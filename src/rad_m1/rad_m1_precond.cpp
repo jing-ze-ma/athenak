@@ -41,8 +41,8 @@ namespace radm1 {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitDumpOp
 //! \brief file layout (all int32 then float64): nmb, nst, n1, n2, n3; per block gid,
-//! lx1, lx2, lx3, level; then per block st(0..nst-1), b, x0, TA, TB, TC, CJM, CJP, CKM, CKP over the active cells
-//! (k,j,i order, i fastest)
+//! lx1, lx2, lx3, level; then per block st(0..nst-1), b, x0, TA, TB, TC, CJM, CJP, CKM,
+//! CKP over the active cells (k,j,i order, i fastest)
 
 void RadiationM1::ImplicitDumpOp() {
   auto *pm = pmy_pack->pmesh;
@@ -345,19 +345,30 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
       });
     }
   }
-  // back up: z_l += P z_{l+1}, and finally the fine z
-  for (int l = nl - 2; l >= 1; --l) {
-    auto c_ = mgc[l];
-    auto n_ = mgc[l+1];
-    par_for("m1_mg_pro", DevExeSpace(), 0, nmb-1, 0, mg_nk[l]-1, 0, mg_nj[l]-1, 0, nx-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      c_(m,MG_Z,k,j,i) += n_(m,MG_Z,k/2,j/2,i);
-    });
-  }
+  // back up, in ONE kernel: the aggregates of level l are 2^l x 2^l fine columns, so
+  // z += P_1 (z_1 + P_2 (z_2 + ...)) is z(k,j,i) += sum_l z_l(k >> l, j >> l, i)
   auto c1_ = mgc[1];
+  auto c2_ = (nl > 2) ? mgc[2] : mgc[1];
+  auto c3_ = (nl > 3) ? mgc[3] : mgc[1];
+  auto c4_ = (nl > 4) ? mgc[4] : mgc[1];
+  if (nl > 5) {
+    for (int l = nl - 2; l >= 4; --l) {   // deeper than 4 coarse levels: fold them first
+      auto c_ = mgc[l];
+      auto n_ = mgc[l+1];
+      par_for("m1_mg_pro", DevExeSpace(), 0, nmb-1, 0, mg_nk[l]-1, 0, mg_nj[l]-1, 0, nx-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        c_(m,MG_Z,k,j,i) += n_(m,MG_Z,k/2,j/2,i);
+      });
+    }
+  }
+  const int nlc = std::min(nl - 1, 4);   // coarse levels read by the fine kernel
   par_for("m1_mg_pro0", DevExeSpace(), 0, nmb-1, 0, mg_nk[0]-1, 0, mg_nj[0]-1, 0, nx-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    iw_(m,zc,k+ks,j+js,i+is) += c1_(m,MG_Z,k/2,j/2,i);
+    Real s = c1_(m,MG_Z,k >> 1,j >> 1,i);
+    if (nlc > 1) s += c2_(m,MG_Z,k >> 2,j >> 2,i);
+    if (nlc > 2) s += c3_(m,MG_Z,k >> 3,j >> 3,i);
+    if (nlc > 3) s += c4_(m,MG_Z,k >> 4,j >> 4,i);
+    iw_(m,zc,k+ks,j+js,i+is) += s;
   });
 }
 
