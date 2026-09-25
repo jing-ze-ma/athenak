@@ -359,6 +359,9 @@ KOKKOS_INLINE_FUNCTION
 Real VcolC2(const Real gb) {
   return fmin(fmax(3.0 - 6.0*gb, 0.0), 1.0);
 }
+
+// the team build sums each shell's moments in VC_NG groups of consecutive rays
+constexpr int VC_NG = 8;
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -608,7 +611,9 @@ void RadiationM1::VetColInit() {
     // within 24 kB (runs_5e GPU sweep: 32 kB halves the occupancy, 3.3 ms at 16 vs 7.7
     // ms at 32 on the He wedge grid)
     const int avail = 3072 - 5*n1 - (vcol_rtop ? 3 : 2)*nray;
-    vcol_lc = std::max(1, std::min(std::min(n1, 16), avail/nray));
+    // (m1-fast5-sp: 8 shells per chunk with the grouped moment sums, runs_5s job 11980678:
+    // 4.95 ms per build at 8, 5.2-5.9 at 6/7/10/12, 7.5 at 16 on the He wedge)
+    vcol_lc = std::max(1, std::min(std::min(n1, 8), avail/nray));
     if (vcol_lcin > 0) {vcol_lc = std::min(n1, vcol_lcin);}
   } else {
     Kokkos::realloc(vcol_buf, nray, ncol);
@@ -996,6 +1001,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray, lc = vcol_lc;
+  const int gsz = (nray + VC_NG - 1)/VC_NG;   // rays per moment group
   const Real fkm = axf ? (1.0/3.0) : vcol_fkmin;
   // vet_col_reflect_top: two sweeps; the third ray slot holds the round-trip
   // transmission (pass 0), then the mirrored top intensity (pass 1)
@@ -1007,7 +1013,8 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap;
   const size_t scr = ScrArray1D<Real>::shmem_size(5*n1) +
                      ScrArray1D<Real>::shmem_size(nrs*nray) +
-                     ScrArray2D<Real>::shmem_size(lc, nray);
+                     ScrArray2D<Real>::shmem_size(lc, nray) +
+                     ScrArray1D<Real>::shmem_size(3*VC_NG*lc);
 
   const int nk = ke - ks + 1, nj = je - js + 1;
   const int nlg = (nmb1 + 1)*nk*nj;
@@ -1022,6 +1029,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     ScrArray1D<Real> pr_(tm.team_scratch(0), 5*n1);    // chi, S, J_in, H_in, K_in
     ScrArray1D<Real> ir_(tm.team_scratch(0), nrs*nray);  // running I; face I; top
     ScrArray2D<Real> ic_(tm.team_scratch(0), lc, nray);
+    ScrArray1D<Real> pm_(tm.team_scratch(0), 3*VC_NG*lc);   // group partial moments
     par_for_inner(tm, 0, n1-1, [&](const int l) {
       const int i = is + l;
       pr_(l) = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
@@ -1086,15 +1094,33 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         if (rtop) {ir_(2*nray + r) = itr;}
       });
       tm.team_barrier();
-      par_for_inner(tm, lb, la, [&](const int l) {
+      // the moments: VC_NG fixed groups of consecutive rays per shell summed in
+      // parallel, then the group sums in group order (a fixed order, the same on every
+      // column and every backend; the grouping is round-off against one running sum)
+      par_for_inner(tm, 0, (la - lb + 1)*VC_NG - 1, [&](const int t) {
+        const int l = lb + t/VC_NG, g = t - VC_NG*(t/VC_NG);
         const int ll = la - l;
         Real jj = 0.0, hh = 0.0, kk = 0.0;
         const int kr = kl_(l);
-        for (int r = 0; r <= kr; ++r) {
+        const int re = ((g + 1)*gsz - 1 < kr) ? ((g + 1)*gsz - 1) : kr;
+        for (int r = g*gsz; r <= re; ++r) {
           const Real wq = w_(r,l)*ic_(ll, r), mq = mu_(r,l);
           jj += wq;
           hh -= wq*mq;
           kk += wq*mq*mq;
+        }
+        pm_(3*t) = jj;
+        pm_(3*t + 1) = hh;
+        pm_(3*t + 2) = kk;
+      });
+      tm.team_barrier();
+      par_for_inner(tm, lb, la, [&](const int l) {
+        const int t0 = (l - lb)*VC_NG;
+        Real jj = pm_(3*t0), hh = pm_(3*t0 + 1), kk = pm_(3*t0 + 2);
+        for (int g = 1; g < VC_NG; ++g) {
+          jj += pm_(3*(t0 + g));
+          hh += pm_(3*(t0 + g) + 1);
+          kk += pm_(3*(t0 + g) + 2);
         }
         pr_(2*n1 + l) = jj;
         pr_(3*n1 + l) = hh;
@@ -1226,16 +1252,31 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         });
         tm.team_barrier();
       }
-      par_for_inner(tm, la, lb, [&](const int l) {
-        const int i = is + l;
+      par_for_inner(tm, 0, (lb - la + 1)*VC_NG - 1, [&](const int t) {
+        const int l = la + t/VC_NG, g = t - VC_NG*(t/VC_NG);
         const int ll = l - la;
-        Real jj = pr_(2*n1 + l), hh = pr_(3*n1 + l), kk = pr_(4*n1 + l);
+        Real jj = 0.0, hh = 0.0, kk = 0.0;
         const int kr = kl_(l);
-        for (int r = 0; r <= kr; ++r) {
+        const int re = ((g + 1)*gsz - 1 < kr) ? ((g + 1)*gsz - 1) : kr;
+        for (int r = g*gsz; r <= re; ++r) {
           const Real wq = w_(r,l)*ic_(ll, r), mq = mu_(r,l);
           jj += wq;
           hh += wq*mq;
           kk += wq*mq*mq;
+        }
+        pm_(3*t) = jj;
+        pm_(3*t + 1) = hh;
+        pm_(3*t + 2) = kk;
+      });
+      tm.team_barrier();
+      par_for_inner(tm, la, lb, [&](const int l) {
+        const int i = is + l;
+        const int t0 = (l - la)*VC_NG;
+        Real jj = pr_(2*n1 + l), hh = pr_(3*n1 + l), kk = pr_(4*n1 + l);
+        for (int g = 0; g < VC_NG; ++g) {
+          jj += pm_(3*(t0 + g));
+          hh += pm_(3*(t0 + g) + 1);
+          kk += pm_(3*(t0 + g) + 2);
         }
         jj *= 0.5;
         hh *= 0.5;
