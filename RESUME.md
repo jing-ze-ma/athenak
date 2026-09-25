@@ -124,3 +124,27 @@ Runs: fresh 10x start, 200 cycles, 50 calls, tol 1e-8, maxit 12. Summaries with 
 - Run the CPU gates: keys off bitwise vs cab48eb7; 6 + 6 restart bitwise with kkt_row on.
 - Both keys must be listed in the input before they can be overridden on the command line.
 - The stalldbg run logs in smokediag/s_* are large (s_none ~1 GB) and can be deleted.
+
+## 09-26 (2): gates and long arms (binary 9326804a; no merge)
+**CPU gates** (`bin_0925/gate_9326804a`: gate.sh / gate.out, gate2.sh / gate2.out; CPU builds of cab48eb7 and
+9326804a): all pass.
+- Keys off vs cab48eb7: data arrays and hst are bitwise identical on sparc_w121 and on the old-planet sparc.athinput.
+- Restart 12 cycles straight vs 6 + 6 with kkt_row on: bitwise.
+  - In gate2 the cells are forced onto the bound with demax 0.02: kkt = 5600-6400 cells per call.
+  - kkt_row on vs off differs there, which confirms the key is exercised.
+
+**GPU, 10x, 800 fresh cycles, tol 1e-8, no stalldbg** (job 11981731; two repeats, interleaved side by side):
+
+| arm | not converged / 200 | passes/call | ms/cycle |
+|---|---|---|---|
+| production | 164 | 11.27 | 43.3 |
+| kkt_row + maxit 16 | 85 | 13.49 | 44.0 (+1.6 %) |
+
+- Per 100 cycles, production fails 25/25 calls from cycle 200 on. kkt_row fails 0, 0, 5, 25, 19, 18, 10, 8.
+- The failures left with kkt_row are NOT stalls. One or two columns are still contracting linearly at pass 16
+  (1e-8 to 2e-7): the stiff day-side population. They need design step 2 (Broyden or a banded Jacobian).
+
+**GPU, 1x:**
+- Fresh start (job 11981732), 800 cycles: 9 -> 0 not converged, 34.25 vs 34.35 ms/cycle.
+- From the production restart sparc_w121x1/base/rst/dhj.00017.rst (rotation 8.14, 1 rotation, job 11981784,
+  `smokediag/rst1x`): 20/2113 -> 0/2112 not converged, 4.50 -> 4.34 passes/call, cpu time 287.9 vs 288.8 s.
