@@ -628,6 +628,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_every = pin->GetOrAddInteger("problem","ck_impl_every",1);
   two_stream_rt::ck_impl_every_thr =
       pin->GetOrAddReal("problem","ck_impl_every_thr",0.0);
+  // ck-fast2 lever 1, default off: the deep diffusion handover (per-layer dtau of every
+  // chain >= ck_dif_dtau below the chain cut).  See utils/two_stream_column_ck.hpp.
+  two_stream_rt::ck_dif_dtau = pin->GetOrAddReal("problem","ck_dif_dtau",0.0);
+  two_stream_rt::ck_dif_margin = pin->GetOrAddInteger("problem","ck_dif_margin",0);
+  // ck-fast2 lever 3, default off: the storing pass's pseudo-spherical beam in its own
+  // per-target kernels (see two_stream_rt::ck_beam_par)
+  two_stream_rt::ck_beam_par = pin->GetOrAddBoolean("problem","ck_beam_par",false);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
   // sweep is linear in B_b at frozen opacity, so only the opacity-dependent coefficients
   // have to be rebuilt -- and they do not change); ck_impl_frozen_cof decides whether the
@@ -770,6 +777,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "needs ck_implicit, ck_impl_once, ck_impl_fuse, ck_impl_colskip, "
               << "ck_impl_debug <= 0, ck_impl_glob = 0 and ck_impl_warm off."
               << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_beam_par && !(two_stream_rt::ck_implicit &&
+      two_stream_rt::ck_impl_frozen_op && !two_stream_rt::ck_impl_refresh_kappa &&
+      two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_lin_thr == 1 &&
+      two_stream_rt::ck_sweep_form == 1 && two_stream_rt::ck_spherical &&
+      two_stream_rt::ck_beam_sph)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_beam_par needs "
+              << "ck_implicit, ck_impl_frozen_op, ck_impl_lin, ck_impl_lin_thr = 1, "
+              << "ck_sweep_form = 1, ck_spherical and ck_beam_sph." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_dif_dtau > 0.0 && !(two_stream_rt::ck_implicit &&
+      two_stream_rt::ck_impl_frozen_op && !two_stream_rt::ck_impl_refresh_kappa &&
+      two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_jac_lin &&
+      two_stream_rt::ck_sweep_form == 1 && two_stream_rt::ck_spherical &&
+      two_stream_rt::ck_impl_debug <= 0 && two_stream_rt::ck_dif_margin >= 0)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_dif_dtau (the deep "
+              << "diffusion handover) needs ck_implicit, ck_impl_frozen_op, ck_impl_lin, "
+              << "ck_impl_jac_lin, ck_sweep_form = 1, ck_spherical, ck_impl_debug <= 0 "
+              << "and ck_dif_margin >= 0." << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (two_stream_rt::ck_impl_once && !two_stream_rt::ck_implicit) {

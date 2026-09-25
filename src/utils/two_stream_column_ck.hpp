@@ -306,6 +306,35 @@ inline int64_t ck_cad_nfull = 0;             // scheduled full calls
 inline int64_t ck_cad_nlin = 0;              // linearised steps
 inline int64_t ck_cad_nguard = 0;            // linearised steps with a guard call
 inline double ck_cad_fref = 0.0;             // sum over linearised steps of nref/ncol
+// ---- ck-fast2 lever 1: problem/ck_dif_dtau = thr > 0, THE DEEP DIFFUSION HANDOVER.
+// Default 0 (off), and off nothing below is allocated, launched or read (bitwise).
+// Route B only (the ck two-stream owns the whole column down to the inner wall).  Per
+// column, on every pass that builds the opacity, the chain cut ich is moved up to the
+// shallowest face below which EVERY centre-to-centre layer is optically thick in EVERY
+// chain: min over (band, g) of dtau_bg(f) = kr_{f-1} dz_{f-1}/2 + kr_f dz_f/2 >= thr for
+// all faces f = is+1 .. ich (kr = kappa rho, the sweep's own; minus ck_dif_margin cells).
+// Below ich the ck chains are replaced by the EXACT THICK LIMIT of the same discrete
+// two-stream, band resolved and from the same face quantities:
+//     F(f) = sum_b G_b(f) (B_b(f-1) - B_b(f)),
+//     G_b(f) = sum_{g,q in b} wfc 2 mu_q (w_l + w_u - 1)/dtau_bg(f),
+// wfc/mu_q the chains' flux weights and angles and w_l, w_u the BFace weights of the
+// layer (1 wherever kappa rho varies smoothly), i.e. (4 pi/3) sum_g gw dB_b/dtau_bg for
+// nquad = 2 and the 0.904 of nquad = 1.  The wall face keeps route B's datum, F(is) =
+// sum_c wfc I_int,b.  The cells is .. ich-1 get the flux-form divergence of F with the
+// chains' area/volume factors; the jacobian rows are exact (F is linear in B_b at frozen
+// opacity).  THE HANDOVER IS ALGEBRAIC: the chains start at face ich with a flux
+// boundary condition, R = 1 and Sc = g_c (B_b(ich-1) - B_b(ich)), g_c = 2 mu_q (w_l + w_u
+// - 1)/dtau_c(ich), so the chains' own face flux at ich is sum_c wfc g_c dB = F(ich) to
+// round-off, and the intensities above it start from the diffusion-limit field.
+inline Real ck_dif_dtau = 0.0;
+inline int ck_dif_margin = 0;
+inline DvceArray3D<int> *ck_ich_ptr = nullptr;    // (m,k,j) chain cut
+inline DvceArray5D<Real> *ck_difG_ptr = nullptr;  // (m,b,i,k,j) G_b at face i
+inline DvceArray5D<Real> *ck_difE_ptr = nullptr;  // (m,b,i,k,j) emission weight, cell i
+inline DvceArray4D<Real> *ck_difg_ptr = nullptr;  // (m,c,k,j) chain datum g_c; -1 = wall
+inline DvceArray4D<int> *ck_diff_ptr = nullptr;   // (m,b,k,j) first thin face of band b
+inline int64_t ck_dif_ncol = 0;                   // last store: columns with a handover
+inline double ck_dif_fsum = 0.0;                  // ... and the sum of (ich - icut)
 
 //! \fn CkDum
 //! \brief a 1-element View for a capture that is never read.  CkDum<V>(label) builds a
@@ -878,6 +907,21 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     // ck_impl_aa's accelerated steps
     // 16-17: ck_impl_floorbound / ck_impl_kkt_demax (cells at the floor, KKT cells)
     ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 18);
+  }
+  // ck-fast2 lever 1 (problem/ck_dif_dtau)
+  if (ck_dif_dtau > 0.0) {
+    if (ck_ich_ptr != nullptr) {
+      delete ck_ich_ptr;
+      delete ck_difG_ptr;
+      delete ck_difE_ptr;
+      delete ck_difg_ptr;
+      delete ck_diff_ptr;
+    }
+    ck_ich_ptr = new DvceArray3D<int>("ck_ich", nmb, n3, n2);
+    ck_difG_ptr = new DvceArray5D<Real>("ck_difG", nmb, nb, n1, n3, n2);
+    ck_difE_ptr = new DvceArray5D<Real>("ck_difE", nmb, nb, n1, n3, n2);
+    ck_difg_ptr = new DvceArray4D<Real>("ck_difg", nmb, nch, n3, n2);
+    ck_diff_ptr = new DvceArray4D<int>("ck_diff", nmb, nb, n3, n2);
   }
 }
 

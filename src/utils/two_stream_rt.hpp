@@ -1054,6 +1054,15 @@ inline bool ck_spherical = false;
 // tau_ray(r_i) is not a running sum -- every target has its own chord set.  It is sized
 // to one element when the switch is off: the kernel is templated on the flag.
 inline bool ck_beam_sph = false;
+// problem/ck_beam_par (ck-fast2 lever 3): the pseudo-spherical beam of the tm sweep's
+// STORING pass in its own kernels, a thread per target face instead of a thread per
+// column (the in-kernel block walks O(N^2) chords serially: measured 48 of the storing
+// kernel's 94 ms per call at nx1 256).  Same chords, same order, same deposit arithmetic;
+// the in-kernel block's "stop once the block's slant depth passes 60" becomes a per-chain
+// stop at VERTICAL depth 60 (a lower bound of the slant one), so the two differ only by
+// deposits below e^-60 of the incident beam.  Needs ck_impl_lin, lin_thr = 1 (scratch).
+inline bool ck_beam_par = false;
+inline DvceArray4D<int> *ck_bstop_ptr = nullptr;   // (m, beam chain, k, j)
 // The beam's optical depth to the TOP face of a mu0 < 0 (twilight) column: the ray
 // enters the domain top on the far side, grazes the tangent radius b = r_top sin(theta0)
 // and climbs back to the target, so every shell between b and r_top is crossed TWICE.
@@ -1814,6 +1823,10 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                     + std::to_string(ck_impl_xs_dmax)) : std::string(""))
                 << (ck_impl_pred ? (" pred=" + std::to_string(ck_impl_npred))
                     : std::string(""))
+                << ((ck_dif_dtau > 0.0) ? (" difcol=" + std::to_string(ck_dif_ncol)
+                    + " difdep=" + std::to_string((ck_dif_ncol > 0)
+                        ? ck_dif_fsum/static_cast<double>(ck_dif_ncol) : 0.0))
+                    : std::string(""))
                 << ((pchk_act >= 0) ? (" pchk_active=" + std::to_string(pchk_act))
                     : std::string(""))
                 << ((ck_impl_floorbound || ck_impl_kkt_demax)
@@ -2545,6 +2558,21 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       auto xT_g   = (band_on) ? *rt_xT_ptr : tau_g;
       auto xP_g   = (band_on) ? *rt_xP_ptr : tau_g;
       auto icut_g = (band_on) ? *rt_icut_ptr : CkDum<DvceArray3D<int>>("dummy");
+      // ---- ck-fast2 lever 1 (problem/ck_dif_dtau, see two_stream_column_ck.hpp) ----
+      // icc_g is the CHAIN cut every ck chain / linear / jacobian kernel reads; the RT
+      // domain cut icut_g (the apply, the column solve, the cadence) is unchanged.  Off,
+      // icc_g IS icut_g and the datum array is a dummy that is never read.
+      const bool ckdif_ = ck_implicit && rt_ck && (ck_dif_dtau > 0.0);
+      // ck_beam_par: the storing pass's pseudo-spherical beam in its own kernels
+      const bool cbt_ = ck_beam_par;
+      auto icc_g = ckdif_ ? *ck_ich_ptr : icut_g;
+      auto difg_g = ckdif_ ? *ck_difg_ptr : CkDum<DvceArray4D<Real>>("ck_difg_d");
+      if (ckdif_ && taublend) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_dif_dtau is "
+                  << "the route-B deep handover (<hydro|mhd>/isotropic_conduction = "
+                  << "none); it cannot be combined with the tau blend." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       auto Qb_g   = (band_on) ? *rt_Qb_ptr : Fb_g;
       // see rt_cell_report: the per-face streams the report needs, q = 0 only
       const bool report_on = rt_cell_report && band_on;
@@ -2950,6 +2978,170 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
           }
         });
+        // ---- ck-fast2 lever 1 (problem/ck_dif_dtau): the chain cut and the deep
+        // diffusion operator, frozen with the opacity (built on the passes that build
+        // it).  Band by band: the first face above the RT cut whose centre-to-centre
+        // layer is thinner than thr in some g-point, and below it the face
+        // conductances G_b and the emission weights.  Then per column the chain cut
+        // ich (the lowest such face over the bands, minus one, minus the margin) and
+        // per chain the flux datum g_c at face ich.  See two_stream_column_ck.hpp.
+        if (ckdif_ && !ckfrz_) {
+          auto difG_ = *ck_difG_ptr;
+          auto difE_ = *ck_difE_ptr;
+          auto diff_ = *ck_diff_ptr;
+          const Real dthr_ = ck_dif_dtau;
+          const int dmrg_ = ck_dif_margin;
+          par_for("ck_dif_band", DevExeSpace(), 0, nmb1, 0, CK_NB-1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int b, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int ic = icut_g(m,k,j);
+            int fail = ie + 1;
+            if (ic > ie) {
+              diff_(m,b,k,j) = fail;
+              return;
+            }
+            // per g: sum over the angles of the chains' 2 wfc mu (flux) and 2 wfc/mu
+            // (emission), the expressions rt_chain_ck forms its wfc and Em with
+            Real wsg[CK_NG], esg[CK_NG], krl[CK_NG];
+            for (int g=0; g<CK_NG; ++g) {
+              if (ck_nq_ == 1) {
+                const Real mu = 1.0/CK_DIFFUSIVITY;
+                const Real wf = M_PI*ckgw(g);
+                wsg[g] = 2.0*wf*mu;
+                esg[g] = 2.0*(wf/mu);
+              } else {
+                wsg[g] = 0.0;
+                esg[g] = 0.0;
+                for (int q=0; q<2; ++q) {
+                  const Real wf = 2.0*M_PI*wg[q]*mug[q]*ckgw(g);
+                  wsg[g] += 2.0*wf*mug[q];
+                  esg[g] += 2.0*(wf/mug[q]);
+                }
+              }
+            }
+            // kappa rho of (b, g) at cell i, by the chain's own expression (kapof/krof)
+            auto krb = [&](const int i, Real *kr) {
+              const Real xTv = xT_g(m,k,j,i);
+              const Real xPv = xP_g(m,k,j,i);
+              const int iT = static_cast<int>(xTv);
+              const int iP = static_cast<int>(xPv);
+              const Real fT = xTv - static_cast<Real>(iT);
+              const Real fP = xPv - static_cast<Real>(iP);
+              const Real rho = rhoN(m,k,j,i);
+              for (int g=0; g<CK_NG; ++g) {
+                kr[g] = (ck_kappa(cklk, iT, fT, iP, fP, b, g) + kc_g(m,b,i,k,j))*rho;
+              }
+            };
+            if (!(T_g(m,k,j,ic) > 0.0)) {
+              diff_(m,b,k,j) = ic;
+              return;
+            }
+            krb(ic, krl);
+            {
+              Real e = 0.0;
+              for (int g=0; g<CK_NG; ++g) e += esg[g]*krl[g];
+              difE_(m,b,ic,k,j) = e;
+            }
+            for (int f=ic+1; f<=ie; ++f) {
+              if (!(T_g(m,k,j,f) > 0.0)) {
+                fail = f;
+                break;
+              }
+              Real kru[CK_NG];
+              krb(f, kru);
+              const Real dzl = 0.5*dx1(m,k,j,f-1);
+              const Real dzu = 0.5*dx1(m,k,j,f);
+              bool thick = true;
+              Real gs = 0.0, e = 0.0;
+              for (int g=0; g<CK_NG; ++g) {
+                const Real dtc = krl[g]*dzl + kru[g]*dzu;
+                if (!(dtc >= dthr_)) thick = false;
+                const Real wbf = BFaceW(kru[g], krl[g], bface_on)
+                               + BFaceW(krl[g], kru[g], bface_on) - 1.0;
+                gs += wsg[g]*wbf/dtc;
+                e += esg[g]*kru[g];
+              }
+              if (!thick) {
+                fail = f;
+                break;
+              }
+              difG_(m,b,f,k,j) = gs;
+              difE_(m,b,f,k,j) = e;
+              for (int g=0; g<CK_NG; ++g) krl[g] = kru[g];
+            }
+            diff_(m,b,k,j) = fail;
+          });
+          par_for("ck_dif_cut", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int ic = icut_g(m,k,j);
+            int fmin = ie + 1;
+            for (int b=0; b<CK_NB; ++b) {
+              const int f = diff_(m,b,k,j);
+              if (f < fmin) fmin = f;
+            }
+            // ich: the highest face that is thick in every chain with every face
+            // below it thick too; at least one deep cell, at least one chain cell
+            int ich = fmin - 1 - dmrg_;
+            if (ic > ie || ich < ic + 1) ich = ic;
+            if (ich > ie) ich = ie;
+            icc_g(m,k,j) = ich;
+          });
+          par_for("ck_dif_datum", DevExeSpace(), 0, nmb1, 0, nblk*RT_NB-1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int ic = icut_g(m,k,j);
+            const int ich = icc_g(m,k,j);
+            if (ich <= ic || ich > ie) {
+              difg_g(m,c,k,j) = -1.0;
+              return;
+            }
+            int b, g;
+            Real mu;
+            if (ck_nq_ == 1) {
+              g = c % CK_NG;
+              b = c/CK_NG;
+              mu = 1.0/CK_DIFFUSIVITY;
+            } else {
+              g = (c/2) % CK_NG;
+              b = c/(2*CK_NG);
+              mu = mug[c % 2];
+            }
+            auto kr1 = [&](const int i) {
+              const Real xTv = xT_g(m,k,j,i);
+              const Real xPv = xP_g(m,k,j,i);
+              const int iT = static_cast<int>(xTv);
+              const int iP = static_cast<int>(xPv);
+              const Real fT = xTv - static_cast<Real>(iT);
+              const Real fP = xPv - static_cast<Real>(iP);
+              return (ck_kappa(cklk, iT, fT, iP, fP, b, g) + kc_g(m,b,i,k,j))
+                     *rhoN(m,k,j,i);
+            };
+            const Real kl = kr1(ich-1);
+            const Real ku = kr1(ich);
+            const Real dtc = kl*(0.5*dx1(m,k,j,ich-1)) + ku*(0.5*dx1(m,k,j,ich));
+            const Real wbf = BFaceW(ku, kl, bface_on) + BFaceW(kl, ku, bface_on) - 1.0;
+            difg_g(m,c,k,j) = 2.0*mu*wbf/dtc;
+          });
+          if (ck_impl_verbose) {
+            Real ncol = 0.0, fsum = 0.0;
+            const int nk_ = ke - ks + 1, nj_ = je - js + 1;
+            Kokkos::parallel_reduce("ck_dif_stat",
+              Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*nk_*nj_),
+              KOKKOS_LAMBDA(const int idx, Real &a, Real &s) {
+                const int j = js + (idx % nj_);
+                const int k = ks + ((idx/nj_) % nk_);
+                const int m = idx/(nj_*nk_);
+                const int d = icc_g(m,k,j) - icut_g(m,k,j);
+                if (d > 0) {
+                  a += 1.0;
+                  s += static_cast<Real>(d);
+                }
+              }, ncol, fsum);
+            ck_dif_ncol = static_cast<int64_t>(ncol);
+            ck_dif_fsum = fsum;
+          }
+        }
         }
       } else {
       // ---- A: chain-independent per-column precompute -----------------------------
@@ -3827,7 +4019,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Em_g(m,blk,i,k,j) = 0.0;
               Src_g(m,blk,i,k,j) = 0.0;
             }
-            const int icut = icut_g(m,k,j);
+            const int icut = icc_g(m,k,j);
             if (icut > ie) return;                  // whole column deeper than the cut
             // Shortwave. This is the one part of the scheme that genuinely restructures:
             // the longwave only ever needs a LAYER optical depth, which is local, but the
@@ -4409,11 +4601,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     suc[cc] = bcut;
                     Rc[cc] = (FRM == 2) ? one : static_cast<RtF>(0.0);
                     Hc[cc] = static_cast<RtF>(bcut + Iint_b);
+                    // ck_dif_dtau: a handover column starts on the deep diffusion
+                    // flux instead, u - d = g_c (B_{cut-1} - B_cut) (R = 1)
+                    const Real gdf = (FRM == 1 && ckdif_)
+                                   ? difg_g(m,blk*NC+cc,k,j) : -1.0;
+                    if (gdf >= 0.0) {
+                      Rc[cc] = one;
+                      Hc[cc] = static_cast<RtF>(gdf*(Bb_g(m,b,icut-1,k,j) - bcut));
+                    }
                     if constexpr (JAC) {
                       // Sc_cut = B_cut + Iint: window (B_cut-2, B_cut-1, B_cut)
                       jS[cc][0] = 0.0;
-                      jS[cc][1] = 0.0;
-                      jS[cc][2] = 1.0;
+                      jS[cc][1] = (gdf >= 0.0) ? gdf : 0.0;
+                      jS[cc][2] = (gdf >= 0.0) ? -gdf : 1.0;
                       // sfc = suc = B_cut: slots (B_{i-1}, B_i) of the first layer
                       jfc[cc][0] = 0.0;
                       jfc[cc][1] = 1.0;
@@ -4773,7 +4973,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                       const Real j0 = wj*(rat*dd2 - jDu[cc][1]);
                       const Real jp = wj*(rat*dd3 - jDu[cc][2]);
                       Kokkos::atomic_add(&ckjac_g(m,1,k,j,i), j0*ckdb_g(m,b,i,k,j));
-                      if (i > icut && jm > 0.0) {
+                      if ((i > icut || (ckdif_ && icut > icut_g(m,k,j)))
+                          && jm > 0.0) {
                         Kokkos::atomic_add(&ckjac_g(m,0,k,j,i),
                                            jm*ckdb_g(m,b,i-1,k,j));
                       }
@@ -4807,7 +5008,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // block in the four-pass sweep below, which carries the derivation and
                 // the sketch; it is repeated rather than shared because the two forms
                 // reach it from different places.
-                if (BSP && lit_sph && !ckfus) {
+                if (BSP && lit_sph && !ckfus && !(ckfst && cbt_)) {
                   const Real rcut = X1F(m,icut);
                   RtF thi[NC];
                   Real tauh[NC];
@@ -5621,7 +5822,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Em_g(m,blk,i,k,j) = 0.0;
               Src_g(m,blk,i,k,j) = 0.0;
             }
-            const int icut = icut_g(m,k,j);
+            const int icut = icc_g(m,k,j);
             if (icut > ie) return;
             int bandc[NC];
             for (int cc=0; cc<NC; ++cc) {
@@ -5638,6 +5839,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               sfc[cc] = bcut;
               suc[cc] = bcut;
               ss[cc] = bcut + lC_g(1,blk*NC+cc);
+              if (ckdif_) {                  // ck_dif_dtau: the flux datum
+                const Real gdf = difg_g(m,blk*NC+cc,k,j);
+                if (gdf >= 0.0) ss[cc] = gdf*(Bb_g(m,bandc[cc],icut-1,k,j) - bcut);
+              }
             }
             for (int i=icut; i<ie+1; ++i) {
               const Real bt = lG_g(m,0,i,k,j);
@@ -5776,7 +5981,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-            const int icut = icut_g(m,k,j);
+            const int icut = icc_g(m,k,j);
             for (int i=is; i<ie+2; ++i) {
               Real src = 0.0, fb = 0.0, em = 0.0;
               if (i >= icut && icut <= ie) {
@@ -5805,7 +6010,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           CkParFor4("rt_chain_ck_lin1", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-            const int icut = icut_g(m,k,j);
+            const int icut = icc_g(m,k,j);
             if (icut > ie) return;
             const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
             // ck-nq2: lP slots 5-7 (kappa rho weights) are stored once per angle pair
@@ -5815,6 +6020,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             auto Sc = CkScrRows<Real>(slbuf, 0, sltsz, n1, slt)[0];
             const Real bcut = Bb_g(m,b,icut,k,j);
             Real sfc = bcut, suc = bcut, ss = bcut + lC_g(1,c);
+            if (ckdif_) {                    // ck_dif_dtau: the flux datum
+              const Real gdf = difg_g(m,c,k,j);
+              if (gdf >= 0.0) ss = gdf*(Bb_g(m,b,icut-1,k,j) - bcut);
+            }
             Real bown = bcut;
             for (int i=icut; i<ie+1; ++i) {
               const Real bt = lG_g(m,0,i,k,j);
@@ -5928,7 +6137,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           CkParFor4("rt_chain_ck_lin1p", cklw_, 0, nmb1, 0, npr-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int pp, const int k, const int j) {
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-            const int icut = icut_g(m,k,j);
+            const int icut = icc_g(m,k,j);
             if (icut > ie) return;
             const int c0 = 2*pp;
             const int b = c0/(2*CK_NG);
@@ -5941,6 +6150,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             Real sfc = bcut, suc = bcut, ss[2];
             ss[0] = bcut + lC_g(1,c0);
             ss[1] = bcut + lC_g(1,c0+1);
+            if (ckdif_) {                    // ck_dif_dtau: the flux datum
+              for (int q=0; q<2; ++q) {
+                const Real gdf = difg_g(m,c0+q,k,j);
+                if (gdf >= 0.0) ss[q] = gdf*(Bb_g(m,b,icut-1,k,j) - bcut);
+              }
+            }
             Real bown = bcut;
             for (int i=icut; i<ie+1; ++i) {
               const Real bt = lG_g(m,0,i,k,j);
@@ -6123,12 +6338,131 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           } else {
             launch_ck_full();
           }
+          // ---- problem/ck_beam_par: the pseudo-spherical beam of the storing pass,
+          // which rt_chain_ck (tm, FOP) skipped, as three kernels with a thread per
+          // TARGET instead of a thread per column: (1) per beam chain the deepest target
+          // still under the vertical depth 60 (the slant depth is never smaller, so every
+          // target the in-kernel block deposits more than e^-60 into is kept); (2) per
+          // (beam chain, face) the slant optical depth of the ray to that face, by the
+          // in-kernel block's own chord walk (same shells, same order: the same number);
+          // (3) per (chain block, target) the deposit, the block's arithmetic in its
+          // order.  Scratch: the lin1 partials ck_lps (free on the storing pass).
+          if (cbt_ && ckfst_ && ckbsph_ && cksph_ && ckform_ == 1) {
+            const Real alb_ = albedo;
+            const Real fst_ = Fstar;
+            const int bst_ = (ck_nq_ == 2) ? 2 : 1;
+            const int nbc_ = nch_/bst_;
+            if (ck_bstop_ptr == nullptr) {
+              ck_bstop_ptr = new DvceArray4D<int>("ck_bstop", nmb1+1, nbc_, n3, n2);
+            }
+            auto bsp_ = *ck_bstop_ptr;
+            auto tsl_ = *ck_lps_ptr;         // (m, beam chain, face, k, j)
+            par_for("ck_beam_stop", DevExeSpace(), 0, nmb1, 0, nbc_-1, ks, ke, js, je,
+            KOKKOS_LAMBDA(const int m, const int p, const int k, const int j) {
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icc_g(m,k,j);
+              const int c = p*bst_;
+              Real vt = 0.0;
+              int fs = icut;
+              for (int i=ie; i>=icut; --i) {
+                if (vt > 60.0) {
+                  fs = i + 1;
+                  break;
+                }
+                vt += static_cast<Real>(static_cast<RtF>(ckkro_g(m,c,i,k,j)))
+                      *(X1F(m,i+1) - X1F(m,i));
+              }
+              bsp_(m,p,k,j) = fs;
+            });
+            par_for("ck_beam_tau", DevExeSpace(), 0, nmb1, 0, nbc_-1, is, ie+1, ks, ke,
+                    js, je,
+            KOKKOS_LAMBDA(const int m, const int p, const int f, const int k,
+                          const int j) {
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icc_g(m,k,j);
+              if (icut > ie || f < icut || f < bsp_(m,p,k,j)) return;
+              const int c = p*bst_;
+              const Real mu0 = cf_g(m,k,j,3);
+              const Real sinz = sqrt((mu0*mu0 < 1.0) ? (1.0 - mu0*mu0) : 0.0);
+              const Real rcut = X1F(m,icut);
+              const Real bb = X1F(m,f)*sinz;
+              const Real b2 = bb*bb;
+              int jlo = f;
+              bool dark = false;
+              if (mu0 < 0.0) {
+                if (bb <= rcut) {
+                  dark = true;
+                } else {
+                  jlo = icut;
+                  for (int jj=f-1; jj>=icut; --jj) {
+                    if (X1F(m,jj) <= bb) {
+                      jlo = jj;
+                      break;
+                    }
+                  }
+                }
+              }
+              Real tl = 0.0;
+              if (!dark) {
+                const Real rl = X1F(m,jlo);
+                Real prev = (rl*rl > b2) ? sqrt(rl*rl - b2) : 0.0;
+                for (int jj=jlo; jj<ie+1; ++jj) {
+                  const Real ru = X1F(m,jj+1);
+                  const Real cur = sqrt(ru*ru - b2);
+                  const Real ds = (jj < f) ? 2.0*(cur - prev) : (cur - prev);
+                  prev = cur;
+                  tl += ds*static_cast<Real>(static_cast<RtF>(ckkro_g(m,c,jj,k,j)));
+                }
+              }
+              tsl_(m,p,f,k,j) = dark ? 1.0e30 : tl;
+            });
+            par_for("ck_beam_dep", DevExeSpace(), 0, nmb1, 0, nblk-1, is, ie, ks, ke,
+                    js, je,
+            KOKKOS_LAMBDA(const int m, const int blk, const int i, const int k,
+                          const int j) {
+              constexpr int NC = RT_NB;
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icc_g(m,k,j);
+              if (icut > ie || i < icut) return;
+              Real q = 0.0;
+              bool any = false;
+              for (int cc=0; cc<NC; cc+=bst_) {
+                const int c = blk*NC + cc;
+                const int p = c/bst_;
+                if (i < bsp_(m,p,k,j)) continue;
+                int g, b;
+                if (ck_nq_ == 1) {
+                  g = c % CK_NG;
+                  b = c/CK_NG;
+                } else {
+                  g = (c/2) % CK_NG;
+                  b = c/(2*CK_NG);
+                }
+                const Real wgc = (ck_nq_ == 1) ? ckgw(g)/static_cast<Real>(ck_nq_)
+                                               : ckgw(g);
+                const Real th = tsl_(m,p,i+1,k,j);
+                const Real tl = tsl_(m,p,i,k,j);
+                const bool dark = (tl >= 1.0e30);
+                const RtF thi = RT_EXP(-static_cast<RtF>(th));
+                const Real dtl = dark ? 1.0e30 : (tl - th);
+                const RtF tlo = dark ? static_cast<RtF>(0.0)
+                                     : RT_EXP(-static_cast<RtF>(tl));
+                const Real dif = static_cast<Real>(thi) - static_cast<Real>(tlo);
+                const Real fac = (fabs(dtl) > 1.0e-3)
+                    ? (dif/dtl) : (static_cast<Real>(thi)*(1.0 - 0.5*dtl));
+                q += (1.0-alb_)*fst_*ckswf(b)*wgc*fac
+                     *static_cast<Real>(static_cast<RtF>(ckkro_g(m,c,i,k,j)));
+                any = true;
+              }
+              if (any) Qb_g(m,blk,i,k,j) += q;
+            });
+          }
           // the factorisation, on the storing pass, from what that pass stored
           if (cklbuild_) {
             par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
             KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-              const int icut = icut_g(m,k,j);
+              const int icut = icc_g(m,k,j);
               // the per-chain constants: the flux weight and the internal-flux datum of
               // the chain's band at the cut (T-independent), written once per chain
               int b;
@@ -6166,8 +6500,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 }
               }
               const Real emw = 2.0*(wfc/muc);
-              // the tm Moebius map of pass 1, on R alone (FRM = 1 of rt_chain_ck)
+              // the tm Moebius map of pass 1, on R alone (FRM = 1 of rt_chain_ck);
+              // ck_dif_dtau: R = 1 at a handover column's cut (the flux datum)
               RtF rr = static_cast<RtF>(0.0);
+              if (ckdif_ && difg_g(m,c,k,j) >= 0.0) rr = static_cast<RtF>(1.0);
               for (int i=icut; i<ie+1; ++i) {
                 const RtF bb = static_cast<RtF>(BTF(m,k,j,i,icut));
                 const RtF dn = static_cast<RtF>(1.0) + rr*bb;
@@ -6219,7 +6555,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               CkParFor4("rt_chain_ck_jlin", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
               KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
                 if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-                const int icut = icut_g(m,k,j);
+                const int icut = icc_g(m,k,j);
                 if (icut > ie) return;
                 const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
                 // ck-nq2: lP slots 5-7 (kappa rho weights) are stored once per angle pair
@@ -6227,6 +6563,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real wfc = lC_g(0,c);
                 // PASS 1: dSc/dB in the window (B_{i-2}, B_{i-1}, B_i) below face i
                 Real jS0 = 0.0, jS1 = 0.0, jS2 = 1.0;
+                // ck_dif_dtau: the flux datum g_c (B_{cut-1} - B_cut) of a handover
+                // column, whose row at the cut then couples to the deep cell below
+                const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
+                if (gdf >= 0.0) {
+                  jS1 = gdf;
+                  jS2 = -gdf;
+                }
                 Real jfc0 = 0.0, jfc1 = 1.0, juc0 = 0.0, juc1 = 1.0;
                 for (int i=icut; i<ie+1; ++i) {
                   lpf_g(m,c,i,k,j) = jS0;
@@ -6339,7 +6682,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real j0 = wj*(rat*dd2 - jDu1);
                   const Real jp = wj*(rat*dd3 - jDu2);
                   lps_g(m,c,i,k,j) = j0*db_g(m,b,i,k,j);
-                  lpf_g(m,c,i,k,j) = (i > icut && (jneg_ || jm > 0.0))
+                  lpf_g(m,c,i,k,j) = ((i > icut || gdf >= 0.0) && (jneg_ || jm > 0.0))
                                    ? jm*db_g(m,b,i-1,k,j) : 0.0;
                   lpj_g(m,c,i,k,j) = (i < ie && (jneg_ || jp > 0.0))
                                    ? jp*db_g(m,b,i+1,k,j) : 0.0;
@@ -6361,7 +6704,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             CkParFor4("ck_jlin_sum", cklw_, 0, nmb1, is, ie, ks, ke, js, je,
             KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-              const int icut = icut_g(m,k,j);
+              const int icut = icc_g(m,k,j);
               if (i < icut || icut > ie) return;
               Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
               for (int c=0; c<nch_; ++c) {
@@ -6376,6 +6719,59 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               jac_g(m,2,k,j,i) = (s2 > 0.0) ? s2 : 0.0;
             });
           }
+        }
+        // ---- ck-fast2 lever 1 (problem/ck_dif_dtau): THE DEEP DIFFUSION -----------
+        // Every pass, after the chains: the cells ic .. ich-1 of a handover column get
+        // the flux-form divergence of F(f) = sum_b G_b(f) (B_b(f-1) - B_b(f)) (the
+        // wall face: route B's datum sum_c wfc I_int,b; face ich: the same F the
+        // chains' datum carries), the per-area face fluxes, the emission and, on a
+        // pass that builds the tridiagonal, their exact rows (after ck_jlin_sum, which
+        // leaves the cells below the chain cut alone).  Written to chain block 0, whose
+        // Src/Fb/Em below ich the chain kernels left 0.
+        if (ckdif_) {
+          auto difG_ = *ck_difG_ptr;
+          auto difE_ = *ck_difE_ptr;
+          const bool djac_ = ckjlp_;
+          const int nchd_ = nblk*RT_NB;
+          par_for("ck_dif_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int ic = icut_g(m,k,j);
+            const int ich = icc_g(m,k,j);
+            if (ich <= ic || ich > ie) return;
+            Real flo = 0.0;          // per-area flux through the lower face of cell i
+            for (int c=0; c<nchd_; ++c) flo += lC_g(0,c)*lC_g(1,c);
+            for (int i=ic; i<ich; ++i) {
+              Real fup = 0.0, em = 0.0;
+              for (int b=0; b<CK_NB; ++b) {
+                fup += difG_(m,b,i+1,k,j)*(Bb_g(m,b,i,k,j) - Bb_g(m,b,i+1,k,j));
+                em += difE_(m,b,i,k,j)*Bb_g(m,b,i,k,j);
+              }
+              const Real vol = ACC(m,k,j,i)*dx1(m,k,j,i);
+              const Real alo = AFC(m,k,j,i);
+              const Real aup = AFC(m,k,j,i+1);
+              Src_g(m,0,i,k,j) = (alo*flo - aup*fup)/vol;
+              Fb_g(m,0,i,k,j) = flo;
+              Em_g(m,0,i,k,j) = em;
+              if (djac_) {
+                Real glo = 0.0, gdl = 0.0, gdu = 0.0, gup = 0.0;
+                for (int b=0; b<CK_NB; ++b) {
+                  const Real gu = difG_(m,b,i+1,k,j);
+                  gdu += gu*ckdb_g(m,b,i,k,j);
+                  gup += gu*ckdb_g(m,b,i+1,k,j);
+                  if (i > ic) {
+                    const Real gl = difG_(m,b,i,k,j);
+                    glo += gl*ckdb_g(m,b,i-1,k,j);
+                    gdl += gl*ckdb_g(m,b,i,k,j);
+                  }
+                }
+                ckjac_g(m,0,k,j,i) = alo*glo/vol;
+                ckjac_g(m,1,k,j,i) = -(alo*gdl + aup*gdu)/vol;
+                ckjac_g(m,2,k,j,i) = aup*gup/vol;
+              }
+              flo = fup;
+            }
+          });
         }
       } else {
       par_for("rt_chain", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
