@@ -1816,6 +1816,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                     : std::string(""))
                 << ((pchk_act >= 0) ? (" pchk_active=" + std::to_string(pchk_act))
                     : std::string(""))
+                << ((ck_impl_floorbound || ck_impl_kkt_demax)
+                    ? (" floor=" + std::to_string(ck_impl_nfloor) + " kkt="
+                       + std::to_string(ck_impl_nkkt)) : std::string(""))
                 << (conv ? "" : " NOT-CONVERGED")
                 << ((ck_impl_debug <= -2) ? (" hist=" + hist) : std::string(""))
                 << std::endl;

@@ -80,6 +80,9 @@
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
+#include "eos/eos.hpp"
+#include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 
 namespace two_stream_rt {
 
@@ -122,6 +125,36 @@ inline Real ck_impl_dtmax = 0.5;
 // while the fallback counter says so.  With ck_spherical = true it is never reached --
 // measured, capped = 0 on every gate run.  0 = no bound.
 inline Real ck_impl_demax = 0.5;
+// problem/ck_impl_floorbound: THE NEWTON IS A BOUND-CONSTRAINED SOLVE, e >= e_floor.
+// Default FALSE = the unconstrained Newton, bit for bit.
+//
+// e_floor = max(e(rho, tfloor), e(rho, pfloor)) is the state ConsToPrim restores a cell
+// to anyway (problem/rt_floor_consistent applies the same rule to the semi-implicit
+// apply).  In the night-side top slab of a fresh WASP-121b start (SMOKE_DIAG.md, 09-25)
+// the backward-Euler root of the coldest top cells lies below that state: the Newton
+// drives them down, the caps clip the step, the column never converges, and the floors
+// put the energy straight back (eos_efloor ~1e7 events per 400 cycles).  With this on:
+//   (a) a step that would take a cell below e_floor stops AT e_floor (a cell already at
+//       or below it is not cooled further; heating steps are untouched);
+//   (b) a cell ON the bound (e <= e_floor (1 + 1e-10)) whose residual points through it
+//       (R = e - e* - h S > 0, i.e. the Newton would cool it further) is at its KKT
+//       point: its residual is not counted in the convergence test.
+// Away from the floors both are the identity, so the arithmetic of every other cell is
+// unchanged; but a cell the old code pushed below e_floor now stops at it, so results
+// change wherever the bound is active.  Counted in slot 16 (cells stopped at the floor)
+// and slot 17 (cells excluded from the test as KKT).  Fused, ck_impl_glob = 0 and
+// ck_impl_aa = 0 path only (refused otherwise).
+inline bool ck_impl_floorbound = false;
+// problem/ck_impl_kkt_demax: the same KKT rule (b) for the TOTAL-excursion bound
+// ck_impl_demax: a cell sitting on e* (1 -+ demax) whose residual points through that
+// bound is converged FOR THE CONSTRAINED PROBLEM.  The bound itself is unchanged (it is
+// the limiter that keeps a dt collapse away; removing it, demax = 0 with dtmax 3,
+// collapsed dt at cycle 22 in smokediag/dtm3d0); only the pass count and the
+// NOT-CONVERGED flag change: the passes a capped cell cannot use are no longer spent.
+// Default FALSE = bitwise.  Counted in slot 17 with (b).
+inline bool ck_impl_kkt_demax = false;
+inline int ck_impl_nfloor = 0;             // cells stopped at e_floor, last pass
+inline int ck_impl_nkkt = 0;               // cells excluded from the test as KKT
 // problem/ck_impl_verbose: print the per-call pass count and residual.
 inline bool ck_impl_verbose = false;
 // problem/ck_impl_debug: print the worst cell of every pass with its whole row.
@@ -843,7 +876,8 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     // slots 8-11: ck_impl_glob's rejected trials, sub-step restarts, failed columns,
     // sub-step seed steps; 12-14: ck_impl_esc's extra passes and coarsenings, and
     // ck_impl_aa's accelerated steps
-    ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 16);
+    // 16-17: ck_impl_floorbound / ck_impl_kkt_demax (cells at the floor, KKT cells)
+    ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 18);
   }
 }
 
@@ -998,6 +1032,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     // problem/ck_impl_warm_step: no column is accepted on the seeded state itself
     const bool wfs_ = ck_impl_warm && ck_impl_warm_step && pz_;
     auto rprev_ = pred_ ? *ck_rprev_ptr : CkDum<DvceArray3D<Real>>("ck_rprev_d");
+    // ck_impl_floorbound / ck_impl_kkt_demax (see their notes)
+    const bool fb_ = ck_impl_floorbound;
+    const bool kd_ = ck_impl_kkt_demax && (detot > 0.0);
+    EOS_Data eosfb_ = (pm->pmb_pack->pmhd != nullptr)
+                      ? pm->pmb_pack->pmhd->peos->eos_data
+                      : pm->pmb_pack->phydro->peos->eos_data;
     const bool aarst_ = ck_impl_aa_rst;
     // ck_impl_every_thr: a column masked out of this call (ck_done = 2) is not touched
     const bool msk_ = ck_cad_partial;
@@ -1043,14 +1083,51 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       // here is stale and must not steer anything)
       const bool pdone = pred_ && (done_(m,k,j) > 0.0);
       if (!glb_) {
+        // KKT (ck_impl_floorbound / ck_impl_kkt_demax): a cell on a bound whose
+        // residual points through it is at its constrained solution (see the notes)
+        auto kktcell = [&](const int i, const Real r) -> bool {
+          const Real e = ei_(m,k,j,i);
+          bool kkt = false;
+          if (fb_ && r > 0.0) {
+            const Real rho = u0(m,IDN,k,j,i);
+            Real efl = eosfb_.EnergyFromTemperature(rho, eosfb_.tfloor);
+            if (e < eosfb_.EnergyFloorBound(rho)) {
+              const Real ep = eosfb_.EnergyFromPressure(rho, eosfb_.pfloor);
+              if (ep > efl) efl = ep;
+            }
+            kkt = (e <= efl*(1.0 + 1.0e-10));
+          }
+          const Real es = est_(m,k,j,i);
+          if (kd_ && !kkt && es > 0.0) {
+            kkt = (r > 0.0 && e <= es*(1.0 - detot)*(1.0 + 1.0e-10))
+                  || (r < 0.0 && e >= es*(1.0 + detot)*(1.0 - 1.0e-10));
+          }
+          return kkt;
+        };
+        const bool kk_ = fb_ || kd_;
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
         [&](const int i, Real &mx) {
           const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-          const Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+          Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+          if (kk_ && s > tol && kktcell(i, r)) s = 0.0;
           if (s > mx) mx = s;
           if (t0rec_) t0_(m,k,j,i) = T_(m,k,j,i);
         }, Kokkos::Max<Real>(rn));
         if (!(rn > 0.0)) rn = 0.0;             // the unfused max starts from 0
+        if (kk_) {
+          Real nkk = 0.0;
+          Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+          [&](const int i, Real &sm) {
+            const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
+            const Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+            if (s > tol && kktcell(i, r)) sm += 1.0;
+          }, nkk);
+          if (nkk > 0.0) {
+            Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+              Kokkos::atomic_add(&cnv_(17), nkk);
+            });
+          }
+        }
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
         [&](const int i, Real &sm) {
           sm += (ei_(m,k,j,i) - est_(m,k,j,i))*dx1_(m,k,j,i);
@@ -1644,6 +1721,19 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           }
           de = en - ei;
         }
+        // ck_impl_floorbound: a cooling step stops at e_floor (rt_floor_consistent rule)
+        if (fb_ && de < 0.0) {
+          const Real rho = u0(m,IDN,k,j,i);
+          Real efl = eosfb_.EnergyFromTemperature(rho, eosfb_.tfloor);
+          if (ei + de < eosfb_.EnergyFloorBound(rho)) {
+            const Real ep = eosfb_.EnergyFromPressure(rho, eosfb_.pfloor);
+            if (ep > efl) efl = ep;
+          }
+          if (ei + de < efl) {
+            de = (ei > efl) ? (efl - ei) : 0.0;
+            Kokkos::atomic_add(&cnv_(16), 1.0);
+          }
+        }
         u0(m,IEN,k,j,i) += de;
         dep_(m,k,j,i) += de;
         if (glb_) lsd_(m,k,j,i) = de;       // the trial the next pass evaluates
@@ -1699,6 +1789,10 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     ck_impl_last_res = hcf(0);
     ck_impl_last_gap = (hcf(5) != 0.0) ? (hcf(4)/hcf(5) - 1.0) : 0.0;
     ck_impl_nactive = static_cast<int>(hcf(6));
+    if (ck_impl_floorbound || ck_impl_kkt_demax) {
+      ck_impl_nfloor = static_cast<int>(hcf(16));
+      ck_impl_nkkt = static_cast<int>(hcf(17));
+    }
     if (ck_impl_glob > 0) {
       ck_impl_nrej += static_cast<int>(hcf(8));
       ck_impl_nsub += static_cast<int>(hcf(9));
