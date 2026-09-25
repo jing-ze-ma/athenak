@@ -387,6 +387,11 @@ inline bool rt_ck = false;
 // makes the 11-band Kataria structure defensible in the first place -- an A-type host
 // would put 18-32 % outside it.
 inline Real rt_star_teff = 6000.0;
+// problem/albedo: an observed Bond albedo.  When the key is present (>= 0) it replaces
+// the Parmentier+2015 fit (get_albedo) everywhere the stellar heating uses the albedo:
+// the RT pass below (every (1-albedo) Fstar deposit and the picket-fence Teff) and the
+// picket-fence initial condition in the pgen.  Absent (-1, default): the fit, as before.
+inline Real rt_albedo_set = -1.0;
 // problem/ck_dump_file: write one column's RT solution -- level pressures, temperatures,
 // net longwave flux and stellar heating -- straight out of the production kernel, once,
 // at
@@ -2366,6 +2371,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
     Real albedo;
     get_albedo(Teff0,grav,albedo);
+    if (rt_albedo_set >= 0.0) albedo = rt_albedo_set;   // problem/albedo
 
 
     // ================================================================================

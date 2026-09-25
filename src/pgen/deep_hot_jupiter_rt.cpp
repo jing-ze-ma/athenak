@@ -149,7 +149,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt);
 void double_gray_two_stream_RT(Mesh *pm, Real bdt);
 
 KOKKOS_INLINE_FUNCTION
-void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, Real &taulim, Real &A, Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3], Real (&gamvv)[3]);
+void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, Real &taulim, Real &A, Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3], Real (&gamvv)[3],
+                                 const Real albedo_set = -1.0);
 KOKKOS_INLINE_FUNCTION
 void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus, const Real &taulim, const Real &A, const Real &B, const Real (&C)[3], const Real (&D)[3], const Real (&E)[3], const Real (&gamv)[3], const Real &tau, Real &T);
 template <typename View1D>
@@ -819,6 +820,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::rt_apply_debug_n =
       pin->GetOrAddInteger("problem","rt_apply_debug_n",8);
   rt_star_teff = pin->GetOrAddReal("problem","ck_star_teff",6000.0);
+  // problem/albedo: observed Bond albedo in place of the Parmentier+2015 fit (see
+  // two_stream_rt.hpp rt_albedo_set).  Read only when present, so an input without it
+  // keeps an identical parameter dump and the fit, bit for bit.
+  if (pin->DoesParameterExist("problem", "albedo")) {
+    two_stream_rt::rt_albedo_set = pin->GetReal("problem", "albedo");
+    if (!(two_stream_rt::rt_albedo_set >= 0.0 && two_stream_rt::rt_albedo_set < 1.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/albedo must be in [0, 1); got "
+                << two_stream_rt::rt_albedo_set << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "deep_hot_jupiter_rt: Bond albedo fixed at problem/albedo = "
+                << two_stream_rt::rt_albedo_set << " (replaces the Parmentier+2015 fit)"
+                << std::endl;
+    }
+  }
   rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
@@ -4249,7 +4267,7 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 
 
 KOKKOS_INLINE_FUNCTION
-void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, Real &taulim, Real &A, Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3], Real (&gamvv)[3]) {
+void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, Real &taulim, Real &A, Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3], Real (&gamvv)[3], const Real albedo_set) {
     
     Real Tirr4 = SQR(SQR(Tirr));
     Real Tint4 = SQR(SQR(Tint));
@@ -4258,6 +4276,7 @@ void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real 
     Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
     Real albedo;
     get_albedo(Teff0,grav,albedo);
+    if (albedo_set >= 0.0) albedo = albedo_set;   // problem/albedo (observed Bond albedo)
     
     Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
     Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
@@ -4322,7 +4341,8 @@ void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &
     Real tautop = 1.0e-6;
     Real Ttop;
     Real taulim, A, B, C[3], D[3], E[3], gamv[3];
-    get_picket_fence_Ttau_coeff(Tint, Tirr, met, grav, mus, taulim, A, B, C, D, E, gamv);
+    get_picket_fence_Ttau_coeff(Tint, Tirr, met, grav, mus, taulim, A, B, C, D, E, gamv,
+                                two_stream_rt::rt_albedo_set);
     get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
     Real kapr, ptop;
     ptop = 2.0; // 2e-6 bar
