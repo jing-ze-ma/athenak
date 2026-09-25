@@ -27,6 +27,7 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -77,7 +78,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   // kernel's closure rather than touching `this` inside the lambda
   M1OpacTab ot = otab;
 
-  par_for("m1_opacity", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  par_for_lb("m1_opacity", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real d = uh(m,IDN,k,j,i);
     Real t = 0.0;

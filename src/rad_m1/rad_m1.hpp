@@ -311,6 +311,46 @@ class RadiationM1 {
   DvceArray4D<Real> f0x1n;      // its start-of-step copy (not restarted)
   DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
   Real impl_nstep, impl_itsum, impl_itmax, impl_nfail;   // host-side Picard counters
+  // implicit_timers = N (m1-fast4; default 0 = off): fenced host timers of the M1 stage
+  // tasks and of the parts of ImplicitSolve, accumulated over cycles >= N and printed
+  // by ImplicitReport.  The fences change the timing a little; only a diagnostic.
+  int tmr_c0 = 0;
+  bool tmr_on = false;
+  double tmr_acc[12] = {}, tmr_cnt[8] = {}, tmr_last = 0.0;
+  Kokkos::Timer tmr_t;
+  void TmrMark(int c);
+  // implicit_mr_every = k (m1-fast4, rad_m1_mr.cpp; default 1 = off): MULTI-RATE
+  // radiation.  The hydro takes every step alone; every k-th step (the first after k/2)
+  // the implicit radiation + coupling is advanced over the whole window Delta by an
+  // operator-split, L-stable, stiffly accurate SDIRK2 (two stage solves), placed at the
+  // window centres so that the composition is Strang (second order).
+  int mr_every = 1;
+  bool mr_on = false;          // an MR radiation step is being taken (Delta = mr_dt)
+  bool mr_first = true;        // the first window is half long (Strang)
+  int mr_cnt = 0;              // hydro steps since the last radiation step
+  Real mr_acc = 0.0;           // time since the last radiation step
+  Real mr_dt = 0.0;            // Delta of the current / last radiation step
+  Real mr_nr = 0.0, mr_nfall = 0.0;   // radiation steps, BE fallbacks (counters)
+  int mr_kc = 0, mr_kn = 0;    // window length (steps) of the last / next window
+  Real mr_theta = 0.0;         // implicit_mr_theta: the adaptive guard (0 = fixed k)
+  bool mr_peq = true;          // implicit_mr_peq: stage-A local-equilibrium start
+  Real mr_thmax = 0.0, mr_ksum = 0.0;   // largest theta seen, sum of window lengths
+  // vet_sc_every = N (m1-fast4, rad_m1_mr.cpp; default 1): the vet_sc formal solution
+  // on every N-th stage-1 (or multi-rate) tensor build only; in between the tensor is
+  // extrapolated linearly in time from the last two formal solutions (O(dt^2))
+  int vsc_every = 1;
+  int vsc_cnt = 0, vsc_nb = 0;  // builds requested, formal solutions stored (0-2)
+  Real vsc_t0 = 0.0, vsc_t1 = 0.0, vsc_tn = 0.0;   // their times, this one
+  Real vsc_nskip = 0.0, vsc_nclip = 0.0;          // extrapolated builds, clipped cells
+  DvceArray5D<Real> vsc_d0, vsc_d1;               // (m,M1_T2_NVET,k,j,i)
+  bool VscSkip();
+  void VscStore();
+  bool F4RstHdr() const {return (mr_every > 1) || (vsc_every > 1);}
+  bool MRActive() const {return mr_every > 1;}
+  void MRInit(ParameterInput *pin);
+  void MRStep(Driver *pdrive, Real dt);
+  void MRSolve(Driver *pdrive, Real dlt);
+  void MRReport();
 
   // ---- MILESTONE 3a2 (the limits of 3a).  See rad_m1_implicit.hpp for what each
   // constant means and docs/dev/rad_m1_implicit_design.md sect. 7 for the measurements.

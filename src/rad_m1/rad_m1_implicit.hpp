@@ -52,6 +52,9 @@ constexpr char kM1Time2RstMagic[8] = {'M', '1', 'T', 'I', 'M', 'E', '2', 'A'};
 // hesdirk2 one -- 9 Reals: the last two measured contractions and the solve counters of
 // the three kinds of solve.  Written only when implicit_one_pass > 0.
 constexpr char kM1OnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'};
+// implicit_mr_every > 1 or vet_sc_every > 1 (rad_m1_mr.cpp): the multi-rate window and
+// tensor-cadence state, behind the one-pass header: 10 Reals, no slabs
+constexpr char kM1MRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled

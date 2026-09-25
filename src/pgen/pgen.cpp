@@ -519,6 +519,37 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     onep_file = true;
   }
 
+  // --- THE <rad_m1> implicit_mr_every / vet_sc_every HEADER (radm1::kM1MRRstMagic),
+  // behind the one-pass one: 10 Reals, no slabs
+  bool mr_file = false;
+  Real mr_hv[10];
+  if (std::memcmp(variabledata, &(radm1::kM1MRRstMagic[0]),
+                  sizeof(radm1::kM1MRRstMagic)) == 0) {
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(mr_hv));
+      ok = ok && (resfile.Read_bytes(&(mr_hv[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(mr_hv[0]), sizeof(mr_hv), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    if (!ok) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <rad_m1> multi-rate header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    mr_file = true;
+  }
+
   // --- THE GENERAL-EOS INTERNAL ENERGY HEADER (kEintRstMagic, pgen.hpp), behind all the
   // others: neint_file slabs of w0(IEN), hydro then mhd, are the LAST slabs of the tail.
   int neint_file = 0;
@@ -1260,6 +1291,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (t2_want && !t2_read && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
+  }
+  if (mr_file && pradm1 != nullptr && pradm1->F4RstHdr()) {
+    pradm1->vsc_cnt = static_cast<int>(mr_hv[6] + 0.5);
+    pradm1->vsc_nb = static_cast<int>(mr_hv[7] + 0.5);
+    pradm1->vsc_t0 = mr_hv[8];
+    pradm1->vsc_t1 = mr_hv[9];
+    pradm1->mr_first = (mr_hv[0] > 0.5);
+    pradm1->mr_cnt = static_cast<int>(mr_hv[1] + 0.5);
+    pradm1->mr_acc = mr_hv[2];
+    pradm1->mr_dt = mr_hv[3];
+    pradm1->mr_kc = static_cast<int>(mr_hv[4] + 0.5);
+    pradm1->mr_kn = static_cast<int>(mr_hv[5] + 0.5);
   }
   if (onep_file && pradm1 != nullptr && pradm1->impl_onep > 0) {
     for (int t = 0; t < 3; ++t) {

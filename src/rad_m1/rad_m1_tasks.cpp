@@ -180,6 +180,7 @@ TaskStatus RadiationM1::Prolongate(Driver *pdrive, int stage) {
     pbval_u->FillCoarseInBndryCC(u0, coarse_u0);
     pbval_u->ProlongateCC(u0, coarse_u0);
   }
+  TmrMark(10);
   return TaskStatus::complete;
 }
 

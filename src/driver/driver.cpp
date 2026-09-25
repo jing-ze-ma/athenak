@@ -433,7 +433,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // runs INSIDE each Heun stage, after its after_stagen; a stage that is not
       // admissible sends the step back to U^n and through the backward-Euler path below.
       radm1::RadiationM1 *pm1 = pmesh->pmb_pack->pradm1;
-      const bool m1t2 = (pm1 != nullptr) && pm1->Time2Active();
+      // <rad_m1>/implicit_mr_every > 1 (rad_m1_mr.cpp): multi-rate radiation, the Heun
+      // stages run the hydro alone and the radiation is taken by MRStep below
+      const bool m1mr = (pm1 != nullptr) && pm1->MRActive();
+      const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
       auto hydro_stage = [&](int stage) {
         ExecuteTaskList(pmesh, "before_stagen", stage);
@@ -483,7 +486,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
       // loop not entered -- when there is no <rad_m1> block.
-      if (pm1 != nullptr && m1t2 && !m1t2fail) {
+      if (m1mr) {
+        pm1->MRStep(this, pmesh->dt);
+      } else if (pm1 != nullptr && m1t2 && !m1t2fail) {
         // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
         pm1->t2_solve = radm1::M1_T2S_NONE;
         pm1->t2_nstep += 1.0;

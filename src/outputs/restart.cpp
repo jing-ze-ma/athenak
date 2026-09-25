@@ -321,6 +321,22 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       onep_hdr[6+t] = pradm1->onep_cnt[t];
     }
   }
+  // <rad_m1> implicit_mr_every > 1 / vet_sc_every > 1: the multi-rate window and the
+  // tensor cadence state, behind the one-pass header
+  const bool wmr = (pradm1 != nullptr) && pradm1->F4RstHdr();
+  Real mr_hdr[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  if (wmr) {
+    mr_hdr[6] = static_cast<Real>(pradm1->vsc_cnt);
+    mr_hdr[7] = static_cast<Real>(pradm1->vsc_nb);
+    mr_hdr[8] = pradm1->vsc_t0;
+    mr_hdr[9] = pradm1->vsc_t1;
+    mr_hdr[0] = pradm1->mr_first ? 1.0 : 0.0;
+    mr_hdr[1] = static_cast<Real>(pradm1->mr_cnt);
+    mr_hdr[2] = pradm1->mr_acc;
+    mr_hdr[3] = pradm1->mr_dt;
+    mr_hdr[4] = static_cast<Real>(pradm1->mr_kc);
+    mr_hdr[5] = static_cast<Real>(pradm1->mr_kn);
+  }
   char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
   {
     const std::int32_t hdr[2] = {(nt2 > 0) ? 1 : 0, static_cast<std::int32_t>(nt2)};
@@ -506,6 +522,13 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(onep_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    if (wmr) {
+      IOWrapperSizeT nb = sizeof(mr_hdr);
+      resfile.Write_any_type(&(radm1::kM1MRRstMagic[0]), sizeof(radm1::kM1MRRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(mr_hdr[0]), nb, "byte", single_file_per_rank);
+    }
     // the internal energy header, same marked form, behind all the others
     if (neint > 0) {
       IOWrapperSizeT nb = sizeof(eint_hdr);
@@ -623,6 +646,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (wonep) {
     step3size += sizeof(radm1::kM1OnePassRstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(onep_hdr);
+  }
+  if (wmr) {
+    step3size += sizeof(radm1::kM1MRRstMagic) + sizeof(IOWrapperSizeT) + sizeof(mr_hdr);
   }
   if (neint > 0) {
     step3size += sizeof(kEintRstMagic) + sizeof(IOWrapperSizeT) + sizeof(eint_hdr);

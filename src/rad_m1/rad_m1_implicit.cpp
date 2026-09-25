@@ -58,6 +58,7 @@
 #include "hydro/hydro.hpp"
 #include "reconstruct/plm.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
@@ -674,6 +675,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
+  tmr_c0 = pin->DoesParameterExist("rad_m1","implicit_timers") ?
+           pin->GetInteger("rad_m1","implicit_timers") : 0;   // read only when named
   // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
   // the closures that do not read the iterate (eddington, vet_sc, tau: 1.6x on the GPU,
   // statistics moved at the solver-tolerance level) and stay OFF for m1 / minerbo /
@@ -1349,6 +1352,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   if (vet_sc) {VetInit(pin);}
   Time2Init(pin);
+  MRInit(pin);         // implicit_mr_every (rad_m1_mr.cpp)
 }
 
 //----------------------------------------------------------------------------------------
@@ -5457,6 +5461,19 @@ void RadiationM1::SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real h
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::TmrMark
+//! \brief implicit_timers: fence, charge the time since the last mark to category c
+//! (c < 0 only sets the mark)
+
+void RadiationM1::TmrMark(int c) {
+  if (!tmr_on) return;
+  Kokkos::fence();
+  const double t = tmr_t.seconds();
+  if (c >= 0) {tmr_acc[c] += t - tmr_last;}
+  tmr_last = t;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitReport
 //! \brief one line at the end of the run with the Picard statistics
 
@@ -5465,6 +5482,21 @@ void RadiationM1::ImplicitReport() {
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
   if (global_variable::my_rank != 0) return;
+  if (tmr_c0 > 0) {
+    // implicit_timers: seconds per category, then the counters (see TmrMark)
+    std::cout << "<rad_m1> timers from cycle " << tmr_c0 << ": stages=" << tmr_cnt[7]
+              << " solves=" << tmr_cnt[0] << " passes=" << tmr_cnt[1]
+              << " kry_it=" << tmr_cnt[2] << " passes_s1=" << tmr_cnt[3]
+              << " passes_s2=" << tmr_cnt[4] << " it_s1=" << tmr_cnt[5]
+              << " it_s2=" << tmr_cnt[6] << std::endl;
+    const char *nm[12] = {"closure", "opacity", "solve_pre", "tensor", "pred",
+                          "pass_setup", "krylov", "pass_post", "solve_end", "hyd_c2p",
+                          "m1_bvals", "unused"};
+    std::cout << "<rad_m1> timers(s):";
+    for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
+    std::cout << std::endl;
+  }
+  MRReport();
   Real mean = (impl_nstep > 0.0) ? (impl_itsum/impl_nstep) : 0.0;
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
@@ -5860,7 +5892,7 @@ void RadiationM1::ImplicitVimpBuild() {
   ImplicitHaloExchange(M1_NVIMP_X, b);
 
   // (2) the operator coefficients and the right-hand side
-  par_for("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for_lb("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
     const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
@@ -6031,6 +6063,7 @@ void RadiationM1::ImplicitVimpBuild() {
 //! the write-back into u0 and into the gas.
 
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+  TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -6245,7 +6278,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   if (have_hydro) {
     auto eos = pmy_pack->phydro->peos->eos_data;
-    par_for("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dd = uh(m,IDN,k,j,i);
       Real idd = 1.0/fmax(dd, 1.0e-300);
@@ -6342,6 +6375,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // closure = vet_sc: the formal solution of the start-of-step state.  (chi, n) are
   // then read by step (b) on every Picard pass: the tensor is lagged by one hydro step.
+  TmrMark(2);
   if (vetsc) {
     if (t2s == M1_T2S_STAGE1) {
       Time2VetStart();          // at U^n, then D* extrapolated to the stage time
@@ -6377,6 +6411,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
   }
+  TmrMark(3);
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit
   // increment, scaled by dt/dt_prev.  Only the STARTING POINT moves: E^n (M1_IW_EN),
@@ -6419,6 +6454,41 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
     if (pok) {
       if (trans) {ImplicitTransverseHalo(1);} else {ImplicitX1Halo(true);}
+    }
+  }
+
+  // implicit_mr_every (rad_m1_mr.cpp), implicit_mr_peq: the stage-A solve of a
+  // multi-rate step starts from the LOCAL equilibrium of every cell -- the gas-radiation
+  // exchange of the stage alone, backward Euler, no transport:
+  //   E' = (E0 + ap a T'^4)/(1 + ae),
+  //   rho e(T') + ap/(1+ae) a T'^4 = rho e0 + ae/(1+ae) E0
+  // (ap, ae = c g Delta rho kappa_P, kappa_E).  The hydro steps of the window leave the
+  // gas out of equilibrium with E, which the extrapolated increment of the last window
+  // does not know.  Only the starting point moves; the fixed point is unchanged.
+  if (mr_on && mr_peq && t2s == M1_T2S_STAGE1 && src_on) {
+    auto eos = pmy_pack->phydro->peos->eos_data;
+    const Real cdt = cl*dt;
+    par_for_lb("m1_mr_peq", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+      const Real ap = cdt*opac_(m,M1_OP_P,k,j,i);
+      const Real ae = cdt*opac_(m,M1_OP_E,k,j,i);
+      if (!(ap > 0.0) || !(ae > 0.0)) return;
+      const Real e0 = fmax(u0_(m,M1_E,k,j,i), efl);
+      const Real t0 = iw_(m,M1_IW_TP,k,j,i);
+      const Real iae = 1.0/(1.0 + ae);
+      Real tq = t0;
+      bool ok = true;
+      (void) M1ImplTemperature(eos, uh(m,IDN,k,j,i), t0, iw_(m,M1_IW_EGN,k,j,i),
+                               ap*iae*ar, ae*iae*e0, tq, ok);
+      if (!ok || !(tq > 0.5*t0 && tq < 2.0*t0)) return;
+      const Real t2 = tq*tq;
+      iw_(m,M1_IW_EP,k,j,i) = fmax((e0 + ap*ar*t2*t2)*iae, efl);
+      iw_(m,M1_IW_TP,k,j,i) = tq;
+    });
+    if (trans) {
+      ImplicitTransverseHalo(1);
+    } else {
+      ImplicitX1Halo(true);
     }
   }
 
@@ -6465,6 +6535,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   Real ores0 = -1.0, ores1 = -1.0;
   for (it = 0; it < impl_maxit && !converged; ++it) {
     int nin = -1;
+    TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
     if (accel) {ImplicitAccelSave();}
@@ -7065,8 +7136,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int enm = impl_enth;
     const bool enth2 = (enm != M1_IENTH_UPWIND);
     const int ngh = indcs.ng;
-    par_for("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
       Real nu = dt/dx;
       Real cr = ch/cl;
@@ -7509,7 +7580,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         ImplicitOffDiagOp(M1_IW_EP, M1_IW_KB, 1.0);
       }
       kdev_slot = std::min(it, 2);
+      TmrMark(5);
       nin = ImplicitBiCGStab(rhsmax);
+      TmrMark(6);
+      if (tmr_on) {
+        tmr_cnt[1] += 1.0;
+        tmr_cnt[2] += nin;
+        if (t2s == M1_T2S_STAGE1) {tmr_cnt[3] += 1.0; tmr_cnt[5] += nin;}
+        if (t2s == M1_T2S_STAGE2) {tmr_cnt[4] += 1.0; tmr_cnt[6] += nin;}
+      }
       if (vimp_now && odm != M1_OD_OPERATOR) {
         // implicit_vimp POSITIVITY: the Newton coupling is not an M-matrix either; a
         // non-positive E drops it for the rest of the step (counted), as for od below
@@ -7572,8 +7651,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (f) accept E', solve for T' and measure the Picard residual
     if (src_on) {
       auto eos = pmy_pack->phydro->peos->eos_data;
-      par_for("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
         Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
         Real eold = iw_(m,M1_IW_EP,k,j,i);
         Real rkpv = opac_(m,M1_OP_P,k,j,i);
@@ -7888,6 +7967,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
   }
+  TmrMark(7);
+  if (tmr_on) {tmr_cnt[0] += 1.0;}
   ew_tight = false;
   if (onep) {
     if (ores1 >= 0.0 && ores0 > 0.0) {
@@ -7954,10 +8035,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool hh = have_hydro;
     const bool gq = have_hydro && coupling && dbgh;
     Real vmin = 1.0e300;
+    // a flat 1-D range (m1-fast4): the rank-4 MDRange reduction ran at 360 us on the
+    // wedge; a min is order-independent, so the result is the same bit for bit
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
     Kokkos::parallel_reduce("m1_t2_adm",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &lmin) {
+      const int m = idx/nkji;
+      int q = idx - m*nkji;
+      const int k = q/nji + ks;
+      q -= (k - ks)*nji;
+      const int j = q/ni + js;
+      const int i = q - (j - js)*ni + is;
       Real r = iw_(m,M1_IW_S2,k,j,i);
       if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
       if (gq) {
@@ -8066,10 +8155,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       (impl_eccheck_every == 1 || pmy_pack->pmesh->ncycle % impl_eccheck_every == 0)) {
     auto eos = pmy_pack->phydro->peos->eos_data;
     Real emx = 0.0, qmx = 0.0;
+    // m1-fast4: a flat range with LaunchBounds<256,1> (the MDRange form spilled 55
+    // VGPRs); a max is order-independent, so the result is bitwise the same
+    const int eni = ie - is + 1, enji = (je - js + 1)*eni, enkji = (ke - ks + 1)*enji;
     Kokkos::parallel_reduce("m1_impl_eck",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+    Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>(DevExeSpace(), 0,
+                                                                  (nmb1 + 1)*enkji),
+    KOKKOS_LAMBDA(const int idx, Real &lmax) {
+      const int m = idx/enkji;
+      int q = idx - m*enkji;
+      const int k = q/enji + ks;
+      q -= (k - ks)*enji;
+      const int j = q/eni + js;
+      const int i = q - (j - js)*eni + is;
       iw_(m,igm,k,j,i) = 0.0;
       Real rkpv = opac_(m,M1_OP_P,k,j,i);
       Real rkev = opac_(m,M1_OP_E,k,j,i);
@@ -8343,6 +8441,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   impl_lin_tol = t2_lin_save;
+  TmrMark(8);
   return TaskStatus::complete;
 }
 
