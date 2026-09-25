@@ -1908,7 +1908,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
             const bool kk = CkKktCell(eosfb_, fb_, kd_, detot, rho, ei, es, r);
             Real pth = 0.0, plat = 0.0, plon = 0.0;
             if (csph_) {
-              CSCellAngles(mbpan_.d_view(m), x2v_(m,j), x3v_(m,k), pth, plat, plon);
+              atm_column::CSCellAngles(mbpan_.d_view(m), x2v_(m,j), x3v_(m,k), pth, plat,
+                                       plon);
             }
             Kokkos::printf("### ckstall pass=%d m=%d k=%d j=%d i=%d w=%d lat=%.2f "
                            "lon=%.2f "
