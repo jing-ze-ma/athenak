@@ -583,6 +583,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
     vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
+    // vet_col_order2 (m1-sp-order2, tests_m1/runs_5o_sporder2): read only when named
+    // (the default keeps the parameter dump); see rad_m1_vetcol.cpp
+    if (pin->DoesParameterExist("rad_m1","vet_col_order2")) {
+      vcol_o2 = pin->GetBoolean("rad_m1","vet_col_order2");
+    }
     // vet_col_surface_q: DEFAULT true since m1-defaults2 (tests_m1/runs_5e_vetcol2:
     // T-S4 L1 2.1e-3 -> 5.2e-5 at n = 256, Milne 1.8e-3 -> 1.1e-4).  A restart whose
     // file lacks the key keeps false; the resolved value is echoed.

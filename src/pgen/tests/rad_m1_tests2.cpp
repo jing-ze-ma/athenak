@@ -641,11 +641,31 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // (the Dirichlet source of the free-streaming point source, implicit_bc_x1min =
     // efix), with F_r = c e_in there
     Real ein = pin->GetOrAddReal("problem","e_in",0.0);
+    // m1-sp-order2 (tests_m1/runs_5o_sporder2), each read only when named so that an
+    // input without them keeps its parameter dump: lat_amp > 0 multiplies E by
+    // 1 + lat_amp cos(lat_l2 pi (x2 - x2min)/(x2max - x2min)) cos(2 pi lat_l3 (x3 -
+    // x3min)/(x3max - x3min)) (a smooth lateral mode, even at reflecting x2 walls; sp
+    // only);
+    // gas_vr sets the gas velocity v_r = gas_vr sin(pi (x1 - x1min)/(x1max - x1min)).
+    const Real lamp = pin->DoesParameterExist("problem","lat_amp") ?
+                      pin->GetReal("problem","lat_amp") : 0.0;
+    const Real ll2 = pin->DoesParameterExist("problem","lat_l2") ?
+                     pin->GetReal("problem","lat_l2") : 1.0;
+    const Real ll3 = pin->DoesParameterExist("problem","lat_l3") ?
+                     pin->GetReal("problem","lat_l3") : 0.0;
+    const Real gvr = pin->DoesParameterExist("problem","gas_vr") ?
+                     pin->GetReal("problem","gas_vr") : 0.0;
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     if (restart) return;
     auto uh = pmbp->phydro->u0;
     auto x1v = pmbp->pcoord->x1v;
+    auto x2v = pmbp->pcoord->x2v;
+    auto x3v = pmbp->pcoord->x3v;
     const bool sp = pmy_mesh_->use_spherical_polar;
+    auto &msz = pmy_mesh_->mesh_size;
+    const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
+    const Real x2a = msz.x2min, x2l = msz.x2max - msz.x2min;
+    const Real x3a = msz.x3min, x3l = msz.x3max - msz.x3min;
     par_for("m1_sph_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real r = sp ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
@@ -657,6 +677,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IEN,k,j,i) = dgas*tgas/gm1;
       Real x = (r - r0)/wid;
       u0(m,radm1::M1_E,k,j,i) = fmax(eout + eamp*exp(-x*x), efl);
+      if (lamp != 0.0 && sp) {
+        u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
+                                   *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
+      }
+      if (gvr != 0.0) {
+        Real vr = gvr*sin(M_PI*(r - x1a)/x1l);
+        uh(m,IM1,k,j,i) = dgas*vr;
+        uh(m,IEN,k,j,i) += 0.5*dgas*vr*vr;
+      }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {
         u0(m,radm1::M1_E,k,j,i) = ein;
@@ -726,6 +755,20 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // atm_seed: a small deterministic cell-to-cell perturbation of the initial E (a seed
     // for transverse modes, which a symmetric start on a Cartesian mesh never has)
     const Real seed = pin->GetOrAddReal("problem","atm_seed",0.0);
+    // m1-sp-order2: the smooth lateral mode of sph_shell (lat_amp, lat_l2, lat_l3; read
+    // only when named, sp only)
+    const Real lamp = pin->DoesParameterExist("problem","lat_amp") ?
+                      pin->GetReal("problem","lat_amp") : 0.0;
+    const Real ll2 = pin->DoesParameterExist("problem","lat_l2") ?
+                     pin->GetReal("problem","lat_l2") : 1.0;
+    const Real ll3 = pin->DoesParameterExist("problem","lat_l3") ?
+                     pin->GetReal("problem","lat_l3") : 0.0;
+    auto x2v = pmbp->pcoord->x2v;
+    auto x3v = pmbp->pcoord->x3v;
+    const Real x2a = pmy_mesh_->mesh_size.x2min;
+    const Real x2l = pmy_mesh_->mesh_size.x2max - x2a;
+    const Real x3a = pmy_mesh_->mesh_size.x3min;
+    const Real x3l = pmy_mesh_->mesh_size.x3max - x3a;
     if (restart) return;
     auto uh = pmbp->phydro->u0;
     Real rho0 = m1_sa_rho0, rin = m1_sa_rin, en = m1_sa_n;
@@ -755,6 +798,10 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tt/gm1;
       u0(m,radm1::M1_E,k,j,i) = e*(1.0 + seed*cos(2.3*j + 1.7*k + 0.9*i));
+      if (lamp != 0.0 && sp) {
+        u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
+                                   *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
+      }
       u0(m,radm1::M1_F1,k,j,i) = f;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;

@@ -41,6 +41,17 @@
 //! (auto = none on sp, see SphericalS1Check; `operator` stays refused).
 //! Cartesian M1OffDiv values are overwritten wherever they are formed, and the od
 //! cache and the 19-point stencil (operator only) never run on this mesh.
+//!
+//! m1-sp-order2 (tests_m1/runs_5o_sporder2): the interior operator on the wedge is
+//! already SECOND order in space (centred face-normal F0 on the faces, A_f/V_i
+//! divergence, exact integrating factor, face-mean curvature; implicit_enthalpy = plm
+//! for the enthalpy flux, uniform and stretched r).  implicit_recon / implicit_flux /
+//! implicit_trans_limit stay refused: under transport = implicit the face flux is the
+//! central form on every mesh (ImplicitInit), so plm_dc has nothing to act on.  What
+//! was first order is the Marshak end face (c q E of the end CELL) -> option
+//! <rad_m1>/implicit_marshak_face = linear (sp only), and the vet_col formal solution
+//! (trapezoid in mu, S and chi linear in the path, cell E/F at the core) -> option
+//! <rad_m1>/vet_col_order2 = true.  Both default off (bitwise).
 
 #include <iostream>
 #include <string>
