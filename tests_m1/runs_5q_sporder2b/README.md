@@ -218,6 +218,53 @@ not implemented.
   NON-CONVERGED 0 in all eight. The order-2 work costs +5 % (vet_col_order2's build,
   +0.6 inner its/solve); predict costs nothing over lag; mg_gc more than pays for it.
 
+## 10. Extra checks (m1-sp-order2c, rt-integration bb414778 defaults, CPU)
+
+`st.py` suffix `_X` = SPACE only (dt fixed at 1/4 of the finest level's dt of the
+space-time study, arm `hd_half` halves it at the finest level); `_T` as before. Lists
+`study_c.txt`, `study_c2.txt`; binary `hd` = git archive of bb414778.
+
+**Time only, vet_col atmosphere transient (T-S4, nx1 = 128).** Default tolerances
+(implicit_tol 1e-11, implicit_lin_tol 1e-12, stage lin tol x10) against TIGHT
+(implicit_tol 1e-14, implicit_lin_tol 1e-15, time2_lin_tol_fac 1): identical to 2-3
+digits through level 16, so the solver is not the limit. Levels l = 1..128, dt = 1.6e-3/l;
+c rho kappa dt at the inner boundary = 16/l:
+
+| case | var | L1 differences | orders |
+| --- | --- | --- | --- |
+| t = 0.08, tight | E | 1.09e-7 4.12e-8 1.47e-8 4.95e-9 1.51e-9 4.20e-10 1.11e-10 | 1.40 1.49 1.57 1.72 1.84 1.92 |
+| same | F | 4.87e-7 1.83e-7 6.54e-8 2.19e-8 6.65e-9 1.85e-9 4.86e-10 | 1.41 1.49 1.58 1.72 1.84 1.93 |
+| t = 0.2, tight | E | 5.01e-8 1.91e-8 6.84e-9 2.30e-9 7.02e-10 1.95e-10 | 1.39 1.48 1.57 1.71 1.85 |
+| t = 0.02, tight | E | 9.73e-7 4.43e-7 3.48e-7 1.94e-7 5.01e-8 | 1.13 0.35 0.84 1.95 (start-up layer) |
+
+The order is 2 only once c rho kappa dt < ~1 (1.84-1.93 at 1 .. 0.25); at 16 .. 2 it is
+1.4-1.6. This IS the stage-order-1 (Prothero-Robinson) reduction of H-ESDIRK2, on the
+stiff flux relaxation of a pure scatterer (F relaxing to a diffusion flux that moves
+with the transient). The absorption tests of sect. 7 do not show it (their stiff mode
+relaxes to a slowly moving equilibrium). The absolute time error stays small: 1e-7
+of the transient at c rho kappa dt = 16, against 1e-3 spatial errors at n = 32..256.
+
+**Space only, transients, dt fixed** (time error checked by halving dt at the finest
+level: its L1 change is 1-5 % of the finest spatial difference or less):
+
+| test | var | L1 differences (4 or 5 levels) | orders | dt vs dt/2 at finest |
+| --- | --- | --- | --- | --- |
+| vet_col pulse, uniform r, n = 32..512 | E | 2.96e-2 7.71e-3 1.84e-3 4.32e-4 | 1.94 2.07 2.09 | 1.1e-6 |
+|  | F | 2.22e-2 6.07e-3 1.46e-3 3.43e-4 | 1.87 2.06 2.08 | 1.0e-6 |
+| same, stretched r | E | 4.88e-2 1.61e-2 4.06e-3 9.68e-4 | 1.61 1.98 2.07 | 2.5e-7 |
+|  | F | 3.77e-2 1.30e-2 3.33e-3 7.83e-4 | 1.53 1.97 2.09 | 2.2e-7 |
+| lateral theta mode on the vet_col atmosphere, s = 1..8 | E | 7.10e-3 1.81e-3 4.55e-4 | 1.98 1.99 | 2.3e-8 |
+|  | F1 | 9.22e-3 2.37e-3 6.08e-4 | 1.96 1.96 | 4.5e-8 |
+|  | F2 | 8.51e-3 2.38e-3 6.10e-4 | 1.84 1.97 | 1.1e-7 |
+| radiation-dominated moving slab (vimp on), n = 32..512 | E | 4.34e-2 1.11e-2 2.75e-3 6.82e-4 | 1.96 2.02 2.01 | 2.2e-5 |
+|  | F | 5.43e-2 1.41e-2 3.59e-3 9.05e-4 | 1.94 1.98 1.99 | 3.7e-5 |
+|  | T | 4.25e-2 1.09e-2 2.71e-3 6.72e-4 | 1.96 2.01 2.01 | 2.1e-5 |
+|  | gas momentum | 5.22e-2 1.37e-2 3.48e-3 8.81e-4 | 1.93 1.98 1.98 | 3.7e-5 |
+|  | gas energy | 4.70e-2 1.39e-2 3.80e-3 9.82e-4 | 1.75 1.87 1.95 | 4.8e-5 |
+
+NON-CONVERGED 0 in every run except the dt/2 slab at n = 512 (733 of 16966 solves at the
+round-off floor, resid 1.8e-12 against tol 1e-12).
+
 ## Files
 
 `st.py`, `solib.py` (from runs_5o), `study_final.txt`, `study_gas.txt`, `RESULTS_*.txt`,

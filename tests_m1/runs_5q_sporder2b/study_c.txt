@@ -1,0 +1,12 @@
+atm_u_T hd 1 2 4 8 16 32
+atm_u_T hd_tight 1 2 4 8 16 32
+atmshort_u_T hd 1 2 4 8 16 32
+atmshort_u_T hd_tight 1 2 4 8 16 32
+pulse_u_X hd
+pulse_s_X hd
+lat_th_atm_X hd
+rsw_u_X hd
+pulse_u_X hd_half 512
+pulse_s_X hd_half 512
+lat_th_atm_X hd_half 8
+rsw_u_X hd_half 512

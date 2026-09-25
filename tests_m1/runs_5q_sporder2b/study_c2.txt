@@ -1,0 +1,2 @@
+atm_u_T hd_tight 64 128
+atmlong_u_T hd_tight 1 2 4 8 16 32 64
