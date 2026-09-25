@@ -44,6 +44,11 @@ ARMS = {
     'novimp': ('new', {'implicit_vimp': 'false'}),
     'be': ('new', {'time_scheme': 'be'}),
     'nc8': ('new', {'vet_col_ncore': 8}),
+    # m1-sp-order2c: rt-integration HEAD bb414778 (defaults), tight solver tolerances
+    'hd': ('hd', {}),
+    'hd_half': ('hd', {}),
+    'hd_tight': ('hd', {'implicit_tol': '1.0e-14', 'implicit_lin_tol': '1.0e-15',
+                        'time2_lin_tol_fac': '1.0'}),
 }
 
 
@@ -95,8 +100,14 @@ def case_cfg(case):
         c = case_cfg(case[:-2])
         c['tref'] = True
         return c
+    # suffix _X: SPACE refinement only, dt FIXED at 1/4 of the finest level's dt of the
+    # space-time study (m1-sp-order2c); the arm suffix _half halves it
+    if case.endswith('_X'):
+        c = case_cfg(case[:-2])
+        c['xref'] = True
+        return c
     c = {'geo': 'r', 'poly': case.endswith('_s'), 'r1': 3.0, 'gas': False,
-         'hwall': 'outflow', 'tref': False}
+         'hwall': 'outflow', 'tref': False, 'xref': False}
     base = case[:-2] if case.endswith('_s') or case.endswith('_u') else case
     if base == 'pulse':
         # the vet_col radiating pulse (radial.py midm): rho kappa_s = 1, Marshak top
@@ -122,6 +133,16 @@ def case_cfg(case):
         # the T-S4 vet_col atmosphere TRANSIENT (sph_atm, r = 1..5, c = 100, Eddington
         # start), t = 0.08; dt = 0.64 dx/c (fixed implicit_cfl)
         c.update(T=0.08, r1=5.0, rad=dict(base_rad(100.0), **ATM_RAD),
+                 prob=atm_prob())
+        c['rad']['implicit_cfl'] = '0.64'
+    elif base == 'atmlong':
+        # the T-S4 transient at t = 0.2 (five light crossings: past the start-up layer)
+        c.update(T=0.2, r1=5.0, rad=dict(base_rad(100.0), **ATM_RAD),
+                 prob=atm_prob())
+        c['rad']['implicit_cfl'] = '0.64'
+    elif base == 'atmshort':
+        # the T-S4 transient at t = 0.02 (half a light crossing: the strong phase)
+        c.update(T=0.02, r1=5.0, rad=dict(base_rad(100.0), **ATM_RAD),
                  prob=atm_prob())
         c['rad']['implicit_cfl'] = '0.64'
     elif base.startswith('stiff'):
@@ -240,6 +261,17 @@ def mk(case, arm, n):
         dxmin = 0.8/n2 if geo == 'th' else 0.8*np.sin(TH0)/n3
         cl = float(rad['c_light'])
         rad['implicit_cfl'] = '%.12g' % (cl*c['dtc']/n/dxmin)
+    if c['xref']:
+        # dt_n (space-time) -> dt_fix = dt_finest/4: radial dt_n ~ dxmin_n, lateral ~ 1/s
+        if geo == 'r':
+            nf = 512
+            rat = (np.diff(so.rfaces(1.0, c['r1'], nf, c['poly'])).min()
+                   / np.diff(so.rfaces(1.0, c['r1'], n, c['poly'])).min())
+        else:
+            rat = n/8.0
+        rat *= 0.25*(0.5 if arm.endswith('_half') else 1.0)
+        rad['implicit_cfl'] = '%.12g' % (float(rad['implicit_cfl'])*rat)
+        time['cfl_number'] = '0.3'
     if c['tref']:
         # both limiters scale with 1/l, so dt halves exactly from level to level
         rad['implicit_cfl'] = '%.12g' % (8.0*float(rad['implicit_cfl'])/n)
