@@ -1336,6 +1336,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   if (vet_sc) {VetInit(pin);}
   Time2Init(pin);
+  MRInit(pin);         // implicit_mr_every (rad_m1_mr.cpp)
 }
 
 //----------------------------------------------------------------------------------------
@@ -5479,6 +5480,7 @@ void RadiationM1::ImplicitReport() {
     for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
     std::cout << std::endl;
   }
+  MRReport();
   Real mean = (impl_nstep > 0.0) ? (impl_itsum/impl_nstep) : 0.0;
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax

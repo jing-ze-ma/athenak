@@ -319,6 +319,12 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! (an extrapolated chi and q were measured: same order, 3e-11 from D^n).
 
 void RadiationM1::Time2VetStart() {
+  // vet_sc_every (rad_m1_mr.cpp): no formal solution on this build, the tensor is
+  // extrapolated from the last two
+  if (vet_sc && vsc_every > 1 && VscSkip()) {
+    Time2VetExtrapolate();
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
@@ -404,6 +410,7 @@ void RadiationM1::Time2VetStart() {
     VetColBuild();
   } else {
     VetShortChar();
+    if (vsc_every > 1) {VscStore();}
   }
   if (fast) {
     Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
@@ -427,7 +434,8 @@ void RadiationM1::Time2VetStart() {
 void RadiationM1::Time2VetExtrapolate() {
   auto vc_ = vet_cell;
   auto vp_ = vet_prev;
-  const Real dt = pmy_pack->pmesh->dt;
+  // implicit_mr_every: the step is the multi-rate window Delta
+  const Real dt = mr_on ? mr_dt : pmy_pack->pmesh->dt;
   const Real r = (t2_vprev && t2_dtprev > 0.0 && t2_vext) ? (dt/t2_dtprev) : 0.0;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -501,7 +509,8 @@ void RadiationM1::Time2VetExtrapolate() {
 int RadiationM1::Time2RstNchWant() {
   if (time_scheme != M1_TIME_HESDIRK2) return 0;
   const int np = (impl_pord == 2) ? 5 : 3;
-  return M1_T2_NK + (impl_pred ? np : 0) + (vet_sc ? M1_T2_NVET : 0);
+  return M1_T2_NK + (impl_pred ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
+         + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0);   // vet_sc_every: D0, D1
 }
 
 int RadiationM1::Time2RstNch() {
@@ -524,6 +533,14 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb) {
   if (vet_sc) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NVET), AL, AL, AL),
                       Kokkos::subview(vet_prev, mb, AL, AL, AL, AL));
+    c += M1_T2_NVET;
+    if (vsc_every > 1) {
+      const int nv = M1_T2_NVET;
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+nv), AL, AL, AL),
+                        Kokkos::subview(vsc_d0, mb, AL, AL, AL, AL));
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+nv, c+2*nv), AL, AL, AL),
+                        Kokkos::subview(vsc_d1, mb, AL, AL, AL, AL));
+    }
   }
 }
 
@@ -544,7 +561,18 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     ch -= np;
   }
   if (vet_sc) {
-    Kokkos::deep_copy(Kokkos::subview(vet_prev, mb, ch, AL, AL, AL), w);
+    if (ch < M1_T2_NVET) {
+      Kokkos::deep_copy(Kokkos::subview(vet_prev, mb, ch, AL, AL, AL), w);
+      return;
+    }
+    ch -= M1_T2_NVET;
+    if (vsc_every > 1) {
+      if (ch < M1_T2_NVET) {
+        Kokkos::deep_copy(Kokkos::subview(vsc_d0, mb, ch, AL, AL, AL), w);
+      } else {
+        Kokkos::deep_copy(Kokkos::subview(vsc_d1, mb, ch - M1_T2_NVET, AL, AL, AL), w);
+      }
+    }
   }
 }
 
