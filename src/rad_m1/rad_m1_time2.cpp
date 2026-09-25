@@ -592,8 +592,10 @@ void RadiationM1::Time2VetColAt(int which) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const Real dt = pmy_pack->pmesh->dt;
-  const Real gdt = kT2G*dt;
+  // implicit_mr_every (rad_m1_mr.cpp): the step is the window Delta, and the stage-A old
+  // vector is Y_0 itself (t2inc = 0), so the gas takes the whole Delta K1
+  const Real dt = mr_on ? mr_dt : pmy_pack->pmesh->dt;
+  const Real gdt = mr_on ? dt : kT2G*dt;
   const bool two = (which == 2);
   auto iw_ = iw;
   auto vn_ = vet_now;
@@ -710,7 +712,8 @@ void RadiationM1::Time2VetColExtrap() {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const Real r = (t2_vcprev && t2_dtprev > 0.0) ? (pmy_pack->pmesh->dt/t2_dtprev) : 0.0;
+  const Real dtn = mr_on ? mr_dt : pmy_pack->pmesh->dt;   // implicit_mr_every: Delta
+  const Real r = (t2_vcprev && t2_dtprev > 0.0) ? (dtn/t2_dtprev) : 0.0;
   auto tt_ = tau_ten;
   auto vp_ = vcol_prev;
   const Real fkm = vcol_axis_flux ? (1.0/3.0) : vcol_fkmin;
