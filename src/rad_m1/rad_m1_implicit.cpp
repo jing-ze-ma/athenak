@@ -726,10 +726,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
-  // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2): read only when
-  // named, so an input without it keeps its parameter dump and the cell form
-  if (pin->DoesParameterExist("rad_m1","implicit_marshak_face")) {
-    const std::string smf = pin->GetString("rad_m1","implicit_marshak_face");
+  // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
+  // the spherical-polar wedge since m1-sp-order2b (tests_m1/runs_5q_sporder2b) with the
+  // fixed-tensor closures (eddington, vet_sc, tau, vet_col); cell with the lagged
+  // closures (m1, minerbo, kershaw: the runs_5h pp_np atmosphere, closure_lag = step at
+  // implicit_cfl 1e6, went from 30 round-off NON-CONVERGED solves to 54 with Picard
+  // blow-ups).  A restart whose file lacks the key keeps cell; the resolved value is
+  // echoed.  Elsewhere read only when named (parameter dump and the cell form kept).
+  if (sph_geom || pin->DoesParameterExist("rad_m1","implicit_marshak_face")) {
+    const bool mfdef = !global_variable::restart_run &&
+                       (eddington || vet_sc || tau_closure);
+    const std::string smf = sph_geom ?
+        pin->GetOrAddString("rad_m1","implicit_marshak_face", mfdef ? "linear" : "cell") :
+        pin->GetString("rad_m1","implicit_marshak_face");
     if (smf.compare("cell") == 0) {
       impl_mface_lin = false;
     } else if (smf.compare("linear") == 0) {
@@ -5544,6 +5553,64 @@ void RadiationM1::ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bo
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitWorkRow
+//! \brief time2_vstage (m1-sp-order2b): the gas work w^k = rho sum_d dv_d^k (v_d +
+//! dv_d^k/2) of the iterate's radiative kick (implicit_vimp's dv^k, this pass) per cell.
+//! row = true: TR -= (chat/c) w^k (the E row carries the work, so the stage value
+//! satisfies its own equation; after the solve alone it is an O(dt) splitting).
+//! row = false (after the write-back, which subtracted the full work): E += (chat/c) w^k
+//! and the stored slope with it, so E loses work - w^k there (0 at convergence).
+//! Dirichlet (efix) end cells are skipped, as in the write-back.
+
+void RadiationM1::ImplicitWorkRow(bool row) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto u0_ = u0;
+  auto uh = pmy_pack->phydro->u0;
+  const int ivb = iw_vimp + M1_IV_DV;
+  const bool trans = trans_on, thrd = trans_x3;
+  const bool dbgft = dbg_gas_force_trans;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool elo = (ibc_x1min == M1_IBC_EFIX), ehi = (ibc_x1max == M1_IBC_EFIX);
+  auto pos_ = part_pos;
+  const int nblkx1 = part_nblk;
+  const Real cr = chat/c_light;
+  const Real fk = 1.0/dt_sub;
+  auto kk_ = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
+  const bool slope = (t2_solve != M1_T2S_NONE);
+  par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipw = pos_.d_view(m);
+    if (!cyclic && ((i == is && ipw == 0 && elo) ||
+                    (i == ie && ipw == nblkx1-1 && ehi))) {
+      return;
+    }
+    Real dv = iw_(m,ivb,k,j,i);
+    Real wk = dv*(iw_(m,M1_IW_V1,k,j,i) + 0.5*dv);
+    if (trans && dbgft) {
+      dv = iw_(m,ivb+1,k,j,i);
+      wk += dv*(iw_(m,M1_IW_V2,k,j,i) + 0.5*dv);
+      if (thrd) {
+        dv = iw_(m,ivb+2,k,j,i);
+        wk += dv*(iw_(m,M1_IW_V3,k,j,i) + 0.5*dv);
+      }
+    }
+    const Real w = cr*uh(m,IDN,k,j,i)*wk;
+    if (row) {
+      iw_(m,M1_IW_TR,k,j,i) -= w;
+    } else {
+      u0_(m,M1_E,k,j,i) += w;
+      if (slope) {
+        kk_(m,M1_T2_E,k,j,i) += w*fk;
+      }
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitVimpBuild
 //! \brief implicit_vimp (rad_m1_implicit.hpp, tests_m1/runs_3v_vimplicit): the Newton
 //! form of the enthalpy flux with the gas velocity implicit, for this Picard pass.
@@ -6243,11 +6310,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // m1-sph2: under time_scheme = hesdirk2 the tensor (and the surface q) is built ONCE
   // per step, at U^n, by the stage-1 solve (Time2VetStart, as vet_sc), and the stage-2
   // solve keeps it; a backward-Euler step builds it here as before
+  // m1-sp-order2b: time2_vet_col (rad_m1_time2.cpp) moves the stage builds to t^{n+1}
   if (vet_col) {
     if (t2s == M1_T2S_STAGE1) {
-      Time2VetStart();
-    } else if (t2s != M1_T2S_STAGE2) {
+      if (t2_vcmode == 1 || t2_vcmode == 2) {
+        Time2VetColAt(1);
+      } else {
+        Time2VetStart();
+        if (t2_vcmode == 3) {
+          Time2VetColExtrap();
+        }
+      }
+    } else if (t2s == M1_T2S_STAGE2) {
+      if (t2_vcmode == 2) {
+        Time2VetColAt(2);
+      }
+    } else {
       VetColBuild();
+      if (t2s == M1_T2S_BESTORE) {
+        t2_vcprev = false;
+      }
     }
   }
 
@@ -6392,6 +6474,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     if (tauc && it == 0) {TauClosureBuild();}
     // (b) the lagged closure, the enthalpy-flux coefficient, de0 and g0
+    const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
+    const int ivd = impl_vimp ? (iw_vimp + M1_IV_DV) : 0;
     par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real e = fmax(iw_(m,M1_IW_EP,k,j,i), efl);
@@ -6567,8 +6651,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           iw_(m,t2da+1,k,j,i) = w2 + (w1*d12 + w2*d22 + w3*d23);
           iw_(m,t2da+2,k,j,i) = w3 + (w1*d13 + w2*d23 + w3*d33);
         }
-        // E0 - E to O(beta^2), with the full pressure tensor
-        Real b1 = v1/cl, b2 = v2/cl, b3 = v3/cl;
+        // E0 - E to O(beta^2), with the full pressure tensor.  m1-sp-order2b
+        // (time2_vstage): in a hesdirk2 stage under implicit_vimp at the iterate's
+        // velocity, v_old + dv^k (the previous pass's write-back increment), not the
+        // stage-start one, which lags by the stage's radiative kick (O(dt))
+        Real u1 = v1, u2 = v2, u3 = v3;
+        if (vdv) {
+          u1 += iw_(m,ivd,k,j,i);
+          u2 += iw_(m,ivd+1,k,j,i);
+          u3 += iw_(m,ivd+2,k,j,i);
+        }
+        Real b1 = u1/cl, b2 = u2/cl, b3 = u3/cl;
         Real bf = (b1*f1 + b2*f2c + b3*f3c)/cl;
         Real bpb = (b1*b1*d11 + b2*b2*d22 + b3*b3*d33
                     + 2.0*(b1*b2*d12 + b1*b3*d13 + b2*b3*d23))*e;
@@ -6914,6 +7007,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto cx1f = pmy_pack->pcoord->xx1f;
     // implicit_marshak_face = linear (sp): the Marshak faces take the face E
     const bool mfl = impl_mface_lin;
+    const bool sqf = vcol_sqf;   // vet_col_surface_face (rad_m1.hpp)
+    // m1-sp-order2b (time2_vstage): the gas WORK v.dm of the radiative kick in the E row
+    // (lagged at the iterate's kick dv^k of this pass) instead of only after the solve.
+    // Subtracted after the solve it is an O(dt) splitting in every stage (passive E in a
+    // moving scattering gas: E order 1.1 in time); in the row the stage value satisfies
+    // its own equation.  The write-back removes only work - work^k (0 at convergence).
+    const bool wimp = t2st && t2_fvnew && vim && have_hydro && feedback && !fref;
+    t2_wk = wimp;
     // (d) assemble the tridiagonal system of every column
     // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
     const int enm = impl_enth;
@@ -7186,7 +7287,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           bb += nup*ch*mq;
           rr += nup*ch*mq*ebhi;
-          if (mfl && !vqs && ie > is) {
+          if (mfl && (!vqs || sqf) && ie > is) {
             // implicit_marshak_face = linear: c q (E_f - E_bath) with E_f the face E.
             // Not with vet_col_surface_q: its q = H(face)/J(top cell) already makes the
             // face flux the formal solution's H with the CELL E (runs_5e); the face J it
@@ -7326,6 +7427,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_TC,k,j,i) = cc;
       iw_(m,M1_IW_TR,k,j,i) = rr;
     });
+    // time2_vstage: the gas work of the iterate's kick on the right-hand side (its own
+    // kernel, so the assembly kernel of every other configuration is untouched)
+    if (wimp) {
+      ImplicitWorkRow(true);
+    }
 
     // (e) SOLVE the linear system of this pass.  With implicit_solver = line_jacobi
     // that is ONE x1 line solve with the lagged transverse term already on the
@@ -7527,7 +7633,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (bc == M1_IBC_MARSHAK) {
           const Real mq = (hi && vqs) ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           fb = sgn*cl*mq*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebhi));
-          if (mfl && !(hi && vqs) && ie > is) {
+          if (mfl && !(hi && vqs && !sqf) && ie > is) {
             // implicit_marshak_face = linear: the face E of the solved iterate
             const int in = lo ? (is+1) : (ie-1);
             const Real ef = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,ic),
@@ -7962,6 +8068,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
 
   //------------------------------------------------------------------------- write back
+  // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
+  // time2_vstage, default true on sp, false = the old stage-start form)
+  const bool vfx = t2st && impl_vimp && t2_fvnew;
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -8089,6 +8198,46 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
 
+    // m1-sp-order2b: a hesdirk2 stage solve under implicit_vimp.  The derived cell flux
+    // F = F0 + a E above takes a = v + v.D of the STAGE-START velocity, lagged by the
+    // radiative kick of the stage (the solved E already carries the implicit v'): an
+    // O(dt) error in the cell F (rsw_u_T: F order 1.0, E, T, gas 1.9-2.0).  It is
+    // re-formed with the velocity the write-back below gives the gas.
+    if (vfx && have_hydro && feedback) {
+      Real idg = 1.0/fmax(dd, 1.0e-300);
+      Real w1 = (uh(m,IM1,k,j,i) + dm1 - dmref)*idg;
+      Real w2 = v2, w3 = v3;
+      if (trans && dbgft) {
+        w2 = (uh(m,IM2,k,j,i) + dm2)*idg;
+        if (thrd) {
+          w3 = (uh(m,IM3,k,j,i) + dm3)*idg;
+        }
+      }
+      Real chi = iw_(m,M1_IW_WCHI,k,j,i);
+      Real n1 = iw_(m,M1_IW_N1,k,j,i), n2 = iw_(m,M1_IW_N2,k,j,i);
+      Real n3 = iw_(m,M1_IW_N3,k,j,i);
+      Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2), d33 = M1EddDiag(chi,n3);
+      Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
+      Real d23 = M1EddOff(chi,n2,n3);
+      if (dfull) {
+        d11 = vd_(m,M1_VET_D11,k,j,i);
+        d22 = vd_(m,M1_VET_D11+1,k,j,i);
+        d33 = vd_(m,M1_VET_D11+2,k,j,i);
+        d12 = vd_(m,M1_VET_D11+3,k,j,i);
+        d13 = vd_(m,M1_VET_D11+4,k,j,i);
+        d23 = vd_(m,M1_VET_D11+5,k,j,i);
+      }
+      // E of the solve (as the stage-start form above): the rows carry the work of
+      // the last pass (ImplicitWorkRow), so it is the stage's E to the tolerance
+      const Real es = iw_(m,M1_IW_EP,k,j,i);
+      fp1 = 0.5*(fl + fr) + (w1 + (w1*d11 + w2*d12 + w3*d13))*es;
+      if (trans) {
+        fp2 = 0.5*(g2l + g2r) + (w2 + (w1*d12 + w2*d22 + w3*d23))*es;
+        if (thrd) {
+          fp3 = 0.5*(g3l + g3r) + (w3 + (w1*d13 + w2*d23 + w3*d33))*es;
+        }
+      }
+    }
     M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
@@ -8115,6 +8264,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   });
 
+  // time2_vstage: the rows took the work of the last pass's kick, which the write-back
+  // subtracted again: give it back (E and the slope; the gas keeps the full work)
+  if (t2_wk) {
+    ImplicitWorkRow(false);
+  }
   // hesdirk2: the face part of the slope, over the active faces
   if (t2k) {
     const Real fk = 1.0/dt;
@@ -8138,6 +8292,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   }
 
+  // time2_vet_col = rebuild: E and T of the stage-1 solution for the stage-2 build
+  if (vet_col && t2_vcmode == 2 && t2s == M1_T2S_STAGE1) {
+    Time2VetColSaveY1();
+  }
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   impl_lin_tol = t2_lin_save;
   return TaskStatus::complete;

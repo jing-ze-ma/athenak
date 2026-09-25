@@ -583,10 +583,47 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
     vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
-    // vet_col_order2 (m1-sp-order2, tests_m1/runs_5o_sporder2): read only when named
-    // (the default keeps the parameter dump); see rad_m1_vetcol.cpp
-    if (pin->DoesParameterExist("rad_m1","vet_col_order2")) {
+    // vet_col_order2 (m1-sp-order2, tests_m1/runs_5o_sporder2); see rad_m1_vetcol.cpp.
+    // DEFAULT true on the spherical-polar wedge since m1-sp-order2b
+    // (tests_m1/runs_5q_sporder2b); a restart whose file lacks the key keeps false, the
+    // resolved value is echoed.  Elsewhere read only when named (parameter dump kept).
+    if (sph_geom) {
+      vcol_o2 = pin->GetOrAddBoolean("rad_m1","vet_col_order2",
+                                     !global_variable::restart_run);
+    } else if (pin->DoesParameterExist("rad_m1","vet_col_order2")) {
       vcol_o2 = pin->GetBoolean("rad_m1","vet_col_order2");
+    }
+    // vet_col_fk_min (m1-sp-order2b): the lower clamp of f_K.  Sp default 0 (a restart
+    // whose file lacks the key keeps 1/3, echoed); elsewhere 1/3 unless named.
+    if (sph_geom) {
+      vcol_fkmin = pin->GetOrAddReal("rad_m1","vet_col_fk_min",
+                                     global_variable::restart_run ? (1.0/3.0) : 0.0);
+    } else if (pin->DoesParameterExist("rad_m1","vet_col_fk_min")) {
+      vcol_fkmin = pin->GetReal("rad_m1","vet_col_fk_min");
+    }
+    if (!(vcol_fkmin >= 0.0 && vcol_fkmin <= 1.0/3.0 + 1.0e-12)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/vet_col_fk_min must be in [0, 1/3]"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // vet_col_reflect_top (m1-sp-order2b, sp only): with implicit_bc_x1max = reflect the
+    // formal solution mirrors the outgoing intensity at the top face instead of taking a
+    // vacuum top (rad_m1_vetcol.cpp).  Sp default true (a restart whose file lacks the
+    // key keeps false, echoed); vet_col_reflect_amax read only when named.
+    if (sph_geom) {
+      vcol_rtop = pin->GetOrAddBoolean("rad_m1","vet_col_reflect_top",
+                                       !global_variable::restart_run);
+    }
+    // vet_col_surface_face (m1-sp-order2b, sp only; rad_m1.hpp): sp default true (a
+    // restart whose file lacks the key keeps false, echoed); acts only together with
+    // vet_col_surface_q and implicit_marshak_face = linear
+    if (sph_geom) {
+      vcol_sqf = pin->GetOrAddBoolean("rad_m1","vet_col_surface_face",
+                                      !global_variable::restart_run);
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_col_reflect_amax")) {
+      vcol_amax = pin->GetReal("rad_m1","vet_col_reflect_amax");
     }
     // vet_col_surface_q: DEFAULT true since m1-defaults2 (tests_m1/runs_5e_vetcol2:
     // T-S4 L1 2.1e-3 -> 5.2e-5 at n = 256, Milne 1.8e-3 -> 1.1e-4).  A restart whose
