@@ -108,6 +108,20 @@ constexpr Real CK_PF_TMAX = 20000.0;
 inline DvceArray2D<Real> *ck_pf_ptr = nullptr;    // (iT, band) fractional Planck function
 inline Real ck_pf_lTmin = 0.0;
 inline Real ck_pf_idlT = 0.0;                     // 1 / grid spacing in log10 T
+// problem/ck_interp_T = linear (default, bitwise) | pchip.  f_b(log T) is interpolated
+// LINEARLY between the 512 nodes, so dB_b/dT -- which the ck_implicit Jacobian takes by
+// a 1e-4 T one-sided difference on this interpolant -- jumps at every node (every 1.2 %
+// in T), and a Newton iterate straddling a node sees the wrong slope on one side.  This
+// is the ONLY temperature-tabulated quantity inside the ck Newton: the k tables, the CE
+// composition and the continuum are looked up once per call at the state the call starts
+// from (the opacity is frozen over the passes; ck_impl_refresh_kappa off), so their node
+// kinks never enter the passes.  With pchip the table carries, in columns
+// CK_NB..2CK_NB-1, the EXACT node slope df_b/dx (x = the grid index), and the lookup is
+// the cubic Hermite on the node values and slopes: identical at the nodes, C1 between
+// them, and the same interpolant everywhere it is read (B_b, dB_b/dT, the photosphere
+// diagnostic).  The flag travels with the view (extent(1) == 2 CK_NB), so no kernel
+// signature changes.
+inline bool ck_pf_pchip = false;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real planck_fraction_below()
@@ -149,7 +163,7 @@ inline Real planck_fraction_below(const Real lamT) {
 
 inline void build_planck_fractions(const Real pcut_bar) {
   const Real rt_ck_pcut = pcut_bar;   // only for the advisory message below
-  ck_pf_ptr = new DvceArray2D<Real>("ck_pf", CK_NPF, CK_NB);
+  ck_pf_ptr = new DvceArray2D<Real>("ck_pf", CK_NPF, ck_pf_pchip ? 2*CK_NB : CK_NB);
   auto hpf = Kokkos::create_mirror_view(*ck_pf_ptr);
   auto hwl = Kokkos::create_mirror_view(*ck_wl_ptr);
   Kokkos::deep_copy(hwl, *ck_wl_ptr);
@@ -180,6 +194,25 @@ inline void build_planck_fractions(const Real pcut_bar) {
     Real sum = 0.0;
     for (int b=0; b<CK_NB; ++b) sum += hpf(i,b);
     worst_sum_err = std::max(worst_sum_err, std::fabs(sum - 1.0));
+  }
+  // ck_pf_pchip: the exact node slopes df_b/dx (x = grid index), by a centred difference
+  // of the analytic fraction at +-1e-4 of a grid step (the fraction is smooth; the
+  // difference error is ~1e-8 relative), tails folded in exactly as the values are
+  if (ck_pf_pchip) {
+    const Real hx = 1.0e-4;
+    for (int i=0; i<CK_NPF; ++i) {
+      Real fp[CK_NB], fm[CK_NB];
+      for (int sgn=0; sgn<2; ++sgn) {
+        const Real T = std::pow(10.0, lTmin + (i + (sgn == 0 ? hx : -hx))*dlT);
+        Real *f = (sgn == 0) ? fp : fm;
+        for (int b=0; b<CK_NB; ++b) {
+          f[b] = planck_fraction_below(hwl(b)*T) - planck_fraction_below(hwl(b+1)*T);
+        }
+        f[0] += 1.0 - planck_fraction_below(hwl(0)*T);
+        f[CK_NB-1] += planck_fraction_below(hwl(CK_NB)*T);
+      }
+      for (int b=0; b<CK_NB; ++b) hpf(i,CK_NB+b) = (fp[b] - fm[b])/(2.0*hx);
+    }
   }
   Kokkos::deep_copy(*ck_pf_ptr, hpf);
 
@@ -214,6 +247,17 @@ inline void build_planck_fractions(const Real pcut_bar) {
 //  grid, so the index is analytic and there is no search.
 
 //----------------------------------------------------------------------------------------
+//! \fn Real ck_pf_herm()
+//  \brief the cubic Hermite of ck_interp_T = pchip on node values and exact node slopes
+//  (columns CK_NB.. of the table), at fraction f of the step from node i to i+1.
+template <typename PFView>
+KOKKOS_INLINE_FUNCTION
+Real ck_pf_herm(const PFView &pf, const int i, const Real f, const int b) {
+  const Real f2 = f*f, f3 = f2*f;
+  return (2.0*f3 - 3.0*f2 + 1.0)*pf(i,b) + (f3 - 2.0*f2 + f)*pf(i,CK_NB+b)
+         + (-2.0*f3 + 3.0*f2)*pf(i+1,b) + (f3 - f2)*pf(i+1,CK_NB+b);
+}
+
 //! \fn Real ck_planck_frac()
 //  \brief f_b(T) for a single band. Uniform log10 T grid, so the index is arithmetic.
 
@@ -235,6 +279,7 @@ Real ck_planck_frac(const PFView &pf, const Real lTmin, const Real idlT,
   int i = static_cast<int>(x);
   i = (i > CK_NPF-2) ? CK_NPF-2 : i;
   const Real f = x - static_cast<Real>(i);
+  if (pf.extent(1) > static_cast<size_t>(CK_NB)) return ck_pf_herm(pf, i, f, b);
   return (1.0-f)*pf(i,b) + f*pf(i+1,b);
 }
 
@@ -248,6 +293,10 @@ void ck_planck_bands(const PFView &pf, const Real lTmin, const Real idlT,
   int i = static_cast<int>(x);
   i = (i > CK_NPF-2) ? CK_NPF-2 : i;
   const Real f = x - static_cast<Real>(i);
+  if (pf.extent(1) > static_cast<size_t>(CK_NB)) {
+    for (int b=0; b<CK_NB; ++b) Bb[b] = sigT4_pi*ck_pf_herm(pf, i, f, b);
+    return;
+  }
   for (int b=0; b<CK_NB; ++b) {
     Bb[b] = sigT4_pi*((1.0-f)*pf(i,b) + f*pf(i+1,b));
   }
