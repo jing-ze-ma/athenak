@@ -359,6 +359,40 @@ KOKKOS_INLINE_FUNCTION
 Real VcolC2(const Real gb) {
   return fmin(fmax(3.0 - 6.0*gb, 0.0), 1.0);
 }
+
+// the team sweep's copies of VcolW / VcolW2 WITHOUT branches: both sides of each
+// small-dtau switch are evaluated and one is selected, so the weights of several shells
+// can be computed back to back (independent chains the scheduler interleaves) before
+// the recursion that uses them.  The selected values are those of VcolW / VcolW2
+// (bitwise): the same expressions in the same order; the unused side may be inf or NaN
+// at dtau = 0 and is discarded.
+KOKKOS_FORCEINLINE_FUNCTION
+void VcolWs(const Real dtau, Real &ex, Real &w0, Real &wu) {
+  ex = exp(-dtau);
+  const Real s0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+  const Real su = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
+  const Real g = (1.0 - ex)/dtau;
+  const bool sm = (dtau < 1.0e-3);
+  w0 = sm ? s0 : (1.0 - g);
+  wu = sm ? su : (g - ex);
+}
+
+KOKKOS_FORCEINLINE_FUNCTION
+void VcolW2s(const Real dtau, const Real a2, Real &ex, Real &w0, Real &wu) {
+  ex = exp(-dtau);
+  const Real w1s = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+  const Real w1e = 1.0 - (1.0 - ex)/dtau;
+  const Real w1 = (dtau < 1.0e-3) ? w1s : w1e;
+  const Real w2s = dtau*(1.0/3.0 - dtau*(1.0/12.0 - dtau*(1.0/60.0 - dtau*(1.0/360.0
+                                                                 - dtau/2520.0))));
+  const Real w2e = 1.0 - 2.0*w1/dtau;
+  const Real w2 = (dtau < 1.0e-2) ? w2s : w2e;
+  w0 = (1.0 - a2)*w1 + a2*w2;
+  wu = (1.0 - ex) - w0;
+}
+
+// shells per group of the team sweep: their segment weights are formed together
+constexpr int VC_NB = 4;
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -1048,30 +1082,46 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     // here, and its own running intensity), so there is one team barrier per chunk, not
     // one per shell: the same operations in the same order per ray (bitwise).  kl_ is
     // non-decreasing in l, so a ray that is inactive at shell l stays so further down.
+    // Within the chunk, groups of VC_NB shells: the segment weights of the group first
+    // (branch-free, independent of the intensity), then the recursion.
     for (int la = n1 - 1; la >= 0; la -= lc) {
       const int lb = (la - lc + 1 > 0) ? (la - lc + 1) : 0;
       par_for_inner(tm, 0, nray-1, [&](const int r) {
         Real irr = ir_(r);
         Real itr = rtop ? ir_(2*nray + r) : 0.0;
-        for (int l = la; l >= lb; --l) {
-          if (r > kl_(l)) break;
-          const Real ch0 = pr_(l), s0 = pr_(n1 + l);
-          const bool top = (l == n1 - 1);
-          const Real sup = top ? stop : pr_(n1 + l + 1);
-          const Real iu = top ? (rt1 ? itr : 0.0) : irr;
-          Real ex, w0, wu;
-          if (g2) {
-            const Real gb = sgt_(l,r,1), chup = top ? ch0 : pr_(l+1);
-            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*sgt_(l,r,0), -VcolC2(gb), ex, w0, wu);
-          } else {
-            const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
-            VcolW(cseg*sgt_(l,r,0), ex, w0, wu);
+        for (int l0 = la; l0 >= lb; l0 -= VC_NB) {
+          Real exq[VC_NB], w0q[VC_NB], wuq[VC_NB];
+#pragma unroll
+          for (int q = 0; q < VC_NB; ++q) {
+            const int l = (l0 - q >= lb) ? (l0 - q) : lb;
+            const Real ch0 = pr_(l);
+            const bool top = (l == n1 - 1);
+            const Real chn = pr_(l + 1);   // unused at the top (the next array's slot)
+            if (g2) {
+              const Real gb = sgt_(l,r,1), chup = top ? ch0 : chn;
+              VcolW2s((chup + (ch0 - chup)*(1.0 - gb))*sgt_(l,r,0), -VcolC2(gb),
+                      exq[q], w0q[q], wuq[q]);
+            } else {
+              const Real cseg = top ? ch0 : 0.5*(chn + ch0);
+              VcolWs(cseg*sgt_(l,r,0), exq[q], w0q[q], wuq[q]);
+            }
           }
-          const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
-          irr = iv;
-          ic_(la - l, r) = iv;
-          if (trk) {
-            itr = top ? ex : itr*ex;
+#pragma unroll
+          for (int q = 0; q < VC_NB; ++q) {
+            const int l = l0 - q;
+            if (l >= lb && r <= kl_(l)) {
+              const Real s0 = pr_(n1 + l);
+              const bool top = (l == n1 - 1);
+              const Real sup = top ? stop : pr_(n1 + l + 1);
+              const Real iu = top ? (rt1 ? itr : 0.0) : irr;
+              const Real ex = exq[q];
+              const Real iv = fmax(iu*ex + wuq[q]*sup + w0q[q]*s0, 0.0);
+              irr = iv;
+              ic_(la - l, r) = iv;
+              if (trk) {
+                itr = top ? ex : itr*ex;
+              }
+            }
           }
         }
         ir_(r) = irr;
@@ -1105,13 +1155,31 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     for (int la = 0; la < n1; la += lc) {
       const int lb = (la + lc - 1 < n1 - 1) ? (la + lc - 1) : (n1 - 1);
       // (as the incoming sweep) each thread carries its rays up through the chunk; a ray
-      // becomes active at its first shell and stays active (kl_ non-decreasing)
+      // becomes active at its first shell and stays active (kl_ non-decreasing).  The
+      // weights of the segments from shell l-1 to l are formed per group ahead.
       par_for_inner(tm, 0, nray-1, [&](const int r) {
         Real irr = ir_(r);
         Real itr = rtop ? ir_(2*nray + r) : 0.0;
         const int lr = static_cast<int>(ray_(r,0));
-        for (int l = la; l <= lb; ++l) {
-          if (r > kl_(l)) continue;
+        for (int l0 = la; l0 <= lb; l0 += VC_NB) {
+          Real exq[VC_NB], w0q[VC_NB], wuq[VC_NB];
+#pragma unroll
+          for (int q = 0; q < VC_NB; ++q) {
+            int l = (l0 + q <= lb) ? (l0 + q) : lb;
+            l = (l > 0) ? l : 1;   // l = 0 has no segment below (unused)
+            const Real ch0 = pr_(l), chd = pr_(l-1);
+            if (g2) {
+              const Real gb = sgt_(l-1,r,1);
+              VcolW2s((chd + (ch0 - chd)*gb)*sgt_(l-1,r,0), VcolC2(gb),
+                      exq[q], w0q[q], wuq[q]);
+            } else {
+              VcolWs(0.5*(chd + ch0)*sgt_(l-1,r,0), exq[q], w0q[q], wuq[q]);
+            }
+          }
+#pragma unroll
+          for (int q = 0; q < VC_NB; ++q) {
+          const int l = l0 + q;
+          if (l > lb || r > kl_(l)) continue;
           const Real ch0 = pr_(l), s0 = pr_(n1 + l);
           const Real chd = (l == 0) ? 0.0 : pr_(l-1);
           const Real sd = (l == 0) ? 0.0 : pr_(n1 + l - 1);
@@ -1120,13 +1188,8 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           Real iv;
           Real ex, w0, wu;
           if (lr < l) {
-            if (g2) {
-              const Real gb = sgt_(l-1,r,1);
-              VcolW2((chd + (ch0 - chd)*gb)*sgt_(l-1,r,0), VcolC2(gb), ex, w0, wu);
-            } else {
-              VcolW(0.5*(chd + ch0)*sgt_(l-1,r,0), ex, w0, wu);
-            }
-            iv = irr*ex + wu*sd + w0*s0;
+            ex = exq[q];
+            iv = irr*ex + wuq[q]*sd + w0q[q]*s0;
             if (trk) {
               itr *= ex;
             }
@@ -1180,6 +1243,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           iv = fmax(iv, 0.0);
           irr = iv;
           ic_(l - la, r) = iv;
+          }
         }
         ir_(r) = irr;
         if (rtop) {ir_(2*nray + r) = itr;}
