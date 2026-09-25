@@ -2103,7 +2103,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto cx3v = pmy_pack->pcoord->x3v;
 
   // (1) the x2 face fluxes
-  par_for("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+  par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
     BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
@@ -2159,7 +2159,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
 
   // (2) the x3 face fluxes
   if (thrd) {
-    par_for("m1_impl_f3face", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+    par_for_lb("m1_impl_f3face", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x3);
       BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x3);
@@ -2226,7 +2226,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   const bool t2afc = (t2_afmode == 2);
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
-  par_for("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for_lb("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dx2 = mbsize.d_view(m).dx2;
     Real dx3 = mbsize.d_view(m).dx3;
