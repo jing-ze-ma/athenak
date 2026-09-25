@@ -904,6 +904,21 @@ struct M1EosDirect {
 };
 
 //----------------------------------------------------------------------------------------
+//! \struct M1EosIdeal
+//! \brief the accessor for an ideal-gas EOS_Data (table off): e and c_v by the same
+//! expressions as the ideal branch of EOS_Data::ThermoAt (bitwise), without the table
+//! code in the kernel (m1-fast5-sp).
+
+struct M1EosIdeal {
+  Real gamma;
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const Real dd, const Real t, Real &ee, Real &cv) const {
+    ee = dd*t/(gamma-1.0);
+    cv = 1.0/(gamma-1.0);
+  }
+};
+
+//----------------------------------------------------------------------------------------
 //! \struct M1EosCached
 //! \brief the same accessor served from the per-cell cache, with the table as fallback.
 //! `nm` points at a thread-local miss counter (may be null).

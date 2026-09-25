@@ -27,6 +27,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "athena.hpp"
@@ -623,8 +624,13 @@ void RadiationM1::Time2VetColAt(int which) {
     const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kss = kappa_s;
     const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
     M1OpacTab ot = otab;
-    par_for_lb("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // m1-fast5-sp: an ideal-gas EOS with analytic opacities gets its own kernel (T and
+    // the opacities by the same expressions, bitwise): the generic one carries the EOS
+    // and opacity table code, 392 B of scratch per lane, even when both are off
+    const Real gam = eos.gamma;
+    const bool vcid = !eos.tbl.active && (otype != M1_OPAC_TABLE);
+    auto vcb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
+                                    const int i) M1_INL {
       const Real d = uh(m,IDN,k,j,i);
       Real t, e;
       if (two) {
@@ -639,11 +645,17 @@ void RadiationM1::Time2VetColAt(int which) {
         Real eint = uh(m,IEN,k,j,i) + gdt*k1_(m,M1_T2_EN,k,j,i)
                     - 0.5*(m1*m1 + m2*m2 + m3*m3)/fmax(d, 1.0e-300);
         if (etg) eint -= d*phicc(m,k,j,i);
-        t = eos.Temperature(d, fmax(eint, 0.0));
+        if constexpr (decltype(idl)::value) {
+          t = ((gam-1.0)*fmax(eint, 0.0)/d);
+        } else {
+          t = eos.Temperature(d, fmax(eint, 0.0));
+        }
         e = u0_(m,M1_E,k,j,i) + dt*k1_(m,M1_T2_E,k,j,i);
       }
       Real op, oe, of, os;
-      if (otype == M1_OPAC_TABLE) {
+      if constexpr (decltype(idl)::value) {
+        M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
+      } else if (otype == M1_OPAC_TABLE) {
         M1TableOpacities(ot, d, t, op, oe, of, os);
       } else {
         M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
@@ -657,7 +669,18 @@ void RadiationM1::Time2VetColAt(int which) {
       iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
       iw_(m,M1_IW_TP,k,j,i) = t;
       iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
-    });
+    };
+    if (vcid) {
+      par_for_lb("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+        vcb(std::true_type{}, m, k, j, i);
+      });
+    } else {
+      par_for_lb("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+        vcb(std::false_type{}, m, k, j, i);
+      });
+    }
   } else {
     par_for("m1_t2_vcr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

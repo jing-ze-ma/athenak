@@ -2115,7 +2115,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto cx3v = pmy_pack->pcoord->x3v;
 
   // (1) the x2 face fluxes
-  par_for("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+  par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
     BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
@@ -2171,7 +2171,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
 
   // (2) the x3 face fluxes
   if (thrd) {
-    par_for("m1_impl_f3face", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+    par_for_lb("m1_impl_f3face", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x3);
       BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x3);
@@ -2238,7 +2238,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   const bool t2afc = (t2_afmode == 2);
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
-  par_for("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for_lb("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dx2 = mbsize.d_view(m).dx2;
     Real dx3 = mbsize.d_view(m).dx3;
@@ -3407,7 +3407,7 @@ namespace {
 //! (j,k) edges, each ordered (-,-),(+,-),(-,+),(+,+) in (first, second) axis.
 
 KOKKOS_INLINE_FUNCTION
-int M1StIdx(const int di, const int dj, const int dk) {
+constexpr int M1StIdx(const int di, const int dj, const int dk) {
   if (dk == 0) {
     if (dj == 0) {return (di == 0) ? 0 : ((di < 0) ? 1 : 2);}
     if (di == 0) {return (dj < 0) ? 3 : 4;}
@@ -3481,7 +3481,7 @@ void RadiationM1::ImplicitStencilBuild() {
   Kokkos::parallel_reduce("m1_impl_stb",
   Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>(DevExeSpace(), 0,
                                                                 (nmb1 + 1)*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &lmx) {
+  KOKKOS_LAMBDA(const int idx, Real &lmx) M1_INL {
     int m = idx/nkji;
     int r = idx - m*nkji;
     int k = r/nji;
@@ -3524,51 +3524,83 @@ void RadiationM1::ImplicitStencilBuild() {
       if (!p2hi) {hi[1] = je+1;}
       if (thrd && !p3lo) {lo[2] = ks-1;}
       if (thrd && !p3hi) {hi[2] = ke+1;}
-      const int cc[3] = {i, j, k};
       const Real cr = ch/cl, kk = ch*cl*dt;
-      const int nd = thrd ? 3 : 2;
-      for (int d = 0; d < nd; ++d) {
-        for (int sd = -1; sd <= 1; sd += 2) {
-          // does this face carry the term (the conditions of ImplicitOffDiagOp)?
-          bool has;
-          if (d == 0) {
-            has = (sd > 0) ? (i < ie || !topb) : (i > is || !botb);
-          } else if (d == 1) {
-            has = (sd > 0) ? !(j == je && p2hi) : !(j == js && p2lo);
-          } else {
-            has = (sd > 0) ? !(k == ke && p3hi) : !(k == ks && p3lo);
-          }
-          if (!has) continue;
-          // the face theta, from the two cells' transport opacities (or the limiter)
-          int nb[3] = {i, j, k};
-          nb[d] += sd;
-          Real th;
-          if (d > 0 && lm) {
-            th = (d == 1) ? th2_(m,k,(sd > 0) ? j+1 : j,i)
-                          : th3_(m,(sd > 0) ? k+1 : k,j,i);
-          } else {
-            Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,nb[2],nb[1],nb[0]));
-            th = 1.0/(1.0 + ch*dt*ktf);
-          }
-          // upper face: y -= w od; lower face: y += w od; od = 0.5 (OD(c) + OD(nb))
-          const Real w = -static_cast<Real>(sd)*(dt/dxv[d])*cr*th*kk*0.5;
-          for (int qs = 0; qs <= 1; ++qs) {
-            int q[3] = {i, j, k};
-            if (qs == 1) {q[d] += sd;}
-            for (int e = 0; e < nd; ++e) {
-              if (e == d) continue;
-              int qa[3] = {q[0], q[1], q[2]}, qb[3] = {q[0], q[1], q[2]};
-              if (q[e] + 1 <= hi[e]) {qa[e] = q[e] + 1;}
-              if (q[e] - 1 >= lo[e]) {qb[e] = q[e] - 1;}
-              if (qa[e] == qb[e]) continue;
-              const Real f = w/((qa[e] - qb[e])*dxv[e]);
-              const Real da = M1DOffC(iw_, vd_, dfull, m, d, e, qa[2], qa[1], qa[0]);
-              const Real db = M1DOffC(iw_, vd_, dfull, m, d, e, qb[2], qb[1], qb[0]);
-              c[M1StIdx(qa[0]-cc[0], qa[1]-cc[1], qa[2]-cc[2])] += f*da;
-              c[M1StIdx(qb[0]-cc[0], qb[1]-cc[1], qb[2]-cc[2])] -= f*db;
-            }
-          }
+      // m1-fast5-sp: the loops over (face axis d, side sd, cell qs, cross axis e) are
+      // unrolled at compile time, so every slot of c is a constant (two candidates per
+      // term, chosen by the one-sided clamp): c stays in registers instead of a 176 B
+      // per-lane scratch array.  The same terms are added in the same order (bitwise).
+      auto qe = [&](auto dc, auto sdc, auto qsc, auto ec, const Real w) M1_INL {
+        constexpr int d = decltype(dc)::value, sd = decltype(sdc)::value;
+        constexpr int qs = decltype(qsc)::value, e = decltype(ec)::value;
+        int q[3] = {i, j, k};
+        if (qs == 1) {q[d] += sd;}
+        const bool ua = (q[e] + 1 <= hi[e]);
+        const bool ub = (q[e] - 1 >= lo[e]);
+        if (!ua && !ub) return;
+        int qa[3] = {q[0], q[1], q[2]}, qb[3] = {q[0], q[1], q[2]};
+        if (ua) {qa[e] = q[e] + 1;}
+        if (ub) {qb[e] = q[e] - 1;}
+        const Real f = w/((qa[e] - qb[e])*dxv[e]);
+        const Real da = M1DOffC(iw_, vd_, dfull, m, d, e, qa[2], qa[1], qa[0]);
+        const Real db = M1DOffC(iw_, vd_, dfull, m, d, e, qb[2], qb[1], qb[0]);
+        constexpr int o0 = (d == 0) ? qs*sd : 0, o1 = (d == 1) ? qs*sd : 0;
+        constexpr int o2 = (d == 2) ? qs*sd : 0;
+        constexpr int s0 = M1StIdx(o0, o1, o2);
+        constexpr int sa = M1StIdx(o0 + (e == 0), o1 + (e == 1), o2 + (e == 2));
+        constexpr int sb = M1StIdx(o0 - (e == 0), o1 - (e == 1), o2 - (e == 2));
+        // value selects, not a store to a selected slot (that would index c at run time)
+        const Real va = f*da, vb = f*db;
+        c[sa] = ua ? (c[sa] + va) : c[sa];
+        c[s0] = ua ? c[s0] : (c[s0] + va);
+        c[sb] = ub ? (c[sb] - vb) : c[sb];
+        c[s0] = ub ? c[s0] : (c[s0] - vb);
+      };
+      auto face = [&](auto dc, auto sdc) M1_INL {
+        constexpr int d = decltype(dc)::value, sd = decltype(sdc)::value;
+        // does this face carry the term (the conditions of ImplicitOffDiagOp)?
+        bool has;
+        if (d == 0) {
+          has = (sd > 0) ? (i < ie || !topb) : (i > is || !botb);
+        } else if (d == 1) {
+          has = (sd > 0) ? !(j == je && p2hi) : !(j == js && p2lo);
+        } else {
+          has = (sd > 0) ? !(k == ke && p3hi) : !(k == ks && p3lo);
         }
+        if (!has) return;
+        // the face theta, from the two cells' transport opacities (or the limiter)
+        int nb[3] = {i, j, k};
+        nb[d] += sd;
+        Real th;
+        if (d > 0 && lm) {
+          th = (d == 1) ? th2_(m,k,(sd > 0) ? j+1 : j,i)
+                        : th3_(m,(sd > 0) ? k+1 : k,j,i);
+        } else {
+          Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,nb[2],nb[1],nb[0]));
+          th = 1.0/(1.0 + ch*dt*ktf);
+        }
+        // upper face: y -= w od; lower face: y += w od; od = 0.5 (OD(c) + OD(nb))
+        const Real w = -static_cast<Real>(sd)*(dt/dxv[d])*cr*th*kk*0.5;
+        auto qsall = [&](auto qsc) M1_INL {
+          if constexpr (d != 0) {qe(dc, sdc, qsc, std::integral_constant<int, 0>{}, w);}
+          if constexpr (d != 1) {qe(dc, sdc, qsc, std::integral_constant<int, 1>{}, w);}
+          if constexpr (d != 2) {
+            if (thrd) {qe(dc, sdc, qsc, std::integral_constant<int, 2>{}, w);}
+          }
+        };
+        qsall(std::integral_constant<int, 0>{});
+        qsall(std::integral_constant<int, 1>{});
+      };
+      using I0 = std::integral_constant<int, 0>;
+      using I1 = std::integral_constant<int, 1>;
+      using I2 = std::integral_constant<int, 2>;
+      using IM = std::integral_constant<int, -1>;
+      face(I0{}, IM{});
+      face(I0{}, I1{});
+      face(I1{}, IM{});
+      face(I1{}, I1{});
+      if (thrd) {
+        face(I2{}, IM{});
+        face(I2{}, I1{});
       }
     }
     for (int o = 0; o < 19; ++o) {st_(m,o,k,j,i) = c[o];}
@@ -7032,8 +7064,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (c) the emission/absorption source, linearised in T about the iterate
     if (src_on) {
       auto eos = pmy_pack->phydro->peos->eos_data;
-      par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // m1-fast5-sp: an ideal-gas EOS without the cache gets its own kernel (e and c_v by
+      // M1EosIdeal, the ideal branch of ThermoAt: bitwise); the generic one carries the
+      // table code (828 B call frame per lane) even when the table is off
+      const bool srid = !eos.tbl.active && !usec;
+      const Real gam = eos.gamma;
+      auto srb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
+                                      const int i) {
         Real rkpv = opac_(m,M1_OP_P,k,j,i);
         Real rkev = opac_(m,M1_OP_E,k,j,i);
         if (rkpv == 0.0 && rkev == 0.0) {
@@ -7044,9 +7081,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real dd = uh(m,IDN,k,j,i);
         Real tk = iw_(m,M1_IW_TP,k,j,i);
         Real nmiss = 0.0;
-        M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
-                                                      &nmiss};
-        M1EosDirect<decltype(eos)> thd{eos};
+        auto thc = [&]() {
+          if constexpr (decltype(idl)::value) {
+            return M1EosIdeal{gam};   // never called: usec is false here
+          } else {
+            return M1EosCached<decltype(eos), decltype(ec_)>{eos, ec_, m, k, j, i, ecnt,
+                                                             &nmiss};
+          }
+        }();
+        auto thd = [&]() {
+          if constexpr (decltype(idl)::value) {
+            return M1EosIdeal{gam};
+          } else {
+            return M1EosDirect<decltype(eos)>{eos};
+          }
+        }();
         Real ee, cv;
         if (usec) {
           thc(dd, tk, ee, cv);
@@ -7112,7 +7161,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
         iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
                                   + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
-      });
+      };
+      if (srid) {
+        par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          srb(std::true_type{}, m, k, j, i);
+        });
+      } else {
+        par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          srb(std::false_type{}, m, k, j, i);
+        });
+      }
     }
 
     // implicit_vimp: the Jacobian of the implicit enthalpy velocity for this pass
@@ -7663,8 +7723,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (f) accept E', solve for T' and measure the Picard residual
     if (src_on) {
       auto eos = pmy_pack->phydro->peos->eos_data;
-      par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+      // m1-fast5-sp: an ideal-gas EOS without the per-cell cache gets its own kernel,
+      // whose root find evaluates e(T) and c_v by the ideal branch of
+      // EOS_Data::ThermoAt (the same expressions: bitwise).  The generic kernel carries
+      // the table evaluation, 254 VGPRs and 324 B of scratch per lane, even when the
+      // table is off (measured, tests_m1/runs_5s_fast5sp).
+      const bool tsid = !eos.tbl.active && !usec;
+      auto tsb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
+                                      const int i) M1_INL {
         Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
         Real eold = iw_(m,M1_IW_EP,k,j,i);
         Real rkpv = opac_(m,M1_OP_P,k,j,i);
@@ -7704,7 +7770,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (!done) {
             // the pre-3g bracketed root find: also the per-cell FALLBACK of the Newton
             // update (c_v <= 0, a step outside the trust region, a non-positive T).
-            if (usec) {
+            if constexpr (decltype(idl)::value) {
+              M1EosIdeal th{eos.gamma};
+              (void) M1ImplTemperatureT(th, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                        cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
+                                        ok);
+            } else if (usec) {
               Real nmiss = 0.0;
               M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
                                                             &nmiss};
@@ -7732,7 +7803,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           iw_(m,M1_IW_S1,k,j,i) = re;
           iw_(m,M1_IW_S3,k,j,i) = rt;
         }
-      });
+      };
+      if (tsid) {
+        par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+          tsb(std::true_type{}, m, k, j, i);
+        });
+      } else {
+        par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+          tsb(std::false_type{}, m, k, j, i);
+        });
+      }
     } else {
       par_for("m1_impl_accept", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

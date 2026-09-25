@@ -359,6 +359,9 @@ KOKKOS_INLINE_FUNCTION
 Real VcolC2(const Real gb) {
   return fmin(fmax(3.0 - 6.0*gb, 0.0), 1.0);
 }
+
+// the team build sums each shell's moments in VC_NG groups of consecutive rays
+constexpr int VC_NG = 8;
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -582,6 +585,19 @@ void RadiationM1::VetColInit() {
   Kokkos::deep_copy(vcol_gb, gb_h);
   Kokkos::deep_copy(vcol_gb0, gb0_h);
   Kokkos::deep_copy(vcol_klast, kl_h);
+  // the team sweep's copy of seg and gb, (shell, ray, 2): the same values
+  Kokkos::realloc(vcol_sgt, n1, nray, 2);
+  {
+    auto sgt_h = Kokkos::create_mirror_view(vcol_sgt);
+    const bool hgb = (gb_h.extent_int(0) == nray);
+    for (int l = 0; l < n1; ++l) {
+      for (int r = 0; r < nray; ++r) {
+        sgt_h(l, r, 0) = seg_h(r, l);
+        sgt_h(l, r, 1) = hgb ? gb_h(r, l) : 0.5;
+      }
+    }
+    Kokkos::deep_copy(vcol_sgt, sgt_h);
+  }
   Kokkos::deep_copy(vcol_muf, muf_h);
   Kokkos::deep_copy(vcol_wf, wf_h);
 
@@ -595,7 +611,9 @@ void RadiationM1::VetColInit() {
     // within 24 kB (runs_5e GPU sweep: 32 kB halves the occupancy, 3.3 ms at 16 vs 7.7
     // ms at 32 on the He wedge grid)
     const int avail = 3072 - 5*n1 - (vcol_rtop ? 3 : 2)*nray;
-    vcol_lc = std::max(1, std::min(std::min(n1, 16), avail/nray));
+    // (m1-fast5-sp: 8 shells per chunk with the grouped moment sums, runs_5s job 11980678:
+    // 4.95 ms per build at 8, 5.2-5.9 at 6/7/10/12, 7.5 at 16 on the He wedge)
+    vcol_lc = std::max(1, std::min(std::min(n1, 8), avail/nray));
     if (vcol_lcin > 0) {vcol_lc = std::min(n1, vcol_lcin);}
   } else {
     Kokkos::realloc(vcol_buf, nray, ncol);
@@ -962,6 +980,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   auto tt_ = tau_ten;
   auto mo_ = vcol_mom;
   auto seg_ = vcol_seg;
+  auto sgt_ = vcol_sgt;
   auto mu_ = vcol_mu;
   auto w_ = vcol_w;
   auto ray_ = vcol_ray;
@@ -982,6 +1001,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray, lc = vcol_lc;
+  const int gsz = (nray + VC_NG - 1)/VC_NG;   // rays per moment group
   const Real fkm = axf ? (1.0/3.0) : vcol_fkmin;
   // vet_col_reflect_top: two sweeps; the third ray slot holds the round-trip
   // transmission (pass 0), then the mirrored top intensity (pass 1)
@@ -993,7 +1013,8 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap;
   const size_t scr = ScrArray1D<Real>::shmem_size(5*n1) +
                      ScrArray1D<Real>::shmem_size(nrs*nray) +
-                     ScrArray2D<Real>::shmem_size(lc, nray);
+                     ScrArray2D<Real>::shmem_size(lc, nray) +
+                     ScrArray1D<Real>::shmem_size(3*VC_NG*lc);
 
   const int nk = ke - ks + 1, nj = je - js + 1;
   const int nlg = (nmb1 + 1)*nk*nj;
@@ -1008,6 +1029,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     ScrArray1D<Real> pr_(tm.team_scratch(0), 5*n1);    // chi, S, J_in, H_in, K_in
     ScrArray1D<Real> ir_(tm.team_scratch(0), nrs*nray);  // running I; face I; top
     ScrArray2D<Real> ic_(tm.team_scratch(0), lc, nray);
+    ScrArray1D<Real> pm_(tm.team_scratch(0), 3*VC_NG*lc);   // group partial moments
     par_for_inner(tm, 0, n1-1, [&](const int l) {
       const int i = is + l;
       pr_(l) = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
@@ -1029,41 +1051,76 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     for (int ps = 0; ps < npass; ++ps) {
     const bool trk = rtop && (ps == 0);
     const bool rt1 = rtop && (ps == 1);
-    // (1) incoming rays, top down, in chunks of lc shells
+    // (1) incoming rays, top down, in chunks of lc shells.  Each thread carries ITS rays
+    // down through the whole chunk (a ray's recursion needs only chi and S, read-only
+    // here, and its own running intensity), so there is one team barrier per chunk, not
+    // one per shell: the same operations in the same order per ray (bitwise).  kl_ is
+    // non-decreasing in l, so a ray that is inactive at shell l stays so further down.
     for (int la = n1 - 1; la >= 0; la -= lc) {
       const int lb = (la - lc + 1 > 0) ? (la - lc + 1) : 0;
-      for (int l = la; l >= lb; --l) {
-        const Real ch0 = pr_(l), s0 = pr_(n1 + l);
-        const bool top = (l == n1 - 1);
-        const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
-        const Real sup = top ? stop : pr_(n1 + l + 1);
-        const int ll = la - l;
-        par_for_inner(tm, 0, kl_(l), [&](const int r) {
-          const Real iu = top ? (rt1 ? ir_(2*nray + r) : 0.0) : ir_(r);
+      par_for_inner(tm, 0, nray-1, [&](const int r) {
+        Real irr = ir_(r);
+        Real itr = rtop ? ir_(2*nray + r) : 0.0;
+        // the next shell's table entries are loaded one step ahead (the loads do not
+        // depend on the recursion, so their latency overlaps the current step)
+        Real sgn = sgt_(la,r,0), gbn = sgt_(la,r,1);
+        for (int l = la; l >= lb; --l) {
+          if (r > kl_(l)) break;
+          const Real sgc = sgn, gbc = gbn;
+          if (l > lb) {
+            sgn = sgt_(l-1,r,0);
+            gbn = sgt_(l-1,r,1);
+          }
+          const Real ch0 = pr_(l), s0 = pr_(n1 + l);
+          const bool top = (l == n1 - 1);
+          const Real sup = top ? stop : pr_(n1 + l + 1);
+          const Real iu = top ? (rt1 ? itr : 0.0) : irr;
           Real ex, w0, wu;
-          VcolW(cseg*seg_(r,l), ex, w0, wu);
           if (g2) {
-            const Real gb = gb_(r,l), chup = top ? ch0 : pr_(l+1);
-            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*seg_(r,l), -VcolC2(gb), ex, w0, wu);
+            const Real gb = gbc, chup = top ? ch0 : pr_(l+1);
+            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*sgc, -VcolC2(gb), ex, w0, wu);
+          } else {
+            const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
+            VcolW(cseg*sgc, ex, w0, wu);
           }
           const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
-          ir_(r) = iv;
-          ic_(ll, r) = iv;
+          irr = iv;
+          ic_(la - l, r) = iv;
           if (trk) {
-            ir_(2*nray + r) = top ? ex : ir_(2*nray + r)*ex;
+            itr = top ? ex : itr*ex;
           }
-        });
-        tm.team_barrier();
-      }
-      par_for_inner(tm, lb, la, [&](const int l) {
+        }
+        ir_(r) = irr;
+        if (rtop) {ir_(2*nray + r) = itr;}
+      });
+      tm.team_barrier();
+      // the moments: VC_NG fixed groups of consecutive rays per shell summed in
+      // parallel, then the group sums in group order (a fixed order, the same on every
+      // column and every backend; the grouping is round-off against one running sum)
+      par_for_inner(tm, 0, (la - lb + 1)*VC_NG - 1, [&](const int t) {
+        const int l = lb + t/VC_NG, g = t - VC_NG*(t/VC_NG);
         const int ll = la - l;
         Real jj = 0.0, hh = 0.0, kk = 0.0;
         const int kr = kl_(l);
-        for (int r = 0; r <= kr; ++r) {
+        const int re = ((g + 1)*gsz - 1 < kr) ? ((g + 1)*gsz - 1) : kr;
+        for (int r = g*gsz; r <= re; ++r) {
           const Real wq = w_(r,l)*ic_(ll, r), mq = mu_(r,l);
           jj += wq;
           hh -= wq*mq;
           kk += wq*mq*mq;
+        }
+        pm_(3*t) = jj;
+        pm_(3*t + 1) = hh;
+        pm_(3*t + 2) = kk;
+      });
+      tm.team_barrier();
+      par_for_inner(tm, lb, la, [&](const int l) {
+        const int t0 = (l - lb)*VC_NG;
+        Real jj = pm_(3*t0), hh = pm_(3*t0 + 1), kk = pm_(3*t0 + 2);
+        for (int g = 1; g < VC_NG; ++g) {
+          jj += pm_(3*(t0 + g));
+          hh += pm_(3*(t0 + g) + 1);
+          kk += pm_(3*(t0 + g) + 2);
         }
         pr_(2*n1 + l) = jj;
         pr_(3*n1 + l) = hh;
@@ -1081,77 +1138,94 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     }
     for (int la = 0; la < n1; la += lc) {
       const int lb = (la + lc - 1 < n1 - 1) ? (la + lc - 1) : (n1 - 1);
-      for (int l = la; l <= lb; ++l) {
-        const Real ch0 = pr_(l), s0 = pr_(n1 + l);
-        const Real chd = (l == 0) ? 0.0 : pr_(l-1);
-        const Real sd = (l == 0) ? 0.0 : pr_(n1 + l - 1);
-        const Real chlo = (l == 0) ? ch0 : chd;
-        const Real slo = (l == 0) ? sbot : sd;
-        const int ll = l - la;
-        par_for_inner(tm, 0, kl_(l), [&](const int r) {
-          const int lr = static_cast<int>(ray_(r,0));
+      // (as the incoming sweep) each thread carries its rays up through the chunk; a ray
+      // becomes active at its first shell and stays active (kl_ non-decreasing)
+      par_for_inner(tm, 0, nray-1, [&](const int r) {
+        Real irr = ir_(r);
+        Real itr = rtop ? ir_(2*nray + r) : 0.0;
+        const int lr = static_cast<int>(ray_(r,0));
+        // the segment below shell l is (l-1, l): loaded one step ahead, as above
+        Real sgn = (la > 0) ? sgt_(la-1,r,0) : 0.0, gbn = (la > 0) ? sgt_(la-1,r,1) : 0.5;
+        for (int l = la; l <= lb; ++l) {
+          const Real sgc = sgn, gbc = gbn;
+          if (l < lb) {
+            sgn = sgt_(l,r,0);
+            gbn = sgt_(l,r,1);
+          }
+          if (r > kl_(l)) continue;
+          const Real ch0 = pr_(l), s0 = pr_(n1 + l);
+          const Real chd = (l == 0) ? 0.0 : pr_(l-1);
+          const Real sd = (l == 0) ? 0.0 : pr_(n1 + l - 1);
+          const Real chlo = (l == 0) ? ch0 : chd;
+          const Real slo = (l == 0) ? sbot : sd;
           Real iv;
           Real ex, w0, wu;
           if (lr < l) {
-            VcolW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
             if (g2) {
-              const Real gb = gb_(r,l-1);
-              VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
+              const Real gb = gbc;
+              VcolW2((chd + (ch0 - chd)*gb)*sgc, VcolC2(gb), ex, w0, wu);
+            } else {
+              VcolW(0.5*(chd + ch0)*sgc, ex, w0, wu);
             }
-            iv = ir_(r)*ex + wu*sd + w0*s0;
+            iv = irr*ex + wu*sd + w0*s0;
             if (trk) {
-              ir_(2*nray + r) *= ex;
+              itr *= ex;
             }
           } else {
             const int ty = static_cast<int>(ray_(r,1));
             if (ty == VC_CORE) {
               Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
-              VcolW(ch0*ray_(r,2), ex, w0, wu);
-              if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
-              if (mir) {ib = fmax(ir_(r)*ex + wu*s0 + w0*sbot, 0.0);}
+              if (g2) {
+                VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);
+              } else {
+                VcolW(ch0*ray_(r,2), ex, w0, wu);
+              }
+              if (mir) {ib = fmax(irr*ex + wu*s0 + w0*sbot, 0.0);}
               if (trk) {
-                ir_(2*nray + r) = mir ? (ir_(2*nray + r)*ex) : 0.0;
+                itr = mir ? (itr*ex) : 0.0;
               }
               if (g2) {VcolW2(ch0*ray_(r,2), VcolC2(gb0_(r)), ex, w0, wu);}
               iv = ib*ex + wu*sbot + w0*s0;
               if (trk) {
-                ir_(2*nray + r) *= ex;
+                itr *= ex;
               }
             } else if (ty == VC_TAN) {
-              iv = ir_(r);
+              iv = irr;
             } else {
               const Real a = ray_(r,3);
               const Real cht = (1.0 - a)*chlo + a*ch0;
               const Real st = (1.0 - a)*slo + a*s0;
-              VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
               if (g2) {
                 const Real gb = gb0_(r);
                 const Real dt2 = (cht + (ch0 - cht)*gb)*ray_(r,2);
                 VcolW2(dt2, -VcolC2(gb), ex, w0, wu);
-                const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
+                const Real it = fmax(irr*ex + wu*s0 + w0*st, 0.0);
                 if (trk) {
-                  ir_(2*nray + r) *= ex;
+                  itr *= ex;
                 }
                 VcolW2(dt2, VcolC2(gb), ex, w0, wu);
                 iv = it*ex + wu*st + w0*s0;
                 if (trk) {
-                  ir_(2*nray + r) *= ex;
+                  itr *= ex;
                 }
               } else {
-              const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
-              iv = it*ex + wu*st + w0*s0;
-              if (trk) {
-                ir_(2*nray + r) *= ex*ex;
-              }
+                VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
+                const Real it = fmax(irr*ex + wu*s0 + w0*st, 0.0);
+                iv = it*ex + wu*st + w0*s0;
+                if (trk) {
+                  itr *= ex*ex;
+                }
               }
             }
           }
           iv = fmax(iv, 0.0);
-          ir_(r) = iv;
-          ic_(ll, r) = iv;
-        });
-        tm.team_barrier();
-      }
+          irr = iv;
+          ic_(l - la, r) = iv;
+        }
+        ir_(r) = irr;
+        if (rtop) {ir_(2*nray + r) = itr;}
+      });
+      tm.team_barrier();
       if (trk && lb == n1 - 1) {
         // the outgoing intensity at the top face (b) and the round-trip transmission
         // (a) of every ray: specular reflection keeps p, so I_in = b + a I_in
@@ -1178,16 +1252,31 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         });
         tm.team_barrier();
       }
-      par_for_inner(tm, la, lb, [&](const int l) {
-        const int i = is + l;
+      par_for_inner(tm, 0, (lb - la + 1)*VC_NG - 1, [&](const int t) {
+        const int l = la + t/VC_NG, g = t - VC_NG*(t/VC_NG);
         const int ll = l - la;
-        Real jj = pr_(2*n1 + l), hh = pr_(3*n1 + l), kk = pr_(4*n1 + l);
+        Real jj = 0.0, hh = 0.0, kk = 0.0;
         const int kr = kl_(l);
-        for (int r = 0; r <= kr; ++r) {
+        const int re = ((g + 1)*gsz - 1 < kr) ? ((g + 1)*gsz - 1) : kr;
+        for (int r = g*gsz; r <= re; ++r) {
           const Real wq = w_(r,l)*ic_(ll, r), mq = mu_(r,l);
           jj += wq;
           hh += wq*mq;
           kk += wq*mq*mq;
+        }
+        pm_(3*t) = jj;
+        pm_(3*t + 1) = hh;
+        pm_(3*t + 2) = kk;
+      });
+      tm.team_barrier();
+      par_for_inner(tm, la, lb, [&](const int l) {
+        const int i = is + l;
+        const int t0 = (l - la)*VC_NG;
+        Real jj = pr_(2*n1 + l), hh = pr_(3*n1 + l), kk = pr_(4*n1 + l);
+        for (int g = 0; g < VC_NG; ++g) {
+          jj += pm_(3*(t0 + g));
+          hh += pm_(3*(t0 + g) + 1);
+          kk += pm_(3*(t0 + g) + 2);
         }
         jj *= 0.5;
         hh *= 0.5;

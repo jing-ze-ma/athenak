@@ -1083,6 +1083,8 @@ class RadiationM1 {
   DvceArray1D<Real> vcol_gb0;  // (ray): the first segment (core: r_in -> shell 0;
                                // sub-ray: tangent point -> its shell)
   DvceArray1D<int> vcol_klast; // (shell): index of the last ray active at the shell
+  DvceArray3D<Real> vcol_sgt;  // (shell l, ray, 2): vcol_seg and vcol_gb transposed, so
+                               // the team sweep's threads (rays) read them coalesced
   DvceArray2D<Real> vcol_buf;  // (ray, column): the running intensity of each ray
   DvceArray5D<Real> vcol_mom;  // (m,5,k,j,i): J, H, K, S, chi of the solution (dump)
   std::vector<double> vcol_rc; // shell radii (host, for the dump)
