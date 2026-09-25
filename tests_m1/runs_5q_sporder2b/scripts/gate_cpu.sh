@@ -1,8 +1,8 @@
 #!/bin/bash -l
 # m1-sp-order2b CPU gates: ref (fe12a518) vs new, the inputs of runs_5h_sph2
 # (/viper/ptmp2/jinma/sph2_0924/inp, read only) plus copies with the new keys.
-# usage: gate_cpu.sh [A|B|C|CO|F|FO|O|R ...]
-# A, B: Cartesian (bitwise).  C, F: sp with the keys absent (the new sp defaults: a
+# usage: gate_cpu.sh [A|B|C|CO|F|FO|O|R|O2|R2 ...]
+# A, B: Cartesian (bitwise; ref = fe12a518).  C, F: sp with the keys absent (the new sp defaults: a
 # DIFF is legitimate where a Marshak face or vet_col is involved).  CO, FO: the same
 # inputs with the OLD values named (bitwise).  O: an OLD restart (ref-written, keys
 # absent) continued by ref and new (bitwise).  R: restart with the new defaults.
@@ -80,13 +80,31 @@ CO|FO)  # the old sp behaviour named: bitwise
   if [ $g = CO ]; then L="sp_sph_diff_be sp_sph_diff_str_be sp_sph_sym_be sp_sph_sym_gas_be sp_marshak_sph_be sp_sph_fs_be sp_sph_atm_be sp_rw_sph_R100_be sp_sph_atm_vc_be sp_sph_atm_str_vc_be sp_sph_atm_bin_vc_be"
   else L="sp_sph_sym sp_sph_sym_gas sp_sph_atm_vc sp_sph_fs"; fi
   for f in $L; do python3 $S/addkeys.py $I/$f.athinput $J/o_$f.athinput rad_m1 $OLDK; done
+  # implicit_precond: where the new binary resolves mg_gc (the new sp default) the old
+  # default was rbgs_fwd; name it (a probe run of 1 cycle, the parameter dump of its rst)
+  for f in $L; do
+    d=$W/gate/probe_$f; rm -rf $d; mkdir -p $d
+    python3 $S/pcfix.py prep $J/o_$f.athinput $d/probe.athinput
+    (cd $d && mpirun -np 1 --oversubscribe $W/bin/athena_new_none_cpu -i $d/probe.athinput -d $d time/nlim=1 > log.txt 2>&1
+     python3 $S/pcfix.py $d $J/o_$f.athinput) &
+  done; wait
+  # the vet_col variants (closure named on the command line) resolve their own default
+  for f in $L; do
+    case $f in *sym*|*sph_fs*) ;; *) continue;; esac
+    cp $J/o_$f.athinput $J/o_vc_$f.athinput
+    a="rad_m1/closure=vet_col"; case $f in *sym*) a="$a rad_m1/c_light=100.0";; esac
+    d=$W/gate/probe_vc_$f; rm -rf $d; mkdir -p $d
+    python3 $S/pcfix.py prep $J/o_vc_$f.athinput $d/probe.athinput
+    (cd $d && mpirun -np 1 --oversubscribe $W/bin/athena_new_none_cpu -i $d/probe.athinput -d $d time/nlim=1 $a > log.txt 2>&1
+     python3 $S/pcfix.py $d $J/o_vc_$f.athinput) &
+  done; wait
   for t in ref new; do
     for f in $L; do
       a=""; np=1
       case $f in *sym*) a="time/nlim=200"; np=4;; *atm_vc*) a="mesh/nx1=64 meshblock/nx1=64 time/nlim=300";; *atm_be*|*str_vc*) a="mesh/nx1=32 meshblock/nx1=32 time/nlim=200";; *bin_vc*) a="time/nlim=100";; esac
       run ${g}_$f $t none $np $J/o_$f.athinput $a
-      case $f in *sym*) run ${g}_vc_$f $t none $np $J/o_$f.athinput $a rad_m1/closure=vet_col rad_m1/c_light=100.0;;
-                 *sph_fs*) run ${g}_vc_$f $t none $np $J/o_$f.athinput rad_m1/closure=vet_col;; esac
+      case $f in *sym*) run ${g}_vc_$f $t none $np $J/o_vc_$f.athinput $a rad_m1/closure=vet_col rad_m1/c_light=100.0;;
+                 *sph_fs*) run ${g}_vc_$f $t none $np $J/o_vc_$f.athinput rad_m1/closure=vet_col;; esac
     done
   done; wait
   for d in $W/gate/${g}_*; do cmpd $(basename $d); done;;
@@ -101,6 +119,26 @@ O)  # an OLD restart (written by ref, keys absent) continued by ref and by new: 
     for t in ref new; do rrun O_$c $t none 4 $W/gate/O_src_$c/ref/rst/sd.00001.rst; done
   done; wait
   for c in vc vcr ed; do cmpd O_$c; grep -h "NON-CONV" $W/gate/O_$c/new/log.txt | cut -c1-140; done;;
+O2|R2)  # the implicit_precond default (mg_gc on sp): sp_sph_atm_vc (no precond key) with a
+  # restart every 150 cycles.  O2: the ref-written restart continued by ref and new
+  # (keeps rbgs_fwd, bitwise); R2: new straight vs restart (mg_gc echoed, bitwise)
+  python3 - $I/sp_sph_atm_vc.athinput $J/rst_atm.athinput <<'PYEOF'
+import sys
+s = open(sys.argv[1]).read() + '\n<output99>\nfile_type = rst\ndcycle = 150\n'
+open(sys.argv[2], 'w').write(s)
+PYEOF
+  A="mesh/nx1=64 meshblock/nx1=64 time/nlim=300"
+  t=ref; [ $g = R2 ] && t=new
+  run ${g}_src $t none 1 $J/rst_atm.athinput $A; wait
+  r=$(ls $W/gate/${g}_src/$t/rst/*.00001.rst)
+  if [ $g = O2 ]; then
+    for u in ref new; do rrun O2 $u none 1 $r; done; wait; cmpd O2
+  else
+    rrun R2_rst new none 1 $r; wait
+    python3 $S/rstcmp.py $W/gate/R2_src/new $W/gate/R2_rst/new
+  fi
+  grep -h "NON-CONV" $W/gate/${g}*/*/log.txt | cut -c1-140
+  for f in $W/gate/${g}*/*/rst/*.00002.rst; do echo "$f: $(grep -a -m1 '^implicit_precond ' $f)"; done;;
 R)  # restart with the NEW defaults (keys absent): straight vs restart at cycle 250
   for c in vc vcr ed; do
     a="rad_m1/c_light=100.0"

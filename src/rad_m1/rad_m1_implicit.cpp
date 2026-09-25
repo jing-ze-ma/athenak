@@ -522,8 +522,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_stencil && impl_bcg_sync != 1) {
     ImplFatal("<rad_m1>/implicit_op_stencil needs implicit_bcg_sync = 1");
   }
-  {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond",
-                                        fdef ? "rbgs_fwd" : "line");
+  // m1-sp-order2b: on the spherical-polar wedge the fast-path default is mg_gc (with
+  // implicit_mg_levels = 1: rbgs_fwd + the global band coarse space; runs_5p_coarse2:
+  // wedge vet_col 13.1 -> 1.1 it/solve, -18 %/-22 % ms/cycle at 1/2 GPUs).  A restart
+  // whose file lacks the key keeps rbgs_fwd; the resolved value is echoed.
+  const char *pcdef = fdef ? ((sph_geom && !global_variable::restart_run) ? "mg_gc"
+                                                                        : "rbgs_fwd")
+                           : "line";
+  {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond", pcdef);
   if (pc.compare("line") == 0) {
     impl_prec = 0;
   } else if (pc.compare("rbgs") == 0) {

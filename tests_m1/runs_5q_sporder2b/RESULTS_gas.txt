@@ -1,0 +1,138 @@
+mvr_u          old        E L1 1.24e-03 2.94e-04 7.56e-05 3.02e-05 | orders  2.08  1.96  1.32
+mvr_u          old        F1 L1 5.31e-03 1.03e-03 2.19e-04 5.68e-05 | orders  2.36  2.24  1.95
+mvr_u          old        T L1 1.25e-03 3.14e-04 7.96e-05 1.98e-05 | orders  1.99  1.98  2.01
+mvr_u          old        M1 L1 4.06e-03 7.72e-04 1.53e-04 3.43e-05 | orders  2.40  2.33  2.16
+mvr_u          old        Eg L1 1.25e-03 3.18e-04 8.14e-05 1.99e-05 | orders  1.97  1.97  2.03
+mvr_u          new        E L1 1.25e-03 3.17e-04 7.96e-05 1.93e-05 | orders  1.98  1.99  2.05
+mvr_u          new        F1 L1 5.37e-03 1.02e-03 2.12e-04 5.35e-05 | orders  2.39  2.28  1.98
+mvr_u          new        T L1 1.25e-03 3.14e-04 7.96e-05 1.98e-05 | orders  1.99  1.98  2.01
+mvr_u          new        M1 L1 4.06e-03 7.72e-04 1.53e-04 3.43e-05 | orders  2.40  2.33  2.16
+mvr_u          new        Eg L1 1.25e-03 3.18e-04 8.14e-05 1.99e-05 | orders  1.97  1.97  2.03
+mvr_u          novimp     E L1 1.26e-03 3.00e-04 7.66e-05 3.03e-05 | orders  2.08  1.97  1.34
+mvr_u          novimp     F1 L1 5.32e-03 1.03e-03 2.19e-04 5.71e-05 | orders  2.36  2.24  1.94
+mvr_u          novimp     T L1 1.25e-03 3.14e-04 7.96e-05 1.98e-05 | orders  1.99  1.98  2.01
+mvr_u          novimp     M1 L1 4.06e-03 7.72e-04 1.53e-04 3.43e-05 | orders  2.40  2.33  2.16
+mvr_u          novimp     Eg L1 1.25e-03 3.18e-04 8.14e-05 1.99e-05 | orders  1.97  1.97  2.03
+mvr_u          vold       E L1 1.24e-03 2.94e-04 7.56e-05 3.02e-05 | orders  2.08  1.96  1.32
+mvr_u          vold       F1 L1 5.31e-03 1.03e-03 2.19e-04 5.68e-05 | orders  2.36  2.24  1.94
+mvr_u          vold       T L1 1.25e-03 3.14e-04 7.96e-05 1.98e-05 | orders  1.99  1.98  2.01
+mvr_u          vold       M1 L1 4.06e-03 7.72e-04 1.53e-04 3.43e-05 | orders  2.40  2.33  2.16
+mvr_u          vold       Eg L1 1.25e-03 3.18e-04 8.14e-05 1.99e-05 | orders  1.97  1.97  2.03
+mvp_u          old        E L1 1.24e-02 2.82e-03 6.48e-04 1.70e-04 | orders  2.13  2.12  1.93
+mvp_u          old        F1 L1 6.38e-03 1.28e-03 2.51e-04 5.92e-05 | orders  2.32  2.35  2.08
+mvp_u          old        T L1 1.25e-03 3.14e-04 7.96e-05 1.98e-05 | orders  1.99  1.98  2.01
+mvp_u          old        M1 L1 4.06e-03 7.72e-04 1.53e-04 3.43e-05 | orders  2.40  2.33  2.16
+mvp_u          old        Eg L1 1.25e-03 3.18e-04 8.14e-05 1.99e-05 | orders  1.97  1.97  2.03
+mvp_u          new        E L1 1.24e-02 2.82e-03 6.48e-04 1.71e-04 | orders  2.13  2.12  1.92
+mvp_u          new        F1 L1 6.38e-03 1.28e-03 2.51e-04 5.90e-05 | orders  2.32  2.35  2.09
+mvp_u          new        T L1 1.25e-03 3.14e-04 7.96e-05 1.98e-05 | orders  1.99  1.98  2.01
+mvp_u          new        M1 L1 4.06e-03 7.72e-04 1.53e-04 3.43e-05 | orders  2.40  2.33  2.16
+mvp_u          new        Eg L1 1.25e-03 3.18e-04 8.14e-05 1.99e-05 | orders  1.97  1.97  2.03
+rsw_u          old        E L1 4.34e-02 1.11e-02 2.74e-03 6.75e-04 | orders  1.96  2.02  2.02
+rsw_u          old        F1 L1 5.53e-02 1.48e-02 3.94e-03 1.09e-03 | orders  1.90  1.91  1.85
+rsw_u          old        T L1 4.25e-02 1.09e-02 2.69e-03 6.63e-04 | orders  1.96  2.02  2.02
+rsw_u          old        M1 L1 5.21e-02 1.36e-02 3.45e-03 8.69e-04 | orders  1.93  1.98  1.99
+rsw_u          old        Eg L1 4.71e-02 1.38e-02 3.76e-03 9.68e-04 | orders  1.77  1.88  1.96
+rsw_u          new        E L1 4.34e-02 1.12e-02 2.76e-03 6.84e-04 | orders  1.96  2.02  2.01
+rsw_u          new        F1 L1 5.43e-02 1.42e-02 3.59e-03 9.05e-04 | orders  1.94  1.98  1.99
+rsw_u          new        T L1 4.26e-02 1.10e-02 2.72e-03 6.74e-04 | orders  1.96  2.01  2.01
+rsw_u          new        M1 L1 5.22e-02 1.37e-02 3.48e-03 8.81e-04 | orders  1.93  1.98  1.98
+rsw_u          new        Eg L1 4.72e-02 1.39e-02 3.78e-03 9.79e-04 | orders  1.77  1.88  1.95
+rsw_u          novimp     E L1 2.94e-02 5.72e-03 1.18e-03 4.03e-04 | orders  2.36  2.28  1.54
+rsw_u          novimp     F1 L1 3.21e-02 6.89e-03 1.56e-03 5.42e-04 | orders  2.22  2.15  1.52
+rsw_u          novimp     T L1 2.89e-02 5.74e-03 1.17e-03 3.99e-04 | orders  2.33  2.30  1.55
+rsw_u          novimp     M1 L1 3.08e-02 6.30e-03 1.12e-03 2.87e-04 | orders  2.29  2.49  1.96
+rsw_u          novimp     Eg L1 3.64e-02 7.20e-03 1.22e-03 4.61e-04 | orders  2.34  2.56  1.41
+rsw_u          vold       E L1 4.34e-02 1.12e-02 2.76e-03 6.84e-04 | orders  1.96  2.02  2.01
+rsw_u          vold       F1 L1 5.54e-02 1.49e-02 3.97e-03 1.10e-03 | orders  1.90  1.90  1.85
+rsw_u          vold       T L1 4.26e-02 1.10e-02 2.71e-03 6.73e-04 | orders  1.96  2.02  2.01
+rsw_u          vold       M1 L1 5.21e-02 1.37e-02 3.48e-03 8.81e-04 | orders  1.93  1.98  1.98
+rsw_u          vold       Eg L1 4.72e-02 1.39e-02 3.78e-03 9.77e-04 | orders  1.77  1.88  1.95
+rsw_edd_u      new        E L1 4.33e-02 1.11e-02 2.72e-03 6.63e-04 | orders  1.97  2.03  2.04
+rsw_edd_u      new        F1 L1 5.42e-02 1.40e-02 3.53e-03 8.77e-04 | orders  1.95  1.99  2.01
+rsw_edd_u      new        T L1 4.24e-02 1.09e-02 2.67e-03 6.53e-04 | orders  1.96  2.03  2.03
+rsw_edd_u      new        M1 L1 5.20e-02 1.36e-02 3.43e-03 8.54e-04 | orders  1.94  1.99  2.00
+rsw_edd_u      new        Eg L1 4.71e-02 1.38e-02 3.75e-03 9.60e-04 | orders  1.77  1.88  1.96
+rsw_u_T        old        E L1 7.28e-04 1.88e-04 5.03e-05 1.44e-05 | orders  1.96  1.90  1.80
+rsw_u_T        old        F1 L1 4.29e-03 2.13e-03 1.06e-03 5.31e-04 | orders  1.01  1.00  1.00
+rsw_u_T        old        T L1 8.60e-04 2.27e-04 6.13e-05 1.72e-05 | orders  1.92  1.89  1.83
+rsw_u_T        old        M1 L1 7.94e-04 2.04e-04 5.44e-05 1.55e-05 | orders  1.96  1.91  1.81
+rsw_u_T        old        Eg L1 2.36e-03 5.95e-04 1.51e-04 3.87e-05 | orders  1.99  1.98  1.96
+rsw_u_T        new        E L1 7.04e-04 1.75e-04 4.39e-05 1.11e-05 | orders  2.01  2.00  1.98
+rsw_u_T        new        F1 L1 7.38e-04 1.83e-04 4.58e-05 1.15e-05 | orders  2.01  2.00  1.99
+rsw_u_T        new        T L1 8.40e-04 2.17e-04 5.57e-05 1.42e-05 | orders  1.95  1.97  1.97
+rsw_u_T        new        M1 L1 7.71e-04 1.92e-04 4.78e-05 1.20e-05 | orders  2.01  2.00  2.00
+rsw_u_T        new        Eg L1 2.34e-03 5.82e-04 1.44e-04 3.52e-05 | orders  2.01  2.02  2.03
+rsw_u_T        novimp     E L1 6.07e-03 2.79e-03 1.33e-03 6.52e-04 | orders  1.12  1.06  1.03
+rsw_u_T        novimp     F1 L1 9.05e-03 4.22e-03 2.04e-03 1.00e-03 | orders  1.10  1.05  1.02
+rsw_u_T        novimp     T L1 5.85e-03 2.71e-03 1.30e-03 6.39e-04 | orders  1.11  1.06  1.03
+rsw_u_T        novimp     M1 L1 6.26e-03 2.84e-03 1.35e-03 6.60e-04 | orders  1.14  1.07  1.04
+rsw_u_T        novimp     Eg L1 8.40e-03 3.82e-03 1.81e-03 8.83e-04 | orders  1.14  1.07  1.04
+rsw_u_T        vold       E L1 7.26e-04 1.87e-04 4.97e-05 1.41e-05 | orders  1.96  1.91  1.82
+rsw_u_T        vold       F1 L1 4.29e-03 2.13e-03 1.06e-03 5.31e-04 | orders  1.01  1.00  1.00
+rsw_u_T        vold       T L1 8.58e-04 2.26e-04 6.06e-05 1.69e-05 | orders  1.92  1.90  1.85
+rsw_u_T        vold       M1 L1 7.93e-04 2.03e-04 5.39e-05 1.53e-05 | orders  1.96  1.91  1.82
+rsw_u_T        vold       Eg L1 2.36e-03 5.94e-04 1.50e-04 3.84e-05 | orders  1.99  1.99  1.97
+mvr_u_T        old        E L1 1.03e-04 5.88e-05 2.93e-05 1.52e-05 | orders  0.81  1.00  0.94
+mvr_u_T        old        F1 L1 2.28e-04 3.89e-05 2.01e-05 4.53e-06 | orders  2.55  0.95  2.15
+mvr_u_T        old        T L1 8.89e-05 2.21e-05 5.48e-06 1.37e-06 | orders  2.01  2.01  2.00
+mvr_u_T        old        M1 L1 1.30e-04 3.25e-05 8.17e-06 2.05e-06 | orders  2.00  1.99  2.00
+mvr_u_T        old        Eg L1 9.70e-05 2.41e-05 5.98e-06 1.49e-06 | orders  2.01  2.01  2.00
+mvr_u_T        new        E L1 1.00e-04 2.70e-05 6.83e-06 1.74e-06 | orders  1.89  1.98  1.98
+mvr_u_T        new        F1 L1 1.89e-04 4.91e-05 1.24e-05 3.13e-06 | orders  1.94  1.99  1.98
+mvr_u_T        new        T L1 8.89e-05 2.21e-05 5.48e-06 1.37e-06 | orders  2.01  2.01  2.00
+mvr_u_T        new        M1 L1 1.30e-04 3.25e-05 8.17e-06 2.05e-06 | orders  2.00  1.99  2.00
+mvr_u_T        new        Eg L1 9.70e-05 2.41e-05 5.98e-06 1.49e-06 | orders  2.01  2.01  2.00
+mvr_u_T        novimp     E L1 1.03e-04 5.88e-05 2.93e-05 1.52e-05 | orders  0.81  1.00  0.94
+mvr_u_T        novimp     F1 L1 2.28e-04 3.89e-05 2.01e-05 4.53e-06 | orders  2.55  0.95  2.15
+mvr_u_T        novimp     T L1 8.89e-05 2.21e-05 5.48e-06 1.37e-06 | orders  2.01  2.01  2.00
+mvr_u_T        novimp     M1 L1 1.30e-04 3.25e-05 8.17e-06 2.05e-06 | orders  2.00  1.99  2.00
+mvr_u_T        novimp     Eg L1 9.70e-05 2.41e-05 5.98e-06 1.49e-06 | orders  2.01  2.01  2.00
+mvr_u_T        vold       E L1 1.03e-04 5.88e-05 2.93e-05 1.52e-05 | orders  0.81  1.00  0.94
+mvr_u_T        vold       F1 L1 2.28e-04 3.89e-05 2.01e-05 4.53e-06 | orders  2.55  0.95  2.15
+mvr_u_T        vold       T L1 8.89e-05 2.21e-05 5.48e-06 1.37e-06 | orders  2.01  2.01  2.00
+mvr_u_T        vold       M1 L1 1.30e-04 3.25e-05 8.17e-06 2.05e-06 | orders  2.00  1.99  2.00
+mvr_u_T        vold       Eg L1 9.70e-05 2.41e-05 5.98e-06 1.49e-06 | orders  2.01  2.01  2.00
+mvrs_u_T       new        E L1 2.13e-04 5.31e-05 1.33e-05 3.30e-06 | orders  2.00  2.00  2.01
+mvrs_u_T       new        F1 L1 1.29e-04 3.20e-05 7.96e-06 1.96e-06 | orders  2.01  2.01  2.02
+mvrs_u_T       new        T L1 8.89e-05 2.21e-05 5.48e-06 1.37e-06 | orders  2.01  2.01  2.00
+mvrs_u_T       new        M1 L1 1.30e-04 3.25e-05 8.17e-06 2.05e-06 | orders  2.00  1.99  2.00
+mvrs_u_T       new        Eg L1 9.70e-05 2.41e-05 5.98e-06 1.49e-06 | orders  2.01  2.01  2.00
+mvrs_u_T       vold       E L1 5.62e-04 2.36e-04 1.07e-04 5.07e-05 | orders  1.25  1.14  1.08
+mvrs_u_T       vold       F1 L1 2.50e-04 1.01e-04 4.37e-05 2.34e-05 | orders  1.31  1.20  0.90
+mvrs_u_T       vold       T L1 8.89e-05 2.21e-05 5.48e-06 1.37e-06 | orders  2.01  2.01  2.00
+mvrs_u_T       vold       M1 L1 1.30e-04 3.25e-05 8.17e-06 2.05e-06 | orders  2.00  1.99  2.00
+mvrs_u_T       vold       Eg L1 9.70e-05 2.41e-05 5.98e-06 1.49e-06 | orders  2.01  2.01  2.00
+mvp_u_T        new        E L1 1.88e-04 4.70e-05 1.18e-05 2.94e-06 | orders  2.00  2.00  2.00
+mvp_u_T        new        F1 L1 1.24e-04 3.10e-05 7.77e-06 1.95e-06 | orders  2.00  2.00  2.00
+mvp_u_T        new        T L1 8.89e-05 2.21e-05 5.48e-06 1.37e-06 | orders  2.01  2.01  2.00
+mvp_u_T        new        M1 L1 1.30e-04 3.25e-05 8.17e-06 2.05e-06 | orders  2.00  1.99  2.00
+mvp_u_T        new        Eg L1 9.70e-05 2.41e-05 5.98e-06 1.49e-06 | orders  2.01  2.01  2.00
+lat_th_mvt     old        E L1 4.46e-03 1.35e-03 3.55e-04 | orders  1.73  1.92
+lat_th_mvt     old        F1 L1 2.60e-02 8.11e-03 2.44e-03 | orders  1.68  1.73
+lat_th_mvt     old        F2 L1 9.79e-03 2.04e-03 4.46e-04 | orders  2.26  2.19
+lat_th_mvt     old        T L1 4.37e-03 1.32e-03 3.54e-04 | orders  1.73  1.90
+lat_th_mvt     old        M1 L1 2.89e-02 8.63e-03 2.50e-03 | orders  1.74  1.79
+lat_th_mvt     old        Eg L1 4.27e-03 1.32e-03 3.54e-04 | orders  1.69  1.90
+lat_th_mvt     old        M2 L1 9.05e-03 1.74e-03 3.58e-04 | orders  2.38  2.28
+lat_th_mvt     new        E L1 4.46e-03 1.35e-03 3.59e-04 | orders  1.72  1.91
+lat_th_mvt     new        F1 L1 2.60e-02 8.11e-03 2.44e-03 | orders  1.68  1.73
+lat_th_mvt     new        F2 L1 9.78e-03 2.06e-03 4.43e-04 | orders  2.25  2.22
+lat_th_mvt     new        T L1 4.37e-03 1.32e-03 3.54e-04 | orders  1.73  1.90
+lat_th_mvt     new        M1 L1 2.89e-02 8.63e-03 2.50e-03 | orders  1.74  1.79
+lat_th_mvt     new        Eg L1 4.27e-03 1.32e-03 3.54e-04 | orders  1.69  1.90
+lat_th_mvt     new        M2 L1 9.05e-03 1.74e-03 3.58e-04 | orders  2.38  2.28
+lat_th_mvt     novimp     E L1 4.49e-03 1.36e-03 3.58e-04 | orders  1.73  1.92
+lat_th_mvt     novimp     F1 L1 2.60e-02 8.11e-03 2.44e-03 | orders  1.68  1.73
+lat_th_mvt     novimp     F2 L1 9.81e-03 2.05e-03 4.47e-04 | orders  2.26  2.19
+lat_th_mvt     novimp     T L1 4.37e-03 1.32e-03 3.54e-04 | orders  1.73  1.90
+lat_th_mvt     novimp     M1 L1 2.89e-02 8.63e-03 2.50e-03 | orders  1.74  1.79
+lat_th_mvt     novimp     Eg L1 4.27e-03 1.32e-03 3.54e-04 | orders  1.69  1.90
+lat_th_mvt     novimp     M2 L1 9.05e-03 1.74e-03 3.58e-04 | orders  2.38  2.28
+lat_th_mvt     vold       E L1 4.46e-03 1.35e-03 3.55e-04 | orders  1.73  1.92
+lat_th_mvt     vold       F1 L1 2.60e-02 8.11e-03 2.44e-03 | orders  1.68  1.73
+lat_th_mvt     vold       F2 L1 9.79e-03 2.04e-03 4.46e-04 | orders  2.26  2.19
+lat_th_mvt     vold       T L1 4.37e-03 1.32e-03 3.54e-04 | orders  1.73  1.90
+lat_th_mvt     vold       M1 L1 2.89e-02 8.63e-03 2.50e-03 | orders  1.74  1.79
+lat_th_mvt     vold       Eg L1 4.27e-03 1.32e-03 3.54e-04 | orders  1.69  1.90
+lat_th_mvt     vold       M2 L1 9.05e-03 1.74e-03 3.58e-04 | orders  2.38  2.28

@@ -13,7 +13,8 @@
 # sp keys named (96 x 128 x 128, 16 blocks on 2 GPUs, 20 steps); (2) correctness: the
 # T-S4 vet_col wedge (n = 64, 100 steps, hesdirk2, new sp defaults) and the same with a
 # reflecting top, 1 GPU, compared with CPU afterwards; (3) cost on the He wedge grid:
-# old keys vs new defaults (predict) vs time2_vet_col = rebuild, same binary,
+# old keys vs new defaults with rbgs_fwd (pre) vs new defaults (mg_gc 1) vs
+# time2_vet_col = rebuild, same binary,
 # interleaved, 2 repeats, 40 steps
 module purge
 module load gcc/14 rocm/6.3 openmpi_gpu/5.0
@@ -45,10 +46,10 @@ done
 run ts4g new none 1 -i $J/ts4_h2.athinput mesh/nx1=64 meshblock/nx1=64 time/nlim=100 output1/dcycle=100 output2/dcycle=100
 run ts4r new none 1 -i $J/ts4_h2.athinput mesh/nx1=64 meshblock/nx1=64 time/nlim=100 output1/dcycle=100 output2/dcycle=100 rad_m1/implicit_bc_x1max=reflect
 for r in 1 2; do
-  if [ $r = 1 ]; then A="old def reb"; else A="reb def old"; fi
+  if [ $r = 1 ]; then A="old pre def reb"; else A="reb def pre old"; fi
   for a in $A; do run hw_${a}_$r new none 2 -i $J/hw_$a.athinput; done
 done
-for a in old def reb; do for r in 1 2; do d=$G/hw_${a}_$r/new
-  echo "== hw_${a}_$r: $(grep -h 'cpu time used' $d/log.txt | tr '\n' ' ') $(grep -h 'NON-CONV\|inner iterations mean\|vet_col.*build\|time2_vet_col=' $d/log.txt | tr '\n' ' ') $(tail -n1 $d/log.txt)"
+for a in old pre def reb; do for r in 1 2; do d=$G/hw_${a}_$r/new
+  echo "== hw_${a}_$r: $(grep -h 'cpu time used' $d/log.txt | tr '\n' ' ') $(grep -ho 'NON-CONVERGED=[0-9.e+]*\|inner iterations mean=[0-9.e+]*\|[0-9.e+-]* ms per build\|time2_vet_col=[a-z]*' $d/log.txt | tr '\n' ' ') $(tail -n1 $d/log.txt)"
 done; done
 echo GPU DONE
