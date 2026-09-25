@@ -470,7 +470,8 @@ class RadiationM1 {
                                 // original), 1 = symmetric red-black transverse line
                                 // Gauss-Seidel, block-local (no communication), 2 = its
                                 // forward half (red, black), 3 = mg (rbgs_fwd + block-
-                                // local semicoarsened levels, rad_m1_precond.cpp)
+                                // local semicoarsened levels, rad_m1_precond.cpp), 4 =
+                                // mg_gc (mg + the global band coarse space)
   // ---- multi-rank Krylov (tests_m1/runs_3w_krylov, rad_m1_krylov.cpp).  Both keys
   // default OFF; off, nothing below is allocated and the path is bitwise the old one.
   bool impl_kpipe;              // <rad_m1>/implicit_krylov_pipe: pipelined (Cools-
@@ -539,6 +540,31 @@ class RadiationM1 {
   std::vector<int> mg_nj, mg_nk;        // per level (level 0 = the MeshBlock)
   void ImplicitMGBuild();
   void ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2);
+  // implicit_precond = mg_gc (rad_m1_precond.cpp, tests_m1/runs_5p_coarse2): a GLOBAL
+  // coarse space of per-x1-layer (x2,x3)-band means in front of mg; used only under it
+  bool gc_on = false;
+  int gc_b2 = 1, gc_b3 = 1;     // <rad_m1>/implicit_gc_bands2 / _bands3
+  int gc_nb = 1, gc_n1 = 0;     // bands, global x1 cells
+  int gc_n2 = 0, gc_n3 = 0;     // global x2 / x3 cells
+  int gc_nlb2 = 1, gc_nlb = 1;  // band slots per block: in x2, in all
+  int gc_kl = 0;                // half bandwidth of the coarse matrix
+  int gc_nrc = 1;               // row chunks of the band reductions
+  bool gc_per2 = false, gc_per3 = false;   // periodic x2 / x3 mesh boundaries
+  bool gc_ok = false;           // the coarse factorisation of this pass is usable
+  DvceArray5D<Real> gcw;        // (m,5,k,j,i) nbands = 1: row sums of A per x1 offset
+  DvceArray1D<Real> gc_pd;      // (m,k,lb2,q,i) partial band sums over x2 (device)
+  DvceArray1D<int> gc_off;      // (m*3) global fine offsets x1, x2, x3 of each block
+  DvceArray1D<int> gc_binfo;    // (m*nlb*5) band id (or -1), j0, j1, k0, k1 (local)
+  std::vector<int> gc_binfo_h, gc_off_h, gc_piv;
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gc_part;  // (m,lb,q,c,i) band sums
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gc_x;     // (gi*nb + b) x_g
+  std::vector<Real> gc_lu, gc_g;  // banded LU of the coarse matrix, right-hand side
+  void ImplicitGCInit();
+  void ImplicitGCSum(int nq);
+  void ImplicitGCBuild();
+  void ImplicitGCPre(int rc, int upd, Real c1, Real c2);
+  void ImplicitGCAdd(int zc);
+  bool impl_rho_direct = false;  // <rad_m1>/implicit_bcg_rho_direct (krylov_fuse = 3)
   int impl_dump_cyc;            // <rad_m1>/implicit_dump_op (debug, rad_m1_precond.cpp)
   bool impl_dump_done;
   void ImplicitDumpOp();

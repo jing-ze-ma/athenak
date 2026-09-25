@@ -532,9 +532,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_prec = 2;
   } else if (pc.compare("mg") == 0) {
     impl_prec = 3;
+  } else if (pc.compare("mg_gc") == 0) {
+    impl_prec = 4;
   } else {
     ImplFatal("<rad_m1>/implicit_precond = '" + pc
-              + "' is not a choice (line | rbgs | rbgs_fwd | mg)");
+              + "' is not a choice (line | rbgs | rbgs_fwd | mg | mg_gc)");
   }
   }
   // implicit_precond = mg (rad_m1_precond.cpp, tests_m1/runs_5m_precond): keys read only
@@ -545,6 +547,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",2);
     mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
     if (mg_nlev < 2) {ImplFatal("<rad_m1>/implicit_mg_levels must be >= 2");}
+  }
+  // implicit_precond = mg_gc (rad_m1_precond.cpp, tests_m1/runs_5p_coarse2): mg with
+  // implicit_mg_levels >= 1 (1 = rbgs_fwd + the global coarse space only) plus the
+  // global band coarse space; its keys are read only under mg_gc
+  if (impl_prec == 4) {
+    mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",1);
+    mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
+    if (mg_nlev < 1) {ImplFatal("<rad_m1>/implicit_mg_levels must be >= 1 (mg_gc)");}
+    gc_b2 = pin->GetOrAddInteger("rad_m1","implicit_gc_bands2",1);
+    gc_b3 = pin->GetOrAddInteger("rad_m1","implicit_gc_bands3",1);
+    gc_on = true;
+  }
+  // implicit_bcg_rho_direct (runs_5p_coarse2; read only when named, default false =
+  // the recurrence, bitwise): implicit_krylov_fuse = 3 sums (rhat, r) directly
+  impl_rho_direct = false;
+  if (pin->DoesParameterExist("rad_m1","implicit_bcg_rho_direct")) {
+    impl_rho_direct = pin->GetBoolean("rad_m1","implicit_bcg_rho_direct");
   }
   if (impl_kfuse < 0 || impl_kfuse > 3) {
     ImplFatal("<rad_m1>/implicit_krylov_fuse must be 0, 1, 2 or 3");
@@ -616,8 +635,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_krylov_dev")) {
     impl_kdev = pin->GetInteger("rad_m1","implicit_krylov_dev");
     if (impl_kdev < 0) {ImplFatal("<rad_m1>/implicit_krylov_dev must be >= 0");}
-    if (impl_kdev > 0 && impl_prec == 3) {
-      ImplFatal("<rad_m1>/implicit_krylov_dev does not take implicit_precond = mg");
+    if (impl_kdev > 0 && impl_prec >= 3) {
+      ImplFatal("<rad_m1>/implicit_krylov_dev does not take implicit_precond = mg(_gc)");
     }
     if (impl_kdev > 0 && (impl_kfuse != 3 || impl_kpipe || !impl_halo_direct)) {
       ImplFatal("<rad_m1>/implicit_krylov_dev needs implicit_krylov_fuse = 3, "
@@ -2994,7 +3013,7 @@ void RadiationM1::ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, i
 //!  implicit_precond = rbgs_fwd: the forward half only (red, black).
 
 void RadiationM1::ImplicitPrecondX(int rc, int zc, int upd, Real c1, Real c2) {
-  if (impl_prec == 3) {
+  if (impl_prec >= 3) {
     ImplicitMGApply(rc, zc, upd, c1, c2);
     return;
   }
@@ -4969,7 +4988,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   const int kf = impl_kfuse;   // implicit_krylov_fuse (needs bcg_sync = 1, pcr)
   if (impl_stencil) {ImplicitStencilBuild();}   // the operator of this pass, once
   if (impl_stencil && impl_dump_cyc >= 0) {ImplicitDumpOp();}
-  if (impl_prec == 3) {ImplicitMGBuild();}      // the coarse rows of this pass
+  if (impl_prec >= 3) {ImplicitMGBuild();}      // the coarse rows of this pass
   if (kf == 3 && impl_kpipe) {return ImplicitBiCGStabPipe(rhsmax);}
   if (kf == 3 && ImplicitKrylovDevOK()) {return ImplicitBiCGStabDev(rhsmax);}
   if (kf == 3) {return ImplicitBiCGStabTwo(rhsmax);}
@@ -5350,13 +5369,33 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
         const Real ts = red.s0, tt2 = red.s1, rt = red.s2;
         omega = (tt2 > 0.0) ? (ts/tt2) : 0.0;
         const Real al = alpha, ow = omega;
-        par_for("m1_impl_bcg2_upd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          iw_(m,M1_IW_KX,k,j,i) += al*iw_(m,M1_IW_KY,k,j,i) + ow*iw_(m,M1_IW_KZ,k,j,i);
-          iw_(m,M1_IW_KR,k,j,i) = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
-        });
         rho = rhon;
-        rhon = rhon - alpha*rv - omega*rt;
+        if (impl_rho_direct) {
+          // implicit_bcg_rho_direct (runs_5p_coarse2): (rhat, r) summed directly in the
+          // update kernel (one more blocking reduction) instead of the recurrence below,
+          // whose cancellation stalls the solve at ~1e-10 on hard systems
+          M1BcgVal ur;
+          Kokkos::parallel_reduce("m1_impl_bcg2_updr", pol,
+          KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+            int m, k, j, i;
+            M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+            k += ks; j += js; i += is;
+            iw_(m,M1_IW_KX,k,j,i) += al*iw_(m,M1_IW_KY,k,j,i) + ow*iw_(m,M1_IW_KZ,k,j,i);
+            const Real r = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
+            iw_(m,M1_IW_KR,k,j,i) = r;
+            v.s0 += iw_(m,M1_IW_KRH,k,j,i)*r;
+          }, HRed(ur));
+          M1GlobalBcg(ur);
+          bcg_nred += 1.0;
+          rhon = ur.s0;
+        } else {
+          par_for("m1_impl_bcg2_upd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+          KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+            iw_(m,M1_IW_KX,k,j,i) += al*iw_(m,M1_IW_KY,k,j,i) + ow*iw_(m,M1_IW_KZ,k,j,i);
+            iw_(m,M1_IW_KR,k,j,i) = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
+          });
+          rhon = rhon - alpha*rv - omega*rt;
+        }
         pend = true;
         if (!(fabs(omega) > M1_BCG_EPS)) {breakdown = true;}
       }
