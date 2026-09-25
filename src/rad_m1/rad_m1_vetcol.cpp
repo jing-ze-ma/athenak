@@ -1053,19 +1053,27 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
       par_for_inner(tm, 0, nray-1, [&](const int r) {
         Real irr = ir_(r);
         Real itr = rtop ? ir_(2*nray + r) : 0.0;
+        // the next shell's table entries are loaded one step ahead (the loads do not
+        // depend on the recursion, so their latency overlaps the current step)
+        Real sgn = sgt_(la,r,0), gbn = sgt_(la,r,1);
         for (int l = la; l >= lb; --l) {
           if (r > kl_(l)) break;
+          const Real sgc = sgn, gbc = gbn;
+          if (l > lb) {
+            sgn = sgt_(l-1,r,0);
+            gbn = sgt_(l-1,r,1);
+          }
           const Real ch0 = pr_(l), s0 = pr_(n1 + l);
           const bool top = (l == n1 - 1);
           const Real sup = top ? stop : pr_(n1 + l + 1);
           const Real iu = top ? (rt1 ? itr : 0.0) : irr;
           Real ex, w0, wu;
           if (g2) {
-            const Real gb = sgt_(l,r,1), chup = top ? ch0 : pr_(l+1);
-            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*sgt_(l,r,0), -VcolC2(gb), ex, w0, wu);
+            const Real gb = gbc, chup = top ? ch0 : pr_(l+1);
+            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*sgc, -VcolC2(gb), ex, w0, wu);
           } else {
             const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
-            VcolW(cseg*sgt_(l,r,0), ex, w0, wu);
+            VcolW(cseg*sgc, ex, w0, wu);
           }
           const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
           irr = iv;
@@ -1110,7 +1118,14 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         Real irr = ir_(r);
         Real itr = rtop ? ir_(2*nray + r) : 0.0;
         const int lr = static_cast<int>(ray_(r,0));
+        // the segment below shell l is (l-1, l): loaded one step ahead, as above
+        Real sgn = (la > 0) ? sgt_(la-1,r,0) : 0.0, gbn = (la > 0) ? sgt_(la-1,r,1) : 0.5;
         for (int l = la; l <= lb; ++l) {
+          const Real sgc = sgn, gbc = gbn;
+          if (l < lb) {
+            sgn = sgt_(l,r,0);
+            gbn = sgt_(l,r,1);
+          }
           if (r > kl_(l)) continue;
           const Real ch0 = pr_(l), s0 = pr_(n1 + l);
           const Real chd = (l == 0) ? 0.0 : pr_(l-1);
@@ -1121,10 +1136,10 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           Real ex, w0, wu;
           if (lr < l) {
             if (g2) {
-              const Real gb = sgt_(l-1,r,1);
-              VcolW2((chd + (ch0 - chd)*gb)*sgt_(l-1,r,0), VcolC2(gb), ex, w0, wu);
+              const Real gb = gbc;
+              VcolW2((chd + (ch0 - chd)*gb)*sgc, VcolC2(gb), ex, w0, wu);
             } else {
-              VcolW(0.5*(chd + ch0)*sgt_(l-1,r,0), ex, w0, wu);
+              VcolW(0.5*(chd + ch0)*sgc, ex, w0, wu);
             }
             iv = irr*ex + wu*sd + w0*s0;
             if (trk) {
