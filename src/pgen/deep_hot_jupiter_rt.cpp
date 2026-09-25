@@ -712,13 +712,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if ((two_stream_rt::ck_impl_floorbound || two_stream_rt::ck_impl_kkt_demax ||
        two_stream_rt::ck_impl_rsec > 0.0) &&
       (!two_stream_rt::ck_implicit || !two_stream_rt::ck_impl_fuse ||
-       two_stream_rt::ck_impl_debug > 0 || two_stream_rt::ck_impl_glob != 0 ||
-       two_stream_rt::ck_impl_aa > 0)) {
+       two_stream_rt::ck_impl_debug > 0 || two_stream_rt::ck_impl_glob != 0)) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_floorbound, "
               << "ck_impl_kkt_demax and ck_impl_rsec are implemented on the fused "
               << "ck_implicit Newton only (ck_implicit, ck_impl_fuse, "
               << "ck_impl_debug <= 0, "
-              << "ck_impl_glob = none, ck_impl_aa = 0)." << std::endl;
+              << "ck_impl_glob = none)." << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
