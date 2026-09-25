@@ -129,7 +129,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   }
 
   // Thermal conduction (only constructed if needed)
-  if (pin->DoesParameterExist("mhd","isotropic_conduction")) {
+  // isotropic_conduction = none: no conduction module at all, exactly as if the key
+  // were absent (lets a restart drop it: ck-nq2, the ck two-stream down to the wall)
+  if (pin->DoesParameterExist("mhd","isotropic_conduction") &&
+      pin->GetString("mhd","isotropic_conduction").compare("none") != 0) {
     if (peos->eos_data.is_ideal) {
       pcond = new Conduction("mhd", ppack, pin);
     } else {

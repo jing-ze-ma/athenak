@@ -95,6 +95,16 @@ inline Real ck_impl_norm_eps = 1.0e-3;
 // problem/ck_impl_dtol: also stop when the Newton STEP is small, max_i |de_i|/e_i.  Both
 // tests must pass.
 inline Real ck_impl_dtol = 1.0e-8;
+// A DEAD cell: its conserved state gives no positive internal energy, so the RT read
+// (eiN in two_stream_rt.hpp) clamped e to e(rho, tfloor) or, where even that is not
+// positive, to 1e-300.  Such a cell cannot take a Newton step -- its "heat capacity"
+// e/T is ~1e-302, so any residual asks for a temperature change of ~1e300 K -- and
+// before this guard it was coupled into its neighbours' rows through that capacity,
+// which stalled the column (measured: the wp transient, nquad = 2, a thick cell next to
+// a dead one kept its residual at 1.98e-6 for 30 passes).  It is given an identity row
+// with no step, and its neighbours' rows drop their coupling to it.  Healthy columns
+// never reach the threshold, so they are unchanged bit for bit.
+constexpr Real CkDeadE = 1.0e-250;
 // problem/ck_impl_maxit: the pass cap.  Each pass is one full ck sweep.
 inline int ck_impl_maxit = 8;
 // problem/ck_impl_dtmax: cap on |de|/e per Newton pass.  A belt, not a limiter: it is
@@ -1303,6 +1313,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           nb += 1;
           return;
         }
+        // a DEAD cell (see CkDeadE): identity row, no step
+        if (!(ei > CkDeadE)) {
+          sa(q) = 0.0;
+          sb(q) = 1.0;
+          sc(q) = 0.0;
+          sd(q) = 0.0;
+          return;
+        }
         Real cvi = ei/Ti;
         const Real eim = (q > 0) ? ei_(m,k,j,i-1) : 0.0;
         const Real Tim = (q > 0) ? T_(m,k,j,i-1) : 1.0;
@@ -1374,6 +1392,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           a = (q > 0) ? (-hh*s0*jac_(m,0,k,j,i)/cvm) : 0.0;
           b = 1.0 - hh*s1*jac_(m,1,k,j,i)/cvi;
           c = (q < n-1) ? (-hh*s2*jac_(m,2,k,j,i)/cvp) : 0.0;
+          if (!(eim > CkDeadE)) a = 0.0;          // no coupling to a dead neighbour
+          if (!(eip > CkDeadE)) c = 0.0;
           if (sub_) {
             d = -(((ei - est_(m,k,j,i)) - sacc_(m,k,j,i)) - hh*src_(m,k,j,i));
           } else {
@@ -1747,6 +1767,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   // ---- problem/ck_impl_debug: print the WORST cell of the pass, with everything the
   // row is built from.  Diagnosis only; nothing reads it.
   if (ck_impl_debug > 0) {
+    const bool dbg2_ = (ck_impl_debug >= 2);
     const Real rmax = hc(0);
     const Real emref = ck_impl_norm_eps;
     par_for("ck_impl_dbg", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -1767,6 +1788,21 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
                          m, k, j, i, s, ei_(m,k,j,i), est_(m,k,j,i), src_(m,k,j,i),
                          emc, (emc > 0.0) ? (src_(m,k,j,i) + emc)/emc : -1.0,
                          (thk_(m,k,j,i) > 0.0) ? 1 : 0, T_(m,k,j,i), bdt);
+          // ck_impl_debug >= 2: every cell of this column the call has moved by more
+          // than 20 % so far, or whose Jacobian diagonal is not negative, with its row
+          if (dbg2_) {
+            for (int i2=ic; i2<ie+1; ++i2) {
+              const Real e2 = ei_(m,k,j,i2), d2 = dep_(m,k,j,i2);
+              if ((e2 > 0.0 && fabs(d2) > 0.2*e2) || !(jac_(m,1,k,j,i2) < 0.0)) {
+                Kokkos::printf("### ckcap i=%d e=%.5e dep=%.5e est=%.5e T=%.4e "
+                               "src=%.5e em=%.5e thick=%d jac=%.4e %.4e %.4e\n",
+                               i2, e2, d2, est_(m,k,j,i2), T_(m,k,j,i2),
+                               src_(m,k,j,i2), em_(m,k,j,i2),
+                               (thk_(m,k,j,i2) > 0.0) ? 1 : 0, jac_(m,0,k,j,i2),
+                               jac_(m,1,k,j,i2), jac_(m,2,k,j,i2));
+              }
+            }
+          }
           return;
         }
       }
@@ -1873,6 +1909,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         b = 1.0 - bdt*s1*jac_(m,1,k,j,i)/cvi;
         c = (q < n-1) ? (-bdt*s2*jac_(m,2,k,j,i)/cvp) : 0.0;
         d = -(ei - est_(m,k,j,i) - bdt*src_(m,k,j,i));
+        if (!(eim > CkDeadE)) a = 0.0;            // no coupling to a dead neighbour
+        if (!(eip > CkDeadE)) c = 0.0;
+      }
+      if (!(ei > CkDeadE)) {                      // a DEAD cell: identity row, no step
+        a = 0.0;
+        b = 1.0;
+        c = 0.0;
+        d = 0.0;
       }
       if (!(b > 0.0)) {
         bad = true;

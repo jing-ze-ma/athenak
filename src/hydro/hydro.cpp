@@ -102,7 +102,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
 
   // Thermal conduction (if requested in input file)
-  if (pin->DoesParameterExist("hydro","isotropic_conduction")) {
+  // isotropic_conduction = none: no conduction module at all, exactly as if the key
+  // were absent (lets a restart drop it: ck-nq2, the ck two-stream down to the wall)
+  if (pin->DoesParameterExist("hydro","isotropic_conduction") &&
+      pin->GetString("hydro","isotropic_conduction").compare("none") != 0) {
     if (peos->eos_data.is_ideal) {
       pcond = new Conduction("hydro", ppack, pin);
     } else {
