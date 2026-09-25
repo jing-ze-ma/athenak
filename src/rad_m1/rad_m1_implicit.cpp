@@ -726,6 +726,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
+  // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2): read only when
+  // named, so an input without it keeps its parameter dump and the cell form
+  if (pin->DoesParameterExist("rad_m1","implicit_marshak_face")) {
+    const std::string smf = pin->GetString("rad_m1","implicit_marshak_face");
+    if (smf.compare("cell") == 0) {
+      impl_mface_lin = false;
+    } else if (smf.compare("linear") == 0) {
+      impl_mface_lin = true;
+    } else {
+      ImplFatal("<rad_m1>/implicit_marshak_face = '" + smf
+                + "' is not a choice (cell | linear)");
+    }
+    if (impl_mface_lin && !sph_geom) {
+      ImplFatal("<rad_m1>/implicit_marshak_face = linear is implemented on the "
+                "spherical-polar wedge only");
+    }
+  }
   // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
   // that does not name them reproduces RESULTS.txt of runs_3a exactly.
   std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux","central");
@@ -6895,6 +6912,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto cx2v = pmy_pack->pcoord->x2v;
     auto cx3v = pmy_pack->pcoord->x3v;
     auto cx1f = pmy_pack->pcoord->xx1f;
+    // implicit_marshak_face = linear (sp): the Marshak faces take the face E
+    const bool mfl = impl_mface_lin;
     // (d) assemble the tridiagonal system of every column
     // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
     const int enm = impl_enth;
@@ -7167,6 +7186,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           bb += nup*ch*mq;
           rr += nup*ch*mq*ebhi;
+          if (mfl && !vqs && ie > is) {
+            // implicit_marshak_face = linear: c q (E_f - E_bath) with E_f the face E.
+            // Not with vet_col_surface_q: its q = H(face)/J(top cell) already makes the
+            // face flux the formal solution's H with the CELL E (runs_5e); the face J it
+            // would need instead is first order (the grazing layer at the top face)
+            // The linear face E is implicit (ca, -cb in the row), the limiter remainder a
+            // deferred correction.
+            Real ca, cb;
+            M1SphMarshakCoef(cx1v(m,ie), cx1v(m,ie-1), cx1f(m,ie+1), ca, cb);
+            const Real e0 = iw_(m,M1_IW_EP,k,j,ie), e1 = iw_(m,M1_IW_EP,k,j,ie-1);
+            const Real dl = M1SphMarshakFaceE(e0, e1, cx1v(m,ie), cx1v(m,ie-1),
+                                              cx1f(m,ie+1)) - (ca*e0 - cb*e1);
+            // the face flux c q E_f, and the outflowing enthalpy flux of
+            // implicit_bc_advect at the same face E
+            Real wq = nup*ch*mq;
+            if (badv && vi > 0.0) {wq += nup*cr*ai;}
+            bb += wq*(ca - 1.0);
+            aa -= wq*cb;
+            rr -= wq*dl;
+          }
           if (badv) {
             if (vi > 0.0) {
               bb += nup*cr*ai;
@@ -7233,6 +7272,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         } else if (bclo == M1_IBC_MARSHAK) {
           bb += num*ch*mq;
           rr += num*ch*mq*eblo;
+          if (mfl && ie > is) {
+            Real ca, cb;
+            M1SphMarshakCoef(cx1v(m,is), cx1v(m,is+1), cx1f(m,is), ca, cb);
+            const Real e0 = iw_(m,M1_IW_EP,k,j,is), e1 = iw_(m,M1_IW_EP,k,j,is+1);
+            const Real dl = M1SphMarshakFaceE(e0, e1, cx1v(m,is), cx1v(m,is+1),
+                                              cx1f(m,is)) - (ca*e0 - cb*e1);
+            Real wq = num*ch*mq;
+            if (badv && vi < 0.0) {wq -= num*cr*ai;}
+            bb += wq*(ca - 1.0);
+            cc -= wq*cb;
+            rr -= wq*dl;
+          }
           if (badv) {
             if (vi > 0.0) {
               rr += num*cr*ai*eblo;
@@ -7476,6 +7527,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (bc == M1_IBC_MARSHAK) {
           const Real mq = (hi && vqs) ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           fb = sgn*cl*mq*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebhi));
+          if (mfl && !(hi && vqs) && ie > is) {
+            // implicit_marshak_face = linear: the face E of the solved iterate
+            const int in = lo ? (is+1) : (ie-1);
+            const Real ef = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,ic),
+                                              iw_(m,M1_IW_EP,k,j,in), cx1v(m,ic),
+                                              cx1v(m,in), cx1f(m,i));
+            fb = sgn*cl*mq*(ef - (lo ? eblo : ebhi));
+          }
         } else if (bc == M1_IBC_FLUX) {
           fb = lo ? fxlo : fxhi;
         } else if (bc == M1_IBC_EFIX) {

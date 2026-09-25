@@ -294,6 +294,13 @@ class RadiationM1 {
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
+  // implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge only): the
+  // Marshak face flux takes the face E extrapolated from r^2 E of the two end cells
+  // (M1SphMarshakCoef in the row, limiter remainder deferred) instead of the end cell's
+  // E (the default `cell`, first order).  Read only when named.  The outer face keeps
+  // the cell form under vet_col_surface_q, whose q = H(face)/J(top cell) is built for
+  // the cell E.
+  bool impl_mface_lin = false;
   // implicit_bc_advect: a MARSHAK x1 end also carries the advected enthalpy flux
   // A E (outflow: the end cell's E; inflow: the bath).  Default off (bitwise).
   bool impl_bc_advect;
@@ -933,6 +940,10 @@ class RadiationM1 {
   bool vcol_sph;               // spherical rays (sp) or plane-parallel (Cartesian)
   bool vcol_axis_flux;         // vet_col_axis = flux: n = the M1 cell flux direction
   int vcol_nc, vcol_np, vcol_nmu, vcol_every, vcol_nray;
+  // vet_col_order2 (m1-sp-order2, default false): sp quadratic mu quadrature, S and chi
+  // linear in r along the segments, the core rays from E and F at the inner face (the
+  // mirrored incoming intensity at a reflecting inner x1)
+  bool vcol_o2 = false;
   int vcol_dump_every;         // vet_col_dump_every (0 = off)
   bool vcol_built;             // a tensor exists (vet_col_every > 1 skips builds)
   std::string vcol_dump;       // vet_col_dump: file prefix of the column dump
@@ -941,6 +952,12 @@ class RadiationM1 {
   DvceArray2D<Real> vcol_mu;   // (ray, shell): mu of the ray at the shell
   DvceArray2D<Real> vcol_w;    // (ray, shell): hemisphere quadrature weight (sum 1)
   DvceArray2D<Real> vcol_ray;  // (ray, 0..3): L (first shell), type, seg0, a_t | mu_face
+  // vet_col_order2 (sp): the mean over the segment of g(u) = (r(u) - r_a)/(r_b - r_a),
+  // u the fraction of the path from the inner end r_a (1/2 radial, ~1/3 from a tangent
+  // point): S and chi are taken linear in r, not in the path, along every segment
+  DvceArray2D<Real> vcol_gb;   // (ray, shell l): the segment from shell l to l+1 / top
+  DvceArray1D<Real> vcol_gb0;  // (ray): the first segment (core: r_in -> shell 0;
+                               // sub-ray: tangent point -> its shell)
   DvceArray1D<int> vcol_klast; // (shell): index of the last ray active at the shell
   DvceArray2D<Real> vcol_buf;  // (ray, column): the running intensity of each ray
   DvceArray5D<Real> vcol_mom;  // (m,5,k,j,i): J, H, K, S, chi of the solution (dump)

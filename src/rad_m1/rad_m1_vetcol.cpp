@@ -74,6 +74,20 @@
 //! formal solution's own H).  Lagged like the tensor (same build); the BC branches of
 //! rad_m1_implicit.cpp shadow marshak_q with it only at the outer x1 face.
 //!
+//! SECOND ORDER (vet_col_order2 = true, m1-sp-order2, tests_m1/runs_5o_sporder2; default
+//! false, bitwise).  The sp build above is order 1.1-1.4 in f_K: (a) the trapezoid in mu
+//! over p-ray nodes that crowd towards mu = 0 like sqrt(dr), (b) S and chi linear in the
+//! PATH along a segment although r is quadratic in the path near a tangent point, (c) the
+//! core rays started from the bottom CELL's E and F.  With the switch: (a) the base
+//! weights come from the piecewise-quadratic interpolant in mu (VcolQuad2, never across
+//! the core edge), then the same 1, mu, mu^2 correction; (b) S and chi are linear in r:
+//! the mean gb of g(u) = (r(u) - r_a)/(r_b - r_a) per ray-segment (host tables vcol_gb,
+//! vcol_gb0) sets the chi integral and the quadratic-in-u source weights of VcolW2; (c)
+//! the core rays start from E extrapolated to the inner face and the stored face flux
+//! f0x1, or from the mirrored incoming intensity at a reflecting inner x1.  f_K is then
+//! second order (L1 2.1 on the T-S6 (ii) state).  Only the weights and the core start
+//! change: the kernels' layout and cost are the same (+1 ms per build on the He wedge).
+//!
 //! COST AND LAYOUT.  vet_col_team = true (default): VetColBuildTeam, one team per column
 //! with the rays over the threads and the moments summed per shell by one thread in the
 //! same order, bitwise the kernel below on CPU.  vet_col_team = false: the original
@@ -183,6 +197,98 @@ bool VcolQuad(const std::vector<double> &mu, std::vector<double> &wout) {
   return ok;
 }
 
+// vet_col_quad = quadratic (m1-sp-order2, tests_m1/runs_5o_sporder2): the base weights
+// of VcolQuad from the piecewise-QUADRATIC interpolant in mu instead of the trapezoid.
+// The p-ray nodes crowd towards mu = 0 like sqrt(dr) (the rays tangent at the shells
+// below), so the trapezoid leaves an O(dr^1.5) error in J, H, K there; per interval the
+// quadratic through three neighbouring nodes (the mean of the two overlapping triples
+// where both exist) leaves O(h^4) per interval, O(dr^2) summed.  The rule never
+// straddles node `split` (the last core ray, mu_c: the core edge, where the outgoing
+// intensity may jump), a panel of one interval is the trapezoid.  Then the moment
+// correction of VcolQuad (1, mu, mu^2 exact).  Returns false (and VcolQuad's weights)
+// if a weight turns negative.
+double VcolLagInt(const double xp, const double xq, const double xr, const double lo,
+                  const double hi) {
+  // int_lo^hi (x - xq)(x - xr) dx / ((xp - xq)(xp - xr))
+  auto prim = [&](double x) {
+    return x*x*x/3.0 - 0.5*(xq + xr)*x*x + xq*xr*x;
+  };
+  return (prim(hi) - prim(lo))/((xp - xq)*(xp - xr));
+}
+
+bool VcolQuad2(const std::vector<double> &mu, const int split,
+               std::vector<double> &wout) {
+  const int kr = static_cast<int>(mu.size()) - 1;
+  std::vector<double> w(kr + 1, 0.0);
+  const int sp = std::min(std::max(split, 0), kr);
+  const int pa[2] = {0, sp}, pb[2] = {sp, kr};
+  for (int q = 0; q < 2; ++q) {
+    const int a = pa[q], b = pb[q];
+    if (b - a == 1) {
+      w[a] += 0.5*(mu[a] - mu[a+1]);
+      w[a+1] += 0.5*(mu[a] - mu[a+1]);
+      continue;
+    }
+    for (int k = a; k < b; ++k) {
+      const double lo = mu[k+1], hi = mu[k];
+      int nt = 0;
+      double wk[4] = {0.0, 0.0, 0.0, 0.0};   // weights of nodes k-1, k, k+1, k+2
+      if (k - 1 >= a) {
+        wk[0] += VcolLagInt(mu[k-1], mu[k], mu[k+1], lo, hi);
+        wk[1] += VcolLagInt(mu[k], mu[k-1], mu[k+1], lo, hi);
+        wk[2] += VcolLagInt(mu[k+1], mu[k-1], mu[k], lo, hi);
+        ++nt;
+      }
+      if (k + 2 <= b) {
+        wk[1] += VcolLagInt(mu[k], mu[k+1], mu[k+2], lo, hi);
+        wk[2] += VcolLagInt(mu[k+1], mu[k], mu[k+2], lo, hi);
+        wk[3] += VcolLagInt(mu[k+2], mu[k], mu[k+1], lo, hi);
+        ++nt;
+      }
+      for (int t = 0; t < 4; ++t) {
+        const int r = k - 1 + t;
+        if (r >= 0 && r <= kr) {w[r] += wk[t]/nt;}
+      }
+    }
+  }
+  double mm[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  for (int r = 0; r <= kr; ++r) {
+    double mq = 1.0;
+    for (int q = 0; q < 5; ++q) {mm[q] += w[r]*mq; mq *= mu[r];}
+  }
+  double A[3][4] = {{mm[0], mm[1], mm[2], 1.0}, {mm[1], mm[2], mm[3], 0.5},
+                    {mm[2], mm[3], mm[4], 1.0/3.0}
+                   };
+  for (int c = 0; c < 3; ++c) {
+    int piv = c;
+    for (int rr = c+1; rr < 3; ++rr) {
+      if (std::fabs(A[rr][c]) > std::fabs(A[piv][c])) piv = rr;
+    }
+    for (int q = 0; q < 4; ++q) {std::swap(A[c][q], A[piv][q]);}
+    for (int rr = 0; rr < 3; ++rr) {
+      if (rr == c) continue;
+      double f = A[rr][c]/A[c][c];
+      for (int q = c; q < 4; ++q) {A[rr][q] -= f*A[c][q];}
+    }
+  }
+  double ca = A[0][3]/A[0][0], cb = A[1][3]/A[1][1], cc = A[2][3]/A[2][2];
+  bool ok = std::isfinite(ca) && std::isfinite(cb) && std::isfinite(cc);
+  for (int r = 0; r <= kr && ok; ++r) {
+    double m = mu[r];
+    if (w[r]*(ca + cb*m + cc*m*m) < 0.0) {ok = false;}
+  }
+  if (!ok) {
+    VcolQuad(mu, wout);
+    return false;
+  }
+  wout.assign(kr + 1, 0.0);
+  for (int r = 0; r <= kr; ++r) {
+    double m = mu[r];
+    wout[r] = w[r]*(ca + cb*m + cc*m*m);
+  }
+  return true;
+}
+
 // ray types in vcol_ray(r, 1)
 constexpr int VC_CORE = 0;   // starts at the inner boundary sphere (face r_in)
 constexpr int VC_TAN = 1;    // tangent exactly at its first shell L
@@ -200,6 +306,39 @@ void VcolW(const Real dtau, Real &ex, Real &w0, Real &wu) {
     w0 = 1.0 - g;
     wu = g - ex;
   }
+}
+
+// vet_col_order2: the short-characteristics weights with S(u) = S_up + (S_dn - S_up)
+// (u + a2 u (u - 1)) along the segment (u = the fraction of the optical path from the
+// upstream end), a2 in [-1, 1]: a2 = 0 is VcolW (S linear in tau).  With
+// W_k = int_0^1 u^k x e^{-x(1-u)} du: w0 = (1 - a2) W1 + a2 W2 (downstream end),
+// wu = (1 - e^-x) - w0 (upstream end); both >= 0 (the profile is monotone in u).
+KOKKOS_INLINE_FUNCTION
+void VcolW2(const Real dtau, const Real a2, Real &ex, Real &w0, Real &wu) {
+  ex = exp(-dtau);
+  Real w1, w2;
+  if (dtau < 1.0e-3) {
+    w1 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+  } else {
+    w1 = 1.0 - (1.0 - ex)/dtau;
+  }
+  if (dtau < 1.0e-2) {
+    w2 = dtau*(1.0/3.0 - dtau*(1.0/12.0 - dtau*(1.0/60.0 - dtau*(1.0/360.0
+                                                                 - dtau/2520.0))));
+  } else {
+    w2 = 1.0 - 2.0*w1/dtau;
+  }
+  w0 = (1.0 - a2)*w1 + a2*w2;
+  wu = (1.0 - ex) - w0;
+}
+
+// vet_col_order2: a2 of VcolW2 from the mean gb of g(u) over an OUTGOING segment (u from
+// the inner end): the quadratic g = c1 u + c2 u^2 with c1 + c2 = 1 and mean gb has
+// c2 = 3 - 6 gb, clamped to [0, 1] (monotone).  Outgoing: a2 = c2; incoming (u from the
+// outer end, g -> 1 - g(1 - u)): a2 = -c2.
+KOKKOS_INLINE_FUNCTION
+Real VcolC2(const Real gb) {
+  return fmin(fmax(3.0 - 6.0*gb, 0.0), 1.0);
 }
 } // namespace
 
@@ -298,6 +437,15 @@ void RadiationM1::VetColInit() {
   Kokkos::realloc(vcol_mu, nray, n1);
   Kokkos::realloc(vcol_w, nray, n1);
   Kokkos::realloc(vcol_ray, nray, 4);
+  const bool go2 = vcol_sph && vcol_o2;
+  Kokkos::realloc(vcol_gb, go2 ? nray : 1, go2 ? n1 : 1);
+  Kokkos::realloc(vcol_gb0, go2 ? nray : 1);
+  auto gb_h = Kokkos::create_mirror_view(vcol_gb);
+  auto gb0_h = Kokkos::create_mirror_view(vcol_gb0);
+  for (int r = 0; r < static_cast<int>(gb_h.extent(0)); ++r) {
+    gb0_h(r) = 0.5;
+    for (int l = 0; l < static_cast<int>(gb_h.extent(1)); ++l) {gb_h(r, l) = 0.5;}
+  }
   Kokkos::realloc(vcol_klast, n1);
   auto seg_h = Kokkos::create_mirror_view(vcol_seg);
   auto mu_h = Kokkos::create_mirror_view(vcol_mu);
@@ -334,13 +482,40 @@ void RadiationM1::VetColInit() {
       ray_h(r, 2) = s0;
       ray_h(r, 3) = (ty[r] == VC_CORE) ? mf[r] : at[r];
     }
+    if (vcol_o2) {
+      // vet_col_order2: gb per segment, by 8-point Gauss in u.  r(u) = sqrt(p^2 +
+      // (z_a + u (z_b - z_a))^2) in relative radii, z = sqrt(x^2 - p^2)
+      std::vector<double> xg, wg;
+      VcolGauss01(8, xg, wg);
+      auto gbar = [&](double pr, double xa, double xb) {
+        const double za = std::sqrt(std::fmax((xa - pr)*(xa + pr), 0.0));
+        const double zb = std::sqrt(std::fmax((xb - pr)*(xb + pr), 0.0));
+        if (!(xb > xa) || !(zb > za)) {return 0.5;}
+        double g = 0.0;
+        for (int q = 0; q < 8; ++q) {
+          const double z = za + xg[q]*(zb - za);
+          g += wg[q]*(std::sqrt(pr*pr + z*z) - xa)/(xb - xa);
+        }
+        return g;
+      };
+      for (int r = 0; r < nray; ++r) {
+        for (int l = lr[r]; l < n1; ++l) {gb_h(r, l) = gbar(p[r], xr[l], xr[l+1]);}
+        if (ty[r] == VC_CORE) {
+          gb0_h(r) = gbar(p[r], xin, xr[0]);
+        } else if (ty[r] == VC_SUB) {
+          gb0_h(r) = gbar(p[r], p[r], xr[lr[r]]);
+        }
+      }
+    }
     // quadrature per shell: trapezoid in mu over rays 0..klast (mu from 1 down to 0),
     // times (a + b mu + c mu^2) so that 1, mu, mu^2 are exact on the hemisphere
     for (int l = 0; l < n1; ++l) {
       const int kr = klast[l];
       std::vector<double> mus(kr + 1), wq;
       for (int r = 0; r <= kr; ++r) {mus[r] = mu_h(r, l);}
-      if (!VcolQuad(mus, wq)) {++nneg;}
+      const bool okq = vcol_o2 ? VcolQuad2(mus, vcol_nc, wq)
+                                        : VcolQuad(mus, wq);
+      if (!okq) {++nneg;}
       for (int r = 0; r <= kr; ++r) {w_h(r, l) = wq[r];}
     }
     // the top FACE (vet_col_surface_q): every ray, mu_f = sqrt(1 - p^2) (x = 1), and a
@@ -350,7 +525,9 @@ void RadiationM1::VetColInit() {
       muf[r] = std::sqrt(std::fmax((1.0 - p[r])*(1.0 + p[r]), 0.0));
     }
     muf[nray] = 0.0;
-    if (!VcolQuad(muf, wf)) {++nneg;}
+    const bool okf = vcol_o2 ? VcolQuad2(muf, vcol_nc, wf)
+                                      : VcolQuad(muf, wf);
+    if (!okf) {++nneg;}
     for (int r = 0; r < nray; ++r) {muf_h(r) = muf[r]; wf_h(r) = wf[r];}
   } else {
     std::vector<double> xg, wg;
@@ -374,6 +551,8 @@ void RadiationM1::VetColInit() {
   Kokkos::deep_copy(vcol_mu, mu_h);
   Kokkos::deep_copy(vcol_w, w_h);
   Kokkos::deep_copy(vcol_ray, ray_h);
+  Kokkos::deep_copy(vcol_gb, gb_h);
+  Kokkos::deep_copy(vcol_gb0, gb0_h);
   Kokkos::deep_copy(vcol_klast, kl_h);
   Kokkos::deep_copy(vcol_muf, muf_h);
   Kokkos::deep_copy(vcol_wf, wf_h);
@@ -418,6 +597,7 @@ void RadiationM1::VetColInit() {
     std::cout << ", " << nray << " rays, " << n1 << " shells), axis "
               << (vcol_axis_flux ? "M1 flux" : "radial") << ", rebuilt every "
               << vcol_every << " step(s)";
+    if (vcol_o2) {std::cout << "; vet_col_order2 (quadratic mu, face core)";}
     if (nneg > 0) {std::cout << "; " << nneg << " shell(s) kept trapezoid weights";}
     if (vcol_team) {
       std::cout << "; team build, " << vcol_lc << " shells per chunk, team size "
@@ -471,6 +651,16 @@ void RadiationM1::VetColBuild() {
   auto vq_ = vcol_q;
   const bool sq = vcol_sq;
   const Real qlo = vcol_qmin, qhi = vcol_qmax, q0 = marshak_q;
+  // vet_col_order2 (m1-sp-order2): the core rays start from E and F at the inner FACE
+  // (E linearly extrapolated from the two bottom cells, F the stored face flux f0x1)
+  const bool o2 = vcol_o2;
+  auto f0f_ = f0x1;
+  const bool g2 = vcol_o2 && vcol_sph;
+  // vet_col_order2 with a reflecting inner x1 boundary: the core rays start from the
+  // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
+  const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
+  auto gb_ = vcol_gb;
+  auto gb0_ = vcol_gb0;
   const int nray = vcol_nray;
   if (vcol_team) {
     VetColBuildTeam(dmp);
@@ -510,6 +700,11 @@ void RadiationM1::VetColBuild() {
         const Real iu = top ? 0.0 : buf_(r,c);
         Real ex, w0, wu;
         VcolW(cseg*seg_(r,l), ex, w0, wu);
+        if (g2) {
+          // vet_col_order2: chi and S linear in r along the (incoming) segment
+          const Real gb = gb_(r,l), chup = top ? ch0 : chu;
+          VcolW2((chup + (ch0 - chup)*(1.0 - gb))*seg_(r,l), -VcolC2(gb), ex, w0, wu);
+        }
         const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
         buf_(r,c) = iv;
         const Real wq = w_(r,l)*iv, mq = mu_(r,l);
@@ -525,8 +720,12 @@ void RadiationM1::VetColBuild() {
     }
 
     // (2) outgoing rays, bottom up
-    const Real e0 = fmax(iw_(m,M1_IW_EN,k,j,is), efl);
-    const Real f0 = iw_(m,M1_IW_F1,k,j,is);
+    Real e0 = fmax(iw_(m,M1_IW_EN,k,j,is), efl);
+    Real f0 = iw_(m,M1_IW_F1,k,j,is);
+    if (o2) {
+      e0 = fmax(1.5*iw_(m,M1_IW_EN,k,j,is) - 0.5*iw_(m,M1_IW_EN,k,j,is+1), efl);
+      f0 = f0f_(m,k,j,is);
+    }
     Real chd = 0.0, sd = 0.0, jtop = 0.0;
     for (int l = 0; l < n1; ++l) {
       const int i = is + l;
@@ -541,13 +740,20 @@ void RadiationM1::VetColBuild() {
         Real ex, w0, wu;
         if (lr < l) {
           VcolW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
+          if (g2) {
+            const Real gb = gb_(r,l-1);
+            VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
+          }
           iv = buf_(r,c)*ex + wu*sd + w0*s0;
         } else {
           const int ty = static_cast<int>(ray_(r,1));
           if (ty == VC_CORE) {
             // the diffusion intensity at the inner face, carried to the first shell
-            const Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
+            Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
             VcolW(ch0*ray_(r,2), ex, w0, wu);
+            if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
+            if (mir) {ib = fmax(buf_(r,c)*ex + wu*s0 + w0*sbot, 0.0);}
+            if (g2) {VcolW2(ch0*ray_(r,2), VcolC2(gb0_(r)), ex, w0, wu);}
             iv = ib*ex + wu*sbot + w0*s0;
           } else if (ty == VC_TAN) {
             iv = buf_(r,c);            // mu = 0 at its tangent shell: out = in
@@ -557,8 +763,17 @@ void RadiationM1::VetColBuild() {
             const Real cht = (1.0 - a)*chlo + a*ch0;
             const Real st = (1.0 - a)*slo + a*s0;
             VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
+            if (g2) {
+              const Real gb = gb0_(r);
+              const Real dt2 = (cht + (ch0 - cht)*gb)*ray_(r,2);
+              VcolW2(dt2, -VcolC2(gb), ex, w0, wu);
+              const Real it = fmax(buf_(r,c)*ex + wu*s0 + w0*st, 0.0);
+              VcolW2(dt2, VcolC2(gb), ex, w0, wu);
+              iv = it*ex + wu*st + w0*s0;
+            } else {
             const Real it = fmax(buf_(r,c)*ex + wu*s0 + w0*st, 0.0);
             iv = it*ex + wu*st + w0*s0;
+            }
           }
         }
         iv = fmax(iv, 0.0);
@@ -607,6 +822,7 @@ void RadiationM1::VetColBuild() {
       for (int r = 0; r < nray; ++r) {
         Real ex, w0, wu;
         VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+        if (g2) {VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);}
         const Real iv = fmax(buf_(r,c)*ex + wu*s0 + w0*stop, 0.0);
         hf += wf_(r)*muf_(r)*iv;
       }
@@ -658,6 +874,16 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   auto vq_ = vcol_q;
   const bool sq = vcol_sq;
   const Real qlo = vcol_qmin, qhi = vcol_qmax, q0 = marshak_q;
+  // vet_col_order2 (m1-sp-order2): the core rays start from E and F at the inner FACE
+  // (E linearly extrapolated from the two bottom cells, F the stored face flux f0x1)
+  const bool o2 = vcol_o2;
+  auto f0f_ = f0x1;
+  const bool g2 = vcol_o2 && vcol_sph;
+  // vet_col_order2 with a reflecting inner x1 boundary: the core rays start from the
+  // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
+  const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
+  auto gb_ = vcol_gb;
+  auto gb0_ = vcol_gb0;
   const int nray = vcol_nray, lc = vcol_lc;
   const size_t scr = ScrArray1D<Real>::shmem_size(5*n1) +
                      ScrArray1D<Real>::shmem_size(2*nray) +
@@ -707,6 +933,10 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           const Real iu = top ? 0.0 : ir_(r);
           Real ex, w0, wu;
           VcolW(cseg*seg_(r,l), ex, w0, wu);
+          if (g2) {
+            const Real gb = gb_(r,l), chup = top ? ch0 : pr_(l+1);
+            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*seg_(r,l), -VcolC2(gb), ex, w0, wu);
+          }
           const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
           ir_(r) = iv;
           ic_(ll, r) = iv;
@@ -731,8 +961,12 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     }
 
     // (2) outgoing rays, bottom up, in chunks of lc shells
-    const Real e0 = fmax(iw_(m,M1_IW_EN,k,j,is), efl);
-    const Real f0 = iw_(m,M1_IW_F1,k,j,is);
+    Real e0 = fmax(iw_(m,M1_IW_EN,k,j,is), efl);
+    Real f0 = iw_(m,M1_IW_F1,k,j,is);
+    if (o2) {
+      e0 = fmax(1.5*iw_(m,M1_IW_EN,k,j,is) - 0.5*iw_(m,M1_IW_EN,k,j,is+1), efl);
+      f0 = f0f_(m,k,j,is);
+    }
     for (int la = 0; la < n1; la += lc) {
       const int lb = (la + lc - 1 < n1 - 1) ? (la + lc - 1) : (n1 - 1);
       for (int l = la; l <= lb; ++l) {
@@ -748,12 +982,19 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           Real ex, w0, wu;
           if (lr < l) {
             VcolW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
+            if (g2) {
+              const Real gb = gb_(r,l-1);
+              VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
+            }
             iv = ir_(r)*ex + wu*sd + w0*s0;
           } else {
             const int ty = static_cast<int>(ray_(r,1));
             if (ty == VC_CORE) {
-              const Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
+              Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
               VcolW(ch0*ray_(r,2), ex, w0, wu);
+              if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
+              if (mir) {ib = fmax(ir_(r)*ex + wu*s0 + w0*sbot, 0.0);}
+              if (g2) {VcolW2(ch0*ray_(r,2), VcolC2(gb0_(r)), ex, w0, wu);}
               iv = ib*ex + wu*sbot + w0*s0;
             } else if (ty == VC_TAN) {
               iv = ir_(r);
@@ -762,8 +1003,17 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
               const Real cht = (1.0 - a)*chlo + a*ch0;
               const Real st = (1.0 - a)*slo + a*s0;
               VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
+              if (g2) {
+                const Real gb = gb0_(r);
+                const Real dt2 = (cht + (ch0 - cht)*gb)*ray_(r,2);
+                VcolW2(dt2, -VcolC2(gb), ex, w0, wu);
+                const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
+                VcolW2(dt2, VcolC2(gb), ex, w0, wu);
+                iv = it*ex + wu*st + w0*s0;
+              } else {
               const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
               iv = it*ex + wu*st + w0*s0;
+              }
             }
           }
           iv = fmax(iv, 0.0);
@@ -778,6 +1028,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         par_for_inner(tm, 0, nray-1, [&](const int r) {
           Real ex, w0, wu;
           VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+          if (g2) {VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);}
           ir_(nray + r) = fmax(ir_(r)*ex + wu*s0 + w0*stop, 0.0);
         });
         tm.team_barrier();

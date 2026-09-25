@@ -504,3 +504,14 @@ the wedge (vimp rows with dxface, M1SphDrr and dt A_f/V_i in `if (sph)` overwrit
 under hesdirk2 (tensor and surface q at U^n, both stages); hesdirk2 (+ vimp) is now the
 default on the wedge and for vet_col.  T-S1 order 2.0, T-S5 2.03-2.08 (Eddington + vimp);
 Cartesian and be-named sp bitwise (CPU + GPU); GPU per step 1.00x be on the He wedge grid.
+
+**m1-sp-order2** (tests_m1/runs_5o_sporder2/README.md): the wedge's transport operator was
+already second order in space (thick, thin, lateral, stretched r, moving gas with the plm
+enthalpy); `implicit_recon` is inert under `transport = implicit` (central forced), so its
+refusal stays.  First order were (1) the Marshak end face (c q E of the end cell) ->
+`implicit_marshak_face = linear` (r^2 E extrapolated to the face, implicit in the row, limited;
+steady atmosphere 1.0 -> 2.0, free streaming exact), and (2) the vet_col formal solution
+(trapezoid in mu, S/chi linear in the path, cell core) -> `vet_col_order2` (f_K 1.3 -> 2.1;
+T-S4 L1 3.5-12x smaller).  Both default off, bitwise; GPU +3.9 % per step on the He wedge.
+Open: the f_K clamp at 1/3 (radiating shells), a reflecting outer x1 under vet_col, the
+tensor lag in time.
