@@ -94,3 +94,9 @@ Everything else was checked and is clean:
 | FastChem records | 8194 as declared, no leftover tokens |
 | FastChem mu | 0.8006 .. 2.3267, no negative VMRs, none summing > 1.5 |
 | `cia/He-_ff.txt`, CIA and Rayleigh tables | no order-of-magnitude outliers beyond the 1e-99 no-data sentinels and genuine Rayleigh falloff |
+
+## Local extension above 6100 K
+
+`ck/Premixed_1x_g8_11_hiT.txt` and `CE_tables/FastChem_ck_1x_int_hiT.txt` are NOT upstream:
+they are these tables extended to 10100 K (rows up to 6100 K verbatim) by
+`tools/gen_hitemp.py`. Method and validation in `HITEMP.md`.
