@@ -1029,32 +1029,41 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     for (int ps = 0; ps < npass; ++ps) {
     const bool trk = rtop && (ps == 0);
     const bool rt1 = rtop && (ps == 1);
-    // (1) incoming rays, top down, in chunks of lc shells
+    // (1) incoming rays, top down, in chunks of lc shells.  Each thread carries ITS rays
+    // down through the whole chunk (a ray's recursion needs only chi and S, read-only
+    // here, and its own running intensity), so there is one team barrier per chunk, not
+    // one per shell: the same operations in the same order per ray (bitwise).  kl_ is
+    // non-decreasing in l, so a ray that is inactive at shell l stays so further down.
     for (int la = n1 - 1; la >= 0; la -= lc) {
       const int lb = (la - lc + 1 > 0) ? (la - lc + 1) : 0;
-      for (int l = la; l >= lb; --l) {
-        const Real ch0 = pr_(l), s0 = pr_(n1 + l);
-        const bool top = (l == n1 - 1);
-        const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
-        const Real sup = top ? stop : pr_(n1 + l + 1);
-        const int ll = la - l;
-        par_for_inner(tm, 0, kl_(l), [&](const int r) {
-          const Real iu = top ? (rt1 ? ir_(2*nray + r) : 0.0) : ir_(r);
+      par_for_inner(tm, 0, nray-1, [&](const int r) {
+        Real irr = ir_(r);
+        Real itr = rtop ? ir_(2*nray + r) : 0.0;
+        for (int l = la; l >= lb; --l) {
+          if (r > kl_(l)) break;
+          const Real ch0 = pr_(l), s0 = pr_(n1 + l);
+          const bool top = (l == n1 - 1);
+          const Real sup = top ? stop : pr_(n1 + l + 1);
+          const Real iu = top ? (rt1 ? itr : 0.0) : irr;
           Real ex, w0, wu;
-          VcolW(cseg*seg_(r,l), ex, w0, wu);
           if (g2) {
             const Real gb = gb_(r,l), chup = top ? ch0 : pr_(l+1);
             VcolW2((chup + (ch0 - chup)*(1.0 - gb))*seg_(r,l), -VcolC2(gb), ex, w0, wu);
+          } else {
+            const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
+            VcolW(cseg*seg_(r,l), ex, w0, wu);
           }
           const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
-          ir_(r) = iv;
-          ic_(ll, r) = iv;
+          irr = iv;
+          ic_(la - l, r) = iv;
           if (trk) {
-            ir_(2*nray + r) = top ? ex : ir_(2*nray + r)*ex;
+            itr = top ? ex : itr*ex;
           }
-        });
-        tm.team_barrier();
-      }
+        }
+        ir_(r) = irr;
+        if (rtop) {ir_(2*nray + r) = itr;}
+      });
+      tm.team_barrier();
       par_for_inner(tm, lb, la, [&](const int l) {
         const int ll = la - l;
         Real jj = 0.0, hh = 0.0, kk = 0.0;
@@ -1081,77 +1090,87 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     }
     for (int la = 0; la < n1; la += lc) {
       const int lb = (la + lc - 1 < n1 - 1) ? (la + lc - 1) : (n1 - 1);
-      for (int l = la; l <= lb; ++l) {
-        const Real ch0 = pr_(l), s0 = pr_(n1 + l);
-        const Real chd = (l == 0) ? 0.0 : pr_(l-1);
-        const Real sd = (l == 0) ? 0.0 : pr_(n1 + l - 1);
-        const Real chlo = (l == 0) ? ch0 : chd;
-        const Real slo = (l == 0) ? sbot : sd;
-        const int ll = l - la;
-        par_for_inner(tm, 0, kl_(l), [&](const int r) {
+      // (as the incoming sweep) each thread carries its rays up through the chunk; a ray
+      // becomes active at its first shell and stays active (kl_ non-decreasing)
+      par_for_inner(tm, 0, nray-1, [&](const int r) {
+        Real irr = ir_(r);
+        Real itr = rtop ? ir_(2*nray + r) : 0.0;
+        for (int l = la; l <= lb; ++l) {
+          if (r > kl_(l)) continue;
+          const Real ch0 = pr_(l), s0 = pr_(n1 + l);
+          const Real chd = (l == 0) ? 0.0 : pr_(l-1);
+          const Real sd = (l == 0) ? 0.0 : pr_(n1 + l - 1);
+          const Real chlo = (l == 0) ? ch0 : chd;
+          const Real slo = (l == 0) ? sbot : sd;
           const int lr = static_cast<int>(ray_(r,0));
           Real iv;
           Real ex, w0, wu;
           if (lr < l) {
-            VcolW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
             if (g2) {
               const Real gb = gb_(r,l-1);
               VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
+            } else {
+              VcolW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
             }
-            iv = ir_(r)*ex + wu*sd + w0*s0;
+            iv = irr*ex + wu*sd + w0*s0;
             if (trk) {
-              ir_(2*nray + r) *= ex;
+              itr *= ex;
             }
           } else {
             const int ty = static_cast<int>(ray_(r,1));
             if (ty == VC_CORE) {
               Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
-              VcolW(ch0*ray_(r,2), ex, w0, wu);
-              if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
-              if (mir) {ib = fmax(ir_(r)*ex + wu*s0 + w0*sbot, 0.0);}
+              if (g2) {
+                VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);
+              } else {
+                VcolW(ch0*ray_(r,2), ex, w0, wu);
+              }
+              if (mir) {ib = fmax(irr*ex + wu*s0 + w0*sbot, 0.0);}
               if (trk) {
-                ir_(2*nray + r) = mir ? (ir_(2*nray + r)*ex) : 0.0;
+                itr = mir ? (itr*ex) : 0.0;
               }
               if (g2) {VcolW2(ch0*ray_(r,2), VcolC2(gb0_(r)), ex, w0, wu);}
               iv = ib*ex + wu*sbot + w0*s0;
               if (trk) {
-                ir_(2*nray + r) *= ex;
+                itr *= ex;
               }
             } else if (ty == VC_TAN) {
-              iv = ir_(r);
+              iv = irr;
             } else {
               const Real a = ray_(r,3);
               const Real cht = (1.0 - a)*chlo + a*ch0;
               const Real st = (1.0 - a)*slo + a*s0;
-              VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
               if (g2) {
                 const Real gb = gb0_(r);
                 const Real dt2 = (cht + (ch0 - cht)*gb)*ray_(r,2);
                 VcolW2(dt2, -VcolC2(gb), ex, w0, wu);
-                const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
+                const Real it = fmax(irr*ex + wu*s0 + w0*st, 0.0);
                 if (trk) {
-                  ir_(2*nray + r) *= ex;
+                  itr *= ex;
                 }
                 VcolW2(dt2, VcolC2(gb), ex, w0, wu);
                 iv = it*ex + wu*st + w0*s0;
                 if (trk) {
-                  ir_(2*nray + r) *= ex;
+                  itr *= ex;
                 }
               } else {
-              const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
-              iv = it*ex + wu*st + w0*s0;
-              if (trk) {
-                ir_(2*nray + r) *= ex*ex;
-              }
+                VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
+                const Real it = fmax(irr*ex + wu*s0 + w0*st, 0.0);
+                iv = it*ex + wu*st + w0*s0;
+                if (trk) {
+                  itr *= ex*ex;
+                }
               }
             }
           }
           iv = fmax(iv, 0.0);
-          ir_(r) = iv;
-          ic_(ll, r) = iv;
-        });
-        tm.team_barrier();
-      }
+          irr = iv;
+          ic_(l - la, r) = iv;
+        }
+        ir_(r) = irr;
+        if (rtop) {ir_(2*nray + r) = itr;}
+      });
+      tm.team_barrier();
       if (trk && lb == n1 - 1) {
         // the outgoing intensity at the top face (b) and the round-trip transmission
         // (a) of every ray: specular reflection keeps p, so I_in = b + a I_in
