@@ -24,17 +24,9 @@
 //! the fine residual (implicit_mg_halo = true, default; false = block-local residual).
 //! M is a fixed linear map (a valid right preconditioner); it changes the iterates, not
 //! the converged answer.
-//!
-//! implicit_mg_fuse = true (default; tests_m1/runs_5n_mgfuse): the restricted residual
-//! of level l is formed in the load phase of level l's own line sweeps instead of in a
-//! separate kernel after level l-1 -- the same numbers, 1 launch fewer per level.
-
 
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
-#include <cstdlib>
-#include <iostream>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -105,92 +97,12 @@ namespace {
 constexpr int MG_TA = 0, MG_TB = 1, MG_TC = 2, MG_CJM = 3, MG_CJP = 4, MG_CKM = 5,
               MG_CKP = 6, MG_R = 7, MG_Z = 8, MG_NC = 9;
 
-void MGFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
-  std::exit(EXIT_FAILURE);
-}
-
-//! the restricted fine residual R (r - A7 z0) of level-1 cell (kc,jc,i): the 2 x 2 fine
-//! columns of the aggregate, with (hal) or without the halo of z0
-KOKKOS_INLINE_FUNCTION
-Real MGRes0(const DvceArray5D<Real> &iw_, const int m, const int kc, const int jc,
-            const int i, const int is, const int js, const int ks, const int nx,
-            const int fj, const int fk, const bool thrd, const bool hal, const int rr,
-            const int zc) {
-  Real sum = 0.0;
-  const int ii = i + is;
-  for (int a = 0; a < 2; ++a) {
-    const int k = 2*kc + a;
-    if (k >= fk) continue;
-    const int kk = k + ks;
-    for (int b = 0; b < 2; ++b) {
-      const int j = 2*jc + b;
-      if (j >= fj) continue;
-      const int jj = j + js;
-      Real y = iw_(m,M1_IW_TB,kk,jj,ii)*iw_(m,zc,kk,jj,ii);
-      if (hal || i > 0) y += iw_(m,M1_IW_TA,kk,jj,ii)*iw_(m,zc,kk,jj,ii-1);
-      if (hal || i < nx-1) y += iw_(m,M1_IW_TC,kk,jj,ii)*iw_(m,zc,kk,jj,ii+1);
-      if (hal || j > 0) y += iw_(m,M1_IW_CJM,kk,jj,ii)*iw_(m,zc,kk,jj-1,ii);
-      if (hal || j < fj-1) y += iw_(m,M1_IW_CJP,kk,jj,ii)*iw_(m,zc,kk,jj+1,ii);
-      if (thrd) {
-        if (hal || k > 0) y += iw_(m,M1_IW_CKM,kk,jj,ii)*iw_(m,zc,kk-1,jj,ii);
-        if (hal || k < fk-1) y += iw_(m,M1_IW_CKP,kk,jj,ii)*iw_(m,zc,kk+1,jj,ii);
-      }
-      sum += iw_(m,rr,kk,jj,ii) - y;
-    }
-  }
-  return sum;
-}
-
-//! the restricted residual of level l-1 (array c_, size cj x ck, x3 couplings th) at
-//! level-l cell (kc,jc,i)
-KOKKOS_INLINE_FUNCTION
-Real MGResL(const DvceArray5D<Real> &c_, const int m, const int kc, const int jc,
-            const int i, const int nx, const int cj, const int ck, const bool th) {
-  Real sum = 0.0;
-  for (int a = 0; a < 2; ++a) {
-    const int k = 2*kc + a;
-    if (k >= ck) continue;
-    for (int b = 0; b < 2; ++b) {
-      const int j = 2*jc + b;
-      if (j >= cj) continue;
-      Real y = c_(m,MG_TB,k,j,i)*c_(m,MG_Z,k,j,i);
-      if (i > 0) y += c_(m,MG_TA,k,j,i)*c_(m,MG_Z,k,j,i-1);
-      if (i < nx-1) y += c_(m,MG_TC,k,j,i)*c_(m,MG_Z,k,j,i+1);
-      if (j > 0) y += c_(m,MG_CJM,k,j,i)*c_(m,MG_Z,k,j-1,i);
-      if (j < cj-1) y += c_(m,MG_CJP,k,j,i)*c_(m,MG_Z,k,j+1,i);
-      if (th) {
-        if (k > 0) y += c_(m,MG_CKM,k,j,i)*c_(m,MG_Z,k-1,j,i);
-        if (k < ck-1) y += c_(m,MG_CKP,k,j,i)*c_(m,MG_Z,k+1,j,i);
-      }
-      sum += c_(m,MG_R,k,j,i) - y;
-    }
-  }
-  return sum;
-}
-
-//! where the right-hand side of a coarse line sweep comes from (implicit_mg_fuse):
-//! mode 0 = MG_R as stored by a separate restriction kernel; mode 1 = restricted from the
-//! fine rows (MGRes0) and mode 2 = from level l-1 (MGResL), both in the load phase of the
-//! sweep and stored to MG_R for the next level's restriction.  The value is the very
-//! number the separate kernel stores, so the fused and unfused maps agree.
-struct MGRes {
-  int mode = 0;
-  DvceArray5D<Real> iw;
-  int rr = 0, zc = 0, is = 0, js = 0, ks = 0;
-  bool hal = false, fthrd = false;
-  DvceArray5D<Real> f;
-  int fj = 1, fk = 1;
-  bool fth = false;
-};
-
 //! one colour of the forward red-black line sweep on a coarse level: columns (k,j) with
 //! parity (k+j) = col solve A_line z = r (- the 5-point coupling to z of the other
 //! colour when sub), by parallel cyclic reduction in team scratch (as M1PCRX)
 template <typename T>
 void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int nj,
-             const int nk, const int col, const bool sub, const bool thrd, int ts,
-             const MGRes &rs) {
+             const int nk, const int col, const bool sub, const bool thrd, int ts) {
   const int njl = (nj + 1)/2;
   const int nkj = nk*njl;
   size_t scr_size = ScrArray1D<T>::shmem_size(8*nx);
@@ -202,12 +114,6 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
   } else {
     policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, Kokkos::AUTO);
   }
-  const int mode = rs.mode;
-  auto riw = rs.iw;
-  auto rf = rs.f;
-  const int rrc = rs.rr, rzc = rs.zc, ris = rs.is, rjs = rs.js, rks = rs.ks;
-  const bool rhal = rs.hal, rfthrd = rs.fthrd, rfth = rs.fth;
-  const int rfj = rs.fj, rfk = rs.fk;
   Kokkos::parallel_for("m1_mg_pcr", policy.set_scratch_size(0, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tm) {
     const int m = tm.league_rank()/nkj;
@@ -220,17 +126,7 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
       sw(i) = static_cast<T>((i == 0) ? 0.0 : a_(m,MG_TA,k,j,i));
       sw(nx + i) = static_cast<T>(a_(m,MG_TB,k,j,i));
       sw(2*nx + i) = static_cast<T>((i == nx-1) ? 0.0 : a_(m,MG_TC,k,j,i));
-      Real rr;
-      if (mode == 1) {
-        rr = MGRes0(riw, m, k, j, i, ris, rjs, rks, nx, rfj, rfk, rfthrd, rhal, rrc,
-                    rzc);
-        a_(m,MG_R,k,j,i) = rr;
-      } else if (mode == 2) {
-        rr = MGResL(rf, m, k, j, i, nx, rfj, rfk, rfth);
-        a_(m,MG_R,k,j,i) = rr;
-      } else {
-        rr = a_(m,MG_R,k,j,i);
-      }
+      Real rr = a_(m,MG_R,k,j,i);
       if (sub) {
         if (j > 0) rr -= a_(m,MG_CJM,k,j,i)*a_(m,MG_Z,k,j-1,i);
         if (j < nj-1) rr -= a_(m,MG_CJP,k,j,i)*a_(m,MG_Z,k,j+1,i);
@@ -276,24 +172,7 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
     });
   });
 }
-
 } // namespace
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::ImplicitMGInit
-//! \brief the implicit_precond = mg keys, read only under mg (every other configuration
-//! untouched)
-
-void RadiationM1::ImplicitMGInit(ParameterInput *pin) {
-  mg_nlev = 0;
-  mg_halo = true;
-  mg_fuse = true;
-  if (impl_prec != 3) {return;}
-  mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",2);
-  mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
-  mg_fuse = pin->GetOrAddBoolean("rad_m1","implicit_mg_fuse",true);
-  if (mg_nlev < 2) {MGFatal("<rad_m1>/implicit_mg_levels must be >= 2");}
-}
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitMGBuild
@@ -374,64 +253,95 @@ void RadiationM1::ImplicitMGBuild() {
 //! as ImplicitPCRSolveX
 
 void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx = indcs.nx1;
-  const int nmb = pmy_pack->nmb_thispack;
-  const bool thrd = trans_x3;
-  auto iw_ = iw;
   // the fine smoother: rbgs_fwd, exactly the implicit_precond = rbgs_fwd map
   ImplicitPCRSolveX(rc, zc, upd, c1, c2, 0, -1);
   ImplicitPCRSolveX(rc, zc, upd, c1, c2, 1, zc);
   const int nl = static_cast<int>(mgc.size());
   if (nl < 2) {return;}
   const int rr = (upd == 1) ? M1_IW_KP : ((upd == 2) ? M1_IW_KS : rc);
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx = indcs.nx1;
+  const int nmb = pmy_pack->nmb_thispack;
+  const bool thrd = trans_x3;
   const bool hal = mg_halo;
   if (hal) {ImplicitKrylovHalo(zc);}
+  auto iw_ = iw;
   int ts = impl_pcr_team;
   if (ts == 0) {
     ts = 1;
     while (ts < nx && ts < 256) ts *= 2;
   }
-  const bool fuse = mg_fuse;
-  // the fine residual r - A7 z0, restricted (unfused: its own kernel)
-  if (!fuse) {
+  // the fine residual r - A7 z0, restricted
+  {
     auto c_ = mgc[1];
     const int fj = mg_nj[0], fk = mg_nk[0];
     const int cj = mg_nj[1], ck = mg_nk[1];
     par_for("m1_mg_res0", DevExeSpace(), 0, nmb-1, 0, ck-1, 0, cj-1, 0, nx-1,
     KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int i) {
-      c_(m,MG_R,kc,jc,i) = MGRes0(iw_, m, kc, jc, i, is, js, ks, nx, fj, fk, thrd, hal,
-                                  rr, zc);
+      Real sum = 0.0;
+      const int ii = i + is;
+      for (int a = 0; a < 2; ++a) {
+        const int k = 2*kc + a;
+        if (k >= fk) continue;
+        const int kk = k + ks;
+        for (int b = 0; b < 2; ++b) {
+          const int j = 2*jc + b;
+          if (j >= fj) continue;
+          const int jj = j + js;
+          Real y = iw_(m,M1_IW_TB,kk,jj,ii)*iw_(m,zc,kk,jj,ii);
+          if (hal || i > 0) y += iw_(m,M1_IW_TA,kk,jj,ii)*iw_(m,zc,kk,jj,ii-1);
+          if (hal || i < nx-1) y += iw_(m,M1_IW_TC,kk,jj,ii)*iw_(m,zc,kk,jj,ii+1);
+          if (hal || j > 0) y += iw_(m,M1_IW_CJM,kk,jj,ii)*iw_(m,zc,kk,jj-1,ii);
+          if (hal || j < fj-1) y += iw_(m,M1_IW_CJP,kk,jj,ii)*iw_(m,zc,kk,jj+1,ii);
+          if (thrd) {
+            if (hal || k > 0) y += iw_(m,M1_IW_CKM,kk,jj,ii)*iw_(m,zc,kk-1,jj,ii);
+            if (hal || k < fk-1) y += iw_(m,M1_IW_CKP,kk,jj,ii)*iw_(m,zc,kk+1,jj,ii);
+          }
+          sum += iw_(m,rr,kk,jj,ii) - y;
+        }
+      }
+      c_(m,MG_R,kc,jc,i) = sum;
     });
   }
-  // down the coarse levels: one forward red-black sweep each, the restricted residual
-  // of the next level either in the next level's sweep (fused) or its own kernel
+  // down the coarse levels: one forward red-black sweep each, then the restricted
+  // residual of the next level (block-local)
   for (int l = 1; l < nl; ++l) {
     auto c_ = mgc[l];
     const int cj = mg_nj[l], ck = mg_nk[l];
     const bool th = thrd && (ck > 1);
-    MGRes rs;
-    if (fuse && l == 1) {
-      rs.mode = 1; rs.iw = iw_; rs.rr = rr; rs.zc = zc; rs.is = is; rs.js = js;
-      rs.ks = ks; rs.hal = hal; rs.fthrd = thrd; rs.fj = mg_nj[0]; rs.fk = mg_nk[0];
-    } else if (fuse) {
-      rs.mode = 2; rs.f = mgc[l-1]; rs.fj = mg_nj[l-1]; rs.fk = mg_nk[l-1];
-      rs.fth = thrd && (mg_nk[l-1] > 1);
-    }
     if (impl_prec_float) {
-      M1PCRMG<float>(c_, nmb, nx, cj, ck, 0, false, th, ts, rs);
-      M1PCRMG<float>(c_, nmb, nx, cj, ck, 1, true, th, ts, rs);
+      M1PCRMG<float>(c_, nmb, nx, cj, ck, 0, false, th, ts);
+      M1PCRMG<float>(c_, nmb, nx, cj, ck, 1, true, th, ts);
     } else {
-      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, false, th, ts, rs);
-      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 1, true, th, ts, rs);
+      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, false, th, ts);
+      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 1, true, th, ts);
     }
-    if (!fuse && l + 1 < nl) {
+    if (l + 1 < nl) {
       auto n_ = mgc[l+1];
       const int nj2 = mg_nj[l+1], nk2 = mg_nk[l+1];
       par_for("m1_mg_res", DevExeSpace(), 0, nmb-1, 0, nk2-1, 0, nj2-1, 0, nx-1,
       KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int i) {
-        n_(m,MG_R,kc,jc,i) = MGResL(c_, m, kc, jc, i, nx, cj, ck, th);
+        Real sum = 0.0;
+        for (int a = 0; a < 2; ++a) {
+          const int k = 2*kc + a;
+          if (k >= ck) continue;
+          for (int b = 0; b < 2; ++b) {
+            const int j = 2*jc + b;
+            if (j >= cj) continue;
+            Real y = c_(m,MG_TB,k,j,i)*c_(m,MG_Z,k,j,i);
+            if (i > 0) y += c_(m,MG_TA,k,j,i)*c_(m,MG_Z,k,j,i-1);
+            if (i < nx-1) y += c_(m,MG_TC,k,j,i)*c_(m,MG_Z,k,j,i+1);
+            if (j > 0) y += c_(m,MG_CJM,k,j,i)*c_(m,MG_Z,k,j-1,i);
+            if (j < cj-1) y += c_(m,MG_CJP,k,j,i)*c_(m,MG_Z,k,j+1,i);
+            if (th) {
+              if (k > 0) y += c_(m,MG_CKM,k,j,i)*c_(m,MG_Z,k-1,j,i);
+              if (k < ck-1) y += c_(m,MG_CKP,k,j,i)*c_(m,MG_Z,k+1,j,i);
+            }
+            sum += c_(m,MG_R,k,j,i) - y;
+          }
+        }
+        n_(m,MG_R,kc,jc,i) = sum;
       });
     }
   }
