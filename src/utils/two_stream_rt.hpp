@@ -1049,6 +1049,15 @@ inline bool ck_spherical = false;
 // tau_ray(r_i) is not a running sum -- every target has its own chord set.  It is sized
 // to one element when the switch is off: the kernel is templated on the flag.
 inline bool ck_beam_sph = false;
+// problem/ck_beam_par (ck-fast2 lever 3): the pseudo-spherical beam of the tm sweep's
+// STORING pass in its own kernels, a thread per target face instead of a thread per
+// column (the in-kernel block walks O(N^2) chords serially: measured 48 of the storing
+// kernel's 94 ms per call at nx1 256).  Same chords, same order, same deposit arithmetic;
+// the in-kernel block's "stop once the block's slant depth passes 60" becomes a per-chain
+// stop at VERTICAL depth 60 (a lower bound of the slant one), so the two differ only by
+// deposits below e^-60 of the incident beam.  Needs ck_impl_lin, lin_thr = 1 (scratch).
+inline bool ck_beam_par = false;
+inline DvceArray4D<int> *ck_bstop_ptr = nullptr;   // (m, beam chain, k, j)
 // The beam's optical depth to the TOP face of a mu0 < 0 (twilight) column: the ray
 // enters the domain top on the far side, grazes the tangent radius b = r_top sin(theta0)
 // and climbs back to the target, so every shell between b and r_top is crossed TWICE.
@@ -2545,6 +2554,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // domain cut icut_g (the apply, the column solve, the cadence) is unchanged.  Off,
       // icc_g IS icut_g and the datum array is a dummy that is never read.
       const bool ckdif_ = ck_implicit && rt_ck && (ck_dif_dtau > 0.0);
+      // ck_beam_par: the storing pass's pseudo-spherical beam in its own kernels
+      const bool cbt_ = ck_beam_par;
       auto icc_g = ckdif_ ? *ck_ich_ptr : icut_g;
       auto difg_g = ckdif_ ? *ck_difg_ptr : CkDum<DvceArray4D<Real>>("ck_difg_d");
       if (ckdif_ && taublend) {
@@ -4988,7 +4999,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // block in the four-pass sweep below, which carries the derivation and
                 // the sketch; it is repeated rather than shared because the two forms
                 // reach it from different places.
-                if (BSP && lit_sph && !ckfus) {
+                if (BSP && lit_sph && !ckfus && !(ckfst && cbt_)) {
                   const Real rcut = X1F(m,icut);
                   RtF thi[NC];
                   Real tauh[NC];
@@ -6317,6 +6328,123 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
           } else {
             launch_ck_full();
+          }
+          // ---- problem/ck_beam_par: the pseudo-spherical beam of the storing pass,
+          // which rt_chain_ck (tm, FOP) skipped, as three kernels with a thread per
+          // TARGET instead of a thread per column: (1) per beam chain the deepest target
+          // still under the vertical depth 60 (the slant depth is never smaller, so every
+          // target the in-kernel block deposits more than e^-60 into is kept); (2) per
+          // (beam chain, face) the slant optical depth of the ray to that face, by the
+          // in-kernel block's own chord walk (same shells, same order: the same number);
+          // (3) per (chain block, target) the deposit, the block's arithmetic in its
+          // order.  Scratch: the lin1 partials ck_lps (free on the storing pass).
+          if (cbt_ && ckfst_ && ckbsph_ && cksph_ && ckform_ == 1) {
+            const Real alb_ = albedo;
+            const Real fst_ = Fstar;
+            const int bst_ = (ck_nq_ == 2) ? 2 : 1;
+            const int nbc_ = nch_/bst_;
+            if (ck_bstop_ptr == nullptr) {
+              ck_bstop_ptr = new DvceArray4D<int>("ck_bstop", nmb1+1, nbc_, n3, n2);
+            }
+            auto bsp_ = *ck_bstop_ptr;
+            auto tsl_ = *ck_lps_ptr;         // (m, beam chain, face, k, j)
+            par_for("ck_beam_stop", DevExeSpace(), 0, nmb1, 0, nbc_-1, ks, ke, js, je,
+            KOKKOS_LAMBDA(const int m, const int p, const int k, const int j) {
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icc_g(m,k,j);
+              const int c = p*bst_;
+              Real vt = 0.0;
+              int fs = icut;
+              for (int i=ie; i>=icut; --i) {
+                if (vt > 60.0) {
+                  fs = i + 1;
+                  break;
+                }
+                vt += static_cast<Real>(static_cast<RtF>(ckkro_g(m,c,i,k,j)))
+                      *(X1F(m,i+1) - X1F(m,i));
+              }
+              bsp_(m,p,k,j) = fs;
+            });
+            par_for("ck_beam_tau", DevExeSpace(), 0, nmb1, 0, nbc_-1, is, ie+1, ks, ke,
+                    js, je,
+            KOKKOS_LAMBDA(const int m, const int p, const int f, const int k, const int j) {
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icc_g(m,k,j);
+              if (icut > ie || f < icut || f < bsp_(m,p,k,j)) return;
+              const int c = p*bst_;
+              const Real mu0 = cf_g(m,k,j,3);
+              const Real sinz = sqrt((mu0*mu0 < 1.0) ? (1.0 - mu0*mu0) : 0.0);
+              const Real rcut = X1F(m,icut);
+              const Real bb = X1F(m,f)*sinz;
+              const Real b2 = bb*bb;
+              int jlo = f;
+              bool dark = false;
+              if (mu0 < 0.0) {
+                if (bb <= rcut) {
+                  dark = true;
+                } else {
+                  jlo = icut;
+                  for (int jj=f-1; jj>=icut; --jj) {
+                    if (X1F(m,jj) <= bb) {
+                      jlo = jj;
+                      break;
+                    }
+                  }
+                }
+              }
+              Real tl = 0.0;
+              if (!dark) {
+                const Real rl = X1F(m,jlo);
+                Real prev = (rl*rl > b2) ? sqrt(rl*rl - b2) : 0.0;
+                for (int jj=jlo; jj<ie+1; ++jj) {
+                  const Real ru = X1F(m,jj+1);
+                  const Real cur = sqrt(ru*ru - b2);
+                  const Real ds = (jj < f) ? 2.0*(cur - prev) : (cur - prev);
+                  prev = cur;
+                  tl += ds*static_cast<Real>(static_cast<RtF>(ckkro_g(m,c,jj,k,j)));
+                }
+              }
+              tsl_(m,p,f,k,j) = dark ? 1.0e30 : tl;
+            });
+            par_for("ck_beam_dep", DevExeSpace(), 0, nmb1, 0, nblk-1, is, ie, ks, ke,
+                    js, je,
+            KOKKOS_LAMBDA(const int m, const int blk, const int i, const int k,
+                          const int j) {
+              constexpr int NC = RT_NB;
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icc_g(m,k,j);
+              if (icut > ie || i < icut) return;
+              Real q = 0.0;
+              bool any = false;
+              for (int cc=0; cc<NC; cc+=bst_) {
+                const int c = blk*NC + cc;
+                const int p = c/bst_;
+                if (i < bsp_(m,p,k,j)) continue;
+                int g, b;
+                if (ck_nq_ == 1) {
+                  g = c % CK_NG;
+                  b = c/CK_NG;
+                } else {
+                  g = (c/2) % CK_NG;
+                  b = c/(2*CK_NG);
+                }
+                const Real wgc = (ck_nq_ == 1) ? ckgw(g)/static_cast<Real>(ck_nq_)
+                                               : ckgw(g);
+                const Real th = tsl_(m,p,i+1,k,j);
+                const Real tl = tsl_(m,p,i,k,j);
+                const bool dark = (tl >= 1.0e30);
+                const RtF thi = RT_EXP(-static_cast<RtF>(th));
+                const Real dtl = dark ? 1.0e30 : (tl - th);
+                const RtF tlo = dark ? static_cast<RtF>(0.0) : RT_EXP(-static_cast<RtF>(tl));
+                const Real dif = static_cast<Real>(thi) - static_cast<Real>(tlo);
+                const Real fac = (fabs(dtl) > 1.0e-3)
+                    ? (dif/dtl) : (static_cast<Real>(thi)*(1.0 - 0.5*dtl));
+                q += (1.0-alb_)*fst_*ckswf(b)*wgc*fac
+                     *static_cast<Real>(static_cast<RtF>(ckkro_g(m,c,i,k,j)));
+                any = true;
+              }
+              if (any) Qb_g(m,blk,i,k,j) += q;
+            });
           }
           // the factorisation, on the storing pass, from what that pass stored
           if (cklbuild_) {
