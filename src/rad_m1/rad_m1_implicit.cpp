@@ -515,10 +515,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_op_split_red")) {
     impl_opsplit = pin->GetBoolean("rad_m1","implicit_op_split_red");
   }
-  impl_opteam = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_op_team_red")) {
-    impl_opteam = pin->GetBoolean("rad_m1","implicit_op_team_red");
-  }
+  // default ON since 2026-09-25 (m1-fast3: box -12 %, wedge -13 %; round-off only)
+  impl_opteam = pin->GetOrAddBoolean("rad_m1","implicit_op_team_red",true);
   impl_fastk = false;
   impl_odskip = false;
   if (impl_stencil && impl_bcg_sync != 1) {
