@@ -7020,8 +7020,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (c) the emission/absorption source, linearised in T about the iterate
     if (src_on) {
       auto eos = pmy_pack->phydro->peos->eos_data;
-      par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // m1-fast5-sp: an ideal-gas EOS without the cache gets its own kernel (e and c_v by
+      // M1EosIdeal, the ideal branch of ThermoAt: bitwise); the generic one carries the
+      // table code (828 B call frame per lane) even when the table is off
+      const bool srid = !eos.tbl.active && !usec;
+      const Real gam = eos.gamma;
+      auto srb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
+                                      const int i) {
         Real rkpv = opac_(m,M1_OP_P,k,j,i);
         Real rkev = opac_(m,M1_OP_E,k,j,i);
         if (rkpv == 0.0 && rkev == 0.0) {
@@ -7032,9 +7037,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real dd = uh(m,IDN,k,j,i);
         Real tk = iw_(m,M1_IW_TP,k,j,i);
         Real nmiss = 0.0;
-        M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
-                                                      &nmiss};
-        M1EosDirect<decltype(eos)> thd{eos};
+        auto thc = [&]() {
+          if constexpr (decltype(idl)::value) {
+            return M1EosIdeal{gam};   // never called: usec is false here
+          } else {
+            return M1EosCached<decltype(eos), decltype(ec_)>{eos, ec_, m, k, j, i, ecnt,
+                                                             &nmiss};
+          }
+        }();
+        auto thd = [&]() {
+          if constexpr (decltype(idl)::value) {
+            return M1EosIdeal{gam};
+          } else {
+            return M1EosDirect<decltype(eos)>{eos};
+          }
+        }();
         Real ee, cv;
         if (usec) {
           thc(dd, tk, ee, cv);
@@ -7100,7 +7117,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
         iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
                                   + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
-      });
+      };
+      if (srid) {
+        par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          srb(std::true_type{}, m, k, j, i);
+        });
+      } else {
+        par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          srb(std::false_type{}, m, k, j, i);
+        });
+      }
     }
 
     // implicit_vimp: the Jacobian of the implicit enthalpy velocity for this pass
@@ -7651,8 +7679,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (f) accept E', solve for T' and measure the Picard residual
     if (src_on) {
       auto eos = pmy_pack->phydro->peos->eos_data;
-      par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+      // m1-fast5-sp: an ideal-gas EOS without the per-cell cache gets its own kernel,
+      // whose root find evaluates e(T) and c_v by the ideal branch of
+      // EOS_Data::ThermoAt (the same expressions: bitwise).  The generic kernel carries
+      // the table evaluation, 254 VGPRs and 324 B of scratch per lane, even when the
+      // table is off (measured, tests_m1/runs_5s_fast5sp).
+      const bool tsid = !eos.tbl.active && !usec;
+      auto tsb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
+                                      const int i) M1_INL {
         Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
         Real eold = iw_(m,M1_IW_EP,k,j,i);
         Real rkpv = opac_(m,M1_OP_P,k,j,i);
@@ -7692,7 +7726,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (!done) {
             // the pre-3g bracketed root find: also the per-cell FALLBACK of the Newton
             // update (c_v <= 0, a step outside the trust region, a non-positive T).
-            if (usec) {
+            if constexpr (decltype(idl)::value) {
+              M1EosIdeal th{eos.gamma};
+              (void) M1ImplTemperatureT(th, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                        cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
+                                        ok);
+            } else if (usec) {
               Real nmiss = 0.0;
               M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
                                                             &nmiss};
@@ -7720,7 +7759,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           iw_(m,M1_IW_S1,k,j,i) = re;
           iw_(m,M1_IW_S3,k,j,i) = rt;
         }
-      });
+      };
+      if (tsid) {
+        par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+          tsb(std::true_type{}, m, k, j, i);
+        });
+      } else {
+        par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+          tsb(std::false_type{}, m, k, j, i);
+        });
+      }
     } else {
       par_for("m1_impl_accept", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
