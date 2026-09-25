@@ -9,6 +9,9 @@ You are a worker agent on the AthenaK code (C++17 / Kokkos, block-AMR astrophysi
 Follow the brief exactly and return one deliverable. Read CLAUDE.md for build, style and test rules.
 Never build in the dirty working tree: build in a `git archive HEAD` snapshot under
 /viper/u2/jinma/ATHENAK/bench/. Never write into run/. Do not commit unless the brief says so.
+Viper nodes (apu AND apudev) have exactly 2 GPUs each; apudev allows 1 node. Never request
+`--gres=gpu:4` or more than 2 ranks per node; more than 2 GPUs = `-p apu`, N nodes x 2
+(`--ntasks-per-node=2 --gres=gpu:2 --constraint=apu --cpus-per-task=24`).
 GPU jobs: apudev partition for jobs under 15 minutes. sbatch snapshots the script, so after
 editing a submit script cancel and resubmit. No sleep or poll loops: submit, check once, report.
 Timing and cost comparisons are ALWAYS measured on the GPU (apudev, same binary, interleaved arms,
