@@ -457,7 +457,8 @@ class RadiationM1 {
   int impl_prec;                // <rad_m1>/implicit_precond: 0 = x1 line Jacobi (the
                                 // original), 1 = symmetric red-black transverse line
                                 // Gauss-Seidel, block-local (no communication), 2 = its
-                                // forward half (red, black)
+                                // forward half (red, black), 3 = mg (rbgs_fwd + block-
+                                // local semicoarsened levels, rad_m1_precond.cpp)
   // ---- multi-rank Krylov (tests_m1/runs_3w_krylov, rad_m1_krylov.cpp).  Both keys
   // default OFF; off, nothing below is allocated and the path is bitwise the old one.
   bool impl_kpipe;              // <rad_m1>/implicit_krylov_pipe: pipelined (Cools-
@@ -519,6 +520,16 @@ class RadiationM1 {
   // (rad_m1_opcheck.cpp); K > 0 fatal on a mismatch, K < 0 report only
   int impl_opchk, opchk_n;
   Real impl_opchk_tol;          // <rad_m1>/implicit_op_check_tol (default 1e-12)
+  // implicit_precond = mg (rad_m1_precond.cpp): block-local (x2,x3) semicoarsening
+  int mg_nlev;                  // <rad_m1>/implicit_mg_levels: levels incl. the fine one
+  bool mg_halo;                 // <rad_m1>/implicit_mg_halo: fine residual with the halo
+  std::vector<DvceArray5D<Real>> mgc;   // level l >= 1: (m,9,nk_l,nj_l,nx1)
+  std::vector<int> mg_nj, mg_nk;        // per level (level 0 = the MeshBlock)
+  void ImplicitMGBuild();
+  void ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2);
+  int impl_dump_cyc;            // <rad_m1>/implicit_dump_op (debug, rad_m1_precond.cpp)
+  bool impl_dump_done;
+  void ImplicitDumpOp();
   void ImplicitOpCheck();
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
