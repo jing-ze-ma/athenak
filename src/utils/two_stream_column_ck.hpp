@@ -153,6 +153,22 @@ inline bool ck_impl_floorbound = false;
 // NOT-CONVERGED flag change: the passes a capped cell cannot use are no longer spent.
 // Default FALSE = bitwise.  Counted in slot 17 with (b).
 inline bool ck_impl_kkt_demax = false;
+// problem/ck_impl_stalldbg: diagnosis of columns that stall at a fixed residual.  0 =
+// off (bitwise).  N > 0: on every fused pass with index >= N, each column still active
+// prints its worst cell, that cell's neighbours and every cell whose step was clipped
+// (dtmax / demax / floor), with the unclipped Newton step, the applied step, the KKT
+// flag and the magnitudes that set the round-off floor of the residual.  Nothing reads
+// it.
+inline int ck_impl_stalldbg = 0;
+// problem/ck_impl_kkt_row: the ACTIVE-SET row for the KKT cells of ck_impl_floorbound /
+// ck_impl_kkt_demax.  A cell on a bound whose residual points through it cannot move,
+// but its row still asks the tridiagonal for a step, and that unrealised step feeds its
+// neighbours' solutions through the off-diagonals: the neighbours then converge to the
+// fixed point of the clipped iteration, not to R = 0, and stall there.  With this on the
+// KKT cell gets the identity row with zero right-hand side (a = c = 0, b = 1, d = 0), so
+// its neighbours solve the reduced system with that cell held.  Default FALSE =
+// bitwise.  Fused, glob = 0 path only.
+inline bool ck_impl_kkt_row = false;
 inline int ck_impl_nfloor = 0;             // cells stopped at e_floor, last pass
 inline int ck_impl_nkkt = 0;               // cells excluded from the test as KKT
 // problem/ck_impl_verbose: print the per-call pass count and residual.
@@ -1015,6 +1031,30 @@ inline void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0) {
 //! with A and E built from the same source, so it degenerates to the explicit step where
 //! the emission is unavailable.  It is counted in slot 3.
 
+//----------------------------------------------------------------------------------------
+//! \fn bool CkKktCell
+//! \brief the KKT test of ck_impl_floorbound / ck_impl_kkt_demax for one cell (the rule
+//! of the fused kernel's kktcell), for ck_impl_kkt_row and ck_impl_stalldbg.
+
+KOKKOS_INLINE_FUNCTION
+bool CkKktCell(const EOS_Data &eos, const bool fb, const bool kd, const Real detot,
+               const Real rho, const Real e, const Real es, const Real r) {
+  bool kkt = false;
+  if (fb && r > 0.0) {
+    Real efl = eos.EnergyFromTemperature(rho, eos.tfloor);
+    if (e < eos.EnergyFloorBound(rho)) {
+      const Real ep = eos.EnergyFromPressure(rho, eos.pfloor);
+      if (ep > efl) efl = ep;
+    }
+    kkt = (e <= efl*(1.0 + 1.0e-10));
+  }
+  if (kd && !kkt && es > 0.0) {
+    kkt = (r > 0.0 && e <= es*(1.0 - detot)*(1.0 + 1.0e-10))
+          || (r < 0.0 && e >= es*(1.0 + detot)*(1.0 - 1.0e-10));
+  }
+  return kkt;
+}
+
 inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
                       DvceArray4D<Real> T_, DvceArray4D<Real> dx1_, const Real bdt) {
   auto &indcs = pm->mb_indcs;
@@ -1115,6 +1155,15 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
                       ? pm->pmb_pack->pmhd->peos->eos_data
                       : pm->pmb_pack->phydro->peos->eos_data;
     const bool aarst_ = ck_impl_aa_rst;
+    // ck_impl_stalldbg / ck_impl_kkt_row (see their notes)
+    const bool sdbg_ = (ck_impl_stalldbg > 0) && (ck_impl_pass >= ck_impl_stalldbg)
+                       && !glb_;
+    const bool krow_ = ck_impl_kkt_row && (fb_ || kd_) && !glb_;
+    const int pass_ = ck_impl_pass;
+    const bool csph_ = pm->use_cubed_sphere;
+    auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
+    auto &x2v_ = pm->pmb_pack->pcoord->x2v;
+    auto &x3v_ = pm->pmb_pack->pcoord->x3v;
     // ck_impl_every_thr: a column masked out of this call (ck_done = 2) is not touched
     const bool msk_ = ck_cad_partial;
     auto aah_ = (naa_ > 0) ? *ck_aah_ptr : CkDum<DvceArray5D<Real>>("ck_aah_d");
@@ -1158,6 +1207,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       // of this call (its arrays hold the state BEFORE that last step, so its residual
       // here is stale and must not steer anything)
       const bool pdone = pred_ && (done_(m,k,j) > 0.0);
+      int iwd = -1;                     // ck_impl_stalldbg: the worst cell
       if (!glb_) {
         // KKT (ck_impl_floorbound / ck_impl_kkt_demax): a cell on a bound whose
         // residual points through it is at its constrained solution (see the notes)
@@ -1190,6 +1240,21 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           if (t0rec_) t0_(m,k,j,i) = T_(m,k,j,i);
         }, Kokkos::Max<Real>(rn));
         if (!(rn > 0.0)) rn = 0.0;             // the unfused max starts from 0
+        if (sdbg_) {
+          using MLc = Kokkos::MaxLoc<Real, int>;
+          typename MLc::value_type vw;
+          Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+          [&](const int i, typename MLc::value_type &u) {
+            const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
+            Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+            if (kk_ && s > tol && kktcell(i, r)) s = 0.0;
+            if (s > u.val) {
+              u.val = s;
+              u.loc = i;
+            }
+          }, MLc(vw));
+          iwd = vw.loc;
+        }
         if (kk_) {
           Real nkk = 0.0;
           Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
@@ -1565,6 +1630,15 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
             rse_(m,k,j,i) = ei;
           }
         }
+        // problem/ck_impl_kkt_row: a thick KKT cell holds (identity row, no step); after
+        // rsec, so the secant history keeps the cell's true residual
+        if (krow_ && !sdc && !thin && CkKktCell(eosfb_, fb_, kd_, detot,
+                                                u0(m,IDN,k,j,i), ei, est_(m,k,j,i), -d)) {
+          a = 0.0;
+          b = 1.0;
+          c = 0.0;
+          d = 0.0;
+        }
         if (!(b > 0.0)) nb += 1;
         sa(q) = a;
         sb(q) = b;
@@ -1820,6 +1894,35 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           if (ei + de < efl) {
             de = (ei > efl) ? (efl - ei) : 0.0;
             Kokkos::atomic_add(&cnv_(16), 1.0);
+          }
+        }
+        if (sdbg_) {
+          const bool clp = (de != sx(q));
+          if (i == iwd || i == iwd - 1 || i == iwd + 1 || clp) {
+            const Real rho = u0(m,IDN,k,j,i);
+            const Real r = ei - es - bdt*src_(m,k,j,i);
+            const Real Ti = T_(m,k,j,i);
+            Real efl = eosfb_.EnergyFromTemperature(rho, eosfb_.tfloor);
+            const Real ep = eosfb_.EnergyFromPressure(rho, eosfb_.pfloor);
+            if (ep > efl) efl = ep;
+            const bool kk = CkKktCell(eosfb_, fb_, kd_, detot, rho, ei, es, r);
+            Real pth = 0.0, plat = 0.0, plon = 0.0;
+            if (csph_) {
+              CSCellAngles(mbpan_.d_view(m), x2v_(m,j), x3v_(m,k), pth, plat, plon);
+            }
+            Kokkos::printf("### ckstall pass=%d m=%d k=%d j=%d i=%d w=%d lat=%.2f "
+                           "lon=%.2f "
+                           "T=%.5e rho=%.4e p=%.4e r/e=%.4e e=%.10e est=%.6e hS/e=%.4e "
+                           "hEm/e=%.4e Etot/e=%.4e efl/e=%.6e cvT=%.4e cvEOS=%.4e thick=%d "
+                           "kkt=%d b=%.4e dx/e=%.4e de/e=%.4e cap=%d\n",
+                           pass_, m, k, j, i, (i == iwd) ? 1 : 0,
+                           plat*57.29577951308232, plon*57.29577951308232, Ti, rho,
+                           eosfb_.Pressure(rho, ei, Ti), r/ei, ei, es,
+                           bdt*src_(m,k,j,i)/ei, bdt*em_(m,k,j,i)/ei,
+                           u0(m,IEN,k,j,i)/ei, efl/ei, (Ti > 0.0) ? ei/Ti : 0.0,
+                           eosfb_.SpecificHeatCv(rho, ei, Ti)*rho,
+                           (thk_(m,k,j,i) > 0.0) ? 1 : 0, kk ? 1 : 0, sb(q),
+                           sx(q)/ei, de/ei, cap ? 1 : 0);
           }
         }
         u0(m,IEN,k,j,i) += de;
