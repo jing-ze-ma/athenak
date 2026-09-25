@@ -582,6 +582,19 @@ void RadiationM1::VetColInit() {
   Kokkos::deep_copy(vcol_gb, gb_h);
   Kokkos::deep_copy(vcol_gb0, gb0_h);
   Kokkos::deep_copy(vcol_klast, kl_h);
+  // the team sweep's copy of seg and gb, (shell, ray, 2): the same values
+  Kokkos::realloc(vcol_sgt, n1, nray, 2);
+  {
+    auto sgt_h = Kokkos::create_mirror_view(vcol_sgt);
+    const bool hgb = (gb_h.extent_int(0) == nray);
+    for (int l = 0; l < n1; ++l) {
+      for (int r = 0; r < nray; ++r) {
+        sgt_h(l, r, 0) = seg_h(r, l);
+        sgt_h(l, r, 1) = hgb ? gb_h(r, l) : 0.5;
+      }
+    }
+    Kokkos::deep_copy(vcol_sgt, sgt_h);
+  }
   Kokkos::deep_copy(vcol_muf, muf_h);
   Kokkos::deep_copy(vcol_wf, wf_h);
 
@@ -962,6 +975,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   auto tt_ = tau_ten;
   auto mo_ = vcol_mom;
   auto seg_ = vcol_seg;
+  auto sgt_ = vcol_sgt;
   auto mu_ = vcol_mu;
   auto w_ = vcol_w;
   auto ray_ = vcol_ray;
@@ -1047,11 +1061,11 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           const Real iu = top ? (rt1 ? itr : 0.0) : irr;
           Real ex, w0, wu;
           if (g2) {
-            const Real gb = gb_(r,l), chup = top ? ch0 : pr_(l+1);
-            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*seg_(r,l), -VcolC2(gb), ex, w0, wu);
+            const Real gb = sgt_(l,r,1), chup = top ? ch0 : pr_(l+1);
+            VcolW2((chup + (ch0 - chup)*(1.0 - gb))*sgt_(l,r,0), -VcolC2(gb), ex, w0, wu);
           } else {
             const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
-            VcolW(cseg*seg_(r,l), ex, w0, wu);
+            VcolW(cseg*sgt_(l,r,0), ex, w0, wu);
           }
           const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
           irr = iv;
@@ -1095,6 +1109,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
       par_for_inner(tm, 0, nray-1, [&](const int r) {
         Real irr = ir_(r);
         Real itr = rtop ? ir_(2*nray + r) : 0.0;
+        const int lr = static_cast<int>(ray_(r,0));
         for (int l = la; l <= lb; ++l) {
           if (r > kl_(l)) continue;
           const Real ch0 = pr_(l), s0 = pr_(n1 + l);
@@ -1102,15 +1117,14 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           const Real sd = (l == 0) ? 0.0 : pr_(n1 + l - 1);
           const Real chlo = (l == 0) ? ch0 : chd;
           const Real slo = (l == 0) ? sbot : sd;
-          const int lr = static_cast<int>(ray_(r,0));
           Real iv;
           Real ex, w0, wu;
           if (lr < l) {
             if (g2) {
-              const Real gb = gb_(r,l-1);
-              VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
+              const Real gb = sgt_(l-1,r,1);
+              VcolW2((chd + (ch0 - chd)*gb)*sgt_(l-1,r,0), VcolC2(gb), ex, w0, wu);
             } else {
-              VcolW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
+              VcolW(0.5*(chd + ch0)*sgt_(l-1,r,0), ex, w0, wu);
             }
             iv = irr*ex + wu*sd + w0*s0;
             if (trk) {
