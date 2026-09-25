@@ -32,6 +32,7 @@
 #include <sys/stat.h>  // mkdir, for the cyclediag/ subdirectory
 
 // C++ headers
+#include <algorithm>  // sort, for problem/ic_profile
 #include <cmath>
 #include <cstdint>
 #include <cstdio>   // snprintf, for the cycle-diagnostic file name
@@ -40,6 +41,7 @@
 #include <sstream>  // ostringstream, for the photosphere dump
 #include <iomanip>  // setw/setfill, for the cycle-diagnostic file name
 #include <string>
+#include <utility>  // pair, for problem/ic_profile
 #include <vector>
 
 // Athena++ headers
@@ -154,6 +156,9 @@ template <typename View1D>
 void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr);
 template <typename View1D>
 void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const int &N, View1D Tarr, View1D lgparr);
+template <typename View1D>
+void read_ic_profile(const std::string &fname, const int &N, View1D Tarr,
+                     View1D lgparr);
 
 void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
 void DhjCycleDiag(Mesh *pm);
@@ -1200,7 +1205,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     
     DualArray1D<Real> Tarr_init("Tarrinit", N);
     DualArray1D<Real> lgparr_init("lgparrinit", N);
-    get_picket_fence_pT_arr(eos, Rgas, gamma, Tint, Tirr, met, grav, mus, N, Tarr_init.h_view, lgparr_init.h_view);
+    // problem/ic_profile: a tabulated T(p) in place of the picket fence (+ 0.9 nabla_ad
+    // adjustment).  Empty (default) keeps the picket-fence path bitwise.
+    const std::string ic_prof = pin->GetOrAddString("problem", "ic_profile", "");
+    if (ic_prof.empty()) {
+      get_picket_fence_pT_arr(eos, Rgas, gamma, Tint, Tirr, met, grav, mus, N,
+                              Tarr_init.h_view, lgparr_init.h_view);
+    } else {
+      read_ic_profile(ic_prof, N, Tarr_init.h_view, lgparr_init.h_view);
+    }
     
     Tarr_init.modify_host();
     Tarr_init.sync_device();
@@ -4348,6 +4361,61 @@ void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &
     adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
 
     return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void read_ic_profile
+//! \brief problem/ic_profile: read a text table of "log10 p [BARYE]  T [K]" (one pair per
+//! line, '#' comments, any order in p) and resample it onto the N-point array the
+//! hydrostatic integrator reads, UNIFORM in log10 p (get_init_Tp_host assumes uniform
+//! spacing), linear in log10 p.  The table must reach 250 bar (get_init_eos_arr starts
+//! there and get_init_Tp_host has no clamp below the bottom of the array).  Everything
+//! downstream -- the hydrostatic z(log p), the probini fill -- is unchanged.
+
+template <typename View1D>
+void read_ic_profile(const std::string &fname, const int &N, View1D Tarr, View1D lgparr) {
+  std::ifstream fin(fname);
+  if (!fin.is_open()) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "problem/ic_profile: cannot open '" << fname << "'"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  std::vector<std::pair<Real, Real>> tab;
+  std::string line;
+  while (std::getline(fin, line)) {
+    const std::size_t c = line.find('#');
+    if (c != std::string::npos) line.erase(c);
+    std::istringstream ls(line);
+    Real lp, t;
+    if (ls >> lp >> t) tab.emplace_back(lp, t);
+  }
+  std::sort(tab.begin(), tab.end());
+  const int nt = static_cast<int>(tab.size());
+  bool ok = (nt >= 2);
+  for (int i=0; ok && i<nt; ++i) {
+    if (!(tab[i].second > 0.0) || (i > 0 && !(tab[i].first > tab[i-1].first))) ok = false;
+  }
+  if (!ok || tab[nt-1].first < std::log10(250.0e6)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "problem/ic_profile '" << fname << "': need >= 2 rows of "
+              << "strictly increasing log10 p [barye] with T > 0, reaching 250 bar "
+              << "(log10 p >= 8.398)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const Real lg0 = tab[0].first, lg1 = tab[nt-1].first;
+  const Real dlgp = (lg1 - lg0)/(N - 1);
+  int it = 0;
+  for (int ip=0; ip<N; ++ip) {
+    const Real lgp = (ip == N-1) ? lg1 : lg0 + ip*dlgp;
+    while (it < nt-2 && tab[it+1].first < lgp) ++it;
+    const Real f = (lgp - tab[it].first)/(tab[it+1].first - tab[it].first);
+    lgparr(ip) = lgp;
+    Tarr(ip) = tab[it].second + f*(tab[it+1].second - tab[it].second);
+  }
+  std::cout << "deep_hot_jupiter_rt: initial T(p) from problem/ic_profile '" << fname
+            << "' (" << nt << " rows, log10 p = " << lg0 << " .. " << lg1
+            << " barye)" << std::endl;
 }
 
 template <typename View1D>
