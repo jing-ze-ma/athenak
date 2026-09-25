@@ -668,6 +668,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
+  tmr_c0 = pin->DoesParameterExist("rad_m1","implicit_timers") ?
+           pin->GetInteger("rad_m1","implicit_timers") : 0;   // read only when named
   // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
   // the closures that do not read the iterate (eddington, vet_sc, tau: 1.6x on the GPU,
   // statistics moved at the solver-tolerance level) and stay OFF for m1 / minerbo /
@@ -5442,6 +5444,19 @@ void RadiationM1::SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real h
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::TmrMark
+//! \brief implicit_timers: fence, charge the time since the last mark to category c
+//! (c < 0 only sets the mark)
+
+void RadiationM1::TmrMark(int c) {
+  if (!tmr_on) return;
+  Kokkos::fence();
+  const double t = tmr_t.seconds();
+  if (c >= 0) {tmr_acc[c] += t - tmr_last;}
+  tmr_last = t;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitReport
 //! \brief one line at the end of the run with the Picard statistics
 
@@ -5450,6 +5465,20 @@ void RadiationM1::ImplicitReport() {
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
   if (global_variable::my_rank != 0) return;
+  if (tmr_c0 > 0) {
+    // implicit_timers: seconds per category, then the counters (see TmrMark)
+    std::cout << "<rad_m1> timers from cycle " << tmr_c0 << ": stages=" << tmr_cnt[7]
+              << " solves=" << tmr_cnt[0] << " passes=" << tmr_cnt[1]
+              << " kry_it=" << tmr_cnt[2] << " passes_s1=" << tmr_cnt[3]
+              << " passes_s2=" << tmr_cnt[4] << " it_s1=" << tmr_cnt[5]
+              << " it_s2=" << tmr_cnt[6] << std::endl;
+    const char *nm[12] = {"closure", "opacity", "solve_pre", "tensor", "pred",
+                          "pass_setup", "krylov", "pass_post", "solve_end", "hyd_c2p",
+                          "m1_bvals", "unused"};
+    std::cout << "<rad_m1> timers(s):";
+    for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
+    std::cout << std::endl;
+  }
   Real mean = (impl_nstep > 0.0) ? (impl_itsum/impl_nstep) : 0.0;
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
@@ -5958,6 +5987,7 @@ void RadiationM1::ImplicitVimpBuild() {
 //! the write-back into u0 and into the gas.
 
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+  TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -6269,6 +6299,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // closure = vet_sc: the formal solution of the start-of-step state.  (chi, n) are
   // then read by step (b) on every Picard pass: the tensor is lagged by one hydro step.
+  TmrMark(2);
   if (vetsc) {
     if (t2s == M1_T2S_STAGE1) {
       Time2VetStart();          // at U^n, then D* extrapolated to the stage time
@@ -6289,6 +6320,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       VetColBuild();
     }
   }
+  TmrMark(3);
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit
   // increment, scaled by dt/dt_prev.  Only the STARTING POINT moves: E^n (M1_IW_EN),
@@ -6377,6 +6409,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   Real ores0 = -1.0, ores1 = -1.0;
   for (it = 0; it < impl_maxit && !converged; ++it) {
     int nin = -1;
+    TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
     if (accel) {ImplicitAccelSave();}
@@ -7397,7 +7430,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         ImplicitOffDiagOp(M1_IW_EP, M1_IW_KB, 1.0);
       }
       kdev_slot = std::min(it, 2);
+      TmrMark(5);
       nin = ImplicitBiCGStab(rhsmax);
+      TmrMark(6);
+      if (tmr_on) {
+        tmr_cnt[1] += 1.0;
+        tmr_cnt[2] += nin;
+        if (t2s == M1_T2S_STAGE1) {tmr_cnt[3] += 1.0; tmr_cnt[5] += nin;}
+        if (t2s == M1_T2S_STAGE2) {tmr_cnt[4] += 1.0; tmr_cnt[6] += nin;}
+      }
       if (vimp_now && odm != M1_OD_OPERATOR) {
         // implicit_vimp POSITIVITY: the Newton coupling is not an M-matrix either; a
         // non-positive E drops it for the rest of the step (counted), as for od below
@@ -7776,6 +7817,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
   }
+  TmrMark(7);
+  if (tmr_on) {tmr_cnt[0] += 1.0;}
   ew_tight = false;
   if (onep) {
     if (ores1 >= 0.0 && ores0 > 0.0) {
@@ -8179,6 +8222,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   impl_lin_tol = t2_lin_save;
+  TmrMark(8);
   return TaskStatus::complete;
 }
 

@@ -311,6 +311,14 @@ class RadiationM1 {
   DvceArray4D<Real> f0x1n;      // its start-of-step copy (not restarted)
   DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
   Real impl_nstep, impl_itsum, impl_itmax, impl_nfail;   // host-side Picard counters
+  // implicit_timers = N (m1-fast4; default 0 = off): fenced host timers of the M1 stage
+  // tasks and of the parts of ImplicitSolve, accumulated over cycles >= N and printed
+  // by ImplicitReport.  The fences change the timing a little; only a diagnostic.
+  int tmr_c0 = 0;
+  bool tmr_on = false;
+  double tmr_acc[12] = {}, tmr_cnt[8] = {}, tmr_last = 0.0;
+  Kokkos::Timer tmr_t;
+  void TmrMark(int c);
 
   // ---- MILESTONE 3a2 (the limits of 3a).  See rad_m1_implicit.hpp for what each
   // constant means and docs/dev/rad_m1_implicit_design.md sect. 7 for the measurements.

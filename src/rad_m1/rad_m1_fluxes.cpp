@@ -128,6 +128,10 @@ void M1Rebuild(const Real *q, const Real cl, const Real efl,
 //! sees admissible states.
 
 TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
+  // implicit_timers: the M1 stage chain starts here
+  tmr_on = (tmr_c0 > 0) && (pmy_pack->pmesh->ncycle >= tmr_c0);
+  if (tmr_on) {tmr_cnt[7] += 1.0;}
+  TmrMark(-1);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int n1 = indcs.nx1 + 2*(indcs.ng);
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
@@ -151,6 +155,7 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
       u0_(m,M1_F3,k,j,i) = f3;
     }
   });
+  TmrMark(0);
   return TaskStatus::complete;
 }
 

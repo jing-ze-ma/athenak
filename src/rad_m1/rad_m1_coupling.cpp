@@ -389,7 +389,9 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   (void) ph->RecvU(pdrive, 0);
   (void) ph->ApplyPhysicalBCs(pdrive, 0);
   (void) ph->Prolongate(pdrive, 0);
-  return ph->ConToPrim(pdrive, 0);
+  TaskStatus ts = ph->ConToPrim(pdrive, 0);
+  TmrMark(9);
+  return ts;
 }
 
 } // namespace radm1
