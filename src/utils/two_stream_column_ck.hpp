@@ -462,6 +462,19 @@ inline bool ck_impl_jneg = false;
 // within 1/50 .. 50 of e/T.  Jacobian only: the fixed point does not move.  Needs
 // ck_impl_fuse.
 inline bool ck_impl_cvsec = false;
+// problem/ck_impl_rsec: a SECANT BOUND on each thick row's diagonal.  Default 0 = off
+// (bitwise).  The Jacobian drops the opacity's own temperature dependence (header note,
+// item iv).  In the 10x WASP-121b day-side upper layers (T 5000-6500 K, t_rad 1-4 % of
+// the stage) that term makes the true dR_i/de_i larger than the modelled one, so the
+// Newton overshoots: a period-2 limit cycle with the e/T Jacobian, ~1e-6 residual stalls
+// with cvsec (SMOKE_DIAG.md section 6).  With rsec > 0, from pass 1 of a call on, each
+// thick row compares its diagonal b with the secant of its OWN residual over the last
+// pass, (R_p - R_{p-1})/(e_p - e_{p-1}), and takes the secant where it is LARGER, capped
+// at rsec*b.  A larger diagonal keeps the M-matrix and only shortens a step; the
+// residual, and therefore the fixed point, is untouched.  The secant also carries what
+// the neighbours' steps did to R_i, which is why it is a bound (max) and capped, not a
+// replacement.  Needs ck_impl_fuse, ck_impl_glob = none, ck_impl_aa = 0.
+inline Real ck_impl_rsec = 0.0;
 // problem/ck_impl_jac0: with ck_impl_seed > 0, build the Jacobian on pass 0 (at e^n,
 // together with the storing pass) instead of on pass 1 (at the seeded state).  Merges
 // the two full sweeps of T3 into one; the chord matrix is then one seed step stale.
@@ -653,6 +666,9 @@ inline DvceArray5D<Real> *ck_lpf_ptr = nullptr;
 inline DvceArray5D<Real> *ck_lchk_ptr = nullptr;
 // ck_impl_cvsec: the previous iterate's e and T, and the cv the rows use, (m,k,j,i)
 inline DvceArray4D<Real> *ck_ep_ptr = nullptr;
+// problem/ck_impl_rsec: each thick row's residual and energy at the previous pass
+inline DvceArray4D<Real> *ck_rsr_ptr = nullptr;
+inline DvceArray4D<Real> *ck_rse_ptr = nullptr;
 inline DvceArray4D<Real> *ck_tp_ptr = nullptr;
 inline DvceArray4D<Real> *ck_cv_ptr = nullptr;
 // ck_impl_jac_lin: the per-chain partial of the third Jacobian entry (the first two go to
@@ -779,6 +795,12 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       delete ck_lpj_ptr;
       ck_lpj_ptr = nullptr;
     }
+    if (ck_rsr_ptr != nullptr) {
+      delete ck_rsr_ptr;
+      delete ck_rse_ptr;
+      ck_rsr_ptr = nullptr;
+      ck_rse_ptr = nullptr;
+    }
     if (ck_ep_ptr != nullptr) {
       delete ck_ep_ptr;
       delete ck_tp_ptr;
@@ -848,6 +870,10 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
         ck_lpj_ptr = new DvceArray5D<Real>("ck_lpj", nmb, nch, n1, n3, n2);
       }
     }
+  }
+  if (ck_impl_rsec > 0.0) {
+    ck_rsr_ptr = new DvceArray4D<Real>("ck_rsr", nmb, n3, n2, n1);
+    ck_rse_ptr = new DvceArray4D<Real>("ck_rse", nmb, n3, n2, n1);
   }
   if (ck_impl_cvsec) {
     ck_ep_ptr = new DvceArray4D<Real>("ck_ep", nmb, n3, n2, n1);
@@ -1008,6 +1034,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const bool cv0_ = (ck_impl_pass <= 0);
     const bool cvk_ = cv0_ && ck_impl_cvkeep;
     auto ep_ = cvs_ ? *ck_ep_ptr : CkDum<DvceArray4D<Real>>("ck_ep_d");
+    // problem/ck_impl_rsec (1-element dummies when off)
+    const Real rsec_ = ck_impl_rsec;
+    const bool rsc_ = (rsec_ > 0.0);
+    const bool rsu_ = rsc_ && (ck_impl_pass > 0);
+    auto rsr_ = rsc_ ? *ck_rsr_ptr : CkDum<DvceArray4D<Real>>("ck_rsr_d");
+    auto rse_ = rsc_ ? *ck_rse_ptr : CkDum<DvceArray4D<Real>>("ck_rse_d");
     auto tp_ = cvs_ ? *ck_tp_ptr : CkDum<DvceArray4D<Real>>("ck_tp_d");
     auto cv_ = cvs_ ? *ck_cv_ptr : CkDum<DvceArray4D<Real>>("ck_cv_d");
     // problem/ck_impl_glob: line search and sub-steps (1-element dummies when off)
@@ -1475,6 +1507,18 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
             d = -(((ei - est_(m,k,j,i)) - sacc_(m,k,j,i)) - hh*src_(m,k,j,i));
           } else {
             d = -(ei - est_(m,k,j,i) - hh*src_(m,k,j,i));
+          }
+          // problem/ck_impl_rsec: the secant bound on the diagonal (see its note)
+          if (rsc_ && !sub_) {
+            if (rsu_ && b > 0.0) {
+              const Real dei = ei - rse_(m,k,j,i);
+              if (fabs(dei) > 1.0e-9*ei) {
+                const Real js = (-d - rsr_(m,k,j,i))/dei;
+                if (js > b) b = fmin(js, rsec_*b);
+              }
+            }
+            rsr_(m,k,j,i) = -d;
+            rse_(m,k,j,i) = ei;
           }
         }
         if (!(b > 0.0)) nb += 1;
