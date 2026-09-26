@@ -21,10 +21,10 @@
 module purge
 if [ -n "$CPURUN" ]; then   # CPU gate/smoke build: spack openmpi, all tasks of the job on one arm
   module load gcc/13.2.0-gcc-13.2.0-w55nxkl openmpi/5.0.1-gcc-13.2.0-xpoh5uw
-  STEP="srun -n ${SLURM_NTASKS} -c ${SLURM_CPUS_PER_TASK}"
+  STEP="srun --mpi=pmix -n ${SLURM_NTASKS} -c ${SLURM_CPUS_PER_TASK}"
 else
   module load gcc/13.2.0-gcc-13.2.0-w55nxkl cuda/12.9.0-none-none-pfmzfdv hpcx/2.17.1/hpcx-ompi
-  STEP="srun -n 1 -N 1 -c ${SLURM_CPUS_PER_TASK} --gpus-per-task=1 --exact --mem=${STEPMEM:-90000}"
+  STEP="srun --mpi=pmix -n 1 -N 1 -c ${SLURM_CPUS_PER_TASK} --gpus-per-task=1 --exact --mem=${STEPMEM:-90000}"
 fi
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
 R=/resnick/home/jingze/ATHENAK/athenak/docs/handover/caltech-2026-09-26/inputs

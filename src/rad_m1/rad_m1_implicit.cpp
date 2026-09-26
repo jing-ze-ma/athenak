@@ -8402,6 +8402,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
   // time2_vstage, default true on sp, false = the old stage-start form)
   const bool vfx = t2st && impl_vimp && t2_fvnew;
+  const bool coupling_ = coupling;  // local: a member read in a kernel captures this
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -8451,7 +8452,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // makes e_gas + (c/chat) E change by the face fluxes and the work term ALONE, to
       // round-off -- measured: the T'^4 form drifted 2.8e-11 over 2000 steps of T5, this
       // one 0.  At convergence the two agree, so T' stays the consistent temperature.
-      if (coupling && dbgh) {
+      if (coupling_ && dbgh) {
         Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*ep;
         eg -= (cl/ch)*qq;
       }
