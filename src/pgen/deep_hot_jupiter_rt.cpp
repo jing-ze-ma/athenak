@@ -640,6 +640,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // ck-fast2 lever 3, default off: the storing pass's pseudo-spherical beam in its own
   // per-target kernels (see two_stream_rt::ck_beam_par)
   two_stream_rt::ck_beam_par = pin->GetOrAddBoolean("problem","ck_beam_par",false);
+  // the storing pass without the chain kernel (see two_stream_rt::ck_store_split)
+  two_stream_rt::ck_store_split = pin->GetOrAddBoolean("problem","ck_store_split",true);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
   // sweep is linear in B_b at frozen opacity, so only the opacity-dependent coefficients
   // have to be rebuilt -- and they do not change); ck_impl_frozen_cof decides whether the

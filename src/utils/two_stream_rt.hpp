@@ -280,6 +280,40 @@ std::conditional_t<ON, CkScrCol<T>, CkScrOne<T>> CkScrGet(Real *buf, const int g
     return CkScrOne<T>{};
   }
 }
+// ck-store: the chain kernel's groups INTERLEAVED by radial index instead: inside a
+// tile, element (cc, i) of group g of lane l sits at
+//   tile + ((i*S + g)*RT_NB + cc)*CKS_W + l   (in Reals),  S = the kernel's group count,
+// so at a given i every (group, chain) of the thread is a compile-time offset from ONE
+// address.  The group-major layout above needs a separate pointer per (group, chain),
+// runtime multiples of n1, which the chain kernel kept live in registers (about 40 of
+// its 164).  A wave's access at one (g, cc, i) is still one contiguous line, and the
+// tile is the same size.  An element takes one Real slot whatever T is.
+template <typename T, int S>
+struct CkScrRowI {
+  Real *p;
+  KOKKOS_INLINE_FUNCTION T &operator[](const int i) const {
+    return *reinterpret_cast<T*>(p + i*(S*RT_NB*CKS_W));
+  }
+};
+template <typename T, int S>
+struct CkScrColI {
+  Real *p;
+  KOKKOS_INLINE_FUNCTION CkScrRowI<T, S> operator[](const int c) const {
+    return CkScrRowI<T, S>{p + c*CKS_W};
+  }
+};
+template <typename T, bool ON, int S>
+KOKKOS_INLINE_FUNCTION
+std::conditional_t<ON, CkScrColI<T, S>, CkScrOne<T>> CkScrGetI(Real *buf, const int g,
+                                                              const size_t tsz,
+                                                              const int t) {
+  if constexpr (ON) {
+    Real *tile = buf + static_cast<size_t>(t/CKS_W)*tsz;
+    return CkScrColI<T, S>{tile + g*RT_NB*CKS_W + (t % CKS_W)};
+  } else {
+    return CkScrOne<T>{};
+  }
+}
 // ck-tiers: the same wave-tiled layout for the other column kernels (rt_chain_ck_lin,
 // rt_chain_ck_lin1, rt_chain_grey).  Thread t's tile holds rows of n1 values; row r
 // (one chain or angle of one array) holds element i of lane l at
@@ -1068,6 +1102,12 @@ inline bool ck_beam_sph = false;
 // deposits below e^-60 of the incident beam.  Needs ck_impl_lin, lin_thr = 1 (scratch).
 inline bool ck_beam_par = false;
 inline DvceArray4D<int> *ck_bstop_ptr = nullptr;   // (m, beam chain, k, j)
+// problem/ck_store_split (ck-store): on the storing pass of the linear re-apply, store the
+// opacity-only operator with a per-(band, g) kernel (ck_coef) and take the pass's fluxes
+// from the linear kernels, instead of running rt_chain_ck (see ckstsp_ in the pass).  The
+// operator is bitwise the chain kernel's; the storing pass's Src and Fb change by
+// round-off.  Only under ck_beam_par (and the conditions of ckstsp_); true by default.
+inline bool ck_store_split = true;
 // The beam's optical depth to the TOP face of a mu0 < 0 (twilight) column: the ray
 // enters the domain top on the far side, grazes the tangent radius b = r_top sin(theta0)
 // and climbs back to the target, so every shell between b and r_top is crossed TWICE.
@@ -2007,7 +2047,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   // pass that reuses the Jacobian run the JAC = 0 code, which is the tm sweep
   // exactly as it was.  See the JAC blocks in the tm body.
   static constexpr bool JAC = decltype(jac_tag)::value;
-  // ck-scratch: the whole-column arrays' groups in rt_ckscr_ptr (see CkScrCol).
+  // ck-scratch: the whole-column arrays' groups in rt_ckscr_ptr (see CkScrColI).
   // gI..gJ are this instantiation's group numbers; a switched-off array has none.
   constexpr int gI = 0;
   constexpr int gC = 1;
@@ -2015,6 +2055,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   constexpr int gP = gK + (BSP ? 1 : 0);
   static constexpr int gJ = gP + ((CCH >= 2) ? 4 : 0);
   constexpr int nGrp = gJ + (JAC ? 3 : 0);
+  static constexpr int nScS = gJ + (JAC ? 3 : 0);   // = nGrp: see CkScrColI
   const int scn1 = n1;
   const int scn2 = je - js + 1, scn3 = ke - ks + 1;
   const size_t grp1 = static_cast<size_t>(RT_NB)*scn1*(nmb1 + 1)*scn3*scn2;
@@ -2141,7 +2182,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
     // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
     // reason to change it, so the column stays.  (ck-scratch: it, and the other
     // whole-column arrays below, now live in rt_ckscr_ptr, not on the stack.)
-    auto I_down = CkScrGet<RtF, true>(scbuf, gI, sctsz, scn1, sct);
+    auto I_down = CkScrGetI<RtF, true, nScS>(scbuf, gI, sctsz, sct);
     // THE FACE MIXING, STORED.  Conservation needs the two rays to use the SAME
     // c at a face -- that, and only that, is what makes A_below (u_b - d_b) =
     // A_above (u_a - d_a) hold and the deposit telescope.  The down-sweep forms
@@ -2150,12 +2191,12 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
     // would be a different number and would break the telescoping at O(beta) per
     // face (measured: 0.7 % per cell, 19 % over the production column).  The
     // accuracy of c is then the probe's; its CONSISTENCY is exact.
-    auto Cmx = CkScrGet<RtF, SPH>(scbuf, gC, sctsz, scn1, sct);
+    auto Cmx = CkScrGetI<RtF, SPH, nScS>(scbuf, gC, sctsz, sct);
     // problem/ck_beam_sph: the (kappa rho) column, filled by the down-sweep and
     // read by the ray integration.  tau_ray is NOT a running sum -- every target
     // radius has its own chord set -- so the profile has to be kept.  One element
     // when the switch is off.
-    auto Krs = CkScrGet<RtF, BSP>(scbuf, gK, sctsz, scn1, sct);
+    auto Krs = CkScrGetI<RtF, BSP, nScS>(scbuf, gK, sctsz, sct);
 
     // Top: the column above the domain, using the top cell's opacity over the
     // hydrostatic column p/g -- the same construction the grey scheme uses.
@@ -2372,10 +2413,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       // ck-scratch) and is a one-element private array otherwise.
       RtF cry0[NC], cryi[NC], cryo[NC];
       constexpr bool CC2 = (CCH >= 2);
-      auto Kpc = CkScrGet<Real, CC2>(scbuf, gP, sctsz, scn1, sct);
-      auto Cc0 = CkScrGet<RtF, CC2>(scbuf, gP+1, sctsz, scn1, sct);
-      auto Cci = CkScrGet<RtF, CC2>(scbuf, gP+2, sctsz, scn1, sct);
-      auto Cco = CkScrGet<RtF, CC2>(scbuf, gP+3, sctsz, scn1, sct);
+      auto Kpc = CkScrGetI<Real, CC2, nScS>(scbuf, gP, sctsz, sct);
+      auto Cc0 = CkScrGetI<RtF, CC2, nScS>(scbuf, gP+1, sctsz, sct);
+      auto Cci = CkScrGetI<RtF, CC2, nScS>(scbuf, gP+2, sctsz, sct);
+      auto Cco = CkScrGetI<RtF, CC2, nScS>(scbuf, gP+3, sctsz, sct);
       // one half-layer step, in the chain's own precision: the same exponential
       // coefficients the staggered layers used, handed the half interval.  dsrc
       // comes back as absorbed minus emitted, which is what Src_g wants and is
@@ -2618,9 +2659,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
         // M-matrix the Thomas sweep relies on), which makes it quasi-Newton with
         // the same root.  All of it is compiled only into the JAC instantiation.
         constexpr int NJ = JAC ? NC : 1;
-        auto Js0 = CkScrGet<Real, JAC>(scbuf, gJ, sctsz, scn1, sct);
-        auto Js1 = CkScrGet<Real, JAC>(scbuf, gJ+1, sctsz, scn1, sct);
-        auto Js2 = CkScrGet<Real, JAC>(scbuf, gJ+2, sctsz, scn1, sct);
+        auto Js0 = CkScrGetI<Real, JAC, nScS>(scbuf, gJ, sctsz, sct);
+        auto Js1 = CkScrGetI<Real, JAC, nScS>(scbuf, gJ+1, sctsz, sct);
+        auto Js2 = CkScrGetI<Real, JAC, nScS>(scbuf, gJ+2, sctsz, sct);
         Real jS[NJ][3], jfc[NJ][2], juc[NJ][2];
         // ---- PASS 1: upward, accumulating the relation at every face --------
         {
@@ -2909,7 +2950,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             // the layer joining cells i-1 and i, from below this time
             Real suv = bown, sfv = bown, snl = bown, krl = kro;
             if (i > icut) {
-              krl = krof(cc, il, b, iTl, fTl, iPl, fPl, rhol, false);
+              // ck-store: krof without its store -- pass 1 stored this very
+              // product (the same cached kappa times the same rho) at cell il
+              krl = ckfus ? ckkro_g(m,blk*NC+cc,il,k,j)
+                          : kapof(cc, il, b, iTl, fTl, iPl, fPl, false)*rhol;
               const Real bfar = Bb_g(m,b,il,k,j);
               suv = BFace(krl, kro, bfar, bown, bface_on);
               snl = BFace(kro, krl, bown, bfar, bface_on);
@@ -6337,9 +6381,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // call (ck_impl_frozen_op), the tm sweep is affine in B_b and its reflectance R
         // does not depend on B: pass 1's R recurrence is the factorisation of the column.
         // ck_lin_build packs, on the storing pass, everything the recurrences need that
-        // does not depend on B into ONE View (lP, 9 slots per chain: the half-layer
-        // triple, R and 1/(1 + R beta) at every face, the three BFace/interpolation
-        // weights of every layer and the emission coefficient) and the column geometry
+        // does not depend on B into ONE View (lP, 6 slots per chain since ck-store:
+        // R and 1/(1 + R beta) at every face, the three BFace/interpolation weights of
+        // every layer and the emission coefficient; the half-layer triple is read from
+        // ck_c0/ci/co) and the column geometry
         // into another (lG: beta, the area ratios, 1/dz); rt_chain_ck_lin then re-runs
         // only the Sc forward substitution and the ray back substitution on the new B_b.
         // Same recurrences and accumulation order as the tm body of rt_chain_ck; the
@@ -6359,6 +6404,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                              && !(ck_impl_seed > 0 && ck_impl_pass == 0 && !ck_impl_jac0);
         const bool cklw_ = ck_impl_lw;
         const bool cklchk_ = cklin_ && (ck_impl_lin_check > 0);
+        // ck-store: THE STORING PASS WITHOUT THE CHAIN KERNEL.  The storing pass of the
+        // linear re-apply needs from rt_chain_ck only what depends on the opacity alone
+        // -- kappa rho, the half-layer triple and the top factor per (cell, chain) --
+        // and the fluxes of the first pass.  ck_coef stores the former, by the chain
+        // kernel's own expressions (bitwise the same numbers), a thread per (band, g)
+        // pair and no serial recurrence; ck_lin_build then factorises as before, and
+        // the linear kernels of every later pass give the fluxes of this one too, i.e.
+        // the storing pass's Src/Fb/Em change by round-off (the lin kernels are the
+        // chain kernel to round-off, see ck_lin_check); Em is bitwise.  Only where the
+        // chain kernel's storing pass carries nothing else: the beam in its own kernels
+        // (ck_beam_par), no four-pass Jacobian, no deep diffusion, FP64.
+        const bool ckstsp_ = cklbuild_ && ckfcf_ && !ckfus_ && cbt_ && ckbsph_ && cksph_
+                             && (ckcache_ >= 2) && !(ckjacp_ && !ckjl_) && !ckdif_
+                             && (RT_FP32 == 0) && ck_store_split;
         const int nch_ = nblk*RT_NB;
         auto lP_g = cklon_ ? *ck_linP_ptr : CkDum<DvceArray5D<Real>>("ck_lP_d");
         auto lG_g = cklon_ ? *ck_linG_ptr : CkDum<DvceArray5D<Real>>("ck_lG_d");
@@ -6415,11 +6474,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 Real slv = bown, sfv = bown, suu = bown;
                 if (i < ie) {
                   const Real bfar = Bb_g(m,b,i+1,k,j);
-                  const Real wl = lP_g(m,5*nch_+cw,i,k,j);
-                  const Real wu = lP_g(m,6*nch_+cw,i,k,j);
+                  const Real wl = lP_g(m,2*nch_+cw,i,k,j);
+                  const Real wu = lP_g(m,3*nch_+cw,i,k,j);
                   slv = wl*bown + (1.0 - wl)*bfar;
                   suu = wu*bfar + (1.0 - wu)*bown;
-                  sfv = slv + (suu - slv)*lP_g(m,7*nch_+cw,i,k,j);
+                  sfv = slv + (suu - slv)*lP_g(m,4*nch_+cw,i,k,j);
                 }
                 const Real e0 = ckc0_g(m,c,i,k,j);
                 const Real cin = ckci_g(m,c,i,k,j);
@@ -6430,8 +6489,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real pu = cin*slv + cout*sfv;
                 const Real qu = cin*sfv + cout*slv;
                 Sc[cc][i] = ss[cc];
-                const Real idn = lP_g(m,4*nch_+c,i,k,j);
-                const Real rn = (lP_g(m,3*nch_+c,i,k,j) + bt)*idn;
+                const Real idn = lP_g(m,1*nch_+c,i,k,j);
+                const Real rn = (lP_g(m,0*nch_+c,i,k,j) + bt)*idn;
                 Real sv = (1.0 - bt)*ss[cc]*idn;
                 sv = tr*(rn*ql + sv) + pl;
                 const Real r2 = tr*tr*rn;
@@ -6451,9 +6510,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const int c = blk*NC + cc;
                 const int b = bandc[cc];
                 const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
-                const Real rr = lP_g(m,3*nch_+c,ie+1,k,j);
+                const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
                 const Real ub = (rr*(1.0 + bt)*da + Sc[cc][ie+1])
-                              * lP_g(m,4*nch_+c,ie+1,k,j);
+                              * lP_g(m,1*nch_+c,ie+1,k,j);
                 const Real db = da + bt*(da - ub);
                 fb += lC_g(0,c)*(ub - db)*fsc;
                 dcu[cc] = db;
@@ -6479,11 +6538,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 Real suv = bown, sfv = bown, snl = bown;
                 if (i > icut) {
                   const Real bfar = Bb_g(m,b,i-1,k,j);
-                  const Real wl = lP_g(m,5*nch_+cw,i-1,k,j);
-                  const Real wu = lP_g(m,6*nch_+cw,i-1,k,j);
+                  const Real wl = lP_g(m,2*nch_+cw,i-1,k,j);
+                  const Real wu = lP_g(m,3*nch_+cw,i-1,k,j);
                   snl = wl*bfar + (1.0 - wl)*bown;
                   suv = wu*bown + (1.0 - wu)*bfar;
-                  sfv = snl + (suv - snl)*lP_g(m,7*nch_+cw,i-1,k,j);
+                  sfv = snl + (suv - snl)*lP_g(m,4*nch_+cw,i-1,k,j);
                 }
                 const Real e0 = ckc0_g(m,c,i,k,j);
                 const Real cin = ckci_g(m,c,i,k,j);
@@ -6500,8 +6559,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 src += wz*(e0*dI - eh);
                 dI = tr*dI + eh;
                 // face i
-                const Real rr = lP_g(m,3*nch_+c,i,k,j);
-                const Real ub = (rr*(1.0 + bt)*dI + Sc[cc][i])*lP_g(m,4*nch_+c,i,k,j);
+                const Real rr = lP_g(m,0*nch_+c,i,k,j);
+                const Real ub = (rr*(1.0 + bt)*dI + Sc[cc][i])*lP_g(m,1*nch_+c,i,k,j);
                 const Real db = dI + bt*(dI - ub);
                 const Real dm = ub - db;
                 fb += wfc*dm*fsc;
@@ -6516,7 +6575,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 ua = tr*ua + eh;
                 src += wz*(ua - ubf[cc]);
                 ubf[cc] = ub;
-                em += lP_g(m,8*nch_+c,i,k,j)*bown;
+                em += lP_g(m,5*nch_+c,i,k,j)*bown;
                 slc[cc] = snl;
                 sfu[cc] = sfv;
               }
@@ -6552,7 +6611,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   if (i <= ie) {
                     const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
                     src += lps_g(m,c,i,k,j);
-                    em += lP_g(m,8*nch_+c,i,k,j)*Bb_g(m,b,i,k,j);
+                    em += lP_g(m,5*nch_+c,i,k,j)*Bb_g(m,b,i,k,j);
                   }
                 }
               }
@@ -6574,7 +6633,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             const int icut = icc_g(m,k,j);
             if (icut > ie) return;
             const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
-            // ck-nq2: lP slots 5-7 (kappa rho weights) are stored once per angle pair
+            // ck-nq2: lP slots 2-4 (kappa rho weights) are stored once per angle pair
             const int cw = (ck_nq_ == 2) ? (c & ~1) : c;
             const Real wfc = lC_g(0,c);
             const int slt = ((m*nch_ + c)*scl3 + (k - ks))*scl2 + (j - js);
@@ -6592,11 +6651,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Real bnext = bown;
               if (i < ie) {
                 bnext = Bb_g(m,b,i+1,k,j);
-                const Real wl = lP_g(m,5*nch_+cw,i,k,j);
-                const Real wu = lP_g(m,6*nch_+cw,i,k,j);
+                const Real wl = lP_g(m,2*nch_+cw,i,k,j);
+                const Real wu = lP_g(m,3*nch_+cw,i,k,j);
                 slv = wl*bown + (1.0 - wl)*bnext;
                 suu = wu*bnext + (1.0 - wu)*bown;
-                sfv = slv + (suu - slv)*lP_g(m,7*nch_+cw,i,k,j);
+                sfv = slv + (suu - slv)*lP_g(m,4*nch_+cw,i,k,j);
               }
               const Real e0 = ckc0_g(m,c,i,k,j);
               const Real cin = ckci_g(m,c,i,k,j);
@@ -6607,8 +6666,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real pu = cin*slv + cout*sfv;
               const Real qu = cin*sfv + cout*slv;
               Sc[i] = ss;
-              const Real idn = lP_g(m,4*nch_+c,i,k,j);
-              const Real rn = (lP_g(m,3*nch_+c,i,k,j) + bt)*idn;
+              const Real idn = lP_g(m,1*nch_+c,i,k,j);
+              const Real rn = (lP_g(m,0*nch_+c,i,k,j) + bt)*idn;
               Real sv = (1.0 - bt)*ss*idn;
               sv = tr*(rn*ql + sv) + pl;
               const Real r2 = tr*tr*rn;
@@ -6622,8 +6681,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             {
               const Real bt = lG_g(m,0,ie+1,k,j);
               const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
-              const Real rr = lP_g(m,3*nch_+c,ie+1,k,j);
-              const Real ub = (rr*(1.0 + bt)*da + Sc[ie+1])*lP_g(m,4*nch_+c,ie+1,k,j);
+              const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
+              const Real ub = (rr*(1.0 + bt)*da + Sc[ie+1])*lP_g(m,1*nch_+c,ie+1,k,j);
               const Real db = da + bt*(da - ub);
               lpf_g(m,c,ie+1,k,j) = wfc*(ub - db)*lG_g(m,2,ie+1,k,j);
               dcu = db;
@@ -6638,11 +6697,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Real bnext = bown;
               if (i > icut) {
                 bnext = Bb_g(m,b,i-1,k,j);
-                const Real wl = lP_g(m,5*nch_+cw,i-1,k,j);
-                const Real wu = lP_g(m,6*nch_+cw,i-1,k,j);
+                const Real wl = lP_g(m,2*nch_+cw,i-1,k,j);
+                const Real wu = lP_g(m,3*nch_+cw,i-1,k,j);
                 snl = wl*bnext + (1.0 - wl)*bown;
                 suv = wu*bown + (1.0 - wu)*bnext;
-                sfv = snl + (suv - snl)*lP_g(m,7*nch_+cw,i-1,k,j);
+                sfv = snl + (suv - snl)*lP_g(m,4*nch_+cw,i-1,k,j);
               }
               const Real e0 = ckc0_g(m,c,i,k,j);
               const Real cin = ckci_g(m,c,i,k,j);
@@ -6657,8 +6716,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               eh = cin*suv + cout*sfv;
               src += wz*(e0*dI - eh);
               dI = tr*dI + eh;
-              const Real rr = lP_g(m,3*nch_+c,i,k,j);
-              const Real ub = (rr*(1.0 + bt)*dI + Sc[i])*lP_g(m,4*nch_+c,i,k,j);
+              const Real rr = lP_g(m,0*nch_+c,i,k,j);
+              const Real ub = (rr*(1.0 + bt)*dI + Sc[i])*lP_g(m,1*nch_+c,i,k,j);
               const Real db = dI + bt*(dI - ub);
               const Real dm = ub - db;
               lpf_g(m,c,i,k,j) = wfc*dm*lG_g(m,2,i,k,j);
@@ -6683,7 +6742,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // ---- ck-nq2: rt_chain_ck_lin1 with BOTH angles of a (band, g) pair in one
         // thread.  With ck_nquad = 2 the chains c = 2p and 2p+1 share the band, the
         // Planck column B_b, the column geometry lG and the three BFace/interpolation
-        // weights (lP slots 5-7, which depend on kappa rho alone), so one thread loads
+        // weights (lP slots 2-4, which depend on kappa rho alone), so one thread loads
         // those once and carries the two angles' recurrences side by side.  Each
         // angle's arithmetic is term for term the one of rt_chain_ck_lin1, and the
         // per-chain partials go to the same lps/lpf slots, so the sum kernel and the
@@ -6724,11 +6783,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Real bnext = bown;
               if (i < ie) {
                 bnext = Bb_g(m,b,i+1,k,j);
-                const Real wl = lP_g(m,5*nch_+c0,i,k,j);
-                const Real wu = lP_g(m,6*nch_+c0,i,k,j);
+                const Real wl = lP_g(m,2*nch_+c0,i,k,j);
+                const Real wu = lP_g(m,3*nch_+c0,i,k,j);
                 slv = wl*bown + (1.0 - wl)*bnext;
                 suu = wu*bnext + (1.0 - wu)*bown;
-                sfv = slv + (suu - slv)*lP_g(m,7*nch_+c0,i,k,j);
+                sfv = slv + (suu - slv)*lP_g(m,4*nch_+c0,i,k,j);
               }
               for (int q=0; q<2; ++q) {
                 const int c = c0 + q;
@@ -6741,8 +6800,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real pu = cin*slv + cout*sfv;
                 const Real qu = cin*sfv + cout*slv;
                 Scr[q][i] = ss[q];
-                const Real idn = lP_g(m,4*nch_+c,i,k,j);
-                const Real rn = (lP_g(m,3*nch_+c,i,k,j) + bt)*idn;
+                const Real idn = lP_g(m,1*nch_+c,i,k,j);
+                const Real rn = (lP_g(m,0*nch_+c,i,k,j) + bt)*idn;
                 Real sv = (1.0 - bt)*ss[q]*idn;
                 sv = tr*(rn*ql + sv) + pl;
                 const Real r2 = tr*tr*rn;
@@ -6760,9 +6819,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const int c = c0 + q;
                 Scr[q][ie+1] = ss[q];
                 const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
-                const Real rr = lP_g(m,3*nch_+c,ie+1,k,j);
+                const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
                 const Real ub = (rr*(1.0 + bt)*da + Scr[q][ie+1])
-                              *lP_g(m,4*nch_+c,ie+1,k,j);
+                              *lP_g(m,1*nch_+c,ie+1,k,j);
                 const Real db = da + bt*(da - ub);
                 lpf_g(m,c,ie+1,k,j) = wfc[q]*(ub - db)*lG_g(m,2,ie+1,k,j);
                 dcu[q] = db;
@@ -6778,11 +6837,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Real bnext = bown;
               if (i > icut) {
                 bnext = Bb_g(m,b,i-1,k,j);
-                const Real wl = lP_g(m,5*nch_+c0,i-1,k,j);
-                const Real wu = lP_g(m,6*nch_+c0,i-1,k,j);
+                const Real wl = lP_g(m,2*nch_+c0,i-1,k,j);
+                const Real wu = lP_g(m,3*nch_+c0,i-1,k,j);
                 snl = wl*bnext + (1.0 - wl)*bown;
                 suv = wu*bown + (1.0 - wu)*bnext;
-                sfv = snl + (suv - snl)*lP_g(m,7*nch_+c0,i-1,k,j);
+                sfv = snl + (suv - snl)*lP_g(m,4*nch_+c0,i-1,k,j);
               }
               const Real g1 = lG_g(m,1,i,k,j);
               const Real g2 = lG_g(m,2,i,k,j);
@@ -6802,8 +6861,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 eh = cin*suv + cout*sfv;
                 src += wz*(e0*dI - eh);
                 dI = tr*dI + eh;
-                const Real rr = lP_g(m,3*nch_+c,i,k,j);
-                const Real ub = (rr*(1.0 + bt)*dI + Scr[q][i])*lP_g(m,4*nch_+c,i,k,j);
+                const Real rr = lP_g(m,0*nch_+c,i,k,j);
+                const Real ub = (rr*(1.0 + bt)*dI + Scr[q][i])*lP_g(m,1*nch_+c,i,k,j);
                 const Real db = dI + bt*(dI - ub);
                 const Real dm = ub - db;
                 lpf_g(m,c,i,k,j) = wfc[q]*dm*g2;
@@ -6835,6 +6894,77 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           } else {
             launch_ck_lin();
           }
+        };
+        // ck-store: ck_coef (see ckstsp_).  Every value is the one the tm body of
+        // rt_chain_ck stores on this pass: kapof (the k-table plus the continuum; the
+        // q = 1 chain of a pair takes the q = 0 chain's number, as there), krof, the
+        // `cofs` triple of the half layer 0.5 kappa rho dz and the top layer's factor.
+        auto launch_ck_coef = [&]() {
+          const int nqc = ck_nq_;
+          const int ngr = nch_/nqc;           // chains per thread: the nq angles
+          CkParFor4("ck_coef", cklw_, 0, nmb1, 0, ngr-1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int p, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int c0 = p*nqc;
+            const int blk = c0/RT_NB;
+            // the chain kernel zeroes the beam deposit its block's beam kernels add to
+            if (c0 % RT_NB == 0) {
+              for (int i=is; i<ie+2; ++i) Qb_g(m,blk,i,k,j) = 0.0;
+            }
+            const int icut = icc_g(m,k,j);
+            if (icut > ie) return;
+            const int g = (nqc == 1) ? (c0 % CK_NG) : ((c0/2) % CK_NG);
+            const int b = (nqc == 1) ? (c0/CK_NG) : (c0/(2*CK_NG));
+            Real muq[2];
+            muq[0] = (nqc == 1) ? 1.0/CK_DIFFUSIVITY : mug[0];
+            muq[1] = mug[1];
+            {   // the top layer, (1 - e^-dtau) of the hydrostatic column above
+              const Real mu0 = cf_g(m,k,j,3);
+              const Real ptop = pb_g(m,k,j,ie+1);
+              const Real xTv = xT_g(m,k,j,ie+1);
+              const Real xPv = xP_g(m,k,j,ie+1);
+              const int iT = static_cast<int>(xTv);
+              const int iP = static_cast<int>(xPv);
+              const Real fT = xTv - static_cast<Real>(iT);
+              const Real fP = xPv - static_cast<Real>(iP);
+              for (int q=0; q<nqc; ++q) {
+                const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, g)
+                               + kc_g(m,b,ie+1,k,j);
+                const Real dtau = RTTopDtau(kap, ptop*1.0e6,
+                                            EffGravAt(grav, ap, x1v_(m,ie+1),
+                                                      grav_pmass, omega, mu0, tide));
+                const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muq[q]));
+                cktpf_g(m,c0+q,k,j) = static_cast<Real>(static_cast<RtF>(1.0)-trans);
+              }
+            }
+            for (int i=icut; i<ie+1; ++i) {
+              const Real rho = rhoN(m,k,j,i);
+              const Real dz = dx1(m,k,j,i);
+              const Real xTv = xT_g(m,k,j,i);
+              const Real xPv = xP_g(m,k,j,i);
+              const int iT = static_cast<int>(xTv);
+              const int iP = static_cast<int>(xPv);
+              const Real fT = xTv - static_cast<Real>(iT);
+              const Real fP = xPv - static_cast<Real>(iP);
+              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, g) + kc_g(m,b,i,k,j);
+              const Real kro = kap*rho;
+              const Real dtau = 0.5*kro*dz;
+              for (int q=0; q<nqc; ++q) {
+                const int c = c0 + q;
+                ckkro_g(m,c,i,k,j) = kro;
+                const RtF x = static_cast<RtF>(dtau/muq[q]);
+                const RtF e0 = -RT_EXPM1(-x);
+                const RtF one = static_cast<RtF>(1.0);
+                const RtF cin = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                              : (x/2 - x*x/3);
+                const RtF cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                               : (x/2 - x*x/6);
+                ckc0_g(m,c,i,k,j) = static_cast<Real>(e0);
+                ckci_g(m,c,i,k,j) = static_cast<Real>(cin);
+                ckco_g(m,c,i,k,j) = static_cast<Real>(cout);
+              }
+            }
+          });
         };
         auto launch_ck_full = [&]() {
           if (cksph_) {
@@ -6896,6 +7026,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                         << " em=" << ((hl(5) > 0.0) ? hl(2)/hl(5) : hl(2))
                         << std::endl;
             }
+          } else if (ckstsp_) {
+            launch_ck_coef();                 // ck-store: the fluxes come below
           } else {
             launch_ck_full();
           }
@@ -7079,21 +7211,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const RtF dn = static_cast<RtF>(1.0) + rr*bb;
                 const Real rj = static_cast<Real>(rr);
                 const Real idn = 1.0/static_cast<Real>(dn);
-                lP_g(m,3*nch_+c,i,k,j) = rj;
-                lP_g(m,4*nch_+c,i,k,j) = idn;
+                lP_g(m,0*nch_+c,i,k,j) = rj;
+                lP_g(m,1*nch_+c,i,k,j) = idn;
                 const RtF rn = (rr + bb)/dn;
                 const Real e0 = ckc0_g(m,c,i,k,j);
                 const Real ci = ckci_g(m,c,i,k,j);
                 const Real co = ckco_g(m,c,i,k,j);
-                // ck-jlin: slots 0-2 (the half-layer triple) are NOT copied: the
-                // linear kernels read ckc0/ckci/ckco, which this pass stored and which
-                // stay frozen with the rest of the factorisation
+                // ck-jlin: the half-layer triple is NOT copied (ck-store: lP has no
+                // slots for it any more): the linear kernels read ckc0/ckci/ckco,
+                // which this pass stored and which stay frozen with the rest of the
+                // factorisation
                 const RtF tr = static_cast<RtF>(1.0) - static_cast<RtF>(e0);
                 rr = tr*tr*rn;
                 rr = tr*tr*rr;
                 const Real kro = ckkro_g(m,c,i,k,j);
-                lP_g(m,8*nch_+c,i,k,j) = emw*kro;
-                // ck-nq2: slots 5-7 depend on kappa rho alone, which is bitwise the
+                lP_g(m,5*nch_+c,i,k,j) = emw*kro;
+                // ck-nq2: slots 2-4 depend on kappa rho alone, which is bitwise the
                 // same for the two angles of a pair; the q = 1 chain reads the q = 0 one
                 // (ck-jlin: and forms the same numbers itself for a fused pass 1)
                 const bool own = !(ck_nq_ == 2 && (c & 1));
@@ -7107,9 +7240,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real dtc = dt_l + dt_u;
                   ffj = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
                   if (own) {
-                    lP_g(m,5*nch_+c,i,k,j) = wl;
-                    lP_g(m,6*nch_+c,i,k,j) = wu;
-                    lP_g(m,7*nch_+c,i,k,j) = ffj;
+                    lP_g(m,2*nch_+c,i,k,j) = wl;
+                    lP_g(m,3*nch_+c,i,k,j) = wu;
+                    lP_g(m,4*nch_+c,i,k,j) = ffj;
                   }
                 }
                 if (ckjfus_) {
@@ -7124,9 +7257,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 lps_g(m,c,ie+1,k,j) = w.s1;
                 lpjb_g(m,c,ie+1,k,j) = w.s2;
               }
-              lP_g(m,3*nch_+c,ie+1,k,j) = static_cast<Real>(rr);
+              lP_g(m,0*nch_+c,ie+1,k,j) = static_cast<Real>(rr);
               const Real btt = BTF(m,k,j,ie+1,icut);
-              lP_g(m,4*nch_+c,ie+1,k,j) = 1.0/(1.0 + static_cast<Real>(rr)*btt);
+              lP_g(m,1*nch_+c,ie+1,k,j) = 1.0/(1.0 + static_cast<Real>(rr)*btt);
             });
           }
           // ---- problem/ck_impl_jac_lin: THE TRIDIAGONAL FROM THE FACTORISATION ------
@@ -7162,7 +7295,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 if (jfus_ && ckskip_ && ckdone_g(m,k,j) > 0.0) return;
                 const int icut = icc_g(m,k,j);
                 if (icut > ie) return;
-                // ck-nq2: lP slots 5-7 (kappa rho weights) are stored once per angle pair
+                // ck-nq2: lP slots 2-4 (kappa rho weights) are stored once per angle pair
                 const int cw = (ck_nq_ == 2) ? (c & ~1) : c;
                 const Real wfc = lC_g(0,c);
                 // PASS 1: dSc/dB in the window (B_{i-2}, B_{i-1}, B_i) below face i
@@ -7183,12 +7316,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     lps_g(m,c,i,k,j) = w.s1;
                     lpj_g(m,c,i,k,j) = w.s2;
                     const bool up = (i < ie);
-                    const Real wl = up ? lP_g(m,5*nch_+cw,i,k,j) : 0.0;
-                    const Real wu = up ? lP_g(m,6*nch_+cw,i,k,j) : 0.0;
-                    const Real ffj = up ? lP_g(m,7*nch_+cw,i,k,j) : 0.0;
+                    const Real wl = up ? lP_g(m,2*nch_+cw,i,k,j) : 0.0;
+                    const Real wu = up ? lP_g(m,3*nch_+cw,i,k,j) : 0.0;
+                    const Real ffj = up ? lP_g(m,4*nch_+cw,i,k,j) : 0.0;
                     CkJlP1Step(w, up, wl, wu, ffj, ckci_g(m,c,i,k,j),
                                ckco_g(m,c,i,k,j), ckc0_g(m,c,i,k,j),
-                               lP_g(m,3*nch_+c,i,k,j), lP_g(m,4*nch_+c,i,k,j),
+                               lP_g(m,0*nch_+c,i,k,j), lP_g(m,1*nch_+c,i,k,j),
                                lG_g(m,0,i,k,j));
                   }
                   jS0 = w.s0;
@@ -7200,7 +7333,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 Real jfu0 = 1.0, jfu1 = 0.0, jlc0 = 1.0, jlc1 = 0.0;
                 {
                   const Real bt = lG_g(m,0,ie+1,k,j);
-                  const Real idn = lP_g(m,4*nch_+c,ie+1,k,j);
+                  const Real idn = lP_g(m,1*nch_+c,ie+1,k,j);
                   const Real al = (1.0 + bt)*idn;
                   const Real be = bt*idn;
                   jDu0 = al*jS0;
@@ -7220,9 +7353,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   Real duv0 = 0.0, duv1 = 1.0, dnl0 = 0.0, dnl1 = 1.0;
                   Real dfw0 = 0.0, dfw1 = 1.0;
                   if (i > icut) {
-                    const Real wc = lP_g(m,5*nch_+cw,i-1,k,j);
-                    const Real wa = lP_g(m,6*nch_+cw,i-1,k,j);
-                    const Real ffj = lP_g(m,7*nch_+cw,i-1,k,j);
+                    const Real wc = lP_g(m,2*nch_+cw,i-1,k,j);
+                    const Real wa = lP_g(m,3*nch_+cw,i-1,k,j);
+                    const Real ffj = lP_g(m,4*nch_+cw,i-1,k,j);
                     const Real sw = (1.0 - ffj)*wc + ffj*(1.0 - wa);
                     duv0 = 1.0 - wa;
                     duv1 = wa;
@@ -7238,8 +7371,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   v1 = tj*v1 + ci*duv1 + co*dfw1;
                   Real v2 = tj*jdm2 + ci*jfu1 + co*jlc1;
                   v2 = tj*v2;
-                  const Real rj = lP_g(m,3*nch_+c,i,k,j);
-                  const Real idn = lP_g(m,4*nch_+c,i,k,j);
+                  const Real rj = lP_g(m,0*nch_+c,i,k,j);
+                  const Real idn = lP_g(m,1*nch_+c,i,k,j);
                   const Real bt = lG_g(m,0,i,k,j);
                   const Real rat = lG_g(m,1,i,k,j);
                   const Real al = (1.0 + bt)*idn;
@@ -7299,6 +7432,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               jac_g(m,2,k,j,i) = (s2 > 0.0) ? s2 : 0.0;
             });
           }
+          // ck-store: the storing pass's fluxes, by the linear re-apply on the
+          // factorisation just built (after rt_chain_ck_jlin, whose windows share the
+          // lps/lpf partials the linear kernels write)
+          if (ckstsp_) launch_ck_lin_tier();
         }
         // ---- ck-fast2 lever 1 (problem/ck_dif_dtau): THE DEEP DIFFUSION -----------
         // Every pass, after the chains: the cells ic .. ich-1 of a handover column get
