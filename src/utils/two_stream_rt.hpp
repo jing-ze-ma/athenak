@@ -2944,7 +2944,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             // the layer joining cells i-1 and i, from below this time
             Real suv = bown, sfv = bown, snl = bown, krl = kro;
             if (i > icut) {
-              krl = krof(cc, il, b, iTl, fTl, iPl, fPl, rhol, false);
+              // ck-store: krof without its store -- pass 1 stored this very
+              // product (the same cached kappa times the same rho) at cell il
+              krl = ckfus ? ckkro_g(m,blk*NC+cc,il,k,j)
+                          : kapof(cc, il, b, iTl, fTl, iPl, fPl, false)*rhol;
               const Real bfar = Bb_g(m,b,il,k,j);
               suv = BFace(krl, kro, bfar, bown, bface_on);
               snl = BFace(kro, krl, bown, bfar, bface_on);
