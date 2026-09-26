@@ -35,3 +35,4 @@ Options (validation /viper/ptmp2/jinma/h2val_0924/README.md, 3-D He box vet_sc, 
   - cfl 0.9 is 2.28x cheaper than 0.3; vet_sc_every 2 adds +7 %; dt is set at the bottom.
   - BUT KE at cfl 0.9 saturates ~4.6x the cfl 0.3 level. The box barely convects (F_conv/F 1e-5).
   - cfl 0.15 / 0.6 arms were running at handover. Until settled, cfl 0.9 = relaxation-phase only.
+- **VERDICT 09-26 night (hebox_cfl_0926): cfl 0.9 NO-GO for production.** Interior KE is 3.8x R3's; saturated KE rises monotonically with cfl (0.15: 1.9e28 still growing, 0.3: 3.6e28, 0.6: 7.3e28, 0.9: 1.3e29), so even cfl 0.3 is not dt-converged. The box is not yet convecting. The same effect appeared with be + Eddington (runs_3o), so it points at hydro+coupling, not the M1 scheme. The user's "keep cfl 0.9" is ON HOLD pending that; ask in the morning.

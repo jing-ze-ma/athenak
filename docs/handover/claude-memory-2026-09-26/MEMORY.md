@@ -1,5 +1,7 @@
 ## RULE ZERO
 
+- **[OVERNIGHT 09-26 (user asleep)](overnight-plan-0926.md)** — finish m1-wedge + He-box cfl, handover updates, merge only gated, fetch before push, morning summary
+
 - **[cs SEAM FLUX ROOT CAUSE of all WASP-121b crashes; fix cs_seam_flux = positive (09-26)](cs-seam-flux-positivity-0926.md)** — merged 2d07119a (default off); needs a multi-rotation check before production
 
 - **[VIPER = 2 GPUs PER NODE, RECURRING MISTAKE (user 09-26)](viper-2-gpus-per-node.md)** — apu AND apudev nodes are gpu:2; apudev max 1 node; >2 GPUs = apu N x 2; NEVER gpu:4; check every sbatch header incl. agents
