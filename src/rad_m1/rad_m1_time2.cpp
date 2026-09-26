@@ -38,12 +38,15 @@
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
 #include "eos/eos.hpp"
+#include "utils/deep_copy_across.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 
 namespace radm1 {
+
+using deep_copy_across::DeepCopyAcross;
 
 namespace {
 const Real kT2G = 1.0 - 1.0/std::sqrt(2.0);
@@ -861,29 +864,29 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   auto mb = std::make_pair(0, nmb);
   auto AL = Kokkos::ALL;
   if (ch < M1_T2_NK) {
-    Kokkos::deep_copy(Kokkos::subview(t2k1, mb, ch, AL, AL, AL), w);
+    DeepCopyAcross(Kokkos::subview(t2k1, mb, ch, AL, AL, AL), w);
     return;
   }
   ch -= M1_T2_NK;
   if (impl_pred) {
     const int np = (impl_pord == 2) ? 5 : 3;
     if (ch < np) {
-      Kokkos::deep_copy(Kokkos::subview(ipred2, mb, ch, AL, AL, AL), w);
+      DeepCopyAcross(Kokkos::subview(ipred2, mb, ch, AL, AL, AL), w);
       return;
     }
     ch -= np;
   }
   if (vet_sc) {
     if (ch < M1_T2_NVET) {
-      Kokkos::deep_copy(Kokkos::subview(vet_prev, mb, ch, AL, AL, AL), w);
+      DeepCopyAcross(Kokkos::subview(vet_prev, mb, ch, AL, AL, AL), w);
       return;
     }
     ch -= M1_T2_NVET;
     if (vsc_every > 1) {
       if (ch < M1_T2_NVET) {
-        Kokkos::deep_copy(Kokkos::subview(vsc_d0, mb, ch, AL, AL, AL), w);
+        DeepCopyAcross(Kokkos::subview(vsc_d0, mb, ch, AL, AL, AL), w);
       } else {
-        Kokkos::deep_copy(Kokkos::subview(vsc_d1, mb, ch - M1_T2_NVET, AL, AL, AL), w);
+        DeepCopyAcross(Kokkos::subview(vsc_d1, mb, ch - M1_T2_NVET, AL, AL, AL), w);
       }
     }
   }
