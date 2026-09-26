@@ -166,8 +166,9 @@ inline int ck_impl_stalldbg = 0;
 // neighbours' solutions through the off-diagonals: the neighbours then converge to the
 // fixed point of the clipped iteration, not to R = 0, and stall there.  With this on the
 // KKT cell gets the identity row with zero right-hand side (a = c = 0, b = 1, d = 0), so
-// its neighbours solve the reduced system with that cell held.  Default FALSE =
-// bitwise.  Fused, glob = 0 path only.
+// its neighbours solve the reduced system with that cell held.  The key defaults to
+// TRUE since default-flips (deep_hot_jupiter_rt reads it; false = the old rows,
+// bitwise).  Fused, glob = 0 path only.
 inline bool ck_impl_kkt_row = false;
 inline int ck_impl_nfloor = 0;             // cells stopped at e_floor, last pass
 inline int ck_impl_nkkt = 0;               // cells excluded from the test as KKT
@@ -247,7 +248,9 @@ inline bool ck_impl_once = false;
 // operator is stored yet, (b) k or more cycles have passed since the store, or (c)
 // problem/ck_impl_xstep_thr > 0 and some cell of the ck domain has moved by more than
 // that relative amount in T or rho since the store (checked on the current state, after
-// rt_pre_tp of pass 0).  Needs frozen_op + lin + jac_lin.
+// rt_pre_tp of pass 0).  Needs frozen_op + lin + jac_lin.  The KEY defaults to 8 since
+// default-flips where ck_impl_every > 1 and the stored operator exists, 0 otherwise
+// (deep_hot_jupiter_rt reads it).
 inline int ck_impl_xstep = 0;
 inline Real ck_impl_xstep_thr = 0.0;
 // set per call by the pass function (pass 0): this call re-applies a stored operator
