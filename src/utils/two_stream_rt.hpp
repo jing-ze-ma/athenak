@@ -64,10 +64,10 @@
 namespace two_stream_rt {
 
 //! \fn void par_reduce_clip4 / par_reduce_clip3
-//! \brief par_for with an int sum reduction bolted on, flattened exactly the way
-//! athena.hpp's par_for flattens its ranges. These exist only so the source limiter can
-//! report how many cells it clipped without a second pass over the grid; that is why they
-//! live here rather than in athena.hpp.
+//! \brief par_for with an int sum reduction bolted on (clip4: j fastest, see below;
+//! clip3: flattened the way athena.hpp's par_for flattens its ranges). These exist only
+//! so the source limiter can report how many cells it clipped without a second pass over
+//! the grid; that is why they live here rather than in athena.hpp.
 
 template <typename Function>
 inline void par_reduce_clip4(const std::string &name, const int ml, const int mu,
@@ -76,12 +76,16 @@ inline void par_reduce_clip4(const std::string &name, const int ml, const int mu
                              const Function &function, const bool async = false) {
   const int nk = ku-kl+1, nj = ju-jl+1, ni = iu-il+1;
   const int nkji = nk*nj*ni, nji = nj*ni;
+  // ck-jlin: j FASTEST, not i.  The only caller (rt_apply) reads ~5 nblk-slot sums per
+  // cell from the chain-block arrays laid out (m, blk, i, k, j), against a dozen
+  // (m, k, j, i) reads; with i fastest every lane of a warp hit its own cache line.
+  // Each cell's arithmetic is untouched, and the int count is order-free.
   auto body = KOKKOS_LAMBDA(const int &idx, int &sum) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
-    int j = (idx - m*nkji - k*nji)/ni;
-    int i = (idx - m*nkji - k*nji - j*ni) + il;
-    function(m+ml, k+kl, j+jl, i, sum);
+    int i = (idx - m*nkji - k*nji)/nj;
+    int j = (idx - m*nkji - k*nji - i*nj) + jl;
+    function(m+ml, k+kl, j, i+il, sum);
   };
   if (async) {
     // problem/ck_impl_nosync: the count goes to a device scalar that nobody reads, so
