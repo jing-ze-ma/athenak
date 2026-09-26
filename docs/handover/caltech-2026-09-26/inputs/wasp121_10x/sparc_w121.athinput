@@ -1,0 +1,271 @@
+# WASP-121b (wasp121_0925, planet_setup.py on branch planet-setup): drop-in replacement of
+# sparc_0925/sparc.athinput for the WASP-121b sponge-test arms.  Only planet / star /
+# rotation / metallicity / albedo / grid / IC / floor / output-cadence keys changed, each
+# marked "# WASP-121b:"; route B, nq2, hiT, sponge and all other keys are verbatim.
+# System: Sing+2024 (AJ 168, 231; NASA Exoplanet Archive default): M_p 1.170 M_J,
+# R_p 1.742 R_J (JWST NIRSpec NRS1, 2.7-3.7 um), a 0.02571 AU, Teff 6628 K, R* 1.461 Rsun;
+# P = 1.27492504 d.  R_p sits at p_ref = 1.8e-4 bar (transit radius of the NRS1 band from the
+# model's own ck opacities on this IC, wasp121_0925/transit.py).  Atmosphere 10x solar
+# ([M/H] = 1), Bond albedo 0.277 (Splinter+2025).  NEEDS a binary with problem/albedo
+# (branch dhj-albedo, cbdb9028).  See /viper/ptmp2/jinma/wasp121_0925/README.md.
+#
+# deep_hot_jupiter_cs_hyd4 -- PURE-HYDRO twin of deep_hot_jupiter_cs_prod4 (2026-09-22).
+# PREPARED for bench/cs_hyd4_prod, NOT LAUNCHED (launch = ./chain.sh <dir> 4).  Tests:
+# tests_hyd4/README.md (smoke, timing); cs_wellbalanced_src
+# under <hydro>: tests_hyd4/README_wbsrc.md.
+#
+# Base = inputs/production/deep_hot_jupiter_cs_prod4.athinput (launched as bench/cs_mhd_prod4;
+# read its header for the nine prod3 -> prod4 changes: ck_spherical + ck_beam_sph,
+# ck_sweep_form = 1 (tm), WB polytropic with wb_cache_every 0, rad_angular false,
+# dt_min 1e-3, max_eta 5e12, pfloor 1e-5 barye, two dead keys removed).  Every one of those
+# that still applies without a magnetic field is kept unchanged here: grid, stretch, RT
+# (spherical tm ck sweep + pseudo-spherical beam), WB polytropic / wb_x1 / wb_cache_every 0,
+# rot_potential (so rotpot_src stays true), etotgrav, radiative conduction with
+# rad_implicit_x1 and rad_angular false, general EOS table, floors (pfloor 1e-5 barye,
+# dfloor 5e-14, tfloor_kelvin 200), dt_min 1e-3, cfl 0.3, rk2, output cadences.
+#
+# Changes vs prod4 (and nothing else):
+# H1. <mhd> -> <hydro>.  MeshBlockPack::AddPhysics builds Hydro instead of MHD; the pgen
+#     (src/pgen/deep_hot_jupiter_rt.cpp) branches on phydro/pmhd everywhere and has a
+#     hydro path for WB, conduction, the ck table and the boundaries.  All WB / rad_* / eos
+#     keys are read from whichever block exists (hydro.cpp:177-252, conduction.cpp,
+#     eos.cpp), with the same defaults for every shared key.
+# H2. rsolver hlld -> hllc.  hlld is MHD-only; hllc is the hydro counterpart used by the
+#     controlled sp_dhj_hyd / sp_dhj_ctl pair and by cs_hyd_rs/hllc; the general EOS sets
+#     is_ideal = true (general_hyd.cpp:33) so hllc is accepted.
+# H3. cs_wellbalanced_src = true, KEPT as in prod4 (was removed in the first draft).
+#     Before 09-22 Coordinates read it only from <mhd>, so under <hydro> it was silently
+#     unread (as in cs_hyd_rs/base.athinput).  Patch tests_hyd4/cs_wbsrc_hydro.patch
+#     (coordinates.cpp, <hydro> branch) now reads it from <hydro>; the hydro source path
+#     (SrcTermsGnomonicEquiangle -> shared SrcTermsGnomonicEquiangleImpl ->
+#     SrcTermsCurvilinearWB with is_mhd = false) already honoured the flag, so no kernel
+#     changed.  Needs a binary built with that patch (bench/cs_hyd4_prod/athena); the
+#     prod4 binary ignores the key.  Gates: tests_hyd4/README_wbsrc.md.  With this, hyd4
+#     is exactly "prod4 minus B" (H1, H2, H4-H6 are all consequences of B = 0).
+# H4. MHD-only keys removed: ohmic_resistivity / max_eta / use_rkg_sts (resistivity.cpp
+#     reads "mhd" only; eos.cpp:296 would also build the unused electron-fraction table
+#     if ohmic_resistivity were left in <hydro>), cs_lowbeta_fallback (mhd.cpp:359).
+# H5. <problem> bbot 3.0 -> 0.0 and bc_outer_maxwell removed.  bbot is a REQUIRED key for
+#     every hot_jupiter run (pgen.cpp:57/131 GetReal; the first smoke job died on
+#     "Parameter name 'bbot' not found" when it was removed) but is used only on MHD paths
+#     (initial vector potential, outer-ghost field), so 0 is inert.  bc_outer_maxwell only
+#     switches the Maxwell-stress term of the outer ghost extrapolation (is_mhd_ branch).
+# H6. <output3> variable mhd_w_bcc -> hydro_w.  History is written as dhj.hydro.hst.
+#
+# The dt-collapse cell diagnostic exists on the hydro path too (Hydro::dt_diag, printed
+# from mesh.cpp:1043 when the dt_min guard fires).
+
+<comment>
+problem   = ultra-hot Jupiter, general EOS + metal ionization, PURE HYDRO (hyd4)
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010)
+
+<job>
+basename  = dhj
+
+<mesh>
+nghost    = 2
+nx1       = 74   # WASP-121b: planet_setup.py (sparc grid) (was 128)
+x1min     = 1.116018e+10   # WASP-121b: planet_setup.py: r(250 bar) from R_p at p_ref (Sing+2024 M_p, R_p) (was 9.44e9)
+x1max     = 1.530921e+10   # WASP-121b: planet_setup.py rce rule: 3% inside r(1e-9 bar) of the IC column (p(x1max) = 1.43e-09 bar) (was 2.0556e10)
+ix1_bc    = user
+ox1_bc    = user
+
+# 64, not 56, so that every direction is a power of two and the meshblock split is free to
+# use the round numbers -- see the <meshblock> note below.  Costs 14.3% more cells than the
+# 56 this ran at previously.
+nx2       = 32
+x2min     = -1.0        # -1 lets the pgen set the full polar range
+x2max     = 1.0
+ix2_bc    = panel
+ox2_bc    = panel
+
+nx3       = 32
+x3min     = -1.0
+x3max     = 1.0
+ix3_bc    = panel
+ox3_bc    = panel
+
+# --- radial grid stretch ---------------------------------------------------------------
+use_grid_stretch_r_poly = true
+f_stretch_r_c1          = -0.090789   # WASP-121b: planet_setup.py (sparc grid) (was -0.068392)
+f_stretch_r_c2          = -4.624280   # WASP-121b: planet_setup.py (sparc grid) (was -2.191487)
+f_stretch_r_c3          = 43.684697   # WASP-121b: planet_setup.py (sparc grid) (was 2.464818)
+f_stretch_r_c4          = -282.659406   # WASP-121b: planet_setup.py (sparc grid) (was -1.366698)
+f_stretch_r_c5          = 932.446804   # WASP-121b: planet_setup.py (sparc grid) (was 0.0)
+f_stretch_r_c6          = -1642.475346   # WASP-121b: planet_setup.py (sparc grid) (was 0.0)
+f_stretch_r_c7          = 1459.195482   # WASP-121b: planet_setup.py (sparc grid) (was 0.0)
+f_stretch_r_c8          = -514.767866   # WASP-121b: planet_setup.py (sparc grid) (was 0.0)
+
+use_cubed_sphere       = true
+
+<meshblock>
+nx1       = 74   # WASP-121b: one x1 block (ck column constraint) (was 128)
+nx2       = 16
+nx3       = 16
+
+<time>
+start_time = 0.0       # radab_0924: set on the command line (T0)
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 1000000000       # effectively no cycle limit; tlim and the wall clock stop it.
+tlim = 3.117345e+07   # WASP-121b: 283 rotations as before (P_rot = 110153.5 s) (was 8.64e7)
+ndiag      = 100
+dt_min     = 1.0e-3      # CHANGED from prod3's 1.0e-2: see change (4) above.
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+# H1: this block was <mhd> in prod4.
+# --- WELL-BALANCED HYDROSTATIC SOURCE: ON, polytropic closure --------------------------
+# Restored from cs_mhd_prod2 / sp_mhd_prod3 (prod3 had turned this off). See change (2)
+# in the header for wb_cache_every = 0 (not prod2's 10: stale-cache energy pump) and the
+# rot_potential consequence.
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+cs_wellbalanced_src = false   # 09-23 user: DROPPED. min beta at prod3 rot 283 = 1.22 (>> the ~2e-3 crossover); hurts hydro accuracy (tests_hyd4/README_wbsrc.md)
+isotropic_conduction = none   # 09-25 ROUTE B: ck two-stream to the wall, no diffusion (rad_* below unused)
+rad_implicit_x1 = true
+rad_cap_ang     = 0.5    # silent no-op with rad_angular=false below; kept for the diff.
+rad_angular     = false  # CHANGED from prod3 (implicit default true): see change (3).
+rad_tau_lo     = 30.0
+rad_tau_hi     = 300.0
+rad_kappa_src  = table
+rad_flux_inner = -1.0              # unused under route B (no conduction); sigma T_int^4 enters at the ck bottom (problem/ck_int_at_cut)
+rad_met        = 1.0   # WASP-121b: [M/H] = +1 (10x solar); unused under route B, kept consistent (was 0.0)
+eos             = general
+general_eos     = table
+reconstruct     = plm
+rsolver         = hllc            # H2: was hlld (MHD-only)
+# cs_lowbeta_fallback: REMOVED (H4, MHD-only)
+gamma           = 1.4727545958   # unused by the table; kept so ideal/general inputs match
+etotgrav        = true
+
+# --- composition ---
+eos_h2               = true      # H2 dissociation: the heat pipe
+eos_ionization       = true      # Saha for H, He, He+
+eos_metal_ionization = true      # Na, K, Ca, Al, Mg, Fe -- the electron donors
+eos_radiation        = false     # aT^4/3 is ~1e-7 of the gas pressure here
+eos_xh               = 0.6588   # WASP-121b: 10x solar metals at solar He/H: X(1 + 0.3367 + 0.1815) = 1 (was 0.7381)
+eos_yhe              = 0.2218   # WASP-121b: Y = 0.3367 X (Asplund09 He/H by mass); Z = 0.1194 (was 0.2485)
+eos_metal_condensation = true
+
+# --- table grid: must bracket the run ---
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 1.5
+eos_logt_max    = 6.0
+eos_dlog        = 0.05
+
+# --- non-ideal MHD: REMOVED (H4) -- ohmic_resistivity, max_eta, use_rkg_sts ---
+
+pfloor = 1.0e-5                       # 09-22 (change 8): was 1e-3; units BARYE (1e-6 bar); see header
+dfloor = 1.0e-16   # WASP-121b: below the IC density at x1max (no cell on the floor at cycle 0) (was 5.0e-14)
+tfloor_kelvin = 200.0
+
+<problem>
+sponge_top = true       # sparc_0925: top velocity sponge 1e-7..1e-6 bar (dhj-sponge-switch)
+sponge_bottom = true    # sparc_0925: bottom horizontal sponge 50..100 bar
+ck_implicit = false
+ck_impl_arat = 2.0
+ck_impl_frozen_op = false
+ck_impl_frozen_cof = true
+ck_impl_lin = false
+ck_impl_lin_thr = 1
+ck_impl_fuse = false
+ck_impl_jac_lin = false
+ck_impl_cvsec = false
+ck_impl_tol = 1.0e-7   # 10x: USER-APPROVED EXCEPTION (09-25, SMOKE_DIAG.md sec. 6): max residual with rsec 20 + maxit 12 is 1.6e-7; default 1e-8
+ck_impl_dtol = 1.0e-8
+ck_impl_maxit = 12   # 10x (09-25): with ck_impl_rsec = 20 (SMOKE_DIAG.md sec. 6)
+ck_impl_rsec = 20.0   # ck-newton10x: secant bound on the thick rows' diagonal (0 = off); 10x day side needs it
+ck_impl_dtmax = 0.5    # default: per-pass cap on |de|/e (the "dstep" of the verbose line); listed so it can be overridden
+ck_impl_demax = 0.5    # default: bound on the total |e - e*|/e* per call (0 = off; off + dtmax 3 collapsed dt, SMOKE_DIAG.md)
+ck_impl_floorbound = true    # dhj-ck-floorbound (586f12a8): Newton stops at e_floor, KKT cells converged; older binaries ignore it
+ck_impl_kkt_demax = true     # dhj-ck-floorbound: KKT rule on the demax bound
+ck_impl_kkt_row = true   # user 09-26: identity row for cells on the demax bound (merge 427f9f58; binary must include it). 1x production NOT-CONVERGED 20/2113 -> 0
+ck_impl_verbose = false
+ck_impl_debug = 0
+ck_impl_once = false
+ck_impl_warm = false
+ck_impl_reuse_jac = 0
+ck_impl_seed = 0
+ck_impl_lw = false
+ck_impl_xstep = 0
+ck_impl_xstep_thr = 0.0
+ck_impl_jreuse = 0.0
+ck_impl_pred = false
+ck_impl_pred_fac = 1.0
+ck_impl_pred_chk = false
+ck_impl_jreuse_xc = false
+ck_impl_warm_step = false
+ck_impl_cvkeep = false
+ck_impl_every = 1                # ck-cadence (README_cadence.md)
+ck_impl_every_thr = 0.0
+ck_impl_jreuse_act = 0.25
+ck_impl_nosync = false
+user_srcs   = true
+# bc_outer_maxwell: REMOVED (H5) -- acts only when MHD is on
+hot_jupiter = true
+Teq   = 2409.3   # WASP-121b: Teff sqrt(R*/2a), Sing+2024 (zero albedo, full redistribution; = their 2409 +- 24 K) (was 2500.0)
+omega = 5.704026e-05   # WASP-121b: 2 pi / P_orb, P = 1.27492504 d (Bourrier+2020, adopted by Sing+2024); tidally locked (was 2.06e-5)
+rot_potential = true     # sp_mhd_prod3 value; see change (2) header note for the
+                         # rotpot_src consequence now that WB is on.
+grav  = 1190.0732   # WASP-121b: planet_setup.py: G M_p / ap^2, M_p = 1.170 M_J (Sing+2024) (was 942.0)
+grav_point_mass = true
+ap    = 1.116018e+10   # WASP-121b: planet_setup.py: = x1min (p = 250 bar) (was 9.44e9)
+Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
+met   = 1.0   # WASP-121b: [M/H] of the ATMOSPHERE, 10x solar (see README); EOS metal donors follow (was 0.0)
+bbot  = 0.0       # H5: was 3.0 G.  Must stay: pgen.cpp:57/131 GetReal it for every hot_jupiter
+                  # run; it is used only on the MHD paths.  0 = the cs_hyd_rs / sp_dhj_hyd value.
+
+# --- radiative transfer -----------------------------------------------------------
+rt_de_max    = 0.5
+rt_use_cons  = true
+rt_ck = true
+rt_split     = false
+ck_pcut_bar  = 1e8                # 09-25 ROUTE B: the cut falls on the inner wall
+ck_nquad     = 2                  # 09-25: exact non-grey diffusion limit (nq2_0925)
+ck_int_at_cut = true             # route B: sigma T_int^4 enters ONCE, as the ck intensity at the wall
+ck_star_teff = 0.0   # WASP-121b: <= 0: stellar band fluxes from ck_swflux (WASP-121 model spectrum), not a blackbody (was 6000.0)
+ck_spherical = true              # NEW: spherical thermal two-stream. See change (1).
+ck_beam_sph  = true              # NEW: pseudo-spherical direct beam. See change (1).
+ck_sweep_form = 1                # 09-22 (change 9): tm = exact probe-free spherical sweep; see header
+ck_table     = ATHENAK_CK_DATA10/ck/Premixed_10x_g8_11_hiT2.txt   # hiT2 = C1 join at 6100 K (ck-hitemp2);  WASP-121b: upstream Exo-FMS 10x + hiT extension (gen_hitemp.py, FastChem 10x) (was ATHENAK_CK_DATA/ck/Premixed_1x_g8_11_hiT.txt)
+ck_ce_table  = CE_tables/FastChem_ck_10x_int_hiT2.txt   # hiT2;  WASP-121b: RELATIVE to ck_data_dir (was CE_tables/FastChem_ck_1x_int_hiT.txt)
+ic_profile   = ic_w121.txt   # WASP-121b: 1-D ck RCE for WASP-121b (route B, nq2, 10x, A_B 0.277) (was /viper/ptmp2/jinma/ckrce_0925/ckrce_nq2_B.txt)
+ck_data_dir  = ATHENAK_CK_DATA10   # WASP-121b: 10x CE tables; cia/ ray/ sw_flux/ symlinked to the repo (was ATHENAK_CK_DATA)
+
+# One-shot column dump: off for production.
+ck_dump_file =
+ck_dump_m    = 0
+ck_dump_j    = -1
+ck_dump_k    = -1
+ck_swflux = sw_band_flux_W121_11.txt   # WASP-121b: Exo-FMS WASP-121 band fluxes (Lee+2021), under ck_data_dir/sw_flux (NEW key)
+albedo = 0.277   # WASP-121b: Bond albedo, Splinter+2025 (JWST NIRISS phase curve); needs branch dhj-albedo (NEW key)
+
+<output1>
+file_type  = hst
+data_format = %.17e
+dt         = 1.10154e+04   # WASP-121b: 10 per rotation (was 3.05e4)
+
+<output2>
+file_type  = log                 # floor / C2P counters; rows are per-interval
+dt         = 1.10154e+04   # WASP-121b: 10 per rotation (was 3.05e4)
+
+<output3>
+last_time = -1.0        # radab_0924: set on the command line
+file_type  = bin
+variable   = hydro_w           # H6: was mhd_w_bcc
+dt         = 2.20307e+05   # WASP-121b: every 2 rotations (was 6.10e5)
+
+<output4>
+last_time = -1.0        # radab_0924: set on the command line
+file_type  = rst                 # so a 24 h timeout can be continued with -r
+dt         = 5.50768e+04   # WASP-121b: every 0.5 rotations (was 1.525e5)

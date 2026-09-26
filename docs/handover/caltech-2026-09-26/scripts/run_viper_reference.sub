@@ -1,0 +1,131 @@
+#!/bin/bash -l
+#SBATCH -o /viper/ptmp2/jinma/sparc_0925/log.out.%j
+#SBATCH -e /viper/ptmp2/jinma/sparc_0925/log.err.%j
+#SBATCH -J sparc
+#SBATCH -p apu
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=23:55:00
+# sparc_0925: cs deep hot Jupiter, HYDRO (hyd4 twin input), C32, SPARC/MITgcm-like radial grid
+# nx1 = 66, 8-coef poly stretch: dr ~ H/2.8 (H = p10 of day-side Hp) where the day-median
+# p > 1e-6 bar, free (coarse) above (design_c8.py / design_c8.txt); production RT
+# T4 + c2 + ck_impl_every = 4.  FRESH START from the analytic IC at t = 0 (rotation 0).
+# hst every 0.01 rot, bin + rst every 0.5 rot.  Binary: rt-integration a6eaac93 (BUILD_COMMIT.txt).
+# 09-25 production physics, IN sparc.athinput: ROUTE B (isotropic_conduction = none,
+# ck_pcut_bar = 1e8, ck_int_at_cut = true: sigma T_int^4 enters once, at the wall),
+# ck_nquad = 2, hiT ck + CE tables, IC = problem/ic_profile ckrce_0925/ckrce_nq2_B.txt.
+# EXTRA="<block/key=val ...>" is appended to the athena command line (fresh and restart).
+#
+# Sponge test arms (one GPU each, two arms per node, each its own srun -n 1 step):
+#   base  = both sponges on        nobot = problem/sponge_bottom=false
+#   notop = problem/sponge_top=false   none = both off
+# PLANET (09-25): w121 (DEFAULT) = WASP-121b: INP wasp121_0925/sparc_w121.athinput, grid from
+#   GRIDENV (default wasp121_0925/grid_w121.env, which sets G), P_rot = 1.101535e5 s;
+#   PLANET=old = the previous planet (sparc.athinput, nx1 66 grid, P_rot = 3.05e5 s).
+#   PLANET=k20 = KELT-20b (kelt20_0925/README.md): INP kelt20_0925/sparc_k20.athinput, grid
+#   from GRIDENV (default kelt20_0925/grid_k20.env), P_rot = 3.001626e5 s; arm dirs default to
+#   PFX=/viper/ptmp2/jinma/sparc_k20/<arm> so both planets can run side by side.
+#   PLANET=w121x1 = WASP-121b at 1x SOLAR (wasp121_0925/x1/README.md): INP x1/sparc_w121_1x.athinput,
+#   grid from GRIDENV (default x1/grid_w121_1x.env), P_rot as w121; arm dirs default to
+#   PFX=/viper/ptmp2/jinma/sparc_w121x1/<arm> (never shared with the 10x w121 arms).
+#   DRY=1 prints the srun command line of each arm instead of running it.
+# usage: [PLANET=w121|w121x1|k20|old] [GRIDENV=<file>] [INP=<athinput>] [DRY=1] [TROT=100] [WALL=hh:mm:ss] [NLIM=n] [VERB=true] [PFX=<dir>] sbatch [-t ..] run.sub arm1 [arm2]
+#   run dir of an arm = ${PFX:-/viper/ptmp2/jinma/sparc_0925}/<arm>.  Each arm starts fresh, or
+#   continues from its own newest rst with time/tlim = TROT rotations (so an arm is extended
+#   later by resubmitting with a larger TROT) and with its sponge keys re-applied on the
+#   command line.  WALL (athena -t, default 23:45:00) ~10-15 min below the job limit.
+#   chain: sbatch --dependency=afterok:<prev> run.sub <same arms>; an arm that did not stop on
+#   the wall clock writes <arm>/STOP and later links skip it.
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0 cmake/4.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+S=/viper/ptmp2/jinma/sparc_0925
+BIN=$S/athena.gpu
+PLANET=${PLANET:-w121}
+if [ "$PLANET" = old ]; then
+  INP=${INP:-$S/sparc.athinput}
+  PR=3.05e5
+  G="mesh/nx1=66 meshblock/nx1=66 mesh/use_grid_stretch_r_poly=true \
+mesh/f_stretch_r_c1=-0.248682 mesh/f_stretch_r_c2=-1.290656 mesh/f_stretch_r_c3=-1.933528 \
+mesh/f_stretch_r_c4=17.707345 mesh/f_stretch_r_c5=-66.701191 mesh/f_stretch_r_c6=89.639593 \
+mesh/f_stretch_r_c7=-30.359120 mesh/f_stretch_r_c8=-11.805760"
+  O="time/start_time=0.0 output1/dt=3.05e3 output3/dt=1.525e5 output4/dt=1.525e5"
+elif [ "$PLANET" = k20 ]; then
+  KK=/viper/ptmp2/jinma/kelt20_0925
+  INP=${INP:-$KK/sparc_k20.athinput}
+  GRIDENV=${GRIDENV:-$KK/grid_k20.env}
+  source $GRIDENV                 # sets G (nx1, meshblock/nx1, x1min, x1max, c1..c8)
+  PR=3.001626e5                   # KELT-20b P_orb = P_rot = 3.4741039 d (Singh+2024)
+  O="time/start_time=0.0 output1/dt=3.00163e3 output3/dt=1.50081e5 output4/dt=1.50081e5"
+  PFX=${PFX:-/viper/ptmp2/jinma/sparc_k20}   # k20 arms never share run dirs with w121 arms
+elif [ "$PLANET" = w121x1 ]; then
+  WX=/viper/ptmp2/jinma/wasp121_0925/x1
+  INP=${INP:-$WX/sparc_w121_1x.athinput}
+  GRIDENV=${GRIDENV:-$WX/grid_w121_1x.env}
+  source $GRIDENV                 # sets G (nx1, meshblock/nx1, x1min, x1max, c1..c8)
+  PR=1.101535e5                   # WASP-121b P_orb = P_rot = 1.27492504 d
+  O="time/start_time=0.0 output1/dt=1.10154e3 output3/dt=5.50768e4 output4/dt=5.50768e4"
+  PFX=${PFX:-/viper/ptmp2/jinma/sparc_w121x1}   # 1x arms never share run dirs with 10x arms
+else
+  WW=/viper/ptmp2/jinma/wasp121_0925
+  INP=${INP:-$WW/sparc_w121.athinput}
+  GRIDENV=${GRIDENV:-$WW/grid_w121.env}
+  source $GRIDENV                 # sets G (nx1, meshblock/nx1, x1min, x1max, c1..c8)
+  PR=1.101535e5                   # WASP-121b P_orb = P_rot = 1.27492504 d
+  O="time/start_time=0.0 output1/dt=1.10154e3 output3/dt=5.50768e4 output4/dt=5.50768e4"
+fi
+TROT=${TROT:-100}
+TL=$(python3 -c "print($TROT*$PR)")
+echo "BIN md5=$(md5sum $BIN | cut -c1-32) PLANET=$PLANET TROT=$TROT TL=$TL INP=$INP arms: $*"
+echo "G=$G"
+T4="problem/ck_implicit=true problem/ck_impl_arat=1e30 problem/ck_impl_frozen_op=true \
+problem/ck_impl_lin=true problem/ck_impl_lin_thr=1 problem/ck_impl_fuse=true \
+problem/ck_impl_jac_lin=true problem/ck_impl_cvsec=true"
+# user 09-26: xstep 8 (was 2; xstep counts cycles, so <= 4 is a no-op under every 4). ckcad_0926: -11 % ms/cycle, interior within noise. Applies to FRESH starts only; restarts keep the keys stored in their rst.
+C2="problem/ck_impl_once=true problem/ck_impl_xstep=8 problem/ck_impl_jreuse=0.2 \
+problem/ck_impl_pred=true problem/ck_impl_pred_fac=0.5 problem/ck_impl_nosync=true"
+E4="problem/ck_impl_every=4"
+for ARM in "$@"; do
+  case $ARM in
+    base)  SP="problem/sponge_top=true problem/sponge_bottom=true" ;;
+    nobot) SP="problem/sponge_top=true problem/sponge_bottom=false" ;;
+    notop) SP="problem/sponge_top=false problem/sponge_bottom=true" ;;
+    none)  SP="problem/sponge_top=false problem/sponge_bottom=false" ;;
+    *) echo "unknown arm $ARM"; continue ;;
+  esac
+  D=${PFX:-$S}/$ARM
+  if [ -n "$DRY" ]; then
+    LAST=$(ls -1 $D/rst/*.rst 2>/dev/null | tail -1)
+    if [ -n "$LAST" ]; then echo "DRY $ARM: $BIN -r $LAST time/tlim=$TL $SP ${NLIM:+time/nlim=$NLIM} $EXTRA"
+    else echo "DRY $ARM: $BIN -i $INP $G $O time/tlim=$TL $T4 $C2 $E4 $SP problem/ck_impl_verbose=${VERB:-false} ${NLIM:+time/nlim=$NLIM} $EXTRA -t ${WALL:-23:45:00}"; fi
+    continue
+  fi
+  mkdir -p $D
+  if [ -f $D/STOP ]; then echo "$ARM: STOP present, skipped"; continue; fi
+  LOG=$D/run.$SLURM_JOB_ID.log
+  LAST=$(ls -1 $D/rst/*.rst 2>/dev/null | tail -1)
+  if [ -n "$LAST" ]; then
+    echo "$ARM: restart from $LAST ($SP)"
+    CMD="$BIN -r $LAST time/tlim=$TL $SP ${NLIM:+time/nlim=$NLIM} $EXTRA -t ${WALL:-23:45:00}"
+  else
+    echo "$ARM: fresh start ($SP)"
+    CMD="$BIN -i $INP $G $O time/tlim=$TL $T4 $C2 $E4 $SP \
+problem/ck_impl_verbose=${VERB:-false} ${NLIM:+time/nlim=$NLIM} $EXTRA -t ${WALL:-23:45:00}"
+  fi
+  ( cd $D && srun -n 1 -N 1 -c ${SLURM_CPUS_PER_TASK} --gres=gpu:1 --exact --mem=${STEPMEM:-50000} \
+      bash -c 'echo "step $SLURM_STEP_ID ROCR_VISIBLE_DEVICES=$ROCR_VISIBLE_DEVICES"; exec "$0" "$@"' \
+      $CMD > $LOG 2>&1
+    echo "$ARM rc=$? $(ls $D/rst 2>/dev/null | tail -1)"
+    if grep -q "Terminating on wall clock limit" $LOG && ! grep -q "FATAL" $LOG; then
+      echo "$ARM: wall clock limit reached, next link may run"
+    else
+      echo "$ARM: stopped (tlim, nlim, FATAL or other): writing STOP"; touch $D/STOP
+    fi ) &
+done
+wait
+echo SPARC_DONE
