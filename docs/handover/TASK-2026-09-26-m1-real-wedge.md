@@ -91,3 +91,77 @@ Scope: a **test-size** development and performance bed, not a production model. 
   - DualViews filled on the host without `sync_device()`;
   - class members read inside kernels (capturing `this`).
 - Once the wedge is gated on viper, Caltech can build it for H200 and compare.
+
+## Appendix: what rad_m1 already supports on sp (researched on Caltech, file:line on rt-integration)
+
+**T-S4 (`sph_atm`)**
+- Code: `src/pgen/tests/rad_m1_tests2.cpp:714-837`.
+- Gas: rho = atm_rho0 (r/r_in)^-atm_rho_n. With `atm_init = eddington` it uses the closed-form spherical
+  Eddington E and F_in (r_in/r)^2.
+- `atm_hold` (default true, `RadM1SphAtmGas`) re-imposes rho, v = 0 and the specific eint every stage.
+  **`problem/atm_hold = false` lets the gas move**, which is the cheapest first step.
+- With `force_reference = wb_arad`, the pgen builds `arad_ref` from the exact F.
+- Inputs live only in the run trees: `tests_m1/runs_5b_sp_s2/inp/sph_atm*.athinput` (64x4x4, r 1..5,
+  theta pi/2+-0.1); the vet_col variants are in `runs_5d_vetcol`, `runs_5e_vetcol2`.
+
+**Hydro coupling on sp is implemented**
+- Energy exchange, the radiation force and gas work run unchanged. F is stored in physical orthonormal
+  (r, theta, phi) components, the same basis as the hydro momentum (`rad_m1_sph.cpp:26-31`).
+- The enthalpy flux (`implicit_enthalpy`, plm default for fixed closures) is "not exact on a stretched grid".
+- `implicit_vimp` is allowed on sp. It is on by default with hesdirk2 + bicgstab + multi-D + ng >= 2 +
+  hydro + coupling + gas_feedback.
+- `etotgrav` is handled.
+- **Not handled:** `sp_cart_all_momentum` / `sp_cart_polar_momentum`. rad_m1 never reads them, so the force
+  would need Cartesian projection (`rad_m1_curvilinear_design.md:279-281`). Do not combine them with M1.
+- Risk 6, measured only WITHOUT gravity (T-S4 with free gas + wb_arad + sp_wellbalanced_src): rms v =
+  2.46e-5 (be) and 7.5e-6 (hesdirk2), vs 5.1e-2 without wb_arad (`runs_5b_sp_s2/README.md:99-125`,
+  `runs_5h_sph2/README.md:155-170`). **There is no point-mass + rad_m1 envelope test yet.**
+
+**FATAL restrictions on sp**
+- `rad_m1.cpp:70-122`:
+  - cubed sphere;
+  - a polar boundary, or theta reaching 0/pi (the wedge must avoid the poles);
+  - theta stretching;
+  - GR.
+- `SphericalS1Check`, `rad_m1_sph.cpp:79-123`:
+  - transport must be implicit;
+  - the closure must NOT be vet_sc or tau (use vet_col, eddington, m1, minerbo or kershaw);
+  - no SMR/AMR;
+  - **meshblock nx1 must equal mesh nx1** (one block per radial column);
+  - implicit_flux central, recon dc, trans_limit none;
+  - offdiag auto/none (lagged allowed for non-Eddington).
+- hesdirk2 needs `<time>/integrator = rk2`.
+- `time2_vet_col` other than lag needs `vet_col_every = 1`.
+
+**Gravity**
+- There is no generic point-mass source in `src/srcterms`. Pgens supply it through `user_srcs` plus the
+  potential arrays phicc0 / phi0.
+- WB keys (`hydro.cpp:182-270`): etotgrav, wellbalance_dynamic, wb_x1, wb_option, ...
+- sp keys (`coordinates.cpp:40-60`): sp_wellbalanced_src, sp_face_avg, ...
+- **`src/pgen/red_giant.cpp` already has** a point mass (`RedGiantGravity` :3128, phicc0/phi0 filled
+  :2574-2578), the `ic_profile` "r rho eint" reader (:1479-1494), open/wall radial BCs (`RedGiantBC` :4564) and
+  sp support. Example input: `inputs/hydro/he4_presn_sp.athinput`.
+- **But red_giant has no rad_m1 hooks:** it uses two_stream_rt + conduction; it never calls `SetForceReference`;
+  it never fills rad_m1 ghosts in `RedGiantBC`; and a `<rad_m1>` block would double-count radiation.
+- Two candidate routes:
+  - (a) add a rad_m1 mode to red_giant: turn off its RT and conduction, pass tables through
+    `SetOpacityTables`, the force reference and the rad ghosts;
+  - (b) add gravity + ic_profile + BCs to the sph_atm test pgen.
+
+**Opacity and BC hooks**
+- `<rad_m1>/opacity = const | powerlaw | user | table`. `table` needs the pgen to call `SetOpacityTables`, as in
+  box_convection. `user` means editing `M1UserOpacity` inline (`rad_m1_opacity.hpp:95-117`).
+- Ghosts: `ApplyPhysicalBCs` (`rad_m1_tasks.cpp:162-170`) runs the built-in fills, then the pgen's single
+  `user_bcs_func`. A user x1 BC must therefore also fill the rad_m1 ghosts (example: `RadM1AtmBC`,
+  `rad_m1_tests2.cpp:~1060`).
+- The implicit solve's physical x1 faces are `implicit_bc_x1min/max` (auto | marshak | flux | reflect | periodic |
+  efix). There is no user callback for the implicit face BC.
+
+**sp defaults (fresh runs)**
+- time_scheme hesdirk2;
+- implicit_precond mg_gc (levels 1) on the fast path;
+- implicit_op_team_red true;
+- implicit_predictor step, predictor_order 2, one_pass 8;
+- lin_ew_max 1e-2;
+- vet_col: ncore 8, nsub 1, nmu 4, every 1, order2 true, team true, chunk auto (cap 8);
+- time2_vet_col predict.

@@ -607,8 +607,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // operator kept across calls (xstep = k cycles, xstep_thr = max relative T/rho change),
   // the adaptive chord Jacobian (jreuse = the contraction that triggers a rebuild), no
   // confirmation pass (pred, pred_fac), and no allocation/blocking fill in the pass path
-  // (nosync).  See utils/two_stream_column_ck.hpp.
-  two_stream_rt::ck_impl_xstep = pin->GetOrAddInteger("problem","ck_impl_xstep",0);
+  // (nosync).  See utils/two_stream_column_ck.hpp.  ck_impl_xstep is read further down,
+  // once ck_impl_every and ck_impl_frozen_op are known (its default depends on them).
   two_stream_rt::ck_impl_xstep_thr =
       pin->GetOrAddReal("problem","ck_impl_xstep_thr",0.0);
   two_stream_rt::ck_impl_jreuse = pin->GetOrAddReal("problem","ck_impl_jreuse",0.0);
@@ -716,8 +716,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",false);
   two_stream_rt::ck_impl_stalldbg =
       pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
+  // problem/ck_impl_kkt_row: DEFAULT TRUE since default-flips (09-26; 1x production
+  // NOT-CONVERGED 20/2113 -> 0 at the same cost).  It acts only with ck_impl_floorbound
+  // or ck_impl_kkt_demax on the fused glob = 0 path; false restores the old rows.  The
+  // value is recorded, so a restart keeps its stored value; a restart file written
+  // before the key existed picks up true.
   two_stream_rt::ck_impl_kkt_row =
-      pin->GetOrAddBoolean("problem","ck_impl_kkt_row",false);
+      pin->GetOrAddBoolean("problem","ck_impl_kkt_row",true);
   if ((two_stream_rt::ck_impl_floorbound || two_stream_rt::ck_impl_kkt_demax ||
        two_stream_rt::ck_impl_rsec > 0.0) &&
       (!two_stream_rt::ck_implicit || !two_stream_rt::ck_impl_fuse ||
@@ -752,6 +757,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "IGNORED with ck_impl_refresh_kappa = true: the operator is frozen "
               << "only where the opacity is." << std::endl;
   }
+  // problem/ck_impl_xstep: DEFAULT 8 since default-flips (09-26 cadence retest: -11 %
+  // per cycle, interior within noise) wherever ck_impl_every > 1 and the stored operator
+  // exists (ck_implicit, ck_impl_frozen_op, not ck_impl_refresh_kappa); 0 (off)
+  // otherwise, as before.  xstep counts CYCLES, so under ck_impl_every = 4 the old
+  // production value 2 never re-applied an operator.  An explicit value (0 = off) always
+  // wins, and the value is recorded, so a restart keeps its stored value; a restart file
+  // written before the key existed picks up the new default.
+  {const bool xsdef = (two_stream_rt::ck_impl_every > 1) && two_stream_rt::ck_implicit &&
+                      two_stream_rt::ck_impl_frozen_op &&
+                      !two_stream_rt::ck_impl_refresh_kappa;
+  two_stream_rt::ck_impl_xstep =
+      pin->GetOrAddInteger("problem","ck_impl_xstep",xsdef ? 8 : 0);}
   if (two_stream_rt::ck_impl_xstep > 0 && !(two_stream_rt::ck_implicit &&
       two_stream_rt::ck_impl_frozen_op && !two_stream_rt::ck_impl_refresh_kappa)) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_xstep keeps "
