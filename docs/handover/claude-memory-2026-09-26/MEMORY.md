@@ -46,6 +46,7 @@ Standing user rules (full text in [index-standing-rules](index-standing-rules.md
 - **[NO ACCURACY SACRIFICE for speed (user 09-25/26)](no-accuracy-sacrifice.md)** — accuracy-neutral = deviation <= ROUND-OFF spread (not the time error) in the region that counts; multi-rate etc. opt-in, never recommended
 - **[TWO PHASES: cheap schemes in relaxation, accurate at steady state (user 09-26)](two-phase-relax-then-accurate.md)** — cfl 0.9 kept in both; multi-rate/e8x16/vet_col_every/loose tol OK only in relaxation; switch-over drift check
 - **[M1 MULTI-RATE REJECTED, even for relaxation (09-26)](m1-multirate-rejected-0926.md)** — on hesdirk2 cfl 0.9: no gain or crash; box does not relax back after switch-off
+- **[M1 KE dt-dependence ROOT CAUSE: coupling split 1st order when exchange stiff (09-26)](m1-coupling-split-ke-0926.md)** — real mode gamma0 ~2e-4/s; hesdirk2 overshoots, Strang mr undershoots; needs stiff-accurate coupling
 - **[THREAD TRIAGE 09-25: production path only (user)](thread-triage-0925.md)** — no new side threads without asking; mg phase 2 RESUMED as m1-coarse2 (user); ck-fast2 running
 - **[DELEGATE to SONNET when adequate (user 09-22)](delegate-to-sonnet-when-adequate.md)** — ONLY really simple, single-step, binary-checked tasks -> sonnet (tightened 09-22 after the 3-attempt profiling job); everything else -> opus
 - **[DELEGATE simple tasks to Opus 5](delegate-simple-tasks-to-opus.md)** — from the first tool call; Fable decides, Opus executes
