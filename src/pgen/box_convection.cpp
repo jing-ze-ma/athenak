@@ -3247,8 +3247,8 @@ void BoxConvBC(Mesh *pm) {
   // and which the running boundary reads at exactly the same point of the update --
   // makes the fill idempotent, so a restart is a bitwise continuation.
   // This is red_giant.cpp's fix (state_i in RedGiantBC) for the same defect.
-  auto state_i = [=] (const int m, const int k, const int j, const int km, const int jm,
-                      const int im, Real &d_i, Real &e_i) {
+  auto state_i = KOKKOS_LAMBDA (const int m, const int k, const int j, const int km,
+                                const int jm, const int im, Real &d_i, Real &e_i) {
     d_i = u0(m,IDN,km,jm,im);
     const Real di = (d_i > 0.0) ? (1.0/d_i) : 0.0;
     e_i = u0(m,IEN,km,jm,im)

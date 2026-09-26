@@ -8460,7 +8460,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // each of its two cells (a physical boundary face gives all of it to its one
       // interior cell), which is exactly what the implicit face source removed from the
       // radiation: sum_cells dm = sum_faces dt (rho k_t)_f F0'_f/c.
-      if (coupling && dbgf) {
+      if (coupling_ && dbgf) {
         Real ktl, ktr;
         Real wl = 0.5, wr = 0.5;
         int ipos = pos_.d_view(m);
