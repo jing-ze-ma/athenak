@@ -40,6 +40,10 @@
 //! velocity mirrored and the transverse velocity copied; so the initial state is its
 //! own ghost state, and a drifting edge cell drags its ghosts with it.  The M1 ghosts
 //! are a copy (inner) and dark (outer); the implicit solve imposes its own face BCs.
+//! <problem>/wg_bc_top = open (default wall) copies the edge cell's radial velocity into
+//! the outer ghosts instead of mirroring it (a transmissive top).
+//! <problem>/wg_sponge_rate > 0 (default 0 = off) damps the velocity above
+//! wg_sponge_r0 (default r_int) at the rate wg_sponge_rate*((r - r0)/(r_top - r0))^2.
 //!
 //! <problem>/wg_spot_amp > 0 adds an isochoric Gaussian temperature perturbation
 //! T -> T(1 + A exp(-d^2/(2 w^2))), E -> E (1 + ...)^4 (test C).
@@ -83,6 +87,9 @@ DvceArray1D<Real> wg_rho_, wg_eint_;
 Real wg_rlo_ = 0.0, wg_dr_ = 1.0;
 int wg_nf_ = 0;
 Real wg_gm_ = 0.0, wg_rin_ = 1.0, wg_rint_ = 0.0, wg_fin_ = 0.0;
+// outer x1 wall (wg_bc_top) and the top sponge (wg_sponge_rate, wg_sponge_r0)
+bool wg_top_open_ = false;
+Real wg_sp_rate_ = 0.0, wg_sp_r0_ = 0.0, wg_rtop_ = 1.0;
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -500,6 +507,20 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
     pm1->SetForceReference(aref_d);
   }
 
+  // outer wall and top sponge (defaults: closed wall, no sponge = the original scheme)
+  {
+    const std::string bt = pin->GetOrAddString("problem","wg_bc_top","wall");
+    if (bt != "wall" && bt != "open") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "sph_wedge: <problem>/wg_bc_top must be wall or open"
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    wg_top_open_ = (bt == "open");
+    wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.0);
+    wg_sp_r0_ = pin->GetOrAddReal("problem","wg_sponge_r0",wg_rint_);
+    wg_rtop_ = rtop;
+  }
   user_srcs_func = RadM1WedgeGravity;
   user_bcs_func = RadM1WedgeBC;
   user_hist_func = RadM1WedgeHist;
@@ -511,7 +532,10 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
               << ", tau(r_in) = " << tau[static_cast<int>((wg_rin_ - wg_rlo_)/wg_dr_)]
               << ", r_int (tau = " << tau_int << ") = " << wg_rint_
               << ", phi_eff = " << (phieff ? "on" : "off")
-              << ", force_reference = " << (fref ? "wb_arad" : "none") << std::endl;
+              << ", force_reference = " << (fref ? "wb_arad" : "none")
+              << ", outer wall = " << (wg_top_open_ ? "open" : "closed")
+              << ", sponge rate = " << wg_sp_rate_ << " above r = " << wg_sp_r0_
+              << std::endl;
   }
   if (restart) return;
 
@@ -632,6 +656,25 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
     }
     u0(m,IM1,k,j,i) += src;
   });
+  if (wg_sp_rate_ <= 0.0) return;
+  // top sponge: the velocity relaxes to zero at the rate wg_sponge_rate*w,
+  // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the
+  // total energy (the heat is not kept, so that the sponge adds no buoyancy)
+  const Real rate = wg_sp_rate_, r0 = wg_sp_r0_, rt = wg_rtop_;
+  par_for("wg_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real r = x1v(m,i);
+    if (r <= r0) return;
+    const Real w = SQR((r - r0)/(rt - r0));
+    const Real f = exp(-bdt*rate*w);
+    const Real d = u0(m,IDN,k,j,i);
+    const Real ke0 = 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+                          + SQR(u0(m,IM3,k,j,i)))/d;
+    u0(m,IM1,k,j,i) *= f;
+    u0(m,IM2,k,j,i) *= f;
+    u0(m,IM3,k,j,i) *= f;
+    u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke0;
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -662,6 +705,7 @@ void RadM1WedgeBC(Mesh *pm) {
   auto ur = rad ? pmbp->pradm1->u0 : DvceArray5D<Real>();
   const Real cl = rad ? pmbp->pradm1->c_light : 1.0;
   const Real efl = rad ? pmbp->pradm1->e_floor : 0.0;
+  const bool topen = wg_top_open_;
   (void) have_phi;
   par_for("wg_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -683,7 +727,8 @@ void RadM1WedgeBC(Mesh *pm) {
         const Real dg = sd*WgLogInterp(crho, rlo, dr, nf, rg);
         const Real eg = se*WgLogInterp(ceint, rlo, dr, nf, rg);
         const Real dm = uh(m,IDN,k,j,im);
-        const Real v1 = -uh(m,IM1,k,j,im)/dm;
+        // wall: v1 mirrored; open outer wall: v1 of the edge cell (zero gradient)
+        const Real v1 = (!lo && topen) ? uh(m,IM1,k,j,ia)/da : -uh(m,IM1,k,j,im)/dm;
         const Real v2 = uh(m,IM2,k,j,im)/dm;
         const Real v3 = uh(m,IM3,k,j,im)/dm;
         uh(m,IDN,k,j,ig) = dg;

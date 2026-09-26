@@ -161,12 +161,116 @@ No analytic (Mihalas) damping-rate comparison was made.
   BITWISE (5/5, 15/15, 9/9 files), every restart BITWISE, for base and new (b899f03c).
 - CPU: T-S4 (vetevery_0926 wedge, 32x32, 12 cycles) base vs d2 identical (all bin/rst).
 
-## 7. What is next for a gravity-bearing He wedge
-1. Convection onset: g4 (box-like k = 4 seed) -> KE, F_conv/F, L_top vs L_in against the box.
-2. Re-time the levers from the evolved g4 state (the IC timings above are not representative).
-3. The radial ringing grows slowly (9e-4 -> 1.4e-3 in 6 000 s): decide whether it is the physical
-   Fe-bump kappa-mechanism or the closed walls (an open/damped outer wall, as box bc_mode 3 / red
-   giant open BCs, is the test).
+## 7. Evolved-state results (09-26 evening; binary n3 = 317d4051 = f8f7232f + open top/sponge)
+
+### 7.1 Convection onset (`gpu/g4_n2`, job 11984805; 84x64x64, k = 4 seed 1e-2 over tau 5-50, t = 27 590 s)
+`scripts/conv.py` (horizontal means per dump; v_MLT = 1.86e4 cm/s, the box value at z = -1.02e8):
+- velocities grow to v_r' (radial minus horizontal mean) = 1.6-2.1 v_MLT and v_lat = 0.9-2.3 v_MLT
+  at t = 24-27.6 ks (0.01 v_MLT at 4 ks), largest in the upper half (z = -1.3e8 .. 0);
+- but the convective flux is ZERO: F_conv/F (gas enthalpy + 4/3 E_r fluctuation fluxes) = 1e-9 .. 1e-7,
+  sign-alternating in time and depth, and corr(s', v_r') flips sign between dumps. These are waves
+  (the growing radial/non-radial acoustic motion of 7.3), not convection. For scale, rho v_MLT^3 is
+  only 2e-9 F here: MLT convection in this Fe bump is very inefficient, so an F_conv/F test cannot
+  detect it; the sign-coherent s'-v_r' correlation is the discriminant, and it is absent.
+- In every 84x32x32 arm (g7/g9) the lateral Mach grows too (e-folding 4.8-8.1 ks from 3e-6 after
+  ~15 ks), with the sponge as well; whether this becomes convection needs a longer sponge run.
+
+### 7.2 Lever timings on MOVING gas (`gpu/g5_n3` job 11989483, `gpu/g5b_n3` job 11990268)
+Restart of g4 hw.00002.rst (t = 27 590 s, Mach_rms 1.1e-2), 2 GPUs apudev, 180 cycles/arm, cycles
+20-180 timed, arms interleaved, 2 (g5) / 3 (g5b) repeats, same binary. `scripts/lev.py`.
+
+| arm | ms/cycle | wall per sim-s | vs ref | Picard/solve | BiCGStab inner/solve |
+| --- | --- | --- | --- | --- | --- |
+| ref (mg_gc, predictor step, order 2, one_pass 8, EW 1e-2, chunk auto, team_red, every 1, cfl 0.3) | 24.1 | 0.150 | 0 | 2.00 | 7.28 |
+| implicit_predictor = none | 30.9-31.2 | 0.193 | +28-29 % | 3.00 | 7.40 |
+| implicit_predictor_order = 1 | 24.8 | 0.155 | +3.0 % | 2.01 | 7.81 |
+| implicit_one_pass = 0 | 24.1 | 0.150 | -0.1 % | 2.10 | 6.67 |
+| implicit_precond = rbgs_fwd | 22.0 | 0.137 | -8.5 / -8.7 % | 2.00 | 8.30 |
+| vet_col_chunk = 4 | 24.3 | 0.152 | +1.0 % | 2.00 | 7.28 |
+| implicit_op_team_red = false | 24.2 | 0.151 | +0.7 % | 2.00 | 7.28 |
+| implicit_lin_ew_max = 0 | 25.4 | 0.159 | +5.6 % | 2.00 | 8.42 |
+| cfl 0.9 | 34.9 | 0.073 | -52 % per sim-s (+45 % per cycle) | 2.83 | 10.5 |
+| vet_col_every 4 + lag | 26.4 | 0.165 | +9.7 % | 2.00 | 9.99 |
+
+NON-CONVERGED 0 in all 32 runs. The near-static "predictor off -6 %" is REFUTED: on moving gas the
+step predictor saves one Picard iteration per solve (3.00 -> 2.00, +28 % without it). From the static
+IC the lagged state is already the answer (1.1 inner it/solve), so the predictor's extra work bought
+nothing; once the gas moves, the extrapolated increment is a far better first guess than the lagged
+state. Also reversed: vet_col_every 4 (+10 %: the lagged tensor costs 2.7 inner it/solve more than
+rebuilding it) and mg_gc vs rbgs_fwd (rbgs_fwd -8.7 % here: more iterations, 8.3 vs 7.3, but cheaper
+ones; on the T-S4 radiation wedge mg_gc was -18 %, so the sp default is not changed; the He input
+may name rbgs_fwd). No default changed.
+
+### 7.3 The radial ringing (`gpu/g7_n3` jobs 11989485/6, `gpu/g7b` 11990284, `gpu/g9_n3/sp` 11990710; 84x32x32, grid seed 1e-3)
+- Period 59.2 s in every closed-wall arm (FFT of <v_r>, hst every 2 s). Acoustic estimate from the IC
+  (Gamma_1 of gas + radiation): 2 int dr/c_s = 65 s = the closed-closed fundamental of the DOMAIN.
+  The star's own fundamental is ~ 2 pi sqrt(R^3/GM) = 1 800 s and cannot live in a 0.7 %-of-R
+  wedge. So this is a box mode of the closed walls, not the stellar kappa-mechanism pulsation.
+- Growth, amplitude e-folding over t = 0-7.6 ks: cfl 0.3 (w3) 9.9e3 s (0.6 % per period);
+  cfl 0.6 (w6) 2.6e3 s (2.3 % per period), i.e. 3.9x faster for 2x dt. A kappa-driven mode grows at a
+  dt-independent rate; this growth is numerical anti-damping that scales ~ dt^2, the same sign of dt
+  dependence as the He-box KE growth (kedt_0926; no operator hunt here). w3 saturates at
+  |<v_r>|/c_s = 1.8e-3 after ~15 ks; w6 at 2.8e-3 had stalled to ~0.7 s/cycle after 20 000 cycles
+  (1-GPU side-by-side launch, see below).
+- open top (wg_bc_top = open, cfl 0.3, 36 ks): no 59-s peak, |<v_r>|/c_s decays 2.6e-4 -> 1.0e-4;
+  but the column settles: <v_r>/c_s = -1e-4 steady, interior mass +2.8 %, E_rad +4.3 %. Not usable.
+- top sponge (wg_sponge_rate = 0.02 /s above r(tau = 1), w = ((r - r0)/(r_top - r0))^2; cfl 0.3,
+  25.7 ks): the mode decays, |<v_r>|/c_s 1.65e-4 -> 3.7e-5 and stays; Mach_r (tau >= 1) flat 9.1e-4
+  (wall: 6.4e-3); L_top/L_in 1.000000, M_int drift 9e-4, dt 0.161 s unchanged (still set at r_in);
+  cost +0.7-1.8 % per cycle (g8 job 11990669, 400-cycle A/B on 2 GPUs and on each GPU).
+  Recommended: wg_sponge_rate = 0.02 (in tests_m1/runs_6a_m1wedge/inp/he.athinput).
+- The g7b sponge arm first ran at 0.57 s/cycle, and w6 slowed likewise after 20 000 cycles; both were
+  the 1-rank GPU-1 half of a side-by-side launch on an apu node. g8 measured the same arms at
+  12.4 ms/cycle on either GPU with identical iteration counts, so it is the launch, not the code:
+  use 2-rank runs.
+
+### 7.4 Convergence order (coordinator task 5; `gpu/g6_n3`, job 11989484; `scripts/order.py`)
+Gate-(A) grey atmosphere + a smooth hot spot (amplitude 1e-2, w = 0.04 at r = 1.1), production sp
+settings (vet_col, hesdirk2, time2_vet_col predict, vimp default), t = 0.2 (~0.5 spot diffusion times).
+SPACE, cfl 0.1, levels 48x16x16 / 96x32x32 / 192x64x64, each vs the next finer level restricted
+(2x2x2 volume average), relative L1 of the spot perturbation (spot minus spot-free twin):
+
+| var | e(48-96) | e(96-192) | order |
+| --- | --- | --- | --- |
+| T | 8.2e-3 | 2.4e-3 | 1.80 |
+| rho | 1.9e-2 | 5.9e-3 | 1.69 |
+| E | 1.1e-2 | 2.7e-3 | 2.07 |
+| v | 1.8e-2 | 4.3e-3 | 2.11 |
+
+(Raw fields: T 1.94, rho 1.99, E 1.97; the raw v of the spot-free twin is noise, so its order (1.09) is
+not meaningful.)
+TIME, 96x32x32, vs cfl 0.025, relative L1 of the perturbation, local order p between neighbours:
+
+| var | every 1: cfl 0.8 / 0.4 / 0.2 / 0.1 | p (0.4-0.2-0.1) | every 4 + lag: 0.8 / 0.4 / 0.2 / 0.1 | p |
+| --- | --- | --- | --- | --- |
+| T | 7.0e-3 / 8.1e-3 / 3.4e-3 / 1.4e-3 | 1.26, 1.30 | 7.8e-3 / 7.2e-3 / 2.8e-3 / 1.1e-3 | 1.37, 1.34 |
+| rho | 4.1e-3 / 1.2e-3 / 4.0e-4 / 1.4e-4 | 1.59, 1.52 | 4.2e-3 / 1.3e-3 / 4.5e-4 / 1.7e-4 | 1.54, 1.44 |
+| E | 1.9e-3 / 1.5e-3 / 4.8e-4 / 1.6e-4 | 1.67, 1.62 | 2.0e-3 / 1.5e-3 / 4.9e-4 / 1.6e-4 | 1.65, 1.58 |
+| v | 8.4e-3 / 3.6e-3 / 1.6e-3 / 6.5e-4 | 1.22, 1.27 | 1.6e-2 / 7.2e-3 / 3.3e-3 / 1.5e-3 | 1.13, 1.12 |
+
+Stiffness: c rho kappa_P dt at the spot = 2.0e3 (cfl 0.1) .. 1.6e4 (cfl 0.8) (domain 0.06 .. 1.1e5);
+diffusion number over the spot width c dt/(3 rho kappa_t w^2) = 0.006 .. 0.05. Verdict: SPACE second
+order (1.7-2.1). TIME between first and second order, 1.2-1.6, in the strongly stiff regime (c rho kappa
+dt >> 1), consistent with the H-ESDIRK2 stage-order-1 reduction of the radiation-only sp tests
+(1.4 at c rho kappa dt = 16); cfl 0.8 is not yet in the asymptotic range (T error non-monotone).
+vet_col_every 4 + lag: same T/rho/E errors, v error 2.0-2.3x larger, order ~1.1 (first order in the
+lagged tensor, as expected).
+
+### 7.5 CUDA read-through of rad_m1_wedge.cpp and restarts
+- Read against the TASK rules: every kernel captures only locals (Views copied from namespace globals
+  or members: crho = wg_rho_, uh = ph->u0, gm = wg_gm_, the new sponge/open-top scalars); the two
+  device helpers are KOKKOS_INLINE_FUNCTION free functions; no generic or nested lambdas; host reads
+  go through create_mirror_view + deep_copy (tables, column, T/kappa); mb_bcs is read through its
+  d_view (the mesh keeps it synced); the namespace-scope Views are released in pgen_final_func. No
+  finding. Not compiled with nvcc here (no CUDA on viper).
+- Time2RstSet: the wedge (hesdirk2 + predictor) writes and reads the slope/predictor channels. The
+  DeepCopyAcross fix came with the merge of f8f7232f (m1-port 48321155); GPU restart of the EVOLVED
+  g4 state (g5 rs_str 250 cycles vs rs_rr 100 + 150): 3/3 rst payloads identical, hst rows verbatim.
+
+## 8. What is next for a gravity-bearing He wedge
+1. Convection onset with the top sponge on (the g4 velocities were the closed-wall mode's waves):
+   a long 84x64x64 k = 4 run with wg_sponge_rate = 0.02, judged by the sign of corr(s', v_r').
+2. The dt-dependent anti-damping of the acoustic mode (7.3) goes to the kedt_0926 operator hunt.
 4. The extended 4 Msun presupernova star (FeCZ 0.64-0.97 R, where a 10-20 deg wedge is natural)
    needs an MLT-based column: its radiative column is super-Eddington in the Fe bump.
 5. Caltech H200 build of rad_m1_wedge.cpp (written to the CUDA-safe rules; not compiled with nvcc).
