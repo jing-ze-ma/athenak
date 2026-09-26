@@ -166,8 +166,9 @@ inline int ck_impl_stalldbg = 0;
 // neighbours' solutions through the off-diagonals: the neighbours then converge to the
 // fixed point of the clipped iteration, not to R = 0, and stall there.  With this on the
 // KKT cell gets the identity row with zero right-hand side (a = c = 0, b = 1, d = 0), so
-// its neighbours solve the reduced system with that cell held.  Default FALSE =
-// bitwise.  Fused, glob = 0 path only.
+// its neighbours solve the reduced system with that cell held.  The key defaults to
+// TRUE since default-flips (deep_hot_jupiter_rt reads it; false = the old rows,
+// bitwise).  Fused, glob = 0 path only.
 inline bool ck_impl_kkt_row = false;
 inline int ck_impl_nfloor = 0;             // cells stopped at e_floor, last pass
 inline int ck_impl_nkkt = 0;               // cells excluded from the test as KKT

@@ -716,8 +716,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",false);
   two_stream_rt::ck_impl_stalldbg =
       pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
+  // problem/ck_impl_kkt_row: DEFAULT TRUE since default-flips (09-26; 1x production
+  // NOT-CONVERGED 20/2113 -> 0 at the same cost).  It acts only with ck_impl_floorbound
+  // or ck_impl_kkt_demax on the fused glob = 0 path; false restores the old rows.  The
+  // value is recorded, so a restart keeps its stored value; a restart file written
+  // before the key existed picks up true.
   two_stream_rt::ck_impl_kkt_row =
-      pin->GetOrAddBoolean("problem","ck_impl_kkt_row",false);
+      pin->GetOrAddBoolean("problem","ck_impl_kkt_row",true);
   if ((two_stream_rt::ck_impl_floorbound || two_stream_rt::ck_impl_kkt_demax ||
        two_stream_rt::ck_impl_rsec > 0.0) &&
       (!two_stream_rt::ck_implicit || !two_stream_rt::ck_impl_fuse ||
