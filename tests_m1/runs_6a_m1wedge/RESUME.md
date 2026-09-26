@@ -59,13 +59,28 @@ no merge into rt-integration, no push of rt-integration.
 - g3_d2 (11984594): test (C) hot spot; python3 scripts/anac.py gpu/g3_d2.
 - gb (11984680/2/3): T-S4 / He box / dhj base vs n1 (b899f03c): all BITWISE, restarts bitwise;
   python3 scripts/gbcompare.py wedge box dhj.
-- g4_n2 (11984805, apu 1 h, SUBMITTED, not analysed): He wedge 84x64x64, seed 1e-2 k = 4 over tau
+- g4_n2 (11984805, apu 1 h, DONE, analysed 09-26 evening, doc 7.1): He wedge 84x64x64, seed 1e-2 k = 4 over tau
   5-50.  Analysis: python3 scripts/hst.py gpu/g4_n2/run 20 1.6667  (Mach_rms and Mach_r columns:
   lateral KE = KE_int - KEr_int shows convection); for f in gpu/g4_n2/run/bin/*hydro_w*.bin; do
   python3 scripts/binv.py $f 3.23971e10 1.6667; done.  Then re-time the levers from its final rst
   (edit g2.sub: -r <rst> instead of -i, same arms).
 
+### 09-26 evening (binary n3 = 317d4051: merge of fork/rt-integration f8f7232f + wg_bc_top/sponge)
+- ana/conv.py <run> [dumps]: v_r', v_lat vs v_MLT, F_conv/F, corr(s',v_r') per band. g4: waves up to
+  2 v_MLT, F_conv/F ~1e-8 sign-alternating -> NO convection (doc 7.1).
+- g5_n3 (11989483) + g5b_n3 (11990268): lever timings from g4 hw.00002.rst; ana/lev.py <dir>; doc 7.2.
+  Predictor off +28 % (refutes the static -6 %); rbgs_fwd -8.7 %; every 4 +10 %; cfl 0.9 -52 %/sim-s.
+  g5 rs_str/rs_rr: GPU restart of the evolved state bitwise (Time2RstSet path).
+- g6_n3 (11989484): convergence order (task 5); ana/order.py gpu/g6_n3; doc 7.4.
+- g7_n3 w3/w6 (11989485), g7b op (11990284), g9_n3/sp (11990710), g8_n3 (11990669 sponge cost):
+  ana/ring.py <run> [t0 t1]; doc 7.3. 59-s closed-wall box mode, growth x3.9 for cfl 0.3 -> 0.6;
+  sponge 0.02 kills it for +1-2 %; open top kills it but the column settles.
+  inp/he_bc.athinput = he.athinput + wg_bc_top/wg_sponge_rate keys (needed for command-line overrides).
+- CAUTION: 1-rank side-by-side launches on apu (g7/g7b, GPU 1 half) stalled to ~0.6 s/cycle; use 2 ranks.
+
 ## Branch state
+- 09-26 evening: fast-forward to fork/rt-integration f8f7232f, then 317d4051 (open top + sponge,
+  defaults off) and the doc/scripts commit; pushed to fork/m1-wedge.
 - m1-wedge commits: 5dd4f3d9 969ded08 b899f03c f323a837 3b56c19d, merge of fork/rt-integration
   4979b3a1 = 38b2e2f3 (clean; merged CPU build + 20-cycle gate A smoke hst identical to d1).
 - NOT pushed, NOT merged into rt-integration. Doc: wt/docs/dev/m1_wedge_0926.md. Inputs and scripts
