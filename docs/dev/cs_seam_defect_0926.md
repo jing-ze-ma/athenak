@@ -247,6 +247,109 @@ Recommendation: use `positive` for dhj production and, once longer runs confirm 
 the default. `upwind` alone already cured all 8 crash arms. `positive` also covers the one
 case (both panels claim inflow) where the mean still drains a cell.
 
+## Reproducer: a hot hole on a mid-seam (`inputs/tests/cubed_sphere_cavity.athinput`)
+
+`cs_test` iprob 3 (hydro) or 9 (MHD) takes `<problem>/cav_*` keys:
+- A top-hat density hole of depth `cav_d` is carried by the rigid rotation.
+- The hole sits within angle `cav_w` of (`cav_x`, `cav_y`, `cav_z`) and within
+  |r - `cav_r`| < `cav_wr`.
+- `cav_p = 0` keeps the pressure (a hot hole). `cav_p = 1` scales it too (an isothermal hole).
+- `CSTestCavityHistory` writes the mass, Etot and per-region min rho, max |v| and max |div B|.
+- With `cav_d = 1` (the default) nothing changes.
+
+The input puts a hot hole, rho = 1e-4, on the mid-seam at (1,1,0).
+Grid: 32^2 x 8 per panel, 2 x 2 blocks per panel, reflecting radial boundaries.
+CPU, 1 rank:
+
+| `cs_seam_flux` | result |
+| --- | --- |
+| `average` | FATAL, non-finite state at cycle 100 (t = 1.1e-3) |
+| `positive` | clean to tlim 0.45; \|dM/M\| 3.7e-14, \|dE/E\| 6.9e-14 |
+
+The same hole in a panel interior (1, 0.15, 0.1) is clean under `average`.
+
+MHD (iprob 9, B = 0.3, rho = 1e-3 hole):
+- On a cube vertex, `average` gives FATAL at t 2.8e-3; `positive` is clean.
+- **MHD therefore needs `positive` too.** It already goes through `flux_seam_cc.cpp`.
+- The seam and vertex EMF averages (`flux_correct_fc.cpp`) keep div B at its initial level:
+  4.4e-5 (seam) and 4.2e-5 (vertex), the same with or without the hole.
+
+Full table: `/viper/ptmp2/jinma/seamaudit_0926/RESUME.md`.
+
+## Vertex: the seam HALO, not the flux (keys `cs_seam_resample`, `cs_seam_rho_guard`)
+
+**Case.** An isothermal hole (rho 1e-4, `cav_p = 1`) centred ON a cube vertex (1,1,1):
+- NaN within 2 cycles under `positive` (at cfl 0.3 and 0.1), FATAL under `average` and `upwind`.
+- The same hole on a mid-seam, or in a panel interior at the vertex latitude, is clean.
+
+**Diagnosis** (env-gated dump of the four hole cells per panel at cycles 0-2; debug patch
+`seamaudit_0926/vxdiag.patch`). Two halo defects combine.
+
+1. **The resampled ghost of an empty seam cell is dense.**
+   - The along-seam quadratic (`bvals_cc.cpp`, the resample around l.440 and seamval around
+     l.575) lands between the empty and the full donor cells.
+   - Panel 1's ghost across the k seam of cell (m6, k17, j3) has rho = 0.368. The cell that
+     actually shares that face (m13, k3, j17) holds 1e-4.
+   - Both panels then see a dense neighbour and both claim inflow: a = -0.064, b = -0.0075.
+   - `positive` zeroes the mass flux but keeps a convex mix of the two OPPOSITE energy and
+     momentum fluxes. That drains a nearly massless cell (dE = -5x its energy).
+   - A bracketing-node clamp does not help: the target lies between an empty and a full
+     node, so 0.368 is a legitimate interpolant.
+2. **The quadratic is not convex.**
+   - The resample has a negative weight whenever it interpolates, and it is clamped per
+     variable.
+   - Next to a cell the floors have just reset (p at the floor, momentum kept), it builds a
+     ghost with E < KE.
+   - ConToPrim floors that ghost with |v| ~ 100. The vertex cell's seam flux then carries an
+     energy flux of 366, which is 1e6 times its content. That is the NaN.
+   - The first floored cell comes from an ordinary interior face at a 1e4 pressure jump,
+     which happens for this hole and resample setting too (with the resample switched off
+     via `CS_NORESAMP_CC`). Without the resample, though, the floored cell does not spread
+     through the seam, and the run is clean.
+
+Neither the seam flux rule, the vertex EMF, the corner fill nor FOFC is the operator.
+- FOFC does not cure it (`fofc = true` with `nghost = 3`): `average` still crashes, and
+  `positive` still NaNs at the vertex.
+- FOFC runs before the reconciliation, and its low-order fluxes enter the reconciliation
+  like any other. It did not get to act here, because the damage is in the ghosts.
+- A per-face "close the face when both claim inflow" rule, including the momentum flux,
+  cures the hole but costs 16-50x in L1 on the smooth rigid rotation (pressure is lost at
+  converging seam faces). Rejected, and not on the branch.
+
+**Fix** (branch `cs-seam-mhd-0926`). Both keys are default off and bitwise when off. They act
+only on the fluid's conserved-state exchange (`pbval_u` of Hydro and MHD):
+- `<mesh>/cs_seam_resample = linear`: convex linear interpolation between the two bracketing
+  donors (weights >= 0). A convex combination of admissible states is admissible.
+- `<mesh>/cs_seam_rho_guard = 4`: a ghost whose resampled density differs from its plain-copy
+  source cell (the cell that shares the face) by more than 4x takes the plain copy, for every
+  variable.
+- Both act in the halo, so the seam update stays exactly conservative.
+- **Both are needed.** Guard alone and linear alone each still NaN on the hydro vertex hole.
+- Recommended set: `cs_seam_flux = positive`, `cs_seam_resample = linear`,
+  `cs_seam_rho_guard = 4`.
+
+**Gates.** Cavity arms from job 11983388, CPU serial.
+
+| gate | result |
+| --- | --- |
+| hydro + MHD cavity arms (seam, vertex, upstream of vertex, interior; hot and isothermal), recommended set and `average` + halo keys | all 32 clean, 0 dt-collapse warnings |
+| hydro conservation in those arms | \|dM/M\| <= 3.3e-14; \|dE/E\| <= 7e-14, except 1.7e-8 in the vertex iso hole (floor energy) |
+| smooth rigid rotation, L1(v) vs `average` (n16 / n32 / n64) | +4.2 % / +0.9 % / +0.13 % |
+| smooth rigid rotation, L1(p) vs `average` (n16 / n32 / n64) | -0.1 % / -0.6 % / +0.04 % |
+| MHD smooth (iprob 9, n32): L1(B), L1(v), L1(p) | +0.4 %, +0.3 %, +0.9 % |
+| keys-off gate: rigidrot, blast, mhd (2 ranks, CPU) | bitwise vs rt-integration f7ee04be (blast log compared order-independently; blast.dat identical) |
+| guard alone on smooth | bitwise equal to `positive` (never triggers) |
+
+**WASP-121b crash reruns.** Job 11983404: GPU, apudev, the same restarts and tlim as the
+branch reruns above.
+
+| setting | nobot | notop |
+| --- | --- | --- |
+| recommended set | clean to tlim, 0 collapse warnings | clean to tlim, 0 collapse warnings |
+| keys off (same binary) | FATAL 46764 | FATAL 80495 |
+
+The keys-off control reproduces the earlier branch `average` crashes exactly.
+
 ## Status and next steps
 
 See `/viper/ptmp2/jinma/seam_0926/RESUME.md` for the job list. Still open:

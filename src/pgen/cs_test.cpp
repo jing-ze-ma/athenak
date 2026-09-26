@@ -86,6 +86,10 @@ int  cs_bc_bcc_match = 0; // ghost x1f matched to bcc (problem/bc_bcc_match)
 int  cs_bc_probe = 0;     // print the interior boundary-layer PHASE (problem/bc_probe)
 Real cs_bazi = 0.0;       // iprob=11 azimuthal amplitude; curl B = 2*cs_bazi*zhat
 int  cs_hist_nband = 2;   // region band half-width in cells for CSTestLoopHistory
+// iprob 3/9 EVACUATION test (<problem>/cav_d < 1): a top-hat density hole; UserProblem
+Real cs_cavd = 1.0, cs_cavx = 1.0, cs_cavy = 1.0, cs_cavz = 1.0;
+Real cs_cavw = 0.08, cs_cavr = 1.5, cs_cavwr = 0.3;
+int  cs_cavp = 0;
 // iprob=14 (force-free resistive decay): B = ffb0 (sin az, cos az, 0), curl B = a B
 Real cs_ffb0 = 0.5, cs_alpha = 0.5*M_PI, cs_eta = 0.0;
 // iprob=3 rotation axis (unit vector); zhat is through two panel centres, (1,1,1)/sqrt3
@@ -397,6 +401,7 @@ void CSTestLevelFluxCheck(Mesh *pm);
 void CSTestConsSums(Mesh *pm);
 void CSTestHistory(HistoryData *pdata, Mesh *pm);
 void CSTestLoopHistory(HistoryData *pdata, Mesh *pm);
+void CSTestCavityHistory(HistoryData *pdata, Mesh *pm);
 void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm);
 void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm);
 
@@ -458,6 +463,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_bcs_func = CSTestRadialBC;
     pgen_final_func = CSTestFFCheck;
   }
+  // EVACUATION TEST (iprob 3 or 9): <problem>/cav_d < 1 multiplies the density by
+  // cav_d inside the angle cav_w of the direction (cav_x, cav_y, cav_z) and inside
+  // |r - cav_r| < cav_wr (a top hat); cav_p = 0 keeps p (a hot hole in pressure
+  // balance, carried by the flow), 1 scales p the same way (an isothermal hole the
+  // flow fills).  Put it on a seam or a cube vertex to stress the seam flux and the
+  // vertex halo with a cell far emptier than its neighbours.  cav_d = 1 (default) is
+  // bitwise the old test.  inputs/tests/cubed_sphere_cavity.athinput is the reproducer.
+  cs_cavd = pin->GetOrAddReal("problem", "cav_d", 1.0);
+  if (cs_cavd < 1.0) {
+    cs_cavx = pin->GetOrAddReal("problem", "cav_x", 1.0);
+    cs_cavy = pin->GetOrAddReal("problem", "cav_y", 1.0);
+    cs_cavz = pin->GetOrAddReal("problem", "cav_z", 1.0);
+    const Real cn = std::sqrt(cs_cavx*cs_cavx + cs_cavy*cs_cavy + cs_cavz*cs_cavz);
+    cs_cavx /= cn; cs_cavy /= cn; cs_cavz /= cn;
+    cs_cavw = pin->GetOrAddReal("problem", "cav_w", 0.08);
+    cs_cavr = pin->GetOrAddReal("problem", "cav_r", 1.5);
+    cs_cavwr = pin->GetOrAddReal("problem", "cav_wr", 0.3);
+    cs_cavp = pin->GetOrAddInteger("problem", "cav_p", 0);
+    cs_hist_nband = pin->GetOrAddInteger("problem", "cav_nband", 1);
+    user_hist_func = CSTestCavityHistory;
+  }
   cs_iprob = iprob;
   cs_amp = pin->GetOrAddReal("problem", "amp", 0.5);
   cs_bc_tfrac = pin->GetOrAddReal("problem", "bc_time_frac", 0.0);
@@ -479,7 +505,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // Grid-imprinting time series. iprob=3 is exactly steady, so the deviation from the
   // initial state IS the error at any time. Enable with <problem>/user_hist = true.
-  if (iprob == 3) {
+  if (iprob == 3 && cs_cavd >= 1.0) {
     user_hist_func = CSTestHistory;
   }
   // iprob = 11 is exactly static too, so the deviation from the initial state IS the
@@ -591,6 +617,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real blx_ = cs_blx, bly_ = cs_bly, blz_ = cs_blz;
   const Real blang_ = cs_blang, blp_ = cs_blp;
   const Real hs_ = cs_hscl;
+  const Real cavd_ = cs_cavd, cavx_ = cs_cavx, cavy_ = cs_cavy, cavz_ = cs_cavz;
+  const Real cavw_ = cs_cavw, cavr_ = cs_cavr, cavwr_ = cs_cavwr;
+  const int cavp_ = cs_cavp;
   // the rotation axis of iprob 3 (iprob 9 keeps zhat: its field precesses about z)
   const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
   const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
@@ -723,6 +752,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real dn, ie_, v1, v2, v3;
       RigidRotState(mbpanel.d_view(m), xi, eta, rad, d0, p0, omega, gm1,
                     dn, ie_, v1, v2, v3, axx_, axy_, axz_);
+      if (cavd_ < 1.0) {
+        Real cx, cy, cz;
+        PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
+        const Real ang = acos(fmin(1.0, fmax(-1.0, cx*cavx_ + cy*cavy_ + cz*cavz_)));
+        // a TOP HAT, so the hole is cav_d deep over whole cells (a smooth profile
+        // sampled at cell centres is never deeper than ~1e-2)
+        const Real fc = (ang < cavw_ && fabs(rad - cavr_) < cavwr_) ? cavd_ : 1.0;
+        dn *= fc;
+        if (cavp_ != 0) ie_ *= fc;
+      }
       w0(m,IDN,k,j,i) = dn;
       w0(m,IEN,k,j,i) = ie_;
       w0(m,IVX,k,j,i) = v1;
@@ -6729,4 +6768,121 @@ void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm) {
     }
     std::printf("\n");
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CSTestCavityHistory(HistoryData *pdata, Mesh *pm)
+//! \brief History for the EVACUATION test (<problem>/cav_d < 1): the volume-weighted mass
+//! and total energy (exactly conserved with reflecting radial boundaries, whatever the
+//! seam rule), and by region -- panel INTERIOR, SEAM (within cav_nband cells of one panel
+//! edge), cube VERTEX (within cav_nband cells of two) -- min rho, max |v| and, with MHD,
+//! max |div B| dx1/|B|.  Minima and maxima are RANK-LOCAL: run it serially.
+
+void CSTestCavityHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 13;
+  pdata->label[0] = "mass";
+  pdata->label[1] = "Etot";
+  pdata->label[2] = "rmin-in";
+  pdata->label[3] = "rmin-sm";
+  pdata->label[4] = "rmin-vx";
+  pdata->label[5] = "mxv-in";
+  pdata->label[6] = "mxv-sm";
+  pdata->label[7] = "mxv-vx";
+  pdata->label[8] = "divB-in";
+  pdata->label[9] = "divB-sm";
+  pdata->label[10] = "divB-vx";
+  pdata->label[11] = "ME";
+  pdata->label[12] = "pmin";
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool mhd = (pmbp->pmhd != nullptr);
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto uh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0);
+  auto wh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0);
+  auto volh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  auto d1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->dx1);
+  const Real gm1 = (mhd ? pmbp->pmhd->peos->eos_data.gamma
+                        : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  auto &size = pmbp->pmb->mb_size;
+  const int nbr = cs_hist_nband;
+  Real mass = 0.0, etot = 0.0, me = 0.0, pmin = 1.0e300;
+  Real rmin[3] = {1.0e300, 1.0e300, 1.0e300};
+  Real mxv[3] = {0.0, 0.0, 0.0}, mxdb[3] = {0.0, 0.0, 0.0};
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+    const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+    const Real dg2 = 0.25*M_PI*(x2max - x2min)/static_cast<Real>(indcs.nx2);
+    const Real dg3 = 0.25*M_PI*(x3max - x3min)/static_cast<Real>(indcs.nx3);
+    for (int k=ks; k<=ke; ++k) {
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+      const bool nre = ((0.25*M_PI - fabs(ec))/dg3) < static_cast<Real>(nbr);
+      for (int j=js; j<=je; ++j) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const bool nrx = ((0.25*M_PI - fabs(xc))/dg2) < static_cast<Real>(nbr);
+        const int rg = (nrx && nre) ? 2 : ((nrx || nre) ? 1 : 0);
+        for (int i=is; i<=ie; ++i) {
+          const Real dv = volh(m,k,j,i);
+          mass += uh(m,IDN,k,j,i)*dv;
+          etot += uh(m,IEN,k,j,i)*dv;
+          rmin[rg] = fmin(rmin[rg], wh(m,IDN,k,j,i));
+          pmin = fmin(pmin, gm1*wh(m,IEN,k,j,i));
+          const Real v2 = SQR(wh(m,IVX,k,j,i)) + SQR(wh(m,IVY,k,j,i))
+                        + SQR(wh(m,IVZ,k,j,i));
+          mxv[rg] = fmax(mxv[rg], sqrt(v2));
+        }
+      }
+    }
+  }
+  if (mhd) {
+    auto bf1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+    auto bf2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+    auto bf3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+    auto bc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->bcc0);
+    auto a1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                 pmbp->pcoord->area.x1f);
+    auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                 pmbp->pcoord->area.x2f);
+    auto a3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                 pmbp->pcoord->area.x3f);
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+      const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+      const Real dg2 = 0.25*M_PI*(x2max - x2min)/static_cast<Real>(indcs.nx2);
+      const Real dg3 = 0.25*M_PI*(x3max - x3min)/static_cast<Real>(indcs.nx3);
+      for (int k=ks; k<=ke; ++k) {
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        const bool nre = ((0.25*M_PI - fabs(ec))/dg3) < static_cast<Real>(nbr);
+        for (int j=js; j<=je; ++j) {
+          const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+          const bool nrx = ((0.25*M_PI - fabs(xc))/dg2) < static_cast<Real>(nbr);
+          const int rg = (nrx && nre) ? 2 : ((nrx || nre) ? 1 : 0);
+          for (int i=is; i<=ie; ++i) {
+            const Real dv = volh(m,k,j,i);
+            const Real b2 = SQR(bc(m,IBX,k,j,i)) + SQR(bc(m,IBY,k,j,i))
+                          + SQR(bc(m,IBZ,k,j,i));
+            me += 0.5*b2*dv;
+            const Real db = (a1h(m,k,j,i+1)*bf1h(m,k,j,i+1) - a1h(m,k,j,i)*bf1h(m,k,j,i)
+                          +  a2h(m,k,j+1,i)*bf2h(m,k,j+1,i) - a2h(m,k,j,i)*bf2h(m,k,j,i)
+                          +  a3h(m,k+1,j,i)*bf3h(m,k+1,j,i) - a3h(m,k,j,i)*bf3h(m,k,j,i))
+                          / dv;
+            mxdb[rg] = fmax(mxdb[rg], fabs(db)*d1h(m,k,j,i)/fmax(sqrt(b2), 1.0e-30));
+          }
+        }
+      }
+    }
+  }
+  pdata->hdata[0] = mass;
+  pdata->hdata[1] = etot;
+  for (int r=0; r<3; ++r) {
+    pdata->hdata[2+r] = rmin[r];
+    pdata->hdata[5+r] = mxv[r];
+    pdata->hdata[8+r] = mxdb[r];
+  }
+  pdata->hdata[11] = me;
+  pdata->hdata[12] = pmin;
+  return;
 }

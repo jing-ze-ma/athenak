@@ -346,6 +346,10 @@ class MeshBoundaryValues {
 class MeshBoundaryValuesCC : public MeshBoundaryValues {
  public:
   MeshBoundaryValuesCC(MeshBlockPack *ppack, ParameterInput *pin, bool z4c);
+  // <mesh>/cs_seam_rho_guard (set by Hydro/MHD on their conserved-state exchange only,
+  // where variable 0 is the density; 0 = off): see PackAndSendCC.
+  Real cs_rho_guard = 0.0;
+  bool cs_lin_resample = false;   // <mesh>/cs_seam_resample = linear, same scope
 
   //functions
   void InitSendIndices(MeshBoundaryBuffer &b,int o1,int o2,int o3,int f1,int f2) override;

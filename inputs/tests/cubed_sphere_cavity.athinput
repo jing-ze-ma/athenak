@@ -1,0 +1,73 @@
+# Cubed sphere, EVACUATION test: a density hole carried by a rigid rotation through a
+# panel seam (docs/dev/cs_seam_defect_0926.md, "Reproducer"). Build with -D PROBLEM=cs_test.
+#
+# The hole is a top hat of depth cav_d (angle cav_w about (cav_x,cav_y,cav_z), |r-cav_r| <
+# cav_wr). Defaults below put a HOT hole (cav_p = 0: pressure balance) ON the mid-seam
+# (1,1,0). Measured (CPU, 1 rank):
+#   mesh/cs_seam_flux=average  -> FATAL, non-finite state at cycle 100 (t = 1.1e-3)
+#   mesh/cs_seam_flux=positive -> clean to tlim 0.45; |dM/M| 3.7e-14, |dE/E| 6.9e-14
+# Other placements: cav_x,y,z = 1,1,1 (cube vertex); 1,0.15,0.1 (panel interior, the
+# control, clean). cav_p = 1 makes the hole isothermal (the flow fills it); on a VERTEX that
+# case needs the halo keys too: cs_seam_resample = linear, cs_seam_rho_guard = 4.
+# Use <mhd> + iprob = 9 for MHD (cav_d = 1e-3). The history (problem/user_hist) gives
+# mass, Etot, and per region (interior / seam / vertex, within cav_nband cells) min rho, max |v|, max |div B|.
+<comment>
+problem = cs evacuation test: hot density hole on a panel seam
+<job>
+basename = cs_cavity
+<mesh>
+nghost   = 2
+nx1      = 8
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect
+ox1_bc   = reflect
+nx2      = 32
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+nx3      = 32
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+use_cubed_sphere = true
+cs_seam_flux = average
+cs_vertex_fill_cc = false
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 200000
+tlim       = 0.45
+ndiag      = 100
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+<problem>
+iprob = 3
+d0    = 1.0
+p0    = 0.01
+omega = 0.65
+rot_axis = z
+user_hist = true
+cav_d = 1.0e-4
+cav_x = 1.0
+cav_y = 1.0
+cav_z = 0.0
+cav_w = 0.08
+cav_r = 1.5
+cav_wr = 0.3
+cav_p = 0
+cav_nband = 1
+<output1>
+file_type = hst
+dt        = 0.005
+data_format = %.15e

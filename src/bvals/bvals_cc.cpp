@@ -94,6 +94,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   int no_rs_cc = 0;
   { const char *e_ = std::getenv("CS_NORESAMP_CC");
     if (e_ != nullptr) { no_rs_cc = std::atoi(e_); } }
+  const Real rg_ = cs_rho_guard;
+  const bool rs_lin = cs_lin_resample;
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
   auto &is_z4c = is_z4c_;
@@ -442,6 +444,12 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             wm = 0.5*u*(u - 1.0);
             w0 = 1.0 - u*u;
             wp = 0.5*u*(u + 1.0);
+            if (rs_lin && cs_interp) {
+              // <mesh>/cs_seam_resample = linear: the two bracketing donors, weights >= 0
+              wm = (u < 0.0) ? -u : 0.0;
+              wp = (u > 0.0) ? u : 0.0;
+              w0 = 1.0 - wm - wp;
+            }
             nst = 3;
             for (int s=0; s<3; ++s) {
               if (cs_seam == 2) {
@@ -535,8 +543,40 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           //
           // The residual 1.2x at 4 x 4 is the extrapolation itself, which is O(dx^3) and
           // harmless; the 137x was the clamp.
+          // <mesh>/cs_seam_rho_guard (see mesh.cpp): the plain copy of the source cell,
+          // with its own basis transform, when the resampled DENSITY and the source
+          // cell's density differ by more than the factor rg_.  Off (rg_ = 0): bitwise.
+          cubed_sphere::SeamXform xfc;
+          const bool rgon = (rg_ > 0.0) && (cs_seam != 0) && (v >= 0);
+          if (rgon && cs_xform) {
+            const Real xic = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
+            const Real etac = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
+            cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xic, etac, xfc);
+          }
+          auto rgbad = [&](const int i) {
+            const Real d0 = cs_coar ? ca(m,0,kst[0],jst[0],i) : a(m,0,kst[0],jst[0],i);
+            const Real d1 = cs_coar ? ca(m,0,kst[1],jst[1],i) : a(m,0,kst[1],jst[1],i);
+            const Real d2 = cs_coar ? ca(m,0,kst[2],jst[2],i) : a(m,0,kst[2],jst[2],i);
+            Real dq = wm*d0 + w0*d1 + wp*d2;
+            if (cs_interp) {
+              dq = fmin(fmax(d0, fmax(d1, d2)), fmax(fmin(d0, fmin(d1, d2)), dq));
+            }
+            const Real dc = cs_coar ? ca(m,0,kk,jj,i) : a(m,0,kk,jj,i);
+            return (dq > rg_*dc) || (dc > rg_*dq);
+          };
+          auto plainval = [&](const int i) {
+            if (!cs_xform) {
+              return (cs_coar ? ca(m,vv,kk,jj,i) : a(m,vv,kk,jj,i))*signvar;
+            }
+            Real m2o, m3o;
+            const Real my_ = cs_coar ? ca(m,va_,kk,jj,i) : a(m,va_,kk,jj,i);
+            const Real mz_ = cs_coar ? ca(m,vb_,kk,jj,i) : a(m,vb_,kk,jj,i);
+            cubed_sphere::ApplyMomentumXform(xfc, my_, mz_, m2o, m3o);
+            return (v == va_) ? m2o : m3o;
+          };
           auto seamval = [&](const int i) {
             if (cs_seam == 0) return sval(0,i);
+            if (rgon && rgbad(i)) return plainval(i);
             const Real sv0 = sval(0,i);
             const Real sv1 = sval(1,i);
             const Real sv2 = sval(2,i);
