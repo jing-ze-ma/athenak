@@ -1,0 +1,32 @@
+#!/bin/bash -l
+#SBATCH -J wgG3
+#SBATCH -p apudev
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:30
+#SBATCH -o /viper/ptmp2/jinma/sprhd_0926/gpu/log/g3.%j.out
+# m1-wedge test (C): hot spot (5 %) in the gate (A) atmosphere, 96x32x32, t = 0.6; arms cfl 0.1 (ref),
+# 0.3, 0.9, 0.3/0.9 + vet_col_every 4 lag, 0.3 on 1 GPU (decomposition noise), 0.3 without the spot
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=1
+W=/viper/ptmp2/jinma/sprhd_0926; B=$W/bin/athena_$1_none_gpu; R=$W/gpu/g3_$1; IN=$W/inp/gateC.athinput
+md5sum $B
+run() { local d=$1 np=$2; shift 2; mkdir -p $R/$d; cd $R/$d
+  srun --export=ALL -n $np --exact --cpus-per-task=24 bash -c \
+    'export ROCR_VISIBLE_DEVICES=$SLURM_LOCALID; exec "$0" "$@"' $B -i $IN time/nlim=-1 time/tlim=0.6 time/ndiag=100 "$@" -d $R/$d -t 00:03:00 > $R/$d/run.log 2>&1
+  echo "$d rc=$? $(date +%T) $(tail -n 30 $R/$d/run.log | grep -m1 'cpu time')"; }
+echo "start $(date +%T)"
+run c03 2 time/cfl_number=0.3
+run c09 2 time/cfl_number=0.9
+run c03v4 2 time/cfl_number=0.3 rad_m1/vet_col_every=4 rad_m1/time2_vet_col=lag
+run c09v4 2 time/cfl_number=0.9 rad_m1/vet_col_every=4 rad_m1/time2_vet_col=lag
+run c03g1 1 time/cfl_number=0.3
+run c03ns 2 time/cfl_number=0.3 problem/wg_spot_amp=0.0
+run c01 2 time/cfl_number=0.1
+echo "done $(date +%T)"

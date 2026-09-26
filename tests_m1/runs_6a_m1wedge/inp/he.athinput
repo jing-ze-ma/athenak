@@ -1,0 +1,146 @@
+<comment>
+problem = m1-wedge: the He-box FeCZ star (V3edd) on a spherical-polar wedge, point mass,
+          implicit grey M1 (vet_col, hesdirk2), tabulated gas-only EOS, Rosseland/Planck tables
+
+<job>
+basename = hw
+
+<mesh>
+nghost    = 3
+nx1       = 84
+x1min     = 3.222393398e+10
+x1max     = 3.244671828e+10
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 32
+x2min     = 1.5537963267948966     # pi/2 - 0.017 (box width 1.10e9 cm at R0)
+x2max     = 1.5877963267948966
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 32
+x3min     = 0.0
+x3max     = 0.034
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+
+<meshblock>
+nx1       = 84
+nx2       = 16
+nx3       = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 100
+tlim       = 1.0e30
+ndiag      = 10
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos                  = general
+general_eos          = table
+gamma                = 1.6666666667
+eos_h2               = false
+eos_ionization       = true
+eos_metal_ionization = false
+eos_radiation        = false
+eos_xh               = 0.0
+eos_yhe              = 0.98
+eos_logd_min         = -13.0
+eos_logd_max         = -3.0
+eos_logt_min         = 3.8
+eos_logt_max         = 6.5
+eos_dlog             = 0.02
+reconstruct = plm
+rsolver     = lhllc
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+tfloor  = 5.0e3
+dfloor  = 1.6e-12
+pfloor  = 1.0e0
+fofc    = true
+
+<rad_m1>
+c_light          = 2.99792458e10
+arad             = 1.583122e-46   # a_cgs*T_unit^4, T_unit = mu m_u/k_B = 1.202724e-8 K
+chat_over_c      = 1.0
+closure          = vet_col
+opacity          = table
+temp_unit_kelvin = 1.202724e-8
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_maxit   = 200
+implicit_gas_newton = true
+implicit_eos_cache  = true
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 2.503162453e+15
+implicit_bc_x1max   = marshak
+marshak_q        = 0.5
+time_scheme      = hesdirk2
+vet_col_every    = 1
+time2_vet_col    = predict
+implicit_precond = mg_gc
+implicit_mg_levels = 1
+implicit_op_team_red = true
+implicit_predictor = step
+implicit_one_pass = 8
+implicit_lin_ew_max = 1.0e-2
+vet_col_chunk    = 0
+
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = sph_wedge
+wg_gm      = 4.180568e+26
+wg_ic      = file
+wg_ic_file = /viper/ptmp2/jinma/sprhd_0926/he/ic_wedge_he.txt
+wg_opac_table   = /viper/ptmp2/jinma/caltech_handover_0926/athenak_data/he_box/rosseland_he_x0.0_z0.02.txt
+wg_planck_table = /viper/ptmp2/jinma/caltech_handover_0926/athenak_data/he_box/planck_he_x0.0_z0.02_ferg+tops.txt
+wg_tau_int = 1.0
+wg_phi_eff = true
+wg_seed    = 0.0
+wg_nfine   = 8192
+wg_seed_k  = 0.0
+wg_seed_rlo = 0.0
+wg_seed_rhi = 0.0
+user_srcs  = true
+user_hist  = true
+
+<output1>
+file_type = hst
+dt        = 1.0
+data_format = %24.16e
+
+<output2>
+file_type = bin
+variable = hydro_w
+dt = 1.0e9
+
+<output3>
+file_type = bin
+variable = m1
+dt = 1.0e9
+
+<output4>
+file_type = rst
+dcycle = 1000000000

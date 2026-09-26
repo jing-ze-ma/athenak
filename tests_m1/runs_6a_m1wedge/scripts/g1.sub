@@ -1,0 +1,30 @@
+#!/bin/bash -l
+#SBATCH -J wgG1
+#SBATCH -p apudev
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:30
+#SBATCH -o /viper/ptmp2/jinma/sprhd_0926/gpu/log/g1.%j.out
+# m1-wedge GPU gate G1 on the He wedge (84x32x32): 2-GPU fresh 400 cyc (rst at 200) + restart
+# 200->400 (bitwise), 1-GPU fresh 400 (1 vs 2 GPUs), then a seeded relaxation run to the wall limit
+# usage: sbatch g1.sub <bin tag>
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=1
+W=/viper/ptmp2/jinma/sprhd_0926; B=$W/bin/athena_$1_none_gpu; R=$W/gpu/g1_$1; IN=$W/inp/he.athinput
+md5sum $B
+run() { local d=$1 np=$2; shift 2; mkdir -p $R/$d; cd $R/$d
+  srun --export=ALL -n $np --exact --cpus-per-task=24 bash -c \
+    'export ROCR_VISIBLE_DEVICES=$SLURM_LOCALID; exec "$0" "$@"' $B "$@" -d $R/$d > $R/$d/run.log 2>&1
+  echo "$d rc=$? $(date +%T) $(grep -c 'cycle limit\|time limit' $R/$d/run.log)"; }
+echo "start $(date +%T)"
+run fresh2 2 -i $IN time/nlim=400 time/ndiag=50 output4/dcycle=200 -t 00:02:00
+run rr2 2 -r $R/fresh2/rst/hw.00001.rst time/nlim=400 -t 00:02:00
+run fresh1 1 -i $IN time/nlim=400 time/ndiag=50 -t 00:02:00
+run long 2 -i $IN time/nlim=-1 time/ndiag=500 problem/wg_seed=1.0e-3 output2/dt=500.0 output3/dt=500.0 output4/dcycle=1000000 -t 00:07:30
+echo "done $(date +%T)"
