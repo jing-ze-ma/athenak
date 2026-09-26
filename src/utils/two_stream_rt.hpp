@@ -179,6 +179,13 @@ using atm_column::EffGravAt;
 // the grey chain (rt_chain_grey) no longer use a compile-time column: their whole-column
 // arrays live in the n1-sized global buffer rt_ckscr_ptr (ck-scratch, ck-tiers), so any
 // n1 runs with no tier waste and no cap.
+// ck-jlin: minimum resident 128-thread blocks per SM (Kokkos::LaunchBounds) for the
+// storing chain kernel rt_chain_ck ONLY; 0 = no bound.  On H200 it sits at 164
+// registers = 3 blocks/SM (18.75 % occupancy, latency-bound); 4 caps it at 128.
+// Register allocation only: the arithmetic is unchanged.
+#ifndef RT_CK_MINB
+#define RT_CK_MINB 4
+#endif
 #ifndef RT_NNC
 #define RT_NNC 72
 #endif
@@ -3723,8 +3730,25 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
     }
   };
   for (int b0=0; b0<nblk; b0+=nbc) {
+#if RT_CK_MINB > 0
+    // ck-jlin: athena.hpp's 4-D flattening, with a launch bound (see RT_CK_MINB)
+    const int b1 = std::min(nblk, b0+nbc) - 1;
+    const int lnb = b1 - b0 + 1, lnk = ke - ks + 1, lnj = je - js + 1;
+    const int lkj = lnk*lnj, lbkj = lnb*lkj;
+    Kokkos::parallel_for("rt_chain_ck",
+      Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<128, RT_CK_MINB>>(
+        DevExeSpace(), 0, (nmb1 + 1)*lbkj),
+      KOKKOS_LAMBDA(const int &idx) {
+        int m = idx/lbkj;
+        int b = (idx - m*lbkj)/lkj;
+        int k = (idx - m*lbkj - b*lkj)/lnj;
+        int j = (idx - m*lbkj - b*lkj - k*lnj) + js;
+        chain_body(m, b + b0, k + ks, j);
+      });
+#else
     par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, b0, std::min(nblk, b0+nbc)-1,
             ks, ke, js, je, chain_body);
+#endif
   }
 }
 
