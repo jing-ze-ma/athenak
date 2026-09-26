@@ -30,10 +30,66 @@ only switches on when a seam cell becomes much emptier than its along-seam neigh
 (night side, 1e-7..1e-6 bar).
 
 The fix is on branch `cs-seam-0926`: `<mesh>/cs_seam_flux = average | upwind | positive`.
-The default is `average`, which is bitwise the old behaviour. The fix decides per face, from
+The default was `average` (bitwise the old behaviour) until the switch to the fixed defaults
+described in "Defaults" below. The fix decides per face, from
 the mass flux of both panels, which panel is the donor, and uses that panel's own flux for
 every variable. `positive` also zeroes the mass flux (by convex weights) when both panels
 claim inflow. Both options stay exactly conservative.
+
+## Defaults (since 09-26, branch `cs-seam-default`)
+
+User decision 09-26: the three seam keys are **on by default** on the cubed sphere.
+
+| key (`<mesh>`) | new default | old behaviour (explicit value) |
+| --- | --- | --- |
+| `cs_seam_flux` | `positive` | `average` |
+| `cs_seam_resample` | `linear` | `quadratic` |
+| `cs_seam_rho_guard` | `4` | `0` (off) |
+
+- All three are read with `GetOrAdd` in `src/mesh/mesh.cpp`, so the values in effect are
+  written into every new restart file and a restart of a new run reproduces it.
+- To run with the old scheme, give all three old values: `cs_seam_flux = average`,
+  `cs_seam_resample = quadratic`, `cs_seam_rho_guard = 0`. With these the branch is bitwise
+  identical to rt-integration c1671b9d (gate below). `average` alone with the new halo keys
+  is a fourth, mixed scheme, not the old one.
+- **Restarting an OLD run changes its seam scheme.** A restart file written before these
+  keys existed (for example every production restart of cs_mhd_prod4, cs_hyd4_prod and
+  sparc_w121x1, written by f637b3be-era binaries) has none of them in its input section,
+  so it picks up the new defaults. To continue such a run unchanged, add the three old
+  values through an `-i` overlay (`athena -r <rst> -i old_seam.athinput`, with a `<mesh>`
+  block holding the three lines). A restart written by rt-integration between 2d07119a and
+  this change already carries the explicit old values (`average`, `quadratic`, `0`) and
+  keeps them; edit them with an overlay to switch it to the new scheme.
+- Non-cubed-sphere meshes never read the keys and are bitwise unchanged.
+- The fluid's conserved-state exchange is the only user; the member defaults in
+  `MeshBoundaryValuesCC` (`cs_rho_guard = 0`, `cs_lin_resample = false`) still apply to every
+  other cell-centred exchange (radiation and the other non-fluid fields) as before.
+
+**Gates of the default switch** (CPU, gcc/14 + openmpi/5.0; runs in
+`/viper/ptmp2/jinma/csdef_0926/gate`, apudev job 11983544; pytest job 11983547):
+
+| gate | result |
+| --- | --- |
+| cs pytest files (`hydro/test_hydro_fofc_cs_cpu`, `mhd/test_mhd_fofc_cs_cpu`, `hydro/test_restart_bitwise_cpu` incl. `restart_cs_mhd`, `rad/test_rad_cs_raddiff_cpu`, `rad/test_rad_cs_implicit_ang_cpu`) | 15 of 15 pass, no threshold changed |
+| rigidrot, blast, mhd, mhd_blast (`cs_test`, 2 MPI ranks, 200 cycles), explicit old keys vs rt-integration c1671b9d | bitwise |
+| the same, no keys vs the three new values written explicitly | bitwise |
+| the same, no keys vs c1671b9d | differ (as they should) |
+| cavity reproducer, defaults (with or without the keys in the input: bitwise) | clean to tlim 0.45, 0 collapse warnings, dM/M -6.9e-15, dE/E -2.7e-14 |
+| cavity reproducer, explicit old keys | FATAL at cycle 100, t = 1.137e-3 (as documented) |
+| smooth rigid rotation L1(v) / L1(p), defaults, n16 / n32 / n64 | 2.5719e-3 / 3.7028e-3, 1.2650e-3 / 1.4198e-3, 1.1017e-3 / 1.1395e-3: identical to the `positive + linear + guard 4` numbers of job 11983388; vs explicit old keys +4.2 % / -0.1 %, +0.9 % / -0.6 %, +0.13 % / +0.04 % (the documented values) |
+| MHD smooth (iprob 9, n32), defaults vs old keys: L1(B), L1(v), L1(p) | 4.2802e-4 vs 4.2617e-4, 1.8057e-3 vs 1.7996e-3, 5.5436e-4 vs 5.4967e-4 (+0.4 %, +0.3 %, +0.9 %, as documented) |
+| non-cubed-sphere, built-in pgens, 2 MPI ranks: linear_wave_hydro, linear_wave_mhd (3-D), sod, Brio-Wu | every output file bitwise vs c1671b9d |
+| cpplint on `src/mesh/mesh.cpp` | 11 errors before and after (all pre-existing, none in the edited lines) |
+
+**dhj full-set multi-rotation check (PENDING at this commit).** Job 11983529 (apu, 1 node,
+2 GPUs): sparc_w121x1/base rst 40 (rot 20.0, cycle 161391, read in place) -> rot 32, GPU 1 =
+full set (the new defaults, picked up because the restart has no seam keys), GPU 2 = the same
++ seed kick 1e-14 (`problem/seed_restart`, the noise member). Binary
+`/viper/ptmp2/jinma/csdef_0926/athena.gpu.full` (md5 6e2a4f57) = f637b3be (production physics)
++ the src diffs of 2d07119a and 6a3d051c (bvals, hydro, mesh, mhd) + the seed_restart hunk of
+fb61cbb6 + this branch's mesh.cpp defaults (`csdef_0926/gpu_src_vs_f637b3be.diff`). Analysis:
+`python3 /viper/ptmp2/jinma/csdef_0926/multirot_ana.py` (vs base, vs the positive-only run of
+job 11982958, and full vs noise member).
 
 ## Setup
 
@@ -244,7 +300,7 @@ the KE components by 3e-4..2e-3. The KE components themselves drift 1-2 % over t
   `cs_seam_flux = average`. With the key on, all three run and differ, as they should.
 
 Recommendation: use `positive` for dhj production and, once longer runs confirm it, make it
-the default. `upwind` alone already cured all 8 crash arms. `positive` also covers the one
+the default (done 09-26 together with the halo keys, see "Defaults"). `upwind` alone already cured all 8 crash arms. `positive` also covers the one
 case (both panels claim inflow) where the mean still drains a cell.
 
 ## Reproducer: a hot hole on a mid-seam (`inputs/tests/cubed_sphere_cavity.athinput`)
@@ -316,7 +372,8 @@ Neither the seam flux rule, the vertex EMF, the corner fill nor FOFC is the oper
   cures the hole but costs 16-50x in L1 on the smooth rigid rotation (pressure is lost at
   converging seam faces). Rejected, and not on the branch.
 
-**Fix** (branch `cs-seam-mhd-0926`). Both keys are default off and bitwise when off. They act
+**Fix** (branch `cs-seam-mhd-0926`). Both keys were default off and bitwise when off (now
+default on, see "Defaults"). They act
 only on the fluid's conserved-state exchange (`pbval_u` of Hydro and MHD):
 - `<mesh>/cs_seam_resample = linear`: convex linear interpolation between the two bracketing
   donors (weights >= 0). A convex combination of admissible states is admissible.
