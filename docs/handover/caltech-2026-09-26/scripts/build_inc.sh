@@ -21,6 +21,10 @@ rm -rf $T/kokkos
 rsync -rlc --delete --exclude=/kokkos --exclude=/build $T/ $I/src/
 rm -rf $T
 ln -sfn $R/kokkos $I/src/kokkos
+# a kokkos version change (e.g. the 4.4.00 -> 4.6.02 bump) needs a fresh CMake configure
+KC=$(git -C $R/kokkos rev-parse HEAD)
+[ "$(cat $I/KOKKOS_COMMIT 2>/dev/null)" = "$KC" ] || rm -rf $I/src/build
+echo $KC > $I/KOKKOS_COMMIT
 git -C $R rev-parse $C > $P/COMMIT_$A
 module purge
 cd $I/src
