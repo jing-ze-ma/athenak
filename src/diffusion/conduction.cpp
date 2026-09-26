@@ -930,8 +930,9 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   // the face conductivity in code units, IDENTICAL in form and order to the face_kcode
   // of AddIsotropicHeatFluxRadiative (which is the coefficient of (T_j - T_i)/dl in the
   // face flux it adds)
-  auto face_kcode = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
-                         const Real dl_, const Real dr_, const Real gradn) {
+  auto face_kcode = KOKKOS_LAMBDA (const Real tl, const Real tr, const Real pl,
+                                   const Real pr, const Real dl_, const Real dr_,
+                                   const Real gradn) {
     const Real pf = 0.5*(pl + pr);
     if (pf < pcut) return 0.0;
     const Real tk = 0.5*(tl + tr)*temp_unit;
@@ -943,7 +944,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
-  auto tcell = [=] (const int m, const int k, const int j, const int i) {
+  auto tcell = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
   };
   const Real capbdt = beta_dt;
@@ -1215,13 +1216,14 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     Kokkos::deep_copy(blk, 0);
     // V_i/alpha_i = V_i rho_i c_v,i, the cell's heat capacity; a cell the linearisation
     // dropped (alpha = 0) carries no flux either way
-    auto cap_i = [=] (const int m, const int k, const int j, const int i) {
+    auto cap_i = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       const Real ai = trst(m,ia_,k,j,i);
       const Real vi = curv ? vol_(m,k,j,i) : 1.0;
       return (ai > 0.0 && vi > 0.0) ? vi/ai : 0.0;
     };
     // the explicit fraction of a face, and the C_sts it leaves behind
-    auto split_f = [=] (const Real cf, const Real hi, const Real hj, const bool open) {
+    auto split_f = KOKKOS_LAMBDA (const Real cf, const Real hi, const Real hj,
+                                  const bool open) {
       if (!open || !(cf > 0.0) || !(spbdt > 0.0)) return 0.0;
       const Real hmin = fmin(hi, hj);
       if (!(hmin > 0.0)) return 0.0;
@@ -1360,8 +1362,9 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
   // gradn is the FACE-NORMAL temperature derivative in code units (T per length); the
   // caller forms it, which is where the grid enters
-  auto face_flux = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
-                        const Real dl_, const Real dr_, const Real gradn) {
+  auto face_flux = KOKKOS_LAMBDA (const Real tl, const Real tr, const Real pl,
+                                  const Real pr, const Real dl_, const Real dr_,
+                                  const Real gradn) {
     const Real pf = 0.5*(pl + pr);
     if (pf < pcut) return 0.0;
     const Real tk = 0.5*(tl + tr)*temp_unit;
@@ -1394,7 +1397,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
   auto &cosc_ = pmy_pack->pcoord->cos_cell;
-  auto tcell = [=] (const int m, const int k, const int j, const int i) {
+  auto tcell = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
   };
 

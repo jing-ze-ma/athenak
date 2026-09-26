@@ -168,11 +168,13 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
       mb_lev.modify_host();
       mb_size.modify_host();
       mb_bcs.modify_host();
+      mb_panel.modify_host();   // was never synced: zeros on a discrete GPU (CUDA)
 
       mb_gid.sync_device();
       mb_lev.sync_device();
       mb_size.sync_device();
       mb_bcs.sync_device();
+      mb_panel.sync_device();
 }
 
 //----------------------------------------------------------------------------------------

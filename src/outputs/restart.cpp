@@ -37,6 +37,9 @@
 #include "pgen/pgen.hpp"
 #include "utils/two_stream_warm_rst.hpp"
 #include "utils/two_stream_ck_rst.hpp"
+#include "utils/deep_copy_across.hpp"
+
+using deep_copy_across::DeepCopyAcross;
 //#include "outputs.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -132,39 +135,39 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   // the general-EOS derived cache p and Gamma_1, see the note on outarray_wdp
   if (phydro != nullptr && phydro->peos->eos_data.IsGeneral()) {
     Kokkos::realloc(outarray_wdp, nmb, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_wdp, Kokkos::subview(phydro->wder,
-                      std::make_pair(0,nmb), static_cast<int>(IDPR),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    DeepCopyAcross(outarray_wdp, Kokkos::subview(phydro->wder,
+                   std::make_pair(0,nmb), static_cast<int>(IDPR),
+                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     Kokkos::realloc(outarray_wdg, nmb, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_wdg, Kokkos::subview(phydro->wder,
-                      std::make_pair(0,nmb), static_cast<int>(IDG1),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    DeepCopyAcross(outarray_wdg, Kokkos::subview(phydro->wder,
+                   std::make_pair(0,nmb), static_cast<int>(IDG1),
+                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   // and the MHD one, which is the same cache of the same two channels: see the note on
   // outarray_wdpm.  The general-EOS MHD runs (the deep hot Jupiter) are chained restarts
   // and every link boundary was a discontinuity without it.
   if (pmhd != nullptr && pmhd->peos->eos_data.IsGeneral()) {
     Kokkos::realloc(outarray_wdpm, nmb, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_wdpm, Kokkos::subview(pmhd->wder,
-                      std::make_pair(0,nmb), static_cast<int>(IDPR),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    DeepCopyAcross(outarray_wdpm, Kokkos::subview(pmhd->wder,
+                   std::make_pair(0,nmb), static_cast<int>(IDPR),
+                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     Kokkos::realloc(outarray_wdgm, nmb, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_wdgm, Kokkos::subview(pmhd->wder,
-                      std::make_pair(0,nmb), static_cast<int>(IDG1),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    DeepCopyAcross(outarray_wdgm, Kokkos::subview(pmhd->wder,
+                   std::make_pair(0,nmb), static_cast<int>(IDG1),
+                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   // the internal energy the last inversion produced, see kEintRstMagic in pgen.hpp
   if (phydro != nullptr && phydro->peos->eos_data.IsGeneral()) {
     Kokkos::realloc(outarray_weh, nmb, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_weh, Kokkos::subview(phydro->w0,
-                      std::make_pair(0,nmb), static_cast<int>(IEN),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    DeepCopyAcross(outarray_weh, Kokkos::subview(phydro->w0,
+                   std::make_pair(0,nmb), static_cast<int>(IEN),
+                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   if (pmhd != nullptr && pmhd->peos->eos_data.IsGeneral()) {
     Kokkos::realloc(outarray_wem, nmb, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_wem, Kokkos::subview(pmhd->w0,
-                      std::make_pair(0,nmb), static_cast<int>(IEN),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    DeepCopyAcross(outarray_wem, Kokkos::subview(pmhd->w0,
+                   std::make_pair(0,nmb), static_cast<int>(IEN),
+                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   // the implicit correlated-k solver's cross-call state (utils/two_stream_ck_rst.hpp)
   ck_rst_hdr_bytes.clear();

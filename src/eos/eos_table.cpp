@@ -341,6 +341,8 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
 
   Kokkos::deep_copy(tbl.tbl, h_tbl);
   Kokkos::deep_copy(tbl.efbnd, h_efb);
+  tbl.tbl_h = h_tbl;       // host-side copies for host callers (see eos_table.hpp)
+  tbl.efbnd_h = h_efb;
   tbl.active = true;
 
   // ------------------------------------------------------------------- optional dump

@@ -44,6 +44,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -6102,6 +6103,267 @@ void RadiationM1::ImplicitVimpBuild() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ImplSrcLaunch
+//! \brief step (c) of RadiationM1::ImplicitSolve: the linearised emission/absorption
+//! source kernel (m1_impl_src), instantiated on the ideal-gas tag.
+template <typename Ctx, typename Idl>
+void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
+  auto ar = std::get<0>(ctx_);
+  auto ch = std::get<1>(ctx_);
+  auto cl = std::get<2>(ctx_);
+  auto dt = std::get<3>(ctx_);
+  auto ec_ = std::get<4>(ctx_);
+  auto ecnt = std::get<5>(ctx_);
+  auto eos = std::get<6>(ctx_);
+  auto gam = std::get<7>(ctx_);
+  auto gasx = std::get<8>(ctx_);
+  auto gnewt = std::get<9>(ctx_);
+  auto igb = std::get<10>(ctx_);
+  auto igf = std::get<11>(ctx_);
+  auto igm = std::get<12>(ctx_);
+  auto igr = std::get<13>(ctx_);
+  auto igy = std::get<14>(ctx_);
+  auto iw_ = std::get<15>(ctx_);
+  auto opac_ = std::get<16>(ctx_);
+  auto uh = std::get<17>(ctx_);
+  auto usec = std::get<18>(ctx_);
+  auto nmb1 = std::get<19>(ctx_);
+  auto ks = std::get<20>(ctx_);
+  auto ke = std::get<21>(ctx_);
+  auto js = std::get<22>(ctx_);
+  auto je = std::get<23>(ctx_);
+  auto is = std::get<24>(ctx_);
+  auto ie = std::get<25>(ctx_);
+  auto srb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
+                                  const int i) {
+#if defined(KOKKOS_ENABLE_CUDA)
+    // nvcc: an extended lambda may not capture a variable for the first time inside
+    // an `if constexpr` branch, so name every capture up front (no code is
+    // generated; other backends capture exactly what the instantiation reads).
+    (void)ar; (void)ch; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)eos; (void)gam;
+    (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr; (void)igy;
+    (void)iw_; (void)opac_; (void)uh; (void)usec;
+#endif
+    Real rkpv = opac_(m,M1_OP_P,k,j,i);
+    Real rkev = opac_(m,M1_OP_E,k,j,i);
+    if (rkpv == 0.0 && rkev == 0.0) {
+      iw_(m,M1_IW_SRCB,k,j,i) = 0.0;
+      iw_(m,M1_IW_SRCR,k,j,i) = 0.0;
+      return;
+    }
+    Real dd = uh(m,IDN,k,j,i);
+    Real tk = iw_(m,M1_IW_TP,k,j,i);
+    Real nmiss = 0.0;
+    auto thc = [&]() {
+      if constexpr (decltype(idl)::value) {
+        return M1EosIdeal{gam};   // never called: usec is false here
+      } else {
+        return M1EosCached<decltype(eos), decltype(ec_)>{eos, ec_, m, k, j, i, ecnt,
+                                                         &nmiss};
+      }
+    }();
+    auto thd = [&]() {
+      if constexpr (decltype(idl)::value) {
+        return M1EosIdeal{gam};
+      } else {
+        return M1EosDirect<decltype(eos)>{eos};
+      }
+    }();
+    Real ee, cv;
+    if (usec) {
+      thc(dd, tk, ee, cv);
+    } else {
+      thd(dd, tk, ee, cv);
+    }
+    Real t3 = tk*tk*tk;
+    Real t4 = t3*tk;
+    Real de0 = iw_(m,M1_IW_DE0,k,j,i);
+    Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
+    Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
+    // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
+    // produced by the Newton step of the previous pass, whose linearisation dropped
+    // the curvature of e(T) and of T^4.  Here -- where e(T_k) has just been
+    // evaluated anyway, so the test is FREE -- the exact nonlinear gas residual
+    //   y(T) = rho e(T) + c dt rho kappa_P a T^4 - rho e^n - c dt rho kappa_E E0'
+    //        = -(R_k + c dt rho kappa_E E')
+    // is compared with the value it had BEFORE that step, at the SAME E' (the solve
+    // has not moved E since).  If it did not decrease, the Newton step is discarded
+    // and the bracketed root find of the pre-3g scheme is run for this cell.
+    if (gnewt) {
+      Real yprev = iw_(m,igy,k,j,i);
+      if (yprev > 0.0) {
+        Real ep = iw_(m,M1_IW_EP,k,j,i);
+        Real ynow = fabs(rk + cl*dt*rkev*ep);
+        // ...but only where the residual still MEANS something.  Once the cell has
+        // converged, y is a difference of numbers that cancel to round-off and it
+        // stops decreasing monotonically; without this floor every converged cell
+        // buys a bracketed root find in every remaining pass (measured: 13 % of all
+        // cell-passes fell back, against 0.6 % with it).
+        Real ysc = fmax(fabs(iw_(m,M1_IW_EGN,k,j,i)), cl*dt*rkev*fmax(ep, 0.0));
+        if (!(ynow < yprev) && ynow > M1_IMPL_TRTOL*ysc) {
+          Real tn = tk;
+          bool ok = true;
+          if (usec) {
+            (void) M1ImplTemperatureT(thc, dd, tk, iw_(m,M1_IW_EGN,k,j,i),
+                                      cl*dt*rkpv*ar, cl*dt*rkev*(ep + de0), tn, ok);
+          } else {
+            (void) M1ImplTemperatureT(thd, dd, tk, iw_(m,M1_IW_EGN,k,j,i),
+                                      cl*dt*rkpv*ar, cl*dt*rkev*(ep + de0), tn, ok);
+          }
+          if (ok && tn > 0.0) {
+            tk = tn;
+            iw_(m,M1_IW_TP,k,j,i) = tk;
+            if (usec) {thc(dd, tk, ee, cv);} else {thd(dd, tk, ee, cv);}
+            t3 = tk*tk*tk;
+            t4 = t3*tk;
+            bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
+            rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4
+                 + cl*dt*rkev*de0;
+          }
+          iw_(m,igf,k,j,i) += 1.0;
+        }
+      }
+      iw_(m,igb,k,j,i) = bk;
+      iw_(m,igr,k,j,i) = rk;
+    }
+    if (gasx) {
+      iw_(m,igm,k,j,i) += nmiss;
+    }
+    Real emis = dt*ch*rkpv*ar;
+    Real kk = (bk > 0.0) ? (emis*4.0*t3*cl*dt*rkev/bk) : 0.0;
+    iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
+    iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
+                              + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
+  };
+  par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    srb(Idl{}, m, k, j, i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ImplTsolveLaunch
+//! \brief step (f) of RadiationM1::ImplicitSolve: accept E', solve for T'
+//! (m1_impl_tsolve), instantiated on the ideal-gas tag.
+template <typename Ctx, typename Idl>
+void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
+  auto ar = std::get<0>(ctx_);
+  auto cl = std::get<1>(ctx_);
+  auto dt = std::get<2>(ctx_);
+  auto ec_ = std::get<3>(ctx_);
+  auto ecnt = std::get<4>(ctx_);
+  auto efl = std::get<5>(ctx_);
+  auto eos = std::get<6>(ctx_);
+  auto escale = std::get<7>(ctx_);
+  auto gasx = std::get<8>(ctx_);
+  auto gnewt = std::get<9>(ctx_);
+  auto igb = std::get<10>(ctx_);
+  auto igf = std::get<11>(ctx_);
+  auto igm = std::get<12>(ctx_);
+  auto igr = std::get<13>(ctx_);
+  auto igy = std::get<14>(ctx_);
+  auto iw_ = std::get<15>(ctx_);
+  auto opac_ = std::get<16>(ctx_);
+  auto plog = std::get<17>(ctx_);
+  auto uh = std::get<18>(ctx_);
+  auto usec = std::get<19>(ctx_);
+  auto nmb1 = std::get<20>(ctx_);
+  auto ks = std::get<21>(ctx_);
+  auto ke = std::get<22>(ctx_);
+  auto js = std::get<23>(ctx_);
+  auto je = std::get<24>(ctx_);
+  auto is = std::get<25>(ctx_);
+  auto ie = std::get<26>(ctx_);
+  auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
+                                  const int i) M1_INL {
+#if defined(KOKKOS_ENABLE_CUDA)
+    // nvcc: an extended lambda may not capture a variable for the first time inside
+    // an `if constexpr` branch, so name every capture up front (no code is
+    // generated; other backends capture exactly what the instantiation reads).
+    (void)ar; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)efl; (void)eos;
+    (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
+    (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
+#endif
+    Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
+    Real eold = iw_(m,M1_IW_EP,k,j,i);
+    Real rkpv = opac_(m,M1_OP_P,k,j,i);
+    Real rkev = opac_(m,M1_OP_E,k,j,i);
+    Real told = iw_(m,M1_IW_TP,k,j,i);
+    Real tnew = told;
+    if (rkpv > 0.0 || rkev > 0.0) {
+      Real dd = uh(m,IDN,k,j,i);
+      Real de0 = iw_(m,M1_IW_DE0,k,j,i);
+      bool ok = true;
+      // MILESTONE 3g.  The gas has ALREADY been eliminated locally to build the row
+      // (step (c)): the linearised energy equation is B_k dT = R_k + c dt rho
+      // kappa_E E', whose dT is exactly what put -4 a T_k^3 c dt rho kappa_E/B_k on
+      // the diagonal and the rest on the right-hand side.  With
+      // implicit_gas_newton the SAME relation supplies T', at no table evaluation at
+      // all, instead of re-solving the nonlinear equation from scratch in every
+      // pass.  It is one Newton step of that equation, so the Picard loop is now a
+      // Newton iteration on the coupled (E,T) system, and its fixed point -- where
+      // the loop stops, |dT|/T < implicit_tol -- satisfies
+      // R_k + c dt rho kappa_E E' = 0, i.e. the EXACT nonlinear backward-Euler gas
+      // equation with e(T) and T^4 evaluated (not linearised) at the final T.
+      // The elimination only ADDS to the diagonal of the radiation row (the
+      // coefficient 4 a T^3 c dt rho kappa_E emis/B_k is >= 0 whenever B_k > 0), so
+      // the M-matrix property of sect. 7 is untouched by it.
+      bool done = false;
+      if (gnewt) {
+        Real bk = iw_(m,igb,k,j,i);
+        Real rk = iw_(m,igr,k,j,i);
+        Real yk = rk + cl*dt*rkev*enew;
+        Real dtk = (bk > 0.0) ? (yk/bk) : 0.0;
+        if (bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told && (told + dtk) > 0.0) {
+          tnew = told + dtk;
+          iw_(m,igy,k,j,i) = fabs(yk);
+          done = true;
+        }
+      }
+      if (!done) {
+        // the pre-3g bracketed root find: also the per-cell FALLBACK of the Newton
+        // update (c_v <= 0, a step outside the trust region, a non-positive T).
+        if constexpr (decltype(idl)::value) {
+          M1EosIdeal th{eos.gamma};
+          (void) M1ImplTemperatureT(th, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                    cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
+                                    ok);
+        } else if (usec) {
+          Real nmiss = 0.0;
+          M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
+                                                        &nmiss};
+          (void) M1ImplTemperatureT(thc, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                    cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
+                                    ok);
+          if (gasx) {iw_(m,igm,k,j,i) += nmiss;}
+        } else {
+          (void) M1ImplTemperature(eos, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                   cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew, ok);
+        }
+        if (!ok) {tnew = told;}
+        if (gnewt) {
+          iw_(m,igy,k,j,i) = 0.0;
+          iw_(m,igf,k,j,i) += 1.0;
+        }
+      }
+    }
+    iw_(m,M1_IW_EP,k,j,i) = enew;
+    iw_(m,M1_IW_TP,k,j,i) = tnew;
+    Real re = fabs(enew - eold)/fmax(fmax(fabs(enew), escale), 1.0e-300);
+    Real rt = fabs(tnew - told)/fmax(fabs(tnew), 1.0e-300);
+    iw_(m,M1_IW_RES,k,j,i) = fmax(re, rt);
+    if (plog) {
+      iw_(m,M1_IW_S1,k,j,i) = re;
+      iw_(m,M1_IW_S3,k,j,i) = rt;
+    }
+  };
+  par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+    tsb(Idl{}, m, k, j, i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationM1::ImplicitSolve
 //! \brief the whole backward-Euler step: the Picard loop, the tridiagonal column solves,
 //! the write-back into u0 and into the gas.
@@ -7069,109 +7331,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // table code (828 B call frame per lane) even when the table is off
       const bool srid = !eos.tbl.active && !usec;
       const Real gam = eos.gamma;
-      auto srb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
-                                      const int i) {
-        Real rkpv = opac_(m,M1_OP_P,k,j,i);
-        Real rkev = opac_(m,M1_OP_E,k,j,i);
-        if (rkpv == 0.0 && rkev == 0.0) {
-          iw_(m,M1_IW_SRCB,k,j,i) = 0.0;
-          iw_(m,M1_IW_SRCR,k,j,i) = 0.0;
-          return;
-        }
-        Real dd = uh(m,IDN,k,j,i);
-        Real tk = iw_(m,M1_IW_TP,k,j,i);
-        Real nmiss = 0.0;
-        auto thc = [&]() {
-          if constexpr (decltype(idl)::value) {
-            return M1EosIdeal{gam};   // never called: usec is false here
-          } else {
-            return M1EosCached<decltype(eos), decltype(ec_)>{eos, ec_, m, k, j, i, ecnt,
-                                                             &nmiss};
-          }
-        }();
-        auto thd = [&]() {
-          if constexpr (decltype(idl)::value) {
-            return M1EosIdeal{gam};
-          } else {
-            return M1EosDirect<decltype(eos)>{eos};
-          }
-        }();
-        Real ee, cv;
-        if (usec) {
-          thc(dd, tk, ee, cv);
-        } else {
-          thd(dd, tk, ee, cv);
-        }
-        Real t3 = tk*tk*tk;
-        Real t4 = t3*tk;
-        Real de0 = iw_(m,M1_IW_DE0,k,j,i);
-        Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
-        Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
-        // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
-        // produced by the Newton step of the previous pass, whose linearisation dropped
-        // the curvature of e(T) and of T^4.  Here -- where e(T_k) has just been
-        // evaluated anyway, so the test is FREE -- the exact nonlinear gas residual
-        //   y(T) = rho e(T) + c dt rho kappa_P a T^4 - rho e^n - c dt rho kappa_E E0'
-        //        = -(R_k + c dt rho kappa_E E')
-        // is compared with the value it had BEFORE that step, at the SAME E' (the solve
-        // has not moved E since).  If it did not decrease, the Newton step is discarded
-        // and the bracketed root find of the pre-3g scheme is run for this cell.
-        if (gnewt) {
-          Real yprev = iw_(m,igy,k,j,i);
-          if (yprev > 0.0) {
-            Real ep = iw_(m,M1_IW_EP,k,j,i);
-            Real ynow = fabs(rk + cl*dt*rkev*ep);
-            // ...but only where the residual still MEANS something.  Once the cell has
-            // converged, y is a difference of numbers that cancel to round-off and it
-            // stops decreasing monotonically; without this floor every converged cell
-            // buys a bracketed root find in every remaining pass (measured: 13 % of all
-            // cell-passes fell back, against 0.6 % with it).
-            Real ysc = fmax(fabs(iw_(m,M1_IW_EGN,k,j,i)), cl*dt*rkev*fmax(ep, 0.0));
-            if (!(ynow < yprev) && ynow > M1_IMPL_TRTOL*ysc) {
-              Real tn = tk;
-              bool ok = true;
-              if (usec) {
-                (void) M1ImplTemperatureT(thc, dd, tk, iw_(m,M1_IW_EGN,k,j,i),
-                                          cl*dt*rkpv*ar, cl*dt*rkev*(ep + de0), tn, ok);
-              } else {
-                (void) M1ImplTemperatureT(thd, dd, tk, iw_(m,M1_IW_EGN,k,j,i),
-                                          cl*dt*rkpv*ar, cl*dt*rkev*(ep + de0), tn, ok);
-              }
-              if (ok && tn > 0.0) {
-                tk = tn;
-                iw_(m,M1_IW_TP,k,j,i) = tk;
-                if (usec) {thc(dd, tk, ee, cv);} else {thd(dd, tk, ee, cv);}
-                t3 = tk*tk*tk;
-                t4 = t3*tk;
-                bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
-                rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4
-                     + cl*dt*rkev*de0;
-              }
-              iw_(m,igf,k,j,i) += 1.0;
-            }
-          }
-          iw_(m,igb,k,j,i) = bk;
-          iw_(m,igr,k,j,i) = rk;
-        }
-        if (gasx) {
-          iw_(m,igm,k,j,i) += nmiss;
-        }
-        Real emis = dt*ch*rkpv*ar;
-        Real kk = (bk > 0.0) ? (emis*4.0*t3*cl*dt*rkev/bk) : 0.0;
-        iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
-        iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
-                                  + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
-      };
+      // nvcc forbids generic (auto) extended lambdas, so the tag-dependent
+      // helper and its kernel are the function template M1ImplSrcLaunch
+      // (above); srb_ctx is what the helper captured, by value.
+      auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnewt,
+                                     igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
+                                     ks, ke, js, je, is, ie);
       if (srid) {
-        par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          srb(std::true_type{}, m, k, j, i);
-        });
+        M1ImplSrcLaunch(srb_ctx, std::true_type{});
       } else {
-        par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          srb(std::false_type{}, m, k, j, i);
-        });
+        M1ImplSrcLaunch(srb_ctx, std::false_type{});
       }
     }
 
@@ -7729,91 +7898,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // the table evaluation, 254 VGPRs and 324 B of scratch per lane, even when the
       // table is off (measured, tests_m1/runs_5s_fast5sp).
       const bool tsid = !eos.tbl.active && !usec;
-      auto tsb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
-                                      const int i) M1_INL {
-        Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
-        Real eold = iw_(m,M1_IW_EP,k,j,i);
-        Real rkpv = opac_(m,M1_OP_P,k,j,i);
-        Real rkev = opac_(m,M1_OP_E,k,j,i);
-        Real told = iw_(m,M1_IW_TP,k,j,i);
-        Real tnew = told;
-        if (rkpv > 0.0 || rkev > 0.0) {
-          Real dd = uh(m,IDN,k,j,i);
-          Real de0 = iw_(m,M1_IW_DE0,k,j,i);
-          bool ok = true;
-          // MILESTONE 3g.  The gas has ALREADY been eliminated locally to build the row
-          // (step (c)): the linearised energy equation is B_k dT = R_k + c dt rho
-          // kappa_E E', whose dT is exactly what put -4 a T_k^3 c dt rho kappa_E/B_k on
-          // the diagonal and the rest on the right-hand side.  With
-          // implicit_gas_newton the SAME relation supplies T', at no table evaluation at
-          // all, instead of re-solving the nonlinear equation from scratch in every
-          // pass.  It is one Newton step of that equation, so the Picard loop is now a
-          // Newton iteration on the coupled (E,T) system, and its fixed point -- where
-          // the loop stops, |dT|/T < implicit_tol -- satisfies
-          // R_k + c dt rho kappa_E E' = 0, i.e. the EXACT nonlinear backward-Euler gas
-          // equation with e(T) and T^4 evaluated (not linearised) at the final T.
-          // The elimination only ADDS to the diagonal of the radiation row (the
-          // coefficient 4 a T^3 c dt rho kappa_E emis/B_k is >= 0 whenever B_k > 0), so
-          // the M-matrix property of sect. 7 is untouched by it.
-          bool done = false;
-          if (gnewt) {
-            Real bk = iw_(m,igb,k,j,i);
-            Real rk = iw_(m,igr,k,j,i);
-            Real yk = rk + cl*dt*rkev*enew;
-            Real dtk = (bk > 0.0) ? (yk/bk) : 0.0;
-            if (bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told && (told + dtk) > 0.0) {
-              tnew = told + dtk;
-              iw_(m,igy,k,j,i) = fabs(yk);
-              done = true;
-            }
-          }
-          if (!done) {
-            // the pre-3g bracketed root find: also the per-cell FALLBACK of the Newton
-            // update (c_v <= 0, a step outside the trust region, a non-positive T).
-            if constexpr (decltype(idl)::value) {
-              M1EosIdeal th{eos.gamma};
-              (void) M1ImplTemperatureT(th, dd, told, iw_(m,M1_IW_EGN,k,j,i),
-                                        cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
-                                        ok);
-            } else if (usec) {
-              Real nmiss = 0.0;
-              M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
-                                                            &nmiss};
-              (void) M1ImplTemperatureT(thc, dd, told, iw_(m,M1_IW_EGN,k,j,i),
-                                        cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
-                                        ok);
-              if (gasx) {iw_(m,igm,k,j,i) += nmiss;}
-            } else {
-              (void) M1ImplTemperature(eos, dd, told, iw_(m,M1_IW_EGN,k,j,i),
-                                       cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew, ok);
-            }
-            if (!ok) {tnew = told;}
-            if (gnewt) {
-              iw_(m,igy,k,j,i) = 0.0;
-              iw_(m,igf,k,j,i) += 1.0;
-            }
-          }
-        }
-        iw_(m,M1_IW_EP,k,j,i) = enew;
-        iw_(m,M1_IW_TP,k,j,i) = tnew;
-        Real re = fabs(enew - eold)/fmax(fmax(fabs(enew), escale), 1.0e-300);
-        Real rt = fabs(tnew - told)/fmax(fabs(tnew), 1.0e-300);
-        iw_(m,M1_IW_RES,k,j,i) = fmax(re, rt);
-        if (plog) {
-          iw_(m,M1_IW_S1,k,j,i) = re;
-          iw_(m,M1_IW_S3,k,j,i) = rt;
-        }
-      };
+      // nvcc forbids generic (auto) extended lambdas, so the tag-dependent
+      // helper and its kernel are the function template M1ImplTsolveLaunch
+      // (above); tsb_ctx is what the helper captured, by value.
+      auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efl, eos, escale, gasx, gnewt,
+                                     igb, igf, igm, igr, igy, iw_, opac_, plog, uh, usec,
+                                     nmb1, ks, ke, js, je, is, ie);
       if (tsid) {
-        par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
-          tsb(std::true_type{}, m, k, j, i);
-        });
+        M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
-        par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
-          tsb(std::false_type{}, m, k, j, i);
-        });
+        M1ImplTsolveLaunch(tsb_ctx, std::false_type{});
       }
     } else {
       par_for("m1_impl_accept", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -8308,6 +8402,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
   // time2_vstage, default true on sp, false = the old stage-start form)
   const bool vfx = t2st && impl_vimp && t2_fvnew;
+  const bool coupling_ = coupling;  // local: a member read in a kernel captures this
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -8357,7 +8452,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // makes e_gas + (c/chat) E change by the face fluxes and the work term ALONE, to
       // round-off -- measured: the T'^4 form drifted 2.8e-11 over 2000 steps of T5, this
       // one 0.  At convergence the two agree, so T' stays the consistent temperature.
-      if (coupling && dbgh) {
+      if (coupling_ && dbgh) {
         Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*ep;
         eg -= (cl/ch)*qq;
       }

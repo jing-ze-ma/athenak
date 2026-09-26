@@ -346,21 +346,21 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // its own pair-implicit sub-step; RKL1 has no line structure and treats them as
   // ordinary open faces.  On a Cartesian mesh `panel` never occurs, so open == linked
   // and every truth table below is what it was.
-  auto bflag2 = [=] (const int m, const int jf) {
+  auto bflag2 = KOKKOS_LAMBDA (const int m, const int jf) {
     if (jf == js) return mb_bcs.d_view(m,BoundaryFace::inner_x2);
     if (jf == je+1) return mb_bcs.d_view(m,BoundaryFace::outer_x2);
     return BoundaryFlag::block;
   };
-  auto open2 = [=] (const int m, const int jf) {
+  auto open2 = KOKKOS_LAMBDA (const int m, const int jf) {
     const BoundaryFlag f = bflag2(m,jf);
     return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
             f == BoundaryFlag::panel);
   };
-  auto lnk2 = [=] (const int m, const int jf) {
+  auto lnk2 = KOKKOS_LAMBDA (const int m, const int jf) {
     const BoundaryFlag f = bflag2(m,jf);
     return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
   };
-  auto seam2 = [=] (const int m, const int jf) {
+  auto seam2 = KOKKOS_LAMBDA (const int m, const int jf) {
     return (bflag2(m,jf) == BoundaryFlag::panel);
   };
   // An x1 face is in the stencil only if it is INTERIOR.  The two physical x1 faces are
@@ -368,24 +368,24 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // MeshBlock by construction, so there is no x1 block face to exchange: the refreshed
   // T*/alpha of the x1 ghosts are never read, and their registers stay at the zero
   // Kokkos allocated them with.
-  auto open1 = [=] (const int i) {
+  auto open1 = KOKKOS_LAMBDA (const int i) {
     return (i > is && i < ie+1);
   };
-  auto bflag3 = [=] (const int m, const int kf) {
+  auto bflag3 = KOKKOS_LAMBDA (const int m, const int kf) {
     if (kf == ks) return mb_bcs.d_view(m,BoundaryFace::inner_x3);
     if (kf == ke+1) return mb_bcs.d_view(m,BoundaryFace::outer_x3);
     return BoundaryFlag::block;
   };
-  auto open3 = [=] (const int m, const int kf) {
+  auto open3 = KOKKOS_LAMBDA (const int m, const int kf) {
     const BoundaryFlag f = bflag3(m,kf);
     return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
             f == BoundaryFlag::panel);
   };
-  auto lnk3 = [=] (const int m, const int kf) {
+  auto lnk3 = KOKKOS_LAMBDA (const int m, const int kf) {
     const BoundaryFlag f = bflag3(m,kf);
     return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
   };
-  auto seam3 = [=] (const int m, const int kf) {
+  auto seam3 = KOKKOS_LAMBDA (const int m, const int kf) {
     return (bflag3(m,kf) == BoundaryFlag::panel);
   };
 
@@ -397,13 +397,13 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // operators cannot disagree about the geometry.  The second term couples j to k and is
   // therefore not part of the 5-point/tridiagonal structure: it is carried explicitly.
   // Th = T* + alpha y when a register is supplied (usey), T* alone otherwise.
-  auto thof = [=] (const DvceArray5D<Real> &yv, const bool usey,
-                   const int m, const int k, const int j, const int i) {
+  auto thof = KOKKOS_LAMBDA (const DvceArray5D<Real> &yv, const bool usey,
+                             const int m, const int k, const int j, const int i) {
     return usey ? (st(m,it_,k,j,i) + st(m,ia_,k,j,i)*yv(m,0,k,j,i))
                 : st(m,it_,k,j,i);
   };
-  auto cross2 = [=] (const DvceArray5D<Real> &yv, const bool usey,
-                     const int m, const int k, const int j, const int i) {
+  auto cross2 = KOKKOS_LAMBDA (const DvceArray5D<Real> &yv, const bool usey,
+                               const int m, const int k, const int j, const int i) {
     const Real gg = g2(m,k,j,i);
     const Real dzm = 0.5*dx3c_(m,k-1,j-1,i) + dx3c_(m,k,j-1,i) + 0.5*dx3c_(m,k+1,j-1,i);
     const Real dzp = 0.5*dx3c_(m,k-1,j,i) + dx3c_(m,k,j,i) + 0.5*dx3c_(m,k+1,j,i);
@@ -412,8 +412,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     const Real q = gg*ge;
     return isfinite(q) ? q : static_cast<Real>(0.0);
   };
-  auto cross3 = [=] (const DvceArray5D<Real> &yv, const bool usey,
-                     const int m, const int k, const int j, const int i) {
+  auto cross3 = KOKKOS_LAMBDA (const DvceArray5D<Real> &yv, const bool usey,
+                               const int m, const int k, const int j, const int i) {
     const Real gg = g3(m,k,j,i);
     const Real dym = 0.5*dx2c_(m,k-1,j-1,i) + dx2c_(m,k-1,j,i) + 0.5*dx2c_(m,k-1,j+1,i);
     const Real dyp = 0.5*dx2c_(m,k,j-1,i) + dx2c_(m,k,j,i) + 0.5*dx2c_(m,k,j+1,i);
@@ -424,7 +424,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   };
   // the cross term's contribution to the Gershgorin ROW RADIUS of the face: the sum of
   // |entry| over the four cells its stencil reads, each weighted by that cell's alpha
-  auto crad2 = [=] (const int m, const int k, const int j, const int i) {
+  auto crad2 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     const Real gg = fabs(g2(m,k,j,i));
     if (!(gg > 0.0)) return static_cast<Real>(0.0);
     const Real dzm = 0.5*dx3c_(m,k-1,j-1,i) + dx3c_(m,k,j-1,i) + 0.5*dx3c_(m,k+1,j-1,i);
@@ -433,7 +433,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                          + (st(m,ia_,k+1,j,i) + st(m,ia_,k-1,j,i))/dzp);
     return isfinite(r) ? r : static_cast<Real>(0.0);
   };
-  auto crad3 = [=] (const int m, const int k, const int j, const int i) {
+  auto crad3 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     const Real gg = fabs(g3(m,k,j,i));
     if (!(gg > 0.0)) return static_cast<Real>(0.0);
     const Real dym = 0.5*dx2c_(m,k-1,j-1,i) + dx2c_(m,k-1,j,i) + 0.5*dx2c_(m,k-1,j+1,i);
@@ -444,7 +444,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   };
   // V_i.  Exactly 1.0 off a cubed sphere, so the divisions below are bitwise no-ops
   // there (see the note on the Cartesian face coefficients above).
-  auto vcell = [=] (const int m, const int k, const int j, const int i) {
+  auto vcell = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
     return curv ? vol_(m,k,j,i) : static_cast<Real>(1.0);
   };
 

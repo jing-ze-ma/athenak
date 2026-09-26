@@ -31,6 +31,7 @@
 #include "driver.hpp"
 #include "diffusion/resistivity.hpp"
 #include "gravity/gravity.hpp"
+#include "utils/deep_copy_across.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -745,7 +746,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             const int iu = (act_i < nx1-1) ? (act_i + 1) : act_i;
             auto wsub = Kokkos::subview(*act_w, act_m, Kokkos::ALL(), act_k, act_j,
                                         Kokkos::make_pair(il, iu+1));
-            auto hw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), wsub);
+            // strided (one cell row across n): stage through contiguous copies, which
+            // a host mirror of a CudaSpace subview cannot do
+            auto hw = deep_copy_across::ContigLike<Kokkos::HostSpace>(wsub, "nan_w");
+            deep_copy_across::DeepCopyAcross(hw, wsub);
             for (int n=0; n<=(iu-il); ++n) {
               std::cout << "      w0 i = " << (il+n) << ": rho = " << hw(IDN,n)
                         << " p/e = " << hw(IEN,n) << " v1 = " << hw(IVX,n)
