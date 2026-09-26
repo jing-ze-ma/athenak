@@ -494,8 +494,8 @@ class RadiationM1 {
   Real onep_actr[3];            // on: eligible solves since the last one-pass acceptance;
                                 // off: switched-off solves since it was switched off
   Real onep_prb[3];             // 1: on as a re-probe, not yet confirmed by an acceptance
-  Real impl_onep_ndis, impl_onep_nprb, impl_onep_nren;  // disables / re-probes /
-                                // re-enables (counters, this run)
+  Real impl_onep_ndis, impl_onep_nprb, impl_onep_nren, impl_onep_nfpr;  // switch-offs /
+                                // re-probes / confirmed / failed (counters, this run)
   bool ew_tight;                // this pass: no Eisenstat-Walker loosening
   int impl_pord;                // <rad_m1>/implicit_predictor_order: 1 or 2 (default 2
                                 // for be, see ImplicitInit)

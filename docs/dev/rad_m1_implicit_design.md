@@ -1714,8 +1714,10 @@ Keys (read only when `implicit_one_pass > 0`, all echoed):
   counter restarts at 0).  Cost of a failed probe: N tight first passes per `reprobe + N`
   solves, about 1/9 of the old overhead.
 * Rank 0 prints a line when a kind is switched off (not for a failed re-probe, which
-  recurs) and when a re-probe is confirmed; the end-of-run summary gives the numbers of
-  switch-offs, re-probes and re-enables.
+  recurs) and when a re-probe is confirmed.  The end-of-run summary gives, for THIS run
+  (from its start or its restart; like the other implicit counters they are not in the
+  restart file), the switch-offs, re-probes (failed / confirmed), and the state of each
+  kind at the end: on, off, or probe (switched on as a re-probe, not yet confirmed).
 * Restart: the one-pass header grows from 9 to 18 Reals when auto is on (per kind: off
   flag, counter, probe flag).  A file with 9 Reals (auto off, or older) restarts with
   one_pass on and fresh counters; with auto off the header stays 9 Reals, byte-identical

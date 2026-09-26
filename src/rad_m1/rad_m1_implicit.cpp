@@ -520,6 +520,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_onep_ndis = 0.0;
   impl_onep_nprb = 0.0;
   impl_onep_nren = 0.0;
+  impl_onep_nfpr = 0.0;
   ew_tight = false;
   impl_pord = 1;
   impl_opsplit = false;
@@ -5573,6 +5574,7 @@ void RadiationM1::OnePassAuto(const int t, const bool on, const bool one) {
     if (onep_prb[t] > 0.5) {
       // a failed re-probe: counted in the summary only (it recurs every auto_reprobe)
       onep_prb[t] = 0.0;
+      impl_onep_nfpr += 1.0;
     } else {
       impl_onep_ndis += 1.0;
       if (r0) {
@@ -5621,11 +5623,19 @@ void RadiationM1::ImplicitReport() {
               << " last q (be, stage 1, stage 2)=" << onep_qa[0] << " " << onep_qa[1]
               << " " << onep_qa[2] << std::endl;
     if (impl_onep_auto) {
+      // the counters are those of this run (from its start or restart); the state is
+      // per kind: on, off, or on as a re-probe not yet confirmed
       std::cout << "<rad_m1> implicit_one_pass_auto: window=" << impl_onep_awin
-                << " reprobe=" << impl_onep_arep << " disables=" << impl_onep_ndis
-                << " re-probes=" << impl_onep_nprb << " re-enables=" << impl_onep_nren
-                << " off at end (be, stage 1, stage 2)=" << onep_off[0] << " "
-                << onep_off[1] << " " << onep_off[2] << std::endl;
+                << " reprobe=" << impl_onep_arep << "; this run: switch-offs="
+                << impl_onep_ndis << " re-probes=" << impl_onep_nprb
+                << " (failed=" << impl_onep_nfpr << " confirmed=" << impl_onep_nren
+                << "); state at end (be, stage 1, stage 2)=";
+      for (int t = 0; t < 3; ++t) {
+        const char *st = (onep_off[t] > 0.5) ? "off"
+                         : ((onep_prb[t] > 0.5) ? "probe" : "on");
+        std::cout << st << ((t < 2) ? "," : "");
+      }
+      std::cout << std::endl;
     }
   }
   if (impl_accel == M1_IACC_ANDERSON) {
