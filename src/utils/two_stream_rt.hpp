@@ -1102,6 +1102,12 @@ inline bool ck_beam_sph = false;
 // deposits below e^-60 of the incident beam.  Needs ck_impl_lin, lin_thr = 1 (scratch).
 inline bool ck_beam_par = false;
 inline DvceArray4D<int> *ck_bstop_ptr = nullptr;   // (m, beam chain, k, j)
+// problem/ck_store_split (ck-store): on the storing pass of the linear re-apply, store the
+// opacity-only operator with a per-(band, g) kernel (ck_coef) and take the pass's fluxes
+// from the linear kernels, instead of running rt_chain_ck (see ckstsp_ in the pass).  The
+// operator is bitwise the chain kernel's; the storing pass's Src and Fb change by
+// round-off.  Only under ck_beam_par (and the conditions of ckstsp_); true by default.
+inline bool ck_store_split = true;
 // The beam's optical depth to the TOP face of a mu0 < 0 (twilight) column: the ray
 // enters the domain top on the far side, grazes the tangent radius b = r_top sin(theta0)
 // and climbs back to the target, so every shell between b and r_top is crossed TWICE.
@@ -6398,6 +6404,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                              && !(ck_impl_seed > 0 && ck_impl_pass == 0 && !ck_impl_jac0);
         const bool cklw_ = ck_impl_lw;
         const bool cklchk_ = cklin_ && (ck_impl_lin_check > 0);
+        // ck-store: THE STORING PASS WITHOUT THE CHAIN KERNEL.  The storing pass of the
+        // linear re-apply needs from rt_chain_ck only what depends on the opacity alone
+        // -- kappa rho, the half-layer triple and the top factor per (cell, chain) --
+        // and the fluxes of the first pass.  ck_coef stores the former, by the chain
+        // kernel's own expressions (bitwise the same numbers), a thread per (band, g)
+        // pair and no serial recurrence; ck_lin_build then factorises as before, and
+        // the linear kernels of every later pass give the fluxes of this one too, i.e.
+        // the storing pass's Src/Fb/Em change by round-off (the lin kernels are the
+        // chain kernel to round-off, see ck_lin_check); Em is bitwise.  Only where the
+        // chain kernel's storing pass carries nothing else: the beam in its own kernels
+        // (ck_beam_par), no four-pass Jacobian, no deep diffusion, FP64.
+        const bool ckstsp_ = cklbuild_ && ckfcf_ && !ckfus_ && cbt_ && ckbsph_ && cksph_
+                             && (ckcache_ >= 2) && !(ckjacp_ && !ckjl_) && !ckdif_
+                             && (RT_FP32 == 0) && ck_store_split;
         const int nch_ = nblk*RT_NB;
         auto lP_g = cklon_ ? *ck_linP_ptr : CkDum<DvceArray5D<Real>>("ck_lP_d");
         auto lG_g = cklon_ ? *ck_linG_ptr : CkDum<DvceArray5D<Real>>("ck_lG_d");
@@ -6875,6 +6895,77 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             launch_ck_lin();
           }
         };
+        // ck-store: ck_coef (see ckstsp_).  Every value is the one the tm body of
+        // rt_chain_ck stores on this pass: kapof (the k-table plus the continuum; the
+        // q = 1 chain of a pair takes the q = 0 chain's number, as there), krof, the
+        // `cofs` triple of the half layer 0.5 kappa rho dz and the top layer's factor.
+        auto launch_ck_coef = [&]() {
+          const int nqc = ck_nq_;
+          const int ngr = nch_/nqc;           // chains per thread: the nq angles
+          CkParFor4("ck_coef", cklw_, 0, nmb1, 0, ngr-1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int p, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int c0 = p*nqc;
+            const int blk = c0/RT_NB;
+            // the chain kernel zeroes the beam deposit its block's beam kernels add to
+            if (c0 % RT_NB == 0) {
+              for (int i=is; i<ie+2; ++i) Qb_g(m,blk,i,k,j) = 0.0;
+            }
+            const int icut = icc_g(m,k,j);
+            if (icut > ie) return;
+            const int g = (nqc == 1) ? (c0 % CK_NG) : ((c0/2) % CK_NG);
+            const int b = (nqc == 1) ? (c0/CK_NG) : (c0/(2*CK_NG));
+            Real muq[2];
+            muq[0] = (nqc == 1) ? 1.0/CK_DIFFUSIVITY : mug[0];
+            muq[1] = mug[1];
+            {   // the top layer, (1 - e^-dtau) of the hydrostatic column above
+              const Real mu0 = cf_g(m,k,j,3);
+              const Real ptop = pb_g(m,k,j,ie+1);
+              const Real xTv = xT_g(m,k,j,ie+1);
+              const Real xPv = xP_g(m,k,j,ie+1);
+              const int iT = static_cast<int>(xTv);
+              const int iP = static_cast<int>(xPv);
+              const Real fT = xTv - static_cast<Real>(iT);
+              const Real fP = xPv - static_cast<Real>(iP);
+              for (int q=0; q<nqc; ++q) {
+                const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, g)
+                               + kc_g(m,b,ie+1,k,j);
+                const Real dtau = RTTopDtau(kap, ptop*1.0e6,
+                                            EffGravAt(grav, ap, x1v_(m,ie+1),
+                                                      grav_pmass, omega, mu0, tide));
+                const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muq[q]));
+                cktpf_g(m,c0+q,k,j) = static_cast<Real>(static_cast<RtF>(1.0)-trans);
+              }
+            }
+            for (int i=icut; i<ie+1; ++i) {
+              const Real rho = rhoN(m,k,j,i);
+              const Real dz = dx1(m,k,j,i);
+              const Real xTv = xT_g(m,k,j,i);
+              const Real xPv = xP_g(m,k,j,i);
+              const int iT = static_cast<int>(xTv);
+              const int iP = static_cast<int>(xPv);
+              const Real fT = xTv - static_cast<Real>(iT);
+              const Real fP = xPv - static_cast<Real>(iP);
+              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, g) + kc_g(m,b,i,k,j);
+              const Real kro = kap*rho;
+              const Real dtau = 0.5*kro*dz;
+              for (int q=0; q<nqc; ++q) {
+                const int c = c0 + q;
+                ckkro_g(m,c,i,k,j) = kro;
+                const RtF x = static_cast<RtF>(dtau/muq[q]);
+                const RtF e0 = -RT_EXPM1(-x);
+                const RtF one = static_cast<RtF>(1.0);
+                const RtF cin = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                              : (x/2 - x*x/3);
+                const RtF cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                               : (x/2 - x*x/6);
+                ckc0_g(m,c,i,k,j) = static_cast<Real>(e0);
+                ckci_g(m,c,i,k,j) = static_cast<Real>(cin);
+                ckco_g(m,c,i,k,j) = static_cast<Real>(cout);
+              }
+            }
+          });
+        };
         auto launch_ck_full = [&]() {
           if (cksph_) {
             if (ckbsph_) {
@@ -6935,6 +7026,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                         << " em=" << ((hl(5) > 0.0) ? hl(2)/hl(5) : hl(2))
                         << std::endl;
             }
+          } else if (ckstsp_) {
+            launch_ck_coef();                 // ck-store: the fluxes come below
           } else {
             launch_ck_full();
           }
@@ -7339,6 +7432,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               jac_g(m,2,k,j,i) = (s2 > 0.0) ? s2 : 0.0;
             });
           }
+          // ck-store: the storing pass's fluxes, by the linear re-apply on the
+          // factorisation just built (after rt_chain_ck_jlin, whose windows share the
+          // lps/lpf partials the linear kernels write)
+          if (ckstsp_) launch_ck_lin_tier();
         }
         // ---- ck-fast2 lever 1 (problem/ck_dif_dtau): THE DEEP DIFFUSION -----------
         // Every pass, after the chains: the cells ic .. ich-1 of a handover column get
