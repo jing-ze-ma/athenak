@@ -82,6 +82,46 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << "= rk2 (its explicit part IS the Heun hydro)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // the stage coefficients (see rad_m1.hpp t2_tab).  hesdirk2: a21 = 1-g, Heun average,
+  // then g/2 K1 + (b2 - g/2) K2.  trbdf2 (ESDIRK form of TR-BDF2, c = (0, 2g, 1),
+  // A = [[0,0,0],[g,g,0],[w,w,g]], w = sqrt(2)/4): a21 = g, the hydro's stage-2 weights
+  // 1/4 (Y2) and 3/4 (U^n), then (w - g/4)(K1 + K2).
+  {
+    const Real g = kT2G;
+    t2_tab = 0;
+    if (pin->DoesParameterExist("rad_m1", "time2_tableau")) {
+      std::string tb = pin->GetString("rad_m1", "time2_tableau");
+      if (tb.compare("hesdirk2") == 0) {
+        t2_tab = 0;
+      } else if (tb.compare("trbdf2") == 0) {
+        t2_tab = 1;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/time2_tableau = '" << tb
+                  << "' is not a choice (hesdirk2 | trbdf2)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (t2_tab == 0) {
+      const Real b2 = g/(2.0*(1.0 - g));
+      t2_a21 = 1.0 - g;
+      t2_w0 = 0.5;
+      t2_w1 = 0.5;
+      t2_c31 = 0.5*g;
+      t2_c32 = b2 - 0.5*g;
+    } else {
+      const Real w = 0.25*std::sqrt(2.0);
+      t2_a21 = g;
+      t2_w0 = 0.25;
+      t2_w1 = 0.75;
+      t2_c31 = w - 0.25*g;
+      t2_c32 = w - 0.25*g;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> time2_tableau = trbdf2: TR-BDF2 implicit stages (stage "
+                  << "order 2), RK2 hydro with c2 = 2 - sqrt(2)" << std::endl;
+      }
+    }
+  }
   // closure = vet_col (m1-sph2) sets tau_closure too: its tensor is a formal solution
   // like vet_sc's, built at U^n by Time2VetStart and kept for both stages
   if (tau_closure && !vet_col) {
@@ -270,7 +310,8 @@ bool RadiationM1::Time2Active() {
 
 void RadiationM1::Time2FormStage(int stage, Real dt) {
   const Real g = kT2G;
-  const Real b2 = g/(2.0*(1.0 - g));
+  const Real w0 = t2_w0, w1 = t2_w1;
+  const bool heun = (t2_tab == 0);   // hesdirk2: the original expression, bitwise
   Real c1, c2;
   auto u0_ = u0;
   auto u1_ = u1;
@@ -282,7 +323,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
       if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
     }
-    c1 = (1.0 - g)*dt;
+    c1 = t2_a21*dt;
     c2 = 0.0;
   } else {
     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
@@ -291,7 +332,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     par_for("m1_t2_avg", DevExeSpace(), 0, nmb1, 0, M1_NVAR-1, 0, n3-1, 0, n2-1,
             0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      u0_(m,n,k,j,i) = 0.5*(u1_(m,n,k,j,i) + u0_(m,n,k,j,i));
+      u0_(m,n,k,j,i) = heun ? 0.5*(u1_(m,n,k,j,i) + u0_(m,n,k,j,i))
+                            : (w1*u1_(m,n,k,j,i) + w0*u0_(m,n,k,j,i));
     });
     auto avgf = [&](DvceArray4D<Real> &a, DvceArray4D<Real> &b) {
       auto a_ = a;
@@ -300,7 +342,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
               0, static_cast<int>(a.extent(1))-1, 0, static_cast<int>(a.extent(2))-1,
               0, static_cast<int>(a.extent(3))-1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        a_(m,k,j,i) = 0.5*(b_(m,k,j,i) + a_(m,k,j,i));
+        a_(m,k,j,i) = heun ? 0.5*(b_(m,k,j,i) + a_(m,k,j,i))
+                           : (w1*b_(m,k,j,i) + w0*a_(m,k,j,i));
       });
     };
     avgf(f0x1, t2f1);
@@ -308,8 +351,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       avgf(f0x2, t2f2);
       if (trans_x3) {avgf(f0x3, t2f3);}
     }
-    c1 = 0.5*g*dt;
-    c2 = (b2 - 0.5*g)*dt;
+    c1 = t2_c31*dt;
+    c2 = t2_c32*dt;
   }
   (void) nf1;
   auto k1_ = t2k1;

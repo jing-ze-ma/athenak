@@ -119,6 +119,18 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
       gam0[1] = 0.5;
       gam1[1] = 0.5;
       beta[1] = 0.5;
+      // <rad_m1>/time2_tableau = trbdf2 (ke-dt-0926, rad_m1_time2.cpp): the explicit
+      // partner of TR-BDF2, the two-stage RK2 with c2 = 2 - sqrt(2) and
+      // b = (1 - 1/(2 c2), 1/(2 c2)): stage 2 = 3/4 U^n + 1/4 Y2 + dt/(2 c2) L(Y2)
+      if (pin->DoesBlockExist("rad_m1") &&
+          pin->DoesParameterExist("rad_m1", "time2_tableau") &&
+          pin->GetString("rad_m1", "time2_tableau").compare("trbdf2") == 0) {
+        const Real c2 = 2.0 - std::sqrt(2.0);
+        beta[0] = c2;
+        gam0[1] = 0.25;
+        gam1[1] = 0.75;
+        beta[1] = 0.5/c2;
+      }
     } else if (integrator == "rk3") {
       // SSPRK (3,3): Gottlieb (2009) equation 3.2
       // Optimal (in error bounds) explicit three-stage, third-order SSPRK
