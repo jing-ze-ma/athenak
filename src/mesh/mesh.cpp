@@ -142,6 +142,34 @@ Mesh::Mesh(ParameterInput *pin) :
   // the two spellings: `extrapolate` is false here, `sample` is true.
   cs_vertex_fill_cc = use_cubed_sphere &&
                       pin->GetOrAddBoolean("mesh", "cs_vertex_fill_cc", false);
+  // `<mesh>/cs_seam_flux`: how the two panels' fluxes through a seam face are made one
+  // (bvals/flux_seam_cc.cpp).  `average` (DEFAULT, the historical answer, bitwise) takes
+  // the mean of the two outward fluxes.  Each panel computes its flux from INTERPOLATED
+  // ghosts of the other, so near a cell-scale structure along the seam the two disagree,
+  // and the mean can take out of a near-empty seam cell far more than its own Riemann
+  // solve allows (a positivity violation; docs/dev/cs_seam_defect_0926.md: up to 40x the
+  // cell's mass per step, the cause of the seam dt collapses of the WASP-121b arms).
+  // `upwind`: when both panels agree on the direction of the MASS flux, every variable
+  // takes the DONOR panel's own flux (computed from the donor's true state); otherwise
+  // the mean.  `positive`: as upwind, and when both claim INFLOW the convex weights that
+  // make the mass flux zero.  All three are exactly conservative; on smooth flow they
+  // differ at the truncation-error level.
+  cs_seam_flux = 0;
+  if (use_cubed_sphere) {
+    std::string sf = pin->GetOrAddString("mesh", "cs_seam_flux", "average");
+    if (sf == "average") {
+      cs_seam_flux = 0;
+    } else if (sf == "upwind") {
+      cs_seam_flux = 1;
+    } else if (sf == "positive") {
+      cs_seam_flux = 2;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mesh>/cs_seam_flux = '" << sf
+                << "' must be average, upwind or positive" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   npanels = (use_cubed_sphere ? 6 : 1);
   if (use_cubed_sphere) {
     strictly_periodic = false;

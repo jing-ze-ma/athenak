@@ -435,6 +435,79 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
 #endif
 
   int nvar = flx.x1f.extent_int(1);
+  const int sfmode = pmy_pack->pmesh->cs_seam_flux;
+  if (sfmode != 0) {
+    // <mesh>/cs_seam_flux = upwind (1) or positive (2); see mesh.cpp.  One team per
+    // (MeshBlock, buffer): the choice is made ONCE per face from the MASS flux of both
+    // sides and applied to every variable (deciding per variable would mix fluxes from
+    // two different Riemann solves in one face, and would race on IDN).  a = this side's
+    // OUTWARD mass flux, b = the neighbour's.  The neighbour decides with (a, b) swapped,
+    // which gives it weight 1 - wa on its own flux: both sides write the same value, so
+    // the update stays exactly conservative.
+    Kokkos::TeamPolicy<> pol_u(DevExeSpace(), (nmb*nnghbr), Kokkos::AUTO);
+    BvalsTeamFor("SeamFluxRecvUpw", pol_u, KOKKOS_LAMBDA(TeamMember_t tmember) {
+      const int m = (tmember.league_rank())/nnghbr;
+      const int n = (tmember.league_rank() - m*nnghbr);
+      if (nghbr.d_view(m,n).gid < 0) {return;}
+      bool x2face; Real sgn;
+      if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
+                        cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
+        return;
+      }
+      if (nghbr.d_view(m,n).panel == mbpanel.d_view(m)) {return;}
+      const int il = rbuf[n].iflux_same[0].bis;
+      const int iu = rbuf[n].iflux_same[0].bie;
+      const int jl = rbuf[n].iflux_same[0].bjs;
+      const int ju = rbuf[n].iflux_same[0].bje;
+      const int kl = rbuf[n].iflux_same[0].bks;
+      const int ku = rbuf[n].iflux_same[0].bke;
+      const int ni = iu - il + 1;
+      const int nj = ju - jl + 1;
+      const int nk = ku - kl + 1;
+      const int nkj = nk*nj;
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+        int k = idx / nj;
+        int j = (idx - k * nj) + jl;
+        k += kl;
+        Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+                             [&](const int i) {
+          const int i0 = i-il + ni*((j-jl) + nj*(k-kl));
+          const int nvs = ni*nj*nk;          // buffer stride of one variable
+          const Real a = sgn*(x2face ? flx.x2f(m,IDN,k,j,i) : flx.x3f(m,IDN,k,j,i));
+          const Real b = rbuf[n].flux(m, i0 + nvs*IDN);
+          // weight of THIS side's flux
+          Real wa = 0.5;
+          if (a > 0.0 && b < 0.0) {
+            wa = 1.0;                        // both: mass leaves this side -> donor = us
+          } else if (a < 0.0 && b > 0.0) {
+            wa = 0.0;                        // both: mass enters -> donor = neighbour
+          } else if (sfmode == 2) {
+            // positive: the zero-flux edges of the two cases above, and the case the
+            // mean gets wrong -- BOTH claim inflow, so the mean drains the side whose
+            // own solve says it gains.  The convex weights below make the mass flux
+            // exactly zero and keep a convex mix of the momentum (pressure) and energy
+            // fluxes.
+            if (a > 0.0 && b == 0.0) {
+              wa = 1.0;
+            } else if (a == 0.0 && b > 0.0) {
+              wa = 0.0;
+            } else if (a < 0.0 && b < 0.0) {
+              wa = b/(a + b);
+            }
+          }
+          for (int v=0; v<nvar; ++v) {
+            const Real recv = rbuf[n].flux(m, i0 + nvs*v);
+            if (x2face) {
+              flx.x2f(m,v,k,j,i) = wa*flx.x2f(m,v,k,j,i) - (1.0 - wa)*sgn*recv;
+            } else {
+              flx.x3f(m,v,k,j,i) = wa*flx.x3f(m,v,k,j,i) - (1.0 - wa)*sgn*recv;
+            }
+          }
+        });
+      });
+    });
+    return TaskStatus::complete;
+  }
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
   BvalsTeamFor("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
