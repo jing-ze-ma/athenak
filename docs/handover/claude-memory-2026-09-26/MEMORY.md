@@ -39,7 +39,7 @@ Standing user rules (full text in [index-standing-rules](index-standing-rules.md
 - **[KELT-20b setup ready, not run (09-25)](kelt20b-setup-0925.md)** — mass 2.0 M_J (unmeasured); UV < 0.26 um 14 % folded into band 10; albedo 0.32 disputed
 - **[CLOUDS desk study 09-25](clouds-desk-study-0925.md)** — ADAM = SPARC renamed; we lack scattering; cloud-free baseline OK; minimal nightside-deck test
 - **[OVERNIGHT PLAN 09-25 (user asleep)](overnight-plan-0925.md)** — smoke -> submit sponge arms if clean; merge gated branches; morning summary only
-- **[NO ACCURACY SACRIFICE for speed (user 09-25)](no-accuracy-sacrifice.md)** — only accuracy-neutral speed-ups; multi-rate etc. opt-in, never recommended
+- **[NO ACCURACY SACRIFICE for speed (user 09-25/26)](no-accuracy-sacrifice.md)** — accuracy-neutral = deviation <= ROUND-OFF spread (not the time error) in the region that counts; multi-rate etc. opt-in, never recommended
 - **[THREAD TRIAGE 09-25: production path only (user)](thread-triage-0925.md)** — no new side threads without asking; mg phase 2 RESUMED as m1-coarse2 (user); ck-fast2 running
 - **[DELEGATE to SONNET when adequate (user 09-22)](delegate-to-sonnet-when-adequate.md)** — ONLY really simple, single-step, binary-checked tasks -> sonnet (tightened 09-22 after the 3-attempt profiling job); everything else -> opus
 - **[DELEGATE simple tasks to Opus 5](delegate-simple-tasks-to-opus.md)** — from the first tool call; Fable decides, Opus executes
