@@ -32,8 +32,11 @@
 #include "mhd/mhd.hpp"
 #include "utils/two_stream_ck_rst.hpp"
 #include "utils/two_stream_column_ck.hpp"
+#include "utils/deep_copy_across.hpp"
 
 namespace two_stream_rt {
+
+using deep_copy_across::DeepCopyAcross;
 
 inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 inline void CkRstScalars();
@@ -160,12 +163,12 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
         Kokkos::deep_copy(dst, 0.0);
       }
     } else if (id == kCkSlabThk) {
-      Kokkos::deep_copy(dst, Kokkos::subview(*ck_thk_ptr, nm, ALL, ALL, ALL));
+      DeepCopyAcross(dst, Kokkos::subview(*ck_thk_ptr, nm, ALL, ALL, ALL));
     } else if (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4) {
-      Kokkos::deep_copy(dst, Kokkos::subview(*ck_cad_ptr, nm, id - kCkSlabCad0,
-                                             ALL, ALL, ALL));
+      DeepCopyAcross(dst, Kokkos::subview(*ck_cad_ptr, nm, id - kCkSlabCad0,
+                                          ALL, ALL, ALL));
     } else if (id == kCkSlabCv) {
-      Kokkos::deep_copy(dst, Kokkos::subview(*ck_cv_ptr, nm, ALL, ALL, ALL));
+      DeepCopyAcross(dst, Kokkos::subview(*ck_cv_ptr, nm, ALL, ALL, ALL));
     } else if (id == kCkSlabXsCyc) {
       Kokkos::deep_copy(dst, static_cast<Real>(ck_impl_xs_cyc));
     } else if (id == kCkSlabXsBdt) {
@@ -174,18 +177,18 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       Kokkos::deep_copy(dst, 0.0);
     } else if (id == kCkSlabXsW) {
       if (ck_xsW_ptr->size() > 0) {
-        Kokkos::deep_copy(dst, Kokkos::subview(*ck_xsW_ptr, nm, ALL, ALL, ALL));
+        DeepCopyAcross(dst, Kokkos::subview(*ck_xsW_ptr, nm, ALL, ALL, ALL));
       } else {
         Kokkos::deep_copy(dst, 0.0);
       }
     } else if (id == kCkSlabXsK) {
-      Kokkos::deep_copy(dst, Kokkos::subview(*ck_xsK_ptr, nm, ALL, ALL, ALL));
+      DeepCopyAcross(dst, Kokkos::subview(*ck_xsK_ptr, nm, ALL, ALL, ALL));
     } else if (id >= kCkSlabXsU0 && id < kCkSlabXsU0 + 16) {
-      Kokkos::deep_copy(dst, Kokkos::subview(*ck_xsU_ptr, nm, id - kCkSlabXsU0,
-                                             ALL, ALL, ALL));
+      DeepCopyAcross(dst, Kokkos::subview(*ck_xsU_ptr, nm, id - kCkSlabXsU0,
+                                          ALL, ALL, ALL));
     } else if (id >= kCkSlabXsB0 && id < kCkSlabXsB0 + 3) {
-      Kokkos::deep_copy(dst, Kokkos::subview(*ck_xsB_ptr, nm, id - kCkSlabXsB0,
-                                             ALL, ALL, ALL));
+      DeepCopyAcross(dst, Kokkos::subview(*ck_xsB_ptr, nm, id - kCkSlabXsB0,
+                                          ALL, ALL, ALL));
     }
   }
   h.version = 1;
@@ -229,8 +232,8 @@ inline bool CkRstPut(const int id, const V &dst) {
   }
   UnmanagedHost4D h(ck_rst_stage[id].data(), ck_rst_nmb, ck_rst_n3, ck_rst_n2,
                     ck_rst_n1);
-  Kokkos::deep_copy(Kokkos::subview(dst, std::make_pair(0, ck_rst_nmb), Kokkos::ALL,
-                                    Kokkos::ALL, Kokkos::ALL), h);
+  DeepCopyAcross(Kokkos::subview(dst, std::make_pair(0, ck_rst_nmb), Kokkos::ALL,
+                                 Kokkos::ALL, Kokkos::ALL), h);
   CkRstStageFree(id);
   return true;
 }

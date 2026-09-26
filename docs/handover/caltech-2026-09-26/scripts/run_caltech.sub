@@ -1,0 +1,90 @@
+#!/bin/bash -l
+#SBATCH -J w121
+#SBATCH -A carnegie_poc
+#SBATCH -p gpu
+#SBATCH -N 1
+#SBATCH --gres=gpu:nvidia_h200:1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=100G
+#SBATCH --time=23:55:00
+#SBATCH -o log.out.%j
+#SBATCH -e log.err.%j
+# Caltech port of run_viper_reference.sub (same body logic: planet, T4/C2/E4 key groups, sponge arms,
+# restart from the newest rst, -t wall stop, STOP file for chained links). One H200 per arm.
+# Caltech gpu nodes: 4 GPUs, 128 cores, 1.5 TB each (H200). For N arms in one job:
+#   sbatch --gres=gpu:nvidia_h200:N --ntasks-per-node=N run_caltech.sub arm1 .. armN   (N <= 4)
+# usage: [PLANET=w121x1|w121] [GRIDENV=..] [INP=..] [DRY=1] [TROT=100] [WALL=hh:mm:ss] [NLIM=n]
+#        [VERB=true] [PFX=<dir>] [BIN=<athena>] [EXTRA="k=v .."] sbatch run_caltech.sub arm1 [arm2 ..]
+#   chain: sbatch --dependency=afterok:<prev> run_caltech.sub <same arms>
+# Arms: base (both sponges) | nobot | notop | none.  Slurm snapshots this script at sbatch time.
+module purge
+if [ -n "$CPURUN" ]; then   # CPU gate/smoke build: spack openmpi, all tasks of the job on one arm
+  module load gcc/13.2.0-gcc-13.2.0-w55nxkl openmpi/5.0.1-gcc-13.2.0-xpoh5uw
+  STEP="srun --mpi=pmix -n ${SLURM_NTASKS} -c ${SLURM_CPUS_PER_TASK}"
+else
+  module load gcc/13.2.0-gcc-13.2.0-w55nxkl cuda/12.9.0-none-none-pfmzfdv hpcx/2.17.1/hpcx-ompi
+  STEP="srun --mpi=pmix -n 1 -N 1 -c ${SLURM_CPUS_PER_TASK} --gpus-per-task=1 --exact --mem=${STEPMEM:-90000}"
+fi
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+R=/resnick/home/jingze/ATHENAK/athenak/docs/handover/caltech-2026-09-26/inputs
+DATA=${DATA:-/resnick/home/jingze/ATHENAK/athenak_data}
+BIN=${BIN:-/resnick/home/jingze/ATHENAK/builds/athena_c0926_gpu}
+PLANET=${PLANET:-w121x1}
+if [ "$PLANET" = w121x1 ]; then
+  INP=${INP:-$R/wasp121_1x/sparc_w121_1x.athinput}; IC=$R/wasp121_1x/ic_w121_1x.txt
+  GRIDENV=${GRIDENV:-$R/wasp121_1x/grid_w121_1x.env}; CKD=$DATA/exo_fms_ck
+  PFX=${PFX:-/resnick/scratch/jingze/sparc_w121x1}
+else
+  INP=${INP:-$R/wasp121_10x/sparc_w121.athinput}; IC=$R/wasp121_10x/ic_w121.txt
+  GRIDENV=${GRIDENV:-$R/wasp121_10x/grid_w121.env}; CKD=$DATA/ckdata10
+  PFX=${PFX:-/resnick/scratch/jingze/sparc_w121}
+fi
+source $GRIDENV                 # sets G (nx1, meshblock/nx1, x1min, x1max, c1..c8)
+PR=1.101535e5                   # WASP-121b P_orb = P_rot = 1.27492504 d
+O="time/start_time=0.0 output1/dt=1.10154e3 output3/dt=5.50768e4 output4/dt=5.50768e4"
+TROT=${TROT:-100}
+TL=$(python3 -c "print($TROT*$PR)")
+echo "BIN md5=$(md5sum $BIN | cut -c1-32) PLANET=$PLANET TROT=$TROT TL=$TL INP=$INP arms: $*"
+T4="problem/ck_implicit=true problem/ck_impl_arat=1e30 problem/ck_impl_frozen_op=true \
+problem/ck_impl_lin=true problem/ck_impl_lin_thr=1 problem/ck_impl_fuse=true \
+problem/ck_impl_jac_lin=true problem/ck_impl_cvsec=true"
+C2="problem/ck_impl_once=true problem/ck_impl_xstep=8 problem/ck_impl_jreuse=0.2 \
+problem/ck_impl_pred=true problem/ck_impl_pred_fac=0.5 problem/ck_impl_nosync=true"
+E4="problem/ck_impl_every=4"
+for ARM in "$@"; do
+  case $ARM in
+    base)  SP="problem/sponge_top=true problem/sponge_bottom=true" ;;
+    nobot) SP="problem/sponge_top=true problem/sponge_bottom=false" ;;
+    notop) SP="problem/sponge_top=false problem/sponge_bottom=true" ;;
+    none)  SP="problem/sponge_top=false problem/sponge_bottom=false" ;;
+    *) echo "unknown arm $ARM"; continue ;;
+  esac
+  D=$PFX/$ARM
+  mkdir -p $D
+  # stage the input with the data placeholders resolved; the IC profile is read relative to the run dir
+  sed -e "s#ATHENAK_CK_DATA10#$DATA/ckdata10#g" -e "s#ATHENAK_CK_DATA#$CKD#g" $INP > $D/run.athinput
+  cp -n $IC $D/
+  LAST=$(ls -1 $D/rst/*.rst 2>/dev/null | tail -1)
+  if [ -n "$LAST" ]; then
+    CMD="$BIN -r $LAST time/tlim=$TL $SP ${NLIM:+time/nlim=$NLIM} $EXTRA -t ${WALL:-23:45:00}"
+  else
+    CMD="$BIN -i $D/run.athinput $G $O time/tlim=$TL $T4 $C2 $E4 $SP \
+problem/ck_impl_verbose=${VERB:-false} ${NLIM:+time/nlim=$NLIM} $EXTRA -t ${WALL:-23:45:00}"
+  fi
+  if [ -n "$DRY" ]; then echo "DRY $ARM: $CMD"; continue; fi
+  if [ -f $D/STOP ]; then echo "$ARM: STOP present, skipped"; continue; fi
+  LOG=$D/run.$SLURM_JOB_ID.log
+  if [ -n "$LAST" ]; then echo "$ARM: restart from $LAST ($SP)"; else echo "$ARM: fresh start ($SP)"; fi
+  ( cd $D && $STEP \
+      bash -c 'echo "step $SLURM_STEP_ID CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"; exec "$0" "$@"' \
+      $CMD > $LOG 2>&1
+    echo "$ARM rc=$? $(ls $D/rst 2>/dev/null | tail -1)"
+    if grep -q "Terminating on wall clock limit" $LOG && ! grep -q "FATAL" $LOG; then
+      echo "$ARM: wall clock limit reached, next link may run"
+    else
+      echo "$ARM: stopped (tlim, nlim, FATAL or other): writing STOP"; touch $D/STOP
+    fi ) &
+done
+wait
+echo SPARC_DONE

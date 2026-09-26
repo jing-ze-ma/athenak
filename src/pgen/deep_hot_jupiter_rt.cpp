@@ -4392,7 +4392,7 @@ void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real 
     
     Real Tirr4 = SQR(SQR(Tirr));
     Real Tint4 = SQR(SQR(Tint));
-    Real Teq = Tirr/sqrt(2);
+    Real Teq = Tirr/sqrt(2.0);
     
     Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
     Real albedo;

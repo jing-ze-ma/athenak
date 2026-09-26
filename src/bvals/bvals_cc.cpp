@@ -117,7 +117,13 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // (tests_m1/runs_3k_gpu3d/README_HALO.md).  So the body is compiled twice: with the
   // branch (cubed sphere / polar) and without it (everything else), where do_cs and
   // do_pole are false anyway, i.e. the same arithmetic; still one launch per call.
+  // nvcc rejects generic (auto) extended lambdas: under CUDA the flag is a plain bool
+  // (and the call sites pass true/false), the same arithmetic.
+#if defined(KOKKOS_ENABLE_CUDA)
+  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const bool kseam_) {
+#else
   auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_) {
+#endif
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -177,7 +183,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       const bool do_pole = use_pole &&
                            (nghbr.d_view(m,n).polar > 0);
 
-      if (kseam_.value && (do_cs || do_pole)) {
+      if (static_cast<bool>(kseam_) && (do_cs || do_pole)) {
         int aj = 1, bj = 0;
         int ak = 1, bk = 0;
         int signvar = 1;
@@ -661,11 +667,19 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   };
   if (use_cs || use_pole) {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+#if defined(KOKKOS_ENABLE_CUDA)
+      pack_(tmember, true);
+#else
       pack_(tmember, std::true_type());
+#endif
     });
   } else {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+#if defined(KOKKOS_ENABLE_CUDA)
+      pack_(tmember, false);
+#else
       pack_(tmember, std::false_type());
+#endif
     });
   }  // end par_for_outer
 

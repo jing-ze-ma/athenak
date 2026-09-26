@@ -127,6 +127,11 @@ struct EOSTable {
   //! ITP groups are the first 64 of them, and the same evaluation touches four.
   DvceArray3D<Real> tbl;
   DvceArray1D<Real> efbnd;   // per-x-cell upper bound on e(rho, pfloor), CODE units
+  //! HostSpace mirrors of tbl and efbnd, filled once at build time. Host-side callers
+  //! (problem generators, diagnostics) read these, since on a discrete GPU the device
+  //! Views are not host accessible. Identical values; on a CPU build, the same memory.
+  DvceArray3D<Real>::HostMirror tbl_h;
+  DvceArray1D<Real>::HostMirror efbnd_h;
 
   //! Largest value of e(rho, T_tablemin)/rho over the table's density range, in CGS.
   //! This is the cheap gate on the sub-floor continuation below (see EOS_Data::
@@ -147,6 +152,26 @@ struct EOSTable {
   //! \brief 10^a, as an exponential rather than a general power
   KOKKOS_INLINE_FUNCTION
   static Real Pow10(const Real a) { return exp(a*ln10); }
+
+  //--------------------------------------------------------------------------------------
+  //! \fn void GatherPatch
+  //! \brief gather the sixteen corner data of one Hermite patch from table view `t`
+  //! (`tbl` on the device, `tbl_h` on the host; see HermitePatch)
+  template <class TV>
+  KOKKOS_INLINE_FUNCTION
+  void GatherPatch(const TV &t, const int iv, const int ix, const int iy,
+                   Real (&cf)[4][4]) const {
+    for (int a=0; a<2; ++a) {
+      for (int b=0; b<2; ++b) {
+        const int i0 = ix + a;
+        const int j0 = iy + b;
+        cf[2*a][2*b]     = t(j0, i0, iv  );
+        cf[2*a+1][2*b]   = t(j0, i0, iv+1)*dx;
+        cf[2*a][2*b+1]   = t(j0, i0, iv+2)*dy;
+        cf[2*a+1][2*b+1] = t(j0, i0, iv+3)*dx*dy;
+      }
+    }
+  }
 
   //--------------------------------------------------------------------------------------
   //! \fn void HermitePatch
@@ -187,17 +212,12 @@ struct EOSTable {
     // Gather the sixteen corner data into the Hermite coefficient matrix. The derivative
     // entries are scaled by the cell size because the basis above is written in the local
     // coordinates u,v rather than in x,y.
+    // Device code reads `tbl`, host code its HostSpace mirror `tbl_h` (same values; on a
+    // CPU build the same allocation), so host callers such as problem generators work
+    // when the device memory is not host accessible (CUDA).
     Real cf[4][4];
-    for (int a=0; a<2; ++a) {
-      for (int b=0; b<2; ++b) {
-        const int i0 = ix + a;
-        const int j0 = iy + b;
-        cf[2*a][2*b]     = tbl(j0, i0, iv  );
-        cf[2*a+1][2*b]   = tbl(j0, i0, iv+1)*dx;
-        cf[2*a][2*b+1]   = tbl(j0, i0, iv+2)*dy;
-        cf[2*a+1][2*b+1] = tbl(j0, i0, iv+3)*dx*dy;
-      }
-    }
+    KOKKOS_IF_ON_DEVICE((GatherPatch(tbl, iv, ix, iy, cf);))
+    KOKKOS_IF_ON_HOST((GatherPatch(tbl_h, iv, ix, iy, cf);))
 
     f = 0.0; fx = 0.0; fy = 0.0;
     for (int a=0; a<4; ++a) {
@@ -731,7 +751,10 @@ struct EOSTable {
     if (gx < 0.0 || gx > static_cast<Real>(nx-1)) return efmax;
     int ix = static_cast<int>(floor(gx));
     ix = (ix > nx-2) ? nx-2 : ix;
-    return efbnd(ix);
+    Real b = efmax;
+    KOKKOS_IF_ON_DEVICE((b = efbnd(ix);))
+    KOKKOS_IF_ON_HOST((b = efbnd_h(ix);))
+    return b;
   }
 };
 
