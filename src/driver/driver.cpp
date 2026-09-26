@@ -457,7 +457,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
+      const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
       auto hydro_stage = [&](int stage) {
+        if (nohyd) return;   // DIAGNOSTIC <rad_m1>/dbg_hydro_off: R alone
         ExecuteTaskList(pmesh, "before_stagen", stage);
         // solve gravity at each RK stage so the potential is consistent
         // with the current density (required for 2nd-order accuracy)

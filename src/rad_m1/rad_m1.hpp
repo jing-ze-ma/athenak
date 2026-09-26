@@ -354,6 +354,7 @@ class RadiationM1 {
   // The step counter travels in the multi-rate restart header (mr_cnt).
   int csplit = 0;
   int csplit_nh2 = 1, csplit_ns = 2;
+  bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips the hydro stages
   int mr_nsub = 1;              // implicit_mr_nsub: R(Delta) as nsub SDIRK2 steps of Delta/nsub
   int CSplitStep();             // per step: 0 = default path, 1 = H then R, 2 = R then H
   bool F4RstHdr() const {return (mr_every > 1) || (vsc_every > 1) || (csplit > 0);}
