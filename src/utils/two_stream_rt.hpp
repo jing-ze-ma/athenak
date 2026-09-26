@@ -7016,6 +7016,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           }
           // the factorisation, on the storing pass, from what that pass stored
           if (cklbuild_) {
+            ck_jlc_ok = false;       // ck-jlin: a new factorisation, new coefficients
             par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
             KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
@@ -7103,18 +7104,26 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // chain order.  The dSc window parked at each face lives in the same three
           // partials (pass 2 reads face i's window just before it writes row i there),
           // so the kernel carries no per-thread column and no scratch.
+          // ck-jlin: none of this depends on B or T -- only the final factor dB_b/dT
+          // does -- so the kernel stores the three coefficients BEFORE that factor
+          // (ljm, lj0, lpj) and runs once per stored factorisation (ck_jlc_ok, cleared
+          // by ck_lin_build); ck_jlin_sum multiplies by dB/dT (a lone rounded product,
+          // CkMulRn: bitwise the product the kernel used to store) and adds in chain
+          // order.  Every column is swept, done or not: a column that is done at this
+          // pass is live again at the next call's, which may re-apply the operator.
           if (ckjlp_) {
             auto jac_g = ckjac_g;
             auto db_g = ckdb_g;
             auto lpj_g = *ck_lpj_ptr;
+            auto ljm_g = *ck_ljm_ptr;
+            auto lj0_g = *ck_lj0_ptr;
             const bool jneg_ = ck_impl_jneg;
-            {
+            if (ckdif_) ck_jlc_ok = false;   // the flux datum is not cached
+            if (!ck_jlc_ok) {
               CkParFor4("rt_chain_ck_jlin", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
               KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
-                if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
                 const int icut = icc_g(m,k,j);
                 if (icut > ie) return;
-                const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
                 // ck-nq2: lP slots 5-7 (kappa rho weights) are stored once per angle pair
                 const int cw = (ck_nq_ == 2) ? (c & ~1) : c;
                 const Real wfc = lC_g(0,c);
@@ -7238,11 +7247,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real jm = wj*(rat*dd1 - jDu0);
                   const Real j0 = wj*(rat*dd2 - jDu1);
                   const Real jp = wj*(rat*dd3 - jDu2);
-                  lps_g(m,c,i,k,j) = j0*db_g(m,b,i,k,j);
-                  lpf_g(m,c,i,k,j) = ((i > icut || gdf >= 0.0) && (jneg_ || jm > 0.0))
-                                   ? jm*db_g(m,b,i-1,k,j) : 0.0;
-                  lpj_g(m,c,i,k,j) = (i < ie && (jneg_ || jp > 0.0))
-                                   ? jp*db_g(m,b,i+1,k,j) : 0.0;
+                  lj0_g(m,c,i,k,j) = j0;
+                  ljm_g(m,c,i,k,j) = ((i > icut || gdf >= 0.0) && (jneg_ || jm > 0.0))
+                                   ? jm : 0.0;
+                  lpj_g(m,c,i,k,j) = (i < ie && (jneg_ || jp > 0.0)) ? jp : 0.0;
                   jDu0 = dd0;
                   jDu1 = dd1;
                   jDu2 = dd2;
@@ -7257,17 +7265,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   jlc1 = dnl1;
                 }
               });
+              ck_jlc_ok = true;
             }
             CkParFor4("ck_jlin_sum", cklw_, 0, nmb1, is, ie, ks, ke, js, je,
             KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
               const int icut = icc_g(m,k,j);
               if (i < icut || icut > ie) return;
+              // a masked (zero) coefficient never reads dB/dT outside icut .. ie
               Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
               for (int c=0; c<nch_; ++c) {
-                s0 += lpf_g(m,c,i,k,j);
-                s1 += lps_g(m,c,i,k,j);
-                s2 += lpj_g(m,c,i,k,j);
+                const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
+                const Real jm = ljm_g(m,c,i,k,j);
+                const Real jp = lpj_g(m,c,i,k,j);
+                s0 += (jm != 0.0) ? CkMulRn(jm, db_g(m,b,i-1,k,j)) : 0.0;
+                s1 += CkMulRn(lj0_g(m,c,i,k,j), db_g(m,b,i,k,j));
+                s2 += (jp != 0.0) ? CkMulRn(jp, db_g(m,b,i+1,k,j)) : 0.0;
               }
               // ck_impl_jneg: a negative NET off-diagonal is dropped (the M-matrix);
               // without it every part is already >= 0

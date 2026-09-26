@@ -726,6 +726,33 @@ inline DvceArray4D<Real> *ck_cv_ptr = nullptr;
 // ck_impl_jac_lin: the per-chain partial of the third Jacobian entry (the first two go to
 // ck_lpf and ck_lps, free by then), (m, chain, i, k, j)
 inline DvceArray5D<Real> *ck_lpj_ptr = nullptr;
+// ck-jlin: the per-chain Jacobian coefficients of rt_chain_ck_jlin BEFORE the dB_b/dT
+// factor, (m, chain, i, k, j): dSrc_i/dB_{i-1} (masked to 0 where the row drops it) and
+// dSrc_i/dB_i; dSrc_i/dB_{i+1} (masked) lives in ck_lpj.  They depend on the stored
+// factorisation alone, so rt_chain_ck_jlin runs once per stored operator (ck_jlc_ok)
+// and every pass that builds the tridiagonal only multiplies them by dB/dT and sums.
+inline DvceArray5D<Real> *ck_ljm_ptr = nullptr;
+inline DvceArray5D<Real> *ck_lj0_ptr = nullptr;
+inline bool ck_jlc_ok = false;
+//! \fn Real CkMulRn
+//! \brief a*b rounded on its own, never contracted into an FMA with a following add:
+//! the product ck_jlin_sum adds is then bitwise the one rt_chain_ck_jlin used to store
+KOKKOS_INLINE_FUNCTION
+double CkMulRn(const double a, const double b) {
+#if defined(__CUDA_ARCH__)
+  return __dmul_rn(a, b);
+#else
+  return a*b;
+#endif
+}
+KOKKOS_INLINE_FUNCTION
+float CkMulRn(const float a, const float b) {
+#if defined(__CUDA_ARCH__)
+  return __fmul_rn(a, b);
+#else
+  return a*b;
+#endif
+}
 // ---- problem/ck_impl_warm: the total increment this call has applied so far, carried
 // over to seed the next one, and the seed actually applied (so that e^n can be recorded
 // net of it)
@@ -845,8 +872,13 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     }
     if (ck_lpj_ptr != nullptr) {
       delete ck_lpj_ptr;
+      delete ck_ljm_ptr;
+      delete ck_lj0_ptr;
       ck_lpj_ptr = nullptr;
+      ck_ljm_ptr = nullptr;
+      ck_lj0_ptr = nullptr;
     }
+    ck_jlc_ok = false;
     if (ck_rsr_ptr != nullptr) {
       delete ck_rsr_ptr;
       delete ck_rse_ptr;
@@ -920,6 +952,9 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       }
       if (ck_impl_jac_lin && ck_impl_lin_thr == 1) {
         ck_lpj_ptr = new DvceArray5D<Real>("ck_lpj", nmb, nch, n1, n3, n2);
+        ck_ljm_ptr = new DvceArray5D<Real>("ck_ljm", nmb, nch, n1, n3, n2);
+        ck_lj0_ptr = new DvceArray5D<Real>("ck_lj0", nmb, nch, n1, n3, n2);
+        ck_jlc_ok = false;
       }
     }
   }
