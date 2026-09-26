@@ -43,6 +43,9 @@
 //! <problem>/wg_bc_top = open (default wall): an outflow-only top, the edge cell's radial
 //! velocity copied into the outer ghosts where it points outward, mirrored (the wall)
 //! where it points inward, so that no mass enters through the top.
+//! <problem>/wg_bc_bot = reservoir (default wall): the inner ghosts hold the initial rho
+//! and eint with the edge cell's radial velocity (inflow or outflow), a mass supply for
+//! a steady wind; the zero-flux correction then skips the inner face.
 //! <problem>/wg_wall_zero_flux (default true) removes the mass, transverse momentum and
 //! energy fluxes through the x1 walls (inflow only through an open top) after the update.
 //! <problem>/wg_sponge_rate (default 0.02, in code time units; 0 = off) damps the
@@ -93,7 +96,7 @@ Real wg_rlo_ = 0.0, wg_dr_ = 1.0;
 int wg_nf_ = 0;
 Real wg_gm_ = 0.0, wg_rin_ = 1.0, wg_rint_ = 0.0, wg_fin_ = 0.0;
 // outer x1 wall (wg_bc_top) and the top sponge (wg_sponge_rate, wg_sponge_r0)
-bool wg_top_open_ = false, wg_zflux_ = true;
+bool wg_top_open_ = false, wg_zflux_ = true, wg_bot_res_ = false;
 Real wg_sp_rate_ = 0.0, wg_sp_r0_ = 0.0, wg_rtop_ = 1.0;
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
@@ -523,6 +526,14 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
     }
     wg_top_open_ = (bt == "open");
     wg_zflux_ = pin->GetOrAddBoolean("problem","wg_wall_zero_flux",true);
+    const std::string bb = pin->GetOrAddString("problem","wg_bc_bot","wall");
+    if (bb != "wall" && bb != "reservoir") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "sph_wedge: <problem>/wg_bc_bot must be wall or reservoir"
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    wg_bot_res_ = (bb == "reservoir");
     // DEFAULT ON (user 09-26): the closed outer wall traps a domain acoustic mode that
     // a dt-dependent anti-damping drives (docs/dev/m1_wedge_0926.md 7.3); 0 = old scheme
     wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.02);
@@ -674,9 +685,10 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
     auto flx1 = ph->uflx.x1f;
     auto &mbbcs = pmbp->pmb->mb_bcs;
     const bool topen = wg_top_open_;
+    const bool bres = wg_bot_res_;
     par_for("wg_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      if (!bres && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
         const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
         u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
         u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
@@ -743,6 +755,7 @@ void RadM1WedgeBC(Mesh *pm) {
   const Real cl = rad ? pmbp->pradm1->c_light : 1.0;
   const Real efl = rad ? pmbp->pradm1->e_floor : 0.0;
   const bool topen = wg_top_open_;
+  const bool bres = wg_bot_res_;
   (void) have_phi;
   par_for("wg_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -755,8 +768,10 @@ void RadM1WedgeBC(Mesh *pm) {
       const Real kea = 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - (etg ? da*phicc(m,k,j,ia) : 0.0);
-      const Real sd = da/WgLogInterp(crho, rlo, dr, nf, x1v(m,ia));
-      const Real se = ea/WgLogInterp(ceint, rlo, dr, nf, x1v(m,ia));
+      // reservoir bottom: the ghosts hold the INITIAL rho and eint (a mass supply)
+      const bool res = lo && bres;
+      const Real sd = res ? 1.0 : da/WgLogInterp(crho, rlo, dr, nf, x1v(m,ia));
+      const Real se = res ? 1.0 : ea/WgLogInterp(ceint, rlo, dr, nf, x1v(m,ia));
       for (int g=0; g<ng; ++g) {
         const int ig = lo ? (is - 1 - g) : (ie + 1 + g);
         const int im = lo ? (is + g) : (ie - g);        // the mirror cell
@@ -766,7 +781,9 @@ void RadM1WedgeBC(Mesh *pm) {
         const Real dm = uh(m,IDN,k,j,im);
         // wall: v1 mirrored; open outer wall: v1 of the edge cell where it flows out
         const Real v1e = uh(m,IM1,k,j,ia)/da;
-        const Real v1 = (!lo && topen && v1e > 0.0) ? v1e : -uh(m,IM1,k,j,im)/dm;
+        // reservoir bottom: the edge cell's radial velocity (floating, either sign)
+        const Real v1 = ((!lo && topen && v1e > 0.0) || res) ? v1e
+                                                             : -uh(m,IM1,k,j,im)/dm;
         const Real v2 = uh(m,IM2,k,j,im)/dm;
         const Real v3 = uh(m,IM3,k,j,im)/dm;
         uh(m,IDN,k,j,ig) = dg;
