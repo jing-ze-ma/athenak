@@ -530,6 +530,14 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   const Real x2a = pmy_mesh_->mesh_size.x2min, x3a = pmy_mesh_->mesh_size.x3min;
   const Real idx2 = pmy_mesh_->mesh_indcs.nx2/(pmy_mesh_->mesh_size.x2max - x2a);
   const Real idx3 = pmy_mesh_->mesh_indcs.nx3/(pmy_mesh_->mesh_size.x3max - x3a);
+  // wg_seed_k > 0: instead a single smooth lateral mode (the box seeds k = 4-6 entropy
+  // modes; a grid-scale seed is damped by radiative diffusion before it can grow),
+  // e -> e (1 + seed sin(2 pi k th') sin(2 pi k ph')), in wg_seed_rlo <= r <= wg_seed_rhi
+  const Real seedk = pin->GetOrAddReal("problem","wg_seed_k",0.0);
+  const Real srlo = pin->GetOrAddReal("problem","wg_seed_rlo",0.0);
+  const Real srhi = pin->GetOrAddReal("problem","wg_seed_rhi",seed_rmax);
+  const Real lth = pmy_mesh_->mesh_size.x2max - x2a;
+  const Real lph = pmy_mesh_->mesh_size.x3max - x3a;
   const Real sx = sr*sin(sth)*cos(sph), sy = sr*sin(sth)*sin(sph), sz = sr*cos(sth);
   auto uh = ph->u0;
   auto ur = pm1->u0;
@@ -554,7 +562,12 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       er *= SQR(SQR(1.0 + del));
       (void) ideal;
     }
-    if (seed != 0.0 && r <= seed_rmax) {
+    if (seed != 0.0 && seedk > 0.0) {
+      if (r >= srlo && r <= srhi) {
+        e *= 1.0 + seed*sin(2.0*M_PI*seedk*(x2v(m,j) - x2a)/lth + 0.3)
+                       *sin(2.0*M_PI*seedk*(x3v(m,k) - x3a)/lph + 1.1);
+      }
+    } else if (seed != 0.0 && r <= seed_rmax) {
       const int jg = static_cast<int>(floor((x2v(m,j) - x2a)*idx2));
       const int kg = static_cast<int>(floor((x3v(m,k) - x3a)*idx3));
       e *= 1.0 + seed*cos(2.3*jg + 1.7*kg + 0.9*i);
