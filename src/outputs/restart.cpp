@@ -315,14 +315,20 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // int32 have, int32 nch, Real pred2_dt, Real dt_prev, Real vprev
   const int nt2 = (pradm1 != nullptr) ? pradm1->Time2RstNch() : 0;
   // <rad_m1> implicit_one_pass: its state, behind the hesdirk2 header
+  // (9 Reals; 18 with implicit_one_pass_auto, whose switch-off state follows)
   const bool wonep = (pradm1 != nullptr) && (pradm1->impl_onep > 0);
-  Real onep_hdr[9];
+  Real onep_hdr[18];
+  IOWrapperSizeT onep_nb = 0;
   if (wonep) {
     for (int t = 0; t < 3; ++t) {
       onep_hdr[t] = pradm1->onep_qa[t];
       onep_hdr[3+t] = pradm1->onep_qb[t];
       onep_hdr[6+t] = pradm1->onep_cnt[t];
+      onep_hdr[9+t] = pradm1->onep_off[t];
+      onep_hdr[12+t] = pradm1->onep_actr[t];
+      onep_hdr[15+t] = pradm1->onep_prb[t];
     }
+    onep_nb = (pradm1->impl_onep_auto ? 18 : 9)*sizeof(Real);
   }
   // <rad_m1> implicit_mr_every > 1 / vet_sc_every > 1: the multi-rate window and the
   // tensor cadence state, behind the one-pass header
@@ -518,7 +524,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&(t2_hdr[0]), nb, "byte", single_file_per_rank);
     }
     if (wonep) {
-      IOWrapperSizeT nb = sizeof(onep_hdr);
+      IOWrapperSizeT nb = onep_nb;
       resfile.Write_any_type(&(radm1::kM1OnePassRstMagic[0]),
                              sizeof(radm1::kM1OnePassRstMagic), "byte",
                              single_file_per_rank);
@@ -648,7 +654,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (wonep) {
     step3size += sizeof(radm1::kM1OnePassRstMagic) + sizeof(IOWrapperSizeT)
-                 + sizeof(onep_hdr);
+                 + onep_nb;
   }
   if (wmr) {
     step3size += sizeof(radm1::kM1MRRstMagic) + sizeof(IOWrapperSizeT) + sizeof(mr_hdr);

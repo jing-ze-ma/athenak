@@ -484,6 +484,18 @@ class RadiationM1 {
   Real onep_qa[3], onep_qb[3];  // last two measured contractions (be, stage 1, stage 2)
   Real onep_cnt[3];             // solves since the last measurement
   Real impl_onep_n, impl_onep_nchk;  // accepted after one pass / measurements (counters)
+  bool impl_onep_auto;          // <rad_m1>/implicit_one_pass_auto (default true): switch
+                                // one_pass off per kind of solve when it does not pay
+  int impl_onep_awin;           // ..._auto_window: check periods without an acceptance
+                                // before it is switched off (default 2)
+  int impl_onep_arep;           // ..._auto_reprobe: switched-off solves before a re-probe
+                                // of one check period (default 64)
+  Real onep_off[3];             // 1: one_pass switched off for this kind (be, s1, s2)
+  Real onep_actr[3];            // on: eligible solves since the last one-pass acceptance;
+                                // off: switched-off solves since it was switched off
+  Real onep_prb[3];             // 1: on as a re-probe, not yet confirmed by an acceptance
+  Real impl_onep_ndis, impl_onep_nprb, impl_onep_nren, impl_onep_nfpr;  // switch-offs /
+                                // re-probes / confirmed / failed (counters, this run)
   bool ew_tight;                // this pass: no Eisenstat-Walker loosening
   int impl_pord;                // <rad_m1>/implicit_predictor_order: 1 or 2 (default 2
                                 // for be, see ImplicitInit)
@@ -891,6 +903,7 @@ class RadiationM1 {
   bool sph_q = false;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
+  void OnePassAuto(const int t, const bool on, const bool one);
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
   void VetInit(ParameterInput *pin);
   //! VET: the short-characteristics formal solution and the uniaxial tensor (chi, n)

@@ -1670,3 +1670,55 @@ branch above is dead: the gates below confirm **byte-identical** history files.
   alone): the root find brackets by walking `T <- T/2` or `T <- 2T`, which leaves a
   `+-9.6 %` window on the first step.  A window wide enough to hold the walk would cost
   more to build than it saves.  With (A) the walk is never taken and the miss rate is 0.
+
+## 18. `implicit_one_pass` and its automatic switch-off (`implicit_one_pass_auto`, default on)
+
+### What `implicit_one_pass = N` does (default 8 where the predictor is on)
+
+A solve that starts from the predictor takes its FIRST Picard pass to the full linear
+tolerance (no Eisenstat-Walker loosening), so that the change of a second pass is the
+nonlinear part alone, `res_1 = q res_0`.  The contraction `q` is measured per kind of
+solve (backward Euler, hesdirk2 stage 1, stage 2) on every solve that takes a second
+pass, and at least every N-th solve of a kind is made to take one.  The others are
+accepted after one pass when `res_0 qe/(1-qe) < implicit_tol`, `qe = safety * max(last
+two q)` (safety `implicit_one_pass_safety` = 3 for be, `time2_one_pass_safety` = 30 for
+the stages).  State in the restart file (marked header `M1ONEP01`).
+
+It pays where solves are accepted (He box, cfl 0.3, H200: 186/299 accepted, -5.5 % on
+1 GPU, -10.6 % on 2) and costs where none is (He box cfl 0.9 and the moving wedge gateC:
+0 accepted, +4.6 %, about 20 % more Krylov iterations for the tight first passes).
+
+### The switch-off (m1-onepass-auto, 2026-09-26)
+
+Keys (read only when `implicit_one_pass > 0`, all echoed):
+
+| key | default | meaning |
+|---|---|---|
+| `implicit_one_pass_auto` | true (false on a restart from a file without the key) | switch one_pass off per kind of solve when it does not pay |
+| `implicit_one_pass_auto_window` | 2 | check periods (x N eligible solves) with no acceptance before it is switched off |
+| `implicit_one_pass_auto_reprobe` | 64 | switched-off solves before a re-probe |
+
+* Per kind, a counter of eligible solves (predictor on and started) since the last one
+  that finished after ONE pass (by the one-pass test or by the ordinary test).  At
+  `window * N` (16) the kind is switched off.  So a switch-off needs a whole window
+  without a single acceptance, and until one happens the logic only counts: runs where
+  acceptances keep coming are bitwise with `implicit_one_pass_auto = false`, which is
+  bitwise with the code before it.
+* Switched off, the solves are exactly those of `implicit_one_pass = 0`: EW-loosened
+  first pass, no one-pass test, `q` and the check counter left alone.
+* `q` is NOT measured while off: with a loosened first pass `res_1/res_0` mixes the
+  linear error into the contraction.  Instead, after `reprobe` switched-off solves the
+  kind is switched on again with its `q` history CLEARED, so that its first probe solve
+  is a check that measures `q` afresh, and with the counter at `(window - 1) * N`: one
+  check period later it is off again unless a solve was accepted, which confirms it (the
+  counter restarts at 0).  Cost of a failed probe: N tight first passes per `reprobe + N`
+  solves, about 1/9 of the old overhead.
+* Rank 0 prints a line when a kind is switched off (not for a failed re-probe, which
+  recurs) and when a re-probe is confirmed.  The end-of-run summary gives, for THIS run
+  (from its start or its restart; like the other implicit counters they are not in the
+  restart file), the switch-offs, re-probes (failed / confirmed), and the state of each
+  kind at the end: on, off, or probe (switched on as a re-probe, not yet confirmed).
+* Restart: the one-pass header grows from 9 to 18 Reals when auto is on (per kind: off
+  flag, counter, probe flag).  A file with 9 Reals (auto off, or older) restarts with
+  one_pass on and fresh counters; with auto off the header stays 9 Reals, byte-identical
+  to the old files.
