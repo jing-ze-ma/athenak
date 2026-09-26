@@ -1,0 +1,108 @@
+<comment>
+problem = m1-wedge gate (A): grey point-mass atmosphere in hydrostatic + radiative equilibrium
+          on a spherical-polar wedge, implicit M1 (vet_col, hesdirk2), free gas
+
+<job>
+basename = wg
+
+<mesh>
+nghost    = 2
+nx1       = 96
+x1min     = 1.0
+x1max     = 1.25
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 16
+x2min     = 1.4707963267948966     # pi/2 - 0.1
+x2max     = 1.6707963267948966     # pi/2 + 0.1
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 16
+x3min     = 0.0
+x3max     = 0.2
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+
+<meshblock>
+nx1       = 96
+nx2       = 8
+nx3       = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 2000
+tlim       = 1.0e30
+ndiag      = 100
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1       = true
+wb_option   = polytropic
+
+<rad_m1>
+c_light      = 300.0
+chat_over_c  = 1.0
+closure      = vet_col
+opacity      = const
+kappa_p      = 5.0e3
+kappa_e      = 5.0e3
+kappa_f      = 5.0e3
+kappa_s      = 5.0e3      # kappa_t = 1e4: tau(r_in) ~ 4e3
+arad         = 3.0e5
+e_floor      = 1.0e-30
+coupling     = true
+gas_feedback = true
+force_reference = wb_arad
+transport    = implicit
+implicit_solver = bicgstab
+implicit_maxit  = 100
+implicit_tol = 1.0e-10
+implicit_lin_tol = 1.0e-10
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 0.009     # Gamma = kappa_t F/(c g) = 0.3
+implicit_bc_x1max   = marshak
+marshak_q    = 0.5
+time_scheme  = hesdirk2
+vet_col_every = 1
+time2_vet_col = predict
+
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = sph_wedge
+wg_gm      = 1.0
+wg_ic      = grey
+wg_rho_top = 3.0e-5
+wg_tau_int = 1.0
+wg_phi_eff = true
+wg_spot_amp = 0.0
+user_srcs  = true
+user_hist  = true
+
+<output1>
+file_type = hst
+dcycle    = 10
+data_format = %24.16e
+
+<output2>
+file_type = bin
+variable = hydro_w
+dcycle = 500
+
+<output3>
+file_type = bin
+variable = m1
+dcycle = 500
+
+<output4>
+file_type = rst
+dcycle = 1000000

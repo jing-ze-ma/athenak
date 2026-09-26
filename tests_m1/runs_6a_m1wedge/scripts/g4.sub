@@ -1,0 +1,26 @@
+#!/bin/bash -l
+#SBATCH -J wgG4
+#SBATCH -p apu
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=01:05:00
+#SBATCH -o /viper/ptmp2/jinma/sprhd_0926/gpu/log/g4.%j.out
+# m1-wedge He wedge convection-onset run: 84x64x64 (box-like horizontal resolution), 2 GPUs,
+# box-like entropy seed (1e-2, one lateral mode k = 4, tau ~ 5..50), 60 min wall.
+# analysis: python3 scripts/hst.py gpu/g4_<tag>/run 20 1.6667 ; scripts/binv.py on bin/*.hydro_w.*
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=1
+W=/viper/ptmp2/jinma/sprhd_0926; B=$W/bin/athena_$1_none_gpu; R=$W/gpu/g4_$1/run; IN=$W/inp/he.athinput
+mkdir -p $R; cd $R; md5sum $B
+srun --export=ALL -n 2 --exact --cpus-per-task=24 bash -c \
+  'export ROCR_VISIBLE_DEVICES=$SLURM_LOCALID; exec "$0" "$@"' $B -i $IN -d $R -t 00:59:00 \
+  mesh/nx2=64 mesh/nx3=64 meshblock/nx2=32 meshblock/nx3=32 time/nlim=-1 time/ndiag=2000 \
+  problem/wg_seed=1.0e-2 problem/wg_seed_k=4 problem/wg_seed_rlo=3.228527e10 problem/wg_seed_rhi=3.236695e10 \
+  output1/dt=10.0 output2/dt=1000.0 output3/dt=1000.0 output4/dcycle=100000 > $R/run.log 2>&1
+echo "rc=$? $(date +%T)"
