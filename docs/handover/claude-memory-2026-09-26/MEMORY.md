@@ -56,6 +56,7 @@ Standing user rules (full text in [index-standing-rules](index-standing-rules.md
 
 - **[ck x1 ONE-BLOCK CONSTRAINT: DEFERRED (user 09-24)](ck-x1-one-block-deferred.md)** — design A (column transpose) / C (affine interface) recorded; weak-scaling test at nx1 256 in /viper/ptmp2/jinma/cs_weak_0924
 - **[NEXT dhj PRODUCTION: T4 + c2 + ck_impl_every=4 + kkt_row + xstep 8 (user 09-24/09-26)](next-prod-ck-c2.md)** — GOAL 300 rotations (~1060 Earth days); keys inside; all blockers cleared 09-24; setup needs user choices (grid, MHD/hydro, nx1, start, nodes)
+- **[RADIAL GRID VERDICT 09-26: spin up on a128, remap to 256/320 for science](radab-a320-verdict-0926.md)** — a128 45 K off at 1e-4..1e-2 bar + kinks; deep within 0.4 %; a320 14.8x cost
 - **[MHD RELAX: hydro spin-up + 10-20 rot C256 MHD is enough (09-25)](mhd-relax-hydro-spinup-ok.md)** — bbot=3 MHD = hydro within noise after rot 6; grid256 (8-coef, nx1 256/320 GPU) merged 587accf0
 - **[GRID RESOLUTION COUNTS ONLY BELOW 1e-6 bar (user 09-25)](resolution-only-below-1e-6-bar.md)** — cells/H targets for p > 1e-6 bar only; top is free
 - **[MASSIVE STARS: TOP ATMOSPHERE DOES NOT MATTER (user 09-26)](accuracy-region-interior-only.md)** — judge accuracy below the photosphere only (tau >~ 1, no top cells/sponge); crude top OK but it must not limit dt, crash, or cost much; = dhj p < 1e-6 bar
