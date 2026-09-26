@@ -7067,14 +7067,29 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
               bsp_(m,p,k,j) = fs;
             });
-            par_for("ck_beam_tau", DevExeSpace(), 0, nmb1, 0, nbc_-1, is, ie+1, ks, ke,
+            // ck-next: CK_BTG beam chains per thread.  The chord lengths of the ray to
+            // face f (the sqrt per shell) depend on the column geometry alone, so one
+            // thread forms them once for its group and adds each chain's kappa rho
+            // along them, every chain in its own accumulator in the old order: the
+            // same slant depth, bitwise.  A chain whose stop face lies above f skips
+            // its loads (its slot is not read, as before).
+            constexpr int CK_BTG = 8;
+            const int nbg_ = (nbc_ + CK_BTG - 1)/CK_BTG;
+            par_for("ck_beam_tau", DevExeSpace(), 0, nmb1, 0, nbg_-1, is, ie+1, ks, ke,
                     js, je,
-            KOKKOS_LAMBDA(const int m, const int p, const int f, const int k,
+            KOKKOS_LAMBDA(const int m, const int pg, const int f, const int k,
                           const int j) {
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
               const int icut = icc_g(m,k,j);
-              if (icut > ie || f < icut || f < bsp_(m,p,k,j)) return;
-              const int c = p*bst_;
+              if (icut > ie || f < icut) return;
+              bool on[CK_BTG];
+              bool any = false;
+              for (int q=0; q<CK_BTG; ++q) {
+                const int p = pg*CK_BTG + q;
+                on[q] = (p < nbc_) && (f >= bsp_(m,(p < nbc_) ? p : 0,k,j));
+                any = any || on[q];
+              }
+              if (!any) return;
               const Real mu0 = cf_g(m,k,j,3);
               const Real sinz = sqrt((mu0*mu0 < 1.0) ? (1.0 - mu0*mu0) : 0.0);
               const Real rcut = X1F(m,icut);
@@ -7095,7 +7110,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   }
                 }
               }
-              Real tl = 0.0;
+              Real tl[CK_BTG];
+              for (int q=0; q<CK_BTG; ++q) tl[q] = 0.0;
               if (!dark) {
                 const Real rl = X1F(m,jlo);
                 Real prev = (rl*rl > b2) ? sqrt(rl*rl - b2) : 0.0;
@@ -7104,10 +7120,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real cur = sqrt(ru*ru - b2);
                   const Real ds = (jj < f) ? 2.0*(cur - prev) : (cur - prev);
                   prev = cur;
-                  tl += ds*static_cast<Real>(static_cast<RtF>(ckkro_g(m,c,jj,k,j)));
+                  for (int q=0; q<CK_BTG; ++q) {
+                    if (on[q]) {
+                      const int c = (pg*CK_BTG + q)*bst_;
+                      const RtF kr = static_cast<RtF>(ckkro_g(m,c,jj,k,j));
+                      tl[q] += ds*static_cast<Real>(kr);
+                    }
+                  }
                 }
               }
-              tsl_(m,p,f,k,j) = dark ? 1.0e30 : tl;
+              for (int q=0; q<CK_BTG; ++q) {
+                if (on[q]) tsl_(m,pg*CK_BTG + q,f,k,j) = dark ? 1.0e30 : tl[q];
+              }
             });
             par_for("ck_beam_dep", DevExeSpace(), 0, nmb1, 0, nblk-1, is, ie, ks, ke,
                     js, je,
