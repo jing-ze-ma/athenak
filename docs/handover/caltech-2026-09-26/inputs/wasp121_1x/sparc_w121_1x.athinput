@@ -245,6 +245,7 @@ ck_int_at_cut = true             # route B: sigma T_int^4 enters ONCE, as the ck
 ck_star_teff = 0.0   # WASP-121b: <= 0: stellar band fluxes from ck_swflux (WASP-121 model spectrum), not a blackbody (was 6000.0)
 ck_spherical = true              # NEW: spherical thermal two-stream. See change (1).
 ck_beam_sph  = true              # NEW: pseudo-spherical direct beam. See change (1).
+ck_beam_par  = true              # user 09-26: beam chord walk in its own kernels (ck-fast2 796a92a5); H200 2 GPU nx1 256: -6.2 % total (~11 % of ck), deep eint 1.03-1.15x the 1e-14 noise
 ck_sweep_form = 1                # 09-22 (change 9): tm = exact probe-free spherical sweep; see header
 ck_table     = ATHENAK_CK_DATA/ck/Premixed_1x_g8_11_hiT2.txt   # 1x SOLAR (x1/README): was ATHENAK_CK_DATA10/ck/Premixed_10x_g8_11_hiT2.txt in the 10x input
 ck_ce_table  = CE_tables/FastChem_ck_1x_int_hiT2.txt   # 1x SOLAR (x1/README): was CE_tables/FastChem_ck_10x_int_hiT2.txt in the 10x input
