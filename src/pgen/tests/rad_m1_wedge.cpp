@@ -318,7 +318,10 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       std::istringstream ss(line);
       Real a, b, c, d;
       if (!(ss >> a >> b >> c)) continue;
-      if (!(ss >> d)) {hasE = false; d = -1.0;}
+      if (!(ss >> d)) {
+        hasE = false;
+        d = -1.0;
+      }
       fr.push_back(a); fd.push_back(b); fe.push_back(c); fE.push_back(d);
     }
     if (fr.size() < 2 || fr.front() > hr.front() || fr.back() < hr.back()) {
@@ -382,7 +385,11 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
     auto h1 = Kokkos::create_mirror_view(wg_rho_);
     auto h2 = Kokkos::create_mirror_view(wg_eint_);
     auto h3 = Kokkos::create_mirror_view(cE);
-    for (int n=0; n<nf; ++n) {h1(n) = hd[n]; h2(n) = he[n]; h3(n) = hE[n];}
+    for (int n=0; n<nf; ++n) {
+      h1(n) = hd[n];
+      h2(n) = he[n];
+      h3(n) = hE[n];
+    }
     Kokkos::deep_copy(wg_rho_, h1);
     Kokkos::deep_copy(wg_eint_, h2);
     Kokkos::deep_copy(cE, h3);
@@ -426,7 +433,10 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   }
   wg_rint_ = wg_rin_;
   for (int n=nf-1; n>=0; --n) {
-    if (tau[n] >= tau_int) {wg_rint_ = std::max(hr[n], wg_rin_); break;}
+    if (tau[n] >= tau_int) {
+      wg_rint_ = std::max(hr[n], wg_rin_);
+      break;
+    }
   }
   for (int n=1; n<nf; ++n) cum[n] = cum[n-1] + 0.5*wg_dr_*(aref[n-1] + aref[n]);
   // shift the running integral so that it is zero at r_in
