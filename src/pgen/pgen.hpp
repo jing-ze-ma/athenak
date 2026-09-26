@@ -147,6 +147,7 @@ class ProblemGenerator {
   void RadiationBeam(ParameterInput *pin, const bool restart);
   void RadiationM1Tests(ParameterInput *pin, const bool restart);
   void RadiationM1Tests2(ParameterInput *pin, const bool restart);
+  void RadiationM1Wedge(ParameterInput *pin, const bool restart);
   void Z4cBoostedPuncture(ParameterInput *pin, const bool restart);
   void Z4cLinearWave(ParameterInput *pin, const bool restart);
   void SelfGravity(ParameterInput *pin, const bool restart);
