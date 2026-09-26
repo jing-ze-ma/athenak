@@ -75,7 +75,7 @@ problem/ck_impl_verbose=${VERB:-false} ${NLIM:+time/nlim=$NLIM} $EXTRA -t ${WALL
   if [ -n "$DRY" ]; then echo "DRY $ARM: $CMD"; continue; fi
   if [ -f $D/STOP ]; then echo "$ARM: STOP present, skipped"; continue; fi
   LOG=$D/run.$SLURM_JOB_ID.log
-  echo "$ARM: ${LAST:+restart from $LAST}${LAST:-fresh start} ($SP)"
+  if [ -n "$LAST" ]; then echo "$ARM: restart from $LAST ($SP)"; else echo "$ARM: fresh start ($SP)"; fi
   ( cd $D && $STEP \
       bash -c 'echo "step $SLURM_STEP_ID CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"; exec "$0" "$@"' \
       $CMD > $LOG 2>&1
