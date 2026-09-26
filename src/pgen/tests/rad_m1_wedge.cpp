@@ -74,6 +74,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "units/units.hpp"
 #include "pgen/pgen.hpp"
 
 namespace {
@@ -129,6 +130,58 @@ void WgGreyStep(const Real r, const Real h, Real *y, const Real gm, const Real k
   for (int n=0; n<2; ++n) yt[n] = y[n] + h*k3[n];
   WgGreyRHS(r + h, yt, gm, kt, cl, ar, fr2, k4);
   for (int n=0; n<2; ++n) y[n] += h*(k1[n] + 2.0*k2[n] + 2.0*k3[n] + k4[n])/6.0;
+}
+//! the merged opacity table format of box_convection.cpp's ReadOpacityTable (copied:
+//! comment lines, one of them "# nT nD lTmin dlT lDmin dlD", then nT*nD values of
+//! log10 kappa with T slowest), filled on the host and deep-copied to the device
+void WgReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
+                        DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD) {
+  std::ifstream f(fname);
+  if (!f.good()) {
+    std::cout << "### FATAL ERROR in sph_wedge: cannot open opacity table '" << fname
+              << "'" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  std::string line;
+  Real lt0 = 0.0, dlt = 0.0, ld0 = 0.0, dld = 0.0;
+  bool have_grid = false;
+  std::vector<Real> vals;
+  while (std::getline(f, line)) {
+    if (line.empty()) continue;
+    if (line[0] == '#') {
+      if (!have_grid) {
+        std::istringstream ss(line.substr(1));
+        int a, b;
+        Real c, d, e, g;
+        if (ss >> a >> b >> c >> d >> e >> g) {
+          nT = a; nD = b; lt0 = c; dlt = d; ld0 = e; dld = g;
+          have_grid = true;
+        }
+      }
+      continue;
+    }
+    vals.push_back(std::stod(line));
+  }
+  if (!have_grid || static_cast<int>(vals.size()) != nT*nD) {
+    std::cout << "### FATAL ERROR in sph_wedge: opacity table '" << fname
+              << "' has no grid line, or " << vals.size() << " values for "
+              << nT << " x " << nD << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Kokkos::realloc(tab, nT, nD);
+  Kokkos::realloc(lT, nT);
+  Kokkos::realloc(lD, nD);
+  auto htab = Kokkos::create_mirror_view(tab);
+  auto hlT = Kokkos::create_mirror_view(lT);
+  auto hlD = Kokkos::create_mirror_view(lD);
+  for (int i=0; i<nT; ++i) {
+    hlT(i) = lt0 + i*dlt;
+    for (int j=0; j<nD; ++j) htab(i,j) = vals[i*nD + j];
+  }
+  for (int j=0; j<nD; ++j) hlD(j) = ld0 + j*dld;
+  Kokkos::deep_copy(tab, htab);
+  Kokkos::deep_copy(lT, hlT);
+  Kokkos::deep_copy(lD, hlD);
 }
 }  // namespace
 
@@ -291,6 +344,36 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
     std::exit(EXIT_FAILURE);
   }
 
+  // ---- <rad_m1>/opacity = table: the pgen hands the Rosseland + Planck tables over
+  // (problem/wg_opac_table, wg_planck_table; one shared grid), as box_convection does
+  if (pm1->opacity_type == radm1::M1_OPAC_TABLE) {
+    const std::string rt = pin->GetString("problem","wg_opac_table");
+    const std::string pt = pin->GetString("problem","wg_planck_table");
+    DvceArray2D<Real> krt, kpt;
+    DvceArray1D<Real> mlT, mlD, plT, plD;
+    int mnT = 0, mnD = 0, pnT = 0, pnD = 0;
+    WgReadOpacityTable(rt, krt, mlT, mlD, mnT, mnD);
+    WgReadOpacityTable(pt, kpt, plT, plD, pnT, pnD);
+    if (mnT != pnT || mnD != pnD) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "sph_wedge: the Rosseland and Planck tables are not on the "
+        << "same grid" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    pm1->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
+    // the lookup's units against the EOS's own code temperature and <units> density
+    const Real tcgs = eos.temp_cgs;
+    const Real dcgs = (pmbp->punit != nullptr) ? pmbp->punit->density_cgs() : 1.0;
+    if (std::fabs(pm1->otab.tunit/tcgs - 1.0) > 1.0e-5 ||
+        std::fabs(pm1->otab.dunit/dcgs - 1.0) > 1.0e-5) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "sph_wedge: <rad_m1>/temp_unit_kelvin = " << pm1->otab.tunit
+        << ", rho_unit_cgs = " << pm1->otab.dunit << " but this run's units are ("
+        << tcgs << ", " << dcgs << ")" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
   // ---- the column on the device: T, E (if not given), kappa_t and a_ref = kt F/c
   Kokkos::realloc(wg_rho_, nf);
   Kokkos::realloc(wg_eint_, nf);
@@ -429,6 +512,14 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   const Real sph = pin->GetOrAddReal("problem","wg_spot_ph",
                      0.5*(pmy_mesh_->mesh_size.x3min + pmy_mesh_->mesh_size.x3max));
   const Real sw = pin->GetOrAddReal("problem","wg_spot_w",0.05*(rtop - wg_rin_));
+  // wg_seed: a small deterministic cell-to-cell perturbation of the gas internal energy
+  // (a seed for convection, as sph_atm's atm_seed), applied where tau(IC) >= wg_tau_int;
+  // a function of the GLOBAL cell indices, so independent of the rank decomposition
+  const Real seed = pin->GetOrAddReal("problem","wg_seed",0.0);
+  const Real seed_rmax = (seed != 0.0) ? wg_rint_ : 0.0;
+  const Real x2a = pmy_mesh_->mesh_size.x2min, x3a = pmy_mesh_->mesh_size.x3min;
+  const Real idx2 = pmy_mesh_->mesh_indcs.nx2/(pmy_mesh_->mesh_size.x2max - x2a);
+  const Real idx3 = pmy_mesh_->mesh_indcs.nx3/(pmy_mesh_->mesh_size.x3max - x3a);
   const Real sx = sr*sin(sth)*cos(sph), sy = sr*sin(sth)*sin(sph), sz = sr*cos(sth);
   auto uh = ph->u0;
   auto ur = pm1->u0;
@@ -452,6 +543,11 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       e *= (1.0 + del);
       er *= SQR(SQR(1.0 + del));
       (void) ideal;
+    }
+    if (seed != 0.0 && r <= seed_rmax) {
+      const int jg = static_cast<int>(floor((x2v(m,j) - x2a)*idx2));
+      const int kg = static_cast<int>(floor((x3v(m,k) - x3a)*idx3));
+      e *= 1.0 + seed*cos(2.3*jg + 1.7*kg + 0.9*i);
     }
     uh(m,IDN,k,j,i) = d;
     uh(m,IM1,k,j,i) = 0.0;
