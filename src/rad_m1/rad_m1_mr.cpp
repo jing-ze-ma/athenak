@@ -113,7 +113,8 @@ void RadiationM1::MRInit(ParameterInput *pin) {
     if (csplit > 0 && (time_scheme != M1_TIME_HESDIRK2 || mr_every > 1)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/coupling_split = " << cs << " needs time_scheme"
-                << " = hesdirk2 (its stage arrays) and implicit_mr_every = 1" << std::endl;
+                << " = hesdirk2 (its stage arrays) and implicit_mr_every = 1"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
     if (csplit > 0) {

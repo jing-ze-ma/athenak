@@ -439,7 +439,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // <rad_m1>/coupling_split (ke-dt-0926, rad_m1_mr.cpp): 1 = the Heun hydro alone,
       // then R(dt); 2 = R(dt), then the Heun hydro alone; 0 = the paths here
       const int m1cs = (pm1 != nullptr) ? pm1->CSplitStep() : 0;
-      if (m1cs == 2) {pm1->MRSolve(this, pmesh->dt);}
+      if (m1cs == 2) {
+        pm1->MRSolve(this, pmesh->dt);
+      }
       const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
