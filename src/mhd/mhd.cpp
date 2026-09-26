@@ -191,6 +191,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // allocate boundary buffers for conserved (cell-centered) and face-centered variables
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
+  pbval_u->cs_rho_guard = ppack->pmesh->cs_seam_rho_guard;
+  pbval_u->cs_lin_resample = ppack->pmesh->cs_seam_resample_linear;
   pbval_u->InitializeBuffers((nmhd+nscalars));
   pbval_b = new MeshBoundaryValuesFC(ppack, pin);
   pbval_b->InitializeBuffers(3);

@@ -304,6 +304,8 @@ class Mesh {
   bool cs_vertex_fill;        // true to fill the cube-vertex corner by exchange (FC)
   bool cs_vertex_fill_cc;     // same for CELL-CENTRED data (see mesh.cpp)
   int cs_seam_flux;           // seam flux reconciliation: 0 average, 1 upwind, 2 positive
+  Real cs_seam_rho_guard;     // seam ghost density guard ratio, 0 = off (mesh.cpp)
+  bool cs_seam_resample_linear;  // convex linear along-seam resample (mesh.cpp)
   int npanels;                // 6 if using cubed sphere; 1 otherwise
   bool use_spherical_polar;   // true if using spherical polar grid
   bool use_grid_stretch_r;      // true if using grid stretching in r

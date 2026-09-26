@@ -276,23 +276,79 @@ MHD (iprob 9, B = 0.3, rho = 1e-3 hole):
 
 Full table: `/viper/ptmp2/jinma/seamaudit_0926/RESUME.md`.
 
-## Vertex: open
+## Vertex: the seam HALO, not the flux (keys `cs_seam_resample`, `cs_seam_rho_guard`)
 
-An **isothermal** hole (rho 1e-4, `cav_p = 1`) centred ON a cube vertex (1,1,1) goes NaN
-within 2 cycles. This happens under every seam option: `positive` at cfl 0.3 and 0.1, and
-`average`/`upwind` (FATAL).
-- The failing cell is the vertex cell itself: T 1e-35, p at the floor, |v| ~ 700.
-- The same hole on a mid-seam or in a panel interior is clean.
-- `cs_vertex_fill_cc` has no effect on hydro. Hydro never reads the cell-centred corner ghosts
-  unless FOFC is on.
+**Case.** An isothermal hole (rho 1e-4, `cav_p = 1`) centred ON a cube vertex (1,1,1):
+- NaN within 2 cycles under `positive` (at cfl 0.3 and 0.1), FATAL under `average` and `upwind`.
+- The same hole on a mid-seam, or in a panel interior at the vertex latitude, is clean.
 
-Next step:
-1. Dump the vertex cell's four seam-face fluxes and its ghosts at cycles 0-2.
-2. Rerun with the along-seam resample off.
-3. Suspects:
-   - the donor-side momentum/energy flux arriving through TWO seam faces, each computed from a
-     resampled ghost blind to the empty cell, so that E < KE;
-   - the resample stencil at the panel end.
+**Diagnosis** (env-gated dump of the four hole cells per panel at cycles 0-2; debug patch
+`seamaudit_0926/vxdiag.patch`). Two halo defects combine.
+
+1. **The resampled ghost of an empty seam cell is dense.**
+   - The along-seam quadratic (`bvals_cc.cpp`, the resample around l.440 and seamval around
+     l.575) lands between the empty and the full donor cells.
+   - Panel 1's ghost across the k seam of cell (m6, k17, j3) has rho = 0.368. The cell that
+     actually shares that face (m13, k3, j17) holds 1e-4.
+   - Both panels then see a dense neighbour and both claim inflow: a = -0.064, b = -0.0075.
+   - `positive` zeroes the mass flux but keeps a convex mix of the two OPPOSITE energy and
+     momentum fluxes. That drains a nearly massless cell (dE = -5x its energy).
+   - A bracketing-node clamp does not help: the target lies between an empty and a full
+     node, so 0.368 is a legitimate interpolant.
+2. **The quadratic is not convex.**
+   - The resample has a negative weight whenever it interpolates, and it is clamped per
+     variable.
+   - Next to a cell the floors have just reset (p at the floor, momentum kept), it builds a
+     ghost with E < KE.
+   - ConToPrim floors that ghost with |v| ~ 100. The vertex cell's seam flux then carries an
+     energy flux of 366, which is 1e6 times its content. That is the NaN.
+   - The first floored cell comes from an ordinary interior face at a 1e4 pressure jump,
+     which happens for this hole and resample setting too (with the resample switched off
+     via `CS_NORESAMP_CC`). Without the resample, though, the floored cell does not spread
+     through the seam, and the run is clean.
+
+Neither the seam flux rule, the vertex EMF, the corner fill nor FOFC is the operator.
+- FOFC does not cure it (`fofc = true` with `nghost = 3`): `average` still crashes, and
+  `positive` still NaNs at the vertex.
+- FOFC runs before the reconciliation, and its low-order fluxes enter the reconciliation
+  like any other. It did not get to act here, because the damage is in the ghosts.
+- A per-face "close the face when both claim inflow" rule, including the momentum flux,
+  cures the hole but costs 16-50x in L1 on the smooth rigid rotation (pressure is lost at
+  converging seam faces). Rejected, and not on the branch.
+
+**Fix** (branch `cs-seam-mhd-0926`). Both keys are default off and bitwise when off. They act
+only on the fluid's conserved-state exchange (`pbval_u` of Hydro and MHD):
+- `<mesh>/cs_seam_resample = linear`: convex linear interpolation between the two bracketing
+  donors (weights >= 0). A convex combination of admissible states is admissible.
+- `<mesh>/cs_seam_rho_guard = 4`: a ghost whose resampled density differs from its plain-copy
+  source cell (the cell that shares the face) by more than 4x takes the plain copy, for every
+  variable.
+- Both act in the halo, so the seam update stays exactly conservative.
+- **Both are needed.** Guard alone and linear alone each still NaN on the hydro vertex hole.
+- Recommended set: `cs_seam_flux = positive`, `cs_seam_resample = linear`,
+  `cs_seam_rho_guard = 4`.
+
+**Gates.** Cavity arms from job 11983388, CPU serial.
+
+| gate | result |
+| --- | --- |
+| hydro + MHD cavity arms (seam, vertex, upstream of vertex, interior; hot and isothermal), recommended set and `average` + halo keys | all 32 clean, 0 dt-collapse warnings |
+| hydro conservation in those arms | \|dM/M\| <= 3.3e-14; \|dE/E\| <= 7e-14, except 1.7e-8 in the vertex iso hole (floor energy) |
+| smooth rigid rotation, L1(v) vs `average` (n16 / n32 / n64) | +4.2 % / +0.9 % / +0.13 % |
+| smooth rigid rotation, L1(p) vs `average` (n16 / n32 / n64) | -0.1 % / -0.6 % / +0.04 % |
+| MHD smooth (iprob 9, n32): L1(B), L1(v), L1(p) | +0.4 %, +0.3 %, +0.9 % |
+| keys-off gate: rigidrot, blast, mhd (2 ranks, CPU) | bitwise vs rt-integration f7ee04be (blast log compared order-independently; blast.dat identical) |
+| guard alone on smooth | bitwise equal to `positive` (never triggers) |
+
+**WASP-121b crash reruns.** Job 11983404: GPU, apudev, the same restarts and tlim as the
+branch reruns above.
+
+| setting | nobot | notop |
+| --- | --- | --- |
+| recommended set | clean to tlim, 0 collapse warnings | clean to tlim, 0 collapse warnings |
+| keys off (same binary) | FATAL 46764 | FATAL 80495 |
+
+The keys-off control reproduces the earlier branch `average` crashes exactly.
 
 ## Status and next steps
 

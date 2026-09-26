@@ -8,9 +8,9 @@
 #   mesh/cs_seam_flux=positive -> clean to tlim 0.45; |dM/M| 3.7e-14, |dE/E| 6.9e-14
 # Other placements: cav_x,y,z = 1,1,1 (cube vertex); 1,0.15,0.1 (panel interior, the
 # control, clean). cav_p = 1 makes the hole isothermal (the flow fills it); on a VERTEX that
-# case is still open (NaN in 2 cycles under every seam option). Use <mhd> + iprob = 9 for
-# MHD (cav_d = 1e-3). The history (problem/user_hist) gives mass, Etot, and per region
-# (interior / seam / vertex, within cav_nband cells) min rho, max |v|, max |div B|.
+# case needs the halo keys too: cs_seam_resample = linear, cs_seam_rho_guard = 4.
+# Use <mhd> + iprob = 9 for MHD (cav_d = 1e-3). The history (problem/user_hist) gives
+# mass, Etot, and per region (interior / seam / vertex, within cav_nband cells) min rho, max |v|, max |div B|.
 <comment>
 problem = cs evacuation test: hot density hole on a panel seam
 <job>
