@@ -80,6 +80,55 @@ void RadiationM1::MRInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "implicit_mr_every")) {
     mr_every = pin->GetInteger("rad_m1", "implicit_mr_every");
   }
+  // coupling_split (ke-dt-0926): read only when named; "default" = the paths above
+  csplit = 0;
+  if (pin->DoesParameterExist("rad_m1", "coupling_split")) {
+    const std::string cs = pin->GetString("rad_m1", "coupling_split");
+    if (cs.compare("default") == 0) {
+      csplit = 0;
+    } else if (cs.compare("strang") == 0) {
+      csplit = 1;
+    } else if (cs.compare("alternate") == 0) {
+      csplit = 2;
+    } else if (cs.compare("mix") == 0) {
+      csplit = 3;
+      if (pin->DoesParameterExist("rad_m1", "coupling_mix_h2")) {
+        csplit_nh2 = pin->GetInteger("rad_m1", "coupling_mix_h2");
+      }
+      if (pin->DoesParameterExist("rad_m1", "coupling_mix_s")) {
+        csplit_ns = pin->GetInteger("rad_m1", "coupling_mix_s");
+      }
+      if (csplit_nh2 < 0 || csplit_ns < 0 || csplit_nh2 + csplit_ns < 1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/coupling_mix_h2, coupling_mix_s must be >= 0 "
+                  << "with a positive sum" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/coupling_split = '" << cs << "' is not a "
+                << "choice (default | strang | alternate | mix)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (csplit > 0 && (time_scheme != M1_TIME_HESDIRK2 || mr_every > 1)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/coupling_split = " << cs << " needs time_scheme"
+                << " = hesdirk2 (its stage arrays) and implicit_mr_every = 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (csplit > 0) {
+      mr_cnt = 0;
+      mr_theta = 0.0;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> coupling_split = " << cs;
+        if (csplit == 3) {
+          std::cout << " (" << csplit_nh2 << " hesdirk2 + " << csplit_ns
+                    << " strang steps per cycle)";
+        }
+        std::cout << std::endl;
+      }
+    }
+  }
   if (mr_every <= 1) {
     mr_every = 1;
     return;
@@ -112,6 +161,28 @@ void RadiationM1::MRInit(ParameterInput *pin) {
               << "(operator-split SDIRK2 over " << mr_every << " hydro steps, Strang)"
               << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CSplitStep
+//! \brief coupling_split: called by the Driver once per step, before the Heun stages.
+//! Returns 0 (the default path: hesdirk2 inside the stages), 1 (the Heun hydro alone,
+//! then R(dt) = MRSolve) or 2 (R(dt) first, then the Heun hydro alone).
+
+int RadiationM1::CSplitStep() {
+  if (csplit == 0) return 0;
+  const int c = mr_cnt;
+  int mode = 1;
+  if (csplit == 2) {
+    mode = (c % 2 == 0) ? 1 : 2;
+    mr_cnt = (c + 1) % 2;
+  } else if (csplit == 3) {
+    const int per = csplit_nh2 + csplit_ns;
+    mode = (c % per < csplit_nh2) ? 0 : 1;
+    mr_cnt = (c + 1) % per;
+  }
+  if (mode != 0) {mr_ksum += 1.0;}
+  return mode;
 }
 
 //----------------------------------------------------------------------------------------

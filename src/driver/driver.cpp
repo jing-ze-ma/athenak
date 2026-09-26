@@ -436,7 +436,11 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       radm1::RadiationM1 *pm1 = pmesh->pmb_pack->pradm1;
       // <rad_m1>/implicit_mr_every > 1 (rad_m1_mr.cpp): multi-rate radiation, the Heun
       // stages run the hydro alone and the radiation is taken by MRStep below
-      const bool m1mr = (pm1 != nullptr) && pm1->MRActive();
+      // <rad_m1>/coupling_split (ke-dt-0926, rad_m1_mr.cpp): 1 = the Heun hydro alone,
+      // then R(dt); 2 = R(dt), then the Heun hydro alone; 0 = the paths here
+      const int m1cs = (pm1 != nullptr) ? pm1->CSplitStep() : 0;
+      if (m1cs == 2) {pm1->MRSolve(this, pmesh->dt);}
+      const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
       auto hydro_stage = [&](int stage) {
@@ -488,7 +492,11 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
       // loop not entered -- when there is no <rad_m1> block.
       if (m1mr) {
-        pm1->MRStep(this, pmesh->dt);
+        if (m1cs == 1) {
+          pm1->MRSolve(this, pmesh->dt);
+        } else if (m1cs == 0) {
+          pm1->MRStep(this, pmesh->dt);
+        }
       } else if (pm1 != nullptr && m1t2 && !m1t2fail) {
         // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
         pm1->t2_solve = radm1::M1_T2S_NONE;

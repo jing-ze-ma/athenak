@@ -345,7 +345,17 @@ class RadiationM1 {
   DvceArray5D<Real> vsc_d0, vsc_d1;               // (m,M1_T2_NVET,k,j,i)
   bool VscSkip();
   void VscStore();
-  bool F4RstHdr() const {return (mr_every > 1) || (vsc_every > 1);}
+  // coupling_split (ke-dt-0926, rad_m1_mr.cpp; read only when named, default = off):
+  // how the implicit radiation + coupling R is placed relative to the Heun hydro H.
+  //   0 default  hesdirk2 in the Heun stages (or implicit_mr_every)
+  //   1 strang   H(dt) then R(dt) by the multi-rate SDIRK2 every step (k = 1)
+  //   2 alternate  H R on even steps, R H on odd steps
+  //   3 mix      coupling_mix_h2 hesdirk2 steps, then coupling_mix_s strang steps
+  // The step counter travels in the multi-rate restart header (mr_cnt).
+  int csplit = 0;
+  int csplit_nh2 = 1, csplit_ns = 2;
+  int CSplitStep();             // per step: 0 = default path, 1 = H then R, 2 = R then H
+  bool F4RstHdr() const {return (mr_every > 1) || (vsc_every > 1) || (csplit > 0);}
   bool MRActive() const {return mr_every > 1;}
   void MRInit(ParameterInput *pin);
   void MRStep(Driver *pdrive, Real dt);
