@@ -27,6 +27,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -563,6 +564,99 @@ void RadiationM1::Time2VetExtrapolate() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1T2VcpLaunch
+//! \brief the m1_t2_vcp kernel of RadiationM1::Time2VetColAt, instantiated on the
+//! ideal-gas/analytic-opacity tag.
+template <typename Ctx, typename Idl>
+void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
+  auto aa = std::get<0>(ctx_);
+  auto bb = std::get<1>(ctx_);
+  auto dt = std::get<2>(ctx_);
+  auto efl = std::get<3>(ctx_);
+  auto eos = std::get<4>(ctx_);
+  auto etg = std::get<5>(ctx_);
+  auto gam = std::get<6>(ctx_);
+  auto gdt = std::get<7>(ctx_);
+  auto iw_ = std::get<8>(ctx_);
+  auto k1_ = std::get<9>(ctx_);
+  auto kev = std::get<10>(ctx_);
+  auto kf = std::get<11>(ctx_);
+  auto kp = std::get<12>(ctx_);
+  auto kss = std::get<13>(ctx_);
+  auto opac_ = std::get<14>(ctx_);
+  auto ot = std::get<15>(ctx_);
+  auto otype = std::get<16>(ctx_);
+  auto phicc = std::get<17>(ctx_);
+  auto rref = std::get<18>(ctx_);
+  auto tref = std::get<19>(ctx_);
+  auto two = std::get<20>(ctx_);
+  auto u0_ = std::get<21>(ctx_);
+  auto uh = std::get<22>(ctx_);
+  auto vn_ = std::get<23>(ctx_);
+  auto nmb1 = std::get<24>(ctx_);
+  auto ks = std::get<25>(ctx_);
+  auto ke = std::get<26>(ctx_);
+  auto js = std::get<27>(ctx_);
+  auto je = std::get<28>(ctx_);
+  auto is = std::get<29>(ctx_);
+  auto ie = std::get<30>(ctx_);
+  auto vcb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
+                                  const int i) M1_INL {
+#if defined(KOKKOS_ENABLE_CUDA)
+    // nvcc: an extended lambda may not capture a variable for the first time inside
+    // an `if constexpr` branch, so name every capture up front (no code is
+    // generated; other backends capture exactly what the instantiation reads).
+    (void)aa; (void)bb; (void)dt; (void)efl; (void)eos; (void)etg; (void)gam; (void)gdt;
+    (void)iw_; (void)k1_; (void)kev; (void)kf; (void)kp; (void)kss; (void)opac_; (void)ot;
+    (void)otype; (void)phicc; (void)rref; (void)tref; (void)two; (void)u0_; (void)uh;
+    (void)vn_;
+#endif
+    const Real d = uh(m,IDN,k,j,i);
+    Real t, e;
+    if (two) {
+      t = vn_(m,3,k,j,i);
+      e = vn_(m,4,k,j,i);
+    } else {
+      // the hydro u0 is already the stage-1 OLD vector here (ImplicitSolve added
+      // t2inc = (1-g) dt K1 to it): g dt K1 completes dt K1
+      const Real m1 = uh(m,IM1,k,j,i) + gdt*k1_(m,M1_T2_M1,k,j,i);
+      const Real m2 = uh(m,IM2,k,j,i) + gdt*k1_(m,M1_T2_M1+1,k,j,i);
+      const Real m3 = uh(m,IM3,k,j,i) + gdt*k1_(m,M1_T2_M1+2,k,j,i);
+      Real eint = uh(m,IEN,k,j,i) + gdt*k1_(m,M1_T2_EN,k,j,i)
+                  - 0.5*(m1*m1 + m2*m2 + m3*m3)/fmax(d, 1.0e-300);
+      if (etg) eint -= d*phicc(m,k,j,i);
+      if constexpr (decltype(idl)::value) {
+        t = ((gam-1.0)*fmax(eint, 0.0)/d);
+      } else {
+        t = eos.Temperature(d, fmax(eint, 0.0));
+      }
+      e = u0_(m,M1_E,k,j,i) + dt*k1_(m,M1_T2_E,k,j,i);
+    }
+    Real op, oe, of, os;
+    if constexpr (decltype(idl)::value) {
+      M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
+    } else if (otype == M1_OPAC_TABLE) {
+      M1TableOpacities(ot, d, t, op, oe, of, os);
+    } else {
+      M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
+    }
+    opac_(m,M1_OP_P,k,j,i) = d*op;
+    opac_(m,M1_OP_E,k,j,i) = d*oe;
+    opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+    vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+    vn_(m,1,k,j,i) = iw_(m,M1_IW_TP,k,j,i);
+    vn_(m,2,k,j,i) = iw_(m,M1_IW_KT,k,j,i);
+    iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
+    iw_(m,M1_IW_TP,k,j,i) = t;
+    iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
+  };
+  par_for_lb("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
+    vcb(Idl{}, m, k, j, i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2VetColAt
 //! \brief closure = vet_col, time2_vet_col = predict | rebuild (m1-sp-order2b): the
 //! formal solution of a state at t^{n+1} accurate to O(dt^2), in place of U^n.
@@ -629,57 +723,16 @@ void RadiationM1::Time2VetColAt(int which) {
     // and opacity table code, 392 B of scratch per lane, even when both are off
     const Real gam = eos.gamma;
     const bool vcid = !eos.tbl.active && (otype != M1_OPAC_TABLE);
-    auto vcb = [=] KOKKOS_FUNCTION (auto idl, const int m, const int k, const int j,
-                                    const int i) M1_INL {
-      const Real d = uh(m,IDN,k,j,i);
-      Real t, e;
-      if (two) {
-        t = vn_(m,3,k,j,i);
-        e = vn_(m,4,k,j,i);
-      } else {
-        // the hydro u0 is already the stage-1 OLD vector here (ImplicitSolve added
-        // t2inc = (1-g) dt K1 to it): g dt K1 completes dt K1
-        const Real m1 = uh(m,IM1,k,j,i) + gdt*k1_(m,M1_T2_M1,k,j,i);
-        const Real m2 = uh(m,IM2,k,j,i) + gdt*k1_(m,M1_T2_M1+1,k,j,i);
-        const Real m3 = uh(m,IM3,k,j,i) + gdt*k1_(m,M1_T2_M1+2,k,j,i);
-        Real eint = uh(m,IEN,k,j,i) + gdt*k1_(m,M1_T2_EN,k,j,i)
-                    - 0.5*(m1*m1 + m2*m2 + m3*m3)/fmax(d, 1.0e-300);
-        if (etg) eint -= d*phicc(m,k,j,i);
-        if constexpr (decltype(idl)::value) {
-          t = ((gam-1.0)*fmax(eint, 0.0)/d);
-        } else {
-          t = eos.Temperature(d, fmax(eint, 0.0));
-        }
-        e = u0_(m,M1_E,k,j,i) + dt*k1_(m,M1_T2_E,k,j,i);
-      }
-      Real op, oe, of, os;
-      if constexpr (decltype(idl)::value) {
-        M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
-      } else if (otype == M1_OPAC_TABLE) {
-        M1TableOpacities(ot, d, t, op, oe, of, os);
-      } else {
-        M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
-      }
-      opac_(m,M1_OP_P,k,j,i) = d*op;
-      opac_(m,M1_OP_E,k,j,i) = d*oe;
-      opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-      vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
-      vn_(m,1,k,j,i) = iw_(m,M1_IW_TP,k,j,i);
-      vn_(m,2,k,j,i) = iw_(m,M1_IW_KT,k,j,i);
-      iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
-      iw_(m,M1_IW_TP,k,j,i) = t;
-      iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
-    };
+    // nvcc forbids generic (auto) extended lambdas, so the tag-dependent
+    // helper and its kernel are the function template M1T2VcpLaunch
+    // (above); vcb_ctx is what the helper captured, by value.
+    auto vcb_ctx = std::make_tuple(aa, bb, dt, efl, eos, etg, gam, gdt, iw_, k1_, kev, kf,
+                                   kp, kss, opac_, ot, otype, phicc, rref, tref, two, u0_,
+                                   uh, vn_, nmb1, ks, ke, js, je, is, ie);
     if (vcid) {
-      par_for_lb("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
-        vcb(std::true_type{}, m, k, j, i);
-      });
+      M1T2VcpLaunch(vcb_ctx, std::true_type{});
     } else {
-      par_for_lb("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
-        vcb(std::false_type{}, m, k, j, i);
-      });
+      M1T2VcpLaunch(vcb_ctx, std::false_type{});
     }
   } else {
     par_for("m1_t2_vcr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
