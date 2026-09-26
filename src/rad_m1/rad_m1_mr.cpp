@@ -89,6 +89,14 @@ void RadiationM1::MRInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "dbg_hydro_off")) {
     dbg_hydro_off = pin->GetBoolean("rad_m1", "dbg_hydro_off");
   }
+  // implicit_mr_tab (ke-dt-0926, DIAGNOSTIC; read only when named): R(Delta) as the
+  // two-stage SDIRK2 (sdirk2, default) or as TR-BDF2 (trbdf2: stage order 2, FSAL slope
+  // K0 = the last R's final slope; the first R and any R after a fallback are SDIRK2)
+  mr_tab = 0;
+  if (pin->DoesParameterExist("rad_m1", "implicit_mr_tab")) {
+    mr_tab = (pin->GetString("rad_m1", "implicit_mr_tab").compare("trbdf2") == 0) ? 1 : 0;
+  }
+  mr_k0ok = false;
   mr_nsub = 1;
   if (pin->DoesParameterExist("rad_m1", "implicit_mr_nsub")) {
     mr_nsub = std::max(1, pin->GetInteger("rad_m1", "implicit_mr_nsub"));
@@ -233,6 +241,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   mr_on = true;
   mr_dt = dlt;
+  const Real nfall0 = mr_nfall;
   // Y_0, kept for a failed stage: radiation in u1 and the t2f* face copies, gas in the
   // hydro u1 (free between steps; stage A's formal solution also reads U^n there)
   Kokkos::deep_copy(DevExeSpace(), u1, u0);
@@ -248,7 +257,23 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
     pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
   };
   // stage A: old vector = Y_0, dt = g Delta, K_A -> t2k2
-  Kokkos::deep_copy(DevExeSpace(), t2inc, 0.0);
+  // (implicit_mr_tab = trbdf2: old vector Y_0 + g Delta K0, K0 = t2k1)
+  const bool trb = (mr_tab == 1) && mr_k0ok;
+  const Real wtr = 0.25*std::sqrt(2.0);
+  if (trb) {
+    const Real c0 = g*dlt;
+    auto k1_ = t2k1;
+    auto in_ = t2inc;
+    par_for("m1_mr_inc0", DevExeSpace(), 0, static_cast<int>(t2inc.extent(0)) - 1,
+            0, M1_T2_NK-1, 0, static_cast<int>(t2inc.extent(2)) - 1,
+            0, static_cast<int>(t2inc.extent(3)) - 1, 0,
+            static_cast<int>(t2inc.extent(4)) - 1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      in_(m,n,k,j,i) = c0*k1_(m,n,k,j,i);
+    });
+  } else {
+    Kokkos::deep_copy(DevExeSpace(), t2inc, 0.0);
+  }
   t2_solve = M1_T2S_STAGE1;
   t2_fail = false;
   nsub = 1;
@@ -256,7 +281,10 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   run_lists();
   if (!t2_fail) {
     // stage B from Y_A: old vector = Y_0 + (1-g) Delta K_A = Y_A + (1-2g) Delta K_A
-    const Real c = (1.0 - 2.0*g)*dlt;
+    // (trbdf2: old vector Y_0 + w Delta (K0 + K_A) = Y_A + (w - g) Delta (K0 + K_A))
+    const Real c = trb ? (wtr - g)*dlt : (1.0 - 2.0*g)*dlt;
+    const Real ck0 = trb ? (wtr - g)*dlt : 0.0;
+    auto k1_ = t2k1;
     auto k2_ = t2k2;
     auto in_ = t2inc;
     const int nmb1 = static_cast<int>(t2inc.extent(0)) - 1;
@@ -266,7 +294,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
     par_for("m1_mr_inc", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, n3-1, 0, n2-1,
             0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      in_(m,n,k,j,i) = c*k2_(m,n,k,j,i);
+      in_(m,n,k,j,i) = trb ? (c*k2_(m,n,k,j,i) + ck0*k1_(m,n,k,j,i)) : c*k2_(m,n,k,j,i);
     });
     t2_solve = M1_T2S_STAGE2;
     t2_fail = false;
@@ -299,6 +327,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
     pred2_ok = false;
     t2_vprev = false;
     mr_nfall += 1.0;
+    mr_k0ok = false;
     t2_solve = M1_T2S_NONE;
     int ns = SetSubsteps(dlt);
     for (int n = 0; n < ns; ++n) {
@@ -359,6 +388,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   t2_dtprev = dlt;
   // the stage state (K1, ipred2, vet_prev) is then written to restart files
   t2_ok = true;
+  mr_k0ok = (mr_nfall == nfall0);
   mr_nr += 1.0;
   mr_on = false;
 }
