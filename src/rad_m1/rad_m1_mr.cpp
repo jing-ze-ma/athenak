@@ -80,6 +80,13 @@ void RadiationM1::MRInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "implicit_mr_every")) {
     mr_every = pin->GetInteger("rad_m1", "implicit_mr_every");
   }
+  // implicit_mr_nsub (ke-dt-0926, DIAGNOSTIC; read only when named): each multi-rate or
+  // coupling_split radiation step R(Delta) is taken as nsub SDIRK2 steps of Delta/nsub,
+  // which separates the error of R itself from that of the H-R splitting
+  mr_nsub = 1;
+  if (pin->DoesParameterExist("rad_m1", "implicit_mr_nsub")) {
+    mr_nsub = std::max(1, pin->GetInteger("rad_m1", "implicit_mr_nsub"));
+  }
   // coupling_split (ke-dt-0926): read only when named; "default" = the paths above
   csplit = 0;
   if (pin->DoesParameterExist("rad_m1", "coupling_split")) {
@@ -205,7 +212,9 @@ void RadiationM1::MRStep(Driver *pdrive, Real dt) {
   mr_acc = 0.0;
   mr_kc = mr_kn;
   mr_ksum += static_cast<Real>(mr_kc);
-  MRSolve(pdrive, dlt);
+  for (int q = 0; q < mr_nsub; ++q) {
+    MRSolve(pdrive, dlt/static_cast<Real>(mr_nsub));
+  }
 }
 
 //----------------------------------------------------------------------------------------
