@@ -11,3 +11,4 @@ Every Viper GPU node, in both the apu and the apudev partition, has gres gpu:2, 
 
 **Why:** the user said on 09-26 "this is a recurring problem for you". Job 11980276 (gpu:4, 2 nodes on apudev) could never run, and I then wrongly told the user that apudev nodes have 4 GPUs.
 **How to apply:** before every sbatch, mine or an agent's, check the header against this. Put this rule in every agent brief that submits GPU jobs. Also see [[apudev-for-short-jobs]] and [[gpu-env-settings-all-jobs]].
+- The apu partition is OverSubscribe=EXCLUSIVE (checked 09-26): a 1-GPU job still gets and blocks a whole 2-GPU node. Pair two 1-GPU runs per job; resubmitting a lone arm on 1 GPU frees nothing.

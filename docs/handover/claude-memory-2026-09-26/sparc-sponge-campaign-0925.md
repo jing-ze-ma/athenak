@@ -50,3 +50,4 @@ Top-boundary arm SKIPPED (user 09-25): lowering the top to 1e-8/1e-7 bar saves o
 - base has the same precursor state and no collapse yet. The bottom sponge is NOT shown causal (one event).
 - Suggested fix, being gated: <hydro>/dfloor_keep_velocity, dfloor_keep_temperature, vceil ~1e7.
 - Open: why a seam row stays at the T-floor (ck seam face mixing or the seam ghost exchange?).
+- Floor-fix gate 09-26 (job 11982198): with <hydro>/dfloor_keep_velocity, dfloor_keep_temperature and vceil=1e7, both crashes are gone (nobot and notop ran past them, no warnings). vceil fired 355 / 1946 times near the old crash; floor counts unchanged. Stability only; accuracy not shown. User 09-26: LEAVE the decisions (continue nobot, production floor keys, base) for after the handover.
