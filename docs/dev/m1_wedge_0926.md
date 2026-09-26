@@ -218,7 +218,7 @@ may name rbgs_fwd). No default changed.
   25.7 ks): the mode decays, |<v_r>|/c_s 1.65e-4 -> 3.7e-5 and stays; Mach_r (tau >= 1) flat 9.1e-4
   (wall: 6.4e-3); L_top/L_in 1.000000, M_int drift 9e-4, dt 0.161 s unchanged (still set at r_in);
   cost +0.7-1.8 % per cycle (g8 job 11990669, 400-cycle A/B on 2 GPUs and on each GPU).
-  Recommended: wg_sponge_rate = 0.02 (in tests_m1/runs_6a_m1wedge/inp/he.athinput).
+  Now the DEFAULT (7.6).
 - The g7b sponge arm first ran at 0.57 s/cycle, and w6 slowed likewise after 20 000 cycles; both were
   the 1-rank GPU-1 half of a side-by-side launch on an apu node. g8 measured the same arms at
   12.4 ms/cycle on either GPU with identical iteration counts, so it is the launch, not the code:
@@ -266,6 +266,51 @@ lagged tensor, as expected).
 - Time2RstSet: the wedge (hesdirk2 + predictor) writes and reads the slope/predictor channels. The
   DeepCopyAcross fix came with the merge of f8f7232f (m1-port 48321155); GPU restart of the EVOLVED
   g4 state (g5 rs_str 250 cycles vs rs_rr 100 + 150): 3/3 rst payloads identical, hst rows verbatim.
+
+### 7.6 Follow-ups (09-26 night)
+**rbgs_fwd as the sp default: NOT flipped.** A confirmation from the evolved SPONGE state (g9 hw.00004.rst,
+84x32x32, t = 25.7 ks, 400 cycles, 3 interleaved repeats on 2 GPUs + a 1-GPU pair; `gpu/g10_n3`, job
+11991033) gives ms/cycle 9.25 (mg_gc) vs 8.92 (rbgs_fwd), -4.0 % per sim-s on 2 GPUs (rep spread ~1 %);
+1 GPU 8.96 vs 8.58, -4.3 %. Inner iterations per solve 1.16 (mg_gc) vs 1.20, Picard 1.00. The gain is
+under the 5 % bar, so the flip (commit badf65fd, gates not run) is parked on local branch
+m1-wedge-sp-rbgs. The -8.7 % of 7.2 was measured on the faster-moving closed-wall state (Mach 1e-2).
+
+**Top sponge ON by default in m1_test = sph_wedge** (736c49bf): wg_sponge_rate = 0.02 above
+wg_sponge_r0 = the IC's tau = wg_tau_int radius; wg_sponge_rate = 0 restores the old scheme.
+Gates (`gpu/g13` job 11991209, `gpu/g15` job 11991353, `gpu/gb2` jobs 11991211-3/11991355, vs base
+b5 = 5d6a68df): new default == old + explicit 0.02, and new + wg_sponge_rate 0 (+ wg_wall_zero_flux false)
+== old default: all bin/rst files and the old hst columns identical; restart of the new default bitwise;
+He box, dhj and T-S4 (sph_atm) fresh + restart bitwise (the T-S4 hydro.hst differs only by rows appended
+when b5 was run twice).
+
+**Zero-flux walls** (0d4a27f8, wg_wall_zero_flux, default true). The closed x1 walls were LEAKY: the
+ghosts carry the scaled initial profile, not the mirror image of the edge cell, so the Riemann flux through
+the wall face carried mass (L x 1: +1.0e-4 of the mass in 1.4 ks; the super-Eddington test below: -17 %
+in 2.5 ks). The earlier open-top +2.8 % in 36 ks was INFLOW through the top (the copied edge velocity
+pointed inward). Fix: after the update, the wall faces' mass, transverse-momentum and energy fluxes are
+taken back out of the edge cells (the pressure flux stays); wg_bc_top = open now mirrors an inward edge
+velocity and keeps only outward mass flux. Result (84x16x16, `gpu/g15`): wall dM/M0 = -3e-13 in 1.4 ks,
+open top -1.1e-5 once (initial settling) then constant; no inflow. hst gains M_tot, Mdot_top, Mdot_bot
+(Riemann face fluxes of the last stage, before the correction).
+
+**Open top for a super-Eddington envelope** (`gpu/g16_n6`, job 11991354): He wedge 84x16x16, F_in x 1.5
+(Gamma_max of the IC 0.75 -> 1.13 in the Fe bump), 2.8 min per arm, 2 GPUs:
+
+| arm | t reached | dM/M0 (0.65 / 1.3 / 2.0 / 2.6 ks) | dt min [s] | Mach (tau >= 1) end | L_top/L_in end | ms/cycle |
+| --- | --- | --- | --- | --- | --- | --- |
+| open, no sponge | 2 618 s | -0.38 / -0.41 / -0.43 / -0.44 | 0.1135 | 4.6e-3 | 1.0000 | 10.3 |
+| open + sponge | 2 719 s | -0.38 / -0.41 / -0.42 / -0.43 | 0.1170 | 4.6e-3 | 1.0000 | 9.9 |
+| wall + sponge | 2 502 s | 2e-13 (closed) | 0.1006 | 3.5e-2 | 0.9975 | 10.0 |
+| wall | 2 351 s | 1e-13 (closed) | 0.0995 | 4.9e-2 | 1.0031 | 10.6 |
+
+NON-CONVERGED 0 in all arms. With the open top the super-Eddington layer is expelled cleanly: 38 % of
+the mass in the first 650 s, then a declining wind (Mdot M0/Mdot ~ 2e4 -> 3e4 s in the earlier leaky run;
+-3 % of M0 over the last 2 ks here), the integrated top face flux equals the mass lost, no reflected
+pulse (interior Mach falls to 4.6e-3), dt is not limited at the top (min 0.114 s, set at r_in, vs 0.100 s
+closed), and the Marshak M1 face holds L_top/L_in = 1.0000 with outflowing gas. Closed or sponged, the
+expelled gas piles up under the lid (top density x 24 in the leaky run) and the interior stays 8-10x more
+agitated. Cost: same per cycle (10.3 vs 10.0-10.6 ms), cheaper per sim-s (larger dt). Not yet a steady
+wind in 2.6 ks; the top-density floor and a longer run decide wind vs inflated envelope.
 
 ## 8. What is next for a gravity-bearing He wedge
 1. Convection onset with the top sponge on (the g4 velocities were the closed-wall mode's waves):

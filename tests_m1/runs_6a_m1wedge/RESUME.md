@@ -78,6 +78,15 @@ no merge into rt-integration, no push of rt-integration.
   inp/he_bc.athinput = he.athinput + wg_bc_top/wg_sponge_rate keys (needed for command-line overrides).
 - CAUTION: 1-rank side-by-side launches on apu (g7/g7b, GPU 1 half) stalled to ~0.6 s/cycle; use 2 ranks.
 
+### 09-26 night (doc 7.6)
+- g10_n3 (11991033): mg_gc vs rbgs_fwd from the sponge state: -4.0 % (2 GPU), -4.3 % (1 GPU) < 5 % ->
+  flip NOT made; parked on local branch m1-wedge-sp-rbgs (badf65fd, ungated).
+- 736c49bf sponge default ON (0.02 above tau=1); 0d4a27f8 zero-flux walls (wg_wall_zero_flux, default
+  true) + outflow-only open top + hst M_tot/Mdot_top/Mdot_bot. Binaries n5 (736c49bf), n6 (0d4a27f8),
+  base b5 (5d6a68df). Gates: g13/g15 (scripts/g13cmp.py, g15cmp.py), gb2 (scripts/gb2compare.py): PASS.
+- g16_n6 (11991354): super-Eddington (F_in x 1.5) open vs wall vs sponge, 84x16x16; doc 7.6 table.
+  inp/he_nosp.athinput = he_bc without wg_sponge_rate (new default applies).
+
 ## Branch state
 - 09-26 evening: fast-forward to fork/rt-integration f8f7232f, then 317d4051 (open top + sponge,
   defaults off) and the doc/scripts commit; pushed to fork/m1-wedge.

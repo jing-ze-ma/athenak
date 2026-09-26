@@ -40,10 +40,14 @@
 //! velocity mirrored and the transverse velocity copied; so the initial state is its
 //! own ghost state, and a drifting edge cell drags its ghosts with it.  The M1 ghosts
 //! are a copy (inner) and dark (outer); the implicit solve imposes its own face BCs.
-//! <problem>/wg_bc_top = open (default wall) copies the edge cell's radial velocity into
-//! the outer ghosts instead of mirroring it (a transmissive top).
-//! <problem>/wg_sponge_rate > 0 (default 0 = off) damps the velocity above
-//! wg_sponge_r0 (default r_int) at the rate wg_sponge_rate*((r - r0)/(r_top - r0))^2.
+//! <problem>/wg_bc_top = open (default wall): an outflow-only top, the edge cell's radial
+//! velocity copied into the outer ghosts where it points outward, mirrored (the wall)
+//! where it points inward, so that no mass enters through the top.
+//! <problem>/wg_wall_zero_flux (default true) removes the mass, transverse momentum and
+//! energy fluxes through the x1 walls (inflow only through an open top) after the update.
+//! <problem>/wg_sponge_rate (default 0.02, in code time units; 0 = off) damps the
+//! velocity above wg_sponge_r0 (default r_int, the IC's tau = wg_tau_int radius) at the
+//! rate wg_sponge_rate*((r - r0)/(r_top - r0))^2.
 //!
 //! <problem>/wg_spot_amp > 0 adds an isochoric Gaussian temperature perturbation
 //! T -> T(1 + A exp(-d^2/(2 w^2))), E -> E (1 + ...)^4 (test C).
@@ -52,7 +56,8 @@
 //! interior face, the middle face, the face at r_int (tau = wg_tau_int of the initial
 //! state) and the Marshak face; L_in; E_rad; e_gas; and, over the interior r <= r_int,
 //! mass, KE, radial KE, radial momentum and sum p dV (Mach number = sqrt(2 KE/(Gamma
-//! PV))).
+//! PV))); the total mass and the Riemann mass flux times area through the top and bottom
+//! faces (last stage; before the wall correction).
 //!
 //! CUDA-safe: no lambdas inside kernels, no host reads of device Views (the fine column
 //! is built on the host and copied), no class members inside kernels.
@@ -88,7 +93,7 @@ Real wg_rlo_ = 0.0, wg_dr_ = 1.0;
 int wg_nf_ = 0;
 Real wg_gm_ = 0.0, wg_rin_ = 1.0, wg_rint_ = 0.0, wg_fin_ = 0.0;
 // outer x1 wall (wg_bc_top) and the top sponge (wg_sponge_rate, wg_sponge_r0)
-bool wg_top_open_ = false;
+bool wg_top_open_ = false, wg_zflux_ = true;
 Real wg_sp_rate_ = 0.0, wg_sp_r0_ = 0.0, wg_rtop_ = 1.0;
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
@@ -517,7 +522,10 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       std::exit(EXIT_FAILURE);
     }
     wg_top_open_ = (bt == "open");
-    wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.0);
+    wg_zflux_ = pin->GetOrAddBoolean("problem","wg_wall_zero_flux",true);
+    // DEFAULT ON (user 09-26): the closed outer wall traps a domain acoustic mode that
+    // a dt-dependent anti-damping drives (docs/dev/m1_wedge_0926.md 7.3); 0 = old scheme
+    wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.02);
     wg_sp_r0_ = pin->GetOrAddReal("problem","wg_sponge_r0",wg_rint_);
     wg_rtop_ = rtop;
   }
@@ -656,6 +664,35 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
     }
     u0(m,IM1,k,j,i) += src;
   });
+  // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
+  // Riemann flux through a "closed" wall carries mass (a 17 % loss in 2 500 s at Gamma
+  // 1.1).  wg_wall_zero_flux (default true) takes the wall face's mass, transverse
+  // momentum and energy fluxes back out of the edge cells (u0 was just updated with them,
+  // with this same beta dt); the pressure flux stays.  With wg_bc_top = open the outer
+  // face keeps outflow and loses only inflow.
+  if (wg_zflux_) {
+    auto flx1 = ph->uflx.x1f;
+    auto &mbbcs = pmbp->pmb->mb_bcs;
+    const bool topen = wg_top_open_;
+    par_for("wg_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
+        u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
+        u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
+        u0(m,IM3,k,j,is) -= f*flx1(m,IM3,k,j,is);
+        u0(m,IEN,k,j,is) -= f*flx1(m,IEN,k,j,is);
+      }
+      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user &&
+          !(topen && flx1(m,IDN,k,j,ie+1) > 0.0)) {
+        const Real f = bdt*area1(m,k,j,ie+1)/volume(m,k,j,ie);
+        u0(m,IDN,k,j,ie) += f*flx1(m,IDN,k,j,ie+1);
+        u0(m,IM2,k,j,ie) += f*flx1(m,IM2,k,j,ie+1);
+        u0(m,IM3,k,j,ie) += f*flx1(m,IM3,k,j,ie+1);
+        u0(m,IEN,k,j,ie) += f*flx1(m,IEN,k,j,ie+1);
+      }
+    });
+  }
   if (wg_sp_rate_ <= 0.0) return;
   // top sponge: the velocity relaxes to zero at the rate wg_sponge_rate*w,
   // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the
@@ -727,8 +764,9 @@ void RadM1WedgeBC(Mesh *pm) {
         const Real dg = sd*WgLogInterp(crho, rlo, dr, nf, rg);
         const Real eg = se*WgLogInterp(ceint, rlo, dr, nf, rg);
         const Real dm = uh(m,IDN,k,j,im);
-        // wall: v1 mirrored; open outer wall: v1 of the edge cell (zero gradient)
-        const Real v1 = (!lo && topen) ? uh(m,IM1,k,j,ia)/da : -uh(m,IM1,k,j,im)/dm;
+        // wall: v1 mirrored; open outer wall: v1 of the edge cell where it flows out
+        const Real v1e = uh(m,IM1,k,j,ia)/da;
+        const Real v1 = (!lo && topen && v1e > 0.0) ? v1e : -uh(m,IM1,k,j,im)/dm;
         const Real v2 = uh(m,IM2,k,j,im)/dm;
         const Real v3 = uh(m,IM3,k,j,im)/dm;
         uh(m,IDN,k,j,ig) = dg;
@@ -752,7 +790,7 @@ void RadM1WedgeBC(Mesh *pm) {
 
 void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  pdata->nhist = 13;
+  pdata->nhist = 16;
   pdata->label[0] = "L_bot";
   pdata->label[1] = "L_mid";
   pdata->label[2] = "L_int";
@@ -766,6 +804,9 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   pdata->label[10] = "Mr_int";
   pdata->label[11] = "PV_int";
   pdata->label[12] = "V_int";
+  pdata->label[13] = "M_tot";
+  pdata->label[14] = "Mdot_top";
+  pdata->label[15] = "Mdot_bot";
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -774,6 +815,7 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   auto *ph = pmbp->phydro;
   auto w0 = ph->w0;
+  auto fl1 = ph->uflx.x1f;
   auto eos = ph->peos->eos_data;
   auto *pm1 = pmbp->pradm1;
   auto ur = pm1->u0;
@@ -807,6 +849,9 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
     if (i == is) h.the_array[4] = fin*area1(m,k,j,i);
     h.the_array[5] = ur(m,radm1::M1_E,k,j,i)*vol;
     h.the_array[6] = w0(m,IEN,k,j,i)*vol;
+    h.the_array[13] = w0(m,IDN,k,j,i)*vol;
+    if (i == ie) h.the_array[14] = fl1(m,IDN,k,j,i+1)*area1(m,k,j,i+1);
+    if (i == is) h.the_array[15] = fl1(m,IDN,k,j,i)*area1(m,k,j,i);
     if (x1v(m,i) <= rint) {
       const Real d = w0(m,IDN,k,j,i);
       const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);

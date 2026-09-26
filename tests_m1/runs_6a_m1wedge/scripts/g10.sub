@@ -1,0 +1,32 @@
+#!/bin/bash -l
+#SBATCH -J wgG10
+#SBATCH -p apudev
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:00
+#SBATCH -o /viper/ptmp2/jinma/sprhd_0926/gpu/log/g10.%j.out
+# m1-wedge: mg_gc vs rbgs_fwd confirmation from the evolved SPONGE state (g9_n3/sp hw.00004.rst,
+# 84x32x32, t = 25 710 s, cycle 159757), 400 cycles/arm, interleaved, 3 repeats on 2 GPUs,
+# plus one 1-GPU pair (1 rank, GPU 0, sequential).  usage: sbatch g10.sub <bin tag>
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=1
+W=/viper/ptmp2/jinma/sprhd_0926; B=$W/bin/athena_$1_none_gpu; R=$W/gpu/g10_$1
+RST=$W/gpu/g9_n3/sp/rst/hw.00004.rst; C0=159757
+O="time/ndiag=40 output1/dt=1.0e9 output2/dt=1.0e9 output3/dt=1.0e9 output4/dcycle=1000000000 time/nlim=$((C0+400))"
+md5sum $B
+declare -A A
+A[ref]="rad_m1/implicit_precond=mg_gc"
+A[rbgs]="rad_m1/implicit_precond=rbgs_fwd"
+run() { local d=$1 np=$2; shift 2; mkdir -p $R/$d; cd $R/$d
+  srun --export=ALL -n $np --exact --cpus-per-task=24 bash -c \
+    'export ROCR_VISIBLE_DEVICES=$SLURM_LOCALID; exec "$0" "$@"' $B -r $RST $O "$@" -d $R/$d -t 00:01:30 > $R/$d/run.log 2>&1
+  echo "$d rc=$? $(date +%T) $(grep -c 'cycle limit' $R/$d/run.log)"; }
+for rep in 1 2 3; do for a in ref rbgs; do run ${a}_r$rep 2 ${A[$a]}; done; done
+for a in ref rbgs; do run ${a}g1_r1 1 ${A[$a]}; done
+echo "done $(date +%T)"
