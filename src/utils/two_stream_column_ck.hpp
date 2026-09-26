@@ -702,14 +702,15 @@ inline DvceArray5D<Real> *ck_co_ptr = nullptr;
 // per cell
 inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
 // ---- problem/ck_impl_lin: the factorisation, packed so that the linear kernel
-// captures few Views.  lP (m, q*nch + chain, i, k, j), q = 0..8: e0, cin, cout (the
-// half-layer triple), R on the below side of face i and 1/(1 + R beta_i) (i = icut ..
-// ie+1), the layer joining cells i and i+1 (i = icut .. ie-1): dslv/dB_i, dsuu/dB_{i+1}
-// and the face interpolation dt_l/dtc, and 2 (wfc/mu) kappa rho (the emission).
+// captures few Views.  lP (m, q*nch + chain, i, k, j), q = 0..5: R on the below side
+// of face i and 1/(1 + R beta_i) (i = icut .. ie+1), the layer joining cells i and i+1
+// (i = icut .. ie-1): dslv/dB_i, dsuu/dB_{i+1} and the face interpolation dt_l/dtc, and
+// 2 (wfc/mu) kappa rho (the emission).
 // lG (m, q, i, k, j), q = 0..3: beta at face i, A_{i-1}/A_i, the flux frame factor and
 // 1/dz.  lC (q, chain): the flux weight and the internal-flux datum at the cut.
-// ck-jlin: slots 0-2 are no longer written; the kernels read the triple from ck_c0,
-// ck_ci, ck_co, which hold the same numbers for as long as the factorisation lives.
+// The half-layer triple (e0, cin, cout; slots 0-2 before ck-store) is not packed: the
+// kernels read it from ck_c0, ck_ci, ck_co, which hold the same numbers for as long as
+// the factorisation lives.
 inline DvceArray5D<Real> *ck_linP_ptr = nullptr;
 inline DvceArray5D<Real> *ck_linG_ptr = nullptr;
 inline DvceArray2D<Real> *ck_linC_ptr = nullptr;
@@ -1001,9 +1002,9 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     ck_ci_ptr = new DvceArray5D<Real>("ck_ci", nmb, nc3, n13, n33, n23);
     ck_co_ptr = new DvceArray5D<Real>("ck_co", nmb, nc3, n13, n33, n23);
     ck_tpf_ptr = new DvceArray4D<Real>("ck_tpf", nmb, nch, n3, n2);
-    // problem/ck_impl_lin: nine more Reals per (cell, chain), four per cell
+    // problem/ck_impl_lin: six more Reals per (cell, chain), four per cell
     if (ck_impl_lin) {
-      ck_linP_ptr = new DvceArray5D<Real>("ck_lP", nmb, 9*nch, n1, n3, n2);
+      ck_linP_ptr = new DvceArray5D<Real>("ck_lP", nmb, 6*nch, n1, n3, n2);
       ck_linG_ptr = new DvceArray5D<Real>("ck_lG", nmb, 4, n1, n3, n2);
       ck_linC_ptr = new DvceArray2D<Real>("ck_lC", 2, nch);
       if (ck_impl_lin_thr == 1) {
