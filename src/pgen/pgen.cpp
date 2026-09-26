@@ -34,8 +34,11 @@
 #include "srcterms/turb_driver.hpp"
 #include "utils/two_stream_warm_rst.hpp"
 #include "utils/two_stream_ck_rst.hpp"
+#include "utils/deep_copy_across.hpp"
 #include "pgen.hpp"
 
+
+using deep_copy_across::DeepCopyAcross;
 
 namespace {
 //----------------------------------------------------------------------------------------
@@ -1359,13 +1362,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     if (wd_hyd) {
       read_slab("hydro pressure");
-      Kokkos::deep_copy(Kokkos::subview(phydro->wder, std::make_pair(0,nmb),
-                        static_cast<int>(IDPR), Kokkos::ALL, Kokkos::ALL,
-                        Kokkos::ALL), wtin);
+      DeepCopyAcross(Kokkos::subview(phydro->wder, std::make_pair(0,nmb),
+                     static_cast<int>(IDPR), Kokkos::ALL, Kokkos::ALL,
+                     Kokkos::ALL), wtin);
       read_slab("hydro Gamma_1");
-      Kokkos::deep_copy(Kokkos::subview(phydro->wder, std::make_pair(0,nmb),
-                        static_cast<int>(IDG1), Kokkos::ALL, Kokkos::ALL,
-                        Kokkos::ALL), wtin);
+      DeepCopyAcross(Kokkos::subview(phydro->wder, std::make_pair(0,nmb),
+                     static_cast<int>(IDG1), Kokkos::ALL, Kokkos::ALL,
+                     Kokkos::ALL), wtin);
       // both caches are in place: the first conversion to primitives of this run must
       // not re-derive them, or the restart is not a bitwise continuation.  See
       // Hydro::c2p_freeze_derived.
@@ -1373,13 +1376,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     if (wd_mhd) {
       read_slab("mhd pressure");
-      Kokkos::deep_copy(Kokkos::subview(pmhd->wder, std::make_pair(0,nmb),
-                        static_cast<int>(IDPR), Kokkos::ALL, Kokkos::ALL,
-                        Kokkos::ALL), wtin);
+      DeepCopyAcross(Kokkos::subview(pmhd->wder, std::make_pair(0,nmb),
+                     static_cast<int>(IDPR), Kokkos::ALL, Kokkos::ALL,
+                     Kokkos::ALL), wtin);
       read_slab("mhd Gamma_1");
-      Kokkos::deep_copy(Kokkos::subview(pmhd->wder, std::make_pair(0,nmb),
-                        static_cast<int>(IDG1), Kokkos::ALL, Kokkos::ALL,
-                        Kokkos::ALL), wtin);
+      DeepCopyAcross(Kokkos::subview(pmhd->wder, std::make_pair(0,nmb),
+                     static_cast<int>(IDG1), Kokkos::ALL, Kokkos::ALL,
+                     Kokkos::ALL), wtin);
       // the MHD counterpart of the line above; see MHD::c2p_freeze_derived
       pmhd->c2p_freeze_derived = true;
     }
@@ -1405,8 +1408,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       myoffset = offset_myrank;
       for (int n=0; n<npred_file; ++n) {
         read_slab("rad_m1 predictor");
-        Kokkos::deep_copy(Kokkos::subview(pradm1->ipred, std::make_pair(0,nmb), n,
-                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
+        DeepCopyAcross(Kokkos::subview(pradm1->ipred, std::make_pair(0,nmb), n,
+                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
       pradm1->pred_ok = true;
       pradm1->pred_dt = pred_dt_file;
