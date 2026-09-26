@@ -10,7 +10,7 @@ Tested 09-26 (/viper/ptmp2/jinma/mr_0926/RESUME.md). The code accepts mr only wi
 - Static wedge: k2/k4 are 1.6-1.7x SLOWER (iterations 3.6 -> 39/81). It relaxes back after the switch.
 - The old README gains (box -37 %, wedge -46 %) were measured on be and do not hold on hesdirk2 cfl 0.9.
 - Caveat: the mr box reference was quiescent, not convecting.
-**Verdict:** do not use, not even in relaxation ([[two-phase-relax-then-accurate]]).
+**Verdict:** the failure is the multi-rate sub-stepping, NOT cfl 0.9 (the mr-off reference at hesdirk2 cfl 0.9 ran clean). Do not use mr, not even in relaxation ([[two-phase-relax-then-accurate]]).
 Setup pitfalls:
 - viper SBATCH_EXPORT=NONE drops env vars;
 - a command-line key must exist in the input file;
