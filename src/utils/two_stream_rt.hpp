@@ -2112,18 +2112,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     }
     const int is_pp = is;
     const int nx1_pp = indcs.nx1;
-    auto X1V = [=] (const int m, const int i) {
+    auto X1V = KOKKOS_LAMBDA (const int m, const int i) {
       return pp_ ? CellCenterX(i-is_pp, nx1_pp, size.d_view(m).x1min,
                                size.d_view(m).x1max)
                  : x1v_(m,i);
     };
-    auto X1F = [=] (const int m, const int i) {
+    auto X1F = KOKKOS_LAMBDA (const int m, const int i) {
       return pp_ ? LeftEdgeX(i-is_pp, nx1_pp, size.d_view(m).x1min,
                              size.d_view(m).x1max)
                  : x1f_(m,i);
     };
     auto dx1_ = pmbp->pcoord->dx1;
-    auto DX1 = [=] (const int m, const int k, const int j, const int i) {
+    auto DX1 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return pp_ ? size.d_view(m).dx1 : dx1_(m,k,j,i);
     };
     // ---- THE TRANSVERSE ARC LENGTHS.  On a CURVILINEAR mesh size.dx2/dx3 are the
@@ -2136,10 +2136,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     const bool curv_ = pmbp->pmesh->use_cubed_sphere || pmbp->pmesh->use_spherical_polar;
     auto dx2_c_ = pmbp->pcoord->dx2;
     auto dx3_c_ = pmbp->pcoord->dx3;
-    auto DX2 = [=] (const int m, const int k, const int j, const int i) {
+    auto DX2 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return curv_ ? dx2_c_(m,k,j,i) : size.d_view(m).dx2;
     };
-    auto DX3 = [=] (const int m, const int k, const int j, const int i) {
+    auto DX3 = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return curv_ ? dx3_c_(m,k,j,i) : size.d_view(m).dx3;
     };
 
@@ -2202,7 +2202,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     }
     auto eicl_g = *rt_eiclamp_cnt;
     auto eos_uc_ = eos;
-    auto eiN = [=] (const int m, const int k, const int j, const int i) {
+    auto eiN = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       if (!usecons_) return w0_uc_(m,IEN,k,j,i);
       const Real ei_uc = EintFromCons(u0_uc_, m, k, j, i,
                                       cs_uc_ ? cosc_uc_(m,k,j) : 0.0, cs_uc_,
@@ -2252,7 +2252,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       }
     }
     const Real dfl_uc_ = eos.dfloor;
-    auto rhoN = [=] (const int m, const int k, const int j, const int i) {
+    auto rhoN = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       const Real d = usecons_ ? u0_uc_(m,IDN,k,j,i) : w0_uc_(m,IDN,k,j,i);
       if (d > 0.0) return d;                 // false for NaN too, as in eiN
       Kokkos::atomic_fetch_add(&stcl_g(0), 1);
@@ -2348,16 +2348,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     // dx1 View, and VLA wherever the code goes through DX1 (the grey sweep and the
     // apply kernel).  That is what makes the substitution bitwise inert on the box --
     // getting it the wrong way round reads the 1x1x1x1 dx1 placeholder there.
-    auto AFC = [=] (const int m, const int k, const int j, const int i) {
+    auto AFC = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return pp_ ? 1.0 : area1(m,k,j,i);
     };
-    auto ACC = [=] (const int m, const int k, const int j, const int i) {
+    auto ACC = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return pp_ ? 1.0 : volume(m,k,j,i)/dx1(m,k,j,i);
     };
-    auto VLS = [=] (const int m, const int k, const int j, const int i) {
+    auto VLS = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return pp_ ? dx1(m,k,j,i) : volume(m,k,j,i);
     };
-    auto VLA = [=] (const int m, const int k, const int j, const int i) {
+    auto VLA = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return pp_ ? DX1(m,k,j,i) : volume(m,k,j,i);
     };
     // ---- THE SPHERICAL FORM of the grey centre-to-centre sweep.  The J = A I
@@ -2372,22 +2372,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     // so the layer solve and the deposit are the plane-parallel ones they always were.
     // Both helpers are identically inert under rt_plane_parallel: beta is exactly 0 and
     // AUN/ACN are the very area factors the old expressions read.
-    auto BTF = [=] (const int m, const int k, const int j, const int f, const int ic) {
+    auto BTF = KOKKOS_LAMBDA (const int m, const int k, const int j, const int f,
+                              const int ic) {
       if (pp_) return 0.0;
       const Real ab = (f <= ic) ? area1(m,k,j,f) : volume(m,k,j,f-1)/dx1(m,k,j,f-1);
       const Real aa = (f > ie) ? area1(m,k,j,f) : volume(m,k,j,f)/dx1(m,k,j,f);
       return (aa - ab)/(aa + ab);
     };
-    auto MIXF = [=] (const Real bt, const Real ub, const Real da) {
+    auto MIXF = KOKKOS_LAMBDA (const Real bt, const Real ub, const Real da) {
       return bt*(da - ub);
     };
     // the area factors the OLD expression still spells out and the spherical form no
     // longer carries: exactly 1.0, read from the Views under rt_plane_parallel so that
     // the box's expression DAG -- and hipcc's FMA contraction -- is untouched
-    auto AUN = [=] (const int m, const int k, const int j, const int i) {
+    auto AUN = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return pp_ ? AFC(m,k,j,i) : 1.0;
     };
-    auto ACN = [=] (const int m, const int k, const int j, const int i) {
+    auto ACN = KOKKOS_LAMBDA (const int m, const int k, const int j, const int i) {
       return pp_ ? ACC(m,k,j,i) : 1.0;
     };
 
