@@ -708,6 +708,8 @@ inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
 // and the face interpolation dt_l/dtc, and 2 (wfc/mu) kappa rho (the emission).
 // lG (m, q, i, k, j), q = 0..3: beta at face i, A_{i-1}/A_i, the flux frame factor and
 // 1/dz.  lC (q, chain): the flux weight and the internal-flux datum at the cut.
+// ck-jlin: slots 0-2 are no longer written; the kernels read the triple from ck_c0,
+// ck_ci, ck_co, which hold the same numbers for as long as the factorisation lives.
 inline DvceArray5D<Real> *ck_linP_ptr = nullptr;
 inline DvceArray5D<Real> *ck_linG_ptr = nullptr;
 inline DvceArray2D<Real> *ck_linC_ptr = nullptr;
@@ -726,6 +728,94 @@ inline DvceArray4D<Real> *ck_cv_ptr = nullptr;
 // ck_impl_jac_lin: the per-chain partial of the third Jacobian entry (the first two go to
 // ck_lpf and ck_lps, free by then), (m, chain, i, k, j)
 inline DvceArray5D<Real> *ck_lpj_ptr = nullptr;
+// ck-jlin: the per-chain Jacobian coefficients of rt_chain_ck_jlin BEFORE the dB_b/dT
+// factor, (m, chain, i, k, j): dSrc_i/dB_{i-1} (masked to 0 where the row drops it) and
+// dSrc_i/dB_i; dSrc_i/dB_{i+1} (masked) lives in ck_lpj.  They depend on the stored
+// factorisation alone, so rt_chain_ck_jlin runs once per stored operator (ck_jlc_ok)
+// and every pass that builds the tridiagonal only multiplies them by dB/dT and sums.
+inline DvceArray5D<Real> *ck_ljm_ptr = nullptr;
+inline DvceArray5D<Real> *ck_lj0_ptr = nullptr;
+inline bool ck_jlc_ok = false;
+//! \struct CkJlP1
+//! \brief the state of pass 1 of rt_chain_ck_jlin: dSc/dB in the window (B_{i-2},
+//! B_{i-1}, B_i) below face i, and the face weights the layer below hands up
+struct CkJlP1 {
+  Real s0, s1, s2, fc0, fc1, uc0, uc1;
+};
+//! \fn void CkJlP1Step
+//! \brief one layer (cell i) of pass 1, shared by rt_chain_ck_jlin and ck_lin_build
+//! (which fuses pass 1 on the pass that builds the tridiagonal): the same expressions
+//! in one place.  up = (i < ie); wl, wu, ffj are then lP slots 5-7 of the layer i, i+1.
+KOKKOS_INLINE_FUNCTION
+void CkJlP1Step(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Real ffj,
+                const Real ci, const Real co, const Real e0, const Real rj,
+                const Real idn, const Real bt) {
+  // slots (B_{i-1}, B_i, B_{i+1}); the first is 0 for all three
+  Real dlv1 = 1.0, dlv2 = 0.0, duu1 = 1.0, duu2 = 0.0;
+  Real dfw1 = 1.0, dfw2 = 0.0;
+  if (up) {
+    const Real dfl = (1.0 - ffj)*wl + ffj*(1.0 - wu);
+    dlv1 = wl;
+    dlv2 = 1.0 - wl;
+    duu1 = 1.0 - wu;
+    duu2 = wu;
+    dfw1 = dfl;
+    dfw2 = 1.0 - dfl;
+  }
+  const Real tj = 1.0 - e0;
+  const Real r1 = (rj + bt)*idn;
+  const Real r2 = tj*tj*r1;
+  const Real c1 = (1.0 - bt)*idn;
+  auto upd = [&](const Real dsf, const Real dsu, const Real dlv, const Real dfw,
+                 const Real so) {
+    const Real dpl = ci*dsf + co*dsu;
+    const Real dql = ci*dsu + co*dsf;
+    const Real dpu = ci*dlv + co*dfw;
+    const Real dqu = ci*dfw + co*dlv;
+    const Real s2 = tj*(r1*dql + c1*so) + dpl;
+    return tj*(r2*dqu + s2) + dpu;
+  };
+  const Real n0 = upd(w.fc0, w.uc0, 0.0, 0.0, w.s1);
+  const Real n1 = upd(w.fc1, w.uc1, dlv1, dfw1, w.s2);
+  const Real n2 = upd(0.0, 0.0, dlv2, dfw2, 0.0);
+  w.s0 = n0;
+  w.s1 = n1;
+  w.s2 = n2;
+  w.fc0 = dfw1;
+  w.fc1 = dfw2;
+  w.uc0 = duu1;
+  w.uc1 = duu2;
+}
+//! \fn CkJlP1 CkJlP1Init
+//! \brief the window at the cut; gdf >= 0: the flux datum of a ck_dif_dtau handover
+KOKKOS_INLINE_FUNCTION
+CkJlP1 CkJlP1Init(const Real gdf) {
+  CkJlP1 w{0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0};
+  if (gdf >= 0.0) {
+    w.s1 = gdf;
+    w.s2 = -gdf;
+  }
+  return w;
+}
+//! \fn Real CkMulRn
+//! \brief a*b rounded on its own, never contracted into an FMA with a following add:
+//! the product ck_jlin_sum adds is then bitwise the one rt_chain_ck_jlin used to store
+KOKKOS_INLINE_FUNCTION
+double CkMulRn(const double a, const double b) {
+#if defined(__CUDA_ARCH__)
+  return __dmul_rn(a, b);
+#else
+  return a*b;
+#endif
+}
+KOKKOS_INLINE_FUNCTION
+float CkMulRn(const float a, const float b) {
+#if defined(__CUDA_ARCH__)
+  return __fmul_rn(a, b);
+#else
+  return a*b;
+#endif
+}
 // ---- problem/ck_impl_warm: the total increment this call has applied so far, carried
 // over to seed the next one, and the seed actually applied (so that e^n can be recorded
 // net of it)
@@ -845,8 +935,13 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     }
     if (ck_lpj_ptr != nullptr) {
       delete ck_lpj_ptr;
+      delete ck_ljm_ptr;
+      delete ck_lj0_ptr;
       ck_lpj_ptr = nullptr;
+      ck_ljm_ptr = nullptr;
+      ck_lj0_ptr = nullptr;
     }
+    ck_jlc_ok = false;
     if (ck_rsr_ptr != nullptr) {
       delete ck_rsr_ptr;
       delete ck_rse_ptr;
@@ -920,6 +1015,9 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       }
       if (ck_impl_jac_lin && ck_impl_lin_thr == 1) {
         ck_lpj_ptr = new DvceArray5D<Real>("ck_lpj", nmb, nch, n1, n3, n2);
+        ck_ljm_ptr = new DvceArray5D<Real>("ck_ljm", nmb, nch, n1, n3, n2);
+        ck_lj0_ptr = new DvceArray5D<Real>("ck_lj0", nmb, nch, n1, n3, n2);
+        ck_jlc_ok = false;
       }
     }
   }
