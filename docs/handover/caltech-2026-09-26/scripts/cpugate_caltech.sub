@@ -1,0 +1,32 @@
+#!/bin/bash -l
+#SBATCH -J cpugate
+#SBATCH -A carnegie_poc
+#SBATCH -p expansion
+#SBATCH -q debug
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=8
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=64G
+#SBATCH --time=00:28:00
+#SBATCH -o log.out.%j
+#SBATCH -e log.err.%j
+# CPU bitwise gate: A=<old tag> B=<new tag> sbatch cpugate_caltech.sub
+# Runs both CPU binaries on the WASP-121b 1x base arm (production keys, 20 cycles, 8 ranks) in
+# ./A and ./B, then cmp's every rst and the hst.  BITWISE = all identical.
+module purge
+module load gcc/13.2.0-gcc-13.2.0-w55nxkl openmpi/5.0.1-gcc-13.2.0-xpoh5uw
+S=/resnick/home/jingze/ATHENAK/athenak/docs/handover/caltech-2026-09-26/scripts
+B0=/resnick/home/jingze/ATHENAK/builds
+W=$PWD
+for T in $A $B; do
+  PFX=$W/$T BIN=$B0/athena_${T}_cpu NLIM=${NLIM:-20} WALL=00:12:00 CPURUN=1 DRY=1 \
+    bash $S/run_caltech.sub base | grep '^DRY' | sed 's/^DRY base: //' > $W/cmd_$T
+  mkdir -p $W/$T/base
+  ( cd $W/$T/base && srun --mpi=pmix -n ${SLURM_NTASKS} $(cat $W/cmd_$T) > run.log 2>&1 )
+  echo "$T rc=$? $(grep -c 'Terminating on cycle limit' $W/$T/base/run.log)"
+done
+ok=1
+for f in $(cd $W/$A/base && ls rst/*.rst *.hst); do
+  if cmp -s $W/$A/base/$f $W/$B/base/$f; then echo "SAME $f"; else echo "DIFF $f"; ok=0; fi
+done
+[ $ok = 1 ] && echo "GATE BITWISE $A vs $B" || echo "GATE NOT BITWISE $A vs $B"
