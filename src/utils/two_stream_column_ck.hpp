@@ -708,6 +708,8 @@ inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
 // and the face interpolation dt_l/dtc, and 2 (wfc/mu) kappa rho (the emission).
 // lG (m, q, i, k, j), q = 0..3: beta at face i, A_{i-1}/A_i, the flux frame factor and
 // 1/dz.  lC (q, chain): the flux weight and the internal-flux datum at the cut.
+// ck-jlin: slots 0-2 are no longer written; the kernels read the triple from ck_c0,
+// ck_ci, ck_co, which hold the same numbers for as long as the factorisation lives.
 inline DvceArray5D<Real> *ck_linP_ptr = nullptr;
 inline DvceArray5D<Real> *ck_linG_ptr = nullptr;
 inline DvceArray2D<Real> *ck_linC_ptr = nullptr;

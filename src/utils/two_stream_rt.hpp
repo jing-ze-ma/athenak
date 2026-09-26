@@ -6445,9 +6445,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   suu = wu*bfar + (1.0 - wu)*bown;
                   sfv = slv + (suu - slv)*lP_g(m,7*nch_+cw,i,k,j);
                 }
-                const Real e0 = lP_g(m,c,i,k,j);
-                const Real cin = lP_g(m,nch_+c,i,k,j);
-                const Real cout = lP_g(m,2*nch_+c,i,k,j);
+                const Real e0 = ckc0_g(m,c,i,k,j);
+                const Real cin = ckci_g(m,c,i,k,j);
+                const Real cout = ckco_g(m,c,i,k,j);
                 const Real tr = 1.0 - e0;
                 const Real pl = cin*sfc[cc] + cout*suc[cc];
                 const Real ql = cin*suc[cc] + cout*sfc[cc];
@@ -6509,9 +6509,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   suv = wu*bown + (1.0 - wu)*bfar;
                   sfv = snl + (suv - snl)*lP_g(m,7*nch_+cw,i-1,k,j);
                 }
-                const Real e0 = lP_g(m,c,i,k,j);
-                const Real cin = lP_g(m,nch_+c,i,k,j);
-                const Real cout = lP_g(m,2*nch_+c,i,k,j);
+                const Real e0 = ckc0_g(m,c,i,k,j);
+                const Real cin = ckci_g(m,c,i,k,j);
+                const Real cout = ckco_g(m,c,i,k,j);
                 const Real tr = 1.0 - e0;
                 const Real wfc = lC_g(0,c);
                 const Real wz = wfc*idz;
@@ -6622,9 +6622,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 suu = wu*bnext + (1.0 - wu)*bown;
                 sfv = slv + (suu - slv)*lP_g(m,7*nch_+cw,i,k,j);
               }
-              const Real e0 = lP_g(m,c,i,k,j);
-              const Real cin = lP_g(m,nch_+c,i,k,j);
-              const Real cout = lP_g(m,2*nch_+c,i,k,j);
+              const Real e0 = ckc0_g(m,c,i,k,j);
+              const Real cin = ckci_g(m,c,i,k,j);
+              const Real cout = ckco_g(m,c,i,k,j);
               const Real tr = 1.0 - e0;
               const Real pl = cin*sfc + cout*suc;
               const Real ql = cin*suc + cout*sfc;
@@ -6668,9 +6668,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 suv = wu*bown + (1.0 - wu)*bnext;
                 sfv = snl + (suv - snl)*lP_g(m,7*nch_+cw,i-1,k,j);
               }
-              const Real e0 = lP_g(m,c,i,k,j);
-              const Real cin = lP_g(m,nch_+c,i,k,j);
-              const Real cout = lP_g(m,2*nch_+c,i,k,j);
+              const Real e0 = ckc0_g(m,c,i,k,j);
+              const Real cin = ckci_g(m,c,i,k,j);
+              const Real cout = ckco_g(m,c,i,k,j);
               const Real tr = 1.0 - e0;
               const Real wz = wfc*lG_g(m,3,i,k,j);
               Real src = 0.0;
@@ -6756,9 +6756,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
               for (int q=0; q<2; ++q) {
                 const int c = c0 + q;
-                const Real e0 = lP_g(m,c,i,k,j);
-                const Real cin = lP_g(m,nch_+c,i,k,j);
-                const Real cout = lP_g(m,2*nch_+c,i,k,j);
+                const Real e0 = ckc0_g(m,c,i,k,j);
+                const Real cin = ckci_g(m,c,i,k,j);
+                const Real cout = ckco_g(m,c,i,k,j);
                 const Real tr = 1.0 - e0;
                 const Real pl = cin*sfc + cout*suc;
                 const Real ql = cin*suc + cout*sfc;
@@ -6813,9 +6813,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real g3 = lG_g(m,3,i,k,j);
               for (int q=0; q<2; ++q) {
                 const int c = c0 + q;
-                const Real e0 = lP_g(m,c,i,k,j);
-                const Real cin = lP_g(m,nch_+c,i,k,j);
-                const Real cout = lP_g(m,2*nch_+c,i,k,j);
+                const Real e0 = ckc0_g(m,c,i,k,j);
+                const Real cin = ckci_g(m,c,i,k,j);
+                const Real cout = ckco_g(m,c,i,k,j);
                 const Real tr = 1.0 - e0;
                 const Real wz = wfc[q]*g3;
                 Real src = 0.0;
@@ -7109,9 +7109,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real e0 = ckc0_g(m,c,i,k,j);
                 const Real ci = ckci_g(m,c,i,k,j);
                 const Real co = ckco_g(m,c,i,k,j);
-                lP_g(m,c,i,k,j) = e0;
-                lP_g(m,nch_+c,i,k,j) = ci;
-                lP_g(m,2*nch_+c,i,k,j) = co;
+                // ck-jlin: slots 0-2 (the half-layer triple) are NOT copied: the
+                // linear kernels read ckc0/ckci/ckco, which this pass stored and which
+                // stay frozen with the rest of the factorisation
                 const RtF tr = static_cast<RtF>(1.0) - static_cast<RtF>(e0);
                 rr = tr*tr*rn;
                 rr = tr*tr*rr;
@@ -7210,8 +7210,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     const Real wl = up ? lP_g(m,5*nch_+cw,i,k,j) : 0.0;
                     const Real wu = up ? lP_g(m,6*nch_+cw,i,k,j) : 0.0;
                     const Real ffj = up ? lP_g(m,7*nch_+cw,i,k,j) : 0.0;
-                    CkJlP1Step(w, up, wl, wu, ffj, lP_g(m,nch_+c,i,k,j),
-                               lP_g(m,2*nch_+c,i,k,j), lP_g(m,c,i,k,j),
+                    CkJlP1Step(w, up, wl, wu, ffj, ckci_g(m,c,i,k,j),
+                               ckco_g(m,c,i,k,j), ckc0_g(m,c,i,k,j),
                                lP_g(m,3*nch_+c,i,k,j), lP_g(m,4*nch_+c,i,k,j),
                                lG_g(m,0,i,k,j));
                   }
@@ -7236,9 +7236,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   jQ = be;
                 }
                 for (int i=ie; i>icut-1; --i) {
-                  const Real ci = lP_g(m,nch_+c,i,k,j);
-                  const Real co = lP_g(m,2*nch_+c,i,k,j);
-                  const Real tj = 1.0 - lP_g(m,c,i,k,j);
+                  const Real ci = ckci_g(m,c,i,k,j);
+                  const Real co = ckco_g(m,c,i,k,j);
+                  const Real tj = 1.0 - ckc0_g(m,c,i,k,j);
                   // the layer joining cells i-1 and i: slots (B_{i-1}, B_i); the third
                   // (B_{i+1}) is 0 for all three
                   Real duv0 = 0.0, duv1 = 1.0, dnl0 = 0.0, dnl1 = 1.0;
