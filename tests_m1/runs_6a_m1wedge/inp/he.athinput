@@ -123,8 +123,9 @@ wg_nfine   = 8192
 wg_seed_k  = 0.0
 wg_seed_rlo = 0.0
 wg_seed_rhi = 0.0
-wg_bc_top  = wall       # closed outer wall; open = transmissive (kills the 59-s mode but the column settles, M_int +2.8 % in 36 000 s)
-wg_sponge_rate = 0.02   # top sponge above r(tau=1): damps the closed-wall 59-s acoustic mode, +1-2 % cost (runs 0926 g8/g9)
+wg_bc_top  = wall       # closed outer wall; open = outflow-only top (for super-Eddington envelopes, doc 7.6)
+wg_wall_zero_flux = true   # default: no mass through the walls (the scaled-profile ghosts leaked)
+wg_sponge_rate = 0.02   # the default: top sponge above r(tau=1), damps the closed-wall 59-s mode (doc 7.3)
 user_srcs  = true
 user_hist  = true
 
