@@ -6599,12 +6599,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                    : CkDum<DvceArray5D<Real>>("ck_lpf_d");
         // the per-block sums of the linear re-apply (shared by lin1 and lin1p)
         auto launch_ck_lin_sum = [&]() {
-          CkParFor4("rt_chain_ck_lin_sum", cklw_, 0, nmb1, 0, nblk-1, ks, ke, js, je,
-          KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
+          // ck-next: a thread per (block, face) instead of per block: the same sums
+          par_for("rt_chain_ck_lin_sum", DevExeSpace(), 0, nmb1, 0, nblk-1, is, ie+1,
+                  ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int blk, const int i, const int k,
+                        const int j) {
             constexpr int NC = RT_NB;
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
             const int icut = icc_g(m,k,j);
-            for (int i=is; i<ie+2; ++i) {
+            {
               Real src = 0.0, fb = 0.0, em = 0.0;
               if (i >= icut && icut <= ie) {
                 for (int cc=0; cc<NC; ++cc) {
