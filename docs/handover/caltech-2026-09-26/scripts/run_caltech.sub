@@ -2,6 +2,7 @@
 #SBATCH -J w121
 #SBATCH -A carnegie_poc
 #SBATCH -p gpu
+#SBATCH --exclude=hpc-sm-01-09   # bad H200 node on 09-26 (~6.6x slow, OOM); remove when fixed
 #SBATCH -N 1
 #SBATCH --gres=gpu:nvidia_h200:1
 #SBATCH --ntasks-per-node=1
