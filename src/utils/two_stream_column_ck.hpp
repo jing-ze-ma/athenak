@@ -248,7 +248,9 @@ inline bool ck_impl_once = false;
 // operator is stored yet, (b) k or more cycles have passed since the store, or (c)
 // problem/ck_impl_xstep_thr > 0 and some cell of the ck domain has moved by more than
 // that relative amount in T or rho since the store (checked on the current state, after
-// rt_pre_tp of pass 0).  Needs frozen_op + lin + jac_lin.
+// rt_pre_tp of pass 0).  Needs frozen_op + lin + jac_lin.  The KEY defaults to 8 since
+// default-flips where ck_impl_every > 1 and the stored operator exists, 0 otherwise
+// (deep_hot_jupiter_rt reads it).
 inline int ck_impl_xstep = 0;
 inline Real ck_impl_xstep_thr = 0.0;
 // set per call by the pass function (pass 0): this call re-applies a stored operator
