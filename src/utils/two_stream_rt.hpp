@@ -1102,6 +1102,8 @@ inline bool ck_beam_sph = false;
 // deposits below e^-60 of the incident beam.  Needs ck_impl_lin, lin_thr = 1 (scratch).
 inline bool ck_beam_par = false;
 inline DvceArray4D<int> *ck_bstop_ptr = nullptr;   // (m, beam chain, k, j)
+// ck-next: ck_coef's per-cell inputs xT, xP, rho, dz as (m, q, i, k, j), j fastest
+inline DvceArray5D<Real> *ck_cin_ptr = nullptr;
 // problem/ck_store_split (ck-store): on the storing pass of the linear re-apply, store the
 // opacity-only operator with a per-(band, g) kernel (ck_coef) and take the pass's fluxes
 // from the linear kernels, instead of running rt_chain_ck (see ckstsp_ in the pass).  The
@@ -6902,6 +6904,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         auto launch_ck_coef = [&]() {
           const int nqc = ck_nq_;
           const int ngr = nch_/nqc;           // chains per thread: the nq angles
+          // ck-next: the cell inputs, read (k, j, i) -- strided by n1 across a warp --
+          // by every one of the ngr threads of a column, are copied once to a j-fastest
+          // View; ck_coef reads the copies (the same numbers: bitwise)
+          if (ck_cin_ptr == nullptr) {
+            ck_cin_ptr = new DvceArray5D<Real>("ck_cin", nmb1+1, 4, n1, n3, n2);
+          }
+          auto cin_g = *ck_cin_ptr;
+          par_for("ck_coef_in", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            if (i < icc_g(m,k,j)) return;
+            cin_g(m,0,i,k,j) = xT_g(m,k,j,i);
+            cin_g(m,1,i,k,j) = xP_g(m,k,j,i);
+            cin_g(m,2,i,k,j) = rhoN(m,k,j,i);
+            cin_g(m,3,i,k,j) = dx1(m,k,j,i);
+          });
           CkParFor4("ck_coef", cklw_, 0, nmb1, 0, ngr-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int p, const int k, const int j) {
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
@@ -6938,10 +6956,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
             }
             for (int i=icut; i<ie+1; ++i) {
-              const Real rho = rhoN(m,k,j,i);
-              const Real dz = dx1(m,k,j,i);
-              const Real xTv = xT_g(m,k,j,i);
-              const Real xPv = xP_g(m,k,j,i);
+              const Real rho = cin_g(m,2,i,k,j);
+              const Real dz = cin_g(m,3,i,k,j);
+              const Real xTv = cin_g(m,0,i,k,j);
+              const Real xPv = cin_g(m,1,i,k,j);
               const int iT = static_cast<int>(xTv);
               const int iP = static_cast<int>(xPv);
               const Real fT = xTv - static_cast<Real>(iT);

@@ -706,8 +706,8 @@ inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
 // of face i and 1/(1 + R beta_i) (i = icut .. ie+1), the layer joining cells i and i+1
 // (i = icut .. ie-1): dslv/dB_i, dsuu/dB_{i+1} and the face interpolation dt_l/dtc, and
 // 2 (wfc/mu) kappa rho (the emission).
-// lG (m, q, i, k, j), q = 0..3: beta at face i, A_{i-1}/A_i, the flux frame factor and
-// 1/dz.  lC (q, chain): the flux weight and the internal-flux datum at the cut.
+// lG (m, q, i, k, j), q = 0..4: beta at face i, A_{i-1}/A_i, the flux frame factor,
+// 1/dz and dz (ck-next).  lC (q, chain): the flux weight and the internal-flux datum at the cut.
 // The half-layer triple (e0, cin, cout; slots 0-2 before ck-store) is not packed: the
 // kernels read it from ck_c0, ck_ci, ck_co, which hold the same numbers for as long as
 // the factorisation lives.
