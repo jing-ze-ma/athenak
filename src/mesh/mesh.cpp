@@ -143,45 +143,53 @@ Mesh::Mesh(ParameterInput *pin) :
   cs_vertex_fill_cc = use_cubed_sphere &&
                       pin->GetOrAddBoolean("mesh", "cs_vertex_fill_cc", false);
   // `<mesh>/cs_seam_flux`: how the two panels' fluxes through a seam face are made one
-  // (bvals/flux_seam_cc.cpp).  `average` (DEFAULT, the historical answer, bitwise) takes
-  // the mean of the two outward fluxes.  Each panel computes its flux from INTERPOLATED
-  // ghosts of the other, so near a cell-scale structure along the seam the two disagree,
-  // and the mean can take out of a near-empty seam cell far more than its own Riemann
-  // solve allows (a positivity violation; docs/dev/cs_seam_defect_0926.md: up to 40x the
-  // cell's mass per step, the cause of the seam dt collapses of the WASP-121b arms).
-  // `upwind`: when both panels agree on the direction of the MASS flux, every variable
-  // takes the DONOR panel's own flux (computed from the donor's true state); otherwise
-  // the mean.  `positive`: as upwind, and when both claim INFLOW the convex weights that
-  // make the mass flux zero.  All three are exactly conservative; on smooth flow they
-  // differ at the truncation-error level.
-  // `<mesh>/cs_seam_rho_guard` = R (DEFAULT 0 = off, bitwise).  The along-seam resample
-  // interpolates the seam ghost from three cells of the other panel.  Across a density
-  // edge only a cell or two wide -- an emptied seam cell, a hole at a cube vertex -- the
-  // quadratic lands between the empty and the full cells, and the ghost next to an empty
-  // cell comes out dense (measured 0.37 next to 1e-4).  Both panels then see a dense
-  // neighbour and both claim INFLOW through their common face; no reconciliation of the
-  // two fluxes is then right (docs/dev/cs_seam_defect_0926.md, "Vertex").  With R > 1,
-  // a ghost cell whose resampled density differs from its plain-copy source cell -- the
-  // cell that actually shares the face -- by more than a factor R takes the plain copy
-  // for EVERY variable (first order there, the pre-resample halo).  Smooth data never
-  // differ by a factor R > 1.5 at resolution, so the smooth answer is untouched.  It
-  // acts in the halo only, so the seam update stays exactly conservative.
+  // (bvals/flux_seam_cc.cpp).  DEFAULT `positive` (since 09-26; the three cs seam keys
+  // below were made default-on together).  `average` (the historical answer before 09-26,
+  // select it explicitly for the old scheme) takes the mean of the two outward fluxes.
+  // Each panel computes its flux from INTERPOLATED ghosts of the other, so near a
+  // cell-scale structure along the seam the two disagree, and the mean can take out of a
+  // near-empty seam cell far more than its own Riemann solve allows (a positivity
+  // violation; docs/dev/cs_seam_defect_0926.md: up to 40x the cell's mass per step, the
+  // cause of the seam dt collapses of the WASP-121b arms). `upwind`: when both panels
+  // agree on the direction of the MASS flux, every variable takes the DONOR panel's own
+  // flux (computed from the donor's true state); otherwise the mean.  `positive`: as
+  // upwind, and when both claim INFLOW the convex weights that make the mass flux zero.
+  // All three are exactly conservative; on smooth flow they differ at the
+  // truncation-error level.
+  // RESTART NOTE: all three keys are GetOrAdd, so a restart file written by this code
+  // carries its values; an OLD restart (written before 09-26, no such keys in its input
+  // section) picks up the NEW defaults, i.e. restarting an old run changes its seam
+  // scheme.  Give cs_seam_flux = average, cs_seam_resample = quadratic and
+  // cs_seam_rho_guard = 0 (in an -i overlay) to continue it with the old one.
+  // `<mesh>/cs_seam_rho_guard` = R (DEFAULT 4 since 09-26; 0 = off, the old halo). The
+  // along-seam resample interpolates the seam ghost from three cells of the other panel.
+  // Across a density edge only a cell or two wide -- an emptied seam cell, a hole at a
+  // cube vertex -- the quadratic lands between the empty and the full cells, and the
+  // ghost next to an empty cell comes out dense (measured 0.37 next to 1e-4).  Both
+  // panels then see a dense neighbour and both claim INFLOW through their common face; no
+  // reconciliation of the two fluxes is then right (docs/dev/cs_seam_defect_0926.md,
+  // "Vertex").  With R > 1, a ghost cell whose resampled density differs from its
+  // plain-copy source cell -- the cell that actually shares the face -- by more than a
+  // factor R takes the plain copy for EVERY variable (first order there, the pre-resample
+  // halo).  Smooth data never differ by a factor R > 1.5 at resolution, so the smooth
+  // answer is untouched.  It acts in the halo only, so the seam update stays exactly
+  // conservative.
   cs_seam_rho_guard = use_cubed_sphere ?
-      pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 0.0) : 0.0;
-  // `<mesh>/cs_seam_resample = quadratic (DEFAULT, bitwise) | linear`, again for the
-  // fluid's conserved state only.  The quadratic along-seam resample has a NEGATIVE
-  // weight whenever it interpolates, and it is clamped variable by variable, so the
-  // ghost it builds is not a convex combination of the donor cells: next to a cell the
-  // floors have just reset (p at the floor, momentum kept) it can hand out a ghost with
-  // E < KE, which ConToPrim floors again with a large velocity, and the seam Riemann
+      pin->GetOrAddReal("mesh", "cs_seam_rho_guard", 4.0) : 0.0;
+  // `<mesh>/cs_seam_resample = linear (DEFAULT since 09-26) | quadratic (the old halo)`,
+  // again for the fluid's conserved state only.  The quadratic along-seam resample has a
+  // NEGATIVE weight whenever it interpolates, and it is clamped variable by variable, so
+  // the ghost it builds is not a convex combination of the donor cells: next to a cell
+  // the floors have just reset (p at the floor, momentum kept) it can hand out a ghost
+  // with E < KE, which ConToPrim floors again with a large velocity, and the seam Riemann
   // solve then drains the neighbour (the cube-vertex hole of
-  // docs/dev/cs_seam_defect_0926.md).  `linear` interpolates between the two donor
-  // cells that bracket the target, weights >= 0: a convex combination of admissible
-  // states is admissible.  Measured cost on the smooth rigid rotation (n32): L1(v)
-  // +0.9 %, L1(p) -0.6 % against the quadratic.  Use it together with cs_seam_rho_guard.
+  // docs/dev/cs_seam_defect_0926.md).  `linear` interpolates between the two donor cells
+  // that bracket the target, weights >= 0: a convex combination of admissible states is
+  // admissible.  Measured cost on the smooth rigid rotation (n32): L1(v) +0.9 %, L1(p)
+  // -0.6 % against the quadratic.  Use it together with cs_seam_rho_guard.
   cs_seam_resample_linear = false;
   if (use_cubed_sphere) {
-    std::string rs = pin->GetOrAddString("mesh", "cs_seam_resample", "quadratic");
+    std::string rs = pin->GetOrAddString("mesh", "cs_seam_resample", "linear");
     if (rs == "linear") {
       cs_seam_resample_linear = true;
     } else if (rs != "quadratic") {
@@ -193,7 +201,7 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   cs_seam_flux = 0;
   if (use_cubed_sphere) {
-    std::string sf = pin->GetOrAddString("mesh", "cs_seam_flux", "average");
+    std::string sf = pin->GetOrAddString("mesh", "cs_seam_flux", "positive");
     if (sf == "average") {
       cs_seam_flux = 0;
     } else if (sf == "upwind") {
