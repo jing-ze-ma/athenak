@@ -31,3 +31,7 @@ Options (validation /viper/ptmp2/jinma/h2val_0924/README.md, 3-D He box vet_sc, 
 - Hydro at cfl 0.9 is UNTESTED (the gas never moves). Next: an atm_hold = false check of cfl 0.9 vs 0.3.
 - The vet_col_every result (vetevery_0926: N=4 -23 %) also comes from this static wedge.
 - CORRECTION 09-26 (m1wedge_mv_0926/RESUME.md): the "fast5-sp He wedge" is NOT He. It is pgen rad_m1_beam, m1_test = sph_atm (test T-S4, rad_m1_tests2.cpp): a grey radiative-equilibrium atmosphere with rho ~ r^-2, constant kappa and NO gravity. With atm_hold = false it just expands. No gravity-bearing M1 He wedge exists (the He4 presn global model is still a plan). The only moving-gas M1 setup is the Cartesian He box (box_convection).
+- **He box moving-gas check 09-26 (hebox_cfl_0926), partial:**
+  - cfl 0.9 is 2.28x cheaper than 0.3; vet_sc_every 2 adds +7 %; dt is set at the bottom.
+  - BUT KE at cfl 0.9 saturates ~4.6x the cfl 0.3 level. The box barely convects (F_conv/F 1e-5).
+  - cfl 0.15 / 0.6 arms were running at handover. Until settled, cfl 0.9 = relaxation-phase only.

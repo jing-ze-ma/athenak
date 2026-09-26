@@ -70,6 +70,9 @@ reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010
 basename  = dhj
 
 <mesh>
+cs_seam_flux      = positive  # 09-26: seam flux positivity fix (root cause of all WASP-121b crashes); docs/dev/cs_seam_defect_0926.md
+cs_seam_resample  = linear    # 09-26: convex seam ghost resample (cube-vertex fix)
+cs_seam_rho_guard = 4         # 09-26: copy the face cell when the resampled ghost density differs > 4x
 nghost    = 2
 nx1       = 76   # 1x SOLAR (x1/README): was 74 in the 10x input
 x1min     = 1.126575e+10   # 1x SOLAR (x1/README): was 1.116018e+10 in the 10x input
