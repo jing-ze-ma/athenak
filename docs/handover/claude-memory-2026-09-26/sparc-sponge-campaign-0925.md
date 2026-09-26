@@ -40,3 +40,13 @@ Top-boundary arm SKIPPED (user 09-25): lowering the top to 1e-8/1e-7 bar saves o
 **DECISION (user 09-26): keep both sponges. Recheck the bottom sponge (base vs nobot, deep flow and T at 1-100 bar) at rot 20;** rerun sponge_chk_0926/tfloor_chk.py as well.
 
 **09-26 ~02:30: nobot and notop CRASHED (FATAL dt collapse, STOP written).** nobot at rot 6.03 (t 6.649e5, cell gid 23 i 50-54); notop at rot 5.59 (t 6.160e5, gid 0 i 56). In both, the cell is at the density floor 1e-16 and the pressure floor 1e-5 (cgs), T 1e11-1e13 K, |v| 1e7-3e11 cm/s: an evacuated upper-atmosphere cell. Only base survives (rot 18.6, dt 13.6). So the rot-20 base-vs-nobot recheck is impossible as planned.
+- PLANNED (user 09-26): when the crash diagnosis (/viper/ptmp2/jinma/sponge_crash_0926/RESUME.md) reports, retry nobot from its last restart before the crash, with the fix it suggests if any. Pair it on the idle second GPU of the base chain (the next base link 11980313), or give it its own 2-arm job.
+**Crash diagnosis 09-26** (/viper/ptmp2/jinma/sponge_crash_0926/RESUME.md):
+- Both crashes are on cubed-sphere face-edge SEAMS, on the night side, locally at 1e-7..4e-7 bar (inside the top-sponge window). 6 of 7 dt-collapse sites are on face edges (12 % of cells).
+- The reruns reproduce each crash exactly.
+- nobot: one seam row pinned at the 200 K T-floor next to 1000-7000 K neighbours; the along-seam flow reaches M ~55, then the cell blows up.
+- notop: a supersonic night downdraft (M 10-20) drains the seam column, with spurious heating (E - KE round-off).
+- The end of both: the legacy density floor raises rho but keeps momentum and energy, giving v 3e11 cm/s, T 1e11+ K, dt collapse.
+- base has the same precursor state and no collapse yet. The bottom sponge is NOT shown causal (one event).
+- Suggested fix, being gated: <hydro>/dfloor_keep_velocity, dfloor_keep_temperature, vceil ~1e7.
+- Open: why a seam row stays at the T-floor (ck seam face mixing or the seam ghost exchange?).
