@@ -280,6 +280,40 @@ std::conditional_t<ON, CkScrCol<T>, CkScrOne<T>> CkScrGet(Real *buf, const int g
     return CkScrOne<T>{};
   }
 }
+// ck-store: the chain kernel's groups INTERLEAVED by radial index instead: inside a
+// tile, element (cc, i) of group g of lane l sits at
+//   tile + ((i*S + g)*RT_NB + cc)*CKS_W + l   (in Reals),  S = the kernel's group count,
+// so at a given i every (group, chain) of the thread is a compile-time offset from ONE
+// address.  The group-major layout above needs a separate pointer per (group, chain),
+// runtime multiples of n1, which the chain kernel kept live in registers (about 40 of
+// its 164).  A wave's access at one (g, cc, i) is still one contiguous line, and the
+// tile is the same size.  An element takes one Real slot whatever T is.
+template <typename T, int S>
+struct CkScrRowI {
+  Real *p;
+  KOKKOS_INLINE_FUNCTION T &operator[](const int i) const {
+    return *reinterpret_cast<T*>(p + i*(S*RT_NB*CKS_W));
+  }
+};
+template <typename T, int S>
+struct CkScrColI {
+  Real *p;
+  KOKKOS_INLINE_FUNCTION CkScrRowI<T, S> operator[](const int c) const {
+    return CkScrRowI<T, S>{p + c*CKS_W};
+  }
+};
+template <typename T, bool ON, int S>
+KOKKOS_INLINE_FUNCTION
+std::conditional_t<ON, CkScrColI<T, S>, CkScrOne<T>> CkScrGetI(Real *buf, const int g,
+                                                              const size_t tsz,
+                                                              const int t) {
+  if constexpr (ON) {
+    Real *tile = buf + static_cast<size_t>(t/CKS_W)*tsz;
+    return CkScrColI<T, S>{tile + g*RT_NB*CKS_W + (t % CKS_W)};
+  } else {
+    return CkScrOne<T>{};
+  }
+}
 // ck-tiers: the same wave-tiled layout for the other column kernels (rt_chain_ck_lin,
 // rt_chain_ck_lin1, rt_chain_grey).  Thread t's tile holds rows of n1 values; row r
 // (one chain or angle of one array) holds element i of lane l at
@@ -2007,7 +2041,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   // pass that reuses the Jacobian run the JAC = 0 code, which is the tm sweep
   // exactly as it was.  See the JAC blocks in the tm body.
   static constexpr bool JAC = decltype(jac_tag)::value;
-  // ck-scratch: the whole-column arrays' groups in rt_ckscr_ptr (see CkScrCol).
+  // ck-scratch: the whole-column arrays' groups in rt_ckscr_ptr (see CkScrColI).
   // gI..gJ are this instantiation's group numbers; a switched-off array has none.
   constexpr int gI = 0;
   constexpr int gC = 1;
@@ -2015,6 +2049,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   constexpr int gP = gK + (BSP ? 1 : 0);
   static constexpr int gJ = gP + ((CCH >= 2) ? 4 : 0);
   constexpr int nGrp = gJ + (JAC ? 3 : 0);
+  static constexpr int nScS = gJ + (JAC ? 3 : 0);   // = nGrp: see CkScrColI
   const int scn1 = n1;
   const int scn2 = je - js + 1, scn3 = ke - ks + 1;
   const size_t grp1 = static_cast<size_t>(RT_NB)*scn1*(nmb1 + 1)*scn3*scn2;
@@ -2141,7 +2176,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
     // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
     // reason to change it, so the column stays.  (ck-scratch: it, and the other
     // whole-column arrays below, now live in rt_ckscr_ptr, not on the stack.)
-    auto I_down = CkScrGet<RtF, true>(scbuf, gI, sctsz, scn1, sct);
+    auto I_down = CkScrGetI<RtF, true, nScS>(scbuf, gI, sctsz, sct);
     // THE FACE MIXING, STORED.  Conservation needs the two rays to use the SAME
     // c at a face -- that, and only that, is what makes A_below (u_b - d_b) =
     // A_above (u_a - d_a) hold and the deposit telescope.  The down-sweep forms
@@ -2150,12 +2185,12 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
     // would be a different number and would break the telescoping at O(beta) per
     // face (measured: 0.7 % per cell, 19 % over the production column).  The
     // accuracy of c is then the probe's; its CONSISTENCY is exact.
-    auto Cmx = CkScrGet<RtF, SPH>(scbuf, gC, sctsz, scn1, sct);
+    auto Cmx = CkScrGetI<RtF, SPH, nScS>(scbuf, gC, sctsz, sct);
     // problem/ck_beam_sph: the (kappa rho) column, filled by the down-sweep and
     // read by the ray integration.  tau_ray is NOT a running sum -- every target
     // radius has its own chord set -- so the profile has to be kept.  One element
     // when the switch is off.
-    auto Krs = CkScrGet<RtF, BSP>(scbuf, gK, sctsz, scn1, sct);
+    auto Krs = CkScrGetI<RtF, BSP, nScS>(scbuf, gK, sctsz, sct);
 
     // Top: the column above the domain, using the top cell's opacity over the
     // hydrostatic column p/g -- the same construction the grey scheme uses.
@@ -2372,10 +2407,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       // ck-scratch) and is a one-element private array otherwise.
       RtF cry0[NC], cryi[NC], cryo[NC];
       constexpr bool CC2 = (CCH >= 2);
-      auto Kpc = CkScrGet<Real, CC2>(scbuf, gP, sctsz, scn1, sct);
-      auto Cc0 = CkScrGet<RtF, CC2>(scbuf, gP+1, sctsz, scn1, sct);
-      auto Cci = CkScrGet<RtF, CC2>(scbuf, gP+2, sctsz, scn1, sct);
-      auto Cco = CkScrGet<RtF, CC2>(scbuf, gP+3, sctsz, scn1, sct);
+      auto Kpc = CkScrGetI<Real, CC2, nScS>(scbuf, gP, sctsz, sct);
+      auto Cc0 = CkScrGetI<RtF, CC2, nScS>(scbuf, gP+1, sctsz, sct);
+      auto Cci = CkScrGetI<RtF, CC2, nScS>(scbuf, gP+2, sctsz, sct);
+      auto Cco = CkScrGetI<RtF, CC2, nScS>(scbuf, gP+3, sctsz, sct);
       // one half-layer step, in the chain's own precision: the same exponential
       // coefficients the staggered layers used, handed the half interval.  dsrc
       // comes back as absorbed minus emitted, which is what Src_g wants and is
@@ -2618,9 +2653,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
         // M-matrix the Thomas sweep relies on), which makes it quasi-Newton with
         // the same root.  All of it is compiled only into the JAC instantiation.
         constexpr int NJ = JAC ? NC : 1;
-        auto Js0 = CkScrGet<Real, JAC>(scbuf, gJ, sctsz, scn1, sct);
-        auto Js1 = CkScrGet<Real, JAC>(scbuf, gJ+1, sctsz, scn1, sct);
-        auto Js2 = CkScrGet<Real, JAC>(scbuf, gJ+2, sctsz, scn1, sct);
+        auto Js0 = CkScrGetI<Real, JAC, nScS>(scbuf, gJ, sctsz, sct);
+        auto Js1 = CkScrGetI<Real, JAC, nScS>(scbuf, gJ+1, sctsz, sct);
+        auto Js2 = CkScrGetI<Real, JAC, nScS>(scbuf, gJ+2, sctsz, sct);
         Real jS[NJ][3], jfc[NJ][2], juc[NJ][2];
         // ---- PASS 1: upward, accumulating the relation at every face --------
         {
