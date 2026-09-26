@@ -964,8 +964,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // implicit_one_pass_auto (m1-onepass-auto): see ImplicitSolve.  A kind of solve that
     // goes auto_window check periods (auto_window * implicit_one_pass eligible solves)
     // without one solve accepted after one pass is switched to one_pass = 0; after
-    // auto_reprobe such solves it is switched on again for one check period.
-    impl_onep_auto = pin->GetOrAddBoolean("rad_m1","implicit_one_pass_auto",true);
+    // auto_reprobe such solves it is switched on again for one check period.  Default
+    // true; false on a restart whose file does not carry the key (written before it
+    // existed), which then continues as before (see above).
+    impl_onep_auto = pin->GetOrAddBoolean("rad_m1","implicit_one_pass_auto",
+                                          !global_variable::restart_run);
     impl_onep_awin = pin->GetOrAddInteger("rad_m1","implicit_one_pass_auto_window",2);
     impl_onep_arep = pin->GetOrAddInteger("rad_m1","implicit_one_pass_auto_reprobe",64);
     if (impl_onep_awin < 1 || impl_onep_arep < 1) {
