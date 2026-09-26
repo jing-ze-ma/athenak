@@ -40,10 +40,12 @@
 //! velocity mirrored and the transverse velocity copied; so the initial state is its
 //! own ghost state, and a drifting edge cell drags its ghosts with it.  The M1 ghosts
 //! are a copy (inner) and dark (outer); the implicit solve imposes its own face BCs.
-//! <problem>/wg_bc_top = open (default wall) copies the edge cell's radial velocity into
-//! the outer ghosts instead of mirroring it (a transmissive top).
-//! <problem>/wg_sponge_rate > 0 (default 0 = off) damps the velocity above
-//! wg_sponge_r0 (default r_int) at the rate wg_sponge_rate*((r - r0)/(r_top - r0))^2.
+//! <problem>/wg_bc_top = open (default wall): an outflow-only top, the edge cell's radial
+//! velocity copied into the outer ghosts where it points outward, mirrored (the wall)
+//! where it points inward, so that no mass enters through the top.
+//! <problem>/wg_sponge_rate (default 0.02, in code time units; 0 = off) damps the
+//! velocity above wg_sponge_r0 (default r_int, the IC's tau = wg_tau_int radius) at the
+//! rate wg_sponge_rate*((r - r0)/(r_top - r0))^2.
 //!
 //! <problem>/wg_spot_amp > 0 adds an isochoric Gaussian temperature perturbation
 //! T -> T(1 + A exp(-d^2/(2 w^2))), E -> E (1 + ...)^4 (test C).
@@ -52,7 +54,7 @@
 //! interior face, the middle face, the face at r_int (tau = wg_tau_int of the initial
 //! state) and the Marshak face; L_in; E_rad; e_gas; and, over the interior r <= r_int,
 //! mass, KE, radial KE, radial momentum and sum p dV (Mach number = sqrt(2 KE/(Gamma
-//! PV))).
+//! PV))); the total mass and the mass flux rho v1 A through the top face (edge cell).
 //!
 //! CUDA-safe: no lambdas inside kernels, no host reads of device Views (the fine column
 //! is built on the host and copied), no class members inside kernels.
@@ -517,7 +519,9 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       std::exit(EXIT_FAILURE);
     }
     wg_top_open_ = (bt == "open");
-    wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.0);
+    // DEFAULT ON (user 09-26): the closed outer wall traps a domain acoustic mode that
+    // a dt-dependent anti-damping drives (docs/dev/m1_wedge_0926.md 7.3); 0 = old scheme
+    wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.02);
     wg_sp_r0_ = pin->GetOrAddReal("problem","wg_sponge_r0",wg_rint_);
     wg_rtop_ = rtop;
   }
@@ -727,8 +731,9 @@ void RadM1WedgeBC(Mesh *pm) {
         const Real dg = sd*WgLogInterp(crho, rlo, dr, nf, rg);
         const Real eg = se*WgLogInterp(ceint, rlo, dr, nf, rg);
         const Real dm = uh(m,IDN,k,j,im);
-        // wall: v1 mirrored; open outer wall: v1 of the edge cell (zero gradient)
-        const Real v1 = (!lo && topen) ? uh(m,IM1,k,j,ia)/da : -uh(m,IM1,k,j,im)/dm;
+        // wall: v1 mirrored; open outer wall: v1 of the edge cell where it flows out
+        const Real v1e = uh(m,IM1,k,j,ia)/da;
+        const Real v1 = (!lo && topen && v1e > 0.0) ? v1e : -uh(m,IM1,k,j,im)/dm;
         const Real v2 = uh(m,IM2,k,j,im)/dm;
         const Real v3 = uh(m,IM3,k,j,im)/dm;
         uh(m,IDN,k,j,ig) = dg;
@@ -752,7 +757,7 @@ void RadM1WedgeBC(Mesh *pm) {
 
 void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  pdata->nhist = 13;
+  pdata->nhist = 15;
   pdata->label[0] = "L_bot";
   pdata->label[1] = "L_mid";
   pdata->label[2] = "L_int";
@@ -766,6 +771,8 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   pdata->label[10] = "Mr_int";
   pdata->label[11] = "PV_int";
   pdata->label[12] = "V_int";
+  pdata->label[13] = "M_tot";
+  pdata->label[14] = "Mdot_top";
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -807,6 +814,8 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
     if (i == is) h.the_array[4] = fin*area1(m,k,j,i);
     h.the_array[5] = ur(m,radm1::M1_E,k,j,i)*vol;
     h.the_array[6] = w0(m,IEN,k,j,i)*vol;
+    h.the_array[13] = w0(m,IDN,k,j,i)*vol;
+    if (i == ie) h.the_array[14] = w0(m,IDN,k,j,i)*w0(m,IVX,k,j,i)*area1(m,k,j,i+1);
     if (x1v(m,i) <= rint) {
       const Real d = w0(m,IDN,k,j,i);
       const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
