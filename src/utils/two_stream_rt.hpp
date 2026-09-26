@@ -7158,6 +7158,31 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           if (cklbuild_) {
             ck_jlc_ok = false;       // ck-jlin: a new factorisation, new coefficients
             auto lpjb_g = ckjfus_ ? *ck_lpj_ptr : CkDum<DvceArray5D<Real>>("ck_lpj_d");
+            // ck-next: the column geometry, by the expressions the tm body spells, in a
+            // kernel of its own before ck_lin_build, which then reads beta and dz from
+            // lG (j fastest, coalesced) instead of every chain re-forming beta from the
+            // (k, j, i) volume/area Views (strided by n1 across a warp) -- the same
+            // numbers, so bitwise.  lG slot 4 is dz itself.
+            par_for("ck_lin_geom", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+            KOKKOS_LAMBDA(const int m, const int k, const int j) {
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icc_g(m,k,j);
+              if (icut > ie) return;
+              for (int i=icut; i<ie+2; ++i) {
+                lG_g(m,0,i,k,j) = BTF(m,k,j,i,icut);
+                if (i <= ie) {
+                  lG_g(m,1,i,k,j) = (i == icut)
+                      ? AFC(m,k,j,icut)/ACC(m,k,j,icut)
+                      : ACC(m,k,j,i-1)/ACC(m,k,j,i);
+                  lG_g(m,2,i,k,j) = (i == icut)
+                      ? 1.0 : ACC(m,k,j,i-1)/AFC(m,k,j,i);
+                  lG_g(m,3,i,k,j) = 1.0/dx1(m,k,j,i);
+                  lG_g(m,4,i,k,j) = dx1(m,k,j,i);
+                } else {
+                  lG_g(m,2,i,k,j) = ACC(m,k,j,ie)/AFC(m,k,j,ie+1);
+                }
+              }
+            });
             par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
             KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
@@ -7182,22 +7207,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                             * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
               }
               if (icut > ie) return;
-              // the column geometry, by the expressions the tm body spells, once
-              if (c == 0) {
-                for (int i=icut; i<ie+2; ++i) {
-                  lG_g(m,0,i,k,j) = BTF(m,k,j,i,icut);
-                  if (i <= ie) {
-                    lG_g(m,1,i,k,j) = (i == icut)
-                        ? AFC(m,k,j,icut)/ACC(m,k,j,icut)
-                        : ACC(m,k,j,i-1)/ACC(m,k,j,i);
-                    lG_g(m,2,i,k,j) = (i == icut)
-                        ? 1.0 : ACC(m,k,j,i-1)/AFC(m,k,j,i);
-                    lG_g(m,3,i,k,j) = 1.0/dx1(m,k,j,i);
-                  } else {
-                    lG_g(m,2,i,k,j) = ACC(m,k,j,ie)/AFC(m,k,j,ie+1);
-                  }
-                }
-              }
               const Real emw = 2.0*(wfc/muc);
               // the tm Moebius map of pass 1, on R alone (FRM = 1 of rt_chain_ck);
               // ck_dif_dtau: R = 1 at a handover column's cut (the flux datum)
@@ -7206,7 +7215,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               if (ckdif_ && gdf >= 0.0) rr = static_cast<RtF>(1.0);
               CkJlP1 w = CkJlP1Init(gdf);
               for (int i=icut; i<ie+1; ++i) {
-                const Real btr = BTF(m,k,j,i,icut);
+                const Real btr = lG_g(m,0,i,k,j);
                 const RtF bb = static_cast<RtF>(btr);
                 const RtF dn = static_cast<RtF>(1.0) + rr*bb;
                 const Real rj = static_cast<Real>(rr);
@@ -7235,8 +7244,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real kru = ckkro_g(m,c,i+1,k,j);
                   wl = BFaceW(kru, kro, bface_on);
                   wu = BFaceW(kro, kru, bface_on);
-                  const Real dt_l = 0.5*kro*dx1(m,k,j,i);
-                  const Real dt_u = 0.5*kru*dx1(m,k,j,i+1);
+                  const Real dt_l = 0.5*kro*lG_g(m,4,i,k,j);
+                  const Real dt_u = 0.5*kru*lG_g(m,4,i+1,k,j);
                   const Real dtc = dt_l + dt_u;
                   ffj = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
                   if (own) {
@@ -7258,7 +7267,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 lpjb_g(m,c,ie+1,k,j) = w.s2;
               }
               lP_g(m,0*nch_+c,ie+1,k,j) = static_cast<Real>(rr);
-              const Real btt = BTF(m,k,j,ie+1,icut);
+              const Real btt = lG_g(m,0,ie+1,k,j);
               lP_g(m,1*nch_+c,ie+1,k,j) = 1.0/(1.0 + static_cast<Real>(rr)*btt);
             });
           }

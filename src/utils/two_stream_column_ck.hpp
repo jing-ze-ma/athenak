@@ -1005,7 +1005,7 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     // problem/ck_impl_lin: six more Reals per (cell, chain), four per cell
     if (ck_impl_lin) {
       ck_linP_ptr = new DvceArray5D<Real>("ck_lP", nmb, 6*nch, n1, n3, n2);
-      ck_linG_ptr = new DvceArray5D<Real>("ck_lG", nmb, 4, n1, n3, n2);
+      ck_linG_ptr = new DvceArray5D<Real>("ck_lG", nmb, 5, n1, n3, n2);
       ck_linC_ptr = new DvceArray2D<Real>("ck_lC", 2, nch);
       if (ck_impl_lin_thr == 1) {
         ck_lps_ptr = new DvceArray5D<Real>("ck_lps", nmb, nch, n1, n3, n2);
