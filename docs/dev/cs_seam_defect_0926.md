@@ -81,15 +81,39 @@ User decision 09-26: the three seam keys are **on by default** on the cubed sphe
 | non-cubed-sphere, built-in pgens, 2 MPI ranks: linear_wave_hydro, linear_wave_mhd (3-D), sod, Brio-Wu | every output file bitwise vs c1671b9d |
 | cpplint on `src/mesh/mesh.cpp` | 11 errors before and after (all pre-existing, none in the edited lines) |
 
-**dhj full-set multi-rotation check (PENDING at this commit).** Job 11983529 (apu, 1 node,
-2 GPUs): sparc_w121x1/base rst 40 (rot 20.0, cycle 161391, read in place) -> rot 32, GPU 1 =
-full set (the new defaults, picked up because the restart has no seam keys), GPU 2 = the same
-+ seed kick 1e-14 (`problem/seed_restart`, the noise member). Binary
-`/viper/ptmp2/jinma/csdef_0926/athena.gpu.full` (md5 6e2a4f57) = f637b3be (production physics)
-+ the src diffs of 2d07119a and 6a3d051c (bvals, hydro, mesh, mhd) + the seed_restart hunk of
-fb61cbb6 + this branch's mesh.cpp defaults (`csdef_0926/gpu_src_vs_f637b3be.diff`). Analysis:
-`python3 /viper/ptmp2/jinma/csdef_0926/multirot_ana.py` (vs base, vs the positive-only run of
-job 11982958, and full vs noise member).
+**dhj full-set multi-rotation check.** Job 11983529 (apu, 1 node, 2 GPUs): sparc_w121x1/base
+rst 40 (rot 20.0, cycle 161391, read in place) -> rot 32. GPU 1 = full set (the new defaults,
+picked up because the restart has no seam keys); GPU 2 = the same + seed kick 1e-14
+(`problem/seed_restart`, the noise member). Binary `/viper/ptmp2/jinma/csdef_0926/athena.gpu.full`
+(md5 6e2a4f57) = f637b3be (production physics) + the src diffs of 2d07119a and 6a3d051c (bvals,
+hydro, mesh, mhd) + the seed_restart hunk of fb61cbb6 + this branch's mesh.cpp defaults
+(`csdef_0926/gpu_src_vs_f637b3be.diff`). Numbers: `csdef_0926/multirot_ana.txt`
+(`multirot_ana.py`); "positive" = the positive-only run of job 11982958.
+
+| | full | noise member | positive only | base (average) |
+| --- | --- | --- | --- | --- |
+| reached rot 32 | yes, 0 collapse warnings | yes, 0 | yes, 0 | FATAL at rot 27.04, 7 warnings |
+| dt mean / min, rot 20-27 [s] | 13.68 / 7.66 | 13.66 / 11.15 | 13.69 / 9.36 | 13.34 / 0.36 |
+| dfloor / tfloor per log row | 2.76e7 / 8.10e6 | 2.76e7 / 8.23e6 | 2.77e7 / 9.26e6 | 2.93e7 / 9.58e6 |
+
+Maximum |dT| of the horizontal mean per isobar (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 10 bar), [K]:
+
+| pair, rotations | 1e-6 | 1e-5 | 1e-4 | 1e-3 | 1e-2 | 1e-1 | 1 | 10 | eint rms 1-10 bar |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| full - base, 20.5-26 | 82 | 37 | 3.3 | 2.0 | 0.9 | 0.4 | 0.4 | 0.3 | 7e-4 .. 5e-3 |
+| noise - full, 20.5-26 | 90 | 27 | 5.5 | 1.9 | 0.4 | 0.2 | 0.0 | 0.0 | 1e-5 .. 1e-4 |
+| noise - full, 27.5-32 | 55 | 23 | 5.3 | 1.3 | 0.7 | 0.1 | 0.1 | 0.1 | 2e-4 .. 5e-4 |
+| full - positive, 20.5-26 | 82 | 30 | 8.1 | 2.2 | 0.4 | 0.4 | 0.2 | 0.2 | 4e-4 .. 2.5e-3 |
+| full - positive, 27.5-32 | 103 | 47 | 10 | 2.9 | 1.5 | 0.5 | 0.8 | 1.0 | 4e-3 .. 9e-3 |
+
+Verdict: the full set is stable for 12 rotations past the base crash, with no collapse
+warnings, and it has 15 % fewer T-floor events than base. At p <= 1e-3 bar, full - base and
+full - positive are the size of the seed noise, which is the chaotic top. At 1e-2..10 bar,
+full - base (rot 21-26) is <= 0.9 K against a noise of <= 0.7 K. Full - positive grows to
+1-1.5 K by rot 32, while the noise stays <= 0.7 K. The deep eint scatter of full - positive
+is about 10-20x the noise member's. So the halo keys, like the flux key, are a real
+operator change at depth. They show as cell-level scatter and a K-level drift of the deep
+horizontal means, with no instability.
 
 ## Setup
 
