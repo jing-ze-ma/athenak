@@ -608,12 +608,14 @@ class Conduction {
                                        DvceFaceFld5D<Real> &f);
   void NewTimeStep(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
 
- private:
   // the ONE RKL1 loop both super-time-stepped entry points run: `with_x1` = false is the
   // 5-point transverse operator (rad_implicit_ang), true the 7-point unified one
-  // (rad_sts_all).  See conduction_transverse.cpp.
+  // (rad_sts_all).  See conduction_transverse.cpp.  Public only because nvcc forbids
+  // extended (device) lambdas inside private/protected member functions.
   void RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                            const Real beta_dt, const bool with_x1);
+
+ private:
   MeshBlockPack* pmy_pack;
   // "hydro" or "mhd": identifies which physics module owns this Conduction object, so
   // that the general EOS derived-variable arrays (cached temperature and pressure) of the
