@@ -162,6 +162,44 @@ Reading of the evidence:
   runaway. The floor switches `dfloor_keep_*` and `vceil` (tested separately in
   sponge_crash_0926) also stop the FATAL, but they treat the symptom.
 
+### Third case: the base arm crashed too (FATAL at cycle 221708, rotation 27.04)
+
+Every dt-setting cell of the base crash is on one seam: panel 0, face j = 31. The cells are
+(gid, k, j, i) = (1,10,17,60), (1,12,17,59), (3,11,17,59) and (3,9,17,58), all with j = 17
+in the ghost-padded index. (1,2,17,49) is the cube-vertex cell at face (j 31, k 0).
+
+Rerun from base rst 53 (rotation 26.5), job 11982463:
+- The production-equivalent binary with the diagnostic reproduces the FATAL at 221708
+  bitwise.
+- Every seam face with phiM > 0.3 is on that seam (m = 1, j = 17; k = 10, 17, 9, 7).
+- With the branch binary, `average`, `upwind` and `positive` all survive with no collapse.
+  The branch is rt-integration HEAD, not the production commit, so its trajectory differs
+  and this case does not discriminate on the branch.
+
+### Solver speed settings (ck cadence and tolerance) are not the cause
+
+Job 11982468 reran the crashes with the production binary (e3a8442e) and ck solved every step
+(`ck_impl_every=1`; the input has 4) with `ck_impl_tol=1e-9` (the input has 1e-8):
+- **nobot still crashes at the same cells.** The first collapse is at 46668 (production
+  46680) and the FATAL at 47753 (production 47063). The cells are (23,17,8..11,50..54).
+- **notop** has 4 collapse warnings starting at the same cycle 78558, at the known seam
+  cells (17/19, j 17), but it reaches tlim. The notop FATAL is sensitive to perturbation:
+  the cfl 0.29 control also survived, with 4 warnings. So this arm behaves like a
+  perturbation control.
+
+The ck cadence and tolerance are cleared.
+
+### Branch binary on the crash reruns
+
+Job 11982451 ran rt-integration cc529150 + the key, with the key given via `-i key.athinput`
+on restart:
+
+| key | nobot | notop |
+| --- | --- | --- |
+| `average` | **FATAL 46764** (3 warnings) | **FATAL 80495** (7 warnings) |
+| `positive` | clean, tlim | clean, tlim |
+| `upwind` | clean, tlim | clean, tlim |
+
 ### Smooth test
 
 `cs_test` iprob 3, rigid rotation about an edge axis, p0 = 0.01, omega = 0.65 (M up to
@@ -212,9 +250,7 @@ case (both panels claim inflow) where the mean still drains a cell.
 ## Status and next steps
 
 See `/viper/ptmp2/jinma/seam_0926/RESUME.md` for the job list. Still open:
-1. The branch GPU binary on the nobot/notop reruns (average / positive / upwind), job in
-   RESUME.md.
-2. A longer check (several rotations) of `positive` from a base restart before making it
+1. A longer check (several rotations) of `positive` from a base restart before making it
    the production default. Compare seamstat.py numbers and the T-floor/dfloor counters.
-3. Optional: the vertex-adjacent Mach excess (Q1) is a separate, milder effect. With
+2. Optional: the vertex-adjacent Mach excess (Q1) is a separate, milder effect. With
    cs_vertex_fill_cc = 0 the cell-centred corner block is extrapolated.
