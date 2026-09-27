@@ -5787,6 +5787,11 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   const Real fk = 1.0/dt_sub;
   auto kk_ = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
   const bool slope = (t2_solve != M1_T2S_NONE);
+  // force_reference_work = split: the row also carries the reference work the radiation
+  // pays (v dt arad_ref per unit mass; dv above is the residual kick)
+  const bool fws = (force_ref == M1_FREF_WB_ARAD) && fref_wsplit;
+  auto aref_ = arad_ref;
+  const Real dtw = dt_sub;
   par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipw = pos_.d_view(m);
@@ -5814,6 +5819,30 @@ void RadiationM1::ImplicitWorkRow(bool row) {
       }
     }
   });
+  if (fws) {
+    // force_reference_work = split: the reference work (v dt rho arad_ref), which the
+    // radiation pays, rides the row too (a separate kernel: the default one is untouched)
+    par_for("m1_impl_wkref", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int ipw = pos_.d_view(m);
+      if (!cyclic && ((i == is && ipw == 0 && elo) ||
+                      (i == ie && ipw == nblkx1-1 && ehi))) {
+        return;
+      }
+      // at the iterate's velocity (v_old + the residual kick dv^k): the stage value's
+      // own velocity, which the implicit stage needs (the old one lags by O(dt))
+      const Real vk = iw_(m,M1_IW_V1,k,j,i) + iw_(m,ivb,k,j,i);
+      const Real w = cr*uh(m,IDN,k,j,i)*vk*dtw*aref_(m,k,j,i);
+      if (row) {
+        iw_(m,M1_IW_TR,k,j,i) -= w;
+      } else {
+        u0_(m,M1_E,k,j,i) += w;
+        if (slope) {
+          kk_(m,M1_T2_E,k,j,i) += w*fk;
+        }
+      }
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -6589,6 +6618,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // leaves the domain with the radiation, which is where it physically goes.
   const bool bmhalf = impl_bmom_half;
   bool fref = (force_ref == M1_FREF_WB_ARAD);
+  // force_reference_work = split (ke-dt-0926): the gas gets only the residual's work here
+  const bool fws = fref && fref_wsplit;
   auto aref_ = arad_ref;
   Real mq = marshak_q;
   // vet_col_surface_q (rad_m1_vetcol.cpp): the OUTER x1 Marshak q of each column from
@@ -7480,7 +7511,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // Subtracted after the solve it is an O(dt) splitting in every stage (passive E in a
     // moving scattering gas: E order 1.1 in time); in the row the stage value satisfies
     // its own equation.  The write-back removes only work - work^k (0 at convergence).
-    const bool wimp = t2st && t2_fvnew && vim && have_hydro && feedback && !fref;
+    // force_reference_work = split: the work goes into the row as well (fws)
+    const bool wimp = t2st && vim && have_hydro && feedback &&
+                      ((t2_fvnew && !fref) || fws);
     t2_wk = wimp;
     // (d) assemble the tridiagonal system of every column
     // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
@@ -8706,6 +8739,48 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       uh(m,IEN,k,j,i) = eg + ekin + egrv + work;
     }
   });
+
+  // force_reference_work = split (ke-dt-0926): the write-back above handed the gas the
+  // work of the FULL force and took it from E.  Here the gas keeps only the residual
+  // kick's work (its exact kinetic-energy change; the WB source gives it the reference
+  // work at its own stage), and E pays residual + reference (v' dt rho arad_ref, at the
+  // stage value's velocity v').  A separate kernel: the default write-back is untouched.
+  if (fws && !fref_wsplit_ok) {
+    ImplFatal("<rad_m1>/force_reference_work = split needs a problem generator whose WB "
+              "source gives the gas the reference work (box_convection, sph_wedge)");
+  }
+  if (fws && have_hydro && gas_feedback && coupling && dbg_gas_force) {
+    const Real fkw = 1.0/dt;
+    const Real chw = chat, clw = c_light;
+    auto kkw_ = (t2s == M1_T2S_STAGE1) ? t2k2 : t2k1;
+    const bool t2kw = t2k;
+    const bool cycw = cyclic;
+    const int bclw = ibc_x1min, bchw = ibc_x1max;
+    const int nbw = part_nblk;
+    auto posw_ = part_pos;
+    par_for("m1_impl_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int ipw = posw_.d_view(m);
+      const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
+                                 (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX));
+      const Real dd = uh(m,IDN,k,j,i);
+      const Real idg = 1.0/fmax(dd, 1.0e-300);
+      const Real v1 = iw_(m,M1_IW_V1,k,j,i);
+      const Real m0 = dd*v1;
+      const Real dmref = dt*dd*aref_(m,k,j,i);
+      const Real dmr = uh(m,IM1,k,j,i) - m0;
+      const Real dm1 = dmr + dmref;
+      const Real wf = 0.5*(v1 + (m0 + dm1)*idg)*dm1;
+      const Real wr = 0.5*(v1 + (m0 + dmr)*idg)*dmr;
+      uh(m,IEN,k,j,i) -= (wf - wr);
+      if (t2kw) {kkw_(m,M1_T2_EN,k,j,i) -= (wf - wr)*fkw;}
+      if (!efw) {
+        const Real de = (chw/clw)*(wf - wr - (m0 + dmr)*idg*dmref);
+        u0_(m,M1_E,k,j,i) += de;
+        if (t2kw) {kkw_(m,M1_T2_E,k,j,i) += de*fkw;}
+      }
+    });
+  }
 
   // time2_vstage: the rows took the work of the last pass's kick, which the write-back
   // subtracted again: give it back (E and the slope; the gas keeps the full work)

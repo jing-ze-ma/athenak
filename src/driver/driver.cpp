@@ -119,6 +119,18 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
       gam0[1] = 0.5;
       gam1[1] = 0.5;
       beta[1] = 0.5;
+      // <rad_m1>/time2_tableau = trbdf2 (ke-dt-0926, rad_m1_time2.cpp): the explicit
+      // partner of TR-BDF2, the two-stage RK2 with c2 = 2 - sqrt(2) and
+      // b = (1 - 1/(2 c2), 1/(2 c2)): stage 2 = 3/4 U^n + 1/4 Y2 + dt/(2 c2) L(Y2)
+      if (pin->DoesBlockExist("rad_m1") &&
+          pin->DoesParameterExist("rad_m1", "time2_tableau") &&
+          pin->GetString("rad_m1", "time2_tableau").compare("trbdf2") == 0) {
+        const Real c2 = 2.0 - std::sqrt(2.0);
+        beta[0] = c2;
+        gam0[1] = 0.25;
+        gam1[1] = 0.75;
+        beta[1] = 0.5/c2;
+      }
     } else if (integrator == "rk3") {
       // SSPRK (3,3): Gottlieb (2009) equation 3.2
       // Optimal (in error bounds) explicit three-stage, third-order SSPRK
@@ -436,10 +448,18 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       radm1::RadiationM1 *pm1 = pmesh->pmb_pack->pradm1;
       // <rad_m1>/implicit_mr_every > 1 (rad_m1_mr.cpp): multi-rate radiation, the Heun
       // stages run the hydro alone and the radiation is taken by MRStep below
-      const bool m1mr = (pm1 != nullptr) && pm1->MRActive();
+      // <rad_m1>/coupling_split (ke-dt-0926, rad_m1_mr.cpp): 1 = the Heun hydro alone,
+      // then R(dt); 2 = R(dt), then the Heun hydro alone; 0 = the paths here
+      const int m1cs = (pm1 != nullptr) ? pm1->CSplitStep() : 0;
+      if (m1cs == 2) {
+        pm1->MRSolve(this, pmesh->dt);
+      }
+      const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
+      const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
       auto hydro_stage = [&](int stage) {
+        if (nohyd) return;   // DIAGNOSTIC <rad_m1>/dbg_hydro_off: R alone
         ExecuteTaskList(pmesh, "before_stagen", stage);
         // solve gravity at each RK stage so the potential is consistent
         // with the current density (required for 2nd-order accuracy)
@@ -488,7 +508,11 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
       // loop not entered -- when there is no <rad_m1> block.
       if (m1mr) {
-        pm1->MRStep(this, pmesh->dt);
+        if (m1cs == 1) {
+          pm1->MRSolve(this, pmesh->dt);
+        } else if (m1cs == 0) {
+          pm1->MRStep(this, pmesh->dt);
+        }
       } else if (pm1 != nullptr && m1t2 && !m1t2fail) {
         // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
         pm1->t2_solve = radm1::M1_T2S_NONE;

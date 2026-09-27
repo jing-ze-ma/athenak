@@ -345,7 +345,29 @@ class RadiationM1 {
   DvceArray5D<Real> vsc_d0, vsc_d1;               // (m,M1_T2_NVET,k,j,i)
   bool VscSkip();
   void VscStore();
-  bool F4RstHdr() const {return (mr_every > 1) || (vsc_every > 1);}
+  // coupling_split (ke-dt-0926, rad_m1_mr.cpp; read only when named, default = off):
+  // how the implicit radiation + coupling R is placed relative to the Heun hydro H.
+  //   0 default  hesdirk2 in the Heun stages (or implicit_mr_every)
+  //   1 strang   H(dt) then R(dt) by the multi-rate SDIRK2 every step (k = 1)
+  //   2 alternate  H R on even steps, R H on odd steps
+  //   3 mix      coupling_mix_h2 hesdirk2 steps, then coupling_mix_s strang steps
+  // The step counter travels in the multi-rate restart header (mr_cnt).
+  int csplit = 0;
+  int csplit_nh2 = 1, csplit_ns = 2;
+  bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
+  // force_reference_work (ke-dt-0926; read only when named, force_reference = wb_arad
+  // only): `full` (default) = the solve hands the gas the work of the FULL force and the
+  // WB source none (rad_m1_coupling.cpp header; its internal-energy cancellation is
+  // O(dt^2) per step); `split` = the WB source gives the gas the work of rho arad_ref at
+  // its own stage (the pgen reads fref_wsplit), the solve gives only the residual's
+  // work, and the radiation pays both
+  bool fref_wsplit = false;
+  bool fref_wsplit_ok = false;  // set by a pgen whose WB source gives the reference work
+  int mr_nsub = 1;              // implicit_mr_nsub: R(Delta) as nsub steps of Delta/nsub
+  int mr_tab = 0;               // implicit_mr_tab: 0 sdirk2, 1 trbdf2 (DIAGNOSTIC)
+  bool mr_k0ok = false;         // t2k1 holds f(Y_0) of this R (the last R's final slope)
+  int CSplitStep();             // per step: 0 = default path, 1 = H then R, 2 = R then H
+  bool F4RstHdr() const {return (mr_every > 1) || (vsc_every > 1) || (csplit > 0);}
   bool MRActive() const {return mr_every > 1;}
   void MRInit(ParameterInput *pin);
   void MRStep(Driver *pdrive, Real dt);
@@ -685,6 +707,13 @@ class RadiationM1 {
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
+  // time2_tableau (ke-dt-0926; read only when named): 0 = hesdirk2 (Heun + H-ESDIRK2),
+  // 1 = trbdf2 (TR-BDF2 implicit, stage order 2, with the RK2 hydro of c2 = 2 - sqrt 2;
+  // the Driver sets the matching gam0/gam1/beta).  Stage coefficients of Time2FormStage:
+  // stage 1 t2inc = t2_a21 dt K1; stage 2 radiation start = t2_w0 Y2 + t2_w1 U^n,
+  // t2inc = dt (t2_c31 K1 + t2_c32 K2); the diagonal is g = 1 - 1/sqrt 2 in both.
+  int t2_tab = 0;
+  Real t2_a21 = 0.0, t2_w0 = 0.5, t2_w1 = 0.5, t2_c31 = 0.0, t2_c32 = 0.0;
   Real t2_lin_tol;              // time2_lin_tol: stage solves' implicit_lin_tol (<= 0:
                                 // implicit_lin_tol x t2_lin_fac)
   Real t2_onep_s;               // time2_one_pass_safety: implicit_one_pass_safety of the

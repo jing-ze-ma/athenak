@@ -80,6 +80,77 @@ void RadiationM1::MRInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "implicit_mr_every")) {
     mr_every = pin->GetInteger("rad_m1", "implicit_mr_every");
   }
+  // implicit_mr_nsub (ke-dt-0926, DIAGNOSTIC; read only when named): each multi-rate or
+  // coupling_split radiation step R(Delta) is taken as nsub SDIRK2 steps of Delta/nsub,
+  // which separates the error of R itself from that of the H-R splitting
+  // dbg_hydro_off (ke-dt-0926, DIAGNOSTIC; read only when named): the Driver skips the
+  // hydro stages, so a multi-rate run is the radiation step R alone (its own order)
+  dbg_hydro_off = false;
+  if (pin->DoesParameterExist("rad_m1", "dbg_hydro_off")) {
+    dbg_hydro_off = pin->GetBoolean("rad_m1", "dbg_hydro_off");
+  }
+  // implicit_mr_tab (ke-dt-0926, DIAGNOSTIC; read only when named): R(Delta) as the
+  // two-stage SDIRK2 (sdirk2, default) or as TR-BDF2 (trbdf2: stage order 2, FSAL slope
+  // K0 = the last R's final slope; the first R and any R after a fallback are SDIRK2)
+  mr_tab = 0;
+  if (pin->DoesParameterExist("rad_m1", "implicit_mr_tab")) {
+    mr_tab = (pin->GetString("rad_m1", "implicit_mr_tab").compare("trbdf2") == 0) ? 1 : 0;
+  }
+  mr_k0ok = false;
+  mr_nsub = 1;
+  if (pin->DoesParameterExist("rad_m1", "implicit_mr_nsub")) {
+    mr_nsub = std::max(1, pin->GetInteger("rad_m1", "implicit_mr_nsub"));
+  }
+  // coupling_split (ke-dt-0926): read only when named; "default" = the paths above
+  csplit = 0;
+  if (pin->DoesParameterExist("rad_m1", "coupling_split")) {
+    const std::string cs = pin->GetString("rad_m1", "coupling_split");
+    if (cs.compare("default") == 0) {
+      csplit = 0;
+    } else if (cs.compare("strang") == 0) {
+      csplit = 1;
+    } else if (cs.compare("alternate") == 0) {
+      csplit = 2;
+    } else if (cs.compare("mix") == 0) {
+      csplit = 3;
+      if (pin->DoesParameterExist("rad_m1", "coupling_mix_h2")) {
+        csplit_nh2 = pin->GetInteger("rad_m1", "coupling_mix_h2");
+      }
+      if (pin->DoesParameterExist("rad_m1", "coupling_mix_s")) {
+        csplit_ns = pin->GetInteger("rad_m1", "coupling_mix_s");
+      }
+      if (csplit_nh2 < 0 || csplit_ns < 0 || csplit_nh2 + csplit_ns < 1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/coupling_mix_h2, coupling_mix_s must be >= 0 "
+                  << "with a positive sum" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/coupling_split = '" << cs << "' is not a "
+                << "choice (default | strang | alternate | mix)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (csplit > 0 && (time_scheme != M1_TIME_HESDIRK2 || mr_every > 1)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/coupling_split = " << cs << " needs time_scheme"
+                << " = hesdirk2 (its stage arrays) and implicit_mr_every = 1"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (csplit > 0) {
+      mr_cnt = 0;
+      mr_theta = 0.0;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> coupling_split = " << cs;
+        if (csplit == 3) {
+          std::cout << " (" << csplit_nh2 << " hesdirk2 + " << csplit_ns
+                    << " strang steps per cycle)";
+        }
+        std::cout << std::endl;
+      }
+    }
+  }
   if (mr_every <= 1) {
     mr_every = 1;
     return;
@@ -115,6 +186,28 @@ void RadiationM1::MRInit(ParameterInput *pin) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CSplitStep
+//! \brief coupling_split: called by the Driver once per step, before the Heun stages.
+//! Returns 0 (the default path: hesdirk2 inside the stages), 1 (the Heun hydro alone,
+//! then R(dt) = MRSolve) or 2 (R(dt) first, then the Heun hydro alone).
+
+int RadiationM1::CSplitStep() {
+  if (csplit == 0) return 0;
+  const int c = mr_cnt;
+  int mode = 1;
+  if (csplit == 2) {
+    mode = (c % 2 == 0) ? 1 : 2;
+    mr_cnt = (c + 1) % 2;
+  } else if (csplit == 3) {
+    const int per = csplit_nh2 + csplit_ns;
+    mode = (c % per < csplit_nh2) ? 0 : 1;
+    mr_cnt = (c + 1) % per;
+  }
+  if (mode != 0) {mr_ksum += 1.0;}
+  return mode;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::MRStep
 //! \brief called by the Driver after the Heun stages of every step: count the step, and
 //! take R(Delta) when the window centre is reached
@@ -133,7 +226,9 @@ void RadiationM1::MRStep(Driver *pdrive, Real dt) {
   mr_acc = 0.0;
   mr_kc = mr_kn;
   mr_ksum += static_cast<Real>(mr_kc);
-  MRSolve(pdrive, dlt);
+  for (int q = 0; q < mr_nsub; ++q) {
+    MRSolve(pdrive, dlt/static_cast<Real>(mr_nsub));
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -146,6 +241,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   mr_on = true;
   mr_dt = dlt;
+  const Real nfall0 = mr_nfall;
   // Y_0, kept for a failed stage: radiation in u1 and the t2f* face copies, gas in the
   // hydro u1 (free between steps; stage A's formal solution also reads U^n there)
   Kokkos::deep_copy(DevExeSpace(), u1, u0);
@@ -161,7 +257,23 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
     pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
   };
   // stage A: old vector = Y_0, dt = g Delta, K_A -> t2k2
-  Kokkos::deep_copy(DevExeSpace(), t2inc, 0.0);
+  // (implicit_mr_tab = trbdf2: old vector Y_0 + g Delta K0, K0 = t2k1)
+  const bool trb = (mr_tab == 1) && mr_k0ok;
+  const Real wtr = 0.25*std::sqrt(2.0);
+  if (trb) {
+    const Real c0 = g*dlt;
+    auto k1_ = t2k1;
+    auto in_ = t2inc;
+    par_for("m1_mr_inc0", DevExeSpace(), 0, static_cast<int>(t2inc.extent(0)) - 1,
+            0, M1_T2_NK-1, 0, static_cast<int>(t2inc.extent(2)) - 1,
+            0, static_cast<int>(t2inc.extent(3)) - 1, 0,
+            static_cast<int>(t2inc.extent(4)) - 1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      in_(m,n,k,j,i) = c0*k1_(m,n,k,j,i);
+    });
+  } else {
+    Kokkos::deep_copy(DevExeSpace(), t2inc, 0.0);
+  }
   t2_solve = M1_T2S_STAGE1;
   t2_fail = false;
   nsub = 1;
@@ -169,7 +281,10 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   run_lists();
   if (!t2_fail) {
     // stage B from Y_A: old vector = Y_0 + (1-g) Delta K_A = Y_A + (1-2g) Delta K_A
-    const Real c = (1.0 - 2.0*g)*dlt;
+    // (trbdf2: old vector Y_0 + w Delta (K0 + K_A) = Y_A + (w - g) Delta (K0 + K_A))
+    const Real c = trb ? (wtr - g)*dlt : (1.0 - 2.0*g)*dlt;
+    const Real ck0 = trb ? (wtr - g)*dlt : 0.0;
+    auto k1_ = t2k1;
     auto k2_ = t2k2;
     auto in_ = t2inc;
     const int nmb1 = static_cast<int>(t2inc.extent(0)) - 1;
@@ -179,7 +294,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
     par_for("m1_mr_inc", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, n3-1, 0, n2-1,
             0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      in_(m,n,k,j,i) = c*k2_(m,n,k,j,i);
+      in_(m,n,k,j,i) = trb ? (c*k2_(m,n,k,j,i) + ck0*k1_(m,n,k,j,i)) : c*k2_(m,n,k,j,i);
     });
     t2_solve = M1_T2S_STAGE2;
     t2_fail = false;
@@ -212,6 +327,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
     pred2_ok = false;
     t2_vprev = false;
     mr_nfall += 1.0;
+    mr_k0ok = false;
     t2_solve = M1_T2S_NONE;
     int ns = SetSubsteps(dlt);
     for (int n = 0; n < ns; ++n) {
@@ -272,6 +388,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   t2_dtprev = dlt;
   // the stage state (K1, ipred2, vet_prev) is then written to restart files
   t2_ok = true;
+  mr_k0ok = (mr_nfall == nfall0);
   mr_nr += 1.0;
   mr_on = false;
 }

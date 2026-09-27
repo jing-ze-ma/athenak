@@ -1719,6 +1719,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         aref(m,k,j,i) = of*fin_a/cl_a;
       });
       pm1->SetForceReference(m1_aref_);
+      pm1->fref_wsplit_ok = true;   // BoxConvSrcs gives the reference work (split)
       // how far the file-driven Phi_eff profile is from this one
       Real amax = 0.0;
       {
@@ -2605,6 +2606,13 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // four energy snapshots this call makes.  The window is closed on the FIRST source
   // call of a cycle, which is stage 1, so E is always sampled at the same phase and the
   // accumulators below cover exactly the interval between two samples.
+  // <rad_m1>/force_reference_work = split (ke-dt-0926): the WB source gives the gas the
+  // work of the rho arad_ref part of its kick (the radiation pays it in its solve)
+  radm1::RadiationM1 *pm1w = pmbp->pradm1;
+  const bool fws = (pm1w != nullptr) && pm1w->fref_wsplit && wbdyn && wb_phi_eff_;
+  DvceArray4D<Real> arefw = fws ? pm1w->arad_ref
+                                : DvceArray4D<Real>("fws_unused", 1, 1, 1, 1);
+
   const bool bud_on = (rtbud_n_ > 0);
   Real bud_e = 0.0, bud_r = 0.0;
   if (bud_on) {
@@ -2675,6 +2683,14 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       }
     }
   });
+  if (fws) {
+    // force_reference_work = split: the work of the rho arad_ref part of the WB kick, at
+    // the stage-start velocity (a separate kernel: the default one is untouched)
+    par_for("boxconv_srcs_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*arefw(m,k,j,i)*w0(m,IVX,k,j,i);
+    });
+  }
   // ---- the sponge's cell range, once, at the first stage it runs (the column tau only
   // exists once BuildRadWeights has run, so it cannot be known at setup)
   if (vdamp_on && !vdamp_printed_) {

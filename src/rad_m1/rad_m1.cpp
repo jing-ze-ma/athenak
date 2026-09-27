@@ -499,6 +499,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
+  fref_wsplit = false;
+  if (pin->DoesParameterExist("rad_m1", "force_reference_work")) {
+    const std::string fw = pin->GetString("rad_m1", "force_reference_work");
+    if (fw.compare("split") == 0) {
+      fref_wsplit = (force_ref == M1_FREF_WB_ARAD);
+    } else if (fw.compare("full") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/force_reference_work = '" << fw << "' is not a valid "
+        << "choice (full | split)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   if (force_ref != M1_FREF_NONE && !(coupling && gas_feedback)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/force_reference needs coupling = true and "

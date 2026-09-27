@@ -513,6 +513,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       aref_d(m,k,j,i) = 0.5*kt*fr2*(1.0/(rl*rl) + 1.0/(rr*rr))/cl;
     });
     pm1->SetForceReference(aref_d);
+    pm1->fref_wsplit_ok = true;   // RadM1WedgeGravity gives the reference work (split)
   }
 
   // outer wall and top sponge (defaults: closed wall, no sponge = the original scheme)
@@ -675,6 +676,17 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
     }
     u0(m,IM1,k,j,i) += src;
   });
+  // <rad_m1>/force_reference_work = split (ke-dt-0926): the work of the rho arad_ref part
+  // of the WB kick, at the stage-start velocity (a separate kernel: the default one is
+  // untouched); the radiation pays it in its solve
+  auto *pm1 = pmbp->pradm1;
+  if (pm1 != nullptr && pm1->fref_wsplit && wbdyn) {
+    auto aref = pm1->arad_ref;
+    par_for("wg_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+    });
+  }
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
   // Riemann flux through a "closed" wall carries mass (a 17 % loss in 2 500 s at Gamma
   // 1.1).  wg_wall_zero_flux (default true) takes the wall face's mass, transverse
