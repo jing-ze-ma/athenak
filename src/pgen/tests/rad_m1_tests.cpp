@@ -167,7 +167,8 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' is hydro only; with <mhd> "
       << "only sph_wedge, beam, pulse1d, equil, marshak, thick_pulse, tophat, "
-      << "radwave and advect_uniform (and the box_convection pgen) are supported" << std::endl;
+      << "radwave and advect_uniform (and the box_convection pgen) are supported"
+      << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // m1-mhd2: the uniform field, read only under <mhd> (a hydro run's parameter dump is
