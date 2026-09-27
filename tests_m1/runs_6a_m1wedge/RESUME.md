@@ -87,6 +87,11 @@ no merge into rt-integration, no push of rt-integration.
 - g16_n6 (11991354): super-Eddington (F_in x 1.5) open vs wall vs sponge, 84x16x16; doc 7.6 table.
   inp/he_nosp.athinput = he_bc without wg_sponge_rate (new default applies).
 
+### 09-27 (doc 7.7): super-Eddington steady state
+- 2c1825e1 wg_bc_bot = reservoir (default wall; bitwise gate g18b vs b7 = 041fac8f). Binary n7.
+- g17_n7 W1 (closed bottom) / W2 (reservoir): inp/se_W1|W2.athinput, jobs 11991958 + 11991959 (2 x 4 h),
+  link 3 cancelled. ana/se.py gpu/g17_n7/W1 50000. W2 steady (BC-driven, subsonic); W1 Mdot ~ t^-0.9.
+
 ## Branch state
 - 09-26 evening: fast-forward to fork/rt-integration f8f7232f, then 317d4051 (open top + sponge,
   defaults off) and the doc/scripts commit; pushed to fork/m1-wedge.

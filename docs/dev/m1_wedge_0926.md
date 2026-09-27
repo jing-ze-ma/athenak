@@ -312,6 +312,43 @@ expelled gas piles up under the lid (top density x 24 in the leaky run) and the 
 agitated. Cost: same per cycle (10.3 vs 10.0-10.6 ms), cheaper per sim-s (larger dt). Not yet a steady
 wind in 2.6 ks; the top-density floor and a longer run decide wind vs inflated envelope.
 
+### 7.7 Super-Eddington wedge to steady state (`gpu/g17_n7`, jobs 11991958 + 11991959, 2 x 4 h apu)
+He wedge 84x16x16, F_in x 1.5 (IC Gamma > 1 at z = -1.27e8 .. -7.3e7 cm, tau 18-55, below the IC
+photosphere at z = -8e6), open (outflow-only) top, no sponge, 1 GPU per arm on one node (per-step
+--gres=gpu:1 --mem=90G; an srun step without them waited for the GPUs of the first step).
+New option wg_bc_bot = reservoir (2c1825e1, default wall; bitwise when off: `gpu/g18b` job 11991989,
+12/12 files + hst vs b7 = 041fac8f, wall and open top): the inner ghosts hold the IC rho, eint with the
+edge cell's radial velocity (floating). `ana/se.py <run> <window>`: windowed Mdot, mass, L_top/L_in,
+horizontal-mean profiles and their drift.
+Time scales of the super-Eddington layer (IC): thickness 5.4e7 cm, sound crossing 9 s, thermal
+(energy content / F) ~1 s; flow time = domain transit 2.2e8 cm / v_r: W2 ~150 s (v_r 0.6-3e6 cm/s),
+W1 ~4e4 s (v_r ~5e3 cm/s).
+
+| | W1 closed bottom (t = 545 ks) | W2 reservoir bottom (t = 353 ks) |
+| --- | --- | --- |
+| Mdot_top (wedge, 1.16e-3 sr) | 2.6e13 -> 3.5e12 g/s over 50-500 ks, ~ t^-0.9, still -11 % per 50 ks | 2.760e17 +- 0.1 % (50-ks windows, 0-350 ks) |
+| mass | -57 % by 50 ks, -67 % at 545 ks, still -0.4 % per 50 ks | +12.2 % (fills, then flat to 1e-4); Mdot_bot = Mdot_top to 5e-5 |
+| L_top/L_in | 0.99999 | 0.99539 (0.46 % of L lifts the gas) |
+| profile drift per 50 ks | rho 1.2 %, T 0.5 %, v_r 1 %, Gamma 3 % | rho 2e-4, T 7e-5, v_r 1e-3, Gamma 2e-4 |
+| photosphere | sinks z = -8e6 -> -7.1e7 (deflation) | z = +3.5e7 (inflated, near the top) |
+| Gamma below the photosphere | < 0.87 everywhere | 0.57-0.90 everywhere; no Gamma > 1 layer left |
+| max Mach_r / dt min / NON-CONVERGED | 0.03 / 0.1135 s / 0 | 0.62 / 0.1133 s / 0 |
+
+Verdicts. W2 reaches a steady outflow within ~10 ks (criteria met: Mdot constant to 0.1 % over > 2000
+flow times, Mdot_bot = Mdot_top, L_top steady, profiles frozen), but it is NOT a radiatively driven wind:
+after the adjustment Gamma < 1 everywhere, the flow is subsonic throughout (Mach 0.62 at the top,
+v = 3.2e6 << v_esc = 1.6e8 cm/s), and it is pushed by the reservoir pressure through the open lid.
+Its rate, 2.39e20 g/s/sr (4.8e-5 Msun/yr over 4 pi), is 0.80 of the photon-tiring limit L/(GM/R)
+(3.0e20 g/s/sr) and 90x a continuum-driven estimate Mdot ~ (Gamma - 1) L/(c c_s) = 2.6e18 g/s/sr, i.e.
+set by the two boundaries, not by the physics. The flow starts at the base (tau 85), below the
+photosphere. W1 has no steady state in finite time: the super-Eddington layer is expelled in the
+first ~2 ks (the launch is below the photosphere, tau 18-55), then the deflated envelope (Gamma < 0.9)
+keeps evaporating through the open top with Mdot ~ t^-0.9. The Gamma > 1 flagged in the top 2-4 cells
+(tau ~ 0) is the free-streaming E gradient, not a force balance. Nothing numerical limits either arm:
+no floor reached (rho_min 1.2e-10 / 7e-8 vs dfloor 1.6e-12), dt set at r_in (0.113-0.18 s), no
+NON-CONVERGED. A physical continuum-driven wind needs the domain through the sonic point (and to
+several R for escape), with a base that supplies mass at the IC pressure: that is the next test.
+
 ## 8. What is next for a gravity-bearing He wedge
 1. Convection onset with the top sponge on (the g4 velocities were the closed-wall mode's waves):
    a long 84x64x64 k = 4 run with wg_sponge_rate = 0.02, judged by the sign of corr(s', v_r').
