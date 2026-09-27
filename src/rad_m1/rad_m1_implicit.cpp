@@ -774,7 +774,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_anderson_start must be >= 1 (pass 0 has no history)");
     }
   }
-  impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
+  // implicit_opac_update: default true with force_reference = wb_arad
+  // (m1-keydefault-0927, docs/dev/ke_dt_0926.md 8), false otherwise
+  impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",
+                                          force_ref == M1_FREF_WB_ARAD);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
@@ -952,8 +955,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_fastk = pin->GetOrAddBoolean("rad_m1","implicit_fast_kernels",ldef);
   impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",
                                     ldef && impl_vimp && impl_stencil);
+  // default 0 (off) with force_reference = wb_arad (m1-keydefault-0927: with
+  // force_reference_work = split the one-pass acceptance loses the 2nd order in v_h)
   impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",
-                                   (ldef && impl_pred) ? 8 : 0);
+                                   (ldef && impl_pred && force_ref != M1_FREF_WB_ARAD)
+                                   ? 8 : 0);
   if (impl_onep != 0 && impl_onep < 2) {
     ImplFatal("<rad_m1>/implicit_one_pass (the check period) must be 0 (off) or >= 2");
   }

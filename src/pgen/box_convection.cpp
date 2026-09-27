@@ -1718,8 +1718,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         radm1::M1TableOpacities(ot, dcol, tcol, op, oe, of, os);
         aref(m,k,j,i) = of*fin_a/cl_a;
       });
+      // BoxConvSrcs gives the reference work (split); set before SetForceReference,
+      // which resolves force_reference_work = auto
+      pm1->fref_wsplit_ok = pmbp->phydro->use_wellbalance_dynamic;
       pm1->SetForceReference(m1_aref_);
-      pm1->fref_wsplit_ok = true;   // BoxConvSrcs gives the reference work (split)
       // how far the file-driven Phi_eff profile is from this one
       Real amax = 0.0;
       {
