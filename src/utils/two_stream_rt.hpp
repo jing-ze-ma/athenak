@@ -7494,18 +7494,49 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   jdm2 = -be*jS2;
                   jQ = be;
                 }
+                // ck-next: cell i-1's loads are issued before cell i is worked
+                Real ci_p = ckci_g(m,c,ie,k,j), co_p = ckco_g(m,c,ie,k,j);
+                Real c0_p = ckc0_g(m,c,ie,k,j), rj_p = lP_g(m,0*nch_+c,ie,k,j);
+                Real id_p = lP_g(m,1*nch_+c,ie,k,j), bt_p = lG_g(m,0,ie,k,j);
+                Real ra_p = lG_g(m,1,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
+                Real s0_p = lpf_g(m,c,ie,k,j), s1_p = lps_g(m,c,ie,k,j);
+                Real s2_p = lpj_g(m,c,ie,k,j);
+                Real wc_p = 0.0, wa_p = 0.0, ff_p = 0.0;
+                if (ie > icut) {
+                  wc_p = lP_g(m,2*nch_+cw,ie-1,k,j);
+                  wa_p = lP_g(m,3*nch_+cw,ie-1,k,j);
+                  ff_p = lP_g(m,4*nch_+cw,ie-1,k,j);
+                }
                 for (int i=ie; i>icut-1; --i) {
-                  const Real ci = ckci_g(m,c,i,k,j);
-                  const Real co = ckco_g(m,c,i,k,j);
-                  const Real tj = 1.0 - ckc0_g(m,c,i,k,j);
+                  const Real ci = ci_p;
+                  const Real co = co_p;
+                  const Real tj = 1.0 - c0_p;
+                  const Real rj = rj_p, idn = id_p, bt = bt_p, rat = ra_p, g3 = g3_p;
+                  const Real s0 = s0_p, s1 = s1_p, s2 = s2_p;
+                  const Real wc = wc_p, wa = wa_p, ffj = ff_p;
+                  if (i > icut) {
+                    ci_p = ckci_g(m,c,i-1,k,j);
+                    co_p = ckco_g(m,c,i-1,k,j);
+                    c0_p = ckc0_g(m,c,i-1,k,j);
+                    rj_p = lP_g(m,0*nch_+c,i-1,k,j);
+                    id_p = lP_g(m,1*nch_+c,i-1,k,j);
+                    bt_p = lG_g(m,0,i-1,k,j);
+                    ra_p = lG_g(m,1,i-1,k,j);
+                    g3_p = lG_g(m,3,i-1,k,j);
+                    s0_p = lpf_g(m,c,i-1,k,j);
+                    s1_p = lps_g(m,c,i-1,k,j);
+                    s2_p = lpj_g(m,c,i-1,k,j);
+                    if (i-1 > icut) {
+                      wc_p = lP_g(m,2*nch_+cw,i-2,k,j);
+                      wa_p = lP_g(m,3*nch_+cw,i-2,k,j);
+                      ff_p = lP_g(m,4*nch_+cw,i-2,k,j);
+                    }
+                  }
                   // the layer joining cells i-1 and i: slots (B_{i-1}, B_i); the third
                   // (B_{i+1}) is 0 for all three
                   Real duv0 = 0.0, duv1 = 1.0, dnl0 = 0.0, dnl1 = 1.0;
                   Real dfw0 = 0.0, dfw1 = 1.0;
                   if (i > icut) {
-                    const Real wc = lP_g(m,2*nch_+cw,i-1,k,j);
-                    const Real wa = lP_g(m,3*nch_+cw,i-1,k,j);
-                    const Real ffj = lP_g(m,4*nch_+cw,i-1,k,j);
                     const Real sw = (1.0 - ffj)*wc + ffj*(1.0 - wa);
                     duv0 = 1.0 - wa;
                     duv1 = wa;
@@ -7521,22 +7552,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   v1 = tj*v1 + ci*duv1 + co*dfw1;
                   Real v2 = tj*jdm2 + ci*jfu1 + co*jlc1;
                   v2 = tj*v2;
-                  const Real rj = lP_g(m,0*nch_+c,i,k,j);
-                  const Real idn = lP_g(m,1*nch_+c,i,k,j);
-                  const Real bt = lG_g(m,0,i,k,j);
-                  const Real rat = lG_g(m,1,i,k,j);
                   const Real al = (1.0 + bt)*idn;
                   const Real be = bt*idn;
                   const Real wr = tj*tj*tj*tj*(1.0 - bt)*idn*jQ;
-                  const Real s0 = lpf_g(m,c,i,k,j);
-                  const Real s1 = lps_g(m,c,i,k,j);
-                  const Real s2 = lpj_g(m,c,i,k,j);
                   const Real omr = 1.0 - rj;
                   const Real dd0 = al*(1.0 + omr*wr)*s0;
                   const Real dd1 = al*(s1 - omr*v0);
                   const Real dd2 = al*(s2 - omr*v1);
                   const Real dd3 = -al*omr*v2;
-                  const Real wj = wfc*lG_g(m,3,i,k,j);
+                  const Real wj = wfc*g3;
                   const Real jm = wj*(rat*dd1 - jDu0);
                   const Real j0 = wj*(rat*dd2 - jDu1);
                   const Real jp = wj*(rat*dd3 - jDu2);
