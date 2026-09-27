@@ -1564,8 +1564,16 @@ void CkLayW(const Real kro, const Real kru, const Real dz, const Real dzu, const
   wl = BFaceW(kru, kro, bf);
   wu = BFaceW(kro, kru, bf);
   const Real dt_l = 0.5*kro*dz;
+#if defined(__CUDA_ARCH__)
+  // ck-lin2-fma: nvcc contracts the sum as fma(0.5 kru, dzu, dt_l) in ck_lin_build,
+  // which stored these weights before; in the kernels that now form them it chose
+  // otherwise.  The rounding is spelled out, so every kernel forms the numbers the
+  // stored ones were (GPU-bitwise).  Host builds do not contract (a*b + c as written).
+  const Real dtc = __fma_rn(0.5*kru, dzu, __dmul_rn(0.5*kro, dz));
+#else
   const Real dt_u = 0.5*kru*dzu;
   const Real dtc = dt_l + dt_u;
+#endif
   ffj = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
 }
 
