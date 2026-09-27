@@ -2652,11 +2652,6 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       // Cartesian: equal face areas, so the background's own pressure drop over dz
       src = bdt*(pr - pl)/dzc;
     }
-    if (fws) {
-      // the work of the reference part at the trapezoid velocity of this kick
-      const Real dref = bdt*d*arefw(m,k,j,i);
-      u0(m,IEN,k,j,i) += dref*(w0(m,IVX,k,j,i) + 0.5*src/d);
-    }
     u0(m,IM1,k,j,i) += src;
     // the cooling layer: relax the SPECIFIC internal energy toward the initial column's
     if (cool_on && z > zcool) {
@@ -2687,6 +2682,14 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       }
     }
   });
+  if (fws) {
+    // force_reference_work = split: the work of the rho arad_ref part of the WB kick, at
+    // the stage-start velocity (a separate kernel: the default one is untouched)
+    par_for("boxconv_srcs_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*arefw(m,k,j,i)*w0(m,IVX,k,j,i);
+    });
+  }
   // ---- the sponge's cell range, once, at the first stage it runs (the column tau only
   // exists once BuildRadWeights has run, so it cannot be known at setup)
   if (vdamp_on && !vdamp_printed_) {
