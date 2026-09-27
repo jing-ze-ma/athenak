@@ -39,12 +39,18 @@ EVERY_CYCLE = ["output1/dt=1.0e-30"]
 
 WARNING = "the explicit radiative source was clipped"
 
+# The limiter belongs to the SEMI-IMPLICIT apply; problem/ck_implicit (default true since
+# defaults2-0927) deposits the converged flux divergence with no rt_de_max clip, so the
+# input is run with the key named false (written into a copy: the input does not name it).
+SEMI = ["ck_implicit = false"]
+
 
 def history(binary, tag, args):
     """Run once in its own directory and return the history file's contents."""
     rundir = os.path.join(BUILD, "run_" + tag)
     shutil.rmtree(rundir, ignore_errors=True)
-    out = ck.run(binary, rundir, MESH + EVERY_CYCLE + args)
+    inp = ck.input_with(os.path.join(BUILD, "inp"), SEMI)
+    out = ck.run(binary, rundir, MESH + EVERY_CYCLE + args, inp=inp)
     # flux_hst also writes dhj.user.hst; the checks read the hydro history
     hst = [f for f in os.listdir(rundir)
            if f.endswith(".hst") and not f.endswith(".user.hst")]
