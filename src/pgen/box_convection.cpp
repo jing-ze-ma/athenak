@@ -2369,14 +2369,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   // m1-mhd: the <mhd> mode covers the M1 box (gravity + WB + Phi_eff + the x1 walls);
-  // the two-stream and the split a_rad force read the hydro directly and are not ported
+  // m1-mhd2: and the grey two-stream (two_stream_rt.hpp is fluid-generic; the box's
+  // weight rebuild and ADI sub-step go through the MHD inversion / Conduction) and the
+  // split a_rad force (FluidRef; MHD::RTStrangSplit has the hydro semantics)
   mhd_ = pfl->mhd;
-  if (mhd_ && (rt_on_ || arad_force_)) {
-    std::cout << "### FATAL ERROR in box_convection: <mhd> supports the <rad_m1> box "
-              << "only (problem/rt_two_stream and problem/wb_arad_force are hydro only)"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   if (restart) return;
 
   // --- m1-mhd: a UNIFORM field problem/b0_1..3 (force free, div B = 0 exactly), set on
@@ -2593,18 +2589,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
 void BoxConvRebuildRadWeights(Mesh *pm, Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->phydro == nullptr) return;
-  Conduction *pc = pmbp->phydro->pcond;
+  // m1-mhd2: <hydro> or <mhd>; under <mhd> the inversion is the MHD one (b0 -> bcc0)
+  if (pmbp->phydro == nullptr && pmbp->pmhd == nullptr) return;
+  Conduction *pc = (pmbp->pmhd != nullptr) ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
   if (pc == nullptr) return;
   auto &indcs = pm->mb_indcs;
   const int ng = indcs.ng;
   const int n1m1 = indcs.nx1 + 2*ng - 1;
   const int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   const int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
-  auto &w0 = pmbp->phydro->w0;
-  pmbp->phydro->peos->ConsToPrim(pmbp->phydro->u0, w0, false,
-                                 0, n1m1, 0, n2m1, 0, n3m1);
-  auto &eosd = pmbp->phydro->peos->eos_data;
+  if (pmbp->pmhd != nullptr) {
+    mhd::MHD *pmh = pmbp->pmhd;
+    pmh->peos->ConsToPrim(pmh->u0, pmh->b0, pmh->w0, pmh->bcc0, false,
+                          0, n1m1, 0, n2m1, 0, n3m1);
+  } else {
+    pmbp->phydro->peos->ConsToPrim(pmbp->phydro->u0, pmbp->phydro->w0, false,
+                                   0, n1m1, 0, n2m1, 0, n3m1);
+  }
+  auto &w0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto &eosd = (pmbp->pmhd != nullptr) ? pmbp->pmhd->peos->eos_data
+                                       : pmbp->phydro->peos->eos_data;
   if (pc->rad_tau_mode) pc->BuildRadWeights(w0, eosd);
   // the same gate Conduction::AddIsotropicHeatFluxRadiative applies before it calls this
   // (including its 1-D early return: there are no transverse faces and cap_c2/cap_c3 are
@@ -2964,12 +2968,14 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       // on the state the column solve has just relaxed.  The in-stage transverse task
       // is a no-op under rad_tr_split_out.
       if (nsub > 1 && rt_split_tr_) {
-        hydro::Hydro *ph = pm->pmb_pack->phydro;
-        if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
-          if (ph->pcond->rad_sts_all) {
-            ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, sdt);
+        // m1-mhd2: the fluid's Conduction (<hydro> or <mhd>, the same call)
+        radm1::FluidRef flt = radm1::FluidRef::Get(pm->pmb_pack);
+        Conduction *pct = flt.pcond;
+        if (flt.on && pct != nullptr && pct->rad_implicit_ang) {
+          if (pct->rad_sts_all) {
+            pct->StsConductionUpdate(flt.u0, flt.peos->eos_data, sdt);
           } else {
-            ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, sdt);
+            pct->ImplicitTransverseUpdate(flt.u0, flt.peos->eos_data, sdt);
           }
         }
       }

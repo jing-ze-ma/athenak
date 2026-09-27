@@ -62,6 +62,8 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "globals.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
@@ -91,6 +93,10 @@ Real m1_jump_er = 0.0;
 // bulk of the "absolute flux 1.4 % low" of design sect. 11.  See sect. 13.
 Real m1_jump_dl = 0.0;
 Real m1_jump_dr = 0.0;
+// m1-mhd2: a UNIFORM field problem/m1_b0_1..3 under <mhd> (force free, div B = 0), so
+// that the uniform-gas tests (equil, marshak, thick_pulse/tophat, advect_uniform) run the
+// |B|^2/2 bookkeeping of every M1 temperature; 0 under <hydro> (never read)
+Real m1_emag = 0.0;
 } // namespace
 
 // prototypes for the user BCs
@@ -107,21 +113,25 @@ namespace {
 //! ghost zones are filled too (the opacity kernel reads them).
 
 void M1SetUniformGas(MeshBlockPack *pmbp, Real d, Real e) {
-  if (pmbp->phydro == nullptr) return;
+  // m1-mhd2: <hydro> or <mhd>; under <mhd> IEN also carries the uniform |B|^2/2
+  radm1::FluidRef flr = radm1::FluidRef::Get(pmbp);
+  if (!flr.on) return;
+  const Real eb = flr.mhd ? m1_emag : 0.0;
   auto &indcs = pmbp->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1 = indcs.nx1 + 2*ng;
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
   int nmb1 = (pmbp->nmb_thispack - 1);
-  auto uh = pmbp->phydro->u0;
+  auto uh = flr.u0;
+  const bool mhdg = flr.mhd;
   par_for("m1_gas_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     uh(m,IDN,k,j,i) = d;
     uh(m,IM1,k,j,i) = 0.0;
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
-    uh(m,IEN,k,j,i) = e;
+    uh(m,IEN,k,j,i) = mhdg ? (e + eb) : e;
   });
 }
 } // namespace
@@ -144,16 +154,45 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
   }
 
   std::string test = pin->GetOrAddString("problem","m1_test","beam");
-  // m1-mhd: only sph_wedge has an <mhd> mode (rad_m1_wedge.cpp); every other test
-  // reads phydro directly
-  if (pmbp->pmhd != nullptr && test.compare("sph_wedge") != 0) {
+  // m1-mhd: sph_wedge has an <mhd> mode (rad_m1_wedge.cpp); m1-mhd2: so do the
+  // uniform-gas tests below (FluidRef, optional uniform field problem/m1_b0_1..3).  The
+  // others (jump, advect_pulse, advect_shear and rad_m1_tests2.cpp) read phydro directly.
+  const bool mhd_ok = (test.compare("sph_wedge") == 0 || test.compare("beam") == 0 ||
+                       test.compare("pulse1d") == 0 || test.compare("equil") == 0 ||
+                       test.compare("marshak") == 0 || test.compare("thick_pulse") == 0 ||
+                       test.compare("tophat") == 0 ||
+                       test.compare("advect_uniform") == 0);
+  if (pmbp->pmhd != nullptr && !mhd_ok) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' is hydro only; with <mhd> "
-      << "only sph_wedge (and the box_convection pgen) are supported" << std::endl;
+      << "only sph_wedge, beam, pulse1d, equil, marshak, thick_pulse, tophat and "
+      << "advect_uniform (and the box_convection pgen) are supported" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // m1-mhd2: the uniform field, read only under <mhd> (a hydro run's parameter dump is
+  // unchanged); set on every face incl. the ghosts, so it is exactly force free
+  if (pmbp->pmhd == nullptr && (pin->DoesParameterExist("problem", "m1_b0_1") ||
+                                pin->DoesParameterExist("problem", "m1_b0_2") ||
+                                pin->DoesParameterExist("problem", "m1_b0_3"))) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "problem/m1_b0_* needs an <mhd> block" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (pmbp->pmhd != nullptr && test.compare("sph_wedge") != 0) {
+    const Real bx = pin->GetOrAddReal("problem", "m1_b0_1", 0.0);
+    const Real by = pin->GetOrAddReal("problem", "m1_b0_2", 0.0);
+    const Real bz = pin->GetOrAddReal("problem", "m1_b0_3", 0.0);
+    m1_emag = 0.5*(bx*bx + by*by + bz*bz);
+    if (!restart) {
+      auto b = pmbp->pmhd->b0;
+      Kokkos::deep_copy(b.x1f, bx);
+      Kokkos::deep_copy(b.x2f, by);
+      Kokkos::deep_copy(b.x3f, bz);
+    }
+  }
   if (test.compare("beam") != 0 && test.compare("pulse1d") != 0 &&
-      test.compare("sph_wedge") != 0 && pmbp->phydro == nullptr) {
+      test.compare("sph_wedge") != 0 && pmbp->phydro == nullptr &&
+      pmbp->pmhd == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' needs a <hydro> block"
       << std::endl;
@@ -494,7 +533,9 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real d0 = pin->GetReal("problem","gas_rho");
     Real vx = pin->GetOrAddReal("problem","pulse_v",0.0);
     Real ar = pmbp->pradm1->arad;
-    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    radm1::FluidRef flr = radm1::FluidRef::Get(pmbp);   // m1-mhd2
+    Real gm1 = flr.eos.gamma - 1.0;
+    const Real eb = flr.mhd ? m1_emag : 0.0;
     Real bb = vx/cl;
     // fixed point of f = beta (1 + chi(f)), a handful of Picard steps (contraction
     // factor ~ beta)
@@ -512,7 +553,8 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
                 << frad/((4.0/3.0)*vx*erad) << std::endl;
     }
     if (restart) return;
-    auto uh = pmbp->phydro->u0;
+    auto uh = flr.u0;
+    const bool mhdu = flr.mhd;
     par_for("m1_advunif_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       uh(m,IDN,k,j,i) = d0;
@@ -520,6 +562,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d0*tg/gm1 + 0.5*d0*vx*vx;
+      if (mhdu) uh(m,IEN,k,j,i) += eb;
       u0(m,radm1::M1_E,k,j,i) = erad;
       u0(m,radm1::M1_F1,k,j,i) = frad;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -538,7 +581,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real tini = pin->GetReal("problem","gas_temp");
     Real ebath = pin->GetReal("problem","e_bath");
     Real ar = pmbp->pradm1->arad;
-    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    Real gm1 = radm1::FluidRef::Get(pmbp).eos.gamma - 1.0;   // m1-mhd2
     m1_jump_el = ebath;              // held in the inner-x1 ghost zones
     m1_jump_er = ar*tini*tini*tini*tini;
     user_bcs_func = RadM1FixedEBC;
