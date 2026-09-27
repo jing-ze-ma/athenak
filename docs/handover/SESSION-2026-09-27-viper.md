@@ -26,8 +26,8 @@ session pushes to the same `rt-integration`. Never force-push.
 | thread | branch | folder | state |
 |---|---|---|---|
 | **M1 coupling fix** (KE dt dependence) | ke-dt-0926 | /viper/ptmp2/jinma/kedt_0926 | gates (a) dt-independent growth 2.15e-4 at every cfl, (b) 2nd order in all variables: PASS with `force_reference_work=split` + `implicit_opac_update=true` + `implicit_one_pass=0` + `implicit_tol=1e-8`. Cost ~2.3x/cycle but ~15x cheaper at equal accuracy. Pending: sph_wedge (term + guard 81e88e44; job 11995660), LE shocks, tst, interleaved timing; branch tip 8f01828f, RESUME section "CHECKPOINT 09-27" -> then the merge/default decision (user) |
-| **dhj flux history** | dhj-fluxhst | /viper/ptmp2/jinma/fluxhst_0927 | adds top/bottom radiative, energy and mass flux columns (`problem/flux_hst`); in progress |
-| **M1 + MHD coupling** | m1-mhd | /viper/ptmp2/jinma/m1mhd_0927 | **ON HOLD (user 09-27) until ke-dt-0926 is merged**; then rebase on rt-integration and build on the merged fix. rad_m1 couples to hydro only today (no pmhd); Cartesian + sp; multi-day |
+| **dhj flux history** | dhj-fluxhst (5f92ba50) | /viper/ptmp2/jinma/fluxhst_0927 (RESUME.md) | adds top/bottom radiative, energy and mass flux columns (`problem/flux_hst`); WIP, gates pending; merge when gated |
+| **M1 + MHD coupling** | m1-mhd (52f1db4b, design only) | /viper/ptmp2/jinma/m1mhd_0927 | **ON HOLD (user 09-27) until ke-dt-0926 is merged**; then rebase on rt-integration and build on the merged fix. rad_m1 couples to hydro only today (no pmhd); Cartesian + sp; multi-day |
 | remap nx1 76 -> 256 | — | radab_0924 (remap.py + remap_pgen.patch) | not started; needed only after rot 300 |
 | 10x ck denser Jacobian | — | docs/handover/RESUME-ck-newton10x-b.md | not started |
 
