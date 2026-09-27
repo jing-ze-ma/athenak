@@ -6487,8 +6487,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         const bool ckstsp_ = cklbuild_ && ckfcf_ && !ckfus_ && cbt_ && ckbsph_ && cksph_
                              && (ckcache_ >= 2) && !(ckjacp_ && !ckjl_) && !ckdif_
                              && (RT_FP32 == 0) && ck_store_split;
-        // ck-lin2: the half-layer pair (cin, cout) is formed by every linear kernel
-        // (CkCinCout), so ck_coef stores it only for a reader that still reads it: the
+        // ck-lin2: the half-layer triple (e0, cin, cout) is formed by the paired linear
+        // kernel, ck_lin_build and rt_chain_ck_jlin (CkE0, CkCinCout), so ck_coef
+        // stores it only for a reader that still reads it: the
         // chain kernel re-applying a frozen operator (a Jacobian pass without
         // ck_impl_jac_lin, ck_impl_lin_check) and the unpaired linear tiers
         const bool cklp_ = (ck_impl_lin_thr == 1) && (ck_nq_ == 2);
@@ -6881,18 +6882,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               kro_u = ckkro_g(m,c0,icut+1,k,j);
               dz_u = lG_g(m,4,icut+1,k,j);
             }
-            Real e0_n[2], r0_n[2];
-            for (int q=0; q<2; ++q) {
-              e0_n[q] = ckc0_g(m,c0+q,icut,k,j);
-              r0_n[q] = lP_g(m,0*nch_+c0+q,icut,k,j);
-            }
+            // ck-lin2: e0 formed too (CkE0), not read
+            Real r0_n[2];
+            for (int q=0; q<2; ++q) r0_n[q] = lP_g(m,0*nch_+c0+q,icut,k,j);
             for (int i=icut; i<ie+1; ++i) {
               const Real bt = bt_n;
               const Real bnx = bnx_n;
               const Real krov = kro_n, dzv = dz_n, kruv = kro_u, dzuv = dz_u;
               Real e0v[2], r0v[2];
               for (int q=0; q<2; ++q) {
-                e0v[q] = e0_n[q];
+                e0v[q] = CkE0(krov, dzv, mug[q]);
                 r0v[q] = r0_n[q];
               }
               if (i < ie) {
@@ -6904,10 +6903,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   kro_u = ckkro_g(m,c0,i+2,k,j);
                   dz_u = lG_g(m,4,i+2,k,j);
                 }
-                for (int q=0; q<2; ++q) {
-                  e0_n[q] = ckc0_g(m,c0+q,i+1,k,j);
-                  r0_n[q] = lP_g(m,0*nch_+c0+q,i+1,k,j);
-                }
+                for (int q=0; q<2; ++q) r0_n[q] = lP_g(m,0*nch_+c0+q,i+1,k,j);
               }
               Real slv = bown, sfv = bown, suu = bown;
               Real bnext = bown;
@@ -6980,9 +6976,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               kro_l = ckkro_g(m,c0,ie-1,k,j);
               dz_l = lG_g(m,4,ie-1,k,j);
             }
-            Real e0_p[2], r0_p[2], sc_p[2];
+            Real r0_p[2], sc_p[2];
             for (int q=0; q<2; ++q) {
-              e0_p[q] = ckc0_g(m,c0+q,ie,k,j);
               r0_p[q] = lP_g(m,0*nch_+c0+q,ie,k,j);
               sc_p[q] = Scr[q][ie];
             }
@@ -6993,7 +6988,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real krov = kro_p, dzv = dz_p, krlv = kro_l, dzlv = dz_l;
               Real e0v[2], r0v[2], scv[2];
               for (int q=0; q<2; ++q) {
-                e0v[q] = e0_p[q];
+                e0v[q] = CkE0(krov, dzv, mug[q]);
                 r0v[q] = r0_p[q];
                 scv[q] = sc_p[q];
               }
@@ -7010,7 +7005,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   dz_l = lG_g(m,4,i-2,k,j);
                 }
                 for (int q=0; q<2; ++q) {
-                  e0_p[q] = ckc0_g(m,c0+q,i-1,k,j);
                   r0_p[q] = lP_g(m,0*nch_+c0+q,i-1,k,j);
                   sc_p[q] = Scr[q][i-1];
                 }
@@ -7157,13 +7151,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int q=0; q<nqc; ++q) {
                 const int c = c0 + q;
                 ckkro_g(m,c,i,k,j) = kro;
-                // ck-lin2: e0 by the function the linear kernels re-form it with
-                const Real e0 = CkE0(kro, dz, muq[q]);
-                ckc0_g(m,c,i,k,j) = e0;
-                // ck-next: the pair by the very function the linear kernels re-form
-                // it with (CkCinCout), from the stored kappa rho, dz and e0; ck-lin2:
-                // stored only when a reader still reads it (ckcst_)
+                // ck-lin2: e0 by the function the linear kernels re-form it with,
+                // and, with the pair (ck-next: CkCinCout), stored only when a reader
+                // still reads it (ckcst_)
                 if (ckcst_) {
+                  const Real e0 = CkE0(kro, dz, muq[q]);
+                  ckc0_g(m,c,i,k,j) = e0;
                   Real cin, cout;
                   CkCinCout(kro, dz, muq[q], e0, cin, cout);
                   ckci_g(m,c,i,k,j) = cin;
@@ -7449,14 +7442,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // (the stores below keep the compiler from hoisting them itself)
               Real btr_n = lG_g(m,0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
               // ck-lin2: cin and cout are formed (CkCinCout), not read
-              Real e0_n = ckc0_g(m,c,icut,k,j), kro_n = ckkro_g(m,c,icut,k,j);
+              // ck-lin2: and so is e0 (CkE0)
+              Real kro_n = ckkro_g(m,c,icut,k,j);
               for (int i=icut; i<ie+1; ++i) {
-                const Real btr = btr_n, dz = dz_n, e0 = e0_n;
+                const Real btr = btr_n, dz = dz_n;
                 const Real kro = kro_n;
+                const Real e0 = CkE0(kro, dz, muc);
                 if (i < ie) {
                   btr_n = lG_g(m,0,i+1,k,j);
                   dz_n = lG_g(m,4,i+1,k,j);
-                  e0_n = ckc0_g(m,c,i+1,k,j);
                   kro_n = ckkro_g(m,c,i+1,k,j);
                 }
                 const RtF bb = static_cast<RtF>(btr);
@@ -7562,11 +7556,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                    lG_g(m,4,i,k,j), lG_g(m,4,i+1,k,j), bface_on,
                                    wl, wu, ffj);
                     // ck-lin2: cin and cout formed (CkCinCout), not read
+                    const Real mu1 = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                    const Real e01 = CkE0(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1);
                     Real ci1, co1;
-                    CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j),
-                              (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2],
-                              ckc0_g(m,c,i,k,j), ci1, co1);
-                    CkJlP1Step(w, up, wl, wu, ffj, ci1, co1, ckc0_g(m,c,i,k,j),
+                    CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1, e01, ci1, co1);
+                    CkJlP1Step(w, up, wl, wu, ffj, ci1, co1, e01,
                                lP_g(m,0*nch_+c,i,k,j),
                                CkIdn(lP_g(m,0*nch_+c,i,k,j), lG_g(m,0,i,k,j)),
                                lG_g(m,0,i,k,j));
@@ -7595,7 +7589,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // ck-next: cin, cout and 1/(1 + R beta) formed (CkCinCout, CkIdn)
                 const Real muj = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
                 Real kr_p = ckkro_g(m,c,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
-                Real c0_p = ckc0_g(m,c,ie,k,j), rj_p = lP_g(m,0*nch_+c,ie,k,j);
+                Real rj_p = lP_g(m,0*nch_+c,ie,k,j);   // ck-lin2: e0 formed (CkE0)
                 Real bt_p = lG_g(m,0,ie,k,j);
                 Real ra_p = lG_g(m,1,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
                 Real s0_p = lpf_g(m,c,ie,k,j), s1_p = lps_g(m,c,ie,k,j);
@@ -7608,6 +7602,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   dz_l = lG_g(m,4,ie-1,k,j);
                 }
                 for (int i=ie; i>icut-1; --i) {
+                  const Real c0_p = CkE0(kr_p, dz_p, muj);
                   Real ci, co;
                   CkCinCout(kr_p, dz_p, muj, c0_p, ci, co);
                   const Real tj = 1.0 - c0_p;
@@ -7619,7 +7614,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   if (i > icut) {
                     kr_p = kr_l;
                     dz_p = dz_l;
-                    c0_p = ckc0_g(m,c,i-1,k,j);
                     rj_p = lP_g(m,0*nch_+c,i-1,k,j);
                     bt_p = lG_g(m,0,i-1,k,j);
                     ra_p = lG_g(m,1,i-1,k,j);
