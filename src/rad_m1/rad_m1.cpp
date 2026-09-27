@@ -499,15 +499,26 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
+  // force_reference_work (m1-keydefault-0927): with force_reference = wb_arad the
+  // default is `auto` = split when the problem generator gives the gas the reference
+  // work (it sets fref_wsplit_ok before SetForceReference: box_convection, sph_wedge),
+  // else full; resolved and echoed in SetForceReference.  `full` keeps the pre-0927
+  // scheme.  Without wb_arad the key is read only when named and has no effect.
   fref_wsplit = false;
-  if (pin->DoesParameterExist("rad_m1", "force_reference_work")) {
-    const std::string fw = pin->GetString("rad_m1", "force_reference_work");
+  fref_wsplit_auto = false;
+  if (force_ref == M1_FREF_WB_ARAD ||
+      pin->DoesParameterExist("rad_m1", "force_reference_work")) {
+    const std::string fw = pin->GetOrAddString("rad_m1", "force_reference_work",
+                                               "auto");
     if (fw.compare("split") == 0) {
       fref_wsplit = (force_ref == M1_FREF_WB_ARAD);
+    } else if (fw.compare("auto") == 0) {
+      fref_wsplit = (force_ref == M1_FREF_WB_ARAD);
+      fref_wsplit_auto = fref_wsplit;
     } else if (fw.compare("full") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/force_reference_work = '" << fw << "' is not a valid "
-        << "choice (full | split)" << std::endl;
+        << "choice (auto | full | split)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -834,6 +845,15 @@ void RadiationM1::SetOpacityTables(const DvceArray2D<Real> &kr,
 
 void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
   arad_ref = a;
+  // force_reference_work = auto: split only if the pgen gives the reference work
+  if (fref_wsplit_auto) {
+    fref_wsplit = fref_wsplit_ok;
+    fref_wsplit_auto = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> force_reference_work = auto -> "
+                << (fref_wsplit ? "split" : "full") << std::endl;
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------

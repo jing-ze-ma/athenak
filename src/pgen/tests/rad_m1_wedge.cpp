@@ -512,8 +512,10 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       const Real rl = x1f(m,i), rr = x1f(m,i+1);
       aref_d(m,k,j,i) = 0.5*kt*fr2*(1.0/(rl*rl) + 1.0/(rr*rr))/cl;
     });
+    // RadM1WedgeGravity gives the reference work (split); set before
+    // SetForceReference, which resolves force_reference_work = auto
+    pm1->fref_wsplit_ok = wbdyn;
     pm1->SetForceReference(aref_d);
-    pm1->fref_wsplit_ok = true;   // RadM1WedgeGravity gives the reference work (split)
   }
 
   // outer wall and top sponge (defaults: closed wall, no sponge = the original scheme)

@@ -363,6 +363,8 @@ class RadiationM1 {
   // work, and the radiation pays both
   bool fref_wsplit = false;
   bool fref_wsplit_ok = false;  // set by a pgen whose WB source gives the reference work
+                                // (BEFORE SetForceReference, which resolves `auto`)
+  bool fref_wsplit_auto = false;  // force_reference_work = auto, not yet resolved
   int mr_nsub = 1;              // implicit_mr_nsub: R(Delta) as nsub steps of Delta/nsub
   int mr_tab = 0;               // implicit_mr_tab: 0 sdirk2, 1 trbdf2 (DIAGNOSTIC)
   bool mr_k0ok = false;         // t2k1 holds f(Y_0) of this R (the last R's final slope)
