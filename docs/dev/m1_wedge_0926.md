@@ -198,8 +198,9 @@ IC the lagged state is already the answer (1.1 inner it/solve), so the predictor
 nothing; once the gas moves, the extrapolated increment is a far better first guess than the lagged
 state. Also reversed: vet_col_every 4 (+10 %: the lagged tensor costs 2.7 inner it/solve more than
 rebuilding it) and mg_gc vs rbgs_fwd (rbgs_fwd -8.7 % here: more iterations, 8.3 vs 7.3, but cheaper
-ones; on the T-S4 radiation wedge mg_gc was -18 %, so the sp default is not changed; the He input
-may name rbgs_fwd). No default changed.
+ones; on the T-S4 radiation wedge mg_gc was -18 %). Update (user decision 09-26, merged 09-27 as
+sp-rbgs-merge): the sp fresh-run default of implicit_precond is rbgs_fwd again (was mg_gc); mg_gc
+stays available by name, restarts keep the echoed value, Cartesian unchanged (mg, levels 3).
 
 ### 7.3 The radial ringing (`gpu/g7_n3` jobs 11989485/6, `gpu/g7b` 11990284, `gpu/g9_n3/sp` 11990710; 84x32x32, grid seed 1e-3)
 - Period 59.2 s in every closed-wall arm (FFT of <v_r>, hst every 2 s). Acoustic estimate from the IC

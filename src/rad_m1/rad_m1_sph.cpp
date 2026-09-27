@@ -61,8 +61,9 @@
 //! time2_vet_col = predict (the vet_col tensor of the hesdirk2 stages at t^{n+1}, not
 //! U^n), time2_vstage = true (implicit_vimp: the stage's own velocity in the cell flux
 //! and the gas work in the E row) and implicit_precond = mg_gc (implicit_mg_levels = 1)
-//! where rbgs_fwd was the default.  A restart whose file lacks a key keeps its old value
-//! (the resolved values are echoed); Cartesian meshes are unchanged.
+//! where rbgs_fwd was the default (mg_gc reverted to rbgs_fwd by m1-wedge, 09-26:
+//! -8.7 % on the rad-hydro wedge with moving gas).  A restart whose file lacks a key
+//! keeps its old value (the resolved values are echoed); Cartesian meshes are unchanged.
 
 #include <iostream>
 #include <string>
