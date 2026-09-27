@@ -33,3 +33,12 @@ MI300A with scratch OUT_OF_RESOURCES (branch ck-scratch). sweep_form 1 + ck_impl
 **Production goal (user 09-24, final):** 300 ROTATIONS (P_rot = 3.05e5 s = 3.53 d, so ~9.2e7 s = ~1060 Earth days; the user also calls it "1000 days"). Estimate for the 1024-around-equator MHD grid on 16 apu nodes: ~25 min/rotation at dt ~18 s -> ~125 h (~5.2 days of 16 nodes, ~6 chained 24-h links) if dt holds; longer if dt shrinks.
 
 **User 09-26: production adds ck_impl_kkt_row = true (in wasp121_0925 x1 and 10x inputs) and ck_impl_xstep = 8 (sparc_0925/run.sub C2; was 2, a no-op).** Needs a binary >= 427f9f58. Fresh starts only; the running sponge arms keep their old keys (binary e3a8442e). Backups: *.bak0926.
+
+**User 09-27: production spin-up WITHOUT the bottom sponge** (top sponge on). Set up and smoke-tested in /viper/ptmp2/jinma/w121prod_0927; the chain is not launched until the user picks nodes and start.
+
+**User 09-27 (updated: run 1x and 10x IN PARALLEL): the 10x WASP-121b run with the SAME updated setup, only 1x -> 10x swapped** (ck tables ckdata10, CE table 10x, IC ic_w121.txt, and the 10x grid if it differs). NO extra 10x solver settings (drop maxit 12, rsec 20 etc.; use the same defaults as 1x). Expect some NOT-CONVERGED from stiff day-side columns (the Broyden/banded Jacobian is not built); report it, don't add settings.
+
+**User 09-27 go:** 1x production spin-up LAUNCHED on its own node, 2 GPUs, TROT 60, chained apu links (/viper/ptmp2/jinma/w121prod_0927, binary 041fac8f md5 7ea1537a; seam defaults, kkt_row, xstep 8, beam_par, top sponge only). 10x: ALLOW the 10x solver settings (tol 1e-7, maxit 12, rsec 20); smoke first, then ask for the go; separate node, 2 GPUs. No floor switches, no ck_dif_dtau. Port the remap later.
+- 09-27 00:36: 10x spin-up LAUNCHED as 11992453 (6.5 h, 2 GPUs, TROT 60, 10x solver keys; smoke showed 10-50 % NOT-CONVERGED at residual <= 4e-7). Stop it and build the denser-Jacobian fix if residuals grow well beyond 1e-6 or dt falls. 1x = 11992260 (4 h).
+- 09-27 07:05: both spin-ups at rotation 60 (1x 2 h 46 min, 10x 4 h 30 min, 0 collapses). **User: run the LOW-RES grid to 300 rotations before any remap to high res.** In progress: a verbose ck check at rot 60 + a relaxation check; the continuation to 300 is prepared, submission awaits the go.
+- 09-27 ~07:50: CONTINUATION to rot 300 submitted: 1x 11995741 (15 h), 10x 11995742 (23:55), same binary, from dhj.00120.rst; STOP files removed. At rot 60 the deep layer was still drifting (100 bar +13-16 K per 10 rot); 10x has 45 % NOT-CONVERGED (max resid 8e-6).
