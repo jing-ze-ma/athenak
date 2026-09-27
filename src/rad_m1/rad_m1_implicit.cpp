@@ -348,17 +348,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_closure_relax must lie in (0,1]");
   }
   impl_crelax_thin = pin->GetOrAddBoolean("rad_m1","implicit_closure_relax_thin",false);
-  // runs_5c_thinstab: the step-to-step closure relaxation of optically thin cells.  Read
-  // only when named, so an input file that does not name it is bitwise unchanged.
-  impl_ctrelax = 0.0;
-  ctr_init = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_closure_thin_relax")) {
-    impl_ctrelax = pin->GetReal("rad_m1","implicit_closure_thin_relax");
-    if (impl_ctrelax < 0.0) {
-      ImplFatal("<rad_m1>/implicit_closure_thin_relax must be >= 0");
-    }
-  }
-  {std::string sc = pin->GetOrAddString("rad_m1","implicit_closure_lag","pass");
+  // implicit_closure_lag: DEFAULT step since defaults-0927 (2026-09-27) for transport =
+  // implicit on a multi-D mesh (runs_3b5 recommends step in 2-D/3-D, every modern input
+  // names it, pass is ~4x slower per simulated second; switch_inventory_2026-09-24.md);
+  // pass elsewhere and on a restart whose file lacks the key.  The value is recorded.
+  const bool md_full = full && pmy_pack->pmesh->multi_d;
+  {std::string sc = pin->GetOrAddString("rad_m1","implicit_closure_lag",
+      (md_full && !global_variable::restart_run) ? "step" : "pass");
   if (sc.compare("pass") == 0) {
     impl_clag_step = false;
   } else if (sc.compare("step") == 0) {
@@ -366,6 +362,27 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_closure_lag = '" + sc
               + "' is not a choice (pass | step)");
+  }
+  }
+  // runs_5c_thinstab: the step-to-step closure relaxation of optically thin cells.
+  // DEFAULT 1.5 since defaults-0927 (2026-09-27; memory m1-thin-cell-cure, merged
+  // b7e48012: the cure of the multi-D thin-cell instability of the chi(f) closures, He
+  // slab 332 fallbacks -> 0 at 0 extra passes, be and hesdirk2) for a chi(f) closure (m1,
+  // minerbo, kershaw) under transport = implicit on a multi-D mesh with
+  // implicit_closure_lag = step -- its own requirements; the fixed-tensor closures
+  // (eddington, vet_sc, tau, vet_col) do not need it.  0 (off) elsewhere and on a
+  // restart whose file lacks the key; the value is recorded where the default applies.
+  impl_ctrelax = 0.0;
+  ctr_init = false;
+  {const bool chif = !(eddington || vet_sc || tau_closure);
+  if (chif && md_full && impl_clag_step) {
+    impl_ctrelax = pin->GetOrAddReal("rad_m1","implicit_closure_thin_relax",
+                                     global_variable::restart_run ? 0.0 : 1.5);
+  } else if (pin->DoesParameterExist("rad_m1","implicit_closure_thin_relax")) {
+    impl_ctrelax = pin->GetReal("rad_m1","implicit_closure_thin_relax");
+  }
+  if (impl_ctrelax < 0.0) {
+    ImplFatal("<rad_m1>/implicit_closure_thin_relax must be >= 0");
   }
   }
   // ---- the TRANSVERSE realizability limiter.  `none` is not merely the default: it
@@ -398,10 +415,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (none | anderson)");
   }
   }
-  // ---- MILESTONE 3g: the GAS-RADIATION energy coupling.  Both default false; neither
-  // allocates anything nor is referenced then, so an input file that does not name them
-  // is bitwise unchanged.
-  impl_gas_newton = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton",false);
+  // ---- MILESTONE 3g: the GAS-RADIATION energy coupling.  implicit_eos_cache defaults
+  // false; neither key allocates anything nor is referenced when false.
+  // implicit_gas_newton: DEFAULT true since defaults-0927 (2026-09-27;
+  // runs_3g_newton_T VERDICT PASS, and every GPU timing and gate since 3g ran it;
+  // switch_inventory_2026-09-24.md decision 8) for transport = implicit; false under
+  // implicit_x1 (the 3a arithmetic) and on a restart whose file lacks the key.  The
+  // value is recorded.
+  impl_gas_newton = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton",
+                                         full && !global_variable::restart_run);
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
@@ -538,8 +560,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // implicit_mg_levels = 1: rbgs_fwd + the global band coarse space; runs_5p_coarse2:
   // wedge vet_col 13.1 -> 1.1 it/solve, -18 %/-22 % ms/cycle at 1/2 GPUs).  A restart
   // whose file lacks the key keeps rbgs_fwd; the resolved value is echoed.
+  // defaults-0927 (2026-09-27): on the Cartesian fast path the default is mg (with
+  // implicit_mg_levels = 3; tests_m1/runs_5m_precond: He box -7 %/cycle on 1 GPU, -6 % on
+  // 2; H200 2 GPUs: plain mg fastest, handover 09-26 sect. 6) on a multi-D, single-level,
+  // non-cs/sp/polar mesh, unless implicit_krylov_dev > 0 is named (it refuses mg).  A
+  // restart whose file lacks the key keeps rbgs_fwd.
+  auto *pmq = pmy_pack->pmesh;
+  const bool kdev_named = pin->DoesParameterExist("rad_m1","implicit_krylov_dev") &&
+                          pin->GetInteger("rad_m1","implicit_krylov_dev") > 0;
+  const bool mgdef = !sph_geom && !pmq->use_cubed_sphere && !pmq->use_polar_boundary &&
+                     !pmq->multilevel && pmq->multi_d && !kdev_named &&
+                     !global_variable::restart_run;
   const char *pcdef = fdef ? ((sph_geom && !global_variable::restart_run) ? "mg_gc"
-                                                                        : "rbgs_fwd")
+                              : (mgdef ? "mg" : "rbgs_fwd"))
                            : "line";
   {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond", pcdef);
   if (pc.compare("line") == 0) {
@@ -564,7 +597,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   mg_nlev = 0;
   mg_halo = true;
   if (impl_prec == 3) {
-    mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",2);
+    // default 3 since defaults-0927 (the recommended value, runs_5m_precond; was 2)
+    mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",3);
     mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
     if (mg_nlev < 2) {ImplFatal("<rad_m1>/implicit_mg_levels must be >= 2");}
   }

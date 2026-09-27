@@ -575,17 +575,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // 1.36x faster on the GPU; the numbers are in tests_ck_sweep_form/README.md.  The
   // default is conditioned on every one of the flag's own refusals, so that flipping it
   // cannot turn a working input into a startup fatal: it falls back to 0 with
-  // ck_spherical off (plane-parallel: the two-pass sweep IS the exact form there), with
-  // ck_implicit on (kept so that an existing implicit input does not change form; tm
-  // carries its own tridiagonal since phase T1, so ck_sweep_form = 1 may be set
-  // explicitly there) and at ck_sweep_cache != 2 (the only setting the probe-free forms
-  // are instantiated at).  Set the line explicitly to override.
-  // ck_implicit itself is read in full below; peek at it here, exactly as with
-  // rt_layer_legacy above.
+  // ck_spherical off (plane-parallel: the two-pass sweep IS the exact form there) and at
+  // ck_sweep_cache != 2 (the only setting the probe-free forms are instantiated at).
+  // Until defaults-0927 (2026-09-27) it also fell back to 0 under ck_implicit; tm is now
+  // the default there too (the T4 linear path needs it, tm carries its own tridiagonal
+  // since phase T1), so an implicit input that does not name the key moves from the
+  // four-pass to the tm form.  Set the line explicitly to override.
   const bool cksweepform_set = pin->DoesParameterExist("problem","ck_sweep_form");
-  const bool ck_implicit_peek = pin->GetOrAddBoolean("problem","ck_implicit",false);
   const int cksweepform_default =
-      (ck_spherical && !ck_implicit_peek && two_stream_rt::ck_sweep_cache == 2) ? 1 : 0;
+      (ck_spherical && two_stream_rt::ck_sweep_cache == 2) ? 1 : 0;
   two_stream_rt::ck_sweep_form =
       pin->GetOrAddInteger("problem","ck_sweep_form", cksweepform_default);
   if (two_stream_rt::ck_sweep_form < 0 || two_stream_rt::ck_sweep_form > 2) {
@@ -606,7 +604,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << (cksweepform_set ? "set explicitly" :
                   (cksweepform_default == 1 ? "the default here (ck_spherical)" :
                    "the default here (no spherical face coupling to solve, or "
-                   "ck_implicit / ck_sweep_cache != 2)")) << std::endl;
+                   "ck_sweep_cache != 2)")) << std::endl;
   }
   // The refusal, stated here rather than only at the first RT call, so that a Cartesian
   // input naming either flag dies at startup with the reason.
@@ -643,7 +641,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // at 10x and 100x the production dt; see utils/two_stream_column_ck.hpp.
   two_stream_rt::ck_impl_tau_min =
       pin->GetOrAddReal("problem","ck_impl_tau_min",0.0);
-  two_stream_rt::ck_impl_arat = pin->GetOrAddReal("problem","ck_impl_arat",2.0);
+  // defaults-0927: 1e30 (no two-level split) under ck_implicit -- arat 2 FAILED (9 of 10
+  // ranks non-converged, README_T1_stall) and every T4/c2 run uses 1e30; 2.0 otherwise
+  two_stream_rt::ck_impl_arat = pin->GetOrAddReal("problem","ck_impl_arat",
+      two_stream_rt::ck_implicit ? 1.0e30 : 2.0);
   two_stream_rt::ck_impl_debug = pin->GetOrAddInteger("problem","ck_impl_debug",0);
   two_stream_rt::ck_impl_ncloc = pin->GetOrAddInteger("problem","ck_impl_ncloc",0);
   dtloc_every = pin->GetOrAddInteger("problem","dtloc_every",0);
@@ -669,8 +670,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddReal("problem","ck_impl_pred_fac",0.5);
   two_stream_rt::ck_impl_pred_chk =
       pin->GetOrAddBoolean("problem","ck_impl_pred_chk",false);
+  // defaults-0927: on under ck_implicit (bitwise on CPU and GPU, -4.3 %/cycle)
   two_stream_rt::ck_impl_nosync =
-      pin->GetOrAddBoolean("problem","ck_impl_nosync",false);
+      pin->GetOrAddBoolean("problem","ck_impl_nosync",two_stream_rt::ck_implicit);
   two_stream_rt::ck_impl_warm_step =
       pin->GetOrAddBoolean("problem","ck_impl_warm_step",false);
   two_stream_rt::ck_impl_cvkeep =
@@ -685,9 +687,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // chain >= ck_dif_dtau below the chain cut).  See utils/two_stream_column_ck.hpp.
   two_stream_rt::ck_dif_dtau = pin->GetOrAddReal("problem","ck_dif_dtau",0.0);
   two_stream_rt::ck_dif_margin = pin->GetOrAddInteger("problem","ck_dif_margin",0);
-  // ck-fast2 lever 3, default off: the storing pass's pseudo-spherical beam in its own
-  // per-target kernels (see two_stream_rt::ck_beam_par)
-  two_stream_rt::ck_beam_par = pin->GetOrAddBoolean("problem","ck_beam_par",false);
+  // ck-fast2 lever 3 (problem/ck_beam_par) is read below, after the T4 set it needs.
   // the storing pass without the chain kernel (see two_stream_rt::ck_store_split)
   two_stream_rt::ck_store_split = pin->GetOrAddBoolean("problem","ck_store_split",true);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
@@ -696,8 +696,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // layer coefficients are stored as well as kappa rho (memory against expm1); and
   // ck_impl_warm starts the Newton from the previous call's converged increment.  See
   // utils/two_stream_column_ck.hpp.
+  // defaults-0927 (2026-09-27): the T4 set -- ck_impl_frozen_op, ck_impl_lin,
+  // ck_impl_fuse, ck_impl_jac_lin, ck_impl_cvsec -- DEFAULTS ON under ck_implicit
+  // wherever their own refusals are met (tm sweep on a spherical ck run, sweep cache 2,
+  // no ck_impl_refresh_kappa, a double-precision chain, ck_impl_debug <= 0); they are
+  // reformulations of the same Newton (same fixed point; lin vs chain 4e-15; see
+  // docs/dev/switch_inventory_2026-09-24.md sect. 3 and tests_ck_implicit/README_T4.md).
+  // Without ck_implicit they stay off, as before.  An explicit value always wins; the
+  // values are recorded, so a restart keeps what its file stored.
+  const bool t4def = two_stream_rt::ck_implicit && ck_spherical &&
+                     two_stream_rt::ck_sweep_form == 1 &&
+                     two_stream_rt::ck_sweep_cache == 2 &&
+                     !two_stream_rt::ck_impl_refresh_kappa && (RT_FP32 == 0) &&
+                     two_stream_rt::ck_impl_debug <= 0;
   two_stream_rt::ck_impl_frozen_op =
-      pin->GetOrAddBoolean("problem","ck_impl_frozen_op",false);
+      pin->GetOrAddBoolean("problem","ck_impl_frozen_op",t4def);
   two_stream_rt::ck_impl_frozen_cof =
       pin->GetOrAddBoolean("problem","ck_impl_frozen_cof",true);
   two_stream_rt::ck_impl_warm =
@@ -706,7 +719,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // for the Newton passes that do not build the Jacobian.  See
   // utils/two_stream_column_ck.hpp.  Default off; the requirements are checked at the
   // first RT call.
-  two_stream_rt::ck_impl_lin = pin->GetOrAddBoolean("problem","ck_impl_lin",false);
+  two_stream_rt::ck_impl_lin = pin->GetOrAddBoolean("problem","ck_impl_lin",
+      t4def && two_stream_rt::ck_impl_frozen_op && two_stream_rt::ck_impl_frozen_cof);
   two_stream_rt::ck_impl_lin_check =
       pin->GetOrAddInteger("problem","ck_impl_lin_check",0);
   two_stream_rt::ck_impl_lin_thr = pin->GetOrAddInteger("problem","ck_impl_lin_thr",1);
@@ -718,12 +732,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // phase T4 (tests_ck_implicit/README_T4.md): the fused residual + step kernel, the
   // Jacobian from the linear kernel's stored factorisation, the Jacobian on pass 0, and
   // light-weight launches.  All default off.  See utils/two_stream_column_ck.hpp.
-  two_stream_rt::ck_impl_fuse = pin->GetOrAddBoolean("problem","ck_impl_fuse",false);
-  two_stream_rt::ck_impl_jac_lin =
-      pin->GetOrAddBoolean("problem","ck_impl_jac_lin",false);
+  two_stream_rt::ck_impl_fuse = pin->GetOrAddBoolean("problem","ck_impl_fuse",t4def);
+  two_stream_rt::ck_impl_jac_lin = pin->GetOrAddBoolean("problem","ck_impl_jac_lin",
+      t4def && two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_lin_thr == 1);
   two_stream_rt::ck_impl_jac0 = pin->GetOrAddBoolean("problem","ck_impl_jac0",false);
   two_stream_rt::ck_impl_jneg = pin->GetOrAddBoolean("problem","ck_impl_jneg",false);
-  two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",false);
+  two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",
+      t4def && two_stream_rt::ck_impl_fuse);
+  // problem/ck_beam_par (ck-fast2 lever 3): the storing pass's pseudo-spherical beam in
+  // its own per-target kernels (see two_stream_rt::ck_beam_par).  defaults-0927: ON
+  // wherever its requirements (checked below) hold, off otherwise (ck-fast2: -25 % RT;
+  // it differs from the in-kernel beam only by deposits below e^-60 of the beam).
+  {const bool bpdef = two_stream_rt::ck_implicit && two_stream_rt::ck_impl_frozen_op &&
+                      !two_stream_rt::ck_impl_refresh_kappa &&
+                      two_stream_rt::ck_impl_lin &&
+                      two_stream_rt::ck_impl_lin_thr == 1 &&
+                      two_stream_rt::ck_sweep_form == 1 && ck_spherical && ck_beam_sph;
+  two_stream_rt::ck_beam_par = pin->GetOrAddBoolean("problem","ck_beam_par",bpdef);}
   // problem/ck_impl_rsec: secant bound on the thick rows' diagonal (0 = off, bitwise)
   two_stream_rt::ck_impl_rsec = pin->GetOrAddReal("problem","ck_impl_rsec",0.0);
   two_stream_rt::ck_impl_lw = pin->GetOrAddBoolean("problem","ck_impl_lw",false);
@@ -1043,7 +1068,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  ck_nq = pin->GetOrAddInteger("problem","ck_nquad",1);
+  // problem/ck_nquad: DEFAULT 2 (two-point Gauss) since defaults-0927 (2026-09-27; user
+  // 09-25 "ck_nquad = 2 for dhj production": the exact diffusion limit, nquad 1 is ~10 %
+  // low there; rms eint vs a tight reference 1.0e-2 vs 1.6e-2; +6 % ms/cycle at nx1 256).
+  // 1 restores the diffusivity-factor form.  The value is recorded, so a restart keeps
+  // what its file stored; an input that does not name it changes.
+  ck_nq = pin->GetOrAddInteger("problem","ck_nquad",2);
   if (ck_nq != 1 && ck_nq != 2) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_nquad must be 1 "
               << "(diffusivity factor) or 2 (Gauss), got " << ck_nq << std::endl;

@@ -1616,12 +1616,15 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     VetFatal("<rad_m1>/vet_axis = '" + ax + "' not implemented (flux | eigen)");
   }
   }
-  // vet_tensor = uniaxial (default) | full.  Read only when given, so that an input
-  // without it writes the restart file the uniaxial path always wrote.
+  // vet_tensor = uniaxial | full.  DEFAULT full since defaults-0927 (2026-09-27;
+  // docs/dev/switch_inventory_2026-09-24.md: every vet_sc gate since runs_3j ran full,
+  // NC 0, +0.03 ms per SC call).  A restart whose file lacks the key (written when the
+  // key was read only when named) keeps uniaxial; the resolved value is recorded.
   vet_full = false;
   vet_eig_min = 0.0;
-  if (pin->DoesParameterExist("rad_m1", "vet_tensor")) {
-    std::string vt = pin->GetString("rad_m1", "vet_tensor");
+  {
+    std::string vt = pin->GetOrAddString("rad_m1", "vet_tensor",
+                         global_variable::restart_run ? "uniaxial" : "full");
     if (vt.compare("full") == 0) {
       vet_full = true;
     } else if (vt.compare("uniaxial") != 0) {
