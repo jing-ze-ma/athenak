@@ -816,7 +816,7 @@ void RadM1WedgeBC(Mesh *pm) {
   const bool topen = wg_top_open_;
   const bool bres = wg_bot_res_;
   (void) have_phi;
-  // m1-mhd: the x1 ghost FACES first (the cell pass below needs the ghost cells' |B|^2/2):
+  // m1-mhd: the x1 ghost FACES first (the cell pass below needs the ghosts' |B|^2/2):
   // B_r continued as r^-2 from the edge face (the monopole), transverse faces copied
   // from the edge cell (zero gradient)
   const bool mhd = wg_mhd_;
