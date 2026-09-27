@@ -1505,6 +1505,33 @@ Real BFaceW(const Real k_own, const Real k_far, const bool on) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CkCinCout
+//! \brief ck-next: the half-layer pair (cin, cout) that ck_coef and the chain kernel's
+//! cofs store in ck_ci / ck_co, formed again from the stored e0 and kappa rho, the
+//! cell's dz and the chain's mu -- the same expressions on the same numbers, so the
+//! stored values bitwise.  The linear kernels read two Reals per (cell, chain) less.
+KOKKOS_INLINE_FUNCTION
+void CkCinCout(const Real kro, const Real dz, const Real mu, const Real e0r, Real &ci,
+               Real &co) {
+  const Real dtau = 0.5*kro*dz;
+  const RtF x = static_cast<RtF>(dtau/mu);
+  const RtF e0 = static_cast<RtF>(e0r);
+  const RtF one = static_cast<RtF>(1.0);
+  const RtF cin = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x) : (x/2 - x*x/3);
+  const RtF cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x) : (x/2 - x*x/6);
+  ci = static_cast<Real>(cin);
+  co = static_cast<Real>(cout);
+}
+//! \fn Real CkIdn
+//! \brief ck-next: lP slot 1, 1/(1 + R beta), from slot 0 and beta by ck_lin_build's
+//! expression (bitwise the stored value)
+KOKKOS_INLINE_FUNCTION
+Real CkIdn(const Real rj, const Real bt) {
+  const RtF dn = static_cast<RtF>(1.0) + static_cast<RtF>(rj)*static_cast<RtF>(bt);
+  return 1.0/static_cast<Real>(dn);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RTLayer
 //! \brief one exact short-characteristic step through a layer (see rt_layer_legacy).
 //!
@@ -6792,27 +6819,27 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               wu_n = lP_g(m,3*nch_+c0,icut,k,j);
               ff_n = lP_g(m,4*nch_+c0,icut,k,j);
             }
-            Real e0_n[2], ci_n[2], co_n[2], id_n[2], r0_n[2];
+            // ck-next: cin, cout and 1/(1 + R beta) are formed from e0, kappa rho
+            // (one per pair), dz and R (CkCinCout, CkIdn), not read
+            Real kro_n = ckkro_g(m,c0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
+            Real e0_n[2], r0_n[2];
             for (int q=0; q<2; ++q) {
               e0_n[q] = ckc0_g(m,c0+q,icut,k,j);
-              ci_n[q] = ckci_g(m,c0+q,icut,k,j);
-              co_n[q] = ckco_g(m,c0+q,icut,k,j);
-              id_n[q] = lP_g(m,1*nch_+c0+q,icut,k,j);
               r0_n[q] = lP_g(m,0*nch_+c0+q,icut,k,j);
             }
             for (int i=icut; i<ie+1; ++i) {
               const Real bt = bt_n;
               const Real bnx = bnx_n, wl = wl_n, wu = wu_n, ff = ff_n;
-              Real e0v[2], civ[2], cov[2], idv[2], r0v[2];
+              const Real krov = kro_n, dzv = dz_n;
+              Real e0v[2], r0v[2];
               for (int q=0; q<2; ++q) {
                 e0v[q] = e0_n[q];
-                civ[q] = ci_n[q];
-                cov[q] = co_n[q];
-                idv[q] = id_n[q];
                 r0v[q] = r0_n[q];
               }
               if (i < ie) {
                 bt_n = lG_g(m,0,i+1,k,j);
+                kro_n = ckkro_g(m,c0,i+1,k,j);
+                dz_n = lG_g(m,4,i+1,k,j);
                 if (i+1 < ie) {
                   bnx_n = Bb_g(m,b,i+2,k,j);
                   wl_n = lP_g(m,2*nch_+c0,i+1,k,j);
@@ -6821,9 +6848,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 }
                 for (int q=0; q<2; ++q) {
                   e0_n[q] = ckc0_g(m,c0+q,i+1,k,j);
-                  ci_n[q] = ckci_g(m,c0+q,i+1,k,j);
-                  co_n[q] = ckco_g(m,c0+q,i+1,k,j);
-                  id_n[q] = lP_g(m,1*nch_+c0+q,i+1,k,j);
                   r0_n[q] = lP_g(m,0*nch_+c0+q,i+1,k,j);
                 }
               }
@@ -6837,15 +6861,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
               for (int q=0; q<2; ++q) {
                 const Real e0 = e0v[q];
-                const Real cin = civ[q];
-                const Real cout = cov[q];
+                Real cin, cout;
+                CkCinCout(krov, dzv, mug[q], e0, cin, cout);
                 const Real tr = 1.0 - e0;
                 const Real pl = cin*sfc + cout*suc;
                 const Real ql = cin*suc + cout*sfc;
                 const Real pu = cin*slv + cout*sfv;
                 const Real qu = cin*sfv + cout*slv;
                 Scr[q][i] = ss[q];
-                const Real idn = idv[q];
+                const Real idn = CkIdn(r0v[q], bt);
                 const Real rn = (r0v[q] + bt)*idn;
                 Real sv = (1.0 - bt)*ss[q]*idn;
                 sv = tr*(rn*ql + sv) + pl;
@@ -6886,12 +6910,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               wu_p = lP_g(m,3*nch_+c0,ie-1,k,j);
               ff_p = lP_g(m,4*nch_+c0,ie-1,k,j);
             }
-            Real e0_p[2], ci_p[2], co_p[2], id_p[2], r0_p[2], sc_p[2];
+            Real kro_p = ckkro_g(m,c0,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
+            Real e0_p[2], r0_p[2], sc_p[2];
             for (int q=0; q<2; ++q) {
               e0_p[q] = ckc0_g(m,c0+q,ie,k,j);
-              ci_p[q] = ckci_g(m,c0+q,ie,k,j);
-              co_p[q] = ckco_g(m,c0+q,ie,k,j);
-              id_p[q] = lP_g(m,1*nch_+c0+q,ie,k,j);
               r0_p[q] = lP_g(m,0*nch_+c0+q,ie,k,j);
               sc_p[q] = Scr[q][ie];
             }
@@ -6899,17 +6921,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real bt = bt_p;
               const Real g1 = g1_p, g2 = g2_p, g3 = g3_p;
               const Real bnx = bnx_p, wl = wl_p, wu = wu_p, ff = ff_p;
-              Real e0v[2], civ[2], cov[2], idv[2], r0v[2], scv[2];
+              const Real krov = kro_p, dzv = dz_p;
+              Real e0v[2], r0v[2], scv[2];
               for (int q=0; q<2; ++q) {
                 e0v[q] = e0_p[q];
-                civ[q] = ci_p[q];
-                cov[q] = co_p[q];
-                idv[q] = id_p[q];
                 r0v[q] = r0_p[q];
                 scv[q] = sc_p[q];
               }
               if (i > icut) {
                 bt_p = lG_g(m,0,i-1,k,j);
+                kro_p = ckkro_g(m,c0,i-1,k,j);
+                dz_p = lG_g(m,4,i-1,k,j);
                 g1_p = lG_g(m,1,i-1,k,j);
                 g2_p = lG_g(m,2,i-1,k,j);
                 g3_p = lG_g(m,3,i-1,k,j);
@@ -6921,9 +6943,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 }
                 for (int q=0; q<2; ++q) {
                   e0_p[q] = ckc0_g(m,c0+q,i-1,k,j);
-                  ci_p[q] = ckci_g(m,c0+q,i-1,k,j);
-                  co_p[q] = ckco_g(m,c0+q,i-1,k,j);
-                  id_p[q] = lP_g(m,1*nch_+c0+q,i-1,k,j);
                   r0_p[q] = lP_g(m,0*nch_+c0+q,i-1,k,j);
                   sc_p[q] = Scr[q][i-1];
                 }
@@ -6939,8 +6958,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int q=0; q<2; ++q) {
                 const int c = c0 + q;
                 const Real e0 = e0v[q];
-                const Real cin = civ[q];
-                const Real cout = cov[q];
+                Real cin, cout;
+                CkCinCout(krov, dzv, mug[q], e0, cin, cout);
                 const Real tr = 1.0 - e0;
                 const Real wz = wfc[q]*g3;
                 Real src = 0.0;
@@ -6952,7 +6971,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 src += wz*(e0*dI - eh);
                 dI = tr*dI + eh;
                 const Real rr = r0v[q];
-                const Real ub = (rr*(1.0 + bt)*dI + scv[q])*idv[q];
+                const Real ub = (rr*(1.0 + bt)*dI + scv[q])*CkIdn(rr, bt);
                 const Real db = dI + bt*(dI - ub);
                 const Real dm = ub - db;
                 lpf_g(m,c,i,k,j) = wfc[q]*dm*g2;
@@ -7496,9 +7515,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   jQ = be;
                 }
                 // ck-next: cell i-1's loads are issued before cell i is worked
-                Real ci_p = ckci_g(m,c,ie,k,j), co_p = ckco_g(m,c,ie,k,j);
+                // ck-next: cin, cout and 1/(1 + R beta) formed (CkCinCout, CkIdn)
+                const Real muj = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                Real kr_p = ckkro_g(m,c,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
                 Real c0_p = ckc0_g(m,c,ie,k,j), rj_p = lP_g(m,0*nch_+c,ie,k,j);
-                Real id_p = lP_g(m,1*nch_+c,ie,k,j), bt_p = lG_g(m,0,ie,k,j);
+                Real bt_p = lG_g(m,0,ie,k,j);
                 Real ra_p = lG_g(m,1,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
                 Real s0_p = lpf_g(m,c,ie,k,j), s1_p = lps_g(m,c,ie,k,j);
                 Real s2_p = lpj_g(m,c,ie,k,j);
@@ -7509,18 +7530,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   ff_p = lP_g(m,4*nch_+cw,ie-1,k,j);
                 }
                 for (int i=ie; i>icut-1; --i) {
-                  const Real ci = ci_p;
-                  const Real co = co_p;
+                  Real ci, co;
+                  CkCinCout(kr_p, dz_p, muj, c0_p, ci, co);
                   const Real tj = 1.0 - c0_p;
-                  const Real rj = rj_p, idn = id_p, bt = bt_p, rat = ra_p, g3 = g3_p;
+                  const Real rj = rj_p, bt = bt_p, rat = ra_p, g3 = g3_p;
+                  const Real idn = CkIdn(rj, bt);
                   const Real s0 = s0_p, s1 = s1_p, s2 = s2_p;
                   const Real wc = wc_p, wa = wa_p, ffj = ff_p;
                   if (i > icut) {
-                    ci_p = ckci_g(m,c,i-1,k,j);
-                    co_p = ckco_g(m,c,i-1,k,j);
+                    kr_p = ckkro_g(m,c,i-1,k,j);
+                    dz_p = lG_g(m,4,i-1,k,j);
                     c0_p = ckc0_g(m,c,i-1,k,j);
                     rj_p = lP_g(m,0*nch_+c,i-1,k,j);
-                    id_p = lP_g(m,1*nch_+c,i-1,k,j);
                     bt_p = lG_g(m,0,i-1,k,j);
                     ra_p = lG_g(m,1,i-1,k,j);
                     g3_p = lG_g(m,3,i-1,k,j);
