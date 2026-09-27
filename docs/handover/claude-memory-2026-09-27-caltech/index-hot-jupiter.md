@@ -1,0 +1,104 @@
+---
+name: index-hot-jupiter
+description: Memory links for the deep hot Jupiter campaigns: MHD, poles, resistivity, correlated-k, grid and EOS.
+metadata:
+  type: reference
+---
+
+## Hot Jupiter: physics, runs, campaigns
+
+- **[cs dhj FOFC MAP: top-of-atmosphere night-side floor limiter, never low-beta](cs-dhj-fofc-where.md) — keep the fallback**
+- **[cs WB arm died rot 12.3; KE gap is sp MHD, not cs](cs-wb-arm-and-ke-gap.md) — every cs arm = sp hydro = 2-3e34**
+- **[dhj JET is SHALLOW, deep equator WESTWARD to rot 164 on sp](dhj-jet-shallow-westward-deep.md) — all cs solvers = sp; hllc jet half of ausm+up**
+- **[cs VERTEX dt COLLAPSE closed 09-11](cs-vertex-dt-collapse-0907-defaults.md) — explicit RT source overcools; semi-implicit is right**
+- **[RESTART dropped rot_potential: centrifugal force doubled](restart-rot-potential-bug.md) — fixed; first-round ablation arms invalid**
+- **[WB RESTART cache bug fixed 5c0b98e4](wb-restart-cache-bug.md) — zero background for 9 cycles**
+- **[sp POLAR BLOW-UP bisected to 863e8337 and fixed](sp-pole-bisect-culprit-863e8337.md) — `mesh/polar_x3_shift=rotate`**
+- [sp pole bisect round 2: null](sp-pole-bisect-round2-null.md)
+- **[cs_mhd_prod died at rot 41.6](cs-mhd-prod-nan-rot41.md) — NaN with no precursor**
+- **[cs_hyd_rs: hydro cs twin x 4 solvers](cs-hyd-rs-run.md) — jet comparison**
+- **[cs_mhd_prod2: cs MHD production from scratch](cs-mhd-prod2-run.md) — WB, rot_potential, deep RT**
+- **[Deep RT: radiative conduction + tau_R blend](radiative-conduction-deep-interior.md) — fad2f5db; `rad_kappa_src=table`, 10%**
+- **[cs MHD dhj validated at rot 20](cs-dhj-diagnostics-rot20.md) — T = sp, jet weak on every grid**
+- **[sp_mhd_prod dies at rot 10.3](sp-pole-bottom-radial-blowup.md) — polar-row radial field at the bottom**
+- **[cs MHD dhj bottom-boundary drift fixed 248f1b77](cs-mhd-bottom-inflow.md) — cs ghost bcc as face averages**
+- **[cs vs sp dhj at rot 50: flows equal, sp loses deep field 1.6x, dayside energy floors 26x](cs-vs-sp-dhj-rot50.md) — setup (cs RT switches), not grid**
+- **[sp MHD EXCESS SOLVED: polar-row HLLD->HLLE swap](sp-polar-hlle-swap-is-the-excess.md) — radial-sweep swap only; DEFAULT now mask 6 (theta+phi), blast stable**
+- [sp MHD excess needs no field](sp-mhd-excess-is-hydro-path.md) — the bbot=0 step
+- [sp MHD energy excess, earlier symptoms](sp-mhd-energy-excess.md) — superseded by the above
+- **[Correlated-k design + build](correlated-k-design.md) — complete**
+- **[dhj RT on the CUBED SPHERE working](dhj-cubed-sphere-port.md) — tracks sp; three bugs pre-existing**
+- **[cs NON-ORTHOGONAL audit: both fixed](cs-nonorthogonal-audit.md) — e415b91a; history KE/ME ~1% wrong**
+- **[cs MHD: the C2P floor corrupts u.e](cs-mhd-c2p-floor-corrupts-ue.md) — vertex order -0.04 to +1.97**
+- **[cs MHD low beta: per-step operator 2nd order](cs-mhd-low-beta-divergent.md) — instability is nonlinear**
+- **[cs MHD low-beta fixed on the test problems only](cs-mhd-lowbeta-fix.md) — cb1afd28; dhj dies at 0.21 rot**
+- **[cs SEAM GHOST e_int retracted as a mechanism](cs-seam-ghost-eint.md) — seam degrades everything 15-19x**
+- **[GENERAL-EOS AUDIT](general-eos-audit.md) — bracketed and monotone, no live bug**
+- **[3D RESISTIVITY: curl B missing theta terms on sp + Cartesian](resistivity-3d-curl-missing-terms.md) — fixed; cs clean**
+- **[sp POLE-EDGE CURRENT: far-side segment wrong sign, fixed](sp-pole-edge-current-sign.md) — J_r grew ~1/dtheta**
+- **[sp POLE: resistive J_r divided by a zero dual area, fixed](sp-pole-edge-area-zero.md) — NaN in cycle 1**
+- **[sp POLE fixed: polar_emf_diss + x3 face-state theta shift](sp-pole-fixes.md) — de667f32; L1(B) rate 0.76 to 2.1**
+- **[sp_test: rigid rotation + resistive decay rates](sp-test-rigidrot-resist.md) — hydro 2.6, B 2.1**
+- **[RESISTIVITY AUDIT](resistivity-audit.md) — clean; one gap behind `use_polar_average_eresist`**
+- **[sp POLAR FIELD BLOW-UP fixed 1cabe85c, default ON 3147de4f](sp-polar-field-blowup.md) — GS05 corner-EMF checkerboard**
+- **[cs ROTATION SOURCE BUG: cs ran the Cartesian beta-plane](cs-rotation-source-bug.md) — f75ad783**
+- **[cs 1-ULP amplification: old nx=64 claim stale](cs-ulp-amplification.md) — retest alive**
+- **[WHAT RECONSTRUCTION ACTUALLY RUNS](reconstruction-what-actually-runs.md) — sp ignores `reconstruct`; cs x1 stretch-aware since 4a16f07b**
+- **[cs VERTEX = LIMITER CLIPPING](cs-vertex-limiter-clipping.md) — ppmx/WENO-Z cut the worst-cell force 6.5x**
+- **[cs VERTEX ORACLE: halo innocent](cs-vertex-oracle-halo-innocent.md) — it is the cell balance**
+- **[sp POLAR-ROW RESIDUAL fixed 7.7x](sp-polar-row-reconstruction.md) — `mesh/polar_quadratic_recon` 6410be99, off**
+- **[sp GEOMETRIC-SOURCE RESIDUAL: polar rows 14x interior](sp-geometric-source-residual.md) — WB claim retracted**
+- **[cs WELL-BALANCED SOURCE CACHED: 46% to 4%](cs-wb-source-cached.md) — 88064f67**
+- **[GS07 corner EMF unconditional on cs since b71ef392](cs-gs07-emf-gate.md) — `bs_emf` is the way back**
+- **[cs DEEP TOROIDAL SHEET closed](cs-deep-toroidal-sheet.md) — was the stretched resistive bug c5c85e3b**
+- **[cs dhj production RETRY arm matrix](cs-dhj-production-retry.md) — nx=32 clean to 5.5 rot, nx=64 dies**
+- **[cs MHD instability characterized](cs-mhd-instability-characterized.md) — not gnomonic-specific; two retractions**
+- **[cs MHD MINIMAL REPRODUCER](cs-mhd-minimal-reproducer.md) — f3d35a96, cs_test iprob=13**
+- **[cs MHD dhj blow-up OPEN, at a cube vertex](cs-mhd-dhj-blowup.md) — 10 mechanisms out; refining makes it worse**
+- **[cs dhj NaN: cause found](cs-raisevel-missing-floor.md) — RaiseVel never re-applied the floors**
+- **[cs_dhj_long went NaN in one rotation](cs-dhj-long-run.md) — resolved; exit 0 is not a run**
+- **[ck_grav_prod: the production campaign](ck-grav-prod-run.md) — point-mass gravity, nx1 234; held**
+- **[ck_mhd_b3: MHD + EOS resistivity, bbot 3 G](ck-mhd-b3-run.md) — smoke passed, not launched**
+- [ck_limb: the constant-g run](ck-limb-run.md) — superseded; calibration reference
+- [ck_grav_size: the sizing run](ck-grav-size-run.md) — r99 = 1.794e10, H = 22 cells
+- [ck_hydro_long retired](ck-hydro-long-run.md) — sim "days" are Earth days
+- [Ideal-gas + EOS x_e resistive runs](xe-resistivity-long-runs.md) — carry the stellar-heating bug
+- **[dhj blow-up closed: it was the race](dhj-ck-eos-blowup.md) — no thermodynamic blow-up**
+- [Exo-FMS cross-validation](exofms-cross-validation.md) — LW agrees 1.7%
+- [Correlated-k shared module](correlated-k-shared-module.md) — DONE 2026-09-07 in TWO stages: correlated_k.hpp (opacity+Rosseland/conduction coupling) and two_stream_rt.hpp + atm_column.hpp (the solver); pgen 6082 -> 3648 lines; gated BITWISE identical
+- [dhj conservation check](dhj-conservation-check.md) — mass +0.21%, internal E +0.56% over t=4.32e5; the hst cadence and weighting both make hst useless here
+- [dhj dt limited by Alfven floor](dhj-dt-limited-by-alfven-floor.md) — MEASURED: dt is the radial Alfven CFL at r/Rp~1.28 in a cell sitting ON dfloor; raising dfloor x10 buys 2.7x
+- [dhj general EOS + correlated-k blow-up](dhj-general-eos-ck-blowup.md) — OPEN: read docs/HANDOFF_dhj_ck_eos.md IN THE REPO first (9 refuted hypotheses); TWO blow-ups, only the general-EOS one is live
+- [dhj high-B crash is the outer BC](dhj-highB-outer-bc.md) — FIXED bc6b5774: RKG super-time-stepping already fixes the diffusive dt; the high-B crash was the outer-x1 Maxwell term, not the Alfven speed
+- [dhj ideal vs general cost](dhj-ideal-vs-general-cost.md) — general is 3.09x ideal per simulated second (10 G, done); max_eta=1e13 beats 1e14 at both fields. Its 3 G runs were CANCELLED and superseded by the viper-base set
+- [dhj ideal + EOS x_e: floors, max_eta, STS](dhj-ideal-xe-floor-relaxation.md) — CLOSED, shipped as 6003c1ce: max_eta=1e13 + STS off is 1.54x faster at the same dt; STS is NOT a standing win at 1e14
+- [dhj restart bugs](dhj-restart-loses-gravity-potential.md) — both FIXED (30d21859, 4cfdc329): restarts lost the gravitational potential and the cell-centered field bcc0
+- [dhj viper dt discrepancy](dhj-viper-dt-discrepancy.md) — LARGELY DISSOLVED: viper bottoms at ~2.6 not ">3", and V_old (viper commit 2af153a3) reproduces it; only the t~1e6 dip is still unchecked
+- [Exo-FMS correlated-k tables](exo-fms-ck-tables.md) — installed and md5-verified in the repo at data/exo_fms_ck/; ROMIO cannot write AthenaK output on /tmp
+- [Perna resistivity for UHJs](resistivity-perna-uhj.md) — good to ~3x below 5000 K; the min_xe→max_eta rename that aborts the dhj runs; a tabulated x_e would be 6x FASTER
+- [x_e table for ideal-gas runs](resistivity-xe-table-for-ideal.md) — DONE 5d1c3436: ohmic_resistivity=eos under eos=ideal; 7% FASTER than perna, plus two latent bugs fixed
+- [sp polar bisection on orion](sp-pole-bisect-orion.md) — jobs 193408-11; the production grid RECONSTRUCTED (nx2=64 f_stretch_theta=3 verified against the 8.1 deg polar cell); dt still 7x off, so the CONTROLS decide
+
+## Hot Jupiter: grid, EOS, atmosphere
+
+- **[HYDROSTATIC WB scheme supports cs + point-mass gravity](wb-hydrostatic-scheme-cs.md) — 140dbf9e; cs == sp, 40-100x**
+- **[Radial grid stretch](radial-grid-stretch.md) — 1e19d4e7, `use_grid_stretch_r_poly`**
+- **[Radial stretch REFIT](radial-stretch-refit.md) — 3.7x to 1.34x, 1.46x dt**
+- **[dt binding direction](dt-binding-direction.md) — radial stretch costs 1.76x**
+- **[Point-mass gravity flag](grav-point-mass-flag.md) — c37ebe75; constant g understates H 2.7x**
+- **[Stellar tide flag](stellar-tide-flag.md) — c4aa730f, validated, off**
+- [Stellar tide at the domain top](stellar-tide-at-domain-top.md) — 0.5% at the limb
+- **[Isobar, not shell](dhj-isobar-vs-shell.md) — measure the 1e-6 bar level on the isobar**
+- [Sizing x1max from the isobar](isobar-buffer-calibration.md) — 1.76 H buffer
+- [Floors for the 1e-6 bar level](dhj-floors-for-1e-6-bar.md) — pfloor 1e-3; tfloor_kelvin=50 crashes
+- [Grid resolution design](dhj-grid-resolution-design.md) — cost is the timestep
+- **[Upper-atmosphere mottling](upper-atm-mottling.md) — H2 dissociation front plus plumes, not noise**
+- **[H2 chemistry quenches above 1e-3.6 bar](h2-chemistry-quench.md) — front not physical**
+- **[sp HYDRO vs MHD at 100 rot](sp-hydro-vs-mhd-comparison.md) — field takes 31% of the zonal KE**
+- **[COMPOSITION + FIELD maps in the atlas](dhj-composition-maps.md) — beta min 0.96 at tau=2/3**
+- **[tau=2/3 PHOTOSPHERE diagnostic](dhj-photosphere-diagnostic.md) — a4d30d43; spans 7040 km**
+- **[EOS table dump](eos-table-dump.md) — f882159f; table NaN below 71 K**
+- **[EOS inversion NaN trap](eos-inversion-nan-trap.md) — naive root find 0.35 dex low in T**
+- [General EOS optimization](general-eos-optimization.md) — 1.41x CPU, 1.062x GPU
+- [FastChem vs the general EOS](fastchem-vs-general-eos.md) — decided against
+- [UHJ band structure in the literature](uhj-band-structure-literature.md) — grid choice right
