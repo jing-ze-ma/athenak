@@ -310,6 +310,8 @@
 #include "globals.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "driver/driver.hpp"
 #include "utils/wb_background.hpp"
 #include "diffusion/conduction.hpp"
@@ -399,6 +401,9 @@ int inflow_cyc_ = -1;        // the cycle the controller was last updated on
 int inflow_print_n_ = 100;   // print cadence in cycles; 0 = off
 Real inflow_eb_ = 0.0, inflow_pb_ = 0.0;   // the base state's eint and pressure
 bool etotgrav_ = false;
+// m1-mhd: the fluid is <mhd>; IEN then carries |B|^2/2 (uniform problem/b0_1..3 field,
+// outflow-copied x1 ghost faces)
+bool mhd_ = false;
 bool wall_noflux_ = false;   // cancel the wall-face flux after each stage (bc_mode 3)
 Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from the column
 // problem/vdamp_top_tau, problem/vdamp_top_time (default 0 = OFF, bitwise inert): a
@@ -588,15 +593,18 @@ bool rtbud_arm_ = false;
 
 void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
   auto &size = pmbp->pmb->mb_size;
-  auto &u0 = pmbp->phydro->u0;
-  auto &w0 = pmbp->phydro->w0;
-  auto wt = pmbp->phydro->wtemp;
-  auto eos = pmbp->phydro->peos->eos_data;
+  auto &u0 = pfl->u0;
+  auto &w0 = pfl->w0;
+  auto wt = pfl->wtemp;
+  auto eos = pfl->peos->eos_data;
   const bool gen = eos.IsGeneral();
   const bool tap = gen && eos.tbl.rad_taper;
   const Real xlo = eos.tbl.rad_lrho_lo, xhi = eos.tbl.rad_lrho_hi;
@@ -642,12 +650,15 @@ void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
 
 Real BoxConvMassInt(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
   auto &size = pmbp->pmb->mb_size;
-  auto &u0 = pmbp->phydro->u0;
+  auto &u0 = pfl->u0;
   Real sm = 0.0;
   Kokkos::parallel_reduce("boxconv_mint",
   Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
@@ -934,6 +945,9 @@ void BoxConvSurfaceDump(Mesh *pm) {
 
 void BoxConvProfileDump(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
@@ -952,10 +966,19 @@ void BoxConvProfileDump(Mesh *pm) {
     Kokkos::realloc(prof_h_, nprof, nx1);
     prof_alloc_ = true;
   }
-  auto &w0 = pmbp->phydro->w0;
-  auto &u0 = pmbp->phydro->u0;
-  auto wt = pmbp->phydro->wtemp;
+  auto &w0 = pfl->w0;
+  auto &u0 = pfl->u0;
+  auto wt = pfl->wtemp;
   auto pd = prof_d_;
+  // m1-mhd: |B|^2/2 out of the conserved energy under <mhd> (hydro: never read)
+  const bool mhdb = mhd_;
+  auto bb1 = mhdb ? pmbp->pmhd->b0.x1f : pfl->phicc0;
+  auto bb2 = mhdb ? pmbp->pmhd->b0.x2f : pfl->phicc0;
+  auto bb3 = mhdb ? pmbp->pmhd->b0.x3f : pfl->phicc0;
+  auto &cx1v = pmbp->pcoord->x1v, &cx1f = pmbp->pcoord->xx1f;
+  auto &cx2v = pmbp->pcoord->x2v, &cx2f = pmbp->pcoord->xx2f;
+  auto &cx3v = pmbp->pcoord->x3v, &cx3f = pmbp->pcoord->xx3f;
+
   auto ru0 = m1p ? pmbp->pradm1->u0 : DvceArray5D<Real>("m1prof_unused",1,1,1,1,1);
   auto rop = m1p ? pmbp->pradm1->opac : DvceArray5D<Real>("m1prof_unused2",1,1,1,1,1);
   const Real clp = m1p ? pmbp->pradm1->c_light : 1.0;
@@ -975,7 +998,11 @@ void BoxConvProfileDump(Mesh *pm) {
       const Real v2 = w0(m,IVY,k,j,i);
       const Real v3 = w0(m,IVZ,k,j,i);
       const Real pg = w0(m,IPR,k,j,i);
-      const Real ei = u0(m,IEN,k,j,i) - 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+      Real ei = u0(m,IEN,k,j,i) - 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+      if (mhdb) {
+        ei -= radm1::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+                                    cx3v, cx3f, m, k, j, i);
+      }
       ls.the_array[0] += d;
       ls.the_array[1] += v1;
       ls.the_array[2] += d*v1;
@@ -1050,7 +1077,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   pgen_final_func = BoxConvFinal;
   user_hist_func = BoxConvHistory;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->phydro == nullptr) {
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+  auto *pfl = &flr_;
+  if (!pfl->on) {
     std::cout << "### FATAL ERROR in box_convection: <hydro> is required" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -1064,8 +1094,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     two_stream_rt::rt_bud_ptr = &rtbud_;
     rtbud_area_ = (pmy_mesh_->mesh_size.x2max - pmy_mesh_->mesh_size.x2min)
                  *(pmy_mesh_->mesh_size.x3max - pmy_mesh_->mesh_size.x3min);
-    rtbud_fin_ = (pmbp->phydro->pcond != nullptr)
-               ? pmbp->phydro->pcond->rad_flux_inner : 0.0;
+    rtbud_fin_ = (pfl->pcond != nullptr)
+               ? pfl->pcond->rad_flux_inner : 0.0;
     rtbud_cyc_ = -1;
     rtbud_arm_ = false;
   }
@@ -1151,17 +1181,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", (bc_mode_ == 3));
   wall_walk_maxfac_ = pin->GetOrAddReal("problem", "wall_walk_maxfac", 100.0);
-  diff_flux_ = (pmbp->phydro->pcond != nullptr) || (pmbp->phydro->pvisc != nullptr);
+  diff_flux_ = (pfl->pcond != nullptr) || (pfl->pvisc != nullptr);
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
   const std::string icprof = pin->GetOrAddString("problem", "ic_profile", "");
   g0_ = g0;
 
-  auto &eos = pmbp->phydro->peos->eos_data;
-  auto &u0 = pmbp->phydro->u0;
+  auto &eos = pfl->peos->eos_data;
+  auto &u0 = pfl->u0;
   const Real gamma = eos.gamma;
   const Real igm1 = 1.0/(gamma - 1.0);
-  const bool etotgrav = pmbp->phydro->use_etotgrav;
-  const bool wbdyn = pmbp->phydro->use_wellbalance_dynamic;
+  const bool etotgrav = pfl->use_etotgrav;
+  const bool wbdyn = pfl->use_wellbalance_dynamic;
   etotgrav_ = etotgrav;
   // ideal-gas branch only; the general branch carries composition in the table
   Real vunit = 1.0, lunit = 1.0, punit = 1.0;
@@ -1389,7 +1419,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   arad_force_ = pin->GetOrAddBoolean("problem", "wb_arad_force", false);
   const std::string aradf = pin->GetOrAddString("problem", "wb_arad_file", "");
   if (wb_phi_eff_ || arad_force_) {
-    if (wb_phi_eff_ && !(wbdyn && pmbp->phydro->use_wb_x1)) {
+    if (wb_phi_eff_ && !(wbdyn && pfl->use_wb_x1)) {
       std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff needs "
                 << "<hydro>/wellbalance_dynamic and <hydro>/wb_x1: the effective "
                 << "potential is read ONLY by the x1 well-balanced walk and by the "
@@ -1457,7 +1487,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     car.modify_host();  car.sync_device();
     cphar.modify_host();  cphar.sync_device();
     car_ = car.d_view;  cphar_ = cphar.d_view;
-    if (wb_phi_eff_) pmbp->phydro->EnableWBEffectivePotential();
+    if (wb_phi_eff_) pfl->EnableWBEffectivePotential();
     if (global_variable::my_rank == 0) {
       std::cout << "box_convection: problem/wb_arad_file = " << aradf << " ("
                 << za.size() << " rows, z = " << za.front() << " .. " << za.back()
@@ -1477,7 +1507,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real gad_b = std::log(ct.h_view(i0+1)/ct.h_view(i0-1))
                      /std::log(cp.h_view(i0+1)/cp.h_view(i0-1));
   const Real cs0 = std::sqrt(g1*p_b/rho_b);
-  Conduction *pc = pmbp->phydro->pcond;
+  Conduction *pc = pfl->pcond;
   Real fin = 0.0;
   if (pc != nullptr) fin = pc->rad_flux_inner*punit*vunit;   // back to erg/cm^2/s
   const Real vstar = (fin > 0.0) ? std::cbrt(fin/rho_b) : cs0;
@@ -1968,9 +1998,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // operator into the sub-cycle loop, and uses the Conduction flag to silence the
     // in-stage task.
     rt_split_tr_ = (rt_col3_sub_ > 1);
-    if (rt_split_tr_ && pmbp->phydro != nullptr && pmbp->phydro->pcond != nullptr &&
-        pmbp->phydro->pcond->rad_implicit_ang) {
-      pmbp->phydro->pcond->rad_tr_split_out = true;
+    if (rt_split_tr_ && pfl->on && pfl->pcond != nullptr &&
+        pfl->pcond->rad_implicit_ang) {
+      pfl->pcond->rad_tr_split_out = true;
       if (global_variable::my_rank == 0) {
         std::cout << "### box_convection: the IMPLICIT TRANSVERSE radiative operator "
                   << "is run inside each column SUB-STEP and NOT as its own in-stage "
@@ -2024,7 +2054,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_force_verbose = pin->GetOrAddInteger("problem", "rt_force_verbose", 0);
     ts::rt_force_grav = g0;
     if (ts::rt_rad_force) {
-      if (!pmbp->phydro->peos->eos_data.tbl.rad_taper) {
+      if (!pfl->peos->eos_data.tbl.rad_taper) {
         std::cout << "### FATAL ERROR in box_convection: problem/rt_rad_force is the "
                   << "momentum source that goes with the EOS radiation taper, and is "
                   << "only defined when the taper is on: set <hydro>/eos_rad_rho_hi and "
@@ -2290,10 +2320,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // rt_de_max.  red_giant.cpp fills its potential before its own restart return for
   // exactly this reason.
   {
-    DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
-    DvceArray4D<Real> ph1 = pmbp->phydro->phi0.x1f;
-    DvceArray4D<Real> ph2 = pmbp->phydro->phi0.x2f;
-    DvceArray4D<Real> ph3 = pmbp->phydro->phi0.x3f;
+    DvceArray4D<Real> phicc = pfl->phicc0;
+    DvceArray4D<Real> ph1 = pfl->phi0->x1f;
+    DvceArray4D<Real> ph2 = pfl->phi0->x2f;
+    DvceArray4D<Real> ph3 = pfl->phi0->x3f;
     const bool have_phi = (etotgrav || wbdyn);
     if (have_phi) {
       par_for("boxconv_phi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
@@ -2317,9 +2347,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // rebuild it identically.  It does, bit for bit: the file is re-read, resampled onto
     // the same fine grid and integrated with the same trapezoid rule, and this kernel is
     // the same kernel.
-    if (pmbp->phydro->use_phi_wb) {
-      DvceArray4D<Real> pccw = pmbp->phydro->phicc_wb;
-      DvceArray4D<Real> pf1w = pmbp->phydro->phi_wb_x1f;
+    if (pfl->use_phi_wb) {
+      DvceArray4D<Real> pccw = pfl->phicc_wb;
+      DvceArray4D<Real> pf1w = pfl->phi_wb_x1f;
       auto cphar = cphar_;
       const Real zlo = zlo_, dzf = dzf_;
       const int nfine = nfine_;
@@ -2338,7 +2368,43 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
+  // m1-mhd: the <mhd> mode covers the M1 box (gravity + WB + Phi_eff + the x1 walls);
+  // the two-stream and the split a_rad force read the hydro directly and are not ported
+  mhd_ = pfl->mhd;
+  if (mhd_ && (rt_on_ || arad_force_)) {
+    std::cout << "### FATAL ERROR in box_convection: <mhd> supports the <rad_m1> box "
+              << "only (problem/rt_two_stream and problem/wb_arad_force are hydro only)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (restart) return;
+
+  // --- m1-mhd: a UNIFORM field problem/b0_1..3 (force free, div B = 0 exactly), set on
+  // every face before the gas so that IEN can carry |B|^2/2
+  // (read only under <mhd>, so that a hydro run's parameter dump is unchanged)
+  const Real b0x1 = mhd_ ? pin->GetOrAddReal("problem", "b0_1", 0.0) : 0.0;
+  const Real b0x2 = mhd_ ? pin->GetOrAddReal("problem", "b0_2", 0.0) : 0.0;
+  const Real b0x3 = mhd_ ? pin->GetOrAddReal("problem", "b0_3", 0.0) : 0.0;
+  if (!mhd_ && (pin->DoesParameterExist("problem", "b0_1") ||
+                pin->DoesParameterExist("problem", "b0_2") ||
+                pin->DoesParameterExist("problem", "b0_3"))) {
+    std::cout << "### FATAL ERROR in box_convection: problem/b0_* needs <mhd>"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (mhd_) {
+    auto b = pmbp->pmhd->b0;
+    Kokkos::deep_copy(b.x1f, b0x1);
+    Kokkos::deep_copy(b.x2f, b0x2);
+    Kokkos::deep_copy(b.x3f, b0x3);
+  }
+  const bool mhdic = mhd_;
+  auto bic1 = mhd_ ? pmbp->pmhd->b0.x1f : pfl->phicc0;   // hydro: never read
+  auto bic2 = mhd_ ? pmbp->pmhd->b0.x2f : pfl->phicc0;
+  auto bic3 = mhd_ ? pmbp->pmhd->b0.x3f : pfl->phicc0;
+  auto &cx1v = pmbp->pcoord->x1v, &cx1f = pmbp->pcoord->xx1f;
+  auto &cx2v = pmbp->pcoord->x2v, &cx2f = pmbp->pcoord->xx2f;
+  auto &cx3v = pmbp->pcoord->x3v, &cx3f = pmbp->pcoord->xx3f;
 
   // --- the random horizontal modes of the velocity seed
   DualArray2D<Real> md("md", std::max(nk,1), 4);   // k2, k3, amplitude, phase
@@ -2408,6 +2474,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     u0(m,IM3,k,j,i) = 0.0;
     u0(m,IEN,k,j,i) = e*efac + 0.5*d*v1*v1;
     if (etotgrav) u0(m,IEN,k,j,i) += d*g0*(z - zmin);
+    if (mhdic) {
+      u0(m,IEN,k,j,i) += radm1::M1EmagCell(bic1, bic2, bic3, false, false, cx1v, cx1f,
+                                           cx2v, cx2f, cx3v, cx3f, m, k, j, i);
+    }
   });
 
   // --- THE M1 RADIATION INITIAL STATE.  A three-column file `z E F` (problem/m1_ic_file)
@@ -2565,26 +2635,29 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     }
   }
   MeshBlockPack *pmbp = pm->pmb_pack;
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto &size = pmbp->pmb->mb_size;
-  auto &u0 = pmbp->phydro->u0;
-  auto &w0 = pmbp->phydro->w0;
-  auto eos = pmbp->phydro->peos->eos_data;
-  const bool etotgrav = pmbp->phydro->use_etotgrav;
-  const bool wbdyn = pmbp->phydro->use_wellbalance_dynamic;
-  const bool wbx1 = pmbp->phydro->use_wb_x1;
-  const WBOption wbo = pmbp->phydro->wb_option;
+  auto &u0 = pfl->u0;
+  auto &w0 = pfl->w0;
+  auto eos = pfl->peos->eos_data;
+  const bool etotgrav = pfl->use_etotgrav;
+  const bool wbdyn = pfl->use_wellbalance_dynamic;
+  const bool wbx1 = pfl->use_wb_x1;
+  const WBOption wbo = pfl->wb_option;
   // the WELL-BALANCED gravity source reads the potential the WB walk used, which is the
   // EFFECTIVE potential when problem/wb_phi_eff is on and phicc0 / phi0.x1f (the very
   // same allocation) otherwise -- so the default path is bit for bit unchanged.  The
   // plain -rho*g0 source below is NOT touched: it is the non-WB gravity path and keeps
   // the true gravity (wb_phi_eff refuses to run without wellbalance_dynamic + wb_x1).
-  DvceArray4D<Real> phicc = pmbp->phydro->phicc_wb;
-  DvceArray4D<Real> ph1 = pmbp->phydro->phi_wb_x1f;
-  DvceArray5D<Real> wbq0 = pmbp->phydro->wbq0;
+  DvceArray4D<Real> phicc = pfl->phicc_wb;
+  DvceArray4D<Real> ph1 = pfl->phi_wb_x1f;
+  DvceArray5D<Real> wbq0 = pfl->wbq0;
   const Real g0 = g0_, zlo = zlo_, dzf = dzf_;
   const Real zcool = zcool_, zmax = zmax_, tcool = tcool_;
   const int nfine = nfine_;
@@ -2597,11 +2670,11 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // carries the larger tau, which is the conservative -- weaker -- choice for the ramp)
   // (rad_w_built guards the one stage in which the column tau does not exist yet: an
   // all-zero tau would read as "thin everywhere" and damp the whole box)
-  const bool vdamp_on = (vdamp_tau_ > 0.0) && (pmbp->phydro->pcond != nullptr)
-                        && pmbp->phydro->pcond->rad_w_built;
+  const bool vdamp_on = (vdamp_tau_ > 0.0) && (pfl->pcond != nullptr)
+                        && pfl->pcond->rad_w_built;
   const Real vd_hi = vdamp_tau_, vd_lo = vdamp_tau_/3.0;
   const Real vd_rate = vdamp_on ? bdt/vdamp_time_ : 0.0;
-  DvceArray4D<Real> vtauf = vdamp_on ? pmbp->phydro->pcond->rad_tauf
+  DvceArray4D<Real> vtauf = vdamp_on ? pfl->pcond->rad_tauf
                                      : DvceArray4D<Real>("vdamp_unused", 1, 1, 1, 1);
 
   // ---- problem/rt_budget_verbose: open/close the window, and take the first of the
@@ -2753,7 +2826,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     BoxConvBoxInt(pm, e2, r2);
     rtbud_h_[8] += e2 - bud_e;
     bud_e = e2;
-    auto &flx1b = pmbp->phydro->uflx.x1f;
+    auto &flx1b = pfl->uflx->x1f;
     auto budf = rtbud_;
     par_for("boxconv_budflx", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -2772,7 +2845,15 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // its pressure term is the wall force that holds the box up.  This is what
   // red_giant.cpp's problem/wall_noflux does at its inner wall.
   if (wall_noflux_) {
-    auto &flx1w = pmbp->phydro->uflx.x1f;
+    auto &flx1w = pfl->uflx->x1f;
+    // m1-mhd: |B|^2/2 out of the conserved energy under <mhd> (hydro: never read)
+    const bool mhdb = mhd_;
+    auto bb1 = mhdb ? pmbp->pmhd->b0.x1f : phicc;
+    auto bb2 = mhdb ? pmbp->pmhd->b0.x2f : phicc;
+    auto bb3 = mhdb ? pmbp->pmhd->b0.x3f : phicc;
+    auto &cx1v = pmbp->pcoord->x1v, &cx1f = pmbp->pcoord->xx1f;
+    auto &cx2v = pmbp->pcoord->x2v, &cx2f = pmbp->pcoord->xx2f;
+    auto &cx3v = pmbp->pcoord->x3v, &cx3f = pmbp->pcoord->xx3f;
     auto &mb_bcs = pmbp->pmb->mb_bcs;
     const bool difflx = diff_flux_;
     const bool topopen = (bc_mode_top_ == 4);
@@ -2806,6 +2887,10 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
                     - 0.5*(SQR(u0(m,IM1,k,j,ic)) + SQR(u0(m,IM2,k,j,ic))
                            + SQR(u0(m,IM3,k,j,ic)))/d;
           if (etotgrav) ei -= d*phicc(m,k,j,ic);
+          if (mhdb) {
+            ei -= radm1::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+                                        cx3v, cx3f, m, k, j, ic);
+          }
           // guard the EOS call: a tabulated EOS takes log10(e) and would write a NaN
           // into u0 with no precursor.  Skipping one stage's cancellation is harmless.
           if (!(ei > 0.0)) continue;
@@ -2943,13 +3028,16 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 void BoxConvARadForce(Mesh *pm, Real bdt) {
   if (!arad_force_ || wb_phi_eff_) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto &size = pmbp->pmb->mb_size;
-  auto &u0 = pmbp->phydro->u0;
-  auto &w0 = pmbp->phydro->w0;
+  auto &u0 = pfl->u0;
+  auto &w0 = pfl->w0;
   auto car = car_;
   const Real zlo = zlo_, dzf = dzf_;
   const int nfine = nfine_;
@@ -2999,6 +3087,9 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   // V1max and Fres are maxima and were always right.
   if (m1_on_) {
     MeshBlockPack *pmbp = pm->pmb_pack;
+    // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+    radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+    auto *pfl = &flr_;
     radm1::RadiationM1 *pm1 = pmbp->pradm1;
     pdata->nhist = 8;
     pdata->label[0] = "F1top";
@@ -3038,10 +3129,18 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     gplane.sync_device();
     const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
     auto &size = pmbp->pmb->mb_size;
-    auto &u0 = pmbp->phydro->u0;
+    auto &u0 = pfl->u0;
     auto ru0 = pm1->u0;
     auto rop = pm1->opac;
-    DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
+    DvceArray4D<Real> phicc = pfl->phicc0;
+    // m1-mhd: |B|^2/2 out of the conserved energy under <mhd> (hydro: never read)
+    const bool mhdb = mhd_;
+    auto bb1 = mhdb ? pmbp->pmhd->b0.x1f : phicc;
+    auto bb2 = mhdb ? pmbp->pmhd->b0.x2f : phicc;
+    auto bb3 = mhdb ? pmbp->pmhd->b0.x3f : phicc;
+    auto &cx1v = pmbp->pcoord->x1v, &cx1f = pmbp->pcoord->xx1f;
+    auto &cx2v = pmbp->pcoord->x2v, &cx2f = pmbp->pcoord->xx2f;
+    auto &cx3v = pmbp->pcoord->x3v, &cx3f = pmbp->pcoord->xx3f;
     const bool etotgrav = etotgrav_;
     const Real ctc = pm1->c_light/pm1->chat;
     const Real clm1 = pm1->c_light;
@@ -3064,6 +3163,10 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
                 - 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                        + SQR(u0(m,IM3,k,j,i)))*id;
       if (etotgrav) eg -= d*phicc(m,k,j,i);
+      if (mhdb) {
+        eg -= radm1::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+                                    cx3v, cx3f, m, k, j, i);
+      }
       const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
       array_sum::GlobalSum hvars;
       for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
@@ -3132,6 +3235,8 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   if (!rt_on_ || !two_stream_rt::rt_face_flux_ready()) return;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);   // m1-mhd
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int ie = indcs.ie, js = indcs.js, ks = indcs.ks;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3;
@@ -3139,9 +3244,9 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   auto fb = two_stream_rt::rt_face_flux();
   auto icut = two_stream_rt::rt_cut_index();
   const int nblk = two_stream_rt::rt_face_nblk();
-  auto &w0 = pmbp->phydro->w0;
-  auto wt = pmbp->phydro->wtemp;
-  auto eos = pmbp->phydro->peos->eos_data;
+  auto &w0 = pfl->w0;
+  auto wt = pfl->wtemp;
+  auto eos = pfl->peos->eos_data;
   const bool gen = eos.IsGeneral();
   const Real tcgs = eos.temp_cgs;
   const Real rgas = rgas_;
@@ -3193,6 +3298,9 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
 
 void BoxConvBC(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  // m1-mhd: <hydro> or <mhd> (FluidRef, rad_m1/m1_fluid.hpp)
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int ng = indcs.ng;
   const int is = indcs.is, ie = indcs.ie;
@@ -3201,9 +3309,41 @@ void BoxConvBC(Mesh *pm) {
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto &size = pmbp->pmb->mb_size;
   auto &mb_bcs = pmbp->pmb->mb_bcs;
-  auto &u0 = pmbp->phydro->u0;
-  auto &w0 = pmbp->phydro->w0;
-  DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
+  auto &u0 = pfl->u0;
+  auto &w0 = pfl->w0;
+  DvceArray4D<Real> phicc = pfl->phicc0;
+  // m1-mhd: under <mhd> the x1 ghost FACES are outflow copies of the edge faces (the
+  // uniform field stays uniform), set before the cells, whose IEN carries |B|^2/2
+  const bool mhd = mhd_;
+  auto bb1 = mhd ? pmbp->pmhd->b0.x1f : phicc;   // hydro: never read, no allocation
+  auto bb2 = mhd ? pmbp->pmhd->b0.x2f : phicc;
+  auto bb3 = mhd ? pmbp->pmhd->b0.x3f : phicc;
+  auto &cx1v = pmbp->pcoord->x1v, &cx1f = pmbp->pcoord->xx1f;
+  auto &cx2v = pmbp->pcoord->x2v, &cx2f = pmbp->pcoord->xx2f;
+  auto &cx3v = pmbp->pcoord->x3v, &cx3f = pmbp->pcoord->xx3f;
+  if (mhd) {
+    par_for("boxconv_bc_b", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        for (int n=0; n<ng; ++n) {
+          bb1(m,k,j,is-1-n) = bb1(m,k,j,is);
+          bb2(m,k,j,is-1-n) = bb2(m,k,j,is);
+          if (j == n2m1) {bb2(m,k,j+1,is-1-n) = bb2(m,k,j+1,is);}
+          bb3(m,k,j,is-1-n) = bb3(m,k,j,is);
+          if (k == n3m1) {bb3(m,k+1,j,is-1-n) = bb3(m,k+1,j,is);}
+        }
+      }
+      if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+        for (int n=0; n<ng; ++n) {
+          bb1(m,k,j,ie+2+n) = bb1(m,k,j,ie+1);
+          bb2(m,k,j,ie+1+n) = bb2(m,k,j,ie);
+          if (j == n2m1) {bb2(m,k,j+1,ie+1+n) = bb2(m,k,j+1,ie);}
+          bb3(m,k,j,ie+1+n) = bb3(m,k,j,ie);
+          if (k == n3m1) {bb3(m,k+1,j,ie+1+n) = bb3(m,k+1,j,ie);}
+        }
+      }
+    });
+  }
   const Real g0 = g0_, zlo = zlo_, dzf = dzf_, zmin = zmin_;
   const int nfine = nfine_;
   // problem/wb_phi_eff: the two HYDROSTATIC WALL CONTINUATIONS (bc_mode 3's WB walk and
@@ -3244,8 +3384,8 @@ void BoxConvBC(Mesh *pm) {
       }
     }
   }
-  auto eos = pmbp->phydro->peos->eos_data;
-  const WBOption wbo = pmbp->phydro->wb_option;
+  auto eos = pfl->peos->eos_data;
+  const WBOption wbo = pfl->wb_option;
   const Real wfac = wall_walk_maxfac_;
   const Real dfl = eos.dfloor;
   // WHERE THE GHOST FILL READS THE INTERIOR CELL IT CONTINUES: from u0, never from w0.
@@ -3273,6 +3413,10 @@ void BoxConvBC(Mesh *pm) {
           - 0.5*(SQR(u0(m,IM1,km,jm,im)) + SQR(u0(m,IM2,km,jm,im))
                  + SQR(u0(m,IM3,km,jm,im)))*di;
     if (etotgrav) e_i -= d_i*phicc(m,km,jm,im);
+    if (mhd) {
+      e_i -= radm1::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+                               cx3v, cx3f, m, km, jm, im);
+    }
   };
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             const int km, const int jm, const int im, const int bcmode) {
@@ -3455,8 +3599,21 @@ void BoxConvBC(Mesh *pm) {
     u0(m,IM1,k,j,i) = d*v1;
     u0(m,IM2,k,j,i) = d*v2;
     u0(m,IM3,k,j,i) = d*v3;
+    if (mhd) {
+      // m1-mhd: the ghost velocity exactly as the MHD inversion (and the frozen one of a
+      // restart) forms it from u0, so that a restart, which re-derives w0 from the
+      // file's u0, is a bitwise continuation (d*v/d differs from v in the last bit)
+      const Real dig = 1.0/d;
+      w0(m,IVX,k,j,i) = dig*u0(m,IM1,k,j,i);
+      w0(m,IVY,k,j,i) = dig*u0(m,IM2,k,j,i);
+      w0(m,IVZ,k,j,i) = dig*u0(m,IM3,k,j,i);
+    }
     Real et = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
     if (etotgrav) et += d*g0*(zg - zmin);
+    if (mhd) {
+      et += radm1::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
+                              cx3v, cx3f, m, k, j, i);
+    }
     u0(m,IEN,k,j,i) = et;
   };
   par_for("boxconv_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,

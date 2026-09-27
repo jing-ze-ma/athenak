@@ -64,7 +64,9 @@
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace radm1 {
@@ -85,14 +87,19 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   auto u0_ = u0;
   auto opac_ = opac;
   auto ug1 = ugas1;
-  auto uh = pmy_pack->phydro->u0;
-  auto eos = pmy_pack->phydro->peos->eos_data;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto eos = fl.eos;
   auto cnt_ = cnt;
   // <hydro>/etotgrav keeps rho*Phi inside the conserved energy.  The implicit solve is
   // about the gas INTERNAL energy, so the potential term is peeled off on the way in and
   // put back on the way out; with etotgrav off phicc0 is never read.
-  const bool etg = pmy_pack->phydro->use_etotgrav;
-  auto phicc = pmy_pack->phydro->phicc0;
+  const bool etg = fl.use_etotgrav;
+  auto phicc = fl.phicc0;
+  // m1-mhd: under MHD the energy also carries |B|^2/2 (emag0, refreshed by Opacity,
+  // which precedes this task in the chain), peeled off and put back like rho*Phi
+  const bool mhd = fl_mhd;
+  auto emag_ = emag0;
 
   Real cl = c_light;
   Real ch = chat;
@@ -152,6 +159,7 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     Real v1 = gi[1]*idd, v2 = gi[2]*idd, v3 = gi[3]*idd;
     Real ekin = 0.5*dd*(v1*v1 + v2*v2 + v3*v3);
     Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;  // rho*Phi, carried by etotgrav
+    if (mhd) egrv += emag_(m,k,j,i);              // |B|^2/2 under MHD
     Real eg = gi[0] - ekin - egrv;                // gas INTERNAL energy density
 
     Real es = fmax(u0_(m,M1_E,k,j,i), efl);
@@ -379,8 +387,38 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
 
 TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   if (!coupling || !gas_feedback) return TaskStatus::complete;
+  if (!fl_on) return TaskStatus::complete;
+  FluidRefresh(pdrive);
+  TmrMark(9);
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::FluidRefresh
+//! \brief restrict, exchange, bound and invert the fluid after a host-side write of its
+//! conserved u0 (see HydroConToPrim above for why).  Hydro: the hydro task calls
+//! verbatim (bitwise).  MHD (m1-mhd): M1 never writes b0, so only u0 is exchanged, and
+//! through pbval_u directly: MHD::InitRecv(-1) also posts the B receives and
+//! MHD::ClearRecv(-1) MPI_Waits on them, and no B is sent here -- a deadlock on more
+//! than one rank.  MHD::ApplyPhysicalBCs re-applies the B BCs to an unchanged b0
+//! (harmless) and the pgen's user BC, Prolongate and ConToPrim rebuild bcc0 and w0.
+
+void RadiationM1::FluidRefresh(Driver *pdrive) {
+  if (pmy_pack->pmhd != nullptr) {
+    mhd::MHD *pm = pmy_pack->pmhd;
+    (void) pm->RestrictU(pdrive, 0);
+    (void) pm->pbval_u->InitRecv(pm->nmhd + pm->nscalars);
+    (void) pm->pbval_u->PackAndSendCC(pm->u0, pm->coarse_u0);
+    (void) pm->pbval_u->ClearSend();
+    (void) pm->pbval_u->ClearRecv();
+    (void) pm->pbval_u->RecvAndUnpackCC(pm->u0, pm->coarse_u0);
+    (void) pm->ApplyPhysicalBCs(pdrive, 0);
+    (void) pm->Prolongate(pdrive, 0);
+    (void) pm->ConToPrim(pdrive, 0);
+    return;
+  }
   hydro::Hydro *ph = pmy_pack->phydro;
-  if (ph == nullptr) return TaskStatus::complete;
+  if (ph == nullptr) return;
   (void) ph->RestrictU(pdrive, 0);
   (void) ph->InitRecv(pdrive, -1);    // stage < 0 suppresses InitFluxRecv
   (void) ph->SendU(pdrive, 0);
@@ -389,9 +427,40 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   (void) ph->RecvU(pdrive, 0);
   (void) ph->ApplyPhysicalBCs(pdrive, 0);
   (void) ph->Prolongate(pdrive, 0);
-  TaskStatus ts = ph->ConToPrim(pdrive, 0);
-  TmrMark(9);
-  return ts;
+  (void) ph->ConToPrim(pdrive, 0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::EmagBuild
+//! \brief m1-mhd: |B|^2/2 per cell (incl. ghosts) of b0 (un = false -> emag0) or of the
+//! U^n copy b1 (un = true -> emag1), with the MHD C2P's face average (M1EmagCell).
+//! No-op for hydro.
+
+void RadiationM1::EmagBuild(bool un) {
+  mhd::MHD *pm = pmy_pack->pmhd;
+  if (pm == nullptr) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1 + 2*(indcs.ng);
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*(indcs.ng)) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*(indcs.ng)) : 1;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto b1f = un ? pm->b1.x1f : pm->b0.x1f;
+  auto b2f = un ? pm->b1.x2f : pm->b0.x2f;
+  auto b3f = un ? pm->b1.x3f : pm->b0.x3f;
+  auto em = un ? emag1 : emag0;
+  const bool sph = pmy_pack->pmesh->use_spherical_polar;
+  const bool csr = pmy_pack->pmesh->use_cubed_sphere;
+  auto &x1v = pmy_pack->pcoord->x1v;
+  auto &x1f = pmy_pack->pcoord->xx1f;
+  auto &x2v = pmy_pack->pcoord->x2v;
+  auto &x2f = pmy_pack->pcoord->xx2f;
+  auto &x3v = pmy_pack->pcoord->x3v;
+  auto &x3f = pmy_pack->pcoord->xx3f;
+  par_for("m1_emag", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    em(m,k,j,i) = M1EmagCell(b1f, b2f, b3f, sph, csr, x1v, x1f, x2v, x2f, x3v, x3f,
+                             m, k, j, i);
+  });
 }
 
 } // namespace radm1

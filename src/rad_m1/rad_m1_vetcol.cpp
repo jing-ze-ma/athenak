@@ -687,7 +687,7 @@ void RadiationM1::VetColBuild() {
   const int n1 = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool thrd = trans_x3;
-  const bool thermal = (pmy_pack->phydro != nullptr) && coupling && !opac_zero;
+  const bool thermal = fl_on && coupling && !opac_zero;
   const bool axf = vcol_axis_flux;
   const bool dmp = !vcol_dump.empty() && (vcol_dump_every > 0) &&
                    ((static_cast<int>(vcol_ncall) % vcol_dump_every) == 0);
@@ -972,7 +972,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const int n1 = indcs.nx1;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool thrd = trans_x3;
-  const bool thermal = (pmy_pack->phydro != nullptr) && coupling && !opac_zero;
+  const bool thermal = fl_on && coupling && !opac_zero;
   const bool axf = vcol_axis_flux;
   const Real cl = c_light, ar = arad, efl = e_floor;
   auto iw_ = iw;

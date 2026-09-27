@@ -3055,7 +3055,7 @@ void RadiationM1::VetShortChar() {
   const Real cl = c_light;
   const Real ar = arad;
   const Real efl = e_floor;
-  const bool thermal = (pmy_pack->phydro != nullptr) && coupling && !opac_zero;
+  const bool thermal = fl_on && coupling && !opac_zero;
   const bool milne = vet_milne;
   const Real fmil = iflux_x1min;
   const Real bblo = (vet_bc_bath && !milne && ibc_x1min == M1_IBC_MARSHAK) ?

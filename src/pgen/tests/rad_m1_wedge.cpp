@@ -81,11 +81,13 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 #include "outputs/outputs.hpp"
 #include "utils/wb_background.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
 
@@ -98,6 +100,9 @@ Real wg_gm_ = 0.0, wg_rin_ = 1.0, wg_rint_ = 0.0, wg_fin_ = 0.0;
 // outer x1 wall (wg_bc_top) and the top sponge (wg_sponge_rate, wg_sponge_r0)
 bool wg_top_open_ = false, wg_zflux_ = true, wg_bot_res_ = false;
 Real wg_sp_rate_ = 0.0, wg_sp_r0_ = 0.0, wg_rtop_ = 1.0;
+// m1-mhd: <mhd> mode, split monopole B_r = wg_b0 (r_in/r)^2 (current-free); the x1
+// ghost faces carry the same r^-2 continuation of the edge face
+bool wg_mhd_ = false;
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -214,10 +219,12 @@ void RadM1WedgeFinal(ParameterInput *pin, Mesh *pm);
 void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto *pm1 = pmbp->pradm1;
-  auto *ph = pmbp->phydro;
-  if (ph == nullptr || !pmy_mesh_->use_spherical_polar) {
+  // m1-mhd: the fluid is <hydro> or <mhd>; FluidRef has the members read here
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto *ph = &fl;
+  if (!fl.on || !pmy_mesh_->use_spherical_polar) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<problem>/m1_test = sph_wedge needs a <hydro> block and "
+      << std::endl << "<problem>/m1_test = sph_wedge needs a <hydro> or <mhd> block and "
       << "mesh/use_spherical_polar = true" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -477,7 +484,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   const Real gm = wg_gm_, rin = wg_rin_;
   if (etg || wbdyn) {
     auto phicc = ph->phicc0;
-    auto ph1 = ph->phi0.x1f, ph2 = ph->phi0.x2f, ph3 = ph->phi0.x3f;
+    auto ph1 = ph->phi0->x1f, ph2 = ph->phi0->x2f, ph3 = ph->phi0->x3f;
     par_for("wg_phi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real pc = gm*(1.0/rin - 1.0/x1v(m,i));
@@ -559,7 +566,40 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
               << ", sponge rate = " << wg_sp_rate_ << " above r = " << wg_sp_r0_
               << std::endl;
   }
+  wg_mhd_ = fl.mhd;
   if (restart) return;
+
+  // ---- m1-mhd: the split monopole on the x1 faces, b0.x1f = wg_b0 (r_in/x1f)^2 (the
+  // flux r^2 B_r dOmega is constant, so the finite-volume div B vanishes to round-off);
+  // no transverse field.  Set before the gas so that IEN can carry |B|^2/2.
+  // (read only under <mhd>, so that a hydro run's parameter dump is unchanged)
+  const Real b0r = fl.mhd ? pin->GetOrAddReal("problem","wg_b0",0.0) : 0.0;
+  DvceFaceFld4D<Real> *pb0 = fl.mhd ? &(pmbp->pmhd->b0) : nullptr;
+  if (fl.mhd) {
+    auto b = *pb0;
+    auto &x1f_ = pmbp->pcoord->xx1f;
+    const Real rin0 = wg_rin_;
+    par_for("wg_b0", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      b.x1f(m,k,j,i) = b0r*SQR(rin0/x1f_(m,i));
+      if (i == n1m1) b.x1f(m,k,j,i+1) = b0r*SQR(rin0/x1f_(m,i+1));
+      b.x2f(m,k,j,i) = 0.0;
+      if (j == n2m1) b.x2f(m,k,j+1,i) = 0.0;
+      b.x3f(m,k,j,i) = 0.0;
+      if (k == n3m1) b.x3f(m,k+1,j,i) = 0.0;
+    });
+  } else if (pin->DoesParameterExist("problem","wg_b0")) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "sph_wedge: problem/wg_b0 needs an <mhd> block" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const bool mhd = fl.mhd;
+  // hydro: any existing 4-D View stands in for the (never read) faces
+  auto bic1 = fl.mhd ? pb0->x1f : pm1->emag0;
+  auto bic2 = fl.mhd ? pb0->x2f : pm1->emag0;
+  auto bic3 = fl.mhd ? pb0->x3f : pm1->emag0;
+  auto &x2f_ic = pmbp->pcoord->xx2f;
+  auto &x3f_ic = pmbp->pcoord->xx3f;
 
   // ---- the initial state (active + ghost cells)
   const Real samp = pin->GetOrAddReal("problem","wg_spot_amp",0.0);
@@ -623,6 +663,10 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
     uh(m,IEN,k,j,i) = e + (etg ? d*gm*(1.0/rin - 1.0/r) : 0.0);
+    if (mhd) {
+      uh(m,IEN,k,j,i) += radm1::M1EmagCell(bic1, bic2, bic3, true, false, x1v, x1f,
+                                           x2v, x2f_ic, x3v, x3f_ic, m, k, j, i);
+    }
     ur(m,radm1::M1_E,k,j,i) = fmax(er, efl);
     ur(m,radm1::M1_F1,k,j,i) = fr2/(r*r);
     ur(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -652,7 +696,9 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
-  auto *ph = pmbp->phydro;
+  // m1-mhd: the fluid is <hydro> or <mhd>; FluidRef has the members read here
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto *ph = &fl;
   auto u0 = ph->u0;
   auto w0 = ph->w0;
   auto eos = ph->peos->eos_data;
@@ -696,7 +742,7 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
   // with this same beta dt); the pressure flux stays.  With wg_bc_top = open the outer
   // face keeps outflow and loses only inflow.
   if (wg_zflux_) {
-    auto flx1 = ph->uflx.x1f;
+    auto flx1 = ph->uflx->x1f;
     auto &mbbcs = pmbp->pmb->mb_bcs;
     const bool topen = wg_top_open_;
     const bool bres = wg_bot_res_;
@@ -756,7 +802,9 @@ void RadM1WedgeBC(Mesh *pm) {
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto &mbbcs = pmbp->pmb->mb_bcs;
   auto &x1v = pmbp->pcoord->x1v;
-  auto *ph = pmbp->phydro;
+  // m1-mhd: the fluid is <hydro> or <mhd>; FluidRef has the members read here
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto *ph = &fl;
   const bool have_phi = ph->use_etotgrav || ph->use_wellbalance_dynamic;
   const bool etg = ph->use_etotgrav;
   auto uh = ph->u0;
@@ -771,6 +819,45 @@ void RadM1WedgeBC(Mesh *pm) {
   const bool topen = wg_top_open_;
   const bool bres = wg_bot_res_;
   (void) have_phi;
+  // m1-mhd: the x1 ghost FACES first (the cell pass below needs the ghosts' |B|^2/2):
+  // B_r continued as r^-2 from the edge face (the monopole), transverse faces copied
+  // from the edge cell (zero gradient)
+  const bool mhd = wg_mhd_;
+  auto &x1f = pmbp->pcoord->xx1f;
+  auto &x2v = pmbp->pcoord->x2v;
+  auto &x2f = pmbp->pcoord->xx2f;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto &x3f = pmbp->pcoord->xx3f;
+  // hydro: phicc stands in for the (never read) face arrays, no allocation
+  auto bb1 = mhd ? pmbp->pmhd->b0.x1f : phicc;
+  auto bb2 = mhd ? pmbp->pmhd->b0.x2f : phicc;
+  auto bb3 = mhd ? pmbp->pmhd->b0.x3f : phicc;
+  if (mhd) {
+    auto bb = pmbp->pmhd->b0;
+    par_for("wg_bcb", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        for (int g=0; g<ng; ++g) {
+          const int ig = is - 1 - g;
+          bb.x1f(m,k,j,ig) = bb.x1f(m,k,j,is)*SQR(x1f(m,is)/x1f(m,ig));
+          bb.x2f(m,k,j,ig) = bb.x2f(m,k,j,is);
+          if (j == n2m1) {bb.x2f(m,k,j+1,ig) = bb.x2f(m,k,j+1,is);}
+          bb.x3f(m,k,j,ig) = bb.x3f(m,k,j,is);
+          if (k == n3m1) {bb.x3f(m,k+1,j,ig) = bb.x3f(m,k+1,j,is);}
+        }
+      }
+      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+        for (int g=0; g<ng; ++g) {
+          const int ig = ie + 1 + g;
+          bb.x1f(m,k,j,ig+1) = bb.x1f(m,k,j,ie+1)*SQR(x1f(m,ie+1)/x1f(m,ig+1));
+          bb.x2f(m,k,j,ig) = bb.x2f(m,k,j,ie);
+          if (j == n2m1) {bb.x2f(m,k,j+1,ig) = bb.x2f(m,k,j+1,ie);}
+          bb.x3f(m,k,j,ig) = bb.x3f(m,k,j,ie);
+          if (k == n3m1) {bb.x3f(m,k+1,j,ig) = bb.x3f(m,k+1,j,ie);}
+        }
+      }
+    });
+  }
   par_for("wg_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -781,7 +868,11 @@ void RadM1WedgeBC(Mesh *pm) {
       const Real da = uh(m,IDN,k,j,ia);
       const Real kea = 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
                             + SQR(uh(m,IM3,k,j,ia)))/da;
-      const Real ea = uh(m,IEN,k,j,ia) - kea - (etg ? da*phicc(m,k,j,ia) : 0.0);
+      Real ea = uh(m,IEN,k,j,ia) - kea - (etg ? da*phicc(m,k,j,ia) : 0.0);
+      if (mhd) {
+        ea -= radm1::M1EmagCell(bb1, bb2, bb3, true, false, x1v, x1f, x2v, x2f, x3v,
+                                x3f, m, k, j, ia);
+      }
       // reservoir bottom: the ghosts hold the INITIAL rho and eint (a mass supply)
       const bool res = lo && bres;
       const Real sd = res ? 1.0 : da/WgLogInterp(crho, rlo, dr, nf, x1v(m,ia));
@@ -806,6 +897,10 @@ void RadM1WedgeBC(Mesh *pm) {
         uh(m,IM3,k,j,ig) = dg*v3;
         uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
                            + (etg ? dg*phicc(m,k,j,ig) : 0.0);
+        if (mhd) {
+          uh(m,IEN,k,j,ig) += radm1::M1EmagCell(bb1, bb2, bb3, true, false, x1v, x1f,
+                                                x2v, x2f, x3v, x3f, m, k, j, ig);
+        }
         if (rad) {
           radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, lo ? 0 : 2,
                              lo ? -1.0 : 1.0, cl, efl);
@@ -844,9 +939,11 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   const int imid = is + nx1/2;
   const int nmkji = pmbp->nmb_thispack*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  auto *ph = pmbp->phydro;
+  // m1-mhd: the fluid is <hydro> or <mhd>; FluidRef has the members read here
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto *ph = &fl;
   auto w0 = ph->w0;
-  auto fl1 = ph->uflx.x1f;
+  auto fl1 = ph->uflx->x1f;
   auto eos = ph->peos->eos_data;
   auto *pm1 = pmbp->pradm1;
   auto ur = pm1->u0;

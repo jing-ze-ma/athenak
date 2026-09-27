@@ -207,6 +207,23 @@ class RadiationM1 {
   int force_ref;
   DvceArray4D<Real> arad_ref;   // (m,k,j,i), a reference x1 acceleration, code units
 
+  // m1-mhd (docs/dev/m1_mhd_0927.md): the fluid is <hydro> or <mhd> (FluidRef,
+  // m1_fluid.hpp).  Under MHD the conserved energy carries |B|^2/2, which every kernel
+  // that forms the gas internal energy subtracts: emag0 = |B|^2/2 of the CURRENT field
+  // (b0), emag1 = of the U^n field (b1), both built from the faces with the C2P's
+  // average (EmagBuild).  Hydro: 1x1x1x1 dummies, never read (the `if (fl_mhd)`
+  // branches are dead), so hydro is bitwise.
+  bool fl_on = false;           // a fluid exists (<hydro> or <mhd>)
+  bool fl_mhd = false;          // it is <mhd>
+  bool emag_hold = false;       // Opacity must not rebuild emag0 (the U^n swap)
+  DvceArray4D<Real> emag0, emag1;
+  void EmagBuild(bool un);      // un = false: emag0 from b0; true: emag1 from b1
+  // after a host-side write of the fluid's u0 (coupling write-back, restores): restrict,
+  // exchange (u only), physical BCs, prolongate, ConToPrim.  Hydro: the hydro task calls
+  // verbatim.  MHD: the u-only exchange through pbval_u -- MHD::InitRecv/ClearRecv(-1)
+  // would post and then wait on B receives that nobody sends here (deadlock on > 1 rank).
+  void FluidRefresh(Driver *pdrive);
+
   // RSLA start-up check (design sect. 2): v_max*tau_max/chat, evaluated once, on the
   // first filled opacity array.  rsla_vmax <= 0 means "measure max |v| over the domain".
   Real rsla_warn, rsla_vmax;

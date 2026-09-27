@@ -43,6 +43,7 @@
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/m1_fluid.hpp"
 
 namespace radm1 {
 
@@ -237,7 +238,8 @@ void RadiationM1::MRStep(Driver *pdrive, Real dt) {
 
 void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   Mesh *pmesh = pmy_pack->pmesh;
-  hydro::Hydro *ph = pmy_pack->phydro;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool ph = fl.on;      // m1-mhd: <hydro> or <mhd>
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   mr_on = true;
   mr_dt = dlt;
@@ -250,7 +252,16 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
     Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
-  if (ph != nullptr) {Kokkos::deep_copy(DevExeSpace(), ph->u1, ph->u0);}
+  if (ph) {
+    Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);
+    // m1-mhd: U^n of the field too (Time2VetStart reads b1); M1 never changes b0
+    if (fl.mhd) {
+      mhd::MHD *pm = pmy_pack->pmhd;
+      Kokkos::deep_copy(DevExeSpace(), pm->b1.x1f, pm->b0.x1f);
+      Kokkos::deep_copy(DevExeSpace(), pm->b1.x2f, pm->b0.x2f);
+      Kokkos::deep_copy(DevExeSpace(), pm->b1.x3f, pm->b0.x3f);
+    }
+  }
   auto run_lists = [&]() {
     pdrive->ExecuteTaskList(pmesh, "m1_before_stagen", 1);
     pdrive->ExecuteTaskList(pmesh, "m1_stagen", 1);
@@ -310,17 +321,9 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
       Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
       if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
     }
-    if (ph != nullptr) {
-      Kokkos::deep_copy(DevExeSpace(), ph->u0, ph->u1);
-      (void) ph->RestrictU(pdrive, 0);
-      (void) ph->InitRecv(pdrive, -1);
-      (void) ph->SendU(pdrive, 0);
-      (void) ph->ClearSend(pdrive, -1);
-      (void) ph->ClearRecv(pdrive, -1);
-      (void) ph->RecvU(pdrive, 0);
-      (void) ph->ApplyPhysicalBCs(pdrive, 0);
-      (void) ph->Prolongate(pdrive, 0);
-      (void) ph->ConToPrim(pdrive, 0);
+    if (ph) {
+      Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
+      FluidRefresh(pdrive);   // b0 = b1 here: M1 does not touch the field
     }
     t2_fail = false;
     pred_ok = false;
@@ -339,15 +342,18 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
   (void) ApplyClosureLimits(pdrive, 1);
   (void) NewTimeStep(pdrive, 1);
   // the guard: theta = max |e_int(Y_1) - e_int(Y_0)|/e_int(Y_0) over the active cells
-  if (mr_theta > 0.0 && ph != nullptr) {
+  if (mr_theta > 0.0 && ph) {
     auto &indcs = pmesh->mb_indcs;
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
     const int ks = indcs.ks, ke = indcs.ke;
     const int nmb1 = pmy_pack->nmb_thispack - 1;
-    auto ua = ph->u0;
-    auto ub = ph->u1;
-    const bool etg = ph->use_etotgrav;
-    auto phi = ph->phicc0;
+    auto ua = fl.u0;
+    auto ub = fl.u1;
+    const bool etg = fl.use_etotgrav;
+    auto phi = fl.phicc0;
+    const bool mhd = fl_mhd;      // m1-mhd: b0 = b1 inside MRSolve, emag0 for both
+    if (mhd) EmagBuild(false);
+    auto emag_ = emag0;
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
     Real th = 0.0;
     Kokkos::parallel_reduce("m1_mr_theta",
@@ -367,6 +373,7 @@ void RadiationM1::MRSolve(Driver *pdrive, Real dlt) {
         Real ek = 0.5*(SQR(u(m,IM1,k,j,i)) + SQR(u(m,IM2,k,j,i)) +
                        SQR(u(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
         ei[q] = u(m,IEN,k,j,i) - ek - (etg ? d*phi(m,k,j,i) : 0.0);
+        if (mhd) ei[q] -= emag_(m,k,j,i);
       }
       Real v = fabs(ei[0] - ei[1])/fmax(fabs(ei[1]), 1.0e-300);
       lmx = (v > lmx) ? v : lmx;

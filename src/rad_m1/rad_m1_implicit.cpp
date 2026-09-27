@@ -56,6 +56,7 @@
 #include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "hydro/hydro.hpp"
 #include "reconstruct/plm.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -939,7 +940,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {auto *pmh = pmy_pack->pmesh;
   const bool vdef = (pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) &&
                     full && pmh->multi_d && (impl_solver == M1_ISOLV_BICGSTAB) &&
-                    (pmh->mb_indcs.ng >= 2) && (pmy_pack->phydro != nullptr) &&
+                    (pmh->mb_indcs.ng >= 2) && fl_on &&
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
@@ -5815,7 +5816,7 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto iw_ = iw;
   auto u0_ = u0;
-  auto uh = pmy_pack->phydro->u0;
+  auto uh = FluidRef::Get(pmy_pack).u0;
   const int ivb = iw_vimp + M1_IV_DV;
   const bool trans = trans_on, thrd = trans_x3;
   const bool dbgft = dbg_gas_force_trans;
@@ -5907,7 +5908,7 @@ void RadiationM1::ImplicitWorkRow(bool row) {
 //!     correction; the velocity increment is the face MEAN of the two cells.
 
 void RadiationM1::ImplicitVimpBuild() {
-  if (pmy_pack->phydro == nullptr || !coupling || !gas_feedback || !dbg_gas_force) {
+  if (!fl_on || !coupling || !gas_feedback || !dbg_gas_force) {
     ImplFatal("<rad_m1>/implicit_vimp needs hydro with coupling, gas_feedback and "
               "dbg_gas_force on (the implicit velocity IS the solve's radiative force)");
   }
@@ -5948,7 +5949,7 @@ void RadiationM1::ImplicitVimpBuild() {
   const bool ftr = dbg_gas_force_trans;
   const int enm = impl_enth;
   const int b = iw_vimp;
-  auto uh = pmy_pack->phydro->u0;
+  auto uh = FluidRef::Get(pmy_pack).u0;
   const Real jsc = impl_vimp_jscale;
   // hesdirk2, time2_enth_vel = start: the plm face a is built from the stage-start a
   // (a - DA) and DA enters as its face mean (M1EnthEfT)
@@ -6681,7 +6682,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto pos_ = part_pos;
   const int nlay_ = (part_nblk > 1) ? part_nlay : 0;
 
-  const bool have_hydro = (pmy_pack->phydro != nullptr);
+  // m1-mhd: <hydro> or <mhd> (FluidRef); the name is kept, it means "a fluid exists"
+  FluidRef flr = FluidRef::Get(pmy_pack);
+  const bool have_hydro = flr.on;
   const bool src_on = have_hydro && coupling && dbgh && !opac_zero;
   // MILESTONE 3g: the gas-radiation energy coupling.  Both are false by default and
   // every branch they guard is then dead, so the pre-3g arithmetic is untouched.
@@ -6695,9 +6698,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const int igm = gasx ? (iw_gas + M1_IWG_MS) : 0;
   const int ecnt = impl_ecnt;
   auto ec_ = ecache;
-  auto uh = have_hydro ? pmy_pack->phydro->u0 : u0;
-  const bool etg = have_hydro ? pmy_pack->phydro->use_etotgrav : false;
-  auto phicc = have_hydro ? pmy_pack->phydro->phicc0 : arad_ref;
+  auto uh = have_hydro ? flr.u0 : u0;
+  const bool etg = have_hydro ? flr.use_etotgrav : false;
+  auto phicc = have_hydro ? flr.phicc0 : arad_ref;
+  // m1-mhd: |B|^2/2 of the current field (refreshed by Opacity, before this task)
+  const bool mhd = fl_mhd;
+  auto emag_ = emag0;
 
   //-------------------------------------------------------------------------- start state
   par_for("m1_impl_i0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -6738,7 +6744,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   });
 
   if (have_hydro) {
-    auto eos = pmy_pack->phydro->peos->eos_data;
+    auto eos = flr.eos;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dd = uh(m,IDN,k,j,i);
@@ -6746,6 +6752,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                        SQR(uh(m,IM3,k,j,i)))*idd;
       Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+      if (mhd) egrv += emag_(m,k,j,i);
       Real eg = uh(m,IEN,k,j,i) - ekin - egrv;
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
       if (t2st) {
@@ -6769,7 +6776,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // the density direction of the tabulated energy surface is collapsed ONCE here and
     // every pass of the Picard loop reads a 1-D cubic in ln T instead of the 2-D table.
     if (usec) {
-      auto eos = pmy_pack->phydro->peos->eos_data;
+      auto eos = flr.eos;
       par_for("m1_impl_ecb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         M1EosCacheBuild(eos, ec_, m, k, j, i, ecnt, uh(m,IDN,k,j,i),
@@ -6927,7 +6934,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // gas out of equilibrium with E, which the extrapolated increment of the last window
   // does not know.  Only the starting point moves; the fixed point is unchanged.
   if (mr_on && mr_peq && t2s == M1_T2S_STAGE1 && src_on) {
-    auto eos = pmy_pack->phydro->peos->eos_data;
+    auto eos = flr.eos;
     const Real cdt = cl*dt;
     par_for_lb("m1_mr_peq", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
@@ -7506,7 +7513,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     // (c) the emission/absorption source, linearised in T about the iterate
     if (src_on) {
-      auto eos = pmy_pack->phydro->peos->eos_data;
+      auto eos = flr.eos;
       // m1-fast5-sp: an ideal-gas EOS without the cache gets its own kernel (e and c_v by
       // M1EosIdeal, the ideal branch of ThermoAt: bitwise); the generic one carries the
       // table code (828 B call frame per lane) even when the table is off
@@ -8074,7 +8081,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     // (f) accept E', solve for T' and measure the Picard residual
     if (src_on) {
-      auto eos = pmy_pack->phydro->peos->eos_data;
+      auto eos = flr.eos;
       // m1-fast5-sp: an ideal-gas EOS without the per-cell cache gets its own kernel,
       // whose root find evaluates e(T) and c_v by the ideal branch of
       // EOS_Data::ThermoAt (the same expressions: bitwise).  The generic kernel carries
@@ -8525,7 +8532,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // persistent, and the next step re-inverts e_gas through the real table.
   if (usec && impl_eccheck && src_on &&
       (impl_eccheck_every == 1 || pmy_pack->pmesh->ncycle % impl_eccheck_every == 0)) {
-    auto eos = pmy_pack->phydro->peos->eos_data;
+    auto eos = flr.eos;
     Real emx = 0.0, qmx = 0.0;
     // m1-fast4: a flat range with LaunchBounds<256,1> (the MDRange form spilled 55
     // VGPRs); a max is order-independent, so the result is bitwise the same
@@ -8628,6 +8635,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                   SQR(uh(m,IM3,k,j,i)))*idd;
       egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+      if (mhd) egrv += emag_(m,k,j,i);
       eg = iw_(m,M1_IW_EGN,k,j,i);
       // (a) the energy the RADIATION gained from the gas over the step.  It is taken
       // from the ASSEMBLED row, q = SRCR - SRCB E', and not from rho kappa_P a T'^4:
