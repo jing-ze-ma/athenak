@@ -708,8 +708,8 @@ inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
 // ck-next: slots 1 (1/(1 + R beta_i)) and 5 (2 (wfc/mu) kappa rho, the emission) are
 // no longer stored: the readers form them (CkIdn, CkEmW in two_stream_rt.hpp).
 // lG (m, q, i, k, j), q = 0..4: beta at face i, A_{i-1}/A_i, the flux frame factor,
-// 1/dz and dz (ck-next).  lC (q, chain): the flux weight and the internal-flux datum
-// at the cut.
+// 1/dz and dz (ck-next).  lC (q, chain): the flux weight, the internal-flux datum
+// at the cut and (ck-next) the emission weight 2 (wfc/mu).
 // The half-layer triple (e0, cin, cout; slots 0-2 before ck-store) is not packed: the
 // kernels read it from ck_c0, ck_ci, ck_co, which hold the same numbers for as long as
 // the factorisation lives.
@@ -1008,7 +1008,7 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     if (ck_impl_lin) {
       ck_linP_ptr = new DvceArray5D<Real>("ck_lP", nmb, 6*nch, n1, n3, n2);
       ck_linG_ptr = new DvceArray5D<Real>("ck_lG", nmb, 5, n1, n3, n2);
-      ck_linC_ptr = new DvceArray2D<Real>("ck_lC", 2, nch);
+      ck_linC_ptr = new DvceArray2D<Real>("ck_lC", 3, nch);
       if (ck_impl_lin_thr == 1) {
         ck_lps_ptr = new DvceArray5D<Real>("ck_lps", nmb, nch, n1, n3, n2);
         ck_lpf_ptr = new DvceArray5D<Real>("ck_lpf", nmb, nch, n1, n3, n2);

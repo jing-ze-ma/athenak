@@ -1531,13 +1531,12 @@ Real CkIdn(const Real rj, const Real bt) {
   return 1.0/static_cast<Real>(dn);
 }
 //! \fn Real CkEmW
-//! \brief ck-next: the emission weight lP slot 5 held, 2 (wfc/mu) kappa rho, by
-//! ck_lin_build's expressions and as a lone rounded product (CkMulRn): the stored value
+//! \brief ck-next: the emission weight lP slot 5 held, 2 (wfc/mu) kappa rho, from
+//! 2 (wfc/mu) (lC row 2, stored by ck_lin_build) as a lone rounded product (CkMulRn):
+//! the stored value
 KOKKOS_INLINE_FUNCTION
-Real CkEmW(const Real wfc, const int c, const int nq, const Real (&mug)[2],
-           const Real kro) {
-  const Real muc = (nq == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
-  return CkMulRn(2.0*(wfc/muc), kro);
+Real CkEmW(const Real emw, const Real kro) {
+  return CkMulRn(emw, kro);
 }
 
 //----------------------------------------------------------------------------------------
@@ -6613,7 +6612,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 ua = tr*ua + eh;
                 src += wz*(ua - ubf[cc]);
                 ubf[cc] = ub;
-                em += CkEmW(lC_g(0,c), c, ck_nq_, mug, ckkro_g(m,c,i,k,j))*bown;
+                em += CkEmW(lC_g(2,c), ckkro_g(m,c,i,k,j))*bown;
                 slc[cc] = snl;
                 sfu[cc] = sfv;
               }
@@ -6659,7 +6658,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     // ck-next: 2 (wfc/mu) kappa rho, formed (CkEmW); the two angles
                     // of a pair share kappa rho
                     const int ck = (ck_nq_ == 2) ? (c & ~1) : c;
-                    em += CkEmW(lC_g(0,c), c, ck_nq_, mug, ckkro_g(m,ck,i,k,j))
+                    em += CkEmW(lC_g(2,c), ckkro_g(m,ck,i,k,j))
                           *Bb_g(m,b,i,k,j);
                   }
                 }
@@ -6913,7 +6912,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real ub = (rr*(1.0 + bt)*da + Scr[q][ie+1])
                               *CkIdn(rr, bt);
                 const Real db = da + bt*(da - ub);
-                fq[q] = wfc[q]*(ub - db)*lG_g(m,2,ie+1,k,j);
+                fq[q] = CkMulRn(wfc[q]*(ub - db), lG_g(m,2,ie+1,k,j));
                 dcu[q] = db;
                 ubf[q] = ub;
               }
@@ -7001,7 +7000,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real ub = (rr*(1.0 + bt)*dI + scv[q])*CkIdn(rr, bt);
                 const Real db = dI + bt*(dI - ub);
                 const Real dm = ub - db;
-                fq[q] = wfc[q]*dm*g2;
+                fq[q] = CkMulRn(wfc[q]*dm, g2);   // not contracted into the add
                 Real ua = dI + dm*g1;
                 dcu[q] = db;
                 eh = cin*sfv + cout*suv;
@@ -7377,17 +7376,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // the per-chain constants: the flux weight and the internal-flux datum of
               // the chain's band at the cut (T-independent), written once per chain
               int b;
-              Real wfc;
+              Real wfc, muc;
               if (ck_nq_ == 1) {
                 b = c/CK_NG;
+                muc = 1.0/CK_DIFFUSIVITY;
                 wfc = M_PI*ckgw(c % CK_NG);
               } else {
                 const int nq = c % 2;
                 b = c/(2*CK_NG);
+                muc = mug[nq];
                 wfc = 2.0*M_PI*wg[nq]*mug[nq]*ckgw((c/2) % CK_NG);
               }
               if (m == 0 && k == ks && j == js) {
                 lC_g(0,c) = wfc;
+                lC_g(2,c) = 2.0*(wfc/muc);   // ck-next: the emission weight (CkEmW)
                 lC_g(1,c) = (int_at_cut ? boltz_sigma/M_PI*Tint4
                             * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
               }
