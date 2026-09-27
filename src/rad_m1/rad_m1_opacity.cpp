@@ -25,6 +25,7 @@
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
@@ -41,8 +42,11 @@ namespace radm1 {
 TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   // with no opacity at all the array stays at the zero it was allocated with, and the
   // thick-limit flux and the coupling are both switched off: nothing to do
+  // m1-mhd: this task is the first gas reader of both M1 chains; |B|^2/2 of the stage's
+  // field is refreshed here, before any early return (Coupling / ImplicitSolve read it)
+  if (fl_mhd && !emag_hold) EmagBuild(false);
   if (opac_zero) return TaskStatus::complete;
-  if (pmy_pack->phydro == nullptr) return TaskStatus::complete;
+  if (!fl_on) return TaskStatus::complete;
   // <rad_m1>/opac_freeze (debug): fill the array once and leave it alone afterwards, so
   // that the opacity no longer responds to the state.  Default false -> bitwise inert.
   if (opac_freeze && opac_frozen) return TaskStatus::complete;
@@ -61,15 +65,18 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
   auto opac_ = opac;
-  auto uh = pmy_pack->phydro->u0;
-  auto eos = pmy_pack->phydro->peos->eos_data;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto eos = fl.eos;
   // <hydro>/etotgrav carries rho*Phi INSIDE the conserved energy, so the gas internal
   // energy -- and so the temperature this lookup needs -- is u(IEN) - KE - rho*Phi.
   // Without the last term the temperature is wrong by orders of magnitude at the top of
   // a stratified box (measured on the He column: the total optical depth came out 17
   // instead of 99).
-  const bool etg = pmy_pack->phydro->use_etotgrav;
-  auto phicc = pmy_pack->phydro->phicc0;
+  const bool etg = fl.use_etotgrav;
+  auto phicc = fl.phicc0;
+  const bool mhd = fl_mhd;      // m1-mhd: and |B|^2/2
+  auto emag_ = emag0;
   int otype = opacity_type;
   Real kp = kappa_p, ke = kappa_e, kf = kappa_f, ks = kappa_s;
   Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
@@ -87,6 +94,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
                           SQR(uh(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
       Real eint = uh(m,IEN,k,j,i) - ke_dens;
       if (etg) eint -= d*phicc(m,k,j,i);
+      if (mhd) eint -= emag_(m,k,j,i);
       t = eos.Temperature(d, fmax(eint, 0.0));
     }
     Real op, oe, of, os;
@@ -144,7 +152,7 @@ void RadiationM1::RSLACheck() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto opac_ = opac;
-  auto uh = pmy_pack->phydro->u0;
+  auto uh = FluidRef::Get(pmy_pack).u0;
   auto &size = pmy_pack->pmb->mb_size;
 
   Real taumax = 0.0;

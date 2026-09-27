@@ -38,6 +38,7 @@
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
 #include "eos/eos.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "utils/deep_copy_across.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
@@ -387,18 +388,18 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
   }
-  hydro::Hydro *ph = pmy_pack->phydro;
-  if (ph != nullptr) {
-    Kokkos::deep_copy(DevExeSpace(), ph->u0, ph->u1);
-    (void) ph->RestrictU(pdrive, 0);
-    (void) ph->InitRecv(pdrive, -1);
-    (void) ph->SendU(pdrive, 0);
-    (void) ph->ClearSend(pdrive, -1);
-    (void) ph->ClearRecv(pdrive, -1);
-    (void) ph->RecvU(pdrive, 0);
-    (void) ph->ApplyPhysicalBCs(pdrive, 0);
-    (void) ph->Prolongate(pdrive, 0);
-    (void) ph->ConToPrim(pdrive, 0);
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  if (fl.on) {
+    Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
+    // m1-mhd: the field back to U^n too (b1 is the stage-1 copy of b0 incl. ghosts)
+    if (fl.mhd) {
+      mhd::MHD *pm = pmy_pack->pmhd;
+      Kokkos::deep_copy(DevExeSpace(), pm->b0.x1f, pm->b1.x1f);
+      Kokkos::deep_copy(DevExeSpace(), pm->b0.x2f, pm->b1.x2f);
+      Kokkos::deep_copy(DevExeSpace(), pm->b0.x3f, pm->b1.x3f);
+    }
+    FluidRefresh(pdrive);
+    if (fl.mhd) EmagBuild(false);
   }
   t2_fail = false;
   t2_ok = false;
@@ -439,11 +440,15 @@ void RadiationM1::Time2VetStart() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto iw_ = iw;
   auto vn_ = vet_now;
-  hydro::Hydro *ph = pmy_pack->phydro;
-  const bool hh = (ph != nullptr);
-  auto uh1 = hh ? ph->u1 : u1;
-  const bool etg = hh ? ph->use_etotgrav : false;
-  auto phicc = hh ? ph->phicc0 : arad_ref;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool hh = fl.on;
+  auto uh1 = hh ? fl.u1 : u1;
+  const bool etg = hh ? fl.use_etotgrav : false;
+  auto phicc = hh ? fl.phicc0 : arad_ref;
+  // m1-mhd: U^n = (u1, b1); its |B|^2/2 goes to emag1
+  const bool mhd = fl_mhd;
+  if (mhd) EmagBuild(true);
+  auto emag_ = emag1;
   const Real efl = e_floor;
   auto u0_ = u0;
   // the fast form (default): ONE fused pass over U^n (the hydro u1) gives T^n and the
@@ -454,7 +459,7 @@ void RadiationM1::Time2VetStart() {
                     !(opacity_type == M1_OPAC_TABLE && otab.nT <= 0);
   if (fast) {
     Kokkos::deep_copy(DevExeSpace(), vet_opac, opac);
-    auto eos = ph->peos->eos_data;
+    auto eos = fl.eos;
     auto opac_ = opac;
     const int n1 = static_cast<int>(opac.extent(4));
     const int n2 = static_cast<int>(opac.extent(3));
@@ -470,6 +475,7 @@ void RadiationM1::Time2VetStart() {
                           SQR(uh1(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
       Real eint = uh1(m,IEN,k,j,i) - ke_dens;
       if (etg) eint -= d*phicc(m,k,j,i);
+      if (mhd) eint -= emag_(m,k,j,i);
       Real t = eos.Temperature(d, fmax(eint, 0.0));
       Real op, oe, of, os;
       if (otype == M1_OPAC_TABLE) {
@@ -488,7 +494,7 @@ void RadiationM1::Time2VetStart() {
       }
     });
   } else if (hh) {
-    auto eos = ph->peos->eos_data;
+    auto eos = fl.eos;
     par_for("m1_t2_vs0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
@@ -499,12 +505,19 @@ void RadiationM1::Time2VetStart() {
       Real ekin = 0.5*(SQR(uh1(m,IM1,k,j,i)) + SQR(uh1(m,IM2,k,j,i)) +
                        SQR(uh1(m,IM3,k,j,i)))*idd;
       Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
+      if (mhd) egrv += emag_(m,k,j,i);
       Real eg = uh1(m,IEN,k,j,i) - ekin - egrv;
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
     });
-    std::swap(ph->u0, ph->u1);
+    // the opacities of U^n: Opacity reads the fluid's u0 and emag0, so both are swapped
+    // with their U^n twins for the call (emag_hold: Opacity must not rebuild emag0)
+    fl.SwapU01();
+    std::swap(emag0, emag1);
+    emag_hold = true;
     (void) Opacity(nullptr, 1);
-    std::swap(ph->u0, ph->u1);
+    emag_hold = false;
+    std::swap(emag0, emag1);
+    fl.SwapU01();
   } else {
     par_for("m1_t2_vs0r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -646,6 +659,8 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
   auto je = std::get<28>(ctx_);
   auto is = std::get<29>(ctx_);
   auto ie = std::get<30>(ctx_);
+  auto mhd = std::get<31>(ctx_);
+  auto emag_ = std::get<32>(ctx_);
   auto vcb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -655,7 +670,7 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
     (void)aa; (void)bb; (void)dt; (void)efl; (void)eos; (void)etg; (void)gam; (void)gdt;
     (void)iw_; (void)k1_; (void)kev; (void)kf; (void)kp; (void)kss; (void)opac_; (void)ot;
     (void)otype; (void)phicc; (void)rref; (void)tref; (void)two; (void)u0_; (void)uh;
-    (void)vn_;
+    (void)vn_; (void)mhd; (void)emag_;
 #endif
     const Real d = uh(m,IDN,k,j,i);
     Real t, e;
@@ -671,6 +686,7 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
       Real eint = uh(m,IEN,k,j,i) + gdt*k1_(m,M1_T2_EN,k,j,i)
                   - 0.5*(m1*m1 + m2*m2 + m3*m3)/fmax(d, 1.0e-300);
       if (etg) eint -= d*phicc(m,k,j,i);
+      if (mhd) eint -= emag_(m,k,j,i);   // m1-mhd: B is not changed by K1
       if constexpr (decltype(idl)::value) {
         t = ((gam-1.0)*fmax(eint, 0.0)/d);
       } else {
@@ -719,8 +735,8 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 //! (opac_freeze, dbg_opac_patch, an empty table) fall back to D(U^n) (counted).
 
 void RadiationM1::Time2VetColAt(int which) {
-  hydro::Hydro *ph = pmy_pack->phydro;
-  const bool hh = (ph != nullptr);
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool hh = fl.on;
   const bool fast = hh && !opac_zero && !opac_freeze && (dbg_opac_patch == 1.0) &&
                     !(opacity_type == M1_OPAC_TABLE && otab.nT <= 0);
   if (hh && !fast) {
@@ -755,11 +771,13 @@ void RadiationM1::Time2VetColAt(int which) {
   });
   if (hh) {
     Kokkos::deep_copy(DevExeSpace(), vet_opac, opac);
-    auto uh = ph->u0;
-    const bool etg = ph->use_etotgrav;
-    auto phicc = ph->phicc0;
-    auto eos = ph->peos->eos_data;
+    auto uh = fl.u0;
+    const bool etg = fl.use_etotgrav;
+    auto phicc = fl.phicc0;
+    auto eos = fl.eos;
     auto opac_ = opac;
+    const bool mhd = fl_mhd;      // m1-mhd: emag0 = the current field's |B|^2/2
+    auto emag_ = emag0;
     const int otype = opacity_type;
     const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kss = kappa_s;
     const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
@@ -774,7 +792,7 @@ void RadiationM1::Time2VetColAt(int which) {
     // (above); vcb_ctx is what the helper captured, by value.
     auto vcb_ctx = std::make_tuple(aa, bb, dt, efl, eos, etg, gam, gdt, iw_, k1_, kev, kf,
                                    kp, kss, opac_, ot, otype, phicc, rref, tref, two, u0_,
-                                   uh, vn_, nmb1, ks, ke, js, je, is, ie);
+                                   uh, vn_, nmb1, ks, ke, js, je, is, ie, mhd, emag_);
     if (vcid) {
       M1T2VcpLaunch(vcb_ctx, std::true_type{});
     } else {

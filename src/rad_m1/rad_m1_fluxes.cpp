@@ -35,6 +35,7 @@
 #include "reconstruct/wenoz.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
+#include "rad_m1/m1_fluid.hpp"
 
 namespace radm1 {
 
@@ -196,9 +197,9 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   // the advective enthalpy-flux split needs the hydro velocity field; with no <hydro>
   // there is no medium to move and the switch is forced off (u0 is captured as a dummy
   // in that case, and never read)
-  bool split = advect_split && (pmy_pack->phydro != nullptr);
+  bool split = advect_split && fl_on;
   bool vrec = split && split_vel_recon;
-  auto uh = (pmy_pack->phydro != nullptr) ? pmy_pack->phydro->u0 : u0;
+  auto uh = fl_on ? FluidRef::Get(pmy_pack).u0 : u0;
 
   //--------------------------------------------------------------------------------- x1
   par_for("m1_flx1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,

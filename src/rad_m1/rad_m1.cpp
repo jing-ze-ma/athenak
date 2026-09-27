@@ -341,7 +341,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (1c) matter coupling.  It reads rho, v and the gas energy from hydro's CONSERVED
   // u0 and writes u0(IEN) and u0(IM1..3) back, so it needs a <hydro> block unless every
   // opacity vanishes (the pure-transport tests of milestone 1a).
-  bool have_hydro = pin->DoesBlockExist("hydro");
+  // m1-mhd: or an <mhd> block (the same conserved layout; IEN also carries |B|^2/2)
+  const bool have_mhd = pin->DoesBlockExist("mhd");
+  bool have_hydro = pin->DoesBlockExist("hydro") || have_mhd;
+  if (have_mhd && pin->DoesBlockExist("hydro")) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1> with both <hydro> and <mhd> (ion-neutral) is not "
+      << "supported: the module couples to ONE fluid" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (have_mhd && ppack->pmesh->use_cubed_sphere) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1> with <mhd> on the cubed sphere is not validated "
+      << "(m1-mhd covers Cartesian and spherical polar)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const std::string fblk = have_mhd ? "mhd" : "hydro";
+  fl_on = have_hydro;
+  fl_mhd = have_mhd;
   // (1c) the advective enthalpy-flux split of the E equation (design sect. 3 "Moving
   // fluid").  It is what carries (4/3) E v where alpha -> 0 switches the transport flux
   // off, so it is on by default exactly where alpha exists and there is a medium; with
@@ -442,7 +459,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   if (coupling && !have_hydro) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_m1> matter coupling requires a <hydro> block" << std::endl;
+      << std::endl << "<rad_m1> matter coupling requires a <hydro> or <mhd> block"
+      << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (!opac_zero && !coupling) {
@@ -451,7 +469,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   // an isothermal gas has no energy equation to couple to
   if (have_hydro && (coupling || !opac_zero)) {
-    std::string heos = pin->GetOrAddString("hydro","eos","ideal");
+    std::string heos = pin->GetOrAddString(fblk,"eos","ideal");
     if (heos.compare("isothermal") == 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1> needs a hydro EOS with an energy equation, not "
@@ -460,7 +478,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   }
   // the design's gas-only EOS requirement (sect. 1)
-  if (have_hydro && pin->GetOrAddBoolean("hydro","eos_radiation",false)) {
+  if (have_hydro && pin->GetOrAddBoolean(fblk,"eos_radiation",false)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> requires a GAS-ONLY EOS: <hydro>/eos_radiation must be "
       << "false (the radiation energy and pressure are evolved, not in the EOS)"
@@ -765,6 +783,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   if (force_ref != M1_FREF_NONE) {
     Kokkos::realloc(arad_ref, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(arad_ref, 0.0);
+  }
+  // m1-mhd: |B|^2/2 of the current (b0) and U^n (b1) fields, every cell incl. ghosts
+  if (fl_mhd) {
+    Kokkos::realloc(emag0, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(emag1, nmb, ncells3, ncells2, ncells1);
+  } else {
+    Kokkos::realloc(emag0, 1, 1, 1, 1);
+    Kokkos::realloc(emag1, 1, 1, 1, 1);
   }
   Kokkos::realloc(cnt, M1_NCNT);
   for (int n=0; n<M1_NCNT; ++n) {cnt.h_view(n) = 0.0;}
