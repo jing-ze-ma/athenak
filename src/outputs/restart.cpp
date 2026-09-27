@@ -237,6 +237,13 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
       Kokkos::deep_copy(outarray_m1t, tmp);
     }
+    // implicit_closure_thin_relax: the relaxed closure of the last step (ctr_mem)
+    if (pradm1->impl_ctrelax > 0.0 && pradm1->ctr_init) {
+      Kokkos::realloc(outarray_m1c, nmb, 4, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_m1c, Kokkos::subview(pradm1->ctr_mem,
+                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL));
+    }
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
@@ -365,6 +372,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // the implicit-ck state block (utils/two_stream_ck_rst.hpp), behind even that one
   const int nck = ck_rst_hdr_bytes.empty() ? 0
                   : static_cast<int>(outarray_ck.extent(0));
+  // <rad_m1> implicit_closure_thin_relax: 4 ctr_mem slabs behind everything (0 = none,
+  // and then not one byte).  radm1::kM1CtrRstMagic.
+  const int nctr = (pradm1 != nullptr && pradm1->impl_ctrelax > 0.0 && pradm1->ctr_init)
+                   ? 4 : 0;
+  char ctr_hdr[2*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[2] = {(nctr > 0) ? 1 : 0, static_cast<std::int32_t>(nctr)};
+    std::memcpy(&(ctr_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[2] = {static_cast<std::int32_t>(neint), 0};
@@ -555,6 +571,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(ck_rst_hdr_bytes.data(), nb, "byte", single_file_per_rank);
     }
+    // the thin_relax closure header, same marked form, behind the implicit-ck one
+    if (nctr > 0) {
+      IOWrapperSizeT nb = sizeof(ctr_hdr);
+      resfile.Write_any_type(&(radm1::kM1CtrRstMagic[0]), sizeof(radm1::kM1CtrRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(ctr_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -624,6 +648,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   data_size += neint*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
   data_size += nck*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
+  data_size += nctr*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -665,6 +690,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nck > 0) {
     step3size += sizeof(two_stream_rt::kCkRstMagic) + sizeof(IOWrapperSizeT)
                  + ck_rst_hdr_bytes.size();
+  }
+  if (nctr > 0) {
+    step3size += sizeof(radm1::kM1CtrRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ctr_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1155,6 +1183,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<nck; ++n) {
     write_wtemp(Kokkos::subview(outarray_ck, n, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "ck restart state");
+  }
+  // and the thin_relax closure memory last of all (kM1CtrRstMagic)
+  for (int n=0; n<nctr; ++n) {
+    write_wtemp(Kokkos::subview(outarray_m1c, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "rad_m1 thin_relax closure");
   }
 
   // close file, clean up

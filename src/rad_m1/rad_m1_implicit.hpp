@@ -55,6 +55,12 @@ constexpr char kM1OnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'};
 // implicit_mr_every > 1 or vet_sc_every > 1 (rad_m1_mr.cpp): the multi-rate window and
 // tensor-cadence state, behind the one-pass header: 10 Reals, no slabs
 constexpr char kM1MRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
+// implicit_closure_thin_relax (runs_5c_thinstab): the relaxed closure of the last step
+// (ctr_mem: chi, n1, n2, n3), header behind EVERY other one (after kCkRstMagic): int32
+// have, int32 nch = 4; its 4 slabs are the LAST of each MeshBlock record.  Written only
+// when the relaxation is active and has a stored step (ctr_init); a file without it
+// restarts with an unrelaxed first step (the behaviour before 2026-09-27).
+constexpr char kM1CtrRstMagic[8] = {'M', '1', 'C', 'T', 'R', 'L', 'X', '1'};
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled
