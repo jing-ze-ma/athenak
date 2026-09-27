@@ -570,7 +570,8 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   // ---- m1-mhd: the split monopole on the x1 faces, b0.x1f = wg_b0 (r_in/x1f)^2 (the
   // flux r^2 B_r dOmega is constant, so the finite-volume div B vanishes to round-off);
   // no transverse field.  Set before the gas so that IEN can carry |B|^2/2.
-  const Real b0r = pin->GetOrAddReal("problem","wg_b0",0.0);
+  // (read only under <mhd>, so that a hydro run's parameter dump is unchanged)
+  const Real b0r = fl.mhd ? pin->GetOrAddReal("problem","wg_b0",0.0) : 0.0;
   DvceFaceFld4D<Real> *pb0 = fl.mhd ? &(pmbp->pmhd->b0) : nullptr;
   if (fl.mhd) {
     auto b = *pb0;
@@ -585,7 +586,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       b.x3f(m,k,j,i) = 0.0;
       if (k == n3m1) b.x3f(m,k+1,j,i) = 0.0;
     });
-  } else if (b0r != 0.0) {
+  } else if (pin->DoesParameterExist("problem","wg_b0")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "sph_wedge: problem/wg_b0 needs an <mhd> block" << std::endl;
     std::exit(EXIT_FAILURE);

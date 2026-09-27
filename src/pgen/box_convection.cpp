@@ -2379,10 +2379,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // --- m1-mhd: a UNIFORM field problem/b0_1..3 (force free, div B = 0 exactly), set on
   // every face before the gas so that IEN can carry |B|^2/2
-  const Real b0x1 = pin->GetOrAddReal("problem", "b0_1", 0.0);
-  const Real b0x2 = pin->GetOrAddReal("problem", "b0_2", 0.0);
-  const Real b0x3 = pin->GetOrAddReal("problem", "b0_3", 0.0);
-  if (!mhd_ && (b0x1 != 0.0 || b0x2 != 0.0 || b0x3 != 0.0)) {
+  // (read only under <mhd>, so that a hydro run's parameter dump is unchanged)
+  const Real b0x1 = mhd_ ? pin->GetOrAddReal("problem", "b0_1", 0.0) : 0.0;
+  const Real b0x2 = mhd_ ? pin->GetOrAddReal("problem", "b0_2", 0.0) : 0.0;
+  const Real b0x3 = mhd_ ? pin->GetOrAddReal("problem", "b0_3", 0.0) : 0.0;
+  if (!mhd_ && (pin->DoesParameterExist("problem", "b0_1") ||
+                pin->DoesParameterExist("problem", "b0_2") ||
+                pin->DoesParameterExist("problem", "b0_3"))) {
     std::cout << "### FATAL ERROR in box_convection: problem/b0_* needs <mhd>"
               << std::endl;
     std::exit(EXIT_FAILURE);
