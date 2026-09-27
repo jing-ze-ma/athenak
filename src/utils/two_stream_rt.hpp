@@ -1543,6 +1543,31 @@ KOKKOS_INLINE_FUNCTION
 Real CkEmW(const Real emw, const Real kro) {
   return CkMulRn(emw, kro);
 }
+//! \fn Real CkE0
+//! \brief ck-lin2: the half-layer e0 = 1 - e^{-dtau/mu}, dtau = 0.5 kappa rho dz, as
+//! ck_coef stores it in ck_c0 (ck_coef forms it by this function): the linear kernels
+//! form it from kappa rho and dz instead of reading ck_c0
+KOKKOS_INLINE_FUNCTION
+Real CkE0(const Real kro, const Real dz, const Real mu) {
+  const Real dtau = 0.5*kro*dz;
+  const RtF x = static_cast<RtF>(dtau/mu);
+  return static_cast<Real>(-RT_EXPM1(-x));
+}
+//! \fn void CkLayW
+//! \brief ck-lin2: lP slots 2-4 of the layer joining cells i and i+1 -- dslv/dB_i,
+//! dsuu/dB_{i+1} and the face interpolation dt_l/dtc -- from the two cells' kappa rho and
+//! dz by ck_lin_build's expressions (ck_lin_build forms them by this function): the
+//! linear kernels form them instead of reading lP
+KOKKOS_INLINE_FUNCTION
+void CkLayW(const Real kro, const Real kru, const Real dz, const Real dzu, const bool bf,
+            Real &wl, Real &wu, Real &ffj) {
+  wl = BFaceW(kru, kro, bf);
+  wu = BFaceW(kro, kru, bf);
+  const Real dt_l = 0.5*kro*dz;
+  const Real dt_u = 0.5*kru*dzu;
+  const Real dtc = dt_l + dt_u;
+  ffj = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn void RTLayer
@@ -6462,6 +6487,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         const bool ckstsp_ = cklbuild_ && ckfcf_ && !ckfus_ && cbt_ && ckbsph_ && cksph_
                              && (ckcache_ >= 2) && !(ckjacp_ && !ckjl_) && !ckdif_
                              && (RT_FP32 == 0) && ck_store_split;
+        // ck-lin2: the half-layer pair (cin, cout) is formed by every linear kernel
+        // (CkCinCout), so ck_coef stores it only for a reader that still reads it: the
+        // chain kernel re-applying a frozen operator (a Jacobian pass without
+        // ck_impl_jac_lin, ck_impl_lin_check) and the unpaired linear tiers
+        const bool cklp_ = (ck_impl_lin_thr == 1) && (ck_nq_ == 2);
+        const bool ckcst_ = !(cklp_ && ckjl_ && (ck_impl_lin_check == 0));
         const int nch_ = nblk*RT_NB;
         auto lP_g = cklon_ ? *ck_linP_ptr : CkDum<DvceArray5D<Real>>("ck_lP_d");
         auto lG_g = cklon_ ? *ck_linG_ptr : CkDum<DvceArray5D<Real>>("ck_lG_d");
@@ -7117,19 +7148,21 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real fP = xPv - static_cast<Real>(iP);
               const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, g) + kc_g(m,b,i,k,j);
               const Real kro = kap*rho;
-              const Real dtau = 0.5*kro*dz;
               for (int q=0; q<nqc; ++q) {
                 const int c = c0 + q;
                 ckkro_g(m,c,i,k,j) = kro;
-                const RtF x = static_cast<RtF>(dtau/muq[q]);
-                const Real e0 = static_cast<Real>(-RT_EXPM1(-x));
-                // ck-next: the pair by the very function the linear kernels re-form
-                // it with (CkCinCout), from the stored kappa rho, dz and e0
-                Real cin, cout;
-                CkCinCout(kro, dz, muq[q], e0, cin, cout);
+                // ck-lin2: e0 by the function the linear kernels re-form it with
+                const Real e0 = CkE0(kro, dz, muq[q]);
                 ckc0_g(m,c,i,k,j) = e0;
-                ckci_g(m,c,i,k,j) = cin;
-                ckco_g(m,c,i,k,j) = cout;
+                // ck-next: the pair by the very function the linear kernels re-form
+                // it with (CkCinCout), from the stored kappa rho, dz and e0; ck-lin2:
+                // stored only when a reader still reads it (ckcst_)
+                if (ckcst_) {
+                  Real cin, cout;
+                  CkCinCout(kro, dz, muq[q], e0, cin, cout);
+                  ckci_g(m,c,i,k,j) = cin;
+                  ckco_g(m,c,i,k,j) = cout;
+                }
               }
             }
           });
@@ -7409,17 +7442,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // ck-next: the loads of cell i+1 are issued before cell i is worked
               // (the stores below keep the compiler from hoisting them itself)
               Real btr_n = lG_g(m,0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
-              Real e0_n = ckc0_g(m,c,icut,k,j), ci_n = ckci_g(m,c,icut,k,j);
-              Real co_n = ckco_g(m,c,icut,k,j), kro_n = ckkro_g(m,c,icut,k,j);
+              // ck-lin2: cin and cout are formed (CkCinCout), not read
+              Real e0_n = ckc0_g(m,c,icut,k,j), kro_n = ckkro_g(m,c,icut,k,j);
               for (int i=icut; i<ie+1; ++i) {
-                const Real btr = btr_n, dz = dz_n, e0 = e0_n, ci = ci_n, co = co_n;
+                const Real btr = btr_n, dz = dz_n, e0 = e0_n;
                 const Real kro = kro_n;
                 if (i < ie) {
                   btr_n = lG_g(m,0,i+1,k,j);
                   dz_n = lG_g(m,4,i+1,k,j);
                   e0_n = ckc0_g(m,c,i+1,k,j);
-                  ci_n = ckci_g(m,c,i+1,k,j);
-                  co_n = ckco_g(m,c,i+1,k,j);
                   kro_n = ckkro_g(m,c,i+1,k,j);
                 }
                 const RtF bb = static_cast<RtF>(btr);
@@ -7458,6 +7489,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   lpf_g(m,c,i,k,j) = w.s0;
                   lps_g(m,c,i,k,j) = w.s1;
                   lpjb_g(m,c,i,k,j) = w.s2;
+                  Real ci, co;
+                  CkCinCout(kro, dz, muc, e0, ci, co);
                   CkJlP1Step(w, i < ie, wl, wu, ffj, ci, co, e0, rj, idn, btr);
                 }
               }
@@ -7526,8 +7559,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     const Real wl = up ? lP_g(m,2*nch_+cw,i,k,j) : 0.0;
                     const Real wu = up ? lP_g(m,3*nch_+cw,i,k,j) : 0.0;
                     const Real ffj = up ? lP_g(m,4*nch_+cw,i,k,j) : 0.0;
-                    CkJlP1Step(w, up, wl, wu, ffj, ckci_g(m,c,i,k,j),
-                               ckco_g(m,c,i,k,j), ckc0_g(m,c,i,k,j),
+                    // ck-lin2: cin and cout formed (CkCinCout), not read
+                    Real ci1, co1;
+                    CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j),
+                              (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2],
+                              ckc0_g(m,c,i,k,j), ci1, co1);
+                    CkJlP1Step(w, up, wl, wu, ffj, ci1, co1, ckc0_g(m,c,i,k,j),
                                lP_g(m,0*nch_+c,i,k,j),
                                CkIdn(lP_g(m,0*nch_+c,i,k,j), lG_g(m,0,i,k,j)),
                                lG_g(m,0,i,k,j));
