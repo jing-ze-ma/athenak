@@ -1,5 +1,6 @@
+- **[CALTECH SESSION START HERE: docs/handover/SESSION-2026-09-27-caltech.md](caltech-cluster-facts.md)** — merges, decisions, next ck/M1 levers, how to test here (rt-integration faf14314)
 - **[NEVER RUN ON hpc-sm-01-09 (bad H200 node, user 09-26)](caltech-cluster-facts.md)** — ~6.6x slow + OOM; every GPU sbatch gets `--exclude=hpc-sm-01-09`; pending jobs: `scontrol update JobId=<id> ExcNodeList=hpc-sm-01-09`; brief every agent
-- **[RESUME HERE 09-27: ck-next (759e92f5) awaiting GPU-accuracy check + 2-GPU timing job 3562060, then user merge decision](ck-next-resume-0927.md)** — 1 H200 -11 % total, ~22.5 % of remaining ck; cumulative ~52 % of ck
+- [ck-next resume note (RESOLVED 09-27: merged 6a9ffb0d, pushed)](ck-next-resume-0927.md) — historical
 - [Delegate to agents](delegate-to-agents.md) — Opus 5.5 medium agents; AVOID haiku/sonnet (user 09-25); never high effort
 - [Caltech cluster facts](caltech-cluster-facts.md) — Slurm, gpu 4/node (18x H200); SCRATCH PURGED after 14 d; H200 ~$1.9/h billed; login 8 GB/proc; srun --mpi=pmix; account carnegie_poc
 - [caltech-port MERGED + pushed 09-25](caltech-port-hold-merge.md) — rt-integration 83876228; viper: submodule update --init once + HIP bitwise gate
@@ -14,7 +15,7 @@
 - [M1 port merged + H200 M1 timing 09-26](m1-port-h200-0926.md) — 48321155; mg_gf +33 % on 2 H200 (only wins 1 GPU); one_pass off -3.5 %; launch-latency bound
 - [Drop unhelpful default-on switches (user 09-26)](drop-unhelpful-defaults-0926.md) — one_pass kept + auto-disable MERGED dff69bc7 (accuracy 5-22x round-off accepted by user)
 - [ck-jlin MERGED 09-26](ck-jlin-merged-0926.md) — 587825ef; ~21-22 % of ck; next lever = store kernel registers; final timing CONFIRMED -13.6 % (2 H200) / -16.1 % (1 H200)
-- [ck-store MERGED 55762ada 09-26](ck-store-0926.md) — store pass without chain kernel (ck_store_split); total ~35-38 % of ck with jlin; noise 1.21x at edge
+- [ck-next MERGED 6a9ffb0d 09-27 (-9.4 %/-11 %; cumulative ck -27 %/-32 %)](ck-store-0926.md); [ck-store MERGED 55762ada 09-26](ck-store-0926.md) — store pass without chain kernel (ck_store_split); total ~35-38 % of ck with jlin; noise 1.21x at edge
 - [Agent collision lesson (09-26)](agent-collision-lesson.md) — agents with background work can resume; TaskStop the old one before a replacement on the same branch
 - [Kokkos 5.2.2: NOT adopted (09-26)](kokkos5-decision-0926.md) — 1-3 % dhj, 0 % M1 on good node; big rename cost; branch kokkos5 kept
 ## RULE ZERO

@@ -51,3 +51,5 @@ State when the user went to bed on 2026-09-26 at ~23:40 PDT. The agents were sto
 **Next session:** confirm the GPU accuracy class of cn14 (and run the noise gate if needed), read the 2-GPU timing, then ask the user whether to merge ck-next. On merge: a handover note asking viper for its HIP gate; delete the branches ck-next-vA and ck-next-vB; remove the worktree.
 
 **Also since last summary:** viper pushed flux_hst (default on; dhj.user.hst gains flux columns; hydro hst/bin/rst bitwise), the sph_wedge reservoir bottom BC, and a session checkpoint. The main checkout is at 392f1e50.
+
+**RESOLVED 2026-09-27:** gates passed (noise 0.78x), 2-GPU timing -9.4 %, merged 6a9ffb0d and pushed (50325e8b). Nothing pending.
