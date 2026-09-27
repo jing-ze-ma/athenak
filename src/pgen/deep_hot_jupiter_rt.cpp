@@ -479,7 +479,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Efl_bot_in / Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
   dhj_flux_hst_wall = flux_hst && pin->DoesParameterExist("problem","flux_hst_wall")
                       && pin->GetBoolean("problem","flux_hst_wall");
-  // problem/wall_closed (default false): make the inner radial boundary a CLOSED wall.
+  // problem/wall_closed (DEFAULT TRUE, user 09-27; false = old reservoir wall): make the inner radial boundary a CLOSED wall.
   // The user boundary (HydrostaticEquilibrium) leaves the inner ghosts at the state the
   // problem generator gave them -- the initial hydrostatic column at rest -- so the is
   // face was a Riemann problem against a FIXED reservoir: a first cell that moves at
@@ -489,9 +489,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // at the is face uses the mirror of the interior-side state (as ix1_bc = reflect
   // does): zero mass flux, zero advected energy, the wall pressure from the interior.
   // The ghosts keep their role in the reconstruction slopes and, under MHD, the field
-  // boundary is unchanged.  Read without recording it so restart bytes do not change.
-  if (pin->DoesParameterExist("problem","wall_closed") &&
-      pin->GetBoolean("problem","wall_closed")) {
+  // boundary is unchanged.  Recorded with GetOrAdd: a restart written before the key
+  // existed picks up the closed wall.
+  if (pin->GetOrAddBoolean("problem","wall_closed",true)) {
     if (pmy_mesh_->pmb_pack->phydro != nullptr) {
       pmy_mesh_->pmb_pack->phydro->wall_closed_ix1 = true;
     }
