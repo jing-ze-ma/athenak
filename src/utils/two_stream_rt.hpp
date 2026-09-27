@@ -6923,23 +6923,24 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             cin_g(m,2,i,k,j) = rhoN(m,k,j,i);
             cin_g(m,3,i,k,j) = dx1(m,k,j,i);
           });
-          CkParFor4("ck_coef", cklw_, 0, nmb1, 0, ngr-1, ks, ke, js, je,
-          KOKKOS_LAMBDA(const int m, const int p, const int k, const int j) {
+          // ck-next: a thread per (pair, cell): no cell depends on another, and a
+          // column loop per pair left the kernel waiting on memory (long scoreboard)
+          par_for("ck_coef", DevExeSpace(), 0, nmb1, 0, ngr-1, is, ie+1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int p, const int i, const int k,
+                        const int j) {
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
             const int c0 = p*nqc;
             const int blk = c0/RT_NB;
             // the chain kernel zeroes the beam deposit its block's beam kernels add to
-            if (c0 % RT_NB == 0) {
-              for (int i=is; i<ie+2; ++i) Qb_g(m,blk,i,k,j) = 0.0;
-            }
+            if (c0 % RT_NB == 0) Qb_g(m,blk,i,k,j) = 0.0;
             const int icut = icc_g(m,k,j);
-            if (icut > ie) return;
+            if (icut > ie || i < icut) return;
             const int g = (nqc == 1) ? (c0 % CK_NG) : ((c0/2) % CK_NG);
             const int b = (nqc == 1) ? (c0/CK_NG) : (c0/(2*CK_NG));
             Real muq[2];
             muq[0] = (nqc == 1) ? 1.0/CK_DIFFUSIVITY : mug[0];
             muq[1] = mug[1];
-            {   // the top layer, (1 - e^-dtau) of the hydrostatic column above
+            if (i == ie+1) {   // the top layer, (1 - e^-dtau) of the column above
               const Real mu0 = cf_g(m,k,j,3);
               const Real ptop = pb_g(m,k,j,ie+1);
               const Real xTv = xT_g(m,k,j,ie+1);
@@ -6957,8 +6958,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muq[q]));
                 cktpf_g(m,c0+q,k,j) = static_cast<Real>(static_cast<RtF>(1.0)-trans);
               }
+              return;
             }
-            for (int i=icut; i<ie+1; ++i) {
+            {
               const Real rho = cin_g(m,2,i,k,j);
               const Real dz = cin_g(m,3,i,k,j);
               const Real xTv = cin_g(m,0,i,k,j);
