@@ -1,0 +1,33 @@
+#!/bin/bash -l
+#SBATCH -J wgSE
+#SBATCH -p apu
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=04:00:00
+#SBATCH -o /viper/ptmp2/jinma/sprhd_0926/gpu/log/g17.%j.out
+# super-Eddington He wedge (F_in x 1.5) to steady state, open top, no sponge, 84x16x16:
+# W1 closed (zero-flux) bottom on GPU 0, W2 reservoir bottom on GPU 1, 1 rank each, side by side,
+# each step with its own memory share and one GPU (--gres=gpu:1; slurm sets the device).  A link restarts from the newest rst of each arm.
+# usage: sbatch g17.sub <bin tag>; analysis: python3 ana/se.py gpu/g17_<tag>/W1 (W2)
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=1
+W=/viper/ptmp2/jinma/sprhd_0926; B=$W/bin/athena_$1_none_gpu; R=$W/gpu/g17_$1
+G="mesh/nx2=16 mesh/nx3=16 meshblock/nx2=16 meshblock/nx3=16 time/nlim=-1 time/tlim=1.0e6 time/ndiag=20000 problem/wg_seed=1.0e-3 output1/dt=2.0 output2/dt=200.0 output3/dt=200.0 output4/dcycle=50000"
+md5sum $B
+run() { local a=$1 g=$2; local d=$R/$a; mkdir -p $d; cd $d
+  local rs=$(ls $d/rst/*.rst 2>/dev/null | tail -1)
+  if [ -n "$rs" ]; then ARG="-r $rs"; else ARG="-i $W/inp/se_$a.athinput $G"; fi
+  srun --export=ALL -n 1 --exact --cpus-per-task=24 --mem=90G --gres=gpu:1 bash -c \
+    'echo "step GPU ROCR_VISIBLE_DEVICES=$ROCR_VISIBLE_DEVICES"; exec "$0" "$@"' $B $ARG -d $d -t 03:50:00 >> $d/run.log 2>&1
+  echo "$a rc=$? $(date +%T) from ${rs:-IC}"; }
+echo "start $(date +%T)"
+run W1 0 &
+run W2 1 &
+wait
+echo "done $(date +%T)"

@@ -508,9 +508,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     onep_qa[t] = -1.0;
     onep_qb[t] = -1.0;
     onep_cnt[t] = 0.0;
+    onep_off[t] = 0.0;
+    onep_actr[t] = 0.0;
+    onep_prb[t] = 0.0;
   }
   impl_onep_n = 0.0;
   impl_onep_nchk = 0.0;
+  impl_onep_auto = false;
+  impl_onep_awin = 2;
+  impl_onep_arep = 64;
+  impl_onep_ndis = 0.0;
+  impl_onep_nprb = 0.0;
+  impl_onep_nren = 0.0;
+  impl_onep_nfpr = 0.0;
   ew_tight = false;
   impl_pord = 1;
   impl_opsplit = false;
@@ -951,6 +961,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_onep_s = pin->GetOrAddReal("rad_m1","implicit_one_pass_safety",3.0);
     if (!(impl_onep_s >= 1.0)) {
       ImplFatal("<rad_m1>/implicit_one_pass_safety must be >= 1");
+    }
+    // implicit_one_pass_auto (m1-onepass-auto): see ImplicitSolve.  A kind of solve that
+    // goes auto_window check periods (auto_window * implicit_one_pass eligible solves)
+    // without one solve accepted after one pass is switched to one_pass = 0; after
+    // auto_reprobe such solves it is switched on again for one check period.  Default
+    // true; false on a restart whose file does not carry the key (written before it
+    // existed), which then continues as before (see above).
+    impl_onep_auto = pin->GetOrAddBoolean("rad_m1","implicit_one_pass_auto",
+                                          !global_variable::restart_run);
+    impl_onep_awin = pin->GetOrAddInteger("rad_m1","implicit_one_pass_auto_window",2);
+    impl_onep_arep = pin->GetOrAddInteger("rad_m1","implicit_one_pass_auto_reprobe",64);
+    if (impl_onep_awin < 1 || impl_onep_arep < 1) {
+      ImplFatal("<rad_m1>/implicit_one_pass_auto_window and _auto_reprobe must be >= 1");
     }
   }
   impl_pord = pin->GetOrAddInteger("rad_m1","implicit_predictor_order",
@@ -5519,6 +5542,52 @@ void RadiationM1::TmrMark(int c) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::OnePassAuto
+//! \brief implicit_one_pass_auto: the counters of one kind of solve (0 be, 1 stage 1,
+//! 2 stage 2) after an eligible solve; on = one_pass was on for it, one = it was accepted
+//! after one pass.  Host-only bookkeeping, identical on every rank (see ImplicitSolve).
+
+void RadiationM1::OnePassAuto(const int t, const bool on, const bool one) {
+  const char *knm[3] = {"be", "stage 1", "stage 2"};
+  const bool r0 = (global_variable::my_rank == 0);
+  if (!on) {
+    onep_actr[t] += 1.0;
+    return;
+  }
+  if (one) {
+    onep_actr[t] = 0.0;
+    if (onep_prb[t] > 0.5) {
+      onep_prb[t] = 0.0;
+      impl_onep_nren += 1.0;
+      if (r0) {
+        std::cout << "<rad_m1> implicit_one_pass_auto: " << knm[t] << " solves: re-probe "
+                  << "accepted, one_pass ON again (cycle " << pmy_pack->pmesh->ncycle
+                  << ")" << std::endl;
+      }
+    }
+    return;
+  }
+  onep_actr[t] += 1.0;
+  if (onep_actr[t] >= static_cast<Real>(impl_onep_awin*impl_onep)) {
+    onep_off[t] = 1.0;
+    onep_actr[t] = 0.0;
+    if (onep_prb[t] > 0.5) {
+      // a failed re-probe: counted in the summary only (it recurs every auto_reprobe)
+      onep_prb[t] = 0.0;
+      impl_onep_nfpr += 1.0;
+    } else {
+      impl_onep_ndis += 1.0;
+      if (r0) {
+        std::cout << "<rad_m1> implicit_one_pass_auto: " << knm[t] << " solves: none "
+                  << "accepted after one pass in " << impl_onep_awin*impl_onep
+                  << " solves, one_pass OFF (re-probe every " << impl_onep_arep
+                  << " solves; cycle " << pmy_pack->pmesh->ncycle << ")" << std::endl;
+      }
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitReport
 //! \brief one line at the end of the run with the Picard statistics
 
@@ -5553,6 +5622,21 @@ void RadiationM1::ImplicitReport() {
               << " contraction measurements=" << impl_onep_nchk
               << " last q (be, stage 1, stage 2)=" << onep_qa[0] << " " << onep_qa[1]
               << " " << onep_qa[2] << std::endl;
+    if (impl_onep_auto) {
+      // the counters are those of this run (from its start or restart); the state is
+      // per kind: on, off, or on as a re-probe not yet confirmed
+      std::cout << "<rad_m1> implicit_one_pass_auto: window=" << impl_onep_awin
+                << " reprobe=" << impl_onep_arep << "; this run: switch-offs="
+                << impl_onep_ndis << " re-probes=" << impl_onep_nprb
+                << " (failed=" << impl_onep_nfpr << " confirmed=" << impl_onep_nren
+                << "); state at end (be, stage 1, stage 2)=";
+      for (int t = 0; t < 3; ++t) {
+        const char *st = (onep_off[t] > 0.5) ? "off"
+                         : ((onep_prb[t] > 0.5) ? "probe" : "on");
+        std::cout << st << ((t < 2) ? "," : "");
+      }
+      std::cout << std::endl;
+    }
   }
   if (impl_accel == M1_IACC_ANDERSON) {
     Real apst = (impl_nstep > 0.0) ? (aa_nacc/impl_nstep) : 0.0;
@@ -6865,8 +6949,34 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // after the first pass when res_0 qe/(1-qe) < implicit_tol, qe = safety * (the larger
   // of the last two measured q), i.e. when the change a second pass would make is
   // bounded below the tolerance.  The state (q, counters) travels in the restart file.
-  const bool onep = (impl_onep > 0) && pred && pred_started;
+  //   implicit_one_pass_auto (m1-onepass-auto, default true): where no solve is ever
+  // accepted after one pass (He box at cfl 0.9, the wedge: +4.6 % for the tighter first
+  // passes alone) a kind of solve switches itself to one_pass = 0.  Its eligible solves
+  // (onep_el) are counted since the last one accepted after ONE pass (by either test);
+  // at auto_window * N of them, i.e. only after a window with no acceptance at all, the
+  // kind is switched off: its solves are then exactly those of implicit_one_pass = 0
+  // (EW-loosened first pass, no one-pass test, q and the check counter left alone).
+  // q is NOT measured while off (the loosened first pass would pollute res_1/res_0);
+  // instead, after auto_reprobe switched-off solves the kind is switched on again as a
+  // re-probe with NO q (q history cleared), so the first probe solve is a check that
+  // measures q afresh, and the counter is set to (auto_window - 1) * N, so that it is
+  // off again after one check period unless a solve is accepted, which confirms it.
+  // Until a switch-off the logic only counts, so where acceptances keep coming the
+  // solves are bitwise those without it.  The state travels in the restart file.
   const int otyp = (t2s == M1_T2S_STAGE1) ? 1 : ((t2s == M1_T2S_STAGE2) ? 2 : 0);
+  const bool onep_el = (impl_onep > 0) && pred && pred_started;
+  if (onep_el && impl_onep_auto && onep_off[otyp] > 0.5 &&
+      onep_actr[otyp] >= static_cast<Real>(impl_onep_arep)) {
+    // re-probe
+    onep_off[otyp] = 0.0;
+    onep_prb[otyp] = 1.0;
+    onep_actr[otyp] = static_cast<Real>((impl_onep_awin - 1)*impl_onep);
+    onep_qa[otyp] = -1.0;
+    onep_qb[otyp] = -1.0;
+    onep_cnt[otyp] = 0.0;
+    impl_onep_nprb += 1.0;
+  }
+  const bool onep = onep_el && !(impl_onep_auto && onep_off[otyp] > 0.5);
   const bool ocheck = onep && ((onep_qa[otyp] < 0.0) ||
                                (onep_cnt[otyp] >= static_cast<Real>(impl_onep - 1)));
   Real ores0 = -1.0, ores1 = -1.0;
@@ -8202,6 +8312,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       onep_cnt[otyp] += 1.0;
     }
   }
+  if (onep_el && impl_onep_auto) {OnePassAuto(otyp, onep, converged && it == 1);}
   // implicit_predictor_order = 2 under hesdirk2: a backward-Euler step keeps ipred
   const bool pskip = (impl_pord == 2) && (time_scheme == M1_TIME_HESDIRK2) && !t2st;
   if (pred && !pskip) {

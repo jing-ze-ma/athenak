@@ -1,6 +1,7 @@
 ## RULE ZERO
 
-- **[OVERNIGHT 09-26 (user asleep)](overnight-plan-0926.md)** — finish m1-wedge + He-box cfl, handover updates, merge only gated, fetch before push, morning summary
+- **[VIPER SESSION STATE 09-27: START HERE -> docs/handover/SESSION-2026-09-27-viper.md](next-prod-ck-c2.md)** — 1x/10x runs to rot 300 (11995741/42); coupling fix (ke-dt-0926 8f01828f) awaiting last gates + merge decision; flux hst WIP; m1-mhd ON HOLD until ke-dt merged
+
 
 - **[cs SEAM FLUX ROOT CAUSE of all WASP-121b crashes; fix cs_seam_flux = positive (09-26)](cs-seam-flux-positivity-0926.md)** — merged 2d07119a (default off); needs a multi-rotation check before production
 
@@ -39,6 +40,8 @@ Standing user rules (full text in [index-standing-rules](index-standing-rules.md
 - **[TEST STATE = prod4 RESTARTS (user 09-23)](test-state-use-prod4-restarts.md)** — dhj tests start from the newest bench/cs_mhd_prod4/rst restart (read-only copy), not prod3 (odd-even columns)
 - **[GPU ENV IN EVERY JOB (user 09-23)](gpu-env-settings-all-jobs.md)** — every GPU sbatch exports the validated set: HSA_XNACK=1, HSA_NO_SCRATCH_RECLAIM=1 (+ whatever the env sweep validates)
 - **[MEASURE COST ON GPU (user 09-22, tightened 23:40)](measure-cost-on-gpu.md)** — ALL timing comparisons on GPU (apudev, same binary, interleaved); CPU = correctness gates only; productions are all GPU
+- **[BENCHMARK DEFAULTS ON RAD-HYDRO, not static tests (user 09-26)](benchmark-on-radhydro.md)** — sph_wedge evolved / He box; T-S4 static misled (predictor, precond)
+- **[EVERY FIX IN HYDRO AND MHD, CARTESIAN AND SP (user 09-27)](fixes-in-hydro-and-mhd.md)** — rad_m1 couples to hydro only today (no pmhd): M1-MHD coupling needed first
 - **[TARGET PLANET = WASP-121b (user 09-25)](target-planet-wasp121b.md)** — all parameters from literature; R_p at the computed transit pressure; setup in wasp121_0925
 - **[KELT-20b setup ready, not run (09-25)](kelt20b-setup-0925.md)** — mass 2.0 M_J (unmeasured); UV < 0.26 um 14 % folded into band 10; albedo 0.32 disputed
 - **[CLOUDS desk study 09-25](clouds-desk-study-0925.md)** — ADAM = SPARC renamed; we lack scattering; cloud-free baseline OK; minimal nightside-deck test

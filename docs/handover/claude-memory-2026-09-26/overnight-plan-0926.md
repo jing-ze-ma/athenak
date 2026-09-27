@@ -13,3 +13,4 @@ User went to bed 09-26. Standing permission: continue the running work only.
 - No new side threads, no production runs. Morning summary only; ignore interim notifications.
 Related: [[thread-triage-0925]], [[no-interim-agent-acks]].
 - 09-26 night: m1-wedge MERGED (d64b96db pushed). sph_wedge test pgen; gates pass; handover section 4c. Open: ringing, convection onset, job 11984805 unanalysed. He-box cfl verdict still pending.
+- 09-26 Caltech pushes (f8f7232f): kokkos submodule bumped to 4.6.02 (viper can build from the submodule again); m1-port merged (Time2RstSet DeepCopyAcross, box_convection nvcc); ck_beam_par = true in WASP-121b inputs; mg_gf Cartesian default DROPPED (+33 % on 2 H200).

@@ -94,7 +94,7 @@ implicit_maxit   = 200
 implicit_gas_newton = true
 implicit_eos_cache  = true
 implicit_bc_x1min   = flux
-implicit_flux_x1min = 2.503162453e+15
+implicit_flux_x1min = 3.754743680e+15   # x1.5: super-Eddington Fe bump (Gamma_max ~1.13)
 implicit_bc_x1max   = marshak
 marshak_q        = 0.5
 time_scheme      = hesdirk2
@@ -123,9 +123,10 @@ wg_nfine   = 8192
 wg_seed_k  = 0.0
 wg_seed_rlo = 0.0
 wg_seed_rhi = 0.0
-wg_bc_top  = wall       # closed outer wall; open = outflow-only top (for super-Eddington envelopes, doc 7.6)
-wg_wall_zero_flux = true   # default: no mass through the walls (the scaled-profile ghosts leaked)
-wg_sponge_rate = 0.02   # the default: top sponge above r(tau=1), damps the closed-wall 59-s mode (doc 7.3)
+wg_bc_top  = open
+wg_bc_bot  = reservoir
+wg_wall_zero_flux = true
+wg_sponge_rate = 0.0
 user_srcs  = true
 user_hist  = true
 

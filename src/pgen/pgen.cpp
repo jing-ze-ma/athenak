@@ -492,16 +492,17 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   // --- THE <rad_m1> implicit_one_pass HEADER (radm1::kM1OnePassRstMagic), behind the
-  // hesdirk2 one: 9 Reals, no slabs
-  bool onep_file = false;
-  Real onep_hv[9];
+  // hesdirk2 one: 9 Reals (18 with implicit_one_pass_auto), no slabs
+  bool onep_file = false, onep_auto_file = false;
+  Real onep_hv[18];
   if (std::memcmp(variabledata, &(radm1::kM1OnePassRstMagic[0]),
                   sizeof(radm1::kM1OnePassRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
       ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
-            == sizeof(IOWrapperSizeT)) && (nb == sizeof(onep_hv));
+            == sizeof(IOWrapperSizeT)) &&
+           (nb == 9*sizeof(Real) || nb == 18*sizeof(Real));
       ok = ok && (resfile.Read_bytes(&(onep_hv[0]), 1, nb, single_file_per_rank) == nb);
       ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
                   == variablesize);
@@ -509,10 +510,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 #if MPI_PARALLEL_ENABLED
     if (!single_file_per_rank) {
       MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&nb, sizeof(IOWrapperSizeT), MPI_CHAR, 0, MPI_COMM_WORLD);
       MPI_Bcast(&(onep_hv[0]), sizeof(onep_hv), MPI_CHAR, 0, MPI_COMM_WORLD);
       MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
     }
 #endif
+    onep_auto_file = ok && (nb == 18*sizeof(Real));
     if (!ok) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the <rad_m1> one-pass header of this restart file is "
@@ -1312,6 +1315,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       pradm1->onep_qa[t] = onep_hv[t];
       pradm1->onep_qb[t] = onep_hv[3+t];
       pradm1->onep_cnt[t] = onep_hv[6+t];
+      // implicit_one_pass_auto: a file without its state (auto off, or older) starts
+      // with one_pass on and fresh counters
+      if (onep_auto_file && pradm1->impl_onep_auto) {
+        pradm1->onep_off[t] = onep_hv[9+t];
+        pradm1->onep_actr[t] = onep_hv[12+t];
+        pradm1->onep_prb[t] = onep_hv[15+t];
+      }
     }
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0) {

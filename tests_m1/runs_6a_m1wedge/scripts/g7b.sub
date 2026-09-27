@@ -1,0 +1,37 @@
+#!/bin/bash -l
+#SBATCH -J wgG7b
+#SBATCH -p apu
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:50:00
+#SBATCH -o /viper/ptmp2/jinma/sprhd_0926/gpu/log/g7b.%j.out
+# m1-wedge radial-ringing test: He wedge 84x32x32 (the g1 long setup, grid seed 1e-3), two arms
+# side by side on one node, 1 GPU each, 45 min: usage sbatch g7.sub <bin tag> <armA> <armB>
+# arms: w3 (closed wall, cfl 0.3), w6 (closed wall, cfl 0.6), op (open top, 0.3),
+#       sp (top sponge above r(tau=1), rate 0.02/s, 0.3), ops (open + sponge, 0.3)
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=1
+W=/viper/ptmp2/jinma/sprhd_0926; B=$W/bin/athena_$1_none_gpu; R=$W/gpu/g7_$1; IN=$W/inp/he_bc.athinput
+declare -A A
+A[w3]="time/cfl_number=0.3"
+A[w6]="time/cfl_number=0.6"
+A[op]="time/cfl_number=0.3 problem/wg_bc_top=open"
+A[sp]="time/cfl_number=0.3 problem/wg_sponge_rate=0.02"
+A[ops]="time/cfl_number=0.3 problem/wg_bc_top=open problem/wg_sponge_rate=0.02"
+md5sum $B
+G="time/nlim=-1 time/ndiag=5000 problem/wg_seed=1.0e-3 output1/dt=2.0 output2/dt=2000.0 output3/dt=2000.0 output4/dcycle=50000"
+run() { local d=$1 g=$2; mkdir -p $R/$d; cd $R/$d
+  srun --export=ALL -n 1 --exact --cpus-per-task=24 bash -c \
+    "export ROCR_VISIBLE_DEVICES=$g; exec \"\$0\" \"\$@\"" $B -i $IN $G ${A[$d]} -d $R/$d -t 00:45:00 > $R/$d/run.log 2>&1
+  echo "$d rc=$? $(date +%T)"; }
+echo "start $(date +%T)"
+run $2 0 &
+run $3 1 &
+wait
+echo "done $(date +%T)"
