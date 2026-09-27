@@ -835,7 +835,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
               << " advect_split=" << (advect_split ? "true" : "false")
               << " split_vel=" << (split_vel_recon ? "recon" : "cell")
               << " source_form=" << (source_ovc ? "ovc" : "full")
-              << " closure=" << (eddington ? "eddington" : "m1")
+              // the closure as named in the input (was eddington ? eddington : m1, which
+              // printed m1 for minerbo/kershaw/vet_sc/tau/vet_col; the printout only)
+              << " closure=" << (vet_col ? "vet_col" : vet_sc ? "vet_sc" :
+                                 tau_closure ? "tau" : eddington ? "eddington" :
+                                 (chi_kind == M1_CHI_MINERBO) ? "minerbo" :
+                                 (chi_kind == M1_CHI_KERSHAW) ? "kershaw" : "m1")
               << " subcycle=" << (subcycle ? "true" : "false") << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e
               << " kappa_f=" << kappa_f << " kappa_s=" << kappa_s
