@@ -703,11 +703,13 @@ inline DvceArray5D<Real> *ck_co_ptr = nullptr;
 inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
 // ---- problem/ck_impl_lin: the factorisation, packed so that the linear kernel
 // captures few Views.  lP (m, q*nch + chain, i, k, j), q = 0..5: R on the below side
-// of face i and 1/(1 + R beta_i) (i = icut .. ie+1), the layer joining cells i and i+1
-// (i = icut .. ie-1): dslv/dB_i, dsuu/dB_{i+1} and the face interpolation dt_l/dtc, and
-// 2 (wfc/mu) kappa rho (the emission).
+// of face i (i = icut .. ie+1) and, slots 2-4, the layer joining cells i and i+1
+// (i = icut .. ie-1): dslv/dB_i, dsuu/dB_{i+1} and the face interpolation dt_l/dtc.
+// ck-next: slots 1 (1/(1 + R beta_i)) and 5 (2 (wfc/mu) kappa rho, the emission) are
+// no longer stored: the readers form them (CkIdn, CkEmW in two_stream_rt.hpp).
 // lG (m, q, i, k, j), q = 0..4: beta at face i, A_{i-1}/A_i, the flux frame factor,
-// 1/dz and dz (ck-next).  lC (q, chain): the flux weight and the internal-flux datum at the cut.
+// 1/dz and dz (ck-next).  lC (q, chain): the flux weight and the internal-flux datum
+// at the cut.
 // The half-layer triple (e0, cin, cout; slots 0-2 before ck-store) is not packed: the
 // kernels read it from ck_c0, ck_ci, ck_co, which hold the same numbers for as long as
 // the factorisation lives.
