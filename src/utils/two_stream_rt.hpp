@@ -6782,31 +6782,71 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
             }
             Real bown = bcut;
+            // ck-next: every load of cell i+1 is issued before cell i is worked (the
+            // stores keep the compiler from hoisting them): the same arithmetic
+            Real bt_n = lG_g(m,0,icut,k,j);
+            Real bnx_n = bown, wl_n = 0.0, wu_n = 0.0, ff_n = 0.0;
+            if (icut < ie) {
+              bnx_n = Bb_g(m,b,icut+1,k,j);
+              wl_n = lP_g(m,2*nch_+c0,icut,k,j);
+              wu_n = lP_g(m,3*nch_+c0,icut,k,j);
+              ff_n = lP_g(m,4*nch_+c0,icut,k,j);
+            }
+            Real e0_n[2], ci_n[2], co_n[2], id_n[2], r0_n[2];
+            for (int q=0; q<2; ++q) {
+              e0_n[q] = ckc0_g(m,c0+q,icut,k,j);
+              ci_n[q] = ckci_g(m,c0+q,icut,k,j);
+              co_n[q] = ckco_g(m,c0+q,icut,k,j);
+              id_n[q] = lP_g(m,1*nch_+c0+q,icut,k,j);
+              r0_n[q] = lP_g(m,0*nch_+c0+q,icut,k,j);
+            }
             for (int i=icut; i<ie+1; ++i) {
-              const Real bt = lG_g(m,0,i,k,j);
+              const Real bt = bt_n;
+              const Real bnx = bnx_n, wl = wl_n, wu = wu_n, ff = ff_n;
+              Real e0v[2], civ[2], cov[2], idv[2], r0v[2];
+              for (int q=0; q<2; ++q) {
+                e0v[q] = e0_n[q];
+                civ[q] = ci_n[q];
+                cov[q] = co_n[q];
+                idv[q] = id_n[q];
+                r0v[q] = r0_n[q];
+              }
+              if (i < ie) {
+                bt_n = lG_g(m,0,i+1,k,j);
+                if (i+1 < ie) {
+                  bnx_n = Bb_g(m,b,i+2,k,j);
+                  wl_n = lP_g(m,2*nch_+c0,i+1,k,j);
+                  wu_n = lP_g(m,3*nch_+c0,i+1,k,j);
+                  ff_n = lP_g(m,4*nch_+c0,i+1,k,j);
+                }
+                for (int q=0; q<2; ++q) {
+                  e0_n[q] = ckc0_g(m,c0+q,i+1,k,j);
+                  ci_n[q] = ckci_g(m,c0+q,i+1,k,j);
+                  co_n[q] = ckco_g(m,c0+q,i+1,k,j);
+                  id_n[q] = lP_g(m,1*nch_+c0+q,i+1,k,j);
+                  r0_n[q] = lP_g(m,0*nch_+c0+q,i+1,k,j);
+                }
+              }
               Real slv = bown, sfv = bown, suu = bown;
               Real bnext = bown;
               if (i < ie) {
-                bnext = Bb_g(m,b,i+1,k,j);
-                const Real wl = lP_g(m,2*nch_+c0,i,k,j);
-                const Real wu = lP_g(m,3*nch_+c0,i,k,j);
+                bnext = bnx;
                 slv = wl*bown + (1.0 - wl)*bnext;
                 suu = wu*bnext + (1.0 - wu)*bown;
-                sfv = slv + (suu - slv)*lP_g(m,4*nch_+c0,i,k,j);
+                sfv = slv + (suu - slv)*ff;
               }
               for (int q=0; q<2; ++q) {
-                const int c = c0 + q;
-                const Real e0 = ckc0_g(m,c,i,k,j);
-                const Real cin = ckci_g(m,c,i,k,j);
-                const Real cout = ckco_g(m,c,i,k,j);
+                const Real e0 = e0v[q];
+                const Real cin = civ[q];
+                const Real cout = cov[q];
                 const Real tr = 1.0 - e0;
                 const Real pl = cin*sfc + cout*suc;
                 const Real ql = cin*suc + cout*sfc;
                 const Real pu = cin*slv + cout*sfv;
                 const Real qu = cin*sfv + cout*slv;
                 Scr[q][i] = ss[q];
-                const Real idn = lP_g(m,1*nch_+c,i,k,j);
-                const Real rn = (lP_g(m,0*nch_+c,i,k,j) + bt)*idn;
+                const Real idn = idv[q];
+                const Real rn = (r0v[q] + bt)*idn;
                 Real sv = (1.0 - bt)*ss[q]*idn;
                 sv = tr*(rn*ql + sv) + pl;
                 const Real r2 = tr*tr*rn;
@@ -6836,26 +6876,71 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               sfu = slc;
             }
             bown = sfu;
+            // ck-next: cell i-1's loads before cell i is worked, as in pass 1
+            Real bt_p = lG_g(m,0,ie,k,j), g1_p = lG_g(m,1,ie,k,j);
+            Real g2_p = lG_g(m,2,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
+            Real bnx_p = bown, wl_p = 0.0, wu_p = 0.0, ff_p = 0.0;
+            if (ie > icut) {
+              bnx_p = Bb_g(m,b,ie-1,k,j);
+              wl_p = lP_g(m,2*nch_+c0,ie-1,k,j);
+              wu_p = lP_g(m,3*nch_+c0,ie-1,k,j);
+              ff_p = lP_g(m,4*nch_+c0,ie-1,k,j);
+            }
+            Real e0_p[2], ci_p[2], co_p[2], id_p[2], r0_p[2], sc_p[2];
+            for (int q=0; q<2; ++q) {
+              e0_p[q] = ckc0_g(m,c0+q,ie,k,j);
+              ci_p[q] = ckci_g(m,c0+q,ie,k,j);
+              co_p[q] = ckco_g(m,c0+q,ie,k,j);
+              id_p[q] = lP_g(m,1*nch_+c0+q,ie,k,j);
+              r0_p[q] = lP_g(m,0*nch_+c0+q,ie,k,j);
+              sc_p[q] = Scr[q][ie];
+            }
             for (int i=ie; i>icut-1; --i) {
-              const Real bt = lG_g(m,0,i,k,j);
+              const Real bt = bt_p;
+              const Real g1 = g1_p, g2 = g2_p, g3 = g3_p;
+              const Real bnx = bnx_p, wl = wl_p, wu = wu_p, ff = ff_p;
+              Real e0v[2], civ[2], cov[2], idv[2], r0v[2], scv[2];
+              for (int q=0; q<2; ++q) {
+                e0v[q] = e0_p[q];
+                civ[q] = ci_p[q];
+                cov[q] = co_p[q];
+                idv[q] = id_p[q];
+                r0v[q] = r0_p[q];
+                scv[q] = sc_p[q];
+              }
+              if (i > icut) {
+                bt_p = lG_g(m,0,i-1,k,j);
+                g1_p = lG_g(m,1,i-1,k,j);
+                g2_p = lG_g(m,2,i-1,k,j);
+                g3_p = lG_g(m,3,i-1,k,j);
+                if (i-1 > icut) {
+                  bnx_p = Bb_g(m,b,i-2,k,j);
+                  wl_p = lP_g(m,2*nch_+c0,i-2,k,j);
+                  wu_p = lP_g(m,3*nch_+c0,i-2,k,j);
+                  ff_p = lP_g(m,4*nch_+c0,i-2,k,j);
+                }
+                for (int q=0; q<2; ++q) {
+                  e0_p[q] = ckc0_g(m,c0+q,i-1,k,j);
+                  ci_p[q] = ckci_g(m,c0+q,i-1,k,j);
+                  co_p[q] = ckco_g(m,c0+q,i-1,k,j);
+                  id_p[q] = lP_g(m,1*nch_+c0+q,i-1,k,j);
+                  r0_p[q] = lP_g(m,0*nch_+c0+q,i-1,k,j);
+                  sc_p[q] = Scr[q][i-1];
+                }
+              }
               Real suv = bown, sfv = bown, snl = bown;
               Real bnext = bown;
               if (i > icut) {
-                bnext = Bb_g(m,b,i-1,k,j);
-                const Real wl = lP_g(m,2*nch_+c0,i-1,k,j);
-                const Real wu = lP_g(m,3*nch_+c0,i-1,k,j);
+                bnext = bnx;
                 snl = wl*bnext + (1.0 - wl)*bown;
                 suv = wu*bown + (1.0 - wu)*bnext;
-                sfv = snl + (suv - snl)*lP_g(m,4*nch_+c0,i-1,k,j);
+                sfv = snl + (suv - snl)*ff;
               }
-              const Real g1 = lG_g(m,1,i,k,j);
-              const Real g2 = lG_g(m,2,i,k,j);
-              const Real g3 = lG_g(m,3,i,k,j);
               for (int q=0; q<2; ++q) {
                 const int c = c0 + q;
-                const Real e0 = ckc0_g(m,c,i,k,j);
-                const Real cin = ckci_g(m,c,i,k,j);
-                const Real cout = ckco_g(m,c,i,k,j);
+                const Real e0 = e0v[q];
+                const Real cin = civ[q];
+                const Real cout = cov[q];
                 const Real tr = 1.0 - e0;
                 const Real wz = wfc[q]*g3;
                 Real src = 0.0;
@@ -6866,8 +6951,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 eh = cin*suv + cout*sfv;
                 src += wz*(e0*dI - eh);
                 dI = tr*dI + eh;
-                const Real rr = lP_g(m,0*nch_+c,i,k,j);
-                const Real ub = (rr*(1.0 + bt)*dI + Scr[q][i])*lP_g(m,1*nch_+c,i,k,j);
+                const Real rr = r0v[q];
+                const Real ub = (rr*(1.0 + bt)*dI + scv[q])*idv[q];
                 const Real db = dI + bt*(dI - ub);
                 const Real dm = ub - db;
                 lpf_g(m,c,i,k,j) = wfc[q]*dm*g2;
