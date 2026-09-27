@@ -7275,62 +7275,112 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // its loads (its slot is not read, as before).
             constexpr int CK_BTG = 8;
             const int nbg_ = (nbc_ + CK_BTG - 1)/CK_BTG;
-            par_for("ck_beam_tau", DevExeSpace(), 0, nmb1, 0, nbg_-1, is, ie+1, ks, ke,
-                    js, je,
-            KOKKOS_LAMBDA(const int m, const int pg, const int f, const int k,
-                          const int j) {
+            // ck-lin2: A TEAM PER (block, beam group, column).  Every face's thread of a
+            // column walked the same kappa rho through L2 (the kernel was bound by its
+            // loads: L2 hit 98 %, the memory pipes 76 % busy).  The team stages the
+            // group's kappa rho (cells icut .. ie, with the RtF cast the walk applies)
+            // and the face radii in team scratch once; its threads then walk the faces
+            // from there, each face by the old body in the old order: bitwise.  Faces go
+            // to threads in snake order (f and the mirrored face of the next round), so
+            // the long walks of the low faces are spread over the team.
+            const int nbk_ = ke - ks + 1, nbj_ = je - js + 1;
+            const int nbf_ = ie - is + 2;                    // faces is .. ie+1
+            const size_t btsz_ = ScrArray2D<Real>::shmem_size(CK_BTG, nbf_)
+                               + ScrArray1D<Real>::shmem_size(nbf_);
+            const int btlv_ = TeamScratchLevel(btsz_, 0);
+            const int btlg_ = (nmb1 + 1)*nbg_*nbk_*nbj_;
+#if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA)
+            Kokkos::TeamPolicy<> btpol(DevExeSpace(), btlg_, 128);
+#else
+            Kokkos::TeamPolicy<> btpol(DevExeSpace(), btlg_, Kokkos::AUTO);
+#endif
+            Kokkos::parallel_for("ck_beam_tau",
+                                 btpol.set_scratch_size(btlv_, Kokkos::PerTeam(btsz_)),
+            KOKKOS_LAMBDA(TeamMember_t tm) {
+              const int nkj = nbk_*nbj_;
+              const int lr = tm.league_rank();
+              const int m = lr/(nbg_*nkj);
+              const int lq = lr - m*nbg_*nkj;
+              const int pg = lq/nkj;
+              const int k = (lq - pg*nkj)/nbj_ + ks;
+              const int j = (lq - pg*nkj) % nbj_ + js;
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
               const int icut = icc_g(m,k,j);
-              if (icut > ie || f < icut) return;
-              bool on[CK_BTG];
-              bool any = false;
+              if (icut > ie) return;
+              ScrArray2D<Real> kt(tm.team_scratch(btlv_), CK_BTG, nbf_);
+              ScrArray1D<Real> xf(tm.team_scratch(btlv_), nbf_);
+              const int ncl = ie + 1 - icut;
+              Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ncl + 1),
+              [&](const int t) {
+                xf(icut - is + t) = X1F(m,icut + t);
+              });
+              Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, CK_BTG*ncl),
+              [&](const int t) {
+                const int q = t/ncl;
+                const int i = icut + (t - q*ncl);
+                const int p = pg*CK_BTG + q;
+                if (p < nbc_) {
+                  const RtF kr = static_cast<RtF>(ckkro_g(m,p*bst_,i,k,j));
+                  kt(q,i - is) = static_cast<Real>(kr);
+                }
+              });
+              int sb[CK_BTG];
               for (int q=0; q<CK_BTG; ++q) {
                 const int p = pg*CK_BTG + q;
-                on[q] = (p < nbc_) && (f >= bsp_(m,(p < nbc_) ? p : 0,k,j));
-                any = any || on[q];
+                sb[q] = (p < nbc_) ? bsp_(m,p,k,j) : (ie + 2);
               }
-              if (!any) return;
               const Real mu0 = cf_g(m,k,j,3);
               const Real sinz = sqrt((mu0*mu0 < 1.0) ? (1.0 - mu0*mu0) : 0.0);
-              const Real rcut = X1F(m,icut);
-              const Real bb = X1F(m,f)*sinz;
-              const Real b2 = bb*bb;
-              int jlo = f;
-              bool dark = false;
-              if (mu0 < 0.0) {
-                if (bb <= rcut) {
-                  dark = true;
-                } else {
-                  jlo = icut;
-                  for (int jj=f-1; jj>=icut; --jj) {
-                    if (X1F(m,jj) <= bb) {
-                      jlo = jj;
-                      break;
+              tm.team_barrier();
+              const Real rcut = xf(icut - is);
+              const int nf = ie + 2 - icut;
+              const int ts = tm.team_size(), tr = tm.team_rank();
+              for (int r=0; r*ts<nf; ++r) {
+                const int o = (r & 1) ? (r*ts + ts - 1 - tr) : (r*ts + tr);
+                if (o >= nf) continue;
+                const int f = icut + o;
+                bool on[CK_BTG];
+                bool any = false;
+                for (int q=0; q<CK_BTG; ++q) {
+                  on[q] = (f >= sb[q]);
+                  any = any || on[q];
+                }
+                if (!any) continue;
+                const Real bb = xf(f - is)*sinz;
+                const Real b2 = bb*bb;
+                int jlo = f;
+                bool dark = false;
+                if (mu0 < 0.0) {
+                  if (bb <= rcut) {
+                    dark = true;
+                  } else {
+                    jlo = icut;
+                    for (int jj=f-1; jj>=icut; --jj) {
+                      if (xf(jj - is) <= bb) {
+                        jlo = jj;
+                        break;
+                      }
                     }
                   }
                 }
-              }
-              Real tl[CK_BTG];
-              for (int q=0; q<CK_BTG; ++q) tl[q] = 0.0;
-              if (!dark) {
-                const Real rl = X1F(m,jlo);
-                Real prev = (rl*rl > b2) ? sqrt(rl*rl - b2) : 0.0;
-                for (int jj=jlo; jj<ie+1; ++jj) {
-                  const Real ru = X1F(m,jj+1);
-                  const Real cur = sqrt(ru*ru - b2);
-                  const Real ds = (jj < f) ? 2.0*(cur - prev) : (cur - prev);
-                  prev = cur;
-                  for (int q=0; q<CK_BTG; ++q) {
-                    if (on[q]) {
-                      const int c = (pg*CK_BTG + q)*bst_;
-                      const RtF kr = static_cast<RtF>(ckkro_g(m,c,jj,k,j));
-                      tl[q] += ds*static_cast<Real>(kr);
+                Real tl[CK_BTG];
+                for (int q=0; q<CK_BTG; ++q) tl[q] = 0.0;
+                if (!dark) {
+                  const Real rl = xf(jlo - is);
+                  Real prev = (rl*rl > b2) ? sqrt(rl*rl - b2) : 0.0;
+                  for (int jj=jlo; jj<ie+1; ++jj) {
+                    const Real ru = xf(jj + 1 - is);
+                    const Real cur = sqrt(ru*ru - b2);
+                    const Real ds = (jj < f) ? 2.0*(cur - prev) : (cur - prev);
+                    prev = cur;
+                    for (int q=0; q<CK_BTG; ++q) {
+                      if (on[q]) tl[q] += ds*kt(q,jj - is);
                     }
                   }
                 }
-              }
-              for (int q=0; q<CK_BTG; ++q) {
-                if (on[q]) tsl_(m,pg*CK_BTG + q,f,k,j) = dark ? 1.0e30 : tl[q];
+                for (int q=0; q<CK_BTG; ++q) {
+                  if (on[q]) tsl_(m,pg*CK_BTG + q,f,k,j) = dark ? 1.0e30 : tl[q];
+                }
               }
             });
             par_for("ck_beam_dep", DevExeSpace(), 0, nmb1, 0, nblk-1, is, ie, ks, ke,
