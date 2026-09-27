@@ -84,7 +84,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto w0facewb_x3f = w0facewb.x3f;
   auto &phicc0_ = phicc0;
   auto &wbq0_ = wbq0;     // the per-cell well-balanced background, built just below
-  auto phi0_x1f = phi0.x1f;
+  // the x1 well-balanced walk uses the EFFECTIVE potential (MHD::phicc_wb); it IS
+  // phicc0 / phi0.x1f unless a problem generator enabled its own (bitwise default)
+  auto &phiwbcc_ = phicc_wb;
+  auto phiwb_x1f_ = phi_wb_x1f;
   auto phi0_x2f = phi0.x2f;
   auto phi0_x3f = phi0.x3f;
     
@@ -183,13 +186,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
-                              m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_,
-                              phi0_x1f, wbq0_, true, wl, wr);
+                              m, k, j, il-1, iu, w0_, x1v_, x1f_, phiwbcc_,
+                              phiwb_x1f_, wbq0_, true, wl, wr);
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
-                              m, k, j, il-1, iu, b0_, x1v_, x1f_, phicc0_,
-                              phi0_x1f, wbq0_, false, bl, br);
+                              m, k, j, il-1, iu, b0_, x1v_, x1f_, phiwbcc_,
+                              phiwb_x1f_, wbq0_, false, bl, br);
       } else {
         // ppm4/wenoz on the RADIAL sweep: the published (Mignone 2014) curvilinear
         // volume-coordinate reconstruction -- see reconstruct/mignone_curvilinear.hpp
@@ -215,7 +218,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
-          m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wbq0_, wl, wr);
+          m, k, j, il-1, iu, w0_, phiwbcc_, phiwb_x1f_, wbq0_, wl, wr);
       PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
     } else {
 
@@ -259,7 +262,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                  use_wellbalance_static_reconst_perturb_,
                                  pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
-                                 x1v_, x1f_, phicc0_, phi0_x1f, wbq0_, dl, dr);
+                                 x1v_, x1f_, phiwbcc_, phiwb_x1f_, wbq0_, dl, dr);
       } else if (use_spherical_polar || str_r1_) {
         // reconstruct_x1 != plm: same Mignone curvilinear reconstruction as w0_/b0_
         // above, applied to the derived thermodynamic variables (no WB background,
@@ -281,7 +284,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
         WbPiecewiseLinearDerX1(member, eos_, wb_option_,
             m, k, j, il-1, iu, w0_, wder_,
-                               phicc0_, phi0_x1f, wbq0_, dl, dr);
+                               phiwbcc_, phiwb_x1f_, wbq0_, dl, dr);
       } else {
       switch (recon_method_) {
         case ReconstructionMethod::dc:

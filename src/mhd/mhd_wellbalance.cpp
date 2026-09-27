@@ -6,6 +6,9 @@
 //! \file mhd_wellbalance.cpp
 //! \brief Implements functions for deviation-based well-balanced scheme.
 
+#include <cstdlib>
+#include <iostream>
+
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
@@ -222,8 +225,8 @@ void MHD::BuildWBCache(const int jl, const int ju, const int kl, const int ku) {
   const WBOption wbo = wb_option;
   const bool gen = eos.IsGeneral();
   auto &w0_ = w0;
-  auto &phicc = phicc0;
-  auto &phi = phi0.x1f;
+  auto &phicc = phicc_wb;
+  auto &phi = phi_wb_x1f;
   auto &wt = wtemp;
   auto &c = wbq0;
   par_for("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
@@ -259,6 +262,43 @@ void MHD::BuildWBCache(const int jl, const int ju, const int kl, const int ku) {
       for (int q=0; q<5; ++q) c(m,10+q,k,j,i) = gm1*c(m,5+q,k,j,i);
     }
   });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::EnableWBEffectivePotential()
+//! \brief give the x1 well-balanced scheme its OWN potential, separate from phicc0 and
+//! phi0.x1f.  Mirror of Hydro::EnableWBEffectivePotential (hydro_wellbalance.cpp), which
+//! documents why; the conserved energy (etotgrav), the gravitational flux and the x2/x3
+//! backgrounds keep the TRUE potential.  New Views, NOT Kokkos::realloc: the members
+//! alias phicc0 / phi0.x1f with the same extents and realloc would keep that allocation.
+
+void MHD::EnableWBEffectivePotential() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ncells1 = indcs.nx1 + 2*(indcs.ng);
+  const int ncells2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*(indcs.ng)) : 1;
+  const int ncells3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*(indcs.ng)) : 1;
+  phicc_wb = DvceArray4D<Real>("phi_cc_wb", nmb, ncells3, ncells2, ncells1);
+  phi_wb_x1f = DvceArray4D<Real>("phi_fc_wb", nmb, ncells3, ncells2, ncells1+1);
+  use_phi_wb = true;
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::SetWBEffectivePotential(...)
+//! \brief copy a host-built effective potential into the device arrays
+
+void MHD::SetWBEffectivePotential(const HostArray4D<Real> &phicc_in,
+                                  const HostArray4D<Real> &phix1f_in) {
+  if (!use_phi_wb) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "SetWBEffectivePotential called before "
+              << "EnableWBEffectivePotential" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Kokkos::deep_copy(phicc_wb, phicc_in);
+  Kokkos::deep_copy(phi_wb_x1f, phix1f_in);
   return;
 }
 

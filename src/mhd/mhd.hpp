@@ -217,6 +217,14 @@ class MHD {
   bool use_etotgrav = false;   // flag to enable etotgrav
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
+  // the potential the x1 well-balanced scheme (BuildWBCache and the x1 WB
+  // reconstruction) sees: the TRUE potential (these ARE phicc0 / phi0.x1f, shallow
+  // copies) unless EnableWBEffectivePotential() gives it its own, e.g. the effective
+  // potential of g - a_rad_ref that <rad_m1>/force_reference = wb_arad needs.  Mirror of
+  // Hydro::phicc_wb (m1-mhd).
+  bool use_phi_wb = false;
+  DvceArray4D<Real> phicc_wb;    // cell-centered potential seen by the x1 WB scheme
+  DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
   // Has wbq0 ever been filled in this process?  With wb_cache_every > 1 the rebuild is
@@ -353,6 +361,11 @@ class MHD {
     // evaluate the background pressure from the static background state
     void SetWbBackgroundPressure();
     void BuildWBCache(const int jl, const int ju, const int kl, const int ku);
+    // the x1 well-balanced scheme's own potential (see phicc_wb); on EVERY start incl. a
+    // restart, before the problem generator fills it.  Mirror of the Hydro methods.
+    void EnableWBEffectivePotential();
+    void SetWBEffectivePotential(const HostArray4D<Real> &phicc_in,
+                                 const HostArray4D<Real> &phix1f_in);
     void RemoveWbFlux(const DvceFaceFld4D<Real> &pfacewb, DvceFaceFld5D<Real> &flx);
     void AddWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
     void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
