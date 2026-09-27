@@ -67,6 +67,7 @@
 #include "pgen_eos_utils.hpp"
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
+#include "outputs/outputs.hpp"
 
 #include <Kokkos_Random.hpp>
 
@@ -162,6 +163,8 @@ void read_ic_profile(const std::string &fname, const int &N, View1D Tarr,
                      View1D lgparr);
 
 void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
+// problem/flux_hst: the radiative / energy / mass flux history columns
+void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
 void DhjCycleDiag(Mesh *pm);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
@@ -455,6 +458,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_cubed_sphere_ = pmy_mesh_->use_cubed_sphere;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
+  // problem/flux_hst (default true): append the eight flux columns of DhjFluxHistory to
+  // every history output.  Read without recording it in the input, so that a restart
+  // file written by a run that does not set the key is byte-for-byte what it was; an
+  // explicit flux_hst = false leaves the history exactly as before.
+  // Needs the curvilinear area/volume Views (cubed sphere or spherical polar); a
+  // Cartesian box has 1x1x1x1 placeholders there, so it is skipped.
+  const bool flux_hst = (pin->DoesParameterExist("problem","flux_hst")
+                         ? pin->GetBoolean("problem","flux_hst") : true)
+                        && (pmy_mesh_->use_cubed_sphere || use_spherical_polar);
+  if (flux_hst) {
+    user_hist = true;
+    user_hist_func = DhjFluxHistory;
+  }
   // problem/photosphere_dump = <file> writes the tau = 2/3 level per band and per
   // g-point at the end of the run, using the run's own correlated-k opacity.  Needs one
   // RT evaluation first (the per-cell tables are allocated lazily), so restart and take a
@@ -5017,4 +5033,109 @@ void DhjCycleDiag(Mesh *pm) {
     std::cout << "### cyclediag: could not rename '" << ftmp << "'" << std::endl;
   }
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void DhjFluxHistory
+//! \brief problem/flux_hst: area-integrated flux columns, appended after the hydro/MHD
+//! history columns.  All in cgs (erg/s and g/s; the dhj runs use cgs code units), summed
+//! over the whole sphere (MPI_SUM over ranks by the history output).  Nothing re-runs the
+//! solver: the radiative columns read the correlated-k two-stream's own arrays, i.e. the
+//! LAST ck call that touched each column (under ck_impl_every > 1 the last full call,
+//! or a later guard call on that column; within the call, its final pass).  The fluid
+//! columns read the Riemann fluxes of the last RK stage.  Radiation is zero until the
+//! first ck call.
+//!   Lir_top   net thermal (longwave) luminosity out through the top face ie+1:
+//!             sum F_net(ie+1) A(ie+1), F_net = up - down, what the update differences
+//!   Lsw_refl  stellar power reflected at the top: albedo F_star sum max(mu0,0) A(ie+1)
+//!   Lsw_abs   stellar power absorbed (the net stellar heating): sum Q_sw V over cells
+//!   Lrad_bot  net radiative luminosity up through the deepest ck face (icut; the inner
+//!             wall when ck_pcut_bar covers the column); under ck_int_at_cut (route B)
+//!             this is where sigma T_int^4 enters
+//!   Etot_top  total energy flux out through the top: fluid + Lir_top - Lsw_abs
+//!   Etot_bot  total energy flux up through the inner wall: fluid + Lrad_bot
+//!   Mdot_top  mass flux out through the top face,  Mdot_bot  up through the inner wall
+
+void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
+  namespace ts = two_stream_rt;
+  constexpr int NFH = 8;
+  pdata->nhist = NFH;
+  pdata->label[0] = "Lir_top";
+  pdata->label[1] = "Lsw_refl";
+  pdata->label[2] = "Lsw_abs";
+  pdata->label[3] = "Lrad_bot";
+  pdata->label[4] = "Etot_top";
+  pdata->label[5] = "Etot_bot";
+  pdata->label[6] = "Mdot_top";
+  pdata->label[7] = "Mdot_bot";
+  for (int n=0; n<NFH; ++n) pdata->hdata[n] = 0.0;
+
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const int ncol = nmb*nx3*nx2;
+  DvceFaceFld5D<Real> uflx = (pmbp->pmhd != nullptr) ? pmbp->pmhd->uflx
+                                                     : pmbp->phydro->uflx;
+  auto fx1 = uflx.x1f;
+  auto area = pmbp->pcoord->area.x1f;
+  auto vol = pmbp->pcoord->volume;
+  const bool rad = ts::rt_face_flux_ready() && (ts::rt_Qb_ptr != nullptr)
+                   && (ts::rt_cf_ptr != nullptr) && (ts::rt_icut_ptr != nullptr);
+  const int nblk = rad ? ts::rt_face_nblk() : 0;
+  DvceArray5D<Real> fb, qb;
+  DvceArray4D<Real> cf;
+  DvceArray3D<int> icut;
+  if (rad) {
+    fb = ts::rt_face_flux();
+    qb = *ts::rt_Qb_ptr;
+    cf = *ts::rt_cf_ptr;
+    icut = ts::rt_cut_index();
+  }
+  const Real arefl = ts::rt_hist_albedo*ts::rt_hist_fstar;
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("dhj_flux_hist",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
+    const int m = idx/(nx3*nx2);
+    const int kj = idx - m*(nx3*nx2);
+    const int k = ks + kj/nx2;
+    const int j = js + kj - (kj/nx2)*nx2;
+    const Real at = area(m,k,j,ie+1);
+    const Real ab = area(m,k,j,is);
+    Real lir = 0.0, lrf = 0.0, lsw = 0.0, lbot = 0.0;
+    if (rad) {
+      const int ic = icut(m,k,j);
+      if (ic <= ie) {
+        Real ft = 0.0, fc = 0.0;
+        for (int b=0; b<nblk; ++b) {
+          ft += fb(m,b,ie+1,k,j);
+          fc += fb(m,b,ic,k,j);
+        }
+        lir = ft*at;
+        lbot = fc*area(m,k,j,ic);
+        for (int i=ic; i<=ie; ++i) {
+          Real q = 0.0;
+          for (int b=0; b<nblk; ++b) q += qb(m,b,i,k,j);
+          lsw += q*vol(m,k,j,i);
+        }
+      }
+      const Real mu0 = cf(m,k,j,3);
+      lrf = (mu0 > 0.0) ? arefl*mu0*at : 0.0;
+    }
+    array_sum::GlobalSum hvars;
+    hvars.the_array[0] = lir;
+    hvars.the_array[1] = lrf;
+    hvars.the_array[2] = lsw;
+    hvars.the_array[3] = lbot;
+    hvars.the_array[4] = fx1(m,IEN,k,j,ie+1)*at + lir - lsw;
+    hvars.the_array[5] = fx1(m,IEN,k,j,is)*ab + lbot;
+    hvars.the_array[6] = fx1(m,IDN,k,j,ie+1)*at;
+    hvars.the_array[7] = fx1(m,IDN,k,j,is)*ab;
+    for (int n=NFH; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
+    mb_sum += hvars;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  Kokkos::fence();
+  for (int n=0; n<NFH; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
 }
