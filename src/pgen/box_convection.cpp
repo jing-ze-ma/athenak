@@ -3230,6 +3230,8 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   if (!rt_on_ || !two_stream_rt::rt_face_flux_ready()) return;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
+  radm1::FluidRef flr_ = radm1::FluidRef::Get(pmbp);   // m1-mhd
+  auto *pfl = &flr_;
   auto &indcs = pm->mb_indcs;
   const int ie = indcs.ie, js = indcs.js, ks = indcs.ks;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3;
