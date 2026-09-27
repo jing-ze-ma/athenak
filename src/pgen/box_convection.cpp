@@ -1750,7 +1750,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       });
       // BoxConvSrcs gives the reference work (split); set before SetForceReference,
       // which resolves force_reference_work = auto
-      pm1->fref_wsplit_ok = pmbp->phydro->use_wellbalance_dynamic;
+      pm1->fref_wsplit_ok = pfl->use_wellbalance_dynamic;
       pm1->SetForceReference(m1_aref_);
       // how far the file-driven Phi_eff profile is from this one
       Real amax = 0.0;
