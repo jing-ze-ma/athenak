@@ -214,6 +214,11 @@ class Hydro {
   bool use_wellbalance_static_reconst_perturb = false;    // flag to enable reconstructing perturbed primitive variables (less robust against large deviations)
   bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
   bool use_wb_x1 = false;    // flag for directions
+  // closed inner radial wall under a USER inner-x1 boundary (set by a problem
+  // generator, e.g. dhj problem/wall_closed): the x1 flux at the is face is computed
+  // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
+  // it carries zero mass and zero advected energy whatever the ghost cells hold.
+  bool wall_closed_ix1 = false;
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic

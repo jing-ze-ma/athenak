@@ -134,6 +134,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // (x1v is the volume centroid on both spherical grids, so the plain uniform stencil
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
+  const bool wall_ix1_ = wall_closed_ix1;
   // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
@@ -403,9 +404,20 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     if (use_spherical_polar || str_r1_) {
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
-        if (mb_bcs_pq.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect) {
+        // Also used for a USER inner boundary under wall_closed_ix1 (dhj problem/
+        // wall_closed).  There the derived pressure / Gamma_1 of a general EOS are
+        // mirrored too: the HLLC general-EOS branch reads them instead of recomputing p
+        // from (d,e), so mirroring only wl would keep the ghost-side pressure and give
+        // S_M != 0.  (ix1_bc = reflect is left exactly as it was.)
+        const BoundaryFlag bix1 = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
+        if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
           for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
           wl(IVX,is) = -wr(IVX,is);
+          if (bix1 == BoundaryFlag::user) {  // reflect stays bitwise
+            for (int n=0; n<nder; ++n) {
+              dl(n,is) = dr(n,is);
+            }
+          }
         }
         if (mb_bcs_pq.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
           for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }

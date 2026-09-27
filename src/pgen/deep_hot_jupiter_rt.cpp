@@ -165,6 +165,8 @@ void read_ic_profile(const std::string &fname, const int &N, View1D Tarr,
 void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
 // problem/flux_hst: the radiative / energy / mass flux history columns
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
+// problem/flux_hst_wall: four inner-wall in/out split columns (set in UserProblem)
+bool dhj_flux_hst_wall = false;
 void DhjCycleDiag(Mesh *pm);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
@@ -458,7 +460,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_cubed_sphere_ = pmy_mesh_->use_cubed_sphere;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
-  // problem/flux_hst (default true): append the eight flux columns of DhjFluxHistory to
+  // problem/flux_hst (default true): append the nine flux columns of DhjFluxHistory to
   // every history output.  Read without recording it in the input, so that a restart
   // file written by a run that does not set the key is byte-for-byte what it was; an
   // explicit flux_hst = false leaves the history exactly as before.
@@ -470,6 +472,36 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
+  }
+  // problem/flux_hst_wall (default false): four more columns after the nine flux
+  // columns, splitting the inner-wall fluxes by the sign of the local mass flux:
+  // Mdot_bot_in / Mdot_bot_out (sum over faces with fx1(IDN,is) > 0 / < 0) and
+  // Efl_bot_in / Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
+  dhj_flux_hst_wall = flux_hst && pin->DoesParameterExist("problem","flux_hst_wall")
+                      && pin->GetBoolean("problem","flux_hst_wall");
+  // problem/wall_closed (default false): make the inner radial boundary a CLOSED wall.
+  // The user boundary (HydrostaticEquilibrium) leaves the inner ghosts at the state the
+  // problem generator gave them -- the initial hydrostatic column at rest -- so the is
+  // face was a Riemann problem against a FIXED reservoir: a first cell that moves at
+  // v_r exchanges mass with it (in at the ghost's entropy, out at its own) and the face
+  // carried a net fluid energy flux of 1.5e30 erg/s into WASP-121b w1x (rot 60-63),
+  // 160 x sigma T_int^4 4 pi r_in^2, at zero mean mass flux.  With wall_closed the flux
+  // at the is face uses the mirror of the interior-side state (as ix1_bc = reflect
+  // does): zero mass flux, zero advected energy, the wall pressure from the interior.
+  // The ghosts keep their role in the reconstruction slopes and, under MHD, the field
+  // boundary is unchanged.  Read without recording it so restart bytes do not change.
+  if (pin->DoesParameterExist("problem","wall_closed") &&
+      pin->GetBoolean("problem","wall_closed")) {
+    if (pmy_mesh_->pmb_pack->phydro != nullptr) {
+      pmy_mesh_->pmb_pack->phydro->wall_closed_ix1 = true;
+    }
+    if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
+      pmy_mesh_->pmb_pack->pmhd->wall_closed_ix1 = true;
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "  inner radial wall: CLOSED (problem/wall_closed = true)"
+                << std::endl;
+    }
   }
   // problem/photosphere_dump = <file> writes the tau = 2/3 level per band and per
   // g-point at the end of the run, using the run's own correlated-k opacity.  Needs one
@@ -5047,7 +5079,12 @@ void DhjCycleDiag(Mesh *pm) {
 //! first ck call.
 //!   Lir_top   net thermal (longwave) luminosity out through the top face ie+1:
 //!             sum F_net(ie+1) A(ie+1), F_net = up - down, what the update differences
-//!   Lsw_refl  stellar power reflected at the top: albedo F_star sum max(mu0,0) A(ie+1)
+//!   Lsw_refl  stellar power reflected: albedo/(1-albedo) Lsw_abs, per column.  The
+//!             deposit is (1-albedo) times the local beam absorption, so the power the
+//!             model reflects is albedo times the power it INTERCEPTS, on the same
+//!             effective area (pi r_abs^2, r_abs where the slant depth reaches ~1), NOT
+//!             albedo F_star pi r_top^2 (the pre-dhj-wall-0927 definition, which counted
+//!             light that never reaches the absorbing layer).
 //!   Lsw_abs   stellar power absorbed (the net stellar heating): sum Q_sw V over cells
 //!   Lrad_bot  net radiative luminosity up through the deepest ck face (icut; the inner
 //!             wall when ck_pcut_bar covers the column); under ck_int_at_cut (route B)
@@ -5055,10 +5092,22 @@ void DhjCycleDiag(Mesh *pm) {
 //!   Etot_top  total energy flux out through the top: fluid + Lir_top - Lsw_abs
 //!   Etot_bot  total energy flux up through the inner wall: fluid + Lrad_bot
 //!   Mdot_top  mass flux out through the top face,  Mdot_bot  up through the inner wall
+//!   Lsw_in    stellar power incident on the DOMAIN TOP sphere, F_star sum max(mu0,0)
+//!             A(ie+1) = F_star pi r_top^2.  Starlight bookkeeping closes as
+//!             Lsw_in = Lsw_refl + Lsw_abs + Lsw_trans, where the remainder Lsw_trans is
+//!             the light crossing the optically thin shell r_abs < b < r_top (and the
+//!             pseudo-spherical twilight) without being absorbed: it leaves the domain.
+//!             (The ck beam is a LOCAL absorption rate, by design -- see ck_beam_sph in
+//!             two_stream_rt.hpp; its photon budget is exact, tests_ck_sph 916dc953.)
+//! With problem/flux_hst_wall = true four more columns follow Lsw_in: Mdot_bot_in,
+//! Mdot_bot_out (sums over inner-wall faces with fx1(IDN,is) > 0 / < 0) and Efl_bot_in,
+//! Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
 
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
-  constexpr int NFH = 8;
+  constexpr int NFH0 = 9;
+  const bool fwall = dhj_flux_hst_wall;
+  const int NFH = fwall ? (NFH0 + 4) : NFH0;
   pdata->nhist = NFH;
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
@@ -5068,6 +5117,13 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   pdata->label[5] = "Etot_bot";
   pdata->label[6] = "Mdot_top";
   pdata->label[7] = "Mdot_bot";
+  pdata->label[8] = "Lsw_in";
+  if (fwall) {
+    pdata->label[9] = "Mdot_bot_in";
+    pdata->label[10] = "Mdot_bot_out";
+    pdata->label[11] = "Efl_bot_in";
+    pdata->label[12] = "Efl_bot_out";
+  }
   for (int n=0; n<NFH; ++n) pdata->hdata[n] = 0.0;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -5093,7 +5149,9 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     cf = *ts::rt_cf_ptr;
     icut = ts::rt_cut_index();
   }
-  const Real arefl = ts::rt_hist_albedo*ts::rt_hist_fstar;
+  const Real fstar = ts::rt_hist_fstar;
+  const Real alb = ts::rt_hist_albedo;
+  const Real arat = (alb < 1.0) ? alb/(1.0 - alb) : 0.0;
   array_sum::GlobalSum sum_this_mb;
   Kokkos::parallel_reduce("dhj_flux_hist",
   Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
@@ -5104,7 +5162,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     const int j = js + kj - (kj/nx2)*nx2;
     const Real at = area(m,k,j,ie+1);
     const Real ab = area(m,k,j,is);
-    Real lir = 0.0, lrf = 0.0, lsw = 0.0, lbot = 0.0;
+    Real lir = 0.0, lrf = 0.0, lsw = 0.0, lbot = 0.0, lin = 0.0;
     if (rad) {
       const int ic = icut(m,k,j);
       if (ic <= ie) {
@@ -5122,7 +5180,8 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
         }
       }
       const Real mu0 = cf(m,k,j,3);
-      lrf = (mu0 > 0.0) ? arefl*mu0*at : 0.0;
+      lin = (mu0 > 0.0) ? fstar*mu0*at : 0.0;
+      lrf = arat*lsw;
     }
     array_sum::GlobalSum hvars;
     hvars.the_array[0] = lir;
@@ -5133,9 +5192,34 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     hvars.the_array[5] = fx1(m,IEN,k,j,is)*ab + lbot;
     hvars.the_array[6] = fx1(m,IDN,k,j,ie+1)*at;
     hvars.the_array[7] = fx1(m,IDN,k,j,is)*ab;
-    for (int n=NFH; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
+    hvars.the_array[8] = lin;
+    for (int n=NFH0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
     mb_sum += hvars;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   Kokkos::fence();
-  for (int n=0; n<NFH; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
+  for (int n=0; n<NFH0; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
+  if (!fwall) return;
+  // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
+  array_sum::GlobalSum wsum;
+  Kokkos::parallel_reduce("dhj_flux_hist_wall",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
+    const int m = idx/(nx3*nx2);
+    const int kj = idx - m*(nx3*nx2);
+    const int k = ks + kj/nx2;
+    const int j = js + kj - (kj/nx2)*nx2;
+    const Real ab = area(m,k,j,is);
+    const Real mb = fx1(m,IDN,k,j,is)*ab;
+    const Real eb = fx1(m,IEN,k,j,is)*ab;
+    array_sum::GlobalSum hvars;
+    for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
+    if (mb > 0.0) {
+      hvars.the_array[0] = mb;  hvars.the_array[2] = eb;
+    } else {
+      hvars.the_array[1] = mb;  hvars.the_array[3] = eb;
+    }
+    mb_sum += hvars;
+  }, Kokkos::Sum<array_sum::GlobalSum>(wsum));
+  Kokkos::fence();
+  for (int n=0; n<4; ++n) pdata->hdata[NFH0+n] = wsum.the_array[n];
 }
