@@ -2605,6 +2605,13 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // four energy snapshots this call makes.  The window is closed on the FIRST source
   // call of a cycle, which is stage 1, so E is always sampled at the same phase and the
   // accumulators below cover exactly the interval between two samples.
+  // <rad_m1>/force_reference_work = split (ke-dt-0926): the WB source gives the gas the
+  // work of the rho arad_ref part of its kick (the radiation pays it in its solve)
+  radm1::RadiationM1 *pm1w = pmbp->pradm1;
+  const bool fws = (pm1w != nullptr) && pm1w->fref_wsplit && wbdyn && wb_phi_eff_;
+  DvceArray4D<Real> arefw = fws ? pm1w->arad_ref
+                                : DvceArray4D<Real>("fws_unused", 1, 1, 1, 1);
+
   const bool bud_on = (rtbud_n_ > 0);
   Real bud_e = 0.0, bud_r = 0.0;
   if (bud_on) {
@@ -2644,6 +2651,11 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       }
       // Cartesian: equal face areas, so the background's own pressure drop over dz
       src = bdt*(pr - pl)/dzc;
+    }
+    if (fws) {
+      // the work of the reference part at the trapezoid velocity of this kick
+      const Real dref = bdt*d*arefw(m,k,j,i);
+      u0(m,IEN,k,j,i) += dref*(w0(m,IVX,k,j,i) + 0.5*src/d);
     }
     u0(m,IM1,k,j,i) += src;
     // the cooling layer: relax the SPECIFIC internal energy toward the initial column's

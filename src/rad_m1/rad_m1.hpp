@@ -355,6 +355,13 @@ class RadiationM1 {
   int csplit = 0;
   int csplit_nh2 = 1, csplit_ns = 2;
   bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
+  // force_reference_work (ke-dt-0926; read only when named, force_reference = wb_arad
+  // only): `full` (default) = the solve hands the gas the work of the FULL force and the
+  // WB source none (rad_m1_coupling.cpp header; its internal-energy cancellation is
+  // O(dt^2) per step); `split` = the WB source gives the gas the work of rho arad_ref at
+  // its own stage (the pgen reads fref_wsplit), the solve gives only the residual's
+  // work, and the radiation pays both
+  bool fref_wsplit = false;
   int mr_nsub = 1;              // implicit_mr_nsub: R(Delta) as nsub steps of Delta/nsub
   int mr_tab = 0;               // implicit_mr_tab: 0 sdirk2, 1 trbdf2 (DIAGNOSTIC)
   bool mr_k0ok = false;         // t2k1 holds f(Y_0) of this R (the last R's final slope)

@@ -6505,6 +6505,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // leaves the domain with the radiation, which is where it physically goes.
   const bool bmhalf = impl_bmom_half;
   bool fref = (force_ref == M1_FREF_WB_ARAD);
+  // force_reference_work = split (ke-dt-0926): the gas gets only the residual's work here
+  const bool fws = fref && fref_wsplit;
   auto aref_ = arad_ref;
   Real mq = marshak_q;
   // vet_col_surface_q (rad_m1_vetcol.cpp): the OUTER x1 Marshak q of each column from
@@ -8513,8 +8515,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         if (feedback) {
           Real idg = 1.0/fmax(dd, 1.0e-300);
-          Real w1 = (uh(m,IM1,k,j,i) + dm1)*idg;
-          work = 0.5*(v1 + w1)*dm1;
+          Real wref = 0.0;
+          if (fws) {
+            // split: the gas momentum moves by dm1 - dmref, and its work is exactly the
+            // kinetic-energy change of that kick; the WB source (the pgen) gives the gas
+            // the work of rho arad_ref, which the radiation pays here (wref)
+            const Real dmr = dm1 - dmref;
+            const Real w1r = (uh(m,IM1,k,j,i) + dmr)*idg;
+            work = 0.5*(v1 + w1r)*dmr;
+            wref = v1*dmref;
+          } else {
+            Real w1 = (uh(m,IM1,k,j,i) + dm1)*idg;
+            work = 0.5*(v1 + w1)*dm1;
+          }
           if (trans && dbgft) {
             Real w2n = (uh(m,IM2,k,j,i) + dm2)*idg;
             work += 0.5*(v2 + w2n)*dm2;
@@ -8524,7 +8537,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
           }
           if (!efc) {
-            ep -= (ch/cl)*work;
+            ep -= fws ? (ch/cl)*(work + wref) : (ch/cl)*work;
           }
         }
       }
