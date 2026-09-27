@@ -48,6 +48,7 @@ struct FluidRef {
   bool use_phi_wb = false;
   WBOption wb_option;
   Conduction *pcond = nullptr;
+  Viscosity *pvisc = nullptr;
   EquationOfState *peos = nullptr;
 
   static FluidRef Get(MeshBlockPack *pp) {
@@ -75,6 +76,7 @@ struct FluidRef {
     use_phi_wb = p->use_phi_wb;
     wb_option = p->wb_option;
     pcond = p->pcond;
+    pvisc = p->pvisc;
   }
   // swap the OWNER's u0 and u1 (the handles; used to evaluate a U^n-state quantity with
   // a routine that reads u0).  The FluidRef copies are swapped too.
@@ -103,9 +105,12 @@ struct FluidRef {
 //! (general_mhd.cpp / ideal_mhd.cpp ConsToPrim): spherical polar = the x_v-weighted mean
 //! in all three directions; cubed sphere = CellCenteredRadialFld in x1 and plain means in
 //! x2, x3; otherwise plain face means.  The temperature M1 forms is then the C2P's.
+//! The three face arrays are passed separately so that a hydro caller can hand any
+//! existing 4-D View as a never-read dummy (no allocation).
 
 KOKKOS_INLINE_FUNCTION
-Real M1EmagCell(const DvceFaceFld4D<Real> &b, const bool sph, const bool csr,
+Real M1EmagCell(const DvceArray4D<Real> &b1f, const DvceArray4D<Real> &b2f,
+                const DvceArray4D<Real> &b3f, const bool sph, const bool csr,
                 const DvceArray2D<Real> &x1v, const DvceArray2D<Real> &x1f,
                 const DvceArray2D<Real> &x2v, const DvceArray2D<Real> &x2f,
                 const DvceArray2D<Real> &x3v, const DvceArray2D<Real> &x3f,
@@ -115,19 +120,19 @@ Real M1EmagCell(const DvceFaceFld4D<Real> &b, const bool sph, const bool csr,
     Real lw, rw;
     lw = (x1f(m,i+1)-x1v(m,i))/(x1f(m,i+1)-x1f(m,i));
     rw = (x1v(m,i)-x1f(m,i))/(x1f(m,i+1)-x1f(m,i));
-    bx = lw*b.x1f(m,k,j,i) + rw*b.x1f(m,k,j,i+1);
+    bx = lw*b1f(m,k,j,i) + rw*b1f(m,k,j,i+1);
     lw = (x2f(m,j+1)-x2v(m,j))/(x2f(m,j+1)-x2f(m,j));
     rw = (x2v(m,j)-x2f(m,j))/(x2f(m,j+1)-x2f(m,j));
-    by = lw*b.x2f(m,k,j,i) + rw*b.x2f(m,k,j+1,i);
+    by = lw*b2f(m,k,j,i) + rw*b2f(m,k,j+1,i);
     lw = (x3f(m,k+1)-x3v(m,k))/(x3f(m,k+1)-x3f(m,k));
     rw = (x3v(m,k)-x3f(m,k))/(x3f(m,k+1)-x3f(m,k));
-    bz = lw*b.x3f(m,k,j,i) + rw*b.x3f(m,k+1,j,i);
+    bz = lw*b3f(m,k,j,i) + rw*b3f(m,k+1,j,i);
   } else {
-    bx = csr ? CellCenteredRadialFld(b.x1f(m,k,j,i), b.x1f(m,k,j,i+1),
+    bx = csr ? CellCenteredRadialFld(b1f(m,k,j,i), b1f(m,k,j,i+1),
                                      x1f(m,i), x1f(m,i+1), x1v(m,i))
-             : 0.5*(b.x1f(m,k,j,i) + b.x1f(m,k,j,i+1));
-    by = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k,j+1,i));
-    bz = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k+1,j,i));
+             : 0.5*(b1f(m,k,j,i) + b1f(m,k,j,i+1));
+    by = 0.5*(b2f(m,k,j,i) + b2f(m,k,j+1,i));
+    bz = 0.5*(b3f(m,k,j,i) + b3f(m,k+1,j,i));
   }
   return 0.5*(bx*bx + by*by + bz*bz);
 }

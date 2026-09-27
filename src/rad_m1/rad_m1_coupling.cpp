@@ -444,7 +444,9 @@ void RadiationM1::EmagBuild(bool un) {
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*(indcs.ng)) : 1;
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*(indcs.ng)) : 1;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto b = un ? pm->b1 : pm->b0;
+  auto b1f = un ? pm->b1.x1f : pm->b0.x1f;
+  auto b2f = un ? pm->b1.x2f : pm->b0.x2f;
+  auto b3f = un ? pm->b1.x3f : pm->b0.x3f;
   auto em = un ? emag1 : emag0;
   const bool sph = pmy_pack->pmesh->use_spherical_polar;
   const bool csr = pmy_pack->pmesh->use_cubed_sphere;
@@ -456,7 +458,8 @@ void RadiationM1::EmagBuild(bool un) {
   auto &x3f = pmy_pack->pcoord->xx3f;
   par_for("m1_emag", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    em(m,k,j,i) = M1EmagCell(b, sph, csr, x1v, x1f, x2v, x2f, x3v, x3f, m, k, j, i);
+    em(m,k,j,i) = M1EmagCell(b1f, b2f, b3f, sph, csr, x1v, x1f, x2v, x2f, x3v, x3f,
+                             m, k, j, i);
   });
 }
 
