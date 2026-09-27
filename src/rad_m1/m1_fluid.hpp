@@ -36,9 +36,9 @@ struct FluidRef {
   bool mhd = false;            // it is <mhd>
   DvceArray5D<Real> u0, u1, w0;
   DvceArray4D<Real> wtemp;
-  DvceFaceFld5D<Real> uflx;
+  DvceFaceFld5D<Real> *uflx = nullptr;   // face fields have no default ctor: pointers
   DvceArray4D<Real> phicc0;
-  DvceFaceFld4D<Real> phi0;
+  DvceFaceFld4D<Real> *phi0 = nullptr;
   DvceArray4D<Real> phicc_wb, phi_wb_x1f;
   DvceArray5D<Real> wbq0;
   EOS_Data eos;
@@ -65,8 +65,8 @@ struct FluidRef {
   template <class F>
   void Fill(F *p) {
     on = true;
-    u0 = p->u0; u1 = p->u1; w0 = p->w0; wtemp = p->wtemp; uflx = p->uflx;
-    phicc0 = p->phicc0; phi0 = p->phi0; phicc_wb = p->phicc_wb;
+    u0 = p->u0; u1 = p->u1; w0 = p->w0; wtemp = p->wtemp; uflx = &(p->uflx);
+    phicc0 = p->phicc0; phi0 = &(p->phi0); phicc_wb = p->phicc_wb;
     phi_wb_x1f = p->phi_wb_x1f; wbq0 = p->wbq0;
     peos = p->peos; eos = p->peos->eos_data;
     use_etotgrav = p->use_etotgrav;
