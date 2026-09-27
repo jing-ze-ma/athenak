@@ -88,6 +88,8 @@ namespace two_stream_rt {
 
 //----------------------------------------------------------------------------------------
 // problem/ck_implicit: the switch.  false = bitwise the semi-implicit per-cell apply.
+// The variable starts false; deep_hot_jupiter_rt defaults the KEY to true on fresh rt_ck
+// runs since defaults2-0927 (false on restarts; see the pgen).
 inline bool ck_implicit = false;
 // problem/ck_impl_tol: the RESIDUAL tolerance, max_i |R_i|/(e_i + eps e_max) over the
 // column set, with eps = ck_impl_norm_eps.  Measuring a thin top cell against its own

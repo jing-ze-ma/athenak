@@ -620,12 +620,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::exit(EXIT_FAILURE);
   }
   // problem/ck_implicit: the BACKWARD-EULER correlated-k column solve (see
-  // two_stream_rt::ck_implicit and utils/two_stream_column_ck.hpp).  Default false =
-  // bitwise the semi-implicit per-cell apply this path has always run.  With it on the
-  // gas receives exactly the converged flux divergence -- no relaxation factor, no
-  // rt_de_max clip -- at ck_impl_maxit ck sweeps per RK stage instead of one.
+  // two_stream_rt::ck_implicit and utils/two_stream_column_ck.hpp).  With it on the gas
+  // receives exactly the converged flux divergence -- no relaxation factor, no rt_de_max
+  // clip -- at ck_impl_maxit ck sweeps per RK stage instead of one; false = the
+  // semi-implicit per-cell apply.  DEFAULT TRUE for FRESH runs since defaults2-0927
+  // (user decision 09-27: the production scheme), and with it the T4 set, ck_impl_arat
+  // 1e30 and ck_impl_nosync, whose defaults below are conditional on it.  The default
+  // is conditioned on the switch's own refusal in two_stream_rt.hpp (rt_ck,
+  // rt_use_cons, !rt_layer_legacy; rt_implicit_column is refused by this pgen anyway)
+  // and on ck_sweep_form != 2 (sd has no tridiagonal), so it can never turn a working
+  // input into a startup fatal.  On a RESTART the default stays false: the value is
+  // recorded, so a file written by an older binary carries its "ck_implicit = 0" and
+  // keeps it, and a file written before the key existed ran the semi-implicit apply,
+  // which it keeps too.  Set the line explicitly to override.
+  {const bool ckimp_default = !restart && rt_ck && !layer_legacy_peek &&
+       pin->GetOrAddBoolean("problem","rt_use_cons",true) &&
+       (two_stream_rt::ck_sweep_form != 2);
   two_stream_rt::ck_implicit =
-      pin->GetOrAddBoolean("problem","ck_implicit",false);
+      pin->GetOrAddBoolean("problem","ck_implicit",ckimp_default);}
   two_stream_rt::ck_impl_tol = pin->GetOrAddReal("problem","ck_impl_tol",1.0e-8);
   two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
   two_stream_rt::ck_impl_norm_eps =
