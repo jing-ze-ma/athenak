@@ -45,7 +45,9 @@ def history(binary, tag, args):
     rundir = os.path.join(BUILD, "run_" + tag)
     shutil.rmtree(rundir, ignore_errors=True)
     out = ck.run(binary, rundir, MESH + EVERY_CYCLE + args)
-    hst = [f for f in os.listdir(rundir) if f.endswith(".hst")]
+    # flux_hst also writes dhj.user.hst; the checks read the hydro history
+    hst = [f for f in os.listdir(rundir)
+           if f.endswith(".hst") and not f.endswith(".user.hst")]
     assert len(hst) == 1, f"expected one history file in {rundir}, found {hst}"
     with open(os.path.join(rundir, hst[0])) as f:
         return out, f.read()
