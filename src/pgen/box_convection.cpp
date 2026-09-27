@@ -3597,6 +3597,15 @@ void BoxConvBC(Mesh *pm) {
     u0(m,IM1,k,j,i) = d*v1;
     u0(m,IM2,k,j,i) = d*v2;
     u0(m,IM3,k,j,i) = d*v3;
+    if (mhd) {
+      // m1-mhd: the ghost velocity exactly as the MHD inversion (and the frozen one of a
+      // restart) forms it from u0, so that a restart, which re-derives w0 from the
+      // file's u0, is a bitwise continuation (d*v/d differs from v in the last bit)
+      const Real dig = 1.0/d;
+      w0(m,IVX,k,j,i) = dig*u0(m,IM1,k,j,i);
+      w0(m,IVY,k,j,i) = dig*u0(m,IM2,k,j,i);
+      w0(m,IVZ,k,j,i) = dig*u0(m,IM3,k,j,i);
+    }
     Real et = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
     if (etotgrav) et += d*g0*(zg - zmin);
     if (mhd) {
