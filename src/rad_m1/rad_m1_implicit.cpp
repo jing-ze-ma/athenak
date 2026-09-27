@@ -8545,7 +8545,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
           }
           if (!efc) {
-            ep -= fws ? (ch/cl)*(work + wref) : (ch/cl)*work;
+            if (fws) {
+              ep -= (ch/cl)*(work + wref);
+            } else {
+              ep -= (ch/cl)*work;
+            }
           }
         }
       }
