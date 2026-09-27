@@ -144,8 +144,16 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
   }
 
   std::string test = pin->GetOrAddString("problem","m1_test","beam");
+  // m1-mhd: only sph_wedge has an <mhd> mode (rad_m1_wedge.cpp); every other test
+  // reads phydro directly
+  if (pmbp->pmhd != nullptr && test.compare("sph_wedge") != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<problem>/m1_test = '" << test << "' is hydro only; with <mhd> "
+      << "only sph_wedge (and the box_convection pgen) are supported" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (test.compare("beam") != 0 && test.compare("pulse1d") != 0 &&
-      pmbp->phydro == nullptr) {
+      test.compare("sph_wedge") != 0 && pmbp->phydro == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' needs a <hydro> block"
       << std::endl;
