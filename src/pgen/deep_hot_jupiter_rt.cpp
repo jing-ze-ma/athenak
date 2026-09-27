@@ -797,11 +797,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_aa_rst = pin->GetOrAddBoolean("problem","ck_impl_aa_rst",true);
   // problem/ck_impl_floorbound / ck_impl_kkt_demax: the Newton as a bound-constrained
   // solve (e >= e_floor; KKT cells on the floor / on the demax bound count as converged).
-  // Both default off (bitwise).  See utils/two_stream_column_ck.hpp.
+  // See utils/two_stream_column_ck.hpp.  DEFAULT TRUE since defaults2-0927 on FRESH runs
+  // of the fused ck_implicit Newton (ck_implicit, ck_impl_fuse, ck_impl_debug <= 0,
+  // ck_impl_glob = none, ck_impl_aa = 0: the only path they exist on); false elsewhere
+  // and on restarts (a file that lacks the keys keeps the unconstrained Newton).  Where
+  // no cell reaches a bound both are the identity: bitwise on vs off on the CPU gates
+  // (dhj_ck_spherical and the 64x8x8 gate input, 20 cycles, floor = kkt = 0).  Where
+  // they bind (both WASP-121b productions, every call) the unconstrained Newton cannot
+  // converge: 1x 466/500 calls NOT-CONVERGED off vs 6/500 on, 10x 500/500 vs 133/500
+  // (defaults2_0927/B).  Set either line explicitly to override.
+  {const bool fbdef = !restart && two_stream_rt::ck_implicit &&
+       two_stream_rt::ck_impl_fuse && two_stream_rt::ck_impl_debug <= 0 &&
+       two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0;
   two_stream_rt::ck_impl_floorbound =
-      pin->GetOrAddBoolean("problem","ck_impl_floorbound",false);
+      pin->GetOrAddBoolean("problem","ck_impl_floorbound",fbdef);
   two_stream_rt::ck_impl_kkt_demax =
-      pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",false);
+      pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",fbdef);}
   two_stream_rt::ck_impl_stalldbg =
       pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
   // problem/ck_impl_kkt_row: DEFAULT TRUE since default-flips (09-26; 1x production
