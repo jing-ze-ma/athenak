@@ -8634,6 +8634,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // kick's work (its exact kinetic-energy change; the WB source gives it the reference
   // work at its own stage), and E pays residual + reference (v' dt rho arad_ref, at the
   // stage value's velocity v').  A separate kernel: the default write-back is untouched.
+  if (fws && !fref_wsplit_ok) {
+    ImplFatal("<rad_m1>/force_reference_work = split needs a problem generator whose WB "
+              "source gives the gas the reference work (box_convection, sph_wedge)");
+  }
   if (fws && have_hydro && gas_feedback && coupling && dbg_gas_force) {
     const Real fkw = 1.0/dt;
     const Real chw = chat, clw = c_light;

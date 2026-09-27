@@ -1719,6 +1719,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         aref(m,k,j,i) = of*fin_a/cl_a;
       });
       pm1->SetForceReference(m1_aref_);
+      pm1->fref_wsplit_ok = true;   // BoxConvSrcs gives the reference work (split)
       // how far the file-driven Phi_eff profile is from this one
       Real amax = 0.0;
       {
