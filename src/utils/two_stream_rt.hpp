@@ -7260,8 +7260,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               RtF rr = static_cast<RtF>(0.0);
               if (ckdif_ && gdf >= 0.0) rr = static_cast<RtF>(1.0);
               CkJlP1 w = CkJlP1Init(gdf);
+              // ck-next: the loads of cell i+1 are issued before cell i is worked
+              // (the stores below keep the compiler from hoisting them itself)
+              Real btr_n = lG_g(m,0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
+              Real e0_n = ckc0_g(m,c,icut,k,j), ci_n = ckci_g(m,c,icut,k,j);
+              Real co_n = ckco_g(m,c,icut,k,j), kro_n = ckkro_g(m,c,icut,k,j);
               for (int i=icut; i<ie+1; ++i) {
-                const Real btr = lG_g(m,0,i,k,j);
+                const Real btr = btr_n, dz = dz_n, e0 = e0_n, ci = ci_n, co = co_n;
+                const Real kro = kro_n;
+                if (i < ie) {
+                  btr_n = lG_g(m,0,i+1,k,j);
+                  dz_n = lG_g(m,4,i+1,k,j);
+                  e0_n = ckc0_g(m,c,i+1,k,j);
+                  ci_n = ckci_g(m,c,i+1,k,j);
+                  co_n = ckco_g(m,c,i+1,k,j);
+                  kro_n = ckkro_g(m,c,i+1,k,j);
+                }
                 const RtF bb = static_cast<RtF>(btr);
                 const RtF dn = static_cast<RtF>(1.0) + rr*bb;
                 const Real rj = static_cast<Real>(rr);
@@ -7269,9 +7283,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 lP_g(m,0*nch_+c,i,k,j) = rj;
                 lP_g(m,1*nch_+c,i,k,j) = idn;
                 const RtF rn = (rr + bb)/dn;
-                const Real e0 = ckc0_g(m,c,i,k,j);
-                const Real ci = ckci_g(m,c,i,k,j);
-                const Real co = ckco_g(m,c,i,k,j);
                 // ck-jlin: the half-layer triple is NOT copied (ck-store: lP has no
                 // slots for it any more): the linear kernels read ckc0/ckci/ckco,
                 // which this pass stored and which stay frozen with the rest of the
@@ -7279,7 +7290,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const RtF tr = static_cast<RtF>(1.0) - static_cast<RtF>(e0);
                 rr = tr*tr*rn;
                 rr = tr*tr*rr;
-                const Real kro = ckkro_g(m,c,i,k,j);
                 lP_g(m,5*nch_+c,i,k,j) = emw*kro;
                 // ck-nq2: slots 2-4 depend on kappa rho alone, which is bitwise the
                 // same for the two angles of a pair; the q = 1 chain reads the q = 0 one
@@ -7287,11 +7297,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const bool own = !(ck_nq_ == 2 && (c & 1));
                 Real wl = 0.0, wu = 0.0, ffj = 0.0;
                 if (i < ie && (own || ckjfus_)) {
-                  const Real kru = ckkro_g(m,c,i+1,k,j);
+                  const Real kru = kro_n;
                   wl = BFaceW(kru, kro, bface_on);
                   wu = BFaceW(kro, kru, bface_on);
-                  const Real dt_l = 0.5*kro*lG_g(m,4,i,k,j);
-                  const Real dt_u = 0.5*kru*lG_g(m,4,i+1,k,j);
+                  const Real dt_l = 0.5*kro*dz;
+                  const Real dt_u = 0.5*kru*dz_n;
                   const Real dtc = dt_l + dt_u;
                   ffj = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
                   if (own) {
