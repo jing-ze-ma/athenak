@@ -5703,6 +5703,11 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   const Real fk = 1.0/dt_sub;
   auto kk_ = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
   const bool slope = (t2_solve != M1_T2S_NONE);
+  // force_reference_work = split: the row also carries the reference work the radiation
+  // pays (v dt arad_ref per unit mass; dv above is the residual kick)
+  const bool fws = (force_ref == M1_FREF_WB_ARAD) && fref_wsplit;
+  auto aref_ = arad_ref;
+  const Real dtw = dt_sub;
   par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipw = pos_.d_view(m);
@@ -5712,6 +5717,7 @@ void RadiationM1::ImplicitWorkRow(bool row) {
     }
     Real dv = iw_(m,ivb,k,j,i);
     Real wk = dv*(iw_(m,M1_IW_V1,k,j,i) + 0.5*dv);
+    if (fws) {wk += iw_(m,M1_IW_V1,k,j,i)*dtw*aref_(m,k,j,i);}
     if (trans && dbgft) {
       dv = iw_(m,ivb+1,k,j,i);
       wk += dv*(iw_(m,M1_IW_V2,k,j,i) + 0.5*dv);
@@ -7372,7 +7378,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // Subtracted after the solve it is an O(dt) splitting in every stage (passive E in a
     // moving scattering gas: E order 1.1 in time); in the row the stage value satisfies
     // its own equation.  The write-back removes only work - work^k (0 at convergence).
-    const bool wimp = t2st && t2_fvnew && vim && have_hydro && feedback && !fref;
+    // force_reference_work = split: the work goes into the row as well (fws)
+    const bool wimp = t2st && vim && have_hydro && feedback &&
+                      ((t2_fvnew && !fref) || fws);
     t2_wk = wimp;
     // (d) assemble the tridiagonal system of every column
     // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
