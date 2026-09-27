@@ -7115,15 +7115,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const int c = c0 + q;
                 ckkro_g(m,c,i,k,j) = kro;
                 const RtF x = static_cast<RtF>(dtau/muq[q]);
-                const RtF e0 = -RT_EXPM1(-x);
-                const RtF one = static_cast<RtF>(1.0);
-                const RtF cin = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
-                                                              : (x/2 - x*x/3);
-                const RtF cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
-                                                               : (x/2 - x*x/6);
-                ckc0_g(m,c,i,k,j) = static_cast<Real>(e0);
-                ckci_g(m,c,i,k,j) = static_cast<Real>(cin);
-                ckco_g(m,c,i,k,j) = static_cast<Real>(cout);
+                const Real e0 = static_cast<Real>(-RT_EXPM1(-x));
+                // ck-next: the pair by the very function the linear kernels re-form
+                // it with (CkCinCout), from the stored kappa rho, dz and e0
+                Real cin, cout;
+                CkCinCout(kro, dz, muq[q], e0, cin, cout);
+                ckc0_g(m,c,i,k,j) = e0;
+                ckci_g(m,c,i,k,j) = cin;
+                ckco_g(m,c,i,k,j) = cout;
               }
             }
           });
@@ -7419,7 +7418,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const RtF bb = static_cast<RtF>(btr);
                 const RtF dn = static_cast<RtF>(1.0) + rr*bb;
                 const Real rj = static_cast<Real>(rr);
-                const Real idn = 1.0/static_cast<Real>(dn);
+                const Real idn = CkIdn(rj, btr);   // ck-next: as the readers form it
                 lP_g(m,0*nch_+c,i,k,j) = rj;
                 const RtF rn = (rr + bb)/dn;
                 // ck-jlin: the half-layer triple is NOT copied (ck-store: lP has no
