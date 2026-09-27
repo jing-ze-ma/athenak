@@ -479,7 +479,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Efl_bot_in / Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
   dhj_flux_hst_wall = flux_hst && pin->DoesParameterExist("problem","flux_hst_wall")
                       && pin->GetBoolean("problem","flux_hst_wall");
-  // problem/wall_closed (DEFAULT TRUE, user 09-27; false = old reservoir wall): make the inner radial boundary a CLOSED wall.
+  // problem/wall_closed (DEFAULT TRUE, user 09-27; false = the old reservoir wall): make
+  // the inner radial boundary a CLOSED wall.
   // The user boundary (HydrostaticEquilibrium) leaves the inner ghosts at the state the
   // problem generator gave them -- the initial hydrostatic column at rest -- so the is
   // face was a Riemann problem against a FIXED reservoir: a first cell that moves at
