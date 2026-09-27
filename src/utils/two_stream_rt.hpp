@@ -6869,16 +6869,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // ck-next: every load of cell i+1 is issued before cell i is worked (the
             // stores keep the compiler from hoisting them): the same arithmetic
             Real bt_n = lG_g(m,0,icut,k,j);
-            Real bnx_n = bown, wl_n = 0.0, wu_n = 0.0, ff_n = 0.0;
-            if (icut < ie) {
-              bnx_n = Bb_g(m,b,icut+1,k,j);
-              wl_n = lP_g(m,2*nch_+c0,icut,k,j);
-              wu_n = lP_g(m,3*nch_+c0,icut,k,j);
-              ff_n = lP_g(m,4*nch_+c0,icut,k,j);
-            }
+            Real bnx_n = bown;
+            if (icut < ie) bnx_n = Bb_g(m,b,icut+1,k,j);
             // ck-next: cin, cout and 1/(1 + R beta) are formed from e0, kappa rho
-            // (one per pair), dz and R (CkCinCout, CkIdn), not read
+            // (one per pair), dz and R (CkCinCout, CkIdn), not read.  ck-lin2: so are
+            // the layer weights, lP slots 2-4 (CkLayW, from the kappa rho and dz of the
+            // two cells: those of cell i+1 are loaded two cells ahead)
             Real kro_n = ckkro_g(m,c0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
+            Real kro_u = 0.0, dz_u = 0.0;
+            if (icut < ie) {
+              kro_u = ckkro_g(m,c0,icut+1,k,j);
+              dz_u = lG_g(m,4,icut+1,k,j);
+            }
             Real e0_n[2], r0_n[2];
             for (int q=0; q<2; ++q) {
               e0_n[q] = ckc0_g(m,c0+q,icut,k,j);
@@ -6886,8 +6888,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
             for (int i=icut; i<ie+1; ++i) {
               const Real bt = bt_n;
-              const Real bnx = bnx_n, wl = wl_n, wu = wu_n, ff = ff_n;
-              const Real krov = kro_n, dzv = dz_n;
+              const Real bnx = bnx_n;
+              const Real krov = kro_n, dzv = dz_n, kruv = kro_u, dzuv = dz_u;
               Real e0v[2], r0v[2];
               for (int q=0; q<2; ++q) {
                 e0v[q] = e0_n[q];
@@ -6895,13 +6897,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
               if (i < ie) {
                 bt_n = lG_g(m,0,i+1,k,j);
-                kro_n = ckkro_g(m,c0,i+1,k,j);
-                dz_n = lG_g(m,4,i+1,k,j);
+                kro_n = kro_u;
+                dz_n = dz_u;
                 if (i+1 < ie) {
                   bnx_n = Bb_g(m,b,i+2,k,j);
-                  wl_n = lP_g(m,2*nch_+c0,i+1,k,j);
-                  wu_n = lP_g(m,3*nch_+c0,i+1,k,j);
-                  ff_n = lP_g(m,4*nch_+c0,i+1,k,j);
+                  kro_u = ckkro_g(m,c0,i+2,k,j);
+                  dz_u = lG_g(m,4,i+2,k,j);
                 }
                 for (int q=0; q<2; ++q) {
                   e0_n[q] = ckc0_g(m,c0+q,i+1,k,j);
@@ -6911,6 +6912,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Real slv = bown, sfv = bown, suu = bown;
               Real bnext = bown;
               if (i < ie) {
+                Real wl, wu, ff;
+                CkLayW(krov, kruv, dzv, dzuv, bface_on, wl, wu, ff);
                 bnext = bnx;
                 slv = wl*bown + (1.0 - wl)*bnext;
                 suu = wu*bnext + (1.0 - wu)*bown;
@@ -6967,14 +6970,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // ck-next: cell i-1's loads before cell i is worked, as in pass 1
             Real bt_p = lG_g(m,0,ie,k,j), g1_p = lG_g(m,1,ie,k,j);
             Real g2_p = lG_g(m,2,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
-            Real bnx_p = bown, wl_p = 0.0, wu_p = 0.0, ff_p = 0.0;
+            Real bnx_p = bown;
+            // ck-lin2: the layer (i-1, i) weights formed (CkLayW): kappa rho and dz of
+            // cell i-1 are loaded two cells ahead
+            Real kro_p = ckkro_g(m,c0,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
+            Real kro_l = 0.0, dz_l = 0.0;
             if (ie > icut) {
               bnx_p = Bb_g(m,b,ie-1,k,j);
-              wl_p = lP_g(m,2*nch_+c0,ie-1,k,j);
-              wu_p = lP_g(m,3*nch_+c0,ie-1,k,j);
-              ff_p = lP_g(m,4*nch_+c0,ie-1,k,j);
+              kro_l = ckkro_g(m,c0,ie-1,k,j);
+              dz_l = lG_g(m,4,ie-1,k,j);
             }
-            Real kro_p = ckkro_g(m,c0,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
             Real e0_p[2], r0_p[2], sc_p[2];
             for (int q=0; q<2; ++q) {
               e0_p[q] = ckc0_g(m,c0+q,ie,k,j);
@@ -6984,8 +6989,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             for (int i=ie; i>icut-1; --i) {
               const Real bt = bt_p;
               const Real g1 = g1_p, g2 = g2_p, g3 = g3_p;
-              const Real bnx = bnx_p, wl = wl_p, wu = wu_p, ff = ff_p;
-              const Real krov = kro_p, dzv = dz_p;
+              const Real bnx = bnx_p;
+              const Real krov = kro_p, dzv = dz_p, krlv = kro_l, dzlv = dz_l;
               Real e0v[2], r0v[2], scv[2];
               for (int q=0; q<2; ++q) {
                 e0v[q] = e0_p[q];
@@ -6994,16 +6999,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
               if (i > icut) {
                 bt_p = lG_g(m,0,i-1,k,j);
-                kro_p = ckkro_g(m,c0,i-1,k,j);
-                dz_p = lG_g(m,4,i-1,k,j);
+                kro_p = kro_l;
+                dz_p = dz_l;
                 g1_p = lG_g(m,1,i-1,k,j);
                 g2_p = lG_g(m,2,i-1,k,j);
                 g3_p = lG_g(m,3,i-1,k,j);
                 if (i-1 > icut) {
                   bnx_p = Bb_g(m,b,i-2,k,j);
-                  wl_p = lP_g(m,2*nch_+c0,i-2,k,j);
-                  wu_p = lP_g(m,3*nch_+c0,i-2,k,j);
-                  ff_p = lP_g(m,4*nch_+c0,i-2,k,j);
+                  kro_l = ckkro_g(m,c0,i-2,k,j);
+                  dz_l = lG_g(m,4,i-2,k,j);
                 }
                 for (int q=0; q<2; ++q) {
                   e0_p[q] = ckc0_g(m,c0+q,i-1,k,j);
@@ -7014,6 +7018,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Real suv = bown, sfv = bown, snl = bown;
               Real bnext = bown;
               if (i > icut) {
+                Real wl, wu, ff;
+                CkLayW(krlv, krov, dzlv, dzv, bface_on, wl, wu, ff);
                 bnext = bnx;
                 snl = wl*bnext + (1.0 - wl)*bown;
                 suv = wu*bown + (1.0 - wu)*bnext;
@@ -7469,16 +7475,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // ck-nq2: slots 2-4 depend on kappa rho alone, which is bitwise the
                 // same for the two angles of a pair; the q = 1 chain reads the q = 0 one
                 // (ck-jlin: and forms the same numbers itself for a fused pass 1)
-                const bool own = !(ck_nq_ == 2 && (c & 1));
+                // ck-lin2: the paired linear kernel and rt_chain_ck_jlin form them
+                // (CkLayW); stored only for the unpaired tiers (!cklp_)
+                const bool own = !(ck_nq_ == 2 && (c & 1)) && !cklp_;
                 Real wl = 0.0, wu = 0.0, ffj = 0.0;
                 if (i < ie && (own || ckjfus_)) {
-                  const Real kru = kro_n;
-                  wl = BFaceW(kru, kro, bface_on);
-                  wu = BFaceW(kro, kru, bface_on);
-                  const Real dt_l = 0.5*kro*dz;
-                  const Real dt_u = 0.5*kru*dz_n;
-                  const Real dtc = dt_l + dt_u;
-                  ffj = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
+                  CkLayW(kro, kro_n, dz, dz_n, bface_on, wl, wu, ffj);
                   if (own) {
                     lP_g(m,2*nch_+c,i,k,j) = wl;
                     lP_g(m,3*nch_+c,i,k,j) = wu;
@@ -7535,8 +7537,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 if (jfus_ && ckskip_ && ckdone_g(m,k,j) > 0.0) return;
                 const int icut = icc_g(m,k,j);
                 if (icut > ie) return;
-                // ck-nq2: lP slots 2-4 (kappa rho weights) are stored once per angle pair
-                const int cw = (ck_nq_ == 2) ? (c & ~1) : c;
                 const Real wfc = lC_g(0,c);
                 // PASS 1: dSc/dB in the window (B_{i-2}, B_{i-1}, B_i) below face i
                 // (ck-jlin: parked by ck_lin_build when it ran on this pass, with the
@@ -7556,9 +7556,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     lps_g(m,c,i,k,j) = w.s1;
                     lpj_g(m,c,i,k,j) = w.s2;
                     const bool up = (i < ie);
-                    const Real wl = up ? lP_g(m,2*nch_+cw,i,k,j) : 0.0;
-                    const Real wu = up ? lP_g(m,3*nch_+cw,i,k,j) : 0.0;
-                    const Real ffj = up ? lP_g(m,4*nch_+cw,i,k,j) : 0.0;
+                    // ck-lin2: the layer weights formed (CkLayW), not read
+                    Real wl = 0.0, wu = 0.0, ffj = 0.0;
+                    if (up) CkLayW(ckkro_g(m,c,i,k,j), ckkro_g(m,c,i+1,k,j),
+                                   lG_g(m,4,i,k,j), lG_g(m,4,i+1,k,j), bface_on,
+                                   wl, wu, ffj);
                     // ck-lin2: cin and cout formed (CkCinCout), not read
                     Real ci1, co1;
                     CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j),
@@ -7598,11 +7600,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 Real ra_p = lG_g(m,1,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
                 Real s0_p = lpf_g(m,c,ie,k,j), s1_p = lps_g(m,c,ie,k,j);
                 Real s2_p = lpj_g(m,c,ie,k,j);
-                Real wc_p = 0.0, wa_p = 0.0, ff_p = 0.0;
+                // ck-lin2: the layer (i-1, i) weights formed (CkLayW): kappa rho and
+                // dz of cell i-1 loaded two cells ahead
+                Real kr_l = 0.0, dz_l = 0.0;
                 if (ie > icut) {
-                  wc_p = lP_g(m,2*nch_+cw,ie-1,k,j);
-                  wa_p = lP_g(m,3*nch_+cw,ie-1,k,j);
-                  ff_p = lP_g(m,4*nch_+cw,ie-1,k,j);
+                  kr_l = ckkro_g(m,c,ie-1,k,j);
+                  dz_l = lG_g(m,4,ie-1,k,j);
                 }
                 for (int i=ie; i>icut-1; --i) {
                   Real ci, co;
@@ -7611,10 +7614,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real rj = rj_p, bt = bt_p, rat = ra_p, g3 = g3_p;
                   const Real idn = CkIdn(rj, bt);
                   const Real s0 = s0_p, s1 = s1_p, s2 = s2_p;
-                  const Real wc = wc_p, wa = wa_p, ffj = ff_p;
+                  Real wc = 0.0, wa = 0.0, ffj = 0.0;
+                  if (i > icut) CkLayW(kr_l, kr_p, dz_l, dz_p, bface_on, wc, wa, ffj);
                   if (i > icut) {
-                    kr_p = ckkro_g(m,c,i-1,k,j);
-                    dz_p = lG_g(m,4,i-1,k,j);
+                    kr_p = kr_l;
+                    dz_p = dz_l;
                     c0_p = ckc0_g(m,c,i-1,k,j);
                     rj_p = lP_g(m,0*nch_+c,i-1,k,j);
                     bt_p = lG_g(m,0,i-1,k,j);
@@ -7624,9 +7628,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     s1_p = lps_g(m,c,i-1,k,j);
                     s2_p = lpj_g(m,c,i-1,k,j);
                     if (i-1 > icut) {
-                      wc_p = lP_g(m,2*nch_+cw,i-2,k,j);
-                      wa_p = lP_g(m,3*nch_+cw,i-2,k,j);
-                      ff_p = lP_g(m,4*nch_+cw,i-2,k,j);
+                      kr_l = ckkro_g(m,c,i-2,k,j);
+                      dz_l = lG_g(m,4,i-2,k,j);
                     }
                   }
                   // the layer joining cells i-1 and i: slots (B_{i-1}, B_i); the third
