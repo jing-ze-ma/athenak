@@ -5745,7 +5745,10 @@ void RadiationM1::ImplicitWorkRow(bool row) {
                       (i == ie && ipw == nblkx1-1 && ehi))) {
         return;
       }
-      const Real w = cr*uh(m,IDN,k,j,i)*iw_(m,M1_IW_V1,k,j,i)*dtw*aref_(m,k,j,i);
+      // at the iterate's velocity (v_old + the residual kick dv^k): the stage value's
+      // own velocity, which the implicit stage needs (the old one lags by O(dt))
+      const Real vk = iw_(m,M1_IW_V1,k,j,i) + iw_(m,ivb,k,j,i);
+      const Real w = cr*uh(m,IDN,k,j,i)*vk*dtw*aref_(m,k,j,i);
       if (row) {
         iw_(m,M1_IW_TR,k,j,i) -= w;
       } else {
@@ -8629,8 +8632,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // force_reference_work = split (ke-dt-0926): the write-back above handed the gas the
   // work of the FULL force and took it from E.  Here the gas keeps only the residual
   // kick's work (its exact kinetic-energy change; the WB source gives it the reference
-  // work at its own stage), and E pays residual + reference (v dt rho arad_ref).  A
-  // separate kernel, so that the default write-back arithmetic is untouched.
+  // work at its own stage), and E pays residual + reference (v' dt rho arad_ref, at the
+  // stage value's velocity v').  A separate kernel: the default write-back is untouched.
   if (fws && have_hydro && gas_feedback && coupling && dbg_gas_force) {
     const Real fkw = 1.0/dt;
     const Real chw = chat, clw = c_light;
@@ -8657,7 +8660,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       uh(m,IEN,k,j,i) -= (wf - wr);
       if (t2kw) {kkw_(m,M1_T2_EN,k,j,i) -= (wf - wr)*fkw;}
       if (!efw) {
-        const Real de = (chw/clw)*(wf - wr - v1*dmref);
+        const Real de = (chw/clw)*(wf - wr - (m0 + dmr)*idg*dmref);
         u0_(m,M1_E,k,j,i) += de;
         if (t2kw) {kkw_(m,M1_T2_E,k,j,i) += de*fkw;}
       }
