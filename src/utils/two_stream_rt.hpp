@@ -6625,7 +6625,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         auto lpf_g = (cklon_ && ck_lpf_ptr != nullptr) ? *ck_lpf_ptr
                    : CkDum<DvceArray5D<Real>>("ck_lpf_d");
         // the per-block sums of the linear re-apply (shared by lin1 and lin1p)
-        auto launch_ck_lin_sum = [&]() {
+        // ck-next: psum -- rt_chain_ck_lin1p wrote the first angle pair of every block
+        // pre-added (chain 0's slot holds f0 + f1, which is bitwise the running sum
+        // (0 + f0) + f1 below): the sum skips chain 1's slot, the same numbers
+        auto launch_ck_lin_sum = [&](const bool psum) {
           // ck-next: a thread per (block, face) instead of per block: the same sums
           par_for("rt_chain_ck_lin_sum", DevExeSpace(), 0, nmb1, 0, nblk-1, is, ie+1,
                   ks, ke, js, je,
@@ -6639,10 +6642,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               if (i >= icut && icut <= ie) {
                 for (int cc=0; cc<NC; ++cc) {
                   const int c = blk*NC + cc;
-                  fb += lpf_g(m,c,i,k,j);
+                  const bool skp = psum && (cc == 1);
+                  if (!skp) fb += lpf_g(m,c,i,k,j);
                   if (i <= ie) {
                     const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
-                    src += lps_g(m,c,i,k,j);
+                    if (!skp) src += lps_g(m,c,i,k,j);
                     em += lP_g(m,5*nch_+c,i,k,j)*Bb_g(m,b,i,k,j);
                   }
                 }
@@ -6769,7 +6773,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               bown = bnext;
             }
           });
-          launch_ck_lin_sum();
+          launch_ck_lin_sum(false);
         };
         // ---- ck-nq2: rt_chain_ck_lin1 with BOTH angles of a (band, g) pair in one
         // thread.  With ck_nquad = 2 the chains c = 2p and 2p+1 share the band, the
@@ -6792,6 +6796,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             const int icut = icc_g(m,k,j);
             if (icut > ie) return;
             const int c0 = 2*pp;
+            // ck-next: the first pair of a chain block stores its two partials added
+            // (see launch_ck_lin_sum)
+            const bool pfst = (RT_NB % 2 == 0) && (c0 % RT_NB == 0);
             const int b = c0/(2*CK_NG);
             Real wfc[2];
             wfc[0] = lC_g(0,c0);
@@ -6884,6 +6891,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             Real slc, sfu;
             {
               const Real bt = lG_g(m,0,ie+1,k,j);
+              Real fq[2];
               for (int q=0; q<2; ++q) {
                 const int c = c0 + q;
                 Scr[q][ie+1] = ss[q];
@@ -6892,9 +6900,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real ub = (rr*(1.0 + bt)*da + Scr[q][ie+1])
                               *lP_g(m,1*nch_+c,ie+1,k,j);
                 const Real db = da + bt*(da - ub);
-                lpf_g(m,c,ie+1,k,j) = wfc[q]*(ub - db)*lG_g(m,2,ie+1,k,j);
+                fq[q] = wfc[q]*(ub - db)*lG_g(m,2,ie+1,k,j);
                 dcu[q] = db;
                 ubf[q] = ub;
+              }
+              if (pfst) {
+                lpf_g(m,c0,ie+1,k,j) = fq[0] + fq[1];
+              } else {
+                lpf_g(m,c0,ie+1,k,j) = fq[0];
+                lpf_g(m,c0+1,ie+1,k,j) = fq[1];
               }
               slc = Bb_g(m,b,ie,k,j);
               sfu = slc;
@@ -6955,8 +6969,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 suv = wu*bown + (1.0 - wu)*bnext;
                 sfv = snl + (suv - snl)*ff;
               }
+              Real fq[2], sq[2];
               for (int q=0; q<2; ++q) {
-                const int c = c0 + q;
                 const Real e0 = e0v[q];
                 Real cin, cout;
                 CkCinCout(krov, dzv, mug[q], e0, cin, cout);
@@ -6974,7 +6988,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real ub = (rr*(1.0 + bt)*dI + scv[q])*CkIdn(rr, bt);
                 const Real db = dI + bt*(dI - ub);
                 const Real dm = ub - db;
-                lpf_g(m,c,i,k,j) = wfc[q]*dm*g2;
+                fq[q] = wfc[q]*dm*g2;
                 Real ua = dI + dm*g1;
                 dcu[q] = db;
                 eh = cin*sfv + cout*suv;
@@ -6985,14 +6999,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 ua = tr*ua + eh;
                 src += wz*(ua - ubf[q]);
                 ubf[q] = ub;
-                lps_g(m,c,i,k,j) = src;
+                sq[q] = src;
+              }
+              if (pfst) {
+                lpf_g(m,c0,i,k,j) = fq[0] + fq[1];
+                lps_g(m,c0,i,k,j) = sq[0] + sq[1];
+              } else {
+                lpf_g(m,c0,i,k,j) = fq[0];
+                lpf_g(m,c0+1,i,k,j) = fq[1];
+                lps_g(m,c0,i,k,j) = sq[0];
+                lps_g(m,c0+1,i,k,j) = sq[1];
               }
               slc = snl;
               sfu = sfv;
               bown = bnext;
             }
           });
-          launch_ck_lin_sum();
+          launch_ck_lin_sum(RT_NB % 2 == 0);
         };
         const bool cklthr1_ = (ck_impl_lin_thr == 1);
         auto launch_ck_lin_tier = [&]() {
