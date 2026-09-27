@@ -3282,8 +3282,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // theta part and Coriolis stay explicit here
           u0(m,IM1,k,j,i) += rho*(cor + (rotpot_src ? 0.0 : oor))*sine*bdt;
           // The centrifugal WORK: with rot_potential AND etotgrav the face potentials
-          // phi0.x1f/x2f/x3f are TotPotAt (gravity + centrifugal, theta-dependent), so the
-          // etotgrav energy flux rho v Phi_tot already does ALL of it, radial and
+          // phi0.x1f/x2f/x3f are TotPotAt (gravity + centrifugal, theta-dependent), so
+          // the etotgrav energy flux rho v Phi_tot already does ALL of it, radial and
           // horizontal; adding the theta part here counted it twice (dhj-rotpot-energy,
           // 09-28: a spurious ~1e31 erg/s source/sink pair in the WASP-121b runs).
           // Without etotgrav (or without rot_potential) the source does all of it.
