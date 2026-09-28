@@ -550,8 +550,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_op_split_red")) {
     impl_opsplit = pin->GetBoolean("rad_m1","implicit_op_split_red");
   }
-  // default ON since 2026-09-25 (m1-fast3: box -12 %, wedge -13 %; round-off only)
-  impl_opteam = pin->GetOrAddBoolean("rad_m1","implicit_op_team_red",true);
+  // default OFF since audit-m1-0928 (was on since 2026-09-25, m1-fast3: -12 % on the
+  // static T-S4 wedge).  On moving gas on MI300A it gains 2.2-2.6 % (1 GPU) and 0.2-2.2 %
+  // (2 GPUs) per simulated second (He box, sph_wedge; 5 interleaved reps), under the ~3 %
+  // bar for a result-changing default (round-off).  Opt-in by name.
+  impl_opteam = pin->GetOrAddBoolean("rad_m1","implicit_op_team_red",false);
   impl_fastk = false;
   impl_odskip = false;
   if (impl_stencil && impl_bcg_sync != 1) {
@@ -672,12 +675,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_ovl = pin->GetOrAddBoolean("rad_m1","implicit_halo_overlap",
                       impl_halo_mpi && (global_variable::nranks > 1) &&
                       !global_variable::restart_run);
-  // implicit_halo_ovl_faces (tests_m1/runs_4l_sync): DEFAULT true since 09-24 wherever
-  // the overlap is on (4 GPUs weak: -1.6..-3.4 ms/cycle vs the full shell; round-off vs
-  // off, restarts bitwise).  As for the overlap, a restart whose file lacks the key keeps
-  // false, the resolved value is echoed, and explicit input overrides.
-  impl_ovl_faces = pin->GetOrAddBoolean("rad_m1","implicit_halo_ovl_faces",
-                       impl_halo_ovl && !global_variable::restart_run);
+  // implicit_halo_ovl_faces (tests_m1/runs_4l_sync): default OFF since audit-m1-0928
+  // (was true wherever the overlap is on, from 09-24 H200 weak scaling).  On MI300A with
+  // moving gas it gains -0.1..+1.0 % (2 GPUs, one node) and -1.4..+0.8 % (2 nodes x 2
+  // GPUs) per simulated second (He box, sph_wedge): no gain for a result-changing
+  // (round-off) default.  Opt-in by name; the resolved value is echoed.
+  impl_ovl_faces = pin->GetOrAddBoolean("rad_m1","implicit_halo_ovl_faces",false);
   for (int f = 0; f < 6; ++f) {hm_face[f] = 1;}
   if (impl_halo_ovl && !impl_halo_mpi) {
     ImplFatal("<rad_m1>/implicit_halo_overlap needs implicit_halo_mpi = true");
@@ -987,13 +990,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   const bool ldef = full && ts_ok && fixcl && !global_variable::restart_run;
   impl_fastk = pin->GetOrAddBoolean("rad_m1","implicit_fast_kernels",ldef);
-  impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",
-                                    ldef && impl_vimp && impl_stencil);
-  // default 0 (off) with force_reference = wb_arad (m1-keydefault-0927: with
-  // force_reference_work = split the one-pass acceptance loses the 2nd order in v_h)
-  impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",
-                                   (ldef && impl_pred && force_ref != M1_FREF_WB_ARAD)
-                                   ? 8 : 0);
+  // implicit_vimp_fold: default OFF since audit-m1-0928 (gain 0.9-2.3 % per simulated
+  // second on the moving He box and sph_wedge, MI300A 1 and 2 GPUs; under the ~3 % bar
+  // for a result-changing default).  Opt-in by name.
+  impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",false);
+  // implicit_one_pass: default 0 (off) everywhere since audit-m1-0928 (8 + auto gained
+  // -2.8..+0.0 % on the moving He box and sph_wedge on MI300A, i.e. nothing, and changes
+  // results 5-22x the round-off spread; before, 0 only with force_reference = wb_arad,
+  // m1-keydefault-0927).  Opt-in by name (e.g. 8).
+  impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",0);
   if (impl_onep != 0 && impl_onep < 2) {
     ImplFatal("<rad_m1>/implicit_one_pass (the check period) must be 0 (off) or >= 2");
   }
