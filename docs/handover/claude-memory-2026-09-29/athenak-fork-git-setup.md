@@ -31,11 +31,12 @@ other repo would need its own key or an account-level key.
 Git identity is set repo-locally to `Jingze Ma <jingzema0211@gmail.com>` (it was previously
 unset, so commits were authored `jinma@orion02.bc.mpcdf.mpg.de`).
 
-**The `upstream` URL used to carry a GitHub PAT in plaintext** in `.git/config` (`ghp_IT5C...`,
-a classic token, so possibly `repo` scope on the SHARED upstream repo). Removed from the config
+**The `upstream` URL used to carry a GitHub PAT in plaintext** in `.git/config` (a classic token, so possibly `repo` scope on the SHARED upstream repo). Removed from the config
 2026-08-12. Filesystem exposure was contained — `/orion/u/jinma` is `drwx------`, so no other
 cluster user could reach it — but the value was printed into a session transcript. If a token is
 ever needed again it goes in a credential helper, never in a remote URL.
+**2026-09-28:** the same token was still in the viper checkout's `origin` URL; the user REVOKED it on GitHub
+and the remote was reset to the plain upstream URL (NOTE-2026-09-28-token-cleanup.md for Caltech/DeltaAI).
 
 ## Open items (as of 2026-08-12)
 
