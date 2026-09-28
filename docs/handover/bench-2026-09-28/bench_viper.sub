@@ -1,0 +1,30 @@
+#!/bin/bash -l
+#SBATCH -J w121bench
+#SBATCH -p apudev
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:59
+# bench-2026-09-28 viper arm.  One job = one GPU count, arms interleaved 1x,10x,1x,10x,...
+#   sbatch -o <dir>/log.out.%j --export=NR=1,OUT=<dir> bench_viper.sub          (1 GPU)
+#   sbatch -o <dir>/log.out.%j --export=NR=2,OUT=<dir> bench_viper.sub          (2 GPUs)
+#   sbatch -p apu -N 2 -t 00:20:00 -o ... --export=NR=4,OUT=<dir> bench_viper.sub (4 GPUs)
+#   smoke: --export=NR=2,OUT=<dir>,SMOKE=1  (50 cycles, ck_impl_verbose on, one rep)
+# Variables: BIN (default /viper/ptmp2/jinma/bench_0928/athena.gpu), REPS (default 2).
+# SBATCH_EXPORT=NONE on viper: pass every variable with --export.
+H=${H:-/viper/u2/jinma/ATHENAK/athenak/docs/handover/bench-2026-09-28}
+BIN=${BIN:-/viper/ptmp2/jinma/bench_0928/athena.gpu}
+REPS=${REPS:-2}
+export MACHINE=viper
+if [ -n "${SMOKE:-}" ]; then
+  REPS=1; export EXTRA="time/nlim=50 time/ndiag=1 problem/ck_impl_verbose=true"
+fi
+for r in $(seq 1 $REPS); do
+  for A in 1x 10x; do
+    bash $H/run_bench.sh $BIN $NR $A $OUT/n${NR}_${A}_r${r}_${SLURM_JOB_ID}
+  done
+done
+python3 $H/ana_bench.py $OUT/n${NR}_*_${SLURM_JOB_ID}/bench.log $([ -n "${SMOKE:-}" ] && echo --c0 0 --c1 50)
+echo BENCH_JOB_DONE
