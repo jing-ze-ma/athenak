@@ -99,3 +99,5 @@ Record the md5 of the binary. `run_bench.sh` also writes it into every log.
 
 Give the median of the repeats, with the spread of the repeats in brackets (min-max). List the job ids
 under the table.
+
+**Builds:** build incrementally, see `docs/handover/NOTE-2026-09-28-incremental-builds.md`.

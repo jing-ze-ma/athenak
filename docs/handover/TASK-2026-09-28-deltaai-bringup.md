@@ -26,6 +26,7 @@ git clone --depth 1 --branch rt-integration --single-branch --recurse-submodules
   with `sed` into a copy of the input; never edit the tracked inputs.
 - Read `CLAUDE.md` at the repo root (build, test, style, architecture).
 - Do the one-time credential cleanup in `docs/handover/NOTE-2026-09-28-token-cleanup.md` first.
+- Build incrementally: `docs/handover/NOTE-2026-09-28-incremental-builds.md`.
 - Pushing needs GitHub credentials. Until the user sets up an SSH key here, do not push. Write results to files
   and tell the user; the user relays them.
 
