@@ -208,6 +208,22 @@ class Hydro {
   // then released.  Empty (and c2p_eint_rst false) otherwise.
   bool c2p_eint_rst = false;
   DvceArray4D<Real> eint_rst;
+
+  // FLOOR BOOKKEEPING (off unless a problem generator calls EnableC2PTrack): the energy
+  // and mass ConToPrim adds to the ACTIVE cells (density/energy/temperature floors, the
+  // cubed-sphere deferred floors, and the rounding of the etotgrav rho*Phi round trip),
+  // volume integrated and weighted by the fraction that survives to the end of the step
+  // (the product of the later stages' gam0; 1 outside the RK stages).  c2p_acc(0, i-is)
+  // is energy, c2p_acc(1, i-is) mass, per x1 index (conversions inside the RK
+  // stages), summed over this rank's MeshBlocks
+  // since the owner last zeroed it; rows 2/3 the same for the operator-split conversion
+  // after the split radiation.  Diagnostic only: the state is not touched.
+  bool c2p_track = false;
+  bool c2p_split = false;   // true while the operator-split ConToPrim task runs
+  DvceArray2D<Real> c2p_acc;
+  DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
+  void EnableC2PTrack();
+  void C2PTrack(Driver *pdrive, int stage, bool before);
     
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
@@ -278,6 +294,7 @@ class Hydro {
   TaskStatus ApplyPhysicalBCs(Driver* pdrive, int stage);
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
+  TaskStatus ConToPrimSplit(Driver *d, int stage);
   TaskStatus RTStrangSplit(Driver *d, int stage);
   void RTOpSplitBvals(bool recv_posted, bool repost);
   TaskStatus NewTimeStep(Driver *d, int stage);

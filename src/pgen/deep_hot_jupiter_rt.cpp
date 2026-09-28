@@ -167,6 +167,9 @@ void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
 // problem/flux_hst_wall: four inner-wall in/out split columns (set in UserProblem)
 bool dhj_flux_hst_wall = false;
+// problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
+bool dhj_flux_hst_floor = false;
+Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
 void DhjCycleDiag(Mesh *pm);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
@@ -479,6 +482,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Efl_bot_in / Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
   dhj_flux_hst_wall = flux_hst && pin->DoesParameterExist("problem","flux_hst_wall")
                       && pin->GetBoolean("problem","flux_hst_wall");
+  // problem/flux_hst_floor (default false; read without recording it, like flux_hst):
+  // three more columns after the others, Efloor [erg/s] and Mfloor [g/s], the energy and
+  // mass that ConToPrim's floors added to the active cells, averaged over the interval
+  // since the previous history row, and Efloor_rt, the part of Efloor added by the
+  // conversion right after the operator-split radiation (the rest is what the hydro
+  // stages left below a floor).  Nothing else books them: they are not fluxes, so
+  // they are the part of d(tot-E)/dt that Etot_bot - Etot_top does not contain (see
+  // Hydro::c2p_track).  Costs two active-cell kernels per ConToPrim; off by default.
+  dhj_flux_hst_floor = flux_hst && pin->DoesParameterExist("problem","flux_hst_floor")
+                       && pin->GetBoolean("problem","flux_hst_floor");
+  if (dhj_flux_hst_floor) {
+    MeshBlockPack *pfl = pmy_mesh_->pmb_pack;
+    if (pfl->phydro != nullptr) pfl->phydro->EnableC2PTrack();
+    if (pfl->pmhd != nullptr) pfl->pmhd->EnableC2PTrack();
+    dhj_floor_t0 = pmy_mesh_->time;
+  }
   // problem/wall_closed (DEFAULT TRUE, user 09-27; false = the old reservoir wall): make
   // the inner radial boundary a CLOSED wall.
   // The user boundary (HydrostaticEquilibrium) leaves the inner ghosts at the state the
@@ -5173,7 +5192,8 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
   constexpr int NFH0 = 9;
   const bool fwall = dhj_flux_hst_wall;
-  const int NFH = fwall ? (NFH0 + 4) : NFH0;
+  const bool ffloor = dhj_flux_hst_floor;
+  const int NFH = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
   pdata->nhist = NFH;
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
@@ -5189,6 +5209,11 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->label[10] = "Mdot_bot_out";
     pdata->label[11] = "Efl_bot_in";
     pdata->label[12] = "Efl_bot_out";
+  }
+  if (ffloor) {
+    pdata->label[NFH-3] = "Efloor";
+    pdata->label[NFH-2] = "Mfloor";
+    pdata->label[NFH-1] = "Efloor_rt";
   }
   for (int n=0; n<NFH; ++n) pdata->hdata[n] = 0.0;
 
@@ -5264,6 +5289,25 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   Kokkos::fence();
   for (int n=0; n<NFH0; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
+  if (ffloor) {
+    // problem/flux_hst_floor: the ConToPrim floor energy and mass of this rank since the
+    // previous row (the history output sums the ranks), as a rate; then restart the sum
+    DvceArray2D<Real> acc = (pmbp->pmhd != nullptr) ? pmbp->pmhd->c2p_acc
+                                                    : pmbp->phydro->c2p_acc;
+    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
+    Real ef = 0.0, mf = 0.0, efr = 0.0;
+    for (int i=0; i<static_cast<int>(h.extent(1)); ++i) {
+      ef += h(0,i) + h(2,i);
+      mf += h(1,i) + h(3,i);
+      efr += h(2,i);
+    }
+    Kokkos::deep_copy(acc, 0.0);
+    const Real tint = pm->time - dhj_floor_t0;
+    dhj_floor_t0 = pm->time;
+    pdata->hdata[NFH-3] = (tint > 0.0) ? ef/tint : 0.0;
+    pdata->hdata[NFH-2] = (tint > 0.0) ? mf/tint : 0.0;
+    pdata->hdata[NFH-1] = (tint > 0.0) ? efr/tint : 0.0;
+  }
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
   array_sum::GlobalSum wsum;

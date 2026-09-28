@@ -27,6 +27,7 @@
 #include "shearing_box/shearing_box.hpp"
 #include "shearing_box/orbital_advection.hpp"
 #include "hydro/hydro.hpp"
+#include "utils/c2p_track.hpp"
 
 namespace hydro {
 
@@ -185,10 +186,10 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   // immediately, so this is bitwise inert for every other run.
   id.splitpre  = tl["before_timeintegrator"]->AddTask(&Hydro::RTStrangSplit, this,
                                                       none);
-  id.splitpc2p = tl["before_timeintegrator"]->AddTask(&Hydro::ConToPrim, this,
+  id.splitpc2p = tl["before_timeintegrator"]->AddTask(&Hydro::ConToPrimSplit, this,
                                                       id.splitpre);
   id.splitpst  = tl["after_timeintegrator"]->AddTask(&Hydro::RTStrangSplit, this, none);
-  id.splitsc2p = tl["after_timeintegrator"]->AddTask(&Hydro::ConToPrim, this,
+  id.splitsc2p = tl["after_timeintegrator"]->AddTask(&Hydro::ConToPrimSplit, this,
                                                      id.splitpst);
   pmy_pack->split_hook_tasks = true;
 
@@ -787,6 +788,39 @@ void Hydro::RTOpSplitBvals(bool recv_posted, bool repost) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void Hydro::EnableC2PTrack / C2PTrack
+//! \brief floor bookkeeping of ConToPrim (see c2p_track in hydro.hpp and
+//! utils/c2p_track.hpp).  Enabled by a problem generator; c2p_acc is zeroed by its owner.
+
+void Hydro::EnableC2PTrack() {
+  c2p_track::Enable(pmy_pack, c2p_acc, c2p_ref_e, c2p_ref_d);
+  c2p_track = true;
+}
+
+void Hydro::C2PTrack(Driver *pdrive, int stage, bool before) {
+  if (before) {
+    c2p_track::Before(pmy_pack, u0, c2p_ref_e, c2p_ref_d);
+  } else {
+    // the split radiation's own conversion runs from RTOpSplitBvals (no driver)
+    const bool split = c2p_split || (pdrive == nullptr);
+    c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc,
+                     c2p_track::Weight(pdrive, stage, split), split);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Hydro::ConToPrimSplit
+//! \brief ConToPrim as the operator-split task pair runs it (after RTStrangSplit, outside
+//! the RK stages): identical, except that the floor bookkeeping weights it by 1.
+
+TaskStatus Hydro::ConToPrimSplit(Driver *pdrive, int stage) {
+  c2p_split = true;
+  TaskStatus ts = ConToPrim(pdrive, stage);
+  c2p_split = false;
+  return ts;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn TaskStatus Hydro::RTStrangSplit
 //! \brief the Strang half-step of ProblemGenerator::user_split_func.  It runs once in
 //! "before_timeintegrator" and once in "after_timeintegrator", each with HALF the
@@ -825,6 +859,7 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
 TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
+  if (c2p_track) C2PTrack(pdrive, stage, true);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -889,6 +924,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     eint_rst = DvceArray4D<Real>();
     c2p_eint_rst = false;
   }
+  if (c2p_track) C2PTrack(pdrive, stage, false);
   runaway_scan::Scan(pmy_pack->pmesh, "ConToPrim_floors");
   return TaskStatus::complete;
 }
