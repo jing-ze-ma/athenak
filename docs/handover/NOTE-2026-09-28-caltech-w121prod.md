@@ -16,4 +16,4 @@ User 09-28: the WASP-121b fresh start of SESSION-2026-09-28-viper.md section 4 r
 **Update 09-29 (Caltech, NOTE-2026-09-29-dhj-rsolver.md):** both inputs switched to `rsolver = lhllc` BEFORE any run
 started (build 3607758 done, 6faba555 md5 in the job logs; smokes 3607759/60 were still queued; no hllc run exists, so
 nothing to stop or rename). Same job ids: smoke 3607759 (1x) / 3607760 (10x) -> prod 3607761 (1x) / 3607762 (10x).
-Smoke result to follow.
+**09-28 16:10:** smoke folded into the production jobs (50 cycles first, same allocation; exit on FATAL / NOT-CONVERGED), so the old ids are cancelled. New: **3608646 (1x), 3608647 (10x)**. Smoke result to follow.

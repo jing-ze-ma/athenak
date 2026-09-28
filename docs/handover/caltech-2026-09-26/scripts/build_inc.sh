@@ -4,7 +4,9 @@
 # A persistent tree $P/inc_<cpu|gpu>_<problem>/src is kept per device+problem; each call
 # exports <commit> to a temp dir and rsync's it in by CONTENT (-c, no -t): unchanged files keep
 # their mtime, changed files get a fresh one, so make recompiles only what changed.
-# Output: $P/athena_<tag>_<cpu|gpu>, commit in $P/COMMIT_<tag>.
+# Output: $P/athena_<tag>_<cpu|gpu>, commit in $P/COMMIT_<tag>; every binary is also kept as
+# $P/bin/athena_<cpu|gpu>_<problem>_<sha8> and logged (sha, md5) in $P/log/BUILDS.txt.  A commit that
+# already has a binary there is reused, not rebuilt (NOTE-2026-09-28-incremental-builds.md).
 # GPU builds belong on a compute node:
 #   sbatch -A carnegie_poc -p expansion -c 32 --mem=64G -t 01:00:00 -o <log> \
 #     --wrap "NJ=32 bash build_inc.sh <tag> gpu <commit>"
@@ -13,8 +15,13 @@ R=/resnick/home/jingze/ATHENAK/athenak
 P=${BUILD_ROOT:-/resnick/home/jingze/ATHENAK/builds}
 A=$1; D=$2; C=${3:-HEAD}; PROB=${4:-deep_hot_jupiter_rt}
 I=$P/inc_${D}_$PROB
-mkdir -p $P/log $I/src
+mkdir -p $P/log $P/bin $I/src
+SHA=$(git -C $R rev-parse $C); B=$P/bin/athena_${D}_${PROB}_${SHA:0:8}
 exec 9>$I/.lock; flock -w 3600 9            # one build per tree at a time
+if [ -x $B ]; then                           # same commit already built: reuse it
+  cp $B $P/athena_${A}_$D; echo $SHA > $P/COMMIT_$A
+  echo BUILD_REUSED $A $D $SHA $(md5sum $B | cut -c1-32); exit 0
+fi
 T=$(mktemp -d $P/snap_XXXXXX)
 git -C $R archive $C | tar -x -C $T
 rm -rf $T/kokkos
@@ -41,5 +48,6 @@ else
 fi
 cd build
 nice -n 10 make -j ${NJ:-16} > $P/log/make_${A}_$D.log 2>&1
-cp src/athena $P/athena_${A}_$D
+cp src/athena $B; cp src/athena $P/athena_${A}_$D
+echo "$(date -Iseconds) $SHA $D $PROB $(md5sum $B | cut -c1-32) $B" >> $P/log/BUILDS.txt
 echo BUILD_OK $A $D $(cat $P/COMMIT_$A) "recompiled: $(grep -c 'Building CXX' $P/log/make_${A}_$D.log)"
