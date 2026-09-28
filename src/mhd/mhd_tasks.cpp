@@ -27,6 +27,7 @@
 #include "shearing_box/shearing_box.hpp"
 #include "shearing_box/orbital_advection.hpp"
 #include "mhd/mhd.hpp"
+#include "utils/c2p_track.hpp"
 #include "dyn_grmhd/dyn_grmhd.hpp"
 
 namespace mhd {
@@ -703,6 +704,25 @@ void MHD::RTOpSplitBvals() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void MHD::EnableC2PTrack / C2PTrack
+//! \brief floor bookkeeping of ConToPrim (see c2p_track in mhd.hpp and
+//! utils/c2p_track.hpp).  Enabled by a problem generator; c2p_acc is zeroed by its owner.
+
+void MHD::EnableC2PTrack() {
+  c2p_track::Enable(pmy_pack, c2p_acc, c2p_ref_e, c2p_ref_d);
+  c2p_track = true;
+}
+
+void MHD::C2PTrack(Driver *pdrive, int stage, bool before) {
+  if (before) {
+    c2p_track::Before(pmy_pack, u0, c2p_ref_e, c2p_ref_d);
+  } else {
+    c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc,
+                     c2p_track::Weight(pdrive, stage, c2p_split));
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn TaskStatus MHD::RTStrangSplit
 //! \brief ProblemGenerator::user_split_func on the MHD task list, with the semantics of
 //! Hydro::RTStrangSplit: Strang halves (dt/2 in "before_timeintegrator", stage 0, and
@@ -730,6 +750,7 @@ TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
 TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
+  if (c2p_track) C2PTrack(pdrive, stage, true);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -797,6 +818,7 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
     eint_rst = DvceArray4D<Real>();
     c2p_eint_rst = false;
   }
+  if (c2p_track) C2PTrack(pdrive, stage, false);
   if (presist != nullptr) {
     if (presist->iso_resist_type.compare("constant") != 0 && (!presist->use_rkg_sts || stage == 0)) {
       presist->SetResistivity(w0, peos->eos_data, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
