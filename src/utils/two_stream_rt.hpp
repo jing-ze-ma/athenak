@@ -1828,6 +1828,10 @@ inline void CkNonconvLoc(Mesh *pm, const Real bdt) {
   const int nmax = ck_impl_ncloc;
   const int rank = global_variable::my_rank;
   const int ncyc = static_cast<int>(pm->ncycle);
+  const bool csph_ = pm->use_cubed_sphere;
+  auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
+  auto &x2v_ = pm->pmb_pack->pcoord->x2v;
+  auto &x3v_ = pm->pmb_pack->pcoord->x3v;
   DvceArray1D<int> cnt("ck_ncloc_cnt", 1);
   par_for("ck_ncloc", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -1850,10 +1854,112 @@ inline void CkNonconvLoc(Mesh *pm, const Real bdt) {
     }
     const int n = Kokkos::atomic_fetch_add(&cnt(0), 1);
     if (n < nmax) {
+      Real pth = 0.0, plat = 0.0, plon = 0.0;
+      if (csph_) {
+        atm_column::CSCellAngles(mbpan_.d_view(m), x2v_(m,j), x3v_(m,k), pth, plat, plon);
+      }
       Kokkos::printf("### ck_ncloc ncycle=%d rank=%d gid=%d m=%d k=%d j=%d i=%d ie=%d "
-                     "icut=%d res=%.3e p_bar=%.4e T=%.1f ptop_bar=%.4e\n", ncyc, rank,
+                     "icut=%d res=%.3e p_bar=%.4e T=%.1f ptop_bar=%.4e lat=%.2f "
+                     "lon=%.2f\n", ncyc, rank,
                      gid_(m), m, k, j, iw, ie, ic, rn, pb_(m,k,j,iw), T_(m,k,j,iw),
-                     pb_(m,k,j,ie));
+                     pb_(m,k,j,ie), plat*57.29577951308232, plon*57.29577951308232);
+    }
+  });
+  Kokkos::fence();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CkNcRefSnap / CkNcRefCmp
+//! \brief problem/ck_impl_ncref (see its note): latch the running increment of the call
+//! after pass N, and at the end of the call compare it with the final one.  Print only.
+
+inline void CkNcRefSnap(Mesh *pm) {
+  if (ck_dep_ptr == nullptr) return;
+  if (ck_ncref_ptr == nullptr) {
+    auto d = *ck_dep_ptr;
+    ck_ncref_ptr = new DvceArray4D<Real>("ck_ncref", d.extent(0), d.extent(1),
+                                         d.extent(2), d.extent(3));
+  }
+  Kokkos::deep_copy(*ck_ncref_ptr, *ck_dep_ptr);
+}
+
+inline void CkNcRefCmp(Mesh *pm, const int nsnap, const int npass, const bool conv) {
+  if (ck_dep_ptr == nullptr || ck_ncref_ptr == nullptr || rt_icut_ptr == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
+  auto dep_ = *ck_dep_ptr;
+  auto snp_ = *ck_ncref_ptr;
+  auto ei_ = *ck_ei_ptr;
+  auto pb_ = *rt_pb_ptr;
+  auto T_ = *rt_T_ptr;
+  auto icut_ = *rt_icut_ptr;
+  auto dx1_ = pm->pmb_pack->pcoord->dx1;
+  DvceArray1D<Real> acc("ck_ncref_acc", 8);
+  par_for("ck_ncref", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const int ic = icut_(m,k,j);
+    if (ic > ie) return;
+    Real mx = 0.0, sd = 0.0, sr = 0.0, mxd = 0.0, mxd4 = 0.0;
+    for (int i=ic; i<ie+1; ++i) {
+      const Real e = ei_(m,k,j,i);
+      const Real d = fabs(dep_(m,k,j,i) - snp_(m,k,j,i));
+      if (e > 0.0 && d/e > mx) mx = d/e;
+      // the region that counts (p > 1e-6 bar), and p > 1e-4 bar
+      if (e > 0.0 && pb_(m,k,j,i) > 1.0e-6 && d/e > mxd) mxd = d/e;
+      if (e > 0.0 && pb_(m,k,j,i) > 1.0e-4 && d/e > mxd4) mxd4 = d/e;
+      sd += d*dx1_(m,k,j,i);
+      sr += fabs(dep_(m,k,j,i))*dx1_(m,k,j,i);
+    }
+    Kokkos::atomic_max(&acc(0), mx);
+    if (sr > 0.0) Kokkos::atomic_max(&acc(1), sd/sr);
+    Kokkos::atomic_add(&acc(2), sd);
+    Kokkos::atomic_add(&acc(3), sr);
+    if (mx > 0.0) Kokkos::atomic_add(&acc(4), 1.0);
+    if (mx > 1.0e-6) Kokkos::atomic_add(&acc(5), 1.0);
+    Kokkos::atomic_max(&acc(6), mxd);
+    Kokkos::atomic_max(&acc(7), mxd4);
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acc);
+  const Real thr = 0.5*h(0);
+  const int rank = global_variable::my_rank;
+  const int ncyc = static_cast<int>(pm->ncycle);
+  std::cout << "### ck_ncref ncycle=" << ncyc << " rank=" << rank << " snap=" << nsnap
+            << " passes=" << npass << " conv=" << (conv ? 1 : 0) << " maxde_e=" << h(0)
+            << " colheat_err_max=" << h(1) << " glob_heat_err="
+            << ((h(3) > 0.0) ? h(2)/h(3) : 0.0) << " ncol_diff=" << h(4)
+            << " ncol_gt1e-6=" << h(5) << " maxde_e_p1e-6=" << h(6)
+            << " maxde_e_p1e-4=" << h(7) << std::endl;
+  if (!(h(0) > 1.0e-6)) return;
+  DvceArray1D<int> cnt("ck_ncref_cnt", 1);
+  const bool csph_ = pm->use_cubed_sphere;
+  auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
+  auto &x2v_ = pm->pmb_pack->pcoord->x2v;
+  auto &x3v_ = pm->pmb_pack->pcoord->x3v;
+  par_for("ck_ncref_loc", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const int ic = icut_(m,k,j);
+    if (ic > ie) return;
+    for (int i=ic; i<ie+1; ++i) {
+      const Real e = ei_(m,k,j,i);
+      const Real d = dep_(m,k,j,i) - snp_(m,k,j,i);
+      if (e > 0.0 && fabs(d)/e >= thr) {
+        const int n = Kokkos::atomic_fetch_add(&cnt(0), 1);
+        if (n < 6) {
+          Real pth = 0.0, plat = 0.0, plon = 0.0;
+          if (csph_) {
+            atm_column::CSCellAngles(mbpan_.d_view(m), x2v_(m,j), x3v_(m,k), pth, plat,
+                                     plon);
+          }
+          Kokkos::printf("### ck_ncref_cell ncycle=%d m=%d k=%d j=%d i=%d ic=%d "
+                         "lat=%.2f lon=%.2f p_bar=%.4e T=%.1f de/e=%.3e dep/e=%.3e "
+                         "snap/e=%.3e\n", ncyc, m, k, j, i, ic,
+                         plat*57.29577951308232, plon*57.29577951308232, pb_(m,k,j,i),
+                         T_(m,k,j,i), d/e, dep_(m,k,j,i)/e, snp_(m,k,j,i)/e);
+        }
+      }
     }
   });
   Kokkos::fence();
@@ -1967,6 +2073,7 @@ inline void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
     }
     // ck_impl_debug <= -2: the residual and the step of every pass, on the report line
     std::string hist;
+    int ncsnap = -1;   // ck_impl_ncref: active columns at the latch, -1 = no latch
     for (int it=0; it<nitmax; ++it) {
       ck_impl_pass = it;
       picket_fence_two_stream_RT_pass(pm, bdt);
@@ -2001,8 +2108,14 @@ inline void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
         conv = true;
         break;
       }
+      // problem/ck_impl_ncref: latch the state a maxit = N call would have accepted
+      if (ck_impl_ncref > 0 && it + 1 == ck_impl_ncref) {
+        CkNcRefSnap(pm);
+        ncsnap = ck_impl_nactive;
+      }
     }
     ck_impl_last_it = npass;
+    if (ncsnap >= 0) CkNcRefCmp(pm, ncsnap, npass, conv);
     // problem/ck_impl_pred_chk: the final state's own residual and gap (one more sweep,
     // no step; diagnostic only -- the gas is not touched)
     int pchk_act = -1;
@@ -2057,6 +2170,8 @@ inline void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
                 << ((ck_impl_floorbound || ck_impl_kkt_demax)
                     ? (" floor=" + std::to_string(ck_impl_nfloor) + " kkt="
                        + std::to_string(ck_impl_nkkt)) : std::string(""))
+                << ((ck_impl_osc > 0) ? (" osc=" + std::to_string(ck_impl_nosc))
+                    : std::string(""))
                 << (conv ? "" : " NOT-CONVERGED")
                 << ((ck_impl_debug <= -2) ? (" hist=" + hist) : std::string(""))
                 << std::endl;

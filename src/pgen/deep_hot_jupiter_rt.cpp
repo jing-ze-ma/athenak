@@ -679,6 +679,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       two_stream_rt::ck_implicit ? 1.0e30 : 2.0);
   two_stream_rt::ck_impl_debug = pin->GetOrAddInteger("problem","ck_impl_debug",0);
   two_stream_rt::ck_impl_ncloc = pin->GetOrAddInteger("problem","ck_impl_ncloc",0);
+  two_stream_rt::ck_impl_ncref = pin->GetOrAddInteger("problem","ck_impl_ncref",0);
   dtloc_every = pin->GetOrAddInteger("problem","dtloc_every",0);
   two_stream_rt::ck_impl_colskip =
       pin->GetOrAddBoolean("problem","ck_impl_colskip",true);
@@ -841,12 +842,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // before the key existed picks up true.
   two_stream_rt::ck_impl_kkt_row =
       pin->GetOrAddBoolean("problem","ck_impl_kkt_row",true);
+  // problem/ck_impl_osc = N: per-cell Aitken damping of oscillating cells from pass N
+  // on (utils/two_stream_column_ck.hpp; cknewton_0928).  0 = off (default, bitwise).
+  two_stream_rt::ck_impl_osc = pin->GetOrAddInteger("problem","ck_impl_osc",0);
+  if (two_stream_rt::ck_impl_osc < 0 || (two_stream_rt::ck_impl_osc > 0 &&
+      two_stream_rt::ck_impl_aa > 0)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_osc must be "
+              << ">= 0, and 0 with ck_impl_aa > 0; got " << two_stream_rt::ck_impl_osc
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if ((two_stream_rt::ck_impl_floorbound || two_stream_rt::ck_impl_kkt_demax ||
-       two_stream_rt::ck_impl_rsec > 0.0) &&
+       two_stream_rt::ck_impl_rsec > 0.0 || two_stream_rt::ck_impl_osc > 0) &&
       (!two_stream_rt::ck_implicit || !two_stream_rt::ck_impl_fuse ||
        two_stream_rt::ck_impl_debug > 0 || two_stream_rt::ck_impl_glob != 0)) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_floorbound, "
-              << "ck_impl_kkt_demax and ck_impl_rsec are implemented on the fused "
+              << "ck_impl_kkt_demax, ck_impl_rsec and ck_impl_osc are implemented on the "
+              << "fused "
               << "ck_implicit Newton only (ck_implicit, ck_impl_fuse, "
               << "ck_impl_debug <= 0, "
               << "ck_impl_glob = none)." << std::endl;
