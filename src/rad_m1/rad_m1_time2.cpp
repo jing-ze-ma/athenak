@@ -214,17 +214,19 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   }
   // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
   // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
-  // x time2_lin_tol_fac.  Default 10 (the input files set implicit_lin_tol =
-  // implicit_tol/100; the stage solves then take implicit_tol/10); 3-D He box: 21 -> 15
-  // Krylov iterations per stage solve; the radwave G1 order is kept together with
-  // time2_one_pass_safety = 30.  As for the runs_4a_accel levers, a restart whose file
-  // does not carry the key keeps the old behaviour (1).
+  // x time2_lin_tol_fac.  Default 1 since audit-m1-0928 (was 10 on fresh runs from
+  // tests_m1/runs_5f_h2fast: 3-D He box 21 -> 15 Krylov iterations per stage solve).
+  // Factor 10 degrades the stiff radiation-wave time convergence
+  // (/viper/ptmp2/jinma/audit_m1_0928/rw/RESULTS_time.txt: error 1.6-4x larger, order
+  // 1.37 -> 0.48 at tau 10), for a gain of -0.4..+7.5 % per simulated second (He box,
+  // sph_wedge, MI300A).  Opt-in by name.  A restart whose file records the key keeps its
+  // value; one that does not gets 1 (as before).
   const bool rs = global_variable::restart_run;
   t2_lin_tol = -1.0;
   if (pin->DoesParameterExist("rad_m1", "time2_lin_tol")) {
     t2_lin_tol = pin->GetReal("rad_m1", "time2_lin_tol");
   }
-  t2_lin_fac = pin->GetOrAddReal("rad_m1", "time2_lin_tol_fac", rs ? 1.0 : 10.0);
+  t2_lin_fac = pin->GetOrAddReal("rad_m1", "time2_lin_tol_fac", 1.0);
   if (!(t2_lin_fac > 0.0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_m1>/time2_lin_tol_fac must be > 0" << std::endl;

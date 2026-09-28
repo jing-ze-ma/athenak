@@ -737,7 +737,7 @@ class RadiationM1 {
                                 // implicit_lin_tol x t2_lin_fac)
   Real t2_onep_s;               // time2_one_pass_safety: implicit_one_pass_safety of the
                                 // stage solves (0: implicit_one_pass_safety)
-  Real t2_lin_fac;              // time2_lin_tol_fac (default 10)
+  Real t2_lin_fac;              // time2_lin_tol_fac (default 1)
   Real t2_lin_save;             // the implicit_lin_tol put back after a stage solve
   Real t2_nclip;                // vet_sc cells whose extrapolated tensor was clipped
   DvceArray5D<Real> t2k1;       // (m,M1_T2_NK,k,j,i) the FSAL slope K1 (restart state)
