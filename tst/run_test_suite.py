@@ -109,7 +109,13 @@ if args.mpicpu is not None:
     test([tests, "-k", "_mpicpu"])  # run all scripts with _mpicpu in name
 
 if args.gpu is not None:
-    testutils.clean_make(flags=cmake_flags(args.gpu, ["-D", "Kokkos_ENABLE_CUDA=On"]))
+    # CUDA unless the caller names another Kokkos device backend (e.g. HIP on AMD GPUs:
+    # --gpu "-DKokkos_ENABLE_HIP=On -DKokkos_ARCH_AMD_GFX942_APU=On ...")
+    gpu_extra = " ".join(args.gpu)
+    backends = ["Kokkos_ENABLE_HIP", "Kokkos_ENABLE_SYCL", "Kokkos_ENABLE_CUDA"]
+    named = any(b in gpu_extra for b in backends)
+    base = [] if named else ["-D", "Kokkos_ENABLE_CUDA=On"]
+    testutils.clean_make(flags=cmake_flags(args.gpu, base))
     test([tests, "-k", "_gpu"])  # run all scripts with _gpu in name
 
 os.chdir(original_dir)

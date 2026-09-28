@@ -4,6 +4,7 @@ Checks source code style, based on Google style guide with some custom modificat
 
 # Modules
 import os
+import sys
 import pytest
 from subprocess import Popen, PIPE
 
@@ -45,7 +46,7 @@ def test_lint_python():
     try:
         print("Running Python linting...")
         print("Current directory:", os.getcwd())
-        command = ["python", "-m", "flake8"]
+        command = [sys.executable, "-m", "flake8"]
         process = Popen(command, stdout=PIPE, stderr=PIPE)
         output, errors = process.communicate()
         status = process.returncode == 0

@@ -154,8 +154,8 @@ inline bool ck_impl_floorbound = false;
 // the limiter that keeps a dt collapse away; removing it, demax = 0 with dtmax 3,
 // collapsed dt at cycle 22 in smokediag/dtm3d0); only the pass count and the
 // NOT-CONVERGED flag change: the passes a capped cell cannot use are no longer spent.
-// false = bitwise (default true on fresh fused ck_implicit dhj runs since defaults2-0927).
-// Counted in slot 17 with (b).
+// false = bitwise (default true on fresh fused ck_implicit dhj runs since
+// defaults2-0927).  Counted in slot 17 with (b).
 inline bool ck_impl_kkt_demax = false;
 // problem/ck_impl_stalldbg: diagnosis of columns that stall at a fixed residual.  0 =
 // off (bitwise).  N > 0: on every fused pass with index >= N, each column still active
