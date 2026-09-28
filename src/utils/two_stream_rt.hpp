@@ -2183,6 +2183,12 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       if (!ckfus) Qb_g(m,blk,i,k,j) = 0.0;
       Em_g(m,blk,i,k,j) = 0.0;
       Src_g(m,blk,i,k,j) = 0.0;
+      // ck-determinism: this block's own slots of the tridiagonal (ck_jacq_ptr)
+      if constexpr (JAC) {
+        ckjac_g(m,3*blk,k,j,i) = 0.0;
+        ckjac_g(m,3*blk+1,k,j,i) = 0.0;
+        ckjac_g(m,3*blk+2,k,j,i) = 0.0;
+      }
     }
     const int icut = icc_g(m,k,j);
     if (icut > ie) return;                  // whole column deeper than the cut
@@ -6344,8 +6350,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // shrinks to one element instead of NC x NN.  See ck_spherical.
         // problem/ck_implicit: the chain blocks accumulate into ONE tridiagonal per
         // column, so it is zeroed here, once, before any of them run.  ck-determinism:
-        // the JAC chain kernel adds into per-block slots (ck_jacq_ptr), zeroed here too,
-        // and ck_jacq_sum adds them into ck_jac in block order after it.
+        // the JAC chain kernel adds into per-block slots (ck_jacq_ptr; each thread zeroes
+        // its own), and ck_jacq_sum adds them into ck_jac in block order after it.
         const bool ckjq_ = ckjacp_ && !ckjl_;
         if (ckjq_) {
           const auto &jx = *ck_jac_ptr;
@@ -6365,9 +6371,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             ckjac_g(m,0,k,j,i) = 0.0;
             ckjac_g(m,1,k,j,i) = 0.0;
             ckjac_g(m,2,k,j,i) = 0.0;
-            if (ckjq_) {
-              for (int q=0; q<3*nblk; ++q) ckjq_g(m,q,k,j,i) = 0.0;
-            }
           });
         }
         // nvcc: no extended (device) lambda may sit inside a generic lambda, so the
