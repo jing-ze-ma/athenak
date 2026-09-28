@@ -1418,6 +1418,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   wb_phi_eff_ = pin->GetOrAddBoolean("problem", "wb_phi_eff", false);
   arad_force_ = pin->GetOrAddBoolean("problem", "wb_arad_force", false);
   const std::string aradf = pin->GetOrAddString("problem", "wb_arad_file", "");
+  // ENERGY CONSISTENCY (energy_audit_0928 item 2).  With Phi_eff the WB source gives
+  // the gas -rho g + rho a_ref in IM1 but NO energy: the work rho a_ref v1 must come
+  // from the radiation module, and the module must then apply only the RESIDUAL force.
+  // Only <rad_m1> with force_reference = wb_arad does both (work mode split: the WB
+  // source adds it, BoxConvSrcs fws; full: the M1 coupling's work term keeps the full
+  // force).  Every other combination is wrong: wb_phi_eff alone or with wb_arad_force
+  // (BoxConvARadForce is a no-op then) never pays the work; with the two-stream's
+  // rt_rad_force or <rad_m1> force_reference = none the radiative force is counted
+  // twice (WB reference + full force) and its work once.
+  if (wb_phi_eff_ && !(pmbp->pradm1 != nullptr
+                       && pmbp->pradm1->force_ref == radm1::M1_FREF_WB_ARAD)) {
+    std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff = true is only "
+              << "energy-consistent with <rad_m1> and <rad_m1>/force_reference = "
+              << "wb_arad ("
+              << ((pmbp->pradm1 == nullptr)
+                  ? "no <rad_m1> block: nothing pays the work rho a_ref v1 of the WB "
+                    "reference force, and rt_rad_force would count the force twice"
+                  : "force_reference = none applies the full force on top of the WB "
+                    "reference: counted twice")
+              << ").  Set problem/wb_phi_eff = false, or use <rad_m1> with "
+              << "force_reference = wb_arad." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (wb_phi_eff_ || arad_force_) {
     if (wb_phi_eff_ && !(wbdyn && pfl->use_wb_x1)) {
       std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff needs "
@@ -2850,6 +2873,12 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // red_giant.cpp's problem/wall_noflux does at its inner wall.
   if (wall_noflux_) {
     auto &flx1w = pfl->uflx->x1f;
+    // the TRUE potential, not the WB one (phicc above): under <hydro>/etotgrav u0(IEN)
+    // carries rho*Phi with phicc0 (Hydro/MHD::AddGravEtot, see the "WHAT THIS DOES NOT
+    // TOUCH" note in Hydro::EnableWBEffectivePotential), so the internal energy the
+    // cancellation feeds to the EOS must take out d*phicc0.  With problem/wb_phi_eff
+    // off, phicc_wb IS phicc0 and nothing changes.
+    DvceArray4D<Real> phit = pfl->phicc0;
     // m1-mhd: |B|^2/2 out of the conserved energy under <mhd> (hydro: never read)
     const bool mhdb = mhd_;
     auto bb1 = mhdb ? pmbp->pmhd->b0.x1f : phicc;
@@ -2890,7 +2919,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
           Real ei = u0(m,IEN,k,j,ic)
                     - 0.5*(SQR(u0(m,IM1,k,j,ic)) + SQR(u0(m,IM2,k,j,ic))
                            + SQR(u0(m,IM3,k,j,ic)))/d;
-          if (etotgrav) ei -= d*phicc(m,k,j,ic);
+          if (etotgrav) ei -= d*phit(m,k,j,ic);
           if (mhdb) {
             ei -= radm1::M1EmagCell(bb1, bb2, bb3, false, false, cx1v, cx1f, cx2v, cx2f,
                                         cx3v, cx3f, m, k, j, ic);
@@ -2898,6 +2927,11 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
           // guard the EOS call: a tabulated EOS takes log10(e) and would write a NaN
           // into u0 with no precursor.  Skipping one stage's cancellation is harmless.
           if (!(ei > 0.0)) continue;
+          // de = dm*(E + p)/d with E the FULL conserved energy, rho*Phi_true included:
+          // the etotgrav flux (Hydro::AddGravFlux) is flx(IEN) += flx(IDN)*Phi, so the
+          // cancelled mass must take its dm*Phi out with it.  Taking it at the CELL
+          // centre (not the face) removes exactly (dm/d)*(d*Phi_cc), so the specific
+          // internal energy left behind does not depend on the potential at all.
           de = dm*(u0(m,IEN,k,j,ic) + eos.Pressure(d, ei))/d;
         } else {
           de = sgn*bdt*idz*flx1w(m,IEN,k,j,ifc);
