@@ -41,3 +41,23 @@ Not flipped (user rules or open decisions): `ck_implicit` itself (flipped in the
 `ck_pcut_bar`, `grav_point_mass` / `rot_potential`, `f_source = wb`; relaxation-only levers,
 cfl 0.9, the floor switches and all tolerances.  Inventory with reasons:
 /viper/ptmp2/jinma/defaults_0927/INVENTORY.md (viper).
+
+## Third round (2026-09-28, speed-default audit on MI300A; user decisions 09-28)
+
+Rule: a default that changes results (even at round-off) must buy >~ 3 % per simulated second
+and stay within the round-off noise; otherwise it is opt-in by name.  All values are recorded in
+the restart file, so a restart keeps the value it recorded; explicit input always wins.
+
+| key | old default | new default | where | evidence |
+|---|---|---|---|---|
+| `problem/ck_impl_xstep` (deep_hot_jupiter_rt) | 8 wherever `ck_impl_every > 1` with the stored operator | 0 everywhere | fresh runs and restarts that record no value (the WASP-121b inputs name 8) | audit_dhj_0928: +3.2 % (1x) / +3.9 % (10x); deviation 1.3-2x the 1e-14-kick spread at 1e-3..1 and > 1 bar in the first rotation; relaxation-phase option only |
+| `rad_m1/implicit_op_team_red` | true | false | everywhere (a restart without the key: true -> false) | audit_m1_0928: +2.2..2.6 % (1 GPU), 0.2-2.2 % (2 GPUs), below the bar |
+| `rad_m1/implicit_vimp_fold` | true (fast-kernel path) | false | everywhere | audit_m1_0928: +0.9..2.3 % |
+| `rad_m1/implicit_halo_ovl_faces` | true where the halo overlap is on | false | everywhere | audit_m1_0928: -1.4..+1.0 %, no gain |
+| `rad_m1/implicit_one_pass` | 8 where not `force_reference = wb_arad` | 0 everywhere | everywhere | audit_m1_0928: -2.8..0 %, and 5-22x the round-off spread |
+| `rad_m1/time2_lin_tol_fac` | 10 on fresh runs (1 on restarts without the key) | 1 | fresh runs | audit_m1_0928 rw/RESULTS_time.txt: factor 10 makes the stiff radiation-wave time error 1.6-4x larger (order 1.37 -> 0.48 at tau 10); gain -0.4..+7.5 % |
+
+Kept (they pay): `ck_store_split`, `ck_beam_par`, `ck_impl_colskip` (part of `ck_impl_every > 1`),
+`implicit_halo_overlap` (+9.2 % wedge on 2 GPUs in one node), `implicit_mg_levels` 3.  Open (user):
+`implicit_gas_newton` (+8.5 % box, 1.6-1.7x noise).  Records: /viper/ptmp2/jinma/audit_dhj_0928 and
+audit_m1_0928 (viper); merge gates: /viper/ptmp2/jinma/mergecoord_0928/RESULTS.md.
