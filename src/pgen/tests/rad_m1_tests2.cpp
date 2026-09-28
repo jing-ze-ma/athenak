@@ -87,6 +87,7 @@
 #include "hydro/hydro.hpp"
 #include "globals.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "pgen/pgen.hpp"
 
@@ -455,7 +456,19 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     Real amp = pin->GetOrAddReal("problem","radwave_amp",1.0e-6);
     Real d0 = pin->GetOrAddReal("problem","radwave_rho",1.0);
     Real t0 = pin->GetOrAddReal("problem","radwave_t",1.0);
-    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    // m1-mhd2: <hydro> or <mhd>; under <mhd> the uniform field problem/m1_b0_1..3 (set
+    // on b0 by RadiationM1Tests) adds its |B|^2/2 to IEN.  B parallel to k leaves the
+    // wave exactly the hydro one.
+    radm1::FluidRef flr = radm1::FluidRef::Get(pmbp);
+    Real gm1 = flr.eos.gamma - 1.0;
+    const bool mhdw = flr.mhd;
+    Real ebw = 0.0;
+    if (mhdw) {
+      const Real bx = pin->GetOrAddReal("problem", "m1_b0_1", 0.0);
+      const Real by = pin->GetOrAddReal("problem", "m1_b0_2", 0.0);
+      const Real bz = pin->GetOrAddReal("problem", "m1_b0_3", 0.0);
+      ebw = 0.5*(bx*bx + by*by + bz*bz);
+    }
     Real kapf = pmbp->pradm1->kappa_f;
     Real pgas = d0*t0;
     Real er0 = ar*t0*t0*t0*t0;
@@ -504,7 +517,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                 << std::endl;
     }
     if (restart) return;
-    auto uh = pmbp->phydro->u0;
+    auto uh = flr.u0;
     // <problem>/radwave_eig = true (default false; tests_m1/runs_3r_radwave): lay down
     // the EXACT linear eigenmode of the gas + moment system instead of the
     // equilibrium-diffusion one.  The complex amplitudes per unit drho/rho are computed
@@ -548,6 +561,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         uh(m,IM2,k,j,i) = d*vv*ny;
         uh(m,IM3,k,j,i) = d*vv*nz;
         uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
+        if (mhdw) uh(m,IEN,k,j,i) += ebw;
         Real ff = amp*ce0*(fre*cp - fim*sp);
         u0(m,radm1::M1_E,k,j,i) = fmax(er0*(1.0 + amp*(ere*cp - eim*sp)), efl);
         if (drift) {
@@ -609,6 +623,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = d*vv*ny;
       uh(m,IM3,k,j,i) = d*vv*nz;
       uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
+      if (mhdw) uh(m,IEN,k,j,i) += ebw;
       Real ee = er0 + derad*cp;
       Real ff = (4.0/3.0)*vv*er0 + fdif*sp;
       u0(m,radm1::M1_E,k,j,i) = fmax(ee, efl);
