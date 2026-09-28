@@ -187,7 +187,10 @@ inline bool ck_impl_kkt_row = false;
 // = s/(s - x) in (0, 1) (Aitken's delta^2 on the cell).  A monotone (same-sign) step is
 // untouched, so the iterate of a column that converges monotonically is bitwise; the
 // residual, and therefore the fixed point, is untouched everywhere.  Counted in slot 18.
-// Fused, glob = none, aa = 0 path only.
+// Fused, glob = none, aa = 0 path only.  NOT NEEDED with the recommended 10x keys: a
+// per-pass cap ck_impl_dtmax = 0.25 with ck_impl_maxit = 24 removes the limit cycles by
+// itself (0/1500 NOT-CONVERGED over 6000 cycles, osc on or off); osc 12 is what makes
+// dtmax 0.5 + maxit 24 converge (0/500 over 2000 cycles, 5/1500 over 6000).
 inline int ck_impl_osc = 0;
 inline DvceArray4D<Real> *ck_osc_ptr = nullptr;   // the step each cell applied last pass
 inline int ck_impl_nosc = 0;                       // cells damped, last pass
