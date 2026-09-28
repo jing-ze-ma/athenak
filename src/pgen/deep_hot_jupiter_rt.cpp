@@ -620,12 +620,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::exit(EXIT_FAILURE);
   }
   // problem/ck_implicit: the BACKWARD-EULER correlated-k column solve (see
-  // two_stream_rt::ck_implicit and utils/two_stream_column_ck.hpp).  Default false =
-  // bitwise the semi-implicit per-cell apply this path has always run.  With it on the
-  // gas receives exactly the converged flux divergence -- no relaxation factor, no
-  // rt_de_max clip -- at ck_impl_maxit ck sweeps per RK stage instead of one.
+  // two_stream_rt::ck_implicit and utils/two_stream_column_ck.hpp).  With it on the gas
+  // receives exactly the converged flux divergence -- no relaxation factor, no rt_de_max
+  // clip -- at ck_impl_maxit ck sweeps per RK stage instead of one; false = the
+  // semi-implicit per-cell apply.  DEFAULT TRUE for FRESH runs since defaults2-0927
+  // (user decision 09-27: the production scheme), and with it the T4 set, ck_impl_arat
+  // 1e30 and ck_impl_nosync, whose defaults below are conditional on it.  The default
+  // is conditioned on the switch's own refusal in two_stream_rt.hpp (rt_ck,
+  // rt_use_cons, !rt_layer_legacy; rt_implicit_column is refused by this pgen anyway)
+  // and on ck_sweep_form != 2 (sd has no tridiagonal), so it can never turn a working
+  // input into a startup fatal.  On a RESTART the default stays false: the value is
+  // recorded, so a file written by an older binary carries its "ck_implicit = 0" and
+  // keeps it, and a file written before the key existed ran the semi-implicit apply,
+  // which it keeps too.  Set the line explicitly to override.
+  {const bool ckimp_default = !restart && rt_ck && !layer_legacy_peek &&
+       pin->GetOrAddBoolean("problem","rt_use_cons",true) &&
+       (two_stream_rt::ck_sweep_form != 2);
   two_stream_rt::ck_implicit =
-      pin->GetOrAddBoolean("problem","ck_implicit",false);
+      pin->GetOrAddBoolean("problem","ck_implicit",ckimp_default);}
   two_stream_rt::ck_impl_tol = pin->GetOrAddReal("problem","ck_impl_tol",1.0e-8);
   two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
   two_stream_rt::ck_impl_norm_eps =
@@ -785,11 +797,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_aa_rst = pin->GetOrAddBoolean("problem","ck_impl_aa_rst",true);
   // problem/ck_impl_floorbound / ck_impl_kkt_demax: the Newton as a bound-constrained
   // solve (e >= e_floor; KKT cells on the floor / on the demax bound count as converged).
-  // Both default off (bitwise).  See utils/two_stream_column_ck.hpp.
+  // See utils/two_stream_column_ck.hpp.  DEFAULT TRUE since defaults2-0927 on FRESH runs
+  // of the fused ck_implicit Newton (ck_implicit, ck_impl_fuse, ck_impl_debug <= 0,
+  // ck_impl_glob = none, ck_impl_aa = 0: the only path they exist on); false elsewhere
+  // and on restarts (a file that lacks the keys keeps the unconstrained Newton).  Where
+  // no cell reaches a bound both are the identity: bitwise on vs off on the CPU gates
+  // (dhj_ck_spherical and the 64x8x8 gate input, 20 cycles, floor = kkt = 0).  Where
+  // they bind (both WASP-121b productions, every call) the unconstrained Newton cannot
+  // converge: 1x 466/500 calls NOT-CONVERGED off vs 6/500 on, 10x 500/500 vs 133/500
+  // (defaults2_0927/B).  Set either line explicitly to override.
+  {const bool fbdef = !restart && two_stream_rt::ck_implicit &&
+       two_stream_rt::ck_impl_fuse && two_stream_rt::ck_impl_debug <= 0 &&
+       two_stream_rt::ck_impl_glob == 0 && two_stream_rt::ck_impl_aa == 0;
   two_stream_rt::ck_impl_floorbound =
-      pin->GetOrAddBoolean("problem","ck_impl_floorbound",false);
+      pin->GetOrAddBoolean("problem","ck_impl_floorbound",fbdef);
   two_stream_rt::ck_impl_kkt_demax =
-      pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",false);
+      pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",fbdef);}
   two_stream_rt::ck_impl_stalldbg =
       pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
   // problem/ck_impl_kkt_row: DEFAULT TRUE since default-flips (09-26; 1x production

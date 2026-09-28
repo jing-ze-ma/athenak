@@ -59,17 +59,31 @@ def build(where, flags=[]):
     return os.path.join(where, "src", "athena")
 
 
-def run(binary, rundir, args, ranks=0):
+def run(binary, rundir, args, ranks=0, inp=INPUT):
     """Run the problem in its own directory.  ranks = 0 means no mpirun at all."""
     os.makedirs(rundir, exist_ok=True)
     launch = ["mpirun", "-np", repr(ranks)] if ranks else []
     proc = subprocess.run(
-        launch + [binary, "-i", INPUT] + args,
+        launch + [binary, "-i", inp] + args,
         cwd=rundir, capture_output=True, text=True,
     )
     if proc.returncode != 0:
         pytest.fail(f"run failed ({ranks or 1} rank(s)):\n{proc.stdout[-4000:]}")
     return proc.stdout
+
+
+def input_with(where, lines):
+    """A copy of INPUT in `where` with `lines` added at the top of its <problem> block
+    (for keys the input does not name: a command-line override of those is refused)."""
+    os.makedirs(where, exist_ok=True)
+    with open(INPUT) as f:
+        text = f.read()
+    add = "".join(ln + "\n" for ln in lines)
+    text = text.replace("<problem>\n", "<problem>\n" + add, 1)
+    path = os.path.join(where, "input_" + os.path.basename(INPUT))
+    with open(path, "w") as f:
+        f.write(text)
+    return path
 
 
 def read_column(path):
