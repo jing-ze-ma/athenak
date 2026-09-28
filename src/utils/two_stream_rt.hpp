@@ -339,6 +339,14 @@ inline void CkScrEnsure(const size_t len) {
       Kokkos::ViewAllocateWithoutInitializing("rt_ckscr"), len);
   rt_ckscr_len = len;
 }
+// ck-determinism: the JAC pass of rt_chain_ck (ck_implicit without ck_impl_jac_lin)
+// added every chain block's share of the tridiagonal into ck_jac with atomics, whose
+// order -- and so whose rounding -- changed from run to run on a GPU.  Each block now
+// adds into its OWN slots (m, 3*blk + s, k, j, i) of this View with plain adds (the one
+// thread of (m, blk, k, j) owns them), and ck_jacq_sum adds the blocks into ck_jac in
+// block order: the same sums in a fixed order, so the run is reproducible.
+inline DvceArray5D<Real> *ck_jacq_ptr = nullptr;
+KOKKOS_INLINE_FUNCTION void CkJacQAdd(Real *p, const Real v) { *p += v; }
 
 // Column solves ("chains") the RT kernel steps per cell: 4 for the grey picket fence
 // (two IR channels x the two Gauss angles), CK_NB*CK_NG*ck_nquad for correlated-k.
@@ -2222,6 +2230,12 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       if (!ckfus) Qb_g(m,blk,i,k,j) = 0.0;
       Em_g(m,blk,i,k,j) = 0.0;
       Src_g(m,blk,i,k,j) = 0.0;
+      // ck-determinism: this block's own slots of the tridiagonal (ck_jacq_ptr)
+      if constexpr (JAC) {
+        ckjac_g(m,3*blk,k,j,i) = 0.0;
+        ckjac_g(m,3*blk+1,k,j,i) = 0.0;
+        ckjac_g(m,3*blk+2,k,j,i) = 0.0;
+      }
     }
     const int icut = icc_g(m,k,j);
     if (icut > ie) return;                  // whole column deeper than the cut
@@ -3179,14 +3193,14 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real jm = wj*(rat*dd1 - jDu[cc][0]);
               const Real j0 = wj*(rat*dd2 - jDu[cc][1]);
               const Real jp = wj*(rat*dd3 - jDu[cc][2]);
-              Kokkos::atomic_add(&ckjac_g(m,1,k,j,i), j0*ckdb_g(m,b,i,k,j));
+              CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,i), j0*ckdb_g(m,b,i,k,j));
               if ((i > icut || (ckdif_ && icut > icut_g(m,k,j)))
                   && jm > 0.0) {
-                Kokkos::atomic_add(&ckjac_g(m,0,k,j,i),
+                CkJacQAdd(&ckjac_g(m,3*blk+0,k,j,i),
                                    jm*ckdb_g(m,b,i-1,k,j));
               }
               if (i < ie && jp > 0.0) {
-                Kokkos::atomic_add(&ckjac_g(m,2,k,j,i),
+                CkJacQAdd(&ckjac_g(m,3*blk+2,k,j,i),
                                    jp*ckdb_g(m,b,i+1,k,j));
               }
               // shift everything down one cell: slots become (B_{i-2}, B_{i-1},
@@ -3490,7 +3504,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               // condition, so the whole row entry is the layer's own emission
               Real e0j, cij, coj;
               jcof(cc, i, 0.5*kro*dz, muc[cc], e0j, cij, coj);
-              Kokkos::atomic_add(&ckjac_g(m,1,k,j,i),
+              CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,i),
                   -(wfc[cc]/dz)*(cij + coj)*ckdb_g(m,b,i,k,j));
               jdn[cc] = cij + coj;
             }
@@ -3537,9 +3551,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real wu = wfc[cc]/dzf;
               const Real wl = wfc[cc]/dz;
               // the upper half lies inside cell i+1 and is that cell's row
-              Kokkos::atomic_add(&ckjac_g(m,1,k,j,i+1),
+              CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,i+1),
                   wu*(e0u*jdn[cc] - (ciu*pu + cou*dfu))*dbu);
-              Kokkos::atomic_add(&ckjac_g(m,0,k,j,i+1),
+              CkJacQAdd(&ckjac_g(m,3*blk+0,k,j,i+1),
                   -wu*(ciu*(1.0 - pu) + cou*dfl)*dbl);
               Real au = (1.0 - e0u)*jdn[cc] + ciu*pu + cou*dfu;
               Real al = ciu*(1.0 - pu) + cou*dfl;
@@ -3549,9 +3563,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 au *= (1.0 + bt_d);
                 al *= (1.0 + bt_d);
               }
-              Kokkos::atomic_add(&ckjac_g(m,1,k,j,i),
+              CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,i),
                   wl*(e0l*al - (cil*dfl + col*pl))*dbl);
-              Kokkos::atomic_add(&ckjac_g(m,2,k,j,i),
+              CkJacQAdd(&ckjac_g(m,3*blk+2,k,j,i),
                   wl*(e0l*au - (cil*dfu + col*(1.0 - pl)))*dbu);
               jdn[cc] = (1.0 - e0l)*al + cil*dfl + col*pl;
             }
@@ -3612,7 +3626,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
           if (jck) {
             Real e0j, cij, coj;
             jcof(cc, icut, 0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
-            Kokkos::atomic_add(&ckjac_g(m,1,k,j,icut),
+            CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,icut),
                 (wfc[cc]/dz)*(e0j*jdn[cc] - (cij + coj))
                 *ckdb_g(m,bandc[cc],icut,k,j));
           }
@@ -3763,7 +3777,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
           if (jck) {
             Real e0j, cij, coj;
             jcof(cc, icut, 0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
-            Kokkos::atomic_add(&ckjac_g(m,1,k,j,icut),
+            CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,icut),
                 (wfc[cc]/dz)*(e0j*jup[cc] - (cij + coj))
                 *ckdb_g(m,bandc[cc],icut,k,j));
             jup[cc] = (1.0 - e0j)*jup[cc] + cij + coj;
@@ -3836,9 +3850,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             const Real dbu = ckdb_g(m,b,i+1,k,j);
             const Real wl = wfc[cc]/dzl;
             const Real wu = wfc[cc]/dzu;
-            Kokkos::atomic_add(&ckjac_g(m,1,k,j,i),
+            CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,i),
                 wl*(e0l*jup[cc] - (cil*pl + col*dfl))*dbl);
-            Kokkos::atomic_add(&ckjac_g(m,2,k,j,i),
+            CkJacQAdd(&ckjac_g(m,3*blk+2,k,j,i),
                 -wl*(cil*(1.0 - pl) + col*dfu)*dbu);
             Real bd = (1.0 - e0l)*jup[cc] + cil*pl + col*dfl;
             Real bpu = cil*(1.0 - pl) + col*dfu;
@@ -3848,9 +3862,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               bd *= rat_u;
               bpu *= rat_u;
             }
-            Kokkos::atomic_add(&ckjac_g(m,1,k,j,i+1),
+            CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,i+1),
                 wu*(e0u*bpu - (ciu*dfu + cou*pu))*dbu);
-            Kokkos::atomic_add(&ckjac_g(m,0,k,j,i+1),
+            CkJacQAdd(&ckjac_g(m,3*blk+0,k,j,i+1),
                 wu*(e0u*bd - (ciu*dfl + cou*(1.0 - pu)))*dbl);
             jup[cc] = (1.0 - e0u)*bpu + ciu*dfu + cou*pu;
           }
@@ -3871,7 +3885,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
           if (jck) {
             Real e0j, cij, coj;
             jcof(cc, ie, 0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
-            Kokkos::atomic_add(&ckjac_g(m,1,k,j,ie),
+            CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,ie),
                 (wfc[cc]/dz)*(e0j*jup[cc] - (cij + coj))
                 *ckdb_g(m,bandc[cc],ie,k,j));
           }
@@ -6382,7 +6396,21 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // expression DAG can shift -- and its per-thread face-mixing column (Cmx below)
         // shrinks to one element instead of NC x NN.  See ck_spherical.
         // problem/ck_implicit: the chain blocks accumulate into ONE tridiagonal per
-        // column with atomics, so it is zeroed here, once, before any of them run.
+        // column, so it is zeroed here, once, before any of them run.  ck-determinism:
+        // the JAC chain kernel adds into per-block slots (ck_jacq_ptr; each thread zeroes
+        // its own), and ck_jacq_sum adds them into ck_jac in block order after it.
+        const bool ckjq_ = ckjacp_ && !ckjl_;
+        if (ckjq_) {
+          const auto &jx = *ck_jac_ptr;
+          if (ck_jacq_ptr == nullptr
+              || ck_jacq_ptr->extent(0) != jx.extent(0)
+              || ck_jacq_ptr->extent(1) != static_cast<size_t>(3*nblk)) {
+            if (ck_jacq_ptr != nullptr) delete ck_jacq_ptr;
+            ck_jacq_ptr = new DvceArray5D<Real>("ck_jacq", jx.extent(0), 3*nblk,
+                                                jx.extent(2), jx.extent(3), jx.extent(4));
+          }
+        }
+        auto ckjq_g = ckjq_ ? *ck_jacq_ptr : CkDum<DvceArray5D<Real>>("ck_jacq_d");
         if (ckjacp_) {
           par_for("ck_jac_zero", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -6400,7 +6428,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                   boltz_sigma, BTF, cbt_, cf_g, ckc0_g,
                                                   ckci_g, ckco_g, ckdb_g, ckdif_,
                                                   ckdone_g, ckfcf_, ckfst_, ckfus_, ckgw,
-                                                  ckjac_g, ckjacp_, ckkro_g, cklk, ck_nq_,
+                                                  ckjq_g, ckjacp_, ckkro_g, cklk, ck_nq_,
                                                   ckpf, ckskip_, ckswf, cktpf_g, difg_g,
                                                   dx1, Em_g, Fb_g, Fstar, grav,
                                                   grav_pmass, icc_g, icut_g, ie,
@@ -7234,6 +7262,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             } else {
               launch_ck_tier(std::false_type{}, std::false_type{});
             }
+          }
+          // ck-determinism: the JAC pass's per-block tridiagonals, added in block order
+          if (ckjq_ && cksph_ && ckform_ == 1) {
+            par_for("ck_jacq_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
+              for (int b=0; b<nblk; ++b) {
+                s0 += ckjq_g(m,3*b,k,j,i);
+                s1 += ckjq_g(m,3*b+1,k,j,i);
+                s2 += ckjq_g(m,3*b+2,k,j,i);
+              }
+              ckjac_g(m,0,k,j,i) = s0;
+              ckjac_g(m,1,k,j,i) = s1;
+              ckjac_g(m,2,k,j,i) = s2;
+            });
           }
         };
         {   // ck-tiers: every column kernel is sized by n1 at run time; no n1 cap
