@@ -27,6 +27,9 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <map>
+#include <utility>
+#include <vector>
 #include <memory>
 #include <cstdio> // sscanf
 #include <fstream>  // Include this for std::ifstream
@@ -56,6 +59,146 @@
 //----------------------------------------------------------------------------------------
 //! \fn int main(int argc, char *argv[])
 //! \brief Athena main program
+
+namespace {
+//----------------------------------------------------------------------------------------
+//! RESTART CONSISTENCY OF THE GRAVITATIONAL POTENTIAL (<hydro|mhd>/etotgrav).
+//!
+//! With etotgrav the conserved energy carries rho*Phi, and a restart file stores that
+//! energy but not Phi: every pgen rebuilds phicc0/phi0 from the CURRENT input keys.  A
+//! key that defines Phi and is changed at restart (command line or -i file) therefore
+//! shifts every cell's internal energy by rho*(Phi_old - Phi_new) without a word -- e.g.
+//! omega with rot_potential, a ~70 % temperature shock at the dhj photosphere.  The
+//! restart file embeds the input it was written with, so the keys below are compared
+//! between that embedded copy and the effective input, and a change is FATAL unless
+//! <problem>/allow_potential_change = true is given for THIS restart (it is reset to
+//! false afterwards, so it is never inherited by the restarts this run writes).
+//!
+//! The list is the union over the pgens that fill phicc0 (dhj, red_giant/He4, box,
+//! convection/solar/cooling, hse_atm, hotbubble, wb_atm, shallow_hot_jupiter): gravity
+//! and potential keys, the unit system they are converted with, and the mesh keys that
+//! place the cell centres.  problem/omega counts only when rot_potential is on.
+
+std::map<std::string, std::string> SnapshotPotentialKeys(ParameterInput *pin,
+    const std::vector<std::pair<std::string, std::string>> &keys) {
+  std::map<std::string, std::string> snap;
+  for (const auto &bk : keys) {
+    if (pin->DoesParameterExist(bk.first, bk.second)) {
+      snap[bk.first + "/" + bk.second] = pin->GetString(bk.first, bk.second);
+    }
+  }
+  return snap;
+}
+
+// the same value spelled differently ("true"/"1", "2.0e-5"/"2e-5") is not a change
+bool SameParamValue(const std::string &a, const std::string &b) {
+  if (a == b) return true;
+  auto asbool = [](const std::string &v, int &out) -> bool {
+    if (v == "true" || v == "True" || v == "TRUE") {
+      out = 1;
+      return true;
+    }
+    if (v == "false" || v == "False" || v == "FALSE") {
+      out = 0;
+      return true;
+    }
+    return false;
+  };
+  int ba, bb;
+  const bool isa = asbool(a, ba), isb = asbool(b, bb);
+  char *ea = nullptr, *eb = nullptr;
+  const double da = std::strtod(a.c_str(), &ea);
+  const double db = std::strtod(b.c_str(), &eb);
+  const bool numa = (ea != a.c_str() && *ea == '\0');
+  const bool numb = (eb != b.c_str() && *eb == '\0');
+  if (isa || isb) {
+    if (!isa) {
+      if (!numa) return false;
+      ba = (da != 0.0);
+    }
+    if (!isb) {
+      if (!numb) return false;
+      bb = (db != 0.0);
+    }
+    return ba == bb;
+  }
+  if (numa && numb) return da == db;
+  return false;
+}
+
+bool ParamIsTrue(const std::map<std::string, std::string> &snap,
+                 const std::string &key) {
+  auto it = snap.find(key);
+  return (it != snap.end()) && SameParamValue(it->second, "true");
+}
+
+const std::vector<std::pair<std::string, std::string>> &PotentialKeys() {
+  static const std::vector<std::pair<std::string, std::string>> keys = {
+    {"hydro", "etotgrav"}, {"mhd", "etotgrav"},
+    {"problem", "grav"}, {"problem", "g0"}, {"problem", "ap"},
+    {"problem", "grav_point_mass"}, {"problem", "rot_potential"}, {"problem", "omega"},
+    {"problem", "mstar"}, {"problem", "rin"}, {"problem", "iprob"},
+    {"hydro_srcterms", "const_accel_val"}, {"mhd_srcterms", "const_accel_val"},
+    {"units", "length_cgs"}, {"units", "mass_cgs"}, {"units", "time_cgs"},
+    {"mesh", "x1min"}, {"mesh", "x1max"}, {"mesh", "x2min"}, {"mesh", "x2max"},
+    {"mesh", "x3min"}, {"mesh", "x3max"},
+    {"mesh", "use_grid_stretch_r"}, {"mesh", "f_stretch_r"},
+    {"mesh", "use_grid_stretch_r_poly"}, {"mesh", "f_stretch_r_c1"},
+    {"mesh", "f_stretch_r_c2"}, {"mesh", "f_stretch_r_c3"}, {"mesh", "f_stretch_r_c4"},
+    {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
+  };
+  return keys;
+}
+
+void CheckRestartPotentialKeys(ParameterInput *pin,
+                               const std::map<std::string, std::string> &file) {
+  const auto now = SnapshotPotentialKeys(pin, PotentialKeys());
+  const bool etg = ParamIsTrue(file, "hydro/etotgrav") ||
+                   ParamIsTrue(file, "mhd/etotgrav") ||
+                   ParamIsTrue(now, "hydro/etotgrav") || ParamIsTrue(now, "mhd/etotgrav");
+  if (!etg) return;
+  const bool rotpot = ParamIsTrue(file, "problem/rot_potential") ||
+                      ParamIsTrue(now, "problem/rot_potential");
+  std::string changed;
+  for (const auto &bk : PotentialKeys()) {
+    const std::string key = bk.first + "/" + bk.second;
+    if (key == "problem/omega" && !rotpot) continue;
+    auto f = file.find(key);
+    auto n = now.find(key);
+    const bool inf = (f != file.end()), inn = (n != now.end());
+    if (!inf && !inn) continue;
+    if (inf && inn && SameParamValue(f->second, n->second)) continue;
+    changed += "    " + key + ": restart file " + (inf ? f->second : "(absent)")
+               + " -> now " + (inn ? n->second : "(absent)") + "\n";
+  }
+  bool allow = false;
+  if (pin->DoesParameterExist("problem", "allow_potential_change")) {
+    allow = pin->GetBoolean("problem", "allow_potential_change");
+    pin->SetBoolean("problem", "allow_potential_change", false);
+  }
+  if (changed.empty()) return;
+  if (global_variable::my_rank == 0) {
+    std::cout << (allow ? "### WARNING" : "### FATAL ERROR") << " in " << __FILE__
+              << ": a key that defines the gravitational potential differs from the "
+              << "restart file,\n" << changed
+              << "  With <hydro|mhd>/etotgrav the stored energy holds rho*Phi of the OLD "
+              << "potential, so every\n  cell's internal energy would jump by "
+              << "rho*(Phi_old - Phi_new) at the restart.\n"
+              << (allow ? "  Continuing: <problem>/allow_potential_change = true "
+                          "(for this restart only).\n"
+                        : "  Set <problem>/allow_potential_change = true to do it "
+                          "anyway.\n") << std::flush;
+  }
+  if (!allow) {
+    // every rank read the same restart header and command line, so every rank is here
+    Kokkos::finalize();
+#if MPI_PARALLEL_ENABLED
+    MPI_Finalize();
+#endif
+    std::exit(EXIT_FAILURE);
+  }
+}
+}  // namespace
 
 int main(int argc, char *argv[]) {
   std::string input_file, restart_file, run_dir;
@@ -231,6 +374,7 @@ int main(int argc, char *argv[]) {
 
   ParameterInput* pinput = new ParameterInput;
   IOWrapper infile, restartfile;
+  std::map<std::string, std::string> rst_potential_keys;   // see PotentialKeys()
   // read parameters from restart file
   bool single_file_per_rank = false; // DBF: flag for single_file_per_rank for rst files
   if (res_flag) {
@@ -262,6 +406,7 @@ int main(int argc, char *argv[]) {
     // read parameters from restart file
     restartfile.Open(restart_file.c_str(),IOWrapper::FileMode::read,single_file_per_rank);
     pinput->LoadFromFile(restartfile, single_file_per_rank);
+    rst_potential_keys = SnapshotPotentialKeys(pinput, PotentialKeys());
     IOWrapperSizeT headeroffset = restartfile.GetPosition(single_file_per_rank);
   }
 
@@ -273,7 +418,19 @@ int main(int argc, char *argv[]) {
     infile.Close();
     pinput->CheckBlockNames();
   }
+  // <problem>/allow_potential_change given on the command line of a restart: register
+  // the key first (ModifyFromCmdline only overrides EXISTING keys).  Only then, so a
+  // restart without it writes the same parameter header as before; see
+  // CheckRestartPotentialKeys
+  if (res_flag) {
+    for (int i = 1; i < argc; ++i) {
+      if (std::string(argv[i]).find("problem/allow_potential_change") == 0) {
+        pinput->GetOrAddBoolean("problem", "allow_potential_change", false);
+      }
+    }
+  }
   pinput->ModifyFromCmdline(argc, argv);
+  if (res_flag) CheckRestartPotentialKeys(pinput, rst_potential_keys);
 
   // Dump input parameters and quit if code was run with -n option.
   if (narg_flag) {

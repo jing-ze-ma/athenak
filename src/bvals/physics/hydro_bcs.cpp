@@ -15,12 +15,92 @@
 #include "eos/eos.hpp"
 
 //----------------------------------------------------------------------------------------
+//! \fn void GravEtotGhosts()
+//! \brief <hydro|mhd>/etotgrav: re-reference the potential energy of the ghost cells a
+//! built-in BC just filled along direction `dir`.
+//!
+//! With etotgrav the conserved energy is E = e + KE (+ emag) + rho*Phi.  The reflect,
+//! outflow and diode BCs COPY u0 from an active cell, so the ghost inherits rho*Phi of
+//! the SOURCE cell, and ConToPrim then removes rho*Phi of the GHOST: the ghost's internal
+//! energy came out wrong by rho*(Phi_src - Phi_ghost), i.e. rho g dz per ghost layer
+//! wherever the potential varies across the face (a bottom wall is heated, an outflow top
+//! can go negative).  After the copy the ghost's density is the source's, so
+//!     E_ghost += rho_ghost*(Phi_ghost - Phi_src)
+//! makes it the source's e + KE plus the ghost's own potential energy.  Inflow ghosts
+//! are set from u_in, which carries no potential energy: they get + rho_ghost*Phi_ghost.
+//! Vacuum ghosts are zero (rho = 0) and need nothing.  Where the potential does not vary
+//! across the face the correction is rho*0 = +0.0 and E is unchanged bit for bit.
+
+namespace {
+void GravEtotGhosts(MeshBlockPack *ppack, DvceArray5D<Real> u0, DvceArray4D<Real> phi,
+                    const int dir) {
+  auto &indcs = ppack->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  auto &mb_bcs = ppack->pmb->mb_bcs;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = ppack->nmb_thispack;
+  int lo, hi, na, nb, fin, fout;
+  if (dir == 1) {
+    lo = indcs.is; hi = indcs.ie; na = n3; nb = n2;
+    fin = BoundaryFace::inner_x1; fout = BoundaryFace::outer_x1;
+  } else if (dir == 2) {
+    lo = indcs.js; hi = indcs.je; na = n3; nb = n1;
+    fin = BoundaryFace::inner_x2; fout = BoundaryFace::outer_x2;
+  } else {
+    lo = indcs.ks; hi = indcs.ke; na = n2; nb = n1;
+    fin = BoundaryFace::inner_x3; fout = BoundaryFace::outer_x3;
+  }
+  par_for("hydrobc_etg", DevExeSpace(), 0, (nmb-1), 0, (na-1), 0, (nb-1),
+  KOKKOS_LAMBDA(int m, int a, int b) {
+    // (a, b) = (k, j) for dir 1, (k, i) for dir 2, (j, i) for dir 3; `x` is the index
+    // along dir
+    auto fix = [&](const int xg, const int xs) {
+      const int k = (dir == 3) ? xg : a;
+      const int j = (dir == 2) ? xg : ((dir == 3) ? a : b);
+      const int i = (dir == 1) ? xg : b;
+      Real dphi = phi(m,k,j,i);
+      if (xs >= 0) {
+        const int ks = (dir == 3) ? xs : k;
+        const int js = (dir == 2) ? xs : j;
+        const int is = (dir == 1) ? xs : i;
+        dphi -= phi(m,ks,js,is);
+      }
+      u0(m,IEN,k,j,i) += u0(m,IDN,k,j,i)*dphi;
+    };
+    for (int face = 0; face < 2; ++face) {
+      const BoundaryFlag flag = mb_bcs.d_view(m, (face == 0) ? fin : fout);
+      for (int g=0; g<ng; ++g) {
+        const int xg = (face == 0) ? (lo - g - 1) : (hi + g + 1);
+        switch (flag) {
+          case BoundaryFlag::reflect:
+            fix(xg, (face == 0) ? (lo + g) : (hi - g));
+            break;
+          case BoundaryFlag::outflow:
+          case BoundaryFlag::diode:
+            fix(xg, (face == 0) ? lo : hi);
+            break;
+          case BoundaryFlag::inflow:
+            fix(xg, -1);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+  });
+}
+}  // namespace
+
+//----------------------------------------------------------------------------------------
 //! \!fn void BoundaryValues::HydroBCs()
 //! \brief Apply physical boundary conditions for all Hydro variables at faces of MB which
 //! are at the edge of the computational domain
 
 void MeshBoundaryValues::HydroBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
-                                  DvceArray5D<Real> u0) {
+                                  DvceArray5D<Real> u0, DvceArray4D<Real> phi) {
+  const bool etg = (phi.size() > 0);
   // loop over all MeshBlocks in this MeshBlockPack
   auto &pm = ppack->pmesh;
   auto &indcs = ppack->pmesh->mb_indcs;
@@ -118,6 +198,7 @@ void MeshBoundaryValues::HydroBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
           break;
       }
     });
+    if (etg) GravEtotGhosts(ppack, u0, phi, 1);
   }
 
   if (pm->one_d) return;
@@ -206,6 +287,7 @@ void MeshBoundaryValues::HydroBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
           break;
       }
     });
+    if (etg) GravEtotGhosts(ppack, u0, phi, 2);
   }
   if (pm->two_d) return;
 
@@ -293,6 +375,7 @@ void MeshBoundaryValues::HydroBCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
         break;
     }
   });
+  if (etg) GravEtotGhosts(ppack, u0, phi, 3);
 
   return;
 }

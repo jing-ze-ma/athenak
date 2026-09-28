@@ -644,7 +644,9 @@ TaskStatus MHD::ApplyPhysicalBCs(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->strictly_periodic) return TaskStatus::complete;
 
   // physical BCs
-  pbval_u->HydroBCs((pmy_pack), (pbval_u->u_in), u0);
+  // with etotgrav the copy BCs re-reference rho*Phi to the ghost's own potential
+  pbval_u->HydroBCs((pmy_pack), (pbval_u->u_in), u0,
+                    use_etotgrav ? phicc0 : DvceArray4D<Real>());
   pbval_b->BFieldBCs((pmy_pack), (pbval_b->b_in), b0);
 
   // user BCs

@@ -286,10 +286,12 @@ TaskStatus Radiation::ApplyPhysicalBCs(Driver *pdrive, int stage) {
   hydro::Hydro *phyd = pmy_pack->phydro;
   mhd::MHD *pmhd = pmy_pack->pmhd;
   if (pmhd != nullptr) {
-    pmhd->pbval_u->HydroBCs((pmy_pack), (pmhd->pbval_u->u_in), pmhd->u0);
+    pmhd->pbval_u->HydroBCs((pmy_pack), (pmhd->pbval_u->u_in), pmhd->u0,
+                            pmhd->use_etotgrav ? pmhd->phicc0 : DvceArray4D<Real>());
     pmhd->pbval_b->BFieldBCs((pmy_pack), (pmhd->pbval_b->b_in), pmhd->b0);
   } else if (phyd != nullptr) {
-    phyd->pbval_u->HydroBCs((pmy_pack), (phyd->pbval_u->u_in), phyd->u0);
+    phyd->pbval_u->HydroBCs((pmy_pack), (phyd->pbval_u->u_in), phyd->u0,
+                            phyd->use_etotgrav ? phyd->phicc0 : DvceArray4D<Real>());
   }
 
   // user BCs
