@@ -93,3 +93,30 @@ Optional: find the exact GPU contraction that breaks bitwise at ck-next cn10 (di
 - **HIP gate pending on viper**: see `TASK-2026-09-27-cklin2-hip-gate.md`.
 - Dropped variants (records only): l3 (lin_build per chain pair), CK_BTG 16, team 256.
 - Next ck cost per storing call on 1 H200, in ms: lin_build 10.6, jlin 9.7, beam_tau 6.9, lin1p 6.3, coef 3.1.
+
+## 6. End of the 09-27 Caltech session (rt-integration 519b2409, pushed; nothing running)
+
+- **ck-lin2-fma merged (8be0ad67).** CPU gate after the merge: bitwise. The HIP gate is pending on viper.
+- **Dropped and kept as record branches only:**
+  - ck-lb (lin_build prefetch / unroll): 0 %.
+  - ck-jl (jlin LaunchBounds): 0 / +0.7 / +2.8 %, because the register caps spill.
+  - The tuning variants ckl-v16 and ckl-t256, the l3 pair-thread variant, and the debug branches ckl-dbg, ckl-fma,
+    ckl-mrn and ckl-mrn-head.
+- **Per-cycle profile** (1 H200, nx1 256): ck costs ~13 ms/cycle, of which lin1p + lin_sum are 45 % and the
+  storing kernels 32 %.
+  - Results are in `/resnick/groups/carnegie_poc/jingze/ckprof`.
+  - The timing harness (`run_caltech.sub`, `tjob`, `prof`) sets `VERB=true`, i.e. ck_impl_verbose. That adds
+    1.28 ms/cycle, so **use VERB=false for timing from now on**.
+- **User decisions:**
+  - Speed work is worth doing only for more than 20 % of the WHOLE run. The ck/hydro micro-levers found
+    (redundant split ConToPrim tasks, the PackAndSendCC vector length, the lin_sum fold, a single EOS solve) are
+    **declined**. ck speed work on Caltech is closed.
+  - The speed-default audit is handed to viper to decide: `TASK-2026-09-28-speed-default-audit.md`.
+    Nothing was switched off.
+- **Node hpc-sm-02-16** was ~2.3 ms/cycle slow on 2-GPU timing. Exclude it from timing jobs, alongside
+  hpc-sm-01-09.
+- **Token cleanup (NOTE-2026-09-28):** Caltech is clean. The search of scratch scripts timed out before it
+  finished.
+- **Queue tips:**
+  - QOS debug (priority 10000, 1 running job per user) is the only priority lever; our fairshare is 0.24.
+  - Keep multi-binary builds on normal QOS: builds hit the 30-min debug limit twice.
