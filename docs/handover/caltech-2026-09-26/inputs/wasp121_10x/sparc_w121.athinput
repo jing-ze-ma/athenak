@@ -145,7 +145,7 @@ rad_met        = 1.0   # WASP-121b: [M/H] = +1 (10x solar); unused under route B
 eos             = general
 general_eos     = table
 reconstruct     = plm
-rsolver         = hllc            # H2: was hlld (MHD-only)
+rsolver         = lhllc             # user 09-29: lhllc for dhj (was hllc; H2: was hlld)
 # cs_lowbeta_fallback: REMOVED (H4, MHD-only)
 gamma           = 1.4727545958   # unused by the table; kept so ideal/general inputs match
 etotgrav        = true
