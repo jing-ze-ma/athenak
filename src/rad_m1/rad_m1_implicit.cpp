@@ -991,8 +991,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   const bool ldef = full && ts_ok && fixcl && !global_variable::restart_run;
   impl_fastk = pin->GetOrAddBoolean("rad_m1","implicit_fast_kernels",ldef);
   // implicit_vimp_fold: default OFF since audit-m1-0928 (gain 0.9-2.3 % per simulated
-  // second on the moving He box and sph_wedge, MI300A 1 and 2 GPUs; under the ~3 % bar for
-  // a result-changing default).  Opt-in by name.
+  // second on the moving He box and sph_wedge, MI300A 1 and 2 GPUs; under the ~3 % bar
+  // for a result-changing default).  Opt-in by name.
   impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",false);
   // implicit_one_pass: default 0 (off) everywhere since audit-m1-0928 (8 + auto gained
   // -2.8..+0.0 % on the moving He box and sph_wedge on MI300A, i.e. nothing, and changes
