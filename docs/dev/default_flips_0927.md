@@ -25,8 +25,19 @@ The ke-dt keys (`force_reference_work`, `implicit_opac_update`, `implicit_one_pa
 | `rad_m1/implicit_precond` | rbgs_fwd (Cartesian fast path) | mg | Cartesian fast path on a multi-D, single-level mesh (not cs / sp / polar), `implicit_krylov_dev` not named > 0, fresh runs | runs_5m_precond: He box -7 %/cycle (1 GPU), -6 % (2 GPUs) |
 | `rad_m1/implicit_mg_levels` (under mg) | 2 | 3 | every mg run | runs_5m_precond recommended value |
 
-Not flipped (user rules or open decisions): `ck_implicit` itself, the c2 levers (`ck_impl_once`,
-`ck_impl_jreuse`, `ck_impl_pred`), `ck_impl_every`, `ck_impl_floorbound` / `ck_impl_kkt_demax`,
+## Second round (branch defaults2-0927, 2026-09-27/28)
+
+| key | old default | new default | where the new default applies (otherwise old) | evidence |
+|---|---|---|---|---|
+| `problem/ck_implicit` (deep_hot_jupiter_rt) | false | true | FRESH runs with `rt_ck`, `rt_use_cons`, not `rt_layer_legacy`, `ck_sweep_form != 2` (the switch's own refusals); **false on restarts** (a file written by an older binary records `ck_implicit = 0`; one written before the key existed ran the semi-implicit apply) | user decision 09-27 (the production scheme); the T4 set, `ck_impl_arat` 1e30 and `ck_impl_nosync` follow automatically (conditional on it) |
+| `problem/ck_impl_floorbound`, `problem/ck_impl_kkt_demax` | false | true | fresh runs on the fused Newton (`ck_implicit`, `ck_impl_fuse`, `ck_impl_debug <= 0`, `ck_impl_glob = none`, `ck_impl_aa = 0`); false on restarts | bitwise vs off where no cell reaches a bound (CPU gates, floor = kkt = 0); where they bind (both WASP-121b productions, every call) the unconstrained Newton does not converge: 1x 466/500 calls NOT-CONVERGED off vs 6/500 on, 10x 500/500 vs 133/500 (/viper/ptmp2/jinma/defaults2_0927/B) |
+
+The prod4 / hyd4 record inputs (inputs/production) now name `ck_implicit = false` (as run).
+`tst` `test_rad_dhj_srclim_cpu.py` tests the semi-implicit `rt_de_max` limiter and now runs a copy
+of its input that names `ck_implicit = false`.  Gates and numbers: /viper/ptmp2/jinma/defaults2_0927/RESULTS.md (viper).
+
+Not flipped (user rules or open decisions): `ck_implicit` itself (flipped in the second round), the c2 levers (`ck_impl_once`,
+`ck_impl_jreuse`, `ck_impl_pred`), `ck_impl_every`, `ck_impl_floorbound` / `ck_impl_kkt_demax` (second round: flipped),
 `ck_pcut_bar`, `grav_point_mass` / `rot_potential`, `f_source = wb`; relaxation-only levers,
 cfl 0.9, the floor switches and all tolerances.  Inventory with reasons:
 /viper/ptmp2/jinma/defaults_0927/INVENTORY.md (viper).
