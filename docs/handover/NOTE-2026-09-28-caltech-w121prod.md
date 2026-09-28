@@ -12,3 +12,8 @@ User 09-28: the WASP-121b fresh start of SESSION-2026-09-28-viper.md section 4 r
 - Chain: build 3607758 -> smoke 3607759/3607760 (50 cycles, fail on FATAL/NOT-CONVERGED) -> prod 3607761 (1x),
   3607762 (10x). Run dirs `/resnick/groups/carnegie_poc/jingze/w121prod_0928/{1x,10x}`.
 - For the nx1 256 remap at rot 300: the rst files will be copied to viper (or the remap run here).
+
+**Update 09-29 (Caltech, NOTE-2026-09-29-dhj-rsolver.md):** both inputs switched to `rsolver = lhllc` BEFORE any run
+started (build 3607758 done, 6faba555 md5 in the job logs; smokes 3607759/60 were still queued; no hllc run exists, so
+nothing to stop or rename). Same job ids: smoke 3607759 (1x) / 3607760 (10x) -> prod 3607761 (1x) / 3607762 (10x).
+Smoke result to follow.
