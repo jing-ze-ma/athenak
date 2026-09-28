@@ -17,6 +17,7 @@
 #include "eos/eos.hpp"
 #include "hydro/rsolvers/llf_hyd_singlestate.hpp"
 #include "hydro.hpp"
+#include "hydro/fofc_etotgrav.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -125,6 +126,14 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       }
       }
     });
+
+    // <hydro>/etotgrav: the trial energy still carries rho*Phi and lacks the
+    // gravitational energy flux; make it e + KE of the trial state before the floor test
+    // (and the cubed-sphere GnomonicRaiseVelFloors test below).  See fofc_etotgrav.hpp.
+    if (use_etotgrav) {
+      FofcTrialRemoveGrav(pmy_pack, utest_, uflx, phicc0, phi0, beta_dt,
+                          il, iu, jl, ju, kl, ku);
+    }
 
     // Test whether conversion to primitives requires floors
     // Note b0 and w0 passed to function, but not used/changed.

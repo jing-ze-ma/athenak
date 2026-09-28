@@ -6,6 +6,7 @@
 //! \file mhd.cpp
 //! \brief implementation of MHD class constructor and assorted functions
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <algorithm>
@@ -214,6 +215,17 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         
     // determine if etotgrav and local well-balanced scheme is enabled
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
+    // SMR/AMR is not supported with etotgrav: the coarse-buffer inversion used for
+    // primitive prolongation (bvals/prolong_prims.cpp) reads e + rho*Phi as the internal
+    // energy, the conserved prolongation of rho*Phi is removed again with the FINE
+    // potential, and a regrid never rebuilds phicc0/phi0 on the new blocks.
+    if (use_etotgrav && pmy_pack->pmesh->multilevel) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/etotgrav = true is not supported with mesh "
+                << "refinement (SMR/AMR): the potential energy is not handled at level "
+                << "boundaries or on regrid." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     use_wellbalance_dynamic = pin->GetOrAddBoolean("mhd","wellbalance_dynamic",false);
     use_wb_x1 = pin->GetOrAddBoolean("mhd","wb_x1",false);
     // rebuild the well-balanced background cache at stage 1 of every N-th cycle instead

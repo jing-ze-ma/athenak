@@ -1314,6 +1314,8 @@ inline int rt_report_every = 100;                 // problem/rt_report_every [cy
 inline DvceArray4D<Real> *rt_idn_ptr = nullptr;   // downward stream at face i
 inline DvceArray4D<Real> *rt_iup_ptr = nullptr;   // upward stream at face i
 inline bool rt_srclim_warned = false;             // the one-time warning has been issued
+inline int64_t rt_srclim_acc = 0;     // clips on THIS rank not yet reduced (see below)
+inline int rt_srclim_ncall = 0;       // outer RT calls since the last reduction
 // problem/nan_report: catch the cell whose conserved energy the GREY apply makes
 // non-finite or non-positive, IN the kernel, with the inputs that produced it.  Off by
 // default, so a default run is bit-identical.  Pointers, not Views, for the same reason
@@ -1404,16 +1406,52 @@ Real RTTopDtau(const Real kap, const Real pcgs, const Real geff) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RTSourceLimiterWarn
-//! \brief say ONCE, from rank 0, that LimitRTSource has clipped cells.
+//! \brief COUNT the cells LimitRTSource clipped on this rank; RTSourceLimiterReduce says
+//! so, once per run.
 //!
-//! Once, not per call: a run that trips this trips it every cycle, and the message is
-//! about the configuration, not about the individual step.
+//! This is called from inside the pass (picket_fence_two_stream_RT_pass), whose number
+//! of calls is RANK-LOCAL under ck_implicit (the Newton loop stops per rank), so it must
+//! not hold a collective: it only accumulates.  The count used to be printed from here
+//! on rank 0 with rank 0's share alone, so a run whose clipping sat on other ranks
+//! showed a clean log.
 inline void RTSourceLimiterWarn(const int nclip) {
-  if (nclip <= 0 || rt_srclim_warned) return;
+  if (rt_srclim_warned || nclip <= 0) return;
+  rt_srclim_acc += nclip;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RTSourceLimiterReduce
+//! \brief sum the clip count over ALL ranks and say ONCE, from rank 0, that LimitRTSource
+//! has clipped cells.
+//!
+//! Called once per outer call (picket_fence_two_stream_RT), which every rank makes the
+//! same number of times, so every rank takes the same branch: the reduction happens on
+//! the same calls everywhere and rt_srclim_warned flips on every rank at once (it is set
+//! from the reduced sum).  Once, not per call: a run that trips this trips it every
+//! cycle, and the message is about the configuration, not the individual step.  After
+//! the warning there is no reduction at all; before it one MPI_Allreduce of one integer
+//! every kRTSrcLimEvery calls (at most a few tens of microseconds per 16 RT calls).
+constexpr int kRTSrcLimEvery = 16;
+inline void RTSourceLimiterReduce() {
+  if (rt_srclim_warned) return;
+  int64_t tot = rt_srclim_acc;
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    if (++rt_srclim_ncall < kRTSrcLimEvery) return;
+    rt_srclim_ncall = 0;
+    MPI_Allreduce(MPI_IN_PLACE, &tot, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  }
+#endif
+  if (tot <= 0) return;
   rt_srclim_warned = true;
+  rt_srclim_acc = 0;
   if (global_variable::my_rank == 0) {
     std::cout << "### WARNING in deep_hot_jupiter_rt: the explicit radiative source was "
-              << "clipped in " << nclip << " cell(s) by problem/rt_de_max = " << rt_de_max
+              << "clipped in " << tot << " cell update(s) (all ranks";
+    if (global_variable::nranks > 1) {
+      std::cout << ", summed over the last <= " << kRTSrcLimEvery << " RT calls";
+    }
+    std::cout << ") by problem/rt_de_max = " << rt_de_max
               << ".\n    The radiative time e/|src| is shorter than the timestep there, "
               << "so the radiation is outside\n    the regime this operator-split scheme "
               << "is valid in. The usual cause is a pressure or\n    density floor "
@@ -1817,7 +1855,7 @@ inline void CkNonconvLoc(Mesh *pm, const Real bdt) {
 //! \fn picket_fence_two_stream_RT
 //! \brief the two-stream source step.
 
-inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
+inline void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
   // ---- problem/rt_implicit_column: the merged tridiagonal Newton --------------------
   // Requirements, checked once.  The column solve linearises the GREY SPLIT sweep, reads
   // the running state out of u0 (rt_use_cons) between passes, and replaces -- not
@@ -2020,6 +2058,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   // mode 3 solves and applies the column inside the pass; the radial conduction stays
   // a separate operator, applied by the ImplicitConduction task as usual.
   picket_fence_two_stream_RT_pass(pm, bdt);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void picket_fence_two_stream_RT
+//! \brief the outer radiative call: the body above, then the rank-uniform once-per-call
+//! point where the source-limiter clip count is reduced (see RTSourceLimiterReduce).
+inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
+  picket_fence_two_stream_RT_body(pm, bdt);
+  RTSourceLimiterReduce();
 }
 
 //----------------------------------------------------------------------------------------

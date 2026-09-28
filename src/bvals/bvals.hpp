@@ -308,7 +308,10 @@ class MeshBoundaryValues {
   TaskStatus ClearFluxSend();
 
   // BCs associated with various physics modules
-  static void HydroBCs(MeshBlockPack *pp, DualArray2D<Real> uin, DvceArray5D<Real> u0);
+  // `phi`: pass the module's phicc0 when <hydro|mhd>/etotgrav is on (u0's energy then
+  // carries rho*Phi); left empty, the BCs are the plain copies they always were
+  static void HydroBCs(MeshBlockPack *pp, DualArray2D<Real> uin, DvceArray5D<Real> u0,
+                       DvceArray4D<Real> phi = DvceArray4D<Real>());
   static void BFieldBCs(MeshBlockPack *pp, DualArray2D<Real> bin, DvceFaceFld4D<Real> b0);
   static void RadiationBCs(MeshBlockPack *pp,DualArray2D<Real> iin,DvceArray5D<Real> i0);
   static void RadM1BCs(MeshBlockPack *pp, DualArray2D<Real> uin, DvceArray5D<Real> u0,

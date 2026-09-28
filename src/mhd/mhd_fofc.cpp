@@ -18,6 +18,7 @@
 #include "mhd/rsolvers/llf_mhd_singlestate.hpp"
 #include "mhd/rsolvers/hlle_mhd_singlestate.hpp"
 #include "mhd.hpp"
+#include "hydro/fofc_etotgrav.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -260,6 +261,13 @@ void MHD::FOFC(Driver *pdriver, int stage) {
       }
       }
     });
+
+    // <mhd>/etotgrav: make the trial energy e + KE + emag before the floor test, as in
+    // Hydro::FOFC -- see hydro/fofc_etotgrav.hpp.  Covers the cubed-sphere test below.
+    if (use_etotgrav) {
+      FofcTrialRemoveGrav(pmy_pack, utest_, uflx, phicc0, phi0, beta_dt,
+                          il, iu, jl, ju, kl, ku);
+    }
 
     // Test whether conversion to primitives requires floors
     // Note b0 and w0 passed to function, but not used/changed.
