@@ -191,6 +191,7 @@ rt_ck = true
 rt_split     = false
 ck_pcut_bar  = 10.0
 ck_nquad     = 1
+ck_implicit  = false             # as run (semi-implicit apply); the default is true since defaults2-0927
 ck_star_teff = 6000.0
 ck_spherical = true              # NEW: spherical thermal two-stream. See change (1).
 ck_beam_sph  = true              # NEW: pseudo-spherical direct beam. See change (1).

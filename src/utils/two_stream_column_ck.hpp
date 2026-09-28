@@ -88,6 +88,8 @@ namespace two_stream_rt {
 
 //----------------------------------------------------------------------------------------
 // problem/ck_implicit: the switch.  false = bitwise the semi-implicit per-cell apply.
+// The variable starts false; deep_hot_jupiter_rt defaults the KEY to true on fresh rt_ck
+// runs since defaults2-0927 (false on restarts; see the pgen).
 inline bool ck_implicit = false;
 // problem/ck_impl_tol: the RESIDUAL tolerance, max_i |R_i|/(e_i + eps e_max) over the
 // column set, with eps = ck_impl_norm_eps.  Measuring a thin top cell against its own
@@ -126,7 +128,8 @@ inline Real ck_impl_dtmax = 0.5;
 // measured, capped = 0 on every gate run.  0 = no bound.
 inline Real ck_impl_demax = 0.5;
 // problem/ck_impl_floorbound: THE NEWTON IS A BOUND-CONSTRAINED SOLVE, e >= e_floor.
-// Default FALSE = the unconstrained Newton, bit for bit.
+// false = the unconstrained Newton, bit for bit.  deep_hot_jupiter_rt defaults the key
+// (and ck_impl_kkt_demax) to true on fresh fused ck_implicit runs since defaults2-0927.
 //
 // e_floor = max(e(rho, tfloor), e(rho, pfloor)) is the state ConsToPrim restores a cell
 // to anyway (problem/rt_floor_consistent applies the same rule to the semi-implicit
@@ -151,7 +154,8 @@ inline bool ck_impl_floorbound = false;
 // the limiter that keeps a dt collapse away; removing it, demax = 0 with dtmax 3,
 // collapsed dt at cycle 22 in smokediag/dtm3d0); only the pass count and the
 // NOT-CONVERGED flag change: the passes a capped cell cannot use are no longer spent.
-// Default FALSE = bitwise.  Counted in slot 17 with (b).
+// false = bitwise (default true on fresh fused ck_implicit dhj runs since defaults2-0927).
+// Counted in slot 17 with (b).
 inline bool ck_impl_kkt_demax = false;
 // problem/ck_impl_stalldbg: diagnosis of columns that stall at a fixed residual.  0 =
 // off (bitwise).  N > 0: on every fused pass with index >= N, each column still active
