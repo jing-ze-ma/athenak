@@ -13,7 +13,10 @@
 //! floor.  Nothing books that change: it is neither a flux nor a source term, so an
 //! energy budget built from the fluxes and sources misses it.  The owner (Hydro or MHD)
 //! calls C2PTrackBefore just before the conversion and C2PTrackAfter just after it;
-//! only the IDN and IEN differences of the active cells are summed.  Off by default and
+//! only the IDN and IEN differences of the active cells are summed.  Rows 0/1 (energy,
+//! mass) take the conversions inside the RK stages, i.e. what the HYDRO update left
+//! below a floor; rows 2/3 the operator-split conversion that follows the split
+//! radiation (Hydro::ConToPrimSplit), i.e. what the RADIATION step left below a floor.  Off by default and
 //! diagnostic only (the state is never written), so a run that does not enable it is
 //! bitwise unchanged.
 
@@ -24,14 +27,14 @@
 
 namespace c2p_track {
 
-// allocate the accumulator (2, nx1) and the pre-conversion copies of the active cells
+// allocate the accumulator (4, nx1) and the pre-conversion copies of the active cells
 inline void Enable(MeshBlockPack *pmbp, DvceArray2D<Real> &acc, DvceArray4D<Real> &re,
                    DvceArray4D<Real> &rd) {
   auto &indcs = pmbp->pmesh->mb_indcs;
   const int nmb = pmbp->nmb_thispack;
   const int n3 = indcs.nx3, n2 = indcs.nx2, n1 = indcs.nx1;
   if (acc.extent(1) != static_cast<size_t>(n1)) {
-    Kokkos::realloc(acc, 2, n1);
+    Kokkos::realloc(acc, 4, n1);
     Kokkos::deep_copy(acc, 0.0);
   }
   Kokkos::realloc(re, nmb, n3, n2, n1);
@@ -63,7 +66,8 @@ inline void Before(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
 
 inline void After(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
                   DvceArray4D<Real> re, DvceArray4D<Real> rd, DvceArray2D<Real> acc,
-                  const Real w) {
+                  const Real w, const bool split) {
+  const int r0 = split ? 2 : 0;
   auto &indcs = pmbp->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
@@ -73,8 +77,8 @@ inline void After(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real de = u0(m,IEN,k,j,i) - re(m,k-ks,j-js,i-is);
     const Real dm = u0(m,IDN,k,j,i) - rd(m,k-ks,j-js,i-is);
-    if (de != 0.0) Kokkos::atomic_add(&acc(0,i-is), w*de*vol(m,k,j,i));
-    if (dm != 0.0) Kokkos::atomic_add(&acc(1,i-is), w*dm*vol(m,k,j,i));
+    if (de != 0.0) Kokkos::atomic_add(&acc(r0,i-is), w*de*vol(m,k,j,i));
+    if (dm != 0.0) Kokkos::atomic_add(&acc(r0+1,i-is), w*dm*vol(m,k,j,i));
   });
 }
 

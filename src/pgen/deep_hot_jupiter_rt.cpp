@@ -483,9 +483,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   dhj_flux_hst_wall = flux_hst && pin->DoesParameterExist("problem","flux_hst_wall")
                       && pin->GetBoolean("problem","flux_hst_wall");
   // problem/flux_hst_floor (default false; read without recording it, like flux_hst):
-  // two more columns after the others, Efloor [erg/s] and Mfloor [g/s], the energy and
+  // three more columns after the others, Efloor [erg/s] and Mfloor [g/s], the energy and
   // mass that ConToPrim's floors added to the active cells, averaged over the interval
-  // since the previous history row.  Nothing else books them: they are not fluxes, so
+  // since the previous history row, and Efloor_rt, the part of Efloor added by the
+  // conversion right after the operator-split radiation (the rest is what the hydro
+  // stages left below a floor).  Nothing else books them: they are not fluxes, so
   // they are the part of d(tot-E)/dt that Etot_bot - Etot_top does not contain (see
   // Hydro::c2p_track).  Costs two active-cell kernels per ConToPrim; off by default.
   dhj_flux_hst_floor = flux_hst && pin->DoesParameterExist("problem","flux_hst_floor")
@@ -5191,7 +5193,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   constexpr int NFH0 = 9;
   const bool fwall = dhj_flux_hst_wall;
   const bool ffloor = dhj_flux_hst_floor;
-  const int NFH = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 2 : 0);
+  const int NFH = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
   pdata->nhist = NFH;
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
@@ -5209,8 +5211,9 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->label[12] = "Efl_bot_out";
   }
   if (ffloor) {
-    pdata->label[NFH-2] = "Efloor";
-    pdata->label[NFH-1] = "Mfloor";
+    pdata->label[NFH-3] = "Efloor";
+    pdata->label[NFH-2] = "Mfloor";
+    pdata->label[NFH-1] = "Efloor_rt";
   }
   for (int n=0; n<NFH; ++n) pdata->hdata[n] = 0.0;
 
@@ -5292,16 +5295,18 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     DvceArray2D<Real> acc = (pmbp->pmhd != nullptr) ? pmbp->pmhd->c2p_acc
                                                     : pmbp->phydro->c2p_acc;
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
-    Real ef = 0.0, mf = 0.0;
+    Real ef = 0.0, mf = 0.0, efr = 0.0;
     for (int i=0; i<static_cast<int>(h.extent(1)); ++i) {
-      ef += h(0,i);
-      mf += h(1,i);
+      ef += h(0,i) + h(2,i);
+      mf += h(1,i) + h(3,i);
+      efr += h(2,i);
     }
     Kokkos::deep_copy(acc, 0.0);
     const Real tint = pm->time - dhj_floor_t0;
     dhj_floor_t0 = pm->time;
-    pdata->hdata[NFH-2] = (tint > 0.0) ? ef/tint : 0.0;
-    pdata->hdata[NFH-1] = (tint > 0.0) ? mf/tint : 0.0;
+    pdata->hdata[NFH-3] = (tint > 0.0) ? ef/tint : 0.0;
+    pdata->hdata[NFH-2] = (tint > 0.0) ? mf/tint : 0.0;
+    pdata->hdata[NFH-1] = (tint > 0.0) ? efr/tint : 0.0;
   }
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
