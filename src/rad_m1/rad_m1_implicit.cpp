@@ -990,8 +990,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   const bool ldef = full && ts_ok && fixcl && !global_variable::restart_run;
   impl_fastk = pin->GetOrAddBoolean("rad_m1","implicit_fast_kernels",ldef);
-  impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",
-                                    ldef && impl_vimp && impl_stencil);
+  // implicit_vimp_fold: default OFF since audit-m1-0928 (gain 0.9-2.3 % per simulated
+  // second on the moving He box and sph_wedge, MI300A 1 and 2 GPUs; under the ~3 % bar for
+  // a result-changing default).  Opt-in by name.
+  impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",false);
   // default 0 (off) with force_reference = wb_arad (m1-keydefault-0927: with
   // force_reference_work = split the one-pass acceptance loses the 2nd order in v_h)
   impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",
