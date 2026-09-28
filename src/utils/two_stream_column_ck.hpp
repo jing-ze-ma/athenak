@@ -174,6 +174,23 @@ inline int ck_impl_stalldbg = 0;
 // TRUE since default-flips (deep_hot_jupiter_rt reads it; false = the old rows,
 // bitwise).  Fused, glob = 0 path only.
 inline bool ck_impl_kkt_row = false;
+// problem/ck_impl_osc = N > 0: PER-CELL AITKEN DAMPING of oscillating cells, from pass N
+// of a call on.  0 = off (default, bitwise).  Measured on the 10x WASP-121b production
+// (cknewton_0928/RESULTS.md): the calls that do not converge even with 24 or 60 passes
+// sit in a period-2/4 limit cycle of the top cells (p ~ 1e-10 bar, T swinging 1700 <->
+// 5300 K): the band Planck emission there rises far faster than its linearisation, so
+// the Newton step of the hot iterate and of the cold one overshoot each other, and the
+// neighbours, heated and cooled by that cell, swing with it at the dtmax cap.  With this
+// on, a thick cell whose Newton step x reverses the sign of the step it applied on the
+// previous pass, s, is a cell with a negative local multiplier lambda = x/s of the
+// iteration, and it takes the step that removes that mode, w x with w = 1/(1 - lambda)
+// = s/(s - x) in (0, 1) (Aitken's delta^2 on the cell).  A monotone (same-sign) step is
+// untouched, so the iterate of a column that converges monotonically is bitwise; the
+// residual, and therefore the fixed point, is untouched everywhere.  Counted in slot 18.
+// Fused, glob = none, aa = 0 path only.
+inline int ck_impl_osc = 0;
+inline DvceArray4D<Real> *ck_osc_ptr = nullptr;   // the step each cell applied last pass
+inline int ck_impl_nosc = 0;                       // cells damped, last pass
 inline int ck_impl_nfloor = 0;             // cells stopped at e_floor, last pass
 inline int ck_impl_nkkt = 0;               // cells excluded from the test as KKT
 // problem/ck_impl_verbose: print the per-call pass count and residual.
@@ -184,6 +201,15 @@ inline int ck_impl_debug = 0;
 // N still-active columns (gid, m, k, j), their worst cell i with its residual, pressure
 // and T.  Print only (works under ck_impl_every); 0 (default) = off, bitwise.
 inline int ck_impl_ncloc = 0;
+// problem/ck_impl_ncref = N > 0 (diagnostic, for the accuracy of a NOT-CONVERGED call):
+// after pass N of a call that has not converged, the running increment (ck_dep) is
+// latched; the call then goes on to ck_impl_maxit, and at its end the latched state is
+// compared with the final one ("### ck_ncref" line: max |de|/e over the cells, and the
+// column heating error sum|de| dx / sum|e_final - e*| dx, max over columns).  Run it
+// with a large ck_impl_maxit so that the final state is the converged reference.  0
+// (default) = off, bitwise.  Print only.
+inline int ck_impl_ncref = 0;
+inline DvceArray4D<Real> *ck_ncref_ptr = nullptr;
 // problem/ck_impl_refresh_kappa: re-look-up the correlated-k opacity (and hence the beam
 // transmission tau_ray) at every Newton pass instead of freezing it over the step.  OFF
 // by default.  Cost: the pre-opacity kernel is a ck_continuum call plus two table index
@@ -949,6 +975,10 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       ck_lj0_ptr = nullptr;
     }
     ck_jlc_ok = false;
+    if (ck_osc_ptr != nullptr) {
+      delete ck_osc_ptr;
+      ck_osc_ptr = nullptr;
+    }
     if (ck_rsr_ptr != nullptr) {
       delete ck_rsr_ptr;
       delete ck_rse_ptr;
@@ -1028,6 +1058,9 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       }
     }
   }
+  if (ck_impl_osc > 0) {
+    ck_osc_ptr = new DvceArray4D<Real>("ck_osc", nmb, n3, n2, n1);
+  }
   if (ck_impl_rsec > 0.0) {
     ck_rsr_ptr = new DvceArray4D<Real>("ck_rsr", nmb, n3, n2, n1);
     ck_rse_ptr = new DvceArray4D<Real>("ck_rse", nmb, n3, n2, n1);
@@ -1060,7 +1093,8 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     // sub-step seed steps; 12-14: ck_impl_esc's extra passes and coarsenings, and
     // ck_impl_aa's accelerated steps
     // 16-17: ck_impl_floorbound / ck_impl_kkt_demax (cells at the floor, KKT cells)
-    ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 18);
+    // 18: ck_impl_osc (cells damped)
+    ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 19);
   }
   // ck-fast2 lever 1 (problem/ck_dif_dtau)
   if (ck_dif_dtau > 0.0) {
@@ -1271,6 +1305,10 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const bool sdbg_ = (ck_impl_stalldbg > 0) && (ck_impl_pass >= ck_impl_stalldbg)
                        && !glb_;
     const bool krow_ = ck_impl_kkt_row && (fb_ || kd_) && !glb_;
+    // ck_impl_osc (1-element dummy when off)
+    const bool osc_ = (ck_impl_osc > 0) && !glb_ && (naa_ == 0);
+    const bool oscp_ = osc_ && (ck_impl_pass >= ck_impl_osc);
+    auto osa_ = osc_ ? *ck_osc_ptr : CkDum<DvceArray4D<Real>>("ck_osc_d");
     const int pass_ = ck_impl_pass;
     const bool csph_ = pm->use_cubed_sphere;
     auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
@@ -1969,6 +2007,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           for (int a=0; a<nh; ++a) sm += sgm(g0 + a)*aah_(m,a,k,j,i);
           de -= sm;
         }
+        // ck_impl_osc: Aitken damping of a cell whose step reversed sign (see the note)
+        if (oscp_ && thk_(m,k,j,i) > 0.0) {
+          const Real sp = osa_(m,k,j,i);
+          if (sp*de < 0.0) {
+            de = de*(sp/(sp - de));
+            Kokkos::atomic_add(&cnv_(18), 1.0);
+          }
+        }
         bool cap = false;
         const Real ei = ei_(m,k,j,i);
         const Real lim = dcap*ei;
@@ -2040,6 +2086,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         }
         u0(m,IEN,k,j,i) += de;
         dep_(m,k,j,i) += de;
+        if (osc_) osa_(m,k,j,i) = de;
         if (glb_) lsd_(m,k,j,i) = de;       // the trial the next pass evaluates
         const Real s = (ei > 0.0) ? fabs(de)/ei : 0.0;
         if (s > mx) mx = s;
@@ -2096,6 +2143,9 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     if (ck_impl_floorbound || ck_impl_kkt_demax) {
       ck_impl_nfloor = static_cast<int>(hcf(16));
       ck_impl_nkkt = static_cast<int>(hcf(17));
+    }
+    if (ck_impl_osc > 0) {
+      ck_impl_nosc = static_cast<int>(hcf(18));
     }
     if (ck_impl_glob > 0) {
       ck_impl_nrej += static_cast<int>(hcf(8));
