@@ -1,0 +1,33 @@
+#!/bin/bash -l
+#SBATCH -J heboxbench
+#SBATCH -p apudev
+#SBATCH -N 1
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:59
+# bench-2026-09-29-hebox viper arm (hesdirk2, cfl 0.3).  One job = one GPU count (NRS), REPS
+# repeats back to back (a list NRS="1 2" interleaves the counts inside each repeat).
+#   sbatch -o <dir>/log.out.%j --export=NRS=1,OUT=<dir> bench_viper_hebox.sub         (1 GPU)
+#   sbatch -o <dir>/log.out.%j --export=NRS=2,OUT=<dir> bench_viper_hebox.sub         (2 GPUs)
+#   sbatch -p apu -N 2 -t 00:10:00 -o ... --export=NRS=4,OUT=<dir> bench_viper_hebox.sub (4 GPUs)
+#   smoke: --export=NRS=2,OUT=<dir>,SMOKE=1  (200 cycles, ndiag 1, Picard log of 20 steps, 1 rep)
+# Variables: BIN (default the box_gpu72 build of the pinned commit), REPS (default 2).
+# SBATCH_EXPORT=NONE on viper: pass every variable with --export.
+H=${H:-/viper/u2/jinma/ATHENAK/athenak/docs/handover/bench-2026-09-29-hebox}
+BIN=${BIN:-/viper/ptmp2/jinma/builds/bin/athena_box_gpu72_401875f0}
+REPS=${REPS:-2}
+export MACHINE=viper
+ANA=""
+if [ -n "${SMOKE:-}" ]; then
+  REPS=1; ANA="--c0 50 --c1 200"
+  export EXTRA="time/nlim=200 time/ndiag=1 rad_m1/implicit_picard_log=20"
+fi
+for r in $(seq 1 $REPS); do
+  for n in $NRS; do
+    bash $H/run_bench_hebox.sh $BIN $n $OUT/n${n}_r${r}_${SLURM_JOB_ID}
+  done
+done
+python3 $H/ana_bench_hebox.py $OUT/n*_r*_${SLURM_JOB_ID}/bench.log $ANA
+echo BENCH_JOB_DONE
