@@ -16,7 +16,8 @@
 //! only the IDN and IEN differences of the active cells are summed.  Rows 0/1 (energy,
 //! mass) take the conversions inside the RK stages, i.e. what the HYDRO update left
 //! below a floor; rows 2/3 the operator-split conversion that follows the split
-//! radiation (Hydro::ConToPrimSplit), i.e. what the RADIATION step left below a floor.  Off by default and
+//! radiation (RTOpSplitBvals / Hydro::ConToPrimSplit), i.e. what the RADIATION step
+//! left below a floor.  Off by default and
 //! diagnostic only (the state is never written), so a run that does not enable it is
 //! bitwise unchanged.
 

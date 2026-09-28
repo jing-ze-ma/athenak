@@ -252,7 +252,8 @@ class MHD {
   // cubed-sphere deferred floors, and the rounding of the etotgrav rho*Phi round trip),
   // volume integrated and weighted by the fraction that survives to the end of the step
   // (the product of the later stages' gam0; 1 outside the RK stages).  c2p_acc(0, i-is)
-  // is energy, c2p_acc(1, i-is) mass, per x1 index (conversions inside the RK stages), summed over this rank's MeshBlocks
+  // is energy, c2p_acc(1, i-is) mass, per x1 index (conversions inside the RK
+  // stages), summed over this rank's MeshBlocks
   // since the owner last zeroed it; rows 2/3 the same for the operator-split conversion
   // after the split radiation.  Diagnostic only: the state is not touched.
   bool c2p_track = false;
