@@ -75,7 +75,8 @@ Real BcovEta(const DvceFaceFld4D<Real> &b, const DvceArray3D<Real> &cosf,
 //! as small as the cell-to-cell width ratio is close to 1.  On the WASP-121b grid (8-term
 //! polynomial, width ratio up to 1.09 below 1e-6 bar and 1.31 at the top) it dominated
 //! the resistive diffusion error: a 1-D replica of this operator (csresist_0928) gave a
-//! 1.2e-2 field error below 1e-6 bar against 6e-4 with these weights.
+//! 1.2e-2 field error below 1e-6 bar against 2.3e-4 with these weights (and the
+//! loop normalized at r_l, the rsc factor in pass 1).
 //!
 //! The derivative at r_l is the MEAN of the two quadratics through (i-1, i, i+1) and
 //! (i-2, i-1, i) -- symmetric, second order at r_l -- or one of them alone on a physical
@@ -199,7 +200,10 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
       for (int s=0; s<4; ++s) {
         if (w[s] != 0.0) dg += w[s]*dxf3(m,k,j,i-2+s)*BcovEta(b,cet,set,m,k,j,i-2+s);
       }
-      jn2(m,k,j,i) = (-dg
+      // ae2 = rbar*(r_c(i)-r_c(i-1))*arc is the loop area at the loop's MEAN radius;
+      // the curl AT the face divides by r_l instead (curl = (1/r)[...] at r = r_l)
+      const Real rsc = 0.5*(rc(m,i) + rc(m,i-1))/rf(m,i);
+      jn2(m,k,j,i) = rsc*(-dg
                       + dxf1(m,k,j,i)*b.x1f(m,k,j,i)
                       - dxf1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/ae2(m,k,j,i);
     });
@@ -220,7 +224,8 @@ void Resistivity::AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0,
       for (int s=0; s<4; ++s) {
         if (w[s] != 0.0) dg += w[s]*dxf2(m,k,j,i-2+s)*BcovXi(b,cxi,sxi,m,k,j,i-2+s);
       }
-      jn3(m,k,j,i) = (dg
+      const Real rsc = 0.5*(rc(m,i) + rc(m,i-1))/rf(m,i);   // as in res_cs_j2c
+      jn3(m,k,j,i) = rsc*(dg
                     - dxf1(m,k,j,i)*b.x1f(m,k,j,i)
                     + dxf1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/ae3(m,k,j,i);
     });
