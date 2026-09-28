@@ -1418,6 +1418,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   wb_phi_eff_ = pin->GetOrAddBoolean("problem", "wb_phi_eff", false);
   arad_force_ = pin->GetOrAddBoolean("problem", "wb_arad_force", false);
   const std::string aradf = pin->GetOrAddString("problem", "wb_arad_file", "");
+  // ENERGY CONSISTENCY (energy_audit_0928 item 2).  With Phi_eff the WB source gives
+  // the gas -rho g + rho a_ref in IM1 but NO energy: the work rho a_ref v1 must come
+  // from the radiation module, and the module must then apply only the RESIDUAL force.
+  // Only <rad_m1> with force_reference = wb_arad does both (work mode split: the WB
+  // source adds it, BoxConvSrcs fws; full: the M1 coupling's work term keeps the full
+  // force).  Every other combination is wrong: wb_phi_eff alone or with wb_arad_force
+  // (BoxConvARadForce is a no-op then) never pays the work; with the two-stream's
+  // rt_rad_force or <rad_m1> force_reference = none the radiative force is counted
+  // twice (WB reference + full force) and its work once.
+  if (wb_phi_eff_ && !(pmbp->pradm1 != nullptr
+                       && pmbp->pradm1->force_ref == radm1::M1_FREF_WB_ARAD)) {
+    std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff = true is only "
+              << "energy-consistent with <rad_m1> and <rad_m1>/force_reference = "
+              << "wb_arad ("
+              << ((pmbp->pradm1 == nullptr)
+                  ? "no <rad_m1> block: nothing pays the work rho a_ref v1 of the WB "
+                    "reference force, and rt_rad_force would count the force twice"
+                  : "force_reference = none applies the full force on top of the WB "
+                    "reference: counted twice")
+              << ").  Set problem/wb_phi_eff = false, or use <rad_m1> with "
+              << "force_reference = wb_arad." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (wb_phi_eff_ || arad_force_) {
     if (wb_phi_eff_ && !(wbdyn && pfl->use_wb_x1)) {
       std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff needs "

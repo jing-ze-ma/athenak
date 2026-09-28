@@ -262,6 +262,16 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       << "true (the well-balanced pair must carry the reference)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // energy_audit_0928 item 3: with wg_phi_eff the WB pair already gives the gas the
+  // reference force rho a_ref; force_reference = none would then apply the FULL force on
+  // top of it (counted twice) and its work once
+  if (phieff && !fref) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "sph_wedge: problem/wg_phi_eff = true needs <rad_m1>/"
+      << "force_reference = wb_arad (with force_reference = none the radiative force "
+      << "is counted twice: the WB reference plus the full M1 force)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (phieff && !wbdyn) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "sph_wedge: problem/wg_phi_eff needs <hydro>/wellbalance_dynamic "
