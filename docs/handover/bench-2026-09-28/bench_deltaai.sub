@@ -1,0 +1,56 @@
+#!/bin/bash -l
+#SBATCH -J w121bench
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=100G
+#SBATCH --time=00:20:00
+#SBATCH -o /u/jma20/ATHENAK/runs/bench_%x.%j.out
+# bench-2026-09-28 DeltaAI arm (GH200).  One job = one GPU count, arms interleaved 1x,10x,1x,10x.
+#   sbatch --ntasks-per-node=<n> --gpus-per-node=<n> --export=ALL,NR=<n> bench_deltaai.sub   (n = 1, 2, 4)
+# Every job first runs the 50-cycle smoke of both arms (ck_impl_verbose on) and stops unless both have
+# rc 0 and no FATAL; then REPS (default 2) timed repeats.  Every run is under `timeout` (TO, default 900 s).
+# Launcher and env: MACHINE=deltaai header of run_bench.sh (docs recipe; see DELTAAI_FACTS.md).
+# Variables: BIN (default builds/bin/athena_dhj_gpu_11c9a5be7d5c), REPS, OUT, TO.
+H=/u/jma20/ATHENAK/bench-2026-09-28
+BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_dhj_gpu_11c9a5be7d5c}
+REPS=${REPS:-2}; TO=${TO:-900}
+OUT=${OUT:-/work/nvme/bivj/jma20/bench_0928}
+NVSMI=${NVSMI:-nvidia-smi}
+export MACHINE=deltaai
+: "${NR:?set NR}"
+mkdir -p $OUT
+J=${SLURM_JOB_ID:-nojob}
+echo "BENCHJOB NR=$NR host=$(hostname) job=$J bin=$BIN md5=$(md5sum $BIN | cut -c1-32) (expect $(cat $BIN.md5 2>/dev/null))"
+$NVSMI -L
+# which GPU each rank is on, for the whole job
+( while sleep 5; do $NVSMI --query-compute-apps=pid,gpu_bus_id --format=csv,noheader; done > $OUT/gpus_n${NR}_$J.raw 2>&1 ) &
+SMP=$!
+
+run() {  # run <arm> <dir> [EXTRA]
+  EXTRA="$3" timeout --kill-after=30 $TO bash $H/run_bench.sh $BIN $NR $1 $2
+  local rc=$?; [ $rc = 124 ] && echo "TIMEOUT after ${TO}s: $2"; return $rc
+}
+
+echo "== smoke (50 cycles, ck_impl_verbose)"
+OK=1
+for A in 1x 10x; do
+  D=$OUT/smoke_n${NR}_${A}_$J
+  run $A $D "time/nlim=50 time/ndiag=1 problem/ck_impl_verbose=true" || OK=0
+  NF=$(grep -c FATAL $D/bench.log); NC=$(grep -c NOT-CONVERGED $D/bench.log)
+  echo "smoke $A: FATAL=$NF NOT-CONVERGED=$NC $(grep -m1 'Number of parallel ranks' $D/bench.log)"
+  [ "$NF" = 0 ] || OK=0
+done
+python3 $H/ana_bench.py $OUT/smoke_n${NR}_*_$J/bench.log --c0 0 --c1 50
+if [ $OK = 0 ]; then echo "smoke failed: no timed runs"; kill $SMP; echo BENCH_JOB_DONE; exit 1; fi
+
+echo "== timed: $REPS x (1x, 10x), 2000 cycles"
+for r in $(seq 1 $REPS); do
+  for A in 1x 10x; do run $A $OUT/n${NR}_${A}_r${r}_$J; done
+done
+kill $SMP 2>/dev/null; wait $SMP 2>/dev/null
+sort -u $OUT/gpus_n${NR}_$J.raw > $OUT/gpus_n${NR}_$J.csv
+echo "GPUs used (pid, bus):"; awk -F, '{print $2}' $OUT/gpus_n${NR}_$J.csv | sort | uniq -c
+python3 $H/ana_bench.py $OUT/n${NR}_*_$J/bench.log
+echo BENCH_JOB_DONE
