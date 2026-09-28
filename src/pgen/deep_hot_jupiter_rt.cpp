@@ -856,18 +856,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "IGNORED with ck_impl_refresh_kappa = true: the operator is frozen "
               << "only where the opacity is." << std::endl;
   }
-  // problem/ck_impl_xstep: DEFAULT 8 since default-flips (09-26 cadence retest: -11 %
-  // per cycle, interior within noise) wherever ck_impl_every > 1 and the stored operator
-  // exists (ck_implicit, ck_impl_frozen_op, not ck_impl_refresh_kappa); 0 (off)
-  // otherwise, as before.  xstep counts CYCLES, so under ck_impl_every = 4 the old
-  // production value 2 never re-applied an operator.  An explicit value (0 = off) always
-  // wins, and the value is recorded, so a restart keeps its stored value; a restart file
-  // written before the key existed picks up the new default.
-  {const bool xsdef = (two_stream_rt::ck_impl_every > 1) && two_stream_rt::ck_implicit &&
-                      two_stream_rt::ck_impl_frozen_op &&
-                      !two_stream_rt::ck_impl_refresh_kappa;
+  // problem/ck_impl_xstep: keep the stored operator of ck_impl_frozen_op over k CYCLES
+  // (under ck_impl_every = 4, k <= 4 is bitwise off).  DEFAULT 0 (off) since
+  // audit_dhj_0928: on MI300A (WASP-121b nx1 76/74, current tip) k = 8 gains only
+  // 3.2 % (1x) / 3.9 % (10x) per simulated second, and its deviation reaches 1.3-2x the
+  // 1e-14-kick spread at 1e-3..1 bar and > 1 bar within the first rotation (it settles
+  // into the noise by ~1 rotation), so it is a RELAXATION-PHASE option only.  Set it
+  // explicitly (8) for spin-up; the value is recorded, so a restart keeps its value.
   two_stream_rt::ck_impl_xstep =
-      pin->GetOrAddInteger("problem","ck_impl_xstep",xsdef ? 8 : 0);}
+      pin->GetOrAddInteger("problem","ck_impl_xstep",0);
   if (two_stream_rt::ck_impl_xstep > 0 && !(two_stream_rt::ck_implicit &&
       two_stream_rt::ck_impl_frozen_op && !two_stream_rt::ck_impl_refresh_kappa)) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_xstep keeps "
