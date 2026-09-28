@@ -994,11 +994,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // second on the moving He box and sph_wedge, MI300A 1 and 2 GPUs; under the ~3 % bar for
   // a result-changing default).  Opt-in by name.
   impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",false);
-  // default 0 (off) with force_reference = wb_arad (m1-keydefault-0927: with
-  // force_reference_work = split the one-pass acceptance loses the 2nd order in v_h)
-  impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",
-                                   (ldef && impl_pred && force_ref != M1_FREF_WB_ARAD)
-                                   ? 8 : 0);
+  // implicit_one_pass: default 0 (off) everywhere since audit-m1-0928 (8 + auto gained
+  // -2.8..+0.0 % on the moving He box and sph_wedge on MI300A, i.e. nothing, and changes
+  // results 5-22x the round-off spread; before, 0 only with force_reference = wb_arad,
+  // m1-keydefault-0927).  Opt-in by name (e.g. 8).
+  impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",0);
   if (impl_onep != 0 && impl_onep < 2) {
     ImplFatal("<rad_m1>/implicit_one_pass (the check period) must be 0 (off) or >= 2");
   }
