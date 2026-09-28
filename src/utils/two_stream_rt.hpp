@@ -1570,6 +1570,10 @@ void CkLayW(const Real kro, const Real kru, const Real dz, const Real dzu, const
   // otherwise.  The rounding is spelled out, so every kernel forms the numbers the
   // stored ones were (GPU-bitwise).  Host builds do not contract (a*b + c as written).
   const Real dtc = __fma_rn(0.5*kru, dzu, __dmul_rn(0.5*kro, dz));
+#elif defined(__HIP_DEVICE_COMPILE__)
+  // ck-lin2-hip: amdclang contracted it the same way in the base ck_lin_build and
+  // otherwise in rt_chain_ck_lin1p / rt_chain_ck_jlin; spelled out likewise
+  const Real dtc = __builtin_fma(0.5*kru, dzu, dt_l);
 #else
   const Real dt_u = 0.5*kru*dzu;
   const Real dtc = dt_l + dt_u;
