@@ -86,3 +86,10 @@ Optional: find the exact GPU contraction that breaks bitwise at ck-next cn10 (di
   - One agent per branch and worktree. An agent that hands back with jobs in flight can RESUME later, so stop
     it before starting a replacement (memory `agent-collision-lesson`).
   - Agents must not merge or push; the coordinator merges after the user's go-ahead.
+
+## 5. Update 09-27 late: ck-lin2-fma MERGED (8be0ad67)
+
+- -9.9 % on 2 H200 and -10.3 % on 1 H200. Bitwise on CPU and on CUDA.
+- **HIP gate pending on viper**: see `TASK-2026-09-27-cklin2-hip-gate.md`.
+- Dropped variants (records only): l3 (lin_build per chain pair), CK_BTG 16, team 256.
+- Next ck cost per storing call on 1 H200, in ms: lin_build 10.6, jlin 9.7, beam_tau 6.9, lin1p 6.3, coef 3.1.

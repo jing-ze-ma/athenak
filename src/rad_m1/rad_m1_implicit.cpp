@@ -557,10 +557,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_stencil && impl_bcg_sync != 1) {
     ImplFatal("<rad_m1>/implicit_op_stencil needs implicit_bcg_sync = 1");
   }
-  // m1-sp-order2b: on the spherical-polar wedge the fast-path default is mg_gc (with
-  // implicit_mg_levels = 1: rbgs_fwd + the global band coarse space; runs_5p_coarse2:
-  // wedge vet_col 13.1 -> 1.1 it/solve, -18 %/-22 % ms/cycle at 1/2 GPUs).  A restart
-  // whose file lacks the key keeps rbgs_fwd; the resolved value is echoed.
+  // Spherical-polar fast-path default: rbgs_fwd.  m1-sp-order2b had made mg_gc the sp
+  // default (runs_5p_coarse2: radiation-only T-S4 wedge, -18 %); on the rad-hydro
+  // sph_wedge with MOVING gas rbgs_fwd is -8.7 % against mg_gc (m1-wedge,
+  // docs/dev/m1_wedge_0926.md 7.2; user decision 09-26), so the sp default is rbgs_fwd
+  // again.  mg_gc stays available by name; the resolved value is echoed.
   // defaults-0927 (2026-09-27): on the Cartesian fast path the default is mg (with
   // implicit_mg_levels = 3; tests_m1/runs_5m_precond: He box -7 %/cycle on 1 GPU, -6 % on
   // 2; H200 2 GPUs: plain mg fastest, handover 09-26 sect. 6) on a multi-D, single-level,
@@ -572,9 +573,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   const bool mgdef = !sph_geom && !pmq->use_cubed_sphere && !pmq->use_polar_boundary &&
                      !pmq->multilevel && pmq->multi_d && !kdev_named &&
                      !global_variable::restart_run;
-  const char *pcdef = fdef ? ((sph_geom && !global_variable::restart_run) ? "mg_gc"
-                              : (mgdef ? "mg" : "rbgs_fwd"))
-                           : "line";
+  const char *pcdef = fdef ? (mgdef ? "mg" : "rbgs_fwd") : "line";
   {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond", pcdef);
   if (pc.compare("line") == 0) {
     impl_prec = 0;
