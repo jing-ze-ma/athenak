@@ -15,19 +15,28 @@
 #
 # LOG:      Updated by @pdmullen on 1/12/2022 for use in AthenaK
 
-# Obtain Google C++ Style Linter:
+# Obtain Google C++ Style Linter into a private temporary file, so that a cpplint.py
+# kept next to this script (tst/scripts/style/cpplint.py is tracked) is never overwritten
+# or deleted.  If the download fails, fall back to that local copy.
 echo "Obtaining Google C++ Style cpplint.py test"
-curl https://raw.githubusercontent.com/cpplint/cpplint/master/cpplint.py \
---output cpplint.py --silent
+CPPLINT=$(mktemp "${TMPDIR:-/tmp}/cpplint.XXXXXX.py")
+trap 'rm -f "$CPPLINT"' EXIT
+if ! curl https://raw.githubusercontent.com/cpplint/cpplint/master/cpplint.py \
+     --output "$CPPLINT" --silent --fail || [ ! -s "$CPPLINT" ]; then
+  if [ -f cpplint.py ]; then
+    echo "Download failed: using the local cpplint.py"; cp cpplint.py "$CPPLINT"
+  else
+    echo "ERROR: could not obtain cpplint.py"; exit 1
+  fi
+fi
 
 # Apply Google C++ Style Linter to all source code files at once:
 echo "Starting Google C++ Style cpplint.py test"
 # Use "python3 -u" to prevent buffering of sys.stdout,stderr.write()
 # calls in cpplint.py and mix-up in Jenkins logs,
 find ../../../src -type f \( -name "*.cpp" -o -name "*.hpp" \) \
--print | xargs python3 -u cpplint.py --filter=-build/include_subdir --counting=detailed
-if [ $? -ne 0 ]; then echo "ERROR: C++ style errors found"; rm -f cpplint.py; exit 1; fi
-rm -f cpplint.py
+-print | xargs python3 -u "$CPPLINT" --filter=-build/include_subdir --counting=detailed
+if [ $? -ne 0 ]; then echo "ERROR: C++ style errors found"; exit 1; fi
 echo "End of Google C++ Style cpplint.py test"
 
 # Begin custom AthenaK style rules and checks:
