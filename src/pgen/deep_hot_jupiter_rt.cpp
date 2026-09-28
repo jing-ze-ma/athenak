@@ -1484,7 +1484,83 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     zarr_init.sync_device();
     logparr_init.modify_host();
     logparr_init.sync_device();
-  
+
+    // problem/remap_file (default empty = off; remap_0929): a FROM-SCRATCH start whose
+    // active cells come from a file written by docs/handover/scripts/dhj_remap.py, i.e.
+    // a restart radially remapped onto THIS grid (spin up on a coarse radial grid, then
+    // continue on a fine one).  The horizontal grid and the MeshBlock layout must be the
+    // restart's.  File: 8-byte magic, int32 nmb_total, nx1, nx2, nx3; then per gid
+    // int32 lx1, lx2, lx3, level, panel and double [5][nx3][nx2][nx1] = rho, v1, v2, v3
+    // (= u0(IM1..3)/rho as stored, covariant on the cubed sphere), and the thermal
+    // variable: p for magic "RADREMAP" (eint =
+    // EintFromP(rho, p), any EOS) or the internal energy density for "RADREMPE".
+    // E = eint + KE + rho*Phi_tot at the NEW cell centres (etotgrav; rot_potential
+    // included), exactly as the analytic IC.  The ghosts keep the analytic column and are
+    // refilled by Driver::Initialize; everything that is not u0 (ck caches, warm starts,
+    // flux-history accumulators, floor bookkeeping) starts fresh as on any fresh start.
+    // MHD: the file carries the hydro state only; B is the analytic bbot field set below
+    // (a hydro spin-up continued as MHD).  Ignored on a restart.
+    const std::string remap_file = pin->GetOrAddString("problem","remap_file","");
+    const bool use_remap_ = (!restart && !remap_file.empty());
+    const int rnx1 = indcs.nx1, rnx2 = indcs.nx2, rnx3 = indcs.nx3;
+    DvceArray5D<Real> wrm_("remap_w", use_remap_ ? pmbp->nmb_thispack : 1, 5,
+                           use_remap_ ? rnx3 : 1, use_remap_ ? rnx2 : 1,
+                           use_remap_ ? rnx1 : 1);
+    bool remap_eint_ = false;
+    if (use_remap_) {
+      std::ifstream rf(remap_file, std::ios::binary);
+      char mg[8];
+      std::int32_t hd[4];
+      rf.read(mg, 8);
+      rf.read(reinterpret_cast<char*>(hd), sizeof(hd));
+      const std::string smg(mg, 8);
+      remap_eint_ = (smg == "RADREMPE");
+      if (!rf || (smg != "RADREMAP" && smg != "RADREMPE") ||
+          hd[0] != pmy_mesh_->nmb_total || hd[1] != rnx1 || hd[2] != rnx2 ||
+          hd[3] != rnx3) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_file "
+                  << remap_file << ": unreadable, bad magic or grid mismatch (file "
+                  << hd[0] << " MeshBlocks of " << hd[1] << "x" << hd[2] << "x" << hd[3]
+                  << ")" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      const std::size_t nrec = static_cast<std::size_t>(5)*rnx3*rnx2*rnx1;
+      const std::streamoff recb = 5*sizeof(std::int32_t) + nrec*sizeof(double);
+      auto hrm = Kokkos::create_mirror_view(wrm_);
+      std::vector<double> buf(nrec);
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int gid = pmbp->gids + m;
+        rf.seekg(8 + sizeof(hd) + gid*recb, std::ios::beg);
+        std::int32_t ll[5];
+        rf.read(reinterpret_cast<char*>(ll), sizeof(ll));
+        rf.read(reinterpret_cast<char*>(buf.data()), nrec*sizeof(double));
+        const LogicalLocation &lc = pmy_mesh_->lloc_eachmb[gid];
+        if (!rf || ll[0] != lc.lx1 || ll[1] != lc.lx2 || ll[2] != lc.lx3 ||
+            ll[3] != lc.level || ll[4] != lc.panel) {
+          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_file "
+                    << "record " << gid << " does not match this MeshBlock's "
+                    << "LogicalLocation" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        std::size_t q = 0;
+        for (int n=0; n<5; ++n) {
+          for (int k=0; k<rnx3; ++k) {
+            for (int j=0; j<rnx2; ++j) {
+              for (int i=0; i<rnx1; ++i) hrm(m,n,k,j,i) = buf[q++];
+            }
+          }
+        }
+      }
+      Kokkos::deep_copy(wrm_, hrm);
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/remap_file " << remap_file << " read ("
+                  << pmy_mesh_->nmb_total << " MeshBlocks, nx1 = " << rnx1 << ", "
+                  << (remap_eint_ ? "eint" : "p") << ")" << std::endl;
+      }
+    }
+    const bool rm_eint_ = remap_eint_;
+    auto &rm_ccell_ = pmbp->pcoord->cos_cell;   // read only on the cubed sphere
+
     // one-off: the initial condition. Skipped on a restart, where u0/w0 come from file.
     if (!restart) {
     par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
@@ -1544,6 +1620,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //      p = pwb;
 //      den = denwb;
 
+      if (!use_remap_) {
       u0_(m,IDN,k,j,i) = den;
       u0_(m,IM1,k,j,i) = 0.0;
       u0_(m,IM2,k,j,i) = 0.0;
@@ -1555,6 +1632,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w0_(m,IVY,k,j,i) = 0.0;   // was IVX three times; harmless, ConsToPrim rebuilt w0
       w0_(m,IVZ,k,j,i) = 0.0;
       w0_(m,IEN,k,j,i) = EintFromP(eos, igm1, den, p);
+      } else {
+        // problem/remap_file: active cells from the file, ghosts analytic (see above)
+        Real v1 = 0.0, v2 = 0.0, v3 = 0.0, eint0;
+        if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) {
+          den = wrm_(m,0,k-ks,j-js,i-is);
+          v1  = wrm_(m,1,k-ks,j-js,i-is);
+          v2  = wrm_(m,2,k-ks,j-js,i-is);
+          v3  = wrm_(m,3,k-ks,j-js,i-is);
+          eint0 = rm_eint_ ? wrm_(m,4,k-ks,j-js,i-is)
+                           : EintFromP(eos, igm1, den, wrm_(m,4,k-ks,j-js,i-is));
+        } else {
+          eint0 = EintFromP(eos, igm1, den, p);
+        }
+        // v1..3 = u0(IM1..3)/rho as stored (on the cubed sphere the COVARIANT
+        // components); KE = 0.5 m_i v^i with the gnomonic metric, as ConToPrim forms it
+        Real vu2 = v2, vu3 = v3;
+        if (use_cubed_sphere_) {
+          const Real c = rm_ccell_(m,k,j), det = 1.0 - c*c;
+          vu2 = (v2 - c*v3)/det;
+          vu3 = (v3 - c*v2)/det;
+        }
+        u0_(m,IDN,k,j,i) = den;
+        u0_(m,IM1,k,j,i) = den*v1;
+        u0_(m,IM2,k,j,i) = den*v2;
+        u0_(m,IM3,k,j,i) = den*v3;
+        u0_(m,IEN,k,j,i) = eint0 + 0.5*den*(v1*v1 + v2*vu2 + v3*vu3);
+        w0_(m,IDN,k,j,i) = den;
+        w0_(m,IVX,k,j,i) = v1;
+        w0_(m,IVY,k,j,i) = vu2;
+        w0_(m,IVZ,k,j,i) = vu3;
+        w0_(m,IEN,k,j,i) = eint0;
+      }
         
         Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
         if (use_etotgrav) {
