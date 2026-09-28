@@ -550,8 +550,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_op_split_red")) {
     impl_opsplit = pin->GetBoolean("rad_m1","implicit_op_split_red");
   }
-  // default ON since 2026-09-25 (m1-fast3: box -12 %, wedge -13 %; round-off only)
-  impl_opteam = pin->GetOrAddBoolean("rad_m1","implicit_op_team_red",true);
+  // default OFF since audit-m1-0928 (was on since 2026-09-25, m1-fast3: -12 % on the
+  // static T-S4 wedge).  On moving gas on MI300A it gains 2.2-2.6 % (1 GPU) and 0.2-2.2 %
+  // (2 GPUs) per simulated second (He box, sph_wedge; 5 interleaved reps), under the ~3 %
+  // bar for a result-changing default (round-off).  Opt-in by name.
+  impl_opteam = pin->GetOrAddBoolean("rad_m1","implicit_op_team_red",false);
   impl_fastk = false;
   impl_odskip = false;
   if (impl_stencil && impl_bcg_sync != 1) {
