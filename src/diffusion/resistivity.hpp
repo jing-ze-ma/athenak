@@ -61,6 +61,11 @@ class Resistivity {
 //  Real min_xe;
   Real max_eta;
   bool use_rkg_sts; // RKG super-stepping (Mattia+2026)
+  // cubed sphere + STRETCHED radial grid: take the radial derivative of the Stokes loop
+  // AT the x1 face instead of at the midpoint of the two cell centres (see
+  // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an
+  // unstretched radial grid.
+  bool cs_resist_x1_centred;
   Real tau, alpha, w1, mu, nu, mut, gat;
   int s = 0;   // RKG stage count; only set once TotStage() has run for the first time
   Real bjm2, bjm1, bj;
