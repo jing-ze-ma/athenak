@@ -3281,9 +3281,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // well-balanced source and, with etotgrav, the energy flux carry it); only the
           // theta part and Coriolis stay explicit here
           u0(m,IM1,k,j,i) += rho*(cor + (rotpot_src ? 0.0 : oor))*sine*bdt;
-//          if (!use_etotgrav)
-          u0(m,IEN,k,j,i) += rho*oor*(((rotpot && use_etotgrav) ? 0.0 : vr*sine)
-                                      + vtheta*cosine)*bdt;
+          // The centrifugal WORK: with rot_potential AND etotgrav the face potentials
+          // phi0.x1f/x2f/x3f are TotPotAt (gravity + centrifugal, theta-dependent), so
+          // the etotgrav energy flux rho v Phi_tot already does ALL of it, radial and
+          // horizontal; adding the theta part here counted it twice (dhj-rotpot-energy,
+          // 09-28: a spurious ~1e31 erg/s source/sink pair in the WASP-121b runs).
+          // Without etotgrav (or without rot_potential) the source does all of it.
+          if (!(rotpot && use_etotgrav)) {
+            u0(m,IEN,k,j,i) += rho*oor*(((rotpot && use_etotgrav) ? 0.0 : vr*sine)
+                                        + vtheta*cosine)*bdt;
+          }
           // The host star's tidal term, on top of the planet's own centrifugal `oor`.
           // Together they make up the Hill acceleration Omega^2 (3x, 0, -z); see
           // TideAccR/TideAccT/TideAccP. mu is the substellar direction cosine, the same
@@ -3352,11 +3359,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1 - acr_rot)*bdt;
           u0(m,IM2,k,j,i) += rho*(acx*e1[0] + acy*e1[1])*bdt;
           u0(m,IM3,k,j,i) += rho*(acx*e2[0] + acy*e2[1])*bdt;
-          // Only the centrifugal part does work -- Coriolis is perpendicular to v -- and
-          // this is the same term the spherical-polar branch adds unconditionally.
-          u0(m,IEN,k,j,i) += rho*(SQR(omega)*(xx*vcx + yy*vcy)
-                                  - ((rotpot && use_etotgrav) ?
-                                     SQR(omega)*(xx*rh0 + yy*rh1)*v1 : 0.0))*bdt;
+          // Only the centrifugal part does work -- Coriolis is perpendicular to v.  With
+          // rot_potential AND etotgrav the etotgrav flux rho v Phi_tot (TotPotAt on all
+          // three face sets) already does the whole centrifugal work, so no energy
+          // source may remain (the old code subtracted only the radial part and counted
+          // the horizontal one twice; see the spherical-polar branch above).
+          if (!(rotpot && use_etotgrav)) {
+            u0(m,IEN,k,j,i) += rho*(SQR(omega)*(xx*vcx + yy*vcy)
+                                    - ((rotpot && use_etotgrav) ?
+                                       SQR(omega)*(xx*rh0 + yy*rh1)*v1 : 0.0))*bdt;
+          }
         } else {
           // corotating beta-plane approximation e.g. Fromang+2016
           Real omega1 = omega*lam;
