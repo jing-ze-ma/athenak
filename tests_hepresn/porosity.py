@@ -22,7 +22,8 @@ import analyze_3d as B  # noqa: E402
 AR = 7.5657332503e-15
 C = 2.99792458e10
 L = 2.3066e38
-KT = '/viper/ptmp2/jinma/caltech_handover_0926/athenak_data/he_box/rosseland_he_x0.0_z0.02.txt'
+KT = ('/viper/ptmp2/jinma/caltech_handover_0926/athenak_data/he_box/'
+      'rosseland_he_x0.0_z0.02.txt')
 
 
 def kap_table():
@@ -92,14 +93,18 @@ def main():
         hk = (P * hi[:, :, None]).sum(axis=(0, 1)) / (P.sum(axis=(0, 1)) + 1e-300)
         x = rc / A.RSTAR
         fz = (x > 0.66) & (x < 0.91)
-        print('== dump %s t %.0f s: FeCZ median drho %.3f  L1 %.3f  Lloc %.3f  Lmean %.3f  '
+        print('== dump %s t %.0f s: FeCZ median drho %.3f  L1 %.3f  Lloc %.3f  '
+              'Lmean %.3f  '
               'P=L1/Lmean %.3f  corr(F1,rho) %+.2f  hk %.2f'
-              % (num, dh['time'], np.median(drho[fz]), np.median(L1[fz]), np.median(Lloc[fz]),
+              % (num, dh['time'], np.median(drho[fz]), np.median(L1[fz]),
+                 np.median(Lloc[fz]),
                  np.median(Lmn[fz]), np.median((L1 / Lmn)[fz]), np.median(corr[fz]),
                  np.median(hk[fz])))
         for i in range(0, n1, 12):
-            print('  r/R %.3f drho %.3e L1 %.3f Lloc %.3f Lmean %.3f P %.3f corr %+.2f hk %.2f'
-                  % (x[i], drho[i], L1[i], Lloc[i], Lmn[i], L1[i] / Lmn[i], corr[i], hk[i]))
+            print('  r/R %.3f drho %.3e L1 %.3f Lloc %.3f Lmean %.3f P %.3f '
+                  'corr %+.2f hk %.2f'
+                  % (x[i], drho[i], L1[i], Lloc[i], Lmn[i], L1[i] / Lmn[i], corr[i],
+                     hk[i]))
 
 
 if __name__ == '__main__':

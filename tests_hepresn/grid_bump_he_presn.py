@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Radial grid with LOCAL refinement at the FeCZ edges: the 8-coefficient poly stretch plus
-two tanh bumps (mesh/f_stretch_r_b<n>_amp/_x/_w, coordinates/grid_stretch.hpp).
+"""Radial grid with LOCAL refinement at the FeCZ edges: the 8-coefficient poly stretch
+plus two tanh bumps (mesh/f_stretch_r_b<n>_amp/_x/_w, coordinates/grid_stretch.hpp).
 usage: grid_bump_he_presn.py BASE_NPY NXBASE RTOP DEPTH[,DEPTH2] WIDTH_R OUT_NPY [NX]
 Target cell width = the base grid's dx(r) (BASE_NPY on NXBASE cells: it already meets the
 cells-per-scale-height rules) times 1 - DEPTH sech^2((r - r_e)/WIDTH_R R) at the FeCZ
@@ -29,9 +29,11 @@ def mapping(p, xi, deriv=False):
         if a == 0.0:
             continue
         if deriv:
-            u += a * (1 / np.cosh((xi - xb) / w)**2 - w * (np.tanh((1 - xb) / w) + np.tanh(xb / w)))
+            u += a * (1 / np.cosh((xi - xb) / w)**2
+                      - w * (np.tanh((1 - xb) / w) + np.tanh(xb / w)))
         else:
-            u += a * w * (np.tanh((xi - xb) / w) - (1 - xi) * np.tanh(-xb / w) - xi * np.tanh((1 - xb) / w))
+            u += a * w * (np.tanh((xi - xb) / w) - (1 - xi) * np.tanh(-xb / w)
+                          - xi * np.tanh((1 - xb) / w))
     return u
 
 
@@ -40,7 +42,9 @@ def basis_d(xi):
 
 
 def main():
-    cb = np.load(sys.argv[1]); nb = int(sys.argv[2]); rtop = float(sys.argv[3])
+    cb = np.load(sys.argv[1])
+    nb = int(sys.argv[2])
+    rtop = float(sys.argv[3])
     deps = [float(v) for v in sys.argv[4].split(',')]
     deps = deps * 2 if len(deps) == 1 else deps
     wid, out = float(sys.argv[5]), sys.argv[6]
@@ -52,8 +56,8 @@ def main():
     dxt = np.exp(np.interp(rr, rcb, np.log(dxb)))
     wids = []
     for e, dep in zip(EDGES, deps):
-        # WIDTH_R > 1: the half width in BASE cells at that edge (keeps the stretch per cell
-        # the same at both edges)
+        # WIDTH_R > 1: the half width in BASE cells at that edge (keeps the stretch
+        # per cell the same at both edges)
         wids.append(wid * np.interp(e * R, rcb, dxb) / R if wid > 1 else wid)
         dxt *= 1 - dep / np.cosh((rr / R - e) / wids[-1])**2
     cnt = np.concatenate([[0], np.cumsum(np.diff(rr) / (0.5 * (dxt[1:] + dxt[:-1])))])
@@ -78,9 +82,11 @@ def main():
         xb = np.interp(e * R, rr, cnt / cnt[-1])
         w = wd * R / (rtop - r0) / np.interp(xb, xs, dut)
         q0 += [-dep * np.interp(xb, xs, dut), xb, w]
-    sol = least_squares(resid, np.array(q0), bounds=([-5, 0, 1e-3, -5, 0, 1e-3], [0, 1, 0.5, 0, 1, 0.5]))
+    sol = least_squares(resid, np.array(q0),
+                        bounds=([-5, 0, 1e-3, -5, 0, 1e-3], [0, 1, 0.5, 0, 1, 0.5]))
     p = solve_c(sol.x)
-    print('target cells %.1f -> nx1 %d; max relative width misfit %.3f' % (cnt[-1], nx, np.abs(sol.fun).max()))
+    print('target cells %.1f -> nx1 %d; max relative width misfit %.3f'
+          % (cnt[-1], nx, np.abs(sol.fun).max()))
     assert (mapping(p, np.linspace(0, 1, 4097), deriv=True) > 0).all(), 'fold-over'
     print('c1..c8 =', ' '.join('%.10e' % v for v in p[:8]))
     for b in range(2):

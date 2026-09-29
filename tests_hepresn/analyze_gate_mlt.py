@@ -3,13 +3,15 @@
 usage: analyze_gate_mlt.py RUNDIR [STRUCT_NPZ]
   RUNDIR      run dir with col.athinput (stretch keys read from it), hepresn.*.hst and
               bin/hepresn.hydro_u.*.bin, hepresn.m1.*.bin (one output per cycle)
-  STRUCT_NPZ  mlt_struct.npz of make_ic_he_presn_m1.py mlt (r, tau, fmlt, ...); used for the
-              zone edges (tau = 1) and for the predicted FeCZ heating -div F_r of the IC
-Prints: (i) net radial force f/(rho g) = d(rho v_r)/dt/(rho g) by zone: first step | max over
-per-step values | cumulative value at the end; (ii) shell luminosity per zone; (iii) the energy
-ledger; (iv) gas heating rate of the FeCZ against the prediction from the IC.
-Zones (r/R): rad 0.5-0.635 (wall cell 0 excluded), FeCZ 0.635-0.968, 0.968 - tau 1, tau < 1,
-wall cell 0 separately.
+  STRUCT_NPZ  mlt_struct.npz of make_ic_he_presn_m1.py mlt (r, tau, fmlt, ...); used
+              for the zone edges (tau = 1) and for the predicted FeCZ heating
+              -div F_r of the IC
+Prints: (i) net radial force f/(rho g) = d(rho v_r)/dt/(rho g) by zone: first step |
+max over per-step values | cumulative value at the end; (ii) shell luminosity per
+zone; (iii) the energy ledger; (iv) gas heating rate of the FeCZ against the
+prediction from the IC.
+Zones (r/R): rad 0.5-0.635 (wall cell 0 excluded), FeCZ 0.635-0.968, 0.968 - tau 1,
+tau < 1, wall cell 0 separately.
 """
 import glob
 import os
@@ -75,7 +77,7 @@ def load(run, tag, re_):
 def main():
     run = sys.argv[1]
     npz = np.load(sys.argv[2]) if len(sys.argv) > 2 else None
-    par = mesh = read_mesh(run)
+    par = read_mesh(run)
     hu = load(run, 'hydro_u', None)
     m1 = load(run, 'm1', None)
     nx = hu[0][2]['dens'].size
@@ -88,22 +90,21 @@ def main():
     x = rc / RSTAR
     if npz is not None:
         tau = np.interp(rc, npz['r'], npz['tau'])
-        fm = np.interp(rc, npz['r'], npz['fmlt'])
     else:
         tau = np.full(nx, 10.0)
-        fm = np.zeros(nx)
     zones = [('rad 0.5-0.635 R', (x >= 0.5) & (x < 0.635)),
              ('FeCZ 0.635-0.968 R', (x >= 0.635) & (x < 0.968)),
              ('0.968 R - tau 1', (x >= 0.968) & (tau >= 1.0)),
              ('tau < 1', tau < 1.0)]
     zones[0][1][0] = False
     print('outputs: %d hydro_u, %d m1; nx1 = %d, r = %.5e .. %.5e; dx %.3e .. %.3e; '
-          'final t = %.2f (cycle %d)' % (len(hu), len(m1), nx, rc[0], rc[-1], dxc.min(),
-                                         dxc.max(), hu[-1][0], hu[-1][1]))
+          'final t = %.2f (cycle %d)'
+          % (len(hu), len(m1), nx, rc[0], rc[-1], dxc.min(), dxc.max(), hu[-1][0],
+             hu[-1][1]))
     steps = [(a, b) for a, b in zip(hu[:-1], hu[1:]) if b[0] > a[0]]
     print('\n(i) net radial force f/(rho g) = d(rho v_r)/dt/(rho g)')
-    print('    %-22s %12s %12s %14s %10s' % ('zone', 'first step', 'max step', 'cum. at end',
-                                          'max at r/R'))
+    print('    %-22s %12s %12s %14s %10s'
+          % ('zone', 'first step', 'max step', 'cum. at end', 'max at r/R'))
     for name, z in zones:
         vals = [np.abs((b[2]['mom1'] - a[2]['mom1']) / (b[0] - a[0]) / (rho0 * g))[z]
                 for a, b in steps]
@@ -113,7 +114,8 @@ def main():
         jj = np.argmax(np.abs(fend[z]))
         print('    %-22s %12.3e %12.3e %14.3e %10.4f'
               % (name, first, mx.max(), np.abs(fend[z]).max(), x[z][jj]))
-    fw = [(b[2]['mom1'] - a[2]['mom1'])[0] / (b[0] - a[0]) / (rho0 * g)[0] for a, b in steps]
+    fw = [(b[2]['mom1'] - a[2]['mom1'])[0] / (b[0] - a[0]) / (rho0 * g)[0]
+          for a, b in steps]
     print('    wall cell 0:           %12.3e %12.3e' % (abs(fw[0]), np.abs(fw).max()))
     print('    dt: first %.4g, min %.4g, max %.4g, median %.4g over %d steps'
           % (steps[0][1][0] - steps[0][0][0], min(b[0] - a[0] for a, b in steps),
@@ -128,7 +130,8 @@ def main():
     for t, c, u in m1[1:][::max(1, len(m1) // 8)]:
         L = 4 * np.pi * rc**2 * u['m1_f1']
         print('    t %9.2f  max|L/L(0)-1|: ' % t + '  '.join(
-            '%s %.2e' % (name.split()[0], np.abs(L / L0 - 1)[z].max()) for name, z in zones))
+            '%s %.2e' % (name.split()[0], np.abs(L / L0 - 1)[z].max())
+            for name, z in zones))
     L = 4 * np.pi * rc**2 * m1[-1][2]['m1_f1']
     print('    final: L/L_star at the end: ' + '  '.join(
         '%s [%.4f, %.4f]' % (name.split()[0], (L / LUM)[z].min(), (L / LUM)[z].max())
@@ -143,10 +146,12 @@ def main():
         t = col['time']
         de = col['Etot'] - col['Etot'][0]
         net = col['L_in'] - col['L_top']
-        integ = np.concatenate([[0.0], np.cumsum(0.5 * np.diff(t) * (net[1:] + net[:-1]))])
+        integ = np.concatenate([[0.0],
+                                np.cumsum(0.5 * np.diff(t) * (net[1:] + net[:-1]))])
         print('\n(iii) energy ledger: dEtot vs int (L_in - L_top) dt')
         i = -1
-        print('    final t %.3f: dEtot %.4e int %.4e (dE - int)/(L_in t) = %.4e; L_top/L_in %.6f'
+        print('    final t %.3f: dEtot %.4e int %.4e (dE - int)/(L_in t) = %.4e; '
+              'L_top/L_in %.6f'
               % (t[i], de[i], integ[i], (de[i] - integ[i]) / (col['L_in'][i] * t[i]),
                  col['L_top'][i] / col['L_in'][i]))
         dt_ = np.diff(t)
@@ -160,8 +165,10 @@ def main():
               % (col['Mdot_top'].max(), col['Min_top'].min(),
                  col['M_tot'][-1] / col['M_tot'][0] - 1))
     if npz is not None:
-        print('\n(iv) FeCZ gas heating: predicted -div F_r of the IC vs measured d e_int/dt')
-        # predicted: G = -div F_r = -(L_r(r_r) - L_r(r_l))/V with L_r = L (1 - fmlt) (IC F_r)
+        print('\n(iv) FeCZ gas heating: predicted -div F_r of the IC vs measured '
+              'd e_int/dt')
+        # predicted: G = -div F_r = -(L_r(r_r) - L_r(r_l))/V with L_r = L (1 - fmlt)
+        # (IC F_r)
         fml = np.interp(re_, npz['r'], npz['fmlt'])
         Lr = LUM * (1 - fml)
         vol = 4 * np.pi / 3 * (re_[1:]**3 - re_[:-1]**3)
@@ -182,11 +189,10 @@ def main():
                   % (t, np.median(gm[sel] / gpred[sel]), (gm[sel] / gpred[sel]).min(),
                      (gm[sel] / gpred[sel]).max(), np.abs(gpred[z]).max(),
                      np.abs(gm[z]).max(),
-                     np.sqrt(np.mean((gm[z] - gpred[z])**2)) / np.sqrt(np.mean(gpred[z]**2))))
-        # the radiative-source measure at the last output: -div F_r of the M1 field
-        Fm = m1[min(1, len(m1) - 1)][2]['m1_f1']
-        print('    pred FeCZ range of -div F_r: %.3e .. %.3e erg/cm3/s (heating where >0), '
-              'rho e/t_heat at the rate max: e/G = %.1f s'
+                     np.sqrt(np.mean((gm[z] - gpred[z])**2))
+                     / np.sqrt(np.mean(gpred[z]**2))))
+        print('    pred FeCZ range of -div F_r: %.3e .. %.3e erg/cm3/s (heating where '
+              '>0), rho e/t_heat at the rate max: e/G = %.1f s'
               % (gpred[z].min(), gpred[z].max(),
                  (u0['ener'] / np.maximum(np.abs(gpred), 1e-30))[z].min()))
 

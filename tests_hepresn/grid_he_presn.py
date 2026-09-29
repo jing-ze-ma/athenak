@@ -19,8 +19,12 @@ A = 7.5657332503e-15
 P = pg + A * T**4 / 3
 g = GM / r**2
 Hp = P / (rho * g)
+
+
 def hl(q):
     return 1.0 / np.maximum(np.abs(np.gradient(np.log(q), r)), 1e-40)
+
+
 H = np.minimum(np.minimum(hl(pg), hl(rho)), hl(T))
 # smooth H over +-1e9 cm (the scale of a cell) so the target is not noisy
 w = int(1e9 / np.median(np.diff(r)))
@@ -61,12 +65,18 @@ re_ = r0 + (r1 - r0) * ue
 dx = np.diff(re_)
 assert (dx > 0).all(), 'fold-over'
 rc = 0.5 * (re_[1:] + re_[:-1])
-ip = lambda q: np.exp(np.interp(rc, r, np.log(q)))
+
+
+def ip(q):
+    return np.exp(np.interp(rc, r, np.log(q)))
+
+
 Hc, Hpc, tauc = ip(Hs), ip(Hp), np.interp(rc, r, tau)
 cs = np.sqrt(5.0 / 3.0 * ip(pg) / ip(rho))
 print('c1..c8 =', ' '.join('%.10e' % v for v in c))
 rat = np.maximum(dx[1:] / dx[:-1], dx[:-1] / dx[1:])
-print('adjacent ratio max at r/R %.4f; ratio > 1.05 in %d faces' % (rc[1:][rat.argmax()] / R, (rat > 1.05).sum()))
+print('adjacent ratio max at r/R %.4f; ratio > 1.05 in %d faces'
+      % (rc[1:][rat.argmax()] / R, (rat > 1.05).sum()))
 print('dx: min %.3e (r/R %.4f) max %.3e (r/R %.4f); adjacent ratio max %.3f'
       % (dx.min(), rc[dx.argmin()] / R, dx.max(), rc[dx.argmax()] / R,
          np.max(np.maximum(dx[1:] / dx[:-1], dx[:-1] / dx[1:]))))
@@ -76,9 +86,11 @@ for nm, z_ in (('tau>100', tauc > 100), ('tau 1-100', (tauc >= 1) & (tauc <= 100
           % (nm, z_.sum(), (Hc / dx)[z_].min(), rc[z_][(Hc / dx)[z_].argmin()] / R,
              (Hpc / dx)[z_].min()))
 fzc = (rc >= 0.636 * R) & (rc <= 0.933 * R)
-print('  FeCZ cells %d; rad zone 0.5-0.636 cells %d' % (fzc.sum(), (rc < 0.636 * R).sum()))
+print('  FeCZ cells %d; rad zone 0.5-0.636 cells %d'
+      % (fzc.sum(), (rc < 0.636 * R).sum()))
 for xx in (0.5, 0.55, 0.6, 0.636, 0.7, 0.8, 0.9, 0.933, 0.96, 0.99, 1.0, 1.02):
-    j = np.argmin(abs(rc - xx * R)); print('    r/R %.3f dx %.2e' % (xx, dx[j]))
+    j = np.argmin(abs(rc - xx * R))
+    print('    r/R %.3f dx %.2e' % (xx, dx[j]))
 dtp = (dx / cs).min()
 dxu = (r1 - r0) / nx
 print('dt proxy min dx/c_gas: %.3f s at r/R %.4f (uniform grid: %.3f s at r/R %.4f)'

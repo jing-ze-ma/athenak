@@ -89,7 +89,8 @@ def shells(fn_h, fn_m, re_, npz, slp):
                vrms=np.sqrt(mean(vr**2)), vhrms=np.sqrt(mean(v2**2 + v3**2)),
                corr=mean(vr * Tp) / np.sqrt(mean(vr**2) * mean(Tp**2) + 1e-300),
                Lcg=area * mean(vr * hp), Lcr=area * mean(vr * 4.0 / 3.0 * Ep),
-               Lrad=area * mean(F1), Lk=area * mean(v1 * 0.5 * rho * (v1**2 + v2**2 + v3**2)),
+               Lrad=area * mean(F1),
+               Lk=area * mean(v1 * 0.5 * rho * (v1**2 + v2**2 + v3**2)),
                vmlt=np.interp(rc, npz['r'], npz['vmlt']), vr_mean=mean(v1))
     # dt proxy
     cs = np.sqrt(5.0 / 3.0 * pg / rho)
@@ -105,7 +106,8 @@ def shells(fn_h, fn_m, re_, npz, slp):
     out['dtloc'] = (best + 1, rc[idx[3]] / RSTAR, float(th[idx[0], idx[1], idx[2], 0]),
                     float(np.sqrt(v1[idx]**2 + v2[idx]**2 + v3[idx]**2)), float(cs[idx]))
     out['vmax'] = float(np.sqrt(v1**2 + v2**2 + v3**2).max())
-    out['vmax_r'] = rc[np.unravel_index(np.sqrt(v1**2 + v2**2 + v3**2).argmax(), v1.shape)[3]] / RSTAR
+    out['vmax_r'] = rc[np.unravel_index(np.sqrt(v1**2 + v2**2 + v3**2).argmax(),
+                                        v1.shape)[3]] / RSTAR
     return out
 
 
@@ -129,10 +131,12 @@ def main():
     x = None
     for n, (a, b) in enumerate(pairs[::every]):
         o = shells(a, b, re_, npz, slp)
-        np.savez(os.path.join(run, 'diag3d', os.path.basename(a).replace('.bin', '.npz')), **o)
+        np.savez(os.path.join(run, 'diag3d',
+                              os.path.basename(a).replace('.bin', '.npz')), **o)
         x = o['r'] / RSTAR
         fz = (x > 0.66) & (x < 0.91)
-        print('t %9.1f cyc %6d | FeCZ: vrms/vMLT %.2e  corr %+.2f  (Lcg+Lcr)/L %+.3f  Lrad/L %.3f'
+        print('t %9.1f cyc %6d | FeCZ: vrms/vMLT %.2e  corr %+.2f  (Lcg+Lcr)/L %+.3f'
+              '  Lrad/L %.3f'
               '  Lk/L %+.1e | vmax %.2e at r/R %.3f | dt proxy %.2f s dir %d r/R %.3f'
               % (o['t'], o['cycle'], np.median(o['vrms'][fz] / o['vmlt'][fz]),
                  np.median(o['corr'][fz]), np.median((o['Lcg'] + o['Lcr'])[fz]) / L,
@@ -140,7 +144,8 @@ def main():
                  o['vmax_r'], o['dtmin'], o['dtloc'][0], o['dtloc'][1]))
     if '--profile' in sys.argv and x is not None:
         for q in range(0, len(x), max(1, len(x) // 24)):
-            print('  r/R %.3f vrms %.2e vMLT %.2e corr %+.2f Lcg/L %+.3f Lcr/L %+.3f Lrad/L %.3f'
+            print('  r/R %.3f vrms %.2e vMLT %.2e corr %+.2f Lcg/L %+.3f Lcr/L %+.3f'
+                  ' Lrad/L %.3f'
                   % (x[q], o['vrms'][q], o['vmlt'][q], o['corr'][q], o['Lcg'][q] / L,
                      o['Lcr'][q] / L, o['Lrad'][q] / L))
 

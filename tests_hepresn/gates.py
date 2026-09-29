@@ -57,7 +57,8 @@ def main():
     t = H['time']
     Lin = H['L_in']
     M0 = H['M_tot'][0]
-    print('M_tot(0) = %.4e g, L_in = %.4e erg/s (wedge), turnover %.0f s' % (M0, Lin[0], tt))
+    print('M_tot(0) = %.4e g, L_in = %.4e erg/s (wedge), turnover %.0f s'
+          % (M0, Lin[0], tt))
     print('   t/tt      M_tot/M0  dM/M%%/tt  Mdot_top   Ltop/Lin  LMLT/Lin   w    '
           '<dt>   Picard  vwall    NFB   NC  stg')
     edges = np.arange(0.0, t[-1] + evy * tt, evy * tt)
@@ -74,7 +75,8 @@ def main():
         pic = pic[pic > 0]
         w = H['w_mlt'][s].mean() if 'w_mlt' in H else float('nan')
         lm = (H['L_MLT'][s] / Lin[s]).mean() if 'L_MLT' in H else float('nan')
-        print('%6.2f-%5.2f %9.6f %+8.3f %10.3e %8.4f %8.4f %6.3f %6.1f %6.2f %8.2e %5d %4d %4d'
+        print('%6.2f-%5.2f %9.6f %+8.3f %10.3e %8.4f %8.4f %6.3f %6.1f %6.2f %8.2e '
+              '%5d %4d %4d'
               % (a / tt, b / tt, m[-1] / M0, dm, H['Mdot_top'][s].mean(),
                  (H['L_top'][s] / Lin[s]).mean(), lm, w, H['dt'][s].mean(),
                  pic.mean() if len(pic) else 0.0,

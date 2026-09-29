@@ -24,7 +24,8 @@ def main():
         q = fs[fz] / fm[fz]
         print('%6.2f  %8.3f  [%6.3f %6.3f] %6.3f %6.3f %+7.4f  %.2e'
               % (t / tt, np.median(q), q.min(), q.max(), np.median(fs[fz]),
-                 np.median(lr[fz]), np.median(lc[fz]), np.abs(fs + lr + lc - 1)[1:-1].max()))
+                 np.median(lr[fz]), np.median(lc[fz]),
+                 np.abs(fs + lr + lc - 1)[1:-1].max()))
     if '--shells' in sys.argv:
         t = max(d['fsub'])
         fs, lr, lc = d['fsub'][t], d['lrad'][t], d['lconv'][t]
