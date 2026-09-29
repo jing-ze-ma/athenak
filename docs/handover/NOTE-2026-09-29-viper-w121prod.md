@@ -20,3 +20,7 @@ NOTE-2026-09-28-caltech-w121prod.md: both machines run the same fresh start; the
 md5 7bf3f753; ~10 % faster per cycle on MI300A, equal-time noise gate passed with a caveat of 1.21-1.28x above
 100 bar, gputune_0928). Smoke 12018384 clean. New jobs: 1x 12018387 (+12018388), 10x 12018389 (+12018390); the
 ROCm 6.3 jobs 12018343-46 were cancelled. Plain ROCm 7.2 (malloc async on) segfaults at startup with Kokkos 4.6.02.
+
+**Status 09-29 02:57 CEST: BOTH viper arms are RUNNING** (ROCm 7.2) since 09-29 02:08 CEST (1x 12018387, 10x 12018389),
+no FATAL. Speed on 2 MI300A: 1x ~27 rot/h (300 rot in ~11 h, ETA ~13:00 CEST), 10x ~16 rot/h (~19 h, ETA ~21:00 CEST).
+Per NOTE-2026-09-28-deltaai-w121prod.md, DeltaAI may cancel its copies; the user decides which copies to keep.
