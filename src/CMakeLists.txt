@@ -207,6 +207,7 @@ add_executable(
         tasklist/numerical_relativity.cpp
 
         units/units.cpp
+        utils/c2p_track.cpp
         utils/change_rundir.cpp
         utils/derived_vars.cpp
         utils/show_config.cpp
