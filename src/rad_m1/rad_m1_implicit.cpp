@@ -667,6 +667,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
+  // implicit_halo_ipc (m1-perf-0928, rad_m1_krylov.cpp): default false
+  impl_halo_ipc = pin->GetOrAddBoolean("rad_m1","implicit_halo_ipc",false);
+  if (impl_halo_ipc && !impl_halo_mpi) {
+    ImplFatal("<rad_m1>/implicit_halo_ipc needs implicit_halo_mpi = true");
+  }
   // implicit_halo_overlap (rad_m1_krylov.cpp, tests_m1/runs_3y_halo_overlap: round-off
   // vs off, restarts bitwise).  DEFAULT true since m1-accmerge wherever it is valid:
   // implicit_halo_mpi on and more than one rank; otherwise false, silently.  A restart
