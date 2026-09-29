@@ -569,19 +569,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real p, cr, ct, cv;
       eos.ThermoAt(bd[i], tc[i], be[i], p, cr, ct, cv);
     };
-    // THE EDGE CELLS IN THE MODULE'S OWN DISCRETE FORM.  In the IC state <rad_m1> gives
+    // THE WALL CELL IN THE MODULE'S OWN DISCRETE FORM.  In the IC state <rad_m1> gives
     // cell i the radiative force [(rho k)_{i-1/2} F_{i-1/2} + (rho k)_{i+1/2} F_{i+1/2}]
     // /(2c), (rho k)_face = the mean of the two cells but, at a PHYSICAL x1 face, the
     // cell's own value (implicit_bmom_half).  Inside, this equals the continuum
     // reference kt F/c of the column to O(dx^2) (~1e-4 rho g, measured); in the two
     // edge cells it differs by -(rho k)' dx/4: -6.6e-3 rho g in the wall cell of the
-    // mlt column (v2/runs/mE03, predicted -6.59e-3).  So in the edge cells a_ref is
+    // mlt column (v2/runs/mE03, predicted -6.59e-3).  So in the WALL cell a_ref is
     // set to the module's value and Phi_eff is rebuilt across the cell with that
-    // acceleration (the ghosts' Phi_eff shifted with the edge face), so that the WB
-    // pair and the module's force agree there too.  (Rebuilding EVERY cell this way
-    // was tried: in the Gamma ~ 1 layers the balance then depends on a_ref to 1e-3 and
-    // the rho <-> kappa fixed point diverges; the interior keeps the continuum form.)
-    const int ni = n1;
+    // acceleration (the ghosts' Phi_eff shifted with the wall face), so that the WB
+    // pair and the module's force agree there too.  NOT done: (a) EVERY cell (in the
+    // Gamma ~ 1 layers the balance then depends on a_ref to 1e-3 and the rho <-> kappa
+    // fixed point diverges); (b) the TOP cell: the march is anchored at the top ghost
+    // and, at fixed T, hydrostatic balance is homogeneous in rho, so a change there
+    // rescales rho of the WHOLE column (-1.2 %, v2/runs/mG2) against the reference.
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1f);
     auto linF = [&](const Real r) {
       Real x = (r - hs_rlo_)/hs_dr_;
@@ -611,11 +612,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
     auto hkk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), kk_d);
     const Real rk_is = dc[is]*hkk(0), rk_is1 = dc[is+1]*hkk(1);
-    const Real rk_ie1 = dc[ie-1]*hkk(2), rk_ie = dc[ie]*hkk(3);
     const Real a_lo = 0.5*(rk_is*linF(hx1f(0,is))
                            + 0.5*(rk_is + rk_is1)*linF(hx1f(0,is+1)))/(cl*dc[is]);
-    const Real a_hi = 0.5*(0.5*(rk_ie1 + rk_ie)*linF(hx1f(0,ie))
-                           + rk_ie*linF(hx1f(0,ie+1)))/(cl*dc[ie]);
     auto seg = [&](const Real a_, const Real ra, const Real rb) {   // Phi_eff(rb) - (ra)
       return hs_gm_*(1.0/ra - 1.0/rb) - a_*(rb - ra);
     };
@@ -624,10 +622,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real pf_new = hpf(0,k0,j0,is+1) - seg(a_lo, hx1f(0,is), hx1f(0,is+1));
       const Real pc_new = pf_new + seg(a_lo, hx1f(0,is), hx1v(0,is));
       const Real dlo = pf_new - pf_old;
-      const Real pt_old = hpf(0,k0,j0,ie+1);
-      const Real pt_new = hpf(0,k0,j0,ie) + seg(a_hi, hx1f(0,ie), hx1f(0,ie+1));
-      const Real pce_new = hpf(0,k0,j0,ie) + seg(a_hi, hx1f(0,ie), hx1v(0,ie));
-      const Real dhi = pt_new - pt_old;
       auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->arad_ref);
       for (int m=0; m<=nmb1; ++m) {
         for (int k=0; k<=n3m1; ++k) {
@@ -638,14 +632,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
             hpf(m,k,j,is) = pf_new;
             hpc(m,k,j,is) = pc_new;
-            hpc(m,k,j,ie) = pce_new;
-            hpf(m,k,j,ie+1) = pt_new;
-            for (int i=ie+1; i<ni; ++i) {
-              hpc(m,k,j,i) += dhi;
-              hpf(m,k,j,i+1) += dhi;
-            }
             har(m,k,j,is) = a_lo;
-            har(m,k,j,ie) = a_hi;
           }
         }
       }
@@ -689,7 +676,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (global_variable::my_rank == 0) {
       std::cout << "he_star_m1: he_ic_balance: max |rho/rho_col - 1| = " << dmax
                 << " at r = " << hx1v(0,imax) << ", max face residual |PR/PL - 1| = "
-                << rmax << ", edge a_ref (module form) set" << std::endl;
+                << rmax << ", wall a_ref (module form) set" << std::endl;
     }
   }
 
