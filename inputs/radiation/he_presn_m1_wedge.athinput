@@ -142,6 +142,7 @@ he_opac_table   = HE_TABLES/rosseland_he_x0.0_z0.02.txt
 he_planck_table = HE_TABLES/planck_he_x0.0_z0.02_ferg+tops.txt
 he_nfine    = 16384
 he_tau_int  = 1.0
+he_ic_cols  = 4                     # 5: file also has E (a relaxed state, make_ic mode state)
 he_wall_zero_flux = true     # remove the wall-face mass, transverse momentum, energy fluxes
 he_wall_closed = true        # inner face: exact mirror state (zero wall mass flux, WB face pressure)
 he_sponge_rate = 0.0

@@ -25,7 +25,7 @@ Output: r[cm] rho eint F_r[erg/cm^2/s]  (eint = rho 10^le(rho,T), gas only); the
         MODE rz: as rad but only the radiative zone below the FeCZ is re-integrated (the
         FeCZ keeps the column T(r), F_r = L - F_MLT; it is not stationary without
         convection).
-Usage : make_ic_he_presn_m1.py [out_dir] [col|rad|rz|hopf|relax PREV_IC RUN_DIR K]   (file ic_he_presn_m1_<mode>.txt)
+Usage : make_ic_he_presn_m1.py [out_dir] [col|rad|rz|hopf|relax|state PREV_IC RUN_DIR K]   (file ic_he_presn_m1_<mode>.txt)
 """
 import os
 import sys
@@ -81,6 +81,8 @@ def main():
     sk = RectBivariateSpline(ty, tx, kv, kx=1, ky=1)
     global sk_
     sk_ = sk
+    if mode == 'state':
+        return main_state(out, sys.argv[3], sys.argv[4], int(sys.argv[5]))
     if mode == 'relax':
         return main_relax(out, sys.argv[3], sys.argv[4], int(sys.argv[5]), sle, slp)
 
@@ -401,6 +403,47 @@ def main_relax(out, prev_fn, run_dir, k, sle, slp):
                  % (os.path.basename(prev_fn), run_dir, k))
         for a, b, c, e, tt in zip(r, rho, eint, Fr, T):
             fh.write('%.10e %.10e %.10e %.10e %.10e\n' % (a, b, c, e, tt))
+    print('wrote', fn)
+
+
+def main_state(out, prev_fn, run_dir, k):
+    """The state of output k of a (velocity-damped) column run as the IC: rho, eint (total
+    energy minus kinetic minus rho Phi), F_r and E at the cell centres; outside the mesh
+    the previous IC scaled by the edge ratio.  Written with 5 columns (he_ic_cols = 5).
+    It is a fixed point of the DISCRETE scheme at that radial resolution (nx1), so it is a
+    test IC for the thin-column gate, not a production one."""
+    sys.path.insert(0, os.path.join(HERE, '..', '..', '..', 'vis', 'python'))
+    from bin_convert import read_binary
+    pv = np.loadtxt(prev_fn, comments='#')
+    r, rho0, e0, F0, T0 = pv[:, 0], pv[:, 1], pv[:, 2], pv[:, 3], pv[:, 4]
+    E0 = A_RAD_*T0**4
+    fu = read_binary(os.path.join(run_dir, 'bin', 'hepresn.hydro_u.%05d.bin' % k))
+    fm = read_binary(os.path.join(run_dir, 'bin', 'hepresn.m1.%05d.bin' % k))
+    n = fu['Nx1']
+    dx = (fu['x1max'] - fu['x1min'])/n
+    rc = fu['x1min'] + (np.arange(n) + 0.5)*dx
+    md = fu['mb_data']
+    ave = lambda a: np.asarray(a)[0].mean(axis=(0, 1))
+    rho, mom, ener = ave(md['dens']), ave(md['mom1']), ave(md['ener'])
+    eint = ener - 0.5*mom**2/rho - rho*GM*(1.0/fu['x1min'] - 1.0/rc)
+    E = ave(fm['mb_data']['m1_e'])
+    F = ave(fm['mb_data']['m1_f1'])
+    print('  state: t = %.1f s, max|v| %.3e cm/s' % (fu['time'], np.abs(mom/rho).max()))
+
+    def ext(a_state, a_prev, lo):
+        ref = np.interp(rc[0] if lo else rc[-1], r, a_prev)
+        return a_prev*(a_state[0 if lo else -1]/ref)
+    low, high = r < rc[0], r > rc[-1]
+    nr = np.concatenate([r[low], rc, r[high]])
+    out_cols = []
+    for st, pr in ((rho, rho0), (eint, e0), (F, F0), (E, E0)):
+        out_cols.append(np.concatenate([ext(st, pr, True)[low], st, ext(st, pr, False)[high]]))
+    fn = os.path.join(out, os.path.basename(prev_fn).replace('.txt', '') + '_state%d.txt' % k)
+    with open(fn, 'w') as fh:
+        fh.write('# he_star_m1 IC (he_ic_cols = 5), the state of output %d of %s\n'
+                 '# r[cm]  rho  eint  F_r  E\n' % (k, run_dir))
+        for row in zip(nr, *out_cols):
+            fh.write('%.10e %.10e %.10e %.10e %.10e\n' % row)
     print('wrote', fn)
 
 

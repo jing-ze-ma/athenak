@@ -211,6 +211,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const std::string fn = pin->GetString("problem","he_ic_file");
   const int nf = pin->GetOrAddInteger("problem","he_nfine",16384);
   const Real tau_int = pin->GetOrAddReal("problem","he_tau_int",1.0);
+  // he_ic_cols = 5: the file also carries the radiation energy density E (a state that
+  // was relaxed by a run); 4 (default): E = a T(rho,eint)^4
+  const int ncols = pin->GetOrAddInteger("problem","he_ic_cols",4);
+  if (ncols != 4 && ncols != 5) HsFatal("problem/he_ic_cols must be 4 or 5", __LINE__);
   // the fine grid spans the mesh plus a margin of (ng + 2) mean radial widths
   const Real dxm = (rtop - hs_rin_)/indcs.nx1;
   const Real marg = (ng + 2)*dxm;
@@ -218,21 +222,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real rhi = rtop + marg;
   hs_nf_ = nf;
   hs_dr_ = (rhi - hs_rlo_)/(nf - 1);
-  std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf);
+  std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0);
   for (int n=0; n<nf; ++n) hr[n] = hs_rlo_ + n*hs_dr_;
 
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
     if (!f.good()) HsFatal("cannot open problem/he_ic_file '" + fn + "'", __LINE__);
-    std::vector<Real> fr, fd, fe, fF;
+    std::vector<Real> fr, fd, fe, fF, fE;
     std::string line;
     while (std::getline(f, line)) {
       if (line.empty() || line[0] == '#') continue;
       std::istringstream ss(line);
-      Real a, b, c, d;
+      Real a, b, c, d, e = -1.0;
       if (!(ss >> a >> b >> c >> d)) continue;
+      if (ncols == 5 && !(ss >> e)) continue;
       fr.push_back(a); fd.push_back(b); fe.push_back(c); fF.push_back(d);
+      fE.push_back(e);
     }
     if (fr.size() < 2 || fr.front() > hr.front() || fr.back() < hr.back()) {
       std::ostringstream os;
@@ -249,6 +255,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       hd[n] = exp((1.0 - w)*log(fd[kk]) + w*log(fd[kk+1]));
       he[n] = exp((1.0 - w)*log(fe[kk]) + w*log(fe[kk+1]));
       hF[n] = exp((1.0 - w)*log(fF[kk]) + w*log(fF[kk+1]));
+      if (ncols == 5) hE[n] = exp((1.0 - w)*log(fE[kk]) + w*log(fE[kk+1]));
     }
   }
 
@@ -291,11 +298,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto h1 = Kokkos::create_mirror_view(hs_rho_);
     auto h2 = Kokkos::create_mirror_view(hs_eint_);
     auto h4 = Kokkos::create_mirror_view(cF);
+    auto h5 = Kokkos::create_mirror_view(cE);
     for (int n=0; n<nf; ++n) {
       h1(n) = hd[n];
       h2(n) = he[n];
       h4(n) = hF[n];
+      h5(n) = hE[n];
     }
+    Kokkos::deep_copy(cE, h5);
     Kokkos::deep_copy(hs_rho_, h1);
     Kokkos::deep_copy(hs_eint_, h2);
     Kokkos::deep_copy(cF, h4);
@@ -310,7 +320,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       radm1::M1TableOpacities(ot, d, t, op, oe, of, os);
       cT(n) = t;
       ckt(n) = of + os;
-      cE(n) = ar*t*t*t*t;
+      if (!(cE(n) > 0.0)) cE(n) = ar*t*t*t*t;
     });
   }
   auto hT = Kokkos::create_mirror_view(cT);
@@ -494,8 +504,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       e *= 1.0 + seed*sin(2.0*M_PI*seedk*(x2v(m,j) - x2a)/lth + 0.3)
                      *sin(2.0*M_PI*seedk*(x3v(m,k) - x3a)/lph + 1.1);
     }
-    const Real t = eos.Temperature(d, HsLogInterp(ceint, rlo, dr, nf, r));
-    const Real er = ar*t*t*t*t;
+    const Real er = HsLogInterp(cE, rlo, dr, nf, r);
     uh(m,IDN,k,j,i) = d;
     uh(m,IM1,k,j,i) = 0.0;
     uh(m,IM2,k,j,i) = 0.0;
