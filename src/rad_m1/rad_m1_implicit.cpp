@@ -8586,6 +8586,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 << " (converged=" << converged << " min(E,T)=" << vmin
                 << "): the step is redone with backward Euler" << std::endl;
     }
+    // DEBUG <rad_m1>/dbg_t2_admiss = N (default 0 = off): for the first N non-admissible
+    // stages, which quantity went <= 0 and where.  Read-only diagnostics after the
+    // decision (nothing written back), so results are bitwise with the key on or off.
+    if (t2_fail && (t2_dbg_adm_n < t2_dbg_adm)) {
+      t2_dbg_adm_n += 1;
+      T2AdmissDebug(uh, u0_, t2i_, cl, ch, hh, gq, t2s, it);
+    }
   }
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
@@ -9059,3 +9066,131 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 }
 
 } // namespace radm1
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::T2AdmissDebug
+//! \brief DEBUG (<rad_m1>/dbg_t2_admiss): after a non-admissible hesdirk2 stage, per
+//! quantity q = solved E (M1_IW_S2), solved T (M1_IW_TP), written-back gas eint,
+//! stage OLD vector E (M1_IW_EN) and gas eint (M1_IW_EGN), stage START E (u0): the
+//! number of active cells with q <= 0 and, where there are any, the cell of the minimum
+//! of q with its state.  rho/<rho> uses the rank-local unweighted mean over the shell.
+//! Every rank prints its own cells.  Nothing is written.
+
+void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
+                                DvceArray5D<Real> t2i_, const Real cl, const Real ch,
+                                const bool hh, const bool gq, const int t2s,
+                                const int it) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto x1v = pmy_pack->pcoord->x1v;
+  const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+  const int ntot = (nmb1 + 1)*nkji;
+  const char *nm[6] = {"E_solved", "T_solved", "eint_writeback", "E_old_vector",
+                       "eint_old_vector", "E_stage_start"};
+  const int rank = global_variable::my_rank;
+  std::cout << "<rad_m1> DBG_T2_ADMISS rank " << rank << " cycle "
+            << pmy_pack->pmesh->ncycle << " time " << pmy_pack->pmesh->time
+            << " stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2) << " picard_passes " << it
+            << std::endl;
+  for (int q = 0; q < 6; ++q) {
+    if ((q == 1 || q == 4) && !hh) continue;
+    if (q == 2 && !gq) continue;
+    auto qval = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real v;
+      switch (q) {
+        case 0: v = iw_(m,M1_IW_S2,k,j,i); break;
+        case 1: v = iw_(m,M1_IW_TP,k,j,i); break;
+        case 2: v = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
+                    iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i)); break;
+        case 3: v = iw_(m,M1_IW_EN,k,j,i); break;
+        case 4: v = iw_(m,M1_IW_EGN,k,j,i); break;
+        default: v = u0_(m,M1_E,k,j,i); break;
+      }
+      return v;
+    };
+    int nbad = 0;
+    Kokkos::parallel_reduce("m1_t2dbg_n", Kokkos::RangePolicy<DevExeSpace>(0, ntot),
+    KOKKOS_LAMBDA(const int idx, int &n) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/nji + ks;
+      r -= (k - ks)*nji;
+      const int j = r/ni + js;
+      const int i = r - (j - js)*ni + is;
+      if (!(qval(m,k,j,i) > 0.0)) n += 1;
+    }, Kokkos::Sum<int>(nbad));
+    if (nbad == 0) {
+      std::cout << "  " << nm[q] << ": no cell <= 0" << std::endl;
+      continue;
+    }
+    using ML = Kokkos::MinLoc<Real,int>;
+    typename ML::value_type mloc;
+    Kokkos::parallel_reduce("m1_t2dbg_min", Kokkos::RangePolicy<DevExeSpace>(0, ntot),
+    KOKKOS_LAMBDA(const int idx, typename ML::value_type &lm) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/nji + ks;
+      r -= (k - ks)*nji;
+      const int j = r/ni + js;
+      const int i = r - (j - js)*ni + is;
+      Real v = qval(m,k,j,i);
+      if (v < lm.val) {lm.val = v; lm.loc = idx;}
+    }, ML(mloc));
+    const int idx = mloc.loc;
+    const int m = idx/nkji;
+    int r = idx - m*nkji;
+    const int k = r/nji + ks;
+    r -= (k - ks)*nji;
+    const int j = r/ni + js;
+    const int i = r - (j - js)*ni + is;
+    // the cell's state and the rank-local shell mean of rho at its i
+    DvceArray1D<Real> cv("m1_t2dbg_cv", 16);
+    par_for("m1_t2dbg_cell", DevExeSpace(), 0, 0,
+    KOKKOS_LAMBDA(const int n) {
+      cv(0) = x1v(m,i);
+      cv(1) = hh ? uh(m,IDN,k,j,i) : 0.0;
+      cv(2) = iw_(m,M1_IW_S2,k,j,i);
+      cv(3) = iw_(m,M1_IW_EN,k,j,i);
+      cv(4) = u0_(m,M1_E,k,j,i);
+      cv(5) = t2i_(m,M1_T2_E,k,j,i);
+      cv(6) = iw_(m,M1_IW_EGN,k,j,i);
+      cv(7) = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
+              iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
+      cv(8) = hh ? t2i_(m,M1_T2_EN,k,j,i) : 0.0;
+      cv(9) = iw_(m,M1_IW_TP,k,j,i);
+      cv(10) = iw_(m,M1_IW_V1,k,j,i);
+      cv(11) = iw_(m,M1_IW_V2,k,j,i);
+      cv(12) = iw_(m,M1_IW_V3,k,j,i);
+      cv(13) = iw_(m,M1_IW_EP,k,j,i);
+      cv(14) = iw_(m,M1_IW_RES,k,j,i);
+    });
+    Real rsum = 0.0;
+    if (hh) {
+      const int nk = ke - ks + 1, nj = je - js + 1, nkj = nk*nj;
+      Kokkos::parallel_reduce("m1_t2dbg_sh",
+      Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nkj),
+      KOKKOS_LAMBDA(const int id, Real &sum) {
+        const int mm = id/nkj;
+        const int kk = (id - mm*nkj)/nj + ks;
+        const int jj = id - mm*nkj - (kk - ks)*nj + js;
+        sum += uh(mm,IDN,kk,jj,i);
+      }, Kokkos::Sum<Real>(rsum));
+      rsum /= static_cast<Real>((nmb1 + 1)*nkj);
+    }
+    auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cv);
+    std::cout << "  " << nm[q] << ": " << nbad << " cells <= 0; min " << mloc.val
+              << " at (m,k,j,i)=(" << m << "," << k << "," << j << "," << i << ") r="
+              << hv(0) << " rho=" << hv(1) << " rho/<rho>_shell="
+              << ((rsum > 0.0) ? hv(1)/rsum : 0.0) << std::endl
+              << "    E: solved " << hv(2) << " old_vector " << hv(3) << " stage_start "
+              << hv(4) << " t2inc " << hv(5) << " last_iterate " << hv(13)
+              << " cell_resid " << hv(14) << std::endl
+              << "    gas eint: old_vector " << hv(6) << " writeback " << hv(7)
+              << " t2inc(total E) " << hv(8) << "  T_solved " << hv(9)
+              << "  v(old vector) " << hv(10) << " " << hv(11) << " " << hv(12)
+              << std::endl;
+  }
+}

@@ -759,6 +759,8 @@ class RadiationM1 {
   int t2_solve;                 // what the next ImplicitSolve does (M1_T2S_*)
   bool t2_fail;                 // the last stage solve was not admissible
   int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
+  int t2_dbg_adm;               // DEBUG dbg_t2_admiss: report the first N non-admissible
+  int t2_dbg_adm_n;             // stages (which quantity <= 0, where); 0 = off
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
@@ -1011,6 +1013,9 @@ class RadiationM1 {
   //! let a problem generator name the x1 boundary types of the implicit solve
   void SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real hi_flux);
   //! the whole backward-Euler step, in place of the explicit stage chain
+  void T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
+                     DvceArray5D<Real> t2i_, const Real cl, const Real ch,
+                     const bool hh, const bool gq, const int t2s, const int it);
   TaskStatus ImplicitSolve(Driver *d, int stage);
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();
