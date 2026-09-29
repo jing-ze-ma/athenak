@@ -660,6 +660,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
+  // TEST of <rad_m1>/esrc (default off): a constant source he_esrc_const (erg/cm^3/s) in
+  // the cells with r < he_esrc_rmax, ON TOP of the frozen MLT deposit if that is on
+  const Real esc = pin->GetOrAddReal("problem","he_esrc_const",0.0);
+  if (esc != 0.0) {
+    const Real rmx = pin->GetOrAddReal("problem","he_esrc_rmax",hs_rin_);
+    if (!pm1->esrc_on) {
+      Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
+      Kokkos::deep_copy(pm1->esrc, 0.0);
+      pm1->esrc_on = true;
+    }
+    auto es = pm1->esrc;
+    const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+    const int ks = indcs.ks, ke = indcs.ke;
+    par_for("hs_esrc_t", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (x1v(m,i) < rmx) es(m,k,j,i) += esc;
+    });
+  }
+
   // top sponge (default off) and hooks
   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
   // the inner wall face sees the exact mirror of the interior-side state
