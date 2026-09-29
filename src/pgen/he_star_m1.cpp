@@ -48,6 +48,9 @@
 #include <math.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -95,6 +98,23 @@ DvceArray1D<Real> hs_fm_;
 Real hs_mrs_ = -1.0, hs_mrt_ = 0.0, hs_mw_ = 1.0, hs_lmx_ = 0.0;
 // problem/he_esrc_const, he_esrc_rmax (the esrc test, kept when w is re-applied)
 Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
+// problem/mlt_closure = adaptive (default frozen): the ADAPTIVE SHELL-MEAN DEFICIT
+// closure.  The applied subgrid flux F_sub (x1 faces) relaxes toward
+// s(r) max(0, L - L_rad - L_conv,res)/A over problem/mlt_relax_time, updated every
+// problem/mlt_closure_every cycles at the START of the cycle (before any stage), from
+// shell sums over all ranks: L_rad = sum A F_0 (the M1 comoving face flux), L_conv,res =
+// the FLUCTUATION flux A (<v_r'(e+p)_gas'> + (4/3) <v_r'E'>) of the cell shells averaged
+// to the face.  s = clamp(fmlt_IC/problem/mlt_closure_taper, 0, 1): the FeCZ of the IC
+// (F_MLT > 0) with its edges tapered.  F_sub(t=0) = F_MLT of the IC.  hs_fsub_ and the
+// update clock hs_ad_tl_ are RESTART STATE (the pgen block of pgen.hpp).
+bool hs_ad_ = false;
+Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
+Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
+int hs_ad_every_ = 1, hs_ad_cyc_ = -1;
+DvceArray1D<Real> hs_fsub_;
+DvceArray2D<Real> hs_shs_;
+std::vector<Real> hs_tap_, hs_r2o_;
+char hs_ad_file_[1024] = {0};
 // Picard counters at the previous history output (HeStarHist)
 Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
 
@@ -192,6 +212,8 @@ void HeStarGravity(Mesh *pm, const Real bdt);
 void HeStarBC(Mesh *pm);
 void HeStarHist(HistoryData *pdata, Mesh *pm);
 void HsApplyMltW(Mesh *pm, const Real w);
+void HsAdaptiveUpdate(Mesh *pm);
+std::vector<char> HsAdaptiveRstWrite();
 void HeStarFinal(ParameterInput *pin, Mesh *pm);
 }  // namespace
 
@@ -245,7 +267,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int ncols = pin->GetOrAddInteger("problem","he_ic_cols",4);
   if (ncols != 4 && ncols != 5) HsFatal("problem/he_ic_cols must be 4 or 5", __LINE__);
   // problem/mlt_flux_frozen (default false; in 3-D only as the start-up scaffold that is
-  // ramped off by problem/mlt_ramp_start/_time while convection grows): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
+  // ramped off by problem/mlt_ramp_start/_time while convection grows, or relaxed by
+  // problem/mlt_closure = adaptive): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
   // with fmlt = F_MLT/F the file's column 7 (make_ic mlt: r rho eint F_r E T fmlt), so
   // that F_r + F_MLT = L/(4 pi r^2) exactly, is deposited as the conservative energy
   // source -(A F_MLT|_{i+1/2} - A F_MLT|_{i-1/2})/V into the RADIATION energy through
@@ -769,8 +792,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const auto &ms = pmy_mesh_->mesh_size;
       const Real omg = (cos(ms.x2min) - cos(ms.x2max))*(ms.x3max - ms.x3min);
       hs_lmx_ = 0.0;
+      hs_r2o_.assign(nfc, 0.0);
       for (int i=0; i<nfc; ++i) {
-        hs_lmx_ = std::max(hs_lmx_, hfm(i)*SQR(hx1f(0,i))*omg);
+        hs_r2o_[i] = SQR(hx1f(0,i))*omg;
+        hs_lmx_ = std::max(hs_lmx_, hfm(i)*hs_r2o_[i]);
+      }
+    }
+    // the adaptive closure's radial taper, from the IC's F_MLT/F on the faces
+    hs_tap_.assign(nfc, 0.0);
+    {
+      const Real tp = pin->GetOrAddReal("problem","mlt_closure_taper",0.01);
+      for (int i=0; i<nfc; ++i) {
+        const Real r = hx1f(0,i);
+        Real x = (r - hs_rlo_)/hs_dr_;
+        int n = static_cast<int>(floor(x));
+        n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
+        Real w = x - n;
+        w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+        const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
+        Real s = (tp > 0.0) ? fm/tp : ((fm > 0.0) ? 1.0 : 0.0);
+        s = (s < 0.0) ? 0.0 : ((s > 1.0) ? 1.0 : s);
+        hs_tap_[i] = (hfm(i) > 0.0) ? s : 0.0;
       }
     }
     // the RADIATION takes the deposit (<rad_m1>/esrc, added to the implicit solve's old
@@ -831,6 +873,80 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   hs_mw_ = 1.0;
   if (hs_mrs_ >= 0.0 && !hs_mlt_) {
     HsFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true", __LINE__);
+  }
+  // problem/mlt_closure: frozen (default: the IC's F_MLT, times w(t)) or adaptive (see
+  // hs_ad_ above; w(t) caps it as an overall factor)
+  {
+    const std::string mc = pin->GetOrAddString("problem","mlt_closure","frozen");
+    if (mc != "frozen" && mc != "adaptive") {
+      HsFatal("problem/mlt_closure must be frozen or adaptive", __LINE__);
+    }
+    hs_ad_ = (mc == "adaptive");
+  }
+  if (hs_ad_) {
+    if (!hs_mlt_) {
+      HsFatal("problem/mlt_closure = adaptive needs problem/mlt_flux_frozen = true (the "
+              "IC's F_MLT is its start profile and its FeCZ mask)", __LINE__);
+    }
+    if (pm1->f0x1.extent_int(0) <= 0) {
+      HsFatal("problem/mlt_closure = adaptive needs the implicit M1 face flux f0x1",
+              __LINE__);
+    }
+    hs_ad_tau_ = pin->GetOrAddReal("problem","mlt_relax_time",1500.0);
+    hs_ad_every_ = pin->GetOrAddInteger("problem","mlt_closure_every",1);
+    hs_ad_dout_ = pin->GetOrAddReal("problem","mlt_closure_dout",0.0);
+    if (!(hs_ad_tau_ > 0.0) || hs_ad_every_ < 1) {
+      HsFatal("problem/mlt_relax_time must be > 0 and mlt_closure_every >= 1", __LINE__);
+    }
+    const int nfc = n1m1 + 2;
+    Kokkos::realloc(hs_fsub_, nfc);
+    Kokkos::deep_copy(hs_fsub_, hs_fm_);
+    Kokkos::realloc(hs_shs_, nfc, 8);
+    hs_ad_tl_ = pmy_mesh_->time;
+    hs_ad_cyc_ = -1;
+    if (restart) {
+      const auto &blk = pgen_rststate;
+      if (blk.size() < 2*sizeof(std::int32_t) + sizeof(Real)) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "### he_star_m1: this restart file carries no adaptive MLT state; "
+                    << "F_sub re-seeded with the IC's F_MLT" << std::endl;
+        }
+      } else {
+        std::int32_t hdr[2];
+        std::memcpy(&(hdr[0]), blk.data(), sizeof(hdr));
+        if (hdr[0] != nfc ||
+            blk.size() != sizeof(hdr) + sizeof(Real) + nfc*sizeof(Real)) {
+          HsFatal("the restart file's adaptive MLT profile does not match this radial "
+                  "grid", __LINE__);
+        }
+        std::vector<Real> tmp(nfc + 1);
+        std::memcpy(tmp.data(), blk.data() + sizeof(hdr), (nfc + 1)*sizeof(Real));
+        hs_ad_tl_ = tmp[0];
+        auto hf = Kokkos::create_mirror_view(hs_fsub_);
+        for (int i=0; i<nfc; ++i) hf(i) = tmp[i+1];
+        Kokkos::deep_copy(hs_fsub_, hf);
+      }
+    }
+    {
+      auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
+      hs_lsub_ = 0.0;
+      for (int i=0; i<nfc; ++i) hs_lsub_ = std::max(hs_lsub_, hf(i)*hs_r2o_[i]);
+    }
+    if (hs_ad_dout_ > 0.0) {
+      snprintf(hs_ad_file_, sizeof(hs_ad_file_), "%s.fsub.txt",
+               pin->GetString("job","basename").c_str());
+      hs_ad_tout_ = hs_ad_dout_*floor(pmy_mesh_->time/hs_ad_dout_ + 1.0);
+      if (!restart) hs_ad_tout_ = 0.0;
+    }
+    pgen_rst_write_func = HsAdaptiveRstWrite;
+    // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
+    HsApplyMltW(pmy_mesh_, HsMltW(pmy_mesh_->time));
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: mlt_closure = adaptive, relax time " << hs_ad_tau_
+                << " s, every " << hs_ad_every_ << " cycle(s), taper "
+                << pin->GetReal("problem","mlt_closure_taper") << ", update clock "
+                << hs_ad_tl_ << ", max L_sub = " << hs_lsub_ << std::endl;
+    }
   }
   if (hs_mlt_) {
     const Real w = HsMltW(pmy_mesh_->time);
@@ -991,6 +1107,12 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   auto wbq0 = ph->wbq0;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
+  // the adaptive closure: once per cycle, at its first stage (before any M1 solve of
+  // the cycle), every mlt_closure_every cycles; it re-applies w(t) itself
+  if (hs_ad_ && pm->ncycle != hs_ad_cyc_) {
+    hs_ad_cyc_ = pm->ncycle;
+    if (pm->ncycle % hs_ad_every_ == 0) HsAdaptiveUpdate(pm);
+  }
   // the frozen-MLT ramp: w at the step's start time (the same on every stage)
   if (hs_mlt_ && hs_mrs_ >= 0.0) {
     const Real w = HsMltW(pm->time);
@@ -1221,7 +1343,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     // host values, summed over ranks by the history output: rank 0 contributes
     const bool r0 = (global_variable::my_rank == 0);
     pdata->hdata[20] = r0 ? hs_mw_ : 0.0;
-    pdata->hdata[21] = r0 ? hs_mw_*hs_lmx_ : 0.0;
+    pdata->hdata[21] = r0 ? hs_mw_*(hs_ad_ ? hs_lsub_ : hs_lmx_) : 0.0;
   }
   // Picard: mean passes per implicit solve since the previous history output (the
   // counters are MPI_MAX-reduced, identical on every rank: rank 0 contributes)
@@ -1246,7 +1368,7 @@ void HsApplyMltW(Mesh *pm, const Real w) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto es = pmbp->pradm1->esrc;
-  auto fmd = hs_fm_;
+  auto fmd = hs_ad_ ? hs_fsub_ : hs_fm_;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   auto &x1v = pmbp->pcoord->x1v;
@@ -1262,6 +1384,135 @@ void HsApplyMltW(Mesh *pm, const Real w) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void HsAdaptiveUpdate()
+//! \brief the adaptive shell-mean deficit closure (hs_ad_): shell sums (deterministic:
+//! one thread per radial index, serial over the columns; MPI sum), the target, the
+//! relaxation F_sub += (1 - exp(-(t - t_last)/tau)) (target - F_sub), clip >= 0, esrc.
+
+void HsAdaptiveUpdate(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmbp->nmb_thispack;
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto w0 = fl.w0;
+  auto eos = fl.peos->eos_data;
+  auto *pm1 = pmbp->pradm1;
+  auto ur = pm1->u0;
+  auto f0 = pm1->f0x1;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &volume = pmbp->pcoord->volume;
+  auto sh = hs_shs_;
+  par_for("hs_ad_shell", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
+    Real s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0, s4 = 0.0, s5 = 0.0, s6 = 0.0, s7 = 0.0;
+    for (int m=0; m<nmb; ++m) {
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          s0 += f0(m,k,j,i)*area1(m,k,j,i);
+          s1 += area1(m,k,j,i);
+          if (i <= ie) {
+            const Real vol = volume(m,k,j,i);
+            const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
+            const Real h = e + eos.Pressure(d, e);
+            const Real v = w0(m,IVX,k,j,i), er = ur(m,radm1::M1_E,k,j,i);
+            s2 += vol;
+            s3 += vol*v;
+            s4 += vol*h;
+            s5 += vol*er;
+            s6 += vol*v*h;
+            s7 += vol*v*er;
+          }
+        }
+      }
+    }
+    sh(i,0) = s0; sh(i,1) = s1; sh(i,2) = s2; sh(i,3) = s3;
+    sh(i,4) = s4; sh(i,5) = s5; sh(i,6) = s6; sh(i,7) = s7;
+  });
+  auto hsh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sh);
+  const int nfc = hsh.extent_int(0);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &hsh(is,0), 8*(ie + 2 - is), MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+#endif
+  // luminosities of the wedge (the units of the history's L_in = F_in A(r_in))
+  std::vector<Real> lc(nfc, 0.0), lrad(nfc, 0.0), lcf(nfc, 0.0), tgt(nfc, 0.0);
+  for (int i=is; i<=ie; ++i) {
+    const Real sv = hsh(i,2);
+    const Real vm = hsh(i,3)/sv;
+    const Real fc = (hsh(i,6)/sv - vm*hsh(i,4)/sv)
+                    + (4.0/3.0)*(hsh(i,7)/sv - vm*hsh(i,5)/sv);
+    lc[i] = fc*0.5*(hsh(i,1) + hsh(i+1,1));
+  }
+  const Real lin = hs_fin_*hsh(is,1);
+  for (int i=is; i<=ie+1; ++i) {
+    lrad[i] = hsh(i,0);
+    lcf[i] = (i > is && i <= ie) ? 0.5*(lc[i-1] + lc[i]) : 0.0;
+    const Real def = lin - lrad[i] - lcf[i];
+    tgt[i] = hs_tap_[i]*((def > 0.0) ? def : 0.0)/hsh(i,1);
+  }
+  const Real t = pm->time;
+  const Real a = 1.0 - exp(-(t - hs_ad_tl_)/hs_ad_tau_);
+  hs_ad_tl_ = t;
+  auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
+  hs_lsub_ = 0.0;
+  for (int i=0; i<nfc; ++i) {
+    Real f = hf(i) + a*(tgt[i] - hf(i));
+    hf(i) = (f > 0.0) ? f : 0.0;
+    hs_lsub_ = std::max(hs_lsub_, hf(i)*hs_r2o_[i]);
+  }
+  Kokkos::deep_copy(hs_fsub_, hf);
+  HsApplyMltW(pm, HsMltW(t));
+  // profiles (problem/mlt_closure_dout > 0): rank 0 appends, per output, three lines
+  // "t <kind> values over the faces is..ie+1" in units of L_in: fsub (w A F_sub),
+  // lrad, lconv; and one "t fmlt" line (A F_MLT) at the first output
+  if (hs_ad_dout_ > 0.0 && t >= hs_ad_tout_ && global_variable::my_rank == 0) {
+    auto hm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fm_);
+    FILE *fp = fopen(hs_ad_file_, "a");
+    if (fp != nullptr) {
+      const char *kind[4] = {"fsub", "lrad", "lconv", "fmlt"};
+      for (int q=0; q<4; ++q) {
+        if (q == 3 && hs_ad_tout_ > 0.0) break;
+        fprintf(fp, "%.10e %s", t, kind[q]);
+        for (int i=is; i<=ie+1; ++i) {
+          Real v = 0.0;
+          if (q == 0) v = hs_mw_*hf(i)*hsh(i,1);
+          if (q == 1) v = lrad[i];
+          if (q == 2) v = lcf[i];
+          if (q == 3) v = hm(i)*hsh(i,1);
+          fprintf(fp, " %.6e", v/lin);
+        }
+        fprintf(fp, "\n");
+      }
+      fclose(fp);
+    }
+    hs_ad_tout_ = hs_ad_dout_*floor(t/hs_ad_dout_ + 1.0);
+  } else if (hs_ad_dout_ > 0.0 && t >= hs_ad_tout_) {
+    hs_ad_tout_ = hs_ad_dout_*floor(t/hs_ad_dout_ + 1.0);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn std::vector<char> HsAdaptiveRstWrite()
+//! \brief the adaptive closure's restart state: int32 nface, int32 0, Real t_last (the
+//! update clock), nface Reals F_sub.
+
+std::vector<char> HsAdaptiveRstWrite() {
+  std::vector<char> out;
+  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) return out;
+  const int nfc = hs_fsub_.extent_int(0);
+  auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
+  const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
+  std::vector<Real> tmp(nfc + 1);
+  tmp[0] = hs_ad_tl_;
+  for (int i=0; i<nfc; ++i) tmp[i+1] = hf(i);
+  out.resize(sizeof(hdr) + (nfc + 1)*sizeof(Real));
+  std::memcpy(out.data(), &(hdr[0]), sizeof(hdr));
+  std::memcpy(out.data() + sizeof(hdr), tmp.data(), (nfc + 1)*sizeof(Real));
+  return out;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void HeStarFinal()
 //! \brief release the namespace-scope Views before Kokkos::finalize.
 
@@ -1271,6 +1522,8 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_eint_ = DvceArray1D<Real>();
   hs_bd_ = DvceArray1D<Real>();
   hs_fm_ = DvceArray1D<Real>();
+  hs_fsub_ = DvceArray1D<Real>();
+  hs_shs_ = DvceArray2D<Real>();
   hs_be_ = DvceArray1D<Real>();
 }
 }  // namespace
