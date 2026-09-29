@@ -17,6 +17,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "units/units.hpp"
 #include "bvals/bvals.hpp"
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -508,6 +509,34 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   } else {
     arad = pin->GetOrAddReal("rad_m1","arad",0.0);
+  }
+  // Unit audit (units-physical-inputs): c_light, arad, temp_unit_kelvin, rho_unit_cgs and
+  // kappa_unit are CODE-unit constants typed into the input, not derived from <units>.
+  // Print each next to the value <units> implies (general EOS: T_unit = m_u/k_B per
+  // code temperature, <units>/mu divided out; ideal: times mu) and warn on a mismatch.
+  // Diagnostic only: the input values are used unchanged.
+  if (pmy_pack->punit != nullptr && global_variable::my_rank == 0) {
+    const auto *pu = pmy_pack->punit;
+    std::string eblk = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
+    const bool gen = pin->DoesParameterExist(eblk, "eos") &&
+                     (pin->GetString(eblk, "eos").compare("general") == 0);
+    const Real tu = pu->temperature_cgs()/(gen ? pu->mu() : 1.0);
+    const Real cexp = units::Units::speed_of_light_cgs/pu->velocity_cgs();
+    const Real aexp = units::Units::rad_constant_cgs*SQR(SQR(tu))/pu->pressure_cgs();
+    const Real dexp = pu->density_cgs();
+    const Real kexp = pu->density_cgs()*pu->length_cgs();
+    auto line = [](const char *key, Real val, Real ex, const char *unit) {
+      const Real rel = std::abs(val/ex - 1.0);
+      std::cout << "<rad_m1>/" << key << " = " << val << " [code] ; <units> implies "
+                << ex << " (" << unit << "), rel. diff " << rel
+                << (rel > 1.0e-5 ? "  <-- WARNING: inconsistent with <units>" : "")
+                << std::endl;
+    };
+    line("c_light", c_light, cexp, "c in code velocity");
+    if (arad > 0.0) line("arad", arad, aexp, "a_rad T_unit^4 / p_unit");
+    line("temp_unit_kelvin", otab.tunit, tu, "K per code temperature");
+    line("rho_unit_cgs", otab.dunit, dexp, "g/cm^3 per code density");
+    line("kappa_unit", otab.kunit, kexp, "code opacity per cm^2/g");
   }
 
   // (2a) <rad_m1>/force_reference.  `wb_arad` means: an EXTERNAL well-balanced scheme

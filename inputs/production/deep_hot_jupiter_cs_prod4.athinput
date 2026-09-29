@@ -273,7 +273,7 @@ grav_point_mass = true
 ap    = 9.44e9
 Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
 met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
-bbot  = 3.0e0     # G at the base, r = ap.
+bbot  = 3.0e0     # CODE units (Heaviside-Lorentz): polar B_r at r = ap; 3.0 code = 10.6 G (bbot_gauss on units-physical-inputs)
 
 # --- radiative transfer -----------------------------------------------------------
 rt_de_max    = 0.5

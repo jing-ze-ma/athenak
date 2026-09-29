@@ -181,7 +181,7 @@ grav_point_mass = true
 ap    = 9.44e9
 Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
 met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
-bbot  = 0.0       # H5: was 3.0 G.  Must stay: pgen.cpp:57/131 GetReal it for every hot_jupiter
+bbot  = 0.0       # H5: was 3.0 (code units = 10.6 G).  Must stay: pgen.cpp:57/131 GetReal it for every hot_jupiter
                   # run; it is used only on the MHD paths.  0 = the cs_hyd_rs / sp_dhj_hyd value.
 
 # --- radiative transfer -----------------------------------------------------------
