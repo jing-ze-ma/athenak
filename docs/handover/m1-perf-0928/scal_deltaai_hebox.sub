@@ -1,0 +1,44 @@
+#!/bin/bash -l
+#SBATCH -J heboxscal
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 2
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=100G
+#SBATCH --time=00:30:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# m1-perf round 3 (user 09-29: production = high resolution on many GPUs).  Current default (Newton on), 150 cycles.
+# (a) preconditioner vs MeshBlock count, 4 GPUs on ONE node, big box 168x208x208 (1.8 M cells/GPU):
+#     mb4 = 4 MBs 168x104x104 | mb8 = 168x104x52 | mb16 = 168x52x52 | x1s = 84x104x104 (x1 split in 2, 8 MBs)
+# (b) first multi-node run on DeltaAI: weak scaling, 8 GPUs on 2 nodes, hebox_w8 (168x416x208, 8 MBs = 1.8 M/GPU),
+#     after a 10-cycle preflight (skipped if it fails).  Reference = mb4.
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_box_dev_2ff4fe27b55e}
+OUT=${OUT:-/work/nvme/bivj/jma20/scal_hebox_0929}; J=${SLURM_JOB_ID:-nojob}; mkdir -p $OUT
+export MACHINE=deltaai
+L1="srun -N 1 -n %N --ntasks-per-node=4 -c 16 --cpu-bind=cores"
+L2="srun -N 2 -n %N --ntasks-per-node=4 -c 16 --cpu-bind=cores"
+echo "SCALJOB job=$J nodes=${SLURM_JOB_NODELIST:-none} bin=$BIN md5=$(md5sum $BIN | cut -c1-32)"
+${DRY:+echo} srun -N 2 -n 8 --ntasks-per-node=4 bash -c 'echo "rank $SLURM_PROCID local $SLURM_LOCALID $(hostname -s)"' | sort -n -k2
+run() {  # name nranks launch input extra...
+  local n=$1 nr=$2 l=$3 inp=$4; shift 4
+  LAUNCH="${DRY:+echo }$l" INP=$inp EXTRA="$*" timeout --kill-after=30 ${TO:-480} \
+    bash $H/run_bench_hebox.sh $BIN $nr $OUT/${n}_$J > /dev/null 2>&1; local rc=$?
+  [ $rc = 124 ] && echo "TIMEOUT: $n"
+  echo "arm=$n nr=$nr rc=$rc $(grep -m1 -o 'Picard iterations mean=[^ ]*' $OUT/${n}_$J/bench.log) $(grep -m1 -o 'inner iterations mean=[^ ]*' $OUT/${n}_$J/bench.log)"
+  return $rc
+}
+NL="time/nlim=150"
+run mb4  4 "$L1" $H/inputs/hebox_bigsweep.athinput $NL
+run mb8  4 "$L1" $H/inputs/hebox_bigsweep.athinput $NL meshblock/nx3=52
+run mb16 4 "$L1" $H/inputs/hebox_bigsweep.athinput $NL meshblock/nx2=52 meshblock/nx3=52
+run x1s  4 "$L1" $H/inputs/hebox_bigsweep.athinput $NL meshblock/nx1=84
+if TO=200 run pre8 8 "$L2" $H/inputs/hebox_w8.athinput time/nlim=10; then
+  run w8 8 "$L2" $H/inputs/hebox_w8.athinput $NL
+else
+  echo "PREFLIGHT 8 GPUs / 2 nodes FAILED: w8 skipped"; tail -20 $OUT/pre8_$J/bench.log
+fi
+python3 $H/ana_bench_hebox.py $OUT/*_$J/bench.log --c0 50 --c1 150
+echo SCAL_DONE

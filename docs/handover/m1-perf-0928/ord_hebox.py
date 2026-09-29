@@ -44,15 +44,16 @@ def rel(a, b):
     return np.abs(a - b).sum() / max(np.abs(b).sum(), 1e-300)
 
 
-SCH = [s for s in 'bn' if os.path.isdir(f'{D}/{s}{CFL[0]}_{J}')]
+SCH = [s for s in os.environ.get('SCH', 'bn') if os.path.isdir(f'{D}/{s}{CFL[0]}_{J}')]
+LAB = {'b': 'base', 'n': 'newton', 'o': 'newton+one_pass'}
 S = {}
 for s in SCH:
     for c in CFL:
         S[s + c] = load(s + c)
 t = {k: v[1] for k, v in S.items()}
 print('final times:', ', '.join(f'{k}={v:.12g}' for k, v in t.items()))
-names = list(S['b6'][0].keys())
-for s, lab in [x for x in (('b', 'base'), ('n', 'newton')) if x[0] in SCH]:
+names = list(S[SCH[0] + '6'][0].keys())
+for s, lab in [(x, LAB[x]) for x in SCH]:
     print(f'\n== {lab}: e(cfl) = ||u_c - u_c/2||_1/||u_c/2||_1   [order]')
     print(f"{'var':10s}" + ''.join(f'{"e(" + a + "/" + b + ")":>16s}' for a, b in zip(CFL, CFL[1:])) +
           f"{'p1':>7s}{'p2':>7s}")
@@ -60,13 +61,13 @@ for s, lab in [x for x in (('b', 'base'), ('n', 'newton')) if x[0] in SCH]:
         e = [rel(S[s + a][0][vn], S[s + b][0][vn]) for a, b in zip(CFL, CFL[1:])]
         p = [np.log2(e[i] / e[i + 1]) if e[i + 1] > 0 else float('nan') for i in range(len(e) - 1)]
         print(f'{vn:10s}' + ''.join(f'{x:16.3e}' for x in e) + ''.join(f'{x:7.2f}' for x in p))
-if len(SCH) == 2:
-  print('\n== ||u_base - u_newton||_1 / ||u||_1 at each cfl, and its ratio to the time error e(cfl)')
-for vn in (names if len(SCH) == 2 else []):
+for ra, rb in zip(SCH, SCH[1:]):
+  print(f'\n== ||u_{ra} - u_{rb}||_1 / ||u||_1 at each cfl, and its ratio to the time error e(cfl) of {ra}')
+  for vn in names:
     row = []
     for i, c in enumerate(CFL):
-        d = rel(S['n' + c][0][vn], S['b' + c][0][vn])
-        et = rel(S['b' + CFL[i]][0][vn], S['b' + CFL[i + 1]][0][vn]) if i + 1 < len(CFL) else float('nan')
+        d = rel(S[rb + c][0][vn], S[ra + c][0][vn])
+        et = rel(S[ra + CFL[i]][0][vn], S[ra + CFL[i + 1]][0][vn]) if i + 1 < len(CFL) else float('nan')
         row.append(f'{d:10.2e} ({d / et if et == et and et > 0 else float("nan"):7.1e})')
     print(f'{vn:10s} ' + '  '.join(row))
 

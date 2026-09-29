@@ -1,0 +1,26 @@
+#!/bin/bash -l
+#SBATCH -J heboxonep
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --time=00:25:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# m1-perf round 2, item 1: implicit_one_pass (skip the confirming Picard pass) ON TOP of implicit_opac_newton.
+# (1) timing, small box, 1 GPU, 300 cycles (window 100-300): newton vs + one_pass 8 at stage safety 30/10/3
+# (2) order test from the evolved t=40 restart (same RST as 3260169/3260196), one_pass 8, safety 30
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+export BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_box_dev_2ff4fe27b55e}
+OP="rad_m1/implicit_one_pass=8"; ON="rad_m1/implicit_opac_newton=true+$OP"
+INP=$H/inputs/hebox_sweep.athinput NRS="1" NLIM=300 C0=100 OUT=${OUT:-/work/nvme/bivj/jma20/onep_hebox_0929} TO=420 \
+  ARMS="def op30:$OP op10:$OP+rad_m1/time2_one_pass_safety=10 op3:$OP+rad_m1/time2_one_pass_safety=3" \
+  bash $H/arms_deltaai_hebox.sub
+for d in ${OUT:-/work/nvme/bivj/jma20/onep_hebox_0929}/*_${SLURM_JOB_ID:-nojob}; do
+  echo "$(basename $d): $(grep -m1 'implicit_one_pass:' $d/bench.log | cut -c1-200)"; done
+RST=/work/nvme/bivj/jma20/ord_hebox_0928/b075_3259962/rst/m1slab.00001.rst OUT=/work/nvme/bivj/jma20/ordrst_hebox_0928 \
+  ARMS="o6:time/cfl_number=0.6+$ON o3:time/cfl_number=0.3+$ON o15:time/cfl_number=0.15+$ON o075:time/cfl_number=0.075+$ON" \
+  bash $H/ordrst_deltaai_hebox.sub
+echo ONEP_DONE
