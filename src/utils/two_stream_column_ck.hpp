@@ -180,6 +180,7 @@ inline bool ck_impl_kkt_row = false;
 // reported arrays change, never the solution.  See CkConserveFlux (two_stream_rt.hpp).
 inline int ck_impl_conserve = 0;
 inline DvceArray1D<Real> *ck_cons_stat_ptr = nullptr;
+inline DvceArray5D<Real> *ck_cons_buf_ptr = nullptr;   // (m, 2, k, j, i) scratch
 inline int64_t ck_cons_ncell = 0;          // cells corrected, last call (verbose only)
 inline Real ck_cons_de = 0.0;              // their sum r V [erg], last call, this rank
 // problem/ck_impl_osc = N > 0: PER-CELL AITKEN DAMPING of oscillating cells, from pass N

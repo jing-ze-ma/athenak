@@ -5669,10 +5669,10 @@ void DhjCycleDiag(Mesh *pm) {
 //! solver: the radiative columns read the correlated-k two-stream's own arrays, i.e. the
 //! LAST ck call that touched each column (under ck_impl_every > 1 the last full call,
 //! or a later guard call on that column; within the call, its final pass).  The fluid
-//! columns read the RK-weighted sum of the stages' Riemann fluxes (problem/flux_hst_rkavg,
-//! default since dhj-ck-conserve 09-29; false = the last RK stage, as before; the
-//! flux_hst_wall split columns always read the last stage).  Radiation is zero until the
-//! first ck call.
+//! columns read the RK-weighted sum of the stages' Riemann fluxes
+//! (problem/flux_hst_rkavg, default since dhj-ck-conserve 09-29; false = the last RK
+//! stage, as before; the flux_hst_wall split columns always read the last stage).
+//! Radiation is zero until the first ck call.
 //!   Lir_top   net thermal (longwave) luminosity out through the top face ie+1:
 //!             sum F_net(ie+1) A(ie+1), F_net = up - down, what the update differences
 //!   Lsw_refl  stellar power reflected: albedo/(1-albedo) Lsw_abs, per column.  The

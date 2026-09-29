@@ -1824,8 +1824,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 //! block's emission Em in the cell it comes from (block 0 where Em = 0).  Only the
 //! REPORTED face fluxes rt_Fb change (Src_g, Em_g and ck_src keep the sweep's values):
 //! no pass, no later call and no state reads rt_Fb before the next sweep rewrites it,
-//! so the solution is bitwise the old one (gate: dhj-ck-conserve 09-29).  Counted: ck_cons_ncell (cells
-//! corrected, last call) and ck_cons_de (sum r V over them, erg, last call, this rank).
+//! so the solution is bitwise the old one (gate: dhj-ck-conserve 09-29).  Counted
+//! (problem/ck_impl_verbose, "cons=" / "consde=" on the ck_implicit line): the cells
+//! corrected in the last call and their sum r V [erg], this rank.
 
 inline void CkConserveFlux(Mesh *pm, const Real bdt) {
   if (ck_impl_conserve <= 0 || rt_Fb_ptr == nullptr || rt_icut_ptr == nullptr ||
@@ -1863,6 +1864,20 @@ inline void CkConserveFlux(Mesh *pm, const Real bdt) {
   }
   auto st_ = *ck_cons_stat_ptr;
   Kokkos::deep_copy(DevExeSpace(), st_, 0.0);
+  // pass 1, per cell: the retained power r V/h of a corrected cell (0 elsewhere) and
+  // the cell's total emission (the block weights), into ck_cons_buf
+  const int n1 = fb_.extent_int(2);
+  if (ck_cons_buf_ptr != nullptr &&
+      (ck_cons_buf_ptr->extent_int(0) != nmb1 + 1 ||
+       ck_cons_buf_ptr->extent_int(4) != n1)) {
+    delete ck_cons_buf_ptr;                    // the pack changed size
+    ck_cons_buf_ptr = nullptr;
+  }
+  if (ck_cons_buf_ptr == nullptr) {
+    ck_cons_buf_ptr = new DvceArray5D<Real>("ck_cons_buf", nmb1 + 1, 2,
+                                            fb_.extent_int(3), fb_.extent_int(4), n1);
+  }
+  auto cb_ = *ck_cons_buf_ptr;
   par_for("ck_conserve", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     if (msk && done_(m,k,j) > 1.5) return;       // masked out of a partial call
@@ -1878,26 +1893,40 @@ inline void CkConserveFlux(Mesh *pm, const Real bdt) {
         const Real e = es + dep_(m,k,j,i);
         use = CkKktCell(eos, fbnd, kd, detot, u0(m,IDN,k,j,i), e, es, r);
       }
+      Real rv = 0.0;
       if (use && r == r) {
-        // split r V/h over the blocks by the cell's emission; carried up the column
-        Real et = 0.0;
-        for (int b=0; b<nblk; ++b) et += em_(m,b,i,k,j);
-        const Real rv = r*v/h;
-        for (int b=0; b<nblk; ++b) {
-          const Real w = (et > 0.0) ? em_(m,b,i,k,j)/et : ((b == 0) ? 1.0 : 0.0);
-          if (w == 0.0) continue;
-          for (int f=i+1; f<=ie+1; ++f) {
-            const Real a = pp_ ? 1.0 : area1(m,k,j,f);
-            fb_(m,b,f,k,j) -= w*rv/a;
-          }
-        }
+        rv = r*v/h;
         csum += r*v;
         nc += 1.0;
+        Real et = 0.0;
+        for (int b=0; b<nblk; ++b) et += em_(m,b,i,k,j);
+        cb_(m,1,k,j,i) = et;
       }
+      cb_(m,0,k,j,i) = rv;
     }
     if (nc > 0.0) {
       Kokkos::atomic_add(&st_(0), nc);
       Kokkos::atomic_add(&st_(1), csum);
+    }
+    // whether pass 2 has anything to do in this column: slot i = 0, a ghost cell
+    // (ic >= is > 0), which pass 1 never writes
+    cb_(m,0,k,j,0) = (nc > 0.0) ? 1.0 : 0.0;
+  });
+  // pass 2, per (block, column): carry the block's share up the column
+  par_for("ck_conserve_fb", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int b, const int k, const int j) {
+    if (msk && done_(m,k,j) > 1.5) return;
+    const int ic = icut_(m,k,j);
+    if (ic > ie || !(cb_(m,0,k,j,0) > 0.0)) return;
+    Real c = 0.0;
+    for (int i=ic; i<=ie; ++i) {
+      const Real rv = cb_(m,0,k,j,i);
+      if (rv != 0.0) {
+        const Real et = cb_(m,1,k,j,i);
+        const Real w = (et > 0.0) ? em_(m,b,i,k,j)/et : ((b == 0) ? 1.0 : 0.0);
+        c += w*rv;
+      }
+      if (c != 0.0) fb_(m,b,i+1,k,j) -= c/(pp_ ? 1.0 : area1(m,k,j,i+1));
     }
   });
   if (ck_impl_verbose) {
@@ -2278,6 +2307,8 @@ inline void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
                 << ((ck_impl_floorbound || ck_impl_kkt_demax)
                     ? (" floor=" + std::to_string(ck_impl_nfloor) + " kkt="
                        + std::to_string(ck_impl_nkkt)) : std::string(""))
+                << ((ck_impl_conserve > 0) ? (" cons=" + std::to_string(ck_cons_ncell)
+                    + " consde=" + std::to_string(ck_cons_de)) : std::string(""))
                 << ((ck_impl_osc > 0) ? (" osc=" + std::to_string(ck_impl_nosc))
                     : std::string(""))
                 << (conv ? "" : " NOT-CONVERGED")
