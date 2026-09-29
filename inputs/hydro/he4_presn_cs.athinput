@@ -235,7 +235,7 @@ rad_ang_maxit    = 400           # the cubed-sphere cross-term outer iteration c
 rad_sts_perplane = true
 # (rad_cap_ang, the explicit stiffness cap of the old fallback, is REMOVED: it and
 # rad_implicit_ang are two treatments of the same operator and the code refuses both.)
-tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor).
+tfloor_kelvin = 5000.0   # user 09-29: real 5000 K floor, was code units (tfloor = 5.0e3) = 6e-5 K
                                  # 5e3 K is BELOW the table's own lowest row (10^3.8 =
                                  # 6310 K) and was therefore UNREACHABLE: every sub-table
                                  # inversion is clamped to 6310 K first, so the tfloor
