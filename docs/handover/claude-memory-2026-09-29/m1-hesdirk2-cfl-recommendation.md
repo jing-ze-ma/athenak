@@ -46,3 +46,9 @@ round-off standard -> 0.3. Box not convecting in this window (F_conv/F ~ 0): con
 1.878e-4 /s identical in every arm (cfl 0.15-0.9), KE still growing at t 34000 (8.97e27, F_conv/F ~ 0): the 09-26
 "saturation" at cfl-dependent levels was the artefact. Costs (apu production average, wall/sim-s): R3 0.575, H6 0.303,
 H9 0.206 (fix costs 1.8x at cfl 0.3, nothing at 0.9). Untested: the saturated/convecting state (continue R3 and H9).
+**RETRACTION 09-29 (heconv_0929/RESULTS.md):** the M1 He box DOES convect (v1'/v_MLT 1.2-1.5 saturated after ~9 turnovers,
+r(v1',T') +0.24..+0.47, same as two-stream box_w8). The "no convection, F_conv/F <= 1e-4" claim was a measurement error:
+ana.py/sat.py/resolve.py "Fconv" = plane-mean <v1(e+p)> under etotgrav (e includes rho*Phi; pulsation-dominated); this
+FeCZ is extremely inefficient (MLT F_conv/F <= 3e-7; fluctuation flux 1e-10..1e-9 in BOTH boxes). Velocities in
+resolve output are cm/s, not km/s. Judge convection by v1'/v_MLT, r(v1',T') and the fluctuation flux
+<v1'(e+p)_gas'> + <v1'(4/3)E'>. Resolution verdict (no doubling needed) stands.

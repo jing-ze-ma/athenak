@@ -53,3 +53,24 @@ Recheck the deep entropy step at ~rot 100; switch xstep 8 -> 0 with a drift chec
 ## 6. Open, later
 
 Massive stars: global He-star model geometry (sp wedge with vet_col, or cubed sphere after M1 stage S5). MHD phase: max_eta cap / drag time, effective numerical eta, lhlld magnetic floor, GS05 corner-emf time order, small wall Mdot in MHD. Pre-existing bugs listed in section 3.
+
+## 7. Update 09-29 ~03:15 (read this first; supersedes section 4 where they differ)
+
+- **WASP-121b fresh start RUNNING on viper** since 09-29 02:08 CEST: `/viper/ptmp2/jinma/w121prod_0929` (1x job 12018387 +
+  12018388 afterany, 10x 12018389 + 12018390), ROCm 7.2 binary of cda4da33 (md5 7bf3f753), inputs = w121prod_0927 +
+  `rsolver = lhllc`, 1x maxit 16, 10x maxit 24 + dtmax 0.25, xstep 8, flux_hst_floor; ~25 rot/h (1x), ~14 rot/h (10x).
+  The same run is also on Caltech (restarted with lhllc, smoke clean) and queued on DeltaAI; the user decides which
+  copies to keep (NOTE-2026-09-29-viper-w121prod.md, NOTE-2026-09-28-deltaai-w121prod.md).
+- **dhj uses lhllc (hydro) / lhlld (MHD) from now on** (user 09-29; NOTE-2026-09-29-dhj-rsolver.md).
+- **ROCm 7.2 adopted on viper** (gcc/16 rocm/7.2 openmpi_gpu/5.0 + `Kokkos_ENABLE_IMPL_HIP_MALLOC_ASYNC=OFF`; ~10 %
+  faster; build targets `*_gpu72` in /viper/ptmp2/jinma/builds; jobs must load the same modules).
+- **Radial remap merged** (e804daf1): `problem/remap_file` + docs/handover/scripts/dhj_remap.py; HOWTO in
+  /viper/ptmp2/jinma/remap_0929/HOWTO.md (76 -> nx1 256 at rot 300; 17.6 min/rot on 2 GPUs at 256).
+- **He box:** the M1 box DOES convect (v1'/v_MLT 1.2-1.5 saturated, same as two-stream box_w8; the earlier "no
+  convection" was a measurement error: plane-mean flux + cm/s read as km/s; heconv_0929). Resolution sufficient (no
+  doubling). Saturated cfl comparison R3/H9/P9 pending in /viper/ptmp2/jinma/hebox_cfl2_0927 (R3 job 12016075 near
+  t = 74000; results in RESULTS.md, script scripts/analyze2.sh, metrics res/conv.py).
+- **Benchmarks:** WASP-121b (bench-2026-09-28; viper, DeltaAI done: GH200 1.4-1.7x MI300A) and He box
+  (bench-2026-09-29-hebox; viper done, hold lifted for Caltech/DeltaAI).
+- **Agents:** simple mechanical tasks on Sonnet ("sonnet" = Claude Sonnet 5, claude-sonnet-5, checked 09-29), judgement on
+  Opus 5.5. Noise gates stop at equal physical time (tlim). CPU checks on the login node (<= 30 min).

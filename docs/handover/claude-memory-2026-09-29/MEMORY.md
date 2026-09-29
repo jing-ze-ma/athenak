@@ -127,3 +127,6 @@ Full original lines in [index-active-m1-he4](index-active-m1-he4.md).
 - [NOISE GATES: STOP ARMS AT EQUAL PHYSICAL TIME (tlim), never nlim (09-28)](noise-gate-equal-time.md) — nlim faked a 4.6x ck-next failure
 - [SKIP GR-FAMILY TESTS (user 09-28: GR EOS known broken)](skip-gr-tests.md) — dyngrmhd/gr/sr/nr
 - [INCREMENTAL BUILDS on viper (user 09-28): builds/build_inc_viper.sh, reuse binaries](incremental-builds-viper.md) — no fresh git-archive full rebuilds
+- [dhj: rsolver lhllc (hydro) / lhlld (MHD) from now on (user 09-29)](dhj-rsolver-lhllc-lhlld.md) — WASP-121b production on Caltech AND viper (w121prod_0929, queued 09-29)
+- [ROCm 7.2 ADOPTED on viper (user 09-29): *_gpu72 build targets, gcc/16 rocm/7.2 modules](rocm72-adopted-0929.md) — ~10 % faster; WASP-121b jobs 12018387/89
+- [SIMPLE AGENTS ON SONNET 5 (user 09-29; no Sonnet 5.5 exists)](simple-agents-sonnet-0929.md) — Opus 5.5 for judgement
