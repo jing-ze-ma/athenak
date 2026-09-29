@@ -122,6 +122,7 @@ implicit_tol     = 1.0e-8
 implicit_maxit   = 200
 implicit_one_pass = 0
 implicit_opac_update = true
+implicit_opac_newton = false   # user 09-29: the Newton face term made the sp-row diagonal negative in fast thin plume cells (diag_seam D/N); off until the guard (branch m1-opn-guard) is merged
 implicit_gas_newton = true
 implicit_eos_cache  = true
 implicit_flux    = central
