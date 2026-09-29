@@ -163,6 +163,8 @@ void read_ic_profile(const std::string &fname, const int &N, View1D Tarr,
                      View1D lgparr);
 
 void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
+void DhjOlrDump(ParameterInput *pin, Mesh *pm);
+void DhjFinalDumps(ParameterInput *pin, Mesh *pm);
 // problem/flux_hst: the radiative / energy / mass flux history columns
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
 // problem/flux_hst_wall: four inner-wall in/out split columns (set in UserProblem)
@@ -529,6 +531,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // single cycle rather than running it at nlim = 0.
   if (!pin->GetOrAddString("problem", "photosphere_dump", "").empty()) {
     pgen_final_func = DhjPhotosphereDump;
+  }
+  // problem/olr_dump = <file> (default off) writes the net top-of-domain longwave flux per
+  // ck band and column, plus the absorbed stellar flux, at the end of the run (synthetic
+  // phase curves).  Same one-cycle-restart rule as photosphere_dump.
+  if (!pin->GetOrAddString("problem", "olr_dump", "").empty()) {
+    pgen_final_func = DhjFinalDumps;
   }
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
@@ -5268,6 +5276,110 @@ void DhjCycleDiag(Mesh *pm) {
     std::cout << "### cyclediag: could not rename '" << ftmp << "'" << std::endl;
   }
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void DhjFinalDumps / DhjOlrDump
+//! \brief problem/olr_dump (default off): per column, the NET longwave flux through the
+//! top face ie+1 per ck band (rt_Fb blocks summed per band: chain c = ((b CK_NG)+g) nq + q,
+//! RT_NB chains per block), the cos of the stellar zenith angle and the absorbed stellar
+//! flux sum_i Q_sw V / A(ie+1).  Code flux units (cgs for dhj).  Reads the arrays of the
+//! LAST ck call, like DhjFluxHistory; nothing is re-run.  Rows: gid k-ks j-js mu0
+//! F_sw_abs F_band[0..nb-1] (bands in table order, edges in the header).
+
+void DhjFinalDumps(ParameterInput *pin, Mesh *pm) {
+  if (!pin->GetOrAddString("problem", "photosphere_dump", "").empty()) {
+    DhjPhotosphereDump(pin, pm);
+  }
+  DhjOlrDump(pin, pm);
+}
+
+void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
+  namespace ts = two_stream_rt;
+  const std::string fname = pin->GetOrAddString("problem", "olr_dump", "");
+  if (fname.empty()) return;
+  if (!ts::rt_face_flux_ready() || ts::rt_Qb_ptr == nullptr || ts::rt_cf_ptr == nullptr
+      || !rt_ck || ck_wl_ptr == nullptr) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "### olr_dump: needs the ck split path and one RT call; nothing written"
+                << std::endl;
+    }
+    return;
+  }
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmbp->nmb_thispack;
+  auto fb = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ts::rt_face_flux());
+  auto qb = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *ts::rt_Qb_ptr);
+  auto cf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *ts::rt_cf_ptr);
+  auto ic = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ts::rt_cut_index());
+  auto wl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *ck_wl_ptr);
+  auto area = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                  pmbp->pcoord->area.x1f);
+  auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  const int nblk = fb.extent_int(1);
+  const int nqb = nblk/CK_NB;          // blocks per band
+  std::ostringstream os;
+  os.precision(9);
+  os << std::scientific;
+  if (global_variable::my_rank == 0) {
+    os << "# AthenaK olr_dump: net top longwave flux per ck band [erg/s/cm2]\n"
+       << "# t = " << pm->time << " s   cycle " << pm->ncycle << "   bands " << CK_NB
+       << "   blocks " << nblk << "\n# band edges [um] (table order):";
+    for (int b=0; b<=CK_NB; ++b) os << " " << wl(b);
+    os << "\n# gid kk jj mu0 F_sw_abs F_band[0.." << CK_NB-1 << "]\n";
+  }
+  for (int m=0; m<nmb; ++m) {
+    const int gid = pmbp->pmb->mb_gid.h_view(m);
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        const Real at = area(m,k,j,ie+1);
+        Real qsw = 0.0;
+        for (int i=ic(m,k,j); i<=ie; ++i) {
+          for (int b=0; b<nblk; ++b) qsw += qb(m,b,i,k,j)*vol(m,k,j,i);
+        }
+        os << gid << " " << k-ks << " " << j-js << " " << cf(m,k,j,3) << " " << qsw/at;
+        for (int b=0; b<CK_NB; ++b) {
+          Real f = 0.0;
+          for (int q=0; q<nqb; ++q) f += fb(m,b*nqb+q,ie+1,k,j);
+          os << " " << f;
+        }
+        os << "\n";
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  {
+    std::string mine = os.str();
+    int len = static_cast<int>(mine.size());
+    int nrank = global_variable::nranks;
+    std::vector<int> lens(nrank), offs(nrank, 0);
+    MPI_Gather(&len, 1, MPI_INT, lens.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+    int tot = 0;
+    if (global_variable::my_rank == 0) {
+      for (int r=0; r<nrank; ++r) { offs[r] = tot; tot += lens[r]; }
+    }
+    std::vector<char> all((global_variable::my_rank == 0) ? tot : 1);
+    MPI_Gatherv(mine.data(), len, MPI_CHAR, all.data(), lens.data(), offs.data(),
+                MPI_CHAR, 0, MPI_COMM_WORLD);
+    if (global_variable::my_rank == 0) {
+      std::ofstream f(fname);
+      f.write(all.data(), tot);
+      f.close();
+      std::cout << "olr_dump: written to '" << fname << "'" << std::endl;
+    }
+  }
+#else
+  {
+    std::ofstream f(fname);
+    f << os.str();
+    f.close();
+    std::cout << "olr_dump: written to '" << fname << "'" << std::endl;
+  }
+#endif
 }
 
 //----------------------------------------------------------------------------------------
