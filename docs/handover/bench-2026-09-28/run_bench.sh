@@ -50,9 +50,19 @@ case $MACHINE in
     CKDATA10=${CKDATA10:-/resnick/home/jingze/ATHENAK/athenak_data/ckdata10}
     LAUNCH=${LAUNCH:-"srun --mpi=pmix -n %N -c ${SLURM_CPUS_PER_TASK:-8} --gpus-per-task=1 --exact"} ;;
   deltaai)
-    # NCSA DeltaAI GH200 (4 per node, ARM Grace host).  TO BE FILLED by the DeltaAI session
-    # (modules, account, partition, launcher, data dirs) per TASK-2026-09-28-deltaai-bringup.md.
-    : "${CKDATA:?set CKDATA}" "${CKDATA10:?set CKDATA10}" "${LAUNCH:?set LAUNCH}" ;;
+    # NCSA DeltaAI GH200 (4 per node, 72-core Grace each; GPU r <-> NUMA r <-> cores 72r..72r+71).
+    # Job header: -A bivj-dtai-gh -p ghx4 (or ghx4-interactive, x2 charge) -N 1 --ntasks-per-node=<n>
+    #   --gpus-per-node=<n> --cpus-per-task=16.  Default modules (PrgEnv-gnu, gcc-native/14,
+    #   cudatoolkit/25.5_12.9, cray-mpich/9.0.1, craype-accel-nvidia90).
+    # Launch = the AthenaK docs' DeltaAI recipe: every rank sees all GPUs, Kokkos maps device by local rank,
+    #   cores bound per rank.  NOT --gpus-per-task=1/--gpu-bind=closest: its cgroups block CUDA IPC, and
+    #   GPU-aware Cray MPICH then hangs (or is ~3x slower with MPICH_GPU_IPC_ENABLED=0), DELTAAI_FACTS.md.
+    module reset > /dev/null 2>&1
+    export MPICH_GPU_SUPPORT_ENABLED=1 OMP_NUM_THREADS=1
+    export SLURM_CPU_BIND=cores KOKKOS_MAP_DEVICE_ID_BY=mpi_rank
+    CKDATA=${CKDATA:-/u/jma20/ATHENAK/data/athenak_data/exo_fms_ck}
+    CKDATA10=${CKDATA10:-/u/jma20/ATHENAK/data/athenak_data/ckdata10}
+    LAUNCH=${LAUNCH:-"srun -n %N -c ${SLURM_CPUS_PER_TASK:-16} --cpu-bind=cores"} ;;
   *)
     : "${CKDATA:?set CKDATA or MACHINE}" "${CKDATA10:?set CKDATA10 or MACHINE}" \
       "${LAUNCH:?set LAUNCH or MACHINE}" ;;
