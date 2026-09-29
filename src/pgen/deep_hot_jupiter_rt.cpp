@@ -170,6 +170,18 @@ bool dhj_flux_hst_wall = false;
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 bool dhj_flux_hst_floor = false;
 Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
+// problem/flux_hst_rkavg (default true; false = the last RK stage, the pre-0929
+// columns): the fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
+// Mdot_bot) are the RK-weighted sums over the stages of the cycle, i.e. the flux the
+// update actually applied (rk1 1; rk2 1/2, 1/2; rk3 1/6, 1/6, 2/3).  Accumulated per
+// column by DhjFluxStage at the top of SourceFunc (uflx then holds the stage's fluxes).
+bool dhj_fhst_avg = false;
+int dhj_fhst_nst = 0;                     // stages per cycle
+Real dhj_fhst_w[3] = {0.0, 0.0, 0.0};     // their weights
+int dhj_fhst_stage = 0;                   // stages accumulated in this cycle
+int64_t dhj_fhst_cyc = -1;                // the cycle they belong to
+DvceArray4D<Real> *dhj_fhst_ptr = nullptr;   // (m, 4, k, j): E_top M_top E_bot M_bot
+void DhjFluxStage(Mesh *pm);
 void DhjCycleDiag(Mesh *pm);
 // problem/budget_dt (DIAGNOSTIC, branch dhj-budget-0929; off unless the key exists and
 // is > 0): per-shell energy and mass ledger, see EBudCk
@@ -492,6 +504,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
+    // problem/flux_hst_rkavg (see its note); read without recording it in the input
+    const bool rkavg = pin->DoesParameterExist("problem","flux_hst_rkavg")
+                       ? pin->GetBoolean("problem","flux_hst_rkavg") : true;
+    const std::string integ = pin->GetOrAddString("time","integrator","rk2");
+    dhj_fhst_nst = 0;
+    if (integ == "rk1") {
+      dhj_fhst_nst = 1;  dhj_fhst_w[0] = 1.0;
+    } else if (integ == "rk2") {
+      dhj_fhst_nst = 2;  dhj_fhst_w[0] = 0.5;  dhj_fhst_w[1] = 0.5;
+    } else if (integ == "rk3") {
+      dhj_fhst_nst = 3;  dhj_fhst_w[0] = 1.0/6.0;  dhj_fhst_w[1] = 1.0/6.0;
+      dhj_fhst_w[2] = 2.0/3.0;
+    }
+    // other integrators (imex etc.): the last stage, as before
+    dhj_fhst_avg = rkavg && user_srcs && (dhj_fhst_nst > 0);
+    if (dhj_fhst_avg) {
+      auto &ic = pmy_mesh_->mb_indcs;
+      dhj_fhst_ptr = new DvceArray4D<Real>("dhj_fhst", pmy_mesh_->pmb_pack->nmb_thispack,
+                                           4, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng);
+    }
   }
   // problem/flux_hst_wall (default false): four more columns after the nine flux
   // columns, splitting the inner-wall fluxes by the sign of the local mass flux:
@@ -884,6 +916,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // before the key existed picks up true.
   two_stream_rt::ck_impl_kkt_row =
       pin->GetOrAddBoolean("problem","ck_impl_kkt_row",true);
+  // problem/ck_impl_conserve: 0 = off (default, bitwise), 1 = the reported face fluxes
+  // (Lir_top, the ledger) consistent with the energy applied in the cells a ck_implicit
+  // call leaves on a bound, 2 = in every cell.  The solution is unchanged either way
+  // (CkConserveFlux, utils/two_stream_rt.hpp).  Read only if present, so a run without
+  // it writes the same restart header.
+  two_stream_rt::ck_impl_conserve =
+      pin->DoesParameterExist("problem","ck_impl_conserve")
+      ? pin->GetInteger("problem","ck_impl_conserve") : 0;
   // problem/ck_impl_osc = N: per-cell Aitken damping of oscillating cells from pass N
   // on (utils/two_stream_column_ck.hpp; cknewton_0928).  0 = off (default, bitwise).
   two_stream_rt::ck_impl_osc = pin->GetOrAddInteger("problem","ck_impl_osc",0);
@@ -3514,8 +3554,38 @@ void EBudCk(Mesh *pm, const Real dt, const bool before) {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void DhjFluxStage
+//! \brief problem/flux_hst_rkavg: add this RK stage's fluid face fluxes at the top face
+//! and at the inner wall, times the stage's weight, into dhj_fhst (reset on stage 1)
+
+void DhjFluxStage(Mesh *pm) {
+  if (!dhj_fhst_avg) return;
+  if (pm->ncycle != dhj_fhst_cyc) {
+    dhj_fhst_cyc = pm->ncycle;
+    dhj_fhst_stage = 0;
+  }
+  if (dhj_fhst_stage >= dhj_fhst_nst) return;     // never: one call per stage
+  const Real w = dhj_fhst_w[dhj_fhst_stage];
+  const bool first = (dhj_fhst_stage == 0);
+  ++dhj_fhst_stage;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto fx1 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->uflx.x1f : pmbp->phydro->uflx.x1f;
+  auto acc = *dhj_fhst_ptr;
+  par_for("dhj_fhst_stage", DevExeSpace(), 0, pmbp->nmb_thispack - 1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const Real v[4] = {fx1(m,IEN,k,j,ie+1), fx1(m,IDN,k,j,ie+1), fx1(m,IEN,k,j,is),
+                       fx1(m,IDN,k,j,is)};
+    for (int n=0; n<4; ++n) acc(m,n,k,j) = (first ? 0.0 : acc(m,n,k,j)) + w*v[n];
+  });
+}
+
 void SourceFunc(Mesh *pm, Real bdt) {
   EBudStage(pm, bdt);
+  DhjFluxStage(pm);
   // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
   const bool use_cubed_sphere_ = pm->use_cubed_sphere;
   auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
@@ -5599,7 +5669,9 @@ void DhjCycleDiag(Mesh *pm) {
 //! solver: the radiative columns read the correlated-k two-stream's own arrays, i.e. the
 //! LAST ck call that touched each column (under ck_impl_every > 1 the last full call,
 //! or a later guard call on that column; within the call, its final pass).  The fluid
-//! columns read the Riemann fluxes of the last RK stage.  Radiation is zero until the
+//! columns read the RK-weighted sum of the stages' Riemann fluxes (problem/flux_hst_rkavg,
+//! default since dhj-ck-conserve 09-29; false = the last RK stage, as before; the
+//! flux_hst_wall split columns always read the last stage).  Radiation is zero until the
 //! first ck call.
 //!   Lir_top   net thermal (longwave) luminosity out through the top face ie+1:
 //!             sum F_net(ie+1) A(ie+1), F_net = up - down, what the update differences
@@ -5679,6 +5751,10 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     cf = *ts::rt_cf_ptr;
     icut = ts::rt_cut_index();
   }
+  // problem/flux_hst_rkavg: the stage-weighted fluid fluxes once a whole cycle is in
+  // the accumulator (else, e.g. the first row after a restart, the last stage's)
+  const bool fav = dhj_fhst_avg && (dhj_fhst_stage == dhj_fhst_nst);
+  auto fav_ = fav ? *dhj_fhst_ptr : DvceArray4D<Real>();
   const Real fstar = ts::rt_hist_fstar;
   const Real alb = ts::rt_hist_albedo;
   const Real arat = (alb < 1.0) ? alb/(1.0 - alb) : 0.0;
@@ -5718,10 +5794,14 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     hvars.the_array[1] = lrf;
     hvars.the_array[2] = lsw;
     hvars.the_array[3] = lbot;
-    hvars.the_array[4] = fx1(m,IEN,k,j,ie+1)*at + lir - lsw;
-    hvars.the_array[5] = fx1(m,IEN,k,j,is)*ab + lbot;
-    hvars.the_array[6] = fx1(m,IDN,k,j,ie+1)*at;
-    hvars.the_array[7] = fx1(m,IDN,k,j,is)*ab;
+    const Real fet = fav ? fav_(m,0,k,j) : fx1(m,IEN,k,j,ie+1);
+    const Real fmt = fav ? fav_(m,1,k,j) : fx1(m,IDN,k,j,ie+1);
+    const Real feb = fav ? fav_(m,2,k,j) : fx1(m,IEN,k,j,is);
+    const Real fmb = fav ? fav_(m,3,k,j) : fx1(m,IDN,k,j,is);
+    hvars.the_array[4] = fet*at + lir - lsw;
+    hvars.the_array[5] = feb*ab + lbot;
+    hvars.the_array[6] = fmt*at;
+    hvars.the_array[7] = fmb*ab;
     hvars.the_array[8] = lin;
     for (int n=NFH0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
     mb_sum += hvars;

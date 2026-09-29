@@ -1802,6 +1802,112 @@ void get_Tint(const Real &Teq, Real &Tint) {
 inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 
 //----------------------------------------------------------------------------------------
+//! \fn CkConserveFlux
+//! \brief problem/ck_impl_conserve (0 = off, bitwise): make the face fluxes a
+//! ck_implicit call REPORTS (rt_Fb: Lir_top, Lrad_bot, the budget ledger) consistent with
+//! the energy the call actually APPLIED.  The applied increment of a cell is
+//! dep = e - e*; the sweep's fluxes book h S (h = bdt).  They differ by the residual
+//! r = dep - h S, which is ~0 in a converged cell but NOT in a cell the bound-constrained
+//! Newton leaves on a bound (ck_impl_floorbound: a cell on e_floor that the fluxes would
+//! cool further, r > 0; ck_impl_kkt_demax: a cell on e* (1 -+ demax), either sign):
+//! such a cell is converged FOR THE CONSTRAINED PROBLEM, i.e. by exclusion from the
+//! test, and its fluxes still carry the unconstrained emission.  Mode 1 corrects exactly
+//! those KKT cells (the same test as the fused kernel's kktcell, on the final e); mode 2
+//! corrects every cell of the column (the Newton tolerance and ck_impl_pred included).
+//! The correction keeps the deepest face (icut, Lrad_bot) and every cell below the
+//! corrected one, whose balance is converged against the downward half of the corrected
+//! cell's emission, untouched, and takes the retained power r V/h out of every face
+//! ABOVE the cell: A_f F_f -= sum_{i < f} r_i V_i/h.  That is the unique face-flux set
+//! with A F(icut) fixed for which A F_i - A F_i+1 + Qb V = dep V/h in EVERY corrected
+//! cell and is unchanged elsewhere, so sum over the column of applied change = booked
+//! boundary fluxes.  The correction is split over the band blocks in proportion to each
+//! block's emission Em in the cell it comes from (block 0 where Em = 0).  Only the
+//! REPORTED face fluxes rt_Fb change (Src_g, Em_g and ck_src keep the sweep's values):
+//! no pass, no later call and no state reads rt_Fb before the next sweep rewrites it,
+//! so the solution is bitwise the old one (gate: dhj-ck-conserve 09-29).  Counted: ck_cons_ncell (cells
+//! corrected, last call) and ck_cons_de (sum r V over them, erg, last call, this rank).
+
+inline void CkConserveFlux(Mesh *pm, const Real bdt) {
+  if (ck_impl_conserve <= 0 || rt_Fb_ptr == nullptr || rt_icut_ptr == nullptr ||
+      ck_dep_ptr == nullptr || ck_src_ptr == nullptr || rt_Em_ptr == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  MeshBlockPack *pp = pm->pmb_pack;
+  const int nmb1 = pp->nmb_thispack - 1;
+  auto fb_ = *rt_Fb_ptr;
+  auto em_ = *rt_Em_ptr;
+  auto dep_ = *ck_dep_ptr;
+  auto src_ = *ck_src_ptr;
+  auto est_ = *ck_estar_ptr;
+  auto icut_ = *rt_icut_ptr;
+  auto done_ = (ck_done_ptr != nullptr) ? *ck_done_ptr : CkDum<DvceArray3D<Real>>("d");
+  const bool hasdone = (ck_done_ptr != nullptr);
+  const bool msk = ck_cad_partial && hasdone;
+  DvceArray5D<Real> u0 = (pp->pmhd != nullptr) ? pp->pmhd->u0 : pp->phydro->u0;
+  EOS_Data eos = (pp->pmhd != nullptr) ? pp->pmhd->peos->eos_data
+                                       : pp->phydro->peos->eos_data;
+  const bool pp_ = !ck_spherical;          // the ck's own divergence (see rt_apply)
+  auto area1 = pp->pcoord->area.x1f;
+  auto vol = pp->pcoord->volume;
+  auto dx1 = pp->pcoord->dx1;
+  const int nblk = fb_.extent_int(1);
+  const bool all = (ck_impl_conserve >= 2);
+  const bool fbnd = ck_impl_floorbound;
+  const bool kd = ck_impl_kkt_demax && (ck_impl_demax > 0.0);
+  const Real detot = ck_impl_demax;
+  const Real h = bdt;
+  if (ck_cons_stat_ptr == nullptr) {
+    ck_cons_stat_ptr = new DvceArray1D<Real>("ck_cons_stat", 2);
+  }
+  auto st_ = *ck_cons_stat_ptr;
+  Kokkos::deep_copy(DevExeSpace(), st_, 0.0);
+  par_for("ck_conserve", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (msk && done_(m,k,j) > 1.5) return;       // masked out of a partial call
+    const int ic = icut_(m,k,j);
+    if (ic > ie) return;
+    Real csum = 0.0, nc = 0.0;
+    for (int i=ic; i<=ie; ++i) {
+      const Real v = pp_ ? dx1(m,k,j,i) : vol(m,k,j,i);
+      const Real r = dep_(m,k,j,i) - h*src_(m,k,j,i);
+      bool use = all;
+      if (!use && r != 0.0) {
+        const Real es = est_(m,k,j,i);
+        const Real e = es + dep_(m,k,j,i);
+        use = CkKktCell(eos, fbnd, kd, detot, u0(m,IDN,k,j,i), e, es, r);
+      }
+      if (use && r == r) {
+        // split r V/h over the blocks by the cell's emission; carried up the column
+        Real et = 0.0;
+        for (int b=0; b<nblk; ++b) et += em_(m,b,i,k,j);
+        const Real rv = r*v/h;
+        for (int b=0; b<nblk; ++b) {
+          const Real w = (et > 0.0) ? em_(m,b,i,k,j)/et : ((b == 0) ? 1.0 : 0.0);
+          if (w == 0.0) continue;
+          for (int f=i+1; f<=ie+1; ++f) {
+            const Real a = pp_ ? 1.0 : area1(m,k,j,f);
+            fb_(m,b,f,k,j) -= w*rv/a;
+          }
+        }
+        csum += r*v;
+        nc += 1.0;
+      }
+    }
+    if (nc > 0.0) {
+      Kokkos::atomic_add(&st_(0), nc);
+      Kokkos::atomic_add(&st_(1), csum);
+    }
+  });
+  if (ck_impl_verbose) {
+    auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), st_);
+    ck_cons_ncell = static_cast<int64_t>(hs(0));
+    ck_cons_de = hs(1);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn CkNonconvLoc
 //! \brief problem/ck_impl_ncloc: after a NOT-CONVERGED ck_implicit call, print where the
 //! columns still active (ck_done = 0) are: gid, m, k, j, the cell i of the column's
@@ -2134,6 +2240,8 @@ inline void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt) {
       ck_impl_evalonly = false;
       pchk_act = ck_impl_nactive;
     }
+    // problem/ck_impl_conserve: the reported fluxes of the cells the call left on a bound
+    CkConserveFlux(pm, bdt);
     if (ck_impl_nsubfail > 0) conv = false;   // ls_sub: a column failed at the finest L
     ck_impl_nonconv = conv ? 0 : 1;
     if (!conv && ck_impl_ncloc > 0) CkNonconvLoc(pm, bdt);
