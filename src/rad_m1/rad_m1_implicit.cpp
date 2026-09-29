@@ -7647,6 +7647,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // On sp the rows are rebuilt below with the sp areas; the same term goes there (opns).
     const bool opnr = opn && gnewt && !sph_geom;
     const bool opns = opn && gnewt && sph_geom;
+    // DEBUG dbg_t2_admiss: the sp E row by term, kept for T2AdmissDebug
+    const bool dbgr = (t2_dbg_adm > 0) && sph_geom;
+    if (dbgr && dbrow.extent_int(0) < nmb1 + 1) {
+      Kokkos::realloc(dbrow, nmb1 + 1, 16, iw.extent_int(2), iw.extent_int(3),
+                      iw.extent_int(4));
+      Kokkos::deep_copy(dbrow, 0.0);
+    }
+    auto dbrow_ = dbrow;
     auto ktdv = ktd;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
@@ -7875,6 +7883,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bb += iw_(m,M1_IW_TDIA,k,j,i);
           rr += iw_(m,M1_IW_TRHS,k,j,i);
         }
+        // DEBUG dbg_t2_admiss: the row by term (d_[0..6] of bb, d_[7..15] of rr)
+        Real d_[16] = {0.0};
+        Real pb_ = bb, pr_ = rr;
         if (i < ie || !topb) {
           int ip = (i < ie) ? (i+1) : (ie+1);
           Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
@@ -7898,14 +7909,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
               rr += nup*cr*th*ch*cl*dt*od;
+              d_[10] += nup*cr*th*ch*cl*dt*od;
               ods = od;
             }
           }
           bb += nup*df*wiu;
+          d_[0] += nup*df*wiu;
           cc -= nup*df*wp;
           Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
           rr -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+          d_[11] -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
           // implicit_opac_newton on sp: the same face term G (every part of it is
           // proportional to th), with the sp area factor and the S2 row coefficients
           if (opns && ip <= ie) {
@@ -7913,16 +7927,22 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                             + nup*df*(wiu*iw_(m,M1_IW_EP,k,j,i)
                                       - wp*iw_(m,M1_IW_EP,k,j,ip));
             const Real q = -0.5*ch*dt*th*gf;
+            {const Real b0 = bb, r0 = rr;
             M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
                       opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            d_[1] += bb - b0; d_[12] += rr - r0;}
+            {const Real r0 = rr;
             M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
                       opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+            d_[12] += rr - r0;}
           }
           if (vf > 0.0) {
             bb += nup*cr*ai;
+            d_[2] += nup*cr*ai;
           } else {
             cc += nup*cr*iw_(m,M1_IW_ADV,k,j,ip);
           }
+          const Real re0_ = rr;
           if (enth2) {
             bool o0, o3;
             int i0 = M1EnthIdx(i-1, is, ie, false, hxl, hxh, o0);
@@ -7943,6 +7963,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                     iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
             }
           }
+          d_[13] += rr - re0_;
         } else if (bchi == M1_IBC_MARSHAK) {
           const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           bb += nup*ch*mq;
@@ -7999,29 +8020,38 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
               rr -= num*cr*th*ch*cl*dt*od;
+              d_[10] -= num*cr*th*ch*cl*dt*od;
               ods = od;
             }
           }
           bb += num*df*wil;
+          d_[0] += num*df*wil;
           aa -= num*df*wm;
           Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
           rr += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+          d_[11] += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
           if (opns && im >= is) {
             const Real gf = -num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*ods)
                             + num*df*(wil*iw_(m,M1_IW_EP,k,j,i)
                                       - wm*iw_(m,M1_IW_EP,k,j,im));
             const Real q = -0.5*ch*dt*th*gf;
+            {const Real b0 = bb, r0 = rr;
             M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
                       opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            d_[1] += bb - b0; d_[12] += rr - r0;}
+            {const Real r0 = rr;
             M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
                       opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+            d_[12] += rr - r0;}
           }
           if (vf > 0.0) {
             aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
           } else {
             bb -= num*cr*ai;
+            d_[2] -= num*cr*ai;
           }
+          const Real re1_ = rr;
           if (enth2) {
             bool o0, o3;
             int i0 = M1EnthIdx(i-2, is, ie, false, hxl, hxh, o0);
@@ -8042,6 +8072,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                     iw_(m,M1_IW_ADV,k,j,i3), vf);
             }
           }
+          d_[13] += rr - re1_;
         } else if (bclo == M1_IBC_MARSHAK) {
           bb += num*ch*mq;
           rr += num*ch*mq*eblo;
@@ -8074,6 +8105,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bb += iw_(m,ivb+M1_IV_JD,k,j,i);
           cc += iw_(m,ivb+M1_IV_J1P,k,j,i);
           rr += iw_(m,ivb+M1_IV_JRHS,k,j,i);
+        }
+        if (dbgr) {
+          if (vim) {
+            d_[4] = iw_(m,ivb+M1_IV_JD,k,j,i);
+            d_[14] = iw_(m,ivb+M1_IV_JRHS,k,j,i);
+          }
+          d_[5] = pb_;
+          d_[6] = bb - pb_ - d_[0] - d_[1] - d_[2] - d_[4];
+          d_[7] = pr_;
+          d_[15] = rr - pr_ - d_[10] - d_[11] - d_[12] - d_[13] - d_[14];
+          for (int q = 0; q < 16; ++q) {dbrow_(m,q,k,j,i) = d_[q];}
         }
       }
 
@@ -9234,7 +9276,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   DvceArray1D<int> lcnt("m1_t2dbg_lcnt", 1);
   // the frozen 7-point row of each listed cell (M1_IW_TA..CKP, KB) with the neighbour
   // solutions, TR, TRHS, TDIA, SRCB, SRCR, KT and WCHI (= f_rr on the sp wedge)
-  const int nrow = 26;
+  const int nrow = 42;
+  auto dbr = dbrow;
+  const bool hasd = (dbrow.extent_int(0) > 0);
   const bool bcg = bicg_on;
   DvceArray2D<Real> row("m1_t2dbg_row", ncap, nrow);
   DvceArray1D<Real> rmn("m1_t2dbg_rmn", indcs.nx1 + 2*indcs.ng);
@@ -9304,6 +9348,7 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     row(n,23) = iw_(m,M1_IW_G0,k,j,i);
     row(n,24) = iw_(m,M1_IW_DE0,k,j,i);
     row(n,25) = iw_(m,M1_IW_LRES,k,j,i);
+    for (int q = 0; q < 16; ++q) {row(n,26+q) = hasd ? dbr(m,q,k,j,i) : 0.0;}
   });
   auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lcnt);
   auto hl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lst);
@@ -9350,6 +9395,15 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
                 << std::endl << "      M-matrix: sum|off|/|diag| "
                 << soff/std::fabs(hr(n,0))
                 << " positive off-diagonals " << npos << std::endl;
+      if (hasd) {
+        std::cout << "      TB terms: base(1+SRCB+TDIA) " << hr(n,31) << " diffusion "
+                  << hr(n,26) << " opac_newton " << hr(n,27) << " advection " << hr(n,28)
+                  << " vimp_JD " << hr(n,30) << " other " << hr(n,32) << std::endl
+                  << "      TR terms: base(EN+SRCR+TRHS) " << hr(n,33) << " curvature "
+                  << hr(n,36) << " face_F0 " << hr(n,37) << " opac_newton " << hr(n,38)
+                  << " enthalpy_corr " << hr(n,39) << " vimp_JRHS " << hr(n,40)
+                  << " other " << hr(n,41) << std::endl;
+      }
     }
   }
   std::cout << "  HIST_J rank " << rank << " (global theta index: count)";

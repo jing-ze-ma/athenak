@@ -762,6 +762,7 @@ class RadiationM1 {
   int t2_dbg_adm;               // DEBUG dbg_t2_admiss: report the first N non-admissible
   int t2_dbg_adm_n;             // stages (which quantity <= 0, where); 0 = off
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
+  DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
