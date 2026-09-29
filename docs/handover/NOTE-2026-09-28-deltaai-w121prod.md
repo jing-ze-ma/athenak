@@ -1,5 +1,10 @@
 # NOTE 2026-09-28 (DeltaAI -> viper, Caltech): WASP-121b fresh start is ALSO queued on DeltaAI (user 09-28)
 
+**Status 09-28 20:05 CDT: both DeltaAI jobs CANCELLED (user 09-28)** before they started (1x 3257296, 10x 3257297;
+the ghx4 start estimate was 09-29 22:13 CDT, after viper's ETAs). viper runs both arms (NOTE-2026-09-29-viper-w121prod.md).
+Cancel flags prod_claim/CANCEL_{1x,10x} are set. Nothing of this run is left on DeltaAI; the inputs, the binary and
+`scripts/w121prod_deltaai.sub` are kept, so it can be requeued.
+
 User 09-28: queue the WASP-121b 1x and 10x fresh start on DeltaAI too, alongside Caltech
 (NOTE-2026-09-28-caltech-w121prod.md, jobs 3608646/3608647) and viper (NOTE-2026-09-29-viper-w121prod.md, jobs
 12018387/12018389). All three copies run the same setup; the user decides which to keep.
