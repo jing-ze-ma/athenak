@@ -425,6 +425,21 @@ constexpr int M1_IWG_MS = 4;   // per-cell count of EOS-cache misses in this ste
 // dT -> 0 forces R_k + c dt rho kappa_E E' -> 0, which IS that equation, with e(T) and
 // T^4 evaluated exactly (never linearised) at the final T.
 constexpr Real M1_NEWT_TRUST = 0.5;
+// implicit_opac_newton: the relative temperature step of the opacity derivative
+constexpr Real M1_OPN_H = 1.0e-5;
+// implicit_opac_newton: one cell's share of the Newton term of a face.  q = -chat dt th
+// G(E^k)/2 of the face, kt = d(rho kappa_T)/dT, bk/rk = the gas Newton step's B_k/R_k
+// and ke = rho kappa_E of that cell: its E' coefficient goes into coef (the row entry of
+// that cell), the rest to the right-hand side.  Cartesian and sp rows share it.
+KOKKOS_INLINE_FUNCTION
+void M1OpnCell(const Real q, const Real kt, const Real bk, const Real rk, const Real ke,
+               const Real cl, const Real dt, Real &coef, Real &rr) {
+  if (bk > 0.0) {
+    const Real s = q*kt/bk;
+    coef += s*cl*dt*ke;
+    rr -= s*rk;
+  }
+}
 
 // BiCGStab breakdown thresholds: |rho| and |rhat.v| below these times the scale of the
 // right-hand side mean the shadow residual has become orthogonal to the Krylov space.

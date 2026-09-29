@@ -667,6 +667,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
+  // implicit_halo_ipc (m1-perf-0928, rad_m1_krylov.cpp): default false
+  impl_halo_ipc = pin->GetOrAddBoolean("rad_m1","implicit_halo_ipc",false);
+  if (impl_halo_ipc && !impl_halo_mpi) {
+    ImplFatal("<rad_m1>/implicit_halo_ipc needs implicit_halo_mpi = true");
+  }
   // implicit_halo_overlap (rad_m1_krylov.cpp, tests_m1/runs_3y_halo_overlap: round-off
   // vs off, restarts bitwise).  DEFAULT true since m1-accmerge wherever it is valid:
   // implicit_halo_mpi on and more than one rank; otherwise false, silently.  A restart
@@ -815,6 +820,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // (m1-keydefault-0927, docs/dev/ke_dt_0926.md 8), false otherwise
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",
                                           force_ref == M1_FREF_WB_ARAD);
+  // DIAGNOSTIC (m1-perf-0928): which opacities the Picard-loop update moves
+  dbg_opac_part = pin->GetOrAddInteger("rad_m1","dbg_opac_part",0);
+  // implicit_opac_newton (m1-perf-0928): the Picard loop under implicit_opac_update is a
+  // fixed-point iteration on the FLUX opacity rho kappa_T(T) of the x1 face terms, and
+  // it converges only linearly (~0.17 per pass on the He box: 6.8 passes per solve at
+  // tol 1e-8 against 2.0 with the opacities frozen).  This key adds the Newton term of
+  // that dependence to the x1 rows (the chain dG/dkappa_face dkappa/dT dT/dE' through
+  // the local gas Newton step), so the pass converges ~quadratically.  The added terms
+  // are proportional to the predicted temperature change of the gas Newton step, which
+  // vanishes at the fixed point: the converged state is the same.
+  // DEFAULT true (m1-perf-0928, user) wherever it applies: implicit_opac_update and
+  // implicit_gas_newton on; hydro or MHD (FluidRef), Cartesian or sp rows.  False on a
+  // restart whose file lacks the key (the implicit_gas_newton convention).  Named true
+  // without its two prerequisites it is fatal (below).
+  impl_opac_newton = pin->GetOrAddBoolean("rad_m1","implicit_opac_newton",
+                                          impl_opac_update && impl_gas_newton &&
+                                          !global_variable::restart_run);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
@@ -1220,6 +1242,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ecache, -1.0);
   }
   Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
+  if (impl_opac_newton) {
+    if (!impl_opac_update || !impl_gas_newton) {
+      ImplFatal("<rad_m1>/implicit_opac_newton needs implicit_opac_update = true and "
+                "implicit_gas_newton = true");
+    }
+    Kokkos::realloc(ktd, nmb, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(ktd, 0.0);
+  }
   if (impl_ctrelax > 0.0) {
     if (!trans_on || !impl_clag_step) {
       ImplFatal("<rad_m1>/implicit_closure_thin_relax needs transport = implicit on a "
@@ -7063,11 +7093,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ImplFatal("<rad_m1>/dbg_tensor = tau needs ONE MeshBlock along x1");
     }
     // (a) optional opacity re-evaluation at the current temperature iterate
-    if (impl_opac_update && it > 0 && have_hydro && !opac_zero) {
+    // implicit_opac_newton: also at pass 0 (at the iterate T, not T^n), so that every
+    // pass's rows carry the derivative at the temperature the opacity was taken at
+    const bool opn = impl_opac_newton && have_hydro && !opac_zero;
+    if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero) {
       int otype = opacity_type;
       Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kscat = kappa_s;
       Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
       M1OpacTab ot = otab;
+      const int opart = dbg_opac_part;
+      auto ktd_ = ktd;
       par_for("m1_impl_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real d = uh(m,IDN,k,j,i);
@@ -7079,10 +7114,27 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           M1Opacities(otype, d, t, kp, kev, kf, kscat, rref, tref, aa, bb, op, oe,
                       of, os);
         }
-        opac_(m,M1_OP_P,k,j,i) = d*op;
-        opac_(m,M1_OP_E,k,j,i) = d*oe;
-        opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-        iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
+        if (opart != 1) {
+          opac_(m,M1_OP_P,k,j,i) = d*op;
+          opac_(m,M1_OP_E,k,j,i) = d*oe;
+        }
+        if (opart != 2) {
+          opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+          iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
+        }
+        if (opn) {
+          // one-sided difference; the table is bilinear in (log T, log rho), so this is
+          // the slope of the cell the iterate sits in (the Jacobian only sets the rate)
+          const Real th = t*M1_OPN_H;
+          Real op2, oe2, of2, os2;
+          if (otype == M1_OPAC_TABLE) {
+            M1TableOpacities(ot, d, t + th, op2, oe2, of2, os2);
+          } else {
+            M1Opacities(otype, d, t + th, kp, kev, kf, kscat, rref, tref, aa, bb, op2,
+                        oe2, of2, os2);
+          }
+          ktd_(m,k,j,i) = d*((of2 + os2) - (of + os))/th;
+        }
       });
     }
 
@@ -7571,6 +7623,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int enm = impl_enth;
     const bool enth2 = (enm != M1_IENTH_UPWIND);
     const int ngh = indcs.ng;
+    // implicit_opac_newton: the Newton term of the flux opacity in the Cartesian x1 rows.
+    // A face term of the row, G = nu cr om th (f0n - ...) + nu df (w_c E_c - w_n E_n),
+    // is proportional to th = 1/(1 + chat dt ktf), so dG/dktf = -chat dt th G.  The
+    // face opacity is the mean of the two cells', and a cell's T moves in the local gas
+    // Newton step by dT = (R_k + c dt rho kappa_E E')/B_k (m1_impl_src/tsolve), so
+    //   G(E', kappa(T_new)) ~ G(E', kappa_k) + q sum_c ktd_c (R_c + c dt kE_c E'_c)/B_c,
+    // q = -chat dt th G(E^k)/2.  The E'_c part goes on the row, the rest to the RHS.
+    // Only faces whose two cells are in this block (x1 neighbours of the block are
+    // not exchanged for ktd): there the term is omitted and the face stays Picard.
+    // On sp the rows are rebuilt below with the sp areas; the same term goes there (opns).
+    const bool opnr = opn && gnewt && !sph_geom;
+    const bool opns = opn && gnewt && sph_geom;
+    auto ktdv = ktd;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -7646,6 +7711,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                M1_IW_EP,vd_,dfull));
         }
         rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od);
+        if (opnr && ip >= is && ip <= ie) {
+          const Real gf = nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od)
+                          + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wp*iw_(m,M1_IW_EP,k,j,ip));
+          const Real q = -0.5*ch*dt*th*gf;
+          M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                    opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+          M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                    opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+        }
         // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
         // <= 0 (upper off-diagonal), so the blend keeps the M-matrix.
         bb += nu*ifw_(m,M1_IFW_HCL,k,j,i+1);
@@ -7712,6 +7786,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                vd_,dfull));
         }
         rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od);
+        if (opnr && im >= is && im <= ie) {
+          const Real gf = -nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od)
+                          + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wm*iw_(m,M1_IW_EP,k,j,im));
+          const Real q = -0.5*ch*dt*th*gf;
+          M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                    opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+          M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                    opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+        }
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
         bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
         rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
@@ -7788,6 +7871,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
           if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
           Real wiu = wi;
+          Real ods = 0.0;   // the S2 curvature term (implicit_opac_newton needs it)
           if (sphq) {
             // S2: the integrating factor, (r_c/r_f)^2 on the q n_r^2 part of each cell
             Real rf = cx1f(m,i+1);
@@ -7802,6 +7886,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
               rr += nup*cr*th*ch*cl*dt*od;
+              ods = od;
             }
           }
           bb += nup*df*wiu;
@@ -7809,6 +7894,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
           rr -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+          // implicit_opac_newton on sp: the same face term G (every part of it is
+          // proportional to th), with the sp area factor and the S2 row coefficients
+          if (opns && ip <= ie) {
+            const Real gf = nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*ods)
+                            + nup*df*(wiu*iw_(m,M1_IW_EP,k,j,i)
+                                      - wp*iw_(m,M1_IW_EP,k,j,ip));
+            const Real q = -0.5*ch*dt*th*gf;
+            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                      opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+          }
           if (vf > 0.0) {
             bb += nup*cr*ai;
           } else {
@@ -7876,6 +7973,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real wm = iw_(m,M1_IW_WCHI,k,j,im);
           if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
           Real wil = wi;
+          Real ods = 0.0;
           if (sphq) {
             Real rf = cx1f(m,i);
             Real si = SQR(cx1v(m,i)/rf), sm = SQR(cx1v(m,im)/rf);
@@ -7889,6 +7987,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
               rr -= num*cr*th*ch*cl*dt*od;
+              ods = od;
             }
           }
           bb += num*df*wil;
@@ -7896,6 +7995,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
           rr += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+          if (opns && im >= is) {
+            const Real gf = -num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*ods)
+                            + num*df*(wil*iw_(m,M1_IW_EP,k,j,i)
+                                      - wm*iw_(m,M1_IW_EP,k,j,im));
+            const Real q = -0.5*ch*dt*th*gf;
+            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                      opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+          }
           if (vf > 0.0) {
             aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
           } else {
@@ -8056,10 +8165,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // has no fixed point (measured: the seeded He slab blows up in 14 steps with
         // lagged + a frozen closure, and runs with none + a frozen closure).
         Real emin = 1.0e300;
+        // m1-perf-0928: a flat range (the MDRange reduction is ~5x slower on CUDA); a
+        // min does not depend on the order, so the value is bitwise the same
+        const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
         Kokkos::parallel_reduce("m1_impl_odmin",
-        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                               {nmb1+1,ke+1,je+1,ie+1}),
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+        Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+        KOKKOS_LAMBDA(const int n, Real &lmin) {
+          int t = n/fni;
+          const int i = is + (n - t*fni);
+          const int j = js + (t % fnj);
+          t /= fnj;
+          const int k = ks + (t % fnk);
+          const int m = t/fnk;
           Real r = iw_(m,M1_IW_S2,k,j,i);
           lmin = (r < lmin) ? r : lmin;
         }, Kokkos::Min<Real>(emin));
@@ -8273,42 +8390,49 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
 
     // (h) convergence
-    resid = 0.0;
-    Kokkos::parallel_reduce("m1_impl_res",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
-      Real r = iw_(m,M1_IW_RES,k,j,i);
-      lmax = (r > lmax) ? r : lmax;
-    }, Kokkos::Max<Real>(resid));
-#if MPI_PARALLEL_ENABLED
-    // the convergence test must be GLOBAL: with a partitioned column the ranks would
-    // otherwise take different numbers of Picard passes and the gather would deadlock,
-    // and even with rank-local columns a per-rank test makes the answer depend on the
-    // decomposition.  One MPI_MAX of one double per pass.
-    {Real rg;
-    MPI_Allreduce(&resid, &rg, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
-    resid = rg;}
-#endif
     // MILESTONE 3b phase B.  The Picard test alone is NOT enough once the transverse
     // couplings are lagged: |dE|/E can stall while the off-diagonal terms are still
     // moving.  The TRUE residual of the full 7-point system is measured separately (see
     // ImplicitTransverseTerms) and both have to be met.
+    // m1-perf-0928: both maxima in ONE flat reduction and one MPI_MAX of two doubles
+    // (was two MDRange reductions, two host syncs and two MPI_Allreduce); a max does not
+    // depend on the order, so the values are bitwise the same.
+    resid = 0.0;
     lresid = 0.0;
-    if (trans) {
-      Kokkos::parallel_reduce("m1_impl_lres",
-      Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                             {nmb1+1,ke+1,je+1,ie+1}),
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
-        Real r = iw_(m,M1_IW_LRES,k,j,i);
+    {
+      const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
+      const bool ltr = trans;
+      Kokkos::parallel_reduce("m1_impl_res",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+      KOKKOS_LAMBDA(const int n, Real &lmax, Real &lmx2) {
+        int t = n/fni;
+        const int i = is + (n - t*fni);
+        const int j = js + (t % fnj);
+        t /= fnj;
+        const int k = ks + (t % fnk);
+        const int m = t/fnk;
+        Real r = iw_(m,M1_IW_RES,k,j,i);
         lmax = (r > lmax) ? r : lmax;
-      }, Kokkos::Max<Real>(lresid));
+        if (ltr) {
+          Real q = iw_(m,M1_IW_LRES,k,j,i);
+          lmx2 = (q > lmx2) ? q : lmx2;
+        }
+      }, Kokkos::Max<Real>(resid), Kokkos::Max<Real>(lresid));
+    }
 #if MPI_PARALLEL_ENABLED
-      {Real lg;
-      MPI_Allreduce(&lresid, &lg, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
-      lresid = lg;}
+    // the convergence test must be GLOBAL: with a partitioned column the ranks would
+    // otherwise take different numbers of Picard passes and the gather would deadlock,
+    // and even with rank-local columns a per-rank test makes the answer depend on the
+    // decomposition.
+    {Real rl[2] = {resid, lresid}, rg[2];
+    MPI_Allreduce(rl, rg, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    resid = rg[0];
+    lresid = rg[1];}
 #endif
+    if (trans) {
       lresid /= rhsmax;
+    } else {
+      lresid = 0.0;
     }
     converged = (resid < impl_tol) && (!trans || (lresid < impl_lin_tol));
     if (impl_conv_est || !impl_lres_test) {

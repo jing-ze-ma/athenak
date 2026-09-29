@@ -1,0 +1,31 @@
+#!/bin/bash -l
+#SBATCH -J heboxdiag
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --time=00:20:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# 1-GPU He-box variants: one fresh-start run of NLIM cycles (default 200) per ARMS entry.  ARMS is a list of
+# name:key=val+key=val (the + become spaces; sbatch --export splits on commas); "base" = no extra key.
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+BIN=${BIN:?set BIN}
+NLIM=${NLIM:-200}; TO=${TO:-300}
+ARMS=${ARMS:?set ARMS}
+OUT=${OUT:-/work/nvme/bivj/jma20/diag_hebox_0928}
+export MACHINE=deltaai
+J=${SLURM_JOB_ID:-nojob}
+mkdir -p $OUT
+echo "DIAGJOB host=$(hostname) job=$J bin=$BIN md5=$(md5sum $BIN | cut -c1-32) NLIM=$NLIM"
+for a in $ARMS; do
+  name=${a%%:*}; kv=${a#*:}; [ "$kv" = "$a" ] && kv=""
+  export EXTRA="time/nlim=$NLIM ${kv//+/ }"
+  D=$OUT/${name}_$J
+  timeout --kill-after=30 $TO bash $H/run_bench_hebox.sh $BIN 1 $D; rc=$?
+  echo "arm=$name rc=$rc extra=[$EXTRA] $(grep -m1 'implicit transport: solves' $D/bench.log | sed 's/.*Picard/Picard/')"
+done
+python3 $H/ana_bench_hebox.py $OUT/*_$J/bench.log --c0 50 --c1 $NLIM
+echo DIAG_JOB_DONE

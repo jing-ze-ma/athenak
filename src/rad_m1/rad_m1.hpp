@@ -306,6 +306,9 @@ class RadiationM1 {
   Real impl_tol;                // Picard tolerance on max(|dE|/E, |dT|/T)
   int impl_maxit;               // maximum Picard iterations per solve
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
+  int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
+  bool impl_opac_newton;        // implicit_opac_newton: d(rho kappa_T)/dT in the x1 rows
+  DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
@@ -587,6 +590,27 @@ class RadiationM1 {
   void ImplicitHaloMPI(int nq, int c0);
   void ImplicitHaloMPIPost(int nq, int c0);    // receives, pack, on-rank copy
   void ImplicitHaloMPIFinish(int nq, int c0);  // sends, wait, unpack
+  // ---- <rad_m1>/implicit_halo_ipc (m1-perf-0928; default false): the off-rank part of
+  // implicit_halo_mpi between ranks on the SAME node without MPI and without a host
+  // wait.  The pack kernel writes straight into the neighbour's receive buffer (CUDA
+  // IPC, double-buffered by the parity of the exchange count), a 1-thread kernel sets
+  // the neighbour's arrival flag; the receiver's 1-thread kernel spins on its own flag,
+  // unpacks, and acknowledges.  Same numbers as the MPI path (bitwise).
+  bool impl_halo_ipc;
+  int hi_state;                 // 0 = not built, 1 = on, -1 = not possible (MPI path)
+  long long hi_seq;             // exchanges so far (identical on every rank)
+  long long hi_nchk;            // exchanges since the last check of the error flag
+  Real *hi_rbuf;                // own receive buffer, 2 parities x hi_half Reals
+  long long *hi_sig;            // own flags: [0,32) arrivals, [32,64) acks, by segment
+  int *hi_err;                  // device error flag (a spin timed out)
+  size_t hi_half;
+  DualArray1D<unsigned long long> hi_prb, hi_psig;  // peer rbuf / sig, per segment
+  DualArray1D<long long> hi_phalf;  // peer parity-half size, per segment
+  DualArray1D<int> hi_proff;    // peer's receive offset (entries) for my data
+  DualArray1D<int> hi_pslot;    // my segment index in the peer's list
+  void ImplicitHaloIPCInit();
+  void ImplicitHaloIPCPost(int nq, int c0);
+  void ImplicitHaloIPCFinish(int nq, int c0);
   // ---- implicit_halo_overlap (tests_m1/runs_3y_halo_overlap): the Krylov halo of x
   // overlapped with the operator on the interior cells; read only when named, default
   // off (then nothing below runs).  Needs implicit_halo_mpi and implicit_op_stencil.

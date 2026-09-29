@@ -1,0 +1,95 @@
+#!/bin/bash -l
+#SBATCH -J valnewton
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4
+#SBATCH -N 1 --ntasks=1 --gpus-per-node=1 --cpus-per-task=16 --mem=60G
+#SBATCH --time=00:30:00
+#SBATCH -o /u/jma20/ATHENAK/runs/valnewton.%j.out
+# m1-perf-0928: validation of implicit_opac_newton DEFAULT ON (2ff4fe27) + sp rows + MHD, 1 GPU.
+#  B1 Cartesian refactor: OLD abac2173 vs NEW, hebox_dev, key named true  -> hst BITWISE expected
+#  B2 default on: NEW hebox_bench (no key = default) vs hebox_dev (false) -> passes down, hst ~ tol
+#  B3 MHD box: hebox_mhd (default) vs hebox_mhd_off
+#  W1 sp null (const opacity -> term 0): gateA default vs gateA_off       -> hst BITWISE expected
+#  W2 sp kappa(T): restart W1 at cycle 200 with opacity = powerlaw (t_ref 0.01, b -0.5), key true/false
+#  W3/W4 = W1/W2 with <mhd> (split monopole wg_b0)
+# Env: DRY=1 prints the commands only.
+V=/u/jma20/ATHENAK/bench-2026-09-29-hebox/val_newton
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+B=/u/jma20/ATHENAK/builds/bin
+OLDB=${OLDB:-$B/athena_box_dev_abac21737d72}
+NEWB=${NEWB:-$B/athena_box_dev_2ff4fe27b55e}
+TSTB=${TSTB:-$B/athena_tst_gpu_cdef813eec26}
+OUT=${OUT:-/work/nvme/bivj/jma20/val_newton_0928}
+J=${SLURM_JOB_ID:-nojob}; R=$OUT/$J; mkdir -p $R
+export MACHINE=deltaai
+if [ -z "${DRY:-}" ]; then
+  module reset > /dev/null 2>&1
+  export MPICH_GPU_SUPPORT_ENABLED=1 OMP_NUM_THREADS=1
+  SRUN="srun -n 1 -c 16"
+else
+  SRUN="echo srun -n 1 -c 16"; export LAUNCH="echo srun -n %N"
+fi
+echo "VALJOB job=$J host=$(hostname)"
+for b in $OLDB $NEWB $TSTB; do echo "bin $b $(md5sum $b | cut -c1-32)"; done
+summ() {  # run dir -> one line: rc, Picard mean/max, NON-CONV, bicg inner, fallbacks, cpu
+  local L=$1/${2:-bench.log}
+  echo "  $(basename $1): $(grep -m1 -o 'Picard iterations mean=[^ ]* max=[^ ]* NON-CONVERGED=[^ ]*' $L) \
+$(grep -m1 -o 'inner iterations mean=[^ ]*' $L) $(grep -m1 -o 'newton fallbacks=[^ ]*' $L) \
+$(grep -m1 'cpu time used' $L | tr -s ' ') fatal=$(grep -c 'FATAL' $L)"
+}
+box() {  # name bin input extra...
+  local n=$1 bin=$2 inp=$3; shift 3
+  INP=$inp EXTRA="time/nlim=100 output1/dt=1e-6 $*" timeout --kill-after=30 420 \
+    bash $H/run_bench_hebox.sh $bin 1 $R/$n > /dev/null 2>&1; echo "$n rc=$?"
+  summ $R/$n
+}
+wedge() {  # name bin input|-r:rstfile extra...
+  local n=$1 bin=$2 inp=$3; shift 3
+  mkdir -p $R/$n; cd $R/$n
+  if [ "${inp#-r:}" != "$inp" ]; then a="-r ${inp#-r:}"; else a="-i $inp"; fi
+  timeout --kill-after=30 420 $SRUN $bin $a "$@" > run.log 2>&1; echo "$n rc=$?"
+  summ $R/$n run.log; cd $R
+}
+hcmp() {  # dirA dirB: every common .hst, bitwise or the max relative column diff
+  python3 - "$1" "$2" <<'E'
+import sys, glob, os, numpy as np
+a, b = sys.argv[1], sys.argv[2]
+for fa in sorted(glob.glob(a + '/*.hst')):
+    fb = os.path.join(b, os.path.basename(fa))
+    if not os.path.exists(fb): print('   ', os.path.basename(fa), 'missing in', b); continue
+    if open(fa,'rb').read() == open(fb,'rb').read(): print('   ', os.path.basename(fa), 'BITWISE'); continue
+    A, Bv = np.loadtxt(fa), np.loadtxt(fb)
+    n = min(len(A), len(Bv)); A, Bv = A[:n], Bv[:n]
+    d = np.abs(A - Bv) / np.maximum(np.maximum(np.abs(A), np.abs(Bv)), 1e-300)
+    j = int(np.argmax(d.max(axis=0)))
+    print('    %s rows=%d max rel diff %.3e (col %d), last-row max %.3e' % (os.path.basename(fa), n, d.max(), j, d[-1].max()))
+E
+}
+cd $R
+echo "== B1 Cartesian refactor (bitwise)"
+box B1_old $OLDB $H/inputs/hebox_dev.athinput rad_m1/implicit_opac_newton=true
+box B1_new $NEWB $H/inputs/hebox_dev.athinput rad_m1/implicit_opac_newton=true
+hcmp $R/B1_old $R/B1_new
+echo "== B2 default on (hydro box)"
+box B2_def $NEWB $H/inputs/hebox_bench.athinput
+box B2_off $NEWB $H/inputs/hebox_dev.athinput
+hcmp $R/B2_off $R/B2_def
+echo "== B3 MHD box"
+box B3_def $NEWB $V/hebox_mhd.athinput
+box B3_off $NEWB $V/hebox_mhd_off.athinput
+hcmp $R/B3_off $R/B3_def
+PL="rad_m1/opacity=powerlaw rad_m1/t_ref=0.01 rad_m1/opac_b=-0.5"
+for s in "" _mhd; do
+  echo "== W sp$s: null test (const opacity: the term is 0)"
+  wedge W${s}_def $TSTB $V/gateA${s}.athinput time/nlim=200 output4/dcycle=200
+  wedge W${s}_off $TSTB $V/gateA${s}_off.athinput time/nlim=200
+  hcmp $R/W${s}_def $R/W${s}_off
+  rst=$(ls $R/W${s}_def/rst/*.rst 2>/dev/null | tail -1)
+  echo "   rst=$rst"
+  [ -n "$rst" ] || { echo "   NO RST: kappa(T) restart arms skipped"; continue; }
+  echo "== W sp$s: kappa(T) powerlaw, restart at cycle 200, +200 cycles"
+  wedge W${s}_plon  $TSTB -r:$rst time/nlim=400 $PL rad_m1/implicit_opac_newton=true
+  wedge W${s}_ploff $TSTB -r:$rst time/nlim=400 $PL rad_m1/implicit_opac_newton=false
+  hcmp $R/W${s}_ploff $R/W${s}_plon
+done
+echo VAL_DONE
