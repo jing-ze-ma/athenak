@@ -532,8 +532,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (!pin->GetOrAddString("problem", "photosphere_dump", "").empty()) {
     pgen_final_func = DhjPhotosphereDump;
   }
-  // problem/olr_dump = <file> (default off) writes the net top-of-domain longwave flux per
-  // ck band and column, plus the absorbed stellar flux, at the end of the run (synthetic
+  // problem/olr_dump = <file> (default off) writes the net top-of-domain longwave flux
+  // per ck band and column, plus the absorbed stellar flux, at the end of the run (synthetic
   // phase curves).  Same one-cycle-restart rule as photosphere_dump.
   if (!pin->GetOrAddString("problem", "olr_dump", "").empty()) {
     pgen_final_func = DhjFinalDumps;
@@ -5281,8 +5281,8 @@ void DhjCycleDiag(Mesh *pm) {
 //----------------------------------------------------------------------------------------
 //! \fn void DhjFinalDumps / DhjOlrDump
 //! \brief problem/olr_dump (default off): per column, the NET longwave flux through the
-//! top face ie+1 per ck band (rt_Fb blocks summed per band: chain c = ((b CK_NG)+g) nq + q,
-//! RT_NB chains per block), the cos of the stellar zenith angle and the absorbed stellar
+//! top face ie+1 per ck band (rt_Fb blocks summed per band: chain
+//! c = ((b CK_NG)+g) nq + q, RT_NB chains per block), the cos of the stellar zenith angle and the absorbed stellar
 //! flux sum_i Q_sw V / A(ie+1).  Code flux units (cgs for dhj).  Reads the arrays of the
 //! LAST ck call, like DhjFluxHistory; nothing is re-run.  Rows: gid k-ks j-js mu0
 //! F_sw_abs F_band[0..nb-1] (bands in table order, edges in the header).
@@ -5301,7 +5301,8 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm) {
   if (!ts::rt_face_flux_ready() || ts::rt_Qb_ptr == nullptr || ts::rt_cf_ptr == nullptr
       || !rt_ck || ck_wl_ptr == nullptr) {
     if (global_variable::my_rank == 0) {
-      std::cout << "### olr_dump: needs the ck split path and one RT call; nothing written"
+      std::cout << "### olr_dump: needs the ck split path and one RT call;"
+                << " nothing written"
                 << std::endl;
     }
     return;
