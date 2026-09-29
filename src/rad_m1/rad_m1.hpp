@@ -322,6 +322,7 @@ class RadiationM1 {
   // without it; opn_nskip_d counts the dropped (row, face) pairs on the device,
   // opn_nskip the all-rank total (summed at the report)
   Real impl_opn_guard = 0.0;
+  int impl_opn_guard_mode = 2;   // implicit_opac_newton_guard_mode (bits 1 rhs, 2 off)
   DvceArray1D<Real> opn_nskip_d;
   Real opn_nskip = 0.0;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
