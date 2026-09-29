@@ -846,6 +846,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // point is the same: the term vanishes there).  <= 0 turns the guard off (the
   // unguarded rows of m1-perf-0928, bitwise).
   impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
+  // implicit_opac_newton_guard_mode: DEFAULT 2 = the diagonal test + the sign of the
+  // neighbour entry (He presn wedge gate: 7 floor clips with the diagonal alone, 0 with
+  // both); 0 = the diagonal test alone; + 1 = also the
+  // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace)
+  impl_opn_guard_mode = pin->GetOrAddInteger("rad_m1",
+                                             "implicit_opac_newton_guard_mode", 2);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
@@ -7669,6 +7675,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // face i-1/2: diagonal, neighbour entry, rr part) and take it out at the end of the
     // row if it leaves the diagonal below opg x its value without it
     const Real opg = impl_opn_guard;
+    const int ogm = impl_opn_guard_mode;
     const bool opgd = (opg > 0.0) && (opnr || opns);
     auto nsk_ = opn_nskip_d;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -8132,9 +8139,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // implicit_opac_newton_guard: face i+1/2 first, then i-1/2 against the diagonal
       // left by the first (the two can together take it no lower than opg^2 x b0)
       if (opgd) {
-        Real bc = bb - gpd - gmd;
-        int ns = M1OpnGuardFace(opg, gpd, gpo, gpr, bc, bb, cc, rr);
-        ns += M1OpnGuardFace(opg, gmd, gmo, gmr, bc, bb, aa, rr);
+        Real bc = bb - gpd - gmd, rc = rr + gpr + gmr;
+        int ns = M1OpnGuardFace(opg, ogm, gpd, gpo, gpr, bc, rc, bb, cc, rr);
+        ns += M1OpnGuardFace(opg, ogm, gmd, gmo, gmr, bc, rc, bb, aa, rr);
         if (ns > 0) {Kokkos::atomic_add(&nsk_(0), static_cast<Real>(ns));}
       }
       // a Dirichlet end cell: the whole row is replaced, which keeps the matrix an

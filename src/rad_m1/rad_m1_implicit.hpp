@@ -460,17 +460,24 @@ void M1OpnCellRec(const Real q, const Real kt, const Real bk, const Real rk,
 // the guard decision for one face: the Newton term (dd on the diagonal, doff on the
 // neighbour's entry, dr subtracted from rr) is taken out of the row when it would leave
 // the diagonal below th x bc, bc = the diagonal without it (and without the faces taken
-// out before).  Returns 1 when it took the face out.
+// out before).  gm (implicit_opac_newton_guard_mode) adds bit 1: also when it takes a
+// positive rr below th x rc (rc = rr without it), bit 2: also when it leaves the
+// neighbour entry positive (an M-matrix needs off-diagonals <= 0).  Returns 1 when it
+// took the face out.
 KOKKOS_INLINE_FUNCTION
-int M1OpnGuardFace(const Real th, const Real dd, const Real doff, const Real dr,
-                   Real &bc, Real &bb, Real &off, Real &rr) {
-  if (dd < 0.0 && bc + dd < th*bc) {
+int M1OpnGuardFace(const Real th, const int gm, const Real dd, const Real doff,
+                   const Real dr, Real &bc, Real &rc, Real &bb, Real &off, Real &rr) {
+  bool bad = (dd < 0.0 && bc + dd < th*bc);
+  if ((gm & 1) && dr > 0.0 && rc > 0.0 && rc - dr < th*rc) {bad = true;}
+  if ((gm & 2) && doff > 0.0 && off > 0.0) {bad = true;}
+  if (bad) {
     bb -= dd;
     off -= doff;
     rr += dr;
     return 1;
   }
   bc += dd;
+  rc -= dr;
   return 0;
 }
 
