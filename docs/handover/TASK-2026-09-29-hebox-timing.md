@@ -1,5 +1,10 @@
 # TASK 2026-09-29: cross-cluster timing benchmark, 3-D He box with implicit M1 + vet_sc
 
+> **ON HOLD (user 09-29): do NOT run this benchmark on Caltech or DeltaAI yet.** The M1 He box in this package
+> does not convect (F_conv/F <= 1e-4 over ~20 turnovers), unlike the older two-stream He boxes; the setup may change
+> (viper investigation /viper/ptmp2/jinma/heconv_0929). Wait for a note lifting the hold. The viper numbers in
+> bench-2026-09-29-hebox/RESULTS_viper.md stay as a record.
+
 For the Caltech (H200) and DeltaAI (GH200) sessions; viper (MI300A) has run its arm. Same structure
 and rules as `TASK-2026-09-28-cross-cluster-timing.md` (WASP-121b). The goal is one table of
 ms/cycle and wall per simulated second for the implicit-M1 He box. **Timing only: no production, no

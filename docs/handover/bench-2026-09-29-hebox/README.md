@@ -1,5 +1,7 @@
 # bench-2026-09-29-hebox: 3-D He box, implicit M1 + vet_sc, cross-cluster timing
 
+> **ON HOLD (user 09-29):** see `docs/handover/TASK-2026-09-29-hebox-timing.md` — do not run on other machines yet.
+
 Timing only. The same fresh-start run of the 3-D He-star FeCZ box with implicit grey M1 radiation
 and the short-characteristics closure (`closure = vet_sc`, full tensor) is timed on viper
 (MI300A, HIP), Caltech (H200, CUDA) and DeltaAI (GH200, CUDA). **One setting only: hesdirk2 at
