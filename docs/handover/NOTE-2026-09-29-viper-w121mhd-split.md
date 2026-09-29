@@ -30,3 +30,5 @@ are pending (Resources); Slurm gives no start estimate yet (apu is full).
   - b3_e13_f16: dt ~0.5 s gives ~2.6 h.
 - An arm that does not reach rot 302 is reported as it stands and is not chained. Its rst files allow a
   continuation if the user wants one.
+
+**UPDATE 09-29 ~23:40 (user):** b3_e14_f13 (12028522) CANCELLED on viper: DeltaAI's b3_e14_sts_f13 covers it, and viper's b10_e14_f13 (no STS) is the explicit reference that validates STS at the stiffest cap. Viper now runs 3 arms: b10_e14_f13 (12028523), b10_e13_f16 (12028524), b3_e13_f16 (12028525).
