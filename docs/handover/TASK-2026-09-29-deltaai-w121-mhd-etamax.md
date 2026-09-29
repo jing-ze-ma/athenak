@@ -152,3 +152,13 @@ Then give a recommended max_eta (and STS or not) for each bbot.
 ## USER DECISIONS 09-29 ~21:45
 - **dfloor = 1e-13 for the MHD scan: YES** (the main scan as set up; keep the two 1e-16 check arms).
 - **hlld_bx_zero_tol: keep the ORIGINAL value (1e-4, i.e. do not set the key).** No with/without pair needed.
+
+## PACKAGE DOWNLOAD (09-29 ~22:10)
+The package is on the fork, branch **data-w121-mhd-pkg** (data only, orphan history, 26.7 MB, no reference rst; every arm starts `-i` from remap.dat):
+```bash
+git fetch fork data-w121-mhd-pkg
+git show fork/data-w121-mhd-pkg:w121_mhd_etamax_pkg_slim.tgz > w121_mhd_etamax_pkg_slim.tgz
+md5sum w121_mhd_etamax_pkg_slim.tgz   # 7f02a2c1b8dd1be4830e2add7920d8fd
+tar xzf w121_mhd_etamax_pkg_slim.tgz  # -> deltaai_pkg/
+```
+The full 128 MB tarball (with dhj.00600.rst) stays on viper only.
