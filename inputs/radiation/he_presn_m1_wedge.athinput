@@ -94,7 +94,7 @@ wb_cache_every      = 0
 # tfloor at the table's lowest T (10^3.8 K), dfloor keeps the velocity, vceil as he4_presn_cs
 dfloor  = 1.0e-14
 tfloor_kelvin = 6.309573445e3
-pfloor  = 1.0e0
+pfloor  = 1.0e-3   # below the top gas pressure (~0.4 dyn/cm2 at r_top on the mlt IC); 1.0 floored the top
 dfloor_keep_velocity = true
 vceil   = 1.0e8
 
@@ -150,7 +150,11 @@ he_planck_table = HE_TABLES/planck_he_x0.0_z0.02_ferg+tops.txt
 he_nfine    = 16384
 he_tau_int  = 1.0
 he_ic_cols  = 4                     # 5: file also has E (a relaxed state, make_ic mode state)
-he_wall_zero_flux = true     # remove the wall-face mass, transverse momentum, energy fluxes
+he_wall_zero_flux = true     # inner face: a no-op under he_wall_closed (mirror face, zero mass flux);
+                             # outer face: NO INFLOW (mass may leave, none enters) - its live effect
+he_ic_balance = false        # true: cells rebuilt DISCRETELY hydrostatic in the WB form (T fixed)
+mlt_flux_frozen = false      # COLUMN TESTS ONLY (needs the 7-col mlt IC): deposit -div(F_MLT) of the IC;
+                             # keep OFF in 3-D, where convection must carry the flux
 he_wall_closed = true        # inner face: exact mirror state (zero wall mass flux, WB face pressure)
 he_sponge_rate = 0.0
 he_seed     = 0.0

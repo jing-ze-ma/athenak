@@ -76,6 +76,13 @@ int hs_nf_ = 0;
 Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
+// problem/he_ic_balance: the discretely balanced initial cells (all x1 cells incl. ghosts
+// of the ONE MeshBlock along x1; every block has the same radial grid)
+bool hs_bal_ = false;
+DvceArray1D<Real> hs_bd_, hs_be_;
+// problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
+bool hs_mlt_ = false;
+DvceArray1D<Real> hs_fm_;
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -215,9 +222,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // was relaxed by a run); 4 (default): E = a T(rho,eint)^4
   const int ncols = pin->GetOrAddInteger("problem","he_ic_cols",4);
   if (ncols != 4 && ncols != 5) HsFatal("problem/he_ic_cols must be 4 or 5", __LINE__);
+  // problem/mlt_flux_frozen (default false; COLUMN TESTS ONLY, keep it off in 3-D, where
+  // convection must carry the flux): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
+  // with fmlt = F_MLT/F the file's column 7 (make_ic mlt: r rho eint F_r E T fmlt), so
+  // that F_r + F_MLT = L/(4 pi r^2) exactly, is deposited as the conservative energy
+  // source -(A F_MLT|_{i+1/2} - A F_MLT|_{i-1/2})/V inside the hydro stage sources
+  // (HeStarGravity, every stage).  Rebuilt from the file on every start (restarts).
+  hs_mlt_ = pin->GetOrAddBoolean("problem","mlt_flux_frozen",false);
+  if (hs_mlt_ && ncols != 5) {
+    HsFatal("problem/mlt_flux_frozen = true needs he_ic_cols = 5 and the 7-column "
+            "file of make_ic_he_presn_m1.py mlt", __LINE__);
+  }
   // the fine grid spans the mesh plus a margin of (ng + 2) mean radial widths
-  // (a stretched radial grid, mesh/use_grid_stretch_r_poly: each margin is (ng + 2) widths
-  // of the end cell on that side, at least the mean width)
+  // (a stretched radial grid, mesh/use_grid_stretch_r_poly: each margin is (ng + 2)
+  // widths of the end cell on that side, at least the mean width)
+  // ONE MeshBlock along x1 (the margins below, the history's face picks and the balanced
+  // IC read the radial grid of block 0)
+  if (pmy_mesh_->mesh_indcs.nx1 != indcs.nx1) {
+    HsFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)", __LINE__);
+  }
   const Real dxm = (rtop - hs_rin_)/indcs.nx1;
   Real dxlo = dxm, dxhi = dxm;
   {
@@ -229,14 +252,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real rhi = rtop + (ng + 2)*dxhi;
   hs_nf_ = nf;
   hs_dr_ = (rhi - hs_rlo_)/(nf - 1);
-  std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0);
+  std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0), hM(nf, 0.0);
   for (int n=0; n<nf; ++n) hr[n] = hs_rlo_ + n*hs_dr_;
 
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
     if (!f.good()) HsFatal("cannot open problem/he_ic_file '" + fn + "'", __LINE__);
-    std::vector<Real> fr, fd, fe, fF, fE;
+    std::vector<Real> fr, fd, fe, fF, fE, fM;
     std::string line;
     while (std::getline(f, line)) {
       if (line.empty() || line[0] == '#') continue;
@@ -244,6 +267,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real a, b, c, d, e = -1.0;
       if (!(ss >> a >> b >> c >> d)) continue;
       if (ncols == 5 && !(ss >> e)) continue;
+      Real tcol = 0.0, fm = 0.0;
+      if (hs_mlt_ && !(ss >> tcol >> fm)) {
+        HsFatal("problem/mlt_flux_frozen: he_ic_file line without column 7 (fmlt)",
+                __LINE__);
+      }
+      fM.push_back(fm);
       fr.push_back(a); fd.push_back(b); fe.push_back(c); fF.push_back(d);
       fE.push_back(e);
     }
@@ -263,6 +292,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       he[n] = exp((1.0 - w)*log(fe[kk]) + w*log(fe[kk+1]));
       hF[n] = exp((1.0 - w)*log(fF[kk]) + w*log(fF[kk+1]));
       if (ncols == 5) hE[n] = exp((1.0 - w)*log(fE[kk]) + w*log(fE[kk+1]));
+      if (hs_mlt_) hM[n] = (1.0 - w)*fM[kk] + w*fM[kk+1];
     }
   }
 
@@ -464,6 +494,149 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     pm1->SetForceReference(aref_d);
   }
 
+  // ---- DISCRETE hydrostatic balance of the initial cells (problem/he_ic_balance,
+  // default false).  The x1 well-balanced scheme is exactly static when, at every
+  // interior face, the pressure of the local background of the cell on the left
+  // (walked from its centre to the face along Phi_eff, WBBackgroundStencil) equals that
+  // of the cell on the right: the Riemann states are then the backgrounds themselves
+  // (the deviations vanish) and the WB source cancels the flux divergence.  For
+  // wb_option = polytropic the walk of cell i depends only on (d_i, T_i) and on the
+  // stencil's dT/dPhi, i.e. on T_{i-1}, T_{i+1}: with T FIXED (the column's, set by the
+  // radiation) each face condition PR_i(d_i) = PL_{i+1}(d_{i+1}) is one equation for d_i.
+  // It is solved from the first outer ghost (anchor: the column) inward to the first
+  // active cell, with the code's own EOS and walk (host), so it is exact to round-off.
+  // The inner ghosts are the column scaled to the edge cell, as HeStarBC makes them;
+  // their T enters the stencil of the edge cell, which is iterated.  The inner wall face
+  // (wall_closed_ix1, mirror state) is then balanced by construction.  E and F_r keep the
+  // column's values.  Rebuilt on a restart (the BCs read the balanced ghost profiles).
+  hs_bal_ = pin->GetOrAddBoolean("problem","he_ic_balance",false);
+  if (hs_bal_) {
+    if (ph->wb_option != WBOption::polytropic) {
+      HsFatal("problem/he_ic_balance = true needs <hydro>/wb_option = polytropic",
+              __LINE__);
+    }
+    const int n1 = n1m1 + 1;
+    const int is = indcs.is, ie = indcs.ie, k0 = indcs.ks, j0 = indcs.js;
+    auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v);
+    auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ph->phicc_wb);
+    auto hpf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ph->phi_wb_x1f);
+    std::vector<Real> dc(n1), ec(n1), tc(n1), bd(n1), be(n1);
+    auto logint = [&](const std::vector<Real> &a, const Real r) {
+      Real x = (r - hs_rlo_)/hs_dr_;
+      int i = static_cast<int>(floor(x));
+      i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
+      Real w = x - i;
+      w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+      return exp((1.0 - w)*log(a[i]) + w*log(a[i+1]));
+    };
+    for (int i=0; i<n1; ++i) {
+      dc[i] = logint(hd, hx1v(0,i));
+      ec[i] = logint(he, hx1v(0,i));
+      tc[i] = eos.Temperature(dc[i], ec[i]);
+      bd[i] = dc[i];
+      be[i] = ec[i];
+    }
+    const WBOption wbo = ph->wb_option;
+    auto walk = [&](const int i, const Real di, Real &pimh, Real &piph) {
+      Real ei, p, cr, ct, cv;
+      eos.ThermoAt(di, tc[i], ei, p, cr, ct, cv);
+      WBState s0, s1, s2, s3, s4;
+      WBBackgroundStencil(eos, wbo, bd[i-1], di, bd[i+1], be[i-1], ei, be[i+1],
+                          hpc(0,k0,j0,i-1), hpf(0,k0,j0,i), hpc(0,k0,j0,i),
+                          hpf(0,k0,j0,i+1), hpc(0,k0,j0,i+1), s0, s1, s2, s3, s4,
+                          tc[i-1], tc[i], tc[i+1]);
+      pimh = s1.p;
+      piph = s3.p;
+    };
+    Real rmax = 0.0;
+    auto solve = [&](const int i, const Real target) {  // PR_i(d_i) = target
+      Real pl, pr;
+      Real x0 = log(bd[i]), x1 = x0 + 1.0e-6;
+      walk(i, exp(x0), pl, pr);
+      Real f0 = pr/target - 1.0;
+      walk(i, exp(x1), pl, pr);
+      Real f1 = pr/target - 1.0;
+      for (int it=0; it<60 && fabs(f1) > 1.0e-15 && f1 != f0; ++it) {
+        const Real x2 = x1 - f1*(x1 - x0)/(f1 - f0);
+        x0 = x1; f0 = f1; x1 = x2;
+        walk(i, exp(x1), pl, pr);
+        f1 = pr/target - 1.0;
+      }
+      rmax = std::max(rmax, fabs(f1));
+      bd[i] = exp(x1);
+      Real p, cr, ct, cv;
+      eos.ThermoAt(bd[i], tc[i], be[i], p, cr, ct, cv);
+    };
+    for (int i=ie; i>=is; --i) {
+      Real pl, pr;
+      walk(i+1, bd[i+1], pl, pr);
+      solve(i, pl);
+    }
+    for (int it=0; it<8; ++it) {
+      for (int g=0; g<is; ++g) {
+        bd[g] = dc[g]*bd[is]/dc[is];
+        be[g] = ec[g]*be[is]/ec[is];
+        tc[g] = eos.Temperature(bd[g], be[g]);
+      }
+      Real pl, pr;
+      walk(is+1, bd[is+1], pl, pr);
+      solve(is, pl);
+    }
+    Real dmax = 0.0;
+    int imax = is;
+    for (int i=is; i<=ie; ++i) {
+      if (fabs(bd[i]/dc[i] - 1.0) > dmax) {
+        dmax = fabs(bd[i]/dc[i] - 1.0);
+        imax = i;
+      }
+    }
+    Kokkos::realloc(hs_bd_, n1);
+    Kokkos::realloc(hs_be_, n1);
+    auto h1 = Kokkos::create_mirror_view(hs_bd_);
+    auto h2 = Kokkos::create_mirror_view(hs_be_);
+    for (int i=0; i<n1; ++i) {
+      h1(i) = bd[i];
+      h2(i) = be[i];
+    }
+    Kokkos::deep_copy(hs_bd_, h1);
+    Kokkos::deep_copy(hs_be_, h2);
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: he_ic_balance: max |rho/rho_col - 1| = " << dmax
+                << " at r = " << hx1v(0,imax) << ", max face residual |PR/PL - 1| = "
+                << rmax << std::endl;
+    }
+  }
+
+  // ---- the frozen MLT flux on the x1 faces (problem/mlt_flux_frozen)
+  if (hs_mlt_) {
+    auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1f);
+    const int nfc = n1m1 + 2;
+    Kokkos::realloc(hs_fm_, nfc);
+    auto hfm = Kokkos::create_mirror_view(hs_fm_);
+    Real fmax = 0.0, rmx = 0.0;
+    for (int i=0; i<nfc; ++i) {
+      const Real r = hx1f(0,i);
+      Real x = (r - hs_rlo_)/hs_dr_;
+      int n = static_cast<int>(floor(x));
+      n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
+      Real w = x - n;
+      w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+      const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
+      const Real fr = exp((1.0 - w)*log(hF[n]) + w*log(hF[n+1]));
+      hfm(i) = (fm > 0.0) ? fr*fm/(1.0 - fm) : 0.0;
+      if (fm > fmax) {
+        fmax = fm;
+        rmx = r;
+      }
+    }
+    Kokkos::deep_copy(hs_fm_, hfm);
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: mlt_flux_frozen: max F_MLT/F on the faces = " << fmax
+                << " at r = " << rmx << "; F_MLT at the bottom/top faces = "
+                << hfm(indcs.is) << " / " << hfm(indcs.ie + 1) << std::endl;
+    }
+  }
+
   // top sponge (default off) and hooks
   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
   // the inner wall face sees the exact mirror of the interior-side state
@@ -501,11 +674,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto x2v = pmbp->pcoord->x2v;
   auto x3v = pmbp->pcoord->x3v;
   auto crho = hs_rho_, ceint = hs_eint_;
+  const bool bal = hs_bal_;
+  auto cbd = hs_bd_, cbe = hs_be_;
   par_for("hs_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
-    const Real d = HsLogInterp(crho, rlo, dr, nf, r);
-    Real e = HsLogInterp(ceint, rlo, dr, nf, r);
+    const Real d = bal ? cbd(i) : HsLogInterp(crho, rlo, dr, nf, r);
+    Real e = bal ? cbe(i) : HsLogInterp(ceint, rlo, dr, nf, r);
     // seed (default off): one smooth lateral mode in eint, wave number he_seed_k
     if (seed != 0.0 && r >= srlo && r <= srhi) {
       e *= 1.0 + seed*sin(2.0*M_PI*seedk*(x2v(m,j) - x2a)/lth + 0.3)
@@ -574,6 +749,16 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     par_for("hs_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+    });
+  }
+  // problem/mlt_flux_frozen: the conservative energy deposit of the IC's MLT flux, in the
+  // same stage source as gravity (coupled per stage, no split)
+  if (hs_mlt_) {
+    auto fm = hs_fm_;
+    par_for("hs_mlt", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      u0(m,IEN,k,j,i) -= bdt*(area1(m,k,j,i+1)*fm(i+1) - area1(m,k,j,i)*fm(i))
+                         /volume(m,k,j,i);
     });
   }
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
@@ -648,6 +833,8 @@ void HeStarBC(Mesh *pm) {
   auto crho = hs_rho_, ceint = hs_eint_;
   const Real rlo = hs_rlo_, dr = hs_dr_;
   const int nf = hs_nf_;
+  const bool bal = hs_bal_;
+  auto cbd = hs_bd_, cbe = hs_be_;
   auto ur = pmbp->pradm1->u0;
   const Real cl = pmbp->pradm1->c_light;
   const Real efl = pmbp->pradm1->e_floor;
@@ -662,14 +849,14 @@ void HeStarBC(Mesh *pm) {
       const Real kea = 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - da*phicc(m,k,j,ia);
-      const Real sd = da/HsLogInterp(crho, rlo, dr, nf, x1v(m,ia));
-      const Real se = ea/HsLogInterp(ceint, rlo, dr, nf, x1v(m,ia));
+      const Real sd = da/(bal ? cbd(ia) : HsLogInterp(crho, rlo, dr, nf, x1v(m,ia)));
+      const Real se = ea/(bal ? cbe(ia) : HsLogInterp(ceint, rlo, dr, nf, x1v(m,ia)));
       for (int g=0; g<ng; ++g) {
         const int ig = lo ? (is - 1 - g) : (ie + 1 + g);
         const int im = lo ? (is + g) : (ie - g);        // the mirror cell
         const Real rg = x1v(m,ig);
-        const Real dg = sd*HsLogInterp(crho, rlo, dr, nf, rg);
-        const Real eg = se*HsLogInterp(ceint, rlo, dr, nf, rg);
+        const Real dg = sd*(bal ? cbd(ig) : HsLogInterp(crho, rlo, dr, nf, rg));
+        const Real eg = se*(bal ? cbe(ig) : HsLogInterp(ceint, rlo, dr, nf, rg));
         const Real dm = uh(m,IDN,k,j,im);
         // wall: v1 mirrored; outer edge: v1 of the edge cell where it flows out
         const Real v1e = uh(m,IM1,k,j,ia)/da;
@@ -778,5 +965,8 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   (void) pin; (void) pm;
   hs_rho_ = DvceArray1D<Real>();
   hs_eint_ = DvceArray1D<Real>();
+  hs_bd_ = DvceArray1D<Real>();
+  hs_fm_ = DvceArray1D<Real>();
+  hs_be_ = DvceArray1D<Real>();
 }
 }  // namespace
