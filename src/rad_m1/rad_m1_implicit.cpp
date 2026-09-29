@@ -9232,6 +9232,11 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   const int nfld = 17;
   DvceArray2D<Real> lst("m1_t2dbg_lst", ncap, nfld);
   DvceArray1D<int> lcnt("m1_t2dbg_lcnt", 1);
+  // the frozen 7-point row of each listed cell (M1_IW_TA..CKP, KB) with the neighbour
+  // solutions, TR, TRHS, TDIA, SRCB, SRCR, KT and WCHI (= f_rr on the sp wedge)
+  const int nrow = 26;
+  const bool bcg = bicg_on;
+  DvceArray2D<Real> row("m1_t2dbg_row", ncap, nrow);
   DvceArray1D<Real> rmn("m1_t2dbg_rmn", indcs.nx1 + 2*indcs.ng);
   auto x2v = pmy_pack->pcoord->x2v;
   auto x3v = pmy_pack->pcoord->x3v;
@@ -9273,9 +9278,36 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     lst(n,14) = iw_(m,M1_IW_EN,k,j,i);
     lst(n,15) = ego;
     lst(n,16) = egw;
+    row(n,0) = iw_(m,M1_IW_TB,k,j,i);
+    row(n,1) = iw_(m,M1_IW_TA,k,j,i);
+    row(n,2) = iw_(m,M1_IW_S2,k,j,i-1);
+    row(n,3) = iw_(m,M1_IW_TC,k,j,i);
+    row(n,4) = iw_(m,M1_IW_S2,k,j,i+1);
+    row(n,5) = bcg ? iw_(m,M1_IW_CJM,k,j,i) : 0.0;
+    row(n,6) = iw_(m,M1_IW_S2,k,j-1,i);
+    row(n,7) = bcg ? iw_(m,M1_IW_CJP,k,j,i) : 0.0;
+    row(n,8) = iw_(m,M1_IW_S2,k,j+1,i);
+    row(n,9) = bcg ? iw_(m,M1_IW_CKM,k,j,i) : 0.0;
+    row(n,10) = iw_(m,M1_IW_S2,k-1,j,i);
+    row(n,11) = bcg ? iw_(m,M1_IW_CKP,k,j,i) : 0.0;
+    row(n,12) = iw_(m,M1_IW_S2,k+1,j,i);
+    row(n,13) = bcg ? iw_(m,M1_IW_KB,k,j,i) : 0.0;
+    row(n,14) = iw_(m,M1_IW_TR,k,j,i);
+    row(n,15) = iw_(m,M1_IW_TRHS,k,j,i);
+    row(n,16) = iw_(m,M1_IW_TDIA,k,j,i);
+    row(n,17) = iw_(m,M1_IW_SRCB,k,j,i);
+    row(n,18) = iw_(m,M1_IW_SRCR,k,j,i);
+    row(n,19) = iw_(m,M1_IW_KT,k,j,i);
+    row(n,20) = iw_(m,M1_IW_WCHI,k,j,i);
+    row(n,21) = iw_(m,M1_IW_EP,k,j,i);
+    row(n,22) = bcg ? iw_(m,M1_IW_KX,k,j,i) : 0.0;
+    row(n,23) = iw_(m,M1_IW_G0,k,j,i);
+    row(n,24) = iw_(m,M1_IW_DE0,k,j,i);
+    row(n,25) = iw_(m,M1_IW_LRES,k,j,i);
   });
   auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lcnt);
   auto hl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lst);
+  auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), row);
   const int nall = std::min(hc(0), ncap);
   auto &msz = pmy_pack->pmesh->mesh_size;
   const int gnx2 = pmy_pack->pmesh->mesh_indcs.nx2;
@@ -9295,6 +9327,30 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     for (int f = 0; f < 5; ++f) std::cout << " " << static_cast<int>(hl(n,f));
     for (int f = 5; f < nfld; ++f) std::cout << " " << hl(n,f);
     std::cout << " " << jg << " " << kg << std::endl;
+    if (static_cast<int>(hl(n,4)) & 1) {
+      // the row: diag*E, each neighbour coefficient x neighbour solution, b; M-matrix
+      // check: sum |off| / |diag| and the number of positive off-diagonal coefficients
+      Real soff = 0.0, lhs = hr(n,0)*hl(n,13);
+      int npos = 0;
+      for (int c = 1; c <= 11; c += 2) {
+        soff += std::fabs(hr(n,c));
+        if (hr(n,c) > 0.0) npos += 1;
+        lhs += hr(n,c)*hr(n,c+1);
+      }
+      std::cout << "  ROW TB " << hr(n,0) << " TB*E " << hr(n,0)*hl(n,13)
+                << " | r- " << hr(n,1) << " x " << hr(n,2) << " r+ " << hr(n,3) << " x "
+                << hr(n,4) << " | th- " << hr(n,5) << " x " << hr(n,6) << " th+ "
+                << hr(n,7) << " x " << hr(n,8) << " | ph- " << hr(n,9) << " x "
+                << hr(n,10) << " ph+ " << hr(n,11) << " x " << hr(n,12) << std::endl
+                << "      b(KB) " << hr(n,13) << " lhs(solution) " << lhs
+                << " TR " << hr(n,14) << " TRHS " << hr(n,15) << " TDIA " << hr(n,16)
+                << " SRCB " << hr(n,17) << " SRCR " << hr(n,18) << " KT " << hr(n,19)
+                << " f_rr " << hr(n,20) << " EP " << hr(n,21) << " KX " << hr(n,22)
+                << " G0 " << hr(n,23) << " DE0 " << hr(n,24) << " LRES " << hr(n,25)
+                << std::endl << "      M-matrix: sum|off|/|diag| "
+                << soff/std::fabs(hr(n,0))
+                << " positive off-diagonals " << npos << std::endl;
+    }
   }
   std::cout << "  HIST_J rank " << rank << " (global theta index: count)";
   for (int q = 0; q < gnx2; ++q) {
