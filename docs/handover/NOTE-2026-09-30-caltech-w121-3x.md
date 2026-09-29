@@ -1,7 +1,7 @@
 # NOTE 2026-09-30 (Caltech): WASP-121b 3x duplicate production (TASK-2026-09-30-caltech-w121-3x)
 
 **Start estimate (sbatch --test-only, 09-29 16:40 PDT):** 1 node x 2 H200 at **2026-09-30 15:23 PDT
-(= 09-30 00:23 CEST +1 d, i.e. 10-01 00:23 CEST)**. Viper's copy 12030356 was estimated at 09-30 07:35 CEST
+(= 10-01 00:23 CEST)**. Viper's copy 12030356 was estimated at 09-30 07:35 CEST
 (= 09-29 22:35 PDT), so **viper is expected to start ~17 h earlier**. Caltech jobs are queued anyway; if viper
 starts first, cancel the Caltech ones (`scancel 3640301 3640302`, nothing spent while pending).
 
