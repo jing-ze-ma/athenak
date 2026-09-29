@@ -8,7 +8,7 @@
 # $P/bin/athena_<cpu|gpu>_<problem>_<sha8> and logged (sha, md5) in $P/log/BUILDS.txt.  A commit that
 # already has a binary there is reused, not rebuilt (NOTE-2026-09-28-incremental-builds.md).
 # GPU builds belong on a compute node:
-#   sbatch -A carnegie_poc -p expansion -c 32 --mem=64G -t 01:00:00 -o <log> \
+#   sbatch -A carnegie_poc -p expansion -c 32 --mem=64G -t 02:30:00 -o <log> \
 #     --wrap "NJ=32 bash build_inc.sh <tag> gpu <commit>"
 set -e
 R=/resnick/home/jingze/ATHENAK/athenak
@@ -17,7 +17,24 @@ A=$1; D=$2; C=${3:-HEAD}; PROB=${4:-deep_hot_jupiter_rt}
 I=$P/inc_${D}_$PROB
 mkdir -p $P/log $P/bin $I/src
 SHA=$(git -C $R rev-parse $C); B=$P/bin/athena_${D}_${PROB}_${SHA:0:8}
-exec 9>$I/.lock; flock -w 3600 9            # one build per tree at a time
+# One build per tree at a time.  mkdir lock, not flock: on /resnick a flock left by a killed build
+# blocked `flock -w 3600` past its timeout (09-29, 1 h hang).  Owner = "host pid jobid"; the lock is
+# stale if its Slurm job is gone, its pid is dead (same host), or it is older than LOCK_MAXAGE s.
+L=$I/.lockdir; W=${LOCK_WAIT:-3600}; MAXAGE=${LOCK_MAXAGE:-10800}
+lock_stale() {
+  local h p j; { read h p j < $L/owner; } 2>/dev/null || { [ $(( $(date +%s) - $(stat -c %Y $L 2>/dev/null || date +%s) )) -gt 60 ]; return; }
+  if [ "$j" != none ]; then [ -z "$(squeue -h -j $j 2>/dev/null)" ] && return 0; fi
+  if [ "$h" = "$(hostname -s)" ] && ! kill -0 $p 2>/dev/null; then return 0; fi
+  [ $(( $(date +%s) - $(stat -c %Y $L) )) -gt $MAXAGE ]
+}
+t0=$(date +%s)
+until mkdir $L 2>/dev/null; do
+  if lock_stale; then echo "build_inc: breaking stale lock $L ($(cat $L/owner 2>/dev/null))" >&2; rm -rf $L; continue; fi
+  [ $(( $(date +%s) - t0 )) -ge $W ] && { echo "build_inc: FAILED, $L held for ${W}s by $(cat $L/owner 2>/dev/null)" >&2; exit 3; }
+  sleep 30
+done
+echo "$(hostname -s) $$ ${SLURM_JOB_ID:-none}" > $L/owner
+trap 'rm -rf $L' EXIT
 if [ -x $B ]; then                           # same commit already built: reuse it
   cp $B $P/athena_${A}_$D; echo $SHA > $P/COMMIT_$A
   echo BUILD_REUSED $A $D $SHA $(md5sum $B | cut -c1-32); exit 0
