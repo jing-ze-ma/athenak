@@ -845,6 +845,7 @@ class RadiationM1 {
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`
   DvceArray5D<Real> ecache;     // (m,nec,k,j,i) the frozen-density e(T) cache
+  bool pin_report_newton_fb = false;   // <rad_m1>/report_newton_fb: print fallback cells
   Real newt_nfb;                // Newton fallbacks to the bracketed root find, whole run
   Real gas_ncell;               // cell-passes of the gas solve, whole run (the scale the
                                 // two counters above and below are read against)

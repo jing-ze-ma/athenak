@@ -426,6 +426,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_gas_newton = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton",
                                          full && !global_variable::restart_run);
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
+  pin_report_newton_fb = pin->GetOrAddBoolean("rad_m1","report_newton_fb",false);
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
   // the check is a MEASUREMENT only (nothing reads igm or ec_emax/ec_tmax but the final
@@ -8510,6 +8511,30 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }, Kokkos::Sum<Real>(sms));
     Real ncell = static_cast<Real>(nmb1+1)*static_cast<Real>(ke-ks+1)
                  *static_cast<Real>(je-js+1)*static_cast<Real>(ie-is+1);
+    // diagnostic (<rad_m1>/report_newton_fb, default off): WHERE the Newton fallbacks of
+    // this step happened (first 8 cells of this rank: cycle, time, m, k, j, i, r)
+    if (sfb > 0.0 && pmy_pack->pmesh->ncycle >= 0 &&
+        pin_report_newton_fb) {
+      auto hfb = Kokkos::create_mirror_view_and_copy(HostMemSpace(), iw_);
+      auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                      pmy_pack->pcoord->x1v);
+      int nrep = 0;
+      for (int m = 0; m <= nmb1 && nrep < 8; ++m) {
+        for (int k = ks; k <= ke && nrep < 8; ++k) {
+          for (int j = js; j <= je && nrep < 8; ++j) {
+            for (int i = is; i <= ie && nrep < 8; ++i) {
+              if (hfb(m,igf,k,j,i) > 0.0) {
+                std::cout << "<rad_m1> NEWTON-FALLBACK cycle=" << pmy_pack->pmesh->ncycle
+                          << " time=" << pmy_pack->pmesh->time << " (m,k,j,i)=(" << m
+                          << "," << k << "," << j << "," << i << ") r=" << hx1v(m,i)
+                          << " count=" << hfb(m,igf,k,j,i) << std::endl;
+                ++nrep;
+              }
+            }
+          }
+        }
+      }
+    }
 #if MPI_PARALLEL_ENABLED
     {Real lo[3] = {sfb, sms, ncell}, gl[3];
     MPI_Allreduce(lo, gl, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);

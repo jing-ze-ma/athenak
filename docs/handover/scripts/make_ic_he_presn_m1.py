@@ -431,7 +431,7 @@ def main_mlt(out, sle, slp, sk):
     TAU_J = float(os.environ.get('MLT_TAUJ', '3.0'))
     TAU_TOP = 1.0e-4
     RHO_TOP = 1.0e-14
-    RMARGIN = 5.0e9
+    RMARGIN = 9.0e9
 
     def kap_of(T_, rho_):
         return 10.0**sk.ev(np.log10(T_), np.log10(rho_))
