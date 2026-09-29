@@ -9065,8 +9065,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   return TaskStatus::complete;
 }
 
-} // namespace radm1
-
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::T2AdmissDebug
 //! \brief DEBUG (<rad_m1>/dbg_t2_admiss): after a non-admissible hesdirk2 stage, per
@@ -9194,3 +9192,5 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
               << std::endl;
   }
 }
+
+} // namespace radm1
