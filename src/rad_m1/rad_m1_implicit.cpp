@@ -8140,10 +8140,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // has no fixed point (measured: the seeded He slab blows up in 14 steps with
         // lagged + a frozen closure, and runs with none + a frozen closure).
         Real emin = 1.0e300;
+        // m1-perf-0928: a flat range (the MDRange reduction is ~5x slower on CUDA); a
+        // min does not depend on the order, so the value is bitwise the same
+        const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
         Kokkos::parallel_reduce("m1_impl_odmin",
-        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                               {nmb1+1,ke+1,je+1,ie+1}),
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+        Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+        KOKKOS_LAMBDA(const int n, Real &lmin) {
+          int t = n/fni;
+          const int i = is + (n - t*fni);
+          const int j = js + (t % fnj);
+          t /= fnj;
+          const int k = ks + (t % fnk);
+          const int m = t/fnk;
           Real r = iw_(m,M1_IW_S2,k,j,i);
           lmin = (r < lmin) ? r : lmin;
         }, Kokkos::Min<Real>(emin));
@@ -8357,42 +8365,49 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
 
     // (h) convergence
-    resid = 0.0;
-    Kokkos::parallel_reduce("m1_impl_res",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
-      Real r = iw_(m,M1_IW_RES,k,j,i);
-      lmax = (r > lmax) ? r : lmax;
-    }, Kokkos::Max<Real>(resid));
-#if MPI_PARALLEL_ENABLED
-    // the convergence test must be GLOBAL: with a partitioned column the ranks would
-    // otherwise take different numbers of Picard passes and the gather would deadlock,
-    // and even with rank-local columns a per-rank test makes the answer depend on the
-    // decomposition.  One MPI_MAX of one double per pass.
-    {Real rg;
-    MPI_Allreduce(&resid, &rg, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
-    resid = rg;}
-#endif
     // MILESTONE 3b phase B.  The Picard test alone is NOT enough once the transverse
     // couplings are lagged: |dE|/E can stall while the off-diagonal terms are still
     // moving.  The TRUE residual of the full 7-point system is measured separately (see
     // ImplicitTransverseTerms) and both have to be met.
+    // m1-perf-0928: both maxima in ONE flat reduction and one MPI_MAX of two doubles
+    // (was two MDRange reductions, two host syncs and two MPI_Allreduce); a max does not
+    // depend on the order, so the values are bitwise the same.
+    resid = 0.0;
     lresid = 0.0;
-    if (trans) {
-      Kokkos::parallel_reduce("m1_impl_lres",
-      Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                             {nmb1+1,ke+1,je+1,ie+1}),
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
-        Real r = iw_(m,M1_IW_LRES,k,j,i);
+    {
+      const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
+      const bool ltr = trans;
+      Kokkos::parallel_reduce("m1_impl_res",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+      KOKKOS_LAMBDA(const int n, Real &lmax, Real &lmx2) {
+        int t = n/fni;
+        const int i = is + (n - t*fni);
+        const int j = js + (t % fnj);
+        t /= fnj;
+        const int k = ks + (t % fnk);
+        const int m = t/fnk;
+        Real r = iw_(m,M1_IW_RES,k,j,i);
         lmax = (r > lmax) ? r : lmax;
-      }, Kokkos::Max<Real>(lresid));
+        if (ltr) {
+          Real q = iw_(m,M1_IW_LRES,k,j,i);
+          lmx2 = (q > lmx2) ? q : lmx2;
+        }
+      }, Kokkos::Max<Real>(resid), Kokkos::Max<Real>(lresid));
+    }
 #if MPI_PARALLEL_ENABLED
-      {Real lg;
-      MPI_Allreduce(&lresid, &lg, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
-      lresid = lg;}
+    // the convergence test must be GLOBAL: with a partitioned column the ranks would
+    // otherwise take different numbers of Picard passes and the gather would deadlock,
+    // and even with rank-local columns a per-rank test makes the answer depend on the
+    // decomposition.
+    {Real rl[2] = {resid, lresid}, rg[2];
+    MPI_Allreduce(rl, rg, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    resid = rg[0];
+    lresid = rg[1];}
 #endif
+    if (trans) {
       lresid /= rhsmax;
+    } else {
+      lresid = 0.0;
     }
     converged = (resid < impl_tol) && (!trans || (lresid < impl_lin_tol));
     if (impl_conv_est || !impl_lres_test) {
