@@ -191,6 +191,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vimp_now = false;
   iw_vimp = -1;
   vimp_nfall = 0.0;
+  flr_ne = 0.0;
+  flr_ng = 0.0;
   vimp_emin = 1.0e300;
   pbval_vm = nullptr;
   time_scheme = 0;

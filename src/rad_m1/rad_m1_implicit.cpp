@@ -5784,6 +5784,10 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
               << " min E from the solve=" << vimp_emin << std::endl;
   }
+  std::cout << "<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= "
+            << "e_floor cell-solves=" << flr_ne
+            << " written-back gas eint <= 0 cell-solves="
+            << flr_ng << std::endl;
 }
 
 //----------------------------------------------------------------------------------------
@@ -8594,6 +8598,37 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       T2AdmissDebug(uh, u0_, t2i_, cl, ch, hh, gq, t2s, it);
     }
   }
+  // floor clips (counting only, nothing written): cells whose solved E is at or below
+  // e_floor (the iterate is floored to it) and cells whose written-back gas internal
+  // energy (the step (a) of the write-back below) is <= 0, in every solve, BE included
+  {
+    const bool hh = have_hydro;
+    const bool gq = have_hydro && coupling && dbgh;
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Real nfe = 0.0, nfg = 0.0;
+    Kokkos::parallel_reduce("m1_flr_cnt",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &se, Real &sg) {
+      const int m = idx/nkji;
+      int q = idx - m*nkji;
+      const int k = q/nji + ks;
+      q -= (k - ks)*nji;
+      const int j = q/ni + js;
+      const int i = q - (j - js)*ni + is;
+      if (!(iw_(m,M1_IW_S2,k,j,i) > efl)) se += 1.0;
+      if (hh && gq) {
+        Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+        if (!(iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq > 0.0)) sg += 1.0;
+      }
+    }, Kokkos::Sum<Real>(nfe), Kokkos::Sum<Real>(nfg));
+#if MPI_PARALLEL_ENABLED
+    {Real a[2] = {nfe, nfg}, g[2];
+    MPI_Allreduce(a, g, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    nfe = g[0]; nfg = g[1];}
+#endif
+    flr_ne += nfe;
+    flr_ng += nfg;
+  }
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
   impl_itmax = std::max(impl_itmax, static_cast<Real>(it));
@@ -9191,6 +9226,85 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
               << "  v(old vector) " << hv(10) << " " << hv(11) << " " << hv(12)
               << std::endl;
   }
+  // every cell with solved E <= 0, written-back eint <= 0 or old-vector eint <= 0 (up to
+  // ncap per rank), with histograms by the GLOBAL theta / phi cell index
+  const int ncap = 4096;
+  const int nfld = 17;
+  DvceArray2D<Real> lst("m1_t2dbg_lst", ncap, nfld);
+  DvceArray1D<int> lcnt("m1_t2dbg_lcnt", 1);
+  DvceArray1D<Real> rmn("m1_t2dbg_rmn", indcs.nx1 + 2*indcs.ng);
+  auto x2v = pmy_pack->pcoord->x2v;
+  auto x3v = pmy_pack->pcoord->x3v;
+  if (hh) {
+    par_for("m1_t2dbg_rmn", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
+      Real sm = 0.0;
+      for (int mm = 0; mm <= nmb1; ++mm) {
+        for (int kk = ks; kk <= ke; ++kk) {
+          for (int jj = js; jj <= je; ++jj) {sm += uh(mm,IDN,kk,jj,i);}
+        }
+      }
+      rmn(i) = sm/static_cast<Real>((nmb1 + 1)*(ke - ks + 1)*(je - js + 1));
+    });
+  }
+  Kokkos::parallel_for("m1_t2dbg_all", Kokkos::RangePolicy<DevExeSpace>(0, ntot),
+  KOKKOS_LAMBDA(const int idx) {
+    const int m = idx/nkji;
+    int r = idx - m*nkji;
+    const int k = r/nji + ks;
+    r -= (k - ks)*nji;
+    const int j = r/ni + js;
+    const int i = r - (j - js)*ni + is;
+    const Real es = iw_(m,M1_IW_S2,k,j,i);
+    const Real ego = hh ? iw_(m,M1_IW_EGN,k,j,i) : 1.0;
+    const Real egw = gq ? (iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
+                     iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i))) : 1.0;
+    const int flg = ((es > 0.0) ? 0 : 1) + ((egw > 0.0) ? 0 : 2) + ((ego > 0.0) ? 0 : 4);
+    if (flg == 0) return;
+    const int n = Kokkos::atomic_fetch_add(&lcnt(0), 1);
+    if (n >= ncap) return;
+    lst(n,0) = m; lst(n,1) = k; lst(n,2) = j; lst(n,3) = i; lst(n,4) = flg;
+    lst(n,5) = x1v(m,i); lst(n,6) = x2v(m,j); lst(n,7) = x3v(m,k);
+    lst(n,8) = hh ? uh(m,IDN,k,j,i) : 0.0;
+    lst(n,9) = (hh && rmn(i) > 0.0) ? uh(m,IDN,k,j,i)/rmn(i) : 0.0;
+    lst(n,10) = iw_(m,M1_IW_V1,k,j,i);
+    lst(n,11) = iw_(m,M1_IW_V2,k,j,i);
+    lst(n,12) = iw_(m,M1_IW_V3,k,j,i);
+    lst(n,13) = es;
+    lst(n,14) = iw_(m,M1_IW_EN,k,j,i);
+    lst(n,15) = ego;
+    lst(n,16) = egw;
+  });
+  auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lcnt);
+  auto hl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lst);
+  const int nall = std::min(hc(0), ncap);
+  auto &msz = pmy_pack->pmesh->mesh_size;
+  const int gnx2 = pmy_pack->pmesh->mesh_indcs.nx2;
+  const int gnx3 = pmy_pack->pmesh->mesh_indcs.nx3;
+  const Real d2 = (msz.x2max - msz.x2min)/gnx2, d3 = (msz.x3max - msz.x3min)/gnx3;
+  std::vector<int> hj(gnx2, 0), hk(gnx3, 0);
+  std::cout << "  ALL rank " << rank << ": " << hc(0) << " cells (flag 1 E_solved<=0, "
+            << "2 eint_writeback<=0, 4 eint_old<=0); listed " << nall << std::endl
+            << "  # m k j i flag r/R_cm theta phi rho rho/<rho> v_r v_th v_ph E_solved "
+            << "E_old eint_old eint_wb jg kg" << std::endl;
+  for (int n = 0; n < nall; ++n) {
+    const int jg = static_cast<int>(std::floor((hl(n,6) - msz.x2min)/d2));
+    const int kg = static_cast<int>(std::floor((hl(n,7) - msz.x3min)/d3));
+    if (jg >= 0 && jg < gnx2) hj[jg] += 1;
+    if (kg >= 0 && kg < gnx3) hk[kg] += 1;
+    std::cout << "  C";
+    for (int f = 0; f < 5; ++f) std::cout << " " << static_cast<int>(hl(n,f));
+    for (int f = 5; f < nfld; ++f) std::cout << " " << hl(n,f);
+    std::cout << " " << jg << " " << kg << std::endl;
+  }
+  std::cout << "  HIST_J rank " << rank << " (global theta index: count)";
+  for (int q = 0; q < gnx2; ++q) {
+    if (hj[q] > 0) {std::cout << " " << q << ":" << hj[q];}
+  }
+  std::cout << std::endl << "  HIST_K rank " << rank << " (global phi index: count)";
+  for (int q = 0; q < gnx3; ++q) {
+    if (hk[q] > 0) {std::cout << " " << q << ":" << hk[q];}
+  }
+  std::cout << std::endl;
 }
 
 } // namespace radm1

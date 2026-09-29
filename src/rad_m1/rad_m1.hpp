@@ -876,6 +876,8 @@ class RadiationM1 {
   bool vimp_now;                // on for this step (the positivity fallback drops it)
   int iw_vimp;                  // first iw component of the M1_NIW_VIMP block, or -1
   Real vimp_nfall;              // how often the positivity fallback dropped it
+  Real flr_ne, flr_ng;          // cell-solves whose solved E <= e_floor (floored) and
+                                // whose written-back gas eint <= 0 (all ranks)
   Real vimp_emin;               // the smallest E the linear solve produced with it on
   DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
   MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
