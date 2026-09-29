@@ -31,6 +31,21 @@ rr, Ht = r[m], Hs[m]
 dxlo, dxhi = 5.0e7, float(__import__('os').environ.get('DXHI', '4e8'))
 dxtop = float(__import__('os').environ.get('DXTOP', '1.5e8'))
 dxt = np.clip(Ht / NC, np.where(tau[m] < 1.0, dxtop, dxlo), dxhi)
+# FeCZ cap (env FECZ_N cells across 0.636-0.933 R) and total-P Hp rule (same NC)
+fz = (rr >= 0.636 * R) & (rr <= 0.933 * R)
+nfz = float(__import__('os').environ.get('FECZ_N', '0'))
+if nfz > 0:
+    dxt[fz] = np.minimum(dxt[fz], 0.297 * R / nfz)
+dxt = np.minimum(dxt, np.exp(np.interp(rr, r, np.log(Hp))) / NC)
+# smooth stretching: limit the log-slope of dx to MAXR per cell (two sweeps)
+mr = float(__import__('os').environ.get('MAXR', '1.04'))
+for _ in range(3):
+    for k in range(1, len(dxt)):
+        lim = dxt[k-1] * mr ** ((rr[k] - rr[k-1]) / dxt[k-1])
+        dxt[k] = min(dxt[k], lim)
+    for k in range(len(dxt) - 2, -1, -1):
+        lim = dxt[k+1] * mr ** ((rr[k+1] - rr[k]) / dxt[k+1])
+        dxt[k] = min(dxt[k], lim)
 # cumulative cell count of the target, rescaled to nx cells
 cnt = np.concatenate([[0], np.cumsum(np.diff(rr) / (0.5 * (dxt[1:] + dxt[:-1])))])
 print('target cells %.1f (requested %d)' % (cnt[-1], nx))
@@ -50,6 +65,8 @@ ip = lambda q: np.exp(np.interp(rc, r, np.log(q)))
 Hc, Hpc, tauc = ip(Hs), ip(Hp), np.interp(rc, r, tau)
 cs = np.sqrt(5.0 / 3.0 * ip(pg) / ip(rho))
 print('c1..c8 =', ' '.join('%.10e' % v for v in c))
+rat = np.maximum(dx[1:] / dx[:-1], dx[:-1] / dx[1:])
+print('adjacent ratio max at r/R %.4f; ratio > 1.05 in %d faces' % (rc[1:][rat.argmax()] / R, (rat > 1.05).sum()))
 print('dx: min %.3e (r/R %.4f) max %.3e (r/R %.4f); adjacent ratio max %.3f'
       % (dx.min(), rc[dx.argmin()] / R, dx.max(), rc[dx.argmax()] / R,
          np.max(np.maximum(dx[1:] / dx[:-1], dx[:-1] / dx[1:]))))
@@ -58,6 +75,10 @@ for nm, z_ in (('tau>100', tauc > 100), ('tau 1-100', (tauc >= 1) & (tauc <= 100
     print('  %-9s cells %3d  min cells/H_gas %.1f (r/R %.4f)  min cells/Hp %.1f'
           % (nm, z_.sum(), (Hc / dx)[z_].min(), rc[z_][(Hc / dx)[z_].argmin()] / R,
              (Hpc / dx)[z_].min()))
+fzc = (rc >= 0.636 * R) & (rc <= 0.933 * R)
+print('  FeCZ cells %d; rad zone 0.5-0.636 cells %d' % (fzc.sum(), (rc < 0.636 * R).sum()))
+for xx in (0.5, 0.55, 0.6, 0.636, 0.7, 0.8, 0.9, 0.933, 0.96, 0.99, 1.0, 1.02):
+    j = np.argmin(abs(rc - xx * R)); print('    r/R %.3f dx %.2e' % (xx, dx[j]))
 dtp = (dx / cs).min()
 dxu = (r1 - r0) / nx
 print('dt proxy min dx/c_gas: %.3f s at r/R %.4f (uniform grid: %.3f s at r/R %.4f)'

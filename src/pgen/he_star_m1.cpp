@@ -235,23 +235,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     HsFatal("problem/mlt_flux_frozen = true needs he_ic_cols = 5 and the 7-column "
             "file of make_ic_he_presn_m1.py mlt", __LINE__);
   }
-  // the fine grid spans the mesh plus a margin of (ng + 2) mean radial widths
-  // (a stretched radial grid, mesh/use_grid_stretch_r_poly: each margin is (ng + 2)
-  // widths of the end cell on that side, at least the mean width)
   // ONE MeshBlock along x1 (the margins below, the history's face picks and the balanced
   // IC read the radial grid of block 0)
   if (pmy_mesh_->mesh_indcs.nx1 != indcs.nx1) {
     HsFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)", __LINE__);
   }
-  const Real dxm = (rtop - hs_rin_)/indcs.nx1;
-  Real dxlo = dxm, dxhi = dxm;
+  // the fine grid spans the OUTERMOST GHOST FACES (the code's own x1f, stretched or
+  // not) plus two end-cell widths on each side: on a uniform grid this is the old
+  // (ng + 2) dx margin exactly; on a coarse stretched grid the old "at least the mean
+  // width" margin reached rho < 1e-14 above the top (v2/runs/P03 fatal)
+  Real rlo_g = hs_rin_, rhi_g = rtop, dxlo = 0.0, dxhi = 0.0;
   {
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
-    dxlo = std::max(dxm, hx1f(0,indcs.is+1) - hx1f(0,indcs.is));
-    dxhi = std::max(dxm, hx1f(0,indcs.ie+1) - hx1f(0,indcs.ie));
+    rlo_g = hx1f(0,0);
+    rhi_g = hx1f(0,n1m1+1);
+    dxlo = hx1f(0,indcs.is+1) - hx1f(0,indcs.is);
+    dxhi = hx1f(0,indcs.ie+1) - hx1f(0,indcs.ie);
   }
-  hs_rlo_ = hs_rin_ - (ng + 2)*dxlo;
-  const Real rhi = rtop + (ng + 2)*dxhi;
+  hs_rlo_ = rlo_g - 2.0*dxlo;
+  const Real rhi = rhi_g + 2.0*dxhi;
   hs_nf_ = nf;
   hs_dr_ = (rhi - hs_rlo_)/(nf - 1);
   std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0), hM(nf, 0.0);
