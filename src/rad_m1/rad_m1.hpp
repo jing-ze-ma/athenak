@@ -1127,6 +1127,11 @@ class RadiationM1 {
   // physical behind a radiating front and D = diag(f, (1-f)/2, (1-f)/2) stays
   // realizable for 0 <= f <= 1)
   Real vcol_fkmin = 1.0/3.0;
+  // vet_col_source (he-presn-m1 0929): the thermal source of the formal solution.
+  // `relaxed` (default): a T^4 at the temperature T* the cell reaches after a LOCAL
+  // backward-Euler exchange over the step (VcolRelaxedSource, rad_m1_vetcol.cpp); `gas`:
+  // the start-of-step gas temperature as before (bitwise the old build)
+  bool vcol_srelax = true;
   // vet_col with a REFLECTING outer x1 (m1-sp-order2b): the incoming intensity at the
   // top face is the mirror of the outgoing one, I_in = b/(1 - a) per ray (b the outgoing
   // intensity of a vacuum-top sweep, a the ray's round-trip transmission), in a second
