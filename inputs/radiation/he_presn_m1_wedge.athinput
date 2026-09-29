@@ -56,7 +56,7 @@ nx3       = 32
 <time>
 evolution  = dynamic
 integrator = rk2
-cfl_number = 0.3
+cfl_number = 0.6    # user 09-29: M1 science window 0.6 (He box: = 0.3 within noise); relaxation 0.9 (~5 % low)
 nlim       = -1
 tlim       = 300.0
 ndiag      = 10
