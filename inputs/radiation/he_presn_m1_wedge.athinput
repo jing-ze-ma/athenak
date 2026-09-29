@@ -4,6 +4,13 @@
 # coupled to the gas, second order in time (hesdirk2) and space.  Problem generator
 # src/pgen/he_star_m1.cpp:  cmake -D PROBLEM=he_star_m1.
 #
+# INITIAL COLUMN (problem/he_ic_file, made by docs/handover/scripts/make_ic_he_presn_m1.py):
+#   col   Woosley column T(r), F_r = L - F_MLT      (faithful; the FeCZ is NOT stationary
+#         without convection: the radiative flux divergence heats it at ~1e-3/s)
+#   rz    as col, radiative zone below the FeCZ re-integrated for F_r = L (exact there)
+#   hopf  STATIC radiative-equilibrium star (F_r = L/(4 pi r^2) everywhere, grey Hopf
+#         atmosphere); a different structure below tau ~ 10 (rho(0.5R) x0.11): the
+#         consistent test IC of gate 1a (tests_hepresn/analyze_gate1a.py)
 # Placeholders in upper case are substituted by the run script:
 #   HE_IC_FILE  = ic_he_presn_m1_gas.txt   (docs/handover/scripts/make_ic_he_presn_m1.py)
 #   HE_TABLES   = dir with rosseland_he_x0.0_z0.02.txt and planck_he_x0.0_z0.02_ferg+tops.txt
