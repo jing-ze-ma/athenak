@@ -114,6 +114,17 @@ class M1Evt {
 
  private:
   hipEvent_t ev_ = nullptr;
+#elif defined(KOKKOS_ENABLE_CUDA)
+  // m1-perf-0928: the CUDA version (was a full device fence, which also waited for the
+  // interior operator queued behind the pack and so serialised implicit_halo_overlap)
+  void record() {
+    if (ev_ == nullptr) {(void)cudaEventCreateWithFlags(&ev_, cudaEventDisableTiming);}
+    (void)cudaEventRecord(ev_, DevExeSpace().cuda_stream());
+  }
+  void wait() {(void)cudaEventSynchronize(ev_);}
+
+ private:
+  cudaEvent_t ev_ = nullptr;
 #else
   void record() {}
   void wait() {DevExeSpace().fence();}
@@ -351,6 +362,7 @@ void RadiationM1::ImplicitHaloMPIInit() {
   hm_comm = static_cast<void *>(c);
   hm_state = 1;
   for (int f = 0; f < 6; ++f) {hm_face[f] = hm_mpif[f];}
+  if (impl_halo_ipc) {ImplicitHaloIPCInit();}
   if (me == 0) {
     std::cout << "<rad_m1> implicit_halo_mpi: ON, rank 0 has " << nseg
               << " neighbour ranks, " << hm_nsend << " cells sent per component"
@@ -380,6 +392,7 @@ void RadiationM1::ImplicitHaloMPI(int nq, int c0) {
 
 void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
 #if MPI_PARALLEL_ENABLED
+  if (hi_state == 1) {ImplicitHaloIPCPost(nq, c0); return;}
   MPI_Comm comm = *static_cast<MPI_Comm *>(hm_comm);
   const int nseg = static_cast<int>(hm_rank.size());
   auto &rq = M1HmReqR();
@@ -433,6 +446,7 @@ void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
 
 void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
 #if MPI_PARALLEL_ENABLED
+  if (hi_state == 1) {ImplicitHaloIPCFinish(nq, c0); return;}
   MPI_Comm comm = *static_cast<MPI_Comm *>(hm_comm);
   const int nseg = static_cast<int>(hm_rank.size());
   auto &rq = M1HmReqR();
@@ -798,6 +812,265 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
   }
   ImplicitBiCGStabEnd(nit, fell_back);
   return nit;
+}
+
+//----------------------------------------------------------------------------------------
+// implicit_halo_ipc (m1-perf-0928): node-local halo exchange over CUDA IPC.
+//
+// Buffers (one per rank, raw cudaMalloc so the IPC handle's base IS the pointer):
+//   hi_rbuf  2 x hi_half Reals, parity p = seq & 1; segment s of component n of a
+//            call with nq components at p*hi_half + roff[s]*nq + n*rlen[s] + e (the
+//            layout of the MPI path's hm_rbuf, so the unpack is the same arithmetic)
+//   hi_sig   64 long long: [s] = the last exchange whose data from segment s arrived,
+//            [32 + s] = the last exchange of MY data that segment s has unpacked
+// Protocol of exchange seq (every rank runs the same sequence of exchanges):
+//   Post:   wait until every neighbour acked seq-2 (it is done with this parity's
+//           buffer), pack straight into the neighbour's buffer, system fence, set the
+//           neighbour's arrival flag [pslot] = seq
+//   Finish: spin until every arrival flag >= seq, unpack, ack into the sender's
+//           [32 + pslot] = seq
+// Every step is a kernel on the one device stream, so the host never waits.  A spin
+// gives up after ~20 s of GPU clock and raises hi_err; the host checks it every 4096
+// exchanges and at the end of the run's solves, and aborts with a message.
+namespace {
+constexpr int M1_HI_NSIG = 32;
+constexpr long long M1_HI_SPIN = 40000000000LL;   // GPU cycles (~20 s at ~2 GHz)
+
+KOKKOS_INLINE_FUNCTION
+void M1HiWaitGE(const long long *f, const long long target, int *err) {
+#if defined(__CUDA_ARCH__)
+  const volatile long long *vf = f;
+  const long long t0 = clock64();
+  while (*vf < target) {
+    __nanosleep(256);
+    if (clock64() - t0 > M1_HI_SPIN) {*err = 1; return;}
+  }
+  __threadfence_system();
+#else
+  (void)f; (void)target; (void)err;
+#endif
+}
+
+KOKKOS_INLINE_FUNCTION
+void M1HiSet(long long *f, const long long v) {
+#if defined(__CUDA_ARCH__)
+  __threadfence_system();
+  volatile long long *vf = f;
+  *vf = v;
+  __threadfence_system();
+#else
+  (void)f; (void)v;
+#endif
+}
+} // namespace
+
+void RadiationM1::ImplicitHaloIPCInit() {
+  hi_state = -1;
+#if MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
+  const int me = global_variable::my_rank;
+  const int nseg = static_cast<int>(hm_rank.size());
+  MPI_Comm comm = *static_cast<MPI_Comm *>(hm_comm);
+  // every neighbour rank on this node?
+  int ok = (nseg <= M1_HI_NSIG) ? 1 : 0;
+  MPI_Comm node;
+  MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, me, MPI_INFO_NULL, &node);
+  int nn;
+  MPI_Comm_size(node, &nn);
+  std::vector<int> nodeg(nn);
+  MPI_Allgather(&me, 1, MPI_INT, nodeg.data(), 1, MPI_INT, node);
+  MPI_Comm_free(&node);
+  for (int s = 0; s < nseg; ++s) {
+    if (std::find(nodeg.begin(), nodeg.end(), hm_rank[s]) == nodeg.end()) {ok = 0;}
+  }
+  hi_half = static_cast<size_t>(std::max(hm_nrecv, 1))*hm_nq;
+  if (ok) {
+    if (cudaMalloc(reinterpret_cast<void **>(&hi_rbuf), 2*hi_half*sizeof(Real))
+        != cudaSuccess) {ok = 0;}
+    if (ok && cudaMalloc(reinterpret_cast<void **>(&hi_sig),
+                         2*M1_HI_NSIG*sizeof(long long)) != cudaSuccess) {ok = 0;}
+    if (ok && cudaMalloc(reinterpret_cast<void **>(&hi_err), sizeof(int))
+        != cudaSuccess) {ok = 0;}
+    if (ok) {
+      (void)cudaMemset(hi_sig, 0, 2*M1_HI_NSIG*sizeof(long long));
+      (void)cudaMemset(hi_err, 0, sizeof(int));
+      (void)cudaDeviceSynchronize();
+    }
+  }
+  {int g = ok;
+  MPI_Allreduce(&ok, &g, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+  ok = g;}
+  if (ok) {
+    // swap with every neighbour: IPC handles, my segment index for it, my receive
+    // offset/length for its data, my parity-half size
+    cudaIpcMemHandle_t hb, hs;
+    (void)cudaIpcGetMemHandle(&hb, hi_rbuf);
+    (void)cudaIpcGetMemHandle(&hs, hi_sig);
+    struct Info {cudaIpcMemHandle_t b, s; long long half; int slot, roff, rlen;};
+    std::vector<Info> mine(nseg), theirs(nseg);
+    std::vector<MPI_Request> rq(2*nseg);
+    for (int s = 0; s < nseg; ++s) {
+      mine[s] = Info{hb, hs, static_cast<long long>(hi_half), s, hm_roff[s], hm_rlen[s]};
+      MPI_Irecv(&theirs[s], sizeof(Info), MPI_BYTE, hm_rank[s], 4243, comm, &rq[s]);
+    }
+    for (int s = 0; s < nseg; ++s) {
+      MPI_Isend(&mine[s], sizeof(Info), MPI_BYTE, hm_rank[s], 4243, comm, &rq[nseg + s]);
+    }
+    MPI_Waitall(2*nseg, rq.data(), MPI_STATUSES_IGNORE);
+    hi_prb = DualArray1D<unsigned long long>("m1_hi_prb", std::max(nseg, 1));
+    hi_psig = DualArray1D<unsigned long long>("m1_hi_psig", std::max(nseg, 1));
+    hi_phalf = DualArray1D<long long>("m1_hi_phalf", std::max(nseg, 1));
+    hi_proff = DualArray1D<int>("m1_hi_proff", std::max(nseg, 1));
+    hi_pslot = DualArray1D<int>("m1_hi_pslot", std::max(nseg, 1));
+    for (int s = 0; s < nseg; ++s) {
+      void *pb = nullptr, *ps = nullptr;
+      if (theirs[s].rlen != hm_slen[s]) {ok = 0;}
+      if (cudaIpcOpenMemHandle(&pb, theirs[s].b, cudaIpcMemLazyEnablePeerAccess)
+          != cudaSuccess) {ok = 0;}
+      if (cudaIpcOpenMemHandle(&ps, theirs[s].s, cudaIpcMemLazyEnablePeerAccess)
+          != cudaSuccess) {ok = 0;}
+      hi_prb.h_view(s) = reinterpret_cast<unsigned long long>(pb);
+      hi_psig.h_view(s) = reinterpret_cast<unsigned long long>(ps);
+      hi_phalf.h_view(s) = theirs[s].half;
+      hi_proff.h_view(s) = theirs[s].roff;
+      hi_pslot.h_view(s) = theirs[s].slot;
+    }
+    (void)cudaGetLastError();
+    for (auto *a : {&hi_prb, &hi_psig}) {a->modify_host(); a->sync_device();}
+    hi_phalf.modify_host(); hi_phalf.sync_device();
+    hi_proff.modify_host(); hi_proff.sync_device();
+    hi_pslot.modify_host(); hi_pslot.sync_device();
+    int g = ok;
+    MPI_Allreduce(&ok, &g, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    ok = g;
+    MPI_Barrier(MPI_COMM_WORLD);   // every peer's flags are zero before any exchange
+  }
+  hi_state = ok ? 1 : -1;
+  hi_seq = 0;
+  hi_nchk = 0;
+  if (me == 0) {
+    std::cout << "<rad_m1> implicit_halo_ipc: "
+              << (ok ? "ON (node-local CUDA IPC, no MPI in the implicit halo)"
+                     : "not possible (neighbour off-node, or IPC failed): MPI path")
+              << std::endl;
+  }
+#endif
+}
+
+void RadiationM1::ImplicitHaloIPCPost(int nq, int c0) {
+#if MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
+  const int nseg = static_cast<int>(hm_rank.size());
+  const long long seq = ++hi_seq;
+  const long long par = seq & 1;
+  long long *sig = hi_sig;
+  int *err = hi_err;
+  auto psig = hi_psig.d_view;
+  auto pslot = hi_pslot.d_view;
+  // the neighbours are done with this parity's buffers (exchange seq-2)
+  Kokkos::parallel_for("m1_hi_wack", Kokkos::RangePolicy<DevExeSpace>(0, 1),
+  KOKKOS_LAMBDA(const int) {
+    for (int s = 0; s < nseg; ++s) {M1HiWaitGE(sig + M1_HI_NSIG + s, seq - 2, err);}
+  });
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int nc0 = c0;
+  auto iw_ = iw;
+  auto segs = hm_segs.d_view;
+  if (hm_nsend > 0) {
+    auto em = hm_sm.d_view;
+    auto ek = hm_skji.d_view;
+    auto es = hm_sseg.d_view;
+    auto prb = hi_prb.d_view;
+    auto phalf = hi_phalf.d_view;
+    auto proff = hi_proff.d_view;
+    const int ns = hm_nsend;
+    par_for("m1_impl_hm_pack", DevExeSpace(), 0, nq-1, 0, ns-1,
+    KOKKOS_LAMBDA(const int n, const int e) {
+      const int sg = es(e);
+      const int off = segs(4*sg), len = segs(4*sg + 1);
+      const int kji = ek(e);
+      const int k = kji/(n1*n2);
+      const int j = (kji - k*n1*n2)/n1;
+      const int i = kji - (k*n2 + j)*n1;
+      const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
+      Real *dst = reinterpret_cast<Real *>(prb(sg)) + par*phalf(sg)
+                  + static_cast<long long>(proff(sg))*nq + n*len + (e - off);
+      *dst = iw_(em(e),nc,k,j,i);
+    });
+  }
+  // arrival flags of this exchange in every neighbour
+  Kokkos::parallel_for("m1_hi_flag", Kokkos::RangePolicy<DevExeSpace>(0, 1),
+  KOKKOS_LAMBDA(const int) {
+    for (int s = 0; s < nseg; ++s) {
+      M1HiSet(reinterpret_cast<long long *>(psig(s)) + pslot(s), seq);
+    }
+  });
+  ImplicitHaloDirect(nq, c0);   // the on-rank neighbours
+#else
+  (void)nq;
+  (void)c0;
+#endif
+}
+
+void RadiationM1::ImplicitHaloIPCFinish(int nq, int c0) {
+#if MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
+  const int nseg = static_cast<int>(hm_rank.size());
+  const long long seq = hi_seq;
+  const long long par = seq & 1;
+  long long *sig = hi_sig;
+  int *err = hi_err;
+  auto psig = hi_psig.d_view;
+  auto pslot = hi_pslot.d_view;
+  Kokkos::parallel_for("m1_hi_warr", Kokkos::RangePolicy<DevExeSpace>(0, 1),
+  KOKKOS_LAMBDA(const int) {
+    for (int s = 0; s < nseg; ++s) {M1HiWaitGE(sig + s, seq, err);}
+  });
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int nc0 = c0;
+  auto iw_ = iw;
+  auto segs = hm_segs.d_view;
+  if (hm_nrecv > 0) {
+    auto em = hm_rm.d_view;
+    auto ek = hm_rkji.d_view;
+    auto es = hm_rseg.d_view;
+    const Real *rb = hi_rbuf + par*static_cast<long long>(hi_half);
+    const int nr = hm_nrecv;
+    par_for("m1_impl_hm_unpack", DevExeSpace(), 0, nq-1, 0, nr-1,
+    KOKKOS_LAMBDA(const int n, const int e) {
+      const int sg = es(e);
+      const int off = segs(4*sg + 2), len = segs(4*sg + 3);
+      const int kji = ek(e);
+      const int k = kji/(n1*n2);
+      const int j = (kji - k*n1*n2)/n1;
+      const int i = kji - (k*n2 + j)*n1;
+      const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
+      iw_(em(e),nc,k,j,i) = rb[static_cast<long long>(off)*nq + n*len + (e - off)];
+    });
+  }
+  // tell every sender its buffer half is free again
+  Kokkos::parallel_for("m1_hi_ack", Kokkos::RangePolicy<DevExeSpace>(0, 1),
+  KOKKOS_LAMBDA(const int) {
+    for (int s = 0; s < nseg; ++s) {
+      M1HiSet(reinterpret_cast<long long *>(psig(s)) + M1_HI_NSIG + pslot(s), seq);
+    }
+  });
+  if (++hi_nchk >= 4096) {
+    hi_nchk = 0;
+    int h = 0;
+    (void)cudaMemcpy(&h, hi_err, sizeof(int), cudaMemcpyDeviceToHost);
+    if (h != 0) {
+      std::cout << "### FATAL ERROR in rad_m1 implicit_halo_ipc: a halo spin timed out "
+                << "(rank " << global_variable::my_rank << ", exchange " << seq << ")"
+                << std::endl;
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+  }
+#else
+  (void)nq;
+  (void)c0;
+#endif
 }
 
 } // namespace radm1

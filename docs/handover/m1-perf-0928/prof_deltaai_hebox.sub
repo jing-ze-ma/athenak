@@ -1,0 +1,31 @@
+#!/bin/bash -l
+#SBATCH -J heboxprof
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=100G
+#SBATCH --time=00:20:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# nsys profile of the He-box benchmark (fresh start, NLIM cycles, default 200) at NRS ranks (default "1 4").
+# Kokkos kernel labels via the kokkos-tools NVTX connector.  One report per rank: <run>/prof.<rank>.nsys-rep
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_box_gpu_401875f01beb}
+NRS=${NRS:-"1 4"}; NLIM=${NLIM:-200}; TO=${TO:-420}
+OUT=${OUT:-/work/nvme/bivj/jma20/prof_hebox_0928}
+NSYS=/opt/nvidia/hpc_sdk/Linux_aarch64/25.5/compilers/bin/nsys
+export KOKKOS_TOOLS_LIBS=/u/jma20/ATHENAK/kokkos-tools/build/profiling/nvtx-connector/libkp_nvtx_connector.so
+export MACHINE=deltaai EXTRA="time/nlim=$NLIM ${XK//+/ }"   # XK: extra keys, "+" separated
+J=${SLURM_JOB_ID:-nojob}
+mkdir -p $OUT
+echo "PROFJOB NRS=$NRS NLIM=$NLIM host=$(hostname) job=$J md5=$(md5sum $BIN | cut -c1-32)"
+for n in $NRS; do
+  D=$OUT/n${n}_$J
+  export LAUNCH="srun -n %N -c 16 --cpu-bind=cores $NSYS profile -t cuda,nvtx,mpi --mpi-impl=mpich -s none --cpuctxsw=none -o prof.%q{SLURM_PROCID} --force-overwrite true"
+  timeout --kill-after=30 $TO bash $H/run_bench_hebox.sh $BIN $n $D; rc=$?
+  echo "n=$n rc=$rc $(grep -m1 'vet_sc: formal' $D/bench.log | cut -c1-200)"
+  ls -la $D/*.nsys-rep 2>&1
+done
+echo PROF_JOB_DONE

@@ -1,0 +1,27 @@
+#!/bin/bash -l
+#SBATCH -J heboxordr
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=60G
+#SBATCH --time=00:20:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# Order test from an EVOLVED state: every arm restarts from the same restart file RST and runs to TLIM
+# at its own cfl.  ARMS: name:key=val+key=val.  Output dirs $OUT/<name>_<job>/ (rst at tlim, per-step hst).
+BIN=${BIN:?}; RST=${RST:?}; ARMS=${ARMS:?}; TLIM=${TLIM:-80}; TO=${TO:-400}
+OUT=${OUT:-/work/nvme/bivj/jma20/ordrst_hebox_0928}
+module reset > /dev/null 2>&1
+export MPICH_GPU_SUPPORT_ENABLED=1 OMP_NUM_THREADS=1 SLURM_CPU_BIND=cores KOKKOS_MAP_DEVICE_ID_BY=mpi_rank
+J=${SLURM_JOB_ID:-nojob}; mkdir -p $OUT
+echo "ORDRST host=$(hostname) job=$J bin=$BIN md5=$(md5sum $BIN | cut -c1-32) rst=$RST TLIM=$TLIM"
+for a in $ARMS; do
+  name=${a%%:*}; kv=${a#*:}; [ "$kv" = "$a" ] && kv=""
+  D=$OUT/${name}_$J; mkdir -p $D
+  ( cd $D && timeout --kill-after=30 $TO ${SRUN:-srun} -n 1 -c 16 --cpu-bind=cores $BIN -r $RST \
+      time/tlim=$TLIM time/nlim=100000 output1/dt=1e-6 ${kv//+/ } > bench.log 2>&1 ); rc=$?
+  echo "arm=$name rc=$rc [$kv] $(grep -m1 'implicit transport: solves' $D/bench.log | sed 's/.*Picard/Picard/' | cut -c1-60)"
+done
+echo ORDRST_DONE

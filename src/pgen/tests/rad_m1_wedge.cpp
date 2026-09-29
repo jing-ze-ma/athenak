@@ -290,7 +290,10 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   for (int n=0; n<nf; ++n) hr[n] = wg_rlo_ + n*wg_dr_;
 
   if (icm.compare("grey") == 0) {
-    if (!eos.is_ideal || pm1->opacity_type != radm1::M1_OPAC_CONST) {
+    // on a RESTART the grey column is only the reference state (potential, force
+    // reference): the run may continue under another opacity law (m1-perf-0928: the sp
+    // test of implicit_opac_newton restarts gateA with a powerlaw kappa(T))
+    if (!eos.is_ideal || (pm1->opacity_type != radm1::M1_OPAC_CONST && !restart)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "sph_wedge: wg_ic = grey needs an ideal EOS and <rad_m1>/"
         << "opacity = const" << std::endl;

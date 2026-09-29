@@ -1,0 +1,36 @@
+#!/bin/bash -l
+#SBATCH -J heboxarms
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=100G
+#SBATCH --time=00:30:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# He-box timing of input variants (ARMS) x GPU counts (NRS, default "1 2 4") on one node, REPS repeats
+# (default 1), all interleaved (rep > nranks > arm).  ARMS: name:key=val+key=val ("+" -> space).
+# Every run is NLIM cycles (default 1200) under `timeout` (TO); analysis window C0..NLIM (default 400).
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+BIN=${BIN:?set BIN}; ARMS=${ARMS:?set ARMS}
+NRS=${NRS:-"1 2 4"}; REPS=${REPS:-1}; NLIM=${NLIM:-1200}; C0=${C0:-400}; TO=${TO:-420}
+OUT=${OUT:-/work/nvme/bivj/jma20/arms_hebox_0928}
+export MACHINE=deltaai
+J=${SLURM_JOB_ID:-nojob}
+mkdir -p $OUT
+echo "ARMSJOB host=$(hostname) job=$J bin=$BIN md5=$(md5sum $BIN | cut -c1-32) NRS=$NRS NLIM=$NLIM INP=${INP:-bench}"
+for r in $(seq 1 $REPS); do
+  for n in $NRS; do
+    for a in $ARMS; do
+      name=${a%%:*}; kv=${a#*:}; [ "$kv" = "$a" ] && kv=""
+      export EXTRA="time/nlim=$NLIM ${kv//+/ }"
+      D=$OUT/${name}_n${n}_r${r}_$J
+      timeout --kill-after=30 $TO bash $H/run_bench_hebox.sh $BIN $n $D; rc=$?
+      [ $rc = 124 ] && echo "TIMEOUT: $D"
+      echo "arm=$name n=$n r=$r rc=$rc extra=[$EXTRA]"
+    done
+  done
+done
+python3 $H/ana_bench_hebox.py $OUT/*_$J/bench.log --c0 $C0 --c1 $NLIM
+echo ARMS_JOB_DONE
