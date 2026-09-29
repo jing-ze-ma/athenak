@@ -47,6 +47,13 @@ def edges(par, nx):
         for k in range(1, 9):
             c = float(par.get('f_stretch_r_c%d' % k, 0.0))
             u += c * xi**k * (1 - xi)
+        for b in (1, 2):   # local bumps (coordinates/grid_stretch.hpp)
+            a = float(par.get('f_stretch_r_b%d_amp' % b, 0.0))
+            if a != 0.0:
+                xb = float(par['f_stretch_r_b%d_x' % b])
+                w = float(par['f_stretch_r_b%d_w' % b])
+                u += a * w * (np.tanh((xi - xb) / w) - (1 - xi) * np.tanh(-xb / w)
+                              - xi * np.tanh((1 - xb) / w))
     return r0 + (r1 - r0) * u
 
 

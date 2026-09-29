@@ -249,10 +249,24 @@ Mesh::Mesh(ParameterInput *pin) :
     // c1..c4 are always recorded (default 0); c5..c8 are read only when the input gives
     // them, so a 4-coefficient input keeps its exact parameter dump (and, with the extra
     // coefficients zero, its bitwise grid).
-    for (int n=0; n<NSTRETCH_R_POLY; ++n) {
+    for (int n=0; n<NSTRETCH_R_PCOEF; ++n) {
       const std::string key = "f_stretch_r_c" + std::to_string(n+1);
       if (n < 4 || pin->DoesParameterExist("mesh", key)) {
         fStretchRPoly[n] = pin->GetOrAddReal("mesh", key, 0.0);
+      }
+    }
+    // optional local bumps (StretchRPoly): read only when the amplitude is given
+    for (int b=0; b<NSTRETCH_R_BUMP; ++b) {
+      const std::string kb = "f_stretch_r_b" + std::to_string(b+1);
+      if (!pin->DoesParameterExist("mesh", kb + "_amp")) continue;
+      Real *cb = fStretchRPoly + NSTRETCH_R_PCOEF + 3*b;
+      cb[0] = pin->GetReal("mesh", kb + "_amp");
+      cb[1] = pin->GetReal("mesh", kb + "_x");
+      cb[2] = pin->GetReal("mesh", kb + "_w");
+      if (cb[0] != 0.0 && !(cb[2] > 0.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mesh/" << kb << "_w must be > 0" << std::endl;
+        std::exit(EXIT_FAILURE);
       }
     }
     // The mapping must be strictly increasing, or the grid folds over and cell widths go
@@ -263,10 +277,17 @@ Mesh::Mesh(ParameterInput *pin) :
     for (int q=0; q<=nchk; ++q) {
       Real xi = static_cast<Real>(q)/static_cast<Real>(nchk);
       Real du = 1.0;
-      for (int n=0; n<NSTRETCH_R_POLY; ++n) {
+      for (int n=0; n<NSTRETCH_R_PCOEF; ++n) {
         // d/dxi [ c_k xi^k (1-xi) ] = c_k ( k xi^(k-1) - (k+1) xi^k )
         Real k = static_cast<Real>(n+1);
         du += fStretchRPoly[n]*(k*std::pow(xi,k-1.0) - (k+1.0)*std::pow(xi,k));
+      }
+      for (int b=0; b<NSTRETCH_R_BUMP; ++b) {
+        const Real *cb = fStretchRPoly + NSTRETCH_R_PCOEF + 3*b;
+        if (cb[0] == 0.0) continue;
+        const Real ch = std::cosh((xi - cb[1])/cb[2]);
+        du += cb[0]*(1.0/(ch*ch) - cb[2]*(std::tanh((1.0 - cb[1])/cb[2])
+                                          + std::tanh(cb[1]/cb[2])));
       }
       dumin = std::min(dumin, du);
     }

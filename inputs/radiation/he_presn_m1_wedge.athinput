@@ -157,7 +157,14 @@ mlt_flux_frozen = false      # COLUMN TESTS ONLY (needs the 7-col mlt IC): depos
                              # keep OFF in 3-D, where convection must carry the flux
 he_wall_closed = true        # inner face: exact mirror state (zero wall mass flux, WB face pressure)
 he_sponge_rate = 0.0
-he_seed     = 0.0
+he_seed     = 0.0                # 3-D: seed amplitude (see he_seed_nk)
+# 3-D seed (he_seed_nk > 0): nk random lateral modes, integer k2, k3 in [kmin, kmax]
+# (|k| = sqrt2 k_comp; 1..2 = wavelengths ~1.4..2.7 FeCZ thicknesses at mid-FeCZ), radial
+# envelope sin(pi (r - rlo)/(rhi - rlo)); he_seed_rad = true: TEMPERATURE seed (eint and E)
+he_seed_nk   = 0
+he_seed_kmin = 1
+he_seed_kmax = 2
+he_seed_rad  = false
 
 <output1>
 file_type   = hst

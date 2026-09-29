@@ -21,7 +21,11 @@
 //     u(xi) = xi + sum_{k=1}^{NSTRETCH_R_POLY} c_k xi^k (1-xi).
 // Inputs give mesh/f_stretch_r_c1..c8; missing ones are zero, which adds exact zeros
 // (a 4-coefficient input gives the same grid bit for bit as when this was 4).
-#define NSTRETCH_R_POLY 8
+// Storage size of Mesh::fStretchRPoly: NSTRETCH_R_PCOEF polynomial coefficients, then
+// NSTRETCH_R_BUMP local "bumps" of (amplitude, centre, width) each (see StretchRPoly).
+#define NSTRETCH_R_PCOEF 8
+#define NSTRETCH_R_BUMP 2
+#define NSTRETCH_R_POLY (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP)
 
 
 KOKKOS_INLINE_FUNCTION
@@ -59,9 +63,19 @@ void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
   Real xi = (r-r0)/(r1-r0);
   Real u = xi;
   Real xik = xi;                      // xi^k, built up as k increases
-  for (int k=1; k<=NSTRETCH_R_POLY; ++k) {
+  for (int k=1; k<=NSTRETCH_R_PCOEF; ++k) {
     u += c[k-1]*xik*(1.0-xi);
     xik *= xi;
+  }
+  // optional local bumps (mesh/f_stretch_r_b<n>_amp, _x, _w; skipped when amp = 0, so a
+  // grid without them is bit for bit the plain polynomial): with a < 0 the cells near
+  // xi = xb are narrower, du/dxi changes by a sech^2((xi - xb)/w) (minus the small
+  // constant a w [tanh((1-xb)/w) + tanh(xb/w)] that keeps u(0) = 0 and u(1) = 1)
+  for (int b=0; b<NSTRETCH_R_BUMP; ++b) {
+    const Real a = c[NSTRETCH_R_PCOEF + 3*b];
+    if (a == 0.0) continue;
+    const Real xb = c[NSTRETCH_R_PCOEF + 3*b + 1], w = c[NSTRETCH_R_PCOEF + 3*b + 2];
+    u += a*w*(tanh((xi - xb)/w) - (1.0 - xi)*tanh(-xb/w) - xi*tanh((1.0 - xb)/w));
   }
   r = r0 + (r1-r0)*u;
 }

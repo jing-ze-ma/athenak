@@ -33,7 +33,10 @@
 //!   * a startup CHECK that the whole initial column, ghost margin included, lies inside
 //!     the EOS table (rho, T) and inside the Rosseland/Planck table grid (fatal);
 //!   * history columns (user_hist): face luminosities, L_in, E_rad, the total energy of
-//!     gas + radiation, the mass through both x1 faces, and the interior kinetic sums.
+//!     gas + radiation, the mass through both x1 faces, the interior kinetic sums, the
+//!     mean v_r^2 of the wall cells and the mean Picard passes per implicit solve since
+//!     the previous history output;
+//!   * an optional multi-mode entropy/temperature seed (he_seed_nk, he_seed_rad).
 //!
 //! RESTARTS: the pgen carries NO state that is not recomputed here.  It is not skipped on
 //! a restart: the column, the tables, the potentials, the reference acceleration and the
@@ -47,6 +50,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -84,6 +88,8 @@ DvceArray1D<Real> hs_bd_, hs_be_;
 // problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
 bool hs_mlt_ = false;
 DvceArray1D<Real> hs_fm_;
+// Picard counters at the previous history output (HeStarHist)
+Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -820,6 +826,48 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real seedk = pin->GetOrAddReal("problem","he_seed_k",4.0);
   const Real srlo = pin->GetOrAddReal("problem","he_seed_rlo",hs_rin_);
   const Real srhi = pin->GetOrAddReal("problem","he_seed_rhi",hs_rint_);
+  // multi-mode seed (he_seed_nk > 0, default 0 = the single mode above): nk random
+  // lateral modes sin(2 pi (k2 (theta - theta_a)/L_theta + k3 (phi - phi_a)/L_phi) + ph),
+  // integer k2, k3 drawn uniformly in [he_seed_kmin, he_seed_kmax] (periodic in the
+  // wedge), amplitudes normalised to sum a_n^2 = 1 (field rms 1/sqrt 2), under the radial
+  // envelope sin(pi (r - rlo)/(rhi - rlo)); box_convection's vpert_var = eint recipe.
+  // he_seed_rad = true scales E by (1 + d)^4 with eint by (1 + d): a TEMPERATURE seed at
+  // fixed rho, gas and radiation in equilibrium (a gas-only eint seed in a radiation-
+  // dominated layer is removed by the stiff exchange in the first step).
+  const int snk = pin->GetOrAddInteger("problem","he_seed_nk",0);
+  const bool srad = pin->GetOrAddBoolean("problem","he_seed_rad",false);
+  const int skmin = pin->GetOrAddInteger("problem","he_seed_kmin",1);
+  const int skmax = pin->GetOrAddInteger("problem","he_seed_kmax",2);
+  const int srng = pin->GetOrAddInteger("problem","he_seed_rng",1234);
+  if (snk > 0 && (skmin < 0 || skmax < skmin || !(srhi > srlo))) {
+    HsFatal("need 0 <= he_seed_kmin <= he_seed_kmax and he_seed_rhi > he_seed_rlo",
+            __LINE__);
+  }
+  DualArray2D<Real> smd("hs_seed_modes", std::max(snk, 1), 4);   // k2, k3, amp, phase
+  {
+    std::mt19937 rng(srng);
+    std::uniform_real_distribution<double> u01(0.0, 1.0);
+    const Real nkr = static_cast<Real>(skmax - skmin + 1);
+    Real norm = 0.0;
+    for (int n=0; n<snk; ++n) {
+      smd.h_view(n,0) = skmin + std::floor(nkr*u01(rng));
+      smd.h_view(n,1) = skmin + std::floor(nkr*u01(rng));
+      smd.h_view(n,2) = u01(rng) + 0.25;
+      smd.h_view(n,3) = 2.0*M_PI*u01(rng);
+      norm += SQR(smd.h_view(n,2));
+    }
+    norm = (norm > 0.0) ? 1.0/std::sqrt(norm) : 1.0;
+    for (int n=0; n<snk; ++n) smd.h_view(n,2) *= norm;
+    if (snk > 0 && global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: seed " << snk << " modes, amplitude " << seed
+                << (srad ? " (temperature: eint and E)" : " (eint)") << ", k in ["
+                << skmin << "," << skmax << "], r " << srlo << " .. " << srhi
+                << std::endl;
+    }
+  }
+  smd.modify_host();
+  smd.sync_device();
+  auto smd_d = smd.d_view;
   const Real x2a = pmy_mesh_->mesh_size.x2min, x3a = pmy_mesh_->mesh_size.x3min;
   const Real lth = pmy_mesh_->mesh_size.x2max - x2a;
   const Real lph = pmy_mesh_->mesh_size.x3max - x3a;
@@ -836,11 +884,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real d = bal ? cbd(i) : HsLogInterp(crho, rlo, dr, nf, r);
     Real e = bal ? cbe(i) : HsLogInterp(ceint, rlo, dr, nf, r);
     // seed (default off): one smooth lateral mode in eint, wave number he_seed_k
+    Real er = HsLogInterp(cE, rlo, dr, nf, r);
     if (seed != 0.0 && r >= srlo && r <= srhi) {
-      e *= 1.0 + seed*sin(2.0*M_PI*seedk*(x2v(m,j) - x2a)/lth + 0.3)
-                     *sin(2.0*M_PI*seedk*(x3v(m,k) - x3a)/lph + 1.1);
+      Real fac;
+      if (snk > 0) {
+        Real amp = 0.0;
+        for (int n=0; n<snk; ++n) {
+          amp += smd_d(n,2)*sin(2.0*M_PI*(smd_d(n,0)*(x2v(m,j) - x2a)/lth
+                                          + smd_d(n,1)*(x3v(m,k) - x3a)/lph)
+                                + smd_d(n,3));
+        }
+        fac = 1.0 + seed*sin(M_PI*(r - srlo)/(srhi - srlo))*amp;
+      } else {
+        fac = 1.0 + seed*sin(2.0*M_PI*seedk*(x2v(m,j) - x2a)/lth + 0.3)
+                        *sin(2.0*M_PI*seedk*(x3v(m,k) - x3a)/lph + 1.1);
+      }
+      e *= fac;
+      if (srad) er *= SQR(SQR(fac));
     }
-    const Real er = HsLogInterp(cE, rlo, dr, nf, r);
     uh(m,IDN,k,j,i) = d;
     uh(m,IM1,k,j,i) = 0.0;
     uh(m,IM2,k,j,i) = 0.0;
@@ -1029,11 +1090,12 @@ void HeStarBC(Mesh *pm) {
 
 void HeStarHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  pdata->nhist = 18;
-  const char *lab[18] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
+  pdata->nhist = 20;
+  const char *lab[20] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
-                         "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top"};
-  for (int n=0; n<18; ++n) pdata->label[n] = lab[n];
+                         "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top",
+                         "v1sq_wall", "Picard"};
+  for (int n=0; n<20; ++n) pdata->label[n] = lab[n];
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -1055,6 +1117,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   const Real rint = hs_rint_, fin = hs_fin_;
+  // v1sq_wall: mean v_r^2 over the wall (first active) cells of the whole mesh
+  const Real inwall = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3);
   array_sum::GlobalSum sum_this;
   Kokkos::parallel_reduce("hs_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
@@ -1084,7 +1148,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       h.the_array[14] = (fm > 0.0) ? fm : 0.0;
       h.the_array[17] = (fm > 0.0) ? 0.0 : fm;
     }
-    if (i == is) h.the_array[15] = fl1(m,IDN,k,j,i)*area1(m,k,j,i);
+    if (i == is) {
+      h.the_array[15] = fl1(m,IDN,k,j,i)*area1(m,k,j,i);
+      h.the_array[18] = SQR(w0(m,IVX,k,j,i))*inwall;
+    }
     h.the_array[16] = (u0(m,IEN,k,j,i) + ur(m,radm1::M1_E,k,j,i))*vol;
     if (x1v(m,i) <= rint) {
       const Real d = w0(m,IDN,k,j,i);
@@ -1099,6 +1166,15 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     msum += h;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this));
   for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = sum_this.the_array[n];
+  // Picard: mean passes per implicit solve since the previous history output (the
+  // counters are MPI_MAX-reduced, identical on every rank: rank 0 contributes)
+  pdata->hdata[19] = 0.0;
+  if (global_variable::my_rank == 0) {
+    const Real dn = pm1->impl_nstep - hs_pic_n0_, ds = pm1->impl_itsum - hs_pic_s0_;
+    pdata->hdata[19] = (dn > 0.0) ? ds/dn : 0.0;
+    hs_pic_n0_ = pm1->impl_nstep;
+    hs_pic_s0_ = pm1->impl_itsum;
+  }
 }
 
 //----------------------------------------------------------------------------------------
