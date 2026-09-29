@@ -1413,6 +1413,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //  Real Rgas = 4.593e7;
 //  Real met = 0.0;
     
+    // This problem generator (and utils/two_stream_rt.hpp) reads every dimensional
+    // <problem> key as CGS without conversion -- Teq [K], grav [cm/s^2], ap [cm], omega
+    // [1/s], ck_pcut_bar with 1 bar = 1e6 code pressure, bbot_gauss via sqrt(4 pi) --
+    // so the code unit system must be cgs.  Refuse anything else rather than mis-scale.
+    if (pmbp->punit != nullptr &&
+        (pmbp->punit->length_cgs() != 1.0 || pmbp->punit->mass_cgs() != 1.0 ||
+         pmbp->punit->time_cgs() != 1.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "deep_hot_jupiter_rt reads its dimensional inputs as "
+                << "cgs: <units> length_cgs, mass_cgs and time_cgs must all be 1"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     Real Teq = pin->GetReal("problem","Teq");
     Real grav_acc = -pin->GetReal("problem","grav");
     Real ap = pin->GetReal("problem","ap");
@@ -2252,8 +2265,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // initialize magnetic fields if MHD. One-off like the initial condition above: on a
     // restart b0/bcc0 are read from file.
     if (!restart && pmbp->pmhd != nullptr) {
-      // Read magnetic field strength
-      Real bbot = pin->GetReal("problem","bbot");
+      // Base field in CODE units (Heaviside-Lorentz, p_mag = B^2/2): problem/bbot, or
+      // problem/bbot_gauss converted by ReadHotJupiterBbot (pgen.cpp), which also prints
+      // it in both units.  B_r = bbot cos(theta) (r0/r)^3: bbot is the polar field at r0.
+      Real bbot = hot_jupiter ? hot_jupiter_param.bbot : pin->GetReal("problem","bbot");
       auto &b0 = pmbp->pmhd->b0;
       auto &bcc0 = pmbp->pmhd->bcc0;
       par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0, n3m1, 0, n2m1, 0, n1m1, //ks,ke,js,je,is,ie,
@@ -2442,7 +2457,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (global_variable::my_rank == 0) {
           std::cout << "deep_hot_jupiter_rt: initial B -- max |sum area*B|"
                     << " / (|B| max area) = " << dvb << ", max |B| = " << bscale
-                    << " G (bbot = " << bbot << ")" << std::endl;
+                    << " [code] = " << bscale*std::sqrt(4.0*M_PI) << " G (bbot = "
+                    << bbot << " [code] = " << bbot*std::sqrt(4.0*M_PI) << " G)"
+                    << std::endl;
         }
       }
     }

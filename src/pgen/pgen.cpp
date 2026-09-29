@@ -8,6 +8,7 @@
 //! Default constructor calls problem generator function, while  constructor for restarts
 //! reads data from restart file, as well as re-initializing problem-specific data.
 
+#include <cmath>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -22,6 +23,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "units/units.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
@@ -56,6 +58,45 @@ void CheckSplitHookCalled(ProblemGenerator *ppgen, Mesh *pm) {
             << "combination calls it (only pure <hydro> or pure <mhd> do)." << std::endl;
   exit(EXIT_FAILURE);
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn Real ReadHotJupiterBbot
+//! \brief the hot-Jupiter base field, from either of its two keys.
+//!
+//! problem/bbot is in CODE units. AthenaK's MHD is Heaviside-Lorentz (p_mag = B^2/2, no
+//! 4 pi), so with <units> = cgs a code field b is b*sqrt(4 pi) = 3.545 b GAUSS: bbot = 3
+//! is 10.6 G, and 3 G is bbot = 0.846. problem/bbot_gauss states the same field in Gauss
+//! and is converted here: b = B_G/sqrt(4 pi p_unit), p_unit = <units> pressure in cgs
+//! (1 without a <units> block). Setting both is an error. The value, in both units, is
+//! printed at startup either way.
+
+Real ReadHotJupiterBbot(ParameterInput *pin, Mesh *pm) {
+  const bool has_code = pin->DoesParameterExist("problem", "bbot");
+  const bool has_g = pin->DoesParameterExist("problem", "bbot_gauss");
+  if (has_code && has_g) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<problem> sets both bbot (code units, Heaviside-Lorentz) and "
+              << "bbot_gauss (Gauss); they are the same field. Set one." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Real punit = 1.0;
+  if (pm->pmb_pack != nullptr && pm->pmb_pack->punit != nullptr) {
+    punit = pm->pmb_pack->punit->pressure_cgs();
+  }
+  const Real gauss_per_code = std::sqrt(4.0*M_PI*punit);
+  Real bbot;
+  if (has_g) {
+    bbot = pin->GetReal("problem", "bbot_gauss")/gauss_per_code;
+  } else {
+    bbot = pin->GetReal("problem", "bbot");   // fatal if absent, as before
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "problem/" << (has_g ? "bbot_gauss" : "bbot") << ": bbot = " << bbot
+              << " [code, Heaviside-Lorentz] = " << bbot*gauss_per_code << " [G]"
+              << std::endl;
+  }
+  return bbot;
+}
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -76,7 +117,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
       hot_jupiter_param.ap = pin->GetReal("problem","ap");
       hot_jupiter_param.Rgas = pin->GetReal("problem","Rgas");
       hot_jupiter_param.met = pin->GetReal("problem","met");
-      hot_jupiter_param.bbot = pin->GetReal("problem","bbot");
+      hot_jupiter_param.bbot = ReadHotJupiterBbot(pin, pm);
       hot_jupiter_param.grav_point_mass =
           pin->GetOrAddBoolean("problem","grav_point_mass",false);
       hot_jupiter_param.stellar_tide =
@@ -155,7 +196,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     hot_jupiter_param.ap = pin->GetReal("problem","ap");
     hot_jupiter_param.Rgas = pin->GetReal("problem","Rgas");
     hot_jupiter_param.met = pin->GetReal("problem","met");
-    hot_jupiter_param.bbot = pin->GetReal("problem","bbot");
+    hot_jupiter_param.bbot = ReadHotJupiterBbot(pin, pm);
     hot_jupiter_param.grav_point_mass =
         pin->GetOrAddBoolean("problem","grav_point_mass",false);
     hot_jupiter_param.stellar_tide =
