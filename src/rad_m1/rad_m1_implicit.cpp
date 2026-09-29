@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <string>
 #include <tuple>
@@ -8897,6 +8898,35 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // time2_vet_col = rebuild: E and T of the stage-1 solution for the stage-2 build
   if (vet_col && t2_vcmode == 2 && t2s == M1_T2S_STAGE1) {
     Time2VetColSaveY1();
+  }
+  // DIAGNOSTIC <rad_m1>/dbg_cell_lo..hi (default off): per-cell budget after the solve
+  if (dbg_cell_lo >= 0 && have_hydro) {
+    const int dlo = is + dbg_cell_lo, dhi = is + dbg_cell_hi;
+    auto eosd = flr.eos;
+    const Real ard = arad;
+    const int ncy = pmy_pack->pmesh->ncycle;
+    Kokkos::fence();
+    auto ttd = tau_ten;
+    const bool ttok = tau_ready;
+    par_for("m1_dbg_cell", DevExeSpace(), 0, 0, ks, ks, js, js+1, dlo, dhi,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real dd = uh(m,IDN,k,j,i);
+      const Real ek = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                           SQR(uh(m,IM3,k,j,i)))/dd;
+      Real eg = uh(m,IEN,k,j,i) - ek - (etg ? dd*phicc(m,k,j,i) : 0.0);
+      const Real tg = eosd.Temperature(dd, fmax(eg, 1.0e-300));
+      const Real es = iw_(m,M1_IW_EP,k,j,i), ef = u0_(m,M1_E,k,j,i);
+      const Real tps = iw_(m,M1_IW_TP,k,j,i);
+      const Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*es;
+      const Real fkd = ttok ? ttd(m,0,k,j,i) : -1.0;
+      printf("DBGC c=%d j=%d fK-1/3=%.4e i=%d EN=%.10e Esolve=%.10e Efin=%.10e Tp=%.10e "
+             "Trs/Tp-1=%.3e Trf/Tg-1=%.3e Tg/Tp-1=%.3e q=%.4e EGN=%.10e eg=%.10e "
+             "v0=%.4e v1=%.4e\n", ncy, j - js, fkd - 1.0/3.0, i - is,
+             iw_(m,M1_IW_EN,k,j,i), es, ef, tps,
+             pow(es/ard, 0.25)/tps - 1.0, pow(ef/ard, 0.25)/tg - 1.0, tg/tps - 1.0, qq,
+             iw_(m,M1_IW_EGN,k,j,i), eg, iw_(m,M1_IW_V1,k,j,i), uh(m,IM1,k,j,i)/dd);
+    });
+    Kokkos::fence();
   }
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   impl_lin_tol = t2_lin_save;

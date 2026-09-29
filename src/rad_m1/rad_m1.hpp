@@ -381,6 +381,10 @@ class RadiationM1 {
   int csplit = 0;
   int csplit_nh2 = 1, csplit_ns = 2;
   bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
+  // DIAGNOSTIC <rad_m1>/dbg_cell_lo, dbg_cell_hi (read only when named; default off):
+  // the implicit write-back prints the per-cell energy budget of active x1 cells
+  // lo..hi (offsets from is) of the first (k, j) column of MeshBlock 0
+  int dbg_cell_lo = -1, dbg_cell_hi = -1;
   // force_reference_work (ke-dt-0926; read only when named, force_reference = wb_arad
   // only): `full` (default) = the solve hands the gas the work of the FULL force and the
   // WB source none (rad_m1_coupling.cpp header; its internal-energy cancellation is
