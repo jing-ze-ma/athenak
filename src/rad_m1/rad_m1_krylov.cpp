@@ -114,6 +114,17 @@ class M1Evt {
 
  private:
   hipEvent_t ev_ = nullptr;
+#elif defined(KOKKOS_ENABLE_CUDA)
+  // m1-perf-0928: the CUDA version (was a full device fence, which also waited for the
+  // interior operator queued behind the pack and so serialised implicit_halo_overlap)
+  void record() {
+    if (ev_ == nullptr) {(void)cudaEventCreateWithFlags(&ev_, cudaEventDisableTiming);}
+    (void)cudaEventRecord(ev_, DevExeSpace().cuda_stream());
+  }
+  void wait() {(void)cudaEventSynchronize(ev_);}
+
+ private:
+  cudaEvent_t ev_ = nullptr;
 #else
   void record() {}
   void wait() {DevExeSpace().fence();}
