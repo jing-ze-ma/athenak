@@ -29,7 +29,7 @@ Do **not** start the production; report the numbers and the user decides the nod
    Check the printout as viper's (`/viper/ptmp2/jinma/w121_c256_0929/remap_c256.txt`): mass / eint change
    <= 1e-15 horizontally, radial column changes <= 1e-13; E_kin -0.3..-0.8 % and rho*Phi a few % (expected);
    etot -9e-4 (radial step, as in the 1-D remap). NOTE viper's printout reported **1.38 M cells raised to
-   dfloor = 1e-16** (1.4 % of the cells, presumably the top of the new radial grid): report your count and where.
+   dfloor = 1e-16** (1.4 % of the cells, presumably the top of the new radial grid): report your count and where. **Checked on viper (09-29):** it is INHERITED, not a remap defect: the rot-300 source already has 4214 cells (0.9 %) at dfloor, in the top 5 radial cells (23.6 % / 14.7 % / 12.2 % / 4.4 % / 1.6 % of columns, i = 75..71); radial-only remap 76 -> 256 gives 21441 (the finer top grid splits each floored cell), horizontal-only 292, full C256 = 21441 x 64. All at p <~ 1e-9 bar (outside the accuracy region).
 3. Benchmark: fresh start `-i <newdir>/remap_c256/remap.athinput` (NOT `-r`), meshblock 256x32x32 (384 blocks),
    ~70 cycles, `time/ndiag=5 problem/ck_impl_verbose=true`, no bin/rst outputs, on **4 nodes (16 H200)** and
    **8 nodes (32 H200)** (H200 only, exclude hpc-sm-01-09 and hpc-sm-02-16 as before). Template: viper's
