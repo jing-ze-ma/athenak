@@ -174,6 +174,15 @@ inline int ck_impl_stalldbg = 0;
 // TRUE since default-flips (deep_hot_jupiter_rt reads it; false = the old rows,
 // bitwise).  Fused, glob = 0 path only.
 inline bool ck_impl_kkt_row = false;
+// problem/ck_impl_conserve: 0 = off (default, bitwise).  1 = the face fluxes a call
+// reports are made consistent with the energy it applied in the cells it leaves on a
+// bound (ck_impl_floorbound / ck_impl_kkt_demax KKT cells); 2 = in every cell.  Only the
+// reported arrays change, never the solution.  See CkConserveFlux (two_stream_rt.hpp).
+inline int ck_impl_conserve = 0;
+inline DvceArray1D<Real> *ck_cons_stat_ptr = nullptr;
+inline DvceArray5D<Real> *ck_cons_buf_ptr = nullptr;   // (m, 2, k, j, i) scratch
+inline int64_t ck_cons_ncell = 0;          // cells corrected, last call (verbose only)
+inline Real ck_cons_de = 0.0;              // their sum r V [erg], last call, this rank
 // problem/ck_impl_osc = N > 0: PER-CELL AITKEN DAMPING of oscillating cells, from pass N
 // of a call on.  0 = off (default, bitwise).  Measured on the 10x WASP-121b production
 // (cknewton_0928/RESULTS.md): the calls that do not converge even with 24 or 60 passes
