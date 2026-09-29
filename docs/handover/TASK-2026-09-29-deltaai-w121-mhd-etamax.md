@@ -83,6 +83,10 @@ The main scan uses dfloor 1e-13, bbot 3 and 10 G. Arm names are b<G>_e<log eta>[
 bbot units: the code B is Heaviside-Lorentz (p_mag = B^2/2), so bbot_code = B_G/sqrt(4 pi). That gives
 3 G = 0.846 and 10 G = 2.821. The field is a dipole with B_r = bbot cos(theta) (x1min/r)^3 at the inner wall.
 cs_mhd_prod4's "bbot = 3 G" was code units, i.e. 10.6 G. Our 10 G arm matches it to within 6 %.
+**`problem/bbot` in this package is in Heaviside-Lorentz CODE units, not Gauss: 3 G = 0.846, 10 G = 2.821**
+(make_arm.sh converts BBOT_GAUSS for you). A physical-unit key `problem/bbot_gauss` (converted by the pgen,
+startup print in both units, FATAL if both keys are set, bitwise with the old key) is on branch
+`units-physical-inputs`, pending the user's merge decision; this package does not need it.
 
 ## Acceptance criterion for max_eta (state it in the results)
 The acceptable cap is the LARGEST cap (closest to the physical eta) that meets all three conditions:
