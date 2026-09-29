@@ -54,3 +54,6 @@ Timing and smoke only; no production, no code changes. Results: `docs/handover/N
 on a new branch `bench-results-caltech-c256` (push to fork). Pending on viper and not needed for this task:
 the ck conservation fix (branch dhj-ck-conserve, energy source of 0.26 % L in the top 2 cells, in gates) will
 go into rt-integration before the C256 production.
+
+## UPDATE 09-29 ~21:00: GPU MEMORY (viper C64 x 256 smoke, job 12027341)
+The C64 x nx1 256 smoke (24 blocks of 256x32x32 on 2 MI300A, rt-integration ae767d20, ck_impl_conserve = 1) ran clean (281 cycles, 0 ck NOT-CONVERGED, dt 3.7-4.05 s = radial CFL as at C32 x 256; offline estimate at C256: radial 2.6 s vs horizontal 9 s, so dt stays radial ~3.9 s) but used **~103 GB per GPU at 3.1M cells per GPU (~33 KB/cell)**. If that scales with cells, C256 (1.0e8 cells) needs ~3.3 TB of GPU memory: **4 H200 nodes (16 x 141 GB, 6.3M cells/GPU) will NOT fit; 8 nodes (32 GPUs, 3.1M cells/GPU, ~103 GB) should just fit; 12 nodes is comfortable.** So benchmark on **8 and 12 nodes** instead of 4 and 8, and record the peak memory per GPU (nvidia-smi). If 8 nodes runs out of memory, try meshblock 256x16x16 (more, smaller blocks) before going up in nodes. Speed at C64: 3.1e7 zone-cycles/s per MI300A.
