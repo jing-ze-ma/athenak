@@ -837,6 +837,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_opac_newton = pin->GetOrAddBoolean("rad_m1","implicit_opac_newton",
                                           impl_opac_update && impl_gas_newton &&
                                           !global_variable::restart_run);
+  // implicit_opac_newton_guard (m1-opn-guard, 09-29): the Newton term above has the sign
+  // of the face flux times d kappa/dT and no bound; in fast optically thin cells (He
+  // presn wedge, across the Fe bump) it took a row diagonal of +802 to -9200, the row
+  // lost the M-matrix property and the solved E went negative (floor clips, stage
+  // failures, NaN).  A face's term is kept in a row only if the diagonal stays >= guard
+  // x its value without it; otherwise that face is left Picard in that row (the fixed
+  // point is the same: the term vanishes there).  <= 0 turns the guard off (the
+  // unguarded rows of m1-perf-0928, bitwise).
+  impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
@@ -1249,6 +1258,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     Kokkos::realloc(ktd, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(ktd, 0.0);
+    Kokkos::realloc(opn_nskip_d, 1);
+    Kokkos::deep_copy(opn_nskip_d, 0.0);
   }
   if (impl_ctrelax > 0.0) {
     if (!trans_on || !impl_clag_step) {
@@ -5668,6 +5679,18 @@ void RadiationM1::OnePassAuto(const int t, const bool on, const bool one) {
 
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
+  // implicit_opac_newton_guard: the dropped (row, face) pairs of all ranks (collective:
+  // every rank reaches this line with the same impl_opac_newton and guard)
+  const bool opgr = impl_opac_newton && (impl_opn_guard > 0.0);
+  if (opgr) {
+    auto hsk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), opn_nskip_d);
+    opn_nskip = hsk(0);
+#if MPI_PARALLEL_ENABLED
+    Real g = 0.0;
+    MPI_Allreduce(&opn_nskip, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    opn_nskip = g;
+#endif
+  }
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
   if (global_variable::my_rank != 0) return;
@@ -5690,6 +5713,12 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (opgr) {
+    std::cout << "<rad_m1> implicit_opac_newton_guard=" << impl_opn_guard
+              << ": Newton face terms dropped (all ranks, all passes)=" << opn_nskip
+              << " per solve=" << ((impl_nstep > 0.0) ? (opn_nskip/impl_nstep) : 0.0)
+              << std::endl;
+  }
   if (impl_onep > 0) {
     std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep
               << " safety=" << impl_onep_s
@@ -7636,6 +7665,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool opnr = opn && gnewt && !sph_geom;
     const bool opns = opn && gnewt && sph_geom;
     auto ktdv = ktd;
+    // implicit_opac_newton_guard: record each face's Newton term (gp* face i+1/2, gm*
+    // face i-1/2: diagonal, neighbour entry, rr part) and take it out at the end of the
+    // row if it leaves the diagonal below opg x its value without it
+    const Real opg = impl_opn_guard;
+    const bool opgd = (opg > 0.0) && (opnr || opns);
+    auto nsk_ = opn_nskip_d;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -7652,6 +7687,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real aa = 0.0, bb = 1.0, cc = 0.0;
       Real rr = iw_(m,M1_IW_EN,k,j,i) + iw_(m,M1_IW_SRCR,k,j,i);
       bb += iw_(m,M1_IW_SRCB,k,j,i);
+      Real gpd = 0.0, gpo = 0.0, gpr = 0.0, gmd = 0.0, gmo = 0.0, gmr = 0.0;
       // MILESTONE 3b phase B: the LINE-JACOBI transverse couplings.  Their diagonal part
       // stays on the diagonal (the 7-point M-matrix), the neighbours' lagged part goes to
       // the right-hand side.
@@ -7715,10 +7751,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real gf = nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od)
                           + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wp*iw_(m,M1_IW_EP,k,j,ip));
           const Real q = -0.5*ch*dt*th*gf;
-          M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                    opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-          M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
-                    opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+          if (opgd) {
+            M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                         opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gpd, gpr);
+            M1OpnCellRec(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                         opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr, gpo, gpr);
+          } else {
+            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                      opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+          }
         }
         // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
         // <= 0 (upper off-diagonal), so the blend keeps the M-matrix.
@@ -7790,10 +7833,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real gf = -nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od)
                           + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wm*iw_(m,M1_IW_EP,k,j,im));
           const Real q = -0.5*ch*dt*th*gf;
-          M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                    opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-          M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
-                    opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+          if (opgd) {
+            M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                         opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gmd, gmr);
+            M1OpnCellRec(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                         opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr, gmo, gmr);
+          } else {
+            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                      opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+          }
         }
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
         bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
@@ -7901,10 +7951,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                             + nup*df*(wiu*iw_(m,M1_IW_EP,k,j,i)
                                       - wp*iw_(m,M1_IW_EP,k,j,ip));
             const Real q = -0.5*ch*dt*th*gf;
-            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-            M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
-                      opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+            if (opgd) {
+              M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                           opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gpd, gpr);
+              M1OpnCellRec(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                           opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr, gpo, gpr);
+            } else {
+              M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                        opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+              M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                        opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+            }
           }
           if (vf > 0.0) {
             bb += nup*cr*ai;
@@ -8000,10 +8057,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                             + num*df*(wil*iw_(m,M1_IW_EP,k,j,i)
                                       - wm*iw_(m,M1_IW_EP,k,j,im));
             const Real q = -0.5*ch*dt*th*gf;
-            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
-                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
-            M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
-                      opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+            if (opgd) {
+              M1OpnCellRec(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                           opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr, gmd, gmr);
+              M1OpnCellRec(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                           opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr, gmo, gmr);
+            } else {
+              M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                        opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+              M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                        opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+            }
           }
           if (vf > 0.0) {
             aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
@@ -8065,6 +8129,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
 
+      // implicit_opac_newton_guard: face i+1/2 first, then i-1/2 against the diagonal
+      // left by the first (the two can together take it no lower than opg^2 x b0)
+      if (opgd) {
+        Real bc = bb - gpd - gmd;
+        int ns = M1OpnGuardFace(opg, gpd, gpo, gpr, bc, bb, cc, rr);
+        ns += M1OpnGuardFace(opg, gmd, gmo, gmr, bc, bb, aa, rr);
+        if (ns > 0) {Kokkos::atomic_add(&nsk_(0), static_cast<Real>(ns));}
+      }
       // a Dirichlet end cell: the whole row is replaced, which keeps the matrix an
       // M-matrix and anchors the level of E (see M1_IBC_EFIX)
       if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||

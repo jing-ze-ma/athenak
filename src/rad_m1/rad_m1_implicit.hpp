@@ -440,6 +440,39 @@ void M1OpnCell(const Real q, const Real kt, const Real bk, const Real rk, const 
     rr -= s*rk;
   }
 }
+// implicit_opac_newton_guard (m1-opn-guard): M1OpnCell that also records what it added
+// (dc: to coef, dr: SUBTRACTED from rr), so that a face whose term would drive the row
+// diagonal below guard x its value without the term can be taken out again (the face
+// then stays Picard).  The in-place update is the one of M1OpnCell.
+KOKKOS_INLINE_FUNCTION
+void M1OpnCellRec(const Real q, const Real kt, const Real bk, const Real rk,
+                  const Real ke, const Real cl, const Real dt, Real &coef, Real &rr,
+                  Real &dc, Real &dr) {
+  if (bk > 0.0) {
+    const Real s = q*kt/bk;
+    const Real a = s*cl*dt*ke, b = s*rk;
+    coef += a;
+    rr -= b;
+    dc += a;
+    dr += b;
+  }
+}
+// the guard decision for one face: the Newton term (dd on the diagonal, doff on the
+// neighbour's entry, dr subtracted from rr) is taken out of the row when it would leave
+// the diagonal below th x bc, bc = the diagonal without it (and without the faces taken
+// out before).  Returns 1 when it took the face out.
+KOKKOS_INLINE_FUNCTION
+int M1OpnGuardFace(const Real th, const Real dd, const Real doff, const Real dr,
+                   Real &bc, Real &bb, Real &off, Real &rr) {
+  if (dd < 0.0 && bc + dd < th*bc) {
+    bb -= dd;
+    off -= doff;
+    rr += dr;
+    return 1;
+  }
+  bc += dd;
+  return 0;
+}
 
 // BiCGStab breakdown thresholds: |rho| and |rhat.v| below these times the scale of the
 // right-hand side mean the shadow residual has become orthogonal to the Krylov space.
