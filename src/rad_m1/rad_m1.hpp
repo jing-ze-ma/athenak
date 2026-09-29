@@ -206,6 +206,15 @@ class RadiationM1 {
   // the problem generator through SetForceReference.
   int force_ref;
   DvceArray4D<Real> arad_ref;   // (m,k,j,i), a reference x1 acceleration, code units
+  // OPTIONAL explicit energy source of the radiation (erg/cm^3/s, code units), (m,k,j,i).
+  // Unallocated and esrc_on = false by default (every path bitwise).  A problem generator
+  // that allocates and fills it sets esrc_on = true (transport = implicit only);
+  // ImplicitSolve then adds dt_solve*(chat/c)*esrc to the OLD vector of E and the same
+  // rate to the hesdirk2 slope, so a constant esrc raises E by exactly dt*esrc per step
+  // under be and hesdirk2 alike (stage retries redo the step from U^n with be).
+  // he_star_m1: the frozen MLT flux.
+  DvceArray4D<Real> esrc;
+  bool esrc_on = false;
 
   // m1-mhd (docs/dev/m1_mhd_0927.md): the fluid is <hydro> or <mhd> (FluidRef,
   // m1_fluid.hpp).  Under MHD the conserved energy carries |B|^2/2, which every kernel

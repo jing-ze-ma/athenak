@@ -6710,11 +6710,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool mhd = fl_mhd;
   auto emag_ = emag0;
 
+  // the optional explicit energy source (esrc, default off): dt (chat/c) esrc joins the
+  // OLD vector of E (and, below, the hesdirk2 slope)
+  const bool eso = esrc_on;
+  auto es_ = esrc;
+  const Real dtes = dt*chat/c_light;
   //-------------------------------------------------------------------------- start state
   par_for("m1_impl_i0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = fmax(u0_(m,M1_E,k,j,i), efl);
     iw_(m,M1_IW_EN,k,j,i) = t2st ? (u0_(m,M1_E,k,j,i) + t2i_(m,M1_T2_E,k,j,i)) : e;
+    if (eso) {iw_(m,M1_IW_EN,k,j,i) += dtes*es_(m,k,j,i);}
     iw_(m,M1_IW_EP,k,j,i) = e;
     iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
     iw_(m,M1_IW_V1,k,j,i) = 0.0;
@@ -8796,6 +8802,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (t2k) {
       const Real fk = 1.0/dt;
       kk_(m,M1_T2_E,k,j,i) = (ep - iw_(m,M1_IW_EN,k,j,i))*fk;
+      if (eso) {kk_(m,M1_T2_E,k,j,i) += dtes*fk*es_(m,k,j,i);}
       bool gk = have_hydro && feedback;
       kk_(m,M1_T2_M1,k,j,i) = gk ? ((dm1 - dmref)*fk) : 0.0;
       kk_(m,M1_T2_M1+1,k,j,i) = (gk && trans && dbgft) ? (dm2*fk) : 0.0;

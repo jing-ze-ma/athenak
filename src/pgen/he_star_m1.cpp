@@ -63,6 +63,7 @@
 #include "utils/wb_background.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "units/units.hpp"
@@ -226,8 +227,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // convection must carry the flux): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
   // with fmlt = F_MLT/F the file's column 7 (make_ic mlt: r rho eint F_r E T fmlt), so
   // that F_r + F_MLT = L/(4 pi r^2) exactly, is deposited as the conservative energy
-  // source -(A F_MLT|_{i+1/2} - A F_MLT|_{i-1/2})/V inside the hydro stage sources
-  // (HeStarGravity, every stage).  Rebuilt from the file on every start (restarts).
+  // source -(A F_MLT|_{i+1/2} - A F_MLT|_{i-1/2})/V into the RADIATION energy through
+  // <rad_m1>/esrc (the implicit solve's old vector, every stage with its weight).
+  // Rebuilt from the file on every start (restarts).
   hs_mlt_ = pin->GetOrAddBoolean("problem","mlt_flux_frozen",false);
   if (hs_mlt_ && ncols != 5) {
     HsFatal("problem/mlt_flux_frozen = true needs he_ic_cols = 5 and the 7-column "
@@ -630,6 +632,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     Kokkos::deep_copy(hs_fm_, hfm);
+    // the RADIATION takes the deposit (<rad_m1>/esrc, added to the implicit solve's old
+    // vector with the stage weights): beta = Pg/P ~ 0.01, so the gas holds ~1 % of the
+    // heat capacity, and an explicit gas-side deposit was -0.5 e_gas per step at cfl 0.3
+    // (v2/runs/mF03: force 0.94 rho g).  The implicit exchange gives the gas its share.
+    if (pm1->transport == radm1::M1_TRANSPORT_EXPLICIT) {
+      HsFatal("problem/mlt_flux_frozen needs <rad_m1>/transport = implicit (esrc)",
+              __LINE__);
+    }
+    Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
+    Kokkos::deep_copy(pm1->esrc, 0.0);
+    auto es = pm1->esrc;
+    auto fmd = hs_fm_;
+    auto &area1 = pmbp->pcoord->area.x1f;
+    auto &volume = pmbp->pcoord->volume;
+    const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+    const int ks = indcs.ks, ke = indcs.ke;
+    par_for("hs_esrc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      es(m,k,j,i) = -(area1(m,k,j,i+1)*fmd(i+1) - area1(m,k,j,i)*fmd(i))/volume(m,k,j,i);
+    });
+    pm1->esrc_on = true;
     if (global_variable::my_rank == 0) {
       std::cout << "he_star_m1: mlt_flux_frozen: max F_MLT/F on the faces = " << fmax
                 << " at r = " << rmx << "; F_MLT at the bottom/top faces = "
@@ -749,16 +772,6 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     par_for("hs_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
-    });
-  }
-  // problem/mlt_flux_frozen: the conservative energy deposit of the IC's MLT flux, in the
-  // same stage source as gravity (coupled per stage, no split)
-  if (hs_mlt_) {
-    auto fm = hs_fm_;
-    par_for("hs_mlt", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      u0(m,IEN,k,j,i) -= bdt*(area1(m,k,j,i+1)*fm(i+1) - area1(m,k,j,i)*fm(i))
-                         /volume(m,k,j,i);
     });
   }
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
