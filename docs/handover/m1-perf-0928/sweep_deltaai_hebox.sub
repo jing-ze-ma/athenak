@@ -1,0 +1,23 @@
+#!/bin/bash -l
+#SBATCH -J heboxsweep
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=100G
+#SBATCH --time=00:30:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# m1-perf round 2: GH200 sweep of existing (MI300A-tuned) switches on the current default (2ff4fe27, Newton on).
+# small box (hebox_sweep): 1 and 4 GPUs, 300 cycles, window 100-300; big box (hebox_bigsweep): 4 GPUs, 120 cycles.
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+export BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_box_dev_2ff4fe27b55e}
+export OUT=${OUT:-/work/nvme/bivj/jma20/sweep_hebox_0929} TO=420
+INP=$H/inputs/hebox_sweep.athinput NRS="1 4" NLIM=300 C0=100 \
+  ARMS="def team:rad_m1/implicit_op_team_red=true split:rad_m1/implicit_op_split_red=true pf:rad_m1/implicit_precond_float=true mg2:rad_m1/implicit_mg_levels=2" \
+  bash $H/arms_deltaai_hebox.sub
+INP=$H/inputs/hebox_bigsweep.athinput NRS="4" NLIM=120 C0=40 OUT=$OUT/big \
+  ARMS="bdef bteam:rad_m1/implicit_op_team_red=true bpf:rad_m1/implicit_precond_float=true bmg4:rad_m1/implicit_mg_levels=4" \
+  bash $H/arms_deltaai_hebox.sub
+echo SWEEP_DONE

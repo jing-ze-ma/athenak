@@ -1,0 +1,19 @@
+#!/bin/bash -l
+#SBATCH -J heboxprof2
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=100G
+#SBATCH --time=00:20:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# m1-perf round 2: nsys profiles of the current default (2ff4fe27, Newton on): small box 1 + 4 GPUs (200 cycles),
+# big box 4 GPUs (60 cycles).
+H=/u/jma20/ATHENAK/bench-2026-09-29-hebox
+export BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_box_dev_2ff4fe27b55e} TO=480
+O=${OUT:-/work/nvme/bivj/jma20/prof2_hebox_0929}
+INP=$H/inputs/hebox_sweep.athinput NRS="1 4" NLIM=200 OUT=$O/small bash $H/prof_deltaai_hebox.sub
+INP=$H/inputs/hebox_bigsweep.athinput NRS="4" NLIM=60 OUT=$O/big bash $H/prof_deltaai_hebox.sub
+echo PROF2_DONE

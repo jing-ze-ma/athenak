@@ -24,6 +24,7 @@ echo "PROFJOB NRS=$NRS NLIM=$NLIM host=$(hostname) job=$J md5=$(md5sum $BIN | cu
 for n in $NRS; do
   D=$OUT/n${n}_$J
   export LAUNCH="srun -n %N -c 16 --cpu-bind=cores $NSYS profile -t cuda,nvtx,mpi --mpi-impl=mpich -s none --cpuctxsw=none -o prof.%q{SLURM_PROCID} --force-overwrite true"
+  [ -n "${DRY:-}" ] && export LAUNCH="echo $LAUNCH"   # DRY=1: print the launch only
   timeout --kill-after=30 $TO bash $H/run_bench_hebox.sh $BIN $n $D; rc=$?
   echo "n=$n rc=$rc $(grep -m1 'vet_sc: formal' $D/bench.log | cut -c1-200)"
   ls -la $D/*.nsys-rep 2>&1
