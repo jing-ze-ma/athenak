@@ -830,7 +830,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // the local gas Newton step), so the pass converges ~quadratically.  The added terms
   // are proportional to the predicted temperature change of the gas Newton step, which
   // vanishes at the fixed point: the converged state is the same.
-  impl_opac_newton = pin->GetOrAddBoolean("rad_m1","implicit_opac_newton",false);
+  // DEFAULT true (m1-perf-0928, user) wherever it applies: implicit_opac_update and
+  // implicit_gas_newton on; hydro or MHD (FluidRef), Cartesian or sp rows.  False on a
+  // restart whose file lacks the key (the implicit_gas_newton convention).  Named true
+  // without its two prerequisites it is fatal (below).
+  impl_opac_newton = pin->GetOrAddBoolean("rad_m1","implicit_opac_newton",
+                                          impl_opac_update && impl_gas_newton &&
+                                          !global_variable::restart_run);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
@@ -7626,7 +7632,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // q = -chat dt th G(E^k)/2.  The E'_c part goes on the row, the rest to the RHS.
     // Only faces whose two cells are in this block (x1 neighbours of the block are
     // not exchanged for ktd): there the term is omitted and the face stays Picard.
+    // On sp the rows are rebuilt below with the sp areas; the same term goes there (opns).
     const bool opnr = opn && gnewt && !sph_geom;
+    const bool opns = opn && gnewt && sph_geom;
     auto ktdv = ktd;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
@@ -7707,17 +7715,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real gf = nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od)
                           + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wp*iw_(m,M1_IW_EP,k,j,ip));
           const Real q = -0.5*ch*dt*th*gf;
-          const Real bi = iw_(m,igb,k,j,i), bp = iw_(m,igb,k,j,ip);
-          if (bi > 0.0) {
-            const Real s = q*ktdv(m,k,j,i)/bi;
-            bb += s*cl*dt*opac_(m,M1_OP_E,k,j,i);
-            rr -= s*iw_(m,igr,k,j,i);
-          }
-          if (bp > 0.0) {
-            const Real s = q*ktdv(m,k,j,ip)/bp;
-            cc += s*cl*dt*opac_(m,M1_OP_E,k,j,ip);
-            rr -= s*iw_(m,igr,k,j,ip);
-          }
+          M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                    opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+          M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                    opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
         }
         // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
         // <= 0 (upper off-diagonal), so the blend keeps the M-matrix.
@@ -7789,17 +7790,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real gf = -nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od)
                           + nu*df*(wi*iw_(m,M1_IW_EP,k,j,i) - wm*iw_(m,M1_IW_EP,k,j,im));
           const Real q = -0.5*ch*dt*th*gf;
-          const Real bi = iw_(m,igb,k,j,i), bm = iw_(m,igb,k,j,im);
-          if (bi > 0.0) {
-            const Real s = q*ktdv(m,k,j,i)/bi;
-            bb += s*cl*dt*opac_(m,M1_OP_E,k,j,i);
-            rr -= s*iw_(m,igr,k,j,i);
-          }
-          if (bm > 0.0) {
-            const Real s = q*ktdv(m,k,j,im)/bm;
-            aa += s*cl*dt*opac_(m,M1_OP_E,k,j,im);
-            rr -= s*iw_(m,igr,k,j,im);
-          }
+          M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                    opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+          M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                    opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
         }
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
         bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
@@ -7877,6 +7871,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
           if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
           Real wiu = wi;
+          Real ods = 0.0;   // the S2 curvature term (implicit_opac_newton needs it)
           if (sphq) {
             // S2: the integrating factor, (r_c/r_f)^2 on the q n_r^2 part of each cell
             Real rf = cx1f(m,i+1);
@@ -7891,6 +7886,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
               rr += nup*cr*th*ch*cl*dt*od;
+              ods = od;
             }
           }
           bb += nup*df*wiu;
@@ -7898,6 +7894,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
           rr -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+          // implicit_opac_newton on sp: the same face term G (every part of it is
+          // proportional to th), with the sp area factor and the S2 row coefficients
+          if (opns && ip <= ie) {
+            const Real gf = nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*ods)
+                            + nup*df*(wiu*iw_(m,M1_IW_EP,k,j,i)
+                                      - wp*iw_(m,M1_IW_EP,k,j,ip));
+            const Real q = -0.5*ch*dt*th*gf;
+            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            M1OpnCell(q, ktdv(m,k,j,ip), iw_(m,igb,k,j,ip), iw_(m,igr,k,j,ip),
+                      opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
+          }
           if (vf > 0.0) {
             bb += nup*cr*ai;
           } else {
@@ -7965,6 +7973,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real wm = iw_(m,M1_IW_WCHI,k,j,im);
           if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
           Real wil = wi;
+          Real ods = 0.0;
           if (sphq) {
             Real rf = cx1f(m,i);
             Real si = SQR(cx1v(m,i)/rf), sm = SQR(cx1v(m,im)/rf);
@@ -7978,6 +7987,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
               rr -= num*cr*th*ch*cl*dt*od;
+              ods = od;
             }
           }
           bb += num*df*wil;
@@ -7985,6 +7995,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
           rr += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+          if (opns && im >= is) {
+            const Real gf = -num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*ods)
+                            + num*df*(wil*iw_(m,M1_IW_EP,k,j,i)
+                                      - wm*iw_(m,M1_IW_EP,k,j,im));
+            const Real q = -0.5*ch*dt*th*gf;
+            M1OpnCell(q, ktdv(m,k,j,i), iw_(m,igb,k,j,i), iw_(m,igr,k,j,i),
+                      opac_(m,M1_OP_E,k,j,i), cl, dt, bb, rr);
+            M1OpnCell(q, ktdv(m,k,j,im), iw_(m,igb,k,j,im), iw_(m,igr,k,j,im),
+                      opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
+          }
           if (vf > 0.0) {
             aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
           } else {
