@@ -174,7 +174,7 @@ void DhjCycleDiag(Mesh *pm);
 // problem/budget_dt (DIAGNOSTIC, branch dhj-budget-0929; off unless the key exists and
 // is > 0): per-shell energy and mass ledger, see EBudCk
 namespace ebud {
-constexpr int NQ = 14;
+constexpr int NQ = 20;
 bool on = false;
 bool started = false;
 Real dt_out = 0.0;
@@ -182,6 +182,8 @@ Real t_next = 0.0;
 DvceArray2D<Real> *acc = nullptr;    // (NQ, nx1+1)
 DvceArray2D<Real> *tmp = nullptr;    // (2, nx1+1): shell E and M
 DvceArray2D<Real> *fhst = nullptr;   // (4, nx1): floors pending for the hst columns
+DvceArray5D<Real> *cpre = nullptr;   // (nmb, 2, n3, n2, n1): u0(IEN) and e_int before ck
+int64_t nfull0 = 0;                  // ck_cad_nfull before the call
 }  // namespace ebud
 void EBudStage(Mesh *pm, const Real bdt);
 void EBudCk(Mesh *pm, const Real dt, const bool before);
@@ -530,6 +532,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ebud::acc = new DvceArray2D<Real>("eb_acc", ebud::NQ, n1 + 1);
     ebud::tmp = new DvceArray2D<Real>("eb_tmp", 2, n1 + 1);
     ebud::fhst = new DvceArray2D<Real>("eb_fhst", 4, n1);
+    {
+      auto &ic = pmy_mesh_->mb_indcs;
+      ebud::cpre = new DvceArray5D<Real>("eb_cpre", peb->nmb_thispack, 2,
+                                         ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng,
+                                         ic.nx1 + 2*ic.ng);
+    }
     if (!peb->phydro->c2p_track) peb->phydro->EnableC2PTrack();
   }
   // problem/wall_closed (DEFAULT TRUE, user 09-27; false = the old reservoir wall): make
@@ -3264,6 +3272,11 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //  11 [0..3] top face: int F_E dt, int F_M dt of stage 1, then of stage 2 (unweighted)
 //  12 [0..3] top face applied (0.5 dt): E, M over inflow faces (F_M < 0), then outflow
 //  13 FLRS the part of FLRE made by the split conversion after the ck call      [shell]
+//  14..18 CKX (= QCK - booked A F dt, V Qb dt) per cell class, summed per shell:
+//      14 full call, cell ends at e_floor;  15 full call, cell on the ck_impl_demax
+//      bound;  16 full call, other;  17 linearised cadence step, |de| capped;  18 lin,
+//      other.  Their sum over the rows is QCK - (FIR_i - FIR_i+1 + QSW_i).
+//  19 [0..4] cell counts of classes 14..18, [5] full calls, [6] lin steps
 // The dump (file ebudget.txt, rank 0) is taken right BEFORE the ck call of a cycle,
 // after the floors so far were drained: time, the cumulative rows, then the shell
 // sums E = sum u0(IEN) V and M = sum u0(IDN) V.  Ledger per shell over two dumps:
@@ -3393,6 +3406,20 @@ void EBudCk(Mesh *pm, const Real dt, const bool before) {
       ebud::t_next += ebud::dt_out;
     }
     EBudShellEM(pm, tm);   // QCK 'before' (row 0)
+    if (ebud::cpre != nullptr) {
+      MeshBlockPack *pb = pm->pmb_pack;
+      auto &ib = pm->mb_indcs;
+      auto cp = *ebud::cpre;
+      auto u0b = pb->phydro->u0;
+      const ts::CkCadState st = ts::CkCadMakeState(pm);
+      par_for("eb_cpre", DevExeSpace(), 0, pb->nmb_thispack - 1, ib.ks, ib.ke, ib.js,
+              ib.je, ib.is, ib.ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        cp(m,0,k,j,i) = u0b(m,IEN,k,j,i);
+        cp(m,1,k,j,i) = st.Eint(m, k, j, i);
+      });
+      ebud::nfull0 = ts::ck_cad_nfull;
+    }
     return;
   }
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -3414,6 +3441,59 @@ void EBudCk(Mesh *pm, const Real dt, const bool before) {
   });
   const bool rad = ts::rt_face_flux_ready() && (ts::rt_Qb_ptr != nullptr)
                    && (ts::rt_icut_ptr != nullptr);
+  if (rad && ebud::cpre != nullptr) {
+    // CKX per cell class (rows 14..19)
+    auto fb = ts::rt_face_flux();
+    auto qb = *ts::rt_Qb_ptr;
+    auto icut = ts::rt_cut_index();
+    const int nblk = ts::rt_face_nblk();
+    auto cp = *ebud::cpre;
+    const ts::CkCadState st = ts::CkCadMakeState(pm);
+    const bool full = (ts::ck_cad_nfull != ebud::nfull0) || (ts::ck_impl_every <= 1);
+    const Real demax = ts::ck_impl_demax;
+    Real capf = ts::ck_impl_dtmax;
+    if (demax > 0.0 && demax < capf) capf = demax;
+    par_for("eb_ckx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int ic = icut(m,k,j);
+      Real bk = 0.0;
+      if (i >= ic) {
+        Real f0 = 0.0, f1 = 0.0, q = 0.0;
+        for (int b=0; b<nblk; ++b) {
+          f0 += fb(m,b,i,k,j);
+          f1 += fb(m,b,i+1,k,j);
+          q += qb(m,b,i,k,j);
+        }
+        bk = (f0*a1(m,k,j,i) - f1*a1(m,k,j,i+1) + q*vol(m,k,j,i))*dt;
+      }
+      const Real x = (u0(m,IEN,k,j,i) - cp(m,0,k,j,i))*vol(m,k,j,i) - bk;
+      const Real eb = cp(m,1,k,j,i);
+      const Real ea = st.Eint(m, k, j, i);
+      const Real d = u0(m,IDN,k,j,i);
+      int c = 0;
+      if (full) {
+        Real efl = st.eos.EnergyFromTemperature(d, st.eos.tfloor);
+        const Real ep = st.eos.EnergyFromPressure(d, st.eos.pfloor);
+        if (ep > efl) efl = ep;
+        if (ea <= efl*(1.0 + 1.0e-8)) {
+          c = 0;
+        } else if (demax > 0.0 && eb > 0.0 &&
+                   (ea <= eb*(1.0 - demax)*(1.0 + 1.0e-8) ||
+                    ea >= eb*(1.0 + demax)*(1.0 - 1.0e-8))) {
+          c = 1;
+        } else {
+          c = 2;
+        }
+      } else {
+        c = (eb > 0.0 && fabs(ea - eb) >= capf*eb*(1.0 - 1.0e-8)) ? 3 : 4;
+      }
+      Kokkos::atomic_add(&acc(14 + c, i-is), x);
+      Kokkos::atomic_add(&acc(19, c), 1.0);
+    });
+    par_for("eb_ckn", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+      acc(19, full ? 5 : 6) += 1.0;
+    });
+  }
   if (rad) {
     auto fb = ts::rt_face_flux();
     auto qb = *ts::rt_Qb_ptr;
