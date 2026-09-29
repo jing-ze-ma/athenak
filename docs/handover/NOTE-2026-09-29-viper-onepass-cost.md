@@ -51,3 +51,5 @@ re-probes from the `implicit_one_pass_auto` line; "end" = state (be, stage 1, st
   no gain. A default
   `implicit_one_pass = 8` wherever Newton is on would cost ~2 % at cfl 0.9 unless the re-probe period is
   raised; gates (a)/(b) (ke-dt, order) are still to be run before any default change. The user decides.
+
+**USER DECISION 09-29 ~09:25: `implicit_one_pass` stays OPT-IN** (gain < 10 % at cfl 0.3, below the 20 % speed-work rule; nothing accepted at cfl 0.9, +2 % from re-probes). Gates (a)/(b) not run.
