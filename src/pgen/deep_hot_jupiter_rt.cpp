@@ -5284,7 +5284,8 @@ void DhjCycleDiag(Mesh *pm) {
 //! top face ie+1 per ck band (rt_Fb blocks summed per band: chain
 //! c = ((b CK_NG)+g) nq + q, RT_NB chains per block), the cos of the stellar zenith
 //! angle and the absorbed stellar flux sum_i Q_sw V / A(ie+1).  Code flux units (cgs).
-//! Reads the arrays of the
+//! Reads the arrays of the LAST ck call, like DhjFluxHistory; nothing is re-run.
+//! Rows: gid k-ks j-js mu0
 //! F_sw_abs F_band[0..nb-1] (bands in table order, edges in the header).
 
 void DhjFinalDumps(ParameterInput *pin, Mesh *pm) {
