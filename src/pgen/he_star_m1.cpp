@@ -575,8 +575,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // cell's own value (implicit_bmom_half).  Inside, this equals the continuum
     // reference kt F/c of the column to O(dx^2) (~1e-4 rho g, measured); in the two
     // edge cells it differs by -(rho k)' dx/4: -6.6e-3 rho g in the wall cell of the
-    // mlt column (v2/runs/mE03, predicted -6.59e-3).  So in the WALL cell a_ref is
-    // set to the module's value and Phi_eff is rebuilt across the cell with that
+    // mlt column (v2/runs/mE03, predicted -6.59e-3).  So in the WALL cells a_ref is
+    // set to the module's value and Phi_eff is rebuilt across them with that
     // acceleration (the ghosts' Phi_eff shifted with the wall face), so that the WB
     // pair and the module's force agree there too.  NOT done: (a) EVERY cell (in the
     // Gamma ~ 1 layers the balance then depends on a_ref to 1e-3 and the rho <-> kappa
@@ -592,68 +592,106 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
       return (1.0 - w)*hF[n] + w*hF[n+1];
     };
-    DvceArray1D<Real> kd_d("hs_kd", 4), kt_d("hs_kt", 4), kk_d("hs_kk", 4);
-    {
-      auto hkd = Kokkos::create_mirror_view(kd_d);
-      auto hkt = Kokkos::create_mirror_view(kt_d);
-      const int ci[4] = {is, is + 1, ie - 1, ie};
-      for (int n=0; n<4; ++n) {
-        hkd(n) = dc[ci[n]];
-        hkt(n) = tc[ci[n]];
-      }
-      Kokkos::deep_copy(kd_d, hkd);
-      Kokkos::deep_copy(kt_d, hkt);
-    }
-    radm1::M1OpacTab ot1 = pm1->otab;
-    par_for("hs_kap1", DevExeSpace(), 0, 3, KOKKOS_LAMBDA(const int n) {
-      Real op, oe, of, os;
-      radm1::M1TableOpacities(ot1, kd_d(n), kt_d(n), op, oe, of, os);
-      kk_d(n) = of + os;
-    });
-    auto hkk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), kk_d);
-    const Real rk_is = dc[is]*hkk(0), rk_is1 = dc[is+1]*hkk(1);
-    const Real a_lo = 0.5*(rk_is*linF(hx1f(0,is))
-                           + 0.5*(rk_is + rk_is1)*linF(hx1f(0,is+1)))/(cl*dc[is]);
     auto seg = [&](const Real a_, const Real ra, const Real rb) {   // Phi_eff(rb) - (ra)
       return hs_gm_*(1.0/ra - 1.0/rb) - a_*(rb - ra);
     };
-    {
-      const Real pf_old = hpf(0,k0,j0,is);
-      const Real pf_new = hpf(0,k0,j0,is+1) - seg(a_lo, hx1f(0,is), hx1f(0,is+1));
-      const Real pc_new = pf_new + seg(a_lo, hx1f(0,is), hx1v(0,is));
-      const Real dlo = pf_new - pf_old;
-      auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->arad_ref);
+    auto march = [&]() {
+      for (int i=ie; i>=is; --i) {
+        Real pl, pr;
+        walk(i+1, bd[i+1], pl, pr);
+        solve(i, pl);
+      }
+      for (int it=0; it<8; ++it) {
+        for (int g=0; g<is; ++g) {
+          bd[g] = dc[g]*bd[is]/dc[is];
+          be[g] = ec[g]*be[is]/ec[is];
+          tc[g] = eos.Temperature(bd[g], be[g]);
+        }
+        Real pl, pr;
+        walk(is+1, bd[is+1], pl, pr);
+        solve(is, pl);
+      }
+    };
+    // the wall cell AND the next NW-1 cells take the module form: moving rho of the wall
+    // cell moves (rho k) of the face above it, i.e. the force of cell is+1 (+6.3e-4
+    // rho g with the wall cell alone, v2/runs/mG3); the kink dies out within a few cells.
+    // Iterated with the balance (a depends on rho); the face x1f(is+NW) keeps its
+    // continuum Phi_eff, the cells below are rebuilt downward from it.
+    const int NW = std::min(4, ie - is);
+    DvceArray1D<Real> kd_d("hs_kd", NW + 1), kt_d("hs_kt", NW + 1), kk_d("hs_kk", NW + 1);
+    auto hkd = Kokkos::create_mirror_view(kd_d);
+    auto hkt = Kokkos::create_mirror_view(kt_d);
+    radm1::M1OpacTab ot1 = pm1->otab;
+    std::vector<Real> aw(NW, 0.0);
+    const Real pf_top = hpf(0,k0,j0,is+NW);
+    const Real pf_old = hpf(0,k0,j0,is);
+    std::vector<Real> gpc(is), gpf(is);
+    for (int i=0; i<is; ++i) {
+      gpc[i] = hpc(0,k0,j0,i) - pf_old;
+      gpf[i] = hpf(0,k0,j0,i) - pf_old;
+    }
+    Real wchg = 0.0;
+    for (int outer=0; outer<8; ++outer) {
+      for (int n=0; n<=NW; ++n) {
+        hkd(n) = bd[is+n];
+        hkt(n) = tc[is+n];
+      }
+      Kokkos::deep_copy(kd_d, hkd);
+      Kokkos::deep_copy(kt_d, hkt);
+      par_for("hs_kap1", DevExeSpace(), 0, NW, KOKKOS_LAMBDA(const int n) {
+        Real op, oe, of, os;
+        radm1::M1TableOpacities(ot1, kd_d(n), kt_d(n), op, oe, of, os);
+        kk_d(n) = of + os;
+      });
+      auto hkk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), kk_d);
+      wchg = 0.0;
+      for (int n=0; n<NW; ++n) {
+        const int i = is + n;
+        const Real rkc = bd[i]*hkk(n), rku = bd[i+1]*hkk(n+1);
+        const Real rkl = (n == 0) ? rkc : 0.5*(rkc + bd[i-1]*hkk(n-1));
+        const Real anew = 0.5*(rkl*linF(hx1f(0,i)) + 0.5*(rkc + rku)*linF(hx1f(0,i+1)))
+                          /(cl*bd[i]);
+        if (outer > 0) wchg = std::max(wchg, fabs(anew/aw[n] - 1.0));
+        aw[n] = anew;
+      }
+      // Phi_eff of the wall cells, downward from the face x1f(is+NW); ghosts follow
+      std::vector<Real> pf(NW + 1), pc(NW);
+      pf[NW] = pf_top;
+      for (int n=NW-1; n>=0; --n) {
+        const int i = is + n;
+        pf[n] = pf[n+1] - seg(aw[n], hx1f(0,i), hx1f(0,i+1));
+        pc[n] = pf[n] + seg(aw[n], hx1f(0,i), hx1v(0,i));
+      }
       for (int m=0; m<=nmb1; ++m) {
         for (int k=0; k<=n3m1; ++k) {
           for (int j=0; j<=n2m1; ++j) {
             for (int i=0; i<is; ++i) {
-              hpc(m,k,j,i) += dlo;
-              hpf(m,k,j,i) += dlo;
+              hpc(m,k,j,i) = gpc[i] + pf[0];
+              hpf(m,k,j,i) = gpf[i] + pf[0];
             }
-            hpf(m,k,j,is) = pf_new;
-            hpc(m,k,j,is) = pc_new;
-            har(m,k,j,is) = a_lo;
+            for (int n=0; n<NW; ++n) {
+              hpf(m,k,j,is+n) = pf[n];
+              hpc(m,k,j,is+n) = pc[n];
+            }
+          }
+        }
+      }
+      rmax = 0.0;
+      march();
+      if (outer > 0 && wchg < 1.0e-13) break;
+    }
+    {
+      auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->arad_ref);
+      for (int m=0; m<=nmb1; ++m) {
+        for (int k=0; k<=n3m1; ++k) {
+          for (int j=0; j<=n2m1; ++j) {
+            for (int n=0; n<NW; ++n) har(m,k,j,is+n) = aw[n];
           }
         }
       }
       Kokkos::deep_copy(ph->phicc_wb, hpc);
       Kokkos::deep_copy(ph->phi_wb_x1f, hpf);
       Kokkos::deep_copy(pm1->arad_ref, har);
-    }
-    for (int i=ie; i>=is; --i) {
-      Real pl, pr;
-      walk(i+1, bd[i+1], pl, pr);
-      solve(i, pl);
-    }
-    for (int it=0; it<8; ++it) {
-      for (int g=0; g<is; ++g) {
-        bd[g] = dc[g]*bd[is]/dc[is];
-        be[g] = ec[g]*be[is]/ec[is];
-        tc[g] = eos.Temperature(bd[g], be[g]);
-      }
-      Real pl, pr;
-      walk(is+1, bd[is+1], pl, pr);
-      solve(is, pl);
     }
     Real dmax = 0.0;
     int imax = is;
@@ -676,7 +714,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (global_variable::my_rank == 0) {
       std::cout << "he_star_m1: he_ic_balance: max |rho/rho_col - 1| = " << dmax
                 << " at r = " << hx1v(0,imax) << ", max face residual |PR/PL - 1| = "
-                << rmax << ", wall a_ref (module form) set" << std::endl;
+                << rmax << ", wall cells a_ref (module form), last change " << wchg
+                << std::endl;
     }
   }
 
