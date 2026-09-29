@@ -1,0 +1,55 @@
+#!/bin/bash -l
+#SBATCH -J heboxbench
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=100G
+#SBATCH --time=00:30:00
+#SBATCH -o /u/jma20/ATHENAK/runs/hebox_%x.%j.out
+# bench-2026-09-29-hebox DeltaAI arm (GH200; hesdirk2, cfl 0.3).  ONE job on one node (4 GPUs held):
+# a 200-cycle smoke at 2 GPUs (gate: rc 0, FATAL 0, NON-CONVERGED 0), then REPS (default 2) repeats of
+# NRS (default "1 2 4"), counts interleaved inside each repeat.  1 rank per GPU; a 1- or 2-rank run
+# uses GPUs 0..n-1 of the node (Kokkos maps device by rank).  Every run is under `timeout` (TO, 600 s).
+#   sbatch bench_deltaai_hebox.sub            (variables: BIN, REPS, NRS, OUT, TO, SKIP_SMOKE)
+H=${H:-/u/jma20/ATHENAK/bench-2026-09-29-hebox}
+BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_box_gpu_401875f01beb}
+REPS=${REPS:-2}; NRS=${NRS:-"1 2 4"}; TO=${TO:-600}
+OUT=${OUT:-/work/nvme/bivj/jma20/bench_hebox_0929}
+NVSMI=${NVSMI:-nvidia-smi}
+export MACHINE=deltaai
+mkdir -p $OUT
+J=${SLURM_JOB_ID:-nojob}
+echo "BENCHJOB NRS=$NRS host=$(hostname) job=$J bin=$BIN md5=$(md5sum $BIN | cut -c1-32) (expect $(cat $BIN.md5 2>/dev/null))"
+$NVSMI -L
+( while sleep 5; do $NVSMI --query-compute-apps=pid,gpu_bus_id --format=csv,noheader; done > $OUT/gpus_$J.raw 2>&1 ) &
+SMP=$!
+
+run() {  # run <nranks> <dir>
+  timeout --kill-after=30 $TO bash $H/run_bench_hebox.sh $BIN $1 $2
+  local rc=$?; [ $rc = 124 ] && echo "TIMEOUT after ${TO}s: $2"; return $rc
+}
+
+if [ -z "${SKIP_SMOKE:-}" ]; then
+  echo "== smoke (2 GPUs, 200 cycles, ndiag 1, Picard log)"
+  D=$OUT/smoke_n2_$J
+  EXTRA="time/nlim=200 time/ndiag=1 rad_m1/implicit_picard_log=20" run 2 $D; RC=$?
+  NF=$(grep -c FATAL $D/bench.log); NC=$(grep -c NON-CONVERGED $D/bench.log)
+  echo "smoke: rc=$RC FATAL=$NF NON-CONVERGED(lines)=$NC $(grep -m1 'Number of parallel ranks' $D/bench.log)"
+  python3 $H/ana_bench_hebox.py $D/bench.log --c0 50 --c1 200
+  if [ $RC != 0 ] || [ "$NF" != 0 ]; then
+    echo "smoke failed: no timed runs"; kill $SMP; echo BENCH_JOB_DONE; exit 1
+  fi
+fi
+
+echo "== timed: $REPS x ($NRS), 1200 cycles"
+for r in $(seq 1 $REPS); do
+  for n in $NRS; do run $n $OUT/n${n}_r${r}_$J; done
+done
+kill $SMP 2>/dev/null; wait $SMP 2>/dev/null
+sort -u $OUT/gpus_$J.raw > $OUT/gpus_$J.csv
+echo "GPUs used (pid, bus):"; awk -F, '{print $2}' $OUT/gpus_$J.csv | sort | uniq -c
+python3 $H/ana_bench_hebox.py $OUT/n*_r*_$J/bench.log
+echo BENCH_JOB_DONE

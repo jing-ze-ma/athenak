@@ -49,9 +49,17 @@ case $MACHINE in
     HE_BOX_DATA=${HE_BOX_DATA:-/resnick/home/jingze/ATHENAK/athenak_data/he_box}
     LAUNCH=${LAUNCH:-"srun --mpi=pmix -n %N -c ${SLURM_CPUS_PER_TASK:-8} --gpus-per-task=1 --exact"} ;;
   deltaai)
-    # NCSA DeltaAI GH200 (4 per node, ARM Grace host).  Fill from the header used for
-    # bench-2026-09-28 (modules, launcher) in your results branch; set HE_BOX_DATA.
-    : "${HE_BOX_DATA:?set HE_BOX_DATA}" "${LAUNCH:?set LAUNCH}" ;;
+    # NCSA DeltaAI GH200 (4 per node, 72-core Grace each; GPU r <-> NUMA r <-> cores 72r..72r+71).
+    # Job header: -A bivj-dtai-gh -p ghx4 (or ghx4-interactive, x2 charge) -N 1 --ntasks-per-node=<n>
+    #   --gpus-per-node=<n> --cpus-per-task=16.  Default modules (PrgEnv-gnu, gcc-native/14,
+    #   cudatoolkit/25.5_12.9, cray-mpich/9.0.1, craype-accel-nvidia90).  Same header as bench-2026-09-28.
+    # Launch = the AthenaK docs' DeltaAI recipe: every rank sees all GPUs, Kokkos maps device by local rank,
+    #   cores bound per rank.  NOT --gpus-per-task=1/--gpu-bind=closest (cgroups block CUDA IPC).
+    module reset > /dev/null 2>&1
+    export MPICH_GPU_SUPPORT_ENABLED=1 OMP_NUM_THREADS=1
+    export SLURM_CPU_BIND=cores KOKKOS_MAP_DEVICE_ID_BY=mpi_rank
+    HE_BOX_DATA=${HE_BOX_DATA:-/u/jma20/ATHENAK/data/athenak_data/he_box}
+    LAUNCH=${LAUNCH:-"srun -n %N -c ${SLURM_CPUS_PER_TASK:-16} --cpu-bind=cores"} ;;
   *)
     : "${HE_BOX_DATA:?set HE_BOX_DATA or MACHINE}" "${LAUNCH:?set LAUNCH or MACHINE}" ;;
 esac
