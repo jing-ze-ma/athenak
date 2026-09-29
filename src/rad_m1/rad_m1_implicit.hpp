@@ -425,6 +425,8 @@ constexpr int M1_IWG_MS = 4;   // per-cell count of EOS-cache misses in this ste
 // dT -> 0 forces R_k + c dt rho kappa_E E' -> 0, which IS that equation, with e(T) and
 // T^4 evaluated exactly (never linearised) at the final T.
 constexpr Real M1_NEWT_TRUST = 0.5;
+// implicit_opac_newton: the relative temperature step of the opacity derivative
+constexpr Real M1_OPN_H = 1.0e-5;
 
 // BiCGStab breakdown thresholds: |rho| and |rhat.v| below these times the scale of the
 // right-hand side mean the shadow residual has become orthogonal to the Krylov space.

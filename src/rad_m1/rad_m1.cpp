@@ -128,6 +128,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_maxit = 30;
   impl_opac_update = false;
   dbg_opac_part = 0;
+  impl_opac_newton = false;
   impl_allow_multid = false;
   marshak_q = 0.5;
   ibc_x1min = M1_IBC_MARSHAK;

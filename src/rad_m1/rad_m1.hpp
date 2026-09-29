@@ -307,6 +307,8 @@ class RadiationM1 {
   int impl_maxit;               // maximum Picard iterations per solve
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
   int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
+  bool impl_opac_newton;        // implicit_opac_newton: d(rho kappa_T)/dT in the x1 rows
+  DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
