@@ -216,17 +216,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int ncols = pin->GetOrAddInteger("problem","he_ic_cols",4);
   if (ncols != 4 && ncols != 5) HsFatal("problem/he_ic_cols must be 4 or 5", __LINE__);
   // the fine grid spans the mesh plus a margin of (ng + 2) mean radial widths
-  // (a stretched radial grid, mesh/use_grid_stretch_r_poly: the widest of the mean width
-  // and the two end cells sets the margin)
-  Real dxm = (rtop - hs_rin_)/indcs.nx1;
+  // (a stretched radial grid, mesh/use_grid_stretch_r_poly: each margin is (ng + 2) widths
+  // of the end cell on that side, at least the mean width)
+  const Real dxm = (rtop - hs_rin_)/indcs.nx1;
+  Real dxlo = dxm, dxhi = dxm;
   {
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
-    dxm = std::max(dxm, std::max(hx1f(0,indcs.is+1) - hx1f(0,indcs.is),
-                                 hx1f(0,indcs.ie+1) - hx1f(0,indcs.ie)));
+    dxlo = std::max(dxm, hx1f(0,indcs.is+1) - hx1f(0,indcs.is));
+    dxhi = std::max(dxm, hx1f(0,indcs.ie+1) - hx1f(0,indcs.ie));
   }
-  const Real marg = (ng + 2)*dxm;
-  hs_rlo_ = hs_rin_ - marg;
-  const Real rhi = rtop + marg;
+  hs_rlo_ = hs_rin_ - (ng + 2)*dxlo;
+  const Real rhi = rtop + (ng + 2)*dxhi;
   hs_nf_ = nf;
   hs_dr_ = (rhi - hs_rlo_)/(nf - 1);
   std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0);
