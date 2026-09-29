@@ -88,8 +88,22 @@ DvceArray1D<Real> hs_bd_, hs_be_;
 // problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
 bool hs_mlt_ = false;
 DvceArray1D<Real> hs_fm_;
+// problem/mlt_ramp_start, mlt_ramp_time: the time-only weight w(t) on the frozen MLT
+// deposit (1 before the start, cosine to 0 over the ramp time, 0 after; start < 0 = no
+// ramp, w = 1 always); hs_mw_ = the w now in <rad_m1>/esrc; hs_lmx_ = max over the x1
+// faces of the UNSCALED L_MLT = F_MLT r^2 Omega (the wedge's solid angle)
+Real hs_mrs_ = -1.0, hs_mrt_ = 0.0, hs_mw_ = 1.0, hs_lmx_ = 0.0;
+// problem/he_esrc_const, he_esrc_rmax (the esrc test, kept when w is re-applied)
+Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // Picard counters at the previous history output (HeStarHist)
 Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
+
+//! the frozen-MLT weight w(t): a function of the time only (restart-safe)
+Real HsMltW(const Real t) {
+  if (hs_mrs_ < 0.0 || t < hs_mrs_) return 1.0;
+  if (hs_mrt_ <= 0.0 || t >= hs_mrs_ + hs_mrt_) return 0.0;
+  return 0.5*(1.0 + cos(M_PI*(t - hs_mrs_)/hs_mrt_));
+}
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -177,6 +191,7 @@ namespace {
 void HeStarGravity(Mesh *pm, const Real bdt);
 void HeStarBC(Mesh *pm);
 void HeStarHist(HistoryData *pdata, Mesh *pm);
+void HsApplyMltW(Mesh *pm, const Real w);
 void HeStarFinal(ParameterInput *pin, Mesh *pm);
 }  // namespace
 
@@ -229,8 +244,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // was relaxed by a run); 4 (default): E = a T(rho,eint)^4
   const int ncols = pin->GetOrAddInteger("problem","he_ic_cols",4);
   if (ncols != 4 && ncols != 5) HsFatal("problem/he_ic_cols must be 4 or 5", __LINE__);
-  // problem/mlt_flux_frozen (default false; COLUMN TESTS ONLY, keep it off in 3-D, where
-  // convection must carry the flux): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
+  // problem/mlt_flux_frozen (default false; in 3-D only as the start-up scaffold that is
+  // ramped off by problem/mlt_ramp_start/_time while convection grows): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
   // with fmlt = F_MLT/F the file's column 7 (make_ic mlt: r rho eint F_r E T fmlt), so
   // that F_r + F_MLT = L/(4 pi r^2) exactly, is deposited as the conservative energy
   // source -(A F_MLT|_{i+1/2} - A F_MLT|_{i-1/2})/V into the RADIATION energy through
@@ -750,6 +765,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     Kokkos::deep_copy(hs_fm_, hfm);
+    {
+      const auto &ms = pmy_mesh_->mesh_size;
+      const Real omg = (cos(ms.x2min) - cos(ms.x2max))*(ms.x3max - ms.x3min);
+      hs_lmx_ = 0.0;
+      for (int i=0; i<nfc; ++i) {
+        hs_lmx_ = std::max(hs_lmx_, hfm(i)*SQR(hx1f(0,i))*omg);
+      }
+    }
     // the RADIATION takes the deposit (<rad_m1>/esrc, added to the implicit solve's old
     // vector with the stage weights): beta = Pg/P ~ 0.01, so the gas holds ~1 % of the
     // heat capacity, and an explicit gas-side deposit was -0.5 e_gas per step at cfl 0.3
@@ -781,8 +804,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // TEST of <rad_m1>/esrc (default off): a constant source he_esrc_const (erg/cm^3/s) in
   // the cells with r < he_esrc_rmax, ON TOP of the frozen MLT deposit if that is on
   const Real esc = pin->GetOrAddReal("problem","he_esrc_const",0.0);
+  hs_esc_ = esc;
   if (esc != 0.0) {
     const Real rmx = pin->GetOrAddReal("problem","he_esrc_rmax",hs_rin_);
+    hs_esrmx_ = rmx;
     if (!pm1->esrc_on) {
       Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
       Kokkos::deep_copy(pm1->esrc, 0.0);
@@ -795,6 +820,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (x1v(m,i) < rmx) es(m,k,j,i) += esc;
     });
+  }
+
+  // problem/mlt_ramp_start (s, default -1 = no ramp) and mlt_ramp_time (s): the weight
+  // w(t) on the frozen MLT deposit, w = 1 for t < start, 0.5 (1 + cos(pi (t - start)/
+  // time)) during the ramp, 0 after.  A function of t only, re-applied on a restart (both
+  // keys may be overridden on the restart's command line).  Unused: esrc bitwise.
+  hs_mrs_ = pin->GetOrAddReal("problem","mlt_ramp_start",-1.0);
+  hs_mrt_ = pin->GetOrAddReal("problem","mlt_ramp_time",0.0);
+  hs_mw_ = 1.0;
+  if (hs_mrs_ >= 0.0 && !hs_mlt_) {
+    HsFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true", __LINE__);
+  }
+  if (hs_mlt_) {
+    const Real w = HsMltW(pmy_mesh_->time);
+    if (w != hs_mw_) HsApplyMltW(pmy_mesh_, w);
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: mlt ramp start = " << hs_mrs_ << ", time = " << hs_mrt_
+                << ", w(t = " << pmy_mesh_->time << ") = " << hs_mw_
+                << ", max L_MLT (unscaled) = " << hs_lmx_ << std::endl;
+    }
   }
 
   // top sponge (default off) and hooks
@@ -946,6 +991,11 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   auto wbq0 = ph->wbq0;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
+  // the frozen-MLT ramp: w at the step's start time (the same on every stage)
+  if (hs_mlt_ && hs_mrs_ >= 0.0) {
+    const Real w = HsMltW(pm->time);
+    if (w != hs_mw_) HsApplyMltW(pm, w);
+  }
   par_for("hs_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
@@ -1090,12 +1140,13 @@ void HeStarBC(Mesh *pm) {
 
 void HeStarHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  pdata->nhist = 20;
-  const char *lab[20] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
+  // w_mlt, L_MLT (= w max_faces F_MLT r^2 Omega) only with mlt_flux_frozen
+  pdata->nhist = hs_mlt_ ? 22 : 20;
+  const char *lab[22] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
                          "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top",
-                         "v1sq_wall", "Picard"};
-  for (int n=0; n<20; ++n) pdata->label[n] = lab[n];
+                         "v1sq_wall", "Picard", "w_mlt", "L_MLT"};
+  for (int n=0; n<pdata->nhist; ++n) pdata->label[n] = lab[n];
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -1165,7 +1216,13 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     }
     msum += h;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this));
-  for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = sum_this.the_array[n];
+  for (int n=0; n<20; ++n) pdata->hdata[n] = sum_this.the_array[n];
+  if (hs_mlt_) {
+    // host values, summed over ranks by the history output: rank 0 contributes
+    const bool r0 = (global_variable::my_rank == 0);
+    pdata->hdata[20] = r0 ? hs_mw_ : 0.0;
+    pdata->hdata[21] = r0 ? hs_mw_*hs_lmx_ : 0.0;
+  }
   // Picard: mean passes per implicit solve since the previous history output (the
   // counters are MPI_MAX-reduced, identical on every rank: rank 0 contributes)
   pdata->hdata[19] = 0.0;
@@ -1175,6 +1232,33 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     hs_pic_n0_ = pm1->impl_nstep;
     hs_pic_s0_ = pm1->impl_itsum;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void HsApplyMltW()
+//! \brief rebuild <rad_m1>/esrc = w (frozen MLT deposit) + the he_esrc_const test source,
+//! with exactly the operations of the start-up kernels (w = 1: bitwise the same esrc).
+
+void HsApplyMltW(Mesh *pm, const Real w) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto es = pmbp->pradm1->esrc;
+  auto fmd = hs_fm_;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &volume = pmbp->pcoord->volume;
+  auto &x1v = pmbp->pcoord->x1v;
+  const Real esc = hs_esc_, rmx = hs_esrmx_;
+  par_for("hs_esrc_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real e = -(area1(m,k,j,i+1)*fmd(i+1) - area1(m,k,j,i)*fmd(i))/volume(m,k,j,i);
+    e = w*e;
+    if (esc != 0.0 && x1v(m,i) < rmx) e += esc;
+    es(m,k,j,i) = e;
+  });
+  hs_mw_ = w;
 }
 
 //----------------------------------------------------------------------------------------
