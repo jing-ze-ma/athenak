@@ -148,3 +148,7 @@ Then give a recommended max_eta (and STS or not) for each bbot.
   winding. Compare arms at equal time, not per cycle.
 - The eta_eos cap sits in cold, metal-condensed gas: 0.01-1 bar, and on the night side up to about
   1e-4 bar. At 1e13, the fraction of cells at the cap per band was 20-27 % at 0.01-1 bar in the smoke state.
+
+## USER DECISIONS 09-29 ~21:45
+- **dfloor = 1e-13 for the MHD scan: YES** (the main scan as set up; keep the two 1e-16 check arms).
+- **hlld_bx_zero_tol: keep the ORIGINAL value (1e-4, i.e. do not set the key).** No with/without pair needed.
