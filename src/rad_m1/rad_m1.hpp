@@ -317,6 +317,13 @@ class RadiationM1 {
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
   int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
   bool impl_opac_newton;        // implicit_opac_newton: d(rho kappa_T)/dT in the x1 rows
+  // implicit_opac_newton_guard (m1-opn-guard, default 0.5; <= 0 = off): a face's Newton
+  // term is dropped from a row whose diagonal it would take below guard x its value
+  // without it; opn_nskip_d counts the dropped (row, face) pairs on the device,
+  // opn_nskip the all-rank total (summed at the report)
+  Real impl_opn_guard = 0.0;
+  DvceArray1D<Real> opn_nskip_d;
+  Real opn_nskip = 0.0;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
