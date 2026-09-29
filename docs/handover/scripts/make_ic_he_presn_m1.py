@@ -25,7 +25,10 @@ Output: r[cm] rho eint F_r[erg/cm^2/s]  (eint = rho 10^le(rho,T), gas only); the
         MODE rz: as rad but only the radiative zone below the FeCZ is re-integrated (the
         FeCZ keeps the column T(r), F_r = L - F_MLT; it is not stationary without
         convection).
-Usage : make_ic_he_presn_m1.py [out_dir] [col|rad|rz|hopf|relax|state PREV_IC RUN_DIR K]   (file ic_he_presn_m1_<mode>.txt)
+        MODE mlt: OUR OWN code-consistent structure (see main_mlt): inward integration from
+        the Hopf photosphere with the run's tables, the M1 radiation force and standard
+        MLT; writes 5 columns (he_ic_cols = 5: r rho eint F_r(radiative only) E = a T^4).
+Usage : make_ic_he_presn_m1.py [out_dir] [col|rad|rz|hopf|mlt|relax|state PREV_IC RUN_DIR K]   (file ic_he_presn_m1_<mode>.txt)
 """
 import os
 import sys
@@ -33,6 +36,7 @@ import sys
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import RectBivariateSpline, CubicSpline
+from scipy.optimize import brentq
 
 BENCH = '/viper/u2/jinma/ATHENAK/bench'
 COL = BENCH + '/hestar_presn/column_he4_presn_sph.txt'
@@ -81,6 +85,8 @@ def main():
     sk = RectBivariateSpline(ty, tx, kv, kx=1, ky=1)
     global sk_
     sk_ = sk
+    if mode == 'mlt':
+        return main_mlt(out, sle, slp, sk)
     if mode == 'state':
         return main_state(out, sys.argv[3], sys.argv[4], int(sys.argv[5]))
     if mode == 'relax':
@@ -349,6 +355,252 @@ def main_hopf(out, d, sle, slp, sk):
                  '# r[cm]  rho[g/cm^3]  eint[erg/cm^3]  F_r[erg/cm^2/s]  T[K] (T is informational)\n' % (TAU_J, GM))
         for a, b, c, e, tt in zip(r, rho, eint, Fr, T):
             fh.write('%.10e %.10e %.10e %.10e %.10e\n' % (a, b, c, e, tt))
+    print('wrote', fn)
+
+
+ALPHA_MLT = 1.5     # Woosley column header: alpha_MLT = 1.50
+
+
+def thermo(sle, slp, T, rho):
+    """gas-only EOS table + separate radiation (total P = Pg + aT^4/3, e = eg + aT^4/rho).
+    Returns P, Pg, chi_rho, chi_T (of the TOTAL), c_P, delta, nabla_ad (of the total)."""
+    lt, lr = np.log10(T), np.log10(rho)
+    pg = rho*10.0**slp.ev(lt, lr)
+    dlp_dlr, dlp_dlt = slp.ev(lt, lr, dy=1), slp.ev(lt, lr, dx=1)
+    eg = 10.0**sle.ev(lt, lr)
+    deg_dT = eg*sle.ev(lt, lr, dx=1)/T
+    pr = A_RAD_*T**4/3.0
+    P = pg + pr
+    chir = pg*(1.0 + dlp_dlr)/P
+    chit = (pg*dlp_dlt + 4.0*pr)/P
+    cv = deg_dT + 4.0*A_RAD_*T**3/rho
+    cp = cv + P*chit**2/(rho*T*chir)
+    dlt = chit/chir
+    nad = P*dlt/(rho*T*cp)
+    return P, pg, chir, chit, cp, dlt, nad
+
+
+def mlt_gradient(sle, slp, sk, T, rho, r, Ffrac=1.0):
+    """local MLT at (T, rho, r): F = Ffrac L/(4 pi r^2) total flux, g = GM/r^2, l = alpha Hp,
+    Hp = P_tot/(rho g).  Bohm-Vitense/Kippenhahn-Weigert bubble model:
+      v = l sqrt(g delta/(8 Hp)) xi,  xi^2 = nabla - nabla',  nabla' - nabla_ad = 2 U xi,
+      U = 3 a c T^3/(c_P rho^2 kappa l^2) sqrt(8 Hp/(g delta)),
+      F_MLT = rho c_P T sqrt(g delta) Hp^(-3/2) l^2/(4 sqrt2) xi^3,
+      nabla_rad - nabla = 9 xi^3/(8 U)  <=>  xi^3 + (8U/9) xi^2 + (16 U^2/9) xi = (8U/9) W,
+    W = nabla_rad - nabla_ad, nabla_rad = 3 kappa P F/(4 a c g T^4).
+    Returns nabla, F_rad/F, F_MLT/F, v_mlt, kappa, P, Hp, nabla_ad, nabla_rad."""
+    P, pg, chir, chit, cp, dlt, nad = thermo(sle, slp, T, rho)
+    lt, lr = np.log10(T), np.log10(rho)
+    kap = 10.0**sk.ev(lt, lr)
+    g = GM/r**2
+    F = Ffrac*LUM/(4*np.pi*r**2)
+    Hp = P/(rho*g)
+    nrad = 3.0*kap*P*F/(4.0*A_RAD_*CL*g*T**4)
+    W = nrad - nad
+    if W <= 0.0:
+        return nrad, 1.0, 0.0, 0.0, kap, P, Hp, nad, nrad, pg
+    l = ALPHA_MLT*Hp
+    U = 3.0*A_RAD_*CL*T**3/(cp*rho**2*kap*l**2)*np.sqrt(8.0*Hp/(g*dlt))
+    f = lambda x: x**3 + 8.0*U/9.0*x**2 + 16.0*U**2/9.0*x - 8.0*U/9.0*W
+    hi = max(1e-12, min(np.sqrt(W), (8.0*U/9.0*W)**(1.0/3.0)) * 1.0001 + 1e-30)
+    while f(hi) < 0.0:
+        hi *= 2.0
+    xi = brentq(f, 0.0, hi, xtol=1e-14, rtol=1e-13)
+    nab = nad + 2.0*U*xi + xi**2
+    v = l*np.sqrt(g*dlt/(8.0*Hp))*xi
+    return nab, nab/nrad, 1.0 - nab/nrad, v, kap, P, Hp, nad, nrad, pg
+
+
+def main_mlt(out, sle, slp, sk):
+    """OUR OWN code-consistent structure of the 4.0 Msun He star (M, L, R of the Woosley
+    column; every microphysical input is the run's own: gas-only He EOS table, Rosseland
+    table, separate radiation, point-mass gravity GM/r^2).
+    * photosphere: Hopf T^4 = (3/4) Teff^4 (tau + q(tau)) with tau(R) = 2/3 at R = RSTAR,
+      Teff from L and R; the photospheric density rho_R is SHOT so that the atmosphere above
+      integrates to tau -> TAU_TOP (1e-4, as the column's top) at rho = 1e-14 (table floor);
+      atmosphere: gas hydrostatic dPg/dr = -rho (g - kappa_R F/c), F = L/(4 pi r^2).
+    * below tau = TAU_J the state (T, rho) is integrated inward with
+        dPtot/dr = -rho g   (= gas balance dPg/dr = -rho g + rho kappa F_rad/c PLUS the
+                             radiation-pressure gradient dPr/dr = -rho kappa F_rad/c),
+        dlnT/dlnPtot = nabla (MLT, see mlt_gradient), F_rad = F nabla/nabla_rad,
+        F_MLT = F - F_rad,  F = L/(4 pi r^2)
+      down to r = 0.5 R minus a margin for the ghost cells.
+    F_r written to the IC = F_rad (radiative part only): the M1 module carries only that;
+    the missing div F_MLT is what the missing convection would supply."""
+    Teff = (LUM/(4*np.pi*RSTAR**2*SIG))**0.25
+    TAU_J = float(os.environ.get('MLT_TAUJ', '3.0'))
+    TAU_TOP = 1.0e-4
+    RHO_TOP = 1.0e-14
+    RMARGIN = 5.0e9
+
+    def kap_of(T_, rho_):
+        return 10.0**sk.ev(np.log10(T_), np.log10(rho_))
+
+    def rhs1(rr, y):                    # Hopf atmosphere, y = (ln rho, tau)
+        lnr, tau = y
+        tau = max(tau, 1.0e-8)
+        rho_ = np.exp(lnr)
+        F = LUM/(4*np.pi*rr**2)
+        q = q_hopf(tau)
+        T_ = (3.0*F/(4.0*SIG)*(tau + q))**0.25
+        kap_ = kap_of(T_, rho_)
+        dtau = -kap_*rho_
+        dlnT = 0.25*(-2.0/rr + (1.0 + 0.1331*3.4488*np.exp(-3.4488*tau))*dtau/(tau + q))
+        lt_, lr_ = np.log10(T_), np.log10(rho_)
+        p_ = rho_*10.0**slp.ev(lt_, lr_)
+        geff = GM/rr**2 - kap_*F/CL
+        dlnp = -rho_*geff/p_
+        dlnr = (dlnp - slp.ev(lt_, lr_, dx=1)*dlnT)/(1.0 + slp.ev(lt_, lr_, dy=1))
+        return [dlnr, dtau]
+
+    def top_event(rr, y):
+        return y[0] - np.log(RHO_TOP)
+    top_event.terminal = True
+
+    def shoot(lnrho_R):
+        s = solve_ivp(rhs1, [RSTAR, RSTAR + 3.0e11], [lnrho_R, 2.0/3.0], events=top_event,
+                      method='LSODA', rtol=1e-10, atol=1e-13)
+        return s
+
+    def resid(lnrho_R):
+        s = shoot(lnrho_R)
+        if s.t_events[0].size == 0:
+            return -1.0                 # never reaches the floor (Gamma > 1 inversion): too dense
+        return s.y_events[0][0][1] - TAU_TOP
+    a, b = np.log(1.0e-11), np.log(3.0e-9)
+    fa, fb = resid(a), resid(b)
+    assert fa*fb < 0, (fa, fb)
+    lnrho_R = brentq(resid, a, b, xtol=1e-12)
+    rho_R = np.exp(lnrho_R)
+    print('  mlt: Teff %.1f K, photosphere rho_R = %.5e (shot: tau(rho = 1e-14) = %.1e)'
+          % (Teff, rho_R, TAU_TOP))
+
+    # atmosphere above R, nodes every DRN
+    DRN = 2.0e6
+    su = shoot(lnrho_R)
+    rtop_atm = su.t_events[0][0]
+    rx = np.arange(RSTAR, rtop_atm + 5.0e9, DRN)
+    su = solve_ivp(rhs1, [RSTAR, rx[-1]], [lnrho_R, 2.0/3.0], t_eval=rx, method='LSODA',
+                   rtol=1e-10, atol=1e-13)
+    assert su.success, su.message
+    # keep floor: beyond the event the density is below the table; extrapolate isothermally
+    # is not attempted: the pgen needs the IC to r_top + margin, rtop.py chooses r_top.
+    # downward Hopf to tau = TAU_J
+    def evj(rr, y):
+        return y[1] - TAU_J
+    evj.terminal = True
+    rd = np.arange(RSTAR, 0.9*RSTAR, -DRN)
+    s1 = solve_ivp(rhs1, [RSTAR, 0.9*RSTAR], [lnrho_R, 2.0/3.0], t_eval=rd, events=evj,
+                   method='LSODA', rtol=1e-10, atol=1e-13)
+    rj = s1.t_events[0][0]
+    yj = s1.y_events[0][0]
+    Tj = (3.0*(LUM/(4*np.pi*rj**2))/(4.0*SIG)*(yj[1] + q_hopf(yj[1])))**0.25
+    rhoj = np.exp(yj[0])
+    print('  mlt: Hopf -> MLT join at tau = %.2f, r = %.6e (r/R %.4f), T %.4e rho %.4e'
+          % (TAU_J, rj, rj/RSTAR, Tj, rhoj))
+
+    def rhs2(rr, y):                    # y = (ln T, ln rho, tau); MLT interior
+        T_, rho_ = np.exp(y[0]), np.exp(y[1])
+        nab, ffr, fmlt, v, kap_, P, Hp, nad, nrad, pg = mlt_gradient(sle, slp, sk, T_, rho_, rr)
+        g = GM/rr**2
+        dlnP = -rho_*g/P
+        dlnT = nab*dlnP
+        P_, pg_, chir, chit, cp, dlt, nad_ = thermo(sle, slp, T_, rho_)
+        dlnr = (dlnP - chit*dlnT)/chir
+        return [dlnT, dlnr, -kap_*rho_]
+
+    rin = 0.5*RSTAR - RMARGIN
+    rn = np.arange(rj, rin, -DRN)
+    s2 = solve_ivp(rhs2, [rj, rin], [np.log(Tj), np.log(rhoj), yj[1]], t_eval=rn,
+                   method='LSODA', rtol=1e-9, atol=1e-12)
+    assert s2.success, s2.message
+    # assemble ascending
+    m1 = s1.t > rj                      # Hopf nodes between rj and R (excl. duplicates)
+    r_h = s1.t[m1]
+    tau_h = np.maximum(s1.y[1][m1], 1e-8)
+    T_h = (3.0*(LUM/(4*np.pi*r_h**2))/(4.0*SIG)*(tau_h + q_hopf(tau_h)))**0.25
+    rho_h = np.exp(s1.y[0][m1])
+    tau_u = np.maximum(su.y[1][1:], 1e-8)
+    r_u = su.t[1:]
+    T_u = (3.0*(LUM/(4*np.pi*r_u**2))/(4.0*SIG)*(tau_u + q_hopf(tau_u)))**0.25
+    r = np.concatenate([s2.t[::-1], r_h[::-1], r_u])
+    T = np.concatenate([np.exp(s2.y[0])[::-1], T_h[::-1], T_u])
+    rho = np.concatenate([np.exp(s2.y[1])[::-1], rho_h[::-1], np.exp(su.y[0][1:])])
+    # local diagnostics and the F_rad column
+    nn = len(r)
+    ffr = np.ones(nn)
+    fmlt = np.zeros(nn)
+    vmlt = np.zeros(nn)
+    nab_ = np.zeros(nn)
+    nrad_ = np.zeros(nn)
+    nad_ = np.zeros(nn)
+    Hp_ = np.zeros(nn)
+    kap_ = np.zeros(nn)
+    isc = r < rj
+    for i in np.where(isc)[0]:
+        o = mlt_gradient(sle, slp, sk, T[i], rho[i], r[i])
+        nab_[i], ffr[i], fmlt[i], vmlt[i], kap_[i], _, Hp_[i], nad_[i], nrad_[i], _ = o
+    Fr = ffr*LUM/(4*np.pi*r**2)
+    lt, lr = np.log10(T), np.log10(rho)
+    eint = rho*10.0**sle.ev(lt, lr)
+    pg = rho*10.0**slp.ev(lt, lr)
+    kap = 10.0**sk.ev(lt, lr)
+    g = GM/r**2
+    tau = np.zeros(nn)
+    tau_up = 1.0e-4                      # above the last node (shot value)
+    tau[-1] = tau_up
+    for i in range(nn - 2, -1, -1):
+        tau[i] = tau[i+1] + 0.5*(r[i+1] - r[i])*(rho[i]*kap[i] + rho[i+1]*kap[i+1])
+    # envelope mass check
+    Menv = np.trapz(4*np.pi*r**2*rho, r)
+    print('nodes %d  r %.5e .. %.5e ; envelope mass above %.3f R: %.3e g (M_star %.3e, %.1e)'
+          % (nn, r[0], r[-1], r[0]/RSTAR, Menv, GM/6.674e-8, Menv/(GM/6.674e-8)))
+    gam = kap*Fr/CL/g
+    print('Gamma = kappa F_r/(c g): max %.4f at r/R = %.4f' % (gam.max(), r[np.argmax(gam)]/RSTAR))
+    conv = fmlt > 1e-3
+    if conv.any():
+        rc_ = r[conv]
+        print('  convective (F_MLT/F > 1e-3): r/R %.4f .. %.4f ; max F_MLT/F %.4f at r/R %.4f ; '
+              'max v_mlt %.3e cm/s' % (rc_.min()/RSTAR, rc_.max()/RSTAR, fmlt.max(),
+                                       r[np.argmax(fmlt)]/RSTAR, vmlt.max()))
+    for t0 in (1e-2, 2.0/3.0, 1.0, 100.0):
+        i = np.argmin(abs(tau - t0))
+        print('  tau(table kappa) = %.3g at r = %.6e (r/R %.4f) rho %.3e T %.4e'
+              % (t0, r[i], r[i]/RSTAR, rho[i], T[i]))
+    for lim in (3e-14, 1e-14):
+        i = min(np.searchsorted(-rho, -lim), nn - 1)
+        print('  rho = %.1e at r = %.6e (r/R %.4f)' % (lim, r[i], r[i]/RSTAR))
+    # comparison with the Woosley column on its nodes
+    d = np.loadtxt(COL, comments='#')
+    d = d[np.argsort(d[:, 0])]
+    rc, Tc, rc_rho, nab_c, nrad_c = d[:, 0], d[:, 2], d[:, 3], d[:, 5], d[:, 7]
+    fm_c = 1.0 - np.clip(nab_c/nrad_c, 0.0, 1.0)
+    m = (rc >= r[0]) & (rc <= RSTAR*1.0)
+    Ti = np.exp(np.interp(rc[m], r, np.log(T)))
+    ri = np.exp(np.interp(rc[m], r, np.log(rho)))
+    fi = np.interp(rc[m], r, fmlt)
+    print('  vs Woosley column (r/R = %.3f .. 1.0): T/T_col: min %.4f max %.4f ; '
+          'rho/rho_col: min %.4f max %.4f ; F_MLT/F: ours max %.4f, col max %.4f'
+          % (rc[m].min()/RSTAR, (Ti/Tc[m]).min(), (Ti/Tc[m]).max(), (ri/rc_rho[m]).min(),
+             (ri/rc_rho[m]).max(), fi.max(), fm_c[m].max()))
+    for x in (0.5, 0.6, 0.635, 0.7, 0.8, 0.9, 0.968, 0.99, 1.0):
+        j = np.argmin(abs(rc - x*RSTAR))
+        print('    r/R %.3f: T/Tcol %.4f rho/rho_col %.4f  F_MLT/F ours %.4f col %.4f'
+              % (x, np.exp(np.interp(rc[j], r, np.log(T)))/Tc[j],
+                 np.exp(np.interp(rc[j], r, np.log(rho)))/rc_rho[j],
+                 np.interp(rc[j], r, fmlt), fm_c[j]))
+    os.makedirs(out, exist_ok=True)
+    fn = os.path.join(out, 'ic_he_presn_m1_mlt.txt')
+    E = A_RAD_*T**4
+    with open(fn, 'w') as fh:
+        fh.write('# he_star_m1 IC (mode mlt, he_ic_cols = 5): own structure, Hopf photosphere,\n'
+                 '# inward MLT (alpha %.2f) with the run tables; GM = %.6e\n'
+                 '# r[cm] rho eint F_r(radiative part) E=aT^4  | T[K] F_MLT/F (informational,'
+                 ' cols 6,7)\n' % (ALPHA_MLT, GM))
+        for row in zip(r, rho, eint, Fr, E, T, fmlt):
+            fh.write('%.10e %.10e %.10e %.10e %.10e %.10e %.6e\n' % row)
+    np.savez(os.path.join(out, 'mlt_struct.npz'), r=r, rho=rho, T=T, Fr=Fr, fmlt=fmlt,
+             tau=tau, nab=nab_, nrad=nrad_, nad=nad_, Hp=Hp_, kap=kap, vmlt=vmlt, pg=pg)
     print('wrote', fn)
 
 
