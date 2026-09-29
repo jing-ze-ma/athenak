@@ -449,6 +449,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // top sponge (default off) and hooks
   hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
+  // the inner wall face sees the exact mirror of the interior-side state (hydro_fluxes.cpp,
+  // wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero mass flux to
+  // round-off and the interior well-balanced face pressure instead of the ghost/cell mean
+  // (which left a first-order force -2e-3 rho g in the first cell at 640 zones)
+  pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","he_wall_closed",true);
   hs_sp_rate_ = pin->GetOrAddReal("problem","he_sponge_rate",0.0);
   hs_sp_r0_ = pin->GetOrAddReal("problem","he_sponge_r0",hs_rint_);
   hs_rtop_ = rtop;
