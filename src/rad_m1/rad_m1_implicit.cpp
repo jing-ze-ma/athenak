@@ -815,6 +815,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // (m1-keydefault-0927, docs/dev/ke_dt_0926.md 8), false otherwise
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",
                                           force_ref == M1_FREF_WB_ARAD);
+  // DIAGNOSTIC (m1-perf-0928): which opacities the Picard-loop update moves
+  dbg_opac_part = pin->GetOrAddInteger("rad_m1","dbg_opac_part",0);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
@@ -7068,6 +7070,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kscat = kappa_s;
       Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
       M1OpacTab ot = otab;
+      const int opart = dbg_opac_part;
       par_for("m1_impl_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real d = uh(m,IDN,k,j,i);
@@ -7079,10 +7082,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           M1Opacities(otype, d, t, kp, kev, kf, kscat, rref, tref, aa, bb, op, oe,
                       of, os);
         }
-        opac_(m,M1_OP_P,k,j,i) = d*op;
-        opac_(m,M1_OP_E,k,j,i) = d*oe;
-        opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-        iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
+        if (opart != 1) {
+          opac_(m,M1_OP_P,k,j,i) = d*op;
+          opac_(m,M1_OP_E,k,j,i) = d*oe;
+        }
+        if (opart != 2) {
+          opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+          iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
+        }
       });
     }
 
