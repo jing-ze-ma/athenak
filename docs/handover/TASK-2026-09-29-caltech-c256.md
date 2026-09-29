@@ -57,3 +57,13 @@ go into rt-integration before the C256 production.
 
 ## UPDATE 09-29 ~21:00: GPU MEMORY (viper C64 x 256 smoke, job 12027341)
 The C64 x nx1 256 smoke (24 blocks of 256x32x32 on 2 MI300A, rt-integration ae767d20, ck_impl_conserve = 1) ran clean (281 cycles, 0 ck NOT-CONVERGED, dt 3.7-4.05 s = radial CFL as at C32 x 256; offline estimate at C256: radial 2.6 s vs horizontal 9 s, so dt stays radial ~3.9 s) but used **~103 GB per GPU at 3.1M cells per GPU (~33 KB/cell)**. If that scales with cells, C256 (1.0e8 cells) needs ~3.3 TB of GPU memory: **4 H200 nodes (16 x 141 GB, 6.3M cells/GPU) will NOT fit; 8 nodes (32 GPUs, 3.1M cells/GPU, ~103 GB) should just fit; 12 nodes is comfortable.** So benchmark on **8 and 12 nodes** instead of 4 and 8, and record the peak memory per GPU (nvidia-smi). If 8 nodes runs out of memory, try meshblock 256x16x16 (more, smaller blocks) before going up in nodes. Speed at C64: 3.1e7 zone-cycles/s per MI300A.
+
+## UPDATE 09-30 ~01:15: DEEP-MIXING QUESTION (user) - part of the C256 production analysis
+The 10x ledger (viper /viper/ptmp2/jinma/w121prod_0929/budget_rot300_10x, closed to 1e-8 of L) found the deep interior
+(10-430 bar) slowly COOLING at C32 (~-0.9 K per 100 rot): the fluid enthalpy flux grows upward from 1.15e28 erg/s at the
+face above the wall to 4.4e28 at 10 bar while the bottom supplies only Lrad_bot = 9.2e27 (effective T_int ~1.5x the
+input), draining the initial deep adiabat. The 1x deep warms slightly instead. Open: is this upward deep enthalpy flux
+resolved circulation or numerical mixing? At C256 (and, for the resolution trend, C64), record from the first rotations on:
+per-shell radial energy flux split into mean-meridional <rho v_r>_(theta,phi) h and eddy parts, at 1/10/100 bar and
+the wall face; the deep isobar T drift per 10 rot at 10/100 bar and the bottom; compare with C32 (same diagnostics from
+w1x/w10x dumps, ana_rot300*/). If the deep flux falls with resolution it is numerical mixing.
