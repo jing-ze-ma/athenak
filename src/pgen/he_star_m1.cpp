@@ -27,9 +27,9 @@
 //!     lets <rad_m1>/force_reference_work = split be accepted;
 //!   * x1 boundaries (ix1_bc = ox1_bc = user): inner = closed hydro wall carrying the
 //!     scaled initial profile, the luminosity entering through the M1 face flux
-//!     (<rad_m1>/implicit_bc_x1min = flux, implicit_flux_x1min = L/(4 pi r_in^2)); outer =
-//!     hydro outflow with NO inflow (mass may leave through the top, none enters), M1
-//!     Marshak top (implicit_bc_x1max = marshak);
+//!     (<rad_m1>/implicit_bc_x1min = flux, implicit_flux_x1min = L/(4 pi r_in^2));
+//!     outer = hydro outflow with NO inflow (mass may leave through the top, none
+//!     enters), M1 Marshak top (implicit_bc_x1max = marshak);
 //!   * a startup CHECK that the whole initial column, ghost margin included, lies inside
 //!     the EOS table (rho, T) and inside the Rosseland/Planck table grid (fatal);
 //!   * history columns (user_hist): face luminosities, L_in, E_rad, the total energy of
@@ -75,6 +75,7 @@ Real hs_rlo_ = 0.0, hs_dr_ = 1.0;
 int hs_nf_ = 0;
 Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
+bool hs_zflux_ = true;
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -447,6 +448,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   // top sponge (default off) and hooks
+  hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
   hs_sp_rate_ = pin->GetOrAddReal("problem","he_sponge_rate",0.0);
   hs_sp_r0_ = pin->GetOrAddReal("problem","he_sponge_r0",hs_rint_);
   hs_rtop_ = rtop;
@@ -557,7 +559,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   // Riemann flux through a "closed" wall carries mass.  The inner wall loses its mass,
   // transverse momentum and energy fluxes (u0 was just updated with them); the pressure
   // flux stays.  The outer face keeps OUTFLOW and loses only inflow (no mass enters).
-  {
+  if (hs_zflux_) {
     auto flx1 = ph->uflx->x1f;
     auto &mbbcs = pmbp->pmb->mb_bcs;
     par_for("hs_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,

@@ -1,0 +1,155 @@
+# =====================================================================================
+# 4.0 Msun presupernova He star (Woosley 2019: M 3.15 Msun, L 2.3066e38 erg/s = log L 4.78,
+# Teff 48978 K, R 2.3717e11 cm), spherical-polar WEDGE, implicit grey M1 radiation fully
+# coupled to the gas, second order in time (hesdirk2) and space.  Problem generator
+# src/pgen/he_star_m1.cpp:  cmake -D PROBLEM=he_star_m1.
+#
+# Placeholders in upper case are substituted by the run script:
+#   HE_IC_FILE  = ic_he_presn_m1_gas.txt   (docs/handover/scripts/make_ic_he_presn_m1.py)
+#   HE_TABLES   = dir with rosseland_he_x0.0_z0.02.txt and planck_he_x0.0_z0.02_ferg+tops.txt
+# Gate-1a THIN COLUMN (tests_hepresn/analyze_gate1a.py): command-line overrides
+#   mesh/nx2=4 mesh/nx3=4 meshblock/nx2=4 meshblock/nx3=4 mesh/x2min=1.5607963268
+#   mesh/x2max=1.5807963268 mesh/x3max=0.02  (no seed: problem/he_seed = 0).
+#
+# Mesh: r = 0.5 R .. R_TOP (R_TOP = the radius where the ghost cells still have rho >= 3 x
+# 10^eos_logd_min, see the pgen check), ONE MeshBlock along x1 (sp M1 requirement), theta
+# pi/4 .. 3 pi/4 and phi 0 .. pi/2 PERIODIC in the wedge (symmetric about the equator).
+# No two-stream, no MLT, no rt_* keys, no conduction operator.
+# =====================================================================================
+<comment>
+problem = He-star presupernova wedge, implicit M1 (he_star_m1)
+
+<job>
+basename = hepresn
+
+<mesh>
+nghost    = 3
+nx1       = 640
+x1min     = 1.185850e11             # 0.5 R
+x1max     = R_TOP
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 64
+x2min     = 0.7853981633974483      # pi/4
+x2max     = 2.356194490192345       # 3 pi/4
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 64
+x3min     = 0.0
+x3max     = 1.5707963267948966      # pi/2
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+
+<meshblock>
+nx1       = 640
+nx2       = 32
+nx3       = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 300.0
+ndiag      = 10
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos                  = general
+general_eos          = table
+gamma                = 1.6666666667
+eos_h2               = false
+eos_ionization       = true
+eos_metal_ionization = false
+eos_radiation        = false      # MANDATORY with <rad_m1>: the module evolves E
+eos_xh               = 0.0
+eos_yhe              = 0.98
+eos_logd_min         = -14.0      # = the opacity tables' lowest log rho
+eos_logd_max         = -3.0
+eos_logt_min         = 3.8
+eos_logt_max         = 6.5
+eos_dlog             = 0.02
+reconstruct = plm
+rsolver     = lhllc
+fofc        = true
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+# floors: dfloor = the EOS table's lowest density (top-cell IC rho / dfloor: see README),
+# tfloor at the table's lowest T (10^3.8 K), dfloor keeps the velocity, vceil as he4_presn_cs
+dfloor  = 1.0e-14
+tfloor_kelvin = 6.309573445e3
+pfloor  = 1.0e0
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+
+<rad_m1>
+c_light          = 2.99792458e10
+arad             = 1.583122e-46   # a_cgs*T_unit^4, T_unit = mu m_u/k_B = 1.202724e-8 K
+chat_over_c      = 1.0
+closure          = vet_col
+opacity          = table
+temp_unit_kelvin = 1.202724e-8    # T[K] = T_code * this
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad        # the pgen builds Phi_eff from the IC column
+force_reference_work = split      # the pgen gives the reference work (fref_wsplit_ok)
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_gas_newton = true
+implicit_eos_cache  = true
+implicit_flux    = central
+implicit_enthalpy = plm
+implicit_vimp    = true
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5  # thin-cell cure (top)
+time_scheme      = hesdirk2
+vet_col_every    = 1
+time2_vet_col    = predict
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 1.305278e15   # L/(4 pi r_in^2), L = 2.3066e38, r_in = 0.5 R
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+
+<problem>
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm       = 4.18143e26            # G M, M = 6.2651e33 g
+he_ic_file  = HE_IC_FILE
+he_opac_table   = HE_TABLES/rosseland_he_x0.0_z0.02.txt
+he_planck_table = HE_TABLES/planck_he_x0.0_z0.02_ferg+tops.txt
+he_nfine    = 16384
+he_tau_int  = 1.0
+he_sponge_rate = 0.0
+he_seed     = 0.0
+
+<output1>
+file_type   = hst
+dt          = 5.0
+data_format = %24.16e
+
+<output2>
+file_type   = rst
+dt          = 1.0e30
