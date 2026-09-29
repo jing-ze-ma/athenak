@@ -199,6 +199,7 @@ ck_impl_demax = 0.5    # default: bound on the total |e - e*|/e* per call (0 = o
 ck_impl_floorbound = true   # 1x SOLAR (x1/README): was true in the 10x input
 ck_impl_kkt_demax = true   # 1x SOLAR (x1/README): was true in the 10x input
 ck_impl_kkt_row = true   # user 09-26: identity row for cells on the demax bound (merge 427f9f58; binary must include it). 1x production NOT-CONVERGED 20/2113 -> 0
+ck_impl_conserve = 1   # user 09-29: reported ck fluxes consistent with the applied energy in bound cells; solution bitwise unchanged (needs rt-integration >= ae767d20)
 ck_impl_verbose = false
 ck_impl_debug = 0
 ck_impl_once = false

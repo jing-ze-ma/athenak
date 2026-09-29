@@ -19,6 +19,11 @@ Do **not** start the production; report the numbers and the user decides the nod
 
 ## Steps
 1. Build (rt-integration tip), record the md5.
+   **C256 production (user 09-29):** must use rt-integration >= ae767d20 (merge of dhj-ck-conserve) with
+   `problem/ck_impl_conserve = 1` (add it to `remap.athinput`, `<problem>` block; solution bitwise unchanged,
+   reported ck fluxes consistent with the applied energy in bound cells). NOTE: the same merge sets
+   `problem/flux_hst_rkavg = true` by default: the dhj hst flux columns are now RK-weighted fluid fluxes
+   (semantics change vs older hst files; set it false to reproduce the old columns).
 2. Remap (login node, ~20 s, python3 + numpy):
    ```bash
    source docs/handover/caltech-2026-09-26/inputs/wasp121_1x/grid_w121_1x.env
