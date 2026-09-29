@@ -7,7 +7,7 @@ starts first, cancel the Caltech ones (`scancel 3640301 3640302`, nothing spent 
 
 - Dir `/resnick/groups/carnegie_poc/jingze/w121prod_0930/` (package w121_3x_pkg md5 9dc9472ee4545b1b0150767577c068ec,
   SETUP.sh run with data from athenak_data/exo_fms_ck; input = the package w121prod_3x.athinput unchanged).
-- Build 3640301 (expansion): build_inc.sh w3x gpu **2fd94098** -> `athena.gpu` (md5 in build.3640301.out).
+- Build 3640301 (expansion): build_inc.sh w3x gpu **2fd94098** -> `athena.gpu`, BUILD_OK, md5 0b507eeeb19ef2a6cd72ca832ffe685b.
 - Production 3640302 (afterok build): 1 node x 2 H200, `prod.sub` ARM=3x (copy of the 1x/10x w121prod_0928 script),
   fresh start with a 50-cycle in-job smoke (exits 1 on FATAL / NOT-CONVERGED / rc != 0), then tlim 3.304605e7 (rot 300),
   -t 15:45. 10x took 13.7 h on 2 H200 here; if 3x does not reach rot 300 in one link, chain with afterok.
