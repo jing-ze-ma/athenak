@@ -202,3 +202,13 @@ DOWNWELLING (v_r -2 km/s vs |v_r| < 0.5 km/s around) = adiabatic compression; NO
 2.4-2.6, no deceleration at 4-deg binning) and NOT H recombination (mu 1.26 = atomic through the knot; recombination, mu
 rising to 2.3, starts downstream at +126..+174). At 1e-5 bar downwelling -6.5 km/s: near the top sponge (1e-7..1e-6 bar),
 possible top influence. The jet is supersonic everywhere on the night side (Mach 2-6).
+**Emission post-processor DONE (09-30 ~23:50):** /viper/ptmp2/jinma/w121prod_0929/synth2_emis/RESULTS.md (scripts in
+docs/handover/scripts/w121/synth2_emis/, uncommitted there). pRT 3.4 R1000 ck + FastChem (ions, dissociation), PHOENIX
+star, real throughputs, 72 phases, angle-dependent per-column rays (no scattering). **Main finding: GCM closure bias**
+(memory ck-spherical-closure-overemits-0930): ray RT on the GCM's own table gives 0.80 (1x) / 0.87 (10x) of the GCM OLR;
+the ck_spherical face closure reproduces it (0.96/1.02). New vs observed (1x | 10x | obs): NRS1 day/night 3219/805 |
+3479/326 | 3924/136; NRS2 3830/1257 | 4261/632 | 4924/630; offsets NRS1/2 17.8/18.6 | 6.4/7.0 | 3.4/2.7 deg E; T_day/
+T_night 2488/1622 | 2667/1300 | 2717/1562 K; eps 0.370 | 0.138 | 0.246. Offsets unchanged by the post-processing (< 1 deg).
+Masked knot: max -47 ppm (CO 4.5-4.8 um), -36 NRS1, -28 NRS2 at phase 0.194; offsets move 0.3-0.9 deg. Open: fix the
+closure (user), scattering/reflected light (user), 416 MB Chrome cache /viper/u2/jinma/.cache/selenium (deletion was
+blocked for the agent; user to decide).
