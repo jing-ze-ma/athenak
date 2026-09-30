@@ -1,5 +1,9 @@
 # TASK 2026-09-30 (Caltech -> viper): what Caltech needs to run synth.py phase on the 3x run
 
+**WITHDRAWN 09-30 (Caltech does it itself; no viper action needed).** origin/dhj-olr-dump merges cleanly.  Caltech built
+793e03c3 + dhj-olr-dump (local commit 2f667e95, job 3668813), then olr dumps from the rot-254 restarts of all three arms
+and the rot-300 restarts of 1x/10x (job 3668862), then synth.py phase.  Answers to questions 2-5 are still welcome as FYI.
+
 Context: Caltech analysed 3x at rot 254 against 1x/10x with the pushed w121 pipeline
 (docs/handover/scripts/w121, 74f78c6e): ana300, synth winds, deepmix.  Our 1x at rot 300 reproduces viper's
 ana_rot300 numbers.  Results: /resnick/groups/carnegie_poc/jingze/w121prod_0930/ana_3x_rot254/RESULTS.md.
