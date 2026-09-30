@@ -564,6 +564,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       plm->pmhd->peos->eos_data.x1_phi_min =
           pin->GetOrAddReal("mhd", "lhlld_x1_phi_min", 1.0);
     }
+    if (global_variable::my_rank == 0) {
+      if (plm->phydro != nullptr) {
+        std::cout << "dhj: <hydro>/lhllc_x1_phi_min = "
+                  << plm->phydro->peos->eos_data.x1_phi_min << std::endl;
+      }
+      if (plm->pmhd != nullptr) {
+        std::cout << "dhj: <mhd>/lhlld_x1_phi_min = "
+                  << plm->pmhd->peos->eos_data.x1_phi_min << std::endl;
+      }
+    }
   }
   // problem/budget_dt > 0 (DIAGNOSTIC): the per-shell ledger (EBudCk).  Read only if the
   // key exists, so a run without it is untouched (also its restart files).
