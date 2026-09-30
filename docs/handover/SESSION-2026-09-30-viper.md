@@ -190,3 +190,8 @@ worker.md and memory. User granted `scontrol hold/release` (allow rule in .claud
 classifier still blocked it twice in this session - may need /hooks or a restart to load).
 Orion task TASK-2026-09-30-orion-he-m1pos DROPPED (no transfer path). WASP-121b analysis scripts pushed:
 docs/handover/scripts/w121/.
+**Secondary hot spot (user question 09-30 23:40):** WASP-121b 1x rot-300 (dumps 146-150) has a compact equatorial hot
+knot at lon +110..+120 deg (past the evening terminator) at 1e-5..1e-4 bar, ~3300 K vs ~1500 K night; gone by 1e-3 bar;
+absent at 10x. Maps /viper/ptmp2/jinma/w121prod_0929/hotspot2/ (Tmaps_rot300.png, maps_w1x/w10x.npz, maps.py; script copy
+docs/handover/scripts/w121/hotspot2/). Masked-knot phase-curve test queued with the emission agent (RESULTS.md section in
+synth2_emis/); my estimate before it: at most tens of ppm, only in strong band cores (CO 4.5-4.8 um).
