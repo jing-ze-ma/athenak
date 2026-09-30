@@ -67,3 +67,6 @@ resolved circulation or numerical mixing? At C256 (and, for the resolution trend
 per-shell radial energy flux split into mean-meridional <rho v_r>_(theta,phi) h and eddy parts, at 1/10/100 bar and
 the wall face; the deep isobar T drift per 10 rot at 10/100 bar and the bottom; compare with C32 (same diagnostics from
 w1x/w10x dumps, ana_rot300*/). If the deep flux falls with resolution it is numerical mixing.
+
+## UPDATE 09-30 ~02:30: build >= 793e03c3 for the C256 production
+DeltaAI found a cubed-sphere seam flux MPI request leak on uniform meshes (NOTE-2026-09-29-deltaai-seam-mpi-leak.md; one leaked Isend request per off-rank seam neighbour per stage; Cray MPICH aborts after ~8100 cycles) and a CUDA-only dhj MHD startup segfault (NOTE-2026-09-29-deltaai-c2p-track-cuda.md). Both fixed on rt-integration (793e03c3, ad992f7b). The C256 production (hundreds of ranks, long) must use rt-integration >= 793e03c3. The benchmark may use the older build.
