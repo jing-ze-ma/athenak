@@ -735,7 +735,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
   two_stream_rt::ck_impl_norm_eps =
       pin->GetOrAddReal("problem","ck_impl_norm_eps",1.0e-3);
-  two_stream_rt::ck_impl_maxit = pin->GetOrAddInteger("problem","ck_impl_maxit",8);
+  // default changed 09-30 (user), was 8
+  two_stream_rt::ck_impl_maxit = pin->GetOrAddInteger("problem","ck_impl_maxit",24);
   two_stream_rt::ck_impl_dtmax = pin->GetOrAddReal("problem","ck_impl_dtmax",0.5);
   two_stream_rt::ck_impl_verbose =
       pin->GetOrAddBoolean("problem","ck_impl_verbose",false);
@@ -916,14 +917,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // before the key existed picks up true.
   two_stream_rt::ck_impl_kkt_row =
       pin->GetOrAddBoolean("problem","ck_impl_kkt_row",true);
-  // problem/ck_impl_conserve: 0 = off (default, bitwise), 1 = the reported face fluxes
+  // problem/ck_impl_conserve: 0 = off (bitwise), 1 (default) = the reported face fluxes
   // (Lir_top, the ledger) consistent with the energy applied in the cells a ck_implicit
   // call leaves on a bound, 2 = in every cell.  The solution is unchanged either way
   // (CkConserveFlux, utils/two_stream_rt.hpp).  Read only if present, so a run without
   // it writes the same restart header.
+  // default changed 09-30 (user), was 0
   two_stream_rt::ck_impl_conserve =
       pin->DoesParameterExist("problem","ck_impl_conserve")
-      ? pin->GetInteger("problem","ck_impl_conserve") : 0;
+      ? pin->GetInteger("problem","ck_impl_conserve") : 1;
+  if (global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: ck_impl_maxit " << two_stream_rt::ck_impl_maxit
+              << ", ck_impl_conserve " << two_stream_rt::ck_impl_conserve
+              << ", sponge_top " << hot_jupiter_param.sponge_top
+              << ", sponge_bottom " << hot_jupiter_param.sponge_bottom
+              << " (defaults 24, 1, 1, 0 since 09-30)" << std::endl;
+  }
   // problem/ck_impl_osc = N: per-cell Aitken damping of oscillating cells from pass N
   // on (utils/two_stream_column_ck.hpp; cknewton_0928).  0 = off (default, bitwise).
   two_stream_rt::ck_impl_osc = pin->GetOrAddInteger("problem","ck_impl_osc",0);
@@ -2268,7 +2277,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // Base field in CODE units (Heaviside-Lorentz, p_mag = B^2/2): problem/bbot, or
       // problem/bbot_gauss converted by ReadHotJupiterBbot (pgen.cpp), which also prints
       // it in both units.  B_r = bbot cos(theta) (r0/r)^3: bbot is the polar field at r0.
-      Real bbot = hot_jupiter ? hot_jupiter_param.bbot : pin->GetReal("problem","bbot");
+      // default changed 09-30 (user), was none (fatal if absent)
+      Real bbot = hot_jupiter ? hot_jupiter_param.bbot
+                              : pin->GetOrAddReal("problem","bbot",0.0);
       auto &b0 = pmbp->pmhd->b0;
       auto &bcc0 = pmbp->pmhd->bcc0;
       par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0, n3m1, 0, n2m1, 0, n1m1, //ks,ke,js,je,is,ie,
@@ -3683,8 +3694,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // explicit radial term is dropped only when that scheme is on; with etotgrav the
     // energy flux carries the potential either way
     const bool rotpot = pm->pgen->hot_jupiter_param.rot_potential;
-    // problem/sponge_top, problem/sponge_bottom (default true): switch the two velocity
-    // sponges at the end of this kernel off; captured by value.
+    // problem/sponge_top (default true), problem/sponge_bottom (default false since
+    // 09-30): switch the two velocity sponges at the end of this kernel off; captured by
+    // value.
     const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
     const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
     const bool rotpot_src = rotpot && use_wellbalance_dynamic;
