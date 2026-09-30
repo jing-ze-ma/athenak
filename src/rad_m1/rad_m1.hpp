@@ -325,6 +325,22 @@ class RadiationM1 {
   int impl_opn_guard_mode = 2;   // implicit_opac_newton_guard_mode (bits 1 rhs, 2 off)
   DvceArray1D<Real> opn_nskip_d;
   Real opn_nskip = 0.0;
+  // m1-positivity (every key read only when named; absent = off = bitwise the old code):
+  //  implicit_g0_limit = w > 0: on the FIRST Picard pass the lagged net-absorption term
+  //    g0 of the face-flux equations is clipped to |chat dt g0| <= w (max(E^k, E_old) +
+  //    (chat/c) max(e_gas,0)) (the energy a cell can exchange in one step)
+  //  implicit_g0_exchange: from the second pass on g0 = -(SRCR - SRCB E^k)/(chat dt), the
+  //    exchange of the linearised source row (= the pointwise g0 at the fixed point)
+  //  implicit_pos_gas: energy-conserving positivity limiter of the written-back gas eint
+  //  implicit_pos_floor: the E floor takes the added energy from the gas (conserving)
+  // pos_cnt_d: device counters (M1_POS_*), pos_cnt the all-rank totals at the report
+  Real impl_g0_lim = 0.0;
+  bool impl_g0_exch = false;    // implicit_g0_exchange (m1-positivity, see ImplicitSolve)
+  bool impl_pos_gas = false;
+  bool impl_pos_floor = false;
+  Real impl_pos_gas_frac = 1.0e-3;
+  DvceArray1D<Real> pos_cnt_d;
+  Real pos_cnt[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
