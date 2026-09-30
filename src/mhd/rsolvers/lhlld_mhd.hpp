@@ -100,8 +100,12 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   Real spd[5];         // signal speeds, left to right
 
   //------------------------ ADIABATIC HLLD solver ---------------------------------------
-  // <mhd>/lhlld_x1_phi_min (EOS_Data::x1_phi_min): floor on phi on x1 faces only
-  const Real phi_min = (ivx == IVX) ? eos.x1_phi_min : 0.0;
+  // <mhd>/lhlld_x1_phi_min (EOS_Data::x1_phi_min): floor on phi on x1 faces only,
+  // applied as the equivalent floor on chi (phi >= phi_min <=> chi >= 1-sqrt(1-phi_min))
+  // so that phi = chi*(2-chi) keeps its expression tree: a select on phi changed the
+  // compiler's FMA contraction of (1-phi) and broke bitwise identity with the key off.
+  const Real chi_min = (ivx == IVX && eos.x1_phi_min > 0.0) ?
+                       1.0 - sqrt(1.0 - fmin(1.0, eos.x1_phi_min)) : 0.0;
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -193,8 +197,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real cur = sqrt(0.5*(qb + sqrt(fmax(0.0, SQR(qb) - 4.0*usqr*caxsqr))));
       // eqns. (14)-(15) of Minoshima & Miyoshi
       Real chi = fmin(1.0, fmax(cul, cur)/fmax(cfl, cfr));
+      chi = fmax(chi, chi_min);  // x1 faces; chi_min = 0 (no-op) when the key is off
       Real phi = chi*(2.0 - chi);
-      if (phi_min > 0.0) phi = fmax(phi, phi_min);  // x1 faces, key set only
 
       // Real cfmax = std::max(cfl,cfr);
       // if (wl_ivx <= wr_ivx) {
