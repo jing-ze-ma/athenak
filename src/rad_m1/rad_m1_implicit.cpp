@@ -7460,19 +7460,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (r0 < -1.0) {r0 = -1.0;}
       iw_(m,M1_IW_RF0,k,j,i) = r0;
     });
-    // m1-positivity, implicit_g0_limit = w: the lagged g0 = rho (kappa_E E0 - kappa_P a T^4)
-    // of the iterate enters every face-flux equation as - c dt v_f g0_f, a lagged,
-    // explicit, centred term.  Where the exchange is stiff and the iterate is out of
-    // equilibrium (Fe-bump plume: kappa_P >> kappa_F, c dt rho kappa_P ~ 1e5) chat dt g0
-    // is orders of magnitude above the energy the cell can exchange in the step, and that
-    // term alone drives the solved E negative (He presn wedge, dbg_t2_admiss).  At a
-    // converged backward-Euler state chat dt g0 = -q, the energy actually exchanged,
-    // which is bounded by the energy present; the clip is then inactive.  Own kernel, so
-    // the lag kernel above is untouched.
+    // m1-positivity, implicit_g0_limit = w: the lagged
+    // g0 = rho (kappa_E E0 - kappa_P a T^4) of the iterate enters every face-flux
+    // equation as - c dt v_f g0_f, a lagged, explicit, centred term.  Where the
+    // exchange is stiff and the iterate is out of equilibrium (Fe-bump plume:
+    // kappa_P >> kappa_F, c dt rho kappa_P ~ 1e5) chat dt g0 is orders of magnitude
+    // above the energy the cell can exchange in the step, and that term alone drives the
+    // solved E negative (He presn wedge, dbg_t2_admiss).  At a converged backward-Euler
+    // state chat dt g0 = -q, the energy actually exchanged.  Own kernel, so the lag
+    // kernel above is untouched.
     // implicit_g0_exchange: from the second pass on, g0 is taken from the EXCHANGE the
     // previous pass's linearised source row gives at the iterate, g0 = -(SRCR - SRCB E^k)
-    // /(chat dt), instead of rho (kappa_E E^k - kappa_P a T_k^4).  The two are the same at
-    // the fixed point (the write-back's q = SRCR - SRCB E' is the exchanged energy), but
+    // /(chat dt), instead of rho (kappa_E E^k - kappa_P a T_k^4).  The two are the same
+    // at the fixed point (the write-back's q = SRCR - SRCB E' is the exchanged energy),
+    // but
     // in a radiation-dominated, stiffly coupled cell the pointwise form is the difference
     // of two numbers ~1e5 x its converged value and a relative error of T_k of 1e-6 moves
     // it by more than the cell's energy per step.  The first pass keeps the pointwise
