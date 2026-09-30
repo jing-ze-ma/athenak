@@ -853,7 +853,8 @@ TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
   // do not check flux send for ICs (stage < 0)
   if (stage >= 0) {
     // with SMR/AMR check sends of restricted fluxes of U complete
-    if (pmy_pack->pmesh->multilevel) {
+    // (and on the cubed sphere, the panel-seam flux sends: see Hydro::ClearSend)
+    if (pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere) {
       tstat = pbval_u->ClearFluxSend();
       if (tstat != TaskStatus::complete) return tstat;
     }
@@ -913,7 +914,7 @@ TaskStatus MHD::ClearRecv(Driver *pdrive, int stage) {
   // do not check flux receives when stage < 0 (i.e. ICs)
   if (stage >= 0) {
     // with SMR/AMR check receives of restricted fluxes of U complete
-    if (pmy_pack->pmesh->multilevel) {
+    if (pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere) {
       tstat = pbval_u->ClearFluxRecv();
       if (tstat != TaskStatus::complete) return tstat;
     }
