@@ -848,6 +848,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // point is the same: the term vanishes there).  <= 0 turns the guard off (the
   // unguarded rows of m1-perf-0928, bitwise).
   impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
+  // m1-positivity: read only when named, so that an input without them (and the restart
+  // echo) is bitwise the old one (rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","implicit_g0_limit")) {
+    impl_g0_lim = pin->GetReal("rad_m1","implicit_g0_limit");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_gas")) {
+    impl_pos_gas = pin->GetBoolean("rad_m1","implicit_pos_gas");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_gas_frac")) {
+    impl_pos_gas_frac = pin->GetReal("rad_m1","implicit_pos_gas_frac");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_floor")) {
+    impl_pos_floor = pin->GetBoolean("rad_m1","implicit_pos_floor");
+  }
+  Kokkos::realloc(pos_cnt_d, M1_POS_N);
+  Kokkos::deep_copy(pos_cnt_d, 0.0);
   // implicit_opac_newton_guard_mode: DEFAULT 2 = the diagonal test + the sign of the
   // neighbour entry (He presn wedge gate: 7 floor clips with the diagonal alone, 0 with
   // both); 0 = the diagonal test alone; + 1 = also the
@@ -5699,6 +5715,15 @@ void RadiationM1::ImplicitReport() {
     opn_nskip = g;
 #endif
   }
+  if (impl_g0_lim > 0.0 || impl_pos_gas || impl_pos_floor) {
+    auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
+    for (int q = 0; q < M1_POS_N; ++q) {pos_cnt[q] = hpc(q);}
+#if MPI_PARALLEL_ENABLED
+    Real g[M1_POS_N];
+    MPI_Allreduce(pos_cnt, g, M1_POS_N, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int q = 0; q < M1_POS_N; ++q) {pos_cnt[q] = g[q];}
+#endif
+  }
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
   if (global_variable::my_rank != 0) return;
@@ -5725,6 +5750,17 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_opac_newton_guard=" << impl_opn_guard
               << ": Newton face terms dropped (all ranks, all passes)=" << opn_nskip
               << " per solve=" << ((impl_nstep > 0.0) ? (opn_nskip/impl_nstep) : 0.0)
+              << std::endl;
+  }
+  if (impl_g0_lim > 0.0 || impl_pos_gas || impl_pos_floor) {
+    std::cout << "<rad_m1> m1-positivity: implicit_g0_limit=" << impl_g0_lim
+              << " clipped cell-passes=" << pos_cnt[M1_POS_G0]
+              << " | implicit_pos_gas=" << impl_pos_gas << " (frac "
+              << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]
+              << " energy moved rad->gas=" << pos_cnt[M1_POS_GAS_DE]
+              << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
+              << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
+              << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
               << std::endl;
   }
   if (impl_onep > 0) {
@@ -7419,6 +7455,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (r0 < -1.0) {r0 = -1.0;}
       iw_(m,M1_IW_RF0,k,j,i) = r0;
     });
+    // m1-positivity, implicit_g0_limit = w: the lagged g0 = rho (kappa_E E0 - kappa_P a T^4)
+    // of the iterate enters every face-flux equation as - c dt v_f g0_f, a lagged,
+    // explicit, centred term.  Where the exchange is stiff and the iterate is out of
+    // equilibrium (Fe-bump plume: kappa_P >> kappa_F, c dt rho kappa_P ~ 1e5) chat dt g0
+    // is orders of magnitude above the energy the cell can exchange in the step, and that
+    // term alone drives the solved E negative (He presn wedge, dbg_t2_admiss).  At a
+    // converged backward-Euler state chat dt g0 = -q, the energy actually exchanged,
+    // which is bounded by the energy present; the clip is then inactive.  Own kernel, so
+    // the lag kernel above is untouched.
+    if (impl_g0_lim > 0.0 && src_on) {
+      const Real w = impl_g0_lim;
+      const bool hh = have_hydro;
+      auto pc_ = pos_cnt_d;
+      par_for("m1_impl_g0lim", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real ea = fmax(fmax(iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EN,k,j,i)), 0.0)
+                        + (hh ? (ch/cl)*fmax(iw_(m,M1_IW_EGN,k,j,i), 0.0) : 0.0);
+        const Real gm = w*ea/(ch*dt);
+        const Real g = iw_(m,M1_IW_G0,k,j,i);
+        if (fabs(g) > gm) {
+          iw_(m,M1_IW_G0,k,j,i) = (g > 0.0) ? gm : -gm;
+          Kokkos::atomic_add(&pc_(M1_POS_G0), 1.0);
+        }
+      });
+    }
     if ((tmode == 1 || tmode == 2) && it == 0) {dbg_tensor_init = true;}
     if (ctr) {ctr_init = true;}
 
@@ -8946,6 +9007,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // time2_vstage, default true on sp, false = the old stage-start form)
   const bool vfx = t2st && impl_vimp && t2_fvnew;
   const bool coupling_ = coupling;  // local: a member read in a kernel captures this
+  // m1-positivity (rad_m1.hpp): the energy-conserving gas eint limiter and E floor
+  const bool pgas = impl_pos_gas && have_hydro && coupling && dbgh;
+  const bool pflr = impl_pos_floor;
+  const bool pany = pgas || pflr;
+  const Real pgf = impl_pos_gas_frac;
+  auto peos = flr.eos;
+  auto pc_ = pos_cnt_d;
+  const bool psph = sph_geom;
+  auto pvol = pmy_pack->pcoord->volume;
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -9112,6 +9182,44 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (thrd) {
           fp3 = 0.5*(g3l + g3r) + (w3 + (w1*d13 + w2*d23 + w3*d33))*es;
         }
+      }
+    }
+    // m1-positivity.  Both moves keep e_gas + (c/chat) E of the cell exactly; eg is the
+    // gas internal energy the write-back sets (the kinetic part is ekin + work).
+    //  implicit_pos_floor: an E below e_floor is raised to it with the energy taken from
+    //    the gas (down to its limit below); what the gas cannot cover is counted.
+    //  implicit_pos_gas: a gas eint below e_min = max(e(rho, tfloor),
+    //    implicit_pos_gas_frac x max(e_gas old, 0)) is raised to it with energy taken
+    //    from the radiation (down to e_floor).
+    if (pany && !efc) {
+      const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                               mbsize.d_view(m).dx3);
+      Real emin = 0.0;
+      if (have_hydro) {
+        emin = pgf*fmax(iw_(m,M1_IW_EGN,k,j,i), 0.0);
+        if (peos.tfloor > 0.0) {
+          Real te, pp, cr, ct, tcv;
+          peos.ThermoAt(dd, peos.tfloor, te, pp, cr, ct, tcv);
+          emin = fmax(emin, te);
+        }
+      }
+      if (pflr && !(ep > efl)) {
+        const Real need = (cl/ch)*(efl - ep);           // gas units
+        const Real avail = (have_hydro && feedback) ? fmax(eg - emin, 0.0) : 0.0;
+        const Real take = fmin(need, avail);
+        if (have_hydro && feedback) {eg -= take;}
+        ep = efl;
+        Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
+        Kokkos::atomic_add(&pc_(M1_POS_FLR_DE), take*vol);
+        Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), (need - take)*vol);
+      }
+      if (pgas && feedback && eg < emin) {
+        const Real need = emin - eg;                     // gas units
+        const Real take = fmin(need, fmax((cl/ch)*(ep - efl), 0.0));
+        eg += take;
+        ep -= (ch/cl)*take;
+        Kokkos::atomic_add(&pc_(M1_POS_GAS), 1.0);
+        Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
       }
     }
     M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
