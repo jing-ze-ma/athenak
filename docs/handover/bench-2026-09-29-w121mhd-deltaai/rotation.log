@@ -1,0 +1,30 @@
+2026-09-29 18:56:55 b3_e0_f13: ghx4 3272763 cancelled -> interactive 3272853 (00:45:00)
+2026-09-29 19:00:57 b3_e11_f13: ghx4 3272762 cancelled -> interactive 3272946 (00:45:00)
+2026-09-29 19:03:59 b3_e12_f13: ghx4 3272761 cancelled -> interactive 3272953 (00:45:00)
+2026-09-29 19:07:01 b3_e12_f13_r2: ghx4 3272764 cancelled -> interactive 3272964 (00:45:00)
+2026-09-29 19:28:43 b3_e11_f13: ghx4 3273060 cancelled -> interactive 3273187 (00:45:00)
+2026-09-29 19:55:15 b3_e12_f13: ghx4 3273061 cancelled -> interactive 3273402 (00:45:00)
+2026-09-29 20:12:21 b3_e12_f13_r2: ghx4 3273062 cancelled -> interactive 3273498 (00:45:00)
+2026-09-29 20:37:29 b3_e13_sts_f13: ghx4 3273063 cancelled -> interactive 3273639 (01:00:00)
+2026-09-29 21:22:45 b10_e0_f13: ghx4 3273064 cancelled -> interactive 3273965 (01:00:00)
+2026-09-29 21:55:50 b10_e11_f13: ghx4 3273065 cancelled -> interactive 3274202 (01:00:00)
+2026-09-29 22:10:12 loop restarted with setsid nohup on gh-login02.delta.ncsa.illinois.edu (user 21:5x)
+2026-09-29 22:37:17 b10_e12_f13: ghx4 3273066 cancelled -> interactive 3274466 (01:00:00)
+2026-09-29 23:18:39 b3_e13_f13: ghx4 3273067 cancelled -> interactive 3275197 (01:30:00)
+2026-09-29 23:49:50 b10_e13_f13: ghx4 3273068 cancelled -> interactive 3275373 (01:30:00)
+2026-09-30 00:24:44 loop PAUSED (SIGSTOP) for sts-lean test job
+2026-09-30 00:55:19 loop RESUMED (SIGCONT) after sts-lean test 3275840
+2026-09-30 00:55:19 b10_e13_sts_f13: ghx4 3273069 cancelled -> interactive 3275909 (01:30:00)
+2026-09-30 00:59:16 loop PAUSED; b10_e13_sts_f13 interactive 3275909 (pending) cancelled for sts-lean test 2, resubmitted after
+2026-09-30 01:07:00 b10_e13_sts_f13: resubmitted -> interactive 3276005 (01:30:00)
+2026-09-30 01:07:00 loop RESUMED after test 2 3275952
+2026-09-30 01:23:39 loop PAUSED: GPU regression suite (tst_gpu 14047b4f) goes after b10_e13_sts_f13
+2026-09-30 02:38:26 suite job 3276635 submitted
+2026-09-30 03:02:55 loop RESUMED after suite 3276635
+2026-09-30 03:02:55 b3_e14_sts_f13: ghx4 3273070 cancelled -> interactive 3276770 (02:00:00)
+2026-09-30 07:09:43 b10_e13_sts_f13: -r finish after wall stop at 99.6 % (3276005) -> interactive 3277988 (00:30:00; waiter of session 8cd78fe4)
+2026-09-30 08:24:54 b10_e14_sts_f13: ghx4 3273071 cancelled -> interactive 3278345 (02:00:00)
+2026-09-30 10:23:51 no pending ghx4 arm left, rotation done
+2026-09-30 11:42:50 b10_e14_sts_f13: -r finish after wall stop at 99.95 % (3278345) -> interactive (00:20:00; session f42a65bb)
+2026-09-30 11:58:06 suite job 3280072 submitted (tst_gpu 115bbe10 merged tree; session f42a65bb)
+2026-09-30 12:18:47 b10_e14_sts_f13: 2nd -r finish (3279924 wall-stopped at 99.99 %) -> interactive 3280176 (00:25:00; session f42a65bb)

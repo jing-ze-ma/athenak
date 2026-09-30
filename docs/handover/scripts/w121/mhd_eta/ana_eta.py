@@ -315,11 +315,11 @@ def analyse_bin(fn, inp, tab, G, cap, H):
     ok = np.isfinite(T1)
     out['Tday'] = np.sum(np.where(ok & day, T1, 0) * w) / np.sum(w * (ok & day))
     out['Tnight'] = np.sum(np.where(ok & ~day, T1, 0) * w) / np.sum(w * (ok & ~day))
-    # dME/dt from the hst around this bin (+-0.1 rot)
+    # dME/dt from the hst around this bin (+-0.25 rot; hst cadence is 0.1 rot -- DeltaAI local fix, was 0.1)
     out['dEMdt'] = np.nan
     if H is not None and '1-ME' in H:
         me = H['1-ME'] + H['2-ME'] + H['3-ME']
-        sel = np.abs(H['time'] - fd['time']) < 0.1 * PROT
+        sel = np.abs(H['time'] - fd['time']) < 0.25 * PROT
         if sel.sum() >= 3:
             out['dEMdt'] = np.polyfit(H['time'][sel], me[sel], 1)[0]
     return out

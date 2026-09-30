@@ -1,0 +1,57 @@
+#!/bin/bash -l
+# run_arm_deltaai.sub: one w121 MHD max_eta-scan arm on DeltaAI (2 GH200 of 1 node by default; user 09-29: 2-GPU jobs schedule much sooner). Adapted from the package's
+# run_arm.sub (TASK-2026-09-29-deltaai-w121-mhd-etamax) with the w121prod_deltaai.sub launch recipe:
+# login shell + module reset, MPICH_GPU_SUPPORT_ENABLED=1, srun -c 16, all GPUs visible, map by rank.
+#   sbatch [-t HH:MM:SS] run_arm_deltaai.sub ARMDIR [NROT] [NRANK]
+#   fresh start (-i mhd.athinput) if ARMDIR/rst is empty, else -r from the newest restart.
+#   SMOKE=<ncycles>: run ARMDIR fresh for that many cycles in ARMDIR/smoke.<jobid> (no rst/bin kept in ARMDIR).
+# Hang guard: the run is killed if its log does not grow for STALL seconds (default 900).
+#SBATCH -J w121eta
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=2
+#SBATCH --gpus-per-node=2
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=200G
+#SBATCH --time=04:00:00
+#SBATCH -o /work/nvme/bivj/jma20/w121_mhd_0929/logs/%x.%j.out
+set -u
+ARM=${1:?ARMDIR}; NROT=${2:-2}; NR=${3:-2}
+BIN=${BIN:-/u/jma20/ATHENAK/builds/bin/athena_dhj_dev_2dfe4e95ff1e}   # rt-integration 6e7eeb3e (c2p_track CUDA fix) + seam flux request fix (branch fix-seam-flux-send)
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export MPICH_GPU_SUPPORT_ENABLED=1 OMP_NUM_THREADS=1 SLURM_CPU_BIND=cores KOKKOS_MAP_DEVICE_ID_BY=mpi_rank
+SRUN=${SRUN:-srun}
+T0=33046050.0; PROT=110153.5
+TLIM=$(python3 -c "print('%.6f' % ($T0 + $NROT*$PROT))")
+# athena's own wall limit: slurm limit minus 10 min, so the final restart is written
+LIMS=$(squeue -h -j ${SLURM_JOB_ID:-0} -o %L 2>/dev/null | awk -F'[-:]' '{n=NF; s=$n+60*$(n-1)+3600*(n>2?$(n-2):0)+86400*(n>3?$(n-3):0); print s}')
+LIMS=${LIMS:-14400}; WS=$((LIMS-600)); WALL=$(printf '%02d:%02d:%02d' $((WS/3600)) $((WS%3600/60)) $((WS%60)))
+echo "arm=$ARM nrot=$NROT nrank=$NR tlim=$TLIM wall=$WALL host=$(hostname) job=${SLURM_JOB_ID:-none}"
+echo "bin $BIN md5 $(md5sum < $BIN | cut -c1-32) (expect $(cat $BIN.md5 2>/dev/null))"
+cd "$ARM" || exit 2
+L="$SRUN -n $NR -c 16 --cpu-bind=cores"
+if [ -n "${SMOKE:-}" ]; then
+  D=smoke.${SLURM_JOB_ID:-none}; mkdir -p $D; cp mhd.athinput $D/
+  cd $D; ARGS="-i mhd.athinput time/nlim=$SMOKE"
+else
+  RST=$(ls -1 rst/dhj.*.rst 2>/dev/null | tail -1)
+  if [ -z "$RST" ]; then ARGS="-i mhd.athinput"; else ARGS="-r $RST"; fi
+fi
+LOG=run.${SLURM_JOB_ID:-none}.log
+echo "run: $L $BIN $ARGS -d . time/tlim=$TLIM -t $WALL  (cwd $PWD)"
+[ -n "${DRY:-}" ] && exit 0
+$L $BIN $ARGS -d . time/tlim=$TLIM -t $WALL > $LOG 2>&1 &
+PID=$!
+STALL=${STALL:-900}; last=0; since=0
+while kill -0 $PID 2>/dev/null; do
+  sleep 30; sz=$(stat -c %s $LOG 2>/dev/null || echo 0)
+  if [ "$sz" = "$last" ]; then since=$((since+30)); else since=0; last=$sz; fi
+  if [ $since -ge $STALL ]; then echo "HANG: $LOG unchanged for ${STALL}s, killing"; kill $PID; sleep 20; kill -9 $PID 2>/dev/null; fi
+done
+wait $PID; RC=$?
+echo "rc=$RC arm=$ARM"
+echo "NOT-CONVERGED $(grep -c 'NOT-CONVERGED' $LOG)  FATAL $(grep -c FATAL $LOG)  nan $(grep -ciw nan $LOG)  dtCOLLAPSE $(grep -ci 'dt collapse' $LOG)"
+grep -m5 -iE 'FATAL|\bnan\b|dt collapse' $LOG
+grep -E 'cycle=' $LOG | tail -2
+tail -n 12 $LOG
