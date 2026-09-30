@@ -232,3 +232,11 @@ super-rotation), not post-processing. Line depths (Fe CCF ~1500 ppm, Na ~3000 pp
 arms_apu.sh + smoke_FH at ~00:15): check /viper/ptmp2/jinma/hepresn_wind_0930/RESULTS.md; if missing, the agent was cut off ->
 run analyze_wind.py on its W*/G*/arm dirs. Next-session checks: beon128 ext to 47,000 s (does the collapsed state persist?),
 He box accuracy (m1pos_0930/hebox/ana.sh 60000 74000), onn/onv128 + offh64 ends (m1pos_0930/analyze.py), C256 bench 12026299.
+
+## 9. Update 10-01 ~00:40 CEST
+- He steady-wind agent was cut off; the session ran analyze_wind.py: /viper/ptmp2/jinma/hepresn_wind_0930/RESULTS.md.
+  **No steady wind in any 1-D arm** (A wall, B frozen, D wall+frozen, E relax300): the beta-law IC wind drains in ~7,000 s,
+  r > 1.2 R becomes near-vacuum infall; Gamma above R 0.2-0.5, below R <1 on average -> continuum driving cannot launch
+  a wind; envelope bursts (M(r<R) -25 %) fall back. Smoke F/H (hesdirk2 0.6; nx1 660) rc=1 in 1 s, never launched.
+- offh64 12046529 was held ("user env retrieval failed"); released 00:35.
+- beon128 ext at 37,713 s, clean (0 NaN); ETA 47,000 s ~01:30. onn128 32,845 / onv128 31,713 / onnh64 32,981 s, clean.
