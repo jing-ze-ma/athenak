@@ -264,15 +264,22 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
 
-  // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
-  int nmnv = 3*nmb;
+  // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components), one team
+  // each, as in PackAndSendCC.  This used to be 3*nmb teams, each walking the neighbours
+  // serially with a team_barrier after every one ("to prevent race condition in
+  // overlapping assignments", a comment that belongs to the UNPACK, where ghost faces are
+  // shared between buffers).  The pack only READS b/cb and every (m,n,v) writes its own
+  // slice ndat*v.. of its own buffer (sbuf[n] row m, or rbuf[dn] row dm), so the triples
+  // are independent.  With 3*nmb = 72 teams on a 132-SM GH200 the serial walk made this
+  // the most expensive kernel of a cubed-sphere MHD cycle (0.93 ms per call; 09-30).
+  int nmnv = 3*nmb*nnghbr;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
   BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int m = tmember.league_rank()/3;
+    const int m = tmember.league_rank()/(3*nnghbr);
+    const int n = (tmember.league_rank()/3)%nnghbr;
     const int v = tmember.league_rank()%3;
 
-    // scalar loop over neighbors to prevent race condition in overlapping assignments
-    for (int n=0; n<nnghbr; ++n) {
+    {
       // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
       // both sides; FillPanelCornersFC overwrites this corner block. See bvals.hpp.
       if (nghbr.d_view(m,n).gid >= 0 &&
@@ -947,7 +954,6 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         }
           } // end if-do-cs/do-pole block
       } // end if-neighbor-exists block
-      tmember.team_barrier();
     }
   }); // end par_for_outer
   }

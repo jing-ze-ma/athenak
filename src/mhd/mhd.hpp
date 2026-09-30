@@ -257,6 +257,9 @@ class MHD {
   // since the owner last zeroed it; rows 2/3 the same for the operator-split conversion
   // after the split radiation.  Diagnostic only: the state is not touched.
   bool c2p_track = false;
+  // set by Resistivity::RKGCoeff under <mhd>/rkg_lean for the intermediate RKG
+  // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
+  bool rkg_skip_u = false;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;

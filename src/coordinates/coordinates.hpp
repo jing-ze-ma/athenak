@@ -121,6 +121,12 @@ class Coordinates {
                                     const DvceArray4D<Real> &wtemp,
                                     const int il, const int iu, const int jl,
                                     const int ju, const int kl, const int ku);
+  // The cell-centred-field part of GnomonicEquiangleRaiseVelMHD ALONE, bitwise the same
+  // arithmetic: for the intermediate RKG super-stages (<mhd>/rkg_lean), which change
+  // only B and the total energy and read nothing but the cell-centred field.
+  void GnomonicCellCenteredB(const DvceFaceFld4D<Real> &b0, DvceArray5D<Real> &bcc0,
+                             const int il, const int iu, const int jl, const int ju,
+                             const int kl, const int ku);
   // The FROZEN half of the two routines above, for the first conversion of a RESTARTED
   // run under a general EOS: the metric velocity raise and the metric internal energy,
   // with the thermodynamic cache (wtemp, wder) neither read nor written.  See

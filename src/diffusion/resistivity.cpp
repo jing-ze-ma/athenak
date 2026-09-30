@@ -46,6 +46,13 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
+    rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
+    if (rkg_lean && (pp->pmesh->multilevel || !pp->pmesh->use_cubed_sphere)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/rkg_lean needs a uniform (not multilevel) "
+                << "cubed-sphere mesh" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     cs_resist_x1_centred = pin->GetOrAddBoolean("mhd", "cs_resist_x1_centred", true);
       
     // Total number of MeshBlocks on this rank to be used in array dimensioning
