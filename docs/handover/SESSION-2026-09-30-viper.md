@@ -133,3 +133,20 @@ diagonals in fast thin plume cells) -> guard 23ec1fb8. **Retracted**: the theta-
 - Standing earlier: 2 GPUs per viper node; HSA_XNACK=1 + HSA_NO_SCRATCH_RECLAIM=1; GPU timings only; ROCm 7.2
   (`*_gpu72` builds); incremental builds (builds/build_inc_viper.sh); rsolver lhllc (hydro) / lhlld (MHD) for dhj;
   noise gates at equal physical time.
+
+## 7. Update 09-30 ~10:20 CEST (read this first; supersedes the sections above where they differ)
+- **Merged since 06:40:** defaults flip 9bf6db23 (ck_impl_maxit 24, ck_impl_conserve 1, bbot default 0, sponge_bottom
+  false; NOTE-2026-09-30-defaults.md, AUDIT-2026-09-30-default-candidates.md); lhllc/lhlld radial-face fix aa9d51b7
+  (NOTE-2026-09-30-lhllc-x1-phi.md): lhllc left an undamped 2-cell RADIAL odd-even velocity mode in the deep (low-Mach
+  phi ~3e-3 radially); `lhllc_x1_phi_min`/`lhlld_x1_phi_min` = 1 restores the full dissipation on x1 faces; default 1 for
+  deep_hot_jupiter_rt ONLY (global 0; the He box would lose ~4 % v1'/v_MLT). Deep v_r, per-shell Mdot and the deep
+  enthalpy flux of every earlier lhllc dhj run are dominated by that mode (deepmix_c32 baseline, 10x deep cooling).
+- **Queued on viper apu (est. ~10:45-13:10):** C256 benchmarks 12028087 (16 N), 12026299 (32 N); WASP-121b FRESH starts
+  WITH the radial fix and original solver keys: w1xf 12037717(+18), w10xf 12037719(+20), w3xk 12034178(+79) (3x),
+  binary athena.gpu.x1f / .w3xk = 44be5b99 (same src as aa9d51b7), dirs /viper/ptmp2/jinma/w121prod_0929/w{1xf,10xf,3xk};
+  He presn with **hllc** (user: near-sonic convection, Mach ~0.4): 64x64 12037044(+45) and 128x128 12037023-25
+  (M1/ad3d_hllc, M1/ad3d_128). HELD: viper MHD arms 12028523-25.
+- **Caltech:** 3x (original keys, pre-fix) 3640302 running, ETA rot 300 ~15:00 CEST; ck A/B: no limit cycle
+  (494540fd) -> the 3x dt decline is not a solver effect; compare with w3xk (radial fix) once it runs.
+- **Next:** C256 benchmark -> machine choice; He presn hllc 64 vs 128; fixed arms vs pre-fix (dt, odd-even share, deep
+  flux via deepmix.py); DeltaAI MHD max_eta scan; then the 3x/10x MHD drag set (PLAN-2026-09-30-w121-mhd-drag-metallicity.md).
