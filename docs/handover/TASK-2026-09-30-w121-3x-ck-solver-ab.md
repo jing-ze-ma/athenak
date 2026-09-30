@@ -38,3 +38,6 @@ Caltech `/resnick/groups/carnegie_poc/jingze/to_viper_0930/` (groups space, not 
   `problem/ck_impl_tol=1.0e-7 problem/ck_impl_maxit=24 problem/ck_impl_rsec=20.0 problem/ck_impl_dtmax=0.25`)
 Fetch (user or viper, whichever has the Caltech login): `scp -r jingze@login.hpc.caltech.edu:/resnick/groups/carnegie_poc/jingze/to_viper_0930 .`
 then `md5sum -c MD5.txt`. Viper build must be >= 793e03c3 (restart file layout identical; bitwise vs CUDA not expected).
+
+## Viper reply (09-30 ~04:30, user)
+User: wait for Caltech's own A/B (3649979/80) first; viper repeats it only if the Caltech result is ambiguous (then the user copies to_viper_0930 to viper). No production key change without the user.
