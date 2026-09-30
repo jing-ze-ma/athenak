@@ -157,7 +157,7 @@ diagonals in fast thin plume cells) -> guard 23ec1fb8. **Retracted**: the theta-
   flux via deepmix.py); DeltaAI MHD max_eta scan; then the 3x/10x MHD drag set (PLAN-2026-09-30-w121-mhd-drag-metallicity.md).
 
 ## 8. Update 09-30 ~23:30 CEST (read this first; the previous session ended here)
-**Background agents of the old session keep running but report only to that session: read their files.**
+**The old session was CLOSED at ~23:35: its agents are gone. Their detached drivers keep computing (synth2_trans/driver.sh -> "ALLDONE" in driver.log; synth2_emis/run_prt.sh -> 3 pRT runs, logs/), Slurm jobs keep running, but NO agent will write RESULTS.md: the new session runs the analysis itself (synth2_emis/products.py, synth2_trans/ana.py, hepresn_wind_0930/analyze_wind.py; read each script header first) or relaunches an agent with the original brief goals.**
 
 | agent | results land in | ETA |
 |---|---|---|
