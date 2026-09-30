@@ -144,16 +144,9 @@ Real EintFromDensT(const EOS_Data &eos, const Real Rgas, const Real igm1, const 
 //! state, to build a wave eigenvector -- has to fetch it through the device, which is
 //! what this does. It launches a one-element kernel, so it is for setup only; never call
 //! it in a loop.
-inline Real HostGamma1FromP(const EOS_Data &eos, const Real d, const Real p) {
-  if (!eos.IsGeneral()) return eos.gamma;
-  DvceArray1D<Real> dout("pgen_eos_scalar", 1);
-  par_for("pgen_eos_eval", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(int) {
-    dout(0) = eos.Gamma1(d, eos.EnergyFromPressure(d, p));
-  });
-  auto hout = Kokkos::create_mirror_view(dout);
-  Kokkos::deep_copy(hout, dout);
-  return hout(0);
-}
+//! Defined once in pgen_eos_utils.cpp (it holds a KOKKOS_LAMBDA and is called from more
+//! than one TU, e.g. linear_wave.cpp and box_convection.cpp; see c2p_track).
+Real HostGamma1FromP(const EOS_Data &eos, const Real d, const Real p);
 
 }  // namespace pgen_eos
 

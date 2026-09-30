@@ -81,6 +81,7 @@ add_executable(
         hydro/hydro_wellbalance.cpp
         hydro/hydro_fluxes.cpp
         hydro/hydro_fofc.cpp
+        hydro/fofc_etotgrav.cpp
         hydro/hydro_newdt.cpp
         hydro/hydro_tasks.cpp
         hydro/hydro_update.cpp
@@ -136,6 +137,7 @@ add_executable(
         outputs/pdf.cpp
 
         pgen/pgen.cpp
+        pgen/pgen_eos_utils.cpp
         pgen/tests/advection.cpp
         pgen/tests/balsara_vortex.cpp
         pgen/tests/collapse.cpp
