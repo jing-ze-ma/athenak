@@ -1284,6 +1284,22 @@ inline int ck_sweep_cache = 2;
 // other caller gets, and what the pgen falls back to.  See
 // tests_ck_sweep_form/README.md and README_default.md.
 inline int ck_sweep_form = 0;
+// problem/ck_sph_dilute (PROTOTYPE, default false = bitwise the face above): replace the
+// spherical face condition of the tm form (S and A D continuous, i.e. the Eddington
+// K = J/3 closure, under which J does NOT dilute through a transparent shell and a sharp
+// photosphere below a shell of area ratio x = A_top/A_ph emits 2x/(1+x) times sigma T^4)
+// by the geometric one for hemispherically isotropic streams:
+//     d_below = d_above,   A_a u_above = A_b u_below + (A_a - A_b) d_above,
+// i.e. the down ray's intensity is invariant (the rays that reach the sphere below keep
+// it) and the down rays that miss the sphere below turn round into the up ray.  A (u - d)
+// is still single-valued at every face, an isotropic field (u = d) passes unchanged, and
+// through a transparent shell A u is conserved, so the photosphere emits sigma T^4 for
+// any x.  In the thick limit it differs from the Eddington face by O(1/(tau r/H)).
+// Face maps (tm): R <- 1 - rho (1 - R), Sc <- rho Sc, rho = A_b/A_a = (1-beta)/(1+beta);
+// solve: u_b = R d_a + Sc, d_b = d_a.  tm (ck_sweep_form = 1) only, explicit or
+// ck_implicit, NOT with ck_impl_lin / ck_impl_jac_lin (their stored-factorisation kernels
+// carry the old face).  tests_ck_sph/closure_0930 (cksph_test_0930).
+inline bool ck_sph_dilute = false;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -2414,6 +2430,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   auto &x1v_ = std::get<65>(ctx_);
   auto &xP_g = std::get<66>(ctx_);
   auto &xT_g = std::get<67>(ctx_);
+  const bool dil = std::get<68>(ctx_);   // problem/ck_sph_dilute
   constexpr bool SPH = decltype(sph_tag)::value;
   constexpr bool BSP = decltype(bsp_tag)::value;
   constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
@@ -3180,9 +3197,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real tj = 1.0 - static_cast<Real>(e0);
               const Real rj = static_cast<Real>(Rc[cc]);
               const Real dnj = 1.0 + rj*bt;
-              const Real r1 = (rj + bt)/dnj;
+              const Real rhd = (1.0 - bt)/(1.0 + bt);   // ck_sph_dilute: A_b/A_a
+              const Real r1 = dil ? (1.0 - rhd*(1.0 - rj)) : (rj + bt)/dnj;
               const Real r2 = tj*tj*r1;
-              const Real c1 = (1.0 - bt)/dnj;
+              const Real c1 = dil ? rhd : (1.0 - bt)/dnj;
               const Real sold[3] = {jS[cc][1], jS[cc][2], 0.0};
               for (int s=0; s<3; ++s) {
                 const Real dsf = (s < 2) ? jfc[cc][s] : 0.0;
@@ -3204,10 +3222,18 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             if (FRM == 1) {
               // tm: reflection addition at the face, T^2 through each half
               const RtF bb = static_cast<RtF>(bt);
-              const RtF dn = one + rr*bb;
-              const RtF rn = (rr + bb)/dn;
-              ss = (one - bb)*ss/dn;
-              rr = rn;
+              if (dil) {
+                // ck_sph_dilute: d passes unchanged, the up ray is diluted by
+                // A_b/A_a and gains the down rays that miss the sphere below
+                const RtF rh = (one - bb)/(one + bb);
+                rr = one - rh*(one - rr);
+                ss = rh*ss;
+              } else {
+                const RtF dn = one + rr*bb;
+                const RtF rn = (rr + bb)/dn;
+                ss = (one - bb)*ss/dn;
+                rr = rn;
+              }
               ss = tr*(rr*ql + ss) + pl;
               rr = tr*tr*rr;
               ss = tr*(rr*qu + ss) + pu;
@@ -3255,8 +3281,13 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             const RtF rr = I_down[cc][f];
             const RtF ss = Cmx[cc][f];
             const RtF bb = static_cast<RtF>(bt);
-            ub = (rr*(one + bb)*da + ss)/(one + rr*bb);
-            db = da + bb*(da - ub);
+            if (dil) {
+              ub = rr*da + ss;
+              db = da;
+            } else {
+              ub = (rr*(one + bb)*da + ss)/(one + rr*bb);
+              db = da + bb*(da - ub);
+            }
           } else {
             const RtF gg = I_down[cc][f];
             const RtF hh = Cmx[cc][f];
@@ -3292,8 +3323,8 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               // the top datum is fixed: d^+ carries nothing, W = 0
               const Real rj = static_cast<Real>(I_down[cc][ie+1]);
               const Real dnj = 1.0 + rj*bt;
-              const Real al = (1.0 + bt)/dnj;
-              const Real be = bt/dnj;
+              const Real al = dil ? 1.0 : (1.0 + bt)/dnj;
+              const Real be = dil ? 0.0 : bt/dnj;
               const Real s0 = Js0[cc][ie+1];
               const Real s1 = Js1[cc][ie+1];
               const Real s2 = Js2[cc][ie+1];
@@ -3435,9 +3466,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               }
               const Real rj = static_cast<Real>(I_down[cc][i]);
               const Real dnj = 1.0 + rj*bt;
-              const Real al = (1.0 + bt)/dnj;
-              const Real be = bt/dnj;
-              const Real wr = tj*tj*tj*tj*(1.0 - bt)/dnj*jQ[cc];
+              const Real al = dil ? 1.0 : (1.0 + bt)/dnj;
+              const Real be = dil ? 0.0 : bt/dnj;
+              const Real wr = dil ? tj*tj*tj*tj*(1.0 - bt)/(1.0 + bt)*jQ[cc]
+                                  : tj*tj*tj*tj*(1.0 - bt)/dnj*jQ[cc];
               const Real s0 = Js0[cc][i];
               const Real s1 = Js1[cc][i];
               const Real s2 = Js2[cc][i];
@@ -6682,6 +6714,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // body of this launcher is the function template TsrtCkChain above
         // picket_fence_two_stream_RT_pass; ck_chain_ctx hands it, by reference, the
         // locals it reads (unpacked there in the same order).
+        const bool dil_ = ck_sph_dilute;   // problem/ck_sph_dilute
         auto ck_chain_ctx = std::forward_as_tuple(ACC, AFC, albedo, ap, Bb_g, bface_on,
                                                   boltz_sigma, BTF, cbt_, cf_g, ckc0_g,
                                                   ckci_g, ckco_g, ckdb_g, ckdif_,
@@ -6694,7 +6727,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                   layer_legacy, MIXF, mug, n1, nblk, nmb1,
                                                   omega, pb_g, pfid, pfl0, Qb_g, rhoN,
                                                   Src_g, T_g, tide, Tint, Tint4, wg, X1F,
-                                                  x1v_, xP_g, xT_g);
+                                                  x1v_, xP_g, xT_g, dil_);
         auto launch_ck_chain = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
                                    auto cch_tag, auto frm_tag, auto fop_tag,
                                    auto jac_tag) {

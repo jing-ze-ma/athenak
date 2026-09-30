@@ -871,6 +871,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_fuse = pin->GetOrAddBoolean("problem","ck_impl_fuse",t4def);
   two_stream_rt::ck_impl_jac_lin = pin->GetOrAddBoolean("problem","ck_impl_jac_lin",
       t4def && two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_lin_thr == 1);
+  // problem/ck_sph_dilute (prototype, default off): see two_stream_rt::ck_sph_dilute
+  two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
+  if (two_stream_rt::ck_sph_dilute &&
+      (!two_stream_rt::ck_spherical || two_stream_rt::ck_sweep_form != 1 ||
+       two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_dilute needs "
+              << "ck_spherical, ck_sweep_form = 1, ck_impl_lin = false and "
+              << "ck_impl_jac_lin = false" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   two_stream_rt::ck_impl_jac0 = pin->GetOrAddBoolean("problem","ck_impl_jac0",false);
   two_stream_rt::ck_impl_jneg = pin->GetOrAddBoolean("problem","ck_impl_jneg",false);
   two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",
