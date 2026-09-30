@@ -1118,6 +1118,37 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void Coordinates::GnomonicCellCenteredB()
+//! \brief The cell-centred field of GnomonicEquiangleRaiseVelMHD and nothing else (same
+//! expressions, so bcc0 is bitwise what the full inversion would write).  Used by the
+//! intermediate RKG super-stages under <mhd>/rkg_lean: those stages change only the face
+//! field and the total energy, and the resistive energy fluxes read only bcc0, so the
+//! EOS inversion (twice per call under a general EOS) is not needed until the last one.
+
+void Coordinates::GnomonicCellCenteredB(const DvceFaceFld4D<Real> &b0,
+    DvceArray5D<Real> &bcc0, const int il, const int iu, const int jl, const int ju,
+    const int kl, const int ku) {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &cos_cell_ = cos_cell;
+  auto &sin_cell_ = sin_cell;
+  auto &x1v_ = x1v;
+  auto &x1f_ = xx1f;
+  par_for("cs_bcc_only", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, il, iu,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real c = cos_cell_(m,k,j);
+    const Real sn = sin_cell_(m,k,j);
+    const Real bx = CellCenteredRadialFld(b0.x1f(m,k,j,i), b0.x1f(m,k,j,i+1),
+                                          x1f_(m,i), x1f_(m,i+1), x1v_(m,i));
+    const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+    const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+    bcc0(m,IBX,k,j,i) = bx;
+    bcc0(m,IBY,k,j,i) = (by_n + c*bz_n)/sn;
+    bcc0(m,IBZ,k,j,i) = bz_n;
+  });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Coordinates::GnomonicEquiangleLowerMom
 //! \brief The inverse of GnomonicEquiangleRaiseVel: build the conserved state from
 //! primitives on the cubed sphere. Use this wherever a problem generator would otherwise

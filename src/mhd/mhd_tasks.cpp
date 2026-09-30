@@ -128,8 +128,13 @@ TaskStatus MHD::SaveMHDState(Driver *pdrive, int stage) {
 
 TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
   // post receives for U
-  TaskStatus tstat = pbval_u->InitRecv(nmhd+nscalars);
-  if (tstat != TaskStatus::complete) return tstat;
+  TaskStatus tstat = TaskStatus::complete;
+  // skipped on BOTH sides (no Irecv here, no send in SendU): ClearRecv/ClearSend then
+  // wait on the previous stage's already completed requests, which return at once
+  if (!rkg_skip_u) {
+    tstat = pbval_u->InitRecv(nmhd+nscalars);
+    if (tstat != TaskStatus::complete) return tstat;
+  }
   // post receives for B
   tstat = pbval_b->InitRecv(3);
   if (tstat != TaskStatus::complete) return tstat;
@@ -455,6 +460,7 @@ TaskStatus MHD::RestrictU(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to pack/send cell-centered conserved variables
 
 TaskStatus MHD::SendU(Driver *pdrive, int stage) {
+  if (rkg_skip_u) return TaskStatus::complete;
   TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0);
   return tstat;
 }
@@ -464,6 +470,7 @@ TaskStatus MHD::SendU(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to receive/unpack cell-centered conserved variables
 
 TaskStatus MHD::RecvU(Driver *pdrive, int stage) {
+  if (rkg_skip_u) return TaskStatus::complete;
   TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0);
   return tstat;
 }

@@ -61,6 +61,11 @@ class Resistivity {
 //  Real min_xe;
   Real max_eta;
   bool use_rkg_sts; // RKG super-stepping (Mattia+2026)
+  // <mhd>/rkg_lean (default false): the intermediate RKG super-stages (stage < s) skip
+  // what only the LAST stage needs -- the conserved-variable halo exchange, the EOS
+  // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
+  // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
+  bool rkg_lean = false;
   // cubed sphere + STRETCHED radial grid: take the radial derivative of the Stokes loop
   // AT the x1 face instead of at the midpoint of the two cell centres (see
   // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an
@@ -93,6 +98,8 @@ class Resistivity {
     TaskStatus CT(Driver *d, int stage);
     TaskStatus CopyCons(Driver *d, int stage);
     TaskStatus UpdateResistivity(Driver *d, int stage);
+    TaskStatus ConToPrimRKG(Driver *d, int stage);
+    TaskStatus NewTimeStepRKG(Driver *d, int stage);
 
   // functions to add resistive E-Field and energy flux
   void AddResistiveEMFs(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);

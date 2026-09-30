@@ -16,6 +16,7 @@
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "mesh/mesh.hpp"
+#include "driver/driver.hpp"
 #include "coordinates/coordinates.hpp"
 #include "eos/eos.hpp"
 #include "diffusion/viscosity.hpp"
@@ -37,7 +38,8 @@ void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<T
 
   // assemble "before_stagen" task list
   id.res_coeff = tl["before_rkg_stagen"]->AddTask(&Resistivity::RKGCoeff, this, none);
-  id.mhd_irecv = tl["before_rkg_stagen"]->AddTask(&mhd::MHD::InitRecv, pmhd, none);
+  // after RKGCoeff: that is where rkg_lean sets pmhd->rkg_skip_u for this stage
+  id.mhd_irecv = tl["before_rkg_stagen"]->AddTask(&mhd::MHD::InitRecv, pmhd, id.res_coeff);
 
   // assemble "stagen" task list
   id.res_flux      = tl["rkg_stagen"]->AddTask(&Resistivity::Fluxes, this, none);
@@ -59,8 +61,8 @@ void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<T
   id.mhd_bcs       = tl["rkg_stagen"]->AddTask(&mhd::MHD::ApplyPhysicalBCs, pmhd, id.mhd_recvb);
   id.mhd_prol      = tl["rkg_stagen"]->AddTask(&mhd::MHD::Prolongate, pmhd, id.mhd_bcs);
   id.res_copyu     = tl["rkg_stagen"]->AddTask(&Resistivity::CopyCons, this, id.mhd_prol);
-  id.mhd_c2p       = tl["rkg_stagen"]->AddTask(&mhd::MHD::ConToPrim, pmhd, id.res_copyu);
-  id.mhd_newdt     = tl["rkg_stagen"]->AddTask(&mhd::MHD::NewTimeStep, pmhd, id.mhd_c2p);
+  id.mhd_c2p       = tl["rkg_stagen"]->AddTask(&Resistivity::ConToPrimRKG, this, id.res_copyu);
+  id.mhd_newdt     = tl["rkg_stagen"]->AddTask(&Resistivity::NewTimeStepRKG, this, id.mhd_c2p);
 
   // assemble "after_stagen" task list
   id.mhd_csend = tl["after_rkg_stagen"]->AddTask(&mhd::MHD::ClearSend, pmhd, none);
@@ -108,6 +110,7 @@ TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
     Real ajm1 = 1.0 - bjm1;
     gat = -mut*ajm1;
   }
+  pmy_pack->pmhd->rkg_skip_u = rkg_lean && (stage < s);
   return TaskStatus::complete;
 }
 
@@ -117,7 +120,29 @@ TaskStatus Resistivity::Fluxes(Driver *pdrive, int stage) {
 }
 
 TaskStatus Resistivity::CopyIniConsAndFluxes(Driver *pdrive, int stage) {
-  if (stage == 1) {
+  if (stage == 1 && rkg_lean) {
+    // only the energy slot of the conserved registers is read (RKUpdate, n = IEN)
+    auto &u0 = pmy_pack->pmhd->u0;
+    auto &uf = pmy_pack->pmhd->uflx;
+    const int n = IEN;
+    auto A = Kokkos::ALL;
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(u_ideal,A,n,A,A,A),
+                      Kokkos::subview(u0,A,n,A,A,A));
+    Kokkos::deep_copy(DevExeSpace(), b_ideal.x1f, pmy_pack->pmhd->b0.x1f);
+    Kokkos::deep_copy(DevExeSpace(), b_ideal.x2f, pmy_pack->pmhd->b0.x2f);
+    Kokkos::deep_copy(DevExeSpace(), b_ideal.x3f, pmy_pack->pmhd->b0.x3f);
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(uflx_ideal.x1f,A,n,A,A,A),
+                      Kokkos::subview(uf.x1f,A,n,A,A,A));
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(uflx_ideal.x2f,A,n,A,A,A),
+                      Kokkos::subview(uf.x2f,A,n,A,A,A));
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(uflx_ideal.x3f,A,n,A,A,A),
+                      Kokkos::subview(uf.x3f,A,n,A,A,A));
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(u2,A,n,A,A,A),
+                      Kokkos::subview(u0,A,n,A,A,A));
+    Kokkos::deep_copy(DevExeSpace(), b2.x1f, pmy_pack->pmhd->b0.x1f);
+    Kokkos::deep_copy(DevExeSpace(), b2.x2f, pmy_pack->pmhd->b0.x2f);
+    Kokkos::deep_copy(DevExeSpace(), b2.x3f, pmy_pack->pmhd->b0.x3f);
+  } else if (stage == 1) {
     Kokkos::deep_copy(DevExeSpace(), u_ideal, pmy_pack->pmhd->u0);
     Kokkos::deep_copy(DevExeSpace(), b_ideal.x1f, pmy_pack->pmhd->b0.x1f);
     Kokkos::deep_copy(DevExeSpace(), b_ideal.x2f, pmy_pack->pmhd->b0.x2f);
@@ -149,6 +174,28 @@ TaskStatus Resistivity::CopyIniE(Driver *pdrive, int stage) {
 }
 
 TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
+  if (rkg_lean) {
+    // u2 is read only in its energy slot; u1 is fully refreshed at stage 1 (it held the
+    // RK stage state) and afterwards differs from u0 only in the energy slot
+    auto &pm = pmy_pack->pmhd;
+    const int n = IEN;
+    auto A = Kokkos::ALL;
+    if (stage > 1) {
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(u2,A,n,A,A,A),
+                        Kokkos::subview(pm->u1,A,n,A,A,A));
+      Kokkos::deep_copy(DevExeSpace(), b2.x1f, pm->b1.x1f);
+      Kokkos::deep_copy(DevExeSpace(), b2.x2f, pm->b1.x2f);
+      Kokkos::deep_copy(DevExeSpace(), b2.x3f, pm->b1.x3f);
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(pm->u1,A,n,A,A,A),
+                        Kokkos::subview(pm->u0,A,n,A,A,A));
+    } else {
+      Kokkos::deep_copy(DevExeSpace(), pm->u1, pm->u0);
+    }
+    Kokkos::deep_copy(DevExeSpace(), pm->b1.x1f, pm->b0.x1f);
+    Kokkos::deep_copy(DevExeSpace(), pm->b1.x2f, pm->b0.x2f);
+    Kokkos::deep_copy(DevExeSpace(), pm->b1.x3f, pm->b0.x3f);
+    return TaskStatus::complete;
+  }
   if (stage > 1) {
     Kokkos::deep_copy(DevExeSpace(), u2, pmy_pack->pmhd->u1);
     Kokkos::deep_copy(DevExeSpace(), b2.x1f, pmy_pack->pmhd->b1.x1f);
@@ -162,7 +209,35 @@ TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
   return TaskStatus::complete;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn Resistivity::ConToPrimRKG / NewTimeStepRKG
+//! \brief Without rkg_lean: MHD::ConToPrim and MHD::NewTimeStep, as before (the latter
+//! then fires at super-stage nexp_stages, i.e. 2, since it gates on that number).
+//! With rkg_lean: the intermediate super-stages rebuild only the cell-centred field; the
+//! last one runs the full inversion and then the timestep, on the final state.
+
+TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
+  if (rkg_lean && stage < s) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    int &ng = indcs.ng;
+    int n1m1 = indcs.nx1 + 2*ng - 1;
+    int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+    int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+    pmy_pack->pcoord->GnomonicCellCenteredB(pmy_pack->pmhd->b0, pmy_pack->pmhd->bcc0,
+                                            0, n1m1, 0, n2m1, 0, n3m1);
+    return TaskStatus::complete;
+  }
+  return pmy_pack->pmhd->ConToPrim(pdrive, stage);
+}
+
+TaskStatus Resistivity::NewTimeStepRKG(Driver *pdrive, int stage) {
+  if (!rkg_lean) return pmy_pack->pmhd->NewTimeStep(pdrive, stage);
+  if (stage < s) return TaskStatus::complete;
+  return pmy_pack->pmhd->NewTimeStep(pdrive, pdrive->nexp_stages);
+}
+
 TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
+  pmy_pack->pmhd->rkg_skip_u = false;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
