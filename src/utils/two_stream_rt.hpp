@@ -346,6 +346,13 @@ inline void CkScrEnsure(const size_t len) {
 // thread of (m, blk, k, j) owns them), and ck_jacq_sum adds the blocks into ck_jac in
 // block order: the same sums in a fixed order, so the run is reproducible.
 inline DvceArray5D<Real> *ck_jacq_ptr = nullptr;
+#define SQRT3_VEF 1.7320508075688772
+// problem/ck_sph_face = 5 (see ck_sph_face): s = sqrt(3 f) at the frames and the face
+// factors gamma (+ the top reflection zeta), per (band, g); the formal solution's work
+inline DvceArray5D<Real> *ck_vef_s_ptr = nullptr;
+inline DvceArray5D<Real> *ck_vef_g_ptr = nullptr;
+inline DvceArray5D<Real> *ck_vef_w_ptr = nullptr;
+inline int ck_vef_last = -1;          // the cycle of the last formal solution
 KOKKOS_INLINE_FUNCTION void CkJacQAdd(Real *p, const Real v) { *p += v; }
 
 // Column solves ("chains") the RT kernel steps per cell: 4 for the grey picket fence
@@ -1336,6 +1343,30 @@ inline int ck_sph_face = 0;
 // depth still from the ghost pressure).  The stellar beam is unchanged.  Chain kernel
 // only; refused with ck_impl_lin / ck_impl_jac_lin.
 inline int ck_sph_top = 0;
+// problem/ck_sph_face = 5 (PROTOTYPE): the VARIABLE EDDINGTON FACTOR form (Auer 1971;
+// Mihalas, Stellar Atmospheres, ch. 7): the moment equations
+//     d(A H)/dr = A kappa (B - J),   d(f q r^2 J)/dr = -q r^2 kappa H,
+//     ln(q r^2) = int (3f - 1)/(r f) dr   (Phi = q r^2),
+// with f = K/J from a FORMAL SOLUTION along impact-parameter (p-z) rays through the
+// radial column (straight chords through the shells, S = B, the wall as the bottom
+// datum, vacuum at the top), per (band, g), Newton-lagged: recomputed on the first RT
+// call of every ck_vef_every-th cycle and frozen in between.  In the tm sweep this is
+// the same two-stream with BOTH chains of a (band, g) pair at mu_eff = sqrt(f) inside
+// the cell (weights 2 pi w mu_eff, so the pair is exactly the moment system with K =
+// f J; s = sqrt(3 f) = mu_eff sqrt 3 below) and the exact jump
+// conditions of the moment equations at the faces between frames,
+//     Phi f J continuous,   A s (u - d) continuous  (A H),
+// i.e. gamma (u_a + d_a) = u_b + d_b, gamma = (Phi f)_a/(Phi f)_b, and
+// u_a - d_a = rho' (u_b - d_b), rho' = rho s_b/s_a.  The outer boundary is Auer's
+// H = h J: the down ray at the top is reflected, d = zeta u + datum, with
+// zeta = (mu_eff - h)/(mu_eff + h).  f = 1/3 (isotropic, diffusion) gives s = 1,
+// gamma = 1: the Eddington face (with the pair at 1/sqrt 3 instead of the Gauss
+// points, which carries the same diffusion flux).  A (u - d) s is single-valued at
+// every face, so the deposit telescopes.  The quadrature in mu is normalised so that
+// an isotropic field gives f = 1/3 and a hemispherically isotropic one h = 1/2 to
+// round-off.
+inline int ck_vef_every = 1;
+inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -2469,8 +2500,11 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   const int fce = std::get<68>(ctx_);    // problem/ck_sph_face
   const bool dil = (fce == 1 || fce == 3);   // the dilute face (ck_sph_dilute)
   const bool fbl = (fce == 2 || fce == 4);   // the thick/thin blend
-  const bool pth = (fce >= 3);               // + the up ray's cone path factor
+  const bool pth = (fce == 3 || fce == 4);  // + the up ray's cone path factor
   const int tpm = std::get<69>(ctx_);        // problem/ck_sph_top
+  auto &vfs_g = std::get<70>(ctx_);          // ck_sph_face = 5: s = sqrt(3 f)
+  auto &vfg_g = std::get<71>(ctx_);          // ... gamma per face, zeta at ie+2
+  const bool vef = (fce == 5);
   constexpr bool SPH = decltype(sph_tag)::value;
   constexpr bool BSP = decltype(bsp_tag)::value;
   constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
@@ -3193,11 +3227,26 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               Rc[cc] = one;
               Hc[cc] = static_cast<RtF>(gdf*(Bb_g(m,b,icut-1,k,j) - bcut));
             }
+            // ck_sph_face = 5: the black wall as a Marshak-type condition on the
+            // moments, J + beta H = B (1/2 + beta/4), beta = J^-/H^- of the formal
+            // solution's incoming field (2 for an isotropic one): the outgoing
+            // half-range flux is B/4 whatever comes in.  With the pair at mu_eff:
+            // u = R0 d + S0, R0 = -(1 - beta mu)/(1 + beta mu),
+            // S0 = (B + Iint)(1 + beta/2)/(1 + beta mu)
+            Real vs0 = 1.0;
+            if (vef) {
+              const int cv = b*CK_NG + gc[cc];
+              const Real bw = vfg_g(m,cv,icut-1,k,j);
+              const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
+              Rc[cc] = static_cast<RtF>(-(1.0 - bw*mw)/(1.0 + bw*mw));
+              vs0 = (1.0 + 0.5*bw)/(1.0 + bw*mw);
+              Hc[cc] = static_cast<RtF>((bcut + Iint_b)*vs0);
+            }
             if constexpr (JAC) {
               // Sc_cut = B_cut + Iint: window (B_cut-2, B_cut-1, B_cut)
               jS[cc][0] = 0.0;
               jS[cc][1] = (gdf >= 0.0) ? gdf : 0.0;
-              jS[cc][2] = (gdf >= 0.0) ? -gdf : 1.0;
+              jS[cc][2] = (gdf >= 0.0) ? -gdf : (vef ? vs0 : 1.0);
               // sfc = suc = B_cut: slots (B_{i-1}, B_i) of the first layer
               jfc[cc][0] = 0.0;
               jfc[cc][1] = 1.0;
@@ -3248,8 +3297,20 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             }
             // both halves of a cell have the same optical thickness, so ONE
             // triple describes the pair (this is the ck_impl_frozen_op note)
+            // ck_sph_face = 5: s below face i (vsb) and in cell i (vsa), gamma
+            Real vsb = 1.0, vsa = 1.0, vgm = 1.0;
+            if (vef) {
+              const int cv = b*CK_NG + gc[cc];
+              vsb = vfs_g(m,cv,i,k,j);
+              vsa = vfs_g(m,cv,i+1,k,j);
+              vgm = vfg_g(m,cv,i,k,j);
+            }
             RtF e0, cin, cout;
-            cofs(cc, i, 0.5*kro*dz, e0, cin, cout, true, true);
+            // (ck_sph_face = 5: BOTH chains of the pair at mu_eff = sqrt(f) = s/sqrt 3,
+            // i.e. dtau/mu_eff = (dtau/mu) sqrt(3) mu/s: the pair is then exactly
+            // the moment system with K = f J inside the cell)
+            cofs(cc, i, vef ? 0.5*kro*dz*(SQRT3_VEF*muc[cc])/vsa : 0.5*kro*dz, e0, cin,
+                 cout, true, true);
             const RtF tr = one - e0;
             // the emission along an up crossing (p) and a down crossing (q) of
             // the lower half (l) and the upper half (u) of this cell
@@ -3300,6 +3361,12 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 Real alx, bex;
                 fblm(cc, rj, bt, dtfc, alx, bex, c1, r1);
               }
+              if (vef) {
+                const Real rpj = rhd*vsb/vsa;
+                const Real evj = (1.0 + rj) + vgm*rpj*(1.0 - rj);
+                r1 = 1.0 - 2.0*vgm*rpj*(1.0 - rj)/evj;
+                c1 = 2.0*rpj/evj;
+              }
               const Real tuj = pth ? upt(cc, r1, tj, 0.5*kro*dz) : tj;
               const Real r2 = tuj*tj*r1;
               const Real sold[3] = {jS[cc][1], jS[cc][2], 0.0};
@@ -3334,6 +3401,13 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 fblm(cc, static_cast<Real>(rr), bt, dtfc, alx, bex, c1x, r1x);
                 ss = static_cast<RtF>(c1x)*ss;
                 rr = static_cast<RtF>(r1x);
+              } else if (vef) {
+                // ck_sph_face = 5: Phi f J and A s (u - d) continuous
+                const RtF rpv = static_cast<RtF>((1.0 - bt)/(1.0 + bt)*vsb/vsa);
+                const RtF gmv = static_cast<RtF>(vgm);
+                const RtF ev = (one + rr) + gmv*rpv*(one - rr);
+                ss = two*rpv*ss/ev;
+                rr = one - two*gmv*rpv*(one - rr)/ev;
               } else {
                 const RtF dn = one + rr*bb;
                 const RtF rn = (rr + bb)/dn;
@@ -3417,6 +3491,16 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             db = sv - dd;
           }
         };
+        // ck_sph_face = 5: the face solve of the VEF jump conditions (see
+        // ck_sph_face): gamma (u_a + d_a) = u_b + d_b, u_a - d_a = rho' (u_b - d_b)
+        auto vsolve = [&](const RtF rr, const RtF ss, const Real rp, const Real gm,
+                          const RtF da, RtF &ub, RtF &db) {
+          const RtF rpv = static_cast<RtF>(rp);
+          const RtF gmv = static_cast<RtF>(gm);
+          const RtF ev = (one + rr) + gmv*rpv*(one - rr);
+          db = (two*gmv*da - (one - gmv*rpv)*ss)/ev;
+          ub = rr*db + ss;
+        };
         // ---- PASS 2: downward ----------------------------------------------
         RtF dcu[NC], ubf[NC];
         Real slc[NC], sfu[NC];
@@ -3431,8 +3515,30 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
           const Real fsc = ACC(m,k,j,ie)/AFC(m,k,j,ie+1);
           for (int cc=0; cc<NC; ++cc) {
             RtF ub, db;
-            fsolve(cc, ie+1, bt, fsc, Itp[cc], ub, db, dtf[cc]);
-            Fb_g(m,blk,ie+1,k,j) += wfc[cc]*static_cast<Real>(ub - db)*fsc;
+            // ck_sph_face = 5: s and gamma of the top face, and the reflection
+            // d_a = zeta u_a + datum of Auer's H = h J
+            Real vsb = 1.0, vrp = 1.0, vgm = 1.0, vzt = 0.0, vkp = 0.0;
+            if (vef) {
+              const int cv = bandc[cc]*CK_NG + gc[cc];
+              vsb = vfs_g(m,cv,ie+1,k,j);
+              vrp = (1.0 - bt)/(1.0 + bt)*vsb/vfs_g(m,cv,ie+2,k,j);
+              vgm = vfg_g(m,cv,ie+1,k,j);
+              vzt = vfg_g(m,cv,ie+2,k,j);
+              const RtF rr = I_down[cc][ie+1];
+              const RtF rpv = static_cast<RtF>(vrp);
+              const RtF gmv = static_cast<RtF>(vgm);
+              const RtF ev = (one + rr) + gmv*rpv*(one - rr);
+              const RtF rup = one - two*gmv*rpv*(one - rr)/ev;
+              const RtF sup = two*rpv*Cmx[cc][ie+1]/ev;
+              const RtF zt = static_cast<RtF>(vzt);
+              const RtF dat = (zt*sup + Itp[cc])/(one - zt*rup);
+              vkp = static_cast<Real>(zt*(two*rpv/ev)/(one - zt*rup));   // dd_a/dSc
+              vsolve(rr, Cmx[cc][ie+1], vrp, vgm, dat, ub, db);
+            } else {
+              fsolve(cc, ie+1, bt, fsc, Itp[cc], ub, db, dtf[cc]);
+            }
+            Fb_g(m,blk,ie+1,k,j) += (vef ? wfc[cc]*vsb/(SQRT3_VEF*muc[cc]) : wfc[cc])
+                                  *static_cast<Real>(ub - db)*fsc;
             dcu[cc] = db;
             ubf[cc] = ub;
             const Real btop = Bb_g(m,bandc[cc],ie,k,j);
@@ -3458,9 +3564,18 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real s0 = Js0[cc][ie+1];
               const Real s1 = Js1[cc][ie+1];
               const Real s2 = Js2[cc][ie+1];
-              jDu[cc][0] = al*s0;
-              jDu[cc][1] = al*s1;
-              jDu[cc][2] = al*s2;
+              Real aD = al;
+              if (vef) {
+                // the reflected datum depends on Sc_top through u_a:
+                // dd_b/dSc = al kp - be, dD/dSc = aD (1 - gamma (1 - R) kp)
+                const Real ev = (1.0 + rj) + vgm*vrp*(1.0 - rj);
+                al = 2.0*vgm/ev;
+                be = (1.0 - vgm*vrp)/ev - al*vkp;
+                aD = 2.0/ev*(1.0 - vgm*(1.0 - rj)*vkp);
+              }
+              jDu[cc][0] = aD*s0;
+              jDu[cc][1] = aD*s1;
+              jDu[cc][2] = aD*s2;
               jdm[cc][0] = -be*s0;
               jdm[cc][1] = -be*s1;
               jdm[cc][2] = -be*s2;
@@ -3523,20 +3638,37 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                                 : (0.5*(snl + suv));
               dtfc = dtc;
             }
+            // ck_sph_face = 5: s of the frame below face i and of cell i, gamma of
+            // face i; the cell's half steps along dtau/s, its weight wfc s
+            Real vsb = 1.0, vsa = 1.0, vgm = 1.0;
+            if (vef) {
+              const int cv = b*CK_NG + gc[cc];
+              vsb = vfs_g(m,cv,i,k,j);
+              vsa = vfs_g(m,cv,i+1,k,j);
+              vgm = vfg_g(m,cv,i,k,j);
+            }
+            const Real dthe = vef ? dth*(SQRT3_VEF*muc[cc])/vsa : dth;
+            const Real wfi = vef ? wfc[cc]*vsa/(SQRT3_VEF*muc[cc]) : wfc[cc];
+            const Real ratv = vef ? rat*vsb/vsa : rat;
             Real dsrc;
             // the down ray: the upper half of cell i, then the lower half
-            step(cc, i, dth, sfu[cc], slc[cc], dcu[cc], dsrc, true, false);
-            Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
-            step(cc, i, dth, suv, sfv, dcu[cc], dsrc, false, false);
-            Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+            step(cc, i, dthe, sfu[cc], slc[cc], dcu[cc], dsrc, true, false);
+            Src_g(m,blk,i,k,j) += wfi/dz*dsrc;
+            step(cc, i, dthe, suv, sfv, dcu[cc], dsrc, false, false);
+            Src_g(m,blk,i,k,j) += wfi/dz*dsrc;
             // face i: the up ray is recovered here, and A D is made continuous
             // by construction -- the flux is A_below (u_b - d_b)/A_face and the
             // up ray is handed d_above + (u_b - d_b) A_below/A_above
             RtF ub, db;
-            fsolve(cc, i, bt, rat, dcu[cc], ub, db, dtfc);
+            if (vef) {
+              vsolve(I_down[cc][i], Cmx[cc][i], ratv, vgm, dcu[cc], ub, db);
+            } else {
+              fsolve(cc, i, bt, rat, dcu[cc], ub, db, dtfc);
+            }
             const RtF dm = ub - db;
-            Fb_g(m,blk,i,k,j) += wfc[cc]*static_cast<Real>(dm)*fsc;
-            RtF ua = dcu[cc] + dm*static_cast<RtF>(rat);
+            Fb_g(m,blk,i,k,j) += (vef ? wfc[cc]*vsb/(SQRT3_VEF*muc[cc]) : wfc[cc])
+                                 *static_cast<Real>(dm)*fsc;
+            RtF ua = dcu[cc] + dm*static_cast<RtF>(ratv);
             dcu[cc] = db;
             // the up ray through cell i: the lower half, then the upper half
             if (pth) {
@@ -3549,22 +3681,22 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               RtF emx = cix*static_cast<RtF>(sfv) + cox*static_cast<RtF>(suv);
               dsrc = static_cast<Real>((one - tux)*ua - emx);
               ua = tux*ua + emx;
-              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+              Src_g(m,blk,i,k,j) += wfi/dz*dsrc;
               emx = cix*static_cast<RtF>(slc[cc]) + cox*static_cast<RtF>(sfu[cc]);
               dsrc = static_cast<Real>((one - tux)*ua - emx);
               ua = tux*ua + emx;
-              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+              Src_g(m,blk,i,k,j) += wfi/dz*dsrc;
             } else {
-              step(cc, i, dth, sfv, suv, ua, dsrc, false, false);
-              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
-              step(cc, i, dth, slc[cc], sfu[cc], ua, dsrc, false, false);
-              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+              step(cc, i, dthe, sfv, suv, ua, dsrc, false, false);
+              Src_g(m,blk,i,k,j) += wfi/dz*dsrc;
+              step(cc, i, dthe, slc[cc], sfu[cc], ua, dsrc, false, false);
+              Src_g(m,blk,i,k,j) += wfi/dz*dsrc;
             }
             // CLOSE THE CELL ON THE FLUX IT REPORTED.  The up ray leaving cell i
             // is the u_below the face above it already used; the two agree to
             // round-off, and adding the difference here is what makes the
             // per-cell budget telescope with nothing left over.
-            Src_g(m,blk,i,k,j) += wfc[cc]/dz
+            Src_g(m,blk,i,k,j) += wfi/dz
                 *static_cast<Real>(ua - ubf[cc]);
             ubf[cc] = ub;
             Em_g(m,blk,i,k,j) += 2.0*(wfc[cc]/muc[cc])*kro*bown;
@@ -3588,7 +3720,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             if constexpr (JAC) {
               // row i of the tridiagonal; slots (B_{i-1}, B_i, B_{i+1})
               RtF e0r, cir, cor;
-              cofs(cc, i, dth, e0r, cir, cor, false, false);
+              cofs(cc, i, dthe, e0r, cir, cor, false, false);
               const Real ci = static_cast<Real>(cir);
               const Real co = static_cast<Real>(cor);
               const Real tj = 1.0 - static_cast<Real>(e0r);
@@ -3639,16 +3771,28 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real s0 = Js0[cc][i];
               const Real s1 = Js1[cc][i];
               const Real s2 = Js2[cc][i];
-              const Real omr = 1.0 - rj;
+              Real omr = 1.0 - rj;
+              // D = aD (Sc - omr d^+): aD = al and omr = 1 - R except under
+              // ck_sph_face = 5, where D = (2/E) (Sc - gamma (1 - R) d^+) and d
+              // crosses the face with al = 2 gamma/E, be = (1 - gamma rho')/E
+              Real aD = al;
+              if (vef) {
+                const Real ev = (1.0 + rj) + vgm*ratv*(1.0 - rj);
+                al = 2.0*vgm/ev;
+                be = (1.0 - vgm*ratv)/ev;
+                aD = 2.0/ev;
+                wr = tj*tj*tj*tj*(2.0*ratv/ev)*jQ[cc];
+                omr = vgm*(1.0 - rj);
+              }
               // dD_i/dB_{i-2 .. i+1}
-              const Real dd0 = al*(1.0 + omr*wr)*s0;
-              const Real dd1 = al*(s1 - omr*v[0]);
-              const Real dd2 = al*(s2 - omr*v[1]);
-              const Real dd3 = -al*omr*v[2];
-              const Real wj = wfc[cc]/dz;
-              const Real jm = wj*(rat*dd1 - jDu[cc][0]);
-              const Real j0 = wj*(rat*dd2 - jDu[cc][1]);
-              const Real jp = wj*(rat*dd3 - jDu[cc][2]);
+              const Real dd0 = aD*(1.0 + omr*wr)*s0;
+              const Real dd1 = aD*(s1 - omr*v[0]);
+              const Real dd2 = aD*(s2 - omr*v[1]);
+              const Real dd3 = -aD*omr*v[2];
+              const Real wj = wfi/dz;
+              const Real jm = wj*(ratv*dd1 - jDu[cc][0]);
+              const Real j0 = wj*(ratv*dd2 - jDu[cc][1]);
+              const Real jp = wj*(ratv*dd3 - jDu[cc][2]);
               CkJacQAdd(&ckjac_g(m,3*blk+1,k,j,i), j0*ckdb_g(m,b,i,k,j));
               if ((i > icut || (ckdif_ && icut > icut_g(m,k,j)))
                   && jm > 0.0) {
@@ -6880,8 +7024,204 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // body of this launcher is the function template TsrtCkChain above
         // picket_fence_two_stream_RT_pass; ck_chain_ctx hands it, by reference, the
         // locals it reads (unpacked there in the same order).
+        // ---- problem/ck_sph_face = 5: the formal solution for f = K/J (see
+        // ck_sph_face).  Once per ck_vef_every cycles, BEFORE the chain kernel, on the
+        // state this RT call starts from; every later pass of the cycle (the Newton
+        // passes) reads the same factors.  Nodes q = 0 .. n+1 of a column: the cut face,
+        // the frames of cells icut .. ie (radius sqrt(A/dOmega)), the top face.  Rays:
+        // ck_vef_ncore through the wall, then one tangent at every node.
+        if (ck_sph_face == 5 && (ck_vef_last < 0 ||
+                                 pm->ncycle - ck_vef_last >= ck_vef_every)) {
+          ck_vef_last = static_cast<int>(pm->ncycle);
+          const int nv = n1 + 3;
+          const int nc_ = CK_NB*CK_NG;
+          if (ck_vef_s_ptr == nullptr ||
+              ck_vef_s_ptr->extent(0) != static_cast<size_t>(nmb1 + 1)) {
+            if (ck_vef_s_ptr != nullptr) {
+              delete ck_vef_s_ptr;
+              delete ck_vef_g_ptr;
+              delete ck_vef_w_ptr;
+            }
+            ck_vef_s_ptr = new DvceArray5D<Real>("ck_vef_s", nmb1 + 1, nc_, nv, ke + 1,
+                                                 je + 1);
+            ck_vef_g_ptr = new DvceArray5D<Real>("ck_vef_g", nmb1 + 1, nc_, nv, ke + 1,
+                                                 je + 1);
+            ck_vef_w_ptr = new DvceArray5D<Real>("ck_vef_w", nmb1 + 1, nc_, 14*nv,
+                                                 ke + 1, je + 1);
+          }
+          auto vs_ = *ck_vef_s_ptr;
+          auto vg_ = *ck_vef_g_ptr;
+          auto vw_ = *ck_vef_w_ptr;
+          const int ncore = ck_vef_ncore;
+          par_for("ck_vef_formal", DevExeSpace(), 0, nmb1, 0, nc_ - 1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+            const int icut = icc_g(m,k,j);
+            if (icut > ie) return;
+            const int b = c/CK_NG;
+            const int g = c % CK_NG;
+            const int n = ie - icut + 1;
+            const int nn = n + 2;
+            // work slots: 0 r, 1 kappa rho, 2 B, 3 I_in, 4 J, 5 K, 6 mu_prev,
+            // 7 (I+ + I-)_prev, 8 W0, 9 W2, 10 W1 (top), 11 H (top), 12 J^- and
+            // 13 H^- at the wall (the incoming half moments; slot 3 of the previous
+            // ray is kept in slot 12's partner below)
+            auto W = [&](const int s, const int q) -> Real & {
+              return vw_(m,c,s*nv + q,k,j);
+            };
+            for (int q=0; q<nn; ++q) {
+              Real r;
+              if (q == 0) {
+                r = X1F(m,icut);
+              } else if (q == nn - 1) {
+                r = X1F(m,ie+1);
+              } else {
+                const Real rm = X1F(m,icut+q-1), rp = X1F(m,icut+q);
+                r = sqrt((rp*rp + rp*rm + rm*rm)/3.0);
+                const int i = icut + q - 1;
+                const Real xTv = xT_g(m,k,j,i);
+                const Real xPv = xP_g(m,k,j,i);
+                const int iT = static_cast<int>(xTv);
+                const int iP = static_cast<int>(xPv);
+                W(1,q) = (ck_kappa(cklk, iT, xTv - static_cast<Real>(iT), iP,
+                                   xPv - static_cast<Real>(iP), b, g)
+                          + kc_g(m,b,i,k,j))*rhoN(m,k,j,i);
+                W(2,q) = Bb_g(m,b,i,k,j);
+              }
+              W(0,q) = r;
+              for (int s=3; s<14; ++s) W(s,q) = 0.0;
+            }
+            const Real Ib = Bb_g(m,b,icut,k,j)
+                          + (int_at_cut ? boltz_sigma/M_PI*Tint4
+                             * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
+            const Real r0 = W(0,0);
+            // chord of impact parameter p between radii ra < rb (both >= p)
+            auto chord = [&](const Real p, const Real ra, const Real rb) {
+              const Real za = (ra > p) ? sqrt(ra*ra - p*p) : 0.0;
+              const Real zb = (rb > p) ? sqrt(rb*rb - p*p) : 0.0;
+              return zb - za;
+            };
+            // one cell's layer of the segment between nodes q and q+1, crossed
+            // inward (in = true) or outward, applied to I
+            auto seg = [&](const int q, const Real p, Real &I, const bool in) {
+              int cl[2];
+              Real ds[2];
+              int ns = 1;
+              if (q == 0) {
+                cl[0] = 1;
+                ds[0] = chord(p, W(0,0), W(0,1));
+              } else if (q == nn - 2) {
+                cl[0] = q;
+                ds[0] = chord(p, W(0,q), W(0,q+1));
+              } else {
+                const Real rf = X1F(m,icut+q);
+                cl[0] = q;
+                ds[0] = chord(p, W(0,q), rf);
+                cl[1] = q + 1;
+                ds[1] = chord(p, rf, W(0,q+1));
+                ns = 2;
+              }
+              for (int t=0; t<ns; ++t) {
+                const int tt = in ? (ns - 1 - t) : t;
+                const Real x = W(1,cl[tt])*ds[tt];
+                const Real e = exp(-x);
+                I = I*e + W(2,cl[tt])*(1.0 - e);
+              }
+            };
+            // l = ncore is the wall's edge ray p = r_cut, taken as hitting the wall;
+            // the tangent ray of node 0 is the same p missing it, so the step of
+            // the field at the edge of the wall's cone falls between two rays
+            const int nray = ncore + 1 + nn;
+            for (int l=0; l<nray; ++l) {
+              Real p;
+              int qlo;
+              if (l <= ncore) {
+                p = r0*sin(0.5*M_PI*static_cast<Real>(l)/static_cast<Real>(ncore));
+                qlo = 0;
+              } else {
+                qlo = l - ncore - 1;
+                p = W(0,qlo);
+              }
+              // inward from the top (vacuum)
+              Real I = 0.0;
+              for (int q=nn-1; q>=qlo; --q) {
+                W(3,q) = I;
+                if (q > qlo) seg(q-1, p, I, true);
+              }
+              I = (l <= ncore) ? Ib : W(3,qlo);
+              for (int q=qlo; q<nn; ++q) {
+                const Real r = W(0,q);
+                const Real mu2 = (r > p) ? (1.0 - (p/r)*(p/r)) : 0.0;
+                const Real mu = (l <= ncore || q > qlo) ? sqrt((mu2 > 0.0) ? mu2 : 0.0)
+                                                        : 0.0;
+                const Real gs = I + W(3,q);
+                if (l > 0) {
+                  const Real dm = W(6,q) - mu;
+                  const Real mp = W(6,q), gp = W(7,q);
+                  W(4,q) += 0.5*dm*(gp + gs);
+                  W(5,q) += 0.5*dm*(mp*mp*gp + mu*mu*gs);
+                  W(8,q) += dm;
+                  W(9,q) += 0.5*dm*(mp*mp + mu*mu);
+                  if (q == nn - 1) {
+                    W(10,q) += 0.5*dm*(mp + mu);
+                    W(11,q) += 0.5*dm*(mp*(gp - 2.0*W(3,q)) + mu*(gs - 2.0*W(3,q)));
+                  }
+                  if (q == 0) {
+                    // I^- of the previous ray at the wall is parked in W(2,0)
+                    // (node 0 has no cell of its own)
+                    const Real ip = W(2,0), ic = W(3,0);
+                    W(12,0) += 0.5*dm*(ip + ic);
+                    W(13,0) += 0.5*dm*(mp*ip + mu*ic);
+                  }
+                }
+                W(6,q) = mu;
+                W(7,q) = gs;
+                if (q == 0) W(2,0) = W(3,0);
+                if (q < nn - 1) seg(q, p, I, false);
+              }
+            }
+            // f, s = sqrt(3 f), ln(Phi f) and the face factors
+            Real lpf = 0.0, fprev = 1.0/3.0, rprev = r0, lphi = 0.0;
+            for (int q=0; q<nn; ++q) {
+              const Real Jq = W(4,q), Kq = W(5,q);
+              Real f = 1.0/3.0;
+              if (Jq > 0.0 && W(9,q) > 0.0) {
+                f = (Kq/Jq)*(W(8,q)/(3.0*W(9,q)));
+                f = (f < 1.0e-3) ? 1.0e-3 : ((f > 1.0) ? 1.0 : f);
+              }
+              const Real r = W(0,q);
+              if (q > 0) {
+                lphi += 0.5*((3.0*fprev - 1.0)/fprev + (3.0*f - 1.0)/f)*log(r/rprev);
+              }
+              const Real lpn = lphi + log(f);
+              if (q == 0) {
+                // the wall's Marshak factor beta = J^-/H^- (2 if nothing comes in)
+                const Real hm = W(13,0), jm = W(12,0);
+                vg_(m,c,icut-1,k,j) = (hm > 1.0e-12*Jq && jm > 0.0) ? jm/hm : 2.0;
+              }
+              vs_(m,c,icut+q,k,j) = sqrt(3.0*f);
+              if (q > 0) vg_(m,c,icut+q-1,k,j) = exp(lpn - lpf);
+              lpf = lpn;
+              fprev = f;
+              rprev = r;
+              if (q == nn - 1) {
+                // Auer's outer condition H = h J, h normalised to 1/2 for a
+                // hemispherically isotropic field; zeta = (s - 2h)/(s + 2h)
+                Real h = 0.5;
+                if (Jq > 0.0 && W(10,q) > 0.0) {
+                  h = (W(11,q)/Jq)*(W(8,q)/(2.0*W(10,q)));
+                }
+                const Real st = sqrt(f);          // mu_eff of the pair
+                vg_(m,c,ie+2,k,j) = (st - h)/(st + h);
+              }
+            }
+          });
+        }
         const int dil_ = ck_sph_face;   // problem/ck_sph_face
         const int tpm_ = ck_sph_top;    // problem/ck_sph_top
+        auto vfs_ = (ck_sph_face == 5) ? *ck_vef_s_ptr
+                                       : CkDum<DvceArray5D<Real>>("ck_vef_s_d");
+        auto vfg_ = (ck_sph_face == 5) ? *ck_vef_g_ptr
+                                       : CkDum<DvceArray5D<Real>>("ck_vef_g_d");
         auto ck_chain_ctx = std::forward_as_tuple(ACC, AFC, albedo, ap, Bb_g, bface_on,
                                                   boltz_sigma, BTF, cbt_, cf_g, ckc0_g,
                                                   ckci_g, ckco_g, ckdb_g, ckdif_,
@@ -6894,7 +7234,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                   layer_legacy, MIXF, mug, n1, nblk, nmb1,
                                                   omega, pb_g, pfid, pfl0, Qb_g, rhoN,
                                                   Src_g, T_g, tide, Tint, Tint4, wg, X1F,
-                                                  x1v_, xP_g, xT_g, dil_, tpm_);
+                                                  x1v_, xP_g, xT_g, dil_, tpm_,
+                                                  vfs_, vfg_);
         auto launch_ck_chain = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
                                    auto cch_tag, auto frm_tag, auto fop_tag,
                                    auto jac_tag) {
