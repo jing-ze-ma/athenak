@@ -212,3 +212,12 @@ T_night 2488/1622 | 2667/1300 | 2717/1562 K; eps 0.370 | 0.138 | 0.246. Offsets 
 Masked knot: max -47 ppm (CO 4.5-4.8 um), -36 NRS1, -28 NRS2 at phase 0.194; offsets move 0.3-0.9 deg. Open: fix the
 closure (user), scattering/reflected light (user), 416 MB Chrome cache /viper/u2/jinma/.cache/selenium (deletion was
 blocked for the agent; user to decide).
+**10-01 ~00:20 ck_spherical closure over-emission CONFIRMED in the real kernel** (cksph_test_0930/RESULTS.md; memory
+ck-spherical-closure-overemits-0930): 2x/(1+x) exactly; W121 1x isothermal 1.22-1.25. Prototype problem/ck_sph_dilute on branch
+ck-sph-closure-fix (not pushed; tm + ck_implicit only, refuses ck_impl_lin/jac_lin which production uses). User decisions:
+adopt + port + GPU A/B; thick-cell blend; variable-Eddington factor; top-ghost boundary value.
+**10-01 ~00:20 He presn beon128 is NOT steady: the envelope COLLAPSED.** Mass above 0.7 R 71 % (3.0 tt) -> 60 % (4.5 tt) ->
+1 % (7.5 tt); median rho at 0.9 R 3.6e-9 -> 1.6e-13; 24 % floor cells above 0.8 R; only 7.7 % of the mass left the domain
+(fell onto a dense shell at 0.5-0.65 R above the closed inner wall). Large inward-flux patches in the empty outer region
+(suspect). Slices page https://claude.ai/artifact/HcgYDVQ3CozhxXavZppqcU ; script /viper/ptmp2/jinma/m1pos_0930/slices/slices.py.
+Open: physical (porosity -> radiation no longer supports the inflated envelope) vs closure ramp-off / closed wall / floor.
