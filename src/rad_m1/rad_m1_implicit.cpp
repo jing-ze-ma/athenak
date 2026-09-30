@@ -853,6 +853,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_g0_limit")) {
     impl_g0_lim = pin->GetReal("rad_m1","implicit_g0_limit");
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_g0_exchange")) {
+    impl_g0_exch = pin->GetBoolean("rad_m1","implicit_g0_exchange");
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_pos_gas")) {
     impl_pos_gas = pin->GetBoolean("rad_m1","implicit_pos_gas");
   }
@@ -867,7 +870,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // implicit_opac_newton_guard_mode: DEFAULT 2 = the diagonal test + the sign of the
   // neighbour entry (He presn wedge gate: 7 floor clips with the diagonal alone, 0 with
   // both); 0 = the diagonal test alone; + 1 = also the
-  // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace)
+  // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace),
+  // + 4 (m1-positivity) = also the row diagonal dominance (m1_impl_asm)
   impl_opn_guard_mode = pin->GetOrAddInteger("rad_m1",
                                              "implicit_opac_newton_guard_mode", 2);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
@@ -5715,7 +5719,7 @@ void RadiationM1::ImplicitReport() {
     opn_nskip = g;
 #endif
   }
-  if (impl_g0_lim > 0.0 || impl_pos_gas || impl_pos_floor) {
+  if (impl_g0_lim > 0.0 || impl_g0_exch || impl_pos_gas || impl_pos_floor) {
     auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
     for (int q = 0; q < M1_POS_N; ++q) {pos_cnt[q] = hpc(q);}
 #if MPI_PARALLEL_ENABLED
@@ -5752,8 +5756,9 @@ void RadiationM1::ImplicitReport() {
               << " per solve=" << ((impl_nstep > 0.0) ? (opn_nskip/impl_nstep) : 0.0)
               << std::endl;
   }
-  if (impl_g0_lim > 0.0 || impl_pos_gas || impl_pos_floor) {
-    std::cout << "<rad_m1> m1-positivity: implicit_g0_limit=" << impl_g0_lim
+  if (impl_g0_lim > 0.0 || impl_g0_exch || impl_pos_gas || impl_pos_floor) {
+    std::cout << "<rad_m1> m1-positivity: implicit_g0_exchange=" << impl_g0_exch
+              << " implicit_g0_limit=" << impl_g0_lim
               << " clipped cell-passes=" << pos_cnt[M1_POS_G0]
               << " | implicit_pos_gas=" << impl_pos_gas << " (frac "
               << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]
@@ -7464,12 +7469,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // converged backward-Euler state chat dt g0 = -q, the energy actually exchanged,
     // which is bounded by the energy present; the clip is then inactive.  Own kernel, so
     // the lag kernel above is untouched.
-    if (impl_g0_lim > 0.0 && src_on) {
+    // implicit_g0_exchange: from the second pass on, g0 is taken from the EXCHANGE the
+    // previous pass's linearised source row gives at the iterate, g0 = -(SRCR - SRCB E^k)
+    // /(chat dt), instead of rho (kappa_E E^k - kappa_P a T_k^4).  The two are the same at
+    // the fixed point (the write-back's q = SRCR - SRCB E' is the exchanged energy), but
+    // in a radiation-dominated, stiffly coupled cell the pointwise form is the difference
+    // of two numbers ~1e5 x its converged value and a relative error of T_k of 1e-6 moves
+    // it by more than the cell's energy per step.  The first pass keeps the pointwise
+    // form (with the clip, if on).
+    // The clip (implicit_g0_limit) acts on the FIRST pass only: it is a guard for the
+    // pass that has no exchange yet, and is not applied where the fixed point is decided
+    // (measured on the He presn wedge: clipping every pass left 1.7e7 cell-passes clipped
+    // and 5 of 6 solves NON-CONVERGED; the exchange form alone converged in 17 passes).
+    const bool gex = impl_g0_exch && src_on && (it > 0);
+    const bool gcl = (impl_g0_lim > 0.0) && src_on && (it == 0);
+    if (gcl || gex) {
       const Real w = impl_g0_lim;
       const bool hh = have_hydro;
       auto pc_ = pos_cnt_d;
       par_for("m1_impl_g0lim", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (gex) {
+          iw_(m,M1_IW_G0,k,j,i) = -(iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*
+                                    fmax(iw_(m,M1_IW_EP,k,j,i), efl))/(ch*dt);
+        }
+        if (!gcl) return;
         const Real ea = fmax(fmax(iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EN,k,j,i)), 0.0)
                         + (hh ? (ch/cl)*fmax(iw_(m,M1_IW_EGN,k,j,i), 0.0) : 0.0);
         const Real gm = w*ea/(ch*dt);
@@ -8260,7 +8284,38 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (opgd) {
         Real bc = bb - gpd - gmd, rc = rr + gpr + gmr;
         int ns = M1OpnGuardFace(opg, ogm, gpd, gpo, gpr, bc, rc, bb, cc, rr);
+        const int nsp = ns;
         ns += M1OpnGuardFace(opg, ogm, gmd, gmo, gmr, bc, rc, bb, aa, rr);
+        if ((ogm & 4) && ns < 2) {
+          // m1-positivity, guard_mode bit 4: the ROW DIAGONAL DOMINANCE.  A face's
+          // Newton term may leave every entry with the right sign and still make the
+          // neighbour entry larger than the diagonal can carry (He presn wedge plume and
+          // photosphere: sum|off|/diag = 2.4 with no positive entry, solved E < 0).  A
+          // Z-matrix whose rows are strictly dominant is an M-matrix, so the Newton terms
+          // still in the row are taken out (the faces stay Picard: same fixed point) when
+          // they grow sum|off|/diag well beyond what the row had without them.
+          const bool kp = (nsp == 0), km = (ns - nsp == 0);
+          Real toff = 0.0;
+          if (bicg && trans) {
+            toff = fabs(iw_(m,M1_IW_CJM,k,j,i)) + fabs(iw_(m,M1_IW_CJP,k,j,i))
+                   + fabs(iw_(m,M1_IW_CKM,k,j,i)) + fabs(iw_(m,M1_IW_CKP,k,j,i));
+          }
+          const Real b0 = bb - (kp ? gpd : 0.0) - (km ? gmd : 0.0);
+          const Real a0 = aa - (km ? gmo : 0.0), c0 = cc - (kp ? gpo : 0.0);
+          // the ratio sum|off|/diag with and without the terms: the rows of a smooth
+          // diffusion operator sit at ~1 (column sums, not rows, carry conservation), so
+          // the test is the growth of that ratio beyond max(1, its value without the
+          // terms) x (1 + guard)
+          const Real rt0 = (fabs(a0) + fabs(c0) + toff)/fmax(b0, 1.0e-300);
+          const Real rt1 = (fabs(aa) + fabs(cc) + toff)/fmax(bb, 1.0e-300);
+          if (!(bb > 0.0) || rt1 > fmax(rt0, 1.0)*(1.0 + opg)) {
+            bb = b0;
+            aa = a0;
+            cc = c0;
+            rr += (kp ? gpr : 0.0) + (km ? gmr : 0.0);
+            ns += (kp ? 1 : 0) + (km ? 1 : 0);
+          }
+        }
         if (ns > 0) {Kokkos::atomic_add(&nsk_(0), static_cast<Real>(ns));}
       }
       // a Dirichlet end cell: the whole row is replaced, which keeps the matrix an
