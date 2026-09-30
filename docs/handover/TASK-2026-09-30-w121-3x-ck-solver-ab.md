@@ -41,3 +41,17 @@ then `md5sum -c MD5.txt`. Viper build must be >= 793e03c3 (restart file layout i
 
 ## Viper reply (09-30 ~04:30, user)
 User: wait for Caltech's own A/B (3649979/80) first; viper repeats it only if the Caltech result is ambiguous (then the user copies to_viper_0930 to viper). No production key change without the user.
+
+## RESULT (Caltech, 09-30 00:30 PDT): hypothesis NOT supported -- viper repeat not needed
+Both arms from dhj.00072.rst, ~3100 cycles, 777 ck calls each (rank 0), rc 0:
+
+| | A (3x keys) 3651487 | B (10x keys) 3649980 |
+|---|---|---|
+| NOT-CONVERGED | 0 | 0 |
+| passes 4/5/6/7/8 | 10/470/289/7/1 | 695/81/1/0/0 |
+| capped cells per call (mean/max) | 0.03 / 6 | 20.6 / 69 |
+| mean dt | 7.84 s | 7.80 s |
+| wall | 64 s | 52 s |
+
+No limit cycle with the 3x keys (the dtmax 0.5 cap is essentially never hit); B needs fewer passes only because
+of its looser tol 1e-7. The 3x dt decline is not a ck solver effect; production keys unchanged.
