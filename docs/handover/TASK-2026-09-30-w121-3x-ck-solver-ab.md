@@ -30,3 +30,11 @@ Repeat the A/B on viper (HIP) once a 3x state at rot >~ 30 exists there (the use
 dhj.00072.rst, 141 MB, if needed): same two arms, ~3000 cycles, ck_impl_verbose on. Report
 NOT-CONVERGED count, passes per call, top-cell T oscillation, dt. Do NOT change any production keys;
 the user decides whether the 3x chain link switches solver keys.
+
+## Snapshot for viper (staged 09-29 19:41 PDT)
+Caltech `/resnick/groups/carnegie_poc/jingze/to_viper_0930/` (groups space, not purged):
+- `dhj.00072.rst` 141347192 B, md5 `4a73aa7c1de70572e3af0337baca149f` (MD5.txt): 3x prod, rot 36, t 3.9656e6 s, cycle ~413.9k
+- `run.athinput` (3x prod input), `COMMIT_binary.txt` (793e03c3), `ab.sub` (Caltech A/B script: nlim 417000, verbose on; arm B adds
+  `problem/ck_impl_tol=1.0e-7 problem/ck_impl_maxit=24 problem/ck_impl_rsec=20.0 problem/ck_impl_dtmax=0.25`)
+Fetch (user or viper, whichever has the Caltech login): `scp -r jingze@login.hpc.caltech.edu:/resnick/groups/carnegie_poc/jingze/to_viper_0930 .`
+then `md5sum -c MD5.txt`. Viper build must be >= 793e03c3 (restart file layout identical; bitwise vs CUDA not expected).
