@@ -1,5 +1,7 @@
 # TASK 2026-09-30 (viper -> orion): He-star wedge + M1 positivity arms on orion CPU
 
+**DROPPED (user 09-30 ~23:00): do NOT run. No shared transfer path viper <-> orion; the gates stay on viper GPUs.**
+
 Written on viper 09-30 ~22:50 CEST. Orion is EXTRA CAPACITY for the He presn M1-positivity work; the decisive gates
 run on viper GPUs (m1pos_0930, jobs 12046524-30). Read `docs/handover/SESSION-2026-09-30-viper.md` section 6 first.
 
