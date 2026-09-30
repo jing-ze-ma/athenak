@@ -84,6 +84,9 @@ int hs_nf_ = 0;
 Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
+// he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
+// (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
+bool hs_binf_ = false, hs_bout_ = false;
 // problem/he_ic_balance: the discretely balanced initial cells (all x1 cells incl. ghosts
 // of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
@@ -161,7 +164,8 @@ Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
 //! returned for the startup range check
 void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
                         DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD,
-                        Real &lt_lo, Real &lt_hi, Real &ld_lo, Real &ld_hi) {
+                        Real &lt_lo, Real &lt_hi, Real &ld_lo, Real &ld_hi,
+                        const Real ld_ext = 1.0e300) {
   std::ifstream f(fname);
   if (!f.good()) HsFatal("cannot open opacity table '" + fname + "'", __LINE__);
   std::string line;
@@ -187,6 +191,36 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
   if (!have_grid || static_cast<int>(vals.size()) != nT*nD) {
     HsFatal("opacity table '" + fname + "' has no grid line or the wrong value count",
             __LINE__);
+  }
+  // problem/he_opac_logd_min (he-wind-bc, default none): the grid is EXTENDED to lower
+  // density by nadd columns, log10 kappa continued linearly in log10 rho with the slope
+  // of the table's first density interval clamped to [0, 1] (an absorption/scattering
+  // opacity per unit mass does not grow as rho falls, and falls at most like rho, the
+  // free-free/bound-free limit).  Where the slope lies inside [0, 1] the extension is
+  // continuous in value AND slope; the stellar tables are edge-filled (constant in rho)
+  // for log R < -8, i.e. flat (slope 0) at the edge for log T >= 4.2.
+  if (ld_ext < ld0 - 1.0e-9*dld) {
+    const int nadd = static_cast<int>(ceil((ld0 - ld_ext)/dld - 1.0e-9));
+    const int nDn = nD + nadd;
+    std::vector<Real> vn(static_cast<std::size_t>(nT)*nDn);
+    int nclip = 0;
+    for (int i=0; i<nT; ++i) {
+      const Real v0 = vals[i*nD], v1 = vals[i*nD + 1];
+      Real sl = (v1 - v0)/dld;
+      if (sl < 0.0 || sl > 1.0) ++nclip;
+      sl = (sl < 0.0) ? 0.0 : ((sl > 1.0) ? 1.0 : sl);
+      for (int j=0; j<nadd; ++j) vn[i*nDn + j] = v0 - sl*(nadd - j)*dld;
+      for (int j=0; j<nD; ++j) vn[i*nDn + nadd + j] = vals[i*nD + j];
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: opacity table '" << fname << "' extended from log10 rho "
+                << ld0 << " to " << ld0 - nadd*dld << " (" << nadd << " columns, slope "
+                << "clamped to [0,1] in " << nclip << " of " << nT << " T rows)"
+                << std::endl;
+    }
+    vals.swap(vn);
+    nD = nDn;
+    ld0 -= nadd*dld;
   }
   Kokkos::realloc(tab, nT, nD);
   Kokkos::realloc(lT, nT);
@@ -303,6 +337,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0), hM(nf, 0.0);
   for (int n=0; n<nf; ++n) hr[n] = hs_rlo_ + n*hs_dr_;
 
+  // problem/he_wind_ic (he-wind-bc, default false): above the radius r_c where the
+  // column's density falls below that of a beta-law wind (he_wind_mdot [g/s, full
+  // sphere], he_wind_vinf, he_wind_beta, he_wind_v0 [cm/s], he_wind_r0 [cm]: v = max(v0,
+  // vinf (1 - r0/r)^beta), rho = Mdot/(4 pi r^2 v)), the IC is that wind: F_r = F_c (r_c/
+  // r)^2, E = (F_r/c) (1 + (c E_c/F_c - 1)(r_c/r)^2) (free streaming far out), T_gas =
+  // T_c (E/E_c)^(1/4) (continuous at r_c), v_r = the beta law.  The file then need not
+  // cover the mesh top (it is extrapolated in log up to r_c, which must lie inside it).
+  const bool wic = pin->GetOrAddBoolean("problem","he_wind_ic",false);
+  std::vector<Real> hV(nf, 0.0);
+  Real wrc = 0.0;
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
@@ -324,7 +368,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       fr.push_back(a); fd.push_back(b); fe.push_back(c); fF.push_back(d);
       fE.push_back(e);
     }
-    if (fr.size() < 2 || fr.front() > hr.front() || fr.back() < hr.back()) {
+    if (fr.size() < 2 || fr.front() > hr.front() || (!wic && fr.back() < hr.back())) {
       std::ostringstream os;
       os << "problem/he_ic_file '" << fn << "' must cover r = " << hr.front() << " .. "
          << hr.back() << " (the mesh plus the ghost margin), it has "
@@ -342,6 +386,54 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (ncols == 5) hE[n] = exp((1.0 - w)*log(fE[kk]) + w*log(fE[kk+1]));
       if (hs_mlt_) hM[n] = (1.0 - w)*fM[kk] + w*fM[kk+1];
     }
+    if (wic) {
+      const Real mdot = pin->GetReal("problem","he_wind_mdot");
+      const Real vinf = pin->GetReal("problem","he_wind_vinf");
+      const Real wbeta = pin->GetOrAddReal("problem","he_wind_beta",1.0);
+      const Real wv0 = pin->GetOrAddReal("problem","he_wind_v0",1.0e6);
+      const Real wr0 = pin->GetReal("problem","he_wind_r0");
+      auto vw = [&](const Real r) {
+        const Real v = (r > wr0) ? vinf*pow(1.0 - wr0/r, wbeta) : 0.0;
+        return std::max(v, wv0);
+      };
+      int nc = -1;
+      for (int n=0; n<nf; ++n) {
+        if (hr[n] >= wr0 && hd[n] <= mdot/(4.0*M_PI*SQR(hr[n])*vw(hr[n]))) {
+          nc = n;
+          break;
+        }
+      }
+      if (nc < 1 || hr[nc] > fr.back()) {
+        HsFatal("problem/he_wind_ic: the wind density never exceeds the column's inside "
+                "the file's range above he_wind_r0", __LINE__);
+      }
+      wrc = hr[nc];
+      const Real tc = eos.Temperature(hd[nc], he[nc]);
+      const Real ec = (hE[nc] > 0.0) ? hE[nc] : ar*SQR(SQR(tc));
+      const Real fc = hF[nc];
+      for (int n=nc; n<nf; ++n) {
+        const Real r = hr[n], x2 = SQR(wrc/r);
+        const Real v = vw(r);
+        const Real d = mdot/(4.0*M_PI*SQR(r)*v);
+        const Real fr_ = fc*x2;
+        const Real er = (fr_/cl)*(1.0 + (cl*ec/fc - 1.0)*x2);
+        const Real t = tc*pow(er/ec, 0.25);
+        Real e, p, cr, ct, cv;
+        eos.ThermoAt(d, t, e, p, cr, ct, cv);
+        hd[n] = d;
+        he[n] = e;
+        hF[n] = fr_;
+        hE[n] = er;
+        hM[n] = 0.0;
+        hV[n] = v;
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "he_star_m1: he_wind_ic: Mdot = " << mdot << " g/s, vinf = " << vinf
+                  << ", beta = " << wbeta << ", r0 = " << wr0 << "; the wind starts at "
+                  << "r_c = " << wrc << " (rho " << hd[nc] << ", T " << tc << ", v "
+                  << hV[nc] << ")" << std::endl;
+      }
+    }
   }
 
   // ---- the Rosseland + Planck tables (one shared grid), handed to the module
@@ -353,9 +445,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     DvceArray1D<Real> mlT, mlD, plT, plD;
     int mnT = 0, mnD = 0, pnT = 0, pnD = 0;
     Real a1, a2, a3, a4, b1, b2, b3, b4;
+    // problem/he_opac_logd_min (default none): extend both tables to this log10 rho
+    const Real ldx = pin->DoesParameterExist("problem","he_opac_logd_min") ?
+                     pin->GetReal("problem","he_opac_logd_min") : 1.0e300;
     HsReadOpacityTable(rt, krt, mlT, mlD, mnT, mnD, tab_lt_lo, tab_lt_hi, tab_ld_lo,
-                       tab_ld_hi);
-    HsReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4);
+                       tab_ld_hi, ldx);
+    HsReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4, ldx);
     b1 = tab_lt_lo; b2 = tab_lt_hi; b3 = tab_ld_lo; b4 = tab_ld_hi;
     if (mnT != pnT || mnD != pnD || fabs(a1 - b1) + fabs(a2 - b2) + fabs(a3 - b3) +
         fabs(a4 - b4) > 1.0e-9) {
@@ -641,8 +736,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto seg = [&](const Real a_, const Real ra, const Real rb) {   // Phi_eff(rb) - (ra)
       return hs_gm_*(1.0/ra - 1.0/rb) - a_*(rb - ra);
     };
+    // he_wind_ic: the march starts below r_c (the wind cells keep their IC)
+    int ianc = ie;
+    if (wic) {
+      while (ianc > is && !(hx1v(0,ianc) < wrc)) --ianc;
+    }
     auto march = [&]() {
-      for (int i=ie; i>=is; --i) {
+      for (int i=ianc; i>=is; --i) {
         Real pl, pr;
         walk(i+1, bd[i+1], pl, pr);
         solve(i, pl);
@@ -964,7 +1064,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (hydro_fluxes.cpp, wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero
   // mass flux to round-off.  Measured: it does not change the first-cell force
   // (-2.1e-3 rho g at 640 zones, first order in dx, gate 1a), which is not the wall flux.
-  pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","he_wall_closed",true);
+  // problem/he_bc_inner (he-wind-bc): wall (default: the closed wall above) | inflow:
+  // the ghosts hold the (balanced) initial column at fixed rho and eint, UNSCALED, with
+  // v_r copied from the first active cell (zero gradient), so mass may enter or leave;
+  // no wall-face correction.  problem/he_bc_outer: noinflow (default) | outflow: the
+  // ghosts continue the edge cell as a constant-velocity wind, rho ~ r^-2, the edge's
+  // specific internal energy (the no-inflow face correction of he_wall_zero_flux stays).
+  {
+    const std::string bi = pin->GetOrAddString("problem","he_bc_inner","wall");
+    const std::string bo = pin->GetOrAddString("problem","he_bc_outer","noinflow");
+    if ((bi != "wall" && bi != "inflow") || (bo != "noinflow" && bo != "outflow")) {
+      HsFatal("problem/he_bc_inner must be wall|inflow, he_bc_outer noinflow|outflow",
+              __LINE__);
+    }
+    hs_binf_ = (bi == "inflow");
+    hs_bout_ = (bo == "outflow");
+  }
+  pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","he_wall_closed",
+                                                       !hs_binf_);
+  if (hs_binf_ && pmbp->phydro->wall_closed_ix1) {
+    HsFatal("problem/he_bc_inner = inflow needs he_wall_closed = false", __LINE__);
+  }
   hs_sp_rate_ = pin->GetOrAddReal("problem","he_sponge_rate",0.0);
   hs_sp_r0_ = pin->GetOrAddReal("problem","he_sponge_r0",hs_rint_);
   hs_rtop_ = rtop;
@@ -1039,6 +1159,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto crho = hs_rho_, ceint = hs_eint_;
   const bool bal = hs_bal_;
   auto cbd = hs_bd_, cbe = hs_be_;
+  DvceArray1D<Real> cwv("hs_wv", wic ? nf : 1);
+  if (wic) {
+    auto hw = Kokkos::create_mirror_view(cwv);
+    for (int n=0; n<nf; ++n) hw(n) = hV[n];
+    Kokkos::deep_copy(cwv, hw);
+  }
   par_for("hs_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
@@ -1063,11 +1189,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       e *= fac;
       if (srad) er *= SQR(SQR(fac));
     }
+    const Real vr = wic ? HsLinInterp(cwv, rlo, dr, nf, r) : 0.0;
     uh(m,IDN,k,j,i) = d;
-    uh(m,IM1,k,j,i) = 0.0;
+    uh(m,IM1,k,j,i) = d*vr;
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
     uh(m,IEN,k,j,i) = e + d*gm*(1.0/rin - 1.0/r);
+    if (wic) uh(m,IEN,k,j,i) += 0.5*d*vr*vr;
     ur(m,radm1::M1_E,k,j,i) = fmax(er, efl);
     ur(m,radm1::M1_F1,k,j,i) = HsLinInterp(cF, rlo, dr, nf, r);
     ur(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -1145,9 +1273,10 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   if (hs_zflux_) {
     auto flx1 = ph->uflx->x1f;
     auto &mbbcs = pmbp->pmb->mb_bcs;
+    const bool binf = hs_binf_;
     par_for("hs_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      if (!binf && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
         const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
         u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
         u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
@@ -1212,6 +1341,7 @@ void HeStarBC(Mesh *pm) {
   const int nf = hs_nf_;
   const bool bal = hs_bal_;
   auto cbd = hs_bd_, cbe = hs_be_;
+  const bool binf = hs_binf_, bout = hs_bout_;
   auto ur = pmbp->pradm1->u0;
   const Real cl = pmbp->pradm1->c_light;
   const Real efl = pmbp->pradm1->e_floor;
@@ -1226,18 +1356,23 @@ void HeStarBC(Mesh *pm) {
       const Real kea = 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - da*phicc(m,k,j,ia);
-      const Real sd = da/(bal ? cbd(ia) : HsLogInterp(crho, rlo, dr, nf, x1v(m,ia)));
-      const Real se = ea/(bal ? cbe(ia) : HsLogInterp(ceint, rlo, dr, nf, x1v(m,ia)));
+      const bool inflo = lo && binf, outfl = !lo && bout;
+      const Real sd = inflo ? 1.0 :
+                      da/(bal ? cbd(ia) : HsLogInterp(crho, rlo, dr, nf, x1v(m,ia)));
+      const Real se = inflo ? 1.0 :
+                      ea/(bal ? cbe(ia) : HsLogInterp(ceint, rlo, dr, nf, x1v(m,ia)));
       for (int g=0; g<ng; ++g) {
         const int ig = lo ? (is - 1 - g) : (ie + 1 + g);
         const int im = lo ? (is + g) : (ie - g);        // the mirror cell
         const Real rg = x1v(m,ig);
-        const Real dg = sd*(bal ? cbd(ig) : HsLogInterp(crho, rlo, dr, nf, rg));
-        const Real eg = se*(bal ? cbe(ig) : HsLogInterp(ceint, rlo, dr, nf, rg));
+        const Real dg = outfl ? da*SQR(x1v(m,ia)/rg) :
+                        sd*(bal ? cbd(ig) : HsLogInterp(crho, rlo, dr, nf, rg));
+        const Real eg = outfl ? ea*(dg/da) :
+                        se*(bal ? cbe(ig) : HsLogInterp(ceint, rlo, dr, nf, rg));
         const Real dm = uh(m,IDN,k,j,im);
         // wall: v1 mirrored; outer edge: v1 of the edge cell where it flows out
         const Real v1e = uh(m,IM1,k,j,ia)/da;
-        const Real v1 = (!lo && v1e > 0.0) ? v1e : -uh(m,IM1,k,j,im)/dm;
+        const Real v1 = inflo ? v1e : ((!lo && v1e > 0.0) ? v1e : -uh(m,IM1,k,j,im)/dm);
         const Real v2 = uh(m,IM2,k,j,im)/dm;
         const Real v3 = uh(m,IM3,k,j,im)/dm;
         uh(m,IDN,k,j,ig) = dg;
