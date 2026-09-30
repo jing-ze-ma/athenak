@@ -33,3 +33,7 @@ be read directly as long as you never write into its directory). Builds and run 
 /viper/ptmp2/jinma (u2 quota is tight).
 
 - Job monitoring (user rule 09-24): ONE background loop per agent, `squeue` every 600 s (sleep 600), exiting when your jobs finish. No shorter sleeps, no extra watchers, no foreground waits.
+- Smoke test before every launch (user rule 09-30): before submitting or releasing any production or
+  chained job, and after ANY edit to its script, input, binary or command-line keys, run a few-cycle
+  apudev smoke with the SAME binary, input and command-line override string (separate smoke dir,
+  time/nlim ~10). Submit/release the real job only if the smoke cycles with no FATAL; report the smoke job id.
