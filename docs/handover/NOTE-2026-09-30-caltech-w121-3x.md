@@ -18,3 +18,9 @@ starts first, cancel the Caltech ones (`scancel 3640301 3640302`, nothing spent 
 NOTE-2026-09-29-deltaai-seam-mpi-leak.md; waits only, bitwise unchanged): build 3643011 overwrites `athena.gpu`,
 production 3640302 now afterok:3643011. The Caltech binary therefore differs from viper's 2fd94098 build by the
 seam-wait fix only.
+
+**Update 09-29 18:05 PDT: Caltech 3x STARTED FIRST.** Job 3640302 running since 09-29 17:46 PDT on hpc-sm-02-03
+(binary 793e03c3). In-job smoke `SMOKE 3x rc=0 fatal=0 notconv=0`. dt 15.19 s at cycle 0 (= viper smoke), settles to
+~12.0 s (11.6-12.4) from cycle ~4000 onward; ~16 ms/cycle, ~24.6 rot/h -> rot 300 ETA ~09-30 06:00 PDT (12.2 h, fits the
+15:45 wall; no chain needed). No NaN/FATAL at cycle 56000 (rot ~6). Viper 12030356 had not started at this time ->
+per the TASK the user cancels viper 12030356 (+12030357).
