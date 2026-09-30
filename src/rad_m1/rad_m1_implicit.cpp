@@ -8288,6 +8288,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #endif
         vimp_emin = std::min(vimp_emin, emin);
         if (!(emin > 0.0)) {
+          // DEBUG dbg_t2_admiss (m1-positivity): the rows of the cells this pass solved
+          // to E <= 0, WITH the implicit_vimp block, before the block is dropped
+          if (t2_dbg_adm_n < t2_dbg_adm) {
+            t2_dbg_adm_n += 1;
+            if (global_variable::my_rank == 0) {
+              std::cout << "<rad_m1> POS_TRIGGER implicit_vimp fallback cycle "
+                        << pmy_pack->pmesh->ncycle << " pass " << it << " solve "
+                        << (t2st ? "hesdirk2-stage" : "be") << " min E " << emin
+                        << std::endl;
+            }
+            T2AdmissDebug(uh, u0_, t2i_, cl, ch, have_hydro,
+                          have_hydro && coupling && dbgh, t2s, it);
+          }
           vimp_now = false;
           vimp_nfall += 1.0;
         }
@@ -8753,6 +8766,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #endif
     flr_ne += nfe;
     flr_ng += nfg;
+    // DEBUG dbg_t2_admiss (m1-positivity): a solve that ENDS with E <= e_floor or a
+    // written-back eint <= 0 anywhere (the BE redo included) lists its cells and rows
+    if ((nfe > 0.0 || nfg > 0.0) && (t2_dbg_adm_n < t2_dbg_adm)) {
+      t2_dbg_adm_n += 1;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> POS_TRIGGER floor cycle " << pmy_pack->pmesh->ncycle
+                  << " solve " << (t2st ? "hesdirk2-stage" : "be") << " E<=e_floor "
+                  << nfe << " eint_wb<=0 " << nfg << " vimp_now " << vimp_now
+                  << std::endl;
+      }
+      T2AdmissDebug(uh, u0_, t2i_, cl, ch, hh, gq, t2s, it);
+    }
   }
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
@@ -9359,7 +9384,10 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
   DvceArray1D<int> lcnt("m1_t2dbg_lcnt", 1);
   // the frozen 7-point row of each listed cell (M1_IW_TA..CKP, KB) with the neighbour
   // solutions, TR, TRHS, TDIA, SRCB, SRCR, KT and WCHI (= f_rr on the sp wedge)
-  const int nrow = 42;
+  // + (m1-positivity) the implicit_vimp block of the row (x1 -2,-1,+1,+2 / x2 -2..+2 /
+  // x3 -2..+2 couplings, JD, JRHS) when the block exists: 14 more
+  const int nrow = 56;
+  const int ivb = iw_vimp;
   auto dbr = dbrow;
   const bool hasd = (dbrow.extent_int(0) > 0);
   const bool bcg = bicg_on;
@@ -9432,6 +9460,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     row(n,24) = iw_(m,M1_IW_DE0,k,j,i);
     row(n,25) = iw_(m,M1_IW_LRES,k,j,i);
     for (int q = 0; q < 16; ++q) {row(n,26+q) = hasd ? dbr(m,q,k,j,i) : 0.0;}
+    for (int q = 0; q < 14; ++q) {
+      row(n,42+q) = (ivb >= 0) ? iw_(m,ivb+M1_IV_X1M2+q,k,j,i) : 0.0;
+    }
   });
   auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lcnt);
   auto hl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lst);
@@ -9486,6 +9517,14 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
                   << hr(n,36) << " face_F0 " << hr(n,37) << " opac_newton " << hr(n,38)
                   << " enthalpy_corr " << hr(n,39) << " vimp_JRHS " << hr(n,40)
                   << " other " << hr(n,41) << std::endl;
+      }
+      if (ivb >= 0) {
+        std::cout << "      VIMP x1(-2,+2) " << hr(n,42) << " " << hr(n,43)
+                  << " x2(-2,-1,+1,+2) " << hr(n,44) << " " << hr(n,45) << " "
+                  << hr(n,46) << " " << hr(n,47) << " x3(-2,-1,+1,+2) " << hr(n,48)
+                  << " " << hr(n,49) << " " << hr(n,50) << " " << hr(n,51)
+                  << " JD " << hr(n,52) << " J1M " << hr(n,53) << " J1P " << hr(n,54)
+                  << " JRHS " << hr(n,55) << std::endl;
       }
     }
   }
