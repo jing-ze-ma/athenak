@@ -876,12 +876,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
   two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
                                                     two_stream_rt::ck_sph_dilute ? 1 : 0);
-  if (two_stream_rt::ck_sph_face < 0 || two_stream_rt::ck_sph_face > 2 ||
+  if (two_stream_rt::ck_sph_face < 0 || two_stream_rt::ck_sph_face > 4 ||
       (two_stream_rt::ck_sph_face != 0 &&
        (!two_stream_rt::ck_spherical || two_stream_rt::ck_sweep_form != 1 ||
         two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin))) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_face must be "
-              << "0..2, and != 0 needs ck_spherical, ck_sweep_form = 1, "
+              << "0..4, and != 0 needs ck_spherical, ck_sweep_form = 1, "
               << "ck_impl_lin = false and ck_impl_jac_lin = false" << std::endl;
     std::exit(EXIT_FAILURE);
   }

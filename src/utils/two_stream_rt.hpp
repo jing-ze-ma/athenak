@@ -1311,6 +1311,18 @@ inline bool ck_sph_dilute = false;
 //      depth of the two half cells that meet at the face.  Thin faces dilute (the
 //      transparent shell above the photosphere), thick faces keep the Eddington face
 //      that matches the diffusion flux.
+//   3  dilute face + CONE PATH FACTOR for the up ray;  4  blend face + cone path.
+//      Through a transparent shell above a photosphere of area A_ph the real up field
+//      fills a cone, sin^2 th_c = A_ph/A, and absorbs 2/(1 + cos th_c) of its flux per
+//      unit radial depth, not the 2 of a hemispherically isotropic stream.  The up
+//      crossing of a half cell therefore absorbs along dtau/(mu (1 + cos th_c)); its
+//      emission and the down crossing are unchanged, so an isotropic source still
+//      emits isotropically.  cos^2 th_c = T^4 R, R the relation's reflection just
+//      above the face and T the half cell's plain transmission: R = 1 - A_ph/A through
+//      a transparent shell over a black photosphere (the dilute face maps 1 - R by
+//      A_b/A_a), T^4 R -> 0 in a thick cell, where f -> 1.  Depends on kappa only, so
+//      the sweep stays affine in B.  Not meant for ck_dif_dtau handover columns (they
+//      start from R = 1).
 // General maps (rho = A_b/A_a, Dc = 1 + e R + e rho (1 - R), al = (1 + e)/Dc,
 // be = e (1 - rho)/Dc):  R <- 1 - rho (1 - R) al,  Sc <- rho al Sc;  solve
 // d_b = al d_a - be Sc_b, u_b = R d_b + Sc_b.  tm (ck_sweep_form = 1) only, explicit or
@@ -2447,8 +2459,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   auto &xP_g = std::get<66>(ctx_);
   auto &xT_g = std::get<67>(ctx_);
   const int fce = std::get<68>(ctx_);    // problem/ck_sph_face
-  const bool dil = (fce == 1);           // the dilute face (ck_sph_dilute)
-  const bool fbl = (fce == 2);           // the thick/thin blend
+  const bool dil = (fce == 1 || fce == 3);   // the dilute face (ck_sph_dilute)
+  const bool fbl = (fce == 2 || fce == 4);   // the thick/thin blend
+  const bool pth = (fce >= 3);               // + the up ray's cone path factor
   constexpr bool SPH = decltype(sph_tag)::value;
   constexpr bool BSP = decltype(bsp_tag)::value;
   constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
@@ -3076,6 +3089,25 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
           c1 = rh*al;
           r1 = 1.0 - rh*(1.0 - rj)*al;
         };
+        // ck_sph_face = 3, 4: R just above a face (the value map, bitwise the one
+        // pass 1 applies), and the up ray's half-cell transmission with the cone
+        // path factor f = 1/(1 + cos th_c), cos^2 th_c = T^4 R (see ck_sph_face)
+        auto rfm = [&](const int cc, const RtF rr, const Real bt, const Real dtc) {
+          if (fbl) {
+            Real alx, bex, c1x, r1x;
+            fblm(cc, static_cast<Real>(rr), bt, dtc, alx, bex, c1x, r1x);
+            return static_cast<RtF>(r1x);
+          }
+          const RtF bb = static_cast<RtF>(bt);
+          const RtF rh = (one - bb)/(one + bb);
+          return one - rh*(one - rr);
+        };
+        auto upt = [&](const int cc, const Real rf, const Real tr, const Real dth) {
+          const Real t2 = tr*tr;
+          const Real cq = t2*t2*rf;
+          const Real cth = sqrt((cq > 0.0) ? cq : 0.0);
+          return exp(-dth/(muc[cc]*(1.0 + cth)));
+        };
         RtF Rc[NC], Hc[NC];
         // ---- problem/ck_implicit (JAC): THE TRIDIAGONAL OF THE tm SWEEP -------
         // At frozen opacity the tm sweep is affine in the band Planck functions
@@ -3242,7 +3274,8 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 Real alx, bex;
                 fblm(cc, rj, bt, dtfc, alx, bex, c1, r1);
               }
-              const Real r2 = tj*tj*r1;
+              const Real tuj = pth ? upt(cc, r1, tj, 0.5*kro*dz) : tj;
+              const Real r2 = tuj*tj*r1;
               const Real sold[3] = {jS[cc][1], jS[cc][2], 0.0};
               for (int s=0; s<3; ++s) {
                 const Real dsf = (s < 2) ? jfc[cc][s] : 0.0;
@@ -3251,8 +3284,8 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 const Real dql = ci*dsu + co*dsf;
                 const Real dpu = ci*dslv[s] + co*dsfw[s];
                 const Real dqu = ci*dsfw[s] + co*dslv[s];
-                const Real s2 = tj*(r1*dql + c1*sold[s]) + dpl;
-                jS[cc][s] = tj*(r2*dqu + s2) + dpu;
+                const Real s2 = tuj*(r1*dql + c1*sold[s]) + dpl;
+                jS[cc][s] = tuj*(r2*dqu + s2) + dpu;
               }
               jfc[cc][0] = dsfw[1];
               jfc[cc][1] = dsfw[2];
@@ -3281,10 +3314,16 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 ss = (one - bb)*ss/dn;
                 rr = rn;
               }
-              ss = tr*(rr*ql + ss) + pl;
-              rr = tr*tr*rr;
-              ss = tr*(rr*qu + ss) + pu;
-              rr = tr*tr*rr;
+              // ck_sph_face = 3, 4: the up crossing absorbs along the cone path
+              // (tu), the down crossing and both emissions are unchanged
+              const RtF tu = pth ? static_cast<RtF>(upt(cc, static_cast<Real>(rr),
+                                                        static_cast<Real>(tr),
+                                                        0.5*kro*dz))
+                                 : tr;
+              ss = tu*(rr*ql + ss) + pl;
+              rr = tu*tr*rr;
+              ss = tu*(rr*qu + ss) + pu;
+              rr = tu*tr*rr;
             } else {
               // sd: the face is a rescaling by A_below/A_above, the layer is the
               // Moebius map with the shared denominator
@@ -3463,10 +3502,27 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             RtF ua = dcu[cc] + dm*static_cast<RtF>(rat);
             dcu[cc] = db;
             // the up ray through cell i: the lower half, then the upper half
-            step(cc, i, dth, sfv, suv, ua, dsrc, false, false);
-            Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
-            step(cc, i, dth, slc[cc], sfu[cc], ua, dsrc, false, false);
-            Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+            if (pth) {
+              // ck_sph_face = 3, 4: pass 1's up crossing, cone-path absorption
+              RtF e0x, cix, cox;
+              cofs(cc, i, dth, e0x, cix, cox, false, false);
+              const RtF rfx = rfm(cc, I_down[cc][i], bt, dtfc);
+              const RtF tux = static_cast<RtF>(upt(cc, static_cast<Real>(rfx),
+                                                   static_cast<Real>(one - e0x), dth));
+              RtF emx = cix*static_cast<RtF>(sfv) + cox*static_cast<RtF>(suv);
+              dsrc = static_cast<Real>((one - tux)*ua - emx);
+              ua = tux*ua + emx;
+              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+              emx = cix*static_cast<RtF>(slc[cc]) + cox*static_cast<RtF>(sfu[cc]);
+              dsrc = static_cast<Real>((one - tux)*ua - emx);
+              ua = tux*ua + emx;
+              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+            } else {
+              step(cc, i, dth, sfv, suv, ua, dsrc, false, false);
+              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+              step(cc, i, dth, slc[cc], sfu[cc], ua, dsrc, false, false);
+              Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+            }
             // CLOSE THE CELL ON THE FLUX IT REPORTED.  The up ray leaving cell i
             // is the u_below the face above it already used; the two agree to
             // round-off, and adding the difference here is what makes the
@@ -3534,6 +3590,14 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 Real c1x, r1x;
                 fblm(cc, rj, bt, dtfc, al, be, c1x, r1x);
                 wr = tj*tj*tj*tj*c1x*jQ[cc];
+                if (pth) {
+                  const Real tuj = upt(cc, r1x, tj, dth);
+                  wr = tuj*tuj*tj*tj*c1x*jQ[cc];
+                }
+              } else if (pth) {
+                const Real rhd = (1.0 - bt)/(1.0 + bt);
+                const Real tuj = upt(cc, 1.0 - rhd*(1.0 - rj), tj, dth);
+                wr = tuj*tuj*tj*tj*rhd*jQ[cc];
               }
               const Real s0 = Js0[cc][i];
               const Real s1 = Js1[cc][i];
