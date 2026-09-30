@@ -1158,6 +1158,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
+  two_stream_rt::rt_dump_kap = pin->GetOrAddBoolean("problem","ck_dump_kap",false);
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
@@ -2553,6 +2554,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real tTk = pin->GetOrAddReal("problem","rt_test_T",0.0);
     const Real tdT = pin->GetOrAddReal("problem","rt_test_dT",0.0);
     const Real tnw = pin->GetOrAddReal("problem","rt_test_nwave",0.0);
+    // rt_test_rstep > 0 (test only): rho = rt_test_rho_top above r = rt_test_rstep (the
+    // sharp-photosphere check of tests_ck_sph/closure_0930); needs rt_test_rho > 0.
+    const Real trst = pin->GetOrAddReal("problem","rt_test_rstep",0.0);
+    const Real trtop = pin->GetOrAddReal("problem","rt_test_rho_top",0.0);
     if (!restart && (trho > 0.0 || tTk > 0.0 || tdT != 0.0)) {
       if (pmbp->phydro == nullptr || use_cubed_sphere_) {
         std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_test_rho, _T "
@@ -2576,7 +2581,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real ke0 = u0t(m,IEN,k,j,i) - eold - (etgt ? rho0*ph : 0.0);
         Real rho = rho0;
         if (trho > 0.0) {
-          rho = trho;
+          rho = (trst > 0.0 && x1vt(m,i) > trst) ? trtop : trho;
           u0t(m,IDN,k,j,i) = rho;
           u0t(m,IM1,k,j,i) = 0.0;
           u0t(m,IM2,k,j,i) = 0.0;

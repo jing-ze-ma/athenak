@@ -450,6 +450,10 @@ inline int rt_dump_m = 0;
 inline int rt_dump_j = -1;
 inline int rt_dump_k = -1;
 inline bool rt_dump_done = false;
+// problem/ck_dump_kap (test only, default false): append kappa(b,g) [cm^2/g, incl. the
+// continuum] of every cell and the g weights to the ck_dump_file column, so an exact
+// ray-traced reference can be built from the kernel's OWN opacities.  Dump path only.
+inline bool rt_dump_kap = false;
 inline Real rt_ck_pcut = 10.0;                    // bar
 // problem/rt_grey: the GREY two-stream, built on the correlated-k machinery rather than
 // on the old picket-fence path.  One band, one opacity, taken from the conduction
@@ -9352,7 +9356,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // dtau_bg over the same centre-to-centre layer the sweep uses, 38 the smallest
         // optical depth from the top over all (band, g) at the face, 39 the Rosseland
         // (grey) diffusion flux at the face from column 35.
-        const int ncold = grey_on ? 12 : (18 + 2*CK_NB);
+        const int ncold0 = grey_on ? 12 : (18 + 2*CK_NB);
+        const int ncold = (grey_on || !rt_dump_kap) ? ncold0
+                        : (ncold0 + CK_NB*CK_NG + CK_NG);
         const bool dtab = (pcond_rt != nullptr) && pcond_rt->rad_kappa_tab &&
                           pcond_rt->rad_kr_nT > 0 && !pcond_rt->rad_kappa_rho;
         auto dkt = dtab ? pcond_rt->rad_kr_tab : CkDum<DvceArray2D<Real>>("d");
@@ -9427,6 +9433,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 }
               }
               fr = -(4.0*M_PI/3.0)*(bsu - bsl)/(kros(i-1)*hl + kros(i)*hu);
+            }
+            if (ncold > ncold0) {
+              for (int b=0; b<CK_NB; ++b) {
+                for (int g=0; g<CK_NG; ++g) col(i,ncold0+b*CK_NG+g) = kbg(ic, b, g);
+              }
+              for (int g=0; g<CK_NG; ++g) col(i,ncold0+CK_NB*CK_NG+g) = ckgw(g);
             }
             col(i,15+2*CK_NB) = fd;
             col(i,16+2*CK_NB) = (tmn < 1.0e300) ? tmn : 0.0;
