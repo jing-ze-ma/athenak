@@ -100,6 +100,9 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   Real spd[5];         // signal speeds, left to right
 
   //------------------------ ADIABATIC HLLD solver ---------------------------------------
+  // <mhd>/lhlld_x1_phi_min (EOS_Data::x1_phi_min): floor on phi on x1 faces only
+  const Real phi_min = (ivx == IVX) ? eos.x1_phi_min : 0.0;
+
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
     Real igm1 = 1.0/gm1;
@@ -191,6 +194,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // eqns. (14)-(15) of Minoshima & Miyoshi
       Real chi = fmin(1.0, fmax(cul, cur)/fmax(cfl, cfr));
       Real phi = chi*(2.0 - chi);
+      if (phi_min > 0.0) phi = fmax(phi, phi_min);  // x1 faces, key set only
 
       // Real cfmax = std::max(cfl,cfr);
       // if (wl_ivx <= wr_ivx) {
