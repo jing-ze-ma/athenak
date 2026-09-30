@@ -885,6 +885,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "ck_impl_lin = false and ck_impl_jac_lin = false" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // problem/ck_sph_top (prototype, default 0): see two_stream_rt::ck_sph_top
+  two_stream_rt::ck_sph_top = pin->GetOrAddInteger("problem","ck_sph_top",0);
+  if (two_stream_rt::ck_sph_top < 0 || two_stream_rt::ck_sph_top > 2 ||
+      (two_stream_rt::ck_sph_top != 0 &&
+       (two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin))) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_top must be "
+              << "0..2, and != 0 needs ck_impl_lin = false and ck_impl_jac_lin = false"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   two_stream_rt::ck_impl_jac0 = pin->GetOrAddBoolean("problem","ck_impl_jac0",false);
   two_stream_rt::ck_impl_jneg = pin->GetOrAddBoolean("problem","ck_impl_jneg",false);
   two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",

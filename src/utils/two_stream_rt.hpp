@@ -1328,6 +1328,14 @@ inline bool ck_sph_dilute = false;
 // d_b = al d_a - be Sc_b, u_b = R d_b + Sc_b.  tm (ck_sweep_form = 1) only, explicit or
 // ck_implicit; refused with ck_impl_lin / ck_impl_jac_lin.  cksph_test_0930/VARIANTS.md.
 inline int ck_sph_face = 0;
+// problem/ck_sph_top (PROTOTYPE, default 0 = bitwise the historical datum): the down
+// intensity the correlated-k chain kernel hands the top face, (1 - e^-dtau/mu) B over
+// the hydrostatic column p/g above the domain.  0 takes kappa and B at the GHOST cell
+// (which a pgen IC can leave hot: T_ghost 3415 K on the old dhj grid); 1 sends
+// nothing down (d_top = 0); 2 takes kappa and B at the top ACTIVE cell (the column
+// depth still from the ghost pressure).  The stellar beam is unchanged.  Chain kernel
+// only; refused with ck_impl_lin / ck_impl_jac_lin.
+inline int ck_sph_top = 0;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -2462,6 +2470,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   const bool dil = (fce == 1 || fce == 3);   // the dilute face (ck_sph_dilute)
   const bool fbl = (fce == 2 || fce == 4);   // the thick/thin blend
   const bool pth = (fce >= 3);               // + the up ray's cone path factor
+  const int tpm = std::get<69>(ctx_);        // problem/ck_sph_top
   constexpr bool SPH = decltype(sph_tag)::value;
   constexpr bool BSP = decltype(bsp_tag)::value;
   constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
@@ -2654,9 +2663,12 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       for (int cc=0; cc<NC; ++cc) {
         // ck_impl_frozen_op: the top layer contributes (1 - e^-dtau) B_ghost, and
         // the factor depends on the opacity alone
+        // problem/ck_sph_top: 1 = nothing, 2 = the top active cell's kappa and B
+        const int itb = (tpm == 2) ? ie : ie+1;
         if (ckfus) {
           I_down[cc][ie+1] = static_cast<RtF>(cktpf_g(m,blk*NC+cc,k,j))
-                           * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
+                           * static_cast<RtF>(Bb_g(m,bandc[cc],itb,k,j));
+          if (tpm == 1) I_down[cc][ie+1] = static_cast<RtF>(0.0);
           tausw[cc] = 0.0;
           transw[cc] = static_cast<RtF>(1.0);
           continue;
@@ -2666,13 +2678,27 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
         const Real dtau = RTTopDtau(kap, ptop*1.0e6,
                                     EffGravAt(grav, ap, x1v_(m,ie+1),
                                               grav_pmass, omega, mu0, tide));
-        const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
+        RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
+        if (tpm == 2) {
+          const Real xTa = xT_g(m,k,j,ie);
+          const Real xPa = xP_g(m,k,j,ie);
+          const int iTa = static_cast<int>(xTa);
+          const int iPa = static_cast<int>(xPa);
+          const Real kpa = ck_kappa(cklk, iTa, xTa - static_cast<Real>(iTa), iPa,
+                                    xPa - static_cast<Real>(iPa), bandc[cc], gc[cc])
+                         + kc_g(m,bandc[cc],ie,k,j);
+          const Real dta = RTTopDtau(kpa, ptop*1.0e6,
+                                     EffGravAt(grav, ap, x1v_(m,ie+1),
+                                               grav_pmass, omega, mu0, tide));
+          trans = RT_EXP(-static_cast<RtF>(dta/muc[cc]));
+        }
         if (ckfst) {
           cktpf_g(m,blk*NC+cc,k,j) =
               static_cast<Real>(static_cast<RtF>(1.0)-trans);
         }
         I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
-                         * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
+                         * static_cast<RtF>(Bb_g(m,bandc[cc],itb,k,j));
+        if (tpm == 1) I_down[cc][ie+1] = static_cast<RtF>(0.0);
         // BSP: nothing above the domain top, so the ray enters unattenuated;
         // the plane-parallel path instead charges it the ghost column's depth
         tausw[cc] = BSP ? 0.0 : dtau;
@@ -3422,6 +3448,13 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 Real c1x, r1x;
                 fblm(cc, rj, bt, dtf[cc], al, be, c1x, r1x);
               }
+              // ck_sph_top = 2: the datum is (1 - e^-dtau) B_ie, so d^+ at the top
+              // face depends on B_ie (slot 1)
+              Real tfd = 0.0;
+              if (tpm == 2) {
+                const Real bie = Bb_g(m,bandc[cc],ie,k,j);
+                tfd = (bie > 0.0) ? static_cast<Real>(Itp[cc])/bie : 0.0;
+              }
               const Real s0 = Js0[cc][ie+1];
               const Real s1 = Js1[cc][ie+1];
               const Real s2 = Js2[cc][ie+1];
@@ -3431,6 +3464,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               jdm[cc][0] = -be*s0;
               jdm[cc][1] = -be*s1;
               jdm[cc][2] = -be*s2;
+              if (tpm == 2) {
+                jDu[cc][1] -= al*(1.0 - rj)*tfd;
+                jdm[cc][1] += al*tfd;
+              }
               jQ[cc] = be;
               jfu[cc][0] = 1.0;
               jfu[cc][1] = 0.0;
@@ -6844,6 +6881,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // picket_fence_two_stream_RT_pass; ck_chain_ctx hands it, by reference, the
         // locals it reads (unpacked there in the same order).
         const int dil_ = ck_sph_face;   // problem/ck_sph_face
+        const int tpm_ = ck_sph_top;    // problem/ck_sph_top
         auto ck_chain_ctx = std::forward_as_tuple(ACC, AFC, albedo, ap, Bb_g, bface_on,
                                                   boltz_sigma, BTF, cbt_, cf_g, ckc0_g,
                                                   ckci_g, ckco_g, ckdb_g, ckdif_,
@@ -6856,7 +6894,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                   layer_legacy, MIXF, mug, n1, nblk, nmb1,
                                                   omega, pb_g, pfid, pfl0, Qb_g, rhoN,
                                                   Src_g, T_g, tide, Tint, Tint4, wg, X1F,
-                                                  x1v_, xP_g, xT_g, dil_);
+                                                  x1v_, xP_g, xT_g, dil_, tpm_);
         auto launch_ck_chain = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
                                    auto cch_tag, auto frm_tag, auto fop_tag,
                                    auto jac_tag) {
