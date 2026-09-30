@@ -53,3 +53,35 @@ Counters: one `<rad_m1> m1-positivity:` line in the end-of-run report.
 | iso6 J | all + guard 6, vimp off | 28 / 0 of 8 | 1 of 4 | - | 2 / 3 (both limited, 0 created) |
 
 ## 4. Gates
+### 4a. Off switches bitwise (apudev, HIP ROCm 7.2), keys absent vs he-presn-m1 abf547b5
+- He-star wedge 128^2, ad3d_128 rst 00011 -> t 25880, 2 GPUs (job 12046531, gate_off/wb vs wn):
+  both hst and rst 00012-00014 IDENTICAL (base binary athena_gpu_he_star_m1_base, new 7192a176).
+- He box, hebox_cfl2 H6 rst 00036 (t 59800) -> 59830, 1 GPU (job 12046647, gate_off/bb vs bn):
+  both hst and rst 00037-00039 IDENTICAL (athena_box_gpu72_abf547b5 vs athena_box_gpu72_7192a176).
+  (A first attempt from rst 00037 = t 61800 ran 0 cycles and is void.)
+
+### 4b. He box cost, GPU (apudev, 2 GPUs, same binary, interleaved C N C N C N, 59800 -> 59880,
+job 12046584, hebox/cost): wall (cpu time used, s) C 25.01 / 25.37 / 26.01, N 24.97 / 25.12 / 25.32;
+Picard 7.0 per solve and 496 solves in every run.  N clips g0 on pass 0 in 42 cell-passes; the gas
+and floor limiters never fire.  Cost: no measurable change (N -1 %, within the C spread).
+
+### 4c. He box accuracy (saturated window 59800 -> 74000, cfl 0.6, C / P (1-ulp cfl noise) / N):
+job 12046701 (apu, submitted 23:05, smoke 12046649 clean). PENDING. Analysis:
+`/viper/ptmp2/jinma/m1pos_0930/hebox/ana.sh 60000 74000` (copy: hebox_ana.sh) -> ana_refC_*.txt,
+conv_*.txt (v1'/v_MLT, r(v1',T'), Fc/F in the FeCZ), kehst_*.txt (KE1, KEh), counters.txt.
+Accept if |N - C| <= |P - C| (and the snapshot scatter) for v1'/v_MLT, KE1, KEh, Fc/F, mean T/rho.
+
+### 4d. DECISIVE He-star restarts (apu, 1 node = 2 GPUs each; smokes 12046496, 12046497 clean)
+Arms (arms.sh; ON = implicit_g0_exchange + implicit_g0_limit 1 + implicit_pos_gas +
+implicit_pos_floor + implicit_opac_newton_guard_mode 6):
+| arm | job | state at 23:05 |
+|---|---|---|
+| off128 (control, r2.sh keys) | 12046524 | FAILED like ad3d_128: last sane cycle 2580 t = 26846 s, then dt 2262 (runaway); E<=floor 1.7e8, eint<=0 1.5e8 cell-solves, vimp fallbacks 440 (min E -inf), stages 12 ok / 234 redone |
+| be128 (time_scheme be, vimp off, options off) | 12046527 | FAILED the same way: last sane t = 26847 s, E<=floor 7.6e7 |
+| onv128 (ON, vimp on) | 12046525 | running, t = 27970 s (past 26825), dt 3.6, 300 stages non-admissible (Picard NC) |
+| onn128 (ON, vimp off) | 12046526 | running, t = 28084 s, dt 3.7, 324 stages non-admissible |
+| beon128 (ON, be, vimp off) | 12046528 | running, t = 29752 s, dt 2.4 |
+| offh64 (hllc 64^2 control, rst 00012 t = 28200) | 12046529 | pending |
+| onnh64 (hllc 64^2, ON, vimp off) | 12046530 | running, t = 32047 s (past the 29200 onset and the 31626 NaN of ad3d_hllc), dt 4.5 |
+Targets: 128^2 t >= 32900 s, 64^2 t >= 33000 s. Analysis: `python3 /viper/ptmp2/jinma/m1pos_0930/analyze.py`
+(time reached, nan lines, non-admissible stages, end-of-run counters incl. the m1-positivity line).
