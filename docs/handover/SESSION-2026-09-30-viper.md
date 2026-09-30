@@ -221,3 +221,10 @@ adopt + port + GPU A/B; thick-cell blend; variable-Eddington factor; top-ghost b
 (fell onto a dense shell at 0.5-0.65 R above the closed inner wall). Large inward-flux patches in the empty outer region
 (suspect). Slices page https://claude.ai/artifact/HcgYDVQ3CozhxXavZppqcU ; script /viper/ptmp2/jinma/m1pos_0930/slices/slices.py.
 Open: physical (porosity -> radiation no longer supports the inflated envelope) vs closure ramp-off / closed wall / floor.
+**10-01 ~00:30 Transmission post-processor DONE** (/viper/ptmp2/jinma/w121prod_0929/synth2_trans/RESULTS.md; scripts copied to
+docs/handover/scripts/w121/synth2_trans/): Kurucz Fe I (300-line mask) + Na D Voigt, H- + Rayleigh continuum, R 600k chords,
+15 epochs, CCF at R 70k. Fe RV morning / evening / whole: 1x -0.66 / -11.86 / -6.75, 10x +0.48 / -11.65 / -6.48 vs
+Seidel+25 -4.12 / -6.90 (whole ~-5.2 to -6): evening ~5 km/s too blue, morning not blueshifted; only the whole-transit value
+agrees. Decomposition: winds alone -4.9 / -6.0, rotation +5.0 / -5.8. Lines form at 10^-4.5 (1x) / 10^-5.2 (10x) bar median;
+domain top high enough (< 3 % above it). Robust to Fe x0.1/x10, extension, chemistry, LSF. Lever = circulation (drag / less
+super-rotation), not post-processing. Line depths (Fe CCF ~1500 ppm, Na ~3000 ppm) not checked against measured amplitudes.
