@@ -65,28 +65,13 @@ Real FofcGravDiv(const int m, const int k, const int j, const int i, const bool 
 }
 
 //! utest(IEN) -= div(F_rho*Phi_f) + utest(IDN)*Phi_c over [il,iu]x[jl,ju]x[kl,ku]
-inline void FofcTrialRemoveGrav(MeshBlockPack *pp, DvceArray5D<Real> utest,
-                                const DvceFaceFld5D<Real> &flx,
-                                const DvceArray4D<Real> &phicc,
-                                const DvceFaceFld4D<Real> &phif, const Real beta_dt,
-                                const int il, const int iu, const int jl, const int ju,
-                                const int kl, const int ku) {
-  const bool curv = pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar;
-  const bool multi_d = pp->pmesh->multi_d;
-  const bool three_d = pp->pmesh->three_d;
-  auto vol = pp->pcoord->volume;
-  auto area = pp->pcoord->area;
-  auto &size = pp->pmb->mb_size;
-  auto flx_ = flx;
-  auto phif_ = phif;
-  auto phicc_ = phicc;
-  par_for("FOFC-etotgrav", DevExeSpace(), 0, pp->nmb_thispack-1, kl, ku, jl, ju, il, iu,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real divg = FofcGravDiv(m, k, j, i, curv, multi_d, three_d, beta_dt, flx_,
-                                  phif_, vol, area, size.d_view(m).dx1,
-                                  size.d_view(m).dx2, size.d_view(m).dx3);
-    utest(m,IEN,k,j,i) -= divg + utest(m,IDN,k,j,i)*phicc_(m,k,j,i);
-  });
-}
+//! Defined once in fofc_etotgrav.cpp: an inline header function holding a KOKKOS_LAMBDA
+//! compiled into two TUs (hydro_fofc, mhd_fofc) breaks under nvcc (one linker copy, the
+//! other caller jumps through an uninitialised lambda wrapper; see c2p_track).
+void FofcTrialRemoveGrav(MeshBlockPack *pp, DvceArray5D<Real> utest,
+                         const DvceFaceFld5D<Real> &flx, const DvceArray4D<Real> &phicc,
+                         const DvceFaceFld4D<Real> &phif, const Real beta_dt,
+                         const int il, const int iu, const int jl, const int ju,
+                         const int kl, const int ku);
 
 #endif  // HYDRO_FOFC_ETOTGRAV_HPP_
