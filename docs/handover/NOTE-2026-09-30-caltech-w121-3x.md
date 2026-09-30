@@ -24,3 +24,9 @@ seam-wait fix only.
 ~12.0 s (11.6-12.4) from cycle ~4000 onward; ~16 ms/cycle, ~24.6 rot/h -> rot 300 ETA ~09-30 06:00 PDT (12.2 h, fits the
 15:45 wall; no chain needed). No NaN/FATAL at cycle 56000 (rot ~6). Viper 12030356 had not started at this time ->
 per the TASK the user cancels viper 12030356 (+12030357).
+
+**Update 09-30 10:45 PDT: link 1 done, link 2 queued.** dt fell 12 -> ~7.5 s after rot ~18 (radial CFL at p ~1e-5 bar,
+supersonic nightside downflows; see ck A/B TASK: not a solver limit cycle). Link 1 3640302 COMPLETED at wall (15:45,
+rc 0) at t = 2.8017e7 s = rot 254.3 (cycle 3.517M, dt 7.47 s, no NaN/FATAL, last rst dhj.00509.rst, 2.9e7 zone-cyc/s).
+Chain link 3648795 (afterok, same binary/keys, restarts from the newest rst) pending, est start 09-30 16:49 PDT;
+~46 rot left (~3 h).
