@@ -6,6 +6,9 @@
 //! \file pgen_eos_utils.cpp
 //! \brief the host helper of pgen_eos_utils.hpp that launches a kernel
 
+#include "athena.hpp"
+#include "mesh/mesh.hpp"
+#include "eos/eos.hpp"
 #include "pgen/pgen_eos_utils.hpp"
 
 namespace pgen_eos {
