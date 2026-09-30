@@ -948,7 +948,12 @@ TaskStatus Hydro::ClearSend(Driver *pdrive, int stage) {
 
   // with SMR/AMR check sends of restricted fluxes of U complete
   // do not check flux send for ICs (stage < 0)
-  if (pmy_pack->pmesh->multilevel && (stage >= 0)) {
+  // On the cubed sphere the PANEL-SEAM flux exchange (SendFlux) uses the same flux_req
+  // and must be waited on too: unwaited, every stage leaked one MPI request per off-rank
+  // seam neighbour and Cray MPICH aborted once its request pool ran out (DeltaAI, dhj
+  // at 2 ranks after ~8000 cycles: "Assertion failed ... req != NULL" in MPI_Isend).
+  if ((pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere) &&
+      (stage >= 0)) {
     tstat = pbval_u->ClearFluxSend();
     if (tstat != TaskStatus::complete) return tstat;
   }
@@ -995,7 +1000,9 @@ TaskStatus Hydro::ClearRecv(Driver *pdrive, int stage) {
 
   // with SMR/AMR check receives of restricted fluxes of U complete
   // do not check flux receives when stage < 0 (i.e. ICs)
-  if (pmy_pack->pmesh->multilevel && (stage >= 0)) {
+  // (and on the cubed sphere, the panel-seam flux receives; see ClearSend)
+  if ((pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere) &&
+      (stage >= 0)) {
     tstat = pbval_u->ClearFluxRecv();
     if (tstat != TaskStatus::complete) return tstat;
   }
