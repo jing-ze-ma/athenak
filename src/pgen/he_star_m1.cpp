@@ -15,6 +15,8 @@
 //! which still serves grey and box-sized tests) with the features this star does not
 //! need removed and the ones it does need added:
 //!   * the gas-only tabulated EOS (<hydro>/eos_radiation = false, enforced by the module)
+//!     or an ideal gas (eos = ideal; <units>/mu sets its kelvin scale, which
+//!     <rad_m1>/temp_unit_kelvin must equal; no EOS range check then)
 //!     and the Rosseland + Planck tables (problem/he_opac_table, he_planck_table);
 //!   * the initial column he_ic_file, columns  r rho eint F_r  (cgs, ascending r):
 //!     F_r is the DIFFUSIVE part of the luminosity flux, F_r = L/(4 pi r^2) - F_MLT, so
@@ -274,6 +276,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng - 1) : 0;
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto eos = ph->peos->eos_data;
+  // kelvin per unit code temperature: the tabulated general EOS keeps its own scale
+  // (EOS_Data::temp_cgs, mu_ref = 1); an ideal gas has T_code = p/d, whose scale is the
+  // <units> temperature with <units>/mu folded in (EOS_Data::temp_cgs stays 1 there)
+  const Real hs_tk = eos.tbl.active ? eos.temp_cgs :
+                     ((pmbp->punit != nullptr) ? pmbp->punit->temperature_cgs() : 1.0);
   const bool etg = ph->use_etotgrav;
   const bool wbdyn = ph->use_wellbalance_dynamic;
   if (!(wbdyn && ph->use_wb_x1 && etg)) {
@@ -433,7 +440,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::cout << "he_star_m1: he_wind_ic: Mdot = " << mdot << " g/s, vinf = " << vinf
                   << ", beta = " << wbeta << ", r0 = " << wr0 << "; the wind starts at "
                   << "r_c = " << wrc << " (rho " << hd[nc] << ", T [K] "
-                  << tc*eos.temp_cgs << ", v "
+                  << tc*hs_tk << ", v "
                   << hV[nc] << ")" << std::endl;
       }
     }
@@ -461,7 +468,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     pm1->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
     // the lookup's units against the EOS's own code temperature and <units> density
-    const Real tcgs = eos.temp_cgs;
+    const Real tcgs = hs_tk;
     const Real dcgs = (pmbp->punit != nullptr) ? pmbp->punit->density_cgs() : 1.0;
     if (std::fabs(pm1->otab.tunit/tcgs - 1.0) > 1.0e-5 ||
         std::fabs(pm1->otab.dunit/dcgs - 1.0) > 1.0e-5) {
@@ -512,13 +519,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Kokkos::deep_copy(hkt, ckt);
 
   // ---- startup check (fatal): the column, ghost margin included, is inside the EOS
-  // table and the opacity table grid, in (rho [g/cm^3], T [K])
+  // table (tabulated EOS only; an ideal gas has no range) and the opacity table grid,
+  // in (rho [g/cm^3], T [K])
   {
     const Real tk = pm1->otab.tunit, dk = pm1->otab.dunit;
-    const Real elo_d = pin->GetReal("hydro","eos_logd_min");
-    const Real ehi_d = pin->GetReal("hydro","eos_logd_max");
-    const Real elo_t = pin->GetReal("hydro","eos_logt_min");
-    const Real ehi_t = pin->GetReal("hydro","eos_logt_max");
+    const bool etab = eos.tbl.active;
+    const Real elo_d = etab ? pin->GetReal("hydro","eos_logd_min") : -1.0e300;
+    const Real ehi_d = etab ? pin->GetReal("hydro","eos_logd_max") : 1.0e300;
+    const Real elo_t = etab ? pin->GetReal("hydro","eos_logt_min") : -1.0e300;
+    const Real ehi_t = etab ? pin->GetReal("hydro","eos_logt_max") : 1.0e300;
     Real ldmin = 1.0e300, ldmax = -1.0e300, ltmin = 1.0e300, ltmax = -1.0e300;
     for (int n=0; n<nf; ++n) {
       const Real ld = log10(hd[n]*dk), lt = log10(hT(n)*tk);
