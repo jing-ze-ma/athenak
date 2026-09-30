@@ -18,7 +18,7 @@ Submit AthenaK jobs to the **p.shared** partition, not p.exclusive — it schedu
 on p.shared without it the OpenMP threads oversubscribe one core per task. p.shared nodes have
 ~224 cores / 512 GB, so 64 cores + 50 GB fits fine. Don't move an already-running job.
 
-**User preference (firm, 2026-07-21):** after editing + building, JUST SUBMIT the real job.
+**SUPERSEDED 09-30 by [[smoke-test-every-launch]] (always smoke-test before a launch).** Old (2026-07-21): after editing + building, JUST SUBMIT the real job.
 Do NOT run pre-flight sanity checks first (no `-m` mesh dry-run, no short `mpirun nlim=N` smoke
 test) — the user interrupted both and said "just run it without checking." Build, archive the
 previous run's outputs, recreate an empty `bin/`, then `sbatch` directly; analyze partial output

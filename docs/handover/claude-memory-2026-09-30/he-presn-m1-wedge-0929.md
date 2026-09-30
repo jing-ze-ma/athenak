@@ -60,3 +60,7 @@ to 3000 s, Newton on and off; column numbers unchanged; He box bitwise (vet_sc u
 USER 09-29 ~23:55: GO guard fix (agent, branch m1-opn-guard, merge after combined gate, NOTE for DeltaAI); He presn wedge input implicit_opac_newton = false until then (committed on he-presn-m1); 128x128 run resubmitted WITH implicit_opac_newton=false (12028935-37); vimp positivity fallback diagnosis LATER.
 
 USER 09-30 ~00:55: He presn wedge input back to GUARDED Newton (ae9e5c77); 128x128 run resubmitted with binary athena_he_gpu72_0b8b6c0d (guard) and implicit_opac_newton=true: jobs 12030056 12030057 12030058.
+
+USER 09-30 ~09:15: He presn wedge input rsolver -> hllc (abf547b5 on he-presn-m1) and M1/he3d_M1.athinput (backup .pre_hllc); 128x128 run RESUBMITTED as 12037023 -> 24 -> 25 (old 12030056-58 cancelled). Not directly comparable with the lhllc 64x64 ad3d/wr3d.
+
+USER 09-30 ~09:20: 64x64 hllc run from t=0 (M1/ad3d_hllc, r3.sh, jobs 12037044 + 12037045; same keys/binary as the 128 run: guarded Newton, adaptive closure, ramp 23500/4700, tlim 37600) for a clean hllc resolution pair with the 128 run.

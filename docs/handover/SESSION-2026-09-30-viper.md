@@ -155,3 +155,38 @@ diagonals in fast thin plume cells) -> guard 23ec1fb8. **Retracted**: the theta-
   (494540fd) -> the 3x dt decline is not a solver effect; compare with w3xk (radial fix) once it runs.
 - **Next:** C256 benchmark -> machine choice; He presn hllc 64 vs 128; fixed arms vs pre-fix (dt, odd-even share, deep
   flux via deepmix.py); DeltaAI MHD max_eta scan; then the 3x/10x MHD drag set (PLAN-2026-09-30-w121-mhd-drag-metallicity.md).
+
+## 8. Update 09-30 ~23:30 CEST (read this first; the previous session ended here)
+**Background agents of the old session keep running but report only to that session: read their files.**
+
+| agent | results land in | ETA |
+|---|---|---|
+| WASP-121b emission post-processor (pRT, angle-resolved, instrument bands) | /viper/ptmp2/jinma/w121prod_0929/synth2_emis/ (RESULTS.md, out/, logs/) | ~00:10-00:20 |
+| WASP-121b transmission / Fe-Na limb RV (hi-res chords, CCF) | /viper/ptmp2/jinma/w121prod_0929/synth2_trans/ (RESULTS.md, out/, driver.log ALLDONE) | ~01:15-01:30 |
+| He-star steady wind, step 1 (branch he-wind-bc 697be6eb, not pushed) | /viper/ptmp2/jinma/hepresn_wind_0930/ (RESULTS.md, W*/G* runs; GPU job hewind 12046760) | open |
+| M1 positivity, step 2 (branch m1-positivity 38500817; fork has 33150622) | FINISHED: tests_m1/runs_6b_m1pos/RESULTS.md on the branch; runs /viper/ptmp2/jinma/m1pos_0930 (`python3 analyze.py`) | arms running |
+
+**He presn (4 Msun wedge):** 128x128 NaN at t 26,825 s (5.7 tt), 64x64 hllc NaN at 31,626 s (6.7 tt): implicit M1 E<0 in the
+porous Fe-bump outflow. dt collapse there = hydro radial CFL of the outflow channels (v_r ~970 km/s > v_esc, rho 0.5-4 %
+of shell mean). Fix on m1-positivity (keys default off, OFF bitwise on wedge + He box, He box GPU cost unchanged):
+implicit_g0_exchange, implicit_g0_limit=1, implicit_opac_newton_guard_mode=6, implicit_pos_gas, implicit_pos_floor.
+First trigger = Picard pass-0 solve E<0 from the lagged -c dt v g0 face term. Restart gates from the last good rst:
+controls (off, BE-off) NaN at 26,825 s again; ON arms pass. Speed/stability at 128: **BE + options (beon128) 12,600
+sim-s/wall-h, 0 stage rejects; hesdirk2 + options 6,000-7,300 sim-s/h with 74-76 % of stages rejected -> BE redo.**
+Recommendation (not decided): BE + options in the transient/relaxation, hesdirk2 only at steady state.
+Steadiness: mass loss peaked ~-7 %/tt at ~4.9 tt and fell to ~-0.01 %/tt by 6.4-6.9 tt at BOTH resolutions (burst,
+not a steady wind); KE and L_top/L_in still drifting after the closure ramp ended at 28,200 s (L_top/L 0.96 at 6.9 tt).
+Caveat: the mass-loss decline coincides with the closure ramp start (23,500 s).
+**Queued (user 09-30):** beon128 extension to t = 47,000 s (10 tt): job 12046848 (afterany 12046528 + smoke 12046798;
+the script exits unless the smoke log shows `rc=0 fatal=0`). Other arms: onv128 12046525, onn128 12046526, onnh64
+12046530, offh64 12046529 (control), He box accuracy 12046701 (`hebox/ana.sh 60000 74000`).
+**Open for the user:** implicit_vimp on/off in relaxation; making the five keys the He-star default (after the 10 tt
+run + He box accuracy); hydro-side eint<=0 in near-void cells (rho/<rho> 2e-5); step 3 (3-D with wind BCs + keys).
+**WASP-121b fixed arms (radial fix) at 23:00:** w1xf rot ~74 dt 14 s; w3xk rot ~46 dt 7-7.7 s (declined from 12 s at rot
+18-20 like Caltech, radial fix does not prevent it); w10xf rot ~43 dt 9.7 s; all clean. C256 32-node bench 12026299
+still pending (16-node: 0.118 s/cycle, dt 3.7 s -> ~1 h / ~31 GPU-h per rotation). MHD arms 12028523-25 HELD.
+**New standing rule (user 09-30):** ALWAYS smoke-test (same binary + input + KEYS) before any launch/relaunch; in
+worker.md and memory. User granted `scontrol hold/release` (allow rule in .claude/settings.local.json; the auto-mode
+classifier still blocked it twice in this session - may need /hooks or a restart to load).
+Orion task TASK-2026-09-30-orion-he-m1pos DROPPED (no transfer path). WASP-121b analysis scripts pushed:
+docs/handover/scripts/w121/.

@@ -1,5 +1,7 @@
 ## RULE ZERO
 
+- **[ALWAYS SMOKE-TEST ON APUDEV BEFORE ANY LAUNCH/RELAUNCH (user 09-30)](smoke-test-every-launch.md)** — exact binary + input + KEYS; He presn died in 9 s from an untested key; scontrol hold/release allowed
+
 - **[VIPER SESSION STATE 09-30 06:40: START HERE -> docs/handover/SESSION-2026-09-30-viper.md (memory snapshot claude-memory-2026-09-30/)](w121-3x-ck-table-0930.md)** — w3xk (3x, dtmax 0.25 + maxit 24) queued on viper; Caltech 3x + ck A/B; C256 benches queued; MHD arms HELD; He presn 128x128 queued (guarded Newton)
 
 
@@ -141,3 +143,7 @@ Full original lines in [index-active-m1-he4](index-active-m1-he4.md).
 - **[APUDEV: AT MOST 3 CHAINED JOBS (user 09-29)](apudev-max-3-chain.md)** — longer runs to apu; state it in agent briefs
 - **[INPUTS IN PHYSICAL UNITS (user 09-29)](inputs-physical-units.md)** — bbot was HL code units: old "3 G" = 10.6 G; audit running
 - [WASP-121b 3x ck table (09-30): ln(k/X) interp, Sonora-validated](w121-3x-ck-table-0930.md) — /viper/ptmp2/jinma/ck3x_0930/ckdata3
+- **[lhllc RADIAL ODD-EVEN MODE (09-30): hllc removes it; fix proposed for x1 faces](lhllc-radial-oddeven-0930.md)** — deep v_r/Mdot/deep flux of lhllc runs unreliable
+- **[He presn: use hllc/hlld, not lhllc (user 09-30)](he-presn-hllc-not-lhllc.md)** — near-sonic convection (Mach ~0.4); dhj keeps lhllc
+- [OVERNIGHT 09-30 (user asleep ~10:00): runs queued, allowed actions, morning summary](overnight-0930.md)
+- [He presn = Fe-bump wind; steady-wind + M1 positivity agents running (user GO 09-30)](he-wind-plan-0930.md) — branches he-wind-bc / m1-positivity; 128 NaN 5.7 tt, rst 00011 last good

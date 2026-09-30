@@ -27,3 +27,9 @@ USER 09-30 ~03:10: viper 3x copy CANCELLED; the 3x runs on Caltech only (3640302
 
 USER 09-30 ~05:25: viper 3x with ONLY ck_impl_dtmax 0.25 + maxit 24 (w3xk, fresh start; tol 1e-8, no rsec): jobs 12034146 (+12034147); input w121prod_3x_ck10.athinput; binary cba4e797; compare with Caltech 3x (3x keys) on dt decline / night-side downflows / top-cell cycle.
 w3xk final jobs: 12034178 (+12034179)
+
+USER 09-30 ~08:00: w3xk (12034178/79) on HOLD until the lhllc radial-face fix is ready (then add the chosen key to w121prod_3x_ck10.athinput + rebuilt binary, resubmit or release).
+
+USER 09-30 ~09:35: w3xk RELEASED with the radial-fix binary (lhllc-x1-phi 36dd494d, md5 30d02515) + lhllc_x1_phi_min = 1 in its input; smoke clean. So w3xk = 3x with dtmax 0.25 + maxit 24 AND the radial fix.
+
+USER 09-30 ~09:55: Caltech A/B: no ck limit cycle with 3x keys (dt 7.84 vs 7.80 s) -> dt decline not a solver effect. w3xk input RESET to the original 3x solver keys: w3xk = 3x + radial fix only. Fixed set w1xf/w3xk/w10xf vs pre-fix w1x/Caltech 3x/w10x (watch the 3x dt decline).
