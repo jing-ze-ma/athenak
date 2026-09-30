@@ -111,7 +111,7 @@ inline Real ck_impl_dtol = 1.0e-8;
 // never reach the threshold, so they are unchanged bit for bit.
 constexpr Real CkDeadE = 1.0e-250;
 // problem/ck_impl_maxit: the pass cap.  Each pass is one full ck sweep.
-inline int ck_impl_maxit = 8;
+inline int ck_impl_maxit = 24;  // default changed 09-30 (user), was 8
 // problem/ck_impl_dtmax: cap on |de|/e per Newton pass.  A belt, not a limiter: it is
 // applied to the STEP, so a capped pass is simply a shorter one and the fixed point is
 // unchanged.  A column that needed it is counted.
@@ -178,7 +178,7 @@ inline bool ck_impl_kkt_row = false;
 // reports are made consistent with the energy it applied in the cells it leaves on a
 // bound (ck_impl_floorbound / ck_impl_kkt_demax KKT cells); 2 = in every cell.  Only the
 // reported arrays change, never the solution.  See CkConserveFlux (two_stream_rt.hpp).
-inline int ck_impl_conserve = 0;
+inline int ck_impl_conserve = 1;  // default changed 09-30 (user), was 0
 inline DvceArray1D<Real> *ck_cons_stat_ptr = nullptr;
 inline DvceArray5D<Real> *ck_cons_buf_ptr = nullptr;   // (m, 2, k, j, i) scratch
 inline int64_t ck_cons_ncell = 0;          // cells corrected, last call (verbose only)
