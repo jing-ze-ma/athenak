@@ -345,7 +345,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // T_c (E/E_c)^(1/4) (continuous at r_c), v_r = the beta law.  The file then need not
   // cover the mesh top (it is extrapolated in log up to r_c, which must lie inside it).
   const bool wic = pin->GetOrAddBoolean("problem","he_wind_ic",false);
-  std::vector<Real> hV(nf, 0.0);
+  std::vector<Real> hV(nf, 0.0), hdc, hec;
   Real wrc = 0.0;
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
@@ -408,6 +408,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "the file's range above he_wind_r0", __LINE__);
       }
       wrc = hr[nc];
+      hdc = hd;   // the column itself (extrapolated), for the balance anchor
+      hec = he;
       const Real tc = eos.Temperature(hd[nc], he[nc]);
       const Real ec = (hE[nc] > 0.0) ? hE[nc] : ar*SQR(SQR(tc));
       const Real fc = hF[nc];
@@ -430,7 +432,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (global_variable::my_rank == 0) {
         std::cout << "he_star_m1: he_wind_ic: Mdot = " << mdot << " g/s, vinf = " << vinf
                   << ", beta = " << wbeta << ", r0 = " << wr0 << "; the wind starts at "
-                  << "r_c = " << wrc << " (rho " << hd[nc] << ", T " << tc << ", v "
+                  << "r_c = " << wrc << " (rho " << hd[nc] << ", T [K] "
+                  << tc*eos.temp_cgs << ", v "
                   << hV[nc] << ")" << std::endl;
       }
     }
@@ -741,6 +744,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (wic) {
       while (ianc > is && !(hx1v(0,ianc) < wrc)) --ianc;
     }
+    // the anchor cell ianc+1 takes the COLUMN's own state for the march (the wind
+    // there is not hydrostatic; its density would rescale the whole column)
+    if (wic && ianc < ie) {
+      const int ia = ianc + 1;
+      dc[ia] = logint(hdc, hx1v(0,ia));
+      ec[ia] = logint(hec, hx1v(0,ia));
+      tc[ia] = eos.Temperature(dc[ia], ec[ia]);
+      bd[ia] = dc[ia];
+      be[ia] = ec[ia];
+    }
     auto march = [&]() {
       for (int i=ianc; i>=is; --i) {
         Real pl, pr;
@@ -846,6 +859,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         dmax = fabs(bd[i]/dc[i] - 1.0);
         imax = i;
       }
+    }
+    if (wic && ianc < ie) {   // the anchor cell is a wind cell again
+      bd[ianc+1] = logint(hd, hx1v(0,ianc+1));
+      be[ianc+1] = logint(he, hx1v(0,ianc+1));
     }
     Kokkos::realloc(hs_bd_, n1);
     Kokkos::realloc(hs_be_, n1);
