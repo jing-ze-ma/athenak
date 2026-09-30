@@ -1300,6 +1300,22 @@ inline int ck_sweep_form = 0;
 // ck_implicit, NOT with ck_impl_lin / ck_impl_jac_lin (their stored-factorisation kernels
 // carry the old face).  tests_ck_sph/closure_0930 (cksph_test_0930).
 inline bool ck_sph_dilute = false;
+// problem/ck_sph_face (PROTOTYPE, default 0 = bitwise the Eddington face above): the face
+// condition of the tm spherical ck two-stream, one of a one-parameter family that keeps
+// A (u - d) single-valued (so the deposit still telescopes):
+//     e (u_a - u_b) + (d_a - d_b) = 0,   A_a (u_a - d_a) = A_b (u_b - d_b),
+// e = 1 the Eddington face (S continuous), e = 0 the dilute face of ck_sph_dilute.
+//   0  Eddington (e = 1), the historical face;
+//   1  dilute (e = 0), = ck_sph_dilute;
+//   2  thick/thin blend: e = 1 - exp(-dtau_f/mu) per chain, dtau_f the radial optical
+//      depth of the two half cells that meet at the face.  Thin faces dilute (the
+//      transparent shell above the photosphere), thick faces keep the Eddington face
+//      that matches the diffusion flux.
+// General maps (rho = A_b/A_a, Dc = 1 + e R + e rho (1 - R), al = (1 + e)/Dc,
+// be = e (1 - rho)/Dc):  R <- 1 - rho (1 - R) al,  Sc <- rho al Sc;  solve
+// d_b = al d_a - be Sc_b, u_b = R d_b + Sc_b.  tm (ck_sweep_form = 1) only, explicit or
+// ck_implicit; refused with ck_impl_lin / ck_impl_jac_lin.  cksph_test_0930/VARIANTS.md.
+inline int ck_sph_face = 0;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -2430,7 +2446,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   auto &x1v_ = std::get<65>(ctx_);
   auto &xP_g = std::get<66>(ctx_);
   auto &xT_g = std::get<67>(ctx_);
-  const bool dil = std::get<68>(ctx_);   // problem/ck_sph_dilute
+  const int fce = std::get<68>(ctx_);    // problem/ck_sph_face
+  const bool dil = (fce == 1);           // the dilute face (ck_sph_dilute)
+  const bool fbl = (fce == 2);           // the thick/thin blend
   constexpr bool SPH = decltype(sph_tag)::value;
   constexpr bool BSP = decltype(bsp_tag)::value;
   constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
@@ -3044,6 +3062,20 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
         // per-chain carries: the cell's kappa rho, the source at the face below
         // it and the source at its centre on the lower half's side
         Real kcu[NC], sfc[NC], suc[NC];
+        // ck_sph_face = 2: the radial optical depth of the two half cells that meet
+        // at the NEXT face up (the face the pass-1 loop crosses first), and the
+        // blend map of a face.  e is the Eddington weight; see ck_sph_face.
+        Real dtf[NC];
+        auto fblm = [&](const int cc, const Real rj, const Real bt, const Real dtc,
+                        Real &al, Real &be, Real &c1, Real &r1) {
+          const Real we = -expm1(-dtc/muc[cc]);
+          const Real rh = (1.0 - bt)/(1.0 + bt);
+          const Real dc = 1.0 + we*rj + we*rh*(1.0 - rj);
+          al = (1.0 + we)/dc;
+          be = we*(1.0 - rh)/dc;
+          c1 = rh*al;
+          r1 = 1.0 - rh*(1.0 - rj)*al;
+        };
         RtF Rc[NC], Hc[NC];
         // ---- problem/ck_implicit (JAC): THE TRIDIAGONAL OF THE tm SWEEP -------
         // At frozen opacity the tm sweep is affine in the band Planck functions
@@ -3092,6 +3124,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                             * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
             sfc[cc] = bcut;
             suc[cc] = bcut;
+            dtf[cc] = 0.5*kcu[cc]*dx1(m,k,j,icut);
             Rc[cc] = (FRM == 2) ? one : static_cast<RtF>(0.0);
             Hc[cc] = static_cast<RtF>(bcut + Iint_b);
             // ck_dif_dtau: a handover column starts on the deep diffusion
@@ -3139,6 +3172,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             // top half layer of cell ie has no neighbour above and keeps its own
             // Planck function at both ends, exactly as the four-pass form does.
             Real slv = bown, sfv = bown, suu = bown, kru = kro;
+            // the face depth this cell's face map uses; the next face's, for the
+            // top face the top half cell alone (as pass 2 forms them)
+            const Real dtfc = dtf[cc];
+            Real dtn = 0.5*kro*dz;
             if (i < ie) {
               kru = krof(cc, i+1, b, iTu, fTu, iPu, fPu, rhou, true);
               const Real bfar = Bb_g(m,b,i+1,k,j);
@@ -3149,6 +3186,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real dtc = dt_l + dt_u;
               sfv = (dtc > 0.0) ? (slv + (suu - slv)*(dt_l/dtc))
                                 : (0.5*(slv + suu));
+              dtn = dtc;
             }
             // both halves of a cell have the same optical thickness, so ONE
             // triple describes the pair (this is the ck_impl_frozen_op note)
@@ -3198,9 +3236,13 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real rj = static_cast<Real>(Rc[cc]);
               const Real dnj = 1.0 + rj*bt;
               const Real rhd = (1.0 - bt)/(1.0 + bt);   // ck_sph_dilute: A_b/A_a
-              const Real r1 = dil ? (1.0 - rhd*(1.0 - rj)) : (rj + bt)/dnj;
+              Real r1 = dil ? (1.0 - rhd*(1.0 - rj)) : (rj + bt)/dnj;
+              Real c1 = dil ? rhd : (1.0 - bt)/dnj;
+              if (fbl) {
+                Real alx, bex;
+                fblm(cc, rj, bt, dtfc, alx, bex, c1, r1);
+              }
               const Real r2 = tj*tj*r1;
-              const Real c1 = dil ? rhd : (1.0 - bt)/dnj;
               const Real sold[3] = {jS[cc][1], jS[cc][2], 0.0};
               for (int s=0; s<3; ++s) {
                 const Real dsf = (s < 2) ? jfc[cc][s] : 0.0;
@@ -3228,6 +3270,11 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                 const RtF rh = (one - bb)/(one + bb);
                 rr = one - rh*(one - rr);
                 ss = rh*ss;
+              } else if (fbl) {
+                Real alx, bex, c1x, r1x;
+                fblm(cc, static_cast<Real>(rr), bt, dtfc, alx, bex, c1x, r1x);
+                ss = static_cast<RtF>(c1x)*ss;
+                rr = static_cast<RtF>(r1x);
               } else {
                 const RtF dn = one + rr*bb;
                 const RtF rn = (rr + bb)/dn;
@@ -3259,6 +3306,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             kcu[cc] = kru;
             sfc[cc] = sfv;
             suc[cc] = suu;
+            dtf[cc] = dtn;
           }
         }
         for (int cc=0; cc<NC; ++cc) {
@@ -3276,7 +3324,8 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
         // d_b = d_a + beta (d_a - u); sd combines D = -G S + H, which the face
         // merely rescales, with S - D = d_a.
         auto fsolve = [&](const int cc, const int f, const Real bt,
-                          const Real rat, const RtF da, RtF &ub, RtF &db) {
+                          const Real rat, const RtF da, RtF &ub, RtF &db,
+                          const Real dtc) {
           if (FRM == 1) {
             const RtF rr = I_down[cc][f];
             const RtF ss = Cmx[cc][f];
@@ -3284,6 +3333,11 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             if (dil) {
               ub = rr*da + ss;
               db = da;
+            } else if (fbl) {
+              Real alx, bex, c1x, r1x;
+              fblm(cc, static_cast<Real>(rr), bt, dtc, alx, bex, c1x, r1x);
+              db = static_cast<RtF>(alx)*da - static_cast<RtF>(bex)*ss;
+              ub = rr*db + ss;
             } else {
               ub = (rr*(one + bb)*da + ss)/(one + rr*bb);
               db = da + bb*(da - ub);
@@ -3312,7 +3366,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
           const Real fsc = ACC(m,k,j,ie)/AFC(m,k,j,ie+1);
           for (int cc=0; cc<NC; ++cc) {
             RtF ub, db;
-            fsolve(cc, ie+1, bt, fsc, Itp[cc], ub, db);
+            fsolve(cc, ie+1, bt, fsc, Itp[cc], ub, db, dtf[cc]);
             Fb_g(m,blk,ie+1,k,j) += wfc[cc]*static_cast<Real>(ub - db)*fsc;
             dcu[cc] = db;
             ubf[cc] = ub;
@@ -3323,8 +3377,12 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               // the top datum is fixed: d^+ carries nothing, W = 0
               const Real rj = static_cast<Real>(I_down[cc][ie+1]);
               const Real dnj = 1.0 + rj*bt;
-              const Real al = dil ? 1.0 : (1.0 + bt)/dnj;
-              const Real be = dil ? 0.0 : bt/dnj;
+              Real al = dil ? 1.0 : (1.0 + bt)/dnj;
+              Real be = dil ? 0.0 : bt/dnj;
+              if (fbl) {
+                Real c1x, r1x;
+                fblm(cc, rj, bt, dtf[cc], al, be, c1x, r1x);
+              }
               const Real s0 = Js0[cc][ie+1];
               const Real s1 = Js1[cc][ie+1];
               const Real s2 = Js2[cc][ie+1];
@@ -3374,6 +3432,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             const Real dth = 0.5*kro*dz;
             // the layer joining cells i-1 and i, from below this time
             Real suv = bown, sfv = bown, snl = bown, krl = kro;
+            Real dtfc = dth;   // ck_sph_face = 2: face i's depth, as pass 1 formed it
             if (i > icut) {
               // ck-store: krof without its store -- pass 1 stored this very
               // product (the same cached kappa times the same rho) at cell il
@@ -3386,6 +3445,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real dtc = dt_l + dth;
               sfv = (dtc > 0.0) ? (snl + (suv - snl)*(dt_l/dtc))
                                 : (0.5*(snl + suv));
+              dtfc = dtc;
             }
             Real dsrc;
             // the down ray: the upper half of cell i, then the lower half
@@ -3397,7 +3457,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
             // by construction -- the flux is A_below (u_b - d_b)/A_face and the
             // up ray is handed d_above + (u_b - d_b) A_below/A_above
             RtF ub, db;
-            fsolve(cc, i, bt, rat, dcu[cc], ub, db);
+            fsolve(cc, i, bt, rat, dcu[cc], ub, db, dtfc);
             const RtF dm = ub - db;
             Fb_g(m,blk,i,k,j) += wfc[cc]*static_cast<Real>(dm)*fsc;
             RtF ua = dcu[cc] + dm*static_cast<RtF>(rat);
@@ -3466,10 +3526,15 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               }
               const Real rj = static_cast<Real>(I_down[cc][i]);
               const Real dnj = 1.0 + rj*bt;
-              const Real al = dil ? 1.0 : (1.0 + bt)/dnj;
-              const Real be = dil ? 0.0 : bt/dnj;
-              const Real wr = dil ? tj*tj*tj*tj*(1.0 - bt)/(1.0 + bt)*jQ[cc]
-                                  : tj*tj*tj*tj*(1.0 - bt)/dnj*jQ[cc];
+              Real al = dil ? 1.0 : (1.0 + bt)/dnj;
+              Real be = dil ? 0.0 : bt/dnj;
+              Real wr = dil ? tj*tj*tj*tj*(1.0 - bt)/(1.0 + bt)*jQ[cc]
+                            : tj*tj*tj*tj*(1.0 - bt)/dnj*jQ[cc];
+              if (fbl) {
+                Real c1x, r1x;
+                fblm(cc, rj, bt, dtfc, al, be, c1x, r1x);
+                wr = tj*tj*tj*tj*c1x*jQ[cc];
+              }
               const Real s0 = Js0[cc][i];
               const Real s1 = Js1[cc][i];
               const Real s2 = Js2[cc][i];
@@ -6714,7 +6779,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // body of this launcher is the function template TsrtCkChain above
         // picket_fence_two_stream_RT_pass; ck_chain_ctx hands it, by reference, the
         // locals it reads (unpacked there in the same order).
-        const bool dil_ = ck_sph_dilute;   // problem/ck_sph_dilute
+        const int dil_ = ck_sph_face;   // problem/ck_sph_face
         auto ck_chain_ctx = std::forward_as_tuple(ACC, AFC, albedo, ap, Bb_g, bface_on,
                                                   boltz_sigma, BTF, cbt_, cf_g, ckc0_g,
                                                   ckci_g, ckco_g, ckdb_g, ckdif_,
