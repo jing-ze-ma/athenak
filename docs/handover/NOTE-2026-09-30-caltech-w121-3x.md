@@ -13,3 +13,8 @@ starts first, cancel the Caltech ones (`scancel 3640301 3640302`, nothing spent 
   -t 15:45. 10x took 13.7 h on 2 H200 here; if 3x does not reach rot 300 in one link, chain with afterok.
 - Input diff vs the Caltech 10x input: only the expected 3x keys (grid nx1 76 / x1 / stretch coefficients, grav, ap, met,
   eos_xh/yhe, rad_met, ck tables, IC) plus ck_impl_conserve = 1, ck_impl_tol 1e-8, maxit 16, dtmax 0.5 (viper's input as shipped).
+
+**Update 09-29 17:35 PDT (user):** rebuilt at **793e03c3** (cubed-sphere seam-flux MPI request leak fix,
+NOTE-2026-09-29-deltaai-seam-mpi-leak.md; waits only, bitwise unchanged): build 3643011 overwrites `athena.gpu`,
+production 3640302 now afterok:3643011. The Caltech binary therefore differs from viper's 2fd94098 build by the
+seam-wait fix only.
