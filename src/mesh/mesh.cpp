@@ -269,6 +269,20 @@ Mesh::Mesh(ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // optional plateau (StretchRPoly): read only when the amplitude is given
+    if (pin->DoesParameterExist("mesh", "f_stretch_r_p_amp")) {
+      Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP;
+      cp[0] = pin->GetReal("mesh", "f_stretch_r_p_amp");
+      cp[1] = pin->GetReal("mesh", "f_stretch_r_p_xa");
+      cp[2] = pin->GetReal("mesh", "f_stretch_r_p_xb");
+      cp[3] = pin->GetReal("mesh", "f_stretch_r_p_w");
+      if (cp[0] != 0.0 && (!(cp[3] > 0.0) || !(cp[2] > cp[1]))) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mesh/f_stretch_r_p_w must be > 0 and f_stretch_r_p_xb "
+                  << "> f_stretch_r_p_xa" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // The mapping must be strictly increasing, or the grid folds over and cell widths go
     // negative. A bad coefficient set has to fatal here rather than corrupt the run, so
     // sample du/dxi densely across [0,1] and require it to stay positive.
@@ -288,6 +302,13 @@ Mesh::Mesh(ParameterInput *pin) :
         const Real ch = std::cosh((xi - cb[1])/cb[2]);
         du += cb[0]*(1.0/(ch*ch) - cb[2]*(std::tanh((1.0 - cb[1])/cb[2])
                                           + std::tanh(cb[1]/cb[2])));
+      }
+      {
+        const Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP;
+        if (cp[0] != 0.0) {
+          du += cp[0]*(0.5*(std::tanh((xi - cp[1])/cp[3]) - std::tanh((xi - cp[2])/cp[3]))
+                       - StretchRPlateauG(cp[1], cp[2], cp[3], 1.0));
+        }
       }
       dumin = std::min(dumin, du);
     }

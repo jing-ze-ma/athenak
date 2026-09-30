@@ -336,6 +336,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     rhi_g = hx1f(0,n1m1+1);
     dxlo = hx1f(0,indcs.is+1) - hx1f(0,indcs.is);
     dxhi = hx1f(0,indcs.ie+1) - hx1f(0,indcs.ie);
+    // problem/he_grid_dump (default false): rank 0 writes the code's own radial grid of
+    // block 0, "i x1f(i) x1v(i) x1f(i+1)-x1f(i)" for every cell incl. ghosts (i = 0 is
+    // the first ghost; active cells is..ie), to <basename>.x1grid.txt
+    if (pin->DoesParameterExist("problem","he_grid_dump") &&
+        pin->GetBoolean("problem","he_grid_dump") &&
+        global_variable::my_rank == 0) {
+      auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+      const std::string gf = pin->GetString("job","basename") + ".x1grid.txt";
+      FILE *fp = fopen(gf.c_str(), "w");
+      if (fp != nullptr) {
+        fprintf(fp, "# is = %d ie = %d; i x1f x1v dx1\n", indcs.is, indcs.ie);
+        for (int i=0; i<=n1m1; ++i) {
+          fprintf(fp, "%d %.17e %.17e %.17e\n", i, hx1f(0,i), hx1v(0,i),
+                  hx1f(0,i+1) - hx1f(0,i));
+        }
+        fprintf(fp, "%d %.17e\n", n1m1 + 1, hx1f(0,n1m1+1));
+        fclose(fp);
+      }
+    }
   }
   hs_rlo_ = rlo_g - 2.0*dxlo;
   const Real rhi = rhi_g + 2.0*dxhi;

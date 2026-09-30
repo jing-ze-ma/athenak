@@ -148,6 +148,8 @@ const std::vector<std::pair<std::string, std::string>> &PotentialKeys() {
     {"mesh", "f_stretch_r_b1_amp"}, {"mesh", "f_stretch_r_b1_x"},
     {"mesh", "f_stretch_r_b1_w"}, {"mesh", "f_stretch_r_b2_amp"},
     {"mesh", "f_stretch_r_b2_x"}, {"mesh", "f_stretch_r_b2_w"},
+    {"mesh", "f_stretch_r_p_amp"}, {"mesh", "f_stretch_r_p_xa"},
+    {"mesh", "f_stretch_r_p_xb"}, {"mesh", "f_stretch_r_p_w"},
     {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
   };
   return keys;
