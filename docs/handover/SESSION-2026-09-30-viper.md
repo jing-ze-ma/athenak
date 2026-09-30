@@ -195,3 +195,10 @@ knot at lon +110..+120 deg (past the evening terminator) at 1e-5..1e-4 bar, ~330
 absent at 10x. Maps /viper/ptmp2/jinma/w121prod_0929/hotspot2/ (Tmaps_rot300.png, maps_w1x/w10x.npz, maps.py; script copy
 docs/handover/scripts/w121/hotspot2/). Masked-knot phase-curve test queued with the emission agent (RESULTS.md section in
 synth2_emis/); my estimate before it: at most tens of ppm, only in strong band cores (CO 4.5-4.8 um).
+**Knot heating check (09-30 ~23:55, hotspot2/knot.py, equator |lat|<8, 1e-4 bar):** along the equator the knot is only a
+~100-200 K bump on the jet's cooling track (T 2950 K at +102 -> 3060 K at +110..+118 -> 2690 K at +126); its ~1500 K
+contrast is vs the cold OFF-equator night at the same lon (a hot equatorial tongue carried by the jet). Cause: strong
+DOWNWELLING (v_r -2 km/s vs |v_r| < 0.5 km/s around) = adiabatic compression; NOT a shock (u stays 13-14 km/s, zonal Mach
+2.4-2.6, no deceleration at 4-deg binning) and NOT H recombination (mu 1.26 = atomic through the knot; recombination, mu
+rising to 2.3, starts downstream at +126..+174). At 1e-5 bar downwelling -6.5 km/s: near the top sponge (1e-7..1e-6 bar),
+possible top influence. The jet is supersonic everywhere on the night side (Mach 2-6).
