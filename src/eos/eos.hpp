@@ -124,6 +124,16 @@ struct EOS_Data {
   // regimes (e.g. deep hot-Jupiter envelopes), where the low value is the wrong choice.
   Real hlld_bx_zero_tol = 1.0e-4;
 
+  // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min -- FLOOR on the low-Mach factor
+  // phi = chi(2-chi) of LHLLC/LHLLD (Minoshima & Miyoshi 2021) on x1 FACES ONLY.  phi
+  // scales the velocity-jump term of the contact pressure; the mass flux keeps its full
+  // HLLC/HLLD form, so at radial Mach ~1e-3 (deep hot-Jupiter envelope, phi ~3e-3) a
+  // 2-cell radial velocity checkerboard is left undamped.  x1 is radial on the
+  // spherical-polar and cubed-sphere grids, so this restores the radial dissipation
+  // while x2/x3 keep the low-Mach fix.  phi = max(phi, x1_phi_min) on x1 faces; >= 1
+  // gives full HLLC/HLLD radially.  <= 0 (default, key unset) = off, bitwise unchanged.
+  Real x1_phi_min = 0.0;
+
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).
   //

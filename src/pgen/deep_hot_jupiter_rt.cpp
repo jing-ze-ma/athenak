@@ -547,6 +547,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pfl->pmhd != nullptr) pfl->pmhd->EnableC2PTrack();
     dhj_floor_t0 = pmy_mesh_->time;
   }
+  // dhj-only DEFAULT (user 09-30): <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min = 1,
+  // i.e. the full HLLC/HLLD velocity-jump term on x1 (radial) faces; see
+  // EOS_Data::x1_phi_min.  The global default stays 0 (box / He runs, where x1 is the
+  // convective direction).  An input (or restart) that names the key keeps its value;
+  // GetOrAdd records 1 so this run's restarts carry it.  Runs on restart too, so a
+  // restart from an older file also gets 1; to switch it off there use `-i file` with
+  // the key = 0 (the command line cannot add a key a restart file does not hold).
+  {
+    MeshBlockPack *plm = pmy_mesh_->pmb_pack;
+    if (plm->phydro != nullptr) {
+      plm->phydro->peos->eos_data.x1_phi_min =
+          pin->GetOrAddReal("hydro", "lhllc_x1_phi_min", 1.0);
+    }
+    if (plm->pmhd != nullptr) {
+      plm->pmhd->peos->eos_data.x1_phi_min =
+          pin->GetOrAddReal("mhd", "lhlld_x1_phi_min", 1.0);
+    }
+    if (global_variable::my_rank == 0) {
+      if (plm->phydro != nullptr) {
+        std::cout << "dhj: <hydro>/lhllc_x1_phi_min = "
+                  << plm->phydro->peos->eos_data.x1_phi_min << std::endl;
+      }
+      if (plm->pmhd != nullptr) {
+        std::cout << "dhj: <mhd>/lhlld_x1_phi_min = "
+                  << plm->pmhd->peos->eos_data.x1_phi_min << std::endl;
+      }
+    }
+  }
   // problem/budget_dt > 0 (DIAGNOSTIC): the per-shell ledger (EBudCk).  Read only if the
   // key exists, so a run without it is untouched (also its restart files).
   ebud::dt_out = pin->DoesParameterExist("problem","budget_dt")

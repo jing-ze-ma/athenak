@@ -96,6 +96,22 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
               << "for MHD" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min: see EOS_Data::x1_phi_min.  Read
+  // only when set (no GetOrAdd), so an unset key leaves the restart header unchanged.
+  {
+    const bool is_hyd = (bk.compare("hydro") == 0);
+    const std::string key = is_hyd ? "lhllc_x1_phi_min" : "lhlld_x1_phi_min";
+    const std::string bad = is_hyd ? "lhlld_x1_phi_min" : "lhllc_x1_phi_min";
+    if (pin->DoesParameterExist(bk, bad)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/" << bad << " is not valid in this "
+                << "block; use <" << bk << ">/" << key << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist(bk, key)) {
+      eos_data.x1_phi_min = pin->GetReal(bk, key);
+    }
+  }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
   // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
   // a silently ignored switch is worse than a refusal, so refuse that combination.

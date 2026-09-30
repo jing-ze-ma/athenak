@@ -6,7 +6,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file lhllc_hyd.hpp
-//! \brief The HLLC Riemann solver for hydrodynamics with a low-Mach fix.  Only works for ideal gas EOS in hydrodynamics.
+//! \brief The HLLC Riemann solver for hydrodynamics with a low-Mach fix.  Only works
+//! for ideal gas EOS in hydrodynamics.
 //!
 //! REFERENCES:
 //! - E.F. Toro, "Riemann Solvers and numerical methods for fluid dynamics", 2nd ed.,
@@ -15,8 +16,8 @@
 //! - P. Batten, N. Clarke, C. Lambert, and D. M. Causon, "On the Choice of Wavespeeds
 //!   for the HLLC Riemann Solver", SIAM J. Sci. & Stat. Comp. 18, 6, 1553-1570, (1997).
 //!
-//! - T. Minoshima and T. Miyoshi, "A low-dissipation HLLD approximate Riemann solver for a
-//!   very wide range of Mach numbers", JCP, 446, 110639, (2021).
+//! - T. Minoshima and T. Miyoshi, "A low-dissipation HLLD approximate Riemann solver
+//!   for a very wide range of Mach numbers", JCP, 446, 110639, (2021).
 
 #include <algorithm>  // max(), min()
 #include <cmath>      // sqrt()
@@ -38,6 +39,9 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
   Real gm1 = eos.gamma - 1.0;
   Real igm1 = 1.0/gm1;
   Real alpha = ((eos.gamma) + 1.0)/(2.0*(eos.gamma));
+
+  // <hydro>/lhllc_x1_phi_min (EOS_Data::x1_phi_min): floor on phi on x1 faces only
+  const Real phi_min = (ivx == IVX) ? eos.x1_phi_min : 0.0;
 
   par_for_inner(member, il, iu, [&](const int i) {
     //--- Step 1.  Create local references for L/R states (helps compiler vectorize)
@@ -86,41 +90,42 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
       el = wl_ipr*igm1 + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
       er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
     }
-      
+
 //      qc = sqrt(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz))/qa;
 //      qd = sqrt(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz))/qb;
 //      Real chi = fmax(qc,qd);
 //      Real phi = chi*(2.0-chi);
-//      
+//
 //    qc = fmin(wl_ivx,wr_ivx);
 //    qd = fmax(wl_ivx,wr_ivx);
 //    qe = fmax(qa,qb);
 //    Real sl = qc - qe;
 //    Real sr = qd - qe;
-//    
+//
 //    qc = sl - wl_ivx;
 //    qd = sr - wr_ivx;
 //      qe = wl_idn*qc - wr_idn*qd;
 //      Real ustar = (wr_ipr-wl_ipr+wl_idn*wl_ivx*qc-wr_idn*wr_ivx*qd)/qe;
-//      
+//
 //      Real rhobar = 0.5*(wl_idn + wr_idn);
 //      Real abar = 0.5*(qa + qb);
 //      Real pstar = 0.5*(wl_ipr+wr_ipr) - 0.5*phi*(wr_ivx-wl_ivx)*rhobar*abar;
-//      
+//
 //      Real ustaralpha;
 //      if ((sl < 0.0) and (ustar >= 0.0)) {
 //          ustaralpha = ustar*wl_idn*qc/(sl-ustar);
 //      }
-      
-      
+
+
     qc = 0.25*(wl_idn + wr_idn)*(qa + qb);  // average density * average sound speed
     qd = 0.5 * (wl_ipr + wr_ipr + (wl_ivx - wr_ivx) * qc);  // P_mid
-    
+
     // coefficients for the low-Mach fix
     qe = fmax(fabs(wl_ivx),fabs(wr_ivx)); // maximum speed
     qf = fmax(qa,qb); // maximum sound speed
     Real chi = fmin(1.0,qe/qf);
     Real phi = chi * (2.0 - chi);
+    if (phi_min > 0.0) phi = fmax(phi, phi_min);  // x1 faces, key set only
 
     //--- Step 3.  Compute sound speed in L,R
 
