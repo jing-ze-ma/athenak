@@ -228,3 +228,7 @@ Seidel+25 -4.12 / -6.90 (whole ~-5.2 to -6): evening ~5 km/s too blue, morning n
 agrees. Decomposition: winds alone -4.9 / -6.0, rotation +5.0 / -5.8. Lines form at 10^-4.5 (1x) / 10^-5.2 (10x) bar median;
 domain top high enough (< 3 % above it). Robust to Fe x0.1/x10, extension, chemistry, LSF. Lever = circulation (drag / less
 super-rotation), not post-processing. Line depths (Fe CCF ~1500 ppm, Na ~3000 ppm) not checked against measured amplitudes.
+**Session end 10-01 00:20.** All agents reported except the He steady-wind agent (step 1, branch he-wind-bc; last activity
+arms_apu.sh + smoke_FH at ~00:15): check /viper/ptmp2/jinma/hepresn_wind_0930/RESULTS.md; if missing, the agent was cut off ->
+run analyze_wind.py on its W*/G*/arm dirs. Next-session checks: beon128 ext to 47,000 s (does the collapsed state persist?),
+He box accuracy (m1pos_0930/hebox/ana.sh 60000 74000), onn/onv128 + offh64 ends (m1pos_0930/analyze.py), C256 bench 12026299.

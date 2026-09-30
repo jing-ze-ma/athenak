@@ -24,3 +24,4 @@ implicit_pos_gas, implicit_pos_floor. He box GPU cost: no change (agent's number
 Controls off128/be128 NaN at 26,825 s; ON arms past it (onnh64 past 31,626 s) but 320-680 hesdirk2 stages
 NOT ADMISSIBLE -> BE redo (vimp on AND off), Picard 100-175. Open for user: vimp off in relaxation; defaults;
 hydro-side eint<=0 in near-void cells (rho/<rho> 2e-5). He box accuracy job 12046701 queued (ana.sh 60000 74000).
+10-01 00:20: beon128 envelope COLLAPSED (M(r>0.7R) 71%->1%), not steady; slices https://claude.ai/artifact/HcgYDVQ3CozhxXavZppqcU

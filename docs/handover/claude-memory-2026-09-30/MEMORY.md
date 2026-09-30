@@ -1,5 +1,6 @@
 ## RULE ZERO
 
+- **[NEXT SESSION (10-01 00:20): read docs/handover/SESSION-2026-09-30-viper.md section 8 FIRST](he-wind-plan-0930.md)** — open for the user: ck_spherical fix (confirmed 2x/(1+x), branch ck-sph-closure-fix), He envelope collapse (beon128), M1 positivity defaults/vimp, W121 limb RVs point to drag; still running: steady-wind agent (hepresn_wind_0930, check RESULTS.md or run analyze_wind.py), beon128 ext 12046848, hebox gate 12046701, onn/onv128, offh64
 - **[ALWAYS SMOKE-TEST ON APUDEV BEFORE ANY LAUNCH/RELAUNCH (user 09-30)](smoke-test-every-launch.md)** — exact binary + input + KEYS; He presn died in 9 s from an untested key; scontrol hold/release allowed
 
 - **[VIPER SESSION STATE 09-30 06:40: START HERE -> docs/handover/SESSION-2026-09-30-viper.md (memory snapshot claude-memory-2026-09-30/)](w121-3x-ck-table-0930.md)** — w3xk (3x, dtmax 0.25 + maxit 24) queued on viper; Caltech 3x + ck A/B; C256 benches queued; MHD arms HELD; He presn 128x128 queued (guarded Newton)
@@ -146,4 +147,5 @@ Full original lines in [index-active-m1-he4](index-active-m1-he4.md).
 - **[lhllc RADIAL ODD-EVEN MODE (09-30): hllc removes it; fix proposed for x1 faces](lhllc-radial-oddeven-0930.md)** — deep v_r/Mdot/deep flux of lhllc runs unreliable
 - **[He presn: use hllc/hlld, not lhllc (user 09-30)](he-presn-hllc-not-lhllc.md)** — near-sonic convection (Mach ~0.4); dhj keeps lhllc
 - [OVERNIGHT 09-30 (user asleep ~10:00): runs queued, allowed actions, morning summary](overnight-0930.md)
-- [He presn = Fe-bump wind; steady-wind + M1 positivity agents running (user GO 09-30)](he-wind-plan-0930.md) — branches he-wind-bc / m1-positivity; 128 NaN 5.7 tt, rst 00011 last good
+- [He presn: burst then ENVELOPE COLLAPSE (beon128 7.5 tt, 10-01); positivity keys stop the NaN](he-wind-plan-0930.md) — branches he-wind-bc / m1-positivity; 128 NaN 5.7 tt, rst 00011 last good
+- **[ck_spherical CLOSURE OVER-EMITS ~25 % (1x) per emission post-processor 09-30; unit test + user decision pending](ck-spherical-closure-overemits-0930.md)** — GCM too cold for its absorbed energy; affects all WASP-121b runs
