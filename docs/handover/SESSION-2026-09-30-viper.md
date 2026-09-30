@@ -125,6 +125,11 @@ diagonals in fast thin plume cells) -> guard 23ec1fb8. **Retracted**: the theta-
 
 ## 6. Standing rules added
 
+- **ALWAYS SMOKE-TEST before any production/chained launch or relaunch (user 09-30, all machines, agents too):** a
+  few-cycle run on the dev partition (viper apudev) with the SAME binary, input and command-line KEYS as the job,
+  in a separate dir; submit/release the chain only when it cycles without FATAL. (He presn 12037023/44 died in 9 s
+  after hours in the queue: KEYS named rad_m1/implicit_opac_newton, absent from the input -> parser fatal.)
+
 - apudev: at most 3 chained jobs (user 09-29); longer runs go to apu.
 - Every input key in physical units named in the key/comment, startup prints code and physical values;
   old "bbot 3 G" statements are code units (10.6 G).
