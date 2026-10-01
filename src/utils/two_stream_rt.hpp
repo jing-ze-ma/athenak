@@ -1380,6 +1380,105 @@ inline int ck_sph_top = 0;
 inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
+// problem/ck_vef_report = N > 0 (diagnostic, print only): at every VEF refresh (after
+// the first) rank 0 prints, per pressure decade, the range of f = s^2/3 and of the face
+// factor gamma over all (band, g, cell), the largest relative change of s and gamma
+// against the factors being replaced (the lag of ck_vef_every), and the number of faces
+// whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
+inline int ck_vef_report = 0;
+// problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
+// x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b,
+// rho' = (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections
+// (1 - x)/(1 + x) and (x - 1)/(1 + x): one of them is NEGATIVE whenever x != 1, and a
+// strong f contrast between two cells makes the frozen operator non-monotone (a cell's
+// net heating can grow with its own temperature).  On the WASP-121b 10x fresh start the
+// factors reach f ~ 0.1 and x = 0.5..1.6 at 1e-5..1e-3 bar within 150 cycles, the
+// runaway spreads down and the hydro dt collapses (ckf5_stab_1001/RESULTS.md).
+// Limiting x bounds the negative reflection by (X - 1)/(X + 1); it changes gamma only
+// where f jumps by a factor ~X^2 between neighbouring cells.  rho' (the flux
+// continuity) is untouched, so the deposit still telescopes.
+inline Real ck_vef_xlim = 0.0;
+template <typename XF>
+inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs,
+                        const DvceArray5D<Real> &vg,
+                        const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
+                        const DvceArray4D<Real> &pb, const DvceArray3D<int> &icc,
+                        const XF &X1F,
+                        const int nmb1, const int nc, const int ks, const int ke,
+                        const int js, const int je, const int ie) {
+  constexpr int NBIN = 12;   // decades 1e-9 .. 1e3 bar
+  constexpr int NQ = 9;      // fmin fmax gmin gmax dsmax dgmax nout xmin xmax
+  DvceArray1D<Real> acc("ck_vef_rep", NBIN*NQ);
+  auto acc_ = acc;
+  Kokkos::parallel_for("ck_vef_rep_init", Kokkos::RangePolicy<DevExeSpace>(0, NBIN),
+  KOKKOS_LAMBDA(const int b) {
+    acc_(b*NQ+0) = 1.0e30; acc_(b*NQ+1) = -1.0e30;
+    acc_(b*NQ+2) = 1.0e30; acc_(b*NQ+3) = -1.0e30;
+    acc_(b*NQ+4) = 0.0; acc_(b*NQ+5) = 0.0; acc_(b*NQ+6) = 0.0;
+    acc_(b*NQ+7) = 1.0e30; acc_(b*NQ+8) = -1.0e30;
+  });
+  par_for("ck_vef_rep", DevExeSpace(), 0, nmb1, 0, nc - 1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+    const int icut = icc(m,k,j);
+    for (int i=icut; i<=ie; ++i) {
+      const Real p = pb(m,k,j,i);
+      int b = static_cast<int>(floor(log10(fmax(p, 1.0e-30)))) + 9;
+      b = (b < 0) ? 0 : ((b >= NBIN) ? NBIN - 1 : b);
+      const Real s = vs(m,c,i+1,k,j);
+      const Real f = s*s/3.0;
+      const Real g = vg(m,c,i,k,j);
+      Kokkos::atomic_min(&acc_(b*NQ+0), f);
+      Kokkos::atomic_max(&acc_(b*NQ+1), f);
+      Kokkos::atomic_min(&acc_(b*NQ+2), g);
+      Kokkos::atomic_max(&acc_(b*NQ+3), g);
+      const Real so = vso(m,c,i+1,k,j), go = vgo(m,c,i,k,j);
+      if (so > 0.0) Kokkos::atomic_max(&acc_(b*NQ+4), fabs(s/so - 1.0));
+      if (go > 0.0) Kokkos::atomic_max(&acc_(b*NQ+5), fabs(g/go - 1.0));
+      // x = gamma rho' of the face below cell i (rho' = (A_b/A_a) s_b/s_a, A = the
+      // frame area r_node^2): the face reflections are (1 - x)/(1 + x) and
+      // (x - 1)/(1 + x), both >= 0 only at x = 1
+      if (i > icut) {
+        const Real rm = X1F(m,i-1), r0 = X1F(m,i), rp = X1F(m,i+1);
+        const Real ab = rm*rm + rm*r0 + r0*r0, aa = r0*r0 + r0*rp + rp*rp;
+        const Real x = g*(ab/aa)*vs(m,c,i,k,j)/s;
+        Kokkos::atomic_min(&acc_(b*NQ+7), x);
+        Kokkos::atomic_max(&acc_(b*NQ+8), x);
+        if (x > 1.1 || x < 1.0/1.1) Kokkos::atomic_add(&acc_(b*NQ+6), 1.0);
+      }
+    }
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
+  Real v[NBIN*NQ], r[NBIN*NQ];
+  for (int q=0; q<NBIN*NQ; ++q) v[q] = h(q);
+#if MPI_PARALLEL_ENABLED
+  for (int b=0; b<NBIN; ++b) {
+    v[b*NQ+0] = -v[b*NQ+0]; v[b*NQ+2] = -v[b*NQ+2]; v[b*NQ+7] = -v[b*NQ+7];
+  }
+  Real cnt[NBIN];
+  for (int b=0; b<NBIN; ++b) {
+    cnt[b] = v[b*NQ+6]; v[b*NQ+6] = 0.0;
+  }
+  MPI_Reduce(v, r, NBIN*NQ, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
+  Real cr[NBIN];
+  MPI_Reduce(cnt, cr, NBIN, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  for (int b=0; b<NBIN; ++b) {
+    r[b*NQ+0] = -r[b*NQ+0]; r[b*NQ+2] = -r[b*NQ+2]; r[b*NQ+6] = cr[b];
+    r[b*NQ+7] = -r[b*NQ+7];
+  }
+#else
+  for (int q=0; q<NBIN*NQ; ++q) r[q] = v[q];
+#endif
+  if (global_variable::my_rank == 0) {
+    for (int b=0; b<NBIN; ++b) {
+      if (r[b*NQ+1] < 0.0) continue;
+      std::printf("### vefrep ncycle=%d p=1e%+d f=[%.4e,%.4e] gam=[%.4e,%.4e] "
+                  "dsmax=%.3e dgmax=%.3e x=[%.4e,%.4e] nx10=%.0f\n",
+                  static_cast<int>(pm->ncycle),
+                  b - 9, r[b*NQ+0], r[b*NQ+1], r[b*NQ+2], r[b*NQ+3], r[b*NQ+4],
+                  r[b*NQ+5], r[b*NQ+7], r[b*NQ+8], r[b*NQ+6]);
+    }
+  }
+}
 inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst) {
   const bool stp = !ck_vef_sync || !ckfop || ckfst;    // a pass that may refresh
   return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
@@ -7102,7 +7201,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           auto vs_ = *ck_vef_s_ptr;
           auto vg_ = *ck_vef_g_ptr;
           auto vw_ = *ck_vef_w_ptr;
+          // problem/ck_vef_report (diagnostic): keep the factors being replaced
+          const bool vrep_ = (ck_vef_report > 0 && ck_vef_last >= 0 && vdue_);
+          DvceArray5D<Real> vso_, vgo_;
+          if (vrep_) {
+            vso_ = DvceArray5D<Real>("ck_vef_so", vs_.extent(0), vs_.extent(1),
+                                     vs_.extent(2), vs_.extent(3), vs_.extent(4));
+            vgo_ = DvceArray5D<Real>("ck_vef_go", vg_.extent(0), vg_.extent(1),
+                                     vg_.extent(2), vg_.extent(3), vg_.extent(4));
+            Kokkos::deep_copy(vso_, vs_);
+            Kokkos::deep_copy(vgo_, vg_);
+          }
           const int ncore = ck_vef_ncore;
+          const Real xlim_ = ck_vef_xlim;
           par_for("ck_vef_formal", DevExeSpace(), 0, nmb1, 0, nc_ - 1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
             const int icut = icc_g(m,k,j);
@@ -7265,6 +7376,47 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
             }
           });
+          // problem/ck_vef_xlim = X > 1: the face factor x = gamma rho' of an interior
+          // face (q = 2..nn-2) kept in [1/X, X] by limiting gamma (rho', the flux
+          // continuity, is untouched, so the deposit still telescopes).  A separate
+          // kernel, so that ck_vef_formal (and every run with the key off) compiles to
+          // the same code as without the limiter: it re-forms f from the moments the
+          // formal solution left in the work slots (4 J, 5 K, 8 W0, 9 W2; slot 0 r)
+          // with the same expressions, so the limited gamma is the in-kernel one.
+          if (xlim_ > 1.0) {
+            par_for("ck_vef_xlim", DevExeSpace(), 0, nmb1, 0, nc_ - 1, ks, ke, js, je,
+            KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+              const int icut = icc_g(m,k,j);
+              if (icut > ie) return;
+              const int nn = ie - icut + 3;
+              auto W = [&](const int s, const int q) -> Real {
+                return vw_(m,c,s*nv + q,k,j);
+              };
+              auto fq = [&](const int q) -> Real {
+                const Real Jq = W(4,q), Kq = W(5,q);
+                Real f = 1.0/3.0;
+                if (Jq > 0.0 && W(9,q) > 0.0) {
+                  f = (Kq/Jq)*(W(8,q)/(3.0*W(9,q)));
+                  f = (f < 1.0e-3) ? 1.0e-3 : ((f > 1.0) ? 1.0 : f);
+                }
+                return f;
+              };
+              Real fprev = fq(1);
+              for (int q=2; q<=nn-2; ++q) {
+                const Real f = fq(q);
+                Real gq = vg_(m,c,icut+q-1,k,j);
+                const Real ra = W(0,q), rb = W(0,q-1);
+                const Real rhop = (rb*rb)/(ra*ra)*sqrt(fprev/f);
+                const Real xq = gq*rhop;
+                if (xq > xlim_) gq = xlim_/rhop;
+                if (xq < 1.0/xlim_) gq = 1.0/(xlim_*rhop);
+                vg_(m,c,icut+q-1,k,j) = gq;
+                fprev = f;
+              }
+            });
+          }
+          if (vrep_) CkVefReport(pm, vs_, vg_, vso_, vgo_, *rt_pb_ptr, icc_g, X1F, nmb1,
+                                 nc_, ks, ke, js, je, ie);
         }
         const int dil_ = ck_sph_face;   // problem/ck_sph_face
         const int tpm_ = ck_sph_top;    // problem/ck_sph_top
