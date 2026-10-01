@@ -183,6 +183,69 @@ int64_t dhj_fhst_cyc = -1;                // the cycle they belong to
 DvceArray4D<Real> *dhj_fhst_ptr = nullptr;   // (m, 4, k, j): E_top M_top E_bot M_bot
 void DhjFluxStage(Mesh *pm);
 void DhjCycleDiag(Mesh *pm);
+
+// AXIAL ANGULAR MOMENTUM (branch am-coriolis, 10-01).  In the corotating frame the
+// conserved quantity is L_abs = L_rel + Omega I, I = sum M R^2 (R = distance from the
+// rotation axis), and the Coriolis torque on L_rel, -2 Omega rho R v_R, is exactly
+// -Omega dI/dt by continuity.  The cubed-sphere source applies it with the CELL-CENTRE
+// rho v, while I changes by the RIEMANN mass fluxes; the two differ (numerical mass
+// diffusion moves I without moving the cell-centre momentum), and the difference is an
+// angular-momentum source (w121prod_0929/angmom_1001: ~2.5 % of the gross torque, a
+// monotonic L_abs loss).
+//   problem/coriolis_am (default false): take the ZONAL part of the Coriolis torque from
+//     the face mass fluxes instead, -Omega Q_c with
+//         Q_c = sum_{faces f of c} Phi_f^out (W_f - W_c),   W = R^2,
+//     Phi^out the outward mass flux (flux x area) the update applies and W_f the face
+//     centre's R^2.  Q_c -> int rho V.grad(R^2) dV = 2 int rho R v_R dV (consistent), and
+//     sum_c Q_c = dI/dt + (outflow of W through the domain boundary) EXACTLY, so the
+//     Coriolis torque cancels Omega dI/dt to round-off.  The correction is a force along
+//     (-y, x, 0), which has no radial component; the total energy is not touched (the
+//     Coriolis force never entered it), so its small work lands in the internal energy.
+//   problem/am_hst (DIAGNOSTIC, default false; read without recording it): eight more
+//     history columns after the flux columns, see DhjFluxHistory.
+namespace amh {
+bool on = false;            // problem/am_hst
+bool fix = false;           // problem/coriolis_am
+Real pdeep = 1.0e8;         // problem/am_hst_pdeep [barye]: the Tdif_deep split (100 bar)
+int nst = 0;                // stages per cycle and their weights (as dhj_fhst_w)
+Real w[3] = {0.0, 0.0, 0.0};
+int stage = 0;
+int64_t cyc = -1;
+constexpr int NACC = 5;     // Tcc, Tcont, Tbnd, Tdif_deep, Tdif_rad
+Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0};   // time integrals since the last row
+Real t0 = 0.0;
+}  // namespace amh
+void AmHstStage(Mesh *pm);
+void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0);
+
+//----------------------------------------------------------------------------------------
+//! \brief Q_c = sum over the six faces of the outward mass flux times (W_f - W_c),
+//! W = R^2 (problem/coriolis_am).  xr/xl, er/el: the cell's xi and eta face coordinates
+//! (radians); xc, ec its centre; r its radius, rl/rr its radial faces; s2c the squared
+//! cylindrical fraction (rh_x^2 + rh_y^2) at the centre, wc = r^2 s2c.  Every face value
+//! is a function of the face alone, so the cells either side of it use the same W_f and
+//! the sum over cells telescopes.  qr returns the radial-face part alone.
+template <typename F5, typename A4>
+KOKKOS_INLINE_FUNCTION
+Real CsAmFluxQ(const F5 &f1, const F5 &f2, const F5 &f3, const A4 &a1, const A4 &a2,
+               const A4 &a3, const int pnl, const int m, const int k, const int j,
+               const int i, const Real r, const Real rl, const Real rr, const Real s2c,
+               const Real wc, const Real xc, const Real ec, const Real xl,
+               const Real xr, const Real el, const Real er, Real &qr) {
+  qr = f1(m,IDN,k,j,i+1)*a1(m,k,j,i+1)*(rr*rr*s2c - wc)
+     - f1(m,IDN,k,j,i)*a1(m,k,j,i)*(rl*rl*s2c - wc);
+  Real q[3];
+  const Real r2 = r*r;
+  cubed_sphere::PanelToCart(pnl, xr, ec, q);
+  Real qh = f2(m,IDN,k,j+1,i)*a2(m,k,j+1,i)*(r2*(q[0]*q[0] + q[1]*q[1]) - wc);
+  cubed_sphere::PanelToCart(pnl, xl, ec, q);
+  qh -= f2(m,IDN,k,j,i)*a2(m,k,j,i)*(r2*(q[0]*q[0] + q[1]*q[1]) - wc);
+  cubed_sphere::PanelToCart(pnl, xc, er, q);
+  qh += f3(m,IDN,k+1,j,i)*a3(m,k+1,j,i)*(r2*(q[0]*q[0] + q[1]*q[1]) - wc);
+  cubed_sphere::PanelToCart(pnl, xc, el, q);
+  qh -= f3(m,IDN,k,j,i)*a3(m,k,j,i)*(r2*(q[0]*q[0] + q[1]*q[1]) - wc);
+  return qr + qh;
+}
 // problem/budget_dt (DIAGNOSTIC, branch dhj-budget-0929; off unless the key exists and
 // is > 0): per-shell energy and mass ledger, see EBudCk
 namespace ebud {
@@ -546,6 +609,47 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pfl->phydro != nullptr) pfl->phydro->EnableC2PTrack();
     if (pfl->pmhd != nullptr) pfl->pmhd->EnableC2PTrack();
     dhj_floor_t0 = pmy_mesh_->time;
+  }
+  // problem/coriolis_am (default false) and problem/am_hst (DIAGNOSTIC, default false):
+  // see namespace amh.  Both read only when named, so a run without them is untouched
+  // (also its restart files).  Cubed sphere only.
+  amh::fix = pin->DoesParameterExist("problem","coriolis_am")
+             && pin->GetBoolean("problem","coriolis_am");
+  amh::on = flux_hst && pin->DoesParameterExist("problem","am_hst")
+            && pin->GetBoolean("problem","am_hst");
+  if ((amh::fix || amh::on) && !pmy_mesh_->use_cubed_sphere) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "problem/coriolis_am and problem/am_hst need the cubed sphere"
+              << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if (amh::on) {
+    if (pin->DoesParameterExist("problem","am_hst_pdeep")) {
+      amh::pdeep = pin->GetReal("problem","am_hst_pdeep");
+    }
+    const std::string integ = pin->GetOrAddString("time","integrator","rk2");
+    amh::nst = 0;
+    if (integ == "rk1") {
+      amh::nst = 1;  amh::w[0] = 1.0;
+    } else if (integ == "rk2") {
+      amh::nst = 2;  amh::w[0] = 0.5;  amh::w[1] = 0.5;
+    } else if (integ == "rk3") {
+      amh::nst = 3;  amh::w[0] = 1.0/6.0;  amh::w[1] = 1.0/6.0;  amh::w[2] = 2.0/3.0;
+    }
+    const int nfh = 9 + (dhj_flux_hst_wall ? 4 : 0) + (dhj_flux_hst_floor ? 3 : 0) + 8;
+    if (amh::nst == 0 || !user_srcs || nfh > NHISTORY_VARIABLES) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/am_hst needs rk1/rk2/rk3, user_srcs and at most "
+                << NHISTORY_VARIABLES << " user history columns (have " << nfh << ")"
+                << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    for (int n=0; n<amh::NACC; ++n) amh::acc[n] = 0.0;
+    amh::t0 = pmy_mesh_->time;
+  }
+  if (global_variable::my_rank == 0 && (amh::fix || amh::on)) {
+    std::cout << "dhj: problem/coriolis_am = " << amh::fix << ", problem/am_hst = "
+              << amh::on << std::endl;
   }
   // dhj-only DEFAULT (user 09-30): <hydro>/lhllc_x1_phi_min, <mhd>/lhlld_x1_phi_min = 1,
   // i.e. the full HLLC/HLLD velocity-jump term on x1 (radial) faces; see
@@ -3639,9 +3743,107 @@ void DhjFluxStage(Mesh *pm) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void AmHstStage
+//! \brief problem/am_hst: one RK stage's Coriolis torque sums, from the stage's
+//! primitives w0 and Riemann fluxes uflx (what SourceFunc and the update use), added to
+//! amh::acc with the stage's weight in the cycle (w_s dt; rk2 1/2, 1/2), so that
+//! acc / (t - t0) is the rate the update applied over the history interval.
+//!   0 Tcc        the cell-centre Coriolis torque, sum -2 Omega rho (x vx + y vy) vol
+//!   1 Tcont      -Omega sum_c Q_c (namespace amh) = -Omega dI/dt - Omega (W outflow)
+//!   2 Tbnd       the boundary part of Tcont, -Omega sum Phi^out W_f, x1 faces is, ie+1
+//!   3 Tdif_deep  Tcc - Tcont over cells with p > problem/am_hst_pdeep (100 bar)
+//!   4 Tdif_rad   the radial-velocity part of Tcc minus the radial-face part of Tcont
+
+void AmHstStage(Mesh *pm) {
+  if (pm->ncycle != amh::cyc) {
+    amh::cyc = pm->ncycle;
+    amh::stage = 0;
+  }
+  if (amh::stage >= amh::nst) return;
+  const Real wdt = amh::w[amh::stage]*pm->dt;
+  ++amh::stage;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const bool mhd = (pmbp->pmhd != nullptr);
+  auto w0 = mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto eos = mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
+  DvceFaceFld5D<Real> &uf = mhd ? pmbp->pmhd->uflx : pmbp->phydro->uflx;
+  auto f1 = uf.x1f, f2 = uf.x2f, f3 = uf.x3f;
+  auto a1 = pmbp->pcoord->area.x1f;
+  auto a2 = pmbp->pcoord->area.x2f;
+  auto a3 = pmbp->pcoord->area.x3f;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto x1f = pmbp->pcoord->xx1f;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  const Real omega = pm->pgen->hot_jupiter_param.omega;
+  const Real pdeep = amh::pdeep;
+  const int ncell = nmb*nx3*nx2*nx1;
+  array_sum::GlobalSum sum;
+  Kokkos::parallel_reduce("dhj_am_stage", Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
+    const int m = idx/(nx3*nx2*nx1);
+    int rem = idx - m*(nx3*nx2*nx1);
+    const int k = ks + rem/(nx2*nx1);
+    rem -= (k - ks)*(nx2*nx1);
+    const int j = js + rem/nx1;
+    const int i = is + rem - (j - js)*nx1;
+    const Real x2l = size.d_view(m).x2min, x2u = size.d_view(m).x2max;
+    const Real x3l = size.d_view(m).x3min, x3u = size.d_view(m).x3max;
+    const Real xi_c = 0.25*M_PI*CellCenterX(j-js, nx2, x2l, x2u);
+    const Real eta_c = 0.25*M_PI*CellCenterX(k-ks, nx3, x3l, x3u);
+    const int pnl = mbpanel.d_view(m);
+    Real qc[3], e1[3], e2[3];
+    cubed_sphere::PanelToCart(pnl, xi_c, eta_c, qc);
+    cubed_sphere::PanelTangents(pnl, xi_c, eta_c, e1, e2);
+    const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+    const Real rh0 = qc[0]*qn, rh1 = qc[1]*qn;
+    const Real r = x1v(m,i);
+    const Real xx = r*rh0, yy = r*rh1;
+    const Real s2c = rh0*rh0 + rh1*rh1;
+    const Real wc = xx*xx + yy*yy;
+    const Real rho = w0(m,IDN,k,j,i);
+    const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
+    const Real vcx = v1*rh0 + v2*e1[0] + v3*e2[0];
+    const Real vcy = v1*rh1 + v2*e1[1] + v3*e2[1];
+    const Real dv = vol(m,k,j,i);
+    const Real tcc = -2.0*omega*rho*(xx*vcx + yy*vcy)*dv;
+    Real qr;
+    const Real q = CsAmFluxQ(f1, f2, f3, a1, a2, a3, pnl, m, k, j, i, r, x1f(m,i),
+        x1f(m,i+1), s2c, wc, xi_c, eta_c,
+        0.25*M_PI*LeftEdgeX(j-js, nx2, x2l, x2u),
+        0.25*M_PI*LeftEdgeX(j+1-js, nx2, x2l, x2u),
+        0.25*M_PI*LeftEdgeX(k-ks, nx3, x3l, x3u),
+        0.25*M_PI*LeftEdgeX(k+1-ks, nx3, x3l, x3u), qr);
+    const Real tcont = -omega*q;
+    Real tbnd = 0.0;
+    if (i == ie) tbnd += -omega*f1(m,IDN,k,j,ie+1)*a1(m,k,j,ie+1)*x1f(m,ie+1)
+                                *x1f(m,ie+1)*s2c;
+    if (i == is) tbnd += omega*f1(m,IDN,k,j,is)*a1(m,k,j,is)*x1f(m,is)*x1f(m,is)*s2c;
+    const Real p = eos.Pressure(rho, w0(m,IEN,k,j,i));
+    const Real tccr = -2.0*omega*rho*v1*r*s2c*dv;
+    array_sum::GlobalSum h;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) h.the_array[n] = 0.0;
+    h.the_array[0] = tcc;
+    h.the_array[1] = tcont;
+    h.the_array[2] = tbnd;
+    h.the_array[3] = (p > pdeep) ? (tcc - tcont) : 0.0;
+    h.the_array[4] = tccr + omega*qr;
+    mb_sum += h;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum));
+  Kokkos::fence();
+  for (int n=0; n<amh::NACC; ++n) amh::acc[n] += wdt*sum.the_array[n];
+}
+
 void SourceFunc(Mesh *pm, Real bdt) {
   EBudStage(pm, bdt);
   DhjFluxStage(pm);
+  if (amh::on) AmHstStage(pm);
   // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
   const bool use_cubed_sphere_ = pm->use_cubed_sphere;
   auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
@@ -3763,6 +3965,19 @@ void SourceFunc(Mesh *pm, Real bdt) {
     DvceArray2D<Real> ebacc;
     if (eb_on) ebacc = *ebud::acc;
     const Real eb_w = 0.5*pm->dt/bdt;
+    // problem/coriolis_am: the face mass fluxes and areas the zonal Coriolis torque is
+    // taken from (see namespace amh); empty Views when off
+    const bool cor_am_ = amh::fix && use_cubed_sphere_;
+    DvceArray5D<Real> amf1, amf2, amf3;
+    DvceArray4D<Real> ama2, ama3;
+    DvceArray2D<Real> amx1f;
+    if (cor_am_) {
+      DvceFaceFld5D<Real> &uf = (pmbp->pmhd != nullptr) ? pmbp->pmhd->uflx
+                                                        : pmbp->phydro->uflx;
+      amf1 = uf.x1f;  amf2 = uf.x2f;  amf3 = uf.x3f;
+      ama2 = pmbp->pcoord->area.x2f;  ama3 = pmbp->pcoord->area.x3f;
+      amx1f = pmbp->pcoord->xx1f;
+    }
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const Real eb_e0 = u0(m,IEN,k,j,i);
@@ -3936,6 +4151,31 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1 - acr_rot)*bdt;
           u0(m,IM2,k,j,i) += rho*(acx*e1[0] + acy*e1[1])*bdt;
           u0(m,IM3,k,j,i) += rho*(acx*e2[0] + acy*e2[1])*bdt;
+          // problem/coriolis_am: replace the zonal torque just applied, -2 omega rho
+          // (x vx + y vy) vol, by -omega Q_c from the face mass fluxes, as a force along
+          // (-y, x, 0) (torque density s (x^2+y^2), no radial component)
+          if (cor_am_) {
+            const Real wc = xx*xx + yy*yy;
+            if (wc > 0.0) {
+              const Real s2c = rh0*rh0 + rh1*rh1;
+              Real qr;
+              const Real qc = CsAmFluxQ(amf1, amf2, amf3, area1, ama2, ama3, pnl, m, k, j,
+                  i, r, amx1f(m,i), amx1f(m,i+1), s2c, wc, xi_c, eta_c,
+                  0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                      size.d_view(m).x2max),
+                  0.25*M_PI*LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min,
+                                      size.d_view(m).x2max),
+                  0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                      size.d_view(m).x3max),
+                  0.25*M_PI*LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min,
+                                      size.d_view(m).x3max), qr);
+              const Real tcc = -2.0*omega*rho*(xx*vcx + yy*vcy)*vol;
+              const Real sam = (-omega*qc - tcc)/(wc*vol);
+              const Real fx = -sam*yy, fy = sam*xx;
+              u0(m,IM2,k,j,i) += (fx*e1[0] + fy*e1[1])*bdt;
+              u0(m,IM3,k,j,i) += (fx*e2[0] + fy*e2[1])*bdt;
+            }
+          }
           // Only the centrifugal part does work -- Coriolis is perpendicular to v.  With
           // rot_potential AND etotgrav the etotgrav flux rho v Phi_tot (TotPotAt on all
           // three face sets) already does the whole centrifugal work, so no energy
@@ -5756,12 +5996,87 @@ void DhjCycleDiag(Mesh *pm) {
 //! Mdot_bot_out (sums over inner-wall faces with fx1(IDN,is) > 0 / < 0) and Efl_bot_in,
 //! Efl_bot_out (the fluid energy flux fx1(IEN,is) A over the same faces).
 
+//----------------------------------------------------------------------------------------
+//! \brief problem/am_hst: the eight angular-momentum columns from column n0 on.  Lrel and
+//! Iw are the state at the row (u0): Lrel = sum vol (x P_y - y P_x), P = rho V rebuilt
+//! from the covariant momenta, Iw = sum vol rho (x^2 + y^2), both with the cell-centre
+//! position the Coriolis source uses, so L_abs = Lrel + Omega Iw is the quantity
+//! problem/coriolis_am conserves.  Tcor (the torque the source applied: Tcont with
+//! coriolis_am, else Tcc) and the AmHstStage sums are rates averaged over the interval
+//! since the previous row [g cm^2 s^-2].  Then
+//!     d(L_abs)/dt = Tcor + Omega dI/dt + (all other torques),
+//!     Omega dI/dt = Tbnd - Tcont  (+ floors),
+//! so without the fix Tcc - Tcont + Tbnd is the Coriolis part of d(L_abs)/dt.
+
+void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  auto u0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  const int ncell = nmb*nx3*nx2*nx1;
+  array_sum::GlobalSum sum;
+  Kokkos::parallel_reduce("dhj_am_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
+    const int m = idx/(nx3*nx2*nx1);
+    int rem = idx - m*(nx3*nx2*nx1);
+    const int k = ks + rem/(nx2*nx1);
+    rem -= (k - ks)*(nx2*nx1);
+    const int j = js + rem/nx1;
+    const int i = is + rem - (j - js)*nx1;
+    const Real xi_c = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
+                                            size.d_view(m).x2max);
+    const Real eta_c = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
+                                             size.d_view(m).x3max);
+    const int pnl = mbpanel.d_view(m);
+    Real qc[3], e1[3], e2[3];
+    cubed_sphere::PanelToCart(pnl, xi_c, eta_c, qc);
+    cubed_sphere::PanelTangents(pnl, xi_c, eta_c, e1, e2);
+    const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+    const Real rh0 = qc[0]*qn, rh1 = qc[1]*qn;
+    const Real r = x1v(m,i);
+    const Real xx = r*rh0, yy = r*rh1;
+    // covariant m2, m3 on the unit pair e1, e2 (e1.e2 = c): raise, then rebuild P
+    const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+    const Real det = 1.0 - c*c;
+    const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+    const Real p2 = (m2 - c*m3)/det, p3 = (m3 - c*m2)/det;
+    const Real px = m1*rh0 + p2*e1[0] + p3*e2[0];
+    const Real py = m1*rh1 + p2*e1[1] + p3*e2[1];
+    const Real dv = vol(m,k,j,i);
+    array_sum::GlobalSum h;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) h.the_array[n] = 0.0;
+    h.the_array[0] = (xx*py - yy*px)*dv;
+    h.the_array[1] = u0(m,IDN,k,j,i)*(xx*xx + yy*yy)*dv;
+    mb_sum += h;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum));
+  Kokkos::fence();
+  const Real tint = pm->time - amh::t0;
+  Real rate[amh::NACC];
+  for (int n=0; n<amh::NACC; ++n) {
+    rate[n] = (tint > 0.0) ? amh::acc[n]/tint : 0.0;
+    amh::acc[n] = 0.0;
+  }
+  amh::t0 = pm->time;
+  pdata->hdata[n0] = sum.the_array[0];
+  pdata->hdata[n0+1] = sum.the_array[1];
+  pdata->hdata[n0+2] = amh::fix ? rate[1] : rate[0];
+  for (int n=0; n<amh::NACC; ++n) pdata->hdata[n0+3+n] = rate[n];
+}
+
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
   constexpr int NFH0 = 9;
   const bool fwall = dhj_flux_hst_wall;
   const bool ffloor = dhj_flux_hst_floor;
-  const int NFH = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
+  // problem/am_hst: eight columns after all the others
+  const int NFL = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
+  const int NFH = NFL + (amh::on ? 8 : 0);
   pdata->nhist = NFH;
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
@@ -5779,9 +6094,19 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->label[12] = "Efl_bot_out";
   }
   if (ffloor) {
-    pdata->label[NFH-3] = "Efloor";
-    pdata->label[NFH-2] = "Mfloor";
-    pdata->label[NFH-1] = "Efloor_rt";
+    pdata->label[NFL-3] = "Efloor";
+    pdata->label[NFL-2] = "Mfloor";
+    pdata->label[NFL-1] = "Efloor_rt";
+  }
+  if (amh::on) {
+    pdata->label[NFL] = "Lrel";
+    pdata->label[NFL+1] = "Iw";
+    pdata->label[NFL+2] = "Tcor";
+    pdata->label[NFL+3] = "Tcc";
+    pdata->label[NFL+4] = "Tcont";
+    pdata->label[NFL+5] = "Tbnd";
+    pdata->label[NFL+6] = "Tdif_deep";
+    pdata->label[NFL+7] = "Tdif_rad";
   }
   for (int n=0; n<NFH; ++n) pdata->hdata[n] = 0.0;
 
@@ -5885,10 +6210,11 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     Kokkos::deep_copy(acc, 0.0);
     const Real tint = pm->time - dhj_floor_t0;
     dhj_floor_t0 = pm->time;
-    pdata->hdata[NFH-3] = (tint > 0.0) ? ef/tint : 0.0;
-    pdata->hdata[NFH-2] = (tint > 0.0) ? mf/tint : 0.0;
-    pdata->hdata[NFH-1] = (tint > 0.0) ? efr/tint : 0.0;
+    pdata->hdata[NFL-3] = (tint > 0.0) ? ef/tint : 0.0;
+    pdata->hdata[NFL-2] = (tint > 0.0) ? mf/tint : 0.0;
+    pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
   }
+  if (amh::on) AmHstColumns(pdata, pm, NFL);
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
   array_sum::GlobalSum wsum;
