@@ -237,7 +237,42 @@ def build(a):
         geff = GM/rr**2 - (kap_*F/CL if a.atm_rad else 0.0)
         return [-rho_*geff/p_/(1.0 + eos.lp(lt_, lr_, dy=1)), -kap_*rho_]
 
-    if a.atm == 'hopf':
+    def rhs_re(rr, y):                  # grey RE atmosphere, y = (ln rho, tau)
+        lnr, tau = y
+        rho_ = np.exp(lnr)
+        T_, dlnT = t_re(rr, tau, rho_)
+        F = LUM/(4*np.pi*rr**2)
+        kap_ = kap_of(T_, rho_)
+        lt_, lr_ = np.log10(T_), np.log10(rho_)
+        p_ = rho_*10.0**eos.lp(lt_, lr_)
+        geff = GM/rr**2 - kap_*F/CL
+        dlnp = -rho_*geff/p_
+        dlnr = (dlnp - eos.lp(lt_, lr_, dx=1)*dlnT)/(1.0 + eos.lp(lt_, lr_, dy=1))
+        return [dlnr, -kap_*rho_]
+
+    def t_re(rr, tau, rho_):
+        # T^4 = (3/4) T_eff^4 (tau + q(tau)) 2 W(r): Hopf at r = R_ph, diluted by the
+        # geometric factor W = (1 - sqrt(1 - (R/r)^2))/2 above (W = 1/2 below R)
+        tq = max(tau, 0.0)
+        x = min(RSTAR/rr, 1.0)
+        w2 = 1.0 - np.sqrt(max(1.0 - x*x, 0.0))
+        T_ = (0.75*Teff**4*(tq + q_hopf(tq))*w2)**0.25
+        dq = 0.1331*3.4488*np.exp(-3.4488*tq)
+        dtau = -kap_of(T_, rho_)*rho_ if tau > 0.0 else 0.0
+        dw2 = (-x*x/rr/np.sqrt(max(1.0 - x*x, 1e-30))) if x < 1.0 else 0.0
+        dlnT = 0.25*((1.0 + dq)*dtau/(tq + q_hopf(tq)) + dw2/w2)
+        return T_, dlnT
+
+    if a.atm == 're':
+        def shoot(lnrho_R):
+            s = solve_ivp(rhs_re, [RSTAR, a.rtop], [lnrho_R, 2.0/3.0],
+                          method='LSODA', rtol=1e-10, atol=1e-13)
+            return s
+
+        def resid(lnrho_R):             # tau left at rtop: 0 wanted
+            s = shoot(lnrho_R)
+            return s.y[1][-1] if s.success else -1.0
+    elif a.atm == 'hopf':
         def top_event(rr, y):
             return y[0] - np.log(RHO_TOP)
         top_event.terminal = True
@@ -281,8 +316,19 @@ def build(a):
 
     DRN = a.drn
     su = shoot(lnrho_R)
-    rtop_atm = su.t_events[0][0]
-    if a.atm == 'hopf':
+    if a.atm == 're':
+        rx = np.arange(RSTAR, a.rtop, DRN)
+        su = solve_ivp(rhs_re, [RSTAR, rx[-1]], [lnrho_R, 2.0/3.0], t_eval=rx,
+                       method='LSODA', rtol=1e-10, atol=1e-13)
+        assert su.success, su.message
+        r_u = su.t[1:]
+        rho_u = np.exp(su.y[0][1:])
+        T_u = np.array([t_re(rr, tt, dd)[0]
+                        for rr, tt, dd in zip(r_u, su.y[1][1:], rho_u)])
+        print('  RE atmosphere to %.4e (%.3f Rsun): rho %.3e, T %.1f K, tau %.2e there'
+              % (r_u[-1], r_u[-1]/RSUN, rho_u[-1], T_u[-1], su.y[1][-1]))
+    elif a.atm == 'hopf':
+        rtop_atm = su.t_events[0][0]
         rx = np.arange(RSTAR, rtop_atm + 5.0e9, DRN)
         su = solve_ivp(rhs1, [RSTAR, rx[-1]], [lnrho_R, 2.0/3.0], t_eval=rx,
                        method='LSODA', rtol=1e-10, atol=1e-13)
@@ -292,6 +338,7 @@ def build(a):
         T_u = (3.0*(LUM/(4*np.pi*r_u**2))/(4.0*SIG)*(tau_u + q_hopf(tau_u)))**0.25
         rho_u = np.exp(su.y[0][1:])
     else:
+        rtop_atm = su.t_events[0][0]
         rx = np.arange(RSTAR, rtop_atm, DRN)
         su = solve_ivp(rhs_iso, [RSTAR, rtop_atm], [lnrho_R, 2.0/3.0], t_eval=rx,
                        method='LSODA', rtol=1e-10, atol=1e-13)
@@ -391,7 +438,7 @@ def main():
         p.add_argument('--' + k, type=float)
     p.add_argument('--eos')
     p.add_argument('--ross')
-    p.add_argument('--atm', choices=['hopf', 'iso'])
+    p.add_argument('--atm', choices=['hopf', 'iso', 're'])
     p.add_argument('--name')
     p.add_argument('--alpha', type=float, default=1.5)
     p.add_argument('--atm_rad', type=int, default=1)
