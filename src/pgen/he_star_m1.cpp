@@ -772,6 +772,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (wic) {
       while (ianc > is && !(hx1v(0,ianc) < wrc)) --ianc;
     }
+    // problem/he_ic_balance_rmax [cm] (default none = the top ghost): the march starts
+    // below this radius and the cells above keep the column state.  For a column that
+    // ends in a constant density floor (make_ic_mlt_star.py --atm iso): the floor is not
+    // hydrostatic, and anchored there the march would rescale the whole column
+    if (pin->DoesParameterExist("problem","he_ic_balance_rmax")) {
+      const Real rbm = pin->GetReal("problem","he_ic_balance_rmax");
+      while (ianc > is && !(hx1v(0,ianc) < rbm)) --ianc;
+    }
     // the anchor cell ianc+1 takes the COLUMN's own state for the march (the wind
     // there is not hydrostatic; its density would rescale the whole column)
     if (wic && ianc < ie) {
