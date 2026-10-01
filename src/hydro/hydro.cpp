@@ -210,6 +210,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // ...and off BELOW this radius (0 = never), same path, same caveat.
   wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
+  // radiation-modified CFL signal speed (hydro_newdt.cpp).  Read only when named, so
+  // the parameter dump of a run without it is unchanged.
+  if (pin->DoesParameterExist("hydro","rad_signal_speed")) {
+    rad_signal_speed = pin->GetBoolean("hydro","rad_signal_speed");
+  }
   // allocate array of flags used with etotgrav
   if (use_etotgrav || use_wellbalance_dynamic) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;

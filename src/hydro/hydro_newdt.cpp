@@ -9,6 +9,7 @@
 #include <math.h>
 
 #include <limits>
+#include <cstdlib>
 #include <iostream>
 #include <algorithm> // min
 
@@ -21,6 +22,7 @@
 #include "diffusion/conduction.hpp"
 #include "diffusion/viscosity.hpp"
 #include "srcterms/srcterms.hpp"
+#include "rad_m1/rad_m1.hpp"
 
 namespace hydro {
 
@@ -79,6 +81,37 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   auto &sncell_ = pmy_pack->pcoord->sin_cell;
   const bool multi_d_ = pmy_pack->pmesh->multi_d;
   const bool three_d_ = pmy_pack->pmesh->three_d;
+
+  // RADIATION SIGNAL SPEED (<hydro>/rad_signal_speed).  The gas sound speed alone
+  // understates the acoustic speed where the M1 radiation is trapped: there P_rad takes
+  // part in the compression.  In the strong-coupling, no-diffusion (equilibrium) limit,
+  // gas + LTE radiation is one fluid with P = P_g + P_r, P_r = E/3, beta = P_g/P, and
+  // the adiabatic exponent of an ideal gas of ratio gamma mixed with radiation is
+  // (Chandrasekhar 1939, ch. II; Mihalas & Mihalas 1984, sect. 101)
+  //   Gamma_1 = beta + (4 - 3 beta)^2 (gamma - 1) / (beta + 12 (gamma - 1)(1 - beta)),
+  // c_eq^2 = Gamma_1 P / rho  (-> gamma P_g/rho at beta = 1, -> 4/3 P_r/rho at beta = 0).
+  // For a general EOS (Gamma_1 of the gas from the table) the decoupled sum
+  // c_eq^2 = c_g^2 + (4/3) P_r/rho is used, an upper bound of the coupled value for an
+  // ideal gas (by <= 3 % in speed at gamma = 5/3).  The radiation term is tapered by
+  // the cell optical depth along each direction, tau_d = rho kappa_T dx_d (kappa_T the
+  // module's transport opacity, opac(M1_OP_T)):
+  //   c_d^2 = c_g^2 + (1 - exp(-tau_d)) (c_eq^2 - c_g^2),
+  // so optically thin cells keep the gas speed.  The fully coupled speed is the LARGEST
+  // acoustic speed of the medium (radiative diffusion at the grid scale only lowers it),
+  // so the bound is conservative.  E and opac are the M1 state of the last radiation
+  // step (the module runs after the hydro stages): a lag of one step.  Off: no change.
+  const bool rss_ = rad_signal_speed;
+  DvceArray5D<Real> erad_, kopc_;
+  if (rss_) {
+    if (pmy_pack->pradm1 == nullptr) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/rad_signal_speed = true needs a <rad_m1> block"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    erad_ = pmy_pack->pradm1->u0;
+    kopc_ = pmy_pack->pradm1->opac;
+  }
 
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
@@ -150,11 +183,41 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         } else         {
           cs = eos.iso_cs;
         }
-        max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cs;
+        Real cs1 = cs, cs2 = cs, cs3 = cs;
+        if (rss_) {
+          const Real d = w0_(m,IDN,k,j,i);
+          const Real pr = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0)/3.0;
+          const Real cg2 = cs*cs;
+          Real ceq2;
+          if (eos.is_ideal && !eos.IsGeneral()) {
+            const Real pg = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
+            const Real ptot = pg + pr;
+            const Real beta = pg/ptot;
+            const Real gm1 = eos.gamma - 1.0;
+            const Real gam1 = beta + SQR(4.0 - 3.0*beta)*gm1
+                                     /(beta + 12.0*gm1*(1.0 - beta));
+            ceq2 = gam1*ptot/d;
+          } else {
+            ceq2 = cg2 + (4.0/3.0)*pr/d;
+          }
+          const Real dc2 = fmax(ceq2 - cg2, 0.0);
+          const Real kt = fmax(kopc_(m,radm1::M1_OP_T,k,j,i), 0.0);
+          Real h1, h2, h3;
+          if (use_cubed_sphere || use_spherical_polar) {
+            h1 = dx1_(m,k,j,i); h2 = dx2_(m,k,j,i); h3 = dx3_(m,k,j,i);
+          } else {
+            h1 = mbsize.d_view(m).dx1; h2 = mbsize.d_view(m).dx2;
+            h3 = mbsize.d_view(m).dx3;
+          }
+          cs1 = sqrt(cg2 + dc2*(1.0 - exp(-kt*h1)));
+          cs2 = sqrt(cg2 + dc2*(1.0 - exp(-kt*h2)));
+          cs3 = sqrt(cg2 + dc2*(1.0 - exp(-kt*h3)));
+        }
+        max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cs1;
         max_dv2 = fabs(w0_(m,IVY,k,j,i))
-                 + (cs_ ? cs/sncell_(m,k,j) : cs);
+                 + (cs_ ? cs2/sncell_(m,k,j) : cs2);
         max_dv3 = fabs(w0_(m,IVZ,k,j,i))
-                 + (cs_ ? cs/sncell_(m,k,j) : cs);
+                 + (cs_ ? cs3/sncell_(m,k,j) : cs3);
       }
       Real cell_dt;
       if (use_cubed_sphere || use_spherical_polar) {
