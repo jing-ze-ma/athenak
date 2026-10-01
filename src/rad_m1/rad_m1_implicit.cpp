@@ -784,6 +784,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_res_rmax")) {
     impl_res_rmax = pin->GetReal("rad_m1","implicit_res_rmax");
   }
+  //  implicit_resid_fatal (read only when named; default 0 = off): a Picard solve that
+  //    ends NON-CONVERGED with resid > this value (or a non-finite resid) is a diverged
+  //    solve: FATAL before its state spreads (BSG production 10-01: one 200-pass solve
+  //    with resid 1.2e6 at t = 2.91e5 s, the whole domain NaN ~15 cycles later).
+  if (pin->DoesParameterExist("rad_m1","implicit_resid_fatal")) {
+    impl_res_fatal = pin->GetReal("rad_m1","implicit_resid_fatal");
+    if (!(impl_res_fatal >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_resid_fatal must be >= 0");
+    }
+  }
   if (impl_res_dmin < 0.0 || impl_res_rmax < 0.0) {
     ImplFatal("<rad_m1>/implicit_res_dmin and implicit_res_rmax must be >= 0");
   }
@@ -816,10 +826,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // implicit_det_reduce (bsg_1001/DETERMINISM.md): the Krylov sums of the fused
   // BiCGStab in a fixed order (M1DetReduce) and the cross-rank sums in rank order, so
   // that two runs of one binary on one decomposition are bitwise identical on the GPU.
-  impl_det = pin->GetOrAddBoolean("rad_m1","implicit_det_reduce",false);
-  if (impl_det && (impl_solver != M1_ISOLV_BICGSTAB || impl_bcg_sync != 1 ||
-                   impl_kfuse == 2 || impl_kpipe || impl_kdev > 0 ||
-                   impl_accel != M1_IACC_NONE)) {
+  // DEFAULT: on for a device build (GPU: measured 2-7 % CHEAPER per cycle than the
+  // Kokkos reductions on the BSG 3-D and He ext wedges, DETERMINISM.md) wherever it is
+  // supported, off on a host build (the strided slots cost 1.7x on the CPU column).
+  // Both settings are run-to-run bitwise on the GPU for a fixed decomposition.
+  const bool det_ok = (impl_solver == M1_ISOLV_BICGSTAB) && (impl_bcg_sync == 1) &&
+                      (impl_kfuse != 2) && !impl_kpipe && (impl_kdev == 0) &&
+                      (impl_accel == M1_IACC_NONE);
+#if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA) \
+    || defined(KOKKOS_ENABLE_SYCL)
+  const bool det_def = det_ok;
+#else
+  const bool det_def = false;
+#endif
+  impl_det = pin->GetOrAddBoolean("rad_m1","implicit_det_reduce",det_def);
+  if (impl_det && !det_ok) {
     ImplFatal("<rad_m1>/implicit_det_reduce supports implicit_solver = bicgstab with "
               "implicit_bcg_sync = 1, implicit_krylov_fuse = 0, 1 or 3 (not krylov_pipe "
               "or krylov_dev) and implicit_accel = none "
@@ -4776,7 +4797,8 @@ template <class F>
 void M1DetReduce(const char *name, const int n, const F &fn,
                  const DvceArray1D<Real> &part, M1BcgVal &out) {
   using TP = Kokkos::TeamPolicy<DevExeSpace>;
-  using Mem = Kokkos::View<Real*, ScratchMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
+  using Mem = Kokkos::View<Real*, ScratchMemSpace,
+                           Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
   const size_t sb = Mem::shmem_size(4*M1_DR_NT);
   // part: [0, 4*NL) the level-1 partials, [4*NL, 4*NL + 4) the result
   Kokkos::parallel_for(name, TP(DevExeSpace(), M1_DR_NL, Kokkos::AUTO)
@@ -4839,7 +4861,8 @@ void M1DetReduce(const char *name, const int n, const F &fn,
     });
   });
   Real h[4];
-  Kokkos::View<Real*, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> hv(h, 4);
+  Kokkos::View<Real*, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+      hv(h, 4);
   Kokkos::deep_copy(hv, Kokkos::subview(part, Kokkos::make_pair(4*M1_DR_NL,
                                                                 4*M1_DR_NL + 4)));
   out.s0 = h[0];
@@ -9343,6 +9366,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 << " lin_resid=" << lresid
                 << " worst cell of rank 0 (m,k,j,i)=(" << lmb << "," << (lk+ks) << ","
                 << (lj+js) << "," << (li+is) << ")" << std::endl;
+    }
+    if (impl_res_fatal > 0.0 && (!(resid <= impl_res_fatal) || !std::isfinite(lresid))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1> Picard solve DIVERGED: resid=" << resid
+                << " lin_resid=" << lresid << " > implicit_resid_fatal=" << impl_res_fatal
+                << " at time " << pmy_pack->pmesh->time << " cycle "
+                << pmy_pack->pmesh->ncycle << " (rank " << global_variable::my_rank
+                << ")" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
   }
 
