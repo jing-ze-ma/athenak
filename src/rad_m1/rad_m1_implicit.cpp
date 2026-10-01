@@ -768,6 +768,27 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    the default for them since 0923, restart-safe).
   //  The Eisenstat-Walker default is 1e-2 with bcg_sync >= 1 and 0 (off) with
   //  bcg_sync = 0, so an input that asks for the original BiCGStab loop still runs.
+  //  implicit_res_dmin, implicit_res_rmax (read only when named; default 0 = off): the
+  //    Picard convergence norm (resid and lresid) leaves out the cells with gas density
+  //    rho < res_dmin (needs <hydro>) or radius x1v > res_rmax (spherical polar only),
+  //    e.g. the density-floor top whose residual stalls at 1e-7..1e-6.  Those cells are
+  //    still solved on every pass; only the stopping test ignores them.  Off: bitwise.
+  if (pin->DoesParameterExist("rad_m1","implicit_res_dmin")) {
+    impl_res_dmin = pin->GetReal("rad_m1","implicit_res_dmin");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_res_rmax")) {
+    impl_res_rmax = pin->GetReal("rad_m1","implicit_res_rmax");
+  }
+  if (impl_res_dmin < 0.0 || impl_res_rmax < 0.0) {
+    ImplFatal("<rad_m1>/implicit_res_dmin and implicit_res_rmax must be >= 0");
+  }
+  if (impl_res_rmax > 0.0 && !pmy_pack->pmesh->use_spherical_polar) {
+    ImplFatal("<rad_m1>/implicit_res_rmax needs a spherical-polar mesh");
+  }
+  if (impl_res_dmin > 0.0 && pmy_pack->phydro == nullptr) {
+    ImplFatal("<rad_m1>/implicit_res_dmin needs <hydro> (the gas density)");
+  }
+  impl_res_mask = (impl_res_dmin > 0.0) || (impl_res_rmax > 0.0);
   impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",!fixcl);
   impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",fixcl);
   impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",
@@ -5750,6 +5771,12 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_res_mask) {
+    std::cout << "<rad_m1> implicit_res mask: rho < " << impl_res_dmin << " or r > "
+              << impl_res_rmax << " (0 = unused) left out of the stopping test; max"
+              << " excluded residual at the last pass=" << impl_res_exmax
+              << ", steps whose excluded residual >= tol=" << impl_res_nex << std::endl;
+  }
   if (opgr) {
     std::cout << "<rad_m1> implicit_opac_newton_guard=" << impl_opn_guard
               << ": Newton face terms dropped (all ranks, all passes)=" << opn_nskip
@@ -7109,6 +7136,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   ew_fprev = 0.0;
   ew_etaprev = 0.0;
   Real rprev = -1.0;
+  const bool rmask = impl_res_mask;   // implicit_res_dmin / _rmax
+  Real rexcl_last = 0.0;
   // implicit_one_pass = N (tests_m1/runs_4a_accel).  A solve that starts from the
   // predictor takes its FIRST pass to the full linear tolerance (no Eisenstat-Walker
   // loosening), so that the change of its second pass is the nonlinear (lagged-term)
@@ -8666,7 +8695,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // depend on the order, so the values are bitwise the same.
     resid = 0.0;
     lresid = 0.0;
-    {
+    Real rexcl = 0.0;
+    if (!rmask) {
       const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
       const bool ltr = trans;
       Kokkos::parallel_reduce("m1_impl_res",
@@ -8685,17 +8715,48 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           lmx2 = (q > lmx2) ? q : lmx2;
         }
       }, Kokkos::Max<Real>(resid), Kokkos::Max<Real>(lresid));
+    } else {
+      // implicit_res_dmin / _rmax: the excluded cells go to their own maximum (rexcl,
+      // a diagnostic) and do not enter the stopping test
+      const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
+      const bool ltr = trans;
+      const Real rdmin = impl_res_dmin, rrmax = impl_res_rmax;
+      auto rx1v = pmy_pack->pcoord->x1v;
+      Kokkos::parallel_reduce("m1_impl_res_mask",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+      KOKKOS_LAMBDA(const int n, Real &lmax, Real &lmx2, Real &lmx3) {
+        int t = n/fni;
+        const int i = is + (n - t*fni);
+        const int j = js + (t % fnj);
+        t /= fnj;
+        const int k = ks + (t % fnk);
+        const int m = t/fnk;
+        const bool ex = (rdmin > 0.0 && uh(m,IDN,k,j,i) < rdmin) ||
+                        (rrmax > 0.0 && rx1v(m,i) > rrmax);
+        Real r = iw_(m,M1_IW_RES,k,j,i);
+        if (ex) {
+          lmx3 = (r > lmx3) ? r : lmx3;
+        } else {
+          lmax = (r > lmax) ? r : lmax;
+          if (ltr) {
+            Real q = iw_(m,M1_IW_LRES,k,j,i);
+            lmx2 = (q > lmx2) ? q : lmx2;
+          }
+        }
+      }, Kokkos::Max<Real>(resid), Kokkos::Max<Real>(lresid), Kokkos::Max<Real>(rexcl));
     }
 #if MPI_PARALLEL_ENABLED
     // the convergence test must be GLOBAL: with a partitioned column the ranks would
     // otherwise take different numbers of Picard passes and the gather would deadlock,
     // and even with rank-local columns a per-rank test makes the answer depend on the
     // decomposition.
-    {Real rl[2] = {resid, lresid}, rg[2];
-    MPI_Allreduce(rl, rg, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    {Real rl[3] = {resid, lresid, rexcl}, rg[3];
+    MPI_Allreduce(rl, rg, rmask ? 3 : 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     resid = rg[0];
-    lresid = rg[1];}
+    lresid = rg[1];
+    if (rmask) {rexcl = rg[2];}}
 #endif
+    rexcl_last = rexcl;
     if (trans) {
       lresid /= rhsmax;
     } else {
@@ -8896,6 +8957,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       T2AdmissDebug(uh, u0_, t2i_, cl, ch, hh, gq, t2s, it);
     }
   }
+  if (rmask) {
+    impl_res_exmax = std::max(impl_res_exmax, rexcl_last);
+    if (rexcl_last >= impl_tol) {impl_res_nex += 1.0;}
+  }
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
   impl_itmax = std::max(impl_itmax, static_cast<Real>(it));
@@ -8909,12 +8974,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     using MaxLoc = Kokkos::MaxLoc<Real,int>;
     MaxLoc::value_type mloc;
     const int nj = je - js + 1, ni = ie - is + 1;
+    const Real rdmin = impl_res_dmin, rrmax = impl_res_rmax;
+    auto rx1v = pmy_pack->pcoord->x1v;
     Kokkos::parallel_reduce("m1_impl_resloc",
     Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
                                            {nmb1+1,ke+1,je+1,ie+1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                   MaxLoc::value_type &lmx) {
       Real r = iw_(m,M1_IW_RES,k,j,i);
+      if (rmask && ((rdmin > 0.0 && uh(m,IDN,k,j,i) < rdmin) ||
+                    (rrmax > 0.0 && rx1v(m,i) > rrmax))) {r = 0.0;}
       if (r > lmx.val) {
         lmx.val = r;
         lmx.loc = ((m*(ke-ks+1) + (k-ks))*nj + (j-js))*ni + (i-is);

@@ -364,6 +364,14 @@ class RadiationM1 {
   DvceArray4D<Real> f0x1n;      // its start-of-step copy (not restarted)
   DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
   Real impl_nstep, impl_itsum, impl_itmax, impl_nfail;   // host-side Picard counters
+  // implicit_res_dmin / implicit_res_rmax (read only when named; 0 = off): cells with
+  // rho < dmin or r > rmax are left out of the Picard convergence norm (resid, lresid);
+  // they are still solved every pass.  res_exmax = the largest excluded residual on the
+  // last pass of any step, res_nex = steps whose excluded residual was >= implicit_tol
+  // (steps that would not have stopped there with the full norm).
+  Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
+  bool impl_res_mask = false;
+  Real impl_res_exmax = 0.0, impl_res_nex = 0.0;
   // implicit_timers = N (m1-fast4; default 0 = off): fenced host timers of the M1 stage
   // tasks and of the parts of ImplicitSolve, accumulated over cycles >= N and printed
   // by ImplicitReport.  The fences change the timing a little; only a diagnostic.
