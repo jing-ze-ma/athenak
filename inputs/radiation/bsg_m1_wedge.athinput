@@ -1,11 +1,13 @@
 # =====================================================================================
-# BSG envelope of Ma, Bildsten & Jiang 2026 (arXiv 2609.28656), 3-D wedge PROPOSAL (bsg-setup
-# step 3, NOT RUN): 268 x 256 x 256, theta pi/3..2pi/3, phi 0..pi/3 periodic, 4 MeshBlocks
-# (268 x 128 x 128) for 2 nodes x 2 GPUs.  See inputs/radiation/bsg_m1_column.athinput.
+# BSG envelope of Ma, Bildsten & Jiang 2026 (arXiv 2609.28656), 3-D wedge, bsg-setup step 4
+# production input (not launched): 268 x 256 x 256, theta pi/3..2pi/3, phi 0..pi/3 periodic,
+# 4 MeshBlocks (268 x 128 x 128) for 2 nodes x 2 GPUs.  cfl 0.3 + hydro/rad_signal_speed,
+# implicit_tol 1e-8, outflow + marshak top, adaptive MLT scaffold with a 3e5..6e5 s ramp,
+# seed 1e-3 over 36.2-43.8 Rsun.  See inputs/radiation/bsg_m1_column.athinput.
 # =====================================================================================
 <comment>
 problem = BSG envelope (Ma, Bildsten & Jiang 2026), 20 Msun, log L 5.161, Teff 15835 K;
-          3-D wedge PROPOSAL (not run): grid B 268 x 256 x 256, 2 nodes x 2 GPUs = 4 MeshBlocks
+          3-D wedge, step 4 production input: grid B 268 x 256 x 256, 2 nodes x 2 GPUs = 4 MeshBlocks
 <job>
 basename = bsg3d
 <mesh>
@@ -38,7 +40,7 @@ nx3       = 128
 <time>
 evolution  = dynamic
 integrator = rk2
-cfl_number = 0.4           # dt is set by r dtheta at the bottom: thin-column test 0.5 unstable at 29 ks, 0.4 and 0.3 stable (step 3)
+cfl_number = 0.3           # user 10-01: radiation-dominated runs at 0.3 (the paper), with hydro/rad_signal_speed
 nlim       = -1
 tlim       = 2.6e6               # 30 d (paper relaxation 20-30 d)
 ndiag      = 50
@@ -49,6 +51,7 @@ time_cgs   = 1.0
 mu         = 0.62
 <hydro>
 eos         = ideal
+rad_signal_speed = true     # radiation-modified CFL signal speed (default on with implicit M1; named for clarity)
 gamma       = 1.6666666666666667
 reconstruct = plm
 rsolver     = hllc
@@ -84,7 +87,7 @@ implicit_offdiag = auto
 implicit_closure_lag = step
 implicit_lin_maxit = 200
 implicit_lin_tol = 1.0e-10
-implicit_tol     = 1.0e-6       # the paper's tolerance; 1e-8 stagnates at 1e-7..4e-6 here
+implicit_tol     = 1.0e-8       # user 10-01: keep 1e-8 (module default / He value)
 implicit_maxit   = 200
 implicit_one_pass = 0
 implicit_opac_update = true
@@ -135,9 +138,14 @@ he_ic_balance_rmax = 3.6176e12   # 52 Rsun: the march starts below; the floor at
 mlt_flux_frozen = true
 he_wall_closed = true
 he_sponge_rate = 0.0
-mlt_ramp_start = -1.0           # USER: ramp start/time once convection carries the flux (turnover Hp/v_mlt ~1.5e5 s)
-mlt_ramp_time  = 0.0
-mlt_closure    = frozen         # or adaptive (beon128: mlt_relax_time, closure_dout)
+he_bc_outer    = outflow          # user 10-01: outflow (no inflow, like the paper) + marshak
+mlt_ramp_start = 3.0e5            # s: backstop cosine ramp of the scaffold from 3e5 s (2 turnovers of 1.5e5 s) ...
+mlt_ramp_time  = 3.0e5            # ... to zero at 6e5 s (7 d)
+mlt_closure    = adaptive         # shell-mean deficit: the scaffold retreats as resolved convection carries flux (He runs)
+mlt_relax_time = 5.0e4            # s, 1/3 turnover (He wind run: 1500 s = 0.32 turnover)
+mlt_closure_every = 1
+mlt_closure_taper = 0.01
+mlt_closure_dout  = 4.32e4         # s: fsub/lrad/lconv profiles every 0.5 d
 <output1>
 file_type   = hst
 dt          = 2000.0

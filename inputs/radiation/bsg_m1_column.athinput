@@ -3,7 +3,10 @@
 # Teff 15835 K, X 0.7 Z 0.008 (TOPS Rosseland + Planck), ideal gas mu 0.62, grid B (plateau
 # radial stretch, dr 0.153 Rsun over 34-56 Rsun, 0.306 elsewhere, r = 20-80 Rsun).  pgen he_star_m1.
 # IC: docs/handover/scripts/make_ic_mlt_star.py --preset bsg (table paths are viper paths).
-# THIN COLUMN TEST (bsg-setup step 3): 4 x 4 cells over 0.08 rad, radial-limited dt.
+# COLUMN TEST (bsg-setup step 4): 4 x 4 cells over 0.02 rad (0.005 rad cells, angular-limited
+# dt as in the 3-D wedge), cfl 0.3 with hydro/rad_signal_speed (default on with implicit M1),
+# implicit_tol 1e-8, he_bc_outer = outflow + marshak.  Step 4: cfl 0.5 stable with the signal
+# speed and unstable without it (wall mode); 0.6 unstable with both.
 # =====================================================================================
 <comment>
 problem = BSG envelope (Ma, Bildsten & Jiang 2026), 20 Msun, log L 5.161, Teff 15835 K;
@@ -18,13 +21,13 @@ x1max     = 5.565600e12          # 80 Rsun
 ix1_bc    = user
 ox1_bc    = user
 nx2       = 4
-x2min     = 1.5307963268
-x2max     = 1.6107963268
+x2min     = 1.5607963268   # thin column: 0.005 rad cells, as the 3-D 0.0041
+x2max     = 1.5807963268
 ix2_bc    = periodic
 ox2_bc    = periodic
 nx3       = 4
 x3min     = 0.0
-x3max     = 0.08
+x3max     = 0.02
 ix3_bc    = periodic
 ox3_bc    = periodic
 use_spherical_polar = true
@@ -40,9 +43,9 @@ nx3       = 4
 <time>
 evolution  = dynamic
 integrator = rk2
-cfl_number = 0.5           # radiation-modified sound speed up to 1.64 c_gas (36 Rsun): 0.6 grows
+cfl_number = 0.3   # step 4
 nlim       = -1
-tlim       = 1.0e6
+tlim       = 2.0e5
 ndiag      = 50
 <units>
 length_cgs = 1.0
@@ -86,7 +89,7 @@ implicit_offdiag = auto
 implicit_closure_lag = step
 implicit_lin_maxit = 200
 implicit_lin_tol = 1.0e-10
-implicit_tol     = 1.0e-6       # the paper's tolerance; 1e-8 stagnates at 1e-7..4e-6 here
+implicit_tol     = 1.0e-8   # user 10-01: keep 1e-8
 implicit_maxit   = 200
 implicit_one_pass = 0
 implicit_opac_update = true
@@ -135,6 +138,9 @@ mlt_ramp_start = -1.0
 mlt_ramp_time  = 0.0
 mlt_closure    = frozen
 he_grid_dump   = true
+he_bc_outer      = outflow
+
+
 <output1>
 file_type   = hst
 dt          = 1000.0
@@ -142,11 +148,11 @@ data_format = %24.16e
 <output2>
 file_type = bin
 variable  = hydro_w
-dt = 5.0e4
+dt = 2.5e4
 <output3>
 file_type = bin
 variable  = m1
-dt = 5.0e4
+dt = 2.5e4
 <output4>
 file_type = log
 dt = 1.0e4
