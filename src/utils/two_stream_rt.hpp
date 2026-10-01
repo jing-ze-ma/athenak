@@ -2738,6 +2738,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
         if (ckfst) {
           cktpf_g(m,blk*NC+cc,k,j) =
               static_cast<Real>(static_cast<RtF>(1.0)-trans);
+          if (tpm == 1) cktpf_g(m,blk*NC+cc,k,j) = 0.0;   // ck_sph_top = 1: no datum
         }
         I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
                          * static_cast<RtF>(Bb_g(m,bandc[cc],itb,k,j));
@@ -7483,8 +7484,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int cc=0; cc<NC; ++cc) {
                 const int c = blk*NC + cc;
                 const int b = bandc[cc];
-                // problem/ck_sph_top = 1: nothing comes down from above
-                const Real da = (tpm_ == 1) ? 0.0 : cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
+                const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
                 const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
                 const Real ub = (rr*(1.0 + bt)*da + Sc[cc][ie+1])
                               * CkIdn(lP_g(m,0*nch_+c,ie+1,k,j), lG_g(m,0,ie+1,k,j));
@@ -7666,8 +7666,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             Real dcu, ubf, slc, sfu;
             {
               const Real bt = lG_g(m,0,ie+1,k,j);
-              // problem/ck_sph_top = 1: nothing comes down from above
-              const Real da = (tpm_ == 1) ? 0.0 : cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
+              const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
               const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
               const Real ub = (rr*(1.0 + bt)*da + Sc[ie+1])*CkIdn(rr, bt);
               const Real db = da + bt*(da - ub);
@@ -7735,6 +7734,242 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // per-chain partials go to the same lps/lpf slots, so the sum kernel and the
         // answer are BITWISE those of the unpaired kernel.
         auto launch_ck_lin1p = [&]() {
+          const int npr = nch_/2;
+          const size_t sltsz = static_cast<size_t>(2)*n1*CKS_W;
+          const size_t slntl = (static_cast<size_t>(nmb1 + 1)*npr*scl3*scl2 + CKS_W - 1)
+                               /CKS_W;
+          CkScrEnsure(slntl*sltsz);
+          Real *slbuf = rt_ckscr_ptr->data();
+          CkParFor4("rt_chain_ck_lin1p", cklw_, 0, nmb1, 0, npr-1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int pp, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int icut = icc_g(m,k,j);
+            if (icut > ie) return;
+            const int c0 = 2*pp;
+            // ck-next: the first pair of a chain block stores its two partials added
+            // (see launch_ck_lin_sum)
+            const bool pfst = (RT_NB % 2 == 0) && (c0 % RT_NB == 0);
+            const int b = c0/(2*CK_NG);
+            Real wfc[2];
+            wfc[0] = lC_g(0,c0);
+            wfc[1] = lC_g(0,c0+1);
+            const int slt = ((m*npr + pp)*scl3 + (k - ks))*scl2 + (j - js);
+            auto Scr = CkScrRows<Real>(slbuf, 0, sltsz, n1, slt);
+            const Real bcut = Bb_g(m,b,icut,k,j);
+            Real sfc = bcut, suc = bcut, ss[2];
+            ss[0] = bcut + lC_g(1,c0);
+            ss[1] = bcut + lC_g(1,c0+1);
+            if (ckdif_) {                    // ck_dif_dtau: the flux datum
+              for (int q=0; q<2; ++q) {
+                const Real gdf = difg_g(m,c0+q,k,j);
+                if (gdf >= 0.0) ss[q] = gdf*(Bb_g(m,b,icut-1,k,j) - bcut);
+              }
+            }
+            Real bown = bcut;
+            // ck-next: every load of cell i+1 is issued before cell i is worked (the
+            // stores keep the compiler from hoisting them): the same arithmetic
+            Real bt_n = lG_g(m,0,icut,k,j);
+            Real bnx_n = bown;
+            if (icut < ie) bnx_n = Bb_g(m,b,icut+1,k,j);
+            // ck-next: cin, cout and 1/(1 + R beta) are formed from e0, kappa rho
+            // (one per pair), dz and R (CkCinCout, CkIdn), not read.  ck-lin2: so are
+            // the layer weights, lP slots 2-4 (CkLayW, from the kappa rho and dz of the
+            // two cells: those of cell i+1 are loaded two cells ahead)
+            Real kro_n = ckkro_g(m,c0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
+            Real kro_u = 0.0, dz_u = 0.0;
+            if (icut < ie) {
+              kro_u = ckkro_g(m,c0,icut+1,k,j);
+              dz_u = lG_g(m,4,icut+1,k,j);
+            }
+            // ck-lin2: e0 formed too (CkE0), not read
+            Real r0_n[2];
+            for (int q=0; q<2; ++q) r0_n[q] = lP_g(m,0*nch_+c0+q,icut,k,j);
+            for (int i=icut; i<ie+1; ++i) {
+              const Real bt = bt_n;
+              const Real bnx = bnx_n;
+              const Real krov = kro_n, dzv = dz_n, kruv = kro_u, dzuv = dz_u;
+              Real e0v[2], r0v[2];
+              for (int q=0; q<2; ++q) {
+                e0v[q] = CkE0(krov, dzv, mug[q]);
+                r0v[q] = r0_n[q];
+              }
+              if (i < ie) {
+                bt_n = lG_g(m,0,i+1,k,j);
+                kro_n = kro_u;
+                dz_n = dz_u;
+                if (i+1 < ie) {
+                  bnx_n = Bb_g(m,b,i+2,k,j);
+                  kro_u = ckkro_g(m,c0,i+2,k,j);
+                  dz_u = lG_g(m,4,i+2,k,j);
+                }
+                for (int q=0; q<2; ++q) r0_n[q] = lP_g(m,0*nch_+c0+q,i+1,k,j);
+              }
+              Real slv = bown, sfv = bown, suu = bown;
+              Real bnext = bown;
+              if (i < ie) {
+                Real wl, wu, ff;
+                CkLayW(krov, kruv, dzv, dzuv, bface_on, wl, wu, ff);
+                bnext = bnx;
+                slv = wl*bown + (1.0 - wl)*bnext;
+                suu = wu*bnext + (1.0 - wu)*bown;
+                sfv = slv + (suu - slv)*ff;
+              }
+              for (int q=0; q<2; ++q) {
+                const Real e0 = e0v[q];
+                Real cin, cout;
+                CkCinCout(krov, dzv, mug[q], e0, cin, cout);
+                const Real tr = 1.0 - e0;
+                const Real pl = cin*sfc + cout*suc;
+                const Real ql = cin*suc + cout*sfc;
+                const Real pu = cin*slv + cout*sfv;
+                const Real qu = cin*sfv + cout*slv;
+                Scr[q][i] = ss[q];
+                const Real idn = CkIdn(r0v[q], bt);
+                const Real rn = (r0v[q] + bt)*idn;
+                Real sv = (1.0 - bt)*ss[q]*idn;
+                sv = tr*(rn*ql + sv) + pl;
+                const Real r2 = tr*tr*rn;
+                ss[q] = tr*(r2*qu + sv) + pu;
+              }
+              sfc = sfv;
+              suc = suu;
+              bown = bnext;
+            }
+            Real dcu[2], ubf[2];
+            Real slc, sfu;
+            {
+              const Real bt = lG_g(m,0,ie+1,k,j);
+              Real fq[2];
+              for (int q=0; q<2; ++q) {
+                const int c = c0 + q;
+                Scr[q][ie+1] = ss[q];
+                const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
+                const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
+                const Real ub = (rr*(1.0 + bt)*da + Scr[q][ie+1])
+                              *CkIdn(rr, bt);
+                const Real db = da + bt*(da - ub);
+                fq[q] = CkMulRn(wfc[q]*(ub - db), lG_g(m,2,ie+1,k,j));
+                dcu[q] = db;
+                ubf[q] = ub;
+              }
+              if (pfst) {
+                lpf_g(m,c0,ie+1,k,j) = fq[0] + fq[1];
+              } else {
+                lpf_g(m,c0,ie+1,k,j) = fq[0];
+                lpf_g(m,c0+1,ie+1,k,j) = fq[1];
+              }
+              slc = Bb_g(m,b,ie,k,j);
+              sfu = slc;
+            }
+            bown = sfu;
+            // ck-next: cell i-1's loads before cell i is worked, as in pass 1
+            Real bt_p = lG_g(m,0,ie,k,j), g1_p = lG_g(m,1,ie,k,j);
+            Real g2_p = lG_g(m,2,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
+            Real bnx_p = bown;
+            // ck-lin2: the layer (i-1, i) weights formed (CkLayW): kappa rho and dz of
+            // cell i-1 are loaded two cells ahead
+            Real kro_p = ckkro_g(m,c0,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
+            Real kro_l = 0.0, dz_l = 0.0;
+            if (ie > icut) {
+              bnx_p = Bb_g(m,b,ie-1,k,j);
+              kro_l = ckkro_g(m,c0,ie-1,k,j);
+              dz_l = lG_g(m,4,ie-1,k,j);
+            }
+            Real r0_p[2], sc_p[2];
+            for (int q=0; q<2; ++q) {
+              r0_p[q] = lP_g(m,0*nch_+c0+q,ie,k,j);
+              sc_p[q] = Scr[q][ie];
+            }
+            for (int i=ie; i>icut-1; --i) {
+              const Real bt = bt_p;
+              const Real g1 = g1_p, g2 = g2_p, g3 = g3_p;
+              const Real bnx = bnx_p;
+              const Real krov = kro_p, dzv = dz_p, krlv = kro_l, dzlv = dz_l;
+              Real e0v[2], r0v[2], scv[2];
+              for (int q=0; q<2; ++q) {
+                e0v[q] = CkE0(krov, dzv, mug[q]);
+                r0v[q] = r0_p[q];
+                scv[q] = sc_p[q];
+              }
+              if (i > icut) {
+                bt_p = lG_g(m,0,i-1,k,j);
+                kro_p = kro_l;
+                dz_p = dz_l;
+                g1_p = lG_g(m,1,i-1,k,j);
+                g2_p = lG_g(m,2,i-1,k,j);
+                g3_p = lG_g(m,3,i-1,k,j);
+                if (i-1 > icut) {
+                  bnx_p = Bb_g(m,b,i-2,k,j);
+                  kro_l = ckkro_g(m,c0,i-2,k,j);
+                  dz_l = lG_g(m,4,i-2,k,j);
+                }
+                for (int q=0; q<2; ++q) {
+                  r0_p[q] = lP_g(m,0*nch_+c0+q,i-1,k,j);
+                  sc_p[q] = Scr[q][i-1];
+                }
+              }
+              Real suv = bown, sfv = bown, snl = bown;
+              Real bnext = bown;
+              if (i > icut) {
+                Real wl, wu, ff;
+                CkLayW(krlv, krov, dzlv, dzv, bface_on, wl, wu, ff);
+                bnext = bnx;
+                snl = wl*bnext + (1.0 - wl)*bown;
+                suv = wu*bown + (1.0 - wu)*bnext;
+                sfv = snl + (suv - snl)*ff;
+              }
+              Real fq[2], sq[2];
+              for (int q=0; q<2; ++q) {
+                const Real e0 = e0v[q];
+                Real cin, cout;
+                CkCinCout(krov, dzv, mug[q], e0, cin, cout);
+                const Real tr = 1.0 - e0;
+                const Real wz = wfc[q]*g3;
+                Real src = 0.0;
+                Real dI = dcu[q];
+                Real eh = cin*sfu + cout*slc;
+                src += wz*(e0*dI - eh);
+                dI = tr*dI + eh;
+                eh = cin*suv + cout*sfv;
+                src += wz*(e0*dI - eh);
+                dI = tr*dI + eh;
+                const Real rr = r0v[q];
+                const Real ub = (rr*(1.0 + bt)*dI + scv[q])*CkIdn(rr, bt);
+                const Real db = dI + bt*(dI - ub);
+                const Real dm = ub - db;
+                fq[q] = CkMulRn(wfc[q]*dm, g2);   // not contracted into the add
+                Real ua = dI + dm*g1;
+                dcu[q] = db;
+                eh = cin*sfv + cout*suv;
+                src += wz*(e0*ua - eh);
+                ua = tr*ua + eh;
+                eh = cin*slc + cout*sfu;
+                src += wz*(e0*ua - eh);
+                ua = tr*ua + eh;
+                src += wz*(ua - ubf[q]);
+                ubf[q] = ub;
+                sq[q] = src;
+              }
+              if (pfst) {
+                lpf_g(m,c0,i,k,j) = fq[0] + fq[1];
+                lps_g(m,c0,i,k,j) = sq[0] + sq[1];
+              } else {
+                lpf_g(m,c0,i,k,j) = fq[0];
+                lpf_g(m,c0+1,i,k,j) = fq[1];
+                lps_g(m,c0,i,k,j) = sq[0];
+                lps_g(m,c0+1,i,k,j) = sq[1];
+              }
+              slc = snl;
+              sfu = sfv;
+              bown = bnext;
+            }
+          });
+          launch_ck_lin_sum(RT_NB % 2 == 0);
+        };
+        // ck_sph_face = 5: rt_chain_ck_lin1p on the VEF face (the chain kernel's tm form
+        // with vef), a kernel of its own, so that the default one is the code it always
+        // was
+        auto launch_ck_lin1p_vef = [&]() {
           const int npr = nch_/2;
           const size_t sltsz = static_cast<size_t>(2)*n1*CKS_W;
           const size_t slntl = (static_cast<size_t>(nmb1 + 1)*npr*scl3*scl2 + CKS_W - 1)
@@ -8041,7 +8276,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         const bool cklthr1_ = (ck_impl_lin_thr == 1);
         auto launch_ck_lin_tier = [&]() {
           if (cklthr1_ && ck_nq_ == 2) {
-            launch_ck_lin1p();
+            if (vefl_) {
+              launch_ck_lin1p_vef();
+            } else {
+              launch_ck_lin1p();
+            }
           } else if (cklthr1_) {
             launch_ck_lin1();
           } else {
@@ -8105,6 +8344,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                       grav_pmass, omega, mu0, tide));
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muq[q]));
                 cktpf_g(m,c0+q,k,j) = static_cast<Real>(static_cast<RtF>(1.0)-trans);
+                // problem/ck_sph_top = 1: no datum, so the linear kernels' cktpf B = 0
+                if (tpm_ == 1) cktpf_g(m,c0+q,k,j) = 0.0;
               }
               return;
             }
@@ -8447,123 +8688,218 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 }
               }
             });
-            par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
-            KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
-              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-              const int icut = icc_g(m,k,j);
-              // the per-chain constants: the flux weight and the internal-flux datum of
-              // the chain's band at the cut (T-independent), written once per chain
-              int b;
-              Real wfc, muc;
-              if (ck_nq_ == 1) {
-                b = c/CK_NG;
-                muc = 1.0/CK_DIFFUSIVITY;
-                wfc = M_PI*ckgw(c % CK_NG);
-              } else {
-                const int nq = c % 2;
-                b = c/(2*CK_NG);
-                muc = mug[nq];
-                wfc = 2.0*M_PI*wg[nq]*mug[nq]*ckgw((c/2) % CK_NG);
-              }
-              if (m == 0 && k == ks && j == js) {
-                lC_g(0,c) = wfc;
-                lC_g(2,c) = 2.0*(wfc/muc);   // ck-next: the emission weight (CkEmW)
-                lC_g(1,c) = (int_at_cut ? boltz_sigma/M_PI*Tint4
-                            * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
-              }
-              if (icut > ie) return;
-              // the tm Moebius map of pass 1, on R alone (FRM = 1 of rt_chain_ck);
-              // ck_dif_dtau: R = 1 at a handover column's cut (the flux datum)
-              const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
-              RtF rr = static_cast<RtF>(0.0);
-              if (ckdif_ && gdf >= 0.0) rr = static_cast<RtF>(1.0);
-              CkJlP1 w = CkJlP1Init(gdf);
-              // ck_sph_face = 5 (ck_nquad = 2: the pair c/2 is the (band, g) of the
-              // formal solution): the Marshak-type wall, R0 = -(1 - beta mu_eff)/(1 +
-              // beta mu_eff), dSc_cut/dB_cut = (1 + beta/2)/(1 + beta mu_eff)
-              const int cv = c/2;
-              if (vefl_) {
-                const Real bwb = vfg_g(m,cv,icut-1,k,j);
-                const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
-                rr = static_cast<RtF>(-(1.0 - bwb*mw)/(1.0 + bwb*mw));
-                w.s2 = (1.0 + 0.5*bwb)/(1.0 + bwb*mw);
-              }
-              // ck-next: the loads of cell i+1 are issued before cell i is worked
-              // (the stores below keep the compiler from hoisting them itself)
-              Real btr_n = lG_g(m,0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
-              // ck-lin2: cin and cout are formed (CkCinCout), not read
-              // ck-lin2: and so is e0 (CkE0)
-              Real kro_n = ckkro_g(m,c,icut,k,j);
-              for (int i=icut; i<ie+1; ++i) {
-                const Real btr = btr_n, dz = dz_n;
-                const Real kro = kro_n;
-                // ck_sph_face = 5: cell i at mu_eff = s/sqrt 3; rp and gamma of face i
-                Real mue = muc, vrp = 1.0, vgm = 1.0;
+            if (vefl_) {   // ck_sph_face = 5: the VEF factorisation, a kernel of its own
+              par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
+              KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+                if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                const int icut = icc_g(m,k,j);
+                // the per-chain constants: the flux weight and the internal-flux datum of
+                // the chain's band at the cut (T-independent), written once per chain
+                int b;
+                Real wfc, muc;
+                if (ck_nq_ == 1) {
+                  b = c/CK_NG;
+                  muc = 1.0/CK_DIFFUSIVITY;
+                  wfc = M_PI*ckgw(c % CK_NG);
+                } else {
+                  const int nq = c % 2;
+                  b = c/(2*CK_NG);
+                  muc = mug[nq];
+                  wfc = 2.0*M_PI*wg[nq]*mug[nq]*ckgw((c/2) % CK_NG);
+                }
+                if (m == 0 && k == ks && j == js) {
+                  lC_g(0,c) = wfc;
+                  lC_g(2,c) = 2.0*(wfc/muc);   // ck-next: the emission weight (CkEmW)
+                  lC_g(1,c) = (int_at_cut ? boltz_sigma/M_PI*Tint4
+                              * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
+                }
+                if (icut > ie) return;
+                // the tm Moebius map of pass 1, on R alone (FRM = 1 of rt_chain_ck);
+                // ck_dif_dtau: R = 1 at a handover column's cut (the flux datum)
+                const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
+                RtF rr = static_cast<RtF>(0.0);
+                if (ckdif_ && gdf >= 0.0) rr = static_cast<RtF>(1.0);
+                CkJlP1 w = CkJlP1Init(gdf);
+                // ck_sph_face = 5 (ck_nquad = 2: the pair c/2 is the (band, g) of the
+                // formal solution): the Marshak-type wall, R0 = -(1 - beta mu_eff)/(1 +
+                // beta mu_eff), dSc_cut/dB_cut = (1 + beta/2)/(1 + beta mu_eff)
+                const int cv = c/2;
                 if (vefl_) {
-                  const Real vsa = vfs_g(m,cv,i+1,k,j);
-                  mue = vsa/SQRT3_VEF;
-                  vrp = (1.0 - btr)/(1.0 + btr)*vfs_g(m,cv,i,k,j)/vsa;
-                  vgm = vfg_g(m,cv,i,k,j);
+                  const Real bwb = vfg_g(m,cv,icut-1,k,j);
+                  const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
+                  rr = static_cast<RtF>(-(1.0 - bwb*mw)/(1.0 + bwb*mw));
+                  w.s2 = (1.0 + 0.5*bwb)/(1.0 + bwb*mw);
                 }
-                const Real e0 = CkE0(kro, dz, mue);
-                if (i < ie) {
-                  btr_n = lG_g(m,0,i+1,k,j);
-                  dz_n = lG_g(m,4,i+1,k,j);
-                  kro_n = ckkro_g(m,c,i+1,k,j);
-                }
-                const RtF bb = static_cast<RtF>(btr);
-                const RtF dn = static_cast<RtF>(1.0) + rr*bb;
-                const Real rj = static_cast<Real>(rr);
-                const Real idn = CkIdn(rj, btr);   // ck-next: as the readers form it
-                lP_g(m,0*nch_+c,i,k,j) = rj;
-                RtF rn = (rr + bb)/dn;
-                Real vr1 = 0.0, vc1 = 0.0;
-                if (vefl_) {
-                  CkVefMap(rj, vrp, vgm, vr1, vc1);
-                  rn = static_cast<RtF>(vr1);
-                }
-                // ck-jlin: the half-layer triple is NOT copied (ck-store: lP has no
-                // slots for it any more): the linear kernels read ckc0/ckci/ckco,
-                // which this pass stored and which stay frozen with the rest of the
-                // factorisation
-                const RtF tr = static_cast<RtF>(1.0) - static_cast<RtF>(e0);
-                rr = tr*tr*rn;
-                rr = tr*tr*rr;
-                // ck-nq2: slots 2-4 depend on kappa rho alone, which is bitwise the
-                // same for the two angles of a pair; the q = 1 chain reads the q = 0 one
-                // (ck-jlin: and forms the same numbers itself for a fused pass 1)
-                // ck-lin2: the paired linear kernel and rt_chain_ck_jlin form them
-                // (CkLayW); stored only for the unpaired tiers (!cklp_)
-                const bool own = !(ck_nq_ == 2 && (c & 1)) && !cklp_;
-                Real wl = 0.0, wu = 0.0, ffj = 0.0;
-                if (i < ie && (own || ckjfus_)) {
-                  CkLayW(kro, kro_n, dz, dz_n, bface_on, wl, wu, ffj);
-                  if (own) {
-                    lP_g(m,2*nch_+c,i,k,j) = wl;
-                    lP_g(m,3*nch_+c,i,k,j) = wu;
-                    lP_g(m,4*nch_+c,i,k,j) = ffj;
+                // ck-next: the loads of cell i+1 are issued before cell i is worked
+                // (the stores below keep the compiler from hoisting them itself)
+                Real btr_n = lG_g(m,0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
+                // ck-lin2: cin and cout are formed (CkCinCout), not read
+                // ck-lin2: and so is e0 (CkE0)
+                Real kro_n = ckkro_g(m,c,icut,k,j);
+                for (int i=icut; i<ie+1; ++i) {
+                  const Real btr = btr_n, dz = dz_n;
+                  const Real kro = kro_n;
+                  // ck_sph_face = 5: cell i at mu_eff = s/sqrt 3; rp and gamma of face i
+                  Real mue = muc, vrp = 1.0, vgm = 1.0;
+                  if (vefl_) {
+                    const Real vsa = vfs_g(m,cv,i+1,k,j);
+                    mue = vsa/SQRT3_VEF;
+                    vrp = (1.0 - btr)/(1.0 + btr)*vfs_g(m,cv,i,k,j)/vsa;
+                    vgm = vfg_g(m,cv,i,k,j);
+                  }
+                  const Real e0 = CkE0(kro, dz, mue);
+                  if (i < ie) {
+                    btr_n = lG_g(m,0,i+1,k,j);
+                    dz_n = lG_g(m,4,i+1,k,j);
+                    kro_n = ckkro_g(m,c,i+1,k,j);
+                  }
+                  const RtF bb = static_cast<RtF>(btr);
+                  const RtF dn = static_cast<RtF>(1.0) + rr*bb;
+                  const Real rj = static_cast<Real>(rr);
+                  const Real idn = CkIdn(rj, btr);   // ck-next: as the readers form it
+                  lP_g(m,0*nch_+c,i,k,j) = rj;
+                  RtF rn = (rr + bb)/dn;
+                  Real vr1 = 0.0, vc1 = 0.0;
+                  if (vefl_) {
+                    CkVefMap(rj, vrp, vgm, vr1, vc1);
+                    rn = static_cast<RtF>(vr1);
+                  }
+                  // ck-jlin: the half-layer triple is NOT copied (ck-store: lP has no
+                  // slots for it any more): the linear kernels read ckc0/ckci/ckco,
+                  // which this pass stored and which stay frozen with the rest of the
+                  // factorisation
+                  const RtF tr = static_cast<RtF>(1.0) - static_cast<RtF>(e0);
+                  rr = tr*tr*rn;
+                  rr = tr*tr*rr;
+                  // ck-nq2: slots 2-4 depend on kappa rho alone, which is bitwise the
+                  // same for the two angles of a pair; the q = 1 chain reads the q = 0
+                  // one
+                  // (ck-jlin: and forms the same numbers itself for a fused pass 1)
+                  // ck-lin2: the paired linear kernel and rt_chain_ck_jlin form them
+                  // (CkLayW); stored only for the unpaired tiers (!cklp_)
+                  const bool own = !(ck_nq_ == 2 && (c & 1)) && !cklp_;
+                  Real wl = 0.0, wu = 0.0, ffj = 0.0;
+                  if (i < ie && (own || ckjfus_)) {
+                    CkLayW(kro, kro_n, dz, dz_n, bface_on, wl, wu, ffj);
+                    if (own) {
+                      lP_g(m,2*nch_+c,i,k,j) = wl;
+                      lP_g(m,3*nch_+c,i,k,j) = wu;
+                      lP_g(m,4*nch_+c,i,k,j) = ffj;
+                    }
+                  }
+                  if (ckjfus_) {
+                    lpf_g(m,c,i,k,j) = w.s0;
+                    lps_g(m,c,i,k,j) = w.s1;
+                    lpjb_g(m,c,i,k,j) = w.s2;
+                    Real ci, co;
+                    CkCinCout(kro, dz, mue, e0, ci, co);
+                    if (vefl_) {
+                      CkJlP1StepRC(w, i < ie, wl, wu, ffj, ci, co, e0, vr1, vc1);
+                    } else {
+                      CkJlP1Step(w, i < ie, wl, wu, ffj, ci, co, e0, rj, idn, btr);
+                    }
                   }
                 }
                 if (ckjfus_) {
-                  lpf_g(m,c,i,k,j) = w.s0;
-                  lps_g(m,c,i,k,j) = w.s1;
-                  lpjb_g(m,c,i,k,j) = w.s2;
-                  Real ci, co;
-                  CkCinCout(kro, dz, mue, e0, ci, co);
-                  if (vefl_) {
-                    CkJlP1StepRC(w, i < ie, wl, wu, ffj, ci, co, e0, vr1, vc1);
-                  } else {
+                  lpf_g(m,c,ie+1,k,j) = w.s0;
+                  lps_g(m,c,ie+1,k,j) = w.s1;
+                  lpjb_g(m,c,ie+1,k,j) = w.s2;
+                }
+                lP_g(m,0*nch_+c,ie+1,k,j) = static_cast<Real>(rr);
+              });
+            } else {
+              par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
+              KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+                if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                const int icut = icc_g(m,k,j);
+                // the per-chain constants: the flux weight and the internal-flux datum of
+                // the chain's band at the cut (T-independent), written once per chain
+                int b;
+                Real wfc, muc;
+                if (ck_nq_ == 1) {
+                  b = c/CK_NG;
+                  muc = 1.0/CK_DIFFUSIVITY;
+                  wfc = M_PI*ckgw(c % CK_NG);
+                } else {
+                  const int nq = c % 2;
+                  b = c/(2*CK_NG);
+                  muc = mug[nq];
+                  wfc = 2.0*M_PI*wg[nq]*mug[nq]*ckgw((c/2) % CK_NG);
+                }
+                if (m == 0 && k == ks && j == js) {
+                  lC_g(0,c) = wfc;
+                  lC_g(2,c) = 2.0*(wfc/muc);   // ck-next: the emission weight (CkEmW)
+                  lC_g(1,c) = (int_at_cut ? boltz_sigma/M_PI*Tint4
+                              * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
+                }
+                if (icut > ie) return;
+                // the tm Moebius map of pass 1, on R alone (FRM = 1 of rt_chain_ck);
+                // ck_dif_dtau: R = 1 at a handover column's cut (the flux datum)
+                const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
+                RtF rr = static_cast<RtF>(0.0);
+                if (ckdif_ && gdf >= 0.0) rr = static_cast<RtF>(1.0);
+                CkJlP1 w = CkJlP1Init(gdf);
+                // ck-next: the loads of cell i+1 are issued before cell i is worked
+                // (the stores below keep the compiler from hoisting them itself)
+                Real btr_n = lG_g(m,0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
+                // ck-lin2: cin and cout are formed (CkCinCout), not read
+                // ck-lin2: and so is e0 (CkE0)
+                Real kro_n = ckkro_g(m,c,icut,k,j);
+                for (int i=icut; i<ie+1; ++i) {
+                  const Real btr = btr_n, dz = dz_n;
+                  const Real kro = kro_n;
+                  const Real e0 = CkE0(kro, dz, muc);
+                  if (i < ie) {
+                    btr_n = lG_g(m,0,i+1,k,j);
+                    dz_n = lG_g(m,4,i+1,k,j);
+                    kro_n = ckkro_g(m,c,i+1,k,j);
+                  }
+                  const RtF bb = static_cast<RtF>(btr);
+                  const RtF dn = static_cast<RtF>(1.0) + rr*bb;
+                  const Real rj = static_cast<Real>(rr);
+                  const Real idn = CkIdn(rj, btr);   // ck-next: as the readers form it
+                  lP_g(m,0*nch_+c,i,k,j) = rj;
+                  const RtF rn = (rr + bb)/dn;
+                  // ck-jlin: the half-layer triple is NOT copied (ck-store: lP has no
+                  // slots for it any more): the linear kernels read ckc0/ckci/ckco,
+                  // which this pass stored and which stay frozen with the rest of the
+                  // factorisation
+                  const RtF tr = static_cast<RtF>(1.0) - static_cast<RtF>(e0);
+                  rr = tr*tr*rn;
+                  rr = tr*tr*rr;
+                  // ck-nq2: slots 2-4 depend on kappa rho alone, which is bitwise the
+                  // same for the two angles of a pair; the q = 1 chain reads the q = 0
+                  // one
+                  // (ck-jlin: and forms the same numbers itself for a fused pass 1)
+                  // ck-lin2: the paired linear kernel and rt_chain_ck_jlin form them
+                  // (CkLayW); stored only for the unpaired tiers (!cklp_)
+                  const bool own = !(ck_nq_ == 2 && (c & 1)) && !cklp_;
+                  Real wl = 0.0, wu = 0.0, ffj = 0.0;
+                  if (i < ie && (own || ckjfus_)) {
+                    CkLayW(kro, kro_n, dz, dz_n, bface_on, wl, wu, ffj);
+                    if (own) {
+                      lP_g(m,2*nch_+c,i,k,j) = wl;
+                      lP_g(m,3*nch_+c,i,k,j) = wu;
+                      lP_g(m,4*nch_+c,i,k,j) = ffj;
+                    }
+                  }
+                  if (ckjfus_) {
+                    lpf_g(m,c,i,k,j) = w.s0;
+                    lps_g(m,c,i,k,j) = w.s1;
+                    lpjb_g(m,c,i,k,j) = w.s2;
+                    Real ci, co;
+                    CkCinCout(kro, dz, muc, e0, ci, co);
                     CkJlP1Step(w, i < ie, wl, wu, ffj, ci, co, e0, rj, idn, btr);
                   }
                 }
-              }
-              if (ckjfus_) {
-                lpf_g(m,c,ie+1,k,j) = w.s0;
-                lps_g(m,c,ie+1,k,j) = w.s1;
-                lpjb_g(m,c,ie+1,k,j) = w.s2;
-              }
-              lP_g(m,0*nch_+c,ie+1,k,j) = static_cast<Real>(rr);
-            });
+                if (ckjfus_) {
+                  lpf_g(m,c,ie+1,k,j) = w.s0;
+                  lps_g(m,c,ie+1,k,j) = w.s1;
+                  lpjb_g(m,c,ie+1,k,j) = w.s2;
+                }
+                lP_g(m,0*nch_+c,ie+1,k,j) = static_cast<Real>(rr);
+              });
+            }
           }
           // ---- problem/ck_impl_jac_lin: THE TRIDIAGONAL FROM THE FACTORISATION ------
           // The JAC recurrences of the tm body (see the JAC blocks in rt_chain_ck), term
@@ -8592,215 +8928,370 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             if (ckdif_) ck_jlc_ok = false;   // the flux datum is not cached
             if (!ck_jlc_ok) {
               const bool jfus_ = ckjfus_;
-              CkParFor4("rt_chain_ck_jlin", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
-              KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
-                // fused: ck_lin_build left the columns it skipped without a window
-                if (jfus_ && ckskip_ && ckdone_g(m,k,j) > 0.0) return;
-                const int icut = icc_g(m,k,j);
-                if (icut > ie) return;
-                const Real wfc = lC_g(0,c);
-                // PASS 1: dSc/dB in the window (B_{i-2}, B_{i-1}, B_i) below face i
-                // (ck-jlin: parked by ck_lin_build when it ran on this pass, with the
-                // top window at ie+1)
-                // ck_dif_dtau: the flux datum g_c (B_{cut-1} - B_cut) of a handover
-                // column, whose row at the cut then couples to the deep cell below
-                const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
-                // ck_sph_face = 5: the pair c/2 is the formal solution's (band, g)
-                const int cv = c/2;
-                Real jS0, jS1, jS2;
-                if (jfus_) {
-                  jS0 = lpf_g(m,c,ie+1,k,j);
-                  jS1 = lps_g(m,c,ie+1,k,j);
-                  jS2 = lpj_g(m,c,ie+1,k,j);
-                } else {
-                  CkJlP1 w = CkJlP1Init(gdf);
-                  if (vefl_) {             // ck_sph_face = 5: the Marshak-type wall
-                    const Real bwb = vfg_g(m,cv,icut-1,k,j);
-                    const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
-                    w.s2 = (1.0 + 0.5*bwb)/(1.0 + bwb*mw);
+              if (vefl_) {   // ck_sph_face = 5: the VEF rows, a kernel of its own
+                CkParFor4("rt_chain_ck_jlin", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
+                KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+                  // fused: ck_lin_build left the columns it skipped without a window
+                  if (jfus_ && ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                  const int icut = icc_g(m,k,j);
+                  if (icut > ie) return;
+                  const Real wfc = lC_g(0,c);
+                  // PASS 1: dSc/dB in the window (B_{i-2}, B_{i-1}, B_i) below face i
+                  // (ck-jlin: parked by ck_lin_build when it ran on this pass, with the
+                  // top window at ie+1)
+                  // ck_dif_dtau: the flux datum g_c (B_{cut-1} - B_cut) of a handover
+                  // column, whose row at the cut then couples to the deep cell below
+                  const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
+                  // ck_sph_face = 5: the pair c/2 is the formal solution's (band, g)
+                  const int cv = c/2;
+                  Real jS0, jS1, jS2;
+                  if (jfus_) {
+                    jS0 = lpf_g(m,c,ie+1,k,j);
+                    jS1 = lps_g(m,c,ie+1,k,j);
+                    jS2 = lpj_g(m,c,ie+1,k,j);
+                  } else {
+                    CkJlP1 w = CkJlP1Init(gdf);
+                    if (vefl_) {             // ck_sph_face = 5: the Marshak-type wall
+                      const Real bwb = vfg_g(m,cv,icut-1,k,j);
+                      const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
+                      w.s2 = (1.0 + 0.5*bwb)/(1.0 + bwb*mw);
+                    }
+                    for (int i=icut; i<ie+1; ++i) {
+                      lpf_g(m,c,i,k,j) = w.s0;
+                      lps_g(m,c,i,k,j) = w.s1;
+                      lpj_g(m,c,i,k,j) = w.s2;
+                      const bool up = (i < ie);
+                      // ck-lin2: the layer weights formed (CkLayW), not read
+                      Real wl = 0.0, wu = 0.0, ffj = 0.0;
+                      if (up) CkLayW(ckkro_g(m,c,i,k,j), ckkro_g(m,c,i+1,k,j),
+                                     lG_g(m,4,i,k,j), lG_g(m,4,i+1,k,j), bface_on,
+                                     wl, wu, ffj);
+                      // ck-lin2: cin and cout formed (CkCinCout), not read
+                      Real mu1 = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                      if (vefl_) mu1 = vfs_g(m,cv,i+1,k,j)/SQRT3_VEF;
+                      const Real e01 = CkE0(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1);
+                      Real ci1, co1;
+                      CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1, e01, ci1, co1);
+                      if (vefl_) {
+                        const Real btv = lG_g(m,0,i,k,j);
+                        Real vr1, vc1;
+                        CkVefMap(lP_g(m,0*nch_+c,i,k,j),
+                                 (1.0 - btv)/(1.0 + btv)*vfs_g(m,cv,i,k,j)
+                                 /vfs_g(m,cv,i+1,k,j), vfg_g(m,cv,i,k,j), vr1, vc1);
+                        CkJlP1StepRC(w, up, wl, wu, ffj, ci1, co1, e01, vr1, vc1);
+                      } else {
+                        CkJlP1Step(w, up, wl, wu, ffj, ci1, co1, e01,
+                                   lP_g(m,0*nch_+c,i,k,j),
+                                   CkIdn(lP_g(m,0*nch_+c,i,k,j), lG_g(m,0,i,k,j)),
+                                   lG_g(m,0,i,k,j));
+                      }
+                    }
+                    jS0 = w.s0;
+                    jS1 = w.s1;
+                    jS2 = w.s2;
                   }
-                  for (int i=icut; i<ie+1; ++i) {
-                    lpf_g(m,c,i,k,j) = w.s0;
-                    lps_g(m,c,i,k,j) = w.s1;
-                    lpj_g(m,c,i,k,j) = w.s2;
-                    const bool up = (i < ie);
-                    // ck-lin2: the layer weights formed (CkLayW), not read
-                    Real wl = 0.0, wu = 0.0, ffj = 0.0;
-                    if (up) CkLayW(ckkro_g(m,c,i,k,j), ckkro_g(m,c,i+1,k,j),
-                                   lG_g(m,4,i,k,j), lG_g(m,4,i+1,k,j), bface_on,
-                                   wl, wu, ffj);
-                    // ck-lin2: cin and cout formed (CkCinCout), not read
-                    Real mu1 = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
-                    if (vefl_) mu1 = vfs_g(m,cv,i+1,k,j)/SQRT3_VEF;
-                    const Real e01 = CkE0(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1);
-                    Real ci1, co1;
-                    CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1, e01, ci1, co1);
+                  // PASS 2: the top datum is fixed, so d^+ carries nothing and W = 0
+                  Real jQ, jDu0, jDu1, jDu2, jdm0, jdm1, jdm2;
+                  Real jfu0 = 1.0, jfu1 = 0.0, jlc0 = 1.0, jlc1 = 0.0;
+                  {
+                    const Real bt = lG_g(m,0,ie+1,k,j);
+                    const Real idn = CkIdn(lP_g(m,0*nch_+c,ie+1,k,j), lG_g(m,0,ie+1,k,j));
+                    Real al = (1.0 + bt)*idn;
+                    Real be = bt*idn;
                     if (vefl_) {
-                      const Real btv = lG_g(m,0,i,k,j);
-                      Real vr1, vc1;
-                      CkVefMap(lP_g(m,0*nch_+c,i,k,j),
-                               (1.0 - btv)/(1.0 + btv)*vfs_g(m,cv,i,k,j)
-                               /vfs_g(m,cv,i+1,k,j), vfg_g(m,cv,i,k,j), vr1, vc1);
-                      CkJlP1StepRC(w, up, wl, wu, ffj, ci1, co1, e01, vr1, vc1);
+                      // ck_sph_face = 5: the reflected datum d_a = (zeta Sc' + datum)/
+                      // (1 - zeta R') depends on Sc_top (the chain kernel's JAC top
+                      // block):
+                      // dd_b/dSc = al kp - be, dD/dSc = aD (1 - gamma (1 - R) kp)
+                      const Real rj = lP_g(m,0*nch_+c,ie+1,k,j);
+                      const Real vsb = vfs_g(m,cv,ie+1,k,j);
+                      const Real vrp = (1.0 - bt)/(1.0 + bt)*vsb/vfs_g(m,cv,ie+2,k,j);
+                      const Real vgm = vfg_g(m,cv,ie+1,k,j);
+                      const Real zt = vfg_g(m,cv,ie+2,k,j);
+                      const Real ev = (1.0 + rj) + vgm*vrp*(1.0 - rj);
+                      const Real rup = 1.0 - 2.0*vgm*vrp*(1.0 - rj)/ev;
+                      const Real vkp = zt*(2.0*vrp/ev)/(1.0 - zt*rup);
+                      al = 2.0*vgm/ev;
+                      be = (1.0 - vgm*vrp)/ev - al*vkp;
+                      const Real aD = 2.0/ev*(1.0 - vgm*(1.0 - rj)*vkp);
+                      jDu0 = aD*jS0;
+                      jDu1 = aD*jS1;
+                      jDu2 = aD*jS2;
                     } else {
+                      jDu0 = al*jS0;
+                      jDu1 = al*jS1;
+                      jDu2 = al*jS2;
+                    }
+                    jdm0 = -be*jS0;
+                    jdm1 = -be*jS1;
+                    jdm2 = -be*jS2;
+                    jQ = be;
+                  }
+                  // ck-next: cell i-1's loads are issued before cell i is worked
+                  // ck-next: cin, cout and 1/(1 + R beta) formed (CkCinCout, CkIdn)
+                  const Real muj = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                  Real kr_p = ckkro_g(m,c,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
+                  Real rj_p = lP_g(m,0*nch_+c,ie,k,j);   // ck-lin2: e0 formed (CkE0)
+                  Real bt_p = lG_g(m,0,ie,k,j);
+                  Real ra_p = lG_g(m,1,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
+                  Real s0_p = lpf_g(m,c,ie,k,j), s1_p = lps_g(m,c,ie,k,j);
+                  Real s2_p = lpj_g(m,c,ie,k,j);
+                  // ck-lin2: the layer (i-1, i) weights formed (CkLayW): kappa rho and
+                  // dz of cell i-1 loaded two cells ahead
+                  Real kr_l = 0.0, dz_l = 0.0;
+                  if (ie > icut) {
+                    kr_l = ckkro_g(m,c,ie-1,k,j);
+                    dz_l = lG_g(m,4,ie-1,k,j);
+                  }
+                  for (int i=ie; i>icut-1; --i) {
+                    // ck_sph_face = 5: cell i at mu_eff, s below face i, gamma of face i
+                    Real mui = muj, vsb = 1.0, vsa = 1.0, vgm = 1.0;
+                    if (vefl_) {
+                      vsb = vfs_g(m,cv,i,k,j);
+                      vsa = vfs_g(m,cv,i+1,k,j);
+                      vgm = vfg_g(m,cv,i,k,j);
+                      mui = vsa/SQRT3_VEF;
+                    }
+                    const Real c0_p = CkE0(kr_p, dz_p, mui);
+                    Real ci, co;
+                    CkCinCout(kr_p, dz_p, mui, c0_p, ci, co);
+                    const Real tj = 1.0 - c0_p;
+                    const Real rj = rj_p, bt = bt_p, rat = ra_p, g3 = g3_p;
+                    const Real idn = CkIdn(rj, bt);
+                    const Real s0 = s0_p, s1 = s1_p, s2 = s2_p;
+                    Real wc = 0.0, wa = 0.0, ffj = 0.0;
+                    if (i > icut) CkLayW(kr_l, kr_p, dz_l, dz_p, bface_on, wc, wa, ffj);
+                    if (i > icut) {
+                      kr_p = kr_l;
+                      dz_p = dz_l;
+                      rj_p = lP_g(m,0*nch_+c,i-1,k,j);
+                      bt_p = lG_g(m,0,i-1,k,j);
+                      ra_p = lG_g(m,1,i-1,k,j);
+                      g3_p = lG_g(m,3,i-1,k,j);
+                      s0_p = lpf_g(m,c,i-1,k,j);
+                      s1_p = lps_g(m,c,i-1,k,j);
+                      s2_p = lpj_g(m,c,i-1,k,j);
+                      if (i-1 > icut) {
+                        kr_l = ckkro_g(m,c,i-2,k,j);
+                        dz_l = lG_g(m,4,i-2,k,j);
+                      }
+                    }
+                    // the layer joining cells i-1 and i: slots (B_{i-1}, B_i); the third
+                    // (B_{i+1}) is 0 for all three
+                    Real duv0 = 0.0, duv1 = 1.0, dnl0 = 0.0, dnl1 = 1.0;
+                    Real dfw0 = 0.0, dfw1 = 1.0;
+                    if (i > icut) {
+                      const Real sw = (1.0 - ffj)*wc + ffj*(1.0 - wa);
+                      duv0 = 1.0 - wa;
+                      duv1 = wa;
+                      dnl0 = wc;
+                      dnl1 = 1.0 - wc;
+                      dfw0 = sw;
+                      dfw1 = 1.0 - sw;
+                    }
+                    // dd_i^+: the down ray's two half steps through cell i
+                    Real v0 = tj*jdm0;
+                    v0 = tj*v0 + ci*duv0 + co*dfw0;
+                    Real v1 = tj*jdm1 + ci*jfu0 + co*jlc0;
+                    v1 = tj*v1 + ci*duv1 + co*dfw1;
+                    Real v2 = tj*jdm2 + ci*jfu1 + co*jlc1;
+                    v2 = tj*v2;
+                    Real al = (1.0 + bt)*idn;
+                    Real be = bt*idn;
+                    Real wr = tj*tj*tj*tj*(1.0 - bt)*idn*jQ;
+                    Real omr = 1.0 - rj;
+                    Real aD = al, ratv = rat, wfi = wfc;
+                    if (vefl_) {
+                      // ck_sph_face = 5: D = (2/E) (Sc - gamma (1 - R) d^+), d crosses
+                      // the face with al = 2 gamma/E, be = (1 - gamma rho')/E
+                      ratv = rat*vsb/vsa;
+                      const Real ev = (1.0 + rj) + vgm*ratv*(1.0 - rj);
+                      al = 2.0*vgm/ev;
+                      be = (1.0 - vgm*ratv)/ev;
+                      aD = 2.0/ev;
+                      wr = tj*tj*tj*tj*(2.0*ratv/ev)*jQ;
+                      omr = vgm*(1.0 - rj);
+                      wfi = wfc*vsa/(SQRT3_VEF*muj);
+                    }
+                    const Real dd0 = aD*(1.0 + omr*wr)*s0;
+                    const Real dd1 = aD*(s1 - omr*v0);
+                    const Real dd2 = aD*(s2 - omr*v1);
+                    const Real dd3 = -aD*omr*v2;
+                    const Real wj = wfi*g3;
+                    const Real jm = wj*(ratv*dd1 - jDu0);
+                    const Real j0 = wj*(ratv*dd2 - jDu1);
+                    const Real jp = wj*(ratv*dd3 - jDu2);
+                    lj0_g(m,c,i,k,j) = j0;
+                    ljm_g(m,c,i,k,j) = ((i > icut || gdf >= 0.0) && (jneg_ || jm > 0.0))
+                                     ? jm : 0.0;
+                    lpj_g(m,c,i,k,j) = (i < ie && (jneg_ || jp > 0.0)) ? jp : 0.0;
+                    jDu0 = dd0;
+                    jDu1 = dd1;
+                    jDu2 = dd2;
+                    const Real qn = al*wr + be;
+                    jdm0 = -qn*s0;
+                    jdm1 = al*v0 - be*s1;
+                    jdm2 = al*v1 - be*s2;
+                    jQ = qn;
+                    jfu0 = dfw0;
+                    jfu1 = dfw1;
+                    jlc0 = dnl0;
+                    jlc1 = dnl1;
+                  }
+                });
+              } else {
+                CkParFor4("rt_chain_ck_jlin", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
+                KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+                  // fused: ck_lin_build left the columns it skipped without a window
+                  if (jfus_ && ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                  const int icut = icc_g(m,k,j);
+                  if (icut > ie) return;
+                  const Real wfc = lC_g(0,c);
+                  // PASS 1: dSc/dB in the window (B_{i-2}, B_{i-1}, B_i) below face i
+                  // (ck-jlin: parked by ck_lin_build when it ran on this pass, with the
+                  // top window at ie+1)
+                  // ck_dif_dtau: the flux datum g_c (B_{cut-1} - B_cut) of a handover
+                  // column, whose row at the cut then couples to the deep cell below
+                  const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
+                  Real jS0, jS1, jS2;
+                  if (jfus_) {
+                    jS0 = lpf_g(m,c,ie+1,k,j);
+                    jS1 = lps_g(m,c,ie+1,k,j);
+                    jS2 = lpj_g(m,c,ie+1,k,j);
+                  } else {
+                    CkJlP1 w = CkJlP1Init(gdf);
+                    for (int i=icut; i<ie+1; ++i) {
+                      lpf_g(m,c,i,k,j) = w.s0;
+                      lps_g(m,c,i,k,j) = w.s1;
+                      lpj_g(m,c,i,k,j) = w.s2;
+                      const bool up = (i < ie);
+                      // ck-lin2: the layer weights formed (CkLayW), not read
+                      Real wl = 0.0, wu = 0.0, ffj = 0.0;
+                      if (up) CkLayW(ckkro_g(m,c,i,k,j), ckkro_g(m,c,i+1,k,j),
+                                     lG_g(m,4,i,k,j), lG_g(m,4,i+1,k,j), bface_on,
+                                     wl, wu, ffj);
+                      // ck-lin2: cin and cout formed (CkCinCout), not read
+                      const Real mu1 = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                      const Real e01 = CkE0(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1);
+                      Real ci1, co1;
+                      CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1, e01, ci1, co1);
                       CkJlP1Step(w, up, wl, wu, ffj, ci1, co1, e01,
                                  lP_g(m,0*nch_+c,i,k,j),
                                  CkIdn(lP_g(m,0*nch_+c,i,k,j), lG_g(m,0,i,k,j)),
                                  lG_g(m,0,i,k,j));
                     }
+                    jS0 = w.s0;
+                    jS1 = w.s1;
+                    jS2 = w.s2;
                   }
-                  jS0 = w.s0;
-                  jS1 = w.s1;
-                  jS2 = w.s2;
-                }
-                // PASS 2: the top datum is fixed, so d^+ carries nothing and W = 0
-                Real jQ, jDu0, jDu1, jDu2, jdm0, jdm1, jdm2;
-                Real jfu0 = 1.0, jfu1 = 0.0, jlc0 = 1.0, jlc1 = 0.0;
-                {
-                  const Real bt = lG_g(m,0,ie+1,k,j);
-                  const Real idn = CkIdn(lP_g(m,0*nch_+c,ie+1,k,j), lG_g(m,0,ie+1,k,j));
-                  Real al = (1.0 + bt)*idn;
-                  Real be = bt*idn;
-                  if (vefl_) {
-                    // ck_sph_face = 5: the reflected datum d_a = (zeta Sc' + datum)/(1 -
-                    // zeta R') depends on Sc_top (the chain kernel's JAC top block):
-                    // dd_b/dSc = al kp - be, dD/dSc = aD (1 - gamma (1 - R) kp)
-                    const Real rj = lP_g(m,0*nch_+c,ie+1,k,j);
-                    const Real vsb = vfs_g(m,cv,ie+1,k,j);
-                    const Real vrp = (1.0 - bt)/(1.0 + bt)*vsb/vfs_g(m,cv,ie+2,k,j);
-                    const Real vgm = vfg_g(m,cv,ie+1,k,j);
-                    const Real zt = vfg_g(m,cv,ie+2,k,j);
-                    const Real ev = (1.0 + rj) + vgm*vrp*(1.0 - rj);
-                    const Real rup = 1.0 - 2.0*vgm*vrp*(1.0 - rj)/ev;
-                    const Real vkp = zt*(2.0*vrp/ev)/(1.0 - zt*rup);
-                    al = 2.0*vgm/ev;
-                    be = (1.0 - vgm*vrp)/ev - al*vkp;
-                    const Real aD = 2.0/ev*(1.0 - vgm*(1.0 - rj)*vkp);
-                    jDu0 = aD*jS0;
-                    jDu1 = aD*jS1;
-                    jDu2 = aD*jS2;
-                  } else {
+                  // PASS 2: the top datum is fixed, so d^+ carries nothing and W = 0
+                  Real jQ, jDu0, jDu1, jDu2, jdm0, jdm1, jdm2;
+                  Real jfu0 = 1.0, jfu1 = 0.0, jlc0 = 1.0, jlc1 = 0.0;
+                  {
+                    const Real bt = lG_g(m,0,ie+1,k,j);
+                    const Real idn = CkIdn(lP_g(m,0*nch_+c,ie+1,k,j), lG_g(m,0,ie+1,k,j));
+                    const Real al = (1.0 + bt)*idn;
+                    const Real be = bt*idn;
                     jDu0 = al*jS0;
                     jDu1 = al*jS1;
                     jDu2 = al*jS2;
+                    jdm0 = -be*jS0;
+                    jdm1 = -be*jS1;
+                    jdm2 = -be*jS2;
+                    jQ = be;
                   }
-                  jdm0 = -be*jS0;
-                  jdm1 = -be*jS1;
-                  jdm2 = -be*jS2;
-                  jQ = be;
-                }
-                // ck-next: cell i-1's loads are issued before cell i is worked
-                // ck-next: cin, cout and 1/(1 + R beta) formed (CkCinCout, CkIdn)
-                const Real muj = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
-                Real kr_p = ckkro_g(m,c,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
-                Real rj_p = lP_g(m,0*nch_+c,ie,k,j);   // ck-lin2: e0 formed (CkE0)
-                Real bt_p = lG_g(m,0,ie,k,j);
-                Real ra_p = lG_g(m,1,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
-                Real s0_p = lpf_g(m,c,ie,k,j), s1_p = lps_g(m,c,ie,k,j);
-                Real s2_p = lpj_g(m,c,ie,k,j);
-                // ck-lin2: the layer (i-1, i) weights formed (CkLayW): kappa rho and
-                // dz of cell i-1 loaded two cells ahead
-                Real kr_l = 0.0, dz_l = 0.0;
-                if (ie > icut) {
-                  kr_l = ckkro_g(m,c,ie-1,k,j);
-                  dz_l = lG_g(m,4,ie-1,k,j);
-                }
-                for (int i=ie; i>icut-1; --i) {
-                  // ck_sph_face = 5: cell i at mu_eff, s below face i, gamma of face i
-                  Real mui = muj, vsb = 1.0, vsa = 1.0, vgm = 1.0;
-                  if (vefl_) {
-                    vsb = vfs_g(m,cv,i,k,j);
-                    vsa = vfs_g(m,cv,i+1,k,j);
-                    vgm = vfg_g(m,cv,i,k,j);
-                    mui = vsa/SQRT3_VEF;
+                  // ck-next: cell i-1's loads are issued before cell i is worked
+                  // ck-next: cin, cout and 1/(1 + R beta) formed (CkCinCout, CkIdn)
+                  const Real muj = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                  Real kr_p = ckkro_g(m,c,ie,k,j), dz_p = lG_g(m,4,ie,k,j);
+                  Real rj_p = lP_g(m,0*nch_+c,ie,k,j);   // ck-lin2: e0 formed (CkE0)
+                  Real bt_p = lG_g(m,0,ie,k,j);
+                  Real ra_p = lG_g(m,1,ie,k,j), g3_p = lG_g(m,3,ie,k,j);
+                  Real s0_p = lpf_g(m,c,ie,k,j), s1_p = lps_g(m,c,ie,k,j);
+                  Real s2_p = lpj_g(m,c,ie,k,j);
+                  // ck-lin2: the layer (i-1, i) weights formed (CkLayW): kappa rho and
+                  // dz of cell i-1 loaded two cells ahead
+                  Real kr_l = 0.0, dz_l = 0.0;
+                  if (ie > icut) {
+                    kr_l = ckkro_g(m,c,ie-1,k,j);
+                    dz_l = lG_g(m,4,ie-1,k,j);
                   }
-                  const Real c0_p = CkE0(kr_p, dz_p, mui);
-                  Real ci, co;
-                  CkCinCout(kr_p, dz_p, mui, c0_p, ci, co);
-                  const Real tj = 1.0 - c0_p;
-                  const Real rj = rj_p, bt = bt_p, rat = ra_p, g3 = g3_p;
-                  const Real idn = CkIdn(rj, bt);
-                  const Real s0 = s0_p, s1 = s1_p, s2 = s2_p;
-                  Real wc = 0.0, wa = 0.0, ffj = 0.0;
-                  if (i > icut) CkLayW(kr_l, kr_p, dz_l, dz_p, bface_on, wc, wa, ffj);
-                  if (i > icut) {
-                    kr_p = kr_l;
-                    dz_p = dz_l;
-                    rj_p = lP_g(m,0*nch_+c,i-1,k,j);
-                    bt_p = lG_g(m,0,i-1,k,j);
-                    ra_p = lG_g(m,1,i-1,k,j);
-                    g3_p = lG_g(m,3,i-1,k,j);
-                    s0_p = lpf_g(m,c,i-1,k,j);
-                    s1_p = lps_g(m,c,i-1,k,j);
-                    s2_p = lpj_g(m,c,i-1,k,j);
-                    if (i-1 > icut) {
-                      kr_l = ckkro_g(m,c,i-2,k,j);
-                      dz_l = lG_g(m,4,i-2,k,j);
+                  for (int i=ie; i>icut-1; --i) {
+                    const Real c0_p = CkE0(kr_p, dz_p, muj);
+                    Real ci, co;
+                    CkCinCout(kr_p, dz_p, muj, c0_p, ci, co);
+                    const Real tj = 1.0 - c0_p;
+                    const Real rj = rj_p, bt = bt_p, rat = ra_p, g3 = g3_p;
+                    const Real idn = CkIdn(rj, bt);
+                    const Real s0 = s0_p, s1 = s1_p, s2 = s2_p;
+                    Real wc = 0.0, wa = 0.0, ffj = 0.0;
+                    if (i > icut) CkLayW(kr_l, kr_p, dz_l, dz_p, bface_on, wc, wa, ffj);
+                    if (i > icut) {
+                      kr_p = kr_l;
+                      dz_p = dz_l;
+                      rj_p = lP_g(m,0*nch_+c,i-1,k,j);
+                      bt_p = lG_g(m,0,i-1,k,j);
+                      ra_p = lG_g(m,1,i-1,k,j);
+                      g3_p = lG_g(m,3,i-1,k,j);
+                      s0_p = lpf_g(m,c,i-1,k,j);
+                      s1_p = lps_g(m,c,i-1,k,j);
+                      s2_p = lpj_g(m,c,i-1,k,j);
+                      if (i-1 > icut) {
+                        kr_l = ckkro_g(m,c,i-2,k,j);
+                        dz_l = lG_g(m,4,i-2,k,j);
+                      }
                     }
+                    // the layer joining cells i-1 and i: slots (B_{i-1}, B_i); the third
+                    // (B_{i+1}) is 0 for all three
+                    Real duv0 = 0.0, duv1 = 1.0, dnl0 = 0.0, dnl1 = 1.0;
+                    Real dfw0 = 0.0, dfw1 = 1.0;
+                    if (i > icut) {
+                      const Real sw = (1.0 - ffj)*wc + ffj*(1.0 - wa);
+                      duv0 = 1.0 - wa;
+                      duv1 = wa;
+                      dnl0 = wc;
+                      dnl1 = 1.0 - wc;
+                      dfw0 = sw;
+                      dfw1 = 1.0 - sw;
+                    }
+                    // dd_i^+: the down ray's two half steps through cell i
+                    Real v0 = tj*jdm0;
+                    v0 = tj*v0 + ci*duv0 + co*dfw0;
+                    Real v1 = tj*jdm1 + ci*jfu0 + co*jlc0;
+                    v1 = tj*v1 + ci*duv1 + co*dfw1;
+                    Real v2 = tj*jdm2 + ci*jfu1 + co*jlc1;
+                    v2 = tj*v2;
+                    const Real al = (1.0 + bt)*idn;
+                    const Real be = bt*idn;
+                    const Real wr = tj*tj*tj*tj*(1.0 - bt)*idn*jQ;
+                    const Real omr = 1.0 - rj;
+                    const Real dd0 = al*(1.0 + omr*wr)*s0;
+                    const Real dd1 = al*(s1 - omr*v0);
+                    const Real dd2 = al*(s2 - omr*v1);
+                    const Real dd3 = -al*omr*v2;
+                    const Real wj = wfc*g3;
+                    const Real jm = wj*(rat*dd1 - jDu0);
+                    const Real j0 = wj*(rat*dd2 - jDu1);
+                    const Real jp = wj*(rat*dd3 - jDu2);
+                    lj0_g(m,c,i,k,j) = j0;
+                    ljm_g(m,c,i,k,j) = ((i > icut || gdf >= 0.0) && (jneg_ || jm > 0.0))
+                                     ? jm : 0.0;
+                    lpj_g(m,c,i,k,j) = (i < ie && (jneg_ || jp > 0.0)) ? jp : 0.0;
+                    jDu0 = dd0;
+                    jDu1 = dd1;
+                    jDu2 = dd2;
+                    const Real qn = al*wr + be;
+                    jdm0 = -qn*s0;
+                    jdm1 = al*v0 - be*s1;
+                    jdm2 = al*v1 - be*s2;
+                    jQ = qn;
+                    jfu0 = dfw0;
+                    jfu1 = dfw1;
+                    jlc0 = dnl0;
+                    jlc1 = dnl1;
                   }
-                  // the layer joining cells i-1 and i: slots (B_{i-1}, B_i); the third
-                  // (B_{i+1}) is 0 for all three
-                  Real duv0 = 0.0, duv1 = 1.0, dnl0 = 0.0, dnl1 = 1.0;
-                  Real dfw0 = 0.0, dfw1 = 1.0;
-                  if (i > icut) {
-                    const Real sw = (1.0 - ffj)*wc + ffj*(1.0 - wa);
-                    duv0 = 1.0 - wa;
-                    duv1 = wa;
-                    dnl0 = wc;
-                    dnl1 = 1.0 - wc;
-                    dfw0 = sw;
-                    dfw1 = 1.0 - sw;
-                  }
-                  // dd_i^+: the down ray's two half steps through cell i
-                  Real v0 = tj*jdm0;
-                  v0 = tj*v0 + ci*duv0 + co*dfw0;
-                  Real v1 = tj*jdm1 + ci*jfu0 + co*jlc0;
-                  v1 = tj*v1 + ci*duv1 + co*dfw1;
-                  Real v2 = tj*jdm2 + ci*jfu1 + co*jlc1;
-                  v2 = tj*v2;
-                  Real al = (1.0 + bt)*idn;
-                  Real be = bt*idn;
-                  Real wr = tj*tj*tj*tj*(1.0 - bt)*idn*jQ;
-                  Real omr = 1.0 - rj;
-                  Real aD = al, ratv = rat, wfi = wfc;
-                  if (vefl_) {
-                    // ck_sph_face = 5: D = (2/E) (Sc - gamma (1 - R) d^+), d crosses
-                    // the face with al = 2 gamma/E, be = (1 - gamma rho')/E
-                    ratv = rat*vsb/vsa;
-                    const Real ev = (1.0 + rj) + vgm*ratv*(1.0 - rj);
-                    al = 2.0*vgm/ev;
-                    be = (1.0 - vgm*ratv)/ev;
-                    aD = 2.0/ev;
-                    wr = tj*tj*tj*tj*(2.0*ratv/ev)*jQ;
-                    omr = vgm*(1.0 - rj);
-                    wfi = wfc*vsa/(SQRT3_VEF*muj);
-                  }
-                  const Real dd0 = aD*(1.0 + omr*wr)*s0;
-                  const Real dd1 = aD*(s1 - omr*v0);
-                  const Real dd2 = aD*(s2 - omr*v1);
-                  const Real dd3 = -aD*omr*v2;
-                  const Real wj = wfi*g3;
-                  const Real jm = wj*(ratv*dd1 - jDu0);
-                  const Real j0 = wj*(ratv*dd2 - jDu1);
-                  const Real jp = wj*(ratv*dd3 - jDu2);
-                  lj0_g(m,c,i,k,j) = j0;
-                  ljm_g(m,c,i,k,j) = ((i > icut || gdf >= 0.0) && (jneg_ || jm > 0.0))
-                                   ? jm : 0.0;
-                  lpj_g(m,c,i,k,j) = (i < ie && (jneg_ || jp > 0.0)) ? jp : 0.0;
-                  jDu0 = dd0;
-                  jDu1 = dd1;
-                  jDu2 = dd2;
-                  const Real qn = al*wr + be;
-                  jdm0 = -qn*s0;
-                  jdm1 = al*v0 - be*s1;
-                  jdm2 = al*v1 - be*s2;
-                  jQ = qn;
-                  jfu0 = dfw0;
-                  jfu1 = dfw1;
-                  jlc0 = dnl0;
-                  jlc1 = dnl1;
-                }
-              });
+                });
+              }
               ck_jlc_ok = true;
             }
             CkParFor4("ck_jlin_sum", cklw_, 0, nmb1, is, ie, ks, ke, js, je,
