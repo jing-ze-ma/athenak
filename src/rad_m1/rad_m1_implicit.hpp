@@ -61,6 +61,12 @@ constexpr char kM1MRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
 // when the relaxation is active and has a stored step (ctr_init); a file without it
 // restarts with an unrelaxed first step (the behaviour before 2026-09-27).
 constexpr char kM1CtrRstMagic[8] = {'M', '1', 'C', 'T', 'R', 'L', 'X', '1'};
+// <hydro>/rad_signal_speed (RadiationM1::RssPrime): the signal-speed inputs of the
+// last M1 step, header behind the thin_relax one: int32 have = 1, nch, mode, 0; its nch
+// slabs (opac(M1_OP_T), then the closure tensor channels of RssSlot) are the LAST of
+// each MeshBlock record.  Written only when rad_signal_speed is on; a file without it
+// restarts with opac filled from the restored state (no longer bitwise).
+constexpr char kM1RssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled

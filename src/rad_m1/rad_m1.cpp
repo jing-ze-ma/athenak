@@ -944,6 +944,96 @@ void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::RssMode
+//! \brief the closure tensor <hydro>/rad_signal_speed reads (hydro_newdt.cpp uses this)
+
+int RadiationM1::RssMode() const {
+  if (tau_closure && tau_ten.extent(0) > 0) return 2;
+  if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
+  if (!eddington && !tau_closure && !vet_sc) return 1;
+  return 0;
+}
+
+int RadiationM1::RssRstNch(int mode) const {
+  if (mode == 2 || mode == 3) return 5;
+  if (mode == 4) return 4;
+  return 1;
+}
+
+void RadiationM1::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
+  if (n == 0) {a = &opac; c = M1_OP_T; return;}
+  if (mode == 2) {a = &tau_ten; c = n - 1; return;}
+  a = &vet_cell;
+  c = (mode == 3) ? (M1_VET_CHI + n - 1) : (M1_VET_D11 + n - 1);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RssRstPack
+//! \brief the signal-speed inputs, channel by channel, into dst (nmb, nch, k, j, i)
+
+void RadiationM1::RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode) {
+  const int nch = RssRstNch(mode);
+  for (int n=0; n<nch; ++n) {
+    DvceArray5D<Real> *a = nullptr;
+    int c = 0;
+    RssSlot(mode, n, a, c);
+    Kokkos::deep_copy(Kokkos::subview(dst, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                      Kokkos::ALL),
+                      Kokkos::subview(*a, std::make_pair(0,nmb), c, Kokkos::ALL,
+                                      Kokkos::ALL, Kokkos::ALL));
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RssPrime
+//! \brief before the first dt of a run with <hydro>/rad_signal_speed: put back the
+//! signal-speed inputs a restart file carries (the restarted run then computes the dt
+//! of the straight run), or -- fresh start, or a file without them -- fill opac from the
+//! current state so that the first steps see the radiation-modified speed, not the gas
+//! speed alone (He wedge: 5.7x the safe dt).  The closure tensor then starts from what
+//! the module has (E/3 or M1Chi(F/cE)).
+
+void RadiationM1::RssPrime(bool restart) {
+  if (rss_stage_mode >= 0) {
+    const int mode = rss_stage_mode;
+    // the tensor is put back only into the same kind of closure; opac always
+    int want = 1;
+    if (mode == 2 && tau_closure) {
+      if (!tau_ready) {TauClosureInit();}
+      want = RssRstNch(mode);
+    } else if ((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
+               (vet_full == (mode == 4))) {
+      want = RssRstNch(mode);
+    } else if (mode >= 2 && global_variable::my_rank == 0) {
+      std::cout << "### WARNING: <rad_m1> the restart file's signal-speed closure tensor "
+                << "does not match this run's closure; only the opacity is restored"
+                << std::endl;
+    }
+    const int nmb = static_cast<int>(rss_stage.extent(0));
+    for (int n=0; n<want; ++n) {
+      DvceArray5D<Real> *a = nullptr;
+      int c = 0;
+      RssSlot(mode, n, a, c);
+      Kokkos::deep_copy(Kokkos::subview(*a, std::make_pair(0,nmb), c, Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL),
+                        Kokkos::subview(rss_stage, Kokkos::ALL, n, Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL));
+    }
+    rss_stage = DvceArray5D<Real>();
+    rss_stage_mode = -1;
+    return;
+  }
+  if (restart && global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file has no <hydro>/rad_signal_speed inputs; the "
+              << "opacity is rebuilt from the restored state and this restart is not "
+              << "bitwise." << std::endl;
+  }
+  // opac_freeze (debug) freezes the FIRST fill: leave that to the first step
+  if (opac_freeze) return;
+  (void) Opacity(nullptr, 1);
+}
+
+//----------------------------------------------------------------------------------------
 // destructor
 
 RadiationM1::~RadiationM1() {

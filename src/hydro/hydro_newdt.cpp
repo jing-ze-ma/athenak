@@ -107,6 +107,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // acoustic speed of the medium (radiative diffusion at the grid scale only lowers it),
   // so the bound is conservative.  E, F, the tensor and opac are the M1 state of the
   // last radiation step (the module runs after the hydro stages): a lag of one step.
+  // Before the first step they come from RadiationM1::RssPrime (Driver::Initialize):
+  // the restart file's copy, or opac of the initial state on a fresh start.
   // Off: no change.
   const bool rss_ = rad_signal_speed;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
@@ -125,15 +127,10 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     kopc_ = prm->opac;
     rss_cl = prm->c_light;
     rss_kind = prm->chi_kind;
-    if (prm->tau_closure && prm->tau_ten.extent(0) > 0) {
-      rss_mode = 2;
-      tten_ = prm->tau_ten;
-    } else if (prm->vet_sc && prm->vet_cell.extent(0) > 0) {
-      rss_mode = prm->vet_full ? 4 : 3;
-      vcel_ = prm->vet_cell;
-    } else if (!prm->eddington && !prm->tau_closure && !prm->vet_sc) {
-      rss_mode = 1;
-    }
+    // the same selection decides what a restart file carries (RadiationM1::RssPrime)
+    rss_mode = prm->RssMode();
+    if (rss_mode == 2) tten_ = prm->tau_ten;
+    if (rss_mode >= 3) vcel_ = prm->vet_cell;
   }
 
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
