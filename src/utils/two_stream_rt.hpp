@@ -1386,6 +1386,12 @@ inline bool ck_vef_sync = true;
 // against the factors being replaced (the lag of ck_vef_every), and the number of faces
 // whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
 inline int ck_vef_report = 0;
+// problem/ck_f6_report = N > 0 (diagnostic, print only, read only when named): after
+// every ck_sph_face = 6 build rank 0 prints the number of ladder elements (g_s, g_p,
+// K_eq/B, R_c over all cells and (band, g)), how many are negative or not finite, and
+// the smallest ratio row excess / diagonal of the node rows in K (the shunt g_p over
+// g_p + the node's two series conductances; > 0: strictly diagonally dominant).
+inline int ck_f6_report = 0;
 // problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
 // x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b,
 // rho' = (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections
@@ -9127,6 +9133,56 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   }
                 }
               });
+              if (ck_f6_report > 0) {
+                // problem/ck_f6_report: the signs of the elements and the dominance of
+                // the node rows (lo_i: g_p + g_s + 1/R_c of face i; hi_i: g_p + g_s +
+                // 1/R_c of face i+1, the top's y_t, the wall's y_w)
+                DvceArray1D<Real> rr("ck_f6_rep", 4);
+                Kokkos::deep_copy(rr, 0.0);
+                Kokkos::parallel_for("ck_f6_rep_init",
+                                     Kokkos::RangePolicy<DevExeSpace>(0, 1),
+                                     KOKKOS_LAMBDA(const int) { rr(3) = 1.0; });
+                par_for("ck_f6_rep", DevExeSpace(), 0, nmb1, 0, npr6-1, ks, ke, js, je,
+                KOKKOS_LAMBDA(const int m, const int pp, const int k, const int j) {
+                  if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                  const int icut = icc_g(m,k,j);
+                  if (icut > ie) return;
+                  const int c0 = 2*pp, c1 = c0 + 1;
+                  auto P = [&](const int sl, const int c, const int i) -> Real {
+                    return lP_g(m,sl*nch_+c,i,k,j);
+                  };
+                  Real nel = 0.0, nneg = 0.0, nnf = 0.0, rmin = 1.0;
+                  for (int i=icut; i<=ie; ++i) {
+                    const Real gp = P(0,c0,i), kq = P(1,c0,i), gs = P(2,c1,i);
+                    const Real rc = (i > icut) ? P(5,c0,i) : 0.0;
+                    const Real el[4] = {gp, kq, gs, rc};
+                    for (int q=0; q<4; ++q) {
+                      nel += 1.0;
+                      if (!(el[q] == el[q]) || fabs(el[q]) > 1.0e300) nnf += 1.0;
+                      else if (el[q] < 0.0) nneg += 1.0;
+                    }
+                    const Real cl = (i > icut) ? ((rc > 0.0) ? 1.0/rc : 1.0e300)
+                                               : P(4,c1,icut);
+                    const Real rcu = (i < ie) ? P(5,c0,i+1) : 0.0;
+                    const Real cu = (i < ie) ? ((rcu > 0.0) ? 1.0/rcu : 1.0e300)
+                                             : P(3,c1,ie+1);
+                    const Real xl = (i > icut) ? gp : gp + cl;
+                    const Real xh = (i < ie) ? gp : gp + cu;
+                    const Real rl = xl/(gp + gs + cl), rh = xh/(gp + gs + cu);
+                    rmin = fmin(rmin, fmin(rl, rh));
+                  }
+                  Kokkos::atomic_add(&rr(0), nel);
+                  Kokkos::atomic_add(&rr(1), nneg);
+                  Kokkos::atomic_add(&rr(2), nnf);
+                  Kokkos::atomic_min(&rr(3), rmin);
+                });
+                auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rr);
+                if (global_variable::my_rank == 0) {
+                  std::printf("### f6rep ncycle=%d elements=%.0f negative=%.0f "
+                              "nonfinite=%.0f min(row excess/diag)=%.3e\n",
+                              static_cast<int>(pm->ncycle), hr(0), hr(1), hr(2), hr(3));
+                }
+              }
             } else if (vefl_) {   // ck_sph_face = 5: the VEF factorisation
               par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
               KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {

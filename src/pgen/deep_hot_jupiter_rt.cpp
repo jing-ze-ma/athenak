@@ -1344,6 +1344,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem", "ck_vef_xlim")) {
     two_stream_rt::ck_vef_xlim = pin->GetReal("problem", "ck_vef_xlim");
   }
+  if (pin->DoesParameterExist("problem", "ck_f6_report")) {
+    two_stream_rt::ck_f6_report = pin->GetInteger("problem", "ck_f6_report");
+  }
   if (pin->DoesParameterExist("problem", "ck_vef_report")) {
     two_stream_rt::ck_vef_report = pin->GetInteger("problem", "ck_vef_report");
   }
