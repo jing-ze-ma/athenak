@@ -223,10 +223,11 @@ void DhjCycleDiag(Mesh *pm);
 //     uniform Maxwell stress on the planar faces) exerts no T_cons on a cell.
 //   DEFAULTS (user 10-01): both ON whenever the rotating frame is (user_srcs, omega != 0,
 //     cubed sphere or spherical polar), OFF otherwise, so non-rotating runs are bitwise
-//     unchanged.  am_transport defaults off (and is refused if named true) with a source
-//     variant it does not replicate: cs/sp_wellbalanced_src, wellbalance_static,
-//     sp_cart_polar_momentum, sp_face_avg.  Read without recording; the startup log
-//     prints the effective values.
+//     unchanged.  A rotating run with a source variant am_transport does not
+//     replicate (cs/sp_wellbalanced_src, wellbalance_static, sp_cart_polar_momentum,
+//     sp_face_avg) stops with a FATAL naming it, unless problem/am_transport = false is
+//     set explicitly; a rotating run with either key false prints a WARNING that L_abs
+//     drifts.  Read without recording; the startup log prints the effective values.
 //   problem/am_hst (DIAGNOSTIC, default false; read without recording it): eight more
 //     history columns after the flux columns, see DhjFluxHistory and AmHstStage.
 //   problem/am_hst_split (DIAGNOSTIC, default false, needs am_hst and what am_transport
@@ -870,29 +871,56 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const bool wbs = mhd ? pam->pmhd->use_wellbalance_static
                          : pam->phydro->use_wellbalance_static;
     Coordinates *pco = pam->pcoord;
-    // the source variants AmCell replicates: the plain cs / sp angular sources
-    const bool trq_ok = curv && !wbs
-        && !(pmy_mesh_->use_cubed_sphere && pco->cs_wellbalanced_src)
-        && !(use_spherical_polar && (pco->sp_wellbalanced_src
-                                     || pco->sp_cart_polar_momentum || pco->sp_face_avg));
+    // the source variants AmCell replicates: the plain cs / sp angular sources.  Any
+    // other one is named here (user 10-01: explicit, never a silent default off)
+    std::string bad = "";
+    if (wbs) bad = mhd ? "<mhd>/wellbalance_static" : "<hydro>/wellbalance_static";
+    if (pmy_mesh_->use_cubed_sphere && pco->cs_wellbalanced_src) {
+      bad = "cs_wellbalanced_src";
+    }
+    if (use_spherical_polar && pco->sp_wellbalanced_src) bad = "sp_wellbalanced_src";
+    if (use_spherical_polar && pco->sp_cart_polar_momentum) {
+      bad = "sp_cart_polar_momentum";
+    }
+    if (use_spherical_polar && pco->sp_face_avg) bad = "sp_face_avg";
+    const bool trq_ok = curv && bad.empty();
     {
-    const std::string sm = pin->DoesParameterExist("problem","sponge_top_mode")
-                           ? pin->GetString("problem","sponge_top_mode") : "all";
-    if (sm != "all" && sm != "radial") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "problem/sponge_top_mode must be all or radial, not '"
-                << sm << "'" << std::endl;
-      exit(EXIT_FAILURE);
+      const std::string sm = pin->DoesParameterExist("problem","sponge_top_mode")
+                             ? pin->GetString("problem","sponge_top_mode") : "all";
+      if (sm != "all" && sm != "radial") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "problem/sponge_top_mode must be all or radial, not '"
+                  << sm << "'" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      dhj_sponge_top_radial = (sm == "radial");
+      if (global_variable::my_rank == 0 && dhj_sponge_top_radial) {
+        std::cout << "dhj: problem/sponge_top_mode = radial" << std::endl;
+      }
     }
-    dhj_sponge_top_radial = (sm == "radial");
-    if (global_variable::my_rank == 0 && dhj_sponge_top_radial) {
-      std::cout << "dhj: problem/sponge_top_mode = radial" << std::endl;
-    }
-  }
-  amh::fix = pin->DoesParameterExist("problem","coriolis_am")
+    amh::fix = pin->DoesParameterExist("problem","coriolis_am")
                ? pin->GetBoolean("problem","coriolis_am") : rotating;
     amh::trans = pin->DoesParameterExist("problem","am_transport")
-                 ? pin->GetBoolean("problem","am_transport") : (rotating && trq_ok);
+                 ? pin->GetBoolean("problem","am_transport") : rotating;
+    if (rotating && amh::trans && !trq_ok) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "rotating frame with " << bad << ": problem/am_transport "
+                << "does not replicate that angular source, so the axial angular "
+                << "momentum is NOT conserved with it.  Set problem/am_transport = false "
+                << "explicitly to run anyway (L_abs then drifts)" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 && rotating && !amh::trans) {
+      std::cout << "### WARNING: problem/am_transport = false in a rotating run"
+                << (bad.empty() ? std::string("") : " (" + bad + ")")
+                << ": the transport angular-momentum correction is OFF, L_abs drifts"
+                << std::endl;
+    }
+    if (global_variable::my_rank == 0 && rotating && !amh::fix) {
+      std::cout << "### WARNING: problem/coriolis_am = false in a rotating run: the "
+                << "Coriolis torque is not continuity-consistent, L_abs drifts"
+                << std::endl;
+    }
     amh::on = flux_hst && pin->DoesParameterExist("problem","am_hst")
               && pin->GetBoolean("problem","am_hst");
     amh::split = amh::on && pin->DoesParameterExist("problem","am_hst_split")
