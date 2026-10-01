@@ -1365,10 +1365,17 @@ inline int ck_sph_top = 0;
 // every face, so the deposit telescopes.  The quadrature in mu is normalised so that
 // an isotropic field gives f = 1/3 and a hemispherically isotropic one h = 1/2 to
 // round-off.
+// Under ck_impl_frozen_op the factors are part of the STORED OPERATOR (the frozen triple
+// at mu_eff, the tm factorisation of ck_impl_lin, the ck_impl_jac_lin coefficients), so
+// with problem/ck_vef_sync (default true) they are refreshed on a STORING pass only (the
+// first pass of a call that does not re-apply an operator stored earlier, see
+// ck_impl_xstep): every pass of every call then sees one consistent operator.  false
+// is the prototype's timing (the first pass of the cycle, a re-applying one included).
 // With ck_impl_lin (production path) face 5 needs ck_impl_lin_thr = 1, ck_nquad = 2
 // and ck_impl_jac_lin.
 inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
+inline bool ck_vef_sync = true;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -7032,8 +7039,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // passes) reads the same factors.  Nodes q = 0 .. n+1 of a column: the cut face,
         // the frames of cells icut .. ie (radius sqrt(A/dOmega)), the top face.  Rays:
         // ck_vef_ncore through the wall, then one tangent at every node.
-        if (ck_sph_face == 5 && (ck_vef_last < 0 ||
-                                 pm->ncycle - ck_vef_last >= ck_vef_every)) {
+        // ck_vef_sync: on a storing pass only (a re-applying pass keeps the factors its
+        // stored operator was formed with); the first call always forms them
+        if (ck_sph_face == 5 && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
+                                 ((!ck_vef_sync || !ckfop_ || ckfst_) &&
+                                  pm->ncycle - ck_vef_last >= ck_vef_every))) {
           ck_vef_last = static_cast<int>(pm->ncycle);
           const int nv = n1 + 3;
           const int nc_ = CK_NB*CK_NG;

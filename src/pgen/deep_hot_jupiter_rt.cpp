@@ -875,6 +875,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5
   two_stream_rt::ck_vef_every = pin->GetOrAddInteger("problem","ck_vef_every",1);
   two_stream_rt::ck_vef_ncore = pin->GetOrAddInteger("problem","ck_vef_ncore",8);
+  two_stream_rt::ck_vef_sync = pin->GetOrAddBoolean("problem","ck_vef_sync",true);
   // problem/ck_sph_face (prototype, default 0): see two_stream_rt::ck_sph_face.
   // problem/ck_sph_dilute = true is the older spelling of ck_sph_face = 1.
   two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
