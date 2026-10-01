@@ -423,14 +423,21 @@ int main(int argc, char *argv[]) {
     infile.Close();
     pinput->CheckBlockNames();
   }
-  // <problem>/allow_potential_change given on the command line of a restart: register
-  // the key first (ModifyFromCmdline only overrides EXISTING keys).  Only then, so a
-  // restart without it writes the same parameter header as before; see
-  // CheckRestartPotentialKeys
+  // <problem>/allow_potential_change (and hydro/rad_signal_speed) given on the command
+  // line of a restart: register the key first (ModifyFromCmdline only overrides EXISTING
+  // keys).  Only then, so a restart without it writes the same parameter header as
+  // before; see CheckRestartPotentialKeys
   if (res_flag) {
     for (int i = 1; i < argc; ++i) {
       if (std::string(argv[i]).find("problem/allow_potential_change") == 0) {
         pinput->GetOrAddBoolean("problem", "allow_potential_change", false);
+      }
+      // hydro/rad_signal_speed (hydro_newdt.cpp) on the command line of a restart whose
+      // embedded input predates the key: register it so the override can switch it
+      // (the value written here is replaced by ModifyFromCmdline right below)
+      if (std::string(argv[i]).find("hydro/rad_signal_speed") == 0 &&
+          pinput->DoesBlockExist("hydro")) {
+        pinput->GetOrAddBoolean("hydro", "rad_signal_speed", false);
       }
     }
   }
