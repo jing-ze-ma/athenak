@@ -170,6 +170,10 @@ bool dhj_flux_hst_wall = false;
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 bool dhj_flux_hst_floor = false;
 Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
+// problem/sponge_top_mode (default "all"; read without recording): "radial" makes the
+// top velocity sponge damp the RADIAL momentum only (IM1, rhat.m on both grids), so it
+// exerts no axial torque (Shaw & Shepherd 2007); "all" damps all three components
+bool dhj_sponge_top_radial = false;
 // problem/flux_hst_rkavg (default true; false = the last RK stage, the pre-0929
 // columns): the fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
 // Mdot_bot) are the RK-weighted sums over the stages of the cycle, i.e. the flux the
@@ -871,7 +875,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         && !(pmy_mesh_->use_cubed_sphere && pco->cs_wellbalanced_src)
         && !(use_spherical_polar && (pco->sp_wellbalanced_src
                                      || pco->sp_cart_polar_momentum || pco->sp_face_avg));
-    amh::fix = pin->DoesParameterExist("problem","coriolis_am")
+    {
+    const std::string sm = pin->DoesParameterExist("problem","sponge_top_mode")
+                           ? pin->GetString("problem","sponge_top_mode") : "all";
+    if (sm != "all" && sm != "radial") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/sponge_top_mode must be all or radial, not '"
+                << sm << "'" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    dhj_sponge_top_radial = (sm == "radial");
+    if (global_variable::my_rank == 0 && dhj_sponge_top_radial) {
+      std::cout << "dhj: problem/sponge_top_mode = radial" << std::endl;
+    }
+  }
+  amh::fix = pin->DoesParameterExist("problem","coriolis_am")
                ? pin->GetBoolean("problem","coriolis_am") : rotating;
     amh::trans = pin->DoesParameterExist("problem","am_transport")
                  ? pin->GetBoolean("problem","am_transport") : (rotating && trq_ok);
@@ -4197,6 +4215,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // 09-30): switch the two velocity sponges at the end of this kernel off; captured by
     // value.
     const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
+    const bool sponge_top_rad_ = dhj_sponge_top_radial;
     const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
     const bool rotpot_src = rotpot && use_wellbalance_dynamic;
 
@@ -4472,8 +4491,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
         if (sponge_top_) {
           u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
-          u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
-          u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+          if (!sponge_top_rad_) {
+            u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
+            u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+          }
         }
         // Bottom sponge layer
         logpl = log(1.0e2*bar);
