@@ -509,6 +509,7 @@ inline void CkRstVefRebuild(Mesh *pm) {
   }
   if (thk_had) CkRstPut(kCkSlabVefK, *ck_thk_ptr);   // else: AfterAlloc
   const int xs_keep = ck_impl_xs_cyc;
+  const Real xsb_keep = ck_xs_bdt;      // the pass's store re-snaps the xstep state
   const std::int64_t nst = ck_impl_nstore, nre = ck_impl_nreuse;
   const std::int64_t nsw = ck_impl_nsweep;
   const bool jb = ck_impl_jac_built;
@@ -524,6 +525,7 @@ inline void CkRstVefRebuild(Mesh *pm) {
   ck_rst_rebuild_active = false;
   ck_impl_pass = -1;
   ck_impl_xs_cyc = xs_keep;
+  ck_xs_bdt = xsb_keep;
   ck_impl_nstore = nst;
   ck_impl_nreuse = nre;
   ck_impl_nsweep = nsw;
