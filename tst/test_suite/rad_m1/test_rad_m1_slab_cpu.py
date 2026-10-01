@@ -32,17 +32,24 @@ COLS = {"m1slab.hydro.hst": ["time", "mass", "tot-E", "1-KE", "2-KE"],
 # box-wall-truephi (09-28): the wall mass cancellation now takes rho*Phi out with the
 # TRUE potential (was Phi_eff under wb_phi_eff); change from the 0927 numbers: time
 # 3.7e-9, 1-KE -3.8e-5 (edd) / -6.4e-6 (vet), V1max -8.1e-4 (edd), Etot 1.2e-10.
+# rss-default-1001 (58f39f11 + 57fcd2b8): <hydro>/rad_signal_speed is now ON by default
+# with implicit M1, so the hydro dt uses the radiation-modified signal speed, which is
+# larger than the gas sound speed in the slab: 12 cycles reach t 1.33 (edd) / 1.43
+# (vet) instead of 1.94.  57fcd2b8 also fills opac before the first dt on a fresh start
+# (before it, step 1 used the gas speed alone): this moved edd again (1.428 -> 1.326);
+# vet was the same at both commits.  Every other column follows from the shorter time.
+# Regenerated with gcc 14, CPU serial (fixes-1001).
 REF = {
-    "edd": {"time": 1.9368550424885040e+00, "mass": 1.2738377353803065e+19,
-            "tot-E": 8.0476796595167506e+32, "1-KE": 2.0731200590576162e+24,
-            "2-KE": 4.0143151064228690e+24, "F1top": 2.4752110413949450e+15,
-            "F1mid": 2.4752123136792175e+15, "F1bot": 2.4751767042604670e+15,
-            "V1max": 6.0496191992118020e+03, "Etot": 1.0723495549405960e+33},
-    "vet": {"time": 1.9366909134295045e+00, "mass": 1.2738377353803084e+19,
-            "tot-E": 8.0494410127120816e+32, "1-KE": 1.3698990517209802e+25,
-            "2-KE": 4.1156161752701397e+24, "F1top": 2.4751298505676935e+15,
-            "F1mid": 2.4751359996804620e+15, "F1bot": 2.4751734924812275e+15,
-            "V1max": 1.4451309476133260e+04, "Etot": 1.0739003402605420e+33},
+    "edd": {"time": 1.3263574735599821e+00, "mass": 1.2738377353803061e+19,
+            "tot-E": 8.0476824191865979e+32, "1-KE": 1.2025839135391527e+24,
+            "2-KE": 2.7622430561289195e+24, "F1top": 2.4752258138624450e+15,
+            "F1mid": 2.4752250100079205e+15, "F1bot": 2.4751827481951940e+15,
+            "V1max": 4.4470178967837883e+03, "Etot": 1.0723532628809100e+33},
+    "vet": {"time": 1.4280339466865284e+00, "mass": 1.2738377353803041e+19,
+            "tot-E": 8.0494317703134749e+32, "1-KE": 8.0414325226132745e+24,
+            "2-KE": 5.7081441763546965e+24, "F1top": 2.4750037022798720e+15,
+            "F1mid": 2.4750230810029555e+15, "F1bot": 2.4751780139539245e+15,
+            "V1max": 1.0426943074024435e+04, "Etot": 1.0738808270535462e+33},
 }
 
 

@@ -5,7 +5,7 @@
 set -e
 B=$(cd "$(dirname "$0")" && pwd)
 D=${1:?usage: SETUP.sh <run dir>}; mkdir -p "$D"
-md5sum -c "$B/MD5SUMS"
+(cd "$B" && md5sum -c --quiet MD5SUMS)   # MD5SUMS holds bare file names: check from inside the bundle
 for f in bsg3d_arm2.athinput bsg_col_arm2.athinput; do
   sed "s#@BUNDLE@#$B#g" "$B/$f" > "$D/$f"
 done

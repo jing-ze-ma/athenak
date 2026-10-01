@@ -12,6 +12,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -718,7 +719,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                                    !global_variable::restart_run);
     vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
-    {std::string vs = pin->GetOrAddString("rad_m1","vet_col_source","relaxed");
+    {
+      std::string vs = pin->GetOrAddString("rad_m1","vet_col_source","relaxed");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("gas") == 0) {
@@ -728,7 +730,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl << "<rad_m1>/vet_col_source = '" << vs << "' not implemented "
         << "(relaxed | gas)" << std::endl;
       std::exit(EXIT_FAILURE);
-    }}
+    }
+    }
     vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);

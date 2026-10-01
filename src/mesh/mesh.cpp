@@ -1148,7 +1148,8 @@ void Mesh::NewTimeStep(const Real tlim) {
       if (ph->dt_diag_valid) {
         auto &dd = ph->dt_diag.h_view;
         std::cout << " r=" << dd(0) << " rho=" << dd(1) << " T=" << dd(2)
-                  << " p=" << dd(3) << " v=(" << dd(5) << "," << dd(6) << "," << dd(7) << ")";
+                  << " p=" << dd(3) << " v=(" << dd(5) << "," << dd(6) << ","
+                  << dd(7) << ")";
       }
       std::cout << std::endl;
     }
