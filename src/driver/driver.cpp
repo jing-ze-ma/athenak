@@ -460,6 +460,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
       auto hydro_stage = [&](int stage) {
         if (nohyd) return;   // DIAGNOSTIC <rad_m1>/dbg_hydro_off: R alone
+        if (pm1 != nullptr) {   // <rad_m1>/implicit_det_trace (no-op unless named)
+          pm1->DetTrace(stage == 1 ? "hyd_in1" : "hyd_in2");
+        }
         ExecuteTaskList(pmesh, "before_stagen", stage);
         // solve gravity at each RK stage so the potential is consistent
         // with the current density (required for 2nd-order accuracy)
@@ -467,6 +470,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             {pmesh->pmb_pack->pgrav->pmgd->Solve(this, stage);}
         ExecuteTaskList(pmesh, "stagen", stage);
         ExecuteTaskList(pmesh, "after_stagen", stage);
+        if (pm1 != nullptr) {pm1->DetTrace("hyd_out");}
       };
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         hydro_stage(stage);

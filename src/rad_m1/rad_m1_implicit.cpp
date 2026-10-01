@@ -6116,20 +6116,22 @@ uint64_t M1DtMix(const Real x, const uint64_t q) {
   return b*(2*q + 0x9E3779B97F4A7C15ULL);
 }
 
-uint64_t M1DtHash(const DvceArray5D<Real> &a, const int n) {
-  const int64_t nk = a.extent(2), nj = a.extent(3), ni = a.extent(4);
+uint64_t M1DtHash(const DvceArray5D<Real> &a, const int n, const int k0, const int k1,
+                  const int j0, const int j1, const int i0, const int i1) {
+  // hash over m and k in [k0,k1), j in [j0,j1), i in [i0,i1)
+  const int64_t nk = k1 - k0, nj = j1 - j0, ni = i1 - i0;
   const int64_t tot = static_cast<int64_t>(a.extent(0))*nk*nj*ni;
   uint64_t h = 0;
-  if (tot == 0) {return h;}
+  if (tot <= 0) {return h;}
   Kokkos::parallel_reduce("m1_dt_hash",
   Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0, tot),
   KOKKOS_LAMBDA(const int64_t q, uint64_t &s) {
     int64_t r = q;
-    const int i = static_cast<int>(r % ni);
+    const int i = static_cast<int>(r % ni) + i0;
     r /= ni;
-    const int j = static_cast<int>(r % nj);
+    const int j = static_cast<int>(r % nj) + j0;
     r /= nj;
-    const int k = static_cast<int>(r % nk);
+    const int k = static_cast<int>(r % nk) + k0;
     const int m = static_cast<int>(r/nk);
     s += M1DtMix(a(m,n,k,j,i), static_cast<uint64_t>(q));
   }, Kokkos::Sum<uint64_t>(h));
@@ -6142,18 +6144,26 @@ void RadiationM1::DetTrace(const char *tag) {
   std::ostringstream os;
   os << "<dtr> r" << global_variable::my_rank << " s" << static_cast<int>(impl_nstep)
      << " " << tag << std::hex;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto put = [&](const char *nm, const DvceArray5D<Real> &a) {
     if (a.size() == 0) {return;}
-    uint64_t all = 0;
+    // full array (ghosts included) and the active cells alone, per component
+    const bool cc = (a.extent_int(2) > indcs.ke) && (a.extent_int(3) > indcs.je) &&
+                    (a.extent_int(4) > indcs.ie);
+    uint64_t all = 0, act = 0;
     std::ostringstream oc;
     oc << std::hex;
     for (int n = 0; n < a.extent_int(1); ++n) {
-      const uint64_t h = M1DtHash(a, n);
+      const uint64_t h = M1DtHash(a, n, 0, a.extent_int(2), 0, a.extent_int(3), 0,
+                                  a.extent_int(4));
+      const uint64_t ha = cc ? M1DtHash(a, n, indcs.ks, indcs.ke + 1, indcs.js,
+                                        indcs.je + 1, indcs.is, indcs.ie + 1) : h;
       all += h*(2*static_cast<uint64_t>(n) + 1);
-      oc << " " << (h & 0xffffffULL);
+      act += ha*(2*static_cast<uint64_t>(n) + 1);
+      oc << " " << (ha & 0xffffffULL);
     }
-    os << " " << nm << "=" << all;
-    if (a.extent_int(1) > 4) {os << " [" << oc.str() << " ]";}
+    os << " " << nm << "=" << all << "/a" << act;
+    if (a.extent_int(1) > 1) {os << " [" << oc.str() << " ]";}
   };
   radm1::FluidRef fl = radm1::FluidRef::Get(pmy_pack);
   put("u0", u0);
