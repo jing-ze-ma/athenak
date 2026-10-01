@@ -701,6 +701,41 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nctr_file = static_cast<int>(hdr[1]);
   }
 
+  // --- THE <hydro>/rad_signal_speed HEADER (radm1::kM1RssRstMagic), behind the
+  // thin_relax one: nrss_file slabs (RadiationM1::RssSlot of mode rss_mode_file), the
+  // LAST of each record.
+  int nrss_file = 0, rss_mode_file = -1;
+  if (std::memcmp(variabledata, &(radm1::kM1RssRstMagic[0]),
+                  sizeof(radm1::kM1RssRstMagic)) == 0) {
+    char rss_hdr[4*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(rss_hdr));
+      ok = ok && (resfile.Read_bytes(&(rss_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(rss_hdr[0]), sizeof(rss_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    if (ok) {std::memcpy(&(hdr[0]), &(rss_hdr[0]), sizeof(hdr));}
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 5 || hdr[2] < 0 || hdr[2] > 4) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <hydro>/rad_signal_speed header of this restart "
+                << "file is broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nrss_file = static_cast<int>(hdr[1]);
+    rss_mode_file = static_cast<int>(hdr[2]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -787,7 +822,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file + neint_file + nck_file
-                            + nctr_file)
+                            + nctr_file + nrss_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1413,8 +1448,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "closure memory; the first step is unrelaxed and this restart is not "
               << "bitwise." << std::endl;
   }
+  // <hydro>/rad_signal_speed: the signal-speed inputs of the last M1 step, staged for
+  // RadiationM1::RssPrime (Driver::Initialize) when this run uses the signal speed too
+  const bool rss_read = (nrss_file > 0) && (pradm1 != nullptr) && (phydro != nullptr) &&
+                        phydro->rad_signal_speed;
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
-      ctr_read) {
+      ctr_read || rss_read) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -1592,6 +1631,21 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
       pradm1->ctr_init = true;
+    }
+    // the rad_signal_speed inputs (kM1RssRstMagic), the last slabs of the record
+    if (rss_read) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nck_file + nctr_file;
+      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      Kokkos::realloc(pradm1->rss_stage, nmb, nrss_file, nout3, nout2, nout1);
+      for (int n=0; n<nrss_file; ++n) {
+        read_slab("rad_signal_speed inputs");
+        DeepCopyAcross(Kokkos::subview(pradm1->rss_stage, Kokkos::ALL, n,
+                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
+      }
+      pradm1->rss_stage_mode = rss_mode_file;
     }
   }
 

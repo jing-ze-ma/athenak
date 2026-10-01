@@ -244,6 +244,15 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
+    // <hydro>/rad_signal_speed: the signal-speed inputs of the last M1 step
+    if (phydro != nullptr && phydro->rad_signal_speed) {
+      const int rmode = pradm1->RssMode();
+      const int nrs = pradm1->RssRstNch(rmode);
+      DvceArray5D<Real> tmp("rst-m1s", nmb, nrs, nout3, nout2, nout1);
+      pradm1->RssRstPack(tmp, nmb, rmode);
+      Kokkos::realloc(outarray_m1s, nmb, nrs, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_m1s, tmp);
+    }
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
@@ -380,6 +389,17 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   {
     const std::int32_t hdr[2] = {(nctr > 0) ? 1 : 0, static_cast<std::int32_t>(nctr)};
     std::memcpy(&(ctr_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
+  // <hydro>/rad_signal_speed: nrss slabs behind even those (radm1::kM1RssRstMagic)
+  const bool wrss = (pradm1 != nullptr) && (phydro != nullptr) &&
+                    phydro->rad_signal_speed;
+  const int rss_mode = wrss ? pradm1->RssMode() : 0;
+  const int nrss = wrss ? pradm1->RssRstNch(rss_mode) : 0;
+  char rss_hdr[4*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[4] = {(nrss > 0) ? 1 : 0, static_cast<std::int32_t>(nrss),
+                                 static_cast<std::int32_t>(rss_mode), 0};
+    std::memcpy(&(rss_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
@@ -579,6 +599,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(ctr_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the signal-speed header, same marked form, behind the thin_relax one
+    if (nrss > 0) {
+      IOWrapperSizeT nb = sizeof(rss_hdr);
+      resfile.Write_any_type(&(radm1::kM1RssRstMagic[0]), sizeof(radm1::kM1RssRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(rss_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -649,6 +677,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += neint*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
   data_size += nck*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
   data_size += nctr*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
+  data_size += nrss*nout1*nout2*nout3*sizeof(Real);     // rad_signal_speed inputs
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -693,6 +722,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nctr > 0) {
     step3size += sizeof(radm1::kM1CtrRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ctr_hdr);
+  }
+  if (nrss > 0) {
+    step3size += sizeof(radm1::kM1RssRstMagic) + sizeof(IOWrapperSizeT) + sizeof(rss_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1188,6 +1220,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<nctr; ++n) {
     write_wtemp(Kokkos::subview(outarray_m1c, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 thin_relax closure");
+  }
+  // and the rad_signal_speed inputs behind it (kM1RssRstMagic)
+  for (int n=0; n<nrss; ++n) {
+    write_wtemp(Kokkos::subview(outarray_m1s, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "rad_signal_speed inputs");
   }
 
   // close file, clean up

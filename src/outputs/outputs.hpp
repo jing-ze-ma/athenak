@@ -304,6 +304,9 @@ class BaseTypeOutput {
   // <rad_m1> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
   // radm1::kM1CtrRstMagic.
   HostArray5D<Real> outarray_m1c;
+  // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationM1::RssSlot);
+  // empty unless the signal speed is on.  radm1::kM1RssRstMagic.
+  HostArray5D<Real> outarray_m1s;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

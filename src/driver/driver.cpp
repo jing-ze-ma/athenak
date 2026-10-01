@@ -354,6 +354,12 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   radiation::Radiation *prad = pmesh->pmb_pack->prad;
   z4c::Z4c *pz4c = pmesh->pmb_pack->pz4c;
   if (time_evolution != TimeEvolution::tstatic) {
+    // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (restored, or opac of
+    // the initial state) before the first dt; see RadiationM1::RssPrime
+    if (phydro != nullptr && phydro->rad_signal_speed &&
+        pmesh->pmb_pack->pradm1 != nullptr) {
+      pmesh->pmb_pack->pradm1->RssPrime(res_flag);
+    }
     if (phydro != nullptr) {
       (void) pmesh->pmb_pack->phydro->NewTimeStep(this, nexp_stages);
     }

@@ -884,6 +884,22 @@ class RadiationM1 {
   Real impl_ctrelax;
   bool ctr_init;
   DvceArray5D<Real> ctr_mem;
+  // <hydro>/rad_signal_speed (hydro_newdt.cpp) reads opac(M1_OP_T) and the closure
+  // tensor of the LAST M1 step, which a restart used to lose: the restarted run then
+  // took one gas-speed-only step and its dt departed from the straight run's.  The
+  // inputs travel in the restart file (kM1RssRstMagic) and are put back, or, on a fresh
+  // start or a file without them, opac is filled from the initial state, before the
+  // first dt (RssPrime, called from Driver::Initialize).
+  //! the closure tensor the signal speed reads: 0 E/3, 1 M1Chi(F/cE), 2 tau_ten,
+  //! 3 vet_cell (chi, n), 4 vet_cell (D_dd); the mode selection of hydro_newdt.cpp
+  int RssMode() const;
+  int RssRstNch(int mode) const;  // channels written: opac(M1_OP_T) + the tensor's
+  //! the array and channel holding restart channel n of a given mode
+  void RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c);
+  void RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode);
+  void RssPrime(bool restart);
+  DvceArray5D<Real> rss_stage;   // (nmb, nch, k, j, i) read from the restart file
+  int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged
   bool impl_clag_step;          // <rad_m1>/implicit_closure_lag = step: freeze chi and n
                                 // at the START-of-step state for the whole step, so each
                                 // step is one linear solve plus the T nonlinearity
