@@ -885,7 +885,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Jacobian from the factorisation); faces 1-4 on the chain kernel only
   const bool vef_lin_ok = two_stream_rt::ck_impl_lin_thr == 1 &&
       pin->GetOrAddInteger("problem","ck_nquad",2) == 2 &&
-      two_stream_rt::ck_impl_jac_lin &&
       two_stream_rt::ck_dif_dtau <= 0.0;
   const bool lin_on = two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin;
   if (two_stream_rt::ck_sph_face < 0 || two_stream_rt::ck_sph_face > 5 ||
@@ -898,8 +897,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_face must be "
               << "0..5, and != 0 needs ck_spherical and ck_sweep_form = 1; 1..4 need "
               << "ck_impl_lin = false and ck_impl_jac_lin = false; 5 with ck_impl_lin "
-              << "needs ck_impl_lin_thr = 1, ck_nquad = 2, ck_impl_jac_lin and "
-              << "ck_dif_dtau = 0; 3 and 4 also need ck_dif_dtau = 0, 5 ck_sph_top != 2"
+              << "needs ck_impl_lin_thr = 1, ck_nquad = 2 and ck_dif_dtau = 0; 3 and 4 "
+              << "also need ck_dif_dtau = 0, 5 ck_sph_top != 2"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
