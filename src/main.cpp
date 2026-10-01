@@ -441,7 +441,8 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-  pinput->ModifyFromCmdline(argc, argv);
+  // a restart may ADD keys its embedded input predates (parameter_input.cpp)
+  pinput->ModifyFromCmdline(argc, argv, res_flag);
   if (res_flag) CheckRestartPotentialKeys(pinput, rst_potential_keys);
 
   // Dump input parameters and quit if code was run with -n option.

@@ -1327,5 +1327,29 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
+  // m1_face: the transported face-normal comoving fluxes (basetype_output.cpp)
+  if (name.compare("m1_face") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto fx1 = prm->f0x1;
+    auto fx2 = prm->f0x2;
+    auto fx3 = prm->f0x3;
+    const bool h1 = (fx1.extent_int(0) >= nmb) && (fx1.extent_int(3) > ie + 1);
+    const bool h2 = prm->trans_on && (fx2.extent_int(0) >= nmb) &&
+                    (fx2.extent_int(2) > je);
+    const bool h3 = prm->trans_on && prm->trans_x3 && (fx3.extent_int(0) >= nmb) &&
+                    (fx3.extent_int(1) > ke);
+    par_for("m1_face_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      dv(m,i_dv  ,k,j,i) = h1 ? fx1(m,k,j,i) : 0.0;
+      dv(m,i_dv+1,k,j,i) = h1 ? fx1(m,k,j,i+1) : 0.0;
+      dv(m,i_dv+2,k,j,i) = h2 ? fx2(m,k,j,i) : 0.0;
+      dv(m,i_dv+3,k,j,i) = h3 ? fx3(m,k,j,i) : 0.0;
+    });
+    i_dv += 4;
+  }
+
   i_dv = i_dv % n_dv; // reset derived variable index
 }

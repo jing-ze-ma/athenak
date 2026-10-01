@@ -335,6 +335,17 @@ Mesh::Mesh(ParameterInput *pin) :
               << "RADIAL stretches are supported." << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // ...and on a Cartesian mesh every stretch would be silently IGNORED (the hydro/MHD
+  // Cartesian coordinates are uniform; rad_m1 refuses them separately).
+  if (!use_spherical_polar && !use_cubed_sphere &&
+      (use_grid_stretch_r || use_grid_stretch_r_poly || use_grid_stretch_theta)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "mesh/use_grid_stretch_r, use_grid_stretch_r_poly and "
+              << "use_grid_stretch_theta act only with mesh/use_spherical_polar or "
+              << "mesh/use_cubed_sphere; on this Cartesian mesh they would be ignored. "
+              << "Remove them (or set them false)." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
   use_polar_quadratic_recon = pin->GetOrAddBoolean("mesh", "polar_quadratic_recon",
                                                     false);
