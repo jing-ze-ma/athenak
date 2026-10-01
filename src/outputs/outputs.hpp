@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 161
+#define NOUTPUT_CHOICES 162
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -108,7 +108,10 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   "m1_e", "m1_f1", "m1_f2", "m1_f3", "m1",
 
   // self-gravity potential (160)
-  "grav_phi"
+  "grav_phi",
+
+  // grey M1 radiation: the closure's Eddington factor and tensor diagonal (161)
+  "m1_vet"
 };
 
 

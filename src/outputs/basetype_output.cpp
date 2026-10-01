@@ -195,6 +195,13 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << std::endl << "Input file is likely missing corresponding block" << std::endl;
     exit(EXIT_FAILURE);
   }
+  if (ivar==161 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output of the M1 Eddington tensor requested in <output> block '"
+       << out_params.block_name << "' but no RadiationM1 object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==160 && (pm->pmb_pack->pgrav == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of gravity potential requested in <output> block '"
@@ -657,6 +664,19 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     }
     if (variable.compare("m1_f3") == 0 || variable.compare("m1") == 0) {
       outvars.emplace_back("m1_f3",radm1::M1_F3,&(pm->pmb_pack->pradm1->u0));
+    }
+
+    // the M1 closure's Eddington factor f_K (= chi along the closure axis) and the
+    // diagonal of the Eddington tensor D = P/E in the coordinate basis (D_11 = D_rr on
+    // the spherical-polar wedge), so that P_rad,aa = D_aa E is exact in post-processing.
+    // Derived (derived_variables.cpp); not part of variable = m1.
+    if (variable.compare("m1_vet") == 0) {
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_fk",0,&(derived_var));
+      outvars.emplace_back("m1_d11",1,&(derived_var));
+      outvars.emplace_back("m1_d22",2,&(derived_var));
+      outvars.emplace_back("m1_d33",3,&(derived_var));
+      out_params.n_derived += 4;
     }
 
     // turbulent forcing

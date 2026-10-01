@@ -27,6 +27,9 @@
 #include "mhd/mhd.hpp"
 #include "radiation/radiation.hpp"
 #include "radiation/radiation_tetrad.hpp"
+#include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_closure.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 #include "particles/particles.hpp"
 #include "outputs.hpp"
 #include "utils/current.hpp"
@@ -1255,5 +1258,74 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       pdens(m,0,kp,jp,ip) += 1.0;
     });
   }
+  // grey M1: the Eddington factor f_K of the closure and the diagonal of D = P/E
+  // (coordinate basis) the transport used for the state being written.
+  //   implicit transport, after the first solve: the lagged closure (chi, n) the last
+  //     Picard pass handed to the operator, stored in the work array iw (every closure:
+  //     m1/minerbo/kershaw chi(|F|/cE), eddington 1/3, tau, vet_col via tau_ten, vet_sc);
+  //     vet_sc + vet_tensor = full: the guarded D of the formal solution (vet_cell).
+  //     implicit_x1 (or a 1-D mesh): chi along x1.
+  //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
+  //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
+  //     written and D = 1/3 (isotropic) as a placeholder.
+  if (name.compare("m1_vet") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto u0_ = prm->u0;
+    auto iw_ = prm->iw;
+    auto vc_ = prm->vet_cell;
+    const bool impl = (prm->transport != radm1::M1_TRANSPORT_EXPLICIT) &&
+                      (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radm1::M1_IW_WCHI);
+    const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radm1::M1_IW_N3);
+    const bool dfull = impl && prm->vet_sc && prm->vet_full;
+    const bool notens = !impl && (prm->tau_closure || prm->vet_col);
+    const bool edd = prm->eddington;
+    const int chk = prm->chi_kind;
+    const Real cl = prm->c_light;
+    const Real efl = prm->e_floor;
+    par_for("m1_vet_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real chi = 1.0/3.0, n1 = 1.0, n2 = 0.0, n3 = 0.0;
+      if (impl) {
+        chi = iw_(m,radm1::M1_IW_WCHI,k,j,i);
+        if (itrans) {
+          n1 = iw_(m,radm1::M1_IW_N1,k,j,i);
+          n2 = iw_(m,radm1::M1_IW_N2,k,j,i);
+          n3 = iw_(m,radm1::M1_IW_N3,k,j,i);
+        }
+      } else if (!notens) {
+        Real e = fmax(u0_(m,radm1::M1_E,k,j,i), efl);
+        Real f1 = u0_(m,radm1::M1_F1,k,j,i);
+        Real f2 = u0_(m,radm1::M1_F2,k,j,i);
+        Real f3 = u0_(m,radm1::M1_F3,k,j,i);
+        Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
+        chi = edd ? (1.0/3.0) : radm1::M1Chi(fmin(fm/(cl*e), 1.0), chk);
+        if (fm > 0.0) {
+          n1 = f1/fm;
+          n2 = f2/fm;
+          n3 = f3/fm;
+        }
+      }
+      Real d11 = radm1::M1EddDiag(chi, n1);
+      Real d22 = radm1::M1EddDiag(chi, n2);
+      Real d33 = radm1::M1EddDiag(chi, n3);
+      if (dfull) {
+        d11 = vc_(m,radm1::M1_VET_D11,k,j,i);
+        d22 = vc_(m,radm1::M1_VET_D11+1,k,j,i);
+        d33 = vc_(m,radm1::M1_VET_D11+2,k,j,i);
+      }
+      if (notens) {
+        chi = -1.0;
+      }
+      dv(m,i_dv  ,k,j,i) = chi;
+      dv(m,i_dv+1,k,j,i) = d11;
+      dv(m,i_dv+2,k,j,i) = d22;
+      dv(m,i_dv+3,k,j,i) = d33;
+    });
+    i_dv += 4;
+  }
+
   i_dv = i_dv % n_dv; // reset derived variable index
 }
