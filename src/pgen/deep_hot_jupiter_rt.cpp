@@ -1321,12 +1321,53 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_fuse = pin->GetOrAddBoolean("problem","ck_impl_fuse",t4def);
   two_stream_rt::ck_impl_jac_lin = pin->GetOrAddBoolean("problem","ck_impl_jac_lin",
       t4def && two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_lin_thr == 1);
-  two_stream_rt::ck_sph_top = pin->GetOrAddInteger("problem","ck_sph_top",0);
-  // problem/ck_sph_face (prototype, default 0): see two_stream_rt::ck_sph_face.
-  // problem/ck_sph_dilute = true is the older spelling of ck_sph_face = 1.
+  // problem/ck_sph_face: see two_stream_rt::ck_sph_face.  problem/ck_sph_dilute = true
+  // is the older spelling of ck_sph_face = 1.
+  // f6-default (user 10-02): on a FRESH spherical ck run (rt_ck, ck_spherical, tm sweep)
+  // the default is 6, the monotone VEF ladder, with its companions ck_sph_top = 1 and
+  // (via ck_vef_on below) ck_vef_every = 150, ck_impl_rowfb = true, ck_impl_rsec = 4: the
+  // validated WASP-121b production combination (ckf6_mono_1001, ckf6_cs_mhd_1001).
+  // Face 6 needs the production linear Newton (f6_ok below).  When a key that face 6
+  // cannot run with is set (or defaults off) and ck_sph_face is not named, the default
+  // falls back to 0 (the historical Eddington face) with a WARNING; the regression
+  // inputs (ck_nquad = 1, the semi-implicit apply) rely on that.  On a RESTART the
+  // default stays 0: the value is recorded, so a file written by a binary that knew the
+  // key keeps its face, and a file written before the key existed ran face 0.  Explicit
+  // keys always win.
   two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
+  {const bool f6_cand = !restart && !two_stream_rt::ck_sph_dilute && rt_ck &&
+       ck_spherical && two_stream_rt::ck_sweep_form == 1 &&
+       !pin->DoesParameterExist("problem","ck_sph_face");
+  bool f6_def = false;
+  if (f6_cand) {
+    // the requirements of face 6 (as f6_ok below), ck_sph_top = 1 unless named
+    const int top_named = pin->DoesParameterExist("problem","ck_sph_top") ?
+                          pin->GetInteger("problem","ck_sph_top") : 1;
+    const int nq_named = pin->DoesParameterExist("problem","ck_nquad") ?
+                         pin->GetInteger("problem","ck_nquad") : 2;
+    std::string why;
+    if (!two_stream_rt::ck_implicit) why += " ck_implicit = false;";
+    if (!two_stream_rt::ck_impl_frozen_op) why += " ck_impl_frozen_op = false;";
+    if (!two_stream_rt::ck_impl_lin) why += " ck_impl_lin = false;";
+    if (!two_stream_rt::ck_impl_jac_lin) why += " ck_impl_jac_lin = false;";
+    if (two_stream_rt::ck_impl_lin_thr != 1) why += " ck_impl_lin_thr != 1;";
+    if (nq_named != 2) why += " ck_nquad != 2;";
+    if (two_stream_rt::ck_dif_dtau > 0.0) why += " ck_dif_dtau > 0;";
+    if (top_named != 1) why += " ck_sph_top != 1;";
+    f6_def = why.empty();
+    if (!f6_def && global_variable::my_rank == 0) {
+      std::cout << "### WARNING in deep_hot_jupiter_rt: problem/ck_sph_face is not set "
+                << "and its default (6) cannot run with" << why << " falling back to "
+                << "ck_sph_face = 0 (Eddington face).  Name ck_sph_face to silence this."
+                << std::endl;
+    }
+  }
   two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
-                                                    two_stream_rt::ck_sph_dilute ? 1 : 0);
+      f6_def ? 6 : (two_stream_rt::ck_sph_dilute ? 1 : 0));}
+  // problem/ck_sph_top: see two_stream_rt::ck_sph_top; default 1 (vacuum top) with face
+  // 6, which needs it, else 0 (bitwise the historical datum)
+  two_stream_rt::ck_sph_top = pin->GetOrAddInteger("problem","ck_sph_top",
+      two_stream_rt::ck_sph_face == 6 ? 1 : 0);
   // ck_sph_face = 6 (the M-matrix form of the VEF closure) reads the same formal
   // solution, refresh, restart state and face-5 Newton defaults
   two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5 ||
