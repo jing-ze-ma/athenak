@@ -880,24 +880,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
   two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
                                                     two_stream_rt::ck_sph_dilute ? 1 : 0);
+  // face 5 runs on the production linear path (ck_impl_lin, the paired tier, its
+  // Jacobian from the factorisation); faces 1-4 on the chain kernel only
+  const bool vef_lin_ok = two_stream_rt::ck_impl_lin_thr == 1 &&
+      pin->GetOrAddInteger("problem","ck_nquad",2) == 2 &&
+      two_stream_rt::ck_impl_jac_lin &&
+      two_stream_rt::ck_dif_dtau <= 0.0;
+  const bool lin_on = two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin;
   if (two_stream_rt::ck_sph_face < 0 || two_stream_rt::ck_sph_face > 5 ||
       (two_stream_rt::ck_sph_face != 0 &&
-       (!two_stream_rt::ck_spherical || two_stream_rt::ck_sweep_form != 1 ||
-        two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin)) ||
+       (!two_stream_rt::ck_spherical || two_stream_rt::ck_sweep_form != 1)) ||
+      (two_stream_rt::ck_sph_face >= 1 && two_stream_rt::ck_sph_face <= 4 && lin_on) ||
+      (two_stream_rt::ck_sph_face == 5 && lin_on && !vef_lin_ok) ||
       (two_stream_rt::ck_sph_face >= 3 && two_stream_rt::ck_dif_dtau > 0.0) ||
       (two_stream_rt::ck_sph_face == 5 && two_stream_rt::ck_sph_top == 2)) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_face must be "
-              << "0..5, and != 0 needs ck_spherical, ck_sweep_form = 1, "
-              << "ck_impl_lin = false and ck_impl_jac_lin = false; 3 and 4 also "
-              << "need ck_dif_dtau = 0, 5 ck_sph_top != 2" << std::endl;
+              << "0..5, and != 0 needs ck_spherical and ck_sweep_form = 1; 1..4 need "
+              << "ck_impl_lin = false and ck_impl_jac_lin = false; 5 with ck_impl_lin "
+              << "needs ck_impl_lin_thr = 1, ck_nquad = 2, ck_impl_jac_lin and "
+              << "ck_dif_dtau = 0; 3 and 4 also need ck_dif_dtau = 0, 5 ck_sph_top != 2"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // problem/ck_sph_top (prototype, default 0): see two_stream_rt::ck_sph_top
   if (two_stream_rt::ck_sph_top < 0 || two_stream_rt::ck_sph_top > 2 ||
-      (two_stream_rt::ck_sph_top != 0 &&
-       (two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin))) {
+      (two_stream_rt::ck_sph_top == 2 && lin_on)) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_top must be "
-              << "0..2, and != 0 needs ck_impl_lin = false and ck_impl_jac_lin = false"
+              << "0..2, and 2 needs ck_impl_lin = false and ck_impl_jac_lin = false"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }

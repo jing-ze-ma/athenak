@@ -790,11 +790,12 @@ struct CkJlP1 {
 //! \fn void CkJlP1Step
 //! \brief one layer (cell i) of pass 1, shared by rt_chain_ck_jlin and ck_lin_build
 //! (which fuses pass 1 on the pass that builds the tridiagonal): the same expressions
-//! in one place.  up = (i < ie); wl, wu, ffj are then lP slots 5-7 of the layer i, i+1.
+//! in one place.  up = (i < ie); wl, wu, ffj are then lP slots 5-7 of the layer i, i+1;
+//! face i maps R to r1 and Sc to c1 Sc (CkJlP1Step: the Eddington face; CkVefMap).
 KOKKOS_INLINE_FUNCTION
-void CkJlP1Step(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Real ffj,
-                const Real ci, const Real co, const Real e0, const Real rj,
-                const Real idn, const Real bt) {
+void CkJlP1StepRC(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Real ffj,
+                  const Real ci, const Real co, const Real e0, const Real r1,
+                  const Real c1) {
   // slots (B_{i-1}, B_i, B_{i+1}); the first is 0 for all three
   Real dlv1 = 1.0, dlv2 = 0.0, duu1 = 1.0, duu2 = 0.0;
   Real dfw1 = 1.0, dfw2 = 0.0;
@@ -808,9 +809,7 @@ void CkJlP1Step(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Re
     dfw2 = 1.0 - dfl;
   }
   const Real tj = 1.0 - e0;
-  const Real r1 = (rj + bt)*idn;
   const Real r2 = tj*tj*r1;
-  const Real c1 = (1.0 - bt)*idn;
   auto upd = [&](const Real dsf, const Real dsu, const Real dlv, const Real dfw,
                  const Real so) {
     const Real dpl = ci*dsf + co*dsu;
@@ -830,6 +829,27 @@ void CkJlP1Step(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Re
   w.fc1 = dfw2;
   w.uc0 = duu1;
   w.uc1 = duu2;
+}
+//! \fn void CkJlP1Step
+//! \brief CkJlP1StepRC with the Eddington face's map of face i, r1 = (R + beta)/(1 +
+//! R beta) and c1 = (1 - beta)/(1 + R beta) (idn = 1/(1 + R beta))
+KOKKOS_INLINE_FUNCTION
+void CkJlP1Step(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Real ffj,
+                const Real ci, const Real co, const Real e0, const Real rj,
+                const Real idn, const Real bt) {
+  const Real r1 = (rj + bt)*idn;
+  const Real c1 = (1.0 - bt)*idn;
+  CkJlP1StepRC(w, up, wl, wu, ffj, ci, co, e0, r1, c1);
+}
+//! \fn void CkVefMap
+//! \brief problem/ck_sph_face = 5 (two_stream_rt::ck_sph_face): the face map of the VEF
+//! jump conditions on the relation u = R d + Sc below a face, rp = rho' = (A_b/A_a)
+//! s_b/s_a and gm = gamma: above it R' = r1, Sc' = c1 Sc (the chain kernel's tm map)
+KOKKOS_INLINE_FUNCTION
+void CkVefMap(const Real rj, const Real rp, const Real gm, Real &r1, Real &c1) {
+  const Real ev = (1.0 + rj) + gm*rp*(1.0 - rj);
+  r1 = 1.0 - 2.0*gm*rp*(1.0 - rj)/ev;
+  c1 = 2.0*rp/ev;
 }
 //! \fn CkJlP1 CkJlP1Init
 //! \brief the window at the cut; gdf >= 0: the flux datum of a ck_dif_dtau handover

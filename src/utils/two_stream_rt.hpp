@@ -1365,6 +1365,8 @@ inline int ck_sph_top = 0;
 // every face, so the deposit telescopes.  The quadrature in mu is normalised so that
 // an isotropic field gives f = 1/3 and a hemispherically isotropic one h = 1/2 to
 // round-off.
+// With ck_impl_lin (production path) face 5 needs ck_impl_lin_thr = 1, ck_nquad = 2
+// and ck_impl_jac_lin.
 inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
@@ -7222,6 +7224,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                        : CkDum<DvceArray5D<Real>>("ck_vef_s_d");
         auto vfg_ = (ck_sph_face == 5) ? *ck_vef_g_ptr
                                        : CkDum<DvceArray5D<Real>>("ck_vef_g_d");
+        // the linear re-apply kernels' names for the same (ck_sph_face = 5)
+        const bool vefl_ = (ck_sph_face == 5);
+        auto vfs_g = vfs_;
+        auto vfg_g = vfg_;
         auto ck_chain_ctx = std::forward_as_tuple(ACC, AFC, albedo, ap, Bb_g, bface_on,
                                                   boltz_sigma, BTF, cbt_, cf_g, ckc0_g,
                                                   ckci_g, ckco_g, ckdb_g, ckdif_,
@@ -7467,7 +7473,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int cc=0; cc<NC; ++cc) {
                 const int c = blk*NC + cc;
                 const int b = bandc[cc];
-                const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
+                // problem/ck_sph_top = 1: nothing comes down from above
+                const Real da = (tpm_ == 1) ? 0.0 : cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
                 const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
                 const Real ub = (rr*(1.0 + bt)*da + Sc[cc][ie+1])
                               * CkIdn(lP_g(m,0*nch_+c,ie+1,k,j), lG_g(m,0,ie+1,k,j));
@@ -7649,7 +7656,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             Real dcu, ubf, slc, sfu;
             {
               const Real bt = lG_g(m,0,ie+1,k,j);
-              const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
+              // problem/ck_sph_top = 1: nothing comes down from above
+              const Real da = (tpm_ == 1) ? 0.0 : cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
               const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
               const Real ub = (rr*(1.0 + bt)*da + Sc[ie+1])*CkIdn(rr, bt);
               const Real db = da + bt*(da - ub);
@@ -7748,6 +7756,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 if (gdf >= 0.0) ss[q] = gdf*(Bb_g(m,b,icut-1,k,j) - bcut);
               }
             }
+            // ck_sph_face = 5: the Marshak-type wall, Sc = (B + Iint) (1 + beta/2)/(1 +
+            // beta mu_eff) (its R is the one ck_lin_build stored at the cut); the pair
+            // (b, g) = pp has one s = sqrt(3 f) per frame, its two angles one mu_eff
+            if (vefl_) {
+              const Real bw = vfs_g(m,pp,icut,k,j)/SQRT3_VEF;
+              const Real bwb = vfg_g(m,pp,icut-1,k,j);
+              const Real vs0 = (1.0 + 0.5*bwb)/(1.0 + bwb*bw);
+              for (int q=0; q<2; ++q) ss[q] = (bcut + lC_g(1,c0+q))*vs0;
+            }
             Real bown = bcut;
             // ck-next: every load of cell i+1 is issued before cell i is worked (the
             // stores keep the compiler from hoisting them): the same arithmetic
@@ -7771,11 +7788,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real bt = bt_n;
               const Real bnx = bnx_n;
               const Real krov = kro_n, dzv = dz_n, kruv = kro_u, dzuv = dz_u;
-              Real e0v[2], r0v[2];
+              Real e0v[2], r0v[2], muv[2];
               for (int q=0; q<2; ++q) {
-                e0v[q] = CkE0(krov, dzv, mug[q]);
+                muv[q] = mug[q];
                 r0v[q] = r0_n[q];
               }
+              // ck_sph_face = 5: both angles at mu_eff = s/sqrt 3 of cell i; rp and
+              // gamma of face i
+              Real vrp = 1.0, vgm = 1.0;
+              if (vefl_) {
+                const Real vsa = vfs_g(m,pp,i+1,k,j);
+                muv[0] = vsa/SQRT3_VEF;
+                muv[1] = muv[0];
+                vrp = (1.0 - bt)/(1.0 + bt)*vfs_g(m,pp,i,k,j)/vsa;
+                vgm = vfg_g(m,pp,i,k,j);
+              }
+              for (int q=0; q<2; ++q) e0v[q] = CkE0(krov, dzv, muv[q]);
               if (i < ie) {
                 bt_n = lG_g(m,0,i+1,k,j);
                 kro_n = kro_u;
@@ -7800,16 +7828,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int q=0; q<2; ++q) {
                 const Real e0 = e0v[q];
                 Real cin, cout;
-                CkCinCout(krov, dzv, mug[q], e0, cin, cout);
+                CkCinCout(krov, dzv, muv[q], e0, cin, cout);
                 const Real tr = 1.0 - e0;
                 const Real pl = cin*sfc + cout*suc;
                 const Real ql = cin*suc + cout*sfc;
                 const Real pu = cin*slv + cout*sfv;
                 const Real qu = cin*sfv + cout*slv;
                 Scr[q][i] = ss[q];
-                const Real idn = CkIdn(r0v[q], bt);
-                const Real rn = (r0v[q] + bt)*idn;
-                Real sv = (1.0 - bt)*ss[q]*idn;
+                Real rn, sv;
+                if (vefl_) {
+                  Real c1;
+                  CkVefMap(r0v[q], vrp, vgm, rn, c1);
+                  sv = c1*ss[q];
+                } else {
+                  const Real idn = CkIdn(r0v[q], bt);
+                  rn = (r0v[q] + bt)*idn;
+                  sv = (1.0 - bt)*ss[q]*idn;
+                }
                 sv = tr*(rn*ql + sv) + pl;
                 const Real r2 = tr*tr*rn;
                 ss[q] = tr*(r2*qu + sv) + pu;
@@ -7826,8 +7861,30 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int q=0; q<2; ++q) {
                 const int c = c0 + q;
                 Scr[q][ie+1] = ss[q];
-                const Real da = cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
+                // problem/ck_sph_top = 1: nothing comes down from above
+                const Real da = (tpm_ == 1) ? 0.0
+                              : cktpf_g(m,c,k,j)*Bb_g(m,b,ie+1,k,j);
                 const Real rr = lP_g(m,0*nch_+c,ie+1,k,j);
+                if (vefl_) {
+                  // ck_sph_face = 5: the down ray reflected at the top (Auer's
+                  // H = h J), d_a = (zeta Sc' + datum)/(1 - zeta R'), then the face
+                  // solve of the jump conditions (the chain kernel's vsolve)
+                  const Real vsb = vfs_g(m,pp,ie+1,k,j);
+                  const Real vrp = (1.0 - bt)/(1.0 + bt)*vsb/vfs_g(m,pp,ie+2,k,j);
+                  const Real vgm = vfg_g(m,pp,ie+1,k,j);
+                  const Real zt = vfg_g(m,pp,ie+2,k,j);
+                  const Real ev = (1.0 + rr) + vgm*vrp*(1.0 - rr);
+                  const Real rup = 1.0 - 2.0*vgm*vrp*(1.0 - rr)/ev;
+                  const Real sup = 2.0*vrp*ss[q]/ev;
+                  const Real dat = (zt*sup + da)/(1.0 - zt*rup);
+                  const Real db = (2.0*vgm*dat - (1.0 - vgm*vrp)*ss[q])/ev;
+                  const Real ub = rr*db + ss[q];
+                  fq[q] = CkMulRn(wfc[q]*vsb/(SQRT3_VEF*mug[q])*(ub - db),
+                                  lG_g(m,2,ie+1,k,j));
+                  dcu[q] = db;
+                  ubf[q] = ub;
+                  continue;
+                }
                 const Real ub = (rr*(1.0 + bt)*da + Scr[q][ie+1])
                               *CkIdn(rr, bt);
                 const Real db = da + bt*(da - ub);
@@ -7868,12 +7925,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real g1 = g1_p, g2 = g2_p, g3 = g3_p;
               const Real bnx = bnx_p;
               const Real krov = kro_p, dzv = dz_p, krlv = kro_l, dzlv = dz_l;
-              Real e0v[2], r0v[2], scv[2];
+              Real e0v[2], r0v[2], scv[2], muv[2];
               for (int q=0; q<2; ++q) {
-                e0v[q] = CkE0(krov, dzv, mug[q]);
+                muv[q] = mug[q];
                 r0v[q] = r0_p[q];
                 scv[q] = sc_p[q];
               }
+              // ck_sph_face = 5: s below face i (vsb) and in cell i (vsa), gamma
+              Real vsb = 1.0, vsa = 1.0, vgm = 1.0;
+              if (vefl_) {
+                vsb = vfs_g(m,pp,i,k,j);
+                vsa = vfs_g(m,pp,i+1,k,j);
+                vgm = vfg_g(m,pp,i,k,j);
+                muv[0] = vsa/SQRT3_VEF;
+                muv[1] = muv[0];
+              }
+              for (int q=0; q<2; ++q) e0v[q] = CkE0(krov, dzv, muv[q]);
               if (i > icut) {
                 bt_p = lG_g(m,0,i-1,k,j);
                 kro_p = kro_l;
@@ -7905,9 +7972,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int q=0; q<2; ++q) {
                 const Real e0 = e0v[q];
                 Real cin, cout;
-                CkCinCout(krov, dzv, mug[q], e0, cin, cout);
+                CkCinCout(krov, dzv, muv[q], e0, cin, cout);
                 const Real tr = 1.0 - e0;
-                const Real wz = wfc[q]*g3;
+                const Real wz = vefl_ ? wfc[q]*vsa/(SQRT3_VEF*mug[q])*g3 : wfc[q]*g3;
                 Real src = 0.0;
                 Real dI = dcu[q];
                 Real eh = cin*sfu + cout*slc;
@@ -7917,11 +7984,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 src += wz*(e0*dI - eh);
                 dI = tr*dI + eh;
                 const Real rr = r0v[q];
-                const Real ub = (rr*(1.0 + bt)*dI + scv[q])*CkIdn(rr, bt);
-                const Real db = dI + bt*(dI - ub);
-                const Real dm = ub - db;
-                fq[q] = CkMulRn(wfc[q]*dm, g2);   // not contracted into the add
-                Real ua = dI + dm*g1;
+                Real ub, db, dm, ua;
+                if (vefl_) {
+                  // ck_sph_face = 5: the face solve of the jump conditions
+                  const Real ratv = g1*vsb/vsa;
+                  const Real ev = (1.0 + rr) + vgm*ratv*(1.0 - rr);
+                  db = (2.0*vgm*dI - (1.0 - vgm*ratv)*scv[q])/ev;
+                  ub = rr*db + scv[q];
+                  dm = ub - db;
+                  fq[q] = CkMulRn(wfc[q]*vsb/(SQRT3_VEF*mug[q])*dm, g2);
+                  ua = dI + dm*ratv;
+                } else {
+                  ub = (rr*(1.0 + bt)*dI + scv[q])*CkIdn(rr, bt);
+                  db = dI + bt*(dI - ub);
+                  dm = ub - db;
+                  fq[q] = CkMulRn(wfc[q]*dm, g2);   // not contracted into the add
+                  ua = dI + dm*g1;
+                }
                 dcu[q] = db;
                 eh = cin*sfv + cout*suv;
                 src += wz*(e0*ua - eh);
@@ -8037,10 +8116,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // and, with the pair (ck-next: CkCinCout), stored only when a reader
                 // still reads it (ckcst_)
                 if (ckcst_) {
-                  const Real e0 = CkE0(kro, dz, muq[q]);
+                  // ck_sph_face = 5: the triple at mu_eff = s/sqrt 3 of cell i (the
+                  // chain kernel's dthe), for a frozen chain kernel that reads it
+                  const Real mqv = vefl_ ? vfs_g(m,c0/nqc,i+1,k,j)/SQRT3_VEF : muq[q];
+                  const Real e0 = CkE0(kro, dz, mqv);
                   ckc0_g(m,c,i,k,j) = e0;
                   Real cin, cout;
-                  CkCinCout(kro, dz, muq[q], e0, cin, cout);
+                  CkCinCout(kro, dz, mqv, e0, cin, cout);
                   ckci_g(m,c,i,k,j) = cin;
                   ckco_g(m,c,i,k,j) = cout;
                 }
@@ -8386,6 +8468,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               RtF rr = static_cast<RtF>(0.0);
               if (ckdif_ && gdf >= 0.0) rr = static_cast<RtF>(1.0);
               CkJlP1 w = CkJlP1Init(gdf);
+              // ck_sph_face = 5 (ck_nquad = 2: the pair c/2 is the (band, g) of the
+              // formal solution): the Marshak-type wall, R0 = -(1 - beta mu_eff)/(1 +
+              // beta mu_eff), dSc_cut/dB_cut = (1 + beta/2)/(1 + beta mu_eff)
+              const int cv = c/2;
+              if (vefl_) {
+                const Real bwb = vfg_g(m,cv,icut-1,k,j);
+                const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
+                rr = static_cast<RtF>(-(1.0 - bwb*mw)/(1.0 + bwb*mw));
+                w.s2 = (1.0 + 0.5*bwb)/(1.0 + bwb*mw);
+              }
               // ck-next: the loads of cell i+1 are issued before cell i is worked
               // (the stores below keep the compiler from hoisting them itself)
               Real btr_n = lG_g(m,0,icut,k,j), dz_n = lG_g(m,4,icut,k,j);
@@ -8395,7 +8487,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int i=icut; i<ie+1; ++i) {
                 const Real btr = btr_n, dz = dz_n;
                 const Real kro = kro_n;
-                const Real e0 = CkE0(kro, dz, muc);
+                // ck_sph_face = 5: cell i at mu_eff = s/sqrt 3; rp and gamma of face i
+                Real mue = muc, vrp = 1.0, vgm = 1.0;
+                if (vefl_) {
+                  const Real vsa = vfs_g(m,cv,i+1,k,j);
+                  mue = vsa/SQRT3_VEF;
+                  vrp = (1.0 - btr)/(1.0 + btr)*vfs_g(m,cv,i,k,j)/vsa;
+                  vgm = vfg_g(m,cv,i,k,j);
+                }
+                const Real e0 = CkE0(kro, dz, mue);
                 if (i < ie) {
                   btr_n = lG_g(m,0,i+1,k,j);
                   dz_n = lG_g(m,4,i+1,k,j);
@@ -8406,7 +8506,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real rj = static_cast<Real>(rr);
                 const Real idn = CkIdn(rj, btr);   // ck-next: as the readers form it
                 lP_g(m,0*nch_+c,i,k,j) = rj;
-                const RtF rn = (rr + bb)/dn;
+                RtF rn = (rr + bb)/dn;
+                Real vr1 = 0.0, vc1 = 0.0;
+                if (vefl_) {
+                  CkVefMap(rj, vrp, vgm, vr1, vc1);
+                  rn = static_cast<RtF>(vr1);
+                }
                 // ck-jlin: the half-layer triple is NOT copied (ck-store: lP has no
                 // slots for it any more): the linear kernels read ckc0/ckci/ckco,
                 // which this pass stored and which stay frozen with the rest of the
@@ -8434,8 +8539,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   lps_g(m,c,i,k,j) = w.s1;
                   lpjb_g(m,c,i,k,j) = w.s2;
                   Real ci, co;
-                  CkCinCout(kro, dz, muc, e0, ci, co);
-                  CkJlP1Step(w, i < ie, wl, wu, ffj, ci, co, e0, rj, idn, btr);
+                  CkCinCout(kro, dz, mue, e0, ci, co);
+                  if (vefl_) {
+                    CkJlP1StepRC(w, i < ie, wl, wu, ffj, ci, co, e0, vr1, vc1);
+                  } else {
+                    CkJlP1Step(w, i < ie, wl, wu, ffj, ci, co, e0, rj, idn, btr);
+                  }
                 }
               }
               if (ckjfus_) {
@@ -8486,6 +8595,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // ck_dif_dtau: the flux datum g_c (B_{cut-1} - B_cut) of a handover
                 // column, whose row at the cut then couples to the deep cell below
                 const Real gdf = ckdif_ ? difg_g(m,c,k,j) : -1.0;
+                // ck_sph_face = 5: the pair c/2 is the formal solution's (band, g)
+                const int cv = c/2;
                 Real jS0, jS1, jS2;
                 if (jfus_) {
                   jS0 = lpf_g(m,c,ie+1,k,j);
@@ -8493,6 +8604,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   jS2 = lpj_g(m,c,ie+1,k,j);
                 } else {
                   CkJlP1 w = CkJlP1Init(gdf);
+                  if (vefl_) {             // ck_sph_face = 5: the Marshak-type wall
+                    const Real bwb = vfg_g(m,cv,icut-1,k,j);
+                    const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
+                    w.s2 = (1.0 + 0.5*bwb)/(1.0 + bwb*mw);
+                  }
                   for (int i=icut; i<ie+1; ++i) {
                     lpf_g(m,c,i,k,j) = w.s0;
                     lps_g(m,c,i,k,j) = w.s1;
@@ -8504,14 +8620,24 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                    lG_g(m,4,i,k,j), lG_g(m,4,i+1,k,j), bface_on,
                                    wl, wu, ffj);
                     // ck-lin2: cin and cout formed (CkCinCout), not read
-                    const Real mu1 = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                    Real mu1 = (ck_nq_ == 1) ? 1.0/CK_DIFFUSIVITY : mug[c % 2];
+                    if (vefl_) mu1 = vfs_g(m,cv,i+1,k,j)/SQRT3_VEF;
                     const Real e01 = CkE0(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1);
                     Real ci1, co1;
                     CkCinCout(ckkro_g(m,c,i,k,j), lG_g(m,4,i,k,j), mu1, e01, ci1, co1);
-                    CkJlP1Step(w, up, wl, wu, ffj, ci1, co1, e01,
-                               lP_g(m,0*nch_+c,i,k,j),
-                               CkIdn(lP_g(m,0*nch_+c,i,k,j), lG_g(m,0,i,k,j)),
-                               lG_g(m,0,i,k,j));
+                    if (vefl_) {
+                      const Real btv = lG_g(m,0,i,k,j);
+                      Real vr1, vc1;
+                      CkVefMap(lP_g(m,0*nch_+c,i,k,j),
+                               (1.0 - btv)/(1.0 + btv)*vfs_g(m,cv,i,k,j)
+                               /vfs_g(m,cv,i+1,k,j), vfg_g(m,cv,i,k,j), vr1, vc1);
+                      CkJlP1StepRC(w, up, wl, wu, ffj, ci1, co1, e01, vr1, vc1);
+                    } else {
+                      CkJlP1Step(w, up, wl, wu, ffj, ci1, co1, e01,
+                                 lP_g(m,0*nch_+c,i,k,j),
+                                 CkIdn(lP_g(m,0*nch_+c,i,k,j), lG_g(m,0,i,k,j)),
+                                 lG_g(m,0,i,k,j));
+                    }
                   }
                   jS0 = w.s0;
                   jS1 = w.s1;
@@ -8523,11 +8649,31 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 {
                   const Real bt = lG_g(m,0,ie+1,k,j);
                   const Real idn = CkIdn(lP_g(m,0*nch_+c,ie+1,k,j), lG_g(m,0,ie+1,k,j));
-                  const Real al = (1.0 + bt)*idn;
-                  const Real be = bt*idn;
-                  jDu0 = al*jS0;
-                  jDu1 = al*jS1;
-                  jDu2 = al*jS2;
+                  Real al = (1.0 + bt)*idn;
+                  Real be = bt*idn;
+                  if (vefl_) {
+                    // ck_sph_face = 5: the reflected datum d_a = (zeta Sc' + datum)/(1 -
+                    // zeta R') depends on Sc_top (the chain kernel's JAC top block):
+                    // dd_b/dSc = al kp - be, dD/dSc = aD (1 - gamma (1 - R) kp)
+                    const Real rj = lP_g(m,0*nch_+c,ie+1,k,j);
+                    const Real vsb = vfs_g(m,cv,ie+1,k,j);
+                    const Real vrp = (1.0 - bt)/(1.0 + bt)*vsb/vfs_g(m,cv,ie+2,k,j);
+                    const Real vgm = vfg_g(m,cv,ie+1,k,j);
+                    const Real zt = vfg_g(m,cv,ie+2,k,j);
+                    const Real ev = (1.0 + rj) + vgm*vrp*(1.0 - rj);
+                    const Real rup = 1.0 - 2.0*vgm*vrp*(1.0 - rj)/ev;
+                    const Real vkp = zt*(2.0*vrp/ev)/(1.0 - zt*rup);
+                    al = 2.0*vgm/ev;
+                    be = (1.0 - vgm*vrp)/ev - al*vkp;
+                    const Real aD = 2.0/ev*(1.0 - vgm*(1.0 - rj)*vkp);
+                    jDu0 = aD*jS0;
+                    jDu1 = aD*jS1;
+                    jDu2 = aD*jS2;
+                  } else {
+                    jDu0 = al*jS0;
+                    jDu1 = al*jS1;
+                    jDu2 = al*jS2;
+                  }
                   jdm0 = -be*jS0;
                   jdm1 = -be*jS1;
                   jdm2 = -be*jS2;
@@ -8550,9 +8696,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   dz_l = lG_g(m,4,ie-1,k,j);
                 }
                 for (int i=ie; i>icut-1; --i) {
-                  const Real c0_p = CkE0(kr_p, dz_p, muj);
+                  // ck_sph_face = 5: cell i at mu_eff, s below face i, gamma of face i
+                  Real mui = muj, vsb = 1.0, vsa = 1.0, vgm = 1.0;
+                  if (vefl_) {
+                    vsb = vfs_g(m,cv,i,k,j);
+                    vsa = vfs_g(m,cv,i+1,k,j);
+                    vgm = vfg_g(m,cv,i,k,j);
+                    mui = vsa/SQRT3_VEF;
+                  }
+                  const Real c0_p = CkE0(kr_p, dz_p, mui);
                   Real ci, co;
-                  CkCinCout(kr_p, dz_p, muj, c0_p, ci, co);
+                  CkCinCout(kr_p, dz_p, mui, c0_p, ci, co);
                   const Real tj = 1.0 - c0_p;
                   const Real rj = rj_p, bt = bt_p, rat = ra_p, g3 = g3_p;
                   const Real idn = CkIdn(rj, bt);
@@ -8594,18 +8748,31 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   v1 = tj*v1 + ci*duv1 + co*dfw1;
                   Real v2 = tj*jdm2 + ci*jfu1 + co*jlc1;
                   v2 = tj*v2;
-                  const Real al = (1.0 + bt)*idn;
-                  const Real be = bt*idn;
-                  const Real wr = tj*tj*tj*tj*(1.0 - bt)*idn*jQ;
-                  const Real omr = 1.0 - rj;
-                  const Real dd0 = al*(1.0 + omr*wr)*s0;
-                  const Real dd1 = al*(s1 - omr*v0);
-                  const Real dd2 = al*(s2 - omr*v1);
-                  const Real dd3 = -al*omr*v2;
-                  const Real wj = wfc*g3;
-                  const Real jm = wj*(rat*dd1 - jDu0);
-                  const Real j0 = wj*(rat*dd2 - jDu1);
-                  const Real jp = wj*(rat*dd3 - jDu2);
+                  Real al = (1.0 + bt)*idn;
+                  Real be = bt*idn;
+                  Real wr = tj*tj*tj*tj*(1.0 - bt)*idn*jQ;
+                  Real omr = 1.0 - rj;
+                  Real aD = al, ratv = rat, wfi = wfc;
+                  if (vefl_) {
+                    // ck_sph_face = 5: D = (2/E) (Sc - gamma (1 - R) d^+), d crosses
+                    // the face with al = 2 gamma/E, be = (1 - gamma rho')/E
+                    ratv = rat*vsb/vsa;
+                    const Real ev = (1.0 + rj) + vgm*ratv*(1.0 - rj);
+                    al = 2.0*vgm/ev;
+                    be = (1.0 - vgm*ratv)/ev;
+                    aD = 2.0/ev;
+                    wr = tj*tj*tj*tj*(2.0*ratv/ev)*jQ;
+                    omr = vgm*(1.0 - rj);
+                    wfi = wfc*vsa/(SQRT3_VEF*muj);
+                  }
+                  const Real dd0 = aD*(1.0 + omr*wr)*s0;
+                  const Real dd1 = aD*(s1 - omr*v0);
+                  const Real dd2 = aD*(s2 - omr*v1);
+                  const Real dd3 = -aD*omr*v2;
+                  const Real wj = wfi*g3;
+                  const Real jm = wj*(ratv*dd1 - jDu0);
+                  const Real j0 = wj*(ratv*dd2 - jDu1);
+                  const Real jp = wj*(ratv*dd3 - jDu2);
                   lj0_g(m,c,i,k,j) = j0;
                   ljm_g(m,c,i,k,j) = ((i > icut || gdf >= 0.0) && (jneg_ || jm > 0.0))
                                    ? jm : 0.0;
