@@ -872,15 +872,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_jac_lin = pin->GetOrAddBoolean("problem","ck_impl_jac_lin",
       t4def && two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_lin_thr == 1);
   two_stream_rt::ck_sph_top = pin->GetOrAddInteger("problem","ck_sph_top",0);
-  // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5
-  two_stream_rt::ck_vef_every = pin->GetOrAddInteger("problem","ck_vef_every",1);
-  two_stream_rt::ck_vef_ncore = pin->GetOrAddInteger("problem","ck_vef_ncore",8);
-  two_stream_rt::ck_vef_sync = pin->GetOrAddBoolean("problem","ck_vef_sync",true);
   // problem/ck_sph_face (prototype, default 0): see two_stream_rt::ck_sph_face.
   // problem/ck_sph_dilute = true is the older spelling of ck_sph_face = 1.
   two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
   two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
                                                     two_stream_rt::ck_sph_dilute ? 1 : 0);
+  two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5);
+  // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5
+  two_stream_rt::ck_vef_every = pin->GetOrAddInteger("problem","ck_vef_every",
+                                                     1);
+  two_stream_rt::ck_vef_ncore = pin->GetOrAddInteger("problem","ck_vef_ncore",8);
+  two_stream_rt::ck_vef_sync = pin->GetOrAddBoolean("problem","ck_vef_sync",true);
   // face 5 runs on the production linear path (ck_impl_lin, the paired tier, its
   // Jacobian from the factorisation); faces 1-4 on the chain kernel only
   const bool vef_lin_ok = two_stream_rt::ck_impl_lin_thr == 1 &&
@@ -925,7 +927,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                       two_stream_rt::ck_sweep_form == 1 && ck_spherical && ck_beam_sph;
   two_stream_rt::ck_beam_par = pin->GetOrAddBoolean("problem","ck_beam_par",bpdef);}
   // problem/ck_impl_rsec: secant bound on the thick rows' diagonal (0 = off, bitwise)
-  two_stream_rt::ck_impl_rsec = pin->GetOrAddReal("problem","ck_impl_rsec",0.0);
+  two_stream_rt::ck_impl_rsec = pin->GetOrAddReal("problem","ck_impl_rsec",
+                                                  0.0);
   two_stream_rt::ck_impl_lw = pin->GetOrAddBoolean("problem","ck_impl_lw",false);
   // problem/ck_impl_glob: Newton globalisation of the fused T4 step, none | ls | ls_sub
   // (utils/two_stream_column_ck.hpp, tests_ck_implicit/README_glob.md).  none = bitwise.
@@ -979,7 +982,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
   two_stream_rt::ck_impl_negdbg = pin->GetOrAddInteger("problem","ck_impl_negdbg",0);
   two_stream_rt::ck_impl_jfd = pin->GetOrAddInteger("problem","ck_impl_jfd",0);
-  two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",false);
+  two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",
+                                                     false);
   two_stream_rt::ck_impl_negpiv = pin->GetOrAddBoolean("problem","ck_impl_negpiv",false);
   two_stream_rt::ck_impl_jnet = pin->GetOrAddBoolean("problem","ck_impl_jnet",false);
   two_stream_rt::ck_impl_tol_ptop = pin->GetOrAddReal("problem","ck_impl_tol_ptop",0.0);

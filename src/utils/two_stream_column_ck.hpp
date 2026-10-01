@@ -192,6 +192,13 @@ inline bool ck_impl_jnet = false;
 inline Real ck_impl_tol_ptop = 0.0;
 inline Real ck_impl_norm_eps_top = 0.1;
 inline DvceArray4D<Real> *ck_pbar_ptr = nullptr;
+// problem/ck_sph_face = 5 (two_stream_rt.hpp): the cycle of the last refresh of the VEF
+// factors (-1 = none yet) and the restart's rebuild of that refresh
+// (two_stream_ck_rst_state.hpp: the factors are re-formed from the state the refresh
+// read, so a restart is bitwise); ck_vef_on = (ck_sph_face == 5), set by the pgen
+inline int ck_vef_last = -1;
+inline bool ck_vef_force = false;
+inline bool ck_vef_on = false;
 // problem/ck_impl_jfd (diagnostic, > 0 on): on every pass that builds the tridiagonal
 // from the factorisation, check its diagonal against a finite difference of the linear
 // re-apply (two_stream_rt.hpp).  Print only; costs n1 extra linear passes.

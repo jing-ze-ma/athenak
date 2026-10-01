@@ -352,7 +352,11 @@ inline DvceArray5D<Real> *ck_jacq_ptr = nullptr;
 inline DvceArray5D<Real> *ck_vef_s_ptr = nullptr;
 inline DvceArray5D<Real> *ck_vef_g_ptr = nullptr;
 inline DvceArray5D<Real> *ck_vef_w_ptr = nullptr;
-inline int ck_vef_last = -1;          // the cycle of the last formal solution
+//! \fn bool CkVefDue
+//! \brief ck_sph_face = 5: is this pass the one that refreshes the VEF factors?  The
+//! first one ever, else (ck_vef_sync) a STORING pass ck_vef_every or more cycles after
+//! the last refresh.  The same test decides the restart snapshot (CkVefSnap).
+inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst);
 KOKKOS_INLINE_FUNCTION void CkJacQAdd(Real *p, const Real v) { *p += v; }
 
 // Column solves ("chains") the RT kernel steps per cell: 4 for the grey picket fence
@@ -1376,6 +1380,10 @@ inline int ck_sph_top = 0;
 inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
+inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst) {
+  return ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
+         ((!ck_vef_sync || !ckfop || ckfst) && pm->ncycle - ck_vef_last >= ck_vef_every);
+}
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -5896,6 +5904,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
           }
         }
+        // ck_sph_face = 5: the state the refresh of THIS pass will read, for a restart
+        // (two_stream_ck_rst_state.hpp; same point in the pass as CkXsSnap); the VEF
+        // rebuild of a restart re-takes it, so a second restart is bitwise too
+        if (ck_sph_face == 5 && (ck_rst_rebuild_active ? ck_vef_force
+                                                       : CkVefDue(pm, ckfop_, ckfst_))) {
+          CkVefSnap(pm, bdt);
+        }
         if (ckjacp_) ck_impl_jac_built = true;
         // problem/ck_impl_frozen_op: the CUT is frozen over the Newton passes with the
         // opacity.  The stored operator covers the cells pass 0 swept, so a cut that
@@ -7056,10 +7071,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // ck_vef_ncore through the wall, then one tangent at every node.
         // ck_vef_sync: on a storing pass only (a re-applying pass keeps the factors its
         // stored operator was formed with); the first call always forms them
-        if (ck_sph_face == 5 && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
-                                 ((!ck_vef_sync || !ckfop_ || ckfst_) &&
-                                  pm->ncycle - ck_vef_last >= ck_vef_every))) {
-          ck_vef_last = static_cast<int>(pm->ncycle);
+        // a restart's rebuild passes (two_stream_ck_rst_state.hpp) form them only when
+        // they rebuild the refresh itself (ck_vef_force) or nothing is there yet
+        const bool vdue_ = ck_rst_rebuild_active ? ck_vef_force
+                                                 : CkVefDue(pm, ckfop_, ckfst_);
+        if (ck_sph_face == 5 && (ck_vef_s_ptr == nullptr || vdue_)) {
+          if (!ck_rst_rebuild_active) ck_vef_last = static_cast<int>(pm->ncycle);
           const int nv = n1 + 3;
           const int nc_ = CK_NB*CK_NG;
           if (ck_vef_s_ptr == nullptr ||
