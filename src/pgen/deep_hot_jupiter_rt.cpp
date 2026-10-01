@@ -1327,7 +1327,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
   two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
                                                     two_stream_rt::ck_sph_dilute ? 1 : 0);
-  two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5);
+  // ck_sph_face = 6 (the M-matrix form of the VEF closure) reads the same formal
+  // solution, refresh, restart state and face-5 Newton defaults
+  two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5 ||
+                              two_stream_rt::ck_sph_face == 6);
   // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5.  With
   // face 5 the DEFAULTS of ck_vef_every (150), ck_impl_rowfb (true) and ck_impl_rsec (4)
   // are the measured cheapest accuracy-neutral setting (cksph_test_0930/PORT.md);
@@ -1341,6 +1344,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem", "ck_vef_xlim")) {
     two_stream_rt::ck_vef_xlim = pin->GetReal("problem", "ck_vef_xlim");
   }
+  if (pin->DoesParameterExist("problem", "ck_f6_report")) {
+    two_stream_rt::ck_f6_report = pin->GetInteger("problem", "ck_f6_report");
+  }
   if (pin->DoesParameterExist("problem", "ck_vef_report")) {
     two_stream_rt::ck_vef_report = pin->GetInteger("problem", "ck_vef_report");
   }
@@ -1350,15 +1356,28 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddInteger("problem","ck_nquad",2) == 2 &&
       two_stream_rt::ck_dif_dtau <= 0.0;
   const bool lin_on = two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin;
-  if (two_stream_rt::ck_sph_face < 0 || two_stream_rt::ck_sph_face > 5 ||
+  // face 6 lives in the linear kernels only (ck_f6_build, rt_chain_ck_lin6,
+  // rt_chain_ck_jlin6): the frozen-operator Newton with ck_impl_lin and
+  // ck_impl_jac_lin, the paired tier, vacuum top
+  const bool f6_ok = two_stream_rt::ck_implicit && two_stream_rt::ck_impl_frozen_op &&
+      two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_jac_lin && vef_lin_ok &&
+      two_stream_rt::ck_sph_top == 1;
+  if (two_stream_rt::ck_sph_face == 6 && !f6_ok) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_face = 6 needs "
+              << "ck_implicit, ck_impl_frozen_op, ck_impl_lin, ck_impl_jac_lin, "
+              << "ck_impl_lin_thr = 1, ck_nquad = 2, ck_dif_dtau = 0 and ck_sph_top = 1"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_sph_face < 0 || two_stream_rt::ck_sph_face > 6 ||
       (two_stream_rt::ck_sph_face != 0 &&
        (!two_stream_rt::ck_spherical || two_stream_rt::ck_sweep_form != 1)) ||
       (two_stream_rt::ck_sph_face >= 1 && two_stream_rt::ck_sph_face <= 4 && lin_on) ||
-      (two_stream_rt::ck_sph_face == 5 && lin_on && !vef_lin_ok) ||
+      (two_stream_rt::ck_sph_face >= 5 && lin_on && !vef_lin_ok) ||
       (two_stream_rt::ck_sph_face >= 3 && two_stream_rt::ck_dif_dtau > 0.0) ||
-      (two_stream_rt::ck_sph_face == 5 && two_stream_rt::ck_sph_top == 2)) {
+      (two_stream_rt::ck_sph_face >= 5 && two_stream_rt::ck_sph_top == 2)) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_face must be "
-              << "0..5, and != 0 needs ck_spherical and ck_sweep_form = 1; 1..4 need "
+              << "0..6, and != 0 needs ck_spherical and ck_sweep_form = 1; 1..4 need "
               << "ck_impl_lin = false and ck_impl_jac_lin = false; 5 with ck_impl_lin "
               << "needs ck_impl_lin_thr = 1, ck_nquad = 2 and ck_dif_dtau = 0; 3 and 4 "
               << "also need ck_dif_dtau = 0, 5 ck_sph_top != 2"
@@ -1446,7 +1465,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",
                                                      two_stream_rt::ck_vef_on);
   if (two_stream_rt::ck_vef_on && global_variable::my_rank == 0) {
-    std::cout << "deep_hot_jupiter_rt: ck_sph_face = 5 (VEF), effective: ck_sph_top = "
+    std::cout << "deep_hot_jupiter_rt: ck_sph_face = " << two_stream_rt::ck_sph_face
+              << " (VEF), effective: ck_sph_top = "
               << two_stream_rt::ck_sph_top << ", ck_vef_every = "
               << two_stream_rt::ck_vef_every << ", ck_vef_sync = "
               << two_stream_rt::ck_vef_sync << ", ck_impl_rowfb = "

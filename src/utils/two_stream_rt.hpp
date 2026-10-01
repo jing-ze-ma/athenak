@@ -1386,6 +1386,12 @@ inline bool ck_vef_sync = true;
 // against the factors being replaced (the lag of ck_vef_every), and the number of faces
 // whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
 inline int ck_vef_report = 0;
+// problem/ck_f6_report = N > 0 (diagnostic, print only, read only when named): after
+// every ck_sph_face = 6 build rank 0 prints the number of ladder elements (g_s, g_p,
+// K_eq/B, R_c over all cells and (band, g)), how many are negative or not finite, and
+// the smallest ratio row excess / diagonal of the node rows in K (the shunt g_p over
+// g_p + the node's two series conductances; > 0: strictly diagonally dominant).
+inline int ck_f6_report = 0;
 // problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
 // x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b,
 // rho' = (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections
@@ -1398,6 +1404,96 @@ inline int ck_vef_report = 0;
 // where f jumps by a factor ~X^2 between neighbouring cells.  rho' (the flux
 // continuity) is untouched, so the deposit still telescopes.
 inline Real ck_vef_xlim = 0.0;
+// problem/ck_sph_face = 6 (PROTOTYPE): the VEF closure of face 5 (same formal solution,
+// same f, h, beta, same ck_vef_every refresh) discretised as a PASSIVE LADDER NETWORK in
+// K = Phi f J (Phi = q r^2), so that it is monotone by construction and needs no limiter
+// (ckf6_mono_1001/RESULTS.md).  The moment equations
+//     dK/dr = -kappa rho (Phi/r^2) G,   dG/dr = kappa rho r^2 (B - J),   G = r^2 H,
+// are solved EXACTLY inside each cell for constant coefficients and the cell's own B
+// (the face-5 two-stream at mu_eff = sqrt f is this solution): with
+//     a = int kappa rho Phi/r^2 dr,  b = int kappa rho r^2/(Phi f) dr  (over the cell,
+//     ln Phi = (3 - 1/f) ln r inside it), Z = sqrt(a/b), Lam = sqrt(a b),
+// the cell is the two-port of a uniform lossy line: a series conductance
+// g_s = 1/(Z sinh Lam) between its two face nodes and a shunt g_p = tanh(Lam/2)/Z from
+// each face node to K_eq = kappa rho V B/b (its emission).  K is continuous at a face
+// (the VEF jump condition Phi f J continuous) and so is G.  Face 5 is exactly this
+// network, but closes the thick-cell staircase (two thick cells at different constant B
+// exchange Delta K/(Z_a + Z_b) instead of the diffusion flux) with a LINEAR source inside
+// the cell, B at the faces interpolated from the neighbours: that makes a cell's
+// emission depend on its neighbours' temperatures and the operator non-monotone (the
+// 10x blow-up, ckf5_stab_1001).  Face 6 keeps the emission cell-local and closes the
+// staircase with a CONTACT resistance at every interior face,
+//     R_c = w(Lam_b) Z_a phc(Lam_a) + w(Lam_a) Z_b phc(Lam_b),
+//     phc(Lam) = Lam/2 - tanh(Lam/2),   w(Lam) = Lam^2/(1 + Lam^2),
+// which is the exact value for which a uniform medium with a LINEAR B carries the
+// Eddington diffusion flux at any Lam (Lam^3/24 for a thin cell, Z (Lam/2 - 1) per side
+// for a thick one), switched off next to an optically thin neighbour so that a thick
+// cell under a thin one keeps its surface emission (an unresolved photosphere).
+// Every element is a positive conductance and every source is the cell's own B: the
+// network is passive, so J >= 0, J is monotone in every B, and the heating of a cell
+// does not grow with its own B (the Newton row b = 1 - h dSrc_i/dT_i/cv > 0; only the
+// cut cell, whose B also drives the wall, can reach + round-off).  Top: Auer's H = h J
+// (h from the formal solution, vacuum above: needs ck_sph_top = 1); wall: face 5's
+// Marshak-type J + beta H = (B_cut + I_int)(1/2 + beta/4).  Solved by the positive
+// Norton recursion from the top (Y' = g Y/(g + Y), I' = g I/(g + Y): no subtraction) and
+// the node potentials upward; Src_i = 4 pi g_w g_p (K_lo + K_hi - 2 K_eq)/V (the cell's
+// absorption minus emission), the fluxes accumulated from the top: V Src = (A F)_i -
+// (A F)_{i+1} to round-off.  The Newton tridiagonal is the exact (i-1, i, i+1) part of
+// dSrc/dB of the network (driving-point and transfer impedances of the ladder).
+// Production path only (ck_implicit, frozen operator, ck_impl_lin + ck_impl_jac_lin,
+// ck_impl_lin_thr = 1, ck_nquad = 2): ck_coef stores kappa rho, ck_f6_build the ladder,
+// rt_chain_ck_lin6 re-applies it, rt_chain_ck_jlin6 forms the tridiagonal.  A storing
+// pass that runs the chain kernel (no ck_beam_par) runs it on the face-5 map and then
+// takes Src, Fb and Em from rt_chain_ck_lin6.
+//! \fn Real CkF6Ex
+//! \brief (e^x - 1)/x, 1 at x = 0
+KOKKOS_INLINE_FUNCTION
+Real CkF6Ex(const Real x) {
+  return (fabs(x) < 1.0e-5) ? 1.0 + x*(0.5 + x/6.0) : expm1(x)/x;
+}
+//! \struct CkF6Cell
+//! \brief ck_sph_face = 6: one cell's two-port (see ck_sph_face = 6)
+struct CkF6Cell {
+  Real lpl;    // ln Phi at the lower face (Phi = 1 at the top face of the column)
+  Real z;      // Z
+  Real lam;    // Lam
+  Real gp;     // shunt conductance tanh(Lam/2)/Z
+  Real gs;     // series conductance 1/(Z sinh Lam) (0 beyond Lam = 700)
+  Real keq;    // K_eq/B = kappa rho V/b
+  Real phc;    // Lam/2 - tanh(Lam/2)
+};
+//! \fn CkF6Cell CkF6Make
+//! \brief the two-port of a cell between radii rl < rh with kappa rho kr, Eddington
+//! factor f and ln Phi lph at its upper face
+KOKKOS_INLINE_FUNCTION
+CkF6Cell CkF6Make(const Real rl, const Real rh, const Real kr, const Real f,
+                  const Real lph) {
+  CkF6Cell c;
+  const Real e = 3.0 - 1.0/f;
+  const Real t = log(rh/rl);
+  Real lpl = lph - e*t;
+  lpl = (lpl > 600.0) ? 600.0 : ((lpl < -600.0) ? -600.0 : lpl);
+  c.lpl = lpl;
+  const Real phl = exp(lpl);
+  const Real a = kr*(t/rl)*CkF6Ex((e - 1.0)*t)*phl;
+  const Real b = (kr/f)*rl*rl*rl*t*CkF6Ex(t/f)/phl;
+  c.z = sqrt(a/b);
+  c.lam = sqrt(a*b);
+  const Real lm = (c.lam < 700.0) ? c.lam : 700.0;
+  const Real th = tanh(0.5*lm);
+  c.gp = th/c.z;
+  c.gs = (c.lam < 700.0) ? 1.0/(c.z*sinh(lm)) : 0.0;
+  c.keq = kr*(rh*rh*rh - rl*rl*rl)/(3.0*b);
+  c.phc = (c.lam < 1.0e-3) ? c.lam*c.lam*c.lam/24.0 : 0.5*c.lam - th;
+  return c;
+}
+//! \fn Real CkF6Rc
+//! \brief the contact resistance of the face between cells a (below) and b (above)
+KOKKOS_INLINE_FUNCTION
+Real CkF6Rc(const CkF6Cell &a, const CkF6Cell &b) {
+  const Real la2 = a.lam*a.lam, lb2 = b.lam*b.lam;
+  return lb2/(1.0 + lb2)*a.z*a.phc + la2/(1.0 + la2)*b.z*b.phc;
+}
 template <typename XF>
 inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs,
                         const DvceArray5D<Real> &vg,
@@ -6007,7 +6103,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // ck_sph_face = 5: the state the refresh of THIS pass will read, for a restart
         // (two_stream_ck_rst_state.hpp; same point in the pass as CkXsSnap); the VEF
         // rebuild of a restart re-takes it, so a second restart is bitwise too
-        if (ck_sph_face == 5 && (ck_rst_rebuild_active ? ck_vef_force
+        if ((ck_sph_face == 5 || ck_sph_face == 6) &&
+            (ck_rst_rebuild_active ? ck_vef_force
                                                        : CkVefDue(pm, ckfop_, ckfst_))) {
           CkVefSnap(pm, bdt);
         }
@@ -7175,7 +7272,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // they rebuild the refresh itself (ck_vef_force) or nothing is there yet
         const bool vdue_ = ck_rst_rebuild_active ? ck_vef_force
                                                  : CkVefDue(pm, ckfop_, ckfst_);
-        if (ck_sph_face == 5 && (ck_vef_s_ptr == nullptr || vdue_)) {
+        // (ck_sph_face = 6 reads the same formal solution)
+        if ((ck_sph_face == 5 || ck_sph_face == 6) &&
+            (ck_vef_s_ptr == nullptr || vdue_)) {
           // a refresh forced on a re-applying pass (nothing formed yet, e.g. the first
           // call after a restart without VEF state re-applies an xstep operator) is not
           // a scheduled one: the next storing pass refreshes (and snapshots) properly
@@ -7418,14 +7517,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           if (vrep_) CkVefReport(pm, vs_, vg_, vso_, vgo_, *rt_pb_ptr, icc_g, X1F, nmb1,
                                  nc_, ks, ke, js, je, ie);
         }
-        const int dil_ = ck_sph_face;   // problem/ck_sph_face
+        // problem/ck_sph_face; = 6 runs the chain kernel (a storing pass without
+        // ck_beam_par, ck_impl_lin_check) on the face-5 map: its own operator lives in
+        // the linear kernels (rt_chain_ck_lin6 overwrites Src, Fb and Em)
+        const int dil_ = (ck_sph_face == 6) ? 5 : ck_sph_face;
         const int tpm_ = ck_sph_top;    // problem/ck_sph_top
-        auto vfs_ = (ck_sph_face == 5) ? *ck_vef_s_ptr
-                                       : CkDum<DvceArray5D<Real>>("ck_vef_s_d");
-        auto vfg_ = (ck_sph_face == 5) ? *ck_vef_g_ptr
-                                       : CkDum<DvceArray5D<Real>>("ck_vef_g_d");
-        // the linear re-apply kernels' names for the same (ck_sph_face = 5)
-        const bool vefl_ = (ck_sph_face == 5);
+        const bool vefa_ = (ck_sph_face == 5 || ck_sph_face == 6);
+        auto vfs_ = vefa_ ? *ck_vef_s_ptr : CkDum<DvceArray5D<Real>>("ck_vef_s_d");
+        auto vfg_ = vefa_ ? *ck_vef_g_ptr : CkDum<DvceArray5D<Real>>("ck_vef_g_d");
+        // the linear re-apply kernels' names for the same (ck_sph_face = 5); vef6_ the
+        // conservative M-matrix form of ck_sph_face = 6 (its own build, linear and
+        // Jacobian kernels)
+        const bool vefl_ = vefa_;
+        const bool vef6_ = (ck_sph_face == 6);
         auto vfs_g = vfs_;
         auto vfg_g = vfg_;
         auto ck_chain_ctx = std::forward_as_tuple(ACC, AFC, albedo, ap, Bb_g, bface_on,
@@ -8158,6 +8262,79 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // ck_sph_face = 5: rt_chain_ck_lin1p on the VEF face (the chain kernel's tm form
         // with vef), a kernel of its own, so that the default one is the code it always
         // was
+        // ck_sph_face = 6: the re-apply of the ladder (see ck_sph_face = 6 and
+        // ck_f6_build) on the new B_b: the Norton sources down (I_hi = I_up + g_p K_eq,
+        // I_lo = a_s I_hi + g_p K_eq, I_up = a_c I_lo), the face potentials up (the cut
+        // node from the wall, K_lo = a_c (K_hi below + R_c I_lo), K_hi = a_s K_lo +
+        // b_s I_hi), then the fluxes accumulated from the top, G = y_t K_top, G += dep,
+        // dep = g_p (K_lo + K_hi - 2 K_eq) the cell's absorption minus emission: the
+        // pair's Src = 4 pi g_w dOmega dep/V and its flux Phi/A at every face, so that
+        // V Src = (A F)_i - (A F)_{i+1} to round-off.  One thread per (band, g) pair,
+        // two scratch rows (I, then K).
+        auto launch_ck_lin6 = [&]() {
+          const int npr = nch_/2;
+          const size_t sltsz = static_cast<size_t>(2)*n1*CKS_W;
+          const size_t slntl = (static_cast<size_t>(nmb1 + 1)*npr*scl3*scl2 + CKS_W - 1)
+                               /CKS_W;
+          CkScrEnsure(slntl*sltsz);
+          Real *slbuf = rt_ckscr_ptr->data();
+          CkParFor4("rt_chain_ck_lin6", cklw_, 0, nmb1, 0, npr-1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int pp, const int k, const int j) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+            const int icut = icc_g(m,k,j);
+            if (icut > ie) return;
+            const int c0 = 2*pp, c1 = c0 + 1;
+            const bool pfst = (RT_NB % 2 == 0) && (c0 % RT_NB == 0);
+            const int b = c0/(2*CK_NG);
+            const int slt = ((m*npr + pp)*scl3 + (k - ks))*scl2 + (j - js);
+            auto Scr = CkScrRows<Real>(slbuf, 0, sltsz, n1, slt);
+            auto P = [&](const int sl, const int c, const int i) -> Real {
+              return lP_g(m,sl*nch_+c,i,k,j);
+            };
+            // down: the Norton sources of both face nodes of every cell
+            Real I = 0.0;
+            for (int i=ie; i>=icut; --i) {
+              const Real src = P(0,c0,i)*P(1,c0,i)*Bb_g(m,b,i,k,j);
+              const Real ihi = I + src;
+              const Real ilo = P(2,c0,i)*ihi + src;
+              Scr[1][i] = ihi;
+              Scr[0][i] = ilo;
+              I = P(4,c0,i)*ilo;
+            }
+            // up: the face potentials
+            Real khi = 0.0;
+            for (int i=icut; i<=ie; ++i) {
+              Real klo;
+              if (i == icut) {
+                klo = (Scr[0][i] + P(3,c1,icut)*(Bb_g(m,b,icut,k,j) + lC_g(1,c0)))
+                      /(P(0,c1,icut) + P(4,c1,icut));
+              } else {
+                klo = P(4,c0,i)*(khi + P(5,c0,i)*Scr[0][i]);
+              }
+              khi = P(2,c0,i)*klo + P(3,c0,i)*Scr[1][i];
+              Scr[0][i] = klo;
+              Scr[1][i] = khi;
+            }
+            // the fluxes from the top, the deposit per cell
+            const Real wpr = lC_g(2,c0) + lC_g(2,c1);           // 4 pi g_w
+            const Real cnv = wpr*AFC(m,k,j,ie+1)/SQR(X1F(m,ie+1));
+            Real G = P(3,c1,ie+1)*khi;
+            lpf_g(m,c0,ie+1,k,j) = cnv*G/AFC(m,k,j,ie+1);
+            if (!pfst) lpf_g(m,c1,ie+1,k,j) = 0.0;
+            for (int i=ie; i>=icut; --i) {
+              const Real keqb = P(1,c0,i)*Bb_g(m,b,i,k,j);
+              const Real d = P(0,c0,i)*((Scr[0][i] - keqb) + (Scr[1][i] - keqb));
+              G += d;
+              lps_g(m,c0,i,k,j) = cnv*d/VLS(m,k,j,i);
+              lpf_g(m,c0,i,k,j) = cnv*G/AFC(m,k,j,i);
+              if (!pfst) {
+                lps_g(m,c1,i,k,j) = 0.0;
+                lpf_g(m,c1,i,k,j) = 0.0;
+              }
+            }
+          });
+          launch_ck_lin_sum(RT_NB % 2 == 0);
+        };
         auto launch_ck_lin1p_vef = [&]() {
           const int npr = nch_/2;
           const size_t sltsz = static_cast<size_t>(2)*n1*CKS_W;
@@ -8465,7 +8642,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         const bool cklthr1_ = (ck_impl_lin_thr == 1);
         auto launch_ck_lin_tier = [&]() {
           if (cklthr1_ && ck_nq_ == 2) {
-            if (vefl_) {
+            if (vef6_) {
+              launch_ck_lin6();
+            } else if (vefl_) {
               launch_ck_lin1p_vef();
             } else {
               launch_ck_lin1p();
@@ -8877,7 +9056,134 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 }
               }
             });
-            if (vefl_) {   // ck_sph_face = 5: the VEF factorisation, a kernel of its own
+            if (vef6_) {
+              // ck_sph_face = 6: the ladder of the passive network (see ck_sph_face =
+              // 6), one thread per (band, g) pair pp = (c0, c0 + 1), Norton from the
+              // top: at the upper node of cell i Y_hi = Y_up + g_p; through the series
+              // conductance b_s = 1/(g_s + Y_hi), a_s = g_s b_s, Y_lo = a_s Y_hi + g_p;
+              // through the contact resistance of face i a_c = 1/(1 + R_c Y_lo), Y_up =
+              // a_c Y_lo.  Stored in lP per cell index i: (slot, chain) (0..5, c0) =
+              // g_p, K_eq/B, a_s, b_s, a_c, R_c (face i), (0..2, c0+1) = Y_lo, Y_hi,
+              // g_s; the top's conductance y_t at (3, c0+1) of ie+1, the wall's
+              // source factor cw and conductance y_w at (3, c0+1), (4, c0+1) of icut.
+              const int npr6 = nch_/2;
+              par_for("ck_f6_build", DevExeSpace(), 0, nmb1, 0, npr6-1, ks, ke, js, je,
+              KOKKOS_LAMBDA(const int m, const int pp, const int k, const int j) {
+                if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                const int icut = icc_g(m,k,j);
+                const int c0 = 2*pp, c1 = c0 + 1;
+                const int b = pp/CK_NG;
+                if (m == 0 && k == ks && j == js) {
+                  for (int q=0; q<2; ++q) {
+                    const Real wfc = 2.0*M_PI*wg[q]*mug[q]*ckgw(pp % CK_NG);
+                    lC_g(0,c0+q) = wfc;
+                    lC_g(2,c0+q) = 2.0*(wfc/mug[q]);
+                    lC_g(1,c0+q) = (int_at_cut ? boltz_sigma/M_PI*Tint4
+                                    * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
+                  }
+                }
+                if (icut > ie) return;
+                auto P = [&](const int sl, const int c, const int i) -> Real & {
+                  return lP_g(m,sl*nch_+c,i,k,j);
+                };
+                // the top: Auer's H = h J, h from zeta = (sqrt f_t - h)/(sqrt f_t + h),
+                // G = y_t K with Phi = 1 at the top face
+                const Real ft = SQR(vfs_g(m,pp,ie+2,k,j))/3.0;
+                const Real zt = vfg_g(m,pp,ie+2,k,j);
+                Real ht = sqrt(ft)*(1.0 - zt)/(1.0 + zt);
+                ht = (ht > 1.0e-30) ? ht : 1.0e-30;
+                const Real rt = X1F(m,ie+1);
+                const Real yt = ht*rt*rt/ft;
+                P(3,c1,ie+1) = yt;
+                CkF6Cell cc = CkF6Make(X1F(m,ie), rt, ckkro_g(m,c0,ie,k,j),
+                                       SQR(vfs_g(m,pp,ie+1,k,j))/3.0, 0.0);
+                Real yup = yt;
+                for (int i=ie; i>=icut; --i) {
+                  const Real yhi = yup + cc.gp;
+                  const Real bs = 1.0/(cc.gs + yhi);
+                  const Real as = cc.gs*bs;
+                  const Real ylo = as*yhi + cc.gp;
+                  P(0,c0,i) = cc.gp;
+                  P(1,c0,i) = cc.keq;
+                  P(2,c0,i) = as;
+                  P(3,c0,i) = bs;
+                  P(0,c1,i) = ylo;
+                  P(1,c1,i) = yhi;
+                  P(2,c1,i) = cc.gs;
+                  if (i > icut) {
+                    const CkF6Cell cd = CkF6Make(X1F(m,i-1), X1F(m,i),
+                                                 ckkro_g(m,c0,i-1,k,j),
+                                                 SQR(vfs_g(m,pp,i,k,j))/3.0, cc.lpl);
+                    const Real rc = CkF6Rc(cd, cc);
+                    const Real ac = 1.0/(1.0 + rc*ylo);
+                    P(4,c0,i) = ac;
+                    P(5,c0,i) = rc;
+                    yup = ac*ylo;
+                    cc = cd;
+                  } else {
+                    // the wall: J + beta H = Ib (1/2 + beta/4), as a conductance y_w to
+                    // the source potential Phi_w f_w (1/2 + beta/4) Ib
+                    const Real fw = SQR(vfs_g(m,pp,icut,k,j))/3.0;
+                    const Real bw = vfg_g(m,pp,icut-1,k,j);
+                    const Real rw = X1F(m,icut);
+                    P(4,c0,i) = 1.0;
+                    P(5,c0,i) = 0.0;
+                    P(3,c1,icut) = rw*rw*(0.5 + 0.25*bw)/bw;
+                    P(4,c1,icut) = rw*rw/(bw*exp(cc.lpl)*fw);
+                  }
+                }
+              });
+              if (ck_f6_report > 0) {
+                // problem/ck_f6_report: the signs of the elements and the dominance of
+                // the node rows (lo_i: g_p + g_s + 1/R_c of face i; hi_i: g_p + g_s +
+                // 1/R_c of face i+1, the top's y_t, the wall's y_w)
+                DvceArray1D<Real> rr("ck_f6_rep", 4);
+                Kokkos::deep_copy(rr, 0.0);
+                Kokkos::parallel_for("ck_f6_rep_init",
+                                     Kokkos::RangePolicy<DevExeSpace>(0, 1),
+                                     KOKKOS_LAMBDA(const int) { rr(3) = 1.0; });
+                par_for("ck_f6_rep", DevExeSpace(), 0, nmb1, 0, npr6-1, ks, ke, js, je,
+                KOKKOS_LAMBDA(const int m, const int pp, const int k, const int j) {
+                  if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                  const int icut = icc_g(m,k,j);
+                  if (icut > ie) return;
+                  const int c0 = 2*pp, c1 = c0 + 1;
+                  auto P = [&](const int sl, const int c, const int i) -> Real {
+                    return lP_g(m,sl*nch_+c,i,k,j);
+                  };
+                  Real nel = 0.0, nneg = 0.0, nnf = 0.0, rmin = 1.0;
+                  for (int i=icut; i<=ie; ++i) {
+                    const Real gp = P(0,c0,i), kq = P(1,c0,i), gs = P(2,c1,i);
+                    const Real rc = (i > icut) ? P(5,c0,i) : 0.0;
+                    const Real el[4] = {gp, kq, gs, rc};
+                    for (int q=0; q<4; ++q) {
+                      nel += 1.0;
+                      if (!(el[q] == el[q]) || fabs(el[q]) > 1.0e300) nnf += 1.0;
+                      else if (el[q] < 0.0) nneg += 1.0;
+                    }
+                    const Real cl = (i > icut) ? ((rc > 0.0) ? 1.0/rc : 1.0e300)
+                                               : P(4,c1,icut);
+                    const Real rcu = (i < ie) ? P(5,c0,i+1) : 0.0;
+                    const Real cu = (i < ie) ? ((rcu > 0.0) ? 1.0/rcu : 1.0e300)
+                                             : P(3,c1,ie+1);
+                    const Real xl = (i > icut) ? gp : gp + cl;
+                    const Real xh = (i < ie) ? gp : gp + cu;
+                    const Real rl = xl/(gp + gs + cl), rh = xh/(gp + gs + cu);
+                    rmin = fmin(rmin, fmin(rl, rh));
+                  }
+                  Kokkos::atomic_add(&rr(0), nel);
+                  Kokkos::atomic_add(&rr(1), nneg);
+                  Kokkos::atomic_add(&rr(2), nnf);
+                  Kokkos::atomic_min(&rr(3), rmin);
+                });
+                auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rr);
+                if (global_variable::my_rank == 0) {
+                  std::printf("### f6rep ncycle=%d elements=%.0f negative=%.0f "
+                              "nonfinite=%.0f min(row excess/diag)=%.3e\n",
+                              static_cast<int>(pm->ncycle), hr(0), hr(1), hr(2), hr(3));
+                }
+              }
+            } else if (vefl_) {   // ck_sph_face = 5: the VEF factorisation
               par_for("ck_lin_build", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
               KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
                 if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
@@ -9118,7 +9424,98 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             if (ckdif_) ck_jlc_ok = false;   // the flux datum is not cached
             if (!ck_jlc_ok) {
               const bool jfus_ = ckjfus_;
-              if (vefl_) {   // ck_sph_face = 5: the VEF rows, a kernel of its own
+              if (vef6_) {
+                // ck_sph_face = 6: the exact (i-1, i, i+1) part of dSrc_i/dB of the
+                // ladder (ck_f6_build).  A unit current into node m raises node m by
+                // 1/D_m (D = Y looking up + Y looking down, the node's shunt once) and
+                // every other node by the product of the voltage ratios of the elements
+                // in between (up: a_s, a_c of the build; down: dn_s = g_s/(g_s + Yd_lo
+                // + g_p), dn_c = 1/(1 + R_c (Yd_hi + g_p)), Yd from a sweep up from the
+                // wall).  Cell j's B drives its two face nodes with g_p K_eq/B each (the
+                // cut cell's also the wall, cw); dep_i = g_p (K_lo + K_hi) - 2 g_p K_eq.
+                // Every factor is >= 0: the off-diagonals are >= 0 and the diagonal
+                // <= 0 (passive network, cell-local emission).  Pair rows in the first
+                // chain of the pair, zeros in the second.
+                const int npr6 = nch_/2;
+                CkParFor4("rt_chain_ck_jlin6", cklw_, 0, nmb1, 0, npr6-1, ks, ke, js, je,
+                KOKKOS_LAMBDA(const int m, const int pp, const int k, const int j) {
+                  // ck_f6_build skipped the columns done on its pass
+                  if (jfus_ && ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                  const int icut = icc_g(m,k,j);
+                  if (icut > ie) return;
+                  const int c0 = 2*pp, c1 = c0 + 1;
+                  auto P = [&](const int sl, const int c, const int i) -> Real {
+                    return lP_g(m,sl*nch_+c,i,k,j);
+                  };
+                  const Real cw = P(3,c1,icut);
+                  const Real cnv = (lC_g(2,c0) + lC_g(2,c1))
+                                 *AFC(m,k,j,ie+1)/SQR(X1F(m,ie+1));
+                  // cell i (current) and its lower neighbour's driving points
+                  Real gp = P(0,c0,icut), sr = gp*P(1,c0,icut), as = P(2,c0,icut);
+                  Real gs = P(2,c1,icut);
+                  Real ydl = P(4,c1,icut);                       // the wall
+                  Real ydh = gs*(ydl + gp)/(gs + ydl + gp);
+                  Real dlo = P(0,c1,icut) + ydl, dhi = P(1,c1,icut) + ydh;
+                  Real dns = gs/(gs + ydl + gp);
+                  Real dlop = 1.0, dhip = 1.0, asp = 0.0, srp = 0.0;
+                  for (int i=icut; i<=ie; ++i) {
+                    const Real ac = P(4,c0,i);
+                    // look-ahead: cell i+1
+                    Real gpn = 0.0, srn = 0.0, asn = 0.0, ydln = 0.0, ydhn = 0.0;
+                    Real dlon = 1.0, dhin = 1.0, dncn = 0.0, dnsn = 0.0;
+                    if (i < ie) {
+                      gpn = P(0,c0,i+1);
+                      srn = gpn*P(1,c0,i+1);
+                      asn = P(2,c0,i+1);
+                      const Real gsn = P(2,c1,i+1);
+                      const Real rcn = P(5,c0,i+1);
+                      const Real yb = ydh + gp;
+                      dncn = 1.0/(1.0 + rcn*yb);
+                      ydln = yb*dncn;
+                      dnsn = gsn/(gsn + ydln + gpn);
+                      ydhn = (ydln + gpn)*dnsn;
+                      dlon = P(0,c1,i+1) + ydln;
+                      dhin = P(1,c1,i+1) + ydhn;
+                    }
+                    // own: sources at lo_i and hi_i (and the wall for the cut cell)
+                    const Real wl = (i == icut) ? cw : 0.0;
+                    const Real klo0 = (sr + wl)/dlo + sr*dns/dhi;
+                    const Real khi0 = (sr + wl)*as/dlo + sr/dhi;
+                    // below: cell i-1 (and the wall through lo_{i-1} if it is the cut)
+                    Real klom = 0.0, khim = 0.0;
+                    if (i > icut) {
+                      const Real wlm = (i - 1 == icut) ? cw : 0.0;
+                      klom = ac*(srp/dhip + (srp + wlm)*asp/dlop);
+                      khim = as*klom;
+                    }
+                    // above: cell i+1
+                    Real klop = 0.0, khip = 0.0;
+                    if (i < ie) {
+                      khip = dncn*(srn/dlon + srn*dnsn/dhin);
+                      klop = dns*khip;
+                    }
+                    const Real cv = cnv/VLS(m,k,j,i);
+                    lj0_g(m,c0,i,k,j) = cv*(gp*(klo0 + khi0) - 2.0*sr);
+                    lpj_g(m,c0,i,k,j) = cv*gp*(klop + khip);
+                    ljm_g(m,c0,i,k,j) = cv*gp*(klom + khim);
+                    lj0_g(m,c1,i,k,j) = 0.0;
+                    lpj_g(m,c1,i,k,j) = 0.0;
+                    ljm_g(m,c1,i,k,j) = 0.0;
+                    // shift
+                    dlop = dlo;
+                    dhip = dhi;
+                    asp = as;
+                    srp = sr;
+                    gp = gpn;
+                    sr = srn;
+                    as = asn;
+                    ydh = ydhn;
+                    dlo = dlon;
+                    dhi = dhin;
+                    dns = dnsn;
+                  }
+                });
+              } else if (vefl_) {   // ck_sph_face = 5: the VEF rows
                 CkParFor4("rt_chain_ck_jlin", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
                 KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
                   // fused: ck_lin_build left the columns it skipped without a window
@@ -9509,7 +9906,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // ck-store: the storing pass's fluxes, by the linear re-apply on the
           // factorisation just built (after rt_chain_ck_jlin, whose windows share the
           // lps/lpf partials the linear kernels write)
-          if (ckstsp_) launch_ck_lin_tier();
+          // ck_sph_face = 6: a storing pass that ran the chain kernel (on the face-5
+          // map) takes its Src, Fb and Em from the face-6 network too
+          if (ckstsp_ || (vef6_ && cklbuild_)) launch_ck_lin_tier();
           // ---- problem/ck_impl_jfd (diagnostic): the tridiagonal of this pass against
           // a finite difference of the linear re-apply.  For every cell index i0 in turn
           // B_b(i0) of EVERY column moves by dB_b/dT dT (dT = 1e-3 T(i0)); the linear
