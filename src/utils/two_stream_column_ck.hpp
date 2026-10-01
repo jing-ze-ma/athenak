@@ -175,6 +175,11 @@ inline int ck_impl_negdbg = 0;
 // rest of the column keeps its Newton step.  Off, such a row sends the WHOLE column to
 // the per-cell fallback.  The residual and the tolerance are unchanged.
 inline bool ck_impl_rowfb = false;
+// problem/ck_impl_negpiv (fused step only, default false = bitwise off): keep the exact
+// Newton row of a cell with a non-positive diagonal (b <= 0: its net heating grows
+// with its temperature faster than cv/h) instead of treating it as bad; only a pivot
+// |b| <= 1e-12 sends the column to the fallback.  Takes precedence over ck_impl_rowfb.
+inline bool ck_impl_negpiv = false;
 // problem/ck_impl_jfd (diagnostic, > 0 on): on every pass that builds the tridiagonal
 // from the factorisation, check its diagonal against a finite difference of the linear
 // re-apply (two_stream_rt.hpp).  Print only; costs n1 extra linear passes.
@@ -1394,6 +1399,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     // ck_impl_negdbg (1-element counter when off)
     const int ngd_ = ck_impl_negdbg;
     const bool rfb_ = ck_impl_rowfb;
+    const bool npv_ = ck_impl_negpiv;
     DvceArray1D<int> ngc_("ck_negdbg_cnt", 1);
     auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
     auto &x2v_ = pm->pmb_pack->pcoord->x2v;
@@ -1885,7 +1891,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         // ck_impl_rowfb: a row with a non-positive diagonal takes the bounded per-cell
         // step of a thin cell (identity row) instead of sending its column to the
         // fallback
-        if (rfb_ && !sdc && !thin && !(b > 0.0)) {
+        if (rfb_ && !npv_ && !sdc && !thin && !(b > 0.0)) {
           a = 0.0;
           b = 1.0;
           c = 0.0;
@@ -1897,7 +1903,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           }
           nb += 65536;
         }
-        if (!(b > 0.0)) nb += 1;
+        if (npv_ && !thin && !sdc) {
+          // ck_impl_negpiv: the exact Newton row stands; only a vanishing pivot is bad
+          if (!(fabs(b) > 1.0e-12)) nb += 1;
+        } else if (!(b > 0.0)) {
+          nb += 1;
+        }
         sa(q) = a;
         sb(q) = b;
         sc(q) = c;
