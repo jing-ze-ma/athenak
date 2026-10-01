@@ -807,10 +807,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_res_mask = (impl_res_dmin > 0.0) || (impl_res_rmax > 0.0);
   impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",!fixcl);
   impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",fixcl);
-  // implicit_src_stable (stall_1002, read only when named, default false = the plain
-  // form bitwise): the cancellation-free form of the gas-eliminated source row
-  impl_src_stable = pin->DoesParameterExist("rad_m1","implicit_src_stable") ?
-                    pin->GetBoolean("rad_m1","implicit_src_stable") : false;
+  // implicit_src_stable (stall_1002): the cancellation-free form of the gas-eliminated
+  // source row.  DEFAULT true (user 10-02) for a fresh run; false (the plain form,
+  // bitwise) on a restart whose file lacks the key, with one line on rank 0.  The value
+  // is recorded, so later restarts keep it; a named key always wins.
+  {const bool named = pin->DoesParameterExist("rad_m1","implicit_src_stable");
+  impl_src_stable = pin->GetOrAddBoolean("rad_m1","implicit_src_stable",
+                                         !global_variable::restart_run);
+  if (!named && global_variable::restart_run && global_variable::my_rank == 0) {
+    std::cout << "rad_m1: implicit_src_stable = false (restart file lacks the key; "
+              << "name it to switch the stable source row on)" << std::endl;
+  }
+  }
   impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",
                                   (fixcl && impl_bcg_sync >= 1) ? 1.0e-2 : 0.0);
   impl_ew_gam = pin->GetOrAddReal("rad_m1","implicit_lin_ew_gamma",0.9);
