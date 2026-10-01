@@ -89,6 +89,16 @@ bool hs_zflux_ = true;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
 // (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
 bool hs_binf_ = false, hs_bout_ = false;
+// bsg-arm2: problem/he_bc_outer = hse (hs_bhse_): the top ghosts are the HYDROSTATIC
+// continuation of the last active cell (HeStarBC); he_bc_hse_gmax clamps the Eddington
+// factor used there, he_bc_hse_tgrad continues T along the interior's dT/dPhi_eff
+// (polytropic WB walk) instead of holding it (isothermal).  problem/he_sponge_mode =
+// radial (hs_sp_rad_) makes the top sponge damp v_r only (default all = v).
+// problem/he_sponge_dmax (default 0 = off): the sponge also acts, at its full rate, on
+// every cell with rho < he_sponge_dmax (the floor gas above the photosphere, which can
+// not be hydrostatic and falls freely)
+bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false;
+Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
 // problem/he_ic_balance: the discretely balanced initial cells (all x1 cells incl. ghosts
 // of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
@@ -1122,16 +1132,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // v_r copied from the first active cell (zero gradient), so mass may enter or leave;
   // no wall-face correction.  problem/he_bc_outer: noinflow (default) | outflow: the
   // ghosts continue the edge cell as a constant-velocity wind, rho ~ r^-2, the edge's
-  // specific internal energy (the no-inflow face correction of he_wall_zero_flux stays).
+  // specific internal energy (the no-inflow face correction of he_wall_zero_flux stays)
+  // | hse (bsg-arm2): the ghosts are the edge cell walked outward in hydrostatic balance
+  // with the effective gravity of the code's own forces (see HeStarBC), T held (or
+  // continued along the interior's dT/dPhi_eff with he_bc_hse_tgrad), v_r copied where
+  // it points out and zero where it points in, v_t copied (box_convection bc_mode_top 4).
   {
     const std::string bi = pin->GetOrAddString("problem","he_bc_inner","wall");
     const std::string bo = pin->GetOrAddString("problem","he_bc_outer","noinflow");
-    if ((bi != "wall" && bi != "inflow") || (bo != "noinflow" && bo != "outflow")) {
-      HsFatal("problem/he_bc_inner must be wall|inflow, he_bc_outer noinflow|outflow",
+    if ((bi != "wall" && bi != "inflow") ||
+        (bo != "noinflow" && bo != "outflow" && bo != "hse")) {
+      HsFatal("problem/he_bc_inner must be wall|inflow, he_bc_outer noinflow|outflow|hse",
               __LINE__);
     }
     hs_binf_ = (bi == "inflow");
     hs_bout_ = (bo == "outflow");
+    hs_bhse_ = (bo == "hse");
+    if (hs_bhse_) {
+      hs_bhse_gmax_ = pin->GetOrAddReal("problem","he_bc_hse_gmax",0.9);
+      hs_bhse_tg_ = pin->GetOrAddBoolean("problem","he_bc_hse_tgrad",false);
+      if (!(hs_bhse_gmax_ >= 0.0 && hs_bhse_gmax_ < 1.0)) {
+        HsFatal("problem/he_bc_hse_gmax must be in [0,1)", __LINE__);
+      }
+    }
   }
   pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","he_wall_closed",
                                                        !hs_binf_);
@@ -1140,6 +1163,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   hs_sp_rate_ = pin->GetOrAddReal("problem","he_sponge_rate",0.0);
   hs_sp_r0_ = pin->GetOrAddReal("problem","he_sponge_r0",hs_rint_);
+  if (pin->DoesParameterExist("problem","he_sponge_mode")) {
+    const std::string sm = pin->GetString("problem","he_sponge_mode");
+    if (sm != "all" && sm != "radial") {
+      HsFatal("problem/he_sponge_mode must be all|radial", __LINE__);
+    }
+    hs_sp_rad_ = (sm == "radial");
+  }
+  if (pin->DoesParameterExist("problem","he_sponge_dmax")) {
+    hs_sp_dmax_ = pin->GetReal("problem","he_sponge_dmax");
+  }
   hs_rtop_ = rtop;
   user_srcs_func = HeStarGravity;
   user_bcs_func = HeStarBC;
@@ -1349,14 +1382,30 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   if (hs_sp_rate_ <= 0.0) return;
   // top sponge: the velocity relaxes to zero at the rate he_sponge_rate*w,
   // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the total
-  // energy (the heat is not kept, so that the sponge adds no buoyancy)
+  // energy (the heat is not kept, so that the sponge adds no buoyancy).
+  // he_sponge_mode = radial: only v_r (the transverse momenta are untouched)
   auto &x1v = pmbp->pcoord->x1v;
-  const Real rate = hs_sp_rate_, r0 = hs_sp_r0_, rt = hs_rtop_;
+  const Real rate = hs_sp_rate_, r0 = hs_sp_r0_, rt = hs_rtop_, spd = hs_sp_dmax_;
+  if (hs_sp_rad_) {
+    par_for("hs_sponge_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real r = x1v(m,i);
+      const bool low = (u0(m,IDN,k,j,i) < spd);
+      if (r <= r0 && !low) return;
+      const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
+      const Real f = exp(-bdt*rate*w);
+      const Real ke1 = 0.5*SQR(u0(m,IM1,k,j,i))/u0(m,IDN,k,j,i);
+      u0(m,IM1,k,j,i) *= f;
+      u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke1;
+    });
+    return;
+  }
   par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
-    if (r <= r0) return;
-    const Real w = SQR((r - r0)/(rt - r0));
+    const bool low = (u0(m,IDN,k,j,i) < spd);
+    if (r <= r0 && !low) return;
+    const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
     const Real f = exp(-bdt*rate*w);
     const Real d = u0(m,IDN,k,j,i);
     const Real ke0 = 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
@@ -1394,10 +1443,18 @@ void HeStarBC(Mesh *pm) {
   const int nf = hs_nf_;
   const bool bal = hs_bal_;
   auto cbd = hs_bd_, cbe = hs_be_;
-  const bool binf = hs_binf_, bout = hs_bout_;
+  const bool binf = hs_binf_, bout = hs_bout_, bhse = hs_bhse_, bhtg = hs_bhse_tg_;
   auto ur = pmbp->pradm1->u0;
   const Real cl = pmbp->pradm1->c_light;
   const Real efl = pmbp->pradm1->e_floor;
+  // he_bc_outer = hse
+  auto eos = ph->peos->eos_data;
+  auto pwc = ph->phicc_wb;
+  auto aref = pmbp->pradm1->arad_ref;
+  auto opac = pmbp->pradm1->opac;
+  const bool haveop = (opac.extent_int(0) > 0);
+  const Real gm = hs_gm_, gmax = hs_bhse_gmax_;
+  const Real dfl = eos.dfloor;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -1410,6 +1467,73 @@ void HeStarBC(Mesh *pm) {
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - da*phicc(m,k,j,ia);
       const bool inflo = lo && binf, outfl = !lo && bout;
+      if (!lo && bhse) {
+        // THE HYDROSTATIC TOP (he_bc_outer = hse).  Every ghost layer continues the LAST
+        // ACTIVE cell a = ie (box_convection bc_mode_top 4, ported): with the WB pair's
+        // effective potential Phi_eff (gravity minus the reference radiation force
+        // a_ref of the column, what the x1 well-balanced stencil walks along) plus the
+        // RESIDUAL radiation force the M1 module applies on top of it,
+        //   a_rad = opac_T F_1/(c rho) of cell a  (the code's own force; the reference
+        //           a_ref when the opacity is not yet filled, i.e. on the first step),
+        //   Gamma = a_rad/g(r_a) clamped to [0, he_bc_hse_gmax], scaled ~ r^-2,
+        // the ghost is the cell walked by dPhi = Phi_eff(r_g) - Phi_eff(r_a)
+        //   - (Gamma g_a - a_ref(a)) r_a^2 (1/r_a - 1/r_g)
+        // with the WB closure (utils/wb_background.hpp WBAdvance): ISOTHERMAL (T_g = T_a,
+        // exact for the ideal gas: rho_g = rho_a exp(-dPhi rho_a/p_a)) or, with
+        // he_bc_hse_tgrad, polytropic along the interior's one-sided dT/dPhi_eff.  So
+        // the total effective gravity over the ghosts is g (1 - Gamma), and with
+        // a_rad = a_ref the ghost IS the WB background of the edge cell: the top-face
+        // Riemann problem then carries no hydrostatic residual (no one-signed mass flux).
+        // Not finite / not positive -> copy of the edge cell; floors after.
+        const int ia1 = ie - 1;
+        const Real ta = eos.Temperature(da, ea);
+        const Real ra = x1v(m,ia), ga = gm/SQR(ra);
+        const Real ar0 = aref(m,k,j,ia);
+        Real arad = ar0;
+        if (haveop && opac(m,radm1::M1_OP_T,k,j,ia) > 0.0) {
+          arad = opac(m,radm1::M1_OP_T,k,j,ia)*ur(m,radm1::M1_F1,k,j,ia)/(cl*da);
+        }
+        Real gam = arad/ga;
+        gam = (gam < 0.0) ? 0.0 : ((gam > gmax) ? gmax : gam);
+        const Real dres = gam*ga - ar0;
+        Real dltdphi = 0.0;
+        if (bhtg) {
+          const Real d1 = uh(m,IDN,k,j,ia1);
+          const Real e1 = uh(m,IEN,k,j,ia1) - 0.5*(SQR(uh(m,IM1,k,j,ia1))
+                          + SQR(uh(m,IM2,k,j,ia1)) + SQR(uh(m,IM3,k,j,ia1)))/d1
+                          - d1*phicc(m,k,j,ia1);
+          const Real dph1 = pwc(m,k,j,ia) - pwc(m,k,j,ia1);
+          if (dph1 != 0.0) dltdphi = (ta - eos.Temperature(d1, e1, ta))/dph1;
+        }
+        const Real v1e = uh(m,IM1,k,j,ia)/da;
+        const Real v1 = (v1e > 0.0) ? v1e : 0.0;
+        const Real v2 = uh(m,IM2,k,j,ia)/da;
+        const Real v3 = uh(m,IM3,k,j,ia)/da;
+        for (int g=0; g<ng; ++g) {
+          const int ig = ie + 1 + g;
+          const Real rg = x1v(m,ig);
+          const Real dphi = (pwc(m,k,j,ig) - pwc(m,k,j,ia))
+                            - dres*SQR(ra)*(1.0/ra - 1.0/rg);
+          Real dg = da, eg = ea, tg = ta;
+          WBAdvance(eos, bhtg ? 3 : 1, da, ea, dphi, dg, eg, tg, ta, dltdphi, ta, ta);
+          if (!(Kokkos::isfinite(dg) && (dg > 0.0) && Kokkos::isfinite(eg)
+                && (eg > 0.0))) {
+            dg = da;
+            eg = ea;
+          }
+          if (dg < dfl) {
+            eg *= dfl/dg;
+            dg = dfl;
+          }
+          uh(m,IDN,k,j,ig) = dg;
+          uh(m,IM1,k,j,ig) = dg*v1;
+          uh(m,IM2,k,j,ig) = dg*v2;
+          uh(m,IM3,k,j,ig) = dg*v3;
+          uh(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
+          radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
+        }
+        continue;
+      }
       const Real sd = inflo ? 1.0 :
                       da/(bal ? cbd(ia) : HsLogInterp(crho, rlo, dr, nf, x1v(m,ia)));
       const Real se = inflo ? 1.0 :
