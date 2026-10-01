@@ -243,6 +243,18 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     wb_rmax = pin->GetOrAddReal("mhd","wb_rmax",0.0);
     // ...and off BELOW this radius (0 = never), same path, same caveat.
     wb_rmin = pin->GetOrAddReal("mhd","wb_rmin",0.0);
+    // radiation-modified CFL signal speed (mhd_newdt.cpp), the MHD form of
+    // <hydro>/rad_signal_speed with the same default: on with an IMPLICIT M1 transport
+    // (<rad_m1>/transport = implicit | implicit_x1), off otherwise.  Read only when
+    // named, so the parameter dump of a run without the key is unchanged.
+    if (pin->DoesBlockExist("rad_m1") &&
+        pin->DoesParameterExist("rad_m1","transport")) {
+      std::string tr = pin->GetString("rad_m1","transport");
+      rad_signal_speed = (tr.compare("implicit") == 0 || tr.compare("implicit_x1") == 0);
+    }
+    if (pin->DoesParameterExist("mhd","rad_signal_speed")) {
+      rad_signal_speed = pin->GetBoolean("mhd","rad_signal_speed");
+    }
     // allocate array of flags used with etotgrav
     if (use_etotgrav || use_wellbalance_dynamic) {
       auto &indcs = pmy_pack->pmesh->mb_indcs;

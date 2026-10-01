@@ -1145,7 +1145,7 @@ void Mesh::NewTimeStep(const Real tlim) {
   }
 #endif
 
-  // A non-finite fluid state (hydro NewTimeStep flags it with dtnew = -1, see the
+  // A non-finite fluid state (hydro and MHD NewTimeStep flag it with dtnew = -1, see the
   // NON-FINITE GUARD there) or any non-finite / non-positive dt: stop here, with the
   // cell, instead of stepping on with a dt set by the cells that are still finite.
   if (!(dt > 0.0) || !std::isfinite(dt)) {
@@ -1161,6 +1161,22 @@ void Mesh::NewTimeStep(const Real tlim) {
         std::cout << " r=" << dd(0) << " rho=" << dd(1) << " T=" << dd(2)
                   << " p=" << dd(3) << " v=(" << dd(5) << "," << dd(6) << ","
                   << dd(7) << ")";
+      }
+      std::cout << std::endl;
+    }
+    // the same for MHD (mhd_newdt.cpp has the same NON-FINITE GUARD)
+    if (pmb_pack->pmhd != nullptr && !(pmb_pack->pmhd->dtnew > 0.0)) {
+      mhd::MHD *pq = pmb_pack->pmhd;
+      std::cout << "### non-finite mhd state at cycle=" << ncycle << " time=" << time
+                << " cell (m,k,j,i) = (" << pq->dtnew_m << "," << pq->dtnew_k << ","
+                << pq->dtnew_j << "," << pq->dtnew_i << ") gid = "
+                << (pmb_pack->gids + std::max(pq->dtnew_m, 0)) << " rank "
+                << global_variable::my_rank;
+      if (pq->dt_diag_valid) {
+        auto &dd = pq->dt_diag.h_view;
+        std::cout << " r=" << dd(0) << " rho=" << dd(1) << " T=" << dd(2)
+                  << " p=" << dd(3) << " |B|^2=" << dd(4) << " v=(" << dd(6) << ","
+                  << dd(7) << "," << dd(8) << ")";
       }
       std::cout << std::endl;
     }
