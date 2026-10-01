@@ -353,9 +353,9 @@ inline DvceArray5D<Real> *ck_vef_s_ptr = nullptr;
 inline DvceArray5D<Real> *ck_vef_g_ptr = nullptr;
 inline DvceArray5D<Real> *ck_vef_w_ptr = nullptr;
 //! \fn bool CkVefDue
-//! \brief ck_sph_face = 5: is this pass the one that refreshes the VEF factors?  The
-//! first one ever, else (ck_vef_sync) a STORING pass ck_vef_every or more cycles after
-//! the last refresh.  The same test decides the restart snapshot (CkVefSnap).
+//! \brief ck_sph_face = 5: is this pass the one that refreshes the VEF factors?  With
+//! ck_vef_sync only a STORING pass, the first one or one ck_vef_every or more cycles
+//! after the last refresh.  The same test decides the restart snapshot (CkVefSnap).
 inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst);
 KOKKOS_INLINE_FUNCTION void CkJacQAdd(Real *p, const Real v) { *p += v; }
 
@@ -1381,8 +1381,9 @@ inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
 inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst) {
-  return ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
-         ((!ck_vef_sync || !ckfop || ckfst) && pm->ncycle - ck_vef_last >= ck_vef_every);
+  const bool stp = !ck_vef_sync || !ckfop || ckfst;    // a pass that may refresh
+  return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
+                 pm->ncycle - ck_vef_last >= ck_vef_every);
 }
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
@@ -7076,7 +7077,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         const bool vdue_ = ck_rst_rebuild_active ? ck_vef_force
                                                  : CkVefDue(pm, ckfop_, ckfst_);
         if (ck_sph_face == 5 && (ck_vef_s_ptr == nullptr || vdue_)) {
-          if (!ck_rst_rebuild_active) ck_vef_last = static_cast<int>(pm->ncycle);
+          // a refresh forced on a re-applying pass (nothing formed yet, e.g. the first
+          // call after a restart without VEF state re-applies an xstep operator) is not
+          // a scheduled one: the next storing pass refreshes (and snapshots) properly
+          if (!ck_rst_rebuild_active && vdue_) {
+            ck_vef_last = static_cast<int>(pm->ncycle);
+          }
           const int nv = n1 + 3;
           const int nc_ = CK_NB*CK_NG;
           if (ck_vef_s_ptr == nullptr ||
