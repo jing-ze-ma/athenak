@@ -38,6 +38,15 @@ Viscosity::Viscosity(std::string block, MeshBlockPack *pp, ParameterInput *pin) 
                 << "Invalid choice for isotropic viscosity type" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // the viscous fluxes difference over the LOGICAL Cartesian block spacing and have
+    // no curvilinear (area/volume, geometric source) form
+    if (pp->pmesh->use_spherical_polar || pp->pmesh->use_cubed_sphere) {
+      std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
+                << "<" << block << ">/isotropic_viscosity has no curvilinear form (it "
+                << "uses the logical Cartesian dx): not supported with "
+                << "mesh/use_spherical_polar or mesh/use_cubed_sphere" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // constant conductivity
     nu_iso = pin->GetReal(block,"nu_iso");
   }

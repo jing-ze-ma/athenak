@@ -354,6 +354,14 @@ class RadiationM1 {
   // the cell form under vet_col_surface_q, whose q = H(face)/J(top cell) is built for
   // the cell E.
   bool impl_mface_lin = false;
+  // implicit_face_weight = equal (default) | distance: how the x1 face values of the
+  // transport opacity rho kappa_T, the velocity v1 and G0 are formed from the two
+  // adjacent cells in the x1 face equation, the E rows, the vimp rows and the momentum
+  // deposit.  equal: 0.5 (q_L + q_R).  distance (spherical-polar wedge only; a Cartesian
+  // grid is uniform): linear interpolation to the face from the two cell midpoints,
+  // q_f = (dr_R q_L + dr_L q_R)/(dr_L + dr_R), dr the radial cell widths; identical to
+  // equal (bitwise) where the two widths agree to 1e-12.  Read only when named.
+  bool impl_face_wdist = false;
   // implicit_bc_advect: a MARSHAK x1 end also carries the advected enthalpy flux
   // A E (outflow: the end cell's E; inflow: the bath).  Default off (bitwise).
   bool impl_bc_advect;

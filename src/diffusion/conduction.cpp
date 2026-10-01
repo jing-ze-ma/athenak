@@ -91,6 +91,19 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
                 << "Invalid choice for isotropic thermal conduction type" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // constant and Spitzer conduction difference over the LOGICAL Cartesian block
+    // spacing (AddIsotropicHeatFluxConstCond/SpitzerCond, NewTimeStep): on a
+    // spherical-polar or cubed-sphere mesh that is not the cell (stretched or not), and
+    // there is no area/volume form.  Only `radiative` has the curvilinear path.
+    if ((iso_cond_type.compare("radiative") != 0) &&
+        (pp->pmesh->use_spherical_polar || pp->pmesh->use_cubed_sphere)) {
+      std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
+                << "<" << block << ">/isotropic_conduction = " << iso_cond_type
+                << " has no curvilinear form (it uses the logical Cartesian dx): not "
+                << "supported with mesh/use_spherical_polar or mesh/use_cubed_sphere. "
+                << "Use isotropic_conduction = radiative there." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // constant conductivity
     if (iso_cond_type.compare("constant") == 0) {
       kappa_iso = pin->GetReal(block,"kappa_iso");
