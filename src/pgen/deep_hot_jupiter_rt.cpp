@@ -1321,6 +1321,51 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_fuse = pin->GetOrAddBoolean("problem","ck_impl_fuse",t4def);
   two_stream_rt::ck_impl_jac_lin = pin->GetOrAddBoolean("problem","ck_impl_jac_lin",
       t4def && two_stream_rt::ck_impl_lin && two_stream_rt::ck_impl_lin_thr == 1);
+  two_stream_rt::ck_sph_top = pin->GetOrAddInteger("problem","ck_sph_top",0);
+  // problem/ck_sph_face (prototype, default 0): see two_stream_rt::ck_sph_face.
+  // problem/ck_sph_dilute = true is the older spelling of ck_sph_face = 1.
+  two_stream_rt::ck_sph_dilute = pin->GetOrAddBoolean("problem","ck_sph_dilute",false);
+  two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
+                                                    two_stream_rt::ck_sph_dilute ? 1 : 0);
+  two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5);
+  // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5.  With
+  // face 5 the DEFAULTS of ck_vef_every (150), ck_impl_rowfb (true) and ck_impl_rsec (4)
+  // are the measured cheapest accuracy-neutral setting (cksph_test_0930/PORT.md);
+  // explicit keys override; face 0 keeps the old defaults (bitwise)
+  const bool vef5 = two_stream_rt::ck_vef_on;
+  two_stream_rt::ck_vef_every = pin->GetOrAddInteger("problem","ck_vef_every",
+                                                     vef5 ? 150 : 1);
+  two_stream_rt::ck_vef_ncore = pin->GetOrAddInteger("problem","ck_vef_ncore",8);
+  two_stream_rt::ck_vef_sync = pin->GetOrAddBoolean("problem","ck_vef_sync",true);
+  // face 5 runs on the production linear path (ck_impl_lin, the paired tier, its
+  // Jacobian from the factorisation); faces 1-4 on the chain kernel only
+  const bool vef_lin_ok = two_stream_rt::ck_impl_lin_thr == 1 &&
+      pin->GetOrAddInteger("problem","ck_nquad",2) == 2 &&
+      two_stream_rt::ck_dif_dtau <= 0.0;
+  const bool lin_on = two_stream_rt::ck_impl_lin || two_stream_rt::ck_impl_jac_lin;
+  if (two_stream_rt::ck_sph_face < 0 || two_stream_rt::ck_sph_face > 5 ||
+      (two_stream_rt::ck_sph_face != 0 &&
+       (!two_stream_rt::ck_spherical || two_stream_rt::ck_sweep_form != 1)) ||
+      (two_stream_rt::ck_sph_face >= 1 && two_stream_rt::ck_sph_face <= 4 && lin_on) ||
+      (two_stream_rt::ck_sph_face == 5 && lin_on && !vef_lin_ok) ||
+      (two_stream_rt::ck_sph_face >= 3 && two_stream_rt::ck_dif_dtau > 0.0) ||
+      (two_stream_rt::ck_sph_face == 5 && two_stream_rt::ck_sph_top == 2)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_face must be "
+              << "0..5, and != 0 needs ck_spherical and ck_sweep_form = 1; 1..4 need "
+              << "ck_impl_lin = false and ck_impl_jac_lin = false; 5 with ck_impl_lin "
+              << "needs ck_impl_lin_thr = 1, ck_nquad = 2 and ck_dif_dtau = 0; 3 and 4 "
+              << "also need ck_dif_dtau = 0, 5 ck_sph_top != 2"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  // problem/ck_sph_top (prototype, default 0): see two_stream_rt::ck_sph_top
+  if (two_stream_rt::ck_sph_top < 0 || two_stream_rt::ck_sph_top > 2 ||
+      (two_stream_rt::ck_sph_top == 2 && lin_on)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sph_top must be "
+              << "0..2, and 2 needs ck_impl_lin = false and ck_impl_jac_lin = false"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   two_stream_rt::ck_impl_jac0 = pin->GetOrAddBoolean("problem","ck_impl_jac0",false);
   two_stream_rt::ck_impl_jneg = pin->GetOrAddBoolean("problem","ck_impl_jneg",false);
   two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",
@@ -1336,7 +1381,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                       two_stream_rt::ck_sweep_form == 1 && ck_spherical && ck_beam_sph;
   two_stream_rt::ck_beam_par = pin->GetOrAddBoolean("problem","ck_beam_par",bpdef);}
   // problem/ck_impl_rsec: secant bound on the thick rows' diagonal (0 = off, bitwise)
-  two_stream_rt::ck_impl_rsec = pin->GetOrAddReal("problem","ck_impl_rsec",0.0);
+  two_stream_rt::ck_impl_rsec = pin->GetOrAddReal("problem","ck_impl_rsec",
+                                                  two_stream_rt::ck_vef_on ? 4.0 : 0.0);
   two_stream_rt::ck_impl_lw = pin->GetOrAddBoolean("problem","ck_impl_lw",false);
   // problem/ck_impl_glob: Newton globalisation of the fused T4 step, none | ls | ls_sub
   // (utils/two_stream_column_ck.hpp, tests_ck_implicit/README_glob.md).  none = bitwise.
@@ -1388,6 +1434,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",fbdef);}
   two_stream_rt::ck_impl_stalldbg =
       pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
+  two_stream_rt::ck_impl_negdbg = pin->GetOrAddInteger("problem","ck_impl_negdbg",0);
+  two_stream_rt::ck_impl_jfd = pin->GetOrAddInteger("problem","ck_impl_jfd",0);
+  two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",
+                                                     two_stream_rt::ck_vef_on);
+  if (two_stream_rt::ck_vef_on && global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: ck_sph_face = 5 (VEF), effective: ck_sph_top = "
+              << two_stream_rt::ck_sph_top << ", ck_vef_every = "
+              << two_stream_rt::ck_vef_every << ", ck_vef_sync = "
+              << two_stream_rt::ck_vef_sync << ", ck_impl_rowfb = "
+              << two_stream_rt::ck_impl_rowfb << ", ck_impl_rsec = "
+              << two_stream_rt::ck_impl_rsec << std::endl;
+  }
+  two_stream_rt::ck_impl_negpiv = pin->GetOrAddBoolean("problem","ck_impl_negpiv",false);
+  two_stream_rt::ck_impl_jnet = pin->GetOrAddBoolean("problem","ck_impl_jnet",false);
+  two_stream_rt::ck_impl_tol_ptop = pin->GetOrAddReal("problem","ck_impl_tol_ptop",0.0);
+  two_stream_rt::ck_impl_norm_eps_top =
+      pin->GetOrAddReal("problem","ck_impl_norm_eps_top",0.1);
+  if ((two_stream_rt::ck_impl_rowfb || two_stream_rt::ck_impl_negpiv) &&
+      !two_stream_rt::ck_impl_fuse) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_rowfb and "
+              << "ck_impl_negpiv live in the fused step (ck_impl_fuse)." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // problem/ck_impl_kkt_row: DEFAULT TRUE since default-flips (09-26; 1x production
   // NOT-CONVERGED 20/2113 -> 0 at the same cost).  It acts only with ck_impl_floorbound
   // or ck_impl_kkt_demax on the fused glob = 0 path; false restores the old rows.  The
@@ -1608,6 +1677,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
+  two_stream_rt::rt_dump_kap = pin->GetOrAddBoolean("problem","ck_dump_kap",false);
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
@@ -3003,6 +3073,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real tTk = pin->GetOrAddReal("problem","rt_test_T",0.0);
     const Real tdT = pin->GetOrAddReal("problem","rt_test_dT",0.0);
     const Real tnw = pin->GetOrAddReal("problem","rt_test_nwave",0.0);
+    // rt_test_rstep > 0 (test only): rho = rt_test_rho_top above r = rt_test_rstep (the
+    // sharp-photosphere check of tests_ck_sph/closure_0930); needs rt_test_rho > 0.
+    const Real trst = pin->GetOrAddReal("problem","rt_test_rstep",0.0);
+    const Real trtop = pin->GetOrAddReal("problem","rt_test_rho_top",0.0);
     if (!restart && (trho > 0.0 || tTk > 0.0 || tdT != 0.0)) {
       if (pmbp->phydro == nullptr || use_cubed_sphere_) {
         std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_test_rho, _T "
@@ -3026,7 +3100,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real ke0 = u0t(m,IEN,k,j,i) - eold - (etgt ? rho0*ph : 0.0);
         Real rho = rho0;
         if (trho > 0.0) {
-          rho = trho;
+          rho = (trst > 0.0 && x1vt(m,i) > trst) ? trtop : trho;
           u0t(m,IDN,k,j,i) = rho;
           u0t(m,IM1,k,j,i) = 0.0;
           u0t(m,IM2,k,j,i) = 0.0;
