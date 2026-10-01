@@ -428,8 +428,10 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   // the resistive fluxes in MHD): the published algorithm forms the trial update from
   // the Riemann fluxes only, and the fallback is meant to replace that flux, with the
   // corrections then applied on top of the first-order flux.
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_flxraw");}
   if (use_fofc) {
     FOFC(pdrive, stage);
+    if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_flxfofc");}
   } else if (pmy_pack->pcoord->is_general_relativistic) {
     if (pmy_pack->pcoord->coord_data.bh_excise) {
       FOFC(pdrive, stage);
