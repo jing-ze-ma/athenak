@@ -2036,7 +2036,8 @@ inline void CkConserveFlux(Mesh *pm, const Real bdt) {
 //! \fn CkNonconvLoc
 //! \brief problem/ck_impl_ncloc: after a NOT-CONVERGED ck_implicit call, print where the
 //! columns still active (ck_done = 0) are: gid, m, k, j, the cell i of the column's
-//! largest relative residual |e - e* - dt S|/(e + eps e_max) (the fused test's norm),
+//! largest relative residual |e - e* - dt S|/(e + eps e_max) (the fused test's norm;
+//! KKT cells skipped, as the test skips them),
 //! its pressure [bar] and T from the last sweep, and the column's top pressure.  Print
 //! only; nothing is written.
 
@@ -2064,6 +2065,16 @@ inline void CkNonconvLoc(Mesh *pm, const Real bdt) {
   auto &x2v_ = pm->pmb_pack->pcoord->x2v;
   auto &x3v_ = pm->pmb_pack->pcoord->x3v;
   DvceArray1D<int> cnt("ck_ncloc_cnt", 1);
+  // the cells the convergence test counts as converged (KKT: on the floor or the demax
+  // bound with the residual pointing through it) are skipped, as the test skips them
+  const Real detot = ck_impl_demax;
+  const bool fbk = ck_impl_floorbound;
+  const bool kdk = ck_impl_kkt_demax && (detot > 0.0);
+  EOS_Data eosk = (pm->pmb_pack->pmhd != nullptr)
+                  ? pm->pmb_pack->pmhd->peos->eos_data
+                  : pm->pmb_pack->phydro->peos->eos_data;
+  auto u0k = (pm->pmb_pack->pmhd != nullptr) ? pm->pmb_pack->pmhd->u0
+                                             : pm->pmb_pack->phydro->u0;
   par_for("ck_ncloc", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     if (done_(m,k,j) != 0.0) return;
@@ -2078,6 +2089,8 @@ inline void CkNonconvLoc(Mesh *pm, const Real bdt) {
     for (int i=ic; i<ie+1; ++i) {
       const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
       const Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+      if ((fbk || kdk) && CkKktCell(eosk, fbk, kdk, detot, u0k(m,IDN,k,j,i),
+                                    ei_(m,k,j,i), est_(m,k,j,i), r)) continue;
       if (s > rn) {
         rn = s;
         iw = i;
