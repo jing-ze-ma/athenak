@@ -981,6 +981,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_jfd = pin->GetOrAddInteger("problem","ck_impl_jfd",0);
   two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",false);
   two_stream_rt::ck_impl_negpiv = pin->GetOrAddBoolean("problem","ck_impl_negpiv",false);
+  two_stream_rt::ck_impl_jnet = pin->GetOrAddBoolean("problem","ck_impl_jnet",false);
   if ((two_stream_rt::ck_impl_rowfb || two_stream_rt::ck_impl_negpiv) &&
       !two_stream_rt::ck_impl_fuse) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_rowfb and "

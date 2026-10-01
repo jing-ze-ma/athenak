@@ -8938,6 +8938,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             auto ljm_g = *ck_ljm_ptr;
             auto lj0_g = *ck_lj0_ptr;
             const bool jneg_ = ck_impl_jneg;
+            const bool jnet_ = ck_impl_jnet;   // keep a negative NET off-diagonal
             if (ckdif_) ck_jlc_ok = false;   // the flux datum is not cached
             if (!ck_jlc_ok) {
               const bool jfus_ = ckjfus_;
@@ -9324,9 +9325,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
               // ck_impl_jneg: a negative NET off-diagonal is dropped (the M-matrix);
               // without it every part is already >= 0
-              jac_g(m,0,k,j,i) = (s0 > 0.0) ? s0 : 0.0;
+              jac_g(m,0,k,j,i) = (jnet_ || s0 > 0.0) ? s0 : 0.0;
               jac_g(m,1,k,j,i) = s1;
-              jac_g(m,2,k,j,i) = (s2 > 0.0) ? s2 : 0.0;
+              jac_g(m,2,k,j,i) = (jnet_ || s2 > 0.0) ? s2 : 0.0;
             });
           }
           // ck-store: the storing pass's fluxes, by the linear re-apply on the

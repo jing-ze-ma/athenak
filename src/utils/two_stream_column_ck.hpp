@@ -180,6 +180,10 @@ inline bool ck_impl_rowfb = false;
 // with its temperature faster than cv/h) instead of treating it as bad; only a pivot
 // |b| <= 1e-12 sends the column to the fallback.  Takes precedence over ck_impl_rowfb.
 inline bool ck_impl_negpiv = false;
+// problem/ck_impl_jnet (default false = bitwise off): keep a NEGATIVE net off-diagonal
+// of the ck_impl_jac_lin tridiagonal (ck_jlin_sum) instead of dropping it; with
+// ck_impl_jneg (the per-chain parts) the rows are then the full derivative.
+inline bool ck_impl_jnet = false;
 // problem/ck_impl_jfd (diagnostic, > 0 on): on every pass that builds the tridiagonal
 // from the factorisation, check its diagonal against a finite difference of the linear
 // re-apply (two_stream_rt.hpp).  Print only; costs n1 extra linear passes.
