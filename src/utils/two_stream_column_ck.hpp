@@ -164,6 +164,10 @@ inline bool ck_impl_kkt_demax = false;
 // flag and the magnitudes that set the round-off floor of the residual.  Nothing reads
 // it.
 inline int ck_impl_stalldbg = 0;
+// problem/ck_impl_negdbg = N > 0 (diagnostic): on every fused pass print up to N Newton
+// rows whose diagonal b = 1 - h J_ii/cv is not positive (they send the whole column to
+// the bounded per-cell fallback), with the three Jacobian entries.  Print only.
+inline int ck_impl_negdbg = 0;
 // problem/ck_impl_kkt_row: the ACTIVE-SET row for the KKT cells of ck_impl_floorbound /
 // ck_impl_kkt_demax.  A cell on a bound whose residual points through it cannot move,
 // but its row still asks the tridiagonal for a step, and that unrealised step feeds its
@@ -1343,6 +1347,9 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     auto osa_ = osc_ ? *ck_osc_ptr : CkDum<DvceArray4D<Real>>("ck_osc_d");
     const int pass_ = ck_impl_pass;
     const bool csph_ = pm->use_cubed_sphere;
+    // ck_impl_negdbg (1-element counter when off)
+    const int ngd_ = ck_impl_negdbg;
+    DvceArray1D<int> ngc_("ck_negdbg_cnt", 1);
     auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
     auto &x2v_ = pm->pmb_pack->pcoord->x2v;
     auto &x3v_ = pm->pmb_pack->pcoord->x3v;
@@ -1822,6 +1829,15 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           d = 0.0;
         }
         if (!(b > 0.0)) nb += 1;
+        if (ngd_ > 0 && !(b > 0.0)) {
+          if (Kokkos::atomic_fetch_add(&ngc_(0), 1) < ngd_) {
+            Kokkos::printf("### ck_negdbg pass=%d m=%d k=%d j=%d i=%d ic=%d thin=%d "
+                           "T=%.4e e=%.4e cv=%.4e h=%.4e J=%.4e %.4e %.4e a=%.4e b=%.4e "
+                           "c=%.4e S/e=%.4e\n", pass_, m, k, j, i, ic, thin ? 1 : 0, Ti,
+                           ei, cvi, hh, jac_(m,0,k,j,i), jac_(m,1,k,j,i), jac_(m,2,k,j,i),
+                           a, b, c, hh*src_(m,k,j,i)/ei);
+          }
+        }
         sa(q) = a;
         sb(q) = b;
         sc(q) = c;
