@@ -5515,6 +5515,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           rt_Bb_ptr = new DvceArray5D<Real>("rt_Bb", nmb, nb_a, n1, n3, n2);
           rt_T_ptr  = new DvceArray4D<Real>("rt_T",  nmb, n3, n2, n1);
           rt_pb_ptr = new DvceArray4D<Real>("rt_pb", nmb, n3, n2, n1);
+          ck_pbar_ptr = rt_pb_ptr;     // ck_impl_tol_ptop reads it in the column step
           rt_xT_ptr = new DvceArray4D<Real>("rt_xT", nmb, n3, n2, n1);
           rt_xP_ptr = new DvceArray4D<Real>("rt_xP", nmb, n3, n2, n1);
           rt_icut_ptr = new DvceArray3D<int>("rt_icut", nmb, n3, n2);

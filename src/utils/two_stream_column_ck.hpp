@@ -184,6 +184,14 @@ inline bool ck_impl_negpiv = false;
 // of the ck_impl_jac_lin tridiagonal (ck_jlin_sum) instead of dropping it; with
 // ck_impl_jneg (the per-chain parts) the rows are then the full derivative.
 inline bool ck_impl_jnet = false;
+// problem/ck_impl_tol_ptop = p [bar] > 0 (default 0 = bitwise off): in the residual test
+// of the fused step a cell with pressure below p is measured against e + eps_top e_max
+// (eps_top = problem/ck_impl_norm_eps_top) instead of e + ck_impl_norm_eps e_max, i.e.
+// a looser tolerance in the top, where the accuracy does not matter (user rule: p <
+// 1e-6 bar); the cells below p keep the full test.  ck_pbar_ptr is the RT's pressure.
+inline Real ck_impl_tol_ptop = 0.0;
+inline Real ck_impl_norm_eps_top = 0.1;
+inline DvceArray4D<Real> *ck_pbar_ptr = nullptr;
 // problem/ck_impl_jfd (diagnostic, > 0 on): on every pass that builds the tridiagonal
 // from the factorisation, check its diagonal against a finite difference of the linear
 // re-apply (two_stream_rt.hpp).  Print only; costs n1 extra linear passes.
@@ -1404,6 +1412,9 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const int ngd_ = ck_impl_negdbg;
     const bool rfb_ = ck_impl_rowfb;
     const bool npv_ = ck_impl_negpiv;
+    const Real ptp_ = (ck_pbar_ptr != nullptr) ? ck_impl_tol_ptop : 0.0;
+    const Real ept_ = ck_impl_norm_eps_top;
+    auto pbr_ = (ptp_ > 0.0) ? *ck_pbar_ptr : CkDum<DvceArray4D<Real>>("ck_pbar_d");
     DvceArray1D<int> ngc_("ck_negdbg_cnt", 1);
     auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
     auto &x2v_ = pm->pmb_pack->pcoord->x2v;
@@ -1475,10 +1486,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           return kkt;
         };
         const bool kk_ = fb_ || kd_;
+        // ck_impl_tol_ptop: the norm's share eps of a top cell
+        auto epsc = [&](const int i) -> Real {
+          return (ptp_ > 0.0 && pbr_(m,k,j,i) < ptp_) ? ept_ : eps;
+        };
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
         [&](const int i, Real &mx) {
           const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-          Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+          Real s = fabs(r)/(ei_(m,k,j,i) + epsc(i)*emax);
           if (kk_ && s > tol && kktcell(i, r)) s = 0.0;
           if (s > mx) mx = s;
           if (t0rec_) t0_(m,k,j,i) = T_(m,k,j,i);
@@ -1490,7 +1505,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
           [&](const int i, typename MLc::value_type &u) {
             const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-            Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+            Real s = fabs(r)/(ei_(m,k,j,i) + epsc(i)*emax);
             if (kk_ && s > tol && kktcell(i, r)) s = 0.0;
             if (s > u.val) {
               u.val = s;
@@ -1504,7 +1519,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
           [&](const int i, Real &sm) {
             const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-            const Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+            const Real s = fabs(r)/(ei_(m,k,j,i) + epsc(i)*emax);
             if (s > tol && kktcell(i, r)) sm += 1.0;
           }, nkk);
           if (nkk > 0.0) {
