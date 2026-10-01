@@ -174,6 +174,12 @@ Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average ov
 // top velocity sponge damp the RADIAL momentum only (IM1, rhat.m on both grids), so it
 // exerts no axial torque (Shaw & Shepherd 2007); "all" damps all three components
 bool dhj_sponge_top_radial = false;
+// problem/sponge_top_plo_bar, sponge_top_phi_bar, sponge_top_tau (read without recording;
+// defaults 1e-7 bar, 1e-6 bar, 1e3 s): the top sponge ramps from 0 at phi to 1 at plo
+// (linear in log p) with damping rate fdrag/tau
+Real dhj_sp_top_plo_bar = 1.0e-7;
+Real dhj_sp_top_phi_bar = 1.0e-6;
+Real dhj_sp_top_tau = 1.0e3;
 // problem/flux_hst_rkavg (default true; false = the last RK stage, the pre-0929
 // columns): the fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
 // Mdot_bot) are the RK-weighted sums over the stages of the cycle, i.e. the flux the
@@ -894,6 +900,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         exit(EXIT_FAILURE);
       }
       dhj_sponge_top_radial = (sm == "radial");
+      if (pin->DoesParameterExist("problem","sponge_top_plo_bar")) {
+        dhj_sp_top_plo_bar = pin->GetReal("problem","sponge_top_plo_bar");
+      }
+      if (pin->DoesParameterExist("problem","sponge_top_phi_bar")) {
+        dhj_sp_top_phi_bar = pin->GetReal("problem","sponge_top_phi_bar");
+      }
+      if (pin->DoesParameterExist("problem","sponge_top_tau")) {
+        dhj_sp_top_tau = pin->GetReal("problem","sponge_top_tau");
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "dhj: top sponge " << dhj_sp_top_plo_bar << " .. "
+                  << dhj_sp_top_phi_bar << " bar, tau " << dhj_sp_top_tau << " s"
+                  << std::endl;
+      }
       if (global_variable::my_rank == 0 && dhj_sponge_top_radial) {
         std::cout << "dhj: problem/sponge_top_mode = radial" << std::endl;
       }
@@ -4244,6 +4264,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // value.
     const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
     const bool sponge_top_rad_ = dhj_sponge_top_radial;
+    const Real sp_plo_ = dhj_sp_top_plo_bar, sp_phi_ = dhj_sp_top_phi_bar;
+    const Real sp_tau_ = dhj_sp_top_tau;
     const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
     const bool rotpot_src = rotpot && use_wellbalance_dynamic;
 
@@ -4509,13 +4531,13 @@ void SourceFunc(Mesh *pm, Real bdt) {
 
         // Top sponge layer
         Real bar = 1.0e6;
-        Real logpl = log(1.0e-6*bar);
-        Real logpt = log(1.0e-7*bar);
+        Real logpl = log(sp_phi_*bar);
+        Real logpt = log(sp_plo_*bar);
         Real logp = log(p);
         Real fdrag = 1.0 - (logp-logpt)/(logpl-logpt); // high p = 0, low p = 1
         fdrag = (fdrag < 0.0) ? 0.0 : fdrag;
         fdrag = (fdrag > 1.0) ? 1.0 : fdrag;
-        itdrag = fdrag/1.0e3;
+        itdrag = fdrag/sp_tau_;
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
         if (sponge_top_) {
           u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
