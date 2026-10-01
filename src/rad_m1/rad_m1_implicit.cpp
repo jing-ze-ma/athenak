@@ -965,10 +965,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 "spherical-polar wedge only");
     }
   }
-  // implicit_face_weight (see rad_m1.hpp): equal (default) | distance.  Read only when
-  // named, so the parameter dump of a run without the key is unchanged.
-  if (pin->DoesParameterExist("rad_m1","implicit_face_weight")) {
-    const std::string sfw = pin->GetString("rad_m1","implicit_face_weight");
+  // implicit_face_weight (see rad_m1.hpp): distance (default on the spherical-polar
+  // wedge) | equal (default elsewhere; the only choice on a Cartesian grid, which is
+  // uniform).  On the wedge the key is recorded (GetOrAdd), so a restart keeps what the
+  // run started with.  A RESTART whose embedded input predates the key keeps `equal`,
+  // the behaviour it was run with, unless the key is given on the command line or in
+  // an -i overlay (main.cpp registers it for the command line).  On a Cartesian grid
+  // it is read only when named, so the parameter dump there is unchanged.
+  if (sph_geom || pin->DoesParameterExist("rad_m1","implicit_face_weight")) {
+    const bool named = pin->DoesParameterExist("rad_m1","implicit_face_weight");
+    const std::string sfw = pin->GetOrAddString("rad_m1","implicit_face_weight",
+        global_variable::restart_run ? "equal" : "distance");
     if (sfw.compare("equal") == 0) {
       impl_face_wdist = false;
     } else if (sfw.compare("distance") == 0) {
@@ -980,6 +987,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_face_wdist && !sph_geom) {
       ImplFatal("<rad_m1>/implicit_face_weight = distance is implemented on the "
                 "spherical-polar wedge only (a Cartesian grid is uniform)");
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1>/implicit_face_weight = " << sfw
+                << (named ? " (from the input)"
+                    : (global_variable::restart_run
+                       ? " (restart file predates the key: kept the old equal)"
+                       : " (default)")) << std::endl;
     }
   }
   // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
@@ -8180,7 +8194,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // q = -chat dt th G(E^k)/2.  The E'_c part goes on the row, the rest to the RHS.
     // Only faces whose two cells are in this block (x1 neighbours of the block are
     // not exchanged for ktd): there the term is omitted and the face stays Picard.
-    // On sp the rows are rebuilt below with the sp areas; the same term goes there (opns).
+    // On sp the rows are rebuilt below with the sp areas; the same term goes there
+    // (opns).
     const bool opnr = opn && gnewt && !sph_geom;
     const bool opns = opn && gnewt && sph_geom;
     // DEBUG dbg_t2_admiss: the sp E row by term, kept for T2AdmissDebug
