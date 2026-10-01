@@ -878,9 +878,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_sph_face = pin->GetOrAddInteger("problem","ck_sph_face",
                                                     two_stream_rt::ck_sph_dilute ? 1 : 0);
   two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5);
-  // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5
+  // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5.  With
+  // face 5 the DEFAULTS of ck_vef_every (150), ck_impl_rowfb (true) and ck_impl_rsec (4)
+  // are the measured cheapest accuracy-neutral setting (cksph_test_0930/PORT.md);
+  // explicit keys override; face 0 keeps the old defaults (bitwise)
+  const bool vef5 = two_stream_rt::ck_vef_on;
   two_stream_rt::ck_vef_every = pin->GetOrAddInteger("problem","ck_vef_every",
-                                                     1);
+                                                     vef5 ? 150 : 1);
   two_stream_rt::ck_vef_ncore = pin->GetOrAddInteger("problem","ck_vef_ncore",8);
   two_stream_rt::ck_vef_sync = pin->GetOrAddBoolean("problem","ck_vef_sync",true);
   // face 5 runs on the production linear path (ck_impl_lin, the paired tier, its
@@ -928,7 +932,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_beam_par = pin->GetOrAddBoolean("problem","ck_beam_par",bpdef);}
   // problem/ck_impl_rsec: secant bound on the thick rows' diagonal (0 = off, bitwise)
   two_stream_rt::ck_impl_rsec = pin->GetOrAddReal("problem","ck_impl_rsec",
-                                                  0.0);
+                                                  two_stream_rt::ck_vef_on ? 4.0 : 0.0);
   two_stream_rt::ck_impl_lw = pin->GetOrAddBoolean("problem","ck_impl_lw",false);
   // problem/ck_impl_glob: Newton globalisation of the fused T4 step, none | ls | ls_sub
   // (utils/two_stream_column_ck.hpp, tests_ck_implicit/README_glob.md).  none = bitwise.
@@ -983,7 +987,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_negdbg = pin->GetOrAddInteger("problem","ck_impl_negdbg",0);
   two_stream_rt::ck_impl_jfd = pin->GetOrAddInteger("problem","ck_impl_jfd",0);
   two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",
-                                                     false);
+                                                     two_stream_rt::ck_vef_on);
+  if (two_stream_rt::ck_vef_on && global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: ck_sph_face = 5 (VEF), effective: ck_sph_top = "
+              << two_stream_rt::ck_sph_top << ", ck_vef_every = "
+              << two_stream_rt::ck_vef_every << ", ck_vef_sync = "
+              << two_stream_rt::ck_vef_sync << ", ck_impl_rowfb = "
+              << two_stream_rt::ck_impl_rowfb << ", ck_impl_rsec = "
+              << two_stream_rt::ck_impl_rsec << std::endl;
+  }
   two_stream_rt::ck_impl_negpiv = pin->GetOrAddBoolean("problem","ck_impl_negpiv",false);
   two_stream_rt::ck_impl_jnet = pin->GetOrAddBoolean("problem","ck_impl_jnet",false);
   two_stream_rt::ck_impl_tol_ptop = pin->GetOrAddReal("problem","ck_impl_tol_ptop",0.0);
