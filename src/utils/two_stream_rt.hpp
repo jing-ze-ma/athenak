@@ -9346,7 +9346,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                   Bb_g.extent(2), Bb_g.extent(3), Bb_g.extent(4));
             Kokkos::deep_copy(bsv, Bb_g);
             DvceArray4D<Real> s0v("ck_jfd_s0", nmb1+1, n1+1, ke+1, je+1);
-            DvceArray1D<Real> rv("ck_jfd_r", 8);
+            DvceArray1D<Real> rv("ck_jfd_r", 10);
             Kokkos::deep_copy(rv, 0.0);
             auto jac_g = ckjac_g;
             auto db_g = ckdb_g;
@@ -9382,6 +9382,24 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 if (jj > 0.0 && fd > 0.0) Kokkos::atomic_add(&rv(4), 1.0);
                 if (fd > 0.0) Kokkos::atomic_max(&rv(5), fd/(fabs(jj) + 1.0e-300));
                 if (rel > 1.0e-6) Kokkos::atomic_add(&rv(6), 1.0);
+                // the off-diagonals: dSrc_{i0+1}/dT_i0 (row i0+1, slot 0) and
+                // dSrc_{i0-1}/dT_i0 (row i0-1, slot 2), against the (clamped) entries
+                for (int sd=-1; sd<=1; sd+=2) {
+                  const int ir = i0 + sd;
+                  if (ir < icc_g(m,k,j) || ir > ie) continue;
+                  Real so = 0.0;
+                  for (int bk=0; bk<nbk; ++bk) so += Src_g(m,bk,ir,k,j);
+                  const Real fo = (so - s0v(m,ir,k,j))/dT;
+                  const Real jo = jac_g(m,(sd > 0) ? 0 : 2,k,j,ir);
+                  const Real jd = fabs(jac_g(m,1,k,j,ir)) + 1.0e-300;
+                  if (fo < 0.0) {
+                    Kokkos::atomic_add(&rv(7), 1.0);
+                    Kokkos::atomic_max(&rv(8), -fo/jd);
+                  } else {
+                    Kokkos::atomic_max(&rv(9), fabs(fo - jo)/(fabs(fo) + fabs(jo)
+                                                              + 1.0e-300));
+                  }
+                }
               });
               Kokkos::deep_copy(Bb_g, bsv);
             }
@@ -9391,7 +9409,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                       << pm->ncycle << " pass=" << ck_impl_pass << " cells=" << hr(1)
                       << " maxrel_diag=" << hr(0) << " n(rel>1e-6)=" << hr(6)
                       << " n(J>0)=" << hr(2) << " n(fd>0)=" << hr(3) << " both="
-                      << hr(4) << " max fd/|J| where fd>0=" << hr(5) << std::endl;
+                      << hr(4) << " max fd/|J| where fd>0=" << hr(5)
+                      << " offdiag: n(fd<0)=" << hr(7) << " max -fd/|J_ii| there="
+                      << hr(8) << " maxrel where fd>=0=" << hr(9) << std::endl;
           }
         }
         // ---- ck-fast2 lever 1 (problem/ck_dif_dtau): THE DEEP DIFFUSION -----------
