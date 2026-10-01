@@ -168,6 +168,13 @@ inline int ck_impl_stalldbg = 0;
 // rows whose diagonal b = 1 - h J_ii/cv is not positive (they send the whole column to
 // the bounded per-cell fallback), with the three Jacobian entries.  Print only.
 inline int ck_impl_negdbg = 0;
+// problem/ck_impl_rowfb (fused step only, default false = bitwise off): a Newton row
+// whose diagonal b = 1 - h J_ii/cv is not positive (a cell whose net heating grows with
+// its own temperature faster than cv/h: the frozen ck_sph_face = 5 operator has such
+// cells in a strongly driven top) takes the bounded per-cell step of a thin cell; the
+// rest of the column keeps its Newton step.  Off, such a row sends the WHOLE column to
+// the per-cell fallback.  The residual and the tolerance are unchanged.
+inline bool ck_impl_rowfb = false;
 // problem/ck_impl_jfd (diagnostic, > 0 on): on every pass that builds the tridiagonal
 // from the factorisation, check its diagonal against a finite difference of the linear
 // re-apply (two_stream_rt.hpp).  Print only; costs n1 extra linear passes.
@@ -1386,6 +1393,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const bool csph_ = pm->use_cubed_sphere;
     // ck_impl_negdbg (1-element counter when off)
     const int ngd_ = ck_impl_negdbg;
+    const bool rfb_ = ck_impl_rowfb;
     DvceArray1D<int> ngc_("ck_negdbg_cnt", 1);
     auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
     auto &x2v_ = pm->pmb_pack->pcoord->x2v;
@@ -1865,7 +1873,6 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           c = 0.0;
           d = 0.0;
         }
-        if (!(b > 0.0)) nb += 1;
         if (ngd_ > 0 && !(b > 0.0)) {
           if (Kokkos::atomic_fetch_add(&ngc_(0), 1) < ngd_) {
             Kokkos::printf("### ck_negdbg pass=%d m=%d k=%d j=%d i=%d ic=%d thin=%d "
@@ -1875,6 +1882,21 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
                            a, b, c, hh*src_(m,k,j,i)/ei);
           }
         }
+        // ck_impl_rowfb: a row with a non-positive diagonal takes the bounded per-cell
+        // step of a thin cell (identity row) instead of sending its column to the fallback
+        if (rfb_ && !sdc && !thin && !(b > 0.0)) {
+          a = 0.0;
+          b = 1.0;
+          c = 0.0;
+          if (sub_) {
+            d = CkThinSolve(ei, est_(m,k,j,i) + sacc_(m,k,j,i), src_(m,k,j,i),
+                            em_(m,k,j,i), hh) - ei;
+          } else {
+            d = CkThinSolve(ei, est_(m,k,j,i), src_(m,k,j,i), em_(m,k,j,i), hh) - ei;
+          }
+          nb += 65536;
+        }
+        if (!(b > 0.0)) nb += 1;
         sa(q) = a;
         sb(q) = b;
         sc(q) = c;

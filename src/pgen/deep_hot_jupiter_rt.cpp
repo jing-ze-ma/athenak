@@ -979,6 +979,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddInteger("problem","ck_impl_stalldbg",0);
   two_stream_rt::ck_impl_negdbg = pin->GetOrAddInteger("problem","ck_impl_negdbg",0);
   two_stream_rt::ck_impl_jfd = pin->GetOrAddInteger("problem","ck_impl_jfd",0);
+  two_stream_rt::ck_impl_rowfb = pin->GetOrAddBoolean("problem","ck_impl_rowfb",false);
+  if (two_stream_rt::ck_impl_rowfb && !two_stream_rt::ck_impl_fuse) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_rowfb lives in "
+              << "the fused step (ck_impl_fuse)." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // problem/ck_impl_kkt_row: DEFAULT TRUE since default-flips (09-26; 1x production
   // NOT-CONVERGED 20/2113 -> 0 at the same cost).  It acts only with ck_impl_floorbound
   // or ck_impl_kkt_demax on the fused glob = 0 path; false restores the old rows.  The
