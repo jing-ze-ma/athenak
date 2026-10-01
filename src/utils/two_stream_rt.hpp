@@ -1417,8 +1417,8 @@ inline Real ck_vef_xlim = 0.0;
 // emission depend on its neighbours' temperatures and the operator non-monotone (the
 // 10x blow-up, ckf5_stab_1001).  Face 6 keeps the emission cell-local and closes the
 // staircase with a CONTACT resistance at every interior face,
-//     R_c = w(Lam_b) Z_a (Lam_a/2 - tanh(Lam_a/2)) + w(Lam_a) Z_b (Lam_b/2 - tanh(Lam_b/2)),
-//     w(Lam) = Lam^2/(1 + Lam^2),
+//     R_c = w(Lam_b) Z_a phc(Lam_a) + w(Lam_a) Z_b phc(Lam_b),
+//     phc(Lam) = Lam/2 - tanh(Lam/2),   w(Lam) = Lam^2/(1 + Lam^2),
 // which is the exact value for which a uniform medium with a LINEAR B carries the
 // Eddington diffusion flux at any Lam (Lam^3/24 for a thin cell, Z (Lam/2 - 1) per side
 // for a thick one), switched off next to an optically thin neighbour so that a thick
