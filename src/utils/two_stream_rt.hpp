@@ -9320,6 +9320,65 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // factorisation just built (after rt_chain_ck_jlin, whose windows share the
           // lps/lpf partials the linear kernels write)
           if (ckstsp_) launch_ck_lin_tier();
+          // ---- problem/ck_impl_jfd (diagnostic): the tridiagonal of this pass against
+          // a finite difference of the linear re-apply.  For every cell index i0 in turn
+          // B_b(i0) of EVERY column moves by dB_b/dT dT (dT = 1e-3 T(i0)); the linear
+          // kernel is affine in B, so (Src(i0) - Src0(i0))/dT is dSrc_i0/dT_i0 to
+          // round-off.  Prints the worst relative mismatch of the diagonal and the
+          // counts of positive diagonals (Jacobian / difference).  The pass's own Src,
+          // Fb, Em and B are restored (the linear kernel rerun on the saved B).
+          if (ck_impl_jfd > 0 && ckjlp_ && cklon_) {
+            DvceArray5D<Real> bsv("ck_jfd_b", Bb_g.extent(0), Bb_g.extent(1),
+                                  Bb_g.extent(2), Bb_g.extent(3), Bb_g.extent(4));
+            Kokkos::deep_copy(bsv, Bb_g);
+            DvceArray4D<Real> s0v("ck_jfd_s0", nmb1+1, n1+1, ke+1, je+1);
+            DvceArray1D<Real> rv("ck_jfd_r", 8);
+            Kokkos::deep_copy(rv, 0.0);
+            auto jac_g = ckjac_g;
+            auto db_g = ckdb_g;
+            const int nbk = nblk;
+            par_for("ck_jfd_s0", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
+            KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+              Real sm = 0.0;
+              for (int bk=0; bk<nbk; ++bk) sm += Src_g(m,bk,i,k,j);
+              s0v(m,i,k,j) = sm;
+            });
+            for (int i0=is; i0<=ie; ++i0) {
+              par_for("ck_jfd_pert", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+              KOKKOS_LAMBDA(const int m, const int k, const int j) {
+                if (i0 < icc_g(m,k,j)) return;
+                const Real dT = 1.0e-3*T_g(m,k,j,i0);
+                for (int b=0; b<CK_NB; ++b) Bb_g(m,b,i0,k,j) += db_g(m,b,i0,k,j)*dT;
+              });
+              launch_ck_lin_tier();
+              par_for("ck_jfd_cmp", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+              KOKKOS_LAMBDA(const int m, const int k, const int j) {
+                if (i0 < icc_g(m,k,j)) return;
+                if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                const Real dT = 1.0e-3*T_g(m,k,j,i0);
+                Real sm = 0.0;
+                for (int bk=0; bk<nbk; ++bk) sm += Src_g(m,bk,i0,k,j);
+                const Real fd = (sm - s0v(m,i0,k,j))/dT;
+                const Real jj = jac_g(m,1,k,j,i0);
+                const Real rel = fabs(fd - jj)/(fabs(fd) + fabs(jj) + 1.0e-300);
+                Kokkos::atomic_max(&rv(0), rel);
+                Kokkos::atomic_add(&rv(1), 1.0);
+                if (jj > 0.0) Kokkos::atomic_add(&rv(2), 1.0);
+                if (fd > 0.0) Kokkos::atomic_add(&rv(3), 1.0);
+                if (jj > 0.0 && fd > 0.0) Kokkos::atomic_add(&rv(4), 1.0);
+                if (fd > 0.0) Kokkos::atomic_max(&rv(5), fd/(fabs(jj) + 1.0e-300));
+                if (rel > 1.0e-6) Kokkos::atomic_add(&rv(6), 1.0);
+              });
+              Kokkos::deep_copy(Bb_g, bsv);
+            }
+            launch_ck_lin_tier();
+            auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rv);
+            std::cout << "### ck_jfd rank=" << global_variable::my_rank << " ncycle="
+                      << pm->ncycle << " pass=" << ck_impl_pass << " cells=" << hr(1)
+                      << " maxrel_diag=" << hr(0) << " n(rel>1e-6)=" << hr(6)
+                      << " n(J>0)=" << hr(2) << " n(fd>0)=" << hr(3) << " both="
+                      << hr(4) << " max fd/|J| where fd>0=" << hr(5) << std::endl;
+          }
         }
         // ---- ck-fast2 lever 1 (problem/ck_dif_dtau): THE DEEP DIFFUSION -----------
         // Every pass, after the chains: the cells ic .. ich-1 of a handover column get

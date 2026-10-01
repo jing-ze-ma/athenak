@@ -168,6 +168,10 @@ inline int ck_impl_stalldbg = 0;
 // rows whose diagonal b = 1 - h J_ii/cv is not positive (they send the whole column to
 // the bounded per-cell fallback), with the three Jacobian entries.  Print only.
 inline int ck_impl_negdbg = 0;
+// problem/ck_impl_jfd (diagnostic, > 0 on): on every pass that builds the tridiagonal
+// from the factorisation, check its diagonal against a finite difference of the linear
+// re-apply (two_stream_rt.hpp).  Print only; costs n1 extra linear passes.
+inline int ck_impl_jfd = 0;
 // problem/ck_impl_kkt_row: the ACTIVE-SET row for the KKT cells of ck_impl_floorbound /
 // ck_impl_kkt_demax.  A cell on a bound whose residual points through it cannot move,
 // but its row still asks the tridiagonal for a step, and that unrealised step feeds its
