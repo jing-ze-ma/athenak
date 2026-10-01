@@ -1384,15 +1384,17 @@ inline bool ck_vef_sync = true;
 // the first) rank 0 prints, per pressure decade, the range of f = s^2/3 and of the face
 // factor gamma over all (band, g, cell), the largest relative change of s and gamma
 // against the factors being replaced (the lag of ck_vef_every), and the number of faces
-// with gamma outside [1/1.2, 1.2].  Nothing reads it.
+// whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
 inline int ck_vef_report = 0;
+template <typename XF>
 inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D<Real> &vg,
                         const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
                         const DvceArray4D<Real> &pb, const DvceArray3D<int> &icc,
+                        const XF &X1F,
                         const int nmb1, const int nc, const int ks, const int ke,
                         const int js, const int je, const int ie) {
   constexpr int NBIN = 12;   // decades 1e-9 .. 1e3 bar
-  constexpr int NQ = 7;      // fmin fmax gmin gmax dsmax dgmax nout
+  constexpr int NQ = 9;      // fmin fmax gmin gmax dsmax dgmax nout xmin xmax
   DvceArray1D<Real> acc("ck_vef_rep", NBIN*NQ);
   auto acc_ = acc;
   Kokkos::parallel_for("ck_vef_rep_init", Kokkos::RangePolicy<DevExeSpace>(0, NBIN),
@@ -1400,6 +1402,7 @@ inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D
     acc_(b*NQ+0) = 1.0e30; acc_(b*NQ+1) = -1.0e30;
     acc_(b*NQ+2) = 1.0e30; acc_(b*NQ+3) = -1.0e30;
     acc_(b*NQ+4) = 0.0; acc_(b*NQ+5) = 0.0; acc_(b*NQ+6) = 0.0;
+    acc_(b*NQ+7) = 1.0e30; acc_(b*NQ+8) = -1.0e30;
   });
   par_for("ck_vef_rep", DevExeSpace(), 0, nmb1, 0, nc - 1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
@@ -1418,7 +1421,17 @@ inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D
       const Real so = vso(m,c,i+1,k,j), go = vgo(m,c,i,k,j);
       if (so > 0.0) Kokkos::atomic_max(&acc_(b*NQ+4), fabs(s/so - 1.0));
       if (go > 0.0) Kokkos::atomic_max(&acc_(b*NQ+5), fabs(g/go - 1.0));
-      if (g > 1.2 || g < 1.0/1.2) Kokkos::atomic_add(&acc_(b*NQ+6), 1.0);
+      // x = gamma rho' of the face below cell i (rho' = (A_b/A_a) s_b/s_a, A = the
+      // frame area r_node^2): the face reflections are (1 - x)/(1 + x) and
+      // (x - 1)/(1 + x), both >= 0 only at x = 1
+      if (i > icut) {
+        const Real rm = X1F(m,i-1), r0 = X1F(m,i), rp = X1F(m,i+1);
+        const Real ab = rm*rm + rm*r0 + r0*r0, aa = r0*r0 + r0*rp + rp*rp;
+        const Real x = g*(ab/aa)*vs(m,c,i,k,j)/s;
+        Kokkos::atomic_min(&acc_(b*NQ+7), x);
+        Kokkos::atomic_max(&acc_(b*NQ+8), x);
+        if (x > 1.1 || x < 1.0/1.1) Kokkos::atomic_add(&acc_(b*NQ+6), 1.0);
+      }
     }
   });
   auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
@@ -1426,7 +1439,7 @@ inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D
   for (int q=0; q<NBIN*NQ; ++q) v[q] = h(q);
 #if MPI_PARALLEL_ENABLED
   for (int b=0; b<NBIN; ++b) {
-    v[b*NQ+0] = -v[b*NQ+0]; v[b*NQ+2] = -v[b*NQ+2];
+    v[b*NQ+0] = -v[b*NQ+0]; v[b*NQ+2] = -v[b*NQ+2]; v[b*NQ+7] = -v[b*NQ+7];
   }
   Real cnt[NBIN];
   for (int b=0; b<NBIN; ++b) {
@@ -1437,6 +1450,7 @@ inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D
   MPI_Reduce(cnt, cr, NBIN, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
   for (int b=0; b<NBIN; ++b) {
     r[b*NQ+0] = -r[b*NQ+0]; r[b*NQ+2] = -r[b*NQ+2]; r[b*NQ+6] = cr[b];
+    r[b*NQ+7] = -r[b*NQ+7];
   }
 #else
   for (int q=0; q<NBIN*NQ; ++q) r[q] = v[q];
@@ -1445,9 +1459,9 @@ inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D
     for (int b=0; b<NBIN; ++b) {
       if (r[b*NQ+1] < 0.0) continue;
       std::printf("### vefrep ncycle=%d p=1e%+d f=[%.4e,%.4e] gam=[%.4e,%.4e] "
-                  "dsmax=%.3e dgmax=%.3e nout=%.0f\n", static_cast<int>(pm->ncycle),
+                  "dsmax=%.3e dgmax=%.3e x=[%.4e,%.4e] nx10=%.0f\n", static_cast<int>(pm->ncycle),
                   b - 9, r[b*NQ+0], r[b*NQ+1], r[b*NQ+2], r[b*NQ+3], r[b*NQ+4],
-                  r[b*NQ+5], r[b*NQ+6]);
+                  r[b*NQ+5], r[b*NQ+7], r[b*NQ+8], r[b*NQ+6]);
     }
   }
 }
@@ -7347,7 +7361,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
             }
           });
-          if (vrep_) CkVefReport(pm, vs_, vg_, vso_, vgo_, *rt_pb_ptr, icc_g, nmb1,
+          if (vrep_) CkVefReport(pm, vs_, vg_, vso_, vgo_, *rt_pb_ptr, icc_g, X1F, nmb1,
                                  nc_, ks, ke, js, je, ie);
         }
         const int dil_ = ck_sph_face;   // problem/ck_sph_face
