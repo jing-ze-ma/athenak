@@ -17,6 +17,7 @@
 #include "eos/eos.hpp"
 #include "hydro/rsolvers/llf_hyd_singlestate.hpp"
 #include "hydro.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "hydro/fofc_etotgrav.hpp"
 
 namespace hydro {
@@ -209,6 +210,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     }
   }
 
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_fofcflag");}
   auto &coord = pmy_pack->pcoord->coord_data;
   bool &is_sr = pmy_pack->pcoord->is_special_relativistic;
   bool &is_gr = pmy_pack->pcoord->is_general_relativistic;

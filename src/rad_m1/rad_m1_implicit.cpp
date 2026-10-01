@@ -44,6 +44,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -6241,6 +6242,31 @@ void RadiationM1::DetTrace(const char *tag) {
     put("fx3", fl.uflx->x3f);
   }
   std::cout << os.str() << std::endl;
+  // M1_DTRACE_DUMP=<tag>: raw dumps of the hydro face fluxes, trial state, FOFC counts
+  // and w0 at the first call with that tag (diagnostic)
+  static std::string dumped = ",";
+  const char *dt = std::getenv("M1_DTRACE_DUMP");
+  const std::string tg = "," + std::string(tag) + ",";
+  if (dt != nullptr && ("," + std::string(dt) + ",").find(tg) != std::string::npos &&
+      dumped.find(tg) == std::string::npos && pmy_pack->phydro != nullptr) {
+    dumped += std::string(tag) + ",";
+    auto dump = [&](const std::string &nm, auto v) {
+      auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), v);
+      std::string fn = "dtd_" + std::string(tag) + "_" + nm + "_r" +
+                       std::to_string(global_variable::my_rank) + ".bin";
+      FILE *f = std::fopen(fn.c_str(), "wb");
+      if (f != nullptr) {
+        std::fwrite(h.data(), sizeof(typename decltype(h)::value_type), h.size(), f);
+        std::fclose(f);
+      }
+    };
+    auto ph = pmy_pack->phydro;
+    dump("fx2", ph->uflx.x2f);
+    dump("fx3", ph->uflx.x3f);
+    dump("fofc", ph->fofc);
+    dump("utest", ph->utest);
+    dump("w0", ph->w0);
+  }
 }
 
 void RadiationM1::DetTraceScalars(const char *tag, int n, const Real *v) {
