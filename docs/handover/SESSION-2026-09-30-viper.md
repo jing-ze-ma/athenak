@@ -240,3 +240,8 @@ He box accuracy (m1pos_0930/hebox/ana.sh 60000 74000), onn/onv128 + offh64 ends 
   a wind; envelope bursts (M(r<R) -25 %) fall back. Smoke F/H (hesdirk2 0.6; nx1 660) rc=1 in 1 s, never launched.
 - offh64 12046529 was held ("user env retrieval failed"); released 00:35.
 - beon128 ext at 37,713 s, clean (0 NaN); ETA 47,000 s ~01:30. onn128 32,845 / onv128 31,713 / onnh64 32,981 s, clean.
+- offh64 12046529 cancelled 00:45 (user: control redundant; off128 controls already NaN at 26,825 s).
+- 10-01 02:20: beon128 ext reached 47,000 s (10 tt), clean; envelope collapse PERSISTS (M(>0.7R) 0.6 %, rho(0.9R) still falling).
+  He box gate: positivity keys accuracy-neutral (N-C < P-C round-off). onv128 vs onn128: vimp on ~33 % slower, no gain.
+  New threads 10-01: ck closure variants (cksph_test_0930/VARIANTS.md; recommend face 5 VEF + top 1, GPU timing running),
+  He HSE check (he_hse_1001), BSG reproduction of Ma+2026 (bsg_1001; step 3 running on branch bsg-setup).
