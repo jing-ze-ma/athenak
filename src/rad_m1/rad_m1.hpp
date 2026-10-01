@@ -764,6 +764,8 @@ class RadiationM1 {
   int impl_plog;                // <rad_m1>/implicit_picard_log: print one line per
                                 // Picard pass for the first N solves (rank 0)
   Real bcg_r0rel;               // max|b - A x0|/max|b| of the last BiCGStab call
+  bool impl_det;                // <rad_m1>/implicit_det_reduce: fixed-order Krylov sums
+  DvceArray1D<Real> det_part;   // its level-1 partials and result (4*1024 + 4)
   bool impl_lres_test;          // <rad_m1>/implicit_lres_test (default false*): require
                                 // the pass-to-pass transverse change lresid < lin_tol
   bool impl_conv_est;           // <rad_m1>/implicit_conv_est (default true*): stop when

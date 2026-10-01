@@ -171,6 +171,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_nred = 0.0;
   impl_bcg_sync = 0;
   impl_dtrace = 0;
+  impl_det = false;
   impl_plog = 0;
   bcg_r0rel = 0.0;
   impl_lres_test = true;
