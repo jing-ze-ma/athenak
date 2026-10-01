@@ -1386,6 +1386,14 @@ inline bool ck_vef_sync = true;
 // against the factors being replaced (the lag of ck_vef_every), and the number of faces
 // whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
 inline int ck_vef_report = 0;
+// problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
+// x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b, rho' =
+// (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections (1 - x)/(1 + x)
+// and (x - 1)/(1 + x): one of them is NEGATIVE whenever x != 1, and a strong f contrast
+// between two cells makes the frozen operator non-monotone (a cell's net heating can
+// grow with its own temperature).  Limiting x bounds the negative reflection by
+// (X - 1)/(X + 1); it changes gamma only where f jumps by a factor ~X^2 between cells.
+inline Real ck_vef_xlim = 0.0;
 template <typename XF>
 inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D<Real> &vg,
                         const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
@@ -7199,6 +7207,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             Kokkos::deep_copy(vgo_, vg_);
           }
           const int ncore = ck_vef_ncore;
+          const Real xlim_ = ck_vef_xlim;
           par_for("ck_vef_formal", DevExeSpace(), 0, nmb1, 0, nc_ - 1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
             const int icut = icc_g(m,k,j);
@@ -7345,7 +7354,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 vg_(m,c,icut-1,k,j) = (hm > 1.0e-12*Jq && jm > 0.0) ? jm/hm : 2.0;
               }
               vs_(m,c,icut+q,k,j) = sqrt(3.0*f);
-              if (q > 0) vg_(m,c,icut+q-1,k,j) = exp(lpn - lpf);
+              if (q > 0) {
+                Real gq = exp(lpn - lpf);
+                // problem/ck_vef_xlim = X > 1: the face factor x = gamma rho' of an
+                // interior face kept in [1/X, X] by limiting gamma (rho', the flux
+                // continuity, is untouched, so the deposit still telescopes)
+                if (xlim_ > 1.0 && q >= 2 && q <= nn - 2) {
+                  const Real ra = W(0,q), rb = W(0,q-1);
+                  const Real rhop = (rb*rb)/(ra*ra)*sqrt(fprev/f);
+                  const Real xq = gq*rhop;
+                  if (xq > xlim_) gq = xlim_/rhop;
+                  if (xq < 1.0/xlim_) gq = 1.0/(xlim_*rhop);
+                }
+                vg_(m,c,icut+q-1,k,j) = gq;
+              }
               lpf = lpn;
               fprev = f;
               rprev = r;
