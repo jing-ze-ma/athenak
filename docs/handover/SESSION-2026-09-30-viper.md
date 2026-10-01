@@ -245,3 +245,38 @@ He box accuracy (m1pos_0930/hebox/ana.sh 60000 74000), onn/onv128 + offh64 ends 
   He box gate: positivity keys accuracy-neutral (N-C < P-C round-off). onv128 vs onn128: vimp on ~33 % slower, no gain.
   New threads 10-01: ck closure variants (cksph_test_0930/VARIANTS.md; recommend face 5 VEF + top 1, GPU timing running),
   He HSE check (he_hse_1001), BSG reproduction of Ma+2026 (bsg_1001; step 3 running on branch bsg-setup).
+- 10-01 04:40: user cancelled the old WASP-121b arms (w1xf/w3xk/w10xf, jobs 12034178/12037717/12037719 + links 12034179/12037718/12037720); last rst w1xf 00413 (rot ~206.5), w3xk 00232 (~116), w10xf 00242 (~121) = old-closure baseline.
+- 10-01 04:45: user cancelled the held jobs: He ext 12048705-07 and the WASP-121b MHD arms 12028523-25.
+
+## 10. 10-01 ~10:25 CEST: user asleep - overnight plan
+See memory overnight-1001. Running: BSG arm 1 12050971 (queued, priority), He scout64 12049477 (->10 tt) + continuation 12051125 (HELD,
+to 20 tt), stringent He col 12050086. Held for BSG priority: He 128 arms 12049478/79 (binary 3b102727). Agents: WASP-121b fresh start
+(w121fresh_1001, jobs to be submitted HELD), BSG arm 2 (bsg_1001/arm2), merge of bsg-setup e415d47d into rt-integration (merge_1001),
+stringent column. rt-integration on fork 0e96ec93 (variant 5 + AM fixes + radial sponge default).
+
+## 11. Update 10-01 ~23:40 CEST (read this first; supersedes sections 8-10 where they differ)
+
+**Code: rt-integration ddb5427e on the fork** (local = fork). Merged today, all gated (keys off bitwise):
+bsg-setup e415d47d (he_star_m1, rad_signal_speed default ON with implicit M1, implicit_det_reduce default ON on GPU,
+FOFC one-writer race fix 2f07a482, NaN-dt guard, implicit_resid_fatal, fofc_report), restart-dt fix 57fcd2b8 (restart block
+kM1RssRstMagic: implicit-M1 restarts with rad_signal_speed are bitwise; fresh starts use the radiation speed from step 1),
+bsg-arm2 (he_bc_outer = hse, he_sponge_mode radial, he_sponge_dmax; make_ic_mlt_star.py --atm re), ck_vef_xlim (face-5
+limiter, separate kernel), **ck_sph_face = 6** (monotone ladder closure, ckf6_mono_1001/RESULTS.md: exact-ref L within 0.3 %,
+10x stable without limiter, 17 % cheaper than face 5; 1x mean T +14-23 K at 1e-3..1e-2 bar vs face 5, toward the exact reference).
+Reports: merge_1001/{MERGE,RESTART_DT}.md, bsg_1001/{DETERMINISM,SWITCH_1001,BACKFILL}.md, ckf5_stab_1001, ckf6_mono_1001.
+
+**Runs (viper apu; congested, 30+ higher-priority jobs ahead):**
+- BSG arm 2 (Ma+2026 reproduction, low top 61 Rsun, HSE atmosphere): job 12056181 RUNNING since 22:00, ~1.3 s/cycle,
+  one 24 h job (~20 h). Page https://claude.ai/artifact/WTWSe9cPXwivWyihbsaG3f (figs/update_page.sh arm2, republish from the
+  scratchpad copy). Arm 1 (old top, restart chain from day 3): 12056180 queued (released after arm 2 started, user rule:
+  arm 2 first). Arm 1's step4/prod/prod_relaunch.sh now resets all output last_times on restart (smoke pending, agent).
+- WASP-121b fresh starts on face 6 (w121fresh_1001/FACE6.md; new face-5-exact RCE ICs): f1x6 12057829->30, f3x6 12057831->32,
+  f10x6 12057833->34->35 (first 10x link = multi-rotation check; check_xl.py). Old-closure baseline rsts: w1xf 00413 etc.
+- He presn ext (hepresn_ext_1001): scout64 done to 10 tt (envelope COLLAPSED to the compact branch; stringent 1-D column
+  confirms the radial mode is physical: STRINGENT.md); queued 12049478 (scout128), 12049479 (acc128), 12051125 (64 to 20 tt).
+  Page https://claude.ai/artifact/HcgYDVQ3CozhxXavZppqcU (slices/update_page.sh).
+- Caltech/DeltaAI: TASK-2026-10-01-{caltech,deltaai}-bsg + NOTE-2026-10-01-bsg-arm2-in-rt-integration; DeltaAI port gate
+  PASSED (GH200 0.67 s/cycle, ~10 h for arm 2) but production not run there (queue estimate 10-11); Caltech no reply yet.
+
+**Agents running (10-01 23:30):** small fixes (arm-1 script smoke, '}}' style, bundle SETUP.sh, slab test reference regen;
+fixes_1001), face 6 on cubed sphere + MHD (ckf6_cs_mhd_1001), BSG steady-state analysis scripts (bsg_1001/analysis).
