@@ -1883,7 +1883,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           }
         }
         // ck_impl_rowfb: a row with a non-positive diagonal takes the bounded per-cell
-        // step of a thin cell (identity row) instead of sending its column to the fallback
+        // step of a thin cell (identity row) instead of sending its column to the
+        // fallback
         if (rfb_ && !sdc && !thin && !(b > 0.0)) {
           a = 0.0;
           b = 1.0;
