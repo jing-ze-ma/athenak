@@ -14,6 +14,7 @@
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro.hpp"
+#include "rad_m1/rad_m1.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -21,6 +22,7 @@ namespace hydro {
 //  \brief Explicit RK update including flux divergence terms
 
 TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_preupd");}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;

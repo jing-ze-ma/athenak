@@ -20,6 +20,7 @@
 #include "eos/eos.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "utils/wb_background.hpp"
+#include "utils/fofc_report.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -146,6 +147,9 @@ class Hydro {
   DualArray1D<Real> dt_diag;   // r, rho, T, p, cs, v1, v2, v3
   bool dt_diag_valid = false;
   Real dtnew_prev = -1.0;
+  // <hydro>/rad_signal_speed: the CFL signal speed includes the radiation pressure of
+  // the M1 field in optically thick cells (hydro_newdt.cpp).  Read only when named.
+  bool rad_signal_speed = false;
 
   // following used for FOFC
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
@@ -157,6 +161,7 @@ class Hydro {
   // dump holds the flags accumulated since the previous dump of it.  Not carried in
   // restart files.
   DvceArray4D<Real> fofc_cnt;
+  FofcReport fofc_rep;     // <hydro>/fofc_report (diagnostic, read only when named)
   // <problem>/nan_report: scan the fluxes and the conserved state for a non-finite value
   // after each stage-level operator and report the first offender.  Default false, in
   // which case not one extra kernel runs.  See the NanScan* helpers in hydro_tasks.cpp.

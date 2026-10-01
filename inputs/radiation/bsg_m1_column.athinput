@@ -1,0 +1,158 @@
+# =====================================================================================
+# BSG envelope of Ma, Bildsten & Jiang 2026 (arXiv 2609.28656): 20 Msun point mass, log L 5.161,
+# Teff 15835 K, X 0.7 Z 0.008 (TOPS Rosseland + Planck), ideal gas mu 0.62, grid B (plateau
+# radial stretch, dr 0.153 Rsun over 34-56 Rsun, 0.306 elsewhere, r = 20-80 Rsun).  pgen he_star_m1.
+# IC: docs/handover/scripts/make_ic_mlt_star.py --preset bsg (table paths are viper paths).
+# COLUMN TEST (bsg-setup step 4): 4 x 4 cells over 0.02 rad (0.005 rad cells, angular-limited
+# dt as in the 3-D wedge), cfl 0.3 with hydro/rad_signal_speed (default on with implicit M1),
+# implicit_tol 1e-8, he_bc_outer = outflow + marshak.  Step 4: cfl 0.5 stable with the signal
+# speed and unstable without it (wall mode); 0.6 unstable with both.
+# =====================================================================================
+<comment>
+problem = BSG envelope (Ma, Bildsten & Jiang 2026), 20 Msun, log L 5.161, Teff 15835 K;
+          1-D column test on grid B (plateau stretch), ideal gas mu 0.62, implicit M1 (he_star_m1)
+<job>
+basename = bsg
+<mesh>
+nghost    = 3
+nx1       = 268
+x1min     = 1.391400e12          # 20 Rsun
+x1max     = 5.565600e12          # 80 Rsun
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 4
+x2min     = 1.5607963268   # thin column: 0.005 rad cells, as the 3-D 0.0041
+x2max     = 1.5807963268
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 4
+x3min     = 0.0
+x3max     = 0.02
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_p_amp = -6.834000000000e-01
+f_stretch_r_p_xa  = 1.717715759142e-01
+f_stretch_r_p_xb  = 7.084996999996e-01
+f_stretch_r_p_w   = 6.096966149644e-03
+<meshblock>
+nx1       = 268
+nx2       = 4
+nx3       = 4
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3   # step 4
+nlim       = -1
+tlim       = 2.0e5
+ndiag      = 50
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 0.62
+<hydro>
+eos         = ideal
+gamma       = 1.6666666666666667
+reconstruct = plm
+rsolver     = hllc
+fofc        = true
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+dfloor  = 1.0e-17
+tfloor_kelvin = 5.0e3
+pfloor  = 1.0e-7
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+<rad_m1>
+report_newton_fb = true
+c_light          = 2.99792458e10
+arad             = 2.3392742567e-47   # a_cgs*T_unit^4, T_unit = 0.62 m_u/k_B = 7.4568864364e-9 K
+chat_over_c      = 1.0
+closure          = vet_col
+opacity          = table
+temp_unit_kelvin = 7.4568864364e-9
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+force_reference_work = split
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_tol     = 1.0e-8   # user 10-01: keep 1e-8
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_eos_cache  = true
+implicit_flux    = central
+implicit_enthalpy = plm
+implicit_vimp    = false
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme      = be
+vet_col_every    = 1
+time2_vet_col    = predict
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 2.2795969490e13   # L/(4 pi r_in^2), L = 5.5458987e38, r_in = 20 Rsun
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+<problem>
+he_seed     = 0.0
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm       = 2.6542488e27          # G M, M = 20 Msun (point mass)
+he_ic_file  = /viper/ptmp2/jinma/bsg_1001/step3/ic_bsg/ic_bsg_mlt.txt
+he_opac_table   = /viper/ptmp2/jinma/bsg_1001/opac/rosseland_tops_x0.7_z0.008.txt
+he_planck_table = /viper/ptmp2/jinma/bsg_1001/opac/planck_tops_x0.7_z0.008.txt
+he_opac_logd_min = -17.0
+he_nfine    = 262144
+he_tau_int  = 1.0
+he_ic_cols  = 5
+he_wall_zero_flux = true
+he_ic_balance = true
+he_ic_balance_rmax = 3.6176e12   # 52 Rsun: the march starts below; the floor atmosphere above keeps the column
+mlt_flux_frozen = true
+he_wall_closed = true
+he_sponge_rate = 0.0
+mlt_ramp_start = -1.0
+mlt_ramp_time  = 0.0
+mlt_closure    = frozen
+he_grid_dump   = true
+he_bc_outer      = outflow
+
+
+<output1>
+file_type   = hst
+dt          = 1000.0
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt = 2.5e4
+<output3>
+file_type = bin
+variable  = m1
+dt = 2.5e4
+<output4>
+file_type = log
+dt = 1.0e4

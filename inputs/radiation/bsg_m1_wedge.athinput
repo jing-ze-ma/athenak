@@ -1,0 +1,166 @@
+# =====================================================================================
+# BSG envelope of Ma, Bildsten & Jiang 2026 (arXiv 2609.28656), 3-D wedge, bsg-setup step 4
+# production input (not launched): 268 x 256 x 256, theta pi/3..2pi/3, phi 0..pi/3 periodic,
+# 4 MeshBlocks (268 x 128 x 128) for 2 nodes x 2 GPUs.  cfl 0.3 + hydro/rad_signal_speed,
+# implicit_tol 1e-8, outflow + marshak top, adaptive MLT scaffold with a 3e5..6e5 s ramp,
+# seed 1e-3 over 36.2-43.8 Rsun.  See inputs/radiation/bsg_m1_column.athinput.
+# =====================================================================================
+<comment>
+problem = BSG envelope (Ma, Bildsten & Jiang 2026), 20 Msun, log L 5.161, Teff 15835 K;
+          3-D wedge, step 4 production input: grid B 268 x 256 x 256, 2 nodes x 2 GPUs = 4 MeshBlocks
+<job>
+basename = bsg3d
+<mesh>
+nghost    = 3
+nx1       = 268
+x1min     = 1.391400e12          # 20 Rsun
+x1max     = 5.565600e12          # 80 Rsun
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 256
+x2min     = 1.0471975511965976    # pi/3
+x2max     = 2.0943951023931953    # 2 pi/3
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 256
+x3min     = 0.0
+x3max     = 1.0471975511965976    # pi/3
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_p_amp = -6.834000000000e-01
+f_stretch_r_p_xa  = 1.717715759142e-01
+f_stretch_r_p_xb  = 7.084996999996e-01
+f_stretch_r_p_w   = 6.096966149644e-03
+<meshblock>
+nx1       = 268
+nx2       = 128
+nx3       = 128
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3           # user 10-01: radiation-dominated runs at 0.3 (the paper), with hydro/rad_signal_speed
+nlim       = -1
+tlim       = 2.6e6               # 30 d (paper relaxation 20-30 d)
+ndiag      = 50
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 0.62
+<hydro>
+eos         = ideal
+rad_signal_speed = true     # radiation-modified CFL signal speed (default on with implicit M1; named for clarity)
+gamma       = 1.6666666666666667
+reconstruct = plm
+rsolver     = hllc
+fofc        = true
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+dfloor  = 1.0e-17
+tfloor_kelvin = 5.0e3
+pfloor  = 1.0e-7
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+<rad_m1>
+report_newton_fb = true
+c_light          = 2.99792458e10
+arad             = 2.3392742567e-47   # a_cgs*T_unit^4, T_unit = 0.62 m_u/k_B = 7.4568864364e-9 K
+chat_over_c      = 1.0
+closure          = vet_col
+opacity          = table
+temp_unit_kelvin = 7.4568864364e-9
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+force_reference_work = split
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_tol     = 1.0e-8       # user 10-01: keep 1e-8 (module default / He value)
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_eos_cache  = true
+implicit_flux    = central
+implicit_enthalpy = plm
+implicit_vimp    = false
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme      = be
+vet_col_every    = 1
+time2_vet_col    = predict
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 2.2795969490e13   # L/(4 pi r_in^2), L = 5.5458987e38, r_in = 20 Rsun
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+<problem>
+he_seed     = 1.0e-3            # entropy seed in the Fe CZ (paper: none, grows from noise)
+he_seed_nk   = 16
+he_seed_kmin = 1
+he_seed_kmax = 2
+he_seed_rad  = true
+he_seed_rlo  = 2.52e12          # 36.2 Rsun
+he_seed_rhi  = 3.05e12          # 43.8 Rsun
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm       = 2.6542488e27          # G M, M = 20 Msun (point mass)
+he_ic_file  = /viper/ptmp2/jinma/bsg_1001/step3/ic_bsg/ic_bsg_mlt.txt
+he_opac_table   = /viper/ptmp2/jinma/bsg_1001/opac/rosseland_tops_x0.7_z0.008.txt
+he_planck_table = /viper/ptmp2/jinma/bsg_1001/opac/planck_tops_x0.7_z0.008.txt
+he_opac_logd_min = -17.0
+he_nfine    = 262144
+he_tau_int  = 1.0
+he_ic_cols  = 5
+he_wall_zero_flux = true
+he_ic_balance = true
+he_ic_balance_rmax = 3.6176e12   # 52 Rsun: the march starts below; the floor atmosphere above keeps the column
+mlt_flux_frozen = true
+he_wall_closed = true
+he_sponge_rate = 0.0
+he_bc_outer    = outflow          # user 10-01: outflow (no inflow, like the paper) + marshak
+mlt_ramp_start = 3.0e5            # s: backstop cosine ramp of the scaffold from 3e5 s (2 turnovers of 1.5e5 s) ...
+mlt_ramp_time  = 3.0e5            # ... to zero at 6e5 s (7 d)
+mlt_closure    = adaptive         # shell-mean deficit: the scaffold retreats as resolved convection carries flux (He runs)
+mlt_relax_time = 5.0e4            # s, 1/3 turnover (He wind run: 1500 s = 0.32 turnover)
+mlt_closure_every = 1
+mlt_closure_taper = 0.01
+mlt_closure_dout  = 4.32e4         # s: fsub/lrad/lconv profiles every 0.5 d
+<output1>
+file_type   = hst
+dt          = 2000.0
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt = 4.32e4                      # 0.5 d
+<output3>
+file_type = bin
+variable  = m1
+dt = 4.32e4
+<output4>
+file_type = log
+dt = 1.0e4
+<output5>
+file_type = rst
+dt = 8.64e4

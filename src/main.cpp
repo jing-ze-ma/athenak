@@ -145,6 +145,11 @@ const std::vector<std::pair<std::string, std::string>> &PotentialKeys() {
     {"mesh", "use_grid_stretch_r"}, {"mesh", "f_stretch_r"},
     {"mesh", "use_grid_stretch_r_poly"}, {"mesh", "f_stretch_r_c1"},
     {"mesh", "f_stretch_r_c2"}, {"mesh", "f_stretch_r_c3"}, {"mesh", "f_stretch_r_c4"},
+    {"mesh", "f_stretch_r_b1_amp"}, {"mesh", "f_stretch_r_b1_x"},
+    {"mesh", "f_stretch_r_b1_w"}, {"mesh", "f_stretch_r_b2_amp"},
+    {"mesh", "f_stretch_r_b2_x"}, {"mesh", "f_stretch_r_b2_w"},
+    {"mesh", "f_stretch_r_p_amp"}, {"mesh", "f_stretch_r_p_xa"},
+    {"mesh", "f_stretch_r_p_xb"}, {"mesh", "f_stretch_r_p_w"},
     {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
   };
   return keys;
@@ -418,14 +423,21 @@ int main(int argc, char *argv[]) {
     infile.Close();
     pinput->CheckBlockNames();
   }
-  // <problem>/allow_potential_change given on the command line of a restart: register
-  // the key first (ModifyFromCmdline only overrides EXISTING keys).  Only then, so a
-  // restart without it writes the same parameter header as before; see
-  // CheckRestartPotentialKeys
+  // <problem>/allow_potential_change (and hydro/rad_signal_speed) given on the command
+  // line of a restart: register the key first (ModifyFromCmdline only overrides EXISTING
+  // keys).  Only then, so a restart without it writes the same parameter header as
+  // before; see CheckRestartPotentialKeys
   if (res_flag) {
     for (int i = 1; i < argc; ++i) {
       if (std::string(argv[i]).find("problem/allow_potential_change") == 0) {
         pinput->GetOrAddBoolean("problem", "allow_potential_change", false);
+      }
+      // hydro/rad_signal_speed (hydro_newdt.cpp) on the command line of a restart whose
+      // embedded input predates the key: register it so the override can switch it
+      // (the value written here is replaced by ModifyFromCmdline right below)
+      if (std::string(argv[i]).find("hydro/rad_signal_speed") == 0 &&
+          pinput->DoesBlockExist("hydro")) {
+        pinput->GetOrAddBoolean("hydro", "rad_signal_speed", false);
       }
     }
   }

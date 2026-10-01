@@ -27,6 +27,7 @@
 #include "shearing_box/shearing_box.hpp"
 #include "shearing_box/orbital_advection.hpp"
 #include "hydro/hydro.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "utils/c2p_track.hpp"
 
 namespace hydro {
@@ -427,8 +428,10 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   // the resistive fluxes in MHD): the published algorithm forms the trial update from
   // the Riemann fluxes only, and the fallback is meant to replace that flux, with the
   // corrections then applied on top of the first-order flux.
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_flxraw");}
   if (use_fofc) {
     FOFC(pdrive, stage);
+    if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_flxfofc");}
   } else if (pmy_pack->pcoord->is_general_relativistic) {
     if (pmy_pack->pcoord->coord_data.bh_excise) {
       FOFC(pdrive, stage);
@@ -516,6 +519,7 @@ TaskStatus Hydro::RecvFlux(Driver *pdrive, int stage) {
 //! variables (u0) have already been partially updated when this fn called.
 
 TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_presrc");}
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
 
   // <problem>/nan_report: this task runs immediately after RKUpdate, so u0 here is what
@@ -645,6 +649,7 @@ TaskStatus Hydro::RecvU_OA(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to restrict conserved vars
 
 TaskStatus Hydro::RestrictU(Driver *pdrive, int stage) {
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_postsrc");}
   // Only execute Mesh function with SMR/SMR
   if (pmy_pack->pmesh->multilevel) {
     pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);

@@ -249,6 +249,15 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
   }
+  // dbg_t2_admiss = N (DEBUG, default 0 = off, read only when named so the restart echo
+  // and every result stay bitwise): for the first N non-admissible hesdirk2 stages print
+  // which quantity went <= 0 (solved E, solved T, written-back gas eint) and, for each,
+  // the cell of its minimum with the stage OLD vector (E, eint) and the stage start E
+  t2_dbg_adm = 0;
+  t2_dbg_adm_n = 0;
+  if (pin->DoesParameterExist("rad_m1", "dbg_t2_admiss")) {
+    t2_dbg_adm = pin->GetInteger("rad_m1", "dbg_t2_admiss");
+  }
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));

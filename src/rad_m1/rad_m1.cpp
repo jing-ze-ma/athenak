@@ -171,6 +171,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_nfall = 0.0;
   bcg_nred = 0.0;
   impl_bcg_sync = 0;
+  impl_dtrace = 0;
+  impl_det = false;
   impl_plog = 0;
   bcg_r0rel = 0.0;
   impl_lres_test = true;
@@ -192,6 +194,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vimp_now = false;
   iw_vimp = -1;
   vimp_nfall = 0.0;
+  flr_ne = 0.0;
+  flr_ng = 0.0;
   vimp_emin = 1.0e300;
   pbval_vm = nullptr;
   time_scheme = 0;
@@ -200,6 +204,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   t2_solve = 0;
   t2_fail = false;
   t2_dbg_fail = -1;
+  t2_dbg_adm = 0;
+  t2_dbg_adm_n = 0;
   t2_nstep = 0.0;
   t2_nbe = 0.0;
   t2_nfall = 0.0;
@@ -712,6 +718,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                                    !global_variable::restart_run);
     vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
+    {std::string vs = pin->GetOrAddString("rad_m1","vet_col_source","relaxed");
+    if (vs.compare("relaxed") == 0) {
+      vcol_srelax = true;
+    } else if (vs.compare("gas") == 0) {
+      vcol_srelax = false;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/vet_col_source = '" << vs << "' not implemented "
+        << "(relaxed | gas)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }}
     vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);

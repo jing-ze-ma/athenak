@@ -17,6 +17,7 @@
 #include "eos/eos.hpp"
 #include "hydro/rsolvers/llf_hyd_singlestate.hpp"
 #include "hydro.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "hydro/fofc_etotgrav.hpp"
 
 namespace hydro {
@@ -207,8 +208,11 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         if (fofcf_(m,k,j,i)) { fcnt_(m,k,j,i) += 1.0; }
       });
     }
+    // <hydro>/fofc_report (diagnostic, read only when named): reads the flags only
+    fofc_rep.Count(pmy_pack, fofc, w0, peos->eos_data.dfloor);
   }
 
+  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_fofcflag");}
   auto &coord = pmy_pack->pcoord->coord_data;
   bool &is_sr = pmy_pack->pcoord->is_special_relativistic;
   bool &is_gr = pmy_pack->pcoord->is_general_relativistic;
@@ -318,6 +322,24 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       }
     };
 
+    // ONE WRITER PER FACE.  A face between two flagged cells is replaced by both; the two
+    // first-order fluxes are the same algebra on the same states but are compiled as
+    // two inlined copies, which the GPU compiler may contract (FMA) differently, so they
+    // can differ in the last bit -- and which store lands last is up to the scheduler:
+    // GPU runs were not bitwise reproducible (bsg_1001/DETERMINISM.md).  So a cell
+    // replaces its UPPER face only when the cell above is not itself replacing it (it
+    // is outside this kernel's range or not flagged).  The cell above writes the face
+    // as its LOWER face, which is also the store that lands last in the serial loop
+    // order: a host (Serial) build is bitwise unchanged.  The flags are therefore no
+    // longer cleared here, but by a separate kernel below.
+    auto nbr = [&](const int kk, const int jj, const int ii) -> bool {
+      if (ii > iu || jj > ju || kk > ku) {return false;}
+      bool f = false;
+      if (use_fofc_) {f = fofc_(m,kk,jj,ii);}
+      if (is_gr && use_excise) {f = f || excision_flux_(m,kk,jj,ii);}
+      return f;
+    };
+
     // Check for FOFC flag
     bool fofc_flag = false;
     if (use_fofc_) { fofc_flag = fofc_(m,k,j,i); }
@@ -380,7 +402,8 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
                               : flux.d*wfull(n,k,j,i);
       }
 
-      // replace x1-flux at i+1
+      // replace x1-flux at i+1 (unless the cell at i+1 replaces it)
+      if (!nbr(k, j, i+1)) {
       // load right state (left state just wi from above)
       HydPrim1D wip1;
       ldx1(i+1, wip1);
@@ -423,6 +446,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       for (int n=nhyd_f; n<nvar_f; ++n) {
         flx1(m,n,k,j,i+1) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j,i)
                               : flux.d*wfull(n,k,j,i+1);
+      }
       }
 
       if (multi_d) {
@@ -475,7 +499,8 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
                                 : flux.d*wfull(n,k,j,i);
         }
 
-        // replace x2-flux at j+1
+        // replace x2-flux at j+1 (unless the cell at j+1 replaces it)
+        if (!nbr(k, j+1, i)) {
         // load left state, permutting components of vectors (just wj from above)
         // load right state, permutting components of vectors
         HydPrim1D wjp1;
@@ -523,6 +548,7 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         for (int n=nhyd_f; n<nvar_f; ++n) {
           flx2(m,n,k,j+1,i) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j,i)
                                 : flux.d*wfull(n,k,j+1,i);
+        }
         }
       }
 
@@ -576,7 +602,8 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
                                 : flux.d*wfull(n,k,j,i);
         }
 
-        // replace x3-flux at k+1
+        // replace x3-flux at k+1 (unless the cell at k+1 replaces it)
+        if (!nbr(k+1, j, i)) {
         // load left state, permutting components of vectors (just wk from above)
         // load right state, permutting components of vectors
         HydPrim1D wkp1;
@@ -624,12 +651,17 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
           flx3(m,n,k+1,j,i) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j,i)
                                 : flux.d*wfull(n,k+1,j,i);
         }
+        }
       }
-
-      // reset FOFC flag (do not reset excision flag)
-      if (use_fofc_ && fofc_flag) { fofc_(m,k,j,i) = false; }
     }
   });
+  // reset the FOFC flags (not the excision flags) once every face is written
+  if (use_fofc_) {
+    par_for("FOFC-reset", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      fofc_(m,k,j,i) = false;
+    });
+  }
 
   return;
 }

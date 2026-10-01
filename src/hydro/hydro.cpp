@@ -210,6 +210,19 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // ...and off BELOW this radius (0 = never), same path, same caveat.
   wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
+  // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
+  // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
+  // whose time step has no light-speed limit; off without <rad_m1> and with the explicit
+  // transport (dt already set by the light speed).  Read only when named, so the
+  // parameter dump of a run without the key is unchanged.
+  if (pin->DoesBlockExist("rad_m1") &&
+      pin->DoesParameterExist("rad_m1","transport")) {
+    std::string tr = pin->GetString("rad_m1","transport");
+    rad_signal_speed = (tr.compare("implicit") == 0 || tr.compare("implicit_x1") == 0);
+  }
+  if (pin->DoesParameterExist("hydro","rad_signal_speed")) {
+    rad_signal_speed = pin->GetBoolean("hydro","rad_signal_speed");
+  }
   // allocate array of flags used with etotgrav
   if (use_etotgrav || use_wellbalance_dynamic) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -298,6 +311,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (evolution_t.compare("stationary") != 0) {
     // determine if FOFC is enabled
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",false);
+    if (use_fofc) {fofc_rep.Init(pin, "hydro");}
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("hydro","reconstruct","plm");

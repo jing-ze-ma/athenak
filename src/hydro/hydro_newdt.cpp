@@ -9,6 +9,7 @@
 #include <math.h>
 
 #include <limits>
+#include <cstdlib>
 #include <iostream>
 #include <algorithm> // min
 
@@ -21,6 +22,8 @@
 #include "diffusion/conduction.hpp"
 #include "diffusion/viscosity.hpp"
 #include "srcterms/srcterms.hpp"
+#include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_closure.hpp"
 
 namespace hydro {
 
@@ -79,6 +82,59 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   auto &sncell_ = pmy_pack->pcoord->sin_cell;
   const bool multi_d_ = pmy_pack->pmesh->multi_d;
   const bool three_d_ = pmy_pack->pmesh->three_d;
+
+  // RADIATION SIGNAL SPEED (<hydro>/rad_signal_speed; default on with an implicit M1
+  // transport, see hydro.cpp).  The gas sound speed alone understates the acoustic speed
+  // where the M1 radiation is trapped: there P_rad takes part in the compression.  In
+  // the strong-coupling, no-diffusion (equilibrium) limit gas + LTE radiation is one
+  // fluid with P = P_g + P_r, beta = P_g/P, and the adiabatic exponent of an ideal gas of
+  // ratio gamma mixed with radiation is (Chandrasekhar 1939, ch. II; Mihalas & Mihalas
+  // 1984, sect. 101)
+  //   Gamma_1 = beta + (4 - 3 beta)^2 (gamma - 1) / (beta + 12 (gamma - 1)(1 - beta)),
+  // c_eq^2 = Gamma_1 P / rho  (-> gamma P_g/rho at beta = 1, -> 4/3 P_r/rho at beta = 0).
+  // For a general EOS (Gamma_1 of the gas from the table) the decoupled sum
+  // c_eq^2 = c_g^2 + (4/3) P_r/rho is used, an upper bound of the coupled value for an
+  // ideal gas (by <= 3 % in speed at gamma = 5/3).  P_r along direction d is the
+  // diagonal of the closure in use, P_dd = E [(1 - chi)/2 + (3 chi - 1)/2 n_d^2]:
+  // (chi, n) of tau_ten (closure = tau | vet_col), of vet_cell (vet_sc; D_dd itself
+  // with vet_tensor = full), M1Chi(|F|/cE) about F (m1 | minerbo | kershaw), 1/3
+  // (eddington); E/3 wherever the closure gives no tensor yet (tau_ten before its first
+  // build).  It is E/3 in the optically thick limit.  The radiation term is tapered by
+  // the cell optical depth along each direction, tau_d = rho kappa_T dx_d (kappa_T the
+  // module's transport opacity, opac(M1_OP_T)):
+  //   c_d^2 = c_g^2 + (1 - exp(-tau_d)) (c_eq,d^2 - c_g^2),
+  // so optically thin cells keep the gas speed.  The fully coupled speed is the LARGEST
+  // acoustic speed of the medium (radiative diffusion at the grid scale only lowers it),
+  // so the bound is conservative.  E, F, the tensor and opac are the M1 state of the
+  // last radiation step (the module runs after the hydro stages): a lag of one step.
+  // Off: no change.
+  const bool rss_ = rad_signal_speed;
+  DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
+  int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
+  int rss_kind = 0;
+  Real rss_cl = 1.0;
+  if (rss_) {
+    auto *prm = pmy_pack->pradm1;
+    if (prm == nullptr) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/rad_signal_speed = true needs a <rad_m1> block"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    erad_ = prm->u0;
+    kopc_ = prm->opac;
+    rss_cl = prm->c_light;
+    rss_kind = prm->chi_kind;
+    if (prm->tau_closure && prm->tau_ten.extent(0) > 0) {
+      rss_mode = 2;
+      tten_ = prm->tau_ten;
+    } else if (prm->vet_sc && prm->vet_cell.extent(0) > 0) {
+      rss_mode = prm->vet_full ? 4 : 3;
+      vcel_ = prm->vet_cell;
+    } else if (!prm->eddington && !prm->tau_closure && !prm->vet_sc) {
+      rss_mode = 1;
+    }
+  }
 
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
@@ -150,11 +206,88 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         } else         {
           cs = eos.iso_cs;
         }
-        max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cs;
+        Real cs1 = cs, cs2 = cs, cs3 = cs;
+        if (rss_) {
+          const Real d = w0_(m,IDN,k,j,i);
+          const Real er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
+          // diagonal of the Eddington tensor, D_dd = P_dd/E
+          Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
+          if (rss_mode == 4) {
+            for (int a = 0; a < 3; ++a) dd[a] = vcel_(m,radm1::M1_VET_D11+a,k,j,i);
+          } else if (rss_mode >= 1) {
+            Real chi, n1, n2, n3;
+            if (rss_mode == 2) {
+              chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
+              n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
+            } else if (rss_mode == 3) {
+              chi = vcel_(m,radm1::M1_VET_CHI,k,j,i);
+              n1 = vcel_(m,radm1::M1_VET_N1,k,j,i);
+              n2 = vcel_(m,radm1::M1_VET_N1+1,k,j,i);
+              n3 = vcel_(m,radm1::M1_VET_N1+2,k,j,i);
+            } else {
+              const Real f1 = erad_(m,radm1::M1_F1,k,j,i);
+              const Real f2 = erad_(m,radm1::M1_F2,k,j,i);
+              const Real f3 = erad_(m,radm1::M1_F3,k,j,i);
+              const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
+              const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
+              chi = (er > 0.0) ? radm1::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+              n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
+            }
+            if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3
+              const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
+              dd[0] = dg + an*n1*n1;
+              dd[1] = dg + an*n2*n2;
+              dd[2] = dg + an*n3*n3;
+            }
+          }
+          const Real cg2 = cs*cs;
+          const Real kt = fmax(kopc_(m,radm1::M1_OP_T,k,j,i), 0.0);
+          Real h[3];
+          if (use_cubed_sphere || use_spherical_polar) {
+            h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
+          } else {
+            h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
+            h[2] = mbsize.d_view(m).dx3;
+          }
+          Real pg = 0.0, gm1 = 0.0;
+          const bool ideal = (eos.is_ideal && !eos.IsGeneral());
+          if (ideal) {
+            pg = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
+            gm1 = eos.gamma - 1.0;
+          }
+          Real csd[3];
+          for (int a = 0; a < 3; ++a) {
+            const Real pr = fmax(dd[a], 0.0)*er;
+            Real ceq2;
+            if (ideal) {
+              const Real ptot = pg + pr;
+              const Real beta = pg/ptot;
+              const Real gam1 = beta + SQR(4.0 - 3.0*beta)*gm1
+                                       /(beta + 12.0*gm1*(1.0 - beta));
+              ceq2 = gam1*ptot/d;
+            } else {
+              ceq2 = cg2 + (4.0/3.0)*pr/d;
+            }
+            const Real dc2 = fmax(ceq2 - cg2, 0.0);
+            csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-kt*h[a])));
+          }
+          cs1 = csd[0]; cs2 = csd[1]; cs3 = csd[2];
+        }
+        max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cs1;
         max_dv2 = fabs(w0_(m,IVY,k,j,i))
-                 + (cs_ ? cs/sncell_(m,k,j) : cs);
+                 + (cs_ ? cs2/sncell_(m,k,j) : cs2);
         max_dv3 = fabs(w0_(m,IVZ,k,j,i))
-                 + (cs_ ? cs/sncell_(m,k,j) : cs);
+                 + (cs_ ? cs3/sncell_(m,k,j) : cs3);
+      }
+      // NON-FINITE GUARD: a NaN/inf state gives a NaN dx/v, which fmin DROPS, so dt
+      // would be set by the finite cells alone and could keep doubling (BSG production
+      // 10-01: the whole domain NaN, dt doubled per step to tlim, rc 0).  Flag the cell
+      // with a negative dt instead; Mesh::NewTimeStep stops the run on dt <= 0.
+      if (!(max_dv1 + max_dv2 + max_dv3 < 1.0e300)) {
+        min_dt1 = -1.0;
+        mres.val = -1.0;
+        mres.loc = idx;
+        return;
       }
       Real cell_dt;
       if (use_cubed_sphere || use_spherical_polar) {

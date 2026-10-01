@@ -206,6 +206,15 @@ class RadiationM1 {
   // the problem generator through SetForceReference.
   int force_ref;
   DvceArray4D<Real> arad_ref;   // (m,k,j,i), a reference x1 acceleration, code units
+  // OPTIONAL explicit energy source of the radiation (erg/cm^3/s, code units), (m,k,j,i).
+  // Unallocated and esrc_on = false by default (every path bitwise).  A problem generator
+  // that allocates and fills it sets esrc_on = true (transport = implicit only);
+  // ImplicitSolve then adds dt_solve*(chat/c)*esrc to the OLD vector of E and the same
+  // rate to the hesdirk2 slope, so a constant esrc raises E by exactly dt*esrc per step
+  // under be and hesdirk2 alike (stage retries redo the step from U^n with be).
+  // he_star_m1: the frozen MLT flux.
+  DvceArray4D<Real> esrc;
+  bool esrc_on = false;
 
   // m1-mhd (docs/dev/m1_mhd_0927.md): the fluid is <hydro> or <mhd> (FluidRef,
   // m1_fluid.hpp).  Under MHD the conserved energy carries |B|^2/2, which every kernel
@@ -316,6 +325,22 @@ class RadiationM1 {
   int impl_opn_guard_mode = 2;   // implicit_opac_newton_guard_mode (bits 1 rhs, 2 off)
   DvceArray1D<Real> opn_nskip_d;
   Real opn_nskip = 0.0;
+  // m1-positivity (every key read only when named; absent = off = bitwise the old code):
+  //  implicit_g0_limit = w > 0: on the FIRST Picard pass the lagged net-absorption term
+  //    g0 of the face-flux equations is clipped to |chat dt g0| <= w (max(E^k, E_old) +
+  //    (chat/c) max(e_gas,0)) (the energy a cell can exchange in one step)
+  //  implicit_g0_exchange: from the second pass on g0 = -(SRCR - SRCB E^k)/(chat dt), the
+  //    exchange of the linearised source row (= the pointwise g0 at the fixed point)
+  //  implicit_pos_gas: energy-conserving positivity limiter of the written-back gas eint
+  //  implicit_pos_floor: the E floor takes the added energy from the gas (conserving)
+  // pos_cnt_d: device counters (M1_POS_*), pos_cnt the all-rank totals at the report
+  Real impl_g0_lim = 0.0;
+  bool impl_g0_exch = false;    // implicit_g0_exchange (m1-positivity, see ImplicitSolve)
+  bool impl_pos_gas = false;
+  bool impl_pos_floor = false;
+  Real impl_pos_gas_frac = 1.0e-3;
+  DvceArray1D<Real> pos_cnt_d;
+  Real pos_cnt[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
@@ -339,6 +364,18 @@ class RadiationM1 {
   DvceArray4D<Real> f0x1n;      // its start-of-step copy (not restarted)
   DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
   Real impl_nstep, impl_itsum, impl_itmax, impl_nfail;   // host-side Picard counters
+  // implicit_res_dmin / implicit_res_rmax (read only when named; 0 = off): cells with
+  // rho < dmin or r > rmax are left out of the Picard convergence norm (resid, lresid);
+  // they are still solved every pass.  res_exmax = the largest excluded residual on the
+  // last pass of any step, res_nex = steps whose excluded residual was >= implicit_tol
+  // (steps that would not have stopped there with the full norm).
+  Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
+  // implicit_resid_fatal (read only when named; 0 = off): stop the run when a Picard
+  // solve ends non-converged with resid above this value or non-finite (a DIVERGED
+  // solve, not the usual 1e-7 stall), before its state is written back and spreads
+  Real impl_res_fatal = 0.0;
+  bool impl_res_mask = false;
+  Real impl_res_exmax = 0.0, impl_res_nex = 0.0;
   // implicit_timers = N (m1-fast4; default 0 = off): fenced host timers of the M1 stage
   // tasks and of the parts of ImplicitSolve, accumulated over cycles >= N and printed
   // by ImplicitReport.  The fences change the timing a little; only a diagnostic.
@@ -383,6 +420,10 @@ class RadiationM1 {
   int csplit = 0;
   int csplit_nh2 = 1, csplit_ns = 2;
   bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
+  // DIAGNOSTIC <rad_m1>/dbg_cell_lo, dbg_cell_hi (read only when named; default off):
+  // the implicit write-back prints the per-cell energy budget of active x1 cells
+  // lo..hi (offsets from is) of the first (k, j) column of MeshBlock 0
+  int dbg_cell_lo = -1, dbg_cell_hi = -1;
   // force_reference_work (ke-dt-0926; read only when named, force_reference = wb_arad
   // only): `full` (default) = the solve hands the gas the work of the FULL force and the
   // WB source none (rad_m1_coupling.cpp header; its internal-energy cancellation is
@@ -632,6 +673,7 @@ class RadiationM1 {
   int hm_face[6];
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> ho_h;  // 2 x 4 partial sums
   void ImplicitHaloOp(int xc, int yc, int red, Real *out);
+  void ImplicitDetOpRed(int xc, int yc, int red, Real *out);   // implicit_det_reduce
   void ImplicitStencilOpPart(int xc, int yc, int red, int part, int w, Real *hs);
   int ImplicitBiCGStabPipe(Real rhsmax);
   // ---- launch and host-sync cuts (tests_m1/runs_4k_launch, rad_m1_launch.cpp).  Every
@@ -719,9 +761,16 @@ class RadiationM1 {
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
   // for m1 | minerbo | kershaw); the OFF settings reproduce the earlier path bitwise.
+  int impl_dtrace;              // <rad_m1>/implicit_det_trace (read only when named):
+                                // bitwise hashes of the solve's arrays for the first N
+                                // solves (run-to-run reproducibility diagnostic)
+  void DetTrace(const char *tag);
+  void DetTraceScalars(const char *tag, int n, const Real *v);
   int impl_plog;                // <rad_m1>/implicit_picard_log: print one line per
                                 // Picard pass for the first N solves (rank 0)
   Real bcg_r0rel;               // max|b - A x0|/max|b| of the last BiCGStab call
+  bool impl_det;                // <rad_m1>/implicit_det_reduce: fixed-order Krylov sums
+  DvceArray1D<Real> det_part;   // its level-1 partials and result (4*1024 + 4)
   bool impl_lres_test;          // <rad_m1>/implicit_lres_test (default false*): require
                                 // the pass-to-pass transverse change lresid < lin_tol
   bool impl_conv_est;           // <rad_m1>/implicit_conv_est (default true*): stop when
@@ -754,7 +803,10 @@ class RadiationM1 {
   int t2_solve;                 // what the next ImplicitSolve does (M1_T2S_*)
   bool t2_fail;                 // the last stage solve was not admissible
   int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
+  int t2_dbg_adm;               // DEBUG dbg_t2_admiss: report the first N non-admissible
+  int t2_dbg_adm_n;             // stages (which quantity <= 0, where); 0 = off
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
+  DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
@@ -869,6 +921,8 @@ class RadiationM1 {
   bool vimp_now;                // on for this step (the positivity fallback drops it)
   int iw_vimp;                  // first iw component of the M1_NIW_VIMP block, or -1
   Real vimp_nfall;              // how often the positivity fallback dropped it
+  Real flr_ne, flr_ng;          // cell-solves whose solved E <= e_floor (floored) and
+                                // whose written-back gas eint <= 0 (all ranks)
   Real vimp_emin;               // the smallest E the linear solve produced with it on
   DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
   MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
@@ -877,6 +931,7 @@ class RadiationM1 {
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`
   DvceArray5D<Real> ecache;     // (m,nec,k,j,i) the frozen-density e(T) cache
+  bool pin_report_newton_fb = false;   // <rad_m1>/report_newton_fb: print fallback cells
   Real newt_nfb;                // Newton fallbacks to the bracketed root find, whole run
   Real gas_ncell;               // cell-passes of the gas solve, whole run (the scale the
                                 // two counters above and below are read against)
@@ -1005,6 +1060,9 @@ class RadiationM1 {
   //! let a problem generator name the x1 boundary types of the implicit solve
   void SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real hi_flux);
   //! the whole backward-Euler step, in place of the explicit stage chain
+  void T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
+                     DvceArray5D<Real> t2i_, const Real cl, const Real ch,
+                     const bool hh, const bool gq, const int t2s, const int it);
   TaskStatus ImplicitSolve(Driver *d, int stage);
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();
@@ -1145,6 +1203,11 @@ class RadiationM1 {
   // physical behind a radiating front and D = diag(f, (1-f)/2, (1-f)/2) stays
   // realizable for 0 <= f <= 1)
   Real vcol_fkmin = 1.0/3.0;
+  // vet_col_source (he-presn-m1 0929): the thermal source of the formal solution.
+  // `relaxed` (default): a T^4 at the temperature T* the cell reaches after a LOCAL
+  // backward-Euler exchange over the step (VcolRelaxedSource, rad_m1_vetcol.cpp); `gas`:
+  // the start-of-step gas temperature as before (bitwise the old build)
+  bool vcol_srelax = true;
   // vet_col with a REFLECTING outer x1 (m1-sp-order2b): the incoming intensity at the
   // top face is the mirror of the outgoing one, I_in = b/(1 - a) per ray (b the outgoing
   // intensity of a vacuum-top sweep, a the ray's round-trip transmission), in a second

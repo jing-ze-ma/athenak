@@ -249,10 +249,38 @@ Mesh::Mesh(ParameterInput *pin) :
     // c1..c4 are always recorded (default 0); c5..c8 are read only when the input gives
     // them, so a 4-coefficient input keeps its exact parameter dump (and, with the extra
     // coefficients zero, its bitwise grid).
-    for (int n=0; n<NSTRETCH_R_POLY; ++n) {
+    for (int n=0; n<NSTRETCH_R_PCOEF; ++n) {
       const std::string key = "f_stretch_r_c" + std::to_string(n+1);
       if (n < 4 || pin->DoesParameterExist("mesh", key)) {
         fStretchRPoly[n] = pin->GetOrAddReal("mesh", key, 0.0);
+      }
+    }
+    // optional local bumps (StretchRPoly): read only when the amplitude is given
+    for (int b=0; b<NSTRETCH_R_BUMP; ++b) {
+      const std::string kb = "f_stretch_r_b" + std::to_string(b+1);
+      if (!pin->DoesParameterExist("mesh", kb + "_amp")) continue;
+      Real *cb = fStretchRPoly + NSTRETCH_R_PCOEF + 3*b;
+      cb[0] = pin->GetReal("mesh", kb + "_amp");
+      cb[1] = pin->GetReal("mesh", kb + "_x");
+      cb[2] = pin->GetReal("mesh", kb + "_w");
+      if (cb[0] != 0.0 && !(cb[2] > 0.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mesh/" << kb << "_w must be > 0" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // optional plateau (StretchRPoly): read only when the amplitude is given
+    if (pin->DoesParameterExist("mesh", "f_stretch_r_p_amp")) {
+      Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP;
+      cp[0] = pin->GetReal("mesh", "f_stretch_r_p_amp");
+      cp[1] = pin->GetReal("mesh", "f_stretch_r_p_xa");
+      cp[2] = pin->GetReal("mesh", "f_stretch_r_p_xb");
+      cp[3] = pin->GetReal("mesh", "f_stretch_r_p_w");
+      if (cp[0] != 0.0 && (!(cp[3] > 0.0) || !(cp[2] > cp[1]))) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mesh/f_stretch_r_p_w must be > 0 and f_stretch_r_p_xb "
+                  << "> f_stretch_r_p_xa" << std::endl;
+        std::exit(EXIT_FAILURE);
       }
     }
     // The mapping must be strictly increasing, or the grid folds over and cell widths go
@@ -263,10 +291,24 @@ Mesh::Mesh(ParameterInput *pin) :
     for (int q=0; q<=nchk; ++q) {
       Real xi = static_cast<Real>(q)/static_cast<Real>(nchk);
       Real du = 1.0;
-      for (int n=0; n<NSTRETCH_R_POLY; ++n) {
+      for (int n=0; n<NSTRETCH_R_PCOEF; ++n) {
         // d/dxi [ c_k xi^k (1-xi) ] = c_k ( k xi^(k-1) - (k+1) xi^k )
         Real k = static_cast<Real>(n+1);
         du += fStretchRPoly[n]*(k*std::pow(xi,k-1.0) - (k+1.0)*std::pow(xi,k));
+      }
+      for (int b=0; b<NSTRETCH_R_BUMP; ++b) {
+        const Real *cb = fStretchRPoly + NSTRETCH_R_PCOEF + 3*b;
+        if (cb[0] == 0.0) continue;
+        const Real ch = std::cosh((xi - cb[1])/cb[2]);
+        du += cb[0]*(1.0/(ch*ch) - cb[2]*(std::tanh((1.0 - cb[1])/cb[2])
+                                          + std::tanh(cb[1]/cb[2])));
+      }
+      {
+        const Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP;
+        if (cp[0] != 0.0) {
+          du += cp[0]*(0.5*(std::tanh((xi - cp[1])/cp[3]) - std::tanh((xi - cp[2])/cp[3]))
+                       - StretchRPlateauG(cp[1], cp[2], cp[3], 1.0));
+        }
       }
       dumin = std::min(dumin, du);
     }
@@ -1091,6 +1133,31 @@ void Mesh::NewTimeStep(const Real tlim) {
     }
   }
 #endif
+
+  // A non-finite fluid state (hydro NewTimeStep flags it with dtnew = -1, see the
+  // NON-FINITE GUARD there) or any non-finite / non-positive dt: stop here, with the
+  // cell, instead of stepping on with a dt set by the cells that are still finite.
+  if (!(dt > 0.0) || !std::isfinite(dt)) {
+    if (pmb_pack->phydro != nullptr && !(pmb_pack->phydro->dtnew > 0.0)) {
+      hydro::Hydro *ph = pmb_pack->phydro;
+      std::cout << "### non-finite hydro state at cycle=" << ncycle << " time=" << time
+                << " cell (m,k,j,i) = (" << ph->dtnew_m << "," << ph->dtnew_k << ","
+                << ph->dtnew_j << "," << ph->dtnew_i << ") gid = "
+                << (pmb_pack->gids + std::max(ph->dtnew_m, 0)) << " rank "
+                << global_variable::my_rank;
+      if (ph->dt_diag_valid) {
+        auto &dd = ph->dt_diag.h_view;
+        std::cout << " r=" << dd(0) << " rho=" << dd(1) << " T=" << dd(2)
+                  << " p=" << dd(3) << " v=(" << dd(5) << "," << dd(6) << "," << dd(7) << ")";
+      }
+      std::cout << std::endl;
+    }
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "dt = " << dt << " at cycle " << ncycle << " time " << time
+              << ": non-finite or non-positive time step (rank "
+              << global_variable::my_rank << ")" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 
   // If dt just collapsed, say which module owns it.  Only the rank holding the
   // global minimum reports, so the components printed are the ones that actually set

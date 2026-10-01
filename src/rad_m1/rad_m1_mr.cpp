@@ -87,6 +87,10 @@ void RadiationM1::MRInit(ParameterInput *pin) {
   // dbg_hydro_off (ke-dt-0926, DIAGNOSTIC; read only when named): the Driver skips the
   // hydro stages, so a multi-rate run is the radiation step R alone (its own order)
   dbg_hydro_off = false;
+  if (pin->DoesParameterExist("rad_m1", "dbg_cell_lo")) {
+    dbg_cell_lo = pin->GetInteger("rad_m1", "dbg_cell_lo");
+    dbg_cell_hi = pin->GetInteger("rad_m1", "dbg_cell_hi");
+  }
   if (pin->DoesParameterExist("rad_m1", "dbg_hydro_off")) {
     dbg_hydro_off = pin->GetBoolean("rad_m1", "dbg_hydro_off");
   }

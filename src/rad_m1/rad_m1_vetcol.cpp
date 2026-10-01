@@ -135,6 +135,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
 namespace radm1 {
@@ -306,6 +307,46 @@ bool VcolQuad2(const std::vector<double> &mu, const int split,
     wout[r] = w[r]*(ca + cb*m + cc*m*m);
   }
   return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VcolRelaxedSource
+//! \brief vet_col_source = relaxed: the thermal source eth a T*^4 + (1 - eth) E* of one
+//! cell, T* and E* the state after a LOCAL backward-Euler gas-radiation exchange over the
+//! step dt from the build state (rho, T_b, E_b):
+//!   E* - E_b = chat dt (rho kappa_P a T*^4 - rho kappa_E E*)
+//!   rho e(T*) - rho e(T_b) = -(c/chat) (E* - E_b)
+//!   rho e(T*) + c dt rho kappa_P a T*^4/(1+x) = rho e(T_b) + c dt rho kappa_E E_b/(1+x)
+//! with x = chat dt rho kappa_E, by the safeguarded root find of the implicit gas solve.
+//! WHY: the tensor is lagged, built from the start-of-step state, where T_b is the gas
+//! temperature after the operator-split hydro step (gas-only EOS).  Where the exchange is
+//! stiff (dt/t_eq >> 1) that T_b is a transient the solve removes at once: in a
+//! radiation-dominated cell it carries the gas-only adiabatic response to the step's
+//! compression, (gamma_gas - 1) drho/rho, of which the coupled state keeps only the gas
+//! heat-capacity share ~ rho c_v/(4 a T^3) (~1/800 at P_gas/P = 0.01).  The per-column
+//! (laterally homogeneous) formal solution turned that transient into an Eddington factor
+//! perturbation on cell scales wherever the cells are optically thin to thick (tau_cell
+//! ~ 0.1-1), and a transverse checkerboard of it drives grid-scale radial flows through
+//! -(c/chi) E d(f)/dr (the he_presn wedge instability, 0929).  Where the exchange is weak
+//! (x, c dt rho kappa_P small) T* -> T_b and E* -> E_b: the old source.
+
+template <class EosT>
+KOKKOS_INLINE_FUNCTION
+Real VcolRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
+                       const Real rkp, const Real rke, const Real eth, const Real ar,
+                       const Real cl, const Real ch, const Real dt) {
+  const Real ix = 1.0/(1.0 + ch*dt*rke);
+  M1EosDirect<EosT> th{eos};
+  Real ee, cv;
+  th(d, tb, ee, cv);
+  Real ts = tb;
+  bool ok = true;
+  (void) M1ImplTemperatureT(th, d, tb, ee, cl*dt*rkp*ar*ix, cl*dt*rke*eb*ix, ts, ok);
+  if (!(ok && ts > 0.0)) {ts = tb;}
+  const Real t2 = ts*ts;
+  const Real t4 = t2*t2;
+  const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
+  return eth*ar*t4 + (1.0 - eth)*es;
 }
 
 // ray types in vcol_ray(r, 1)
@@ -688,6 +729,13 @@ void RadiationM1::VetColBuild() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool thrd = trans_x3;
   const bool thermal = fl_on && coupling && !opac_zero;
+  // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
+  const bool srx = thermal && vcol_srelax;
+  FluidRef flv = FluidRef::Get(pmy_pack);
+  auto eos = flv.eos;
+  auto uh = flv.u0;
+  const Real chs = chat;
+  const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
   const bool axf = vcol_axis_flux;
   const bool dmp = !vcol_dump.empty() && (vcol_dump_every > 0) &&
                    ((static_cast<int>(vcol_ncall) % vcol_dump_every) == 0);
@@ -745,7 +793,12 @@ void RadiationM1::VetColBuild() {
         Real tg = iw_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
-        s = eth*ar*t2*t2 + (1.0 - eth)*e;
+        if (srx) {
+          s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
+                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts);
+        } else {
+          s = eth*ar*t2*t2 + (1.0 - eth)*e;
+        }
       }
       return s;
     };
@@ -973,6 +1026,13 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool thrd = trans_x3;
   const bool thermal = fl_on && coupling && !opac_zero;
+  // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
+  const bool srx = thermal && vcol_srelax;
+  FluidRef flv = FluidRef::Get(pmy_pack);
+  auto eos = flv.eos;
+  auto uh = flv.u0;
+  const Real chs = chat;
+  const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
   const bool axf = vcol_axis_flux;
   const Real cl = c_light, ar = arad, efl = e_floor;
   auto iw_ = iw;
@@ -1040,7 +1100,12 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         Real tg = iw_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
-        s = eth*ar*t2*t2 + (1.0 - eth)*e;
+        if (srx) {
+          s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
+                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts);
+        } else {
+          s = eth*ar*t2*t2 + (1.0 - eth)*e;
+        }
       }
       pr_(n1 + l) = s;
     });
