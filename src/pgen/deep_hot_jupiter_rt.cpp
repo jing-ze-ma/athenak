@@ -6433,7 +6433,16 @@ void DhjCycleDiag(Mesh *pm) {
 //!             wall when ck_pcut_bar covers the column); under ck_int_at_cut (route B)
 //!             this is where sigma T_int^4 enters
 //!   Etot_top  total energy flux out through the top: fluid + Lir_top - Lsw_abs
-//!   Etot_bot  total energy flux up through the inner wall: fluid + Lrad_bot
+//!   Etot_bot  total energy flux up through the inner wall: fluid + Lrad_bot.  Lrad_bot
+//!             is the flux the ck kernel APPLIES at the cut face (the deposit telescopes
+//!             to it), so the column means the same for every ck_sph_face.  Under route
+//!             B the faces differ in what the wall delivers: face 0 carries pi I_int =
+//!             sigma T_int^4 exactly; faces 5 and 6 (Marshak-type wall J + beta H =
+//!             (B + I_int)(1/2 + beta/4) with the pair at mu_eff) carry
+//!             2 pi mu (1 + beta/2)/(1 + beta mu) I_int, = 4/(2 + sqrt 3) = 1.0718
+//!             sigma T_int^4 in the isotropic deep limit (beta = 2, mu = 1/sqrt 3):
+//!             a real 7.2 % larger internal heating, not a diagnostic offset
+//!             (f6default_1002/RESULTS.md).
 //!   Mdot_top  mass flux out through the top face,  Mdot_bot  up through the inner wall
 //!   Lsw_in    stellar power incident on the DOMAIN TOP sphere, F_star sum max(mu0,0)
 //!             A(ie+1) = F_star pi r_top^2.  Starlight bookkeeping closes as
