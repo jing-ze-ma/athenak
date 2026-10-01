@@ -43,7 +43,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -742,6 +744,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
+  impl_dtrace = pin->DoesParameterExist("rad_m1","implicit_det_trace") ?
+                pin->GetInteger("rad_m1","implicit_det_trace") : 0;
   tmr_c0 = pin->DoesParameterExist("rad_m1","implicit_timers") ?
            pin->GetInteger("rad_m1","implicit_timers") : 0;   // read only when named
   // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
@@ -5388,6 +5392,10 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         }, HRed(red));
         M1GlobalBcg(red);
         bcg_nred += 1.0;
+        if (impl_dtrace > 0) {
+          const Real sv[5] = {rv, alpha, omega, red.s0, red.mx};
+          DetTraceScalars("bcgf", 5, sv);
+        }
         rho = rhon;
         rhon = red.s0;
         rnorm = red.mx;
@@ -5940,6 +5948,86 @@ void RadiationM1::ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bo
               << " lres=" << lresid << " iL=" << locs[2]
               << " nin=" << nin << " r0=" << bcg_r0rel << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::DetTrace
+//! \brief <rad_m1>/implicit_det_trace = N (read only when named): for the first N solves,
+//! print an order-independent bitwise hash (exact uint64 sum of position-mixed bit
+//! patterns) of every component of iw, u0, opac and the fluid u0/w0, per rank.  Two runs
+//! of the same binary are bitwise identical iff these lines are.  Diagnostic only.
+
+namespace {
+KOKKOS_INLINE_FUNCTION
+uint64_t M1DtMix(const Real x, const uint64_t q) {
+  union {Real d; uint64_t u;} c;
+  c.u = 0;
+  c.d = x;
+  uint64_t b = c.u ^ (c.u >> 29);
+  return b*(2*q + 0x9E3779B97F4A7C15ULL);
+}
+
+uint64_t M1DtHash(const DvceArray5D<Real> &a, const int n) {
+  const int64_t nk = a.extent(2), nj = a.extent(3), ni = a.extent(4);
+  const int64_t tot = static_cast<int64_t>(a.extent(0))*nk*nj*ni;
+  uint64_t h = 0;
+  if (tot == 0) {return h;}
+  Kokkos::parallel_reduce("m1_dt_hash",
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0, tot),
+  KOKKOS_LAMBDA(const int64_t q, uint64_t &s) {
+    int64_t r = q;
+    const int i = static_cast<int>(r % ni);
+    r /= ni;
+    const int j = static_cast<int>(r % nj);
+    r /= nj;
+    const int k = static_cast<int>(r % nk);
+    const int m = static_cast<int>(r/nk);
+    s += M1DtMix(a(m,n,k,j,i), static_cast<uint64_t>(q));
+  }, Kokkos::Sum<uint64_t>(h));
+  return h;
+}
+} // namespace
+
+void RadiationM1::DetTrace(const char *tag) {
+  if (impl_dtrace <= 0 || impl_nstep >= static_cast<Real>(impl_dtrace)) {return;}
+  std::ostringstream os;
+  os << "<dtr> r" << global_variable::my_rank << " s" << static_cast<int>(impl_nstep)
+     << " " << tag << std::hex;
+  auto put = [&](const char *nm, const DvceArray5D<Real> &a) {
+    if (a.size() == 0) {return;}
+    uint64_t all = 0;
+    std::ostringstream oc;
+    oc << std::hex;
+    for (int n = 0; n < a.extent_int(1); ++n) {
+      const uint64_t h = M1DtHash(a, n);
+      all += h*(2*static_cast<uint64_t>(n) + 1);
+      oc << " " << (h & 0xffffffULL);
+    }
+    os << " " << nm << "=" << all;
+    if (a.extent_int(1) > 4) {os << " [" << oc.str() << " ]";}
+  };
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmy_pack);
+  put("u0", u0);
+  put("opac", opac);
+  put("fu0", fl.u0);
+  put("fw0", fl.w0);
+  put("iw", iw);
+  put("ifw", ifw);
+  put("tau", tau_ten);
+  std::cout << os.str() << std::endl;
+}
+
+void RadiationM1::DetTraceScalars(const char *tag, int n, const Real *v) {
+  if (impl_dtrace <= 0 || impl_nstep >= static_cast<Real>(impl_dtrace)) {return;}
+  if (global_variable::my_rank != 0) {return;}
+  char buf[64];
+  std::ostringstream os;
+  os << "<dts> s" << static_cast<int>(impl_nstep) << " " << tag;
+  for (int q = 0; q < n; ++q) {
+    std::snprintf(buf, sizeof(buf), " %a", v[q]);
+    os << buf;
+  }
+  std::cout << os.str() << std::endl;
 }
 
 //----------------------------------------------------------------------------------------
@@ -6681,6 +6769,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool dfull = vet_full;
   Kokkos::Timer vtimer;
   if (vetsc) {Kokkos::fence(); vtimer.reset();}
+  DetTrace("solve_in");
 
   auto u0_ = u0;
   auto iw_ = iw;
@@ -8408,7 +8497,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       kdev_slot = std::min(it, 2);
       TmrMark(5);
+      DetTrace("pre_bcg");
       nin = ImplicitBiCGStab(rhsmax);
+      DetTrace("post_bcg");
       TmrMark(6);
       if (tmr_on) {
         tmr_cnt[1] += 1.0;

@@ -756,6 +756,11 @@ class RadiationM1 {
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
   // for m1 | minerbo | kershaw); the OFF settings reproduce the earlier path bitwise.
+  int impl_dtrace;              // <rad_m1>/implicit_det_trace (read only when named):
+                                // bitwise hashes of the solve's arrays for the first N
+                                // solves (run-to-run reproducibility diagnostic)
+  void DetTrace(const char *tag);
+  void DetTraceScalars(const char *tag, int n, const Real *v);
   int impl_plog;                // <rad_m1>/implicit_picard_log: print one line per
                                 // Picard pass for the first N solves (rank 0)
   Real bcg_r0rel;               // max|b - A x0|/max|b| of the last BiCGStab call
