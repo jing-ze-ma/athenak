@@ -50,6 +50,7 @@
 #include <string>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -9116,11 +9117,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // otherwise take different numbers of Picard passes and the gather would deadlock,
     // and even with rank-local columns a per-rank test makes the answer depend on the
     // decomposition.
-    {Real rl[3] = {resid, lresid, rexcl}, rg[3];
+    {
+    Real rl[3] = {resid, lresid, rexcl}, rg[3];
     MPI_Allreduce(rl, rg, rmask ? 3 : 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     resid = rg[0];
     lresid = rg[1];
-    if (rmask) {rexcl = rg[2];}}
+    if (rmask) {rexcl = rg[2];}
+    }
 #endif
     rexcl_last = rexcl;
     if (trans) {
