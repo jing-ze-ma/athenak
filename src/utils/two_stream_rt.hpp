@@ -1380,6 +1380,77 @@ inline int ck_sph_top = 0;
 inline int ck_vef_every = 1;
 inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
+// problem/ck_vef_report = N > 0 (diagnostic, print only): at every VEF refresh (after
+// the first) rank 0 prints, per pressure decade, the range of f = s^2/3 and of the face
+// factor gamma over all (band, g, cell), the largest relative change of s and gamma
+// against the factors being replaced (the lag of ck_vef_every), and the number of faces
+// with gamma outside [1/1.2, 1.2].  Nothing reads it.
+inline int ck_vef_report = 0;
+inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D<Real> &vg,
+                        const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
+                        const DvceArray4D<Real> &pb, const DvceArray3D<int> &icc,
+                        const int nmb1, const int nc, const int ks, const int ke,
+                        const int js, const int je, const int ie) {
+  constexpr int NBIN = 12;   // decades 1e-9 .. 1e3 bar
+  constexpr int NQ = 7;      // fmin fmax gmin gmax dsmax dgmax nout
+  DvceArray1D<Real> acc("ck_vef_rep", NBIN*NQ);
+  auto acc_ = acc;
+  Kokkos::parallel_for("ck_vef_rep_init", Kokkos::RangePolicy<DevExeSpace>(0, NBIN),
+  KOKKOS_LAMBDA(const int b) {
+    acc_(b*NQ+0) = 1.0e30; acc_(b*NQ+1) = -1.0e30;
+    acc_(b*NQ+2) = 1.0e30; acc_(b*NQ+3) = -1.0e30;
+    acc_(b*NQ+4) = 0.0; acc_(b*NQ+5) = 0.0; acc_(b*NQ+6) = 0.0;
+  });
+  par_for("ck_vef_rep", DevExeSpace(), 0, nmb1, 0, nc - 1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+    const int icut = icc(m,k,j);
+    for (int i=icut; i<=ie; ++i) {
+      const Real p = pb(m,k,j,i);
+      int b = static_cast<int>(floor(log10(fmax(p, 1.0e-30)))) + 9;
+      b = (b < 0) ? 0 : ((b >= NBIN) ? NBIN - 1 : b);
+      const Real s = vs(m,c,i+1,k,j);
+      const Real f = s*s/3.0;
+      const Real g = vg(m,c,i,k,j);
+      Kokkos::atomic_min(&acc_(b*NQ+0), f);
+      Kokkos::atomic_max(&acc_(b*NQ+1), f);
+      Kokkos::atomic_min(&acc_(b*NQ+2), g);
+      Kokkos::atomic_max(&acc_(b*NQ+3), g);
+      const Real so = vso(m,c,i+1,k,j), go = vgo(m,c,i,k,j);
+      if (so > 0.0) Kokkos::atomic_max(&acc_(b*NQ+4), fabs(s/so - 1.0));
+      if (go > 0.0) Kokkos::atomic_max(&acc_(b*NQ+5), fabs(g/go - 1.0));
+      if (g > 1.2 || g < 1.0/1.2) Kokkos::atomic_add(&acc_(b*NQ+6), 1.0);
+    }
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
+  Real v[NBIN*NQ], r[NBIN*NQ];
+  for (int q=0; q<NBIN*NQ; ++q) v[q] = h(q);
+#if MPI_PARALLEL_ENABLED
+  for (int b=0; b<NBIN; ++b) {
+    v[b*NQ+0] = -v[b*NQ+0]; v[b*NQ+2] = -v[b*NQ+2];
+  }
+  Real cnt[NBIN];
+  for (int b=0; b<NBIN; ++b) {
+    cnt[b] = v[b*NQ+6]; v[b*NQ+6] = 0.0;
+  }
+  MPI_Reduce(v, r, NBIN*NQ, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
+  Real cr[NBIN];
+  MPI_Reduce(cnt, cr, NBIN, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  for (int b=0; b<NBIN; ++b) {
+    r[b*NQ+0] = -r[b*NQ+0]; r[b*NQ+2] = -r[b*NQ+2]; r[b*NQ+6] = cr[b];
+  }
+#else
+  for (int q=0; q<NBIN*NQ; ++q) r[q] = v[q];
+#endif
+  if (global_variable::my_rank == 0) {
+    for (int b=0; b<NBIN; ++b) {
+      if (r[b*NQ+1] < 0.0) continue;
+      std::printf("### vefrep ncycle=%d p=1e%+d f=[%.4e,%.4e] gam=[%.4e,%.4e] "
+                  "dsmax=%.3e dgmax=%.3e nout=%.0f\n", static_cast<int>(pm->ncycle),
+                  b - 9, r[b*NQ+0], r[b*NQ+1], r[b*NQ+2], r[b*NQ+3], r[b*NQ+4],
+                  r[b*NQ+5], r[b*NQ+6]);
+    }
+  }
+}
 inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst) {
   const bool stp = !ck_vef_sync || !ckfop || ckfst;    // a pass that may refresh
   return stp && (ck_vef_last < 0 || ck_vef_s_ptr == nullptr ||
@@ -7102,6 +7173,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           auto vs_ = *ck_vef_s_ptr;
           auto vg_ = *ck_vef_g_ptr;
           auto vw_ = *ck_vef_w_ptr;
+          // problem/ck_vef_report (diagnostic): keep the factors being replaced
+          const bool vrep_ = (ck_vef_report > 0 && ck_vef_last >= 0 && vdue_);
+          DvceArray5D<Real> vso_, vgo_;
+          if (vrep_) {
+            vso_ = DvceArray5D<Real>("ck_vef_so", vs_.extent(0), vs_.extent(1),
+                                     vs_.extent(2), vs_.extent(3), vs_.extent(4));
+            vgo_ = DvceArray5D<Real>("ck_vef_go", vg_.extent(0), vg_.extent(1),
+                                     vg_.extent(2), vg_.extent(3), vg_.extent(4));
+            Kokkos::deep_copy(vso_, vs_);
+            Kokkos::deep_copy(vgo_, vg_);
+          }
           const int ncore = ck_vef_ncore;
           par_for("ck_vef_formal", DevExeSpace(), 0, nmb1, 0, nc_ - 1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
@@ -7265,6 +7347,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
             }
           });
+          if (vrep_) CkVefReport(pm, vs_, vg_, vso_, vgo_, *rt_pb_ptr, icc_g, nmb1,
+                                 nc_, ks, ke, js, je, ie);
         }
         const int dil_ = ck_sph_face;   // problem/ck_sph_face
         const int tpm_ = ck_sph_top;    // problem/ck_sph_top
