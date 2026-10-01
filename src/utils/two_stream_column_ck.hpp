@@ -164,6 +164,45 @@ inline bool ck_impl_kkt_demax = false;
 // flag and the magnitudes that set the round-off floor of the residual.  Nothing reads
 // it.
 inline int ck_impl_stalldbg = 0;
+// problem/ck_impl_negdbg = N > 0 (diagnostic): on every fused pass print up to N Newton
+// rows whose diagonal b = 1 - h J_ii/cv is not positive (they send the whole column to
+// the bounded per-cell fallback), with the three Jacobian entries.  Print only.
+inline int ck_impl_negdbg = 0;
+// problem/ck_impl_rowfb (fused step only, default false = bitwise off): a Newton row
+// whose diagonal b = 1 - h J_ii/cv is not positive (a cell whose net heating grows with
+// its own temperature faster than cv/h: the frozen ck_sph_face = 5 operator has such
+// cells in a strongly driven top) takes the bounded per-cell step of a thin cell; the
+// rest of the column keeps its Newton step.  Off, such a row sends the WHOLE column to
+// the per-cell fallback.  The residual and the tolerance are unchanged.
+inline bool ck_impl_rowfb = false;
+// problem/ck_impl_negpiv (fused step only, default false = bitwise off): keep the exact
+// Newton row of a cell with a non-positive diagonal (b <= 0: its net heating grows
+// with its temperature faster than cv/h) instead of treating it as bad; only a pivot
+// |b| <= 1e-12 sends the column to the fallback.  Takes precedence over ck_impl_rowfb.
+inline bool ck_impl_negpiv = false;
+// problem/ck_impl_jnet (default false = bitwise off): keep a NEGATIVE net off-diagonal
+// of the ck_impl_jac_lin tridiagonal (ck_jlin_sum) instead of dropping it; with
+// ck_impl_jneg (the per-chain parts) the rows are then the full derivative.
+inline bool ck_impl_jnet = false;
+// problem/ck_impl_tol_ptop = p [bar] > 0 (default 0 = bitwise off): in the residual test
+// of the fused step a cell with pressure below p is measured against e + eps_top e_max
+// (eps_top = problem/ck_impl_norm_eps_top) instead of e + ck_impl_norm_eps e_max, i.e.
+// a looser tolerance in the top, where the accuracy does not matter (user rule: p <
+// 1e-6 bar); the cells below p keep the full test.  ck_pbar_ptr is the RT's pressure.
+inline Real ck_impl_tol_ptop = 0.0;
+inline Real ck_impl_norm_eps_top = 0.1;
+inline DvceArray4D<Real> *ck_pbar_ptr = nullptr;
+// problem/ck_sph_face = 5 (two_stream_rt.hpp): the cycle of the last refresh of the VEF
+// factors (-1 = none yet) and the restart's rebuild of that refresh
+// (two_stream_ck_rst_state.hpp: the factors are re-formed from the state the refresh
+// read, so a restart is bitwise); ck_vef_on = (ck_sph_face == 5), set by the pgen
+inline int ck_vef_last = -1;
+inline bool ck_vef_force = false;
+inline bool ck_vef_on = false;
+// problem/ck_impl_jfd (diagnostic, > 0 on): on every pass that builds the tridiagonal
+// from the factorisation, check its diagonal against a finite difference of the linear
+// re-apply (two_stream_rt.hpp).  Print only; costs n1 extra linear passes.
+inline int ck_impl_jfd = 0;
 // problem/ck_impl_kkt_row: the ACTIVE-SET row for the KKT cells of ck_impl_floorbound /
 // ck_impl_kkt_demax.  A cell on a bound whose residual points through it cannot move,
 // but its row still asks the tridiagonal for a step, and that unrealised step feeds its
@@ -790,7 +829,50 @@ struct CkJlP1 {
 //! \fn void CkJlP1Step
 //! \brief one layer (cell i) of pass 1, shared by rt_chain_ck_jlin and ck_lin_build
 //! (which fuses pass 1 on the pass that builds the tridiagonal): the same expressions
-//! in one place.  up = (i < ie); wl, wu, ffj are then lP slots 5-7 of the layer i, i+1.
+//! in one place.  up = (i < ie); wl, wu, ffj are then lP slots 5-7 of the layer i, i+1;
+//! face i maps R to r1 and Sc to c1 Sc (CkJlP1Step: the Eddington face; CkVefMap).
+KOKKOS_INLINE_FUNCTION
+void CkJlP1StepRC(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Real ffj,
+                  const Real ci, const Real co, const Real e0, const Real r1,
+                  const Real c1) {
+  // slots (B_{i-1}, B_i, B_{i+1}); the first is 0 for all three
+  Real dlv1 = 1.0, dlv2 = 0.0, duu1 = 1.0, duu2 = 0.0;
+  Real dfw1 = 1.0, dfw2 = 0.0;
+  if (up) {
+    const Real dfl = (1.0 - ffj)*wl + ffj*(1.0 - wu);
+    dlv1 = wl;
+    dlv2 = 1.0 - wl;
+    duu1 = 1.0 - wu;
+    duu2 = wu;
+    dfw1 = dfl;
+    dfw2 = 1.0 - dfl;
+  }
+  const Real tj = 1.0 - e0;
+  const Real r2 = tj*tj*r1;
+  auto upd = [&](const Real dsf, const Real dsu, const Real dlv, const Real dfw,
+                 const Real so) {
+    const Real dpl = ci*dsf + co*dsu;
+    const Real dql = ci*dsu + co*dsf;
+    const Real dpu = ci*dlv + co*dfw;
+    const Real dqu = ci*dfw + co*dlv;
+    const Real s2 = tj*(r1*dql + c1*so) + dpl;
+    return tj*(r2*dqu + s2) + dpu;
+  };
+  const Real n0 = upd(w.fc0, w.uc0, 0.0, 0.0, w.s1);
+  const Real n1 = upd(w.fc1, w.uc1, dlv1, dfw1, w.s2);
+  const Real n2 = upd(0.0, 0.0, dlv2, dfw2, 0.0);
+  w.s0 = n0;
+  w.s1 = n1;
+  w.s2 = n2;
+  w.fc0 = dfw1;
+  w.fc1 = dfw2;
+  w.uc0 = duu1;
+  w.uc1 = duu2;
+}
+//! \fn void CkJlP1Step
+//! \brief CkJlP1StepRC with the Eddington face's map of face i, r1 = (R + beta)/(1 +
+//! R beta) and c1 = (1 - beta)/(1 + R beta) (idn = 1/(1 + R beta)); kept as its own
+//! copy so that the default kernels are the code they always were
 KOKKOS_INLINE_FUNCTION
 void CkJlP1Step(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Real ffj,
                 const Real ci, const Real co, const Real e0, const Real rj,
@@ -830,6 +912,16 @@ void CkJlP1Step(CkJlP1 &w, const bool up, const Real wl, const Real wu, const Re
   w.fc1 = dfw2;
   w.uc0 = duu1;
   w.uc1 = duu2;
+}
+//! \fn void CkVefMap
+//! \brief problem/ck_sph_face = 5 (two_stream_rt::ck_sph_face): the face map of the VEF
+//! jump conditions on the relation u = R d + Sc below a face, rp = rho' = (A_b/A_a)
+//! s_b/s_a and gm = gamma: above it R' = r1, Sc' = c1 Sc (the chain kernel's tm map)
+KOKKOS_INLINE_FUNCTION
+void CkVefMap(const Real rj, const Real rp, const Real gm, Real &r1, Real &c1) {
+  const Real ev = (1.0 + rj) + gm*rp*(1.0 - rj);
+  r1 = 1.0 - 2.0*gm*rp*(1.0 - rj)/ev;
+  c1 = 2.0*rp/ev;
 }
 //! \fn CkJlP1 CkJlP1Init
 //! \brief the window at the cut; gdf >= 0: the flux datum of a ck_dif_dtau handover
@@ -1323,6 +1415,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     auto osa_ = osc_ ? *ck_osc_ptr : CkDum<DvceArray4D<Real>>("ck_osc_d");
     const int pass_ = ck_impl_pass;
     const bool csph_ = pm->use_cubed_sphere;
+    // ck_impl_negdbg (1-element counter when off)
+    const int ngd_ = ck_impl_negdbg;
+    const bool rfb_ = ck_impl_rowfb;
+    const bool npv_ = ck_impl_negpiv;
+    const Real ptp_ = (ck_pbar_ptr != nullptr) ? ck_impl_tol_ptop : 0.0;
+    const Real ept_ = ck_impl_norm_eps_top;
+    auto pbr_ = (ptp_ > 0.0) ? *ck_pbar_ptr : CkDum<DvceArray4D<Real>>("ck_pbar_d");
+    DvceArray1D<int> ngc_("ck_negdbg_cnt", 1);
     auto &mbpan_ = pm->pmb_pack->pmb->mb_panel;
     auto &x2v_ = pm->pmb_pack->pcoord->x2v;
     auto &x3v_ = pm->pmb_pack->pcoord->x3v;
@@ -1393,10 +1493,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           return kkt;
         };
         const bool kk_ = fb_ || kd_;
+        // ck_impl_tol_ptop: the norm's share eps of a top cell
+        auto epsc = [&](const int i) -> Real {
+          return (ptp_ > 0.0 && pbr_(m,k,j,i) < ptp_) ? ept_ : eps;
+        };
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
         [&](const int i, Real &mx) {
           const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-          Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+          Real s = fabs(r)/(ei_(m,k,j,i) + epsc(i)*emax);
           if (kk_ && s > tol && kktcell(i, r)) s = 0.0;
           if (s > mx) mx = s;
           if (t0rec_) t0_(m,k,j,i) = T_(m,k,j,i);
@@ -1408,7 +1512,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
           [&](const int i, typename MLc::value_type &u) {
             const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-            Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+            Real s = fabs(r)/(ei_(m,k,j,i) + epsc(i)*emax);
             if (kk_ && s > tol && kktcell(i, r)) s = 0.0;
             if (s > u.val) {
               u.val = s;
@@ -1422,7 +1526,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
           [&](const int i, Real &sm) {
             const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
-            const Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+            const Real s = fabs(r)/(ei_(m,k,j,i) + epsc(i)*emax);
             if (s > tol && kktcell(i, r)) sm += 1.0;
           }, nkk);
           if (nkk > 0.0) {
@@ -1801,7 +1905,36 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           c = 0.0;
           d = 0.0;
         }
-        if (!(b > 0.0)) nb += 1;
+        if (ngd_ > 0 && !(b > 0.0)) {
+          if (Kokkos::atomic_fetch_add(&ngc_(0), 1) < ngd_) {
+            Kokkos::printf("### ck_negdbg pass=%d m=%d k=%d j=%d i=%d ic=%d thin=%d "
+                           "T=%.4e e=%.4e cv=%.4e h=%.4e J=%.4e %.4e %.4e a=%.4e b=%.4e "
+                           "c=%.4e S/e=%.4e\n", pass_, m, k, j, i, ic, thin ? 1 : 0, Ti,
+                           ei, cvi, hh, jac_(m,0,k,j,i), jac_(m,1,k,j,i), jac_(m,2,k,j,i),
+                           a, b, c, hh*src_(m,k,j,i)/ei);
+          }
+        }
+        // ck_impl_rowfb: a row with a non-positive diagonal takes the bounded per-cell
+        // step of a thin cell (identity row) instead of sending its column to the
+        // fallback
+        if (rfb_ && !npv_ && !sdc && !thin && !(b > 0.0)) {
+          a = 0.0;
+          b = 1.0;
+          c = 0.0;
+          if (sub_) {
+            d = CkThinSolve(ei, est_(m,k,j,i) + sacc_(m,k,j,i), src_(m,k,j,i),
+                            em_(m,k,j,i), hh) - ei;
+          } else {
+            d = CkThinSolve(ei, est_(m,k,j,i), src_(m,k,j,i), em_(m,k,j,i), hh) - ei;
+          }
+          nb += 65536;
+        }
+        if (npv_ && !thin && !sdc) {
+          // ck_impl_negpiv: the exact Newton row stands; only a vanishing pivot is bad
+          if (!(fabs(b) > 1.0e-12)) nb += 1;
+        } else if (!(b > 0.0)) {
+          nb += 1;
+        }
         sa(q) = a;
         sb(q) = b;
         sc(q) = c;

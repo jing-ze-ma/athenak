@@ -96,6 +96,55 @@ inline void CkXsSnap(Mesh *pm, const Real bdt) {
   ck_xs_have = true;
 }
 
+// ---- problem/ck_sph_face = 5: the state the last refresh of the VEF factors read, and
+// that call's bdt (a device copy on every refresh, i.e. every ck_vef_every cycles)
+inline DvceArray5D<Real> *ck_vsU_ptr = nullptr;
+inline DvceArray4D<Real> *ck_vsW_ptr = nullptr;
+inline DvceArray4D<Real> *ck_vsK_ptr = nullptr;
+inline DvceArray5D<Real> *ck_vsB_ptr = nullptr;
+inline Real ck_vs_bdt = 0.0;
+inline bool ck_vs_have = false;
+
+//----------------------------------------------------------------------------------------
+//! \fn void CkVefSnap
+//! \brief ck_sph_face = 5: called by the pass that refreshes the VEF factors, at the
+//! point of the pass where CkXsSnap is called: everything it reads from the gas.
+
+inline void CkVefSnap(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool hyd = (pmbp->phydro != nullptr);
+  DvceArray5D<Real> u0 = hyd ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+  DvceArray4D<Real> wt = hyd ? pmbp->phydro->wtemp : pmbp->pmhd->wtemp;
+  if (ck_thk_ptr == nullptr) return;     // not reached: the solver allocates first
+  if (ck_vsU_ptr == nullptr || ck_vsU_ptr->extent(0) != u0.extent(0)) {
+    if (ck_vsU_ptr != nullptr) {
+      delete ck_vsU_ptr;
+      delete ck_vsW_ptr;
+      delete ck_vsK_ptr;
+      if (ck_vsB_ptr != nullptr) delete ck_vsB_ptr;
+      ck_vsB_ptr = nullptr;
+    }
+    ck_vsU_ptr = new DvceArray5D<Real>("ck_vsU", u0.extent(0), u0.extent(1),
+                                       u0.extent(2), u0.extent(3), u0.extent(4));
+    ck_vsW_ptr = new DvceArray4D<Real>("ck_vsW", wt.extent(0), wt.extent(1),
+                                       wt.extent(2), wt.extent(3));
+    auto &thk = *ck_thk_ptr;
+    ck_vsK_ptr = new DvceArray4D<Real>("ck_vsK", thk.extent(0), thk.extent(1),
+                                       thk.extent(2), thk.extent(3));
+    if (!hyd) {
+      auto &bc = pmbp->pmhd->bcc0;
+      ck_vsB_ptr = new DvceArray5D<Real>("ck_vsB", bc.extent(0), bc.extent(1),
+                                         bc.extent(2), bc.extent(3), bc.extent(4));
+    }
+  }
+  Kokkos::deep_copy(DevExeSpace(), *ck_vsU_ptr, u0);
+  if (wt.size() > 0) Kokkos::deep_copy(DevExeSpace(), *ck_vsW_ptr, wt);
+  Kokkos::deep_copy(DevExeSpace(), *ck_vsK_ptr, *ck_thk_ptr);
+  if (!hyd) Kokkos::deep_copy(DevExeSpace(), *ck_vsB_ptr, pmbp->pmhd->bcc0);
+  ck_vs_bdt = bdt;
+  ck_vs_have = true;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn int CkRstCollect
 //! \brief restart.cpp's LoadOutputData: the slabs (nslab, nmb, n3, n2, n1) and header.
@@ -142,6 +191,19 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       for (int n=0; n<3; ++n) ids.push_back(kCkSlabXsB0 + n);
     }
   }
+  // ck_sph_face = 5: the last refresh's state (or the staged one, not consumed yet)
+  const bool vs_stg = !ck_vs_have && CkRstStaged(kCkSlabVefK);
+  const int nvu = static_cast<int>(u0.extent(1));
+  if (ck_vef_on && (ck_vs_have || vs_stg) && nvu <= 6) {
+    ids.push_back(kCkSlabVefCyc);
+    ids.push_back(kCkSlabVefBdt);
+    ids.push_back(kCkSlabVefW);
+    ids.push_back(kCkSlabVefK);
+    for (int n=0; n<nvu; ++n) ids.push_back(kCkSlabVefU0 + n);
+    if (!hyd) {
+      for (int n=0; n<3; ++n) ids.push_back(kCkSlabVefB0 + n);
+    }
+  }
   const int ns = static_cast<int>(ids.size());
   if (ns > kCkRstMaxSlab) return 0;
   Kokkos::realloc(out, ns, nmb, n3, n2, n1);
@@ -151,10 +213,11 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
     const int id = ids[s];
     auto dst = Kokkos::subview(out, s, ALL, ALL, ALL, ALL);
     // still staged (not consumed since the restart): copy the staged bytes
+    const bool vid = (id >= kCkSlabVefCyc);
     const bool stg = CkRstStaged(id) &&
         ((id == kCkSlabThk && thk_stg) || (id == kCkSlabCv && ck_cv_ptr == nullptr) ||
          (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4 && cad_stg) ||
-         (id >= kCkSlabXsW && xs_stg));
+         (id >= kCkSlabXsW && !vid && xs_stg) || (vid && vs_stg));
     if (stg) {
       const std::size_t nd = dst.size();
       if (ck_rst_stage[id].size() == nd) {
@@ -173,6 +236,24 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       Kokkos::deep_copy(dst, static_cast<Real>(ck_impl_xs_cyc));
     } else if (id == kCkSlabXsBdt) {
       Kokkos::deep_copy(dst, ck_xs_bdt);
+    } else if (id == kCkSlabVefCyc) {
+      Kokkos::deep_copy(dst, static_cast<Real>(ck_vef_last));
+    } else if (id == kCkSlabVefBdt) {
+      Kokkos::deep_copy(dst, ck_vs_bdt);
+    } else if (id == kCkSlabVefW) {
+      if (ck_vsW_ptr->size() > 0) {
+        DeepCopyAcross(dst, Kokkos::subview(*ck_vsW_ptr, nm, ALL, ALL, ALL));
+      } else {
+        Kokkos::deep_copy(dst, 0.0);
+      }
+    } else if (id == kCkSlabVefK) {
+      DeepCopyAcross(dst, Kokkos::subview(*ck_vsK_ptr, nm, ALL, ALL, ALL));
+    } else if (id >= kCkSlabVefU0 && id < kCkSlabVefU0 + 6) {
+      DeepCopyAcross(dst, Kokkos::subview(*ck_vsU_ptr, nm, id - kCkSlabVefU0,
+                                          ALL, ALL, ALL));
+    } else if (id >= kCkSlabVefB0 && id < kCkSlabVefB0 + 3) {
+      DeepCopyAcross(dst, Kokkos::subview(*ck_vsB_ptr, nm, id - kCkSlabVefB0,
+                                          ALL, ALL, ALL));
     } else if (!ck_xs_have) {
       Kokkos::deep_copy(dst, 0.0);
     } else if (id == kCkSlabXsW) {
@@ -289,7 +370,9 @@ inline void CkRstAfterAlloc() {
     Kokkos::deep_copy(*ck_done_ptr, *ck_cad_mask_ptr);
   }
   if (!ck_rst_have) return;
-  if (ck_rst_rebuild_active) {
+  if (ck_rst_rebuild_active && ck_vef_force) {
+    CkRstPut(kCkSlabVefK, *ck_thk_ptr);
+  } else if (ck_rst_rebuild_active) {
     CkRstPut(kCkSlabXsK, *ck_thk_ptr);
   } else {
     CkRstPut(kCkSlabThk, *ck_thk_ptr);
@@ -369,6 +452,95 @@ inline void CkRstRebuild(Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CkRstVefRebuild
+//! \brief ck_sph_face = 5: re-run, on the state the last refresh read (the VEF slabs),
+//! a storing pass that refreshes the VEF factors (ck_vef_force), which re-forms exactly
+//! the factors that refresh formed; then put the restarted state back and restore what
+//! the pass touched.  The xstep rebuild (if any) and the call itself follow.
+
+inline void CkRstVefRebuild(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool hyd = (pmbp->phydro != nullptr);
+  DvceArray5D<Real> u0 = hyd ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+  DvceArray4D<Real> wt = hyd ? pmbp->phydro->wtemp : pmbp->pmhd->wtemp;
+  DvceArray5D<Real> bc;
+  if (!hyd) bc = pmbp->pmhd->bcc0;
+  using Kokkos::ALL;
+  DvceArray5D<Real> u0k("ck_rstv_u0k", u0.extent(0), u0.extent(1), u0.extent(2),
+                        u0.extent(3), u0.extent(4));
+  Kokkos::deep_copy(u0k, u0);
+  DvceArray4D<Real> wtk("ck_rstv_wtk", wt.extent(0), wt.extent(1), wt.extent(2),
+                        wt.extent(3));
+  if (wt.size() > 0) Kokkos::deep_copy(wtk, wt);
+  DvceArray5D<Real> bck;
+  if (!hyd) {
+    bck = DvceArray5D<Real>("ck_rstv_bck", bc.extent(0), bc.extent(1), bc.extent(2),
+                            bc.extent(3), bc.extent(4));
+    Kokkos::deep_copy(bck, bc);
+  }
+  // ck_thk as it stands (allocated: kept and put back; not yet: the pass's AfterAlloc
+  // puts the VEF snapshot's, and the call's own one comes from the staging later)
+  DvceArray4D<Real> thkk;
+  const bool thk_had = (ck_thk_ptr != nullptr);
+  if (thk_had) {
+    auto &t = *ck_thk_ptr;
+    thkk = DvceArray4D<Real>("ck_rstv_thk", t.extent(0), t.extent(1), t.extent(2),
+                             t.extent(3));
+    Kokkos::deep_copy(thkk, t);
+  }
+  Real cyc = -1.0, bdt = 0.0;
+  if (CkRstStaged(kCkSlabVefCyc)) cyc = ck_rst_stage[kCkSlabVefCyc][0];
+  if (CkRstStaged(kCkSlabVefBdt)) bdt = ck_rst_stage[kCkSlabVefBdt][0];
+  CkRstStageFree(kCkSlabVefCyc);
+  CkRstStageFree(kCkSlabVefBdt);
+  const int nv = static_cast<int>(u0.extent(1));
+  for (int n=0; n<nv && n<6; ++n) {
+    CkRstPut(kCkSlabVefU0 + n, Kokkos::subview(u0, ALL, n, ALL, ALL, ALL));
+  }
+  if (wt.size() > 0) {
+    CkRstPut(kCkSlabVefW, wt);
+  } else {
+    CkRstStageFree(kCkSlabVefW);
+  }
+  if (!hyd) {
+    for (int n=0; n<3; ++n) {
+      CkRstPut(kCkSlabVefB0 + n, Kokkos::subview(bc, ALL, n, ALL, ALL, ALL));
+    }
+  }
+  if (thk_had) CkRstPut(kCkSlabVefK, *ck_thk_ptr);   // else: AfterAlloc
+  const int xs_keep = ck_impl_xs_cyc;
+  const std::int64_t nst = ck_impl_nstore, nre = ck_impl_nreuse;
+  const std::int64_t nsw = ck_impl_nsweep;
+  const bool jb = ck_impl_jac_built;
+  ck_impl_xs_cyc = -1;                  // pass 0 stores
+  ck_impl_pass = 0;
+  ck_impl_prev_res = -1.0;
+  ck_impl_jac_again = false;
+  if (ck_done_ptr != nullptr) Kokkos::deep_copy(*ck_done_ptr, 0.0);
+  ck_rst_rebuild_active = true;
+  ck_vef_force = true;
+  picket_fence_two_stream_RT_pass(pm, bdt);
+  ck_vef_force = false;
+  ck_rst_rebuild_active = false;
+  ck_impl_pass = -1;
+  ck_impl_xs_cyc = xs_keep;
+  ck_impl_nstore = nst;
+  ck_impl_nreuse = nre;
+  ck_impl_nsweep = nsw;
+  ck_impl_jac_built = jb;
+  ck_vef_last = static_cast<int>(cyc);
+  CkRstStageFree(kCkSlabVefK);
+  Kokkos::deep_copy(u0, u0k);
+  if (wt.size() > 0) Kokkos::deep_copy(wt, wtk);
+  if (!hyd) Kokkos::deep_copy(bc, bck);
+  if (thk_had) Kokkos::deep_copy(*ck_thk_ptr, thkk);
+  if (global_variable::my_rank == 0) {
+    std::cout << "ck restart: re-formed the ck_sph_face = 5 VEF factors of the refresh "
+              << "on cycle " << ck_vef_last << " (bdt " << bdt << ")" << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CkRstBeginCall
 //! \brief the top of every implicit call (picket_fence_two_stream_RT): on the first one
 //! of a restarted run, restore the scalars and, if this call is going to re-apply the
@@ -378,13 +550,25 @@ inline void CkRstBeginCall(Mesh *pm) {
   CkRstScalars();
   if (!ck_rst_have || ck_rst_first_done) return;
   ck_rst_first_done = true;
-  if (ck_thk_ptr != nullptr) {        // already allocated: deliver now
-    CkRstPut(kCkSlabThk, *ck_thk_ptr);
-    if (ck_cv_ptr != nullptr) CkRstPut(kCkSlabCv, *ck_cv_ptr);
-  }
   const bool snap = CkRstStaged(kCkSlabXsK);
   const bool reuse = (ck_impl_xstep > 0) && (ck_impl_xs_cyc >= 0) &&
                      (pm->ncycle - ck_impl_xs_cyc < ck_impl_xstep) && !ck_cad_partial;
+  // ck_sph_face = 5: the VEF factors first (the xstep rebuild's pass reads them)
+  const bool vsnap = ck_vef_on && CkRstStaged(kCkSlabVefK);
+  if (vsnap) {
+    CkRstVefRebuild(pm);
+  } else if (ck_vef_on && global_variable::my_rank == 0) {
+    std::cout << "ck restart: no ck_sph_face = 5 VEF state in this file; the factors "
+              << "are re-formed on the first storing pass (this restart is not "
+              << "bitwise)." << std::endl;
+  }
+  for (int id=kCkSlabVefCyc; id<kCkRstMaxSlab; ++id) CkRstStageFree(id);
+  // already allocated: deliver now (unless the xstep rebuild below delivers it after
+  // its own pass, which only the VEF rebuild above can have allocated for)
+  if (ck_thk_ptr != nullptr) {
+    if (!(vsnap && reuse && snap)) CkRstPut(kCkSlabThk, *ck_thk_ptr);
+    if (ck_cv_ptr != nullptr) CkRstPut(kCkSlabCv, *ck_cv_ptr);
+  }
   if (reuse && snap) {
     CkRstRebuild(pm);
   } else if (reuse) {

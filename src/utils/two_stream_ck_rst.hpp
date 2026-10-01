@@ -29,6 +29,9 @@
 //!     cadence guard)                                                   -> slab XSCYC
 //!   * host scalars: ck_impl_jac_built, the xstep store bdt, and the run counters that
 //!     the verbose lines print                                          -> header
+//!   * problem/ck_sph_face = 5: the VEF factors (O(100) Reals per cell) are, like the
+//!     xstep operator, re-formed from the state the last REFRESH read (u0, wtemp, bcc0,
+//!     ck_thk), its bdt and its cycle ck_vef_last (CkRstVefRebuild)    -> slabs VEF*
 //! Everything else the solver keeps (ck_rprev, ck_ep/ck_tp, ck_jac, ck_done, ck_dep,
 //! the per-call scalars) is reset or rewritten before it is read in every call.
 //! NOT covered: ck_impl_warm (ck_dep + ck_ei carried; a failed lever, refused with the
@@ -65,7 +68,15 @@ enum CkRstSlab : std::int32_t {
   kCkSlabXsK = 9,     // ck_thk at the start of the storing call
   kCkSlabXsBdt = 10,  // the storing call's bdt, per rank, in every cell
   kCkSlabXsU0 = 16,   // u0 variable n at the store = 16 + n (n < 16)
-  kCkSlabXsB0 = 32    // bcc0 component n at the store = 32 + n (MHD)
+  kCkSlabXsB0 = 32,   // bcc0 component n at the store = 32 + n (MHD)
+  // problem/ck_sph_face = 5: the state the last refresh of the VEF factors read, from
+  // which a restart re-forms them (CkRstVefRebuild)
+  kCkSlabVefCyc = 35,  // ck_vef_last, as a Real, in every cell
+  kCkSlabVefBdt = 36,  // the refreshing call's bdt
+  kCkSlabVefW = 37,    // wtemp
+  kCkSlabVefK = 38,    // ck_thk at the start of the refreshing call
+  kCkSlabVefB0 = 39,   // bcc0 component n = 39 + n (MHD)
+  kCkSlabVefU0 = 42    // u0 variable n = 42 + n (n < 6)
 };
 
 struct CkRstHdr {
