@@ -769,7 +769,7 @@ bool bc_outer_maxwell = true;
 //                  xi = (r - x1min)/(x1max - x1min); nwave = 0 is a uniform dT.
 //  rt_test_out, rt_test_every  per-cycle diagnostic file (serial runs only).
 namespace {
-// problem/dtloc_every = N > 0: every N cycles print the cell that set the hydro dt
+// problem/dtloc_every = N > 0: every N cycles print the cell that set the hydro/MHD dt
 // (gid, i, j, k) with its pressure from the ck sweep.  Print only; 0 (default) = off.
 int dtloc_every = 0;
 bool rt_test_freeze = false;
@@ -6038,20 +6038,26 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
 
 void DhjCkRtSplit(Mesh *pm, const Real dt) {
   if (dtloc_every > 0 && pm->ncycle % dtloc_every == 0 &&
-      pm->pmb_pack->phydro != nullptr && two_stream_rt::rt_pb_ptr != nullptr) {
+      (pm->pmb_pack->phydro != nullptr || pm->pmb_pack->pmhd != nullptr) &&
+      two_stream_rt::rt_pb_ptr != nullptr) {
+    // the cell that set the fluid dt: hydro, or MHD (same members, mhd_newdt.cpp)
     hydro::Hydro *ph = pm->pmb_pack->phydro;
+    mhd::MHD *pq = pm->pmb_pack->pmhd;
+    const int dm = (ph != nullptr) ? ph->dtnew_m : pq->dtnew_m;
+    const int dk = (ph != nullptr) ? ph->dtnew_k : pq->dtnew_k;
+    const int dj = (ph != nullptr) ? ph->dtnew_j : pq->dtnew_j;
+    const int di = (ph != nullptr) ? ph->dtnew_i : pq->dtnew_i;
+    const Real dtf = (ph != nullptr) ? ph->dtnew : pq->dtnew;
     Real pbar = -1.0;
-    if (ph->dtnew_m >= 0) {
-      auto sv = Kokkos::subview(*two_stream_rt::rt_pb_ptr, ph->dtnew_m, ph->dtnew_k,
-                                ph->dtnew_j, ph->dtnew_i);
+    if (dm >= 0) {
+      auto sv = Kokkos::subview(*two_stream_rt::rt_pb_ptr, dm, dk, dj, di);
       auto hv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), sv);
       pbar = hv();
     }
-    std::printf("### dtloc ncycle=%d rank=%d dt=%.5e dthyd=%.5e gid=%d k=%d j=%d i=%d "
+    std::printf("### dtloc ncycle=%d rank=%d dt=%.5e %s=%.5e gid=%d k=%d j=%d i=%d "
                 "ie=%d p_bar=%.4e\n", static_cast<int>(pm->ncycle),
-                global_variable::my_rank, dt, ph->dtnew,
-                pm->pmb_pack->gids + std::max(ph->dtnew_m, 0), ph->dtnew_k, ph->dtnew_j,
-                ph->dtnew_i, pm->mb_indcs.ie, pbar);
+                global_variable::my_rank, dt, (ph != nullptr) ? "dthyd" : "dtmhd", dtf,
+                pm->pmb_pack->gids + std::max(dm, 0), dk, dj, di, pm->mb_indcs.ie, pbar);
   }
   // problem/ck_impl_every > 1: the cadence (full call every N cycles, linearised step in
   // between); see utils/two_stream_column_ck.hpp

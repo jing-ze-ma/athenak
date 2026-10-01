@@ -1448,10 +1448,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "closure memory; the first step is unrelaxed and this restart is not "
               << "bitwise." << std::endl;
   }
-  // <hydro>/rad_signal_speed: the signal-speed inputs of the last M1 step, staged for
-  // RadiationM1::RssPrime (Driver::Initialize) when this run uses the signal speed too
-  const bool rss_read = (nrss_file > 0) && (pradm1 != nullptr) && (phydro != nullptr) &&
-                        phydro->rad_signal_speed;
+  // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last M1 step, staged
+  // for RadiationM1::RssPrime (Driver::Initialize) when this run uses the signal speed
+  const bool rss_read = (nrss_file > 0) && (pradm1 != nullptr) &&
+                        ((phydro != nullptr && phydro->rad_signal_speed) ||
+                         (pmhd != nullptr && pmhd->rad_signal_speed));
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
       ctr_read || rss_read) {
     const IOWrapperSizeT tail0 = offset_myrank;

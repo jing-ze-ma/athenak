@@ -663,6 +663,36 @@ Real M1SphDrr(const Real chi, const Real n1, const Real s2) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1FaceAvg
+//! \brief <rad_m1>/implicit_face_weight: the x1 face value of a cell quantity from the
+//! left (ql, radial width dl) and right (qr, dr) cells.  equal (dist false): 0.5 (ql+qr),
+//! the expression of the code before the key, bitwise.  distance: linear interpolation
+//! between the two cell midpoints, whose distances to the face are dl/2 and dr/2:
+//! q_f = (dr ql + dl qr)/(dl + dr).  Two widths that agree to 1e-12 (a uniform grid, up
+//! to the round-off of the face positions) give the equal form exactly.
+KOKKOS_INLINE_FUNCTION
+Real M1FaceAvg(const Real ql, const Real qr, const Real dl, const Real dr,
+               const bool dist) {
+  if (dist) {
+    const Real s = dl + dr;
+    if (fabs(dr - dl) > 1.0e-12*s) {return (dr*ql + dl*qr)/s;}
+  }
+  return 0.5*(ql + qr);
+}
+
+//! \brief M1FaceAvg with the widths of the cells il (left) and ir (right) read from the
+//! x1 face positions x1f(m,i) -- only when dist is set, so a Cartesian mesh (whose x1f
+//! is a dummy view) never touches it.
+template <typename X1F>
+KOKKOS_INLINE_FUNCTION
+Real M1FaceAvgX1(const Real ql, const Real qr, const X1F &x1f, const int m, const int il,
+                 const int ir, const bool dist) {
+  if (dist) {
+    return M1FaceAvg(ql, qr, x1f(m,il+1) - x1f(m,il), x1f(m,ir+1) - x1f(m,ir), true);
+  }
+  return 0.5*(ql + qr);
+}
+
 //! \fn M1SphMarshakFaceE
 //! \brief <rad_m1>/implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge,
 //! tests_m1/runs_5o_sporder2): the E of a Marshak boundary FACE at r_f, from the end cell
