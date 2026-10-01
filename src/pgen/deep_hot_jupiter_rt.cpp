@@ -170,10 +170,13 @@ bool dhj_flux_hst_wall = false;
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 bool dhj_flux_hst_floor = false;
 Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
-// problem/sponge_top_mode (default "all"; read without recording): "radial" makes the
-// top velocity sponge damp the RADIAL momentum only (IM1, rhat.m on both grids), so it
-// exerts no axial torque (Shaw & Shepherd 2007); "all" damps all three components
-bool dhj_sponge_top_radial = false;
+// problem/sponge_top_mode (read without recording): "radial" (DEFAULT since 10-01, user
+// GO after am_coriolis_1001/ext arm D) makes the top velocity sponge damp the RADIAL
+// momentum only (IM1, rhat.m on both grids), so it exerts no axial torque and no drag
+// that reaches the jet below it (Shaw & Shepherd 2007): with it the 1e-5..1e-3 bar jet
+// matches a domain whose top and sponge are 2 decades higher, at the old dt and cost.
+// "all" damps all three components (the behaviour before 10-01, bitwise).
+bool dhj_sponge_top_radial = true;
 // problem/sponge_top_plo_bar, sponge_top_phi_bar, sponge_top_tau (read without recording;
 // defaults 1e-7 bar, 1e-6 bar, 1e3 s): the top sponge ramps from 0 at phi to 1 at plo
 // (linear in log p) with damping rate fdrag/tau
@@ -892,7 +895,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const bool trq_ok = curv && bad.empty();
     {
       const std::string sm = pin->DoesParameterExist("problem","sponge_top_mode")
-                             ? pin->GetString("problem","sponge_top_mode") : "all";
+                             ? pin->GetString("problem","sponge_top_mode") : "radial";
       if (sm != "all" && sm != "radial") {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/sponge_top_mode must be all or radial, not '"
@@ -914,8 +917,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << dhj_sp_top_phi_bar << " bar, tau " << dhj_sp_top_tau << " s"
                   << std::endl;
       }
-      if (global_variable::my_rank == 0 && dhj_sponge_top_radial) {
-        std::cout << "dhj: problem/sponge_top_mode = radial" << std::endl;
+      if (global_variable::my_rank == 0) {
+        std::cout << "dhj: problem/sponge_top_mode = " << sm
+                  << (pin->DoesParameterExist("problem","sponge_top_mode") ? ""
+                      : " (default; 'all' = the pre-10-01 full-velocity sponge)")
+                  << std::endl;
       }
     }
     amh::fix = pin->DoesParameterExist("problem","coriolis_am")
