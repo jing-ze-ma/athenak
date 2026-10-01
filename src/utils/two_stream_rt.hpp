@@ -1387,15 +1387,20 @@ inline bool ck_vef_sync = true;
 // whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
 inline int ck_vef_report = 0;
 // problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
-// x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b, rho' =
-// (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections (1 - x)/(1 + x)
-// and (x - 1)/(1 + x): one of them is NEGATIVE whenever x != 1, and a strong f contrast
-// between two cells makes the frozen operator non-monotone (a cell's net heating can
-// grow with its own temperature).  Limiting x bounds the negative reflection by
-// (X - 1)/(X + 1); it changes gamma only where f jumps by a factor ~X^2 between cells.
+// x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b,
+// rho' = (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections
+// (1 - x)/(1 + x) and (x - 1)/(1 + x): one of them is NEGATIVE whenever x != 1, and a
+// strong f contrast between two cells makes the frozen operator non-monotone (a cell's
+// net heating can grow with its own temperature).  On the WASP-121b 10x fresh start the
+// factors reach f ~ 0.1 and x = 0.5..1.6 at 1e-5..1e-3 bar within 150 cycles, the
+// runaway spreads down and the hydro dt collapses (ckf5_stab_1001/RESULTS.md).
+// Limiting x bounds the negative reflection by (X - 1)/(X + 1); it changes gamma only
+// where f jumps by a factor ~X^2 between neighbouring cells.  rho' (the flux
+// continuity) is untouched, so the deposit still telescopes.
 inline Real ck_vef_xlim = 0.0;
 template <typename XF>
-inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D<Real> &vg,
+inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs,
+                        const DvceArray5D<Real> &vg,
                         const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
                         const DvceArray4D<Real> &pb, const DvceArray3D<int> &icc,
                         const XF &X1F,
@@ -1467,7 +1472,8 @@ inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs, const DvceArray5D
     for (int b=0; b<NBIN; ++b) {
       if (r[b*NQ+1] < 0.0) continue;
       std::printf("### vefrep ncycle=%d p=1e%+d f=[%.4e,%.4e] gam=[%.4e,%.4e] "
-                  "dsmax=%.3e dgmax=%.3e x=[%.4e,%.4e] nx10=%.0f\n", static_cast<int>(pm->ncycle),
+                  "dsmax=%.3e dgmax=%.3e x=[%.4e,%.4e] nx10=%.0f\n",
+                  static_cast<int>(pm->ncycle),
                   b - 9, r[b*NQ+0], r[b*NQ+1], r[b*NQ+2], r[b*NQ+3], r[b*NQ+4],
                   r[b*NQ+5], r[b*NQ+7], r[b*NQ+8], r[b*NQ+6]);
     }
