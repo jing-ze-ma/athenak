@@ -7360,20 +7360,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 vg_(m,c,icut-1,k,j) = (hm > 1.0e-12*Jq && jm > 0.0) ? jm/hm : 2.0;
               }
               vs_(m,c,icut+q,k,j) = sqrt(3.0*f);
-              if (q > 0) {
-                Real gq = exp(lpn - lpf);
-                // problem/ck_vef_xlim = X > 1: the face factor x = gamma rho' of an
-                // interior face kept in [1/X, X] by limiting gamma (rho', the flux
-                // continuity, is untouched, so the deposit still telescopes)
-                if (xlim_ > 1.0 && q >= 2 && q <= nn - 2) {
-                  const Real ra = W(0,q), rb = W(0,q-1);
-                  const Real rhop = (rb*rb)/(ra*ra)*sqrt(fprev/f);
-                  const Real xq = gq*rhop;
-                  if (xq > xlim_) gq = xlim_/rhop;
-                  if (xq < 1.0/xlim_) gq = 1.0/(xlim_*rhop);
-                }
-                vg_(m,c,icut+q-1,k,j) = gq;
-              }
+              if (q > 0) vg_(m,c,icut+q-1,k,j) = exp(lpn - lpf);
               lpf = lpn;
               fprev = f;
               rprev = r;
@@ -7389,6 +7376,45 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               }
             }
           });
+          // problem/ck_vef_xlim = X > 1: the face factor x = gamma rho' of an interior
+          // face (q = 2..nn-2) kept in [1/X, X] by limiting gamma (rho', the flux
+          // continuity, is untouched, so the deposit still telescopes).  A separate
+          // kernel, so that ck_vef_formal (and every run with the key off) compiles to
+          // the same code as without the limiter: it re-forms f from the moments the
+          // formal solution left in the work slots (4 J, 5 K, 8 W0, 9 W2; slot 0 r)
+          // with the same expressions, so the limited gamma is the in-kernel one.
+          if (xlim_ > 1.0) {
+            par_for("ck_vef_xlim", DevExeSpace(), 0, nmb1, 0, nc_ - 1, ks, ke, js, je,
+            KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+              const int icut = icc_g(m,k,j);
+              if (icut > ie) return;
+              const int nn = ie - icut + 3;
+              auto W = [&](const int s, const int q) -> Real {
+                return vw_(m,c,s*nv + q,k,j);
+              };
+              auto fq = [&](const int q) -> Real {
+                const Real Jq = W(4,q), Kq = W(5,q);
+                Real f = 1.0/3.0;
+                if (Jq > 0.0 && W(9,q) > 0.0) {
+                  f = (Kq/Jq)*(W(8,q)/(3.0*W(9,q)));
+                  f = (f < 1.0e-3) ? 1.0e-3 : ((f > 1.0) ? 1.0 : f);
+                }
+                return f;
+              };
+              Real fprev = fq(1);
+              for (int q=2; q<=nn-2; ++q) {
+                const Real f = fq(q);
+                Real gq = vg_(m,c,icut+q-1,k,j);
+                const Real ra = W(0,q), rb = W(0,q-1);
+                const Real rhop = (rb*rb)/(ra*ra)*sqrt(fprev/f);
+                const Real xq = gq*rhop;
+                if (xq > xlim_) gq = xlim_/rhop;
+                if (xq < 1.0/xlim_) gq = 1.0/(xlim_*rhop);
+                vg_(m,c,icut+q-1,k,j) = gq;
+                fprev = f;
+              }
+            });
+          }
           if (vrep_) CkVefReport(pm, vs_, vg_, vso_, vgo_, *rt_pb_ptr, icc_g, X1F, nmb1,
                                  nc_, ks, ke, js, je, ie);
         }
