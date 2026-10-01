@@ -340,6 +340,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   if (evolution_t.compare("stationary") != 0) {
     // determine if FOFC is enabled
     use_fofc = pin->GetOrAddBoolean("mhd","fofc",false);
+    if (use_fofc) {fofc_rep.Init(pin, "mhd");}
     // <mhd>/fofc_rsolver: see the note in mhd.hpp.  Default llf keeps every existing
     // run bit-for-bit unchanged.
     {

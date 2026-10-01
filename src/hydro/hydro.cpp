@@ -311,6 +311,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (evolution_t.compare("stationary") != 0) {
     // determine if FOFC is enabled
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",false);
+    if (use_fofc) {fofc_rep.Init(pin, "hydro");}
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("hydro","reconstruct","plm");

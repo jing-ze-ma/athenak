@@ -20,6 +20,7 @@
 #include "eos/eos.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "utils/wb_background.hpp"
+#include "utils/fofc_report.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -183,6 +184,7 @@ class MHD {
   // dump holds the flags accumulated since the previous dump of it.  Not carried in
   // restart files.
   DvceArray4D<Real> fofc_cnt;
+  FofcReport fofc_rep;     // <mhd>/fofc_report (diagnostic, read only when named)
   // <mhd>/fofc_rsolver = llf (default) | hlle -- which SINGLE-STATE solver the
   // first-order fallback uses.  LLF is the most diffusive and the traditional FOFC
   // fallback; HLLE restores the contact-adjacent accuracy at a small cost in

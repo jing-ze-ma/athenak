@@ -343,6 +343,8 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         if (fofcf_(m,k,j,i)) { fcnt_(m,k,j,i) += 1.0; }
       });
     }
+    // <mhd>/fofc_report (diagnostic, read only when named): reads the flags only
+    fofc_rep.Count(pmy_pack, fofc, w0, peos->eos_data.dfloor);
   }
 
   auto &coord = pmy_pack->pcoord->coord_data;
