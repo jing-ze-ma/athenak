@@ -817,9 +817,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // that two runs of one binary on one decomposition are bitwise identical on the GPU.
   impl_det = pin->GetOrAddBoolean("rad_m1","implicit_det_reduce",false);
   if (impl_det && (impl_solver != M1_ISOLV_BICGSTAB || impl_bcg_sync != 1 ||
-                   impl_kfuse >= 2 || impl_accel != M1_IACC_NONE)) {
+                   impl_kfuse == 2 || impl_kpipe || impl_kdev > 0 ||
+                   impl_accel != M1_IACC_NONE)) {
     ImplFatal("<rad_m1>/implicit_det_reduce supports implicit_solver = bicgstab with "
-              "implicit_bcg_sync = 1, implicit_krylov_fuse <= 1 and implicit_accel = none");
+              "implicit_bcg_sync = 1, implicit_krylov_fuse = 0, 1 or 3 (not krylov_pipe "
+              "or krylov_dev) and implicit_accel = none "
+              "(solver " + std::to_string(impl_solver) + ", bcg_sync " +
+              std::to_string(impl_bcg_sync) + ", krylov_fuse " +
+              std::to_string(impl_kfuse) + ", accel " + std::to_string(impl_accel) + ")");
   }
   if (impl_det) {det_part = DvceArray1D<Real>("m1_det_part", 4*1024 + 4);}
   {std::string pr = pin->GetOrAddString("rad_m1","implicit_predictor",
@@ -5606,6 +5611,47 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitDetOpRed
+//! \brief implicit_det_reduce: y = A x (ImplicitHaloOp with no reduction), then the sums
+//! the fused kernel would have returned for `red`, in a FIXED order (M1DetReduce):
+//! red 1|4: out[0] = (rhat, y), and 4 also out[3] = max|r|; red 2|3: out[0] = (y, s),
+//! out[1] = (y, y), and 3 also out[2] = (rhat, y).  This rank only (the caller sums).
+
+void RadiationM1::ImplicitDetOpRed(int xc, int yc, int red, Real *out) {
+  ImplicitHaloOp(xc, yc, 0, nullptr);
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int ni = indcs.ie - is + 1;
+  const int nji = (indcs.je - js + 1)*ni;
+  const int nkji = (indcs.ke - ks + 1)*nji;
+  const int ntot = pmy_pack->nmb_thispack*nkji;
+  auto iw_ = iw;
+  const int cy = yc, rm = red;
+  M1BcgVal v0;
+  M1DetReduce("m1_det_opred", ntot, KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+    int m, k, j, i;
+    M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+    k += ks; j += js; i += is;
+    const Real y = iw_(m,cy,k,j,i);
+    if (rm == 1 || rm == 4) {
+      v.s0 += iw_(m,M1_IW_KRH,k,j,i)*y;
+      if (rm == 4) {
+        const Real a = fabs(iw_(m,M1_IW_KR,k,j,i));
+        v.mx = (a > v.mx) ? a : v.mx;
+      }
+    } else {
+      v.s0 += y*iw_(m,M1_IW_KS,k,j,i);
+      v.s1 += y*y;
+      if (rm == 3) {v.s2 += iw_(m,M1_IW_KRH,k,j,i)*y;}
+    }
+  }, det_part, v0);
+  out[0] = v0.s0;
+  out[1] = v0.s1;
+  out[2] = v0.s2;
+  out[3] = v0.mx;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::ImplicitBiCGStabTwo
 //! \brief implicit_krylov_fuse = 3: the right-preconditioned BiCGStab of
 //! ImplicitBiCGStabFused with TWO blocking reductions per iteration instead of three.
@@ -5635,6 +5681,26 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
   Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
       pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
   using HRed = M1BcgRed<Kokkos::HostSpace>;
+  // implicit_det_reduce: fixed-order sums (M1DetReduce), rank-ordered MPI, and the sums
+  // the fused operator kernels return taken by ImplicitDetOpRed instead
+  const bool det = impl_det;
+  const int ntot = (nmb1 + 1)*nkji;
+  auto dpart = det_part;
+  auto lred = [&](const char *nm, const auto &fn, M1BcgVal &rv) {
+    if (det) {
+      M1DetReduce(nm, ntot, fn, dpart, rv);
+    } else {
+      Kokkos::parallel_reduce(nm, pol, fn, HRed(rv));
+    }
+    M1GlobalBcg(rv, det);
+  };
+  auto hop = [&](const int xc, const int yc, const int rd, Real *o) {
+    if (det) {
+      ImplicitDetOpRed(xc, yc, rd, o);
+    } else {
+      ImplicitHaloOp(xc, yc, rd, o);
+    }
+  };
 
   // x0 = the Picard iterate; r0 = b - A x0, with max|r0| and (r0,r0) in the same kernel
   par_for("m1_impl_bcg2_x0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -5643,7 +5709,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
   });
   ImplicitApplyOp(M1_IW_KX, M1_IW_KV);
   M1BcgVal red;
-  Kokkos::parallel_reduce("m1_impl_bcg2_r0", pol,
+  lred("m1_impl_bcg2_r0",
   KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
     int m, k, j, i;
     M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
@@ -5656,8 +5722,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
     v.s0 += r*r;
     Real a = fabs(r);
     v.mx = (a > v.mx) ? a : v.mx;
-  }, HRed(red));
-  M1GlobalBcg(red);
+  }, red);
   bcg_nred += 1.0;
   Real rnorm = red.mx;
   Real rhon = red.s0;
@@ -5683,7 +5748,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
   auto true_ok = [&]() -> bool {
     ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
     M1BcgVal tr;
-    Kokkos::parallel_reduce("m1_impl_bcg2_true", pol,
+    lred("m1_impl_bcg2_true",
     KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
       int m, k, j, i;
       M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
@@ -5692,8 +5757,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
       iw_(m,M1_IW_KR,k,j,i) = r;
       Real a = fabs(r);
       v.mx = (a > v.mx) ? a : v.mx;
-    }, HRed(tr));
-    M1GlobalBcg(tr);
+    }, tr);
     bcg_nred += 1.0;
     return lin_done(tr.mx);
   };
@@ -5711,10 +5775,10 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
       Real beta = (rhon/rho)*(alpha/omega);
       ImplicitPrecondX(-1, M1_IW_KY, 1, beta, omega);
       Real o4[4];
-      ImplicitHaloOp(M1_IW_KY, M1_IW_KV, 4, o4);
+      hop(M1_IW_KY, M1_IW_KV, 4, o4);
       M1BcgVal a;
       a.s0 = o4[0]; a.s1 = 0.0; a.s2 = 0.0; a.mx = o4[3];
-      M1GlobalBcg(a);
+      M1GlobalBcg(a, det);
       bcg_nred += 1.0;
       if (pend) {
         pend = false;
@@ -5732,9 +5796,9 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
       if (!breakdown) {
         alpha = rhon/rv;
         ImplicitPrecondX(-1, M1_IW_KZ, 2, alpha, 0.0);
-        ImplicitHaloOp(M1_IW_KZ, M1_IW_KTT, 3, o4);
+        hop(M1_IW_KZ, M1_IW_KTT, 3, o4);
         red.s0 = o4[0]; red.s1 = o4[1]; red.s2 = o4[2]; red.mx = 0.0;
-        M1GlobalBcg(red);
+        M1GlobalBcg(red, det);
         bcg_nred += 1.0;
         const Real ts = red.s0, tt2 = red.s1, rt = red.s2;
         omega = (tt2 > 0.0) ? (ts/tt2) : 0.0;
@@ -5745,7 +5809,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
           // update kernel (one more blocking reduction) instead of the recurrence below,
           // whose cancellation stalls the solve at ~1e-10 on hard systems
           M1BcgVal ur;
-          Kokkos::parallel_reduce("m1_impl_bcg2_updr", pol,
+          lred("m1_impl_bcg2_updr",
           KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
             int m, k, j, i;
             M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
@@ -5754,8 +5818,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
             const Real r = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
             iw_(m,M1_IW_KR,k,j,i) = r;
             v.s0 += iw_(m,M1_IW_KRH,k,j,i)*r;
-          }, HRed(ur));
-          M1GlobalBcg(ur);
+          }, ur);
           bcg_nred += 1.0;
           rhon = ur.s0;
         } else {
@@ -5779,7 +5842,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
         break;
       }
       ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
-      Kokkos::parallel_reduce("m1_impl_bcg2_rs", pol,
+      lred("m1_impl_bcg2_rs",
       KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
         int m, k, j, i;
         M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
@@ -5790,8 +5853,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
         iw_(m,M1_IW_KP,k,j,i) = 0.0;
         iw_(m,M1_IW_KV,k,j,i) = 0.0;
         v.s0 += r*r;
-      }, HRed(red));
-      M1GlobalBcg(red);
+      }, red);
       bcg_nred += 1.0;
       rhon = red.s0;
       rho = 1.0;
@@ -6173,6 +6235,11 @@ void RadiationM1::DetTrace(const char *tag) {
   put("iw", iw);
   put("ifw", ifw);
   put("tau", tau_ten);
+  if (fl.uflx != nullptr) {
+    put("fx1", fl.uflx->x1f);
+    put("fx2", fl.uflx->x2f);
+    put("fx3", fl.uflx->x3f);
+  }
   std::cout << os.str() << std::endl;
 }
 

@@ -669,6 +669,7 @@ class RadiationM1 {
   int hm_face[6];
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> ho_h;  // 2 x 4 partial sums
   void ImplicitHaloOp(int xc, int yc, int red, Real *out);
+  void ImplicitDetOpRed(int xc, int yc, int red, Real *out);   // implicit_det_reduce
   void ImplicitStencilOpPart(int xc, int yc, int red, int part, int w, Real *hs);
   int ImplicitBiCGStabPipe(Real rhsmax);
   // ---- launch and host-sync cuts (tests_m1/runs_4k_launch, rad_m1_launch.cpp).  Every
