@@ -145,12 +145,15 @@ const std::vector<std::pair<std::string, std::string>> &PotentialKeys() {
     {"mesh", "use_grid_stretch_r"}, {"mesh", "f_stretch_r"},
     {"mesh", "use_grid_stretch_r_poly"}, {"mesh", "f_stretch_r_c1"},
     {"mesh", "f_stretch_r_c2"}, {"mesh", "f_stretch_r_c3"}, {"mesh", "f_stretch_r_c4"},
+    {"mesh", "f_stretch_r_c5"}, {"mesh", "f_stretch_r_c6"}, {"mesh", "f_stretch_r_c7"},
+    {"mesh", "f_stretch_r_c8"},
     {"mesh", "f_stretch_r_b1_amp"}, {"mesh", "f_stretch_r_b1_x"},
     {"mesh", "f_stretch_r_b1_w"}, {"mesh", "f_stretch_r_b2_amp"},
     {"mesh", "f_stretch_r_b2_x"}, {"mesh", "f_stretch_r_b2_w"},
     {"mesh", "f_stretch_r_p_amp"}, {"mesh", "f_stretch_r_p_xa"},
     {"mesh", "f_stretch_r_p_xb"}, {"mesh", "f_stretch_r_p_w"},
-    {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
+    {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"},
+    {"mesh", "use_spherical_polar"}, {"mesh", "use_cubed_sphere"}
   };
   return keys;
 }
@@ -438,6 +441,11 @@ int main(int argc, char *argv[]) {
       if (std::string(argv[i]).find("hydro/rad_signal_speed") == 0 &&
           pinput->DoesBlockExist("hydro")) {
         pinput->GetOrAddBoolean("hydro", "rad_signal_speed", false);
+      }
+      // mhd/rad_signal_speed (mhd_newdt.cpp): the same
+      if (std::string(argv[i]).find("mhd/rad_signal_speed") == 0 &&
+          pinput->DoesBlockExist("mhd")) {
+        pinput->GetOrAddBoolean("mhd", "rad_signal_speed", false);
       }
     }
   }

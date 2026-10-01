@@ -964,6 +964,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 "spherical-polar wedge only");
     }
   }
+  // implicit_face_weight (see rad_m1.hpp): equal (default) | distance.  Read only when
+  // named, so the parameter dump of a run without the key is unchanged.
+  if (pin->DoesParameterExist("rad_m1","implicit_face_weight")) {
+    const std::string sfw = pin->GetString("rad_m1","implicit_face_weight");
+    if (sfw.compare("equal") == 0) {
+      impl_face_wdist = false;
+    } else if (sfw.compare("distance") == 0) {
+      impl_face_wdist = true;
+    } else {
+      ImplFatal("<rad_m1>/implicit_face_weight = '" + sfw
+                + "' is not a choice (equal | distance)");
+    }
+    if (impl_face_wdist && !sph_geom) {
+      ImplFatal("<rad_m1>/implicit_face_weight = distance is implemented on the "
+                "spherical-polar wedge only (a Cartesian grid is uniform)");
+    }
+  }
   // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
   // that does not name them reproduces RESULTS.txt of runs_3a exactly.
   std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux","central");
@@ -6475,6 +6492,7 @@ void RadiationM1::ImplicitVimpBuild() {
   auto cdxf = pmy_pack->pcoord->dxface;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
+  const bool fwd = sph && impl_face_wdist;   // implicit_face_weight = distance
 
   // (1) the Jacobian rows and dv^k
   par_for("m1_vimp_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -6507,7 +6525,8 @@ void RadiationM1::ImplicitVimpBuild() {
       } else {
         const int im = (cyclic && fi == is) ? ie : (fi-1);
         const int ip = (cyclic && fi == ie+1) ? is : fi;
-        kf[s] = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,ip));
+        kf[s] = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, im,
+                             ip, fwd);
         wf[s] = 0.5;
         const Real th = 1.0/(1.0 + ch*dt*kf[s]);
         const Real bs = th*ch*cl*dt/mbsize(m).dx1;
@@ -8132,6 +8151,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto cx2v = pmy_pack->pcoord->x2v;
     auto cx3v = pmy_pack->pcoord->x3v;
     auto cx1f = pmy_pack->pcoord->xx1f;
+    // implicit_face_weight = distance (sp): x1 face kappa_T, v1, G0 by M1FaceAvgX1
+    const bool fwd = sph && impl_face_wdist;
     // implicit_marshak_face = linear (sp): the Marshak faces take the face E
     const bool mfl = impl_mface_lin;
     const bool sqf = vcol_sqf;   // vet_col_surface_face (rad_m1.hpp)
@@ -8424,7 +8445,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real pb_ = bb, pr_ = rr;
         if (i < ie || !topb) {
           int ip = (i < ie) ? (i+1) : (ie+1);
-          Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
+          Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
+                                 i, ip, fwd);
           Real th = 1.0/(1.0 + ch*dt*ktf);
           Real df = th*ch*ch*dt/cdxf.x1f(m,k,j,i+1);
           Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
@@ -8452,8 +8474,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bb += nup*df*wiu;
           d_[0] += nup*df*wiu;
           cc -= nup*df*wp;
-          Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
-          Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
+          Real vf = M1FaceAvgX1(vi, iw_(m,M1_IW_V1,k,j,ip), cx1f, m, i, ip, fwd);
+          Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,i), iw_(m,M1_IW_G0,k,j,ip), cx1f, m,
+                                 i, ip, fwd);
           rr -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
           d_[11] -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
           // implicit_opac_newton on sp: the same face term G (every part of it is
@@ -8545,7 +8568,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         if (i > is || !botb) {
           int im = (i > is) ? (i-1) : (is-1);
-          Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
+          Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
+                                 im, i, fwd);
           Real th = 1.0/(1.0 + ch*dt*ktf);
           Real df = th*ch*ch*dt/cdxf.x1f(m,k,j,i);
           Real wm = iw_(m,M1_IW_WCHI,k,j,im);
@@ -8572,8 +8596,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bb += num*df*wil;
           d_[0] += num*df*wil;
           aa -= num*df*wm;
-          Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
-          Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
+          Real vf = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,im), vi, cx1f, m, im, i, fwd);
+          Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,im), iw_(m,M1_IW_G0,k,j,i), cx1f, m,
+                                 im, i, fwd);
           rr += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
           d_[11] += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
           if (opns && im >= is) {
@@ -8938,10 +8963,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else {
         int im = (cyclic && i == is) ? ie : (i-1);
         int ip = (cyclic && i == ie+1) ? is : i;
-        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,ip));
+        Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
+                               im, ip, fwd);
         Real th = 1.0/(1.0 + ch*dt*ktf);
-        Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + iw_(m,M1_IW_V1,k,j,ip));
-        Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,ip));
+        Real vf = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,im), iw_(m,M1_IW_V1,k,j,ip), cx1f, m,
+                              im, ip, fwd);
+        Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,im), iw_(m,M1_IW_G0,k,j,ip), cx1f, m,
+                               im, ip, fwd);
         Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
         Real wm = iw_(m,M1_IW_WCHI,k,j,im);
         if (trans) {
@@ -9516,6 +9544,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto pc_ = pos_cnt_d;
   const bool psph = sph_geom;
   auto pvol = pmy_pack->pcoord->volume;
+  // implicit_face_weight = distance (sp): the face kappa_T of the momentum deposit is
+  // the one the face equation used
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  const bool fwd = psph && impl_face_wdist;
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -9583,14 +9615,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           wl = bmhalf ? 0.5 : 1.0;
         } else {
           int im = (cyclic && i == is) ? ie : (i-1);
-          ktl = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
+          ktl = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m, im, i,
+                            fwd);
         }
         if (i == ie && ipos == nblkx1-1 && !cyclic) {
           ktr = iw_(m,M1_IW_KT,k,j,i);
           wr = bmhalf ? 0.5 : 1.0;
         } else {
           int ip = (cyclic && i == ie) ? is : (i+1);
-          ktr = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
+          ktr = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, i, ip,
+                            fwd);
         }
         dm1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
         dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;

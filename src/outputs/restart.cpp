@@ -244,8 +244,9 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
-    // <hydro>/rad_signal_speed: the signal-speed inputs of the last M1 step
-    if (phydro != nullptr && phydro->rad_signal_speed) {
+    // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last M1 step
+    if ((phydro != nullptr && phydro->rad_signal_speed) ||
+        (pmhd != nullptr && pmhd->rad_signal_speed)) {
       const int rmode = pradm1->RssMode();
       const int nrs = pradm1->RssRstNch(rmode);
       DvceArray5D<Real> tmp("rst-m1s", nmb, nrs, nout3, nout2, nout1);
@@ -390,9 +391,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[2] = {(nctr > 0) ? 1 : 0, static_cast<std::int32_t>(nctr)};
     std::memcpy(&(ctr_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <hydro>/rad_signal_speed: nrss slabs behind even those (radm1::kM1RssRstMagic)
-  const bool wrss = (pradm1 != nullptr) && (phydro != nullptr) &&
-                    phydro->rad_signal_speed;
+  // <hydro|mhd>/rad_signal_speed: nrss slabs behind even those (radm1::kM1RssRstMagic)
+  const bool wrss = (pradm1 != nullptr) &&
+                    ((phydro != nullptr && phydro->rad_signal_speed) ||
+                     (pmhd != nullptr && pmhd->rad_signal_speed));
   const int rss_mode = wrss ? pradm1->RssMode() : 0;
   const int nrss = wrss ? pradm1->RssRstNch(rss_mode) : 0;
   char rss_hdr[4*sizeof(std::int32_t)];

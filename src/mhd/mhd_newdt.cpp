@@ -9,6 +9,7 @@
 #include <math.h>
 
 #include <limits>
+#include <cstdlib>
 #include <iostream>
 #include <algorithm> // min
 
@@ -22,6 +23,8 @@
 #include "diffusion/viscosity.hpp"
 #include "diffusion/resistivity.hpp"
 #include "srcterms/srcterms.hpp"
+#include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_closure.hpp"
 
 namespace mhd {
 
@@ -81,6 +84,44 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   const bool multi_d_ = pmy_pack->pmesh->multi_d;
   const bool three_d_ = pmy_pack->pmesh->three_d;
 
+  // RADIATION SIGNAL SPEED (<mhd>/rad_signal_speed; default on with an implicit M1
+  // transport, see mhd.cpp).  The MHD form of <hydro>/rad_signal_speed (hydro_newdt.cpp,
+  // where the closure diagonal, the equilibrium sound speed and the optical-depth taper
+  // are derived).  In the strong-coupling (equilibrium-diffusion) limit gas + radiation
+  // is one fluid of total pressure P = P_g + P_r and adiabatic exponent Gamma_1 (ideal
+  // gas: the Chandrasekhar mixture; general EOS: the decoupled sum).  The pressure enters
+  // the ideal-MHD wave speeds only through the sound speed a^2 = Gamma_1 P/rho, so the
+  // fast magnetosonic speed along direction d is the usual one with a^2 replaced by the
+  // tapered radiation-modified sound speed of hydro_newdt.cpp,
+  //   c_d^2  = c_g^2 + (1 - exp(-tau_d)) (c_eq,d^2 - c_g^2),
+  //   cf_d^2 = (1/2) [ c_d^2 + B^2/rho + sqrt((c_d^2 + B^2/rho)^2 - 4 c_d^2 B_d^2/rho) ],
+  // c_g the gas sound speed of the fast speed below (ideal: gamma p/rho; general EOS:
+  // Gamma_1 p/rho; isothermal: iso_cs^2).  cf_d grows monotonically with c_d^2, so this
+  // is >= the gas fast speed and -> it in thin cells (tau_d -> 0); at B = 0 it is the
+  // hydro signal speed.  Off: no change (the gas fast speed, bitwise).
+  const bool rss_ = rad_signal_speed;
+  DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
+  int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
+  int rss_kind = 0;
+  Real rss_cl = 1.0;
+  if (rss_) {
+    auto *prm = pmy_pack->pradm1;
+    if (prm == nullptr) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/rad_signal_speed = true needs a <rad_m1> block"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    erad_ = prm->u0;
+    kopc_ = prm->opac;
+    rss_cl = prm->c_light;
+    rss_kind = prm->chi_kind;
+    // the same selection decides what a restart file carries (RadiationM1::RssPrime)
+    rss_mode = prm->RssMode();
+    if (rss_mode == 2) tten_ = prm->tau_ten;
+    if (rss_mode >= 3) vcel_ = prm->vet_cell;
+  }
+
   if (pdriver->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
     Kokkos::parallel_reduce("MHDNudt1",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
@@ -93,6 +134,13 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
       k += ks;
       j += js;
 
+      // NON-FINITE GUARD (see the MHDNudt2 kernel below): a NaN velocity gives a NaN
+      // dx/|v|, which fmin drops; flag it with a negative dt so the run stops
+      if (!(fabs(w0_(m,IVX,k,j,i)) + fabs(w0_(m,IVY,k,j,i)) + fabs(w0_(m,IVZ,k,j,i))
+            < 1.0e300)) {
+        min_dt1 = -1.0;
+        return;
+      }
       if (use_cubed_sphere || use_spherical_polar) {
         min_dt1 = fmin((dx1_(m,k,j,i)/fabs(w0_(m,IVX,k,j,i))), min_dt1);
         min_dt2 = fmin((dx2_(m,k,j,i)/fabs(w0_(m,IVY,k,j,i))), min_dt2);
@@ -199,8 +247,101 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
         }
         max_dv3 = fabs(w0_(m,IVZ,k,j,i))
                  + (cs_ ? cf/sncell_(m,k,j) : cf);
+
+        if (rss_) {
+          // <mhd>/rad_signal_speed: the same closure diagonal, equilibrium sound speed
+          // and taper as hydro_newdt.cpp, then the fast speed with a^2 -> c_d^2
+          const Real d = w_d;
+          const Real er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
+          Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
+          if (rss_mode == 4) {
+            for (int a = 0; a < 3; ++a) dd[a] = vcel_(m,radm1::M1_VET_D11+a,k,j,i);
+          } else if (rss_mode >= 1) {
+            Real chi, n1, n2, n3;
+            if (rss_mode == 2) {
+              chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
+              n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
+            } else if (rss_mode == 3) {
+              chi = vcel_(m,radm1::M1_VET_CHI,k,j,i);
+              n1 = vcel_(m,radm1::M1_VET_N1,k,j,i);
+              n2 = vcel_(m,radm1::M1_VET_N1+1,k,j,i);
+              n3 = vcel_(m,radm1::M1_VET_N1+2,k,j,i);
+            } else {
+              const Real f1 = erad_(m,radm1::M1_F1,k,j,i);
+              const Real f2 = erad_(m,radm1::M1_F2,k,j,i);
+              const Real f3 = erad_(m,radm1::M1_F3,k,j,i);
+              const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
+              const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
+              chi = (er > 0.0) ? radm1::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+              n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
+            }
+            if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3
+              const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
+              dd[0] = dg + an*n1*n1;
+              dd[1] = dg + an*n2*n2;
+              dd[2] = dg + an*n3*n3;
+            }
+          }
+          // the gas sound speed squared of the fast speeds above
+          Real cg2;
+          if (eos.IsGeneral()) {
+            cg2 = g1*pg/d;
+          } else if (eos.is_ideal) {
+            cg2 = eos.gamma*p/d;
+          } else {
+            cg2 = eos.iso_cs*eos.iso_cs;
+          }
+          const Real kt = fmax(kopc_(m,radm1::M1_OP_T,k,j,i), 0.0);
+          Real h[3];
+          if (use_cubed_sphere || use_spherical_polar) {
+            h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
+          } else {
+            h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
+            h[2] = mbsize.d_view(m).dx3;
+          }
+          const bool ideal = (eos.is_ideal && !eos.IsGeneral());
+          const Real gm1 = ideal ? (eos.gamma - 1.0) : 0.0;
+          const Real bb[3] = {w_bx, w_by, w_bz};
+          Real cfd[3];
+          for (int a = 0; a < 3; ++a) {
+            const Real pr = fmax(dd[a], 0.0)*er;
+            Real ceq2;
+            if (ideal) {
+              const Real ptot = p + pr;
+              const Real beta = p/ptot;
+              const Real gam1 = beta + SQR(4.0 - 3.0*beta)*gm1
+                                       /(beta + 12.0*gm1*(1.0 - beta));
+              ceq2 = gam1*ptot/d;
+            } else {
+              ceq2 = cg2 + (4.0/3.0)*pr/d;
+            }
+            const Real dc2 = fmax(ceq2 - cg2, 0.0);
+            const Real asq = d*(cg2 + dc2*(1.0 - exp(-kt*h[a])));   // rho c_d^2
+            const Real bn2 = bb[a]*bb[a];
+            const Real ct2 = bb[(a+1)%3]*bb[(a+1)%3] + bb[(a+2)%3]*bb[(a+2)%3];
+            const Real qsq = bn2 + ct2 + asq;
+            const Real tmp = bn2 + ct2 - asq;
+            cfd[a] = sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ct2))/d);
+          }
+          max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cfd[0];
+          max_dv2 = fabs(w0_(m,IVY,k,j,i))
+                   + (cs_ ? cfd[1]/sncell_(m,k,j) : cfd[1]);
+          max_dv3 = fabs(w0_(m,IVZ,k,j,i))
+                   + (cs_ ? cfd[2]/sncell_(m,k,j) : cfd[2]);
+        }
       }
 
+      // NON-FINITE GUARD (the MHD port of hydro_newdt.cpp): a NaN/inf state gives a NaN
+      // dx/v, which fmin DROPS, so dt would be set by the finite cells alone and could
+      // keep doubling (BSG production 10-01: the whole domain NaN, dt doubled per step
+      // to tlim, rc 0).  Flag the cell with a negative dt instead; Mesh::NewTimeStep
+      // stops the run on dt <= 0 and reports the cell.
+      if (!(max_dv1 + max_dv2 + max_dv3 < 1.0e300)) {
+        min_dt1 = -1.0;
+        mres.val = -1.0;
+        mres.loc = idx;
+        return;
+      }
       Real cell_dt;
       if (use_cubed_sphere || use_spherical_polar) {
         min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);

@@ -1024,8 +1024,8 @@ void RadiationM1::RssPrime(bool restart) {
     return;
   }
   if (restart && global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <hydro>/rad_signal_speed inputs; the "
-              << "opacity is rebuilt from the restored state and this restart is not "
+    std::cout << "### WARNING: restart file has no <hydro|mhd>/rad_signal_speed inputs; "
+              << "the opacity is rebuilt from the restored state and this restart is not "
               << "bitwise." << std::endl;
   }
   // opac_freeze (debug) freezes the FIRST fill: leave that to the first step
