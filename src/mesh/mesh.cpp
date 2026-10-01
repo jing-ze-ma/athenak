@@ -1134,6 +1134,31 @@ void Mesh::NewTimeStep(const Real tlim) {
   }
 #endif
 
+  // A non-finite fluid state (hydro NewTimeStep flags it with dtnew = -1, see the
+  // NON-FINITE GUARD there) or any non-finite / non-positive dt: stop here, with the
+  // cell, instead of stepping on with a dt set by the cells that are still finite.
+  if (!(dt > 0.0) || !std::isfinite(dt)) {
+    if (pmb_pack->phydro != nullptr && !(pmb_pack->phydro->dtnew > 0.0)) {
+      hydro::Hydro *ph = pmb_pack->phydro;
+      std::cout << "### non-finite hydro state at cycle=" << ncycle << " time=" << time
+                << " cell (m,k,j,i) = (" << ph->dtnew_m << "," << ph->dtnew_k << ","
+                << ph->dtnew_j << "," << ph->dtnew_i << ") gid = "
+                << (pmb_pack->gids + std::max(ph->dtnew_m, 0)) << " rank "
+                << global_variable::my_rank;
+      if (ph->dt_diag_valid) {
+        auto &dd = ph->dt_diag.h_view;
+        std::cout << " r=" << dd(0) << " rho=" << dd(1) << " T=" << dd(2) << " p=" << dd(3)
+                  << " v=(" << dd(5) << "," << dd(6) << "," << dd(7) << ")";
+      }
+      std::cout << std::endl;
+    }
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "dt = " << dt << " at cycle " << ncycle << " time " << time
+              << ": non-finite or non-positive time step (rank "
+              << global_variable::my_rank << ")" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+
   // If dt just collapsed, say which module owns it.  Only the rank holding the
   // global minimum reports, so the components printed are the ones that actually set
   // dt; every other rank's candidates are larger and would mislead.  At most 20 lines.

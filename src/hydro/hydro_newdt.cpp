@@ -279,6 +279,16 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         max_dv3 = fabs(w0_(m,IVZ,k,j,i))
                  + (cs_ ? cs3/sncell_(m,k,j) : cs3);
       }
+      // NON-FINITE GUARD: a NaN/inf state gives a NaN dx/v, which fmin DROPS, so dt
+      // would be set by the finite cells alone and could keep doubling (BSG production
+      // 10-01: the whole domain NaN, dt doubled per step to tlim, rc 0).  Flag the cell
+      // with a negative dt instead; Mesh::NewTimeStep stops the run on dt <= 0.
+      if (!(max_dv1 + max_dv2 + max_dv3 < 1.0e300)) {
+        min_dt1 = -1.0;
+        mres.val = -1.0;
+        mres.loc = idx;
+        return;
+      }
       Real cell_dt;
       if (use_cubed_sphere || use_spherical_polar) {
         min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
