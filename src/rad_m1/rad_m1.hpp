@@ -380,14 +380,7 @@ class RadiationM1 {
   // last pass of any step, res_nex = steps whose excluded residual was >= implicit_tol
   // (steps that would not have stopped there with the full norm).
   Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
-  // implicit_stall_accept (he_estall_1003, read only when named; 0 = off): a Picard solve
-  // whose residual has stopped contracting (no new minimum below stall_fac x the minimum
-  // of the window before, and the residual rose at least twice in the last stall_window
-  // passes) is accepted once resid < stall_accept, from pass stall_min on.  Counted in
-  // impl_nstall (not in impl_nfail).
-  Real impl_stall_acc = 0.0, impl_stall_fac = 0.5, impl_nstall = 0.0;
-  Real impl_stall_rsum = 0.0, impl_stall_rmax = 0.0;
-  int impl_stall_win = 10, impl_stall_min = 20;
+  Real impl_stall_fac = 0.5;    // implicit_stall_fac (implicit_gas_newton_switch test)
   int impl_gn_sw = 0, impl_gn_sw_min = 20;   // implicit_gas_newton_switch (window, min)
   Real impl_gn_nsw = 0.0;       // solves switched off the gas Newton update
   // implicit_resid_fatal (read only when named; 0 = off): stop the run when a Picard

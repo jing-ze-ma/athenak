@@ -1279,54 +1279,43 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   impl_recon_w = pin->GetOrAddReal("rad_m1","implicit_recon_w",-1.0);
   impl_res_floor = pin->GetOrAddReal("rad_m1","implicit_res_floor",0.0);
-  // implicit_stall_accept (he_estall_1003; read only when named, 0 = off, bitwise):
-  // accept a STALLED Picard solve.  In the He presn wedge ~29 % of the solves end in a
-  // non-contracting limit cycle of resid 1e-8..2e-6 (|dE|/E in cells of the porous
-  // FeCZ next to hot, decoupled gas) and run to implicit_maxit, holding ~75 % of all
-  // passes; the iterate of pass 200 is no closer to the fixed point than that of pass 30.
-  // A solve is accepted (not counted NON-CONVERGED) at pass it when ALL of
-  //   it + 1 >= implicit_stall_min                                     (default 20)
-  //   resid < implicit_stall_accept                       (the ceiling, e.g. 1e-6)
-  //   the minimum of resid over the last implicit_stall_window passes   (default 10)
-  //     is >= implicit_stall_fac (default 0.5) x the minimum before that window
-  //   resid rose (r_k > r_{k-1}) at least twice inside that window
-  // The last condition keeps a slowly but monotonically contracting solve iterating.
-  // resid is the global (MPI_MAX) value, so every rank takes the same decision.
-  // implicit_gas_newton_switch = W (he_estall_1003; read only when named, 0 = off,
-  // bitwise): under implicit_gas_newton, a solve whose residual is detected stalled by
-  // the test above (window W, from pass implicit_gas_newton_switch_min, default 20,
-  // factor implicit_stall_fac) drops the gas Newton update (and the opac_newton face
-  // terms, which need it) for the rest of the solve: the gas T is then the bracketed
-  // root of the exact backward-Euler gas equation with kappa_P, kappa_E at the trial T
-  // (the implicit_tsolve_opac root find) in every remaining pass.  Diagnosis
-  // (he_estall_1003): in hot (2-3 MK), low-density void cells the Newton row omits
-  // d kappa_P/dT, the lagged-opacity iteration has slope < -1 and the gas T flips
-  // between two values every pass; the root find with kappa(T) has no such cycle.
+  // implicit_gas_newton_switch = W (he_estall_1003).  DEFAULT 10 on fresh runs (user
+  // 10-03); a restart whose input lacks the key keeps the old behaviour (0 = off) and
+  // says so; 0 = off is bitwise the pre-key code.  Under implicit_gas_newton, a solve
+  // whose Picard residual is detected STALLED drops the gas Newton update (and the
+  // opac_newton face terms, which need it) for the rest of that solve: the gas T is the
+  // bracketed root of the exact backward-Euler gas equation with kappa_P, kappa_E at the
+  // trial T (the implicit_tsolve_opac root find, forced on) in every remaining pass.
+  // Stall test at pass it (resid = the global MPI_MAX value, so every rank agrees):
+  //   it + 1 >= implicit_gas_newton_switch_min (default 20), it + 1 > W,
+  //   min(resid over the last W passes) >= implicit_stall_fac (default 0.5) x the
+  //   minimum before that window, and resid rose at least twice inside the window
+  //   (a slowly but monotonically contracting solve keeps Newton).
+  // Solves that converge never switch.  Diagnosis (he_estall_1003): in hot (2-3 MK),
+  // low-density void cells the Newton row omits d kappa_P/dT, the lagged-opacity
+  // iteration has slope < -1 and the gas T flips between two values every pass (a
+  // resid 1e-8..2e-6 2-cycle that ran ~29 % of the He presn wedge solves to
+  // implicit_maxit); the root find with kappa(T) has no such cycle.  He wedge -30..-36 %
+  // wall, accuracy within the noise spread; He box bitwise (never switches).
   if (pin->DoesParameterExist("rad_m1","implicit_gas_newton_switch")) {
     impl_gn_sw = pin->GetInteger("rad_m1","implicit_gas_newton_switch");
+  } else if (global_variable::restart_run) {
+    impl_gn_sw = 0;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart input has no implicit_gas_newton_switch: keeping "
+                << "the old default (off); set it to switch" << std::endl;
+    }
+  } else {
+    impl_gn_sw = pin->GetOrAddInteger("rad_m1","implicit_gas_newton_switch",10);
+  }
+  if (impl_gn_sw > 0) {
     impl_gn_sw_min = pin->GetOrAddInteger("rad_m1","implicit_gas_newton_switch_min",20);
-    if (impl_gn_sw < 0 || impl_gn_sw > 64 || impl_gn_sw_min < 1) {
-      ImplFatal("<rad_m1>/implicit_gas_newton_switch must lie in [0,64] and "
-                "implicit_gas_newton_switch_min >= 1");
-    }
-    if (impl_gn_sw > 0 && impl_gn_sw < 3) {
-      ImplFatal("<rad_m1>/implicit_gas_newton_switch must be 0 or >= 3");
-    }
     impl_stall_fac = pin->GetOrAddReal("rad_m1","implicit_stall_fac",0.5);
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_stall_accept")) {
-    impl_stall_acc = pin->GetReal("rad_m1","implicit_stall_accept");
-    if (!(impl_stall_acc >= 0.0)) {
-      ImplFatal("<rad_m1>/implicit_stall_accept must be >= 0");
-    }
-    impl_stall_win = pin->GetOrAddInteger("rad_m1","implicit_stall_window",10);
-    impl_stall_min = pin->GetOrAddInteger("rad_m1","implicit_stall_min",20);
-    impl_stall_fac = pin->GetOrAddReal("rad_m1","implicit_stall_fac",0.5);
-    if (impl_stall_win < 3 || impl_stall_win > 64 || impl_stall_min < 1 ||
-        !(impl_stall_fac > 0.0 && impl_stall_fac <= 1.0)) {
-      ImplFatal("<rad_m1>/implicit_stall_window must lie in [3,64], implicit_stall_min "
-                ">= 1 and implicit_stall_fac in (0,1]");
-    }
+  if (impl_gn_sw < 0 || impl_gn_sw > 64 || (impl_gn_sw > 0 && impl_gn_sw < 3) ||
+      impl_gn_sw_min < 1 || !(impl_stall_fac > 0.0 && impl_stall_fac <= 1.0)) {
+    ImplFatal("<rad_m1>/implicit_gas_newton_switch must be 0 or lie in [3,64], "
+              "implicit_gas_newton_switch_min >= 1 and implicit_stall_fac in (0,1]");
   }
   std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag","picard");
   impl_recon_freeze = (slg.compare("step") == 0);
@@ -6183,14 +6172,6 @@ void RadiationM1::ImplicitReport() {
               << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
               << std::endl;
   }
-  if (impl_stall_acc > 0.0) {
-    std::cout << "<rad_m1> implicit_stall_accept=" << impl_stall_acc << " (window "
-              << impl_stall_win << ", min pass " << impl_stall_min << ", fac "
-              << impl_stall_fac << "): stalled solves accepted=" << impl_nstall
-              << " resid at acceptance mean="
-              << ((impl_nstall > 0.0) ? impl_stall_rsum/impl_nstall : 0.0)
-              << " max=" << impl_stall_rmax << std::endl;
-  }
   if (impl_res_mask) {
     std::cout << "<rad_m1> implicit_res mask: rho < " << impl_res_dmin << " or r > "
               << impl_res_rmax << " (0 = unused) left out of the stopping test; max"
@@ -7922,17 +7903,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool ocheck = onep && ((onep_qa[otyp] < 0.0) ||
                                (onep_cnt[otyp] >= static_cast<Real>(impl_onep - 1)));
   Real ores0 = -1.0, ores1 = -1.0;
-  // implicit_stall_accept: the residual history of this solve (host side)
-  const bool stl = (impl_stall_acc > 0.0);
+  // implicit_gas_newton_switch: the residual history of this solve (host side)
   std::vector<Real> rhist;
-  if (stl) {rhist.reserve(impl_maxit);}
-  bool stalled = false;
   const bool strc = (impl_strace > 0) && (impl_strace_n < impl_strace_max);
   int sloc = -1, sloc2 = -1;
   // implicit_gas_newton_switch: set once this solve's residual is detected stalled
   bool gnsw = false;
   const bool gsd = (impl_gn_sw > 0) && gnewt;
-  if (gsd && !stl) {rhist.reserve(impl_maxit);}
+  if (gsd) {rhist.reserve(impl_maxit);}
   for (it = 0; it < impl_maxit && !converged; ++it) {
     // the gas Newton update of THIS pass (off after a detected stall, see above)
     const bool gnw = gnewt && !gnsw;
@@ -9569,7 +9547,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
-    if (stl || gsd) {
+    if (gsd) {
       rhist.push_back(resid);
       // the stall test: from pass min on, the minimum of the last nw passes is not below
       // fac x the minimum before them, and resid rose at least twice inside the window
@@ -9593,10 +9571,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // the history restarts: the switched iteration is judged on its own passes
         rhist.clear();
         for (int q = 0; q <= it; ++q) {rhist.push_back(resid);}
-      } else if (stl && (resid < impl_stall_acc) &&
-                 stall_test(impl_stall_win, impl_stall_min, impl_stall_fac)) {
-        converged = true;
-        stalled = true;
       }
     }
     rprev = resid;
@@ -9793,11 +9767,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (rmask) {
     impl_res_exmax = std::max(impl_res_exmax, rexcl_last);
     if (rexcl_last >= impl_tol) {impl_res_nex += 1.0;}
-  }
-  if (stalled) {
-    impl_nstall += 1.0;
-    impl_stall_rsum += resid;
-    impl_stall_rmax = std::max(impl_stall_rmax, resid);
   }
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
