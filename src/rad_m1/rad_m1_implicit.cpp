@@ -1269,6 +1269,33 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   impl_recon_w = pin->GetOrAddReal("rad_m1","implicit_recon_w",-1.0);
   impl_res_floor = pin->GetOrAddReal("rad_m1","implicit_res_floor",0.0);
+  // implicit_stall_accept (he_estall_1003; read only when named, 0 = off, bitwise):
+  // accept a STALLED Picard solve.  In the He presn wedge ~29 % of the solves end in a
+  // non-contracting limit cycle of resid 1e-8..2e-6 (|dE|/E in cells of the porous
+  // FeCZ next to hot, decoupled gas) and run to implicit_maxit, holding ~75 % of all
+  // passes; the iterate of pass 200 is no closer to the fixed point than that of pass 30.
+  // A solve is accepted (not counted NON-CONVERGED) at pass it when ALL of
+  //   it + 1 >= implicit_stall_min                                     (default 20)
+  //   resid < implicit_stall_accept                       (the ceiling, e.g. 1e-6)
+  //   the minimum of resid over the last implicit_stall_window passes   (default 10)
+  //     is >= implicit_stall_fac (default 0.5) x the minimum before that window
+  //   resid rose (r_k > r_{k-1}) at least twice inside that window
+  // The last condition keeps a slowly but monotonically contracting solve iterating.
+  // resid is the global (MPI_MAX) value, so every rank takes the same decision.
+  if (pin->DoesParameterExist("rad_m1","implicit_stall_accept")) {
+    impl_stall_acc = pin->GetReal("rad_m1","implicit_stall_accept");
+    if (!(impl_stall_acc >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_stall_accept must be >= 0");
+    }
+    impl_stall_win = pin->GetOrAddInteger("rad_m1","implicit_stall_window",10);
+    impl_stall_min = pin->GetOrAddInteger("rad_m1","implicit_stall_min",20);
+    impl_stall_fac = pin->GetOrAddReal("rad_m1","implicit_stall_fac",0.5);
+    if (impl_stall_win < 3 || impl_stall_win > 64 || impl_stall_min < 1 ||
+        !(impl_stall_fac > 0.0 && impl_stall_fac <= 1.0)) {
+      ImplFatal("<rad_m1>/implicit_stall_window must lie in [3,64], implicit_stall_min "
+                ">= 1 and implicit_stall_fac in (0,1]");
+    }
+  }
   std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag","picard");
   impl_recon_freeze = (slg.compare("step") == 0);
   // MILESTONE 3c: freeze the deferred correction, and with it the plm limiter's choice,
@@ -6119,6 +6146,14 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_stall_acc > 0.0) {
+    std::cout << "<rad_m1> implicit_stall_accept=" << impl_stall_acc << " (window "
+              << impl_stall_win << ", min pass " << impl_stall_min << ", fac "
+              << impl_stall_fac << "): stalled solves accepted=" << impl_nstall
+              << " resid at acceptance mean="
+              << ((impl_nstall > 0.0) ? impl_stall_rsum/impl_nstall : 0.0)
+              << " max=" << impl_stall_rmax << std::endl;
+  }
   if (impl_res_mask) {
     std::cout << "<rad_m1> implicit_res mask: rho < " << impl_res_dmin << " or r > "
               << impl_res_rmax << " (0 = unused) left out of the stopping test; max"
@@ -7829,6 +7864,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool ocheck = onep && ((onep_qa[otyp] < 0.0) ||
                                (onep_cnt[otyp] >= static_cast<Real>(impl_onep - 1)));
   Real ores0 = -1.0, ores1 = -1.0;
+  // implicit_stall_accept: the residual history of this solve (host side)
+  const bool stl = (impl_stall_acc > 0.0);
+  std::vector<Real> rhist;
+  if (stl) {rhist.reserve(impl_maxit);}
+  bool stalled = false;
   for (it = 0; it < impl_maxit && !converged; ++it) {
     int nin = -1;
     TmrMark((it == 0) ? 4 : 7);
@@ -9458,6 +9498,27 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
+    if (stl) {
+      rhist.push_back(resid);
+      const int nw = impl_stall_win;
+      if (!converged && (it + 1 >= impl_stall_min) && (it + 1 > nw) &&
+          (resid < impl_stall_acc)) {
+        Real mwin = 1.0e300, mpre = 1.0e300;
+        int nup = 0;
+        for (int q = 0; q <= it; ++q) {
+          if (q > it - nw) {
+            mwin = std::min(mwin, rhist[q]);
+            if (rhist[q] > rhist[q-1]) {++nup;}
+          } else {
+            mpre = std::min(mpre, rhist[q]);
+          }
+        }
+        if (mwin >= impl_stall_fac*mpre && nup >= 2) {
+          converged = true;
+          stalled = true;
+        }
+      }
+    }
     rprev = resid;
     if (it == 0) {ores0 = resid;}
     if (it == 1) {ores1 = resid;}
@@ -9642,6 +9703,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (rmask) {
     impl_res_exmax = std::max(impl_res_exmax, rexcl_last);
     if (rexcl_last >= impl_tol) {impl_res_nex += 1.0;}
+  }
+  if (stalled) {
+    impl_nstall += 1.0;
+    impl_stall_rsum += resid;
+    impl_stall_rmax = std::max(impl_stall_rmax, resid);
   }
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
