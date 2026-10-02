@@ -746,6 +746,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
+  // nc_cure_1002: the Newton-fallback gas-temperature root find with kappa_P(T), kappa_E(T)
+  // evaluated at the trial T (M1ImplTemperatureOpac).  Default off = the frozen-opacity
+  // root find, bitwise.
+  impl_tsolve_opac = pin->GetOrAddBoolean("rad_m1","implicit_tsolve_opac",false);
   // DEBUG (nc_cure_1002): implicit_nc_dump = N > 0 prints, in the last N passes of a
   // solve that runs to implicit_maxit, the local state of each rank's worst-residual
   // cell (optical depths, coupling stiffness, energy ratio, beta, f, the T-Newton
@@ -7123,6 +7127,28 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \struct M1OpacFn
+//! \brief implicit_tsolve_opac: rho kappa_P and rho kappa_E at (d, T), code units, by the
+//! same calls as step (a) of the Picard loop (table or analytic).
+
+struct M1OpacFn {
+  int otype;
+  M1OpacTab ot;
+  Real kp, kev, kf, ks, rref, tref, aa, bb;
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const Real d, const Real t, Real &rkp, Real &rke) const {
+    Real op, oe, of, os;
+    if (otype == M1_OPAC_TABLE) {
+      M1TableOpacities(ot, d, t, op, oe, of, os);
+    } else {
+      M1Opacities(otype, d, t, kp, kev, kf, ks, rref, tref, aa, bb, op, oe, of, os);
+    }
+    rkp = d*op;
+    rke = d*oe;
+  }
+};
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ImplTsolveLaunch
 //! \brief step (f) of RadiationM1::ImplicitSolve: accept E', solve for T'
 //! (m1_impl_tsolve), instantiated on the ideal-gas tag.
@@ -7155,6 +7181,8 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto je = std::get<24>(ctx_);
   auto is = std::get<25>(ctx_);
   auto ie = std::get<26>(ctx_);
+  auto tso = std::get<27>(ctx_);
+  auto opf = std::get<28>(ctx_);
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -7164,6 +7192,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)efl; (void)eos;
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
+    (void)tso; (void)opf;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -7204,7 +7233,26 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
       if (!done) {
         // the pre-3g bracketed root find: also the per-cell FALLBACK of the Newton
         // update (c_v <= 0, a step outside the trust region, a non-positive T).
-        if constexpr (decltype(idl)::value) {
+        // implicit_tsolve_opac: the fallback root find takes kappa_P, kappa_E at the
+        // trial T (M1ImplTemperatureOpac) instead of at the lagged iterate.
+        if (tso) {
+          if constexpr (decltype(idl)::value) {
+            M1EosIdeal th{eos.gamma};
+            (void) M1ImplTemperatureOpac(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                         cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+          } else if (usec) {
+            Real nmiss = 0.0;
+            M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
+                                                          &nmiss};
+            (void) M1ImplTemperatureOpac(thc, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                         cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            if (gasx) {iw_(m,igm,k,j,i) += nmiss;}
+          } else {
+            M1EosDirect<decltype(eos)> th{eos};
+            (void) M1ImplTemperatureOpac(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                         cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+          }
+        } else if constexpr (decltype(idl)::value) {
           M1EosIdeal th{eos.gamma};
           (void) M1ImplTemperatureT(th, dd, told, iw_(m,M1_IW_EGN,k,j,i),
                                     cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
@@ -9111,7 +9159,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // (above); tsb_ctx is what the helper captured, by value.
       auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efl, eos, escale, gasx, gnewt,
                                      igb, igf, igm, igr, igy, iw_, opac_, plog, uh, usec,
-                                     nmb1, ks, ke, js, je, is, ie);
+                                     nmb1, ks, ke, js, je, is, ie, impl_tsolve_opac,
+                                     M1OpacFn{opacity_type, otab, kappa_p, kappa_e,
+                                              kappa_f, kappa_s, opac_rho_ref,
+                                              opac_t_ref, opac_a, opac_b});
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {

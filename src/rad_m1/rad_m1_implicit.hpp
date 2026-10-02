@@ -1137,6 +1137,73 @@ int M1ImplTemperatureT(const ThermoT &th, const Real dd, const Real tguess,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ImplTemperatureOpac
+//! \brief <rad_m1>/implicit_tsolve_opac (nc_cure_1002): the bracketed gas-temperature root
+//! find with the Planck and absorption opacities evaluated AT the trial T,
+//!   y(T) = e(T) + c dt rho kappa_P(T) a T^4 - rho e^n - c dt rho kappa_E(T) (E' + de0),
+//! instead of at the lagged iterate.  With the opacity frozen at the previous pass a cell
+//! whose kappa_P changes by >10x over the iterate's T range (shock-heated near-void
+//! cells at log T 6.3-6.6) has no fixed point of the Picard map and cycles with
+//! |dT|/T ~ 0.36 for implicit_maxit passes.  y need not be monotone here, so the root
+//! is found by bisection in log T on a sign-change bracket grown from the guess (same
+//! growth rule as M1ImplTemperatureT).  opf(d, T, rkp, rke) returns rho kappa_P and
+//! rho kappa_E in code units.
+
+template <class ThermoT, class OpF>
+KOKKOS_INLINE_FUNCTION
+int M1ImplTemperatureOpac(const ThermoT &th, const OpF &opf, const Real dd,
+                          const Real tguess, const Real egn, const Real cdta,
+                          const Real cdt, const Real erhs, Real &tout, bool &ok) {
+  auto yfn = [&](const Real t) {
+    Real ee, cv, rkp, rke;
+    th(dd, t, ee, cv);
+    opf(dd, t, rkp, rke);
+    const Real t2 = t*t;
+    return ee + cdta*rkp*t2*t2 - egn - cdt*rke*erhs;
+  };
+  Real tlo = tguess, thi = tguess;
+  Real y0 = yfn(tguess);
+  int nev = 1;
+  ok = true;
+  if (y0 == 0.0) {
+    tout = tguess;
+    return nev;
+  }
+  if (y0 > 0.0) {
+    Real y = y0;
+    for (int it=0; it<80 && y > 0.0; ++it) {
+      thi = tlo;
+      tlo *= 0.5;
+      y = yfn(tlo);
+      ++nev;
+    }
+    ok = (y <= 0.0);
+  } else {
+    Real y = y0;
+    for (int it=0; it<80 && y < 0.0; ++it) {
+      tlo = thi;
+      thi *= 2.0;
+      y = yfn(thi);
+      ++nev;
+    }
+    ok = (y >= 0.0);
+  }
+  if (!ok) {
+    tout = tguess;
+    return nev;
+  }
+  // bisection in log T: y(tlo) <= 0 <= y(thi), thi/tlo = 2 at the start
+  for (int it=0; it<M1_IMPL_TMAXIT && (thi - tlo) > M1_IMPL_TRTOL*thi; ++it) {
+    const Real tm = sqrt(tlo*thi);
+    const Real y = yfn(tm);
+    ++nev;
+    if (y > 0.0) {thi = tm;} else {tlo = tm;}
+  }
+  tout = sqrt(tlo*thi);
+  return nev;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ImplTemperature
 //! \brief the pre-3g entry point: the same safeguarded root find, reading the EOS table
 //! directly.  Kept so that every call site that does not use the cache makes exactly the
