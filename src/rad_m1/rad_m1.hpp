@@ -388,6 +388,8 @@ class RadiationM1 {
   Real impl_stall_acc = 0.0, impl_stall_fac = 0.5, impl_nstall = 0.0;
   Real impl_stall_rsum = 0.0, impl_stall_rmax = 0.0;
   int impl_stall_win = 10, impl_stall_min = 20;
+  int impl_gn_sw = 0, impl_gn_sw_min = 20;   // implicit_gas_newton_switch (window, min)
+  Real impl_gn_nsw = 0.0;       // solves switched off the gas Newton update
   // implicit_resid_fatal (read only when named; 0 = off): stop the run when a Picard
   // solve ends non-converged with resid above this value or non-finite (a DIVERGED
   // solve, not the usual 1e-7 stall), before its state is written back and spreads

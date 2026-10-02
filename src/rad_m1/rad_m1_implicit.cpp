@@ -1292,6 +1292,28 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //   resid rose (r_k > r_{k-1}) at least twice inside that window
   // The last condition keeps a slowly but monotonically contracting solve iterating.
   // resid is the global (MPI_MAX) value, so every rank takes the same decision.
+  // implicit_gas_newton_switch = W (he_estall_1003; read only when named, 0 = off,
+  // bitwise): under implicit_gas_newton, a solve whose residual is detected stalled by
+  // the test above (window W, from pass implicit_gas_newton_switch_min, default 20,
+  // factor implicit_stall_fac) drops the gas Newton update (and the opac_newton face
+  // terms, which need it) for the rest of the solve: the gas T is then the bracketed
+  // root of the exact backward-Euler gas equation with kappa_P, kappa_E at the trial T
+  // (the implicit_tsolve_opac root find) in every remaining pass.  Diagnosis
+  // (he_estall_1003): in hot (2-3 MK), low-density void cells the Newton row omits
+  // d kappa_P/dT, the lagged-opacity iteration has slope < -1 and the gas T flips
+  // between two values every pass; the root find with kappa(T) has no such cycle.
+  if (pin->DoesParameterExist("rad_m1","implicit_gas_newton_switch")) {
+    impl_gn_sw = pin->GetInteger("rad_m1","implicit_gas_newton_switch");
+    impl_gn_sw_min = pin->GetOrAddInteger("rad_m1","implicit_gas_newton_switch_min",20);
+    if (impl_gn_sw < 0 || impl_gn_sw > 64 || impl_gn_sw_min < 1) {
+      ImplFatal("<rad_m1>/implicit_gas_newton_switch must lie in [0,64] and "
+                "implicit_gas_newton_switch_min >= 1");
+    }
+    if (impl_gn_sw > 0 && impl_gn_sw < 3) {
+      ImplFatal("<rad_m1>/implicit_gas_newton_switch must be 0 or >= 3");
+    }
+    impl_stall_fac = pin->GetOrAddReal("rad_m1","implicit_stall_fac",0.5);
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_stall_accept")) {
     impl_stall_acc = pin->GetReal("rad_m1","implicit_stall_accept");
     if (!(impl_stall_acc >= 0.0)) {
@@ -6156,6 +6178,11 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_gn_sw > 0) {
+    std::cout << "<rad_m1> implicit_gas_newton_switch=" << impl_gn_sw << " (min pass "
+              << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
+              << std::endl;
+  }
   if (impl_stall_acc > 0.0) {
     std::cout << "<rad_m1> implicit_stall_accept=" << impl_stall_acc << " (window "
               << impl_stall_win << ", min pass " << impl_stall_min << ", fac "
@@ -7902,7 +7929,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   bool stalled = false;
   const bool strc = (impl_strace > 0) && (impl_strace_n < impl_strace_max);
   int sloc = -1, sloc2 = -1;
+  // implicit_gas_newton_switch: set once this solve's residual is detected stalled
+  bool gnsw = false;
+  const bool gsd = (impl_gn_sw > 0) && gnewt;
+  if (gsd && !stl) {rhist.reserve(impl_maxit);}
   for (it = 0; it < impl_maxit && !converged; ++it) {
+    // the gas Newton update of THIS pass (off after a detected stall, see above)
+    const bool gnw = gnewt && !gnsw;
     int nin = -1;
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
@@ -8475,7 +8508,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // nvcc forbids generic (auto) extended lambdas, so the tag-dependent
       // helper and its kernel are the function template M1ImplSrcLaunch
       // (above); srb_ctx is what the helper captured, by value.
-      auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnewt,
+      auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
                                      ks, ke, js, je, is, ie, impl_src_stable);
       if (srid) {
@@ -8533,8 +8566,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // not exchanged for ktd): there the term is omitted and the face stays Picard.
     // On sp the rows are rebuilt below with the sp areas; the same term goes there
     // (opns).
-    const bool opnr = opn && gnewt && !sph_geom;
-    const bool opns = opn && gnewt && sph_geom;
+    const bool opnr = opn && gnw && !sph_geom;
+    const bool opns = opn && gnw && sph_geom;
     // DEBUG dbg_t2_admiss: the sp E row by term, kept for T2AdmissDebug
     const bool dbgr = (t2_dbg_adm > 0) && sph_geom;
     if (dbgr && dbrow.extent_int(0) < nmb1 + 1) {
@@ -9252,10 +9285,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // nvcc forbids generic (auto) extended lambdas, so the tag-dependent
       // helper and its kernel are the function template M1ImplTsolveLaunch
       // (above); tsb_ctx is what the helper captured, by value.
-      auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efl, eos, escale, gasx, gnewt,
+      auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efl, eos, escale, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, plog, uh, usec,
                                      nmb1, ks, ke, js, je, is, ie,
-                                     impl_tsolve_opac && (it >= impl_tsolve_opac_start),
+                                     (impl_tsolve_opac && (it >= impl_tsolve_opac_start))
+                                     || gnsw,
                                      M1OpacFn{opacity_type, otab, kappa_p, kappa_e,
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b});
@@ -9535,11 +9569,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
-    if (stl) {
+    if (stl || gsd) {
       rhist.push_back(resid);
-      const int nw = impl_stall_win;
-      if (!converged && (it + 1 >= impl_stall_min) && (it + 1 > nw) &&
-          (resid < impl_stall_acc)) {
+      // the stall test: from pass min on, the minimum of the last nw passes is not below
+      // fac x the minimum before them, and resid rose at least twice inside the window
+      auto stall_test = [&](int nw, int pmin, Real fac) {
+        if (converged || (it + 1 < pmin) || (it + 1 <= nw)) {return false;}
         Real mwin = 1.0e300, mpre = 1.0e300;
         int nup = 0;
         for (int q = 0; q <= it; ++q) {
@@ -9550,10 +9585,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             mpre = std::min(mpre, rhist[q]);
           }
         }
-        if (mwin >= impl_stall_fac*mpre && nup >= 2) {
-          converged = true;
-          stalled = true;
-        }
+        return (mwin >= fac*mpre) && (nup >= 2);
+      };
+      if (gsd && !gnsw && stall_test(impl_gn_sw, impl_gn_sw_min, impl_stall_fac)) {
+        gnsw = true;
+        impl_gn_nsw += 1.0;
+        // the history restarts: the switched iteration is judged on its own passes
+        rhist.clear();
+        for (int q = 0; q <= it; ++q) {rhist.push_back(resid);}
+      } else if (stl && (resid < impl_stall_acc) &&
+                 stall_test(impl_stall_win, impl_stall_min, impl_stall_fac)) {
+        converged = true;
+        stalled = true;
       }
     }
     rprev = resid;
