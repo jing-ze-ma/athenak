@@ -379,11 +379,16 @@ void ParameterInput::AddParameter(InputBlock *pb, std::string name, std::string 
 }
 
 //----------------------------------------------------------------------------------------
-//! void ParameterInput::ModifyFromCmdline(int argc, char *argv[])
+//! void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent)
 //  \brief parse commandline for changes to input parameters
 // Note this function is very forgiving (no warnings!) if there is an error in format
+// add_absent (main.cpp: true on a restart): a block/name=value whose NAME is absent
+// from an existing block is added, as if the input file had it (a restart's embedded
+// input predates every key read only when named), with a note on rank 0.  Without it
+// (fresh start) an unknown name stays FATAL (typo guard).  An unknown BLOCK is FATAL
+// either way.  Keys that exist are replaced exactly as before.
 
-void ParameterInput::ModifyFromCmdline(int argc, char *argv[]) {
+void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) {
   std::string input_text, block,name, value;
   InputBlock *pb;
   InputLine *pl;
@@ -412,6 +417,15 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[]) {
 
     // get pointer to node with same parameter name in linked list of InputLines
     pl = pb->GetPtrToLine(name);
+    if (pl == nullptr && add_absent) {
+      AddParameter(pb, name, value, "# added on the command line of a restart");
+      if (global_variable::my_rank == 0) {
+        std::cout << "### NOTE: parameter '" << name << "' in block '" << block
+                  << "' is absent from the restart's input: added from the command "
+                  << "line (= " << value << ")" << std::endl;
+      }
+      continue;
+    }
     if (pl == nullptr) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "Parameter '" << name << "' in block '" << block

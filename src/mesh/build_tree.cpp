@@ -460,6 +460,34 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
   }
 #endif
 
+  // The restart's grid layout wins (the memcpy below overwrites what the Mesh
+  // constructor built from the input), so an input or command-line change of the
+  // cell counts or ghost depth would be silently ignored while the changed value is
+  // written into every later restart.  Refuse it.
+  {
+    RegionIndcs fm, fb;
+    const IOWrapperSizeT o = 2*sizeof(int) + sizeof(RegionSize);
+    std::memcpy(&fm, &(headerdata[o]), sizeof(RegionIndcs));
+    std::memcpy(&fb, &(headerdata[o + sizeof(RegionIndcs)]), sizeof(RegionIndcs));
+    auto same = [](const RegionIndcs &a, const RegionIndcs &b) {
+      return a.ng == b.ng && a.nx1 == b.nx1 && a.nx2 == b.nx2 && a.nx3 == b.nx3;
+    };
+    if (!same(fm, mesh_indcs) || !same(fb, mb_indcs)) {
+      if (global_variable::my_rank == 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mesh>/<meshblock> nx1/nx2/nx3/nghost differ from the "
+                  << "restart file: mesh " << fm.nx1 << "x" << fm.nx2 << "x" << fm.nx3
+                  << " ng " << fm.ng << ", meshblock " << fb.nx1 << "x" << fb.nx2 << "x"
+                  << fb.nx3 << " in the file; now mesh " << mesh_indcs.nx1 << "x"
+                  << mesh_indcs.nx2 << "x" << mesh_indcs.nx3 << " ng " << mesh_indcs.ng
+                  << ", meshblock " << mb_indcs.nx1 << "x" << mb_indcs.nx2 << "x"
+                  << mb_indcs.nx3 << ".  A restart cannot change the grid layout."
+                  << std::endl;
+      }
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
   // Now copy mesh data read from restart file into Mesh variables. Order of variables
   // set by Write()'s in restart.cpp
   // Note this overwrites size and indices initialized in Mesh constructor.

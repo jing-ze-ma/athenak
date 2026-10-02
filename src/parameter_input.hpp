@@ -77,7 +77,7 @@ class ParameterInput {
   void CheckBlockNames();
   void LoadFromStream(std::istream &is);
   void LoadFromFile(IOWrapper &input, bool single_file_per_rank=false);
-  void ModifyFromCmdline(int argc, char *argv[]);
+  void ModifyFromCmdline(int argc, char *argv[], bool add_absent = false);
   void ParameterDump(std::ostream& os);
   bool DoesBlockExist(std::string name);
   bool DoesParameterExist(std::string block, std::string name);

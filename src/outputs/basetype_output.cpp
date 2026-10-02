@@ -202,6 +202,34 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
   }
+  // derived curls/currents/curvatures difference over the LOGICAL Cartesian block
+  // spacing (derived_variables.cpp): on a spherical-polar or cubed-sphere mesh they are
+  // not the quantity named (mhd_divb has its own finite-volume form there).
+  {
+    static const char *cart_only[] = {"hydro_wz", "mhd_wz", "hydro_w2", "mhd_w2",
+        "mhd_jz", "mhd_j2", "mhd_curv", "mhd_curv_alt", "mhd_jcon", "mhd_k_jxb",
+        "mhd_curv_perp", "mhd_dynamo_ks"};
+    if (pm->use_spherical_polar || pm->use_cubed_sphere) {
+      for (const char *v : cart_only) {
+        if (out_params.variable.compare(v) == 0) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "Output variable '" << out_params.variable
+                    << "' in <output> block '" << out_params.block_name << "' uses the "
+                    << "logical Cartesian dx and has no curvilinear form: not supported "
+                    << "with mesh/use_spherical_polar or mesh/use_cubed_sphere"
+                    << std::endl;
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+  }
+  if (ivar==162 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output of the M1 face fluxes requested in <output> block '"
+       << out_params.block_name << "' but no RadiationM1 object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==160 && (pm->pmb_pack->pgrav == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of gravity potential requested in <output> block '"
@@ -676,6 +704,23 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_d11",1,&(derived_var));
       outvars.emplace_back("m1_d22",2,&(derived_var));
       outvars.emplace_back("m1_d33",3,&(derived_var));
+      out_params.n_derived += 4;
+    }
+
+    // the face-normal comoving fluxes the implicit transport carries (f0x1/f0x2/f0x3),
+    // stored at the cell of their INNER face: m1_fx1 = F0 on x1 face i, m1_fx1o on
+    // face i+1 (so the outer boundary face is there too), m1_fx2/m1_fx3 on the inner
+    // x2/x3 faces.  sum(A_x1f m1_fx1) over a shell is the code's luminosity through
+    // that face.  The cell flux m1_f1 is a DERIVED state (face mean + advective term,
+    // then limited to |F| <= c E) and is not the transported flux.  Zero where the
+    // array does not exist (explicit transport; x2/x3 on a 1-D column).  Derived; not
+    // part of variable = m1.
+    if (variable.compare("m1_face") == 0) {
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_fx1",0,&(derived_var));
+      outvars.emplace_back("m1_fx1o",1,&(derived_var));
+      outvars.emplace_back("m1_fx2",2,&(derived_var));
+      outvars.emplace_back("m1_fx3",3,&(derived_var));
       out_params.n_derived += 4;
     }
 

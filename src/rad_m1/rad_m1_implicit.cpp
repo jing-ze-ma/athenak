@@ -7593,6 +7593,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool ctri = ctr_init;
     const Real ctc = impl_ctrelax;
     const bool ctsph = sph_geom;
+    // ...and on a STRETCHED spherical-polar x1 the logical mb_size dx1 is the mean dr:
+    // the cell optical depth takes the cell's own width xx1f(i+1) - xx1f(i) there
+    // (uniform grids keep the logical dx1, bitwise)
+    const bool ctstr = sph_geom && (pmy_pack->pmesh->use_grid_stretch_r ||
+                                    pmy_pack->pmesh->use_grid_stretch_r_poly);
+    auto ctx1f = pmy_pack->pcoord->xx1f;
     auto cm_ = ctr_mem;
     // DIAGNOSTIC dbg_tensor (VET scaffolding): tkeep = read the stored tensor; ttau =
     // rebuild it from the optical depth (first pass of every step); ttilt = rotate the
@@ -7770,6 +7776,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (ctr && !edd && !vetsc && !tkeep && !tauc) {
           if (ctri) {
             Real dx1 = mbsize.d_view(m).dx1;
+            if (ctstr) {dx1 = ctx1f(m,i+1) - ctx1f(m,i);}
             Real kt = iw_(m,M1_IW_KT,k,j,i);
             Real tc = kt*dx1;
             if (!ctsph) {
