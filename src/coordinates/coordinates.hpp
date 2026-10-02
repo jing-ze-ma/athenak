@@ -33,16 +33,18 @@ enum class ExcisionScheme {
 //! inside kernels.
 
 struct CoordData {
-  // following data is only used in GR calculations to compute metric
-  bool is_minkowski;               // flag to specify Minkowski (flat) space
-  Real bh_spin;                    // needed for GR metric
-  bool bh_excise;                  // flag to specify excision
-  Real rexcise;                    // excision radius (SKS)
-  Real dexcise;                    // rest-mass density inside excised region
-  Real pexcise;                    // pressure inside excised region
-  Real flux_excise_r;              // reduce to first-order inside this radius
-  ExcisionScheme excision_scheme;  // excision method
-  Real excise_lapse;               // if excision_scheme = lapse, excise under this lapse
+  // following data is only used in GR calculations to compute metric.  Coordinates sets
+  // them only for GR runs, but kernels copy the whole struct in every run, so they need
+  // defaults: an uninitialized bool is undefined behaviour (UBSan, DeltaAI 10-01)
+  bool is_minkowski = false;                            // flag to specify Minkowski space
+  Real bh_spin = 0.0;                                   // needed for GR metric
+  bool bh_excise = false;                               // flag to specify excision
+  Real rexcise = 0.0;                                   // excision radius (SKS)
+  Real dexcise = 0.0;                                   // density inside excised region
+  Real pexcise = 0.0;                                   // pressure inside excised region
+  Real flux_excise_r = 0.0;                             // first-order inside this radius
+  ExcisionScheme excision_scheme = ExcisionScheme::fixed;  // excision method
+  Real excise_lapse = 0.0;                // if excision_scheme = lapse, excise under it
 };
 
 //----------------------------------------------------------------------------------------
