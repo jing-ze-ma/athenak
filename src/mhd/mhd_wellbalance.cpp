@@ -230,6 +230,7 @@ void MHD::BuildWBCache(const int jl, const int ju, const int kl, const int ku) {
   auto &wt = wtemp;
   auto &c = wbq0;
   const bool wbgi = wb_guard_ideal;
+  const bool wbci = wb_clamp_ideal;
   par_for("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (gen) {
@@ -255,7 +256,7 @@ void MHD::BuildWBCache(const int jl, const int ju, const int kl, const int ku) {
                 w0_(m,IDN,k,j,i-1), w0_(m,IDN,k,j,i), w0_(m,IDN,k,j,i+1),
                 w0_(m,IEN,k,j,i-1), w0_(m,IEN,k,j,i), w0_(m,IEN,k,j,i+1),
                 phicc(m,k,j,i-1), phi(m,k,j,i), phicc(m,k,j,i), phi(m,k,j,i+1),
-                phicc(m,k,j,i+1), a, b, cc, d, e);
+                phicc(m,k,j,i+1), a, b, cc, d, e, -1.0, -1.0, -1.0, wbci);
         c(m,5*var,k,j,i) = a; c(m,5*var+1,k,j,i) = b; c(m,5*var+2,k,j,i) = cc;
         c(m,5*var+3,k,j,i) = d; c(m,5*var+4,k,j,i) = e;
       }

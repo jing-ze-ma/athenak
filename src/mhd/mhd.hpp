@@ -233,6 +233,7 @@ class MHD {
   DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
   bool wb_guard_ideal = false;  // <mhd>/wb_guard_ideal (mhd.cpp)
+  bool wb_clamp_ideal = false;  // <mhd>/wb_clamp_ideal (mhd.cpp)
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
   // Has wbq0 ever been filled in this process?  With wb_cache_every > 1 the rebuild is
   // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart
@@ -1099,7 +1100,7 @@ class MHD {
                 const Real &phi_iph, const Real &phi_ip1,
                 Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1,
                 const Real t_im1c = -1.0, const Real t_ic = -1.0,
-                const Real t_ip1c = -1.0) {
+                const Real t_ip1c = -1.0, const bool clamp_dt = false) {
       if (eos.IsGeneral()) {
         WBState s_im1, s_imh, s_i, s_iph, s_ip1;
         WBBackgroundStencil(eos, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
@@ -1121,7 +1122,7 @@ class MHD {
         int n = (var == WBVar::wb_dens) ? IDN : IEN;
         getWBerho(n, eos.gamma, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
                   phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
-                  q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+                  q0_im1, q0_imh, q0_i, q0_iph, q0_ip1, clamp_dt);
         if (var == WBVar::wb_pres) {
           Real gm1 = eos.gamma - 1.0;
           q0_im1 *= gm1; q0_imh *= gm1; q0_i *= gm1; q0_iph *= gm1; q0_ip1 *= gm1;
@@ -1150,7 +1151,8 @@ class MHD {
                 const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
                 const Real &e_im1, const Real &e_i, const Real &e_ip1,
                 const Real &phi_im1, const Real &phi_imh, const Real &phi_i, const Real &phi_iph, const Real &phi_ip1,
-                Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1) {
+                Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1,
+                const bool clamp_dt = false) {
       const auto wb_option_ = wb_option;
       int wb_option_num;
       Real igm1 = 1.0/(gamma-1.0);
@@ -1193,11 +1195,18 @@ class MHD {
             const Real b = (fabs(dphis) > 0.0) ?
                 gm1_*(e_ip1/rho_ip1 - e_im1/rho_im1)/dphis : 0.0;
             const Real t_i = gm1_*e_i/rho_i;
+            // clamp_dt (<mhd>/wb_clamp_ideal, x1 cache only): BOUND THE TEMPERATURE
+            // EXTRAPOLATION as the general-EOS walk does (wb_background.hpp): limit the
+            // DECREASE of T over a segment to half the starting temperature, so a small
+            // positive t1 cannot overflow pow(t1/t0, -(1+b)/b) across a steep T jump (BSG
+            // arm 1, 10-02); the branch degrades toward its isothermal member instead.
+            // Where the clamp does not bite, be IS b bit for bit.
             auto step = [&](const Real d0, const Real t0, const Real dphi,
                             Real &d1, Real &t1) {
-              t1 = t0 + b*dphi;
-              if (fabs(b) > 1.0e-10 && t1 > 0.0) {
-                d1 = d0*pow(t1/t0, -(1.0 + b)/b);
+              const Real be = (clamp_dt && b*dphi < -0.5*t0) ? (-0.5*t0/dphi) : b;
+              t1 = t0 + be*dphi;
+              if (fabs(be) > 1.0e-10 && t1 > 0.0) {
+                d1 = d0*pow(t1/t0, -(1.0 + be)/be);
               } else {
                 t1 = t0;
                 d1 = d0*exp(-dphi/t0);
