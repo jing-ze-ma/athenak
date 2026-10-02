@@ -232,6 +232,7 @@ class MHD {
   DvceArray4D<Real> phicc_wb;    // cell-centered potential seen by the x1 WB scheme
   DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
+  bool wb_guard_ideal = false;  // <mhd>/wb_guard_ideal: WBGuard on the ideal-gas cache
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
   // Has wbq0 ever been filled in this process?  With wb_cache_every > 1 the rebuild is
   // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart

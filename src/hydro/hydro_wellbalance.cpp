@@ -295,6 +295,7 @@ void Hydro::BuildWBCache(const int jl, const int ju, const int kl, const int ku)
   auto &phi = phi_wb_x1f;
   auto &wt = wtemp;
   auto &c = wbq0;
+  const bool wbgi = wb_guard_ideal;
   par_for("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (gen) {
@@ -326,6 +327,22 @@ void Hydro::BuildWBCache(const int jl, const int ju, const int kl, const int ku)
       }
       const Real gm1 = eos.gamma - 1.0;
       for (int q=0; q<5; ++q) c(m,10+q,k,j,i) = gm1*c(m,5+q,k,j,i);
+      // hydro/wb_guard_ideal (default false): the general-EOS walk's WBGuard for the
+      // closed forms too.  The polytropic step d0 (T1/T0)^(-(1+b)/b) overflows when T1
+      // heads for zero (steep T jump, e.g. floor gas falling onto a photosphere), the
+      // deviation w0 - bg is then -inf and the reconstructed interface energy NaN
+      // (BSG arm 1, 10-02).  A non-finite, non-positive or absurd (> 6 decades) walked
+      // state flattens the background to the anchor: plain PLM in that cell.
+      if (wbgi) {
+        WBState s[5];
+        for (int q=0; q<5; ++q) {
+          s[q].d = c(m,q,k,j,i); s[q].e = c(m,5+q,k,j,i); s[q].p = c(m,10+q,k,j,i);
+        }
+        WBGuard(s[0], s[1], s[2], s[3], s[4]);
+        for (int q=0; q<5; ++q) {
+          c(m,q,k,j,i) = s[q].d; c(m,5+q,k,j,i) = s[q].e; c(m,10+q,k,j,i) = s[q].p;
+        }
+      }
     }
   });
   return;
