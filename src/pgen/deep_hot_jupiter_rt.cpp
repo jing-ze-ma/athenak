@@ -1372,6 +1372,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // solution, refresh, restart state and face-5 Newton defaults
   two_stream_rt::ck_vef_on = (two_stream_rt::ck_sph_face == 5 ||
                               two_stream_rt::ck_sph_face == 6);
+  // problem/ck_wall_flux_exact (wallfix-1002, see two_stream_rt::ck_wall_flux_exact):
+  // the face 5 / 6 wall delivers sigma T_int^4 exactly (was 1.0718x).  Default true on a
+  // fresh run; a restart whose input lacks the key keeps the old wall (one line).
+  {const bool wnamed = pin->DoesParameterExist("problem","ck_wall_flux_exact");
+  two_stream_rt::ck_wall_flux_exact =
+      pin->GetOrAddBoolean("problem","ck_wall_flux_exact",!restart);
+  if (restart && !wnamed && two_stream_rt::ck_vef_on && global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: restart input has no problem/ck_wall_flux_exact: "
+              << "keeping the old face-" << two_stream_rt::ck_sph_face << " wall "
+              << "(1.07x internal flux); set it true to switch" << std::endl;
+  }}
   // problem/ck_vef_every, ck_vef_ncore: the formal solution of ck_sph_face = 5.  With
   // face 5 the DEFAULTS of ck_vef_every (150), ck_impl_rowfb (true) and ck_impl_rsec (4)
   // are the measured cheapest accuracy-neutral setting (cksph_test_0930/PORT.md);
@@ -1512,7 +1523,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << two_stream_rt::ck_vef_every << ", ck_vef_sync = "
               << two_stream_rt::ck_vef_sync << ", ck_impl_rowfb = "
               << two_stream_rt::ck_impl_rowfb << ", ck_impl_rsec = "
-              << two_stream_rt::ck_impl_rsec << std::endl;
+              << two_stream_rt::ck_impl_rsec << ", ck_wall_flux_exact = "
+              << two_stream_rt::ck_wall_flux_exact << std::endl;
   }
   two_stream_rt::ck_impl_negpiv = pin->GetOrAddBoolean("problem","ck_impl_negpiv",false);
   two_stream_rt::ck_impl_jnet = pin->GetOrAddBoolean("problem","ck_impl_jnet",false);

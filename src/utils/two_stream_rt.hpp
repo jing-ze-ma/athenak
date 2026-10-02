@@ -1349,6 +1349,27 @@ inline int ck_sph_face = 0;
 // depth still from the ghost pressure).  The stellar beam is unchanged.  Chain kernel
 // only; refused with ck_impl_lin / ck_impl_jac_lin.
 inline int ck_sph_top = 0;
+// problem/ck_wall_flux_exact (wallfix-1002; default true on a fresh run, false on a
+// restart whose input lacks the key): the internal flux of the ck_sph_face = 5 / 6 wall.
+// The Marshak-type wall J + beta H = (B_cut + I_int)(1/2 + beta/4) with the pair at
+// mu = mu_eff = sqrt f gives u = R0 d + (B_cut + I_int)(1 + beta/2)/(1 + beta mu), so
+// the I_int part of the net flux 2 pi mu (u - d) is 2 pi mu (1 + beta/2)/(1 + beta mu)
+// I_int: 4 pi/(2 + sqrt 3) I_int = 1.0718 sigma T_int^4 for the deep field (beta = 2,
+// f = 1/3), against pi I_int = sigma T_int^4 at face 0 (f6default_1002 part B: measured
+// Etot_bot face 5/6 over face 0 1.07166).  On, I_int in the wall source is scaled by
+//   face 5 (chain kernel, rt_chain_ck_lin1p):  c = (1 + beta mu)/(2 mu (1 + beta/2)),
+//     exact for the actual beta and mu of the wall when nothing comes back from above
+//     (the condition under which face 0's I_int is exactly pi I_int too);
+//   face 6 (the ladder, rt_chain_ck_lin6):  c6 = beta (y_lo + y_w)/((2 + beta) y_lo),
+//     y_lo the driving-point admittance of the network above the wall node and y_w the
+//     wall's conductance: by the Thevenin split the I_int part of the wall current is
+//     r^2 c6 I_int (1/2 + beta/4)/beta y_lo/(y_lo + y_w) = r^2 I_int/4 EXACTLY, i.e.
+//     the wall flux carries pi I_int whatever the column; for a thick wall cell y_lo =
+//     beta mu y_w and c6 = c.
+// I_int does not enter any Jacobian row (the rows are dSrc/dB), so only the sources
+// change; the formal solution's bottom boundary stays I^+ = B_cut + I_int (isotropic,
+// as the exact reference).  false = bitwise the historical wall.
+inline bool ck_wall_flux_exact = false;
 // problem/ck_sph_face = 5 (PROTOTYPE): the VARIABLE EDDINGTON FACTOR form (Auer 1971;
 // Mihalas, Stellar Atmospheres, ch. 7): the moment equations
 //     d(A H)/dr = A kappa (B - J),   d(f q r^2 J)/dr = -q r^2 kappa H,
@@ -2734,6 +2755,7 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
   auto &vfs_g = std::get<70>(ctx_);          // ck_sph_face = 5: s = sqrt(3 f)
   auto &vfg_g = std::get<71>(ctx_);          // ... gamma per face, zeta at ie+2
   const bool vef = (fce == 5);
+  const bool wex = std::get<72>(ctx_);       // problem/ck_wall_flux_exact
   constexpr bool SPH = decltype(sph_tag)::value;
   constexpr bool BSP = decltype(bsp_tag)::value;
   constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
@@ -3470,7 +3492,10 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
               const Real mw = vfs_g(m,cv,icut,k,j)/SQRT3_VEF;
               Rc[cc] = static_cast<RtF>(-(1.0 - bw*mw)/(1.0 + bw*mw));
               vs0 = (1.0 + 0.5*bw)/(1.0 + bw*mw);
-              Hc[cc] = static_cast<RtF>((bcut + Iint_b)*vs0);
+              // ck_wall_flux_exact: I_int scaled so the wall's net flux is pi I_int
+              const Real iwb = wex ? Iint_b*(1.0 + bw*mw)/(2.0*mw*(1.0 + 0.5*bw))
+                                   : Iint_b;
+              Hc[cc] = static_cast<RtF>((bcut + iwb)*vs0);
             }
             if constexpr (JAC) {
               // Sc_cut = B_cut + Iint: window (B_cut-2, B_cut-1, B_cut)
@@ -7533,6 +7558,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // Jacobian kernels)
         const bool vefl_ = vefa_;
         const bool vef6_ = (ck_sph_face == 6);
+        const bool wex_ = ck_wall_flux_exact;   // see ck_wall_flux_exact
         auto vfs_g = vfs_;
         auto vfg_g = vfg_;
         auto ck_chain_ctx = std::forward_as_tuple(ACC, AFC, albedo, ap, Bb_g, bface_on,
@@ -7548,7 +7574,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                   omega, pb_g, pfid, pfl0, Qb_g, rhoN,
                                                   Src_g, T_g, tide, Tint, Tint4, wg, X1F,
                                                   x1v_, xP_g, xT_g, dil_, tpm_,
-                                                  vfs_, vfg_);
+                                                  vfs_, vfg_, wex_);
         auto launch_ck_chain = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
                                    auto cch_tag, auto frm_tag, auto fop_tag,
                                    auto jac_tag) {
@@ -8309,7 +8335,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             for (int i=icut; i<=ie; ++i) {
               Real klo;
               if (i == icut) {
-                klo = (Scr[0][i] + P(3,c1,icut)*(Bb_g(m,b,icut,k,j) + lC_g(1,c0)))
+                // ck_wall_flux_exact: I_int scaled by c6 = beta (y_lo + y_w)/((2 +
+                // beta) y_lo), so the wall current's I_int part is r^2 I_int/4
+                Real iw = lC_g(1,c0);
+                if (wex_) {
+                  const Real bwl = vfg_g(m,pp,icut-1,k,j);
+                  iw *= bwl*(P(0,c1,icut) + P(4,c1,icut))/((2.0 + bwl)*P(0,c1,icut));
+                }
+                klo = (Scr[0][i] + P(3,c1,icut)*(Bb_g(m,b,icut,k,j) + iw))
                       /(P(0,c1,icut) + P(4,c1,icut));
               } else {
                 klo = P(4,c0,i)*(khi + P(5,c0,i)*Scr[0][i]);
@@ -8377,7 +8410,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real bw = vfs_g(m,pp,icut,k,j)/SQRT3_VEF;
               const Real bwb = vfg_g(m,pp,icut-1,k,j);
               const Real vs0 = (1.0 + 0.5*bwb)/(1.0 + bwb*bw);
-              for (int q=0; q<2; ++q) ss[q] = (bcut + lC_g(1,c0+q))*vs0;
+              // ck_wall_flux_exact: I_int scaled so the wall's net flux is pi I_int
+              const Real cwx = wex_ ? (1.0 + bwb*bw)/(2.0*bw*(1.0 + 0.5*bwb)) : 1.0;
+              for (int q=0; q<2; ++q) ss[q] = (bcut + lC_g(1,c0+q)*cwx)*vs0;
             }
             Real bown = bcut;
             // ck-next: every load of cell i+1 is issued before cell i is worked (the
