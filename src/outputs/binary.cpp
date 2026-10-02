@@ -22,6 +22,7 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "outputs.hpp"
 
@@ -73,6 +74,20 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
           + "." + out_params.file_id + number + ".bin";
   }
 
+  // STRETCHED GRIDS (mesh/use_grid_stretch_r, _r_poly, _theta on a spherical-polar or
+  // cubed-sphere mesh): the per-MeshBlock x1min..x3max below are the LOGICAL (uniform)
+  // extents, so a reader that rebuilds the cell positions from them (or from <mesh>
+  // x1min/x1max/nx1) gets the wrong radii.  On those grids only, the file is written as
+  // version 1.2: one extra preheader line "coordinate arrays=1" and, after the six
+  // extents of every MeshBlock, the true face and centre positions of the OUTPUT range
+  // taken from Coordinates (x1f[nout1+1], x1v[nout1], x2f[nout2+1], x2v[nout2],
+  // x3f[nout3+1], x3v[nout3], all of size "size of location").  x?v are the code's own
+  // cell centres (the radial VOLUME CENTROID on both spherical grids, not the midpoint).
+  // Every other grid keeps version 1.1 byte for byte.
+  const bool coord_arrays = (pm->use_spherical_polar || pm->use_cubed_sphere) &&
+      (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ||
+       pm->use_grid_stretch_theta);
+
   IOWrapper binfile;
   std::size_t header_offset=0;
   binfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
@@ -84,14 +99,17 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // 4. Header (input file information)
   {
     std::stringstream msg;
-    msg << "Athena binary output version=1.1" << std::endl
+    msg << "Athena binary output version=" << (coord_arrays ? "1.2" : "1.1") << std::endl
         // preheader size includes "size of preheader" line up to "number of variables"
-        << "  size of preheader=5" << std::endl
+        << "  size of preheader=" << (coord_arrays ? 6 : 5) << std::endl
         << "  time=" << pm->time << std::endl
         << "  cycle=" << pm->ncycle << std::endl
         << "  size of location=" << sizeof(Real) << std::endl
-        << "  size of variable=" << sizeof(float) << std::endl
-        << "  number of variables=" << outvars.size() << std::endl
+        << "  size of variable=" << sizeof(float) << std::endl;
+    if (coord_arrays) {
+      msg << "  coordinate arrays=1" << std::endl;
+    }
+    msg << "  number of variables=" << outvars.size() << std::endl
         << "  variables:  ";
     for (int n=0; n<outvars.size(); n++) {
       msg << outvars[n].label.c_str() << "  ";
@@ -125,17 +143,31 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   int nout_vars = outvars.size();
   int nout_mbs = outmbs.size();
   int cells = 0;
+  int ncoord = 0;  // number of Reals in the optional coordinate record (version 1.2)
   if (nout_mbs > 0) {
     int nout1 = outmbs[0].oie - outmbs[0].ois + 1;
     int nout2 = outmbs[0].oje - outmbs[0].ojs + 1;
     int nout3 = outmbs[0].oke - outmbs[0].oks + 1;
     cells = nout1*nout2*nout3;
+    if (coord_arrays) {ncoord = (2*nout1 + 1) + (2*nout2 + 1) + (2*nout3 + 1);}
   }
 
   // ois, oie, ojs, oje, oks, oke + il1, il2, il3, level +
-  // x1min, x1max, x2min, x2max, x3min, x3max + data
+  // x1min, x1max, x2min, x2max, x3min, x3max + [coordinate arrays] + data
   std::size_t data_size = 10*sizeof(int32_t) + 6*sizeof(Real)
-                        + (cells*nout_vars)*sizeof(float);
+                        + ncoord*sizeof(Real) + (cells*nout_vars)*sizeof(float);
+
+  // host copies of the 1-D coordinate arrays (only on stretched grids)
+  HostArray2D<Real> hx1v, hx1f, hx2v, hx2f, hx3v, hx3f;
+  if (coord_arrays) {
+    auto *pc = pm->pmb_pack->pcoord;
+    hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pc->x1v);
+    hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pc->xx1f);
+    hx2v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pc->x2v);
+    hx2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pc->xx2f);
+    hx3v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pc->x3v);
+    hx3f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pc->xx3f);
+  }
 
   int ns_mbs = pm->gids_eachrank[global_variable::my_rank];
   int nb_mbs = pm->nmb_eachrank[global_variable::my_rank];
@@ -210,6 +242,27 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     xv = outmbs[m].x3max;
     memcpy(pdata,&(xv),sizeof(xv));
     pdata+=sizeof(xv);
+
+    // version 1.2: true face and centre positions of the output range
+    if (coord_arrays) {
+      int lm = outmbs[m].mb_gid - pm->gids_eachrank[global_variable::my_rank];
+      auto put = [&](const HostArray2D<Real> &f, const HostArray2D<Real> &v,
+                     const int s, const int e) {
+        for (int i=s; i<=e+1; ++i) {
+          xv = f(lm,i);
+          memcpy(pdata,&(xv),sizeof(xv));
+          pdata+=sizeof(xv);
+        }
+        for (int i=s; i<=e; ++i) {
+          xv = v(lm,i);
+          memcpy(pdata,&(xv),sizeof(xv));
+          pdata+=sizeof(xv);
+        }
+      };
+      put(hx1f, hx1v, ois, oie);
+      put(hx2f, hx2v, ojs, oje);
+      put(hx3f, hx3v, oks, oke);
+    }
 
     // output variables
     float tmp_data;

@@ -21,10 +21,12 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 #include <limits> // numeric_limits<>
 
 #include "athena.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/grid_stretch.hpp"
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "hydro/hydro.hpp"
@@ -89,6 +91,15 @@ void MeshVTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   int ncoord2 = (nout2 > 1)? nout2+1 : nout2;
   int ncoord3 = (nout3 > 1)? nout3+1 : nout3;
 
+  // STRETCHED GRIDS (mesh/use_grid_stretch_r, _r_poly, _theta on a spherical-polar or
+  // cubed-sphere mesh): ORIGIN/SPACING can only describe the uniform LOGICAL grid, so on
+  // those grids the file is a RECTILINEAR_GRID whose X/Y/Z_COORDINATES are the true
+  // (stretched) face positions, mapped exactly as Coordinates maps them.  Every other
+  // grid keeps STRUCTURED_POINTS byte for byte.
+  const bool coord_arrays = (pm->use_spherical_polar || pm->use_cubed_sphere) &&
+      (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ||
+       pm->use_grid_stretch_theta);
+
   // Write parts 1-4: Create string with header text.
   std::stringstream msg;
   msg << "# vtk DataFile Version 2.0" << std::endl
@@ -98,7 +109,8 @@ void MeshVTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       << "  cycle=" << pm->ncycle
       << "  variables=" << out_params.variable
       << std::endl << "BINARY" << std::endl
-      << "DATASET STRUCTURED_POINTS" << std::endl
+      << (coord_arrays ? "DATASET RECTILINEAR_GRID" : "DATASET STRUCTURED_POINTS")
+      << std::endl
       << "DIMENSIONS " << ncoord1 << " " << ncoord2 << " " << ncoord3 << std::endl;
 
   // Specify uniform Cartesian mesh with grid minima and spacings
@@ -125,9 +137,40 @@ void MeshVTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     x3min -= (indcs.ng)*dx3;
   }
   msg.seekp(0, std::ios_base::end);
-  msg << std::scientific << std::setprecision(std::numeric_limits<Real>::max_digits10 - 1)
-      << "ORIGIN " << x1min << " " << x2min << " " << x3min << " " <<  std::endl
-      << "SPACING " << dx1  << " " << dx2   << " " << dx3   << " " <<  std::endl;
+  if (!coord_arrays) {
+    msg << std::scientific
+        << std::setprecision(std::numeric_limits<Real>::max_digits10 - 1)
+        << "ORIGIN " << x1min << " " << x2min << " " << x3min << " " <<  std::endl
+        << "SPACING " << dx1  << " " << dx2   << " " << dx3   << " " <<  std::endl;
+  } else {
+    // face i of the logical grid is xmin + i*dx (as ORIGIN/SPACING above), then mapped
+    const Real rmin = pm->mesh_size.x1min, rmax = pm->mesh_size.x1max;
+    Real cpoly[NSTRETCH_R_POLY];
+    for (int n=0; n<NSTRETCH_R_POLY; ++n) {cpoly[n] = pm->fStretchRPoly[n];}
+    const Real fstr_r = pm->use_grid_stretch_r ? pm->fStretchR : 0.0;
+    const bool str_th = pm->use_spherical_polar && pm->use_grid_stretch_theta;
+    const char *lab[3] = {"X_COORDINATES ", "Y_COORDINATES ", "Z_COORDINATES "};
+    const int nc[3] = {ncoord1, ncoord2, ncoord3};
+    const Real x0[3] = {x1min, x2min, x3min};
+    const Real dx[3] = {dx1, dx2, dx3};
+    for (int d=0; d<3; ++d) {
+      msg << lab[d] << nc[d] << " float" << std::endl;
+      std::vector<float> c(nc[d]);
+      for (int i=0; i<nc[d]; ++i) {
+        Real x = x0[d] + i*dx[d];
+        if (d == 0) {
+          ApplyRStretch(pm->use_grid_stretch_r, fstr_r, pm->use_grid_stretch_r_poly,
+                        cpoly, rmin, rmax, x);
+        } else if (d == 1 && str_th) {
+          StretchTheta(pm->fStretchTheta, x);
+        }
+        c[i] = static_cast<float>(x);
+        if (!big_end) {Swap4Bytes(&c[i]);}
+      }
+      msg.write(reinterpret_cast<const char*>(c.data()), nc[d]*sizeof(float));
+      msg << std::endl;
+    }
+  }
 
   // Write part 5: An arbitrary number of scalars and vectors can be written (every
   // element of the outvars vector), all in binary floats format
@@ -262,7 +305,8 @@ void MeshVTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         << std::endl << "Output file '" << fname << "' could not be opened" <<std::endl;
         exit(EXIT_FAILURE);
     }
-    std::fprintf(pfile,"%s",msg.str().c_str());
+    // fwrite, not fprintf("%s"): a RECTILINEAR_GRID header holds binary coordinates
+    std::fwrite(msg.str().data(), 1, msg.str().size(), pfile);
 
     // allocate 1D vector of floats used to convert and output entire 3D data
     float *data = new float[nout1*nout2*nout3];

@@ -78,6 +78,11 @@ The read_*(...) functions return a filedata dictionary-like object with
     filedata['mb_geometry'] = array with shape [n_mbs, 6]
         x1i,x2i,x3i,dx1,dx2,dx3 including cell-centered location of left-most
         cell and offsets between cells
+    filedata['mb_x1f'], ['mb_x1v'], ... ['mb_x3v'] = arrays [n_mbs, nout(+1)]
+        ONLY in version 1.2 files (stretched spherical-polar / cubed-sphere grids):
+        the code's true face / cell-centre positions of each MeshBlock's output range
+        (x1v = radial volume centroid).  mb_geometry is then the uniform LOGICAL
+        extent and must not be used to rebuild positions.
     filedata['mb_data'] = dict of arrays with shape [n_mbs, nx3, nx2, nx1]
         {'var1':var1_array, 'var2':var2_array, ...} dictionary of fluid data arrays
         for each variable in var_names
@@ -124,7 +129,7 @@ def read_binary(filename):
             + '(should be "Athena")'
         )
     version = code_header[-1].split(b"=")[-1]
-    if version != b"1.1":
+    if version not in (b"1.1", b"1.2"):
         raise TypeError(f"unsupported file format version {version.decode('utf-8')}")
 
     pheader_count = int(fp.readline().split(b"=")[-1])
@@ -136,6 +141,8 @@ def read_binary(filename):
     cycle = int(pheader["cycle"])
     locsizebytes = int(pheader["size of location"])
     varsizebytes = int(pheader["size of variable"])
+    # version 1.2 (stretched sp/cs grids): true face/centre positions per MeshBlock
+    coord_arrays = int(pheader.get("coordinate arrays", "0")) == 1
 
     nvars = int(fp.readline().split(b"=")[-1])
     var_list = [v.decode("utf-8") for v in fp.readline().split()[1:]]
@@ -196,6 +203,7 @@ def read_binary(filename):
     mb_logical = []
     mb_geometry = []
 
+    mb_coords = {key: [] for key in ("x1f", "x1v", "x2f", "x2v", "x3f", "x3v")}
     mb_data = {}
     for var in var_list:
         mb_data[var] = []
@@ -213,6 +221,15 @@ def read_binary(filename):
                 dtype=np.float64 if locfmt == "d" else np.float32,
             )
         )
+        if coord_arrays:
+            for d, nout in ((1, nx1_out), (2, nx2_out), (3, nx3_out)):
+                for key, n in ((f"x{d}f", nout + 1), (f"x{d}v", nout)):
+                    mb_coords[key].append(
+                        np.frombuffer(
+                            fp.read(n * locsizebytes),
+                            dtype=np.float64 if locfmt == "d" else np.float32,
+                        )
+                    )
 
         data = np.fromfile(
             fp,
@@ -255,6 +272,11 @@ def read_binary(filename):
     filedata["mb_logical"] = np.array(mb_logical)
     filedata["mb_geometry"] = np.array(mb_geometry)
     filedata["mb_data"] = mb_data
+    # version 1.2 only: per-MeshBlock face/centre positions of the output range (the
+    # code's Coordinates arrays; x1v is the radial volume centroid on sp/cs grids)
+    if coord_arrays:
+        for key, val in mb_coords.items():
+            filedata["mb_" + key] = np.array(val)
 
     return filedata
 
@@ -477,9 +499,15 @@ def read_all_ranks_binary(rank0_filename):
     combined_filedata["mb_geometry"] = []
     combined_filedata["mb_data"] = {var: [] for var in rank0_filedata["var_names"]}
 
+    coord_keys = [k for k in rank0_filedata if k in _MB_COORD_KEYS]
+    for key in coord_keys:
+        combined_filedata[key] = []
+
     # Read data from all ranks
     for rank_filename in rank_files:
         rank_filedata = read_binary(rank_filename)
+        for key in coord_keys:
+            combined_filedata[key].extend(rank_filedata[key])
 
         combined_filedata["mb_index"].extend(rank_filedata["mb_index"])
         combined_filedata["mb_logical"].extend(rank_filedata["mb_logical"])
@@ -493,6 +521,8 @@ def read_all_ranks_binary(rank0_filename):
     combined_filedata["mb_geometry"] = np.array(combined_filedata["mb_geometry"])
     for var in rank0_filedata["var_names"]:
         combined_filedata["mb_data"][var] = np.array(combined_filedata["mb_data"][var])
+    for key in coord_keys:
+        combined_filedata[key] = np.array(combined_filedata[key])
 
     # Ensure all relevant fields are stored
     combined_filedata["header"] = rank0_filedata["header"]
@@ -599,6 +629,43 @@ def read_all_ranks_coarsened_binary(rank0_filename):
     combined_filedata["nx3_out_mb"] = rank0_filedata["nx3_out_mb"]
 
     return combined_filedata
+
+
+_MB_COORD_KEYS = ("mb_x1f", "mb_x1v", "mb_x2f", "mb_x2v", "mb_x3f", "mb_x3v")
+
+
+def _apply_file_coords(filedata, data, nx_vals, block_size, level, num_ghost, dtype):
+    """
+    Version 1.2 files (stretched spherical-polar / cubed-sphere grids) carry the true
+    face and centre positions of every MeshBlock.  Replace the uniform x?f / x?v built
+    from x?min/x?max with them, for every dimension that is fully tiled by MeshBlocks
+    at the requested level.  Files without the arrays (version 1.1) are left untouched.
+    """
+    if "mb_x1f" not in filedata or num_ghost != 0:
+        return
+    levels = filedata["mb_logical"][:, 3]
+    locs = filedata["mb_logical"][:, :3]
+    for d in range(3):
+        nx = nx_vals[d]
+        bs = block_size[d]
+        if nx == 1 or bs == 1:
+            continue
+        xf = np.full(nx + 1, np.nan)
+        xv = np.full(nx, np.nan)
+        for mb in range(len(levels)):
+            if levels[mb] != level:
+                continue
+            o = locs[mb][d] * bs
+            if o + bs > nx:
+                continue
+            xf[o:o + bs + 1] = filedata[f"mb_x{d + 1}f"][mb]
+            xv[o:o + bs] = filedata[f"mb_x{d + 1}v"][mb]
+        if np.isnan(xf).any() or np.isnan(xv).any():
+            print(f"bin_convert: x{d + 1} not tiled at level {level}; "
+                  f"keeping the uniform x{d + 1}f/x{d + 1}v")
+            continue
+        data[f"x{d + 1}f"] = xf.astype(dtype)
+        data[f"x{d + 1}v"] = xv.astype(dtype)
 
 
 def read_binary_as_athdf(
@@ -736,6 +803,7 @@ def read_binary_as_athdf(
         data[xv] = np.empty(nx, dtype=dtype)
         for i in range(nx):
             data[xv][i] = center_funcs[d - 1](data[xf][i], data[xf][i + 1])
+    _apply_file_coords(filedata, data, nx_vals, block_size, level, num_ghost, dtype)
 
     # Create list of quantities
     if quantities is None:
@@ -995,6 +1063,7 @@ def read_all_ranks_binary_as_athdf(
         data[xv] = np.empty(nx, dtype=dtype)
         for i in range(nx):
             data[xv][i] = center_funcs[d - 1](data[xf][i], data[xf][i + 1])
+    _apply_file_coords(filedata, data, nx_vals, block_size, level, num_ghost, dtype)
 
     # Create list of quantities
     if quantities is None:
@@ -1428,6 +1497,10 @@ def read_single_rank_binary_as_athdf(
         data[xv] = np.empty(nx, dtype=dtype)
         for i in range(nx):
             data[xv][i] = center_funcs[d - 1](data[xf][i], data[xf][i + 1])
+        # version 1.2 (stretched grids): the first MeshBlock's true positions
+        if f"mb_x{d}f" in filedata and nx > 1:
+            data[xf] = filedata[f"mb_x{d}f"][0].astype(dtype)
+            data[xv] = filedata[f"mb_x{d}v"][0].astype(dtype)
 
     # Create list of quantities
     if quantities is None:
@@ -1811,6 +1884,11 @@ def write_athdf(filename, fdata, varsize_bytes=4, locsize_bytes=8):
         else:
             x3f[mb] = mb_x3f
             x3v[mb] = mb_x3v
+        # version 1.2 (stretched sp/cs grids): the code's own face/centre positions
+        if "mb_x1f" in fdata:
+            x1f[mb], x1v[mb] = fdata["mb_x1f"][mb], fdata["mb_x1v"][mb]
+            x2f[mb], x2v[mb] = fdata["mb_x2f"][mb], fdata["mb_x2v"][mb]
+            x3f[mb], x3v[mb] = fdata["mb_x3f"][mb], fdata["mb_x3v"][mb]
 
     # set dataset names and number of variables
     dataset_names = [np.array("uov", dtype="|S21")]

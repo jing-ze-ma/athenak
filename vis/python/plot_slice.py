@@ -185,8 +185,13 @@ def main(**kwargs):
 
         # Read header metadata
         line = f.readline().decode('ascii')
-        if line != 'Athena binary output version=1.1\n':
+        if line not in ('Athena binary output version=1.1\n',
+                        'Athena binary output version=1.2\n'):
             raise RuntimeError('Unrecognized data file format.')
+        # version 1.2 (stretched sp/cs grids) adds a preheader line and a per-block
+        # record of face/centre positions; this script plots in the logical
+        # coordinates of the block extents and skips that record
+        coord_arrays = line.endswith('1.2\n')
         next(f)
         next(f)
         next(f)
@@ -198,6 +203,8 @@ def main(**kwargs):
         if line[:19] != '  size of variable=':
             raise RuntimeError('Could not read variable size.')
         variable_size = int(line[19:])
+        if coord_arrays:
+            next(f)
         next(f)
         line = f.readline().decode('ascii')
         if line[:12] != '  variables:':
@@ -448,6 +455,10 @@ def main(**kwargs):
                 cells_per_block = block_nz * block_ny * block_nx
                 block_cell_format = '=' + str(cells_per_block) + variable_format
                 variable_data_size = cells_per_block * variable_size
+                coord_bytes = 0
+                if coord_arrays:
+                    coord_bytes = (2 * (block_nx + block_ny + block_nz) + 3) \
+                        * location_size
                 if kwargs['dimension'] is None:
                     if block_nx > 1 and block_ny > 1 and block_nz > 1:
                         kwargs['dimension'] = 'z'
@@ -516,18 +527,22 @@ def main(**kwargs):
                                                    * block_loc_for_level[-1])
                 max_level_calculated = block_level
             if kwargs['dimension'] == 'x' and block_i != block_loc_for_level[block_level]:
-                f.seek(6 * location_size + num_variables_base * variable_data_size, 1)
+                f.seek(6 * location_size + coord_bytes
+                       + num_variables_base * variable_data_size, 1)
                 continue
             if kwargs['dimension'] == 'y' and block_j != block_loc_for_level[block_level]:
-                f.seek(6 * location_size + num_variables_base * variable_data_size, 1)
+                f.seek(6 * location_size + coord_bytes
+                       + num_variables_base * variable_data_size, 1)
                 continue
             if kwargs['dimension'] == 'z' and block_k != block_loc_for_level[block_level]:
-                f.seek(6 * location_size + num_variables_base * variable_data_size, 1)
+                f.seek(6 * location_size + coord_bytes
+                       + num_variables_base * variable_data_size, 1)
                 continue
             num_blocks_used += 1
 
             # Read coordinate data
             block_lims = struct.unpack('=6' + location_format, f.read(6 * location_size))
+            f.seek(coord_bytes, 1)
             if kwargs['dimension'] == 'x':
                 extents.append((block_lims[2], block_lims[3], block_lims[4],
                                 block_lims[5]))

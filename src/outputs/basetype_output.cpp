@@ -204,11 +204,15 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
   }
   // derived curls/currents/curvatures difference over the LOGICAL Cartesian block
   // spacing (derived_variables.cpp): on a spherical-polar or cubed-sphere mesh they are
-  // not the quantity named (mhd_divb has its own finite-volume form there).
+  // not the quantity named (mhd_divb has its own finite-volume form there).  mhd_jcon
+  // and the rad_coord/rad_fluid moments also evaluate the CARTESIAN Kerr-Schild metric
+  // at the logical cell centre; on a curvilinear mesh no choice of x1v makes that the
+  // metric of the grid, so they are refused rather than fed the coordinate arrays.
   {
     static const char *cart_only[] = {"hydro_wz", "mhd_wz", "hydro_w2", "mhd_w2",
         "mhd_jz", "mhd_j2", "mhd_curv", "mhd_curv_alt", "mhd_jcon", "mhd_k_jxb",
-        "mhd_curv_perp", "mhd_dynamo_ks"};
+        "mhd_curv_perp", "mhd_dynamo_ks", "rad_coord", "rad_fluid",
+        "rad_coord_fluid"};
     if (pm->use_spherical_polar || pm->use_cubed_sphere) {
       for (const char *v : cart_only) {
         if (out_params.variable.compare(v) == 0) {

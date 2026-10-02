@@ -363,6 +363,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
 
     par_for("jcon", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      // Cartesian (Kerr-Schild) metric at the cell centre: CellCenterX is exact on the
+      // Cartesian meshes this is allowed on (refused on sp/cs in basetype_output.cpp)
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
       Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
@@ -1086,6 +1088,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
 
     par_for("moments",DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      // Cartesian (Kerr-Schild) metric at the cell centre: CellCenterX is exact on the
+      // Cartesian meshes this is allowed on (refused on sp/cs in basetype_output.cpp)
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
       Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
