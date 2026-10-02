@@ -1,0 +1,1 @@
+Exo-FMS ck tables for the WASP-121b fresh starts (TASK-2026-10-02-caltech-w121fresh): CK1X, CK3X, CK10X dirs; md5 of the tgz: 8f1b56eafb17c6ecf502d7d7acac7eec; per-file md5s in docs/handover/w121fresh_1002_bundle/MD5_CK on rt-integration.
