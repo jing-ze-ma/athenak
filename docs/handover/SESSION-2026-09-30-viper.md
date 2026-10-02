@@ -280,3 +280,15 @@ Reports: merge_1001/{MERGE,RESTART_DT}.md, bsg_1001/{DETERMINISM,SWITCH_1001,BAC
 
 **Agents running (10-01 23:30):** small fixes (arm-1 script smoke, '}}' style, bundle SETUP.sh, slab test reference regen;
 fixes_1001), face 6 on cubed sphere + MHD (ckf6_cs_mhd_1001), BSG steady-state analysis scripts (bsg_1001/analysis).
+
+## 12. 10-02 ~09:40 CEST: user asleep - state and overnight plan (see memory overnight-1002)
+- BSG: arm 2 fresh (arm2/prod_1002, 30bf6c03, be) running since 06:20, 7.3 d at 09:30, scaffold off, 0 NC; arm 1 fresh
+  (step4/prod_1002) FAILED 08:43 at 4.06 d (NaN at 54.5 Rsun, old-top infall region), follow-ons held, diagnosis agent
+  (bsg_1001/arm1_crash_1002). Remote BSG (Caltech/DeltaAI/FREYA/Raven) dropped. Page WTWSe9cPXwivWyihbsaG3f.
+- He presn ext 128^2 now on RAVEN (A100; fix de528da5 for CUDA team scratch), 2.3x a viper node; viper copies cancelled.
+- WASP-121b fresh f6 + wall fix: viper chains queued; Caltech copies queued (nvcc fix 59d98e03); Raven copies being set
+  up (w121_raven_1002). Cross-site watcher /viper/ptmp2/jinma/xsite_watch_1002.sh.
+- Code today (rt-integration): stall fix implicit_src_stable, face weights distance, HSE top face flux, grid restart guard,
+  MHD NaN guard + rad_signal_speed, dump m1_face, new keys on restart, face 6 default, wall-flux fix, defaults
+  (positivity, fofc in stellar pgens, resid_fatal 1e2), CoordData init, A100 team scratch, nvcc capture fix.
+- Raven access: user-opened ssh socket (memory raven-access), expires ~17:55 CEST.
