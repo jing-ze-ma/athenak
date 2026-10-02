@@ -234,7 +234,23 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // radiative timescale the profile changes on.  N = 1 halves the walk cost, N = 10
     // removes it.
     wb_cache_every = pin->GetOrAddInteger("mhd","wb_cache_every",0);
-    wb_guard_ideal = pin->GetOrAddBoolean("mhd","wb_guard_ideal",false);
+    // <mhd>/wb_guard_ideal: WBGuard on the ideal-gas x1 WB cache (BuildWBCache).
+    // DEFAULT true on a fresh run where that path is active (wb_x1 with a non-general
+    // EOS); a restart whose input lacks the key keeps the old default (off, one line);
+    // an explicit value always wins.
+    bool wbgi_dflt = false;
+    if (use_wb_x1 && !peos->eos_data.IsGeneral() &&
+        !pin->DoesParameterExist("mhd","wb_guard_ideal")) {
+      if (global_variable::restart_run) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "mhd: restart input has no mhd/wb_guard_ideal: keeping the "
+                    << "old default (off); set it true to switch" << std::endl;
+        }
+      } else {
+        wbgi_dflt = true;
+      }
+    }
+    wb_guard_ideal = pin->GetOrAddBoolean("mhd","wb_guard_ideal",wbgi_dflt);
     use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
     // switch the x1 well-balanced reconstruction off above this radius (0 = never); see

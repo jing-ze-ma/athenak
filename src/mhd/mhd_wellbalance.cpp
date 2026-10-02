@@ -261,12 +261,13 @@ void MHD::BuildWBCache(const int jl, const int ju, const int kl, const int ku) {
       }
       const Real gm1 = eos.gamma - 1.0;
       for (int q=0; q<5; ++q) c(m,10+q,k,j,i) = gm1*c(m,5+q,k,j,i);
-      // mhd/wb_guard_ideal (default false): the general-EOS walk's WBGuard for the
-      // closed forms too.  The polytropic step d0 (T1/T0)^(-(1+b)/b) overflows when T1
-      // heads for zero (steep T jump, e.g. floor gas falling onto a photosphere), the
-      // deviation w0 - bg is then -inf and the reconstructed interface energy NaN
-      // (BSG arm 1, 10-02).  A non-finite, non-positive or absurd (> 6 decades) walked
-      // state flattens the background to the anchor: plain PLM in that cell.
+      // mhd/wb_guard_ideal (default true on fresh runs, see mhd.cpp): the
+      // general-EOS walk's WBGuard for the closed forms too.  The polytropic step
+      // d0 (T1/T0)^(-(1+b)/b) overflows when T1 heads for zero (steep T jump, e.g.
+      // floor gas falling onto a photosphere), the deviation w0 - bg is then -inf and
+      // the reconstructed interface energy NaN (BSG arm 1, 10-02).  A non-finite,
+      // non-positive or absurd (> 6 decades) walked state flattens the background to
+      // the anchor: plain PLM in that cell.
       if (wbgi) {
         WBState s[5];
         for (int q=0; q<5; ++q) {

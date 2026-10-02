@@ -199,7 +199,23 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // radiative timescale the profile changes on.  N = 1 halves the walk cost, N = 10
   // removes it.
   wb_cache_every = pin->GetOrAddInteger("hydro","wb_cache_every",0);
-  wb_guard_ideal = pin->GetOrAddBoolean("hydro","wb_guard_ideal",false);
+  // <hydro>/wb_guard_ideal: WBGuard on the ideal-gas x1 WB cache (BuildWBCache).
+  // DEFAULT true on a fresh run where that path is active (wb_x1 with a non-general
+  // EOS); a restart whose input lacks the key keeps the old default (off, one line);
+  // an explicit value always wins.
+  bool wbgi_dflt = false;
+  if (use_wb_x1 && !peos->eos_data.IsGeneral() &&
+      !pin->DoesParameterExist("hydro","wb_guard_ideal")) {
+    if (global_variable::restart_run) {
+      if (global_variable::my_rank == 0) {
+        std::cout << "hydro: restart input has no hydro/wb_guard_ideal: keeping the "
+                  << "old default (off); set it true to switch" << std::endl;
+      }
+    } else {
+      wbgi_dflt = true;
+    }
+  }
+  wb_guard_ideal = pin->GetOrAddBoolean("hydro","wb_guard_ideal",wbgi_dflt);
   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);

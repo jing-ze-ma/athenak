@@ -197,7 +197,7 @@ class Hydro {
   bool use_phi_wb = false;
   DvceArray4D<Real> phicc_wb;    // cell-centered potential seen by the x1 WB scheme
   DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
-  bool wb_guard_ideal = false;  // <hydro>/wb_guard_ideal: WBGuard on the ideal-gas cache
+  bool wb_guard_ideal = false;  // <hydro>/wb_guard_ideal (hydro.cpp)
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
   // Kokkos team-scratch level for the flux kernels: 0 = LDS (64 kB per workgroup on
   // AMD, which caps meshblock nx1 at a few hundred), 1 = global memory, no cap (~1% cost)
