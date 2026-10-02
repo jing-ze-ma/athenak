@@ -188,6 +188,8 @@
 //!   vpert_kmax    of 2 pi / L2 (L3); the draw is uniform on [kmin,kmax] (defaults 1, 4).
 //!                 Raise kmin to keep the seed OFF the box-scale surface f-modes of a
 //!                 wide box.
+//!   vpert_signs   "positive" (default, historical: k2, k3 >= 0, one diagonal tilt) or
+//!                 "random" (independent random signs for k2 and k3 of each mode)
 //!   vpert_zlo     height range (cm) the seed is applied in; the vertical envelope is
 //!   vpert_zhi     sin(pi (z - zlo)/(zhi - zlo)) inside and zero outside.  Defaults are
 //!                 the mesh x1min/x1max, i.e. the whole column.
@@ -1144,6 +1146,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "problem/vpert_kmax" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // vpert_signs = positive (default, the historical draw: k2, k3 >= 0, every wavefront
+  // tilts the same diagonal way) | random (independent random signs for k2 and k3 of each
+  // mode, drawn in a separate pass after the historical draws: default bitwise unchanged)
+  const std::string psign_str = pin->GetOrAddString("problem", "vpert_signs", "positive");
+  if (psign_str != "positive" && psign_str != "random") {
+    std::cout << "### FATAL ERROR in box_convection: problem/vpert_signs must be "
+              << "\"positive\" or \"random\"" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const bool psign_rand = (psign_str == "random");
   const Real pzlo = pin->GetOrAddReal("problem", "vpert_zlo",
                                       pmy_mesh_->mesh_size.x1min);
   const Real pzhi = pin->GetOrAddReal("problem", "vpert_zhi",
@@ -2449,6 +2461,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     norm = (norm > 0.0) ? 1.0/std::sqrt(norm) : 1.0;
     for (int n=0; n<nk; ++n) md.h_view(n,2) *= norm;
+    if (psign_rand) {
+      for (int n=0; n<nk; ++n) {
+        if (u01(rng) < 0.5) md.h_view(n,0) = -md.h_view(n,0);
+        if (three_d && u01(rng) < 0.5) md.h_view(n,1) = -md.h_view(n,1);
+      }
+    }
   }
   md.modify_host();
   md.sync_device();

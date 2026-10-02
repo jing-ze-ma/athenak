@@ -38,7 +38,8 @@
 //!     gas + radiation, the mass through both x1 faces, the interior kinetic sums, the
 //!     mean v_r^2 of the wall cells and the mean Picard passes per implicit solve since
 //!     the previous history output;
-//!   * an optional multi-mode entropy/temperature seed (he_seed_nk, he_seed_rad).
+//!   * an optional multi-mode entropy/temperature seed (he_seed_nk, he_seed_rad,
+//!     he_seed_signs, he_seed_kdist).
 //!
 //! RESTARTS: the pgen carries NO state that is not recomputed here.  It is not skipped on
 //! a restart: the column, the tables, the potentials, the reference acceleration and the
@@ -50,6 +51,7 @@
 #include <math.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -1238,9 +1240,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int skmin = pin->GetOrAddInteger("problem","he_seed_kmin",1);
   const int skmax = pin->GetOrAddInteger("problem","he_seed_kmax",2);
   const int srng = pin->GetOrAddInteger("problem","he_seed_rng",1234);
+  // he_seed_signs = positive (default, the historical draw: k2, k3 >= 0, so every
+  // wavefront tilts the same diagonal way) | random (an independent random sign for k2
+  // and for k3 of each mode).  he_seed_kdist = box (default: k2, k3 independently
+  // uniform in [kmin, kmax]) | shell (|k| = sqrt(k2^2 + k3^2) uniform in [kmin, kmax],
+  // direction uniform, both rounded to integers, k = 0 rejected; with signs = positive
+  // the direction is limited to the first quadrant).  Both extra draws come AFTER the
+  // historical per-mode draws (a separate pass on the same RNG stream), so the default
+  // keys reproduce the old seed bitwise.
+  const std::string ssign = pin->GetOrAddString("problem","he_seed_signs","positive");
+  const std::string skdist = pin->GetOrAddString("problem","he_seed_kdist","box");
+  if (ssign != "positive" && ssign != "random") {
+    HsFatal("he_seed_signs must be positive or random", __LINE__);
+  }
+  if (skdist != "box" && skdist != "shell") {
+    HsFatal("he_seed_kdist must be box or shell", __LINE__);
+  }
+  const bool srsign = (ssign == "random"), sshell = (skdist == "shell");
   if (snk > 0 && (skmin < 0 || skmax < skmin || !(srhi > srlo))) {
     HsFatal("need 0 <= he_seed_kmin <= he_seed_kmax and he_seed_rhi > he_seed_rlo",
             __LINE__);
+  }
+  if (snk > 0 && sshell && skmax < 1) {
+    HsFatal("he_seed_kdist = shell needs he_seed_kmax >= 1", __LINE__);
   }
   DualArray2D<Real> smd("hs_seed_modes", std::max(snk, 1), 4);   // k2, k3, amp, phase
   {
@@ -1257,11 +1279,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     norm = (norm > 0.0) ? 1.0/std::sqrt(norm) : 1.0;
     for (int n=0; n<snk; ++n) smd.h_view(n,2) *= norm;
+    // opt-in wave-vector redraws (separate pass: the default path draws nothing here)
+    if (sshell) {
+      const Real amax = srsign ? 2.0*M_PI : 0.5*M_PI;
+      for (int n=0; n<snk; ++n) {
+        Real k2 = 0.0, k3 = 0.0;
+        while (k2 == 0.0 && k3 == 0.0) {
+          const Real kk = skmin + (skmax - skmin)*u01(rng);
+          const Real an = amax*u01(rng);
+          k2 = std::round(kk*std::cos(an));
+          k3 = std::round(kk*std::sin(an));
+        }
+        smd.h_view(n,0) = k2;
+        smd.h_view(n,1) = k3;
+      }
+    } else if (srsign) {
+      for (int n=0; n<snk; ++n) {
+        if (u01(rng) < 0.5) smd.h_view(n,0) = -smd.h_view(n,0);
+        if (u01(rng) < 0.5) smd.h_view(n,1) = -smd.h_view(n,1);
+      }
+    }
     if (snk > 0 && global_variable::my_rank == 0) {
       std::cout << "he_star_m1: seed " << snk << " modes, amplitude " << seed
                 << (srad ? " (temperature: eint and E)" : " (eint)") << ", k in ["
-                << skmin << "," << skmax << "], r " << srlo << " .. " << srhi
-                << std::endl;
+                << skmin << "," << skmax << "], signs " << ssign << ", kdist "
+                << skdist << ", r " << srlo << " .. " << srhi << std::endl;
+      for (int n=0; n<snk; ++n) {
+        std::cout << "  seed mode " << n << ": k2 " << smd.h_view(n,0) << " k3 "
+                  << smd.h_view(n,1) << " a " << smd.h_view(n,2) << std::endl;
+      }
     }
   }
   smd.modify_host();
