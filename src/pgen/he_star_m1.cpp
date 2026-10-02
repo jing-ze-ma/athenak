@@ -98,6 +98,11 @@ bool hs_binf_ = false, hs_bout_ = false;
 // every cell with rho < he_sponge_dmax (the floor gas above the photosphere, which can
 // not be hydrostatic and falls freely)
 bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false;
+// problem/he_bc_hse_flux = face (default on a fresh start) | cell: the radial flux in the
+// hse top's Gamma.  face = the transported comoving face flux (f0x1, mean of the top
+// cell's two x1 faces); cell = the old clipped lab-frame cell F1.  A restart whose
+// embedded input lacks the key keeps cell (no silent change mid-run).
+bool hs_bhse_face_ = true;
 Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
 // problem/he_ic_balance: the discretely balanced initial cells (all x1 cells incl. ghosts
 // of the ONE MeshBlock along x1; every block has the same radial grid)
@@ -1151,6 +1156,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (hs_bhse_) {
       hs_bhse_gmax_ = pin->GetOrAddReal("problem","he_bc_hse_gmax",0.9);
       hs_bhse_tg_ = pin->GetOrAddBoolean("problem","he_bc_hse_tgrad",false);
+      std::string hf;
+      if (restart && !pin->DoesParameterExist("problem","he_bc_hse_flux")) {
+        hf = "cell";
+        pin->SetString("problem","he_bc_hse_flux",hf);
+        if (global_variable::my_rank == 0) {
+          std::cout << "### he_star_m1: restart input has no problem/he_bc_hse_flux; "
+                    << "keeping the old cell-flux Gamma (he_bc_hse_flux = cell)"
+                    << std::endl;
+        }
+      } else {
+        hf = pin->GetOrAddString("problem","he_bc_hse_flux","face");
+      }
+      if (hf != "face" && hf != "cell") {
+        HsFatal("problem/he_bc_hse_flux must be face|cell", __LINE__);
+      }
+      hs_bhse_face_ = (hf == "face");
+      if (hs_bhse_face_ && (pmbp->pradm1 == nullptr ||
+                            pmbp->pradm1->f0x1.extent_int(0) == 0)) {
+        HsFatal("problem/he_bc_hse_flux = face needs the implicit rad_m1 transport "
+                "(face fluxes f0x1); use cell", __LINE__);
+      }
       if (!(hs_bhse_gmax_ >= 0.0 && hs_bhse_gmax_ < 1.0)) {
         HsFatal("problem/he_bc_hse_gmax must be in [0,1)", __LINE__);
       }
@@ -1455,6 +1481,8 @@ void HeStarBC(Mesh *pm) {
   const bool haveop = (opac.extent_int(0) > 0);
   const Real gm = hs_gm_, gmax = hs_bhse_gmax_;
   const Real dfl = eos.dfloor;
+  const bool bhfc = bhse && hs_bhse_face_;
+  auto ff1 = pmbp->pradm1->f0x1;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -1475,6 +1503,10 @@ void HeStarBC(Mesh *pm) {
         // RESIDUAL radiation force the M1 module applies on top of it,
         //   a_rad = opac_T F_1/(c rho) of cell a  (the code's own force; the reference
         //           a_ref when the opacity is not yet filled, i.e. on the first step),
+        //           F_1 per he_bc_hse_flux: face (default) = 0.5 (f0x1(ie) + f0x1(ie+1)),
+        //           the comoving flux the transport carries and the gas force uses;
+        //           cell = the clipped lab-frame cell F1 (old; noisy, ~0.76 of the face
+        //           flux in the 3-D BSG top where |F| = cE clips)
         //   Gamma = a_rad/g(r_a) clamped to [0, he_bc_hse_gmax], scaled ~ r^-2,
         // the ghost is the cell walked by dPhi = Phi_eff(r_g) - Phi_eff(r_a)
         //   - (Gamma g_a - a_ref(a)) r_a^2 (1/r_a - 1/r_g)
@@ -1491,7 +1523,12 @@ void HeStarBC(Mesh *pm) {
         const Real ar0 = aref(m,k,j,ia);
         Real arad = ar0;
         if (haveop && opac(m,radm1::M1_OP_T,k,j,ia) > 0.0) {
-          arad = opac(m,radm1::M1_OP_T,k,j,ia)*ur(m,radm1::M1_F1,k,j,ia)/(cl*da);
+          // face (he_bc_hse_flux): the comoving radial flux the transport carries, the
+          // mean of the cell's two x1 faces = the unclipped cell F1 minus its lab-frame
+          // (v + v.D) E; cell: the clipped lab-frame cell F1 (old)
+          const Real f1 = bhfc ? 0.5*(ff1(m,k,j,ia) + ff1(m,k,j,ia+1))
+                               : ur(m,radm1::M1_F1,k,j,ia);
+          arad = opac(m,radm1::M1_OP_T,k,j,ia)*f1/(cl*da);
         }
         Real gam = arad/ga;
         gam = (gam < 0.0) ? 0.0 : ((gam > gmax) ? gmax : gam);
