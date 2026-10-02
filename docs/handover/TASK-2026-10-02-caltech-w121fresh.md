@@ -15,9 +15,12 @@ yours starts). Viper chains (pending): f1x6w 12059646->47, f3x6w 12059648->49, f
 ## 2. Inputs (docs/handover/w121fresh_1002_bundle/)
 - w121fresh_{1x,3x,10x}_f6.athinput = viper's production inputs with only the data paths replaced by placeholders:
   @BUNDLE@ (the bundle dir: IC files ic_w121_*_f5.txt, MD5_IC), @CK1X@ / @CK3X@ / @CK10X@ = the Exo-FMS ck data dirs for
-  1x / 3x (met 0.4771) / 10x (met 1.0) with ck/Premixed_*_g8_11_hiT2.txt inside. The tables are NOT in git (14 MB each):
-  use your local copies and check them against MD5_CK (paths CK1X/..., CK3X/..., CK10X/...). If any md5 differs, STOP
-  and report (do not substitute another table).
+  1x / 3x (met 0.4771) / 10x (met 1.0) with ck/Premixed_*_g8_11_hiT2.txt inside. **The tables are in a tarball on the
+  separate data branch `data-w121fresh-1002`** (orphan branch, do NOT merge it): `git fetch fork data-w121fresh-1002`
+  then `git show fork/data-w121fresh-1002:w121_cktables_1002.tgz > w121_cktables_1002.tgz` (18.5 MB, md5
+  8f1b56eafb17c6ecf502d7d7acac7eec), `tar xzf` it somewhere on your scratch: it gives CK1X/, CK3X/, CK10X/ - point
+  @CK1X@ etc. at those dirs and check `md5sum -c MD5_CK` from the directory that contains them. If any md5 differs,
+  STOP and report.
 - The ICs are the exact-reference (p-z formal solution) RCE profiles from viper (w121fresh_1001/ic/rce_f5.py), 90-160 K
   warmer at 1e-3..0.1 bar than the old ICs. Grid/physics otherwise = your earlier w121prod inputs (cubed sphere C32,
   lhllc, etc.); time/tlim = 300 rotations as in the input.
