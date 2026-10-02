@@ -746,6 +746,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
+  // DEBUG (nc_cure_1002): implicit_nc_dump = N > 0 prints, in the last N passes of a
+  // solve that runs to implicit_maxit, the local state of each rank's worst-residual
+  // cell (optical depths, coupling stiffness, energy ratio, beta, f, the T-Newton
+  // flags).  Read only when named; prints only; no number of the solve changes.
+  impl_ncdump = pin->DoesParameterExist("rad_m1","implicit_nc_dump") ?
+                pin->GetInteger("rad_m1","implicit_nc_dump") : 0;
   impl_dtrace = pin->DoesParameterExist("rad_m1","implicit_det_trace") ?
                 pin->GetInteger("rad_m1","implicit_det_trace") : 0;
   tmr_c0 = pin->DoesParameterExist("rad_m1","implicit_timers") ?
@@ -6282,6 +6288,104 @@ void RadiationM1::ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bo
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitNCDump
+//! \brief DEBUG (<rad_m1>/implicit_nc_dump, nc_cure_1002): one line per rank with the
+//! local state of the rank's worst-residual cell: its geometry and optical depths, the
+//! coupling stiffness c dt rho kappa_P, the gas/radiation energy ratio, v/c, the reduced
+//! flux, the lagged closure, the T-Newton row and flags, and E, T of its six neighbours.
+//! Prints only.
+
+void RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, int igf,
+                                 int igy) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
+  auto iw_ = iw;
+  using MaxLoc = Kokkos::MaxLoc<Real,int>;
+  MaxLoc::value_type mloc;
+  Kokkos::parallel_reduce("m1_impl_ncd_loc",
+  Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                         {nmb1+1,ke+1,je+1,ie+1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                MaxLoc::value_type &lmx) {
+    Real r = iw_(m,M1_IW_RES,k,j,i);
+    if (r > lmx.val) {
+      lmx.val = r;
+      lmx.loc = ((m*nk + (k-ks))*nj + (j-js))*ni + (i-is);
+    }
+  }, MaxLoc(mloc));
+  const int lm = mloc.loc/(nk*nj*ni);
+  int rem = mloc.loc - lm*nk*nj*ni;
+  const int lk = rem/(nj*ni) + ks;
+  rem -= (lk-ks)*nj*ni;
+  const int lj = rem/ni + js;
+  const int li = rem - (lj-js)*ni + is;
+  constexpr int NV = 48;
+  DvceArray1D<Real> dv("ncd", NV);
+  auto opac_ = opac;
+  auto uh = FluidRef::Get(pmy_pack).u0;
+  auto x1f = pmy_pack->pcoord->xx1f;
+  auto x1v = pmy_pack->pcoord->x1v;
+  auto mbsize = pmy_pack->pmb->mb_size;
+  const Real cl = c_light, dt = dt_sub;
+  Kokkos::parallel_for("m1_impl_ncd", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+  KOKKOS_LAMBDA(const int) {
+    const int m = lm, k = lk, j = lj, i = li;
+    const Real r = x1v(m,i);
+    const Real dr = x1f(m,i+1) - x1f(m,i);
+    const Real rdth = r*mbsize.d_view(m).dx2;
+    const Real e = iw_(m,M1_IW_EP,k,j,i);
+    const Real f1 = iw_(m,M1_IW_F1,k,j,i), f2 = iw_(m,M1_IW_F2,k,j,i);
+    const Real f3 = iw_(m,M1_IW_F3,k,j,i);
+    const Real kt = iw_(m,M1_IW_KT,k,j,i);
+    dv(0) = r; dv(1) = dr; dv(2) = rdth;
+    dv(3) = uh(m,IDN,k,j,i);
+    dv(4) = iw_(m,M1_IW_EN,k,j,i); dv(5) = e; dv(6) = iw_(m,M1_IW_TP,k,j,i);
+    dv(7) = iw_(m,M1_IW_EGN,k,j,i);
+    dv(8) = iw_(m,M1_IW_RES,k,j,i); dv(9) = iw_(m,M1_IW_LRES,k,j,i);
+    dv(10) = kt*dr; dv(11) = kt*rdth;                       // tau_r, tau_lat
+    dv(12) = cl*dt*opac_(m,M1_OP_P,k,j,i);                   // c dt rho kP
+    dv(13) = cl*dt*opac_(m,M1_OP_E,k,j,i);                   // c dt rho kE
+    dv(14) = iw_(m,M1_IW_EGN,k,j,i)/fmax(e, 1.0e-300);       // e_gas/E
+    dv(15) = iw_(m,M1_IW_V1,k,j,i)/cl; dv(16) = iw_(m,M1_IW_V2,k,j,i)/cl;
+    dv(17) = iw_(m,M1_IW_V3,k,j,i)/cl;
+    dv(18) = sqrt(f1*f1 + f2*f2 + f3*f3)/(cl*fmax(e, 1.0e-300));
+    dv(19) = f1/(cl*fmax(e, 1.0e-300));
+    dv(20) = iw_(m,M1_IW_WCHI,k,j,i); dv(21) = iw_(m,M1_IW_RF0,k,j,i);
+    dv(22) = iw_(m,M1_IW_G0,k,j,i);
+    dv(23) = iw_(m,M1_IW_SRCB,k,j,i); dv(24) = iw_(m,M1_IW_SRCR,k,j,i);
+    dv(25) = iw_(m,M1_IW_DE0,k,j,i);
+    dv(26) = gasx ? iw_(m,igb,k,j,i) : 0.0; dv(27) = gasx ? iw_(m,igr,k,j,i) : 0.0;
+    dv(28) = gasx ? iw_(m,igf,k,j,i) : 0.0; dv(29) = gasx ? iw_(m,igy,k,j,i) : 0.0;
+    dv(30) = iw_(m,M1_IW_EP,k,j,i-1); dv(31) = iw_(m,M1_IW_EP,k,j,i+1);
+    dv(32) = iw_(m,M1_IW_EP,k,j-1,i); dv(33) = iw_(m,M1_IW_EP,k,j+1,i);
+    dv(34) = iw_(m,M1_IW_EP,k-1,j,i); dv(35) = iw_(m,M1_IW_EP,k+1,j,i);
+    dv(36) = iw_(m,M1_IW_TP,k,j,i-1); dv(37) = iw_(m,M1_IW_TP,k,j,i+1);
+    dv(38) = iw_(m,M1_IW_TP,k,j-1,i); dv(39) = iw_(m,M1_IW_TP,k,j+1,i);
+    dv(40) = iw_(m,M1_IW_TP,k-1,j,i); dv(41) = iw_(m,M1_IW_TP,k+1,j,i);
+    dv(42) = iw_(m,M1_IW_TDIA,k,j,i); dv(43) = iw_(m,M1_IW_TRHS,k,j,i);
+    dv(44) = opac_(m,M1_OP_P,k,j,i); dv(45) = opac_(m,M1_OP_E,k,j,i);
+    dv(46) = kt; dv(47) = iw_(m,M1_IW_TB,k,j,i);
+  });
+  auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dv);
+  static const char *nm[NV] = {"r", "dr", "rdth", "rho", "En", "E", "T", "egn", "res",
+    "lres", "tau_r", "tau_th", "cdtkP", "cdtkE", "eg/E", "b1", "b2", "b3", "f", "f1",
+    "w", "rf0", "g0", "srcb", "srcr", "de0", "Bk", "Rk", "nfb", "Yk", "Eim", "Eip",
+    "Ejm", "Ejp", "Ekm", "Ekp", "Tim", "Tip", "Tjm", "Tjp", "Tkm", "Tkp", "tdia", "trhs",
+    "rkP", "rkE", "rkT", "TB"};
+  std::ostringstream os;
+  os.precision(7);
+  os << "<rad_m1> NCD rank=" << global_variable::my_rank << " cycle="
+     << pmy_pack->pmesh->ncycle << " step=" << static_cast<int>(impl_nstep)
+     << " pass=" << it << " tag=" << tag << " cell=" << lm << "," << lk << "," << lj
+     << "," << li;
+  for (int q = 0; q < NV; ++q) {os << " " << nm[q] << "=" << hv(q);}
+  std::cout << os.str() << std::endl;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::DetTrace
 //! \brief <rad_m1>/implicit_det_trace = N (read only when named): for the first N solves,
 //! print an order-independent bitwise hash (exact uint64 sum of position-mixed bit
@@ -9288,6 +9392,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (it == 0) {ores0 = resid;}
     if (it == 1) {ores1 = resid;}
     if (plog) {ImplicitPicardLog(it, nin, resid, lresid, src_on);}
+    if (impl_ncdump > 0 && it >= impl_maxit - impl_ncdump) {
+      ImplicitNCDump(it, 0, gasx, igb, igr, igf, igy);
+    }
     // MILESTONE 3e: ACCELERATE.  Only on a pass that is followed by another one: the
     // state the step ENDS on must be the one the face fluxes of step (g) were built
     // from, so a converged pass -- and the last pass of a non-converged step -- keeps

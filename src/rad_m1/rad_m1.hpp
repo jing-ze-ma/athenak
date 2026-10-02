@@ -776,6 +776,9 @@ class RadiationM1 {
                                 // solves (run-to-run reproducibility diagnostic)
   void DetTrace(const char *tag);
   void DetTraceScalars(const char *tag, int n, const Real *v);
+  int impl_ncdump;              // <rad_m1>/implicit_nc_dump (DEBUG, default 0 = off):
+                                // the local state of each rank's worst cell in the
+                                // last N passes of a solve that hits implicit_maxit
   int impl_plog;                // <rad_m1>/implicit_picard_log: print one line per
                                 // Picard pass for the first N solves (rank 0)
   Real bcg_r0rel;               // max|b - A x0|/max|b| of the last BiCGStab call
@@ -1183,6 +1186,7 @@ class RadiationM1 {
   int ImplicitBiCGStabFused(Real rhsmax);
   void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics
   void ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bool srct);
+  void ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, int igf, int igy);
 
   // ---- <rad_m1>/closure = tau (rad_m1_tau.cpp): the Eddington tensor of the multi-D
   // implicit solve from the COLUMN OPTICAL DEPTH measured from the top of the domain
