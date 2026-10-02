@@ -783,6 +783,7 @@ class RadiationM1 {
   DvceArray1D<Real> det_part;   // its level-1 partials and result (4*1024 + 4)
   bool impl_lres_test;          // <rad_m1>/implicit_lres_test (default false*): require
                                 // the pass-to-pass transverse change lresid < lin_tol
+  bool impl_src_stable = false;  // <rad_m1>/implicit_src_stable (stall_1002)
   bool impl_conv_est;           // <rad_m1>/implicit_conv_est (default true*): stop when
                                 // the linear-rate estimate of the REMAINING change is
                                 // below implicit_tol
