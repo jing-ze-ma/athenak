@@ -777,6 +777,7 @@ class RadiationM1 {
   void DetTrace(const char *tag);
   void DetTraceScalars(const char *tag, int n, const Real *v);
   bool impl_tsolve_opac;        // <rad_m1>/implicit_tsolve_opac (nc_cure_1002)
+  int impl_tsolve_opac_start;   // implicit_tsolve_opac_start: first Picard pass
   int impl_ncdump;              // <rad_m1>/implicit_nc_dump (DEBUG, default 0 = off):
                                 // the local state of each rank's worst cell in the
                                 // last N passes of a solve that hits implicit_maxit

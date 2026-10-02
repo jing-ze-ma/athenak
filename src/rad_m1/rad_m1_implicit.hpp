@@ -1138,8 +1138,8 @@ int M1ImplTemperatureT(const ThermoT &th, const Real dd, const Real tguess,
 
 //----------------------------------------------------------------------------------------
 //! \fn M1ImplTemperatureOpac
-//! \brief <rad_m1>/implicit_tsolve_opac (nc_cure_1002): the bracketed gas-temperature root
-//! find with the Planck and absorption opacities evaluated AT the trial T,
+//! \brief <rad_m1>/implicit_tsolve_opac (nc_cure_1002): the bracketed gas-temperature
+//! root find with the Planck and absorption opacities evaluated AT the trial T,
 //!   y(T) = e(T) + c dt rho kappa_P(T) a T^4 - rho e^n - c dt rho kappa_E(T) (E' + de0),
 //! instead of at the lagged iterate.  With the opacity frozen at the previous pass a cell
 //! whose kappa_P changes by >10x over the iterate's T range (shock-heated near-void

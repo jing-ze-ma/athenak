@@ -746,10 +746,26 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
-  // nc_cure_1002: the Newton-fallback gas-temperature root find with kappa_P(T), kappa_E(T)
-  // evaluated at the trial T (M1ImplTemperatureOpac).  Default off = the frozen-opacity
-  // root find, bitwise.
-  impl_tsolve_opac = pin->GetOrAddBoolean("rad_m1","implicit_tsolve_opac",false);
+  // implicit_tsolve_opac (nc_cure_1002): the Newton-fallback gas-temperature root find
+  // with kappa_P(T), kappa_E(T) evaluated at the trial T (M1ImplTemperatureOpac) instead
+  // of at the lagged iterate; it removes the |dT|/T = 0.365 limit cycles of shock-heated
+  // near-void cells (He presn wedge, /viper/ptmp2/jinma/he_nc_cure_1002).  ...only from
+  // Picard pass implicit_tsolve_opac_start on: a solve that converges before it is
+  // bitwise the frozen-opacity one.  DEFAULT true with start 20 on fresh runs (user
+  // 10-02); a restart whose file lacks the key keeps the old behaviour (off) and says
+  // so.  The resolved values are recorded.
+  if (pin->DoesParameterExist("rad_m1","implicit_tsolve_opac")) {
+    impl_tsolve_opac = pin->GetBoolean("rad_m1","implicit_tsolve_opac");
+  } else if (global_variable::restart_run) {
+    impl_tsolve_opac = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart input has no implicit_tsolve_opac: keeping the old "
+                << "default (off); set it to switch" << std::endl;
+    }
+  } else {
+    impl_tsolve_opac = pin->GetOrAddBoolean("rad_m1","implicit_tsolve_opac",true);
+  }
+  impl_tsolve_opac_start = pin->GetOrAddInteger("rad_m1","implicit_tsolve_opac_start",20);
   // DEBUG (nc_cure_1002): implicit_nc_dump = N > 0 prints, in the last N passes of a
   // solve that runs to implicit_maxit, the local state of each rank's worst-residual
   // cell (optical depths, coupling stiffness, energy ratio, beta, f, the T-Newton
@@ -9161,7 +9177,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // (above); tsb_ctx is what the helper captured, by value.
       auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efl, eos, escale, gasx, gnewt,
                                      igb, igf, igm, igr, igy, iw_, opac_, plog, uh, usec,
-                                     nmb1, ks, ke, js, je, is, ie, impl_tsolve_opac,
+                                     nmb1, ks, ke, js, je, is, ie,
+                                     impl_tsolve_opac && (it >= impl_tsolve_opac_start),
                                      M1OpacFn{opacity_type, otab, kappa_p, kappa_e,
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b});
