@@ -807,6 +807,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_res_mask = (impl_res_dmin > 0.0) || (impl_res_rmax > 0.0);
   impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",!fixcl);
   impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",fixcl);
+  // implicit_src_stable (stall_1002): the cancellation-free form of the gas-eliminated
+  // source row.  DEFAULT true (user 10-02) for a fresh run; false (the plain form,
+  // bitwise) on a restart whose file lacks the key, with one line on rank 0.  The value
+  // is recorded, so later restarts keep it; a named key always wins.
+  {const bool named = pin->DoesParameterExist("rad_m1","implicit_src_stable");
+  impl_src_stable = pin->GetOrAddBoolean("rad_m1","implicit_src_stable",
+                                         !global_variable::restart_run);
+  if (!named && global_variable::restart_run && global_variable::my_rank == 0) {
+    std::cout << "rad_m1: implicit_src_stable = false (restart file lacks the key; "
+              << "name it to switch the stable source row on)" << std::endl;
+  }
+  }
   impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",
                                   (fixcl && impl_bcg_sync >= 1) ? 1.0e-2 : 0.0);
   impl_ew_gam = pin->GetOrAddReal("rad_m1","implicit_lin_ew_gamma",0.9);
@@ -965,10 +977,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 "spherical-polar wedge only");
     }
   }
-  // implicit_face_weight (see rad_m1.hpp): equal (default) | distance.  Read only when
-  // named, so the parameter dump of a run without the key is unchanged.
-  if (pin->DoesParameterExist("rad_m1","implicit_face_weight")) {
-    const std::string sfw = pin->GetString("rad_m1","implicit_face_weight");
+  // implicit_face_weight (see rad_m1.hpp): distance (default on the spherical-polar
+  // wedge) | equal (default elsewhere; the only choice on a Cartesian grid, which is
+  // uniform).  On the wedge the key is recorded (GetOrAdd), so a restart keeps what the
+  // run started with.  A RESTART whose embedded input predates the key keeps `equal`,
+  // the behaviour it was run with, unless the key is given on the command line or in
+  // an -i overlay (ModifyFromCmdline adds absent keys on a restart).  On a Cartesian grid
+  // it is read only when named, so the parameter dump there is unchanged.
+  if (sph_geom || pin->DoesParameterExist("rad_m1","implicit_face_weight")) {
+    const bool named = pin->DoesParameterExist("rad_m1","implicit_face_weight");
+    const std::string sfw = pin->GetOrAddString("rad_m1","implicit_face_weight",
+        global_variable::restart_run ? "equal" : "distance");
     if (sfw.compare("equal") == 0) {
       impl_face_wdist = false;
     } else if (sfw.compare("distance") == 0) {
@@ -980,6 +999,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_face_wdist && !sph_geom) {
       ImplFatal("<rad_m1>/implicit_face_weight = distance is implemented on the "
                 "spherical-polar wedge only (a Cartesian grid is uniform)");
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1>/implicit_face_weight = " << sfw
+                << (named ? " (from the input)"
+                    : (global_variable::restart_run
+                       ? " (restart file predates the key: kept the old equal)"
+                       : " (default)")) << std::endl;
     }
   }
   // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
@@ -6188,12 +6214,29 @@ void RadiationM1::ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bo
       Real r = iw_(m,c,k,j,i);
       if (r > lmx.val) {
         lmx.val = r;
-        lmx.loc = i;
+        // stall_1002: the full (m,k,j,i) of the cell, i in the low 10 bits
+        lmx.loc = (((m*1024 + k)*1024 + j)*1024) + i;
       }
     }, MaxLoc(mloc));
     vals[q] = mloc.val;
     locs[q] = mloc.loc;
   }
+  // stall_1002: every rank prints its own maxima, (m,k,j,i) decoded
+  {
+    std::string sl[3];
+    for (int q = 0; q < 3; ++q) {
+      int l = locs[q];
+      if (l < 0) {sl[q] = "-"; continue;}
+      sl[q] = std::to_string(l/(1024*1024*1024)) + ","
+              + std::to_string((l/(1024*1024))%1024) + ","
+              + std::to_string((l/1024)%1024) + "," + std::to_string(l%1024);
+    }
+    std::cout << "<rad_m1> plogR rank=" << global_variable::my_rank << " step="
+              << static_cast<int>(impl_nstep) << " pass=" << it << " res=" << resid
+              << " resE=" << vals[0] << " @" << sl[0] << " resT=" << vals[1] << " @"
+              << sl[1] << " lres=" << vals[2] << " @" << sl[2] << std::endl;
+  }
+  for (int q = 0; q < 3; ++q) {if (locs[q] >= 0) {locs[q] = locs[q] % 1024;}}
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> plog step=" << static_cast<int>(impl_nstep) << " pass=" << it
               << " res=" << resid << " resE=" << vals[0] << " iE=" << locs[0]
@@ -6814,6 +6857,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
   auto je = std::get<23>(ctx_);
   auto is = std::get<24>(ctx_);
   auto ie = std::get<25>(ctx_);
+  auto sstab = std::get<26>(ctx_);
   auto srb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -6822,7 +6866,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     // generated; other backends capture exactly what the instantiation reads).
     (void)ar; (void)ch; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)eos; (void)gam;
     (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr; (void)igy;
-    (void)iw_; (void)opac_; (void)uh; (void)usec;
+    (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab;
 #endif
     Real rkpv = opac_(m,M1_OP_P,k,j,i);
     Real rkev = opac_(m,M1_OP_E,k,j,i);
@@ -6910,6 +6954,24 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
       iw_(m,igm,k,j,i) += nmiss;
     }
     Real emis = dt*ch*rkpv*ar;
+    if (sstab && bk > 0.0) {
+      // implicit_src_stable (stall_1002): the SAME Schur-eliminated row in a form
+      // without cancellation.  With K = c dt rho kappa (2e8 at the BSG wall) the plain
+      // form takes SRCB = c dt k_E - c dt k_E (bk - rho c_v)/bk, a difference of two
+      // numbers ~K that leaves O(1), and SRCR likewise subtracts ~K E terms; both carry
+      // an absolute round-off ~eps K that moved the solved E by ~1e-7 relative in every
+      // Picard pass (a floor above implicit_tol 1e-8).  Exactly (bk - rho c_v =
+      // 4 c dt k_P a T^3, emis 4 T^3 = (ch/cl)(bk - rho c_v)):
+      //   SRCB = ch dt k_E w,
+      //   SRCR = w (emis T^4 - ch dt k_E de0) + (ch/cl) q (e^n - e_k)
+      // with w = rho c_v/bk and q = 1 - w = 4 cl dt k_P a T^3/bk.
+      const Real w = dd*cv/bk;
+      const Real q = 4.0*cl*dt*rkpv*ar*t3/bk;
+      iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev*w;
+      iw_(m,M1_IW_SRCR,k,j,i) = w*(emis*t4 - dt*ch*rkev*de0)
+                                + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
+      return;
+    }
     Real kk = (bk > 0.0) ? (emis*4.0*t3*cl*dt*rkev/bk) : 0.0;
     iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
     iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
@@ -8133,7 +8195,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // (above); srb_ctx is what the helper captured, by value.
       auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnewt,
                                      igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
-                                     ks, ke, js, je, is, ie);
+                                     ks, ke, js, je, is, ie, impl_src_stable);
       if (srid) {
         M1ImplSrcLaunch(srb_ctx, std::true_type{});
       } else {
@@ -8187,7 +8249,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // q = -chat dt th G(E^k)/2.  The E'_c part goes on the row, the rest to the RHS.
     // Only faces whose two cells are in this block (x1 neighbours of the block are
     // not exchanged for ktd): there the term is omitted and the face stays Picard.
-    // On sp the rows are rebuilt below with the sp areas; the same term goes there (opns).
+    // On sp the rows are rebuilt below with the sp areas; the same term goes there
+    // (opns).
     const bool opnr = opn && gnewt && !sph_geom;
     const bool opns = opn && gnewt && sph_geom;
     // DEBUG dbg_t2_admiss: the sp E row by term, kept for T2AdmissDebug
@@ -9398,6 +9461,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     int lk = lrem/(nj*ni);
     int lj = (lrem - lk*nj*ni)/ni;
     int li = lrem - lk*nj*ni - lj*ni;
+    // stall_1002: every rank's own worst cell and its value
+    std::cout << "<rad_m1> NC-local rank=" << global_variable::my_rank << " cycle="
+              << pmy_pack->pmesh->ncycle << " max=" << mloc.val << " (m,k,j,i)=(" << lmb
+              << "," << (lk+ks) << "," << (lj+js) << "," << (li+is) << ")" << std::endl;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> Picard NON-CONVERGED after " << it << " passes:"
                 << " resid=" << resid << " (tol " << impl_tol << ")"

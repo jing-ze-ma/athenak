@@ -76,8 +76,14 @@ namespace {
 //!
 //! The list is the union over the pgens that fill phicc0 (dhj, red_giant/He4, box,
 //! convection/solar/cooling, hse_atm, hotbubble, wb_atm, shallow_hot_jupiter): gravity
-//! and potential keys, the unit system they are converted with, and the mesh keys that
-//! place the cell centres.  problem/omega counts only when rot_potential is on.
+//! and potential keys and the unit system they are converted with.  problem/omega counts
+//! only when rot_potential is on.
+//!
+//! RESTART CONSISTENCY OF THE GRID (always, with or without etotgrav).  The restart file
+//! stores the cell data block by block, but the cell POSITIONS are rebuilt from the
+//! current input: the mesh extent, the radial/theta stretch, the coordinate system and
+//! the cell counts.  Changing one of GridKeys() at restart would silently place the old
+//! data on different cells, so a change is always FATAL (no override).
 
 std::map<std::string, std::string> SnapshotPotentialKeys(ParameterInput *pin,
     const std::vector<std::pair<std::string, std::string>> &keys) {
@@ -139,9 +145,19 @@ const std::vector<std::pair<std::string, std::string>> &PotentialKeys() {
     {"problem", "grav_point_mass"}, {"problem", "rot_potential"}, {"problem", "omega"},
     {"problem", "mstar"}, {"problem", "rin"}, {"problem", "iprob"},
     {"hydro_srcterms", "const_accel_val"}, {"mhd_srcterms", "const_accel_val"},
-    {"units", "length_cgs"}, {"units", "mass_cgs"}, {"units", "time_cgs"},
+    {"units", "length_cgs"}, {"units", "mass_cgs"}, {"units", "time_cgs"}
+  };
+  return keys;
+}
+
+// keys that place the cells (mesh.cpp Mesh ctor, grid_stretch.hpp): checked always
+const std::vector<std::pair<std::string, std::string>> &GridKeys() {
+  static const std::vector<std::pair<std::string, std::string>> keys = {
     {"mesh", "x1min"}, {"mesh", "x1max"}, {"mesh", "x2min"}, {"mesh", "x2max"},
     {"mesh", "x3min"}, {"mesh", "x3max"},
+    {"mesh", "nx1"}, {"mesh", "nx2"}, {"mesh", "nx3"}, {"mesh", "nghost"},
+    {"meshblock", "nx1"}, {"meshblock", "nx2"}, {"meshblock", "nx3"},
+    {"mesh", "use_spherical_polar"}, {"mesh", "use_cubed_sphere"},
     {"mesh", "use_grid_stretch_r"}, {"mesh", "f_stretch_r"},
     {"mesh", "use_grid_stretch_r_poly"}, {"mesh", "f_stretch_r_c1"},
     {"mesh", "f_stretch_r_c2"}, {"mesh", "f_stretch_r_c3"}, {"mesh", "f_stretch_r_c4"},
@@ -152,14 +168,60 @@ const std::vector<std::pair<std::string, std::string>> &PotentialKeys() {
     {"mesh", "f_stretch_r_b2_x"}, {"mesh", "f_stretch_r_b2_w"},
     {"mesh", "f_stretch_r_p_amp"}, {"mesh", "f_stretch_r_p_xa"},
     {"mesh", "f_stretch_r_p_xb"}, {"mesh", "f_stretch_r_p_w"},
-    {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"},
-    {"mesh", "use_spherical_polar"}, {"mesh", "use_cubed_sphere"}
+    {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
   };
   return keys;
 }
 
+// the value a grid key takes when it is absent from the input ("" = no default), so
+// that an absent key and its default spelled out are not a change
+std::string GridKeyDefault(const std::map<std::string, std::string> &snap,
+                           const std::string &key) {
+  if (key.rfind("mesh/use_", 0) == 0) return "false";
+  if (key.rfind("mesh/f_stretch_r_c", 0) == 0) return "0";
+  if (key.rfind("mesh/f_stretch_r_b", 0) == 0 && key.find("_amp") != std::string::npos)
+    return "0";
+  if (key == "mesh/f_stretch_r_p_amp") return "0";
+  if (key == "mesh/nghost") return "2";
+  if (key.rfind("meshblock/nx", 0) == 0) {   // meshblock/nxN defaults to mesh/nxN
+    auto it = snap.find("mesh/" + key.substr(10));
+    if (it != snap.end()) return it->second;
+  }
+  return "";
+}
+
+void CheckRestartGridKeys(const std::map<std::string, std::string> &file,
+                          const std::map<std::string, std::string> &now) {
+  std::string changed;
+  for (const auto &bk : GridKeys()) {
+    const std::string key = bk.first + "/" + bk.second;
+    auto f = file.find(key);
+    auto n = now.find(key);
+    const std::string fv = (f != file.end()) ? f->second : GridKeyDefault(file, key);
+    const std::string nv = (n != now.end()) ? n->second : GridKeyDefault(now, key);
+    if (fv.empty() && nv.empty()) continue;
+    if (!fv.empty() && !nv.empty() && SameParamValue(fv, nv)) continue;
+    changed += "    " + key + ": restart file " + (fv.empty() ? "(absent)" : fv)
+               + " -> now " + (nv.empty() ? "(absent)" : nv) + "\n";
+  }
+  if (changed.empty()) return;
+  if (global_variable::my_rank == 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << ": a key that places the cells "
+              << "differs from the restart file,\n" << changed
+              << "  The restart data would be put on different cells.  Restart with the "
+              << "grid the file was\n  written with (remove the override), or start "
+              << "a new run from a remapped initial state.\n" << std::flush;
+  }
+  Kokkos::finalize();
+#if MPI_PARALLEL_ENABLED
+  MPI_Finalize();
+#endif
+  std::exit(EXIT_FAILURE);
+}
+
 void CheckRestartPotentialKeys(ParameterInput *pin,
                                const std::map<std::string, std::string> &file) {
+  CheckRestartGridKeys(file, SnapshotPotentialKeys(pin, GridKeys()));
   const auto now = SnapshotPotentialKeys(pin, PotentialKeys());
   const bool etg = ParamIsTrue(file, "hydro/etotgrav") ||
                    ParamIsTrue(file, "mhd/etotgrav") ||
@@ -415,6 +477,9 @@ int main(int argc, char *argv[]) {
     restartfile.Open(restart_file.c_str(),IOWrapper::FileMode::read,single_file_per_rank);
     pinput->LoadFromFile(restartfile, single_file_per_rank);
     rst_potential_keys = SnapshotPotentialKeys(pinput, PotentialKeys());
+    for (const auto &kv : SnapshotPotentialKeys(pinput, GridKeys())) {
+      rst_potential_keys.insert(kv);
+    }
     IOWrapperSizeT headeroffset = restartfile.GetPosition(single_file_per_rank);
   }
 

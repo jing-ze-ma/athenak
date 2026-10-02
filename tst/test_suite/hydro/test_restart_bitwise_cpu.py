@@ -199,3 +199,30 @@ def test_restart_perturbed_run_differs():
             )
     finally:
         outputs_cleanup()
+
+
+@pytest.mark.parametrize("flag", ["mesh/x1max=1.6", "mesh/nx1=64",
+                                  "mesh/use_grid_stretch_r=true"])
+def test_restart_grid_change_is_fatal(flag):
+    """A key that places the cells, changed at restart, must stop the run.
+
+    The restart file holds the cell data, but the cell positions are rebuilt from the
+    current input (main.cpp GridKeys).  restart_sp_mhd has no etotgrav, so this also
+    checks that the grid guard does not depend on it.  The same value spelled
+    differently (1.50 for 1.5) is not a change and must run.
+    """
+    base = "restart_sp_mhd"
+    restart_file = f"rst/{base}.{_RST:05d}.rst"
+    try:
+        outputs_cleanup()
+        assert testutils.run(f"inputs/{base}.athinput"), f"{base}: continuous run failed"
+        assert os.path.exists(restart_file), f"{base}: no restart file"
+        command = ["./athena", "-r", restart_file, f"job/basename={base}_r"]
+        assert not testutils.run_command(command + [flag]), (
+            f"restart with {flag} ran: the grid guard did not fire"
+        )
+        assert testutils.run_command(command + ["mesh/x1max=1.50"]), (
+            "restart with mesh/x1max=1.50 (= the file's 1.5) failed"
+        )
+    finally:
+        outputs_cleanup()
