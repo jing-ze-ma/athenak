@@ -29,3 +29,14 @@ viper then cancels its copy of that arm (f1x6w 12059646->47, f3x6w 12059648->49,
 - Expected speed: ~14-15 ms/cycle (09-28 w121prod on 2 H200; the 1x 300 rot took ~10.5 h in one link), i.e.
   likely 1-2 links per arm; the 10x multi-rotation check (check_xl.py: per-rotation dt median >= 5 s, KE < 1e34,
   |Etot/Etot0-1| < 1e-2) is done at the ~50-rotation reports.
+
+## Update 10-01 23:15 PDT (Caltech): job ids changed, CUDA build fix
+- The first GPU build (3761762, f24fcfcf) FAILED under nvcc: `two_stream_rt.hpp(3408..3625): error: An extended
+  __host__ __device__ lambda cannot first-capture variable in constexpr-if context` (fbl, vef, vfg_g, vfs_g, wex, dil,
+  pth in the `if constexpr (FRM != 0)` branch of the face-6 code). HIP accepts it, so viper never saw it.
+- Fix 59d98e03 (branch cuda-capture-1002, now merged into rt-integration): `(void)` each of those variables just before
+  the `if constexpr`, so the lambda captures them outside it. No change to computed values. **Any CUDA build of the face-6
+  code needs it (DeltaAI too).**
+- Binary athena_gpu_deep_hot_jupiter_rt_59d98e03. The earlier job ids are void; the new ones (1 node x 2 H200 each) are:
+  1x 3762938 -> 3762939, 3x 3762940 -> 3762941, 10x 3762942 -> 3762943. All pending (Resources/Priority). A START
+  NOTE follows when each arm runs.
