@@ -935,32 +935,52 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // point is the same: the term vanishes there).  <= 0 turns the guard off (the
   // unguarded rows of m1-perf-0928, bitwise).
   impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
-  // m1-positivity: read only when named, so that an input without them (and the restart
-  // echo) is bitwise the old one (rad_m1.hpp)
+  // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
+  // implicit_g0_limit = 1, implicit_pos_gas = true, implicit_pos_floor = true and
+  // implicit_opac_newton_guard_mode = 6 below; every he_star_m1 production ran this set;
+  // He box / wedge IDENT, BSG column within the 1-ulp twin spread:
+  // /viper/ptmp2/jinma/defaults_gate_1002/item2).  A restart whose file lacks a key
+  // keeps its old default (off; guard mode 2 is recorded in every file) and says so once.
+  // The resolved values are recorded.  implicit_pos_gas_frac: read only when named.
+  {const bool rst = global_variable::restart_run;
+  bool old_kept = false;
+  auto pbool = [&](const char *key, bool &v) {
+    if (pin->DoesParameterExist("rad_m1",key)) {
+      v = pin->GetBoolean("rad_m1",key);
+    } else if (rst) {
+      old_kept = true;
+    } else {
+      v = pin->GetOrAddBoolean("rad_m1",key,true);
+    }
+  };
   if (pin->DoesParameterExist("rad_m1","implicit_g0_limit")) {
     impl_g0_lim = pin->GetReal("rad_m1","implicit_g0_limit");
+  } else if (rst) {
+    old_kept = true;
+  } else {
+    impl_g0_lim = pin->GetOrAddReal("rad_m1","implicit_g0_limit",1.0);
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_g0_exchange")) {
-    impl_g0_exch = pin->GetBoolean("rad_m1","implicit_g0_exchange");
-  }
-  if (pin->DoesParameterExist("rad_m1","implicit_pos_gas")) {
-    impl_pos_gas = pin->GetBoolean("rad_m1","implicit_pos_gas");
-  }
+  pbool("implicit_g0_exchange", impl_g0_exch);
+  pbool("implicit_pos_gas", impl_pos_gas);
+  pbool("implicit_pos_floor", impl_pos_floor);
+  if (old_kept && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> restart input lacks m1-positivity keys (implicit_g0_exchange,"
+              << " g0_limit, pos_gas, pos_floor): keeping the old default (off) for "
+              << "those; name them to switch" << std::endl;
+  }}
   if (pin->DoesParameterExist("rad_m1","implicit_pos_gas_frac")) {
     impl_pos_gas_frac = pin->GetReal("rad_m1","implicit_pos_gas_frac");
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_pos_floor")) {
-    impl_pos_floor = pin->GetBoolean("rad_m1","implicit_pos_floor");
-  }
   Kokkos::realloc(pos_cnt_d, M1_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
-  // implicit_opac_newton_guard_mode: DEFAULT 2 = the diagonal test + the sign of the
-  // neighbour entry (He presn wedge gate: 7 floor clips with the diagonal alone, 0 with
-  // both); 0 = the diagonal test alone; + 1 = also the
-  // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace),
-  // + 4 (m1-positivity) = also the row diagonal dominance (m1_impl_asm)
-  impl_opn_guard_mode = pin->GetOrAddInteger("rad_m1",
-                                             "implicit_opac_newton_guard_mode", 2);
+  // implicit_opac_newton_guard_mode: 0 = the diagonal test alone; + 1 = also the
+  // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace; He presn
+  // wedge gate: 7 floor clips with the diagonal alone, 0 with both), + 4 (m1-positivity)
+  // = also the row diagonal dominance (m1_impl_asm).  DEFAULT 6 since defaults-1002 (the
+  // positivity set above); 2 on a restart whose file lacks the key (files written since
+  // 09-29 record it).
+  impl_opn_guard_mode = pin->GetOrAddInteger("rad_m1","implicit_opac_newton_guard_mode",
+                                             global_variable::restart_run ? 2 : 6);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
