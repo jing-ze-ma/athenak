@@ -6314,12 +6314,14 @@ void RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, i
                                          {nmb1+1,ke+1,je+1,ie+1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                 MaxLoc::value_type &lmx) {
-    Real r = iw_(m,M1_IW_RES,k,j,i);
+    // tag 1: the cell with the most negative solved E (floor clips)
+    Real r = (tag == 1) ? -iw_(m,M1_IW_S2,k,j,i) : iw_(m,M1_IW_RES,k,j,i);
     if (r > lmx.val) {
       lmx.val = r;
       lmx.loc = ((m*nk + (k-ks))*nj + (j-js))*ni + (i-is);
     }
   }, MaxLoc(mloc));
+  if (mloc.loc < 0) {return;}
   const int lm = mloc.loc/(nk*nj*ni);
   int rem = mloc.loc - lm*nk*nj*ni;
   const int lk = rem/(nj*ni) + ks;
@@ -6371,14 +6373,14 @@ void RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, i
     dv(40) = iw_(m,M1_IW_TP,k-1,j,i); dv(41) = iw_(m,M1_IW_TP,k+1,j,i);
     dv(42) = iw_(m,M1_IW_TDIA,k,j,i); dv(43) = iw_(m,M1_IW_TRHS,k,j,i);
     dv(44) = opac_(m,M1_OP_P,k,j,i); dv(45) = opac_(m,M1_OP_E,k,j,i);
-    dv(46) = kt; dv(47) = iw_(m,M1_IW_TB,k,j,i);
+    dv(46) = kt; dv(47) = iw_(m,M1_IW_S2,k,j,i);
   });
   auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dv);
   static const char *nm[NV] = {"r", "dr", "rdth", "rho", "En", "E", "T", "egn", "res",
     "lres", "tau_r", "tau_th", "cdtkP", "cdtkE", "eg/E", "b1", "b2", "b3", "f", "f1",
     "w", "rf0", "g0", "srcb", "srcr", "de0", "Bk", "Rk", "nfb", "Yk", "Eim", "Eip",
     "Ejm", "Ejp", "Ekm", "Ekp", "Tim", "Tip", "Tjm", "Tjp", "Tkm", "Tkp", "tdia", "trhs",
-    "rkP", "rkE", "rkT", "TB"};
+    "rkP", "rkE", "rkT", "S2"};
   std::ostringstream os;
   os.precision(7);
   os << "<rad_m1> NCD rank=" << global_variable::my_rank << " cycle="
@@ -9603,6 +9605,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     nfe = g[0]; nfg = g[1];}
 #endif
     flr_ne += nfe;
+    if (impl_ncdump > 0 && nfe > 0.0) {
+      ImplicitNCDump(it, 1, gasx, igb, igr, igf, igy);
+    }
     flr_ng += nfg;
     // DEBUG dbg_t2_admiss (m1-positivity): a solve that ENDS with E <= e_floor or a
     // written-back eint <= 0 anywhere (the BE redo included) lists its cells and rows
