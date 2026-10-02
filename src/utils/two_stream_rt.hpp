@@ -3376,6 +3376,9 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
       // intensity and the up intensity at the same face in the same iteration --
       // so the two columns are BORROWED to hold the Riccati pair instead.  The
       // thread's private segment is the same size it was.
+      // nvcc: an extended lambda may not FIRST capture a variable inside an
+      // if-constexpr branch, so name every one this branch alone uses here.
+      (void)fbl; (void)vef; (void)vfg_g; (void)vfs_g; (void)wex; (void)dil; (void)pth;
       if constexpr (FRM != 0) {
         const RtF one = static_cast<RtF>(1.0);
         const RtF two = static_cast<RtF>(2.0);
