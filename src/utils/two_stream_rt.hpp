@@ -1311,7 +1311,8 @@ inline int ck_sweep_form = 0;
 // ck_implicit, NOT with ck_impl_lin / ck_impl_jac_lin (their stored-factorisation kernels
 // carry the old face).  tests_ck_sph/closure_0930 (cksph_test_0930).
 inline bool ck_sph_dilute = false;
-// problem/ck_sph_face (PROTOTYPE, default 0 = bitwise the Eddington face above): the face
+// problem/ck_sph_face (default 6 on a fresh spherical ck run whose keys allow it, else 0
+// = bitwise the Eddington face above; f6-default 10-02, see the pgen): the face
 // condition of the tm spherical ck two-stream, one of a one-parameter family that keeps
 // A (u - d) single-valued (so the deposit still telescopes):
 //     e (u_a - u_b) + (d_a - d_b) = 0,   A_a (u_a - d_a) = A_b (u_b - d_b),
@@ -1339,7 +1340,8 @@ inline bool ck_sph_dilute = false;
 // d_b = al d_a - be Sc_b, u_b = R d_b + Sc_b.  tm (ck_sweep_form = 1) only, explicit or
 // ck_implicit; refused with ck_impl_lin / ck_impl_jac_lin.  cksph_test_0930/VARIANTS.md.
 inline int ck_sph_face = 0;
-// problem/ck_sph_top (PROTOTYPE, default 0 = bitwise the historical datum): the down
+// problem/ck_sph_top (default 1 with ck_sph_face = 6, else 0 = bitwise the historical
+// datum): the down
 // intensity the correlated-k chain kernel hands the top face, (1 - e^-dtau/mu) B over
 // the hydrostatic column p/g above the domain.  0 takes kappa and B at the GHOST cell
 // (which a pgen IC can leave hot: T_ghost 3415 K on the old dhj grid); 1 sends
@@ -1404,7 +1406,8 @@ inline int ck_f6_report = 0;
 // where f jumps by a factor ~X^2 between neighbouring cells.  rho' (the flux
 // continuity) is untouched, so the deposit still telescopes.
 inline Real ck_vef_xlim = 0.0;
-// problem/ck_sph_face = 6 (PROTOTYPE): the VEF closure of face 5 (same formal solution,
+// problem/ck_sph_face = 6 (the DEFAULT since f6-default 10-02): the VEF closure of face
+// 5 (same formal solution,
 // same f, h, beta, same ck_vef_every refresh) discretised as a PASSIVE LADDER NETWORK in
 // K = Phi f J (Phi = q r^2), so that it is monotone by construction and needs no limiter
 // (ckf6_mono_1001/RESULTS.md).  The moment equations
