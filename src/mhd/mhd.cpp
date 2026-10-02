@@ -234,6 +234,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // radiative timescale the profile changes on.  N = 1 halves the walk cost, N = 10
     // removes it.
     wb_cache_every = pin->GetOrAddInteger("mhd","wb_cache_every",0);
+    wb_guard_ideal = pin->GetOrAddBoolean("mhd","wb_guard_ideal",false);
     use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
     // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
