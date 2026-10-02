@@ -772,6 +772,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // flags).  Read only when named; prints only; no number of the solve changes.
   impl_ncdump = pin->DoesParameterExist("rad_m1","implicit_nc_dump") ?
                 pin->GetInteger("rad_m1","implicit_nc_dump") : 0;
+  // DEBUG (he_estall_1003): implicit_stall_trace = N > 0: in a solve still unconverged at
+  // pass implicit_stall_trace_p0 (default 40), fix each rank's worst cell of that pass
+  // and print its NCD line (tag 3) before step (c) and (tag 2) after the residual of
+  // every pass p0 .. p0+N-1, for at most implicit_stall_trace_max (default 30) solves.
+  // Prints only; read only when named.
+  if (pin->DoesParameterExist("rad_m1","implicit_stall_trace")) {
+    impl_strace = pin->GetInteger("rad_m1","implicit_stall_trace");
+    impl_strace_p0 = pin->GetOrAddInteger("rad_m1","implicit_stall_trace_p0",40);
+    impl_strace_max = pin->GetOrAddInteger("rad_m1","implicit_stall_trace_max",30);
+  }
   impl_dtrace = pin->DoesParameterExist("rad_m1","implicit_det_trace") ?
                 pin->GetInteger("rad_m1","implicit_det_trace") : 0;
   tmr_c0 = pin->DoesParameterExist("rad_m1","implicit_timers") ?
@@ -6350,8 +6360,8 @@ void RadiationM1::ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bo
 //! flux, the lagged closure, the T-Newton row and flags, and E, T of its six neighbours.
 //! Prints only.
 
-void RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, int igf,
-                                 int igy) {
+int RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, int igf,
+                                int igy, int floc) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -6360,6 +6370,8 @@ void RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, i
   auto iw_ = iw;
   using MaxLoc = Kokkos::MaxLoc<Real,int>;
   MaxLoc::value_type mloc;
+  mloc.loc = floc;
+  if (floc < 0) {
   Kokkos::parallel_reduce("m1_impl_ncd_loc",
   Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
                                          {nmb1+1,ke+1,je+1,ie+1}),
@@ -6372,7 +6384,8 @@ void RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, i
       lmx.loc = ((m*nk + (k-ks))*nj + (j-js))*ni + (i-is);
     }
   }, MaxLoc(mloc));
-  if (mloc.loc < 0) {return;}
+  }
+  if (mloc.loc < 0) {return -1;}
   const int lm = mloc.loc/(nk*nj*ni);
   int rem = mloc.loc - lm*nk*nj*ni;
   const int lk = rem/(nj*ni) + ks;
@@ -6440,6 +6453,7 @@ void RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, i
      << "," << li;
   for (int q = 0; q < NV; ++q) {os << " " << nm[q] << "=" << hv(q);}
   std::cout << os.str() << std::endl;
+  return mloc.loc;
 }
 
 //----------------------------------------------------------------------------------------
@@ -7869,6 +7883,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   std::vector<Real> rhist;
   if (stl) {rhist.reserve(impl_maxit);}
   bool stalled = false;
+  const bool strc = (impl_strace > 0) && (impl_strace_n < impl_strace_max);
+  int sloc = -1;
   for (it = 0; it < impl_maxit && !converged; ++it) {
     int nin = -1;
     TmrMark((it == 0) ? 4 : 7);
@@ -8427,6 +8443,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
 
+    if (strc && it > impl_strace_p0 && it < impl_strace_p0 + impl_strace) {
+      (void) ImplicitNCDump(it, 3, gasx, igb, igr, igf, igy, sloc);
+    }
     // (c) the emission/absorption source, linearised in T about the iterate
     if (src_on) {
       auto eos = flr.eos;
@@ -9525,6 +9544,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (plog) {ImplicitPicardLog(it, nin, resid, lresid, src_on);}
     if (impl_ncdump > 0 && it >= impl_maxit - impl_ncdump) {
       ImplicitNCDump(it, 0, gasx, igb, igr, igf, igy);
+    }
+    if (strc && it == impl_strace_p0 && !converged) {
+      sloc = ImplicitNCDump(it, 2, gasx, igb, igr, igf, igy);
+      impl_strace_n += 1;
+    } else if (strc && sloc >= 0 && it > impl_strace_p0 &&
+               it < impl_strace_p0 + impl_strace) {
+      (void) ImplicitNCDump(it, 2, gasx, igb, igr, igf, igy, sloc);
     }
     // MILESTONE 3e: ACCELERATE.  Only on a pass that is followed by another one: the
     // state the step ENDS on must be the one the face fluxes of step (g) were built

@@ -786,6 +786,10 @@ class RadiationM1 {
   void DetTraceScalars(const char *tag, int n, const Real *v);
   bool impl_tsolve_opac;        // <rad_m1>/implicit_tsolve_opac (nc_cure_1002)
   int impl_tsolve_opac_start;   // implicit_tsolve_opac_start: first Picard pass
+  int impl_strace = 0;          // <rad_m1>/implicit_stall_trace (DEBUG, he_estall_1003)
+  int impl_strace_p0 = 40;      // ...from this pass, the worst cell fixed (per rank)
+  int impl_strace_max = 30;     // ...in at most this many solves
+  int impl_strace_n = 0;        // solves traced so far
   int impl_ncdump;              // <rad_m1>/implicit_nc_dump (DEBUG, default 0 = off):
                                 // the local state of each rank's worst cell in the
                                 // last N passes of a solve that hits implicit_maxit
@@ -1196,7 +1200,8 @@ class RadiationM1 {
   int ImplicitBiCGStabFused(Real rhsmax);
   void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics
   void ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bool srct);
-  void ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, int igf, int igy);
+  int ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, int igf, int igy,
+                     int floc = -1);
 
   // ---- <rad_m1>/closure = tau (rad_m1_tau.cpp): the Eddington tensor of the multi-D
   // implicit solve from the COLUMN OPTICAL DEPTH measured from the top of the domain
