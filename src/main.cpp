@@ -507,12 +507,6 @@ int main(int argc, char *argv[]) {
           pinput->DoesBlockExist("hydro")) {
         pinput->GetOrAddBoolean("hydro", "rad_signal_speed", false);
       }
-      // rad_m1/implicit_face_weight (rad_m1_implicit.cpp): the same; a restart whose
-      // embedded input lacks it keeps equal unless it is named here
-      if (std::string(argv[i]).find("rad_m1/implicit_face_weight") == 0 &&
-          pinput->DoesBlockExist("rad_m1")) {
-        pinput->GetOrAddString("rad_m1", "implicit_face_weight", "equal");
-      }
       // mhd/rad_signal_speed (mhd_newdt.cpp): the same
       if (std::string(argv[i]).find("mhd/rad_signal_speed") == 0 &&
           pinput->DoesBlockExist("mhd")) {

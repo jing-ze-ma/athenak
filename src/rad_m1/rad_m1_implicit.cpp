@@ -970,7 +970,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // uniform).  On the wedge the key is recorded (GetOrAdd), so a restart keeps what the
   // run started with.  A RESTART whose embedded input predates the key keeps `equal`,
   // the behaviour it was run with, unless the key is given on the command line or in
-  // an -i overlay (main.cpp registers it for the command line).  On a Cartesian grid
+  // an -i overlay (ModifyFromCmdline adds absent keys on a restart).  On a Cartesian grid
   // it is read only when named, so the parameter dump there is unchanged.
   if (sph_geom || pin->DoesParameterExist("rad_m1","implicit_face_weight")) {
     const bool named = pin->DoesParameterExist("rad_m1","implicit_face_weight");
