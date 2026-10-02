@@ -1266,8 +1266,11 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
 #else
   Kokkos::TeamPolicy<> pol(DevExeSpace(), lg, Kokkos::AUTO);
 #endif
+  // level-0 team scratch unless the device cannot fit it (nx1*16 doubles: 52 KB at
+  // nx1 410 > the 48 KB per block of an A100)
+  const int lv = TeamScratchLevel(scr, 0, pol.team_size());
   Kokkos::parallel_for("m1_vet_mb_momout", Kokkos::Experimental::require(
-                       pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+                       pol.set_scratch_size(lv, Kokkos::PerTeam(scr)),
                        Kokkos::Experimental::WorkItemProperty::HintLightWeight),
   KOKKOS_LAMBDA(const TeamMember_t &tm) {
     const int lgi = tm.league_rank();
@@ -1278,7 +1281,7 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
     const int n = q%10, m = q/10;
     const int j0 = c*cj;
     const int ncj = (nx2 - j0 < cj) ? (nx2 - j0) : cj;
-    ScrArray1D<Real> tl(tm.team_scratch(0), nx1*cj);
+    ScrArray1D<Real> tl(tm.team_scratch(lv), nx1*cj);
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nx1*ncj), [&](const int u) {
       const int jj = u%ncj, i = u/ncj;
       const int j = j0 + jj;

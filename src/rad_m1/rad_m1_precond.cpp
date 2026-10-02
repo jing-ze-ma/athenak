@@ -139,14 +139,17 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
   } else {
     policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, Kokkos::AUTO);
   }
-  Kokkos::parallel_for("m1_mg_pcr", policy.set_scratch_size(0, Kokkos::PerTeam(scr_size)),
+  // level-0 team scratch unless the device cannot fit it (A100: 48 KB per block)
+  const int lv = TeamScratchLevel(scr_size, 0, policy.team_size());
+  Kokkos::parallel_for("m1_mg_pcr",
+                       policy.set_scratch_size(lv, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tm) {
     const int m = tm.league_rank()/nkj;
     const int k = (tm.league_rank() - m*nkj)/njl;
     const int jj = (tm.league_rank() - m*nkj)%njl;
     const int j = 2*jj + ((col + k) & 1);
     if (j >= nj) return;   // team-uniform
-    ScrArray1D<T> sw(tm.team_scratch(0), 8*nx);
+    ScrArray1D<T> sw(tm.team_scratch(lv), 8*nx);
     Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
       sw(i) = static_cast<T>((i == 0) ? 0.0 : a_(m,MG_TA,k,j,i));
       sw(nx + i) = static_cast<T>(a_(m,MG_TB,k,j,i));
@@ -1258,12 +1261,13 @@ void RadiationM1::ImplicitGFBuild() {
   size_t scr = ScrArray1D<Real>::shmem_size(7*n1) + ScrArray1D<int>::shmem_size(n1);
   auto ai_ = gf_ainv;
   Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), gf_nm, ts);
-  Kokkos::parallel_for("m1_gf_fac", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+  const int lv = TeamScratchLevel(scr, 0, ts);   // level 1 only if level 0 cannot fit
+  Kokkos::parallel_for("m1_gf_fac", pol.set_scratch_size(lv, Kokkos::PerTeam(scr)),
   KOKKOS_LAMBDA(const TeamMember_t &tm) {
     const int q = tm.league_rank();
     const int a = q%nb2, c = q/nb2;
-    ScrArray1D<Real> el(tm.team_scratch(0), 7*n1);   // (r, cc) at r*7 + cc - r + 2
-    ScrArray1D<int> pvs(tm.team_scratch(0), n1);
+    ScrArray1D<Real> el(tm.team_scratch(lv), 7*n1);   // (r, cc) at r*7 + cc - r + 2
+    ScrArray1D<int> pvs(tm.team_scratch(lv), n1);
     for (int r = tm.team_rank(); r < n1; r += tm.team_size()) {
       Real w[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
       for (int s = 0; s < 25; ++s) {
@@ -1423,10 +1427,11 @@ void RadiationM1::ImplicitGFPre(int rc, int upd, Real c1, Real c2) {
     auto ai_ = gf_ainv;
     size_t scr = ScrArray1D<Real>::shmem_size(n1);
     Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nm, ts);
-    Kokkos::parallel_for("m1_gf_solve", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+    const int lv = TeamScratchLevel(scr, 0, ts);   // level 1 only if level 0 cannot fit
+    Kokkos::parallel_for("m1_gf_solve", pol.set_scratch_size(lv, Kokkos::PerTeam(scr)),
     KOKKOS_LAMBDA(const TeamMember_t &tm) {
       const int q = tm.league_rank();
-      ScrArray1D<Real> y(tm.team_scratch(0), n1);
+      ScrArray1D<Real> y(tm.team_scratch(lv), n1);
       const bool ok = (ok_(q) != 0);
       const Real nq = nr_(q);
       for (int gi = tm.team_rank(); gi < n1; gi += tm.team_size()) {

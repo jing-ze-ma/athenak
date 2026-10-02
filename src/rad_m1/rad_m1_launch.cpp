@@ -212,8 +212,10 @@ void M1PCRXD(const DvceArray5D<Real> &iw_, const DvceArray1D<Real> &kd_,
   size_t scr_size = ScrArray1D<T>::shmem_size(2*nv*nx);
   int nround = 0;
   while ((1 << nround) < nx) ++nround;
+  // level-0 team scratch unless the device cannot fit it (A100: 48 KB per block)
+  const int lv = TeamScratchLevel(scr_size, 0, policy.team_size());
   Kokkos::parallel_for("m1_impl_pcrxd",
-                       policy.set_scratch_size(0, Kokkos::PerTeam(scr_size)),
+                       policy.set_scratch_size(lv, Kokkos::PerTeam(scr_size)),
   KOKKOS_LAMBDA(TeamMember_t tm) {
     if (kd_(KD_STOP) != 0.0) return;   // team-uniform
     const int m = tm.league_rank()/nkj;
@@ -222,7 +224,7 @@ void M1PCRXD(const DvceArray5D<Real> &iw_, const DvceArray1D<Real> &kd_,
     const int k = kk + ks;
     const int j = colr ? (js + 2*jj + ((cl_ + kk) & 1)) : (jj + js);
     if (j > je) return;   // team-uniform
-    ScrArray1D<T> sw(tm.team_scratch(0), 2*nv*nx);
+    ScrArray1D<T> sw(tm.team_scratch(lv), 2*nv*nx);
     Real alpha = 0.0, beta = 0.0, gam = 1.0;
     if (cyclic) {
       alpha = iw_(m,M1_IW_TC,k,j,ie);

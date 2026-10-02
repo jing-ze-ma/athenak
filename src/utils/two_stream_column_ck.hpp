@@ -1436,7 +1436,9 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
 #else
     Kokkos::TeamPolicy<> tpol(DevExeSpace(), nlg, Kokkos::AUTO);
 #endif
-    tpol.set_scratch_size(0, Kokkos::PerTeam(scr));
+    // level-0 team scratch unless the device cannot fit it (6 ns reals grow with nx1)
+    const int cklv_ = TeamScratchLevel(scr, 0, tpol.team_size());
+    tpol.set_scratch_size(cklv_, Kokkos::PerTeam(scr));
     auto body = KOKKOS_LAMBDA(TeamMember_t tm) {
       const int lr = tm.league_rank();
       const int m = lr/nkj;
@@ -1750,13 +1752,13 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       if (ic > ie) return;
       if (done_(m,k,j) > 0.0) return;
       const int n = ie - ic + 1;
-      ScrArray1D<Real> sa(tm.team_scratch(0), ns);
-      ScrArray1D<Real> sb(tm.team_scratch(0), ns);
-      ScrArray1D<Real> sc(tm.team_scratch(0), ns);
-      ScrArray1D<Real> sd(tm.team_scratch(0), ns);
-      ScrArray1D<Real> sx(tm.team_scratch(0), ns);
-      ScrArray1D<Real> sv(tm.team_scratch(0), ns);
-      ScrArray1D<Real> sgm(tm.team_scratch(0), nsg);
+      ScrArray1D<Real> sa(tm.team_scratch(cklv_), ns);
+      ScrArray1D<Real> sb(tm.team_scratch(cklv_), ns);
+      ScrArray1D<Real> sc(tm.team_scratch(cklv_), ns);
+      ScrArray1D<Real> sd(tm.team_scratch(cklv_), ns);
+      ScrArray1D<Real> sx(tm.team_scratch(cklv_), ns);
+      ScrArray1D<Real> sv(tm.team_scratch(cklv_), ns);
+      ScrArray1D<Real> sgm(tm.team_scratch(cklv_), nsg);
       constexpr int g0 = CK_AA_MAX*CK_AA_MAX + CK_AA_MAX;   // gamma's slots in sg
       // ck_impl_cvsec: this pass's cv of every cell, before any row reads a neighbour's
       if (cvs_) {

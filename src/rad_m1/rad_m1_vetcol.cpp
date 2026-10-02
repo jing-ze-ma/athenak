@@ -1081,15 +1081,17 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   Kokkos::TeamPolicy<> pol =
       (vcol_ts > 0) ? Kokkos::TeamPolicy<>(DevExeSpace(), nlg, vcol_ts)
                     : Kokkos::TeamPolicy<>(DevExeSpace(), nlg, Kokkos::AUTO);
-  Kokkos::parallel_for("m1_vcol_team", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+  // level-0 team scratch unless the device cannot fit it (5 n1 reals grow with nx1)
+  const int lv = TeamScratchLevel(scr, 0, (vcol_ts > 0) ? vcol_ts : 0);
+  Kokkos::parallel_for("m1_vcol_team", pol.set_scratch_size(lv, Kokkos::PerTeam(scr)),
   KOKKOS_LAMBDA(TeamMember_t tm) {
     const int m = tm.league_rank()/(nk*nj);
     const int k = (tm.league_rank() - m*nk*nj)/nj + ks;
     const int j = (tm.league_rank() - m*nk*nj) % nj + js;
-    ScrArray1D<Real> pr_(tm.team_scratch(0), 5*n1);    // chi, S, J_in, H_in, K_in
-    ScrArray1D<Real> ir_(tm.team_scratch(0), nrs*nray);  // running I; face I; top
-    ScrArray2D<Real> ic_(tm.team_scratch(0), lc, nray);
-    ScrArray1D<Real> pm_(tm.team_scratch(0), 3*VC_NG*lc);   // group partial moments
+    ScrArray1D<Real> pr_(tm.team_scratch(lv), 5*n1);   // chi, S, J_in, H_in, K_in
+    ScrArray1D<Real> ir_(tm.team_scratch(lv), nrs*nray);  // running I; face I; top
+    ScrArray2D<Real> ic_(tm.team_scratch(lv), lc, nray);
+    ScrArray1D<Real> pm_(tm.team_scratch(lv), 3*VC_NG*lc);   // group partial moments
     par_for_inner(tm, 0, n1-1, [&](const int l) {
       const int i = is + l;
       pr_(l) = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
