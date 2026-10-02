@@ -1,5 +1,7 @@
 # TASK for FREYA (MPA cluster, MPCDF): BSG arm 2 production (same run as viper, Caltech, DeltaAI, Raven)
 
+**CANCELLED 10-02 06:30 (user): BSG runs on viper; see NOTE-2026-10-02-bsg-drop-remote.md. Do not start this task.**
+
 Read first: NOTE-2026-10-02-sync-bsg.md (common setup and reporting), NOTE-2026-10-02-bsg-code-ready.md (commit and
 gate numbers), TASK-2026-10-01-caltech-bsg.md (full background, sections 1-5). This TASK only adds the FREYA specifics.
 FREYA cannot be reached from viper (ssh blocked), so this runs from a session started on FREYA itself.
