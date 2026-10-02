@@ -12,6 +12,8 @@
 #include <type_traits>
 #include <string>
 #include <cstdint>
+#include <map>
+#include <utility>
 
 #include <Kokkos_Core.hpp>
 #include <Kokkos_DualView.hpp>
@@ -368,31 +370,45 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
 
 //------------------------------------------
 // Team scratch level that can be launched: returns scr_level unchanged unless it is 0 and
-// the device cannot fit scr_size bytes of level-0 (on-chip) team scratch in any team size
-// (e.g. MHD fluxes at nx1 > ~264 on a 64 KB-LDS AMD GPU), in which case it returns 1
-// (global memory). Every size that launches on level 0 today stays on level 0. Host
-// backends are never changed. Kernels must use the returned level in team_scratch().
+// the device cannot fit scr_size bytes of level-0 (on-chip) team scratch, in which case
+// it returns 1 (global memory). team_size = 0 probes a Kokkos::AUTO team (any team size
+// that fits), team_size > 0 probes that explicit team size. The probe asks Kokkos itself
+// (team_size_recommended / team_size_max): on HIP an oversized request throws, on CUDA
+// it returns 0 (A100/H100 give 48 KB per block without opt-in; MHD fluxes at nx1 > ~264
+// on a 64 KB-LDS AMD GPU, hydro fluxes at nx1 ~400 on an A100). Every size that
+// launches on level 0 today stays on level 0. Host backends are never changed. Kernels
+// must use the returned level in team_scratch().
 struct TeamScratchProbe {
   KOKKOS_INLINE_FUNCTION void operator()(const TeamMember_t &) const {}
 };
-inline int TeamScratchLevel(size_t scr_size, int scr_level) {
+inline int TeamScratchLevel(size_t scr_size, int scr_level, int team_size = 0) {
   if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
     return scr_level;
   } else {
-    // cache of sizes already probed (sizes are few and fixed per run)
-    static size_t fits_max = 32768, fails_min = SIZE_MAX;
-    if (scr_level != 0 || scr_size <= fits_max) return scr_level;
-    if (scr_size >= fails_min) return 1;
-    Kokkos::TeamPolicy<> policy(DevExeSpace(), 1, Kokkos::AUTO);
-    policy.set_scratch_size(0, Kokkos::PerTeam(scr_size));
+    if (scr_level != 0 || scr_size <= 32768) return scr_level;
+    // cache of (size, team size) pairs already probed (few and fixed per run)
+    static std::map<std::pair<size_t, int>, int> probed;
+    const auto key = std::make_pair(scr_size, team_size);
+    const auto it = probed.find(key);
+    if (it != probed.end()) return it->second;
+    int lev = 0;
     try {
-      policy.team_size_recommended(TeamScratchProbe(), Kokkos::ParallelForTag());
+      if (team_size > 0) {
+        Kokkos::TeamPolicy<> policy(DevExeSpace(), 1, team_size);
+        policy.set_scratch_size(0, Kokkos::PerTeam(scr_size));
+        if (policy.team_size_max(TeamScratchProbe(), Kokkos::ParallelForTag()) <
+            team_size) lev = 1;
+      } else {
+        Kokkos::TeamPolicy<> policy(DevExeSpace(), 1, Kokkos::AUTO);
+        policy.set_scratch_size(0, Kokkos::PerTeam(scr_size));
+        if (policy.team_size_recommended(TeamScratchProbe(),
+                                         Kokkos::ParallelForTag()) <= 0) lev = 1;
+      }
     } catch (const std::runtime_error &) {
-      fails_min = scr_size;
-      return 1;
+      lev = 1;
     }
-    fits_max = scr_size;
-    return 0;
+    probed[key] = lev;
+    return lev;
   }
 }
 
