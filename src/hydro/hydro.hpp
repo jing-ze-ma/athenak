@@ -82,6 +82,13 @@ inline DvceArray1D<Real> *wbrec_nanrep_rec = nullptr;
 inline int wbrec_nanrep_lines = 0;
 inline int rsolv_nanrep_lines = 0;
 
+// <hydro>/fofc pgen-level default (defaults-1002): false in the core; a problem generator
+// whose inputs all run FOFC sets it true at static initialisation (he_star_m1,
+// box_convection).  Constant-initialised, so it is false before any dynamic initialiser
+// runs; read once by the Hydro constructor.  An input that names the key is unchanged; a
+// RESTART whose embedded input lacks the key keeps the old default (off).
+inline bool fofc_pgen_default = false;
+
 //----------------------------------------------------------------------------------------
 //! \class Hydro
 

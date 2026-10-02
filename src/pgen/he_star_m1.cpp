@@ -78,6 +78,12 @@
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
 
+// defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
+// stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
+namespace {
+[[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
+}  // namespace
+
 namespace {
 // the initial column on a uniform fine radial grid (device), read by the x1 BCs
 DvceArray1D<Real> hs_rho_, hs_eint_;

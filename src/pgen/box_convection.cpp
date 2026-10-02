@@ -331,6 +331,12 @@ void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
 void BoxConvHistory(HistoryData *pdata, Mesh *pm);
 
+// defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
+// stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
+namespace {
+[[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
+}  // namespace
+
 namespace {
 // the column, on a uniform fine grid covering the mesh plus its ghosts
 DvceArray1D<Real> cd_, ce_, cp_, ct_;   // density, eint, pressure, temperature [K]

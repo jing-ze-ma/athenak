@@ -785,15 +785,27 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_res_rmax")) {
     impl_res_rmax = pin->GetReal("rad_m1","implicit_res_rmax");
   }
-  //  implicit_resid_fatal (read only when named; default 0 = off): a Picard solve that
-  //    ends NON-CONVERGED with resid > this value (or a non-finite resid) is a diverged
-  //    solve: FATAL before its state spreads (BSG production 10-01: one 200-pass solve
-  //    with resid 1.2e6 at t = 2.91e5 s, the whole domain NaN ~15 cycles later).
+  //  implicit_resid_fatal: a Picard solve that ends NON-CONVERGED with resid > this
+  //    value (or a non-finite resid or lin_resid) is a diverged solve: FATAL before its
+  //    state spreads (BSG production 10-01: one 200-pass solve with resid 1.2e6 at
+  //    t = 2.91e5 s, the whole domain NaN ~15 cycles later).  0 = off.  DEFAULT 1e2
+  //    since defaults-1002 (/viper/ptmp2/jinma/defaults_gate_1002/item5): the largest
+  //    NON-CONVERGED resid of a run that went on cleanly was 0.997 (He presn onv128;
+  //    scout64 0.37); every resid > 1e3 seen came from a run that was failing.  A restart
+  //    whose file lacks the key keeps the old default (off) and says so; the resolved
+  //    value is recorded.
   if (pin->DoesParameterExist("rad_m1","implicit_resid_fatal")) {
     impl_res_fatal = pin->GetReal("rad_m1","implicit_resid_fatal");
     if (!(impl_res_fatal >= 0.0)) {
       ImplFatal("<rad_m1>/implicit_resid_fatal must be >= 0");
     }
+  } else if (global_variable::restart_run) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart input has no implicit_resid_fatal: keeping the old "
+                << "default (off); set it to switch" << std::endl;
+    }
+  } else {
+    impl_res_fatal = pin->GetOrAddReal("rad_m1","implicit_resid_fatal",1.0e2);
   }
   if (impl_res_dmin < 0.0 || impl_res_rmax < 0.0) {
     ImplFatal("<rad_m1>/implicit_res_dmin and implicit_res_rmax must be >= 0");
