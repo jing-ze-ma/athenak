@@ -6440,6 +6440,23 @@ int RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, in
     dv(46) = kt; dv(47) = iw_(m,M1_IW_S2,k,j,i);
   });
   auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dv);
+  // implicit_stall_trace: the hottest of the six neighbours inside this MeshBlock
+  ncd_hot_loc = -1;
+  {
+    Real tb = -1.0;
+    const int di[6] = {-1, 1, 0, 0, 0, 0}, dj[6] = {0, 0, -1, 1, 0, 0};
+    const int dk[6] = {0, 0, 0, 0, -1, 1};
+    for (int q = 0; q < 6; ++q) {
+      const int ni2 = li + di[q], nj2 = lj + dj[q], nk2 = lk + dk[q];
+      if (ni2 < is || ni2 > ie || nj2 < js || nj2 > je || nk2 < ks || nk2 > ke) {
+        continue;
+      }
+      if (hv(36 + q) > tb) {
+        tb = hv(36 + q);
+        ncd_hot_loc = ((lm*nk + (nk2-ks))*nj + (nj2-js))*ni + (ni2-is);
+      }
+    }
+  }
   static const char *nm[NV] = {"r", "dr", "rdth", "rho", "En", "E", "T", "egn", "res",
     "lres", "tau_r", "tau_th", "cdtkP", "cdtkE", "eg/E", "b1", "b2", "b3", "f", "f1",
     "w", "rf0", "g0", "srcb", "srcr", "de0", "Bk", "Rk", "nfb", "Yk", "Eim", "Eip",
@@ -7884,7 +7901,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (stl) {rhist.reserve(impl_maxit);}
   bool stalled = false;
   const bool strc = (impl_strace > 0) && (impl_strace_n < impl_strace_max);
-  int sloc = -1;
+  int sloc = -1, sloc2 = -1;
   for (it = 0; it < impl_maxit && !converged; ++it) {
     int nin = -1;
     TmrMark((it == 0) ? 4 : 7);
@@ -8445,6 +8462,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     if (strc && it > impl_strace_p0 && it < impl_strace_p0 + impl_strace) {
       (void) ImplicitNCDump(it, 3, gasx, igb, igr, igf, igy, sloc);
+      if (sloc2 >= 0) {(void) ImplicitNCDump(it, 5, gasx, igb, igr, igf, igy, sloc2);}
     }
     // (c) the emission/absorption source, linearised in T about the iterate
     if (src_on) {
@@ -9547,10 +9565,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
     if (strc && it == impl_strace_p0 && !converged) {
       sloc = ImplicitNCDump(it, 2, gasx, igb, igr, igf, igy);
+      sloc2 = ncd_hot_loc;
+      if (sloc2 >= 0) {(void) ImplicitNCDump(it, 4, gasx, igb, igr, igf, igy, sloc2);}
       impl_strace_n += 1;
     } else if (strc && sloc >= 0 && it > impl_strace_p0 &&
                it < impl_strace_p0 + impl_strace) {
       (void) ImplicitNCDump(it, 2, gasx, igb, igr, igf, igy, sloc);
+      if (sloc2 >= 0) {(void) ImplicitNCDump(it, 4, gasx, igb, igr, igf, igy, sloc2);}
     }
     // MILESTONE 3e: ACCELERATE.  Only on a pass that is followed by another one: the
     // state the step ENDS on must be the one the face fluxes of step (g) were built

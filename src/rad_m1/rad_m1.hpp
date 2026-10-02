@@ -790,6 +790,7 @@ class RadiationM1 {
   int impl_strace_p0 = 40;      // ...from this pass, the worst cell fixed (per rank)
   int impl_strace_max = 30;     // ...in at most this many solves
   int impl_strace_n = 0;        // solves traced so far
+  int ncd_hot_loc = -1;         // set by ImplicitNCDump: its hottest in-block neighbour
   int impl_ncdump;              // <rad_m1>/implicit_nc_dump (DEBUG, default 0 = off):
                                 // the local state of each rank's worst cell in the
                                 // last N passes of a solve that hits implicit_maxit
