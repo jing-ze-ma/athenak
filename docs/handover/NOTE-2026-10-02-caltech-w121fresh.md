@@ -40,3 +40,9 @@ viper then cancels its copy of that arm (f1x6w 12059646->47, f3x6w 12059648->49,
 - Binary athena_gpu_deep_hot_jupiter_rt_59d98e03. The earlier job ids are void; the new ones (1 node x 2 H200 each) are:
   1x 3762938 -> 3762939, 3x 3762940 -> 3762941, 10x 3762942 -> 3762943. All pending (Resources/Priority). A START
   NOTE follows when each arm runs.
+
+## UPDATE 2026-10-02: Caltech copies CANCELLED (user)
+
+All six Caltech jobs (1x 3762938->39, 3x 3762940->41, 10x 3762942->43) were
+scancelled while still PENDING; none ever started. Viper keeps all three arms;
+no START note will follow from Caltech. Do not cancel the viper chains on our account.
