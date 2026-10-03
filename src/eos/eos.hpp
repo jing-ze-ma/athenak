@@ -108,6 +108,20 @@ struct EOS_Data {
   // Firings are counted in EventCounters::neos_vceil (event-log column eos_vceil).
   Real vceil = 0.0;
 
+  // <mhd>/valfven_max_cgs -- an ALFVEN-SPEED density floor for Newtonian MHD, in cm/s
+  // (0 = off, the default; read only when named).  Wherever B^2/rho > valfven_max^2
+  // (Heaviside-Lorentz code units, v_A^2 = B^2/rho) the density is raised to
+  // B^2/valfven_max^2 exactly as dfloor raises it: momentum and the conserved energy
+  // are left alone (the velocity drops, the internal energy density is kept).  It exists
+  // for tenuous, strongly magnetised layers (the nightside top of a hot Jupiter with a
+  // planetary dipole) where v_A would otherwise set the time step by orders of
+  // magnitude.  B^2 is the cell-centred face-average triple ConsToPrim already forms; on
+  // the cubed sphere that is the non-orthogonal face-normal triple, so the floor value
+  // is approximate there by up to the panel's 1/sin^2 metric factor, which is harmless
+  // for a floor.  Counted with the density floor (event-log column eos_dfloor).
+  // Stored as 1/valfven_max^2 in code units.
+  Real va2max_inv = 0.0;
+
   // <mhd>/hlld_bx_zero_tol -- plasma-beta cut used by the HLLD family (hlld_mhd.hpp,
   // hlld_uct_mhd.hpp, lhlld_mhd.hpp) to decide whether the rotational discontinuities
   // (the ** states) are built at all.  The test is 0.5*Bx^2 < tol*pt*: since pt* is the
