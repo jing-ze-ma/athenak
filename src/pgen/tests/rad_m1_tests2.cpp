@@ -72,6 +72,8 @@
 #include <math.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -148,6 +150,7 @@ void RadM1ShockBC(Mesh *pm);
 void RadM1AtmBC(Mesh *pm);
 void RadM1AtmGas(Mesh *pm, const Real bdt);
 void RadM1SphAtmGas(Mesh *pm, const Real bdt);
+void RadM1ShellReport(ParameterInput *pin, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::RadiationM1Tests2()
@@ -686,14 +689,23 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     auto x2v = pmbp->pcoord->x2v;
     auto x3v = pmbp->pcoord->x3v;
     const bool sp = pmy_mesh_->use_spherical_polar;
+    // STAGE CS0 (m1-cs-implicit): on the cubed sphere x1 is r as well
+    const bool spr = sp || pmy_mesh_->use_cubed_sphere;
+    // <problem>/shell_report = true (read only when named): at the end of the run print
+    // per radial index the min / mean / max over every column (all panels, ranks) of E
+    // and F1, and max|F2|, max|F3| (RadM1ShellReport, double precision)
+    if (pin->DoesParameterExist("problem","shell_report") &&
+        pin->GetBoolean("problem","shell_report")) {
+      pgen_final_func = RadM1ShellReport;
+    }
     auto &msz = pmy_mesh_->mesh_size;
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
     const Real x2a = msz.x2min, x2l = msz.x2max - msz.x2min;
     const Real x3a = msz.x3min, x3l = msz.x3max - msz.x3min;
     par_for("m1_sph_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      Real r = sp ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
-                                           size.d_view(m).x1max);
+      Real r = spr ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
+                                            size.d_view(m).x1max);
       uh(m,IDN,k,j,i) = dgas;
       uh(m,IM1,k,j,i) = 0.0;
       uh(m,IM2,k,j,i) = 0.0;
@@ -1114,4 +1126,67 @@ void RadM1AtmBC(Mesh *pm) {
     }
   });
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1ShellReport
+//! \brief <problem>/shell_report (STAGE CS0, m1-cs-implicit): per radial index i over all
+//! active columns of the whole mesh: x1v, xx1f(i), min / mean / max of E and of F1, then
+//! max|F1|, max|F2|, max|F3|.  One radial MeshBlock per column is assumed (every block
+//! has the same r grid); printed by rank 0 as "SHELL" lines in %.17e.
+
+void RadM1ShellReport(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pradm1 == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  auto u = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pradm1->u0);
+  auto x1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto x1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  const int nq = 2;
+  std::vector<Real> mn(nq*nx1, 1.0e300), mx(nq*nx1, -1.0e300), sm(nq*nx1, 0.0);
+  Real fm[3] = {0.0, 0.0, 0.0};
+  const int iv[3] = {radm1::M1_E, radm1::M1_F1, radm1::M1_F1};
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = ks; k < ks + nx3; ++k) {
+      for (int j = js; j < js + nx2; ++j) {
+        for (int i = is; i < is + nx1; ++i) {
+          const int q = i - is;
+          for (int a = 0; a < 2; ++a) {
+            const Real v = u(m,iv[a],k,j,i);
+            mn[a*nx1 + q] = std::min(mn[a*nx1 + q], v);
+            mx[a*nx1 + q] = std::max(mx[a*nx1 + q], v);
+            sm[a*nx1 + q] += v;
+          }
+          fm[0] = std::max(fm[0], std::abs(u(m,radm1::M1_F1,k,j,i)));
+          fm[1] = std::max(fm[1], std::abs(u(m,radm1::M1_F2,k,j,i)));
+          fm[2] = std::max(fm[2], std::abs(u(m,radm1::M1_F3,k,j,i)));
+        }
+      }
+    }
+  }
+  Real ncol = static_cast<Real>(nmb)*nx2*nx3;
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, mn.data(), nq*nx1, MPI_ATHENA_REAL, MPI_MIN,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, mx.data(), nq*nx1, MPI_ATHENA_REAL, MPI_MAX,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, sm.data(), nq*nx1, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, fm, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &ncol, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank != 0) return;
+  std::printf("SHELL columns %.0f  max|F1| %.17e  max|F2| %.17e  max|F3| %.17e\n",
+              ncol, fm[0], fm[1], fm[2]);
+  std::printf("SHELL i x1v x1f_left Emin Emean Emax F1min F1mean F1max\n");
+  for (int q = 0; q < nx1; ++q) {
+    std::printf("SHELL %d %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", q,
+                x1v(0,is+q), x1f(0,is+q), mn[q], sm[q]/ncol, mx[q],
+                mn[nx1 + q], sm[nx1 + q]/ncol, mx[nx1 + q]);
+  }
+  std::printf("SHELL x1f_right %.17e\n", x1f(0,is+nx1));
+  (void)pin;
 }

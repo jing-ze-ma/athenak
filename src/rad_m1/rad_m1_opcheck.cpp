@@ -86,10 +86,17 @@ void RadiationM1::ImplicitOpCheck() {
   if (opchk_n >= nchk) {return;}
   ++opchk_n;
   auto *pm = pmy_pack->pmesh;
-  if (pm->multilevel || pm->use_cubed_sphere || pm->use_polar_boundary) {
+  // STAGE CS0 (m1-cs-implicit): the cubed sphere is checked too.  Its same-panel ghosts
+  // are plain copies (checked exactly as elsewhere); a ghost whose donor is on another
+  // panel is the along-seam RESAMPLE of the donor's cells, which the hash cannot predict,
+  // so those are checked by a second exchange of a field that depends on i only (a
+  // spherically symmetric x): every ghost with a donor, seams and corners included, must
+  // reproduce it (the resample weights sum to one, clamped to the stencil's min/max).
+  const bool csm = pm->use_cubed_sphere;
+  if (pm->multilevel || pm->use_polar_boundary) {
     if (global_variable::my_rank == 0) {
-      std::cout << "M1OPCHK solve " << opchk_n << ": SKIPPED (multilevel, cubed sphere "
-                << "or polar mesh)" << std::endl;
+      std::cout << "M1OPCHK solve " << opchk_n << ": SKIPPED (multilevel or polar mesh)"
+                << std::endl;
     }
     return;
   }
@@ -127,10 +134,12 @@ void RadiationM1::ImplicitOpCheck() {
 
   // ---- the neighbour gid of each block in each of the 27 directions (same level)
   DualArray2D<int> nbg("m1_chk_nbg", nmb, 27);
+  // cubed sphere: 1 where the neighbour in that direction is on another panel
+  DualArray2D<int> nbs("m1_chk_nbs", nmb, 27);
   {
     auto &nb = pmy_pack->pmb->nghbr;
     for (int m = 0; m < nmb; ++m) {
-      for (int d = 0; d < 27; ++d) {nbg.h_view(m,d) = -1;}
+      for (int d = 0; d < 27; ++d) {nbg.h_view(m,d) = -1; nbs.h_view(m,d) = 0;}
       for (int o3 = (td ? -1 : 0); o3 <= (td ? 1 : 0); ++o3) {
         for (int o2 = (md ? -1 : 0); o2 <= (md ? 1 : 0); ++o2) {
           for (int o1 = -1; o1 <= 1; ++o1) {
@@ -139,14 +148,20 @@ void RadiationM1::ImplicitOpCheck() {
             if (n < 0 || n >= pmy_pack->pmb->nnghbr) continue;
             const NeighborBlock &q = nb.h_view(m,n);
             if (q.gid >= 0) {nbg.h_view(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) = q.gid;}
+            if (csm && q.gid >= 0 && q.panel != pmy_pack->pmb->mb_panel.h_view(m)) {
+              nbs.h_view(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) = 1;
+            }
           }
         }
       }
     }
     nbg.modify_host();
     nbg.sync_device();
+    nbs.modify_host();
+    nbs.sync_device();
   }
   auto nbg_ = nbg.d_view;
+  auto nbs_ = nbs.d_view;
 
   constexpr int XC = M1_IW_KY, YC = M1_IW_KV;
   auto iw_ = iw;
@@ -190,12 +205,55 @@ void RadiationM1::ImplicitOpCheck() {
       if (td && (k < ks - rch || k > ke + rch)) return;
       const int g = nbg_(m, (o1+1) + 3*(o2+1) + 9*(o3+1));
       if (g < 0) return;
+      if (nbs_(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) != 0) return;   // seam: shell_check
       nc += 1.0;
       const Real want = M1ChkHash(g, k - o3*nx3, j - o2*nx2, i - o1*nx1, 1);
       if (a(m,XC,k,j,i) != want) {nw += 1.0;}
     }, nchecked, nbad);
     res[0] = nchecked;
     res[1] = nbad;
+  };
+  // cubed sphere: x = a hash of i only in the active cells, the poison in the ghosts;
+  // after the exchange every ghost within `reach` that has a donor (seam or not) must
+  // hold the value of its own i to 1e-14.  Returns (checked, wrong, of them on a seam).
+  auto shell_check = [&](Real *res) {
+    auto a = iw;
+    par_for("m1_chk_sfill", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie) && (!md || (j >= js && j <= je)) &&
+                       (!td || (k >= ks && k <= ke));
+      a(m,XC,k,j,i) = act ? M1ChkHash(0, 0, 0, i, 4) : M1CHK_POISON;
+    });
+    ImplicitKrylovHalo(XC);
+    DevExeSpace().fence();
+    const int rch = reach;
+    Real nchecked = 0.0, nbad = 0.0, nseam = 0.0;
+    const int nkji = n3*n2*n1;
+    Kokkos::parallel_reduce("m1_chk_shell",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &nc, Real &nw, Real &ns) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/(n2*n1);
+      r -= k*n2*n1;
+      const int j = r/n1;
+      const int i = r - j*n1;
+      const int o1 = (i < is) ? -1 : ((i > ie) ? 1 : 0);
+      const int o2 = md ? ((j < js) ? -1 : ((j > je) ? 1 : 0)) : 0;
+      const int o3 = td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+      if (o1 == 0 && o2 == 0 && o3 == 0) return;
+      if (i < is - rch || i > ie + rch) return;
+      if (md && (j < js - rch || j > je + rch)) return;
+      if (td && (k < ks - rch || k > ke + rch)) return;
+      const int d = (o1+1) + 3*(o2+1) + 9*(o3+1);
+      if (nbg_(m,d) < 0) return;
+      nc += 1.0;
+      if (nbs_(m,d) != 0) {ns += 1.0;}
+      if (!(fabs(a(m,XC,k,j,i) - M1ChkHash(0, 0, 0, i, 4)) <= 1.0e-14)) {nw += 1.0;}
+    }, nchecked, nbad, nseam);
+    res[0] = nchecked;
+    res[1] = nbad;
+    res[2] = nseam;
   };
 
   // the result of the reference and of each variant
@@ -390,6 +448,22 @@ void RadiationM1::ImplicitOpCheck() {
         std::snprintf(buf, sizeof(buf), "  halo %-34s ghosts checked %.0f  wrong %.0f"
                       "  %s", hn.c_str(), hv[0], hv[1], bad ? "FAIL" : "PASS");
         lines.push_back(buf);
+        if (csm) {
+          Real sr[3];
+          shell_check(sr);
+          Real sv[3] = {sr[0], sr[1], sr[2]};
+#if MPI_PARALLEL_ENABLED
+          MPI_Allreduce(sr, sv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+          const bool sbad = (sv[1] > 0.0) || (sv[2] <= 0.0);
+          if (sbad) {++nfail;}
+          std::snprintf(buf, sizeof(buf), "  halo %-34s shell field: ghosts %.0f (seam "
+                        "%.0f)  wrong %.0f  %s", (hn + "/cs_shell").c_str(), sv[0], sv[2],
+                        sv[1], sbad ? "FAIL" : "PASS");
+          lines.push_back(buf);
+          fill();
+          ImplicitKrylovHalo(XC);
+        }
       }
       if (impl_stencil) {
         ImplicitStencilOp(XC, YC, 3, out);

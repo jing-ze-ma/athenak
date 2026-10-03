@@ -85,14 +85,23 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // transport = implicit, closure = eddington and the restrictions checked by
   // SphericalS1Check after ImplicitInit; STAGE S2 (tests_m1/runs_5b_sp_s2) adds the
   // chi(f) closures m1 / minerbo / kershaw there.  Everything else on sp (the poles,
-  // explicit transport, vet_sc, tau) and everything on the cubed sphere stays refused.
+  // explicit transport, vet_sc, tau) stays refused.
+  // STAGE CS0 (branch m1-cs-implicit, rt_design_1003/CS_IMPLICIT_VET.md): the cubed
+  // sphere for transport = implicit, closure = eddington, time_scheme = be, bicgstab +
+  // rbgs_fwd only (checked in SphericalS1Check, which runs for both meshes).  x1 = r on
+  // it as on sp, so the sp radial forms (A_f/V_i, dxface, the Marshak face) carry over;
+  // the transverse faces take the plain two-point form over dxface (no skew factor).
   sph_geom = false;
+  cs_geom = false;
   {
     Mesh *pm_ = ppack->pmesh;
     std::string why;
     const bool sp_ = pm_->use_spherical_polar && !pm_->use_cubed_sphere;
+    const bool cs_ = pm_->use_cubed_sphere && !pm_->use_spherical_polar;
     if (pm_->use_spherical_polar && !sp_) {why += " mesh/use_spherical_polar";}
-    if (pm_->use_cubed_sphere) {why += " mesh/use_cubed_sphere";}
+    if (cs_ && transport != M1_TRANSPORT_IMPLICIT) {
+      why += " mesh/use_cubed_sphere with transport != implicit";
+    }
     if (pm_->use_polar_boundary) {
       why += " mesh/use_polar_boundary (the poles are not supported yet: run a wedge "
              "whose theta range stays clear of theta = 0 and pi)";
@@ -101,8 +110,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       why += " a theta range that reaches a pole (the poles are not supported yet: run "
              "a wedge whose theta range stays clear of theta = 0 and pi)";
     }
-    if (pm_->use_grid_stretch_r && !sp_) {why += " mesh/use_grid_stretch_r";}
-    if (pm_->use_grid_stretch_r_poly && !sp_) {why += " mesh/use_grid_stretch_r_poly";}
+    if (pm_->use_grid_stretch_r && !sp_ && !cs_) {why += " mesh/use_grid_stretch_r";}
+    if (pm_->use_grid_stretch_r_poly && !sp_ && !cs_) {
+      why += " mesh/use_grid_stretch_r_poly";
+    }
     if (pm_->use_grid_stretch_theta) {why += " mesh/use_grid_stretch_theta";}
     if (ppack->pcoord != nullptr &&
         (ppack->pcoord->is_special_relativistic ||
@@ -115,7 +126,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl << "<rad_m1> (explicit and implicit transport) supports a "
         << "uniform Cartesian mesh and, for the implicit solve only (stages S1, S2: "
         << "closure eddington | m1 | minerbo | kershaw), "
-        << "a spherical-polar wedge clear of the poles; this input sets:" << why << "."
+        << "a spherical-polar wedge clear of the poles and (stage CS0: closure "
+        << "eddington only) the cubed sphere; this input sets:" << why << "."
         << std::endl
         << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "
         << "docs/dev/rad_m1_curvilinear_design.md (branch m1-curv-design) for the "
@@ -123,6 +135,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     sph_geom = sp_;
+    if (cs_) {
+      sph_geom = true;
+      cs_geom = true;
+    }
   }
   nstage = M1_NSTAGE;
   impl_cfl = -1.0;

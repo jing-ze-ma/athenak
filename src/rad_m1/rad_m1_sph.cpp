@@ -108,6 +108,36 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       }
     }
   }
+  // STAGE CS0 (m1-cs-implicit, rt_design_1003/CS_IMPLICIT_VET.md sect. 4): on the cubed
+  // sphere only closure = eddington (isotropic tangential pressure, so no transverse
+  // curvature and no Christoffel face sum), time_scheme = be, the fused bicgstab with
+  // implicit_precond = rbgs_fwd (mg has no seam-aware coarse grid), no implicit_vimp,
+  // no implicit_halo_mpi; the transverse faces are the plain two-point form (stage CS1
+  // adds the skew 1/sin factor and the lagged cross term)
+  if (cs_geom) {
+    std::string wcs;
+    if (!eddington || vet_col || vet_sc || tau_closure) {wcs += " closure != eddington;";}
+    if (time_scheme != M1_TIME_BE ||
+        (pin->DoesParameterExist("rad_m1","time_scheme") &&
+         pin->GetString("rad_m1","time_scheme").compare("be") != 0)) {
+      wcs += " time_scheme != be;";
+    }
+    if (impl_solver != M1_ISOLV_BICGSTAB) {wcs += " implicit_solver != bicgstab;";}
+    if (impl_prec != 2) {wcs += " implicit_precond != rbgs_fwd;";}
+    if (impl_vimp) {wcs += " implicit_vimp = true;";}
+    if (impl_halo_mpi) {wcs += " implicit_halo_mpi = true;";}
+    if (!wcs.empty()) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1> on the cubed sphere (stage CS0) supports only "
+        << "transport = implicit, closure = eddington, time_scheme = be, implicit_solver "
+        << "= bicgstab, implicit_precond = rbgs_fwd, no implicit_vimp, no "
+        << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
+        << wcs << why << std::endl
+        << "See /viper/ptmp2/jinma/rt_design_1003/CS_IMPLICIT_VET.md sect. 4."
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> on a spherical-polar mesh (stages S1, S2) supports "
@@ -139,7 +169,13 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     impl_offdiag = (s.compare("lagged") == 0) ? M1_OD_LAGGED : M1_OD_NONE;
     od_now = impl_offdiag;
   }
-  if (global_variable::my_rank == 0) {
+  if (global_variable::my_rank == 0 && cs_geom) {
+    std::cout << "<rad_m1>: cubed sphere (stage CS0: eddington, plain two-point "
+              << "transverse faces; implicit with areas/volumes/face distances from "
+              << "Coordinates"
+              << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?
+                  ", stretched radial grid)" : ")") << std::endl;
+  } else if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: spherical-polar wedge ("
               << (sph_q ? "stage S2: chi(f) closure, radial integrating factor, "
                           "lagged curvature, offdiag " : "stage S1: ")

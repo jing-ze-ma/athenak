@@ -1089,6 +1089,12 @@ class RadiationM1 {
   // minerbo, kershaw): the radial faces take the integrating factor (M1SphDrr) and every
   // face equation the lagged curvature M1SphCurv; false keeps the S1 arithmetic
   bool sph_q = false;
+  // STAGE CS0 (rad_m1_sph.cpp, m1-cs-implicit): the cubed sphere.  sph_geom is set there
+  // too (x1 = r and the Coordinates areas, volumes and face distances exist on both
+  // meshes), and cs_geom restricts it to transport = implicit, closure = eddington,
+  // time_scheme = be, bicgstab + rbgs_fwd; the transverse faces are the plain two-point
+  // form (no skew 1/sin, no cross term: stage CS1)
+  bool cs_geom = false;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
   void OnePassAuto(const int t, const bool on, const bool one);
