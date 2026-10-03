@@ -150,9 +150,20 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
     bool tclamp_used=false;
     bool vceil_used=false, vceil_test=false;
     // the cached temperature in this cell warm starts the T(d,e) root find
+    // <mhd>/valfven_max_cgs: Alfven-speed density floor (EOS_Data::va2max_inv), applied
+    // like dfloor and written back below through dfloor_used
+    bool vafloor_used = false;
+    if (eos.va2max_inv > 0.0) {
+      const Real dva = (SQR(u.bx) + SQR(u.by) + SQR(u.bz))*eos.va2max_inv;
+      if (u.d < dva) {
+        u.d = dva;
+        vafloor_used = true;
+      }
+    }
     SingleC2P_GeneralMHD(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
                          dfloor_used, efloor_used, tfloor_used, vceil_used, vceil_test,
                          tclamp_used);
+    dfloor_used = dfloor_used || vafloor_used;
     // see the note in ideal_mhd.cpp: the floor-TEST pass writes nothing back
     if (!only_testfloors && vceil_used) {
       cons(m,IM1,k,j,i) = u.mx;

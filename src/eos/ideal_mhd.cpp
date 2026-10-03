@@ -115,8 +115,19 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
     HydPrim1D w;
     bool dfloor_used=false, efloor_used=false, tfloor_used=false;
     bool vceil_used=false, vceil_test=false;
+    // <mhd>/valfven_max_cgs: Alfven-speed density floor (EOS_Data::va2max_inv), applied
+    // like dfloor and written back below through dfloor_used
+    bool vafloor_used = false;
+    if (eos.va2max_inv > 0.0) {
+      const Real dva = (SQR(u.bx) + SQR(u.by) + SQR(u.bz))*eos.va2max_inv;
+      if (u.d < dva) {
+        u.d = dva;
+        vafloor_used = true;
+      }
+    }
     SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used,
                        vceil_used, vceil_test);
+    dfloor_used = dfloor_used || vafloor_used;
     // The floor-TEST pass (FOFC) is handed scratch conserved data and must leave no
     // trace, so the momentum rescale is written back only on the real pass.
     if (!only_testfloors && vceil_used) {

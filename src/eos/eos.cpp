@@ -79,6 +79,27 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       std::exit(EXIT_FAILURE);
     }
   }
+  // <mhd>/valfven_max_cgs: see the note on EOS_Data::va2max_inv.  Newtonian MHD only,
+  // read only when named (no GetOrAdd, so unset inputs and restarts are unchanged).
+  if (pin->DoesParameterExist(bk,"valfven_max_cgs")) {
+    if (bk.compare("mhd") != 0 || pp->pcoord->is_special_relativistic ||
+        pp->pcoord->is_general_relativistic) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/valfven_max_cgs is implemented only for "
+                << "Newtonian <mhd>" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    const Real va_cgs = pin->GetReal(bk,"valfven_max_cgs");
+    const Real vunit = (pp->punit != nullptr) ? pp->punit->velocity_cgs() : 1.0;
+    if (va_cgs > 0.0) {
+      const Real va = va_cgs/vunit;
+      eos_data.va2max_inv = 1.0/(va*va);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<mhd>/valfven_max_cgs = " << va_cgs << " [cm/s] = " << va_cgs/vunit
+                << " [code]: density floor rho >= B^2/v_A,max^2" << std::endl;
+    }
+  }
   // <mhd>/hlld_bx_zero_tol: see the note on EOS_Data::hlld_bx_zero_tol.  Only the HLLD
   // family (hlld_mhd.hpp, hlld_uct_mhd.hpp, lhlld_mhd.hpp) reads it; in any other block
   // it would be parsed and silently ignored, so refuse it there instead.  The existence
