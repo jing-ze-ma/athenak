@@ -767,8 +767,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // near-void cells (He presn wedge, /viper/ptmp2/jinma/he_nc_cure_1002).  ...only from
   // Picard pass implicit_tsolve_opac_start on: a solve that converges before it is
   // bitwise the frozen-opacity one.  DEFAULT true with start 20 on fresh runs (user
-  // 10-02); a restart whose file lacks the key keeps the old behaviour (off) and says
-  // so.  The resolved values are recorded.
+  // 10-02; part of the R2 default with mode 1 and switch 10 below); a restart whose
+  // file lacks the key keeps the old behaviour (off) and says so.  The resolved values
+  // are recorded.
   if (pin->DoesParameterExist("rad_m1","implicit_tsolve_opac")) {
     impl_tsolve_opac = pin->GetBoolean("rad_m1","implicit_tsolve_opac");
   } else if (global_variable::restart_run) {
@@ -781,15 +782,29 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_tsolve_opac = pin->GetOrAddBoolean("rad_m1","implicit_tsolve_opac",true);
   }
   impl_tsolve_opac_start = pin->GetOrAddInteger("rad_m1","implicit_tsolve_opac_start",20);
-  // implicit_tsolve_opac_mode (tsolve_root_fix_1003, default 0 = the root find above,
-  // unchanged): bit 1 (value 1) takes the root of the kappa(T) equation NEAREST the
-  // lagged T (M1ImplTemperatureOpacNear) instead of the halve/double bracket's; bit 2
-  // (value 2) is a slope guard: a cell whose d ln kappa_P / d ln T at the lagged T is
-  // below implicit_tsolve_opac_slope_min (default -4, where kappa_P T^4 falls with T)
-  // takes the frozen-opacity root find instead.  3 = both.  Read only when named, so
-  // a run without the keys writes the same restart file.
+  // implicit_tsolve_opac_mode (tsolve_root_fix_1003): 0 = the root find above; bit 1
+  // (value 1) takes the root of the kappa(T) equation NEAREST the lagged T
+  // (M1ImplTemperatureOpacNear) instead of the halve/double bracket's; bit 2 (value 2)
+  // is a slope guard: a cell whose d ln kappa_P / d ln T at the lagged T is below
+  // implicit_tsolve_opac_slope_min (default -4, where kappa_P T^4 falls with T) takes
+  // the frozen-opacity root find instead.  3 = both.  DEFAULT 1 on fresh runs (R2
+  // default, user 10-03): mode 0 picks the wrong root of the 3-root gas-T equation at H
+  // recombination (kappa_P ~ T^30) and 2-cycles; with mode 1 the BSG envelope (rst
+  // 00008, switch 10) runs 0 FATAL / 4 NON-CONV where mode 0 diverged
+  // (bsg_1001/TSOLVE_FIX_1003.md, AB_SOLVER_1003.md), BSG R2 vs A0 lies within 2-3x the
+  // noise spread (bsg_1001/r2b_shift_1003), He wedge/box: 0 NON-CONV, box bitwise
+  // (he_mltpp_1002/GATE_MODE1.md).  A restart whose file lacks the key keeps the old
+  // behaviour (0) and says so; a named value always wins.
   if (pin->DoesParameterExist("rad_m1","implicit_tsolve_opac_mode")) {
     impl_tsolve_opac_mode = pin->GetInteger("rad_m1","implicit_tsolve_opac_mode");
+  } else if (global_variable::restart_run) {
+    impl_tsolve_opac_mode = 0;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart input has no implicit_tsolve_opac_mode: keeping "
+                << "the old default (0); set it to switch" << std::endl;
+    }
+  } else {
+    impl_tsolve_opac_mode = pin->GetOrAddInteger("rad_m1","implicit_tsolve_opac_mode",1);
   }
   if (pin->DoesParameterExist("rad_m1","implicit_tsolve_opac_slope_min")) {
     impl_tsolve_opac_smin = pin->GetReal("rad_m1","implicit_tsolve_opac_slope_min");
@@ -1323,11 +1338,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   impl_recon_w = pin->GetOrAddReal("rad_m1","implicit_recon_w",-1.0);
   impl_res_floor = pin->GetOrAddReal("rad_m1","implicit_res_floor",0.0);
-  // implicit_gas_newton_switch = W (he_estall_1003).  DEFAULT 0 = off (bitwise the
-  // pre-key code), read only when named: on the BSG envelope (bsg_1001/AB_SOLVER_1003.md,
-  // rst 00008) W = 10 DIVERGED within 6 cycles (resid 0.31) -- the forced kappa(T) root
-  // find in every cell is unstable there -- while it cures the He presn wedge stalls;
-  // set it explicitly per run.  Under implicit_gas_newton, a solve
+  // implicit_gas_newton_switch = W (he_estall_1003).  DEFAULT 10 on fresh runs (R2
+  // default, user 10-03; it was off by default in 69e8f149 only because the switch
+  // with the mode-0 root find diverged the BSG envelope, bsg_1001/AB_SOLVER_1003.md,
+  // rst 00008: W = 10 died at cycle 14575, resid 0.31; with implicit_tsolve_opac_mode
+  // 1 it is robust there, TSOLVE_FIX_1003.md).  A restart whose file lacks the key
+  // keeps the old behaviour (0 = off, bitwise the pre-key code) and says so; a named
+  // value always wins.  Under implicit_gas_newton, a solve
   // whose Picard residual is detected STALLED drops the gas Newton update (and the
   // opac_newton face terms, which need it) for the rest of that solve: the gas T is the
   // bracketed root of the exact backward-Euler gas equation with kappa_P, kappa_E at the
@@ -1343,9 +1360,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // resid 1e-8..2e-6 2-cycle that ran ~29 % of the He presn wedge solves to
   // implicit_maxit); the root find with kappa(T) has no such cycle.  He wedge -30..-36 %
   // wall, accuracy within the noise spread; He box bitwise (never switches).
-  impl_gn_sw = 0;
   if (pin->DoesParameterExist("rad_m1","implicit_gas_newton_switch")) {
     impl_gn_sw = pin->GetInteger("rad_m1","implicit_gas_newton_switch");
+  } else if (global_variable::restart_run) {
+    impl_gn_sw = 0;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart input has no implicit_gas_newton_switch: keeping "
+                << "the old default (off); set it to switch" << std::endl;
+    }
+  } else {
+    impl_gn_sw = pin->GetOrAddInteger("rad_m1","implicit_gas_newton_switch",10);
   }
   if (impl_gn_sw > 0) {
     impl_gn_sw_min = pin->GetOrAddInteger("rad_m1","implicit_gas_newton_switch_min",20);
