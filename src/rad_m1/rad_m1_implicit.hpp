@@ -1285,6 +1285,181 @@ int M1ImplTemperatureOpacNear(const ThermoT &th, const OpF &opf, const Real dd,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ImplTemperatureOpacStable / M1ImplTemperatureOpacOde
+//! \brief <rad_m1>/implicit_tsolve_opac_mode bit 4 (value 8, r2b_shift_1003): the same
+//! equation as M1ImplTemperatureOpac, but the STABLE root (up-crossing of y in T) nearest
+//! the END POINT of the exact exchange ODE de/dt = c (rho kE E' - rho kP(T) a T^4) at
+//! fixed E' over dt, started from the no-exchange T_gn (e(T_gn) = e_gn).  Why: every
+//! root of the backward-Euler gas equation lies between T_gn and T_rad; where kappa_P
+//! rises steeply with T (H recombination, absorbing gas) it has several.  Neither the
+//! root nearest the lagged T (bit 1: lag-dependent, 2-cycles) nor the one nearest T_rad
+//! (tried as value 4: wrong when the exchange is not stiff, BSG R2N diverged) is the
+//! physical one; the ODE end point is, and it is lag-independent and continuous in E'.
+//! BSG cell rank 2 (0,38,44,181), cycle 14572: ODE ends at T_rad = 11241 K, root
+//! 11232 K (not 9423.6 K); at dt/10 it ends at 8897 K, root 8020 K (value 4: 11119 K).
+//! T_gn: safeguarded Newton on e(T) = e_gn from the lagged T.  End point: elapsed time
+//! int de/rate on M1_TSO_ODE_NS (32) log-T points from T_gn toward T_rad (trapezoid),
+//! stopped where it reaches c dt.  The root: the tightened outward log scan of
+//! tsolve-near-tight 09b12e4e started there (first step ln2/1024, x1.25 per step, up to
+//! 2^20, nearer of the brackets of the first bracketing step, bisected in log T).
+//! No stable root, E' + de0 <= 0 or no T_gn: ok = false, tout = the lagged T.
+
+constexpr int  M1_TSO_RAD_NS = 64;                  // max steps per side
+constexpr Real M1_TSO_RAD_H0 = 6.7690286301289e-4;  // first step in ln T (ln 2 / 1024)
+constexpr Real M1_TSO_RAD_G  = 1.25;                // step growth per step
+constexpr Real M1_TSO_RAD_LMAX = 13.862943611198906;  // ln(2^20)
+
+template <class ThermoT, class OpF>
+KOKKOS_INLINE_FUNCTION
+int M1ImplTemperatureOpacStable(const ThermoT &th, const OpF &opf, const Real dd,
+                              const Real tguess, const Real egn, const Real cdta,
+                              const Real cdt, const Real erhs, Real &tout, bool &ok) {
+  auto yfn = [&](const Real t) {
+    Real ee, cv, rkp, rke;
+    th(dd, t, ee, cv);
+    opf(dd, t, rkp, rke);
+    const Real t2 = t*t;
+    return ee + cdta*rkp*t2*t2 - egn - cdt*rke*erhs;
+  };
+  const Real y0 = yfn(tguess);
+  int nev = 1;
+  ok = true;
+  tout = tguess;
+  if (y0 == 0.0) {return nev;}
+  // scan fronts (T and y) above and below the guess; an up-crossing bracket [lo, hi] has
+  // y(lo) < 0 <= y(hi)
+  Real tu = tguess, yu = y0, td = tguess, yd = y0;
+  Real lu = 0.0, hu = 0.0, ld = 0.0, hd = 0.0;
+  bool fu = false, fd = false;
+  Real dl = 0.0, h = M1_TSO_RAD_H0;
+  for (int s=0; s<M1_TSO_RAD_NS && !fu && !fd && dl < M1_TSO_RAD_LMAX; ++s) {
+    dl += h;
+    h *= M1_TSO_RAD_G;
+    const Real t1 = tguess*exp(dl);
+    const Real y1 = yfn(t1);
+    const Real t2 = tguess*exp(-dl);
+    const Real y2 = yfn(t2);
+    nev += 2;
+    if (yu < 0.0 && y1 >= 0.0) {
+      fu = true;
+      lu = tu;
+      hu = t1;
+    }
+    if (y2 < 0.0 && yd >= 0.0) {
+      fd = true;
+      ld = t2;
+      hd = td;
+    }
+    tu = t1;
+    yu = y1;
+    td = t2;
+    yd = y2;
+  }
+  if (!fu && !fd) {
+    ok = false;
+    return nev;
+  }
+  // bisection in log T of each bracket found (y(lo) < 0 <= y(hi))
+  Real ru = tguess, rd = tguess;
+  if (fu) {
+    for (int it=0; it<M1_IMPL_TMAXIT && (hu - lu) > M1_IMPL_TRTOL*hu; ++it) {
+      const Real tm = sqrt(lu*hu);
+      const Real y = yfn(tm);
+      ++nev;
+      if (y < 0.0) {lu = tm;} else {hu = tm;}
+    }
+    ru = sqrt(lu*hu);
+  }
+  if (fd) {
+    for (int it=0; it<M1_IMPL_TMAXIT && (hd - ld) > M1_IMPL_TRTOL*hd; ++it) {
+      const Real tm = sqrt(ld*hd);
+      const Real y = yfn(tm);
+      ++nev;
+      if (y < 0.0) {ld = tm;} else {hd = tm;}
+    }
+    rd = sqrt(ld*hd);
+  }
+  if (fu && fd) {
+    tout = (fabs(log(ru/tguess)) <= fabs(log(rd/tguess))) ? ru : rd;
+  } else {
+    tout = fu ? ru : rd;
+  }
+  return nev;
+}
+
+constexpr int M1_TSO_ODE_NS = 32;    // log-T points of the exchange-ODE quadrature
+
+template <class ThermoT, class OpF>
+KOKKOS_INLINE_FUNCTION
+int M1ImplTemperatureOpacOde(const ThermoT &th, const OpF &opf, const Real dd,
+                             const Real tlag, const Real egn, const Real cdta,
+                             const Real cdt, const Real erhs, Real &tout, bool &ok) {
+  ok = false;
+  tout = tlag;
+  if (!(erhs > 0.0) || !(cdta > 0.0) || !(cdt > 0.0) || !(tlag > 0.0)) {return 0;}
+  int nev = 0;
+  // T_gn: e(T) = e_gn, Newton in T with a bracket that grows by halving/doubling
+  Real tg = tlag, lo = 0.0, hi = 0.0;
+  bool conv = false;
+  for (int it=0; it<60; ++it) {
+    Real ee, cv;
+    th(dd, tg, ee, cv);
+    ++nev;
+    const Real f = ee - egn;
+    if (f > 0.0) {hi = tg;} else {lo = tg;}
+    if (fabs(f) <= 1.0e-12*fabs(egn)) {conv = true; break;}
+    Real tn = (cv > 0.0) ? (tg - f/(dd*cv)) : -1.0;   // cv per unit mass
+    const bool inb = (tn > 0.0) && (lo <= 0.0 || tn > lo) && (hi <= 0.0 || tn < hi);
+    if (!inb) {
+      if (lo > 0.0 && hi > 0.0) {
+        tn = sqrt(lo*hi);
+      } else {
+        tn = (f > 0.0) ? 0.5*tg : 2.0*tg;
+      }
+    }
+    if (fabs(tn - tg) <= 1.0e-13*tg) {tg = tn; conv = true; break;}
+    tg = tn;
+  }
+  if (!conv || !(tg > 0.0)) {return nev;}
+  const Real arad = cdta/cdt;
+  const Real trad = sqrt(sqrt(erhs/arad));
+  // end point of the exchange ODE: elapsed (c t) = int de / rate, rate = rho kE E' -
+  // rho kP a T^4, marched in log T from T_gn toward T_rad
+  Real tend = trad;
+  const Real L = log(trad/tg);
+  if (fabs(L) < 1.0e-3) {
+    tend = tg;              // T_gn ~ T_rad: the anchor is either; skip the quadrature
+  } else {
+    auto rate = [&](const Real t) {
+      Real rkp, rke;
+      opf(dd, t, rkp, rke);
+      const Real t2 = t*t;
+      return rke*erhs - rkp*arad*t2*t2;
+    };
+    Real tt = 0.0, tp = tg, rp = rate(tg), ep = egn;
+    ++nev;
+    for (int s=1; s<=M1_TSO_ODE_NS; ++s) {
+      const Real t = tg*exp(L*s/M1_TSO_ODE_NS);
+      const Real r = rate(t);
+      Real e, cv;
+      th(dd, t, e, cv);
+      nev += 2;
+      const Real rm = 0.5*(r + rp);
+      const Real dts = (rm != 0.0) ? (e - ep)/rm : 1.0e300;
+      if (!(dts >= 0.0) || tt + dts >= cdt) {
+        const Real fr = (dts > 0.0 && dts < 1.0e299) ? (cdt - tt)/dts : 0.0;
+        tend = tp*exp(log(t/tp)*fmin(fmax(fr, 0.0), 1.0));
+        break;
+      }
+      tt += dts; tp = t; rp = r; ep = e;
+    }
+  }
+  nev += M1ImplTemperatureOpacStable(th, opf, dd, tend, egn, cdta, cdt, erhs, tout, ok);
+  if (!ok) {tout = tlag;}
+  return nev;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1TsoSlope
 //! \brief implicit_tsolve_opac_mode bit 2: d ln kappa_P / d ln T at (dd, t), by a central
 //! difference (+-1e-3 in ln T) of the same opacity call the root find uses.
