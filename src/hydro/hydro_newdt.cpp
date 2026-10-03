@@ -13,7 +13,12 @@
 #include <iostream>
 #include <algorithm> // min
 
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "coordinates/cell_locations.hpp"
@@ -361,6 +366,196 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;
+
+  // DEBUG dt report (r2b_shift_1003; env ATHENA_DT_REPORT = N > 0, every N cycles,
+  // no key, no state change): the rank holding the global minimum hydro dt prints the
+  // limiting cell, its direction, gas and radiation-modified signal speeds, the taper
+  // optical depth rho kappa_T dx, E_rad, c dt rho kappa_P and the thin-freeze flag; the
+  // global minimum of the GAS-ONLY dt dx/(|v| + c_gas) is printed alongside.
+  static int dtrep = -1;
+  if (dtrep < 0) {
+    const char *ev = std::getenv("ATHENA_DT_REPORT");
+    dtrep = (ev != nullptr) ? std::atoi(ev) : 0;
+  }
+  if (dtrep > 0 && pdrive->time_evolution != TimeEvolution::kinematic &&
+      !is_special_relativistic_ && !is_general_relativistic_ &&
+      !is_dynamical_relativistic_ && (pmy_pack->pmesh->ncycle % dtrep) == 0) {
+    // gas-only dt (no radiation term)
+    Real dtg = std::numeric_limits<float>::max();
+    Kokkos::parallel_reduce("HydroNudtGas",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+    KOKKOS_LAMBDA(const int &idx, Real &mn) {
+      int m = (idx)/nkji;
+      int k = (idx - m*nkji)/nji;
+      int j = (idx - m*nkji - k*nji)/nx1;
+      int i = (idx - m*nkji - k*nji - j*nx1) + is;
+      k += ks;
+      j += js;
+      Real cs;
+      if (eos.IsGeneral()) {
+        cs = eos.SoundSpeedFromP(w0_(m,IDN,k,j,i), wder_(m,IDPR,k,j,i),
+                                 wder_(m,IDG1,k,j,i));
+      } else if (eos.is_ideal) {
+        cs = eos.IdealHydroSoundSpeed(w0_(m,IDN,k,j,i),
+                                      eos.IdealGasPressure(w0_(m,IEN,k,j,i)));
+      } else {
+        cs = eos.iso_cs;
+      }
+      Real h1, h2, h3;
+      if (use_cubed_sphere || use_spherical_polar) {
+        h1 = dx1_(m,k,j,i); h2 = dx2_(m,k,j,i); h3 = dx3_(m,k,j,i);
+      } else {
+        h1 = mbsize.d_view(m).dx1; h2 = mbsize.d_view(m).dx2; h3 = mbsize.d_view(m).dx3;
+      }
+      const Real sc = cs_ ? 1.0/sncell_(m,k,j) : 1.0;
+      Real c = h1/(fabs(w0_(m,IVX,k,j,i)) + cs);
+      if (multi_d_) c = fmin(c, h2/(fabs(w0_(m,IVY,k,j,i)) + cs*sc));
+      if (three_d_) c = fmin(c, h3/(fabs(w0_(m,IVZ,k,j,i)) + cs*sc));
+      mn = fmin(mn, c);
+    }, Kokkos::Min<Real>(dtg));
+    struct {double v; int r;} loc{static_cast<double>(dtnew), global_variable::my_rank};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &loc, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &dtg, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+#endif
+    if (loc.r == global_variable::my_rank && dtnew_m >= 0) {
+      DualArray1D<Real> rp("dtrep", 32);
+      const int dm = dtnew_m, dk = dtnew_k, dj = dtnew_j, di = dtnew_i;
+      auto &x1v_ = pmy_pack->pcoord->x1v;
+      auto &wtemp_ = pmy_pack->phydro->wtemp;
+      const bool curv = (use_cubed_sphere || use_spherical_polar);
+      DvceArray4D<Real> tfz_;
+      bool havetf = false;
+      if (pmy_pack->pradm1 != nullptr) {
+        tfz_ = pmy_pack->pradm1->thin_frz;
+        havetf = (tfz_.extent(0) > 0);
+      }
+      const Real cdt = (pmy_pack->pradm1 != nullptr ? pmy_pack->pradm1->c_light : 0.0)
+                       *pmy_pack->pmesh->dt;
+      const int is_ = is, nx1_ = nx1;
+      auto rv = rp.d_view;
+      par_for("hyd_dtrep", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+        const int m = dm, k = dk, j = dj, i = di;
+        const Real d = w0_(m,IDN,k,j,i);
+        Real pr, cs, g1 = 0.0;
+        if (eos.IsGeneral()) {
+          pr = wder_(m,IDPR,k,j,i);
+          g1 = wder_(m,IDG1,k,j,i);
+          cs = eos.SoundSpeedFromP(d, pr, g1);
+        } else if (eos.is_ideal) {
+          pr = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
+          cs = eos.IdealHydroSoundSpeed(d, pr);
+        } else {
+          pr = d*SQR(eos.iso_cs);
+          cs = eos.iso_cs;
+        }
+        Real h[3];
+        if (curv) {
+          h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
+        } else {
+          h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
+          h[2] = mbsize.d_view(m).dx3;
+        }
+        Real csd[3] = {cs, cs, cs};
+        Real er = 0.0, kt = 0.0, kp = 0.0;
+        Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
+        if (rss_) {
+          er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
+          if (rss_mode == 4) {
+            for (int a = 0; a < 3; ++a) dd[a] = vcel_(m,radm1::M1_VET_D11+a,k,j,i);
+          } else if (rss_mode >= 1) {
+            Real chi, n1, n2, n3;
+            if (rss_mode == 2) {
+              chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
+              n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
+            } else if (rss_mode == 3) {
+              chi = vcel_(m,radm1::M1_VET_CHI,k,j,i);
+              n1 = vcel_(m,radm1::M1_VET_N1,k,j,i);
+              n2 = vcel_(m,radm1::M1_VET_N1+1,k,j,i);
+              n3 = vcel_(m,radm1::M1_VET_N1+2,k,j,i);
+            } else {
+              const Real f1 = erad_(m,radm1::M1_F1,k,j,i);
+              const Real f2 = erad_(m,radm1::M1_F2,k,j,i);
+              const Real f3 = erad_(m,radm1::M1_F3,k,j,i);
+              const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
+              const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
+              chi = (er > 0.0) ? radm1::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+              n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
+            }
+            if (chi > 0.0) {
+              const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
+              dd[0] = dg + an*n1*n1;
+              dd[1] = dg + an*n2*n2;
+              dd[2] = dg + an*n3*n3;
+            }
+          }
+          kt = fmax(kopc_(m,radm1::M1_OP_T,k,j,i), 0.0);
+          kp = kopc_(m,radm1::M1_OP_P,k,j,i);
+          const bool ideal = (eos.is_ideal && !eos.IsGeneral());
+          const Real gm1 = ideal ? (eos.gamma - 1.0) : 0.0;
+          const Real pg = ideal ? eos.IdealGasPressure(w0_(m,IEN,k,j,i)) : 0.0;
+          for (int a = 0; a < 3; ++a) {
+            const Real prr = fmax(dd[a], 0.0)*er;
+            Real ceq2;
+            if (ideal) {
+              const Real ptot = pg + prr;
+              const Real beta = pg/ptot;
+              const Real gam1 = beta + SQR(4.0 - 3.0*beta)*gm1
+                                       /(beta + 12.0*gm1*(1.0 - beta));
+              ceq2 = gam1*ptot/d;
+            } else {
+              ceq2 = cs*cs + (4.0/3.0)*prr/d;
+            }
+            const Real dc2 = fmax(ceq2 - cs*cs, 0.0);
+            csd[a] = sqrt(cs*cs + dc2*(1.0 - exp(-kt*h[a])));
+          }
+        }
+        const Real sc = cs_ ? 1.0/sncell_(m,k,j) : 1.0;
+        const Real v[3] = {w0_(m,IVX,k,j,i), w0_(m,IVY,k,j,i), w0_(m,IVZ,k,j,i)};
+        int adir = 0;
+        Real best = 1.0e300;
+        for (int a = 0; a < 3; ++a) {
+          if ((a == 1 && !multi_d_) || (a == 2 && !three_d_)) continue;
+          const Real t = h[a]/(fabs(v[a]) + csd[a]*(a > 0 ? sc : 1.0));
+          if (t < best) {best = t; adir = a;}
+        }
+        rv(0) = curv ? x1v_(m,i) : CellCenterX(i-is_, nx1_, mbsize.d_view(m).x1min,
+                                               mbsize.d_view(m).x1max);
+        rv(1) = d;
+        rv(2) = eos.IsGeneral() ? wtemp_(m,k,j,i) : (pr/d);
+        rv(3) = pr;
+        rv(4) = g1;
+        rv(5) = cs;
+        rv(6) = adir + 1;
+        rv(7) = v[adir];
+        rv(8) = csd[adir];
+        rv(9) = h[adir];
+        rv(10) = kt*h[adir];
+        rv(11) = er;
+        rv(12) = dd[adir];
+        rv(13) = cdt*kp;
+        rv(14) = havetf ? tfz_(m,k,j,i) : -1.0;
+        rv(15) = best;
+        rv(16) = h[adir]/(fabs(v[adir]) + cs*(adir > 0 ? sc : 1.0));
+        rv(17) = sc;
+      });
+      rp.modify_device();
+      rp.sync_host();
+      auto &q = rp.h_view;
+      const Real cf = pmy_pack->pmesh->cfl_no;
+      std::cout << "DTREP cycle=" << pmy_pack->pmesh->ncycle
+                << " time=" << pmy_pack->pmesh->time
+                << " cfl*dt_hyd=" << cf*dtnew << " cfl*dt_gasonly=" << cf*dtg
+                << " rank=" << global_variable::my_rank
+                << " gid=" << (pmy_pack->gids + dm) << " kji=" << dk << "," << dj << ","
+                << di << " dir=" << static_cast<int>(q(6)) << " r=" << q(0)
+                << " rho=" << q(1) << " T=" << q(2) << " pg=" << q(3) << " G1=" << q(4)
+                << " cgas=" << q(5) << " v=" << q(7) << " ceff=" << q(8)
+                << " h=" << q(9) << " tauT_h=" << q(10) << " Erad=" << q(11)
+                << " Ddd=" << q(12) << " cdt_kP=" << q(13) << " frz=" << q(14)
+                << " sc=" << q(17) << " cell_dt=" << q(15) << " cell_dt_gas=" << q(16)
+                << std::endl;
+    }
+  }
 
   // compute timestep for diffusion
   if (pcond != nullptr) {
