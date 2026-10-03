@@ -168,6 +168,8 @@ const std::vector<std::pair<std::string, std::string>> &GridKeys() {
     {"mesh", "f_stretch_r_b2_x"}, {"mesh", "f_stretch_r_b2_w"},
     {"mesh", "f_stretch_r_p_amp"}, {"mesh", "f_stretch_r_p_xa"},
     {"mesh", "f_stretch_r_p_xb"}, {"mesh", "f_stretch_r_p_w"},
+    {"mesh", "f_stretch_r_p2_amp"}, {"mesh", "f_stretch_r_p2_xa"},
+    {"mesh", "f_stretch_r_p2_xb"}, {"mesh", "f_stretch_r_p2_w"},
     {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
   };
   return keys;
@@ -181,7 +183,7 @@ std::string GridKeyDefault(const std::map<std::string, std::string> &snap,
   if (key.rfind("mesh/f_stretch_r_c", 0) == 0) return "0";
   if (key.rfind("mesh/f_stretch_r_b", 0) == 0 && key.find("_amp") != std::string::npos)
     return "0";
-  if (key == "mesh/f_stretch_r_p_amp") return "0";
+  if (key == "mesh/f_stretch_r_p_amp" || key == "mesh/f_stretch_r_p2_amp") return "0";
   if (key == "mesh/nghost") return "2";
   if (key.rfind("meshblock/nx", 0) == 0) {   // meshblock/nxN defaults to mesh/nxN
     auto it = snap.find("mesh/" + key.substr(10));
