@@ -781,6 +781,9 @@ class RadiationM1 {
   void DetTraceScalars(const char *tag, int n, const Real *v);
   bool impl_tsolve_opac;        // <rad_m1>/implicit_tsolve_opac (nc_cure_1002)
   int impl_tsolve_opac_start;   // implicit_tsolve_opac_start: first Picard pass
+  int impl_tsolve_opac_mode = 0;      // implicit_tsolve_opac_mode (tsolve_root_fix_1003)
+                                     // bit 1 nearest root, bit 2 slope guard, 0 = off
+  Real impl_tsolve_opac_smin = -4.0;  // implicit_tsolve_opac_slope_min (bit 2 threshold)
   int impl_strace = 0;          // <rad_m1>/implicit_stall_trace (DEBUG, he_estall_1003)
   int impl_strace_p0 = 40;      // ...from this pass, the worst cell fixed (per rank)
   int impl_strace_max = 30;     // ...in at most this many solves
