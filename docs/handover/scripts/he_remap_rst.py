@@ -450,9 +450,9 @@ def radial_remap(r, G, pnew, n1new, use_slopes=True):
         dq = np.diff(qa, axis=-1) / np.diff(Vc)
         s = np.zeros_like(qa)
         s[..., 1:-1] = minmod(dq[..., 1:], dq[..., :-1])
-        # one-sided at the ends (the fallback keeps it safe)
+        # one-sided at the inner end (the fallback keeps it safe); none at the outer end
+        # (floor region: no extrapolation below the floor)
         s[..., 0] = dq[..., 0]
-        s[..., -1] = dq[..., -1]
         return S * s
 
     def remap1(q, s=None, zero=None):
@@ -582,6 +582,61 @@ def radial_remap(r, G, pnew, n1new, use_slopes=True):
     r.blocks = blocks
     r.fo, r.fn = fo, fn
     return Gn, st
+
+
+# ------------------------------------------------------------------------------- sector
+def extract_sector(r, G, x2s, x2e, x3s, x3e):
+    """cut the angular sub-sector [x2s, x2e] x [x3s, x3e] (on source cell edges) out of
+    the gathered state, WITH a one-cell halo of true source neighbours (periodic wrap of
+    the source), so that the angular prolongation's limited slopes at the sector edges use
+    the real neighbours; strip_sector() removes the halo after remap().  Updates r: the
+    geometry seen by remap() is the halo'd box; r.sector holds the final one."""
+    N2, N3 = r.mind[2], r.mind[3]
+    d2 = (r.msize[4] - r.msize[1])/N2
+    d3 = (r.msize[5] - r.msize[2])/N3
+    j0 = (x2s - r.msize[1])/d2
+    j1 = (x2e - r.msize[1])/d2
+    k0 = (x3s - r.msize[2])/d3
+    k1 = (x3e - r.msize[2])/d3
+    idx = []
+    for v in (j0, j1, k0, k1):
+        if abs(v - round(v)) > 1e-8:
+            sys.exit('sector bounds are not on source cell edges (%.9f)' % v)
+        idx.append(int(round(v)))
+    j0, j1, k0, k1 = idx
+    if not (0 <= j0 < j1 <= N2 and 0 <= k0 < k1 <= N3):
+        sys.exit('sector outside the source mesh')
+    J = np.arange(j0 - 1, j1 + 1) % N2
+    K = np.arange(k0 - 1, k1 + 1) % N3
+    Gs = {}
+    for nm, a in G.items():
+        if a.ndim == 3:
+            Gs[nm] = a[np.ix_(K, J)]
+        else:
+            Gs[nm] = a[:, K][:, :, J]
+    r.sector = (x2s, x2e, x3s, x3e, j1 - j0, k1 - k0)
+    r.msize[1], r.msize[4] = x2s - d2, x2e + d2
+    r.msize[2], r.msize[5] = x3s - d3, x3e + d3
+    r.mind[2], r.mind[3] = j1 - j0 + 2, k1 - k0 + 2
+    return Gs
+
+
+def strip_sector(r, out, f):
+    """remove the prolonged halo (f fine cells per side) and set the sector geometry"""
+    x2s, x2e, x3s, x3e, n2, n3 = r.sector
+    o = {}
+    for nm, a in out.items():
+        if a.ndim == 3:
+            o[nm] = np.ascontiguousarray(a[f:f + n3*f, f:f + n2*f])
+        else:
+            o[nm] = np.ascontiguousarray(a[:, f:f + n3*f, f:f + n2*f])
+    r.msize[1], r.msize[4], r.msize[2], r.msize[5] = x2s, x2e, x3s, x3e
+    r.mind[2], r.mind[3] = n2, n3
+    r.text = set_param(r.text, 'mesh', 'x2min', '%.16g' % x2s)
+    r.text = set_param(r.text, 'mesh', 'x2max', '%.16g' % x2e)
+    r.text = set_param(r.text, 'mesh', 'x3min', '%.16g' % x3s)
+    r.text = set_param(r.text, 'mesh', 'x3max', '%.16g' % x3e)
+    return o
 
 
 # ------------------------------------------------------------------------------- writing
@@ -736,6 +791,10 @@ def main():
         help='.npy: 18 StretchRPoly parameters of the NEW '
         'radial grid (same x1min/x1max/ng); with --nx1')
     ap.add_argument('--nx1', type=int, default=None)
+    ap.add_argument('--sector', type=float, nargs=4, default=None,
+                    metavar=('X2MIN', 'X2MAX', 'X3MIN', 'X3MAX'),
+                    help='cut this angular sector (source cell edges) before the '
+                    'angular prolongation; the new mesh is periodic on it as before')
     a = ap.parse_args()
     r = read_rst(a.inp)
     m = re.search(r'<rad_m1>\n(?:(?!<).*\n)*?c_light\s*=\s*(\S+)', r.text)
@@ -749,8 +808,12 @@ def main():
         G, sr = radial_remap(r, G, np.load(a.grid), a.nx1, use_slopes=not a.no_slopes)
         print('radial: %d -> %d cells; ' % (len(r.fo) - 1 - 2 * r.ng, a.nx1)
               + ', '.join('%s %s' % (k, v) for k, v in sr.items()))
+    if a.sector:
+        G = extract_sector(r, G, *a.sector)
     out, st = remap(r, G, a.factor, clight, use_slopes=not a.no_slopes,
                     force_math=a.force_math)
+    if a.sector:
+        out = strip_sector(r, out, a.factor)
     print(
         'fallbacks (coarse cells -> injection): hydro %d, m1 %d of %d; max parent |F|/cE '
         '%.4g' %
