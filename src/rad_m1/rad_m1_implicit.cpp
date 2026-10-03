@@ -869,10 +869,26 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_res_rmax")) {
     impl_res_rmax = pin->GetReal("rad_m1","implicit_res_rmax");
   }
+  //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
+  //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
+  //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
+  //    presn 128^2 wedge (he_mltpp_1002/FREEZE_AB.md, rst 00055, 1.5 ks) it is neutral
+  //    within the cfl-0.2999 noise member below the photosphere, -32 % s/cycle, Picard
+  //    mean 39.6 -> 16.3, 0 NON-CONV; dt -0.9 % (as on the BSG, PICARD_ROBUST_1003.md).
+  //    A restart whose file lacks the key keeps the old behaviour (0 = off) and says so;
+  //    a named value always wins.
   if (pin->DoesParameterExist("rad_m1","implicit_thin_freeze")) {
     impl_thin_frz = pin->GetReal("rad_m1","implicit_thin_freeze");
-    if (impl_thin_frz < 0.0) {ImplFatal("<rad_m1>/implicit_thin_freeze must be >= 0");}
+  } else if (global_variable::restart_run) {
+    impl_thin_frz = 0.0;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart input has no implicit_thin_freeze: keeping the old "
+                << "default (0 = off); set it to switch" << std::endl;
+    }
+  } else {
+    impl_thin_frz = pin->GetOrAddReal("rad_m1","implicit_thin_freeze",1.0e-2);
   }
+  if (impl_thin_frz < 0.0) {ImplFatal("<rad_m1>/implicit_thin_freeze must be >= 0");}
   //  implicit_resid_fatal: a Picard solve that ends NON-CONVERGED with resid > this
   //    value (or a non-finite resid or lin_resid) is a diverged solve: FATAL before its
   //    state spreads (BSG production 10-01: one 200-pass solve with resid 1.2e6 at
