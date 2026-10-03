@@ -36,6 +36,7 @@ A restart's first cycle takes the header dt as is (driver.cpp) and dt = 0 is fat
 the header dt is --dt-factor x the source dt; the next cycle may at most double it.
 """
 import argparse
+import os
 import re
 import struct
 import sys
@@ -607,6 +608,11 @@ def extract_sector(r, G, x2s, x2e, x3s, x3e):
     if not (0 <= j0 < j1 <= N2 and 0 <= k0 < k1 <= N3):
         sys.exit('sector outside the source mesh')
     J = np.arange(j0 - 1, j1 + 1) % N2
+    if os.environ.get('HE_JOIN'):   # TEST ONLY: x2 cells a0..a1-1 then b0..b1-1 (a seam)
+        a0, a1, b0, b1 = [int(v) for v in os.environ['HE_JOIN'].split()]
+        J = np.concatenate([[a0 - 1], np.arange(a0, a1), np.arange(b0, b1), [b1]]) % N2
+        if J.size != j1 - j0 + 2:
+            sys.exit('HE_JOIN size does not match the sector')
     K = np.arange(k0 - 1, k1 + 1) % N3
     Gs = {}
     for nm, a in G.items():
@@ -637,6 +643,35 @@ def strip_sector(r, out, f):
     r.text = set_param(r.text, 'mesh', 'x3min', '%.16g' % x3s)
     r.text = set_param(r.text, 'mesh', 'x3max', '%.16g' % x3e)
     return o
+
+
+def seam_blend(out, w):
+    """--seam-blend W: a sector cut makes NEW periodic seams (x2: last <-> first row, x3:
+    last <-> first column) across which the state jumps (rho by ~10x, E by up to e^2), and
+    the implicit M1 Picard iteration does not converge there.  Over W cells on each side,
+    cell d (0 = next to the seam) and its partner across the seam at the same d (equal
+    volumes: the sector is symmetric about the equator, x3 is uniform) are mixed:
+    q_A <- q_A + a (q_B - q_A)/2, q_B <- q_B + a (q_A - q_B)/2, a = 1 - (d + 1/2)/W.
+    The pair sum is unchanged (exactly conservative, all conserved densities and the face
+    fluxes), and mixing conserved densities keeps e_int > 0 and |F| <= cE (convexity)."""
+    def mix(a, ax, n):
+        a = np.moveaxis(a, ax, 0)
+        for d in range(w):
+            al = 1.0 - (d + 0.5)/w
+            A, B = a[d].copy(), a[n - 1 - d].copy()
+            a[d] = A + 0.5*al*(B - A)
+            a[n - 1 - d] = B + 0.5*al*(A - B)
+        return np.moveaxis(a, 0, ax)
+    for nm in ('hyd', 'm1', 'f1', 'f2', 'f3'):
+        a = out[nm]
+        off = 1 if a.ndim == 4 else 0
+        N3, N2 = a.shape[off], a.shape[off + 1]
+        if nm != 'f2':
+            a = mix(a, off + 1, N2)
+        if nm != 'f3':
+            a = mix(a, off, N3)
+        out[nm] = a
+    return out
 
 
 # ------------------------------------------------------------------------------- writing
@@ -791,6 +826,13 @@ def main():
         help='.npy: 18 StretchRPoly parameters of the NEW '
         'radial grid (same x1min/x1max/ng); with --nx1')
     ap.add_argument('--nx1', type=int, default=None)
+    ap.add_argument('--reset-ft', action='store_true',
+                    help='with --sector: F2, F3 and the x2/x3 face fluxes = 0 (a cut '
+                    'changes the illumination of the thin region; the carried '
+                    'transverse beams made the first M1 solve diverge)')
+    ap.add_argument('--seam-blend', type=int, default=0,
+                    help='with --sector: conservative mixing band of W cells at the '
+                    'new seams (tested, not needed with --reset-ft)')
     ap.add_argument('--sector', type=float, nargs=4, default=None,
                     metavar=('X2MIN', 'X2MAX', 'X3MIN', 'X3MAX'),
                     help='cut this angular sector (source cell edges) before the '
@@ -814,6 +856,13 @@ def main():
                     force_math=a.force_math)
     if a.sector:
         out = strip_sector(r, out, a.factor)
+        if a.reset_ft:
+            out['m1'][2][:] = 0.0
+            out['m1'][3][:] = 0.0
+            out['f2'][:] = 0.0
+            out['f3'][:] = 0.0
+        if a.seam_blend:
+            out = seam_blend(out, a.seam_blend)
     print(
         'fallbacks (coarse cells -> injection): hydro %d, m1 %d of %d; max parent |F|/cE '
         '%.4g' %
