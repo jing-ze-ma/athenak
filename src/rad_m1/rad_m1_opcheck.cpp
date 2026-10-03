@@ -323,6 +323,58 @@ void RadiationM1::ImplicitOpCheck() {
     res[2] = nseam;
     res[3] = nvert;
   };
+  // STAGE CS1, gate (c): the seam geometry is SINGLE VALUED.  Each cell next to a panel
+  // seam carries the canonical seam arc dth (q = 0) or pair angle angm (q = 1) of its
+  // seam face (a cell at a panel corner has two seam faces with the same canonical
+  // index, so the same numbers), the exchange brings the neighbour's value into the
+  // first ghost across the seam, and the two must be BITWISE equal.  Returns (checked,
+  // unequal).
+  auto csg2c = csg2;
+  auto csg3c = csg3;
+  auto cseamc = cs_seam.d_view;
+  auto geom_check = [&](const int qv, Real *res) {
+    auto a = iw;
+    par_for("m1_chk_gfill", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie) && (j >= js && j <= je) &&
+                       (k >= ks && k <= ke);
+      Real w = 0.0;
+      if (act) {
+        if (j == js && cseamc(m,0)) {w = csg2c(m,qv,k,0);}
+        if (j == je && cseamc(m,1)) {w = csg2c(m,qv,k,1);}
+        if (k == ks && cseamc(m,2)) {w = csg3c(m,qv,j,0);}
+        if (k == ke && cseamc(m,3)) {w = csg3c(m,qv,j,1);}
+      }
+      a(m,XC,k,j,i) = act ? w : M1CHK_POISON;
+    });
+    ImplicitKrylovHalo(XC);
+    DevExeSpace().fence();
+    Real nchecked = 0.0, nbad = 0.0;
+    const int nkji = n3*n2*n1;
+    Kokkos::parallel_reduce("m1_chk_geom",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &nc, Real &nw) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/(n2*n1);
+      r -= k*n2*n1;
+      const int j = r/n1;
+      const int i = r - j*n1;
+      if (i < is || i > ie) return;
+      const bool kin = (k >= ks && k <= ke), jin = (j >= js && j <= je);
+      Real mine = 0.0;
+      bool on = false;
+      if (kin && j == js-1 && cseamc(m,0)) {on = true; mine = csg2c(m,qv,k,0);}
+      if (kin && j == je+1 && cseamc(m,1)) {on = true; mine = csg2c(m,qv,k,1);}
+      if (jin && k == ks-1 && cseamc(m,2)) {on = true; mine = csg3c(m,qv,j,0);}
+      if (jin && k == ke+1 && cseamc(m,3)) {on = true; mine = csg3c(m,qv,j,1);}
+      if (!on) return;
+      nc += 1.0;
+      if (a(m,XC,k,j,i) != mine) {nw += 1.0;}
+    }, nchecked, nbad);
+    res[0] = nchecked;
+    res[1] = nbad;
+  };
   // cubed sphere: x = a hash of i only in the active cells, the poison in the ghosts;
   // after the exchange every ghost within `reach` that has a donor (seam or not) must
   // hold the value of its own i to 1e-14.  Returns (checked, wrong, of them on a seam).
@@ -478,6 +530,34 @@ void RadiationM1::ImplicitOpCheck() {
       std::snprintf(buf, sizeof(buf), "  ref  %-34s max|y| %.3e  unfilled-ghost reads "
                     "%.0f  %s", name.c_str(), v[1], nbad, bad ? "FAIL" : "ok");
       lines.push_back(buf);
+      if (csm) {
+        // STAGE CS1: the CONSERVATION of the operator, seams included: with no source
+        // in the row (pure scattering, closed or reflecting x1 ends) sum_i V_i (y - x)_i
+        // telescopes, so its ratio to sum_i |V_i (y - x)_i| is round-off.  Reported
+        // (not a pass/fail: absorption or open x1 ends make it O(1) legitimately).
+        auto cv = pmy_pack->pcoord->volume;
+        Real s0 = 0.0, s1 = 0.0;
+        Kokkos::parallel_reduce("m1_chk_cons",
+        Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+        KOKKOS_LAMBDA(const int idx, Real &l0, Real &l1) {
+          const int m = idx/nkji;
+          int r = idx - m*nkji;
+          const int k = ks + r/nji;
+          r -= (k - ks)*nji;
+          const int j = js + r/ni;
+          const int i = is + (r - (j - js)*ni);
+          const Real dv = cv(m,k,j,i)*(a(m,YC,k,j,i) - a(m,XC,k,j,i));
+          l0 += dv;
+          l1 += fabs(dv);
+        }, s0, s1);
+        Real sv[2] = {s0, s1};
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(MPI_IN_PLACE, sv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        std::snprintf(buf, sizeof(buf), "  cons %-34s |sum V(Ax-x)|/sum|V(Ax-x)| %.3e",
+                      name.c_str(), fabs(sv[0])/fmax(sv[1], 1.0e-300));
+        lines.push_back(buf);
+      }
       return;
     }
     ++nrun;
@@ -584,6 +664,21 @@ void RadiationM1::ImplicitOpCheck() {
                         (hn + "/cs_label").c_str(), lv[0], lv[2], lv[3], lv[1],
                         lbad ? "FAIL" : "PASS");
           lines.push_back(buf);
+          for (int qv = 0; qv < 2; ++qv) {
+            Real gr[2];
+            geom_check(qv, gr);
+            Real gv[2] = {gr[0], gr[1]};
+#if MPI_PARALLEL_ENABLED
+            MPI_Allreduce(gr, gv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+            const bool gbad = (gv[1] > 0.0) || (gv[0] <= 0.0);
+            if (gbad) {++nfail;}
+            std::snprintf(buf, sizeof(buf), "  geom %-34s seam %s both sides bitwise: "
+                          "faces %.0f  unequal %.0f  %s", (hn + "/cs_seam").c_str(),
+                          (qv == 0) ? "arc dth   " : "pair angm ", gv[0], gv[1],
+                          gbad ? "FAIL" : "PASS");
+            lines.push_back(buf);
+          }
           fill();
           ImplicitKrylovHalo(XC);
         }

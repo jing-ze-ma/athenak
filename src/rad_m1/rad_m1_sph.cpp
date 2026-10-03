@@ -302,6 +302,9 @@ void RadiationM1::CubedSeamFaceAverage() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     f3(m,k,j,i) = x3(m,0,k,j,i);
   });
+  if (cs_seam_avg_n == 0 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1>: CS1 seam average of f0x2/f0x3 active" << std::endl;
+  }
   ++cs_seam_avg_n;
 }
 

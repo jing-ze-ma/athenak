@@ -824,7 +824,9 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     user_srcs_func = RadM1SphAtmGas;
     auto x1v = pmbp->pcoord->x1v;
-    const bool sp = pmy_mesh_->use_spherical_polar;
+    // STAGE CS1: on the cubed sphere x1 is r as well
+    const bool sp = pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere;
+    const bool csm = pmy_mesh_->use_cubed_sphere;
     if (pmbp->pradm1->force_ref == radm1::M1_FREF_WB_ARAD) {
       Real fin = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
       Real kt = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
@@ -871,6 +873,26 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                      pin->GetReal("problem","lat_l3") : 0.0;
     auto x2v = pmbp->pcoord->x2v;
     auto x3v = pmbp->pcoord->x3v;
+    // STAGE CS1 (cubed sphere), read only when named: the P_l(rhat . axis) mode of
+    // sph_shell (lat_l, lat_axis, lat_amp) and its user history
+    int csl = 0;
+    if (csm && pin->DoesParameterExist("problem","lat_l")) {
+      csl = pin->GetInteger("problem","lat_l");
+      m1_cs_l = csl;
+      std::string ax = pin->GetOrAddString("problem","lat_axis","z");
+      Real a0 = 0.0, a1 = 0.0, a2 = 1.0;
+      if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
+      if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
+      const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
+      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
+    }
+    if (csm) {user_hist_func = RadM1CsHistory;}
+    if (pin->DoesParameterExist("problem","shell_report") &&
+        pin->GetBoolean("problem","shell_report")) {
+      pgen_final_func = RadM1ShellReport;
+    }
+    const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
+    auto mbpan = pmbp->pmb->mb_panel;
     const Real x2a = pmy_mesh_->mesh_size.x2min;
     const Real x2l = pmy_mesh_->mesh_size.x2max - x2a;
     const Real x3a = pmy_mesh_->mesh_size.x3min;
@@ -904,9 +926,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tt/gm1;
       u0(m,radm1::M1_E,k,j,i) = e*(1.0 + seed*cos(2.3*j + 1.7*k + 0.9*i));
-      if (lamp != 0.0 && sp) {
+      if (lamp != 0.0 && sp && !csm) {
         u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
+      }
+      if (lamp != 0.0 && csm && csl > 0) {
+        const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+                               size.d_view(m).x2min, size.d_view(m).x2max,
+                               size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
+        u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
       }
       u0(m,radm1::M1_F1,k,j,i) = f;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -1128,7 +1156,7 @@ void RadM1SphAtmGas(Mesh *pm, const Real bdt) {
   auto &size = pmbp->pmb->mb_size;
   auto uh = pmbp->phydro->u0;
   auto x1v = pmbp->pcoord->x1v;
-  const bool sp = pm->use_spherical_polar;
+  const bool sp = pm->use_spherical_polar || pm->use_cubed_sphere;   // CS1: r = x1v
   Real rho0 = m1_sa_rho0, rin = m1_sa_rin, en = m1_sa_n;
   par_for("m1_sa_hold", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
