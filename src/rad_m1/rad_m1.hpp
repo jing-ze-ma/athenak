@@ -387,6 +387,11 @@ class RadiationM1 {
   // solve ends non-converged with resid above this value or non-finite (a DIVERGED
   // solve, not the usual 1e-7 stall), before its state is written back and spreads
   Real impl_res_fatal = 0.0;
+  // implicit_resid_fatal_masked (resmask_1003; read only when the res mask is on, default
+  // 1.0 then, 0 = off): stop the run when the largest residual of the EXCLUDED cells at
+  // the last pass of a solve exceeds this value or is non-finite (a masked cell that
+  // diverges is otherwise invisible to the stopping test and to implicit_resid_fatal)
+  Real impl_res_fatal_masked = 0.0;
   bool impl_res_mask = false;
   Real impl_res_exmax = 0.0, impl_res_nex = 0.0;
   // implicit_timers = N (m1-fast4; default 0 = off): fenced host timers of the M1 stage

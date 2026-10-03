@@ -853,6 +853,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_res_dmin needs <hydro> (the gas density)");
   }
   impl_res_mask = (impl_res_dmin > 0.0) || (impl_res_rmax > 0.0);
+  //  implicit_resid_fatal_masked (resmask_1003; read only when the mask is on, so a
+  //    mask-off run is unchanged): FATAL when the largest residual of the excluded cells
+  //    at the last pass of ANY solve (converged or not) is above this value or
+  //    non-finite.  Default 1.0: the worst excluded residual of the BSG res_dmin = 1e-16
+  //    A/B arm over 881 steps was 9.6e-2 (/viper/ptmp2/jinma/bsg_1001/SEAM_AB_1003.md).
+  //    0 = off.
+  if (impl_res_mask) {
+    impl_res_fatal_masked = pin->GetOrAddReal("rad_m1","implicit_resid_fatal_masked",1.0);
+    if (!(impl_res_fatal_masked >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_resid_fatal_masked must be >= 0");
+    }
+  }
   impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",!fixcl);
   impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",fixcl);
   // implicit_src_stable (stall_1002): the cancellation-free form of the gas-eliminated
@@ -9493,6 +9505,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         (rrmax > 0.0 && rx1v(m,i) > rrmax);
         Real r = iw_(m,M1_IW_RES,k,j,i);
         if (ex) {
+          // a NaN would drop out of the max: map it to 1e300 (resid_fatal_masked)
+          if (Kokkos::isnan(r)) {r = 1.0e300;}
           lmx3 = (r > lmx3) ? r : lmx3;
         } else {
           lmax = (r > lmax) ? r : lmax;
@@ -9803,8 +9817,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> Picard NON-CONVERGED after " << it << " passes:"
                 << " resid=" << resid << " (tol " << impl_tol << ")"
-                << " lin_resid=" << lresid
-                << " worst cell of rank 0 (m,k,j,i)=(" << lmb << "," << (lk+ks) << ","
+                << " lin_resid=" << lresid;
+      if (rmask) {std::cout << " masked_resid=" << rexcl_last;}
+      std::cout << " worst cell of rank 0 (m,k,j,i)=(" << lmb << "," << (lk+ks) << ","
                 << (lj+js) << "," << (li+is) << ")" << std::endl;
     }
     if (impl_res_fatal > 0.0 && (!(resid <= impl_res_fatal) || !std::isfinite(lresid))) {
@@ -9816,6 +9831,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 << ")" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+  }
+  // implicit_resid_fatal_masked: the excluded cells are still solved every pass; a
+  // diverging one must stop the run before its state spreads (NaN maps to 1e300)
+  if (rmask && impl_res_fatal_masked > 0.0 &&
+      !(rexcl_last <= impl_res_fatal_masked && rexcl_last < 1.0e300)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1> Picard solve DIVERGED in the masked cells: "
+              << "masked_resid=" << rexcl_last << " (1e300 = NaN) > "
+              << "implicit_resid_fatal_masked=" << impl_res_fatal_masked
+              << " (resid=" << resid << ", converged=" << converged << ") at time "
+              << pmy_pack->pmesh->time << " cycle " << pmy_pack->pmesh->ncycle
+              << " (rank " << global_variable::my_rank << ")" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
 
   // MILESTONE 3g: the per-cell counters of the gas coupling, reduced ONCE per step.
