@@ -43,6 +43,7 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/nghbr_index.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
@@ -212,6 +213,115 @@ void RadiationM1::ImplicitOpCheck() {
     }, nchecked, nbad);
     res[0] = nchecked;
     res[1] = nbad;
+  };
+  // STAGE CS1, cubed sphere: an EXACT check of every ghost with a donor, seams included.
+  // Each cell gets a hash of its CHART-FREE integer label: the cube-surface position of
+  // its centre in doubled equiangular index units, P = a (2 jg+1-N) + b (2 kg+1-N) + n N
+  // with (a, b, n) the panel frame (PanelFrame) and (jg, kg) the index on the panel.  The
+  // equiangular grid is invariant under the cube's symmetries, so the no-resample seam
+  // ghost (the neighbour's own cell next to the seam) is the MIRROR of this block's cell
+  // at the same depth, whose label is the integer reflection of P across the plane that
+  // holds the seam edge: R(P) = P - (P.(n - s)) (n - s), s the seam side's axis.  A ghost
+  // across two seams (a cube vertex) has no donor in this exchange and is not checked.
+  // Returns (checked, wrong, of them across a seam, vertex ghosts skipped).
+  DualArray2D<int> lab("m1_chk_lab", nmb, 3);
+  if (csm) {
+    const int npan = pm->mesh_indcs.nx2;
+    for (int m = 0; m < nmb; ++m) {
+      lab.h_view(m,0) = pmy_pack->pmb->mb_panel.h_view(m);
+      lab.h_view(m,1) = static_cast<int>(std::lround(
+          0.5*(pmy_pack->pmb->mb_size.h_view(m).x2min + 1.0)*npan));
+      lab.h_view(m,2) = static_cast<int>(std::lround(
+          0.5*(pmy_pack->pmb->mb_size.h_view(m).x3min + 1.0)*npan));
+    }
+    lab.template modify<HostMemSpace>();
+    lab.template sync<DevExeSpace>();
+  }
+  auto lab_ = lab.d_view;
+  const int npn = pm->mesh_indcs.nx2;
+  auto label_check = [&](Real *res) {
+    auto a = iw;
+    // the expected value of cell (m,k,j,i), or (vertex) a flag: returns false for a ghost
+    // across two seams
+    auto want = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                              Real &w, bool &seam) -> bool {
+      Real fa[3], fb[3], fn[3];
+      cubed_sphere::PanelFrame(lab_(m,0), fa, fb, fn);
+      int va[3], vb[3], vn[3];
+      for (int c = 0; c < 3; ++c) {
+        va[c] = static_cast<int>(fa[c]); vb[c] = static_cast<int>(fb[c]);
+        vn[c] = static_cast<int>(fn[c]);
+      }
+      int jg = j - js + lab_(m,1), kg = k - ks + lab_(m,2);
+      const bool jo = (jg < 0 || jg >= npn), ko = (kg < 0 || kg >= npn);
+      seam = jo || ko;
+      if (jo && ko) {return false;}
+      int sv[3] = {0, 0, 0};
+      if (jg < 0) {
+        jg = -1 - jg;
+        for (int c = 0; c < 3; ++c) {sv[c] = -va[c];}
+      } else if (jg >= npn) {
+        jg = 2*npn - 1 - jg;
+        for (int c = 0; c < 3; ++c) {sv[c] = va[c];}
+      } else if (kg < 0) {
+        kg = -1 - kg;
+        for (int c = 0; c < 3; ++c) {sv[c] = -vb[c];}
+      } else if (kg >= npn) {
+        kg = 2*npn - 1 - kg;
+        for (int c = 0; c < 3; ++c) {sv[c] = vb[c];}
+      }
+      int pv[3];
+      for (int c = 0; c < 3; ++c) {
+        pv[c] = va[c]*(2*jg + 1 - npn) + vb[c]*(2*kg + 1 - npn) + vn[c]*npn;
+      }
+      if (seam) {
+        int u[3], d = 0;
+        for (int c = 0; c < 3; ++c) {u[c] = vn[c] - sv[c]; d += pv[c]*u[c];}
+        for (int c = 0; c < 3; ++c) {pv[c] -= d*u[c];}
+      }
+      w = M1ChkHash(pv[0] + 4096, pv[1], pv[2], i, 5);
+      return true;
+    };
+    par_for("m1_chk_lfill", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie) && (!md || (j >= js && j <= je)) &&
+                       (!td || (k >= ks && k <= ke));
+      Real w = 0.0;
+      bool sm = false;
+      if (act) {want(m, k, j, i, w, sm);}
+      a(m,XC,k,j,i) = act ? w : M1CHK_POISON;
+    });
+    ImplicitKrylovHalo(XC);
+    DevExeSpace().fence();
+    Real nchecked = 0.0, nbad = 0.0, nseam = 0.0, nvert = 0.0;
+    const int nkji = n3*n2*n1;
+    Kokkos::parallel_reduce("m1_chk_label",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &nc, Real &nw, Real &ns, Real &nv) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/(n2*n1);
+      r -= k*n2*n1;
+      const int j = r/n1;
+      const int i = r - j*n1;
+      const int o1 = (i < is) ? -1 : ((i > ie) ? 1 : 0);
+      const int o2 = md ? ((j < js) ? -1 : ((j > je) ? 1 : 0)) : 0;
+      const int o3 = td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+      if (o1 == 0 && o2 == 0 && o3 == 0) return;
+      if (o1 != 0) return;   // x1 is a physical boundary on cs (one radial block)
+      const int d = (o1+1) + 3*(o2+1) + 9*(o3+1);
+      if (nbg_(m,d) < 0) return;
+      Real w = 0.0;
+      bool sm = false;
+      if (!want(m, k, j, i, w, sm)) {nv += 1.0; return;}
+      nc += 1.0;
+      if (sm) {ns += 1.0;}
+      if (a(m,XC,k,j,i) != w) {nw += 1.0;}
+    }, nchecked, nbad, nseam, nvert);
+    res[0] = nchecked;
+    res[1] = nbad;
+    res[2] = nseam;
+    res[3] = nvert;
   };
   // cubed sphere: x = a hash of i only in the active cells, the poison in the ghosts;
   // after the exchange every ghost within `reach` that has a donor (seam or not) must
@@ -460,6 +570,19 @@ void RadiationM1::ImplicitOpCheck() {
           std::snprintf(buf, sizeof(buf), "  halo %-34s shell field: ghosts %.0f (seam "
                         "%.0f)  wrong %.0f  %s", (hn + "/cs_shell").c_str(), sv[0], sv[2],
                         sv[1], sbad ? "FAIL" : "PASS");
+          lines.push_back(buf);
+          Real lr[4];
+          label_check(lr);
+          Real lv[4] = {lr[0], lr[1], lr[2], lr[3]};
+#if MPI_PARALLEL_ENABLED
+          MPI_Allreduce(lr, lv, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+          const bool lbad = (lv[1] > 0.0) || (lv[2] <= 0.0);
+          if (lbad) {++nfail;}
+          std::snprintf(buf, sizeof(buf), "  halo %-34s mirror labels: ghosts %.0f (seam "
+                        "%.0f, vertex skipped %.0f)  wrong %.0f  %s",
+                        (hn + "/cs_label").c_str(), lv[0], lv[2], lv[3], lv[1],
+                        lbad ? "FAIL" : "PASS");
           lines.push_back(buf);
           fill();
           ImplicitKrylovHalo(XC);

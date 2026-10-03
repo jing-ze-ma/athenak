@@ -353,6 +353,12 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // where variable 0 is the density; 0 = off): see PackAndSendCC.
   Real cs_rho_guard = 0.0;
   bool cs_lin_resample = false;   // <mesh>/cs_seam_resample = linear, same scope
+  // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
+  // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
+  // images of this block's cells across the seam.  Set by the implicit M1 on its scratch
+  // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell; the
+  // global diagnostic env CS_NORESAMP_CC does the same for every object.
+  bool cs_noresample = false;
 
   //functions
   void InitSendIndices(MeshBoundaryBuffer &b,int o1,int o2,int o3,int f1,int f2) override;

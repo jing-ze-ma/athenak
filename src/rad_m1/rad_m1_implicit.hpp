@@ -598,6 +598,80 @@ Real M1DDiag(const V &iw, const V &vd, const bool full, const int m, const int d
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1CsSeamGeom
+//! \brief STAGE CS1 (cubed sphere): the CANONICAL geometry of the panel-seam face next to
+//! along-seam cell q (0..n-1, n cells per panel edge, equiangular) of a seam, as angles
+//! on the unit sphere: dth = the seam arc of the face (area 0.5 (r_r^2 - r_l^2) dth),
+//! angm = the angle between the cell centre next to the seam and its MIRROR image across
+//! the seam plane (the neighbour panel's cell next to the seam, which is what the
+//! no-resample halo puts in the first ghost; the pair chord is normal to the seam),
+//! sfoot = the along-seam position of the foot of that normal, smid = the along-seam
+//! position of the face midpoint (both from the seam midpoint, increasing with q).
+//!
+//! Everything is a function of the integers (q, n) alone, evaluated for min(q, n-1-q)
+//! with the along-seam positions negated for the reflected half: the two panels sharing
+//! the face get BITWISE the same dth and angm (and opposite-oriented sfoot, smid), so the
+//! two-point seam coefficient is single valued and the seam flux telescopes.
+
+KOKKOS_INLINE_FUNCTION
+void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
+                  Real &smid) {
+  const bool flip = (q > n - 1 - q);
+  const int qq = flip ? (n - 1 - q) : q;
+  const Real dl = 0.5*M_PI/static_cast<Real>(n);
+  const Real el = -0.25*M_PI + static_cast<Real>(qq)*dl;
+  const Real er = -0.25*M_PI + static_cast<Real>(qq + 1)*dl;
+  const Real ec = -0.25*M_PI + (static_cast<Real>(qq) + 0.5)*dl;
+  const Real xc = tan(0.25*M_PI - 0.5*dl);
+  const Real yl = tan(el), yr = tan(er), yc = tan(ec);
+  const Real r2 = sqrt(2.0);
+  const Real sl = atan(yl/r2), sr = atan(yr/r2);
+  dth = sr - sl;
+  smid = 0.5*(sl + sr);
+  sfoot = atan(yc*r2/(1.0 + xc));
+  angm = 2.0*asin((1.0 - xc)/(r2*sqrt(1.0 + xc*xc + yc*yc)));
+  if (flip) {
+    smid = -smid;
+    sfoot = -sfoot;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1CsTanDer
+//! \brief STAGE CS1: the derivative along the OTHER tangential axis (e = 1: x2, e = 2:
+//! x3) of D_ee E at cell (k,j,i), per unit arc length, for the lagged cross term of the
+//! skewed face gradient.  Centred over the two centre-to-centre arcs dxface; ONE-SIDED
+//! (second order, three cells inside the panel) at a cell next to a panel seam along e,
+//! whose ghost there is a mirror cell off this cell's coordinate line.  slo/shi: the
+//! block's low/high face along e is a panel seam.
+
+template <class V, class VF>
+KOKKOS_INLINE_FUNCTION
+Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const int m,
+                const int e, const int k, const int j, const int i, const int lo,
+                const int hi, const bool slo, const bool shi) {
+  const int c = (e == 1) ? j : k;
+  auto q = [&](const int o) {
+    const int kk = (e == 2) ? (k + o) : k, jj = (e == 1) ? (j + o) : j;
+    return M1DDiag(iw, vd, full, m, e, kk, jj, i)*iw(m,M1_IW_EP,kk,jj,i);
+  };
+  auto h = [&](const int o) {   // the arc between cells c+o-1 and c+o
+    return (e == 1) ? cdxf.x2f(m,k,j+o,i) : cdxf.x3f(m,k+o,j,i);
+  };
+  if (c == lo && slo) {
+    const Real h1 = h(1), h2 = h(2);
+    return (-(2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) + ((h1 + h2)/(h1*h2))*q(1)
+           - (h1/(h2*(h1 + h2)))*q(2);
+  }
+  if (c == hi && shi) {
+    const Real h1 = h(0), h2 = h(-1);
+    return ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
+           + (h1/(h2*(h1 + h2)))*q(-2);
+  }
+  return (q(1) - q(-1))/(h(0) + h(1));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1OffDiv
 //! \brief sum_{e != d} d_e P_de at one cell: the OFF-DIAGONAL part of the divergence of
 //! the radiation pressure that drives the face-normal flux of direction d.  It is fully

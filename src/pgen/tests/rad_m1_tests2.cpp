@@ -84,6 +84,7 @@
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -112,6 +113,42 @@ Real m1_at_flux = 1.0, m1_at_c = 1.0, m1_at_ebot = 1.0, m1_at_kap = 1.0;
 // sph_atm (STAGE S2, tests_m1/runs_5b_sp_s2): the held gas rho = rho0 (r/r_in)^-n
 Real m1_sa_rho0 = 1.0, m1_sa_rin = 1.0, m1_sa_n = 0.0;
 bool m1_sa_hold = true;
+
+// STAGE CS1 (cubed sphere, sph_shell): the lateral mode P_l(mu), mu = rhat . axis
+int m1_cs_l = 2;
+Real m1_cs_ax[3] = {0.0, 0.0, 1.0};
+
+//----------------------------------------------------------------------------------------
+//! \fn M1Legendre
+//! \brief P_l(x) by the upward recurrence
+
+KOKKOS_INLINE_FUNCTION
+Real M1Legendre(const int l, const Real x) {
+  Real p0 = 1.0, p1 = x;
+  if (l == 0) return p0;
+  for (int n = 1; n < l; ++n) {
+    const Real p2 = ((2.0*n + 1.0)*x*p1 - n*p0)/(n + 1.0);
+    p0 = p1;
+    p1 = p2;
+  }
+  return p1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1CsMu
+//! \brief rhat . axis of the centre of cell (k,j) of a cubed-sphere MeshBlock
+
+KOKKOS_INLINE_FUNCTION
+Real M1CsMu(const int panel, const int k, const int j, const int ks, const int js,
+            const int nx2, const int nx3, const Real x2mn, const Real x2mx,
+            const Real x3mn, const Real x3mx, const Real ax, const Real ay,
+            const Real az) {
+  const Real xi = 0.25*M_PI*CellCenterX(j - js, nx2, x2mn, x2mx);
+  const Real eta = 0.25*M_PI*CellCenterX(k - ks, nx3, x3mn, x3mx);
+  Real q[3];
+  cubed_sphere::PanelToCart(panel, xi, eta, q);
+  return q[0]*ax + q[1]*ay + q[2]*az;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1AtmTau
@@ -151,6 +188,7 @@ void RadM1AtmBC(Mesh *pm);
 void RadM1AtmGas(Mesh *pm, const Real bdt);
 void RadM1SphAtmGas(Mesh *pm, const Real bdt);
 void RadM1ShellReport(ParameterInput *pin, Mesh *pm);
+void RadM1CsHistory(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::RadiationM1Tests2()
@@ -698,6 +736,24 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         pin->GetBoolean("problem","shell_report")) {
       pgen_final_func = RadM1ShellReport;
     }
+    // STAGE CS1 (cubed sphere), read only when named: lat_l = l multiplies E by
+    // 1 + lat_amp P_l(rhat . axis), lat_axis = z | edge (1,1,0) | vertex (1,1,1); the
+    // user history (problem/user_hist = true) is RadM1CsHistory
+    const bool csm = pmy_mesh_->use_cubed_sphere;
+    int csl = 0;
+    if (csm && pin->DoesParameterExist("problem","lat_l")) {
+      csl = pin->GetInteger("problem","lat_l");
+      m1_cs_l = csl;
+      std::string ax = pin->GetOrAddString("problem","lat_axis","z");
+      Real a0 = 0.0, a1 = 0.0, a2 = 1.0;
+      if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
+      if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
+      const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
+      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
+    }
+    if (csm) {user_hist_func = RadM1CsHistory;}
+    const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
+    auto mbpan = pmbp->pmb->mb_panel;
     auto &msz = pmy_mesh_->mesh_size;
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
     const Real x2a = msz.x2min, x2l = msz.x2max - msz.x2min;
@@ -716,6 +772,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       if (lamp != 0.0 && sp) {
         u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
+      }
+      if (lamp != 0.0 && csm && csl > 0) {
+        const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+                               size.d_view(m).x2min, size.d_view(m).x2max,
+                               size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
+        u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
       }
       if (gteq) {
         uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1;
@@ -1135,9 +1197,14 @@ void RadM1AtmBC(Mesh *pm) {
 //! max|F1|, max|F2|, max|F3|.  One radial MeshBlock per column is assumed (every block
 //! has the same r grid); printed by rank 0 as "SHELL" lines in %.17e.
 
+void RadM1CellDump(const std::string &pre, Mesh *pm);
+
 void RadM1ShellReport(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   if (pmbp->pradm1 == nullptr) return;
+  if (pm->use_cubed_sphere && pin->DoesParameterExist("problem","cell_dump")) {
+    RadM1CellDump(pin->GetString("problem","cell_dump"), pm);
+  }
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
@@ -1189,4 +1256,96 @@ void RadM1ShellReport(ParameterInput *pin, Mesh *pm) {
   }
   std::printf("SHELL x1f_right %.17e\n", x1f(0,is+nx1));
   (void)pin;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1CellDump
+//! \brief <problem>/cell_dump = <prefix> (cubed sphere, read only when named): every rank
+//! writes <prefix>.<rank>.txt with, for the radial index nx1/2 of every column, the
+//! panel, (xi, eta), the unit vector of the centre, the cell volume and E in %.17e.
+
+void RadM1CellDump(const std::string &pre, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  auto u = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pradm1->u0);
+  auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  auto &size = pmbp->pmb->mb_size;
+  auto &pan = pmbp->pmb->mb_panel;
+  std::string fn = pre + "." + std::to_string(global_variable::my_rank) + ".txt";
+  FILE *f = std::fopen(fn.c_str(), "w");
+  if (f == nullptr) return;
+  const int i = is + nx1/2;
+  for (int m = 0; m < pmbp->nmb_thispack; ++m) {
+    for (int k = ks; k < ks + nx3; ++k) {
+      for (int j = js; j < js + nx2; ++j) {
+        const Real xi = 0.25*M_PI*CellCenterX(j - js, nx2, size.h_view(m).x2min,
+                                               size.h_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k - ks, nx3, size.h_view(m).x3min,
+                                                size.h_view(m).x3max);
+        Real q[3];
+        cubed_sphere::PanelToCart(pan.h_view(m), xi, eta, q);
+        std::fprintf(f, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", pan.h_view(m),
+                     xi, eta, q[0], q[1], q[2], vol(m,k,j,i), u(m,radm1::M1_E,k,j,i));
+      }
+    }
+  }
+  std::fclose(f);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1CsHistory
+//! \brief STAGE CS1 (cubed sphere, sph_shell): volume sums for the lateral-mode decay and
+//! the conservation gate, with V = Coordinates volume and P = P_l(rhat . axis) of the
+//! lat_l mode: sum V E, sum V E P, sum V P P, sum V P, sum V, and the number of cells
+//! with E <= 0.  The mode amplitude is (VEP - VE VP/V)/(VPP - VP^2/V).
+
+void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 6;
+  pdata->label[0] = "VE";
+  pdata->label[1] = "VEP";
+  pdata->label[2] = "VPP";
+  pdata->label[3] = "VP";
+  pdata->label[4] = "V";
+  pdata->label[5] = "nEle0";
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pradm1 == nullptr) return;
+  auto u0 = pmbp->pradm1->u0;
+  auto vol = pmbp->pcoord->volume;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpan = pmbp->pmb->mb_panel;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int l = m1_cs_l;
+  const Real ax = m1_cs_ax[0], ay = m1_cs_ax[1], az = m1_cs_ax[2];
+  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+  const int nji = nx2*nx1;
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("M1CsHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    k += ks; j += js; i += is;
+    array_sum::GlobalSum hv;
+    for (int n = 0; n < NHISTORY_VARIABLES; ++n) {hv.the_array[n] = 0.0;}
+    const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+                           size.d_view(m).x2min, size.d_view(m).x2max,
+                           size.d_view(m).x3min, size.d_view(m).x3max, ax, ay, az);
+    const Real p = M1Legendre(l, mu);
+    const Real v = vol(m,k,j,i);
+    const Real e = u0(m,radm1::M1_E,k,j,i);
+    hv.the_array[0] = v*e;
+    hv.the_array[1] = v*e*p;
+    hv.the_array[2] = v*p*p;
+    hv.the_array[3] = v*p;
+    hv.the_array[4] = v;
+    hv.the_array[5] = (e <= 0.0) ? 1.0 : 0.0;
+    mb_sum += hv;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
 }

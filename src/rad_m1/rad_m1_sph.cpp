@@ -65,6 +65,7 @@
 //! -8.7 % on the rad-hydro wedge with moving gas).  A restart whose file lacks a key
 //! keeps its old value (the resolved values are echoed); Cartesian meshes are unchanged.
 
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -72,6 +73,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
@@ -126,9 +128,20 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     if (impl_prec != 2) {wcs += " implicit_precond != rbgs_fwd;";}
     if (impl_vimp) {wcs += " implicit_vimp = true;";}
     if (impl_halo_mpi) {wcs += " implicit_halo_mpi = true;";}
+    // CS1: the canonical seam geometry needs the equiangular panel of -1..1 with the same
+    // cell count along both tangential axes, and the one-sided tangential derivatives
+    // next to a seam three cells of the block
+    if (pm->mesh_indcs.nx2 != pm->mesh_indcs.nx3 ||
+        pm->mesh_size.x2min != -1.0 || pm->mesh_size.x2max != 1.0 ||
+        pm->mesh_size.x3min != -1.0 || pm->mesh_size.x3max != 1.0) {
+      wcs += " a panel other than x2, x3 in [-1, 1] with mesh nx2 = nx3;";
+    }
+    if (pm->mb_indcs.nx2 < 3 || pm->mb_indcs.nx3 < 3) {
+      wcs += " meshblock nx2 or nx3 < 3;";
+    }
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1> on the cubed sphere (stage CS0) supports only "
+        << std::endl << "<rad_m1> on the cubed sphere (stages CS0, CS1) supports only "
         << "transport = implicit, closure = eddington, time_scheme = be, implicit_solver "
         << "= bicgstab, implicit_precond = rbgs_fwd, no implicit_vimp, no "
         << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
@@ -170,9 +183,9 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     od_now = impl_offdiag;
   }
   if (global_variable::my_rank == 0 && cs_geom) {
-    std::cout << "<rad_m1>: cubed sphere (stage CS0: eddington, plain two-point "
-              << "transverse faces; implicit with areas/volumes/face distances from "
-              << "Coordinates"
+    std::cout << "<rad_m1>: cubed sphere (stage CS1: eddington, skewed transverse "
+              << "faces with the lagged cross term, mirror-pair seam faces without the "
+              << "resample; implicit with areas/volumes/face distances from Coordinates"
               << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?
                   ", stretched radial grid)" : ")") << std::endl;
   } else if (global_variable::my_rank == 0) {
@@ -184,6 +197,112 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
               << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?
                   " (stretched radial grid)" : "") << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CubedS1Init
+//! \brief STAGE CS1 (cubed sphere, after ImplicitInit): open the panel seams of the
+//! implicit operator (m1bcs), record which block faces are seams, tabulate the canonical
+//! seam geometry (M1CsSeamGeom) of every x2/x3 seam face incl. the ghost rows along the
+//! seam, and switch the implicit scratch exchanges to the no-resample (mirror) halo.
+
+void RadiationM1::CubedS1Init() {
+  auto *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ng = indcs.ng;
+  const int n2 = indcs.nx2 + 2*ng, n3 = indcs.nx3 + 2*ng;
+  const int npan = pm->mesh_indcs.nx2;   // cells per panel edge (= nx3, checked)
+  auto &bc = pmy_pack->pmb->mb_bcs;
+  auto &msz = pmy_pack->pmb->mb_size;
+  m1bcs = DualArray2D<BoundaryFlag>("m1bcs", nmb, 6);
+  cs_seam = DualArray2D<int>("m1csseam", nmb, 4);
+  csg2 = DvceArray4D<Real>("m1csg2", nmb, 4, n3, 2);
+  csg3 = DvceArray4D<Real>("m1csg3", nmb, 4, n2, 2);
+  auto g2h = Kokkos::create_mirror_view(csg2);
+  auto g3h = Kokkos::create_mirror_view(csg3);
+  Kokkos::deep_copy(g2h, 0.0);
+  Kokkos::deep_copy(g3h, 0.0);
+  for (int m = 0; m < nmb; ++m) {
+    for (int f = 0; f < 6; ++f) {
+      BoundaryFlag b = bc.h_view(m,f);
+      m1bcs.h_view(m,f) = (b == BoundaryFlag::panel) ? BoundaryFlag::block : b;
+    }
+    for (int f = 0; f < 4; ++f) {
+      cs_seam.h_view(m,f) = (bc.h_view(m,2+f) == BoundaryFlag::panel) ? 1 : 0;
+    }
+    // the first active cell's index along the panel edge
+    const int j0 = static_cast<int>(std::lround(0.5*(msz.h_view(m).x2min + 1.0)*npan));
+    const int k0 = static_cast<int>(std::lround(0.5*(msz.h_view(m).x3min + 1.0)*npan));
+    for (int sd = 0; sd < 2; ++sd) {
+      for (int k = 0; k < n3; ++k) {
+        const int q = k - indcs.ks + k0;
+        if (q < 0 || q >= npan) continue;
+        Real a, b, c, d;
+        M1CsSeamGeom(q, npan, a, b, c, d);
+        g2h(m,0,k,sd) = a; g2h(m,1,k,sd) = b; g2h(m,2,k,sd) = c; g2h(m,3,k,sd) = d;
+      }
+      for (int j = 0; j < n2; ++j) {
+        const int q = j - indcs.js + j0;
+        if (q < 0 || q >= npan) continue;
+        Real a, b, c, d;
+        M1CsSeamGeom(q, npan, a, b, c, d);
+        g3h(m,0,j,sd) = a; g3h(m,1,j,sd) = b; g3h(m,2,j,sd) = c; g3h(m,3,j,sd) = d;
+      }
+    }
+  }
+  m1bcs.template modify<HostMemSpace>();
+  m1bcs.template sync<DevExeSpace>();
+  cs_seam.template modify<HostMemSpace>();
+  cs_seam.template sync<DevExeSpace>();
+  Kokkos::deep_copy(csg2, g2h);
+  Kokkos::deep_copy(csg3, g3h);
+  if (pbval_th != nullptr) {pbval_th->cs_noresample = true;}
+  if (pbval_tq != nullptr) {pbval_tq->cs_noresample = true;}
+  if (pbval_kr != nullptr) {pbval_kr->cs_noresample = true;}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CubedSeamFaceAverage
+//! \brief STAGE CS1 (C5): make the stored transverse face state f0x2/f0x3 single valued
+//! at the panel seams, each panel keeping the mean of the two outward values
+//! (MeshBoundaryValuesCC::*FluxSeamCC, the hydro's seam-flux exchange, on pbval_kr).
+//! Called at the start of each implicit step, before f0x* is copied to the old state.
+
+void RadiationM1::CubedSeamFaceAverage() {
+  if (!cs_geom || pbval_kr == nullptr) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = indcs.nx2 + 2*indcs.ng;
+  const int n3 = indcs.nx3 + 2*indcs.ng;
+  DvceFaceFld5D<Real> fl("m1_csfa", nmb, 1, n3, n2, n1);
+  auto f2 = f0x2;
+  auto f3 = f0x3;
+  auto x2 = fl.x2f;
+  auto x3 = fl.x3f;
+  par_for("m1_csfa_in2", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    x2(m,0,k,j,i) = f2(m,k,j,i);
+  });
+  par_for("m1_csfa_in3", DevExeSpace(), 0, nmb-1, 0, n3, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    x3(m,0,k,j,i) = f3(m,k,j,i);
+  });
+  pbval_kr->InitFluxSeamRecv(1);
+  pbval_kr->PackAndSendFluxSeamCC(fl);
+  while (pbval_kr->RecvAndUnpackFluxSeamCC(fl) != TaskStatus::complete) {}
+  pbval_kr->ClearFluxSend();
+  pbval_kr->ClearFluxRecv();
+  par_for("m1_csfa_out2", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    f2(m,k,j,i) = x2(m,0,k,j,i);
+  });
+  par_for("m1_csfa_out3", DevExeSpace(), 0, nmb-1, 0, n3, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    f3(m,k,j,i) = x3(m,0,k,j,i);
+  });
+  ++cs_seam_avg_n;
 }
 
 } // namespace radm1

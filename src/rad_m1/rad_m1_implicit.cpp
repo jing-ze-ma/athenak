@@ -2233,7 +2233,7 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   auto th3_ = thx3;
   auto kl3_ = klx3;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;   // CS1: seams open
   Real cl = c_light, ch = chat, dt = dt_sub;
   Real efl = e_floor;
   Real fmx = impl_tfmax;
@@ -2445,6 +2445,114 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
     iw_(m,M1_IW_CKP,k,j,i) = ckp;
   }
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn M1CsTransRow
+//! \brief STAGE CS1 (cubed sphere): M1SphTransRow with the skewed-grid two-point
+//! coefficients.  An interior face takes the centre arc times sin of the face angle
+//! (dP/dn = (dP/dl_a - cos dP/dl_b)/sin, the cross part lagged in the face flux); a
+//! panel-seam face takes the canonical seam area 0.5 (r_r^2 - r_l^2) dth and the mirror
+//! pair distance r angm (M1CsSeamGeom), the same numbers on both panels.
+
+template <typename V, typename VD, typename VV, typename VF, typename VS, typename VG,
+          typename VB, typename VX>
+KOKKOS_INLINE_FUNCTION
+void M1CsTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
+                  const VF &carea, const VF &cdxf, const VS &sn2, const VS &sn3,
+                  const VG &g2, const VG &g3, const VB &cseam, const VX &x1v,
+                  const VX &x1f, const int m, const int k, const int j, const int i,
+                  const int js, const int je, const int ks, const int ke,
+                  const bool p2lo, const bool p2hi, const bool thrd,
+                  const bool p3lo, const bool p3hi, const bool bcg,
+                  const Real ch, const Real cl, const Real dt, const Real fp,
+                  const Real fm, const Real gp, const Real gm, Real &dia, Real &tt) {
+  const Real cr = ch/cl;
+  const Real iv = dt/cvol(m,k,j,i);
+  const Real dsh = 0.5*(x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i));
+  const bool s2lo = (cseam(m,0) != 0), s2hi = (cseam(m,1) != 0);
+  const bool s3lo = (cseam(m,2) != 0), s3hi = (cseam(m,3) != 0);
+  dia = 0.0;
+  Real cjp = 0.0, cjm = 0.0, ckp = 0.0, ckm = 0.0;
+  const Real d2c = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
+  const Real a2c = iw_(m,M1_IW_A2,k,j,i);
+  // the x2 faces j+1 (p) and j (m): area and two-point distance
+  const bool sp2 = (j == je) && s2hi, sm2 = (j == js) && s2lo;
+  const Real a2p = sp2 ? dsh*g2(m,0,k,1) : carea.x2f(m,k,j+1,i);
+  const Real a2m = sm2 ? dsh*g2(m,0,k,0) : carea.x2f(m,k,j,i);
+  const Real l2p = sp2 ? x1v(m,i)*g2(m,1,k,1) : cdxf.x2f(m,k,j+1,i)*sn2(m,k,j+1);
+  const Real l2m = sm2 ? x1v(m,i)*g2(m,1,k,0) : cdxf.x2f(m,k,j,i)*sn2(m,k,j);
+  const Real n2p = a2p*iv, n2m = a2m*iv;
+  if (!(j == je && p2hi)) {
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+    Real th = 1.0/(1.0 + ch*dt*ktf);
+    Real vf = 0.5*(iw_(m,M1_IW_V2,k,j,i) + iw_(m,M1_IW_V2,k,j+1,i));
+    if (vf > 0.0) {
+      dia += n2p*cr*a2c;
+    } else {
+      cjp += n2p*cr*iw_(m,M1_IW_A2,k,j+1,i);
+    }
+    Real g = th*ch*ch*dt/l2p;
+    dia += n2p*g*d2c;
+    cjp -= n2p*g*M1DDiag(iw_,vd_,dfull,m,1,k,j+1,i);
+  }
+  if (!(j == js && p2lo)) {
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real th = 1.0/(1.0 + ch*dt*ktf);
+    Real vf = 0.5*(iw_(m,M1_IW_V2,k,j-1,i) + iw_(m,M1_IW_V2,k,j,i));
+    if (vf > 0.0) {
+      cjm -= n2m*cr*iw_(m,M1_IW_A2,k,j-1,i);
+    } else {
+      dia -= n2m*cr*a2c;
+    }
+    Real g = th*ch*ch*dt/l2m;
+    dia += n2m*g*d2c;
+    cjm -= n2m*g*M1DDiag(iw_,vd_,dfull,m,1,k,j-1,i);
+  }
+  tt = cr*(n2p*fp - n2m*fm);
+  if (thrd) {
+    const Real d3c = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
+    const Real a3c = iw_(m,M1_IW_A3,k,j,i);
+    const bool sp3 = (k == ke) && s3hi, sm3 = (k == ks) && s3lo;
+    const Real a3p = sp3 ? dsh*g3(m,0,j,1) : carea.x3f(m,k+1,j,i);
+    const Real a3m = sm3 ? dsh*g3(m,0,j,0) : carea.x3f(m,k,j,i);
+    const Real l3p = sp3 ? x1v(m,i)*g3(m,1,j,1) : cdxf.x3f(m,k+1,j,i)*sn3(m,k+1,j);
+    const Real l3m = sm3 ? x1v(m,i)*g3(m,1,j,0) : cdxf.x3f(m,k,j,i)*sn3(m,k,j);
+    const Real n3p = a3p*iv, n3m = a3m*iv;
+    if (!(k == ke && p3hi)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real vf = 0.5*(iw_(m,M1_IW_V3,k,j,i) + iw_(m,M1_IW_V3,k+1,j,i));
+      if (vf > 0.0) {
+        dia += n3p*cr*a3c;
+      } else {
+        ckp += n3p*cr*iw_(m,M1_IW_A3,k+1,j,i);
+      }
+      Real g = th*ch*ch*dt/l3p;
+      dia += n3p*g*d3c;
+      ckp -= n3p*g*M1DDiag(iw_,vd_,dfull,m,2,k+1,j,i);
+    }
+    if (!(k == ks && p3lo)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real vf = 0.5*(iw_(m,M1_IW_V3,k-1,j,i) + iw_(m,M1_IW_V3,k,j,i));
+      if (vf > 0.0) {
+        ckm -= n3m*cr*iw_(m,M1_IW_A3,k-1,j,i);
+      } else {
+        dia -= n3m*cr*a3c;
+      }
+      Real g = th*ch*ch*dt/l3m;
+      dia += n3m*g*d3c;
+      ckm -= n3m*g*M1DDiag(iw_,vd_,dfull,m,2,k-1,j,i);
+    }
+    tt += cr*(n3p*gp - n3m*gm);
+  }
+  if (bcg) {
+    iw_(m,M1_IW_CJM,k,j,i) = cjm;
+    iw_(m,M1_IW_CJP,k,j,i) = cjp;
+    iw_(m,M1_IW_CKM,k,j,i) = ckm;
+    iw_(m,M1_IW_CKP,k,j,i) = ckp;
+  }
+}
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -2502,7 +2610,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto th2_ = thx2;
   auto th3_ = thx3;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;   // CS1: seams open
   Real cl = c_light, ch = chat, dt = dt_sub;
   const bool thrd = trans_x3;
   const bool fst = first;
@@ -2535,6 +2643,26 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
   auto cx3v = pmy_pack->pcoord->x3v;
+  // STAGE CS1 (cubed sphere): the face-normal gradient on the skewed panel grid, as
+  // `if (csg)` overwrites of the sp result.  An interior face takes
+  //   dP/dn = (dP/dl_a - cos dP/dl_b)/sin,
+  // the two-point part over the centre arc dxface (implicit: M1CsTransRow) and the cross
+  // term from M1CsTanDer of the iterate (lagged into TRHS through the face flux, the
+  // Picard contraction <= |cos|/... <= 1/2).  A PANEL-SEAM face pairs the cell with its
+  // mirror image (the no-resample ghost): the pair chord is normal to the seam, so the
+  // two-point difference over the canonical pair distance r angm IS the normal gradient,
+  // at the foot of the chord; the lagged correction del * d/ds moves it along the seam to
+  // the face midpoint (del = smid - sfoot, d/ds over the neighbouring seam faces, one-
+  // sided at a cube vertex).  Both panels evaluate the same canonical numbers.
+  const bool csg = cs_geom;
+  auto cseam = cs_seam.d_view;
+  auto csg2_ = csg2;
+  auto csg3_ = csg3;
+  auto csn2 = pmy_pack->pcoord->sin_face_xi;
+  auto ccs2 = pmy_pack->pcoord->cos_face_xi;
+  auto csn3 = pmy_pack->pcoord->sin_face_eta;
+  auto ccs3 = pmy_pack->pcoord->cos_face_eta;
+  auto cx1f = pmy_pack->pcoord->xx1f;
 
   // (1) the x2 face fluxes
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
@@ -2572,6 +2700,34 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
     if (sph) {
       gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/cdxf.x2f(m,k,j,i);
+    }
+    if (csg) {
+      const bool s2lo = (cseam(m,0) != 0), s2hi = (cseam(m,1) != 0);
+      const bool s3lo = (cseam(m,2) != 0), s3hi = (cseam(m,3) != 0);
+      if ((j == js && s2lo) || (j == je+1 && s2hi)) {
+        const int sd = (j == js) ? 0 : 1;
+        auto dpr = [&](const int kq) {
+          return (M1DDiag(iw_,vd_,dfull,m,1,kq,j,i)*iw_(m,M1_IW_EP,kq,j,i)
+                  - M1DDiag(iw_,vd_,dfull,m,1,kq,jm,i)*iw_(m,M1_IW_EP,kq,jm,i))
+                 /(cx1v(m,i)*csg2_(m,1,kq,sd));
+        };
+        const Real d0 = dpr(k);
+        const bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
+        Real dd = 0.0;
+        if (up && dn) {
+          dd = (dpr(k+1) - dpr(k-1))/(csg2_(m,2,k+1,sd) - csg2_(m,2,k-1,sd));
+        } else if (up) {
+          dd = (dpr(k+1) - d0)/(csg2_(m,2,k+1,sd) - csg2_(m,2,k,sd));
+        } else if (dn) {
+          dd = (d0 - dpr(k-1))/(csg2_(m,2,k,sd) - csg2_(m,2,k-1,sd));
+        }
+        gr = d0 + (csg2_(m,3,k,sd) - csg2_(m,2,k,sd))*dd;
+      } else {
+        const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
+                             + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
+        gr = ((dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/cdxf.x2f(m,k,j,i)
+              - ccs2(m,k,j)*ge)/csn2(m,k,j);
+      }
     }
     Real vf = 0.5*(iw_(m,M1_IW_V2,k,jm,i) + iw_(m,M1_IW_V2,k,j,i));
     Real g0f = 0.5*(iw_(m,M1_IW_G0,k,jm,i) + iw_(m,M1_IW_G0,k,j,i));
@@ -2628,6 +2784,35 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
       if (sph) {
         gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/cdxf.x3f(m,k,j,i);
+      }
+      if (csg) {
+        const bool s2lo = (cseam(m,0) != 0), s2hi = (cseam(m,1) != 0);
+        const bool s3lo = (cseam(m,2) != 0), s3hi = (cseam(m,3) != 0);
+        if ((k == ks && s3lo) || (k == ke+1 && s3hi)) {
+          const int sd = (k == ks) ? 0 : 1;
+          auto dpr = [&](const int jq) {
+            return (M1DDiag(iw_,vd_,dfull,m,2,k,jq,i)*iw_(m,M1_IW_EP,k,jq,i)
+                    - M1DDiag(iw_,vd_,dfull,m,2,km,jq,i)*iw_(m,M1_IW_EP,km,jq,i))
+                   /(cx1v(m,i)*csg3_(m,1,jq,sd));
+          };
+          const Real d0 = dpr(j);
+          const bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
+          Real dd = 0.0;
+          if (up && dn) {
+            dd = (dpr(j+1) - dpr(j-1))/(csg3_(m,2,j+1,sd) - csg3_(m,2,j-1,sd));
+          } else if (up) {
+            dd = (dpr(j+1) - d0)/(csg3_(m,2,j+1,sd) - csg3_(m,2,j,sd));
+          } else if (dn) {
+            dd = (d0 - dpr(j-1))/(csg3_(m,2,j,sd) - csg3_(m,2,j-1,sd));
+          }
+          gr = d0 + (csg3_(m,3,j,sd) - csg3_(m,2,j,sd))*dd;
+        } else {
+          const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
+                               + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,
+                                            s2hi));
+          gr = ((dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/cdxf.x3f(m,k,j,i)
+                - ccs3(m,k,j)*ge)/csn3(m,k,j);
+        }
       }
       Real vf = 0.5*(iw_(m,M1_IW_V3,km,j,i) + iw_(m,M1_IW_V3,k,j,i));
       Real g0f = 0.5*(iw_(m,M1_IW_G0,km,j,i) + iw_(m,M1_IW_G0,k,j,i));
@@ -2851,6 +3036,16 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     p2lo, p2hi, thrd, mbbcs.d_view(m,BoundaryFace::inner_x3),
                     mbbcs.d_view(m,BoundaryFace::outer_x3), bcg, ch, cl, dt, fp, fm,
                     gps, gms, dia, tt);
+    }
+    if (csg) {
+      // STAGE CS1: the same row on the skewed panel grid and the seam pairs
+      BoundaryFlag c5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+      BoundaryFlag c6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+      bool q3lo = (c5 != BoundaryFlag::block) && (c5 != BoundaryFlag::periodic);
+      bool q3hi = (c6 != BoundaryFlag::block) && (c6 != BoundaryFlag::periodic);
+      M1CsTransRow(iw_, vd_, dfull, cvol, carea, cdxf, csn2, csn3, csg2_, csg3_, cseam,
+                   cx1v, cx1f, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd, q3lo, q3hi,
+                   bcg, ch, cl, dt, fp, fm, gps, gms, dia, tt);
     }
     Real unew = tt - dia*ec;
     Real uold = -iw_(m,M1_IW_TRHS,k,j,i);
@@ -3497,7 +3692,7 @@ void RadiationM1::ImplicitODCache(int xc) {
   auto iw_ = iw;
   auto od_ = odc;
   auto mbsize = pmy_pack->pmb->mb_size.d_view;
-  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // CS1: seams open
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
   const int cx = xc;
@@ -3716,7 +3911,7 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
   auto iw_ = iw;
   auto od_ = odc;
   auto mbsize = pmy_pack->pmb->mb_size.d_view;
-  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // CS1: seams open
   auto pos_ = part_pos.d_view;
   const int nblkx1 = part_nblk;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
@@ -3885,7 +4080,7 @@ void RadiationM1::ImplicitStencilBuild() {
   auto vd_ = vet_cell;
   const bool dfull = vet_full;
   auto mbsize = pmy_pack->pmb->mb_size.d_view;
-  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // CS1: seams open
   auto pos_ = part_pos.d_view;
   const int nblkx1 = part_nblk;
   const bool thrd = trans_x3;
@@ -4585,7 +4780,7 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   // i.e. onto Kokkos HIP's constant-memory launch, which waits on the previous such
   // launch (hip_event_synchronize) -- one hidden host stall per call, ~290 per cycle.
   auto mbsize = pmy_pack->pmb->mb_size.d_view;
-  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // CS1: seams open
   auto pos_ = part_pos.d_view;
   auto vd_ = vet_cell;   // vet_tensor = full (M1DDiag, M1OffDiv)
   const bool dfull = vet_full;
@@ -6803,7 +6998,7 @@ void RadiationM1::ImplicitVimpBuild() {
   auto th3_ = thx3;
   const bool lm = (impl_tlim != M1_TLIM_NONE);
   auto mbsize = pmy_pack->pmb->mb_size.d_view;
-  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // CS1: seams open
   auto pos_ = part_pos.d_view;
   const int nblkx1 = part_nblk;
   const bool thrd = trans_x3;
@@ -7574,6 +7769,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto f2_ = f0x2;
   auto f3_ = f0x3;
   if (trans) {
+    if (cs_geom && thrd) {CubedSeamFaceAverage();}   // STAGE CS1 (C5)
     Kokkos::deep_copy(DevExeSpace(), f0x2n, f0x2);
     if (thrd) {Kokkos::deep_copy(DevExeSpace(), f0x3n, f0x3);}
   }
@@ -7613,7 +7809,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
   }
-  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;   // CS1: seams open
   auto opac_ = opac;
   auto &mbsize = pmy_pack->pmb->mb_size;
   Real cl = c_light;

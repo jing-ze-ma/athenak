@@ -96,6 +96,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     if (e_ != nullptr) { no_rs_cc = std::atoi(e_); } }
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
+  const bool nors_ = cs_noresample;
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
   auto &is_z4c = is_z4c_;
@@ -346,7 +347,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
-          if (no_rs_cc) { cs_seam = 0; }
+          if (no_rs_cc || nors_) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;
