@@ -771,7 +771,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // lagged T (M1ImplTemperatureOpacNear) instead of the halve/double bracket's; bit 2
   // (value 2) is a slope guard: a cell whose d ln kappa_P / d ln T at the lagged T is
   // below implicit_tsolve_opac_slope_min (default -4, where kappa_P T^4 falls with T)
-  // takes the frozen-opacity root find instead.  3 = both.  Read only when named, so
+  // takes the frozen-opacity root find instead.  3 = both.  Bit 3 (value 4,
+  // r2b_shift_1003) takes the stable root NEAREST T_rad(E'+de0) instead of the lagged T
+  // (M1ImplTemperatureOpacRad; wins over bit 1).  Read only when named, so
   // a run without the keys writes the same restart file.
   if (pin->DoesParameterExist("rad_m1","implicit_tsolve_opac_mode")) {
     impl_tsolve_opac_mode = pin->GetInteger("rad_m1","implicit_tsolve_opac_mode");
@@ -7365,22 +7367,40 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
         bool tsu = tso && !(tfz && tf_(m,k,j,i) > 0.5);
         if (tsu && (tsm & 2)) {tsu = (M1TsoSlope(opf, dd, told) >= tsmin);}
         const bool tnear = ((tsm & 1) != 0);
-        if (tsu && tnear) {
+        // implicit_tsolve_opac_mode bit 3 (value 4): the stable root nearest T_rad
+        // of E'+de0 (M1ImplTemperatureOpacRad); takes precedence over bit 1
+        const bool trd = ((tsm & 4) != 0);
+        if (tsu && (tnear || trd)) {
           if constexpr (decltype(idl)::value) {
             M1EosIdeal th{eos.gamma};
-            (void) M1ImplTemperatureOpacNear(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
-                                             cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            if (trd) {
+              (void) M1ImplTemperatureOpacRad(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                                  cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            } else {
+              (void) M1ImplTemperatureOpacNear(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                                   cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            }
           } else if (usec) {
             Real nmiss = 0.0;
             M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
                                                           &nmiss};
-            (void) M1ImplTemperatureOpacNear(thc, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
-                                             cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            if (trd) {
+              (void) M1ImplTemperatureOpacRad(thc, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                                  cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            } else {
+              (void) M1ImplTemperatureOpacNear(thc, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                                   cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            }
             if (gasx) {iw_(m,igm,k,j,i) += nmiss;}
           } else {
             M1EosDirect<decltype(eos)> th{eos};
-            (void) M1ImplTemperatureOpacNear(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
-                                             cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            if (trd) {
+              (void) M1ImplTemperatureOpacRad(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                                  cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            } else {
+              (void) M1ImplTemperatureOpacNear(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                                   cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            }
           }
         } else if (tsu) {
           if constexpr (decltype(idl)::value) {
