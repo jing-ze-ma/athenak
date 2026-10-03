@@ -1279,9 +1279,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   impl_recon_w = pin->GetOrAddReal("rad_m1","implicit_recon_w",-1.0);
   impl_res_floor = pin->GetOrAddReal("rad_m1","implicit_res_floor",0.0);
-  // implicit_gas_newton_switch = W (he_estall_1003).  DEFAULT 10 on fresh runs (user
-  // 10-03); a restart whose input lacks the key keeps the old behaviour (0 = off) and
-  // says so; 0 = off is bitwise the pre-key code.  Under implicit_gas_newton, a solve
+  // implicit_gas_newton_switch = W (he_estall_1003).  DEFAULT 0 = off (bitwise the
+  // pre-key code), read only when named: on the BSG envelope (bsg_1001/AB_SOLVER_1003.md,
+  // rst 00008) W = 10 DIVERGED within 6 cycles (resid 0.31) -- the forced kappa(T) root
+  // find in every cell is unstable there -- while it cures the He presn wedge stalls;
+  // set it explicitly per run.  Under implicit_gas_newton, a solve
   // whose Picard residual is detected STALLED drops the gas Newton update (and the
   // opac_newton face terms, which need it) for the rest of that solve: the gas T is the
   // bracketed root of the exact backward-Euler gas equation with kappa_P, kappa_E at the
@@ -1297,16 +1299,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // resid 1e-8..2e-6 2-cycle that ran ~29 % of the He presn wedge solves to
   // implicit_maxit); the root find with kappa(T) has no such cycle.  He wedge -30..-36 %
   // wall, accuracy within the noise spread; He box bitwise (never switches).
+  impl_gn_sw = 0;
   if (pin->DoesParameterExist("rad_m1","implicit_gas_newton_switch")) {
     impl_gn_sw = pin->GetInteger("rad_m1","implicit_gas_newton_switch");
-  } else if (global_variable::restart_run) {
-    impl_gn_sw = 0;
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> restart input has no implicit_gas_newton_switch: keeping "
-                << "the old default (off); set it to switch" << std::endl;
-    }
-  } else {
-    impl_gn_sw = pin->GetOrAddInteger("rad_m1","implicit_gas_newton_switch",10);
   }
   if (impl_gn_sw > 0) {
     impl_gn_sw_min = pin->GetOrAddInteger("rad_m1","implicit_gas_newton_switch_min",20);
