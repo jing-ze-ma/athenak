@@ -486,8 +486,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // the +-1-ulp level) for the closures whose tensor is fixed within a step (eddington,
   // vet_sc, tau) whenever the configuration admits them: transport = implicit with
   // bicgstab, implicit_bcg_sync = 1, implicit_line_solver = pcr, ONE MeshBlock along x1,
-  // no implicit_lin_cnorm, and (op_stencil) no periodic x1 wrap.  m1 / minerbo /
-  // kershaw keep them off (not gated there).  A key the input names keeps its value.
+  // and (op_stencil) no periodic x1 wrap; with implicit_lin_cnorm > 0 krylov_fuse is 1.
+  // m1 / minerbo / kershaw keep them off (not gated there).  A key the input names keeps
+  // its value.
   //  implicit_halo_direct = true   the implicit exchanges as ONE on-rank copy kernel
   //    when every neighbour of every block is on its own rank at the same level
   //    (otherwise the ordinary exchange, as before).  Bitwise.
@@ -513,10 +514,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   bool fdef = fixcl && full && (impl_solver == M1_ISOLV_BICGSTAB) &&
               (impl_bcg_sync == 1) && (impl_line_solver == 1) &&
               (pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1);
-  if (pin->DoesParameterExist("rad_m1","implicit_lin_cnorm") &&
-      pin->GetReal("rad_m1","implicit_lin_cnorm") > 0.0) {
-    fdef = false;
-  }
+  // implicit_lin_cnorm > 0 (m1-cnorm-fastpath, bsg_1001/CNORM_FAST_1003.md): the fast
+  // set stays on, with implicit_krylov_fuse = 1 instead of 3.  The per-cell norm is
+  // taken in the reductions of ImplicitBiCGStab (fuse 0/1/2), which ImplicitBiCGStabTwo
+  // (fuse 3) does not have; fuse 1 is the p-update in the preconditioner (bitwise vs 0)
+  // and costs the same as 3 (He wedge 0.392-0.422 vs 0.410-0.422 s/cycle).  Before, any
+  // cnorm > 0 dropped the whole fast set (fdef = false: 2.2x slower on the He wedge).
+  const bool cn_def = pin->DoesParameterExist("rad_m1","implicit_lin_cnorm") &&
+                      pin->GetReal("rad_m1","implicit_lin_cnorm") > 0.0;
   // the x1 wrap as the boundary parsing below will read it (same keys, same defaults)
   const bool x1per = (ImplBCFromString(
       pin->GetOrAddString("rad_m1","implicit_bc_x1min","auto"),
@@ -524,7 +529,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       == M1_IBC_PERIODIC);
   impl_halo_direct = pin->GetOrAddBoolean("rad_m1","implicit_halo_direct",fdef);
   impl_odc = pin->GetOrAddBoolean("rad_m1","implicit_od_cache",fdef);
-  impl_kfuse = pin->GetOrAddInteger("rad_m1","implicit_krylov_fuse",fdef ? 3 : 0);
+  impl_kfuse = pin->GetOrAddInteger("rad_m1","implicit_krylov_fuse",
+                                    fdef ? (cn_def ? 1 : 3) : 0);
+  // a restart file written without cnorm echoes the defaulted fuse 3: with cnorm named
+  // now it runs fuse 1 (round-off vs 3), echoed; a fuse 3 the input names still FATALs
+  if (impl_kfuse == 3 && cn_def &&
+      pin->IsParameterDefaulted("rad_m1","implicit_krylov_fuse")) {
+    impl_kfuse = 1;
+    pin->SetInteger("rad_m1","implicit_krylov_fuse",1);
+    std::cout << "rad_m1: implicit_krylov_fuse 3 (defaulted in the restart file) -> 1, "
+              << "since implicit_lin_cnorm > 0" << std::endl;
+  }
   impl_stencil = pin->GetOrAddBoolean("rad_m1","implicit_op_stencil",fdef && !x1per);
   impl_prec_float = pin->GetOrAddBoolean("rad_m1","implicit_precond_float",false);
   // tests_m1/runs_4a_accel levers (implicit_vimp_fold, implicit_one_pass,
