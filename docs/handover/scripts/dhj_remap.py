@@ -561,15 +561,26 @@ def face_areas(n, e):
     return a1, ae[..., None]*dr2, ax[..., None]*dr2
 
 
-def spline_matrix(n, f):
-    """(f n + 1, n + 1): not-a-knot cubic spline through nodes 0..n evaluated at the fine
-    nodes m/f; rows of coincident nodes are exact unit vectors (linear in the data)"""
+def spline_matrix(n, f, kind='cubic'):
+    """(f n + 1, n + 1): not-a-knot cubic spline (or piecewise linear) through nodes
+    0..n evaluated at the fine nodes m/f; rows of coincident nodes are exact unit vectors
+    (linear in the data either way)"""
+    if kind == 'linear':
+        x = np.arange(f*n + 1)/f
+        i0 = np.minimum(np.floor(x).astype(int), n - 1)
+        w = x - i0
+        M = np.zeros((f*n + 1, n + 1))
+        M[np.arange(f*n + 1), i0] = 1.0 - w
+        M[np.arange(f*n + 1), i0 + 1] += w
+        M[::f] = np.eye(n + 1)
+        return M
     M = CubicSpline(np.arange(n + 1.0), np.eye(n + 1), axis=0)(np.arange(f*n + 1)/f)
     M[::f] = np.eye(n + 1)
     return M
 
 
-def remap_bfield(h, a, eo, en, fac, n2o, nx1n, lloc_new, b2n, b3n, fo_path, radial_id):
+def remap_bfield(h, a, eo, en, fac, n2o, nx1n, lloc_new, b2n, b3n, fo_path, radial_id,
+                 hkind='cubic'):
     """divergence-free remap of the face fields via edge line integrals of a vector
     potential in the radial gauge (A_r = 0).  Per panel: bottom shell L2 = 0, L3 =
     cumulative Phi1 along xi; above, L3(i+1) = L3(i) - Phi2, L2(i+1) = L2(i) + Phi3 (exact
@@ -629,7 +640,7 @@ def remap_bfield(h, a, eo, en, fac, n2o, nx1n, lloc_new, b2n, b3n, fo_path, radi
     del L2, L3
     # horizontal
     if fac > 1:
-        M = spline_matrix(N, fac)
+        M = spline_matrix(N, fac, hkind)
         C2 = np.concatenate((np.zeros((6, N + 1, 1, nx1n + 1)), np.cumsum(L2n, axis=2)),
                             axis=2)
         C3 = np.concatenate((np.zeros((6, 1, N + 1, nx1n + 1)), np.cumsum(L3n, axis=1)),
@@ -802,6 +813,11 @@ def main():
     ap_.add_argument('--check-only', action='store_true')
     ap_.add_argument('--allow-truncate', action='store_true',
                      help='allow x1max to drop (gas above the new top is discarded)')
+    ap_.add_argument('--bh-interp', default='linear', choices=('linear', 'cubic'),
+                     help='MHD horizontal: interpolation of the cumulative edge line '
+                     'integrals (linear: each child gets 1/f^2 of the parent radial '
+                     'flux, no overshoot; cubic: not-a-knot spline, adds sub-cell '
+                     'structure and ME)')
     ap_.add_argument('--no-bfield', action='store_true',
                      help='MHD restart: write the hydro remap.dat only (B ignored)')
     ap_.add_argument('--selftest', action='store_true')
@@ -1371,7 +1387,7 @@ def main():
     if h['mhd'] and not a.no_bfield:
         bfn = os.path.join(a.outdir, 'remap_b.dat')
         d = remap_bfield(h, a, eo, en, fac, n2o, nx1n, lloc_new, b2n, b3n, bfn,
-                         radial_identity)
+                         radial_identity, a.bh_interp)
         print('B: restart div B max |sum Phi| / (|b|max area max) %.2e (per cell, / own '
               'area: %.2e); MeshBlock shared-face copies differ by %.2e; Phi1 rebuilt '
               'from the radial-gauge potential vs restart %.2e'
