@@ -834,6 +834,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_res_rmax")) {
     impl_res_rmax = pin->GetReal("rad_m1","implicit_res_rmax");
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_thin_freeze")) {
+    impl_thin_frz = pin->GetReal("rad_m1","implicit_thin_freeze");
+    if (impl_thin_frz < 0.0) {ImplFatal("<rad_m1>/implicit_thin_freeze must be >= 0");}
+  }
   //  implicit_resid_fatal: a Picard solve that ends NON-CONVERGED with resid > this
   //    value (or a non-finite resid or lin_resid) is a diverged solve: FATAL before its
   //    state spreads (BSG production 10-01: one 200-pass solve with resid 1.2e6 at
@@ -1511,6 +1515,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ecache, -1.0);
   }
   Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
+  if (impl_thin_frz > 0.0) {
+    Kokkos::realloc(thin_frz, nmb, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(thin_frz, 0.0);
+  }
   if (impl_opac_newton) {
     if (!impl_opac_update || !impl_gas_newton) {
       ImplFatal("<rad_m1>/implicit_opac_newton needs implicit_opac_update = true and "
@@ -7297,6 +7305,8 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto opf = std::get<28>(ctx_);
   auto tsm = std::get<29>(ctx_);
   auto tsmin = std::get<30>(ctx_);
+  auto tf_ = std::get<31>(ctx_);
+  auto tfz = std::get<32>(ctx_);
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -7306,7 +7316,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)efl; (void)eos;
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
-    (void)tso; (void)opf; (void)tsm; (void)tsmin;
+    (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -7349,10 +7359,11 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
         // update (c_v <= 0, a step outside the trust region, a non-positive T).
         // implicit_tsolve_opac: the fallback root find takes kappa_P, kappa_E at the
         // trial T (M1ImplTemperatureOpac) instead of at the lagged iterate.
+        // implicit_thin_freeze: a frozen cell never takes the kappa(T) find
         // implicit_tsolve_opac_mode bit 2: the slope guard sends a cell whose kappa_P
         // falls faster than T^smin at the lagged T to the frozen-opacity find below
-        bool tsu = tso;
-        if (tso && (tsm & 2)) {tsu = (M1TsoSlope(opf, dd, told) >= tsmin);}
+        bool tsu = tso && !(tfz && tf_(m,k,j,i) > 0.5);
+        if (tsu && (tsm & 2)) {tsu = (M1TsoSlope(opf, dd, told) >= tsmin);}
         const bool tnear = ((tsm & 1) != 0);
         if (tsu && tnear) {
           if constexpr (decltype(idl)::value) {
@@ -7998,6 +8009,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_opac_newton: also at pass 0 (at the iterate T, not T^n), so that every
     // pass's rows carry the derivative at the temperature the opacity was taken at
     const bool opn = impl_opac_newton && have_hydro && !opac_zero;
+    // implicit_thin_freeze: mark, at pass 0 from the start-of-solve opacities, the cells
+    // with c dt rho kappa_P below the threshold; they skip every opacity update below
+    const bool tfz = (impl_thin_frz > 0.0) && have_hydro && !opac_zero;
+    if (tfz && it == 0) {
+      auto tf_ = thin_frz;
+      const Real thr = impl_thin_frz, cdt = c_light*dt;
+      par_for("m1_impl_thinfrz", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        tf_(m,k,j,i) = (cdt*opac_(m,M1_OP_P,k,j,i) < thr) ? 1.0 : 0.0;
+      });
+    }
     if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero) {
       int otype = opacity_type;
       Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kscat = kappa_s;
@@ -8005,8 +8027,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       M1OpacTab ot = otab;
       const int opart = dbg_opac_part;
       auto ktd_ = ktd;
+      auto tf_ = thin_frz;
       par_for("m1_impl_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (tfz && tf_(m,k,j,i) > 0.5) {
+          if (opn) {ktd_(m,k,j,i) = 0.0;}
+          return;
+        }
         Real d = uh(m,IDN,k,j,i);
         Real t = iw_(m,M1_IW_TP,k,j,i);
         Real op, oe, of, os;
@@ -9315,7 +9342,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      M1OpacFn{opacity_type, otab, kappa_p, kappa_e,
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b},
-                                     impl_tsolve_opac_mode, impl_tsolve_opac_smin);
+                                     impl_tsolve_opac_mode, impl_tsolve_opac_smin,
+                                     thin_frz, (impl_thin_frz > 0.0));
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {

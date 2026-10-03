@@ -380,6 +380,11 @@ class RadiationM1 {
   // last pass of any step, res_nex = steps whose excluded residual was >= implicit_tol
   // (steps that would not have stopped there with the full norm).
   Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
+  // implicit_thin_freeze (m1-picard-aa, read only when named, 0 = off): cells with
+  // c dt rho kappa_P < this at the start of the solve keep their start-of-step opacities
+  // for every pass and take the frozen-opacity gas-T find
+  Real impl_thin_frz = 0.0;
+  DvceArray4D<Real> thin_frz;   // 1 = frozen cell of this solve (implicit_thin_freeze)
   Real impl_stall_fac = 0.5;    // implicit_stall_fac (implicit_gas_newton_switch test)
   int impl_gn_sw = 0, impl_gn_sw_min = 20;   // implicit_gas_newton_switch (window, min)
   Real impl_gn_nsw = 0.0;       // solves switched off the gas Newton update
