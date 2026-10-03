@@ -3064,6 +3064,113 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
       });
 
+      // problem/remap_bfile (dhj-remap-mhd, default empty = off): the ACTIVE face fields
+      // of a remapped MHD restart, given as edge line integrals of a vector potential
+      // in the radial gauge (written by docs/handover/scripts/dhj_remap.py next to
+      // remap_file).  b = curl/area with the code's own areas, exactly as the dipole
+      // above, so div B vanishes to round-off on this grid.  File: 8-byte magic
+      // "RADREMB1", int32 nmb_total, nx1, nx2, nx3; then per gid int32 lx1, lx2, lx3,
+      // level, panel and double L2[nx3+1][nx2][nx1+1] (the x2 edges, along xi at the
+      // eta faces) and L3[nx3][nx2+1][nx1+1] (the x3 edges, along eta at the xi faces).
+      // The magnetic energy of the dipole is swapped for the remapped one in the active
+      // cells; ghosts keep the dipole until the boundary exchange.  Cubed sphere only.
+      const std::string remap_bfile = pin->GetOrAddString("problem","remap_bfile","");
+      if (!remap_bfile.empty()) {
+        if (!use_cubed_sphere_ || !use_remap_) {
+          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_bfile needs "
+                    << "the cubed sphere and problem/remap_file" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        const int bn1 = indcs.nx1, bn2 = indcs.nx2, bn3 = indcs.nx3;
+        DvceArray4D<Real> l2_("remap_l2", pmbp->nmb_thispack, bn3+1, bn2, bn1+1);
+        DvceArray4D<Real> l3_("remap_l3", pmbp->nmb_thispack, bn3, bn2+1, bn1+1);
+        std::ifstream bf(remap_bfile, std::ios::binary);
+        char mg[8];
+        std::int32_t hd[4];
+        bf.read(mg, 8);
+        bf.read(reinterpret_cast<char*>(hd), sizeof(hd));
+        if (!bf || std::string(mg, 8) != "RADREMB1" || hd[0] != pmy_mesh_->nmb_total ||
+            hd[1] != bn1 || hd[2] != bn2 || hd[3] != bn3) {
+          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_bfile "
+                    << remap_bfile << ": unreadable, bad magic or grid mismatch"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        const std::size_t n2r = static_cast<std::size_t>(bn3+1)*bn2*(bn1+1);
+        const std::size_t n3r = static_cast<std::size_t>(bn3)*(bn2+1)*(bn1+1);
+        const std::streamoff recb = 5*sizeof(std::int32_t) + (n2r + n3r)*sizeof(double);
+        auto hl2 = Kokkos::create_mirror_view(l2_);
+        auto hl3 = Kokkos::create_mirror_view(l3_);
+        std::vector<double> buf(n2r + n3r);
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          const int gid = pmbp->gids + m;
+          bf.seekg(8 + sizeof(hd) + gid*recb, std::ios::beg);
+          std::int32_t ll[5];
+          bf.read(reinterpret_cast<char*>(ll), sizeof(ll));
+          bf.read(reinterpret_cast<char*>(buf.data()), (n2r + n3r)*sizeof(double));
+          const LogicalLocation &lc = pmy_mesh_->lloc_eachmb[gid];
+          if (!bf || ll[0] != lc.lx1 || ll[1] != lc.lx2 || ll[2] != lc.lx3 ||
+              ll[3] != lc.level || ll[4] != lc.panel) {
+            std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_bfile "
+                      << "record " << gid << " does not match this MeshBlock's "
+                      << "LogicalLocation" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          std::size_t q = 0;
+          for (int k=0; k<=bn3; ++k) {
+            for (int j=0; j<bn2; ++j) {
+              for (int i=0; i<=bn1; ++i) hl2(m,k,j,i) = buf[q++];
+            }
+          }
+          for (int k=0; k<bn3; ++k) {
+            for (int j=0; j<=bn2; ++j) {
+              for (int i=0; i<=bn1; ++i) hl3(m,k,j,i) = buf[q++];
+            }
+          }
+        }
+        Kokkos::deep_copy(l2_, hl2);
+        Kokkos::deep_copy(l3_, hl3);
+        // 1. the faces of every active cell (the far faces by the last cell)
+        par_for("pgen_b0_remap", DevExeSpace(), 0, (pmbp->nmb_thispack-1), ks, ke, js, je,
+                is, ie, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          const int a = i - is, b = j - js, c = k - ks;
+          u0_(m,IEN,k,j,i) -= 0.5*(SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i))
+                                 + SQR(bcc0(m,IBZ,k,j,i)));
+          b0.x1f(m,k,j,i) = (l3_(m,c,b+1,a) - l3_(m,c,b,a) - l2_(m,c+1,b,a)
+                           + l2_(m,c,b,a))/area1(m,k,j,i);
+          b0.x2f(m,k,j,i) = -(l3_(m,c,b,a+1) - l3_(m,c,b,a))/area2(m,k,j,i);
+          b0.x3f(m,k,j,i) = (l2_(m,c,b,a+1) - l2_(m,c,b,a))/area3(m,k,j,i);
+          if (i == ie) {
+            b0.x1f(m,k,j,i+1) = (l3_(m,c,b+1,a+1) - l3_(m,c,b,a+1) - l2_(m,c+1,b,a+1)
+                               + l2_(m,c,b,a+1))/area1(m,k,j,i+1);
+          }
+          if (j == je) {
+            b0.x2f(m,k,j+1,i) = -(l3_(m,c,b+1,a+1) - l3_(m,c,b+1,a))/area2(m,k,j+1,i);
+          }
+          if (k == ke) {
+            b0.x3f(m,k+1,j,i) = (l2_(m,c+1,b,a+1) - l2_(m,c+1,b,a))/area3(m,k+1,j,i);
+          }
+        });
+        // 2. bcc and the magnetic energy of the active cells, as the dipole branch
+        par_for("pgen_bcc_remap", DevExeSpace(), 0, (pmbp->nmb_thispack-1), ks, ke, js, je,
+                is, ie, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          const Real lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          const Real rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0.x1f(m,k,j,i+1);
+          const Real cg = ccell_ic_(m,k,j), sg = scell_ic_(m,k,j);
+          const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+          const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+          bcc0(m,IBY,k,j,i) = (by_n + cg*bz_n)/sg;
+          bcc0(m,IBZ,k,j,i) = bz_n;
+          u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i))
+                                 + SQR(bcc0(m,IBZ,k,j,i)));
+        });
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: problem/remap_bfile " << remap_bfile
+                    << " read (active face fields replaced)" << std::endl;
+        }
+      }
+
       // GATE ON THE CONSTRUCTION, printed once.  Two numbers, because div B alone is
       // satisfied by a ZERO field -- which is exactly what the cubed sphere silently had
       // before this branch existed.  B is the discrete curl of A on the very edges CT
