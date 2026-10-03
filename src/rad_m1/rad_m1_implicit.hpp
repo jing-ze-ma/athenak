@@ -1204,6 +1204,103 @@ int M1ImplTemperatureOpac(const ThermoT &th, const OpF &opf, const Real dd,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ImplTemperatureOpacNear
+//! \brief <rad_m1>/implicit_tsolve_opac_mode bit 1 (tsolve_root_fix_1003): the same
+//! equation as M1ImplTemperatureOpac, but the root NEAREST the guess in log T.  y(T) need
+//! not be monotone where kappa_P(T) T^4 falls with T, and the halve/double bracket of
+//! M1ImplTemperatureOpac is grown in the direction a MONOTONE y would point to, so it can
+//! step over the root next to the iterate and bisect onto a distant one.  Here the scan
+//! steps outward from the guess by the factor M1_TSO_NEAR_Q alternately up and down, so
+//! the first sign change met is the closest one (to within one step), then bisects that
+//! cell in log T (either orientation of the crossing).  No sign change within a factor
+//! 2^(M1_TSO_NEAR_NS/16) of the guess: ok = false, tout = guess.
+
+constexpr int  M1_TSO_NEAR_NS = 320;                 // steps per side (factor 2^20)
+constexpr Real M1_TSO_NEAR_Q  = 1.0442737824274138;  // 2^(1/16)
+
+template <class ThermoT, class OpF>
+KOKKOS_INLINE_FUNCTION
+int M1ImplTemperatureOpacNear(const ThermoT &th, const OpF &opf, const Real dd,
+                              const Real tguess, const Real egn, const Real cdta,
+                              const Real cdt, const Real erhs, Real &tout, bool &ok) {
+  auto yfn = [&](const Real t) {
+    Real ee, cv, rkp, rke;
+    th(dd, t, ee, cv);
+    opf(dd, t, rkp, rke);
+    const Real t2 = t*t;
+    return ee + cdta*rkp*t2*t2 - egn - cdt*rke*erhs;
+  };
+  const Real y0 = yfn(tguess);
+  int nev = 1;
+  ok = true;
+  tout = tguess;
+  if (y0 == 0.0) {return nev;}
+  const bool s0 = (y0 > 0.0);
+  Real tu = tguess, td = tguess;      // the scan fronts above and below the guess
+  Real ta = tguess, tb = tguess;      // the bracket: sign(y(ta)) = s0 != sign(y(tb))
+  bool found = false;
+  for (int s=0; s<M1_TSO_NEAR_NS && !found; ++s) {
+    const Real t1 = tu*M1_TSO_NEAR_Q;
+    const Real y1 = yfn(t1);
+    ++nev;
+    if (y1 == 0.0) {
+      tout = t1;
+      return nev;
+    }
+    if ((y1 > 0.0) != s0) {
+      ta = tu;
+      tb = t1;
+      found = true;
+    } else {
+      tu = t1;
+      const Real t2 = td/M1_TSO_NEAR_Q;
+      const Real y2 = yfn(t2);
+      ++nev;
+      if (y2 == 0.0) {
+        tout = t2;
+        return nev;
+      }
+      if ((y2 > 0.0) != s0) {
+        ta = td;
+        tb = t2;
+        found = true;
+      } else {
+        td = t2;
+      }
+    }
+  }
+  if (!found) {
+    ok = false;
+    return nev;
+  }
+  // bisection in log T between ta (sign s0) and tb (the other sign), either order
+  for (int it=0; it<M1_IMPL_TMAXIT && fabs(tb - ta) > M1_IMPL_TRTOL*fmax(ta, tb); ++it) {
+    const Real tm = sqrt(ta*tb);
+    const Real y = yfn(tm);
+    ++nev;
+    if ((y > 0.0) == s0) {ta = tm;} else {tb = tm;}
+  }
+  tout = sqrt(ta*tb);
+  return nev;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1TsoSlope
+//! \brief implicit_tsolve_opac_mode bit 2: d ln kappa_P / d ln T at (dd, t), by a central
+//! difference (+-1e-3 in ln T) of the same opacity call the root find uses.
+
+template <class OpF>
+KOKKOS_INLINE_FUNCTION
+Real M1TsoSlope(const OpF &opf, const Real dd, const Real t) {
+  constexpr Real h = 1.0e-3;
+  Real p1, e1, p2, e2;
+  opf(dd, t*exp(h), p1, e1);
+  opf(dd, t*exp(-h), p2, e2);
+  if (!(p1 > 0.0) || !(p2 > 0.0)) {return 0.0;}
+  return log(p1/p2)/(2.0*h);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ImplTemperature
 //! \brief the pre-3g entry point: the same safeguarded root find, reading the EOS table
 //! directly.  Kept so that every call site that does not use the cache makes exactly the

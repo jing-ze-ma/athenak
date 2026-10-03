@@ -766,6 +766,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_tsolve_opac = pin->GetOrAddBoolean("rad_m1","implicit_tsolve_opac",true);
   }
   impl_tsolve_opac_start = pin->GetOrAddInteger("rad_m1","implicit_tsolve_opac_start",20);
+  // implicit_tsolve_opac_mode (tsolve_root_fix_1003, default 0 = the root find above,
+  // unchanged): bit 1 (value 1) takes the root of the kappa(T) equation NEAREST the
+  // lagged T (M1ImplTemperatureOpacNear) instead of the halve/double bracket's; bit 2
+  // (value 2) is a slope guard: a cell whose d ln kappa_P / d ln T at the lagged T is
+  // below implicit_tsolve_opac_slope_min (default -4, where kappa_P T^4 falls with T)
+  // takes the frozen-opacity root find instead.  3 = both.  Read only when named, so
+  // a run without the keys writes the same restart file.
+  if (pin->DoesParameterExist("rad_m1","implicit_tsolve_opac_mode")) {
+    impl_tsolve_opac_mode = pin->GetInteger("rad_m1","implicit_tsolve_opac_mode");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_tsolve_opac_slope_min")) {
+    impl_tsolve_opac_smin = pin->GetReal("rad_m1","implicit_tsolve_opac_slope_min");
+  }
   // DEBUG (nc_cure_1002): implicit_nc_dump = N > 0 prints, in the last N passes of a
   // solve that runs to implicit_maxit, the local state of each rank's worst-residual
   // cell (optical depths, coupling stiffness, energy ratio, beta, f, the T-Newton
@@ -7282,6 +7295,8 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto ie = std::get<26>(ctx_);
   auto tso = std::get<27>(ctx_);
   auto opf = std::get<28>(ctx_);
+  auto tsm = std::get<29>(ctx_);
+  auto tsmin = std::get<30>(ctx_);
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -7291,7 +7306,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)efl; (void)eos;
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
-    (void)tso; (void)opf;
+    (void)tso; (void)opf; (void)tsm; (void)tsmin;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -7334,7 +7349,29 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
         // update (c_v <= 0, a step outside the trust region, a non-positive T).
         // implicit_tsolve_opac: the fallback root find takes kappa_P, kappa_E at the
         // trial T (M1ImplTemperatureOpac) instead of at the lagged iterate.
-        if (tso) {
+        // implicit_tsolve_opac_mode bit 2: the slope guard sends a cell whose kappa_P
+        // falls faster than T^smin at the lagged T to the frozen-opacity find below
+        bool tsu = tso;
+        if (tso && (tsm & 2)) {tsu = (M1TsoSlope(opf, dd, told) >= tsmin);}
+        const bool tnear = ((tsm & 1) != 0);
+        if (tsu && tnear) {
+          if constexpr (decltype(idl)::value) {
+            M1EosIdeal th{eos.gamma};
+            (void) M1ImplTemperatureOpacNear(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                             cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+          } else if (usec) {
+            Real nmiss = 0.0;
+            M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
+                                                          &nmiss};
+            (void) M1ImplTemperatureOpacNear(thc, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                             cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+            if (gasx) {iw_(m,igm,k,j,i) += nmiss;}
+          } else {
+            M1EosDirect<decltype(eos)> th{eos};
+            (void) M1ImplTemperatureOpacNear(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                             cl*dt*ar, cl*dt, enew + de0, tnew, ok);
+          }
+        } else if (tsu) {
           if constexpr (decltype(idl)::value) {
             M1EosIdeal th{eos.gamma};
             (void) M1ImplTemperatureOpac(th, opf, dd, told, iw_(m,M1_IW_EGN,k,j,i),
@@ -9277,7 +9314,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      || gnsw,
                                      M1OpacFn{opacity_type, otab, kappa_p, kappa_e,
                                               kappa_f, kappa_s, opac_rho_ref,
-                                              opac_t_ref, opac_a, opac_b});
+                                              opac_t_ref, opac_a, opac_b},
+                                     impl_tsolve_opac_mode, impl_tsolve_opac_smin);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
