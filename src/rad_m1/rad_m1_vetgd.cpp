@@ -50,7 +50,8 @@
 //!          vet_col_lat_offdiag),
 //!   LAT3, LAT4, LAT5 = D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2 (the trace-free
 //!          tangential anisotropy about the operator's isotropic tangential pressure:
-//!          the lagged term M1SphTan of the transverse face equations, vet_gd_tangential).
+//!          the lagged term M1SphTan of the transverse face equations,
+//!          vet_gd_tangential).
 //! All vet_col_lat keys apply (taucut, every, init_iter, offdiag, dump).
 
 #include <algorithm>
@@ -60,6 +61,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -138,6 +140,40 @@ void VgdDirections(const int ns, std::vector<double> &d) {
 // level-symmetric LQ_N (Carlson; mu_1 of Lewis & Miller), positive weights per
 // permutation class from the even moments 1, x^4, x^6, ... (sum w nn = I/3 exactly by
 // the octahedral symmetry); the Athena++ / Jiang 2021 (Bruls 1999) family
+// product set: Gauss-Legendre in n_z (nmu nodes on [-1, 1]) x nphi uniform azimuths per
+// ring, alternate rings shifted by half an azimuth step (stagger); C_nphi-invariant about
+// z, positive weights, sum w = 1, sum w n = 0, sum w nn = I/3 exactly (no fix)
+void VgdProduct(const int nmu, const int nphi, const bool stagger,
+                std::vector<double> &d) {
+  d.clear();
+  for (int q = 0; q < nmu; ++q) {       // Newton on P_nmu
+    double z = std::cos(M_PI*(q + 0.75)/(nmu + 0.5));
+    double pp = 1.0;
+    for (int it = 0; it < 100; ++it) {
+      double p1 = 1.0, p2 = 0.0;
+      for (int l = 1; l <= nmu; ++l) {
+        const double p3 = p2;
+        p2 = p1;
+        p1 = ((2.0*l - 1.0)*z*p2 - (l - 1.0)*p3)/l;
+      }
+      pp = nmu*(z*p1 - p2)/(z*z - 1.0);
+      const double dz = p1/pp;
+      z -= dz;
+      if (std::fabs(dz) < 1.0e-15) {break;}
+    }
+    const double wq = 2.0/((1.0 - z*z)*pp*pp);      // [-1, 1] weight, sum 2
+    const double st = std::sqrt(std::max(1.0 - z*z, 0.0));
+    const double off = (stagger && (q % 2 == 1)) ? 0.5 : 0.0;
+    for (int k = 0; k < nphi; ++k) {
+      const double ph = (k + off)*2.0*M_PI/nphi;
+      d.push_back(st*std::cos(ph));
+      d.push_back(st*std::sin(ph));
+      d.push_back(z);
+      d.push_back(0.5*wq/nphi);
+    }
+  }
+}
+
 bool VgdLevelSym(const int nl, std::vector<double> &d) {
   double m1;
   switch (nl) {
@@ -229,7 +265,16 @@ void RadiationM1::VetGdInit() {
   const int c3 = indcs.nx3 + 2*indcs.ng;
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
-  if (vgd_ls > 0) {
+  if (vgd_gl_nmu > 0) {
+    // the product set: its azimuth step must divide the wedge's phi period (exact walls)
+    const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
+    const double m = per*vgd_gl_nphi/(2.0*M_PI);
+    if (vgd_gl_nphi < 4 || std::fabs(m - std::round(m)) > 1.0e-9) {
+      VgdFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
+               "the wedge (exact wall maps)");
+    }
+    VgdProduct(vgd_gl_nmu, vgd_gl_nphi, vgd_gl_stag, vgd_base);
+  } else if (vgd_ls > 0) {
     if (!VgdLevelSym(vgd_ls, vgd_base)) {VgdFatal("vet_gd_ls must be 6, 8, 10 or 12");}
   } else {
     VgdDirections(vgd_nside, vgd_base);
@@ -371,8 +416,11 @@ void RadiationM1::VetGdTables(const Real alpha) {
   vgd_alpha = alpha;
   if (first && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_gd: global-direction SC closure on the sp wedge, "
-              << ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
-                               : ("HEALPix nside " + std::to_string(vgd_nside)))
+              << ((vgd_gl_nmu > 0) ? ("product GL" + std::to_string(vgd_gl_nmu) + "x"
+                                      + std::to_string(vgd_gl_nphi)
+                                      + (vgd_gl_stag ? " staggered" : ""))
+                  : ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
+                                  : ("HEALPix nside " + std::to_string(vgd_nside))))
               << " (" << n << " directions); z-rotation every " << vgd_rot
               << " cycle(s) (0 = fixed), first angle " << alpha << ";"
               << " rank 0 wall ghost columns " << nwall << ", direction maps exact "

@@ -1377,7 +1377,10 @@ class RadiationM1 {
                                // first gd shell, q from the gd top cell)
   int vgd_n = 0;
   int vgd_ls = 0;              // vet_gd_ls = 6/8/10/12: level-symmetric LQ_N set instead
-  int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation of the set every N cycles
+  int vgd_gl_nmu = 0;          // vet_gd_gl_nmu > 0: product set GL(nmu in n_z) x nphi
+  int vgd_gl_nphi = 12;        // vet_gd_gl_nphi (C_nphi about z)
+  bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
+  int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
