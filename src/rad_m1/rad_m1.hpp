@@ -1408,6 +1408,7 @@ class RadiationM1 {
   int vgd_maxcnt = 0;
   bool vgd_hmpi = false;
   Real vgd_thalo = 0.0;
+  bool vgd_time_halo = false;   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
   void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;

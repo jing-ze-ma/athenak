@@ -320,6 +320,7 @@ void RadiationM1::VetGdInit() {
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
   Kokkos::realloc(vgd_mr, nmb, c3w, c2w, n);
   VetGdHaloInit();
+  vgd_time_halo = (std::getenv("VGD_TIME_HALO") != nullptr);
   vgd_alpha = -1.0;
   VetGdTables(VetGdAngle(pm->ncycle));
 }
@@ -863,6 +864,7 @@ void RadiationM1::VetGdSweep() {
         vi_(m,d,k,j,i) = iv;
       });
       // the shell is complete on every block: its lateral band, exact (not lagged)
+      if (vgd_time_halo) {Kokkos::fence();}
       Kokkos::Timer th;
       VetGdHalo(vgd_i, n, i, i);
       VetGdWall(i, i);
