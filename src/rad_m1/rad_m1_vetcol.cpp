@@ -419,7 +419,15 @@ void RadiationM1::VetColInit() {
     VcolFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)");
   }
   if (ibc_x1min == M1_IBC_PERIODIC) {VcolFatal("a periodic x1 boundary has no top");}
-  if (pm->use_cubed_sphere) {VcolFatal("the cubed sphere is not supported (stage S5)");}
+  // STAGE CS2 (m1-cs-implicit): the cubed sphere with the RADIAL axis.  x1 is r on every
+  // panel and one block spans the whole column, so the column is the radial line of a
+  // panel cell and the p-ray tables of block 0 serve every block, as on sp.  The tensor
+  // is uniaxial about r_hat; its tangential part (1-f_K)/2 is an isotropic pressure,
+  // which the cs transverse rows read as the scalar D_tt (M1DDiag, CS1).  The flux axis
+  // needs the cell F direction on the skewed panel basis: refused.
+  if (pm->use_cubed_sphere && vcol_axis_flux) {
+    VcolFatal("vet_col_axis = flux is not supported on the cubed sphere");
+  }
   if (indcs.nx1 < 2) {VcolFatal("needs at least 2 cells along x1");}
   if (vcol_nc < 1 || vcol_np < 1 || vcol_nmu < 1 || vcol_every < 1) {
     VcolFatal("vet_col_ncore, vet_col_nsub, vet_col_nmu, vet_col_every must be >= 1");
@@ -672,7 +680,13 @@ void RadiationM1::VetColInit() {
                 << "the q is built but unused" << std::endl;
     }
   }
-  Kokkos::realloc(tau_ten, nmb, 4, c3, c2, c1);
+  // STAGE CS2: on the cubed sphere tau_ten carries 6 more slots, M1_TT_LAT0..+5, the
+  // LATERAL CORRECTION interface of the closure tensor (the planned short-
+  // characteristics correction of vet_col, rt_design_1003/SP_SC_CLOSURE.md): D_ab in
+  // the cs basis (r, xi, eta), covariant on the panel pair like F, order rr, r xi,
+  // r eta, xi xi, xi eta, eta eta.  Zero, and read by nothing yet (CS2_RESULTS.md,
+  // "interface"); the uniaxial (chi, n) of slots 0..3 is what runs.  Elsewhere 4 slots.
+  Kokkos::realloc(tau_ten, nmb, pm->use_cubed_sphere ? 10 : 4, c3, c2, c1);
   Kokkos::deep_copy(tau_ten, 0.0);
   if (!vcol_dump.empty()) {
     Kokkos::realloc(vcol_mom, nmb, 5, c3, c2, c1);
@@ -1002,6 +1016,7 @@ void RadiationM1::VetColBuild() {
   Kokkos::fence();
   vcol_time += timer.seconds();
   if (dmp) {VetColDumpColumn(static_cast<int>(vcol_ncall));}
+  if (vcol_spread > static_cast<int>(vcol_ncall)) {VetColSpread(static_cast<int>(vcol_ncall));}
   vcol_ncall += 1.0;
   vcol_built = true;
 }
@@ -1431,6 +1446,51 @@ void RadiationM1::VetColDumpColumn(int ncall) {
       << jj << " " << mo_h(0,1,ks,js,i) << " " << mo_h(0,2,ks,js,i) << " "
       << ((jj > 0.0) ? mo_h(0,2,ks,js,i)/jj : 0.0) << " " << tt_h(0,0,ks,js,i) << " "
       << iw_h(0,M1_IW_EN,ks,js,i) << " " << iw_h(0,M1_IW_F1,ks,js,i) << "\n";
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetColSpread
+//! \brief <rad_m1>/vet_col_spread = N (read only when named; STAGE CS2, gate T-S6): for
+//! the first N builds, per shell the min and max of f_K (tau_ten slot 0) over EVERY
+//! column of the mesh (all blocks, ranks; on the cubed sphere all panels, seams and
+//! vertices), printed by rank 0 as "VCSPREAD" lines in %.17e: the build is column-local,
+//! so on a state that is the same on every column the tensor must be bitwise identical.
+
+void RadiationM1::VetColSpread(int ncall) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int n1 = indcs.nx1, n2 = indcs.nx2, n3 = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto tt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tau_ten);
+  std::vector<Real> mn(n1, 1.0e300), mx(n1, -1.0e300);
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = ks; k < ks + n3; ++k) {
+      for (int j = js; j < js + n2; ++j) {
+        for (int l = 0; l < n1; ++l) {
+          const Real v = tt_h(m,0,k,j,is+l);
+          mn[l] = std::min(mn[l], v);
+          mx[l] = std::max(mx[l], v);
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, mn.data(), n1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, mx.data(), n1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank != 0) return;
+  Real dmax = 0.0;
+  int nd = 0;
+  for (int l = 0; l < n1; ++l) {
+    dmax = std::max(dmax, mx[l] - mn[l]);
+    if (mx[l] != mn[l]) {++nd;}
+  }
+  std::printf("VCSPREAD build %d: shells %d, shells not bitwise identical %d, "
+              "max(fK max - fK min) %.3e\n", ncall, n1, nd, dmax);
+  for (int l = 0; l < n1; ++l) {
+    std::printf("VCSPREAD %d %d %.17e %.17e %.17e\n", ncall, l, vcol_rc[l], mn[l],
+                mx[l]);
   }
 }
 

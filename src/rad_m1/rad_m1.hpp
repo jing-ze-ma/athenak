@@ -1333,6 +1333,8 @@ class RadiationM1 {
   DvceArray1D<Real> vcol_wf;   // (ray): hemisphere weight at the top face
   void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
   void VetColBuild();          // the formal solution -> tau_ten (chi, n)
+  void VetColSpread(int ncall);   // vet_col_spread (CS2, gate T-S6)
+  int vcol_spread = 0;
   void VetColBuildTeam(bool dmp);   // the same, one team per column (vet_col_team)
   void VetColReport();
   void VetColDumpColumn(int ncall);

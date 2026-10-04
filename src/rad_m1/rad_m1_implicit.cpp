@@ -2179,6 +2179,33 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
   ImplicitHaloCopy(*pa, nq, c0, false);
+  // STAGE CS2 (C3): the seam transform takes (N2, N3) as a covariant pair on the panel
+  // basis, which does not keep |n| = 1 across the shear: renormalise the unit flux
+  // direction of every GHOST cell with the panel metric, |n|^2 = n1^2 + g^ab n_a n_b
+  // (g^ab = [[1,-c],[-c,1]]/s^2).  A zero n (closure = eddington, or vet_col about
+  // r_hat whose tangential n is 0) is left alone, so this is a no-op for what cs runs.
+  if (cs_geom && nq == M1_NHALO_T) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+    const int ks = indcs.ks, ke = indcs.ke;
+    const int n1 = indcs.nx1 + 2*indcs.ng, n2 = indcs.nx2 + 2*indcs.ng;
+    const int n3 = indcs.nx3 + 2*indcs.ng;
+    auto iw_ = iw;
+    auto ccl = pmy_pack->pcoord->cos_cell;
+    par_for("m1_cs_nrenorm", DevExeSpace(), 0, pmy_pack->nmb_thispack-1, 0, n3-1, 0, n2-1,
+            0, n1-1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) return;
+      const Real c = ccl(m,k,j), s2 = 1.0 - c*c;
+      const Real a = iw_(m,M1_IW_N1,k,j,i), b = iw_(m,M1_IW_N2,k,j,i);
+      const Real d = iw_(m,M1_IW_N3,k,j,i);
+      const Real nn = a*a + (b*b + d*d - 2.0*c*b*d)/s2;
+      if (!(nn > 0.0)) return;
+      const Real f = 1.0/sqrt(nn);
+      iw_(m,M1_IW_N1,k,j,i) = a*f;
+      iw_(m,M1_IW_N2,k,j,i) = b*f;
+      iw_(m,M1_IW_N3,k,j,i) = d*f;
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -2744,6 +2771,18 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                  + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
                              M1_IW_EP));
     }
+    if (csg) {
+      // STAGE CS2: THE LATERAL-CLOSURE HOOK of the cs transverse face (CS2_RESULTS.md,
+      // "interface").  With the closures cs runs (eddington, vet_col about r_hat) the
+      // tensor is uniaxial about r_hat, P = p_t (I - r r) + p_r r r, and its tangential
+      // divergence is grad_t p_t: the two-point + cross-term gradient above carries all
+      // of it, the sp curvature M1SphCurv (theta-based) does not apply, and the lagged
+      // remainder is zero.  A lateral/off-diagonal correction of the tensor (tau_ten
+      // slots M1_TT_LAT, the planned SC correction of vet_col) enters HERE as a lagged
+      // term of the face equation, (d_r P_r,lat + curvature + d_t of the non-isotropic
+      // tangential part), exactly as `off` does on Cartesian and sp meshes.
+      off = 0.0;
+    }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
 
@@ -2829,6 +2868,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                    + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
                                M1_IW_EP));
       }
+      if (csg) {off = 0.0;}   // STAGE CS2: the lateral-closure hook (see the x2 face)
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
     });
@@ -7932,12 +7972,22 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   if (have_hydro) {
     auto eos = flr.eos;
+    // STAGE CS2 (C3): on the cubed sphere the hydro momentum is COVARIANT on the panel
+    // basis, so the kinetic energy is 0.5 m_a v^a with the metric (gnomonic_raisevel.hpp)
+    const bool csk = cs_geom;
+    auto ccl = pmy_pack->pcoord->cos_cell;
     par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dd = uh(m,IDN,k,j,i);
       Real idd = 1.0/fmax(dd, 1.0e-300);
       Real ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                        SQR(uh(m,IM3,k,j,i)))*idd;
+      if (csk) {
+        const Real c = ccl(m,k,j);
+        const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+        ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+               *idd;
+      }
       Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
       if (mhd) egrv += emag_(m,k,j,i);
       Real eg = uh(m,IEN,k,j,i) - ekin - egrv;
@@ -10312,6 +10362,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // the one the face equation used
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool fwd = psph && impl_face_wdist;
+  // STAGE CS2 (C3), cubed sphere: the transverse face fluxes F0 are FACE-NORMAL, and
+  // the hydro momentum and the stored cell F are COVARIANT on the panel basis (the seam
+  // transform of pbval_u / pbval_th takes them as such).  With a, b the face-normal x2,
+  // x3 values at the cell and (c, s) = (cos, sin) of the cell's angle,
+  //   F.e_xi = (a + c b)/s,  F.e_eta = (b + c a)/s
+  // (n_xi = (e_xi - c e_eta)/s); the same map turns the face-normal momentum deposit
+  // into the covariant dm2, dm3.  The kinetic energy is 0.5 m_a v^a and the work
+  // v^a dm_a with the contravariant v^a = g^ab m_b/rho.  `if (csw)` overwrites below;
+  // the Cartesian and sp arithmetic is untouched.
+  const bool csw = cs_geom;
+  auto cclw = pmy_pack->pcoord->cos_cell;
+  auto csnw = pmy_pack->pcoord->sin_cell;
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -10340,6 +10402,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         fp3 = 0.5*(g3l + g3r) + iw_(m,M1_IW_A3,k,j,i)*ep;
       }
     }
+    if (csw && trans && thrd) {
+      const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+      const Real a = fp2, b = fp3;
+      fp2 = (a + c*b)*si;
+      fp3 = (b + c*a)*si;
+    }
 
     Real work = 0.0, dm1 = 0.0, dmref = 0.0, eg = 0.0, ekin = 0.0, egrv = 0.0;
     Real dm2 = 0.0, dm3 = 0.0;
@@ -10352,6 +10420,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       v3 = uh(m,IM3,k,j,i)*idd;
       ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                   SQR(uh(m,IM3,k,j,i)))*idd;
+      if (csw) {
+        const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
+        const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+        v2 = (m2 - c*m3)*idd*id2;   // contravariant
+        v3 = (m3 - c*m2)*idd*id2;
+        ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)*id2)*idd;
+      }
       egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
       if (mhd) egrv += emag_(m,k,j,i);
       eg = iw_(m,M1_IW_EGN,k,j,i);
@@ -10422,6 +10497,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             Real w3 = ((k == ke && p3hi) && !bmhalf) ? 1.0 : 0.5;
             dm3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);
           }
+          if (csw && thrd) {
+            const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+            const Real a = dm2, b = dm3;
+            dm2 = (a + c*b)*si;   // covariant, as the hydro momentum
+            dm3 = (b + c*a)*si;
+          }
         }
         if (feedback) {
           Real idg = 1.0/fmax(dd, 1.0e-300);
@@ -10433,6 +10514,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             if (thrd) {
               Real w3n = (uh(m,IM3,k,j,i) + dm3)*idg;
               work += 0.5*(v3 + w3n)*dm3;
+            }
+            if (csw && thrd) {
+              // v^a dm_a with the contravariant v^a before and after the kick
+              const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
+              const Real n2 = uh(m,IM2,k,j,i) + dm2, n3 = uh(m,IM3,k,j,i) + dm3;
+              const Real u2 = (n2 - c*n3)*idg*id2, u3 = (n3 - c*n2)*idg*id2;
+              work = 0.5*(v1 + w1)*dm1 + 0.5*(v2 + u2)*dm2 + 0.5*(v3 + u3)*dm3;
             }
           }
           if (!efc) {
@@ -10520,7 +10608,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
       }
     }
-    M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
+    if (csw) {
+      M1ApplyLimitsCs(cl, efl, cclw(m,k,j), ep, fp1, fp2, fp3);
+    } else {
+      M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
+    }
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
       const Real fk = 1.0/dt;

@@ -143,13 +143,18 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
   Real cl = c_light;
   Real efl = e_floor;
 
+  // STAGE CS2: on the cubed sphere (f2, f3) are covariant: the metric norm
+  const bool csl = pmy_pack->pmesh->use_cubed_sphere;
+  auto ccl = pmy_pack->pcoord->cos_cell;
   par_for("m1_limits", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = u0_(m,M1_E,k,j,i);
     Real f1 = u0_(m,M1_F1,k,j,i);
     Real f2 = u0_(m,M1_F2,k,j,i);
     Real f3 = u0_(m,M1_F3,k,j,i);
-    if (M1ApplyLimits(cl, efl, e, f1, f2, f3)) {
+    const bool lim = csl ? M1ApplyLimitsCs(cl, efl, ccl(m,k,j), e, f1, f2, f3)
+                         : M1ApplyLimits(cl, efl, e, f1, f2, f3);
+    if (lim) {
       u0_(m,M1_E,k,j,i) = e;
       u0_(m,M1_F1,k,j,i) = f1;
       u0_(m,M1_F2,k,j,i) = f2;

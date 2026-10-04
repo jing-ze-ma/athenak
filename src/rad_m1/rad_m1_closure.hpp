@@ -90,6 +90,32 @@ bool M1ApplyLimits(const Real cl, const Real e_floor,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ApplyLimitsCs
+//! \brief STAGE CS2 (cubed sphere): M1ApplyLimits for a flux whose (f2, f3) are COVARIANT
+//! on the panel basis at the cell angle c = cos_cell: |F|^2 = f1^2 + g^ab f_a f_b,
+//! g^ab = [[1, -c], [-c, 1]]/(1 - c^2).
+
+KOKKOS_INLINE_FUNCTION
+bool M1ApplyLimitsCs(const Real cl, const Real e_floor, const Real c,
+                     Real &e, Real &f1, Real &f2, Real &f3) {
+  bool limited = false;
+  if (!(e > e_floor)) {
+    e = e_floor;
+    limited = true;
+  }
+  Real fmag = sqrt(f1*f1 + (f2*f2 + f3*f3 - 2.0*c*f2*f3)/(1.0 - c*c));
+  Real fmax = cl*e;
+  if (fmag > fmax) {
+    Real scale = (fmag > 0.0) ? (fmax/fmag) : 0.0;
+    f1 *= scale;
+    f2 *= scale;
+    f3 *= scale;
+    limited = true;
+  }
+  return limited;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ReducedFlux
 //! \brief Given (E, F_i) return the reduced flux f_i = F_i/(c E) clipped to |f| <= 1,
 //! and its magnitude.  E is assumed already floored.

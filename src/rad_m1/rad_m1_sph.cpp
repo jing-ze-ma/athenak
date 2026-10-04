@@ -118,7 +118,16 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
   // adds the skew 1/sin factor and the lagged cross term)
   if (cs_geom) {
     std::string wcs;
-    if (!eddington || vet_col || vet_sc || tau_closure) {wcs += " closure != eddington;";}
+    // STAGE CS2: closure = vet_col with the radial axis as well (uniaxial about r_hat:
+    // no transverse curvature, the radial integrating factor of S2 as on sp)
+    if ((!eddington && !vet_col) || vet_sc || (tau_closure && !vet_col)) {
+      wcs += " closure != eddington | vet_col;";
+    }
+    if (vet_col && vcol_axis_flux) {wcs += " vet_col_axis = flux;";}
+    if (pin->DoesParameterExist("rad_m1","implicit_offdiag") &&
+        pin->GetString("rad_m1","implicit_offdiag").compare("lagged") == 0) {
+      wcs += " implicit_offdiag = lagged;";
+    }
     if (time_scheme != M1_TIME_BE ||
         (pin->DoesParameterExist("rad_m1","time_scheme") &&
          pin->GetString("rad_m1","time_scheme").compare("be") != 0)) {
@@ -141,8 +150,9 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     }
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1> on the cubed sphere (stages CS0, CS1) supports only "
-        << "transport = implicit, closure = eddington, time_scheme = be, implicit_solver "
+        << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS2) supports only "
+        << "transport = implicit, closure = eddington | vet_col (radial axis), "
+        << "implicit_offdiag none, time_scheme = be, implicit_solver "
         << "= bicgstab, implicit_precond = rbgs_fwd, no implicit_vimp, no "
         << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
         << wcs << why << std::endl

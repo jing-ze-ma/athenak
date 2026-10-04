@@ -766,6 +766,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vcol_dump_every = pin->GetOrAddInteger("rad_m1","vet_col_dump_every",1);
       if (vcol_dump.compare("none") == 0 || vcol_dump_every <= 0) {vcol_dump = "";}
     }
+    // vet_col_spread = N (STAGE CS2, read only when named): VetColSpread
+    if (pin->DoesParameterExist("rad_m1","vet_col_spread")) {
+      vcol_spread = pin->GetInteger("rad_m1","vet_col_spread");
+    }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = '" << cl << "' not implemented "
