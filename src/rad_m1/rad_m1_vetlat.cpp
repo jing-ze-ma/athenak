@@ -178,7 +178,7 @@ void RadiationM1::VetLatInit() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-  const int nd = 2*vlat_nmu*vlat_npsi;
+  const int nd = vgd_on ? 1 : 2*vlat_nmu*vlat_npsi;   // vet_gd: own arrays (VetGdInit)
   Kokkos::realloc(vlat_i, nmb, nd, c3, c2, c1);
   Kokkos::deep_copy(vlat_i, 0.0);
   Kokkos::realloc(vlat_t, nmb, nd, c3, c2, c1);
@@ -240,6 +240,7 @@ void RadiationM1::VetLatInit() {
   pbval_vt->SetVectorPairs(ntt, {});
   vlat_geo_icut = -1;
   vlat_ready = true;
+  if (vgd_on) {VetGdInit(); return;}
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_col_lat: lateral SC correction of vet_col, " << vlat_nmu
               << " mu x " << vlat_npsi << " psi per hemisphere (" << nd
@@ -289,15 +290,19 @@ void RadiationM1::VetLatBuild() {
     Kokkos::Timer timer;
     // the twin first (its ghost band is the current part of the 3-D inflow), then the
     // 3-D sweep(s), each followed by the exchange of the lagged lateral difference
-    VetLatSweep(0);
-    VetLatExchange(vlat_t, vlat_t_c, pbval_vl);
-    const int nit = (vlat_nbuild == 0) ? vlat_iinit : 1;
-    for (int it = 0; it < nit; ++it) {
-      VetLatSweep(1);
-      VetLatExchange(vlat_d, vlat_d_c, pbval_vl);
-      vlat_ncall += 1.0;
+    if (vgd_on) {
+      VetGdBuild();
+    } else {
+      VetLatSweep(0);
+      VetLatExchange(vlat_t, vlat_t_c, pbval_vl);
+      const int nit = (vlat_nbuild == 0) ? vlat_iinit : 1;
+      for (int it = 0; it < nit; ++it) {
+        VetLatSweep(1);
+        VetLatExchange(vlat_d, vlat_d_c, pbval_vl);
+        vlat_ncall += 1.0;
+      }
+      VetLatSweep(2);
     }
-    VetLatSweep(2);
     vlat_nbuild += 1;
     Kokkos::fence();
     vlat_time += timer.seconds();
@@ -403,6 +408,7 @@ void RadiationM1::VetLatSweep(const int stage) {
     vlat_icut = std::max(0, std::min(lmin, n1 - 2));
   }
   }
+  if (vgd_on) {return;}   // vet_gd: source and first shell only (VetGdBuild)
   const int lcut = vlat_icut;
 
   // (3) the per-shell ray geometry (host; rebuilt when the first shell moves)

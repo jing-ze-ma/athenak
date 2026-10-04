@@ -66,6 +66,7 @@ constexpr int M1_VET_NC  = 23;
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
 constexpr int M1_TT_NLAT = 6;
+constexpr int M1_VGD_NMAX = 432;   // vet_gd: at most 12 x 6^2 directions
 constexpr int M1_OP_P = 0;  // rho kappa_P, Planck (emission) mean
 constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
 constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s), the TRANSPORT opacity: what the
@@ -1363,6 +1364,27 @@ class RadiationM1 {
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
   void VetLatDump();
+
+  // ---- <rad_m1>/vet_gd (m1-vet-gd, rad_m1_vetgd.cpp; design
+  // rt_design_1003/SC_PROPER_SP.md, candidate b): the Eddington tensor from an SC sweep
+  // along GLOBALLY FIXED (Cartesian) HEALPix directions, handed over through the
+  // vet_col_lat interface (sets vlat_on; the vet_col_lat keys apply).  Read only when
+  // named; sp wedge only.
+  bool vgd_on = false;         // vet_gd
+  int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
+  int vgd_n = 0;
+  DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
+  DvceArray5D<Real> vgd_i;     // (m, d, k, j, i): intensities, ghosts lagged
+  DvceArray5D<Real> vgd_i_c;
+  Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
+  Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
+  MeshBoundaryValuesCC *pbval_gd = nullptr;
+  Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
+  void VetGdInit();
+  void VetGdBuild();
+  void VetGdSweep();
+  void VetGdWall();
+  void VetGdMoments();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

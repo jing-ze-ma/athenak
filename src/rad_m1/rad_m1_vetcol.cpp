@@ -1454,6 +1454,11 @@ void RadiationM1::VetColReport() {
               << ((vlat_ncall > 0.0) ? (1.0e3*vlat_time/vlat_ncall) : 0.0)
               << " ms per sweep; lateral reads clamped to the ghost band (rank 0, "
               << "all sweeps): " << vlat_nclamp << std::endl;
+    if (vgd_on) {
+      std::cout << "<rad_m1> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
+                << ", sweeps " << vgd_tswp << ", exchange+walls " << vgd_texc
+                << ", moments " << vgd_tmom << std::endl;
+    }
   }
 }
 

@@ -755,6 +755,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","vet_col_lat")) {
       vlat_on = pin->GetBoolean("rad_m1","vet_col_lat");
     }
+    // vet_gd (m1-vet-gd, rad_m1_vetgd.cpp): rides on the vet_col_lat interface
+    if (pin->DoesParameterExist("rad_m1","vet_gd")) {
+      vgd_on = pin->GetBoolean("rad_m1","vet_gd");
+      if (vgd_on) {vlat_on = true;}
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_nside")) {
+      vgd_nside = pin->GetInteger("rad_m1","vet_gd_nside");
+    }
     if (vlat_on) {
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_nmu")) {
         vlat_nmu = pin->GetInteger("rad_m1","vet_col_lat_nmu");
@@ -1083,6 +1091,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}
+  if (pbval_gd != nullptr) {delete pbval_gd;}
 }
 
 //----------------------------------------------------------------------------------------
