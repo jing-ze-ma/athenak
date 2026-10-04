@@ -193,9 +193,11 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     od_now = impl_offdiag;
   }
   if (global_variable::my_rank == 0 && cs_geom) {
-    std::cout << "<rad_m1>: cubed sphere (stage CS1: eddington, skewed transverse "
-              << "faces with the lagged cross term, mirror-pair seam faces without the "
-              << "resample; implicit with areas/volumes/face distances from Coordinates"
+    std::cout << "<rad_m1>: cubed sphere (stage CS2: " << (vet_col ? "vet_col, radial "
+              "axis" : "eddington") << "; covariant cell F and gas coupling; skewed "
+              << "transverse faces with the lagged cross term, mirror-pair seam faces "
+              << "without the resample; implicit with areas/volumes/face distances from "
+              << "Coordinates"
               << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?
                   ", stretched radial grid)" : ")") << std::endl;
   } else if (global_variable::my_rank == 0) {
