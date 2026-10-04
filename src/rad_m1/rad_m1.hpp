@@ -1359,7 +1359,8 @@ class RadiationM1 {
   DvceArray5D<Real> vlat_d_c;
   DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vlat_cs_c;
-  DvceArray5D<Real> vlat_tt_c; // coarse twin of tau_ten for its exchange
+  DvceArray5D<Real> vlat_lx;    // (m, 2, k, j, i): D_rt, D_rp for their ghost exchange
+  DvceArray5D<Real> vlat_tt_c;  // its coarse twin
   DvceArray3D<Real> vlat_geo;  // (shell l, 2 a + dir, 0..3): per-shell ray geometry
   DvceArray1D<Real> vlat_mu;   // (a): Gauss nodes on [0, 1], descending
   DvceArray1D<Real> vlat_w;    // (a): hemisphere weights, sum 1/2 (J = sum w I)

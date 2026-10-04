@@ -195,8 +195,10 @@ void RadiationM1::VetLatInit() {
   Kokkos::deep_copy(vlat_cs, 0.0);
   Kokkos::realloc(vlat_cs_c, nmb, 2, 1, 1, 1);
   if (vlat_taumax > 0.0) {Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);}
-  const int ntt = static_cast<int>(tau_ten.extent(1));
-  Kokkos::realloc(vlat_tt_c, nmb, ntt, 1, 1, 1);
+  // the exchange of the off-diagonal slots only (slots 0-3 keep vet_col's ghosts)
+  Kokkos::realloc(vlat_lx, nmb, 2, c3, c2, c1);
+  Kokkos::deep_copy(vlat_lx, 0.0);
+  Kokkos::realloc(vlat_tt_c, nmb, 2, 1, 1, 1);
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
   Kokkos::realloc(vlat_w, vlat_nmu);
@@ -241,8 +243,8 @@ void RadiationM1::VetLatInit() {
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
   pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
-  pbval_vt->InitializeBuffers(ntt);
-  pbval_vt->SetVectorPairs(ntt, {});
+  pbval_vt->InitializeBuffers(2);
+  pbval_vt->SetVectorPairs(2, {});
   vlat_geo_icut = -1;
   vlat_ready = true;
   if (global_variable::my_rank == 0) {
@@ -319,7 +321,26 @@ void RadiationM1::VetLatBuild() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     tt_(m,0,k,j,i) = fmin(fmax(tt_(m,0,k,j,i) + tt_(m,M1_TT_LAT0,k,j,i), fkm), 1.0);
   });
-  VetLatExchange(tau_ten, vlat_tt_c, pbval_vt);
+  // the ghosts of D_rt, D_rp (read by M1SphLat): through a 2-slot copy, so that
+  // vet_col's own slots keep their (unfilled) ghosts and a restart is unchanged
+  {
+    auto lx_ = vlat_lx;
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    par_for("m1_vlat_lxo", DevExeSpace(), 0, nmb1, id.ks, id.ke, id.js, id.je, id.is,
+            id.ie, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      lx_(m,0,k,j,i) = tt_(m,M1_TT_LAT0+1,k,j,i);
+      lx_(m,1,k,j,i) = tt_(m,M1_TT_LAT0+2,k,j,i);
+    });
+    VetLatExchange(vlat_lx, vlat_tt_c, pbval_vt);
+    const int n3 = static_cast<int>(tt_.extent(2)) - 1;
+    const int n2 = static_cast<int>(tt_.extent(3)) - 1;
+    const int n1 = static_cast<int>(tt_.extent(4)) - 1;
+    par_for("m1_vlat_lxi", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      tt_(m,M1_TT_LAT0+1,k,j,i) = lx_(m,0,k,j,i);
+      tt_(m,M1_TT_LAT0+2,k,j,i) = lx_(m,1,k,j,i);
+    });
+  }
   if (due && !vlat_dump.empty() && (vlat_nbuild == 1 || (vlat_dump_every > 0 &&
       (vlat_nbuild % vlat_dump_every) == 0))) {VetLatDump();}
 }
