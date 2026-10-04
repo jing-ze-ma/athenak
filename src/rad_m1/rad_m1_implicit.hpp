@@ -866,6 +866,58 @@ Real M1SphLat(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
   return s;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1SphTan
+//! \brief <rad_m1>/vet_gd (m1-vet-gd): the LAGGED divergence of the TANGENTIAL
+//! anisotropy of the Eddington tensor at one cell centre of the sp wedge.  The operator
+//! carries the isotropic tangential pressure (1 - D_rr)/2 E; the deviation
+//!   dP_tt = a E, dP_pp = -a E, P_tp = D_tp E,   a = tt(c0+3) = D_tt - (1 - D_rr)/2,
+//! D_tp = tt(c0+4) (tau_ten slots of rad_m1_vetgd.cpp, ghosts exchanged), E = iw(ec),
+//! adds (the trace-free part has no radial component)
+//!   d = 1:  (1/(r sin)) d_th (sin dP_tt) + (1/(r sin)) d_ph P_tp - cot dP_pp / r
+//!   d = 2:  (1/(r sin^2)) d_th (sin^2 P_tp) + (1/(r sin)) d_ph dP_pp
+//! centred over the coordinate distances, one-sided at a physical boundary as M1SphLat.
+
+template <class V, class A>
+KOKKOS_INLINE_FUNCTION
+Real M1SphTan(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v,
+              const A &x3v, const int m, const int d, const int k, const int j,
+              const int i, const bool thrd, const int jl, const int ju, const int kl,
+              const int ku, const int ec) {
+  const Real r = x1v(m,i);
+  const int ja = (j+1 <= ju) ? (j+1) : j;
+  const int jb = (j-1 >= jl) ? (j-1) : j;
+  const int ka = (thrd && k+1 <= ku) ? (k+1) : k;
+  const int kb = (thrd && k-1 >= kl) ? (k-1) : k;
+  const Real sn = sin(x2v(m,j));
+  const Real ct = cos(x2v(m,j))/sn;
+  Real s = 0.0;
+  if (d == 1) {
+    if (ja != jb) {
+      s += (sin(x2v(m,ja))*tt(m,c0+3,k,ja,i)*iw(m,ec,k,ja,i)
+            - sin(x2v(m,jb))*tt(m,c0+3,k,jb,i)*iw(m,ec,k,jb,i))
+           /(r*sn*(x2v(m,ja) - x2v(m,jb)));
+    }
+    if (ka != kb) {
+      s += (tt(m,c0+4,ka,j,i)*iw(m,ec,ka,j,i) - tt(m,c0+4,kb,j,i)*iw(m,ec,kb,j,i))
+           /(r*sn*(x3v(m,ka) - x3v(m,kb)));
+    }
+    s += ct*tt(m,c0+3,k,j,i)*iw(m,ec,k,j,i)/r;
+  } else if (d == 2) {
+    if (ja != jb) {
+      const Real sa = sin(x2v(m,ja)), sb = sin(x2v(m,jb));
+      s += (sa*sa*tt(m,c0+4,k,ja,i)*iw(m,ec,k,ja,i)
+            - sb*sb*tt(m,c0+4,k,jb,i)*iw(m,ec,k,jb,i))
+           /(r*sn*sn*(x2v(m,ja) - x2v(m,jb)));
+    }
+    if (ka != kb) {
+      s -= (tt(m,c0+3,ka,j,i)*iw(m,ec,ka,j,i) - tt(m,c0+3,kb,j,i)*iw(m,ec,kb,j,i))
+           /(r*sn*(x3v(m,ka) - x3v(m,kb)));
+    }
+  }
+  return s;
+}
+
 // the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
 // Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange
 // (halo "B") carries M1_IW_EP alone, after the line solve has accepted the new iterate.

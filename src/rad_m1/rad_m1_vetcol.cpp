@@ -778,7 +778,20 @@ void RadiationM1::VetColBuild() {
   // vet_col_surface_face: q = H(face)/J_f, J_f extrapolated (rad_m1.hpp)
   const bool sqf = vcol_sqf;
   const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap;
-  if (vcol_team) {
+  if (vgd_on && vgd_replace) {
+    // vet_gd_replace (m1-vet-gd): no column solution; the isotropic tensor about r_hat
+    // and the default Marshak q here, the gd sweep (VetLatBuild -> VetGdBuild) then
+    // overwrites D above its first shell and q at the top
+    const int ie = indcs.ie;
+    par_for("m1_vgd_iso", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      tt_(m,0,k,j,i) = 1.0/3.0;
+      tt_(m,1,k,j,i) = 1.0;
+      tt_(m,2,k,j,i) = 0.0;
+      tt_(m,3,k,j,i) = 0.0;
+      if (sq && i == is) {vq_(m,k,j) = q0;}
+    });
+  } else if (vcol_team) {
     VetColBuildTeam(dmp);
   } else {
   par_for("m1_vcol", DevExeSpace(), 0, nmb1, ks, ke, js, je,

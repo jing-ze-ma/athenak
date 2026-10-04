@@ -2552,6 +2552,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool vlat = vlat_on && vlat_od && vlat_ready && sph;
   auto vlt_ = tau_ten;
   const int c0l = M1_TT_LAT0;
+  // vet_gd (m1-vet-gd): the lagged tangential anisotropy M1SphTan
+  const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
   auto cx3v = pmy_pack->pcoord->x3v;
@@ -2614,6 +2616,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                  + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,il,iu,jl,
                             ju,kl,ku,M1_IW_EP));
     }
+    if (vtan) {
+      off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,jl,ju,kl,ku,
+                           M1_IW_EP)
+                 + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,jl,ju,kl,ku,
+                            M1_IW_EP));
+    }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
 
@@ -2675,6 +2683,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                                ju,kl,ku,M1_IW_EP)
                    + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,il,iu,jl,
                               ju,kl,ku,M1_IW_EP));
+      }
+      if (vtan) {
+        off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,jl,ju,kl,ku,
+                             M1_IW_EP)
+                   + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,jl,ju,kl,ku,
+                              M1_IW_EP));
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);

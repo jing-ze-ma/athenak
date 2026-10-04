@@ -1372,6 +1372,9 @@ class RadiationM1 {
   // named; sp wedge only.
   bool vgd_on = false;         // vet_gd
   int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
+  bool vgd_tan = true;         // vet_gd_tangential: the lagged M1SphTan term
+  bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
+                               // first gd shell, q from the gd top cell)
   int vgd_n = 0;
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
   DvceArray5D<Real> vgd_i;     // (m, d, k, j, i): intensities, ghosts lagged

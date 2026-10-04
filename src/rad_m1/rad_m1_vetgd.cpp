@@ -48,7 +48,9 @@
 //!          the sweep above the first shell, vet_col's f_K below it),
 //!   LAT1, LAT2 = D_r,theta and D_r,phi (the lagged Picard term M1SphLat when
 //!          vet_col_lat_offdiag),
-//!   LAT3, LAT4, LAT5 = D_tt - (1 - f_K)/2, D_tp, D_pp - (1 - f_K)/2.
+//!   LAT3, LAT4, LAT5 = D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2 (the trace-free
+//!          tangential anisotropy about the operator's isotropic tangential pressure:
+//!          the lagged term M1SphTan of the transverse face equations, vet_gd_tangential).
 //! All vet_col_lat keys apply (taucut, every, init_iter, offdiag, dump).
 
 #include <algorithm>
@@ -459,6 +461,10 @@ void RadiationM1::VetGdMoments() {
   auto dir_ = vgd_dir;
   auto tt_ = tau_ten;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  // vet_gd_replace with vet_col_surface_q: the outer Marshak q = H_r/J of the top cell
+  const bool repq = vgd_replace && vcol_sq;
+  auto vq_ = vcol_q;
+  const Real qlo = vcol_qmin, qhi = vcol_qmax;
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
@@ -466,7 +472,7 @@ void RadiationM1::VetGdMoments() {
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
     const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
     const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-    Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
+    Real jm = 0.0, hr = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       const Real a = nx*st*cp + ny*st*sp + nz*ct;
@@ -474,6 +480,7 @@ void RadiationM1::VetGdMoments() {
       const Real c = -nx*sp + ny*cp;
       const Real wi = dir_(d,3)*vi_(m,d,k,j,i);
       jm += wi;
+      hr += wi*a;
       rr += wi*a*a;
       rt += wi*a*b;
       rp += wi*a*c;
@@ -483,13 +490,13 @@ void RadiationM1::VetGdMoments() {
     }
     if (jm > 0.0) {
       const Real fk = tt_(m,0,k,j,i);
-      const Real ht = 0.5*(1.0 - fk);
       tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - fk;
       tt_(m,M1_TT_LAT0+1,k,j,i) = rt/jm;
       tt_(m,M1_TT_LAT0+2,k,j,i) = rp/jm;
-      tt_(m,M1_TT_LAT0+3,k,j,i) = tq/jm - ht;
+      tt_(m,M1_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
       tt_(m,M1_TT_LAT0+4,k,j,i) = tp/jm;
-      tt_(m,M1_TT_LAT0+5,k,j,i) = pq/jm - ht;
+      tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
+      if (repq && i == ie) {vq_(m,k,j) = fmin(fmax(hr/jm, qlo), qhi);}
     }
   });
 }
