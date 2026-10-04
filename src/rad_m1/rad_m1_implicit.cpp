@@ -6328,7 +6328,8 @@ void RadiationM1::ImplicitReport() {
               << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
               << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
-              << std::endl;
+              << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
+              << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM] << std::endl;
   }
   if (impl_onep > 0) {
     std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep

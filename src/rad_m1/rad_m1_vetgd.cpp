@@ -1432,7 +1432,7 @@ void RadiationM1::VetGdRealDiag() {
   const int nst = hst ? static_cast<int>(ost.extent(1)) : 0;
   const Real cl = c_light;
   const int c0 = M1_TT_LAT0;
-  constexpr int NB = 5, NQ = 7;
+  constexpr int NB = 5, NQ = 8;
   // per band: ncell, n(lmin<0), min lmin, n(|f|>1), n(pos rows), max ratio, min Drr
   DvceArray2D<Real> acc("vgd_rd", NB, NQ);
   {
@@ -1496,6 +1496,8 @@ void RadiationM1::VetGdRealDiag() {
       if (lmin < -1.0e-12) {Kokkos::atomic_add(&ac_(b,1), 1.0);}
       Kokkos::atomic_min(&ac_(b,2), lmin);
       if (fn > 1.0 + 1.0e-12) {Kokkos::atomic_add(&ac_(b,3), 1.0);}
+      // the LATERAL part of f (|f_lat| > 0.5: the flux mostly sideways)
+      if (f[1]*f[1] + f[2]*f[2] > 0.25) {Kokkos::atomic_add(&ac_(b,7), 1.0);}
       Kokkos::atomic_min(&ac_(b,6), drr - 1.0/3.0);
       if (hst) {
         const Real dg = st_(m,0,k,j,i);
@@ -1545,7 +1547,8 @@ void RadiationM1::VetGdRealDiag() {
       const Real *v = &loc[b*NQ];
       std::cout << " | tau " << bn[b] << ": n=" << v[0] << " lmin<0 " << v[1]
                 << " lmin " << v[2] << " |f|>1 " << v[3] << " posrow " << v[4]
-                << " maxpos/diag " << v[5] << " min(Drr-1/3) " << v[6];
+                << " maxpos/diag " << v[5] << " min(Drr-1/3) " << v[6] << " |flat|>0.5 "
+                << v[7];
     }
     std::cout << std::endl;
   }
