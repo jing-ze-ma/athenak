@@ -133,6 +133,78 @@ void VgdDirections(const int ns, std::vector<double> &d) {
     d[4*q+3] = (1.0 + c*(d[4*q+2]*d[4*q+2] - m2))/n;
   }
 }
+
+// level-symmetric LQ_N (Carlson; mu_1 of Lewis & Miller), positive weights per
+// permutation class from the even moments 1, x^4, x^6, ... (sum w nn = I/3 exactly by
+// the octahedral symmetry); the Athena++ / Jiang 2021 (Bruls 1999) family
+bool VgdLevelSym(const int nl, std::vector<double> &d) {
+  double m1;
+  switch (nl) {
+    case 6: m1 = 0.2666355; break;
+    case 8: m1 = 0.2182179; break;
+    case 10: m1 = 0.1893213; break;
+    case 12: m1 = 0.1672126; break;
+    default: return false;
+  }
+  const int h = nl/2;
+  const double dl = 2.0*(1.0 - 3.0*m1*m1)/(nl - 2);
+  std::vector<double> mu(h);
+  for (int q = 0; q < h; ++q) {mu[q] = std::sqrt(m1*m1 + dl*q);}
+  std::vector<std::vector<int>> cls;     // sorted index triples
+  std::vector<int> pc;                   // class of each (unsigned) point
+  std::vector<double> pt;
+  for (int a = 0; a < h; ++a) {
+    for (int b = 0; b < h; ++b) {
+      const int c = h - 1 - a - b;
+      if (c < 0) {continue;}
+      std::vector<int> t = {a, b, c};
+      std::sort(t.begin(), t.end());
+      int id = -1;
+      for (int q = 0; q < static_cast<int>(cls.size()); ++q) {if (cls[q] == t) {id = q;}}
+      if (id < 0) {cls.push_back(t); id = static_cast<int>(cls.size()) - 1;}
+      pc.push_back(id);
+      pt.push_back(mu[a]); pt.push_back(mu[b]); pt.push_back(mu[c]);
+    }
+  }
+  const int nc = static_cast<int>(cls.size());
+  const int np = static_cast<int>(pc.size());
+  // A w = rhs over one octant (weights per point sum to 1/8 there)
+  std::vector<double> A(nc*nc, 0.0), r(nc);
+  for (int row = 0; row < nc; ++row) {
+    const int p2 = (row == 0) ? 0 : (2*(row + 1));
+    for (int q = 0; q < np; ++q) {A[row*nc + pc[q]] += std::pow(pt[3*q], p2)*8.0;}
+    r[row] = 1.0/(p2 + 1.0);
+  }
+  for (int c = 0; c < nc; ++c) {       // Gauss elimination with partial pivoting
+    int pv = c;
+    for (int q = c + 1; q < nc; ++q) {
+      if (std::fabs(A[q*nc + c]) > std::fabs(A[pv*nc + c])) {pv = q;}
+    }
+    for (int q = 0; q < nc; ++q) {std::swap(A[c*nc + q], A[pv*nc + q]);}
+    std::swap(r[c], r[pv]);
+    for (int q = c + 1; q < nc; ++q) {
+      const double f = A[q*nc + c]/A[c*nc + c];
+      for (int t = c; t < nc; ++t) {A[q*nc + t] -= f*A[c*nc + t];}
+      r[q] -= f*r[c];
+    }
+  }
+  std::vector<double> w(nc);
+  for (int c = nc - 1; c >= 0; --c) {
+    double v = r[c];
+    for (int t = c + 1; t < nc; ++t) {v -= A[c*nc + t]*w[t];}
+    w[c] = v/A[c*nc + c];
+  }
+  d.clear();
+  for (int q = 0; q < np; ++q) {
+    for (int sg = 0; sg < 8; ++sg) {
+      d.push_back(((sg & 1) ? -1.0 : 1.0)*pt[3*q]);
+      d.push_back(((sg & 2) ? -1.0 : 1.0)*pt[3*q+1]);
+      d.push_back(((sg & 4) ? -1.0 : 1.0)*pt[3*q+2]);
+      d.push_back(w[pc[q]]);
+    }
+  }
+  return true;
+}
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -148,26 +220,69 @@ void RadiationM1::VetGdInit() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int c2 = indcs.nx2 + 2*indcs.ng;
   const int c3 = indcs.nx3 + 2*indcs.ng;
-  std::vector<double> d;
-  VgdDirections(vgd_nside, d);
-  vgd_n = static_cast<int>(d.size()/4);
+  // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
+  // sum w nn = I/3; the sweep never looks inside it)
+  if (vgd_ls > 0) {
+    if (!VgdLevelSym(vgd_ls, vgd_base)) {VgdFatal("vet_gd_ls must be 6, 8, 10 or 12");}
+  } else {
+    VgdDirections(vgd_nside, vgd_base);
+  }
+  vgd_n = static_cast<int>(vgd_base.size()/4);
+  if (vgd_n > M1_VGD_NMAX) {VgdFatal("too many directions");}
   const int n = vgd_n;
   Kokkos::realloc(vgd_dir, n, 4);
-  auto d_h = Kokkos::create_mirror_view(vgd_dir);
-  for (int q = 0; q < n; ++q) {
-    for (int c = 0; c < 4; ++c) {d_h(q,c) = d[4*q+c];}
-  }
-  Kokkos::deep_copy(vgd_dir, d_h);
   Kokkos::realloc(vgd_i, nmb, n, c3, c2, c1);
   Kokkos::deep_copy(vgd_i, 0.0);
   Kokkos::realloc(vgd_i_c, nmb, n, 1, 1, 1);
   pbval_gd = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_gd->InitializeBuffers(n);
   pbval_gd->SetVectorPairs(n, {});
-  // wall maps: lateral ghost cells outside the mesh in theta or phi hold the other
-  // side's intensities; new(d) = old(map(d)), map = nearest set direction to M n_d
   Kokkos::realloc(vgd_wall, nmb, c3, c2);
   Kokkos::realloc(vgd_map, nmb, c3, c2, n);
+  Kokkos::realloc(vgd_mr, nmb, c3, c2, n);
+  vgd_alpha = -1.0;
+  VetGdTables(VetGdAngle(pm->ncycle));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VetGdAngle
+//! \brief vet_gd_rotate_every = N > 0: the z-rotation of the set for cycle c, constant
+//! over each block of N cycles: alpha = (pi/2) frac((c/N) g), g = (sqrt 5 - 1)/2 (a
+//! deterministic low-discrepancy sequence of the cycle number: reruns and restarts
+//! bitwise; pi/2 is the C4 period of the set)
+
+Real RadiationM1::VetGdAngle(const int cyc) const {
+  if (vgd_rot <= 0) {return 0.0;}
+  const double b = static_cast<double>(cyc/vgd_rot);
+  const double g = 0.5*(std::sqrt(5.0) - 1.0);
+  return 0.5*M_PI*(b*g - std::floor(b*g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdTables
+//! \brief the set rotated by alpha about z -> vgd_dir, the wall maps and branch tables
+
+void RadiationM1::VetGdTables(const Real alpha) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int c2 = indcs.nx2 + 2*indcs.ng;
+  const int c3 = indcs.nx3 + 2*indcs.ng;
+  const int n = vgd_n;
+  std::vector<double> d(vgd_base);
+  const double ca = std::cos(alpha), sa = std::sin(alpha);
+  for (int q = 0; q < n; ++q) {
+    const double x = vgd_base[4*q], y = vgd_base[4*q+1];
+    d[4*q] = ca*x - sa*y;
+    d[4*q+1] = sa*x + ca*y;
+  }
+  auto d_h = Kokkos::create_mirror_view(vgd_dir);
+  for (int q = 0; q < n; ++q) {
+    for (int c = 0; c < 4; ++c) {d_h(q,c) = d[4*q+c];}
+  }
+  Kokkos::deep_copy(vgd_dir, d_h);
+  // wall maps: lateral ghost cells outside the mesh in theta or phi hold the other
+  // side's intensities; new(d) = old(map(d)), map = nearest set direction to M n_d
   auto w_h = Kokkos::create_mirror_view(vgd_wall);
   auto mp_h = Kokkos::create_mirror_view(vgd_map);
   // positions of the wall maps and branch tables: the face MIDPOINTS (x2v is the
@@ -224,7 +339,6 @@ void RadiationM1::VetGdInit() {
   }
   // the branch of every stored value: n . r_hat of the direction actually stored at a
   // lateral cell (the mapped one, at the source position, for a wall ghost)
-  Kokkos::realloc(vgd_mr, nmb, c3, c2, n);
   auto mr_h = Kokkos::create_mirror_view(vgd_mr);
   for (int m = 0; m < nmb; ++m) {
     for (int k = 0; k < c3; ++k) {
@@ -246,9 +360,14 @@ void RadiationM1::VetGdInit() {
   Kokkos::deep_copy(vgd_mr, mr_h);
   Kokkos::deep_copy(vgd_wall, w_h);
   Kokkos::deep_copy(vgd_map, mp_h);
-  if (global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> vet_gd: global-direction SC closure on the sp wedge, nside "
-              << vgd_nside << " (" << n << " HEALPix directions, moment-fixed weights);"
+  const bool first = (vgd_alpha < 0.0);
+  vgd_alpha = alpha;
+  if (first && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> vet_gd: global-direction SC closure on the sp wedge, "
+              << ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
+                               : ("HEALPix nside " + std::to_string(vgd_nside)))
+              << " (" << n << " directions); z-rotation every " << vgd_rot
+              << " cycle(s) (0 = fixed), first angle " << alpha << ";"
               << " rank 0 wall ghost columns " << nwall << ", direction maps exact "
               << nexact << " of " << nmap << " (the rest: nearest direction)"
               << std::endl;
@@ -511,7 +630,16 @@ void RadiationM1::VetGdBuild() {
   VetLatSweep(0);
   Kokkos::fence();
   vgd_tsrc += tm.seconds();
-  const int nit = (vlat_nbuild == 0) ? vlat_iinit : 1;
+  // vet_gd_rotate_every: a new z-angle at the first build of a block of N cycles (the
+  // build sits outside the Picard solve, once per step); the stored intensities belong
+  // to the old directions, so the lagged inflow is re-converged as at the first build
+  const Real al = VetGdAngle(pmy_pack->pmesh->ncycle);
+  bool rotated = false;
+  if (al != vgd_alpha) {
+    VetGdTables(al);
+    rotated = true;
+  }
+  const int nit = (vlat_nbuild == 0 || rotated) ? vlat_iinit : 1;
   for (int it = 0; it < nit; ++it) {
     tm.reset();
     VetGdSweep();

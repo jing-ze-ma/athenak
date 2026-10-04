@@ -760,6 +760,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_on = pin->GetBoolean("rad_m1","vet_gd");
       if (vgd_on) {vlat_on = true;}
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_ls")) {
+      vgd_ls = pin->GetInteger("rad_m1","vet_gd_ls");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
+      vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_replace")) {
       vgd_replace = pin->GetBoolean("rad_m1","vet_gd_replace");
     }

@@ -1376,6 +1376,10 @@ class RadiationM1 {
   bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
                                // first gd shell, q from the gd top cell)
   int vgd_n = 0;
+  int vgd_ls = 0;              // vet_gd_ls = 6/8/10/12: level-symmetric LQ_N set instead
+  int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation of the set every N cycles
+  Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
+  std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
   DvceArray5D<Real> vgd_i;     // (m, d, k, j, i): intensities, ghosts lagged
   DvceArray5D<Real> vgd_i_c;
@@ -1385,6 +1389,8 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
+  Real VetGdAngle(const int cyc) const;
+  void VetGdTables(const Real alpha);
   void VetGdBuild();
   void VetGdSweep();
   void VetGdWall();
