@@ -1469,8 +1469,8 @@ void RadiationM1::VetColReport() {
               << "all sweeps): " << vlat_nclamp << std::endl;
     if (vgd_on) {
       std::cout << "<rad_m1> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
-                << ", sweeps " << vgd_tswp << ", exchange+walls " << vgd_texc
-                << ", moments " << vgd_tmom << std::endl;
+                << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
+                << vgd_thalo << "), moments " << vgd_tmom << std::endl;
     }
   }
 }

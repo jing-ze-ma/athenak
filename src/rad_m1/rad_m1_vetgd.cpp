@@ -1057,7 +1057,6 @@ void RadiationM1::VetGdBuild() {
     VetGdTables(al);
     rotated = true;
   }
-  // vet_gd_iter: sweeps per ordinary build (lagged block inflow re-converged each build)
   // the per-shell halo makes one sweep exact; vet_gd_iter > 1 only repeats it
   (void) rotated;
   const int nit = vgd_iter;
@@ -1066,10 +1065,6 @@ void RadiationM1::VetGdBuild() {
     VetGdSweep();
     Kokkos::fence();
     vgd_tswp += tm.seconds();
-    tm.reset();
-    // (the per-shell halo inside the sweep is exact: no inflow to re-converge)
-    Kokkos::fence();
-    vgd_texc += tm.seconds();
     vlat_ncall += 1.0;
   }
   tm.reset();
