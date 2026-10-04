@@ -55,6 +55,7 @@
 //! All vet_col_lat keys apply (taucut, every, init_iter, offdiag, dump).
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -528,8 +529,60 @@ void RadiationM1::VetGdHaloInit() {
   const int nreg = std::max(indcs.nx2, indcs.nx3)*vgd_w;
   vgd_maxcnt = nreg*std::max(vgd_n, 2*c1);
   if (vgd_hmpi) {
-    Kokkos::realloc(vgd_sbuf, nmb, 8, vgd_maxcnt);
-    Kokkos::realloc(vgd_rbuf, nmb, 8, vgd_maxcnt);
+    Kokkos::realloc(vgd_sbuf, static_cast<size_t>(nmb)*8*vgd_maxcnt);
+    Kokkos::realloc(vgd_rbuf, static_cast<size_t>(nmb)*8*vgd_maxcnt);
+    // the message plan: pieces sorted by (rank, receiver block, receiver slot) on both
+    // sides; sizes per piece kn*jn with kn, jn in {nx, ws}
+    std::vector<std::array<int, 4>> ps, pr;
+    for (int m = 0; m < nmb; ++m) {
+      for (int o = 0; o < 8; ++o) {
+        if (hl_h(8*m + o) >= 0) {continue;}
+        ps.push_back({vgd_hrank[8*m + o], vgd_hlid[8*m + o], 7 - o, 8*m + o});
+        pr.push_back({vgd_hrank[8*m + o], m, o, 8*m + o});
+      }
+    }
+    std::sort(ps.begin(), ps.end());
+    std::sort(pr.begin(), pr.end());
+    vgd_prk.clear();
+    for (const auto &x : ps) {
+      if (vgd_prk.empty() || vgd_prk.back() != x[0]) {vgd_prk.push_back(x[0]);}
+    }
+    const int np = static_cast<int>(vgd_prk.size());
+    Kokkos::realloc(vgd_soff, vgd_w + 1, 8*nmb);
+    Kokkos::realloc(vgd_roff, vgd_w + 1, 8*nmb);
+    auto so_h = Kokkos::create_mirror_view(vgd_soff);
+    auto ro_h = Kokkos::create_mirror_view(vgd_roff);
+    vgd_pdsp.assign(vgd_w + 1, std::vector<int>(np, 0));
+    vgd_pscnt = vgd_pdsp;
+    vgd_prdsp = vgd_pdsp;
+    vgd_prcnt = vgd_pdsp;
+    auto sz = [&](const int o, const int ws) {
+      const int oo = (o < 4) ? o : (o + 1);
+      const int dk = oo/3 - 1, dj = oo%3 - 1;
+      return ((dk == 0) ? indcs.nx3 : ws)*((dj == 0) ? indcs.nx2 : ws);
+    };
+    for (int ws = 0; ws <= vgd_w; ++ws) {
+      for (int t = 0; t < 8*nmb; ++t) {so_h(ws,t) = -1; ro_h(ws,t) = -1;}
+      for (int side = 0; side < 2; ++side) {
+        const auto &L = (side == 0) ? ps : pr;
+        int off = 0, p = -1, prev = -1;
+        for (const auto &x : L) {
+          if (x[0] != prev) {
+            ++p;
+            prev = x[0];
+            ((side == 0) ? vgd_pdsp : vgd_prdsp)[ws][p] = off;
+          }
+          const int o = x[3] % 8;
+          ((side == 0) ? so_h : ro_h)(ws, x[3]) = off;
+          // the piece size: the receiver's slot (7 - o on the send side is the same
+          // shape as my slot o)
+          off += sz(o, ws);
+          ((side == 0) ? vgd_pscnt : vgd_prcnt)[ws][p] += sz(o, ws);
+        }
+      }
+    }
+    Kokkos::deep_copy(vgd_soff, so_h);
+    Kokkos::deep_copy(vgd_roff, ro_h);
   }
 }
 
@@ -558,6 +611,9 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
   const bool mpi = vgd_hmpi;
   if (mapd && !mpi) {return;}
   auto sb_ = vgd_sbuf;
+  auto so_ = vgd_soff;
+  auto ro_ = vgd_roff;
+  const int nvi = nv*ni;
   par_for("m1_vgd_halo", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
     const int oo = (o < 4) ? o : (o + 1);
@@ -585,34 +641,25 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
       // my interior that the remote neighbour needs in ITS opposite slot
       const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
       const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
-      sb_(m,o,t) = a_(m,v,ks2+kk,js2+jj,i);
+      sb_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) = a_(m,v,ks2+kk,js2+jj,i);
     }
   });
 #if MPI_PARALLEL_ENABLED
   if (mpi) {
     Kokkos::fence();
-    const int nmb = nmb1 + 1;
     std::vector<MPI_Request> req;
     auto rb_ = vgd_rbuf;
-    for (int m = 0; m < nmb; ++m) {
-      for (int o = 0; o < 8; ++o) {
-        if (vgd_hlid[8*m + o] < 0) {continue;}
-        const int oo = (o < 4) ? o : (o + 1);
-        const int dk = oo/3 - 1, dj = oo%3 - 1;
-        const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
-        const int cnt = nv*kn*jn*ni;
-        const int rk = vgd_hrank[8*m + o];
-        // receive into my slot o from the neighbour; send my data to its slot 7 - o
-        const int rtag = 7000 + 8*(pmy_pack->pmb->mb_gid.h_view(m) % 4000) + o;
-        const int stag = 7000 + 8*((pmy_pack->pmesh->gids_eachrank[rk]
-                                    + vgd_hlid[8*m + o]) % 4000) + (7 - o);
-        req.emplace_back();
-        MPI_Irecv(rb_.data() + (static_cast<size_t>(m)*8 + o)*vgd_maxcnt, cnt,
-                  MPI_ATHENA_REAL, rk, rtag, MPI_COMM_WORLD, &req.back());
-        req.emplace_back();
-        MPI_Isend(sb_.data() + (static_cast<size_t>(m)*8 + o)*vgd_maxcnt, cnt,
-                  MPI_ATHENA_REAL, rk, stag, MPI_COMM_WORLD, &req.back());
-      }
+    // one message per partner rank and direction
+    for (size_t p = 0; p < vgd_prk.size(); ++p) {
+      const int rk = vgd_prk[p];
+      req.emplace_back();
+      MPI_Irecv(rb_.data() + static_cast<size_t>(vgd_prdsp[ws][p])*nvi,
+                vgd_prcnt[ws][p]*nvi, MPI_ATHENA_REAL, rk, 7001, MPI_COMM_WORLD,
+                &req.back());
+      req.emplace_back();
+      MPI_Isend(sb_.data() + static_cast<size_t>(vgd_pdsp[ws][p])*nvi,
+                vgd_pscnt[ws][p]*nvi, MPI_ATHENA_REAL, rk, 7001, MPI_COMM_WORLD,
+                &req.back());
     }
     MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
     par_for("m1_vgd_unpack", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
@@ -632,7 +679,8 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
       const int jj = r2/ni;
       const int ii = r2 - jj*ni;
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
-      a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(m,o,((vs*kn + kk)*jn + jj)*ni + ii);
+      a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(static_cast<size_t>(ro_(ws,8*m + o))*nvi
+                                      + ((vs*kn + kk)*jn + jj)*ni + ii);
     });
   }
 #endif

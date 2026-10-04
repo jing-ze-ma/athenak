@@ -1404,7 +1404,13 @@ class RadiationM1 {
   DvceArray5D<Real> vgd_cs;    // (m, 2, k, j, i): ln chi, ln S with the vgd_w band
   DvceArray1D<int> vgd_hloc;   // (8 nmb): local index of the slot's neighbour, -1 remote
   std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): the remote neighbour's rank, lid
-  DvceArray3D<Real> vgd_sbuf, vgd_rbuf;   // (nmb, 8, maxcnt) message buffers
+  DvceArray1D<Real> vgd_sbuf, vgd_rbuf;   // flat message buffers, one piece per remote
+  // (block, slot), the pieces to/from one rank contiguous (one message per rank pair)
+  // in the order of the RECEIVER's (block, slot); offsets per band depth ws in units of
+  // nv*ni: (ws, 8 m + o), -1 for an on-rank slot
+  DvceArray2D<int> vgd_soff, vgd_roff;
+  std::vector<int> vgd_prk;                  // partner ranks
+  std::vector<std::vector<int>> vgd_pdsp, vgd_pscnt, vgd_prdsp, vgd_prcnt;   // (ws, p)
   int vgd_maxcnt = 0;
   bool vgd_hmpi = false;
   Real vgd_thalo = 0.0;
