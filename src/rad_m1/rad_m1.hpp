@@ -1331,15 +1331,28 @@ class RadiationM1 {
   // equations as a LAGGED Picard term (M1SphLat).  Read only when named; sp wedge only
   // (cs after CS2).
   bool vlat_on = false;        // vet_col_lat
-  bool vlat_od = true;         // vet_col_lat_offdiag: the lagged D_r,lat term
+  // vet_col_lat_offdiag: what D_r,lat does in the solve.  0 none, 1 lagged (a Picard
+  // term, C1), 2 operator (default, C2: in the Krylov operator, M1SphLat of the
+  // Krylov vector, through the stored stencil and VetLatOp)
+  int vlat_odm = 2;
+  bool vlat_now = false;       // the term is on in this step (positivity fallback)
+  Real vlat_nfall = 0.0;       // steps dropped to `none` by the positivity guard
+  Real vlat_odmax = 0.0;       // max |D_r,lat| of the last sweep (all ranks)
+  // the operator form is active: on in this step and a non-zero D_r,lat (a zero one
+  // leaves the operator, its stencil and the right-hand side untouched, bitwise)
+  bool VlatOp() const {return vlat_now && (vlat_odm == 2) && (vlat_odmax > 0.0);}
   int vlat_nmu = 4, vlat_npsi = 4, vlat_every = 1, vlat_iinit = 3;
   Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
                                // has tau_top >= this (global shell index vlat_icut)
   int vlat_icut = 0;
+  Real vlat_taumax = 0.0;      // vet_col_lat_taumax: depth taper (0 off)
+  Real vlat_taumin = 0.0;      // vet_col_lat_taumin: thin-top cap (0 off)
+  DvceArray4D<Real> vlat_wt;   // (m, k, j, i): the taper weight
   bool vlat_ready = false;     // VetLatInit done
   int vlat_nbuild = 0;         // builds done (the first one iterates vlat_iinit times)
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
   std::string vlat_dump;       // vet_col_lat_dump: per-rank dump prefix (gate c)
+  int vlat_dump_every = 0;     // vet_col_lat_dump_every (0: the first build only)
   DvceArray5D<Real> vlat_i;    // (m, 2 nmu npsi, k, j, i): 3-D intensities
   DvceArray5D<Real> vlat_t;    // (m, 2 nmu npsi, k, j, i): twin intensities
   DvceArray5D<Real> vlat_t_c;
@@ -1348,7 +1361,8 @@ class RadiationM1 {
   DvceArray5D<Real> vlat_d_c;
   DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vlat_cs_c;
-  DvceArray5D<Real> vlat_tt_c; // coarse twin of tau_ten for its exchange
+  DvceArray5D<Real> vlat_lx;    // (m, 2, k, j, i): D_rt, D_rp for their ghost exchange
+  DvceArray5D<Real> vlat_tt_c;  // its coarse twin
   DvceArray3D<Real> vlat_geo;  // (shell l, 2 a + dir, 0..3): per-shell ray geometry
   DvceArray1D<Real> vlat_mu;   // (a): Gauss nodes on [0, 1], descending
   DvceArray1D<Real> vlat_w;    // (a): hemisphere weights, sum 1/2 (J = sum w I)
@@ -1361,9 +1375,16 @@ class RadiationM1 {
   void VetLatInit();
   void VetLatBuild();
   void VetLatSweep(const int stage);   // 0 twin, 1 3-D, 2 moments
+  void VetLatTTGhosts();
+  void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
   void VetLatDump();
+  // vet_col_lat_offdiag = operator: y += sgn L_lat(x) (the direct form, legacy
+  // operator path and the right-hand side), and the same terms added to the stored
+  // 19-point stencil of the pass (ImplicitStencilBuild)
+  void VetLatOp(int xc, int yc, Real sgn);
+  void VetLatStencilAdd();
 
   // ---- <rad_m1>/vet_gd (m1-vet-gd, rad_m1_vetgd.cpp; design
   // rt_design_1003/SC_PROPER_SP.md, candidate b): the Eddington tensor from an SC sweep
@@ -1414,7 +1435,15 @@ class RadiationM1 {
   int vgd_maxcnt = 0;
   bool vgd_hmpi = false;
   Real vgd_thalo = 0.0;
-  bool vgd_time_halo = false;   // env VGD_TIME_HALO=1: fence before the halo timer
+  bool vgd_time_halo = false;
+  // vet_gd_rebuild_every = k > 0 (read only when named; 0 = the tensor lagged to the
+  // start of the step): rebuild the gd tensor inside the implicit solve at Picard passes
+  // k, 2k, ... from the iterate's E (M1_IW_EP) and T (M1_IW_TP)
+  int vgd_rbe = 0;
+  bool vlat_src_ep = false;
+  DvceArray4D<Real> vgd_fk0;   // (m, k, j, i): slot 0 before the fold
+  Real vgd_nrb = 0.0, vgd_trb = 0.0;
+  void VetGdIterRebuild();   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,

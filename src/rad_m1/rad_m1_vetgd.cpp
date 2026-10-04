@@ -335,6 +335,9 @@ void RadiationM1::VetGdInit() {
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
   Kokkos::realloc(vgd_mr, nmb, c3w, c2w, n);
   VetGdHaloInit();
+  if (vgd_rbe > 0) {
+    Kokkos::realloc(vgd_fk0, nmb, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng, c1);
+  }
   vgd_time_halo = (std::getenv("VGD_TIME_HALO") != nullptr);
   vgd_alpha = -1.0;
   VetGdTables(VetGdAngle(pm->ncycle));
@@ -1089,7 +1092,7 @@ void RadiationM1::VetGdSmooth() {
   const int c0 = M1_TT_LAT0;
   for (int pass = 0; pass < vgd_smooth; ++pass) {
     for (int dir = 0; dir < 2; ++dir) {
-      VetLatExchange(tau_ten, vlat_tt_c, pbval_vt);
+      VetLatTTGhosts();
       par_for("m1_vgd_sm", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (dir == 0) {
@@ -1155,6 +1158,7 @@ void RadiationM1::VetGdBuild() {
   tm.reset();
   VetGdMoments();
   if (vgd_smooth > 0) {VetGdSmooth();}
+  VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();
   auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cnt);

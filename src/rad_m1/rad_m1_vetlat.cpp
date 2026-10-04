@@ -165,6 +165,10 @@ void RadiationM1::VetLatInit() {
     VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
   }
   if (vcol_axis_flux) {VlatFatal("needs vet_col_axis = radial");}
+  if (vlat_odm == 2 && !(bicg_on && impl_stencil)) {
+    VlatFatal("vet_col_lat_offdiag = operator needs implicit_solver = bicgstab and "
+              "implicit_op_stencil = true (the lateral terms go into the stencil)");
+  }
   if (vlat_nmu < 1 || vlat_npsi < 2 || vlat_every < 1 || vlat_iinit < 1) {
     VlatFatal("vet_col_lat_nmu >= 1, _npsi >= 2, _every >= 1, _init_iter >= 1");
   }
@@ -190,8 +194,16 @@ void RadiationM1::VetLatInit() {
   Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
   Kokkos::deep_copy(vlat_cs, 0.0);
   Kokkos::realloc(vlat_cs_c, nmb, 2, 1, 1, 1);
-  const int ntt = static_cast<int>(tau_ten.extent(1));
-  Kokkos::realloc(vlat_tt_c, nmb, ntt, 1, 1, 1);
+  if (vlat_taumax > 0.0 || vlat_taumin > 0.0) {
+    Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);
+  }
+  // the exchange of the off-diagonal slots only (slots 0-3 keep vet_col's ghosts)
+  // (vet_gd: also slot 0 after the fold and every LAT slot: the face diagonals and the
+  // tangential cross terms read their lateral ghosts)
+  const int nlx = vgd_on ? (1 + M1_TT_NLAT) : 2;
+  Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);
+  Kokkos::deep_copy(vlat_lx, 0.0);
+  Kokkos::realloc(vlat_tt_c, nmb, nlx, 1, 1, 1);
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
   Kokkos::realloc(vlat_w, vlat_nmu);
@@ -236,8 +248,8 @@ void RadiationM1::VetLatInit() {
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
   pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
-  pbval_vt->InitializeBuffers(ntt);
-  pbval_vt->SetVectorPairs(ntt, {});
+  pbval_vt->InitializeBuffers(nlx);
+  pbval_vt->SetVectorPairs(nlx, {});
   vlat_geo_icut = -1;
   vlat_ready = true;
   if (vgd_on) {VetGdInit(); return;}
@@ -246,8 +258,12 @@ void RadiationM1::VetLatInit() {
               << " mu x " << vlat_npsi << " psi per hemisphere (" << nd
               << " directions), "
               << "3-D minus twin; f_rr folded into the diagonal"
-              << (vlat_od ? ", D_r,lat as a lagged Picard term" : ", D_r,lat NOT used")
-              << "; sweep from tau_top >= " << vlat_taucut << "; rebuilt every "
+              << ((vlat_odm == 2) ? ", D_r,lat in the implicit operator"
+                  : ((vlat_odm == 1) ? ", D_r,lat as a lagged Picard term"
+                                     : ", D_r,lat NOT used"))
+              << "; sweep from tau_top >= " << vlat_taucut << "; taper "
+              << vlat_taumax << " (0: off)" << ", thin cap " << vlat_taumin << " (0: off)"
+              << "; rebuilt every "
               << vlat_every << " step(s); first build " << vlat_iinit
               << " inflow iterations" << std::endl;
     if (vcol_rtop) {
@@ -255,6 +271,104 @@ void RadiationM1::VetLatInit() {
                 << "reflecting top is not mirrored; both sweeps alike)" << std::endl;
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatOdMax
+//! \brief vlat_odmax = max over ranks of |D_rt|, |D_rp| (tau_ten LAT slots 1, 2) over the
+//! active cells: 0 keeps the operator form untouched (vet_col_lat and vet_gd)
+
+void RadiationM1::VetLatOdMax() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto tt_ = tau_ten;
+  {
+    Real omx = 0.0;
+    const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
+    Kokkos::parallel_reduce("m1_vlat_odmax",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
+      KOKKOS_LAMBDA(const int idx, Real &mx) {
+        int t = idx/ni;
+        const int i = is + (idx - t*ni);
+        const int j = js + (t % nj);
+        t /= nj;
+        const int k = ks + (t % nk);
+        const int m = t/nk;
+        const Real v = fmax(fabs(tt_(m,M1_TT_LAT0+1,k,j,i)),
+                            fabs(tt_(m,M1_TT_LAT0+2,k,j,i)));
+        mx = (v > mx) ? v : mx;
+      }, Kokkos::Max<Real>(omx));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &omx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    vlat_odmax = omx;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdIterRebuild
+//! \brief vet_gd_rebuild_every: the gd tensor rebuilt inside the implicit solve from the
+//! Picard iterate (E = M1_IW_EP, T = M1_IW_TP): slot 0 back to its pre-fold value, the
+//! build (source, sweep, moments, vlat_odmax), the fold and the ghosts as VetLatBuild
+
+void RadiationM1::VetGdIterRebuild() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  Kokkos::fence();
+  Kokkos::Timer timer;
+  auto tt_ = tau_ten;
+  auto f0_ = vgd_fk0;
+  par_for("m1_vgd_fk0r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    tt_(m,0,k,j,i) = f0_(m,k,j,i);
+  });
+  vlat_src_ep = true;
+  VetGdBuild();
+  vlat_src_ep = false;
+  const Real fkm = vcol_fkmin;
+  const int ilo = is + vlat_icut;
+  par_for("m1_vgd_refold", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    tt_(m,0,k,j,i) = fmin(fmax(tt_(m,0,k,j,i) + tt_(m,M1_TT_LAT0,k,j,i), fkm), 1.0);
+  });
+  VetLatTTGhosts();
+  Kokkos::fence();
+  vgd_nrb += 1.0;
+  vgd_trb += timer.seconds();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatTTGhosts
+//! \brief the lateral ghosts of the tau_ten slots the operator reads at neighbours,
+//! through a copy: D_rt, D_rp (vet_col_lat), or slot 0 and every LAT slot (vet_gd)
+
+void RadiationM1::VetLatTTGhosts() {
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto tt_ = tau_ten;
+  auto lx_ = vlat_lx;
+  const int nlx = static_cast<int>(vlat_lx.extent(1));
+  const bool gd = vgd_on;
+  auto slot = [=] KOKKOS_FUNCTION (const int c) {
+    return gd ? ((c == 0) ? 0 : (M1_TT_LAT0 + c - 1)) : (M1_TT_LAT0 + 1 + c);
+  };
+  // copied in over ALL cells: cells the exchange does not fill (x1 and physical-boundary
+  // ghosts) come back unchanged
+  const int n3 = static_cast<int>(tt_.extent(2)) - 1;
+  const int n2 = static_cast<int>(tt_.extent(3)) - 1;
+  const int n1 = static_cast<int>(tt_.extent(4)) - 1;
+  par_for("m1_vlat_lxo", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int c = 0; c < nlx; ++c) {lx_(m,c,k,j,i) = tt_(m,slot(c),k,j,i);}
+  });
+  VetLatExchange(vlat_lx, vlat_tt_c, pbval_vt);
+  par_for("m1_vlat_lxi", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int c = 0; c < nlx; ++c) {tt_(m,slot(c),k,j,i) = lx_(m,c,k,j,i);}
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -311,12 +425,23 @@ void RadiationM1::VetLatBuild() {
   auto tt_ = tau_ten;
   const Real fkm = vcol_fkmin;
   const int ilo = is + vlat_icut;
+  if (vgd_on && vgd_rbe > 0) {
+    // vet_gd_rebuild_every: keep slot 0 before the fold for the in-solve rebuilds
+    auto f0_ = vgd_fk0;
+    par_for("m1_vgd_fk0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      f0_(m,k,j,i) = tt_(m,0,k,j,i);
+    });
+  }
   par_for("m1_vlat_fold", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     tt_(m,0,k,j,i) = fmin(fmax(tt_(m,0,k,j,i) + tt_(m,M1_TT_LAT0,k,j,i), fkm), 1.0);
   });
-  VetLatExchange(tau_ten, vlat_tt_c, pbval_vt);
-  if (due && !vlat_dump.empty() && vlat_nbuild == 1) {VetLatDump();}
+  // the ghosts of D_rt, D_rp (read by M1SphLat): through a 2-slot copy, so that
+  // vet_col's own slots keep their (unfilled) ghosts and a restart is unchanged
+  VetLatTTGhosts();
+  if (due && !vlat_dump.empty() && (vlat_nbuild == 1 || (vlat_dump_every > 0 &&
+      (vlat_nbuild % vlat_dump_every) == 0))) {VetLatDump();}
 }
 
 //----------------------------------------------------------------------------------------
@@ -360,10 +485,11 @@ void RadiationM1::VetLatSweep(const int stage) {
   const Real chs = chat;
   const Real dts = mr_on ? mr_dt : pm->dt;
   const Real cl = c_light, ar = arad, efl = e_floor;
+  const bool srcep = vlat_src_ep;   // vet_gd_rebuild_every: the Picard iterate's E
   par_for("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
-    Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+    Real e = fmax(iw_(m,srcep ? M1_IW_EP : M1_IW_EN,k,j,i), efl);
     Real s = e;
     if (thermal) {
       Real tg = iw_(m,M1_IW_TP,k,j,i);
@@ -635,6 +761,31 @@ void RadiationM1::VetLatSweep(const int stage) {
   }
   return;
   }
+  // vet_col_lat_taumax = T > 0: the correction tapered off with depth, weight 1 for
+  // tau_top <= T, 0 for tau_top >= 2 T, linear in ln(tau_top) between (vlat_wt)
+  // vet_col_lat_taumin = t > 0: the same taper at the THIN end, weight 0 for
+  // tau_top <= t, 1 for tau_top >= 2 t (the thin top, where no closure term may be lagged
+  // or coupled without losing the Picard fixed point, C2_RESULTS.md); the two multiply
+  const bool tap = (vlat_taumax > 0.0) || (vlat_taumin > 0.0);
+  auto wt_ = vlat_wt;
+  if (tap) {
+    const Real tmx = vlat_taumax, tmn = vlat_taumin;
+    const Real il2 = 1.0/log(2.0);
+    par_for("m1_vlat_taper", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real tau = 0.0;
+      for (int i = ie; i >= is; --i) {
+        const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
+        const Real tc = tau + 0.5*dt_;
+        const Real lt = log(fmax(tc, 1.0e-300));
+        const Real wd = (tmx > 0.0) ? fmin(fmax(1.0 - (lt - log(tmx))*il2, 0.0), 1.0)
+                                    : 1.0;
+        const Real wn = (tmn > 0.0) ? fmin(fmax((lt - log(tmn))*il2, 0.0), 1.0) : 1.0;
+        wt_(m,k,j,i) = wd*wn;
+        tau += dt_;
+      }
+    });
+  }
   // (5) the moments: the correction dD = D(3-D) - D(twin) -> tau_ten LAT slots
   const int ilo = is + lcut;
   const Real twopi = 2.0*M_PI;
@@ -667,19 +818,23 @@ void RadiationM1::VetLatSweep(const int stage) {
       }
     }
     if (j3 > 0.0 && jt > 0.0) {
-      tt_(m,M1_TT_LAT0,k,j,i) = krr3/j3 - krrt/jt;
-      tt_(m,M1_TT_LAT0+1,k,j,i) = krt3/j3 - krtt/jt;
-      tt_(m,M1_TT_LAT0+2,k,j,i) = krp3/j3 - krpt/jt;
+      const Real w = tap ? wt_(m,k,j,i) : 1.0;
+      tt_(m,M1_TT_LAT0,k,j,i) = w*(krr3/j3 - krrt/jt);
+      tt_(m,M1_TT_LAT0+1,k,j,i) = w*(krt3/j3 - krtt/jt);
+      tt_(m,M1_TT_LAT0+2,k,j,i) = w*(krp3/j3 - krpt/jt);
     }
   });
+  // the largest |D_r,lat| of this sweep (all ranks): 0 keeps the operator untouched
+  VetLatOdMax();
   auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cnt);
   vlat_nclamp = cnt_h(0);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetLatDump
-//! \brief vet_col_lat_dump = prefix: one binary file per rank, prefix.<rank>.bin, of the
-//! first build: int64 count, then per active cell 9 doubles
+//! \brief vet_col_lat_dump = prefix: one binary file per rank and dumped build,
+//! prefix.<build>.<rank>.bin (the first build, and every vet_col_lat_dump_every-th):
+//! int64 count, then per active cell 9 doubles
 //! (x1v, x2v, x3v, ln chi, ln S, f_K after the fold, dD_rr, D_rt, D_rp)
 
 void RadiationM1::VetLatDump() {
@@ -709,8 +864,8 @@ void RadiationM1::VetLatDump() {
       }
     }
   }
-  const std::string fn = vlat_dump + "." + std::to_string(global_variable::my_rank)
-                         + ".bin";
+  const std::string fn = vlat_dump + "." + std::to_string(vlat_nbuild) + "."
+                         + std::to_string(global_variable::my_rank) + ".bin";
   FILE *fp = std::fopen(fn.c_str(), "wb");
   if (fp == nullptr) {VlatFatal("cannot open " + fn);}
   int64_t n = static_cast<int64_t>(buf.size()/9);
@@ -718,10 +873,284 @@ void RadiationM1::VetLatDump() {
   std::fwrite(buf.data(), sizeof(double), buf.size(), fp);
   std::fclose(fp);
   if (global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> vet_col_lat: dumped the first build to " << vlat_dump
-              << ".<rank>.bin (first shell of the sweep i = is + " << vlat_icut << ")"
-              << std::endl;
+    std::cout << "<rad_m1> vet_col_lat: dumped build " << vlat_nbuild << " to "
+              << vlat_dump
+              << "." << vlat_nbuild << ".<rank>.bin (first shell of the sweep i = is + "
+              << vlat_icut << ")" << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatOp
+//! \brief vet_col_lat_offdiag = operator (C2): iw(yc) += sgn L_lat(x), x = iw(xc), the
+//! lateral off-diagonal part of the E row,
+//!   L_lat(x) = - sum_faces sd (dt A_f/V_i) (chat/c) theta_f chat c dt
+//!              0.5 [M1SphLat(x; L) + M1SphLat(x; R)],
+//! i.e. exactly the term the assembly carries in the face fluxes (rad_m1_implicit.cpp,
+//! the `if (vlat)` sites: TRHS through the x2/x3 face fluxes, rr on the x1 faces) with
+//! the lagged energy E^k replaced by x.  The closure is frozen inside a Picard pass, so
+//! this is linear in x.  Used (i) on the right-hand side with x = E^k (it takes the
+//! lagged term out again) and (ii) in the legacy operator application; the stored
+//! stencil carries the same terms (VetLatStencilAdd), which implicit_op_check compares.
+//! The face conditions mirror the assembly: physical x1 faces (imposed flux) and
+//! physical x2/x3 faces carry no term, a Dirichlet (efix) row gets none.
+
+void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto tt_ = tau_ten;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto pos_ = part_pos.d_view;
+  const int nblkx1 = part_nblk;
+  const bool thrd = trans_x3;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const Real cl = c_light, ch = chat, dt = dt_sub;
+  const bool fwd = sph_geom && impl_face_wdist;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx3v = pmy_pack->pcoord->x3v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  const int cx = xc, cy = yc;
+  const Real sg = sgn;
+  const int c0 = M1_TT_LAT0;
+  par_for("m1_vlat_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_(m);
+    const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    if ((i == is && botb && bclo == M1_IBC_EFIX) ||
+        (i == ie && topb && bchi == M1_IBC_EFIX)) {
+      return;
+    }
+    BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
+    BoundaryFlag q2 = mbbcs(m,BoundaryFace::outer_x1);
+    BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
+    const bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+    const bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+    const bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+    const bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+    int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
+    if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {il = is-1;}
+    if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {iu = ie+1;}
+    if (!p2lo) {jl = js-1;}
+    if (!p2hi) {ju = je+1;}
+    if (thrd && !p3lo) {kl = ks-1;}
+    if (thrd && !p3hi) {ku = ke+1;}
+    const Real cr = ch/cl, kk = ch*cl*dt;
+    const Real iv = dt/cvol(m,k,j,i);
+    Real y = 0.0;
+    auto lat = [&](const int d, const int kq, const int jq, const int iq) {
+      return M1SphLat(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, il, iu,
+                      jl, ju, kl, ku, cx);
+    };
+    // the two x1 faces
+    if (i < ie || !topb) {
+      const int ip = i + 1;
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
+                                   i, ip, fwd);
+      const Real th = 1.0/(1.0 + ch*dt*ktf);
+      y -= carea.x1f(m,k,j,i+1)*iv*cr*th*kk*0.5*(lat(0,k,j,i) + lat(0,k,j,ip));
+    }
+    if (i > is || !botb) {
+      const int im = i - 1;
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
+                                   im, i, fwd);
+      const Real th = 1.0/(1.0 + ch*dt*ktf);
+      y += carea.x1f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(0,k,j,im) + lat(0,k,j,i));
+    }
+    // the two x2 faces
+    if (!(j == je && p2hi)) {
+      const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
+                                            + iw_(m,M1_IW_KT,k,j+1,i)));
+      y -= carea.x2f(m,k,j+1,i)*iv*cr*th*kk*0.5*(lat(1,k,j,i) + lat(1,k,j+1,i));
+    }
+    if (!(j == js && p2lo)) {
+      const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j-1,i)
+                                            + iw_(m,M1_IW_KT,k,j,i)));
+      y += carea.x2f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(1,k,j-1,i) + lat(1,k,j,i));
+    }
+    // the two x3 faces
+    if (thrd) {
+      if (!(k == ke && p3hi)) {
+        const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
+                                              + iw_(m,M1_IW_KT,k+1,j,i)));
+        y -= carea.x3f(m,k+1,j,i)*iv*cr*th*kk*0.5*(lat(2,k,j,i) + lat(2,k+1,j,i));
+      }
+      if (!(k == ks && p3lo)) {
+        const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k-1,j,i)
+                                              + iw_(m,M1_IW_KT,k,j,i)));
+        y += carea.x3f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(2,k-1,j,i) + lat(2,k,j,i));
+      }
+    }
+    iw_(m,cy,k,j,i) += sg*y;
+  });
+}
+
+namespace {
+// the slot of the 19-point stencil for the offset (di,dj,dk) (M1StIdx of
+// rad_m1_implicit.cpp, term for term)
+KOKKOS_INLINE_FUNCTION
+int VlatStIdx(const int di, const int dj, const int dk) {
+  if (dk == 0) {
+    if (dj == 0) {return (di == 0) ? 0 : ((di < 0) ? 1 : 2);}
+    if (di == 0) {return (dj < 0) ? 3 : 4;}
+    return 7 + ((di > 0) ? 1 : 0) + ((dj > 0) ? 2 : 0);
+  }
+  if (dj == 0) {
+    if (di == 0) {return (dk < 0) ? 5 : 6;}
+    return 11 + ((di > 0) ? 1 : 0) + ((dk > 0) ? 2 : 0);
+  }
+  return 15 + ((dj > 0) ? 1 : 0) + ((dk > 0) ? 2 : 0);
+}
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatStencilAdd
+//! \brief vet_col_lat_offdiag = operator: the terms of VetLatOp distributed onto the
+//! stored 19-point stencil ost of this Picard pass (added after ImplicitStencilBuild):
+//! every M1SphLat difference is linear in x with frozen coefficients, at the face cell
+//! q (offset 0 or the face neighbour) and its clamped neighbours along the cross axis,
+//! so it lands on the centre, a face or an edge slot.  Same terms as VetLatOp (the sums
+//! are grouped differently: round-off), compared by implicit_op_check.
+
+void RadiationM1::VetLatStencilAdd() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto tt_ = tau_ten;
+  auto st_ = ost;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto pos_ = part_pos.d_view;
+  const int nblkx1 = part_nblk;
+  const bool thrd = trans_x3;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const Real cl = c_light, ch = chat, dt = dt_sub;
+  const bool fwd = sph_geom && impl_face_wdist;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx3v = pmy_pack->pcoord->x3v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  const int c0 = M1_TT_LAT0;
+  par_for("m1_vlat_stencil", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_(m);
+    const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    if ((i == is && botb && bclo == M1_IBC_EFIX) ||
+        (i == ie && topb && bchi == M1_IBC_EFIX)) {
+      return;
+    }
+    BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
+    BoundaryFlag q2 = mbbcs(m,BoundaryFace::outer_x1);
+    BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
+    const bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+    const bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+    const bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+    const bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+    int lo[3] = {is, js, ks}, hi[3] = {ie, je, ke};
+    if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {lo[0] = is-1;}
+    if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {hi[0] = ie+1;}
+    if (!p2lo) {lo[1] = js-1;}
+    if (!p2hi) {hi[1] = je+1;}
+    if (thrd && !p3lo) {lo[2] = ks-1;}
+    if (thrd && !p3hi) {hi[2] = ke+1;}
+    const Real cr = ch/cl, kk = ch*cl*dt;
+    const Real iv = dt/cvol(m,k,j,i);
+    // x coefficient c at the cell p (absolute indices) of this row
+    auto add = [&](const int pi, const int pj, const int pk, const Real c) {
+      st_(m,VlatStIdx(pi - i, pj - j, pk - k),k,j,i) += c;
+    };
+    // w M1SphLat(x; q, d): the frozen coefficients, distributed (the clamps of M1SphLat)
+    auto latc = [&](const int d, const int qi, const int qj, const int qk, const Real w) {
+      const Real r = cx1v(m,qi);
+      if (d == 0) {
+        const Real sn = sin(cx2v(m,qj));
+        const Real ct = cos(cx2v(m,qj))/sn;
+        const int ja = (qj + 1 <= hi[1]) ? qj + 1 : qj;
+        const int jb = (qj - 1 >= lo[1]) ? qj - 1 : qj;
+        if (ja != jb) {
+          const Real f = w/(r*(cx2v(m,ja) - cx2v(m,jb)));
+          add(qi, ja, qk, f*tt_(m,c0+1,qk,ja,qi));
+          add(qi, jb, qk, -f*tt_(m,c0+1,qk,jb,qi));
+        }
+        add(qi, qj, qk, w*ct*tt_(m,c0+1,qk,qj,qi)/r);
+        if (thrd) {
+          const int ka = (qk + 1 <= hi[2]) ? qk + 1 : qk;
+          const int kb = (qk - 1 >= lo[2]) ? qk - 1 : qk;
+          if (ka != kb) {
+            const Real f = w/(r*sn*(cx3v(m,ka) - cx3v(m,kb)));
+            add(qi, qj, ka, f*tt_(m,c0+2,ka,qj,qi));
+            add(qi, qj, kb, -f*tt_(m,c0+2,kb,qj,qi));
+          }
+        }
+      } else {
+        const int ia = (qi + 1 <= hi[0]) ? qi + 1 : qi;
+        const int ib = (qi - 1 >= lo[0]) ? qi - 1 : qi;
+        if (ia != ib) {
+          const Real ra = cx1v(m,ia), rb = cx1v(m,ib);
+          const Real f = w/(r*r*r*(ra - rb));
+          add(ia, qj, qk, f*ra*ra*ra*tt_(m,c0+d,qk,qj,ia));
+          add(ib, qj, qk, -f*rb*rb*rb*tt_(m,c0+d,qk,qj,ib));
+        }
+      }
+    };
+    // the faces: upper y -= a od, lower y += a od, od = 0.5 [lat(c) + lat(nb)]
+    if (i < ie || !topb) {
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,i+1), cx1f,
+                                   m, i, i+1, fwd);
+      const Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      latc(0, i, j, k, w);
+      latc(0, i+1, j, k, w);
+    }
+    if (i > is || !botb) {
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i-1), iw_(m,M1_IW_KT,k,j,i), cx1f,
+                                   m, i-1, i, fwd);
+      const Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      latc(0, i-1, j, k, w);
+      latc(0, i, j, k, w);
+    }
+    if (!(j == je && p2hi)) {
+      const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+      const Real w = -0.5*carea.x2f(m,k,j+1,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      latc(1, i, j, k, w);
+      latc(1, i, j+1, k, w);
+    }
+    if (!(j == js && p2lo)) {
+      const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+      const Real w = 0.5*carea.x2f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      latc(1, i, j-1, k, w);
+      latc(1, i, j, k, w);
+    }
+    if (thrd) {
+      if (!(k == ke && p3hi)) {
+        const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+        const Real w = -0.5*carea.x3f(m,k+1,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        latc(2, i, j, k, w);
+        latc(2, i, j, k+1, w);
+      }
+      if (!(k == ks && p3lo)) {
+        const Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        const Real w = 0.5*carea.x3f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        latc(2, i, j, k-1, w);
+        latc(2, i, j, k, w);
+      }
+    }
+  });
 }
 
 } // namespace radm1

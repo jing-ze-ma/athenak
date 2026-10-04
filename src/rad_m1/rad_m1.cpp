@@ -781,6 +781,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_smooth")) {
       vgd_smooth = std::max(0, pin->GetInteger("rad_m1","vet_gd_smooth"));
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
+      vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_iter")) {
       vgd_iter = std::max(1, pin->GetInteger("rad_m1","vet_gd_iter"));
     }
@@ -812,12 +815,33 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taucut")) {
         vlat_taucut = pin->GetReal("rad_m1","vet_col_lat_taucut");
       }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumin")) {
+        vlat_taumin = pin->GetReal("rad_m1","vet_col_lat_taumin");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumax")) {
+        vlat_taumax = pin->GetReal("rad_m1","vet_col_lat_taumax");
+      }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag")) {
-        vlat_od = pin->GetBoolean("rad_m1","vet_col_lat_offdiag");
+        std::string so = pin->GetString("rad_m1","vet_col_lat_offdiag");
+        if (so.compare("none") == 0 || so.compare("false") == 0) {
+          vlat_odm = 0;
+        } else if (so.compare("lagged") == 0 || so.compare("true") == 0) {
+          vlat_odm = 1;
+        } else if (so.compare("operator") == 0) {
+          vlat_odm = 2;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_col_lat_offdiag = '" << so
+                    << "' (none | lagged | operator)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
         vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");
         if (vlat_dump.compare("none") == 0) {vlat_dump = "";}
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump_every")) {
+        vlat_dump_every = pin->GetInteger("rad_m1","vet_col_lat_dump_every");
       }
     }
   } else {

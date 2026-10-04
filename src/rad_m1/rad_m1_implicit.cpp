@@ -2549,7 +2549,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool sphq = sph_q;
   const bool odl = (odm != M1_OD_NONE);
   // vet_col_lat (m1-vetcol-lat): the lagged lateral off-diagonal term M1SphLat
-  const bool vlat = vlat_on && vlat_od && vlat_ready && sph;
+  const bool vlat = vlat_now && vlat_ready && sph;
   auto vlt_ = tau_ten;
   const int c0l = M1_TT_LAT0;
   // vet_gd (m1-vet-gd): the lagged tangential anisotropy M1SphTan
@@ -4108,6 +4108,11 @@ void RadiationM1::ImplicitStencilBuild() {
   emax = g;}
 #endif
   st_edges = (emax > 0.0);
+  // vet_col_lat_offdiag = operator: the lateral off-diagonal terms (rad_m1_vetlat.cpp)
+  if (VlatOp() && vlat_ready && sph_geom) {
+    VetLatStencilAdd();
+    st_edges = true;
+  }
 }
 
 namespace {
@@ -4774,6 +4779,7 @@ void RadiationM1::ImplicitApplyOp(int xc, int yc) {
   ImplicitKrylovHalo(xc);
   if (impl_odc) {   // 7-point row + off-diagonal Eddington terms in one kernel
     ImplicitOffDiagOpC(xc, yc, 1.0, true, 0, nullptr);
+    if (VlatOp()) {VetLatOp(xc, yc, 1.0);}
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -4810,6 +4816,7 @@ void RadiationM1::ImplicitApplyOp(int xc, int yc) {
   if (od_now == M1_OD_OPERATOR) {
     ImplicitOffDiagOp(xc, yc, 1.0);
   }
+  if (VlatOp()) {VetLatOp(xc, yc, 1.0);}
 }
 
 //----------------------------------------------------------------------------------------
@@ -5590,6 +5597,7 @@ void RadiationM1::ImplicitBiCGStabEnd(int nit, bool fell_back) {
     if (od_now == M1_OD_OPERATOR) {
       ImplicitOffDiagOp(M1_IW_EP, M1_IW_TR, -1.0);
     }
+    if (VlatOp()) {VetLatOp(M1_IW_EP, M1_IW_TR, -1.0);}
     ImplicitTridiagSolve();
   } else {
     par_for("m1_impl_bcg_out", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -7613,6 +7621,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // M-matrix, so E' > 0 is no longer guaranteed by construction).
   od_now = impl_offdiag;
   vimp_now = impl_vimp;
+  // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
+  // form may drop it for the rest of the step, positivity below)
+  vlat_now = vlat_on && (vlat_odm > 0);
   // the closure under-relaxation and the start-of-step closure freeze.  Both are inert
   // at their defaults (w = 1, lag = pass), so phase C arithmetic is untouched.
   const Real crw = impl_crelax;
@@ -8083,6 +8094,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool gsd = (impl_gn_sw > 0) && gnewt;
   if (gsd) {rhist.reserve(impl_maxit);}
   for (it = 0; it < impl_maxit && !converged; ++it) {
+    // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k, ...
+    if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0) {
+      VetGdIterRebuild();
+    }
     // the gas Newton update of THIS pass (off after a detected stall, see above)
     const bool gnw = gnewt && !gnsw;
     int nin = -1;
@@ -8698,7 +8713,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool sphq = sph_q;
     const bool odl = (odm != M1_OD_NONE);
     // vet_col_lat (m1-vetcol-lat): the lagged lateral off-diagonal term M1SphLat
-    const bool vlat = vlat_on && vlat_od && vlat_ready && sph;
+    const bool vlat = vlat_now && vlat_ready && sph;
     auto vlt_ = tau_ten;
     const int c0l = M1_TT_LAT0;
     auto cx1v = pmy_pack->pcoord->x1v;
@@ -9362,6 +9377,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (odm == M1_OD_OPERATOR && !impl_odskip) {
         ImplicitOffDiagOp(M1_IW_EP, M1_IW_KB, 1.0);
       }
+      // vet_col_lat_offdiag = operator: the same for the lateral off-diagonal term (the
+      // assembly put -L_lat(E^k) into TR through M1SphLat; the operator adds L_lat(x))
+      if (VlatOp()) {VetLatOp(M1_IW_EP, M1_IW_KB, 1.0);}
       kdev_slot = std::min(it, 2);
       TmrMark(5);
       DetTrace("pre_bcg");
@@ -9409,7 +9427,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           vimp_nfall += 1.0;
         }
       }
-      if (odm == M1_OD_OPERATOR) {
+      const bool vlop = VlatOp();
+      if (odm == M1_OD_OPERATOR || vlop) {
         // POSITIVITY.  The cross-derivative coefficients have mixed signs, so the
         // 9-/19-point operator is not an M-matrix and E' > 0 is no longer guaranteed.
         // Measure the smallest E the solve produced and, if any cell is non-positive,
@@ -9442,8 +9461,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         od_emin = std::min(od_emin, emin);
         if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
         if (!(emin > 0.0)) {
-          od_now = M1_OD_NONE;
-          od_nfall += 1.0;
+          if (odm == M1_OD_OPERATOR) {
+            od_now = M1_OD_NONE;
+            od_nfall += 1.0;
+          }
+          // vet_col_lat_offdiag = operator: drop D_r,lat for the rest of the step (the
+          // assembly's term too: `none`, the M-matrix form), counted
+          if (vlop) {
+            vlat_now = false;
+            vlat_nfall += 1.0;
+          }
           if (vimp_now) {
             vimp_now = false;
             vimp_nfall += 1.0;

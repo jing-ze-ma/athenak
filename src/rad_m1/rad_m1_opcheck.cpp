@@ -433,7 +433,9 @@ void RadiationM1::ImplicitOpCheck() {
       if (tag.empty()) {
         // the legacy operators (no stored stencil): 7-point row + M1VimpRow + od terms
         impl_stencil = false;
-        if (impl_odc && odc.extent_int(0) == nmb) {
+        // (vet_col_lat_offdiag = operator: the fused od_cache kernel does not carry the
+        // lateral term and its reductions are formed inside it -- not compared)
+        if (impl_odc && odc.extent_int(0) == nmb && !VlatOp()) {
           fill();
           ImplicitKrylovHalo(XC);
           ImplicitOffDiagOpC(XC, YC, 1.0, true, 3, out);
