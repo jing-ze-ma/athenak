@@ -71,6 +71,10 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+
 namespace radm1 {
 
 namespace {
@@ -261,8 +265,6 @@ void RadiationM1::VetGdInit() {
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
-  const int c2 = indcs.nx2 + 2*indcs.ng;
-  const int c3 = indcs.nx3 + 2*indcs.ng;
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
@@ -283,15 +285,41 @@ void RadiationM1::VetGdInit() {
   if (vgd_n > M1_VGD_NMAX) {VgdFatal("too many directions");}
   const int n = vgd_n;
   Kokkos::realloc(vgd_dir, n, 4);
-  Kokkos::realloc(vgd_i, nmb, n, c3, c2, c1);
+  // the lateral band: the deepest reach of an upwind point in cells, over every shell:
+  // a NORM segment reaches sqrt(r_{l+1}^2 - r_l^2), a TURN segment 2 sqrt(r_l^2 -
+  // r_{l-1}^2) sideways at most; cell sizes r dtheta and r sin(theta) dphi
+  {
+    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmy_pack->pcoord->x1v);
+    auto &mbs = pmy_pack->pmb->mb_size;
+    const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
+    const double smin = std::min(std::sin(t0), std::sin(t1));
+    const double dmin = std::min(mbs.h_view(0).dx2, smin*mbs.h_view(0).dx3);
+    double reach = 0.0;
+    for (int l = indcs.is; l <= indcs.ie; ++l) {
+      const double r = x1v_h(0,l);
+      double a = 0.0;
+      if (l < indcs.ie) {a = std::max(a, std::sqrt(x1v_h(0,l+1)*x1v_h(0,l+1) - r*r));}
+      if (l > indcs.is) {a = std::max(a, 2.0*std::sqrt(r*r - x1v_h(0,l-1)*x1v_h(0,l-1)));}
+      reach = std::max(reach, a/(r*dmin));
+    }
+    const int wneed = static_cast<int>(std::ceil(reach)) + 2;
+    vgd_w = std::min(wneed, std::min(indcs.nx2, indcs.nx3));
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
+                << " cells (needed " << wneed << ")"
+                << ((vgd_w < wneed) ? ": MeshBlocks too small, the deepest near-tangent "
+                                      "reads are clamped (counted)" : "") << std::endl;
+    }
+  }
+  const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
+  Kokkos::realloc(vgd_i, nmb, n, c3w, c2w, c1);
   Kokkos::deep_copy(vgd_i, 0.0);
-  Kokkos::realloc(vgd_i_c, nmb, n, 1, 1, 1);
-  pbval_gd = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
-  pbval_gd->InitializeBuffers(n);
-  pbval_gd->SetVectorPairs(n, {});
-  Kokkos::realloc(vgd_wall, nmb, c3, c2);
-  Kokkos::realloc(vgd_map, nmb, c3, c2, n);
-  Kokkos::realloc(vgd_mr, nmb, c3, c2, n);
+  Kokkos::realloc(vgd_cs, nmb, 2, c3w, c2w, c1);
+  Kokkos::realloc(vgd_wall, nmb, c3w, c2w);
+  Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
+  Kokkos::realloc(vgd_mr, nmb, c3w, c2w, n);
+  VetGdHaloInit();
   vgd_alpha = -1.0;
   VetGdTables(VetGdAngle(pm->ncycle));
 }
@@ -318,8 +346,8 @@ void RadiationM1::VetGdTables(const Real alpha) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
-  const int c2 = indcs.nx2 + 2*indcs.ng;
-  const int c3 = indcs.nx3 + 2*indcs.ng;
+  const int c2 = indcs.nx2 + 2*vgd_w;
+  const int c3 = indcs.nx3 + 2*vgd_w;
   const int n = vgd_n;
   std::vector<double> d(vgd_base);
   const double ca = std::cos(alpha), sa = std::sin(alpha);
@@ -340,7 +368,7 @@ void RadiationM1::VetGdTables(const Real alpha) {
   // positions of the wall maps and branch tables: the face MIDPOINTS (x2v is the
   // volume centroid on sp; the periodic image of a midpoint is exact)
   auto &mbs = pmy_pack->pmb->mb_size;
-  const int jsg = indcs.js, ksg = indcs.ks;
+  const int jsg = vgd_w, ksg = vgd_w;   // the band-index origin of the active cells
   auto x2_h = [&](const int m, const int j) {
     return mbs.h_view(m).x2min + (j - jsg + 0.5)*mbs.h_view(m).dx2;
   };
@@ -430,20 +458,179 @@ void RadiationM1::VetGdTables(const Real alpha) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHaloInit
+//! \brief the 8 lateral neighbour slots of every local MeshBlock (one x1 block, uniform
+//! level; theta and phi periodic: the wrap of the logical location), message buffers
+
+void RadiationM1::VetGdHaloInit() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int g0 = pmy_pack->gids;
+  const int me = global_variable::my_rank;
+  int nb2 = 1, nb3 = 1;
+  for (int g = 0; g < pm->nmb_total; ++g) {
+    nb2 = std::max(nb2, pm->lloc_eachmb[g].lx2 + 1);
+    nb3 = std::max(nb3, pm->lloc_eachmb[g].lx3 + 1);
+  }
+  std::vector<int> gof(nb2*nb3, -1);
+  for (int g = 0; g < pm->nmb_total; ++g) {
+    LogicalLocation &l = pm->lloc_eachmb[g];
+    if (l.lx1 != 0) {VgdFatal("needs ONE MeshBlock along x1");}
+    gof[l.lx3*nb2 + l.lx2] = g;
+  }
+  for (int t = 0; t < nb2*nb3; ++t) {
+    if (gof[t] < 0) {VgdFatal("incomplete MeshBlock grid (SMR/AMR not supported)");}
+  }
+  Kokkos::realloc(vgd_hloc, 8*nmb);
+  auto hl_h = Kokkos::create_mirror_view(vgd_hloc);
+  vgd_hrank.assign(8*nmb, me);
+  vgd_hlid.assign(8*nmb, -1);
+  vgd_hmpi = false;
+  for (int m = 0; m < nmb; ++m) {
+    LogicalLocation &l = pm->lloc_eachmb[g0 + m];
+    for (int o = 0; o < 8; ++o) {
+      const int oo = (o < 4) ? o : (o + 1);       // skip the centre of the 3x3
+      const int dk = oo/3 - 1, dj = oo%3 - 1;
+      const int l2 = (l.lx2 + dj + nb2) % nb2;
+      const int l3 = (l.lx3 + dk + nb3) % nb3;
+      const int g = gof[l3*nb2 + l2];
+      const int rk = pm->rank_eachmb[g];
+      if (rk == me) {
+        hl_h(8*m + o) = g - g0;
+      } else {
+        hl_h(8*m + o) = -1;
+        vgd_hrank[8*m + o] = rk;
+        vgd_hlid[8*m + o] = g - pm->gids_eachrank[rk];
+        vgd_hmpi = true;
+      }
+    }
+  }
+  Kokkos::deep_copy(vgd_hloc, hl_h);
+  // the largest region (an edge slot: nx x W) times the most variables per message
+  // (all directions of one shell, or ln chi and ln S of every shell)
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int nreg = std::max(indcs.nx2, indcs.nx3)*vgd_w;
+  vgd_maxcnt = nreg*std::max(vgd_n, 2*c1);
+  if (vgd_hmpi) {
+    Kokkos::realloc(vgd_sbuf, nmb, 8, vgd_maxcnt);
+    Kokkos::realloc(vgd_rbuf, nmb, 8, vgd_maxcnt);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHalo
+//! \brief fill the lateral band (vgd_w cells) of a band-index array a(m, v, k, j, i),
+//! variables [0, nv), shells i in [i0, i1], from the 8 lateral neighbours' interiors:
+//! a local neighbour is copied directly (it reads only interiors, it writes only bands:
+//! no race), a remote one by one message per (block, slot)
+
+void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
+                            const int i1) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
+  const int ni = i1 - i0 + 1;
+  const int mx = std::max(nx2, nx3)*w*nv*ni;
+  auto hl_ = vgd_hloc;
+  auto a_ = a;
+  // region of slot o along one direction d = -1, 0, +1: (dest start, len, src start) =
+  // (0, w, nx), (w, nx, w), (w + nx, w, w) in the band index space
+  const bool mpi = vgd_hmpi;
+  auto sb_ = vgd_sbuf;
+  // local copies and the packing of the sends: one thread per (block, slot, element)
+  par_for("m1_vgd_halo", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
+  KOKKOS_LAMBDA(const int m, const int o, const int t) {
+    const int oo = (o < 4) ? o : (o + 1);
+    const int dk = oo/3 - 1, dj = oo%3 - 1;
+    const int jd = (dj < 0) ? 0 : ((dj == 0) ? w : (w + nx2));
+    const int jn = (dj == 0) ? nx2 : w;
+    const int js_ = (dj < 0) ? nx2 : w;
+    const int kd = (dk < 0) ? 0 : ((dk == 0) ? w : (w + nx3));
+    const int kn = (dk == 0) ? nx3 : w;
+    const int ks_ = (dk < 0) ? nx3 : w;
+    const int cnt = nv*kn*jn*ni;
+    if (t >= cnt) {return;}
+    const int v = t/(kn*jn*ni);
+    const int r1 = t - v*kn*jn*ni;
+    const int kk = r1/(jn*ni);
+    const int r2 = r1 - kk*jn*ni;
+    const int jj = r2/ni;
+    const int i = i0 + (r2 - jj*ni);
+    const int nl = hl_(8*m + o);
+    if (nl >= 0) {
+      a_(m,v,kd+kk,jd+jj,i) = a_(nl,v,ks_+kk,js_+jj,i);
+    } else if (mpi) {
+      // my interior that the remote neighbour needs in ITS opposite slot: the source
+      // region of the opposite direction in my own block
+      int js2, ks2;
+      js2 = (dj > 0) ? nx2 : w;
+      ks2 = (dk > 0) ? nx3 : w;
+      sb_(m,o,t) = a_(m,v,ks2+kk,js2+jj,i);
+    }
+  });
+#if MPI_PARALLEL_ENABLED
+  if (mpi) {
+    Kokkos::fence();
+    const int nmb = nmb1 + 1;
+    std::vector<MPI_Request> req;
+    auto rb_ = vgd_rbuf;
+    for (int m = 0; m < nmb; ++m) {
+      for (int o = 0; o < 8; ++o) {
+        if (vgd_hlid[8*m + o] < 0) {continue;}
+        const int oo = (o < 4) ? o : (o + 1);
+        const int dk = oo/3 - 1, dj = oo%3 - 1;
+        const int jn = (dj == 0) ? nx2 : w, kn = (dk == 0) ? nx3 : w;
+        const int cnt = nv*kn*jn*ni;
+        const int rk = vgd_hrank[8*m + o];
+        // receive into my slot o from the neighbour; send my data to its slot 7 - o
+        const int rtag = 7000 + 8*(pmy_pack->pmb->mb_gid.h_view(m) % 4000) + o;
+        const int stag = 7000 + 8*((pmy_pack->pmesh->gids_eachrank[rk]
+                                    + vgd_hlid[8*m + o]) % 4000) + (7 - o);
+        req.emplace_back();
+        MPI_Irecv(rb_.data() + (static_cast<size_t>(m)*8 + o)*vgd_maxcnt, cnt,
+                  MPI_ATHENA_REAL, rk, rtag, MPI_COMM_WORLD, &req.back());
+        req.emplace_back();
+        MPI_Isend(sb_.data() + (static_cast<size_t>(m)*8 + o)*vgd_maxcnt, cnt,
+                  MPI_ATHENA_REAL, rk, stag, MPI_COMM_WORLD, &req.back());
+      }
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    par_for("m1_vgd_unpack", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
+    KOKKOS_LAMBDA(const int m, const int o, const int t) {
+      if (hl_(8*m + o) >= 0) {return;}
+      const int oo = (o < 4) ? o : (o + 1);
+      const int dk = oo/3 - 1, dj = oo%3 - 1;
+      const int jd = (dj < 0) ? 0 : ((dj == 0) ? w : (w + nx2));
+      const int kd = (dk < 0) ? 0 : ((dk == 0) ? w : (w + nx3));
+      const int jn = (dj == 0) ? nx2 : w, kn = (dk == 0) ? nx3 : w;
+      const int cnt = nv*kn*jn*ni;
+      if (t >= cnt) {return;}
+      const int v = t/(kn*jn*ni);
+      const int r1 = t - v*kn*jn*ni;
+      const int kk = r1/(jn*ni);
+      const int r2 = r1 - kk*jn*ni;
+      const int jj = r2/ni;
+      const int i = i0 + (r2 - jj*ni);
+      a_(m,v,kd+kk,jd+jj,i) = rb_(m,o,t);
+    });
+  }
+#endif
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdWall
 //! \brief re-index the wall ghost intensities after an exchange (local-frame periodicity)
 
-void RadiationM1::VetGdWall() {
+void RadiationM1::VetGdWall(const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int c2 = indcs.nx2 + 2*indcs.ng, c3 = indcs.nx3 + 2*indcs.ng;
+  const int c2 = indcs.nx2 + 2*vgd_w, c3 = indcs.nx3 + 2*vgd_w;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int n = vgd_n;
   auto vi_ = vgd_i;
   auto wl_ = vgd_wall;
   auto mp_ = vgd_map;
-  const int ilo = is + vlat_icut;
-  par_for("m1_vgd_wall", DevExeSpace(), 0, nmb1, 0, c3 - 1, 0, c2 - 1, ilo, ie,
+  par_for("m1_vgd_wall", DevExeSpace(), 0, nmb1, 0, c3 - 1, 0, c2 - 1, i0, i1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (wl_(m,k,j) == 0) {return;}
     Real buf[M1_VGD_NMAX];
@@ -459,14 +646,16 @@ void RadiationM1::VetGdWall() {
 void RadiationM1::VetGdSweep() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, ng = indcs.ng;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
+  const int is = indcs.is, ie = indcs.ie;
+  // the band index space of vgd_i / vgd_cs / the tables: active cells at [wb, wb + nx)
+  const int wb = vgd_w;
+  const int js = wb, je = wb + indcs.nx2 - 1;
+  const int ks = wb, ke = wb + indcs.nx3 - 1;
   const int n1 = indcs.nx1;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int n = vgd_n;
   const int lcut = vlat_icut;
-  auto cs_ = vlat_cs;
+  auto cs_ = vgd_cs;
   auto vi_ = vgd_i;
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
@@ -475,8 +664,8 @@ void RadiationM1::VetGdSweep() {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  const int jlo = js - ng, jhi = je + ng - 1;
-  const int klo = ks - ng, khi = ke + ng - 1;
+  const int jlo = 0, jhi = je + wb - 1;
+  const int klo = 0, khi = ke + wb - 1;
   const Real twopi = 2.0*M_PI;
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
@@ -673,6 +862,12 @@ void RadiationM1::VetGdSweep() {
         }
         vi_(m,d,k,j,i) = iv;
       });
+      // the shell is complete on every block: its lateral band, exact (not lagged)
+      Kokkos::Timer th;
+      VetGdHalo(vgd_i, n, i, i);
+      VetGdWall(i, i);
+      Kokkos::fence();
+      vgd_thalo += th.seconds();
     }
   }
 }
@@ -691,6 +886,7 @@ void RadiationM1::VetGdMoments() {
   const int n = vgd_n;
   const int ilo = is + vlat_icut;
   auto vi_ = vgd_i;
+  const int og = vgd_w - indcs.ng;   // mesh index -> band index of vgd_i
   auto dir_ = vgd_dir;
   auto tt_ = tau_ten;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -711,7 +907,7 @@ void RadiationM1::VetGdMoments() {
       const Real a = nx*st*cp + ny*st*sp + nz*ct;
       const Real b = nx*ct*cp + ny*ct*sp - nz*st;
       const Real c = -nx*sp + ny*cp;
-      const Real wi = dir_(d,3)*vi_(m,d,k,j,i);
+      const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
       jm += wi;
       rr += wi*a*a;
       rt += wi*a*b;
@@ -775,9 +971,9 @@ void RadiationM1::VetGdMoments() {
     for (int d = 0; d < n; ++d) {
       const Real a = dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
       const Real w = dir_(d,3);
-      jt += w*vi_(m,d,k,j,ie);
-      jb += w*vi_(m,d,k,j,ie-1);
-      ht += w*a*vi_(m,d,k,j,ie);
+      jt += w*vi_(m,d,k+og,j+og,ie);
+      jb += w*vi_(m,d,k+og,j+og,ie-1);
+      ht += w*a*vi_(m,d,k+og,j+og,ie);
     }
     const Real rr = cx1v(m,ie)/cx1f(m,ie+1);
     const Real hf = ht*rr*rr;
@@ -812,9 +1008,11 @@ void RadiationM1::VetGdSmooth() {
       par_for("m1_vgd_sm", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (dir == 0) {
-          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k,j-1,i) + 2.0*tt_(m,c0,k,j,i) + tt_(m,c0,k,j+1,i));
+          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k,j-1,i) + 2.0*tt_(m,c0,k,j,i)
+                               + tt_(m,c0,k,j+1,i));
         } else {
-          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k-1,j,i) + 2.0*tt_(m,c0,k,j,i) + tt_(m,c0,k+1,j,i));
+          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k-1,j,i) + 2.0*tt_(m,c0,k,j,i)
+                               + tt_(m,c0,k+1,j,i));
         }
       });
       par_for("m1_vgd_smc", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
@@ -833,6 +1031,21 @@ void RadiationM1::VetGdSmooth() {
 void RadiationM1::VetGdBuild() {
   Kokkos::Timer tm;
   VetLatSweep(0);
+  {
+    // ln chi, ln S in the band index space, the lateral band filled exactly
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    const int og = vgd_w - indcs.ng;
+    const int ilo = indcs.is + vlat_icut, ie = indcs.ie;
+    auto cs_ = vlat_cs;
+    auto cw_ = vgd_cs;
+    par_for("m1_vgd_csw", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks,
+            indcs.ke, indcs.js, indcs.je, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      cw_(m,0,k+og,j+og,i) = cs_(m,0,k,j,i);
+      cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
+    });
+    VetGdHalo(vgd_cs, 2, ilo, ie);
+  }
   Kokkos::fence();
   vgd_tsrc += tm.seconds();
   // vet_gd_rotate_every: a new z-angle at the first build of a block of N cycles (the
@@ -845,16 +1058,16 @@ void RadiationM1::VetGdBuild() {
     rotated = true;
   }
   // vet_gd_iter: sweeps per ordinary build (lagged block inflow re-converged each build)
-  const int nit = (vlat_nbuild == 0 || rotated) ? std::max(vlat_iinit, vgd_iter)
-                                                 : vgd_iter;
+  // the per-shell halo makes one sweep exact; vet_gd_iter > 1 only repeats it
+  (void) rotated;
+  const int nit = vgd_iter;
   for (int it = 0; it < nit; ++it) {
     tm.reset();
     VetGdSweep();
     Kokkos::fence();
     vgd_tswp += tm.seconds();
     tm.reset();
-    VetLatExchange(vgd_i, vgd_i_c, pbval_gd);
-    VetGdWall();
+    // (the per-shell halo inside the sweep is exact: no inflow to re-converge)
     Kokkos::fence();
     vgd_texc += tm.seconds();
     vlat_ncall += 1.0;

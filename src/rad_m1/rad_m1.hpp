@@ -1397,13 +1397,26 @@ class RadiationM1 {
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
   DvceArray4D<Real> vgd_mr;    // (m, k, j, d): n . r_hat of the value stored there
   MeshBoundaryValuesCC *pbval_gd = nullptr;
+  // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
+  // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled
+  // shell by shell from the 8 lateral neighbours (on-rank copies + MPI)
+  int vgd_w = 0;
+  DvceArray5D<Real> vgd_cs;    // (m, 2, k, j, i): ln chi, ln S with the vgd_w band
+  DvceArray1D<int> vgd_hloc;   // (8 nmb): local index of the slot's neighbour, -1 remote
+  std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): the remote neighbour's rank, lid
+  DvceArray3D<Real> vgd_sbuf, vgd_rbuf;   // (nmb, 8, maxcnt) message buffers
+  int vgd_maxcnt = 0;
+  bool vgd_hmpi = false;
+  Real vgd_thalo = 0.0;
+  void VetGdHaloInit();
+  void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
   void VetGdTables(const Real alpha);
   void VetGdBuild();
   void VetGdSweep();
-  void VetGdWall();
+  void VetGdWall(const int i0, const int i1);
   void VetGdMoments();
   void VetGdSmooth();
 
