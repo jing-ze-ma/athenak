@@ -1425,9 +1425,12 @@ void RadiationM1::VetGdRealDiag() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = tau_ten;
   auto u0_ = u0;
-  auto cs_ = vlat_cs;
+  auto iw_ = iw;   // tau_top from the transport opacity M1_IW_KT (= exp of vet_gd's ln chi)
   auto cx1f_ = pmy_pack->pcoord->xx1f;
   auto st_ = ost;
+  // the LAT slots exist only with vet_col_lat / vet_gd; plain vet_col: D from slot 0
+  // (D_rr = f_K along r_hat) and the isotropic tangential part
+  const bool lat = (static_cast<int>(tau_ten.extent(1)) >= M1_TT_LAT0 + M1_TT_NLAT);
   const bool hst = impl_stencil && (ost.extent(0) > 0);
   const int nst = hst ? static_cast<int>(ost.extent(1)) : 0;
   const Real cl = c_light;
@@ -1447,20 +1450,20 @@ void RadiationM1::VetGdRealDiag() {
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     Real tau = 0.0;
     for (int i = ie; i >= is; --i) {
-      const Real dtc = exp(cs_(m,0,k,j,i))*(cx1f_(m,i+1) - cx1f_(m,i));
+      const Real dtc = iw_(m,M1_IW_KT,k,j,i)*(cx1f_(m,i+1) - cx1f_(m,i));
       const Real tc = tau + 0.5*dtc;
       tau += dtc;
       const int b = (tc >= 1.0) ? 0 : ((tc >= 0.1) ? 1 : ((tc >= 0.01) ? 2
                     : ((tc >= 1.0e-3) ? 3 : 4)));
       const Real drr = tt_(m,0,k,j,i);
-      const Real a = tt_(m,c0+3,k,j,i);
+      const Real a = lat ? tt_(m,c0+3,k,j,i) : 0.0;
       Real d[3][3];
       d[0][0] = drr;
       d[1][1] = 0.5*(1.0 - drr) + a;
       d[2][2] = 0.5*(1.0 - drr) - a;
-      d[0][1] = d[1][0] = tt_(m,c0+1,k,j,i);
-      d[0][2] = d[2][0] = tt_(m,c0+2,k,j,i);
-      d[1][2] = d[2][1] = tt_(m,c0+4,k,j,i);
+      d[0][1] = d[1][0] = lat ? tt_(m,c0+1,k,j,i) : 0.0;
+      d[0][2] = d[2][0] = lat ? tt_(m,c0+2,k,j,i) : 0.0;
+      d[1][2] = d[2][1] = lat ? tt_(m,c0+4,k,j,i) : 0.0;
       const Real e = u0_(m,M1_E,k,j,i);
       Real f[3] = {0.0, 0.0, 0.0};
       if (e > 0.0) {

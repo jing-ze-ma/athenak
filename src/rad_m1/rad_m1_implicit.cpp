@@ -10560,7 +10560,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // DIAGNOSTIC (env VGD_RDIAG = N > 0, vet_gd): realizability of the tensor against the
   // new (E, F) and the sign structure of the last pass's stencil, every N solves
-  if (vgd_on && vlat_ready) {VetGdRealDiag();}
+  if (vet_col && tau_ready) {VetGdRealDiag();}
   // time2_vet_col = rebuild: E and T of the stage-1 solution for the stage-2 build
   if (vet_col && t2_vcmode == 2 && t2s == M1_T2S_STAGE1) {
     Time2VetColSaveY1();
