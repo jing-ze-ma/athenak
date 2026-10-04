@@ -786,6 +786,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
       std::exit(EXIT_SUCCESS);
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_seam_mask")) {
+      vgd_seam = std::max(0, pin->GetInteger("rad_m1","vet_gd_seam_mask"));
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_thin_decades")) {
       vgd_tdec = pin->GetReal("rad_m1","vet_gd_thin_decades");
     }

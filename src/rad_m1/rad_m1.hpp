@@ -1447,6 +1447,7 @@ class RadiationM1 {
   Real vgd_tdec = 1.0;
   bool vgd_tsmooth = false;
   int vgd_tparts = 3;
+  int vgd_seam = 0;             // vet_gd_seam_mask (TEST)
   bool vlat_src_ep = false;
   DvceArray4D<Real> vgd_fk0;   // (m, k, j, i): slot 0 before the fold
   Real vgd_nrb = 0.0, vgd_trb = 0.0;

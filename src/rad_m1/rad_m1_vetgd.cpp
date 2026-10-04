@@ -1053,6 +1053,23 @@ void RadiationM1::VetGdMoments() {
       }
     });
   }
+  // vet_gd_seam_mask = n > 0 (TEST, read only when named, default 0): the LATERAL parts
+  // (LAT1..LAT5) zeroed in the first and last n theta cells of the MESH (the index-
+  // periodic theta seam, where the wall maps are nearest-direction approximations)
+  if (vgd_seam > 0) {
+    const Real t0m = pmy_pack->pmesh->mesh_size.x2min;
+    const Real t1m = pmy_pack->pmesh->mesh_size.x2max;
+    const int ns = vgd_seam;
+    auto &mbz = pmy_pack->pmb->mb_size;
+    par_for("m1_vgd_seam", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d2 = mbz.d_view(m).dx2;
+      const Real th = mbz.d_view(m).x2min + (j - js + 0.5)*d2;
+      if (th - t0m < ns*d2 || t1m - th < ns*d2) {
+        for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
+      }
+    });
+  }
   if (!repq) {return;}
   // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's FACE form,
   // q = H(face)/J_f, clamped to [vet_col_surface_qmin, _qmax]: H(face) = H_r of the top
