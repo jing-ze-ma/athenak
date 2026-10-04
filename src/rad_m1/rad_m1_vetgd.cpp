@@ -1168,7 +1168,7 @@ void RadiationM1::VetGdMoments() {
       }
     });
   }
-  if (!repq) {return;}
+  if (!repq || vgd_noq) {return;}
   // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's FACE form,
   // q = H(face)/J_f, clamped to [vet_col_surface_qmin, _qmax]: H(face) = H_r of the top
   // cell carried to the face as r^2 H (free streaming over the half cell), J_f = J of the
@@ -1275,6 +1275,9 @@ void RadiationM1::VetGdBuild() {
     vgd_ttab += tt.seconds();
     rotated = true;
   }
+  // vet_gd_twin: the RAY-NOISE pattern of the set on the laterally uniform field (the
+  // shell means of chi and S), same angle, subtracted below
+  if (vgd_twin) {VetGdTwin(0);}
   // the per-shell halo makes one sweep exact; vet_gd_iter > 1 only repeats it
   (void) rotated;
   const int nit = vgd_iter;
@@ -1287,6 +1290,7 @@ void RadiationM1::VetGdBuild() {
   }
   tm.reset();
   VetGdMoments();
+  if (vgd_twin) {VetGdTwin(1);}
   if (vgd_smooth > 0) {VetGdSmooth();}
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
@@ -1670,6 +1674,101 @@ void RadiationM1::VetGdRealDiag() {
     }
     std::cout << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdTwin
+//! \brief vet_gd_twin (read only when named, default false): uniform-state twin
+//! subtraction of the direction-sampling (ray) noise of the set.
+//!  stage 0 (before the real sweep): the band arrays vgd_cs set to the SHELL MEANS of chi
+//!    and S (all ranks; arithmetic means of chi and S, logged), one sweep + moments with
+//!    the same angle (no Marshak q) -> the LAT slots, kept in vgd_twl; vgd_cs restored.
+//!  stage 1 (after the real moments): LAT0 -= (twin LAT0 - its shell mean), LAT1..5 -=
+//!    twin LAT1..5 (the exact laterally uniform tensor is diagonal, D_tt = D_pp, and
+//!    laterally constant: its noise-free value is the shell mean of the twin's D_rr).
+//!  A laterally uniform state then gives a laterally uniform D exactly.
+
+void RadiationM1::VetGdTwin(const int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int ilo = is + vlat_icut;
+  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3;
+  auto tt_ = tau_ten;
+  // shell sums over the active lateral cells (all ranks) of f(m, k, j, i)
+  auto shell_mean = [&](auto f, DvceArray1D<Real> &out) {
+    Kokkos::deep_copy(out, 0.0);
+    auto o_ = out;
+    par_for("m1_vgd_tw_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Kokkos::atomic_add(&o_(i), f(m,k,j,i));
+    });
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), out);
+#if MPI_PARALLEL_ENABLED
+    std::vector<Real> g(c1);
+    MPI_Allreduce(h.data(), g.data(), c1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    for (int i = 0; i < c1; ++i) {h(i) = g[i];}
+#endif
+    for (int i = 0; i < c1; ++i) {h(i) /= ncol;}
+    Kokkos::deep_copy(out, h);
+  };
+  if (vgd_twm.extent(0) == 0) {
+    Kokkos::realloc(vgd_twm, c1);
+    Kokkos::realloc(vgd_twm2, c1);
+    Kokkos::realloc(vgd_twl, pmy_pack->nmb_thispack, M1_TT_NLAT, indcs.nx3 + 2*indcs.ng,
+                    indcs.nx2 + 2*indcs.ng, c1);
+    Kokkos::realloc(vgd_cs0, vgd_cs.extent(0), vgd_cs.extent(1), vgd_cs.extent(2),
+                    vgd_cs.extent(3), vgd_cs.extent(4));
+  }
+  auto twl_ = vgd_twl;
+  if (stage == 0) {
+    Kokkos::Timer tm;
+    const int og = vgd_w - indcs.ng;
+    auto cw_ = vgd_cs;
+    auto c0_ = vgd_cs0;
+    Kokkos::deep_copy(c0_, cw_);
+    auto ch = [=] KOKKOS_FUNCTION (int m, int k, int j, int i) {
+      return exp(cw_(m,0,k+og,j+og,i));
+    };
+    auto sh = [=] KOKKOS_FUNCTION (int m, int k, int j, int i) {
+      return exp(cw_(m,1,k+og,j+og,i));
+    };
+    shell_mean(ch, vgd_twm);
+    shell_mean(sh, vgd_twm2);
+    auto mc_ = vgd_twm;
+    auto ms_ = vgd_twm2;
+    const int n3 = static_cast<int>(cw_.extent(2)) - 1;
+    const int n2 = static_cast<int>(cw_.extent(3)) - 1;
+    par_for("m1_vgd_tw_uni", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      cw_(m,0,k,j,i) = log(fmax(mc_(i), 1.0e-300));
+      cw_(m,1,k,j,i) = log(fmax(ms_(i), 1.0e-300));
+    });
+    VetGdSweep();
+    vgd_noq = true;
+    VetGdMoments();
+    vgd_noq = false;
+    par_for("m1_vgd_tw_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < M1_TT_NLAT; ++c) {twl_(m,c,k,j,i) = tt_(m,M1_TT_LAT0+c,k,j,i);}
+    });
+    Kokkos::deep_copy(cw_, c0_);
+    Kokkos::fence();
+    vgd_ttwin += tm.seconds();
+    return;
+  }
+  // stage 1: subtract the noise pattern
+  auto t0f = [=] KOKKOS_FUNCTION (int m, int k, int j, int i) {return twl_(m,0,k,j,i);};
+  shell_mean(t0f, vgd_twm);
+  auto mt_ = vgd_twm;
+  par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - mt_(i);
+    for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
+  });
 }
 
 } // namespace radm1

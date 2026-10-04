@@ -1420,6 +1420,12 @@ class RadiationM1 {
   // vet_gd_wall_interp (read only when named, default false): wall ghosts from the 3
   // nearest same-branch directions with weights (m, k, j, d, 3)
   bool vgd_wint = false;
+  // vet_gd_twin (read only when named, default false): uniform-state twin subtraction
+  bool vgd_twin = false, vgd_noq = false;
+  DvceArray1D<Real> vgd_twm, vgd_twm2;
+  DvceArray5D<Real> vgd_twl, vgd_cs0;
+  Real vgd_ttwin = 0.0;
+  void VetGdTwin(const int stage);
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
   MeshBoundaryValuesCC *pbval_gd = nullptr;
