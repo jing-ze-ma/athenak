@@ -744,8 +744,13 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
                 vgd_pscnt[ws][p]*nvi, MPI_ATHENA_REAL, rk, 7001, MPI_COMM_WORLD,
                 &req.back());
     }
+    vgd_tpost += tq.seconds();
     MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
     vgd_tmpi += tq.seconds();
+    vgd_nexch += 1.0;
+    for (size_t p = 0; p < vgd_prk.size(); ++p) {
+      vgd_nbyte += static_cast<Real>(vgd_pscnt[ws][p])*nvi*sizeof(Real);
+    }
     par_for("m1_vgd_unpack", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
     KOKKOS_LAMBDA(const int m, const int o, const int t) {
       if (hl_(8*m + o) >= 0) {return;}

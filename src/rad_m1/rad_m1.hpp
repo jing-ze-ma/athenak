@@ -1446,6 +1446,7 @@ class RadiationM1 {
   int vgd_maxcnt = 0;
   bool vgd_hmpi = false;
   Real vgd_thalo = 0.0, vgd_tmpi = 0.0, vgd_ttab = 0.0;
+  Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0;   // halo diagnostics (rank 0)
   bool vgd_time_halo = false;
   // vet_gd_rebuild_every = k > 0 (read only when named; 0 = the tensor lagged to the
   // start of the step): rebuild the gd tensor inside the implicit solve at Picard passes
