@@ -1016,7 +1016,9 @@ void RadiationM1::VetColBuild() {
   Kokkos::fence();
   vcol_time += timer.seconds();
   if (dmp) {VetColDumpColumn(static_cast<int>(vcol_ncall));}
-  if (vcol_spread > static_cast<int>(vcol_ncall)) {VetColSpread(static_cast<int>(vcol_ncall));}
+  if (vcol_spread > static_cast<int>(vcol_ncall)) {
+    VetColSpread(static_cast<int>(vcol_ncall));
+  }
   vcol_ncall += 1.0;
   vcol_built = true;
 }
