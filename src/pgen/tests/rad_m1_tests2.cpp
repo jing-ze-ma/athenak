@@ -1432,6 +1432,10 @@ void RadM1CellDump(const std::string &pre, Mesh *pm) {
   auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
   auto &size = pmbp->pmb->mb_size;
   auto &pan = pmbp->pmb->mb_panel;
+  // STAGE CS2: the gas momenta (covariant) and the cell F (covariant) as well
+  const bool hyd = (pmbp->phydro != nullptr);
+  auto uh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                hyd ? pmbp->phydro->u0 : pmbp->pradm1->u0);
   std::string fn = pre + "." + std::to_string(global_variable::my_rank) + ".txt";
   FILE *f = std::fopen(fn.c_str(), "w");
   if (f == nullptr) return;
@@ -1445,8 +1449,12 @@ void RadM1CellDump(const std::string &pre, Mesh *pm) {
                                                 size.h_view(m).x3max);
         Real q[3];
         cubed_sphere::PanelToCart(pan.h_view(m), xi, eta, q);
-        std::fprintf(f, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", pan.h_view(m),
+        std::fprintf(f, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e", pan.h_view(m),
                      xi, eta, q[0], q[1], q[2], vol(m,k,j,i), u(m,radm1::M1_E,k,j,i));
+        std::fprintf(f, " %.17e %.17e %.17e %.17e %.17e %.17e\n",
+                     hyd ? uh(m,IM1,k,j,i) : 0.0, hyd ? uh(m,IM2,k,j,i) : 0.0,
+                     hyd ? uh(m,IM3,k,j,i) : 0.0, u(m,radm1::M1_F1,k,j,i),
+                     u(m,radm1::M1_F2,k,j,i), u(m,radm1::M1_F3,k,j,i));
       }
     }
   }
