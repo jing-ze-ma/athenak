@@ -359,6 +359,10 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell; the
   // global diagnostic env CS_NORESAMP_CC does the same for every object.
   bool cs_noresample = false;
+  // cs_perm_pairs (default false): the tangential vector pairs of this object are
+  // face-normal components; a seam permutes them with the axis signs instead of the
+  // covariant metric transform (bvals_cc.cpp).  Set by the implicit M1 on pbval_th.
+  bool cs_perm_pairs = false;
 
   //functions
   void InitSendIndices(MeshBoundaryBuffer &b,int o1,int o2,int o3,int f1,int f2) override;

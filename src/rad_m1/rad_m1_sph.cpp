@@ -269,7 +269,11 @@ void RadiationM1::CubedS1Init() {
   cs_seam.sync_device();
   Kokkos::deep_copy(csg2, g2h);
   Kokkos::deep_copy(csg3, g3h);
-  if (pbval_th != nullptr) {pbval_th->cs_noresample = true;}
+  if (pbval_th != nullptr) {
+    pbval_th->cs_noresample = true;
+    // STAGE CS2: (N2,N3), (A2,A3), (V2,V3) of the work array are face-normal components
+    pbval_th->cs_perm_pairs = true;
+  }
   if (pbval_tq != nullptr) {pbval_tq->cs_noresample = true;}
   if (pbval_kr != nullptr) {pbval_kr->cs_noresample = true;}
 }

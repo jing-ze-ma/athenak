@@ -2179,11 +2179,11 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
   ImplicitHaloCopy(*pa, nq, c0, false);
-  // STAGE CS2 (C3): the seam transform takes (N2, N3) as a covariant pair on the panel
-  // basis, which does not keep |n| = 1 across the shear: renormalise the unit flux
-  // direction of every GHOST cell with the panel metric, |n|^2 = n1^2 + g^ab n_a n_b
-  // (g^ab = [[1,-c],[-c,1]]/s^2).  A zero n (closure = eddington, or vet_col about
-  // r_hat whose tangential n is 0) is left alone, so this is a no-op for what cs runs.
+  // STAGE CS2 (C3): (N2, N3) of the work array are FACE-NORMAL components (as A and V)
+  // and cross a seam by the signed axis permutation (cs_perm_pairs, CubedS1Init), which
+  // keeps |n|; it is renormalised in the ghost cells all the same (to round-off a no-op),
+  // so that a later change of the seam map cannot hand the closure a non-unit n.  A zero
+  // n (eddington; vet_col about r_hat has n = r_hat) is left alone.
   if (cs_geom && nq == M1_NHALO_T) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -2191,14 +2191,12 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
     const int n1 = indcs.nx1 + 2*indcs.ng, n2 = indcs.nx2 + 2*indcs.ng;
     const int n3 = indcs.nx3 + 2*indcs.ng;
     auto iw_ = iw;
-    auto ccl = pmy_pack->pcoord->cos_cell;
     par_for("m1_cs_nrenorm", DevExeSpace(), 0, pmy_pack->nmb_thispack-1, 0, n3-1, 0, n2-1,
             0, n1-1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) return;
-      const Real c = ccl(m,k,j), s2 = 1.0 - c*c;
       const Real a = iw_(m,M1_IW_N1,k,j,i), b = iw_(m,M1_IW_N2,k,j,i);
       const Real d = iw_(m,M1_IW_N3,k,j,i);
-      const Real nn = a*a + (b*b + d*d - 2.0*c*b*d)/s2;
+      const Real nn = a*a + b*b + d*d;
       if (!(nn > 0.0)) return;
       const Real f = 1.0/sqrt(nn);
       iw_(m,M1_IW_N1,k,j,i) = a*f;
