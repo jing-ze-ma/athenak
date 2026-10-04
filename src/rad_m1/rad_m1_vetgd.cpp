@@ -671,6 +671,32 @@ void RadiationM1::VetGdMoments() {
       tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
     }
   });
+  // vet_gd_thin_taumin > 0: taper the LATERAL parts (LAT1..LAT5: D_r,lat and the
+  // tangential anisotropy, both lagged terms of the face equations) to 0 in the far thin
+  // top, log-linearly from 1 at tau_top = 10 taumin to 0 at tau_top = taumin (tau_top of
+  // the column above the cell centre).  D_rr (LAT0, implicit) is kept.  The accuracy
+  // region of the closure is below the photosphere; the lagged terms lose their fixed
+  // point in thin cells at c dt >> dx (C1_RESULTS.md, GD_RESULTS.md sect. 5)
+  if (vgd_taumin > 0.0) {
+    auto cs_ = vlat_cs;
+    auto cx1f_ = pmy_pack->pcoord->xx1f;
+    const Real tlo = vgd_taumin;
+    const Real lgw = log(10.0);
+    par_for("m1_vgd_taper", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real tau = 0.0;
+      for (int i = ie; i >= ilo; --i) {
+        const Real dtc = exp(cs_(m,0,k,j,i))*(cx1f_(m,i+1) - cx1f_(m,i));
+        const Real tc = tau + 0.5*dtc;
+        tau += dtc;
+        const Real w = (tc <= tlo) ? 0.0
+                       : ((tc >= 10.0*tlo) ? 1.0 : log(tc/tlo)/lgw);
+        if (w < 1.0) {
+          for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) *= w;}
+        }
+      }
+    });
+  }
   if (!repq) {return;}
   // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's FACE form,
   // q = H(face)/J_f, clamped to [vet_col_surface_qmin, _qmax]: H(face) = H_r of the top
