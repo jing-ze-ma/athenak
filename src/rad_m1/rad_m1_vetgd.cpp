@@ -746,7 +746,9 @@ void RadiationM1::VetGdBuild() {
     VetGdTables(al);
     rotated = true;
   }
-  const int nit = (vlat_nbuild == 0 || rotated) ? vlat_iinit : 1;
+  // vet_gd_iter: sweeps per ordinary build (lagged block inflow re-converged each build)
+  const int nit = (vlat_nbuild == 0 || rotated) ? std::max(vlat_iinit, vgd_iter)
+                                                 : vgd_iter;
   for (int it = 0; it < nit; ++it) {
     tm.reset();
     VetGdSweep();
