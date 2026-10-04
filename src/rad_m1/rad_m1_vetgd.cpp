@@ -53,7 +53,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -166,8 +168,16 @@ void RadiationM1::VetGdInit() {
   Kokkos::realloc(vgd_map, nmb, c3, c2, n);
   auto w_h = Kokkos::create_mirror_view(vgd_wall);
   auto mp_h = Kokkos::create_mirror_view(vgd_map);
-  auto x2_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x2v);
-  auto x3_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x3v);
+  // positions of the wall maps and branch tables: the face MIDPOINTS (x2v is the
+  // volume centroid on sp; the periodic image of a midpoint is exact)
+  auto &mbs = pmy_pack->pmb->mb_size;
+  const int jsg = indcs.js, ksg = indcs.ks;
+  auto x2_h = [&](const int m, const int j) {
+    return mbs.h_view(m).x2min + (j - jsg + 0.5)*mbs.h_view(m).dx2;
+  };
+  auto x3_h = [&](const int m, const int k) {
+    return mbs.h_view(m).x3min + (k - ksg + 0.5)*mbs.h_view(m).dx3;
+  };
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
   const double p0 = pm->mesh_size.x3min, p1 = pm->mesh_size.x3max;
   int nwall = 0, nexact = 0, nmap = 0;
@@ -286,8 +296,6 @@ void RadiationM1::VetGdSweep() {
   auto cnt_ = vlat_cnt;
   auto mr_ = vgd_mr;
   auto cx1v = pmy_pack->pcoord->x1v;
-  auto cx2v = pmy_pack->pcoord->x2v;
-  auto cx3v = pmy_pack->pcoord->x3v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const int jlo = js - ng, jhi = je + ng - 1;
@@ -301,7 +309,9 @@ void RadiationM1::VetGdSweep() {
       par_for("m1_vgd_shell", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-        const Real th = cx2v(m,j), ph = cx3v(m,k);
+        // the face midpoints (uniform in index space, as the bilinear reads assume)
+        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
         const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
         if (inw == (mr >= 0.0)) {return;}
@@ -448,13 +458,13 @@ void RadiationM1::VetGdMoments() {
   auto vi_ = vgd_i;
   auto dir_ = vgd_dir;
   auto tt_ = tau_ten;
-  auto cx2v = pmy_pack->pcoord->x2v;
-  auto cx3v = pmy_pack->pcoord->x3v;
+  auto &mbsize = pmy_pack->pmb->mb_size;
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
     if (i < ilo) {return;}
-    const Real th = cx2v(m,j), ph = cx3v(m,k);
+    const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+    const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
     const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
     Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
     for (int d = 0; d < n; ++d) {
@@ -513,6 +523,19 @@ void RadiationM1::VetGdBuild() {
   vgd_tmom += tm.seconds();
   auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cnt);
   vlat_nclamp = cnt_h(0);
+  // debug (gate): VGD_DUMP_I=<file>: rank 0's intensities incl. ghosts, first build
+  const char *fi = std::getenv("VGD_DUMP_I");
+  if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
+    auto vi_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i);
+    FILE *fp = std::fopen(fi, "wb");
+    if (fp != nullptr) {
+      int64_t sh[5];
+      for (int c = 0; c < 5; ++c) {sh[c] = static_cast<int64_t>(vi_h.extent(c));}
+      std::fwrite(sh, sizeof(int64_t), 5, fp);
+      std::fwrite(vi_h.data(), sizeof(Real), vi_h.size(), fp);
+      std::fclose(fp);
+    }
+  }
 }
 
 } // namespace radm1
