@@ -303,6 +303,8 @@ constexpr int M1_POS_GAS_DE = 2;   // energy (erg, volume-weighted) moved gas <-
 constexpr int M1_POS_FLR    = 3;   // cell-solves where E was raised to e_floor
 constexpr int M1_POS_FLR_DE = 4;   // floor energy taken from the gas (erg)
 constexpr int M1_POS_FLR_UN = 5;   // floor energy NOT covered by the gas (created, erg)
+constexpr int M1_POS_FCLIP  = 6;   // cell-solves whose |F| > c E was scaled back
+constexpr int M1_POS_FCLIPM = 7;   // sum of (|F|/(c E) - 1) over those cell-solves
 constexpr int M1_POS_N      = 8;
 constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
 constexpr int M1_IFW_HCL = 1;   // alpha * (coefficient of E'_L in F_HLL), >= 0

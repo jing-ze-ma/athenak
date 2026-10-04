@@ -8094,7 +8094,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool gsd = (impl_gn_sw > 0) && gnewt;
   if (gsd) {rhist.reserve(impl_maxit);}
   for (it = 0; it < impl_maxit && !converged; ++it) {
-    // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k, ...
+    // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k
     if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0) {
       VetGdIterRebuild();
     }
@@ -10453,6 +10453,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
       }
     }
+    {   // diagnostic counters only: the flux scaled back to |F| = c E by M1ApplyLimits
+      const Real fq = sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
+      if (ep > efl && fq > cl*ep) {
+        Kokkos::atomic_add(&pc_(M1_POS_FCLIP), 1.0);
+        Kokkos::atomic_add(&pc_(M1_POS_FCLIPM), fq/(cl*ep) - 1.0);
+      }
+    }
     M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
@@ -10550,6 +10557,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   }
 
+  // DIAGNOSTIC (env VGD_RDIAG = N > 0, vet_gd): realizability of the tensor against the
+  // new (E, F) and the sign structure of the last pass's stencil, every N solves
+  if (vgd_on && vlat_ready) {VetGdRealDiag();}
   // time2_vet_col = rebuild: E and T of the stage-1 solution for the stage-2 build
   if (vet_col && t2_vcmode == 2 && t2s == M1_T2S_STAGE1) {
     Time2VetColSaveY1();

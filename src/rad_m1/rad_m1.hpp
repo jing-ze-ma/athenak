@@ -1451,7 +1451,9 @@ class RadiationM1 {
   DvceArray4D<Real> vgd_fk0;   // (m, k, j, i): slot 0 before the fold
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   void VetGdIterRebuild();
-  void VetGdMms();   // env VGD_TIME_HALO=1: fence before the halo timer
+  void VetGdMms();
+  void VetGdRealDiag();
+  int vgd_rdiag = -1, vgd_rdcnt = 0;   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,

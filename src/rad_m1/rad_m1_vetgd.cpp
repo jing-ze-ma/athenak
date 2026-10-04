@@ -1400,4 +1400,155 @@ void RadiationM1::VetGdMms() {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdRealDiag
+//! \brief DIAGNOSTIC (env VGD_RDIAG = N, every N-th implicit solve; nothing written to
+//! the state): per band of the column optical depth tau_top (from the gd build's ln chi):
+//!  (1) realizability of the closure against the new state: lambda_min of D - f f^T,
+//!      D the tensor of tau_ten (D_rr slot 0; D_tt, D_pp = (1 - D_rr)/2 +- a; D_rt, D_rp,
+//!      D_tp the LAT slots), f = F/(c E) (u0, physical components); |f| > 1 cells;
+//!  (2) the sign structure of the last pass's 19-point stencil: rows with a POSITIVE
+//!      off-diagonal (not an M-matrix row) and max sum(positive off-diag)/diag;
+//!  plus the write-back |F| > c E scale-back counters (M1_POS_FCLIP, FCLIPM) since the
+//!  last report.
+
+void RadiationM1::VetGdRealDiag() {
+  if (vgd_rdiag < 0) {
+    const char *ev = std::getenv("VGD_RDIAG");
+    vgd_rdiag = (ev != nullptr) ? std::max(0, std::atoi(ev)) : 0;
+  }
+  if (vgd_rdiag <= 0) {return;}
+  if ((++vgd_rdcnt % vgd_rdiag) != 0) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto tt_ = tau_ten;
+  auto u0_ = u0;
+  auto cs_ = vlat_cs;
+  auto cx1f_ = pmy_pack->pcoord->xx1f;
+  auto st_ = ost;
+  const bool hst = impl_stencil && (ost.extent(0) > 0);
+  const int nst = hst ? static_cast<int>(ost.extent(1)) : 0;
+  const Real cl = c_light;
+  const int c0 = M1_TT_LAT0;
+  constexpr int NB = 5, NQ = 7;
+  // per band: ncell, n(lmin<0), min lmin, n(|f|>1), n(pos rows), max ratio, min Drr
+  DvceArray2D<Real> acc("vgd_rd", NB, NQ);
+  {
+    auto a0 = Kokkos::create_mirror_view(acc);
+    for (int b = 0; b < NB; ++b) {
+      for (int q = 0; q < NQ; ++q) {a0(b,q) = (q == 2 || q == 6) ? 1.0e300 : 0.0;}
+    }
+    Kokkos::deep_copy(acc, a0);
+  }
+  auto ac_ = acc;
+  par_for("m1_vgd_rdiag", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    Real tau = 0.0;
+    for (int i = ie; i >= is; --i) {
+      const Real dtc = exp(cs_(m,0,k,j,i))*(cx1f_(m,i+1) - cx1f_(m,i));
+      const Real tc = tau + 0.5*dtc;
+      tau += dtc;
+      const int b = (tc >= 1.0) ? 0 : ((tc >= 0.1) ? 1 : ((tc >= 0.01) ? 2
+                    : ((tc >= 1.0e-3) ? 3 : 4)));
+      const Real drr = tt_(m,0,k,j,i);
+      const Real a = tt_(m,c0+3,k,j,i);
+      Real d[3][3];
+      d[0][0] = drr;
+      d[1][1] = 0.5*(1.0 - drr) + a;
+      d[2][2] = 0.5*(1.0 - drr) - a;
+      d[0][1] = d[1][0] = tt_(m,c0+1,k,j,i);
+      d[0][2] = d[2][0] = tt_(m,c0+2,k,j,i);
+      d[1][2] = d[2][1] = tt_(m,c0+4,k,j,i);
+      const Real e = u0_(m,M1_E,k,j,i);
+      Real f[3] = {0.0, 0.0, 0.0};
+      if (e > 0.0) {
+        for (int q = 0; q < 3; ++q) {f[q] = u0_(m,M1_F1+q,k,j,i)/(cl*e);}
+      }
+      Real mm[3][3];
+      for (int p = 0; p < 3; ++p) {
+        for (int q = 0; q < 3; ++q) {mm[p][q] = d[p][q] - f[p]*f[q];}
+      }
+      // smallest eigenvalue of the symmetric 3x3 (trigonometric closed form)
+      const Real p1 = mm[0][1]*mm[0][1] + mm[0][2]*mm[0][2] + mm[1][2]*mm[1][2];
+      const Real qm = (mm[0][0] + mm[1][1] + mm[2][2])/3.0;
+      Real lmin;
+      if (p1 < 1.0e-300) {
+        lmin = fmin(mm[0][0], fmin(mm[1][1], mm[2][2]));
+      } else {
+        const Real p2 = (mm[0][0] - qm)*(mm[0][0] - qm) + (mm[1][1] - qm)*(mm[1][1] - qm)
+                        + (mm[2][2] - qm)*(mm[2][2] - qm) + 2.0*p1;
+        const Real pp = sqrt(p2/6.0);
+        Real bm[3][3];
+        for (int p = 0; p < 3; ++p) {
+          for (int q = 0; q < 3; ++q) {bm[p][q] = (mm[p][q] - ((p == q) ? qm : 0.0))/pp;}
+        }
+        const Real det = bm[0][0]*(bm[1][1]*bm[2][2] - bm[1][2]*bm[2][1])
+                         - bm[0][1]*(bm[1][0]*bm[2][2] - bm[1][2]*bm[2][0])
+                         + bm[0][2]*(bm[1][0]*bm[2][1] - bm[1][1]*bm[2][0]);
+        const Real r = fmin(fmax(0.5*det, -1.0), 1.0);
+        const Real phi = acos(r)/3.0;
+        lmin = qm + 2.0*pp*cos(phi + 2.0*M_PI/3.0);
+      }
+      const Real fn = sqrt(f[0]*f[0] + f[1]*f[1] + f[2]*f[2]);
+      Kokkos::atomic_add(&ac_(b,0), 1.0);
+      if (lmin < -1.0e-12) {Kokkos::atomic_add(&ac_(b,1), 1.0);}
+      Kokkos::atomic_min(&ac_(b,2), lmin);
+      if (fn > 1.0 + 1.0e-12) {Kokkos::atomic_add(&ac_(b,3), 1.0);}
+      Kokkos::atomic_min(&ac_(b,6), drr - 1.0/3.0);
+      if (hst) {
+        const Real dg = st_(m,0,k,j,i);
+        Real pos = 0.0;
+        for (int q = 1; q < nst; ++q) {pos += fmax(st_(m,q,k,j,i), 0.0);}
+        if (pos > 0.0) {
+          Kokkos::atomic_add(&ac_(b,4), 1.0);
+          Kokkos::atomic_max(&ac_(b,5), pos/fmax(fabs(dg), 1.0e-300));
+        }
+      }
+    }
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acc);
+  Real loc[NB*NQ];
+  for (int b = 0; b < NB; ++b) {
+    for (int q = 0; q < NQ; ++q) {loc[b*NQ + q] = h(b,q);}
+  }
+  auto pch = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
+  Real fc[2] = {pch(M1_POS_FCLIP), pch(M1_POS_FCLIPM)};
+#if MPI_PARALLEL_ENABLED
+  {
+    Real g[NB*NQ];
+    Real gs[NB*NQ];
+    for (int t = 0; t < NB*NQ; ++t) {gs[t] = loc[t];}
+    MPI_Allreduce(gs, g, NB*NQ, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    Real gmn[NB*NQ], gmx[NB*NQ];
+    MPI_Allreduce(gs, gmn, NB*NQ, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(gs, gmx, NB*NQ, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    for (int b = 0; b < NB; ++b) {
+      for (int q = 0; q < NQ; ++q) {
+        const int t = b*NQ + q;
+        loc[t] = (q == 2 || q == 6) ? gmn[t] : ((q == 5) ? gmx[t] : g[t]);
+      }
+    }
+    Real fg[2];
+    MPI_Allreduce(fc, fg, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    fc[0] = fg[0];
+    fc[1] = fg[1];
+  }
+#endif
+  if (global_variable::my_rank == 0) {
+    const char *bn[NB] = {">1", "0.1-1", "0.01-0.1", "1e-3-0.01", "<1e-3"};
+    std::cout << "VGD_RDIAG cycle=" << pmy_pack->pmesh->ncycle << " time="
+              << pmy_pack->pmesh->time << " Fclip(cum)=" << fc[0] << " sum(|f|-1)="
+              << fc[1];
+    for (int b = 0; b < NB; ++b) {
+      const Real *v = &loc[b*NQ];
+      std::cout << " | tau " << bn[b] << ": n=" << v[0] << " lmin<0 " << v[1]
+                << " lmin " << v[2] << " |f|>1 " << v[3] << " posrow " << v[4]
+                << " maxpos/diag " << v[5] << " min(Drr-1/3) " << v[6];
+    }
+    std::cout << std::endl;
+  }
+}
+
 } // namespace radm1
