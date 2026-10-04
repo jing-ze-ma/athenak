@@ -251,10 +251,10 @@ void RadiationM1::CubedS1Init() {
       }
     }
   }
-  m1bcs.template modify<HostMemSpace>();
-  m1bcs.template sync<DevExeSpace>();
-  cs_seam.template modify<HostMemSpace>();
-  cs_seam.template sync<DevExeSpace>();
+  m1bcs.modify_host();
+  m1bcs.sync_device();
+  cs_seam.modify_host();
+  cs_seam.sync_device();
   Kokkos::deep_copy(csg2, g2h);
   Kokkos::deep_copy(csg3, g3h);
   if (pbval_th != nullptr) {pbval_th->cs_noresample = true;}

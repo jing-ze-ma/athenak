@@ -234,8 +234,8 @@ void RadiationM1::ImplicitOpCheck() {
       lab.h_view(m,2) = static_cast<int>(std::lround(
           0.5*(pmy_pack->pmb->mb_size.h_view(m).x3min + 1.0)*npan));
     }
-    lab.template modify<HostMemSpace>();
-    lab.template sync<DevExeSpace>();
+    lab.modify_host();
+    lab.sync_device();
   }
   auto lab_ = lab.d_view;
   const int npn = pm->mesh_indcs.nx2;
