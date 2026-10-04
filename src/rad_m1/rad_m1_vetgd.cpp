@@ -334,6 +334,10 @@ void RadiationM1::VetGdInit() {
   Kokkos::realloc(vgd_wall, nmb, c3w, c2w);
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
   Kokkos::realloc(vgd_mr, nmb, c3w, c2w, n);
+  if (vgd_wint) {
+    Kokkos::realloc(vgd_m3, nmb, c3w, c2w, n, 3);
+    Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
+  }
   VetGdHaloInit();
   if (vgd_rbe > 0) {
     Kokkos::realloc(vgd_fk0, nmb, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng, c1);
@@ -384,6 +388,13 @@ void RadiationM1::VetGdTables(const Real alpha) {
   // side's intensities; new(d) = old(map(d)), map = nearest set direction to M n_d
   auto w_h = Kokkos::create_mirror_view(vgd_wall);
   auto mp_h = Kokkos::create_mirror_view(vgd_map);
+  const bool wint = vgd_wint;
+  auto m3_h = Kokkos::create_mirror_view(vgd_m3);
+  auto w3_h = Kokkos::create_mirror_view(vgd_w3);
+  std::vector<double> mt_v(wint ? static_cast<size_t>(nmb)*c3*c2*n : 0, 0.0);
+  auto mt_h = [&](int m, int k, int j, int q) -> double & {
+    return mt_v[((static_cast<size_t>(m)*c3 + k)*c2 + j)*n + q];
+  };
   // positions of the wall maps and branch tables: the face MIDPOINTS (x2v is the
   // volume centroid on sp; the periodic image of a midpoint is exact)
   auto &mbs = pmy_pack->pmb->mb_size;
@@ -432,6 +443,64 @@ void RadiationM1::VetGdTables(const Real alpha) {
           mp_h(m,k,j,q) = best;
           ++nmap;
           if (bd > 1.0 - 1.0e-12) {++nexact;}
+          if (wint) {
+            // vet_gd_wall_interp: the exactly rotated direction M n_q from the 3 nearest
+            // set directions OF THE SAME BRANCH at the source cell (spherical
+            // barycentric weights when all >= 0, else inverse-angle), weights sum to 1;
+            // an exact match keeps the single direction (the phi period: bitwise)
+            const double mt = nx*st*cp + ny*st*sp + nz*ct;   // target branch n.r_hat
+            int r3[3] = {best, best, best};
+            double w3[3] = {1.0, 0.0, 0.0};
+            if (bd <= 1.0 - 1.0e-12) {
+              double b3[3] = {-2.0, -2.0, -2.0};
+              for (int r = 0; r < n; ++r) {
+                const double br = d[4*r]*sw*cpw + d[4*r+1]*sw*spw + d[4*r+2]*cw;
+                if ((br >= 0.0) != (mt >= 0.0)) {continue;}
+                const double dd = mx*d[4*r] + my*d[4*r+1] + mz*d[4*r+2];
+                if (dd > b3[0]) {
+                  b3[2] = b3[1]; r3[2] = r3[1]; b3[1] = b3[0]; r3[1] = r3[0];
+                  b3[0] = dd; r3[0] = r;
+                } else if (dd > b3[1]) {
+                  b3[2] = b3[1]; r3[2] = r3[1]; b3[1] = dd; r3[1] = r;
+                } else if (dd > b3[2]) {
+                  b3[2] = dd; r3[2] = r;
+                }
+              }
+              if (b3[2] > -2.0) {
+                // solve [n_r0 n_r1 n_r2] w = m (Cramer)
+                const double *u = &d[4*r3[0]], *v = &d[4*r3[1]], *x = &d[4*r3[2]];
+                auto det3 = [](const double *a, const double *b, const double *c) {
+                  return a[0]*(b[1]*c[2] - b[2]*c[1]) - a[1]*(b[0]*c[2] - b[2]*c[0])
+                         + a[2]*(b[0]*c[1] - b[1]*c[0]);
+                };
+                const double mv[3] = {mx, my, mz};
+                const double dt0 = det3(u, v, x);
+                bool ok = std::fabs(dt0) > 1.0e-12;
+                double ww[3] = {0.0, 0.0, 0.0};
+                if (ok) {
+                  ww[0] = det3(mv, v, x)/dt0;
+                  ww[1] = det3(u, mv, x)/dt0;
+                  ww[2] = det3(u, v, mv)/dt0;
+                  ok = (ww[0] >= -1.0e-12) && (ww[1] >= -1.0e-12) && (ww[2] >= -1.0e-12);
+                }
+                if (!ok) {
+                  for (int t = 0; t < 3; ++t) {
+                    ww[t] = 1.0/std::max(std::acos(std::min(b3[t], 1.0)), 1.0e-9);
+                  }
+                }
+                const double ws = std::max(ww[0], 0.0) + std::max(ww[1], 0.0)
+                                  + std::max(ww[2], 0.0);
+                for (int t = 0; t < 3; ++t) {w3[t] = std::max(ww[t], 0.0)/ws;}
+              } else {
+                r3[0] = r3[1] = r3[2] = best;
+              }
+            }
+            for (int t = 0; t < 3; ++t) {
+              m3_h(m,k,j,q,t) = r3[t];
+              w3_h(m,k,j,q,t) = w3[t];
+            }
+            mt_h(m,k,j,q) = mt;
+          }
         }
       }
     }
@@ -452,11 +521,18 @@ void RadiationM1::VetGdTables(const Real alpha) {
         for (int q = 0; q < n; ++q) {
           const int r = mp_h(m,k,j,q);
           mr_h(m,k,j,q) = d[4*r]*st*cp + d[4*r+1]*st*sp + d[4*r+2]*ct;
+          // interpolated wall ghost: the branch of the TARGET direction (the sources
+          // were chosen on that branch)
+          if (wint && w_h(m,k,j) != 0) {mr_h(m,k,j,q) = mt_h(m,k,j,q);}
         }
       }
     }
   }
   Kokkos::deep_copy(vgd_mr, mr_h);
+  if (wint) {
+    Kokkos::deep_copy(vgd_m3, m3_h);
+    Kokkos::deep_copy(vgd_w3, w3_h);
+  }
   Kokkos::deep_copy(vgd_wall, w_h);
   Kokkos::deep_copy(vgd_map, mp_h);
   const bool first = (vgd_alpha < 0.0);
@@ -607,6 +683,9 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
   auto a_ = a;
   auto wl_ = vgd_wall;
   auto mp_ = vgd_map;
+  const bool wint = vgd_wint;
+  auto m3_ = vgd_m3;
+  auto w3_ = vgd_w3;
   // region of slot o along one direction d = -1, 0, +1 with depth ws: (dest start, len,
   // neighbour source start) = (w - ws, ws, w + nx - ws), (w, nx, w), (w + nx, ws, w);
   // wall ghosts (mapd) take direction mp(v) of the source: the wall re-indexing folded
@@ -683,9 +762,18 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
       const int r2 = r1 - kk*jn*ni;
       const int jj = r2/ni;
       const int ii = r2 - jj*ni;
+      const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nvi;
+      if (mapd && wint && wl_(m,kd+kk,jd+jj) != 0) {
+        Real val = 0.0;
+        for (int q = 0; q < 3; ++q) {
+          const int vq = m3_(m,kd+kk,jd+jj,v,q);
+          val += w3_(m,kd+kk,jd+jj,v,q)*rb_(rb0 + ((vq*kn + kk)*jn + jj)*ni + ii);
+        }
+        a_(m,v,kd+kk,jd+jj,i0+ii) = val;
+        return;
+      }
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
-      a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(static_cast<size_t>(ro_(ws,8*m + o))*nvi
-                                      + ((vs*kn + kk)*jn + jj)*ni + ii);
+      a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(rb0 + ((vs*kn + kk)*jn + jj)*ni + ii);
     });
   }
 #endif
@@ -740,6 +828,9 @@ void RadiationM1::VetGdSweep() {
   auto wl_ = vgd_wall;
   auto mp_ = vgd_map;
   const int nx2b = indcs.nx2, nx3b = indcs.nx3;
+  const bool wint = vgd_wint;
+  auto m3_ = vgd_m3;
+  auto w3_ = vgd_w3;
   const bool bandx = vgd_bandx;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -761,6 +852,13 @@ void RadiationM1::VetGdSweep() {
           const int oo = 3*(ek + 1) + (ej + 1);
           const int nl = hl_(8*m + ((oo < 4) ? oo : (oo - 1)));
           if (nl < 0) {return vi_(m,d,kk,jj,ii);}
+          if (wint && wl_(m,kk,jj) != 0) {
+            Real v = 0.0;
+            for (int t = 0; t < 3; ++t) {
+              v += w3_(m,kk,jj,d,t)*vi_(nl,m3_(m,kk,jj,d,t),kk - ek*nx3b,jj - ej*nx2b,ii);
+            }
+            return v;
+          }
           const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,d) : d;
           return vi_(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
         };
@@ -1442,7 +1540,7 @@ void RadiationM1::VetGdRealDiag() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = tau_ten;
   auto u0_ = u0;
-  auto iw_ = iw;   // tau_top from the transport opacity M1_IW_KT (= exp of vet_gd's ln chi)
+  auto iw_ = iw;   // tau_top from the transport opacity M1_IW_KT
   auto cx1f_ = pmy_pack->pcoord->xx1f;
   auto st_ = ost;
   // the LAT slots exist only with vet_col_lat / vet_gd; plain vet_col: D from slot 0

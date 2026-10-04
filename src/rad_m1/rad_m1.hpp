@@ -1417,6 +1417,11 @@ class RadiationM1 {
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
   DvceArray4D<Real> vgd_mr;    // (m, k, j, d): n . r_hat of the value stored there
+  // vet_gd_wall_interp (read only when named, default false): wall ghosts from the 3
+  // nearest same-branch directions with weights (m, k, j, d, 3)
+  bool vgd_wint = false;
+  Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
+  DvceArray5D<Real> vgd_w3;
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
   // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled
