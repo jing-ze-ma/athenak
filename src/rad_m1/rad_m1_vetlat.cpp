@@ -284,6 +284,7 @@ void RadiationM1::VetLatOdMax() {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = tau_ten;
+  const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
   {
     Real omx = 0.0;
     const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
@@ -296,8 +297,12 @@ void RadiationM1::VetLatOdMax() {
         t /= nj;
         const int k = ks + (t % nk);
         const int m = t/nk;
-        const Real v = fmax(fabs(tt_(m,M1_TT_LAT0+1,k,j,i)),
-                            fabs(tt_(m,M1_TT_LAT0+2,k,j,i)));
+        Real v = fmax(fabs(tt_(m,M1_TT_LAT0+1,k,j,i)),
+                      fabs(tt_(m,M1_TT_LAT0+2,k,j,i)));
+        if (tn) {
+          v = fmax(v, fmax(fabs(tt_(m,M1_TT_LAT0+3,k,j,i)),
+                           fabs(tt_(m,M1_TT_LAT0+4,k,j,i))));
+        }
         mx = (v > mx) ? v : mx;
       }, Kokkos::Max<Real>(omx));
 #if MPI_PARALLEL_ENABLED
@@ -919,6 +924,7 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
   const int cx = xc, cy = yc;
   const Real sg = sgn;
   const int c0 = M1_TT_LAT0;
+  const bool tanop = vgd_on && vgd_tan && vgd_tanop;
   par_for("m1_vlat_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -948,8 +954,13 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
     const Real iv = dt/cvol(m,k,j,i);
     Real y = 0.0;
     auto lat = [&](const int d, const int kq, const int jq, const int iq) {
-      return M1SphLat(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, il, iu,
-                      jl, ju, kl, ku, cx);
+      Real v = M1SphLat(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, il, iu,
+                        jl, ju, kl, ku, cx);
+      if (tanop && d > 0) {   // vet_gd: the tangential cross terms in the operator too
+        v += M1SphTan(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, jl, ju, kl,
+                      ku, cx);
+      }
+      return v;
     };
     // the two x1 faces
     if (i < ie || !topb) {
@@ -1044,6 +1055,7 @@ void RadiationM1::VetLatStencilAdd() {
   auto cvol = pmy_pack->pcoord->volume;
   auto carea = pmy_pack->pcoord->area;
   const int c0 = M1_TT_LAT0;
+  const bool tanop = vgd_on && vgd_tan && vgd_tanop;
   par_for("m1_vlat_stencil", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -1106,6 +1118,31 @@ void RadiationM1::VetLatStencilAdd() {
           const Real f = w/(r*r*r*(ra - rb));
           add(ia, qj, qk, f*ra*ra*ra*tt_(m,c0+d,qk,qj,ia));
           add(ib, qj, qk, -f*rb*rb*rb*tt_(m,c0+d,qk,qj,ib));
+        }
+        if (tanop) {
+          // M1SphTan (vet_gd), the same clamps: d = 1: (1/(r sin)) d_ph (D_tp E) +
+          // 2 cot a E / r; d = 2: (1/(r sin^2)) d_th (sin^2 D_tp E)
+          const Real sn = sin(cx2v(m,qj));
+          const Real ct = cos(cx2v(m,qj))/sn;
+          if (d == 1) {
+            const int ka = (thrd && qk + 1 <= hi[2]) ? qk + 1 : qk;
+            const int kb = (thrd && qk - 1 >= lo[2]) ? qk - 1 : qk;
+            if (ka != kb) {
+              const Real f = w/(r*sn*(cx3v(m,ka) - cx3v(m,kb)));
+              add(qi, qj, ka, f*tt_(m,c0+4,ka,qj,qi));
+              add(qi, qj, kb, -f*tt_(m,c0+4,kb,qj,qi));
+            }
+            add(qi, qj, qk, w*2.0*ct*tt_(m,c0+3,qk,qj,qi)/r);
+          } else {
+            const int ja = (qj + 1 <= hi[1]) ? qj + 1 : qj;
+            const int jb = (qj - 1 >= lo[1]) ? qj - 1 : qj;
+            if (ja != jb) {
+              const Real sa = sin(cx2v(m,ja)), sb = sin(cx2v(m,jb));
+              const Real f = w/(r*sn*sn*(cx2v(m,ja) - cx2v(m,jb)));
+              add(qi, ja, qk, f*sa*sa*tt_(m,c0+4,qk,ja,qi));
+              add(qi, jb, qk, -f*sb*sb*tt_(m,c0+4,qk,jb,qi));
+            }
+          }
         }
       }
     };

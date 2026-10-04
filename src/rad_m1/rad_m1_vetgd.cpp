@@ -1178,4 +1178,211 @@ void RadiationM1::VetGdBuild() {
   }
 }
 
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdMms
+//! \brief <rad_m1>/vet_gd_mms = true (test only; prints and exits): manufactured-solution
+//! check of the discrete div(E D) the implicit transport assembles on the sp wedge, with
+//! a smooth E and an anisotropic D whose six components are all nonzero.  The discrete
+//! terms are evaluated with the SAME helpers and face formulas as the kernels
+//! (M1SphDrr on x1 faces, M1EddDiag + the vet_gd deviation a on x2/x3 faces, M1SphLat,
+//! M1SphTan, cell values averaged to the face), on host copies of the coordinates, and
+//! compared per term with the analytic physical components
+//!   r:  d_r P_rr + (2 P_rr - P_tt - P_pp)/r                         [R1 x1 face diag]
+//!       (1/r) d_th P_rt + cot P_rt/r + (1/(r sin)) d_ph P_rp        [R2 M1SphLat d 0]
+//!   th: (1/r) d_th P_tt                                             [T1 x2 face diag]
+//!       (1/r^3) d_r (r^3 P_rt)                                      [T2 M1SphLat d 1]
+//!       cot (P_tt - P_pp)/r + (1/(r sin)) d_ph P_tp                 [T3 M1SphTan d 1]
+//!   ph: (1/(r sin)) d_ph P_pp                                       [P1 x3 face diag]
+//!       (1/r^3) d_r (r^3 P_rp)                                      [P2 M1SphLat d 2]
+//!       (1/r) d_th P_tp + 2 cot P_tp/r                              [P3 M1SphTan d 2]
+//! (P_tt + P_pp = (1 - D_rr) E: the deviation a has no radial part.)  Errors: max over
+//! the faces at least 2 cells from every block edge, relative to the max |component|.
+
+void RadiationM1::VetGdMms() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int c1 = indcs.nx1 + 2*ng, c2 = indcs.nx2 + 2*ng, c3 = indcs.nx3 + 2*ng;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto x1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+  auto x2v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x2v);
+  auto x3v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x3v);
+  auto x1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx1f);
+  auto &dxf = pmy_pack->pcoord->dxface;
+  auto d1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dxf.x1f);
+  auto d2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dxf.x2f);
+  auto d3f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dxf.x3f);
+  auto &mbs = pmy_pack->pmb->mb_size;
+  const double r0 = pm->mesh_size.x1min, r1 = pm->mesh_size.x1max;
+  const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
+  const double p0 = pm->mesh_size.x3min, p1 = pm->mesh_size.x3max;
+  // the manufactured fields (normalised coordinates u, v, w in [0, 1])
+  auto U = [&](double r) {return (r - r0)/(r1 - r0);};
+  auto V = [&](double t) {return (t - t0)/(t1 - t0);};
+  auto W = [&](double p) {return (p - p0)/(p1 - p0);};
+  auto fE = [&](double r, double t, double p) {
+    return (1.0 + 0.5*U(r)*U(r))*(1.0 + 0.2*std::sin(3.0*V(t))*std::cos(2.0*W(p)));
+  };
+  auto fDrr = [&](double r, double t, double p) {
+    return 0.5 + 0.1*std::sin(2.0*V(t) + 1.0)*std::cos(W(p))*(1.0 + U(r));
+  };
+  auto fA = [&](double r, double t, double p) {
+    return 0.05*std::cos(V(t))*std::sin(2.0*W(p) + 0.3)*(1.0 + 0.5*U(r));
+  };
+  auto fDrt = [&](double r, double t, double p) {
+    return 0.08*std::sin(V(t) + 0.2)*std::cos(W(p))*(1.0 + U(r)*U(r));
+  };
+  auto fDrp = [&](double r, double t, double p) {
+    return 0.06*std::cos(2.0*V(t))*std::sin(W(p) + 0.4)*(1.0 + U(r));
+  };
+  auto fDtp = [&](double r, double t, double p) {
+    return 0.04*std::sin(3.0*V(t) + 0.1)*std::cos(2.0*W(p))*(1.0 + 0.7*U(r));
+  };
+  // physical P components
+  auto Prr = [&](double r, double t, double p) {return fDrr(r,t,p)*fE(r,t,p);};
+  auto Ptt = [&](double r, double t, double p) {
+    return (0.5*(1.0 - fDrr(r,t,p)) + fA(r,t,p))*fE(r,t,p);
+  };
+  auto Ppp = [&](double r, double t, double p) {
+    return (0.5*(1.0 - fDrr(r,t,p)) - fA(r,t,p))*fE(r,t,p);
+  };
+  auto Prt = [&](double r, double t, double p) {return fDrt(r,t,p)*fE(r,t,p);};
+  auto Prp = [&](double r, double t, double p) {return fDrp(r,t,p)*fE(r,t,p);};
+  auto Ptp = [&](double r, double t, double p) {return fDtp(r,t,p)*fE(r,t,p);};
+  // 4th-order central derivative of an analytic function along one coordinate
+  auto der = [&](auto f, int c, double r, double t, double p) {
+    const double h = 1.0e-3*((c == 0) ? (r1 - r0) : ((c == 1) ? (t1 - t0) : (p1 - p0)));
+    auto g = [&](double s) {
+      return (c == 0) ? f(r + s, t, p) : ((c == 1) ? f(r, t + s, p) : f(r, t, p + s));
+    };
+    return (8.0*(g(h) - g(-h)) - (g(2.0*h) - g(-2.0*h)))/(12.0*h);
+  };
+  // host work arrays as the kernels read them
+  HostArray5D<Real> iwh("mms_iw", nmb, M1_NIW, c3, c2, c1);
+  HostArray5D<Real> tth("mms_tt", nmb, M1_TT_LAT0 + M1_TT_NLAT, c3, c2, c1);
+  const int c0 = M1_TT_LAT0;
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = 0; k < c3; ++k) {
+      for (int j = 0; j < c2; ++j) {
+        for (int i = 0; i < c1; ++i) {
+          const double r = x1v(m,i), t = x2v(m,j), p = x3v(m,k);
+          iwh(m,M1_IW_EP,k,j,i) = fE(r,t,p);
+          iwh(m,M1_IW_WCHI,k,j,i) = fDrr(r,t,p);
+          iwh(m,M1_IW_N1,k,j,i) = 1.0;
+          iwh(m,M1_IW_N1+1,k,j,i) = 0.0;
+          iwh(m,M1_IW_N1+2,k,j,i) = 0.0;
+          tth(m,c0+1,k,j,i) = fDrt(r,t,p);
+          tth(m,c0+2,k,j,i) = fDrp(r,t,p);
+          tth(m,c0+3,k,j,i) = fA(r,t,p);
+          tth(m,c0+4,k,j,i) = fDtp(r,t,p);
+          tth(m,c0+5,k,j,i) = -fA(r,t,p);
+        }
+      }
+    }
+  }
+  const int il = 0, iu = c1 - 1, jl = 0, ju = c2 - 1, kl = 0, ku = c3 - 1;
+  const int ep = M1_IW_EP;
+  double emax[8] = {0.0}, amax[3] = {0.0};
+  const char *nm[8] = {"R1 x1-face diag", "R2 SphLat d0", "T1 x2-face diag",
+                       "T2 SphLat d1", "T3 SphTan d1", "P1 x3-face diag", "P2 SphLat d2",
+                       "P3 SphTan d2"};
+  auto lat = [&](int m, int d, int k, int j, int i) {
+    return M1SphLat(iwh, tth, c0, x1v, x2v, x3v, m, d, k, j, i, true, il, iu, jl, ju, kl,
+                    ku, ep);
+  };
+  auto tan = [&](int m, int d, int k, int j, int i) {
+    return M1SphTan(iwh, tth, c0, x1v, x2v, x3v, m, d, k, j, i, true, jl, ju, kl, ku, ep);
+  };
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = ks + 2; k <= ke - 2; ++k) {
+      for (int j = js + 2; j <= je - 2; ++j) {
+        for (int i = is + 2; i <= ie - 2; ++i) {
+          const double r = x1v(m,i), t = x2v(m,j), p = x3v(m,k);
+          // x1 face i+1/2 (between i and ip), as the S2 row
+          {
+            const int ip = i + 1;
+            const double rf = x1f(m,ip);
+            const double si = SQR(x1v(m,i)/rf), sp = SQR(x1v(m,ip)/rf);
+            const double wi = M1SphDrr(iwh(m,M1_IW_WCHI,k,j,i), 1.0, si);
+            const double wp = M1SphDrr(iwh(m,M1_IW_WCHI,k,j,ip), 1.0, sp);
+            const double g1 = (wp*iwh(m,ep,k,j,ip) - wi*iwh(m,ep,k,j,i))/d1f(m,k,j,ip);
+            const double g2 = 0.5*(lat(m,0,k,j,i) + lat(m,0,k,j,ip));
+            const double a1 = der(Prr,0,rf,t,p) + (2.0*Prr(rf,t,p) - Ptt(rf,t,p)
+                                                    - Ppp(rf,t,p))/rf;
+            const double a2 = der(Prt,1,rf,t,p)/rf
+                              + std::cos(t)/std::sin(t)*Prt(rf,t,p)/rf
+                              + der(Prp,2,rf,t,p)/(rf*std::sin(t));
+            emax[0] = std::max(emax[0], std::fabs(g1 - a1));
+            emax[1] = std::max(emax[1], std::fabs(g2 - a2));
+            amax[0] = std::max(amax[0], std::fabs(a1 + a2));
+          }
+          // x2 face j-1/2 (between jm and j), as m1_impl_f2face
+          {
+            const int jm = j - 1;
+            const double tf = mbs.h_view(m).x2min + (j - js)*mbs.h_view(m).dx2;
+            const double dl = M1EddDiag(iwh(m,M1_IW_WCHI,k,jm,i), 0.0)
+                              + tth(m,c0+3,k,jm,i);
+            const double dr = M1EddDiag(iwh(m,M1_IW_WCHI,k,j,i), 0.0)
+                              + tth(m,c0+3,k,j,i);
+            const double g1 = (dr*iwh(m,ep,k,j,i) - dl*iwh(m,ep,k,jm,i))/d2f(m,k,j,i);
+            const double g2 = 0.5*(lat(m,1,k,jm,i) + lat(m,1,k,j,i));
+            const double g3 = 0.5*(tan(m,1,k,jm,i) + tan(m,1,k,j,i));
+            auto r3prt = [&](double rr, double tt, double pp) {
+              return rr*rr*rr*Prt(rr,tt,pp);
+            };
+            const double ct = std::cos(tf)/std::sin(tf);
+            const double a1 = der(Ptt,1,r,tf,p)/r;
+            const double a2 = der(r3prt,0,r,tf,p)/(r*r*r);
+            const double a3 = ct*(Ptt(r,tf,p) - Ppp(r,tf,p))/r
+                              + der(Ptp,2,r,tf,p)/(r*std::sin(tf));
+            emax[2] = std::max(emax[2], std::fabs(g1 - a1));
+            emax[3] = std::max(emax[3], std::fabs(g2 - a2));
+            emax[4] = std::max(emax[4], std::fabs(g3 - a3));
+            amax[1] = std::max(amax[1], std::fabs(a1 + a2 + a3));
+          }
+          // x3 face k-1/2 (between km and k), as m1_impl_f3face
+          {
+            const int km = k - 1;
+            const double pf = mbs.h_view(m).x3min + (k - ks)*mbs.h_view(m).dx3;
+            const double dl = M1EddDiag(iwh(m,M1_IW_WCHI,km,j,i), 0.0)
+                              + tth(m,c0+5,km,j,i);
+            const double dr = M1EddDiag(iwh(m,M1_IW_WCHI,k,j,i), 0.0)
+                              + tth(m,c0+5,k,j,i);
+            const double g1 = (dr*iwh(m,ep,k,j,i) - dl*iwh(m,ep,km,j,i))/d3f(m,k,j,i);
+            const double g2 = 0.5*(lat(m,2,km,j,i) + lat(m,2,k,j,i));
+            const double g3 = 0.5*(tan(m,2,km,j,i) + tan(m,2,k,j,i));
+            auto r3prp = [&](double rr, double tt, double pp) {
+              return rr*rr*rr*Prp(rr,tt,pp);
+            };
+            const double ct = std::cos(t)/std::sin(t);
+            const double a1 = der(Ppp,2,r,t,pf)/(r*std::sin(t));
+            const double a2 = der(r3prp,0,r,t,pf)/(r*r*r);
+            const double a3 = der(Ptp,1,r,t,pf)/r + 2.0*ct*Ptp(r,t,pf)/r;
+            emax[5] = std::max(emax[5], std::fabs(g1 - a1));
+            emax[6] = std::max(emax[6], std::fabs(g2 - a2));
+            emax[7] = std::max(emax[7], std::fabs(g3 - a3));
+            amax[2] = std::max(amax[2], std::fabs(a1 + a2 + a3));
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, emax, 8, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, amax, 3, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    std::cout << "VGD_MMS nx = " << pm->mesh_indcs.nx1 << " " << pm->mesh_indcs.nx2
+              << " " << pm->mesh_indcs.nx3 << std::endl;
+    for (int t = 0; t < 8; ++t) {
+      const int c = (t < 2) ? 0 : ((t < 5) ? 1 : 2);
+      std::cout << "VGD_MMS " << nm[t] << " max|err|/max|div P_" << c << "| = "
+                << emax[t]/amax[c] << std::endl;
+    }
+  }
+}
+
 } // namespace radm1

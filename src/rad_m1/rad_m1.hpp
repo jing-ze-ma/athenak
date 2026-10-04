@@ -1440,10 +1440,14 @@ class RadiationM1 {
   // start of the step): rebuild the gd tensor inside the implicit solve at Picard passes
   // k, 2k, ... from the iterate's E (M1_IW_EP) and T (M1_IW_TP)
   int vgd_rbe = 0;
+  // vet_gd_tan_operator (read only when named, default true): the tangential cross terms
+  // (M1SphTan) join D_r,lat in the implicit operator under vet_col_lat_offdiag = operator
+  bool vgd_tanop = true;
   bool vlat_src_ep = false;
   DvceArray4D<Real> vgd_fk0;   // (m, k, j, i): slot 0 before the fold
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
-  void VetGdIterRebuild();   // env VGD_TIME_HALO=1: fence before the halo timer
+  void VetGdIterRebuild();
+  void VetGdMms();   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,

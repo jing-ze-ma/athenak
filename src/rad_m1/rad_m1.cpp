@@ -781,6 +781,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_smooth")) {
       vgd_smooth = std::max(0, pin->GetInteger("rad_m1","vet_gd_smooth"));
     }
+    if (pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
+        pin->GetBoolean("rad_m1","vet_gd_mms")) {
+      VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
+      std::exit(EXIT_SUCCESS);
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tan_operator")) {
+      vgd_tanop = pin->GetBoolean("rad_m1","vet_gd_tan_operator");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
     }
