@@ -1916,6 +1916,11 @@ void HsAdaptiveUpdate(Mesh *pm) {
         }
         fprintf(fp, "\n");
       }
+      // STAGE CS3 (gate (c)): the shell-mean radiation energy density per CELL is..ie
+      // (code units, not normalised; a trailing 0 keeps the face count)
+      fprintf(fp, "%.10e emean", t);
+      for (int i=is; i<=ie; ++i) {fprintf(fp, " %.6e", hsh(i,5)/hsh(i,2));}
+      fprintf(fp, " 0\n");
       fclose(fp);
     }
     hs_ad_tout_ = hs_ad_dout_*floor(t/hs_ad_dout_ + 1.0);
