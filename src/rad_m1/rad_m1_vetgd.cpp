@@ -556,6 +556,7 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
   // wall ghosts (mapd) take direction mp(v) of the source: the wall re-indexing folded
   // into the copy (new(d) = old(map(d)))
   const bool mpi = vgd_hmpi;
+  if (mapd && !mpi) {return;}
   auto sb_ = vgd_sbuf;
   par_for("m1_vgd_halo", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
@@ -572,6 +573,7 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
     const int jj = r2/ni;
     const int i = i0 + (r2 - jj*ni);
     const int nl = hl_(8*m + o);
+    if (nl >= 0 && mapd) {return;}    // the sweep reads on-rank neighbours directly
     if (nl >= 0) {
       const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
       const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
@@ -678,6 +680,13 @@ void RadiationM1::VetGdSweep() {
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
   auto mr_ = vgd_mr;
+  // intensities outside the block (band index) of an ON-RANK neighbour are read from its
+  // interior directly (direction re-indexed at a wall); remote ones from the band, filled
+  // per shell by VetGdHalo
+  auto hl_ = vgd_hloc;
+  auto wl_ = vgd_wall;
+  auto mp_ = vgd_map;
+  const int nx2b = indcs.nx2, nx3b = indcs.nx3;
   const bool bandx = vgd_bandx;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
@@ -692,6 +701,16 @@ void RadiationM1::VetGdSweep() {
       const int i = is + l;
       par_for("m1_vgd_shell", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+        auto rd = [&](const int kk, const int jj, const int ii) -> Real {
+          const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
+          const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
+          if (ek == 0 && ej == 0) {return vi_(m,d,kk,jj,ii);}
+          const int oo = 3*(ek + 1) + (ej + 1);
+          const int nl = hl_(8*m + ((oo < 4) ? oo : (oo - 1)));
+          if (nl < 0) {return vi_(m,d,kk,jj,ii);}
+          const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,d) : d;
+          return vi_(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
+        };
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -796,7 +815,7 @@ void RadiationM1::VetGdSweep() {
               const Real mq = mr_(m,kk,jj,d);
               if (((want_in && mq < 0.0) || (!want_in && mq >= 0.0)) && wq > 0.0) {
                 wsum += wq;
-                isum += wq*((1.0 - wr)*vi_(m,d,kk,jj,i) + wr*vi_(m,d,kk,jj,iu));
+                isum += wq*((1.0 - wr)*rd(kk,jj,i) + wr*rd(kk,jj,iu));
               }
             }
             if (wsum > 0.0) {
@@ -854,8 +873,8 @@ void RadiationM1::VetGdSweep() {
             }
             Real ivu;
             if (all) {
-              ivu = VgdLerp(VgdLerp(vi_(m,d,k0,j0,iu), vi_(m,d,k0,j1,iu), uj),
-                            VgdLerp(vi_(m,d,k1,j0,iu), vi_(m,d,k1,j1,iu), uj), uk);
+              ivu = VgdLerp(VgdLerp(rd(k0,j0,iu), rd(k0,j1,iu), uj),
+                            VgdLerp(rd(k1,j0,iu), rd(k1,j1,iu), uj), uk);
             } else {
               Real ws = 0.0, vs = 0.0;
               for (int q = 0; q < 4; ++q) {
@@ -863,7 +882,7 @@ void RadiationM1::VetGdSweep() {
                 const int jj = (q % 2 == 0) ? j0 : j1;
                 const Real wq = ((q < 2) ? (1.0 - uk) : uk)
                                 *((q % 2 == 0) ? (1.0 - uj) : uj);
-                if (ok[q] && wq > 0.0) {ws += wq; vs += wq*vi_(m,d,kk,jj,iu);}
+                if (ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
               }
               ivu = (ws > 0.0) ? vs/ws : -1.0;   // none: the upwind source (below)
             }
