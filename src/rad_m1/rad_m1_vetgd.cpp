@@ -60,6 +60,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <numeric>
 #include <string>
 #include <utility>
 #include <vector>
@@ -295,19 +296,32 @@ void RadiationM1::VetGdInit() {
     const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
     const double smin = std::min(std::sin(t0), std::sin(t1));
     const double dmin = std::min(mbs.h_view(0).dx2, smin*mbs.h_view(0).dx3);
-    double reach = 0.0;
+    // the data of shell s is read (a) by shell s-1 in the inward pass, chord <=
+    // sqrt(r_s^2 - r_{s-1}^2), (b) by shell s+1 in the outward pass, chord <=
+    // sqrt(r_{s+1}^2 - r_s^2), (c) by shell s itself (TURN / inner face), chord <= 2
+    // sqrt(r_s^2 - r_lo^2), r_lo = r_{s-1} (the inner face of the first shell); the
+    // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
+    auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmy_pack->pcoord->xx1f);
+    const int nmax = std::min(indcs.nx2, indcs.nx3);
+    vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
+    int wneed = 0;
     for (int l = indcs.is; l <= indcs.ie; ++l) {
       const double r = x1v_h(0,l);
-      double a = 0.0;
-      if (l < indcs.ie) {a = std::max(a, std::sqrt(x1v_h(0,l+1)*x1v_h(0,l+1) - r*r));}
-      if (l > indcs.is) {a = std::max(a, 2.0*std::sqrt(r*r - x1v_h(0,l-1)*x1v_h(0,l-1)));}
-      reach = std::max(reach, a/(r*dmin));
+      const double rlo = (l > indcs.is) ? x1v_h(0,l-1) : x1f_h(0,l);
+      double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+      if (l < indcs.ie) {
+        a = std::max(a, std::sqrt(x1v_h(0,l+1)*x1v_h(0,l+1) - r*r));
+      }
+      const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
+      wneed = std::max(wneed, wl);
+      vgd_wsh[l] = std::min(wl, nmax);
     }
-    const int wneed = static_cast<int>(std::ceil(reach)) + 2;
-    vgd_w = std::min(wneed, std::min(indcs.nx2, indcs.nx3));
+    vgd_w = std::min(wneed, nmax);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
-                << " cells (needed " << wneed << ")"
+                << " cells (needed " << wneed << "), per-shell depth mean "
+                << std::accumulate(vgd_wsh.begin(), vgd_wsh.end(), 0.0)/indcs.nx1
                 << ((vgd_w < wneed) ? ": MeshBlocks too small, the deepest near-tangent "
                                       "reads are clamped (counted)" : "") << std::endl;
     }
@@ -527,29 +541,28 @@ void RadiationM1::VetGdHaloInit() {
 //! no race), a remote one by one message per (block, slot)
 
 void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
-                            const int i1) {
+                            const int i1, const int ws, const bool mapd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
   const int ni = i1 - i0 + 1;
-  const int mx = std::max(nx2, nx3)*w*nv*ni;
+  const int mx = std::max(nx2, nx3)*ws*nv*ni;
   auto hl_ = vgd_hloc;
   auto a_ = a;
-  // region of slot o along one direction d = -1, 0, +1: (dest start, len, src start) =
-  // (0, w, nx), (w, nx, w), (w + nx, w, w) in the band index space
+  auto wl_ = vgd_wall;
+  auto mp_ = vgd_map;
+  // region of slot o along one direction d = -1, 0, +1 with depth ws: (dest start, len,
+  // neighbour source start) = (w - ws, ws, w + nx - ws), (w, nx, w), (w + nx, ws, w);
+  // wall ghosts (mapd) take direction mp(v) of the source: the wall re-indexing folded
+  // into the copy (new(d) = old(map(d)))
   const bool mpi = vgd_hmpi;
   auto sb_ = vgd_sbuf;
-  // local copies and the packing of the sends: one thread per (block, slot, element)
   par_for("m1_vgd_halo", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
     const int oo = (o < 4) ? o : (o + 1);
     const int dk = oo/3 - 1, dj = oo%3 - 1;
-    const int jd = (dj < 0) ? 0 : ((dj == 0) ? w : (w + nx2));
-    const int jn = (dj == 0) ? nx2 : w;
-    const int js_ = (dj < 0) ? nx2 : w;
-    const int kd = (dk < 0) ? 0 : ((dk == 0) ? w : (w + nx3));
-    const int kn = (dk == 0) ? nx3 : w;
-    const int ks_ = (dk < 0) ? nx3 : w;
+    const int jn = (dj == 0) ? nx2 : ws;
+    const int kn = (dk == 0) ? nx3 : ws;
     const int cnt = nv*kn*jn*ni;
     if (t >= cnt) {return;}
     const int v = t/(kn*jn*ni);
@@ -560,13 +573,16 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
     const int i = i0 + (r2 - jj*ni);
     const int nl = hl_(8*m + o);
     if (nl >= 0) {
-      a_(m,v,kd+kk,jd+jj,i) = a_(nl,v,ks_+kk,js_+jj,i);
+      const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
+      const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
+      const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
+      const int ks_ = (dk < 0) ? (w + nx3 - ws) : w;
+      const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
+      a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_+kk,js_+jj,i);
     } else if (mpi) {
-      // my interior that the remote neighbour needs in ITS opposite slot: the source
-      // region of the opposite direction in my own block
-      int js2, ks2;
-      js2 = (dj > 0) ? nx2 : w;
-      ks2 = (dk > 0) ? nx3 : w;
+      // my interior that the remote neighbour needs in ITS opposite slot
+      const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
+      const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
       sb_(m,o,t) = a_(m,v,ks2+kk,js2+jj,i);
     }
   });
@@ -581,7 +597,7 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
         if (vgd_hlid[8*m + o] < 0) {continue;}
         const int oo = (o < 4) ? o : (o + 1);
         const int dk = oo/3 - 1, dj = oo%3 - 1;
-        const int jn = (dj == 0) ? nx2 : w, kn = (dk == 0) ? nx3 : w;
+        const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
         const int cnt = nv*kn*jn*ni;
         const int rk = vgd_hrank[8*m + o];
         // receive into my slot o from the neighbour; send my data to its slot 7 - o
@@ -602,9 +618,9 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
       if (hl_(8*m + o) >= 0) {return;}
       const int oo = (o < 4) ? o : (o + 1);
       const int dk = oo/3 - 1, dj = oo%3 - 1;
-      const int jd = (dj < 0) ? 0 : ((dj == 0) ? w : (w + nx2));
-      const int kd = (dk < 0) ? 0 : ((dk == 0) ? w : (w + nx3));
-      const int jn = (dj == 0) ? nx2 : w, kn = (dk == 0) ? nx3 : w;
+      const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
+      const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
+      const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
       const int cnt = nv*kn*jn*ni;
       if (t >= cnt) {return;}
       const int v = t/(kn*jn*ni);
@@ -612,8 +628,9 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
       const int kk = r1/(jn*ni);
       const int r2 = r1 - kk*jn*ni;
       const int jj = r2/ni;
-      const int i = i0 + (r2 - jj*ni);
-      a_(m,v,kd+kk,jd+jj,i) = rb_(m,o,t);
+      const int ii = r2 - jj*ni;
+      const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
+      a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(m,o,((vs*kn + kk)*jn + jj)*ni + ii);
     });
   }
 #endif
@@ -866,8 +883,7 @@ void RadiationM1::VetGdSweep() {
       // the shell is complete on every block: its lateral band, exact (not lagged)
       if (vgd_time_halo) {Kokkos::fence();}
       Kokkos::Timer th;
-      VetGdHalo(vgd_i, n, i, i);
-      VetGdWall(i, i);
+      VetGdHalo(vgd_i, n, i, i, vgd_wsh[i], true);
       Kokkos::fence();
       vgd_thalo += th.seconds();
     }
@@ -1046,7 +1062,7 @@ void RadiationM1::VetGdBuild() {
       cw_(m,0,k+og,j+og,i) = cs_(m,0,k,j,i);
       cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
     });
-    VetGdHalo(vgd_cs, 2, ilo, ie);
+    VetGdHalo(vgd_cs, 2, ilo, ie, vgd_w, false);
   }
   Kokkos::fence();
   vgd_tsrc += tm.seconds();

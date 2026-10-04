@@ -1410,7 +1410,9 @@ class RadiationM1 {
   Real vgd_thalo = 0.0;
   bool vgd_time_halo = false;   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
-  void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1);
+  std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
+  void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,
+                 const int ws, const bool mapd);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
