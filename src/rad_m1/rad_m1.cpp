@@ -898,7 +898,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // Returns immediately with transport = explicit.
   ImplicitInit(pin);
   if (sph_geom) {SphericalS1Check(pin);}
-  if (cs_geom) {CubedS1Init();}
+  if (cs_geom) {
+    pin_cs_ = pin;
+    CubedS1Init();
+  }
 
   // (5) boundary buffers
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);

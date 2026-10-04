@@ -6429,6 +6429,12 @@ void RadiationM1::OnePassAuto(const int t, const bool on, const bool one) {
 
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
+  if (cs_geom && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> cubed sphere: seam face averages " << cs_seam_avg_n
+              << (cs_seam_avg_on ? "" : " (disabled by rad_m1/cs_seam_avg)")
+              << ", largest change of an x2 face value (rank 0) " << cs_seam_dmax
+              << " of max|F0|" << std::endl;
+  }
   // implicit_opac_newton_guard: the dropped (row, face) pairs of all ranks (collective:
   // every rank reaches this line with the same impl_opac_newton and guard)
   const bool opgr = impl_opac_newton && (impl_opn_guard > 0.0);

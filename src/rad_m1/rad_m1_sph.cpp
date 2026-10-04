@@ -267,6 +267,12 @@ void RadiationM1::CubedS1Init() {
   cs_seam.sync_device();
   Kokkos::deep_copy(csg2, g2h);
   Kokkos::deep_copy(csg3, g3h);
+  // DEBUG <rad_m1>/cs_seam_avg (read only when named, default true): the C5 seam average
+  // of the stored face state
+  cs_seam_avg_on = true;
+  if (pin_cs_ != nullptr && pin_cs_->DoesParameterExist("rad_m1","cs_seam_avg")) {
+    cs_seam_avg_on = pin_cs_->GetBoolean("rad_m1","cs_seam_avg");
+  }
   if (pbval_th != nullptr) {
     pbval_th->cs_noresample = true;
     // STAGE CS2: (N2,N3), (A2,A3), (V2,V3) of the work array are face-normal components
@@ -289,7 +295,7 @@ void RadiationM1::CubedS1Init() {
 //! Called at the start of each implicit step, before f0x* is copied to the old state.
 
 void RadiationM1::CubedSeamFaceAverage() {
-  if (!cs_geom || pbval_kr == nullptr) return;
+  if (!cs_geom || pbval_kr == nullptr || !cs_seam_avg_on) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int n1 = indcs.nx1 + 2*indcs.ng;
@@ -313,6 +319,15 @@ void RadiationM1::CubedSeamFaceAverage() {
   while (pbval_kr->RecvAndUnpackFluxSeamCC(fl) != TaskStatus::complete) {}
   pbval_kr->ClearFluxSend();
   pbval_kr->ClearFluxRecv();
+  // diagnostic: the largest change the average makes, relative to max |F0| (cs_seam_dmax)
+  Real dmx = 0.0, fmx = 0.0;
+  Kokkos::parallel_reduce("m1_csfa_d2", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, 0, 0, 0}, {nmb, n3, n2 + 1, n1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ld, Real &lf) {
+    ld = fmax(ld, fabs(f2(m,k,j,i) - x2(m,0,k,j,i)));
+    lf = fmax(lf, fabs(f2(m,k,j,i)));
+  }, Kokkos::Max<Real>(dmx), Kokkos::Max<Real>(fmx));
+  cs_seam_dmax = fmax(cs_seam_dmax, dmx/fmax(fmx, 1.0e-300));
   par_for("m1_csfa_out2", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     f2(m,k,j,i) = x2(m,0,k,j,i);

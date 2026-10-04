@@ -1111,6 +1111,9 @@ class RadiationM1 {
   //! the seam average of the stored face state f0x2/f0x3 (stage CS1, C5)
   void CubedSeamFaceAverage();
   int cs_seam_avg_n = 0;   // seam-face-average calls (diagnostic)
+  bool cs_seam_avg_on = true;
+  Real cs_seam_dmax = 0.0;   // max relative change of an x2 face value by the average
+  ParameterInput *pin_cs_ = nullptr;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
   void OnePassAuto(const int t, const bool on, const bool one);
