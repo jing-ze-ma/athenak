@@ -577,6 +577,10 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // k^2 = l(l+1) <1/r^2> (the shell's volume mean), v and F in COVARIANT panel
     // components (v.e_xi, v.e_eta), F0 on the faces zero (as the plane wave without
     // radwave_eig).
+    if (pin->DoesParameterExist("problem","shell_report") &&
+        pin->GetBoolean("problem","shell_report")) {
+      pgen_final_func = RadM1ShellReport;
+    }
     if (pin->DoesParameterExist("problem","rw_hist") &&
         pin->GetBoolean("problem","rw_hist")) {
       user_hist_func = RadM1RwHistory;
@@ -1434,8 +1438,8 @@ void RadM1CellDump(const std::string &pre, Mesh *pm) {
   auto &pan = pmbp->pmb->mb_panel;
   // STAGE CS2: the gas momenta (covariant) and the cell F (covariant) as well
   const bool hyd = (pmbp->phydro != nullptr);
-  auto uh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                hyd ? pmbp->phydro->u0 : pmbp->pradm1->u0);
+  auto uh = Kokkos::create_mirror_view_and_copy(
+      HostMemSpace(), hyd ? pmbp->phydro->u0 : pmbp->pradm1->u0);
   std::string fn = pre + "." + std::to_string(global_variable::my_rank) + ".txt";
   FILE *f = std::fopen(fn.c_str(), "w");
   if (f == nullptr) return;
