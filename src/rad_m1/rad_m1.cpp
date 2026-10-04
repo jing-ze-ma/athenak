@@ -750,6 +750,56 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vcol_dump_every = pin->GetOrAddInteger("rad_m1","vet_col_dump_every",1);
       if (vcol_dump.compare("none") == 0 || vcol_dump_every <= 0) {vcol_dump = "";}
     }
+    // vet_col_lat (m1-vetcol-lat, rad_m1_vetlat.cpp): every key read only when named, so
+    // that an input without them writes the same restart and parameter dump as before
+    if (pin->DoesParameterExist("rad_m1","vet_col_lat")) {
+      vlat_on = pin->GetBoolean("rad_m1","vet_col_lat");
+    }
+    if (vlat_on) {
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_nmu")) {
+        vlat_nmu = pin->GetInteger("rad_m1","vet_col_lat_nmu");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_npsi")) {
+        vlat_npsi = pin->GetInteger("rad_m1","vet_col_lat_npsi");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_every")) {
+        vlat_every = pin->GetInteger("rad_m1","vet_col_lat_every");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_init_iter")) {
+        vlat_iinit = pin->GetInteger("rad_m1","vet_col_lat_init_iter");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_taucut")) {
+        vlat_taucut = pin->GetReal("rad_m1","vet_col_lat_taucut");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumin")) {
+        vlat_taumin = pin->GetReal("rad_m1","vet_col_lat_taumin");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumax")) {
+        vlat_taumax = pin->GetReal("rad_m1","vet_col_lat_taumax");
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag")) {
+        std::string so = pin->GetString("rad_m1","vet_col_lat_offdiag");
+        if (so.compare("none") == 0 || so.compare("false") == 0) {
+          vlat_odm = 0;
+        } else if (so.compare("lagged") == 0 || so.compare("true") == 0) {
+          vlat_odm = 1;
+        } else if (so.compare("operator") == 0) {
+          vlat_odm = 2;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_col_lat_offdiag = '" << so
+                    << "' (none | lagged | operator)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
+        vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");
+        if (vlat_dump.compare("none") == 0) {vlat_dump = "";}
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump_every")) {
+        vlat_dump_every = pin->GetInteger("rad_m1","vet_col_lat_dump_every");
+      }
+    }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = '" << cl << "' not implemented "
@@ -1051,6 +1101,9 @@ RadiationM1::~RadiationM1() {
   if (pbval_tq != nullptr) {delete pbval_tq;}
   if (pbval_kr != nullptr) {delete pbval_kr;}
   if (pbval_vm != nullptr) {delete pbval_vm;}
+  if (pbval_vl != nullptr) {delete pbval_vl;}
+  if (pbval_vs != nullptr) {delete pbval_vs;}
+  if (pbval_vt != nullptr) {delete pbval_vt;}
 }
 
 //----------------------------------------------------------------------------------------

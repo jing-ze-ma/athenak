@@ -672,7 +672,8 @@ void RadiationM1::VetColInit() {
                 << "the q is built but unused" << std::endl;
     }
   }
-  Kokkos::realloc(tau_ten, nmb, 4, c3, c2, c1);
+  // vet_col_lat (rad_m1_vetlat.cpp): M1_TT_NLAT more slots, the lateral correction
+  Kokkos::realloc(tau_ten, nmb, vlat_on ? (M1_TT_LAT0 + M1_TT_NLAT) : 4, c3, c2, c1);
   Kokkos::deep_copy(tau_ten, 0.0);
   if (!vcol_dump.empty()) {
     Kokkos::realloc(vcol_mom, nmb, 5, c3, c2, c1);
@@ -706,6 +707,7 @@ void RadiationM1::VetColInit() {
     }
     std::cout << std::endl;
   }
+  if (vlat_on) {VetLatInit();}
 }
 
 //----------------------------------------------------------------------------------------
@@ -1004,6 +1006,7 @@ void RadiationM1::VetColBuild() {
   if (dmp) {VetColDumpColumn(static_cast<int>(vcol_ncall));}
   vcol_ncall += 1.0;
   vcol_built = true;
+  if (vlat_on) {VetLatBuild();}
 }
 
 //----------------------------------------------------------------------------------------
@@ -1444,6 +1447,14 @@ void RadiationM1::VetColReport() {
             << vcol_nskip << " skipped), " << vcol_time << " s (rank 0, fenced), "
             << ((vcol_ncall > 0.0) ? (1.0e3*vcol_time/vcol_ncall) : 0.0)
             << " ms per build" << std::endl;
+  if (vlat_on) {
+    std::cout << "<rad_m1> vet_col_lat: " << vlat_ncall << " sweeps (incl. the "
+              << "first build's " << vlat_iinit << " inflow iterations), " << vlat_time
+              << " s (rank 0, fenced), "
+              << ((vlat_ncall > 0.0) ? (1.0e3*vlat_time/vlat_ncall) : 0.0)
+              << " ms per sweep; lateral reads clamped to the ghost band (rank 0, "
+              << "all sweeps): " << vlat_nclamp << std::endl;
+  }
 }
 
 } // namespace radm1
