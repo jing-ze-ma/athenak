@@ -67,6 +67,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 
 namespace radm1 {
 
@@ -215,6 +216,12 @@ void RadiationM1::VetGdInit() {
   Mesh *pm = pmy_pack->pmesh;
   if (vgd_nside < 1 || vgd_nside > 6) {VgdFatal("vet_gd_nside must be 1..6");}
   if (!pm->three_d) {VgdFatal("needs a 3-D wedge");}
+  if (ibc_x1max != M1_IBC_MARSHAK) {
+    // the sweep has a VACUUM top: a reflecting (or any non-Marshak) outer x1 of the M1
+    // solve would be inconsistent with it near the top (GD_RESULTS.md, open item)
+    VgdFatal("reflecting outer x1 not supported; use implicit_bc_x1max = marshak "
+             "(+ vet_col_surface_q)");
+  }
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
@@ -591,7 +598,7 @@ void RadiationM1::VetGdMoments() {
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
     const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
     const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-    Real jm = 0.0, hr = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
+    Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       const Real a = nx*st*cp + ny*st*sp + nz*ct;
@@ -599,7 +606,6 @@ void RadiationM1::VetGdMoments() {
       const Real c = -nx*sp + ny*cp;
       const Real wi = dir_(d,3)*vi_(m,d,k,j,i);
       jm += wi;
-      hr += wi*a;
       rr += wi*a*a;
       rt += wi*a*b;
       rp += wi*a*c;
@@ -615,8 +621,35 @@ void RadiationM1::VetGdMoments() {
       tt_(m,M1_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
       tt_(m,M1_TT_LAT0+4,k,j,i) = tp/jm;
       tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
-      if (repq && i == ie) {vq_(m,k,j) = fmin(fmax(hr/jm, qlo), qhi);}
     }
+  });
+  if (!repq) {return;}
+  // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's FACE form,
+  // q = H(face)/J_f, clamped to [vet_col_surface_qmin, _qmax]: H(face) = H_r of the top
+  // cell carried to the face as r^2 H (free streaming over the half cell), J_f = J of the
+  // top cell, or with vet_col_surface_face the same extrapolation as vet_col
+  // (jca J_top - jcb J_below, limited to [0, jcap J_top])
+  const bool sqf = vcol_sqf;
+  const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap, q0 = marshak_q;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  par_for("m1_vgd_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+    const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+    const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+    Real jt = 0.0, jb = 0.0, ht = 0.0;
+    for (int d = 0; d < n; ++d) {
+      const Real a = dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
+      const Real w = dir_(d,3);
+      jt += w*vi_(m,d,k,j,ie);
+      jb += w*vi_(m,d,k,j,ie-1);
+      ht += w*a*vi_(m,d,k,j,ie);
+    }
+    const Real rr = cx1v(m,ie)/cx1f(m,ie+1);
+    const Real hf = ht*rr*rr;
+    const Real jq = sqf ? fmin(fmax(jca*jt - jcb*jb, 0.0), jcap*jt) : jt;
+    vq_(m,k,j) = (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
   });
 }
 
