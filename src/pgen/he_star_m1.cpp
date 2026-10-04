@@ -72,6 +72,8 @@
 #include "mhd/mhd.hpp"
 #include "outputs/outputs.hpp"
 #include "utils/wb_background.hpp"
+#include "coordinates/cubed_sphere.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
@@ -283,8 +285,15 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm);
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto *pm1 = pmbp->pradm1;
-  if (pm1 == nullptr || pmbp->phydro == nullptr || !pmy_mesh_->use_spherical_polar) {
-    HsFatal("needs <hydro>, <rad_m1> and mesh/use_spherical_polar = true", __LINE__);
+  // STAGE CS3 (m1-cs-implicit): the cubed sphere as well (x1 = r on both meshes; the
+  // column, the potentials, the WB pair and the x1 BCs are radial).  On cs the solid
+  // angle is 4 pi and the multi-mode seed is laid down in the global (theta, phi) of the
+  // cell centre (see the seed below).
+  const bool hcs = pmy_mesh_->use_cubed_sphere;
+  if (pm1 == nullptr || pmbp->phydro == nullptr ||
+      !(pmy_mesh_->use_spherical_polar || hcs)) {
+    HsFatal("needs <hydro>, <rad_m1> and mesh/use_spherical_polar or use_cubed_sphere",
+            __LINE__);
   }
   if (pmbp->pmhd != nullptr) {
     HsFatal("<mhd> is not supported by this pgen (hydro only)", __LINE__);
@@ -966,7 +975,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::deep_copy(hs_fm_, hfm);
     {
       const auto &ms = pmy_mesh_->mesh_size;
-      const Real omg = (cos(ms.x2min) - cos(ms.x2max))*(ms.x3max - ms.x3min);
+      const Real omg = hcs ? (4.0*M_PI)
+                           : (cos(ms.x2min) - cos(ms.x2max))*(ms.x3max - ms.x3min);
       hs_lmx_ = 0.0;
       hs_r2o_.assign(nfc, 0.0);
       for (int i=0; i<nfc; ++i) {
@@ -1313,9 +1323,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   smd.modify_host();
   smd.sync_device();
   auto smd_d = smd.d_view;
-  const Real x2a = pmy_mesh_->mesh_size.x2min, x3a = pmy_mesh_->mesh_size.x3min;
-  const Real lth = pmy_mesh_->mesh_size.x2max - x2a;
-  const Real lph = pmy_mesh_->mesh_size.x3max - x3a;
+  // STAGE CS3: on the cubed sphere the modes are laid down in the GLOBAL polar angles of
+  // the cell centre, with the 90 x 90 degree wedge's periods (theta_a = pi/4, L_theta =
+  // L_phi = pi/2: the same k2, k3 give the same wavelengths as on the production wedge;
+  // phi-periodic over 2 pi since 4 k3 is an integer), tapered by sin(theta) so the seed
+  // is continuous at the poles (two panel centres)
+  const Real x2a = hcs ? (0.25*M_PI) : pmy_mesh_->mesh_size.x2min;
+  const Real x3a = hcs ? 0.0 : pmy_mesh_->mesh_size.x3min;
+  const Real lth = hcs ? (0.5*M_PI) : (pmy_mesh_->mesh_size.x2max - x2a);
+  const Real lph = hcs ? (0.5*M_PI) : (pmy_mesh_->mesh_size.x3max - x3a);
+  auto mbpan = pmbp->pmb->mb_panel;
+  auto &msz = pmbp->pmb->mb_size;
+  const int hjs = indcs.js, hks = indcs.ks, hnx2 = indcs.nx2, hnx3 = indcs.nx3;
   auto uh = ph->u0;
   auto ur = pm1->u0;
   auto x2v = pmbp->pcoord->x2v;
@@ -1338,17 +1357,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real er = HsLogInterp(cE, rlo, dr, nf, r);
     if (seed != 0.0 && r >= srlo && r <= srhi) {
       Real fac;
+      Real th2 = x2v(m,j), ph3 = x3v(m,k), tap = 1.0;
+      if (hcs) {
+        const Real xi = 0.25*M_PI*CellCenterX(j - hjs, hnx2, msz.d_view(m).x2min,
+                                               msz.d_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k - hks, hnx3, msz.d_view(m).x3min,
+                                                msz.d_view(m).x3max);
+        Real q[3];
+        cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
+        th2 = acos(fmin(fmax(q[2], -1.0), 1.0));
+        ph3 = atan2(q[1], q[0]);
+        tap = sin(th2);
+      }
       if (snk > 0) {
         Real amp = 0.0;
         for (int n=0; n<snk; ++n) {
-          amp += smd_d(n,2)*sin(2.0*M_PI*(smd_d(n,0)*(x2v(m,j) - x2a)/lth
-                                          + smd_d(n,1)*(x3v(m,k) - x3a)/lph)
+          amp += smd_d(n,2)*sin(2.0*M_PI*(smd_d(n,0)*(th2 - x2a)/lth
+                                          + smd_d(n,1)*(ph3 - x3a)/lph)
                                 + smd_d(n,3));
         }
-        fac = 1.0 + seed*sin(M_PI*(r - srlo)/(srhi - srlo))*amp;
+        fac = 1.0 + seed*sin(M_PI*(r - srlo)/(srhi - srlo))*amp*tap;
       } else {
-        fac = 1.0 + seed*sin(2.0*M_PI*seedk*(x2v(m,j) - x2a)/lth + 0.3)
-                        *sin(2.0*M_PI*seedk*(x3v(m,k) - x3a)/lph + 1.1);
+        fac = 1.0 + seed*sin(2.0*M_PI*seedk*(th2 - x2a)/lth + 0.3)
+                        *sin(2.0*M_PI*seedk*(ph3 - x3a)/lph + 1.1)*tap;
       }
       e *= fac;
       if (srad) er *= SQR(SQR(fac));

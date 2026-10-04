@@ -128,11 +128,11 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
         pin->GetString("rad_m1","implicit_offdiag").compare("lagged") == 0) {
       wcs += " implicit_offdiag = lagged;";
     }
-    if (time_scheme != M1_TIME_BE ||
-        (pin->DoesParameterExist("rad_m1","time_scheme") &&
-         pin->GetString("rad_m1","time_scheme").compare("be") != 0)) {
-      wcs += " time_scheme != be;";
-    }
+    // STAGE CS3 (C9): time_scheme = hesdirk2 as well.  The stage solves' old vector and
+    // slopes are cell- and face-local (rad_m1_time2.cpp), so they carry no geometry; the
+    // seam face state is averaged at the start of each solve (CubedSeamFaceAverage).
+    // implicit_vimp stays refused (its transverse rows and the exchange of its Jacobian
+    // rows across a seam are not converted)
     if (impl_solver != M1_ISOLV_BICGSTAB) {wcs += " implicit_solver != bicgstab;";}
     if (impl_prec != 2) {wcs += " implicit_precond != rbgs_fwd;";}
     if (impl_vimp) {wcs += " implicit_vimp = true;";}
@@ -150,9 +150,9 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     }
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS2) supports only "
+        << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS3) supports only "
         << "transport = implicit, closure = eddington | vet_col (radial axis), "
-        << "implicit_offdiag none, time_scheme = be, implicit_solver "
+        << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
         << "= bicgstab, implicit_precond = rbgs_fwd, no implicit_vimp, no "
         << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
         << wcs << why << std::endl
