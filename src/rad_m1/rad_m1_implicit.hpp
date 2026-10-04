@@ -817,6 +817,55 @@ Real M1SphCurv(const V &iw, const A &x1v, const A &x2v, const A &x3v, const int 
   return s;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1SphLat
+//! \brief <rad_m1>/vet_col_lat (m1-vetcol-lat): the LAGGED divergence of the lateral
+//! off-diagonal pressure P_ra = D_ra E (a = theta, phi) at one cell centre of the sp
+//! wedge.  D_rt, D_rp are slots c0+1, c0+2 of tau_ten (c0 = M1_TT_LAT0; the short-
+//! characteristics correction of rad_m1_vetlat.cpp, ghosts exchanged), E is component
+//! `ec` of iw:
+//!   d = 0:  (1/r) d_th P_rt + cot P_rt / r + (1/(r sin)) d_ph P_rp
+//!   d = 1:  (1/r^3) d_r (r^3 P_rt)
+//!   d = 2:  (1/r^3) d_r (r^3 P_rp)
+//! (the [od] terms of M1SphCurv with P_tp = 0), centred over the coordinate distances,
+//! one-sided at a physical boundary exactly as M1SphCurv.
+
+template <class V, class A>
+KOKKOS_INLINE_FUNCTION
+Real M1SphLat(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v,
+              const A &x3v, const int m, const int d, const int k, const int j,
+              const int i, const bool thrd, const int il, const int iu, const int jl,
+              const int ju, const int kl, const int ku, const int ec) {
+  const Real r = x1v(m,i);
+  const int ia = (i+1 <= iu) ? (i+1) : i;
+  const int ib = (i-1 >= il) ? (i-1) : i;
+  const int ja = (j+1 <= ju) ? (j+1) : j;
+  const int jb = (j-1 >= jl) ? (j-1) : j;
+  const int ka = (thrd && k+1 <= ku) ? (k+1) : k;
+  const int kb = (thrd && k-1 >= kl) ? (k-1) : k;
+  Real s = 0.0;
+  if (d == 0) {
+    const Real sn = sin(x2v(m,j));
+    const Real ct = cos(x2v(m,j))/sn;
+    if (ja != jb) {
+      s += (tt(m,c0+1,k,ja,i)*iw(m,ec,k,ja,i) - tt(m,c0+1,k,jb,i)*iw(m,ec,k,jb,i))
+           /(r*(x2v(m,ja) - x2v(m,jb)));
+    }
+    s += ct*tt(m,c0+1,k,j,i)*iw(m,ec,k,j,i)/r;
+    if (ka != kb) {
+      s += (tt(m,c0+2,ka,j,i)*iw(m,ec,ka,j,i) - tt(m,c0+2,kb,j,i)*iw(m,ec,kb,j,i))
+           /(r*sn*(x3v(m,ka) - x3v(m,kb)));
+    }
+  } else if (ia != ib) {
+    const int c = c0 + d;
+    const Real ra = x1v(m,ia), rb = x1v(m,ib);
+    s = (ra*ra*ra*tt(m,c,k,j,ia)*iw(m,ec,k,j,ia)
+         - rb*rb*rb*tt(m,c,k,j,ib)*iw(m,ec,k,j,ib))
+        /(r*r*r*(ra - rb));
+  }
+  return s;
+}
+
 // the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
 // Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange
 // (halo "B") carries M1_IW_EP alone, after the line solve has accepted the new iterate.

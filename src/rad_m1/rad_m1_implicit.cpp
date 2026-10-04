@@ -2548,6 +2548,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // OVERWRITES the Cartesian `off` below
   const bool sphq = sph_q;
   const bool odl = (odm != M1_OD_NONE);
+  // vet_col_lat (m1-vetcol-lat): the lagged lateral off-diagonal term M1SphLat
+  const bool vlat = vlat_on && vlat_od && vlat_ready && sph;
+  auto vlt_ = tau_ten;
+  const int c0l = M1_TT_LAT0;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
   auto cx3v = pmy_pack->pcoord->x3v;
@@ -2604,6 +2608,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                  + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
                              M1_IW_EP));
     }
+    if (vlat) {
+      off += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,il,iu,jl,
+                             ju,kl,ku,M1_IW_EP)
+                 + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,il,iu,jl,
+                            ju,kl,ku,M1_IW_EP));
+    }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
 
@@ -2659,6 +2669,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                              M1_IW_EP)
                    + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
                                M1_IW_EP));
+      }
+      if (vlat) {
+        off += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,il,iu,jl,
+                               ju,kl,ku,M1_IW_EP)
+                   + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,il,iu,jl,
+                              ju,kl,ku,M1_IW_EP));
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
@@ -8659,6 +8675,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (M1SphDrr) and the lagged curvature (M1SphCurv), inside the sp overwrites only
     const bool sphq = sph_q;
     const bool odl = (odm != M1_OD_NONE);
+    // vet_col_lat (m1-vetcol-lat): the lagged lateral off-diagonal term M1SphLat
+    const bool vlat = vlat_on && vlat_od && vlat_ready && sph;
+    auto vlt_ = tau_ten;
+    const int c0l = M1_TT_LAT0;
     auto cx1v = pmy_pack->pcoord->x1v;
     auto cx2v = pmy_pack->pcoord->x2v;
     auto cx3v = pmy_pack->pcoord->x3v;
@@ -8979,6 +8999,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                        kl,ku,M1_IW_EP)
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
+              if (vlat) {
+                od += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,i,thrd,il,iu,jl,
+                                       ju,kl,ku,M1_IW_EP)
+                           + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,ip,thrd,
+                                      il,iu,jl,ju,kl,ku,M1_IW_EP));
+              }
               rr += nup*cr*th*ch*cl*dt*od;
               d_[10] += nup*cr*th*ch*cl*dt*od;
               ods = od;
@@ -9101,6 +9127,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                        kl,ku,M1_IW_EP)
                              + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,
                                          ju,kl,ku,M1_IW_EP));
+              if (vlat) {
+                od += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,im,thrd,il,iu,jl,
+                                       ju,kl,ku,M1_IW_EP)
+                           + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,i,thrd,il,iu,jl,
+                                      ju,kl,ku,M1_IW_EP));
+              }
               rr -= num*cr*th*ch*cl*dt*od;
               d_[10] -= num*cr*th*ch*cl*dt*od;
               ods = od;
@@ -9555,6 +9587,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                 M1_IW_EP)
                       + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,ju,kl,
                                   ku,M1_IW_EP));
+            if (vlat) {
+              od += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,im,thrd,il,iu,jl,
+                                     ju,kl,ku,M1_IW_EP)
+                         + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,ip,thrd,il,iu,jl,
+                                    ju,kl,ku,M1_IW_EP));
+            }
           }
         }
         Real fn = th*(f0n_(m,k,j,(i == ie+1 && cyclic) ? is : i)

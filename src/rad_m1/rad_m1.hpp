@@ -62,7 +62,11 @@ constexpr int M1_VET_D11 = 16;  // vet_tensor = full: the GUARDED D = K/J handed
                                 // solve, 11 22 33 12 13 23, ghosts filled (periodic)
 constexpr int M1_VET_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
 constexpr int M1_VET_NC  = 23;
-constexpr int M1_OP_P = 0;   // rho kappa_P, Planck (emission) mean
+// tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
+// the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
+constexpr int M1_TT_LAT0 = 4;
+constexpr int M1_TT_NLAT = 6;
+constexpr int M1_OP_P = 0;  // rho kappa_P, Planck (emission) mean
 constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
 constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s), the TRANSPORT opacity: what the
                              // flux source relaxes F with, and what tau_face is built of
@@ -1314,6 +1318,48 @@ class RadiationM1 {
   void VetColBuildTeam(bool dmp);   // the same, one team per column (vet_col_team)
   void VetColReport();
   void VetColDumpColumn(int ncall);
+
+  // ---- <rad_m1>/vet_col_lat (m1-vetcol-lat, rad_m1_vetlat.cpp; design
+  // rt_design_1003/SP_SC_G0.md sect. 4, plan C1): the LATERAL CORRECTION of vet_col from
+  // a few-angle short-characteristics sweep on the mesh (local mu x psi about r_hat).
+  // Every direction is swept twice: through the 3-D field and through the column's own
+  // laterally homogeneous field (the TWIN, the same arithmetic with the own column read
+  // at every lateral point); their moment difference is the correction, exactly 0 on a
+  // laterally uniform state.  Stored in tau_ten slots M1_TT_LAT0.. (the mesh basis):
+  // dD_rr is folded into the implicit diagonal (chi of slot 0), D_r,lat enters the face
+  // equations as a LAGGED Picard term (M1SphLat).  Read only when named; sp wedge only
+  // (cs after CS2).
+  bool vlat_on = false;        // vet_col_lat
+  bool vlat_od = true;         // vet_col_lat_offdiag: the lagged D_r,lat term
+  int vlat_nmu = 4, vlat_npsi = 4, vlat_every = 1, vlat_iinit = 3;
+  Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
+                               // has tau_top >= this (global shell index vlat_icut)
+  int vlat_icut = 0;
+  bool vlat_ready = false;     // VetLatInit done
+  int vlat_nbuild = 0;         // builds done (the first one iterates vlat_iinit times)
+  Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
+  std::string vlat_dump;       // vet_col_lat_dump: per-rank dump prefix (gate c)
+  DvceArray5D<Real> vlat_i;    // (m, 2 nmu npsi, k, j, i): 3-D intensities, ghosts lagged
+  DvceArray5D<Real> vlat_i_c;
+  DvceArray5D<Real> vlat_t;    // (m, 2 nmu npsi, k, j, i): twin intensities
+  DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
+  DvceArray5D<Real> vlat_cs_c;
+  DvceArray5D<Real> vlat_tt_c; // coarse twin of tau_ten for its exchange
+  DvceArray3D<Real> vlat_geo;  // (shell l, 2 a + dir, 0..3): per-shell ray geometry
+  DvceArray1D<Real> vlat_mu;   // (a): Gauss nodes on [0, 1], descending
+  DvceArray1D<Real> vlat_w;    // (a): hemisphere weights, sum 1/2 (J = sum w I)
+  DvceArray1D<Real> vlat_cnt;  // (1): lateral reads clamped to the ghost band
+  std::vector<double> vlat_nodes;   // the mu nodes (host)
+  int vlat_geo_icut = -1;       // the first shell vlat_geo was built for
+  MeshBoundaryValuesCC *pbval_vl = nullptr;   // vlat_i
+  MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
+  MeshBoundaryValuesCC *pbval_vt = nullptr;   // tau_ten (all slots)
+  void VetLatInit();
+  void VetLatBuild();
+  void VetLatSweep();
+  void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
+                      MeshBoundaryValuesCC *pb);
+  void VetLatDump();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);
