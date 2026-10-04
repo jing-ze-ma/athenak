@@ -650,6 +650,7 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
 #if MPI_PARALLEL_ENABLED
   if (mpi) {
     Kokkos::fence();
+    Kokkos::Timer tq;
     std::vector<MPI_Request> req;
     auto rb_ = vgd_rbuf;
     // one message per partner rank and direction
@@ -665,6 +666,7 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
                 &req.back());
     }
     MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    vgd_tmpi += tq.seconds();
     par_for("m1_vgd_unpack", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
     KOKKOS_LAMBDA(const int m, const int o, const int t) {
       if (hl_(8*m + o) >= 0) {return;}
@@ -1142,7 +1144,9 @@ void RadiationM1::VetGdBuild() {
   const Real al = VetGdAngle(pmy_pack->pmesh->ncycle);
   bool rotated = false;
   if (al != vgd_alpha) {
+    Kokkos::Timer tt;
     VetGdTables(al);
+    vgd_ttab += tt.seconds();
     rotated = true;
   }
   // the per-shell halo makes one sweep exact; vet_gd_iter > 1 only repeats it
