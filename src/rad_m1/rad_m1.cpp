@@ -775,7 +775,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vlat_taumax = pin->GetReal("rad_m1","vet_col_lat_taumax");
       }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag")) {
-        vlat_od = pin->GetBoolean("rad_m1","vet_col_lat_offdiag");
+        std::string so = pin->GetString("rad_m1","vet_col_lat_offdiag");
+        if (so.compare("none") == 0 || so.compare("false") == 0) {
+          vlat_odm = 0;
+        } else if (so.compare("lagged") == 0 || so.compare("true") == 0) {
+          vlat_odm = 1;
+        } else if (so.compare("operator") == 0) {
+          vlat_odm = 2;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_col_lat_offdiag = '" << so
+                    << "' (none | lagged | operator)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
         vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");

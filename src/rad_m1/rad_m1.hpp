@@ -1330,7 +1330,16 @@ class RadiationM1 {
   // equations as a LAGGED Picard term (M1SphLat).  Read only when named; sp wedge only
   // (cs after CS2).
   bool vlat_on = false;        // vet_col_lat
-  bool vlat_od = true;         // vet_col_lat_offdiag: the lagged D_r,lat term
+  // vet_col_lat_offdiag: what D_r,lat does in the solve.  0 none, 1 lagged (a Picard
+  // term, C1), 2 operator (default, C2: in the Krylov operator, M1SphLat of the
+  // Krylov vector, through the stored stencil and VetLatOp)
+  int vlat_odm = 2;
+  bool vlat_now = false;       // the term is on in this step (positivity fallback)
+  Real vlat_nfall = 0.0;       // steps dropped to `none` by the positivity guard
+  Real vlat_odmax = 0.0;       // max |D_r,lat| of the last sweep (all ranks)
+  // the operator form is active: on in this step and a non-zero D_r,lat (a zero one
+  // leaves the operator, its stencil and the right-hand side untouched, bitwise)
+  bool VlatOp() const {return vlat_now && (vlat_odm == 2) && (vlat_odmax > 0.0);}
   int vlat_nmu = 4, vlat_npsi = 4, vlat_every = 1, vlat_iinit = 3;
   Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
                                // has tau_top >= this (global shell index vlat_icut)
@@ -1366,6 +1375,11 @@ class RadiationM1 {
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
   void VetLatDump();
+  // vet_col_lat_offdiag = operator: y += sgn L_lat(x) (the direct form, legacy
+  // operator path and the right-hand side), and the same terms added to the stored
+  // 19-point stencil of the pass (ImplicitStencilBuild)
+  void VetLatOp(int xc, int yc, Real sgn);
+  void VetLatStencilAdd();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);
