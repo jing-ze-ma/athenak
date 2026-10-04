@@ -1443,6 +1443,10 @@ class RadiationM1 {
   // vet_gd_tan_operator (read only when named, default true): the tangential cross terms
   // (M1SphTan) join D_r,lat in the implicit operator under vet_col_lat_offdiag = operator
   bool vgd_tanop = true;
+  // thin-top cap shape (read only when named): ramp decades, smoothstep, parts mask
+  Real vgd_tdec = 1.0;
+  bool vgd_tsmooth = false;
+  int vgd_tparts = 3;
   bool vlat_src_ep = false;
   DvceArray4D<Real> vgd_fk0;   // (m, k, j, i): slot 0 before the fold
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
