@@ -7932,6 +7932,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto es_ = esrc;
   const Real dtes = dt*chat/c_light;
   //-------------------------------------------------------------------------- start state
+  // STAGE CS2 (C3): the cell F of the work array holds FACE-NORMAL components (what the
+  // per-pass rebuild from the face fluxes gives); u0 holds them covariant on cs
+  const bool csf0 = cs_geom;
+  auto cclf0 = pmy_pack->pcoord->cos_cell;
   par_for("m1_impl_i0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = fmax(u0_(m,M1_E,k,j,i), efl);
@@ -7957,6 +7961,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_V3,k,j,i) = 0.0;
       iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F2,k,j,i);
       iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F3,k,j,i);
+      if (csf0) {
+        const Real c = cclf0(m,k,j), sn = sqrt(1.0 - c*c);
+        const Real a = u0_(m,M1_F2,k,j,i), b = u0_(m,M1_F3,k,j,i);
+        iw_(m,M1_IW_F2,k,j,i) = (a - c*b)/sn;
+        iw_(m,M1_IW_F3,k,j,i) = (b - c*a)/sn;
+      }
       if (!tpers) {
         iw_(m,M1_IW_N1,k,j,i) = 0.0;
         iw_(m,M1_IW_N2,k,j,i) = 0.0;
@@ -8007,6 +8017,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (trans) {
         iw_(m,M1_IW_V2,k,j,i) = uh(m,IM2,k,j,i)*idd;
         iw_(m,M1_IW_V3,k,j,i) = uh(m,IM3,k,j,i)*idd;
+      }
+      if (csk && trans) {
+        // STAGE CS2 (C3): the transverse V of the work array are the FACE-NORMAL
+        // velocities the face fluxes advect with, v.n_xi = s v^xi, v.n_eta = s v^eta
+        // (v^a = g^ab m_b/rho contravariant, s = sin_cell)
+        const Real c = ccl(m,k,j), s2 = 1.0 - c*c, sn = sqrt(s2);
+        const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+        iw_(m,M1_IW_V2,k,j,i) = sn*(m2 - c*m3)*idd/s2;
+        iw_(m,M1_IW_V3,k,j,i) = sn*(m3 - c*m2)*idd/s2;
       }
     });
     // MILESTONE 3g: the FROZEN-DENSITY e(T) cache.  rho does not move over the step, so
