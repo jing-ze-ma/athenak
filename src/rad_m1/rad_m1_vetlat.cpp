@@ -194,7 +194,9 @@ void RadiationM1::VetLatInit() {
   Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
   Kokkos::deep_copy(vlat_cs, 0.0);
   Kokkos::realloc(vlat_cs_c, nmb, 2, 1, 1, 1);
-  if (vlat_taumax > 0.0) {Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);}
+  if (vlat_taumax > 0.0 || vlat_taumin > 0.0) {
+    Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);
+  }
   // the exchange of the off-diagonal slots only (slots 0-3 keep vet_col's ghosts)
   Kokkos::realloc(vlat_lx, nmb, 2, c3, c2, c1);
   Kokkos::deep_copy(vlat_lx, 0.0);
@@ -256,7 +258,7 @@ void RadiationM1::VetLatInit() {
                   : ((vlat_odm == 1) ? ", D_r,lat as a lagged Picard term"
                                      : ", D_r,lat NOT used"))
               << "; sweep from tau_top >= " << vlat_taucut << "; taper "
-              << vlat_taumax << " (0: off)"
+              << vlat_taumax << " (0: off)" << ", thin cap " << vlat_taumin << " (0: off)"
               << "; rebuilt every "
               << vlat_every << " step(s); first build " << vlat_iinit
               << " inflow iterations" << std::endl;
@@ -662,10 +664,13 @@ void RadiationM1::VetLatSweep(const int stage) {
   }
   // vet_col_lat_taumax = T > 0: the correction tapered off with depth, weight 1 for
   // tau_top <= T, 0 for tau_top >= 2 T, linear in ln(tau_top) between (vlat_wt)
-  const bool tap = (vlat_taumax > 0.0);
+  // vet_col_lat_taumin = t > 0: the same taper at the THIN end, weight 0 for
+  // tau_top <= t, 1 for tau_top >= 2 t (the thin top, where no closure term may be lagged
+  // or coupled without losing the Picard fixed point, C2_RESULTS.md); the two multiply
+  const bool tap = (vlat_taumax > 0.0) || (vlat_taumin > 0.0);
   auto wt_ = vlat_wt;
   if (tap) {
-    const Real tmx = vlat_taumax;
+    const Real tmx = vlat_taumax, tmn = vlat_taumin;
     const Real il2 = 1.0/log(2.0);
     par_for("m1_vlat_taper", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -673,7 +678,11 @@ void RadiationM1::VetLatSweep(const int stage) {
       for (int i = ie; i >= is; --i) {
         const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
         const Real tc = tau + 0.5*dt_;
-        wt_(m,k,j,i) = fmin(fmax(1.0 - log(fmax(tc, 1.0e-300)/tmx)*il2, 0.0), 1.0);
+        const Real lt = log(fmax(tc, 1.0e-300));
+        const Real wd = (tmx > 0.0) ? fmin(fmax(1.0 - (lt - log(tmx))*il2, 0.0), 1.0)
+                                    : 1.0;
+        const Real wn = (tmn > 0.0) ? fmin(fmax((lt - log(tmn))*il2, 0.0), 1.0) : 1.0;
+        wt_(m,k,j,i) = wd*wn;
         tau += dt_;
       }
     });
