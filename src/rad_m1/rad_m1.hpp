@@ -1374,6 +1374,8 @@ class RadiationM1 {
   int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
   bool vgd_tan = true;         // vet_gd_tangential: the lagged M1SphTan term
   int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
+  bool vgd_bandx = false;      // vet_gd_band_exit: shortened segments for reads
+                               // beyond the ghost band instead of clamping
   Real vgd_taumin = 0.0;       // vet_gd_thin_taumin > 0: lateral parts tapered to 0
                                // from tau_top = 10 taumin to taumin (far thin top)
   bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the

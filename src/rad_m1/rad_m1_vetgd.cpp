@@ -471,6 +471,7 @@ void RadiationM1::VetGdSweep() {
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
   auto mr_ = vgd_mr;
+  const bool bandx = vgd_bandx;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -549,7 +550,65 @@ void RadiationM1::VetGdSweep() {
           if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
           if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
           const int j1 = j0 + 1, k1 = k0 + 1;
-          if (typ == 2) {
+          bool bdone = false;
+          if (clp && bandx && typ == 1) {
+            // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead of
+            // reading the clamped (wrong) column, stop the segment where the ray leaves
+            // the band (index linear in the path fraction s) and take I, chi, S there,
+            // bilinear on the band-edge ghost columns of the two shells i and iu (the
+            // lagged inflow of the last sweep) and linear in r between them
+            const Real gj = fj - j, gk = fk - k;
+            Real s = 1.0;
+            if (fj < jlo) {s = fmin(s, (jlo - j)/gj);}
+            if (fj > jhi + 1) {s = fmin(s, (jhi + 1 - j)/gj);}
+            if (fk < klo) {s = fmin(s, (klo - k)/gk);}
+            if (fk > khi + 1) {s = fmin(s, (khi + 1 - k)/gk);}
+            s = fmax(s*(1.0 - 1.0e-9), 0.0);
+            const Real dsx = s*ds;
+            const Real xx = r*st*cp - dsx*nx, yx = r*st*sp - dsx*ny, zx = r*ct - dsx*nz;
+            const Real rx = sqrt(xx*xx + yx*yx + zx*zx);
+            const Real thx = acos(fmin(fmax(zx/rx, -1.0), 1.0));
+            Real dpx = atan2(yx, xx) - ph;
+            dpx -= twopi*floor((dpx + M_PI)/twopi);
+            const Real fjx = fmin(fmax(j + (thx - th)/mbsize.d_view(m).dx2, Real(jlo)),
+                                  Real(jhi + 1));
+            const Real fkx = fmin(fmax(k + dpx/mbsize.d_view(m).dx3, Real(klo)),
+                                  Real(khi + 1));
+            int jx0 = static_cast<int>(floor(fjx)), kx0 = static_cast<int>(floor(fkx));
+            jx0 = (jx0 > jhi) ? jhi : jx0;
+            kx0 = (kx0 > khi) ? khi : kx0;
+            const Real ujx = fjx - jx0, ukx = fkx - kx0;
+            const Real wr = fmin(fmax((rx - r)/(cx1v(m,iu) - r), 0.0), 1.0);
+            const bool want_in = inw;
+            Real wsum = 0.0, isum = 0.0;
+            for (int q = 0; q < 4; ++q) {
+              const int kk = (q < 2) ? kx0 : (kx0 + 1);
+              const int jj = (q % 2 == 0) ? jx0 : (jx0 + 1);
+              const Real wq = ((q < 2) ? (1.0 - ukx) : ukx)
+                              *((q % 2 == 0) ? (1.0 - ujx) : ujx);
+              const Real mq = mr_(m,kk,jj,d);
+              if (((want_in && mq < 0.0) || (!want_in && mq >= 0.0)) && wq > 0.0) {
+                wsum += wq;
+                isum += wq*((1.0 - wr)*vi_(m,d,kk,jj,i) + wr*vi_(m,d,kk,jj,iu));
+              }
+            }
+            if (wsum > 0.0) {
+              auto linx = [&](const int c, const int ii) {
+                return VgdLerp(VgdLerp(cs_(m,c,kx0,jx0,ii), cs_(m,c,kx0,jx0+1,ii), ujx),
+                               VgdLerp(cs_(m,c,kx0+1,jx0,ii), cs_(m,c,kx0+1,jx0+1,ii),
+                                       ujx), ukx);
+              };
+              const Real chx = exp((1.0 - wr)*linx(0,i) + wr*linx(0,iu));
+              const Real sx = exp((1.0 - wr)*linx(1,i) + wr*linx(1,iu));
+              Real ex, w0, wu;
+              VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
+              iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
+              bdone = true;
+            }
+          }
+          if (bdone) {
+            // done: the shortened segment from the band edge
+          } else if (typ == 2) {
             // the diffusion intensity at the inner face of the first shell
             const Real rf = cx1f(m,i);
             const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
