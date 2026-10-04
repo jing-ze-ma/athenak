@@ -876,6 +876,13 @@ Real M1SphLat(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
 //! adds (the trace-free part has no radial component)
 //!   d = 1:  (1/(r sin)) d_th (sin dP_tt) + (1/(r sin)) d_ph P_tp - cot dP_pp / r
 //!   d = 2:  (1/(r sin^2)) d_th (sin^2 P_tp) + (1/(r sin)) d_ph dP_pp
+//! The NORMAL-gradient parts (1/r) d_th dP_tt (d = 1) and (1/(r sin)) d_ph dP_pp (d = 2)
+//! are NOT here: the caller adds +a / -a to the face diagonal D_dd of the compact face
+//! gradient (ImplicitTransverseTerms), exactly as the isotropic part.  A lagged wide
+//! centred difference of them was unstable in the thin top (He 128^2: L_top grew e-fold
+//! per ~90 s).  What remains here are zeroth-derivative and cross terms:
+//!   d = 1:  2 cot a E / r + (1/(r sin)) d_ph P_tp
+//!   d = 2:  (1/(r sin^2)) d_th (sin^2 P_tp)
 //! centred over the coordinate distances, one-sided at a physical boundary as M1SphLat.
 
 template <class V, class A>
@@ -893,26 +900,17 @@ Real M1SphTan(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
   const Real ct = cos(x2v(m,j))/sn;
   Real s = 0.0;
   if (d == 1) {
-    if (ja != jb) {
-      s += (sin(x2v(m,ja))*tt(m,c0+3,k,ja,i)*iw(m,ec,k,ja,i)
-            - sin(x2v(m,jb))*tt(m,c0+3,k,jb,i)*iw(m,ec,k,jb,i))
-           /(r*sn*(x2v(m,ja) - x2v(m,jb)));
-    }
     if (ka != kb) {
       s += (tt(m,c0+4,ka,j,i)*iw(m,ec,ka,j,i) - tt(m,c0+4,kb,j,i)*iw(m,ec,kb,j,i))
            /(r*sn*(x3v(m,ka) - x3v(m,kb)));
     }
-    s += ct*tt(m,c0+3,k,j,i)*iw(m,ec,k,j,i)/r;
+    s += 2.0*ct*tt(m,c0+3,k,j,i)*iw(m,ec,k,j,i)/r;
   } else if (d == 2) {
     if (ja != jb) {
       const Real sa = sin(x2v(m,ja)), sb = sin(x2v(m,jb));
       s += (sa*sa*tt(m,c0+4,k,ja,i)*iw(m,ec,k,ja,i)
             - sb*sb*tt(m,c0+4,k,jb,i)*iw(m,ec,k,jb,i))
            /(r*sn*sn*(x2v(m,ja) - x2v(m,jb)));
-    }
-    if (ka != kb) {
-      s -= (tt(m,c0+3,ka,j,i)*iw(m,ec,ka,j,i) - tt(m,c0+3,kb,j,i)*iw(m,ec,kb,j,i))
-           /(r*sn*(x3v(m,ka) - x3v(m,kb)));
     }
   }
   return s;

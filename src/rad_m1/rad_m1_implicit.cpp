@@ -2591,6 +2591,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
     Real dl = M1DDiag(iw_,vd_,dfull,m,1,k,jm,i);
     Real dr = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
+    if (vtan) {   // vet_gd: D_tt = (1 - D_rr)/2 + a in the compact face gradient
+      dl += vlt_(m,c0l+3,k,jm,i);
+      dr += vlt_(m,c0l+3,k,j,i);
+    }
     Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
     if (sph) {
       gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/cdxf.x2f(m,k,j,i);
@@ -2659,6 +2663,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real dl = M1DDiag(iw_,vd_,dfull,m,2,km,j,i);
       Real dr = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
+      if (vtan) {   // vet_gd: D_pp = (1 - D_rr)/2 - a in the compact face gradient
+        dl += vlt_(m,c0l+5,km,j,i);
+        dr += vlt_(m,c0l+5,k,j,i);
+      }
       Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
       if (sph) {
         gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/cdxf.x3f(m,k,j,i);
