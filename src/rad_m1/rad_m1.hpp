@@ -1374,6 +1374,8 @@ class RadiationM1 {
   int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
   bool vgd_tan = true;         // vet_gd_tangential: the lagged M1SphTan term
   int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
+  int vgd_smooth = 0;          // vet_gd_smooth: lateral 1-2-1 passes on dD_rr (diag.)
+  DvceArray4D<Real> vgd_sm;    // (m, k, j, i) scratch of VetGdSmooth
   bool vgd_bandx = false;      // vet_gd_band_exit: shortened segments for reads
                                // beyond the ghost band instead of clamping
   Real vgd_taumin = 0.0;       // vet_gd_thin_taumin > 0: lateral parts tapered to 0
@@ -1403,6 +1405,7 @@ class RadiationM1 {
   void VetGdSweep();
   void VetGdWall();
   void VetGdMoments();
+  void VetGdSmooth();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

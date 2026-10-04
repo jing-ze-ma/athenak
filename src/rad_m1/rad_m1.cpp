@@ -778,6 +778,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_exit")) {
       vgd_bandx = pin->GetBoolean("rad_m1","vet_gd_band_exit");
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_smooth")) {
+      vgd_smooth = std::max(0, pin->GetInteger("rad_m1","vet_gd_smooth"));
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_iter")) {
       vgd_iter = std::max(1, pin->GetInteger("rad_m1","vet_gd_iter"));
     }

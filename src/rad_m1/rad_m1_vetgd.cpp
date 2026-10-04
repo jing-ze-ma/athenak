@@ -787,6 +787,45 @@ void RadiationM1::VetGdMoments() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdSmooth
+//! \brief vet_gd_smooth = N > 0 (diagnostic, default 0): N passes of a lateral 1-2-1
+//! filter (theta, then phi) of the D_rr correction LAT0, ghosts exchanged before each
+//! direction (periodic walls: scalar copy)
+
+void RadiationM1::VetGdSmooth() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int ilo = is + vlat_icut;
+  if (vgd_sm.extent(0) == 0) {
+    Kokkos::realloc(vgd_sm, pmy_pack->nmb_thispack, indcs.nx3 + 2*indcs.ng,
+                    indcs.nx2 + 2*indcs.ng, indcs.nx1 + 2*indcs.ng);
+  }
+  auto tt_ = tau_ten;
+  auto sm_ = vgd_sm;
+  const int c0 = M1_TT_LAT0;
+  for (int pass = 0; pass < vgd_smooth; ++pass) {
+    for (int dir = 0; dir < 2; ++dir) {
+      VetLatExchange(tau_ten, vlat_tt_c, pbval_vt);
+      par_for("m1_vgd_sm", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (dir == 0) {
+          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k,j-1,i) + 2.0*tt_(m,c0,k,j,i) + tt_(m,c0,k,j+1,i));
+        } else {
+          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k-1,j,i) + 2.0*tt_(m,c0,k,j,i) + tt_(m,c0,k+1,j,i));
+        }
+      });
+      par_for("m1_vgd_smc", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        tt_(m,c0,k,j,i) = sm_(m,k,j,i);
+      });
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdBuild
 //! \brief the gd build inside VetLatBuild: source and first shell (VetLatSweep(0)), the
 //! sweep(s) with the lagged lateral inflow, the moments; timed per part (fenced)
@@ -822,6 +861,7 @@ void RadiationM1::VetGdBuild() {
   }
   tm.reset();
   VetGdMoments();
+  if (vgd_smooth > 0) {VetGdSmooth();}
   Kokkos::fence();
   vgd_tmom += tm.seconds();
   auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cnt);

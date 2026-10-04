@@ -10018,6 +10018,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     std::cout << "<rad_m1> NC-local rank=" << global_variable::my_rank << " cycle="
               << pmy_pack->pmesh->ncycle << " max=" << mloc.val << " (m,k,j,i)=(" << lmb
               << "," << (lk+ks) << "," << (lj+js) << "," << (li+is) << ")" << std::endl;
+    if (vgd_on && std::getenv("VGD_NCDIAG") != nullptr) {
+      // vet_gd diagnosis (env VGD_NCDIAG): the 3x3 lateral neighbourhood of the worst
+      // cell: D_rr (tau_ten slot 0), E, F1, Picard residual
+      const int kk = lk+ks, jj = lj+js, ii = li+is;
+      auto pr = std::make_pair(ii, ii+1);
+      auto pk = std::make_pair(kk-1, kk+2);
+      auto pj = std::make_pair(jj-1, jj+2);
+      auto dh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(tau_ten, lmb, 0, pk, pj, pr));
+      auto eh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(iw, lmb, static_cast<int>(M1_IW_EP), pk, pj, pr));
+      auto fh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(iw, lmb, static_cast<int>(M1_IW_F1), pk, pj, pr));
+      auto rh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(iw, lmb, static_cast<int>(M1_IW_RES), pk, pj, pr));
+      std::cout << "<rad_m1> NC-diag rank=" << global_variable::my_rank << " cycle="
+                << pmy_pack->pmesh->ncycle << " edge(k,j)=(" << (kk == ks || kk == ke)
+                << "," << (jj == js || jj == je) << ")";
+      for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+          std::cout << " [" << (a-1) << (b-1) << " D " << dh(a,b,0) << " E " << eh(a,b,0)
+                    << " F " << fh(a,b,0) << " R " << rh(a,b,0) << "]";
+        }
+      }
+      std::cout << std::endl;
+    }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> Picard NON-CONVERGED after " << it << " passes:"
                 << " resid=" << resid << " (tol " << impl_tol << ")"
