@@ -311,7 +311,8 @@ void RadiationM1::VetLatBuild() {
     tt_(m,0,k,j,i) = fmin(fmax(tt_(m,0,k,j,i) + tt_(m,M1_TT_LAT0,k,j,i), fkm), 1.0);
   });
   VetLatExchange(tau_ten, vlat_tt_c, pbval_vt);
-  if (due && !vlat_dump.empty() && vlat_nbuild == 1) {VetLatDump();}
+  if (due && !vlat_dump.empty() && (vlat_nbuild == 1 || (vlat_dump_every > 0 &&
+      (vlat_nbuild % vlat_dump_every) == 0))) {VetLatDump();}
 }
 
 //----------------------------------------------------------------------------------------
@@ -672,8 +673,8 @@ void RadiationM1::VetLatSweep(const int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetLatDump
-//! \brief vet_col_lat_dump = prefix: one binary file per rank, prefix.<rank>.bin, of the
-//! first build: int64 count, then per active cell 9 doubles
+//! \brief vet_col_lat_dump = prefix: one binary file per rank and dumped build,
+//! prefix.<build>.<rank>.bin (the first build, and every vet_col_lat_dump_every-th): int64 count, then per active cell 9 doubles
 //! (x1v, x2v, x3v, ln chi, ln S, f_K after the fold, dD_rr, D_rt, D_rp)
 
 void RadiationM1::VetLatDump() {
@@ -703,8 +704,8 @@ void RadiationM1::VetLatDump() {
       }
     }
   }
-  const std::string fn = vlat_dump + "." + std::to_string(global_variable::my_rank)
-                         + ".bin";
+  const std::string fn = vlat_dump + "." + std::to_string(vlat_nbuild) + "."
+                         + std::to_string(global_variable::my_rank) + ".bin";
   FILE *fp = std::fopen(fn.c_str(), "wb");
   if (fp == nullptr) {VlatFatal("cannot open " + fn);}
   int64_t n = static_cast<int64_t>(buf.size()/9);
@@ -712,9 +713,9 @@ void RadiationM1::VetLatDump() {
   std::fwrite(buf.data(), sizeof(double), buf.size(), fp);
   std::fclose(fp);
   if (global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> vet_col_lat: dumped the first build to " << vlat_dump
-              << ".<rank>.bin (first shell of the sweep i = is + " << vlat_icut << ")"
-              << std::endl;
+    std::cout << "<rad_m1> vet_col_lat: dumped build " << vlat_nbuild << " to " << vlat_dump
+              << "." << vlat_nbuild << ".<rank>.bin (first shell of the sweep i = is + "
+              << vlat_icut << ")" << std::endl;
   }
 }
 

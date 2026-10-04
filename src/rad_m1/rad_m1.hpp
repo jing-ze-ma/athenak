@@ -1339,6 +1339,7 @@ class RadiationM1 {
   int vlat_nbuild = 0;         // builds done (the first one iterates vlat_iinit times)
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
   std::string vlat_dump;       // vet_col_lat_dump: per-rank dump prefix (gate c)
+  int vlat_dump_every = 0;     // vet_col_lat_dump_every (0: the first build only)
   DvceArray5D<Real> vlat_i;    // (m, 2 nmu npsi, k, j, i): 3-D intensities
   DvceArray5D<Real> vlat_t;    // (m, 2 nmu npsi, k, j, i): twin intensities
   DvceArray5D<Real> vlat_t_c;

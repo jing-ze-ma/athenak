@@ -778,6 +778,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");
         if (vlat_dump.compare("none") == 0) {vlat_dump = "";}
       }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump_every")) {
+        vlat_dump_every = pin->GetInteger("rad_m1","vet_col_lat_dump_every");
+      }
     }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
