@@ -190,6 +190,7 @@ void RadiationM1::VetLatInit() {
   Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
   Kokkos::deep_copy(vlat_cs, 0.0);
   Kokkos::realloc(vlat_cs_c, nmb, 2, 1, 1, 1);
+  if (vlat_taumax > 0.0) {Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);}
   const int ntt = static_cast<int>(tau_ten.extent(1));
   Kokkos::realloc(vlat_tt_c, nmb, ntt, 1, 1, 1);
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
@@ -246,7 +247,9 @@ void RadiationM1::VetLatInit() {
               << " directions), "
               << "3-D minus twin; f_rr folded into the diagonal"
               << (vlat_od ? ", D_r,lat as a lagged Picard term" : ", D_r,lat NOT used")
-              << "; sweep from tau_top >= " << vlat_taucut << "; rebuilt every "
+              << "; sweep from tau_top >= " << vlat_taucut << "; taper "
+              << vlat_taumax << " (0: off)"
+              << "; rebuilt every "
               << vlat_every << " step(s); first build " << vlat_iinit
               << " inflow iterations" << std::endl;
     if (vcol_rtop) {
@@ -630,6 +633,24 @@ void RadiationM1::VetLatSweep(const int stage) {
   }
   return;
   }
+  // vet_col_lat_taumax = T > 0: the correction tapered off with depth, weight 1 for
+  // tau_top <= T, 0 for tau_top >= 2 T, linear in ln(tau_top) between (vlat_wt)
+  const bool tap = (vlat_taumax > 0.0);
+  auto wt_ = vlat_wt;
+  if (tap) {
+    const Real tmx = vlat_taumax;
+    const Real il2 = 1.0/log(2.0);
+    par_for("m1_vlat_taper", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real tau = 0.0;
+      for (int i = ie; i >= is; --i) {
+        const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
+        const Real tc = tau + 0.5*dt_;
+        wt_(m,k,j,i) = fmin(fmax(1.0 - log(fmax(tc, 1.0e-300)/tmx)*il2, 0.0), 1.0);
+        tau += dt_;
+      }
+    });
+  }
   // (5) the moments: the correction dD = D(3-D) - D(twin) -> tau_ten LAT slots
   const int ilo = is + lcut;
   const Real twopi = 2.0*M_PI;
@@ -662,9 +683,10 @@ void RadiationM1::VetLatSweep(const int stage) {
       }
     }
     if (j3 > 0.0 && jt > 0.0) {
-      tt_(m,M1_TT_LAT0,k,j,i) = krr3/j3 - krrt/jt;
-      tt_(m,M1_TT_LAT0+1,k,j,i) = krt3/j3 - krtt/jt;
-      tt_(m,M1_TT_LAT0+2,k,j,i) = krp3/j3 - krpt/jt;
+      const Real w = tap ? wt_(m,k,j,i) : 1.0;
+      tt_(m,M1_TT_LAT0,k,j,i) = w*(krr3/j3 - krrt/jt);
+      tt_(m,M1_TT_LAT0+1,k,j,i) = w*(krt3/j3 - krtt/jt);
+      tt_(m,M1_TT_LAT0+2,k,j,i) = w*(krp3/j3 - krpt/jt);
     }
   });
   auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cnt);

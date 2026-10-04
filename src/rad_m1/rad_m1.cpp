@@ -771,6 +771,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taucut")) {
         vlat_taucut = pin->GetReal("rad_m1","vet_col_lat_taucut");
       }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumax")) {
+        vlat_taumax = pin->GetReal("rad_m1","vet_col_lat_taumax");
+      }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag")) {
         vlat_od = pin->GetBoolean("rad_m1","vet_col_lat_offdiag");
       }

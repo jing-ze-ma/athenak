@@ -1335,6 +1335,8 @@ class RadiationM1 {
   Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
                                // has tau_top >= this (global shell index vlat_icut)
   int vlat_icut = 0;
+  Real vlat_taumax = 0.0;      // vet_col_lat_taumax: depth taper (0 off)
+  DvceArray4D<Real> vlat_wt;   // (m, k, j, i): the taper weight
   bool vlat_ready = false;     // VetLatInit done
   int vlat_nbuild = 0;         // builds done (the first one iterates vlat_iinit times)
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
