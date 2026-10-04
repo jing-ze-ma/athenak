@@ -828,6 +828,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // initial E (radiative equilibrium, the start of the stiff coupled tests)
     const Real gvt = pin->DoesParameterExist("problem","gas_vth") ?
                      pin->GetReal("problem","gas_vth") : 0.0;
+    // STAGE CS3 (read only when named): gas_rot = Omega, a solid-body rotation of the
+    // gas about z, v = Omega z x r, on sp (v_phi = Omega r sin theta) and on the cubed
+    // sphere (covariant v.e_xi, v.e_eta); the moving-gas O(v/c) terms of the order gate
+    const Real grot = pin->DoesParameterExist("problem","gas_rot") ?
+                      pin->GetReal("problem","gas_rot") : 0.0;
     const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
                       pin->GetBoolean("problem","gas_teq") : false;
     const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
@@ -902,6 +907,24 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         Real vt = gvt*sin(M_PI*(x2v(m,j) - x2a)/x2l);
         uh(m,IM2,k,j,i) = dgas*vt;
         uh(m,IEN,k,j,i) += 0.5*dgas*vt*vt;
+      }
+      if (grot != 0.0 && sp) {
+        const Real vp = grot*r*sin(x2v(m,j));
+        uh(m,IM3,k,j,i) = dgas*vp;
+        uh(m,IEN,k,j,i) += 0.5*dgas*vp*vp;
+      }
+      if (grot != 0.0 && csm) {
+        const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
+                                               size.d_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
+                                                size.d_view(m).x3max);
+        Real q[3], ta[3], tb[3];
+        cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
+        cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
+        const Real v0 = -grot*r*q[1], v1 = grot*r*q[0];
+        uh(m,IM2,k,j,i) = dgas*(v0*ta[0] + v1*ta[1]);
+        uh(m,IM3,k,j,i) = dgas*(v0*tb[0] + v1*tb[1]);
+        uh(m,IEN,k,j,i) += 0.5*dgas*(v0*v0 + v1*v1);
       }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {

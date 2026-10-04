@@ -6940,6 +6940,8 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   const bool fws = (force_ref == M1_FREF_WB_ARAD) && fref_wsplit;
   auto aref_ = arad_ref;
   const Real dtw = dt_sub;
+  const bool csw = cs_geom;
+  auto cclw = pmy_pack->pcoord->cos_cell;
   par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipw = pos_.d_view(m);
@@ -6955,6 +6957,17 @@ void RadiationM1::ImplicitWorkRow(bool row) {
       if (thrd) {
         dv = iw_(m,ivb+2,k,j,i);
         wk += dv*(iw_(m,M1_IW_V3,k,j,i) + 0.5*dv);
+      }
+      if (csw && thrd) {
+        // STAGE CS3: V and dv are FACE-NORMAL components n_a = s v^a; the kinetic energy
+        // is 0.5 rho (n_2^2 + n_3^2 + 2 c n_2 n_3)/s^2 (+ the radial part)
+        const Real c = cclw(m,k,j), is2 = 1.0/(1.0 - c*c);
+        const Real a2 = iw_(m,ivb+1,k,j,i), a3 = iw_(m,ivb+2,k,j,i);
+        const Real v2 = iw_(m,M1_IW_V2,k,j,i), v3 = iw_(m,M1_IW_V3,k,j,i);
+        const Real d1 = iw_(m,ivb,k,j,i);
+        wk = d1*(iw_(m,M1_IW_V1,k,j,i) + 0.5*d1)
+             + is2*(a2*(v2 + 0.5*a2) + a3*(v3 + 0.5*a3)
+                    + c*(a2*(v3 + 0.5*a3) + a3*(v2 + 0.5*a2)));
       }
     }
     const Real w = cr*uh(m,IDN,k,j,i)*wk;
@@ -7077,6 +7090,22 @@ void RadiationM1::ImplicitVimpBuild() {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool fwd = sph && impl_face_wdist;   // implicit_face_weight = distance
+  // STAGE CS3 (C9): implicit_vimp on the cubed sphere.  The work array's transverse
+  // velocities and face fluxes are FACE-NORMAL components, in which the velocity change
+  // of a face-normal radiative kick is exactly (normal force)/rho, as on a Cartesian
+  // mesh (the metric cancels: dm_a covariant = (a + c b)/s gives s v^a = a/rho).  So
+  // only the geometry changes: the two-point distance of the transverse face rows (centre
+  // arc times sin, the mirror-pair distance at a panel seam), the canonical seam areas,
+  // and the Jacobian row of a SEAM ghost (its P rows cross the seam as scalars, which a
+  // swapped or reversed axis scrambles): there the cell's own row, reflected, stands in
+  // (exact for a mirror-symmetric state; P only sets the Newton direction, the
+  // right-hand side carries the true dv^k, so the converged answer does not depend on it)
+  const bool csg = cs_geom;
+  auto cseam = cs_seam.d_view;
+  auto csg2_ = csg2;
+  auto csg3_ = csg3;
+  auto csn2 = pmy_pack->pcoord->sin_face_xi;
+  auto csn3 = pmy_pack->pcoord->sin_face_eta;
 
   // (1) the Jacobian rows and dv^k
   par_for("m1_vimp_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -7184,6 +7213,21 @@ void RadiationM1::ImplicitVimpBuild() {
               cL[s] = bsp*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
               cR[s] = -bsp*M1DDiag(iw_,vd_,dfull,m,d,kq,jq,i);
             }
+            if (csg) {
+              const int sl = (d == 1) ? 0 : 2;
+              const bool sm = (s == 0) ? (c == cs && cseam(m,sl) != 0)
+                                       : (c == ce && cseam(m,sl+1) != 0);
+              Real dxs;
+              if (sm) {
+                dxs = cx1v(m,i)*((d == 1) ? csg2_(m,1,k,s) : csg3_(m,1,j,s));
+              } else {
+                dxs = (d == 1) ? cdxf.x2f(m,k,cf,i)*csn2(m,k,cf)
+                               : cdxf.x3f(m,cf,j,i)*csn3(m,cf,j);
+              }
+              const Real bsp = th*ch*cl*dt/dxs;
+              cL[s] = bsp*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
+              cR[s] = -bsp*M1DDiag(iw_,vd_,dfull,m,d,kq,jq,i);
+            }
           }
         }
         p0 = sj*wf[0]*kf[0]*cL[0];
@@ -7262,6 +7306,15 @@ void RadiationM1::ImplicitVimpBuild() {
           }
         }
       }
+      if (csg && d > 0) {
+        const int sl = (d == 1) ? 0 : 2;
+        if (c == cs && cseam(m,sl) != 0) {
+          for (int r = 0; r < 3; ++r) {P[0][r] = -P[1][2-r];}
+        }
+        if (c == ce && cseam(m,sl+1) != 0) {
+          for (int r = 0; r < 3; ++r) {P[2][r] = -P[1][2-r];}
+        }
+      }
       Real phf[2] = {0.0, 0.0};
       const Real jr0 = jr;
       for (int s = 0; s < 2; ++s) {
@@ -7309,6 +7362,15 @@ void RadiationM1::ImplicitVimpBuild() {
             af = carea.x2f(m,k,j+s,i);
           } else {
             af = carea.x3f(m,k+s,j,i);
+          }
+          if (csg && d > 0) {
+            const int sl = (d == 1) ? 0 : 2;
+            const bool sm = (s == 0) ? (c == cs && cseam(m,sl) != 0)
+                                     : (c == ce && cseam(m,sl+1) != 0);
+            if (sm) {
+              af = 0.5*(cx1f(m,i+1)*cx1f(m,i+1) - cx1f(m,i)*cx1f(m,i))
+                   *((d == 1) ? csg2_(m,0,k,s) : csg3_(m,0,j,s));
+            }
           }
           const Real nus = af*iv;
           const Real sg = (s == 0) ? -1.0 : 1.0;
@@ -10419,12 +10481,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         fp3 = 0.5*(g3l + g3r) + iw_(m,M1_IW_A3,k,j,i)*ep;
       }
     }
-    if (csw && trans && thrd) {
-      const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
-      const Real a = fp2, b = fp3;
-      fp2 = (a + c*b)*si;
-      fp3 = (b + c*a)*si;
-    }
 
     Real work = 0.0, dm1 = 0.0, dmref = 0.0, eg = 0.0, ekin = 0.0, egrv = 0.0;
     Real dm2 = 0.0, dm3 = 0.0;
@@ -10562,6 +10618,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           w3 = (uh(m,IM3,k,j,i) + dm3)*idg;
         }
       }
+      if (csw && trans && thrd) {
+        // STAGE CS3: the face-normal velocities s v^a of the kicked (covariant) momentum
+        const Real c = cclw(m,k,j), sn = csnw(m,k,j), s2 = 1.0 - c*c;
+        const Real n2 = uh(m,IM2,k,j,i) + (dbgft ? dm2 : 0.0);
+        const Real n3 = uh(m,IM3,k,j,i) + (dbgft ? dm3 : 0.0);
+        w2 = sn*(n2 - c*n3)*idg/s2;
+        w3 = sn*(n3 - c*n2)*idg/s2;
+      }
       Real chi = iw_(m,M1_IW_WCHI,k,j,i);
       Real n1 = iw_(m,M1_IW_N1,k,j,i), n2 = iw_(m,M1_IW_N2,k,j,i);
       Real n3 = iw_(m,M1_IW_N3,k,j,i);
@@ -10626,6 +10690,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
     if (csw) {
+      // STAGE CS2/CS3: the cell flux to COVARIANT panel components (the face-normal
+      // values a, b: F.e_xi = (a + c b)/s, F.e_eta = (b + c a)/s), after the vimp
+      // re-forming above, then the metric flux limit
+      if (trans && thrd) {
+        const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+        const Real a = fp2, b = fp3;
+        fp2 = (a + c*b)*si;
+        fp3 = (b + c*a)*si;
+      }
       M1ApplyLimitsCs(cl, efl, cclw(m,k,j), ep, fp1, fp2, fp3);
     } else {
       M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);

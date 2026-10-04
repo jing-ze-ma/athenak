@@ -131,11 +131,9 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // STAGE CS3 (C9): time_scheme = hesdirk2 as well.  The stage solves' old vector and
     // slopes are cell- and face-local (rad_m1_time2.cpp), so they carry no geometry; the
     // seam face state is averaged at the start of each solve (CubedSeamFaceAverage).
-    // implicit_vimp stays refused (its transverse rows and the exchange of its Jacobian
-    // rows across a seam are not converted)
+    // implicit_vimp too (its cs form: ImplicitVimpBuild, the face-normal work row)
     if (impl_solver != M1_ISOLV_BICGSTAB) {wcs += " implicit_solver != bicgstab;";}
     if (impl_prec != 2) {wcs += " implicit_precond != rbgs_fwd;";}
-    if (impl_vimp) {wcs += " implicit_vimp = true;";}
     if (impl_halo_mpi) {wcs += " implicit_halo_mpi = true;";}
     // CS1: the canonical seam geometry needs the equiangular panel of -1..1 with the same
     // cell count along both tangential axes, and the one-sided tangential derivatives
@@ -153,7 +151,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
         << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS3) supports only "
         << "transport = implicit, closure = eddington | vet_col (radial axis), "
         << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
-        << "= bicgstab, implicit_precond = rbgs_fwd, no implicit_vimp, no "
+        << "= bicgstab, implicit_precond = rbgs_fwd, no "
         << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
         << wcs << why << std::endl
         << "See /viper/ptmp2/jinma/rt_design_1003/CS_IMPLICIT_VET.md sect. 4."
@@ -276,6 +274,11 @@ void RadiationM1::CubedS1Init() {
   }
   if (pbval_tq != nullptr) {pbval_tq->cs_noresample = true;}
   if (pbval_kr != nullptr) {pbval_kr->cs_noresample = true;}
+  // STAGE CS3: implicit_vimp's exchange; (DV2, DV3) are face-normal components
+  if (impl_vimp && pbval_vm != nullptr) {
+    pbval_vm->cs_noresample = true;
+    pbval_vm->cs_perm_pairs = true;
+  }
 }
 
 //----------------------------------------------------------------------------------------
