@@ -210,6 +210,28 @@ void RadiationM1::VetGdInit() {
       }
     }
   }
+  // the branch of every stored value: n . r_hat of the direction actually stored at a
+  // lateral cell (the mapped one, at the source position, for a wall ghost)
+  Kokkos::realloc(vgd_mr, nmb, c3, c2, n);
+  auto mr_h = Kokkos::create_mirror_view(vgd_mr);
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = 0; k < c3; ++k) {
+      for (int j = 0; j < c2; ++j) {
+        double th = x2_h(m,j), ph = x3_h(m,k);
+        if (th < t0) {th += (t1 - t0);}
+        if (th > t1) {th -= (t1 - t0);}
+        if (ph < p0) {ph += (p1 - p0);}
+        if (ph > p1) {ph -= (p1 - p0);}
+        const double st = std::sin(th), ct = std::cos(th);
+        const double sp = std::sin(ph), cp = std::cos(ph);
+        for (int q = 0; q < n; ++q) {
+          const int r = mp_h(m,k,j,q);
+          mr_h(m,k,j,q) = d[4*r]*st*cp + d[4*r+1]*st*sp + d[4*r+2]*ct;
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(vgd_mr, mr_h);
   Kokkos::deep_copy(vgd_wall, w_h);
   Kokkos::deep_copy(vgd_map, mp_h);
   if (global_variable::my_rank == 0) {
@@ -262,6 +284,7 @@ void RadiationM1::VetGdSweep() {
   auto vi_ = vgd_i;
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
+  auto mr_ = vgd_mr;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
   auto cx3v = pmy_pack->pcoord->x3v;
@@ -362,9 +385,36 @@ void RadiationM1::VetGdSweep() {
                                     VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
             iv = bv*ex + wu*qv + w0*s0;
           } else {
-            const Real ivu = VgdLerp(VgdLerp(vi_(m,d,k0,j0,iu), vi_(m,d,k0,j1,iu), uj),
-                                     VgdLerp(vi_(m,d,k1,j0,iu), vi_(m,d,k1,j1,iu), uj),
-                                     uk);
+            // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
+            // selects; the ray read here is inward at the upwind point for the inward
+            // pass and for a turned ray, outward otherwise.  Stencil cells of the other
+            // pass hold the wrong branch (near the tangent band): they are dropped and
+            // the bilinear weights renormalised (all valid: the plain bilinear)
+            const bool want_in = inw || (typ == 3);
+            bool ok[4];
+            bool all = true;
+            for (int q = 0; q < 4; ++q) {
+              const int kk = (q < 2) ? k0 : k1;
+              const int jj = (q % 2 == 0) ? j0 : j1;
+              const Real mq = mr_(m,kk,jj,d);
+              ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
+              all = all && ok[q];
+            }
+            Real ivu;
+            if (all) {
+              ivu = VgdLerp(VgdLerp(vi_(m,d,k0,j0,iu), vi_(m,d,k0,j1,iu), uj),
+                            VgdLerp(vi_(m,d,k1,j0,iu), vi_(m,d,k1,j1,iu), uj), uk);
+            } else {
+              Real ws = 0.0, vs = 0.0;
+              for (int q = 0; q < 4; ++q) {
+                const int kk = (q < 2) ? k0 : k1;
+                const int jj = (q % 2 == 0) ? j0 : j1;
+                const Real wq = ((q < 2) ? (1.0 - uk) : uk)
+                                *((q % 2 == 0) ? (1.0 - uj) : uj);
+                if (ok[q] && wq > 0.0) {ws += wq; vs += wq*vi_(m,d,kk,jj,iu);}
+              }
+              ivu = (ws > 0.0) ? vs/ws : -1.0;   // none: the upwind source (below)
+            }
             auto lin = [&](const int c) {
               return VgdLerp(VgdLerp(cs_(m,c,k0,j0,iu), cs_(m,c,k0,j1,iu), uj),
                              VgdLerp(cs_(m,c,k1,j0,iu), cs_(m,c,k1,j1,iu), uj), uk);
@@ -373,7 +423,7 @@ void RadiationM1::VetGdSweep() {
             const Real su = exp(lin(1));
             Real ex, w0, wu;
             VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
-            iv = fmax(ivu*ex + wu*su + w0*s0, 0.0);
+            iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
           }
         }
         vi_(m,d,k,j,i) = iv;

@@ -1378,6 +1378,7 @@ class RadiationM1 {
   DvceArray5D<Real> vgd_i_c;
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
+  DvceArray4D<Real> vgd_mr;    // (m, k, j, d): n . r_hat of the value stored there
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
