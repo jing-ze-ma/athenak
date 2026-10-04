@@ -1698,13 +1698,17 @@ void RadiationM1::VetGdTwin(const int stage) {
   const int ilo = is + vlat_icut;
   const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3;
   auto tt_ = tau_ten;
-  // shell sums over the active lateral cells (all ranks) of f(m, k, j, i)
-  auto shell_mean = [&](auto f, DvceArray1D<Real> &out) {
+  // shell means over the active lateral cells (all ranks) of a(m, c, k+og, j+og, i)
+  // (exp of it when ex): no generic lambda around the device kernel (nvcc)
+  auto shell_mean = [&](DvceArray5D<Real> &arr, const int c, const int og, const bool ex,
+                        DvceArray1D<Real> &out) {
     Kokkos::deep_copy(out, 0.0);
     auto o_ = out;
+    auto a_ = arr;
     par_for("m1_vgd_tw_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Kokkos::atomic_add(&o_(i), f(m,k,j,i));
+      const Real v = a_(m,c,k+og,j+og,i);
+      Kokkos::atomic_add(&o_(i), ex ? exp(v) : v);
     });
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), out);
 #if MPI_PARALLEL_ENABLED
@@ -1730,14 +1734,8 @@ void RadiationM1::VetGdTwin(const int stage) {
     auto cw_ = vgd_cs;
     auto c0_ = vgd_cs0;
     Kokkos::deep_copy(c0_, cw_);
-    auto ch = [=] KOKKOS_FUNCTION (int m, int k, int j, int i) {
-      return exp(cw_(m,0,k+og,j+og,i));
-    };
-    auto sh = [=] KOKKOS_FUNCTION (int m, int k, int j, int i) {
-      return exp(cw_(m,1,k+og,j+og,i));
-    };
-    shell_mean(ch, vgd_twm);
-    shell_mean(sh, vgd_twm2);
+    shell_mean(vgd_cs, 0, og, true, vgd_twm);
+    shell_mean(vgd_cs, 1, og, true, vgd_twm2);
     auto mc_ = vgd_twm;
     auto ms_ = vgd_twm2;
     const int n3 = static_cast<int>(cw_.extent(2)) - 1;
@@ -1761,8 +1759,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     return;
   }
   // stage 1: subtract the noise pattern
-  auto t0f = [=] KOKKOS_FUNCTION (int m, int k, int j, int i) {return twl_(m,0,k,j,i);};
-  shell_mean(t0f, vgd_twm);
+  shell_mean(vgd_twl, 0, 0, false, vgd_twm);
   auto mt_ = vgd_twm;
   par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
