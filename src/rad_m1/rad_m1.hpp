@@ -1339,9 +1339,12 @@ class RadiationM1 {
   int vlat_nbuild = 0;         // builds done (the first one iterates vlat_iinit times)
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
   std::string vlat_dump;       // vet_col_lat_dump: per-rank dump prefix (gate c)
-  DvceArray5D<Real> vlat_i;    // (m, 2 nmu npsi, k, j, i): 3-D intensities, ghosts lagged
-  DvceArray5D<Real> vlat_i_c;
+  DvceArray5D<Real> vlat_i;    // (m, 2 nmu npsi, k, j, i): 3-D intensities
   DvceArray5D<Real> vlat_t;    // (m, 2 nmu npsi, k, j, i): twin intensities
+  DvceArray5D<Real> vlat_t_c;
+  DvceArray5D<Real> vlat_d;    // (m, 2 nmu npsi, k, j, i): 3-D minus twin, ghosts
+                               // lagged (the lateral part of the inflow)
+  DvceArray5D<Real> vlat_d_c;
   DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vlat_cs_c;
   DvceArray5D<Real> vlat_tt_c; // coarse twin of tau_ten for its exchange
@@ -1356,7 +1359,7 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_vt = nullptr;   // tau_ten (all slots)
   void VetLatInit();
   void VetLatBuild();
-  void VetLatSweep();
+  void VetLatSweep(const int stage);   // 0 twin, 1 3-D, 2 moments
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
   void VetLatDump();

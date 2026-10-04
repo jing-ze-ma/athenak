@@ -43,14 +43,16 @@
 //! (rad_m1_implicit.hpp), evaluated from the iterate E (vet_col_lat_offdiag, default
 //! true).
 //!
-//! SEVERAL MESHBLOCKS.  The sweep runs on every MeshBlock of the pack at once; the
-//! upwind point of a ray near a block edge falls into the lateral ghost band, which holds
-//! the neighbour's intensities of the PREVIOUS build (the exchange runs once per build,
-//! after the sweep).  The inflow across block boundaries is therefore lagged by one build
-//! (one step in science mode); on the first build the sweep is iterated
-//! vet_col_lat_init_iter times with an exchange in between.  A ray whose upwind point
-//! lies beyond the ghost band (very oblique rays at very thin cells) reads the last ghost
-//! (counted, reported at the end).
+//! SEVERAL MESHBLOCKS.  Each build sweeps the TWIN first (it reads only its own
+//! column) and exchanges its ghost band; then the 3-D sweep runs on every MeshBlock of
+//! the pack at once.  An upwind point inside the block reads the current 3-D intensity;
+//! one in the lateral ghost band reads the neighbour column's CURRENT twin plus the
+//! LAGGED lateral difference (3-D minus twin) of the previous sweep, exchanged after
+//! each 3-D sweep.  Only the lateral part of the inflow across block boundaries is
+//! lagged (by one build, i.e. one step in science mode), and a laterally uniform state
+//! stays exact.  The first build iterates the 3-D sweep vet_col_lat_init_iter times.  A
+//! ray whose upwind point lies beyond the ghost band (very oblique rays through
+//! laterally thin cells) reads the last ghost (counted, reported at the end).
 //!
 //! CADENCE.  Built with vet_col (every step; under hesdirk2 + time2_vet_col = predict at
 //! U^n + dt K1).  vet_col_lat_every = N > 1 keeps the correction of the last sweep for N
@@ -179,9 +181,12 @@ void RadiationM1::VetLatInit() {
   const int nd = 2*vlat_nmu*vlat_npsi;
   Kokkos::realloc(vlat_i, nmb, nd, c3, c2, c1);
   Kokkos::deep_copy(vlat_i, 0.0);
-  Kokkos::realloc(vlat_i_c, nmb, nd, 1, 1, 1);
   Kokkos::realloc(vlat_t, nmb, nd, c3, c2, c1);
   Kokkos::deep_copy(vlat_t, 0.0);
+  Kokkos::realloc(vlat_t_c, nmb, nd, 1, 1, 1);
+  Kokkos::realloc(vlat_d, nmb, nd, c3, c2, c1);
+  Kokkos::deep_copy(vlat_d, 0.0);
+  Kokkos::realloc(vlat_d_c, nmb, nd, 1, 1, 1);
   Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
   Kokkos::deep_copy(vlat_cs, 0.0);
   Kokkos::realloc(vlat_cs_c, nmb, 2, 1, 1, 1);
@@ -282,13 +287,17 @@ void RadiationM1::VetLatBuild() {
   if (due) {
     Kokkos::fence();
     Kokkos::Timer timer;
+    // the twin first (its ghost band is the current part of the 3-D inflow), then the
+    // 3-D sweep(s), each followed by the exchange of the lagged lateral difference
+    VetLatSweep(0);
+    VetLatExchange(vlat_t, vlat_t_c, pbval_vl);
     const int nit = (vlat_nbuild == 0) ? vlat_iinit : 1;
     for (int it = 0; it < nit; ++it) {
-      VetLatSweep();
-      // the lagged inflow of the next sweep: the lateral ghost band of the intensities
-      VetLatExchange(vlat_i, vlat_i_c, pbval_vl);
+      VetLatSweep(1);
+      VetLatExchange(vlat_d, vlat_d_c, pbval_vl);
       vlat_ncall += 1.0;
     }
+    VetLatSweep(2);
     vlat_nbuild += 1;
     Kokkos::fence();
     vlat_time += timer.seconds();
@@ -307,9 +316,10 @@ void RadiationM1::VetLatBuild() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetLatSweep
-//! \brief one sweep (3-D and twin) of every direction and the moments -> tau_ten LAT
+//! \brief stage 0: source, first shell, geometry and the TWIN sweep; stage 1: the
+//! 3-D sweep and its lateral difference; stage 2: the moments -> tau_ten LAT
 
-void RadiationM1::VetLatSweep() {
+void RadiationM1::VetLatSweep(const int stage) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, ng = indcs.ng;
@@ -335,6 +345,7 @@ void RadiationM1::VetLatSweep() {
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
 
+  if (stage == 0) {
   // (1) ln chi, ln S of every active cell (vet_col's extinction and source), ghosts
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
@@ -391,10 +402,11 @@ void RadiationM1::VetLatSweep() {
 #endif
     vlat_icut = std::max(0, std::min(lmin, n1 - 2));
   }
+  }
   const int lcut = vlat_icut;
 
   // (3) the per-shell ray geometry (host; rebuilt when the first shell moves)
-  if (lcut != vlat_geo_icut) {
+  if (stage == 0 && lcut != vlat_geo_icut) {
     auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cx1v);
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cx1f);
     std::vector<double> rc(n1);
@@ -448,10 +460,17 @@ void RadiationM1::VetLatSweep() {
   }
 
   // (4) the sweeps: inward top-down, then outward bottom-up; one launch per shell, one
-  // thread per (block, cell, direction) doing the 3-D ray and its twin
+  // thread per (block, cell, direction).  stage 0: the TWIN (every lateral read at the
+  // own column); stage 1: the 3-D sweep, whose lateral reads take the current 3-D
+  // intensity inside the block and, in the ghost band, the CURRENT twin of the
+  // neighbour column plus the LAGGED lateral difference (3-D minus twin) of the last
+  // sweep: a lagged inflow that is exact on a laterally uniform state.
+  if (stage != 2) {
   const int jlo = js - ng, jhi = je + ng - 1;   // j0 range with j0+1 in the array
   const int klo = thrd ? (ks - ng) : ks, khi = thrd ? (ke + ng - 1) : ks;
   const Real twopi = 2.0*M_PI;
+  const bool tw = (stage == 0);
+  auto vd_ = vlat_d;
   for (int pass = 0; pass < 2; ++pass) {
     const int dir = pass;                     // 0 inward, 1 outward
     for (int q = 0; q < n1 - lcut; ++q) {
@@ -477,14 +496,13 @@ void RadiationM1::VetLatSweep() {
         const Real ch0 = exp(cs_(m,0,k,j,i));
         const Real s0 = exp(cs_(m,1,k,j,i));
         const int slot = dir*nh + d;
-        Real i3, it;
+        Real iv;
         if (typ == VL_TOP) {
           const Real stp = fmax(1.5*exp(cs_(m,1,k,j,i)) - 0.5*exp(cs_(m,1,k,j,i-1)),
                                 1.0e-300);
           Real ex, w0, wu;
           VlatW(ch0*ds, ex, w0, wu);
-          i3 = wu*stp + w0*s0;
-          it = i3;
+          iv = wu*stp + w0*s0;
         } else {
           // the upwind point, its lateral cell and bilinear fractions (index space)
           const Real xu = r*st*cp - ds*nx;
@@ -509,8 +527,11 @@ void RadiationM1::VetLatSweep() {
             k0 = k;
             uk = 0.0;
           }
-          if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
+          if (clp && !tw) {Kokkos::atomic_add(&cnt_(0), 1.0);}
           const int k1 = thrd ? (k0 + 1) : k0;
+          // the lateral cells read: the four neighbours (3-D) or the own column (twin)
+          const int ka = tw ? k : k0, kb = tw ? k : k1;
+          const int ja = tw ? j : j0, jb = tw ? j : (j0 + 1);
           if (typ == VL_START) {
             // the diffusion intensity at the inner face of shell icut (sc_he.py)
             const Real muf = geo_(l, 2*a+dir, 3);
@@ -526,16 +547,11 @@ void RadiationM1::VetLatSweep() {
             };
             Real ex, w0, wu;
             VlatW(ch0*ds, ex, w0, wu);
-            const Real b3 = fmax(VlatLerp(VlatLerp(ib(k0,j0), ib(k0,j0+1), uj),
-                                          VlatLerp(ib(k1,j0), ib(k1,j0+1), uj), uk), 0.0);
-            const Real q3 = VlatLerp(VlatLerp(sbt(k0,j0), sbt(k0,j0+1), uj),
-                                     VlatLerp(sbt(k1,j0), sbt(k1,j0+1), uj), uk);
-            const Real bt = fmax(VlatLerp(VlatLerp(ib(k,j), ib(k,j), uj),
-                                          VlatLerp(ib(k,j), ib(k,j), uj), uk), 0.0);
-            const Real qt = VlatLerp(VlatLerp(sbt(k,j), sbt(k,j), uj),
-                                     VlatLerp(sbt(k,j), sbt(k,j), uj), uk);
-            i3 = b3*ex + wu*q3 + w0*s0;
-            it = bt*ex + wu*qt + w0*s0;
+            const Real bv = fmax(VlatLerp(VlatLerp(ib(ka,ja), ib(ka,jb), uj),
+                                          VlatLerp(ib(kb,ja), ib(kb,jb), uj), uk), 0.0);
+            const Real qv = VlatLerp(VlatLerp(sbt(ka,ja), sbt(ka,jb), uj),
+                                     VlatLerp(sbt(kb,ja), sbt(kb,jb), uj), uk);
+            iv = bv*ex + wu*qv + w0*s0;
           } else {
             // upwind shell and the intensity family read there
             const int iu = (typ == VL_TURN) ? i : ((dir == 0) ? (i + 1) : (i - 1));
@@ -544,7 +560,8 @@ void RadiationM1::VetLatSweep() {
             const Real fa = geo_(l, 2*a+dir, 3);
             const int a1 = (a0 + 1 < nmu) ? (a0 + 1) : a0;
             const int b0 = dsrc*nh;
-            // azimuth of n in the frame of lateral cell (kk, jj), and the lerp in mu, psi
+            // azimuth of n in the frame of lateral cell (kk, jj) (always the 3-D
+            // neighbour's frame: the twin shares the arithmetic), lerp in mu and psi
             auto azi = [&](const int kk, const int jj, int &p0, Real &up) {
               const Real tq = cx2v(m,jj), pq = cx3v(m,kk);
               const Real ctq = cos(tq), stq = sin(tq), cpq = cos(pq), spq = sin(pq);
@@ -556,14 +573,21 @@ void RadiationM1::VetLatSweep() {
               p0 = static_cast<int>(floor(f));
               up = f - p0;
             };
-            auto val = [&](const DvceArray5D<Real> &A, const int kk, const int jj,
-                           const int p0, const Real up) {
+            // the intensity of slot c at lateral cell (kk, jj) of the upwind shell
+            auto rd = [&](const int c, const int kk, const int jj) {
+              if (tw) {return vt_(m,c,kk,jj,iu);}
+              if (kk >= ks && kk <= ke && jj >= js && jj <= je) {
+                return vi_(m,c,kk,jj,iu);
+              }
+              return vt_(m,c,kk,jj,iu) + vd_(m,c,kk,jj,iu);
+            };
+            auto val = [&](const int kk, const int jj, const int p0, const Real up) {
               const int pa = ((p0 % npsi) + npsi) % npsi;
               const int pb = (pa + 1) % npsi;
-              const Real v0 = VlatLerp(A(m,b0+a0*npsi+pa,kk,jj,iu),
-                                       A(m,b0+a0*npsi+pb,kk,jj,iu), up);
-              const Real v1 = VlatLerp(A(m,b0+a1*npsi+pa,kk,jj,iu),
-                                       A(m,b0+a1*npsi+pb,kk,jj,iu), up);
+              const Real v0 = VlatLerp(rd(b0+a0*npsi+pa,kk,jj), rd(b0+a0*npsi+pb,kk,jj),
+                                       up);
+              const Real v1 = VlatLerp(rd(b0+a1*npsi+pa,kk,jj), rd(b0+a1*npsi+pb,kk,jj),
+                                       up);
               return VlatLerp(v0, v1, fa);
             };
             int p00, p01, p10, p11;
@@ -572,38 +596,42 @@ void RadiationM1::VetLatSweep() {
             azi(k0, j0+1, p01, u01);
             azi(k1, j0, p10, u10);
             azi(k1, j0+1, p11, u11);
-            const Real iu3 = VlatLerp(VlatLerp(val(vi_,k0,j0,p00,u00),
-                                               val(vi_,k0,j0+1,p01,u01), uj),
-                                      VlatLerp(val(vi_,k1,j0,p10,u10),
-                                               val(vi_,k1,j0+1,p11,u11), uj), uk);
-            const Real iut = VlatLerp(VlatLerp(val(vt_,k,j,p00,u00),
-                                               val(vt_,k,j,p01,u01), uj),
-                                      VlatLerp(val(vt_,k,j,p10,u10),
-                                               val(vt_,k,j,p11,u11), uj), uk);
-            auto lin = [&](const int c, const int ka, const int ja, const int kb,
-                           const int jb) {
+            const Real v0 = VlatLerp(val(ka,ja,p00,u00), val(ka,jb,p01,u01), uj);
+            const Real v1 = VlatLerp(val(kb,ja,p10,u10), val(kb,jb,p11,u11), uj);
+            const Real ivu = VlatLerp(v0, v1, uk);
+            auto lin = [&](const int c) {
               return VlatLerp(VlatLerp(cs_(m,c,ka,ja,iu), cs_(m,c,ka,jb,iu), uj),
                               VlatLerp(cs_(m,c,kb,ja,iu), cs_(m,c,kb,jb,iu), uj), uk);
             };
-            const Real chu3 = exp(lin(0, k0, j0, k1, j0+1));
-            const Real su3 = exp(lin(1, k0, j0, k1, j0+1));
-            const Real chut = exp(lin(0, k, j, k, j));
-            const Real sut = exp(lin(1, k, j, k, j));
+            const Real chu = exp(lin(0));
+            const Real su = exp(lin(1));
             Real ex, w0, wu;
-            VlatW(0.5*(chu3 + ch0)*ds, ex, w0, wu);
-            i3 = fmax(iu3*ex + wu*su3 + w0*s0, 0.0);
-            VlatW(0.5*(chut + ch0)*ds, ex, w0, wu);
-            it = fmax(iut*ex + wu*sut + w0*s0, 0.0);
+            VlatW(0.5*(chu + ch0)*ds, ex, w0, wu);
+            iv = fmax(ivu*ex + wu*su + w0*s0, 0.0);
           }
         }
-        vi_(m,slot,k,j,i) = i3;
-        vt_(m,slot,k,j,i) = it;
+        if (tw) {
+          vt_(m,slot,k,j,i) = iv;
+        } else {
+          vi_(m,slot,k,j,i) = iv;
+        }
       });
     }
   }
-
+  if (!tw) {
+    // the lateral difference of this sweep: the lagged part of the next sweep's inflow
+    const int nd = 2*nh;
+    const int ilo = is + lcut;
+    par_for("m1_vlat_diff", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int c = 0; c < nd; ++c) {vd_(m,c,k,j,i) = vi_(m,c,k,j,i) - vt_(m,c,k,j,i);}
+    });
+  }
+  return;
+  }
   // (5) the moments: the correction dD = D(3-D) - D(twin) -> tau_ten LAT slots
   const int ilo = is + lcut;
+  const Real twopi = 2.0*M_PI;
   par_for("m1_vlat_mom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
