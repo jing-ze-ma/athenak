@@ -674,7 +674,8 @@ void RadiationM1::VetLatSweep(const int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetLatDump
 //! \brief vet_col_lat_dump = prefix: one binary file per rank and dumped build,
-//! prefix.<build>.<rank>.bin (the first build, and every vet_col_lat_dump_every-th): int64 count, then per active cell 9 doubles
+//! prefix.<build>.<rank>.bin (the first build, and every vet_col_lat_dump_every-th):
+//! int64 count, then per active cell 9 doubles
 //! (x1v, x2v, x3v, ln chi, ln S, f_K after the fold, dD_rr, D_rt, D_rp)
 
 void RadiationM1::VetLatDump() {
@@ -713,7 +714,8 @@ void RadiationM1::VetLatDump() {
   std::fwrite(buf.data(), sizeof(double), buf.size(), fp);
   std::fclose(fp);
   if (global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> vet_col_lat: dumped build " << vlat_nbuild << " to " << vlat_dump
+    std::cout << "<rad_m1> vet_col_lat: dumped build " << vlat_nbuild << " to "
+              << vlat_dump
               << "." << vlat_nbuild << ".<rank>.bin (first shell of the sweep i = is + "
               << vlat_icut << ")" << std::endl;
   }
