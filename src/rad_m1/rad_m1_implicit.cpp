@@ -8084,6 +8084,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         uh(m,IEN,k,j,i) += t2i_(m,M1_T2_EN,k,j,i);
         ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                     SQR(uh(m,IM3,k,j,i)))*idd;
+        if (csk) {
+          // cs-hydro-energy (10-05): the METRIC kinetic energy here too, as above and as
+          // the write-back adds back (m1_impl_wb).  The orthonormal form left EGN short
+          // by the cross term, and the write-back then created that difference as total
+          // energy at every hesdirk2 stage solve (a per-step leak, not truncation).
+          const Real c = ccl(m,k,j);
+          const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+          ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+                 *idd;
+        }
         eg = uh(m,IEN,k,j,i) - ekin - egrv;
       }
       iw_(m,M1_IW_EGN,k,j,i) = eg;
