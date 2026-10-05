@@ -10662,20 +10662,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           fp3 = 0.5*(g3l + g3r) + (w3 + (w1*d13 + w2*d23 + w3*d33))*es;
         }
       }
-      if (csw && trans && thrd) {
-        // STAGE CS3 (overwrite; the expressions above are the pre-CS3 ones): the work
-        // array is face-normal, so the transverse velocities are s v^a of the kicked
-        // covariant momentum
-        const Real c = cclw(m,k,j), sn = csnw(m,k,j), s2 = 1.0 - c*c;
-        const Real q2 = uh(m,IM2,k,j,i) + (dbgft ? dm2 : 0.0);
-        const Real q3 = uh(m,IM3,k,j,i) + (dbgft ? dm3 : 0.0);
-        const Real u2 = sn*(q2 - c*q3)*idg/s2, u3 = sn*(q3 - c*q2)*idg/s2;
-        fp1 = 0.5*(fl + fr) + (w1 + (w1*d11 + u2*d12 + u3*d13))*es;
-        const Real a2 = 0.5*(g2l + g2r) + (u2 + (w1*d12 + u2*d22 + u3*d23))*es;
-        const Real a3 = 0.5*(g3l + g3r) + (u3 + (w1*d13 + u2*d23 + u3*d33))*es;
-        fp2 = (a2 + c*a3)/sn;   // covariant, as the transform above
-        fp3 = (a3 + c*a2)/sn;
-      }
     }
     // m1-positivity.  Both moves keep e_gas + (c/chat) E of the cell exactly; eg is the
     // gas internal energy the write-back sets (the kinetic part is ekin + work).
@@ -10745,6 +10731,50 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       uh(m,IEN,k,j,i) = eg + ekin + egrv + work;
     }
   });
+  if (vfx && have_hydro && feedback && csw && trans && thrd) {
+    // STAGE CS3: the vimp re-forming of the cell F on the cubed sphere, as a kernel of
+    // its own (an overwrite inside the write-back above changed the GPU code of the
+    // sp/Cartesian path).  The work array is face-normal, so the transverse velocities
+    // are s v^a of the kicked covariant momentum, which the write-back has just stored
+    // in uh; E is the final one (the limits are idempotent in E).
+    par_for("m1_impl_wb_csvfx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real idg = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+      const Real w1 = uh(m,IM1,k,j,i)*idg;
+      const Real c = cclw(m,k,j), sn = csnw(m,k,j), s2 = 1.0 - c*c;
+      const Real q2 = uh(m,IM2,k,j,i), q3 = uh(m,IM3,k,j,i);
+      const Real u2 = sn*(q2 - c*q3)*idg/s2, u3 = sn*(q3 - c*q2)*idg/s2;
+      Real chi = iw_(m,M1_IW_WCHI,k,j,i);
+      Real n1 = iw_(m,M1_IW_N1,k,j,i), n2 = iw_(m,M1_IW_N2,k,j,i);
+      Real n3 = iw_(m,M1_IW_N3,k,j,i);
+      Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2), d33 = M1EddDiag(chi,n3);
+      Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
+      Real d23 = M1EddOff(chi,n2,n3);
+      if (dfull) {
+        d11 = vd_(m,M1_VET_D11,k,j,i);
+        d22 = vd_(m,M1_VET_D11+1,k,j,i);
+        d33 = vd_(m,M1_VET_D11+2,k,j,i);
+        d12 = vd_(m,M1_VET_D11+3,k,j,i);
+        d13 = vd_(m,M1_VET_D11+4,k,j,i);
+        d23 = vd_(m,M1_VET_D11+5,k,j,i);
+      }
+      const Real es = iw_(m,M1_IW_EP,k,j,i);
+      const Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
+      const Real g2l = f2_(m,k,j,i), g2r = f2_(m,k,j+1,i);
+      const Real g3l = f3_(m,k,j,i), g3r = f3_(m,k+1,j,i);
+      Real fp1 = 0.5*(fl + fr) + (w1 + (w1*d11 + u2*d12 + u3*d13))*es;
+      const Real a2 = 0.5*(g2l + g2r) + (u2 + (w1*d12 + u2*d22 + u3*d23))*es;
+      const Real a3 = 0.5*(g3l + g3r) + (u3 + (w1*d13 + u2*d23 + u3*d33))*es;
+      Real fp2 = (a2 + c*a3)/sn;   // covariant, as the write-back's transform
+      Real fp3 = (a3 + c*a2)/sn;
+      Real ep = u0_(m,M1_E,k,j,i);
+      M1ApplyLimitsCs(cl, efl, c, ep, fp1, fp2, fp3);
+      u0_(m,M1_E,k,j,i) = ep;
+      u0_(m,M1_F1,k,j,i) = fp1;
+      u0_(m,M1_F2,k,j,i) = fp2;
+      u0_(m,M1_F3,k,j,i) = fp3;
+    });
+  }
 
   // force_reference_work = split (ke-dt-0926): the write-back above handed the gas the
   // work of the FULL force and took it from E.  Here the gas keeps only the residual
