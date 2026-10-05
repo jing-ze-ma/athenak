@@ -816,6 +816,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
+      vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_async")) {
       vgd_async = pin->GetBoolean("rad_m1","vet_gd_async");
     }

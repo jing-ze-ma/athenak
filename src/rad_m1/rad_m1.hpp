@@ -1478,7 +1478,17 @@ class RadiationM1 {
   int vgd_nb2 = 1, vgd_nb3 = 1;
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
   DvceArray1D<Real> vgd_csb, vgd_crb;
-  DvceArray1D<int> vgd_fs, vgd_fr, vgd_pbv;
+  // vet_gd_halo_pipe (default true, bitwise): the compact mask of the NEXT shell is built
+  // while this shell's messages travel; 2 slots of flags/positions (vgd_hfs/hfr) and of
+  // the partner boundaries in pinned host memory (vgd_hpb), tagged (i, inw, ws, icut,
+  // sweep id)
+  DvceArray1D<int> vgd_hfs[2], vgd_hfr[2];
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hpb[2];
+  int vgd_htag[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1}};
+  int vgd_hlast = 1, vgd_hsweep = 0;
+  int vgd_hnext[3] = {-1, 0, 0};
+  bool vgd_hpipe = true;
+  void VetGdHcPrep(const int slot, const int i0, const bool inw0, const int ws);
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
   void VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int i0, const int ws);
@@ -1505,9 +1515,10 @@ class RadiationM1 {
   bool vgd_apend = false;      // a swept build whose moments are not yet taken
   bool vgd_afly = false;       // the helper thread is running
   int vgd_acyc = -1;           // ncycle of the pending build (its z-angle)
+  int vgd_pcut = -1;           // vlat_icut of the pending build (async)
+  int vgd_scut = 0;            // vlat_icut the running sweep uses (sync: = vlat_icut)
   std::thread vgd_athr;
   DevExeSpace vgd_cur, vgd_ex;
-  DvceArray1D<int>::HostMirror vgd_pbv_h;
   Real vgd_tjoin = 0.0, vgd_nasync = 0.0;
   DvceArray5D<Real> vgd_rst;   // (nmb, 2, k, j, i): vlat_cs of the pending build, staged
   int vgd_rst_cyc = -1;        // from the restart file (-1: nothing staged)
