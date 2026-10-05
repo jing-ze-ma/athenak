@@ -6946,8 +6946,38 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   const bool fws = (force_ref == M1_FREF_WB_ARAD) && fref_wsplit;
   auto aref_ = arad_ref;
   const Real dtw = dt_sub;
-  const bool csw = cs_geom;
-  auto cclw = pmy_pack->pcoord->cos_cell;
+  if (cs_geom) {
+    // STAGE CS3: V and dv are FACE-NORMAL components n_a = s v^a on the cubed sphere, so
+    // the kinetic energy is 0.5 rho (n_2^2 + n_3^2 + 2 c n_2 n_3)/s^2 (+ the radial
+    // part); a kernel of its own, the one below is the pre-CS3 one
+    auto cclw = pmy_pack->pcoord->cos_cell;
+    par_for("m1_impl_wk_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int ipw = pos_.d_view(m);
+      if (!cyclic && ((i == is && ipw == 0 && elo) ||
+                      (i == ie && ipw == nblkx1-1 && ehi))) {
+        return;
+      }
+      const Real d1 = iw_(m,ivb,k,j,i);
+      Real wk = d1*(iw_(m,M1_IW_V1,k,j,i) + 0.5*d1);
+      if (trans && dbgft && thrd) {
+        const Real c = cclw(m,k,j), is2 = 1.0/(1.0 - c*c);
+        const Real a2 = iw_(m,ivb+1,k,j,i), a3 = iw_(m,ivb+2,k,j,i);
+        const Real v2 = iw_(m,M1_IW_V2,k,j,i), v3 = iw_(m,M1_IW_V3,k,j,i);
+        wk += is2*(a2*(v2 + 0.5*a2) + a3*(v3 + 0.5*a3)
+                   + c*(a2*(v3 + 0.5*a3) + a3*(v2 + 0.5*a2)));
+      }
+      const Real w = cr*uh(m,IDN,k,j,i)*wk;
+      if (row) {
+        iw_(m,M1_IW_TR,k,j,i) -= w;
+      } else {
+        u0_(m,M1_E,k,j,i) += w;
+        if (slope) {
+          kk_(m,M1_T2_E,k,j,i) += w*fk;
+        }
+      }
+    });
+  } else {
   par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipw = pos_.d_view(m);
@@ -6964,17 +6994,6 @@ void RadiationM1::ImplicitWorkRow(bool row) {
         dv = iw_(m,ivb+2,k,j,i);
         wk += dv*(iw_(m,M1_IW_V3,k,j,i) + 0.5*dv);
       }
-      if (csw && thrd) {
-        // STAGE CS3: V and dv are FACE-NORMAL components n_a = s v^a; the kinetic energy
-        // is 0.5 rho (n_2^2 + n_3^2 + 2 c n_2 n_3)/s^2 (+ the radial part)
-        const Real c = cclw(m,k,j), is2 = 1.0/(1.0 - c*c);
-        const Real a2 = iw_(m,ivb+1,k,j,i), a3 = iw_(m,ivb+2,k,j,i);
-        const Real v2 = iw_(m,M1_IW_V2,k,j,i), v3 = iw_(m,M1_IW_V3,k,j,i);
-        const Real d1 = iw_(m,ivb,k,j,i);
-        wk = d1*(iw_(m,M1_IW_V1,k,j,i) + 0.5*d1)
-             + is2*(a2*(v2 + 0.5*a2) + a3*(v3 + 0.5*a3)
-                    + c*(a2*(v3 + 0.5*a3) + a3*(v2 + 0.5*a2)));
-      }
     }
     const Real w = cr*uh(m,IDN,k,j,i)*wk;
     if (row) {
@@ -6986,6 +7005,7 @@ void RadiationM1::ImplicitWorkRow(bool row) {
       }
     }
   });
+  }   // cs_geom
   if (fws) {
     // force_reference_work = split: the reference work (v dt rho arad_ref), which the
     // radiation pays, rides the row too (a separate kernel: the default one is untouched)
@@ -10624,14 +10644,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           w3 = (uh(m,IM3,k,j,i) + dm3)*idg;
         }
       }
-      if (csw && trans && thrd) {
-        // STAGE CS3: the face-normal velocities s v^a of the kicked (covariant) momentum
-        const Real c = cclw(m,k,j), sn = csnw(m,k,j), s2 = 1.0 - c*c;
-        const Real n2 = uh(m,IM2,k,j,i) + (dbgft ? dm2 : 0.0);
-        const Real n3 = uh(m,IM3,k,j,i) + (dbgft ? dm3 : 0.0);
-        w2 = sn*(n2 - c*n3)*idg/s2;
-        w3 = sn*(n3 - c*n2)*idg/s2;
-      }
       Real chi = iw_(m,M1_IW_WCHI,k,j,i);
       Real n1 = iw_(m,M1_IW_N1,k,j,i), n2 = iw_(m,M1_IW_N2,k,j,i);
       Real n3 = iw_(m,M1_IW_N3,k,j,i);
@@ -10655,6 +10667,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (thrd) {
           fp3 = 0.5*(g3l + g3r) + (w3 + (w1*d13 + w2*d23 + w3*d33))*es;
         }
+      }
+      if (csw && trans && thrd) {
+        // STAGE CS3 (overwrite; the expressions above are the pre-CS3 ones): the work
+        // array is face-normal, so the transverse velocities are s v^a of the kicked
+        // covariant momentum
+        const Real c = cclw(m,k,j), sn = csnw(m,k,j), s2 = 1.0 - c*c;
+        const Real q2 = uh(m,IM2,k,j,i) + (dbgft ? dm2 : 0.0);
+        const Real q3 = uh(m,IM3,k,j,i) + (dbgft ? dm3 : 0.0);
+        const Real u2 = sn*(q2 - c*q3)*idg/s2, u3 = sn*(q3 - c*q2)*idg/s2;
+        fp1 = 0.5*(fl + fr) + (w1 + (w1*d11 + u2*d12 + u3*d13))*es;
+        fp2 = 0.5*(g2l + g2r) + (u2 + (w1*d12 + u2*d22 + u3*d23))*es;
+        fp3 = 0.5*(g3l + g3r) + (u3 + (w1*d13 + u2*d23 + u3*d33))*es;
       }
     }
     // m1-positivity.  Both moves keep e_gas + (c/chat) E of the cell exactly; eg is the
