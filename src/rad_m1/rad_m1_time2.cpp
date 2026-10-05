@@ -35,6 +35,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
 #include "eos/eos.hpp"
@@ -462,6 +463,10 @@ void RadiationM1::Time2VetStart() {
   auto emag_ = emag1;
   const Real efl = e_floor;
   auto u0_ = u0;
+  // cs-hydro-energy (10-05): the metric kinetic energy on the cubed sphere (covariant
+  // momentum), as RadiationM1::Opacity and m1_impl_i1
+  const bool csk = pmy_pack->pmesh->use_cubed_sphere;
+  auto ccl = pmy_pack->pcoord->cos_cell;
   // the fast form (default): ONE fused pass over U^n (the hydro u1) gives T^n and the
   // opacities of U^n, with exactly the arithmetic of RadiationM1::Opacity, and the
   // stage-start opacities are saved and copied back afterwards instead of re-evaluated.
@@ -484,6 +489,12 @@ void RadiationM1::Time2VetStart() {
       Real d = uh1(m,IDN,k,j,i);
       Real ke_dens = 0.5*(SQR(uh1(m,IM1,k,j,i)) + SQR(uh1(m,IM2,k,j,i)) +
                           SQR(uh1(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
+      if (csk) {
+        const Real c = ccl(m,k,j);
+        const Real m2 = uh1(m,IM2,k,j,i), m3 = uh1(m,IM3,k,j,i);
+        ke_dens = 0.5*(SQR(uh1(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+                  /fmax(d, 1.0e-300);
+      }
       Real eint = uh1(m,IEN,k,j,i) - ke_dens;
       if (etg) eint -= d*phicc(m,k,j,i);
       if (mhd) eint -= emag_(m,k,j,i);
@@ -515,6 +526,12 @@ void RadiationM1::Time2VetStart() {
       Real idd = 1.0/fmax(dd, 1.0e-300);
       Real ekin = 0.5*(SQR(uh1(m,IM1,k,j,i)) + SQR(uh1(m,IM2,k,j,i)) +
                        SQR(uh1(m,IM3,k,j,i)))*idd;
+      if (csk) {
+        const Real c = ccl(m,k,j);
+        const Real m2 = uh1(m,IM2,k,j,i), m3 = uh1(m,IM3,k,j,i);
+        ekin = 0.5*(SQR(uh1(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+               *idd;
+      }
       Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
       if (mhd) egrv += emag_(m,k,j,i);
       Real eg = uh1(m,IEN,k,j,i) - ekin - egrv;
