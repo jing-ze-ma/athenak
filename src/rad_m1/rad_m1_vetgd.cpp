@@ -731,11 +731,15 @@ void RadiationM1::VetGdHaloInit() {
       vgd_r1f.assign(x1f_h.extent(1), 0.0);
       for (size_t q = 0; q < vgd_r1v.size(); ++q) {vgd_r1v[q] = x1v_h(0,q);}
       for (size_t q = 0; q < vgd_r1f.size(); ++q) {vgd_r1f[q] = x1f_h(0,q);}
-      const size_t nall = static_cast<size_t>(nmb)*8*vgd_maxcnt;
-      Kokkos::realloc(vgd_csb, nall);
-      Kokkos::realloc(vgd_crb, nall);
-      Kokkos::realloc(vgd_fs, nall + 1);
-      Kokkos::realloc(vgd_fr, nall + 1);
+      // exact per-shell sizes (ni = 1, nv = vgd_n) at the deepest band: the sums of the
+      // remote pieces (the dense sbuf / rbuf also carry the multi-shell ln chi, ln S
+      // exchange; these buffers do not)
+      const size_t ns = static_cast<size_t>(pb_h(vgd_w,npp))*vgd_n;
+      const size_t nr = static_cast<size_t>(pb_h(vgd_w,2*npp + 1))*vgd_n;
+      Kokkos::realloc(vgd_csb, std::max<size_t>(ns, 1));
+      Kokkos::realloc(vgd_crb, std::max<size_t>(nr, 1));
+      Kokkos::realloc(vgd_fs, ns + 1);
+      Kokkos::realloc(vgd_fr, nr + 1);
     }
   }
 }
