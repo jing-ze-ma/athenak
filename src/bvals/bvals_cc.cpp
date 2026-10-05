@@ -96,6 +96,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     if (e_ != nullptr) { no_rs_cc = std::atoi(e_); } }
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
+  const bool nors_ = cs_noresample;
+  const bool cperm_ = cs_perm_pairs;
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
   auto &is_z4c = is_z4c_;
@@ -258,6 +260,22 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             ak = -1;
             bk = kl + ku;
           }
+          // cs_perm_pairs (default false): the tangential pairs of this object are
+          // FACE-NORMAL components (the implicit M1 work array, stage CS2), not covariant
+          // ones: across a seam they take the signed AXIS permutation of the index map
+          // (the component along the source axis that becomes the destination's x2 or
+          // x3, negated where that axis runs reversed), with no metric transform.
+          if (cperm_ && vec_) {
+            cs_xform = false;
+            const bool sw = (pb.swap_ax == 1);
+            if (v == va_) {
+              vv = sw ? vb_ : va_;
+              signvar = (sw ? rev_b_preswap : rev_a_preswap) ? -1 : 1;
+            } else {
+              vv = sw ? va_ : vb_;
+              signvar = (sw ? rev_a_preswap : rev_b_preswap) ? -1 : 1;
+            }
+          }
 
           // WHICH BUFFER IS THIS, and therefore which way does the along-seam resample
           // run?  Read it off the SLOT INDEX.  Slots are laid out (nghbr_index.hpp):
@@ -346,7 +364,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
-          if (no_rs_cc) { cs_seam = 0; }
+          if (no_rs_cc || nors_) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;

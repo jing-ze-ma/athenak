@@ -43,6 +43,7 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/nghbr_index.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
@@ -86,10 +87,17 @@ void RadiationM1::ImplicitOpCheck() {
   if (opchk_n >= nchk) {return;}
   ++opchk_n;
   auto *pm = pmy_pack->pmesh;
-  if (pm->multilevel || pm->use_cubed_sphere || pm->use_polar_boundary) {
+  // STAGE CS0 (m1-cs-implicit): the cubed sphere is checked too.  Its same-panel ghosts
+  // are plain copies (checked exactly as elsewhere); a ghost whose donor is on another
+  // panel is the along-seam RESAMPLE of the donor's cells, which the hash cannot predict,
+  // so those are checked by a second exchange of a field that depends on i only (a
+  // spherically symmetric x): every ghost with a donor, seams and corners included, must
+  // reproduce it (the resample weights sum to one, clamped to the stencil's min/max).
+  const bool csm = pm->use_cubed_sphere;
+  if (pm->multilevel || pm->use_polar_boundary) {
     if (global_variable::my_rank == 0) {
-      std::cout << "M1OPCHK solve " << opchk_n << ": SKIPPED (multilevel, cubed sphere "
-                << "or polar mesh)" << std::endl;
+      std::cout << "M1OPCHK solve " << opchk_n << ": SKIPPED (multilevel or polar mesh)"
+                << std::endl;
     }
     return;
   }
@@ -127,10 +135,12 @@ void RadiationM1::ImplicitOpCheck() {
 
   // ---- the neighbour gid of each block in each of the 27 directions (same level)
   DualArray2D<int> nbg("m1_chk_nbg", nmb, 27);
+  // cubed sphere: 1 where the neighbour in that direction is on another panel
+  DualArray2D<int> nbs("m1_chk_nbs", nmb, 27);
   {
     auto &nb = pmy_pack->pmb->nghbr;
     for (int m = 0; m < nmb; ++m) {
-      for (int d = 0; d < 27; ++d) {nbg.h_view(m,d) = -1;}
+      for (int d = 0; d < 27; ++d) {nbg.h_view(m,d) = -1; nbs.h_view(m,d) = 0;}
       for (int o3 = (td ? -1 : 0); o3 <= (td ? 1 : 0); ++o3) {
         for (int o2 = (md ? -1 : 0); o2 <= (md ? 1 : 0); ++o2) {
           for (int o1 = -1; o1 <= 1; ++o1) {
@@ -139,14 +149,20 @@ void RadiationM1::ImplicitOpCheck() {
             if (n < 0 || n >= pmy_pack->pmb->nnghbr) continue;
             const NeighborBlock &q = nb.h_view(m,n);
             if (q.gid >= 0) {nbg.h_view(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) = q.gid;}
+            if (csm && q.gid >= 0 && q.panel != pmy_pack->pmb->mb_panel.h_view(m)) {
+              nbs.h_view(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) = 1;
+            }
           }
         }
       }
     }
     nbg.modify_host();
     nbg.sync_device();
+    nbs.modify_host();
+    nbs.sync_device();
   }
   auto nbg_ = nbg.d_view;
+  auto nbs_ = nbs.d_view;
 
   constexpr int XC = M1_IW_KY, YC = M1_IW_KV;
   auto iw_ = iw;
@@ -190,12 +206,216 @@ void RadiationM1::ImplicitOpCheck() {
       if (td && (k < ks - rch || k > ke + rch)) return;
       const int g = nbg_(m, (o1+1) + 3*(o2+1) + 9*(o3+1));
       if (g < 0) return;
+      if (nbs_(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) != 0) return;   // seam: shell_check
       nc += 1.0;
       const Real want = M1ChkHash(g, k - o3*nx3, j - o2*nx2, i - o1*nx1, 1);
       if (a(m,XC,k,j,i) != want) {nw += 1.0;}
     }, nchecked, nbad);
     res[0] = nchecked;
     res[1] = nbad;
+  };
+  // STAGE CS1, cubed sphere: an EXACT check of every ghost with a donor, seams included.
+  // Each cell gets a hash of its CHART-FREE integer label: the cube-surface position of
+  // its centre in doubled equiangular index units, P = a (2 jg+1-N) + b (2 kg+1-N) + n N
+  // with (a, b, n) the panel frame (PanelFrame) and (jg, kg) the index on the panel.  The
+  // equiangular grid is invariant under the cube's symmetries, so the no-resample seam
+  // ghost (the neighbour's own cell next to the seam) is the MIRROR of this block's cell
+  // at the same depth, whose label is the integer reflection of P across the plane that
+  // holds the seam edge: R(P) = P - (P.(n - s)) (n - s), s the seam side's axis.  A ghost
+  // across two seams (a cube vertex) has no donor in this exchange and is not checked.
+  // Returns (checked, wrong, of them across a seam, vertex ghosts skipped).
+  DualArray2D<int> lab("m1_chk_lab", nmb, 3);
+  if (csm) {
+    const int npan = pm->mesh_indcs.nx2;
+    for (int m = 0; m < nmb; ++m) {
+      lab.h_view(m,0) = pmy_pack->pmb->mb_panel.h_view(m);
+      lab.h_view(m,1) = static_cast<int>(std::lround(
+          0.5*(pmy_pack->pmb->mb_size.h_view(m).x2min + 1.0)*npan));
+      lab.h_view(m,2) = static_cast<int>(std::lround(
+          0.5*(pmy_pack->pmb->mb_size.h_view(m).x3min + 1.0)*npan));
+    }
+    lab.modify_host();
+    lab.sync_device();
+  }
+  auto lab_ = lab.d_view;
+  const int npn = pm->mesh_indcs.nx2;
+  auto label_check = [&](Real *res) {
+    auto a = iw;
+    // the expected value of cell (m,k,j,i), or (vertex) a flag: returns false for a ghost
+    // across two seams
+    auto want = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                              Real &w, bool &seam) -> bool {
+      Real fa[3], fb[3], fn[3];
+      cubed_sphere::PanelFrame(lab_(m,0), fa, fb, fn);
+      int va[3], vb[3], vn[3];
+      for (int c = 0; c < 3; ++c) {
+        va[c] = static_cast<int>(fa[c]); vb[c] = static_cast<int>(fb[c]);
+        vn[c] = static_cast<int>(fn[c]);
+      }
+      int jg = j - js + lab_(m,1), kg = k - ks + lab_(m,2);
+      const bool jo = (jg < 0 || jg >= npn), ko = (kg < 0 || kg >= npn);
+      seam = jo || ko;
+      if (jo && ko) {return false;}
+      int sv[3] = {0, 0, 0};
+      if (jg < 0) {
+        jg = -1 - jg;
+        for (int c = 0; c < 3; ++c) {sv[c] = -va[c];}
+      } else if (jg >= npn) {
+        jg = 2*npn - 1 - jg;
+        for (int c = 0; c < 3; ++c) {sv[c] = va[c];}
+      } else if (kg < 0) {
+        kg = -1 - kg;
+        for (int c = 0; c < 3; ++c) {sv[c] = -vb[c];}
+      } else if (kg >= npn) {
+        kg = 2*npn - 1 - kg;
+        for (int c = 0; c < 3; ++c) {sv[c] = vb[c];}
+      }
+      int pv[3];
+      for (int c = 0; c < 3; ++c) {
+        pv[c] = va[c]*(2*jg + 1 - npn) + vb[c]*(2*kg + 1 - npn) + vn[c]*npn;
+      }
+      if (seam) {
+        int u[3], d = 0;
+        for (int c = 0; c < 3; ++c) {u[c] = vn[c] - sv[c]; d += pv[c]*u[c];}
+        for (int c = 0; c < 3; ++c) {pv[c] -= d*u[c];}
+      }
+      w = M1ChkHash(pv[0] + 4096, pv[1], pv[2], i, 5);
+      return true;
+    };
+    par_for("m1_chk_lfill", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie) && (!md || (j >= js && j <= je)) &&
+                       (!td || (k >= ks && k <= ke));
+      Real w = 0.0;
+      bool sm = false;
+      if (act) {want(m, k, j, i, w, sm);}
+      a(m,XC,k,j,i) = act ? w : M1CHK_POISON;
+    });
+    ImplicitKrylovHalo(XC);
+    DevExeSpace().fence();
+    Real nchecked = 0.0, nbad = 0.0, nseam = 0.0, nvert = 0.0;
+    const int nkji = n3*n2*n1;
+    Kokkos::parallel_reduce("m1_chk_label",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &nc, Real &nw, Real &ns, Real &nv) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/(n2*n1);
+      r -= k*n2*n1;
+      const int j = r/n1;
+      const int i = r - j*n1;
+      const int o1 = (i < is) ? -1 : ((i > ie) ? 1 : 0);
+      const int o2 = md ? ((j < js) ? -1 : ((j > je) ? 1 : 0)) : 0;
+      const int o3 = td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+      if (o1 == 0 && o2 == 0 && o3 == 0) return;
+      if (o1 != 0) return;   // x1 is a physical boundary on cs (one radial block)
+      const int d = (o1+1) + 3*(o2+1) + 9*(o3+1);
+      if (nbg_(m,d) < 0) return;
+      Real w = 0.0;
+      bool sm = false;
+      if (!want(m, k, j, i, w, sm)) {nv += 1.0; return;}
+      nc += 1.0;
+      if (sm) {ns += 1.0;}
+      if (a(m,XC,k,j,i) != w) {nw += 1.0;}
+    }, nchecked, nbad, nseam, nvert);
+    res[0] = nchecked;
+    res[1] = nbad;
+    res[2] = nseam;
+    res[3] = nvert;
+  };
+  // STAGE CS1, gate (c): the seam geometry is SINGLE VALUED.  Each cell next to a panel
+  // seam carries the canonical seam arc dth (q = 0) or pair angle angm (q = 1) of its
+  // seam face (a cell at a panel corner has two seam faces with the same canonical
+  // index, so the same numbers), the exchange brings the neighbour's value into the
+  // first ghost across the seam, and the two must be BITWISE equal.  Returns (checked,
+  // unequal).
+  auto csg2c = csg2;
+  auto csg3c = csg3;
+  auto cseamc = cs_seam.d_view;
+  auto geom_check = [&](const int qv, Real *res) {
+    auto a = iw;
+    par_for("m1_chk_gfill", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie) && (j >= js && j <= je) &&
+                       (k >= ks && k <= ke);
+      Real w = 0.0;
+      if (act) {
+        if (j == js && cseamc(m,0)) {w = csg2c(m,qv,k,0);}
+        if (j == je && cseamc(m,1)) {w = csg2c(m,qv,k,1);}
+        if (k == ks && cseamc(m,2)) {w = csg3c(m,qv,j,0);}
+        if (k == ke && cseamc(m,3)) {w = csg3c(m,qv,j,1);}
+      }
+      a(m,XC,k,j,i) = act ? w : M1CHK_POISON;
+    });
+    ImplicitKrylovHalo(XC);
+    DevExeSpace().fence();
+    Real nchecked = 0.0, nbad = 0.0;
+    const int nkji = n3*n2*n1;
+    Kokkos::parallel_reduce("m1_chk_geom",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &nc, Real &nw) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/(n2*n1);
+      r -= k*n2*n1;
+      const int j = r/n1;
+      const int i = r - j*n1;
+      if (i < is || i > ie) return;
+      const bool kin = (k >= ks && k <= ke), jin = (j >= js && j <= je);
+      Real mine = 0.0;
+      bool on = false;
+      if (kin && j == js-1 && cseamc(m,0)) {on = true; mine = csg2c(m,qv,k,0);}
+      if (kin && j == je+1 && cseamc(m,1)) {on = true; mine = csg2c(m,qv,k,1);}
+      if (jin && k == ks-1 && cseamc(m,2)) {on = true; mine = csg3c(m,qv,j,0);}
+      if (jin && k == ke+1 && cseamc(m,3)) {on = true; mine = csg3c(m,qv,j,1);}
+      if (!on) return;
+      nc += 1.0;
+      if (a(m,XC,k,j,i) != mine) {nw += 1.0;}
+    }, nchecked, nbad);
+    res[0] = nchecked;
+    res[1] = nbad;
+  };
+  // cubed sphere: x = a hash of i only in the active cells, the poison in the ghosts;
+  // after the exchange every ghost within `reach` that has a donor (seam or not) must
+  // hold the value of its own i to 1e-14.  Returns (checked, wrong, of them on a seam).
+  auto shell_check = [&](Real *res) {
+    auto a = iw;
+    par_for("m1_chk_sfill", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie) && (!md || (j >= js && j <= je)) &&
+                       (!td || (k >= ks && k <= ke));
+      a(m,XC,k,j,i) = act ? M1ChkHash(0, 0, 0, i, 4) : M1CHK_POISON;
+    });
+    ImplicitKrylovHalo(XC);
+    DevExeSpace().fence();
+    const int rch = reach;
+    Real nchecked = 0.0, nbad = 0.0, nseam = 0.0;
+    const int nkji = n3*n2*n1;
+    Kokkos::parallel_reduce("m1_chk_shell",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &nc, Real &nw, Real &ns) {
+      const int m = idx/nkji;
+      int r = idx - m*nkji;
+      const int k = r/(n2*n1);
+      r -= k*n2*n1;
+      const int j = r/n1;
+      const int i = r - j*n1;
+      const int o1 = (i < is) ? -1 : ((i > ie) ? 1 : 0);
+      const int o2 = md ? ((j < js) ? -1 : ((j > je) ? 1 : 0)) : 0;
+      const int o3 = td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+      if (o1 == 0 && o2 == 0 && o3 == 0) return;
+      if (i < is - rch || i > ie + rch) return;
+      if (md && (j < js - rch || j > je + rch)) return;
+      if (td && (k < ks - rch || k > ke + rch)) return;
+      const int d = (o1+1) + 3*(o2+1) + 9*(o3+1);
+      if (nbg_(m,d) < 0) return;
+      nc += 1.0;
+      if (nbs_(m,d) != 0) {ns += 1.0;}
+      if (!(fabs(a(m,XC,k,j,i) - M1ChkHash(0, 0, 0, i, 4)) <= 1.0e-14)) {nw += 1.0;}
+    }, nchecked, nbad, nseam);
+    res[0] = nchecked;
+    res[1] = nbad;
+    res[2] = nseam;
   };
 
   // the result of the reference and of each variant
@@ -310,6 +530,34 @@ void RadiationM1::ImplicitOpCheck() {
       std::snprintf(buf, sizeof(buf), "  ref  %-34s max|y| %.3e  unfilled-ghost reads "
                     "%.0f  %s", name.c_str(), v[1], nbad, bad ? "FAIL" : "ok");
       lines.push_back(buf);
+      if (csm) {
+        // STAGE CS1: the CONSERVATION of the operator, seams included: with no source
+        // in the row (pure scattering, closed or reflecting x1 ends) sum_i V_i (y - x)_i
+        // telescopes, so its ratio to sum_i |V_i (y - x)_i| is round-off.  Reported
+        // (not a pass/fail: absorption or open x1 ends make it O(1) legitimately).
+        auto cv = pmy_pack->pcoord->volume;
+        Real s0 = 0.0, s1 = 0.0;
+        Kokkos::parallel_reduce("m1_chk_cons",
+        Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nkji),
+        KOKKOS_LAMBDA(const int idx, Real &l0, Real &l1) {
+          const int m = idx/nkji;
+          int r = idx - m*nkji;
+          const int k = ks + r/nji;
+          r -= (k - ks)*nji;
+          const int j = js + r/ni;
+          const int i = is + (r - (j - js)*ni);
+          const Real dv = cv(m,k,j,i)*(a(m,YC,k,j,i) - a(m,XC,k,j,i));
+          l0 += dv;
+          l1 += fabs(dv);
+        }, s0, s1);
+        Real sv[2] = {s0, s1};
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(MPI_IN_PLACE, sv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        std::snprintf(buf, sizeof(buf), "  cons %-34s |sum V(Ax-x)|/sum|V(Ax-x)| %.3e",
+                      name.c_str(), fabs(sv[0])/fmax(sv[1], 1.0e-300));
+        lines.push_back(buf);
+      }
       return;
     }
     ++nrun;
@@ -390,6 +638,50 @@ void RadiationM1::ImplicitOpCheck() {
         std::snprintf(buf, sizeof(buf), "  halo %-34s ghosts checked %.0f  wrong %.0f"
                       "  %s", hn.c_str(), hv[0], hv[1], bad ? "FAIL" : "PASS");
         lines.push_back(buf);
+        if (csm) {
+          Real sr[3];
+          shell_check(sr);
+          Real sv[3] = {sr[0], sr[1], sr[2]};
+#if MPI_PARALLEL_ENABLED
+          MPI_Allreduce(sr, sv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+          const bool sbad = (sv[1] > 0.0) || (sv[2] <= 0.0);
+          if (sbad) {++nfail;}
+          std::snprintf(buf, sizeof(buf), "  halo %-34s shell field: ghosts %.0f (seam "
+                        "%.0f)  wrong %.0f  %s", (hn + "/cs_shell").c_str(), sv[0], sv[2],
+                        sv[1], sbad ? "FAIL" : "PASS");
+          lines.push_back(buf);
+          Real lr[4];
+          label_check(lr);
+          Real lv[4] = {lr[0], lr[1], lr[2], lr[3]};
+#if MPI_PARALLEL_ENABLED
+          MPI_Allreduce(lr, lv, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+          const bool lbad = (lv[1] > 0.0) || (lv[2] <= 0.0);
+          if (lbad) {++nfail;}
+          std::snprintf(buf, sizeof(buf), "  halo %-34s mirror labels: ghosts %.0f (seam "
+                        "%.0f, vertex skipped %.0f)  wrong %.0f  %s",
+                        (hn + "/cs_label").c_str(), lv[0], lv[2], lv[3], lv[1],
+                        lbad ? "FAIL" : "PASS");
+          lines.push_back(buf);
+          for (int qv = 0; qv < 2; ++qv) {
+            Real gr[2];
+            geom_check(qv, gr);
+            Real gv[2] = {gr[0], gr[1]};
+#if MPI_PARALLEL_ENABLED
+            MPI_Allreduce(gr, gv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+            const bool gbad = (gv[1] > 0.0) || (gv[0] <= 0.0);
+            if (gbad) {++nfail;}
+            std::snprintf(buf, sizeof(buf), "  geom %-34s seam %s both sides bitwise: "
+                          "faces %.0f  unequal %.0f  %s", (hn + "/cs_seam").c_str(),
+                          (qv == 0) ? "arc dth   " : "pair angm ", gv[0], gv[1],
+                          gbad ? "FAIL" : "PASS");
+            lines.push_back(buf);
+          }
+          fill();
+          ImplicitKrylovHalo(XC);
+        }
       }
       if (impl_stencil) {
         ImplicitStencilOp(XC, YC, 3, out);

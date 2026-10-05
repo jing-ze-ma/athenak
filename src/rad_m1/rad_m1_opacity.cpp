@@ -22,6 +22,7 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
@@ -77,6 +78,10 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   auto phicc = fl.phicc0;
   const bool mhd = fl_mhd;      // m1-mhd: and |B|^2/2
   auto emag_ = emag0;
+  // cs-hydro-energy (10-05): on the cubed sphere the momentum is COVARIANT, so the
+  // kinetic energy is 0.5 m_a v^a with the metric (gnomonic_raisevel.hpp)
+  const bool csk = pmy_pack->pmesh->use_cubed_sphere;
+  auto ccl = pmy_pack->pcoord->cos_cell;
   int otype = opacity_type;
   Real kp = kappa_p, ke = kappa_e, kf = kappa_f, ks = kappa_s;
   Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
@@ -92,6 +97,12 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     if (need_t) {
       Real ke_dens = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                           SQR(uh(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
+      if (csk) {
+        const Real c = ccl(m,k,j);
+        const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+        ke_dens = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+                  /fmax(d, 1.0e-300);
+      }
       Real eint = uh(m,IEN,k,j,i) - ke_dens;
       if (etg) eint -= d*phicc(m,k,j,i);
       if (mhd) eint -= emag_(m,k,j,i);

@@ -72,6 +72,8 @@
 #include <math.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -82,6 +84,7 @@
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -110,6 +113,48 @@ Real m1_at_flux = 1.0, m1_at_c = 1.0, m1_at_ebot = 1.0, m1_at_kap = 1.0;
 // sph_atm (STAGE S2, tests_m1/runs_5b_sp_s2): the held gas rho = rho0 (r/r_in)^-n
 Real m1_sa_rho0 = 1.0, m1_sa_rin = 1.0, m1_sa_n = 0.0;
 bool m1_sa_hold = true;
+
+// STAGE CS2 (radwave, rw_hist): the plane-wave vector / the cs sectoral mode frame
+Real m1_rw_k[3] = {0.0, 0.0, 0.0};
+Real m1_rw_rho0 = 1.0;
+int m1_rw_l = 0;
+Real m1_rw_e1[3] = {1.0, 0.0, 0.0}, m1_rw_e2[3] = {0.0, 1.0, 0.0};
+
+// STAGE CS1 (cubed sphere, sph_shell): the lateral mode P_l(mu), mu = rhat . axis
+int m1_cs_l = 2;
+Real m1_cs_ax[3] = {0.0, 0.0, 1.0};
+
+//----------------------------------------------------------------------------------------
+//! \fn M1Legendre
+//! \brief P_l(x) by the upward recurrence
+
+KOKKOS_INLINE_FUNCTION
+Real M1Legendre(const int l, const Real x) {
+  Real p0 = 1.0, p1 = x;
+  if (l == 0) return p0;
+  for (int n = 1; n < l; ++n) {
+    const Real p2 = ((2.0*n + 1.0)*x*p1 - n*p0)/(n + 1.0);
+    p0 = p1;
+    p1 = p2;
+  }
+  return p1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1CsMu
+//! \brief rhat . axis of the centre of cell (k,j) of a cubed-sphere MeshBlock
+
+KOKKOS_INLINE_FUNCTION
+Real M1CsMu(const int panel, const int k, const int j, const int ks, const int js,
+            const int nx2, const int nx3, const Real x2mn, const Real x2mx,
+            const Real x3mn, const Real x3mx, const Real ax, const Real ay,
+            const Real az) {
+  const Real xi = 0.25*M_PI*CellCenterX(j - js, nx2, x2mn, x2mx);
+  const Real eta = 0.25*M_PI*CellCenterX(k - ks, nx3, x3mn, x3mx);
+  Real q[3];
+  cubed_sphere::PanelToCart(panel, xi, eta, q);
+  return q[0]*ax + q[1]*ay + q[2]*az;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1AtmTau
@@ -148,6 +193,9 @@ void RadM1ShockBC(Mesh *pm);
 void RadM1AtmBC(Mesh *pm);
 void RadM1AtmGas(Mesh *pm, const Real bdt);
 void RadM1SphAtmGas(Mesh *pm, const Real bdt);
+void RadM1ShellReport(ParameterInput *pin, Mesh *pm);
+void RadM1CsHistory(HistoryData *pdata, Mesh *pm);
+void RadM1RwHistory(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::RadiationM1Tests2()
@@ -516,6 +564,110 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                 << " period=" << (lam/cs) << " tau_lambda=" << (kapf*d0*lam)
                 << std::endl;
     }
+    // STAGE CS2 (gate (d)), read only when named.  problem/rw_hist = true enrolls
+    // RadM1RwHistory: sum V (rho - rho0) S over the active cells, S = e^{i k.x} on a
+    // Cartesian mesh (k of the input) or the cubed-sphere mode below.  On the cubed
+    // sphere problem/radwave_cs_l = l lays down a TRAVELLING SECTORAL wave instead of the
+    // plane wave: S = (x' + i y')^l = sin^l(theta') e^{i l phi'} about the axis
+    // radwave_cs_axis = z (its equator crosses four panel seams) | vertex ((1,-1,0)/
+    // sqrt2: the great circle through four cube vertices), with the equilibrium-diffusion
+    // eigenmode of the plane wave written through the surface gradient,
+    //   drho/rho = A Re S, dT/T = (G3-1) A Re S, dE = derad Re S,
+    //   v = (A c_s/k) grad_s Im S,  F = (4/3) E0 v - (fdif/k) grad_s Re S,
+    // k^2 = l(l+1) <1/r^2> (the shell's volume mean), v and F in COVARIANT panel
+    // components (v.e_xi, v.e_eta), F0 on the faces zero (as the plane wave without
+    // radwave_eig).
+    if (pin->DoesParameterExist("problem","shell_report") &&
+        pin->GetBoolean("problem","shell_report")) {
+      pgen_final_func = RadM1ShellReport;
+    }
+    if (pin->DoesParameterExist("problem","rw_hist") &&
+        pin->GetBoolean("problem","rw_hist")) {
+      user_hist_func = RadM1RwHistory;
+      m1_rw_k[0] = kx; m1_rw_k[1] = ky; m1_rw_k[2] = kz;
+      m1_rw_rho0 = d0;
+    }
+    if (pmy_mesh_->use_cubed_sphere &&
+        pin->DoesParameterExist("problem","radwave_cs_l")) {
+      const int cl_l = pin->GetInteger("problem","radwave_cs_l");
+      const std::string cax = pin->GetOrAddString("problem","radwave_cs_axis","z");
+      Real ax[3] = {0.0, 0.0, 1.0}, e1[3] = {1.0, 0.0, 0.0};
+      if (cax == "vertex") {
+        const Real h = 1.0/std::sqrt(2.0);
+        ax[0] = h; ax[1] = -h; ax[2] = 0.0;
+        e1[0] = 0.0; e1[1] = 0.0; e1[2] = 1.0;
+      }
+      Real e2[3] = {ax[1]*e1[2] - ax[2]*e1[1], ax[2]*e1[0] - ax[0]*e1[2],
+                    ax[0]*e1[1] - ax[1]*e1[0]};
+      const Real r1 = msz.x1min, r2 = msz.x1max;
+      const Real ir2 = (r2 - r1)/((r2*r2*r2 - r1*r1*r1)/3.0);
+      const Real kk = std::sqrt(cl_l*(cl_l + 1.0)*ir2);
+      const Real derad_c = 4.0*er0*g3m1*amp;
+      const Real fdif_c = (cl/(3.0*kapf*d0))*kk*derad_c;
+      m1_rw_l = cl_l;
+      for (int c = 0; c < 3; ++c) {m1_rw_e1[c] = e1[c]; m1_rw_e2[c] = e2[c];}
+      if (global_variable::my_rank == 0) {
+        std::cout << "  radwave_cs: sectoral l=" << cl_l << " axis " << cax << " k=" << kk
+                  << " lambda=" << (2.0*M_PI/kk) << " period=" << (2.0*M_PI/(kk*cs))
+                  << std::endl;
+      }
+      if (restart) return;
+      auto uh = flr.u0;
+      auto x1v_ = pmbp->pcoord->x1v;
+      auto mbpan = pmbp->pmb->mb_panel;
+      const Real e10 = e1[0], e11 = e1[1], e12 = e1[2];
+      const Real e20 = e2[0], e21 = e2[1], e22 = e2[2];
+      const int ll = cl_l;
+      const Real ampv = amp*cs/kk, er0_ = er0;
+      par_for("m1_radwave_cs", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        auto &sz = size.d_view(m);
+        const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, sz.x2min, sz.x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, sz.x3min, sz.x3max);
+        Real q[3], ta[3], tb[3];
+        cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
+        cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
+        const Real xp = q[0]*e10 + q[1]*e11 + q[2]*e12;
+        const Real yp = q[0]*e20 + q[1]*e21 + q[2]*e22;
+        // S = (xp + i yp)^l and (xp + i yp)^(l-1)
+        Real sr = 1.0, si = 0.0, pr = 1.0, pi_ = 0.0;
+        for (int n = 0; n < ll; ++n) {
+          if (n == ll - 1) {pr = sr; pi_ = si;}
+          const Real tr = sr*xp - si*yp;
+          si = sr*yp + si*xp;
+          sr = tr;
+        }
+        const Real r = x1v_(m,i);
+        // grad_s S on the sphere of radius r: (l/r)[(xp+iyp)^(l-1) (e1 + i e2) - S q]
+        Real gr[3], gi[3];
+        const Real e1v[3] = {e10, e11, e12}, e2v[3] = {e20, e21, e22};
+        for (int c = 0; c < 3; ++c) {
+          gr[c] = (ll/r)*(pr*e1v[c] - pi_*e2v[c] - sr*q[c]);
+          gi[c] = (ll/r)*(pr*e2v[c] + pi_*e1v[c] - si*q[c]);
+        }
+        Real v[3], f[3];
+        for (int c = 0; c < 3; ++c) {
+          v[c] = ampv*gi[c];
+          f[c] = (4.0/3.0)*er0_*v[c] - (fdif_c/kk)*gr[c];
+        }
+        const Real vxi = v[0]*ta[0] + v[1]*ta[1] + v[2]*ta[2];
+        const Real veta = v[0]*tb[0] + v[1]*tb[1] + v[2]*tb[2];
+        const Real fxi = f[0]*ta[0] + f[1]*ta[1] + f[2]*ta[2];
+        const Real feta = f[0]*tb[0] + f[1]*tb[1] + f[2]*tb[2];
+        const Real d = d0*(1.0 + amp*sr);
+        const Real tt = t0*(1.0 + g3m1*amp*sr);
+        uh(m,IDN,k,j,i) = d;
+        uh(m,IM1,k,j,i) = 0.0;
+        uh(m,IM2,k,j,i) = d*vxi;
+        uh(m,IM3,k,j,i) = d*veta;
+        uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        u0(m,radm1::M1_E,k,j,i) = fmax(er0_ + derad_c*sr, efl);
+        u0(m,radm1::M1_F1,k,j,i) = 0.0;
+        u0(m,radm1::M1_F2,k,j,i) = fxi;
+        u0(m,radm1::M1_F3,k,j,i) = feta;
+      });
+      return;
+    }
     if (restart) return;
     auto uh = flr.u0;
     // <problem>/radwave_eig = true (default false; tests_m1/runs_3r_radwave): lay down
@@ -676,6 +828,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // initial E (radiative equilibrium, the start of the stiff coupled tests)
     const Real gvt = pin->DoesParameterExist("problem","gas_vth") ?
                      pin->GetReal("problem","gas_vth") : 0.0;
+    // STAGE CS3 (read only when named): gas_rot = Omega, a solid-body rotation of the
+    // gas about z, v = Omega z x r, on sp (v_phi = Omega r sin theta) and on the cubed
+    // sphere (covariant v.e_xi, v.e_eta); the moving-gas O(v/c) terms of the order gate
+    const Real grot = pin->DoesParameterExist("problem","gas_rot") ?
+                      pin->GetReal("problem","gas_rot") : 0.0;
     const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
                       pin->GetBoolean("problem","gas_teq") : false;
     const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
@@ -686,14 +843,41 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     auto x2v = pmbp->pcoord->x2v;
     auto x3v = pmbp->pcoord->x3v;
     const bool sp = pmy_mesh_->use_spherical_polar;
+    // STAGE CS0 (m1-cs-implicit): on the cubed sphere x1 is r as well
+    const bool spr = sp || pmy_mesh_->use_cubed_sphere;
+    // <problem>/shell_report = true (read only when named): at the end of the run print
+    // per radial index the min / mean / max over every column (all panels, ranks) of E
+    // and F1, and max|F2|, max|F3| (RadM1ShellReport, double precision)
+    if (pin->DoesParameterExist("problem","shell_report") &&
+        pin->GetBoolean("problem","shell_report")) {
+      pgen_final_func = RadM1ShellReport;
+    }
+    // STAGE CS1 (cubed sphere), read only when named: lat_l = l multiplies E by
+    // 1 + lat_amp P_l(rhat . axis), lat_axis = z | edge (1,1,0) | vertex (1,1,1); the
+    // user history (problem/user_hist = true) is RadM1CsHistory
+    const bool csm = pmy_mesh_->use_cubed_sphere;
+    int csl = 0;
+    if (csm && pin->DoesParameterExist("problem","lat_l")) {
+      csl = pin->GetInteger("problem","lat_l");
+      m1_cs_l = csl;
+      std::string ax = pin->GetOrAddString("problem","lat_axis","z");
+      Real a0 = 0.0, a1 = 0.0, a2 = 1.0;
+      if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
+      if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
+      const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
+      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
+    }
+    if (csm) {user_hist_func = RadM1CsHistory;}
+    const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
+    auto mbpan = pmbp->pmb->mb_panel;
     auto &msz = pmy_mesh_->mesh_size;
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
     const Real x2a = msz.x2min, x2l = msz.x2max - msz.x2min;
     const Real x3a = msz.x3min, x3l = msz.x3max - msz.x3min;
     par_for("m1_sph_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      Real r = sp ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
-                                           size.d_view(m).x1max);
+      Real r = spr ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
+                                            size.d_view(m).x1max);
       uh(m,IDN,k,j,i) = dgas;
       uh(m,IM1,k,j,i) = 0.0;
       uh(m,IM2,k,j,i) = 0.0;
@@ -704,6 +888,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       if (lamp != 0.0 && sp) {
         u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
+      }
+      if (lamp != 0.0 && csm && csl > 0) {
+        const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+                               size.d_view(m).x2min, size.d_view(m).x2max,
+                               size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
+        u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
       }
       if (gteq) {
         uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1;
@@ -717,6 +907,24 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         Real vt = gvt*sin(M_PI*(x2v(m,j) - x2a)/x2l);
         uh(m,IM2,k,j,i) = dgas*vt;
         uh(m,IEN,k,j,i) += 0.5*dgas*vt*vt;
+      }
+      if (grot != 0.0 && sp) {
+        const Real vp = grot*r*sin(x2v(m,j));
+        uh(m,IM3,k,j,i) = dgas*vp;
+        uh(m,IEN,k,j,i) += 0.5*dgas*vp*vp;
+      }
+      if (grot != 0.0 && csm) {
+        const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
+                                               size.d_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
+                                                size.d_view(m).x3max);
+        Real q[3], ta[3], tb[3];
+        cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
+        cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
+        const Real v0 = -grot*r*q[1], v1 = grot*r*q[0];
+        uh(m,IM2,k,j,i) = dgas*(v0*ta[0] + v1*ta[1]);
+        uh(m,IM3,k,j,i) = dgas*(v0*tb[0] + v1*tb[1]);
+        uh(m,IEN,k,j,i) += 0.5*dgas*(v0*v0 + v1*v1);
       }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {
@@ -750,7 +958,9 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     user_srcs_func = RadM1SphAtmGas;
     auto x1v = pmbp->pcoord->x1v;
-    const bool sp = pmy_mesh_->use_spherical_polar;
+    // STAGE CS1: on the cubed sphere x1 is r as well
+    const bool sp = pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere;
+    const bool csm = pmy_mesh_->use_cubed_sphere;
     if (pmbp->pradm1->force_ref == radm1::M1_FREF_WB_ARAD) {
       Real fin = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
       Real kt = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
@@ -797,6 +1007,26 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                      pin->GetReal("problem","lat_l3") : 0.0;
     auto x2v = pmbp->pcoord->x2v;
     auto x3v = pmbp->pcoord->x3v;
+    // STAGE CS1 (cubed sphere), read only when named: the P_l(rhat . axis) mode of
+    // sph_shell (lat_l, lat_axis, lat_amp) and its user history
+    int csl = 0;
+    if (csm && pin->DoesParameterExist("problem","lat_l")) {
+      csl = pin->GetInteger("problem","lat_l");
+      m1_cs_l = csl;
+      std::string ax = pin->GetOrAddString("problem","lat_axis","z");
+      Real a0 = 0.0, a1 = 0.0, a2 = 1.0;
+      if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
+      if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
+      const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
+      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
+    }
+    if (csm) {user_hist_func = RadM1CsHistory;}
+    if (pin->DoesParameterExist("problem","shell_report") &&
+        pin->GetBoolean("problem","shell_report")) {
+      pgen_final_func = RadM1ShellReport;
+    }
+    const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
+    auto mbpan = pmbp->pmb->mb_panel;
     const Real x2a = pmy_mesh_->mesh_size.x2min;
     const Real x2l = pmy_mesh_->mesh_size.x2max - x2a;
     const Real x3a = pmy_mesh_->mesh_size.x3min;
@@ -830,9 +1060,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tt/gm1;
       u0(m,radm1::M1_E,k,j,i) = e*(1.0 + seed*cos(2.3*j + 1.7*k + 0.9*i));
-      if (lamp != 0.0 && sp) {
+      if (lamp != 0.0 && sp && !csm) {
         u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
+      }
+      if (lamp != 0.0 && csm && csl > 0) {
+        const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+                               size.d_view(m).x2min, size.d_view(m).x2max,
+                               size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
+        u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
       }
       u0(m,radm1::M1_F1,k,j,i) = f;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -1054,7 +1290,7 @@ void RadM1SphAtmGas(Mesh *pm, const Real bdt) {
   auto &size = pmbp->pmb->mb_size;
   auto uh = pmbp->phydro->u0;
   auto x1v = pmbp->pcoord->x1v;
-  const bool sp = pm->use_spherical_polar;
+  const bool sp = pm->use_spherical_polar || pm->use_cubed_sphere;   // CS1: r = x1v
   Real rho0 = m1_sa_rho0, rin = m1_sa_rin, en = m1_sa_n;
   par_for("m1_sa_hold", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -1114,4 +1350,268 @@ void RadM1AtmBC(Mesh *pm) {
     }
   });
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1ShellReport
+//! \brief <problem>/shell_report (STAGE CS0, m1-cs-implicit): per radial index i over all
+//! active columns of the whole mesh: x1v, xx1f(i), min / mean / max of E and of F1, then
+//! max|F1|, max|F2|, max|F3|.  One radial MeshBlock per column is assumed (every block
+//! has the same r grid); printed by rank 0 as "SHELL" lines in %.17e.
+
+void RadM1CellDump(const std::string &pre, Mesh *pm);
+
+void RadM1ShellReport(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pradm1 == nullptr) return;
+  if (pm->use_cubed_sphere && pin->DoesParameterExist("problem","cell_dump")) {
+    RadM1CellDump(pin->GetString("problem","cell_dump"), pm);
+  }
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  auto u = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pradm1->u0);
+  auto x1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto x1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  const int nq = 2;
+  std::vector<Real> mn(nq*nx1, 1.0e300), mx(nq*nx1, -1.0e300), sm(nq*nx1, 0.0);
+  Real fm[3] = {0.0, 0.0, 0.0};
+  const int iv[3] = {radm1::M1_E, radm1::M1_F1, radm1::M1_F1};
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = ks; k < ks + nx3; ++k) {
+      for (int j = js; j < js + nx2; ++j) {
+        for (int i = is; i < is + nx1; ++i) {
+          const int q = i - is;
+          for (int a = 0; a < 2; ++a) {
+            const Real v = u(m,iv[a],k,j,i);
+            mn[a*nx1 + q] = std::min(mn[a*nx1 + q], v);
+            mx[a*nx1 + q] = std::max(mx[a*nx1 + q], v);
+            sm[a*nx1 + q] += v;
+          }
+          fm[0] = std::max(fm[0], std::abs(u(m,radm1::M1_F1,k,j,i)));
+          fm[1] = std::max(fm[1], std::abs(u(m,radm1::M1_F2,k,j,i)));
+          fm[2] = std::max(fm[2], std::abs(u(m,radm1::M1_F3,k,j,i)));
+        }
+      }
+    }
+  }
+  Real ncol = static_cast<Real>(nmb)*nx2*nx3;
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, mn.data(), nq*nx1, MPI_ATHENA_REAL, MPI_MIN,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, mx.data(), nq*nx1, MPI_ATHENA_REAL, MPI_MAX,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, sm.data(), nq*nx1, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, fm, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &ncol, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  Real gm[4] = {0.0, 0.0, 0.0, 0.0};
+  // STAGE CS2 gate (e): the gas momentum (covariant on cs) over the active cells
+  if (pmbp->phydro != nullptr) {
+    auto uh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->phydro->u0);
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = ks; k < ks + nx3; ++k) {
+        for (int j = js; j < js + nx2; ++j) {
+          for (int i = is; i < is + nx1; ++i) {
+            gm[0] = std::max(gm[0], std::abs(uh(m,IM1,k,j,i)));
+            gm[1] = std::max(gm[1], std::abs(uh(m,IM2,k,j,i)));
+            gm[2] = std::max(gm[2], std::abs(uh(m,IM3,k,j,i)));
+            gm[3] = std::max(gm[3], std::abs(uh(m,IDN,k,j,i)));
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, gm, 4, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  }
+  if (global_variable::my_rank != 0) return;
+  std::printf("SHELL columns %.0f  max|F1| %.17e  max|F2| %.17e  max|F3| %.17e\n",
+              ncol, fm[0], fm[1], fm[2]);
+  std::printf("SHELL i x1v x1f_left Emin Emean Emax F1min F1mean F1max\n");
+  for (int q = 0; q < nx1; ++q) {
+    std::printf("SHELL %d %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", q,
+                x1v(0,is+q), x1f(0,is+q), mn[q], sm[q]/ncol, mx[q],
+                mn[nx1 + q], sm[nx1 + q]/ncol, mx[nx1 + q]);
+  }
+  std::printf("SHELL x1f_right %.17e\n", x1f(0,is+nx1));
+  if (global_variable::my_rank == 0 && pmbp->phydro != nullptr) {
+    std::printf("SHELLGAS max|m1| %.6e max|m2| %.6e max|m3| %.6e max rho %.6e\n",
+                gm[0], gm[1], gm[2], gm[3]);
+  }
+  (void)pin;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1CellDump
+//! \brief <problem>/cell_dump = <prefix> (cubed sphere, read only when named): every rank
+//! writes <prefix>.<rank>.txt with, for the radial index nx1/2 of every column, the
+//! panel, (xi, eta), the unit vector of the centre, the cell volume and E in %.17e.
+
+void RadM1CellDump(const std::string &pre, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  auto u = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pradm1->u0);
+  auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  auto &size = pmbp->pmb->mb_size;
+  auto &pan = pmbp->pmb->mb_panel;
+  // STAGE CS2: the gas momenta (covariant) and the cell F (covariant) as well
+  const bool hyd = (pmbp->phydro != nullptr);
+  auto uh = Kokkos::create_mirror_view_and_copy(
+      HostMemSpace(), hyd ? pmbp->phydro->u0 : pmbp->pradm1->u0);
+  std::string fn = pre + "." + std::to_string(global_variable::my_rank) + ".txt";
+  FILE *f = std::fopen(fn.c_str(), "w");
+  if (f == nullptr) return;
+  const int i = is + nx1/2;
+  for (int m = 0; m < pmbp->nmb_thispack; ++m) {
+    for (int k = ks; k < ks + nx3; ++k) {
+      for (int j = js; j < js + nx2; ++j) {
+        const Real xi = 0.25*M_PI*CellCenterX(j - js, nx2, size.h_view(m).x2min,
+                                               size.h_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k - ks, nx3, size.h_view(m).x3min,
+                                                size.h_view(m).x3max);
+        Real q[3];
+        cubed_sphere::PanelToCart(pan.h_view(m), xi, eta, q);
+        std::fprintf(f, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e", pan.h_view(m),
+                     xi, eta, q[0], q[1], q[2], vol(m,k,j,i), u(m,radm1::M1_E,k,j,i));
+        std::fprintf(f, " %.17e %.17e %.17e %.17e %.17e %.17e\n",
+                     hyd ? uh(m,IM1,k,j,i) : 0.0, hyd ? uh(m,IM2,k,j,i) : 0.0,
+                     hyd ? uh(m,IM3,k,j,i) : 0.0, u(m,radm1::M1_F1,k,j,i),
+                     u(m,radm1::M1_F2,k,j,i), u(m,radm1::M1_F3,k,j,i));
+      }
+    }
+  }
+  std::fclose(f);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1CsHistory
+//! \brief STAGE CS1 (cubed sphere, sph_shell): volume sums for the lateral-mode decay and
+//! the conservation gate, with V = Coordinates volume and P = P_l(rhat . axis) of the
+//! lat_l mode: sum V E, sum V E P, sum V P P, sum V P, sum V, and the number of cells
+//! with E <= 0.  The mode amplitude is (VEP - VE VP/V)/(VPP - VP^2/V).
+
+void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 6;
+  pdata->label[0] = "VE";
+  pdata->label[1] = "VEP";
+  pdata->label[2] = "VPP";
+  pdata->label[3] = "VP";
+  pdata->label[4] = "V";
+  pdata->label[5] = "nEle0";
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pradm1 == nullptr) return;
+  auto u0 = pmbp->pradm1->u0;
+  auto vol = pmbp->pcoord->volume;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpan = pmbp->pmb->mb_panel;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int l = m1_cs_l;
+  const Real ax = m1_cs_ax[0], ay = m1_cs_ax[1], az = m1_cs_ax[2];
+  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+  const int nji = nx2*nx1;
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("M1CsHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    k += ks; j += js; i += is;
+    array_sum::GlobalSum hv;
+    for (int n = 0; n < NHISTORY_VARIABLES; ++n) {hv.the_array[n] = 0.0;}
+    const Real mu = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+                           size.d_view(m).x2min, size.d_view(m).x2max,
+                           size.d_view(m).x3min, size.d_view(m).x3max, ax, ay, az);
+    const Real p = M1Legendre(l, mu);
+    const Real v = vol(m,k,j,i);
+    const Real e = u0(m,radm1::M1_E,k,j,i);
+    hv.the_array[0] = v*e;
+    hv.the_array[1] = v*e*p;
+    hv.the_array[2] = v*p*p;
+    hv.the_array[3] = v*p;
+    hv.the_array[4] = v;
+    hv.the_array[5] = (e <= 0.0) ? 1.0 : 0.0;
+    mb_sum += hv;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1RwHistory
+//! \brief STAGE CS2 gate (d), problem/rw_hist: P = sum V (rho - rho0) S over the active
+//! cells (Re, Im) and sum V |S|^2, with S = e^{i k.x} (Cartesian, k of the radwave input)
+//! or the cubed-sphere sectoral mode (x' + i y')^l of radwave_cs_l.  A forward wave
+//! A Re(S e^{-i w t}) gives P = (N/2) A e^{+i w t}, a backward one e^{-i w t}.
+
+void RadM1RwHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 3;
+  pdata->label[0] = "ReP";
+  pdata->label[1] = "ImP";
+  pdata->label[2] = "VSS";
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  radm1::FluidRef flr = radm1::FluidRef::Get(pmbp);
+  auto uh = flr.u0;
+  auto &size = pmbp->pmb->mb_size;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const bool csm = pm->use_cubed_sphere;
+  auto vol = pmbp->pcoord->volume;
+  auto &mbpan = pmbp->pmb->mb_panel;
+  const int ll = m1_rw_l;
+  const Real k1 = m1_rw_k[0], k2 = m1_rw_k[1], k3 = m1_rw_k[2], rho0 = m1_rw_rho0;
+  const Real a0 = m1_rw_e1[0], a1 = m1_rw_e1[1], a2 = m1_rw_e1[2];
+  const Real b0 = m1_rw_e2[0], b1 = m1_rw_e2[1], b2 = m1_rw_e2[2];
+  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+  const int nji = nx2*nx1;
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("M1RwHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    k += ks; j += js; i += is;
+    array_sum::GlobalSum hv;
+    for (int n = 0; n < NHISTORY_VARIABLES; ++n) {hv.the_array[n] = 0.0;}
+    auto &sz = size.d_view(m);
+    Real sr, si, v;
+    if (csm) {
+      const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, sz.x2min, sz.x2max);
+      const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, sz.x3min, sz.x3max);
+      Real q[3];
+      cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
+      const Real xp = q[0]*a0 + q[1]*a1 + q[2]*a2;
+      const Real yp = q[0]*b0 + q[1]*b1 + q[2]*b2;
+      sr = 1.0; si = 0.0;
+      for (int n = 0; n < ll; ++n) {
+        const Real tr = sr*xp - si*yp;
+        si = sr*yp + si*xp;
+        sr = tr;
+      }
+      v = vol(m,k,j,i);
+    } else {
+      const Real x1 = CellCenterX(i-is, nx1, sz.x1min, sz.x1max);
+      const Real x2 = (nx2 > 1) ? CellCenterX(j-js, nx2, sz.x2min, sz.x2max) : 0.0;
+      const Real x3 = (nx3 > 1) ? CellCenterX(k-ks, nx3, sz.x3min, sz.x3max) : 0.0;
+      const Real ph = k1*x1 + k2*x2 + k3*x3;
+      sr = cos(ph); si = sin(ph);
+      v = sz.dx1*sz.dx2*sz.dx3;
+    }
+    const Real dr = uh(m,IDN,k,j,i) - rho0;
+    hv.the_array[0] = v*dr*sr;
+    hv.the_array[1] = v*dr*si;
+    hv.the_array[2] = v*(sr*sr + si*si);
+    mb_sum += hv;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
 }

@@ -1094,6 +1094,37 @@ class RadiationM1 {
   // minerbo, kershaw): the radial faces take the integrating factor (M1SphDrr) and every
   // face equation the lagged curvature M1SphCurv; false keeps the S1 arithmetic
   bool sph_q = false;
+  // STAGE CS0 (rad_m1_sph.cpp, m1-cs-implicit): the cubed sphere.  sph_geom is set there
+  // too (x1 = r and the Coordinates areas, volumes and face distances exist on both
+  // meshes), and cs_geom restricts it to transport = implicit, closure = eddington,
+  // time_scheme = be, bicgstab + rbgs_fwd; the transverse faces are the plain two-point
+  // form (no skew 1/sin, no cross term: stage CS1)
+  bool cs_geom = false;
+  // STAGE CS1 (rad_m1_sph.cpp CubedS1Init): the transverse operator on the cubed sphere.
+  //   m1bcs     mb_bcs with BoundaryFlag::panel read as block, so that a panel seam is an
+  //             OPEN face of the implicit operator (CS0 closed it); the kernels take it
+  //             in place of mb_bcs only on cs (elsewhere the View they read is mb_bcs).
+  //   cs_seam   per MeshBlock: its inner_x2, outer_x2, inner_x3, outer_x3 face is a seam.
+  //   csg2/3    the canonical seam geometry (M1CsSeamGeom) of the x2 / x3 seam faces,
+  //             (m, {dth, angm, sfoot, smid}, along-seam cell incl. ghosts, side lo/hi).
+  // The implicit scratch exchanges (pbval_th, pbval_tq, pbval_kr) run without the
+  // along-seam resample, so a seam ghost is the neighbour's own (mirror) cell.
+  DualArray2D<BoundaryFlag> m1bcs;
+  DualArray2D<int> cs_seam;
+  DvceArray4D<Real> csg2, csg3;
+  // STAGE CS3: the effective transverse geometry of the cs operator, for kernels that
+  // read Coordinates through the sp branches (ImplicitVimpBuild): dxface with the x2/x3
+  // two-point distances (centre arc x sin of the face angle; r angm at a panel seam)
+  // and area with the canonical seam areas; x1 parts are copies
+  DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
+  DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
+  void CubedS1Init();
+  //! the seam average of the stored face state f0x2/f0x3 (stage CS1, C5)
+  void CubedSeamFaceAverage();
+  int cs_seam_avg_n = 0;   // seam-face-average calls (diagnostic)
+  bool cs_seam_avg_on = true;
+  Real cs_seam_dmax = 0.0;   // max relative change of an x2 face value by the average
+  ParameterInput *pin_cs_ = nullptr;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
   void OnePassAuto(const int t, const bool on, const bool one);
@@ -1316,6 +1347,8 @@ class RadiationM1 {
   DvceArray1D<Real> vcol_wf;   // (ray): hemisphere weight at the top face
   void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
   void VetColBuild();          // the formal solution -> tau_ten (chi, n)
+  void VetColSpread(int ncall);   // vet_col_spread (CS2, gate T-S6)
+  int vcol_spread = 0;
   void VetColBuildTeam(bool dmp);   // the same, one team per column (vet_col_team)
   void VetColReport();
   void VetColDumpColumn(int ncall);
