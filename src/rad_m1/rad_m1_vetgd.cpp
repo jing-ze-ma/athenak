@@ -1570,7 +1570,8 @@ void RadiationM1::VetGdMoments() {
     // vet_gd_thin_decades (default 1): the ramp from tau = taumin to taumin 10^decades;
     // vet_gd_thin_smooth (default false): smoothstep 3x^2 - 2x^3 instead of linear in
     // ln tau; vet_gd_thin_parts (bit 1 = D_r,lat LAT1-2, bit 2 = tangential LAT3-5,
-    // default 3 = both)
+    // default 3 = both; bit 4 = the D_rr correction LAT0 too, so that D_rr goes back to
+    // vet_col's column f_K in the far thin top: gd_div_1005, BSG Picard divergence)
     const Real dec = vgd_tdec;
     const Real lgw = dec*log(10.0);
     const Real thi = tlo*pow(10.0, dec);
@@ -1586,8 +1587,8 @@ void RadiationM1::VetGdMoments() {
         Real w = (tc <= tlo) ? 0.0 : ((tc >= thi) ? 1.0 : log(tc/tlo)/lgw);
         if (smo) {w = w*w*(3.0 - 2.0*w);}
         if (w < 1.0) {
-          for (int c = 1; c < M1_TT_NLAT; ++c) {
-            const int bit = (c <= 2) ? 1 : 2;
+          for (int c = 0; c < M1_TT_NLAT; ++c) {
+            const int bit = (c == 0) ? 4 : ((c <= 2) ? 1 : 2);
             if (prt & bit) {tt_(m,M1_TT_LAT0+c,k,j,i) *= w;}
           }
         }
