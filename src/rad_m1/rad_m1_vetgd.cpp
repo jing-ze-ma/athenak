@@ -56,6 +56,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>  // NOLINT(build/c++11)
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -83,6 +84,9 @@
 namespace radm1 {
 
 namespace {
+// env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
+int g_vgd_apoll = 0;
+
 void VgdFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
             << "<rad_m1>/vet_gd: " << msg << std::endl;
@@ -379,6 +383,10 @@ void RadiationM1::VetGdInit() {
 #endif
     if (!vgd_ainl) {
       vgd_ex = Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0];
+    }
+    // diagnostic: the helper polls its MPI with sleeps of this many microseconds
+    if (std::getenv("VGD_ASYNC_POLL_US") != nullptr) {
+      g_vgd_apoll = std::atoi(std::getenv("VGD_ASYNC_POLL_US"));
     }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_async: ON, the sweep of build n overlaps cycle n ("
@@ -1163,7 +1171,18 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
     VetGdHcPrep(1 - slot, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
   }
   std::vector<MPI_Status> stat(req.size());
-  MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
+  if (vgd_afly && g_vgd_apoll > 0) {
+    // vet_gd_async helper (env VGD_ASYNC_POLL_US > 0): poll instead of a blocking wait,
+    // sleeping between tests, so that the main thread's MPI is not held up
+    int done = 0;
+    while (true) {
+      MPI_Testall(static_cast<int>(req.size()), req.data(), &done, stat.data());
+      if (done) {break;}
+      std::this_thread::sleep_for(std::chrono::microseconds(g_vgd_apoll));
+    }
+  } else {
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
+  }
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
   for (int p = 0; p < np; ++p) {
