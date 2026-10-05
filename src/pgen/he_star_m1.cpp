@@ -1376,10 +1376,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                           + smd_d(n,1)*(ph3 - x3a)/lph)
                                 + smd_d(n,3));
         }
-        fac = 1.0 + seed*sin(M_PI*(r - srlo)/(srhi - srlo))*amp*tap;
+        if (hcs) {amp *= tap;}   // (the sp expression below is the pre-CS3 one)
+        fac = 1.0 + seed*sin(M_PI*(r - srlo)/(srhi - srlo))*amp;
       } else {
         fac = 1.0 + seed*sin(2.0*M_PI*seedk*(th2 - x2a)/lth + 0.3)
-                        *sin(2.0*M_PI*seedk*(ph3 - x3a)/lph + 1.1)*tap;
+                        *sin(2.0*M_PI*seedk*(ph3 - x3a)/lph + 1.1);
+        if (hcs) {fac = 1.0 + (fac - 1.0)*tap;}
       }
       e *= fac;
       if (srad) er *= SQR(SQR(fac));
