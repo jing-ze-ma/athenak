@@ -869,6 +869,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_res_rmax")) {
     impl_res_rmax = pin->GetReal("rad_m1","implicit_res_rmax");
   }
+  //  implicit_realisable_coupling (gd_physfix_1005, read only when named; default false =
+  //    bitwise the old code): the gas sees the REALISABLE radiation flux.  In optically
+  //    thin cells with c dt/dx >> 1 the Picard iterate of the cell flux is unrealisable
+  //    (BSG far-thin top: |F| = 10-20 c E on average, ~200 c E in the cells that stalled);
+  //    the write-back clips it to |F| = c E (M1ApplyLimits), but the comoving correction
+  //    E0 - E = -2 beta.F/c + O(beta^2) and the momentum deposit dt (rho k_t)_f F0_f/c
+  //    took the UNCLIPPED flux: E0 came out -85 % of E (|E0 - E| <= 2 |beta| E for any
+  //    intensity field), which moved the gas-T equation into the kappa_P(T) valley of the
+  //    low-density table and made it 3-rooted (the Picard T cycle), and the floor gas got
+  //    10-200x the largest force any radiation field of energy E can exert (rho k E).
+  //    With the key, per cell, s = min(1, c E/|F_iter|) scales the flux in beta.F of E0 and
+  //    the momentum deposit (and so its work, which the radiation loses: total energy
+  //    stays exact).  s = 1 wherever the iterate is realisable.
+  if (pin->DoesParameterExist("rad_m1","implicit_realisable_coupling")) {
+    impl_real_couple = pin->GetBoolean("rad_m1","implicit_realisable_coupling");
+  }
   //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
   //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
   //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
@@ -8203,6 +8219,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (b) the lagged closure, the enthalpy-flux coefficient, de0 and g0
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
     const int ivd = impl_vimp ? (iw_vimp + M1_IV_DV) : 0;
+    const bool rcp = impl_real_couple;
     par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real e = fmax(iw_(m,M1_IW_EP,k,j,i), efl);
@@ -8218,7 +8235,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_ADV,k,j,i) = v1*(1.0 + chi);
         // E0 - E with F_2 = F_3 = 0: P_11 = chi E, P_22 = P_33 = (1-chi) E/2
         Real b1 = v1/cl;
-        de0 = ovc ? (-2.0*b1*f1/cl) : (b1*b1*e - 2.0*b1*f1/cl + b1*b1*chi*e);
+        // implicit_realisable_coupling: |F| <= c E in beta.F
+        const Real f1r = rcp ? fmin(fmax(f1, -cl*e), cl*e) : f1;
+        de0 = ovc ? (-2.0*b1*f1r/cl) : (b1*b1*e - 2.0*b1*f1r/cl + b1*b1*chi*e);
       } else {
         // MILESTONE 3b phase B: the closure of the MULTI-DIMENSIONAL solve.  The reduced
         // flux is the MAGNITUDE |F|/(c E) and the Eddington tensor is built around the
@@ -8391,6 +8410,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         Real b1 = u1/cl, b2 = u2/cl, b3 = u3/cl;
         Real bf = (b1*f1 + b2*f2c + b3*f3c)/cl;
+        // implicit_realisable_coupling: the realisable flux, |F| <= c E, in beta.F
+        if (rcp && fm > cl*e) {bf *= cl*e/fm;}
         Real bpb = (b1*b1*d11 + b2*b2*d22 + b3*b3*d33
                     + 2.0*(b1*b2*d12 + b1*b3*d13 + b2*b3*d23))*e;
         Real b2sq = b1*b1 + b2*b2 + b3*b3;
@@ -10246,6 +10267,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // the one the face equation used
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool fwd = psph && impl_face_wdist;
+  const bool rcpw = impl_real_couple;
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
@@ -10355,6 +10377,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             Real u3 = ((k == ks && p3lo) && !bmhalf) ? 1.0 : 0.5;
             Real w3 = ((k == ke && p3hi) && !bmhalf) ? 1.0 : 0.5;
             dm3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);
+          }
+        }
+        // implicit_realisable_coupling: the deposit of the realisable cell flux, scaled
+        // by s = min(1, c E/|F_iter|) (the factor the write-back clip applies to F); the
+        // work below follows dm, so the radiation loses exactly what the gas gains
+        if (rcpw) {
+          const Real fq = sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
+          const Real fc = cl*fmax(ep, efl);
+          if (fq > fc) {
+            const Real sc = fc/fq;
+            dm1 *= sc;
+            dm2 *= sc;
+            dm3 *= sc;
           }
         }
         if (feedback) {
