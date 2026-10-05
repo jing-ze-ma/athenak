@@ -306,6 +306,8 @@ void RadiationM1::VetGdInit() {
                                                      pmy_pack->pcoord->xx1f);
     const int nmax = std::min(indcs.nx2, indcs.nx3);
     vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
+    vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
+    vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
     int wneed = 0;
     for (int l = indcs.is; l <= indcs.ie; ++l) {
       const double r = x1v_h(0,l);
@@ -317,6 +319,13 @@ void RadiationM1::VetGdInit() {
       const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
       wneed = std::max(wneed, wl);
       vgd_wsh[l] = std::min(wl, nmax);
+      // per pass: the INWARD-pass halo of shell s serves (a) and (c) (inward values),
+      // the OUTWARD-pass halo only (b) (outward values read by shell s+1)
+      const double ain = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+      const double aout = (l < indcs.ie) ? std::sqrt(x1v_h(0,l+1)*x1v_h(0,l+1) - r*r)
+                                          : 0.0;
+      vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
+      vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
     }
     vgd_w = std::min(wneed, nmax);
     if (global_variable::my_rank == 0) {
@@ -1058,7 +1067,7 @@ void RadiationM1::VetGdSweep() {
       // the shell is complete on every block: its lateral band, exact (not lagged)
       if (vgd_time_halo) {Kokkos::fence();}
       Kokkos::Timer th;
-      VetGdHalo(vgd_i, n, i, i, vgd_wsh[i], true);
+      VetGdHalo(vgd_i, n, i, i, inw ? vgd_wsi[i] : vgd_wso[i], true);
       Kokkos::fence();
       vgd_thalo += th.seconds();
     }
