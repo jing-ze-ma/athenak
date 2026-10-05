@@ -10507,6 +10507,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         fp3 = 0.5*(g3l + g3r) + iw_(m,M1_IW_A3,k,j,i)*ep;
       }
     }
+    if (csw && trans && thrd) {
+      const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+      const Real a = fp2, b = fp3;
+      fp2 = (a + c*b)*si;
+      fp3 = (b + c*a)*si;
+    }
 
     Real work = 0.0, dm1 = 0.0, dmref = 0.0, eg = 0.0, ekin = 0.0, egrv = 0.0;
     Real dm2 = 0.0, dm3 = 0.0;
@@ -10677,8 +10683,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         const Real q3 = uh(m,IM3,k,j,i) + (dbgft ? dm3 : 0.0);
         const Real u2 = sn*(q2 - c*q3)*idg/s2, u3 = sn*(q3 - c*q2)*idg/s2;
         fp1 = 0.5*(fl + fr) + (w1 + (w1*d11 + u2*d12 + u3*d13))*es;
-        fp2 = 0.5*(g2l + g2r) + (u2 + (w1*d12 + u2*d22 + u3*d23))*es;
-        fp3 = 0.5*(g3l + g3r) + (u3 + (w1*d13 + u2*d23 + u3*d33))*es;
+        const Real a2 = 0.5*(g2l + g2r) + (u2 + (w1*d12 + u2*d22 + u3*d23))*es;
+        const Real a3 = 0.5*(g3l + g3r) + (u3 + (w1*d13 + u2*d23 + u3*d33))*es;
+        fp2 = (a2 + c*a3)/sn;   // covariant, as the transform above
+        fp3 = (a3 + c*a2)/sn;
       }
     }
     // m1-positivity.  Both moves keep e_gas + (c/chat) E of the cell exactly; eg is the
@@ -10720,15 +10728,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
     if (csw) {
-      // STAGE CS2/CS3: the cell flux to COVARIANT panel components (the face-normal
-      // values a, b: F.e_xi = (a + c b)/s, F.e_eta = (b + c a)/s), after the vimp
-      // re-forming above, then the metric flux limit
-      if (trans && thrd) {
-        const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
-        const Real a = fp2, b = fp3;
-        fp2 = (a + c*b)*si;
-        fp3 = (b + c*a)*si;
-      }
       M1ApplyLimitsCs(cl, efl, cclw(m,k,j), ep, fp1, fp2, fp3);
     } else {
       M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
