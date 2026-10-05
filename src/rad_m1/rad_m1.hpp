@@ -1107,6 +1107,12 @@ class RadiationM1 {
   DualArray2D<BoundaryFlag> m1bcs;
   DualArray2D<int> cs_seam;
   DvceArray4D<Real> csg2, csg3;
+  // STAGE CS3: the effective transverse geometry of the cs operator, for kernels that
+  // read Coordinates through the sp branches (ImplicitVimpBuild): dxface with the x2/x3
+  // two-point distances (centre arc x sin of the face angle; r angm at a panel seam)
+  // and area with the canonical seam areas; x1 parts are copies
+  DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
+  DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
   void CubedS1Init();
   //! the seam average of the stored face state f0x2/f0x3 (stage CS1, C5)
   void CubedSeamFaceAverage();

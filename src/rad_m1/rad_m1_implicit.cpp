@@ -7126,12 +7126,13 @@ void RadiationM1::ImplicitVimpBuild() {
   // swapped or reversed axis scrambles): there the cell's own row, reflected, stands in
   // (exact for a mirror-symmetric state; P only sets the Newton direction, the
   // right-hand side carries the true dv^k, so the converged answer does not depend on it)
-  const bool csg = cs_geom;
-  auto cseam = cs_seam.d_view;
-  auto csg2_ = csg2;
-  auto csg3_ = csg3;
-  auto csn2 = pmy_pack->pcoord->sin_face_xi;
-  auto csn3 = pmy_pack->pcoord->sin_face_eta;
+  // (the effective two-point distances and face areas, cs_dxf_eff / cs_area_eff, are
+  // built once in CubedS1Init; the sp branches below read them in place of Coordinates,
+  // so the sp arithmetic is textually the one of the wedge)
+  if (cs_geom) {
+    carea = cs_area_eff;
+    cdxf = cs_dxf_eff;
+  }
 
   // (1) the Jacobian rows and dv^k
   par_for("m1_vimp_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -7239,21 +7240,6 @@ void RadiationM1::ImplicitVimpBuild() {
               cL[s] = bsp*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
               cR[s] = -bsp*M1DDiag(iw_,vd_,dfull,m,d,kq,jq,i);
             }
-            if (csg) {
-              const int sl = (d == 1) ? 0 : 2;
-              const bool sm = (s == 0) ? (c == cs && cseam(m,sl) != 0)
-                                       : (c == ce && cseam(m,sl+1) != 0);
-              Real dxs;
-              if (sm) {
-                dxs = cx1v(m,i)*((d == 1) ? csg2_(m,1,k,s) : csg3_(m,1,j,s));
-              } else {
-                dxs = (d == 1) ? cdxf.x2f(m,k,cf,i)*csn2(m,k,cf)
-                               : cdxf.x3f(m,cf,j,i)*csn3(m,cf,j);
-              }
-              const Real bsp = th*ch*cl*dt/dxs;
-              cL[s] = bsp*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
-              cR[s] = -bsp*M1DDiag(iw_,vd_,dfull,m,d,kq,jq,i);
-            }
           }
         }
         p0 = sj*wf[0]*kf[0]*cL[0];
@@ -7268,6 +7254,26 @@ void RadiationM1::ImplicitVimpBuild() {
     }
   });
   ImplicitHaloExchange(M1_NVIMP_X, b);
+  if (cs_geom) {
+    // STAGE CS3: the Jacobian rows of a SEAM ghost (first layer) for the seam-normal
+    // direction: the adjacent cell's own row, reflected (see above)
+    auto cseam = cs_seam.d_view;
+    par_for("m1_vimp_csrow", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (j == js && cseam(m,0) != 0) {
+        for (int r = 0; r < 3; ++r) {iw_(m,b+3+r,k,j-1,i) = -iw_(m,b+3+2-r,k,j,i);}
+      }
+      if (j == je && cseam(m,1) != 0) {
+        for (int r = 0; r < 3; ++r) {iw_(m,b+3+r,k,j+1,i) = -iw_(m,b+3+2-r,k,j,i);}
+      }
+      if (k == ks && cseam(m,2) != 0) {
+        for (int r = 0; r < 3; ++r) {iw_(m,b+6+r,k-1,j,i) = -iw_(m,b+6+2-r,k,j,i);}
+      }
+      if (k == ke && cseam(m,3) != 0) {
+        for (int r = 0; r < 3; ++r) {iw_(m,b+6+r,k+1,j,i) = -iw_(m,b+6+2-r,k,j,i);}
+      }
+    });
+  }
 
   // (2) the operator coefficients and the right-hand side
   par_for_lb("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -7332,15 +7338,6 @@ void RadiationM1::ImplicitVimpBuild() {
           }
         }
       }
-      if (csg && d > 0) {
-        const int sl = (d == 1) ? 0 : 2;
-        if (c == cs && cseam(m,sl) != 0) {
-          for (int r = 0; r < 3; ++r) {P[0][r] = -P[1][2-r];}
-        }
-        if (c == ce && cseam(m,sl+1) != 0) {
-          for (int r = 0; r < 3; ++r) {P[2][r] = -P[1][2-r];}
-        }
-      }
       Real phf[2] = {0.0, 0.0};
       const Real jr0 = jr;
       for (int s = 0; s < 2; ++s) {
@@ -7388,15 +7385,6 @@ void RadiationM1::ImplicitVimpBuild() {
             af = carea.x2f(m,k,j+s,i);
           } else {
             af = carea.x3f(m,k+s,j,i);
-          }
-          if (csg && d > 0) {
-            const int sl = (d == 1) ? 0 : 2;
-            const bool sm = (s == 0) ? (c == cs && cseam(m,sl) != 0)
-                                     : (c == ce && cseam(m,sl+1) != 0);
-            if (sm) {
-              af = 0.5*(cx1f(m,i+1)*cx1f(m,i+1) - cx1f(m,i)*cx1f(m,i))
-                   *((d == 1) ? csg2_(m,0,k,s) : csg3_(m,0,j,s));
-            }
           }
           const Real nus = af*iv;
           const Real sg = (s == 0) ? -1.0 : 1.0;

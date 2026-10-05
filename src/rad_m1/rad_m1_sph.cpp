@@ -74,6 +74,7 @@
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
@@ -267,6 +268,49 @@ void RadiationM1::CubedS1Init() {
   cs_seam.sync_device();
   Kokkos::deep_copy(csg2, g2h);
   Kokkos::deep_copy(csg3, g3h);
+  // STAGE CS3: the effective transverse distances and areas (rad_m1.hpp)
+  {
+    auto *pc = pmy_pack->pcoord;
+    const int n1 = indcs.nx1 + 2*ng;
+    cs_dxf_eff = DvceFaceFld4D<Real>("m1csdxf", nmb, n3, n2, n1);
+    cs_area_eff = DvceFaceFld4D<Real>("m1csarea", nmb, n3, n2, n1);
+    Kokkos::deep_copy(cs_dxf_eff.x1f, pc->dxface.x1f);
+    Kokkos::deep_copy(cs_dxf_eff.x2f, pc->dxface.x2f);
+    Kokkos::deep_copy(cs_dxf_eff.x3f, pc->dxface.x3f);
+    Kokkos::deep_copy(cs_area_eff.x1f, pc->area.x1f);
+    Kokkos::deep_copy(cs_area_eff.x2f, pc->area.x2f);
+    Kokkos::deep_copy(cs_area_eff.x3f, pc->area.x3f);
+    auto dx2 = cs_dxf_eff.x2f, dx3 = cs_dxf_eff.x3f;
+    auto a2 = cs_area_eff.x2f, a3 = cs_area_eff.x3f;
+    auto sn2 = pc->sin_face_xi, sn3 = pc->sin_face_eta;
+    auto x1v = pc->x1v, x1f = pc->xx1f;
+    auto g2 = csg2, g3 = csg3;
+    auto cse = cs_seam.d_view;
+    const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+    const int is = indcs.is, ie = indcs.ie;
+    par_for("m1_cs_eff2", DevExeSpace(), 0, nmb-1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool sm = (j == js && cse(m,0) != 0) || (j == je+1 && cse(m,1) != 0);
+      const int sd = (j == js) ? 0 : 1;
+      if (sm) {
+        dx2(m,k,j,i) = x1v(m,i)*g2(m,1,k,sd);
+        a2(m,k,j,i) = 0.5*(x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i))*g2(m,0,k,sd);
+      } else {
+        dx2(m,k,j,i) = dx2(m,k,j,i)*sn2(m,k,j);
+      }
+    });
+    par_for("m1_cs_eff3", DevExeSpace(), 0, nmb-1, ks, ke+1, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool sm = (k == ks && cse(m,2) != 0) || (k == ke+1 && cse(m,3) != 0);
+      const int sd = (k == ks) ? 0 : 1;
+      if (sm) {
+        dx3(m,k,j,i) = x1v(m,i)*g3(m,1,j,sd);
+        a3(m,k,j,i) = 0.5*(x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i))*g3(m,0,j,sd);
+      } else {
+        dx3(m,k,j,i) = dx3(m,k,j,i)*sn3(m,k,j);
+      }
+    });
+  }
   // DEBUG <rad_m1>/cs_seam_avg (read only when named, default true): the C5 seam average
   // of the stored face state
   cs_seam_avg_on = true;
