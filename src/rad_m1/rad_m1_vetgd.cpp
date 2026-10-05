@@ -205,7 +205,9 @@ bool VgdLevelSym(const int nl, std::vector<double> &d) {
       std::vector<int> t = {a, b, c};
       std::sort(t.begin(), t.end());
       int id = -1;
-      for (int q = 0; q < static_cast<int>(cls.size()); ++q) {if (cls[q] == t) {id = q;}}
+      for (int q = 0; q < static_cast<int>(cls.size()); ++q) {
+        if (cls[q] == t) {id = q;}
+      }
       if (id < 0) {cls.push_back(t); id = static_cast<int>(cls.size()) - 1;}
       pc.push_back(id);
       pt.push_back(mu[a]); pt.push_back(mu[b]); pt.push_back(mu[c]);
