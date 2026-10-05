@@ -63,6 +63,7 @@
 #include <iostream>
 #include <numeric>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
@@ -417,8 +418,10 @@ void RadiationM1::VetGdTables(const Real alpha) {
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
   const double p0 = pm->mesh_size.x3min, p1 = pm->mesh_size.x3max;
   int nwall = 0, nexact = 0, nmap = 0;
-  for (int m = 0; m < nmb; ++m) {
-    for (int k = 0; k < c3; ++k) {
+  // the (m, k) columns are independent: host threads over them (bitwise identical to
+  // the serial loop; each thread keeps its own counters)
+  auto column = [&](const int m, const int k, int &nwall, int &nexact, int &nmap) {
+    {
       for (int j = 0; j < c2; ++j) {
         const double th = x2_h(m,j), ph = x3_h(m,k);
         double thw = th, phw = ph;
@@ -512,6 +515,26 @@ void RadiationM1::VetGdTables(const Real alpha) {
           }
         }
       }
+    }
+  };
+  {
+    const int ncol = nmb*c3;
+    const int hwc = static_cast<int>(std::thread::hardware_concurrency());
+    const int nth = std::max(1, std::min(hwc, std::min(16, ncol)));
+    std::vector<std::array<int, 3>> cnt(nth, {0, 0, 0});
+    std::vector<std::thread> pool;
+    for (int t = 0; t < nth; ++t) {
+      pool.emplace_back([&, t]() {
+        for (int c = t; c < ncol; c += nth) {
+          column(c/c3, c % c3, cnt[t][0], cnt[t][1], cnt[t][2]);
+        }
+      });
+    }
+    for (auto &th : pool) {th.join();}
+    for (int t = 0; t < nth; ++t) {
+      nwall += cnt[t][0];
+      nexact += cnt[t][1];
+      nmap += cnt[t][2];
     }
   }
   // the branch of every stored value: n . r_hat of the direction actually stored at a
