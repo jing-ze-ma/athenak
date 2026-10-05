@@ -1311,6 +1311,12 @@ void RadiationM1::VetGdBuild() {
   vgd_tmom += tm.seconds();
   auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cnt);
   vlat_nclamp = cnt_h(0);
+  // all ranks (exactness of the sweep: any read beyond the band is clamped and counted)
+  vgd_nclamp_all = vlat_nclamp;
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &vgd_nclamp_all, 1, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+#endif
   // debug (gate): VGD_DUMP_I=<file>: rank 0's intensities incl. ghosts, first build
   const char *fi = std::getenv("VGD_DUMP_I");
   if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
