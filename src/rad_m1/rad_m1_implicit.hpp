@@ -303,6 +303,8 @@ constexpr int M1_POS_GAS_DE = 2;   // energy (erg, volume-weighted) moved gas <-
 constexpr int M1_POS_FLR    = 3;   // cell-solves where E was raised to e_floor
 constexpr int M1_POS_FLR_DE = 4;   // floor energy taken from the gas (erg)
 constexpr int M1_POS_FLR_UN = 5;   // floor energy NOT covered by the gas (created, erg)
+constexpr int M1_POS_FCLIP  = 6;   // cell-solves whose |F| > c E was scaled back
+constexpr int M1_POS_FCLIPM = 7;   // sum of (|F|/(c E) - 1) over those cell-solves
 constexpr int M1_POS_N      = 8;
 constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
 constexpr int M1_IFW_HCL = 1;   // alpha * (coefficient of E'_L in F_HLL), >= 0
@@ -862,6 +864,56 @@ Real M1SphLat(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
     s = (ra*ra*ra*tt(m,c,k,j,ia)*iw(m,ec,k,j,ia)
          - rb*rb*rb*tt(m,c,k,j,ib)*iw(m,ec,k,j,ib))
         /(r*r*r*(ra - rb));
+  }
+  return s;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1SphTan
+//! \brief <rad_m1>/vet_gd (m1-vet-gd): the LAGGED divergence of the TANGENTIAL
+//! anisotropy of the Eddington tensor at one cell centre of the sp wedge.  The operator
+//! carries the isotropic tangential pressure (1 - D_rr)/2 E; the deviation
+//!   dP_tt = a E, dP_pp = -a E, P_tp = D_tp E,   a = tt(c0+3) = D_tt - (1 - D_rr)/2,
+//! D_tp = tt(c0+4) (tau_ten slots of rad_m1_vetgd.cpp, ghosts exchanged), E = iw(ec),
+//! adds (the trace-free part has no radial component)
+//!   d = 1:  (1/(r sin)) d_th (sin dP_tt) + (1/(r sin)) d_ph P_tp - cot dP_pp / r
+//!   d = 2:  (1/(r sin^2)) d_th (sin^2 P_tp) + (1/(r sin)) d_ph dP_pp
+//! The NORMAL-gradient parts (1/r) d_th dP_tt (d = 1) and (1/(r sin)) d_ph dP_pp (d = 2)
+//! are NOT here: the caller adds +a / -a to the face diagonal D_dd of the compact face
+//! gradient (ImplicitTransverseTerms), exactly as the isotropic part.  A lagged wide
+//! centred difference of them was unstable in the thin top (He 128^2: L_top grew e-fold
+//! per ~90 s).  What remains here are zeroth-derivative and cross terms:
+//!   d = 1:  2 cot a E / r + (1/(r sin)) d_ph P_tp
+//!   d = 2:  (1/(r sin^2)) d_th (sin^2 P_tp)
+//! centred over the coordinate distances, one-sided at a physical boundary as M1SphLat.
+
+template <class V, class A>
+KOKKOS_INLINE_FUNCTION
+Real M1SphTan(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v,
+              const A &x3v, const int m, const int d, const int k, const int j,
+              const int i, const bool thrd, const int jl, const int ju, const int kl,
+              const int ku, const int ec) {
+  const Real r = x1v(m,i);
+  const int ja = (j+1 <= ju) ? (j+1) : j;
+  const int jb = (j-1 >= jl) ? (j-1) : j;
+  const int ka = (thrd && k+1 <= ku) ? (k+1) : k;
+  const int kb = (thrd && k-1 >= kl) ? (k-1) : k;
+  const Real sn = sin(x2v(m,j));
+  const Real ct = cos(x2v(m,j))/sn;
+  Real s = 0.0;
+  if (d == 1) {
+    if (ka != kb) {
+      s += (tt(m,c0+4,ka,j,i)*iw(m,ec,ka,j,i) - tt(m,c0+4,kb,j,i)*iw(m,ec,kb,j,i))
+           /(r*sn*(x3v(m,ka) - x3v(m,kb)));
+    }
+    s += 2.0*ct*tt(m,c0+3,k,j,i)*iw(m,ec,k,j,i)/r;
+  } else if (d == 2) {
+    if (ja != jb) {
+      const Real sa = sin(x2v(m,ja)), sb = sin(x2v(m,jb));
+      s += (sa*sa*tt(m,c0+4,k,ja,i)*iw(m,ec,k,ja,i)
+            - sb*sb*tt(m,c0+4,k,jb,i)*iw(m,ec,k,jb,i))
+           /(r*sn*sn*(x2v(m,ja) - x2v(m,jb)));
+    }
   }
   return s;
 }

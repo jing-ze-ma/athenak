@@ -182,7 +182,7 @@ void RadiationM1::VetLatInit() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-  const int nd = 2*vlat_nmu*vlat_npsi;
+  const int nd = vgd_on ? 1 : 2*vlat_nmu*vlat_npsi;   // vet_gd: own arrays (VetGdInit)
   Kokkos::realloc(vlat_i, nmb, nd, c3, c2, c1);
   Kokkos::deep_copy(vlat_i, 0.0);
   Kokkos::realloc(vlat_t, nmb, nd, c3, c2, c1);
@@ -198,9 +198,12 @@ void RadiationM1::VetLatInit() {
     Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);
   }
   // the exchange of the off-diagonal slots only (slots 0-3 keep vet_col's ghosts)
-  Kokkos::realloc(vlat_lx, nmb, 2, c3, c2, c1);
+  // (vet_gd: also slot 0 after the fold and every LAT slot: the face diagonals and the
+  // tangential cross terms read their lateral ghosts)
+  const int nlx = vgd_on ? (1 + M1_TT_NLAT) : 2;
+  Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);
   Kokkos::deep_copy(vlat_lx, 0.0);
-  Kokkos::realloc(vlat_tt_c, nmb, 2, 1, 1, 1);
+  Kokkos::realloc(vlat_tt_c, nmb, nlx, 1, 1, 1);
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
   Kokkos::realloc(vlat_w, vlat_nmu);
@@ -245,10 +248,11 @@ void RadiationM1::VetLatInit() {
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
   pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
-  pbval_vt->InitializeBuffers(2);
-  pbval_vt->SetVectorPairs(2, {});
+  pbval_vt->InitializeBuffers(nlx);
+  pbval_vt->SetVectorPairs(nlx, {});
   vlat_geo_icut = -1;
   vlat_ready = true;
+  if (vgd_on) {VetGdInit(); return;}
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_col_lat: lateral SC correction of vet_col, " << vlat_nmu
               << " mu x " << vlat_npsi << " psi per hemisphere (" << nd
@@ -267,6 +271,109 @@ void RadiationM1::VetLatInit() {
                 << "reflecting top is not mirrored; both sweeps alike)" << std::endl;
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatOdMax
+//! \brief vlat_odmax = max over ranks of |D_rt|, |D_rp| (tau_ten LAT slots 1, 2) over the
+//! active cells: 0 keeps the operator form untouched (vet_col_lat and vet_gd)
+
+void RadiationM1::VetLatOdMax() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto tt_ = tau_ten;
+  const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
+  {
+    Real omx = 0.0;
+    const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
+    Kokkos::parallel_reduce("m1_vlat_odmax",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
+      KOKKOS_LAMBDA(const int idx, Real &mx) {
+        int t = idx/ni;
+        const int i = is + (idx - t*ni);
+        const int j = js + (t % nj);
+        t /= nj;
+        const int k = ks + (t % nk);
+        const int m = t/nk;
+        Real v = fmax(fabs(tt_(m,M1_TT_LAT0+1,k,j,i)),
+                      fabs(tt_(m,M1_TT_LAT0+2,k,j,i)));
+        if (tn) {
+          v = fmax(v, fmax(fabs(tt_(m,M1_TT_LAT0+3,k,j,i)),
+                           fabs(tt_(m,M1_TT_LAT0+4,k,j,i))));
+        }
+        mx = (v > mx) ? v : mx;
+      }, Kokkos::Max<Real>(omx));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &omx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    vlat_odmax = omx;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdIterRebuild
+//! \brief vet_gd_rebuild_every: the gd tensor rebuilt inside the implicit solve from the
+//! Picard iterate (E = M1_IW_EP, T = M1_IW_TP): slot 0 back to its pre-fold value, the
+//! build (source, sweep, moments, vlat_odmax), the fold and the ghosts as VetLatBuild
+
+void RadiationM1::VetGdIterRebuild() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  Kokkos::fence();
+  Kokkos::Timer timer;
+  auto tt_ = tau_ten;
+  auto f0_ = vgd_fk0;
+  par_for("m1_vgd_fk0r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    tt_(m,0,k,j,i) = f0_(m,k,j,i);
+  });
+  vlat_src_ep = true;
+  VetGdBuild();
+  vlat_src_ep = false;
+  const Real fkm = vcol_fkmin;
+  const int ilo = is + vlat_icut;
+  par_for("m1_vgd_refold", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    tt_(m,0,k,j,i) = fmin(fmax(tt_(m,0,k,j,i) + tt_(m,M1_TT_LAT0,k,j,i), fkm), 1.0);
+  });
+  VetLatTTGhosts();
+  Kokkos::fence();
+  vgd_nrb += 1.0;
+  vgd_trb += timer.seconds();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatTTGhosts
+//! \brief the lateral ghosts of the tau_ten slots the operator reads at neighbours,
+//! through a copy: D_rt, D_rp (vet_col_lat), or slot 0 and every LAT slot (vet_gd)
+
+void RadiationM1::VetLatTTGhosts() {
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto tt_ = tau_ten;
+  auto lx_ = vlat_lx;
+  const int nlx = static_cast<int>(vlat_lx.extent(1));
+  const bool gd = vgd_on;
+  auto slot = [=] KOKKOS_FUNCTION (const int c) {
+    return gd ? ((c == 0) ? 0 : (M1_TT_LAT0 + c - 1)) : (M1_TT_LAT0 + 1 + c);
+  };
+  // copied in over ALL cells: cells the exchange does not fill (x1 and physical-boundary
+  // ghosts) come back unchanged
+  const int n3 = static_cast<int>(tt_.extent(2)) - 1;
+  const int n2 = static_cast<int>(tt_.extent(3)) - 1;
+  const int n1 = static_cast<int>(tt_.extent(4)) - 1;
+  par_for("m1_vlat_lxo", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int c = 0; c < nlx; ++c) {lx_(m,c,k,j,i) = tt_(m,slot(c),k,j,i);}
+  });
+  VetLatExchange(vlat_lx, vlat_tt_c, pbval_vt);
+  par_for("m1_vlat_lxi", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int c = 0; c < nlx; ++c) {tt_(m,slot(c),k,j,i) = lx_(m,c,k,j,i);}
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -302,15 +409,19 @@ void RadiationM1::VetLatBuild() {
     Kokkos::Timer timer;
     // the twin first (its ghost band is the current part of the 3-D inflow), then the
     // 3-D sweep(s), each followed by the exchange of the lagged lateral difference
-    VetLatSweep(0);
-    VetLatExchange(vlat_t, vlat_t_c, pbval_vl);
-    const int nit = (vlat_nbuild == 0) ? vlat_iinit : 1;
-    for (int it = 0; it < nit; ++it) {
-      VetLatSweep(1);
-      VetLatExchange(vlat_d, vlat_d_c, pbval_vl);
-      vlat_ncall += 1.0;
+    if (vgd_on) {
+      VetGdBuild();
+    } else {
+      VetLatSweep(0);
+      VetLatExchange(vlat_t, vlat_t_c, pbval_vl);
+      const int nit = (vlat_nbuild == 0) ? vlat_iinit : 1;
+      for (int it = 0; it < nit; ++it) {
+        VetLatSweep(1);
+        VetLatExchange(vlat_d, vlat_d_c, pbval_vl);
+        vlat_ncall += 1.0;
+      }
+      VetLatSweep(2);
     }
-    VetLatSweep(2);
     vlat_nbuild += 1;
     Kokkos::fence();
     vlat_time += timer.seconds();
@@ -319,30 +430,21 @@ void RadiationM1::VetLatBuild() {
   auto tt_ = tau_ten;
   const Real fkm = vcol_fkmin;
   const int ilo = is + vlat_icut;
+  if (vgd_on && vgd_rbe > 0) {
+    // vet_gd_rebuild_every: keep slot 0 before the fold for the in-solve rebuilds
+    auto f0_ = vgd_fk0;
+    par_for("m1_vgd_fk0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      f0_(m,k,j,i) = tt_(m,0,k,j,i);
+    });
+  }
   par_for("m1_vlat_fold", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     tt_(m,0,k,j,i) = fmin(fmax(tt_(m,0,k,j,i) + tt_(m,M1_TT_LAT0,k,j,i), fkm), 1.0);
   });
   // the ghosts of D_rt, D_rp (read by M1SphLat): through a 2-slot copy, so that
   // vet_col's own slots keep their (unfilled) ghosts and a restart is unchanged
-  {
-    auto lx_ = vlat_lx;
-    auto &id = pmy_pack->pmesh->mb_indcs;
-    par_for("m1_vlat_lxo", DevExeSpace(), 0, nmb1, id.ks, id.ke, id.js, id.je, id.is,
-            id.ie, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      lx_(m,0,k,j,i) = tt_(m,M1_TT_LAT0+1,k,j,i);
-      lx_(m,1,k,j,i) = tt_(m,M1_TT_LAT0+2,k,j,i);
-    });
-    VetLatExchange(vlat_lx, vlat_tt_c, pbval_vt);
-    const int n3 = static_cast<int>(tt_.extent(2)) - 1;
-    const int n2 = static_cast<int>(tt_.extent(3)) - 1;
-    const int n1 = static_cast<int>(tt_.extent(4)) - 1;
-    par_for("m1_vlat_lxi", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      tt_(m,M1_TT_LAT0+1,k,j,i) = lx_(m,0,k,j,i);
-      tt_(m,M1_TT_LAT0+2,k,j,i) = lx_(m,1,k,j,i);
-    });
-  }
+  VetLatTTGhosts();
   if (due && !vlat_dump.empty() && (vlat_nbuild == 1 || (vlat_dump_every > 0 &&
       (vlat_nbuild % vlat_dump_every) == 0))) {VetLatDump();}
 }
@@ -388,10 +490,11 @@ void RadiationM1::VetLatSweep(const int stage) {
   const Real chs = chat;
   const Real dts = mr_on ? mr_dt : pm->dt;
   const Real cl = c_light, ar = arad, efl = e_floor;
+  const bool srcep = vlat_src_ep;   // vet_gd_rebuild_every: the Picard iterate's E
   par_for("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
-    Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+    Real e = fmax(iw_(m,srcep ? M1_IW_EP : M1_IW_EN,k,j,i), efl);
     Real s = e;
     if (thermal) {
       Real tg = iw_(m,M1_IW_TP,k,j,i);
@@ -436,6 +539,7 @@ void RadiationM1::VetLatSweep(const int stage) {
     vlat_icut = std::max(0, std::min(lmin, n1 - 2));
   }
   }
+  if (vgd_on) {return;}   // vet_gd: source and first shell only (VetGdBuild)
   const int lcut = vlat_icut;
 
   // (3) the per-shell ray geometry (host; rebuilt when the first shell moves)
@@ -726,27 +830,7 @@ void RadiationM1::VetLatSweep(const int stage) {
     }
   });
   // the largest |D_r,lat| of this sweep (all ranks): 0 keeps the operator untouched
-  {
-    Real omx = 0.0;
-    const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
-    Kokkos::parallel_reduce("m1_vlat_odmax",
-      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
-      KOKKOS_LAMBDA(const int idx, Real &mx) {
-        int t = idx/ni;
-        const int i = is + (idx - t*ni);
-        const int j = js + (t % nj);
-        t /= nj;
-        const int k = ks + (t % nk);
-        const int m = t/nk;
-        const Real v = fmax(fabs(tt_(m,M1_TT_LAT0+1,k,j,i)),
-                            fabs(tt_(m,M1_TT_LAT0+2,k,j,i)));
-        mx = (v > mx) ? v : mx;
-      }, Kokkos::Max<Real>(omx));
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &omx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
-#endif
-    vlat_odmax = omx;
-  }
+  VetLatOdMax();
   auto cnt_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vlat_cnt);
   vlat_nclamp = cnt_h(0);
 }
@@ -840,6 +924,7 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
   const int cx = xc, cy = yc;
   const Real sg = sgn;
   const int c0 = M1_TT_LAT0;
+  const bool tanop = vgd_on && vgd_tan && vgd_tanop;
   par_for("m1_vlat_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -869,8 +954,13 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
     const Real iv = dt/cvol(m,k,j,i);
     Real y = 0.0;
     auto lat = [&](const int d, const int kq, const int jq, const int iq) {
-      return M1SphLat(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, il, iu,
-                      jl, ju, kl, ku, cx);
+      Real v = M1SphLat(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, il, iu,
+                        jl, ju, kl, ku, cx);
+      if (tanop && d > 0) {   // vet_gd: the tangential cross terms in the operator too
+        v += M1SphTan(iw_, tt_, c0, cx1v, cx2v, cx3v, m, d, kq, jq, iq, thrd, jl, ju, kl,
+                      ku, cx);
+      }
+      return v;
     };
     // the two x1 faces
     if (i < ie || !topb) {
@@ -965,6 +1055,7 @@ void RadiationM1::VetLatStencilAdd() {
   auto cvol = pmy_pack->pcoord->volume;
   auto carea = pmy_pack->pcoord->area;
   const int c0 = M1_TT_LAT0;
+  const bool tanop = vgd_on && vgd_tan && vgd_tanop;
   par_for("m1_vlat_stencil", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -1027,6 +1118,31 @@ void RadiationM1::VetLatStencilAdd() {
           const Real f = w/(r*r*r*(ra - rb));
           add(ia, qj, qk, f*ra*ra*ra*tt_(m,c0+d,qk,qj,ia));
           add(ib, qj, qk, -f*rb*rb*rb*tt_(m,c0+d,qk,qj,ib));
+        }
+        if (tanop) {
+          // M1SphTan (vet_gd), the same clamps: d = 1: (1/(r sin)) d_ph (D_tp E) +
+          // 2 cot a E / r; d = 2: (1/(r sin^2)) d_th (sin^2 D_tp E)
+          const Real sn = sin(cx2v(m,qj));
+          const Real ct = cos(cx2v(m,qj))/sn;
+          if (d == 1) {
+            const int ka = (thrd && qk + 1 <= hi[2]) ? qk + 1 : qk;
+            const int kb = (thrd && qk - 1 >= lo[2]) ? qk - 1 : qk;
+            if (ka != kb) {
+              const Real f = w/(r*sn*(cx3v(m,ka) - cx3v(m,kb)));
+              add(qi, qj, ka, f*tt_(m,c0+4,ka,qj,qi));
+              add(qi, qj, kb, -f*tt_(m,c0+4,kb,qj,qi));
+            }
+            add(qi, qj, qk, w*2.0*ct*tt_(m,c0+3,qk,qj,qi)/r);
+          } else {
+            const int ja = (qj + 1 <= hi[1]) ? qj + 1 : qj;
+            const int jb = (qj - 1 >= lo[1]) ? qj - 1 : qj;
+            if (ja != jb) {
+              const Real sa = sin(cx2v(m,ja)), sb = sin(cx2v(m,jb));
+              const Real f = w/(r*sn*sn*(cx2v(m,ja) - cx2v(m,jb)));
+              add(qi, ja, qk, f*sa*sa*tt_(m,c0+4,qk,ja,qi));
+              add(qi, jb, qk, -f*sb*sb*tt_(m,c0+4,qk,jb,qi));
+            }
+          }
         }
       }
     };

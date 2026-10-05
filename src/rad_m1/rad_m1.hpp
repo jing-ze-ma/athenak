@@ -66,6 +66,7 @@ constexpr int M1_VET_NC  = 23;
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
 constexpr int M1_TT_NLAT = 6;
+constexpr int M1_VGD_NMAX = 432;   // vet_gd: at most 12 x 6^2 directions
 constexpr int M1_OP_P = 0;  // rho kappa_P, Planck (emission) mean
 constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
 constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s), the TRANSPORT opacity: what the
@@ -1374,6 +1375,8 @@ class RadiationM1 {
   void VetLatInit();
   void VetLatBuild();
   void VetLatSweep(const int stage);   // 0 twin, 1 3-D, 2 moments
+  void VetLatTTGhosts();
+  void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
   void VetLatDump();
@@ -1382,6 +1385,115 @@ class RadiationM1 {
   // 19-point stencil of the pass (ImplicitStencilBuild)
   void VetLatOp(int xc, int yc, Real sgn);
   void VetLatStencilAdd();
+
+  // ---- <rad_m1>/vet_gd (m1-vet-gd, rad_m1_vetgd.cpp; design
+  // rt_design_1003/SC_PROPER_SP.md, candidate b): the Eddington tensor from an SC sweep
+  // along GLOBALLY FIXED (Cartesian) HEALPix directions, handed over through the
+  // vet_col_lat interface (sets vlat_on; the vet_col_lat keys apply).  Read only when
+  // named; sp wedge only.
+  bool vgd_on = false;         // vet_gd
+  int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
+  bool vgd_tan = true;         // vet_gd_tangential: the lagged M1SphTan term
+  int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
+  int vgd_smooth = 0;          // vet_gd_smooth: lateral 1-2-1 passes on dD_rr (diag.)
+  DvceArray4D<Real> vgd_sm;    // (m, k, j, i) scratch of VetGdSmooth
+  bool vgd_bandx = false;      // vet_gd_band_exit: shortened segments for reads
+                               // beyond the ghost band instead of clamping
+  Real vgd_taumin = 0.0;       // vet_gd_thin_taumin > 0: lateral parts tapered to 0
+                               // from tau_top = 10 taumin to taumin (far thin top)
+  bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
+                               // first gd shell, q from the gd top cell)
+  int vgd_n = 0;
+  int vgd_ls = 0;              // vet_gd_ls = 6/8/10/12: level-symmetric LQ_N set instead
+  int vgd_gl_nmu = 0;          // vet_gd_gl_nmu > 0: product set GL(nmu in n_z) x nphi
+  int vgd_gl_nphi = 12;        // vet_gd_gl_nphi (C_nphi about z)
+  bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
+  int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
+  Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
+  std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
+  DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
+  DvceArray5D<Real> vgd_i;     // (m, d, k, j, i): intensities, ghosts lagged
+  DvceArray5D<Real> vgd_i_c;
+  Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
+  Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
+  DvceArray4D<Real> vgd_mr;    // (m, k, j, d): n . r_hat of the value stored there
+  // vet_gd_wall_interp (read only when named, default false): wall ghosts from the 3
+  // nearest same-branch directions with weights (m, k, j, d, 3)
+  bool vgd_wint = false;
+  // vet_gd_twin (read only when named, default false): uniform-state twin subtraction
+  bool vgd_twin = false, vgd_noq = false;
+  DvceArray1D<Real> vgd_twm, vgd_twm2;
+  DvceArray5D<Real> vgd_twl, vgd_cs0;
+  Real vgd_ttwin = 0.0;
+  void VetGdTwin(const int stage);
+  Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
+  DvceArray5D<Real> vgd_w3;
+  MeshBoundaryValuesCC *pbval_gd = nullptr;
+  // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
+  // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled
+  // shell by shell from the 8 lateral neighbours (on-rank copies + MPI)
+  int vgd_w = 0;
+  DvceArray5D<Real> vgd_cs;    // (m, 2, k, j, i): ln chi, ln S with the vgd_w band
+  DvceArray1D<int> vgd_hloc;   // (8 nmb): local index of the slot's neighbour, -1 remote
+  std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): the remote neighbour's rank, lid
+  DvceArray1D<Real> vgd_sbuf, vgd_rbuf;   // flat message buffers, one piece per remote
+  // (block, slot), the pieces to/from one rank contiguous (one message per rank pair)
+  // in the order of the RECEIVER's (block, slot); offsets per band depth ws in units of
+  // nv*ni: (ws, 8 m + o), -1 for an on-rank slot
+  DvceArray2D<int> vgd_soff, vgd_roff;
+  std::vector<int> vgd_prk;                  // partner ranks
+  std::vector<std::vector<int>> vgd_pdsp, vgd_pscnt, vgd_prdsp, vgd_prcnt;   // (ws, p)
+  int vgd_maxcnt = 0;
+  bool vgd_hmpi = false;
+  Real vgd_thalo = 0.0, vgd_tmpi = 0.0, vgd_ttab = 0.0;
+  // halo diagnostics (rank 0; clamps all ranks)
+  Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0, vgd_nclamp_all = 0.0;
+  bool vgd_time_halo = false;
+  // vet_gd_rebuild_every = k > 0 (read only when named; 0 = the tensor lagged to the
+  // start of the step): rebuild the gd tensor inside the implicit solve at Picard passes
+  // k, 2k, ... from the iterate's E (M1_IW_EP) and T (M1_IW_TP)
+  int vgd_rbe = 0;
+  // vet_gd_tan_operator (read only when named, default true): the tangential cross terms
+  // (M1SphTan) join D_r,lat in the implicit operator under vet_col_lat_offdiag = operator
+  bool vgd_tanop = true;
+  // thin-top cap shape (read only when named): ramp decades, smoothstep, parts mask
+  Real vgd_tdec = 1.0;
+  bool vgd_tsmooth = false;
+  int vgd_tparts = 3;
+  int vgd_seam = 0;             // vet_gd_seam_mask (TEST)
+  bool vlat_src_ep = false;
+  DvceArray4D<Real> vgd_fk0;   // (m, k, j, i): slot 0 before the fold
+  Real vgd_nrb = 0.0, vgd_trb = 0.0;
+  void VetGdIterRebuild();
+  void VetGdMms();
+  void VetGdRealDiag();
+  int vgd_rdiag = -1, vgd_rdcnt = 0;   // env VGD_TIME_HALO=1: fence before the halo timer
+  void VetGdHaloInit();
+  // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
+  int vgd_hcomp = 0;
+  bool vgd_capped = false, vgd_allow_clamp = false;
+  Real vgd_nclamp_seen = 0.0;
+  bool vgd_hinw = true;
+  int vgd_nb2 = 1, vgd_nb3 = 1;
+  Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
+  DvceArray1D<Real> vgd_csb, vgd_crb;
+  DvceArray1D<int> vgd_fs, vgd_fr, vgd_pbv;
+  Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
+  std::vector<double> vgd_r1v, vgd_r1f;
+  void VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int i0, const int ws);
+  std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
+  std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
+  void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,
+                 const int ws, const bool mapd);
+  Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
+  void VetGdInit();
+  Real VetGdAngle(const int cyc) const;
+  void VetGdTables(const Real alpha);
+  void VetGdBuild();
+  void VetGdSweep();
+  void VetGdWall(const int i0, const int i1);
+  void VetGdMoments();
+  void VetGdSmooth();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

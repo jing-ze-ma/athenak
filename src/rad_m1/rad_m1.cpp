@@ -755,6 +755,82 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","vet_col_lat")) {
       vlat_on = pin->GetBoolean("rad_m1","vet_col_lat");
     }
+    // vet_gd (m1-vet-gd, rad_m1_vetgd.cpp): rides on the vet_col_lat interface
+    if (pin->DoesParameterExist("rad_m1","vet_gd")) {
+      vgd_on = pin->GetBoolean("rad_m1","vet_gd");
+      if (vgd_on) {vlat_on = true;}
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_gl_nmu")) {
+      vgd_gl_nmu = pin->GetInteger("rad_m1","vet_gd_gl_nmu");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_gl_nphi")) {
+      vgd_gl_nphi = pin->GetInteger("rad_m1","vet_gd_gl_nphi");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_gl_stagger")) {
+      vgd_gl_stag = pin->GetBoolean("rad_m1","vet_gd_gl_stagger");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_ls")) {
+      vgd_ls = pin->GetInteger("rad_m1","vet_gd_ls");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
+      vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_exit")) {
+      vgd_bandx = pin->GetBoolean("rad_m1","vet_gd_band_exit");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_smooth")) {
+      vgd_smooth = std::max(0, pin->GetInteger("rad_m1","vet_gd_smooth"));
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
+        pin->GetBoolean("rad_m1","vet_gd_mms")) {
+      VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
+      std::exit(EXIT_SUCCESS);
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_allow_clamp")) {
+      vgd_allow_clamp = pin->GetBoolean("rad_m1","vet_gd_allow_clamp");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
+      vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin")) {
+      vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
+      vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_seam_mask")) {
+      vgd_seam = std::max(0, pin->GetInteger("rad_m1","vet_gd_seam_mask"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_thin_decades")) {
+      vgd_tdec = pin->GetReal("rad_m1","vet_gd_thin_decades");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_thin_smooth")) {
+      vgd_tsmooth = pin->GetBoolean("rad_m1","vet_gd_thin_smooth");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_thin_parts")) {
+      vgd_tparts = pin->GetInteger("rad_m1","vet_gd_thin_parts");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tan_operator")) {
+      vgd_tanop = pin->GetBoolean("rad_m1","vet_gd_tan_operator");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
+      vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_iter")) {
+      vgd_iter = std::max(1, pin->GetInteger("rad_m1","vet_gd_iter"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_thin_taumin")) {
+      vgd_taumin = pin->GetReal("rad_m1","vet_gd_thin_taumin");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_replace")) {
+      vgd_replace = pin->GetBoolean("rad_m1","vet_gd_replace");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tangential")) {
+      vgd_tan = pin->GetBoolean("rad_m1","vet_gd_tangential");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_nside")) {
+      vgd_nside = pin->GetInteger("rad_m1","vet_gd_nside");
+    }
     if (vlat_on) {
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_nmu")) {
         vlat_nmu = pin->GetInteger("rad_m1","vet_col_lat_nmu");
@@ -1104,6 +1180,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}
+  if (pbval_gd != nullptr) {delete pbval_gd;}
 }
 
 //----------------------------------------------------------------------------------------

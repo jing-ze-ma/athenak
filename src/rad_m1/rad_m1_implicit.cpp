@@ -2552,6 +2552,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool vlat = vlat_now && vlat_ready && sph;
   auto vlt_ = tau_ten;
   const int c0l = M1_TT_LAT0;
+  // vet_gd (m1-vet-gd): the lagged tangential anisotropy M1SphTan
+  const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
   auto cx3v = pmy_pack->pcoord->x3v;
@@ -2589,6 +2591,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
     Real dl = M1DDiag(iw_,vd_,dfull,m,1,k,jm,i);
     Real dr = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
+    if (vtan) {   // vet_gd: D_tt = (1 - D_rr)/2 + a in the compact face gradient
+      dl += vlt_(m,c0l+3,k,jm,i);
+      dr += vlt_(m,c0l+3,k,j,i);
+    }
     Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
     if (sph) {
       gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/cdxf.x2f(m,k,j,i);
@@ -2613,6 +2619,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                              ju,kl,ku,M1_IW_EP)
                  + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,il,iu,jl,
                             ju,kl,ku,M1_IW_EP));
+    }
+    if (vtan) {
+      off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,jl,ju,kl,ku,
+                           M1_IW_EP)
+                 + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,jl,ju,kl,ku,
+                            M1_IW_EP));
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
@@ -2651,6 +2663,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real dl = M1DDiag(iw_,vd_,dfull,m,2,km,j,i);
       Real dr = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
+      if (vtan) {   // vet_gd: D_pp = (1 - D_rr)/2 - a in the compact face gradient
+        dl += vlt_(m,c0l+5,km,j,i);
+        dr += vlt_(m,c0l+5,k,j,i);
+      }
       Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
       if (sph) {
         gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/cdxf.x3f(m,k,j,i);
@@ -2675,6 +2691,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                                ju,kl,ku,M1_IW_EP)
                    + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,il,iu,jl,
                               ju,kl,ku,M1_IW_EP));
+      }
+      if (vtan) {
+        off += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,jl,ju,kl,ku,
+                             M1_IW_EP)
+                   + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,jl,ju,kl,ku,
+                              M1_IW_EP));
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
@@ -6306,7 +6328,8 @@ void RadiationM1::ImplicitReport() {
               << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
               << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
-              << std::endl;
+              << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
+              << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM] << std::endl;
   }
   if (impl_onep > 0) {
     std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep
@@ -8072,6 +8095,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool gsd = (impl_gn_sw > 0) && gnewt;
   if (gsd) {rhist.reserve(impl_maxit);}
   for (it = 0; it < impl_maxit && !converged; ++it) {
+    // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k
+    if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0) {
+      VetGdIterRebuild();
+    }
     // the gas Newton update of THIS pass (off after a detected stall, see above)
     const bool gnw = gnewt && !gnsw;
     int nin = -1;
@@ -10019,6 +10046,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     std::cout << "<rad_m1> NC-local rank=" << global_variable::my_rank << " cycle="
               << pmy_pack->pmesh->ncycle << " max=" << mloc.val << " (m,k,j,i)=(" << lmb
               << "," << (lk+ks) << "," << (lj+js) << "," << (li+is) << ")" << std::endl;
+    if (vgd_on && std::getenv("VGD_NCDIAG") != nullptr) {
+      // vet_gd diagnosis (env VGD_NCDIAG): the 3x3 lateral neighbourhood of the worst
+      // cell: D_rr (tau_ten slot 0), E, F1, Picard residual
+      const int kk = lk+ks, jj = lj+js, ii = li+is;
+      auto pr = std::make_pair(ii, ii+1);
+      auto pk = std::make_pair(kk-1, kk+2);
+      auto pj = std::make_pair(jj-1, jj+2);
+      auto dh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(tau_ten, lmb, 0, pk, pj, pr));
+      auto eh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(iw, lmb, static_cast<int>(M1_IW_EP), pk, pj, pr));
+      auto fh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(iw, lmb, static_cast<int>(M1_IW_F1), pk, pj, pr));
+      auto rh = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(iw, lmb, static_cast<int>(M1_IW_RES), pk, pj, pr));
+      std::cout << "<rad_m1> NC-diag rank=" << global_variable::my_rank << " cycle="
+                << pmy_pack->pmesh->ncycle << " edge(k,j)=(" << (kk == ks || kk == ke)
+                << "," << (jj == js || jj == je) << ")";
+      for (int a = 0; a < 3; ++a) {
+        for (int b = 0; b < 3; ++b) {
+          std::cout << " [" << (a-1) << (b-1) << " D " << dh(a,b,0) << " E " << eh(a,b,0)
+                    << " F " << fh(a,b,0) << " R " << rh(a,b,0) << "]";
+        }
+      }
+      std::cout << std::endl;
+    }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> Picard NON-CONVERGED after " << it << " passes:"
                 << " resid=" << resid << " (tol " << impl_tol << ")"
@@ -10401,6 +10454,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
       }
     }
+    {   // diagnostic counters only: the flux scaled back to |F| = c E by M1ApplyLimits
+      const Real fq = sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
+      if (ep > efl && fq > cl*ep) {
+        Kokkos::atomic_add(&pc_(M1_POS_FCLIP), 1.0);
+        Kokkos::atomic_add(&pc_(M1_POS_FCLIPM), fq/(cl*ep) - 1.0);
+      }
+    }
     M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
@@ -10498,6 +10558,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   }
 
+  // DIAGNOSTIC (env VGD_RDIAG = N > 0, vet_gd): realizability of the tensor against the
+  // new (E, F) and the sign structure of the last pass's stencil, every N solves
+  if (vet_col && tau_ready) {VetGdRealDiag();}
   // time2_vet_col = rebuild: E and T of the stage-1 solution for the stage-2 build
   if (vet_col && t2_vcmode == 2 && t2s == M1_T2S_STAGE1) {
     Time2VetColSaveY1();

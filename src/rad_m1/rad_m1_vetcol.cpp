@@ -778,7 +778,20 @@ void RadiationM1::VetColBuild() {
   // vet_col_surface_face: q = H(face)/J_f, J_f extrapolated (rad_m1.hpp)
   const bool sqf = vcol_sqf;
   const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap;
-  if (vcol_team) {
+  if (vgd_on && vgd_replace) {
+    // vet_gd_replace (m1-vet-gd): no column solution; the isotropic tensor about r_hat
+    // and the default Marshak q here, the gd sweep (VetLatBuild -> VetGdBuild) then
+    // overwrites D above its first shell and q at the top
+    const int ie = indcs.ie;
+    par_for("m1_vgd_iso", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      tt_(m,0,k,j,i) = 1.0/3.0;
+      tt_(m,1,k,j,i) = 1.0;
+      tt_(m,2,k,j,i) = 0.0;
+      tt_(m,3,k,j,i) = 0.0;
+      if (sq && i == is) {vq_(m,k,j) = q0;}
+    });
+  } else if (vcol_team) {
     VetColBuildTeam(dmp);
   } else {
   par_for("m1_vcol", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -1454,6 +1467,21 @@ void RadiationM1::VetColReport() {
               << ((vlat_ncall > 0.0) ? (1.0e3*vlat_time/vlat_ncall) : 0.0)
               << " ms per sweep; lateral reads clamped to the ghost band (rank 0, "
               << "all sweeps): " << vlat_nclamp << std::endl;
+    if (vgd_on) {
+      std::cout << "<rad_m1> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
+                << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
+                << vgd_thalo << ", of which MPI wait " << vgd_tmpi
+                << "), tables (rotation) " << vgd_ttab << ", uniform twin " << vgd_ttwin
+                << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
+                << vgd_trb << " s)" << std::endl;
+      std::cout << "<rad_m1> vet_gd halo (rank 0): exchanges " << vgd_nexch
+                << ", bytes sent "
+                << vgd_nbyte << " (" << ((vgd_nexch > 0.0) ? vgd_nbyte/vgd_nexch : 0.0)
+                << " per exchange), post " << vgd_tpost << " s, partners "
+                << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
+                << "sweeps) "
+                << vgd_nclamp_all << std::endl;
+    }
   }
 }
 
