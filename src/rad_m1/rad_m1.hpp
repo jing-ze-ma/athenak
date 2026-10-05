@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
 #include "athena.hpp"
@@ -1494,6 +1495,32 @@ class RadiationM1 {
   void VetGdWall(const int i0, const int i1);
   void VetGdMoments();
   void VetGdSmooth();
+  // vet_gd_async (GD_ASYNC.md): the sweep of build n runs on its own device instance
+  // and host thread while the rest of cycle n runs; the D of cycle n is the moments of
+  // build n-1 (one cycle lag).  The pending build's source (vlat_cs) and cycle travel
+  // in the restart file (kM1VgdRstMagic).  vgd_cur: the instance the sweep/halo use.
+  bool vgd_async = false;
+  bool vgd_ainl = false;       // the sweep inline at launch (host backends, or env
+                               // VGD_ASYNC_INLINE=1): same numbers, no overlap
+  bool vgd_apend = false;      // a swept build whose moments are not yet taken
+  bool vgd_afly = false;       // the helper thread is running
+  int vgd_acyc = -1;           // ncycle of the pending build (its z-angle)
+  std::thread vgd_athr;
+  DevExeSpace vgd_cur, vgd_ex;
+  DvceArray1D<int>::HostMirror vgd_pbv_h;
+  Real vgd_tjoin = 0.0, vgd_nasync = 0.0;
+  DvceArray5D<Real> vgd_rst;   // (nmb, 2, k, j, i): vlat_cs of the pending build, staged
+  int vgd_rst_cyc = -1;        // from the restart file (-1: nothing staged)
+#if MPI_PARALLEL_ENABLED
+  MPI_Comm vgd_comm = MPI_COMM_WORLD;
+#endif
+  void VetGdSource();
+  void VetGdPost();
+  void VetGdBuildAsync();
+  void VetGdAsyncJoin();
+  int VetGdAsyncRstNch() const {return (vgd_async && vgd_apend) ? 2 : 0;}
+  void VetGdAsyncRstPack(DvceArray5D<Real> &dst, int nmb);
+  void VetLatCsFinish();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

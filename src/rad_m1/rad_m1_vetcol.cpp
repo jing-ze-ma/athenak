@@ -1481,6 +1481,11 @@ void RadiationM1::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
+      if (vgd_async) {
+        std::cout << "<rad_m1> vet_gd_async (rank 0): " << vgd_nasync
+                  << " overlapped sweeps (" << (vgd_ainl ? "inline" : "thread")
+                  << "), wait at the join " << vgd_tjoin << " s" << std::endl;
+      }
     }
   }
 }
