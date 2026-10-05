@@ -795,6 +795,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin")) {
       vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
     }
+    // vet_gd_twin_full (read only when named, default false; needs vet_gd_twin): subtract
+    // the FULL twin D_rr correction, so that the laterally symmetric part of D_rr is
+    // vet_col's column f_K and gd supplies only the 3-D deviation D_gd - D_gd,twin
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_full")) {
+      vgd_twfull = pin->GetBoolean("rad_m1","vet_gd_twin_full");
+      if (vgd_twfull && !vgd_twin) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_full needs vet_gd_twin = true"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }

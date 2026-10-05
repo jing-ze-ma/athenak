@@ -2347,6 +2347,8 @@ void RadiationM1::VetGdRealDiag() {
 //!    twin LAT1..5 (the exact laterally uniform tensor is diagonal, D_tt = D_pp, and
 //!    laterally constant: its noise-free value is the shell mean of the twin's D_rr).
 //!  A laterally uniform state then gives a laterally uniform D exactly.
+//!  vet_gd_twin_full: LAT0 -= twin LAT0 (no shell mean), i.e. on a laterally uniform
+//!    state D_rr = vet_col's f_K exactly and LAT1..5 = 0.
 
 void RadiationM1::VetGdTwin(const int stage) {
   Mesh *pm = pmy_pack->pmesh;
@@ -2418,8 +2420,13 @@ void RadiationM1::VetGdTwin(const int stage) {
     vgd_ttwin += tm.seconds();
     return;
   }
-  // stage 1: subtract the noise pattern
-  shell_mean(vgd_twl, 0, 0, false, vgd_twm);
+  // stage 1: subtract the noise pattern.  vet_gd_twin_full: the full twin LAT0 (its
+  // shell mean not added back), so D_rr = f_K(vet_col) + D_rr,gd - D_rr,twin
+  if (vgd_twfull) {
+    Kokkos::deep_copy(vgd_twm, 0.0);
+  } else {
+    shell_mean(vgd_twl, 0, 0, false, vgd_twm);
+  }
   auto mt_ = vgd_twm;
   par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

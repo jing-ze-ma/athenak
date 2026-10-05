@@ -1423,6 +1423,7 @@ class RadiationM1 {
   bool vgd_wint = false;
   // vet_gd_twin (read only when named, default false): uniform-state twin subtraction
   bool vgd_twin = false, vgd_noq = false;
+  bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
   DvceArray1D<Real> vgd_twm, vgd_twm2;
   DvceArray5D<Real> vgd_twl, vgd_cs0;
   Real vgd_ttwin = 0.0;
