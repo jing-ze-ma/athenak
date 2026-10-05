@@ -1446,7 +1446,8 @@ class RadiationM1 {
   int vgd_maxcnt = 0;
   bool vgd_hmpi = false;
   Real vgd_thalo = 0.0, vgd_tmpi = 0.0, vgd_ttab = 0.0;
-  Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0, vgd_nclamp_all = 0.0;   // halo diagnostics (rank 0)
+  // halo diagnostics (rank 0; clamps all ranks)
+  Real vgd_tpost = 0.0, vgd_nexch = 0.0, vgd_nbyte = 0.0, vgd_nclamp_all = 0.0;
   bool vgd_time_halo = false;
   // vet_gd_rebuild_every = k > 0 (read only when named; 0 = the tensor lagged to the
   // start of the step): rebuild the gd tensor inside the implicit solve at Picard passes
@@ -1468,6 +1469,18 @@ class RadiationM1 {
   void VetGdRealDiag();
   int vgd_rdiag = -1, vgd_rdcnt = 0;   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
+  // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
+  int vgd_hcomp = 0;
+  bool vgd_capped = false, vgd_allow_clamp = false;
+  Real vgd_nclamp_seen = 0.0;
+  bool vgd_hinw = true;
+  int vgd_nb2 = 1, vgd_nb3 = 1;
+  Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
+  DvceArray1D<Real> vgd_csb, vgd_crb;
+  DvceArray1D<int> vgd_fs, vgd_fr, vgd_pbv;
+  Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
+  std::vector<double> vgd_r1v, vgd_r1f;
+  void VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int i0, const int ws);
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
   void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,

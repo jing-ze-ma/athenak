@@ -786,6 +786,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
       std::exit(EXIT_SUCCESS);
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_allow_clamp")) {
+      vgd_allow_clamp = pin->GetBoolean("rad_m1","vet_gd_allow_clamp");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
+      vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin")) {
       vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
     }
