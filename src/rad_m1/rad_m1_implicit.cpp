@@ -872,16 +872,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //  implicit_realisable_coupling (gd_physfix_1005, read only when named; default false =
   //    bitwise the old code): the gas sees the REALISABLE radiation flux.  In optically
   //    thin cells with c dt/dx >> 1 the Picard iterate of the cell flux is unrealisable
-  //    (BSG far-thin top: |F| = 10-20 c E on average, ~200 c E in the cells that stalled);
+  //    (BSG far-thin top: mean |F| = 10-20 c E, ~200 c E in the cells that stalled);
   //    the write-back clips it to |F| = c E (M1ApplyLimits), but the comoving correction
   //    E0 - E = -2 beta.F/c + O(beta^2) and the momentum deposit dt (rho k_t)_f F0_f/c
-  //    took the UNCLIPPED flux: E0 came out -85 % of E (|E0 - E| <= 2 |beta| E for any
+  //    took the UNCLIPPED flux: E0 - E came out -0.85 E (|E0 - E| <= 2 |beta| E for any
   //    intensity field), which moved the gas-T equation into the kappa_P(T) valley of the
   //    low-density table and made it 3-rooted (the Picard T cycle), and the floor gas got
   //    10-200x the largest force any radiation field of energy E can exert (rho k E).
-  //    With the key, per cell, s = min(1, c E/|F_iter|) scales the flux in beta.F of E0 and
-  //    the momentum deposit (and so its work, which the radiation loses: total energy
-  //    stays exact).  s = 1 wherever the iterate is realisable.
+  //    With the key, per cell, s = min(1, c E/|F_iter|) scales the flux in beta.F of E0,
+  //    and the momentum deposit (and so its work, which the radiation loses: total
+  //    energy stays exact).  s = 1 wherever the iterate is realisable.
   if (pin->DoesParameterExist("rad_m1","implicit_realisable_coupling")) {
     impl_real_couple = pin->GetBoolean("rad_m1","implicit_realisable_coupling");
   }
