@@ -738,8 +738,8 @@ void RadiationM1::VetGdHaloInit() {
       const size_t nr = static_cast<size_t>(pb_h(vgd_w,2*npp + 1))*vgd_n;
       Kokkos::realloc(vgd_csb, std::max<size_t>(ns, 1));
       Kokkos::realloc(vgd_crb, std::max<size_t>(nr, 1));
-      Kokkos::realloc(vgd_fs, ns/vgd_n + 1);   // one count per cell
-      Kokkos::realloc(vgd_fr, nr/vgd_n + 1);
+      Kokkos::realloc(vgd_fs, ns + 1);
+      Kokkos::realloc(vgd_fr, nr + 1);
     }
   }
 }
@@ -835,7 +835,7 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
       vgd_nbyte += static_cast<Real>(vgd_pscnt[ws][p])*nvi*sizeof(Real);
     }
   }
-  if (mpi && !hcomp) {
+  if (mpi) {
     auto rb_ = vgd_rbuf;
     par_for("m1_vgd_unpack", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
     KOKKOS_LAMBDA(const int m, const int o, const int t) {
@@ -880,9 +880,6 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
 //! by gam for the source-cell/upwind-point offset) >= dep - 3 cells.  wall: branch only.
 
 namespace {
-// one piece cell of the compact halo: global lateral indices, band depth, wall flag
-struct VgdCell {int gj, gk, dep; bool wall;};
-
 KOKKOS_INLINE_FUNCTION
 bool VgdHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, const int gk,
                  const Real t0, const Real dth, const Real p0, const Real dph,
@@ -929,7 +926,7 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
-  const int cmx = std::max(nx2, nx3)*ws;     // cells of the largest piece
+  const int mx = std::max(nx2, nx3)*ws*nv;
   const int i = i0;
   const bool inw = vgd_hinw;
   const int mode = vgd_hcomp;
@@ -956,114 +953,101 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
   auto fr_ = vgd_fr;
   auto csb_ = vgd_csb;
   auto crb_ = vgd_crb;
-  auto wl_ = vgd_wall;
-  auto mp_ = vgd_map;
-  const bool wint = vgd_wint;
-  auto m3_ = vgd_m3;
-  auto w3_ = vgd_w3;
-  const int n = vgd_n;
-  // cell counts of the dense layouts (units: cells; per cell the values in v order)
-  const int np = static_cast<int>(vgd_prk.size());
-  const size_t sc = static_cast<size_t>(vgd_pdsp[ws].empty() ? 0 :
-                    (vgd_pdsp[ws].back() + vgd_pscnt[ws].back()));
-  const size_t rc = static_cast<size_t>(vgd_prdsp[ws].empty() ? 0 :
-                    (vgd_prdsp[ws].back() + vgd_prcnt[ws].back()));
-  // geometry of one piece cell: (send) my interior cell, the receiver band depth;
-  // (recv) the neighbour's source cell and my band depth; global lateral indices
-  auto cell = [=] KOKKOS_FUNCTION (const int m, const int o, const int c, const bool snd,
-                                   int &kk, int &jj, VgdCell &g) -> bool {
+  auto rb_ = vgd_rbuf;
+  const int nvi = nv;
+  const size_t stot = static_cast<size_t>(vgd_pdsp[ws].empty() ? 0 :
+                      (vgd_pdsp[ws].back() + vgd_pscnt[ws].back()))*nvi;
+  const size_t rtot = static_cast<size_t>(vgd_prdsp[ws].empty() ? 0 :
+                      (vgd_prdsp[ws].back() + vgd_prcnt[ws].back()))*nvi;
+  // (1) flags of both dense layouts (sender: my interior; receiver: my band)
+  par_for("m1_vgd_hc_flag", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
+  KOKKOS_LAMBDA(const int m, const int o, const int t) {
+    if (hl_(8*m + o) >= 0) {return;}
     const int oo = (o < 4) ? o : (o + 1);
     const int dk = oo/3 - 1, dj = oo%3 - 1;
     const int jn = (dj == 0) ? nx2 : ws;
     const int kn = (dk == 0) ? nx3 : ws;
-    if (c >= kn*jn) {return false;}
-    kk = c/jn;
-    jj = c - kk*jn;
+    if (t >= nv*kn*jn) {return;}
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
     const int lx2 = lx_(m,0), lx3 = lx_(m,1);
-    if (snd) {
+    const Real nx = dir_(v,0), ny = dir_(v,1), nz = dir_(v,2);
+    {
+      // SEND (my slot o, receiver slot direction -dj, -dk)
       const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
       const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
-      g.gj = lx2*nx2 + (js2 + jj - w);
-      g.gk = lx3*nx3 + (ks2 + kk - w);
+      const int gj = lx2*nx2 + (js2 + jj - w), gk = lx3*nx3 + (ks2 + kk - w);
       const int rdj = -dj, rdk = -dk;
       const int dpj = (rdj < 0) ? (ws - jj) : ((rdj > 0) ? (jj + 1) : 0);
       const int dpk = (rdk < 0) ? (ws - kk) : ((rdk > 0) ? (kk + 1) : 0);
-      g.dep = (dpj > dpk) ? dpj : dpk;
       const int lr2 = (lx2 + dj + nb2) % nb2, lr3 = (lx3 + dk + nb3) % nb3;
-      g.wall = (lr2 + rdj < 0) || (lr2 + rdj >= nb2) || (lr3 + rdk < 0)
-               || (lr3 + rdk >= nb3);
-    } else {
+      const bool wall = (lr2 + rdj < 0) || (lr2 + rdj >= nb2) || (lr3 + rdk < 0)
+                        || (lr3 + rdk >= nb3);
+      fs_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) =
+        VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
+                    (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+    }
+    {
+      // RECEIVE (my slot o): the source cell in the neighbour, global indices
       const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
       const int ks_ = (dk < 0) ? (w + nx3 - ws) : w;
       const int ln2 = (lx2 + dj + nb2) % nb2, ln3 = (lx3 + dk + nb3) % nb3;
-      g.gj = ln2*nx2 + (js_ + jj - w);
-      g.gk = ln3*nx3 + (ks_ + kk - w);
+      const int gj = ln2*nx2 + (js_ + jj - w), gk = ln3*nx3 + (ks_ + kk - w);
       const int dpj = (dj < 0) ? (ws - jj) : ((dj > 0) ? (jj + 1) : 0);
       const int dpk = (dk < 0) ? (ws - kk) : ((dk > 0) ? (kk + 1) : 0);
-      g.dep = (dpj > dpk) ? dpj : dpk;
-      g.wall = (lx2 + dj < 0) || (lx2 + dj >= nb2) || (lx3 + dk < 0) || (lx3 + dk >= nb3);
-    }
-    return true;
-  };
-  auto keep = [=] KOKKOS_FUNCTION (const int v, const VgdCell &g) -> bool {
-    return VgdHaloKeep(dir_(v,0), dir_(v,1), dir_(v,2), g.gj, g.gk, t0, dth, p0, dph,
-                       inw, mode, g.wall, g.dep, rs, rm, rp, hasm, hasp, gam, dmin);
-  };
-  // (1) kept values per cell, both layouts
-  par_for("m1_vgd_hc_count", DevExeSpace(), 0, nmb1, 0, 7, 0, cmx - 1,
-  KOKKOS_LAMBDA(const int m, const int o, const int c) {
-    if (hl_(8*m + o) >= 0) {return;}
-    int kk, jj;
-    VgdCell g;
-    if (cell(m, o, c, true, kk, jj, g)) {
-      int k = 0;
-      for (int v = 0; v < n; ++v) {if (keep(v, g)) {++k;}}
-      fs_(static_cast<size_t>(so_(ws,8*m + o)) + c) = k;
-    }
-    if (cell(m, o, c, false, kk, jj, g)) {
-      int k = 0;
-      for (int v = 0; v < n; ++v) {if (keep(v, g)) {++k;}}
-      fr_(static_cast<size_t>(ro_(ws,8*m + o)) + c) = k;
+      const bool wall = (lx2 + dj < 0) || (lx2 + dj >= nb2) || (lx3 + dk < 0)
+                        || (lx3 + dk >= nb3);
+      fr_(static_cast<size_t>(ro_(ws,8*m + o))*nvi + t) =
+        VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
+                    (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
     }
   });
-  // (2) exclusive scans over the cells (the total at index count)
-  auto scan = [](DvceArray1D<int> &f, const size_t cnt) {
+  // (2) exclusive scans (in place: flag -> position; the total at index n)
+  auto scan = [](DvceArray1D<int> &f, const size_t n) {
     auto f_ = f;
     Kokkos::parallel_scan("m1_vgd_hc_scan",
-                          Kokkos::RangePolicy<>(DevExeSpace(), 0, cnt + 1),
+                          Kokkos::RangePolicy<>(DevExeSpace(), 0, n + 1),
     KOKKOS_LAMBDA(const size_t q, int &acc, const bool fin) {
-      const int v = (q < cnt) ? f_(q) : 0;
+      const int v = (q < n) ? f_(q) : 0;
       if (fin) {f_(q) = acc;}
       acc += v;
     });
   };
-  scan(vgd_fs, sc);
-  scan(vgd_fr, rc);
+  // keep the flags: pack/expand need flag AND position -> flag = pos(q+1) - pos(q)
+  scan(vgd_fs, stot);
+  scan(vgd_fr, rtot);
   // (3) compact pack
-  par_for("m1_vgd_hc_pack", DevExeSpace(), 0, nmb1, 0, 7, 0, cmx - 1,
-  KOKKOS_LAMBDA(const int m, const int o, const int c) {
+  par_for("m1_vgd_hc_pack", DevExeSpace(), 0, nmb1, 0, 7, 0, mx - 1,
+  KOKKOS_LAMBDA(const int m, const int o, const int t) {
     if (hl_(8*m + o) >= 0) {return;}
-    int kk, jj;
-    VgdCell g;
-    if (!cell(m, o, c, true, kk, jj, g)) {return;}
     const int oo = (o < 4) ? o : (o + 1);
     const int dk = oo/3 - 1, dj = oo%3 - 1;
+    const int jn = (dj == 0) ? nx2 : ws;
+    const int kn = (dk == 0) ? nx3 : ws;
+    if (t >= nv*kn*jn) {return;}
+    const size_t q = static_cast<size_t>(so_(ws,8*m + o))*nvi + t;
+    if (fs_(q + 1) == fs_(q)) {return;}
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
     const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
     const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
-    int pos = fs_(static_cast<size_t>(so_(ws,8*m + o)) + c);
-    for (int v = 0; v < n; ++v) {
-      if (keep(v, g)) {csb_(pos++) = a_(m,v,ks2+kk,js2+jj,i);}
-    }
+    csb_(fs_(q)) = a_(m,v,ks2+kk,js2+jj,i);
   });
-  // (4) partner boundaries (cells -> values via the scans), MPI
+  // (4) counts per partner from the scans (host), MPI
+  const int np = static_cast<int>(vgd_prk.size());
   std::vector<int> sp(np + 1), rp_(np + 1);
   {
+    // the scan values at the partner boundaries: one small gather + one copy
     auto pbd_ = vgd_pbd;
     auto pbv_ = vgd_pbv;
     Kokkos::parallel_for("m1_vgd_hc_bnd",
                          Kokkos::RangePolicy<>(DevExeSpace(), 0, 2*(np + 1)),
     KOKKOS_LAMBDA(const int q) {
-      const size_t at = static_cast<size_t>(pbd_(ws,q));
+      const size_t at = static_cast<size_t>(pbd_(ws,q))*nvi;
       pbv_(q) = (q <= np) ? fs_(at) : fr_(at);
     });
     auto pbh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_pbv);
@@ -1097,40 +1081,12 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
     }
     vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);
   }
-  // (5) unpack straight from the compact message into the band (wall ghosts re-indexed
-  // or interpolated as the dense unpack); unsent entries: NaN (env VGD_COMPACT_NAN) or 0
+  // (5) expansion to the dense receive layout
   const Real fill = (std::getenv("VGD_COMPACT_NAN") != nullptr) ?
                     std::numeric_limits<Real>::quiet_NaN() : 0.0;
-  par_for("m1_vgd_hc_unpack", DevExeSpace(), 0, nmb1, 0, 7, 0, cmx - 1,
-  KOKKOS_LAMBDA(const int m, const int o, const int c) {
-    if (hl_(8*m + o) >= 0) {return;}
-    int kk, jj;
-    VgdCell g;
-    if (!cell(m, o, c, false, kk, jj, g)) {return;}
-    const int oo = (o < 4) ? o : (o + 1);
-    const int dk = oo/3 - 1, dj = oo%3 - 1;
-    const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
-    const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
-    int pos = fr_(static_cast<size_t>(ro_(ws,8*m + o)) + c);
-    if (wl_(m,kd+kk,jd+jj) == 0) {
-      for (int v = 0; v < n; ++v) {
-        a_(m,v,kd+kk,jd+jj,i) = keep(v, g) ? crb_(pos++) : fill;
-      }
-      return;
-    }
-    Real loc[M1_VGD_NMAX];
-    for (int v = 0; v < n; ++v) {loc[v] = keep(v, g) ? crb_(pos++) : fill;}
-    for (int v = 0; v < n; ++v) {
-      if (wint) {
-        Real val = 0.0;
-        for (int q = 0; q < 3; ++q) {
-          val += w3_(m,kd+kk,jd+jj,v,q)*loc[m3_(m,kd+kk,jd+jj,v,q)];
-        }
-        a_(m,v,kd+kk,jd+jj,i) = val;
-      } else {
-        a_(m,v,kd+kk,jd+jj,i) = loc[mp_(m,kd+kk,jd+jj,v)];
-      }
-    }
+  Kokkos::parallel_for("m1_vgd_hc_expand", Kokkos::RangePolicy<>(DevExeSpace(), 0, rtot),
+  KOKKOS_LAMBDA(const size_t q) {
+    rb_(q) = (fr_(q + 1) > fr_(q)) ? crb_(fr_(q)) : fill;
   });
 #endif
 }
