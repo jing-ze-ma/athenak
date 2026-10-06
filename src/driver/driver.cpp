@@ -659,6 +659,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           const int n2 = static_cast<int>(u.extent_int(3));
           const int n1 = static_cast<int>(u.extent_int(4));
           const int ntot = nmb*n3*n2*n1;
+          // isothermal: no energy slot (u.extent(1) == IEN), test the density twice
+          const int ien = (u.extent_int(1) > static_cast<int>(IEN)) ? IEN : IDN;
           int nb = 0;
           // ...and WHERE the first one is.  "N cells are NaN" does not say whether the
           // run went unstable in the interior or a boundary condition wrote a bad ghost,
@@ -673,7 +675,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             const int j = (idx - m*n3*n2*n1 - k*n2*n1)/n1;
             const int i = idx - m*n3*n2*n1 - k*n2*n1 - j*n1;
             if (!Kokkos::isfinite(u(m,IDN,k,j,i))
-                || !Kokkos::isfinite(u(m,IEN,k,j,i))) {
+                || !Kokkos::isfinite(u(m,ien,k,j,i))) {
               sum++;
               if (idx < mres.val) { mres.val = idx; mres.loc = idx; }
             }
@@ -689,7 +691,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             const int j = (idx - m*n3*n2*n1 - k*n2*n1)/n1;
             const int i = idx - m*n3*n2*n1 - k*n2*n1 - j*n1;
             if (!Kokkos::isfinite(u(m,IDN,k,j,i))
-                || !Kokkos::isfinite(u(m,IEN,k,j,i))) {
+                || !Kokkos::isfinite(u(m,ien,k,j,i))) {
               lo = (i < lo) ? i : lo;
               hi = (i > hi) ? i : hi;
             }
@@ -720,7 +722,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
               const int i = idx - m*n3*n2*n1 - k*n2*n1 - j*n1;
               if (i < is || i > ie || j < js || j > je || k < ks || k > ke) return;
               if (!Kokkos::isfinite(u(m,IDN,k,j,i))
-                  || !Kokkos::isfinite(u(m,IEN,k,j,i))) {
+                  || !Kokkos::isfinite(u(m,ien,k,j,i))) {
                 sum++;
                 if (idx < mres.val) { mres.val = idx; mres.loc = idx; }
               }
@@ -787,7 +789,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             deep_copy_across::DeepCopyAcross(hw, wsub);
             for (int n=0; n<=(iu-il); ++n) {
               std::cout << "      w0 i = " << (il+n) << ": rho = " << hw(IDN,n)
-                        << " p/e = " << hw(IEN,n) << " v1 = " << hw(IVX,n)
+                        << " p/e = "
+                        << ((hw.extent_int(0) > static_cast<int>(IEN)) ? hw(IEN,n) : 0.0)
+                        << " v1 = " << hw(IVX,n)
                         << " v2 = " << hw(IVY,n) << " v3 = " << hw(IVZ,n) << std::endl;
             }
           }
