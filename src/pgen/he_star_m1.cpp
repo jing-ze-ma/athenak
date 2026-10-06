@@ -44,7 +44,8 @@
 //!     mass of the initial column instead of the point mass: G m(r) = he_gm + G int 4 pi
 //!     r^2 rho_IC dr from r_in (he_gm = G m(r_in)), a static monopole frozen at t = 0.
 //!   * (hegiant-1006, problem/he_wall_inject, default off) a wall inside a convective
-//!     zone: the M1 inner face injects the column's TOTAL flux, the scaffold is zero there.
+//!     zone: the M1 inner face injects the column's TOTAL flux, the scaffold is zero
+//!     on the wall face.
 //!
 //! RESTARTS: the pgen carries NO state that is not recomputed here.  It is not skipped on
 //! a restart: the column, the tables, the potentials, the reference acceleration and the
