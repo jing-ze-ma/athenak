@@ -10541,6 +10541,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int bclw = ibc_x1min, bchw = ibc_x1max;
     const int nbw = part_nblk;
     auto posw_ = part_pos;
+    // time_scheme = be (fref-split-cons-1006): E pays exactly the reference work the
+    // gas got in the hydro stages of this step (fref_wacc, the share dt/dt_mesh of it
+    // per solve), not v' dt rho a_ref: a separate kernel, the other paths are untouched
+    if (FrefWaccOn()) {
+      auto wacc_ = FrefWacc();
+      const Real fra = dt/pmy_pack->pmesh->dt;
+      par_for("m1_impl_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const int ipw = posw_.d_view(m);
+        const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
+                                   (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX));
+        const Real dd = uh(m,IDN,k,j,i);
+        const Real idg = 1.0/fmax(dd, 1.0e-300);
+        const Real v1 = iw_(m,M1_IW_V1,k,j,i);
+        const Real m0 = dd*v1;
+        const Real dmref = dt*dd*aref_(m,k,j,i);
+        const Real dmr = uh(m,IM1,k,j,i) - m0;
+        const Real dm1 = dmr + dmref;
+        const Real wf = 0.5*(v1 + (m0 + dm1)*idg)*dm1;
+        const Real wr = 0.5*(v1 + (m0 + dmr)*idg)*dmr;
+        uh(m,IEN,k,j,i) -= (wf - wr);
+        if (!efw) {
+          u0_(m,M1_E,k,j,i) += (chw/clw)*(wf - wr - fra*wacc_(m,k,j,i));
+        }
+      });
+    } else {
     par_for("m1_impl_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = posw_.d_view(m);
@@ -10563,6 +10589,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (t2kw) {kkw_(m,M1_T2_E,k,j,i) += de*fkw;}
       }
     });
+    }
   }
 
   // time2_vstage: the rows took the work of the last pass's kick, which the write-back

@@ -464,6 +464,24 @@ class RadiationM1 {
   bool fref_wsplit_ok = false;  // set by a pgen whose WB source gives the reference work
                                 // (BEFORE SetForceReference, which resolves `auto`)
   bool fref_wsplit_auto = false;  // force_reference_work = auto, not yet resolved
+  // force_reference_work = split with time_scheme = be (fref-split-cons-1006): the WB
+  // source gives the gas rho a_ref v at each hydro stage, and the Heun combination keeps
+  // sum_s c_s beta_s dt (rho a_ref v)_s of it; the be solve, which runs once after the
+  // whole step, paid v' dt rho a_ref at the post-kick velocity instead, an O(dt^2) per
+  // step energy leak (-1.8e-3 L_top at dt 88 s in the BSG).  The pgen now also adds its
+  // increment to fref_wacc (acc = gam0_s acc + increment, the same linear combination
+  // the gas energy undergoes), and the be write-back makes E pay exactly fref_wacc
+  // (times dt_solve/dt_mesh).  <rad_m1>/force_reference_work_pay = post (read only when
+  // named) restores the old post-kick payment.  hesdirk2 and multi-rate keep theirs.
+  DvceArray4D<Real> fref_wacc;
+  bool fref_pay_post = false;
+  int fref_hnst = 0;
+  Real fref_hgam0[4] = {0.0, 0.0, 0.0, 0.0}, fref_hbeta[4] = {0.0, 0.0, 0.0, 0.0};
+  bool FrefWaccOn() const;
+  // gam0 of the hydro stage whose beta dt is bdt (FATAL if none matches)
+  Real FrefWaccGam0(Real bdt, Real dt_mesh) const;
+  // the accumulator, (re)allocated to the shape of arad_ref
+  DvceArray4D<Real> FrefWacc();
   int mr_nsub = 1;              // implicit_mr_nsub: R(Delta) as nsub steps of Delta/nsub
   int mr_tab = 0;               // implicit_mr_tab: 0 sdirk2, 1 trbdf2 (DIAGNOSTIC)
   bool mr_k0ok = false;         // t2k1 holds f(Y_0) of this R (the last R's final slope)

@@ -1433,10 +1433,23 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   auto *pm1 = pmbp->pradm1;
   if (pm1 != nullptr && pm1->fref_wsplit) {
     auto aref = pm1->arad_ref;
-    par_for("hs_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
-    });
+    if (pm1->FrefWaccOn()) {
+      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // accumulator the be solve makes E pay (acc = gam0 acc + increment)
+      auto wacc = pm1->FrefWacc();
+      const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
+      par_for("hs_grav_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real w = bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+        u0(m,IEN,k,j,i) += w;
+        wacc(m,k,j,i) = g0*wacc(m,k,j,i) + w;
+      });
+    } else {
+      par_for("hs_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+      });
+    }
   }
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
   // Riemann flux through a "closed" wall carries mass.  The inner wall loses its mass,
