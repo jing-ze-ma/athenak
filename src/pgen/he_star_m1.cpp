@@ -670,7 +670,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (hs_gmc_) {
     if (pmbp->punit == nullptr) HsFatal("problem/he_gm_column needs <units>", __LINE__);
     const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
-    const Real gcode = Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/
+    const Real gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/
                        (lu*lu*lu);
     std::vector<Real> cm(nf, 0.0), hgm(nf), cp(nf, 0.0);
     for (int n=1; n<nf; ++n) {
