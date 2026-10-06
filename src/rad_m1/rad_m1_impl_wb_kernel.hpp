@@ -138,9 +138,12 @@
 #if M1_RCP
         // implicit_realisable_coupling: the deposit of the realisable cell flux, scaled
         // by s = min(1, c E/|F_iter|) (the factor the write-back clip applies to F); the
-        // work below follows dm, so the radiation loses exactly what the gas gains
+        // work below follows dm, so the radiation loses exactly what the gas gains.  On
+        // the cubed sphere fp2, fp3 and dm2, dm3 are covariant here: |F| is the clip's
+        // metric norm (M1FluxNormCs) and the covariant dm takes the same scalar factor
         {
-          const Real fq = sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
+          const Real fq = csw ? M1FluxNormCs(cclw(m,k,j), fp1, fp2, fp3)
+                              : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
           const Real fc = cl*fmax(ep, efl);
           if (fq > fc) {
             const Real sc = fc/fq;

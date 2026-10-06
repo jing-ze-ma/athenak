@@ -200,8 +200,15 @@
         Real b1 = u1/cl, b2 = u2/cl, b3 = u3/cl;
         Real bf = (b1*f1 + b2*f2c + b3*f3c)/cl;
 #if M1_RCP
-        // implicit_realisable_coupling: the realisable flux, |F| <= c E, in beta.F
-        if (fm > cl*e) {bf *= cl*e/fm;}
+        // implicit_realisable_coupling: the realisable flux, |F| <= c E, in beta.F.  On
+        // the cubed sphere f2c, f3c are face-normal: |F| is the clip's metric norm of the
+        // covariant pair (a + c b)/s, (b + c a)/s (the write-back's map)
+        Real fmr = fm;
+        if (rcs) {
+          const Real c = rccl(m,k,j), si = 1.0/rcsn(m,k,j);
+          fmr = M1FluxNormCs(c, f1, (f2c + c*f3c)*si, (f3c + c*f2c)*si);
+        }
+        if (fmr > cl*e) {bf *= cl*e/fmr;}
 #endif
         Real bpb = (b1*b1*d11 + b2*b2*d22 + b3*b3*d33
                     + 2.0*(b1*b2*d12 + b1*b3*d13 + b2*b3*d23))*e;

@@ -8569,6 +8569,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
     const int ivd = impl_vimp ? (iw_vimp + M1_IV_DV) : 0;
     const bool rcp = impl_real_couple;
+    // implicit_realisable_coupling on the cubed sphere: the work array's transverse F are
+    // FACE-NORMAL; the fix-A kernel forms the covariant pair and the clip's metric norm
+    const bool rcs = cs_geom;
+    auto rccl = pmy_pack->pcoord->cos_cell;
+    auto rcsn = pmy_pack->pcoord->sin_cell;
     if (!rcp) {
       par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
