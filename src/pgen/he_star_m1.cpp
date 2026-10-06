@@ -40,6 +40,9 @@
 //!     the previous history output;
 //!   * an optional multi-mode entropy/temperature seed (he_seed_nk, he_seed_rad,
 //!     he_seed_signs, he_seed_kdist).
+//!   * (hegiant-1006, problem/he_gm_column, default off) the gravity of the enclosed
+//!     mass of the initial column instead of the point mass: G m(r) = he_gm + G int 4 pi
+//!     r^2 rho_IC dr from r_in (he_gm = G m(r_in)), a static monopole frozen at t = 0.
 //!
 //! RESTARTS: the pgen carries NO state that is not recomputed here.  It is not skipped on
 //! a restart: the column, the tables, the potentials, the reference acceleration and the
@@ -94,6 +97,14 @@ DvceArray1D<Real> hs_rho_, hs_eint_;
 Real hs_rlo_ = 0.0, hs_dr_ = 1.0;
 int hs_nf_ = 0;
 Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
+// hegiant-1006: problem/he_gm_column (read only when named, default false = the point
+// mass GM = he_gm, bit for bit): the gravity of the ENCLOSED MASS of the initial column,
+// G m(r) = he_gm + G int_{r_in}^{r} 4 pi r'^2 rho_IC dr' (he_gm = G m(r_in), the mass
+// inside the wall), FROZEN at t = 0 (a static monopole, rebuilt from he_ic_file on every
+// start).  hs_phig_ = Phi(r) = int_{r_in}^{r} G m/r'^2 dr' and hs_gmr_ = G m(r) on the
+// uniform fine grid of the column (hs_rlo_, hs_dr_, hs_nf_).
+bool hs_gmc_ = false;
+DvceArray1D<Real> hs_phig_, hs_gmr_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
@@ -332,6 +343,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // ---- parameters
   hs_gm_ = pin->GetReal("problem","he_gm");
+  hs_gmc_ = pin->DoesParameterExist("problem","he_gm_column") &&
+            pin->GetBoolean("problem","he_gm_column");
   hs_rin_ = pmy_mesh_->mesh_size.x1min;
   const Real rtop = pmy_mesh_->mesh_size.x1max;
   hs_fin_ = pin->GetReal("rad_m1","implicit_flux_x1min");
@@ -651,11 +664,54 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real w = x - i;
     cin = (1.0 - w)*cum[i] + w*cum[i+1];
   }
+  // he_gm_column: G m(r) and Phi(r) of the column on the fine grid (trapezoid sums,
+  // both zero-referenced at r_in like the point-mass Phi = GM (1/r_in - 1/r))
+  std::vector<Real> hphig;
+  if (hs_gmc_) {
+    if (pmbp->punit == nullptr) HsFatal("problem/he_gm_column needs <units>", __LINE__);
+    const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
+    const Real gcode = Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/
+                       (lu*lu*lu);
+    std::vector<Real> cm(nf, 0.0), hgm(nf), cp(nf, 0.0);
+    for (int n=1; n<nf; ++n) {
+      cm[n] = cm[n-1] + 0.5*hs_dr_*4.0*M_PI*(hr[n-1]*hr[n-1]*hd[n-1] + hr[n]*hr[n]*hd[n]);
+    }
+    const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
+    const int i0 = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
+    const Real w0 = x - i0;
+    const Real cm0 = (1.0 - w0)*cm[i0] + w0*cm[i0+1];
+    for (int n=0; n<nf; ++n) hgm[n] = hs_gm_ + gcode*(cm[n] - cm0);
+    for (int n=1; n<nf; ++n) {
+      cp[n] = cp[n-1] + 0.5*hs_dr_*(hgm[n-1]/(hr[n-1]*hr[n-1]) + hgm[n]/(hr[n]*hr[n]));
+    }
+    const Real cp0 = (1.0 - w0)*cp[i0] + w0*cp[i0+1];
+    hphig.resize(nf);
+    for (int n=0; n<nf; ++n) hphig[n] = cp[n] - cp0;
+    Kokkos::realloc(hs_phig_, nf);
+    Kokkos::realloc(hs_gmr_, nf);
+    auto h1 = Kokkos::create_mirror_view(hs_phig_);
+    auto h2 = Kokkos::create_mirror_view(hs_gmr_);
+    for (int n=0; n<nf; ++n) {
+      h1(n) = hphig[n];
+      h2(n) = hgm[n];
+    }
+    Kokkos::deep_copy(hs_phig_, h1);
+    Kokkos::deep_copy(hs_gmr_, h2);
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: he_gm_column: G m(r_in) = " << hs_gm_
+                << ", G m(r_top) = " << hgm[nf-1] << " (G = " << gcode
+                << " code), static monopole of the initial column" << std::endl;
+    }
+  }
   DvceArray1D<Real> cphi("hs_phieff", nf);
   {
     auto hp = Kokkos::create_mirror_view(cphi);
     for (int n=0; n<nf; ++n) {
-      hp(n) = hs_gm_*(1.0/hs_rin_ - 1.0/hr[n]) - (cum[n] - cin);
+      if (hs_gmc_) {
+        hp(n) = hphig[n] - (cum[n] - cin);
+      } else {
+        hp(n) = hs_gm_*(1.0/hs_rin_ - 1.0/hr[n]) - (cum[n] - cin);
+      }
     }
     Kokkos::deep_copy(cphi, hp);
   }
@@ -664,7 +720,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &x1v = pmbp->pcoord->x1v;
   auto &x1f = pmbp->pcoord->xx1f;
   const Real gm = hs_gm_, rin = hs_rin_;
-  {
+  if (hs_gmc_) {
+    auto phicc = ph->phicc0;
+    auto ph1 = ph->phi0->x1f, ph2 = ph->phi0->x2f, ph3 = ph->phi0->x3f;
+    auto pg = hs_phig_;
+    const Real rlo0 = hs_rlo_, dr0 = hs_dr_;
+    par_for("hs_phi_col", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real pc = HsLinInterp(pg, rlo0, dr0, nf, x1v(m,i));
+      phicc(m,k,j,i) = pc;
+      ph1(m,k,j,i) = HsLinInterp(pg, rlo0, dr0, nf, x1f(m,i));
+      if (i == n1m1) ph1(m,k,j,i+1) = HsLinInterp(pg, rlo0, dr0, nf, x1f(m,i+1));
+      ph2(m,k,j,i) = pc;
+      ph3(m,k,j,i) = pc;
+      if (j == n2m1) ph2(m,k,j+1,i) = pc;
+      if (k == n3m1) ph3(m,k+1,j,i) = pc;
+    });
+  } else {
     auto phicc = ph->phicc0;
     auto ph1 = ph->phi0->x1f, ph2 = ph->phi0->x2f, ph3 = ph->phi0->x3f;
     par_for("hs_phi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
@@ -804,7 +876,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
       return (1.0 - w)*hF[n] + w*hF[n+1];
     };
+    auto phig = [&](const Real r) {   // he_gm_column: the column's Phi, linear
+      Real x = (r - hs_rlo_)/hs_dr_;
+      int n = static_cast<int>(floor(x));
+      n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
+      Real w = x - n;
+      w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+      return (1.0 - w)*hphig[n] + w*hphig[n+1];
+    };
     auto seg = [&](const Real a_, const Real ra, const Real rb) {   // Phi_eff(rb) - (ra)
+      if (hs_gmc_) return phig(rb) - phig(ra) - a_*(rb - ra);
       return hs_gm_*(1.0/ra - 1.0/rb) - a_*(rb - ra);
     };
     // he_wind_ic: the march starts below r_c (the wind cells keep their IC)
@@ -1348,6 +1429,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto x2v = pmbp->pcoord->x2v;
   auto x3v = pmbp->pcoord->x3v;
   auto crho = hs_rho_, ceint = hs_eint_;
+  const bool gmc = hs_gmc_;
+  auto pgc = hs_phig_;
   const bool bal = hs_bal_;
   auto cbd = hs_bd_, cbe = hs_be_;
   DvceArray1D<Real> cwv("hs_wv", wic ? nf : 1);
@@ -1399,7 +1482,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     uh(m,IM1,k,j,i) = d*vr;
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
-    uh(m,IEN,k,j,i) = e + d*gm*(1.0/rin - 1.0/r);
+    if (gmc) {
+      uh(m,IEN,k,j,i) = e + d*HsLinInterp(pgc, rlo, dr, nf, r);
+    } else {
+      uh(m,IEN,k,j,i) = e + d*gm*(1.0/rin - 1.0/r);
+    }
     if (wic) uh(m,IEN,k,j,i) += 0.5*d*vr*vr;
     ur(m,radm1::M1_E,k,j,i) = fmax(er, efl);
     ur(m,radm1::M1_F1,k,j,i) = HsLinInterp(cF, rlo, dr, nf, r);
@@ -1595,6 +1682,8 @@ void HeStarBC(Mesh *pm) {
   auto opac = pmbp->pradm1->opac;
   const bool haveop = (opac.extent_int(0) > 0);
   const Real gm = hs_gm_, gmax = hs_bhse_gmax_;
+  const bool gmc = hs_gmc_;
+  auto cgm = hs_gmr_;
   const Real dfl = eos.dfloor;
   const bool bhfc = bhse && hs_bhse_face_;
   auto ff1 = pmbp->pradm1->f0x1;
@@ -1634,7 +1723,8 @@ void HeStarBC(Mesh *pm) {
         // Not finite / not positive -> copy of the edge cell; floors after.
         const int ia1 = ie - 1;
         const Real ta = eos.Temperature(da, ea);
-        const Real ra = x1v(m,ia), ga = gm/SQR(ra);
+        const Real ra = x1v(m,ia);
+        const Real ga = gmc ? HsLinInterp(cgm, rlo, dr, nf, ra)/SQR(ra) : gm/SQR(ra);
         const Real ar0 = aref(m,k,j,ia);
         Real arad = ar0;
         if (haveop && opac(m,radm1::M1_OP_T,k,j,ia) > 0.0) {
