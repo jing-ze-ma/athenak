@@ -138,8 +138,10 @@ struct M1OpacTab {
 //!   form 2 (`absorption`): eq. 6 without the k_dP term, emission by true absorption:
 //!     S = J + (rho k_a/chi)(B - J) = [(chi - rkes) B + rkes J]/chi.
 //! b, j: vet_col_source = gas: b = a T^4, j = E (start of step / Picard iterate);
-//! relaxed: b = a T*^4 after the local backward-Euler exchange, j = the CURRENT E (NOT
-//! the relaxed E*, which would collapse every form to S = E*).
+//! relaxed: b = a T*^4 after the local backward-Euler exchange and j = the CURRENT E
+//! (vet_scatter_j = current, default), or j = the relaxed E* (vet_scatter_j = relaxed,
+//! the consistent end-of-step pair: S - E* = (E* - E)/(c dt chi), which is ~0 in a stiff
+//! cell -- every form then collapses to S ~ E*).
 //! The default source eps B + (1 - eps) E with eps = min(rho k_P/chi, 1) is NOT computed
 //! here: the callers keep their own expression untouched when the key is off.
 KOKKOS_INLINE_FUNCTION
@@ -1376,6 +1378,9 @@ class RadiationM1 {
   // closure source VetScatterMix.  vscat_form 1 = ma (Jiang 2021 eq. 6), 2 = absorption
   bool vscat = false;
   int vscat_form = 1;
+  // vet_scatter_j (relaxed source mode only): false = current (default): J = E^n / the
+  // Picard iterate next to B*; true = relaxed: J = E*, the end-of-step pair of B*
+  bool vscat_jrel = false;
   // vet_col with a REFLECTING outer x1 (m1-sp-order2b): the incoming intensity at the
   // top face is the mirror of the outgoing one, I_in = b/(1 - a) per ray (b the outgoing
   // intensity of a vacuum-top sweep, a the ray's round-trip transmission), in a second

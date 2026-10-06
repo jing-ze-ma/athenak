@@ -131,9 +131,13 @@ Real VlatRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real 
   const Real t2 = ts*ts;
   const Real t4 = t2*t2;
   const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
-  // vet_scatter: B* of the relaxed gas, but the CURRENT J = eb (E^n or the Picard
-  // iterate), not E*: with E* every form collapses to S ~ E* (B* = E* in a stiff cell)
-  if (sf != 0) {return VetScatterMix(sf, rkp, chi, rkes, ar*t4, eb);}
+  // vet_scatter: B* of the relaxed gas with (sf = 1, 2; vet_scatter_j = current) the
+  // CURRENT J = eb (E^n or the Picard iterate) or (sf = 3, 4; vet_scatter_j = relaxed)
+  // the relaxed E*, the consistent end-of-step pair (S - E* = (E* - eb)/(c dt chi))
+  if (sf != 0) {
+    return VetScatterMix((sf > 2) ? (sf - 2) : sf, rkp, chi, rkes, ar*t4,
+                         (sf > 2) ? es : eb);
+  }
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
@@ -534,6 +538,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
+  const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
   auto uh = flv.u0;
@@ -553,7 +558,7 @@ void RadiationM1::VetLatSweep(const int stage) {
       const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
       if (srx) {
         s = VlatRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsf, chi,
+                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr, chi,
                               rks);
       } else if (vsf != 0) {
         s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);

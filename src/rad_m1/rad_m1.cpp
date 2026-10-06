@@ -398,6 +398,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << "(ma | absorption)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    std::string sj = pin->GetOrAddString("rad_m1","vet_scatter_j","current");
+    if (sj.compare("current") == 0) {
+      vscat_jrel = false;
+    } else if (sj.compare("relaxed") == 0) {
+      vscat_jrel = true;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/vet_scatter_j = '" << sj << "' not implemented "
+        << "(current | relaxed)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     std::string km = "const";
     if (opacity_type == M1_OPAC_TABLE) {
       km = pin->GetOrAddString("rad_m1","vet_scatter_kappa_e","const");
@@ -418,7 +429,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       otab.kxe = otab.kunit*(6.6524587321e-25/1.66053906660e-24);
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "rad_m1: vet_scatter on, form " << sf;
+      std::cout << "rad_m1: vet_scatter on, form " << sf << ", J (relaxed source) " << sj;
       if (opacity_type == M1_OPAC_TABLE) {
         std::cout << ", table split kappa_e = " << km << " (kappa_e " << otab.kes
                   << ", floor " << otab.kfl << ", sigma_T/m_u " << otab.kxe
