@@ -1419,8 +1419,10 @@ void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
     const Real ss = geom(m,k,j,10);
 
     const Real rho = w0(m,IDN,k,j,i);
-    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
-                   : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // isothermal EOS: no energy in w0 (IEN is out of range), p = d c_s^2
+    Real pr = (!eos_.is_ideal) ? w0(m,IDN,k,j,i)*SQR(eos_.iso_cs)
+              : gen_ ? wder_(m,IDPR,k,j,i)
+              : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     // the static well-balanced background is removed from the source exactly as the
     // Christoffel form removes it (spherical polar only; the cubed sphere passes false)
     if (wbs_) pr -= pwb_(m,k,j,i);
@@ -1550,8 +1552,10 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     Real v1 = w0(m,IVX,k,j,i);   // radial
     Real v2 = w0(m,IVY,k,j,i);   // xi
     Real v3 = w0(m,IVZ,k,j,i);   // eta
-    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
-                            : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // isothermal EOS: no energy in w0 (IEN is out of range), p = d c_s^2
+    Real pr = (!eos_.is_ideal) ? w0(m,IDN,k,j,i)*SQR(eos_.iso_cs)
+              : gen_ ? wder_(m,IDPR,k,j,i)
+              : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     // subtract the STATIC well-balanced background pressure, precomputed once by
     // SetWbBackgroundPressure(): the flux path already had it removed (RemoveWbFlux), so
     // leaving it in the geometric source would leave the two halves of the momentum RHS
@@ -1868,8 +1872,10 @@ void Coordinates::SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
         rh[c] = geom(m,kk,jj,c); th[c] = geom(m,kk,jj,3+c); ph[c] = geom(m,kk,jj,6+c);
       }
       const Real rho = w0(m,IDN,kk,jj,ii);
-      const Real pr = gen_ ? wder_(m,IDPR,kk,jj,ii)
-                           : eos_.Pressure(w0(m,IDN,kk,jj,ii), w0(m,IEN,kk,jj,ii));
+      // isothermal EOS: no energy in w0 (IEN is out of range), p = d c_s^2
+      const Real pr = (!eos_.is_ideal) ? w0(m,IDN,kk,jj,ii)*SQR(eos_.iso_cs)
+                      : gen_ ? wder_(m,IDPR,kk,jj,ii)
+                      : eos_.Pressure(w0(m,IDN,kk,jj,ii), w0(m,IEN,kk,jj,ii));
       Real vv[3], bb[3] = {0.0, 0.0, 0.0};
       for (int c=0; c<3; ++c) {
         vv[c] = w0(m,IVX,kk,jj,ii)*rh[c] + w0(m,IVY,kk,jj,ii)*th[c]
@@ -2124,8 +2130,10 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
-    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
-                            : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // isothermal EOS: no energy in w0 (IEN is out of range), p = d c_s^2
+    Real pr = (!eos_.is_ideal) ? w0(m,IDN,k,j,i)*SQR(eos_.iso_cs)
+              : gen_ ? wder_(m,IDPR,k,j,i)
+              : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     // subtract the background pressure, precomputed once by SetWbBackgroundPressure()
     // -- for a general EOS it depends on the background DENSITY as well as its internal
     // energy, so it cannot be written as (gamma-1)*e_bg and is not free to recompute
@@ -2206,8 +2214,10 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
-    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
-                            : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // isothermal EOS: no energy in w0 (IEN is out of range), p = d c_s^2
+    Real pr = (!eos_.is_ideal) ? w0(m,IDN,k,j,i)*SQR(eos_.iso_cs)
+              : gen_ ? wder_(m,IDPR,k,j,i)
+              : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     // subtract the background pressure, which for a general EOS depends on the background
     // DENSITY as well as its internal energy and so cannot be written as (gamma-1)*e_bg
     if (use_wb_static_) {
