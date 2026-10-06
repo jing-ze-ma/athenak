@@ -43,6 +43,8 @@
 //!   * (hegiant-1006, problem/he_gm_column, default off) the gravity of the enclosed
 //!     mass of the initial column instead of the point mass: G m(r) = he_gm + G int 4 pi
 //!     r^2 rho_IC dr from r_in (he_gm = G m(r_in)), a static monopole frozen at t = 0.
+//!   * (hegiant-1006, problem/he_wall_inject, default off) a wall inside a convective
+//!     zone: the M1 inner face injects the column's TOTAL flux, the scaffold is zero there.
 //!
 //! RESTARTS: the pgen carries NO state that is not recomputed here.  It is not skipped on
 //! a restart: the column, the tables, the potentials, the reference acceleration and the
@@ -105,6 +107,14 @@ Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
 // uniform fine grid of the column (hs_rlo_, hs_dr_, hs_nf_).
 bool hs_gmc_ = false;
 DvceArray1D<Real> hs_phig_, hs_gmr_;
+// hegiant-1006: problem/he_wall_inject (read only when named, default false): the wall is
+// inside a CONVECTIVE zone, so the column's radiative F_r(r_in) is a small part of the
+// flux.  The M1 inner face then injects the TOTAL flux F_r/(1 - fmlt) of the column at
+// r_in (<rad_m1>/implicit_flux_x1min must equal it), and the frozen MLT scaffold is zero
+// on the wall face (and below): at t = 0 the scaffold takes the injected flux out of the
+// first cell and carries it up; once it is ramped off, the injected flux heats the base
+// and drives the resolved convection.  Needs mlt_flux_frozen = true.
+bool hs_winj_ = false;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
@@ -345,6 +355,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   hs_gm_ = pin->GetReal("problem","he_gm");
   hs_gmc_ = pin->DoesParameterExist("problem","he_gm_column") &&
             pin->GetBoolean("problem","he_gm_column");
+  hs_winj_ = pin->DoesParameterExist("problem","he_wall_inject") &&
+             pin->GetBoolean("problem","he_wall_inject");
   hs_rin_ = pmy_mesh_->mesh_size.x1min;
   const Real rtop = pmy_mesh_->mesh_size.x1max;
   hs_fin_ = pin->GetReal("rad_m1","implicit_flux_x1min");
@@ -633,11 +645,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
     const int i = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
     const Real w = x - i;
-    const Real fcol = (1.0 - w)*hF[i] + w*hF[i+1];
+    Real fcol = (1.0 - w)*hF[i] + w*hF[i+1];
+    if (hs_winj_) {           // the TOTAL flux of the column at r_in
+      if (!hs_mlt_) HsFatal("problem/he_wall_inject needs mlt_flux_frozen = true",
+                            __LINE__);
+      const Real fm = (1.0 - w)*hM[i] + w*hM[i+1];
+      fcol = fcol/(1.0 - fm);
+    }
     if (fabs(hs_fin_/fcol - 1.0) > 1.0e-3) {
       std::ostringstream os;
-      os << "<rad_m1>/implicit_flux_x1min = " << hs_fin_ << " but the column has F_r("
-         << hs_rin_ << ") = " << fcol;
+      os << "<rad_m1>/implicit_flux_x1min = " << hs_fin_ << " but the column has "
+         << (hs_winj_ ? "F_r/(1 - fmlt)(" : "F_r(") << hs_rin_ << ") = " << fcol;
       HsFatal(os.str(), __LINE__);
     }
   }
@@ -1056,6 +1074,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
       const Real fr = exp((1.0 - w)*log(hF[n]) + w*log(hF[n+1]));
       hfm(i) = (fm > 0.0) ? fr*fm/(1.0 - fm) : 0.0;
+      if (hs_winj_ && i <= indcs.is) hfm(i) = 0.0;   // the wall face and below
       if (fm > fmax) {
         fmax = fm;
         rmx = r;
