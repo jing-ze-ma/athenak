@@ -18,8 +18,8 @@
 //! + kappa_e and S = VetScatterMix, rad_m1.hpp: Jiang 2021 eq. 6 or true absorption.)
 //! Without it the stellar tables carry no separate scattering opacity (kappa_s = 0,
 //! kappa_F = Rosseland incl. electron scattering), so the absorption fraction is
-//! estimated by the Planck/extinction ratio and CAPPED: S is a convex blend of a T^4 and E, never
-//! negative.
+//! estimated by the Planck/extinction ratio and CAPPED: S is a convex blend of a T^4
+//! and E, never negative.
 //! (The form E + (kappa_P a T^4 - kappa_E E)/chi, the module's own net emission, is NOT
 //! usable: kappa_P >> kappa_R in the iron bump amplifies T_gas - T_rad by kappa_P/chi and
 //! drove S to 0 at tau ~ 2-9, K/J = 0.48 there, in the first 200 s test.)

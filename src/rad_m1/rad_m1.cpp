@@ -382,7 +382,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   //      Scattering exchanges no energy (coherent, no Compton term): the exchange keeps
   //      kappa_P / kappa_E.
   //  (ii) the closure source of vet_sc / vet_col / vet_col_lat / vet_gd, VetScatterMix
-  //      (rad_m1.hpp), form vet_scatter_form = ma (Jiang 2021 eq. 6) | absorption.
+  //      (rad_m1.hpp), form vet_scatter_form = ma (Jiang 2021 eq. 6) | absorption,
+  //      J next to B* vet_scatter_j = relaxed (default) | current (absorption only;
+  //      ma + current FATALs below).
   if (pin->DoesParameterExist("rad_m1","vet_scatter")) {
     vscat = pin->GetBoolean("rad_m1","vet_scatter");
   }
@@ -398,7 +400,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << "(ma | absorption)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    std::string sj = pin->GetOrAddString("rad_m1","vet_scatter_j","current");
+    // vet_scatter_j default = relaxed (J = E*, the end-of-step pair of B*).
+    std::string sj = pin->GetOrAddString("rad_m1","vet_scatter_j","relaxed");
     if (sj.compare("current") == 0) {
       vscat_jrel = false;
     } else if (sj.compare("relaxed") == 0) {
@@ -407,6 +410,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/vet_scatter_j = '" << sj << "' not implemented "
         << "(current | relaxed)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // form ma + j = current is unstable: the kappa_P/kappa_R factor of the ma form
+    // (~250-520 in the BSG iron bump) amplifies the lag between the relaxed
+    // (end-of-step) B* and the start-of-step J = E^n; the implicit Picard loop then
+    // fails to converge (NON-CONV on the BSG, bsg_1001/VET_SCATTER.md round 2).
+    if (vscat_form == 1 && !vscat_jrel) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/vet_scatter_form = ma with vet_scatter_j = current "
+        << "is not allowed: the kappa_P/kappa_R factor of the ma form (~250-520 in an "
+        << "iron bump) amplifies the lag between the relaxed end-of-step B* and the "
+        << "start-of-step J = E^n, and the implicit Picard loop does not converge "
+        << "(NON-CONV on the BSG). Use vet_scatter_j = relaxed (default) or "
+        << "vet_scatter_form = absorption." << std::endl;
       std::exit(EXIT_FAILURE);
     }
     std::string km = "const";
@@ -429,7 +446,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       otab.kxe = otab.kunit*(6.6524587321e-25/1.66053906660e-24);
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "rad_m1: vet_scatter on, form " << sf << ", J (relaxed source) " << sj;
+      std::cout << "rad_m1: vet_scatter on, form " << sf << ", J (relaxed source) " << sj
+                << (vscat_jrel ? " (default)" : "");
       if (opacity_type == M1_OPAC_TABLE) {
         std::cout << ", table split kappa_e = " << km << " (kappa_e " << otab.kes
                   << ", floor " << otab.kfl << ", sigma_T/m_u " << otab.kxe
