@@ -15,6 +15,8 @@
 //! is solved with the column's own extinction chi = rho (kappa_F + kappa_s) (M1_IW_KT)
 //! and the grey source of closure = vet_sc (rad_m1_vet.cpp header):
 //!     S = eps_th a T^4 + (1 - eps_th) E^n,  eps_th = min(rho kappa_P / chi, 1),
+//!     (vet_scatter = true, opt-in, read only when named: S = VetScatterMix, rad_m1.hpp,
+//!     the Jiang 2021 eq. 6 source of Ma+2026 or emission by kappa_R - kappa_e only)
 //! in E units (eps = 4 pi I / c, E = J).  The Eddington factor f_K = K/J of the solution
 //! is handed to the solve as the FIXED uniaxial tensor
 //!     D = diag(f_K, (1-f_K)/2, (1-f_K)/2)   about n = r_hat (x1 on Cartesian),
@@ -334,7 +336,8 @@ template <class EosT>
 KOKKOS_INLINE_FUNCTION
 Real VcolRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
                        const Real rkp, const Real rke, const Real eth, const Real ar,
-                       const Real cl, const Real ch, const Real dt) {
+                       const Real cl, const Real ch, const Real dt,
+                       const int sf, const Real chi, const Real rkes) {
   const Real ix = 1.0/(1.0 + ch*dt*rke);
   M1EosDirect<EosT> th{eos};
   Real ee, cv;
@@ -346,6 +349,7 @@ Real VcolRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real 
   const Real t2 = ts*ts;
   const Real t4 = t2*t2;
   const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
+  if (sf != 0) {return VetScatterMix(sf, rkp, chi, rkes, ar*t4, es);}   // vet_scatter
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
@@ -748,6 +752,8 @@ void RadiationM1::VetColBuild() {
   const bool thermal = fl_on && coupling && !opac_zero;
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   const bool srx = thermal && vcol_srelax;
+  const int vsf = vscat ? vscat_form : 0;   // vet_scatter
+  const Real vkes = vscat_kes, vkfl = vscat_kfl;
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
   auto uh = flv.u0;
@@ -823,9 +829,14 @@ void RadiationM1::VetColBuild() {
         Real tg = iw_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
+        const Real rks = (vsf != 0) ? VetScatterKes(uh(m,IDN,k,j,i), vkes, vkfl, chi)
+                                        : 0.0;
         if (srx) {
           s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts);
+                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsf, chi,
+                                rks);
+        } else if (vsf != 0) {
+          s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
         } else {
           s = eth*ar*t2*t2 + (1.0 - eth)*e;
         }
@@ -1062,6 +1073,8 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const bool thermal = fl_on && coupling && !opac_zero;
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   const bool srx = thermal && vcol_srelax;
+  const int vsf = vscat ? vscat_form : 0;   // vet_scatter
+  const Real vkes = vscat_kes, vkfl = vscat_kfl;
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
   auto uh = flv.u0;
@@ -1136,9 +1149,14 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         Real tg = iw_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
+        const Real rks = (vsf != 0) ? VetScatterKes(uh(m,IDN,k,j,i), vkes, vkfl, chi)
+                                        : 0.0;
         if (srx) {
           s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts);
+                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsf, chi,
+                                rks);
+        } else if (vsf != 0) {
+          s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
         } else {
           s = eth*ar*t2*t2 + (1.0 - eth)*e;
         }

@@ -118,7 +118,8 @@ template <class EosT>
 KOKKOS_INLINE_FUNCTION
 Real VlatRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
                        const Real rkp, const Real rke, const Real eth, const Real ar,
-                       const Real cl, const Real ch, const Real dt) {
+                       const Real cl, const Real ch, const Real dt,
+                       const int sf, const Real chi, const Real rkes) {
   const Real ix = 1.0/(1.0 + ch*dt*rke);
   M1EosDirect<EosT> th{eos};
   Real ee, cv;
@@ -130,6 +131,7 @@ Real VlatRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real 
   const Real t2 = ts*ts;
   const Real t4 = t2*t2;
   const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
+  if (sf != 0) {return VetScatterMix(sf, rkp, chi, rkes, ar*t4, es);}   // vet_scatter
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
@@ -529,6 +531,8 @@ void RadiationM1::VetLatSweep(const int stage) {
   // (1) ln chi, ln S of every active cell (vet_col's extinction and source), ghosts
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
+  const int vsf = vscat ? vscat_form : 0;   // vet_scatter
+  const Real vkes = vscat_kes, vkfl = vscat_kfl;
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
   auto uh = flv.u0;
@@ -545,9 +549,14 @@ void RadiationM1::VetLatSweep(const int stage) {
       Real tg = iw_(m,M1_IW_TP,k,j,i);
       Real t2 = tg*tg;
       Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
+      const Real rks = (vsf != 0) ? VetScatterKes(uh(m,IDN,k,j,i), vkes, vkfl, chi)
+                                      : 0.0;
       if (srx) {
         s = VlatRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts);
+                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsf, chi,
+                              rks);
+      } else if (vsf != 0) {
+        s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }

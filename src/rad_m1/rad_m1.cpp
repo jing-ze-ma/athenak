@@ -788,6 +788,32 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     }
+    // vet_scatter (vet-scatter-1006): read only when named, default off = bitwise
+    if (pin->DoesParameterExist("rad_m1","vet_scatter")) {
+      vscat = pin->GetBoolean("rad_m1","vet_scatter");
+    }
+    if (vscat) {
+      std::string sf = pin->GetOrAddString("rad_m1","vet_scatter_form","ma");
+      if (sf.compare("ma") == 0) {
+        vscat_form = 1;
+      } else if (sf.compare("absorption") == 0) {
+        vscat_form = 2;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/vet_scatter_form = '" << sf << "' not implemented "
+          << "(ma | absorption)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      // cm^2/g -> code opacity per unit mass (kappa_unit, 1 when opacity != table)
+      const Real ku = pin->GetOrAddReal("rad_m1","kappa_unit",1.0);
+      vscat_kes = ku*pin->GetOrAddReal("rad_m1","vet_kappa_es",0.34);
+      vscat_kfl = ku*pin->GetOrAddReal("rad_m1","vet_kappa_floor",1.0e-5);
+      if (global_variable::my_rank == 0) {
+        std::cout << "rad_m1: vet_scatter on, form " << sf << ", kappa_e "
+                  << vscat_kes << ", kappa_floor " << vscat_kfl
+                  << " (code units)" << std::endl;
+      }
+    }
     vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);

@@ -109,6 +109,39 @@ struct M1OpacTab {
   Real kunit = 1.0;
 };
 
+//----------------------------------------------------------------------------------------
+//! \fn VetScatterMix
+//! \brief <rad_m1>/vet_scatter (vet-scatter-1006, read only when named, default off =
+//! bitwise): the grey source S of the VET formal solutions (vet_col, vet_col_lat, vet_gd)
+//! in E units, from B = a T^4 and E = J, for a cell of extinction chi = rho kappa_R
+//! (unchanged: M1_IW_KT), Planck absorption rho kappa_P (rkp) and electron scattering
+//! rho kappa_e (rkes, already guarded so that chi - rkes >= rho kappa_floor > 0).
+//!   form 1 (`ma`, Jiang 2021 ApJS 253 49 eq. 6 as used by Ma+2026 sect. 2.2.4):
+//!     dI/ds = rho k_s (J - I) + rho k_a (B - I) + rho (k_P - k_a)(B - J),
+//!     k_a + k_s = k_R  ->  S = J + (rho k_P/chi) (B - J), NOT capped at 1 (the split
+//!     of k_R into k_a and k_e drops out exactly); clipped at S >= 0.
+//!   form 2 (`absorption`): eq. 6 without the k_dP term, emission by true absorption:
+//!     S = [(chi - rkes) B + rkes J]/chi.
+//! The default source eps B + (1 - eps) E with eps = min(rho k_P/chi, 1) is NOT computed
+//! here: the callers keep their own expression untouched when the key is off.
+KOKKOS_INLINE_FUNCTION
+Real VetScatterMix(const int form, const Real rkp, const Real chi, const Real rkes,
+                   const Real b, const Real e) {
+  if (form == 1) {
+    const Real ep = rkp/chi;
+    return fmax(e + ep*(b - e), 0.0);
+  }
+  return ((chi - rkes)*b + rkes*e)/chi;
+}
+
+//! the guarded rho kappa_e of VetScatterMix (Ma+2026 sect. 2.2.4): rkes = rho kappa_e,
+//! and where kappa_R < kappa_e + kappa_floor, kappa_e = kappa_R - kappa_floor (>= 0)
+KOKKOS_INLINE_FUNCTION
+Real VetScatterKes(const Real d, const Real kes, const Real kfl, const Real chi) {
+  const Real rkes = d*kes, rkfl = d*kfl;
+  return (chi < rkes + rkfl) ? fmax(chi - rkfl, 0.0) : rkes;
+}
+
 // <rad_m1>/reconstruct, as a plain int for the device (same order as the code-wide
 // ReconstructionMethod enum, so the two can be compared).  ppm4 and above read a
 // 5-cell stencil per face state and need <mesh>/nghost >= 3.
@@ -1319,6 +1352,13 @@ class RadiationM1 {
   // backward-Euler exchange over the step (VcolRelaxedSource, rad_m1_vetcol.cpp); `gas`:
   // the start-of-step gas temperature as before (bitwise the old build)
   bool vcol_srelax = true;
+  // vet_scatter (vet-scatter-1006, read only when named; default off = bitwise): the
+  // closure source with electron scattering, VetScatterMix.  vscat_form 1 = ma (Jiang
+  // 2021 eq. 6), 2 = absorption.  vscat_kes, vscat_kfl: kappa_e and Ma's floor in CODE
+  // opacity per unit mass (vet_kappa_es, vet_kappa_floor in cm^2/g times kappa_unit)
+  bool vscat = false;
+  int vscat_form = 1;
+  Real vscat_kes = 0.34, vscat_kfl = 1.0e-5;
   // vet_col with a REFLECTING outer x1 (m1-sp-order2b): the incoming intensity at the
   // top face is the mirror of the outgoing one, I_in = b/(1 - a) per ray (b the outgoing
   // intensity of a vacuum-top sweep, a the ray's round-trip transmission), in a second
