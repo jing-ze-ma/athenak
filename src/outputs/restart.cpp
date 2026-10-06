@@ -254,6 +254,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::realloc(outarray_m1s, nmb, nrs, nout3, nout2, nout1);
       Kokkos::deep_copy(outarray_m1s, tmp);
     }
+    // vet_gd_async: the source of the pending gd build (its sweep may be in flight; it
+    // does not touch vlat_cs)
+    if (pradm1->VetGdAsyncRstNch() > 0) {
+      DvceArray5D<Real> tmp("rst-m1g", nmb, 2, nout3, nout2, nout1);
+      pradm1->VetGdAsyncRstPack(tmp, nmb);
+      Kokkos::realloc(outarray_m1g, nmb, 2, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_m1g, tmp);
+    }
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
@@ -402,6 +410,16 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[4] = {(nrss > 0) ? 1 : 0, static_cast<std::int32_t>(nrss),
                                  static_cast<std::int32_t>(rss_mode), 0};
     std::memcpy(&(rss_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
+  // <rad_m1>/vet_gd_async: 2 slabs of the pending build's source behind even those
+  // (radm1::kM1VgdRstMagic); the header carries the build's ncycle (its z-angle)
+  const int nvgd = (pradm1 != nullptr) ? pradm1->VetGdAsyncRstNch() : 0;
+  char vgd_hdr[4*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[4] = {(nvgd > 0) ? 1 : 0, static_cast<std::int32_t>(nvgd),
+                                 static_cast<std::int32_t>((pradm1 != nullptr) ?
+                                                           pradm1->vgd_acyc : -1), 0};
+    std::memcpy(&(vgd_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
@@ -609,6 +627,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(rss_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the vet_gd_async header, same marked form, behind the signal-speed one
+    if (nvgd > 0) {
+      IOWrapperSizeT nb = sizeof(vgd_hdr);
+      resfile.Write_any_type(&(radm1::kM1VgdRstMagic[0]), sizeof(radm1::kM1VgdRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(vgd_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -680,6 +706,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += nck*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
   data_size += nctr*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
   data_size += nrss*nout1*nout2*nout3*sizeof(Real);     // rad_signal_speed inputs
+  data_size += nvgd*nout1*nout2*nout3*sizeof(Real);     // vet_gd_async source
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -727,6 +754,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nrss > 0) {
     step3size += sizeof(radm1::kM1RssRstMagic) + sizeof(IOWrapperSizeT) + sizeof(rss_hdr);
+  }
+  if (nvgd > 0) {
+    step3size += sizeof(radm1::kM1VgdRstMagic) + sizeof(IOWrapperSizeT) + sizeof(vgd_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1227,6 +1257,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<nrss; ++n) {
     write_wtemp(Kokkos::subview(outarray_m1s, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_signal_speed inputs");
+  }
+  // and the vet_gd_async pending source behind it (kM1VgdRstMagic)
+  for (int n=0; n<nvgd; ++n) {
+    write_wtemp(Kokkos::subview(outarray_m1g, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "vet_gd_async source");
   }
 
   // close file, clean up

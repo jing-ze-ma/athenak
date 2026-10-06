@@ -304,7 +304,16 @@ int main(int argc, char *argv[]) {
     return(0);
   }
 #else  // no OpenMP
-  if (MPI_SUCCESS != MPI_Init(&argc, &argv)) {
+  // env ATHENA_MPI_THREAD_MULTIPLE=1: MPI_THREAD_MULTIPLE (<rad_m1>/vet_gd_async runs
+  // the sweep's MPI on a helper thread); otherwise MPI_Init as always
+  if (std::getenv("ATHENA_MPI_THREAD_MULTIPLE") != nullptr) {
+    int mpiprv;
+    if (MPI_SUCCESS != MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &mpiprv)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "MPI Initialization failed." << std::endl;
+      return(0);
+    }
+  } else if (MPI_SUCCESS != MPI_Init(&argc, &argv)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "MPI Initialization failed." << std::endl;
     return(0);

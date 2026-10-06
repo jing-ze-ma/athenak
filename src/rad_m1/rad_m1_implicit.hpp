@@ -67,6 +67,12 @@ constexpr char kM1CtrRstMagic[8] = {'M', '1', 'C', 'T', 'R', 'L', 'X', '1'};
 // each MeshBlock record.  Written only when rad_signal_speed is on; a file without it
 // restarts with opac filled from the restored state (no longer bitwise).
 constexpr char kM1RssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
+// <rad_m1>/vet_gd_async (GD_ASYNC.md): the source (ln chi, ln S = vlat_cs) of the
+// pending gd build, header behind the rad_signal_speed one: int32 have = 1, nch = 2,
+// the build's ncycle, 0; its 2 slabs are the LAST of each MeshBlock record.  Written
+// only when vet_gd_async is on with a pending build; a file without it restarts with a
+// synchronous first build (D of the restart cycle unlagged: not bitwise).
+constexpr char kM1VgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled

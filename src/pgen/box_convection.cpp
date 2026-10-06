@@ -2812,10 +2812,23 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   if (fws) {
     // force_reference_work = split: the work of the rho arad_ref part of the WB kick, at
     // the stage-start velocity (a separate kernel: the default one is untouched)
-    par_for("boxconv_srcs_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*arefw(m,k,j,i)*w0(m,IVX,k,j,i);
-    });
+    if (pm1w->FrefWaccOn()) {
+      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // accumulator the be solve makes E pay (acc = gam0 acc + increment)
+      auto wacc = pm1w->FrefWacc();
+      const Real g0 = pm1w->FrefWaccGam0(bdt, pm->dt);
+      par_for("boxconv_srcs_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real w = bdt*w0(m,IDN,k,j,i)*arefw(m,k,j,i)*w0(m,IVX,k,j,i);
+        u0(m,IEN,k,j,i) += w;
+        wacc(m,k,j,i) = g0*wacc(m,k,j,i) + w;
+      });
+    } else {
+      par_for("boxconv_srcs_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*arefw(m,k,j,i)*w0(m,IVX,k,j,i);
+      });
+    }
   }
   // ---- the sponge's cell range, once, at the first stage it runs (the column tau only
   // exists once BuildRadWeights has run, so it cannot be known at setup)

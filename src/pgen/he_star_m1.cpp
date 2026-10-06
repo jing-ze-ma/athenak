@@ -192,7 +192,7 @@ Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
 void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
                         DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD,
                         Real &lt_lo, Real &lt_hi, Real &ld_lo, Real &ld_hi,
-                        const Real ld_ext = 1.0e300) {
+                        const Real ld_ext = 1.0e300, const bool ld_hold = false) {
   std::ifstream f(fname);
   if (!f.good()) HsFatal("cannot open opacity table '" + fname + "'", __LINE__);
   std::string line;
@@ -236,6 +236,9 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
       Real sl = (v1 - v0)/dld;
       if (sl < 0.0 || sl > 1.0) ++nclip;
       sl = (sl < 0.0) ? 0.0 : ((sl > 1.0) ? 1.0 : sl);
+      // problem/he_opac_extend_hold (gd_physfix_1005): no extrapolation in rho, the
+      // extended columns hold the table's edge value (kappa constant below its rho edge)
+      if (ld_hold) sl = 0.0;
       for (int j=0; j<nadd; ++j) vn[i*nDn + j] = v0 - sl*(nadd - j)*dld;
       for (int j=0; j<nD; ++j) vn[i*nDn + nadd + j] = vals[i*nD + j];
     }
@@ -509,9 +512,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // problem/he_opac_logd_min (default none): extend both tables to this log10 rho
     const Real ldx = pin->DoesParameterExist("problem","he_opac_logd_min") ?
                      pin->GetReal("problem","he_opac_logd_min") : 1.0e300;
+    // problem/he_opac_extend_hold (gd_physfix_1005, read only when named, default false):
+    // the he_opac_logd_min extension holds both tables at their rho edge (slope 0)
+    // instead of continuing log kappa in log rho; rho >= the table edge is unchanged
+    const bool ldh = pin->DoesParameterExist("problem","he_opac_extend_hold") &&
+                     pin->GetBoolean("problem","he_opac_extend_hold");
     HsReadOpacityTable(rt, krt, mlT, mlD, mnT, mnD, tab_lt_lo, tab_lt_hi, tab_ld_lo,
-                       tab_ld_hi, ldx);
-    HsReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4, ldx);
+                       tab_ld_hi, ldx, ldh);
+    HsReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4, ldx, ldh);
     b1 = tab_lt_lo; b2 = tab_lt_hi; b3 = tab_ld_lo; b4 = tab_ld_hi;
     if (mnT != pnT || mnD != pnD || fabs(a1 - b1) + fabs(a2 - b2) + fabs(a3 - b3) +
         fabs(a4 - b4) > 1.0e-9) {
@@ -1458,10 +1466,23 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   auto *pm1 = pmbp->pradm1;
   if (pm1 != nullptr && pm1->fref_wsplit) {
     auto aref = pm1->arad_ref;
-    par_for("hs_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
-    });
+    if (pm1->FrefWaccOn()) {
+      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // accumulator the be solve makes E pay (acc = gam0 acc + increment)
+      auto wacc = pm1->FrefWacc();
+      const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
+      par_for("hs_grav_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real w = bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+        u0(m,IEN,k,j,i) += w;
+        wacc(m,k,j,i) = g0*wacc(m,k,j,i) + w;
+      });
+    } else {
+      par_for("hs_grav_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+      });
+    }
   }
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
   // Riemann flux through a "closed" wall carries mass.  The inner wall loses its mass,

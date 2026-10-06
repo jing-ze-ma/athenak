@@ -869,6 +869,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_res_rmax")) {
     impl_res_rmax = pin->GetReal("rad_m1","implicit_res_rmax");
   }
+  //  implicit_realisable_coupling (gd_physfix_1005, read only when named; default false =
+  //    bitwise the old code): the gas sees the REALISABLE radiation flux.  In optically
+  //    thin cells with c dt/dx >> 1 the Picard iterate of the cell flux is unrealisable
+  //    (BSG far-thin top: mean |F| = 10-20 c E, ~200 c E in the cells that stalled);
+  //    the write-back clips it to |F| = c E (M1ApplyLimits), but the comoving correction
+  //    E0 - E = -2 beta.F/c + O(beta^2) and the momentum deposit dt (rho k_t)_f F0_f/c
+  //    took the UNCLIPPED flux: E0 - E came out -0.85 E (|E0 - E| <= 2 |beta| E for any
+  //    intensity field), which moved the gas-T equation into the kappa_P(T) valley of the
+  //    low-density table and made it 3-rooted (the Picard T cycle), and the floor gas got
+  //    10-200x the largest force any radiation field of energy E can exert (rho k E).
+  //    With the key, per cell, s = min(1, c E/|F_iter|) scales the flux in beta.F of E0,
+  //    and the momentum deposit (and so its work, which the radiation loses: total
+  //    energy stays exact).  s = 1 wherever the iterate is realisable.
+  if (pin->DoesParameterExist("rad_m1","implicit_realisable_coupling")) {
+    impl_real_couple = pin->GetBoolean("rad_m1","implicit_realisable_coupling");
+  }
   //  implicit_thin_freeze (m1-picard-aa, 095ca6ee): cells with c dt rho kappa_P below it
   //    at pass 0 keep their start-of-solve opacities for every Picard pass and take the
   //    frozen-opacity gas-T find.  DEFAULT 1e-2 on fresh runs (user 10-04): on the He
@@ -8552,237 +8568,23 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (b) the lagged closure, the enthalpy-flux coefficient, de0 and g0
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
     const int ivd = impl_vimp ? (iw_vimp + M1_IV_DV) : 0;
-    par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real e = fmax(iw_(m,M1_IW_EP,k,j,i), efl);
-      Real f1 = iw_(m,M1_IW_F1,k,j,i);
-      Real rf = f1/(cl*e);
-      if (rf > 1.0) {rf = 1.0;}
-      if (rf < -1.0) {rf = -1.0;}
-      Real chi = edd ? (1.0/3.0) : M1Chi(fabs(rf), chk);
-      Real v1 = iw_(m,M1_IW_V1,k,j,i);
-      Real de0;
-      if (!trans) {
-        iw_(m,M1_IW_WCHI,k,j,i) = chi;
-        iw_(m,M1_IW_ADV,k,j,i) = v1*(1.0 + chi);
-        // E0 - E with F_2 = F_3 = 0: P_11 = chi E, P_22 = P_33 = (1-chi) E/2
-        Real b1 = v1/cl;
-        de0 = ovc ? (-2.0*b1*f1/cl) : (b1*b1*e - 2.0*b1*f1/cl + b1*b1*chi*e);
-      } else {
-        // MILESTONE 3b phase B: the closure of the MULTI-DIMENSIONAL solve.  The reduced
-        // flux is the MAGNITUDE |F|/(c E) and the Eddington tensor is built around the
-        // unit flux direction n, D_ab = (1-chi)/2 delta_ab + (3 chi - 1)/2 n_a n_b.  In
-        // 1-D this is the branch above with n = (+-1,0,0), which is why the 1-D mesh is
-        // handled there (gate G3) and nothing about implicit_x1 changes.
-        Real f2c = iw_(m,M1_IW_F2,k,j,i);
-        Real f3c = iw_(m,M1_IW_F3,k,j,i);
-        Real fm = sqrt(f1*f1 + f2c*f2c + f3c*f3c);
-        Real rfm = fm/(cl*e);
-        if (rfm > 1.0) {rfm = 1.0;}
-        chi = edd ? (1.0/3.0) : M1Chi(rfm, chk);
-        Real ifm = 1.0/fmax(fm, 1.0e-300);
-        Real n1 = f1*ifm, n2 = f2c*ifm, n3 = f3c*ifm;
-        Real v2 = iw_(m,M1_IW_V2,k,j,i), v3 = iw_(m,M1_IW_V3,k,j,i);
-        // MILESTONE 3b phase D: how fast the LAGGED closure is allowed to move.
-        //   implicit_closure_lag = step  freezes (chi, n) at the start-of-step state for
-        //     the whole step (the Eddington tensor is then explicit in time, as in a VET
-        //     code that reuses the previous step's tensor), leaving ONE linear solve plus
-        //     the temperature nonlinearity per step;
-        //   implicit_closure_relax = w   under-relaxes them between passes, optionally
-        //     only where the cell is optically thin (theta > 1/2), which is where the
-        //     closure feeds back on the solve through (c dt/dx)^2.
-        if (ttau) {
-          // column optical depth to the top of the block at j-1, j, j+1 (cell centres)
-          Real dx1 = mbsize.d_view(m).dx1;
-          Real dx2 = mbsize.d_view(m).dx2;
-          Real tm = 0.5*iw_(m,M1_IW_KT,k,j-1,i)*dx1;
-          Real tc = 0.5*iw_(m,M1_IW_KT,k,j,i)*dx1;
-          Real tq = 0.5*iw_(m,M1_IW_KT,k,j+1,i)*dx1;
-          for (int ii = i+1; ii <= ie; ++ii) {
-            tm += iw_(m,M1_IW_KT,k,j-1,ii)*dx1;
-            tc += iw_(m,M1_IW_KT,k,j,ii)*dx1;
-            tq += iw_(m,M1_IW_KT,k,j+1,ii)*dx1;
-          }
-          // exact grey plane-parallel K/J = (tau + q_inf)/(3 (tau + q(tau))), q = Hopf
-          Real qh = 0.710446 - 0.133054*exp(-3.4488*tc);
-          chi = (tc + 0.710446)/(3.0*(tc + qh));
-          Real g1 = -iw_(m,M1_IW_KT,k,j,i);
-          Real g2 = (tq - tm)/(2.0*dx2);
-          Real ign = 1.0/fmax(sqrt(g1*g1 + g2*g2), 1.0e-300);
-          n1 = -g1*ign;
-          n2 = -g2*ign;
-          n3 = 0.0;
-        } else if (ttilt) {
-          Real dx2 = mbsize.d_view(m).dx2;
-          Real x2v = mbsize.d_view(m).x2min + (static_cast<Real>(j - js) + 0.5)*dx2;
-          Real al = talp*sin(2.0*M_PI*(x2v - tx2min)/tx2len);
-          Real ca = cos(al), sa = sin(al);
-          Real r1 = ca*n1 - sa*n2, r2 = sa*n1 + ca*n2;
-          n1 = r1;
-          n2 = r2;
-        }
-        if (vetsc) {
-          chi = vc_(m,M1_VET_CHI,k,j,i);
-          n1 = vc_(m,M1_VET_N1,k,j,i);
-          n2 = vc_(m,M1_VET_N1+1,k,j,i);
-          n3 = vc_(m,M1_VET_N1+2,k,j,i);
-        } else if (tkeep) {
-          chi = iw_(m,M1_IW_WCHI,k,j,i);
-          n1 = iw_(m,M1_IW_N1,k,j,i);
-          n2 = iw_(m,M1_IW_N2,k,j,i);
-          n3 = iw_(m,M1_IW_N3,k,j,i);
-        } else if (dofreeze) {
-          chi = iw_(m,M1_IW_WCHI,k,j,i);
-          n1 = iw_(m,M1_IW_N1,k,j,i);
-          n2 = iw_(m,M1_IW_N2,k,j,i);
-          n3 = iw_(m,M1_IW_N3,k,j,i);
-        } else if (dorel && (!crthin || (ch*dt*iw_(m,M1_IW_KT,k,j,i) < 1.0))) {
-          Real w1 = 1.0 - crw;
-          chi = w1*iw_(m,M1_IW_WCHI,k,j,i) + crw*chi;
-          n1 = w1*iw_(m,M1_IW_N1,k,j,i) + crw*n1;
-          n2 = w1*iw_(m,M1_IW_N2,k,j,i) + crw*n2;
-          n3 = w1*iw_(m,M1_IW_N3,k,j,i) + crw*n3;
-          Real nn = sqrt(n1*n1 + n2*n2 + n3*n3);
-          if (nn > 0.0) {
-            Real inn = 1.0/nn;
-            n1 *= inn;
-            n2 *= inn;
-            n3 *= inn;
-          }
-        }
-        if (tauc) {
-          chi = tt_(m,0,k,j,i);
-          n1 = tt_(m,1,k,j,i);
-          n2 = tt_(m,2,k,j,i);
-          n3 = tt_(m,3,k,j,i);
-        }
-        // implicit_closure_thin_relax (tests_m1/runs_5c_thinstab): the lagged closure's
-        // dependence on F is explicit, and at c dt >> dx a flux perturbation comes back
-        // amplified by g ~ max(chi', b/f)/tau_c each step (tau_c the cell optical depth
-        // along n).  Relaxing (chi, n) from the previous step's values with
-        // w = 2/(1 + G^2), G >= |g|, makes the step map contract (|1 - w + w g| < 1 for
-        // Re g < 1) to the SAME fixed point; cells with G <= 1 are left untouched.
-        if (ctr && !edd && !vetsc && !tkeep && !tauc) {
-          if (ctri) {
-            Real dx1 = mbsize.d_view(m).dx1;
-            if (ctstr) {dx1 = ctx1f(m,i+1) - ctx1f(m,i);}
-            Real kt = iw_(m,M1_IW_KT,k,j,i);
-            Real tc = kt*dx1;
-            if (!ctsph) {
-              Real dx2 = mbsize.d_view(m).dx2;
-              Real dx3 = mbsize.d_view(m).dx3;
-              tc = kt/fmax(fabs(n1)/dx1 + fabs(n2)/dx2 + fabs(n3)/dx3, 1.0e-300);
-            }
-            Real fh = fmin(fmax(rfm, 1.0e-3), 0.999);
-            Real cp = (M1Chi(fh + 1.0e-3, chk) - M1Chi(fh - 1.0e-3, chk))/2.0e-3;
-            Real bf = 0.5*(3.0*chi - 1.0)/fh;
-            Real gg = ctc*fmax(cp, bf)/fmax(tc, 1.0e-300)
-                      + fh*cp/fmax(fmin(chi, 1.0 - chi), 1.0e-3);
-            Real w = 2.0/(1.0 + gg*gg);
-            if (w < 1.0) {
-              Real w1 = 1.0 - w;
-              chi = w1*cm_(m,0,k,j,i) + w*chi;
-              n1 = w1*cm_(m,1,k,j,i) + w*n1;
-              n2 = w1*cm_(m,2,k,j,i) + w*n2;
-              n3 = w1*cm_(m,3,k,j,i) + w*n3;
-              Real nn = sqrt(n1*n1 + n2*n2 + n3*n3);
-              if (nn > 0.0) {
-                Real inn = 1.0/nn;
-                n1 *= inn;
-                n2 *= inn;
-                n3 *= inn;
-              }
-            }
-          }
-          cm_(m,0,k,j,i) = chi;
-          cm_(m,1,k,j,i) = n1;
-          cm_(m,2,k,j,i) = n2;
-          cm_(m,3,k,j,i) = n3;
-        }
-        iw_(m,M1_IW_WCHI,k,j,i) = chi;
-        iw_(m,M1_IW_N1,k,j,i) = n1;
-        iw_(m,M1_IW_N2,k,j,i) = n2;
-        iw_(m,M1_IW_N3,k,j,i) = n3;
-        // a_d = v_d + (v.D)_d, so that the enthalpy flux A_d = v_d E + (v.P)_d = a_d E
-        Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2), d33 = M1EddDiag(chi,n3);
-        Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
-        Real d23 = M1EddOff(chi,n2,n3);
-        if (dfull) {
-          // vet_tensor = full: the guarded K/J of the formal solution, all six components
-          d11 = vd_(m,M1_VET_D11,k,j,i);
-          d22 = vd_(m,M1_VET_D11+1,k,j,i);
-          d33 = vd_(m,M1_VET_D11+2,k,j,i);
-          d12 = vd_(m,M1_VET_D11+3,k,j,i);
-          d13 = vd_(m,M1_VET_D11+4,k,j,i);
-          d23 = vd_(m,M1_VET_D11+5,k,j,i);
-        }
-        iw_(m,M1_IW_ADV,k,j,i) = v1 + (v1*d11 + v2*d12 + v3*d13);
-        iw_(m,M1_IW_A2,k,j,i) = v2 + (v1*d12 + v2*d22 + v3*d23);
-        iw_(m,M1_IW_A3,k,j,i) = v3 + (v1*d13 + v2*d23 + v3*d33);
-        if (t2dav) {
-          // hesdirk2: the part of a carried by the old vector's velocity increment
-          Real idg = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
-          Real w1 = t2i_(m,M1_T2_M1,k,j,i)*idg, w2 = t2i_(m,M1_T2_M1+1,k,j,i)*idg;
-          Real w3 = t2i_(m,M1_T2_M1+2,k,j,i)*idg;
-          iw_(m,t2da,k,j,i) = w1 + (w1*d11 + w2*d12 + w3*d13);
-          iw_(m,t2da+1,k,j,i) = w2 + (w1*d12 + w2*d22 + w3*d23);
-          iw_(m,t2da+2,k,j,i) = w3 + (w1*d13 + w2*d23 + w3*d33);
-        }
-        // E0 - E to O(beta^2), with the full pressure tensor.  m1-sp-order2b
-        // (time2_vstage): in a hesdirk2 stage under implicit_vimp at the iterate's
-        // velocity, v_old + dv^k (the previous pass's write-back increment), not the
-        // stage-start one, which lags by the stage's radiative kick (O(dt))
-        Real u1 = v1, u2 = v2, u3 = v3;
-        if (vdv) {
-          u1 += iw_(m,ivd,k,j,i);
-          u2 += iw_(m,ivd+1,k,j,i);
-          u3 += iw_(m,ivd+2,k,j,i);
-        }
-        Real b1 = u1/cl, b2 = u2/cl, b3 = u3/cl;
-        Real bf = (b1*f1 + b2*f2c + b3*f3c)/cl;
-        Real bpb = (b1*b1*d11 + b2*b2*d22 + b3*b3*d33
-                    + 2.0*(b1*b2*d12 + b1*b3*d13 + b2*b3*d23))*e;
-        Real b2sq = b1*b1 + b2*b2 + b3*b3;
-        de0 = ovc ? (-2.0*bf) : (b2sq*e - 2.0*bf + bpb);
-      }
-      iw_(m,M1_IW_DE0,k,j,i) = de0;
-      Real rkev = opac_(m,M1_OP_E,k,j,i);
-      Real rkpv = opac_(m,M1_OP_P,k,j,i);
-      Real tp = iw_(m,M1_IW_TP,k,j,i);
-      Real t2 = tp*tp;
-      iw_(m,M1_IW_G0,k,j,i) = rkev*(e + de0) - rkpv*ar*t2*t2;
-      // The COMOVING reduced flux of the iterate, which is what the HLL part of the
-      // ap_hll flux lags (the HLL acts on F0 only; the enthalpy flux A is added back
-      // upwinded, exactly as in the explicit advective split).  The LAB f above still
-      // drives the closure chi, as it does in the explicit scheme.
-      //
-      // It is NOT F0_cell/(c E) with F0_cell the arithmetic mean of the two faces.  That
-      // is design risk R4 and it is fatal here: in free streaming the upwind face flux is
-      // c E_{i-1}, so the cell mean is c (E_{i-1}+E_i)/2 and the derived f is
-      // (1 + E_{i-1}/E_i)/2, i.e. 0.5 rather than 1 on the steep side of a pulse.  The
-      // wave speeds then reopen to +-c/sqrt(3), the HLL flux turns CENTRED, and the
-      // I6 pulse is flattened to its box mean in one crossing (amplitude ratio 0.0014).
-      // Each FACE flux is therefore normalised by the E of the cell it comes FROM, which
-      // is exactly 1 for an upwind free-streaming face, and the cell value is the mean of
-      // the two face ratios.  On a cold start (f0x1 is zero-initialised and the problem
-      // generator's state lives in u0) the cell flux is used instead.
-      Real r0;
-      Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
-      if (fabs(fl) + fabs(fr) > 0.0) {
-        int iml = (i > is) ? (i-1)
-                  : (cyclic ? ie : ((pos_.d_view(m) > 0) ? (is-1) : is));
-        int ipr = (i < ie) ? (i+1)
-                  : (cyclic ? is : ((pos_.d_view(m) < nblkx1-1) ? (ie+1) : ie));
-        Real eul = fmax((fl > 0.0) ? iw_(m,M1_IW_EP,k,j,iml) : e, efl);
-        Real eur = fmax((fr > 0.0) ? e : iw_(m,M1_IW_EP,k,j,ipr), efl);
-        r0 = 0.5*(fl/(cl*eul) + fr/(cl*eur));
-      } else {
-        r0 = (f1 - iw_(m,M1_IW_ADV,k,j,i)*e)/(cl*e);
-      }
-      if (r0 > 1.0) {r0 = 1.0;}
-      if (r0 < -1.0) {r0 = -1.0;}
-      iw_(m,M1_IW_RF0,k,j,i) = r0;
-    });
+    const bool rcp = impl_real_couple;
+    if (!rcp) {
+      par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 0
+#include "rad_m1/rad_m1_impl_lag_kernel.hpp"
+#undef M1_RCP
+      });
+    } else {
+      // implicit_realisable_coupling: the same kernel with the key on
+      par_for("m1_impl_lag_rc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 1
+#include "rad_m1/rad_m1_impl_lag_kernel.hpp"  // NOLINT(build/include)
+#undef M1_RCP
+      });
+    }
     // m1-positivity, implicit_g0_limit = w: the lagged
     // g0 = rho (kappa_E E0 - kappa_P a T^4) of the iterate enters every face-flux
     // equation as - c dt v_f g0_f, a lagged, explicit, centred term.  Where the
@@ -10607,277 +10409,23 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool csw = cs_geom;
   auto cclw = pmy_pack->pcoord->cos_cell;
   auto csnw = pmy_pack->pcoord->sin_cell;
-  par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real ep = iw_(m,M1_IW_EP,k,j,i);
-    // an M1_IBC_EFIX end cell: its row was replaced by E' = EN (the Dirichlet value),
-    // and that is the E it keeps -- the work term below must not move it.  It used to:
-    // the replaced row has no transverse coupling, so nothing damped the x2 structure
-    // the per-step work kicks left in the end column, and at the OUTFLOW end of the
-    // radiative shock (T7) it grew into an x2 mode (E, F2, gas v2) until the end cell
-    // hit the E floor (tests_m1/runs_4d_efix).
-    const int ipw = pos_.d_view(m);
-    const bool efc = !cyclic && ((i == is && ipw == 0 && bclo == M1_IBC_EFIX) ||
-                                 (i == ie && ipw == nblkx1-1 && bchi == M1_IBC_EFIX));
-    Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
-    Real fp1 = 0.5*(fl + fr) + iw_(m,M1_IW_ADV,k,j,i)*ep;
-    // MILESTONE 3b phase B: the derived cell-centred transverse fluxes, the face means
-    // plus the enthalpy flux, exactly as in x1.
-    Real fp2 = 0.0, fp3 = 0.0;
-    Real g2l = 0.0, g2r = 0.0, g3l = 0.0, g3r = 0.0;
-    if (trans) {
-      g2l = f2_(m,k,j,i);
-      g2r = f2_(m,k,j+1,i);
-      fp2 = 0.5*(g2l + g2r) + iw_(m,M1_IW_A2,k,j,i)*ep;
-      if (thrd) {
-        g3l = f3_(m,k,j,i);
-        g3r = f3_(m,k+1,j,i);
-        fp3 = 0.5*(g3l + g3r) + iw_(m,M1_IW_A3,k,j,i)*ep;
-      }
-    }
-    if (csw && trans && thrd) {
-      const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
-      const Real a = fp2, b = fp3;
-      fp2 = (a + c*b)*si;
-      fp3 = (b + c*a)*si;
-    }
-
-    Real work = 0.0, dm1 = 0.0, dmref = 0.0, eg = 0.0, ekin = 0.0, egrv = 0.0;
-    Real dm2 = 0.0, dm3 = 0.0;
-    Real dd = 0.0, v1 = 0.0, v2 = 0.0, v3 = 0.0;
-    if (have_hydro) {
-      dd = uh(m,IDN,k,j,i);
-      Real idd = 1.0/fmax(dd, 1.0e-300);
-      v1 = uh(m,IM1,k,j,i)*idd;
-      v2 = uh(m,IM2,k,j,i)*idd;
-      v3 = uh(m,IM3,k,j,i)*idd;
-      ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
-                  SQR(uh(m,IM3,k,j,i)))*idd;
-      if (csw) {
-        const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
-        const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
-        v2 = (m2 - c*m3)*idd*id2;   // contravariant
-        v3 = (m3 - c*m2)*idd*id2;
-        ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)*id2)*idd;
-      }
-      egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
-      if (mhd) egrv += emag_(m,k,j,i);
-      eg = iw_(m,M1_IW_EGN,k,j,i);
-      // (a) the energy the RADIATION gained from the gas over the step.  It is taken
-      // from the ASSEMBLED row, q = SRCR - SRCB E', and not from rho kappa_P a T'^4:
-      // the two differ by the Picard remainder of the linearisation, and only the first
-      // is the amount the solved E actually received.  Setting the gas energy from it
-      // makes e_gas + (c/chat) E change by the face fluxes and the work term ALONE, to
-      // round-off -- measured: the T'^4 form drifted 2.8e-11 over 2000 steps of T5, this
-      // one 0.  At convergence the two agree, so T' stays the consistent temperature.
-      if (coupling_ && dbgh) {
-        Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*ep;
-        eg -= (cl/ch)*qq;
-      }
-      // (b) MOMENTUM.  Each x1 face hands dt (rho k_t)_f F0'_f/c to the gas, half to
-      // each of its two cells (a physical boundary face gives all of it to its one
-      // interior cell), which is exactly what the implicit face source removed from the
-      // radiation: sum_cells dm = sum_faces dt (rho k_t)_f F0'_f/c.
-      if (coupling_ && dbgf) {
-        Real ktl, ktr;
-        Real wl = 0.5, wr = 0.5;
-        int ipos = pos_.d_view(m);
-        if (i == is && ipos == 0 && !cyclic) {
-          ktl = iw_(m,M1_IW_KT,k,j,i);
-          wl = bmhalf ? 0.5 : 1.0;
-        } else {
-          int im = (cyclic && i == is) ? ie : (i-1);
-          ktl = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m, im, i,
-                            fwd);
-        }
-        if (i == ie && ipos == nblkx1-1 && !cyclic) {
-          ktr = iw_(m,M1_IW_KT,k,j,i);
-          wr = bmhalf ? 0.5 : 1.0;
-        } else {
-          int ip = (cyclic && i == ie) ? is : (i+1);
-          ktr = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, i, ip,
-                            fwd);
-        }
-        dm1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
-        dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;
-        if (trans && dbgft) {
-          // the same rule per transverse direction: each face hands
-          // dt (rho k_t)_f F0_f/c to the gas, half to each of its two cells, and a
-          // PHYSICAL boundary face (where F0 is zero anyway) half as well under
-          // implicit_bmom_half.
-          BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
-          BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
-          bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
-          bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
-          Real ktc = iw_(m,M1_IW_KT,k,j,i);
-          Real kl2 = (j == js && p2lo) ? ktc
-                     : 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + ktc);
-          Real kr2 = (j == je && p2hi) ? ktc
-                     : 0.5*(ktc + iw_(m,M1_IW_KT,k,j+1,i));
-          Real u2 = ((j == js && p2lo) && !bmhalf) ? 1.0 : 0.5;
-          Real w2 = ((j == je && p2hi) && !bmhalf) ? 1.0 : 0.5;
-          dm2 = (dt/cl)*(u2*kl2*g2l + w2*kr2*g2r);
-          if (thrd) {
-            BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
-            BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
-            bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
-            bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
-            Real kl3 = (k == ks && p3lo) ? ktc
-                       : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
-            Real kr3 = (k == ke && p3hi) ? ktc
-                       : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
-            Real u3 = ((k == ks && p3lo) && !bmhalf) ? 1.0 : 0.5;
-            Real w3 = ((k == ke && p3hi) && !bmhalf) ? 1.0 : 0.5;
-            dm3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);
-          }
-          if (csw && thrd) {
-            const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
-            const Real a = dm2, b = dm3;
-            dm2 = (a + c*b)*si;   // covariant, as the hydro momentum
-            dm3 = (b + c*a)*si;
-          }
-        }
-        if (feedback) {
-          Real idg = 1.0/fmax(dd, 1.0e-300);
-          Real w1 = (uh(m,IM1,k,j,i) + dm1)*idg;
-          work = 0.5*(v1 + w1)*dm1;
-          if (trans && dbgft) {
-            Real w2n = (uh(m,IM2,k,j,i) + dm2)*idg;
-            work += 0.5*(v2 + w2n)*dm2;
-            if (thrd) {
-              Real w3n = (uh(m,IM3,k,j,i) + dm3)*idg;
-              work += 0.5*(v3 + w3n)*dm3;
-            }
-            if (csw && thrd) {
-              // v^a dm_a with the contravariant v^a before and after the kick
-              const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
-              const Real n2 = uh(m,IM2,k,j,i) + dm2, n3 = uh(m,IM3,k,j,i) + dm3;
-              const Real u2 = (n2 - c*n3)*idg*id2, u3 = (n3 - c*n2)*idg*id2;
-              work = 0.5*(v1 + w1)*dm1 + 0.5*(v2 + u2)*dm2 + 0.5*(v3 + u3)*dm3;
-            }
-          }
-          if (!efc) {
-            ep -= (ch/cl)*work;
-          }
-        }
-      }
-    }
-
-    // m1-sp-order2b: a hesdirk2 stage solve under implicit_vimp.  The derived cell flux
-    // F = F0 + a E above takes a = v + v.D of the STAGE-START velocity, lagged by the
-    // radiative kick of the stage (the solved E already carries the implicit v'): an
-    // O(dt) error in the cell F (rsw_u_T: F order 1.0, E, T, gas 1.9-2.0).  It is
-    // re-formed with the velocity the write-back below gives the gas.
-    if (vfx && have_hydro && feedback) {
-      Real idg = 1.0/fmax(dd, 1.0e-300);
-      Real w1 = (uh(m,IM1,k,j,i) + dm1 - dmref)*idg;
-      Real w2 = v2, w3 = v3;
-      if (trans && dbgft) {
-        w2 = (uh(m,IM2,k,j,i) + dm2)*idg;
-        if (thrd) {
-          w3 = (uh(m,IM3,k,j,i) + dm3)*idg;
-        }
-      }
-      Real chi = iw_(m,M1_IW_WCHI,k,j,i);
-      Real n1 = iw_(m,M1_IW_N1,k,j,i), n2 = iw_(m,M1_IW_N2,k,j,i);
-      Real n3 = iw_(m,M1_IW_N3,k,j,i);
-      Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2), d33 = M1EddDiag(chi,n3);
-      Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
-      Real d23 = M1EddOff(chi,n2,n3);
-      if (dfull) {
-        d11 = vd_(m,M1_VET_D11,k,j,i);
-        d22 = vd_(m,M1_VET_D11+1,k,j,i);
-        d33 = vd_(m,M1_VET_D11+2,k,j,i);
-        d12 = vd_(m,M1_VET_D11+3,k,j,i);
-        d13 = vd_(m,M1_VET_D11+4,k,j,i);
-        d23 = vd_(m,M1_VET_D11+5,k,j,i);
-      }
-      // E of the solve (as the stage-start form above): the rows carry the work of
-      // the last pass (ImplicitWorkRow), so it is the stage's E to the tolerance
-      const Real es = iw_(m,M1_IW_EP,k,j,i);
-      fp1 = 0.5*(fl + fr) + (w1 + (w1*d11 + w2*d12 + w3*d13))*es;
-      if (trans) {
-        fp2 = 0.5*(g2l + g2r) + (w2 + (w1*d12 + w2*d22 + w3*d23))*es;
-        if (thrd) {
-          fp3 = 0.5*(g3l + g3r) + (w3 + (w1*d13 + w2*d23 + w3*d33))*es;
-        }
-      }
-    }
-    // m1-positivity.  Both moves keep e_gas + (c/chat) E of the cell exactly; eg is the
-    // gas internal energy the write-back sets (the kinetic part is ekin + work).
-    //  implicit_pos_floor: an E below e_floor is raised to it with the energy taken from
-    //    the gas (down to its limit below); what the gas cannot cover is counted.
-    //  implicit_pos_gas: a gas eint below e_min = max(e(rho, tfloor),
-    //    implicit_pos_gas_frac x max(e_gas old, 0)) is raised to it with energy taken
-    //    from the radiation (down to e_floor).
-    if (pany && !efc) {
-      const Real vol = psph ? pvol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
-                                               mbsize.d_view(m).dx3);
-      Real emin = 0.0;
-      if (have_hydro) {
-        emin = pgf*fmax(iw_(m,M1_IW_EGN,k,j,i), 0.0);
-        if (peos.tfloor > 0.0) {
-          Real te, pp, cr, ct, tcv;
-          peos.ThermoAt(dd, peos.tfloor, te, pp, cr, ct, tcv);
-          emin = fmax(emin, te);
-        }
-      }
-      if (pflr && !(ep > efl)) {
-        const Real need = (cl/ch)*(efl - ep);           // gas units
-        const Real avail = (have_hydro && feedback) ? fmax(eg - emin, 0.0) : 0.0;
-        const Real take = fmin(need, avail);
-        if (have_hydro && feedback) {eg -= take;}
-        ep = efl;
-        Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
-        Kokkos::atomic_add(&pc_(M1_POS_FLR_DE), take*vol);
-        Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), (need - take)*vol);
-      }
-      if (pgas && feedback && eg < emin) {
-        const Real need = emin - eg;                     // gas units
-        const Real take = fmin(need, fmax((cl/ch)*(ep - efl), 0.0));
-        eg += take;
-        ep -= (ch/cl)*take;
-        Kokkos::atomic_add(&pc_(M1_POS_GAS), 1.0);
-        Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
-      }
-    }
-    {   // diagnostic counters only: the flux scaled back to |F| = c E by M1ApplyLimits
-      const Real fq = sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
-      if (ep > efl && fq > cl*ep) {
-        Kokkos::atomic_add(&pc_(M1_POS_FCLIP), 1.0);
-        Kokkos::atomic_add(&pc_(M1_POS_FCLIPM), fq/(cl*ep) - 1.0);
-      }
-    }
-    if (csw) {
-      M1ApplyLimitsCs(cl, efl, cclw(m,k,j), ep, fp1, fp2, fp3);
-    } else {
-      M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
-    }
-    // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
-    if (t2k) {
-      const Real fk = 1.0/dt;
-      kk_(m,M1_T2_E,k,j,i) = (ep - iw_(m,M1_IW_EN,k,j,i))*fk;
-      if (eso) {kk_(m,M1_T2_E,k,j,i) += dtes*fk*es_(m,k,j,i);}
-      bool gk = have_hydro && feedback;
-      kk_(m,M1_T2_M1,k,j,i) = gk ? ((dm1 - dmref)*fk) : 0.0;
-      kk_(m,M1_T2_M1+1,k,j,i) = (gk && trans && dbgft) ? (dm2*fk) : 0.0;
-      kk_(m,M1_T2_M1+2,k,j,i) = (gk && trans && dbgft && thrd) ? (dm3*fk) : 0.0;
-      kk_(m,M1_T2_EN,k,j,i) = gk ? ((eg + ekin + egrv + work - uh(m,IEN,k,j,i))*fk)
-                                 : 0.0;
-    }
-    u0_(m,M1_E,k,j,i) = ep;
-    u0_(m,M1_F1,k,j,i) = fp1;
-    u0_(m,M1_F2,k,j,i) = fp2;
-    u0_(m,M1_F3,k,j,i) = fp3;
-    if (have_hydro && feedback) {
-      uh(m,IM1,k,j,i) = uh(m,IM1,k,j,i) + dm1 - dmref;
-      if (trans && dbgft) {
-        uh(m,IM2,k,j,i) = uh(m,IM2,k,j,i) + dm2;
-        if (thrd) {uh(m,IM3,k,j,i) = uh(m,IM3,k,j,i) + dm3;}
-      }
-      uh(m,IEN,k,j,i) = eg + ekin + egrv + work;
-    }
-  });
+  const bool rcpw = impl_real_couple;
+  if (!rcpw) {
+    par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 0
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"
+#undef M1_RCP
+    });
+  } else {
+    // implicit_realisable_coupling: the same kernel with the key on
+    par_for("m1_impl_wb_rc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 1
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#undef M1_RCP
+    });
+  }
   if (vfx && have_hydro && feedback && csw && trans && thrd) {
     // STAGE CS3: the vimp re-forming of the cell F on the cubed sphere, as a kernel of
     // its own (an overwrite inside the write-back above changed the GPU code of the
@@ -10941,6 +10489,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int bclw = ibc_x1min, bchw = ibc_x1max;
     const int nbw = part_nblk;
     auto posw_ = part_pos;
+    // time_scheme = be (fref-split-cons-1006): E pays exactly the reference work the
+    // gas got in the hydro stages of this step (fref_wacc, the share dt/dt_mesh of it
+    // per solve), not v' dt rho a_ref: a separate kernel, the other paths are untouched
+    if (FrefWaccOn()) {
+      auto wacc_ = FrefWacc();
+      const Real fra = dt/pmy_pack->pmesh->dt;
+      par_for("m1_impl_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const int ipw = posw_.d_view(m);
+        const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
+                                   (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX));
+        const Real dd = uh(m,IDN,k,j,i);
+        const Real idg = 1.0/fmax(dd, 1.0e-300);
+        const Real v1 = iw_(m,M1_IW_V1,k,j,i);
+        const Real m0 = dd*v1;
+        const Real dmref = dt*dd*aref_(m,k,j,i);
+        const Real dmr = uh(m,IM1,k,j,i) - m0;
+        const Real dm1 = dmr + dmref;
+        const Real wf = 0.5*(v1 + (m0 + dm1)*idg)*dm1;
+        const Real wr = 0.5*(v1 + (m0 + dmr)*idg)*dmr;
+        uh(m,IEN,k,j,i) -= (wf - wr);
+        if (!efw) {
+          u0_(m,M1_E,k,j,i) += (chw/clw)*(wf - wr - fra*wacc_(m,k,j,i));
+        }
+      });
+    } else {
     par_for("m1_impl_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = posw_.d_view(m);
@@ -10963,6 +10537,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (t2kw) {kkw_(m,M1_T2_E,k,j,i) += de*fkw;}
       }
     });
+    }
   }
 
   // time2_vstage: the rows took the work of the last pass's kick, which the write-back

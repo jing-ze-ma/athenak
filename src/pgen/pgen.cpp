@@ -736,6 +736,41 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     rss_mode_file = static_cast<int>(hdr[2]);
   }
 
+  // --- THE <rad_m1>/vet_gd_async HEADER (radm1::kM1VgdRstMagic), behind the signal-speed
+  // one: nvgd_file (2) slabs of the pending gd build's source, the LAST of each record,
+  // and the build's ncycle.
+  int nvgd_file = 0, vgd_cyc_file = -1;
+  if (std::memcmp(variabledata, &(radm1::kM1VgdRstMagic[0]),
+                  sizeof(radm1::kM1VgdRstMagic)) == 0) {
+    char vgd_hdr[4*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(vgd_hdr));
+      ok = ok && (resfile.Read_bytes(&(vgd_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(vgd_hdr[0]), sizeof(vgd_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    if (ok) {std::memcpy(&(hdr[0]), &(vgd_hdr[0]), sizeof(hdr));}
+    if (!ok || hdr[0] != 1 || hdr[1] != 2 || hdr[2] < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <rad_m1>/vet_gd_async header of this restart "
+                << "file is broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nvgd_file = static_cast<int>(hdr[1]);
+    vgd_cyc_file = static_cast<int>(hdr[2]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -822,7 +857,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file + neint_file + nck_file
-                            + nctr_file + nrss_file)
+                            + nctr_file + nrss_file + nvgd_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1453,8 +1488,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   const bool rss_read = (nrss_file > 0) && (pradm1 != nullptr) &&
                         ((phydro != nullptr && phydro->rad_signal_speed) ||
                          (pmhd != nullptr && pmhd->rad_signal_speed));
+  // <rad_m1>/vet_gd_async: the pending gd build's source, staged for VetGdBuildAsync
+  // when this run is async too (a sync run ignores it; an async run from a file
+  // without it starts with a synchronous build)
+  const bool vgd_read = (nvgd_file == 2) && (pradm1 != nullptr) && pradm1->vgd_async;
+  if (pradm1 != nullptr && pradm1->vgd_async && !vgd_read &&
+      global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file has no <rad_m1> vet_gd_async pending build; "
+              << "the first gd build is synchronous and this restart is not bitwise."
+              << std::endl;
+  }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
-      ctr_read || rss_read) {
+      ctr_read || rss_read || vgd_read) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -1647,6 +1692,21 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
       pradm1->rss_stage_mode = rss_mode_file;
+    }
+    // the vet_gd_async pending source (kM1VgdRstMagic), the last slabs of the record
+    if (vgd_read) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nck_file + nctr_file + nrss_file;
+      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      Kokkos::realloc(pradm1->vgd_rst, nmb, nvgd_file, nout3, nout2, nout1);
+      for (int n=0; n<nvgd_file; ++n) {
+        read_slab("vet_gd_async source");
+        DeepCopyAcross(Kokkos::subview(pradm1->vgd_rst, Kokkos::ALL, n,
+                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
+      }
+      pradm1->vgd_rst_cyc = vgd_cyc_file;
     }
   }
 

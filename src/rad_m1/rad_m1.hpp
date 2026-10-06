@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
 #include "athena.hpp"
@@ -385,6 +386,7 @@ class RadiationM1 {
   // last pass of any step, res_nex = steps whose excluded residual was >= implicit_tol
   // (steps that would not have stopped there with the full norm).
   Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
+  bool impl_real_couple = false;      // implicit_realisable_coupling (gd_physfix_1005)
   // implicit_thin_freeze (m1-picard-aa; default 1e-2 on fresh runs, 0 = off): cells with
   // c dt rho kappa_P < this at the start of the solve keep their start-of-step opacities
   // for every pass and take the frozen-opacity gas-T find
@@ -462,6 +464,24 @@ class RadiationM1 {
   bool fref_wsplit_ok = false;  // set by a pgen whose WB source gives the reference work
                                 // (BEFORE SetForceReference, which resolves `auto`)
   bool fref_wsplit_auto = false;  // force_reference_work = auto, not yet resolved
+  // force_reference_work = split with time_scheme = be (fref-split-cons-1006): the WB
+  // source gives the gas rho a_ref v at each hydro stage, and the Heun combination keeps
+  // sum_s c_s beta_s dt (rho a_ref v)_s of it; the be solve, which runs once after the
+  // whole step, paid v' dt rho a_ref at the post-kick velocity instead, an O(dt^2) per
+  // step energy leak (-1.8e-3 L_top at dt 88 s in the BSG).  The pgen now also adds its
+  // increment to fref_wacc (acc = gam0_s acc + increment, the same linear combination
+  // the gas energy undergoes), and the be write-back makes E pay exactly fref_wacc
+  // (times dt_solve/dt_mesh).  <rad_m1>/force_reference_work_pay = post (read only when
+  // named) restores the old post-kick payment.  hesdirk2 and multi-rate keep theirs.
+  DvceArray4D<Real> fref_wacc;
+  bool fref_pay_post = false;
+  int fref_hnst = 0;
+  Real fref_hgam0[4] = {0.0, 0.0, 0.0, 0.0}, fref_hbeta[4] = {0.0, 0.0, 0.0, 0.0};
+  bool FrefWaccOn() const;
+  // gam0 of the hydro stage whose beta dt is bdt (FATAL if none matches)
+  Real FrefWaccGam0(Real bdt, Real dt_mesh) const;
+  // the accumulator, (re)allocated to the shape of arad_ref
+  DvceArray4D<Real> FrefWacc();
   int mr_nsub = 1;              // implicit_mr_nsub: R(Delta) as nsub steps of Delta/nsub
   int mr_tab = 0;               // implicit_mr_tab: 0 sdirk2, 1 trbdf2 (DIAGNOSTIC)
   bool mr_k0ok = false;         // t2k1 holds f(Y_0) of this R (the last R's final slope)
@@ -1455,6 +1475,7 @@ class RadiationM1 {
   bool vgd_wint = false;
   // vet_gd_twin (read only when named, default false): uniform-state twin subtraction
   bool vgd_twin = false, vgd_noq = false;
+  bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
   DvceArray1D<Real> vgd_twm, vgd_twm2;
   DvceArray5D<Real> vgd_twl, vgd_cs0;
   Real vgd_ttwin = 0.0;
@@ -1510,7 +1531,17 @@ class RadiationM1 {
   int vgd_nb2 = 1, vgd_nb3 = 1;
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
   DvceArray1D<Real> vgd_csb, vgd_crb;
-  DvceArray1D<int> vgd_fs, vgd_fr, vgd_pbv;
+  // vet_gd_halo_pipe (default true, bitwise): the compact mask of the NEXT shell is built
+  // while this shell's messages travel; 2 slots of flags/positions (vgd_hfs/hfr) and of
+  // the partner boundaries in pinned host memory (vgd_hpb), tagged (i, inw, ws, icut,
+  // sweep id)
+  DvceArray1D<int> vgd_hfs[2], vgd_hfr[2];
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hpb[2];
+  int vgd_htag[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1} };
+  int vgd_hlast = 1, vgd_hsweep = 0;
+  int vgd_hnext[3] = {-1, 0, 0};
+  bool vgd_hpipe = true;
+  void VetGdHcPrep(const int slot, const int i0, const bool inw0, const int ws);
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
   void VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int i0, const int ws);
@@ -1527,6 +1558,33 @@ class RadiationM1 {
   void VetGdWall(const int i0, const int i1);
   void VetGdMoments();
   void VetGdSmooth();
+  // vet_gd_async (GD_ASYNC.md): the sweep of build n runs on its own device instance
+  // and host thread while the rest of cycle n runs; the D of cycle n is the moments of
+  // build n-1 (one cycle lag).  The pending build's source (vlat_cs) and cycle travel
+  // in the restart file (kM1VgdRstMagic).  vgd_cur: the instance the sweep/halo use.
+  bool vgd_async = false;
+  bool vgd_ainl = false;       // the sweep inline at launch (host backends, or env
+                               // VGD_ASYNC_INLINE=1): same numbers, no overlap
+  bool vgd_apend = false;      // a swept build whose moments are not yet taken
+  bool vgd_afly = false;       // the helper thread is running
+  int vgd_acyc = -1;           // ncycle of the pending build (its z-angle)
+  int vgd_pcut = -1;           // vlat_icut of the pending build (async)
+  int vgd_scut = 0;            // vlat_icut the running sweep uses (sync: = vlat_icut)
+  std::thread vgd_athr;
+  DevExeSpace vgd_cur, vgd_ex;
+  Real vgd_tjoin = 0.0, vgd_nasync = 0.0;
+  DvceArray5D<Real> vgd_rst;   // (nmb, 2, k, j, i): vlat_cs of the pending build, staged
+  int vgd_rst_cyc = -1;        // from the restart file (-1: nothing staged)
+#if MPI_PARALLEL_ENABLED
+  MPI_Comm vgd_comm = MPI_COMM_WORLD;
+#endif
+  void VetGdSource();
+  void VetGdPost();
+  void VetGdBuildAsync();
+  void VetGdAsyncJoin();
+  int VetGdAsyncRstNch() const {return (vgd_async && vgd_apend) ? 2 : 0;}
+  void VetGdAsyncRstPack(DvceArray5D<Real> &dst, int nmb);
+  void VetLatCsFinish();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

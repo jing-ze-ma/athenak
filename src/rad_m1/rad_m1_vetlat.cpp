@@ -450,6 +450,51 @@ void RadiationM1::VetLatBuild() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatCsFinish
+//! \brief after the source kernel of VetLatSweep(0) (or vlat_cs put back from a restart
+//! file, vet_gd_async): the ghosts of vlat_cs and the first shell vlat_icut
+
+void RadiationM1::VetLatCsFinish() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int n1 = indcs.nx1;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto cs_ = vlat_cs;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  VetLatExchange(vlat_cs, vlat_cs_c, pbval_vs);
+
+  // (2) the first shell of the sweep: every column has tau_top >= vet_col_lat_taucut
+  // there (one global min); the shells below keep dD = 0
+  {
+    const Real tcut = vlat_taucut;
+    const int nk = ke - ks + 1, nj = je - js + 1;
+    int lmin = n1 - 2;
+    Kokkos::parallel_reduce("m1_vlat_icut",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nk*nj),
+      KOKKOS_LAMBDA(const int idx, int &lm) {
+        const int m = idx/(nk*nj);
+        const int k = ks + (idx/nj) % nk;
+        const int j = js + idx % nj;
+        Real tau = 0.0;
+        int lc = 0;
+        for (int i = ie; i >= is; --i) {
+          const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
+          if (tau + 0.5*dt_ >= tcut) {lc = i - is; break;}
+          tau += dt_;
+        }
+        lm = (lc < lm) ? lc : lm;
+      }, Kokkos::Min<int>(lmin));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &lmin, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+#endif
+    vlat_icut = std::max(0, std::min(lmin, n1 - 2));
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetLatSweep
 //! \brief stage 0: source, first shell, geometry and the TWIN sweep; stage 1: the
 //! 3-D sweep and its lateral difference; stage 2: the moments -> tau_ten LAT
@@ -510,34 +555,7 @@ void RadiationM1::VetLatSweep(const int stage) {
     cs_(m,0,k,j,i) = log(chi);
     cs_(m,1,k,j,i) = log(fmax(s, 1.0e-300));
   });
-  VetLatExchange(vlat_cs, vlat_cs_c, pbval_vs);
-
-  // (2) the first shell of the sweep: every column has tau_top >= vet_col_lat_taucut
-  // there (one global min); the shells below keep dD = 0
-  {
-    const Real tcut = vlat_taucut;
-    const int nk = ke - ks + 1, nj = je - js + 1;
-    int lmin = n1 - 2;
-    Kokkos::parallel_reduce("m1_vlat_icut",
-      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nk*nj),
-      KOKKOS_LAMBDA(const int idx, int &lm) {
-        const int m = idx/(nk*nj);
-        const int k = ks + (idx/nj) % nk;
-        const int j = js + idx % nj;
-        Real tau = 0.0;
-        int lc = 0;
-        for (int i = ie; i >= is; --i) {
-          const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
-          if (tau + 0.5*dt_ >= tcut) {lc = i - is; break;}
-          tau += dt_;
-        }
-        lm = (lc < lm) ? lc : lm;
-      }, Kokkos::Min<int>(lmin));
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &lmin, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
-#endif
-    vlat_icut = std::max(0, std::min(lmin, n1 - 2));
-  }
+  VetLatCsFinish();
   }
   if (vgd_on) {return;}   // vet_gd: source and first shell only (VetGdBuild)
   const int lcut = vlat_icut;

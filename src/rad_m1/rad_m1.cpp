@@ -602,6 +602,46 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
+  // force_reference_work_pay (fref-split-cons-1006; read only when named): exact
+  // (default) = with split and time_scheme = be, E pays the reference work the gas got
+  // in the hydro stages (fref_wacc); post = the old v' dt rho a_ref
+  fref_pay_post = false;
+  if (pin->DoesParameterExist("rad_m1", "force_reference_work_pay")) {
+    const std::string fp = pin->GetString("rad_m1", "force_reference_work_pay");
+    if (fp.compare("post") == 0) {
+      fref_pay_post = true;
+    } else if (fp.compare("exact") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/force_reference_work_pay = '" << fp << "' is not a "
+        << "valid choice (exact | post)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // the hydro integrator's stage weights (driver.cpp), for fref_wacc
+  {
+    const std::string hi = pin->DoesParameterExist("time", "integrator") ?
+                           pin->GetString("time", "integrator") : "rk2";
+    fref_hnst = 0;
+    if (hi.compare("rk1") == 0) {
+      fref_hnst = 1;
+      fref_hgam0[0] = 0.0;  fref_hbeta[0] = 1.0;
+    } else if (hi.compare("rk2") == 0) {
+      fref_hnst = 2;
+      fref_hgam0[0] = 0.0;  fref_hbeta[0] = 1.0;
+      fref_hgam0[1] = 0.5;  fref_hbeta[1] = 0.5;
+      if (pin->DoesParameterExist("rad_m1", "time2_tableau") &&
+          pin->GetString("rad_m1", "time2_tableau").compare("trbdf2") == 0) {
+        const Real c2 = 2.0 - std::sqrt(2.0);
+        fref_hbeta[0] = c2;
+        fref_hgam0[1] = 0.25;  fref_hbeta[1] = 0.5/c2;
+      }
+    } else if (hi.compare("rk3") == 0) {
+      fref_hnst = 3;
+      fref_hgam0[0] = 0.0;      fref_hbeta[0] = 1.0;
+      fref_hgam0[1] = 0.25;     fref_hbeta[1] = 0.25;
+      fref_hgam0[2] = 2.0/3.0;  fref_hbeta[2] = 2.0/3.0;
+    }
+  }
   if (force_ref != M1_FREF_NONE && !(coupling && gas_feedback)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/force_reference needs coupling = true and "
@@ -811,6 +851,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin")) {
       vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
     }
+    // vet_gd_twin_full (read only when named, default false; needs vet_gd_twin): subtract
+    // the FULL twin D_rr correction, so that the laterally symmetric part of D_rr is
+    // vet_col's column f_K and gd supplies only the 3-D deviation D_gd - D_gd,twin
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_full")) {
+      vgd_twfull = pin->GetBoolean("rad_m1","vet_gd_twin_full");
+      if (vgd_twfull && !vgd_twin) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_full needs vet_gd_twin = true"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }
@@ -831,6 +883,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
+      vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_async")) {
+      vgd_async = pin->GetBoolean("rad_m1","vet_gd_async");
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_iter")) {
       vgd_iter = std::max(1, pin->GetInteger("rad_m1","vet_gd_iter"));
@@ -1097,6 +1155,41 @@ void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn RadiationM1::FrefWaccOn, FrefWaccGam0, FrefWacc
+//! \brief force_reference_work = split, time_scheme = be: the accumulator of the
+//! reference work the gas receives in the hydro stages (rad_m1.hpp, fref_wacc)
+
+bool RadiationM1::FrefWaccOn() const {
+  return fref_wsplit && !fref_pay_post && (time_scheme == M1_TIME_BE) && (mr_every <= 1);
+}
+
+Real RadiationM1::FrefWaccGam0(Real bdt, Real dt_mesh) const {
+  for (int s = 0; s < fref_hnst; ++s) {
+    if (std::abs(bdt - fref_hbeta[s]*dt_mesh) <= 1.0e-12*fref_hbeta[s]*dt_mesh) {
+      return fref_hgam0[s];
+    }
+  }
+  std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+            << "<rad_m1>/force_reference_work = split with time_scheme = be: no hydro "
+            << "stage has beta dt = " << bdt << " (dt = " << dt_mesh << "; integrators "
+            << "rk1, rk2, rk3 supported); force_reference_work_pay = post skips this"
+            << std::endl;
+  std::exit(EXIT_FAILURE);
+  return 0.0;
+}
+
+DvceArray4D<Real> RadiationM1::FrefWacc() {
+  const int n0 = arad_ref.extent_int(0), n1 = arad_ref.extent_int(1);
+  const int n2 = arad_ref.extent_int(2), n3 = arad_ref.extent_int(3);
+  if (fref_wacc.extent_int(0) != n0 || fref_wacc.extent_int(1) != n1 ||
+      fref_wacc.extent_int(2) != n2 || fref_wacc.extent_int(3) != n3) {
+    Kokkos::realloc(fref_wacc, n0, n1, n2, n3);
+    Kokkos::deep_copy(fref_wacc, 0.0);
+  }
+  return fref_wacc;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::RssMode
 //! \brief the closure tensor <hydro>/rad_signal_speed reads (hydro_newdt.cpp uses this)
 
@@ -1190,6 +1283,7 @@ void RadiationM1::RssPrime(bool restart) {
 // destructor
 
 RadiationM1::~RadiationM1() {
+  VetGdAsyncJoin();   // vet_gd_async: the helper thread of the pending build
   if (tau_closure) {TauClosureReport();}
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit

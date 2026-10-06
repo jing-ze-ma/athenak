@@ -311,6 +311,9 @@ class BaseTypeOutput {
   // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationM1::RssSlot);
   // empty unless the signal speed is on.  radm1::kM1RssRstMagic.
   HostArray5D<Real> outarray_m1s;
+  // <rad_m1>/vet_gd_async: the pending gd build's source (vlat_cs, 2 channels); empty
+  // unless one is pending.  radm1::kM1VgdRstMagic.
+  HostArray5D<Real> outarray_m1g;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks
