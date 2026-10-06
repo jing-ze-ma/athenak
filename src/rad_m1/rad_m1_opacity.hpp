@@ -32,6 +32,9 @@ namespace radm1 {
 //! On the He column the two differ by 15x to 527x, which is why the design refuses
 //! planck_from_rosseland for any quoted result.
 //!
+//! vet_scatter (tab.scat != 0) splits that total into of = kappa_a = kappa_R - kappa_e
+//! and os = kappa_e (Ma+2026 eq. 7); every consumer uses of + os, the total.
+//!
 //! \param[in]  tab   the two tables and their unit conversions
 //! \param[in]  d, t  density and temperature of the cell, CODE units
 //! \param[out] op,oe,of,os  the four opacities per unit mass, CODE units
@@ -89,6 +92,34 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
   oe = op;
   of = kr*tab.kunit;
   os = 0.0;
+  // vet_scatter (vet-scatter-1006): split the TOTAL into kappa_a + kappa_e, guarded as
+  // in Ma+2026; of + os is the old of to round-off.  scat = 2 (EOS kappa_e) starts from
+  // the constant split here; the module's fill kernels then call M1ScatterEos.
+  if (tab.scat != 0) {
+    const Real kt = of;
+    os = M1ScatterGuard(kt, tab.kes, tab.kfl);
+    of = kt - os;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ScatterEos
+//! \brief vet_scatter_kappa_e = eos (vet-scatter-1006): the split of the total
+//! kappa_R = of + os with the IONISATION-DEPENDENT electron-scattering opacity
+//!     kappa_e = sigma_T n_e/rho = (sigma_T/m_u) x_e/mu,  x_e = n_e/n_tot,
+//! from the general EOS's own Saha composition (EOS_Data::ElectronFraction and
+//! MeanMolecularWeight, the table's ITXE surface), guarded as in Ma+2026.  A no-op
+//! unless tab.scat == 2.  d, t in CODE units (the EOS converts them itself).
+template <class EosT>
+KOKKOS_INLINE_FUNCTION
+void M1ScatterEos(const M1OpacTab &tab, const EosT &eos, const Real d, const Real t,
+                  Real &of, Real &os) {
+  if (tab.scat != 2) return;
+  const Real kt = of + os;
+  const Real xe = eos.ElectronFraction(d, 0.0, t);
+  const Real mu = eos.MeanMolecularWeight(d, 0.0, t);
+  os = M1ScatterGuard(kt, tab.kxe*xe/fmax(mu, 1.0e-30), tab.kfl);
+  of = kt - os;
 }
 
 //----------------------------------------------------------------------------------------

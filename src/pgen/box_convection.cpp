@@ -1787,7 +1787,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real tcol = ColInterp(ct_dv, zlo_a, dzf_a, nf_a, z)/ot.tunit;
         Real op, oe, of, os;
         radm1::M1TableOpacities(ot, dcol, tcol, op, oe, of, os);
-        aref(m,k,j,i) = of*fin_a/cl_a;
+        // the TOTAL extinction (vet_scatter splits it; os = 0 otherwise: bitwise)
+        aref(m,k,j,i) = (of + os)*fin_a/cl_a;
       });
       // BoxConvSrcs gives the reference work (split); set before SetForceReference,
       // which resolves force_reference_work = auto

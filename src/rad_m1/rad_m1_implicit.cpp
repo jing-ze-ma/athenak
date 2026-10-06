@@ -8525,6 +8525,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const int opart = dbg_opac_part;
       auto ktd_ = ktd;
       auto tf_ = thin_frz;
+      const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
+      auto eosv = flr.eos;
       par_for("m1_impl_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (tfz && tf_(m,k,j,i) > 0.5) {
@@ -8544,9 +8546,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           opac_(m,M1_OP_P,k,j,i) = d*op;
           opac_(m,M1_OP_E,k,j,i) = d*oe;
         }
+        if (osc && otype == M1_OPAC_TABLE) {M1ScatterEos(ot, eosv, d, t, of, os);}
         if (opart != 2) {
           opac_(m,M1_OP_T,k,j,i) = d*(of + os);
           iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
+          if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
         }
         if (opn) {
           // one-sided difference; the table is bilinear in (log T, log rho), so this is

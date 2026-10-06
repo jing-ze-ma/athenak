@@ -73,6 +73,10 @@ constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
 constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s), the TRANSPORT opacity: what the
                              // flux source relaxes F with, and what tau_face is built of
 constexpr int M1_NOPAC = 3;
+// vet_scatter (vet-scatter-1006): a 4th component, allocated ONLY when the key is on
+// (opac then has M1_NOPAC + 1 components): rho kappa_e, the electron-scattering part of
+// M1_OP_T.  M1_OP_T stays the TOTAL extinction rho (kappa_a + kappa_e) = rho kappa_R.
+constexpr int M1_OP_S = 3;
 
 // <rad_m1>/opacity
 constexpr int M1_OPAC_CONST    = 0;
@@ -107,21 +111,35 @@ struct M1OpacTab {
   Real tunit = 1.0;
   Real dunit = 1.0;
   Real kunit = 1.0;
+  // vet_scatter (vet-scatter-1006): the split of the tabulated TOTAL kappa_R into true
+  // absorption kappa_a = kappa_R - kappa_e and electron scattering kappa_e (Ma+2026
+  // sect. 2.2.4).  scat 0 = no split (os = 0, bitwise the old lookup), 1 = constant
+  // kappa_e = kes, 2 = kappa_e from the EOS electron fraction, kxe x_e/mu (M1ScatterEos,
+  // rad_m1_opacity.hpp).  kes, kfl, kxe in CODE opacity per unit mass (times kunit).
+  int scat = 0;
+  Real kes = 0.0;    // constant kappa_e, vet_kappa_es (0.34 cm^2/g = 0.2(1+X), X = 0.7)
+  Real kfl = 0.0;    // Ma's floor: kappa_e <= kappa_R - kfl, vet_kappa_floor (1e-5)
+  Real kxe = 0.0;    // sigma_T/m_u = 0.40062 cm^2/g: kappa_e = kxe n_e/(n_tot mu)
 };
 
 //----------------------------------------------------------------------------------------
 //! \fn VetScatterMix
 //! \brief <rad_m1>/vet_scatter (vet-scatter-1006, read only when named, default off =
-//! bitwise): the grey source S of the VET formal solutions (vet_col, vet_col_lat, vet_gd)
-//! in E units, from B = a T^4 and E = J, for a cell of extinction chi = rho kappa_R
-//! (unchanged: M1_IW_KT), Planck absorption rho kappa_P (rkp) and electron scattering
-//! rho kappa_e (rkes, already guarded so that chi - rkes >= rho kappa_floor > 0).
+//! bitwise): the grey source S of the VET formal solutions (vet_sc, vet_col,
+//! vet_col_lat, vet_gd) in E units, for a cell of TOTAL extinction chi = rho kappa_R
+//! (M1_OP_T / M1_IW_KT, unchanged by the split), Planck absorption rkp = rho kappa_P
+//! and electron scattering rkes = rho kappa_e (opac M1_OP_S, so chi - rkes = rho kappa_a
+//! is the true absorption of the split), from the thermal source b and the mean
+//! intensity j (both in E units):
 //!   form 1 (`ma`, Jiang 2021 ApJS 253 49 eq. 6 as used by Ma+2026 sect. 2.2.4):
 //!     dI/ds = rho k_s (J - I) + rho k_a (B - I) + rho (k_P - k_a)(B - J),
-//!     k_a + k_s = k_R  ->  S = J + (rho k_P/chi) (B - J), NOT capped at 1 (the split
-//!     of k_R into k_a and k_e drops out exactly); clipped at S >= 0.
+//!     k_a + k_s = k_R  ->  S = J + (rho k_P/chi) (B - J), NOT capped (the split of k_R
+//!     into k_a and k_e drops out exactly); clipped at S >= 0.
 //!   form 2 (`absorption`): eq. 6 without the k_dP term, emission by true absorption:
-//!     S = [(chi - rkes) B + rkes J]/chi.
+//!     S = J + (rho k_a/chi)(B - J) = [(chi - rkes) B + rkes J]/chi.
+//! b, j: vet_col_source = gas: b = a T^4, j = E (start of step / Picard iterate);
+//! relaxed: b = a T*^4 after the local backward-Euler exchange, j = the CURRENT E (NOT
+//! the relaxed E*, which would collapse every form to S = E*).
 //! The default source eps B + (1 - eps) E with eps = min(rho k_P/chi, 1) is NOT computed
 //! here: the callers keep their own expression untouched when the key is off.
 KOKKOS_INLINE_FUNCTION
@@ -134,12 +152,13 @@ Real VetScatterMix(const int form, const Real rkp, const Real chi, const Real rk
   return ((chi - rkes)*b + rkes*e)/chi;
 }
 
-//! the guarded rho kappa_e of VetScatterMix (Ma+2026 sect. 2.2.4): rkes = rho kappa_e,
-//! and where kappa_R < kappa_e + kappa_floor, kappa_e = kappa_R - kappa_floor (>= 0)
+//! \fn M1ScatterGuard
+//! \brief the guarded kappa_e of the split (Ma+2026 sect. 2.2.4), per unit mass: kt is
+//! the TOTAL kappa_R, ke the electron-scattering opacity; where kt < ke + kfl the
+//! scattering part is kt - kfl (>= 0), so that kappa_a = kt - kappa_e >= kfl
 KOKKOS_INLINE_FUNCTION
-Real VetScatterKes(const Real d, const Real kes, const Real kfl, const Real chi) {
-  const Real rkes = d*kes, rkfl = d*kfl;
-  return (chi < rkes + rkfl) ? fmax(chi - rkfl, 0.0) : rkes;
+Real M1ScatterGuard(const Real kt, const Real ke, const Real kfl) {
+  return (kt < ke + kfl) ? fmax(kt - kfl, 0.0) : ke;
 }
 
 // <rad_m1>/reconstruct, as a plain int for the device (same order as the code-wide
@@ -1352,13 +1371,11 @@ class RadiationM1 {
   // backward-Euler exchange over the step (VcolRelaxedSource, rad_m1_vetcol.cpp); `gas`:
   // the start-of-step gas temperature as before (bitwise the old build)
   bool vcol_srelax = true;
-  // vet_scatter (vet-scatter-1006, read only when named; default off = bitwise): the
-  // closure source with electron scattering, VetScatterMix.  vscat_form 1 = ma (Jiang
-  // 2021 eq. 6), 2 = absorption.  vscat_kes, vscat_kfl: kappa_e and Ma's floor in CODE
-  // opacity per unit mass (vet_kappa_es, vet_kappa_floor in cm^2/g times kappa_unit)
+  // vet_scatter (vet-scatter-1006, read only when named; default off = bitwise): ONE
+  // switch for electron scattering: the opacity split (otab.scat, opac M1_OP_S) and the
+  // closure source VetScatterMix.  vscat_form 1 = ma (Jiang 2021 eq. 6), 2 = absorption
   bool vscat = false;
   int vscat_form = 1;
-  Real vscat_kes = 0.34, vscat_kfl = 1.0e-5;
   // vet_col with a REFLECTING outer x1 (m1-sp-order2b): the incoming intensity at the
   // top face is the mirror of the outgoing one, I_in = b/(1 - a) per ray (b the outgoing
   // intensity of a vacuum-top sweep, a the ray's round-trip transmission), in a second

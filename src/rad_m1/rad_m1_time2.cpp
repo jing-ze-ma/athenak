@@ -283,14 +283,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (vet_sc) {
     Kokkos::realloc(vet_prev, nmb, M1_T2_NVET, n3, n2, n1);
     Kokkos::realloc(vet_now, nmb, M1_T2_NVET, n3, n2, n1);
-    Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
+    Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2,
+                    n1);
     Kokkos::deep_copy(vet_prev, 0.0);
   }
   if (vet_col) {
     // Time2VetStart's save slots (E, T) and the saved stage-start opacities;
     // time2_vet_col = predict | rebuild: also KT, T(Y1), E(Y1) and the inner face flux
     Kokkos::realloc(vet_now, nmb, (t2_vcmode == 0 || t2_vcmode == 3) ? 2 : 6, n3, n2, n1);
-    Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
+    Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2,
+                    n1);
     if (t2_vcmode == 3) {
       Kokkos::realloc(vcol_prev, nmb, n3, n2, n1);
       Kokkos::realloc(vcol_qprev, nmb, n3, n2);
@@ -484,6 +486,7 @@ void RadiationM1::Time2VetStart() {
     const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kss = kappa_s;
     const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
     M1OpacTab ot = otab;
+    const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
     par_for_lb("m1_t2_vsf", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real d = uh1(m,IDN,k,j,i);
@@ -505,9 +508,11 @@ void RadiationM1::Time2VetStart() {
       } else {
         M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
       }
+      if (osc && otype == M1_OPAC_TABLE) {M1ScatterEos(ot, eos, d, t, of, os);}
       opac_(m,M1_OP_P,k,j,i) = d*op;
       opac_(m,M1_OP_E,k,j,i) = d*oe;
       opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+      if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
       if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) {
         vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
         vn_(m,1,k,j,i) = iw_(m,M1_IW_TP,k,j,i);
@@ -689,6 +694,7 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
   auto ie = std::get<30>(ctx_);
   auto mhd = std::get<31>(ctx_);
   auto emag_ = std::get<32>(ctx_);
+  auto osc = std::get<33>(ctx_);   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
   auto vcb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -698,7 +704,7 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
     (void)aa; (void)bb; (void)dt; (void)efl; (void)eos; (void)etg; (void)gam; (void)gdt;
     (void)iw_; (void)k1_; (void)kev; (void)kf; (void)kp; (void)kss; (void)opac_; (void)ot;
     (void)otype; (void)phicc; (void)rref; (void)tref; (void)two; (void)u0_; (void)uh;
-    (void)vn_; (void)mhd; (void)emag_;
+    (void)vn_; (void)mhd; (void)emag_; (void)osc;
 #endif
     const Real d = uh(m,IDN,k,j,i);
     Real t, e;
@@ -732,7 +738,9 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
     }
     opac_(m,M1_OP_P,k,j,i) = d*op;
     opac_(m,M1_OP_E,k,j,i) = d*oe;
+    if (osc && otype == M1_OPAC_TABLE) {M1ScatterEos(ot, eos, d, t, of, os);}
     opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+    if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
     vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
     vn_(m,1,k,j,i) = iw_(m,M1_IW_TP,k,j,i);
     vn_(m,2,k,j,i) = iw_(m,M1_IW_KT,k,j,i);
@@ -820,7 +828,8 @@ void RadiationM1::Time2VetColAt(int which) {
     // (above); vcb_ctx is what the helper captured, by value.
     auto vcb_ctx = std::make_tuple(aa, bb, dt, efl, eos, etg, gam, gdt, iw_, k1_, kev, kf,
                                    kp, kss, opac_, ot, otype, phicc, rref, tref, two, u0_,
-                                   uh, vn_, nmb1, ks, ke, js, je, is, ie, mhd, emag_);
+                                   uh, vn_, nmb1, ks, ke, js, je, is, ie, mhd, emag_,
+                                   vscat);
     if (vcid) {
       M1T2VcpLaunch(vcb_ctx, std::true_type{});
     } else {

@@ -349,7 +349,9 @@ Real VcolRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real 
   const Real t2 = ts*ts;
   const Real t4 = t2*t2;
   const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
-  if (sf != 0) {return VetScatterMix(sf, rkp, chi, rkes, ar*t4, es);}   // vet_scatter
+  // vet_scatter: B* of the relaxed gas, but the CURRENT J = eb (E^n or the Picard
+  // iterate), not E*: with E* every form collapses to S ~ E* (B* = E* in a stiff cell)
+  if (sf != 0) {return VetScatterMix(sf, rkp, chi, rkes, ar*t4, eb);}
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
@@ -753,7 +755,6 @@ void RadiationM1::VetColBuild() {
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   const bool srx = thermal && vcol_srelax;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
-  const Real vkes = vscat_kes, vkfl = vscat_kfl;
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
   auto uh = flv.u0;
@@ -829,8 +830,7 @@ void RadiationM1::VetColBuild() {
         Real tg = iw_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
-        const Real rks = (vsf != 0) ? VetScatterKes(uh(m,IDN,k,j,i), vkes, vkfl, chi)
-                                        : 0.0;
+        const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
         if (srx) {
           s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
                                 opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsf, chi,
@@ -1074,7 +1074,6 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   const bool srx = thermal && vcol_srelax;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
-  const Real vkes = vscat_kes, vkfl = vscat_kfl;
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
   auto uh = flv.u0;
@@ -1149,8 +1148,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         Real tg = iw_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
-        const Real rks = (vsf != 0) ? VetScatterKes(uh(m,IDN,k,j,i), vkes, vkfl, chi)
-                                        : 0.0;
+        const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
         if (srx) {
           s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
                                 opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsf, chi,

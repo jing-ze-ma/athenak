@@ -14,7 +14,9 @@
 //!     S = eps_th a T^4 + (1 - eps_th) E,   eps_th = min(kappa_P / chi, 1),
 //! i.e. (kappa_a B + kappa_s J)/chi with J taken from the current M1 E (no lambda
 //! iteration: E is what the moment solve delivers and it is lagged with the tensor).
-//! The stellar tables carry no separate scattering opacity (kappa_s = 0, kappa_F =
+//! (vet_scatter = true, opt-in, read only when named: the table split kappa_R = kappa_a
+//! + kappa_e and S = VetScatterMix, rad_m1.hpp: Jiang 2021 eq. 6 or true absorption.)
+//! Without it the stellar tables carry no separate scattering opacity (kappa_s = 0, kappa_F =
 //! Rosseland incl. electron scattering), so the absorption fraction is estimated by the
 //! Planck/extinction ratio and CAPPED: S is a convex blend of a T^4 and E, never
 //! negative.
@@ -3060,6 +3062,7 @@ void RadiationM1::VetShortChar() {
   const Real efl = e_floor;
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool milne = vet_milne;
+  const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const Real fmil = iflux_x1min;
   const Real bblo = (vet_bc_bath && !milne && ibc_x1min == M1_IBC_MARSHAK) ?
                      iebath_x1min : -1.0;
@@ -3085,8 +3088,13 @@ void RadiationM1::VetShortChar() {
       if (thermal) {
         Real tg = iwd_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
-        Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
-        s = eth*ar*t2*t2 + (1.0 - eth)*e;
+        if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
+          s = VetScatterMix(vsf, opd_(m,M1_OP_P,k,j,i), chx, opd_(m,M1_OP_S,k,j,i),
+                            ar*t2*t2, e);
+        } else {
+          Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
+          s = eth*ar*t2*t2 + (1.0 - eth)*e;
+        }
       }
       vcd_(m,M1_VET_CHX,k,j,i) = chx;
       vcd_(m,M1_VET_SRC,k,j,i) = s;
@@ -3112,8 +3120,13 @@ void RadiationM1::VetShortChar() {
           Real t = iw_(m,M1_IW_TP,k,j,i);
           Real t2 = t*t;
           // thermal fraction: the Planck (emission) mean over the extinction, capped at 1
-          Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chx, 1.0);
-          s = eth*ar*t2*t2 + (1.0 - eth)*e;
+          if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
+            s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chx, opac_(m,M1_OP_S,k,j,i),
+                              ar*t2*t2, e);
+          } else {
+            Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chx, 1.0);
+            s = eth*ar*t2*t2 + (1.0 - eth)*e;
+          }
         }
         tau += chx*dx1;
         vc_(m,M1_VET_CHX,k,j,i) = chx;

@@ -371,6 +371,64 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   opac_zero = (kappa_p == 0.0 && kappa_e == 0.0 && kappa_f == 0.0 && kappa_s == 0.0 &&
                opacity_type != M1_OPAC_USER && opacity_type != M1_OPAC_TABLE);
+  // vet_scatter (vet-scatter-1006; read only when named, default off = bitwise): ONE
+  // switch for electron scattering across the module.
+  //  (i) the opacity split.  opacity = table: os = kappa_e, of = kappa_a = kappa_R -
+  //      kappa_e (Ma+2026 sect. 2.2.4, guarded so that kappa_a >= vet_kappa_floor), with
+  //      kappa_e = vet_kappa_es (vet_scatter_kappa_e = const, default 0.34 cm^2/g) or
+  //      sigma_T x_e/(mu m_u) from the general EOS (= eos).  Other opacity laws: the
+  //      input's own kappa_f (absorption) and kappa_s (scattering).  rho kappa_e goes to
+  //      opac(M1_OP_S); every consumer of the extinction keeps the TOTAL M1_OP_T.
+  //      Scattering exchanges no energy (coherent, no Compton term): the exchange keeps
+  //      kappa_P / kappa_E.
+  //  (ii) the closure source of vet_sc / vet_col / vet_col_lat / vet_gd, VetScatterMix
+  //      (rad_m1.hpp), form vet_scatter_form = ma (Jiang 2021 eq. 6) | absorption.
+  if (pin->DoesParameterExist("rad_m1","vet_scatter")) {
+    vscat = pin->GetBoolean("rad_m1","vet_scatter");
+  }
+  if (vscat) {
+    std::string sf = pin->GetOrAddString("rad_m1","vet_scatter_form","ma");
+    if (sf.compare("ma") == 0) {
+      vscat_form = 1;
+    } else if (sf.compare("absorption") == 0) {
+      vscat_form = 2;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/vet_scatter_form = '" << sf << "' not implemented "
+        << "(ma | absorption)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::string km = "const";
+    if (opacity_type == M1_OPAC_TABLE) {
+      km = pin->GetOrAddString("rad_m1","vet_scatter_kappa_e","const");
+      if (km.compare("const") == 0) {
+        otab.scat = 1;
+      } else if (km.compare("eos") == 0) {
+        otab.scat = 2;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/vet_scatter_kappa_e = '" << km << "' not "
+          << "implemented (const | eos)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      // cm^2/g -> code opacity per unit mass
+      otab.kes = otab.kunit*pin->GetOrAddReal("rad_m1","vet_kappa_es",0.34);
+      otab.kfl = otab.kunit*pin->GetOrAddReal("rad_m1","vet_kappa_floor",1.0e-5);
+      // sigma_T/m_u [cm^2/g] (CODATA 2018)
+      otab.kxe = otab.kunit*(6.6524587321e-25/1.66053906660e-24);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "rad_m1: vet_scatter on, form " << sf;
+      if (opacity_type == M1_OPAC_TABLE) {
+        std::cout << ", table split kappa_e = " << km << " (kappa_e " << otab.kes
+                  << ", floor " << otab.kfl << ", sigma_T/m_u " << otab.kxe
+                  << ", code units)";
+      } else {
+        std::cout << ", kappa_e = kappa_s " << kappa_s;
+      }
+      std::cout << std::endl;
+    }
+  }
 
   // (1c) matter coupling.  It reads rho, v and the gas energy from hydro's CONSERVED
   // u0 and writes u0(IEN) and u0(IM1..3) back, so it needs a <hydro> block unless every
@@ -788,32 +846,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     }
-    // vet_scatter (vet-scatter-1006): read only when named, default off = bitwise
-    if (pin->DoesParameterExist("rad_m1","vet_scatter")) {
-      vscat = pin->GetBoolean("rad_m1","vet_scatter");
-    }
-    if (vscat) {
-      std::string sf = pin->GetOrAddString("rad_m1","vet_scatter_form","ma");
-      if (sf.compare("ma") == 0) {
-        vscat_form = 1;
-      } else if (sf.compare("absorption") == 0) {
-        vscat_form = 2;
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_m1>/vet_scatter_form = '" << sf << "' not implemented "
-          << "(ma | absorption)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      // cm^2/g -> code opacity per unit mass (kappa_unit, 1 when opacity != table)
-      const Real ku = pin->GetOrAddReal("rad_m1","kappa_unit",1.0);
-      vscat_kes = ku*pin->GetOrAddReal("rad_m1","vet_kappa_es",0.34);
-      vscat_kfl = ku*pin->GetOrAddReal("rad_m1","vet_kappa_floor",1.0e-5);
-      if (global_variable::my_rank == 0) {
-        std::cout << "rad_m1: vet_scatter on, form " << sf << ", kappa_e "
-                  << vscat_kes << ", kappa_floor " << vscat_kfl
-                  << " (code units)" << std::endl;
-      }
-    }
     vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);
@@ -1073,7 +1105,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
   // rho*kappa is needed in the GHOST cells too: the face opacity at the first and last
   // active face is the arithmetic mean over a ghost and an active cell.
-  Kokkos::realloc(opac, nmb, M1_NOPAC, ncells3, ncells2, ncells1);
+  // vet_scatter: a 4th component, rho kappa_e (M1_OP_S)
+  Kokkos::realloc(opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, ncells3, ncells2,
+                  ncells1);
   Kokkos::deep_copy(opac, 0.0);
   if (coupling) {
     Kokkos::realloc(ugas1, nmb, 4, ncells3, ncells2, ncells1);
