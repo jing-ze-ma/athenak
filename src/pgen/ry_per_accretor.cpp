@@ -93,6 +93,7 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "utils/wb_background.hpp"
 #include "outputs/outputs.hpp"
 #include "pgen.hpp"
 
@@ -118,8 +119,27 @@ bool noslip_ = true, inner_hse_ = false, outer_hse_ = true, stream_on_ = true;
 bool inner_wall_ = false;
 Real rho_s_ = 1.0, phi_s_ = 0.0, sig_ = 0.05, nsig_ = 3.0, vr_s_ = 0.0, vp_s_ = 0.0;
 Real hse_cap_ = 40.0;
-// flux accumulators (per rank), RK registers, stage counter
-constexpr int kNacc = 6;
+// stage 2 (problem/inner = envelope): the resolved stellar envelope, see the header
+bool env_ = false, env_noslip_ = false;
+Real env_np_ = 3.0, env_rhoph_ = 20.0, env_cph2_ = 240.25, env_rtop_ = 4.11;
+Real env_tro_ = 1.0e-4, env_tri_ = 1.0e-4, env_phis_ = 0.0, env_racc_ = 4.06;
+Real env_dlt_ = 0.0;           // (spin^2 - 1) Omega^2 / 2
+Real env_rhoamb_ = 1.0e-6;     // floor (ambient) density = problem/rho_amb
+Real env_camb2_ = 9.0e4;       // hot hydrostatic ambient P/rho (problem/env_cs_amb^2)
+Real env_ramb_ = 1.0e-6;       // ambient density at r = R_acc (problem/env_amb_rho)
+Real env_kamb_ = 3.0;          // gas denser than env_amb_k x the hydrostatic ambient is
+                               // stream/star material and relaxes to c_ph^2
+DvceArray3D<Real> rhoamb_;     // the hydrostatic ambient density at (m,k,i)
+Real env_tsp_ = 1.0e-4;        // floor velocity damping time (problem/env_t_sponge)
+Real env_fsp_ = 10.0;          // sponge acts where rho < env_sponge_rho x rho_amb
+Real env_vcap_ = 100.0;        // |v| cap of sponge cells (problem/env_v_floor_max)
+DvceArray3D<Real> cref2_;      // relaxation target P/rho at (m,k,i)
+DvceArray3D<Real> gpl_;        // plain -dPhi_wb/dr (face difference), above hydro/wb_rmax
+DvceArray1D<int> iracc_;       // per MeshBlock: index of the x1 face at r = R_acc, or -1
+// flux accumulators (per rank), RK registers, stage counter.  The absorbing surface
+// (stage 1) uses the first kNaccS, the envelope all kNacc.
+constexpr int kNaccS = 6;
+constexpr int kNacc = 9;
 int nstages_ = 0;
 Real rk_g0_[3], rk_g1_[3];
 int stage_ctr_ = 0;
@@ -133,6 +153,32 @@ Real RochePot(const RocheParams &p, const Real r, const Real phi) {
   const Real rd = sqrt(fmax(r*r + p.asep*p.asep - 2.0*p.asep*r*cp, 1.0e-30));
   return -p.gma/r - p.gmd/rd
          - 0.5*SQR(p.omega)*(r*r + p.xcm*p.xcm - 2.0*p.xcm*r*cp);
+}
+
+//! stage 2: the potential of the x1 well-balanced pair.  Below r_top: Phi - Delta,
+//! Delta = (s^2 - 1) Omega^2 r^2/2 (the envelope's effective potential incl. its own
+//! spin).  Above r_top, where the gas is
+//! unsupported ambient/stream, it is FLAT in r (the WB background then equals the cell
+//! state: plain PLM and no WB force), and gravity there is the explicit -dD/dr,
+//! D = Phi - Phi_wb (gr_).
+KOKKOS_INLINE_FUNCTION
+Real PhiWB(const RocheParams &p, const Real dlt, const Real rtop, const Real r,
+           const Real phi) {
+  const Real x = fmin(r, rtop);
+  return RochePot(p, x, phi) - dlt*x*x;
+}
+
+//! stage 2: envelope P/rho at depth psi = Phi_s - Phi_wb (n-polytrope shifted to the
+//! photospheric P/rho c_ph^2 at psi = 0; isothermal c_ph^2 above)
+KOKKOS_INLINE_FUNCTION
+Real EnvC2(const Real psi, const Real cph2, const Real np) {
+  return (psi > 0.0) ? cph2 + psi/(np + 1.0) : cph2;
+}
+
+KOKKOS_INLINE_FUNCTION
+Real EnvRho(const Real psi, const Real cph2, const Real np, const Real rhoph) {
+  return (psi > 0.0) ? rhoph*pow(1.0 + psi/((np + 1.0)*cph2), np)
+                     : rhoph*exp(fmax(psi/cph2, -700.0));
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -376,9 +422,9 @@ void RyPerSrc(Mesh *pm, const Real bdt) {
 
   const int s = stage_ctr_ % nstages_;
   if (s == 0) {
-    for (int n=0; n<kNacc; ++n) acc1_[n] = acc0_[n];
+    for (int n=0; n<kNaccS; ++n) acc1_[n] = acc0_[n];
   }
-  for (int n=0; n<kNacc; ++n) {
+  for (int n=0; n<kNaccS; ++n) {
     acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
   }
   stage_ctr_++;
@@ -419,9 +465,283 @@ void RyPerHist(HistoryData *pdata, Mesh *pm) {
   pdata->hdata[1] = s.the_array[1];
   const Real t = pm->time;
   const Real dt = (hist_tprev_ >= 0.0) ? (t - hist_tprev_) : 0.0;
-  for (int n=0; n<kNacc; ++n) {
+  for (int n=0; n<kNaccS; ++n) {
     pdata->hdata[2+n] = acc0_[n];
     pdata->hdata[8+n] = (dt > 0.0) ? (acc0_[n] - hist_prev_[n])/dt : 0.0;
+    hist_prev_[n] = acc0_[n];
+  }
+  hist_tprev_ = t;
+}
+
+//----------------------------------------------------------------------------------------
+//! stage 2 (problem/inner = envelope): closed wall at r_in under the envelope, stream
+//! window / outflow at r_out.  Ideal gas with <hydro>/etotgrav: the conserved energy
+//! carries rho Phi (phicc0), so the ghosts get it too.  Ghost density is the isothermal
+//! hydrostatic extrapolation in Phi_wb at the edge cell's P/rho (the x1 WB background of
+//! that cell, so the wall face sees equal states); velocities are mirrored (v_r) and
+//! free-slip or held at the initial spin (v_phi, problem/env_wall_slip).
+void RyPerBCEnv(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int is = indcs.is, ie = indcs.ie;
+  const int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng - 1) : 0;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto u0 = pmbp->phydro->u0;
+  auto phicc = pmbp->phydro->phicc0;
+  const Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+  const Real dfl = pmbp->phydro->peos->eos_data.dfloor;
+  const RocheParams p = rp_;
+  const Real vwall = (spin_ - 1.0)*rp_.omega;
+  const bool noslip = env_noslip_, strm = stream_on_;
+  const Real rhos = rho_s_, phis = phi_s_, sig = sig_, wwin = nsig_*sig_;
+  const Real vrs = vr_s_, vps = vp_s_, cap = hse_cap_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, cph2 = env_cph2_;
+  par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const Real ph = x3v(m,k);
+    if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      const Real da = u0(m,IDN,k,j,is);
+      const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
+                            + SQR(u0(m,IM3,k,j,is)))/da;
+      const Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
+      const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
+      const Real pa = PhiWB(p, dlt, rtop, x1v(m,is), ph);
+      for (int g=0; g<ng; ++g) {
+        const int ig = is - 1 - g, im = is + g;
+        const Real pg = PhiWB(p, dlt, rtop, x1v(m,ig), ph);
+        const Real dg = fmax(da*exp(fmin(-(pg - pa)/ta, cap)), dfl);
+        const Real dm = u0(m,IDN,k,j,im);
+        const Real v1 = -u0(m,IM1,k,j,im)/dm;
+        const Real v2 = u0(m,IM2,k,j,im)/dm;
+        const Real v3 = noslip ? vwall*x1v(m,ig) : u0(m,IM3,k,j,im)/dm;
+        u0(m,IDN,k,j,ig) = dg;
+        u0(m,IM1,k,j,ig) = dg*v1;
+        u0(m,IM2,k,j,ig) = dg*v2;
+        u0(m,IM3,k,j,ig) = dg*v3;
+        u0(m,IEN,k,j,ig) = dg*ta/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
+                           + dg*phicc(m,k,j,ig);
+      }
+    }
+    if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+      const Real dph = WrapPhi(ph - phis);
+      const bool win = strm && (fabs(dph) < wwin);
+      const Real da = u0(m,IDN,k,j,ie);
+      const Real v1a = u0(m,IM1,k,j,ie)/da;
+      const Real v2a = u0(m,IM2,k,j,ie)/da;
+      const Real v3a = u0(m,IM3,k,j,ie)/da;
+      const Real ea = u0(m,IEN,k,j,ie) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
+                      - da*phicc(m,k,j,ie);
+      const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
+      const Real pa = RochePot(p, x1v(m,ie), ph);
+      for (int g=0; g<ng; ++g) {
+        const int ig = ie + 1 + g;
+        Real dg, v1, v2, v3, tg;
+        if (win) {
+          dg = rhos*exp(-0.5*SQR(dph/sig));
+          v1 = vrs; v2 = 0.0; v3 = vps; tg = cph2;
+        } else {
+          const Real pg = RochePot(p, x1v(m,ig), ph);
+          dg = da*exp(fmin(-(pg - pa)/ta, cap));
+          v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
+        }
+        dg = fmax(dg, dfl);
+        u0(m,IDN,k,j,ig) = dg;
+        u0(m,IM1,k,j,ig) = dg*v1;
+        u0(m,IM2,k,j,ig) = dg*v2;
+        u0(m,IM3,k,j,ig) = dg*v3;
+        u0(m,IEN,k,j,ig) = dg*tg/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
+                           + dg*phicc(m,k,j,ig);
+      }
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! stage 2 sources: x1 gravity in the well-balanced pressure form (the background of the
+//! x1 WB pair, built with Phi_wb) plus -dDelta/dr, phi gravity and Coriolis explicit,
+//! thermal relaxation toward P/rho = cref2 (exact exponential over the stage), and the
+//! RK-weighted boundary flux integrals incl. the face r = R_acc and the stream AM.
+//! The work of gravity is in the etotgrav energy flux (TRUE Phi incl. the orbital
+//! centrifugal term); no explicit centrifugal work is added (09-28 double-count guard).
+void RyPerSrcEnv(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto *ph = pmbp->phydro;
+  auto u0 = ph->u0;
+  auto w0 = ph->w0;
+  auto wbq0 = ph->wbq0;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &volume = pmbp->pcoord->volume;
+  auto gr = gr_, gp = gp_, c2r = cref2_, gpl = gpl_;
+  auto &x1v = pmbp->pcoord->x1v;
+  const Real rmax = ph->wb_rmax;
+  const Real gm1 = ph->peos->eos_data.gamma - 1.0;
+  const Real om2 = 2.0*rp_.omega;
+  const Real cph2 = env_cph2_, tro = env_tro_, tri = env_tri_;
+  const Real rfl = env_rhoamb_, tsp = env_tsp_, fsp = env_fsp_;
+  const Real vcap = env_vcap_;
+  const Real kamb = env_kamb_, camb2 = env_camb2_;
+  auto ramb = rhoamb_;
+  par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
+    const Real vr = w0(m,IVX,k,j,i), vp = w0(m,IVZ,k,j,i);
+    // the WB pressure form where the x1 WB reconstruction is on (r <= wb_rmax), the
+    // plain -rho dPhi_wb/dr above it (unsupported ambient: hydro/wb_rmax)
+    Real fg;
+    if (rmax > 0.0 && x1v(m,i) > rmax) {
+      fg = d*gpl(m,k,i);
+    } else {
+      Real d1, pl, d2, pr, d3;
+      WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
+      const Real p = (e > 0.0) ? gm1*e : 0.5*(pl + pr);
+      fg = (area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))/volume(m,k,j,i);
+    }
+    u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
+    u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
+    // relaxation target: the envelope profile inside; outside, material by density
+    // relative to the hydrostatic ambient: denser than env_amb_k x rho_amb(r,phi) is
+    // stream/atmosphere gas (c_ph^2), the rest is the hot ambient (c_amb^2).  Choosing
+    // by temperature or by an absolute density instead heated the stream's thin
+    // leading edge and the atmosphere's top to c_amb (precursor jets at 1700 km/s and
+    // an evaporation wind; tests g_half, a2, 10-06/07).
+    Real ct = c2r(m,k,i);
+    const bool inside = (ct > cph2*(1.0 + 1.0e-9));
+    if (!inside) {
+      ct = (d > kamb*ramb(m,k,i)) ? cph2 : camb2;
+    }
+    const Real tr = inside ? tri : tro;
+    if (tr > 0.0) {
+      u0(m,IEN,k,j,i) += (d*ct/gm1 - e)*(1.0 - exp(-bdt/tr));
+    }
+    // floor sponge (outside the envelope, rho < env_sponge_rho rho_amb): the rotating-
+    // frame velocity decays at 1/t_sponge and is capped at env_v_floor_max; the kinetic
+    // energy removed leaves the total energy (no heating of the floor gas)
+    const Real du = u0(m,IDN,k,j,i);
+    if (!inside && d < fsp*rfl && du > 0.0) {
+      const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+      const Real v = sqrt(m1*m1 + m2*m2 + m3*m3)/du;
+      Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
+      if (v*f > vcap) f = vcap/v;
+      u0(m,IM1,k,j,i) = f*m1;
+      u0(m,IM2,k,j,i) = f*m2;
+      u0(m,IM3,k,j,i) = f*m3;
+      u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/du;
+    }
+  });
+
+  if (nstages_ <= 0) return;
+  auto &flx = ph->uflx.x1f;
+  auto &xf = pmbp->pcoord->xx1f;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  auto ira = iracc_;
+  const Real om = rp_.omega, phis = phi_s_, wwin = nsig_*sig_;
+  const bool strm = stream_on_;
+  const int nj = je - js + 1, nk = ke - ks + 1;
+  const int ntot = (nmb1 + 1)*nk*nj;
+  array_sum::GlobalSum fs;
+  Kokkos::parallel_reduce("ryper_flxe", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+    const int m = idx/(nk*nj);
+    const int k = (idx - m*nk*nj)/nj + ks;
+    const int j = idx%nj + js;
+    array_sum::GlobalSum v;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+    if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      const Real a = area1(m,k,j,is), r = xf(m,is);
+      const Real fd = flx(m,IDN,k,j,is), f3 = flx(m,IM3,k,j,is);
+      v.the_array[2] = -fd*a;
+      v.the_array[3] = -(f3 + om*r*fd)*r*a;
+      v.the_array[4] = -(f3 - fd*w0(m,IVZ,k,j,is))*r*a;
+    }
+    if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+      const Real a = area1(m,k,j,ie+1), r = xf(m,ie+1);
+      const Real fd = flx(m,IDN,k,j,ie+1), f3 = flx(m,IM3,k,j,ie+1);
+      const bool win = strm && (fabs(WrapPhi(x3v(m,k) - phis)) < wwin);
+      if (win) {
+        v.the_array[0] = -fd*a;
+        v.the_array[8] = -(f3 + om*r*fd)*r*a;
+      } else {
+        v.the_array[1] = fd*a;
+      }
+      v.the_array[5] = (f3 + om*r*fd)*r*a;
+    }
+    const int ir = ira(m);
+    if (ir >= 0) {
+      const Real a = area1(m,k,j,ir), r = xf(m,ir);
+      const Real fd = flx(m,IDN,k,j,ir), f3 = flx(m,IM3,k,j,ir);
+      v.the_array[6] = -fd*a;
+      v.the_array[7] = -(f3 + om*r*fd)*r*a;
+    }
+    sum += v;
+  }, Kokkos::Sum<array_sum::GlobalSum>(fs));
+
+  const int s = stage_ctr_ % nstages_;
+  if (s == 0) {
+    for (int n=0; n<kNacc; ++n) acc1_[n] = acc0_[n];
+  }
+  for (int n=0; n<kNacc; ++n) {
+    acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
+  }
+  stage_ctr_++;
+}
+
+//----------------------------------------------------------------------------------------
+//! stage 2 history: Mdom Jdom, Menv Jenv (cells with r < R_acc), then the nine cumulative
+//! boundary integrals and their rates over the last history interval
+void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  auto u0 = pmbp->phydro->u0;
+  auto &vol = pmbp->pcoord->volume;
+  auto &x1v = pmbp->pcoord->x1v;
+  const Real om = rp_.omega, racc = env_racc_;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  array_sum::GlobalSum s;
+  Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    const int i = idx%nx1 + is;
+    array_sum::GlobalSum v;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+    const Real dv = vol(m,k,j,i), r = x1v(m,i), d = u0(m,IDN,k,j,i);
+    const Real jz = dv*r*(u0(m,IM3,k,j,i) + om*r*d);
+    v.the_array[0] = dv*d;
+    v.the_array[1] = jz;
+    if (r < racc) {
+      v.the_array[2] = dv*d;
+      v.the_array[3] = jz;
+    }
+    sum += v;
+  }, Kokkos::Sum<array_sum::GlobalSum>(s));
+
+  const char *lab[22] = {"Mdom", "Jdom", "Menv", "Jenv",
+                         "Min", "Mout", "Mwal", "Jwal", "Jstr", "Jout", "MR", "JR", "Jin",
+                         "dMin", "dMout", "dMwal", "dJwal", "dJstr", "dJout", "dMR",
+                         "dJR", "dJin"};
+  pdata->nhist = 22;
+  for (int n=0; n<22; ++n) pdata->label[n] = lab[n];
+  for (int n=0; n<4; ++n) pdata->hdata[n] = s.the_array[n];
+  const Real t = pm->time;
+  const Real dt = (hist_tprev_ >= 0.0) ? (t - hist_tprev_) : 0.0;
+  for (int n=0; n<kNacc; ++n) {
+    pdata->hdata[4+n] = acc0_[n];
+    pdata->hdata[13+n] = (dt > 0.0) ? (acc0_[n] - hist_prev_[n])/dt : 0.0;
     hist_prev_[n] = acc0_[n];
   }
   hist_tprev_ = t;
@@ -431,6 +751,249 @@ void RyPerHist(HistoryData *pdata, Mesh *pm) {
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   gr_ = DvceArray3D<Real>();
   gp_ = DvceArray3D<Real>();
+  cref2_ = DvceArray3D<Real>();
+  rhoamb_ = DvceArray3D<Real>();
+  gpl_ = DvceArray3D<Real>();
+  iracc_ = DvceArray1D<int>();
+}
+
+//----------------------------------------------------------------------------------------
+//! stage 2 set-up, on every start (restart included): keys, potentials (true Phi into
+//! phicc0/phi0 for etotgrav, Phi_wb into the x1 WB pair), the -dDelta/dr force (into
+//! gr_), the relaxation target, the R_acc face index, and on a fresh start the envelope
+void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
+              const Real rho_amb, const bool restart) {
+  const bool root = (global_variable::my_rank == 0);
+  auto *phd = pmbp->phydro;
+  auto &eos = phd->peos->eos_data;
+  const Real cph = pin->GetOrAddReal("problem", "env_cs_ph", 15.5);   // km/s
+  env_cph2_ = cph*cph;
+  env_np_ = pin->GetOrAddReal("problem", "env_npoly", 3.0);
+  env_rhoph_ = pin->GetOrAddReal("problem", "env_rho_ph", 20.0);
+  env_tro_ = pin->GetOrAddReal("problem", "env_t_relax", 1.0e-4);
+  env_tri_ = pin->GetOrAddReal("problem", "env_t_relax_env", env_tro_);
+  std::string ws = pin->GetOrAddString("problem", "env_wall_slip", "free");
+  env_noslip_ = (ws.compare("noslip") == 0);
+  if (!env_noslip_ && ws.compare("free") != 0) {
+    std::cout << "### FATAL ERROR in ry_per_accretor: env_wall_slip must be free | noslip"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  env_racc_ = racc;
+  env_rhoamb_ = rho_amb;
+  const Real csa = pin->GetOrAddReal("problem", "env_cs_amb", 300.0);   // km/s
+  env_camb2_ = csa*csa;
+  env_ramb_ = pin->GetOrAddReal("problem", "env_amb_rho", 1.0e-6);
+  env_kamb_ = pin->GetOrAddReal("problem", "env_amb_k", 3.0);
+  env_tsp_ = pin->GetOrAddReal("problem", "env_t_sponge", 1.0e-4);
+  env_fsp_ = pin->GetOrAddReal("problem", "env_sponge_rho", 10.0);
+  env_vcap_ = pin->GetOrAddReal("problem", "env_v_floor_max", 100.0);
+  const Real ntop = pin->GetOrAddReal("problem", "env_top_hp", 15.0);
+  // free slip: the x1 flux at r_in is the exact mirror (zero mass, energy and phi-
+  // momentum flux) whatever the ghosts hold; noslip needs the ghosts' v_phi
+  phd->wall_closed_ix1 = !env_noslip_;
+  env_dlt_ = 0.5*(spin_*spin_ - 1.0)*SQR(rp_.omega);
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_;
+  env_phis_ = RochePot(p, racc, 0.5*M_PI) - dlt*racc*racc;
+  // r_top: the first log-grid x1 face above R_acc where the isothermal (c_ph) hydrostatic
+  // atmosphere over the photosphere has dropped by e^env_top_hp (default 15 scale
+  // heights; independent of the floor; problem/env_r_top overrides).
+  // Above it Phi_wb is flat, the gas unsupported ambient at rest.
+  {
+    const Real x1a = pmbp->pmesh->mesh_size.x1min, x1b = pmbp->pmesh->mesh_size.x1max;
+    const Real dlg = std::log(x1b/x1a)/pmbp->pmesh->mesh_indcs.nx1;
+    env_rtop_ = x1b;
+    for (int n=1; n<100000; ++n) {
+      const Real r = racc*std::exp(n*dlg);
+      if (r >= x1b) break;
+      const Real ex = -(RochePot(rp_, r, 0.5*M_PI) - dlt*r*r - env_phis_)/env_cph2_;
+      if (ex < -ntop) {
+        env_rtop_ = r;
+        break;
+      }
+    }
+    env_rtop_ = pin->GetOrAddReal("problem", "env_r_top", env_rtop_);
+  }
+  const Real rtop = env_rtop_;
+  const Real phis = env_phis_, cph2 = env_cph2_, np = env_np_, rhoph = env_rhoph_;
+
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x1f = pmbp->pcoord->xx1f;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto &x3f = pmbp->pcoord->xx3f;
+  // the TRUE potential (Roche incl. the orbital centrifugal term) for etotgrav
+  {
+    auto phicc = phd->phicc0;
+    auto ph1 = phd->phi0.x1f, ph2 = phd->phi0.x2f, ph3 = phd->phi0.x3f;
+    const int n1m1 = n1 - 1, n2m1 = n2 - 1, n3m1 = n3 - 1;
+    par_for("ryper_phi", DevExeSpace(), 0, nmb - 1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real pc = RochePot(p, x1v(m,i), x3v(m,k));
+      phicc(m,k,j,i) = pc;
+      ph1(m,k,j,i) = RochePot(p, x1f(m,i), x3v(m,k));
+      if (i == n1m1) ph1(m,k,j,i+1) = RochePot(p, x1f(m,i+1), x3v(m,k));
+      ph2(m,k,j,i) = pc;
+      if (j == n2m1) ph2(m,k,j+1,i) = pc;
+      ph3(m,k,j,i) = RochePot(p, x1v(m,i), x3f(m,k));
+      if (k == n3m1) ph3(m,k+1,j,i) = RochePot(p, x1v(m,i), x3f(m,k+1));
+    });
+  }
+  // ... and Phi_wb = Phi - Delta for the x1 well-balanced pair
+  {
+    phd->EnableWBEffectivePotential();
+    auto pwc = phd->phicc_wb, pwf = phd->phi_wb_x1f;
+    const int n1m1 = n1 - 1;
+    par_for("ryper_phiwb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real ph = x3v(m,k);
+      pwc(m,k,j,i) = PhiWB(p, dlt, rtop, x1v(m,i), ph);
+      pwf(m,k,j,i) = PhiWB(p, dlt, rtop, x1f(m,i), ph);
+      if (i == n1m1) {
+        pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, x1f(m,i+1), ph);
+      }
+    });
+  }
+  // gr_ becomes the x1 force the WB pair does not carry: -dDelta/dr; target P/rho
+  Kokkos::realloc(cref2_, nmb, n3, n1);
+  Kokkos::realloc(rhoamb_, nmb, n3, n1);
+  {
+    auto ra = rhoamb_;
+    const Real ramb0 = env_ramb_, camb2 = env_camb2_, dmin = rho_amb;
+    par_for("ryper_ramb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int i) {
+      const Real dph = RochePot(p, x1v(m,i), x3v(m,k)) - RochePot(p, racc, x3v(m,k));
+      ra(m,k,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
+    });
+  }
+  Kokkos::realloc(gpl_, nmb, n3, n1);
+  {
+    auto gr = gr_, c2r = cref2_, gpl = gpl_;
+    par_for("ryper_gre", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int i) {
+      const Real rl = x1f(m,i), rr = x1f(m,i+1), ph = x3v(m,k);
+      gr(m,k,i) = -((RochePot(p, rr, ph) - PhiWB(p, dlt, rtop, rr, ph))
+                    - (RochePot(p, rl, ph) - PhiWB(p, dlt, rtop, rl, ph)))/(rr - rl);
+      gpl(m,k,i) = -(PhiWB(p, dlt, rtop, rr, ph) - PhiWB(p, dlt, rtop, rl, ph))/(rr - rl);
+      const Real psi = phis - PhiWB(p, dlt, rtop, x1v(m,i), x3v(m,k));
+      c2r(m,k,i) = EnvC2(psi, cph2, np);
+    });
+  }
+  // the x1 face at r = R_acc in each MeshBlock (or -1)
+  Kokkos::realloc(iracc_, nmb);
+  int nfound = 0;
+  {
+    auto hx = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1f);
+    auto hi = Kokkos::create_mirror_view(iracc_);
+    for (int m=0; m<nmb; ++m) {
+      hi(m) = -1;
+      for (int i=indcs.is; i<=indcs.ie+1; ++i) {
+        if (std::fabs(hx(m,i) - racc) < 1.0e-6*racc) hi(m) = i;
+      }
+      if (hi(m) >= 0) nfound++;
+    }
+    Kokkos::deep_copy(iracc_, hi);
+  }
+  const Real r_in = pmbp->pmesh->mesh_size.x1min;
+  if (root) {
+    const Real psi_in = phis - PhiWB(p, dlt, rtop, r_in, 0.5*M_PI);
+    std::printf("ry_per_accretor: ENVELOPE n %.2f, c_ph %.3f km/s, rho_ph %.4g, r_in %.5f"
+                " = %.4f R_acc; at r_in P/rho %.4g (c_iso %.2f km/s), rho %.4e; r_top "
+                "%.4f, t_relax %.3g / env %.3g, wall %s; R_acc face found in %d of %d "
+                "local blocks\n", np, cph, rhoph, r_in, r_in/racc,
+                EnvC2(psi_in, cph2, np),
+                std::sqrt(EnvC2(psi_in, cph2, np)), EnvRho(psi_in, cph2, np, rhoph), rtop,
+                env_tro_, env_tri_, ws.c_str(), nfound, nmb);
+  }
+  if (nfound == 0 && root) {
+    std::printf("ry_per_accretor: WARNING no x1 face at r = R_acc = %.6f on rank 0: "
+                "MR/JR are zero there (choose x1min so that R_acc is a log-grid face)\n",
+                racc);
+  }
+  if (restart) return;
+
+  // ---- initial state: the envelope in DISCRETE hydrostatic equilibrium of the x1 WB
+  // pair, column by column.  T = P/rho is the target profile at the cell centres; the
+  // anchor is the deepest active cell at the analytic polytrope density (there the
+  // profile is resolved, so P stays a function of Phi_wb and the tidal phi force is
+  // balanced); from it the pressure is carried face by face with each cell's own
+  // isothermal background,
+  //   p_f = p_i exp(-(Phi_wb,f - Phi_wb,i)/T_i),  p_{i+1} = p_f exp((Phi_wb,f -
+  //   Phi_wb,i+1)/T_{i+1}),
+  // which is the exact rest state of the isothermal-option WB reconstruction and source
+  // even where H_p is not resolved (the photosphere).  Upward the c_ph atmosphere ends at
+  // the hot ambient's pressure or r_top; above, the hot hydrostatic ambient at rest.
+  // Rotation (spin - 1) Omega r
+  // (rotating frame) in the supported part (r < r_top).
+  const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
+  const Real vsp = (spin_ - 1.0)*rp_.omega;
+  const Real camb2 = env_camb2_, ramb = env_ramb_;
+  auto u0 = phd->u0;
+  auto phicc = phd->phicc0;
+  auto pwc = phd->phicc_wb, pwf = phd->phi_wb_x1f;
+  auto c2r = cref2_;
+  const int isa = indcs.is;
+  {
+    auto hi = Kokkos::create_mirror_view_and_copy(HostMemSpace(), iracc_);
+    for (int m=0; m<nmb; ++m) {
+      if (hi(m) < 0) {
+        std::cout << "### FATAL ERROR in ry_per_accretor: inner = envelope needs every "
+                  << "MeshBlock to span r = R_acc (meshblock/nx1 = mesh/nx1, R_acc a "
+                  << "log-grid face)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+  }
+  par_for("ryper_ice", DevExeSpace(), 0, nmb - 1, 0, n3 - 1,
+  KOKKOS_LAMBDA(const int m, const int k) {
+    const int ia = isa;                   // the deepest active cell
+    const Real psia = phis - pwc(m,k,0,ia);
+    // pass 1 (down from the anchor, incl. the ghosts), pass 2 (up)
+    for (int pass=0; pass<2; ++pass) {
+      Real pp = EnvRho(psia, cph2, np, rhoph)*c2r(m,k,ia);
+      Real tp = c2r(m,k,ia);
+      bool amb = false;
+      const int i0 = (pass == 0) ? ia : ia + 1;
+      const int i1 = (pass == 0) ? -1 : n1;
+      const int di = (pass == 0) ? -1 : 1;
+      for (int i=i0; i!=i1; i+=di) {
+        const Real t = c2r(m,k,i);
+        Real pc = pp;
+        if (i != ia) {
+          const int ip = i - di;                       // previous cell
+          const int f = (di > 0) ? i : i + 1;          // face between ip and i
+          const Real pf = pp*exp(-(pwf(m,k,0,f) - pwc(m,k,0,ip))/tp);
+          pc = pf*exp((pwf(m,k,0,f) - pwc(m,k,0,i))/t);
+        }
+        Real d = pc/t, tt = t;
+        Real v3 = (x1v(m,i) < rtop) ? vsp*x1v(m,i) : 0.0;
+        // the hot ambient: isothermal (c_amb) at rest, hydrostatic in the TRUE Roche
+        // potential, env_amb_rho at R_acc; it takes over where the cold column's
+        // pressure falls below its own (or above r_top)
+        const Real pha = phicc(m,k,0,i) - RochePot(p, racc, x3v(m,k));
+        const Real da = ramb*exp(fmax(-pha/camb2, -700.0));
+        if (pass == 1 && (amb || x1v(m,i) > rtop || pc < da*camb2)) {
+          amb = true;
+          d = fmax(da, rho_amb); tt = camb2; v3 = 0.0;
+        }
+        d = fmax(d, dfl);
+        for (int j=0; j<n2; ++j) {
+          u0(m,IDN,k,j,i) = d;
+          u0(m,IM1,k,j,i) = 0.0;
+          u0(m,IM2,k,j,i) = 0.0;
+          u0(m,IM3,k,j,i) = d*v3;
+          u0(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*v3*v3 + d*phicc(m,k,j,i);
+        }
+        pp = pc; tp = t;
+      }
+    }
+  });
 }
 
 }  // namespace
@@ -448,12 +1011,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pmbp->phydro == nullptr || pmbp->pmhd != nullptr) fatal("needs <hydro>, no <mhd>");
   if (!pmy_mesh_->use_spherical_polar) fatal("needs mesh/use_spherical_polar = true");
   std::string thermo = pin->GetOrAddString("problem", "thermo", "isothermal");
-  if (thermo.compare("isothermal") != 0) {
-    fatal("problem/thermo = '" + thermo + "': only isothermal is implemented (adiabatic "
-          "is reserved; see the file header for what it needs)");
+  // stage 2: problem/inner = envelope (read only when named, so a stage-1 input's
+  // parameter dump is unchanged)
+  env_ = false;
+  if (pin->DoesParameterExist("problem", "inner")) {
+    std::string inner = pin->GetString("problem", "inner");
+    env_ = (inner.compare("envelope") == 0);
+    if (!env_ && inner.compare("surface") != 0) {
+      fatal("problem/inner must be surface | envelope");
+    }
   }
   auto &eos = pmbp->phydro->peos->eos_data;
-  if (eos.is_ideal) fatal("needs <hydro>/eos = isothermal");
+  if (env_) {
+    auto *phd = pmbp->phydro;
+    if (thermo.compare("adiabatic") != 0) {
+      fatal("inner = envelope needs thermo = adiabatic");
+    }
+    if (!eos.is_ideal) fatal("inner = envelope needs <hydro>/eos = ideal");
+    if (!(phd->use_etotgrav && phd->use_wellbalance_dynamic && phd->use_wb_x1)) {
+      fatal("inner = envelope needs <hydro>/etotgrav, wellbalance_dynamic and wb_x1 = "
+            "true");
+    }
+  } else {
+    if (thermo.compare("isothermal") != 0) {
+      fatal("problem/thermo = '" + thermo + "': only isothermal is implemented for the "
+            "absorbing surface (adiabatic needs problem/inner = envelope)");
+    }
+    if (eos.is_ideal) fatal("needs <hydro>/eos = isothermal");
+  }
   if (!user_srcs) fatal("set problem/user_srcs = true");
   if (!user_bcs) fatal("set mesh/ix1_bc = ox1_bc = user");
 
@@ -551,11 +1136,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 " %.2f deg)\n", bo.rmin, bo.rmin*asep, bo.phimin*180.0/M_PI,
                 bi.phi*180.0/M_PI, bi.vr*aom, bi.vt*aom,
                 std::atan2(std::fabs(bi.vt), -bi.vr)*180.0/M_PI);
-    std::printf("ry_per_accretor: spin %.3f (wall v_phi %.3f km/s at r_in, rotating "
-                "frame), inner %s/%s/%s, outer %s, stream %s, iso_cs %.3f km/s\n", spin_,
-                (spin_ - 1.0)*rp_.omega*r_in, slip.c_str(), irho.c_str(), ivr.c_str(),
-                orho.c_str(), stream_on_ ? "on" : "off", eos.iso_cs);
-    if (std::fabs(r_in - racc) > 1.0e-6*racc) {
+    if (env_) {
+      std::printf("ry_per_accretor: spin %.3f (envelope v_phi %.3f km/s at R_acc, "
+                  "rotating frame), stream %s\n", spin_, (spin_ - 1.0)*rp_.omega*racc,
+                  stream_on_ ? "on" : "off");
+    } else {
+      std::printf("ry_per_accretor: spin %.3f (wall v_phi %.3f km/s at r_in, rotating "
+                  "frame), inner %s/%s/%s, outer %s, stream %s, iso_cs %.3f km/s\n",
+                  spin_, (spin_ - 1.0)*rp_.omega*r_in, slip.c_str(), irho.c_str(),
+                  ivr.c_str(),
+                  orho.c_str(), stream_on_ ? "on" : "off", eos.iso_cs);
+    }
+    if (!env_ && std::fabs(r_in - racc) > 1.0e-6*racc) {
       std::printf("ry_per_accretor: NOTE mesh x1min %.6f != problem/r_acc %.6f (the "
                   "absorbing surface sits at x1min)\n", r_in, racc);
     }
@@ -589,6 +1181,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   user_srcs_func = RyPerSrc;
   if (user_hist) user_hist_func = RyPerHist;
   pgen_final_func = RyPerFinal;
+  if (env_) {
+    EnvSetup(pin, pmbp, racc, rho_amb, restart);
+    user_bcs_func = RyPerBCEnv;
+    user_srcs_func = RyPerSrcEnv;
+    if (user_hist) user_hist_func = RyPerHistEnv;
+    return;
+  }
   if (restart) return;
 
   // ---- initial state: at rest in the rotating frame
