@@ -43,9 +43,9 @@
 //!   * (hegiant-1006, problem/he_gm_column, default off) the gravity of the enclosed
 //!     mass of the initial column instead of the point mass: G m(r) = he_gm + G int 4 pi
 //!     r^2 rho_IC dr from r_in (he_gm = G m(r_in)), a static monopole frozen at t = 0.
-//!   * (hegiant-1006, problem/he_wall_inject, default off) a wall inside a convective
-//!     zone: the M1 inner face injects the column's TOTAL flux, the scaffold is zero
-//!     on the wall face.
+//!   * (hegiant-1006, problem/he_base_heat, default off) a wall inside a convective
+//!     zone: the scaffold's wall-face convective luminosity is kept as a base heating
+//!     layer while the frozen scaffold is ramped off.
 //!
 //! RESTARTS: the pgen carries NO state that is not recomputed here.  It is not skipped on
 //! a restart: the column, the tables, the potentials, the reference acceleration and the
@@ -108,14 +108,16 @@ Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
 // uniform fine grid of the column (hs_rlo_, hs_dr_, hs_nf_).
 bool hs_gmc_ = false;
 DvceArray1D<Real> hs_phig_, hs_gmr_;
-// hegiant-1006: problem/he_wall_inject (read only when named, default false): the wall is
-// inside a CONVECTIVE zone, so the column's radiative F_r(r_in) is a small part of the
-// flux.  The M1 inner face then injects the TOTAL flux F_r/(1 - fmlt) of the column at
-// r_in (<rad_m1>/implicit_flux_x1min must equal it), and the frozen MLT scaffold is zero
-// on the wall face (and below): at t = 0 the scaffold takes the injected flux out of the
-// first cell and carries it up; once it is ramped off, the injected flux heats the base
-// and drives the resolved convection.  Needs mlt_flux_frozen = true.
-bool hs_winj_ = false;
+// hegiant-1006: problem/he_base_heat [cm] (read only when named, default none): the wall
+// lies inside a CONVECTIVE zone, so the frozen MLT scaffold's wall-face flux F_MLT(r_in)
+// is the convective luminosity entering the domain.  While the scaffold is ramped off
+// (mlt_ramp_start/_time, weight w) that luminosity is kept as a BASE HEATING layer: the
+// deposit is w (-div A F_MLT) + (1 - w) (-div A F_b), F_b(r) = F_MLT(r_in) (r_in/r)^2
+// max(0, 1 - (r - r_in)/he_base_heat) on the x1 faces, so A F_b = L_MLT(r_in) at the
+// wall face and 0 above r_in + he_base_heat.  Frozen closure only.  (Injecting it as M1
+// face flux instead puts a radiation force of ~Gamma_F ~ 100 g on the wall cells.)
+Real hs_bheat_ = 0.0;
+DvceArray1D<Real> hs_fb_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
@@ -356,8 +358,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   hs_gm_ = pin->GetReal("problem","he_gm");
   hs_gmc_ = pin->DoesParameterExist("problem","he_gm_column") &&
             pin->GetBoolean("problem","he_gm_column");
-  hs_winj_ = pin->DoesParameterExist("problem","he_wall_inject") &&
-             pin->GetBoolean("problem","he_wall_inject");
+  if (pin->DoesParameterExist("problem","he_base_heat")) {
+    hs_bheat_ = pin->GetReal("problem","he_base_heat");
+    if (!(hs_bheat_ > 0.0)) HsFatal("problem/he_base_heat must be > 0 [cm]", __LINE__);
+  }
   hs_rin_ = pmy_mesh_->mesh_size.x1min;
   const Real rtop = pmy_mesh_->mesh_size.x1max;
   hs_fin_ = pin->GetReal("rad_m1","implicit_flux_x1min");
@@ -646,17 +650,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
     const int i = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
     const Real w = x - i;
-    Real fcol = (1.0 - w)*hF[i] + w*hF[i+1];
-    if (hs_winj_) {           // the TOTAL flux of the column at r_in
-      if (!hs_mlt_) HsFatal("problem/he_wall_inject needs mlt_flux_frozen = true",
-                            __LINE__);
-      const Real fm = (1.0 - w)*hM[i] + w*hM[i+1];
-      fcol = fcol/(1.0 - fm);
-    }
+    const Real fcol = (1.0 - w)*hF[i] + w*hF[i+1];
     if (fabs(hs_fin_/fcol - 1.0) > 1.0e-3) {
       std::ostringstream os;
-      os << "<rad_m1>/implicit_flux_x1min = " << hs_fin_ << " but the column has "
-         << (hs_winj_ ? "F_r/(1 - fmlt)(" : "F_r(") << hs_rin_ << ") = " << fcol;
+      os << "<rad_m1>/implicit_flux_x1min = " << hs_fin_ << " but the column has F_r("
+         << hs_rin_ << ") = " << fcol;
       HsFatal(os.str(), __LINE__);
     }
   }
@@ -1075,13 +1073,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
       const Real fr = exp((1.0 - w)*log(hF[n]) + w*log(hF[n+1]));
       hfm(i) = (fm > 0.0) ? fr*fm/(1.0 - fm) : 0.0;
-      if (hs_winj_ && i <= indcs.is) hfm(i) = 0.0;   // the wall face and below
       if (fm > fmax) {
         fmax = fm;
         rmx = r;
       }
     }
     Kokkos::deep_copy(hs_fm_, hfm);
+    // he_base_heat: the base-heating flux F_b on the same faces (see hs_bheat_)
+    if (hs_bheat_ > 0.0) {
+      if (pin->GetOrAddString("problem","mlt_closure","frozen") != "frozen") {
+        HsFatal("problem/he_base_heat needs mlt_closure = frozen", __LINE__);
+      }
+      Kokkos::realloc(hs_fb_, nfc);
+      auto hfb = Kokkos::create_mirror_view(hs_fb_);
+      const Real fw = hfm(indcs.is);
+      for (int i=0; i<nfc; ++i) {
+        const Real r = hx1f(0,i);
+        Real x = 1.0 - (r - hs_rin_)/hs_bheat_;
+        x = (x < 0.0) ? 0.0 : ((x > 1.0) ? 1.0 : x);
+        hfb(i) = fw*SQR(hs_rin_/r)*x;
+      }
+      Kokkos::deep_copy(hs_fb_, hfb);
+      if (global_variable::my_rank == 0) {
+        std::cout << "he_star_m1: he_base_heat: F_MLT(r_in) = " << fw << " kept as base "
+                  << "heating over r_in .. r_in + " << hs_bheat_ << " when w(t) < 1"
+                  << std::endl;
+      }
+    }
     {
       const auto &ms = pmy_mesh_->mesh_size;
       const Real omg = hcs ? (4.0*M_PI)
@@ -1938,10 +1956,18 @@ void HsApplyMltW(Mesh *pm, const Real w) {
   auto &volume = pmbp->pcoord->volume;
   auto &x1v = pmbp->pcoord->x1v;
   const Real esc = hs_esc_, rmx = hs_esrmx_;
+  const bool bh = (hs_bheat_ > 0.0);
+  auto fbd = hs_fb_;
   par_for("hs_esrc_w", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = -(area1(m,k,j,i+1)*fmd(i+1) - area1(m,k,j,i)*fmd(i))/volume(m,k,j,i);
-    e = w*e;
+    if (bh) {
+      const Real eb = -(area1(m,k,j,i+1)*fbd(i+1) - area1(m,k,j,i)*fbd(i))
+                      /volume(m,k,j,i);
+      e = w*e + (1.0 - w)*eb;
+    } else {
+      e = w*e;
+    }
     if (esc != 0.0 && x1v(m,i) < rmx) e += esc;
     es(m,k,j,i) = e;
   });
@@ -2097,5 +2123,6 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_be_ = DvceArray1D<Real>();
   hs_phig_ = DvceArray1D<Real>();
   hs_gmr_ = DvceArray1D<Real>();
+  hs_fb_ = DvceArray1D<Real>();
 }
 }  // namespace
