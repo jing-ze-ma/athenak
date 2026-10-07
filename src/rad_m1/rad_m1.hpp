@@ -384,6 +384,11 @@ class RadiationM1 {
   // opn_nskip the all-rank total (summed at the report)
   Real impl_opn_guard = 0.0;
   int impl_opn_guard_mode = 2;   // implicit_opac_newton_guard_mode (bits 1 rhs, 2 off)
+  // opacity cliffs (opacnewt-cliff-1007, both read only when named, 0 = off = bitwise):
+  // with s = d ln kappa_T/d ln T of the one-sided Newton difference, a cell with |s| >
+  // implicit_opac_newton_slope_off drops its Newton term (ktd = 0, the face stays
+  // Picard); implicit_opac_newton_slope_max damps it, ktd x min(1, slope_max/|s|)
+  Real impl_opn_soff = 0.0, impl_opn_smax = 0.0;
   DvceArray1D<Real> opn_nskip_d;
   Real opn_nskip = 0.0;
   // m1-positivity (every key read only when named; absent = off = bitwise the old code):
