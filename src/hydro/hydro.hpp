@@ -268,6 +268,10 @@ class Hydro {
   // buoyancy mode it is meant to leave alone.  Below wb_rmin those cells take the plain
   // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
   Real wb_rmin = 0.0;
+  // Equipotential version of wb_rmax, set by a problem generator (no input key): cells
+  // whose x1 well-balanced potential phicc_wb exceeds wb_phimax take the plain
+  // reconstruction, exactly as above wb_rmax.  Default +huge = never (bitwise unchanged).
+  Real wb_phimax = 1.0e300;
   WBOption wb_option;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
@@ -757,7 +761,7 @@ class Hydro {
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
          const WBOption wb_option,
          const bool use_wb_rho, const bool use_wellbalance_dynamic, const bool use_wb_x1,
-         const Real wb_rmax, const Real wb_rmin,
+         const Real wb_rmax, const Real wb_rmin, const Real wb_phimax,
          const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -784,7 +788,8 @@ class Hydro {
               // directly, like the non-well-balanced branch below.  Per CELL, not per
               // MeshBlock: a radial block spans both.
               if ((wb_rmax > 0.0 && x_i > wb_rmax) ||
-                  (wb_rmin > 0.0 && x_i < wb_rmin)) {
+                  (wb_rmin > 0.0 && x_i < wb_rmin) ||
+                  phicc(m,k,j,i) > wb_phimax) {
                 PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
                                dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
                 return;
@@ -932,7 +937,7 @@ class Hydro {
     static void GridPiecewiseLinearDerX1(TeamMember_t const &member,
          const EOS_Data &eos, const WBOption wb_option,
          const bool use_wellbalance_dynamic, const bool use_wb_x1,
-         const Real wb_rmax, const Real wb_rmin,
+         const Real wb_rmax, const Real wb_rmin, const Real wb_phimax,
          const bool use_wb_static_perturb,
          const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const int m, const int k, const int j, const int il, const int iu,
@@ -978,7 +983,8 @@ class Hydro {
           // primitives were reconstructed in full
           if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1 &&
               !(wb_rmax > 0.0 && x_i > wb_rmax) &&
-              !(wb_rmin > 0.0 && x_i < wb_rmin)) {
+              !(wb_rmin > 0.0 && x_i < wb_rmin) &&
+              !(phicc(m,k,j,i) > wb_phimax)) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
             WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);

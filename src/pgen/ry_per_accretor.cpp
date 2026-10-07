@@ -139,7 +139,11 @@ Real env_fsp_ = 10.0;          // sponge acts where rho < env_sponge_rho x rho_a
 Real env_vcap_ = 100.0;        // |v| cap of sponge cells (problem/env_v_floor_max)
 DvceArray3D<Real> cref2_;      // relaxation target P/rho at (m,k,i)
 DvceArray3D<Real> gpl_;        // plain -dPhi_wb/dr (face difference), above hydro/wb_rmax
-DvceArray1D<int> iracc_;       // per MeshBlock: index of the x1 face at r = R_acc, or -1
+DvceArray1D<int> iracc_;       // per MeshBlock: index of the measuring x1 face (r_meas), or -1
+// problem/env_top_mode = equipotential: Phi_wb is capped at env_phtop_ (the equipotential
+// psi = -env_top_hp c_ph^2) instead of being flat above a spherical r_top; +huge = off
+Real env_phtop_ = 1.0e300;
+Real env_rmeas_ = 4.06;        // measuring face radius (problem/r_meas, default R_acc)
 // flux accumulators (per rank), RK registers, stage counter.  The absorbing surface
 // (stage 1) uses the first kNaccS, the envelope all kNacc.
 constexpr int kNaccS = 6;
@@ -168,9 +172,9 @@ Real RochePot(const RocheParams &p, const Real r, const Real phi) {
 //! (problem/env_r_spin, default r_top): above it the atmosphere is at rest (synchronous).
 KOKKOS_INLINE_FUNCTION
 Real PhiWB(const RocheParams &p, const Real dlt, const Real rtop, const Real rspin,
-           const Real r, const Real phi) {
+           const Real phtop, const Real r, const Real phi) {
   const Real x = fmin(r, rtop), xs = fmin(x, rspin);
-  return RochePot(p, x, phi) - dlt*xs*xs;
+  return fmin(RochePot(p, x, phi) - dlt*xs*xs, phtop);
 }
 
 //! stage 2: envelope P/rho at depth psi = Phi_s - Phi_wb (n-polytrope shifted to the
@@ -505,7 +509,7 @@ void RyPerBCEnv(Mesh *pm) {
   const bool noslip = env_noslip_, strm = stream_on_;
   const Real rhos = rho_s_, phis = phi_s_, sig = sig_, wwin = nsig_*sig_;
   const Real vrs = vr_s_, vps = vp_s_, cap = hse_cap_;
-  const Real dlt = env_dlt_, rtop = env_rtop_, cph2 = env_cph2_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, cph2 = env_cph2_, phtop = env_phtop_;
   const Real cstr2 = env_cstr2_, rspin = env_rspin_;
   par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -516,10 +520,10 @@ void RyPerBCEnv(Mesh *pm) {
                             + SQR(u0(m,IM3,k,j,is)))/da;
       const Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
       const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
-      const Real pa = PhiWB(p, dlt, rtop, rspin, x1v(m,is), ph);
+      const Real pa = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
       for (int g=0; g<ng; ++g) {
         const int ig = is - 1 - g, im = is + g;
-        const Real pg = PhiWB(p, dlt, rtop, rspin, x1v(m,ig), ph);
+        const Real pg = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
         const Real dg = fmax(da*exp(fmin(-(pg - pa)/ta, cap)), dfl);
         const Real dm = u0(m,IDN,k,j,im);
         const Real v1 = -u0(m,IM1,k,j,im)/dm;
@@ -588,7 +592,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto &volume = pmbp->pcoord->volume;
   auto gr = gr_, gp = gp_, c2r = cref2_, gpl = gpl_;
   auto &x1v = pmbp->pcoord->x1v;
-  const Real rmax = ph->wb_rmax;
+  const Real rmax = ph->wb_rmax, phimax = ph->wb_phimax;
+  auto pwcs = ph->phicc_wb;
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
   const Real om2 = 2.0*rp_.omega;
   const Real cph2 = env_cph2_, tro = env_tro_, tri = env_tri_;
@@ -603,7 +608,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     // the WB pressure form where the x1 WB reconstruction is on (r <= wb_rmax), the
     // plain -rho dPhi_wb/dr above it (unsupported ambient: hydro/wb_rmax)
     Real fg;
-    if (rmax > 0.0 && x1v(m,i) > rmax) {
+    if ((rmax > 0.0 && x1v(m,i) > rmax) || pwcs(m,k,j,i) > phimax) {
       fg = d*gpl(m,k,i);
     } else {
       Real d1, pl, d2, pr, d3;
@@ -713,7 +718,7 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   auto u0 = pmbp->phydro->u0;
   auto &vol = pmbp->pcoord->volume;
   auto &x1v = pmbp->pcoord->x1v;
-  const Real om = rp_.omega, racc = env_racc_;
+  const Real om = rp_.omega, racc = env_rmeas_;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   array_sum::GlobalSum s;
   Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -825,15 +830,45 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     }
     env_rtop_ = pin->GetOrAddReal("problem", "env_r_top", env_rtop_);
   }
-  const Real rtop = env_rtop_;
-  env_rspin_ = fmin(rspk, rtop);
+  // problem/env_top_mode = sphere (default: the spherical r_top above, found along
+  // phi = 90 deg) | equipotential: the supported envelope ends on the equipotential
+  // psi = -env_top_hp c_ph^2 at every phi (Phi_wb capped at that value, r_top -> r_out).
+  // With spin 1 the Roche equipotentials bulge along the binary axis (photosphere 9.0
+  // at phi 90 vs ~9.5 at phi 0 for Plaskett): a spherical cut leaves dense gas against
+  // the hot ambient there (blow-out at start).  The spin term keeps its spherical end
+  // (env_r_spin, default the phi = 90 r_top).
+  const std::string topm = pin->GetOrAddString("problem", "env_top_mode", "sphere");
+  const bool eqtop = (topm.compare("equipotential") == 0);
+  if (!eqtop && topm.compare("sphere") != 0) {
+    std::cout << "### FATAL ERROR in ry_per_accretor: env_top_mode must be sphere | "
+              << "equipotential" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const Real rtop90 = env_rtop_;
+  Real rtopmax = rtop90;           // largest radius of the envelope top over phi
+  if (eqtop) {
+    env_phtop_ = env_phis_ + ntop*env_cph2_;
+    env_rtop_ = pmbp->pmesh->mesh_size.x1max;
+    const Real rsp = fmin(rspk, rtop90);
+    for (int q=0; q<=360; ++q) {           // phi = 0 .. 2 pi, 1 deg steps
+      const Real ph = q*M_PI/180.0;
+      for (Real r=racc; r<env_rtop_; r+=1.0e-4*racc) {
+        if (RochePot(p, r, ph) - dlt*SQR(fmin(r, rsp)) >= env_phtop_) {
+          rtopmax = fmax(rtopmax, r);
+          break;
+        }
+      }
+    }
+  }
+  const Real rtop = env_rtop_, phtop = env_phtop_;
+  env_rspin_ = fmin(rspk, rtop90);
   const Real rspin = env_rspin_;
   // the stream's own temperature (default c_ph: unchanged runs) and the radius below
   // which dense gas outside the star belongs to the (hot) stellar atmosphere
   {
     const Real cst = pin->GetOrAddReal("problem", "env_cs_stream", std::sqrt(env_cph2_));
     env_cstr2_ = cst*cst;
-    env_rhot_ = pin->GetOrAddReal("problem", "env_r_hot", rtop);
+    env_rhot_ = pin->GetOrAddReal("problem", "env_r_hot", rtopmax);
   }
   const Real phis = env_phis_, cph2 = env_cph2_, np = env_np_, rhoph = env_rhoph_;
 
@@ -872,10 +907,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     par_for("ryper_phiwb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real ph = x3v(m,k);
-      pwc(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, x1v(m,i), ph);
-      pwf(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, x1f(m,i), ph);
+      pwc(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), ph);
+      pwf(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i), ph);
       if (i == n1m1) {
-        pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, rspin, x1f(m,i+1), ph);
+        pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i+1), ph);
       }
     });
   }
@@ -885,9 +920,12 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   {
     auto ra = rhoamb_;
     const Real ramb0 = env_ramb_, camb2 = env_camb2_, dmin = rho_amb;
+    // anchor: R_acc on the same phi (sphere), or the photospheric equipotential
+    const Real aeq = RochePot(p, racc, 0.5*M_PI);
     par_for("ryper_ramb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int i) {
-      const Real dph = RochePot(p, x1v(m,i), x3v(m,k)) - RochePot(p, racc, x3v(m,k));
+      const Real dph = RochePot(p, x1v(m,i), x3v(m,k))
+                       - (eqtop ? aeq : RochePot(p, racc, x3v(m,k)));
       ra(m,k,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
     });
   }
@@ -897,15 +935,20 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     par_for("ryper_gre", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int i) {
       const Real rl = x1f(m,i), rr = x1f(m,i+1), ph = x3v(m,k);
-      const Real wr = PhiWB(p, dlt, rtop, rspin, rr, ph);
-      const Real wl = PhiWB(p, dlt, rtop, rspin, rl, ph);
+      const Real wr = PhiWB(p, dlt, rtop, rspin, phtop, rr, ph);
+      const Real wl = PhiWB(p, dlt, rtop, rspin, phtop, rl, ph);
       gr(m,k,i) = -((RochePot(p, rr, ph) - wr) - (RochePot(p, rl, ph) - wl))/(rr - rl);
       gpl(m,k,i) = -(wr - wl)/(rr - rl);
-      const Real psi = phis - PhiWB(p, dlt, rtop, rspin, x1v(m,i), x3v(m,k));
+      const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), x3v(m,k));
       c2r(m,k,i) = EnvC2(psi, cph2, np);
     });
   }
-  // the x1 face at r = R_acc in each MeshBlock (or -1)
+  // the measuring x1 face in each MeshBlock (or -1): r = R_acc exactly (default), or,
+  // with problem/r_meas, the face nearest r_meas (MR/JR, Menv/Jenv then refer to it; a
+  // sphere outside the tidally bulged photosphere, so the envelope does not breathe
+  // through it)
+  const bool mexact = !pin->DoesParameterExist("problem", "r_meas");
+  env_rmeas_ = pin->GetOrAddReal("problem", "r_meas", racc);
   Kokkos::realloc(iracc_, nmb);
   int nfound = 0;
   {
@@ -913,16 +956,46 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     auto hi = Kokkos::create_mirror_view(iracc_);
     for (int m=0; m<nmb; ++m) {
       hi(m) = -1;
+      Real best = 1.0e300;
       for (int i=indcs.is; i<=indcs.ie+1; ++i) {
-        if (std::fabs(hx(m,i) - racc) < 1.0e-6*racc) hi(m) = i;
+        if (mexact) {
+          if (std::fabs(hx(m,i) - racc) < 1.0e-6*racc) hi(m) = i;
+        } else if (std::fabs(hx(m,i) - env_rmeas_) < best) {
+          best = std::fabs(hx(m,i) - env_rmeas_);
+          hi(m) = i;
+        }
       }
+      if (!mexact && hi(m) >= 0) env_rmeas_ = hx(m,hi(m));
       if (hi(m) >= 0) nfound++;
     }
     Kokkos::deep_copy(iracc_, hi);
   }
+  // problem/env_wb_depth > 0: the x1 well-balanced scheme is switched off (as above
+  // hydro/wb_rmax) outside the equipotential through r = R_acc - env_wb_depth at
+  // phi = 90 deg, i.e. at the same depth below the photosphere at every phi
+  {
+    const Real wdep = pin->GetOrAddReal("problem", "env_wb_depth", 0.0);
+    if (wdep > 0.0) {
+      const Real rw = racc - wdep;
+      phd->wb_phimax = RochePot(p, rw, 0.5*M_PI) - dlt*SQR(fmin(rw, rspin));
+      if (root) {
+        std::printf("ry_per_accretor: x1 WB off outside the equipotential through r = "
+                    "%.4f (phi 90), Phi_wb > %.6e\n", rw, phd->wb_phimax);
+      }
+    }
+  }
+  if (root && !mexact) {
+    std::printf("ry_per_accretor: measuring face (MR, JR, Menv, Jenv) at r = %.5f\n",
+                env_rmeas_);
+  }
+  if (root && eqtop) {
+    std::printf("ry_per_accretor: envelope top on the equipotential psi = -%.1f c_ph^2 "
+                "(Phi_wb cap %.6e), r_top %.4f at phi 90, max over phi %.4f\n", ntop,
+                phtop, rtop90, rtopmax);
+  }
   const Real r_in = pmbp->pmesh->mesh_size.x1min;
   if (root) {
-    const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, r_in, 0.5*M_PI);
+    const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, r_in, 0.5*M_PI);
     std::printf("ry_per_accretor: ENVELOPE n %.2f, c_ph %.3f km/s, rho_ph %.4g, r_in %.5f"
                 " = %.4f R_acc; at r_in P/rho %.4g (c_iso %.2f km/s), rho %.4e; r_top "
                 "%.4f, t_relax %.3g / env %.3g, wall %s; R_acc face found in %d of %d "
@@ -954,6 +1027,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
   const Real vsp = (spin_ - 1.0)*rp_.omega;
   const Real camb2 = env_camb2_, ramb = env_ramb_;
+  const Real aeq = RochePot(p, racc, 0.5*M_PI);
   auto u0 = phd->u0;
   auto phicc = phd->phicc0;
   auto pwc = phd->phicc_wb, pwf = phd->phi_wb_x1f;
@@ -996,9 +1070,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
         // the hot ambient: isothermal (c_amb) at rest, hydrostatic in the TRUE Roche
         // potential, env_amb_rho at R_acc; it takes over where the cold column's
         // pressure falls below its own (or above r_top)
-        const Real pha = phicc(m,k,0,i) - RochePot(p, racc, x3v(m,k));
+        const Real pha = phicc(m,k,0,i) - (eqtop ? aeq : RochePot(p, racc, x3v(m,k)));
         const Real da = ramb*exp(fmax(-pha/camb2, -700.0));
-        if (pass == 1 && (amb || x1v(m,i) > rtop || pc < da*camb2)) {
+        if (pass == 1 && (amb || x1v(m,i) > rtop || pwc(m,k,0,i) >= phtop ||
+                          pc < da*camb2)) {
           amb = true;
           d = fmax(da, rho_amb); tt = camb2; v3 = 0.0;
         }
