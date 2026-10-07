@@ -128,6 +128,7 @@ Real env_rhoamb_ = 1.0e-6;     // floor (ambient) density = problem/rho_amb
 Real env_camb2_ = 9.0e4;       // hot hydrostatic ambient P/rho (problem/env_cs_amb^2)
 Real env_ramb_ = 1.0e-6;       // ambient density at r = R_acc (problem/env_amb_rho)
 Real env_cstr2_ = 240.25;      // stream (far dense gas) P/rho, problem/env_cs_stream^2
+Real env_rspin_ = 1.0e30;      // spin term / rotation ends at this radius (env_r_spin)
 Real env_rhot_ = 1.0e30;       // dense gas outside the star relaxes to c_ph^2 below this
                                // radius, to env_cs_stream^2 above (problem/env_r_hot)
 Real env_kamb_ = 3.0;          // gas denser than env_amb_k x the hydrostatic ambient is
@@ -163,12 +164,13 @@ Real RochePot(const RocheParams &p, const Real r, const Real phi) {
 //! spin).  Above r_top, where the gas is
 //! unsupported ambient/stream, it is FLAT in r (the WB background then equals the cell
 //! state: plain PLM and no WB force), and gravity there is the explicit -dD/dr,
-//! D = Phi - Phi_wb (gr_).
+//! D = Phi - Phi_wb (gr_).  The spin term stops growing at r_spin <= r_top
+//! (problem/env_r_spin, default r_top): above it the atmosphere is at rest (synchronous).
 KOKKOS_INLINE_FUNCTION
-Real PhiWB(const RocheParams &p, const Real dlt, const Real rtop, const Real r,
-           const Real phi) {
-  const Real x = fmin(r, rtop);
-  return RochePot(p, x, phi) - dlt*x*x;
+Real PhiWB(const RocheParams &p, const Real dlt, const Real rtop, const Real rspin,
+           const Real r, const Real phi) {
+  const Real x = fmin(r, rtop), xs = fmin(x, rspin);
+  return RochePot(p, x, phi) - dlt*xs*xs;
 }
 
 //! stage 2: envelope P/rho at depth psi = Phi_s - Phi_wb (n-polytrope shifted to the
@@ -504,7 +506,7 @@ void RyPerBCEnv(Mesh *pm) {
   const Real rhos = rho_s_, phis = phi_s_, sig = sig_, wwin = nsig_*sig_;
   const Real vrs = vr_s_, vps = vp_s_, cap = hse_cap_;
   const Real dlt = env_dlt_, rtop = env_rtop_, cph2 = env_cph2_;
-  const Real cstr2 = env_cstr2_;
+  const Real cstr2 = env_cstr2_, rspin = env_rspin_;
   par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real ph = x3v(m,k);
@@ -514,10 +516,10 @@ void RyPerBCEnv(Mesh *pm) {
                             + SQR(u0(m,IM3,k,j,is)))/da;
       const Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
       const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
-      const Real pa = PhiWB(p, dlt, rtop, x1v(m,is), ph);
+      const Real pa = PhiWB(p, dlt, rtop, rspin, x1v(m,is), ph);
       for (int g=0; g<ng; ++g) {
         const int ig = is - 1 - g, im = is + g;
-        const Real pg = PhiWB(p, dlt, rtop, x1v(m,ig), ph);
+        const Real pg = PhiWB(p, dlt, rtop, rspin, x1v(m,ig), ph);
         const Real dg = fmax(da*exp(fmin(-(pg - pa)/ta, cap)), dfl);
         const Real dm = u0(m,IDN,k,j,im);
         const Real v1 = -u0(m,IM1,k,j,im)/dm;
@@ -799,7 +801,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   env_dlt_ = 0.5*(spin_*spin_ - 1.0)*SQR(rp_.omega);
   const RocheParams p = rp_;
   const Real dlt = env_dlt_;
-  env_phis_ = RochePot(p, racc, 0.5*M_PI) - dlt*racc*racc;
+  // r_spin: the star's rotation (and the spin term of Phi_wb) ends here; default =
+  // r_top (read again below), huge while r_top is searched
+  const Real rspk = pin->GetOrAddReal("problem", "env_r_spin", 1.0e30);
+  env_phis_ = RochePot(p, racc, 0.5*M_PI) - dlt*SQR(fmin(racc, rspk));
   // r_top: the first log-grid x1 face above R_acc where the isothermal (c_ph) hydrostatic
   // atmosphere over the photosphere has dropped by e^env_top_hp (default 15 scale
   // heights; independent of the floor; problem/env_r_top overrides).
@@ -811,7 +816,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     for (int n=1; n<100000; ++n) {
       const Real r = racc*std::exp(n*dlg);
       if (r >= x1b) break;
-      const Real ex = -(RochePot(rp_, r, 0.5*M_PI) - dlt*r*r - env_phis_)/env_cph2_;
+      const Real ex = -(RochePot(rp_, r, 0.5*M_PI) - dlt*SQR(fmin(r, rspk))
+                        - env_phis_)/env_cph2_;
       if (ex < -ntop) {
         env_rtop_ = r;
         break;
@@ -820,6 +826,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     env_rtop_ = pin->GetOrAddReal("problem", "env_r_top", env_rtop_);
   }
   const Real rtop = env_rtop_;
+  env_rspin_ = fmin(rspk, rtop);
+  const Real rspin = env_rspin_;
   // the stream's own temperature (default c_ph: unchanged runs) and the radius below
   // which dense gas outside the star belongs to the (hot) stellar atmosphere
   {
@@ -864,10 +872,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     par_for("ryper_phiwb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real ph = x3v(m,k);
-      pwc(m,k,j,i) = PhiWB(p, dlt, rtop, x1v(m,i), ph);
-      pwf(m,k,j,i) = PhiWB(p, dlt, rtop, x1f(m,i), ph);
+      pwc(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, x1v(m,i), ph);
+      pwf(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, x1f(m,i), ph);
       if (i == n1m1) {
-        pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, x1f(m,i+1), ph);
+        pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, rspin, x1f(m,i+1), ph);
       }
     });
   }
@@ -889,10 +897,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     par_for("ryper_gre", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int i) {
       const Real rl = x1f(m,i), rr = x1f(m,i+1), ph = x3v(m,k);
-      gr(m,k,i) = -((RochePot(p, rr, ph) - PhiWB(p, dlt, rtop, rr, ph))
-                    - (RochePot(p, rl, ph) - PhiWB(p, dlt, rtop, rl, ph)))/(rr - rl);
-      gpl(m,k,i) = -(PhiWB(p, dlt, rtop, rr, ph) - PhiWB(p, dlt, rtop, rl, ph))/(rr - rl);
-      const Real psi = phis - PhiWB(p, dlt, rtop, x1v(m,i), x3v(m,k));
+      const Real wr = PhiWB(p, dlt, rtop, rspin, rr, ph);
+      const Real wl = PhiWB(p, dlt, rtop, rspin, rl, ph);
+      gr(m,k,i) = -((RochePot(p, rr, ph) - wr) - (RochePot(p, rl, ph) - wl))/(rr - rl);
+      gpl(m,k,i) = -(wr - wl)/(rr - rl);
+      const Real psi = phis - PhiWB(p, dlt, rtop, rspin, x1v(m,i), x3v(m,k));
       c2r(m,k,i) = EnvC2(psi, cph2, np);
     });
   }
@@ -913,7 +922,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   }
   const Real r_in = pmbp->pmesh->mesh_size.x1min;
   if (root) {
-    const Real psi_in = phis - PhiWB(p, dlt, rtop, r_in, 0.5*M_PI);
+    const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, r_in, 0.5*M_PI);
     std::printf("ry_per_accretor: ENVELOPE n %.2f, c_ph %.3f km/s, rho_ph %.4g, r_in %.5f"
                 " = %.4f R_acc; at r_in P/rho %.4g (c_iso %.2f km/s), rho %.4e; r_top "
                 "%.4f, t_relax %.3g / env %.3g, wall %s; R_acc face found in %d of %d "
@@ -983,7 +992,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
           pc = pf*exp((pwf(m,k,0,f) - pwc(m,k,0,i))/t);
         }
         Real d = pc/t, tt = t;
-        Real v3 = (x1v(m,i) < rtop) ? vsp*x1v(m,i) : 0.0;
+        Real v3 = (x1v(m,i) < rspin) ? vsp*x1v(m,i) : 0.0;
         // the hot ambient: isothermal (c_amb) at rest, hydrostatic in the TRUE Roche
         // potential, env_amb_rho at R_acc; it takes over where the cold column's
         // pressure falls below its own (or above r_top)
