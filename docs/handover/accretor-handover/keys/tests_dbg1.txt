@@ -1,0 +1,1 @@
+problem/stream=false problem/init=hse problem/inner_rho=hse problem/outer_rho=hse time/tlim=0.0005 output2/dt=0.00025 hydro/iso_sound_speed=150

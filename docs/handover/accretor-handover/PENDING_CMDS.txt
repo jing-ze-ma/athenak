@@ -1,0 +1,23 @@
+# 2026-10-07 (accretor worker): blocked by the permission check. Diagnostic only, no physics change.
+# Plaskett option 2, q10_s1 (job 12109351) collapsed at t = 0.0353 (cycle 19177).
+# This command restarts from its t = 0.0229 restart (qd1), writes a restart at t = 0.0344, and then
+# restarts from that (qd2) with a dump every 2e-5 through the collapse. One apudev job, ~5 min,
+# ~4 GB of dumps in qd2/bin.
+cd /viper/ptmp2/jinma/accretor_1006/gpu2 || exit 1; sed -e 's/srun -n $SLURM_NTASKS $B -i $INP $KEYS/srun -n $SLURM_NTASKS $B $KEYS/; s/srun -n $SLURM_NTASKS -c 24 $B -i $INP $KEYS/srun -n $SLURM_NTASKS -c 24 $B $KEYS/' job10.sbatch > job10r.sbatch; grep -n "srun" job10r.sbatch; mkdir -p qd1 qd2; echo "-r /viper/ptmp2/jinma/accretor_1006/gpu2/q10_s1/rst/ryper.00001.rst time/tlim=0.0345 output2/dt=100 output1/dt=0.0005 output3/dt=0.0115 -t 00:04:00" > qd1/keys.txt; echo "-r /viper/ptmp2/jinma/accretor_1006/gpu2/qd1/rst/ryper.00002.rst time/tlim=0.0358 time/ndiag=1 output2/dt=2.0e-5 output1/dt=2.0e-5 output3/dt=100 -t 00:05:00" > qd2/keys.txt; sbatch job10r.sbatch qd1 qd2
+
+# 2026-10-07 (accretor worker), blocked by the permission check.
+# Plaskett fofc fix. Input bin/plaskett_env11.athinput is plaskett_env10 plus nghost 3, fofc true
+# (fofc_report 500 every 0.0005) and wb_rmax = R_acc. Binary env7.
+# Step 1 (apudev): smoke, then a fresh run to t = 0.045 (past the 0.0353 collapse).
+cd /viper/ptmp2/jinma/accretor_1006/gpu2 || exit 1; sed -e 's/plaskett_env10.athinput/plaskett_env11.athinput/' job10.sbatch > job11.sbatch; grep -n "^B=\|BIN_MD5=\|INP=" job11.sbatch; mkdir -p q11sm q11_s45; echo "time/nlim=10 output3/dt=100" > q11sm/keys.txt; echo "time/tlim=0.045 output2/dt=0.0115 output1/dt=0.0005 output3/dt=0.0229 -t 00:11:30" > q11_s45/keys.txt; sbatch job11.sbatch q11sm q11_s45
+# Step 2: ONLY if q11_s45 reaches t = 0.045 with no COLL/FATAL. 0.5 orbit on 2 apu nodes, plus
+# the envelope-only check on 1 node.
+cd /viper/ptmp2/jinma/accretor_1006/gpu2 || exit 1; mkdir -p q11_s1 q11_a1; echo "time/tlim=0.2291 output2/dt=0.0115 output1/dt=0.0005 output3/dt=0.0229 -t 01:10:00" > q11_s1/keys.txt; echo "problem/stream=false time/tlim=0.0917 output2/dt=0.0229 output1/dt=0.0005 output3/dt=0.0229 -t 00:28:00" > q11_a1/keys.txt; sbatch -p apu --nodes=2 --time=01:15:00 job11.sbatch q11_s1; sbatch -p apu --time=00:33:00 job11.sbatch q11_a1
+
+# 2026-10-07 (accretor worker), blocked: the user's wb_rmax = R_acc - 1.5 d_pen idea.
+# d_pen ~0.32 Rsun (ram-pressure balance), so wb_rmax = 8.52.
+# Arm A: plaskett_env12 (env10, nghost 2, no fofc). Arm B: plaskett_env12f (env11 + fofc, nghost 3).
+# Per arm: apudev smoke + stream run to t = 0.045, and the envelope-only test (0.2 orbit) on 1 apu node.
+cd /viper/ptmp2/jinma/accretor_1006/gpu2 || exit 1; sed -e 's/plaskett_env10.athinput/plaskett_env12.athinput/' job10.sbatch > job12.sbatch; sed -e 's/plaskett_env10.athinput/plaskett_env12f.athinput/' job10.sbatch > job12f.sbatch; grep -n "INP=" job12.sbatch job12f.sbatch; for a in 12 12f; do mkdir -p q${a}sm q${a}_s45 q${a}_a1; echo "time/nlim=10 output3/dt=100" > q${a}sm/keys.txt; echo "time/tlim=0.045 output2/dt=0.0115 output1/dt=0.0005 output3/dt=0.0229 -t 00:11:30" > q${a}_s45/keys.txt; echo "problem/stream=false time/tlim=0.0917 output2/dt=0.0229 output1/dt=0.0005 output3/dt=0.0229 -t 00:28:00" > q${a}_a1/keys.txt; sbatch job$a.sbatch q${a}sm q${a}_s45; sbatch -p apu --time=00:33:00 job$a.sbatch q${a}_a1; done
+# Then, for each arm whose q*_s45 reaches t = 0.045 cleanly (A: X=12, B: X=12f), the 0.5-orbit run:
+# cd /viper/ptmp2/jinma/accretor_1006/gpu2 || exit 1; mkdir -p qX_s1; echo "time/tlim=0.2291 output2/dt=0.0115 output1/dt=0.0005 output3/dt=0.0229 -t 01:10:00" > qX_s1/keys.txt; sbatch -p apu --nodes=2 --time=01:15:00 jobX.sbatch qX_s1

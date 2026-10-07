@@ -1,0 +1,24 @@
+nx1 500, f (dr/r outside) 2.1599e-03, zone centre index 237.0, fold-free True
+  dr_min 2.509e-03  dr(r_in) 1.3316e-02  dr(r_out) 2.9344e-02  max neighbour ratio 1.0807; max |r - r_target| 3.09e-03
+  cells with dr < 1.1 dr_f: 122, r 8.8011..9.1276; face nearest R_acc: index 248, r 9.0012926
+  dr at r 8.50: 1.6551e-02
+  dr at r 8.70: 8.7303e-03
+  dr at r 8.85: 2.7767e-03
+  dr at r 9.10: 2.6193e-03
+  dr at r 9.15: 3.6461e-03
+  dr at r 9.50: 1.9170e-02
+  dr at r 13.49: 2.9344e-02
+use_grid_stretch_r_poly = true
+f_stretch_r_c1 = -0.47439537639300261
+f_stretch_r_c2 = 0.83607117390409702
+f_stretch_r_c3 = -8.8260354761248507
+f_stretch_r_c4 = 46.139108472200576
+f_stretch_r_c5 = -108.80892814668809
+f_stretch_r_c6 = 122.5773885446889
+f_stretch_r_c7 = -64.341289348760696
+f_stretch_r_c8 = 12.253782134447572
+f_stretch_r_p_amp = -1.1656527591798058
+f_stretch_r_p_xa = 0.30391234196299605
+f_stretch_r_p_xb = 0.64391234196299607
+f_stretch_r_p_w = 0.024
+r_acc (face) = 9.00129260997162

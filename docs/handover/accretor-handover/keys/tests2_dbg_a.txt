@@ -1,0 +1,1 @@
+time/nlim=40 problem/stream=false output2/dt=4.0e-4 problem/spin=1.0

@@ -1,0 +1,23 @@
+# name P_d Macc Mdon Racc a(0=Kepler)  [Dervisoglu+2010 Tab.1 unless noted]
+RY_Per    6.86 6.24 1.69 4.06 0
+S_Cnc     9.48 2.51 0.23 2.15 0
+RS_Cep   12.4  2.83 0.41 2.65 0
+SW_Cyg    4.57 2.50 0.50 2.60 0
+RX_Gem   12.2  4.40 0.80 4.80 0
+RY_Gem    9.30 2.04 0.39 2.38 0
+AD_Her    9.77 2.90 0.90 2.60 0
+TT_Hya    6.95 2.63 0.59 1.95 0
+AU_Mon   11.1  5.93 1.18 5.28 0
+TU_Mon    5.09 12.6 2.70 5.60 0
+bet_Per   2.87 3.70 0.81 2.74 0
+RW_Per   14.2  2.56 0.38 2.80 0
+RZ_Sct   15.2  5.50 1.50 11.0 0
+V356_Sgr  8.89 12.2 4.70 8.50 0
+U_Cep     2.49 3.57 1.86 2.41 0
+TW_And    4.12 1.68 0.32 2.19 0
+# Mourard+2018 (q=4.50, a sin i 58.19, i 93.5, Rg 6.0 assumed)
+bet_Lyr  12.94 13.3 2.9  6.0  58.3
+# Shepard+2025 Table (a 48.7, Rg 3.8 assumed)
+W_Ser    14.16 5.7 2.0 3.8 48.7
+# Pavlovski+2006 (A=306, R1~4 tabulated MS)
+W_Cru   198.5 8.2 1.6 4.0 306

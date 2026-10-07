@@ -1,0 +1,1 @@
+time/nlim=3000 output2/dt=100 -t 00:08:00

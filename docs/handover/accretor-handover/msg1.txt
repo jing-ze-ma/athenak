@@ -1,0 +1,11 @@
+coordinates: isothermal pressure in the sp / cubed-sphere geometric sources
+
+SrcTermsSphericalPolar{Hydro,MHD}, SrcTermsCurvilinearWB, SrcTermsGnomonicEquiangleImpl
+and SrcTermsSphericalPolarCartRows took the pressure as eos.Pressure(d, w0(IEN)), which
+for an isothermal EOS reads an energy slot that does not exist (IEN out of range) and
+returns (gamma-1)*garbage. With <hydro>/eos = isothermal on a spherical-polar grid the
+2p/r radial source was missing: a hydrostatic isothermal atmosphere fell inward at
+2 c_s^2/r (ry_per_accretor test a1). Now p = d c_s^2 when !is_ideal; the ideal and
+general EOS paths are unchanged (same expression behind the is_ideal branch).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

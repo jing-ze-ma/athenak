@@ -1,0 +1,96 @@
+## RX_Cas
+q=Md/Ma=0.3103  mu_don=0.2368  Omega=2.2494e-06 s^-1  a=5.8439e+12 cm  a*Om=131.5 km/s
+L1 distance from accretor = 0.6176 a = 51.88 Rsun
+Eggleton RL(accretor) = 0.4824 a = 40.52 Rsun; donor RL = 23.82 Rsun
+cs_donor(T=4400,mu=1.27)=5.35 km/s eps=cs/(a Om)=0.0407 cs/Om=3.42 Rsun
+ballistic r_min = 0.0842 a = 7.07 Rsun ; LS fit 0.0488 q^-0.464 = 0.0840 a; r_circ fit 0.0859 q^-0.426 = 0.1414 a = 11.88 Rsun
+R_acc/a = 0.0298; direct impact: False
+impact R_acc: stream does not reach r=0.030 a
+r_out=0.9 dL1: r=0.5558 a=46.68 Rsun phi=2.5 deg (0=donor, + = leading y) | rot frame v_r=-28.7 v_t=13.6 km/s angle from inward radial=25.4 deg | inertial(acc-centred) v_r=-28.7 v_t=86.7 km/s | j_in/j_kep=0.563 | v_ff=218 km/s
+r_out=0.8 dL1: r=0.4939 a=41.49 Rsun phi=5.9 deg (0=donor, + = leading y) | rot frame v_r=-56.2 v_t=28.9 km/s angle from inward radial=27.2 deg | inertial(acc-centred) v_r=-56.2 v_t=93.8 km/s | j_in/j_kep=0.574 | v_ff=231 km/s
+r_out=0.7 dL1: r=0.4319 a=36.28 Rsun phi=10.0 deg (0=donor, + = leading y) | rot frame v_r=-83.9 v_t=47.8 km/s angle from inward radial=29.7 deg | inertial(acc-centred) v_r=-83.9 v_t=104.5 km/s | j_in/j_kep=0.598 | v_ff=247 km/s
+v_crit(R_acc)=sqrt(GM/R)=665 km/s ; v_sync(R_acc)=3.9 km/s
+## SX_Cas
+q=Md/Ma=0.2941  mu_don=0.2273  Omega=1.9869e-06 s^-1  a=6.0526e+12 cm  a*Om=120.3 km/s
+L1 distance from accretor = 0.6228 a = 54.18 Rsun
+Eggleton RL(accretor) = 0.4871 a = 42.38 Rsun; donor RL = 24.32 Rsun
+cs_donor(T=4000,mu=1.27)=5.10 km/s eps=cs/(a Om)=0.0424 cs/Om=3.69 Rsun
+ballistic r_min = 0.0865 a = 7.53 Rsun ; LS fit 0.0488 q^-0.464 = 0.0861 a; r_circ fit 0.0859 q^-0.426 = 0.1447 a = 12.59 Rsun
+R_acc/a = 0.0345; direct impact: False
+impact R_acc: stream does not reach r=0.034 a
+r_out=0.9 dL1: r=0.5603 a=48.75 Rsun phi=2.5 deg (0=donor, + = leading y) | rot frame v_r=-26.3 v_t=12.7 km/s angle from inward radial=25.6 deg | inertial(acc-centred) v_r=-26.3 v_t=80.0 km/s | j_in/j_kep=0.566 | v_ff=200 km/s
+r_out=0.8 dL1: r=0.4978 a=43.31 Rsun phi=5.9 deg (0=donor, + = leading y) | rot frame v_r=-51.5 v_t=26.8 km/s angle from inward radial=27.5 deg | inertial(acc-centred) v_r=-51.5 v_t=86.7 km/s | j_in/j_kep=0.578 | v_ff=212 km/s
+r_out=0.7 dL1: r=0.4358 a=37.91 Rsun phi=10.1 deg (0=donor, + = leading y) | rot frame v_r=-76.7 v_t=44.1 km/s angle from inward radial=29.9 deg | inertial(acc-centred) v_r=-76.7 v_t=96.5 km/s | j_in/j_kep=0.602 | v_ff=227 km/s
+v_crit(R_acc)=sqrt(GM/R)=570 km/s ; v_sync(R_acc)=4.1 km/s
+## W_Cru
+q=Md/Ma=0.1538  mu_don=0.1333  Omega=3.6636e-07 s^-1  a=2.0725e+13 cm  a*Om=75.9 km/s
+L1 distance from accretor = 0.6817 a = 203.09 Rsun
+Eggleton RL(accretor) = 0.5430 a = 161.77 Rsun; donor RL = 69.70 Rsun
+cs_donor(T=5500,mu=1.27)=5.98 km/s eps=cs/(a Om)=0.0788 cs/Om=23.46 Rsun
+ballistic r_min = 0.1226 a = 36.52 Rsun ; LS fit 0.0488 q^-0.464 = 0.1163 a; r_circ fit 0.0859 q^-0.426 = 0.1907 a = 56.80 Rsun
+R_acc/a = 0.0134; direct impact: False
+impact R_acc: stream does not reach r=0.013 a
+r_out=0.9 dL1: r=0.6133 a=182.71 Rsun phi=2.5 deg (0=donor, + = leading y) | rot frame v_r=-17.5 v_t=9.4 km/s angle from inward radial=28.3 deg | inertial(acc-centred) v_r=-17.5 v_t=56.0 km/s | j_in/j_kep=0.621 | v_ff=128 km/s
+r_out=0.8 dL1: r=0.5451 a=162.39 Rsun phi=6.4 deg (0=donor, + = leading y) | rot frame v_r=-32.7 v_t=19.6 km/s angle from inward radial=30.9 deg | inertial(acc-centred) v_r=-32.7 v_t=61.0 km/s | j_in/j_kep=0.637 | v_ff=135 km/s
+r_out=0.7 dL1: r=0.4770 a=142.11 Rsun phi=11.2 deg (0=donor, + = leading y) | rot frame v_r=-47.7 v_t=32.0 km/s angle from inward radial=33.9 deg | inertial(acc-centred) v_r=-47.7 v_t=68.2 km/s | j_in/j_kep=0.667 | v_ff=145 km/s
+v_crit(R_acc)=sqrt(GM/R)=610 km/s ; v_sync(R_acc)=1.0 km/s
+## bet_Lyr
+q=Md/Ma=0.2273  mu_don=0.1852  Omega=5.6199e-06 s^-1  a=4.0838e+12 cm  a*Om=229.5 km/s
+L1 distance from accretor = 0.6469 a = 37.97 Rsun
+Eggleton RL(accretor) = 0.5097 a = 29.92 Rsun; donor RL = 15.31 Rsun
+cs_donor(T=13200,mu=1.27)=9.26 km/s eps=cs/(a Om)=0.0404 cs/Om=2.37 Rsun
+ballistic r_min = 0.0980 a = 5.75 Rsun ; LS fit 0.0488 q^-0.464 = 0.0970 a; r_circ fit 0.0859 q^-0.426 = 0.1615 a = 9.48 Rsun
+R_acc/a = 0.1022; direct impact: True
+impact R_acc: r=0.1017 a=5.97 Rsun phi=125.1 deg (0=donor, + = leading y) | rot frame v_r=-145.4 v_t=803.5 km/s angle from inward radial=79.7 deg | inertial(acc-centred) v_r=-145.4 v_t=826.8 km/s | j_in/j_kep=1.273 | v_ff=919 km/s
+r_out=0.9 dL1: r=0.5821 a=34.17 Rsun phi=2.6 deg (0=donor, + = leading y) | rot frame v_r=-50.8 v_t=25.0 km/s angle from inward radial=26.2 deg | inertial(acc-centred) v_r=-50.8 v_t=158.6 km/s | j_in/j_kep=0.584 | v_ff=384 km/s
+r_out=0.8 dL1: r=0.5172 a=30.36 Rsun phi=6.1 deg (0=donor, + = leading y) | rot frame v_r=-99.1 v_t=53.3 km/s angle from inward radial=28.3 deg | inertial(acc-centred) v_r=-99.1 v_t=172.0 km/s | j_in/j_kep=0.597 | v_ff=407 km/s
+r_out=0.7 dL1: r=0.4527 a=26.57 Rsun phi=10.4 deg (0=donor, + = leading y) | rot frame v_r=-146.6 v_t=87.9 km/s angle from inward radial=31.0 deg | inertial(acc-centred) v_r=-146.6 v_t=191.8 km/s | j_in/j_kep=0.623 | v_ff=435 km/s
+v_crit(R_acc)=sqrt(GM/R)=648 km/s ; v_sync(R_acc)=23.5 km/s
+## RS_Cep
+q=Md/Ma=0.1429  mu_don=0.1250  Omega=5.8552e-06 s^-1  a=2.3167e+12 cm  a*Om=135.6 km/s
+L1 distance from accretor = 0.6881 a = 22.91 Rsun
+Eggleton RL(accretor) = 0.5492 a = 18.29 Rsun; donor RL = 7.63 Rsun
+cs_donor(T=4610,mu=1.27)=5.47 km/s eps=cs/(a Om)=0.0404 cs/Om=1.34 Rsun
+ballistic r_min = 0.1229 a = 4.09 Rsun ; LS fit 0.0488 q^-0.464 = 0.1204 a; r_circ fit 0.0859 q^-0.426 = 0.1968 a = 6.55 Rsun
+R_acc/a = 0.0796; direct impact: False
+impact R_acc: stream does not reach r=0.080 a
+r_out=0.9 dL1: r=0.6192 a=20.62 Rsun phi=2.7 deg (0=donor, + = leading y) | rot frame v_r=-30.4 v_t=15.8 km/s angle from inward radial=27.5 deg | inertial(acc-centred) v_r=-30.4 v_t=99.8 km/s | j_in/j_kep=0.620 | v_ff=228 km/s
+r_out=0.8 dL1: r=0.5501 a=18.32 Rsun phi=6.5 deg (0=donor, + = leading y) | rot frame v_r=-58.5 v_t=34.0 km/s angle from inward radial=30.1 deg | inertial(acc-centred) v_r=-58.5 v_t=108.6 km/s | j_in/j_kep=0.636 | v_ff=242 km/s
+r_out=0.7 dL1: r=0.4813 a=16.03 Rsun phi=11.2 deg (0=donor, + = leading y) | rot frame v_r=-85.7 v_t=56.3 km/s angle from inward radial=33.3 deg | inertial(acc-centred) v_r=-85.7 v_t=121.5 km/s | j_in/j_kep=0.666 | v_ff=258 km/s
+v_crit(R_acc)=sqrt(GM/R)=449 km/s ; v_sync(R_acc)=10.8 km/s
+## HD170582
+q=Md/Ma=0.2111  mu_don=0.1743  Omega=4.3105e-06 s^-1  a=4.2716e+12 cm  a*Om=184.1 km/s
+L1 distance from accretor = 0.6537 a = 40.13 Rsun
+Eggleton RL(accretor) = 0.5161 a = 31.69 Rsun; donor RL = 15.69 Rsun
+cs_donor(T=8000,mu=1.27)=7.21 km/s eps=cs/(a Om)=0.0392 cs/Om=2.40 Rsun
+ballistic r_min = 0.1014 a = 6.23 Rsun ; LS fit 0.0488 q^-0.464 = 0.1004 a; r_circ fit 0.0859 q^-0.426 = 0.1666 a = 10.23 Rsun
+R_acc/a = 0.0896; direct impact: False
+impact R_acc: stream does not reach r=0.090 a
+r_out=0.9 dL1: r=0.5883 a=36.12 Rsun phi=2.6 deg (0=donor, + = leading y) | rot frame v_r=-40.8 v_t=20.2 km/s angle from inward radial=26.3 deg | inertial(acc-centred) v_r=-40.8 v_t=128.5 km/s | j_in/j_kep=0.589 | v_ff=308 km/s
+r_out=0.8 dL1: r=0.5226 a=32.09 Rsun phi=6.1 deg (0=donor, + = leading y) | rot frame v_r=-79.6 v_t=43.2 km/s angle from inward radial=28.5 deg | inertial(acc-centred) v_r=-79.6 v_t=139.4 km/s | j_in/j_kep=0.603 | v_ff=327 km/s
+r_out=0.7 dL1: r=0.4569 a=28.06 Rsun phi=10.6 deg (0=donor, + = leading y) | rot frame v_r=-117.9 v_t=71.6 km/s angle from inward radial=31.3 deg | inertial(acc-centred) v_r=-117.9 v_t=155.8 km/s | j_in/j_kep=0.630 | v_ff=350 km/s
+v_crit(R_acc)=sqrt(GM/R)=559 km/s ; v_sync(R_acc)=16.5 km/s
+## AU_Mon
+q=Md/Ma=0.1714  mu_don=0.1463  Omega=6.5456e-06 s^-1  a=2.9428e+12 cm  a*Om=192.6 km/s
+L1 distance from accretor = 0.6723 a = 28.44 Rsun
+Eggleton RL(accretor) = 0.5339 a = 22.58 Rsun; donor RL = 10.20 Rsun
+cs_donor(T=5750,mu=1.27)=6.11 km/s eps=cs/(a Om)=0.0317 cs/Om=1.34 Rsun
+ballistic r_min = 0.1116 a = 4.72 Rsun ; LS fit 0.0488 q^-0.464 = 0.1106 a; r_circ fit 0.0859 q^-0.426 = 0.1821 a = 7.70 Rsun
+R_acc/a = 0.1206; direct impact: True
+impact R_acc: r=0.1205 a=5.10 Rsun phi=112.2 deg (0=donor, + = leading y) | rot frame v_r=-158.3 v_t=612.7 km/s angle from inward radial=75.5 deg | inertial(acc-centred) v_r=-158.3 v_t=635.9 km/s | j_in/j_kep=1.242 | v_ff=724 km/s
+r_out=0.9 dL1: r=0.6048 a=25.59 Rsun phi=2.7 deg (0=donor, + = leading y) | rot frame v_r=-43.0 v_t=21.5 km/s angle from inward radial=26.5 deg | inertial(acc-centred) v_r=-43.0 v_t=138.0 km/s | j_in/j_kep=0.604 | v_ff=323 km/s
+r_out=0.8 dL1: r=0.5376 a=22.74 Rsun phi=6.3 deg (0=donor, + = leading y) | rot frame v_r=-83.4 v_t=46.3 km/s angle from inward radial=29.0 deg | inertial(acc-centred) v_r=-83.4 v_t=149.9 km/s | j_in/j_kep=0.618 | v_ff=343 km/s
+r_out=0.7 dL1: r=0.4704 a=19.90 Rsun phi=10.8 deg (0=donor, + = leading y) | rot frame v_r=-122.8 v_t=76.9 km/s angle from inward radial=32.1 deg | inertial(acc-centred) v_r=-122.8 v_t=167.5 km/s | j_in/j_kep=0.647 | v_ff=366 km/s
+v_crit(R_acc)=sqrt(GM/R)=512 km/s ; v_sync(R_acc)=23.2 km/s
+## RY_Per
+q=Md/Ma=0.2708  mu_don=0.2131  Omega=1.0595e-05 s^-1  a=2.1080e+12 cm  a*Om=223.3 km/s
+L1 distance from accretor = 0.6306 a = 19.11 Rsun
+Eggleton RL(accretor) = 0.4944 a = 14.98 Rsun; donor RL = 8.29 Rsun
+cs_donor(T=6250,mu=1.27)=6.37 km/s eps=cs/(a Om)=0.0285 cs/Om=0.86 Rsun
+ballistic r_min = 0.0889 a = 2.69 Rsun ; LS fit 0.0488 q^-0.464 = 0.0895 a; r_circ fit 0.0859 q^-0.426 = 0.1499 a = 4.54 Rsun
+R_acc/a = 0.1340; direct impact: True
+impact R_acc: r=0.1327 a=4.02 Rsun phi=74.6 deg (0=donor, + = leading y) | rot frame v_r=-349.1 v_t=550.9 km/s angle from inward radial=57.6 deg | inertial(acc-centred) v_r=-349.1 v_t=580.5 km/s | j_in/j_kep=1.067 | v_ff=770 km/s
+r_out=0.9 dL1: r=0.5675 a=17.20 Rsun phi=2.6 deg (0=donor, + = leading y) | rot frame v_r=-48.9 v_t=22.9 km/s angle from inward radial=25.1 deg | inertial(acc-centred) v_r=-48.9 v_t=149.6 km/s | j_in/j_kep=0.569 | v_ff=372 km/s
+r_out=0.8 dL1: r=0.5042 a=15.28 Rsun phi=5.9 deg (0=donor, + = leading y) | rot frame v_r=-96.2 v_t=49.5 km/s angle from inward radial=27.2 deg | inertial(acc-centred) v_r=-96.2 v_t=162.1 km/s | j_in/j_kep=0.581 | v_ff=395 km/s
+r_out=0.7 dL1: r=0.4414 a=13.37 Rsun phi=10.1 deg (0=donor, + = leading y) | rot frame v_r=-142.9 v_t=82.0 km/s angle from inward radial=29.9 deg | inertial(acc-centred) v_r=-142.9 v_t=180.6 km/s | j_in/j_kep=0.605 | v_ff=422 km/s
+v_crit(R_acc)=sqrt(GM/R)=542 km/s ; v_sync(R_acc)=29.9 km/s

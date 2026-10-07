@@ -1,0 +1,1 @@
+problem/env_amb_rho=1.0e-6 time/nlim=4000 output2/dt=100 -t 00:04:00
