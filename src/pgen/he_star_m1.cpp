@@ -1567,9 +1567,18 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   auto &volume = pmbp->pcoord->volume;
   // the adaptive closure: once per cycle, at its first stage (before any M1 solve of
   // the cycle), every mlt_closure_every cycles; it re-applies w(t) itself
+  // the closure is skipped once the ramp has ended (w(t) = 0 AND w = 0 already applied
+  // to esrc): F_sub then enters nothing (esrc = w F_sub deposit, history slot 21 =
+  // w L_sub), so F_sub and its clock stay FROZEN at their last values (also in the
+  // restart files), except when a problem/mlt_closure_dout profile is due (diagnostic
+  // cadence kept: the update runs and writes its lines)
   if (hs_ad_ && pm->ncycle != hs_ad_cyc_) {
     hs_ad_cyc_ = pm->ncycle;
-    if (pm->ncycle % hs_ad_every_ == 0) HsAdaptiveUpdate(pm);
+    if (pm->ncycle % hs_ad_every_ == 0) {
+      const bool off = (hs_mrs_ >= 0.0 && HsMltW(pm->time) == 0.0 && hs_mw_ == 0.0);
+      const bool dout = (hs_ad_dout_ > 0.0 && pm->time >= hs_ad_tout_);
+      if (!off || dout) HsAdaptiveUpdate(pm);
+    }
   }
   // the frozen-MLT ramp: w at the step's start time (the same on every stage)
   if (hs_mlt_ && hs_mrs_ >= 0.0) {

@@ -1113,6 +1113,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // 09-29 record it).
   impl_opn_guard_mode = pin->GetOrAddInteger("rad_m1","implicit_opac_newton_guard_mode",
                                              global_variable::restart_run ? 2 : 6);
+  // opacnewt-cliff-1007: implicit_opac_newton_slope_off / _slope_max (read only when
+  // named; 0 = off).  At an opacity cliff (He recombination: |d ln kappa/d ln T| ~ 5-14
+  // in the TOPS tables) the d(rho kappa_T)/dT term of a strongly coupled cell makes the E
+  // iterate cycle (He giant N897 photosphere, HEGIANT_PICARD.md: 77 passes, NON-CONV);
+  // these keys drop or damp the term in cliff-steep cells only.
+  if (pin->DoesParameterExist("rad_m1","implicit_opac_newton_slope_off")) {
+    impl_opn_soff = pin->GetReal("rad_m1","implicit_opac_newton_slope_off");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_opac_newton_slope_max")) {
+    impl_opn_smax = pin->GetReal("rad_m1","implicit_opac_newton_slope_max");
+  }
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // implicit_marshak_face (m1-sp-order2, tests_m1/runs_5o_sporder2).  DEFAULT linear on
@@ -8526,6 +8537,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       auto ktd_ = ktd;
       auto tf_ = thin_frz;
       const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
+      const Real soff = impl_opn_soff, smax = impl_opn_smax;
+      const bool oscl = (soff > 0.0 || smax > 0.0);
       auto eosv = flr.eos;
       par_for("m1_impl_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -8564,6 +8577,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         oe2, of2, os2);
           }
           ktd_(m,k,j,i) = d*((of2 + os2) - (of + os))/th;
+          if (oscl) {
+            // logarithmic slope of kappa_T over the same difference
+            const Real kt0 = of + os;
+            const Real sl = (kt0 > 0.0) ? fabs((of2 + os2) - kt0)*t/(kt0*th) : 0.0;
+            if (soff > 0.0 && sl > soff) {
+              ktd_(m,k,j,i) = 0.0;
+            } else if (smax > 0.0 && sl > smax) {
+              ktd_(m,k,j,i) *= smax/sl;
+            }
+          }
         }
       });
     }
