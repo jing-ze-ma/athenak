@@ -127,6 +127,9 @@ Real env_dlt_ = 0.0;           // (spin^2 - 1) Omega^2 / 2
 Real env_rhoamb_ = 1.0e-6;     // floor (ambient) density = problem/rho_amb
 Real env_camb2_ = 9.0e4;       // hot hydrostatic ambient P/rho (problem/env_cs_amb^2)
 Real env_ramb_ = 1.0e-6;       // ambient density at r = R_acc (problem/env_amb_rho)
+Real env_cstr2_ = 240.25;      // stream (far dense gas) P/rho, problem/env_cs_stream^2
+Real env_rhot_ = 1.0e30;       // dense gas outside the star relaxes to c_ph^2 below this
+                               // radius, to env_cs_stream^2 above (problem/env_r_hot)
 Real env_kamb_ = 3.0;          // gas denser than env_amb_k x the hydrostatic ambient is
                                // stream/star material and relaxes to c_ph^2
 DvceArray3D<Real> rhoamb_;     // the hydrostatic ambient density at (m,k,i)
@@ -501,6 +504,7 @@ void RyPerBCEnv(Mesh *pm) {
   const Real rhos = rho_s_, phis = phi_s_, sig = sig_, wwin = nsig_*sig_;
   const Real vrs = vr_s_, vps = vp_s_, cap = hse_cap_;
   const Real dlt = env_dlt_, rtop = env_rtop_, cph2 = env_cph2_;
+  const Real cstr2 = env_cstr2_;
   par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real ph = x3v(m,k);
@@ -543,7 +547,7 @@ void RyPerBCEnv(Mesh *pm) {
         Real dg, v1, v2, v3, tg;
         if (win) {
           dg = rhos*exp(-0.5*SQR(dph/sig));
-          v1 = vrs; v2 = 0.0; v3 = vps; tg = cph2;
+          v1 = vrs; v2 = 0.0; v3 = vps; tg = cstr2;
         } else {
           const Real pg = RochePot(p, x1v(m,ig), ph);
           dg = da*exp(fmin(-(pg - pa)/ta, cap));
@@ -588,7 +592,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const Real cph2 = env_cph2_, tro = env_tro_, tri = env_tri_;
   const Real rfl = env_rhoamb_, tsp = env_tsp_, fsp = env_fsp_;
   const Real vcap = env_vcap_;
-  const Real kamb = env_kamb_, camb2 = env_camb2_;
+  const Real kamb = env_kamb_, camb2 = env_camb2_, cstr2 = env_cstr2_, rhot = env_rhot_;
   auto ramb = rhoamb_;
   par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -616,7 +620,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     Real ct = c2r(m,k,i);
     const bool inside = (ct > cph2*(1.0 + 1.0e-9));
     if (!inside) {
-      ct = (d > kamb*ramb(m,k,i)) ? cph2 : camb2;
+      ct = (d > kamb*ramb(m,k,i)) ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
     }
     const Real tr = inside ? tri : tro;
     if (tr > 0.0) {
@@ -816,6 +820,13 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     env_rtop_ = pin->GetOrAddReal("problem", "env_r_top", env_rtop_);
   }
   const Real rtop = env_rtop_;
+  // the stream's own temperature (default c_ph: unchanged runs) and the radius below
+  // which dense gas outside the star belongs to the (hot) stellar atmosphere
+  {
+    const Real cst = pin->GetOrAddReal("problem", "env_cs_stream", std::sqrt(env_cph2_));
+    env_cstr2_ = cst*cst;
+    env_rhot_ = pin->GetOrAddReal("problem", "env_r_hot", rtop);
+  }
   const Real phis = env_phis_, cph2 = env_cph2_, np = env_np_, rhoph = env_rhoph_;
 
   auto &indcs = pmbp->pmesh->mb_indcs;
