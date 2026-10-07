@@ -12,3 +12,9 @@
 - **q12_s1 DONE:** reached tlim 0.2291 (0.50 orbit) at 2026-10-07 15:29:24 CDT, cycle 127041, rc 0, 0 FATAL/nan, final dt
   1.70e-6, min dt 1.429097e-06 (no collapse), wall 32.1 min (2.70e8 zone-cycles/s on 4 GH200). Data: /work/nvme/bivj/jma20/plaskett_1007/run/q12_s1/
   (run.log, ryper.hydro.hst, ryper.user.hst, bin/ 21 hydro_w dumps, rst/ 12 files).
+- **q12f_s1 DONE:** reached tlim 0.2291 at 2026-10-07 15:40:02 CDT, cycle 126357, rc 0, 0 FATAL/nan, final dt 1.84e-6,
+  min dt 1.21e-6 (no collapse), wall 36.3 min (2.38e8 zone-cycles/s). Data: /work/nvme/bivj/jma20/plaskett_1007/run/q12f_s1/ (slurm logs as slurm-<job>.txt).
+- 2026-10-07 DeltaAI: Plaskett page https://claude.ai/artifact/6LeTufDkTVZqbNXC6WALLj ; arms q12_s1, q12f_s1 t_final
+  0.500 orbits. Through R_acc: M 8.29 / 8.65 of 17.85 rho_s Rsun^3 in; j (last 0.1 orbit) 0.486 / 0.471 j_K, cumulative
+  0.670 / 0.649 j_K. Arms nearly identical (FOFC changes little). numbers_*.json in plaskett-1007/results/.
+  Caveat: stream width = default c_s/Omega (2.8x wider than Ryu+2025 L1 width), see TASK-2026-10-07-viper-accretor-handover.
