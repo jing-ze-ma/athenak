@@ -9,3 +9,6 @@
 - **q12f_s1:** job 3333331 (ghx4). Smoke PASS: dt cycle 0 1.956427e-06, time cycle 10 1.942194e-05, rc 0,
   0 FATAL/nan. **Production started 2026-10-07 15:03:40 CDT** (22:03 CEST).
 - Results follow in this NOTE when each arm ends. Data: /work/nvme/bivj/jma20/plaskett_1007/run/<arm>/.
+- **q12_s1 DONE:** reached tlim 0.2291 (0.50 orbit) at 2026-10-07 15:29:24 CDT, cycle 127041, rc 0, 0 FATAL/nan, final dt
+  1.70e-6, min dt 1.429097e-06 (no collapse), wall 32.1 min (2.70e8 zone-cycles/s on 4 GH200). Data: /work/nvme/bivj/jma20/plaskett_1007/run/q12_s1/
+  (run.log, ryper.hydro.hst, ryper.user.hst, bin/ 21 hydro_w dumps, rst/ 12 files).
