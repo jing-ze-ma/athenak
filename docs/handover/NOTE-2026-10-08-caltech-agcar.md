@@ -44,3 +44,9 @@ B 4235665 started 08:38:47 PDT on 1 H200 (hpc-sm-01-11). At 4 min: cycle 150, t 
 0 NON-CONVERGED; ~1.6 s/cycle -> B to tlim 4.624e5 in ~1 h at this dt. A (4235666, afterany B) follows on Caltech.
 Per the TASK, the pending B copies elsewhere (Raven 31004544, viper 12131308, DeltaAI) can now be cancelled if the
 user agrees; A copies too if the user wants Caltech to own A. The user decides; this note does not cancel anything.
+
+## UPDATE 10-08 08:50 PDT: Caltech copies CANCELLED (user)
+User: cancel both AG Car runs on Caltech. B 4235665 scancelled after 7 min (cycle 250, t 5.97e4 s, clean; rst 00001
+kept in agcar_1008/runB), A 4235666/7 cancelled before start; CANCEL files in runA/runB. Caltech runs NO AG Car now.
+The copies on Raven (31004544 B, 31004545 A), viper (12131308 B, 12131309 A) and DeltaAI must carry the runs: do NOT
+cancel them on account of the earlier "B started" update above. Smoke results above stay valid (port PASS).
