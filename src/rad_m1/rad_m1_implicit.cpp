@@ -6709,6 +6709,7 @@ void RadiationM1::ImplicitReport() {
               << " closure_relax=" << impl_crelax
               << " closure_lag=" << (impl_clag_step ? "step" : "pass")
               << " positivity fallbacks=" << od_nfall
+              << " (vet_col_lat " << vlat_nfall << ")"
               << " min E from the solve=" << od_emin << std::endl;
   }
   if (impl_vimp) {
