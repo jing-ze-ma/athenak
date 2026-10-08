@@ -269,17 +269,21 @@ Mesh::Mesh(ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // optional plateau (StretchRPoly): read only when the amplitude is given
-    if (pin->DoesParameterExist("mesh", "f_stretch_r_p_amp")) {
-      Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP;
-      cp[0] = pin->GetReal("mesh", "f_stretch_r_p_amp");
-      cp[1] = pin->GetReal("mesh", "f_stretch_r_p_xa");
-      cp[2] = pin->GetReal("mesh", "f_stretch_r_p_xb");
-      cp[3] = pin->GetReal("mesh", "f_stretch_r_p_w");
+    // optional plateaus (StretchRPoly): f_stretch_r_p_* and f_stretch_r_p2_*, each read
+    // only when its amplitude is given
+    for (int q=0; q<NSTRETCH_R_NPLAT; ++q) {
+      const std::string kp = (q == 0) ? std::string("f_stretch_r_p")
+                                      : "f_stretch_r_p" + std::to_string(q+1);
+      if (!pin->DoesParameterExist("mesh", kp + "_amp")) continue;
+      Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + 4*q;
+      cp[0] = pin->GetReal("mesh", kp + "_amp");
+      cp[1] = pin->GetReal("mesh", kp + "_xa");
+      cp[2] = pin->GetReal("mesh", kp + "_xb");
+      cp[3] = pin->GetReal("mesh", kp + "_w");
       if (cp[0] != 0.0 && (!(cp[3] > 0.0) || !(cp[2] > cp[1]))) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "mesh/f_stretch_r_p_w must be > 0 and f_stretch_r_p_xb "
-                  << "> f_stretch_r_p_xa" << std::endl;
+                  << std::endl << "mesh/" << kp << "_w must be > 0 and " << kp << "_xb > "
+                  << kp << "_xa" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -303,8 +307,8 @@ Mesh::Mesh(ParameterInput *pin) :
         du += cb[0]*(1.0/(ch*ch) - cb[2]*(std::tanh((1.0 - cb[1])/cb[2])
                                           + std::tanh(cb[1]/cb[2])));
       }
-      {
-        const Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP;
+      for (int q=0; q<NSTRETCH_R_NPLAT; ++q) {
+        const Real *cp = fStretchRPoly + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + 4*q;
         if (cp[0] != 0.0) {
           du += cp[0]*(0.5*(std::tanh((xi - cp[1])/cp[3]) - std::tanh((xi - cp[2])/cp[3]))
                        - StretchRPlateauG(cp[1], cp[2], cp[3], 1.0));

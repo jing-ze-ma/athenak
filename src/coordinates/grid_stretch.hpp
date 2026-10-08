@@ -22,11 +22,12 @@
 // Inputs give mesh/f_stretch_r_c1..c8; missing ones are zero, which adds exact zeros
 // (a 4-coefficient input gives the same grid bit for bit as when this was 4).
 // Storage size of Mesh::fStretchRPoly: NSTRETCH_R_PCOEF polynomial coefficients, then
-// NSTRETCH_R_BUMP local "bumps" of (amplitude, centre, width) each, then one "plateau"
-// of (amplitude, xa, xb, width) (see StretchRPoly).
+// NSTRETCH_R_BUMP local "bumps" of (amplitude, centre, width) each, then NSTRETCH_R_NPLAT
+// "plateaus" of (amplitude, xa, xb, width) each (see StretchRPoly).
 #define NSTRETCH_R_PCOEF 8
 #define NSTRETCH_R_BUMP 2
-#define NSTRETCH_R_PLAT 4
+#define NSTRETCH_R_NPLAT 2
+#define NSTRETCH_R_PLAT (4*NSTRETCH_R_NPLAT)
 #define NSTRETCH_R_POLY (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT)
 
 //! ln cosh(x) without overflow: |x| + ln(1 + exp(-2|x|)) - ln 2
@@ -99,10 +100,12 @@ void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
     const Real xb = c[NSTRETCH_R_PCOEF + 3*b + 1], w = c[NSTRETCH_R_PCOEF + 3*b + 2];
     u += a*w*(tanh((xi - xb)/w) - (1.0 - xi)*tanh(-xb/w) - xi*tanh((1.0 - xb)/w));
   }
-  // optional plateau (mesh/f_stretch_r_p_amp, _xa, _xb, _w; skipped when amp = 0, so a
-  // grid without it is bit for bit the one above): see StretchRPlateauG
-  {
-    const Real *cp = c + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP;
+  // optional plateaus (mesh/f_stretch_r_p_amp, _xa, _xb, _w and the second one
+  // mesh/f_stretch_r_p2_*; each skipped when its amp = 0, so a grid without it is bit for
+  // bit the one above): see StretchRPlateauG.  Two plateaus give three flat levels, e.g.
+  // coarse deep, medium envelope, fine photosphere (BSG PHOTO_RES_1003).
+  for (int q=0; q<NSTRETCH_R_NPLAT; ++q) {
+    const Real *cp = c + NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + 4*q;
     if (cp[0] != 0.0) {
       u += cp[0]*(StretchRPlateauG(cp[1], cp[2], cp[3], xi)
                   - xi*StretchRPlateauG(cp[1], cp[2], cp[3], 1.0));
