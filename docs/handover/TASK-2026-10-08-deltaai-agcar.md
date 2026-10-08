@@ -26,18 +26,18 @@ restarts point at it).
 
 ## 5. Smoke (60 s scale), then compare with viper
 `<bin> -i agcar_shake{A,B}_ge.athinput -d <rundir> time/nlim=10`. viper reference in `agcar-files-1008/smoke_ref_viper/`
-(jobs 12125673 A / 12125674 B, rc 0, 0 NON-CONVERGED, 0 FATAL):
+(jobs 12130897 A / 12130898 B, inputs WITH rad_m1/implicit_opac_newton_slope_max = 3 (user 10-08, opacity cliff at H/He recombination), rc 0, 0 NON-CONVERGED, 0 FATAL):
 
 | | A | B |
 |---|---|---|
-| t after 10 cycles | 1.2525591814642337e+04 s | 2.4186988199012840e+03 s |
-| dt at cycle 10 | 1.2525587305066954e+03 | 2.4186976857007838e+02 |
+| t after 10 cycles | 1.2525591814642336e+04 s | 2.4186988199012844e+03 s |
+| dt at cycle 10 | 1.2525587305066963e+03 | 2.4186976857007841e+02 |
 | mass (hst col 3) | 6.1192879615035610e+32 | 1.7891809043883109e+31 |
-| tot-E (col 7) | 1.6552578848539072e+47 | 1.0633773260127629e+46 |
+| tot-E (col 7) | 1.6552578848539149e+47 | 1.0633773260127629e+46 |
 | IC T check "IC column T(rho,eint)/T_col" | 7.1e-14 | 6.4e-14 |
 | "he_ic_balance cells" max | 3.24e-7 | 1.08e-7 |
-| Picard mean / max | 7.6 / 10 | 6.9 / 24 |
-| zone-cycles/cpu_second (2 MI300A) | 3.48e6 | 3.34e6 |
+| Picard mean / max | 13.5 / 16 | 6.9 / 24 |
+| zone-cycles/cpu_second (2 MI300A) | 3.09e6 | 3.18e6 |
 
 Pass: same rc / no FATAL / no NON-CONVERGED, the two IC T-check lines identical in magnitude, hst columns 1-7 within
 ~1e-6 relative (FMA, not bitwise; see TASK-2026-10-07 section 2), Picard within +-1-2 passes.

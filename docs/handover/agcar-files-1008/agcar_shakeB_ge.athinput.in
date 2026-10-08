@@ -132,6 +132,7 @@ implicit_one_pass = 0
 implicit_opac_update = true
 implicit_opac_newton = true
 implicit_opac_newton_guard_mode = 6
+implicit_opac_newton_slope_max = 3          # opacity-cliff damping (H/He recombination; He giant fix 90a1d462), user 10-08
 implicit_gas_newton = true
 implicit_flux    = central
 implicit_enthalpy = plm
