@@ -39,17 +39,23 @@ COLS = {"m1slab.hydro.hst": ["time", "mass", "tot-E", "1-KE", "2-KE"],
 # (before it, step 1 used the gas speed alone): this moved edd again (1.428 -> 1.326);
 # vet was the same at both commits.  Every other column follows from the shorter time.
 # Regenerated with gcc 14, CPU serial (fixes-1001).
+# be-split-work (d6164a6a, 10-05): with force_reference_work = split and time_scheme = be
+# (the slab names be) the be write-back makes E pay exactly the reference work the gas
+# got at its Heun stages (fref_wacc) instead of v' dt rho a_ref at the post-kick
+# velocity; change from the 1001 numbers: time 7.8e-9 (edd) / 1.2e-8 (vet), 1-KE 8.0e-7
+# (edd) / 5.0e-6 (vet), Etot -5.2e-9 / -3.0e-8.  Regenerated with gcc 14, CPU serial
+# (cs-iso-1008).
 REF = {
-    "edd": {"time": 1.3263574735599821e+00, "mass": 1.2738377353803061e+19,
-            "tot-E": 8.0476824191865979e+32, "1-KE": 1.2025839135391527e+24,
-            "2-KE": 2.7622430561289195e+24, "F1top": 2.4752258138624450e+15,
-            "F1mid": 2.4752250100079205e+15, "F1bot": 2.4751827481951940e+15,
-            "V1max": 4.4470178967837883e+03, "Etot": 1.0723532628809100e+33},
-    "vet": {"time": 1.4280339466865284e+00, "mass": 1.2738377353803041e+19,
-            "tot-E": 8.0494317703134749e+32, "1-KE": 8.0414325226132745e+24,
-            "2-KE": 5.7081441763546965e+24, "F1top": 2.4750037022798720e+15,
-            "F1mid": 2.4750230810029555e+15, "F1bot": 2.4751780139539245e+15,
-            "V1max": 1.0426943074024435e+04, "Etot": 1.0738808270535462e+33},
+    "edd": {"time": 1.3263574838735652e+00, "mass": 1.2738377353803055e+19,
+            "tot-E": 8.0476824148265932e+32, "1-KE": 1.2025848795476678e+24,
+            "2-KE": 2.7622437963853669e+24, "F1top": 2.4752257956003550e+15,
+            "F1mid": 2.4752249647985080e+15, "F1bot": 2.4751827403078455e+15,
+            "V1max": 4.4470173796416129e+03, "Etot": 1.0723532573355033e+33},
+    "vet": {"time": 1.4280339638821982e+00, "mass": 1.2738377353803057e+19,
+            "tot-E": 8.0494317487222714e+32, "1-KE": 8.0414723646010427e+24,
+            "2-KE": 5.7081450409462032e+24, "F1top": 2.4750035162229130e+15,
+            "F1mid": 2.4750229343721900e+15, "F1bot": 2.4751780043850815e+15,
+            "V1max": 1.0426930970576175e+04, "Etot": 1.0738807946663671e+33},
 }
 
 
