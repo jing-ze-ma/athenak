@@ -1,4 +1,4 @@
-# NOTE 2026-10-08 (orion): RSG wind -- gas line+molecular force <= 0.34 in LTE, likely ~0.01 in non-LTE; only large iron-free silicate grains at ~4 R can drive
+# NOTE 2026-10-08 (orion): RSG wind -- gas line+molecular force <= 0.34 (LTE); non-LTE: gas cold beyond ~3-4 R, warm Fe II-heated phase at 2-3 R; molecules set up cold dense gas, only large iron-free silicate grains at ~4 R can drive
 
 Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; CNO, step 4, not done).
 Orion owns this thread (user 10-08). Python on CPU, no AthenaK changes.
@@ -118,7 +118,7 @@ delta is ~2.5e-3, raising the requirement 1.6x.
 Approximations: optically thin RE, single-temperature grains, no drag/drift, no grain-growth kinetics (can grains reach
 ~0.3 um in the time available?), no gas heating by dust, both phases see the unattenuated stellar flux.
 
-## 5. Below the 1e-8 bar table edge: scaled ck extension (fallback), non-LTE thermal balance, DACE rebuild
+## 5. Below the 1e-8 bar table edge: scaled ck extension (fallback), non-LTE thermal balance, DACE rebuild, physical non-LTE
 Added 10-08. Work dirs `/orion/ptmp/jinma/rsg_wind_1008/{lowP,nlte}` (tables and npz there, not committed).
 
 **5a. Low-P ck extension (fallback, `lowP/data/ck/Premixed_1x_g8_11_hiT2_lowP.txt`, P 1e-14..1000 bar, 52 nodes).**
@@ -133,7 +133,7 @@ INCREASES (TiO/Fe evaporation, 700-2500 K) failed validation and are cut, so the
 thin Gamma_F at 1500-2250 K drops 2-10x vs clamp (TiO/VO dissociation), max still 0.38 (2500 K). A proper rebuild from
 DACE per-species 1e-8 bar cross sections (Lee et al. 2021's own source) is in progress.
 
-**5b. Non-LTE thermal balance (`tables/nlte_tables.md`, `scripts/nlte.py`).** At the wind densities (rho ~1e-15,
+**5b. Non-LTE thermal balance, simple two-level eps model (`tables/nlte_tables.md`, `scripts/nlte.py`) -- SUPERSEDED by 5d (its "warm phase lost, gas 700-930 K" conclusion is wrong: Fe II metastable heating and rotational cooling were missing).** At the wind densities (rho ~1e-15,
 n ~ 3e8 cm^-3, P ~ 1e-10 bar) collisions (C = n q, q 1e-12..1e-10 cm^3/s) are far slower than radiative decay, so the
 thermalisation fraction eps = C/(C + A) is ~1e-3..1e-4 for IR vib-rot (A 10-100 /s) and <= 1e-6 for electronic/atomic
 lines (A 1e6-1e8 /s). Net heating H = sum_b (eps_b kl_b + kc_b)(W B_b(Teff) - B_b(T)) (H-/CIA continuum eps = 1;
@@ -191,17 +191,54 @@ per band, value at the table's 4+4 Gauss g-points (this convention matches; the 
   (32 % of those entries changed, median 0.26 dex; irrelevant for the wind, a per-band ratio would fix it); B's SiO
   factor is circular.
 
+**5d. Non-LTE thermal balance with physical rates (`tables/nlte2_tables.txt`, `scripts/nlte2/`; work dir
+`/orion/ptmp/jinma/rsg_wind_1008/nlte2`).** Replaces 5b.
+- Model: statistical-equilibrium model atoms in the diluted stellar field J = W B(Teff) with Sobolev escape (dv/dr =
+  v/r, v 10/30 km/s): Fe I (248 levels, 7134 lines, Barklem 2018 Fe+H rates), Fe II (121 levels), Ti, Cr, Ca, Mn, Ni,
+  Mg, Na, K, Al, Si, O, C (Kurucz gfemq E1+M1+E2); photoionisation/recombination (rough, x3-10); metastable quench by
+  H/H2 q_forb 1e-12..1e-10 cm^3/s (no data; controls the atomic heating; S_H of Drawin irrelevant). Molecular cooling:
+  Neufeld & Kaufman 1993 non-LTE cooling functions (H2O, CO rot/vib, H2; transcribed by eye from the scan), coupled to
+  the stellar field (radiative pumping). TiO/VO electronic heating bracketed (fluorescence fraction x vib quench).
+  H-/CIA eps = 1.
+- Physics: Fe is photoionised (Fe I 1e-6..1e-2 of Fe), so **Fe II** carries the atomic heating via UV-pumped
+  metastables quenched by collisions; non-LTE molecular cooling is ~1e-3 of LTE band cooling, dominated by H2O/CO
+  ROTATIONAL lines (they thermalise far better than the vibrational bands).
+- Stable roots, nominal (golden16; m20lgl5.5 similar but colder):
+
+  | r/R | P [bar] | stable T [K] | warm-phase heating / cooling |
+  |---|---|---|---|
+  | 2 | 1e-11..1e-9 | 330-510 cold / 1870-2260 warm / 3390-3490 hot | Fe II quench 64-91 % / CO rot or vib |
+  | 3 | 1e-11, 1e-10 | < 150-160 cold / ~1800 warm / 3000-3200 hot | same |
+  | 3 | 1e-9 | 247 | - |
+  | 4 | 1e-11 | < 150 / 1628 | - |
+  | 4-5 | others | < 150 (no root above the grid edge) | cold: H2 / IR-band pumping heats, H2O rot cools |
+
+  m20lgl5.5: warm ~1730-1790 K only at 2 R; 3-5 R cold (~210 K or < 150 K).
+- The warm phase is NOT robust: it disappears (except at 2 R) if the stellar UV below 300 nm is 1 % of a blackbody
+  (real RSG photospheric UV is far below a blackbody; chromospheric UV, e.g. Mg II h&k, is not modelled), moves by
+  > 1000 K within the q_forb range, and appears everywhere at the high TiO-heating bracket.
+- RE reached? t_th at the warm roots 3e5-7e7 s vs flow 3e7-5e8 s and shock interval 6e7-1e8 s: RE at 1e-9 bar,
+  marginal at 1e-10 bar, not at 1e-11 bar. The cold "< 150 K" roots have t_th 3e6-1e8 s, i.e. they are approached
+  but not reached; there the gas T follows shocks and adiabatic expansion.
+- Flags: blackbody UV (biggest risk to the warm phase); q_forb unknown; TiO fluorescence fraction unknown; equilibrium
+  chemistry/condensation (Fe condenses below ~1300 K, removing the atomic heating from the cool phase -- a reason for the
+  bistability); NK93 hand-transcribed; OH omitted, SiO crude; ice formation and adiabatic cooling below 150 K not
+  modelled.
+
 ## 6. Verdict
 - Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
-  **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35), peaking at 3-4 R, T 1500-1700 K, mainly 0.61-0.85 um
-  (TiO/VO). It cannot drive RSG mass loss. Below the 1e-8 bar edge the opacity likely falls further (TiO/VO dissociate),
-  and in non-LTE the warm gas phase is probably lost (section 5): the gas at 3-5 R is cool (700-930 K) with Gamma ~0.01,
-  so the molecular contribution to driving may be negligible rather than 20-30 % of gravity.
-- Dust: grain temperature (independent of the gas T) still limits condensation; nearly transparent iron-free silicate
-  grains first survive at ~4 R (3 R for the cool, luminous m20lgl5.5), and only LARGE (~0.1-1 um, scattering) grains of
-  that kind reach Gamma_c > 1. Al2O3 and absorbing silicates cannot. Cool non-LTE gas favours condensation.
-- Biggest uncertainties: R (line-resolved non-LTE of the electronic/atomic bands), the dust opacity per gram (assumed),
-  grain growth kinetics, non-equilibrium chemistry, the low-P opacity (DACE rebuild 5c: Lee's SiO unexplained, atoms
-  below 2500 K).
-- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force; a dust/grain-growth model is the next
+  **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35; the DACE low-P opacity lowers the ceiling to 0.32),
+  peaking at 3-4 R, T 1500-1700 K, mainly 0.61-0.85 um (TiO/VO). It cannot drive RSG mass loss. With physical
+  non-LTE rates (5d) the gas beyond ~3-4 R is cold (a few hundred K and falling, not in RE at <= 1e-10 bar), where the
+  molecular force is ~0.01-0.1; a warm (1600-2300 K) Fe II-heated phase exists mainly at 2-3 R and depends on the
+  stellar UV, so the molecular contribution to driving is small.
+- Molecules DO set up the conditions for dust: rotational H2O/CO cooling makes cold, dense, SiO-rich gas at >~ 3-4 R
+  (high supersaturation; Fe condensation removes the atomic heating, so the cold state is self-reinforcing). The
+  binding limit is still the GRAIN temperature (radiative, independent of the gas T): nearly transparent iron-free
+  silicate grains first survive at ~4 R (3 R for the cool, luminous m20lgl5.5), and only LARGE (~0.1-1 um,
+  scattering) grains of that kind reach Gamma_c > 1. Al2O3 and absorbing silicates cannot.
+- Biggest uncertainties: the stellar (and chromospheric) UV, the Fe II metastable quench rate, the TiO fluorescence
+  heating, the dust opacity per gram (assumed), grain growth kinetics (grain-growth model in progress), non-equilibrium
+  chemistry, the low-P opacity (DACE rebuild 5c: Lee's SiO unexplained, atoms below 2500 K).
+- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force; the grain-growth model is the next
   analysis step.
