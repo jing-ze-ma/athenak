@@ -1,0 +1,7 @@
+lit2026 notes (2026-10-08). Sources:
+ Matthews+2026 arXiv:2608.02847 (AJ acc.) -> matthews2026.txt (HTML text), Table 5 T_B, Eq.1
+ Dent+2026  arXiv:2608.19339v2 (A&A acc.) -> dent2026.txt, App. B Eq.(1)-(2) SEM, Fig.5 T_e(R) (dent2026_fig5.png)
+ sem_dent2026.py / sem_dent2026_table.txt: n_H, rho, n_e from Eq.(1); T read off Fig.5 (+-50 K)
+ Harper+2026 ApJ 1002, 80 (Antares HST-STIS) doi:10.3847/1538-4357/ae581b: Table 5 n_e 10^8.1, N_H 10^24.0, Te 4000 K (Antares); Betelgeuse 10^8.3, 10^23.9, 8000 K
+ Dupree+2026 ApJ 998, 50 arXiv:2601.00470: wake, v_turb~20, wind ~10 km/s, no densities
+ Wong & Ohnaka 2026 (CS23, zenodo 20541746): Antares RRLs n_e>1e8, ~3000 K

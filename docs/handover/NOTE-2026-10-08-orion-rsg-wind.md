@@ -334,6 +334,39 @@ L 1.64e5 Lsun, M 18/20; set B: 168 pc, R 764 Rsun, L 1e5, M 16.5/19 (n_H x 1.15)
 - Flags: T from six points; density beyond 5 R* extrapolated (Harper agrees within 30 %); the steady dust run is
   kinematic (no feedback, drift, attenuation); dust-shell radii from a quick search (papers not opened).
 
+**9b. 2026 literature and the rerun on the Dent et al. 2026 model (`tables/betelgeuse26_tables.md`,
+`scripts/betelgeuse26/`, `density_survey/lit2026_NOTES.txt`, `density_survey/sem_dent2026_table.txt`).** Added 10-08.
+- Literature: Dent, Richards, Harper, Matthews & O'Gorman 2026 (arXiv:2608.19339v2, A&A accepted), Appendix B, gives a
+  new semi-empirical model fitted to 2021-2023 ALMA Bands 3-8 + VLA (Matthews 2026 K/Q, O'Gorman 2015 L-U):
+  n_H = 1.34e12 exp[-(R - 1.144 R*)/0.06 R*] + 2.96e9 (R*/R)^2 (0.998 - (R*/R)^0.45)^-1.5, R* = 812 Rsun = 5.65e13 cm
+  (Rosseland tau 2/3), d = 172 pc, M 17.5, Teff 3650 K (L = 1.05e5 Lsun from R*, Teff); n_e/n_H 2.5e-5 -> 5e-4 at
+  1.144 -> 2 R* (photoionised metals, H neutral); Mdot 3.8e-6 Msun/yr, v_inf 9 km/s; v_turb 14 (molecular lines) to
+  19.5 km/s (best fit, most-probable); T (Fig. 5) minimum ~1780 K at 1.2 R*, plateau 3500 K at 1.9-2.5 R*, 1410 K at
+  5 R*. Matthews et al. 2026 (arXiv:2608.02847): disk-averaged T_B 2220 K at 1.2-1.3 R* rising to ~3500 K at 2.6-2.7
+  R*, T_B peak moved out after the Great Dimming (no density model). Harper et al. 2026 (Antares, HST-STIS, ApJ 1002,
+  80): C II] Te 8000 K, n_e 10^8.1 (Betelgeuse 10^8.3) -- a warm UV phase far denser in n_e than the radio model;
+  Antares v_wind 19, v_turb 21 km/s, Mdot 2e-6. Dupree et al. 2026: companion wake at ~2.3 R*.
+- Rerun (all parameters from the paper): Gamma_req (v_t = 0) = 0.90 / 0.99 / 0.94 / 0.96 / 0.94 / 0.96 / 1.00 / 1.03 at
+  1.15 / 1.2 / 1.5 / 2 / 3 / 5 / 10 / 30 R*; crosses 1 at ~11 R* (12.6 R* with a power-law T beyond 5 R*; a crossing at
+  1.20-1.22 R* is a mu-jump artefact of the T dip). Inertia <= 0.05 g. Gas radiation force (DACE table A) <= 0.12-0.18
+  everywhere (lower than 2024's 0.25 because L fell from 1.64e5 to 1.05e5 Lsun, kappa_Edd 1.43 -> 2.17 cm^2/g).
+  Non-radiative support after the most generous gas force: v_t (1-D rms) = 12.3 / 16.0 / 20.7 / 18.9 / 16.0 / 12.1 /
+  7.4 km/s at 1.15 / 1.5 / 2 / 3 / 5 / 10 / 30 R*; the paper's 14-19.5 km/s most-probable (= 9.9-13.8 rms) matches the
+  chromosphere base, 1.5-5 R* needs 15-50 % more.
+- The paper's H = 0.06 R* (its Eq. 2, v_mp 19.5 km/s) is reproduced only with g = 0.73 cm/s^2, not the reduced
+  g* = 0.32 it states; that reduction would mean an effective Gamma = 0.56, which the radiation force does not supply.
+- Dust along the steady flow from 1.15 R*: seeds at 1.73 R* (pure, 9.8e13 cm) / 1.96 R* (Fe3e-4) / 2.82 R* (Fe1e-3);
+  0.1 um at 1.86 R* (pure, alpha 1; ~30 yr transit, vs ~500 yr in the 2024 profile) / 2.2 R* / 3.4 R*. Efficient
+  growth (pure alpha 1; Fe3e-4 alpha 1) gives Gamma_d 1.4-3.7 from 2-5 R*, overdriving a 9 km/s wind; alpha 0.1 Fe
+  cases < 0.3. Ballistic parcels in this density: no dusty wind (Gamma_d <= 1.3). Observed inner dust (~1.5 R*, Haubois
+  2019) slightly inside the earliest seeds; the Great Dimming clump (months) needs a denser/slower parcel than the mean
+  flow (~30 yr to 0.1 um).
+- Versus 2024: at fixed r [cm] the 2026 model is 33x less dense at 8.5e13 cm, 12x at 1.1e14 cm, converging by 1.4e15
+  cm (mostly R* 1014 -> 812 Rsun); at fixed r/R* within 0.25-0.87 inside 5 R*. Conclusions unchanged: ~80 % of gravity
+  carried by non-radiative support of ~10-20 km/s; dust needed only beyond ~11 R* at Gamma_d ~1.
+- Flags: T from Fig. 5 (+-50 K) and extrapolated beyond 5 R* (bracketed: < 0.6 km/s effect on v_t); the SEM wind term is
+  singular at 1.0045 R* (frozen inside 1.144 R*); LTE gas force; steady dust run kinematic.
+
 ## 10. Verdict
 - Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
   **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35; the DACE low-P opacity lowers the ceiling to 0.32),
@@ -352,11 +385,13 @@ L 1.64e5 Lsun, M 18/20; set B: 168 pc, R 764 Rsun, L 1e5, M 16.5/19 (n_H x 1.15)
 - Biggest uncertainties: the chromospheric density (v_con normalisation, FT time-averaging vs observed RSG atmospheres),
   the stellar/chromospheric UV (Fe II heating, Mg photoionisation), grain composition (Fe) and sticking, drift and
   dust attenuation, the Fe II metastable quench rate, non-equilibrium chemistry, the low-P opacity (5c).
-- With the observed Betelgeuse density (section 9) the picture is: the extended atmosphere is held up by non-radiative
+- With the observed Betelgeuse density (section 9, rerun on the Dent et al. 2026 model in 9b) the picture is: the extended atmosphere is held up by non-radiative
   pressure of ~10-20 km/s (radiation on the gas gives <= 0.03 inside 5 R*, <= 0.25 anywhere); the shock-lifted
   ballistic tail sets the observed Mdot (section 8: with the density lowered to the observed level, every observed-like
   wind is dust-free, and dust either overdrives or does nothing); dust is needed only beyond ~12-20 R* at Gamma_d ~1. The
-  open mismatch is v_inf (~31-37 km/s from the tail vs observed 10-15 km/s).
+  open mismatch is v_inf (~31-37 km/s from the tail vs observed 9-15 km/s). The Dent 2026 model writes Betelgeuse's
+  atmosphere as turbulence-supported (v_turb 14-19.5 km/s) with a slow wind (v_inf 9 km/s, Mdot 3.8e-6); our budget on
+  it needs ~80 % non-radiative support everywhere (v_t 12-21 km/s inside 5 R*) and dust only beyond ~11 R*.
 - Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force. Next analysis: a self-consistent dusty
   wind with drift and attenuation; the origin of the 10-20 km/s support (pulsation/convective shocks vs Alfven waves);
   the supernova-CSM view of the observed profile (M(<r), effective Mdot(r)).
