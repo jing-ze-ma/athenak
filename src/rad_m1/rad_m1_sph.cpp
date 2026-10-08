@@ -99,7 +99,11 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
         impl_flux != M1_IFLUX_BLEND) {
       why += " implicit_flux = ap_hll;";
     }
-    if (impl_recon != M1_IRECON_DC) {why += " implicit_recon != dc;";}
+    // rad-beam-1008: the plm deferred correction of the berthon part (plm_dc) on the
+    // radial faces, with berthon | blend only (central has no upwind part to correct)
+    if (impl_recon != M1_IRECON_DC && impl_flux == M1_IFLUX_CENTRAL) {
+      why += " implicit_recon != dc;";
+    }
     if (impl_tlim != M1_TLIM_NONE) {why += " implicit_trans_limit != none;";}
     // m1-sph2 (tests_m1/runs_5h_sph2): time_scheme = hesdirk2 and implicit_vimp are
     // allowed on the wedge (the stage solves' old vector carries no geometry; the vimp

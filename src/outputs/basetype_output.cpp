@@ -739,11 +739,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // vet_gd): m1_jfs = sum_d w_d I_d (E units, compare m1_e) and m1_hfs = sum_d w_d
     // (n_d . r_hat) I_d (= F_r/c, compare m1_f1/c).  Zero where vet_gd is off or below
     // its first shell.  Diagnostic (sp-blend-1008 GATE2); derived, not part of m1.
+    // m1_sfs, m1_cfs: the source S and extinction chi the sweep used (rad-beam-1008).
     if (variable.compare("m1_fs") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_jfs",0,&(derived_var));
       outvars.emplace_back("m1_hfs",1,&(derived_var));
-      out_params.n_derived += 2;
+      outvars.emplace_back("m1_sfs",2,&(derived_var));
+      outvars.emplace_back("m1_cfs",3,&(derived_var));
+      out_params.n_derived += 4;
     }
 
     // turbulent forcing

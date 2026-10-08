@@ -1463,6 +1463,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // correction after a few passes leaves an ordinary linear system to converge.
   // <= 0 (the default) never freezes, i.e. reproduces 3a2.
   impl_recon_npass = pin->GetOrAddInteger("rad_m1","implicit_recon_npass",-1);
+  if (pin->DoesParameterExist("rad_m1","implicit_recon_dgpass")) {
+    impl_recon_dgpass = pin->GetBoolean("rad_m1","implicit_recon_dgpass");
+  }
   if (!impl_recon_freeze && slg.compare("picard") != 0) {
     ImplFatal("<rad_m1>/implicit_recon_lag = '" + slg
               + "' is not a choice (step | picard)");
@@ -8633,6 +8636,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
     const int ivd = impl_vimp ? (iw_vimp + M1_IV_DV) : 0;
     const bool rcp = impl_real_couple;
+    // rad-beam-1008 implicit_recon_dgpass: the lagged reduced flux of a cell is made from
+    // the LOW-ORDER part of its face fluxes (the stored face flux minus the plm deferred
+    // correction): the correction's face E is not the donor's, and its ratio to the donor
+    // E (< 1 on a falling front) slows the front and steepens it into a spike
+    const bool rdgx = aphll && plmdc && impl_recon_dgpass;
+    const Real clch = c_light/chat;
     // implicit_realisable_coupling on the cubed sphere: the work array's transverse F are
     // FACE-NORMAL; the fix-A kernel forms the covariant pair and the clip's metric norm
     const bool rcs = cs_geom;
@@ -8878,10 +8887,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 iw_(m,M1_IW_EP,k,j,ip), elp, dum);
             PLM(iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip),
                 iw_(m,M1_IW_EP,k,j,ipp), dum, erp);
-            PLM(iw_(m,M1_IW_RF0,k,j,imm), iw_(m,M1_IW_RF0,k,j,im),
-                iw_(m,M1_IW_RF0,k,j,ip), flp, dum);
-            PLM(iw_(m,M1_IW_RF0,k,j,im), iw_(m,M1_IW_RF0,k,j,ip),
-                iw_(m,M1_IW_RF0,k,j,ipp), dum, frp);
+            // rad-beam-1008: with a fixed-tensor closure on the wedge the reduced flux
+            // is f(D_rr) of the lagged closure (as rfl, rfr above), in all four cells
+            auto fcell = [&](const int ii) {
+              Real fv = iw_(m,M1_IW_RF0,k,j,ii);
+              if (vfix) {
+                const Real cq = fmin(fmax(M1DDiag(iw_,vd_,dfull,m,0,k,j,ii), 1.0/3.0),
+                                     1.0);
+                const Real sq = 0.5*(5.0 - 3.0*cq);
+                fv = copysign(sqrt(fmax((4.0 - sq*sq)/3.0, 0.0)), fv);
+              }
+              return fv;
+            };
+            PLM(fcell(imm), rfl, rfr, flp, dum);
+            PLM(rfl, rfr, fcell(ipp), dum, frp);
             Real ecl = iw_(m,M1_IW_EP,k,j,im), ecr = iw_(m,M1_IW_EP,k,j,ip);
             // the deferred correction applies to the UPWIND part only, so it carries the
             // same weight w_f the upwind part carries (3c).
@@ -8920,6 +8939,51 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             // pass leaves the fixed point untouched and breaks the cycle.
             if (iter > 0) {dg = 0.5*(dg + ifw_(m,M1_IFW_DG,k,j,i));}
           }
+        }
+        ifw_(m,M1_IFW_DG,k,j,i) = dg;
+      });
+    }
+    // rad-beam-1008 implicit_recon_dgpass: the plm deferred correction of the berthon
+    // part re-made on EVERY Picard pass from the iterate's E with the step-frozen face
+    // coefficients: G = HCL E_L^plm + HCR E_R^plm (the frozen reduced flux, plm in E
+    // only) minus the dc flux HCL E_L + HCR E_R, clamped to the donor bound, weighted
+    // 1/(1 + nu) and averaged with the previous pass (as the picard-lag correction).
+    // The face then converges to a convex dc/plm blend of the END-of-step state, not the
+    // explicit correction of E^n.
+    if (aphll && plmdc && rfreeze && impl_recon_dgpass) {
+      const Real rwin2 = impl_recon_w;
+      const bool sphf2 = sph_geom;
+      auto cdxf2 = pmy_pack->pcoord->dxface;
+      const int nlay2 = nlay_;
+      par_for("m1_impl_dgpass", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        int ipos = pos_.d_view(m);
+        bool phys = (((i == is) && (ipos == 0)) ||
+                     ((i == ie+1) && (ipos == nblkx1-1))) && !cyclic;
+        if (phys) {return;}
+        int im = (cyclic && i == is) ? ie : (i-1);
+        int ip = (cyclic && i == ie+1) ? is : i;
+        int ilo = is - ((ipos > 0) ? nlay2 : 0);
+        int ihi = ie + ((ipos < nblkx1-1) ? nlay2 : 0);
+        int imm = (im > ilo) ? (im-1) : (cyclic ? ie : -1);
+        int ipp = (ip < ihi) ? (ip+1) : (cyclic ? is : -1);
+        Real dg = 0.0;
+        const Real ccl = ifw_(m,M1_IFW_HCL,k,j,i), ccr = ifw_(m,M1_IFW_HCR,k,j,i);
+        const Real wfr = ifw_(m,M1_IFW_AL,k,j,i);
+        if (imm >= 0 && ipp >= 0 && (ccl != 0.0 || ccr != 0.0)) {
+          Real dum, elp, erp;
+          const Real ecl = iw_(m,M1_IW_EP,k,j,im), ecr = iw_(m,M1_IW_EP,k,j,ip);
+          PLM(iw_(m,M1_IW_EP,k,j,imm), ecl, ecr, elp, dum);
+          PLM(ecl, ecr, iw_(m,M1_IW_EP,k,j,ipp), dum, erp);
+          Real gp = ccl*elp + ccr*erp;
+          const Real gc = ccl*ecl + ccr*ecr;
+          const Real wq = (wfr > 0.0) ? wfr : 1.0;
+          gp = fmin(fmax(gp, -wq*ch*ecr), wq*ch*ecl);
+          Real dx = mbsize.d_view(m).dx1;
+          if (sphf2) {dx = cdxf2.x1f(m,k,j,i);}
+          const Real wdc = (rwin2 > 0.0) ? rwin2 : (1.0/(1.0 + ch*dt/dx));
+          dg = wdc*(gp - gc);
+          if (iter > 0) {dg = 0.5*(dg + ifw_(m,M1_IFW_DG,k,j,i));}
         }
         ifw_(m,M1_IFW_DG,k,j,i) = dg;
       });

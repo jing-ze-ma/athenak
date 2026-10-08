@@ -238,6 +238,10 @@
       // generator's state lives in u0) the cell flux is used instead.
       Real r0;
       Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
+      if (rdgx) {
+        fl -= clch*ifw_(m,M1_IFW_DG,k,j,i);
+        fr -= clch*ifw_(m,M1_IFW_DG,k,j,i+1);
+      }
       if (fabs(fl) + fabs(fr) > 0.0) {
         int iml = (i > is) ? (i-1)
                   : (cyclic ? ie : ((pos_.d_view(m) > 0) ? (is-1) : is));

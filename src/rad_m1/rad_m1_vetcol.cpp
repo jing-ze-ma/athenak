@@ -758,6 +758,9 @@ void RadiationM1::VetColBuild() {
   const bool thermal = fl_on && coupling && !opac_zero;
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   const bool srx = thermal && vcol_srelax;
+  const bool noes = vsrc_noes && esrc_on && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  auto es_ = esrc;
+  const Real dtes = (mr_on ? mr_dt : pmy_pack->pmesh->dt)*chat/c_light;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
   FluidRef flv = FluidRef::Get(pmy_pack);
@@ -828,7 +831,7 @@ void RadiationM1::VetColBuild() {
     auto chx = [&](const int l) {return fmax(iw_(m,M1_IW_KT,k,j,is+l), 1.0e-300);};
     auto src = [&](const int l) {
       const int i = is + l;
-      Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+      Real e = fmax(iw_(m,M1_IW_EN,k,j,i) - (noes ? dtes*es_(m,k,j,i) : 0.0), efl);
       Real s = e;
       if (thermal) {
         Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
@@ -1077,6 +1080,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const bool thrd = trans_x3;
   const bool thermal = fl_on && coupling && !opac_zero;
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
+  const bool noes = vsrc_noes && esrc_on && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  auto es_ = esrc;
+  const Real dtes = (mr_on ? mr_dt : pmy_pack->pmesh->dt)*chat/c_light;
   const bool srx = thermal && vcol_srelax;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
@@ -1147,7 +1153,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     par_for_inner(tm, 0, n1-1, [&](const int l) {
       const int i = is + l;
       pr_(l) = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
-      Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+      Real e = fmax(iw_(m,M1_IW_EN,k,j,i) - (noes ? dtes*es_(m,k,j,i) : 0.0), efl);
       Real s = e;
       if (thermal) {
         Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);

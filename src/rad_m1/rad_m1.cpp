@@ -875,6 +875,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     }
+    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
+      vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
+    }
     vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);

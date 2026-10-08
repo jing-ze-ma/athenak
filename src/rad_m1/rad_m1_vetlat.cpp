@@ -537,6 +537,9 @@ void RadiationM1::VetLatSweep(const int stage) {
   // (1) ln chi, ln S of every active cell (vet_col's extinction and source), ghosts
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
+  const bool noes = vsrc_noes && esrc_on && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  auto es_ = esrc;
+  const Real dtes = (mr_on ? mr_dt : pm->dt)*chat/c_light;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
   FluidRef flv = FluidRef::Get(pmy_pack);
@@ -549,7 +552,8 @@ void RadiationM1::VetLatSweep(const int stage) {
   par_for("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
-    Real e = fmax(iw_(m,srcep ? M1_IW_EP : M1_IW_EN,k,j,i), efl);
+    Real e = fmax(iw_(m,srcep ? M1_IW_EP : M1_IW_EN,k,j,i)
+                  - ((noes && !srcep) ? dtes*es_(m,k,j,i) : 0.0), efl);
     Real s = e;
     if (thermal) {
       Real tg = iw_(m,M1_IW_TP,k,j,i);

@@ -276,6 +276,12 @@ class RadiationM1 {
   // he_star_m1: the frozen MLT flux.
   DvceArray4D<Real> esrc;
   bool esrc_on = false;
+  // rad-beam-1008 <rad_m1>/vet_source_noesrc (default false = bitwise): the vet_col /
+  // vet_col_lat / vet_gd source reads E^n WITHOUT the explicit deposit dt (chat/c) esrc
+  // that the implicit solve's old vector E^n carries (the frozen MLT scaffold): the
+  // deposit is transported away inside the step by the solve, but a LOCAL relaxed
+  // source keeps it in the cell (AG Car A: S up to 10 E at 0.985-0.994 R_ph, L_fs 3 L)
+  bool vsrc_noes = false;
 
   // m1-mhd (docs/dev/m1_mhd_0927.md): the fluid is <hydro> or <mhd> (FluidRef,
   // m1_fluid.hpp).  Under MHD the conserved energy carries |B|^2/2, which every kernel
@@ -607,6 +613,11 @@ class RadiationM1 {
   // the imposed-flux boundary hand-off, LIMIT 3.  See ImplicitSolve.
   bool impl_recon_freeze;       // implicit_recon_lag = step: evaluate the deferred
                                 // correction once per step, not once per Picard pass
+  // rad-beam-1008: implicit_recon_dgpass (default false): with the face coefficients
+  // frozen for the step (implicit_recon_lag = step) the plm_dc correction is re-made on
+  // every Picard pass from the iterate's E (plm in E only, the frozen face f), instead of
+  // once from E^n (an explicit anti-diffusion that is unstable: pulse amplitude 2.7-3.5)
+  bool impl_recon_dgpass = false;
   int impl_recon_npass;         // implicit_recon_npass: FREEZE the plm deferred
                                 // correction (and with it the limiter's choice) after
                                 // this many Picard passes, to break the limit cycle the
