@@ -1,0 +1,54 @@
+# Writes the general-EOS table dump read by make_ic_accretor_column.py (same <units>/<hydro> EOS keys as s2_general.athinput).
+# Any build with eos = general writes it before the pgen runs (accretor-rhd-1008 used athena_cpu_he_star_m1_8b2d770c; its pgen then stops, harmless).
+<job>
+basename = dump
+<mesh>
+nghost = 2
+nx1 = 16
+x1min = 1.0
+x1max = 2.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 1
+x2min = 0
+x2max = 1
+nx3 = 1
+x3min = 0
+x3max = 1
+<meshblock>
+nx1 = 16
+nx2 = 1
+nx3 = 1
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 0
+tlim = 1
+<units>
+length_cgs = 6.957e10
+mass_cgs   = 1.7204e25
+time_cgs   = 6.957e5
+mu         = 1.0
+<hydro>
+eos = general
+general_eos = table
+gamma = 1.6666666667
+eos_h2 = false
+eos_ionization = true
+eos_metal_ionization = false
+eos_radiation = false
+eos_xh = 0.70
+eos_yhe = 0.28
+eos_logd_min = -18.0
+eos_logd_max = 0.0
+eos_logt_min = 3.5
+eos_logt_max = 7.6
+eos_dlog = 0.02
+eos_table_dump = eos_x0.70_y0.28_logd-18.txt
+reconstruct = plm
+rsolver = hllc
+dfloor = 1.0e-8
+tfloor_kelvin = 5.0e3
+pfloor = 1.0e-10
+<problem>
