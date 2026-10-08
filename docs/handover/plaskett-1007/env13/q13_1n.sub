@@ -1,0 +1,20 @@
+#!/bin/bash
+# env13 (accretor-1007 8cecb89a) half-orbit stream arm q13_s1, 1 node x 4 GH200 (2 MeshBlocks per GPU)
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=200G
+#SBATCH --time=01:15:00
+#SBATCH -J q13_s1
+#SBATCH -o /work/nvme/bivj/jma20/plaskett_1007/test1007/logs/%x.%j.out
+T=/work/nvme/bivj/jma20/plaskett_1007/test1007; cd $T
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export MPICH_GPU_SUPPORT_ENABLED=1 OMP_NUM_THREADS=1 SLURM_CPU_BIND=cores KOKKOS_MAP_DEVICE_ID_BY=mpi_rank
+SRUN="srun -N 1 -n 4 -c 16 --cpu-bind=cores"; [ -n "${DRY:-}" ] && SRUN="echo $SRUN"
+P=$T/run/q13_s1; [ -e $P ] && { echo "$P exists, refusing"; exit 1; }; mkdir -p $P
+echo "job ${SLURM_JOB_ID:-dry} start $(date '+%F %T %Z') bin md5 $(md5sum < new.bin | cut -c1-32)"
+timeout 4200 $SRUN ./new.bin -i in/plaskett_env13.athinput time/tlim=0.2291 -t 01:05:00 -d $P > $P/run.log 2>&1
+echo "rc $? end $(date '+%F %T %Z')"; tail -n 12 $P/run.log
