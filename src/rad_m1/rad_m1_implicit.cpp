@@ -8353,7 +8353,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // depend on n, vet_sc and tau read their own arrays), so the fixed point is unchanged.
   // It runs AFTER the vet_sc formal solution, which reads T^n (M1_IW_TP) as its source,
   // and the moved E is then sent to the ghost cells.
-  const bool pred = impl_pred && (edd || vetsc || tauc) && !(aphll && rfreeze);
+  // sp-blend-1008: on the multi-D wedge with a fixed-tensor closure the frozen face
+  // coefficients read f(D_rr) of the step's lagged closure, not the iterate, so the
+  // predicted start does not enter them and the predictor stays on
+  const bool spfx = sph_geom && trans_on && !edd && (vetsc || tauc);
+  const bool pred = impl_pred && (edd || vetsc || tauc) && !(aphll && rfreeze && !spfx);
   if (impl_pred && (static_cast<int>(ipred.extent(0)) != nmb1 + 1)) {
     pred_ok = false;   // the pack changed size (AMR): start cold
   }
@@ -8738,6 +8742,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool fwdf = sph_geom && impl_face_wdist;
       auto cdxff = pmy_pack->pcoord->dxface;
       auto cx1ff = pmy_pack->pcoord->xx1f;
+      // sp-blend-1008: with a FIXED-TENSOR closure (vet_col, vet_sc, tau) on the multi-D
+      // wedge the reduced flux the HLL part and the weight use is the one the LAGGED
+      // closure implies, f(D_rr) of the M1 (Levermore) relation chi = (3 + 4 f^2)/(5 + 2
+      // sqrt(4 - 3 f^2)) inverted: sqrt(4 - 3 f^2) = (5 - 3 chi)/2, with the sign of the
+      // lagged face flux.  The face-flux ratio alone is not relaxed by anything in the
+      // thin limit (berthon keeps whatever f it is given), so a beam from a photosphere
+      // kept f ~ 0.89 where the formal solution says 0.97 (AG Car A column, 3 R_ph).
+      const bool vfix = sphf && trans && !edd && (vetsc || tauc);
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -8758,6 +8770,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (sphf) {dx = cdxff.x1f(m,k,j,i);}
         Real rfl = iw_(m,M1_IW_RF0,k,j,im);
         Real rfr = iw_(m,M1_IW_RF0,k,j,ip);
+        if (vfix) {
+          Real cq = fmin(fmax(M1DDiag(iw_,vd_,dfull,m,0,k,j,im), 1.0/3.0), 1.0);
+          Real sq = 0.5*(5.0 - 3.0*cq);
+          rfl = copysign(sqrt(fmax((4.0 - sq*sq)/3.0, 0.0)), rfl);
+          cq = fmin(fmax(M1DDiag(iw_,vd_,dfull,m,0,k,j,ip), 1.0/3.0), 1.0);
+          sq = 0.5*(5.0 - 3.0*cq);
+          rfr = copysign(sqrt(fmax((4.0 - sq*sq)/3.0, 0.0)), rfr);
+        }
         // closed-form M1 wave speeds of the two LAGGED states (1-D: mu = sign f)
         Real bl, br;
         if (edd) {
