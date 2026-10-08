@@ -408,11 +408,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool wic = pin->GetOrAddBoolean("problem","he_wind_ic",false);
   std::vector<Real> hV(nf, 0.0), hdc, hec;
   Real wrc = 0.0;
+  // problem/he_ic_eint_from_t (default false = bitwise the old IC): set the internal
+  // energy of the column from (rho, T) with the code's OWN EOS, T = the file's column 6
+  // [K] (the 7-column make_ic files), instead of taking the file's eint (column 3).  The
+  // file's eint was computed by the IC builder with its own interpolant of the EOS (for
+  // the general EOS: a cubic spline of the code's table dump, not the code's bicubic
+  // Hermite patch), so T(rho, eint) in the code missed the column T by the difference of
+  // the two interpolants (agcar/geos B: 5.8e-6, vs 4.6e-7 for the ideal gas); E = aT^4 of
+  // the file is then out of equilibrium with the gas by 4x that.  With this key the
+  // code's T equals the column T to round-off (the log-linear resampling aside).
+  const bool eft = pin->GetOrAddBoolean("problem","he_ic_eint_from_t",false);
+  if (eft && ncols != 5) {
+    HsFatal("problem/he_ic_eint_from_t = true needs he_ic_cols = 5 and the 7-column file "
+            "(column 6 = T [K])", __LINE__);
+  }
+  bool tcol_read = false;
+  std::vector<Real> hTcol(nf, -1.0);   // the file's T column [K] on the fine grid
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
     if (!f.good()) HsFatal("cannot open problem/he_ic_file '" + fn + "'", __LINE__);
-    std::vector<Real> fr, fd, fe, fF, fE, fM;
+    std::vector<Real> fr, fd, fe, fF, fE, fM, fT;
     std::string line;
     while (std::getline(f, line)) {
       if (line.empty() || line[0] == '#') continue;
@@ -421,11 +437,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (!(ss >> a >> b >> c >> d)) continue;
       if (ncols == 5 && !(ss >> e)) continue;
       Real tcol = 0.0, fm = 0.0;
-      if (hs_mlt_ && !(ss >> tcol >> fm)) {
-        HsFatal("problem/mlt_flux_frozen: he_ic_file line without column 7 (fmlt)",
-                __LINE__);
+      if ((hs_mlt_ || eft) && !(ss >> tcol >> fm)) {
+        HsFatal("problem/mlt_flux_frozen / he_ic_eint_from_t: he_ic_file line without "
+                "columns 6-7 (T, fmlt)", __LINE__);
       }
       fM.push_back(fm);
+      fT.push_back(tcol);
       fr.push_back(a); fd.push_back(b); fe.push_back(c); fF.push_back(d);
       fE.push_back(e);
     }
@@ -446,6 +463,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       hF[n] = exp((1.0 - w)*log(fF[kk]) + w*log(fF[kk+1]));
       if (ncols == 5) hE[n] = exp((1.0 - w)*log(fE[kk]) + w*log(fE[kk+1]));
       if (hs_mlt_) hM[n] = (1.0 - w)*fM[kk] + w*fM[kk+1];
+      if (hs_mlt_ || eft) hTcol[n] = exp((1.0 - w)*log(fT[kk]) + w*log(fT[kk+1]));
+    }
+    tcol_read = (hs_mlt_ || eft);
+    if (eft) {
+      for (int n=0; n<nf; ++n) {
+        Real ee, pp, cr, ct, cv;
+        eos.ThermoAt(hd[n], hTcol[n]/hs_tk, ee, pp, cr, ct, cv);
+        he[n] = ee;
+      }
     }
     if (wic) {
       const Real mdot = pin->GetReal("problem","he_wind_mdot");
@@ -576,6 +602,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto hkt = Kokkos::create_mirror_view(ckt);
   Kokkos::deep_copy(hT, cT);
   Kokkos::deep_copy(hkt, ckt);
+  // diagnostic (output only): the code's T(rho, eint) of the column against the file's T
+  // (column 6), over the mesh's radial range; skipped with he_wind_ic (T replaced there)
+  if (tcol_read && !wic && global_variable::my_rank == 0) {
+    const Real x1a = pmy_mesh_->mesh_size.x1min, x1b = pmy_mesh_->mesh_size.x1max;
+    Real tdm = 0.0, rdm = 0.0;
+    for (int n=0; n<nf; ++n) {
+      if (hr[n] < x1a || hr[n] > x1b) continue;
+      const Real dv = fabs(hT(n)*hs_tk/hTcol[n] - 1.0);
+      if (dv > tdm) {
+        tdm = dv;
+        rdm = hr[n];
+      }
+    }
+    std::cout << "he_star_m1: IC column T(rho,eint)/T_col - 1: max " << tdm << " at r = "
+              << rdm << " (he_ic_eint_from_t = " << (eft ? "true" : "false") << ")"
+              << std::endl;
+  }
 
   // ---- startup check (fatal): the column, ghost margin included, is inside the EOS
   // table (tabulated EOS only; an ideal gas has no range) and the opacity table grid,
@@ -935,6 +978,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         dmax = fabs(bd[i]/dc[i] - 1.0);
         imax = i;
       }
+    }
+    if (tcol_read && !wic && global_variable::my_rank == 0) {   // diagnostic only
+      Real tdm = 0.0, rdm = 0.0;
+      for (int i=is; i<=ie; ++i) {
+        const Real dv = fabs(tc[i]*hs_tk/logint(hTcol, hx1v(0,i)) - 1.0);
+        if (dv > tdm) {
+          tdm = dv;
+          rdm = hx1v(0,i);
+        }
+      }
+      std::cout << "he_star_m1: he_ic_balance cells: max |T/T_col - 1| = " << tdm
+                << " at r = " << rdm << std::endl;
     }
     if (wic && ianc < ie) {   // the anchor cell is a wind cell again
       bd[ianc+1] = logint(hd, hx1v(0,ianc+1));
