@@ -385,6 +385,60 @@ void RadiationM1::VetLatTTGhosts() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatLocalMask
+//! \brief rad-beam-1008 vet_col_lat_fallback = local: the lateral off-diagonal tensor
+//! entries D_r,theta and D_r,phi (the slots M1SphLat and VetLatOp read) are zeroed in every
+//! cell whose 3x3x3 in-block neighbourhood holds a non-positive solved E (M1_IW_S2), then
+//! the lateral ghosts are refreshed.  Every face term reads the same tensor from both
+//! sides, so conservation is kept; the next build restores the tensor.
+
+void RadiationM1::VetLatLocalMask() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool thrd = trans_x3;
+  auto tt_ = tau_ten;
+  auto iw_ = iw;
+  const int c1 = M1_TT_LAT0 + 1, c2 = M1_TT_LAT0 + 2;
+  const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
+  Real nz = 0.0;
+  Kokkos::parallel_reduce("m1_vlat_lmask",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+  KOKKOS_LAMBDA(const int n, Real &sum) {
+    int t = n/fni;
+    const int i = is + (n - t*fni);
+    const int j = js + (t % fnj);
+    t /= fnj;
+    const int k = ks + (t % fnk);
+    const int m = t/fnk;
+    bool bad = false;
+    for (int dk = (thrd ? -1 : 0); dk <= (thrd ? 1 : 0); ++dk) {
+      for (int dj = -1; dj <= 1; ++dj) {
+        for (int di = -1; di <= 1; ++di) {
+          const int kk = k + dk, jj = j + dj, ii = i + di;
+          if (kk < ks || kk > ke || jj < js || jj > je || ii < is || ii > ie) {continue;}
+          if (!(iw_(m,M1_IW_S2,kk,jj,ii) > 0.0)) {bad = true;}
+        }
+      }
+    }
+    if (bad && (tt_(m,c1,k,j,i) != 0.0 || tt_(m,c2,k,j,i) != 0.0)) {
+      tt_(m,c1,k,j,i) = 0.0;
+      tt_(m,c2,k,j,i) = 0.0;
+      sum += 1.0;
+    }
+  }, Kokkos::Sum<Real>(nz));
+#if MPI_PARALLEL_ENABLED
+  {Real g;
+  MPI_Allreduce(&nz, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  nz = g;}
+#endif
+  vlat_nloc += nz;
+  VetLatTTGhosts();
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetLatExchange
 //! \brief the ordinary cell-centred ghost exchange of a (m, n, k, j, i) array
 

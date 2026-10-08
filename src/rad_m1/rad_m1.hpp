@@ -1470,6 +1470,13 @@ class RadiationM1 {
   int vlat_odm = 2;
   bool vlat_now = false;       // the term is on in this step (positivity fallback)
   Real vlat_nfall = 0.0;       // steps dropped to `none` by the positivity guard
+  // rad-beam-1008 <rad_m1>/vet_col_lat_fallback = global (default) | local: on a non-positive
+  // solved E, zero D_r,theta and D_r,phi only in the offending cells and their 3x3x3
+  // neighbourhood (VetLatLocalMask) and re-solve, up to vet_col_lat_fallback_max times per
+  // step, before the global drop; vlat_nloc counts the masked cells (all ranks)
+  bool vlat_floc = false;
+  int vlat_flocmax = 3, vlat_flocn = 0;
+  Real vlat_nlocev = 0.0, vlat_nloc = 0.0;
   Real vlat_odmax = 0.0;       // max |D_r,lat| of the last sweep (all ranks)
   // the operator form is active: on in this step and a non-zero D_r,lat (a zero one
   // leaves the operator, its stencil and the right-hand side untouched, bitwise)
@@ -1509,6 +1516,7 @@ class RadiationM1 {
   void VetLatBuild();
   void VetLatSweep(const int stage);   // 0 twin, 1 3-D, 2 moments
   void VetLatTTGhosts();
+  void VetLatLocalMask();
   void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);

@@ -1017,6 +1017,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumax")) {
         vlat_taumax = pin->GetReal("rad_m1","vet_col_lat_taumax");
       }
+      if (pin->DoesParameterExist("rad_m1","vet_col_lat_fallback")) {
+        std::string sf = pin->GetString("rad_m1","vet_col_lat_fallback");
+        if (sf.compare("local") == 0) {
+          vlat_floc = true;
+        } else if (sf.compare("global") != 0) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_col_lat_fallback = '" << sf
+                    << "' is not a choice (global | local)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        vlat_flocmax = pin->GetOrAddInteger("rad_m1","vet_col_lat_fallback_max",3);
+      }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag")) {
         std::string so = pin->GetString("rad_m1","vet_col_lat_offdiag");
         if (so.compare("none") == 0 || so.compare("false") == 0) {

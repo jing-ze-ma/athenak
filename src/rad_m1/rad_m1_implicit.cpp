@@ -6712,7 +6712,8 @@ void RadiationM1::ImplicitReport() {
               << " closure_relax=" << impl_crelax
               << " closure_lag=" << (impl_clag_step ? "step" : "pass")
               << " positivity fallbacks=" << od_nfall
-              << " (vet_col_lat " << vlat_nfall << ")"
+              << " (vet_col_lat " << vlat_nfall << ", local " << vlat_nlocev << " events "
+              << vlat_nloc << " cells)"
               << " min E from the solve=" << od_emin << std::endl;
   }
   if (impl_vimp) {
@@ -7997,6 +7998,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
   // form may drop it for the rest of the step, positivity below)
   vlat_now = vlat_on && (vlat_odm > 0);
+  vlat_flocn = 0;   // vet_col_lat_fallback = local: masks applied in this step
   // the closure under-relaxation and the start-of-step closure freeze.  Both are inert
   // at their defaults (w = 1, lag = pass), so phase C arithmetic is untouched.
   const Real crw = impl_crelax;
@@ -9803,8 +9805,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // vet_col_lat_offdiag = operator: drop D_r,lat for the rest of the step (the
           // assembly's term too: `none`, the M-matrix form), counted
           if (vlop) {
-            vlat_now = false;
-            vlat_nfall += 1.0;
+            if (vlat_floc && vlat_flocn < vlat_flocmax) {
+              // vet_col_lat_fallback = local: drop D_r,lat only around the offending cells
+              VetLatLocalMask();
+              vlat_flocn += 1;
+              vlat_nlocev += 1.0;
+            } else {
+              vlat_now = false;
+              vlat_nfall += 1.0;
+            }
           }
           if (vimp_now) {
             vimp_now = false;
