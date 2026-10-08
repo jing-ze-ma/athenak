@@ -50,7 +50,7 @@ tr:last-child td{border-bottom:0}
 a{color:var(--s1)}
 a:focus-visible{outline:2px solid var(--s1);outline-offset:2px}
 ul{margin:0;padding-left:20px;max-width:78ch;display:flex;flex-direction:column;gap:6px}
-.pending{border:1px dashed var(--rule);border-radius:6px;padding:12px 14px;color:var(--ink-2)}
+
 @media (max-width:520px){h1{font-size:1.7rem}}
 </style>
 
@@ -97,6 +97,36 @@ ul{margin:0;padding-left:20px;max-width:78ch;display:flex;flex-direction:column;
   </figure>
 </section>
 
+
+<section>
+  <h2>Grain growth with the density lowered</h2>
+  <p>42,240 grain-growth trajectories with the model chromosphere density multiplied by 1 to 0.01 (profile and launch flux together). Ballistic means gas launched faster than escape, with no dust. Dust-driven means gas on a bound orbit that grains push out.</p>
+  <figure>
+    <div class="legend" id="leg5"></div>
+    <div class="chart"><svg id="c5" viewBox="0 0 900 400" role="img" aria-label="Mass-loss rate versus density scale factor"></svg></div>
+    <figcaption>Mass-loss rate [Msun/yr] against the density scale factor, both logarithmic. Solid: dust-free ballistic tail (Γ_gas = 0). Dots: median dust-driven rate over grain optics, sticking, seeds, Γ_gas and gas temperature; absent where no configuration makes a dust-driven wind (golden16 at ≤ 0.1, m20lgl5.5 at 0.01). Horizontal band: Betelgeuse's observed 1–4e-6 Msun/yr. Vertical band: the density survey's 0.22–0.36 for golden16. Every case with an observed-like rate and 10–40 km/s is in the dust-free tail; its terminal velocity is 24–36 km/s, about twice Betelgeuse's 10–15 km/s.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>What holds up Betelgeuse's atmosphere</h2>
+  <p>A steady wind with the observed density (Dent et al. 2024, R* = 1014 Rsun = 7.05e13 cm, 18 Msun, Ṁ = 2e-6 Msun/yr) moves at 0.3–5 km/s inside 30 R*. The force it needs, as a fraction of gravity, follows from the momentum equation with the observed temperature.</p>
+  <figure>
+    <div class="legend" id="leg6"></div>
+    <div class="chart"><svg id="c6" viewBox="0 0 900 360" role="img" aria-label="Required force versus radius"></svg></div>
+    <figcaption>Required outward force Γ_req (fraction of gravity) against radius r [cm], for turbulent pressure ρv_t² with v_t = 0, 5 and 10 km/s. The shaded band is the most the radiation on the gas supplies anywhere (≤ 0.25; ≤ 0.03 inside 5 R*). Thermal pressure gives only 3–10% of the support, because the gas scale height is 0.007 R* while the observed density falls off over 0.13–0.95 R*.</figcaption>
+  </figure>
+  <figure>
+    <div class="chart"><svg id="c7" viewBox="0 0 900 300" role="img" aria-label="Required turbulent velocity versus radius"></svg></div>
+    <figcaption>Turbulent or wave velocity needed to carry the gravity that gas pressure and the most generous radiation force leave unsupported (66–87% of it), against radius r [cm]. For 168 pc (764 Rsun) it is 13–22 km/s. The observed MOLsphere and turbulent motions are ±10–30 km/s (Ohnaka).</figcaption>
+  </figure>
+  <ul>
+    <li>Radiation on the gas cannot hold up or drive this atmosphere. Something non-radiative (convective or pulsation shocks, Alfvén waves) has to supply pressure equivalent to 10–20 km/s.</li>
+    <li>The Dent profile fits the Fuller &amp; Tsuna form with v_esc/v_con = 10.35 (v_con = 8–9.4 km/s); its escaping tail gives Ṁ = 2.9–4.2e-6 Msun/yr, the observed rate, at 32–37 km/s.</li>
+    <li>In this slow flow, grains seed from 1.7 R* (pure forsterite) to 2.8 R* (about 1% Fe) and reach 0.1 µm by 1.8–5 R*, matching the observed inner dust. A net outward push (Γ_req &gt; 1) is needed only beyond about 12–20 R*, where Γ_dust ≈ 1 is enough; efficient growth gives 3–6 and would overdrive the wind.</li>
+  </ul>
+</section>
+
 <section>
   <h2>Sources</h2>
   <div class="tblwrap"><table>
@@ -118,7 +148,6 @@ ul{margin:0;padding-left:20px;max-width:78ch;display:flex;flex-direction:column;
     <li>The model's mass-loss rate is too high by the same order (5–10×). A 10–25% lower convective velocity, about 6–7 km/s instead of MESA's 8.2, would bring the profile onto the observations, because the density is exponential in v_esc/v_con.</li>
     <li>The observed mean outflow inside 5 R* is under 5 km/s, so this gas is mostly quasi-static or turbulent.</li>
   </ul>
-  <div class="pending">Grain-growth runs with the density lowered (×0.3 to ×0.01, and v_esc/v_con from 11.4 to 20) are still running. They will show which density and grain efficiency reproduce the observed 1e-7 to 1e-5 Msun/yr at 10–40 km/s. This page will be updated with them.</div>
 </section>
 </main>
 <div class="tip" id="tip"></div>
@@ -211,6 +240,55 @@ ranges('c4',[
   {t:'Observed RSGs, typical',lo:10,hi:40,obs:1},
   {t:'Model: dust-driven winds',lo:4,hi:166,n:'median 92 km/s'}],
   [0,175],false,'terminal velocity [km/s]',[10,40],'km/s');
+
+
+// chart 5: Mdot vs density scale
+(function(){
+  const svg=document.getElementById('c5');const x0=78,x1=880,y0=14,y1=340;
+  const xr=[0.008,1.25],yr=[1e-8,1e-2];
+  const X=v=>x0+(Math.log10(v)-Math.log10(xr[0]))/(Math.log10(xr[1])-Math.log10(xr[0]))*(x1-x0);
+  const Y=v=>y1-(Math.log10(v)-Math.log10(yr[0]))/(Math.log10(yr[1])-Math.log10(yr[0]))*(y1-y0);
+  el(svg,'rect',{x:x0,width:x1-x0,y:Y(4e-6),height:Y(1e-6)-Y(4e-6),fill:'var(--band)'});
+  el(svg,'rect',{x:X(0.22),width:X(0.36)-X(0.22),y:y0,height:y1-y0,fill:'var(--band)'});
+  for(let p=-8;p<=-2;p++){const y=Y(10**p);el(svg,'line',{x1:x0,x2:x1,y1:y,y2:y,class:'gr'});const t=el(svg,'text',{x:x0-8,y:y+4,'text-anchor':'end'});t.textContent='1e'+sup(p)}
+  for(const v of [0.01,0.03,0.1,0.3,1]){const x=X(v);el(svg,'line',{x1:x,x2:x,y1:y0,y2:y1,class:'gr'});const t=el(svg,'text',{x,y:y1+18,'text-anchor':'middle'});t.textContent=v}
+  el(svg,'line',{x1:x0,x2:x1,y1:y1,y2:y1,class:'ax'});el(svg,'line',{x1:x0,x2:x0,y1:y0,y2:y1,class:'ax'});
+  const a=el(svg,'text',{x:(x0+x1)/2,y:y1+38,'text-anchor':'middle',class:'lbl'});a.textContent='density scale factor (1 = MESA-based Fuller & Tsuna)';
+  const b=el(svg,'text',{x:16,y:(y0+y1)/2,'text-anchor':'middle',class:'lbl',transform:`rotate(-90 16 ${(y0+y1)/2})`});b.textContent='mass-loss rate [Msun/yr]';
+  const f=[1,0.3,0.1,0.03,0.01];
+  const S=[['--s1','golden16, dust-free ballistic tail',[4.1e-6,1.2e-6,4.1e-7,1.2e-7,4.1e-8],'line'],
+           ['--s1','golden16, dust-driven (median)',[4.7e-4,1.7e-4,0,0,0],'dot'],
+           ['--s2','m20lgl5.5, dust-free ballistic tail',[1.1e-4,3.2e-5,1.1e-5,3.2e-6,1.1e-6],'line'],
+           ['--s2','m20lgl5.5, dust-driven (median)',[1.7e-3,5.2e-4,5.5e-4,1.7e-4,0],'dot']];
+  for(const [c,t,v,k] of S){
+    if(k==='line'){const d=f.map((x,i)=>(i?'L':'M')+X(x).toFixed(1)+' '+Y(v[i]).toFixed(1)).join(' ');el(svg,'path',{d,fill:'none',stroke:`var(${c})`,'stroke-width':2});}
+    f.forEach((x,i)=>{if(!v[i])return;const m=el(svg,k==='line'?'rect':'circle',k==='line'?{x:X(x)-4,y:Y(v[i])-4,width:8,height:8,rx:2,fill:`var(${c})`,stroke:'var(--surface)','stroke-width':2}:{cx:X(x),cy:Y(v[i]),r:5.5,fill:`var(${c})`,stroke:'var(--surface)','stroke-width':2});tipped(m,`${t}\ndensity × ${x}\nṀ = ${fmt(v[i])} Msun/yr`)})}
+  legend('leg5',[{c:'--s1',t:S[0][1]},{c:'--s1',t:S[1][1],k:'dot'},{c:'--s2',t:S[2][1]},{c:'--s2',t:S[3][1],k:'dot'}]);
+})();
+
+// charts 6,7: Betelgeuse budget vs r [cm]
+const RB=7.054e13, XB=[1.2,1.5,2,3,5,10,20,30];
+function rchart(id,series,yr,yl,band,ref){
+  const svg=document.getElementById(id);const vb=svg.viewBox.baseVal;const x0=78,x1=880,y0=14,y1=vb.height-60;
+  const xr=[7e13,2.4e15];
+  const X=v=>x0+(Math.log10(v)-Math.log10(xr[0]))/(Math.log10(xr[1])-Math.log10(xr[0]))*(x1-x0);
+  const Y=v=>y1-(v-yr[0])/(yr[1]-yr[0])*(y1-y0);
+  if(band)el(svg,'rect',{x:x0,width:x1-x0,y:Y(band[1]),height:Y(band[0])-Y(band[1]),fill:'var(--band)'});
+  const step=(yr[1]-yr[0])>5?5:0.25;
+  for(let v=yr[0];v<=yr[1]+1e-9;v+=step){const y=Y(v);el(svg,'line',{x1:x0,x2:x1,y1:y,y2:y,class:'gr'});const t=el(svg,'text',{x:x0-8,y:y+4,'text-anchor':'end'});t.textContent=step<1?v.toFixed(2):v}
+  if(ref!==undefined){el(svg,'line',{x1:x0,x2:x1,y1:Y(ref),y2:Y(ref),class:'ax','stroke-dasharray':'4 3'});const t=el(svg,'text',{x:x1,y:Y(ref)-6,'text-anchor':'end'});t.textContent='gravity balanced'}
+  for(const v of [1e14,3e14,1e15,2e15]){const x=X(v);el(svg,'line',{x1:x,x2:x,y1:y0,y2:y1,class:'gr'});const t=el(svg,'text',{x,y:y1+18,'text-anchor':'middle'});t.textContent=fmt(v)}
+  for(const s of [2,5,10,20]){const x=X(s*RB);const t=el(svg,'text',{x,y:y1+34,'text-anchor':'middle',style:'fill:var(--muted)'});t.textContent=s+' R*'}
+  el(svg,'line',{x1:x0,x2:x1,y1:y1,y2:y1,class:'ax'});el(svg,'line',{x1:x0,x2:x0,y1:y0,y2:y1,class:'ax'});
+  const a=el(svg,'text',{x:(x0+x1)/2,y:y1+52,'text-anchor':'middle',class:'lbl'});a.textContent='radius r [cm]';
+  const b=el(svg,'text',{x:16,y:(y0+y1)/2,'text-anchor':'middle',class:'lbl',transform:`rotate(-90 16 ${(y0+y1)/2})`});b.textContent=yl;
+  for(const [c,t,v,da] of series){const pts=XB.map((x,i)=>[x,v[i]]).filter(p=>p[1]!==null);
+    el(svg,'path',{d:pts.map((p,i)=>(i?'L':'M')+X(p[0]*RB).toFixed(1)+' '+Y(p[1]).toFixed(1)).join(' '),fill:'none',stroke:`var(${c})`,'stroke-width':2,'stroke-dasharray':da||''});
+    for(const p of pts){const m=el(svg,'circle',{cx:X(p[0]*RB),cy:Y(p[1]),r:4.5,fill:`var(${c})`,stroke:'var(--surface)','stroke-width':2});tipped(m,`${t}\nr = ${fmt(p[0]*RB)} cm (${p[0]} R*)\n${yl.split(' [')[0]} = ${p[1]}`)}}
+}
+rchart('c6',[['--s1','v_t = 0',[0.97,0.90,0.92,0.93,0.92,0.95,1.00,1.11]],['--s2','v_t = 5 km/s',[0.91,0.77,0.84,0.86,0.81,0.74,0.58,0.47],'6 4'],['--s3','v_t = 10 km/s',[0.74,0.38,0.60,0.65,0.49,0.11,null,null],'2 3']],[0,1.25],'Γ_req (fraction of gravity)',[0,0.25],1);
+legend('leg6',[{c:'--s1',t:'no turbulent pressure'},{c:'--s2',t:'v_t = 5 km/s',k:'dash'},{c:'--s3',t:'v_t = 10 km/s',k:'dash'}]);
+rchart('c7',[['--s1','required v_t',[17.6,11.2,14.6,15.9,12.9,9.3,6.7,5.9]]],[0,20],'required v_t [km/s]',[10,20]);
 
 // table
 const rows=[

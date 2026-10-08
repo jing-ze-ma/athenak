@@ -1,6 +1,6 @@
-# NOTE 2026-10-08 (orion): RSG wind -- gas force <= 0.34 (LTE), small in non-LTE; iron-free silicate grains from ~2 R would OVERPRODUCE the wind in the FT chromosphere -> density or grain efficiency is lower
+# NOTE 2026-10-08 (orion): RSG wind -- radiation cannot hold up or drive the extended atmosphere (Gamma_gas <= 0.25); Betelgeuse needs ~10-20 km/s turbulent/wave support; observed Mdot = dust-free shock-launched tail; dust only beyond ~12-20 R*
 
-Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; grain growth, section 6; observed densities, section 7; CNO, step 4, not done).
+Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; grain growth, section 6; observed densities, section 7; rescaled grains, section 8; Betelgeuse wind budget, section 9; CNO, step 4, not done).
 Orion owns this thread (user 10-08). Python on CPU, no AthenaK changes.
 
 Files: `docs/handover/rsg-wind-orion-1008/` -- `scripts/` (rt.py, rsglib.py with MESA reader + ft/mft cases,
@@ -131,7 +131,7 @@ k(P < 1e-8) = k(1e-8) x clip(S(P)/S(1e-8), 0, 1). Holdouts: 1 decade p90 0.24 de
 INCREASES (TiO/Fe evaporation, 700-2500 K) failed validation and are cut, so the table is a LOWER BOUND on k below
 1e-8 bar; > 2-3 decades of extrapolation unvalidated. Rows at P >= 1e-8 bitwise identical to the original. Effect:
 thin Gamma_F at 1500-2250 K drops 2-10x vs clamp (TiO/VO dissociation), max still 0.38 (2500 K). A proper rebuild from
-DACE per-species 1e-8 bar cross sections (Lee et al. 2021's own source) is in progress.
+DACE per-species 1e-8 bar cross sections (Lee et al. 2021's own source) is section 5c.
 
 **5b. Non-LTE thermal balance, simple two-level eps model (`tables/nlte_tables.md`, `scripts/nlte.py`) -- SUPERSEDED by 5d (its "warm phase lost, gas 700-930 K" conclusion is wrong: Fe II metastable heating and rotational cooling were missing).** At the wind densities (rho ~1e-15,
 n ~ 3e8 cm^-3, P ~ 1e-10 bar) collisions (C = n q, q 1e-12..1e-10 cm^3/s) are far slower than radiative decay, so the
@@ -284,10 +284,57 @@ same content as `density_survey/density_check.html`). Literature from web; digit
 - **Bottom line:** the MESA-based FT chromosphere is too dense at 1.5-3 R* by ~3-5x (golden16 as built) to ~2-12x
   (scaled to Betelgeuse), largest near 2 R*; uncertainty ~x3 (distance/radius, metal ionisation fraction n_H ~
   x_e^-1/2, epoch variability; radio measures <n_H^2>, so clumping makes the true mean even lower). A 10-25 % lower
-  v_con (~6-7 km/s instead of MESA's 8.2) puts FT onto the observations. Rescaled grain runs (density x0.3..x0.01,
-  v_esc/v_con 11.4..20) are in progress in `/orion/ptmp/jinma/rsg_wind_1008/grains/rescale/`.
+  v_con (~6-7 km/s instead of MESA's 8.2) puts FT onto the observations. Rescaled grain runs: section 8; the
+  wind budget built on this observed profile: section 9.
 
-## 8. Verdict
+## 8. Grain growth with the chromospheric density lowered (`tables/grains_rescale_*`, `scripts/grains_rescale/`)
+Added 10-08. 42,240 trajectories: golden16 and m20lgl5.5; density x f_rho in {1, 0.3, 0.1, 0.03, 0.01} (profile and
+launch flux) or v_esc/v_con in {12.5, 15, 20} at fixed rho_ph; optics {lowk, pure, Fe3e-4, Fe1e-3}, alpha {0.1, 1},
+seeds {1e-15, 1e-13}, Gamma_gas {0, 0.1}, T_gas {400, 1200} K; launch bins of 2.5 km/s weighted by the exponential tail.
+- **No dust-driven wind is observed-like.** Dust-driven Mdot is either >= 7.5e-5 (golden16) / 1.3e-5 (m20) Msun/yr with
+  v_inf ~60-190 km/s, or exactly 0 once the density is low enough for observed rates (f_rho <= 0.1 or v_esc/v_con >= 15):
+  grains still form (1.7-2.7 R pure, 2.9-5.8 R Fe1e-3) but never reach 0.1 um. Grains grow only where the launch
+  density is high, and that density sets a high Mdot -- there is no gentle 1e-6 Msun/yr dust wind in this model.
+- Every case in the observed box (1e-7..1e-5 Msun/yr, 10-40 km/s) comes from the DUST-FREE ballistic tail (gas launched
+  above v_esc sqrt(1 - Gamma_gas)), v_inf 24-36 km/s. golden16 ballistic Mdot (Gamma_gas 0 / 0.1): f = 1: 4.1e-6 / 7.3e-6;
+  0.3: 1.2e-6 / 2.2e-6; 0.1: 4.1e-7 / 7.3e-7; q = 12.5: 1.2e-6 / 2.4e-6; q = 15: 8.5e-8 / 1.8e-7.
+- Consistency: the density survey (section 7) puts Betelgeuse at 0.22-0.36 of golden16; at f ~0.3 the ballistic tail
+  gives 1.2-2.4e-6 Msun/yr = Betelgeuse's observed rate. The mismatch is v_inf: ~31 km/s vs 10-15 (24-27 km/s at best,
+  only at v_esc/v_con = 20 with Mdot ~1e-9).
+- Low dust-driven v_inf needs a peak Gamma_d just above 1 (median v_inf 25 km/s for Gamma_d < 1.5; 74-133 km/s for 1.5-6);
+  those runs are near-escape launches with Gamma = 1 reached late (~4-5 R) and carry ~15 % of the dust-driven mass.
+- Flags: drift and dust attenuation still ignored (dust-driven Mdot, v_inf upper limits; the ballistic tail is unaffected);
+  the ballistic tail extrapolates FT's exp(-v0/v_con) beyond v_esc; 68 of 42,240 runs timed out near thresholds.
+
+## 9. Betelgeuse wind budget from the observed density (`tables/betelgeuse_tables.md`, `scripts/betelgeuse/`)
+Added 10-08. Observed profile = Dent et al. 2024 (n_H digitized, spline over 1.08-5 R*, r^-2.85 beyond; T from six
+read-off points, Harper's shape beyond 5 R*), Harper 2001 as a second profile. Set A: 222 pc, R 1014 Rsun, Teff 3650 K,
+L 1.64e5 Lsun, M 18/20; set B: 168 pc, R 764 Rsun, L 1e5, M 16.5/19 (n_H x 1.15).
+- Required force, steady wind with the observed rho and Mdot 2e-6 (set A, M 18): Gamma_req = 0.97 / 0.90 / 0.92 / 0.93 /
+  0.92 / 0.95 / 1.00 / 1.11 at 1.2 / 1.5 / 2 / 3 / 5 / 10 / 20 / 30 R* with no turbulent pressure. Thermal pressure gives
+  only 3-10 % (gas scale height 0.007 R* vs observed density scale height 0.13-0.95 R*); inertia <= 0.008. Steady-wind
+  v = 0.3 / 1.0 / 1.7 / 3.2 / 4.5 km/s at 2 / 5 / 10 / 20 / 30 R* (observed < 5 km/s inside 5 R*). Gamma_req > 1 only
+  beyond 12-20 R* (set and Mdot dependent).
+- Available radiation force on the gas (LTE, DACE table A; old table within 30 %): static RE column <= 0.03 inside 5 R*,
+  max 0.23 at 9 R*; Sobolev <= 0.002-0.009 inside 5 R*, max 0.10-0.19 at 8 R*; cool-phase brackets (300-2000 K) <= 0.25.
+  Non-LTE (5d) would lower it.
+- **Missing support:** even with the most generous gas force at each radius, 66-87 % of gravity is unaccounted for at
+  1.2-30 R*: an equivalent turbulent/wave pressure v_t = 17.6 / 11.2 / 14.6 / 15.9 / 12.9 / 9.3 / 6.7 / 5.9 km/s at 1.2 /
+  1.5 / 2 / 3 / 5 / 10 / 20 / 30 R* (set B 13-22 km/s), i.e. 6-28 x the gas pressure -- the same order as the observed
+  MOLsphere / turbulent velocities (+-10-30 km/s, Ohnaka). The Dent profile fits FT eq. 7 with v_esc/v_con = 10.35
+  (v_con 8-9.4 km/s, rms 0.11 dex), whose escaping tail gives Mdot 2.9-4.2e-6 (observed) at v_inf ~32-37 km/s.
+- Dust: in the slow observed flow, seeds grow from 1.7 R* (pure) / 2.8 R* (Fe1e-3) and reach 0.1 um by 1.8-5 R* (100-1000
+  yr transit) -- consistent with the observed inner dust (~1.5 R*, Haubois et al. 2019; Great Dimming dust, Montarges et
+  al. 2021). Efficient growth gives Gamma_d 3-6 (would overdrive the wind); Fe-bearing, low-sticking grains <= 0.1-1.6.
+  Ballistic parcels: dust-driven winds only for pure/Fe3e-4, alpha 1, seeds 1e-13, Mdot 5e-5..1.7e-4 (excluded).
+- **Bottom line:** Betelgeuse's extended atmosphere is held up by non-radiative (turbulent / pulsation-shock / wave)
+  pressure of ~10-20 km/s, not by radiation; shock-lifted gas sets the mass budget (the FT tail fitted to the observed
+  density reproduces the observed Mdot); dust is needed only beyond ~12-20 R* at Gamma_d ~1, so the grain efficiency must
+  be moderate or episodic.
+- Flags: T from six points; density beyond 5 R* extrapolated (Harper agrees within 30 %); the steady dust run is
+  kinematic (no feedback, drift, attenuation); dust-shell radii from a quick search (papers not opened).
+
+## 10. Verdict
 - Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
   **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35; the DACE low-P opacity lowers the ceiling to 0.32),
   peaking at 3-4 R, T 1500-1700 K, mainly 0.61-0.85 um (TiO/VO). It cannot drive RSG mass loss. With physical
@@ -305,5 +352,11 @@ same content as `density_survey/density_check.html`). Literature from web; digit
 - Biggest uncertainties: the chromospheric density (v_con normalisation, FT time-averaging vs observed RSG atmospheres),
   the stellar/chromospheric UV (Fe II heating, Mg photoionisation), grain composition (Fe) and sticking, drift and
   dust attenuation, the Fe II metastable quench rate, non-equilibrium chemistry, the low-P opacity (5c).
-- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force. Next analysis: the grain model with
-  the density scaled to the observations (running); optionally a self-consistent dusty wind with attenuation.
+- With the observed Betelgeuse density (section 9) the picture is: the extended atmosphere is held up by non-radiative
+  pressure of ~10-20 km/s (radiation on the gas gives <= 0.03 inside 5 R*, <= 0.25 anywhere); the shock-lifted
+  ballistic tail sets the observed Mdot (section 8: with the density lowered to the observed level, every observed-like
+  wind is dust-free, and dust either overdrives or does nothing); dust is needed only beyond ~12-20 R* at Gamma_d ~1. The
+  open mismatch is v_inf (~31-37 km/s from the tail vs observed 10-15 km/s).
+- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force. Next analysis: a self-consistent dusty
+  wind with drift and attenuation; the origin of the 10-20 km/s support (pulsation/convective shocks vs Alfven waves);
+  the supernova-CSM view of the observed profile (M(<r), effective Mdot(r)).

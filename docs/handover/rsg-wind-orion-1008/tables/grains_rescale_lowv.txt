@@ -1,0 +1,10 @@
+configs with a dust-driven v0 bin at v_inf 10-40 km/s: 48
+mass fraction of the dust wind in those bins: median 0.15, max 1.00
+  ('m20lgl5.5', ('f', 1.0), 'Fe1e-3', 1.0, 1e-15, 0.0, 400.0) Mdot(10-40 bins) 1.4e-04 of dust 1.4e-04, dust v_inf(mass-wt) 27, ballistic 1.2e-04, bins 2/2
+  ('m20lgl5.5', ('f', 1.0), 'Fe1e-3', 1.0, 1e-15, 0.0, 1200.0) Mdot(10-40 bins) 1.8e-04 of dust 1.8e-04, dust v_inf(mass-wt) 28, ballistic 1.2e-04, bins 3/3
+  ('m20lgl5.5', ('f', 0.3), 'Fe1e-3', 1.0, 1e-13, 0.0, 1200.0) Mdot(10-40 bins) 5.5e-05 of dust 8.7e-05, dust v_inf(mass-wt) 41, ballistic 3.7e-05, bins 3/4
+  ('m20lgl5.5', ('f', 0.3), 'Fe3e-4', 1.0, 1e-15, 0.1, 1200.0) Mdot(10-40 bins) 1.4e-04 of dust 2.4e-04, dust v_inf(mass-wt) 28, ballistic 6.8e-05, bins 3/5
+  ('m20lgl5.5', ('f', 0.3), 'Fe3e-4', 1.0, 1e-15, 0.0, 1200.0) Mdot(10-40 bins) 1.0e-04 of dust 1.8e-04, dust v_inf(mass-wt) 32, ballistic 3.7e-05, bins 3/5
+  ('m20lgl5.5', ('f', 1.0), 'Fe1e-3', 1.0, 1e-15, 0.1, 1200.0) Mdot(10-40 bins) 1.9e-04 of dust 3.3e-04, dust v_inf(mass-wt) 36, ballistic 2.3e-04, bins 2/3
+golden16 min nonzero dust-driven Mdot over all configs 7.5e-05
+m20lgl5.5 min nonzero dust-driven Mdot over all configs 1.3e-05
