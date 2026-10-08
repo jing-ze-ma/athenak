@@ -197,6 +197,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_ew_max = 0.0;
   impl_ew_gam = 0.9;
   impl_lin_cnorm = 0.0;
+  impl_lin_wsc = false;
   ew_fprev = 0.0;
   ew_etaprev = 0.0;
   impl_pred = false;

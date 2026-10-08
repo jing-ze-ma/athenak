@@ -904,6 +904,8 @@ class RadiationM1 {
   Real impl_ew_gam;             // <rad_m1>/implicit_lin_ew_gamma
   Real impl_lin_cnorm;          // <rad_m1>/implicit_lin_cnorm: inner test on the per-cell
                                 // relative E error max|r_i|/(s_i E_i) (0 = off)
+  bool impl_lin_wsc;            // <rad_m1>/implicit_lin_scaled: BiCGStab inner products
+                                // weighted by 1/(s_i E_i)^2 (the row-scaled system)
   Real ew_fprev, ew_etaprev;    // max|r0| and eta of the previous pass of this step
                                 // (* = for eddington | vet_sc | tau; m1-type closures
                                 // default to the opposite, the pre-0923 path)

@@ -974,6 +974,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_lin_cnorm must be >= 0 and needs "
               "implicit_bcg_sync >= 1");
   }
+  // implicit_lin_scaled (sp-blend2-1008, default false = the unweighted recurrence,
+  // bitwise): BiCGStab on the ROW-SCALED system D A x = D b, D = diag(1/(s_i E^k_i)), the
+  // scaling the cnorm test already measures the residual in.  Right preconditioning
+  // commutes with it (D A M^-1 D^-1), so the only change is that every inner product of
+  // residual-space vectors -- (rhat,r), (rhat,v), (t,s), (t,t) -- carries the weight
+  // 1/(s_i E^k_i)^2.  Unweighted, the omega step and the Lanczos coefficients are set by
+  // the cells with the largest E (the deep interior, E ~ 1e8 x the atmosphere's on AG
+  // Car), so the thin atmosphere's residual -- the one the per-cell test waits for --
+  // barely enters them.  Needs implicit_lin_cnorm > 0 and implicit_krylov_fuse <= 1 (the
+  // fused reductions of fuse 2/3 live in the operator kernel).
+  impl_lin_wsc = pin->GetOrAddBoolean("rad_m1","implicit_lin_scaled",false);
+  if (impl_lin_wsc && (!(impl_lin_cnorm > 0.0) || impl_kfuse > 1)) {
+    ImplFatal("<rad_m1>/implicit_lin_scaled needs implicit_lin_cnorm > 0 and "
+              "implicit_krylov_fuse <= 1");
+  }
   if (impl_ew_max < 0.0 || impl_ew_max >= 1.0 || !(impl_ew_gam > 0.0)) {
     ImplFatal("<rad_m1>/implicit_lin_ew_max must lie in [0,1), ew_gamma > 0");
   }
@@ -5896,6 +5911,19 @@ void RadiationM1::ImplicitBiCGStabEnd(int nit, bool fell_back) {
   bcg_itmax = std::max(bcg_itmax, static_cast<Real>(nit));
 }
 
+namespace {
+//! implicit_lin_scaled: the weight 1/(s_i E^k_i)^2 of the row-scaled system's inner
+//! products (s_i = 1 + SRCB_i, as in the cnorm test); 1 when off (bitwise)
+KOKKOS_INLINE_FUNCTION
+Real M1BcgW(const DvceArray5D<Real> &iw_, const bool on, const Real efl, const int m,
+            const int k, const int j, const int i) {
+  if (!on) {return 1.0;}
+  const Real d = (1.0 + fmax(iw_(m,M1_IW_SRCB,k,j,i), 0.0))
+                 *fmax(iw_(m,M1_IW_EP,k,j,i), efl);
+  return 1.0/(d*d);
+}
+} // namespace
+
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::ImplicitBiCGStabFused
 //! \brief implicit_bcg_sync = 1 | 2: the SAME right-preconditioned BiCGStab recurrence as
@@ -5965,6 +5993,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   // the error of E in every cell relative to the local E; the test is r < lin_cnorm.
   const bool cn = (impl_lin_cnorm > 0.0);
   const Real efl = e_floor;
+  const bool wsc = impl_lin_wsc;   // implicit_lin_scaled: weighted inner products
 
   // x0 = the Picard iterate; r0 = b - A x0, with max|r0| and (r0,r0) in the same kernel
   par_for("m1_impl_bcgf_x0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -5982,7 +6011,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
     iw_(m,M1_IW_KRH,k,j,i) = r;
     iw_(m,M1_IW_KP,k,j,i) = 0.0;
     iw_(m,M1_IW_KV,k,j,i) = 0.0;
-    v.s0 += r*r;
+    v.s0 += M1BcgW(iw_, wsc, efl, m, k, j, i)*r*r;
     Real a = cn ? (fabs(r)/((1.0 + fmax(iw_(m,M1_IW_SRCB,k,j,i), 0.0))
                             *fmax(iw_(m,M1_IW_EP,k,j,i), efl))) : fabs(r);
     v.mx = (a > v.mx) ? a : v.mx;
@@ -6054,7 +6083,8 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         int m, k, j, i;
         M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
         k += ks; j += js; i += is;
-        ls += iw_(m,M1_IW_KRH,k,j,i)*iw_(m,M1_IW_KV,k,j,i);
+        ls += M1BcgW(iw_, wsc, efl, m, k, j, i)
+              *iw_(m,M1_IW_KRH,k,j,i)*iw_(m,M1_IW_KV,k,j,i);
       };
       if (devrv) {
         // no host sync: alpha stays on the device until the (t,s) reduction
@@ -6111,8 +6141,9 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
           M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
           k += ks; j += js; i += is;
           Real t = iw_(m,M1_IW_KTT,k,j,i);
-          v.s0 += t*iw_(m,M1_IW_KS,k,j,i);
-          v.s1 += t*t;
+          const Real wt = M1BcgW(iw_, wsc, efl, m, k, j, i);
+          v.s0 += wt*t*iw_(m,M1_IW_KS,k,j,i);
+          v.s1 += wt*t*t;
           if (dv && idx == 0) {v.s2 += rvd_();}   // carries rhat.v to the host, exactly
         });
         }
@@ -6139,7 +6170,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
           iw_(m,M1_IW_KX,k,j,i) += al*iw_(m,M1_IW_KY,k,j,i) + ow*iw_(m,M1_IW_KZ,k,j,i);
           Real r = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
           iw_(m,M1_IW_KR,k,j,i) = r;
-          v.s0 += iw_(m,M1_IW_KRH,k,j,i)*r;
+          v.s0 += M1BcgW(iw_, wsc, efl, m, k, j, i)*iw_(m,M1_IW_KRH,k,j,i)*r;
           Real a = cn ? (fabs(r)/((1.0 + fmax(iw_(m,M1_IW_SRCB,k,j,i), 0.0))
                                   *fmax(iw_(m,M1_IW_EP,k,j,i), efl))) : fabs(r);
           v.mx = (a > v.mx) ? a : v.mx;
@@ -6194,7 +6225,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         iw_(m,M1_IW_KRH,k,j,i) = r;
         iw_(m,M1_IW_KP,k,j,i) = 0.0;
         iw_(m,M1_IW_KV,k,j,i) = 0.0;
-        v.s0 += r*r;
+        v.s0 += M1BcgW(iw_, wsc, efl, m, k, j, i)*r*r;
       });
       bcg_nred += 1.0;
       rhon = red.s0;
