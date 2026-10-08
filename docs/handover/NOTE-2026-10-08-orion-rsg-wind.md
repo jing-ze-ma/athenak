@@ -1,6 +1,6 @@
-# NOTE 2026-10-08 (orion): RSG wind -- gas line+molecular force <= 0.34 (MESA, Fuller & Tsuna chromosphere, Sobolev); two-phase gas at 3-5 R; only large iron-free silicate grains at ~4 R can drive
+# NOTE 2026-10-08 (orion): RSG wind -- gas line+molecular force <= 0.34 in LTE, likely ~0.01 in non-LTE; only large iron-free silicate grains at ~4 R can drive
 
-Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; CNO, step 4, not done).
+Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; CNO, step 4, not done).
 Orion owns this thread (user 10-08). Python on CPU, no AthenaK changes.
 
 Files: `docs/handover/rsg-wind-orion-1008/` -- `scripts/` (rt.py, rsglib.py with MESA reader + ft/mft cases,
@@ -118,15 +118,53 @@ delta is ~2.5e-3, raising the requirement 1.6x.
 Approximations: optically thin RE, single-temperature grains, no drag/drift, no grain-growth kinetics (can grains reach
 ~0.3 um in the time available?), no gas heating by dust, both phases see the unattenuated stellar flux.
 
-## 5. Verdict
+## 5. Below the 1e-8 bar table edge: scaled ck extension (fallback) and non-LTE thermal balance
+Added 10-08. Work dirs `/orion/ptmp/jinma/rsg_wind_1008/{lowP,nlte}` (tables and npz there, not committed).
+
+**5a. Low-P ck extension (fallback, `lowP/data/ck/Premixed_1x_g8_11_hiT2_lowP.txt`, P 1e-14..1000 bar, 52 nodes).**
+Lines are Doppler-limited at <= 1e-8 bar (Lorentz = Doppler only near 0.3 bar), so below the edge k per gram changes
+only through chemistry. Viper's summed carrier-group taper (data/exo_fms_ck/tools/carriers.py) FAILS in pressure:
+inside the table (1e-8..1e-5 bar vs 1e-8) median error 0.36 dex, p90 1.95 dex (carriers change: H2O/TiO/CO
+dissociate, CN/Fe/Fe+ take over above ~2500 K). Used instead: a non-negative fit k_bg = sum_s c_s(T,b,g) X_s(T,P) over
+the 31 premixed species with pyfastchem 4.0.3 local equilibrium condensation (in-table median 0.004 dex), then
+k(P < 1e-8) = k(1e-8) x clip(S(P)/S(1e-8), 0, 1). Holdouts: 1 decade p90 0.24 dex, 2 decades p90 0.82 dex; predicted
+INCREASES (TiO/Fe evaporation, 700-2500 K) failed validation and are cut, so the table is a LOWER BOUND on k below
+1e-8 bar; > 2-3 decades of extrapolation unvalidated. Rows at P >= 1e-8 bitwise identical to the original. Effect:
+thin Gamma_F at 1500-2250 K drops 2-10x vs clamp (TiO/VO dissociation), max still 0.38 (2500 K). A proper rebuild from
+DACE per-species 1e-8 bar cross sections (Lee et al. 2021's own source) is in progress.
+
+**5b. Non-LTE thermal balance (`tables/nlte_tables.md`, `scripts/nlte.py`).** At the wind densities (rho ~1e-15,
+n ~ 3e8 cm^-3, P ~ 1e-10 bar) collisions (C = n q, q 1e-12..1e-10 cm^3/s) are far slower than radiative decay, so the
+thermalisation fraction eps = C/(C + A) is ~1e-3..1e-4 for IR vib-rot (A 10-100 /s) and <= 1e-6 for electronic/atomic
+lines (A 1e6-1e8 /s). Net heating H = sum_b (eps_b kl_b + kc_b)(W B_b(Teff) - B_b(T)) (H-/CIA continuum eps = 1;
+Rayleigh scattering removed). LTE reproduces section 4 exactly (golden16 2745/939, 2580/795, 1928/708 K).
+- Only R = eps_el/eps_IR matters (identical results for eps_IR 1e-2 and 1e-4). Pure two-level scattering
+  (R <= 1e-4): the warm phase DISAPPEARS; the gas sits on the IR-balanced cool root, within 10 K of LTE: golden16
+  1220/927/790/707 K at 2/3/4/5 R, m20lgl5.5 ~1170/888/761/684 K. Bistability needs R >~ 0.5-1 (most absorbed visible
+  energy degraded into vibration and quenched, e.g. 2536/931 K at 3 R for R = 0.5); R >= 3 gives a single 2750-3000 K
+  phase. The continuum supplies < 0.5 % of the absorbed power at P <= 1e-9 bar and cannot hold the warm phase.
+- Physical R (orion's reading): the LTE warm phase is heated mainly in 0.26-0.42 um = atomic Fe lines, which resonance-
+  scatter with no vibrational cascade (R ~ 1e-4); only TiO electronic bands could reach R ~ 0.5. So the warm phase is
+  most likely lost and the wind gas is cool (700-930 K at 3-5 R), where the gas force is ~0.01.
+- Is RE reached? LTE: t_th 40-3000 s << t_dyn (flow r/v 3e7-5e8 s, FT shock interval R/v_con 6e7-1e8 s). Non-LTE cool
+  root: t_th/t_dyn ~ 0.01-0.2 at 1e-10 bar, 0.1-20 at 1e-11 bar -> at P <~ 1e-11 bar (and 1e-10 bar for slow
+  collisions) T is set by shocks/adiabatic expansion, not RE; at P >= 1e-9 bar RE always holds.
+- Force: absorption from the stellar beam with isotropic re-emission carries no net momentum, so eps changes Gamma only
+  through T.
+- Flags: equilibrium chemistry assumed (H2 formation between the phases ~1e10 s > t_dyn); single two-level eps per band
+  (no line-specific A, q, no radiative pumping of IR levels); 1-2 um bands treated as vib-rot although TiO/CN/FeH have
+  electronic bands there; lowP table is a lower bound (LTE warm roots within 150 K of clamp).
+
+## 6. Verdict
 - Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
-  **Gamma = 0.1-0.34** (no case of 1,800+ above 0.35), peaking at 3-4 R, T 1500-1700 K, mainly the 0.61-0.85 um
-  molecular band (TiO/VO). It cannot drive RSG mass loss, but lowers the effective gravity by 20-30 % at 3-4 R.
-- That same layer is thermally bistable (warm ~2000-2700 K / cool ~700-950 K clumps) and is where nearly transparent
-  iron-free silicate grains first survive. Driving then requires LARGE (~0.1-1 um) iron-free silicate grains in the
-  cool clumps at ~4 R (3 R for the cool, luminous m20lgl5.5): molecules hold the gas up to there, dust launches it.
-  Al2O3 and absorbing silicates cannot.
-- Biggest uncertainties: the 1e-8 bar table edge (sets the cool-phase T and the instability window), the dust opacity
-  per gram (assumed), grain growth kinetics.
-- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force alone; a dust/grain-growth model
-  (or a ck table extended below 1e-8 bar) would be the next analysis step.
+  **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35), peaking at 3-4 R, T 1500-1700 K, mainly 0.61-0.85 um
+  (TiO/VO). It cannot drive RSG mass loss. Below the 1e-8 bar edge the opacity likely falls further (TiO/VO dissociate),
+  and in non-LTE the warm gas phase is probably lost (section 5): the gas at 3-5 R is cool (700-930 K) with Gamma ~0.01,
+  so the molecular contribution to driving may be negligible rather than 20-30 % of gravity.
+- Dust: grain temperature (independent of the gas T) still limits condensation; nearly transparent iron-free silicate
+  grains first survive at ~4 R (3 R for the cool, luminous m20lgl5.5), and only LARGE (~0.1-1 um, scattering) grains of
+  that kind reach Gamma_c > 1. Al2O3 and absorbing silicates cannot. Cool non-LTE gas favours condensation.
+- Biggest uncertainties: R (line-resolved non-LTE of the electronic/atomic bands), the dust opacity per gram (assumed),
+  grain growth kinetics, non-equilibrium chemistry, the low-P opacity (DACE rebuild in progress).
+- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force; a dust/grain-growth model is the next
+  analysis step.
