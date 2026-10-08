@@ -819,6 +819,24 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   auto wder_ = wder;
   auto wtemp_ = wtemp;
 
+  // ISOTHERMAL EOS: there is no energy slot (IEN is out of range in u0 and w0) and no
+  // energy floor, so only the velocity is raised with the metric.  A separate kernel, so
+  // that the ideal/general kernels below are compiled exactly as before.
+  if (!eos_data.is_ideal) {
+    par_for("cs_raisev_iso", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cos_cell_(m,k,j);
+      const Real det = 1.0 - c*c;
+      const Real d = u0(m,IDN,k,j,i);
+      const Real m2 = u0(m,IM2,k,j,i);   // xi
+      const Real m3 = u0(m,IM3,k,j,i);   // eta
+      w0(m,IVX,k,j,i) = u0(m,IM1,k,j,i)/d;
+      w0(m,IVY,k,j,i) = (m2 - c*m3)/(d*det);
+      w0(m,IVZ,k,j,i) = (m3 - c*m2)/(d*det);
+    });
+    return;
+  }
+
   // THE LEGACY KERNEL.  See the note on EOS_Data::floors_legacy: with no floor switch
   // enabled the kernel below is algebraically the same as this one, but not bitwise --
   // hoisting the kinetic energy, moving the w0 writes and turning the par_for into a
@@ -1025,6 +1043,32 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
   auto eos_ = eos_data;
   auto wder_ = wder;
   auto wtemp_ = wtemp;
+  // ISOTHERMAL EOS: no energy slot (IEN is out of range in u0 and w0), so only the
+  // orthonormal cell-centred field and the raised velocity are formed, with the same
+  // expressions as the kernel below; a separate kernel keeps that one unchanged.
+  if (!eos_data.is_ideal) {
+    auto &x1v_i = x1v;
+    auto &x1f_i = xx1f;
+    par_for("cs_raisev_mhd_iso", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cos_cell_(m,k,j);
+      const Real sn = sin_cell_(m,k,j);
+      const Real det = 1.0 - c*c;
+      const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+      const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+      bcc0(m,IBX,k,j,i) = CellCenteredRadialFld(b0.x1f(m,k,j,i), b0.x1f(m,k,j,i+1),
+                                                x1f_i(m,i), x1f_i(m,i+1), x1v_i(m,i));
+      bcc0(m,IBY,k,j,i) = (by_n + c*bz_n)/sn;
+      bcc0(m,IBZ,k,j,i) = bz_n;
+      const Real d = u0(m,IDN,k,j,i);
+      const Real m2 = u0(m,IM2,k,j,i);   // xi
+      const Real m3 = u0(m,IM3,k,j,i);   // eta
+      w0(m,IVX,k,j,i) = u0(m,IM1,k,j,i)/d;
+      w0(m,IVY,k,j,i) = (m2 - c*m3)/(d*det);
+      w0(m,IVZ,k,j,i) = (m3 - c*m2)/(d*det);
+    });
+    return;
+  }
   // On a STRETCHED radial grid the cell centre is not the midpoint of its two faces, so
   // the radial field at the centre is a weighted interpolation, not the plain average --
   // see CellCenteredRadialFld.  Only when the grid really is stretched: on a uniform one
@@ -1159,6 +1203,28 @@ void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
     const int kl, const int ku) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
+
+  // ISOTHERMAL EOS: no energy slot (IEN is out of range), so only d and the momentum
+  bool iso_ = false;
+  if (pmy_pack->phydro != nullptr) {
+    iso_ = !pmy_pack->phydro->peos->eos_data.is_ideal;
+  } else if (pmy_pack->pmhd != nullptr) {
+    iso_ = !pmy_pack->pmhd->peos->eos_data.is_ideal;
+  }
+  if (iso_) {
+    par_for("cs_lowerm_iso", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cos_cell_(m,k,j);
+      const Real d = w0(m,IDN,k,j,i);
+      const Real v2 = w0(m,IVY,k,j,i);
+      const Real v3 = w0(m,IVZ,k,j,i);
+      u0(m,IDN,k,j,i) = d;
+      u0(m,IM1,k,j,i) = d*w0(m,IVX,k,j,i);
+      u0(m,IM2,k,j,i) = d*(v2 + c*v3);
+      u0(m,IM3,k,j,i) = d*(v3 + c*v2);
+    });
+    return;
+  }
 
   par_for("cs_lowerm", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

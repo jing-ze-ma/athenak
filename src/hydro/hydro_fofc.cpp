@@ -152,7 +152,8 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     // would floor.  Nothing is written back: the trial state is scratch.
     // Cells the DENSITY floor already flagged are skipped; they are flagged either way,
     // and their trial density is not the density the raise would be handed.
-    if (cs_ && peos->eos_data.defer_cons_floors &&
+    // (isothermal: no energy slot and no energy floor to defer)
+    if (cs_ && peos->eos_data.defer_cons_floors && peos->eos_data.is_ideal &&
         !pmy_pack->pcoord->is_special_relativistic &&
         !pmy_pack->pcoord->is_general_relativistic) {
       auto eos_ = peos->eos_data;

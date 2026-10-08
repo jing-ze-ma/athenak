@@ -154,6 +154,9 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   } else {
     // find smallest dx/(v +/- Cf) in each direction for mhd problems
     auto &bcc0_ = bcc0;
+    // the slot the Newtonian gas pressure is read from: an isothermal EOS has no energy
+    // (IEN is out of range) and never uses that pressure, so it reads IDN instead
+    const int ipr_ = eos.is_ideal ? static_cast<int>(IEN) : static_cast<int>(IDN);
 
     Kokkos::parallel_reduce("MHDNudt2",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
     KOKKOS_LAMBDA(const int &idx, Real &min_dt1, Real &min_dt2, Real &min_dt3,
@@ -209,7 +212,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
         Real &w_by = bcc0_(m,IBY,k,j,i);
         Real &w_bz = bcc0_(m,IBZ,k,j,i);
         Real cf;
-        Real p = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
+        Real p = eos.IdealGasPressure(w0_(m,ipr_,k,j,i));
         // For a general EOS the pressure and Gamma_1 were evaluated once per cell in
         // ConsToPrim. Using them here matters: with ionization or radiation pressure the
         // ideal-gas expression gives the wrong fast speed, hence the wrong CFL timestep.
