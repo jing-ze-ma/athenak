@@ -1,4 +1,4 @@
-# NOTE 2026-10-07 (DeltaAI): Plaskett setup audit -> env13 (branch accretor-1007) -- q13_s1 QUEUED
+# NOTE 2026-10-07 (DeltaAI): Plaskett setup audit -> env13 (branch accretor-1007) -- q13_s1 DONE
 
 Follows NOTE-2026-10-07-deltaai-plaskett (q12_s1 / q12f_s1) and the viper handover (accretor-handover/).
 The accretor work now runs on DeltaAI only.
@@ -70,4 +70,35 @@ All new keys are off by default, so runs without them are bitwise unchanged.
 - **Backup.** Job 3336438 (ghx4, 2 nodes, same output dir; it refuses to run if the dir exists) will be cancelled
   once q13_s1 has run.
 - **Data.** /work/nvme/bivj/jma20/plaskett_1007/test1007/run/q13_s1/.
-- Results and the comparison page against q12 will be added to this NOTE.
+- The backup job 3336438 was cancelled after q13_s1 ran.
+
+## Results: q13_s1 DONE
+
+- **Run.** Job 3336769 ran on gh node, 2026-10-08 00:02:37 to 00:54:15 CDT (52 min). It reached tlim 0.2291 (0.50 orbit)
+  at cycle 156692, rc 0, 0 FATAL/nan. Final dt 1.42e-6; min dt 9.58e-7 (no collapse); 2.66e8 zone-cycles/s on 4 GH200.
+- **Page:** https://claude.ai/artifact/RLmHQrvfFAr9yAv4eki4Tx (q13_s1 vs q12_s1 / q12f_s1). Numbers:
+  `plaskett-1007/env13/results/numbers_*.json`. Figure + page scripts: `plaskett-1007/env13/page/` (`make_all.sh`).
+  The q12 numbers were recomputed with the new script; the old values are reproduced exactly.
+
+| quantity | q13_s1 (env13) | q12_s1 | q12f_s1 |
+|---|---|---|---|
+| measuring radius (Rsun) | r_meas 9.6157 | R_acc 9.0013 | R_acc 9.0013 |
+| stream mass in (rho_s Rsun^3) | 8.575 | 17.852 | 17.852 |
+| net mass in through the face | 7.884 | 8.286 | 8.647 |
+| accreted fraction | **0.919** | 0.464 | 0.484 |
+| lowest cumulative net mass through the face | **-5e-11** | -12.76 | -12.76 |
+| envelope-edge shift, median over phi (Rsun) | **0.013** | 0.101 | 0.105 |
+| j through the face, last 0.1 orbit (j_K at the face) | 0.556 | 0.486 | 0.471 |
+| j through the face, cumulative | 0.556 | 0.670 | 0.649 |
+| j of the ballistic L1 orbit at the face | 0.555 | 0.571 | 0.571 |
+| j of rigid rotation (spin 1) at the face | 0.234 | 0.212 | 0.212 |
+
+- **Reading:**
+  - The bulge breathing is gone: no outflow through r_meas at any time.
+  - Accreted mass follows the stream inflow with a lag, about the flight time from r_out.
+  - The edge shift away from the stream sector is 8x smaller, and the remaining 0.013 Rsun grows only after 0.3 orbit,
+    near the stream splash.
+  - The gas through r_meas carries the ballistic orbit's j (0.556 vs 0.555 j_K), well below Keplerian.
+  - Half an orbit tests the setup; it is not a steady state.
+- **Units.** Masses are in rho_stream Rsun^3, and rho_stream is rederived in env13 (narrower stream). So compare the
+  fractions, not the absolute masses.
