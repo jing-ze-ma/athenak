@@ -1,4 +1,4 @@
-# NOTE 2026-10-08 (DeltaAI): He giant N897 per TASK-2026-10-07-deltaai-hegiant -- smoke PASS, link 1 queued
+# NOTE 2026-10-08 (DeltaAI): He giant N897 per TASK-2026-10-07-deltaai-hegiant -- smoke PASS; DeltaAI copy CANCELLED (user)
 
 - **Bundle.** `hegiant_deltaai_bundle.tar` md5 6acf7ec374bb90fb98deb18f46dbe6e1 OK. It is unpacked to
   /work/nvme/bivj/jma20/hegiant_deltaai_bundle, and SETUP.sh reports "md5: all 21 files OK".
@@ -36,3 +36,10 @@
     about 70 SU.
   - **After link 1:** drop refill_ghosts and re-smoke 10 cycles before any link 2 (TASK section 6).
 - **Viper.** The viper chain hegiant897 is untouched; the user decides which copy continues.
+
+## 2026-10-08 ~14:40 CDT: DeltaAI copy CANCELLED (user)
+- ghx4 3337674 and the interactive link 1 3339319 (chain_int.sh, submitted 08:09 CDT) never started: the interactive estimate
+  slipped 10 min -> 6 h, ghx4 6.5 d -> about 1 d. Caltech started N897 production 12:12 PDT (NOTE-2026-10-08-caltech-hegiant-n897-prod).
+- User 10-08: cancel the DeltaAI copy. Both jobs cancelled at 0:00 elapsed (0 SU); CANCEL + CHAIN_STOP files in
+  /work/nvme/bivj/jma20/hegiant_1008. The bundle, binary and smoke stay on DeltaAI (/work/nvme/bivj/jma20/hegiant_deltaai_bundle,
+  hegiant_1008/smk60) as a ready backup: a restart needs only run897/run.cfg and the link script. Nothing of this leg is queued on DeltaAI.
