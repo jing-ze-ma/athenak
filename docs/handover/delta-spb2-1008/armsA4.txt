@@ -1,0 +1,5 @@
+sblf rad_m1/implicit_lin_scaled=true
+smg rad_m1/implicit_precond=mg rad_m1/implicit_lin_scaled=true
+blf
+mg rad_m1/implicit_precond=mg
+smg5 rad_m1/implicit_precond=mg rad_m1/implicit_mg_levels=5 rad_m1/implicit_lin_scaled=true
