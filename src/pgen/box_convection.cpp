@@ -335,8 +335,10 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm);
 
 // defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
+// merge-1008: <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
 namespace {
 [[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
+[[maybe_unused]] const bool kMhdFofcPgenDefault = (mhd::fofc_pgen_default = true);
 }  // namespace
 
 namespace {
