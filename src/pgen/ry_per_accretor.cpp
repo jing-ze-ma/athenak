@@ -553,10 +553,10 @@ void RyPerBCEnv(Mesh *pm) {
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real ph = x3v(m,k);
     if (gen) {
-      // thermo = general: the same BCs through the EOS.  Ghost T = the edge cell's
-      // (floored), density by the isothermal hydrostatic walk of the general EOS
-      // (WBAdvance isothermal branch from the edge cell, frozen coefficient), in Phi_wb
-      // at r_in and in the TRUE Roche Phi at r_out; IEN = e + KE + rho Phi.
+      // thermo = general: the same BCs through the EOS.  r_in: the local polytrope of
+      // the two edge cells in Phi_wb (WBAdvance polytropic branch); r_out: ghost T = the
+      // edge cell's (floored), density by the isothermal hydrostatic walk of the general
+      // EOS in the TRUE Roche Phi; IEN = e + KE + rho Phi.
       if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
         const Real da = u0(m,IDN,k,j,is);
         const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
@@ -568,14 +568,33 @@ void RyPerBCEnv(Mesh *pm) {
           ea = eosd.EnergyFromTemperature(da, ta);
         }
         const Real pa = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
+        // the local polytrope of the two edge cells (wb_option = polytropic): T linear in
+        // Phi_wb with their dT/dPhi, density by the WB polytropic walk, so the ghosts lie
+        // on the edge cell's own WB background
+        Real a = 0.0;
+        {
+          const int i1 = is + 1;
+          const Real d1 = u0(m,IDN,k,j,i1);
+          const Real e1 = u0(m,IEN,k,j,i1) - 0.5*(SQR(u0(m,IM1,k,j,i1))
+                          + SQR(u0(m,IM2,k,j,i1)) + SQR(u0(m,IM3,k,j,i1)))/d1
+                          - d1*phicc(m,k,j,i1);
+          const Real dp1 = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph) - pa;
+          if (e1 > 0.0 && dp1 != 0.0) a = (eosd.Temperature(d1, e1, ta) - ta)/dp1;
+        }
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g, im = is + g;
           const Real pg = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
           Real dg = da, eg = ea, tg = ta;
-          WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tg, ta, 0.0, ta, ta);
-          if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+          WBAdvance(eosd, 3, da, ea, pg - pa, dg, eg, tg, ta, a, ta, ta);
+          if (!(Kokkos::isfinite(dg) && dg > 0.0 && Kokkos::isfinite(eg) && eg > 0.0 &&
+                tg >= tfl)) {
+            dg = da; eg = ea; tg = ta;
+            WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tg, ta, 0.0, ta, ta);
+            if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+            tg = ta;
+          }
           dg = fmax(fmin(dg, da*exp(cap)), dfl);
-          eg = eosd.EnergyFromTemperature(dg, ta);
+          eg = eosd.EnergyFromTemperature(dg, tg);
           const Real dm = u0(m,IDN,k,j,im);
           const Real v1 = -u0(m,IM1,k,j,im)/dm;
           const Real v2 = u0(m,IM2,k,j,im)/dm;
