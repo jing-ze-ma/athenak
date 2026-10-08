@@ -118,7 +118,7 @@ delta is ~2.5e-3, raising the requirement 1.6x.
 Approximations: optically thin RE, single-temperature grains, no drag/drift, no grain-growth kinetics (can grains reach
 ~0.3 um in the time available?), no gas heating by dust, both phases see the unattenuated stellar flux.
 
-## 5. Below the 1e-8 bar table edge: scaled ck extension (fallback) and non-LTE thermal balance
+## 5. Below the 1e-8 bar table edge: scaled ck extension (fallback), non-LTE thermal balance, DACE rebuild
 Added 10-08. Work dirs `/orion/ptmp/jinma/rsg_wind_1008/{lowP,nlte}` (tables and npz there, not committed).
 
 **5a. Low-P ck extension (fallback, `lowP/data/ck/Premixed_1x_g8_11_hiT2_lowP.txt`, P 1e-14..1000 bar, 52 nodes).**
@@ -155,6 +155,42 @@ Rayleigh scattering removed). LTE reproduces section 4 exactly (golden16 2745/93
   (no line-specific A, q, no radiative pumping of IR levels); 1-2 um bands treated as vib-rot although TiO/CN/FeH have
   electronic bands there; lowP table is a lower bound (LTE warm roots within 150 K of clamp).
 
+**5c. DACE per-species rebuild of the ck table below 1e-8 bar (`scripts/premix_lib.py`, `premix_lowP.py`,
+`build_lowP.py`, `gate.py`; tables and the 16 GB raw DACE slab in `/orion/ptmp/jinma/rsg_wind_1008/dace/`, not
+committed).** Lee et al. 2021 (arXiv:2106.11664) built the Exo-FMS table from HELIOS-K/DACE cross sections, premixed at
+high resolution with equilibrium-chemistry VMRs, then sorted into k; DACE's grid stops at 1e-8 bar, hence the table
+edge. Rebuild: the 1e-8 bar slab of the 32 premixed species from DACE (dace-query API; line lists as in Lee 2021 Table
+1, v1.0; atoms Kurucz, available only >= 2500 K), premixed with pyfastchem 4.0.3 equilibrium-condensation VMRs, sorted
+per band, value at the table's 4+4 Gauss g-points (this convention matches; the sub-interval mean does not).
+- Gate at 1e-8 bar vs the table, 500-3000 K, b2-b10: median 0.063 dex (method OK), p90 0.88 dex -> FAILED, for three
+  specific reasons: (1) SiO: FastChem has SiO ~5e-5 at 1200-2300 K carrying 98-99 % of b0-b3, the table behaves as if
+  SiO were absent at 1200-1700 K and ~1e-4 x FastChem at 1900-2900 K (cause unresolved: GGchem Si chemistry, SiO cross
+  section, or SiO missing); (2) Fe+: every DACE atom file has a ~2-3e-3 cm^2/g smooth floor (untruncated wings); the
+  table keeps it for Fe I but not Fe+ (wing cutoff in Lee's Fe+) -> floor removed; (3) a 500-900 K low-g IR deficit
+  (chemistry CH4/HCl or wing treatment; unresolved, irrelevant for the wind). b6-b9 (0.42-1.3 um, TiO/VO) match at p90
+  0.12-0.26 dex. With the Fe+ floor removed and SiO fitted per T: median 0.044, p90 0.29 (circular for SiO).
+- Two tables (P 1e-14..1000 bar, 52 nodes; rows >= 1e-8 bar = the original, bitwise; new rows = table(1e-8) x
+  premix(P)/premix(1e-8), cross sections held at 1e-8 bar = Doppler limit): **A** `Premixed_1x_g8_11_hiT2_dace_lowP_SiOfc.txt`
+  (FastChem SiO, physical) and **B** `..._SiOtab.txt` (SiO suppressed as the table implies). A vs B differ only in
+  b0-b6 at 1000-2900 K (p90 0.24 dex below 1700 K, 0.83 dex at 1900-2900 K).
+- Unlike the scaled fallback (5a, decreases only), the premix shows INCREASES at low P in cool gas: at 1000 K and 1e-10
+  bar band k x1.1-28 (Fe gas x36, SiO x90 as they evaporate from condensates); also at 600-1300 K and x1.5 in b7 at
+  2500 K. At 2500 K A drops harder than 5a (SiO dissociates), B does not.
+- Thin Gamma_F, golden16, rho 1e-17 -> 1e-14:
+
+  | T [K] | clamp at 1e-8 bar | 5a scaled | A | B |
+  |---|---|---|---|---|
+  | 1000 | 0.018 | 0.018 | 0.13 -> 0.056 | 0.069 -> 0.048 |
+  | 1500 | 0.25 | 0.14 -> 0.23 | 0.26 -> 0.24 | 0.25 -> 0.24 |
+  | 2000 | 0.19 | 0.02 -> 0.14 | ~0.16 | ~0.16 |
+  | 2500 | 0.38 | 0.20 -> 0.38 | 0.014 -> 0.32 | 0.018 -> 0.32 |
+
+  Grid maximum 0.32 (A, B) vs 0.38: the gas-force ceiling drops slightly; cool ~1000 K gas gets 3-7x more (0.05-0.13).
+- Caveats: atoms below 2500 K are held at their 2500 K cross sections (the 1000 K Fe increase is uncertain -- exactly
+  the T range of the non-LTE cool root); rows above 6100 K are distorted by the carried-over ratio + g-monotonicity
+  (32 % of those entries changed, median 0.26 dex; irrelevant for the wind, a per-band ratio would fix it); B's SiO
+  factor is circular.
+
 ## 6. Verdict
 - Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
   **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35), peaking at 3-4 R, T 1500-1700 K, mainly 0.61-0.85 um
@@ -165,6 +201,7 @@ Rayleigh scattering removed). LTE reproduces section 4 exactly (golden16 2745/93
   grains first survive at ~4 R (3 R for the cool, luminous m20lgl5.5), and only LARGE (~0.1-1 um, scattering) grains of
   that kind reach Gamma_c > 1. Al2O3 and absorbing silicates cannot. Cool non-LTE gas favours condensation.
 - Biggest uncertainties: R (line-resolved non-LTE of the electronic/atomic bands), the dust opacity per gram (assumed),
-  grain growth kinetics, non-equilibrium chemistry, the low-P opacity (DACE rebuild in progress).
+  grain growth kinetics, non-equilibrium chemistry, the low-P opacity (DACE rebuild 5c: Lee's SiO unexplained, atoms
+  below 2500 K).
 - Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force; a dust/grain-growth model is the next
   analysis step.
