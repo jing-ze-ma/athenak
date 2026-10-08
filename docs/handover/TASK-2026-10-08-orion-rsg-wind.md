@@ -1,5 +1,10 @@
 # TASK for Orion: RSG wind -- does molecular / line / dust radiation force matter? (CPU, Python, no AthenaK)
 
+**OWNERSHIP (user 10-08): the RSG wind thread is handed over to Orion.** Viper does no further RSG wind work; Orion
+owns the analysis, its follow-ups and the decisions it proposes to the user (next steps such as non-grey opacity
+binning in M1/VET would come back as a TASK to viper/a GPU machine). Viper's work dir /viper/ptmp2/jinma/rsg_ck_1008 is
+frozen; everything needed is on this branch.
+
 ## 1. Context (viper step 1, done 10-08)
 Science goal (user): RSG wind mass loss, potentially driven by molecules. Viper's 1-D test is in
 `docs/handover/rsg-ck-1008/RSG_CK.md` (+ tables, plots, scripts). Verdict: **molecules alone cannot drive.** The
