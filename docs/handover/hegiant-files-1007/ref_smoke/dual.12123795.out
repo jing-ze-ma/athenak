@@ -1,0 +1,38 @@
+run.cfg: BIN=/viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f3a66907_hegopn TLIM=2.592e6
+XKEYS: time/cfl_number=0.3
+PK: 
+job 12123795 (hegiant_smkc) 1 nodes vipa1327, 2 ranks, start 2026-10-08_04:11:00
+GUARD: me 12123795 start 2026-10-08T04:10:58; running of this name: 12123795,2026-10-08T04:10:58
+GUARD: I run
+fc7b33a1ea517e9bddd83850f5b2d0f6  /viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f3a66907_hegopn
+FRESH start from /viper/ptmp2/jinma/he_giant_1006/runs/scout128/hegiant_scout128.athinput (00e7dfbc9c5044222a952d7e1283bd96)
+srun -n 2 /viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f3a66907_hegopn -i /viper/ptmp2/jinma/he_giant_1006/runs/scout128/hegiant_scout128.athinput time/tlim=2.592e6 time/cfl_number=0.3  time/nlim=60 time/ndiag=1 -d /viper/ptmp2/jinma/he_giant_1006/runs/smk_fresh_caltech -t 00:12:00   04:11:00
+rc=0 04:12:43, newest rst /viper/ptmp2/jinma/he_giant_1006/runs/smk_fresh_caltech/rst/hegiant.00001.rst
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  hegiant_smkc
+Node list: vipa1327
+Job start: Thu Oct  8 04:10:58 CEST 2026
+Job end:   Thu Oct  8 04:12:43 CEST 2026
+Work dir:  /viper/ptmp2/jinma/he_giant_1006/runs/smk_fresh_caltech
+Command:   /viper/ptmp2/jinma/he_giant_1006/runs/smk_fresh_caltech/dual_hegiant.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+12123795      hegiant_sm      1            96                             00:01:45      0:0
+12123795.0    athena_he_      1      2     96     3649.32M     3527.81M   00:01:43      0:0
+  
+Maximum memory per node: 7.653186 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 4.5 %
+  
