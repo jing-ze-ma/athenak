@@ -1,0 +1,11 @@
+# scout128 fresh start (viper link 1, job 12108729): run.cfg XKEYS and the full command line built by dual_hegiant.sh
+XKEYS="time/cfl_number=0.3"
+PK=""
+TLIM=2.592e6
+# command (fresh start; -t = wall - 20 min):
+#   srun -n <ranks> <BIN> -i hegiant_scout128_N445_fresh.athinput time/tlim=2.592e6 time/cfl_number=0.3 -d <run> -t <hh:mm:ss>
+# smoke variant (as smk_fresh_caltech): append  time/nlim=60 time/ndiag=1
+# Caltech: point problem/he_ic_file, problem/he_opac_table, problem/he_planck_table at your copies, e.g.
+#   problem/he_ic_file=<dir>/ic_giant_own.txt problem/he_opac_table=<dir>/rosseland_tops_hegiant_blend.txt \
+#   problem/he_planck_table=<dir>/planck_tops_hegiant_blend.txt
+# (or use hegiant_scout128_N445_fresh.athinput.in with @BUNDLE@ replaced; it differs from the viper input in these 3 lines only)

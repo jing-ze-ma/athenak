@@ -1,0 +1,223 @@
+<comment>
+problem = He GIANT envelope before core collapse (MESA r15140 M2pt754_Porb100 profile29, Wu grid: M 2.556 Msun,
+          L_ph 1.62e4 Lsun, R_ph 61.78 Rsun, Teff 8.28 kK), FOLLOW THE EXPANSION. he_star_m1 on branch hegiant-1006:
+          he_gm_column (enclosed-mass gravity of the IC column, static), he_base_heat (wall in the CZ: the
+          scaffold's wall luminosity L_MLT(3 Rsun) 6.72e6 Lsun stays as a 0.5 Rsun base heating layer). IC : MESA T(r) + HSE with our EOS and
+          our m(r) (ic/make_ic_giant_mesa.py --hse own), frozen MLT scaffold F - F_diff, RE atmosphere, floor 1e-20.
+          General EOS X 0 Y 0.9265 (Z 0.0735 inert, a_metal 1.77 : fully ionized metals); TOPS tables of the
+          envelope/surface mixtures blended in log T (tables/blend_tables.py). r 3-200 Rsun N445 (grid/fit_445:
+          dr : max(0.015 r, 0.15 Rsun) deep, plateau ~0.039 Rsun : H_atm/3 over 60.3-64.2 Rsun, dr/r <: 0.01 to
+          130 Rsun). pi/3 x pi/3 wedge, 128 x 128 SCOUT layout (16 blocks 445 x 32 x 32). See SETUP.md.
+<job>
+basename = hegiant
+<mesh>
+nghost    = 3
+nx1       = 445
+x1min     = 2.087100e11          # 3 Rsun
+x1max     = 1.391400e13          # 200 Rsun (outflow top; R_ph 61.78 Rsun at t : 0)
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 128
+x2min     = 1.0471975511965976    # pi/3
+x2max     = 2.0943951023931953    # 2 pi/3
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 128
+x3min     = 0.0
+x3max     = 1.0471975511965976    # pi/3
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_c1       = -1.236894517393e+00   # grid/fit_giant.py 445 (DMIN 0.15): grid/fit_445.out
+f_stretch_r_c2       = -4.735163641768e+00
+f_stretch_r_c3       = 5.026104492976e+01
+f_stretch_r_c4       = -3.570419665727e+02
+f_stretch_r_c5       = 1.422488454204e+03
+f_stretch_r_c6       = -2.717229013236e+03
+f_stretch_r_c7       = 2.437978328868e+03
+f_stretch_r_c8       = -8.386699985201e+02
+f_stretch_r_b1_amp   = -2.021640817960e+00
+f_stretch_r_b1_x     = 4.640065359922e-01
+f_stretch_r_b1_w     = 1.525464300752e-01
+f_stretch_r_b2_amp   = 2.054617003474e+00
+f_stretch_r_b2_x     = 8.798116659071e-01
+f_stretch_r_b2_w     = 1.046282952739e-01
+f_stretch_r_p_amp    = -9.988878672034e-01
+f_stretch_r_p_xa     = 3.705211949536e-01
+f_stretch_r_p_xb     = 8.168730212611e-01
+f_stretch_r_p_w      = 2.057947745856e-02
+<meshblock>
+nx1       = 445
+nx2       = 64      # 4 blocks of 445 x 64 x 64: 32 x 32 blocks fail vet_gd (clamped lateral reads, smoke 12108597)
+nx3       = 64
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3           # radiation-dominated (user rule)
+nlim       = -1
+tlim       = 2.592e6       # 30 d (user GO 10-07)
+ndiag      = 50
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0     # general EOS: T_unit : m_u/k_B
+<hydro>
+eos                  = general
+general_eos          = table
+gamma                = 1.6666666667
+eos_h2               = false
+eos_ionization       = true
+eos_metal_ionization = false
+eos_radiation        = false      # MANDATORY with <rad_m1>: the module evolves E
+eos_xh               = 0.0
+eos_yhe              = 0.9265     # Z : 0.0735 : the TOPS envelope mixture
+eos_a_metal          = 1.77       # metals FULLY IONIZED: Z/a : sum X_i (1+Z_i)/A_i (exact in the deep envelope)
+eos_logd_min         = -21.0      # covers dfloor 1e-20 (: he_opac_logd_min)
+eos_logd_max         = -1.0
+eos_logt_min         = 3.5        # below tfloor 4e3 K
+eos_logt_max         = 6.8
+eos_dlog             = 0.02
+rad_signal_speed = true
+reconstruct = plm
+rsolver     = hllc                # near-sonic convection (He presn rule)
+fofc        = true
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+dfloor  = 1.0e-20
+tfloor_kelvin = 4.0e3
+pfloor  = 1.0e-12
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+<rad_m1>
+implicit_tsolve_opac = true
+implicit_tsolve_opac_mode = 1
+implicit_gas_newton_switch = 10
+implicit_thin_freeze = 1.0e-2
+implicit_realisable_coupling = true
+report_newton_fb = true
+c_light          = 2.99792458e10
+arad             = 1.583122e-46   # a_cgs*T_unit^4, T_unit : m_u/k_B : 1.202724e-8 K
+chat_over_c      = 1.0
+closure          = vet_col
+vet_gd           = true
+vet_gd_replace   = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu    = 10
+vet_gd_gl_nphi   = 12             # 2 pi/12 divides the phi period pi/3
+vet_gd_gl_stagger = true
+vet_gd_rotate_every = 10
+vet_col_lat_offdiag = operator
+vet_gd_tangential   = false
+vet_gd_wall_interp  = true
+vet_gd_halo_compact = 2
+implicit_halo_direct = true
+implicit_od_cache = true
+implicit_krylov_fuse = 1
+implicit_op_stencil = true
+implicit_precond = rbgs_fwd
+implicit_halo_mpi = true
+implicit_halo_overlap = true
+opacity          = table
+temp_unit_kelvin = 1.202724e-8
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+force_reference_work = split
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_flux    = central
+implicit_enthalpy = plm
+implicit_vimp    = false
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme      = be
+vet_col_every    = 1
+time2_vet_col    = predict
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 2.1556412974e+14   # the column's RADIATIVE F_r(r_in); the convective 99.5 % enters via the scaffold / he_base_heat
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+<problem>
+he_seed     = 1.0e-2            # SEED RULE: isotropic T seed 1e-2, 16 modes
+he_seed_nk   = 16
+he_seed_kmin = 1                # k by H_p,tot at 30 Rsun 1.0-1.5; by CZ depth < 1 (wedge-limited): SETUP.md
+he_seed_kmax = 2
+he_seed_signs = random
+he_seed_rad  = true
+he_seed_rlo  = 2.2262e11        # 3.2 Rsun
+he_seed_rhi  = 3.8264e12        # 55 Rsun
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm       = 2.1708476572e+26  # G m(r_in), m(3 Rsun) : 1.63516 Msun (IC column col 8)
+he_gm_column = true             # hegiant-1006: enclosed-mass gravity of the IC column (static)
+he_base_heat   = 3.4785e10      # hegiant-1006: 0.5 Rsun (~H_p/2 at r_in) base heating layer keeps L_MLT(r_in) 6.72e6 Lsun when the scaffold ramps off
+he_ic_file  = /viper/ptmp2/jinma/he_giant_1006/ic/ic_giant_own.txt       # md5 ddc72692
+he_opac_table   = /viper/ptmp2/jinma/he_giant_1006/tables/rosseland_tops_hegiant_blend.txt   # md5 c1ef063c
+he_planck_table = /viper/ptmp2/jinma/he_giant_1006/tables/planck_tops_hegiant_blend.txt      # md5 b699c60d
+he_opac_logd_min = -21.0
+he_nfine    = 1048576
+he_tau_int  = 1.0
+he_ic_cols  = 5
+he_wall_zero_flux = true
+he_wall_closed = true
+he_ic_balance = true
+he_ic_balance_rmax = 4.24377e12  # 61.0 Rsun: march anchored below the photosphere (column already in HSE)
+mlt_flux_frozen = true
+mlt_ramp_start = 4.32e5          # 5 d: scaffold cosine ramp ...
+mlt_ramp_time  = 4.32e5          # ... to zero at 10 d (user GO 10-07)
+he_bc_outer    = outflow         # outflow top, no inflow: the envelope may expand
+he_sponge_rate = 1.0e-3          # acts only on the floor gas (rho < dmax) and above r0 : 199 Rsun
+he_sponge_r0   = 1.384443e13
+he_sponge_mode = radial
+he_sponge_dmax = 1.0e-17
+he_grid_dump = true
+<output1>
+file_type   = hst
+dt          = 25.0                # as the He presn runs (~1 per step at dt ~20 s)
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt = 21600.0                      # 0.25 d
+<output3>
+file_type = bin
+variable  = m1
+dt = 21600.0
+<output4>
+file_type = log
+dt = 1.0e4
+<output5>
+file_type = rst
+dt = 43200.0                      # 0.5 d
+<output6>
+file_type = bin
+variable  = m1_vet
+dt = 21600.0
