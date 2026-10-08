@@ -122,7 +122,7 @@ Real hse_cap_ = 40.0;
 // stage 2 (problem/inner = envelope): the resolved stellar envelope, see the header
 bool env_ = false, env_noslip_ = false;
 Real env_np_ = 3.0, env_rhoph_ = 20.0, env_cph2_ = 240.25, env_rtop_ = 4.11;
-Real env_tro_ = 1.0e-4, env_tri_ = 1.0e-4, env_phis_ = 0.0, env_racc_ = 4.06;
+Real env_tro_ = 1.0e-4, env_tri_ = 1.0e-4, env_trs_ = 1.0e-4, env_phis_ = 0.0, env_racc_ = 4.06;
 Real env_dlt_ = 0.0;           // (spin^2 - 1) Omega^2 / 2
 Real env_rhoamb_ = 1.0e-6;     // floor (ambient) density = problem/rho_amb
 Real env_camb2_ = 9.0e4;       // hot hydrostatic ambient P/rho (problem/env_cs_amb^2)
@@ -596,7 +596,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto pwcs = ph->phicc_wb;
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
   const Real om2 = 2.0*rp_.omega;
-  const Real cph2 = env_cph2_, tro = env_tro_, tri = env_tri_;
+  const Real cph2 = env_cph2_, tro = env_tro_, tri = env_tri_, trs = env_trs_;
   const Real rfl = env_rhoamb_, tsp = env_tsp_, fsp = env_fsp_;
   const Real vcap = env_vcap_;
   const Real kamb = env_kamb_, camb2 = env_camb2_, cstr2 = env_cstr2_, rhot = env_rhot_;
@@ -625,11 +625,15 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     // leading edge and the atmosphere's top to c_amb (precursor jets at 1700 km/s and
     // an evaporation wind; tests g_half, a2, 10-06/07).
     Real ct = c2r(m,k,i);
+    // Time constants: env_t_relax_env inside, env_t_relax_stream for the stream/atmosphere
+    // gas, env_t_relax for the hot ambient; t <= 0 switches the relaxation off (adiabatic).
     const bool inside = (ct > cph2*(1.0 + 1.0e-9));
+    Real tr = tri;
     if (!inside) {
-      ct = (d > kamb*ramb(m,k,i)) ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
+      const bool dense = (d > kamb*ramb(m,k,i));
+      ct = dense ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
+      tr = dense ? trs : tro;
     }
-    const Real tr = inside ? tri : tro;
     if (tr > 0.0) {
       u0(m,IEN,k,j,i) += (d*ct/gm1 - e)*(1.0 - exp(-bdt/tr));
     }
@@ -783,6 +787,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   env_rhoph_ = pin->GetOrAddReal("problem", "env_rho_ph", 20.0);
   env_tro_ = pin->GetOrAddReal("problem", "env_t_relax", 1.0e-4);
   env_tri_ = pin->GetOrAddReal("problem", "env_t_relax_env", env_tro_);
+  // stream/atmosphere gas outside the envelope (rho > env_amb_k rho_amb); default
+  // env_t_relax (bitwise as before).  0 = adiabatic stream (shock heating kept).
+  env_trs_ = pin->GetOrAddReal("problem", "env_t_relax_stream", env_tro_);
   std::string ws = pin->GetOrAddString("problem", "env_wall_slip", "free");
   env_noslip_ = (ws.compare("noslip") == 0);
   if (!env_noslip_ && ws.compare("free") != 0) {
@@ -998,11 +1005,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, r_in, 0.5*M_PI);
     std::printf("ry_per_accretor: ENVELOPE n %.2f, c_ph %.3f km/s, rho_ph %.4g, r_in %.5f"
                 " = %.4f R_acc; at r_in P/rho %.4g (c_iso %.2f km/s), rho %.4e; r_top "
-                "%.4f, t_relax %.3g / env %.3g, wall %s; R_acc face found in %d of %d "
-                "local blocks\n", np, cph, rhoph, r_in, r_in/racc,
+                "%.4f, t_relax %.3g / env %.3g / stream %.3g, wall %s; R_acc face found in "
+                "%d of %d local blocks\n", np, cph, rhoph, r_in, r_in/racc,
                 EnvC2(psi_in, cph2, np),
                 std::sqrt(EnvC2(psi_in, cph2, np)), EnvRho(psi_in, cph2, np, rhoph), rtop,
-                env_tro_, env_tri_, ws.c_str(), nfound, nmb);
+                env_tro_, env_tri_, env_trs_, ws.c_str(), nfound, nmb);
   }
   if (nfound == 0 && root) {
     std::printf("ry_per_accretor: WARNING no x1 face at r = R_acc = %.6f on rank 0: "
