@@ -1,0 +1,30 @@
+| star | r/R | rho_FT | n_H | t_0.1um a=1 Tg=400/1700 [s] | t_0.3um a=1 Tg=400/1700 [s] | t_ff=sqrt(r^3/GM) [s] |
+|---|---|---|---|---|---|---|
+| golden16 | 1.5 | 6.4e-13 | 2.8e+11 | 1.7e+06 / 8.1e+05 | 5.0e+06 / 2.4e+06 | 1.3e+07 |
+| golden16 | 2.0 | 8.1e-14 | 3.6e+10 | 1.3e+07 / 6.3e+06 | 3.9e+07 / 1.9e+07 | 2.0e+07 |
+| golden16 | 3.0 | 1.0e-14 | 4.6e+09 | 1.0e+08 / 5.0e+07 | 3.1e+08 / 1.5e+08 | 3.7e+07 |
+| golden16 | 4.0 | 3.3e-15 | 1.5e+09 | 3.2e+08 / 1.5e+08 | 9.6e+08 / 4.6e+08 | 5.7e+07 |
+| golden16 | 5.0 | 1.5e-15 | 6.8e+08 | 6.9e+08 / 3.3e+08 | 2.1e+09 / 1.0e+09 | 7.9e+07 |
+| m20lgl5.5 | 1.5 | 1.6e-12 | 6.9e+11 | 6.8e+05 / 3.3e+05 | 2.0e+06 / 9.9e+05 | 3.2e+07 |
+| m20lgl5.5 | 2.0 | 2.7e-13 | 1.2e+11 | 3.9e+06 / 1.9e+06 | 1.2e+07 / 5.7e+06 | 4.9e+07 |
+| m20lgl5.5 | 3.0 | 4.5e-14 | 2.0e+10 | 2.4e+07 / 1.1e+07 | 7.1e+07 / 3.4e+07 | 8.9e+07 |
+| m20lgl5.5 | 4.0 | 1.6e-14 | 7.1e+09 | 6.6e+07 / 3.2e+07 | 2.0e+08 / 9.5e+07 | 1.4e+08 |
+| m20lgl5.5 | 5.0 | 8.0e-15 | 3.5e+09 | 1.3e+08 / 6.4e+07 | 4.0e+08 / 1.9e+08 | 1.9e+08 |
+
+r_seed/R (first growth), dens=ft, median [min-max] over runs that formed grains:
+  golden16 lowk   n=  816  1.43 [1.42-1.46]
+  golden16 pure   n=  624  1.99 [1.96-2.12]
+  golden16 Fe3e-4 n=  576  2.35 [2.31-2.79]
+  golden16 Fe1e-3 n=  480  3.71 [3.60-10.00]
+  m20lgl5.5 lowk   n= 1008  1.33 [1.32-1.34]
+  m20lgl5.5 pure   n=  864  1.71 [1.70-1.74]
+  m20lgl5.5 Fe3e-4 n=  816  1.96 [1.95-2.00]
+  m20lgl5.5 Fe1e-3 n=  672  2.92 [2.89-3.07]
+golden16 dust-driven winds n=279: vinf median 92 [4-166] km/s; vd_max median 31 [8-62]; Mdot(>v0) range 6.1e-06-8.1e-04
+m20lgl5.5 dust-driven winds n=1030: vinf median 95 [2-236] km/s; vd_max median 14 [2-45]; Mdot(>v0) range 2.0e-04-7.3e-03
+golden16 Ggas=0.0: ballistic escape v0 > 93.2 km/s -> Mdot(>v_esc,eff) = 4.1e-06 Msun/yr
+golden16 Ggas=0.1: ballistic escape v0 > 88.5 km/s -> Mdot(>v_esc,eff) = 7.3e-06 Msun/yr
+golden16 Ggas=0.3: ballistic escape v0 > 78.0 km/s -> Mdot(>v_esc,eff) = 2.6e-05 Msun/yr
+m20lgl5.5 Ggas=0.0: ballistic escape v0 > 75.1 km/s -> Mdot(>v_esc,eff) = 1.1e-04 Msun/yr
+m20lgl5.5 Ggas=0.1: ballistic escape v0 > 71.2 km/s -> Mdot(>v_esc,eff) = 1.7e-04 Msun/yr
+m20lgl5.5 Ggas=0.3: ballistic escape v0 > 62.8 km/s -> Mdot(>v_esc,eff) = 4.7e-04 Msun/yr

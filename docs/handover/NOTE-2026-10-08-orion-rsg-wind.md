@@ -1,6 +1,6 @@
-# NOTE 2026-10-08 (orion): RSG wind -- gas line+molecular force <= 0.34 (LTE); non-LTE: gas cold beyond ~3-4 R, warm Fe II-heated phase at 2-3 R; molecules set up cold dense gas, only large iron-free silicate grains at ~4 R can drive
+# NOTE 2026-10-08 (orion): RSG wind -- gas force <= 0.34 (LTE), small in non-LTE; iron-free silicate grains from ~2 R would OVERPRODUCE the wind in the FT chromosphere -> density or grain efficiency is lower
 
-Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; CNO, step 4, not done).
+Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; grain growth, section 6; CNO, step 4, not done).
 Orion owns this thread (user 10-08). Python on CPU, no AthenaK changes.
 
 Files: `docs/handover/rsg-wind-orion-1008/` -- `scripts/` (rt.py, rsglib.py with MESA reader + ft/mft cases,
@@ -225,20 +225,62 @@ per band, value at the table's 4+4 Gauss g-points (this convention matches; the 
   bistability); NK93 hand-transcribed; OH omitted, SiO crude; ice formation and adiabatic cooling below 150 K not
   modelled.
 
-## 6. Verdict
+## 6. Silicate grain growth in the Fuller & Tsuna chromosphere (`tables/grains_*`, `scripts/grains/`, `plots/grains_*`)
+Added 10-08. Work dir `/orion/ptmp/jinma/rsg_wind_1008/grains` (venv with miepython 3.3.0, pyfastchem 4.0.3).
+- Model: Mie optics of amorphous Mg2SiO4 (Jaeger et al. 2003 via the Kitzmann & Heng 2018 LX-MIE compilation; variants
+  lowk = k x0.1 below 5 um, and k floors 3e-4 / 1e-3 below 8 um standing for ~0.3 % / ~1 % Fe), size-dependent grain
+  temperature from radiative equilibrium in the diluted Planck field; growth by Mg accretion (Mg is the key species,
+  caps dust/gas at 2.05e-3), da/dt = V_mon alpha (n_Mg vbar/4)/2 [1 - sqrt(T_d/T_g)/S], S from the JANAF ln K of
+  forsterite (FastChem logK_condensates) at the GRAIN temperature, key-species depletion; seeds 1 nm, n_seed/n_H
+  1e-16..1e-13, switched on where S > 1; ballistic parcels g(1 - Gamma_gas - Gamma_d), Gamma_gas 0/0.1/0.3, T_gas
+  400-1700 K; density = FT eq. 7 (or mass-conserving); launch flux Mdot(>v0) = 4 pi R^2 rho_ph v_con exp(-v0/v_con)
+  (the exponential tail implied by FT eqs. 7 and 15: gas reaching r was launched at v_esc sqrt(1 - R/r)). 20,736
+  trajectories. Checks: Mie vs Bohren & Huffman, blackbody grain T, analytic growth, forsterite S = 1 at 1350 K / 1e-4
+  bar (FastChem 1345 K), 1036-1108 K at the wind densities; gas-grain heating negligible.
+- Optics: kappa_pr ~ 11 cm^2/g(dust) for a <= 0.01 um, 3040 at 0.1 um, 6410 at 0.3 um (Q_pr 0.82), 2400 at 1 um --
+  scattering-dominated, the same for all variants; only 0.1-1 um grains reach the 300-900 cm^2/g section 4 needs.
+- Grain temperature (Mie) is much colder than the p = -1 estimate of section 4 for pure forsterite (T_d ~ W^0.49):
+  seeds first grow at 1.4 R (lowk) / 2.0 R (pure) / 2.35 R (3e-4) / 3.7 R (1e-3) in golden16, 1.3 / 1.7 / 2.0 / 2.9 R
+  in m20lgl5.5. Large grains run hotter (pure 0.3 um grains at 2 R exceed T_cond: growth stalls at 0.05-0.1 um until
+  the parcel moves out).
+- Growth vs dynamics (alpha = 1): t(0.1 um) = 1e6-1e7 s at 1.5-2 R (FT n_H 4e10-3e11) < free fall 1-5e7 s;
+  1e8 s at 3 R, 3e8 s at 4 R, 7e8 s at 5 R (golden16) >> free fall. So grains must start at ~1.5-2 R in the dense
+  chromosphere; growth that starts at 3-5 R (Fe-bearing grains) is too slow: golden16 then has no dust-driven wind at
+  any alpha, m20lgl5.5 only with alpha = 1. alpha = 0.01 essentially never works; seed number and T_gas matter weakly.
+- Dynamics: parcels launched at 20-50 km/s turn round at 1.05-1.7 R; reaching 3-5 R needs 76-83 km/s (golden16) or
+  61-67 km/s (m20). Dust-free ballistic escape (v0 > v_esc sqrt(1 - Gamma_gas)) already gives Mdot = 4e-6 / 7e-6 /
+  2.6e-5 Msun/yr (golden16, Gamma_gas 0 / 0.1 / 0.3) and 1.1-4.7e-4 (m20). Dust-driven winds (dust-free orbit bound,
+  1309 of 20,736) need nearly iron-free grains, alpha 0.1-1, v0 >= 50-70 km/s: golden16 Mdot 6e-6..8e-4 Msun/yr,
+  v_inf median 92 km/s; m20lgl5.5 2e-4..7e-3, median 95 km/s. Observed RSGs: 1e-7..1e-5 Msun/yr, 10-40 km/s.
+- **Reading:** if pure forsterite formed efficiently at ~2 R in the FT chromosphere, RSG winds would be 1-3 orders of
+  magnitude too strong and too fast (dust lowers the launch threshold from ~93 to 60-70 km/s, x30-100 in the
+  exponential tail). Observations therefore require inefficient grain formation (Fe content, low sticking, Mg+
+  photoionisation: Mg+/Mg ~ 1e3-6e4 in an undiluted-blackbody-UV estimate, shock destruction) and/or a chromosphere
+  LESS DENSE than the MESA-based FT profile. Note that FT's own eq. 15 with the MESA v_con already gives 1.4e-5
+  Msun/yr for golden16, ~10x FT's quoted ~1e-6 for 15-20 Msun: the density normalisation is exponentially sensitive
+  to v_esc/v_con (section 2).
+- Flags: drift 10-60 km/s (Gamma_d and v_inf upper limits); no attenuation by the dust (inconsistent at Mdot >= 1e-4);
+  the parcel density is a prescription (growth happens at 1.5-2 R where it is highest); the result hinges on k at
+  0.4-2 um (a 1 % Fe floor removes the golden16 winds); fall-back parcels regrow grains (no shock sputtering); no
+  nucleation calculation.
+
+## 7. Verdict
 - Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
   **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35; the DACE low-P opacity lowers the ceiling to 0.32),
   peaking at 3-4 R, T 1500-1700 K, mainly 0.61-0.85 um (TiO/VO). It cannot drive RSG mass loss. With physical
   non-LTE rates (5d) the gas beyond ~3-4 R is cold (a few hundred K and falling, not in RE at <= 1e-10 bar), where the
   molecular force is ~0.01-0.1; a warm (1600-2300 K) Fe II-heated phase exists mainly at 2-3 R and depends on the
   stellar UV, so the molecular contribution to driving is small.
-- Molecules DO set up the conditions for dust: rotational H2O/CO cooling makes cold, dense, SiO-rich gas at >~ 3-4 R
-  (high supersaturation; Fe condensation removes the atomic heating, so the cold state is self-reinforcing). The
-  binding limit is still the GRAIN temperature (radiative, independent of the gas T): nearly transparent iron-free
-  silicate grains first survive at ~4 R (3 R for the cool, luminous m20lgl5.5), and only LARGE (~0.1-1 um,
-  scattering) grains of that kind reach Gamma_c > 1. Al2O3 and absorbing silicates cannot.
-- Biggest uncertainties: the stellar (and chromospheric) UV, the Fe II metastable quench rate, the TiO fluorescence
-  heating, the dust opacity per gram (assumed), grain growth kinetics (grain-growth model in progress), non-equilibrium
-  chemistry, the low-P opacity (DACE rebuild 5c: Lee's SiO unexplained, atoms below 2500 K).
-- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force; the grain-growth model is the next
-  analysis step.
+- Molecules set up cold, dense, SiO-rich gas, but the grain temperature (radiative) decides: with Mie optics pure
+  iron-free forsterite seeds survive from ~2 R (1.7 R for m20lgl5.5), where the FT chromosphere is dense enough for
+  growth to 0.1-0.5 um within a free-fall time (section 6); Fe-bearing grains form only at 3-4 R, too late to grow.
+- In the FT chromosphere efficient dust formation OVERPRODUCES the wind (Mdot 1e-5..1e-2 Msun/yr, v_inf ~90 km/s vs
+  observed 1e-7..1e-5 and 10-40 km/s), and dust-free ballistic escape alone already gives ~4e-6 Msun/yr for golden16.
+  So dust plausibly REGULATES rather than enables RSG mass loss, and observed rates constrain the chromospheric density
+  (likely lower than the MESA-based FT profile) and/or the grain formation efficiency.
+- Biggest uncertainties: the chromospheric density (v_con normalisation, FT time-averaging vs observed RSG atmospheres),
+  the stellar/chromospheric UV (Fe II heating, Mg photoionisation), grain composition (Fe) and sticking, drift and
+  dust attenuation, the Fe II metastable quench rate, non-equilibrium chemistry, the low-P opacity (5c).
+- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force. Next analysis: confront the FT
+  density with observed RSG extended-atmosphere densities (e.g. Betelgeuse radio/ALMA, semi-empirical models) and
+  rerun the grain model with the density scaled to match; optionally a self-consistent dusty wind with attenuation.
