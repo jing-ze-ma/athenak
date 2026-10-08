@@ -61,7 +61,7 @@ eos_xh               = 0.36
 eos_yhe              = 0.62       # Z = 0.02 (inert metals, a = 16); TOPS mixture X 0.36 Z 0.02
 eos_logd_min         = -21.0      # covers dfloor 1e-20 (= he_opac_logd_min)
 eos_logd_max         = -2.0
-eos_logt_min         = 3.4        # below tfloor 3000 K (user 10-08: T_rad(x1max) ~3770 K < old tfloor 5000 K)
+eos_logt_min         = 3.4        # below tfloor 3000 K (user 10-08)
 eos_logt_max         = 6.6
 eos_dlog             = 0.02       # as SK67 / He presn (dlogt 0.004)
 rad_signal_speed = true
@@ -76,7 +76,7 @@ wb_x1               = true
 wb_option           = polytropic
 wb_cache_every      = 0
 dfloor  = 1.0e-20
-tfloor_kelvin = 3.0e3   # user 10-08: below T_rad at x1max (was 5e3: FOFC fired on the clamped atmosphere)
+tfloor_kelvin = 3.0e3   # user 10-08: below T_rad at x1max
 pfloor  = 1.0e-12
 dfloor_keep_velocity = true
 vceil   = 1.0e8
@@ -134,7 +134,8 @@ implicit_opac_newton = true
 implicit_opac_newton_guard_mode = 6
 implicit_opac_newton_slope_max = 3          # opacity-cliff damping (H/He recombination; He giant fix 90a1d462), user 10-08
 implicit_gas_newton = true
-implicit_flux    = central
+implicit_flux    = blend
+implicit_blend   = tau_f          # sp blend flux (branch sp-blend-1008 4622f424), user 10-08
 implicit_enthalpy = plm
 implicit_vimp    = false
 implicit_predictor = step

@@ -42,7 +42,7 @@ evolution  = dynamic
 integrator = rk2
 cfl_number = 0.3
 nlim       = -1
-tlim       = 4.6240e+05     # 4 Fe-peak turnovers (general-EOS IC: H_p,tot/v_MLT = 1.156e+05 s): through the end of the scaffold ramp
+tlim       = 1.3000e+06     # user 10-08: fresh B with blend, ~3-5 thermal times above the Fe peak
 ndiag      = 50
 <units>
 length_cgs = 1.0
@@ -134,7 +134,8 @@ implicit_opac_newton = true
 implicit_opac_newton_guard_mode = 6
 implicit_opac_newton_slope_max = 3          # opacity-cliff damping (H/He recombination; He giant fix 90a1d462), user 10-08
 implicit_gas_newton = true
-implicit_flux    = central
+implicit_flux    = blend
+implicit_blend   = tau_f
 implicit_enthalpy = plm
 implicit_vimp    = false
 implicit_predictor = step
