@@ -29,3 +29,19 @@ env13 is ideal gas gamma 5/3, but env_t_relax(_env) = 1e-4 (~50 steps) clamps T 
   - s2_env13 4235882: env13, env_t_relax_env = 0 AND env_t_relax_stream = 0 (shock heating kept), queued.
 - Step 3 (physical cooling: diffusion time with electron-scattering + Kramers opacity) after these, user decides.
 DeltaAI has no further action.
+
+## UPDATE 10-08 12:15 PDT: half-orbit results (t 0.2291), all 0 FATAL
+| | q13_s1 (DeltaAI, all relaxed) | s1_nostream | s1_env13 (envelope adiabatic) | s2_env13 (envelope + stream adiabatic) |
+|---|---|---|---|---|
+| stream mass in | 8.575 | - | 8.576 | 8.562 |
+| through r_meas (accreted) | 7.884 (0.919) | 1.2e-7 | 7.751 (0.904) | 3.164 (0.370) |
+| out of the domain | -5e-5 | 4e-12 | 2.2e-3 | 0.73 |
+| j accreted / j_K | 0.556 | - | 0.546 | 0.388 |
+| min dt | 9.58e-7 | 1.78e-6 | 5.71e-7 | 4.83e-7 |
+(from ryper.user.hst cols 7, 13, 8, 14; q13 numbers from numbers_q13_s1.json)
+- Envelope without the T clamp is static (no stream: mass, J, tot-E unchanged to 6 digits).
+- s1 = q13 within ~2 %: relaxing only the stream/atmosphere is enough to reproduce the isothermal answer.
+- s2 (no cooling at all): the impact shock heats the stream and outer envelope to sqrt(P/rho) ~100-110 km/s (median, dense gas
+  at r 9-10.5; c_ph 19.4) = ~30x the photospheric T; the hot layer puffs above r_meas (dense mass at r 9.6-10.5: 7.3e4 vs
+  1.3e4 in s1), only 37 % crosses r_meas in the half orbit, 0.73 leaves the domain. This is the no-cooling upper bound;
+  the real photosphere cools in ~1 s (docs/dev/accretor_rhd_design.md), so step 3 (cooling) decides between s1 and s2.
