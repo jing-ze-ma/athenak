@@ -1,6 +1,6 @@
 # NOTE 2026-10-08 (orion): RSG wind -- gas force <= 0.34 (LTE), small in non-LTE; iron-free silicate grains from ~2 R would OVERPRODUCE the wind in the FT chromosphere -> density or grain efficiency is lower
 
-Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; grain growth, section 6; CNO, step 4, not done).
+Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; low-P opacity + non-LTE, section 5; grain growth, section 6; observed densities, section 7; CNO, step 4, not done).
 Orion owns this thread (user 10-08). Python on CPU, no AthenaK changes.
 
 Files: `docs/handover/rsg-wind-orion-1008/` -- `scripts/` (rt.py, rsglib.py with MESA reader + ft/mft cases,
@@ -264,7 +264,30 @@ Added 10-08. Work dir `/orion/ptmp/jinma/rsg_wind_1008/grains` (venv with miepyt
   0.4-2 um (a 1 % Fe floor removes the golden16 winds); fall-back parcels regrow grains (no shock sputtering); no
   nucleation calculation.
 
-## 7. Verdict
+## 7. Observed RSG atmosphere densities vs the FT chromosphere (`density_survey/`)
+Added 10-08. Page with plots (rho [g/cm^3] vs r [cm]): https://claude.ai/artifact/JYF6Z6B9btSFQ6s5a6jrqW (private;
+same content as `density_survey/density_check.html`). Literature from web; digitized values in
+`density_survey/dent24_fig3_digitized.txt`; working copies of the papers in `/orion/ptmp/jinma/rsg_wind_1008/dens_survey`.
+- Best current mean density for Betelgeuse: the Harper semi-empirical radio model as updated by Dent et al. 2024
+  (arXiv:2404.06501, Fig. 3, read off; R* = 1014 Rsun at 222 pc): n_H = 8.3e11 / 9.3e10 / 7.6e9 / 1.6e9 / 6.8e8 / 3.7e8
+  cm^-3 at 1.2 / 1.5 / 2 / 3 / 4 / 5 R* (rho = n_H x 2.27e-24 g), T peaking ~3800 K at 2 R*. Harper, Brown & Lim 2001
+  (ApJ 551, 1073) use the 11.15 um diameter (56 mas = 1.32 x the 42.5 mas photospheric diameter); rescaled to the
+  photospheric R* and 222 pc (n_H ~ d^-1/2) it agrees with Dent to within 20 % at 2-5 R*. Other points: Ohnaka et al.
+  2009 CO layer ~2e10 cm^-3 at 1.4-1.5 R* (derived, +-5x); Antares MOLsphere (O'Gorman et al. 2020 App. B) n_H ~3e10
+  at ~1.3 R* (+-10x). Observed mean outflow inside 5 R* < 5 km/s (quasi-static / turbulent).
+- Ratio observed (Dent 2024) / FT: vs golden16 as built 0.34 / 0.22 / 0.36 at 1.5 / 2 / 3 R* (0.47, 0.56 at 4, 5 R*);
+  vs FT scaled to Betelgeuse (18 Msun, 1014 Rsun, 222 pc) 0.16 / 0.083 / 0.12; at 168 pc (764 Rsun) 0.43 / 0.28 /
+  0.48; Antares MOLsphere ~0.02-0.03. The observed profile falls as ~r^-2.85 beyond ~2 R*, steeper than FT's r^-2.
+- Mass loss: Betelgeuse (1-4)e-6 Msun/yr, v_inf ~10-15 km/s; Antares 2e-6; Beasor et al. 2020/2023 prescription at
+  log L 5.06, 15 Msun: 2.8-2.9e-6. FT eq. 15 with MESA inputs gives 1.4e-5: 5-10x too high, consistent with the
+  density excess.
+- **Bottom line:** the MESA-based FT chromosphere is too dense at 1.5-3 R* by ~3-5x (golden16 as built) to ~2-12x
+  (scaled to Betelgeuse), largest near 2 R*; uncertainty ~x3 (distance/radius, metal ionisation fraction n_H ~
+  x_e^-1/2, epoch variability; radio measures <n_H^2>, so clumping makes the true mean even lower). A 10-25 % lower
+  v_con (~6-7 km/s instead of MESA's 8.2) puts FT onto the observations. Rescaled grain runs (density x0.3..x0.01,
+  v_esc/v_con 11.4..20) are in progress in `/orion/ptmp/jinma/rsg_wind_1008/grains/rescale/`.
+
+## 8. Verdict
 - Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
   **Gamma = 0.1-0.34** in LTE (no case of 1,800+ above 0.35; the DACE low-P opacity lowers the ceiling to 0.32),
   peaking at 3-4 R, T 1500-1700 K, mainly 0.61-0.85 um (TiO/VO). It cannot drive RSG mass loss. With physical
@@ -277,10 +300,10 @@ Added 10-08. Work dir `/orion/ptmp/jinma/rsg_wind_1008/grains` (venv with miepyt
 - In the FT chromosphere efficient dust formation OVERPRODUCES the wind (Mdot 1e-5..1e-2 Msun/yr, v_inf ~90 km/s vs
   observed 1e-7..1e-5 and 10-40 km/s), and dust-free ballistic escape alone already gives ~4e-6 Msun/yr for golden16.
   So dust plausibly REGULATES rather than enables RSG mass loss, and observed rates constrain the chromospheric density
-  (likely lower than the MESA-based FT profile) and/or the grain formation efficiency.
+  and/or the grain formation efficiency. Observed Betelgeuse/Antares densities (section 7) confirm the MESA-based FT
+  chromosphere is ~3-12x too dense at 1.5-3 R* (v_con ~6-7 km/s would fit).
 - Biggest uncertainties: the chromospheric density (v_con normalisation, FT time-averaging vs observed RSG atmospheres),
   the stellar/chromospheric UV (Fe II heating, Mg photoionisation), grain composition (Fe) and sticking, drift and
   dust attenuation, the Fe II metastable quench rate, non-equilibrium chemistry, the low-P opacity (5c).
-- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force. Next analysis: confront the FT
-  density with observed RSG extended-atmosphere densities (e.g. Betelgeuse radio/ALMA, semi-empirical models) and
-  rerun the grain model with the density scaled to match; optionally a self-consistent dusty wind with attenuation.
+- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force. Next analysis: the grain model with
+  the density scaled to the observations (running); optionally a self-consistent dusty wind with attenuation.
