@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 163
+#define NOUTPUT_CHOICES 164
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -115,7 +115,10 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // grey M1 radiation: the TRANSPORTED face-normal comoving fluxes of the implicit
   // solve (f0x1/f0x2/f0x3), the flux whose face sums are the luminosities (162)
-  "m1_face"
+  "m1_face",
+
+  // grey M1 radiation: moments of the vet_gd formal solution, J and H_r in E units (163)
+  "m1_fs"
 };
 
 

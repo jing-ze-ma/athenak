@@ -1355,5 +1355,39 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
+  // m1_fs: J and H_r of the vet_gd formal solution (basetype_output.cpp)
+  if (name.compare("m1_fs") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto vi_ = prm->vgd_i;
+    auto dir_ = prm->vgd_dir;
+    const int nd = prm->vgd_n;
+    const bool hv = prm->vgd_on && (nd > 0) && (vi_.extent_int(0) >= nmb) &&
+                    (vi_.extent_int(1) >= nd);
+    const int og = prm->vgd_w - indcs.ng;
+    const int ilo = is + prm->vlat_icut;
+    auto &mbsize = pm->pmb_pack->pmb->mb_size;
+    par_for("m1_fs_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real jm = 0.0, hr = 0.0;
+      if (hv && i >= ilo) {
+        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+        const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+        for (int d = 0; d < nd; ++d) {
+          const Real a = dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
+          const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          jm += wi;
+          hr += wi*a;
+        }
+      }
+      dv(m,i_dv  ,k,j,i) = jm;
+      dv(m,i_dv+1,k,j,i) = hr;
+    });
+    i_dv += 2;
+  }
+
   i_dv = i_dv % n_dv; // reset derived variable index
 }
