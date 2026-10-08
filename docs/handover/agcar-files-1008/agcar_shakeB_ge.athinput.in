@@ -1,0 +1,206 @@
+<comment>
+problem = AG Car B GENERAL EOS (agcar/geos: eos general/table Saha H/He, X 0.36 Y 0.62, IC icB/ic_agcar_B_ge.txt, Fe peak 73.5 Rsun); (hot state, log L 6.17 at 6 kpc, Teff 20000 K, R_ph 101.3 Rsun, M 55 Msun point mass) 3-D SHAKE-DOWN DRAFT (NOT RUN; apudev smoke first): he_star_m1 sp wedge theta pi/3-2pi/3 x phi 0-pi/3 (periodic, as Ma26 / BSG / T19L6.4 draft), 480 x 128 x 128 = 7.86e6 cells, 35.8-303.9 Rsun (3 R_ph), poly-stretched radial grid (gridB_480.txt, agcar/scripts/design_grid.py: >= 15 cells per H_p,tot over the Fe zone, >= 4.4 per static H_p,tot over 0.9-1.1 R_ph), 4 blocks 480 x 64 x 64 (2 per MI300A). IC agcar MLT++ inward column (IC_AGCAR.md), frozen MLT++ scaffold ramped off from 2 to 4 Fe-peak turnovers (OPEN), SEED RULE, closed inner wall + flux BC, outflow top + floor sponge. RT keys as lbv_1008 shake/lbv_shake128.athinput (BSG repro production set: vet_gd T5wihc, be, cfl 0.3).
+<job>
+basename = agcar3d
+<mesh>
+nghost    = 3
+nx1       = 480
+x1min     = 2.4906060000e+12    # 35.8 Rsun (IC base)
+x1max     = 2.1141529902e+13    # 3 R_ph
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 128
+x2min     = 1.0471975511965976    # pi/3
+x2max     = 2.0943951023931953    # 2 pi/3
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 128
+x3min     = 0.0
+x3max     = 1.0471975511965976    # pi/3
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_c1     = -9.059424827163e-01
+f_stretch_r_c2     = -9.057429916036e-01
+f_stretch_r_c3     = -2.314983147912e-02
+f_stretch_r_c4     = 1.473556131595e+01
+f_stretch_r_c5     = -4.999999999258e+01
+f_stretch_r_c6     = 4.999999996628e+01
+f_stretch_r_c7     = 2.205252889467e-02
+f_stretch_r_c8     = -2.154551721448e+01
+f_stretch_r_p_amp  = -7.205561444216e-01
+f_stretch_r_p_xa   = 3.254667024927e-01
+f_stretch_r_p_xb   = 7.994410249309e-01
+f_stretch_r_p_w    = 6.134103168953e-02
+<meshblock>
+nx1       = 480                  # the radial column in ONE block (he_star_m1 / vet_gd)
+nx2       = 64
+nx3       = 64
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 4.6240e+05     # 4 Fe-peak turnovers (general-EOS IC: H_p,tot/v_MLT = 1.156e+05 s): through the end of the scaffold ramp
+ndiag      = 50
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0     # general EOS: T_unit = m_u/k_B
+<hydro>
+eos                  = general      # OUR general EOS (Saha H/He ionization, tabulated), SK67 recipe
+general_eos          = table
+gamma                = 1.6666666667
+eos_h2               = false
+eos_ionization       = true
+eos_metal_ionization = false
+eos_radiation        = false      # MANDATORY with <rad_m1>: the module evolves E
+eos_xh               = 0.36
+eos_yhe              = 0.62       # Z = 0.02 (inert metals, a = 16); TOPS mixture X 0.36 Z 0.02
+eos_logd_min         = -21.0      # covers dfloor 1e-20 (= he_opac_logd_min)
+eos_logd_max         = -2.0
+eos_logt_min         = 3.6        # below tfloor 5e3 K
+eos_logt_max         = 6.6
+eos_dlog             = 0.02       # as SK67 / He presn (dlogt 0.004)
+rad_signal_speed = true
+reconstruct = plm
+rsolver     = hllc
+fofc        = true
+fofc_report = 512
+fofc_report_dt = 3.6e3
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+dfloor  = 1.0e-20
+tfloor_kelvin = 5.0e3
+pfloor  = 1.0e-12
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+<rad_m1>
+implicit_tsolve_opac = true
+implicit_tsolve_opac_mode = 1
+implicit_gas_newton_switch = 10
+implicit_thin_freeze = 1.0e-2
+implicit_realisable_coupling = true
+report_newton_fb = true
+c_light          = 2.99792458e10
+arad             = 1.583122e-46   # a_cgs*T_unit^4, T_unit = m_u/k_B = 1.202724e-8 K
+chat_over_c      = 1.0
+closure          = vet_col
+vet_gd           = true
+vet_gd_replace   = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu    = 10
+vet_gd_gl_nphi   = 12               # 2 pi/12 divides the phi period pi/3
+vet_gd_gl_stagger = true
+vet_gd_rotate_every = 10
+vet_col_lat_offdiag = operator       # T5wihc
+vet_gd_tangential   = false
+vet_gd_wall_interp  = true
+vet_gd_halo_compact = 2
+implicit_halo_direct = true
+implicit_od_cache = true
+implicit_krylov_fuse = 1
+implicit_op_stencil = true
+implicit_precond = rbgs_fwd
+implicit_halo_mpi = true
+implicit_halo_overlap = true
+opacity          = table
+temp_unit_kelvin = 1.202724e-8
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+force_reference_work = split
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_flux    = central
+implicit_enthalpy = plm
+implicit_vimp    = false
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme      = be
+vet_col_every    = 1
+time2_vet_col    = predict
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 7.263601539204e+13   # L/(4 pi r_in^2): radiative base (F_MLT/F = 0)
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+<problem>
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm       = 7.29918420e+27          # G M, M = 55 Msun (Grassitelli+2021 adopted) point mass, as the IC
+he_ic_file  = @AGCAR_DIR@/ic_agcar_B_ge.txt
+he_opac_table   = @AGCAR_DIR@/rosseland_tops_gs98_x0.36_z0.02.txt   # md5 49aea217
+he_planck_table = @AGCAR_DIR@/planck_tops_gs98_x0.36_z0.02.txt      # md5 cedde546
+he_opac_logd_min = -21.0         # SK67 clamp (slope of the first interval clamped to [0, 1])
+he_nfine    = 262144
+he_tau_int  = 1.0
+he_ic_cols  = 5
+he_seed     = 1.0e-2            # SEED RULE: isotropic T seed 1e-2, 16 modes
+he_seed_nk   = 16
+he_seed_kmin = 2                # general-EOS IC: H_p,tot 6.01 Rsun at the Fe peak (73.5 Rsun; ideal 6.35) -> k band unchanged 2..4 (k(H_p) ~2.5-3.8)
+he_seed_kmax = 4
+he_seed_signs = random
+he_seed_rad  = true
+he_seed_rlo  = 3.513285e+12        # 50.5 Rsun (general-EOS CZ 50.0-100.5 Rsun, F_conv/F > 0.01)
+he_seed_rhi  = 6.887430e+12        # 99.0 Rsun (below R_ph)
+he_wall_zero_flux = true
+he_wall_closed = true
+he_ic_eint_from_t = true   # branch he-ic-eint-from-t 2fbc6aa1: eint = e_code(rho, T col 6)
+he_ic_balance = true
+he_ic_balance_rmax = 6.191730e+12  # 89.0 Rsun: inside the smooth MLT++ adiabat, below the photosphere
+mlt_flux_frozen = true
+mlt_closure    = frozen
+mlt_ramp_start = 2.3120e+05       # 2 Fe-peak turnovers: OPEN (user)
+mlt_ramp_time  = 2.3120e+05       # to zero at 4 turnovers: OPEN
+he_bc_outer    = outflow        # J18 top: outflow; no inflow
+he_sponge_rate = 1.0e-3         # floor gas only (rho < dmax)
+he_sponge_r0   = 1.902738e+13      # 0.9 x x1max (as T19L6.4: 300/335.5)
+he_sponge_mode = radial
+he_sponge_dmax = 1.0e-17
+he_grid_dump   = true
+<output1>
+file_type   = hst
+dt          = 1.0000e+03
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt = 1.0000e+04
+<output3>
+file_type = bin
+variable  = m1
+dt = 1.0000e+04
+<output4>
+file_type = log
+dt = 1.0000e+04
+<output5>
+file_type = rst
+dt = 5.0000e+04

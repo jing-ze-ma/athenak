@@ -1,0 +1,255 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 2 x 2 MeshBlocks
+Total number of MeshBlocks = 4
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 2
+  Rank = 0: 2 MeshBlocks, cost = 2
+  Rank = 1: 2 MeshBlocks, cost = 2
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+<hydro>/tfloor_kelvin = 5000 K -> tfloor = 4.15723e+11 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 951 x 751 nodes (87 MB), log10 rho[cgs] in [-21, -2], log10 T[K] in [3.6, 6.6]
+             X = 0.36, Y = 0.62, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 0.84729, n_e/n_tot = 0.565093
+General EOS: tabulated on 951 x 751 nodes (87 MB), log10 rho[cgs] in [-21, -2], log10 T[K] in [3.6, 6.6]
+             X = 0.36, Y = 0.62, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 0.84729, n_e/n_tot = 0.565093
+Radial (x1) reconstruction on the spherical polar grid (<hydro>/reconstruct_x1) = plm
+<rad_m1>/c_light = 2.99792e+10 [code] ; <units> implies 2.99792e+10 (c in code velocity), rel. diff 0
+<rad_m1>/arad = 1.58312e-46 [code] ; <units> implies 1.58312e-46 (a_rad T_unit^4 / p_unit), rel. diff 1.51153e-09
+<rad_m1>/temp_unit_kelvin = 1.20272e-08 [code] ; <units> implies 1.20272e-08 (K per code temperature), rel. diff 3.16964e-07
+<rad_m1>/rho_unit_cgs = 1 [code] ; <units> implies 1 (g/cm^3 per code density), rel. diff 0
+<rad_m1>/kappa_unit = 1 [code] ; <units> implies 1 (code opacity per cm^2/g), rel. diff 0
+<rad_m1>/implicit_face_weight = distance (default)
+<rad_m1>: transport=implicit (3-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=true marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_enthalpy=plm (deferred correction)
+         implicit_bc_advect=true (Marshak x1 end carries A E)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=3.28177e+12 flux_max=0
+<rad_m1>: spherical-polar wedge (stage S2: chi(f) closure, radial integrating factor, lagged curvature, offdiag none; implicit with areas/volumes/face distances from Coordinates (stretched radial grid)
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=1.58312e-46
+         opacity=table force_reference=wb_arad temp_unit_kelvin=1.20272e-08 rho_unit_cgs=1
+he_star_m1: opacity table '/viper/ptmp2/jinma/lbv_1008/agcar/tables/rosseland_tops_gs98_x0.36_z0.02.txt' extended from log10 rho -14 to -21 (140 columns, slope clamped to [0,1] in 63 of 217 T rows)
+he_star_m1: opacity table '/viper/ptmp2/jinma/lbv_1008/agcar/tables/planck_tops_gs98_x0.36_z0.02.txt' extended from log10 rho -14 to -21 (140 columns, slope clamped to [0,1] in 9 of 217 T rows)
+he_star_m1: IC column T(rho,eint)/T_col - 1: max 7.10543e-14 at r = 2.60677e+13 (he_ic_eint_from_t = true)
+he_star_m1: column inside the tables: log10 rho -16 .. -5.69136, log10 T 3.95669 .. 5.71821
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 3.23845e-07 at r = 2.69834e+13
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.000124918 at r = 9.12545e+12, max face residual |PR/PL - 1| = 7.10543e-15, wall cells a_ref (module form), last change 1.68754e-14
+he_star_m1: mlt_flux_frozen: max F_MLT/F on the faces = 0.806895 at r = 1.7037e+13; F_MLT at the bottom/top faces = 0 / 0
+he_star_m1: mlt ramp start = 4.032e+06, time = 4.032e+06, w(t = 0) = 1, max L_MLT (unscaled) = 2.29408e+38
+he_star_m1: GM = 7.29918e+27, F_in = 3.28177e+12, tau(r_in) = 3.82893e+06, r_int (tau = 1) = 2.69939e+13, r_top = 8.10422e+13, sponge rate = 0.001 above r = 7.2938e+13
+he_star_m1: seed 16 modes, amplitude 0.01 (temperature: eint and E), k in [2,4], signs random, kdist box, r 1.01572e+13 .. 2.64366e+13
+  seed mode 0: k2 3 k3 4 a 0.307274
+  seed mode 1: k2 -4 k3 -2 a 0.159861
+  seed mode 2: k2 2 k3 2 a 0.0937057
+  seed mode 3: k2 2 k3 -4 a 0.124124
+  seed mode 4: k2 -3 k3 -2 a 0.192727
+  seed mode 5: k2 -4 k3 4 a 0.440942
+  seed mode 6: k2 3 k3 3 a 0.280912
+  seed mode 7: k2 3 k3 3 a 0.292079
+  seed mode 8: k2 2 k3 3 a 0.253977
+  seed mode 9: k2 2 k3 -4 a 0.31955
+  seed mode 10: k2 -4 k3 4 a 0.420415
+  seed mode 11: k2 4 k3 -3 a 0.182711
+  seed mode 12: k2 4 k3 -3 a 0.117956
+  seed mode 13: k2 -2 k3 -2 a 0.206065
+  seed mode 14: k2 -2 k3 -3 a 0.13136
+  seed mode 15: k2 4 k3 3 a 0.0983059
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=7.4715e+06, measured v_max=0)
+
+Setup complete, executing task list(s)...
+
+elapsed=1.508429e+01 cycle=0 time=0.000000e+00 dt=1.252560e+03
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 489 rays, 480 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); f_K >= 0.000000e+00; 407 shell(s) kept trapezoid weights; team build, 1 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [1.000000e-03, 1.000000e+00]
+<rad_m1> vet_gd: exact per-shell lateral halo, band 60 cells (needed 60), per-shell depth mean 2.700000e+01
+<rad_m1> vet_gd: global-direction SC closure on the sp wedge, product GL10x12 staggered (120 directions); z-rotation every 10 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 36960, direction maps exact 1785600 of 4435200 (the rest: nearest direction)
+<rad_m1> implicit_halo_mpi: ON, rank 0 has 1 neighbour ranks, 403200 cells sent per component
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(0,8,57,465) r=5.887243e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(0,30,57,460) r=5.448062e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(0,32,5,272) r=2.704632e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(0,36,37,461) r=5.530362e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(0,3,21,461) r=5.53036e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(0,3,63,463) r=5.7031e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(0,30,56,387) r=3.12463e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(0,33,3,273) r=2.70779e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(1,10,10,462) r=5.615346e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(1,27,8,465) r=5.887243e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(1,58,4,464) r=5.793699e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0.000000e+00 (m,k,j,i)=(1,62,4,462) r=5.615346e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(1,29,48,462) r=5.61535e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(1,38,42,463) r=5.7031e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(1,53,63,274) r=2.71095e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=0 time=0 (m,k,j,i)=(1,62,8,461) r=5.53036e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,412) r=3.44895e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,413) r=3.46777e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,414) r=3.48715e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,415) r=3.50708e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,416) r=3.52759e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,417) r=3.5487e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,418) r=3.57041e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1252.56 (m,k,j,i)=(0,3,3,419) r=3.59276e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,412) r=3.448945e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,413) r=3.467775e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,414) r=3.487149e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,415) r=3.507084e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,416) r=3.527595e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,417) r=3.548699e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,418) r=3.570415e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=1 time=1.252560e+03 (m,k,j,i)=(0,3,3,419) r=3.592761e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,391) r=3.16012e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,392) r=3.16985e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,393) r=3.17993e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,394) r=3.19038e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,395) r=3.20119e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,396) r=3.21239e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,397) r=3.22396e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2505.12 (m,k,j,i)=(0,3,3,398) r=3.23594e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,391) r=3.160124e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,392) r=3.169850e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,393) r=3.179931e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,394) r=3.190376e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,395) r=3.201192e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,396) r=3.212386e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,397) r=3.223965e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=2 time=2.505119e+03 (m,k,j,i)=(0,3,3,398) r=3.235936e+13 count=1.000000e+00
+<hydro> fofc_report t=3.757679e+03 cycle=3 stages=7 fired cell-stages: at-floor=0 other=311548 | per x1 bin [i0-i1] floor/other: [444-444] 0/24 [446-446] 0/168 [447-447] 0/375 [448-448] 0/875 [450-449] 0/4523 [450-450] 0/1869 [451-451] 0/2751 [452-452] 0/5447 [453-453] 0/5987 [454-454] 0/7926 [455-455] 0/8208 [456-456] 0/9526 [457-457] 0/11244 [458-458] 0/10522 [459-459] 0/14463 [460-460] 0/16375 [461-461] 0/13785 [462-462] 0/12056 [463-463] 0/6240 [465-464] 0/8920 [465-465] 0/4752 [466-466] 0/1672 [469-469] 0/81920 [473-473] 0/65536 [475-475] 0/16384
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3757.68 (m,k,j,i)=(0,36,4,279) r=2.72687e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3757.68 (m,k,j,i)=(1,14,47,432) r=3.9513e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3757.68 (m,k,j,i)=(1,24,45,422) r=3.66379e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3757.68 (m,k,j,i)=(1,36,7,450) r=4.75558e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3.757679e+03 (m,k,j,i)=(0,20,42,453) r=4.940452e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3.757679e+03 (m,k,j,i)=(0,26,23,450) r=4.755579e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3.757679e+03 (m,k,j,i)=(0,55,20,415) r=3.507084e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3.757679e+03 (m,k,j,i)=(1,20,47,434) r=4.019935e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3.757679e+03 (m,k,j,i)=(1,36,61,375) r=3.045763e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=3 time=3.757679e+03 (m,k,j,i)=(1,47,34,454) r=5.006153e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,3,23,357) r=2.97422e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,3,26,359) r=2.98076e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,3,27,358) r=2.97746e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,4,24,358) r=2.97746e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,5,7,272) r=2.70463e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,5,7,365) r=3.00189e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,5,16,342) r=2.92838e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5010.24 (m,k,j,i)=(0,5,31,348) r=2.94638e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,3,24,363) r=2.994543e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,3,26,363) r=2.994543e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,3,30,356) r=2.971010e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,3,33,333) r=2.901116e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,4,5,448) r=4.641879e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,4,26,363) r=2.994543e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,4,33,334) r=2.904179e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=4 time=5.010238e+03 (m,k,j,i)=(0,5,4,387) r=3.124626e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(0,30,18,441) r=4.29665e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(0,32,46,464) r=5.7937e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(0,40,28,441) r=4.29665e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(0,42,8,446) r=4.53525e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(0,66,34,302) r=2.80172e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(1,5,55,387) r=3.12463e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(1,7,39,437) r=4.13117e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6262.8 (m,k,j,i)=(1,12,47,412) r=3.44895e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6.262797e+03 (m,k,j,i)=(0,22,42,421) r=3.639427e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6.262797e+03 (m,k,j,i)=(0,31,13,412) r=3.448945e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6.262797e+03 (m,k,j,i)=(0,43,44,416) r=3.527595e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6.262797e+03 (m,k,j,i)=(0,44,16,441) r=4.296648e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6.262797e+03 (m,k,j,i)=(1,6,21,464) r=5.793699e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6.262797e+03 (m,k,j,i)=(1,10,53,431) r=3.918518e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=5 time=6.262797e+03 (m,k,j,i)=(1,57,49,444) r=4.435228e+13 count=1.000000e+00
+<hydro> fofc_report t=7.515357e+03 cycle=6 stages=6 fired cell-stages: at-floor=0 other=608115 | per x1 bin [i0-i1] floor/other: [440-440] 0/40 [441-441] 0/273 [442-442] 0/3339 [443-443] 0/3623 [444-444] 0/12823 [445-445] 0/10644 [446-446] 0/24160 [447-447] 0/14932 [448-448] 0/34365 [450-449] 0/17539 [450-450] 0/24121 [451-451] 0/18695 [452-452] 0/29777 [453-453] 0/22130 [454-454] 0/25008 [455-455] 0/22043 [456-456] 0/23094 [457-457] 0/19138 [458-458] 0/14662 [459-459] 0/13215 [460-460] 0/26044 [461-461] 0/10562 [462-462] 0/19920 [465-464] 0/18096 [466-466] 0/3264 [469-469] 0/98304 [473-473] 0/98304
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,18,30,354) r=2.964709e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,19,55,413) r=3.467775e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,20,36,268) r=2.692073e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,20,37,361) r=2.987518e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,31,38,390) r=3.150748e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,31,41,272) r=2.704632e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,40,20,272) r=2.704632e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7.515357e+03 (m,k,j,i)=(0,42,41,277) r=2.720481e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,18,10,414) r=3.48715e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,19,28,350) r=2.95242e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,20,36,389) r=3.14171e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,22,35,432) r=3.9513e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,24,51,383) r=3.09415e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,31,15,442) r=4.34138e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,35,40,314) r=2.84098e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=6 time=7515.36 (m,k,j,i)=(0,45,50,435) r=4.05587e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,4,66,450) r=4.75558e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,12,23,373) r=3.03579e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,16,23,324) r=2.87307e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,21,22,332) r=2.89804e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,22,64,443) r=4.38756e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,23,32,310) r=2.82795e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,25,21,394) r=3.19038e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8767.92 (m,k,j,i)=(0,27,33,327) r=2.88251e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,4,33,269) r=2.695203e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,5,39,313) r=2.837731e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,10,33,308) r=2.821409e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,11,6,272) r=2.704632e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,11,15,365) r=3.001889e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,11,39,334) r=2.904179e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,12,33,360) r=2.984109e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=7 time=8.767915e+03 (m,k,j,i)=(0,13,33,368) r=3.013644e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,9,313) r=2.83773e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,13,348) r=2.94638e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,14,354) r=2.96471e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,17,360) r=2.98411e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,18,368) r=3.01364e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,18,385) r=3.1088e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,21,407) r=3.3625e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=10020.5 (m,k,j,i)=(0,3,22,419) r=3.59276e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,6,349) r=2.949393e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,7,340) r=2.922368e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,12,346) r=2.940366e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,13,352) r=2.958523e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,15,466) r=5.983817e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,16,365) r=3.001889e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,16,380) r=3.074227e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=8 time=1.002047e+04 (m,k,j,i)=(0,3,16,381) r=3.080611e+13 count=1.000000e+00
+<hydro> fofc_report t=1.127303e+04 cycle=9 stages=6 fired cell-stages: at-floor=0 other=661104 | per x1 bin [i0-i1] floor/other: [439-439] 0/11 [440-440] 0/4045 [441-441] 0/2821 [442-442] 0/19116 [443-443] 0/9059 [444-444] 0/14336 [445-445] 0/16301 [446-446] 0/34604 [447-447] 0/16102 [448-448] 0/45715 [450-449] 0/17521 [450-450] 0/26842 [451-451] 0/17447 [452-452] 0/30964 [453-453] 0/21034 [454-454] 0/25817 [455-455] 0/21091 [456-456] 0/23089 [457-457] 0/19526 [458-458] 0/14622 [459-459] 0/10778 [460-460] 0/22220 [461-461] 0/12691 [462-462] 0/17384 [465-464] 0/18096 [466-466] 0/3264 [469-469] 0/98304 [473-473] 0/98304
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,5,367) r=3.00962e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,7,359) r=2.98076e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,14,356) r=2.97101e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,17,362) r=2.99099e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,18,364) r=2.99817e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,21,434) r=4.01993e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,22,368) r=3.01364e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=11273 (m,k,j,i)=(0,3,22,369) r=3.01779e+13 count=1
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,20,341) r=2.925374e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,21,341) r=2.925374e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,22,342) r=2.928376e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,24,342) r=2.928376e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,25,341) r=2.925374e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,28,342) r=2.928376e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,29,343) r=2.931375e+13 count=1.000000e+00
+<rad_m1> NEWTON-FALLBACK cycle=9 time=1.127303e+04 (m,k,j,i)=(0,3,30,346) r=2.940366e+13 count=1.000000e+00
+
+Terminating on cycle limit
+time=1.252559e+04 cycle=10
+tlim=8.064000e+06 nlim=10
+
+MeshBlock-cycles = 40
+cpu time used  = 2.260007e+01
+zone-cycles/cpu_second = 3.479777e+06
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> closure = vet_col: 1.000000e+01 tensor builds (0.000000e+00 skipped), 4.745888e-03 s (rank 0, fenced), 4.745888e-01 ms per build
+<rad_m1> vet_col_lat: 1.000000e+01 sweeps (incl. the first build's 3 inflow iterations), 6.091581e+00 s (rank 0, fenced), 6.091581e+02 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 1.781196e-01, sweeps 5.893647e+00 (of which per-shell halo+walls 5.872897e+00, of which MPI wait 4.107509e-01), tables (rotation) 0.000000e+00, uniform twin 0.000000e+00, moments 1.927361e-02; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 4.648000e+03, bytes sent 1.728263e+10 (3.718293e+06 per exchange), post 3.134663e-02 s, partners 1; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=1.000000e+01 Picard iterations mean=7.600000e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=8.348000e+03 per solve=8.348000e+02
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=3.422729e+07 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=5.178568e+06 energy moved rad->gas=3.445362e+38 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) | |F| > c E scaled back cell-solves=1.579767e+07 sum(|F|/(cE) - 1)=9.703139e+06
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual mean=1.140519e-08 max=9.016017e-08 tol=1.000000e-10
+<rad_m1> bicgstab: outer passes=7.600000e+01 linear solves=7.600000e+01 inner iterations mean=3.753947e+01 max=1.550000e+02 total=2.853000e+03
+<rad_m1> bicgstab: breakdowns=8.000000e+00 line_jacobi fallbacks=2.000000e+00 global reductions=8.723000e+03 (3.057483e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=5.976883e+08 newton fallbacks=1.851638e+06 (3.097999e-03 per cell-pass)
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 min E from the solve=8.302717e-01
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
