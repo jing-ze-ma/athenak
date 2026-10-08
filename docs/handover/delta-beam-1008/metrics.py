@@ -38,6 +38,11 @@ def main():
     m = bc.read_binary_as_athdf(fm)
     ffs = fm.replace('.m1.', '.m1_fs.')
     s = bc.read_binary_as_athdf(ffs) if os.path.exists(ffs) else None
+    if s is None:   # a restart keeps the file id: output2/variable=m1_fs writes *.hydro_w.*
+        fh = fm.replace('.m1.', '.hydro_w.')
+        if os.path.exists(fh):
+            s = bc.read_binary_as_athdf(fh)
+            s = s if 'm1_jfs' in s else None
     r = np.asarray(m['x1v'], dtype=float)
     E, F = m['m1_e'], m['m1_f1']
     print('# %s  bin %s  t %.4e  cycle %d' % (d, num, m['Time'], m['NumCycles']))

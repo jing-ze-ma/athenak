@@ -746,7 +746,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_hfs",1,&(derived_var));
       outvars.emplace_back("m1_sfs",2,&(derived_var));
       outvars.emplace_back("m1_cfs",3,&(derived_var));
-      out_params.n_derived += 4;
+      outvars.emplace_back("m1_drrfs",4,&(derived_var));
+      outvars.emplace_back("m1_drtfs",5,&(derived_var));
+      outvars.emplace_back("m1_drpfs",6,&(derived_var));
+      out_params.n_derived += 7;
     }
 
     // turbulent forcing

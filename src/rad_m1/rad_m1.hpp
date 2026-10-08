@@ -1576,6 +1576,11 @@ class RadiationM1 {
   // shell by shell from the 8 lateral neighbours (on-rank copies + MPI)
   int vgd_w = 0;
   DvceArray5D<Real> vgd_cs;    // (m, 2, k, j, i): ln chi, ln S with the vgd_w band
+  // rad-beam-1008 <rad_m1>/implicit_blend_ffs (default false): with vet_gd the berthon part
+  // and the blend weight of the radial faces read the formal solution's own flux factor
+  // f = H_r/J (vgd_ffs, -2 below the first shell) instead of f(D_rr) by the M1 inversion
+  bool impl_ffs = false;
+  DvceArray4D<Real> vgd_ffs;
   DvceArray1D<int> vgd_hloc;   // (8 nmb): local index of the slot's neighbour, -1 remote
   std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): the remote neighbour's rank, lid
   DvceArray1D<Real> vgd_sbuf, vgd_rbuf;   // flat message buffers, one piece per remote

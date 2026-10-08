@@ -1527,14 +1527,22 @@ void RadiationM1::VetGdMoments() {
   const bool repq = vgd_replace && vcol_sq;
   auto vq_ = vcol_q;
   const Real qlo = vcol_qmin, qhi = vcol_qmax;
+  // implicit_blend_ffs: the flux factor H_r/J of the formal solution per cell
+  const bool dffs = impl_ffs;
+  if (dffs && vgd_ffs.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(vgd_ffs, nmb1 + 1, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng,
+                    indcs.nx1 + 2*indcs.ng);
+  }
+  auto ffs_ = vgd_ffs;
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
+    if (dffs) {ffs_(m,k,j,i) = -2.0;}
     if (i < ilo) {return;}
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
     const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
     const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-    Real jm = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
+    Real jm = 0.0, hr = 0.0, rr = 0.0, rt = 0.0, rp = 0.0, tq = 0.0, tp = 0.0, pq = 0.0;
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       const Real a = nx*st*cp + ny*st*sp + nz*ct;
@@ -1542,6 +1550,7 @@ void RadiationM1::VetGdMoments() {
       const Real c = -nx*sp + ny*cp;
       const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
       jm += wi;
+      hr += wi*a;
       rr += wi*a*a;
       rt += wi*a*b;
       rp += wi*a*c;
@@ -1557,6 +1566,7 @@ void RadiationM1::VetGdMoments() {
       tt_(m,M1_TT_LAT0+3,k,j,i) = 0.5*(tq - pq)/jm;    // D_tt - (1 - D_rr)/2
       tt_(m,M1_TT_LAT0+4,k,j,i) = tp/jm;
       tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
+      if (dffs) {ffs_(m,k,j,i) = fmin(fmax(hr/jm, -1.0), 1.0);}
     }
   });
   // vet_gd_thin_taumin > 0: taper the LATERAL parts (LAT1..LAT5: D_r,lat and the

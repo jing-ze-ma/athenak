@@ -1256,6 +1256,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_blend_tau0 = pin->GetOrAddReal("rad_m1","implicit_blend_tau0",1.0);
   impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",0.6);
   impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",0.9);
+  if (pin->DoesParameterExist("rad_m1","implicit_blend_ffs")) {
+    impl_ffs = pin->GetBoolean("rad_m1","implicit_blend_ffs");
+  }
   if (!(impl_blend_tau0 > 0.0) || !(impl_blend_fhi > impl_blend_flo)) {
     ImplFatal("<rad_m1>: implicit_blend_tau0 must be positive and implicit_blend_fhi "
               "must exceed implicit_blend_flo");
@@ -8762,6 +8765,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // thin limit (berthon keeps whatever f it is given), so a beam from a photosphere
       // kept f ~ 0.89 where the formal solution says 0.97 (AG Car A column, 3 R_ph).
       const bool vfix = sphf && trans && !edd && (vetsc || tauc);
+      // rad-beam-1008 implicit_blend_ffs: the formal solution's H_r/J where vet_gd has it
+      const bool vffs = vfix && impl_ffs && vgd_on &&
+                        (vgd_ffs.extent_int(0) == nmb1 + 1);
+      auto ffs_ = vgd_ffs;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -8789,6 +8796,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           cq = fmin(fmax(M1DDiag(iw_,vd_,dfull,m,0,k,j,ip), 1.0/3.0), 1.0);
           sq = 0.5*(5.0 - 3.0*cq);
           rfr = copysign(sqrt(fmax((4.0 - sq*sq)/3.0, 0.0)), rfr);
+          if (vffs) {
+            const Real gl = ffs_(m,k,j,im), gr = ffs_(m,k,j,ip);
+            if (gl > -1.5) {rfl = gl;}
+            if (gr > -1.5) {rfr = gr;}
+          }
         }
         // closed-form M1 wave speeds of the two LAGGED states (1-D: mu = sign f)
         Real bl, br;

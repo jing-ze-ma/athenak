@@ -1372,7 +1372,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto &mbsize = pm->pmb_pack->pmb->mb_size;
     par_for("m1_fs_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      Real jm = 0.0, hr = 0.0, sv = 0.0, cv = 0.0;
+      Real jm = 0.0, hr = 0.0, sv = 0.0, cv = 0.0, prr = 0.0, prt = 0.0, prp = 0.0;
       if (hv && i >= ilo) {
         sv = exp(cs_(m,1,k+og,j+og,i));
         cv = exp(cs_(m,0,k+og,j+og,i));
@@ -1384,14 +1384,23 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
           const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
           jm += wi;
           hr += wi*a;
+          const Real b = dir_(d,0)*ct*cp + dir_(d,1)*ct*sp - dir_(d,2)*st;
+          const Real c = -dir_(d,0)*sp + dir_(d,1)*cp;
+          prr += wi*a*a;
+          prt += wi*a*b;
+          prp += wi*a*c;
         }
       }
       dv(m,i_dv  ,k,j,i) = jm;
       dv(m,i_dv+1,k,j,i) = hr;
       dv(m,i_dv+2,k,j,i) = sv;
       dv(m,i_dv+3,k,j,i) = cv;
+      const Real ij = (jm > 0.0) ? 1.0/jm : 0.0;
+      dv(m,i_dv+4,k,j,i) = prr*ij;
+      dv(m,i_dv+5,k,j,i) = prt*ij;
+      dv(m,i_dv+6,k,j,i) = prp*ij;
     });
-    i_dv += 4;
+    i_dv += 7;
   }
 
   i_dv = i_dv % n_dv; // reset derived variable index
