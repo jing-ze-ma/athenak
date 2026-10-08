@@ -48,6 +48,16 @@
 //! BCs a pressure.  With the isothermal EOS there is no energy equation, so neither the
 //! etotgrav machinery nor that guard applies here.
 //!
+//! THERMO = GENERAL (problem/thermo = general, envelope stage only; accretor-rhd-1008,
+//! design docs/dev/accretor_rhd_design.md stages S1/S2).  <hydro>/eos = general (table,
+//! eos_radiation = false), <units> Rsun / km/s / a fixed density unit (mu 1), wb_option
+//! = polytropic.  Every ideal-gas site of the envelope stage goes through the EOS: ghost
+//! T and the isothermal ghost walk (WBAdvance), the WB pressure, the relaxation targets
+//! (kelvin keys env_t_ph / env_t_amb / env_t_stream; envelope and atmosphere relax to
+//! the column T(psi)), the ambient's P/rho, and the IC: T(psi), rho(psi) from the S0
+//! column file problem/env_ic_file, balanced discretely (EnvICGeneral).  With thermo =
+//! adiabatic (ideal gas) every one of these sites runs its original code verbatim.
+//!
 //! BOUNDARIES (user BCs on both x1 faces; mesh/ix1_bc = ox1_bc = user):
 //!  inner (r = R_acc): rigid ABSORBING stellar surface.  v_r(ghost) = min(v_r(edge), 0)
 //!    (a diode: gas only leaves into the star); density copied from the edge cell
@@ -80,11 +90,14 @@
 //!   dMin ... dJout       the same six as RATES averaged over the last history interval
 //! The cumulative integrals restart from zero on a restart.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -95,6 +108,7 @@
 #include "hydro/hydro.hpp"
 #include "utils/wb_background.hpp"
 #include "outputs/outputs.hpp"
+#include "units/units.hpp"
 #include "pgen.hpp"
 
 namespace {
@@ -153,6 +167,18 @@ DvceArray1D<int> iracc_;       // per MeshBlock: index of the measuring x1 face 
 // psi = -env_top_hp c_ph^2) instead of being flat above a spherical r_top; +huge = off
 Real env_phtop_ = 1.0e300;
 Real env_rmeas_ = 4.06;        // measuring face radius (problem/r_meas, default R_acc)
+// problem/thermo = general (envelope only; default off = the ideal-gas code paths
+// verbatim): <hydro>/eos = general (tabulated, gas only), temperatures in kelvin keys,
+// the envelope T(psi) from a 1-D column file (problem/env_ic_file, S0 script
+// docs/dev/accretor_rhd/make_ic_accretor_column.py), the discrete balance of the x1 WB
+// pair (wb_option = polytropic) for the IC.  All T below are CODE temperatures of the
+// general EOS (kelvin / eos.temp_cgs, mu_ref = 1).
+bool gen_ = false;
+Real gen_tph_ = 0.0;           // photospheric T (problem/env_t_ph, K)
+Real gen_tamb_ = 0.0;          // hot ambient T (problem/env_t_amb, K)
+Real gen_tstr_ = 0.0;          // stream T at the window (problem/env_t_stream, K)
+Real gen_tfl_ = 0.0;           // ghost T floor (eos tfloor, or 1e-3 T_ph if unset)
+DvceArray3D<Real> tcol_;       // column T(psi) at (m,k,i) [code T]
 // flux accumulators (per rank), RK registers, stage counter.  The absorbing surface
 // (stage 1) uses the first kNaccS, the envelope all kNacc.
 constexpr int kNaccS = 6;
@@ -520,9 +546,88 @@ void RyPerBCEnv(Mesh *pm) {
   const Real vrs = vr_s_, vps = vp_s_, cap = hse_cap_;
   const Real dlt = env_dlt_, rtop = env_rtop_, cph2 = env_cph2_, phtop = env_phtop_;
   const Real cstr2 = env_cstr2_, rspin = env_rspin_;
+  const bool gen = gen_;
+  const EOS_Data eosd = pmbp->phydro->peos->eos_data;
+  const Real tfl = gen_tfl_, tstr = gen_tstr_;
   par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real ph = x3v(m,k);
+    if (gen) {
+      // thermo = general: the same BCs through the EOS.  Ghost T = the edge cell's
+      // (floored), density by the isothermal hydrostatic walk of the general EOS
+      // (WBAdvance isothermal branch from the edge cell, frozen coefficient), in Phi_wb
+      // at r_in and in the TRUE Roche Phi at r_out; IEN = e + KE + rho Phi.
+      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        const Real da = u0(m,IDN,k,j,is);
+        const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
+                              + SQR(u0(m,IM3,k,j,is)))/da;
+        Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
+        Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
+        if (!(ta > tfl)) {
+          ta = tfl;
+          ea = eosd.EnergyFromTemperature(da, ta);
+        }
+        const Real pa = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
+        for (int g=0; g<ng; ++g) {
+          const int ig = is - 1 - g, im = is + g;
+          const Real pg = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
+          Real dg = da, eg = ea, tg = ta;
+          WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tg, ta, 0.0, ta, ta);
+          if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+          dg = fmax(fmin(dg, da*exp(cap)), dfl);
+          eg = eosd.EnergyFromTemperature(dg, ta);
+          const Real dm = u0(m,IDN,k,j,im);
+          const Real v1 = -u0(m,IM1,k,j,im)/dm;
+          const Real v2 = u0(m,IM2,k,j,im)/dm;
+          const Real v3 = noslip ? vwall*x1v(m,ig) : u0(m,IM3,k,j,im)/dm;
+          u0(m,IDN,k,j,ig) = dg;
+          u0(m,IM1,k,j,ig) = dg*v1;
+          u0(m,IM2,k,j,ig) = dg*v2;
+          u0(m,IM3,k,j,ig) = dg*v3;
+          u0(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
+        }
+      }
+      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+        const Real dph = WrapPhi(ph - phis);
+        const bool win = strm && (fabs(dph) < wwin);
+        const Real da = u0(m,IDN,k,j,ie);
+        const Real v1a = u0(m,IM1,k,j,ie)/da;
+        const Real v2a = u0(m,IM2,k,j,ie)/da;
+        const Real v3a = u0(m,IM3,k,j,ie)/da;
+        Real ea = u0(m,IEN,k,j,ie) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
+                  - da*phicc(m,k,j,ie);
+        Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
+        if (!(ta > tfl)) {
+          ta = tfl;
+          ea = eosd.EnergyFromTemperature(da, ta);
+        }
+        const Real pa = RochePot(p, x1v(m,ie), ph);
+        for (int g=0; g<ng; ++g) {
+          const int ig = ie + 1 + g;
+          Real dg, v1, v2, v3, tg;
+          if (win) {
+            dg = rhos*exp(-0.5*SQR(dph/sig));
+            v1 = vrs; v2 = 0.0; v3 = vps; tg = tstr;
+          } else {
+            const Real pg = RochePot(p, x1v(m,ig), ph);
+            Real eg = ea, tw = ta;
+            dg = da;
+            WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
+            if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+            dg = fmin(dg, da*exp(cap));
+            v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
+          }
+          dg = fmax(dg, dfl);
+          u0(m,IDN,k,j,ig) = dg;
+          u0(m,IM1,k,j,ig) = dg*v1;
+          u0(m,IM2,k,j,ig) = dg*v2;
+          u0(m,IM3,k,j,ig) = dg*v3;
+          u0(m,IEN,k,j,ig) = eosd.EnergyFromTemperature(dg, tg)
+                             + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
+        }
+      }
+      return;
+    }
     if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
       const Real da = u0(m,IDN,k,j,is);
       const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
@@ -613,6 +718,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const Real vcap = env_vcap_;
   const Real kamb = env_kamb_, camb2 = env_camb2_, cstr2 = env_cstr2_, rhot = env_rhot_;
   auto ramb = rhoamb_;
+  const bool gen = gen_;
+  const EOS_Data eosd = ph->peos->eos_data;
+  const Real tstr = gen_tstr_, tamb = gen_tamb_;
+  auto tcol = tcol_;
   par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
@@ -625,7 +734,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     } else {
       Real d1, pl, d2, pr, d3;
       WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
-      const Real p = (e > 0.0) ? gm1*e : 0.5*(pl + pr);
+      Real p;
+      if (gen) {
+        p = (e > 0.0) ? eosd.Pressure(d, e) : 0.5*(pl + pr);
+      } else {
+        p = (e > 0.0) ? gm1*e : 0.5*(pl + pr);
+      }
       fg = (area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))/volume(m,k,j,i);
     }
     u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
@@ -661,7 +775,23 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       tr = eg/(2.99792458e10*at4)*(1.0/(kab*rc) + 3.0*kr*hl*hl)/tu;
       tr = fmax(tr, tcmin);
     }
-    if (tr > 0.0) {
+    if (gen) {
+      // thermo = general: the targets are temperatures.  The envelope and the dense gas
+      // below env_r_hot (the stellar atmosphere) relax to the column T(psi), so the
+      // static IC is not touched; the stream above env_r_hot to env_t_stream; the hot
+      // ambient to env_t_amb.  (env_cool is refused with thermo = general.)
+      if (tr > 0.0 && d > 0.0) {
+        Real tt;
+        if (inside) {
+          tt = tcol(m,k,i);
+        } else if (d > kamb*ramb(m,k,i)) {
+          tt = (x1v(m,i) <= rhot) ? tcol(m,k,i) : tstr;
+        } else {
+          tt = tamb;
+        }
+        u0(m,IEN,k,j,i) += (eosd.EnergyFromTemperature(d, tt) - e)*(1.0 - exp(-bdt/tr));
+      }
+    } else if (tr > 0.0) {
       u0(m,IEN,k,j,i) += (d*ct/gm1 - e)*(1.0 - exp(-bdt/tr));
     }
     // floor sponge (outside the envelope, rho < env_sponge_rho rho_amb): the rotating-
@@ -794,9 +924,199 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   gr_ = DvceArray3D<Real>();
   gp_ = DvceArray3D<Real>();
   cref2_ = DvceArray3D<Real>();
+  tcol_ = DvceArray3D<Real>();
   rhoamb_ = DvceArray3D<Real>();
   gpl_ = DvceArray3D<Real>();
   iracc_ = DvceArray1D<int>();
+}
+
+//! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
+void ColumnAt(const std::vector<Real> &ps, const std::vector<Real> &lt,
+              const std::vector<Real> &lr, const Real psi, Real &t, Real &r) {
+  const int n = static_cast<int>(ps.size());
+  if (psi <= ps[0]) {
+    t = lt[0]; r = lr[0];
+    return;
+  }
+  if (psi >= ps[n-1]) {
+    t = lt[n-1]; r = lr[n-1];
+    return;
+  }
+  const int hi = static_cast<int>(std::upper_bound(ps.begin(), ps.end(), psi) - ps.begin());
+  const int lo = hi - 1;
+  const Real w = (psi - ps[lo])/(ps[hi] - ps[lo]);
+  t = (1.0 - w)*lt[lo] + w*lt[hi];
+  r = (1.0 - w)*lr[lo] + w*lr[hi];
+}
+
+//----------------------------------------------------------------------------------------
+//! thermo = general: the envelope IC in DISCRETE hydrostatic balance of the x1 WB pair
+//! (the he_star_m1 he_ic_balance march, per (m,k) column, host).  T is FIXED at the
+//! column's T(psi) (tcol_); the x1 WB background of cell i (WBBackgroundStencil with the
+//! run's wb_option and the cells' fixed T) walked to its faces gives PL_i(d_i) and
+//! PR_i(d_i); the face condition PR_i(d_i) = PL_{i+1}(d_{i+1}) is solved cell by cell
+//! (secant in ln d) from the ANCHOR, the active cell nearest the photosphere (psi = 0),
+//! which takes the column's density there; upward and downward.  Gas pressure only (no
+//! radiation in the EOS): below the photosphere the gas carries the whole weight, so the
+//! deep density exceeds the column's (which was built with P_gas + P_rad) by the
+//! integrated Eddington factor.  Upward, the hot hydrostatic ambient takes over as in
+//! the ideal-gas IC (pressure below the ambient's, r > r_top or Phi_wb >= the top cap).
+//! The inner ghost (i = 0) and the outer ghost (n1 - 1) copy the isothermal walk; the
+//! BCs rewrite them anyway.
+void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
+                  const bool eqtop, const std::vector<Real> &cpsi,
+                  const std::vector<Real> &clt, const std::vector<Real> &clr) {
+  const bool root = (global_variable::my_rank == 0);
+  auto *phd = pmbp->phydro;
+  const EOS_Data eos = phd->peos->eos_data;
+  const WBOption wbo = phd->wb_option;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  const int is = indcs.is, ie = indcs.ie;
+  const RocheParams p = rp_;
+  const Real dfl = eos.dfloor, tamb = gen_tamb_, camb2 = env_camb2_, ramb0 = env_ramb_;
+  const Real rtop = env_rtop_, phtop = env_phtop_, rspin = env_rspin_, phis = env_phis_;
+  const Real vsp = (spin_ - 1.0)*rp_.omega;
+  const Real aeq = RochePot(p, racc, 0.5*M_PI);
+  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+  auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), phd->phicc_wb);
+  auto hpf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), phd->phi_wb_x1f);
+  auto hpt = Kokkos::create_mirror_view_and_copy(HostMemSpace(), phd->phicc0);
+  auto ht = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tcol_);
+  DvceArray3D<Real> dd("ryper_icd", nmb, n3, n1), de("ryper_ice", nmb, n3, n1);
+  DvceArray3D<Real> dv("ryper_icv", nmb, n3, n1);
+  auto hd = Kokkos::create_mirror_view(dd);
+  auto he = Kokkos::create_mirror_view(de);
+  auto hv = Kokkos::create_mirror_view(dv);
+  std::vector<Real> d(n1), e(n1), t(n1), pw(n1), pf(n1 + 1);
+  Real rmax = 0.0, rhoanc_min = 1e300, rhoanc_max = -1e300;
+  int nfail = 0;
+  for (int m=0; m<nmb; ++m) {
+    for (int k=0; k<n3; ++k) {
+      for (int i=0; i<n1; ++i) {
+        t[i] = ht(m,k,i);
+        pw[i] = hpc(m,k,0,i);
+        pf[i] = hpf(m,k,0,i);
+      }
+      pf[n1] = hpf(m,k,0,n1);
+      // walk of cell i at density di: pressures at its inner and outer face
+      auto walk = [&](const int i, const Real di, Real &pl, Real &pr) {
+        Real ei, pp, cr, ct, cv;
+        eos.ThermoAt(di, t[i], ei, pp, cr, ct, cv);
+        WBState s0, s1, s2, s3, s4;
+        WBBackgroundStencil(eos, wbo, di, di, di, ei, ei, ei, pw[i-1], pf[i], pw[i],
+                            pf[i+1], pw[i+1], s0, s1, s2, s3, s4, t[i-1], t[i], t[i+1]);
+        pl = s1.p;
+        pr = s3.p;
+      };
+      // solve for d_i: side 0 = its inner-face pressure, 1 = its outer-face pressure
+      auto solve = [&](const int i, const int side, const Real target, const Real dg) {
+        Real pl, pr;
+        Real x0 = std::log(dg), x1 = x0 - 0.05;
+        walk(i, std::exp(x0), pl, pr);
+        Real f0 = ((side == 0) ? pl : pr)/target - 1.0;
+        walk(i, std::exp(x1), pl, pr);
+        Real f1 = ((side == 0) ? pl : pr)/target - 1.0;
+        for (int it=0; it<80 && std::fabs(f1) > 1.0e-14 && f1 != f0; ++it) {
+          Real x2 = x1 - f1*(x1 - x0)/(f1 - f0);
+          x2 = std::min(std::max(x2, x1 - 2.0), x1 + 2.0);
+          x0 = x1; f0 = f1; x1 = x2;
+          walk(i, std::exp(x1), pl, pr);
+          f1 = ((side == 0) ? pl : pr)/target - 1.0;
+        }
+        if (!(std::fabs(f1) < 1.0e-8)) nfail++;
+        rmax = std::max(rmax, std::fabs(f1));
+        return std::exp(x1);
+      };
+      // anchor: the active cell with |psi| smallest
+      int ia = is;
+      Real best = 1.0e300;
+      for (int i=is; i<=ie; ++i) {
+        const Real psi = phis - pw[i];
+        if (std::fabs(psi) < best) {
+          best = std::fabs(psi);
+          ia = i;
+        }
+      }
+      {
+        Real lt, lr;
+        ColumnAt(cpsi, clt, clr, phis - pw[ia], lt, lr);
+        d[ia] = std::exp(lr)/eos.dens_cgs;
+        rhoanc_min = std::min(rhoanc_min, d[ia]);
+        rhoanc_max = std::max(rhoanc_max, d[ia]);
+      }
+      // downward to cell 1
+      for (int i=ia-1; i>=1; --i) {
+        Real pl, pr;
+        walk(i+1, d[i+1], pl, pr);
+        d[i] = solve(i, 1, pl, d[i+1]);
+      }
+      // upward to n1 - 2; the hot ambient takes over
+      bool amb = false;
+      for (int i=ia; i<=n1-1; ++i) {
+        const Real pha = hpt(m,k,0,i) - (eqtop ? aeq : RochePot(p, racc, hx3(m,k)));
+        const Real da = ramb0*std::exp(std::max(-pha/camb2, -700.0));
+        if (!amb && i > ia) {
+          if (i <= n1 - 2) {
+            Real pl, pr;
+            walk(i-1, d[i-1], pl, pr);
+            d[i] = solve(i, 0, pr, d[i-1]);
+          } else {
+            d[i] = d[i-1];
+          }
+        }
+        Real pc = 0.0;
+        if (!amb) {
+          Real ei, cr, ct, cv;
+          eos.ThermoAt(d[i], t[i], ei, pc, cr, ct, cv);
+        }
+        if (i > ia && (amb || hx1(m,i) > rtop || pw[i] >= phtop || pc < da*camb2 ||
+                       i == n1 - 1)) {
+          amb = true;
+          d[i] = std::max(da, rho_amb);
+          t[i] = tamb;
+        }
+      }
+      // inner ghost i = 0: the isothermal walk from cell 1
+      {
+        Real e1 = eos.EnergyFromTemperature(d[1], t[1]);
+        Real dg = d[1], eg = e1, tg = t[1];
+        WBAdvance(eos, 1, d[1], e1, pw[0] - pw[1], dg, eg, tg, t[1], 0.0, t[1], t[1]);
+        d[0] = dg;
+        t[0] = t[1];
+      }
+      for (int i=0; i<n1; ++i) {
+        d[i] = std::max(d[i], dfl);
+        hd(m,k,i) = d[i];
+        he(m,k,i) = eos.EnergyFromTemperature(d[i], t[i]);
+        hv(m,k,i) = (hx1(m,i) < rspin && t[i] != tamb) ? vsp*hx1(m,i) : 0.0;
+      }
+    }
+  }
+  if (root) {
+    std::printf("ry_per_accretor: general IC (rank 0): anchor rho %.5g .. %.5g code, "
+                "balance residual max %.3e, %d unconverged cells\n", rhoanc_min, rhoanc_max,
+                rmax, nfail);
+  }
+  Kokkos::deep_copy(dd, hd);
+  Kokkos::deep_copy(de, he);
+  Kokkos::deep_copy(dv, hv);
+  auto u0 = phd->u0;
+  auto phicc = phd->phicc0;
+  par_for("ryper_icg", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real dc = dd(m,k,i), v3 = dv(m,k,i);
+    u0(m,IDN,k,j,i) = dc;
+    u0(m,IM1,k,j,i) = 0.0;
+    u0(m,IM2,k,j,i) = 0.0;
+    u0(m,IM3,k,j,i) = dc*v3;
+    u0(m,IEN,k,j,i) = de(m,k,i) + 0.5*dc*v3*v3 + dc*phicc(m,k,j,i);
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -826,6 +1146,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     cool_tfac_ = mu*1.67262192e-24*kVel*kVel/1.380649e-16;
     cool_tmin_ = pin->GetOrAddReal("problem", "cool_t_min", 0.0);
   }
+  if (gen_ && env_cool_) {
+    std::cout << "### FATAL ERROR in ry_per_accretor: env_cool is ideal-gas only (not with "
+              << "thermo = general)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   std::string ws = pin->GetOrAddString("problem", "env_wall_slip", "free");
   env_noslip_ = (ws.compare("noslip") == 0);
   if (!env_noslip_ && ws.compare("free") != 0) {
@@ -838,6 +1163,27 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   const Real csa = pin->GetOrAddReal("problem", "env_cs_amb", 300.0);   // km/s
   env_camb2_ = csa*csa;
   env_ramb_ = pin->GetOrAddReal("problem", "env_amb_rho", 1.0e-6);
+  if (gen_) {
+    // thermo = general: temperatures in kelvin (defaults: the c_s keys at mu 0.62), code
+    // T = kelvin/eos.temp_cgs.  The ambient's P/rho (its isothermal scale) comes from the
+    // EOS at (env_amb_rho, T_amb); it is fully ionized, so this is ideal to < 1e-3.
+    const Real kmu = 0.62*kMH*kVel*kVel/kKB;     // K per (km/s)^2 at mu 0.62
+    const Real tk = eos.temp_cgs;
+    gen_tph_ = pin->GetOrAddReal("problem", "env_t_ph", kmu*cph*cph)/tk;
+    gen_tamb_ = pin->GetOrAddReal("problem", "env_t_amb", kmu*csa*csa)/tk;
+    const Real cst0 = pin->GetOrAddReal("problem", "env_cs_stream", cph);
+    gen_tstr_ = pin->GetOrAddReal("problem", "env_t_stream", kmu*cst0*cst0)/tk;
+    gen_tfl_ = (eos.tfloor > 0.0) ? eos.tfloor : 1.0e-3*gen_tph_;
+    const Real ea = eos.EnergyFromTemperature(env_ramb_, gen_tamb_);
+    env_camb2_ = eos.Pressure(env_ramb_, ea, gen_tamb_)/env_ramb_;
+    if (root) {
+      std::printf("ry_per_accretor: thermo = general: T_ph %.1f K, T_amb %.4g K (P/rho %.5g"
+                  " = (%.3f km/s)^2), T_stream %.1f K, ghost T floor %.1f K; %.5g K per "
+                  "code T, %.5g g/cc per code density\n", gen_tph_*tk, gen_tamb_*tk,
+                  env_camb2_, std::sqrt(env_camb2_), gen_tstr_*tk, gen_tfl_*tk, tk,
+                  eos.dens_cgs);
+    }
+  }
   env_kamb_ = pin->GetOrAddReal("problem", "env_amb_k", 3.0);
   env_tsp_ = pin->GetOrAddReal("problem", "env_t_sponge", 1.0e-4);
   env_fsp_ = pin->GetOrAddReal("problem", "env_sponge_rho", 10.0);
@@ -986,6 +1332,83 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       c2r(m,k,i) = EnvC2(psi, cph2, np);
     });
   }
+  // thermo = general: the envelope column T(psi), rho(psi) from problem/env_ic_file
+  // (S0 script; ASCII, '#' comments, columns psi [(km/s)^2, = Phi_s - Phi_wb at phi 90]
+  // T [K] rho [g/cc] [...], psi ascending), interpolated linearly in psi on log T and
+  // log rho; clamped at the file's ends.  tcol_ = T at the cell centres.
+  std::vector<Real> cpsi, clt, clr;
+  if (gen_) {
+    const std::string fn = pin->GetString("problem", "env_ic_file");
+    std::ifstream f(fn);
+    if (!f.good()) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: cannot open env_ic_file '" << fn
+                << "'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::string ln;
+    while (std::getline(f, ln)) {
+      if (ln.empty() || ln[0] == '#') continue;
+      std::istringstream is(ln);
+      Real a, b, c;
+      if (!(is >> a >> b >> c)) continue;
+      if (!cpsi.empty() && !(a > cpsi.back())) {
+        std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file psi not strictly "
+                  << "ascending at psi = " << a << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cpsi.push_back(a);
+      clt.push_back(std::log(b));
+      clr.push_back(std::log(c));
+    }
+    if (cpsi.size() < 2) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file has < 2 rows"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // range check: the column inside the EOS table (T and rho, cgs)
+    {
+      const auto &tb = eos.tbl;
+      Real tlo = 1e300, thi = -1e300, rlo = 1e300, rhi = -1e300;
+      for (size_t n=0; n<cpsi.size(); ++n) {
+        tlo = std::min(tlo, clt[n]); thi = std::max(thi, clt[n]);
+        rlo = std::min(rlo, clr[n]); rhi = std::max(rhi, clr[n]);
+      }
+      const Real l10 = std::log(10.0);
+      const bool okt = (tlo/l10 >= tb.ymin) && (thi/l10 <= tb.ymax);
+      const bool okr = (rlo/l10 >= tb.xmin) && (rhi/l10 <= tb.xmax);
+      const Real tak = gen_tamb_*eos.temp_cgs;
+      const bool oka = (std::log10(tak) <= tb.ymax);
+      if (root) {
+        std::printf("ry_per_accretor: env_ic_file %s: %d rows, psi %.5g .. %.5g, log T "
+                    "%.4f .. %.4f, log rho %.4f .. %.4f; EOS table log T %.3f .. %.3f, "
+                    "log rho %.3f .. %.3f: %s\n", fn.c_str(), static_cast<int>(cpsi.size()),
+                    cpsi.front(), cpsi.back(), tlo/l10, thi/l10, rlo/l10, rhi/l10,
+                    tb.ymin, tb.ymax, tb.xmin, tb.xmax,
+                    (okt && okr && oka) ? "inside" : "OUTSIDE");
+      }
+      if (!(okt && okr && oka)) {
+        std::cout << "### FATAL ERROR in ry_per_accretor: the env_ic_file column or T_amb "
+                  << "is outside the EOS table" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    Kokkos::realloc(tcol_, nmb, n3, n1);
+    auto ht = Kokkos::create_mirror_view(tcol_);
+    auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v);
+    auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x3v);
+    const Real tk = eos.temp_cgs;
+    for (int m=0; m<nmb; ++m) {
+      for (int k=0; k<n3; ++k) {
+        for (int i=0; i<n1; ++i) {
+          const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i), hx3(m,k));
+          Real lt, lr;
+          ColumnAt(cpsi, clt, clr, psi, lt, lr);
+          ht(m,k,i) = std::exp(lt)/tk;
+        }
+      }
+    }
+    Kokkos::deep_copy(tcol_, ht);
+  }
   // the measuring x1 face in each MeshBlock (or -1): r = R_acc exactly (default), or,
   // with problem/r_meas, the face nearest r_meas (MR/JR, Menv/Jenv then refer to it; a
   // sphere outside the tidally bulged photosphere, so the envelope does not breathe
@@ -1067,6 +1490,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // the hot ambient's pressure or r_top; above, the hot hydrostatic ambient at rest.
   // Rotation (spin - 1) Omega r
   // (rotating frame) in the supported part (r < r_top).
+  if (gen_) {
+    EnvICGeneral(pmbp, racc, rho_amb, eqtop, cpsi, clt, clr);
+    return;
+  }
   const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
   const Real vsp = (spin_ - 1.0)*rp_.omega;
   const Real camb2 = env_camb2_, ramb = env_ramb_;
@@ -1160,12 +1587,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   auto &eos = pmbp->phydro->peos->eos_data;
+  gen_ = false;
   if (env_) {
     auto *phd = pmbp->phydro;
-    if (thermo.compare("adiabatic") != 0) {
-      fatal("inner = envelope needs thermo = adiabatic");
+    gen_ = (thermo.compare("general") == 0);
+    if (gen_) {
+      // thermo = general: tabulated general EOS, gas only, in Rsun / km/s units
+      if (pin->GetString("hydro", "eos").compare("general") != 0 || !eos.tbl.active) {
+        fatal("thermo = general needs <hydro>/eos = general with general_eos = table");
+      }
+      if (eos.tbl.radiation) fatal("thermo = general needs <hydro>/eos_radiation = false");
+      if (phd->wb_option != WBOption::polytropic) {
+        fatal("thermo = general needs <hydro>/wb_option = polytropic");
+      }
+      if (pmbp->punit == nullptr) fatal("thermo = general needs a <units> block");
+      const Real lu = pmbp->punit->length_cgs(), vu = pmbp->punit->velocity_cgs();
+      if (std::fabs(lu/kRsun - 1.0) > 1.0e-6 || std::fabs(vu/kVel - 1.0) > 1.0e-6 ||
+          std::fabs(pmbp->punit->mu() - 1.0) > 1.0e-12) {
+        fatal("thermo = general needs <units> length_cgs = 6.957e10 (Rsun), time_cgs = "
+              "6.957e5 (velocity km/s) and mu = 1");
+      }
+      if (root) {
+        std::printf("ry_per_accretor: thermo = general, density unit %.6g g/cc\n",
+                    pmbp->punit->density_cgs());
+      }
+    } else if (thermo.compare("adiabatic") != 0) {
+      fatal("inner = envelope needs thermo = adiabatic | general");
     }
-    if (!eos.is_ideal) fatal("inner = envelope needs <hydro>/eos = ideal");
+    if (!gen_ && !eos.is_ideal) fatal("inner = envelope needs <hydro>/eos = ideal");
     if (!(phd->use_etotgrav && phd->use_wellbalance_dynamic && phd->use_wb_x1)) {
       fatal("inner = envelope needs <hydro>/etotgrav, wellbalance_dynamic and wb_x1 = "
             "true");
