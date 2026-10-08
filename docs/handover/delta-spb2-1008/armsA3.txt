@@ -2,4 +2,4 @@ mg5 rad_m1/implicit_precond=mg rad_m1/implicit_mg_levels=5
 pfloat rad_m1/implicit_precond_float=true
 ew01 rad_m1/implicit_lin_ew_max=0.1
 mgpf rad_m1/implicit_precond=mg rad_m1/implicit_precond_float=true
-blfface output7/file_type=bin output7/variable=m1_face output7/dcycle=276
+blfface output6/dcycle=276
