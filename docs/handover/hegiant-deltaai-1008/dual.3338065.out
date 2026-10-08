@@ -1,0 +1,10 @@
+run.cfg: BIN=/u/jma20/ATHENAK/builds/bin/athena_hes_gpu_f3a66907dc9c TLIM=2.592e6 ENVSH=/work/nvme/bivj/jma20/hegiant_1008/env_deltaai.sh
+XKEYS: time/cfl_number=0.3 time/restart_refill_ghosts=true rad_m1/implicit_opac_newton_slope_max=3
+PK: problem/he_ic_file=/work/nvme/bivj/jma20/hegiant_deltaai_bundle/ic/ic_giant_own.txt problem/he_opac_table=/work/nvme/bivj/jma20/hegiant_deltaai_bundle/tables/rosseland_tops_hegiant_blend.txt problem/he_planck_table=/work/nvme/bivj/jma20/hegiant_deltaai_bundle/tables/planck_tops_hegiant_blend.txt
+job 3338065 (hegiant_smk) 1 nodes gh066, 4 ranks, start 2026-10-08_00:58:59
+GUARD: me 3338065 start 2026-10-08T00:58:54; running of this name: 3338065,2026-10-08T00:58:54
+GUARD: I run
+726ee6cd2435aa9c0c66539680055887  /u/jma20/ATHENAK/builds/bin/athena_hes_gpu_f3a66907dc9c
+restart from /work/nvme/bivj/jma20/hegiant_1008/smk60/rst/hegiant.00022.rst (t = 900420.77721355006, cycle 47861)
+srun -n 4 -c 16 --cpu-bind=cores /u/jma20/ATHENAK/builds/bin/athena_hes_gpu_f3a66907dc9c -r /work/nvme/bivj/jma20/hegiant_1008/smk60/rst/hegiant.00022.rst output1/last_time=900400 output2/last_time=885600 output3/last_time=885600 output4/last_time=900000 output5/last_time=864000 output6/last_time=885600 time/tlim=2.592e6 time/cfl_number=0.3 time/restart_refill_ghosts=true rad_m1/implicit_opac_newton_slope_max=3 problem/he_ic_file=/work/nvme/bivj/jma20/hegiant_deltaai_bundle/ic/ic_giant_own.txt problem/he_opac_table=/work/nvme/bivj/jma20/hegiant_deltaai_bundle/tables/rosseland_tops_hegiant_blend.txt problem/he_planck_table=/work/nvme/bivj/jma20/hegiant_deltaai_bundle/tables/planck_tops_hegiant_blend.txt time/nlim=47921 time/ndiag=1 -d /work/nvme/bivj/jma20/hegiant_1008/smk60 -t 00:16:56   00:59:03
+rc=0 01:00:05, newest rst /work/nvme/bivj/jma20/hegiant_1008/smk60/rst/hegiant.00023.rst

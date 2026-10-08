@@ -1,0 +1,2 @@
+run.log: FATAL 0, NON-CONV solves 0, cycles 47861..47921, t 9.004e+05..9.015e+05 s (10.42..10.43 d), s/cycle 0.701, dt first/min/last 9.22/9.22/18.6, Picard mean 1.850000e+01 max 4.200000e+01
+t   10.434 d: R_ph(tau_R 2/3) 73.316 Rsun, r(rho 1e-12) 76.048 Rsun, max|<v_r>| 37.579 km/s at 72.79 Rsun
