@@ -1,6 +1,6 @@
-# NOTE 2026-10-08 (orion): RSG wind -- line + molecular force with real MESA structures, the Fuller & Tsuna chromosphere and Sobolev desaturation: Gamma <= 0.34, cannot drive
+# NOTE 2026-10-08 (orion): RSG wind -- gas line+molecular force <= 0.34 (MESA, Fuller & Tsuna chromosphere, Sobolev); two-phase gas at 3-5 R; only large iron-free silicate grains at ~4 R can drive
 
-Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1 and 2 (dust, step 3, and CNO, step 4, not done).
+Answer to TASK-2026-10-08-orion-rsg-wind.md, steps 1-3 (step 3 as a two-phase gas + dust test, section 4; CNO, step 4, not done).
 Orion owns this thread (user 10-08). Python on CPU, no AthenaK changes.
 
 Files: `docs/handover/rsg-wind-orion-1008/` -- `scripts/` (rt.py, rsglib.py with MESA reader + ft/mft cases,
@@ -69,11 +69,64 @@ dv/dr -> 0 gives 0, thin value matches gmap_table.md.
 - Approximations (mostly overestimates): g-points are not lines, line overlap/blanketing ignored, radial streaming,
   LTE, equilibrium chemistry, 1x solar (not CNO-processed); the FT gradients v_con/r, v_con/H are proxies.
 
-## 4. Verdict
-Line + molecular radiation force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev
-desaturation, reaches **Gamma = 0.1-0.34** (no case of 1,800+ above 0.35), peaking at 3-4 R where T passes
-1500-1700 K, carried mainly by the 0.61-0.85 um molecular band (TiO/VO). It cannot drive RSG mass loss (Gamma > ~0.5
-nowhere), but can reduce the effective gravity by 20-30 % in exactly the layer where dust condenses, which is the
-open lever: the dust estimate (step 3) is next. The 1700 K plateau is the bistable molecular cooling regime viper
-saw; a two-phase (clumpy, thermally unstable) medium there is a candidate for dust formation in the cool phase.
-Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force alone.
+## 4. Two-phase gas + dust (task step 3, `tables/twophase_tables.md`, `scripts/twophase.py`)
+Added 10-08 (user: "is it possible to have a multi-phase gas"). Optically thin radiative equilibrium of gas in the
+diluted stellar field with the ck opacities, all roots T(rho or P, r); then a warm + cool phase in pressure balance
+on the MESA columns (m15lgl5.1, m20lgl5.3, m20lgl5.5), cool volume filling factor f = 0.01/0.1/0.3, Sobolev gas
+force per phase, dust in the cool phase, clump porosity (1 - e^-tau)/tau for clump size l = 0.01 r, 0.1 r.
+
+**(a) Thermal bistability is real at 3-5 R, absent at <= 2 R** (isobaric/Field, P = 1e-4 dyn/cm^2, clamp):
+
+| star | r/R | stable warm / cool T [K] | rho_c/rho_w |
+|---|---|---|---|
+| golden16 | 1.5 / 2 | single phase (3358 / 2940) | - |
+| golden16 | 3 / 4 / 5 | 2744/939, 2579/795, 1928/708 | 5.4, 6.0, 5.0 |
+| m20lgl5.5 | 3 / 4 | 2496/894, 1902/763 | 5.2, 4.6 |
+
+Mechanism: the warm phase is heated in the 0.26-0.85 um bands (TiO/VO-type absorbers) and cools at 4.4-8.7 um;
+below ~1300 K the visible absorbers leave the equilibrium chemistry, heating collapses and the gas runs to an IR-balanced
+cool root at 700-940 K. This is the likely origin of the 1800-2100 K lambda-iteration oscillation in the columns (but
+the thin-RE warm root is 2500-2750 K, the columns' plateau ~1700 K). **Caveat (binding):** all wind states lie below
+the ck/FastChem table edge (1e-8 bar = 1e-2 dyn/cm^2; wind P ~ 1e-7..1e-3 dyn/cm^2), so the chemistry is taken at
+1e-8 bar (extrap changes only the band-mean k: warm roots move <= 200 K, cool roots <= 1 K). The cool-root T and the
+instability window are clamp-dependent; at the real pressure these transitions should sit at lower T.
+
+**(b) Two-phase gas without dust lowers the force:** the cool phase holds 34-40 % of the mass (f = 0.1) with gas
+Gamma_c ~0.01; mass-weighted gas Gamma <= 0.27 (single phase 0.34).
+
+**(c) Dust in the cool phase -- the grain temperature is the binding criterion.** T_d = Teff W^(1/(4+p)); golden16 at
+3 R: 2017 / 1689 / 1256 K for p = 1 (absorbing) / 0 / -1 (nearly transparent iron-free silicate, Al2O3), 4 R: 1793 /
+1458 / 1032 K. The gas criterion (T_c < T_cond) is met wherever a cool phase exists but the grains would evaporate.
+- Al2O3 (delta <= 1e-4): <= 0.3 cm^2/g of gas vs kappa_Edd 0.8-1.7 -- ~6x short, never drives.
+- absorbing silicates (p = 1) and p = 0: do not condense inside 5 R (p = 0 only m20lgl5.5 at 5 R, optimistic T_cond).
+- iron-free silicate, p = -1 (delta 4e-3, max supply 12 cm^2/g of gas at kappa_d 3000): the only working case.
+  Minimum delta f_cond kappa_d for Gamma_c > 1: 1.7-1.8 cm^2/g gas (golden16, 3-4 R), 1.5 (m20lgl5.3), 0.8-1.0
+  (m20lgl5.5); large clumps (l = 0.1 r) cannot reach Gamma_c > 1 at 2 R (golden16, m20lgl5.3) or anywhere inside 4 R
+  (m20lgl5.5).
+
+| model | silicate T_cond | Gamma_c > 1 (needs f_cond x kappa_d [cm^2/g dust]) | mass-weighted Gamma > 0.5 |
+|---|---|---|---|
+| m15lgl5.1, m20lgl5.3 | 1200 K (optimistic) | 4 R only, >= ~900 | 0.50-0.58 at 4 R with f = 0.3 |
+| m15lgl5.1, m20lgl5.3 | nominal | no | no |
+| m20lgl5.5 | 1200 K | 3 R, >= ~300 | 0.88 at 3 R |
+| m20lgl5.5 | nominal | 4 R, >= ~300 | 0.56 at 4 R (f = 0.1) |
+
+kappa_d >= 300-900 cm^2/g(dust) means ~0.1-1 um grains with Q_pr ~ 1 (scattering), the Hoefner (2008) AGB mechanism;
+small iron-free grains absorb far too little. The kappa_d scan (300/1000/3000) is an ASSUMED range (literature values
+not verified here; geometric limit 2300-7800 x Q_pr cm^2/g for a = 1-0.3 um). With Asplund 2009 Mg+Si the silicate
+delta is ~2.5e-3, raising the requirement 1.6x.
+Approximations: optically thin RE, single-temperature grains, no drag/drift, no grain-growth kinetics (can grains reach
+~0.3 um in the time available?), no gas heating by dust, both phases see the unattenuated stellar flux.
+
+## 5. Verdict
+- Line + molecular force on real MESA RSG structures, with a Fuller & Tsuna chromosphere and Sobolev desaturation:
+  **Gamma = 0.1-0.34** (no case of 1,800+ above 0.35), peaking at 3-4 R, T 1500-1700 K, mainly the 0.61-0.85 um
+  molecular band (TiO/VO). It cannot drive RSG mass loss, but lowers the effective gravity by 20-30 % at 3-4 R.
+- That same layer is thermally bistable (warm ~2000-2700 K / cool ~700-950 K clumps) and is where nearly transparent
+  iron-free silicate grains first survive. Driving then requires LARGE (~0.1-1 um) iron-free silicate grains in the
+  cool clumps at ~4 R (3 R for the cool, luminous m20lgl5.5): molecules hold the gas up to there, dust launches it.
+  Al2O3 and absorbing silicates cannot.
+- Biggest uncertainties: the 1e-8 bar table edge (sets the cool-phase T and the instability window), the dust opacity
+  per gram (assumed), grain growth kinetics.
+- Next GPU-side work (non-grey M1/VET binning) is not justified by the gas force alone; a dust/grain-growth model
+  (or a ck table extended below 1e-8 bar) would be the next analysis step.
