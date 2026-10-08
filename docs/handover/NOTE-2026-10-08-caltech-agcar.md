@@ -33,3 +33,8 @@ Smokes 4235600 (A) / 4235601 (B), 1 H200, rc 0, 0 FATAL, 0 NON-CONVERGED.
 All hst differences <= 5e-15 relative (FMA level). Speed: 1 H200 ~ 1 viper node; A 2.36 s/cycle, B 2.07 s/cycle.
 Wall estimate at the smoke dt (dt will change): B ~1900 cycles ~1.1 h, A ~6400 cycles ~4.2 h on 1 H200.
 Runs still NOT queued on Caltech: waiting for the user.
+
+## UPDATE 10-08 08:45 PDT: runs QUEUED (user OK), not started
+1 H200 each, script agcar_1008/link_agcar.sh, run dirs agcar_1008/run{B,A} (DONE/STOP/CANCEL files):
+B 4235665 (12 h, tlim 4.624e5) -> A 4235666 (24 h, afterany B, tlim 8.064e6) -> A 4235667 (24 h, afterany).
+Start estimate: none yet (Priority). A later update will say when B actually starts; keep other copies until then.
