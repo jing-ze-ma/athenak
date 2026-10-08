@@ -1647,7 +1647,10 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
           }
         }
         Real lt, lr;
-        ColumnAt(cpsi, clt, clr, phis - pw[ia], lt, lr);
+        const Real psia = rad_ ? (phis - PhiWB(p, env_dlt_, rtop, rspin, phtop, hx1(m,ia),
+                                               hx3(m,k)))
+                               : (phis - pw[ia]);
+        ColumnAt(cpsi, clt, clr, psia, lt, lr);
         d[ia] = std::exp(lr)/eos.dens_cgs;
       }
       rhoanc_min = std::min(rhoanc_min, d[ia]);
