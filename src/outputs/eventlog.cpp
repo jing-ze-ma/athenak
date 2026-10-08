@@ -8,6 +8,8 @@
 //! throughout the code to a log file.  Checks whether there is data to be written
 //! every time step, but only writes data if one or more counters are non-zero
 
+#include <cinttypes>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iomanip>
@@ -35,26 +37,26 @@ EventLogOutput::EventLogOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
 void EventLogOutput::LoadOutputData(Mesh *pm) {
 #if MPI_PARALLEL_ENABLED
   // perform in-place sum or max over all MPI ranks, depending on counter
-  int* pdfloor = &(pm->ecounter.neos_dfloor);
-  int* pefloor = &(pm->ecounter.neos_efloor);
-  int* ptfloor = &(pm->ecounter.neos_tfloor);
-  int* pvceil  = &(pm->ecounter.neos_vceil);
-  int* pfail   = &(pm->ecounter.neos_fail);
-  int* pmaxit  = &(pm->ecounter.maxit_c2p);
-  int* pfofc   = &(pm->ecounter.nfofc);
-  int* ptclamp = &(pm->ecounter.neos_tclamp);
-  int* ptset   = &(pm->ecounter.neos_tset);
+  std::int64_t* pdfloor = &(pm->ecounter.neos_dfloor);
+  std::int64_t* pefloor = &(pm->ecounter.neos_efloor);
+  std::int64_t* ptfloor = &(pm->ecounter.neos_tfloor);
+  std::int64_t* pvceil = &(pm->ecounter.neos_vceil);
+  std::int64_t* pfail = &(pm->ecounter.neos_fail);
+  std::int64_t* pmaxit = &(pm->ecounter.maxit_c2p);
+  std::int64_t* pfofc = &(pm->ecounter.nfofc);
+  std::int64_t* ptclamp = &(pm->ecounter.neos_tclamp);
+  std::int64_t* ptset = &(pm->ecounter.neos_tset);
   Real* pefde  = &(pm->ecounter.efloor_de);
   Real* pvcde  = &(pm->ecounter.vceil_de);
-  MPI_Allreduce(MPI_IN_PLACE, pdfloor, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, pefloor, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, ptfloor, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, pvceil,  1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, pfail,   1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, pmaxit,  1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, pfofc,   1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, ptclamp, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, ptset,   1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pdfloor, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pefloor, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, ptfloor, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pvceil,  1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pfail,   1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pmaxit,  1, MPI_INT64_T, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pfofc,   1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, ptclamp, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, ptset,   1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, pefde, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, pvcde, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
@@ -129,20 +131,20 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // write event counters
     if (!(no_output)) {
       std::fprintf(pfile, "%8d", pm->ncycle);
-      std::fprintf(pfile, " %8d", pm->ecounter.neos_dfloor);
-      std::fprintf(pfile, " %8d", pm->ecounter.neos_efloor);
-      std::fprintf(pfile, " %8d", pm->ecounter.neos_tfloor);
-      std::fprintf(pfile, " %8d", pm->ecounter.neos_vceil);
-      std::fprintf(pfile, " %8d", pm->ecounter.neos_fail);
-      std::fprintf(pfile, " %6d", pm->ecounter.maxit_c2p);
-      std::fprintf(pfile, " %8d", pm->ecounter.nfofc);
+      std::fprintf(pfile, " %8" PRId64, pm->ecounter.neos_dfloor);
+      std::fprintf(pfile, " %8" PRId64, pm->ecounter.neos_efloor);
+      std::fprintf(pfile, " %8" PRId64, pm->ecounter.neos_tfloor);
+      std::fprintf(pfile, " %8" PRId64, pm->ecounter.neos_vceil);
+      std::fprintf(pfile, " %8" PRId64, pm->ecounter.neos_fail);
+      std::fprintf(pfile, " %6" PRId64, pm->ecounter.maxit_c2p);
+      std::fprintf(pfile, " %8" PRId64, pm->ecounter.nfofc);
       // internal energy density created by the energy floor since the last row
       std::fprintf(pfile, " %11.4e",
                    static_cast<double>(pm->ecounter.efloor_de));
-      std::fprintf(pfile, " %10d", pm->ecounter.neos_tclamp);
+      std::fprintf(pfile, " %10" PRId64, pm->ecounter.neos_tclamp);
       // <block>/efloor_as_tfloor: cells whose floored e was rebuilt from T.  APPENDED,
       // so every column index an existing reader uses is unchanged.
-      std::fprintf(pfile, " %10d", pm->ecounter.neos_tset);
+      std::fprintf(pfile, " %10" PRId64, pm->ecounter.neos_tset);
       // kinetic energy density the velocity ceiling clipped since the last row: removed
       // from the total energy, or turned into internal energy under vceil_thermalise.
       // APPENDED, so every existing column index is unchanged.
