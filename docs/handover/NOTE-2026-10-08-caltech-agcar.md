@@ -38,3 +38,9 @@ Runs still NOT queued on Caltech: waiting for the user.
 1 H200 each, script agcar_1008/link_agcar.sh, run dirs agcar_1008/run{B,A} (DONE/STOP/CANCEL files):
 B 4235665 (12 h, tlim 4.624e5) -> A 4235666 (24 h, afterany B, tlim 8.064e6) -> A 4235667 (24 h, afterany).
 Start estimate: none yet (Priority). A later update will say when B actually starts; keep other copies until then.
+
+## UPDATE 10-08 08:45 PDT: Caltech B STARTED
+B 4235665 started 08:38:47 PDT on 1 H200 (hpc-sm-01-11). At 4 min: cycle 150, t 3.63e4 s, dt 241.9, 0 FATAL,
+0 NON-CONVERGED; ~1.6 s/cycle -> B to tlim 4.624e5 in ~1 h at this dt. A (4235666, afterany B) follows on Caltech.
+Per the TASK, the pending B copies elsewhere (Raven 31004544, viper 12131308, DeltaAI) can now be cancelled if the
+user agrees; A copies too if the user wants Caltech to own A. The user decides; this note does not cancel anything.
