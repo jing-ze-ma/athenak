@@ -964,7 +964,7 @@ void ColumnAt(const std::vector<Real> &ps, const std::vector<Real> &lt,
 //! The inner ghost (i = 0) and the outer ghost (n1 - 1) copy the isothermal walk; the
 //! BCs rewrite them anyway.
 void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
-                  const bool eqtop, const std::vector<Real> &cpsi,
+                  const bool eqtop, const bool icpoly, const std::vector<Real> &cpsi,
                   const std::vector<Real> &clt, const std::vector<Real> &clr) {
   const bool root = (global_variable::my_rank == 0);
   auto *phd = pmbp->phydro;
@@ -1033,23 +1033,27 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
         rmax = std::max(rmax, std::fabs(f1));
         return std::exp(x1);
       };
-      // anchor: the active cell with |psi| smallest
+      // anchor: polytrope: the deepest active cell at EnvRho (as the ideal-gas IC; the
+      // profile is resolved there, so P stays a function of Phi_wb and the tidal phi force
+      // is balanced); column: the active cell with |psi| smallest at the column's rho
       int ia = is;
-      Real best = 1.0e300;
-      for (int i=is; i<=ie; ++i) {
-        const Real psi = phis - pw[i];
-        if (std::fabs(psi) < best) {
-          best = std::fabs(psi);
-          ia = i;
+      if (icpoly) {
+        d[ia] = EnvRho(phis - pw[ia], env_cph2_, env_np_, env_rhoph_);
+      } else {
+        Real best = 1.0e300;
+        for (int i=is; i<=ie; ++i) {
+          const Real psi = phis - pw[i];
+          if (std::fabs(psi) < best) {
+            best = std::fabs(psi);
+            ia = i;
+          }
         }
-      }
-      {
         Real lt, lr;
         ColumnAt(cpsi, clt, clr, phis - pw[ia], lt, lr);
         d[ia] = std::exp(lr)/eos.dens_cgs;
-        rhoanc_min = std::min(rhoanc_min, d[ia]);
-        rhoanc_max = std::max(rhoanc_max, d[ia]);
       }
+      rhoanc_min = std::min(rhoanc_min, d[ia]);
+      rhoanc_max = std::max(rhoanc_max, d[ia]);
       // downward to cell 1
       for (int i=ia-1; i>=1; --i) {
         Real pl, pr;
@@ -1336,8 +1340,41 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // (S0 script; ASCII, '#' comments, columns psi [(km/s)^2, = Phi_s - Phi_wb at phi 90]
   // T [K] rho [g/cc] [...], psi ascending), interpolated linearly in psi on log T and
   // log rho; clamped at the file's ends.  tcol_ = T at the cell centres.
+  // problem/env_ic (thermo = general): polytrope (default) = the env13 structure, T(psi)
+  // = T_ph EnvC2(psi)/c_ph^2 (the analytic n-polytrope's P/rho shape in kelvin), anchored
+  // at the deepest cell at EnvRho (as the ideal-gas IC), gas-pressure hydrostatic: the S2
+  // test of the general EOS on the env13 star.  column = the S0 radiative column
+  // (env_ic_file).  NOTE: that column is in hydrostatic balance with P_gas + P_rad; with
+  // gas pressure alone at its T(psi) the discrete balance makes the deep envelope ~5e4x
+  // denser (the integrated Eddington factor), so column needs the radiation force
+  // reference of stage S3 (a_ref in Phi_wb) before it is a sensible star.
   std::vector<Real> cpsi, clt, clr;
+  bool icpoly = true;
   if (gen_) {
+    const std::string icm = pin->GetOrAddString("problem", "env_ic", "polytrope");
+    icpoly = (icm.compare("polytrope") == 0);
+    if (!icpoly && icm.compare("column") != 0) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: env_ic must be polytrope | column"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (gen_ && icpoly) {
+    Kokkos::realloc(tcol_, nmb, n3, n1);
+    auto tc = tcol_;
+    const Real tph = gen_tph_;
+    par_for("ryper_tcolp", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int i) {
+      const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), x3v(m,k));
+      tc(m,k,i) = tph*EnvC2(psi, cph2, np)/cph2;
+    });
+    if (root) {
+      const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, pmbp->pmesh->mesh_size.x1min, 0.5*M_PI);
+      std::printf("ry_per_accretor: env_ic = polytrope: T(r_in) %.4g K, T_ph %.1f K\n",
+                  tph*EnvC2(psi_in, cph2, np)/cph2*eos.temp_cgs, tph*eos.temp_cgs);
+    }
+  }
+  if (gen_ && !icpoly) {
     const std::string fn = pin->GetString("problem", "env_ic_file");
     std::ifstream f(fn);
     if (!f.good()) {
@@ -1491,7 +1528,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // Rotation (spin - 1) Omega r
   // (rotating frame) in the supported part (r < r_top).
   if (gen_) {
-    EnvICGeneral(pmbp, racc, rho_amb, eqtop, cpsi, clt, clr);
+    EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
     return;
   }
   const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
