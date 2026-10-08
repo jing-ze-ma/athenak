@@ -432,6 +432,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                          full && !global_variable::restart_run);
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
   pin_report_newton_fb = pin->GetOrAddBoolean("rad_m1","report_newton_fb",false);
+  dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
   // the check is a MEASUREMENT only (nothing reads igm or ec_emax/ec_tmax but the final
@@ -997,6 +998,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_bcg_maxrst < 0) {
     ImplFatal("<rad_m1>/implicit_bcg_max_restarts must be >= 0");
   }
+  // implicit_face_opac_n (fixbundle-1009 F2, default false = bitwise): rad_m1.hpp
+  impl_face_ktn = pin->GetOrAddBoolean("rad_m1","implicit_face_opac_n",false);
   if (impl_ew_max < 0.0 || impl_ew_max >= 1.0 || !(impl_ew_gam > 0.0)) {
     ImplFatal("<rad_m1>/implicit_lin_ew_max must lie in [0,1), ew_gamma > 0");
   }
@@ -1118,6 +1121,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   pbool("implicit_g0_exchange", impl_g0_exch);
   pbool("implicit_pos_gas", impl_pos_gas);
   pbool("implicit_pos_floor", impl_pos_floor);
+  impl_pos_floor_s2 = pin->GetOrAddBoolean("rad_m1","implicit_pos_floor_solve",false);
+  if (impl_pos_floor_s2 && !impl_pos_floor) {
+    ImplFatal("<rad_m1>/implicit_pos_floor_solve needs implicit_pos_floor = true");
+  }
   if (old_kept && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> restart input lacks m1-positivity keys (implicit_g0_exchange,"
               << " g0_limit, pos_gas, pos_floor): keeping the old default (off) for "
@@ -1667,6 +1674,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ktd, 0.0);
     Kokkos::realloc(opn_nskip_d, 1);
     Kokkos::deep_copy(opn_nskip_d, 0.0);
+  }
+  if (impl_face_ktn) {
+    if (part_nblk > 1) {
+      ImplFatal("<rad_m1>/implicit_face_opac_n needs ONE MeshBlock along x1 (the T^n "
+                "snapshot has no x1 halo)");
+    }
+    Kokkos::realloc(ktn, nmb, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(ktn, 0.0);
   }
   if (impl_ctrelax > 0.0) {
     if (!trans_on || !impl_clag_step) {
@@ -6589,6 +6604,50 @@ void RadiationM1::OnePassAuto(const int t, const bool on, const bool one) {
 //! \fn void RadiationM1::ImplicitReport
 //! \brief one line at the end of the run with the Picard statistics
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::EventTotals
+//! \brief fixbundle-1009 F4: the solver / limiter totals of this run (or restart) for the
+//! event log, all ranks (collective).  v[0..6] are decided on global reductions and are
+//! the same on every rank; v[7..12] are per-rank device counters, summed here.
+//!   0 BiCGStab breakdowns, 1 line-Jacobi fallbacks, 2 fallbacks that kept the Krylov
+//!   iterate (implicit_bcg_fallback = best), 3 APPLIED gas-Newton fallbacks,
+//!   4 solves switched to the gas root find, 5 od positivity drops, 6 vet_col_lat
+//!   positivity drops, 7 opac-Newton face terms dropped by the guard, 8 E floor raises
+//!   (write-back, cell-solves), 9 energy the floor CREATED (x volume), 10 of which the
+//!   solve undershoot (implicit_pos_floor_solve), 11 ApplyClosureLimits E raises,
+//!   12 ApplyClosureLimits |F| clips (active cells, every stage)
+
+void RadiationM1::EventTotals(Real *v) {
+  v[0] = bcg_nbreak;
+  v[1] = bcg_nfall;
+  v[2] = bcg_nkeep;
+  v[3] = newt_nfb;
+  v[4] = impl_gn_nsw;
+  v[5] = od_nfall;
+  v[6] = vlat_nfall;
+  for (int q = 7; q < 13; ++q) {v[q] = 0.0;}
+  if (opn_nskip_d.extent_int(0) > 0) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), opn_nskip_d);
+    v[7] = h(0);
+  }
+  if (pos_cnt_d.extent_int(0) >= M1_POS_N) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
+    v[8] = h(M1_POS_FLR);
+    v[9] = h(M1_POS_FLR_UN);
+    v[10] = h(M1_POS_FLRS);
+  }
+  if (acl_cnt_d.extent_int(0) == 2) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acl_cnt_d);
+    v[11] = h(0);
+    v[12] = h(1);
+  }
+#if MPI_PARALLEL_ENABLED
+  Real g[6];
+  MPI_Allreduce(&v[7], g, 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  for (int q = 0; q < 6; ++q) {v[7+q] = g[q];}
+#endif
+}
+
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
   if (cs_geom && global_variable::my_rank == 0) {
@@ -6667,6 +6726,7 @@ void RadiationM1::ImplicitReport() {
               << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
               << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
+              << " of which solve undershoot (pos_floor_solve)=" << pos_cnt[M1_POS_FLRS]
               << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
               << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM] << std::endl;
   }
@@ -7735,8 +7795,9 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
             bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
             rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4
                  + cl*dt*rkev*de0;
+            // fixbundle-1009 F4: count the fallback only when it is APPLIED (output only)
+            iw_(m,igf,k,j,i) += 1.0;
           }
-          iw_(m,igf,k,j,i) += 1.0;
         }
       }
       iw_(m,igb,k,j,i) = bk;
@@ -7991,8 +8052,64 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
 //! \brief the whole backward-Euler step: the Picard loop, the tridiagonal column solves,
 //! the write-back into u0 and into the gas.
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::DbgEnergyTally
+//! \brief dbg_energy_tally: all-rank sums over active cells of (gas IEN, E, fref_wacc,
+//! esrc) x cell volume into o[0..3]
+
+void RadiationM1::DbgEnergyTally(Real *o) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int ni = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto ur = u0;
+  const bool wa = fref_wsplit && FrefWaccOn();
+  DvceArray4D<Real> wc;
+  if (wa) {wc = FrefWacc();}
+  const bool eso = esrc_on;
+  auto es_ = esrc;
+  const bool sph = sph_geom;
+  auto vol = pmy_pack->pcoord->volume;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const bool hy = fl.on;
+  for (int q = 0; q < 4; ++q) {
+    Real s = 0.0;
+    Kokkos::parallel_reduce("m1_dbg_etally", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            nmb*nk*nj*ni),
+    KOKKOS_LAMBDA(const int n, Real &acc) {
+      const int m = n/(nk*nj*ni);
+      const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+      const Real v = sph ? vol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                           mbsize.d_view(m).dx3);
+      Real x = 0.0;
+      if (q == 0) {x = hy ? uh(m,IEN,k,j,i) : 0.0;}
+      if (q == 1) {x = ur(m,M1_E,k,j,i);}
+      if (q == 2) {x = wa ? wc(m,k,j,i) : 0.0;}
+      if (q == 3) {x = eso ? es_(m,k,j,i) : 0.0;}
+      acc += x*v;
+    }, Kokkos::Sum<Real>(s));
+    o[q] = s;
+  }
+#if MPI_PARALLEL_ENABLED
+  Real g[4];
+  MPI_Allreduce(o, g, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  for (int q = 0; q < 4; ++q) {o[q] = g[q];}
+#endif
+}
+
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
+  if (dbg_etally) {
+    Real o[4];
+    DbgEnergyTally(o);
+    if (global_variable::my_rank == 0) {
+      std::printf("ETALLY0 cycle=%d stage=%d t=%.16e dt=%.16e ien=%.16e e=%.16e "
+                  "wacc=%.16e esrc=%.16e\n", pmy_pack->pmesh->ncycle, stage,
+                  pmy_pack->pmesh->time, dt_sub, o[0], o[1], o[2], o[3]);
+    }
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -8618,6 +8735,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         tf_(m,k,j,i) = (cdt*opac_(m,M1_OP_P,k,j,i) < thr) ? 1.0 : 0.0;
       });
     }
+    // fixbundle-1009 F2: rho kappa_T at T^n (the Opacity task's, copied into iw by the
+    // start-state kernel) before pass 0 moves it to the predicted T
+    if (impl_face_ktn && it == 0) {
+      auto ktn_ = ktn;
+      par_for("m1_impl_ktn", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        ktn_(m,k,j,i) = iw_(m,M1_IW_KT,k,j,i);
+      });
+    }
     if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero) {
       int otype = opacity_type;
       Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kscat = kappa_s;
@@ -8810,6 +8936,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // thin limit (berthon keeps whatever f it is given), so a beam from a photosphere
       // kept f ~ 0.89 where the formal solution says 0.97 (AG Car A column, 3 R_ph).
       const bool vfix = sphf && trans && !edd && (vetsc || tauc);
+      const bool fktn = impl_face_ktn && (it == 0);   // F2: kappa_T at T^n
+      auto ktn_ = ktn;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -8852,10 +8980,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         // alpha: Bloch et al. (2021) eq. 25 with the (1-f^2) guard and the arithmetic
         // face mean of the CELL optical depth.  lp*lm <= 0, so den >= 1 and alpha <= 1.
-        Real tauf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,ip))*dx;
+        const Real ktl = fktn ? ktn_(m,k,j,im) : iw_(m,M1_IW_KT,k,j,im);
+        const Real ktr = fktn ? ktn_(m,k,j,ip) : iw_(m,M1_IW_KT,k,j,ip);
+        Real tauf = 0.5*(ktl + ktr)*dx;
         if (sphf) {
-          tauf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1ff, m,
-                             im, ip, fwdf)*dx;
+          tauf = M1FaceAvgX1(ktl, ktr, cx1ff, m, im, ip, fwdf)*dx;
         }
         Real al = 1.0;
         if (tauf > 0.0) {
@@ -9867,6 +9996,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 
     // (f) accept E', solve for T' and measure the Picard residual
+    // F3 implicit_pos_floor_solve: the iterate keeps the solved S2 down to 1e-6 e_floor
+    // (no hidden raise to e_floor here), so the face fluxes rebuilt from it are the
+    // solve's own and the write-back floor (implicit_pos_floor) raises E to e_floor with
+    // the energy charged to the gas or counted
+    const Real efls = impl_pos_floor_s2 ? 1.0e-6*efl : efl;
     if (src_on) {
       auto eos = flr.eos;
       // m1-fast5-sp: an ideal-gas EOS without the per-cell cache gets its own kernel,
@@ -9878,7 +10012,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // nvcc forbids generic (auto) extended lambdas, so the tag-dependent
       // helper and its kernel are the function template M1ImplTsolveLaunch
       // (above); tsb_ctx is what the helper captured, by value.
-      auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efl, eos, escale, gasx, gnw,
+      auto tsb_ctx = std::make_tuple(ar, cl, dt, ec_, ecnt, efls, eos, escale, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, plog, uh, usec,
                                      nmb1, ks, ke, js, je, is, ie,
                                      (impl_tsolve_opac && (it >= impl_tsolve_opac_start))
@@ -9896,7 +10030,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     } else {
       par_for("m1_impl_accept", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
+        Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efls);
         Real eold = iw_(m,M1_IW_EP,k,j,i);
         iw_(m,M1_IW_EP,k,j,i) = enew;
         iw_(m,M1_IW_RES,k,j,i) = fabs(enew - eold)
@@ -10620,6 +10754,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // m1-positivity (rad_m1.hpp): the energy-conserving gas eint limiter and E floor
   const bool pgas = impl_pos_gas && have_hydro && coupling && dbgh;
   const bool pflr = impl_pos_floor;
+  const bool pfs = impl_pos_floor_s2;   // F3
   const bool pany = pgas || pflr;
   const Real pgf = impl_pos_gas_frac;
   auto peos = flr.eos;
@@ -10840,6 +10975,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   impl_lin_tol = t2_lin_save;
   TmrMark(8);
+  if (dbg_etally) {
+    Real o[4];
+    DbgEnergyTally(o);
+    if (global_variable::my_rank == 0) {
+      std::printf("ETALLY1 cycle=%d stage=%d ien=%.16e e=%.16e wacc=%.16e\n",
+                  pmy_pack->pmesh->ncycle, stage, o[0], o[1], o[2]);
+    }
+  }
   return TaskStatus::complete;
 }
 
