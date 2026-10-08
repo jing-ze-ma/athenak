@@ -107,6 +107,11 @@ struct M1OpacTab {
   Real tunit = 1.0;
   Real dunit = 1.0;
   Real kunit = 1.0;
+  // <rad_m1>/opac_abs_rho_max (default 0 = off): code densities below amask_rho get no
+  // absorption (kappa_P = kappa_E = 0) and the transport opacity amask_kes (code units
+  // per mass, = opac_abs_kappa_s [cm^2/g] x kunit); see rad_m1.cpp
+  Real amask_rho = 0.0;
+  Real amask_kes = 0.0;
 };
 
 // <rad_m1>/reconstruct, as a plain int for the device (same order as the code-wide

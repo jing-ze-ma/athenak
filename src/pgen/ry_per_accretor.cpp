@@ -58,6 +58,25 @@
 //! column file problem/env_ic_file, balanced discretely (EnvICGeneral).  With thermo =
 //! adiabatic (ideal gas) every one of these sites runs its original code verbatim.
 //!
+//! RADIATION (<rad_m1> present; stage S3 of docs/dev/accretor_rhd_design.md; needs
+//! inner = envelope, thermo = general, env_ic = column).  Implicit grey M1 (closure
+//! vet_col: vet_gd cannot run on the 4-cell theta band) with the run's Rosseland + Planck
+//! tables (problem/env_opac_table, env_planck_table; the S0 column must be built from the
+//! same Rosseland table and the same EOS).  The column's radiation force enters as a
+//! REFERENCE (force_reference = wb_arad): Phi_eff = Phi_wb + G(psi), G = -int a_ref dr_eq
+//! along the column, a_ref = kappa_t F/c (RadSetup), so the column balances in the
+//! discrete WB sense with gas pressure only; the module applies the residual
+//! kappa_t F/c - a_ref and this pgen adds the reference work (split).  Bottom: the
+//! column's flux F(r_in) through the implicit face BC (implicit_bc_x1min = flux,
+//! implicit_flux_x1min checked against the column to 1e-3); top: Marshak/vacuum
+//! (implicit_bc_x1max = marshak, dark ghosts).  IC: E = a T_col^4, F_r = F_col(psi).
+//! The hot ambient keeps its T relaxation and gets no absorption: <rad_m1>/
+//! opac_abs_rho_max (module key) removes kappa_P, kappa_E below that density and keeps
+//! electron scattering.  The relaxation/sponge energy is booked (history Erel).  The
+//! relaxation inside the envelope and of the dense atmosphere should be off
+//! (env_t_relax_env = env_t_relax_stream = 0).  History: the nine rate columns become
+//! Lmeas Ltop Erad Etot KE Ebnd Erel Pic Picmax (RyPerHistEnv).
+//!
 //! BOUNDARIES (user BCs on both x1 faces; mesh/ix1_bc = ox1_bc = user):
 //!  inner (r = R_acc): rigid ABSORBING stellar surface.  v_r(ghost) = min(v_r(edge), 0)
 //!    (a diode: gas only leaves into the star); density copied from the edge cell
@@ -109,6 +128,9 @@
 #include "utils/wb_background.hpp"
 #include "outputs/outputs.hpp"
 #include "units/units.hpp"
+#include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_closure.hpp"
+#include "rad_m1/rad_m1_opacity.hpp"
 #include "pgen.hpp"
 
 namespace {
@@ -186,9 +208,20 @@ constexpr int kNacc = 9;
 int nstages_ = 0;
 Real rk_g0_[3], rk_g1_[3];
 int stage_ctr_ = 0;
-Real acc0_[kNacc] = {0.0}, acc1_[kNacc] = {0.0};
-Real hist_prev_[kNacc] = {0.0};
+// <rad_m1> on the envelope (S3) adds four registers: radiation energy in at r_in (the
+// imposed flux), radiation out at r_out (the comoving face flux f0x1), the hydro energy
+// flux out at r_out (etotgrav: incl. rho Phi v), and the energy put in by the T
+// relaxation and taken out by the floor sponge
+constexpr int kNaccR = 13;
+Real acc0_[kNaccR] = {0.0}, acc1_[kNaccR] = {0.0};
+Real hist_prev_[kNaccR] = {0.0};
 Real hist_tprev_ = -1.0;
+// <rad_m1> on the envelope (stage S3, accretor-rhd-1008; see the header RADIATION)
+bool rad_ = false;
+Real rad_fin_ = 0.0;           // imposed x1min radiative flux (code), = F_col(r_in)
+Real rad_lfac_ = 1.0;          // code band luminosity -> Lsun of the full sphere
+Real rad_pn0_ = 0.0, rad_ps0_ = 0.0;   // Picard counters at the previous history output
+std::vector<Real> rcol_psi_, rcol_g_, rcol_f_;   // column psi, G(psi), F(psi) [code]
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -549,6 +582,19 @@ void RyPerBCEnv(Mesh *pm) {
   const bool gen = gen_;
   const EOS_Data eosd = pmbp->phydro->peos->eos_data;
   const Real tfl = gen_tfl_, tstr = gen_tstr_;
+  // <rad_m1> (S3): the inner ghosts walk along the EFFECTIVE potential of the x1 WB pair
+  // (Phi_wb + G, the radiation-force reference, phicc_wb), and the radiation ghosts are
+  // filled as he_star_m1's: r_in copy (the implicit solve imposes the flux there), r_out
+  // vacuum (dark; Marshak through the implicit face BC)
+  const bool rad = rad_;
+  auto pwcc = pmbp->phydro->phicc_wb;
+  DvceArray5D<Real> ur;
+  Real rcl = 1.0, refl = 0.0;
+  if (rad) {
+    ur = pmbp->pradm1->u0;
+    rcl = pmbp->pradm1->c_light;
+    refl = pmbp->pradm1->e_floor;
+  }
   par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real ph = x3v(m,k);
@@ -567,7 +613,7 @@ void RyPerBCEnv(Mesh *pm) {
           ta = tfl;
           ea = eosd.EnergyFromTemperature(da, ta);
         }
-        const Real pa = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
+        const Real pa = rad ? pwcc(m,k,j,is) : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
         // the local polytrope of the two edge cells (wb_option = polytropic): T linear in
         // Phi_wb with their dT/dPhi, density by the WB polytropic walk, so the ghosts lie
         // on the edge cell's own WB background
@@ -578,12 +624,14 @@ void RyPerBCEnv(Mesh *pm) {
           const Real e1 = u0(m,IEN,k,j,i1) - 0.5*(SQR(u0(m,IM1,k,j,i1))
                           + SQR(u0(m,IM2,k,j,i1)) + SQR(u0(m,IM3,k,j,i1)))/d1
                           - d1*phicc(m,k,j,i1);
-          const Real dp1 = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph) - pa;
+          const Real dp1 = (rad ? pwcc(m,k,j,i1) :
+                            PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph)) - pa;
           if (e1 > 0.0 && dp1 != 0.0) a = (eosd.Temperature(d1, e1, ta) - ta)/dp1;
         }
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g, im = is + g;
-          const Real pg = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
+          const Real pg = rad ? pwcc(m,k,j,ig) :
+                          PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
           Real dg = da, eg = ea, tg = ta;
           WBAdvance(eosd, 3, da, ea, pg - pa, dg, eg, tg, ta, a, ta, ta);
           if (!(Kokkos::isfinite(dg) && dg > 0.0 && Kokkos::isfinite(eg) && eg > 0.0 &&
@@ -604,6 +652,7 @@ void RyPerBCEnv(Mesh *pm) {
           u0(m,IM2,k,j,ig) = dg*v2;
           u0(m,IM3,k,j,ig) = dg*v3;
           u0(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
+          if (rad) radm1::M1FillGhost(ur, m, k, j, ig, k, j, is, 1, 0, -1.0, rcl, refl);
         }
       }
       if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
@@ -643,6 +692,7 @@ void RyPerBCEnv(Mesh *pm) {
           u0(m,IM3,k,j,ig) = dg*v3;
           u0(m,IEN,k,j,ig) = eosd.EnergyFromTemperature(dg, tg)
                              + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
+          if (rad) radm1::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
         }
       }
       return;
@@ -705,6 +755,27 @@ void RyPerBCEnv(Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
+//! <rad_m1>: the volume sum of u(IEN) over the active cells of this rank
+Real RyPerEsum(MeshBlockPack *pmbp) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int ni = indcs.nx1, nji = indcs.nx2*indcs.nx1, nkji = indcs.nx3*nji;
+  const int nmb = pmbp->nmb_thispack;
+  auto u0 = pmbp->phydro->u0;
+  auto &volume = pmbp->pcoord->volume;
+  Real es = 0.0;
+  Kokkos::parallel_reduce("ryper_esum", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &sum) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+    const int i = idx%ni + is;
+    sum += u0(m,IEN,k,j,i)*volume(m,k,j,i);
+  }, Kokkos::Sum<Real>(es));
+  return es;
+}
+
+//----------------------------------------------------------------------------------------
 //! stage 2 sources: x1 gravity in the well-balanced pressure form (the background of the
 //! x1 WB pair, built with Phi_wb) plus -dDelta/dr, phi gravity and Coriolis explicit,
 //! thermal relaxation toward P/rho = cref2 (exact exponential over the stage), and the
@@ -741,6 +812,11 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const EOS_Data eosd = ph->peos->eos_data;
   const Real tstr = gen_tstr_, tamb = gen_tamb_;
   auto tcol = tcol_;
+  // <rad_m1>: the energy the relaxation and the floor sponge put in/take out is booked
+  // (the volume sum of u(IEN) before and after this kernel: no other term of it touches
+  // the energy)
+  const bool rad = rad_;
+  const Real erel0 = rad ? RyPerEsum(pmbp) : 0.0;
   par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
@@ -828,6 +904,31 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/du;
     }
   });
+  Real derel = 0.0;
+  if (rad) {
+    derel = RyPerEsum(pmbp) - erel0;     // per rank, as the flux registers
+    // the WORK of the reference radiation force a_ref (force_reference_work = split; the
+    // module pays it from the radiation energy), as he_star_m1's HeStarGravity
+    auto *pm1 = pmbp->pradm1;
+    if (pm1->fref_wsplit) {
+      auto aref = pm1->arad_ref;
+      if (pm1->FrefWaccOn()) {
+        auto wacc = pm1->FrefWacc();
+        const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
+        par_for("ryper_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          const Real w = bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+          u0(m,IEN,k,j,i) += w;
+          wacc(m,k,j,i) = g0*wacc(m,k,j,i) + w;
+        });
+      } else {
+        par_for("ryper_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          u0(m,IEN,k,j,i) += bdt*w0(m,IDN,k,j,i)*aref(m,k,j,i)*w0(m,IVX,k,j,i);
+        });
+      }
+    }
+  }
 
   if (nstages_ <= 0) return;
   auto &flx = ph->uflx.x1f;
@@ -839,6 +940,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const bool strm = stream_on_;
   const int nj = je - js + 1, nk = ke - ks + 1;
   const int ntot = (nmb1 + 1)*nk*nj;
+  DvceArray4D<Real> ff0;
+  if (rad) ff0 = pmbp->pradm1->f0x1;
+  const bool haveff = rad && (ff0.extent_int(0) > 0);
+  const Real fin = rad_fin_;
   array_sum::GlobalSum fs;
   Kokkos::parallel_reduce("ryper_flxe", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
   KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
@@ -853,6 +958,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       v.the_array[2] = -fd*a;
       v.the_array[3] = -(f3 + om*r*fd)*r*a;
       v.the_array[4] = -(f3 - fd*w0(m,IVZ,k,j,is))*r*a;
+      if (rad) v.the_array[9] = fin*a;
     }
     if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
       const Real a = area1(m,k,j,ie+1), r = xf(m,ie+1);
@@ -865,6 +971,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         v.the_array[1] = fd*a;
       }
       v.the_array[5] = (f3 + om*r*fd)*r*a;
+      if (rad) {
+        if (haveff) v.the_array[10] = ff0(m,k,j,ie+1)*a;
+        v.the_array[11] = flx(m,IEN,k,j,ie+1)*a;
+      }
     }
     const int ir = ira(m);
     if (ir >= 0) {
@@ -877,11 +987,18 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   }, Kokkos::Sum<array_sum::GlobalSum>(fs));
 
   const int s = stage_ctr_ % nstages_;
+  const int nacc = rad ? kNaccR : kNacc;
   if (s == 0) {
-    for (int n=0; n<kNacc; ++n) acc1_[n] = acc0_[n];
+    for (int n=0; n<nacc; ++n) acc1_[n] = acc0_[n];
   }
   for (int n=0; n<kNacc; ++n) {
     acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
+  }
+  if (rad) {
+    for (int n=kNacc; n<kNaccR - 1; ++n) {
+      acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
+    }
+    acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
   }
   stage_ctr_++;
 }
@@ -900,6 +1017,20 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   auto &x1v = pmbp->pcoord->x1v;
   const Real om = rp_.omega, racc = env_rmeas_;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  // <rad_m1>: E_rad, gas + radiation energy, kinetic energy below r_meas, and the
+  // comoving x1 face fluxes at r_meas and r_out
+  const bool rad = rad_;
+  const int ie = indcs.ie;
+  DvceArray5D<Real> ur;
+  DvceArray4D<Real> ff0;
+  if (rad) {
+    ur = pmbp->pradm1->u0;
+    ff0 = pmbp->pradm1->f0x1;
+  }
+  const bool haveff = rad && (ff0.extent_int(0) > 0);
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  auto ira = iracc_;
   array_sum::GlobalSum s;
   Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
@@ -918,6 +1049,21 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
       v.the_array[2] = dv*d;
       v.the_array[3] = jz;
     }
+    if (rad) {
+      const Real er = ur(m,radm1::M1_E,k,j,i);
+      v.the_array[4] = dv*er;
+      v.the_array[5] = dv*(u0(m,IEN,k,j,i) + er);
+      if (r < racc) {
+        v.the_array[6] = dv*0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+                                 + SQR(u0(m,IM3,k,j,i)))/d;
+      }
+      if (haveff) {
+        if (i == ira(m)) v.the_array[7] = ff0(m,k,j,i)*area1(m,k,j,i);
+        if (i == ie && mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+          v.the_array[8] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
+        }
+      }
+    }
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(s));
 
@@ -928,6 +1074,45 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   pdata->nhist = 22;
   for (int n=0; n<22; ++n) pdata->label[n] = lab[n];
   for (int n=0; n<4; ++n) pdata->hdata[n] = s.the_array[n];
+  if (rad) {
+    // <rad_m1>: the nine RATE columns are replaced (they are the differences of the
+    // cumulative columns 4-12 over the history interval; NHISTORY_VARIABLES = 22 is
+    // left alone so that no other build changes):
+    //   Lmeas, Ltop  comoving x1 radiative flux through r_meas and r_out, in Lsun of the
+    //                FULL sphere (band sum x 4 pi / band solid angle)
+    //   Erad, Etot   radiation energy and gas (incl. KE and rho Phi) + radiation energy
+    //   KE           kinetic energy (rotating frame) below r_meas
+    //   Ebnd         CUMULATIVE energy through the boundaries: radiation in at r_in
+    //                (imposed) - radiation out at r_out - hydro energy flux out at r_out
+    //   Erel         CUMULATIVE energy put in by the T relaxation (ambient) and the floor
+    //                sponge; energy conservation: Etot - Etot(0) = Ebnd + Erel (+ floors)
+    //   Pic, Picmax  mean Picard passes per implicit solve since the previous output, and
+    //                the largest pass count of any solve so far
+    // (all energies code units of the band; cumulative columns restart from 0)
+    const char *lr[9] = {"Lmeas", "Ltop", "Erad", "Etot", "KE", "Ebnd", "Erel", "Pic",
+                         "Picmax"};
+    for (int n=0; n<9; ++n) pdata->label[13+n] = lr[n];
+    for (int n=0; n<kNacc; ++n) pdata->hdata[4+n] = acc0_[n];
+    pdata->hdata[13] = s.the_array[7]*rad_lfac_;
+    pdata->hdata[14] = s.the_array[8]*rad_lfac_;
+    pdata->hdata[15] = s.the_array[4];
+    pdata->hdata[16] = s.the_array[5];
+    pdata->hdata[17] = s.the_array[6];
+    pdata->hdata[18] = acc0_[9] - acc0_[10] - acc0_[11];
+    pdata->hdata[19] = acc0_[12];
+    pdata->hdata[20] = 0.0;
+    pdata->hdata[21] = 0.0;
+    auto *pm1 = pmbp->pradm1;
+    if (global_variable::my_rank == 0) {
+      const Real dn = pm1->impl_nstep - rad_pn0_, ds = pm1->impl_itsum - rad_ps0_;
+      pdata->hdata[20] = (dn > 0.0) ? ds/dn : 0.0;
+      pdata->hdata[21] = pm1->impl_itmax;
+      rad_pn0_ = pm1->impl_nstep;
+      rad_ps0_ = pm1->impl_itsum;
+    }
+    hist_tprev_ = pm->time;
+    return;
+  }
   const Real t = pm->time;
   const Real dt = (hist_tprev_ >= 0.0) ? (t - hist_tprev_) : 0.0;
   for (int n=0; n<kNacc; ++n) {
@@ -968,6 +1153,394 @@ void ColumnAt(const std::vector<Real> &ps, const std::vector<Real> &lt,
   r = (1.0 - w)*lr[lo] + w*lr[hi];
 }
 
+//! <rad_m1>: y(psi) of the column (rcol_psi_ ascending), linear, clamped at the ends
+Real RadColAt(const std::vector<Real> &y, const Real psi) {
+  const auto &ps = rcol_psi_;
+  const int n = static_cast<int>(ps.size());
+  if (psi <= ps[0]) return y[0];
+  if (psi >= ps[n-1]) return y[n-1];
+  const int hi = static_cast<int>(std::upper_bound(ps.begin(), ps.end(), psi) - ps.begin());
+  const int lo = hi - 1;
+  const Real w = (psi - ps[lo])/(ps[hi] - ps[lo]);
+  return (1.0 - w)*y[lo] + w*y[hi];
+}
+
+//! <rad_m1>: the merged opacity table format (he_star_m1's HsReadOpacityTable without the
+//! low-density extension: below the grid the lookup holds the edge value)
+void RyReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
+                        DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD,
+                        Real &lt_lo, Real &lt_hi, Real &ld_lo, Real &ld_hi) {
+  std::ifstream f(fname);
+  if (!f.good()) {
+    std::cout << "### FATAL ERROR in ry_per_accretor: cannot open opacity table '" << fname
+              << "'" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  std::string line;
+  Real lt0 = 0.0, dlt = 0.0, ld0 = 0.0, dld = 0.0;
+  bool have_grid = false;
+  std::vector<Real> vals;
+  while (std::getline(f, line)) {
+    if (line.empty()) continue;
+    if (line[0] == '#') {
+      if (!have_grid) {
+        std::istringstream ss(line.substr(1));
+        int a, b;
+        Real c, d, e, g;
+        if (ss >> a >> b >> c >> d >> e >> g) {
+          nT = a; nD = b; lt0 = c; dlt = d; ld0 = e; dld = g;
+          have_grid = true;
+        }
+      }
+      continue;
+    }
+    vals.push_back(std::stod(line));
+  }
+  if (!have_grid || static_cast<int>(vals.size()) != nT*nD) {
+    std::cout << "### FATAL ERROR in ry_per_accretor: opacity table '" << fname
+              << "' has no grid line or the wrong value count" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Kokkos::realloc(tab, nT, nD);
+  Kokkos::realloc(lT, nT);
+  Kokkos::realloc(lD, nD);
+  auto htab = Kokkos::create_mirror_view(tab);
+  auto hlT = Kokkos::create_mirror_view(lT);
+  auto hlD = Kokkos::create_mirror_view(lD);
+  for (int i=0; i<nT; ++i) {
+    hlT(i) = lt0 + i*dlt;
+    for (int j=0; j<nD; ++j) htab(i,j) = vals[i*nD + j];
+  }
+  for (int j=0; j<nD; ++j) hlD(j) = ld0 + j*dld;
+  Kokkos::deep_copy(tab, htab);
+  Kokkos::deep_copy(lT, hlT);
+  Kokkos::deep_copy(lD, hlD);
+  lt_lo = lt0; lt_hi = lt0 + (nT - 1)*dlt;
+  ld_lo = ld0; ld_hi = ld0 + (nD - 1)*dld;
+}
+
+//----------------------------------------------------------------------------------------
+//! <rad_m1> on the envelope (stage S3): units and keys checks, the Rosseland + Planck
+//! tables, and the RADIATION-FORCE REFERENCE of the column.
+//! The column (S0 script) is in hydrostatic balance with P_gas + P_rad along psi:
+//! dP_gas/dpsi = rho (1 - Gamma), Gamma = kappa_t F/(c g) its Eddington factor.  In the
+//! diffusion limit on Roche equipotentials F is proportional to g = |grad Phi_wb| at fixed
+//! psi (von Zeipel), so Gamma is a function of psi alone and the radiation force is
+//! -grad G(psi), G(psi) = int Gamma dpsi = -int a_ref dr_eq along the column (a_ref =
+//! kappa_t F/c, the column's own radiative acceleration, kappa_t from THIS run's table
+//! lookup).  The x1 well-balanced pair then carries Phi_eff = Phi_wb + G(psi) (constant
+//! above the envelope top, where psi is capped), the module the x1 reference a_ref =
+//! -dG/dr (face difference, so the WB pair and the module subtract the same force) and
+//! applies only the residual, and the plain gravity above hydro/wb_rmax / env_wb_depth
+//! uses Phi_eff too.  gr_ (the -d(Phi - Phi_wb)/dr remainder) is unchanged.  The column
+//! must come from the SAME opacity table: the run recomputes kappa_t, and the imposed
+//! bottom flux must equal the column's F(r_in) (checked to 1e-3).
+void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> &cpsi,
+              const std::vector<Real> &clt, const std::vector<Real> &clr,
+              const std::vector<Real> &crq, const std::vector<Real> &cfl) {
+  const bool root = (global_variable::my_rank == 0);
+  auto fatal = [&](const std::string &msg) {
+    std::cout << "### FATAL ERROR in ry_per_accretor (<rad_m1>): " << msg << std::endl;
+    std::exit(EXIT_FAILURE);
+  };
+  auto *pm1 = pmbp->pradm1;
+  auto *phd = pmbp->phydro;
+  auto &eos = phd->peos->eos_data;
+  // ---- units: Rsun, km/s, the fixed density unit; the module's constants must match
+  const Real du = pmbp->punit->density_cgs(), lu = pmbp->punit->length_cgs();
+  const Real vu = pmbp->punit->velocity_cgs(), tk = eos.temp_cgs;
+  const Real eu = du*vu*vu, fu = eu*vu;          // erg/cc, erg/cm^2/s per code unit
+  const Real cl = pm1->c_light, ar = pm1->arad;
+  {
+    std::ostringstream os;
+    bool bad = false;
+    auto chk = [&](const char *nm, const Real have, const Real want, const Real tol) {
+      if (!(std::fabs(have/want - 1.0) <= tol)) {
+        os << nm << " = " << have << " but this run's units need " << want << "; ";
+        bad = true;
+      }
+    };
+    chk("<rad_m1>/temp_unit_kelvin", pm1->otab.tunit, tk, 1.0e-5);
+    chk("<rad_m1>/rho_unit_cgs", pm1->otab.dunit, du, 1.0e-5);
+    chk("<rad_m1>/kappa_unit", pm1->otab.kunit, du*lu, 1.0e-5);
+    chk("<rad_m1>/c_light", cl, 2.99792458e10/vu, 1.0e-6);
+    chk("<rad_m1>/arad", ar, 7.5657e-15*SQR(SQR(tk))/eu, 1.0e-4);
+    if (bad) fatal(os.str());
+  }
+  if (pm1->opacity_type != radm1::M1_OPAC_TABLE) fatal("needs <rad_m1>/opacity = table");
+  if (pm1->force_ref != radm1::M1_FREF_WB_ARAD) {
+    fatal("needs <rad_m1>/force_reference = wb_arad (Phi_eff carries the column's "
+          "radiation force)");
+  }
+  if (pm1->transport == radm1::M1_TRANSPORT_EXPLICIT) fatal("needs implicit transport");
+  if (pin->GetString("rad_m1", "implicit_bc_x1min").compare("flux") != 0 ||
+      pin->GetString("rad_m1", "implicit_bc_x1max").compare("marshak") != 0) {
+    fatal("needs implicit_bc_x1min = flux (the star's L at r_in) and implicit_bc_x1max = "
+          "marshak (vacuum top)");
+  }
+  // ---- the tables (one grid), handed to the module
+  Real lt_lo, lt_hi, ld_lo, ld_hi;
+  {
+    const std::string rt = pin->GetString("problem", "env_opac_table");
+    const std::string pt = pin->GetString("problem", "env_planck_table");
+    DvceArray2D<Real> krt, kpt;
+    DvceArray1D<Real> mlT, mlD, plT, plD;
+    int mnT = 0, mnD = 0, pnT = 0, pnD = 0;
+    Real a1, a2, a3, a4;
+    RyReadOpacityTable(rt, krt, mlT, mlD, mnT, mnD, lt_lo, lt_hi, ld_lo, ld_hi);
+    RyReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4);
+    if (mnT != pnT || mnD != pnD || std::fabs(a1 - lt_lo) + std::fabs(a2 - lt_hi) +
+        std::fabs(a3 - ld_lo) + std::fabs(a4 - ld_hi) > 1.0e-9) {
+      fatal("the Rosseland and Planck tables are not on the same grid");
+    }
+    pm1->SetOpacityTables(krt, kpt, mlT, mlD, mnT, mnD);
+    if (root) {
+      std::printf("ry_per_accretor: <rad_m1> tables %s + %s: log T %.3f .. %.3f, log rho "
+                  "%.3f .. %.3f (edge-held outside); absorption mask below %.4g code "
+                  "(%.4g g/cc), kappa_s there %.4g cm^2/g\n", rt.c_str(), pt.c_str(),
+                  lt_lo, lt_hi, ld_lo, ld_hi, pm1->otab.amask_rho, pm1->otab.amask_rho*du,
+                  pm1->otab.amask_kes/pm1->otab.kunit);
+    }
+  }
+  // ---- kappa_t along the column with this run's lookup (device), a_ref, G(psi)
+  const int nc = static_cast<int>(cpsi.size());
+  std::vector<Real> kt(nc);
+  {
+    DvceArray1D<Real> dd("ryper_cd", nc), dt("ryper_ct", nc), dk("ryper_ck", nc);
+    auto hd = Kokkos::create_mirror_view(dd);
+    auto ht = Kokkos::create_mirror_view(dt);
+    for (int n=0; n<nc; ++n) {
+      hd(n) = std::exp(clr[n])/du;
+      ht(n) = std::exp(clt[n])/tk;
+    }
+    Kokkos::deep_copy(dd, hd);
+    Kokkos::deep_copy(dt, ht);
+    radm1::M1OpacTab ot = pm1->otab;
+    par_for("ryper_ckt", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int n) {
+      Real op, oe, of, os;
+      radm1::M1TableOpacities(ot, dd(n), dt(n), op, oe, of, os);
+      dk(n) = of + os;
+    });
+    auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dk);
+    for (int n=0; n<nc; ++n) kt[n] = hk(n);
+  }
+  rcol_psi_ = cpsi;
+  rcol_g_.assign(nc, 0.0);
+  rcol_f_.assign(nc, 0.0);
+  std::vector<Real> aref(nc);
+  for (int n=0; n<nc; ++n) {
+    rcol_f_[n] = cfl[n]/fu;
+    aref[n] = kt[n]*rcol_f_[n]/cl;
+  }
+  for (int n=1; n<nc; ++n) {      // psi ascending = r_eq descending
+    rcol_g_[n] = rcol_g_[n-1] + 0.5*(aref[n-1] + aref[n])*(crq[n-1] - crq[n]);
+  }
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
+  const Real phis = env_phis_;
+  // ---- the imposed bottom flux must be the column's F at psi(r_in, phi 90)
+  const Real r_in = pmbp->pmesh->mesh_size.x1min;
+  const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, r_in, 0.5*M_PI);
+  rad_fin_ = pin->GetReal("rad_m1", "implicit_flux_x1min");
+  const Real fcol = RadColAt(rcol_f_, psi_in);
+  if (!(std::fabs(rad_fin_/fcol - 1.0) <= 1.0e-3)) {
+    std::ostringstream os;
+    os << "<rad_m1>/implicit_flux_x1min = " << rad_fin_ << " but the column has F(r_in) = "
+       << fcol << " (code units, " << fcol*fu << " erg/cm^2/s)";
+    fatal(os.str());
+  }
+  // band solid angle -> full sphere, code luminosity -> Lsun
+  {
+    const auto &ms = pmbp->pmesh->mesh_size;
+    const Real omg = (std::cos(ms.x2min) - std::cos(ms.x2max))*(ms.x3max - ms.x3min);
+    rad_lfac_ = (4.0*M_PI/omg)*fu*lu*lu/3.828e33;
+  }
+  // ---- Phi_eff into the x1 WB pair (centres, x1 faces), the plain-gravity force above
+  // the WB region (gpl_), the module's x1 reference a_ref = -dG/dr
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+  auto hpc = Kokkos::create_mirror_view(phd->phicc_wb);
+  auto hpf = Kokkos::create_mirror_view(phd->phi_wb_x1f);
+  auto hgl = Kokkos::create_mirror_view(gpl_);
+  DvceArray4D<Real> aref_d("ryper_aref", nmb, n3, n2, n1);
+  auto ha = Kokkos::create_mirror_view(aref_d);
+  Real amax = 0.0;
+  for (int m=0; m<nmb; ++m) {
+    for (int k=0; k<n3; ++k) {
+      const Real ph = hx3(m,k);
+      std::vector<Real> pf(n1 + 1), gf(n1 + 1);
+      for (int i=0; i<=n1; ++i) {
+        const Real w = PhiWB(p, dlt, rtop, rspin, phtop, hx1f(m,i), ph);
+        gf[i] = RadColAt(rcol_g_, phis - w);
+        pf[i] = w + gf[i];
+      }
+      for (int i=0; i<n1; ++i) {
+        const Real w = PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i), ph);
+        const Real pc = w + RadColAt(rcol_g_, phis - w);
+        const Real dr = hx1f(m,i+1) - hx1f(m,i);
+        const Real a = -(gf[i+1] - gf[i])/dr;
+        hgl(m,k,i) = -(pf[i+1] - pf[i])/dr;
+        amax = std::max(amax, a);
+        for (int j=0; j<n2; ++j) {
+          hpc(m,k,j,i) = pc;
+          hpf(m,k,j,i) = pf[i];
+          if (i == n1 - 1) hpf(m,k,j,i+1) = pf[i+1];
+          ha(m,k,j,i) = a;
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(phd->phicc_wb, hpc);
+  Kokkos::deep_copy(phd->phi_wb_x1f, hpf);
+  Kokkos::deep_copy(gpl_, hgl);
+  Kokkos::deep_copy(aref_d, ha);
+  pm1->fref_wsplit_ok = true;       // RyPerSrcEnv gives the reference work (split)
+  pm1->SetForceReference(aref_d);
+  if (root) {
+    const Real g_in = RadColAt(rcol_g_, psi_in);
+    std::printf("ry_per_accretor: <rad_m1> force reference: G(psi) over the column (psi "
+                "%.5g .. %.5g), G(r_in) %.6g (km/s)^2 = %.4f psi(r_in); max a_ref %.5g; "
+                "bottom flux %.6g code = %.6g erg/cm^2/s (L %.5g Lsun at r_in, phi 90)\n",
+                cpsi.front(), cpsi.back(), g_in, g_in/psi_in, amax, rad_fin_,
+                rad_fin_*fu, 4.0*M_PI*SQR(r_in*lu)*rad_fin_*fu/3.828e33);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! <rad_m1>: the radiation IC (fresh start): E = a T_col^4 (T_col(psi): the column's,
+//! clamped at its top; in the ambient the radiation of the top of the atmosphere), F_r =
+//! the column's F(psi) on cells and on the x1 faces (f0x1), F_theta = F_phi = 0; then the
+//! startup range check of every radiatively active cell (rho >= the absorption mask)
+//! against the opacity grid and the EOS table (fatal).
+void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
+  const bool root = (global_variable::my_rank == 0);
+  auto *pm1 = pmbp->pradm1;
+  auto *phd = pmbp->phydro;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
+  const Real phis = env_phis_;
+  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+  DvceArray3D<Real> fc("ryper_rfc", nmb, n3, n1), ffc("ryper_rff", nmb, n3, n1 + 1);
+  auto hfc = Kokkos::create_mirror_view(fc);
+  auto hff = Kokkos::create_mirror_view(ffc);
+  for (int m=0; m<nmb; ++m) {
+    for (int k=0; k<n3; ++k) {
+      for (int i=0; i<n1; ++i) {
+        hfc(m,k,i) = RadColAt(rcol_f_, phis - PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i),
+                                                    hx3(m,k)));
+      }
+      for (int i=0; i<=n1; ++i) {
+        hff(m,k,i) = RadColAt(rcol_f_, phis - PhiWB(p, dlt, rtop, rspin, phtop, hx1f(m,i),
+                                                    hx3(m,k)));
+      }
+    }
+  }
+  Kokkos::deep_copy(fc, hfc);
+  Kokkos::deep_copy(ffc, hff);
+  auto ur = pm1->u0;
+  auto tc = tcol_;
+  const Real ar = pm1->arad, efl = pm1->e_floor, cl = pm1->c_light;
+  par_for("ryper_ric", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real t = tc(m,k,i);
+    const Real e = fmax(ar*SQR(SQR(t)), efl);
+    ur(m,radm1::M1_E,k,j,i) = e;
+    ur(m,radm1::M1_F1,k,j,i) = fmin(fc(m,k,i), 0.9*cl*e);
+    ur(m,radm1::M1_F2,k,j,i) = 0.0;
+    ur(m,radm1::M1_F3,k,j,i) = 0.0;
+  });
+  auto ff0 = pm1->f0x1;
+  if (ff0.extent_int(0) >= nmb) {
+    const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
+    const int e1 = std::min(ff0.extent_int(3) - 1, n1);
+    par_for("ryper_ricf", DevExeSpace(), 0, nmb - 1, 0, e3, 0, e2, 0, e1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      ff0(m,k,j,i) = ffc(m,k,i);
+    });
+  }
+  // range check of the radiatively active cells (active zones)
+  {
+    const auto &eosd = phd->peos->eos_data;
+    const EOS_Data eos = eosd;
+    auto u0 = phd->u0;
+    auto phicc = phd->phicc0;
+    const Real thr = pm1->otab.amask_rho, du = pm1->otab.dunit, tk = pm1->otab.tunit;
+    const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+    const int ni = indcs.nx1, nji = indcs.nx2*ni, nkji = indcs.nx3*nji;
+    Real mn[2], mx[2];
+    for (int q=0; q<2; ++q) {
+      Real lo = 1.0e300, hi = -1.0e300;
+      Kokkos::parallel_reduce("ryper_rchk_lo", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              nmb*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &l) {
+        const int m = idx/nkji;
+        const int k = (idx - m*nkji)/nji + ks;
+        const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+        const int i = idx%ni + is;
+        const Real d = u0(m,IDN,k,j,i);
+        if (!(d >= thr)) return;
+        const Real e = u0(m,IEN,k,j,i) - 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+                       + SQR(u0(m,IM3,k,j,i)))/d - d*phicc(m,k,j,i);
+        const Real v = (q == 0) ? log10(d*du) : log10(eos.Temperature(d, e)*tk);
+        l = fmin(l, v);
+      }, Kokkos::Min<Real>(lo));
+      Kokkos::parallel_reduce("ryper_rchk_hi", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              nmb*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &l) {
+        const int m = idx/nkji;
+        const int k = (idx - m*nkji)/nji + ks;
+        const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+        const int i = idx%ni + is;
+        const Real d = u0(m,IDN,k,j,i);
+        if (!(d >= thr)) return;
+        const Real e = u0(m,IEN,k,j,i) - 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+                       + SQR(u0(m,IM3,k,j,i)))/d - d*phicc(m,k,j,i);
+        const Real v = (q == 0) ? log10(d*du) : log10(eos.Temperature(d, e)*tk);
+        l = fmax(l, v);
+      }, Kokkos::Max<Real>(hi));
+      mn[q] = lo;
+      mx[q] = hi;
+    }
+    auto &ot = pm1->otab;
+    auto hlT = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ot.lT);
+    auto hlD = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ot.lD);
+    const Real tlo = hlT(0), thi = hlT(ot.nT - 1), dlo = hlD(0), dhi = hlD(ot.nD - 1);
+    const bool ok = (mn[0] >= dlo && mx[0] <= dhi && mn[1] >= tlo && mx[1] <= thi);
+    const Real elo_d = pin->GetReal("hydro", "eos_logd_min");
+    const Real ehi_d = pin->GetReal("hydro", "eos_logd_max");
+    const Real elo_t = pin->GetReal("hydro", "eos_logt_min");
+    const Real ehi_t = pin->GetReal("hydro", "eos_logt_max");
+    const bool oke = (mn[0] >= elo_d && mx[0] <= ehi_d && mn[1] >= elo_t && mx[1] <= ehi_t);
+    if (root) {
+      std::printf("ry_per_accretor: <rad_m1> radiatively active cells (rho >= %.4g code): "
+                  "log rho %.4f .. %.4f, log T %.4f .. %.4f; opacity grid log rho %.3f .. "
+                  "%.3f, log T %.3f .. %.3f: %s; EOS table: %s\n", thr, mn[0], mx[0], mn[1],
+                  mx[1], dlo, dhi, tlo, thi, ok ? "inside" : "OUTSIDE",
+                  oke ? "inside" : "OUTSIDE");
+    }
+    if (!(ok && oke)) {
+      std::cout << "### FATAL ERROR in ry_per_accretor (<rad_m1>): radiatively active "
+                << "cells outside the opacity grid or the EOS table" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+}
+
 //----------------------------------------------------------------------------------------
 //! thermo = general: the envelope IC in DISCRETE hydrostatic balance of the x1 WB pair
 //! (the he_star_m1 he_ic_balance march, per (m,k) column, host).  T is FIXED at the
@@ -1001,6 +1574,8 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
   const Real rtop = env_rtop_, phtop = env_phtop_, rspin = env_rspin_, phis = env_phis_;
   const Real vsp = (spin_ - 1.0)*rp_.omega;
   const Real aeq = RochePot(p, racc, 0.5*M_PI);
+  // the envelope top cap in the WB pair's own potential (Phi_eff under <rad_m1>)
+  const Real phtop_c = rad_ ? (phtop + RadColAt(rcol_g_, phis - phtop)) : phtop;
   auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
   auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
   auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), phd->phicc_wb);
@@ -1061,7 +1636,10 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
       } else {
         Real best = 1.0e300;
         for (int i=is; i<=ie; ++i) {
-          const Real psi = phis - pw[i];
+          // <rad_m1>: pw is Phi_eff = Phi_wb + G; psi is defined by Phi_wb alone
+          const Real psi = rad_ ? (phis - PhiWB(p, env_dlt_, rtop, rspin, phtop, hx1(m,i),
+                                                hx3(m,k)))
+                                : (phis - pw[i]);
           if (std::fabs(psi) < best) {
             best = std::fabs(psi);
             ia = i;
@@ -1098,7 +1676,7 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
           Real ei, cr, ct, cv;
           eos.ThermoAt(d[i], t[i], ei, pc, cr, ct, cv);
         }
-        if (i > ia && (amb || hx1(m,i) > rtop || pw[i] >= phtop || pc < da*camb2 ||
+        if (i > ia && (amb || hx1(m,i) > rtop || pw[i] >= phtop_c || pc < da*camb2 ||
                        i == n1 - 1)) {
           amb = true;
           d[i] = std::max(da, rho_amb);
@@ -1367,7 +1945,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // gas pressure alone at its T(psi) the discrete balance makes the deep envelope ~5e4x
   // denser (the integrated Eddington factor), so column needs the radiation force
   // reference of stage S3 (a_ref in Phi_wb) before it is a sensible star.
-  std::vector<Real> cpsi, clt, clr;
+  std::vector<Real> cpsi, clt, clr, crq, cfl;
   bool icpoly = true;
   if (gen_) {
     const std::string icm = pin->GetOrAddString("problem", "env_ic", "polytrope");
@@ -1407,6 +1985,13 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       std::istringstream is(ln);
       Real a, b, c;
       if (!(is >> a >> b >> c)) continue;
+      // <rad_m1>: also r_eq [Rsun] (column 7) and F [erg/cm^2/s] (column 8)
+      Real c4, c5, c6, c7, c8;
+      if (rad_ && !(is >> c4 >> c5 >> c6 >> c7 >> c8)) {
+        std::cout << "### FATAL ERROR in ry_per_accretor: <rad_m1> needs the 8+ column S0 "
+                  << "file (psi T rho P_gas P_rad kappa_R r_eq F ...)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       if (!cpsi.empty() && !(a > cpsi.back())) {
         std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file psi not strictly "
                   << "ascending at psi = " << a << std::endl;
@@ -1415,6 +2000,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       cpsi.push_back(a);
       clt.push_back(std::log(b));
       clr.push_back(std::log(c));
+      if (rad_) {
+        crq.push_back(c7);
+        cfl.push_back(c8);
+      }
     }
     if (cpsi.size() < 2) {
       std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file has < 2 rows"
@@ -1464,6 +2053,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
     }
     Kokkos::deep_copy(tcol_, ht);
+    if (rad_) RadSetup(pin, pmbp, cpsi, clt, clr, crq, cfl);
   }
   // the measuring x1 face in each MeshBlock (or -1): r = R_acc exactly (default), or,
   // with problem/r_meas, the face nearest r_meas (MR/JR, Menv/Jenv then refer to it; a
@@ -1500,6 +2090,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     if (wdep > 0.0) {
       const Real rw = racc - wdep;
       phd->wb_phimax = RochePot(p, rw, 0.5*M_PI) - dlt*SQR(fmin(rw, rspin));
+      // <rad_m1>: phicc_wb holds Phi_eff = Phi_wb + G(psi)
+      if (rad_) phd->wb_phimax += RadColAt(rcol_g_, env_phis_ - phd->wb_phimax);
       if (root) {
         std::printf("ry_per_accretor: x1 WB off outside the equipotential through r = "
                     "%.4f (phi 90), Phi_wb > %.6e\n", rw, phd->wb_phimax);
@@ -1548,6 +2140,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // (rotating frame) in the supported part (r < r_top).
   if (gen_) {
     EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
+    if (rad_) RadIC(pin, pmbp);
     return;
   }
   const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
@@ -1644,6 +2237,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   auto &eos = pmbp->phydro->peos->eos_data;
   gen_ = false;
+  // <rad_m1> (stage S3): only with inner = envelope, thermo = general, env_ic = column
+  rad_ = (pmbp->pradm1 != nullptr);
+  if (rad_) {
+    if (!env_ || thermo.compare("general") != 0 ||
+        pin->GetOrAddString("problem", "env_ic", "polytrope").compare("column") != 0) {
+      fatal("<rad_m1> needs problem/inner = envelope, thermo = general and env_ic = column");
+    }
+  }
   if (env_) {
     auto *phd = pmbp->phydro;
     gen_ = (thermo.compare("general") == 0);

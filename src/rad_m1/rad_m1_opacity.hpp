@@ -89,6 +89,13 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
   oe = op;
   of = kr*tab.kunit;
   os = 0.0;
+  // <rad_m1>/opac_abs_rho_max: the absorption mask of tenuous (ambient) gas, scattering
+  // only (default amask_rho = 0: never true, bitwise inert)
+  if (d < tab.amask_rho) {
+    op = 0.0;
+    oe = 0.0;
+    of = tab.amask_kes;
+  }
 }
 
 //----------------------------------------------------------------------------------------

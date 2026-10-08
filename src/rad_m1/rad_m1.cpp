@@ -351,6 +351,28 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       << "be positive" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // <rad_m1>/opac_abs_rho_max (accretor-rhd-1008; read only when named, default 0 = off,
+  // bitwise inert): an ABSORPTION MASK of the table opacity for tenuous gas.  Cells with a
+  // CODE density below it get kappa_P = kappa_E = 0 (no emission, no absorption) and the
+  // transport opacity <rad_m1>/opac_abs_kappa_s [cm^2/g] (electron scattering, default
+  // 0.34 = 0.2 (1 + X) at X = 0.7) instead of the table's Rosseland mean.  Meant for an
+  // artificial, optically thin, thermally decoupled ambient (ry_per_accretor's hot
+  // 300 km/s ambient, design docs/dev/accretor_rhd_design.md sect. 2.3): with an edge-held
+  // table kappa_P it would cool to T_rad in ~1e-6 s and collapse.  Applied inside
+  // M1TableOpacities, i.e. at EVERY table lookup of the module (opacity task, the Picard
+  // re-evaluation, the T solve, time2), so the mask is the same wherever kappa is used.
+  if (pin->DoesParameterExist("rad_m1","opac_abs_rho_max")) {
+    otab.amask_rho = pin->GetReal("rad_m1","opac_abs_rho_max");
+    const Real kes = pin->DoesParameterExist("rad_m1","opac_abs_kappa_s") ?
+                     pin->GetReal("rad_m1","opac_abs_kappa_s") : 0.34;
+    otab.amask_kes = kes*otab.kunit;
+    if (otab.amask_rho < 0.0 || kes < 0.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/opac_abs_rho_max and opac_abs_kappa_s must be >= 0"
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   kappa_p = pin->GetOrAddReal("rad_m1","kappa_p",0.0);
   kappa_e = pin->GetOrAddReal("rad_m1","kappa_e",kappa_p);
   kappa_f = pin->GetOrAddReal("rad_m1","kappa_f",kappa_p);
