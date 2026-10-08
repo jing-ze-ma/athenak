@@ -934,6 +934,27 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
+    // sp-blend-1008 (read only when named): beam_f = f > 0 makes the shell a radially
+    // BEAMED pulse, F_r = f c E on the cells and the face-normal comoving flux of the
+    // implicit solve f0x1 = f c E(r_f) on every x1 face (the gas is static), so that
+    // the face-eliminated central form starts from the same beam its memory term
+    // carries.  A shell with F = 0 instead splits into an ingoing and an outgoing half.
+    if (pin->DoesParameterExist("problem","beam_f") && pmbp->pradm1 != nullptr &&
+        pmbp->pradm1->f0x1.extent_int(0) > 0) {
+      const Real bf = pin->GetReal("problem","beam_f");
+      auto f0 = pmbp->pradm1->f0x1;
+      auto xf = pmbp->pcoord->xx1f;
+      par_for("m1_sph_beam", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        u0(m,radm1::M1_F1,k,j,i) = bf*cl*u0(m,radm1::M1_E,k,j,i);
+        if (i >= is && i <= is+nx1) {
+          Real rf = spr ? xf(m,i) : LeftEdgeX(i-is, nx1, size.d_view(m).x1min,
+                                              size.d_view(m).x1max);
+          Real x = (rf - r0)/wid;
+          f0(m,k,j,i) = bf*cl*fmax(eout + eamp*exp(-x*x), efl);
+        }
+      });
+    }
   } else if (test.compare("sph_atm") == 0) {
     // STAGE S2 (tests_m1/runs_5b_sp_s2, gate T-S4): an extended grey atmosphere on the
     // spherical-polar wedge.  Gas rho = atm_rho0 (r/r_in)^(-atm_rho_n) at T = atm_temp,

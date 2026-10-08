@@ -1201,10 +1201,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // 3b phase B: the transverse operator is built for the face-eliminated (central) form
   // only.  The HLL/berthon/blend face fluxes carry per-face coefficients (ifw) that exist
   // for the x1 faces alone, so anything but `central` would silently be central in x2/x3.
+  // sp-blend-1008: on the spherical-polar WEDGE (not the cubed sphere) berthon | blend
+  // act on the x1 (radial) faces, with the A_f/V_i areas and volumes and the centroid
+  // distance of the sp row; the x2/x3 faces stay central (a beam in an outflow is
+  // radial).  Every other multi-D mesh keeps the refusal.
   if (full && impl_flux != M1_IFLUX_CENTRAL) {
-    ImplFatal("<rad_m1>/transport = implicit supports implicit_flux = central only "
-              "(the asymptotic-preserving forms are built for the x1 faces); use "
-              "transport = implicit_x1 for ap_hll | berthon | blend");
+    const bool spok = sph_geom && !cs_geom &&
+                      (impl_flux == M1_IFLUX_BERTHON || impl_flux == M1_IFLUX_BLEND);
+    if (!spok) {
+      ImplFatal("<rad_m1>/transport = implicit supports implicit_flux = central only "
+                "(berthon | blend on the x1 faces of the spherical-polar wedge); use "
+                "transport = implicit_x1 for ap_hll | berthon | blend");
+    }
   }
   // ---- milestone 3c.  The weight of implicit_flux = blend.  Inert for every other
   // flux, and the two ends of the blend are BITWISE central and berthon.
@@ -1236,6 +1244,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_blend_mode = '" + sbw
               + "' is not a choice (flux | dissipation)");
+  }
+  // sp-blend-1008: the tau-only weight fails the grey atmosphere, the opacity jump and
+  // the He column (design sect. 9), and `dissipation` is rejected there too; neither is
+  // offered on the multi-D wedge
+  if (full && impl_flux == M1_IFLUX_BLEND &&
+      (impl_blend == M1_IBLEND_TAU || impl_blend_mode == M1_IBMODE_DISSIP)) {
+    ImplFatal("<rad_m1>/transport = implicit with implicit_flux = blend takes "
+              "implicit_blend = f | tau_f and implicit_blend_mode = flux only");
   }
   impl_blend_tau0 = pin->GetOrAddReal("rad_m1","implicit_blend_tau0",1.0);
   impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",0.6);
@@ -7268,7 +7284,7 @@ void RadiationM1::ImplicitVimpBuild() {
           cR[s] = (1.0 - al)*cR[s] + (cl/ch)*ifw_(m,M1_IFW_HCR,k,j,fi);
         }
         if (sph) {
-          // sp (central flux only): the face distance, and the S2 integrating factor
+          // sp: the face distance, and the S2 integrating factor
           const Real bsp = th*ch*cl*dt/cdxf.x1f(m,k,j,fi);
           Real wl = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);
           Real wr = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);
@@ -7281,6 +7297,12 @@ void RadiationM1::ImplicitVimpBuild() {
           }
           cL[s] = bsp*wl;
           cR[s] = -bsp*wr;
+          // sp-blend-1008: the blend of the face flux the row applies (berthon | blend)
+          if (aphll) {
+            const Real al = ifw_(m,M1_IFW_AL,k,j,fi);
+            cL[s] = (1.0 - al)*cL[s] + (cl/ch)*ifw_(m,M1_IFW_HCL,k,j,fi);
+            cR[s] = (1.0 - al)*cR[s] + (cl/ch)*ifw_(m,M1_IFW_HCR,k,j,fi);
+          }
         }
       }
     }
@@ -8696,6 +8718,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (doface) {
       const bool dodg = plmdc && (it == 0
                                   || (!rfreeze && (rnpass <= 0 || it < rnpass)));
+      // sp-blend-1008 (spherical-polar wedge): the face optical depth is the SAME face
+      // kappa_T the sp row's theta uses (M1FaceAvgX1, distance-weighted under
+      // implicit_face_weight = distance) times the centroid distance dxface.x1f, and that
+      // distance replaces dx1 wherever a face length enters.  The HLL coefficients
+      // themselves are face FLUXES per unit E (no length); the row multiplies them by
+      // dt A_f/V_i.  The Cartesian expressions are untouched (sphf false).
+      const bool sphf = sph_geom;
+      const bool fwdf = sph_geom && impl_face_wdist;
+      auto cdxff = pmy_pack->pcoord->dxface;
+      auto cx1ff = pmy_pack->pcoord->xx1f;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -8713,6 +8745,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         int im = (cyclic && i == is) ? ie : (i-1);
         int ip = (cyclic && i == ie+1) ? is : i;
         Real dx = mbsize.d_view(m).dx1;
+        if (sphf) {dx = cdxff.x1f(m,k,j,i);}
         Real rfl = iw_(m,M1_IW_RF0,k,j,im);
         Real rfr = iw_(m,M1_IW_RF0,k,j,ip);
         // closed-form M1 wave speeds of the two LAGGED states (1-D: mu = sign f)
@@ -8730,6 +8763,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // alpha: Bloch et al. (2021) eq. 25 with the (1-f^2) guard and the arithmetic
         // face mean of the CELL optical depth.  lp*lm <= 0, so den >= 1 and alpha <= 1.
         Real tauf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,ip))*dx;
+        if (sphf) {
+          tauf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1ff, m,
+                             im, ip, fwdf)*dx;
+        }
         Real al = 1.0;
         if (tauf > 0.0) {
           Real fbar = 0.5*(fabs(rfl) + fabs(rfr));
@@ -9181,7 +9218,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // STAGE S1 (sp): the row rebuilt with dt A_f/V_i per face and the centroid
       // distance dxface.x1f in the face-flux gradient.  The Cartesian row above is left
       // textually untouched and overwritten here.  On sp (SphericalS1Check) the flux is
-      // central (om = 1, no HLL/DG part) and offdiag none or lagged; m1-sph2 adds the
+      // central (om = 1, no HLL/DG part; sp-blend-1008: or berthon | blend, the x1
+      // HLL part with dt A_f/V_i) and offdiag none or lagged; m1-sph2 adds the
       // hesdirk2 stage solves (the old vector is generic) and implicit_vimp.
       if (sph) {
         Real iv = dt/cvol(m,k,j,i);
@@ -9202,7 +9240,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
                                  i, ip, fwd);
           Real th = 1.0/(1.0 + ch*dt*ktf);
-          Real df = th*ch*ch*dt/cdxf.x1f(m,k,j,i+1);
+          // sp-blend-1008: the central (face-eliminated) part of the face flux keeps the
+          // weight 1 - AL of the blend (exactly th when implicit_flux = central)
+          Real tw = th;
+          if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i+1))*th;}
+          Real df = tw*ch*ch*dt/cdxf.x1f(m,k,j,i+1);
           Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
           if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
           Real wiu = wi;
@@ -9226,8 +9268,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                            + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,ip,thrd,
                                       il,iu,jl,ju,kl,ku,M1_IW_EP));
               }
-              rr += nup*cr*th*ch*cl*dt*od;
-              d_[10] += nup*cr*th*ch*cl*dt*od;
+              rr += nup*cr*tw*ch*cl*dt*od;
+              d_[10] += nup*cr*tw*ch*cl*dt*od;
               ods = od;
             }
           }
@@ -9237,12 +9279,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real vf = M1FaceAvgX1(vi, iw_(m,M1_IW_V1,k,j,ip), cx1f, m, i, ip, fwd);
           Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,i), iw_(m,M1_IW_G0,k,j,ip), cx1f, m,
                                  i, ip, fwd);
-          rr -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
-          d_[11] -= nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+          rr -= nup*cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+          d_[11] -= nup*cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
           // implicit_opac_newton on sp: the same face term G (every part of it is
           // proportional to th), with the sp area factor and the S2 row coefficients
           if (opns && ip <= ie) {
-            const Real gf = nup*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*ods)
+            const Real gf = nup*cr*tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*ods)
                             + nup*df*(wiu*iw_(m,M1_IW_EP,k,j,i)
                                       - wp*iw_(m,M1_IW_EP,k,j,ip));
             const Real q = -0.5*ch*dt*th*gf;
@@ -9263,6 +9305,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         opac_(m,M1_OP_E,k,j,ip), cl, dt, cc, rr);
               d_[12] += rr - r0;}
             }
+          }
+          // sp-blend-1008: the berthon part of the face flux, ifw HCL E_i + HCR E_ip + DG
+          // (HCL >= 0 on the diagonal, HCR <= 0 off it), times dt A_f/V_i
+          if (aphll) {
+            bb += nup*ifw_(m,M1_IFW_HCL,k,j,i+1);
+            cc += nup*ifw_(m,M1_IFW_HCR,k,j,i+1);
+            rr -= nup*ifw_(m,M1_IFW_DG,k,j,i+1);
           }
           if (vf > 0.0) {
             bb += nup*cr*ai;
@@ -9331,7 +9380,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
                                  im, i, fwd);
           Real th = 1.0/(1.0 + ch*dt*ktf);
-          Real df = th*ch*ch*dt/cdxf.x1f(m,k,j,i);
+          Real tw = th;   // sp-blend-1008, as at face i+1/2
+          if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i))*th;}
+          Real df = tw*ch*ch*dt/cdxf.x1f(m,k,j,i);
           Real wm = iw_(m,M1_IW_WCHI,k,j,im);
           if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
           Real wil = wi;
@@ -9354,8 +9405,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                            + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,i,thrd,il,iu,jl,
                                       ju,kl,ku,M1_IW_EP));
               }
-              rr -= num*cr*th*ch*cl*dt*od;
-              d_[10] -= num*cr*th*ch*cl*dt*od;
+              rr -= num*cr*tw*ch*cl*dt*od;
+              d_[10] -= num*cr*tw*ch*cl*dt*od;
               ods = od;
             }
           }
@@ -9365,10 +9416,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real vf = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,im), vi, cx1f, m, im, i, fwd);
           Real g0f = M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,im), iw_(m,M1_IW_G0,k,j,i), cx1f, m,
                                  im, i, fwd);
-          rr += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
-          d_[11] += num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+          rr += num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+          d_[11] += num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
           if (opns && im >= is) {
-            const Real gf = -num*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*ods)
+            const Real gf = -num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*ods)
                             + num*df*(wil*iw_(m,M1_IW_EP,k,j,i)
                                       - wm*iw_(m,M1_IW_EP,k,j,im));
             const Real q = -0.5*ch*dt*th*gf;
@@ -9389,6 +9440,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         opac_(m,M1_OP_E,k,j,im), cl, dt, aa, rr);
               d_[12] += rr - r0;}
             }
+          }
+          if (aphll) {
+            aa -= num*ifw_(m,M1_IFW_HCL,k,j,i);
+            bb -= num*ifw_(m,M1_IFW_HCR,k,j,i);
+            rr += num*ifw_(m,M1_IFW_DG,k,j,i);
           }
           if (vf > 0.0) {
             aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);

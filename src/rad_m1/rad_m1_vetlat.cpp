@@ -957,6 +957,10 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
   const Real sg = sgn;
   const int c0 = M1_TT_LAT0;
   const bool tanop = vgd_on && vgd_tan && vgd_tanop;
+  // sp-blend-1008: under implicit_flux = berthon | blend the x1 face keeps 1 - AL of the
+  // central face flux, the lateral term included (as the row and the face update)
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
+  auto ifw_ = ifw;
   par_for("m1_vlat_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -999,14 +1003,16 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
       const int ip = i + 1;
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
                                    i, ip, fwd);
-      const Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       y -= carea.x1f(m,k,j,i+1)*iv*cr*th*kk*0.5*(lat(0,k,j,i) + lat(0,k,j,ip));
     }
     if (i > is || !botb) {
       const int im = i - 1;
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
                                    im, i, fwd);
-      const Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       y += carea.x1f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(0,k,j,im) + lat(0,k,j,i));
     }
     // the two x2 faces
@@ -1088,6 +1094,8 @@ void RadiationM1::VetLatStencilAdd() {
   auto carea = pmy_pack->pcoord->area;
   const int c0 = M1_TT_LAT0;
   const bool tanop = vgd_on && vgd_tan && vgd_tanop;
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);   // sp-blend-1008, as VetLatOp
+  auto ifw_ = ifw;
   par_for("m1_vlat_stencil", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -1182,14 +1190,16 @@ void RadiationM1::VetLatStencilAdd() {
     if (i < ie || !topb) {
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,i+1), cx1f,
                                    m, i, i+1, fwd);
-      const Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       latc(0, i, j, k, w);
       latc(0, i+1, j, k, w);
     }
     if (i > is || !botb) {
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i-1), iw_(m,M1_IW_KT,k,j,i), cx1f,
                                    m, i-1, i, fwd);
-      const Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       latc(0, i-1, j, k, w);
       latc(0, i, j, k, w);
     }
