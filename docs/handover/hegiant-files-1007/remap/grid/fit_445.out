@@ -1,0 +1,43 @@
+target cells 444.6, plateau dr 0.0390 Rsun; fitting N = 445
+N 445 cost 4.865; dr/target min 0.827 max 1.201; max neighbour ratio 1.079; dr min 0.0330 Rsun
+  r   3.09 Rsun: dr 0.1801 Rsun dr/r 0.05830 target 0.1500
+  r   5.06 Rsun: dr 0.1359 Rsun dr/r 0.02684 target 0.1500
+  r   9.98 Rsun: dr 0.1645 Rsun dr/r 0.01648 target 0.1500
+  r  20.12 Rsun: dr 0.3073 Rsun dr/r 0.01527 target 0.3018
+  r  30.09 Rsun: dr 0.4631 Rsun dr/r 0.01539 target 0.4513
+  r  39.89 Rsun: dr 0.5620 Rsun dr/r 0.01409 target 0.5984
+  r  50.22 Rsun: dr 0.5454 Rsun dr/r 0.01086 target 0.5429
+  r  55.12 Rsun: dr 0.3187 Rsun dr/r 0.00578 target 0.2979
+  r  57.99 Rsun: dr 0.1365 Rsun dr/r 0.00235 target 0.1544
+  r  60.03 Rsun: dr 0.0579 Rsun dr/r 0.00096 target 0.0527
+  r  60.99 Rsun: dr 0.0332 Rsun dr/r 0.00054 target 0.0390
+  r  61.49 Rsun: dr 0.0395 Rsun dr/r 0.00064 target 0.0390
+  r  61.78 Rsun: dr 0.0431 Rsun dr/r 0.00070 target 0.0390
+  r  62.50 Rsun: dr 0.0449 Rsun dr/r 0.00072 target 0.0390
+  r  63.50 Rsun: dr 0.0350 Rsun dr/r 0.00055 target 0.0390
+  r  64.49 Rsun: dr 0.0586 Rsun dr/r 0.00091 target 0.0536
+  r  65.99 Rsun: dr 0.1270 Rsun dr/r 0.00192 target 0.1287
+  r  70.02 Rsun: dr 0.3002 Rsun dr/r 0.00429 target 0.3299
+  r  79.94 Rsun: dr 0.7961 Rsun dr/r 0.00996 target 0.7994
+  r 100.47 Rsun: dr 0.9965 Rsun dr/r 0.00992 target 1.0047
+  r 130.49 Rsun: dr 1.4086 Rsun dr/r 0.01080 target 1.3185
+  r 159.25 Rsun: dr 2.6308 Rsun dr/r 0.01652 target 2.5908
+  r 197.73 Rsun: dr 4.5469 Rsun dr/r 0.02300 target 4.8468
+f_stretch_r_c1 = -1.236894517393e+00
+f_stretch_r_c2 = -4.735163641768e+00
+f_stretch_r_c3 = 5.026104492976e+01
+f_stretch_r_c4 = -3.570419665727e+02
+f_stretch_r_c5 = 1.422488454204e+03
+f_stretch_r_c6 = -2.717229013236e+03
+f_stretch_r_c7 = 2.437978328868e+03
+f_stretch_r_c8 = -8.386699985201e+02
+f_stretch_r_b1_amp = -2.021640817960e+00
+f_stretch_r_b1_x = 4.640065359922e-01
+f_stretch_r_b1_w = 1.525464300752e-01
+f_stretch_r_b2_amp = 2.054617003474e+00
+f_stretch_r_b2_x = 8.798116659071e-01
+f_stretch_r_b2_w = 1.046282952739e-01
+f_stretch_r_p_amp = -9.988878672034e-01
+f_stretch_r_p_xa = 3.705211949536e-01
+f_stretch_r_p_xb = 8.168730212611e-01
+f_stretch_r_p_w = 2.057947745856e-02

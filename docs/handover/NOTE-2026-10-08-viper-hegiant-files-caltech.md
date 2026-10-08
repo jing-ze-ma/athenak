@@ -48,11 +48,13 @@ and the t = 0 `bin/` dumps (724 MB). Numbers below from `ref_smoke/run.log` and 
 | quantity | viper 12123795 |
 |---|---|
 | rc / FATAL / NaN | 0 / 0 / 0 |
-| dt at cycle 0 / 1 / 10 / 20 / 59 | 2.004690e+01 / 2.004690e+01 / 2.004682e+01 / 2.004682e+01 / 2.004712e+01 |
+| dt at cycle 0 / 1 / 10 / 20 / 59 / 60 | 2.004690e+01 / 2.004690e+01 / 2.004682e+01 / 2.004682e+01 / 2.004712e+01 / 2.004713e+01 |
+| t at cycle 60 (end) | 1.202815e+03 s (`Terminating on cycle limit`, nlim=60) |
 | t at cycle 59 | 1.182768e+03 s |
 | Picard (end-of-run `implicit transport:` line) | solves 60, mean 4.95, max 10, NON-CONVERGED 0 |
-| `NEWTON-FALLBACK` log lines (60 cycles) | 450 (informational) |
-| last hst row (t, dt, mass, tot-E) | 1.2028153622134232e+03, 2.0047130133686156e+01, 1.5435376857927376e+32, 1.4778208815011109e+47 |
+| `NEWTON-FALLBACK` log lines (60 cycles) | 450 lines = 225 events, each printed twice (once with `count=1.000000e+00`, once with `count=1`); informational |
+| last hydro hst row (t, dt, mass, tot-E; the row before has the same t and dt 2.0047122260540117e+01 = final-output duplicate) | 1.2028153622134232e+03, 2.0047130133686156e+01, 1.5435376857927376e+32, 1.4778208815011109e+47 |
+| last user hst row: t, dt, L_bot, L_mid, L_int, L_top, M_tot, Etot, Picard, w_mlt, L_MLT | 1.2028153622134232e+03, 2.0047130133686156e+01, 9.3777178643186865e+36, 3.8483090095250413e+35, 3.8639972427683574e+36, 4.0177936418879663e+36, 1.5435376857927376e+32, 1.6047580863661254e+47, 0, 1, 2.3449707380448740e+39 (full row in `ref_smoke/hegiant.user.hst`) |
 | `he_ic_balance` line at startup | max \|rho/rho_col - 1\| = 0.00369707 at r = 2.15098e+11, max face residual \|PR/PL - 1\| = 7.99361e-15, last change 8.31531e-10 |
 | s/cycle | median 1.439 (cycles 10-60, `elapsed=` diffs), mean 1.471; layout 1 node x 2 MI300A, 2 ranks, 4 blocks 445x64x64 = 2 blocks per GPU |
 

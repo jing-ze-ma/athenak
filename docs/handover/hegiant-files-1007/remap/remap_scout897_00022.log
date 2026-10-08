@@ -1,0 +1,9 @@
+read /viper/ptmp2/jinma/he_giant_1006/runs/scout128/rst/hegiant.00022.rst: t=900420.777214 cycle 47861 dt 18.4467, 4 MeshBlocks 445x64x64, nhydro 5, pred 5, eint 1, ctr 4, rss 5, blocks ['pred', 'eint', 'ctr', 'rss']
+radial: 445 -> 897 cells; phi_old_file_vs_code 1.1424181474346576e-14, rad_hyd_slope_dropped_old_cells 33672, rad_hyd_bad_after 0, rad_eint_min_ratio 0.5000188550686236, rad_rho_min 9.999999999999998e-21, rad_cons_mass 3.5468831621684754e-16, rad_cons_U 5.538556150474505e-16, rad_cons_m_r 4.241238202291784e-16, rad_cons_r_m_th 3.762357697250656e-16, rad_cons_r_m_ph 4.0857376632712477e-16, rad_m1_E_slope_dropped_old_cells 0, rad_cons_Erad 6.590454343804484e-16, rad_Fr_change_rel 0.007236591420986411, rad_F_ratio_max 1.0000000000000004, rad_m1_slope_dropped_old_cells 0, rad_F_max_ratio_before_clip 1.0000000000000004, rad_F_clipped 960395, m1_faces zeroed (cold-start closure lag from the cell F)
+fallbacks (coarse cells -> injection): hydro 14794752, m1 14794752 of 14794752; max parent |F|/cE 1
+   r/R 0.40-0.55: angular fallback fraction hydro 1.0000, m1 1.0000
+   r/R 0.55-0.70: angular fallback fraction hydro 1.0000, m1 1.0000
+   r/R 0.70-0.85: angular fallback fraction hydro 1.0000, m1 1.0000
+   r/R 0.85-1.05: angular fallback fraction hydro 1.0000, m1 1.0000
+   r/R 1.05-3.00: angular fallback fraction hydro 1.0000, m1 1.0000
+wrote /viper/ptmp2/jinma/he_giant_1006/runs/scout897/rst/hegiant.00022.rst: 4 MeshBlocks 897x64x64, record 567412160 bytes, caches dropped, dt 0.5 x source

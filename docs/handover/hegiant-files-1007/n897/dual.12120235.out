@@ -1,0 +1,38 @@
+run.cfg: BIN=/viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f3a66907_hegopn TLIM=2.592e6
+XKEYS: time/cfl_number=0.3 time/restart_refill_ghosts=true rad_m1/implicit_opac_newton_slope_max=3
+PK: 
+job 12120235 (smk_smax3) 1 nodes vipa1327, 2 ranks, start 2026-10-07_21:47:37
+GUARD: me 12120235 start 2026-10-07T21:47:35; running of this name: 12120235,2026-10-07T21:47:35
+GUARD: I run
+fc7b33a1ea517e9bddd83850f5b2d0f6  /viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f3a66907_hegopn
+restart from /viper/ptmp2/jinma/he_giant_1006/runs/smk_smax3/rst/hegiant.00022.rst (t = 900420.77721355006, cycle 47861)
+srun -n 2 /viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f3a66907_hegopn -r /viper/ptmp2/jinma/he_giant_1006/runs/smk_smax3/rst/hegiant.00022.rst output1/last_time=900400 output2/last_time=885600 output3/last_time=885600 output4/last_time=900000 output5/last_time=864000 output6/last_time=885600 time/tlim=2.592e6 time/cfl_number=0.3 time/restart_refill_ghosts=true rad_m1/implicit_opac_newton_slope_max=3  time/nlim=47921 time/ndiag=1 -d /viper/ptmp2/jinma/he_giant_1006/runs/smk_smax3 -t 00:10:59   21:47:38
+rc=0 21:50:47, newest rst /viper/ptmp2/jinma/he_giant_1006/runs/smk_smax3/rst/hegiant.00023.rst
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  smk_smax3
+Node list: vipa1327
+Job start: Wed Oct  7 21:47:35 CEST 2026
+Job end:   Wed Oct  7 21:50:48 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/athenak
+Command:   /viper/ptmp2/jinma/he_giant_1006/runs/scout897/dual_hegiant.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+12120235       smk_smax3      1            96                             00:03:13      0:0
+12120235.0    athena_he_      1      2     96     4562.39M     4399.95M   00:03:09      0:0
+  
+Maximum memory per node: 9.568023 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 4.2 %
+  

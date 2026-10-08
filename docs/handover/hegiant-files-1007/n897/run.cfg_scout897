@@ -1,0 +1,8 @@
+# scout128 run config (He giant, 128^2, 30 d), read by dual_hegiant.sh at job start; editable for pending links.
+# Every key of XKEYS is named in IN. Smoke rule: re-smoke after any change here.
+BIN=/viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f3a66907_hegopn
+BIN_MD5=fc7b33a1ea517e9bddd83850f5b2d0f6
+IN=/viper/ptmp2/jinma/he_giant_1006/runs/scout128/hegiant_scout128.athinput
+TLIM=2.592e6
+XKEYS="time/cfl_number=0.3 time/restart_refill_ghosts=true rad_m1/implicit_opac_newton_slope_max=3"
+PK=""

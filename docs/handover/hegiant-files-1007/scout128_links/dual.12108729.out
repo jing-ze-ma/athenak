@@ -1,0 +1,38 @@
+run.cfg: BIN=/viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f7291255_hegiant TLIM=2.592e6
+XKEYS: time/cfl_number=0.3
+PK: 
+job 12108729 (hegiant) 2 nodes vipa[1256,1279], 4 ranks, start 2026-10-07_04:22:35
+GUARD: me 12108729 start 2026-10-07T04:22:30; running of this name: 12108729,2026-10-07T04:22:30
+GUARD: I run
+ae8a3d11e0977dfe96f7fec7bd4bfbd6  /viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f7291255_hegiant
+FRESH start from /viper/ptmp2/jinma/he_giant_1006/runs/scout128/hegiant_scout128.athinput (00e7dfbc9c5044222a952d7e1283bd96)
+srun -n 4 /viper/ptmp2/jinma/builds/bin/athena_he_gpu72_f7291255_hegiant -i /viper/ptmp2/jinma/he_giant_1006/runs/scout128/hegiant_scout128.athinput time/tlim=2.592e6 time/cfl_number=0.3  -d /viper/ptmp2/jinma/he_giant_1006/runs/scout128 -t 05:39:58   04:22:36
+rc=0 10:02:39, newest rst /viper/ptmp2/jinma/he_giant_1006/runs/scout128/rst/hegiant.00011.rst
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  hegiant
+Node list: vipa[1256,1279]
+Job start: Wed Oct  7 04:22:30 CEST 2026
+Job end:   Wed Oct  7 10:02:39 CEST 2026
+Work dir:  /viper/ptmp2/jinma/he_giant_1006/runs/scout128
+Command:   /viper/ptmp2/jinma/he_giant_1006/runs/scout128/dual_hegiant.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+12108729         hegiant      2           192                             05:40:09      0:0
+12108729.0    athena_he_      2      4    192     3162.61M     2899.37M   05:40:03      0:0
+  
+Maximum memory per node: 6.632473 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 4.7 %
+  
