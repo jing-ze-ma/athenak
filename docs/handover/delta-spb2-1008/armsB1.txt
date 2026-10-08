@@ -1,0 +1,4 @@
+blf
+mg rad_m1/implicit_precond=mg
+mggc rad_m1/implicit_precond=mg_gc
+cen rad_m1/implicit_flux=central
