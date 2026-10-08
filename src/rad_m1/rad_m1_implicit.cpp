@@ -1444,7 +1444,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_gas_newton_switch must be 0 or lie in [3,64], "
               "implicit_gas_newton_switch_min >= 1 and implicit_stall_fac in (0,1]");
   }
-  std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag","picard");
+  // sp-blend-1008: on the multi-D wedge berthon | blend default to `step`.  The lagged
+  // reduced flux of a cell is the MEAN of its two faces' upwind ratios, and in free
+  // streaming the upwind berthon flux reproduces any lagged f (F_f = c f E_up), so
+  // recomputing the coefficients every Picard pass only AVERAGES f between neighbours,
+  // pass after pass: a neutral iteration in which the zero-flux inner face and the
+  // Marshak face leak inward (measured, gate b at CFL 0.4: Picard never meets 1e-12
+  // in 200 passes and f falls from 1 to 0.69 in one step).  With `step` the face
+  // coefficients come from the start-of-step state and the row is linear in E.
+  const bool splag = full && sph_geom && (impl_flux != M1_IFLUX_CENTRAL);
+  std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag",
+                                        splag ? "step" : "picard");
   impl_recon_freeze = (slg.compare("step") == 0);
   // MILESTONE 3c: freeze the deferred correction, and with it the plm limiter's choice,
   // after this many Picard passes.  The 3a2 finding is that the limiter keeps switching
