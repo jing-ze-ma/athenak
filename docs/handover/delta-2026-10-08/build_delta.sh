@@ -1,6 +1,7 @@
 #!/bin/bash
 # Incremental AthenaK build on NCSA Delta (A100, CUDA) -- see docs/handover/NOTE-2026-09-28-incremental-builds.md
-# usage: bash build_delta.sh <target> <commit>       targets: he_gpu (PROBLEM=he_star_m1, CUDA+MPI)
+# usage: bash build_delta.sh <target> <commit>       targets: he_gpu (PROBLEM=he_star_m1, CUDA+MPI),
+#   he_gpu_nofma (same, host -ffp-contract=off)
 # One persistent worktree + build dir per target; never builds a dirty tree; binary -> bin/athena_<target>_<sha>.
 set -eo pipefail
 B=/work/nvme/bivj/jma20/delta_1008
@@ -34,6 +35,10 @@ mkdir -p $B/bin
 case $T in
   he_gpu) OPTS="-D PROBLEM=he_star_m1 -D Athena_ENABLE_MPI=ON -D Kokkos_ENABLE_CUDA=On
                 -D Kokkos_ARCH_AMPERE80=On -D Kokkos_ARCH_ZEN3=On
+                -D CMAKE_CXX_COMPILER=$WT/kokkos/bin/nvcc_wrapper" ;;
+  # host code without FMA contraction (Cray CC adds -march=znver3); device code keeps nvcc defaults
+  he_gpu_nofma) OPTS="-D PROBLEM=he_star_m1 -D Athena_ENABLE_MPI=ON -D Kokkos_ENABLE_CUDA=On
+                -D Kokkos_ARCH_AMPERE80=On -D Kokkos_ARCH_ZEN3=On -D CMAKE_CXX_FLAGS=-ffp-contract=off
                 -D CMAKE_CXX_COMPILER=$WT/kokkos/bin/nvcc_wrapper" ;;
   *) echo "unknown target $T"; exit 1 ;;
 esac

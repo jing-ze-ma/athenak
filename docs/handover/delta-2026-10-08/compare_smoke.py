@@ -6,7 +6,9 @@ import sys
 
 C, D = sys.argv[1], sys.argv[2]
 REF = "/work/nvme/bivj/jma20/delta_1008/agcar_files/smoke_ref_viper"
-RAVEN = {"A": {1: 1.2525591814773266e+04, 3: 6.1192879615024124e+32}}
+RAVEN = {"A": {1: 1.2525591814773266e+04, 3: 6.1192879615024124e+32},
+         "B": {1: 2.4186988199012371e+03, 3: 1.7891809043881911e+31,
+               7: 1.0633773260127060e+46}}  # Raven 31004354 (viper NOTE 10-08)
 
 
 def last_row(f):
