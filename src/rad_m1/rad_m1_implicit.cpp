@@ -989,6 +989,29 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_lin_scaled needs implicit_lin_cnorm > 0 and "
               "implicit_krylov_fuse <= 1");
   }
+  // implicit_bcg_max_restarts / implicit_bcg_fallback (sp-blend2-1008; defaults 2 / line
+  // = the original, bitwise).  After more than max_restarts breakdowns (a vanishing
+  // rho / omega / rhat.v, or a recurrence residual that met the tolerance while the true
+  // residual did not) the fused BiCGStab gives up.  `line` then DISCARDS the Krylov
+  // iterate and makes one line-Jacobi update from E^k (ImplicitBiCGStabEnd); `best`
+  // first forms the true residual of the iterate and keeps the iterate whenever that
+  // residual is smaller than the initial one (the same norm the tolerance uses), so the
+  // Picard pass gets the better of the two instead of always the cruder.  Fused path
+  // (bcg_sync >= 1, krylov_fuse <= 2) only.
+  impl_bcg_maxrst = pin->GetOrAddInteger("rad_m1","implicit_bcg_max_restarts",2);
+  {std::string fb = pin->GetOrAddString("rad_m1","implicit_bcg_fallback","line");
+  if (fb.compare("line") == 0) {
+    impl_bcg_keep = false;
+  } else if (fb.compare("best") == 0) {
+    impl_bcg_keep = true;
+  } else {
+    ImplFatal("<rad_m1>/implicit_bcg_fallback = '" + fb
+              + "' is not a choice (line | best)");
+  }
+  }
+  if (impl_bcg_maxrst < 0) {
+    ImplFatal("<rad_m1>/implicit_bcg_max_restarts must be >= 0");
+  }
   if (impl_ew_max < 0.0 || impl_ew_max >= 1.0 || !(impl_ew_gam > 0.0)) {
     ImplFatal("<rad_m1>/implicit_lin_ew_max must lie in [0,1), ew_gamma > 0");
   }
@@ -6019,6 +6042,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   bcg_nred += 1.0;
   Real rnorm = red.mx;
   Real rhon = red.s0;   // (rhat, r) of the NEXT iteration, always known on entry
+  const Real rnorm0 = red.mx;   // implicit_bcg_fallback = best: the bar to beat
   bcg_r0rel = cn ? rnorm : (rnorm/bscale);
   // Eisenstat-Walker (implicit_lin_ew_max > 0): max|r0| IS the nonlinear residual of
   // the Picard iterate in the max norm (the system was re-linearised about it), so the
@@ -6210,8 +6234,28 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
     if (breakdown && !done) {
       ++nrestart;
       bcg_nbreak += 1.0;
-      if (nrestart > 2) {
+      if (nrestart > impl_bcg_maxrst) {
         fell_back = true;   // one line-Jacobi update (ImplicitBiCGStabEnd)
+        if (impl_bcg_keep) {
+          // implicit_bcg_fallback = best: keep the Krylov iterate if its TRUE residual
+          // beats the initial one (b - A x0, x0 = the Picard iterate)
+          ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
+          bred("m1_impl_bcgf_keep",
+          KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+            int m, k, j, i;
+            M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+            k += ks; j += js; i += is;
+            Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
+            Real a = cn ? (fabs(r)/((1.0 + fmax(iw_(m,M1_IW_SRCB,k,j,i), 0.0))
+                                    *fmax(iw_(m,M1_IW_EP,k,j,i), efl))) : fabs(r);
+            v.mx = (a > v.mx) ? a : v.mx;
+          });
+          bcg_nred += 1.0;
+          if (red.mx < rnorm0) {
+            fell_back = false;
+            bcg_nkeep += 1.0;
+          }
+        }
         break;
       }
       ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
@@ -6705,6 +6749,12 @@ void RadiationM1::ImplicitReport() {
               << " line_jacobi fallbacks=" << bcg_nfall
               << " global reductions=" << bcg_nred
               << " (" << rper << " per inner iteration)" << std::endl;
+    if (impl_bcg_keep || impl_bcg_maxrst != 2) {
+      std::cout << "<rad_m1> bicgstab: implicit_bcg_max_restarts=" << impl_bcg_maxrst
+                << " fallback=" << (impl_bcg_keep ? "best" : "line")
+                << ": Krylov iterate kept instead of line-Jacobi=" << bcg_nkeep
+                << std::endl;
+    }
     if (impl_kdev > 0) {
       std::cout << "<rad_m1> implicit_krylov_dev: period=" << impl_kdev
                 << " host status reads=" << kdev_nchk << " queued iterations="
