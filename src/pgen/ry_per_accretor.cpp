@@ -124,6 +124,15 @@ bool env_ = false, env_noslip_ = false;
 Real env_np_ = 3.0, env_rhoph_ = 20.0, env_cph2_ = 240.25, env_rtop_ = 4.11;
 Real env_tro_ = 1.0e-4, env_tri_ = 1.0e-4, env_trs_ = 1.0e-4, env_phis_ = 0.0, env_racc_ = 4.06;
 Real env_dlt_ = 0.0;           // (spin^2 - 1) Omega^2 / 2
+// problem/env_cool (default false): the envelope and stream/atmosphere relaxation times become
+// the local radiative cooling time (diffusion + optically thin bridge, ES + Kramers opacity);
+// the hot ambient keeps env_t_relax.  Constants in cgs, set in EnvSetup.
+bool env_cool_ = false;
+Real cool_rhou_ = 5.11e-8;      // g/cc per code density (problem/cool_rho_unit)
+Real cool_kes_ = 0.34;          // cm^2/g electron scattering (problem/cool_kappa_es)
+Real cool_kk0_ = 1.5e24;        // Kramers kappa = k0 rho T^-3.5 (problem/cool_kappa_k0)
+Real cool_tfac_ = 0.0;          // K per (km/s)^2 of P/rho: mu m_H kVel^2 / k_B (problem/cool_mu)
+Real cool_tmin_ = 0.0;          // floor of the cooling time [code time] (problem/cool_t_min)
 Real env_rhoamb_ = 1.0e-6;     // floor (ambient) density = problem/rho_amb
 Real env_camb2_ = 9.0e4;       // hot hydrostatic ambient P/rho (problem/env_cs_amb^2)
 Real env_ramb_ = 1.0e-6;       // ambient density at r = R_acc (problem/env_amb_rho)
@@ -597,6 +606,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
   const Real om2 = 2.0*rp_.omega;
   const Real cph2 = env_cph2_, tro = env_tro_, tri = env_tri_, trs = env_trs_;
+  const bool cool = env_cool_;
+  const Real rhou = cool_rhou_, kes = cool_kes_, kk0 = cool_kk0_, tfac = cool_tfac_;
+  const Real tcmin = cool_tmin_, gma = rp_.gma, lu = kRsun, vu = kVel, tu = kTime;
   const Real rfl = env_rhoamb_, tsp = env_tsp_, fsp = env_fsp_;
   const Real vcap = env_vcap_;
   const Real kamb = env_kamb_, camb2 = env_camb2_, cstr2 = env_cstr2_, rhot = env_rhot_;
@@ -633,6 +645,21 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       const bool dense = (d > kamb*ramb(m,k,i));
       ct = dense ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
       tr = dense ? trs : tro;
+    }
+    // local cooling time: t = e_gas/(c a T^4) (1/(kappa_abs rho) + 3 kappa rho H^2): thin
+    // emission by the absorption (Kramers) opacity, diffusion by ES + Kramers; H = (P/rho)/g,
+    // g = G M_a / r^2 (cgs inside, converted to code time); not for the hot ambient
+    if (cool && (inside || d > kamb*ramb(m,k,i)) && e > 0.0 && d > 0.0) {
+      const Real c2 = gm1*e/d;                                   // (km/s)^2
+      const Real tk = tfac*c2;                                   // K
+      const Real rc = d*rhou;                                    // g/cc
+      const Real kab = kk0*rc*pow(tk, -3.5);                     // cm^2/g, Kramers
+      const Real hl = fmin(c2*SQR(x1v(m,i))/gma, x1v(m,i))*lu;    // cm
+      const Real eg = e*rhou*vu*vu;                              // erg/cc
+      const Real at4 = 7.5657e-15*SQR(SQR(tk));                  // erg/cc
+      const Real kr = (kes + kab)*rc;
+      tr = eg/(2.99792458e10*at4)*(1.0/(kab*rc) + 3.0*kr*hl*hl)/tu;
+      tr = fmax(tr, tcmin);
     }
     if (tr > 0.0) {
       u0(m,IEN,k,j,i) += (d*ct/gm1 - e)*(1.0 - exp(-bdt/tr));
@@ -790,6 +817,15 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // stream/atmosphere gas outside the envelope (rho > env_amb_k rho_amb); default
   // env_t_relax (bitwise as before).  0 = adiabatic stream (shock heating kept).
   env_trs_ = pin->GetOrAddReal("problem", "env_t_relax_stream", env_tro_);
+  env_cool_ = pin->GetOrAddBoolean("problem", "env_cool", false);
+  if (env_cool_) {
+    cool_rhou_ = pin->GetReal("problem", "cool_rho_unit");
+    cool_kes_ = pin->GetOrAddReal("problem", "cool_kappa_es", 0.34);
+    cool_kk0_ = pin->GetOrAddReal("problem", "cool_kappa_k0", 1.5e24);
+    const Real mu = pin->GetOrAddReal("problem", "cool_mu", 0.62);
+    cool_tfac_ = mu*1.67262192e-24*kVel*kVel/1.380649e-16;
+    cool_tmin_ = pin->GetOrAddReal("problem", "cool_t_min", 0.0);
+  }
   std::string ws = pin->GetOrAddString("problem", "env_wall_slip", "free");
   env_noslip_ = (ws.compare("noslip") == 0);
   if (!env_noslip_ && ws.compare("free") != 0) {
