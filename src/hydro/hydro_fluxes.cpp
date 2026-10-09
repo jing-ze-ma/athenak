@@ -508,7 +508,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                 ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
     auto &flx2_ = uflx.x2f;
       
-    auto &x2v_ = pmy_pack->pcoord->x2v;
+    auto &x2v_ = pmy_pack->pcoord->x2v_rec;  // == x2v unless sp_x2_periodic_image
     auto &x2f_ = pmy_pack->pcoord->xx2f;
 
     // set the loop limits for 1D/2D/3D problems
