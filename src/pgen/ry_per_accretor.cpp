@@ -250,6 +250,9 @@ Real rad_pn0_ = 0.0, rad_ps0_ = 0.0;   // Picard counters at the previous histor
 bool amb_radeq_ = false;
 bool strad_ = false;
 Real strad_e_ = 0.0;           // a T_s^4 of the window (code)
+bool stprof_ = false;          // problem/stream_t_profile = diffusion (StreamT)
+Real gen_tsurf_ = 0.0;         // problem/stream_t_surf (code T): the profile's floor
+Real strad_ar_ = 0.0;          // <rad_m1> arad, for E = a T(phi)^4 in the window ghosts
 DvceArray3D<Real> rbath_;      // per-column outer Marshak bath (m,k,j), handed to <rad_m1>
 std::vector<Real> rcol_psi_, rcol_g_, rcol_f_;   // column psi, G(psi), F(psi) [code]
 
@@ -295,6 +298,19 @@ Real WrapPhi(Real d) {
   if (d > M_PI) d -= tp;
   if (d < -M_PI) d += tp;
   return d;
+}
+
+//! problem/stream_t_profile = diffusion (S5, user 10-09): the stream's T across the window.
+//! The core T_c (env_t_stream, the one-zone value) falls toward the stream surface as the
+//! lowest diffusion (cooling) mode of a slab in optical-depth coordinate, T^4 = T_c^4
+//! cos(pi/2 tau(x)/tau_half), with tau(x)/tau_half = erf(|x|/sqrt 2) for the Gaussian
+//! density at constant opacity (x = dphi/sigma), clamped below at the thin
+//! radiative-equilibrium T_eq (problem/stream_t_surf).  On = false: T_c everywhere.
+KOKKOS_INLINE_FUNCTION
+Real StreamT(const bool on, const Real tc, const Real teq, const Real x) {
+  if (!on) return tc;
+  const Real c = cos(0.5*M_PI*erf(fabs(x)/sqrt(2.0)));
+  return fmax(tc*sqrt(sqrt(fmax(c, 0.0))), teq);
 }
 
 //----------------------------------------------------------------------------------------
@@ -619,6 +635,8 @@ void RyPerBCEnv(Mesh *pm) {
   const bool rad = rad_;
   const bool strad = strad_;
   const Real sre = strad_e_;
+  const bool stp = stprof_;
+  const Real tsf = gen_tsurf_, sar = strad_ar_;
   auto pwcc = pmbp->phydro->phicc_wb;
   DvceArray5D<Real> ur;
   Real rcl = 1.0, refl = 0.0;
@@ -707,7 +725,7 @@ void RyPerBCEnv(Mesh *pm) {
           Real dg, v1, v2, v3, tg;
           if (win) {
             dg = rhos*exp(-0.5*SQR(dph/sig));
-            v1 = vrs; v2 = 0.0; v3 = vps; tg = tstr;
+            v1 = vrs; v2 = 0.0; v3 = vps; tg = StreamT(stp, tstr, tsf, dph/sig);
           } else {
             const Real pg = RochePot(p, x1v(m,ig), ph);
             Real eg = ea, tw = ta;
@@ -728,10 +746,11 @@ void RyPerBCEnv(Mesh *pm) {
             if (win && strad) {
               // problem/stream_rad: the stream's radiation in equilibrium with its gas,
               // E = a T_s^4, lab-frame flux of optically thick advection (4/3) E v
-              ur(m,radm1::M1_E,k,j,ig) = sre;
-              ur(m,radm1::M1_F1,k,j,ig) = (4.0/3.0)*sre*v1;
+              const Real eg = stp ? sar*SQR(SQR(tg)) : sre;
+              ur(m,radm1::M1_E,k,j,ig) = eg;
+              ur(m,radm1::M1_F1,k,j,ig) = (4.0/3.0)*eg*v1;
               ur(m,radm1::M1_F2,k,j,ig) = 0.0;
-              ur(m,radm1::M1_F3,k,j,ig) = (4.0/3.0)*sre*v3;
+              ur(m,radm1::M1_F3,k,j,ig) = (4.0/3.0)*eg*v3;
             } else {
               radm1::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
             }
@@ -1950,6 +1969,21 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     }
     strad_ = pin->DoesParameterExist("problem", "stream_rad") &&
              pin->GetBoolean("problem", "stream_rad");
+    stprof_ = false;
+    if (pin->DoesParameterExist("problem", "stream_t_profile")) {
+      const std::string sp = pin->GetString("problem", "stream_t_profile");
+      stprof_ = (sp.compare("diffusion") == 0);
+      if (!stprof_ && sp.compare("uniform") != 0) {
+        fatal5("stream_t_profile must be uniform | diffusion");
+      }
+      if (stprof_) {
+        gen_tsurf_ = pin->GetReal("problem", "stream_t_surf")/eos.temp_cgs;
+        if (!gen_ || !(gen_tsurf_ > 0.0 && gen_tsurf_ <= gen_tstr_)) {
+          fatal5("stream_t_profile = diffusion needs thermo = general and 0 < "
+                 "stream_t_surf <= env_t_stream");
+        }
+      }
+    }
     if ((amb_radeq_ || strad_) && !rad_) {
       fatal5("env_amb_mode = radeq and stream_rad need <rad_m1>");
     }
@@ -1980,11 +2014,25 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       auto rb = rbath_;
       auto &x3c = pmbp->pcoord->x3v;
       const bool on = strad_ && stream_on_;
-      const Real es = strad_e_, phs = phi_s_, ww = nsig_*sig_;
+      strad_ar_ = pm1->arad;
+      const Real es = strad_e_, phs = phi_s_, ww = nsig_*sig_, sg = sig_;
+      const bool stp = stprof_;
+      const Real tc = gen_tstr_, tsf = gen_tsurf_, ar = pm1->arad;
       par_for("ryper_bath", DevExeSpace(), 0, nb - 1, 0, m3 - 1, 0, m2 - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j) {
-        rb(m,k,j) = (on && fabs(WrapPhi(x3c(m,k) - phs)) < ww) ? es : 0.0;
+        const Real dph = WrapPhi(x3c(m,k) - phs);
+        const Real t = StreamT(stp, tc, tsf, dph/sg);
+        rb(m,k,j) = (on && fabs(dph) < ww) ? (stp ? ar*SQR(SQR(t)) : es) : 0.0;
       });
+      if (root && stp) {
+        std::printf("ry_per_accretor: stream_t_profile = diffusion: T at x = dphi/sigma = 0, 1, "
+                    "2, 2.5, 3: %.0f %.0f %.0f %.0f %.0f K (floor stream_t_surf %.0f K)\n",
+                    StreamT(true, tc, tsf, 0.0)*eos.temp_cgs,
+                    StreamT(true, tc, tsf, 1.0)*eos.temp_cgs,
+                    StreamT(true, tc, tsf, 2.0)*eos.temp_cgs,
+                    StreamT(true, tc, tsf, 2.5)*eos.temp_cgs,
+                    StreamT(true, tc, tsf, 3.0)*eos.temp_cgs, tsf*eos.temp_cgs);
+      }
       pm1->SetX1maxBathColumns(rbath_);
       if (root) {
         std::printf("ry_per_accretor: S5: ambient %s; stream radiation %s (E = a T_s^4 = "

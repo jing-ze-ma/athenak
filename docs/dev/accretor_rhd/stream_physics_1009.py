@@ -268,3 +268,19 @@ for xs in (0.0, 1.0, 2.0, 2.5, 3.0):
     tau = kR(r2, T2)*r2*sperp*Rsun*np.sqrt(np.pi/2)*erfc(xs/np.sqrt(2))
     print('  window x = %.1f sigma: rho %.3e g/cc  Prad/Pgas %.3f  kR %.3f kP %.2f  tau(>x, core kR) %.3g'
           % (xs, rr, pr(T2)/pg(rr, T2), kR(rr, T2), kP(rr, T2), tau))
+
+# ---------------------------------------------------------------- (6) transverse T profile (user 10-09)
+# problem/stream_t_profile = diffusion: T^4 = max(T_c^4 cos(pi/2 erf(|x|/sqrt2)), T_eq^4), x = dphi/sigma:
+# the lowest cooling (diffusion) mode of a slab in optical depth, tau(x)/tau_half = erf(|x|/sqrt 2) for a
+# Gaussian density at constant opacity, clamped at the thin radiative-equilibrium T with both stars.
+print('\n## (6) transverse T profile (stream_t_profile = diffusion, stream_t_surf = T_eq %.0f K)' % Teq)
+xs_ = np.linspace(-3, 3, 6001); dx_ = xs_[1] - xs_[0]
+Tx = np.maximum(T2*np.cos(0.5*np.pi*erf(np.abs(xs_)/np.sqrt(2)))**0.25, Teq)
+for xs in (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0):
+    i = np.argmin(np.abs(xs_ - xs)); rr = r2*np.exp(-0.5*xs*xs); T = Tx[i]
+    print('  x = %.1f: T %.0f K  rho %.3e  Prad/Pgas %.3f  E = aT^4 %.4g code' % (xs, T, rr, pr(T)/pg(rr, T), A_RAD*T**4/eu))
+fr_rad_p = 4.0/3.0*A_RAD*np.sum(Tx**4)*dx_*vr5*warc*Rsun
+gp = np.array([eg(r2*np.exp(-0.5*x*x), T) + pg(r2*np.exp(-0.5*x*x), T) for x, T in zip(xs_[::20], Tx[::20])])
+fr_gas_p = np.sum(gp)*dx_*20*vr5*warc*Rsun
+print('window fluxes per unit z with the profile: radiation %.3e (uniform T: %.3e), gas enthalpy %.3e; '
+      'radiation/gas %.3f, radiation/kinetic %.3f' % (fr_rad_p, fr_rad, fr_gas_p, fr_rad_p/fr_gas_p, fr_rad_p/fr_kin))

@@ -154,6 +154,7 @@ implicit_g0_exchange = true
 implicit_g0_limit = 1.0
 implicit_pos_gas = true
 implicit_pos_floor = true
+implicit_pos_floor_solve = true      # mem-1009 fixbundle F3 (viper 10-09 production): energy-consistent e_floor handling
 implicit_precond = rbgs_fwd
 vet_col_every    = 1
 marshak_q        = 0.5
@@ -215,6 +216,9 @@ stream_rad  = true                   # S5: the window injects the stream's radia
 rho_stream  = 0.240807               # code (1.2305e-8 g/cc): one-zone core at r_out, Mdot 1e-4 Msun/yr, Ryu adiabatic Q 0.649
 rho_amb     = 1.0e-8                 # FLOOR density (= hydro dfloor) = the ambient (5.1e-16 g/cc)
 stream_nsig = 3.0
+stream_t_profile = diffusion        # user 10-09: T falls from the core (env_t_stream) to the surface as the lowest diffusion mode,
+                                     # T^4 = T_c^4 cos(pi/2 erf(|x|/sqrt2)), x = dphi/sigma, clamped at stream_t_surf (stream_physics_1009.py sect. 6)
+stream_t_surf = 19239.0              # K, thin radiative-equilibrium T at r_out with both stars (stream_physics_1009.py)
 stream_width = 1.5362                # Rsun at r_out (sigma_phi 6.38 deg): sigma_perp 1.3850 / cos 25.6 deg (one-zone c_iso 34.96 km/s)
 
 <output1>
