@@ -214,6 +214,23 @@ void M1HrCell(const int src, const V &iw, const V &vc, const VH &gh, const int m
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1HrJFlag
+//! \brief xthinfix-1009 (implicit_blend_xthin_mode = beam_kn): 1 when the formal-solution
+//! J of the cell (vet_sc, src 1) is out of equilibrium with the iterate E by more than a
+//! factor 3 (a light front crossing the cell this step: the lagged E has no gradient to
+//! test yet), else 0.  No J for the other sources: 0.
+
+template <class V, class VC>
+KOKKOS_INLINE_FUNCTION
+Real M1HrJFlag(const int src, const V &iw, const VC &vc, const int m, const int k,
+               const int j, const int i) {
+  if (src != 1) {return 0.0;}
+  const Real jj = vc(m,M1_VET_J,k,j,i);
+  const Real ee = iw(m,M1_IW_EP,k,j,i);
+  return (jj > 3.0*ee || 3.0*jj < ee) ? 1.0 : 0.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1HrFace
 //! \brief hrup-1009: AL, HCL, HCR of one face from hp of the LEFT cell and hm of the
 //! RIGHT cell: the upwind half-range flux c (hp_L E_L + hm_R E_R) weighted by the AP
@@ -241,7 +258,7 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
               const Real btau0, const Real bflo, const Real bfhi, const Real balpha,
               const Real ch, const Real el, const Real er, const Real br0,
               const Real hml, const Real hpr, const Real cdx, const Real bx0,
-              const int bxmode, const Real bxwmin, const Real bxr0,
+              const int bxmode, const Real bxwmin, const Real bxr0, const Real bxj,
               Real &alw, Real &ccl, Real &ccr) {
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
@@ -289,26 +306,31 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
   //   beam (1):    only faces whose weight is already > implicit_blend_xthin_wmin (the
   //                mixed beam/central faces); diffusive faces keep the plain weight, so
   //                smooth fields stay central and converge (order_1009);
-  //   beam_kn (2): beam, plus the faces with w <= wmin whose field is NOT diffusive, by
-  //                the Knudsen ratio R = |E_R - E_L|/(tau_f max(E_L, E_R)) (= 3|F|/cE in
-  //                the diffusion limit, -> infinity in vacuum next to a beam or shadow),
-  //                weighted R^4/(R^4 + R0^4), R0 = implicit_blend_xthin_r0.  As in the
-  //                always-dissipative HLLE of Jiang+ 2012 / Menon+ 2022 the transparent
-  //                vacuum faces stay upwind (realisable, well conditioned), but a
-  //                diffusive transition layer (R < R0) stays central (xthinfix_1009).
+  //   beam_kn (2): beam, plus the TRANSPARENT faces with w <= wmin whose field is NOT
+  //                diffusive: weight max(R^4/(R^4 + R0^4), bxj) X^8/(X^8 + X0^8),
+  //                R = |E_R - E_L|/(tau_f max(E_L, E_R)) the face Knudsen ratio (= 3|F|/
+  //                cE in the diffusion limit, -> infinity in vacuum next to a beam),
+  //                R0 = implicit_blend_xthin_r0, and bxj = 1 where the formal-solution J
+  //                and E differ by > 3x (a light front, M1HrJFlag).  The steep X^8 keeps
+  //                the override off for X < X0 (a thin time-dependent field at c dt/dx
+  //                < X0 stays central and consistent).  As in the always-dissipative HLLE
+  //                of Jiang+ 2012 / Menon+ 2022, transparent non-diffusive faces stay
+  //                upwind (realisable, well conditioned); a diffusive transition layer
+  //                stays central (xthinfix_1009).
   if (bx0 > 0.0) {
-    Real g = 1.0;
+    const Real x = cdx/(1.0 + cdx*tauf);
+    Real s2 = x*x/(x*x + bx0*bx0);   // the hrup-1009 expression, kept for bitwise GPU
     if (bxmode != 0 && !(w > bxwmin)) {
-      g = 0.0;
+      Real g = 0.0;
       if (bxmode == 2) {
         const Real em = fmax(fmax(el, er), 1.0e-300);
         const Real r = fabs(er - el)/fmax(tauf*em, 1.0e-300*em);
         const Real r4 = SQR(SQR(fmin(r, 1.0e30)));
-        g = r4/(r4 + SQR(SQR(bxr0)));
+        const Real x8 = SQR(SQR(SQR(fmin(x/bx0, 1.0e30))));
+        g = fmax(r4/(r4 + SQR(SQR(bxr0))), bxj)*x8/(x8 + 1.0);
       }
+      s2 = g;
     }
-    const Real x = cdx/(1.0 + cdx*tauf);
-    const Real s2 = g*x*x/(x*x + bx0*bx0);
     w = 1.0 - (1.0 - w)*(1.0 - s2);
   }
   alw = w;
@@ -2743,6 +2765,8 @@ void RadiationM1::ImplicitLatFaceCoef() {
         M1HrCell(hsrc, iw_, hvc_, hgh_, m, k, j, i, d, 0.0, hp, hm, fb);
         iw_(m,M1_IW_S1,k,j,i) = hp;
         iw_(m,M1_IW_S3,k,j,i) = hm;
+        // beam_kn: the light-front flag (M1HrJFlag) rides in RES as fb + 2 (fb <= 1)
+        if (bxmode == 2) {fb += 2.0*M1HrJFlag(hsrc, iw_, hvc_, m, k, j, i);}
         iw_(m,M1_IW_RES,k,j,i) = fb;
       });
       ImplicitHaloExchange(1, M1_IW_S1);
@@ -2771,12 +2795,14 @@ void RadiationM1::ImplicitLatFaceCoef() {
         if (sph) {dx = (d == 1) ? cdxf.x2f(m,k,j,i) : cdxf.x3f(m,k,j,i);}
         const Real tauf = 0.5*(iw_(m,M1_IW_KT,km,jm,i) + iw_(m,M1_IW_KT,k,j,i))*dx;
         Real al, hl, hr;
-        M1HrFace(iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,k,j,i), iw_(m,M1_IW_RES,km,jm,i),
-                 iw_(m,M1_IW_RES,k,j,i), tauf, blend, bkind, bfm, btau0, bflo, bfhi,
-                 balph,
+        Real fbl = iw_(m,M1_IW_RES,km,jm,i), fbr = iw_(m,M1_IW_RES,k,j,i), jfl = 0.0;
+        if (fbl > 1.5) {fbl -= 2.0; jfl = 1.0;}
+        if (fbr > 1.5) {fbr -= 2.0; jfl = 1.0;}
+        M1HrFace(iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,k,j,i), fbl, fbr, tauf, blend,
+                 bkind, bfm, btau0, bflo, bfhi, balph,
                  ch, iw_(m,M1_IW_EP,km,jm,i), iw_(m,M1_IW_EP,k,j,i), br0,
                  iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxmode,
-                 bxwmin, bxr0, al, hl, hr);
+                 bxwmin, bxr0, jfl, al, hl, hr);
         fw(m,M1_IFW_AL,k,j,i) = al;
         fw(m,M1_IFW_HCL,k,j,i) = hl;
         fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -9767,8 +9793,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real alb, hlb, hrb;
           M1HrFace(hpl, hmr, fbl, fbr, tauf, blend, bkind, bfm, btau0, bflo, bfhi, balph,
                    ch, iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip), br0, hml, hpr,
-                   ch*dt/dx, bx0, bxmode, bxwmin, bxr0, alb, hlb,
-                   hrb);
+                   ch*dt/dx, bx0, bxmode, bxwmin, bxr0,
+                   (bxmode == 2) ? fmax(M1HrJFlag(hsrc, iw_, hvc_, m, k, j, im),
+                                        M1HrJFlag(hsrc, iw_, hvc_, m, k, j, ip)) : 0.0,
+                   alb, hlb, hrb);
           ifw_(m,M1_IFW_AL,k,j,i) = alb;
           ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
           ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
