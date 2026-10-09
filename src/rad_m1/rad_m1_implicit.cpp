@@ -1886,10 +1886,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_flux_beam = fs needs implicit_flux_faces = all on a "
               "multi-D mesh and closure = vet_sc, or vet_gd on the sp wedge");
   }
-  if (blat_on && impl_vimp) {
-    ImplFatal("<rad_m1>/implicit_flux_faces = all does not take implicit_vimp (the "
-              "transverse vimp Jacobian has no berthon part)");
-  }
   if (blat_on && part_nblk > 1) {
     ImplFatal("<rad_m1>/implicit_flux_faces = all needs one MeshBlock along x1");
   }
@@ -7970,6 +7966,9 @@ void RadiationM1::ImplicitVimpBuild() {
   auto th2_ = thx2;
   auto th3_ = thx3;
   const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
+  const bool blt = blat_on;   // vimphr-1009: the x2/x3 berthon / half-range part
+  auto bw2_ = ifw2;
+  auto bw3_ = ifw3;
   auto mbsize = pmy_pack->pmb->mb_size.d_view;
   auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // CS1: seams open
   auto pos_ = part_pos.d_view;
@@ -8141,6 +8140,18 @@ void RadiationM1::ImplicitVimpBuild() {
               const Real bsp = th*ch*cl*dt/dxs;
               cL[s] = bsp*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
               cR[s] = -bsp*M1DDiag(iw_,vd_,dfull,m,d,kq,jq,i);
+            }
+            // vimphr-1009: implicit_flux_faces = all.  The face flux the write-back
+            // stores (and dv^k is built from) is th (1 - AL) F_central + (c/chat)
+            // (HCL E_L + HCR E_R), th already carrying (1 - AL) (thx2/thx3, lm true);
+            // the Jacobian row takes the same berthon / half-range part
+            if (blt) {
+              const Real hcl = (d == 1) ? bw2_(m,M1_IFW_HCL,k,cf,i)
+                                        : bw3_(m,M1_IFW_HCL,cf,j,i);
+              const Real hcr = (d == 1) ? bw2_(m,M1_IFW_HCR,k,cf,i)
+                                        : bw3_(m,M1_IFW_HCR,cf,j,i);
+              cL[s] += (cl/ch)*hcl;
+              cR[s] += (cl/ch)*hcr;
             }
           }
         }
