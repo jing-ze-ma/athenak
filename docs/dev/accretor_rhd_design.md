@@ -577,3 +577,19 @@ docs/dev/accretor_rhd/plaskett_s5_1009.md; runs rhd/s5/.
   12.2 d wall (24.4 GPU-d); nx3 1024 x 1 H200 (static ratio 0.51, dt radial-limited, unchanged) -> 13.7 h,
   11.4 d; 1024 x 2 H200 (1.6x assumed) ~8.6 h, ~7.2 d wall. Approach phase: dt 7.0e-6 (4.6x S3a) at
   0.95-1.05 s/cycle (Picard 11-15). The injected stream ran at Picard ~15 (vs 12 gas-only).
+
+### 11.3 Option (a): transverse T profile (user 10-09), a844c97d
+- `problem/stream_t_profile = diffusion` + `stream_t_surf` (default uniform, bitwise): T^4 = max(T_c^4
+  cos(pi/2 erf(|x|/sqrt2)), T_eq^4), x = dphi/sigma (lowest cooling mode of a slab in optical depth at
+  constant opacity; T_eq 19239 K, both stars); gas and injected radiation follow the local T. Window
+  T 64.8 / 53.9 / 33.5 / 24.2 / 19.2 kK at 0/1/2/2.5/3 sigma; P_rad/P_gas 0.40-0.52 inside 2.5 sigma (1.0 at 3);
+  injected radiation 2.8x lower (0.37 of the gas enthalpy flux). Input adds implicit_pos_floor_solve = true.
+- Gates (a844c97d): env13, env13_cool, S2 identical to the refs; S3a-final and an S5 uniform stream_rad input
+  (nx3 256, stream on, 20 cycles) identical to ce3cc213 (hst, bin, cycle/dt).
+- Smoke (rhd/s5/smoke_prof, restart of the static state): approach as before (Picard 7 -> 15, dt 7.03e-6,
+  budget 1.7e-7, mass closes); core 62.6 (r_out) / 50.5 (12) / 33.0 (11) / 22.8 kK (10). **Picard DIVERGED at
+  t = 0.02432** (resid 3.4e14) at r 9.50, phi 8.5 deg: the same head/atmosphere contact. Diagnostic dumps
+  (crash_prof): between t 0.02406 and 0.02431 the column from the photosphere top (r 9.45, where f_rr -> 1
+  and the cell-centred L collapses) up through the arriving head (rho 3e-5..1e-3 code, v -420 km/s) cools
+  21 -> 10 kK with T_gas = T_rad; the head above radiates inward (F < 0). Stopped per instruction; module
+  work (option d) not started.
