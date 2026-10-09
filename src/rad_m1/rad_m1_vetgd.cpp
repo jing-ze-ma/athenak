@@ -903,6 +903,10 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
   }
   if (mpi) {
     auto rb_ = vgd_rbuf;
+    // vet_gd_twin_fuse: the twin's band (b, from its own expanded buffer) in the same
+    // threads; the main writes are unchanged
+    auto b_ = two ? *b : a;
+    auto rb2_ = two ? vgd_rbuf2 : vgd_rbuf;
     par_for("m1_vgd_unpack", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
     KOKKOS_LAMBDA(const int m, const int o, const int t) {
       if (hl_(8*m + o) >= 0) {return;}
@@ -921,51 +925,22 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
       const int ii = r2 - jj*ni;
       const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nvi;
       if (mapd && wint && wl_(m,kd+kk,jd+jj) != 0) {
-        Real val = 0.0;
+        Real val = 0.0, val2 = 0.0;
         for (int q = 0; q < 3; ++q) {
           const int vq = m3_(m,kd+kk,jd+jj,v,q);
-          val += w3_(m,kd+kk,jd+jj,v,q)*rb_(rb0 + ((vq*kn + kk)*jn + jj)*ni + ii);
+          const size_t at = rb0 + ((vq*kn + kk)*jn + jj)*ni + ii;
+          val += w3_(m,kd+kk,jd+jj,v,q)*rb_(at);
+          if (two) {val2 += w3_(m,kd+kk,jd+jj,v,q)*rb2_(at);}
         }
         a_(m,v,kd+kk,jd+jj,i0+ii) = val;
+        if (two) {b_(m,v,kd+kk,jd+jj,i0+ii) = val2;}
         return;
       }
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
-      a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(rb0 + ((vs*kn + kk)*jn + jj)*ni + ii);
+      const size_t at = rb0 + ((vs*kn + kk)*jn + jj)*ni + ii;
+      a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(at);
+      if (two) {b_(m,v,kd+kk,jd+jj,i0+ii) = rb2_(at);}
     });
-    if (two) {
-      // the twin's band: the same unpack from its own expanded buffer
-      auto b_ = *b;
-      auto rb2_ = vgd_rbuf2;
-      par_for("m1_vgd_unpack2", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
-      KOKKOS_LAMBDA(const int m, const int o, const int t) {
-        if (hl_(8*m + o) >= 0) {return;}
-        const int oo = (o < 4) ? o : (o + 1);
-        const int dk = oo/3 - 1, dj = oo%3 - 1;
-        const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
-        const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
-        const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
-        const int cnt = nv*kn*jn*ni;
-        if (t >= cnt) {return;}
-        const int v = t/(kn*jn*ni);
-        const int r1 = t - v*kn*jn*ni;
-        const int kk = r1/(jn*ni);
-        const int r2 = r1 - kk*jn*ni;
-        const int jj = r2/ni;
-        const int ii = r2 - jj*ni;
-        const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nvi;
-        if (mapd && wint && wl_(m,kd+kk,jd+jj) != 0) {
-          Real val = 0.0;
-          for (int q = 0; q < 3; ++q) {
-            const int vq = m3_(m,kd+kk,jd+jj,v,q);
-            val += w3_(m,kd+kk,jd+jj,v,q)*rb2_(rb0 + ((vq*kn + kk)*jn + jj)*ni + ii);
-          }
-          b_(m,v,kd+kk,jd+jj,i0+ii) = val;
-          return;
-        }
-        const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
-        b_(m,v,kd+kk,jd+jj,i0+ii) = rb2_(rb0 + ((vs*kn + kk)*jn + jj)*ni + ii);
-      });
-    }
   }
 #endif
 }
