@@ -718,6 +718,62 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       break;
     }
   }
+  // fixbundle-1009 F7 problem/he_ic_rad_thin (default false = bitwise): the initial
+  // radiation above the photosphere (tau_R < 2/3 from the mesh top, this column) is the
+  // uniformly bright sphere's, E = F_r/(c f), f = (1 + mu_c)/2, mu_c = sqrt(1 -
+  // (R_ph/r)^2), instead of the column's a T^4; F_r is the column's own (= L/(4 pi r^2)
+  // there; printed).  Below R_ph E is blended into the column's: E = w 2F/c + (1 - w)
+  // E_col with w a smoothstep in tau from 1 at 2/3 to 0 at he_ic_rad_thin_taub (default
+  // 2), so E is continuous at R_ph (f = 1/2 there).  Gas T, rho, F, a_ref unchanged
+  // (the thin gas is decoupled; changing T would break the column's balance).
+  if (pin->GetOrAddBoolean("problem","he_ic_rad_thin",false)) {
+    const Real taub = pin->GetOrAddReal("problem","he_ic_rad_thin_taub",2.0);
+    const Real t23 = 2.0/3.0;
+    if (!(taub > t23)) HsFatal("problem/he_ic_rad_thin_taub must exceed 2/3", __LINE__);
+    Real rph = -1.0;
+    for (int n=nf-2; n>=0; --n) {
+      if (tau[n] >= t23 && tau[n+1] < t23) {
+        rph = hr[n] + hs_dr_*(tau[n] - t23)/(tau[n] - tau[n+1]);
+        break;
+      }
+    }
+    if (!(rph > 0.0)) HsFatal("problem/he_ic_rad_thin: tau_R = 2/3 not on the column",
+                              __LINE__);
+    auto hEc = Kokkos::create_mirror_view(cE);
+    Kokkos::deep_copy(hEc, cE);
+    const Real lph = 4.0*M_PI*rph*rph;
+    Real fdev = 0.0, lum = 0.0;
+    {
+      const Real x = (rph - hs_rlo_)/hs_dr_;
+      const int i = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
+      const Real w = x - i;
+      lum = lph*((1.0 - w)*hF[i] + w*hF[i+1]);
+    }
+    int nmod = 0;
+    for (int n=0; n<nf; ++n) {
+      if (tau[n] >= taub) continue;
+      const Real r = hr[n], f = hF[n];
+      Real e;
+      if (r >= rph) {
+        const Real mu = sqrt(fmax(1.0 - SQR(rph/r), 0.0));
+        e = f/(cl*0.5*(1.0 + mu));
+        if (r <= rtop) fdev = std::max(fdev, std::fabs(4.0*M_PI*r*r*f/lum - 1.0));
+      } else {
+        const Real x = (taub - tau[n])/(taub - t23);   // 0 at taub, 1 at 2/3
+        const Real w = (x >= 1.0) ? 1.0 : x*x*(3.0 - 2.0*x);
+        e = w*2.0*f/cl + (1.0 - w)*hEc(n);
+      }
+      hEc(n) = e;
+      ++nmod;
+    }
+    Kokkos::deep_copy(cE, hEc);
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: he_ic_rad_thin: R_ph (tau_R = 2/3) = " << rph
+                << ", L = " << lum << ", blend to tau " << taub << ", column points "
+                << nmod << ", max |4 pi r^2 F/L - 1| above R_ph (mesh) = " << fdev
+                << std::endl;
+    }
+  }
   for (int n=1; n<nf; ++n) cum[n] = cum[n-1] + 0.5*hs_dr_*(aref[n-1] + aref[n]);
   Real cin = 0.0;
   {
@@ -1642,6 +1698,53 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     const Real w = HsMltW(pm->time);
     if (w != hs_mw_) HsApplyMltW(pm, w);
   }
+  // fixbundle-1009 F6 localisation (<rad_m1>/dbg_energy_tally, output only): sum IEN V
+  // after each part of this source and the hydro energy flux through the x1 boundary
+  // faces
+  const bool htal = (pmbp->pradm1 != nullptr) && pmbp->pradm1->dbg_etally;
+  auto htsum = [&]() {
+    Real s = 0.0;
+    const int nx1 = ie - is + 1, nx2 = je - js + 1, nx3 = ke - ks + 1;
+    Kokkos::parallel_reduce("hs_htally", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nx3*nx2*nx1),
+    KOKKOS_LAMBDA(const int n, Real &acc) {
+      const int m = n/(nx3*nx2*nx1);
+      const int k = (n/(nx2*nx1))%nx3 + ks, j = (n/nx1)%nx2 + js, i = n%nx1 + is;
+      acc += u0(m,IEN,k,j,i)*volume(m,k,j,i);
+    }, Kokkos::Sum<Real>(s));
+#if MPI_PARALLEL_ENABLED
+    Real g = 0.0;
+    MPI_Allreduce(&s, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    s = g;
+#endif
+    return s;
+  };
+  Real ht[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  if (htal) {
+    ht[0] = htsum();
+    auto flx1 = ph->uflx->x1f;
+    const int nx2 = je - js + 1, nx3 = ke - ks + 1;
+    Real fb[2];
+    for (int q = 0; q < 2; ++q) {
+      Real s = 0.0;
+      const int ib = (q == 0) ? is : (ie + 1);
+      Kokkos::parallel_reduce("hs_htally_f", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              (nmb1 + 1)*nx3*nx2),
+      KOKKOS_LAMBDA(const int n, Real &acc) {
+        const int m = n/(nx3*nx2);
+        const int k = (n/nx2)%nx3 + ks, j = n%nx2 + js;
+        acc += bdt*flx1(m,IEN,k,j,ib)*area1(m,k,j,ib);
+      }, Kokkos::Sum<Real>(s));
+      fb[q] = s;
+    }
+#if MPI_PARALLEL_ENABLED
+    Real g[2];
+    MPI_Allreduce(fb, g, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    fb[0] = g[0]; fb[1] = g[1];
+#endif
+    ht[4] = fb[0];
+    ht[5] = fb[1];
+  }
   par_for("hs_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
@@ -1675,6 +1778,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       });
     }
   }
+  if (htal) {ht[1] = htsum();}
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
   // Riemann flux through a "closed" wall carries mass.  The inner wall loses its mass,
   // transverse momentum and energy fluxes (u0 was just updated with them); the pressure
@@ -1702,6 +1806,16 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       }
     });
   }
+  if (htal) {
+    ht[2] = htsum();
+    if (hs_sp_rate_ <= 0.0) {ht[3] = ht[2];}
+    if (global_variable::my_rank == 0 && hs_sp_rate_ <= 0.0) {
+      std::printf("HTALLY cycle=%d bdt=%.6e fws=%.10e zflux=%.10e sponge=%.10e "
+                  "flx_in=%.10e flx_out=%.10e in=%.16e out=%.16e\n", pm->ncycle, bdt,
+                  ht[1] - ht[0],
+                  ht[2] - ht[1], 0.0, ht[4], ht[5], ht[0], ht[3]);
+    }
+  }
   if (hs_sp_rate_ <= 0.0) return;
   // top sponge: the velocity relaxes to zero at the rate he_sponge_rate*w,
   // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the total
@@ -1721,6 +1835,15 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       u0(m,IM1,k,j,i) *= f;
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke1;
     });
+    if (htal) {
+      ht[3] = htsum();
+      if (global_variable::my_rank == 0) {
+        std::printf("HTALLY cycle=%d bdt=%.6e fws=%.10e zflux=%.10e sponge=%.10e "
+                    "flx_in=%.10e flx_out=%.10e in=%.16e out=%.16e\n", pm->ncycle, bdt,
+                    ht[1] - ht[0],
+                    ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
+      }
+    }
     return;
   }
   par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -1738,6 +1861,15 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     u0(m,IM3,k,j,i) *= f;
     u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke0;
   });
+  if (htal) {
+    ht[3] = htsum();
+    if (global_variable::my_rank == 0) {
+      std::printf("HTALLY cycle=%d bdt=%.6e fws=%.10e zflux=%.10e sponge=%.10e "
+                  "flx_in=%.10e flx_out=%.10e in=%.16e out=%.16e\n", pm->ncycle, bdt,
+                  ht[1] - ht[0],
+                  ht[2] - ht[1], ht[3] - ht[2], ht[4], ht[5], ht[0], ht[3]);
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1912,12 +2044,18 @@ void HeStarBC(Mesh *pm) {
 void HeStarHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   // w_mlt, L_MLT (= w max_faces F_MLT r^2 Omega) only with mlt_flux_frozen
-  pdata->nhist = hs_mlt_ ? 22 : 20;
-  const char *lab[22] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
+  // fixbundle-1009 F4: + P_esrc (power the explicit source puts into E, (chat/c) sum
+  // esrc V) and P_sponge (kinetic-energy loss rate of the top sponge at this state), the
+  // two non-flux terms of d Etot/dt = L_in - L_top + P_esrc - P_sponge
+  const int nb = hs_mlt_ ? 22 : 20;
+  pdata->nhist = nb + 2;
+  const char *lab[24] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
                          "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top",
-                         "v1sq_wall", "Picard", "w_mlt", "L_MLT"};
-  for (int n=0; n<pdata->nhist; ++n) pdata->label[n] = lab[n];
+                         "v1sq_wall", "Picard", "w_mlt", "L_MLT", "P_esrc", "P_sponge"};
+  for (int n=0; n<nb; ++n) pdata->label[n] = lab[n];
+  pdata->label[nb] = lab[22];
+  pdata->label[nb+1] = lab[23];
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -1941,6 +2079,11 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const Real rint = hs_rint_, fin = hs_fin_;
   // v1sq_wall: mean v_r^2 over the wall (first active) cells of the whole mesh
   const Real inwall = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3);
+  const bool eso = pm1->esrc_on;
+  auto es_ = pm1->esrc;
+  const Real chc = pm1->chat/pm1->c_light;
+  const Real sprate = hs_sp_rate_, spr0 = hs_sp_r0_, sprt = hs_rtop_, spd = hs_sp_dmax_;
+  const bool sprad = hs_sp_rad_;
   array_sum::GlobalSum sum_this;
   Kokkos::parallel_reduce("hs_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
@@ -1975,6 +2118,19 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       h.the_array[18] = SQR(w0(m,IVX,k,j,i))*inwall;
     }
     h.the_array[16] = (u0(m,IEN,k,j,i) + ur(m,radm1::M1_E,k,j,i))*vol;
+    if (eso) h.the_array[22] = chc*es_(m,k,j,i)*vol;
+    if (sprate > 0.0) {
+      const Real r = x1v(m,i);
+      const Real d = u0(m,IDN,k,j,i);
+      const bool low = (d < spd);
+      if (r > spr0 || low) {
+        const Real wsp = low ? 1.0 : SQR((r - spr0)/(sprt - spr0));
+        const Real kes = sprad ? 0.5*SQR(u0(m,IM1,k,j,i))/d
+                               : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+                                      + SQR(u0(m,IM3,k,j,i)))/d;
+        h.the_array[23] = 2.0*sprate*wsp*kes*vol;
+      }
+    }
     if (x1v(m,i) <= rint) {
       const Real d = w0(m,IDN,k,j,i);
       const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
@@ -1988,6 +2144,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     msum += h;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this));
   for (int n=0; n<20; ++n) pdata->hdata[n] = sum_this.the_array[n];
+  pdata->hdata[nb] = sum_this.the_array[22];
+  pdata->hdata[nb+1] = sum_this.the_array[23];
   if (hs_mlt_) {
     // host values, summed over ranks by the history output: rank 0 contributes
     const bool r0 = (global_variable::my_rank == 0);

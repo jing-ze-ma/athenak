@@ -453,7 +453,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     auto &e12_ = e1x2;
     auto &e32_ = e3x2;
       
-    auto &x2v_ = pmy_pack->pcoord->x2v;
+    auto &x2v_ = pmy_pack->pcoord->x2v_rec;  // == x2v unless sp_x2_periodic_image
     auto &x2f_ = pmy_pack->pcoord->xx2f;
 
     // set the loop limits for 2D/3D problems

@@ -281,6 +281,8 @@ class RadiationM1 {
   // that the implicit solve's old vector E^n carries (the frozen MLT scaffold): the
   // deposit is transported away inside the step by the solve, but a LOCAL relaxed
   // source keeps it in the cell (AG Car A: S up to 10 E at 0.985-0.994 R_ph, L_fs 3 L)
+  // fixbundle-1009 F1: every reader (incl. the vet_col inner-boundary intensity) takes
+  // the physical E^n = u0 directly (be only; dt-free, right for nsub > 1)
   bool vsrc_noes = false;
 
   // m1-mhd (docs/dev/m1_mhd_0927.md): the fluid is <hydro> or <mhd> (FluidRef,
@@ -412,7 +414,14 @@ class RadiationM1 {
   bool impl_pos_floor = false;
   Real impl_pos_gas_frac = 1.0e-3;
   DvceArray1D<Real> pos_cnt_d;
-  Real pos_cnt[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  Real pos_cnt[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  // fixbundle-1009 F3 <rad_m1>/implicit_pos_floor_solve (default false = bitwise): the
+  // T-solve / accept no longer raise the iterate to e_floor (EP = max(S2, e_floor) made
+  // energy that implicit_pos_floor never saw, and the face fluxes rebuilt from the raised
+  // EP no longer matched the solve's): EP = max(S2, 1e-6 e_floor), and the write-back
+  // floor raises E to e_floor with the energy taken from the gas (FLR_DE) or counted
+  // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
+  bool impl_pos_floor_s2 = false;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
@@ -458,6 +467,11 @@ class RadiationM1 {
   // for every pass and take the frozen-opacity gas-T find
   Real impl_thin_frz = 0.0;
   DvceArray4D<Real> thin_frz;   // 1 = frozen cell of this solve (implicit_thin_freeze)
+  // fixbundle-1009 F2 <rad_m1>/implicit_face_opac_n (default false = bitwise): the
+  // step-frozen x1 face data of the blend (alpha, tau_f weight) from rho kappa_T at T^n
+  // (snapshot ktn, taken before the pass-0 opacity update), not at the predicted T
+  bool impl_face_ktn = false;
+  DvceArray4D<Real> ktn;
   Real impl_stall_fac = 0.5;    // implicit_stall_fac (implicit_gas_newton_switch test)
   int impl_gn_sw = 0, impl_gn_sw_min = 20;   // implicit_gas_newton_switch (window, min)
   Real impl_gn_nsw = 0.0;       // solves switched off the gas Newton update
@@ -666,6 +680,9 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_kr;  // the exchange object of krw
   Real bcg_nsolve, bcg_itsum, bcg_itmax;  // inner-iteration statistics
   Real bcg_nbreak, bcg_nfall, bcg_nred;   // breakdowns, line-Jacobi fallbacks, reductions
+  Real bcg_nkeep;               // fallbacks that kept the Krylov iterate (fallback best)
+  int impl_bcg_maxrst;          // <rad_m1>/implicit_bcg_max_restarts (default 2)
+  bool impl_bcg_keep;           // <rad_m1>/implicit_bcg_fallback = best
   int impl_bcg_sync;            // <rad_m1>/implicit_bcg_sync: 0 = the original loop
                                 // (5 blocking reductions per its), 1 = fused reductions
                                 // (3, the DEFAULT), 2 = 1 plus alpha kept on the device
@@ -1218,6 +1235,15 @@ class RadiationM1 {
   ParameterInput *pin_cs_ = nullptr;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
+  // fixbundle-1009 <rad_m1>/dbg_energy_tally (default false, output only): rank 0 prints
+  // at the start and end of every be solve the global sums of the gas total energy, E,
+  // the reference-work accumulator and esrc (x volume): line ETALLY
+  bool dbg_etally = false;
+  void DbgEnergyTally(Real *o);
+  // fixbundle-1009 F4: ApplyClosureLimits clips over ACTIVE cells (0 = E raised to
+  // e_floor, 1 = |F| scaled to c E), every stage, and the event-log totals (collective)
+  DvceArray1D<Real> acl_cnt_d;
+  void EventTotals(Real *v);
   void OnePassAuto(const int t, const bool on, const bool one);
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
   void VetInit(ParameterInput *pin);
