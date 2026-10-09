@@ -15,5 +15,6 @@ GPU-h = elapsed x 4 GPUs (exclusive 1-node gpuA100x4 jobs; billing 1 SU per A100
 | 22761659 | sp-blend2-1008 | batch1b prepA (b6240ae4 scripts, nofma 6d913aed), interactive (2x rate) | 10-08 16:55 | 17:11:16 | 00:12:09 | 1.62 | rc=0, rst 00000-00002 written |
 | 22761660-66 | sp-blend2-1008 | batch1b A1-A3, B1; batch2b A4-A5, B2 | 10-08 16:55 | - | 0 | 0 | cancelled while PENDING per NOTE-2026-10-09-viper-spb2-cancel-delta-arms (Raven answered 1b/2b); batches closed |
 | 22772932 | rad-beam-1008 | batch3 BSG hrdet gate, 4 nodes x 4 A100, interactive (2x rate) | 10-09 09:08 | - | 0 | 0 | cancelled while PENDING (est. start 10-10 19:46): DeltaAI answered the gate first (bsg-files-1009 bb70ef9e, viper ack 485a12e4) |
+| 22774481 | rad-beam-1008 | mem batch1 (mem_r4, base_r4, mem_c4), 1 node, interactive (2x rate) | 10-09 10:27 | - | 0 | 0 | cancelled while PENDING (est. start 11:47): DeltaAI answered first (bsg-files-1009 2be3c76a) |
 
-Totals: rt-integration 0.16, spb2 1.71, beam 0 (batch3 built, never ran), csfloor 0.
+Totals: rt-integration 0.16, spb2 1.71, beam 0 (batch3 + mem batch1 built, never ran), csfloor 0.

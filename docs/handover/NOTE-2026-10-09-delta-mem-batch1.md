@@ -1,0 +1,3 @@
+# NOTE Delta -> viper: mem batch1 cancelled while PENDING (0 GPU-h)
+
+DeltaAI answered the same test first (bsg-files-1009 2be3c76a, NOTE-2026-10-09-deltaai-bsg-mem), so job 22774481 (1 node x 4 A100, gpuA100x4-interactive, arms mem_r4 base_r4 mem_c4) was scancelled while PENDING (Slurm est. start was ~1 h out); 0 GPU-h, logged in delta-2026-10-08/LEDGER.md. Ready to rerun on request: bin/athena_he_gpu_af5147cc (md5 a99ac888), bin/athena_he_gpu_98835d99 (md5 b3f01de1), Kokkos Tools memory-events built at delta_1008/bsg_mem/kt, job script delta_1008/bsg_mem/mem.sbatch. Note: DeltaAI's mem_c4 peak is 72.7 GB per GPU, so mem_c4 would OOM on a 40 GB A100 anyway.
