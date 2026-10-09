@@ -304,7 +304,8 @@ constexpr int M1_IM_D     = 3;
 constexpr int M1_IM_X1    = 4;    // -2, -1, +1, +2
 constexpr int M1_IM_X2    = 8;
 constexpr int M1_IM_X3    = 12;
-constexpr int M1_NIW_MUSCL = 16;
+constexpr int M1_IM_KILL  = 16;   // 1: dc for the rest of the step (positivity)
+constexpr int M1_NIW_MUSCL = 17;
 
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).

@@ -1640,6 +1640,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     } else if (shr.compare("dc") != 0) {
       ImplFatal("<rad_m1>/implicit_hr_recon = '" + shr + "' is not a choice (dc | plm)");
     }
+    if (impl_muscl) {
+      impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
+    }
     if (impl_muscl && pin->GetOrAddString("rad_m1","implicit_flux_beam",
                                           "closure").compare("halfrange") != 0) {
       ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux_beam = halfrange");
@@ -9013,7 +9016,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   od_now = impl_offdiag;
   vimp_now = impl_vimp;
   muscl_now = impl_muscl;   // xthinfix-1009 Fix B
-  muscl_sigdone = false;
+  muscl_nbuild = 0;
   // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
   // form may drop it for the rest of the step, positivity below)
   vlat_now = vlat_on && (vlat_odm > 0);
@@ -12248,9 +12251,12 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
 //! \fn void RadiationM1::ImplicitMusclBuild
 //! \brief implicit_hr_recon = plm (xthinfix-1009 Fix B), once per Picard pass after the
 //! face coefficients (x1: ifw, x2/x3: ifw2/ifw3) of the pass are set.
-//!  (1) ONCE PER STEP (first pass; a limiter re-made every pass switches on a few cells
-//!      and the Picard loop limit-cycles: cyl, 200 passes per step), sig_d per cell
-//!      from the step-start E (M1_IW_EP): van Leer, sig = 4ab/(a+b)^2 for
+//!  (1) on the first implicit_hr_recon_fresh (2) passes of the step, then FROZEN for the
+//!      rest of it (re-made every pass, the limiter switches on a few cells and the
+//!      Picard loop limit-cycles: cyl, 200 passes per step; made once from the step-start
+//!      E, it is not TVD for a front that crosses many cells in the step: E <= 0 in
+//!      vacuum, xb20), sig_d per cell from the Picard iterate E (M1_IW_EP), zero where
+//!      the positivity fallback has set KILL this step: van Leer, sig = 4ab/(a+b)^2 for
 //!      ab > 0 (a, b the two one-sided differences), else 0, so the face value
 //!      E_c +- s_c/2, s_c = sig_c (E_c+1 - E_c-1)/2, lies between E_c and the neighbour
 //!      at the lagged state (TVD).  sig = 0 next to a physical boundary (its ghost is not
@@ -12288,8 +12294,9 @@ void RadiationM1::ImplicitMusclBuild() {
   const bool l2 = twod && (bw2_.extent_int(0) > 0);
   const bool l3 = thrd && (bw3_.extent_int(0) > 0);
   // (1) the frozen limiter (once per step)
-  if (!muscl_sigdone) {
-  muscl_sigdone = true;
+  if (muscl_nbuild < impl_muscl_nfresh) {
+  const bool first = (muscl_nbuild == 0);
+  muscl_nbuild += 1;
   par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
@@ -12326,6 +12333,11 @@ void RadiationM1::ImplicitMusclBuild() {
         const Real ea = e0 - iw_(m,M1_IW_EP,km,jm,im);
         const Real eb = iw_(m,M1_IW_EP,kp,jp,ip) - e0;
         if (ea*eb > 0.0) {sg = 4.0*ea*eb/SQR(ea + eb);}
+      }
+      if (first) {
+        if (d == 0) {iw_(m,b+M1_IM_KILL,k,j,i) = 0.0;}
+      } else if (iw_(m,b+M1_IM_KILL,k,j,i) > 0.5) {
+        sg = 0.0;
       }
       iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
     }
@@ -12453,6 +12465,7 @@ void RadiationM1::ImplicitMusclKill() {
     }
     if (neg) {
       for (int d = 0; d < 3; ++d) {iw_(m,b+M1_IM_SIG+d,k,j,i) = 0.0;}
+      iw_(m,b+M1_IM_KILL,k,j,i) = 1.0;
     }
   });
   ImplicitHaloExchange(3, b + M1_IM_SIG);
