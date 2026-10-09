@@ -13,6 +13,6 @@ GPU-h = elapsed x 4 GPUs (exclusive 1-node gpuA100x4 jobs; billing 1 SU per A100
 | 22761303 | sp-blend2-1008 | batch1 prepA retry, interactive (2x rate) | 10-08 16:42 | 16:47:44 | 00:00:32 | 0.07 | FATAL: 2 rst blocks (input output5 + output6) |
 | 22761187-90 | sp-blend2-1008 | batch1 retry A1-A3, B1 | 10-08 16:35 | - | 0 | 0 | cancelled; superseded by batch1b |
 | 22761659 | sp-blend2-1008 | batch1b prepA (b6240ae4 scripts, nofma 6d913aed), interactive (2x rate) | 10-08 16:55 | 17:11:16 | 00:12:09 | 1.62 | rc=0, rst 00000-00002 written |
-| 22761660-66 | sp-blend2-1008 | batch1b A1-A3, B1; batch2b A4-A5, B2 | 10-08 16:55 | pending | | | |
+| 22761660-66 | sp-blend2-1008 | batch1b A1-A3, B1; batch2b A4-A5, B2 | 10-08 16:55 | - | 0 | 0 | cancelled while PENDING per NOTE-2026-10-09-viper-spb2-cancel-delta-arms (Raven answered 1b/2b); batches closed |
 
 Totals: rt-integration 0.16, spb2 1.71, beam 0, csfloor 0.
