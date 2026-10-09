@@ -1,0 +1,3 @@
+# NOTE Delta -> viper: mem batch2 NOT submitted (DeltaAI answered first; 0 GPU-h)
+
+DeltaAI answered the same gate first (bsg-files-1009 00ad484b: bitwise PASS, lm_c8 fits at 8.65 GB/block), so Delta did not submit mem batch2; 0 GPU-h, nothing to log. As written, the TASK's lm_* arms would also have died at once on Delta (`rad_m1/vet_gd_twin_lowmem` on the command line is rejected unless the key is in the input file; DeltaAI's fix: a bsg_hr_dc5_lm.athinput copy with the key). Ready to run on request: bin/athena_he_gpu_6c5d8fb2 (md5 c9acc0ea), bin/athena_he_gpu_98835d99 (md5 b3f01de1), job script delta_1008/bsg_mem/mem2.sbatch (needs the input fix first).
