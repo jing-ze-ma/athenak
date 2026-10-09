@@ -400,3 +400,14 @@ equatorial band of the Roche-distorted star radiates <(g/g90)(r/r90)^2/cos alpha
 the phi = 90 column's L at the photosphere (0.9875 at r_in), docs/dev/accretor_rhd/
 band_luminosity.py. The band cannot shed flux to the poles (2-D slab), so it heats on the
 envelope's thermal time until it radiates the imposed L_in (T_eff(phi 90) then +1 %).
+
+### 9.x User decisions 2026-10-08 (after S3a)
+- **L_in = band equivalent** for the 2-D equatorial slab: the inner flux is lowered from the phi=90 column's L = 4.68e4 Lsun
+  by the von Zeipel band factor (0.9605 with the dev tables; recompute with the final tables via band_luminosity.py), so the
+  band radiates what it receives and T_eff stays 28.3 kK. The current flux-BC consistency check against F_col(r_in) must
+  allow this factor (a named key, e.g. problem/env_lin_band_factor, default 1 = bitwise). **For a 3-D run (full theta),
+  go back to the full column L: the band factor applies only to the theta-thin slab.**
+- **Opacity tables:** X 0.70, Z 0.02 Rosseland + Planck requested from viper
+  (TASK-2026-10-08-viper-accretor-opacity-tables); rebuild the S0 column and rerun S3a with them.
+- **Stream window radiation:** no injection; vacuum/Marshak window (P_rad/P_gas ~0.7 % at the stream peak, 5.1e-8 g/cc,
+  26.2 kK; only the low-mass wings reach order unity).
