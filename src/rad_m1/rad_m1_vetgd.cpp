@@ -1534,10 +1534,21 @@ void RadiationM1::VetGdMoments() {
                     indcs.nx1 + 2*indcs.ng);
   }
   auto ffs_ = vgd_ffs;
+  // fsanchor-1009 implicit_fs_anchor: J, H_r, H_t, H_p of the formal solution per cell
+  // (0 below the first shell); the anchor weight (slot 4) is set below
+  const bool dfsm = fsa_on;
+  if (dfsm && vgd_fsm.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(vgd_fsm, nmb1 + 1, 5, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng,
+                    indcs.nx1 + 2*indcs.ng);
+  }
+  auto fsm_ = vgd_fsm;
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
     if (dffs) {ffs_(m,k,j,i) = -2.0;}
+    if (dfsm) {
+      for (int c = 0; c < 5; ++c) {fsm_(m,c,k,j,i) = 0.0;}
+    }
     if (i < ilo) {return;}
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
     const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
@@ -1568,7 +1579,39 @@ void RadiationM1::VetGdMoments() {
       tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
       if (dffs) {ffs_(m,k,j,i) = fmin(fmax(hr/jm, -1.0), 1.0);}
     }
+    if (dfsm) {
+      Real ht = 0.0, hp = 0.0;
+      for (int d = 0; d < n; ++d) {
+        const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+        const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+        ht += wi*(nx*ct*cp + ny*ct*sp - nz*st);
+        hp += wi*(-nx*sp + ny*cp);
+      }
+      fsm_(m,0,k,j,i) = jm;
+      fsm_(m,1,k,j,i) = hr;
+      fsm_(m,2,k,j,i) = ht;
+      fsm_(m,3,k,j,i) = hp;
+    }
   });
+  // fsanchor-1009: the anchor weight w(tau_top) in slot 4 (rad_m1.hpp), tau_top from
+  // x1max to the cell centre with the FS's own extinction (vlat_cs slot 0 = ln chi)
+  if (dfsm) {
+    auto cs_ = vlat_cs;
+    auto cx1f_ = pmy_pack->pcoord->xx1f;
+    const Real tlo = fsa_tlo, lgw = log(fsa_thi/fsa_tlo), thi = fsa_thi;
+    par_for("m1_vgd_fsaw", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real tau = 0.0;
+      for (int i = ie; i >= ilo; --i) {
+        const Real dtc = exp(cs_(m,0,k,j,i))*(cx1f_(m,i+1) - cx1f_(m,i));
+        const Real tc = tau + 0.5*dtc;
+        tau += dtc;
+        Real w = (tc <= tlo) ? 1.0 : ((tc >= thi) ? 0.0 : 1.0 - log(tc/tlo)/lgw);
+        w = w*w*(3.0 - 2.0*w);
+        fsm_(m,4,k,j,i) = (fsm_(m,0,k,j,i) > 0.0) ? w : 0.0;
+      }
+    });
+  }
   // vet_gd_thin_taumin > 0: taper the LATERAL parts (LAT1..LAT5: D_r,lat and the
   // tangential anisotropy, both lagged terms of the face equations) to 0 in the far thin
   // top, log-linearly from 1 at tau_top = 10 taumin to 0 at tau_top = taumin (tau_top of
@@ -2427,6 +2470,19 @@ void RadiationM1::VetGdTwin(const int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int c = 0; c < M1_TT_NLAT; ++c) {twl_(m,c,k,j,i) = tt_(m,M1_TT_LAT0+c,k,j,i);}
     });
+    // fsanchor-1009: the twin's FS moments J, H_r, H_t, H_p
+    if (fsa_on) {
+      if (vgd_fstw.extent_int(0) != nmb1 + 1) {
+        Kokkos::realloc(vgd_fstw, nmb1 + 1, 4, indcs.nx3 + 2*indcs.ng,
+                        indcs.nx2 + 2*indcs.ng, c1);
+      }
+      auto ftw_ = vgd_fstw;
+      auto fsm_ = vgd_fsm;
+      par_for("m1_vgd_tw_fkeep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        for (int c = 0; c < 4; ++c) {ftw_(m,c,k,j,i) = fsm_(m,c,k,j,i);}
+      });
+    }
     Kokkos::deep_copy(cw_, c0_);
     Kokkos::fence();
     vgd_ttwin += tm.seconds();
@@ -2445,6 +2501,28 @@ void RadiationM1::VetGdTwin(const int stage) {
     tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - mt_(i);
     for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
   });
+  // fsanchor-1009: the same noise subtraction on the FS moments the anchor reads.  With
+  // the twin's J_t, H_t and their shell means <J_t>, <H_r,t>, and g = J/J_t:
+  //   J -> g <J_t>,  H_r -> H_r - g (H_r,t - <H_r,t>),  H_lat -> H_lat - g H_lat,t,
+  // so a laterally uniform state gives laterally uniform J, H_r and H_lat = 0 exactly
+  if (fsa_on) {
+    shell_mean(vgd_fstw, 0, 0, false, vgd_twm);
+    shell_mean(vgd_fstw, 1, 0, false, vgd_twm2);
+    auto mj_ = vgd_twm;
+    auto mh_ = vgd_twm2;
+    auto ftw_ = vgd_fstw;
+    auto fsm_ = vgd_fsm;
+    par_for("m1_vgd_tw_fsub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real jt = ftw_(m,0,k,j,i);
+      if (!(jt > 0.0) || !(fsm_(m,0,k,j,i) > 0.0)) {return;}
+      const Real g = fsm_(m,0,k,j,i)/jt;
+      fsm_(m,0,k,j,i) = g*mj_(i);
+      fsm_(m,1,k,j,i) -= g*(ftw_(m,1,k,j,i) - mh_(i));
+      fsm_(m,2,k,j,i) -= g*ftw_(m,2,k,j,i);
+      fsm_(m,3,k,j,i) -= g*ftw_(m,3,k,j,i);
+    });
+  }
 }
 
 } // namespace radm1

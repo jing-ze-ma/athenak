@@ -227,6 +227,12 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
+  if (ivar==164 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output m1_fsa requested in <output> block '" << out_params.block_name
+       << "' but no RadiationM1 object has been constructed." << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==163 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of the M1 formal-solution moments requested in <output> block '"
@@ -750,6 +756,19 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_drtfs",5,&(derived_var));
       outvars.emplace_back("m1_drpfs",6,&(derived_var));
       out_params.n_derived += 7;
+    }
+
+    // fsanchor-1009: what <rad_m1>/implicit_fs_anchor reads, after the vet_gd_twin
+    // correction: m1_jfa, m1_hrfa, m1_htfa, m1_hpfa (E units, compare m1_e, m1_f/c) and
+    // the anchor weight m1_wfa.  Zero when the anchor is off.  Derived.
+    if (variable.compare("m1_fsa") == 0) {
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_jfa",0,&(derived_var));
+      outvars.emplace_back("m1_hrfa",1,&(derived_var));
+      outvars.emplace_back("m1_htfa",2,&(derived_var));
+      outvars.emplace_back("m1_hpfa",3,&(derived_var));
+      outvars.emplace_back("m1_wfa",4,&(derived_var));
+      out_params.n_derived += 5;
     }
 
     // turbulent forcing

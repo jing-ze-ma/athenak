@@ -1581,6 +1581,25 @@ class RadiationM1 {
   // f = H_r/J (vgd_ffs, -2 below the first shell) instead of f(D_rr) by the M1 inversion
   bool impl_ffs = false;
   DvceArray4D<Real> vgd_ffs;
+  // fsanchor-1009 <rad_m1>/implicit_fs_anchor (read only when named, default false =
+  // bitwise; sp wedge + vet_gd + transport = implicit): in the optically thin top the
+  // solve is ANCHORED to the vet_gd formal solution (FS) of the step-start emissivity.
+  //  E row:      + a (E' - J_fs),  a = w ke c^ dt/dx1   (diagonal + RHS: M-matrix kept)
+  //  x1 face:    F0_f = (1 - s_f) F0_f,scheme + s_f c H_r,fs(f),  s_f = sf min(w_i, w_ip)
+  //              (the scheme's face coefficients scaled by 1 - s_f, the FS flux a RHS
+  //              constant; the stored F0_f, which the momentum deposit reads, is the same
+  //              blended flux, so the force uses the flux the transport applied)
+  //  w(tau_top): 1 for tau_top <= tau_lo, 0 for tau_top >= tau_hi, smoothstep in ln tau
+  //              (tau_top: the radial column depth from x1max to the cell centre, of the
+  //              FS's own extinction vlat_cs)
+  // The FS moments carry the vet_gd_twin ray-noise correction when the twin is on.
+  bool fsa_on = false;
+  Real fsa_ke = 10.0, fsa_sf = 1.0, fsa_tlo = 0.1, fsa_thi = 1.0;
+  DvceArray5D<Real> vgd_fsm;    // (m, 5, k, j, i): J, H_r, H_t, H_p (E units), w
+  DvceArray5D<Real> vgd_fstw;   // (m, 4, k, j, i): the twin's J, H_r, H_t, H_p
+  // anchor energy diagnostics: (c/chat) sum a (J - E') V per step, accumulated (code
+  // energy units, rank sums), its absolute sum, and the number of steps
+  Real fsa_qsum = 0.0, fsa_qabs = 0.0, fsa_qlast = 0.0, fsa_nstep = 0.0;
   DvceArray1D<int> vgd_hloc;   // (8 nmb): local index of the slot's neighbour, -1 remote
   std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): the remote neighbour's rank, lid
   DvceArray1D<Real> vgd_sbuf, vgd_rbuf;   // flat message buffers, one piece per remote

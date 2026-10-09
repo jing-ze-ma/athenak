@@ -1259,6 +1259,33 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_blend_ffs")) {
     impl_ffs = pin->GetBoolean("rad_m1","implicit_blend_ffs");
   }
+  // fsanchor-1009 (rad_m1.hpp): implicit_fs_anchor and its parameters, read only when
+  // named
+  if (pin->DoesParameterExist("rad_m1","implicit_fs_anchor")) {
+    fsa_on = pin->GetBoolean("rad_m1","implicit_fs_anchor");
+  }
+  if (fsa_on) {
+    if (!vgd_on || !sph_geom) {
+      ImplFatal("<rad_m1>/implicit_fs_anchor needs vet_gd on the sp wedge");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_fs_anchor_ke")) {
+      fsa_ke = pin->GetReal("rad_m1","implicit_fs_anchor_ke");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_fs_anchor_sf")) {
+      fsa_sf = pin->GetReal("rad_m1","implicit_fs_anchor_sf");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_fs_anchor_tau_lo")) {
+      fsa_tlo = pin->GetReal("rad_m1","implicit_fs_anchor_tau_lo");
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_fs_anchor_tau_hi")) {
+      fsa_thi = pin->GetReal("rad_m1","implicit_fs_anchor_tau_hi");
+    }
+    if (!(fsa_ke >= 0.0) || !(fsa_sf >= 0.0 && fsa_sf <= 1.0) || !(fsa_tlo > 0.0) ||
+        !(fsa_thi > fsa_tlo)) {
+      ImplFatal("<rad_m1>: implicit_fs_anchor_ke >= 0, 0 <= _sf <= 1 and "
+                "0 < _tau_lo < _tau_hi");
+    }
+  }
   if (!(impl_blend_tau0 > 0.0) || !(impl_blend_fhi > impl_blend_flo)) {
     ImplFatal("<rad_m1>: implicit_blend_tau0 must be positive and implicit_blend_fhi "
               "must exceed implicit_blend_flo");
@@ -6556,6 +6583,11 @@ void RadiationM1::ImplicitReport() {
               << ", largest change of an x2 face value (rank 0) " << cs_seam_dmax
               << " of max|F0|" << std::endl;
   }
+  if (fsa_on && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_fs_anchor: steps " << fsa_nstep
+              << ", E-anchor energy (c/chat) sum a (J - E') V: total " << fsa_qsum
+              << ", sum|.| " << fsa_qabs << ", last step " << fsa_qlast << std::endl;
+  }
   // implicit_opac_newton_guard: the dropped (row, face) pairs of all ranks (collective:
   // every rank reaches this line with the same impl_opac_newton and guard)
   const bool opgr = impl_opac_newton && (impl_opn_guard > 0.0);
@@ -9098,6 +9130,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int ogm = impl_opn_guard_mode;
     const bool opgd = (opg > 0.0) && (opnr || opns);
     auto nsk_ = opn_nskip_d;
+    // fsanchor-1009 implicit_fs_anchor (rad_m1.hpp): the FS moments and anchor weight
+    const bool fsa = fsa_on && sph && vlat_ready;
+    auto fsm_ = vgd_fsm;
+    const Real fke = fsa_ke, fsf = fsa_sf;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -9353,6 +9389,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // weight 1 - AL of the blend (exactly th when implicit_flux = central)
           Real tw = th;
           if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i+1))*th;}
+          // fsanchor-1009: the scheme part of the face flux weighted 1 - s, the FS flux
+          // s c H_r(f) (free-streaming r^2 mean of the two cells) a RHS constant
+          Real fsp = 0.0;
+          if (fsa && ip <= ie) {
+            fsp = fsf*fmin(fsm_(m,4,k,j,i), fsm_(m,4,k,j,ip));
+            if (fsp > 0.0) {
+              tw *= (1.0 - fsp);
+              const Real rf2 = SQR(cx1f(m,i+1));
+              const Real hf = 0.5*(SQR(cx1v(m,i))*fsm_(m,1,k,j,i)
+                                   + SQR(cx1v(m,ip))*fsm_(m,1,k,j,ip))/rf2;
+              rr -= nup*cr*fsp*cl*hf;
+            }
+          }
           Real df = tw*ch*ch*dt/cdxf.x1f(m,k,j,i+1);
           Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
           if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
@@ -9418,9 +9467,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // sp-blend-1008: the berthon part of the face flux, ifw HCL E_i + HCR E_ip + DG
           // (HCL >= 0 on the diagonal, HCR <= 0 off it), times dt A_f/V_i
           if (aphll) {
+            if (fsp > 0.0) {
+              const Real om = 1.0 - fsp;
+              bb += nup*om*ifw_(m,M1_IFW_HCL,k,j,i+1);
+              cc += nup*om*ifw_(m,M1_IFW_HCR,k,j,i+1);
+              rr -= nup*om*ifw_(m,M1_IFW_DG,k,j,i+1);
+            } else {
             bb += nup*ifw_(m,M1_IFW_HCL,k,j,i+1);
             cc += nup*ifw_(m,M1_IFW_HCR,k,j,i+1);
             rr -= nup*ifw_(m,M1_IFW_DG,k,j,i+1);
+            }
           }
           if (vf > 0.0) {
             bb += nup*cr*ai;
@@ -9491,6 +9547,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real th = 1.0/(1.0 + ch*dt*ktf);
           Real tw = th;   // sp-blend-1008, as at face i+1/2
           if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i))*th;}
+          Real fsm = 0.0;   // fsanchor-1009, as at face i+1/2
+          if (fsa && im >= is) {
+            fsm = fsf*fmin(fsm_(m,4,k,j,im), fsm_(m,4,k,j,i));
+            if (fsm > 0.0) {
+              tw *= (1.0 - fsm);
+              const Real rf2 = SQR(cx1f(m,i));
+              const Real hf = 0.5*(SQR(cx1v(m,im))*fsm_(m,1,k,j,im)
+                                   + SQR(cx1v(m,i))*fsm_(m,1,k,j,i))/rf2;
+              rr += num*cr*fsm*cl*hf;
+            }
+          }
           Real df = tw*ch*ch*dt/cdxf.x1f(m,k,j,i);
           Real wm = iw_(m,M1_IW_WCHI,k,j,im);
           if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
@@ -9551,9 +9618,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
           }
           if (aphll) {
+            if (fsm > 0.0) {
+              const Real om = 1.0 - fsm;
+              aa -= num*om*ifw_(m,M1_IFW_HCL,k,j,i);
+              bb -= num*om*ifw_(m,M1_IFW_HCR,k,j,i);
+              rr += num*om*ifw_(m,M1_IFW_DG,k,j,i);
+            } else {
             aa -= num*ifw_(m,M1_IFW_HCL,k,j,i);
             bb -= num*ifw_(m,M1_IFW_HCR,k,j,i);
             rr += num*ifw_(m,M1_IFW_DG,k,j,i);
+            }
           }
           if (vf > 0.0) {
             aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
@@ -9607,6 +9681,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         } else if (bclo == M1_IBC_FLUX) {
           rr += num*cr*fxlo;
+        }
+        // fsanchor-1009: the E anchor a (E' - J_fs), a = w ke c^ dt/dx1 (diagonal)
+        if (fsa) {
+          const Real wa = fsm_(m,4,k,j,i);
+          if (wa > 0.0) {
+            const Real a = wa*fke*ch*dt/(cx1f(m,i+1) - cx1f(m,i));
+            bb += a;
+            rr += a*fsm_(m,0,k,j,i);
+          }
         }
         // m1-sph2: implicit_vimp, as in the Cartesian row above (ImplicitVimpBuild
         // builds its coefficients with the sp areas, volumes and face distances)
@@ -9886,6 +9969,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 
     // (g) the face fluxes of the new iterate, and the derived cell flux
+    const bool fsa2 = fsa_on && sph && vlat_ready;   // fsanchor-1009 (m1_impl_asm)
+    auto fsm2_ = vgd_fsm;
+    const Real fsf2 = fsa_sf;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -10016,6 +10102,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                     + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
                     + ifw_(m,M1_IFW_DG,k,j,i);
           fn = (1.0 - al)*fn + (cl/ch)*gh;
+        }
+        // fsanchor-1009: the same anchored face flux the row was assembled with
+        if (fsa2 && i > is && i <= ie) {
+          const Real sf = fsf2*fmin(fsm2_(m,4,k,j,im), fsm2_(m,4,k,j,ip));
+          if (sf > 0.0) {
+            const Real hf = 0.5*(SQR(cx1v(m,im))*fsm2_(m,1,k,j,im)
+                                 + SQR(cx1v(m,ip))*fsm2_(m,1,k,j,ip))/SQR(cx1f(m,i));
+            fn = (1.0 - sf)*fn + sf*cl*hf;
+          }
         }
         f0_(m,k,j,i) = fn;
       }
@@ -10613,6 +10708,41 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool csw = cs_geom;
   auto cclw = pmy_pack->pcoord->cos_cell;
   auto csnw = pmy_pack->pcoord->sin_cell;
+  // fsanchor-1009: the radiation energy the E anchor added this step,
+  // (c/chat) sum a (J - E') V (and sum |.|), rank sums MPI-summed, for the run summary
+  if (fsa_on && psph && vlat_ready && vgd_fsm.extent_int(0) == nmb1 + 1) {
+    auto fsm_ = vgd_fsm;
+    const Real fke = fsa_ke;
+    const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
+    Real qs = 0.0, qa = 0.0;
+    Kokkos::parallel_reduce("m1_impl_fsaq",
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+    KOKKOS_LAMBDA(const int n, Real &s1, Real &s2) {
+      int t = n/fni;
+      const int i = is + (n - t*fni);
+      const int j = js + (t % fnj);
+      t /= fnj;
+      const int k = ks + (t % fnk);
+      const int m = t/fnk;
+      const Real wa = fsm_(m,4,k,j,i);
+      if (wa > 0.0) {
+        const Real a = wa*fke*ch*dt/(cx1f(m,i+1) - cx1f(m,i));
+        const Real q = (cl/ch)*a*(fsm_(m,0,k,j,i) - iw_(m,M1_IW_EP,k,j,i))
+                       *pvol(m,k,j,i);
+        s1 += q;
+        s2 += fabs(q);
+      }
+    }, Kokkos::Sum<Real>(qs), Kokkos::Sum<Real>(qa));
+#if MPI_PARALLEL_ENABLED
+    Real qq[2] = {qs, qa}, qg[2];
+    MPI_Allreduce(qq, qg, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    qs = qg[0]; qa = qg[1];
+#endif
+    fsa_qsum += qs;
+    fsa_qabs += qa;
+    fsa_qlast = qs;
+    fsa_nstep += 1.0;
+  }
   const bool rcpw = impl_real_couple;
   if (!rcpw) {
     par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

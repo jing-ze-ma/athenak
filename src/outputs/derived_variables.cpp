@@ -1403,5 +1403,20 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 7;
   }
 
+  // m1_fsa (fsanchor-1009): the anchor's FS moments and weight (basetype_output.cpp)
+  if (name.compare("m1_fsa") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto fa_ = prm->vgd_fsm;
+    const bool hv = prm->fsa_on && (fa_.extent_int(0) >= nmb);
+    par_for("m1_fsa_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      for (int c = 0; c < 5; ++c) {dv(m,i_dv+c,k,j,i) = hv ? fa_(m,c,k,j,i) : 0.0;}
+    });
+    i_dv += 5;
+  }
+
   i_dv = i_dv % n_dv; // reset derived variable index
 }
