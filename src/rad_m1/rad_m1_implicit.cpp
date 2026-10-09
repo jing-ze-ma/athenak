@@ -1012,6 +1012,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_bcg_maxrst < 0) {
     ImplFatal("<rad_m1>/implicit_bcg_max_restarts must be >= 0");
   }
+  // implicit_bcg_keep_frac (fallback = best): keep the iterate only if its true residual
+  // is below keep_frac x the initial one (1 = any improvement; measured on AG Car B with
+  // det_reduce off: any improvement let a poor iterate through and Picard diverged)
+  impl_bcg_keepf = pin->GetOrAddReal("rad_m1","implicit_bcg_keep_frac",1.0);
+  if (!(impl_bcg_keepf > 0.0) || impl_bcg_keepf > 1.0) {
+    ImplFatal("<rad_m1>/implicit_bcg_keep_frac must lie in (0,1]");
+  }
   if (impl_ew_max < 0.0 || impl_ew_max >= 1.0 || !(impl_ew_gam > 0.0)) {
     ImplFatal("<rad_m1>/implicit_lin_ew_max must lie in [0,1), ew_gamma > 0");
   }
@@ -6251,7 +6258,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
             v.mx = (a > v.mx) ? a : v.mx;
           });
           bcg_nred += 1.0;
-          if (red.mx < rnorm0) {
+          if (red.mx < impl_bcg_keepf*rnorm0) {
             fell_back = false;
             bcg_nkeep += 1.0;
           }
@@ -6752,6 +6759,7 @@ void RadiationM1::ImplicitReport() {
     if (impl_bcg_keep || impl_bcg_maxrst != 2) {
       std::cout << "<rad_m1> bicgstab: implicit_bcg_max_restarts=" << impl_bcg_maxrst
                 << " fallback=" << (impl_bcg_keep ? "best" : "line")
+                << " keep_frac=" << impl_bcg_keepf
                 << ": Krylov iterate kept instead of line-Jacobi=" << bcg_nkeep
                 << std::endl;
     }

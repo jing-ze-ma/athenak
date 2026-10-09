@@ -658,6 +658,7 @@ class RadiationM1 {
   Real bcg_nkeep;               // fallbacks that kept the Krylov iterate (fallback best)
   int impl_bcg_maxrst;          // <rad_m1>/implicit_bcg_max_restarts (default 2)
   bool impl_bcg_keep;           // <rad_m1>/implicit_bcg_fallback = best
+  Real impl_bcg_keepf;          // <rad_m1>/implicit_bcg_keep_frac (keep if r < f r0)
   int impl_bcg_sync;            // <rad_m1>/implicit_bcg_sync: 0 = the original loop
                                 // (5 blocking reductions per its), 1 = fused reductions
                                 // (3, the DEFAULT), 2 = 1 plus alpha kept on the device
