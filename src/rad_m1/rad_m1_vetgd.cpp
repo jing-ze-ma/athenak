@@ -1250,24 +1250,27 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
   }
   const int ns = pbh[np] - pbh[0];
   const int nr = nrw[0], nw = nrw[1];
-  const size_t need = sizeof(int)*(static_cast<size_t>(ns) + 2*static_cast<size_t>(nr)
-                                   + 4*static_cast<size_t>(nw));
-  const size_t have = sizeof(int)*(E.sl.extent(0) + E.dl.extent(0) + E.sr.extent(0) +
-                                   E.dw.extent(0) + E.sw.extent(0));
-  if (need > have) {
-    if (vgd_hl_bytes - have + need > (static_cast<size_t>(vgd_hl_mb) << 20)) {
+  // every array at least its new size (capacity kept); the budget on the sum
+  const size_t nsz[5] = {static_cast<size_t>(std::max(ns, 1)),
+                         static_cast<size_t>(std::max(nr, 1)),
+                         static_cast<size_t>(std::max(nr, 1)),
+                         static_cast<size_t>(std::max(nw, 1)),
+                         static_cast<size_t>(std::max(3*nw, 1))};
+  DvceArray1D<int> *arr[5] = {&E.sl, &E.dl, &E.sr, &E.dw, &E.sw};
+  size_t have = 0, after = 0;
+  for (int q = 0; q < 5; ++q) {
+    have += arr[q]->extent(0);
+    after += std::max(arr[q]->extent(0), nsz[q]);
+  }
+  if (after > have) {
+    const size_t cap = static_cast<size_t>(vgd_hl_mb) << 20;
+    if (vgd_hl_bytes + sizeof(int)*(after - have) > cap) {
       return false;
     }
-    auto grow = [](DvceArray1D<int> &x, const size_t n) {
-      if (x.extent(0) < n) {Kokkos::realloc(x, n);}
-    };
-    grow(E.sl, std::max(ns, 1));
-    grow(E.dl, std::max(nr, 1));
-    grow(E.sr, std::max(nr, 1));
-    grow(E.dw, std::max(nw, 1));
-    grow(E.sw, std::max(3*nw, 1));
-    vgd_hl_bytes = vgd_hl_bytes - have + sizeof(int)*(E.sl.extent(0) + E.dl.extent(0) +
-                   E.sr.extent(0) + E.dw.extent(0) + E.sw.extent(0));
+    for (int q = 0; q < 5; ++q) {
+      if (arr[q]->extent(0) < nsz[q]) {Kokkos::realloc(*arr[q], nsz[q]);}
+    }
+    vgd_hl_bytes += sizeof(int)*(after - have);
   }
   auto sl_ = E.sl;
   auto dl_ = E.dl;
