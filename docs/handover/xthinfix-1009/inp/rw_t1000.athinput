@@ -1,0 +1,108 @@
+<comment>
+problem = runs_3r_radwave vetf_impl_x1_P100_t1000_N128_nt200_ny4
+
+<job>
+basename = rw
+
+<mesh>
+nghost = 2
+nx1 = 128
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 128
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.8
+nlim = -1
+tlim = 0.086475675180174003
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_m1>
+c_light = 1000
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 1000
+kappa_e = 1000
+kappa_f = 1000
+kappa_s = 0.0
+arad = 300
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = 55.344432115311363
+implicit_tol = 1.0e-11
+implicit_maxit = 200
+implicit_lin_tol = 1.0e-13
+implicit_lin_maxit = 400
+implicit_solver = bicgstab
+implicit_offdiag = operator
+implicit_closure_lag = step
+implicit_flux = central
+implicit_recon = dc
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 2
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = radwave
+radwave_dir = x1
+radwave_amp = 1.0000000000000001e-05
+radwave_rho = 1.0
+radwave_t = 1.0
+radwave_eig = true
+radwave_eig_e_im = -0.23949916562925161
+radwave_eig_e_re = 1.3131847552598652
+radwave_eig_f_im = -0.0041339728008632113
+radwave_eig_f_re = 0.014917190046611331
+radwave_eig_t_im = -0.059874822627135407
+radwave_eig_t_re = 0.32829619149519329
+radwave_eig_v_im = -1.0377147527042292
+radwave_eig_v_re = 11.563945558913813
+
+<output1>
+file_type = tab
+variable = hydro_w
+data_format = %.16e
+dt = 0.0054047296987608752
+slice_x2 = 0.125
+
+
+<output2>
+file_type = tab
+variable = m1
+data_format = %.16e
+dt = 0.0054047296987608752
+slice_x2 = 0.125
+
