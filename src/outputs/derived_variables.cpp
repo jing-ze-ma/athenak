@@ -1410,7 +1410,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto dv = derived_var;
     auto prm = pm->pmb_pack->pradm1;
     auto fa_ = prm->vgd_fsm;
-    const bool hv = prm->fsa_on && (fa_.extent_int(0) >= nmb);
+    const bool hv = prm->fsa_mom && (fa_.extent_int(0) >= nmb);
     par_for("m1_fsa_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       for (int c = 0; c < 5; ++c) {dv(m,i_dv+c,k,j,i) = hv ? fa_(m,c,k,j,i) : 0.0;}

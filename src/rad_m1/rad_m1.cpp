@@ -1404,6 +1404,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_vm != nullptr) {delete pbval_vm;}
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
+  if (pbval_fs != nullptr) {delete pbval_fs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}
   if (pbval_gd != nullptr) {delete pbval_gd;}
 }

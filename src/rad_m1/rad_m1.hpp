@@ -1620,6 +1620,20 @@ class RadiationM1 {
   //              FS's own extinction vlat_cs)
   // The FS moments carry the vet_gd_twin ray-noise correction when the twin is on.
   bool fsa_on = false;
+  // vet_gd_fs_moments (read only when named, diagnostic): the twin-corrected FS moments
+  // (vgd_fsm, output m1_fsa) are built without anchoring; implied by implicit_fs_anchor
+  bool fsa_mom = false;
+  // implicit_fs_lateral (read only when named, default false; needs vet_gd, sp): the
+  // x2/x3 face flux in thin cells becomes the FS-direction UPWIND flux
+  //   F0_f = (1 - s_f) F0_f,central + s_f c h_f E_up,  h_f = face mean of H_lat/J (FS),
+  //   s_f = fsl min(w_l, w_r),  E_up = E of the cell h_f points away from,
+  // conservative (one value per face; the deposit reads it), M-matrix (upwind); the
+  // amplitude stays M1's, only the direction comes from the FS
+  bool fsl_on = false;
+  Real fsl_sf = 1.0;
+  MeshBoundaryValuesCC *pbval_fs = nullptr;
+  DvceArray5D<Real> vgd_fsm_c;
+  void FsaHalo();
   Real fsa_ke = 10.0, fsa_sf = 1.0, fsa_tlo = 0.1, fsa_thi = 1.0;
   DvceArray5D<Real> vgd_fsm;    // (m, 5, k, j, i): J, H_r, H_t, H_p (E units), w
   DvceArray5D<Real> vgd_fstw;   // (m, 4, k, j, i): the twin's J, H_r, H_t, H_p

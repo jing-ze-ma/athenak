@@ -1294,6 +1294,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_fs_anchor")) {
     fsa_on = pin->GetBoolean("rad_m1","implicit_fs_anchor");
   }
+  fsa_mom = fsa_on;
+  if (pin->DoesParameterExist("rad_m1","vet_gd_fs_moments")) {
+    fsa_mom = fsa_mom || pin->GetBoolean("rad_m1","vet_gd_fs_moments");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_fs_lateral")) {
+    fsl_on = pin->GetBoolean("rad_m1","implicit_fs_lateral");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_fs_lateral_sf")) {
+    fsl_sf = pin->GetReal("rad_m1","implicit_fs_lateral_sf");
+  }
+  fsa_mom = fsa_mom || fsl_on;
+  if (fsa_mom && (!vgd_on || !sph_geom)) {
+    ImplFatal("<rad_m1>/vet_gd_fs_moments | implicit_fs_anchor need vet_gd on the sp wedge");
+  }
   if (fsa_on) {
     if (!vgd_on || !sph_geom) {
       ImplFatal("<rad_m1>/implicit_fs_anchor needs vet_gd on the sp wedge");
@@ -2519,6 +2533,26 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
 
 namespace {
 //----------------------------------------------------------------------------------------
+//! \fn M1FslFace
+//! \brief fsanchor-1009 implicit_fs_lateral: the blend weight s and the FS flux factor
+//! h = H_c/J (c = slot 2 theta, 3 phi of vgd_fsm) of the lateral face between cells
+//! (k0, j0, i0) and (k1, j1, i1): s = sf min(w0, w1) (w = slot 4), h the mean of the
+//! two cells' H_c/J clamped to [-1, 1]; s = 0 where either cell has no FS (J <= 0)
+
+template <typename VF>
+KOKKOS_INLINE_FUNCTION
+void M1FslFace(const VF &fs, const int m, const int c, const int k0, const int j0,
+               const int i0, const int k1, const int j1, const int i1, const Real sf,
+               Real &s, Real &h) {
+  s = 0.0;
+  h = 0.0;
+  const Real ja = fs(m,0,k0,j0,i0), jb = fs(m,0,k1,j1,i1);
+  if (!(ja > 0.0) || !(jb > 0.0)) {return;}
+  s = sf*fmin(fs(m,4,k0,j0,i0), fs(m,4,k1,j1,i1));
+  h = fmin(fmax(0.5*(fs(m,c,k0,j0,i0)/ja + fs(m,c,k1,j1,i1)/jb), -1.0), 1.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1SphTransRow
 //! \brief STAGE S1 (spherical-polar wedge): the transverse part of the E row, i.e. the
 //! diagonal `dia`, the lagged right-hand side `tt` and (bicgstab) the neighbour
@@ -2526,7 +2560,7 @@ namespace {
 //! centre-to-centre arc length.  Same terms as the Cartesian m1_impl_tcell; the face
 //! fluxes fp/fm (x2) and gp/gm (x3) come from it unchanged.
 
-template <typename V, typename VD, typename VV, typename VF>
+template <typename V, typename VD, typename VV, typename VF, typename VS>
 KOKKOS_INLINE_FUNCTION
 void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol,
                    const VF &carea, const VF &cdxf, const int m, const int k,
@@ -2534,7 +2568,8 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
                    const int ke, const bool p2lo, const bool p2hi, const bool thrd,
                    const BoundaryFlag b5, const BoundaryFlag b6, const bool bcg,
                    const Real ch, const Real cl, const Real dt, const Real fp,
-                   const Real fm, const Real gp, const Real gm, Real &dia, Real &tt) {
+                   const Real fm, const Real gp, const Real gm, Real &dia, Real &tt,
+                   const bool fsl, const VS &fsl_, const Real fslsf) {
   const Real cr = ch/cl;
   const Real iv = dt/cvol(m,k,j,i);
   dia = 0.0;
@@ -2552,6 +2587,14 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
       cjp += n2p*cr*iw_(m,M1_IW_A2,k,j+1,i);
     }
     Real g = th*ch*ch*dt/cdxf.x2f(m,k,j+1,i);
+    if (fsl) {   // fsanchor-1009: the upwind FS-direction part, s c h E_up
+      Real sf, hf;
+      M1FslFace(fsl_, m, 2, k, j, i, k, j+1, i, fslsf, sf, hf);
+      if (sf > 0.0) {
+        g *= (1.0 - sf);
+        if (hf > 0.0) {dia += n2p*ch*sf*hf;} else {cjp += n2p*ch*sf*hf;}
+      }
+    }
     dia += n2p*g*d2c;
     cjp -= n2p*g*M1DDiag(iw_,vd_,dfull,m,1,k,j+1,i);
   }
@@ -2565,6 +2608,14 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
       dia -= n2m*cr*a2c;
     }
     Real g = th*ch*ch*dt/cdxf.x2f(m,k,j,i);
+    if (fsl) {
+      Real sf, hf;
+      M1FslFace(fsl_, m, 2, k, j-1, i, k, j, i, fslsf, sf, hf);
+      if (sf > 0.0) {
+        g *= (1.0 - sf);
+        if (hf > 0.0) {cjm -= n2m*ch*sf*hf;} else {dia -= n2m*ch*sf*hf;}
+      }
+    }
     dia += n2m*g*d2c;
     cjm -= n2m*g*M1DDiag(iw_,vd_,dfull,m,1,k,j-1,i);
   }
@@ -2585,6 +2636,14 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
         ckp += n3p*cr*iw_(m,M1_IW_A3,k+1,j,i);
       }
       Real g = th*ch*ch*dt/cdxf.x3f(m,k+1,j,i);
+      if (fsl) {
+        Real sf, hf;
+        M1FslFace(fsl_, m, 3, k, j, i, k+1, j, i, fslsf, sf, hf);
+        if (sf > 0.0) {
+          g *= (1.0 - sf);
+          if (hf > 0.0) {dia += n3p*ch*sf*hf;} else {ckp += n3p*ch*sf*hf;}
+        }
+      }
       dia += n3p*g*d3c;
       ckp -= n3p*g*M1DDiag(iw_,vd_,dfull,m,2,k+1,j,i);
     }
@@ -2598,6 +2657,14 @@ void M1SphTransRow(const V &iw_, const VD &vd_, const bool dfull, const VV &cvol
         dia -= n3m*cr*a3c;
       }
       Real g = th*ch*ch*dt/cdxf.x3f(m,k,j,i);
+      if (fsl) {
+        Real sf, hf;
+        M1FslFace(fsl_, m, 3, k-1, j, i, k, j, i, fslsf, sf, hf);
+        if (sf > 0.0) {
+          g *= (1.0 - sf);
+          if (hf > 0.0) {ckm -= n3m*ch*sf*hf;} else {dia -= n3m*ch*sf*hf;}
+        }
+      }
       dia += n3m*g*d3c;
       ckm -= n3m*g*M1DDiag(iw_,vd_,dfull,m,2,k-1,j,i);
     }
@@ -2835,6 +2902,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto ccs3 = pmy_pack->pcoord->cos_face_eta;
   auto cx1f = pmy_pack->pcoord->xx1f;
 
+  // fsanchor-1009 implicit_fs_lateral (rad_m1.hpp): the FS-direction upwind blend of
+  // the lateral face fluxes (FsaHalo filled the ghosts of vgd_fsm)
+  const bool fsl = fsl_on && sph && vlat_ready && (vgd_fsm.extent_int(0) == nmb1 + 1);
+  auto fsl_ = vgd_fsm;
+  const Real fslsf = fsl_sf;
   // (1) the x2 face fluxes
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2944,6 +3016,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       off = 0.0;
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+    if (fsl) {
+      Real sf, hf;
+      M1FslFace(fsl_, m, 2, k, jm, i, k, j, i, fslsf, sf, hf);
+      if (sf > 0.0) {
+        const Real eu = (hf > 0.0) ? iw_(m,M1_IW_EP,k,jm,i) : iw_(m,M1_IW_EP,k,j,i);
+        f2_(m,k,j,i) = (1.0 - sf)*f2_(m,k,j,i) + sf*cl*hf*eu;
+      }
+    }
   });
 
   // (2) the x3 face fluxes
@@ -3047,6 +3127,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (csg) {off = 0.0;}   // STAGE CS2: the lateral-closure hook (see the x2 face)
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+      if (fsl) {
+        Real sf, hf;
+        M1FslFace(fsl_, m, 3, k-1, j, i, k, j, i, fslsf, sf, hf);
+        if (sf > 0.0) {
+          const Real eu = (hf > 0.0) ? iw_(m,M1_IW_EP,k-1,j,i) : iw_(m,M1_IW_EP,k,j,i);
+          f3_(m,k,j,i) = (1.0 - sf)*f3_(m,k,j,i) + sf*cl*hf*eu;
+        }
+      }
     });
   }
 
@@ -3251,7 +3339,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       M1SphTransRow(iw_, vd_, dfull, cvol, carea, cdxf, m, k, j, i, js, je, ks, ke,
                     p2lo, p2hi, thrd, mbbcs.d_view(m,BoundaryFace::inner_x3),
                     mbbcs.d_view(m,BoundaryFace::outer_x3), bcg, ch, cl, dt, fp, fm,
-                    gps, gms, dia, tt);
+                    gps, gms, dia, tt, fsl, fsl_, fslsf);
     }
     if (csg) {
       // STAGE CS1: the same row on the skewed panel grid and the seam pairs

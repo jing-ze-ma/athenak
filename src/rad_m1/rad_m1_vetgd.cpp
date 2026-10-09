@@ -1536,7 +1536,7 @@ void RadiationM1::VetGdMoments() {
   auto ffs_ = vgd_ffs;
   // fsanchor-1009 implicit_fs_anchor: J, H_r, H_t, H_p of the formal solution per cell
   // (0 below the first shell); the anchor weight (slot 4) is set below
-  const bool dfsm = fsa_on;
+  const bool dfsm = fsa_mom;
   if (dfsm && vgd_fsm.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(vgd_fsm, nmb1 + 1, 5, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng,
                     indcs.nx1 + 2*indcs.ng);
@@ -1814,6 +1814,7 @@ void RadiationM1::VetGdPost() {
   Kokkos::Timer tm;
   VetGdMoments();
   if (vgd_twin) {VetGdTwin(1);}
+  if (fsl_on) {FsaHalo();}   // fsanchor-1009: the FS moments' lateral ghosts
   if (vgd_smooth > 0) {VetGdSmooth();}
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
@@ -2471,7 +2472,7 @@ void RadiationM1::VetGdTwin(const int stage) {
       for (int c = 0; c < M1_TT_NLAT; ++c) {twl_(m,c,k,j,i) = tt_(m,M1_TT_LAT0+c,k,j,i);}
     });
     // fsanchor-1009: the twin's FS moments J, H_r, H_t, H_p
-    if (fsa_on) {
+    if (fsa_mom) {
       if (vgd_fstw.extent_int(0) != nmb1 + 1) {
         Kokkos::realloc(vgd_fstw, nmb1 + 1, 4, indcs.nx3 + 2*indcs.ng,
                         indcs.nx2 + 2*indcs.ng, c1);
@@ -2505,7 +2506,7 @@ void RadiationM1::VetGdTwin(const int stage) {
   // the twin's J_t, H_t and their shell means <J_t>, <H_r,t>, and g = J/J_t:
   //   J -> g <J_t>,  H_r -> H_r - g (H_r,t - <H_r,t>),  H_lat -> H_lat - g H_lat,t,
   // so a laterally uniform state gives laterally uniform J, H_r and H_lat = 0 exactly
-  if (fsa_on) {
+  if (fsa_mom) {
     shell_mean(vgd_fstw, 0, 0, false, vgd_twm);
     shell_mean(vgd_fstw, 1, 0, false, vgd_twm2);
     auto mj_ = vgd_twm;
@@ -2523,6 +2524,22 @@ void RadiationM1::VetGdTwin(const int stage) {
       fsm_(m,3,k,j,i) -= g*ftw_(m,3,k,j,i);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::FsaHalo
+//! \brief fsanchor-1009 implicit_fs_lateral: the ordinary cell-centred ghost exchange of
+//! the (twin-corrected) FS moments vgd_fsm, so that both blocks of a lateral face build
+//! the same face flux
+
+void RadiationM1::FsaHalo() {
+  if (pbval_fs == nullptr) {
+    pbval_fs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
+    pbval_fs->InitializeBuffers(5);
+    pbval_fs->SetVectorPairs(5, {});
+    Kokkos::realloc(vgd_fsm_c, pmy_pack->nmb_thispack, 5, 1, 1, 1);   // as vlat_cs_c
+  }
+  VetLatExchange(vgd_fsm, vgd_fsm_c, pbval_fs);
 }
 
 } // namespace radm1
