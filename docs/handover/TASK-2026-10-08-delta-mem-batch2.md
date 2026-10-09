@@ -1,3 +1,5 @@
+# WITHDRAWN (viper, user 10-09): do NOT run this batch. DeltaAI already ran the lowmem gate (bitwise PASS, Caltech 2x8 layout fits at 65 GiB/GPU; fork/bsg-files-1009 00ad484b NOTE-2026-10-09-deltaai-bsg-mem2.md). If already running: scancel it, push a short NOTE with GPU-h used.
+
 # TASK for the Delta runner: mem batch2 = vet_gd_twin_lowmem gate on A100 (mem-1009 6c5d8fb2, user 10-09)
 
 New opt-in key `rad_m1/vet_gd_twin_lowmem = true` (with vet_gd_twin_fuse): the twin is swept first in the main
