@@ -386,6 +386,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                      global_variable::restart_run ? 0.0 : 1.5);
   } else if (pin->DoesParameterExist("rad_m1","implicit_closure_thin_relax")) {
     impl_ctrelax = pin->GetReal("rad_m1","implicit_closure_thin_relax");
+    // accel-1009 (memory): a fixed-tensor closure (eddington, vet_sc, tau, vet_col) never
+    // relaxes (impl_lag_kernel: ctr && !edd && !vetsc && !tkeep && !tauc), so the 4-slab
+    // closure memory stayed all-zero and was still written to every restart: off
+    if (!chif) {impl_ctrelax = 0.0;}
   }
   if (impl_ctrelax < 0.0) {
     ImplFatal("<rad_m1>/implicit_closure_thin_relax must be >= 0");
@@ -1897,6 +1901,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (vet_sc) {VetInit(pin);}
   Time2Init(pin);
   MRInit(pin);         // implicit_mr_every (rad_m1_mr.cpp)
+  // accel-1009 (memory): u1 is used only by the explicit stage copy, hesdirk2 and the
+  // multi-rate step; a backward-Euler implicit run without multi-rate frees it
+  if (transport >= M1_TRANSPORT_IMPLICIT_X1 && time_scheme == M1_TIME_BE &&
+      mr_every <= 1) {
+    Kokkos::realloc(u1, u1.extent(0), M1_NVAR, 1, 1, 1);
+  }
 }
 
 //----------------------------------------------------------------------------------------

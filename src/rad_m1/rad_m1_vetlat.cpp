@@ -191,12 +191,14 @@ void RadiationM1::VetLatInit() {
   const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   const int nd = vgd_on ? 1 : 2*vlat_nmu*vlat_npsi;   // vet_gd: own arrays (VetGdInit)
-  Kokkos::realloc(vlat_i, nmb, nd, c3, c2, c1);
+  // accel-1009 (memory): under vet_gd the vet_col_lat sweep arrays are never touched
+  const int s3 = vgd_on ? 1 : c3, s2 = vgd_on ? 1 : c2, s1 = vgd_on ? 1 : c1;
+  Kokkos::realloc(vlat_i, nmb, nd, s3, s2, s1);
   Kokkos::deep_copy(vlat_i, 0.0);
-  Kokkos::realloc(vlat_t, nmb, nd, c3, c2, c1);
+  Kokkos::realloc(vlat_t, nmb, nd, s3, s2, s1);
   Kokkos::deep_copy(vlat_t, 0.0);
   Kokkos::realloc(vlat_t_c, nmb, nd, 1, 1, 1);
-  Kokkos::realloc(vlat_d, nmb, nd, c3, c2, c1);
+  Kokkos::realloc(vlat_d, nmb, nd, s3, s2, s1);
   Kokkos::deep_copy(vlat_d, 0.0);
   Kokkos::realloc(vlat_d_c, nmb, nd, 1, 1, 1);
   Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
