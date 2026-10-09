@@ -1445,18 +1445,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
   // that does not name them reproduces RESULTS.txt of runs_3a exactly.
-  // defaults-1009 (user 10-09): on a FRESH multi-D implicit run whose VET closure carries
-  // ray data (closure = vet_sc, or vet_col with vet_gd = true) on a Cartesian or
-  // spherical-polar (not cubed-sphere) mesh, the defaults are the half-range VET face
-  // flux: implicit_flux = blend, implicit_flux_faces = all, implicit_flux_beam =
-  // halfrange, implicit_blend = idort_f, implicit_blend_tau0 = 1, _flo = 0.3, _fhi = 0.6,
-  // _xthin = 30.  M1 / eddington / tau / vet_col without vet_gd, implicit_x1, the cubed
-  // sphere and a restart whose file lacks a key keep the old defaults.  Every resolved
-  // value is recorded.
-  const bool hrdef = full && pmy_pack->pmesh->multi_d && (vgd_on || vet_sc) &&
-                     !cs_geom && !global_variable::restart_run;
-  std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux",
-                                        hrdef ? "blend" : "central");
+  std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux","central");
   if (sfx.compare("central") == 0) {
     impl_flux = M1_IFLUX_CENTRAL;
   } else if (sfx.compare("ap_hll") == 0) {
@@ -1480,12 +1469,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // multi-D solve -- the Cartesian x1, x2, x3 faces and the sp LATERAL faces -- with the
   // per-face coefficients of the lagged closure's beam vector (M1BeamFace).  Default
   // `x1`: the behaviour above, bitwise.
-  // defaults-1009: the dependent half-range defaults follow the RESOLVED keys, so an
-  // input that names implicit_flux = central (or another flux / beam) keeps the old ones
-  const bool hrd2 = hrdef && (impl_flux == M1_IFLUX_BLEND);
   {
-    std::string sff = pin->GetOrAddString("rad_m1","implicit_flux_faces",
-                                          hrd2 ? "all" : "x1");
+    std::string sff = pin->GetOrAddString("rad_m1","implicit_flux_faces","x1");
     if (sff.compare("all") == 0) {
       impl_flux_all = true;
     } else if (sff.compare("x1") != 0) {
@@ -1494,9 +1479,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
   }
   {
-    std::string sbb = pin->GetOrAddString("rad_m1","implicit_flux_beam",
-                                          (hrd2 && impl_flux_all) ? "halfrange"
-                                                                  : "closure");
+    std::string sbb = pin->GetOrAddString("rad_m1","implicit_flux_beam","closure");
     if (sbb.compare("fs") == 0) {
       impl_beam_fs = true;
     } else if (sbb.compare("halfrange") == 0) {
@@ -1529,8 +1512,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // ---- milestone 3c.  The weight of implicit_flux = blend.  Inert for every other
   // flux, and the two ends of the blend are BITWISE central and berthon.
-  std::string sbl = pin->GetOrAddString("rad_m1","implicit_blend",
-                                        (hrd2 && impl_beam_hr) ? "idort_f" : "tau_f");
+  std::string sbl = pin->GetOrAddString("rad_m1","implicit_blend","tau_f");
   if (sbl.compare("tau") == 0) {
     impl_blend = M1_IBLEND_TAU;
   } else if (sbl.compare("f") == 0) {
@@ -1558,8 +1540,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   impl_blend_alpha = pin->GetOrAddReal("rad_m1","implicit_blend_alpha",1.0);
   impl_blend_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_r0",1.5);
-  impl_blend_xthin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin",
-                                       (hrd2 && impl_beam_hr) ? 30.0 : 0.0);
+  impl_blend_xthin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin",0.0);
   std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
   if (sbm.compare("max") == 0) {
     impl_blend_fmode = M1_IBFM_MAX;
@@ -1601,9 +1582,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               "implicit_blend = f | tau_f and implicit_blend_mode = flux only");
   }
   impl_blend_tau0 = pin->GetOrAddReal("rad_m1","implicit_blend_tau0",1.0);
-  const bool hrd3 = hrd2 && impl_beam_hr;
-  impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",hrd3 ? 0.3 : 0.6);
-  impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",hrd3 ? 0.6 : 0.9);
+  impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",0.6);
+  impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",0.9);
   if (!(impl_blend_tau0 > 0.0) || !(impl_blend_fhi > impl_blend_flo)) {
     ImplFatal("<rad_m1>: implicit_blend_tau0 must be positive and implicit_blend_fhi "
               "must exceed implicit_blend_flo");
