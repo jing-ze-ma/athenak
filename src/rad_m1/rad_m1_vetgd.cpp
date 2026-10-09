@@ -1402,8 +1402,12 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
       }
       return &g;
     };
-    gwa = gwget(static_cast<const void *>(a.d.data()));
-    if (two) {gwb = gwget(static_cast<const void *>(b->d.data()));}
+    if constexpr (std::is_same<V, VgdIView>::value) {
+      gwa = gwget(static_cast<const void *>(a.d.data()));
+      if (two) {gwb = gwget(static_cast<const void *>(b->d.data()));}
+    } else {
+      lst = false;
+    }
   }
   auto xvalid = [&]() {
     const VgdHlEntry &X = vgd_hle[ex];
