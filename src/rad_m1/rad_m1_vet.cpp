@@ -3628,8 +3628,11 @@ void RadiationM1::VetDump(const std::string &fname) {
     g << "# closure = vet_sc plane dump, m = " << m << ", k = ks; call "
       << static_cast<int>(vet_ncall) << (vet_full ? " (full)" : " (uniaxial)") << "\n"
       << "# 1 i  2 j  3 J  4-9 K/J 11 22 33 12 13 23  10-12 H/J  13 chi  14-16 n  "
-      << "17-22 D_guarded 11 22 33 12 13 23 (0 unless full)  23 E_m1  24 chi_ext\n";
-    g << std::setprecision((vet_mbs != nullptr) ? 17 : 10);
+      << "17-22 D_guarded 11 22 33 12 13 23 (0 unless full)  23 E_m1  24 chi_ext"
+      << (impl_beam_hr ? "  25-27 H+/J 1 2 3 (halfrange)" : "") << "\n";
+    // hrmb-1009: 17 digits also under implicit_flux_beam = halfrange (single- vs multi-
+    // block comparisons of the sweep)
+    g << std::setprecision((vet_mbs != nullptr || impl_beam_hr) ? 17 : 10);
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
         Real jj = vh(m,M1_VET_J,ks,j,i);
@@ -3641,7 +3644,11 @@ void RadiationM1::VetDump(const std::string &fname) {
         for (int n = 0; n < 6; ++n) {
           g << " " << (vet_full ? vh(m,M1_VET_D11+n,ks,j,i) : 0.0);
         }
-        g << " " << ih(m,M1_IW_EN,ks,j,i) << " " << vh(m,M1_VET_CHX,ks,j,i) << "\n";
+        g << " " << ih(m,M1_IW_EN,ks,j,i) << " " << vh(m,M1_VET_CHX,ks,j,i);
+        if (impl_beam_hr) {
+          for (int n = 0; n < 3; ++n) {g << " " << vh(m,M1_VET_HP1+n,ks,j,i)*ij;}
+        }
+        g << "\n";
       }
     }
   }
