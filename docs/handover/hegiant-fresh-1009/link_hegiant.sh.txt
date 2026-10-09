@@ -1,0 +1,41 @@
+#!/bin/bash
+# Template link script for the He giant fresh N897 run on Caltech (adapt account / modules / wrapper
+# from your bsg_1009/link_bsg.sh). One link = one 6 h job; chain with --dependency=afterany.
+#SBATCH -p gpu
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=2
+#SBATCH --gres=gpu:h200:2
+#SBATCH --time=06:00:00
+#SBATCH -J hegfresh
+set -u
+BIN=<abs path>/athena_gpu_he_star_m1_6c5d8fb2_nofma        # md5 e9873137c319b5f29d85680b535a450c
+IN=<files dir>/hegiant_fresh897.athinput                     # from SETUP.sh
+RUN=/resnick/groups/carnegie_poc/jingze/hegiant_1009/fresh897
+XKEYS="time/cfl_number=0.3"                                  # = viper/Raven run.cfg XKEYS
+TLIM=2.592e6
+H=<bundle dir>                                               # rst_info.py lives here
+REPO=<fork checkout>                                         # for the CANCEL check
+mkdir -p "$RUN"; cd "$RUN" || exit 1
+[ -f STOP ] && { echo "STOP file present"; exit 0; }
+[ -f DONE ] && { echo "DONE"; exit 0; }
+# FIRST START WINS: do not run if viper/Raven already won
+git -C "$REPO" fetch -q fork bsg-files-1009 && \
+  git -C "$REPO" cat-file -e FETCH_HEAD:docs/handover/NOTE-2026-10-09-viper-caltech-hegiant-CANCEL.md 2>/dev/null \
+  && { echo "CANCEL note on the fork"; touch STOP; exit 0; }
+[ "$(md5sum < "$BIN" | cut -c1-32)" = e9873137c319b5f29d85680b535a450c ] || { echo "BIN md5"; touch STOP; exit 1; }
+RST=$(ls -1 rst/hegiant.*.rst 2>/dev/null | sort | tail -1)
+if [ -z "$RST" ]; then
+  ARGS="-i $IN $XKEYS"                                       # FRESH start, t = 0
+else
+  read -r T NC TL < <(python3 "$H/rst_info.py" "$RST" | head -1)
+  python3 -c "import sys; sys.exit(0 if float('$T') >= $TLIM*(1-1e-12) else 1)" && { touch DONE; exit 0; }
+  LT=$(python3 "$H/rst_info.py" "$RST" | sed -n 2p)
+  ARGS="-r $RST $XKEYS $LT"
+fi
+L=log_${SLURM_JOB_ID}.txt
+srun --cpu-bind=cores <your CUDA_VISIBLE_DEVICES=$SLURM_LOCALID wrapper> "$BIN" $ARGS -d "$RUN" -t 05:45:00 > "$L" 2>&1
+RC=$?
+NF=$(grep -c FATAL "$L"); NN=$(grep -cwiE "nan|-nan" "$L"); NC2=$(grep -c NON-CONV "$L")
+echo "rc=$RC FATAL=$NF NaN=$NN NONCONV=$NC2"
+[ $RC -ne 0 ] || [ "$NF" -gt 0 ] || [ "$NN" -gt 0 ] || [ "$NC2" -gt 0 ] && touch STOP
+exit 0
