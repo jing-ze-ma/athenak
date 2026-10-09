@@ -47,6 +47,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
     sp_face_avg = pin->GetOrAddBoolean("mhd","sp_face_avg",false);
     sp_face_avg_terms = pin->GetOrAddInteger("mhd","sp_face_avg_terms",3);
+    sp_x2_periodic_image = pin->GetOrAddBoolean("mhd","sp_x2_periodic_image",false);
   } else if (pin->DoesBlockExist("hydro")) {
     // pure hydro: the same well-balanced source, through the same shared
     // SrcTermsGnomonicEquiangleImpl -> SrcTermsCurvilinearWB path (is_mhd = false)
@@ -58,6 +59,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
     sp_face_avg = pin->GetOrAddBoolean("hydro","sp_face_avg",false);
     sp_face_avg_terms = pin->GetOrAddInteger("hydro","sp_face_avg_terms",3);
+    sp_x2_periodic_image = pin->GetOrAddBoolean("hydro","sp_x2_periodic_image",false);
   }
 
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
@@ -76,6 +78,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(dx3, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(x1v, nmb, ncells1);
     Kokkos::realloc(x2v, nmb, ncells2);
+    Kokkos::realloc(x2v_rec, nmb, ncells2);
     Kokkos::realloc(x3v, nmb, ncells3);
     Kokkos::realloc(xx1f, nmb, ncells1+1);
     Kokkos::realloc(xx2f, nmb, ncells2+1);
@@ -1872,6 +1875,52 @@ void Coordinates::CoordSphericalPolar() {
     if (k > 0 && i > 0) areaedge_.x2e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * fabs(sin(x2v_(m,j))) * (x3v_(m,k)-x3v_(m,k-1));
     if (i > 0 && j > 0) areaedge_.x3e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * (x2v_(m,j)-x2v_(m,j-1));
   });
+  BuildX2vRecon();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Coordinates::BuildX2vRecon
+//! \brief theta positions used by the angular x2 reconstruction (GridPiecewiseLinearX2).
+//! Equal to x2v except, with <hydro|mhd>/sp_x2_periodic_image on a theta-PERIODIC mesh,
+//! in the ghost rows of blocks at x2min/x2max: there they are the PERIODIC IMAGES of the
+//! cells the ghosts hold (centroid of [theta_l + L, theta_r + L] minus L, L = x2max -
+//! x2min).  x2v is the sin-weighted centroid, which is not invariant under theta ->
+//! theta + L, so with the plain x2v the faces x2min and x2max reconstruct the SAME cell
+//! values with different stencil spacings, F2(x2min) != F2(x2max), and mass, momentum
+//! and energy leak through the periodic seam (measured +2.6e23 g/cycle on the AG Car A
+//! 480x8x8 wedge, mass_1009).  With the images both faces see bitwise-equivalent
+//! stencils up to round-off.  Default off: x2v_rec = x2v, results bitwise unchanged.
+
+void Coordinates::BuildX2vRecon() {
+  Kokkos::deep_copy(x2v_rec, x2v);
+  Mesh *pm = pmy_pack->pmesh;
+  if (!sp_x2_periodic_image || !pm->use_spherical_polar || !pm->multi_d) return;
+  if (pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic) return;
+  if (pm->use_grid_stretch_theta) return;  // images are not translations then
+  auto &indcs = pm->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ng = indcs.ng;
+  const Real x2min = pm->mesh_size.x2min, x2max = pm->mesh_size.x2max;
+  const Real len = x2max - x2min;
+  auto h_x2v = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x2v_rec);
+  auto h_x2f = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), xx2f);
+  auto &size = pmy_pack->pmb->mb_size;
+  auto centroid = [](Real tl, Real tr) {
+    return -((sin(tr)-tr*cos(tr)) - (sin(tl)-tl*cos(tl))) / (cos(tr)-cos(tl));
+  };
+  const Real tol = 1.0e-12*len;
+  for (int m=0; m<pmy_pack->nmb_thispack; ++m) {
+    if (fabs(size.h_view(m).x2min - x2min) < tol) {
+      for (int j=js-ng; j<js; ++j) {
+        h_x2v(m,j) = centroid(h_x2f(m,j) + len, h_x2f(m,j+1) + len) - len;
+      }
+    }
+    if (fabs(size.h_view(m).x2max - x2max) < tol) {
+      for (int j=je+1; j<=je+ng; ++j) {
+        h_x2v(m,j) = centroid(h_x2f(m,j) - len, h_x2f(m,j+1) - len) + len;
+      }
+    }
+  }
+  Kokkos::deep_copy(x2v_rec, h_x2v);
 }
 
 //----------------------------------------------------------------------------------------
