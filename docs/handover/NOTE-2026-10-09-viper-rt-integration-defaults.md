@@ -80,3 +80,17 @@ Name these in the input; the old values are shown.
 - WASP-121b / dhj cubed sphere: nothing changes and no pin is needed (no rad_m1, not spherical-polar). Gate:
   byte-identical, above.
 - Restarts: unaffected unless the restart file lacks the key AND the run is fresh. Restarts never take a new default.
+
+## Addenda (10-10)
+- History caveat: commit 16080d79 still carries the half-range scheme defaults; a soft-reset squash missed the
+  unstaged file. They are removed in a4bb4b51 (the "gate numbers" docs commit), so every commit from a4bb4b51 on
+  matches the user's decision. The Raven gate 31035413 was built from the corrected sources. The CPU regression was
+  rerun on the corrected tip b2f2e897 (regress_dflt4.log): `_cpu` 62 passed, and `_mpicpu` has only the old lwave2d
+  segfault.
+- fork/vimphr-1009 6671987e merged (hrmb-1009 multi-block half-range sums in vet_sc plus implicit_vimp with
+  all-faces half-range). Gates of the combination:
+  - Raven 31035935 (binary athena_he_a100_879ce827_vimpm2, md5 f6ad20ac): AG Car A, BSG hr and He giant fresh are
+    bitwise vs 98835d99, both with keys kept and with the keys equal to the new defaults removed.
+  - CPU, 4 blocks and 4 ranks with vet_sc (/viper/ptmp2/jinma/merge_1009/vimpruns2): cyl central, cyl half-range,
+    He box, He box half-range, and He box half-range + implicit_vimp all finish with no FATAL.
+  - Regression (regress_vimp2.log): `_cpu` 62 passed; `_mpicpu` has only the old lwave2d segfault.
