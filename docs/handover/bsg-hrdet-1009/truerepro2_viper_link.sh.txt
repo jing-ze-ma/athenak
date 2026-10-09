@@ -1,0 +1,83 @@
+#!/bin/bash -l
+# truerepro2-1009 production link (viper apu, 8 nodes x 2 MI300A = 16 ranks; 16 MeshBlocks 256x64x64, 1/GPU).
+# Code = truerepro2-1009 (accel-1009 dd9dff37 + bsg-truerepro-1008 54bf6697); input bsg3d_truerepro2.athinput.
+# Copy of prod/truerepro.sh + run.cfg.<jobid> copy + md5 echo of IN/tables + per-node GPU memory monitor.
+# usage: sbatch -J bsg_tr2 --nodes=8 --time=<T> -o $D/link.%j.out -e $D/link.%j.err truerepro2.sh $D [NCYC]
+#   $D/run.cfg: BIN BIN_MD5 IN TLIM XKEYS.  No rst in $D/rst -> FRESH start from IN (t = 0); else restart from
+#   the newest rst with outputN/last_time reset (bsg_viper_1006/rst_info.py).  NCYC (smoke only): stop NCYC
+#   cycles after the start point.  GUARD: an older RUNNING job of the same name -> exit 0.  CANCEL/DONE ->
+#   exit 0, STOP -> exit 1, md5 mismatch -> STOP.  NaN/FATAL or rc != 0 -> STOP (no garbage restart chained).
+#SBATCH -J bsg_tr2
+#SBATCH -p apu
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=2
+#SBATCH --gres=gpu:2
+#SBATCH --constraint=apu
+#SBATCH --cpus-per-task=24
+#SBATCH --time=24:00:00
+export SBATCH_EXPORT=NONE
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=1
+INFO=/viper/ptmp2/jinma/bsg_viper_1006/rst_info.py
+D=$1
+NCYC=${2:-}
+[ -n "$D" ] && [ -f "$D/run.cfg" ] || { echo "no run dir / run.cfg ($D): exit 1"; exit 1; }
+BIN=""; BIN_MD5=""; IN=""; TLIM=""; XKEYS=""
+source "$D/run.cfg"
+cd "$D" || exit 1
+echo "job $SLURM_JOB_ID ($SLURM_JOB_NAME) $SLURM_NNODES nodes $SLURM_JOB_NODELIST, $SLURM_NTASKS ranks, $(date +%F_%T)"
+[ -f CANCEL ] && { echo "CANCEL: exit 0"; exit 0; }
+ME=$(squeue -h -j "$SLURM_JOB_ID" -o %S)
+for l in $(squeue -h -u "$USER" -t R -n "$SLURM_JOB_NAME" -o "%i,%S"); do
+  id=${l%%,*}; st=${l#*,}
+  [ "$id" = "$SLURM_JOB_ID" ] && continue
+  if [[ "$st" < "$ME" ]] || { [ "$st" = "$ME" ] && [ "$id" -lt "$SLURM_JOB_ID" ]; }; then
+    echo "GUARD: older running job $id: exit 0"; exit 0
+  fi
+done
+[ -f DONE ] && { echo "DONE: exit 0"; exit 0; }
+[ -f STOP ] && { echo "STOP ($(cat STOP)): exit 1"; exit 1; }
+module purge; module load gcc/16 rocm/7.2 openmpi_gpu/5.0
+M=$(md5sum "$BIN" | cut -d' ' -f1)
+[ "$M" != "$BIN_MD5" ] && { echo "md5 $M != $BIN_MD5: STOP"; echo "md5 mismatch" > STOP; exit 1; }
+cp -p run.cfg "run.cfg.$SLURM_JOB_ID"
+md5sum "$BIN" "$IN" $(grep -E '^ *(he_ic_file|he_opac_table|he_planck_table) ' "$IN" | awk '{print $3}')
+LIM=$(squeue -h -j "$SLURM_JOB_ID" -o %l)
+dd=0; [[ $LIM == *-* ]] && { dd=${LIM%%-*}; LIM=${LIM#*-}; }
+IFS=: read -r a b c <<< "$LIM"; [ -z "$c" ] && { c=$b; b=$a; a=0; }
+LIMS=$(( dd*86400 + 10#$a*3600 + 10#$b*60 + 10#$c ))
+MARGIN=1200; [ -n "$NCYC" ] && MARGIN=180
+LEFT=$(( LIMS - SECONDS - MARGIN ))
+TL=$(printf '%02d:%02d:%02d' $((LEFT/3600)) $(((LEFT%3600)/60)) $((LEFT%60)))
+mkdir -p rst
+R=$(ls rst/*.rst 2>/dev/null | sort | tail -1)
+if [ -z "$R" ]; then
+  ARGS="-i $IN time/tlim=$TLIM $XKEYS"
+  NC=0
+  echo "FRESH start from $IN"
+else
+  INF=$(/usr/bin/python3 $INFO "$R") || { echo "rst_info failed on $R: exit 1"; exit 1; }
+  read -r T NC TL0 <<< "$(echo "$INF" | head -1)"
+  awk -v t="$T" -v l="$TLIM" 'BEGIN{exit !(t >= l*(1-1e-12))}' && { echo "rst t=$T >= tlim: DONE"; touch DONE; exit 0; }
+  ARGS="-r $R $(echo "$INF" | tail -1) time/tlim=$TLIM $XKEYS"
+  echo "restart from $R (t = $T, cycle $NC)"
+fi
+[ -n "$NCYC" ] && ARGS="$ARGS time/nlim=$(( NC + NCYC )) time/ndiag=1"
+[ -f run.log ] && mv run.log "run.$(date +%m%d_%H%M%S).log"
+WRAP=/viper/ptmp2/jinma/bsg_truerepro_1008/prod2/gpumon_wrap.sh   # per-node GPU memory log, gpumem.<job>.<host>.log
+[ -n "$NCYC" ] && export GPUMON_DT=15
+echo "srun $BIN $ARGS -d $D -t $TL  $(date +%T)"
+srun -n "$SLURM_NTASKS" --cpu-bind=cores "$WRAP" "$BIN" $ARGS -d "$D" -t "$TL" > run.log 2>&1
+rc=$?
+echo "rc=$rc $(date +%T)"
+if grep -q "FATAL" run.log || tail -n 60 run.log | grep -qiw "nan"; then
+  echo "NaN/FATAL in run.log: STOP"; echo "NaN/FATAL in run.log of job $SLURM_JOB_ID (rc $rc)" > STOP; exit 1
+fi
+[ $rc -ne 0 ] && { echo "srun rc=$rc: STOP"; echo "srun rc=$rc in job $SLURM_JOB_ID" > STOP; exit 1; }
+R2=$(ls rst/*.rst 2>/dev/null | sort | tail -1)
+if [ -n "$R2" ]; then
+  T2=$(/usr/bin/python3 $INFO "$R2" | head -1 | cut -d' ' -f1)
+  awk -v t="$T2" -v l="$TLIM" 'BEGIN{exit !(t >= l*(1-1e-12))}' && { echo "rst t=$T2 >= tlim: DONE"; touch DONE; }
+fi
+exit 0
