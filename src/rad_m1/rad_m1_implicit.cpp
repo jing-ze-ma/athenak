@@ -1306,7 +1306,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   fsa_mom = fsa_mom || fsl_on;
   if (fsa_mom && (!vgd_on || !sph_geom)) {
-    ImplFatal("<rad_m1>/vet_gd_fs_moments | implicit_fs_anchor need vet_gd on the sp wedge");
+    ImplFatal("<rad_m1>/vet_gd_fs_moments | implicit_fs_anchor need vet_gd on the "
+              "sp wedge");
   }
   if (fsa_on) {
     if (!vgd_on || !sph_geom) {
