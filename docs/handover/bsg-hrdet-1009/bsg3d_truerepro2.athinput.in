@@ -1,0 +1,193 @@
+<comment>
+problem = BSG TRUE REPRODUCTION of Ma, Bildsten & Jiang 2026 (bsg-truerepro-1008, TRUEREPRO.md): the finished
+          reproduction run's input (repro_final/bsg3d_repro.athinput) with every DIFFERENT-can-match setting set to the
+          paper: NO well-balanced scheme (Athena++ point-mass source, full M1 force), Ma zero-contact inner ghosts
+          (unscaled IC rho/P, v_r of ghost 1 from S_M = 0, v = 0 elsewhere), Ma outflow top (copy, v_r<0 -> 0), no
+          flux surgery at the walls, NO seed, M1 IC F_r = 0 above r_photo.  Only the RT differs (M1/VET vs DO).
+
+<job>
+basename = bsg3d
+<mesh>
+nghost    = 3
+nx1 = 256          # paper SMR matched: dr 0.15625 Rsun on 35-55.16, 0.3125 outside (grid/README)
+x1min     = 1.391400e12          # 20 Rsun
+x1max     = 5.565600e12          # 80 Rsun
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 256
+x2min     = 1.0471975511965976    # pi/3
+x2max     = 2.0943951023931953    # 2 pi/3
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 256
+x3min     = 0.0
+x3max     = 1.0471975511965976    # pi/3
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_p_amp = -6.666666666667e-01   # design_plateau_ma.py 256 35.0 0.45 80.0 20.0 0.15625
+f_stretch_r_p_xa = 1.884747382227e-01
+f_stretch_r_p_xb = 6.884747382227e-01
+f_stretch_r_p_w = 5.625000000000e-03
+<meshblock>
+nx1 = 256
+nx2       = 64    # 16 blocks, 1 per A100 on 4 nodes x 4
+nx3       = 64
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3           # paper hydro CFL 0.3; OPEN KNOB (dt cap ~22 s via cfl 0.075), switchable in run.cfg XKEYS
+nlim       = -1
+tlim       = 4.96e6              # 57.4 d
+ndiag      = 50
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 0.62
+<hydro>
+sp_x2_periodic_image = true   # theta-periodic wedge: seam mass/energy fix (mass_1009)
+eos         = ideal
+rad_signal_speed = true
+gamma       = 1.6666666666666667
+reconstruct = plm
+rsolver     = hllc             # paper: HLLC
+fofc        = true
+fofc_report = 267
+fofc_report_dt = 4.32e4
+etotgrav    = true
+wellbalance_dynamic = false      # paper: no well-balanced scheme
+dfloor  = 1.0e-20                # = the IC floor (atmosphere reaches it at 72 Rsun)
+tfloor_kelvin = 5.0e3
+pfloor  = 1.0e-12
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+<rad_m1>
+vet_gd_twin_fuse         = true   # accel-1009: twin in the main sweep (restart-exact cut)
+vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)
+vet_source_noesrc        = true   # F1: never without vet_gd_twin
+vet_gd_twin              = true   # with F1 (beam worker A3d twin)
+implicit_face_opac_n     = true   # F2
+implicit_pos_floor_solve = true   # F3 (needs implicit_pos_floor = true)
+vet_scatter_form         = ma     # paper split (Jiang 2021 eq. 6)
+vet_scatter_j            = relaxed
+vet_scatter_kappa_e      = const  # paper: ideal gas mu 0.62, kappa_es const (NOT eos)
+implicit_tsolve_opac = true          # R2+B
+implicit_tsolve_opac_mode = 1        # R2+B: nearest root (mode 1 default; no mode 8)
+implicit_gas_newton_switch = 10      # R2+B
+implicit_thin_freeze = 1.0e-2        # R2+B (B)
+implicit_realisable_coupling = true  # fix A (gd-physfix-1005 12b78e4f): realisable flux in E0 - E and the gas deposit
+report_newton_fb = false   # rc-1009: no per-step iw host copy (F4 counters keep the count)
+c_light          = 2.99792458e10
+arad             = 2.3392742567e-47   # a_cgs*T_unit^4, T_unit = 0.62 m_u/k_B = 7.4568864364e-9 K
+chat_over_c      = 1.0
+closure          = vet_col          # vet_gd rides on the vet_col interface; vet_gd_replace drops the vet_col sweep
+vet_gd           = true
+vet_scatter      = true           # Ma+2026 kappa_a/kappa_e split in the closure source (Jiang 2021 eq. 6, form ma; VET_SCATTER.md: <= 6e-6 effect)
+vet_gd_replace   = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu    = 10
+vet_gd_gl_nphi   = 12
+vet_gd_gl_stagger = true
+vet_gd_rotate_every = 10
+vet_col_lat_offdiag = operator       # T5wihc
+vet_gd_tangential   = false          # T5wihc
+vet_gd_wall_interp  = true           # T5wihc
+vet_gd_halo_compact = 2              # T5wihc
+implicit_halo_direct = true         # fast Krylov set
+implicit_od_cache = true
+implicit_krylov_fuse = 1
+implicit_op_stencil = true
+implicit_precond = rbgs_fwd
+implicit_halo_mpi = true
+implicit_halo_overlap = true
+opacity          = table
+temp_unit_kelvin = 7.4568864364e-9
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference = none     # full M1 radiation force (no WB pair)
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_flux    = blend            # sp blend flux (merge2-1008 ee03881b), thin-atmosphere fix
+implicit_blend   = tau_f
+implicit_enthalpy = plm
+implicit_vimp    = false
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme      = be               # OPEN KNOB (be | hesdirk2), switchable in run.cfg XKEYS
+vet_col_every    = 1
+time2_vet_col    = predict
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 2.2942145641e+13   # L/(4 pi r_in^2), L = 5.581461e+38 (Ma file), r_in = 20 Rsun
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+<problem>
+he_seed = 0.0             # paper: no seed
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm       = 2.6542488e27          # G M, M = 20 Msun (point mass)
+he_gravity = pointmass   # Athena++ point-mass source (bsg-truerepro-1008)
+he_ic_file = @FILES@/ic_ma2026_f0.txt   # ic_ma2026.txt with F_r = 0 above r_photo, md5 246a666e
+he_opac_table = @FILES@/rosseland_ma2026_x0.7_z0.008_padded.txt   # md5 450bc0c1
+he_planck_table = @FILES@/planck_ma2026_x0.7_z0.008_padded.txt      # md5 e18ca805
+he_nfine    = 262144
+he_tau_int  = 1.0
+he_ic_cols  = 5
+he_wall_zero_flux = false   # paper: no flux surgery (S_M = 0 makes the inner mass flux vanish)
+he_ic_balance = false            # the Ma IC AS IS (paper: no re-balance)
+mlt_flux_frozen = false          # radiative-only IC, no MLT deposit
+he_wall_closed = false      # the zero-contact ghosts, not the mirror wall
+mlt_closure    = frozen
+he_grid_dump   = true
+he_bc_outer = copy     # paper: copy rho, P, v_t; v_r copied if > 0 else 0
+he_bc_inner = zerocontact   # paper: zero-mass-flux ghosts (HLLC S_M = 0)
+<output1>
+file_type   = hst
+dt          = 1000.0
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt = 4.32e4                      # 0.5 d
+<output3>
+file_type = bin
+variable  = m1
+dt = 4.32e4
+<output4>
+file_type = log
+dt = 1.0e4
+<output5>
+file_type = rst
+dt = 8.64e4                      # 1 d
+<output6>
+file_type = bin
+variable  = m1_vet
+dt = 4.32e4
+<output7>
+file_type = bin
+variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
+dt = 4.32e4
