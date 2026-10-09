@@ -1164,9 +1164,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(u0, nmb, M1_NVAR, ncells3, ncells2, ncells1);
   Kokkos::realloc(u1, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
+  // accel-1009 (memory): the face fluxes are the explicit stage's (CalculateFluxes,
+  // RKUpdate, flux correction); the implicit task list never adds them
+  {const bool expl = (transport < M1_TRANSPORT_IMPLICIT_X1);
+  const int f3 = expl ? ncells3 : 1, f2 = expl ? ncells2 : 1, f1 = expl ? ncells1 : 1;
+  Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, f3, f2, f1);
+  Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, f3, f2, f1);
+  Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, f3, f2, f1);}
   // rho*kappa is needed in the GHOST cells too: the face opacity at the first and last
   // active face is the arithmetic mean over a ghost and an active cell.
   // vet_scatter: a 4th component, rho kappa_e (M1_OP_S)
