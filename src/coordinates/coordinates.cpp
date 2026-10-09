@@ -9,6 +9,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "cartesian_ks.hpp"
@@ -37,6 +38,13 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     sin_face_eta("sin_face_eta",1,1,1), cos_face_eta("cos_face_eta",1,1,1),
     x_ov_rD("x_ov_rD",1,1,1,1), y_ov_rC("y_ov_rC",1,1,1,1), z_ov_rE("z_ov_rC",1,1,1,1) {
         
+  // defaults-1009 (user 10-09): sp_x2_periodic_image defaults ON on a FRESH run on a
+  // theta-PERIODIC spherical-polar mesh (the only place it acts, BuildX2vRecon); a
+  // restart whose file lacks the key and every other mesh keep the old default (off)
+  const bool img_def = !global_variable::restart_run &&
+      pmy_pack->pmesh->use_spherical_polar && pmy_pack->pmesh->multi_d &&
+      pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic &&
+      !pmy_pack->pmesh->use_grid_stretch_theta;
   // Read only if <mhd> already exists: GetOrAdd would CREATE the block, and
   // MeshBlockPack::AddPhysics decides which modules to build from which blocks exist.
   if (pin->DoesBlockExist("mhd")) {
@@ -47,7 +55,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
     sp_face_avg = pin->GetOrAddBoolean("mhd","sp_face_avg",false);
     sp_face_avg_terms = pin->GetOrAddInteger("mhd","sp_face_avg_terms",3);
-    sp_x2_periodic_image = pin->GetOrAddBoolean("mhd","sp_x2_periodic_image",false);
+    sp_x2_periodic_image = pin->GetOrAddBoolean("mhd","sp_x2_periodic_image",img_def);
   } else if (pin->DoesBlockExist("hydro")) {
     // pure hydro: the same well-balanced source, through the same shared
     // SrcTermsGnomonicEquiangleImpl -> SrcTermsCurvilinearWB path (is_mhd = false)
@@ -59,7 +67,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
     sp_face_avg = pin->GetOrAddBoolean("hydro","sp_face_avg",false);
     sp_face_avg_terms = pin->GetOrAddInteger("hydro","sp_face_avg_terms",3);
-    sp_x2_periodic_image = pin->GetOrAddBoolean("hydro","sp_x2_periodic_image",false);
+    sp_x2_periodic_image = pin->GetOrAddBoolean("hydro","sp_x2_periodic_image",
+                                                img_def);
   }
 
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {

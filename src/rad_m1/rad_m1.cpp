@@ -388,8 +388,33 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   //      (rad_m1.hpp), form vet_scatter_form = ma (Jiang 2021 eq. 6) | absorption,
   //      J next to B* vet_scatter_j = relaxed (default) | current (absorption only;
   //      ma + current FATALs below).
+  // defaults-1009 (user 10-09): on a FRESH run with a VET closure that carries ray data
+  // (closure = vet_sc, or vet_col with vet_gd = true), opacity = table and a tabulated
+  // general EOS (which supplies kappa_e from its Saha x_e), vet_scatter defaults ON with
+  // vet_scatter_kappa_e = eos; everything else (M1 / eddington / tau / vet_col without
+  // vet_gd, other opacity laws, the ideal gas) and a restart whose file lacks the key
+  // keep the old default (off).  The resolved value is recorded.
+  const bool fresh = !global_variable::restart_run;
+  bool gen_eos_tab = false;   // <hydro|mhd>/eos = general with general_eos = table
+  for (const char *bk : {"hydro", "mhd"}) {
+    if (pin->DoesBlockExist(bk) && pin->DoesParameterExist(bk,"eos") &&
+        pin->GetString(bk,"eos").compare("general") == 0 &&
+        pin->DoesParameterExist(bk,"general_eos") &&
+        pin->GetString(bk,"general_eos").compare("table") == 0) {
+      gen_eos_tab = true;
+    }
+  }
+  bool vet_rays = false;      // closure = vet_sc, or vet_col + vet_gd = true
+  if (pin->DoesParameterExist("rad_m1","closure")) {
+    const std::string cl0 = pin->GetString("rad_m1","closure");
+    vet_rays = (cl0.compare("vet_sc") == 0) ||
+               (cl0.compare("vet_col") == 0 && pin->DoesParameterExist("rad_m1","vet_gd")
+                && pin->GetBoolean("rad_m1","vet_gd"));
+  }
   if (pin->DoesParameterExist("rad_m1","vet_scatter")) {
     vscat = pin->GetBoolean("rad_m1","vet_scatter");
+  } else if (fresh && vet_rays && opacity_type == M1_OPAC_TABLE && gen_eos_tab) {
+    vscat = pin->GetOrAddBoolean("rad_m1","vet_scatter",true);
   }
   if (vscat) {
     std::string sf = pin->GetOrAddString("rad_m1","vet_scatter_form","ma");
@@ -431,7 +456,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     std::string km = "const";
     if (opacity_type == M1_OPAC_TABLE) {
-      km = pin->GetOrAddString("rad_m1","vet_scatter_kappa_e","const");
+      // defaults-1009: eos where a tabulated general EOS supplies x_e (fresh runs)
+      km = pin->GetOrAddString("rad_m1","vet_scatter_kappa_e",
+                               (fresh && gen_eos_tab) ? "eos" : "const");
       if (km.compare("const") == 0) {
         otab.scat = 1;
       } else if (km.compare("eos") == 0) {
@@ -945,8 +972,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
+    // defaults-1009 (user 10-09): vet_gd_twin, vet_gd_twin_fuse (where its needs below
+    // hold), vet_gd_twin_det and vet_source_noesrc (with the twin) default ON on a FRESH
+    // vet_gd run; a restart whose file lacks a key keeps the old default (off).  The
+    // resolved values are recorded.  The twin is not taken with vet_gd_async = true.
+    const bool vgd_async_named = pin->DoesParameterExist("rad_m1","vet_gd_async") &&
+                                 pin->GetBoolean("rad_m1","vet_gd_async");
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin")) {
       vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
+    } else if (vgd_on && fresh && !vgd_async_named) {
+      vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",true);
     }
     // vet_gd_twin_full (read only when named, default false; needs vet_gd_twin): subtract
     // the FULL twin D_rr correction, so that the laterally symmetric part of D_rr is
@@ -973,6 +1008,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
+    } else if (vgd_on && fresh && vgd_twin) {
+      // defaults-1009: on only where VetGdInit's needs hold (else the old unfused twin)
+      const bool it1 = !pin->DoesParameterExist("rad_m1","vet_gd_iter") ||
+                       pin->GetInteger("rad_m1","vet_gd_iter") <= 1;
+      const bool bx = pin->DoesParameterExist("rad_m1","vet_gd_band_exit") &&
+                      pin->GetBoolean("rad_m1","vet_gd_band_exit");
+      const bool hok = (global_variable::nranks == 1) || (vgd_hcomp > 0);
+      vgd_twfuse = pin->GetOrAddBoolean("rad_m1","vet_gd_twin_fuse",
+                                        it1 && !bx && !vgd_async_named && hok);
     }
     // vet_gd_twin_lowmem (mem-1009; read only when named, default false): with
     // vet_gd_twin_fuse, the twin is swept BEFORE the main sweep in the same intensity
@@ -990,6 +1034,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // instead of by atomics, so a GPU run is reproducible run to run
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_det")) {
       vgd_twdet = pin->GetBoolean("rad_m1","vet_gd_twin_det");
+    } else if (vgd_on && fresh && vgd_twin) {
+      // defaults-1009
+      vgd_twdet = pin->GetOrAddBoolean("rad_m1","vet_gd_twin_det",true);
+    }
+    // defaults-1009: vet_source_noesrc follows the twin on a fresh vet_gd run (read above
+    // when named)
+    if (vgd_on && fresh && vgd_twin &&
+        !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
+      vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
