@@ -241,6 +241,7 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
               const Real btau0, const Real bflo, const Real bfhi, const Real balpha,
               const Real ch, const Real el, const Real er, const Real br0,
               const Real hml, const Real hpr, const Real cdx, const Real bx0,
+              const bool bxbeam, const Real bxwmin,
               Real &alw, Real &ccl, Real &ccr) {
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
@@ -283,7 +284,11 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
   // 1/tau_cell in a thick cell).  Mixed faces with X >> 1 make the 7-point system
   // ill-conditioned (BiCGStab 200-550 its or stagnation on xb20) and the central flux has
   // no diffusion limit there anyway.
-  if (bx0 > 0.0) {
+  // xthinfix-1009: implicit_blend_xthin_mode = beam applies the override only on faces
+  // whose weight is already > implicit_blend_xthin_wmin (the mixed beam/central faces);
+  // diffusive faces (w <= wmin, e.g. idort_f below flo) keep the plain weight, so
+  // smooth fields stay central and converge (order_1009).  mode = all: every face.
+  if (bx0 > 0.0 && (!bxbeam || w > bxwmin)) {
     const Real x = cdx/(1.0 + cdx*tauf);
     const Real s2 = x*x/(x*x + bx0*bx0);
     w = 1.0 - (1.0 - w)*(1.0 - s2);
@@ -1533,6 +1538,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_blend_alpha = pin->GetOrAddReal("rad_m1","implicit_blend_alpha",1.0);
   impl_blend_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_r0",1.5);
   impl_blend_xthin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin",0.0);
+  {
+    // xthinfix-1009: where the xthin override acts (all faces = hrup-1009 behaviour)
+    std::string sxm = pin->GetOrAddString("rad_m1","implicit_blend_xthin_mode","all");
+    if (sxm.compare("all") == 0) {
+      impl_blend_xthin_beam = false;
+    } else if (sxm.compare("beam") == 0) {
+      impl_blend_xthin_beam = true;
+    } else {
+      ImplFatal("<rad_m1>/implicit_blend_xthin_mode = '" + sxm
+                + "' is not a choice (all | beam)");
+    }
+    impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
+  }
   std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
   if (sbm.compare("max") == 0) {
     impl_blend_fmode = M1_IBFM_MAX;
@@ -2686,6 +2704,8 @@ void RadiationM1::ImplicitLatFaceCoef() {
   const Real ch = chat;
   const Real balph = impl_blend_alpha, br0 = impl_blend_r0;
   const Real bx0 = impl_blend_xthin, dtl = dt_sub;
+  const bool bxbeam = impl_blend_xthin_beam;
+  const Real bxwmin = impl_blend_xthin_wmin;
   if (impl_beam_hr) {
     // hrup-1009: per direction d, h+_d -> S1 and h-_d -> S3 of every active cell
     // (M1HrCell), both through the transverse halo, then the faces (M1HrFace)
@@ -2732,8 +2752,8 @@ void RadiationM1::ImplicitLatFaceCoef() {
                  iw_(m,M1_IW_RES,k,j,i), tauf, blend, bkind, bfm, btau0, bflo, bfhi,
                  balph,
                  ch, iw_(m,M1_IW_EP,km,jm,i), iw_(m,M1_IW_EP,k,j,i), br0,
-                 iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, al,
-                 hl, hr);
+                 iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxbeam,
+                 bxwmin, al, hl, hr);
         fw(m,M1_IFW_AL,k,j,i) = al;
         fw(m,M1_IFW_HCL,k,j,i) = hl;
         fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -9640,6 +9660,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool hrx = impl_beam_hr;
       const Real balph = impl_blend_alpha, br0 = impl_blend_r0;
       const Real bx0 = impl_blend_xthin;
+      const bool bxbeam = impl_blend_xthin_beam;
+      const Real bxwmin = impl_blend_xthin_wmin;
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -9722,7 +9744,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real alb, hlb, hrb;
           M1HrFace(hpl, hmr, fbl, fbr, tauf, blend, bkind, bfm, btau0, bflo, bfhi, balph,
                    ch, iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip), br0, hml, hpr,
-                   ch*dt/dx, bx0, alb, hlb, hrb);
+                   ch*dt/dx, bx0, bxbeam, bxwmin, alb, hlb, hrb);
           ifw_(m,M1_IFW_AL,k,j,i) = alb;
           ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
           ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
