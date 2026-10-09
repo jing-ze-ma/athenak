@@ -1350,7 +1350,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     std::cout << "<rad_m1> restart input lacks m1-positivity keys (implicit_g0_exchange,"
               << " g0_limit, pos_gas, pos_floor): keeping the old default (off) for "
               << "those; name them to switch" << std::endl;
-  }}
+  }
+  }  // end of the restart-default scope
   if (pin->DoesParameterExist("rad_m1","implicit_pos_gas_frac")) {
     impl_pos_gas_frac = pin->GetReal("rad_m1","implicit_pos_gas_frac");
   }
