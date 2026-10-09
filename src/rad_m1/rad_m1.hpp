@@ -593,8 +593,9 @@ class RadiationM1 {
   int impl_blend_mode;          // M1_IBMODE_*: blend the whole flux, or add the HLL
                                 // dissipation alone on top of the full central flux
   Real impl_blend_xthin = 0.0;    // hrup-1009: transparency override X0 (0 off)
-  bool impl_blend_xthin_beam = false;  // xthinfix-1009: override only where w > wmin
+  int impl_blend_xthin_mode = 0;       // xthinfix-1009: 0 all, 1 beam, 2 beam_kn
   Real impl_blend_xthin_wmin = 0.0;    // xthinfix-1009: threshold of mode = beam
+  Real impl_blend_xthin_r0 = 1.5;      // xthinfix-1009: Knudsen R0 of mode = beam_kn
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)

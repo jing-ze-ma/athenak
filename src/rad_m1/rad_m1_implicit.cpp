@@ -241,7 +241,7 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
               const Real btau0, const Real bflo, const Real bfhi, const Real balpha,
               const Real ch, const Real el, const Real er, const Real br0,
               const Real hml, const Real hpr, const Real cdx, const Real bx0,
-              const bool bxbeam, const Real bxwmin,
+              const int bxmode, const Real bxwmin, const Real bxr0,
               Real &alw, Real &ccl, Real &ccr) {
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
@@ -284,13 +284,31 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
   // 1/tau_cell in a thick cell).  Mixed faces with X >> 1 make the 7-point system
   // ill-conditioned (BiCGStab 200-550 its or stagnation on xb20) and the central flux has
   // no diffusion limit there anyway.
-  // xthinfix-1009: implicit_blend_xthin_mode = beam applies the override only on faces
-  // whose weight is already > implicit_blend_xthin_wmin (the mixed beam/central faces);
-  // diffusive faces (w <= wmin, e.g. idort_f below flo) keep the plain weight, so
-  // smooth fields stay central and converge (order_1009).  mode = all: every face.
-  if (bx0 > 0.0 && (!bxbeam || w > bxwmin)) {
+  // xthinfix-1009: where the override acts (implicit_blend_xthin_mode)
+  //   all (0):     every face (hrup-1009);
+  //   beam (1):    only faces whose weight is already > implicit_blend_xthin_wmin (the
+  //                mixed beam/central faces); diffusive faces keep the plain weight, so
+  //                smooth fields stay central and converge (order_1009);
+  //   beam_kn (2): beam, plus the faces with w <= wmin whose field is NOT diffusive, by
+  //                the Knudsen ratio R = |E_R - E_L|/(tau_f max(E_L, E_R)) (= 3|F|/cE in
+  //                the diffusion limit, -> infinity in vacuum next to a beam or shadow),
+  //                weighted R^4/(R^4 + R0^4), R0 = implicit_blend_xthin_r0.  As in the
+  //                always-dissipative HLLE of Jiang+ 2012 / Menon+ 2022 the transparent
+  //                vacuum faces stay upwind (realisable, well conditioned), but a
+  //                diffusive transition layer (R < R0) stays central (xthinfix_1009).
+  if (bx0 > 0.0) {
+    Real g = 1.0;
+    if (bxmode != 0 && !(w > bxwmin)) {
+      g = 0.0;
+      if (bxmode == 2) {
+        const Real em = fmax(fmax(el, er), 1.0e-300);
+        const Real r = fabs(er - el)/fmax(tauf*em, 1.0e-300*em);
+        const Real r4 = SQR(SQR(fmin(r, 1.0e30)));
+        g = r4/(r4 + SQR(SQR(bxr0)));
+      }
+    }
     const Real x = cdx/(1.0 + cdx*tauf);
-    const Real s2 = x*x/(x*x + bx0*bx0);
+    const Real s2 = g*x*x/(x*x + bx0*bx0);
     w = 1.0 - (1.0 - w)*(1.0 - s2);
   }
   alw = w;
@@ -1542,12 +1560,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // xthinfix-1009: where the xthin override acts (all faces = hrup-1009 behaviour)
     std::string sxm = pin->GetOrAddString("rad_m1","implicit_blend_xthin_mode","all");
     if (sxm.compare("all") == 0) {
-      impl_blend_xthin_beam = false;
+      impl_blend_xthin_mode = 0;
     } else if (sxm.compare("beam") == 0) {
-      impl_blend_xthin_beam = true;
+      impl_blend_xthin_mode = 1;
+    } else if (sxm.compare("beam_kn") == 0) {
+      impl_blend_xthin_mode = 2;
     } else {
       ImplFatal("<rad_m1>/implicit_blend_xthin_mode = '" + sxm
-                + "' is not a choice (all | beam)");
+                + "' is not a choice (all | beam | beam_kn)");
+    }
+    if (impl_blend_xthin_mode == 2) {
+      impl_blend_xthin_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_r0",1.5);
     }
     impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
   }
@@ -2704,8 +2727,8 @@ void RadiationM1::ImplicitLatFaceCoef() {
   const Real ch = chat;
   const Real balph = impl_blend_alpha, br0 = impl_blend_r0;
   const Real bx0 = impl_blend_xthin, dtl = dt_sub;
-  const bool bxbeam = impl_blend_xthin_beam;
-  const Real bxwmin = impl_blend_xthin_wmin;
+  const int bxmode = impl_blend_xthin_mode;
+  const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
   if (impl_beam_hr) {
     // hrup-1009: per direction d, h+_d -> S1 and h-_d -> S3 of every active cell
     // (M1HrCell), both through the transverse halo, then the faces (M1HrFace)
@@ -2752,8 +2775,8 @@ void RadiationM1::ImplicitLatFaceCoef() {
                  iw_(m,M1_IW_RES,k,j,i), tauf, blend, bkind, bfm, btau0, bflo, bfhi,
                  balph,
                  ch, iw_(m,M1_IW_EP,km,jm,i), iw_(m,M1_IW_EP,k,j,i), br0,
-                 iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxbeam,
-                 bxwmin, al, hl, hr);
+                 iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxmode,
+                 bxwmin, bxr0, al, hl, hr);
         fw(m,M1_IFW_AL,k,j,i) = al;
         fw(m,M1_IFW_HCL,k,j,i) = hl;
         fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -9660,8 +9683,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool hrx = impl_beam_hr;
       const Real balph = impl_blend_alpha, br0 = impl_blend_r0;
       const Real bx0 = impl_blend_xthin;
-      const bool bxbeam = impl_blend_xthin_beam;
-      const Real bxwmin = impl_blend_xthin_wmin;
+      const int bxmode = impl_blend_xthin_mode;
+      const Real bxwmin = impl_blend_xthin_wmin, bxr0 = impl_blend_xthin_r0;
       const bool hgd = hrx && vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0);
       const int hsrc = !hrx ? 0 : (vetsc ? 1 : (hgd ? 2 : (!impl_hr_model ? -1 :
                                                             (trans ? 0 : 3))));
@@ -9744,7 +9767,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real alb, hlb, hrb;
           M1HrFace(hpl, hmr, fbl, fbr, tauf, blend, bkind, bfm, btau0, bflo, bfhi, balph,
                    ch, iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip), br0, hml, hpr,
-                   ch*dt/dx, bx0, bxbeam, bxwmin, alb, hlb, hrb);
+                   ch*dt/dx, bx0, bxmode, bxwmin, bxr0, alb, hlb,
+                   hrb);
           ifw_(m,M1_IFW_AL,k,j,i) = alb;
           ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
           ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
