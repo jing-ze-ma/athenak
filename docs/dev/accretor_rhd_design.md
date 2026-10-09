@@ -557,4 +557,23 @@ docs/dev/accretor_rhd/plaskett_s5_1009.md; runs rhd/s5/.
   stream head meets the top of the atmosphere near the L1 cap: the same place and time as the S4 env13
   failure. Before it, the whole column from the photosphere top (r 9.465, f_rr -> 1) to the stream head
   collapses radiatively 20 -> 9.5 kK in 2e-4 code. Not cured by cfl 0.15 or Anderson acceleration.
-  Open: gas-only stream on the radeq ambient (smoke_gas) and implicit_flux ap_hll/blend from rst 5.
+  Also not cured by implicit_flux = blend / blend + implicit_flux_faces = all (mem-1009 code; both diverge in
+  the first step after the switch); ap_hll/berthon/closure_lag pass are not available with transport =
+  implicit on this mesh.
+- **Gas-only control (stream_rad = false, same hot one-zone gas, radeq ambient; rhd/s5/smoke_gas,
+  3f37ebf8): through the first impact, 0 NON-CONVERGED** to t = 0.0300 (6824 cycles): the window gas hands
+  its radiation to the dark window at once (T 65 -> 15.6 kK at r_out, P_rad/P_gas 0.01), the cold stream
+  hits at phi ~15 deg: shock T 84 kK (t 0.0284) -> 110 kK (t 0.0300) at r 9.43, P_rad/P_gas 9 -> 3.4, rho
+  0.15 code; MR 0.0206 code by t 0.030 (Min 0.40); budget -2e-6 of int L dt, mass budget closes; Picard 12.4
+  in the impact phase, dt 1.52-1.64e-6, 0.65 s/cycle; compressed ambient ahead of the stream T_gas/T_rad =
+  1.000 (0.997-1.007). So the physical ambient converges where the S4 masked ambient diverged; what fails is
+  the radiation-rich (injected) stream head meeting the atmosphere.
+- **mem-1009 merge (ce3cc213):** env13, env13_cool, S2: hst, bin, cycle/dt identical to the refs; S3a-final
+  input vs 9a706823: bin (hydro + m1) and cycle/dt identical, history sums differ in the last digit (rad-mode
+  reductions, e.g. Lmeas row 0 5.165626921119900e4 vs ...899e4, hydro momenta 1e-16 relative); the injected
+  smoke diverges at the same cycle with the same residual (bitwise).
+- **Cost (impact phase, gas-only stream, dt 1.6e-6; half orbit 0.2366 code = 1.48e5 cycles):** 2048 x 1 H200
+  0.655 s/cycle -> 26.9 h per half orbit, 22.4 d per 10 orbits; 2048 x 2 H200 0.356 s/cycle (1.84x) -> 14.6 h,
+  12.2 d wall (24.4 GPU-d); nx3 1024 x 1 H200 (static ratio 0.51, dt radial-limited, unchanged) -> 13.7 h,
+  11.4 d; 1024 x 2 H200 (1.6x assumed) ~8.6 h, ~7.2 d wall. Approach phase: dt 7.0e-6 (4.6x S3a) at
+  0.95-1.05 s/cycle (Picard 11-15). The injected stream ran at Picard ~15 (vs 12 gas-only).

@@ -130,3 +130,12 @@ core, that affects only a skin of the top cell (closure error confined to tau < 
   in history column 8 "Mfl" (cumulative; replaces Jstr, the wall-stress diagnostic that has no meaning
   deep in the envelope), energy in Erel. Mass budget dMdom = Min - Mout - Mwal + Mfl.
 - Size: P_floor/P_ph ~1e-6; ram of floor gas falling at 100 km/s ~1e-4 code vs P_ph ~7; KE flux ~1e-6 of F.
+
+## 7. viper's 10-09 production radiation keys (mem-1009) for this input
+
+| key | adopted? | why |
+|---|---|---|
+| vet_source_noesrc | no | acts only with the explicit esrc deposit (MLT scaffold); the accretor has no esrc: no-op |
+| implicit_face_opac_n | no | changes the step-frozen face data of the blend; this input uses implicit_flux = central (blend diverged here) |
+| implicit_pos_floor_solve | not yet (recommended for the next input) | energy-consistent e_floor handling; inert unless E reaches e_floor (1e-10; the ambient E ~1 code), so it cannot cure the impact divergence; not tested here |
+| half-range beam (implicit_flux_beam = halfrange) | no | needs vet_sc / vet_gd rays; with vet_col the faces stay central (implicit_hr_model fails G1 per viper); vet_gd cannot run on the 4-cell theta band |
