@@ -358,6 +358,16 @@ class RadiationM1 {
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
+  // PER-COLUMN incident bath at the outer x1 face (accretor-rhd-1008 S5, the stream
+  // window's own radiation): a problem generator hands (nmb, n3, n2) values through
+  // SetX1maxBathColumns; the outer Marshak face then uses E_bath(m,k,j) instead of
+  // iebath_x1max (comoving face flux c q (E - E_bath), inflow enthalpy a E_bath), and the
+  // face kernel stores the lab-frame advective energy flux of implicit_bc_advect through
+  // that face in ibadv_x1max(m,k,j) (the end face's f0x1 is the comoving flux only).
+  // Default: not set, the scalar bath, bitwise.
+  bool iebath_hi_col_on = false;
+  DvceArray3D<Real> iebath_hi_col;
+  DvceArray3D<Real> ibadv_x1max;
   // implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge only): the
   // Marshak face flux takes the face E extrapolated from r^2 E of the two end cells
   // (M1SphMarshakCoef in the row, limiter remainder deferred) instead of the end cell's
@@ -1100,6 +1110,7 @@ class RadiationM1 {
   //! the per-cell reference acceleration of force_reference = wb_arad; the caller owns
   //! the array and must keep it alive for the run
   void SetForceReference(const DvceArray4D<Real> &a);
+  void SetX1maxBathColumns(const DvceArray3D<Real> &eb);
   //! design sect. 2: evaluate and print v_max*tau_max/chat.  Runs once, from the first
   //! Opacity task that has a filled array (tau needs rho*kappa, which the ctor has not).
   void RSLACheck();

@@ -8048,6 +8048,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   int bclo = ibc_x1min, bchi = ibc_x1max;
   Real fxlo = iflux_x1min, fxhi = iflux_x1max;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
+  // per-column outer bath (SetX1maxBathColumns; off: the scalar ebhi, bitwise)
+  const bool ebc = iebath_hi_col_on;
+  auto ebc_ = iebath_hi_col;
+  auto bdv_ = ibadv_x1max;
   const bool badv = impl_bc_advect;
   bool cyclic = (bclo == M1_IBC_PERIODIC);
   // MILESTONE 3b, LIMIT 4.  With more than one MeshBlock along x1 a block is at a
@@ -9047,15 +9051,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       } else if (bchi == M1_IBC_MARSHAK) {
         const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
+        const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
         bb += nu*ch*mq;
-        rr += nu*ch*mq*ebhi;
+        rr += nu*ch*mq*ebh;
         // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
         // the end cell's velocity (outflow: this cell's E; inflow: the bath)
         if (badv) {
           if (vi > 0.0) {
             bb += nu*cr*ai;
           } else {
-            rr -= nu*cr*ai*ebhi;
+            rr -= nu*cr*ai*ebh;
           }
         }
       } else if (bchi == M1_IBC_FLUX) {
@@ -9267,8 +9272,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           d_[13] += rr - re0_;
         } else if (bchi == M1_IBC_MARSHAK) {
           const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
+          const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
           bb += nup*ch*mq;
-          rr += nup*ch*mq*ebhi;
+          rr += nup*ch*mq*ebh;
           if (mfl && (!vqs || sqf) && ie > is) {
             // implicit_marshak_face = linear: c q (E_f - E_bath) with E_f the face E.
             // Not with vet_col_surface_q: its q = H(face)/J(top cell) already makes the
@@ -9293,7 +9299,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             if (vi > 0.0) {
               bb += nup*cr*ai;
             } else {
-              rr -= nup*cr*ai*ebhi;
+              rr -= nup*cr*ai*ebh;
             }
           }
         } else if (bchi == M1_IBC_FLUX) {
@@ -9700,14 +9706,24 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real fb = 0.0;
         if (bc == M1_IBC_MARSHAK) {
           const Real mq = (hi && vqs) ? vq_(m,k,j) : mqo;   // vet_col_surface_q
-          fb = sgn*cl*mq*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebhi));
+          const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
+          fb = sgn*cl*mq*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebh));
+          Real eout = iw_(m,M1_IW_EP,k,j,ic);   // the E an outflow carries out
           if (mfl && !(hi && vqs && !sqf) && ie > is) {
             // implicit_marshak_face = linear: the face E of the solved iterate
             const int in = lo ? (is+1) : (ie-1);
             const Real ef = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,ic),
                                               iw_(m,M1_IW_EP,k,j,in), cx1v(m,ic),
                                               cx1v(m,in), cx1f(m,i));
-            fb = sgn*cl*mq*(ef - (lo ? eblo : ebhi));
+            fb = sgn*cl*mq*(ef - (lo ? eblo : ebh));
+            eout = ef;
+          }
+          // per-column bath: the lab-frame advective energy flux a E_up of
+          // implicit_bc_advect through the outer face (outflow: the E of the face flux
+          // above; inflow: the bath), for the problem's energy budget
+          if (hi && ebc) {
+            const Real ae = iw_(m,M1_IW_ADV,k,j,ic);
+            bdv_(m,k,j) = badv ? ((iw_(m,M1_IW_V1,k,j,ic) > 0.0) ? ae*eout : ae*ebh) : 0.0;
           }
         } else if (bc == M1_IBC_FLUX) {
           fb = lo ? fxlo : fxhi;

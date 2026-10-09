@@ -79,6 +79,27 @@
 //! (env_t_relax_env = env_t_relax_stream = 0).  History: the nine rate columns become
 //! Lmeas Ltop Erad Etot KE Ebnd Erel Pic Picmax (RyPerHistEnv).
 //!
+//! PHYSICAL AMBIENT (problem/env_amb_mode = radeq; default hot = the hot hydrostatic ambient
+//! above; S5 of accretor-rhd-1008, user 10-09).  The gas between the stars is tenuous gas at
+//! radiative equilibrium: absorption ON (no opac_abs_rho_max), no T relaxation (env_t_relax
+//! = 0; the M1 coupling itself sets T_gas = T_rad), held by the density floor rho_amb (=
+//! hydro/dfloor; it cannot be hydrostatic at ~2e4 K over the domain).  IC: the column's
+//! atmosphere ends where its density falls to rho_amb; above, rho_amb at T_col (the
+//! radiation IC's own T, so gas and radiation start in equilibrium).  The floor is applied
+//! HERE (RyPerSrcEnv, after the sources; the added gas has the cell's velocity and T), so
+//! its mass is booked (history column 8 "Mfl", cumulative, in place of the wall stress Jstr)
+//! and its energy goes into Erel with the sponge; the EOS floor then never acts.
+//!
+//! STREAM RADIATION (problem/stream_rad = true; default false: dark window).  The optically
+//! thick stream enters with its radiation in equilibrium with its gas: in the window the M1
+//! ghosts hold E = a T_s^4 and the lab-frame flux of optically thick advection F = (4/3) E v
+//! (env_t_stream, the stream velocity), and since the implicit x1 solve uses a FACE-FLUX
+//! boundary (the ghosts are not read), the outer Marshak face gets the same state as a
+//! per-column incident bath (RadiationM1::SetX1maxBathColumns): comoving flux c q (E -
+//! E_bath), inflow enthalpy (1 + chi) v E_bath (= (4/3) v E_bath in the thick limit).
+//! Elsewhere the bath is 0 (vacuum/Marshak, unchanged).  The advective radiation energy
+//! through r_out (module's ibadv_x1max) is booked in Ebnd with the comoving face flux.
+//!
 //! BOUNDARIES (user BCs on both x1 faces; mesh/ix1_bc = ox1_bc = user):
 //!  inner (r = R_acc): rigid ABSORBING stellar surface.  v_r(ghost) = min(v_r(edge), 0)
 //!    (a diode: gas only leaves into the star); density copied from the edge cell
@@ -224,6 +245,12 @@ bool rad_ = false;
 Real rad_fin_ = 0.0;           // imposed x1min radiative flux (code), = f_band F_col(r_in)
 Real rad_lfac_ = 1.0;          // code band luminosity -> Lsun of the full sphere
 Real rad_pn0_ = 0.0, rad_ps0_ = 0.0;   // Picard counters at the previous history output
+// S5 (user 10-09): problem/env_amb_mode = radeq (floor ambient at radiative equilibrium,
+// floor booked) and problem/stream_rad (the window's radiation injected); see the header
+bool amb_radeq_ = false;
+bool strad_ = false;
+Real strad_e_ = 0.0;           // a T_s^4 of the window (code)
+DvceArray3D<Real> rbath_;      // per-column outer Marshak bath (m,k,j), handed to <rad_m1>
 std::vector<Real> rcol_psi_, rcol_g_, rcol_f_;   // column psi, G(psi), F(psi) [code]
 
 KOKKOS_INLINE_FUNCTION
@@ -590,6 +617,8 @@ void RyPerBCEnv(Mesh *pm) {
   // filled as he_star_m1's: r_in copy (the implicit solve imposes the flux there), r_out
   // vacuum (dark; Marshak through the implicit face BC)
   const bool rad = rad_;
+  const bool strad = strad_;
+  const Real sre = strad_e_;
   auto pwcc = pmbp->phydro->phicc_wb;
   DvceArray5D<Real> ur;
   Real rcl = 1.0, refl = 0.0;
@@ -695,7 +724,18 @@ void RyPerBCEnv(Mesh *pm) {
           u0(m,IM3,k,j,ig) = dg*v3;
           u0(m,IEN,k,j,ig) = eosd.EnergyFromTemperature(dg, tg)
                              + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-          if (rad) radm1::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
+          if (rad) {
+            if (win && strad) {
+              // problem/stream_rad: the stream's radiation in equilibrium with its gas,
+              // E = a T_s^4, lab-frame flux of optically thick advection (4/3) E v
+              ur(m,radm1::M1_E,k,j,ig) = sre;
+              ur(m,radm1::M1_F1,k,j,ig) = (4.0/3.0)*sre*v1;
+              ur(m,radm1::M1_F2,k,j,ig) = 0.0;
+              ur(m,radm1::M1_F3,k,j,ig) = (4.0/3.0)*sre*v3;
+            } else {
+              radm1::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
+            }
+          }
         }
       }
       return;
@@ -907,6 +947,42 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/du;
     }
   });
+  // problem/env_amb_mode = radeq: the density floor applied here (the EOS floor then never
+  // acts), added gas at the cell's velocity and temperature; its mass is booked (Mfl), its
+  // energy is inside the Erel difference below
+  Real dmfl = 0.0;
+  if (amb_radeq_) {
+    auto phc = ph->phicc0;
+    const Real tfl = gen_tfl_;
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Kokkos::parallel_reduce("ryper_flr", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &sum) {
+      const int m = idx/nkji;
+      const int k = (idx - m*nkji)/nji + ks;
+      const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+      const int i = idx%ni + is;
+      const Real du = u0(m,IDN,k,j,i);
+      if (!(du < rfl)) return;
+      const Real dw = w0(m,IDN,k,j,i), ew = w0(m,IEN,k,j,i);
+      Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
+      Real tc = (dw > 0.0 && ew > 0.0) ? eosd.Temperature(dw, ew) : tfl;
+      if (du > 0.0) {
+        v1 = u0(m,IM1,k,j,i)/du; v2 = u0(m,IM2,k,j,i)/du; v3 = u0(m,IM3,k,j,i)/du;
+        const Real ei = u0(m,IEN,k,j,i) - 0.5*du*(v1*v1 + v2*v2 + v3*v3)
+                        - du*phc(m,k,j,i);
+        if (ei > 0.0) tc = eosd.Temperature(du, ei, tc);
+      }
+      tc = fmax(tc, tfl);
+      u0(m,IDN,k,j,i) = rfl;
+      u0(m,IM1,k,j,i) = rfl*v1;
+      u0(m,IM2,k,j,i) = rfl*v2;
+      u0(m,IM3,k,j,i) = rfl*v3;
+      u0(m,IEN,k,j,i) = eosd.EnergyFromTemperature(rfl, tc)
+                        + 0.5*rfl*(v1*v1 + v2*v2 + v3*v3) + rfl*phc(m,k,j,i);
+      sum += (rfl - du)*volume(m,k,j,i);
+    }, Kokkos::Sum<Real>(dmfl));
+  }
   Real derel = 0.0;
   if (rad) {
     derel = RyPerEsum(pmbp) - erel0;     // per rank, as the flux registers
@@ -947,6 +1023,11 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   if (rad) ff0 = pmbp->pradm1->f0x1;
   const bool haveff = rad && (ff0.extent_int(0) > 0);
   const Real fin = rad_fin_;
+  // per-column outer bath (env_amb_mode = radeq or stream_rad): the advective radiation
+  // energy through r_out (implicit_bc_advect) joins the comoving face flux in register 10
+  const bool hbdv = rad && pmbp->pradm1->iebath_hi_col_on;
+  DvceArray3D<Real> bdv;
+  if (hbdv) bdv = pmbp->pradm1->ibadv_x1max;
   array_sum::GlobalSum fs;
   Kokkos::parallel_reduce("ryper_flxe", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
   KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
@@ -976,6 +1057,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       v.the_array[5] = (f3 + om*r*fd)*r*a;
       if (rad) {
         if (haveff) v.the_array[10] = ff0(m,k,j,ie+1)*a;
+        if (hbdv) v.the_array[10] += bdv(m,k,j)*a;
         v.the_array[11] = flx(m,IEN,k,j,ie+1)*a;
       }
     }
@@ -991,12 +1073,16 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
 
   const int s = stage_ctr_ % nstages_;
   const int nacc = rad ? kNaccR : kNacc;
+  // env_amb_mode = radeq: register 4 (the wall-stress part Jstr of Jacc, meaningless deep in
+  // the envelope) holds the cumulative floor mass Mfl instead
+  if (amb_radeq_) fs.the_array[4] = 0.0;
   if (s == 0) {
     for (int n=0; n<nacc; ++n) acc1_[n] = acc0_[n];
   }
   for (int n=0; n<kNacc; ++n) {
     acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
   }
+  if (amb_radeq_) acc0_[4] += dmfl;
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
       acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
@@ -1076,6 +1162,7 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
                          "dJR", "dJin"};
   pdata->nhist = 22;
   for (int n=0; n<22; ++n) pdata->label[n] = lab[n];
+  if (amb_radeq_) pdata->label[8] = "Mfl";   // cumulative floor mass (env_amb_mode = radeq)
   for (int n=0; n<4; ++n) pdata->hdata[n] = s.the_array[n];
   if (rad) {
     // <rad_m1>: the nine RATE columns are replaced (they are the differences of the
@@ -1135,6 +1222,7 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   rhoamb_ = DvceArray3D<Real>();
   gpl_ = DvceArray3D<Real>();
   iracc_ = DvceArray1D<int>();
+  rbath_ = DvceArray3D<Real>();
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
@@ -1331,9 +1419,11 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     const Real wa = sig_*pmbp->pmesh->mesh_size.x1max;     // arc sigma at r_out (code)
     if (root) {
       std::printf("ry_per_accretor: <rad_m1> stream window peak: rho %.4g g/cc, T %.1f K, "
-                  "P_rad/P_gas %.4g (radiation NOT injected: dark ghosts), kappa_R %.4g "
+                  "P_rad/P_gas %.4g (%s), kappa_R %.4g "
                   "kappa_P %.4g cm^2/g, tau across one arc sigma (%.4g Rsun) %.4g\n",
-                  d*du, t*tk, prad/pg, hsk(0)/(du*lu),
+                  d*du, t*tk, prad/pg, strad_ ? "radiation INJECTED: E = a T^4 = "
+                  "window ghosts and outer Marshak bath, F = (4/3) E v" :
+                  "radiation NOT injected: dark ghosts", hsk(0)/(du*lu),
                   hsk(1)/(du*lu), wa, hsk(0)*d*wa);
     }
   }
@@ -1635,6 +1725,8 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
   auto he = Kokkos::create_mirror_view(de);
   auto hv = Kokkos::create_mirror_view(dv);
   std::vector<Real> d(n1), e(n1), t(n1), pw(n1), pf(n1 + 1);
+  std::vector<char> isa(n1, 0);
+  const bool radeq = amb_radeq_;
   Real rmax = 0.0, rhoanc_min = 1e300, rhoanc_max = -1e300;
   int nfail = 0;
   for (int m=0; m<nmb; ++m) {
@@ -1707,8 +1799,10 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
         walk(i+1, d[i+1], pl, pr);
         d[i] = solve(i, 1, pl, d[i+1]);
       }
-      // upward to n1 - 2; the hot ambient takes over
+      // upward to n1 - 2; the hot ambient takes over (env_amb_mode = radeq: the floor at the
+      // column's T, where the column's density has fallen to rho_amb)
       bool amb = false;
+      for (int i=0; i<n1; ++i) isa[i] = 0;
       for (int i=ia; i<=n1-1; ++i) {
         const Real pha = hpt(m,k,0,i) - (eqtop ? aeq : RochePot(p, racc, hx3(m,k)));
         const Real da = ramb0*std::exp(std::max(-pha/camb2, -700.0));
@@ -1726,11 +1820,16 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
           Real ei, cr, ct, cv;
           eos.ThermoAt(d[i], t[i], ei, pc, cr, ct, cv);
         }
-        if (i > ia && (amb || hx1(m,i) > rtop || pw[i] >= phtop_c || pc < da*camb2 ||
-                       i == n1 - 1)) {
+        if (i > ia && (amb || hx1(m,i) > rtop || pw[i] >= phtop_c ||
+                       (radeq ? (d[i] < rho_amb) : (pc < da*camb2)) || i == n1 - 1)) {
           amb = true;
-          d[i] = std::max(da, rho_amb);
-          t[i] = tamb;
+          isa[i] = 1;
+          if (radeq) {
+            d[i] = rho_amb;          // t[i] stays T_col: E = a T_col^4 in RadIC
+          } else {
+            d[i] = std::max(da, rho_amb);
+            t[i] = tamb;
+          }
         }
       }
       // inner ghost i = 0: the isothermal walk from cell 1
@@ -1745,7 +1844,8 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
         d[i] = std::max(d[i], dfl);
         hd(m,k,i) = d[i];
         he(m,k,i) = eos.EnergyFromTemperature(d[i], t[i]);
-        hv(m,k,i) = (hx1(m,i) < rspin && t[i] != tamb) ? vsp*hx1(m,i) : 0.0;
+        hv(m,k,i) = (hx1(m,i) < rspin && (radeq ? (isa[i] == 0) : (t[i] != tamb))) ?
+                    vsp*hx1(m,i) : 0.0;
       }
     }
   }
@@ -1833,6 +1933,66 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
                   "code T, %.5g g/cc per code density\n", gen_tph_*tk, gen_tamb_*tk,
                   env_camb2_, std::sqrt(env_camb2_), gen_tstr_*tk, gen_tfl_*tk, tk,
                   eos.dens_cgs);
+    }
+  }
+  // ---- S5 (user 10-09): the physical ambient and the stream's radiation (read only when
+  // named, so older inputs' parameter dumps are unchanged)
+  {
+    auto fatal5 = [&](const std::string &msg) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: " << msg << std::endl;
+      std::exit(EXIT_FAILURE);
+    };
+    amb_radeq_ = false;
+    if (pin->DoesParameterExist("problem", "env_amb_mode")) {
+      const std::string am = pin->GetString("problem", "env_amb_mode");
+      amb_radeq_ = (am.compare("radeq") == 0);
+      if (!amb_radeq_ && am.compare("hot") != 0) fatal5("env_amb_mode must be hot | radeq");
+    }
+    strad_ = pin->DoesParameterExist("problem", "stream_rad") &&
+             pin->GetBoolean("problem", "stream_rad");
+    if ((amb_radeq_ || strad_) && !rad_) {
+      fatal5("env_amb_mode = radeq and stream_rad need <rad_m1>");
+    }
+    if (amb_radeq_) {
+      if (env_tro_ != 0.0) {
+        fatal5("env_amb_mode = radeq needs problem/env_t_relax = 0 (the floor gas reaches "
+               "radiative equilibrium through the M1 coupling, no T relaxation)");
+      }
+      if (pmbp->pradm1->otab.amask_rho > 0.0) {
+        fatal5("env_amb_mode = radeq needs absorption ON: remove <rad_m1>/opac_abs_rho_max");
+      }
+      if (eos.dfloor != rho_amb) {
+        fatal5("env_amb_mode = radeq needs hydro/dfloor = problem/rho_amb (the floor is "
+               "applied and booked by this pgen)");
+      }
+    }
+    if (rad_ && (amb_radeq_ || strad_)) {
+      // the per-column outer bath: a T_s^4 in the stream window (stream_rad, stream on),
+      // 0 elsewhere (vacuum, = the scalar implicit_ebath_x1max default)
+      auto *pm1 = pmbp->pradm1;
+      if (pm1->iebath_x1max != 0.0) fatal5("stream_rad / radeq need implicit_ebath_x1max = 0");
+      strad_e_ = pm1->arad*SQR(SQR(gen_tstr_));
+      auto &ind = pmbp->pmesh->mb_indcs;
+      const int nb = pmbp->nmb_thispack;
+      const int m3 = (ind.nx3 > 1) ? (ind.nx3 + 2*ind.ng) : 1;
+      const int m2 = (ind.nx2 > 1) ? (ind.nx2 + 2*ind.ng) : 1;
+      Kokkos::realloc(rbath_, nb, m3, m2);
+      auto rb = rbath_;
+      auto &x3c = pmbp->pcoord->x3v;
+      const bool on = strad_ && stream_on_;
+      const Real es = strad_e_, phs = phi_s_, ww = nsig_*sig_;
+      par_for("ryper_bath", DevExeSpace(), 0, nb - 1, 0, m3 - 1, 0, m2 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        rb(m,k,j) = (on && fabs(WrapPhi(x3c(m,k) - phs)) < ww) ? es : 0.0;
+      });
+      pm1->SetX1maxBathColumns(rbath_);
+      if (root) {
+        std::printf("ry_per_accretor: S5: ambient %s; stream radiation %s (E = a T_s^4 = "
+                    "%.6g code at T_s %.1f K, F = (4/3) E v; outer Marshak bath per column)"
+                    "\n", amb_radeq_ ? "radeq (floor at radiative equilibrium, absorption "
+                    "on, floor booked as Mfl)" : "hot", on ? "INJECTED" : "off (dark)",
+                    strad_e_, gen_tstr_*eos.temp_cgs);
+      }
     }
   }
   env_kamb_ = pin->GetOrAddReal("problem", "env_amb_k", 3.0);

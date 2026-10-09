@@ -1177,6 +1177,19 @@ void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::SetX1maxBathColumns
+//! \brief the per-column incident bath E_bath(m,k,j) of the outer x1 Marshak face (see
+//! rad_m1.hpp, iebath_hi_col); also allocates ibadv_x1max (the lab-frame advective energy
+//! flux through that face, filled by the implicit face kernel)
+
+void RadiationM1::SetX1maxBathColumns(const DvceArray3D<Real> &eb) {
+  iebath_hi_col = eb;
+  iebath_hi_col_on = true;
+  Kokkos::realloc(ibadv_x1max, eb.extent_int(0), eb.extent_int(1), eb.extent_int(2));
+  Kokkos::deep_copy(ibadv_x1max, 0.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn RadiationM1::FrefWaccOn, FrefWaccGam0, FrefWacc
 //! \brief force_reference_work = split, time_scheme = be: the accumulator of the
 //! reference work the gas receives in the hydro stages (rad_m1.hpp, fref_wacc)
