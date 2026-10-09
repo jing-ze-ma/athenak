@@ -65,3 +65,13 @@ Pass criteria (steady state t > 30 d): |L_top/L - 1| <= 0.03 over 2 d; |residual
 Last 2 d (4.47-6.46 d), item 4:
 
 4. **Budget** over t = 4.468-6.459 d (1.991 d), wedge sums -> fraction of L: <L_in> 1.0000, <L_top> 0.9308, dEtot/dt 0.0691 (Etot = internal + kinetic + gravitational (rho Phi_c) + E_rad, hst `Etot`), P_esrc 0.00e+00, P_sponge 0.00e+00, top mass outflow 9.825e+19 g (wedge; energy 1.78e-08 L), removed top inflow -1.272e+16 g, inner-face mass 3.710e+14 g (energy 1.68e-14 L). **Residual L_in - <L_top> - dEtot/dt = +0.0001 L; with P_esrc - P_sponge and the wall mass terms +0.0001 L.**
+
+## SEEDED FRESH RUN STARTED 2026-10-09T16:02:12 PDT on hpc-sm-02-03 (viper GO 1d071a09)
+- Unseeded chain 4286643-45 stopped 10-09 ~12:30 PDT at t 6.45 d (newest rst 6.0 d, cycle 6045), kept as bsg_1009/prod_noseed
+  (symmetric reference: lateral KE <= 2.6e-16 of KE_int).
+- New run bsg_1009/prod_seed: chain 4294781 4294782 4294783 (12 h links; link 1 afterok on smoke 4294780), same binary 6c5d8fb2_nofma (md5 e9873137)
+  and input with ONLY the seed block (he_seed 1e-6, he_seed_rad true, nk 16, kmin 2, kmax 4, signs random, rlo 2.6089e12,
+  rhi 3.1446e12; rng default): bsg3d_truerepro2_hr_lm_seed1e-6.athinput, md5 a3d332abcd701b65215a5d57c5754180.
+- Smoke 4294780: rc=0, FATAL/NaN/NON-CONV 0 (stop rule passed), GPU peak MiB  66537;
+  cycle-0 dump seed check: seeded vs unseeded t = 0 dumps: max|T_seed/T_noseed - 1| = 2.3e-6 inside 37.5-45.2 Rsun, exactly 0 outside; density identical
+- After each link I will add t, cycle, dt, s/cycle, counts and the lateral KE (KE_int - KEr_int) from user.hst.
