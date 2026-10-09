@@ -374,3 +374,29 @@ Secondary:
 6. **Budget:** full 640 x 4 x 2048 for how many orbits (~1 H200-day per half orbit); reduced nx3; 1 vs 2
    GPUs; where it runs (Caltech is testing only).
 7. **Accept vet_col-only**, or a 3-D wedge (nx2 >~ 64, ~16x cells) to make vet_gd possible.
+
+## 9. S3a status (2026-10-08, Caltech, branch accretor-rhd-1008)
+
+Code (ry_per_accretor + one module key): `<rad_m1>` on the envelope (inner = envelope, thermo =
+general, env_ic = column). Tables problem/env_opac_table + env_planck_table (module lookup also
+recomputes kappa_t along the column). Radiation-force reference: Phi_eff = Phi_wb + G(psi),
+G = -int kappa_t F/c dr_eq along the column (F ~ g on equipotentials: G is a function of psi),
+a_ref = -dG/dr per cell (face difference), split work in RyPerSrcEnv; the IC march, the inner
+ghost walk, gpl_ and wb_phimax all use Phi_eff. Flux bottom (checked against F_col(r_in) to
+1e-3), Marshak top, M1FillGhost (copy / vacuum). `<rad_m1>/opac_abs_rho_max` (+ opac_abs_kappa_s):
+no absorption below that density, electron scattering kept (applied inside M1TableOpacities, so
+at every lookup). History: the 9 rate columns become Lmeas Ltop Erad Etot KE Ebnd Erel Pic Picmax
+in rad mode only (NHISTORY_VARIABLES untouched). Input template docs/dev/accretor_rhd/s3a.athinput.in.
+
+Gates (dev tables TOPS X 0.7 Z 0.008, the Z 0.02 TOPS query is pending): env13, env13_cool,
+S2 bitwise; restart bitwise (40 vs 20 + 20); GPU = CPU to round-off (10 cycles, nx3 256).
+Static run 0.02 orbit (5855 cycles): Lmeas/L 0.963-0.966 (rising slowly), T_eff 28.05 kK, mass
+through r_meas 7e-13 Menv, photosphere moved <= 1 cell, v <= 0.5 km/s in the envelope, budget
+drift 1e-6 of int L dt after the transient, 0 NON-CONVERGED; 0.49 s/cycle (vet_col 0.32 s = 64 %),
+Picard mean 5.6 (2-12), max 14; dt 1.57e-6 (1.09 s).
+
+The 3.5 % luminosity deficit is geometric, not numerical: with T = T(psi) and F ~ g the
+equatorial band of the Roche-distorted star radiates <(g/g90)(r/r90)^2/cos alpha> = 0.9605 of
+the phi = 90 column's L at the photosphere (0.9875 at r_in), docs/dev/accretor_rhd/
+band_luminosity.py. The band cannot shed flux to the poles (2-D slab), so it heats on the
+envelope's thermal time until it radiates the imposed L_in (T_eff(phi 90) then +1 %).

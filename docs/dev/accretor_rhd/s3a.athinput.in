@@ -1,0 +1,221 @@
+# =====================================================================================
+# Plaskett's-star progenitor at the start of Case-A accretion (Wade et al. 2026,
+# arXiv:2609.25526): the L1 stream on a RESOLVED envelope of the gainer
+# (ry_per_accretor, problem/inner = envelope).  DeltaAI setup 2026-10-07 (env13).
+# Ideal gas gamma 5/3; the envelope is an n = 3 polytrope in the Roche potential
+# (spin 1), anchored at the photospheric P/rho = c_ph^2 on the equipotential through
+# R_acc (phi 90); temperatures relaxed with env_t_relax (stream effectively isothermal).
+# Code: branch accretor-1007 (env_top_mode, env_wb_depth, r_meas).
+# Derivations: plaskett_setup_1007.py / RESULTS.md (DeltaAI scratch setup/), audit 10-07.
+# S3a (accretor-rhd-1008): <rad_m1> on the static envelope (stream off), env_ic = column.
+# UNITS: length Rsun, velocity km/s, time 6.957e5 s (P_orb = 0.458266), density in units
+# of the stream's peak density at r_out (problem/rho_stream).
+# Temperatures from Wade+2026's MESA track at the onset of Case A (HR figure):
+#   gainer Teff 28.3 kK (log L 4.73), donor Teff 26.2 kK (log L 4.84, R = R_L 12.8).
+# Stream: Ryu et al. 2025 (arXiv:2505.18255) isothermal L_in solution at L1, carried to
+#   r_out with its local transverse pressure-supported width; Mdot 1e-4 Msun/yr.
+# =====================================================================================
+<comment>
+problem = Plaskett progenitor, start of Case-A accretion, resolved envelope (env13: equipotential top, Ryu+2025 stream, Wade+2026 temperatures)
+
+<job>
+basename = ryper
+
+<mesh>
+nghost    = 2
+nx1       = 640
+x1min     = 6.3
+x1max     = 13.5015                  # 0.85 d_L1 (d_L1 15.884)
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 4
+x2min     = 1.5646604                # pi/2 - 2 dphi
+x2max     = 1.5769322                # pi/2 + 2 dphi
+ix2_bc    = reflect
+ox2_bc    = reflect
+nx3       = 2048
+x3min     = 0.0
+x3max     = 6.283185307179586
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+# plateau radial stretch (plaskett_setup_1007.py, NX1=640): fine zone 8.80..9.63 at
+# dr <= H_p/4 (H_p,min 0.0102 at c_ph 19.41), covering the tidally bulged photosphere
+# (r_ph 9.00 at phi 90 .. 9.485 at phi 0); face 215 = r_acc; neighbour ratio <= 1.095
+use_grid_stretch_r_poly = true
+f_stretch_r_c1 = 0.0
+f_stretch_r_c2 = 0.0
+f_stretch_r_c3 = 0.0
+f_stretch_r_c4 = 0.0
+f_stretch_r_p_amp = -2.3075712439456293
+f_stretch_r_p_xa = 0.13050612424870098
+f_stretch_r_p_xb = 0.79254378452084151
+f_stretch_r_p_w = 0.018749999999999999
+
+<meshblock>
+nx1       = 640
+nx2       = 4
+nx3       = 256
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 4.58266                 # 10 orbits
+dt_min     = 1.0e-7                  # dt-collapse guard (abort)
+ndiag      = 100
+
+<units>
+length_cgs = 6.957e10                # Rsun
+time_cgs   = 6.957e5                 # Rsun/(km/s)
+mass_cgs   = 1.7205983e25            # rho_u Rsun^3, rho_u = 5.11e-8 g/cc (env13 stream peak, unit choice a)
+mu         = 1.0                     # general EOS: T_unit = m_u (km/s)^2/k_B = 120.27 K
+
+<hydro>
+eos             = general            # tabulated general EOS (Saha H/He), gas only
+general_eos     = table
+gamma           = 1.6666666666666667
+eos_h2          = false
+eos_ionization  = true
+eos_metal_ionization = false
+eos_radiation   = false              # S3: <rad_m1> evolves E
+eos_xh          = 0.70
+eos_yhe         = 0.28               # Z = 0.02
+eos_logd_min    = -18.0              # dfloor 1e-8 code = 5.1e-16 g/cc
+eos_logd_max    = 0.0
+eos_logt_min    = 3.5
+eos_logt_max    = 7.6                # hot ambient 6.76e6 K (log 6.83)
+eos_dlog        = 0.02
+reconstruct     = plm
+rsolver         = hllc
+dfloor          = 1.0e-8             # = problem/rho_amb
+pfloor          = 1.0e-10
+tfloor_kelvin   = 5.0e3
+etotgrav        = true
+wellbalance_dynamic = true
+wb_x1           = true
+wb_option       = polytropic
+wb_rho          = true
+
+<rad_m1>
+# S3a (accretor-rhd-1008): implicit grey M1 on the static envelope, closure vet_col (vet_gd
+# cannot run on the 4-cell theta band, design sect. 4); settings of the He giant / AG Car
+# production inputs (hegiant_N445_fresh_caltech) without vet_gd and the MLT scaffold
+c_light          = 299792.458         # km/s
+arad             = 3.0981247e-09      # a T_u^4/(rho_u v_u^2), T_u = m_u (km/s)^2/k_B = 120.27 K
+chat_over_c      = 1.0
+closure          = vet_col
+opacity          = table
+temp_unit_kelvin = 120.272355
+rho_unit_cgs     = 5.1099127e-08
+kappa_unit       = 3554.96626         # rho_u Rsun
+opac_abs_rho_max = 1.0e-6             # absorption mask: the hot ambient (rho <= 1e-7 code) gets electron scattering only
+opac_abs_kappa_s = 0.34               # cm^2/g, 0.2 (1 + X)
+e_floor          = 1.0e-10
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+force_reference_work = split
+transport        = implicit
+time_scheme      = be
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_gas_newton_switch = 10
+implicit_tsolve_opac = true
+implicit_tsolve_opac_mode = 1
+implicit_thin_freeze = 1.0e-2
+implicit_realisable_coupling = true
+implicit_flux    = central
+implicit_enthalpy = plm
+implicit_vimp    = false
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+implicit_precond = rbgs_fwd
+vet_col_every    = 1
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 1453030.1277       # code (= 7.4249e13 erg/cm^2/s): the column's F at r_in = 6.3 (L 4.6822e4 Lsun)
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+
+<problem>
+user_srcs   = true
+user_hist   = true
+thermo      = general                # accretor-rhd-1008 S2: general EOS, column IC
+env_ic      = column                 # S3: the S0 radiative column (P_gas + P_rad), balanced with the radiation-force reference
+env_ic_file = @COLUMN@
+env_opac_table   = @ROSS@
+env_planck_table = @PLANCK@
+env_t_ph    = 28300.0                # K
+env_t_amb   = 6.758e6                # K (300 km/s at mu 0.62)
+env_t_stream = 26200.0               # K (donor Teff)
+inner       = envelope
+m_acc       = 16.0                   # Msun, Wade+2026 (gainer at the start of accretion)
+m_don       = 18.0                   # Msun (M1,i = 18.2 less winds)
+a_sep       = 32.5575                # Rsun, Kepler for 34 Msun at 3.69 d
+period      = 3.69                   # d, Wade+2026 P_i
+r_acc       = 9.00129260997162       # Rsun, face 215 (quoted R ~ 9)
+t_don       = 26200.0                # K, donor Teff at onset (Wade+2026 track)
+mu_don      = 0.62
+spin        = 1.0                    # Omega_* / Omega_orb (critical 4.72)
+env_npoly   = 3.0
+env_rho_ph  = 0.0128                 # documentation only with env_ic = column (the column's rho_ph 6.5e-10 g/cc / 5.11e-8)
+env_cs_ph   = 19.4132                # km/s, gainer Teff 28.3 kK, mu 0.62
+env_cs_stream = 18.6791              # km/s, donor Teff 26.2 kK
+env_t_relax = 1.0e-4                 # code time; the hot ambient only (radiatively masked)
+env_t_relax_env = 0.0                # inside: off (radiation)
+env_t_relax_stream = 0.0             # dense atmosphere/stream gas outside the envelope: off (radiation)
+env_top_mode = equipotential         # envelope ends on psi = -15 c_ph^2 at every phi
+env_wb_depth = 0.41                  # WB off above the equipotential 1.5 d_pen (0.27) below the photosphere
+r_meas      = 9.615675               # MR/JR, Menv/Jenv: face 463, above max r_ph + 10 H_p
+env_cs_amb  = 300.0                  # km/s, hot ambient, isothermal, hydrostatic in the Roche potential
+env_amb_rho = 1.0e-7                 # ambient density on the photospheric equipotential (P_amb/P_ph 4.3e-4)
+env_amb_k   = 3.0                    # rho > k rho_amb,hse(r,phi): stream/star gas, relaxed to c_ph^2
+env_t_sponge = 1.0e-4                # code time, safety-net sponge on floor gas (rho < 10 rho_amb)
+env_sponge_rho = 10.0
+env_v_floor_max = 100.0              # km/s, |v| cap of sponge cells
+env_r_spin  = 9.00129260997162       # rotation only below R_acc
+env_wall_slip = free                 # free | noslip
+outer_rho   = hse                    # hse | copy  (outside the stream window)
+stream      = false
+rho_stream  = 1.0
+rho_amb     = 1.0e-8                 # FLOOR density (= hydro dfloor)
+stream_nsig = 3.0
+stream_width = 0.735                 # Rsun at r_out (sigma_phi 3.12 deg): transverse width 0.670 / cos 24.3 deg
+
+<output1>
+file_type  = hst
+dt         = 0.0005
+data_format = %.15e 
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 0.022913                # P_orb/20
+
+<output4>
+file_type  = bin
+variable   = m1
+dt         = 0.022913
+
+<output3>
+file_type  = rst
+dt         = 0.045827                # P_orb/10
