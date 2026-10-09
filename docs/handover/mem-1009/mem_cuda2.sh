@@ -50,4 +50,5 @@ for a in ${ARMS:-lm_c8:N:2:full:6:1 lm_c4:N:4:full:6:1 base_c4:O:4:full:6:0 new_
   B=$BN; [ "$b" = O ] && B=$BO
   go $n $B $r $m $l $k
 done
-cmpd base_c4 lm_c4; cmpd base_c4 new_c4; cmpd base_r4 lm_r4
+cmpd base_c4 lm_c4; cmpd base_c4 new_c4; cmpd base_r4 lm_r4; cmpd base_r4 new_r4; cmpd new_r4 lm_r4
+cmpd base_r2 lm_r2; cmpd base_r2 new_r2; cmpd new_r2 lm_r2
