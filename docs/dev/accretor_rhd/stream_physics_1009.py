@@ -71,13 +71,17 @@ def rho_of(p, T):
 Ma, Md, a = 16.0, 18.0, 33.2596         # env13 32.5575
 Om = 1.908715e-5                        # 1/s (env13 1.9708e-5)
 B, C = 6.994, 7.994                     # L1 curvature (Omega^2 units; depend on q only)
-Pnn, Pzz = 4.128, 9.218                 # transverse curvature at the r_out crossing (env13 4.135, 9.218)
-vout = 133.47e5                         # |v| at r_out, cm/s (env13 134.87)
-cosa = 121.64/133.47                    # |v_r|/|v| at r_out (stream 24.3 deg from radial)
+# The ballistic launch speed is the L1 overflow speed of the hot L1 state of section (2)
+# (c_T = sqrt(P_gas/rho) = 45.45 km/s, the speed in the Mdot integral), not the donor-Teff
+# 18.68 km/s of env13: problem/t_don = 155115 K (mu 0.62) in the pgen.  Central trajectory
+# for that launch (rhd/s5/setup/traj_launch.py; env13-launch values in brackets):
+Pnn, Pzz = 3.6132, 9.222                # transverse curvature at the r_out crossing [4.128, 9.218]
+vout = 140.27e5                         # |v| at r_out, cm/s [133.47]
+cosa = 126.46/140.27                    # |v_r|/|v| at r_out [121.64/133.47]
 r_out = 13.7926                         # Rsun (0.85 d_L1, d_L1 16.22664; env13 13.5015)
-phi_s = 3.798                           # deg, central trajectory at r_out
-t_fl = 0.0522*6.957e5                   # L1 -> r_out flight, s (env13 0.0507 code)
-t_imp = 4.40*Rsun/(0.5*(133.47e5 + 408.8e5))   # r_out -> photosphere (r 9.39), ~ s
+phi_s = 3.410                           # deg, central trajectory at r_out [3.798]
+t_fl = 0.0348*6.957e5                   # L1 -> r_out flight, s [0.0522 code]
+t_imp = (0.0550 - 0.0348)*6.957e5       # r_out -> photosphere (r 9.39, phi 15.07 deg, |v| 410.7), s
 Mdot = 1.0e-4*Msun/yr
 Td, Rd = 26200.0, 12.9433               # donor Teff (HR figure, kept) and R = R_L (Eggleton, 3.81 d)
 Ld = 4*np.pi*(Rd*Rsun)**2*SIG*Td**4/Lsun

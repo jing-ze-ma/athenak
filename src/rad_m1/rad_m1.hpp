@@ -358,13 +358,17 @@ class RadiationM1 {
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
-  // PER-COLUMN incident bath at the outer x1 face (accretor-rhd-1008 S5, the stream
-  // window's own radiation): a problem generator hands (nmb, n3, n2) values through
-  // SetX1maxBathColumns; the outer Marshak face then uses E_bath(m,k,j) instead of
-  // iebath_x1max (comoving face flux c q (E - E_bath), inflow enthalpy a E_bath), and the
-  // face kernel stores the lab-frame advective energy flux of implicit_bc_advect through
-  // that face in ibadv_x1max(m,k,j) (the end face's f0x1 is the comoving flux only).
-  // Default: not set, the scalar bath, bitwise.
+  // PER-COLUMN INFLOW columns of the outer x1 Marshak face (accretor-rhd-1008 S5, the
+  // stream window's own radiation): a problem generator hands E_in(m,k,j) (nmb, n3, n2)
+  // through SetX1maxBathColumns.  Columns with E_in > 0 are an optically thick INFLOW
+  // face: comoving face flux 0 (no Marshak term) and the lab-frame enthalpy inflow
+  // a E_in = v1 (1 + chi) E_in of implicit_bc_advect, i.e. F = (4/3) v E_in in the thick
+  // limit; columns with E_in = 0 keep the Marshak face with the scalar bath (must be 0).
+  // The face kernel stores the lab-frame advective energy flux through the outer face in
+  // ibadv_x1max(m,k,j) (the end face's f0x1 is the comoving flux only).
+  // Default: not set, bitwise.  (A first version used E_in as a Marshak bath, c q (E -
+  // E_in): that shines an isotropic 65 kK wall into the thin ambient, c/(4 (4/3) v) ~450x
+  // the advected radiation, and diverged in the first step, rhd/s5/smoke.)
   bool iebath_hi_col_on = false;
   DvceArray3D<Real> iebath_hi_col;
   DvceArray3D<Real> ibadv_x1max;

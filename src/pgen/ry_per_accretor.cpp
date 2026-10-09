@@ -94,10 +94,10 @@
 //! thick stream enters with its radiation in equilibrium with its gas: in the window the M1
 //! ghosts hold E = a T_s^4 and the lab-frame flux of optically thick advection F = (4/3) E v
 //! (env_t_stream, the stream velocity), and since the implicit x1 solve uses a FACE-FLUX
-//! boundary (the ghosts are not read), the outer Marshak face gets the same state as a
-//! per-column incident bath (RadiationM1::SetX1maxBathColumns): comoving flux c q (E -
-//! E_bath), inflow enthalpy (1 + chi) v E_bath (= (4/3) v E_bath in the thick limit).
-//! Elsewhere the bath is 0 (vacuum/Marshak, unchanged).  The advective radiation energy
+//! boundary (the ghosts are not read), the outer face of the window columns gets the same
+//! state as an INFLOW face (RadiationM1::SetX1maxBathColumns): comoving flux 0 (= the
+//! ghosts' F - (4/3) v E), lab-frame inflow (1 + chi) v E_s (= (4/3) v E_s, thick limit).
+//! Elsewhere the outer face is vacuum/Marshak, unchanged.  The advective radiation energy
 //! through r_out (module's ibadv_x1max) is booked in Ebnd with the comoving face flux.
 //!
 //! BOUNDARIES (user BCs on both x1 faces; mesh/ix1_bc = ox1_bc = user):
