@@ -347,7 +347,6 @@ void RadiationM1::VetGdInit() {
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
-  VgdRagAlloc(vgd_i);
   Kokkos::realloc(vgd_cs, nmb, 2, c3w, c2w, c1);
   Kokkos::realloc(vgd_wall, nmb, c3w, c2w);
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
@@ -357,6 +356,7 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   VetGdHaloInit();
+  VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   if (vgd_twfuse) {
     // vet_gd_twin_fuse: the twin's intensities and source live in their own arrays
     if (vgd_iter != 1 || vgd_async || vgd_bandx || (vgd_hmpi && vgd_hcomp <= 0)) {
@@ -1922,15 +1922,12 @@ void RadiationM1::VetGdPost() {
     DvceArray5D<Real> dd("vgd_i_dump", vgd_i.extent(0), vgd_i.extent(1),
                          vgd_i.extent(2), vgd_i.extent(3), vgd_i.extent(4));
     auto vr_ = vgd_i;
-    const int dw = vgd_w, dn2 = vr_.nx2, dn3 = vr_.nx3;
+    const int dc2 = vr_.extent_int(3);
     par_for("m1_vgd_dump", DevExeSpace(), 0, vr_.extent_int(0) - 1, 0,
             vr_.extent_int(1) - 1, 0, vr_.extent_int(2) - 1, 0, vr_.extent_int(4) - 1,
     KOKKOS_LAMBDA(const int m, const int v, const int k, const int i) {
-      const int s = dw - vr_.wi(i);
-      for (int j = 0; j < dn2 + 2*dw; ++j) {
-        const bool in = (k >= s) && (k < dn3 + 2*dw - s) && (j >= s) &&
-                        (j < dn2 + 2*dw - s);
-        dd(m,v,k,j,i) = in ? vr_(m,v,k,j,i) : 0.0;
+      for (int j = 0; j < dc2; ++j) {
+        dd(m,v,k,j,i) = vr_.Has(m,k,j,i) ? vr_(m,v,k,j,i) : 0.0;
       }
     });
     auto vi_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dd);
@@ -2649,12 +2646,29 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
   a.nx3 = indcs.nx3;
   a.w = vgd_w;
   a.c1 = c1;
-  Kokkos::realloc(a.off, c1);
+  Kokkos::realloc(a.off, a.nmb, c1);
   Kokkos::realloc(a.wi, c1);
+  Kokkos::realloc(a.sb, a.nmb, 4);
   Kokkos::realloc(a.oos, 1);
   auto off_h = Kokkos::create_mirror_view(a.off);
   auto wi_h = Kokkos::create_mirror_view(a.wi);
-  int64_t tot = 0;
+  auto sb_h = Kokkos::create_mirror_view(a.sb);
+  // a side carries the band when any of its three neighbours (the edge and the two
+  // corners) is not on this rank (vgd_hloc < 0: remote, or none)
+  auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
+  for (int m = 0; m < a.nmb; ++m) {
+    int side[4] = {0, 0, 0, 0};
+    for (int o = 0; o < 8; ++o) {
+      if (hl_h(8*m + o) >= 0) {continue;}
+      const int oo = (o < 4) ? o : (o + 1);
+      const int dk = oo/3 - 1, dj = oo%3 - 1;
+      if (dk < 0) {side[0] = 1;}
+      if (dk > 0) {side[1] = 1;}
+      if (dj < 0) {side[2] = 1;}
+      if (dj > 0) {side[3] = 1;}
+    }
+    for (int q = 0; q < 4; ++q) {sb_h(m,q) = side[q];}
+  }
   for (int i = 0; i < c1; ++i) {
     int wl = 0;
     if (i >= indcs.is && i <= indcs.ie) {
@@ -2662,12 +2676,20 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
       wl = std::min(wl, vgd_w);
     }
     wi_h(i) = wl;
-    off_h(i) = tot;
-    tot += static_cast<int64_t>(a.nmb)*a.n*(a.nx3 + 2*wl)*(a.nx2 + 2*wl);
+  }
+  int64_t tot = 0;
+  for (int m = 0; m < a.nmb; ++m) {
+    for (int i = 0; i < c1; ++i) {
+      const int wl = wi_h(i);
+      off_h(m,i) = tot;
+      tot += static_cast<int64_t>(a.n)*(a.nx3 + (sb_h(m,0) + sb_h(m,1))*wl)*
+             (a.nx2 + (sb_h(m,2) + sb_h(m,3))*wl);
+    }
   }
   a.dummy = tot;
   Kokkos::deep_copy(a.off, off_h);
   Kokkos::deep_copy(a.wi, wi_h);
+  Kokkos::deep_copy(a.sb, sb_h);
   Kokkos::realloc(a.d, tot + 1);
   Kokkos::deep_copy(a.d, 0.0);
   Kokkos::deep_copy(a.oos, 0.0);
@@ -2675,7 +2697,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     const double dense = static_cast<double>(a.nmb)*a.n*(a.nx3 + 2*vgd_w)*
                          (a.nx2 + 2*vgd_w)*c1;
     std::cout << "<rad_m1> vet_gd: ragged per-shell band intensity array "
-              << tot*sizeof(Real)/1.0e9 << " GB per rank (dense band "
+              << tot*sizeof(Real)/1.0e9 << " GB on rank 0 (dense band "
               << dense*sizeof(Real)/1.0e9 << " GB)" << std::endl;
   }
 }

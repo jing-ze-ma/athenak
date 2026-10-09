@@ -1603,31 +1603,42 @@ class RadiationM1 {
   // values and every arithmetic are unchanged (bitwise)
   // accel-1009 (memory): RAGGED per-shell band.  Shell i stores only the lateral band
   // its own data needs (wi(i) = vgd_wsh, <= vgd_w; the dense array carried the deepest
-  // band of all shells for every shell: 70 % of the device memory of AG Car A).  Index
-  // space unchanged: (m, d, k, j, i) with k, j in the band index space of depth vgd_w;
-  // within a shell (m, d, k, j) is LayoutLeft-ordered (m fastest).  An access outside
+  // band of all shells for every shell: 70 % of the device memory of AG Car A), and a
+  // block only on the sides where a neighbour (edge or corner) is NOT on this rank (an
+  // on-rank neighbour is read in its interior, never through the band).  Index space
+  // unchanged: (m, d, k, j, i) with k, j in the band index space of depth vgd_w; one
+  // slab per (m, i), d fastest, then k, then j.  An access outside
   // the shell's slab (never, by the band construction) goes to one dummy element and is
   // counted (VgdRag::oos, reported at the end): the values are bitwise those of the
   // dense array as long as the count is 0.
   struct VgdRag {
     DvceArray1D<Real> d;
-    Kokkos::View<int64_t*, DevMemSpace> off;   // (i): first element of shell i
+    Kokkos::View<int64_t**, DevMemSpace> off;  // (m, i): first element of slab (m, i)
     DvceArray1D<int> wi;                       // (i): band depth of shell i
+    DvceArray2D<int> sb;                       // (m, 4): band on side k-, k+, j-, j+
     DvceArray1D<Real> oos;                     // (0): out-of-slab accesses
     int nmb = 0, n = 0, nx2 = 0, nx3 = 0, w = 0, c1 = 0;
     int64_t dummy = 0;
+    // is (k, j) of shell i of block m stored?  (band index space of depth w)
+    KOKKOS_INLINE_FUNCTION
+    bool Has(const int m, const int k, const int j, const int i) const {
+      const int wl = wi(i);
+      const int k0 = w - sb(m,0)*wl, k1 = w + nx3 + sb(m,1)*wl;
+      const int j0 = w - sb(m,2)*wl, j1 = w + nx2 + sb(m,3)*wl;
+      return (k >= k0) && (k < k1) && (j >= j0) && (j < j1);
+    }
     KOKKOS_INLINE_FUNCTION
     Real &operator()(const int m, const int v, const int k, const int j,
                      const int i) const {
-      const int wl = wi(i), s = w - wl;
-      const int kk = k - s, jj = j - s;
-      const int c3 = nx3 + 2*wl, c2 = nx2 + 2*wl;
+      const int wl = wi(i);
+      const int bk0 = sb(m,0)*wl, bj0 = sb(m,2)*wl;
+      const int c3 = nx3 + bk0 + sb(m,1)*wl, c2 = nx2 + bj0 + sb(m,3)*wl;
+      const int kk = k - (w - bk0), jj = j - (w - bj0);
       if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {
         Kokkos::atomic_add(&oos(0), 1.0);
         return d(dummy);
       }
-      return d(off(i) + m + static_cast<int64_t>(nmb)*(v + static_cast<int64_t>(n)
-                                                       *(kk + static_cast<int64_t>(c3)*jj)));
+      return d(off(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj));
     }
     int extent_int(const int r) const {
       return (r == 0) ? nmb : (r == 1) ? n : (r == 2) ? (nx3 + 2*w) : (r == 3) ?
