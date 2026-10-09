@@ -17,5 +17,6 @@ GPU-h = elapsed x 4 GPUs (exclusive 1-node gpuA100x4 jobs; billing 1 SU per A100
 | 22772932 | rad-beam-1008 | batch3 BSG hrdet gate, 4 nodes x 4 A100, interactive (2x rate) | 10-09 09:08 | - | 0 | 0 | cancelled while PENDING (est. start 10-10 19:46): DeltaAI answered the gate first (bsg-files-1009 bb70ef9e, viper ack 485a12e4) |
 | 22774481 | rad-beam-1008 | mem batch1 (mem_r4, base_r4, mem_c4), 1 node, interactive (2x rate) | 10-09 10:27 | - | 0 | 0 | cancelled while PENDING (est. start 11:47): DeltaAI answered first (bsg-files-1009 2be3c76a) |
 | 22778067 | rad-beam-1008 | prof batch1 (8 arms AG Car B + BSG reduced, kernel timer), 1 node x 4 A100, interactive (2x rate) | 10-09 13:37 | - | 0 | 0 | cancelled while PENDING (est. start 18:52): batch withdrawn, moved to DeltaAI (rad-beam-1008 80564020, bsg-files-1009 547b106f) |
+| 22778535 | rad-beam-1008 | prof batch2 (8 arms AG Car B + BSG reduced, kernel timer), 1 node x 4 A100, interactive (2x rate), prof_cuda.sh default SRUN4 (--gpus-per-task=1 --gpu-bind=closest) | 10-09 14:28 | 15:17:43 | 00:08:52 | 1.18 | HUNG in agc_plain after IC setup: 32x "GTL DEBUG cuIpcOpenMemHandle: invalid argument" (Cray MPICH GPU IPC across per-task-isolated GPUs), 5.1 GB/GPU flat, no cycle; cancelled |
 
-Totals: rt-integration 0.16, spb2 1.71, beam 0 (batch3, mem batch1, prof batch1 never ran), csfloor 0.
+Totals: rt-integration 0.16, spb2 1.71, beam 1.18 (prof2 hung run; batch3, mem batch1, prof batch1 never ran), csfloor 0.
