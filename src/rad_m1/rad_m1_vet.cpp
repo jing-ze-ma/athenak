@@ -140,6 +140,29 @@ int VetWrap(const int a, const int n) {
   return (r < 0) ? (r + n) : r;
 }
 
+// scho-1009, vet_sc_order = 2: the monotone cubic (Steffen 1990, A&A 239, 443) through
+// the four equally spaced values ym, y0, y1, y2 at the fraction a in [0, 1) between y0
+// and y1.  The node slopes are limited so that the interpolant is monotone between y0
+// and y1 and has no new extremum; the result is clamped to [min, max](y0, y1) against
+// round-off, so a non-negative intensity, source or extinction stays non-negative.
+KOKKOS_INLINE_FUNCTION
+Real VetMonoCubic(const Real ym, const Real y0, const Real y1, const Real y2,
+                  const Real a) {
+  const Real sl = y0 - ym, sc = y1 - y0, sr = y2 - y1;
+  // Steffen node slope: 0 at an extremum, else min(2|s-|, 2|s+|, |s- + s+|/2), signed
+  Real d0 = 0.0, d1 = 0.0;
+  if (sl*sc > 0.0) {
+    d0 = copysign(fmin(fmin(2.0*fabs(sl), 2.0*fabs(sc)), 0.5*fabs(sl + sc)), sc);
+  }
+  if (sc*sr > 0.0) {
+    d1 = copysign(fmin(fmin(2.0*fabs(sc), 2.0*fabs(sr)), 0.5*fabs(sc + sr)), sc);
+  }
+  const Real a2 = a*a, a3 = a2*a;
+  const Real v = (2.0*a3 - 3.0*a2 + 1.0)*y0 + (a3 - 2.0*a2 + a)*d0
+                 + (3.0*a2 - 2.0*a3)*y1 + (a3 - a2)*d1;
+  return fmin(fmax(v, fmin(y0, y1)), fmax(y0, y1));
+}
+
 // largest eigenvalue and its unit eigenvector of a symmetric 3x3 matrix (cyclic Jacobi)
 KOKKOS_INLINE_FUNCTION
 void VetEigMax(Real a[3][3], Real &lmax, Real &e1, Real &e2, Real &e3) {
@@ -1599,6 +1622,24 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   }
   vet_nmu = pin->GetOrAddInteger("rad_m1", "vet_nmu", 4);
   vet_nphi = pin->GetOrAddInteger("rad_m1", "vet_nphi", 8);
+  // vet_sc_order (scho-1009, read only when given; default 1 = the bilinear foot):
+  // 2 interpolates the upwind intensity, source and extinction at the foot of each
+  // short characteristic by the monotone cubic VetMonoCubic (4 points per direction,
+  // tensor product in x2-x3) instead of bilinearly.  Positivity is kept (no new
+  // extremum); a beam edge or shadow edge then spreads ~3 cells over ~100 layers
+  // instead of ~10.  Single-MeshBlock sweep only (the banded multi-block sweep would
+  // need one more band cell on each side).
+  vet_sc_order = 1;
+  if (pin->DoesParameterExist("rad_m1", "vet_sc_order")) {
+    vet_sc_order = pin->GetInteger("rad_m1", "vet_sc_order");
+  }
+  if (vet_sc_order != 1 && vet_sc_order != 2) {
+    VetFatal("<rad_m1>/vet_sc_order must be 1 or 2");
+  }
+  if (vet_sc_order == 2 && (pm->nmb_total != 1 || global_variable::nranks != 1)) {
+    VetFatal("<rad_m1>/vet_sc_order = 2 needs the single-block sweep (one MeshBlock, "
+             "one rank)");
+  }
   vet_milne = pin->GetOrAddBoolean("rad_m1", "vet_milne", false);
   // m1-h2div (tests_m1/runs_5j_h2div): at an x1 end with implicit_bc = marshak the rays
   // entering the box carry the incident bath, eps = implicit_ebath (0 = the vacuum of a
@@ -3167,6 +3208,7 @@ void RadiationM1::VetShortChar() {
     VetMBSweeps();
   }
   const int nlaunch = (vet_mbs != nullptr) ? 0 : nx1;   // the banded sweep ran instead
+  const bool sco2 = (vet_sc_order == 2);   // scho-1009: monotone cubic foot
   const int npass = vet_x1per ? vet_x1npass : 1;
   for (int p = 0; p < npass; ++p) {
   const bool wrap = (p > 0);            // layer is (ie) reads the periodic image
@@ -3243,18 +3285,47 @@ void RadiationM1::VetShortChar() {
             ka = ks + VetWrap(k - ks + o3, nx3);
             kb = ks + VetWrap(k - ks + o3 + 1, nx3);
           }
-          const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
-          const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
-          const Real iup_v = waa*ip_(m,pr,r,ka,ja) + wab*ip_(m,pr,r,ka,jb)
-                             + wba*ip_(m,pr,r,kb,ja) + wbb*ip_(m,pr,r,kb,jb);
-          const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
-                          + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
-                          + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
-                          + wbb*vc_(m,M1_VET_CHX,kb,jb,iup);
-          const Real su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
-                          + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
-                          + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
-                          + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+          Real iup_v, cu, su;
+          if (sco2) {
+            // vet_sc_order = 2: monotone cubic at the foot (VetMonoCubic), on the rows
+            // o-1 .. o+2 in x2 and, in 3-D, the same in x3 (tensor product)
+            const int jm = js + VetWrap(ja - js - 1, nx2);
+            const int jc = js + VetWrap(jb - js + 1, nx2);
+            const int nkr = thrd ? 4 : 1;
+            Real vi[4], vx[4], vs[4];
+            for (int q = 0; q < nkr; ++q) {
+              const int kq = thrd ? (ks + VetWrap(ka - ks - 1 + q, nx3)) : k;
+              vi[q] = VetMonoCubic(ip_(m,pr,r,kq,jm), ip_(m,pr,r,kq,ja),
+                                   ip_(m,pr,r,kq,jb), ip_(m,pr,r,kq,jc), a2);
+              constexpr int nx = M1_VET_CHX, ns = M1_VET_SRC;
+              vx[q] = VetMonoCubic(vc_(m,nx,kq,jm,iup), vc_(m,nx,kq,ja,iup),
+                                   vc_(m,nx,kq,jb,iup), vc_(m,nx,kq,jc,iup), a2);
+              vs[q] = VetMonoCubic(vc_(m,ns,kq,jm,iup), vc_(m,ns,kq,ja,iup),
+                                   vc_(m,ns,kq,jb,iup), vc_(m,ns,kq,jc,iup), a2);
+            }
+            if (thrd) {
+              iup_v = VetMonoCubic(vi[0], vi[1], vi[2], vi[3], a3);
+              cu = VetMonoCubic(vx[0], vx[1], vx[2], vx[3], a3);
+              su = VetMonoCubic(vs[0], vs[1], vs[2], vs[3], a3);
+            } else {
+              iup_v = vi[0];
+              cu = vx[0];
+              su = vs[0];
+            }
+          } else {
+            const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
+            const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
+            iup_v = waa*ip_(m,pr,r,ka,ja) + wab*ip_(m,pr,r,ka,jb)
+                    + wba*ip_(m,pr,r,kb,ja) + wbb*ip_(m,pr,r,kb,jb);
+            cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
+                 + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
+                 + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
+                 + wbb*vc_(m,M1_VET_CHX,kb,jb,iup);
+            su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
+                 + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
+                 + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
+                 + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+          }
           const Real dtau = 0.5*(cu + c0)*dx1/am1;
           const Real ex = exp(-dtau);
           Real w0, wu;
