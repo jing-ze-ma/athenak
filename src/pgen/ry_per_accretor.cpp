@@ -1305,6 +1305,38 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
                   pm1->otab.amask_kes/pm1->otab.kunit);
     }
   }
+  // ---- the stream window under radiation (S4): the injected gas carries its T through the
+  // EOS (EnergyFromTemperature, RyPerBCEnv), its own radiation field is NOT injected (dark
+  // r_out ghosts, Marshak window; user 10-08), and its temperature must not be relaxed
+  // (env_t_relax_stream = 0).  Report the peak state so the no-injection premise
+  // (P_rad << P_gas) and the stream's optical depth can be checked from the log.
+  if (stream_on_) {
+    if (env_trs_ != 0.0) {
+      fatal("stream on under <rad_m1> needs problem/env_t_relax_stream = 0 (the stream's T "
+            "is set by the EOS state at the window and by radiation, not relaxed)");
+    }
+    const Real d = rho_s_, t = gen_tstr_;
+    const Real e = eos.EnergyFromTemperature(d, t);
+    const Real pg = eos.Pressure(d, e, t);
+    const Real prad = ar*SQR(SQR(t))/3.0;
+    DvceArray1D<Real> sk("ryper_sk", 2);
+    radm1::M1OpacTab ot = pm1->otab;
+    par_for("ryper_skt", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
+      Real op, oe, of, os;
+      radm1::M1TableOpacities(ot, d, t, op, oe, of, os);
+      sk(0) = of + os;
+      sk(1) = op;
+    });
+    auto hsk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sk);
+    const Real wa = sig_*pmbp->pmesh->mesh_size.x1max;     // arc sigma at r_out (code)
+    if (root) {
+      std::printf("ry_per_accretor: <rad_m1> stream window peak: rho %.4g g/cc, T %.1f K, "
+                  "P_rad/P_gas %.4g (radiation NOT injected: dark ghosts), kappa_R %.4g "
+                  "kappa_P %.4g cm^2/g, tau across one arc sigma (%.4g Rsun) %.4g\n",
+                  d*du, t*tk, prad/pg, hsk(0)/(du*lu),
+                  hsk(1)/(du*lu), wa, hsk(0)*d*wa);
+    }
+  }
   // ---- kappa_t along the column with this run's lookup (device), a_ref, G(psi)
   const int nc = static_cast<int>(cpsi.size());
   std::vector<Real> kt(nc);
