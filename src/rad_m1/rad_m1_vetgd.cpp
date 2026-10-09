@@ -1776,7 +1776,7 @@ void RadiationM1::VetGdSweep() {
       }
       auto L_ = vgd_shl[p];
       int cnt = 0;
-      Kokkos::parallel_scan("m1_vgd_shl", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+      Kokkos::parallel_scan("m1_vgd_shl", Kokkos::RangePolicy<>(vgd_cur, 0, ntot),
       KOKKOS_LAMBDA(const int c, int &acc, const bool fin) {
         int t = c;
         const int d = t % n;
