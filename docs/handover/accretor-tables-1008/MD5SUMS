@@ -1,0 +1,28 @@
+a354af68e0e874a3b751f232934fa994  checks/blend_jump_locations.txt
+c2a3bdb0f3524b28630869da8394c9d9  checks/table_check_x070.txt
+722e540fee4f8cfa9651a5a596502b32  mixture_x0.70_z0.02.txt
+99d668f69b16a502f50f1ec555fb0cd1  planck_ext2_gs98_x0.70_z0.02.txt
+228f4ac63345c14a734b64fda7f3830b  raw/fetch_all.sh
+158823b3da13ecf9bec244736b0850f3  raw/tops_gs98_x0.70_z0.02_10keV.dat
+1d0a8753dee9ac573a0157a795075cd5  raw/tops_lo_x0.70_10keV.dat
+ad516c7eae541fd3aa34d6048c2c2c0a  rosseland_ext2_gs98_x0.70_z0.02.txt
+eede7657423124a2ac324b1bbf879ef6  scripts/build_ext.py
+c0895d57fcd200bb4462ae392c1cf219  scripts/compare.py
+ce39a9ac6cd2def57de2d44f8c14df7f  scripts/convert_tops.py
+db0556df34bd2d2b35b3ad8388ce856a  scripts/fetch_tops.py
+54d0c0aada9088d1e2995d5dfbaf2c3c  scripts/merge_tops_T.py
+3e4a3a847cf8a7f7edf510be0c9ecf22  scripts/mixspec.py
+acc62e4486feec3a2fa4c637b5d90472  scripts/saha_es.py
+9666296574c97ef550b0f28ed610c8df  scripts/table_check_x070.py
+d6e47745f3833b56ac8152c3553af3bb  tables_tops_only/planck_tops_gs98_x0.70_z0.02.txt
+94814726f6378f902852564cf5c3a0b4  tables_tops_only/rosseland_tops_gs98_x0.70_z0.02.txt
+# raw fetches before the T merge (not pushed; /viper/ptmp2/jinma/accretor_tables_1009/raw):
+1b3a9b6ed76bc3c29ea3513c4c34539e  tops_gs98_x0.70_z0.02.dat (0.0005-1 keV, rho 1e-14..1, 71)
+6ad1ff9d082b28159130af3800214aed  tops_hiT_x0.70.dat (1-10 keV, rho 1e-14..1, 71)
+5a45db9d9cef10047132db002caeacdb  tops_lo_x0.70.dat (0.0005-1 keV, rho 1e-21..1e-14, 36)
+5f3dde89f8a2ff05900ce93b955c85f9  tops_hiT_lo_x0.70.dat (1-10 keV, rho 1e-21..1e-14, 36)
+# Ferguson 2005 sources (viper /viper/u2/jinma/ATHENAK/bench/m1_opac/ferguson05, byte-identical to the tarball members):
+96a1b1db04248ce2f59633d44390d881  f05.gs98.tar.gz
+69d8b6d370cafe4655ed7faf55ee14d5  f05.g98.pl.tar.gz
+4b7cbce2d4df70accd67c6199eb76b87  g98.7.02.tron
+8950933358535d5c9f2fd338b3711f04  g98.pl.7.02.tpon

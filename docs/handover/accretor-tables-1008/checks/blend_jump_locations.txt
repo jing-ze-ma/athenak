@@ -1,0 +1,14 @@
+R log T 3.950->3.975: max step 0.275 at log rho -7.65 (log R -1.50)
+R log T 4.000->4.025: max step 0.650 at log rho -0.20 (log R 5.80)
+R log T 4.100->4.125: max step 0.438 at log rho -0.40 (log R 5.30)
+R log T 4.175->4.200: max step 0.333 at log rho -0.80 (log R 4.68)
+R log T 4.200->4.225: max step 0.177 at log rho -1.00 (log R 4.40)
+R log T 4.000, log R<=1 only: max step 0.227
+R log T 4.100, log R<=1 only: max step 0.151
+P log T 3.950->3.975: max step 0.604 at log rho -21.00 (log R -14.85)
+P log T 4.000->4.025: max step 0.410 at log rho -0.20 (log R 5.80)
+P log T 4.100->4.125: max step 0.146 at log rho -8.80 (log R -3.10)
+P log T 4.175->4.200: max step 0.257 at log rho -21.00 (log R -15.53)
+P log T 4.200->4.225: max step 0.235 at log rho -21.00 (log R -15.60)
+P log T 4.000, log R<=1 only: max step 0.261
+P log T 4.100, log R<=1 only: max step 0.146
