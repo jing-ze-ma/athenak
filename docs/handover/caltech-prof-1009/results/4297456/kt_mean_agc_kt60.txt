@@ -1,0 +1,552 @@
+Total Execution Time (incl. Kokkos + non-Kokkos): 58.55768 seconds
+Total Time in Kokkos kernels: 28.53941 seconds
+- m1_vgd_shell
+ (ParFor) 8.483837 29520
+- m1_vgd_unpack
+ (ParFor) 3.179114 29580
+- m1_vgd_hc_scan
+ (ParFor) 3.076358 59040
+- m1_vgd_hc_flag
+ (ParFor) 1.734298 29520
+- m1_vgd_hc_pack
+ (ParFor) 0.805402 29520
+- m1_impl_asm
+ (ParFor) 0.649732 247
+- hyd_c2p_gen
+ (ParFor) 0.621022 421
+- m1_impl_pcrx
+ (ParFor) 0.620938 3712
+- m1_vgd_tw_sumd
+ (ParFor) 0.519680 180
+- m1_vgd_hc_expand
+ (ParFor) 0.498250 29520
+- m1_impl_stop
+ (ParFor) 0.484873 4690
+- m1_impl_tcell
+ (ParFor) 0.447099 307
+- m1_vlat_src
+ (ParFor) 0.353622 60
+- wbcache
+ (ParFor) 0.343085 120
+- m1_vgd_hr_sm
+ (ParFor) 0.327385 360
+- m1_vgd_mom
+ (ParFor) 0.319030 120
+- m1_vlat_stencil
+ (ParFor) 0.292987 247
+- m1_vgd_hr
+ (ParFor) 0.273159 120
+- hflux_x2
+ (ParFor) 0.272564 120
+- m1_vgd_hc_bnd
+ (ParFor) 0.266430 29520
+- hflux_x3
+ (ParFor) 0.268551 120
+- m1_impl_hdir
+ (ParFor) 0.260514 5174
+- m1_mg_pcr
+ (ParFor) 0.254823 7424
+- hflux_x1
+ (ParFor) 0.221421 120
+- m1_vlat_op
+ (ParFor) 0.207821 247
+- Kokkos::View::initialization [_mirror] via memset
+ (ParFor) 0.198928 83
+- m1_impl_src
+ (ParFor) 0.187592 247
+- hs_grav
+ (ParFor) 0.180222 120
+- m1_impl_opac
+ (ParFor) 0.177556 247
+- m1_mg_res0
+ (ParFor) 0.167596 1856
+- m1_impl_f2face
+ (ParFor) 0.155638 307
+- m1_opacity
+ (ParFor) 0.153467 61
+- SendBuff
+ (ParFor) 0.147894 362
+- m1_impl_face
+ (ParFor) 0.143771 247
+- m1_impl_f3face
+ (ParFor) 0.129041 307
+- RecvBuff
+ (ParFor) 0.118475 362
+- Kokkos::View::initialization [] via memset
+ (ParFor) 0.118131 976
+- m1_impl_bcgf_upd
+ (ParFor) 0.114538 928
+- m1_impl_g0lim
+ (ParFor) 0.105685 247
+- m1_impl_i1
+ (ParFor) 0.088400 60
+- m1_impl_stb
+ (ParFor) 0.086757 247
+- m1_impl_lag_rc
+ (ParFor) 0.086369 247
+- m1_impl_tsolve
+ (ParFor) 0.073066 247
+- m1_impl_hm_pack
+ (ParFor) 0.072462 5174
+- m1_mg_pro0
+ (ParFor) 0.071800 1856
+- m1_impl_hm_unpack
+ (ParFor) 0.071690 5174
+- h_update
+ (ParFor) 0.066782 120
+- m1_mg_res
+ (ParFor) 0.061153 1856
+- m1_impl_wb_rc
+ (ParFor) 0.051166 60
+- FOFC-newu
+ (ParFor) 0.046412 120
+- m1_det_red2
+ (ParFor) 0.039768 3273
+- spsrc
+ (ParFor) 0.040063 120
+- m1_impl_rhsmax
+ (ParFor) 0.039716 60
+- m1_impl_gcnt
+ (ParFor) 0.039440 60
+- m1_impl_gms
+ (ParFor) 0.039205 60
+- m1_impl_bcgf_ts
+ (ParFor) 0.036954 928
+- m1_impl_bcgf_rv
+ (ParFor) 0.031547 928
+- m1_impl_i0
+ (ParFor) 0.031036 60
+- Kokkos::View::initialization [d_out_var_mirror] via memset
+ (ParFor) 0.032045 54
+- m1_impl_bcgf_r0
+ (ParFor) 0.027908 247
+- m1_mg_build
+ (ParFor) 0.027293 494
+- Kokkos::View::initialization [cc_outvar] via memset
+ (ParFor) 0.024602 7
+- m1_impl_f1
+ (ParFor) 0.021383 247
+- hs_hist
+ (ParFor) 0.021254 16
+- m1_impl_aphll
+ (ParFor) 0.018269 60
+- m1_impl_bcgf_true
+ (ParFor) 0.017858 242
+- FOFC-etotgrav
+ (ParFor) 0.017944 120
+- HydroNudt2
+ (ParFor) 0.017444 61
+- m1_vgd_halo
+ (ParFor) 0.016450 60
+- m1_impl_rhs
+ (ParFor) 0.016004 247
+- etotgravadd
+ (ParFor) 0.014201 301
+- etotgravrem
+ (ParFor) 0.013990 301
+- FOFC-flx
+ (ParFor) 0.013249 120
+- m1_impl_tbl2
+ (ParFor) 0.012977 307
+- m1_impl_tbl3
+ (ParFor) 0.012736 307
+- m1_impl_lfchf
+ (ParFor) 0.011880 120
+- m1_vgd_tw_uni2
+ (ParFor) 0.011499 60
+- hs_bc
+ (ParFor) 0.011166 242
+- m1_vgd_hr_sub
+ (ParFor) 0.010775 360
+- m1_impl_res
+ (ParFor) 0.010441 247
+- m1_impl_lfchr
+ (ParFor) 0.009429 120
+- m1_impl_odmin
+ (ParFor) 0.009118 247
+- m1_vlat_lxi
+ (ParFor) 0.009108 60
+- m1_vlat_lxo
+ (ParFor) 0.009050 60
+- m1_impl_bcgf_x0
+ (ParFor) 0.007740 247
+- hs_grav_fws_x
+ (ParFor) 0.007762 120
+- m1_impl_bcg_out
+ (ParFor) 0.007678 247
+- m1_vgd_q
+ (ParFor) 0.007414 60
+- m1_limits
+ (ParFor) 0.007463 120
+- m1_vgd_tw_keep2
+ (ParFor) 0.007260 60
+- HistSums
+ (ParFor) 0.007159 16
+- m1_vlat_icut
+ (ParFor) 0.006831 60
+- m1_impl_pstore
+ (ParFor) 0.006459 60
+- m1_vgd_tw_sub
+ (ParFor) 0.006098 60
+- m1_impl_pred
+ (ParFor) 0.005567 60
+- m1_impl_fws_x
+ (ParFor) 0.005238 60
+- etotgrav2
+ (ParFor) 0.004794 120
+- etotgrav3
+ (ParFor) 0.004797 120
+- etotgrav1
+ (ParFor) 0.004612 120
+- hs_sponge_r
+ (ParFor) 0.004417 120
+- FOFC-count
+ (ParFor) 0.003853 120
+- m1_vgd_iso
+ (ParFor) 0.003904 60
+- fofc_report
+ (ParFor) 0.003713 120
+- m1_flr_cnt
+ (ParFor) 0.003676 60
+- FOFC-reset
+ (ParFor) 0.003455 120
+- spcoord
+ (ParFor) 0.003221 1
+- m1_vgd_csw
+ (ParFor) 0.003478 60
+- Kokkos::View::initialization [d] via memset
+ (ParFor) 0.002981 480
+- RadM1NudtSph
+ (ParFor) 0.002783 61
+- hs_zflux
+ (ParFor) 0.002599 120
+- m1_vlat_odmax
+ (ParFor) 0.002586 60
+- hydrobc_x1
+ (ParFor) 0.002388 181
+- hydrobc_etg
+ (ParFor) 0.001949 181
+- m1_impl_thinfrz
+ (ParFor) 0.001937 60
+- m1_impl_ktn
+ (ParFor) 0.001952 60
+- Kokkos::ViewCopy-3D
+ (ParFor) 0.001916 54
+- RadM1Nudt
+ (ParFor) 0.001785 61
+- Kokkos::ViewCopy-4D
+ (ParFor) 0.001654 12
+- m1_vlat_fold
+ (ParFor) 0.001419 60
+- m1_rsla_v
+ (ParFor) 0.001130 1
+- radm1bc_x1
+ (ParFor) 0.000932 61
+- Kokkos::View::initialization [d_out_var] via memset
+ (ParFor) 0.000918 54
+- hs_col
+ (ParFor) 0.000827 1
+- Kokkos::View::initialization [sbuf_dv]
+ (ParFor) 0.000756 8
+- m1_impl_hrq
+ (ParFor) 0.000678 60
+- Kokkos::View::initialization [hs_T_mirror] via memset
+ (ParFor) 0.000678 1
+- Kokkos::View::initialization [hs_F_mirror] via memset
+ (ParFor) 0.000676 1
+- Kokkos::View::initialization [hs_kt_mirror] via memset
+ (ParFor) 0.000674 2
+- Kokkos::View::initialization [hs_E_mirror] via memset
+ (ParFor) 0.000668 1
+- Kokkos::View::initialization [hs_phieff_mirror] via memset
+ (ParFor) 0.000654 1
+- Kokkos::View::initialization [m1_hm_rseg_mirror] via memset
+ (ParFor) 0.000474 1
+- hs_ic
+ (ParFor) 0.000359 1
+- Kokkos::View::initialization [rbuf_dv]
+ (ParFor) 0.000338 8
+- Kokkos::View::initialization [fofc_rep_ioff_mirror] via memset
+ (ParFor) 0.000276 120
+- m1_rsla_tau
+ (ParFor) 0.000259 1
+- hs_kap1
+ (ParFor) 0.000130 8
+- spcoord_add
+ (ParFor) 0.000126 1
+- Kokkos::View::initialization [rst-m1s] via memset
+ (ParFor) 0.000097 2
+- Kokkos::View::initialization [iin] via memset
+ (ParFor) 0.000087 16
+- Kokkos::View::initialization [uin] via memset
+ (ParFor) 0.000087 16
+- Kokkos::View::initialization [bin] via memset
+ (ParFor) 0.000085 16
+- hs_phi
+ (ParFor) 0.000082 1
+- Kokkos::View::initialization [cons] via memset
+ (ParFor) 0.000079 2
+- hs_aref
+ (ParFor) 0.000078 1
+- hs_esrc
+ (ParFor) 0.000080 1
+- Kokkos::View::initialization [DualView::modified_flags] via memset
+ (ParFor) 0.000085 44
+- hs_phieff
+ (ParFor) 0.000076 1
+- Kokkos::View::initialization [cons1] via memset
+ (ParFor) 0.000063 2
+- Kokkos::View::initialization [uflx.x1f] via memset
+ (ParFor) 0.000061 2
+- Kokkos::View::initialization [rbuf_dv_mirror]
+ (ParFor) 0.000062 8
+- Kokkos::View::initialization [prim] via memset
+ (ParFor) 0.000060 2
+- Kokkos::View::initialization [uflx.x3f] via memset
+ (ParFor) 0.000058 2
+- Kokkos::View::initialization [sbuf_dv_mirror]
+ (ParFor) 0.000061 8
+- Kokkos::View::initialization [utest] via memset
+ (ParFor) 0.000058 2
+- hs_icf
+ (ParFor) 0.000056 1
+- Kokkos::View::initialization [uflx.x2f] via memset
+ (ParFor) 0.000057 2
+- Kokkos::View::initialization [m1_u0] via memset
+ (ParFor) 0.000051 2
+- Kokkos::View::initialization [m1_uflx.x2f] via memset
+ (ParFor) 0.000049 2
+- Kokkos::View::initialization [m1_uflx.x3f] via memset
+ (ParFor) 0.000034 2
+- Kokkos::View::initialization [m1_uflx.x1f] via memset
+ (ParFor) 0.000053 2
+- Kokkos::View::initialization [m1_u1] via memset
+ (ParFor) 0.000048 2
+- Kokkos::View::initialization [m1_hm_rm_mirror] via memset
+ (ParFor) 0.000289 1
+- Kokkos::View::initialization [m1_hm_skji_mirror] via memset
+ (ParFor) 0.000035 1
+- Kokkos::View::initialization [m1_hm_sseg_mirror] via memset
+ (ParFor) 0.000286 1
+- Kokkos::View::initialization [m1_mgc] via memset
+ (ParFor) 0.000043 2
+- Kokkos::View::initialization [m1_hm_sm_mirror] via memset
+ (ParFor) 0.000032 1
+- Kokkos::View::initialization [m1_hm_rkji_mirror] via memset
+ (ParFor) 0.000283 1
+- Kokkos::ViewFill-1D
+ (ParFor) 0.000043 2
+- Kokkos::View::initialization [uin_mirror] via memset
+ (ParFor) 0.000032 16
+- Kokkos::View::initialization [volume] via memset
+ (ParFor) 0.000029 2
+- hyd_dtdiag
+ (ParFor) 0.000029 1
+- Kokkos::View::initialization [phi_cc] via memset
+ (ParFor) 0.000029 3
+- Kokkos::View::initialization [derived-var] via memset
+ (ParFor) 0.000029 5
+- Kokkos::View::initialization [bin_mirror] via memset
+ (ParFor) 0.000026 16
+- Kokkos::View::initialization [iin_mirror] via memset
+ (ParFor) 0.000026 16
+- Kokkos::View::initialization [phi_fc.x1f] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [area.x3f] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [areae.x3e] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [area.x1f] via memset
+ (ParFor) 0.000023 2
+- Kokkos::View::initialization [phi_fc.x2f] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [dxe.x1e] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [dx2] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [dx1] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [y_ov_rC] via memset
+ (ParFor) 0.000023 2
+- Kokkos::View::initialization [areae.x2e] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [dxe.x3e] via memset
+ (ParFor) 0.000023 2
+- Kokkos::View::initialization [dxf.x3f] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [dxf.x2f] via memset
+ (ParFor) 0.000023 2
+- Kokkos::View::initialization [dxf.x1f] via memset
+ (ParFor) 0.000022 2
+- Kokkos::View::initialization [areae.x1e] via memset
+ (ParFor) 0.000023 2
+- Kokkos::View::initialization [phi_fc.x3f] via memset
+ (ParFor) 0.000024 2
+- Kokkos::View::initialization [area.x2f] via memset
+ (ParFor) 0.000022 2
+- Kokkos::View::initialization [dx3] via memset
+ (ParFor) 0.000022 2
+- Kokkos::View::initialization [z_ov_rC] via memset
+ (ParFor) 0.000022 2
+- Kokkos::View::initialization [x_ov_rD] via memset
+ (ParFor) 0.000022 2
+- Kokkos::View::initialization [dxe.x2e] via memset
+ (ParFor) 0.000022 2
+- Kokkos::View::initialization [fofc_cnt] via memset
+ (ParFor) 0.000022 2
+- Kokkos::View::initialization [m1_hm_rbuf] via memset
+ (ParFor) 0.000019 1
+- Kokkos::View::initialization [phi_cc_wb] via memset
+ (ParFor) 0.000019 1
+- Kokkos::View::initialization [m1_hm_sbuf] via memset
+ (ParFor) 0.000019 1
+- Kokkos::View::initialization [phi_fc_wb] via memset
+ (ParFor) 0.000017 1
+- Kokkos::View::initialization [hs_aref] via memset
+ (ParFor) 0.000012 1
+- Kokkos::View::initialization [fofc] via memset
+ (ParFor) 0.000017 2
+- Kokkos::View::initialization [m1_hm_sm] via memset
+ (ParFor) 0.000018 1
+- Kokkos::View::initialization [hs_phieff] via memset
+ (ParFor) 0.000013 1
+- Kokkos::View::initialization [hs_kt] via memset
+ (ParFor) 0.000015 2
+- Kokkos::View::initialization [x1v] via memset
+ (ParFor) 0.000013 2
+- Kokkos::View::initialization [xx2f] via memset
+ (ParFor) 0.000012 2
+- Kokkos::View::initialization [xx1f] via memset
+ (ParFor) 0.000012 2
+- Kokkos::View::initialization [x3v] via memset
+ (ParFor) 0.000011 2
+- Kokkos::View::initialization [m1_hm_skji] via memset
+ (ParFor) 0.000010 1
+- Kokkos::View::initialization [xx3f] via memset
+ (ParFor) 0.000011 2
+- Kokkos::View::initialization [x2v] via memset
+ (ParFor) 0.000012 2
+- Kokkos::View::initialization [fc_outvar.x2f] via memset
+ (ParFor) 0.000010 5
+- Kokkos::View::initialization [mb_gid] via memset
+ (ParFor) 0.000010 1
+- Kokkos::View::initialization [m1_hm_sseg] via memset
+ (ParFor) 0.000010 1
+- Kokkos::View::initialization [m1_hm_rseg] via memset
+ (ParFor) 0.000010 1
+- Kokkos::View::initialization [fc_outvar.x1f] via memset
+ (ParFor) 0.000010 5
+- Kokkos::View::initialization [fc_outvar.x3f] via memset
+ (ParFor) 0.000009 5
+- Kokkos::View::initialization [m1_hm_rkji] via memset
+ (ParFor) 0.000010 1
+- Kokkos::View::initialization [hs_E] via memset
+ (ParFor) 0.000008 1
+- Kokkos::View::initialization [fofc_rep_ioff] via memset
+ (ParFor) 0.000008 1
+- Kokkos::View::initialization [hs_T] via memset
+ (ParFor) 0.000008 1
+- Kokkos::View::initialization [m1_hm_rm] via memset
+ (ParFor) 0.000010 1
+- Kokkos::View::initialization [fofc_rep] via memset
+ (ParFor) 0.000008 1
+- Kokkos::View::initialization [hs_F] via memset
+ (ParFor) 0.000008 1
+- Kokkos::View::initialization [m1_det_part] via memset
+ (ParFor) 0.000008 1
+- Kokkos::View::initialization [hs_kd] via memset
+ (ParFor) 0.000007 1
+- Kokkos::View::initialization [ru] via memset
+ (ParFor) 0.000007 1
+- Kokkos::View::initialization [hs_wv] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [ccons] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [phi_fc] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [hs_seed_modes] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [m1_hd_src] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [m1csdxf.x1f] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [presfwb.x2f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [presfwb.x1f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [mbsize] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [excision_floor] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [mb_lev] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [excision_flux] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [cos_face_eta] via memset
+ (ParFor) 0.000027 2
+- Kokkos::View::initialization [cos_face_xi] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1_hm_segs] via memset
+ (ParFor) 0.000006 1
+- Kokkos::View::initialization [conswb] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [cos_cell] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [sin_face_eta] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [hs_kk] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [primwb] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [primfwb.x3f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [sin_face_xi] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [primfwb.x2f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [cprim] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [sin_cell] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [primfwb.x1f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [preswb] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [presfwb.x3f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1_coarse_u0] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [mbbcs] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [mb_panel] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1csdxf.x3f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1csdxf.x2f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1csarea.x3f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1csarea.x1f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1csarea.x2f] via memset
+ (ParFor) 0.000005 1
+- Kokkos::View::initialization [m1_ho_h] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [mbbcs_mirror] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [mb_panel_mirror] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [m1_hm_segs_mirror] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [hs_seed_modes_mirror] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [m1_hd_src_mirror] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [hs_kd_mirror] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [mbsize_mirror] via memset
+ (ParFor) 0.000001 1
+- Kokkos::View::initialization [mb_lev_mirror] via memset
+ (ParFor) 0.000002 1
+- Kokkos::View::initialization [mb_gid_mirror] via memset
+ (ParFor) 0.000002 1

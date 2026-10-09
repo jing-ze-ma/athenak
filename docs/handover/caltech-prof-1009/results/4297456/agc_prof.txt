@@ -1,0 +1,63 @@
+# STEADY = agc_kt60 minus agc_kt10 (50 cycles), mean over 1 rank files
+# wall (Total Execution Time) 28.237 s, in kernels 23.362 s (82.7 %), outside kernels (host, MPI waits, launch gaps) 4.874 s
+# s/cycle (tool run, fenced): 0.5647, kernels 0.4672
+
+## top 25 kernels (time, % of kernel time, % of wall, calls)
+m1_vgd_shell                           7.066 s  30.24 %  25.02 %    24600  vet_gd sweep (other)   0.1413 s/cyc
+m1_vgd_unpack                          2.649 s  11.34 %   9.38 %    24650  vet_gd halo pack/unpack   0.0530 s/cyc
+m1_vgd_hc_scan                         2.560 s  10.96 %   9.07 %    49200  vet_gd halo pack/unpack   0.0512 s/cyc
+m1_vgd_hc_flag                         1.445 s   6.19 %   5.12 %    24600  vet_gd halo pack/unpack   0.0289 s/cyc
+m1_vgd_hc_pack                         0.671 s   2.87 %   2.38 %    24600  vet_gd halo pack/unpack   0.0134 s/cyc
+m1_impl_asm                            0.526 s   2.25 %   1.86 %      200  unmapped (label not a literal in src/)   0.0105 s/cyc
+hyd_c2p_gen                            0.518 s   2.22 %   1.83 %      350  hydro c2p (eos)   0.0104 s/cyc
+m1_impl_pcrx                           0.478 s   2.05 %   1.69 %     2860  rad mg/line preconditioner   0.0096 s/cyc
+m1_vgd_tw_sumd                         0.433 s   1.85 %   1.53 %      150  vet_gd twin   0.0087 s/cyc
+m1_vgd_hc_expand                       0.415 s   1.78 %   1.47 %    24600  vet_gd halo pack/unpack   0.0083 s/cyc
+m1_impl_stop                           0.378 s   1.62 %   1.34 %     3654  rad Picard update/residual/accel   0.0076 s/cyc
+m1_impl_tcell                          0.363 s   1.55 %   1.29 %      250  unmapped (label not a literal in src/)   0.0073 s/cyc
+m1_vlat_src                            0.294 s   1.26 %   1.04 %       50  vet_col/lat   0.0059 s/cyc
+wbcache                                0.286 s   1.22 %   1.01 %      100  hydro update/other   0.0057 s/cyc
+m1_vgd_hr_sm                           0.273 s   1.17 %   0.97 %      300  half-range pass   0.0055 s/cyc
+m1_vgd_mom                             0.266 s   1.14 %   0.94 %      100  vet_gd sweep (other)   0.0053 s/cyc
+m1_vlat_stencil                        0.237 s   1.02 %   0.84 %      200  vet_col/lat   0.0047 s/cyc
+m1_vgd_hr                              0.228 s   0.97 %   0.81 %      100  half-range pass   0.0046 s/cyc
+hflux_x2                               0.225 s   0.97 %   0.80 %      100  hydro fluxes/recon   0.0045 s/cyc
+hflux_x3                               0.222 s   0.95 %   0.79 %      100  hydro fluxes/recon   0.0044 s/cyc
+m1_vgd_hc_bnd                          0.222 s   0.95 %   0.79 %    24600  vet_gd halo pack/unpack   0.0044 s/cyc
+m1_impl_hdir                           0.207 s   0.88 %   0.73 %     4057  rad matrix/operator assembly   0.0041 s/cyc
+m1_mg_pcr                              0.196 s   0.84 %   0.70 %     5720  rad mg/line preconditioner   0.0039 s/cyc
+m1_vlat_op                             0.168 s   0.72 %   0.60 %      200  vet_col/lat   0.0034 s/cyc
+hflux_x1                               0.165 s   0.71 %   0.59 %      100  hydro fluxes/recon   0.0033 s/cyc
+
+## groups (time, % of kernel time, % of wall, kernels)
+vet_gd halo pack/unpack                                        7.976 s  34.14 %  28.25 %    7   0.1595 s/cyc
+vet_gd sweep (other)                                           7.339 s  31.41 %  25.99 %    4   0.1468 s/cyc
+unmapped (label not a literal in src/)                         1.476 s   6.32 %   5.23 %    8   0.0295 s/cyc
+rad matrix/operator assembly                                   0.935 s   4.00 %   3.31 %   17   0.0187 s/cyc
+rad mg/line preconditioner                                     0.927 s   3.97 %   3.28 %    6   0.0185 s/cyc
+vet_col/lat                                                    0.727 s   3.11 %   2.57 %    9   0.0145 s/cyc
+hydro fluxes/recon                                             0.613 s   2.62 %   2.17 %    3   0.0123 s/cyc
+rad Picard update/residual/accel                               0.555 s   2.37 %   1.96 %    9   0.0111 s/cyc
+hydro c2p (eos)                                                0.518 s   2.22 %   1.83 %    1   0.0104 s/cyc
+half-range pass                                                0.518 s   2.22 %   1.83 %    5   0.0104 s/cyc
+vet_gd twin                                                    0.454 s   1.94 %   1.61 %    4   0.0091 s/cyc
+hydro update/other                                             0.408 s   1.74 %   1.44 %   11   0.0082 s/cyc
+coordinates/mesh/driver/utils                                  0.208 s   0.89 %   0.74 %    8   0.0042 s/cyc
+rad Krylov/BiCGStab vector ops                                 0.194 s   0.83 %   0.69 %    7   0.0039 s/cyc
+srcterms + pgen (he_star_m1)                                   0.188 s   0.81 %   0.67 %   14   0.0038 s/cyc
+kokkos internal (view init, copies)                            0.162 s   0.70 %   0.58 %  149   0.0032 s/cyc
+rad implicit halo pack/unpack                                  0.113 s   0.48 %   0.40 %    2   0.0023 s/cyc
+rad other (opacity, explicit flux, time2, coupling, dt)        0.043 s   0.19 %   0.15 %    7   0.0009 s/cyc
+outputs                                                        0.005 s   0.02 %   0.02 %    1   0.0001 s/cyc
+halo/MPI pack-unpack (bvals)                                   0.004 s   0.02 %   0.01 %    3   0.0001 s/cyc
+
+## radiation (rad_m1 + vet + half-range) 19.780 s = 84.7 % of kernel time; hydro (fluxes/update/c2p) 1.538 s = 6.6 %; rad/(rad+hydro) = 92.8 %
+
+## top unmapped labels: m1_impl_asm 0.526 s, m1_impl_tcell 0.363 s, m1_opacity 0.127 s, m1_impl_f2face 0.127 s, m1_impl_f3face 0.105 s, RecvBuff 0.098 s, m1_impl_i1 0.074 s, m1_impl_tsolve 0.056 s
+
+## rank spread (long run): top 5 kernels max-rank / mean-rank time
+m1_vgd_shell                       max 8.484 mean 8.484
+m1_vgd_unpack                      max 3.179 mean 3.179
+m1_vgd_hc_scan                     max 3.076 mean 3.076
+m1_vgd_hc_flag                     max 1.734 mean 1.734
+m1_vgd_hc_pack                     max 0.805 mean 0.805

@@ -1,0 +1,60 @@
+<rad_m1> vet_gd: ragged per-shell band intensity array 1.360199e+01 GB per rank (dense band 1.854407e+01 GB)
+<rad_m1> vet_gd: ragged per-shell band intensity array 1.360199e+01 GB per rank (dense band 1.854407e+01 GB)
+<rad_m1> vet_gd: global-direction SC closure on the sp wedge, product GL10x12 staggered (120 directions); z-rotation every 10 cycle(s) (0 = fixed), first angle 0.000000e+00; rank 0 wall ghost columns 40960, direction maps exact 1966080 of 4915200 (the rest: nearest direction)
+<rad_m1> implicit_halo_mpi: ON, rank 0 has 1 neighbour ranks, 215040 cells sent per component
+elapsed=4.117127e+00 cycle=1 time=9.738697e+01 dt=9.738593e+01
+elapsed=4.522858e+00 cycle=2 time=1.947729e+02 dt=9.738248e+01
+elapsed=4.898643e+00 cycle=3 time=2.921554e+02 dt=9.737888e+01
+elapsed=5.261116e+00 cycle=4 time=3.895343e+02 dt=9.737515e+01
+elapsed=5.603327e+00 cycle=5 time=4.869094e+02 dt=9.737130e+01
+elapsed=5.936021e+00 cycle=6 time=5.842807e+02 dt=9.736734e+01
+elapsed=6.261022e+00 cycle=7 time=6.816481e+02 dt=9.736329e+01
+elapsed=6.561488e+00 cycle=8 time=7.790114e+02 dt=9.735916e+01
+elapsed=6.857192e+00 cycle=9 time=8.763705e+02 dt=9.735496e+01
+elapsed=7.156063e+00 cycle=10 time=9.737255e+02 dt=9.735068e+01
+elapsed=7.778145e+00 cycle=11 time=1.071076e+03 dt=9.734635e+01
+elapsed=8.075249e+00 cycle=12 time=1.168423e+03 dt=9.734197e+01
+elapsed=8.372203e+00 cycle=13 time=1.265764e+03 dt=9.733755e+01
+elapsed=8.674854e+00 cycle=14 time=1.363102e+03 dt=9.733309e+01
+elapsed=8.969772e+00 cycle=15 time=1.460435e+03 dt=9.732860e+01
+elapsed=9.267645e+00 cycle=16 time=1.557764e+03 dt=9.732409e+01
+elapsed=9.557950e+00 cycle=17 time=1.655088e+03 dt=9.731956e+01
+elapsed=9.853271e+00 cycle=18 time=1.752407e+03 dt=9.731503e+01
+elapsed=1.014938e+01 cycle=19 time=1.849722e+03 dt=9.731049e+01
+elapsed=1.044298e+01 cycle=20 time=1.947033e+03 dt=9.730595e+01
+elapsed=1.106294e+01 cycle=21 time=2.044339e+03 dt=9.730142e+01
+elapsed=1.136142e+01 cycle=22 time=2.141640e+03 dt=9.729690e+01
+elapsed=1.165964e+01 cycle=23 time=2.238937e+03 dt=9.729240e+01
+elapsed=1.195369e+01 cycle=24 time=2.336230e+03 dt=9.728793e+01
+elapsed=1.224564e+01 cycle=25 time=2.433518e+03 dt=9.728347e+01
+elapsed=1.254047e+01 cycle=26 time=2.530801e+03 dt=9.727905e+01
+elapsed=1.283324e+01 cycle=27 time=2.628080e+03 dt=9.727466e+01
+elapsed=1.312643e+01 cycle=28 time=2.725355e+03 dt=9.727030e+01
+elapsed=1.341955e+01 cycle=29 time=2.822625e+03 dt=9.726599e+01
+elapsed=1.714200e+01 cycle=30 time=2.919891e+03 dt=9.726171e+01
+
+Terminating on cycle limit
+time=2.919891e+03 cycle=30
+tlim=4.960000e+06 nlim=30
+
+MeshBlock-cycles = 120
+cpu time used  = 1.415504e+01
+zone-cycles/cpu_second = 8.889354e+06
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> closure = vet_col: 3.000000e+01 tensor builds (0.000000e+00 skipped), 1.726624e-03 s (rank 0, fenced), 5.755413e-02 ms per build
+<rad_m1> vet_col_lat: 3.000000e+01 sweeps (incl. the first build's 3 inflow iterations), 7.406474e+00 s (rank 0, fenced), 2.468825e+02 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 1.736481e-01, sweeps 6.023676e+00 (of which per-shell halo+walls 3.713324e+00, of which MPI wait 1.326438e+00), tables (rotation) 5.925574e-01, uniform twin 3.100406e-01, moments 2.744481e-01; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 6.330000e+03, bytes sent 9.602700e+10 (1.517014e+07 per exchange), post 2.006543e-01 s, partners 1; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=1 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=3.000000e+01 Picard iterations mean=2.700000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=0.000000e+00 per solve=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=1.225523e+07 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) of which solve undershoot (pos_floor_solve)=0.000000e+00 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual mean=1.819160e-09 max=1.102679e-08 tol=1.000000e-10
+<rad_m1> bicgstab: outer passes=8.100000e+01 linear solves=8.100000e+01 inner iterations mean=2.644444e+01 max=5.200000e+01 total=2.142000e+03
+<rad_m1> bicgstab: breakdowns=1.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=6.589000e+03 (3.076097e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=3.397386e+08 newton fallbacks=4.092310e+05 (1.204547e-03 per cell-pass)
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=3.049573e+01
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00

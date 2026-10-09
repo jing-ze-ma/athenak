@@ -1,0 +1,60 @@
+<hydro> fofc_report t=7.256086e+03 cycle=30 stages=30 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.364335e+01 cycle=31 time=7.497958e+03 dt=2.418718e+02
+elapsed=3.409365e+01 cycle=32 time=7.739829e+03 dt=2.418721e+02
+elapsed=3.454559e+01 cycle=33 time=7.981702e+03 dt=2.418723e+02
+elapsed=3.500169e+01 cycle=34 time=8.223574e+03 dt=2.418725e+02
+elapsed=3.545180e+01 cycle=35 time=8.465446e+03 dt=2.418727e+02
+elapsed=3.589362e+01 cycle=36 time=8.707319e+03 dt=2.418728e+02
+elapsed=3.633763e+01 cycle=37 time=8.949192e+03 dt=2.418729e+02
+elapsed=3.678981e+01 cycle=38 time=9.191065e+03 dt=2.418731e+02
+elapsed=3.723820e+01 cycle=39 time=9.432938e+03 dt=2.418732e+02
+elapsed=3.768653e+01 cycle=40 time=9.674811e+03 dt=2.418733e+02
+elapsed=3.842051e+01 cycle=41 time=9.916684e+03 dt=2.418735e+02
+elapsed=3.945120e+01 cycle=42 time=1.015856e+04 dt=2.418736e+02
+elapsed=3.989974e+01 cycle=43 time=1.040043e+04 dt=2.418737e+02
+elapsed=4.034871e+01 cycle=44 time=1.064231e+04 dt=2.418739e+02
+elapsed=4.080219e+01 cycle=45 time=1.088418e+04 dt=2.418740e+02
+<hydro> fofc_report t=1.088418e+04 cycle=45 stages=30 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.128599e+01 cycle=46 time=1.112605e+04 dt=2.418742e+02
+elapsed=4.173268e+01 cycle=47 time=1.136793e+04 dt=2.418744e+02
+elapsed=4.217760e+01 cycle=48 time=1.160980e+04 dt=2.418746e+02
+elapsed=4.262230e+01 cycle=49 time=1.185168e+04 dt=2.418748e+02
+elapsed=4.307443e+01 cycle=50 time=1.209355e+04 dt=2.418751e+02
+elapsed=4.377177e+01 cycle=51 time=1.233543e+04 dt=2.418753e+02
+elapsed=4.422119e+01 cycle=52 time=1.257730e+04 dt=2.418756e+02
+elapsed=4.467039e+01 cycle=53 time=1.281918e+04 dt=2.418758e+02
+elapsed=4.513189e+01 cycle=54 time=1.306105e+04 dt=2.418761e+02
+elapsed=4.558136e+01 cycle=55 time=1.330293e+04 dt=2.418764e+02
+elapsed=4.603029e+01 cycle=56 time=1.354481e+04 dt=2.418766e+02
+elapsed=4.648009e+01 cycle=57 time=1.378668e+04 dt=2.418769e+02
+elapsed=4.693519e+01 cycle=58 time=1.402856e+04 dt=2.418771e+02
+elapsed=4.738833e+01 cycle=59 time=1.427044e+04 dt=2.418773e+02
+elapsed=5.331492e+01 cycle=60 time=1.451231e+04 dt=2.418776e+02
+
+Terminating on cycle limit
+time=1.451231e+04 cycle=60
+tlim=1.300000e+06 nlim=60
+
+MeshBlock-cycles = 240
+cpu time used  = 3.540590e+01
+zone-cycles/cpu_second = 1.332714e+07
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> closure = vet_col: 6.000000e+01 tensor builds (0.000000e+00 skipped), 4.088910e-03 s (rank 0, fenced), 6.814850e-02 ms per build
+<rad_m1> vet_col_lat: 6.000000e+01 sweeps (incl. the first build's 3 inflow iterations), 2.079331e+01 s (rank 0, fenced), 3.465551e+02 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 6.134622e-01, sweeps 1.714059e+01 (of which per-shell halo+walls 1.189353e+01, of which MPI wait 2.738220e+00), tables (rotation) 1.504747e+00, uniform twin 8.052212e-01, moments 7.267655e-01; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 2.958000e+04, bytes sent 2.053506e+11 (6.942210e+06 per exchange), post 1.282541e-01 s, partners 1; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=1 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> timers from cycle 3: stages=1.140000e+02 solves=5.700000e+01 passes=2.280000e+02 kry_it=8.350000e+02 passes_s1=0.000000e+00 passes_s2=0.000000e+00 it_s1=0.000000e+00 it_s2=0.000000e+00
+<rad_m1> timers(s): closure=6.969249e-03 opacity=1.446538e-01 solve_pre=1.797114e-01 tensor=1.980769e+01 pred=9.739891e-03 pass_setup=1.978653e+00 krylov=2.247411e+00 pass_post=2.480661e-01 solve_end=2.789559e-01 hyd_c2p=1.601856e-01 m1_bvals=4.710997e-02
+<rad_m1> implicit transport: solves=6.000000e+01 Picard iterations mean=4.116667e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=0.000000e+00 per solve=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=1.096351e+08 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) of which solve undershoot (pos_floor_solve)=0.000000e+00 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual mean=1.333233e-12 max=7.246918e-11 tol=1.000000e-10
+<rad_m1> bicgstab: outer passes=2.470000e+02 linear solves=2.470000e+02 inner iterations mean=3.757085e+00 max=1.700000e+01 total=9.280000e+02
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=3.273000e+03 (3.526940e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=1.942487e+09 newton fallbacks=2.596904e+06 (1.336896e-03 per cell-pass)
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=3.479561e+01
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00

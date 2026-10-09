@@ -1,0 +1,63 @@
+# STEADY = bsg_kt30 minus bsg_kt5 (25 cycles), mean over 1 rank files
+# wall (Total Execution Time) 9.774 s, in kernels 7.781 s (79.6 %), outside kernels (host, MPI waits, launch gaps) 1.993 s
+# s/cycle (tool run, fenced): 0.3910, kernels 0.3113
+
+## top 25 kernels (time, % of kernel time, % of wall, calls)
+m1_vgd_shell                           1.839 s  23.63 %  18.81 %     5250  vet_gd sweep (other)   0.0735 s/cyc
+m1_vgd_unpack                          1.285 s  16.52 %  13.15 %     5275  vet_gd halo pack/unpack   0.0514 s/cyc
+m1_vgd_hc_scan                         0.965 s  12.40 %   9.87 %    10500  vet_gd halo pack/unpack   0.0386 s/cyc
+m1_vgd_hc_flag                         0.583 s   7.49 %   5.96 %     5250  vet_gd halo pack/unpack   0.0233 s/cyc
+m1_impl_pcrx                           0.578 s   7.43 %   5.91 %     5952  rad mg/line preconditioner   0.0231 s/cyc
+m1_impl_stop                           0.375 s   4.81 %   3.83 %     6184  rad Picard update/residual/accel   0.0150 s/cyc
+m1_vgd_hc_pack                         0.227 s   2.91 %   2.32 %     5250  vet_gd halo pack/unpack   0.0091 s/cyc
+m1_vgd_tw_sumd                         0.213 s   2.73 %   2.18 %       75  vet_gd twin   0.0085 s/cyc
+m1_vgd_hc_expand                       0.146 s   1.87 %   1.49 %     5250  vet_gd halo pack/unpack   0.0058 s/cyc
+m1_vgd_hr_sm                           0.134 s   1.72 %   1.37 %      150  half-range pass   0.0054 s/cyc
+m1_impl_bcgf_upd                       0.106 s   1.37 %   1.09 %     1488  rad Krylov/BiCGStab vector ops   0.0043 s/cyc
+m1_impl_hdir                           0.095 s   1.22 %   0.97 %     3406  rad matrix/operator assembly   0.0038 s/cyc
+m1_impl_asm                            0.080 s   1.02 %   0.81 %       57  unmapped (label not a literal in src/)   0.0032 s/cyc
+Kokkos::View::initialization [_mir     0.076 s   0.98 %   0.78 %       12  kokkos internal (view init, copies)   0.0030 s/cyc
+m1_impl_tcell                          0.067 s   0.87 %   0.69 %       82  unmapped (label not a literal in src/)   0.0027 s/cyc
+hflux_x2                               0.065 s   0.84 %   0.67 %       50  hydro fluxes/recon   0.0026 s/cyc
+hflux_x3                               0.065 s   0.83 %   0.66 %       50  hydro fluxes/recon   0.0026 s/cyc
+m1_vgd_mom                             0.060 s   0.77 %   0.61 %       50  vet_gd sweep (other)   0.0024 s/cyc
+m1_det_red2                            0.054 s   0.70 %   0.55 %     4580  rad other (opacity, explicit flux, time2, coupling, dt)   0.0022 s/cyc
+m1_vgd_hr                              0.053 s   0.68 %   0.54 %       50  half-range pass   0.0021 s/cyc
+m1_vgd_hc_bnd                          0.048 s   0.62 %   0.49 %     5250  vet_gd halo pack/unpack   0.0019 s/cyc
+m1_impl_bcgf_ts                        0.042 s   0.54 %   0.43 %     1488  rad Krylov/BiCGStab vector ops   0.0017 s/cyc
+m1_impl_hm_pack                        0.039 s   0.50 %   0.40 %     3406  rad implicit halo pack/unpack   0.0016 s/cyc
+m1_impl_hm_unpack                      0.039 s   0.50 %   0.39 %     3406  rad implicit halo pack/unpack   0.0015 s/cyc
+m1_vlat_stencil                        0.037 s   0.47 %   0.38 %       57  vet_col/lat   0.0015 s/cyc
+
+## groups (time, % of kernel time, % of wall, kernels)
+vet_gd halo pack/unpack                                        3.257 s  41.85 %  33.32 %    7   0.1303 s/cyc
+vet_gd sweep (other)                                           1.903 s  24.45 %  19.47 %    4   0.0761 s/cyc
+rad mg/line preconditioner                                     0.578 s   7.43 %   5.91 %    1   0.0231 s/cyc
+rad Picard update/residual/accel                               0.413 s   5.31 %   4.23 %    9   0.0165 s/cyc
+unmapped (label not a literal in src/)                         0.231 s   2.96 %   2.36 %    8   0.0092 s/cyc
+vet_gd twin                                                    0.218 s   2.81 %   2.24 %    4   0.0087 s/cyc
+rad Krylov/BiCGStab vector ops                                 0.194 s   2.49 %   1.98 %    8   0.0077 s/cyc
+half-range pass                                                0.192 s   2.46 %   1.96 %    5   0.0077 s/cyc
+rad matrix/operator assembly                                   0.189 s   2.43 %   1.93 %   16   0.0076 s/cyc
+hydro fluxes/recon                                             0.160 s   2.06 %   1.64 %    3   0.0064 s/cyc
+kokkos internal (view init, copies)                            0.086 s   1.11 %   0.88 %  142   0.0034 s/cyc
+vet_col/lat                                                    0.085 s   1.09 %   0.87 %    9   0.0034 s/cyc
+rad implicit halo pack/unpack                                  0.077 s   1.00 %   0.79 %    2   0.0031 s/cyc
+coordinates/mesh/driver/utils                                  0.074 s   0.95 %   0.76 %    8   0.0030 s/cyc
+rad other (opacity, explicit flux, time2, coupling, dt)        0.059 s   0.75 %   0.60 %    7   0.0023 s/cyc
+hydro update/other                                             0.037 s   0.47 %   0.38 %   10   0.0015 s/cyc
+hydro c2p (eos)                                                0.020 s   0.26 %   0.20 %    1   0.0008 s/cyc
+srcterms + pgen (he_star_m1)                                   0.007 s   0.09 %   0.07 %    7   0.0003 s/cyc
+halo/MPI pack-unpack (bvals)                                   0.002 s   0.02 %   0.02 %    3   0.0001 s/cyc
+outputs                                                        0.001 s   0.01 %   0.01 %    3   0.0000 s/cyc
+
+## radiation (rad_m1 + vet + half-range) 7.165 s = 92.1 % of kernel time; hydro (fluxes/update/c2p) 0.217 s = 2.8 %; rad/(rad+hydro) = 97.1 %
+
+## top unmapped labels: m1_impl_asm 0.080 s, m1_impl_tcell 0.067 s, RecvBuff 0.026 s, m1_impl_f2face 0.023 s, m1_impl_f3face 0.019 s, m1_opacity 0.009 s, m1_impl_i1 0.004 s, m1_impl_tsolve 0.002 s
+
+## rank spread (long run): top 5 kernels max-rank / mean-rank time
+m1_vgd_shell                       max 2.209 mean 2.209
+m1_vgd_unpack                      max 1.542 mean 1.542
+m1_vgd_hc_scan                     max 1.161 mean 1.161
+m1_vgd_hc_flag                     max 0.699 mean 0.699
+m1_impl_pcrx                       max 0.832 mean 0.832
