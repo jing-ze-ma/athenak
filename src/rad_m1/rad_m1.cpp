@@ -956,6 +956,26 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // vet_gd_twin_fuse (accel-1009; read only when named, default false = bitwise): the
+    // twin sweep of the shell-mean field rides in the main sweep's kernels and per-shell
+    // halo (one launch and one message round per shell instead of two); needs
+    // vet_gd_twin, vet_gd_iter = 1, no vet_gd_async / vet_gd_band_exit, and with MPI
+    // vet_gd_halo_compact > 0 (checked in VetGdInit)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_fuse")) {
+      vgd_twfuse = pin->GetBoolean("rad_m1","vet_gd_twin_fuse");
+      if (vgd_twfuse && !vgd_twin) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_fuse needs vet_gd_twin = true"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // vet_gd_twin_det (accel-1009; read only when named, default false = bitwise): the
+    // twin's shell means summed in a fixed order (thread per shell, rank-ordered MPI)
+    // instead of by atomics, so a GPU run is reproducible run to run
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_det")) {
+      vgd_twdet = pin->GetBoolean("rad_m1","vet_gd_twin_det");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }
@@ -976,6 +996,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
+    }
+    // vet_gd_halo_cache_mb (accel-1009; read only when named; 0 = off = bitwise path):
+    // per-rank MB budget of the compact-halo mask cache (rad_m1_vetgd.cpp VetGdHcGet)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_cache_mb")) {
+      vgd_hc_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_cache_mb"));
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
       vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");

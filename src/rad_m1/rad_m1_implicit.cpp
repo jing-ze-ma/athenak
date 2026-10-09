@@ -10643,9 +10643,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // this step happened (first 8 cells of this rank: cycle, time, m, k, j, i, r)
     if (sfb > 0.0 && pmy_pack->pmesh->ncycle >= 0 &&
         pin_report_newton_fb) {
-      auto hfb = Kokkos::create_mirror_view_and_copy(HostMemSpace(), iw_);
+      // accel-1009: copy only the fallback-count component (the whole work array was
+      // copied before: ~0.26 s per step on A100 for AG Car A); the printed lines are
+      // the same
+      if (nfb_buf.extent(0) != static_cast<size_t>(nmb1 + 1) ||
+          nfb_buf.extent(1) != iw_.extent(2) || nfb_buf.extent(2) != iw_.extent(3) ||
+          nfb_buf.extent(3) != iw_.extent(4)) {
+        Kokkos::realloc(nfb_buf, nmb1 + 1, iw_.extent(2), iw_.extent(3), iw_.extent(4));
+      }
+      auto nb_ = nfb_buf;
+      par_for("m1_impl_nfb_cp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        nb_(m,k,j,i) = iw_(m,igf,k,j,i);
+      });
+      auto hfb4 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), nfb_buf);
       auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                       pmy_pack->pcoord->x1v);
+      auto hfb = [&](const int m, const int, const int k, const int j, const int i) {
+        return hfb4(m,k,j,i);
+      };
       int nrep = 0;
       for (int m = 0; m <= nmb1 && nrep < 8; ++m) {
         for (int k = ks; k <= ke && nrep < 8; ++k) {

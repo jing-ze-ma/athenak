@@ -358,6 +358,21 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   VetGdHaloInit();
+  if (vgd_twfuse) {
+    // vet_gd_twin_fuse: the twin's intensities and source live in their own arrays
+    if (vgd_iter != 1 || vgd_async || vgd_bandx || (vgd_hmpi && vgd_hcomp <= 0)) {
+      VgdFatal("vet_gd_twin_fuse needs vet_gd_iter = 1, no vet_gd_async / "
+               "vet_gd_band_exit, and vet_gd_halo_compact > 0 when the halo uses MPI");
+    }
+    Kokkos::realloc(vgd_itw, nmb, n, c3w, c2w, c1);
+    Kokkos::deep_copy(vgd_itw, 0.0);
+    Kokkos::realloc(vgd_cst, nmb, 2, c3w, c2w, c1);
+    if (vgd_hmpi) {
+      Kokkos::realloc(vgd_csb2, vgd_csb.extent(0));
+      Kokkos::realloc(vgd_crb2, vgd_crb.extent(0));
+      Kokkos::realloc(vgd_rbuf2, vgd_rbuf.extent(0));
+    }
+  }
   if (vgd_rbe > 0) {
     Kokkos::realloc(vgd_fk0, nmb, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng, c1);
   }
@@ -798,8 +813,9 @@ void RadiationM1::VetGdHaloInit() {
 //! a local neighbour is copied directly (it reads only interiors, it writes only bands:
 //! no race), a remote one by one message per (block, slot)
 
-void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
-                            const int i1, const int ws, const bool mapd) {
+template <class V>
+void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
+                            const bool mapd, V *b) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
@@ -823,7 +839,10 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
   auto ro_ = vgd_roff;
   const int nvi = nv*ni;
   const bool hcomp = mapd && (vgd_hcomp > 0) && (ni == 1);
-  if (hcomp) {VetGdHaloCompact(a, nv, i0, ws);}
+  // vet_gd_twin_fuse: b (the twin intensities) rides in the same exchange; only the
+  // compact path carries it (VetGdInit refuses the fuse otherwise under MPI)
+  const bool two = (b != nullptr) && hcomp;
+  if (hcomp) {VetGdHaloCompact(a, nv, i0, ws, two ? b : nullptr);}
   if (!hcomp) {
   par_for("m1_vgd_halo", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
@@ -913,6 +932,40 @@ void RadiationM1::VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0,
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
       a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(rb0 + ((vs*kn + kk)*jn + jj)*ni + ii);
     });
+    if (two) {
+      // the twin's band: the same unpack from its own expanded buffer
+      auto b_ = *b;
+      auto rb2_ = vgd_rbuf2;
+      par_for("m1_vgd_unpack2", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
+      KOKKOS_LAMBDA(const int m, const int o, const int t) {
+        if (hl_(8*m + o) >= 0) {return;}
+        const int oo = (o < 4) ? o : (o + 1);
+        const int dk = oo/3 - 1, dj = oo%3 - 1;
+        const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
+        const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
+        const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
+        const int cnt = nv*kn*jn*ni;
+        if (t >= cnt) {return;}
+        const int v = t/(kn*jn*ni);
+        const int r1 = t - v*kn*jn*ni;
+        const int kk = r1/(jn*ni);
+        const int r2 = r1 - kk*jn*ni;
+        const int jj = r2/ni;
+        const int ii = r2 - jj*ni;
+        const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nvi;
+        if (mapd && wint && wl_(m,kd+kk,jd+jj) != 0) {
+          Real val = 0.0;
+          for (int q = 0; q < 3; ++q) {
+            const int vq = m3_(m,kd+kk,jd+jj,v,q);
+            val += w3_(m,kd+kk,jd+jj,v,q)*rb2_(rb0 + ((vq*kn + kk)*jn + jj)*ni + ii);
+          }
+          b_(m,v,kd+kk,jd+jj,i0+ii) = val;
+          return;
+        }
+        const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
+        b_(m,v,kd+kk,jd+jj,i0+ii) = rb2_(rb0 + ((vs*kn + kk)*jn + jj)*ni + ii);
+      });
+    }
   }
 #endif
 }
@@ -1090,8 +1143,51 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
 //! compact pack, MPI, expansion; then (pipe) the next shell's mask is queued before the
 //! wait.  Bitwise the unpipelined path (same masks, same positions).
 
-void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int i0,
-                                   const int ws) {
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::VetGdHcGet
+//! \brief vet_gd_halo_cache_mb (accel-1009): the cache entry of the compact-halo masks of
+//! shell i of pass inw at band depth ws, (re)made by VetGdHcPrep when the direction set
+//! (vgd_alpha), the cut or the depth changed; -1 when the byte budget is used up (the
+//! caller then preps a pipeline slot as before).  The masks are the same numbers either
+//! way, so the sweep is bitwise unchanged.
+
+int RadiationM1::VetGdHcGet(const int i, const bool inw, const int ws) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  if (vgd_hce.empty()) {vgd_hce.resize(2*n1);}
+  const int e = (inw ? 0 : n1) + i;
+  if (e < 0 || e >= static_cast<int>(vgd_hce.size())) {return -1;}
+  VgdHcEntry &c = vgd_hce[e];
+  if (c.alpha == vgd_alpha && c.scut == vgd_scut && c.ws == ws) {return e;}
+  if (c.fs.extent(0) == 0) {
+    const size_t need = (vgd_hfs[0].extent(0) + vgd_hfr[0].extent(0) +
+                         vgd_hpb[0].extent(0))*sizeof(int);
+    if (vgd_hc_bytes + need > (static_cast<size_t>(vgd_hc_mb) << 20)) {return -1;}
+    Kokkos::realloc(c.fs, vgd_hfs[0].extent(0));
+    Kokkos::realloc(c.fr, vgd_hfr[0].extent(0));
+    c.pb = Kokkos::View<int*, Kokkos::SharedHostPinnedSpace>("m1_vgd_hc_pb",
+                                                             vgd_hpb[0].extent(0));
+    vgd_hc_bytes += need;
+  }
+  // prep into slot 0's place with the entry's arrays swapped in, then swap back (slot
+  // 0's own arrays and tag are then stale: the tag is cleared)
+  std::swap(vgd_hfs[0], c.fs);
+  std::swap(vgd_hfr[0], c.fr);
+  std::swap(vgd_hpb[0], c.pb);
+  VetGdHcPrep(0, i, inw, ws);
+  std::swap(vgd_hfs[0], c.fs);
+  std::swap(vgd_hfr[0], c.fr);
+  std::swap(vgd_hpb[0], c.pb);
+  vgd_htag[0][0] = -1;
+  c.alpha = vgd_alpha;
+  c.scut = vgd_scut;
+  c.ws = ws;
+  vgd_hc_nmade += 1.0;
+  return e;
+}
+
+template <class V>
+void RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b) {
 #if MPI_PARALLEL_ENABLED
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
@@ -1106,6 +1202,12 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
   auto csb_ = vgd_csb;
   auto crb_ = vgd_crb;
   auto rb_ = vgd_rbuf;
+  // vet_gd_twin_fuse: the twin array b packed / sent / expanded with the same masks
+  const bool two = (b != nullptr);
+  auto b_ = two ? *b : a;
+  auto csb2_ = vgd_csb2;
+  auto crb2_ = vgd_crb2;
+  auto rb2_ = vgd_rbuf2;
   const int nvi = nv;
   const size_t rtot = static_cast<size_t>(vgd_prdsp[ws].empty() ? 0 :
                       (vgd_prdsp[ws].back() + vgd_prcnt[ws].back()))*nvi;
@@ -1116,17 +1218,22 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
            vgd_htag[sl][4] == vgd_hsweep;
   };
   int slot = -1;
-  if (vgd_hpipe) {
-    if (tagged(0)) {slot = 0;}
-    if (tagged(1)) {slot = 1;}
+  // vet_gd_halo_cache_mb > 0: the masks of this (pass, shell) from the cache (made at
+  // the first sweep of the direction set, cut and depth), no per-shell prep
+  const int ce = (vgd_hc_mb > 0) ? VetGdHcGet(i, inw, ws) : -1;
+  if (ce < 0) {
+    if (vgd_hpipe) {
+      if (tagged(0)) {slot = 0;}
+      if (tagged(1)) {slot = 1;}
+    }
+    if (slot < 0) {
+      slot = vgd_hpipe ? (1 - vgd_hlast) : 0;
+      VetGdHcPrep(slot, i, inw, ws);
+    }
+    vgd_hlast = slot;
   }
-  if (slot < 0) {
-    slot = vgd_hpipe ? (1 - vgd_hlast) : 0;
-    VetGdHcPrep(slot, i, inw, ws);
-  }
-  vgd_hlast = slot;
-  auto fs_ = vgd_hfs[slot];
-  auto fr_ = vgd_hfr[slot];
+  auto fs_ = (ce >= 0) ? vgd_hce[ce].fs : vgd_hfs[slot];
+  auto fr_ = (ce >= 0) ? vgd_hce[ce].fr : vgd_hfr[slot];
   // (3) compact pack
   par_for("m1_vgd_hc_pack", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
@@ -1145,12 +1252,13 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
     const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
     const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
     csb_(fs_(q)) = a_(m,v,ks2+kk,js2+jj,i);
+    if (two) {csb2_(fs_(q)) = b_(m,v,ks2+kk,js2+jj,i);}
   });
   const int np = static_cast<int>(vgd_prk.size());
   vgd_cur.fence();
   std::vector<int> sp(np + 1), rp_(np + 1);
   {
-    auto pbh = vgd_hpb[slot];
+    auto pbh = (ce >= 0) ? vgd_hce[ce].pb : vgd_hpb[slot];
     for (int p = 0; p <= np; ++p) {
       sp[p] = pbh(p);
       rp_[p] = pbh(np + 1 + p);
@@ -1167,10 +1275,30 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
     MPI_Isend(csb_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7002,
               vgd_comm, &req.back());
   }
+  if (two) {
+    // after the main pairs, so stat[2p] below stays the main receive of partner p
+    for (int p = 0; p < np; ++p) {
+      const int rk = vgd_prk[p];
+      req.emplace_back();
+      MPI_Irecv(crb2_.data() + rp_[p], rp_[p+1] - rp_[p], MPI_ATHENA_REAL, rk, 7003,
+                vgd_comm, &req.back());
+      req.emplace_back();
+      MPI_Isend(csb2_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7003,
+                vgd_comm, &req.back());
+    }
+  }
   vgd_tpost += tq.seconds();
   // vet_gd_halo_pipe: the next shell's mask on the device while the messages travel
   if (vgd_hpipe && vgd_hnext[0] >= 0) {
-    VetGdHcPrep(1 - slot, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
+    // (with the cache: the next shell's entry, made only when it is not valid)
+    if (vgd_hc_mb > 0 &&
+        VetGdHcGet(vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]) >= 0) {
+    } else if (ce >= 0) {
+      VetGdHcPrep(1 - vgd_hlast, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
+      vgd_hlast = 1 - vgd_hlast;
+    } else {
+      VetGdHcPrep(1 - slot, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
+    }
   }
   std::vector<MPI_Status> stat(req.size());
   if (vgd_afly && g_vgd_apoll > 0) {
@@ -1193,7 +1321,7 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
     if (got != rp_[p+1] - rp_[p]) {
       VgdFatal("vet_gd_halo_compact: sender and receiver masks disagree");
     }
-    vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);
+    vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real)*(two ? 2 : 1);
   }
   // (5) expansion to the dense receive layout
   const Real fill = (std::getenv("VGD_COMPACT_NAN") != nullptr) ?
@@ -1201,6 +1329,7 @@ void RadiationM1::VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int
   Kokkos::parallel_for("m1_vgd_hc_expand", Kokkos::RangePolicy<>(vgd_cur, 0, rtot),
   KOKKOS_LAMBDA(const size_t q) {
     rb_(q) = (fr_(q + 1) > fr_(q)) ? crb_(fr_(q)) : fill;
+    if (two) {rb2_(q) = (fr_(q + 1) > fr_(q)) ? crb2_(fr_(q)) : fill;}
   });
 #endif
 }
@@ -1285,25 +1414,11 @@ void RadiationM1::VetGdSweep() {
       } else {
         vgd_hnext[0] = -1;
       }
+      const bool two = vgd_sw2;      // vet_gd_twin_fuse: the twin field in the same pass
+      auto ct_ = vgd_cst;
+      auto vt_ = vgd_itw;
       par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-        auto rd = [&](const int kk, const int jj, const int ii) -> Real {
-          const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
-          const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
-          if (ek == 0 && ej == 0) {return vi_(m,d,kk,jj,ii);}
-          const int oo = 3*(ek + 1) + (ej + 1);
-          const int nl = hl_(8*m + ((oo < 4) ? oo : (oo - 1)));
-          if (nl < 0) {return vi_(m,d,kk,jj,ii);}
-          if (wint && wl_(m,kk,jj) != 0) {
-            Real v = 0.0;
-            for (int t = 0; t < 3; ++t) {
-              v += w3_(m,kk,jj,d,t)*vi_(nl,m3_(m,kk,jj,d,t),kk - ek*nx3b,jj - ej*nx2b,ii);
-            }
-            return v;
-          }
-          const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,d) : d;
-          return vi_(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
-        };
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -1311,192 +1426,217 @@ void RadiationM1::VetGdSweep() {
         const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
         if (inw == (mr >= 0.0)) {return;}
-        const Real r = cx1v(m,i);
-        const Real zr = r*fabs(mr);
-        const Real p2 = fmax(r*r - zr*zr, 0.0);
-        const Real ch0 = exp(cs_(m,0,k,j,i));
-        const Real s0 = exp(cs_(m,1,k,j,i));
-        Real iv;
-        if (inw && l == n1 - 1) {
-          // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat)
-          const Real rtop = cx1f(m,ie+1);
-          const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
-          const Real stp = fmax(1.5*s0 - 0.5*exp(cs_(m,1,k,j,i-1)), 1.0e-300);
-          Real ex, w0, wu;
-          VgdW(ch0*ds, ex, w0, wu);
-          iv = wu*stp + w0*s0;
-        } else if (!inw && zr < 1.0e-12*r) {
-          iv = s0;                     // tangent at the cell centre (measure zero)
-        } else {
-          int typ = 1;                 // 1 upwind shell, 2 inner face, 3 own shell
-          int iu = i + 1;
-          Real ds;
-          if (inw) {
-            const Real ru = cx1v(m,i+1);
-            ds = sqrt(ru*ru - p2) - zr;
-          } else {
-            const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
-            if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
-              iu = i - 1;
-              ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-            } else if (l == lcut && p2 <= rd*rd) {
-              typ = 2;
-              iu = i;
-              ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-            } else {
-              typ = 3;
-              iu = i;
-              ds = 2.0*zr;
-            }
-          }
-          // the upwind point, its lateral cell and bilinear fractions (index space)
-          const Real xu = r*st*cp - ds*nx;
-          const Real yu = r*st*sp - ds*ny;
-          const Real zu = r*ct - ds*nz;
-          const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
-          const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
-          Real dph = atan2(yu, xu) - ph;
-          dph -= twopi*floor((dph + M_PI)/twopi);
-          const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
-          const Real fk = k + dph/mbsize.d_view(m).dx3;
-          int j0 = static_cast<int>(floor(fj));
-          int k0 = static_cast<int>(floor(fk));
-          Real uj = fj - j0, uk = fk - k0;
-          bool clp = false;
-          if (j0 < jlo) {j0 = jlo; uj = 0.0; clp = true;}
-          if (j0 > jhi) {j0 = jhi; uj = 1.0; clp = true;}
-          if (k0 < klo) {k0 = klo; uk = 0.0; clp = true;}
-          if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
-          if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
-          const int j1 = j0 + 1, k1 = k0 + 1;
-          bool bdone = false;
-          if (clp && bandx && typ == 1) {
-            // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead of
-            // reading the clamped (wrong) column, stop the segment where the ray leaves
-            // the band (index linear in the path fraction s) and take I, chi, S there,
-            // bilinear on the band-edge ghost columns of the two shells i and iu (the
-            // lagged inflow of the last sweep) and linear in r between them
-            const Real gj = fj - j, gk = fk - k;
-            Real s = 1.0;
-            if (fj < jlo) {s = fmin(s, (jlo - j)/gj);}
-            if (fj > jhi + 1) {s = fmin(s, (jhi + 1 - j)/gj);}
-            if (fk < klo) {s = fmin(s, (klo - k)/gk);}
-            if (fk > khi + 1) {s = fmin(s, (khi + 1 - k)/gk);}
-            s = fmax(s*(1.0 - 1.0e-9), 0.0);
-            const Real dsx = s*ds;
-            const Real xx = r*st*cp - dsx*nx, yx = r*st*sp - dsx*ny, zx = r*ct - dsx*nz;
-            const Real rx = sqrt(xx*xx + yx*yx + zx*zx);
-            const Real thx = acos(fmin(fmax(zx/rx, -1.0), 1.0));
-            Real dpx = atan2(yx, xx) - ph;
-            dpx -= twopi*floor((dpx + M_PI)/twopi);
-            const Real fjx = fmin(fmax(j + (thx - th)/mbsize.d_view(m).dx2, Real(jlo)),
-                                  Real(jhi + 1));
-            const Real fkx = fmin(fmax(k + dpx/mbsize.d_view(m).dx3, Real(klo)),
-                                  Real(khi + 1));
-            int jx0 = static_cast<int>(floor(fjx)), kx0 = static_cast<int>(floor(fkx));
-            jx0 = (jx0 > jhi) ? jhi : jx0;
-            kx0 = (kx0 > khi) ? khi : kx0;
-            const Real ujx = fjx - jx0, ukx = fkx - kx0;
-            const Real wr = fmin(fmax((rx - r)/(cx1v(m,iu) - r), 0.0), 1.0);
-            const bool want_in = inw;
-            Real wsum = 0.0, isum = 0.0;
-            for (int q = 0; q < 4; ++q) {
-              const int kk = (q < 2) ? kx0 : (kx0 + 1);
-              const int jj = (q % 2 == 0) ? jx0 : (jx0 + 1);
-              const Real wq = ((q < 2) ? (1.0 - ukx) : ukx)
-                              *((q % 2 == 0) ? (1.0 - ujx) : ujx);
-              const Real mq = mr_(m,kk,jj,d);
-              if (((want_in && mq < 0.0) || (!want_in && mq >= 0.0)) && wq > 0.0) {
-                wsum += wq;
-                isum += wq*((1.0 - wr)*rd(kk,jj,i) + wr*rd(kk,jj,iu));
+        // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same
+        // thread; one launch and one halo per shell for both sweeps
+        auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix) -> Real {
+          auto rd = [&](const int kk, const int jj, const int ii) -> Real {
+            const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
+            const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
+            if (ek == 0 && ej == 0) {return vix(m,d,kk,jj,ii);}
+            const int oo = 3*(ek + 1) + (ej + 1);
+            const int nl = hl_(8*m + ((oo < 4) ? oo : (oo - 1)));
+            if (nl < 0) {return vix(m,d,kk,jj,ii);}
+            if (wint && wl_(m,kk,jj) != 0) {
+              Real v = 0.0;
+              for (int t = 0; t < 3; ++t) {
+                v += w3_(m,kk,jj,d,t)*vix(nl,m3_(m,kk,jj,d,t),kk - ek*nx3b,
+                                          jj - ej*nx2b,ii);
               }
+              return v;
             }
-            if (wsum > 0.0) {
-              auto linx = [&](const int c, const int ii) {
-                return VgdLerp(VgdLerp(cs_(m,c,kx0,jx0,ii), cs_(m,c,kx0,jx0+1,ii), ujx),
-                               VgdLerp(cs_(m,c,kx0+1,jx0,ii), cs_(m,c,kx0+1,jx0+1,ii),
-                                       ujx), ukx);
-              };
-              const Real chx = exp((1.0 - wr)*linx(0,i) + wr*linx(0,iu));
-              const Real sx = exp((1.0 - wr)*linx(1,i) + wr*linx(1,iu));
-              Real ex, w0, wu;
-              VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
-              iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
-              bdone = true;
-            }
-          }
-          if (bdone) {
-            // done: the shortened segment from the band edge
-          } else if (typ == 2) {
-            // the diffusion intensity at the inner face of the first shell
-            const Real rf = cx1f(m,i);
-            const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
-            const int i1 = i + 1;
-            auto ib = [&](const int kk, const int jj) {
-              const Real sa = exp(cs_(m,1,kk,jj,i)), sb = exp(cs_(m,1,kk,jj,i1));
-              const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(cs_(m,0,kk,jj,i));
-              return sa + g0*muf;
-            };
-            auto sbt = [&](const int kk, const int jj) {
-              return fmax(1.5*exp(cs_(m,1,kk,jj,i)) - 0.5*exp(cs_(m,1,kk,jj,i1)),
-                          1.0e-300);
-            };
+            const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,d) : d;
+            return vix(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
+          };
+          const Real r = cx1v(m,i);
+          const Real zr = r*fabs(mr);
+          const Real p2 = fmax(r*r - zr*zr, 0.0);
+          const Real ch0 = exp(csx(m,0,k,j,i));
+          const Real s0 = exp(csx(m,1,k,j,i));
+          Real iv;
+          if (inw && l == n1 - 1) {
+            // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat)
+            const Real rtop = cx1f(m,ie+1);
+            const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
+            const Real stp = fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i-1)), 1.0e-300);
             Real ex, w0, wu;
             VgdW(ch0*ds, ex, w0, wu);
-            const Real bv = fmax(VgdLerp(VgdLerp(ib(k0,j0), ib(k0,j1), uj),
-                                         VgdLerp(ib(k1,j0), ib(k1,j1), uj), uk), 0.0);
-            const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
-                                    VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
-            iv = bv*ex + wu*qv + w0*s0;
+            iv = wu*stp + w0*s0;
+          } else if (!inw && zr < 1.0e-12*r) {
+            iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
-            // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
-            // selects; the ray read here is inward at the upwind point for the inward
-            // pass and for a turned ray, outward otherwise.  Stencil cells of the other
-            // pass hold the wrong branch (near the tangent band): they are dropped and
-            // the bilinear weights renormalised (all valid: the plain bilinear)
-            const bool want_in = inw || (typ == 3);
-            bool ok[4];
-            bool all = true;
-            for (int q = 0; q < 4; ++q) {
-              const int kk = (q < 2) ? k0 : k1;
-              const int jj = (q % 2 == 0) ? j0 : j1;
-              const Real mq = mr_(m,kk,jj,d);
-              ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
-              all = all && ok[q];
-            }
-            Real ivu;
-            if (all) {
-              ivu = VgdLerp(VgdLerp(rd(k0,j0,iu), rd(k0,j1,iu), uj),
-                            VgdLerp(rd(k1,j0,iu), rd(k1,j1,iu), uj), uk);
+            int typ = 1;                 // 1 upwind shell, 2 inner face, 3 own shell
+            int iu = i + 1;
+            Real ds;
+            if (inw) {
+              const Real ru = cx1v(m,i+1);
+              ds = sqrt(ru*ru - p2) - zr;
             } else {
-              Real ws = 0.0, vs = 0.0;
+              const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
+              if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
+                iu = i - 1;
+                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+              } else if (l == lcut && p2 <= rd*rd) {
+                typ = 2;
+                iu = i;
+                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+              } else {
+                typ = 3;
+                iu = i;
+                ds = 2.0*zr;
+              }
+            }
+            // the upwind point, its lateral cell and bilinear fractions (index space)
+            const Real xu = r*st*cp - ds*nx;
+            const Real yu = r*st*sp - ds*ny;
+            const Real zu = r*ct - ds*nz;
+            const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
+            const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
+            Real dph = atan2(yu, xu) - ph;
+            dph -= twopi*floor((dph + M_PI)/twopi);
+            const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
+            const Real fk = k + dph/mbsize.d_view(m).dx3;
+            int j0 = static_cast<int>(floor(fj));
+            int k0 = static_cast<int>(floor(fk));
+            Real uj = fj - j0, uk = fk - k0;
+            bool clp = false;
+            if (j0 < jlo) {j0 = jlo; uj = 0.0; clp = true;}
+            if (j0 > jhi) {j0 = jhi; uj = 1.0; clp = true;}
+            if (k0 < klo) {k0 = klo; uk = 0.0; clp = true;}
+            if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
+            if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
+            const int j1 = j0 + 1, k1 = k0 + 1;
+            bool bdone = false;
+            if (clp && bandx && typ == 1) {
+              // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead
+              // of reading the clamped (wrong) column, stop the segment where the ray
+              // leaves the band (index linear in the path fraction s) and take I, chi, S
+              // there, bilinear on the band-edge ghost columns of the two shells i and iu
+              // (the lagged inflow of the last sweep) and linear in r between them
+              const Real gj = fj - j, gk = fk - k;
+              Real s = 1.0;
+              if (fj < jlo) {s = fmin(s, (jlo - j)/gj);}
+              if (fj > jhi + 1) {s = fmin(s, (jhi + 1 - j)/gj);}
+              if (fk < klo) {s = fmin(s, (klo - k)/gk);}
+              if (fk > khi + 1) {s = fmin(s, (khi + 1 - k)/gk);}
+              s = fmax(s*(1.0 - 1.0e-9), 0.0);
+              const Real dsx = s*ds;
+              const Real xx = r*st*cp - dsx*nx, yx = r*st*sp - dsx*ny, zx = r*ct - dsx*nz;
+              const Real rx = sqrt(xx*xx + yx*yx + zx*zx);
+              const Real thx = acos(fmin(fmax(zx/rx, -1.0), 1.0));
+              Real dpx = atan2(yx, xx) - ph;
+              dpx -= twopi*floor((dpx + M_PI)/twopi);
+              const Real fjx = fmin(fmax(j + (thx - th)/mbsize.d_view(m).dx2, Real(jlo)),
+                                    Real(jhi + 1));
+              const Real fkx = fmin(fmax(k + dpx/mbsize.d_view(m).dx3, Real(klo)),
+                                    Real(khi + 1));
+              int jx0 = static_cast<int>(floor(fjx)), kx0 = static_cast<int>(floor(fkx));
+              jx0 = (jx0 > jhi) ? jhi : jx0;
+              kx0 = (kx0 > khi) ? khi : kx0;
+              const Real ujx = fjx - jx0, ukx = fkx - kx0;
+              const Real wr = fmin(fmax((rx - r)/(cx1v(m,iu) - r), 0.0), 1.0);
+              const bool want_in = inw;
+              Real wsum = 0.0, isum = 0.0;
+              for (int q = 0; q < 4; ++q) {
+                const int kk = (q < 2) ? kx0 : (kx0 + 1);
+                const int jj = (q % 2 == 0) ? jx0 : (jx0 + 1);
+                const Real wq = ((q < 2) ? (1.0 - ukx) : ukx)
+                                *((q % 2 == 0) ? (1.0 - ujx) : ujx);
+                const Real mq = mr_(m,kk,jj,d);
+                if (((want_in && mq < 0.0) || (!want_in && mq >= 0.0)) && wq > 0.0) {
+                  wsum += wq;
+                  isum += wq*((1.0 - wr)*rd(kk,jj,i) + wr*rd(kk,jj,iu));
+                }
+              }
+              if (wsum > 0.0) {
+                auto linx = [&](const int c, const int ii) {
+                  return VgdLerp(VgdLerp(csx(m,c,kx0,jx0,ii), csx(m,c,kx0,jx0+1,ii), ujx),
+                                 VgdLerp(csx(m,c,kx0+1,jx0,ii), csx(m,c,kx0+1,jx0+1,ii),
+                                         ujx), ukx);
+                };
+                const Real chx = exp((1.0 - wr)*linx(0,i) + wr*linx(0,iu));
+                const Real sx = exp((1.0 - wr)*linx(1,i) + wr*linx(1,iu));
+                Real ex, w0, wu;
+                VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
+                iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
+                bdone = true;
+              }
+            }
+            if (bdone) {
+              // done: the shortened segment from the band edge
+            } else if (typ == 2) {
+              // the diffusion intensity at the inner face of the first shell
+              const Real rf = cx1f(m,i);
+              const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
+              const int i1 = i + 1;
+              auto ib = [&](const int kk, const int jj) {
+                const Real sa = exp(csx(m,1,kk,jj,i)), sb = exp(csx(m,1,kk,jj,i1));
+                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(csx(m,0,kk,jj,i));
+                return sa + g0*muf;
+              };
+              auto sbt = [&](const int kk, const int jj) {
+                return fmax(1.5*exp(csx(m,1,kk,jj,i)) - 0.5*exp(csx(m,1,kk,jj,i1)),
+                            1.0e-300);
+              };
+              Real ex, w0, wu;
+              VgdW(ch0*ds, ex, w0, wu);
+              const Real bv = fmax(VgdLerp(VgdLerp(ib(k0,j0), ib(k0,j1), uj),
+                                           VgdLerp(ib(k1,j0), ib(k1,j1), uj), uk), 0.0);
+              const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
+                                      VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
+              iv = bv*ex + wu*qv + w0*s0;
+            } else {
+              // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
+              // selects; the ray read here is inward at the upwind point for the inward
+              // pass and for a turned ray, outward otherwise.  Stencil cells of the other
+              // pass hold the wrong branch (near the tangent band): they are dropped and
+              // the bilinear weights renormalised (all valid: the plain bilinear)
+              const bool want_in = inw || (typ == 3);
+              bool ok[4];
+              bool all = true;
               for (int q = 0; q < 4; ++q) {
                 const int kk = (q < 2) ? k0 : k1;
                 const int jj = (q % 2 == 0) ? j0 : j1;
-                const Real wq = ((q < 2) ? (1.0 - uk) : uk)
-                                *((q % 2 == 0) ? (1.0 - uj) : uj);
-                if (ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
+                const Real mq = mr_(m,kk,jj,d);
+                ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
+                all = all && ok[q];
               }
-              ivu = (ws > 0.0) ? vs/ws : -1.0;   // none: the upwind source (below)
+              Real ivu;
+              if (all) {
+                ivu = VgdLerp(VgdLerp(rd(k0,j0,iu), rd(k0,j1,iu), uj),
+                              VgdLerp(rd(k1,j0,iu), rd(k1,j1,iu), uj), uk);
+              } else {
+                Real ws = 0.0, vs = 0.0;
+                for (int q = 0; q < 4; ++q) {
+                  const int kk = (q < 2) ? k0 : k1;
+                  const int jj = (q % 2 == 0) ? j0 : j1;
+                  const Real wq = ((q < 2) ? (1.0 - uk) : uk)
+                                  *((q % 2 == 0) ? (1.0 - uj) : uj);
+                  if (ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
+                }
+                ivu = (ws > 0.0) ? vs/ws : -1.0;   // none: the upwind source (below)
+              }
+              auto lin = [&](const int c) {
+                return VgdLerp(VgdLerp(csx(m,c,k0,j0,iu), csx(m,c,k0,j1,iu), uj),
+                               VgdLerp(csx(m,c,k1,j0,iu), csx(m,c,k1,j1,iu), uj), uk);
+              };
+              const Real chu = exp(lin(0));
+              const Real su = exp(lin(1));
+              Real ex, w0, wu;
+              VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
+              iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
             }
-            auto lin = [&](const int c) {
-              return VgdLerp(VgdLerp(cs_(m,c,k0,j0,iu), cs_(m,c,k0,j1,iu), uj),
-                             VgdLerp(cs_(m,c,k1,j0,iu), cs_(m,c,k1,j1,iu), uj), uk);
-            };
-            const Real chu = exp(lin(0));
-            const Real su = exp(lin(1));
-            Real ex, w0, wu;
-            VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
-            iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
           }
-        }
-        vi_(m,d,k,j,i) = iv;
+          return iv;
+        };
+        vi_(m,d,k,j,i) = solve(cs_, vi_);
+        if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_);}
       });
       // the shell is complete on every block: its lateral band, exact (not lagged)
       if (vgd_time_halo) {vgd_cur.fence();}
       Kokkos::Timer th;
       vgd_hinw = inw;
-      VetGdHalo(vgd_i, n, i, i, inw ? vgd_wsi[i] : vgd_wso[i], true);
+      VetGdHalo(vgd_i, n, i, i, inw ? vgd_wsi[i] : vgd_wso[i], true,
+                two ? &vgd_itw : nullptr);
       // the next shell's kernel is stream-ordered behind the unpack: no fence needed
       // (env VGD_TIME_HALO: fenced, for the per-part timers)
       if (vgd_time_halo) {vgd_cur.fence();}
@@ -1527,8 +1667,9 @@ void RadiationM1::VetGdMoments() {
   const bool repq = vgd_replace && vcol_sq;
   auto vq_ = vcol_q;
   const Real qlo = vcol_qmin, qhi = vcol_qmax;
-  par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // accel-1009: shell-major thread order (j fastest), matching the LayoutLeft vgd_i
+  par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
     if (i < ilo) {return;}
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -1736,6 +1877,12 @@ void RadiationM1::VetGdBuild() {
   }
   // vet_gd_twin: the RAY-NOISE pattern of the set on the laterally uniform field (the
   // shell means of chi and S), same angle, subtracted below
+  // (diagnostic env VGD_TWIN_CUTFIX, accel-1009: the unfused twin sweeps with THIS
+  // build's cut; without it the twin reuses the previous build's vgd_scut, which after a
+  // restart is 0 -- the restart != continuous of the unfused twin)
+  if (vgd_twin && !vgd_twfuse && std::getenv("VGD_TWIN_CUTFIX") != nullptr) {
+    vgd_scut = vlat_icut;
+  }
   if (vgd_twin) {VetGdTwin(0);}
   // the per-shell halo makes one sweep exact; vet_gd_iter > 1 only repeats it
   (void) rotated;
@@ -1744,11 +1891,14 @@ void RadiationM1::VetGdBuild() {
   vgd_scut = vlat_icut;
   for (int it = 0; it < nit; ++it) {
     tm.reset();
+    vgd_sw2 = vgd_twfuse;   // vet_gd_twin_fuse: the twin rides in this sweep (nit = 1)
     VetGdSweep();
+    vgd_sw2 = false;
     Kokkos::fence();
     vgd_tswp += tm.seconds();
     vlat_ncall += 1.0;
   }
+  if (vgd_twfuse) {VetGdTwinFusedMoments();}
   VetGdPost();
 }
 
@@ -1791,7 +1941,21 @@ void RadiationM1::VetGdPost() {
   // debug (gate): VGD_DUMP_I=<file>: rank 0's intensities incl. ghosts, first build
   const char *fi = std::getenv("VGD_DUMP_I");
   if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
-    auto vi_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i);
+    // the file keeps the LayoutRight (m, d, k, j, i) order of the old array
+    auto vl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i);
+    HostArray5D<Real> vi_h("vgd_i_dump", vl_h.extent(0), vl_h.extent(1),
+                           vl_h.extent(2), vl_h.extent(3), vl_h.extent(4));
+    for (size_t a0 = 0; a0 < vl_h.extent(0); ++a0) {
+      for (size_t a1 = 0; a1 < vl_h.extent(1); ++a1) {
+        for (size_t a2 = 0; a2 < vl_h.extent(2); ++a2) {
+          for (size_t a3 = 0; a3 < vl_h.extent(3); ++a3) {
+            for (size_t a4 = 0; a4 < vl_h.extent(4); ++a4) {
+              vi_h(a0,a1,a2,a3,a4) = vl_h(a0,a1,a2,a3,a4);
+            }
+          }
+        }
+      }
+    }
     FILE *fp = std::fopen(fi, "wb");
     if (fp != nullptr) {
       int64_t sh[5];
@@ -2369,15 +2533,46 @@ void RadiationM1::VetGdTwin(const int stage) {
     Kokkos::deep_copy(out, 0.0);
     auto o_ = out;
     auto a_ = arr;
-    par_for("m1_vgd_tw_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real v = a_(m,c,k+og,j+og,i);
-      Kokkos::atomic_add(&o_(i), ex ? exp(v) : v);
-    });
+    if (vgd_twdet) {
+      // vet_gd_twin_det: one thread per shell sums its cells in a fixed (m, k, j) order
+      // (the atomic sum below is order-dependent on a GPU: not run-to-run reproducible)
+      par_for("m1_vgd_tw_sumd", DevExeSpace(), ilo, ie,
+      KOKKOS_LAMBDA(const int i) {
+        Real acc = 0.0;
+        for (int m = 0; m <= nmb1; ++m) {
+          for (int k = ks; k <= ke; ++k) {
+            for (int j = js; j <= je; ++j) {
+              const Real v = a_(m,c,k+og,j+og,i);
+              acc += ex ? exp(v) : v;
+            }
+          }
+        }
+        o_(i) = acc;
+      });
+    } else {
+      par_for("m1_vgd_tw_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real v = a_(m,c,k+og,j+og,i);
+        Kokkos::atomic_add(&o_(i), ex ? exp(v) : v);
+      });
+    }
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), out);
 #if MPI_PARALLEL_ENABLED
     std::vector<Real> g(c1);
-    MPI_Allreduce(h.data(), g.data(), c1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    if (vgd_twdet && global_variable::nranks > 1) {
+      // rank-ordered sum of the per-rank shell sums (as implicit_det_reduce)
+      const int nr = global_variable::nranks;
+      std::vector<Real> all(static_cast<size_t>(c1)*nr);
+      MPI_Allgather(h.data(), c1, MPI_ATHENA_REAL, all.data(), c1, MPI_ATHENA_REAL,
+                    MPI_COMM_WORLD);
+      for (int i = 0; i < c1; ++i) {
+        Real a = 0.0;
+        for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*c1 + i];}
+        g[i] = a;
+      }
+    } else {
+      MPI_Allreduce(h.data(), g.data(), c1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    }
     for (int i = 0; i < c1; ++i) {h(i) = g[i];}
 #endif
     for (int i = 0; i < c1; ++i) {h(i) /= ncol;}
@@ -2392,6 +2587,29 @@ void RadiationM1::VetGdTwin(const int stage) {
                     vgd_cs.extent(3), vgd_cs.extent(4));
   }
   auto twl_ = vgd_twl;
+  if (stage == 0 && vgd_twfuse) {
+    // vet_gd_twin_fuse: only the twin's source here (the same values the unfused path
+    // writes into vgd_cs for its own sweep); the sweep is VetGdBuild's, the moments
+    // VetGdTwinFusedMoments
+    Kokkos::Timer tm;
+    const int og = vgd_w - indcs.ng;
+    auto ct_ = vgd_cst;
+    Kokkos::deep_copy(ct_, vgd_cs);
+    shell_mean(vgd_cs, 0, og, true, vgd_twm);
+    shell_mean(vgd_cs, 1, og, true, vgd_twm2);
+    auto mc_ = vgd_twm;
+    auto ms_ = vgd_twm2;
+    const int n3 = static_cast<int>(ct_.extent(2)) - 1;
+    const int n2 = static_cast<int>(ct_.extent(3)) - 1;
+    par_for("m1_vgd_tw_uni2", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      ct_(m,0,k,j,i) = log(fmax(mc_(i), 1.0e-300));
+      ct_(m,1,k,j,i) = log(fmax(ms_(i), 1.0e-300));
+    });
+    Kokkos::fence();
+    vgd_ttwin += tm.seconds();
+    return;
+  }
   if (stage == 0) {
     Kokkos::Timer tm;
     const int og = vgd_w - indcs.ng;
@@ -2435,6 +2653,33 @@ void RadiationM1::VetGdTwin(const int stage) {
     tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - mt_(i);
     for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdTwinFusedMoments
+//! \brief vet_gd_twin_fuse: the twin's moments from its own intensities (vgd_itw), kept
+//! in vgd_twl exactly as the unfused VetGdTwin(0) keeps them; the main moments follow
+//! in VetGdPost and overwrite tau_ten as before
+
+void RadiationM1::VetGdTwinFusedMoments() {
+  Kokkos::Timer tm;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  std::swap(vgd_i, vgd_itw);
+  vgd_noq = true;
+  VetGdMoments();
+  vgd_noq = false;
+  std::swap(vgd_i, vgd_itw);
+  auto tt_ = tau_ten;
+  auto twl_ = vgd_twl;
+  par_for("m1_vgd_tw_keep2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int c = 0; c < M1_TT_NLAT; ++c) {twl_(m,c,k,j,i) = tt_(m,M1_TT_LAT0+c,k,j,i);}
+  });
+  Kokkos::fence();
+  vgd_ttwin += tm.seconds();
 }
 
 } // namespace radm1

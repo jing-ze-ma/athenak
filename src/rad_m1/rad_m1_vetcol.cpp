@@ -1580,6 +1580,12 @@ void RadiationM1::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
+      if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet) {
+        std::cout << "<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=" << vgd_twfuse
+                  << " vet_gd_twin_det=" << vgd_twdet << " halo mask cache: "
+                  << vgd_hc_nmade << " entries made, " << vgd_hc_bytes/1048576.0
+                  << " MB of " << vgd_hc_mb << std::endl;
+      }
       if (vgd_async) {
         std::cout << "<rad_m1> vet_gd_async (rank 0): " << vgd_nasync
                   << " overlapped sweeps (" << (vgd_ainl ? "inline" : "thread")

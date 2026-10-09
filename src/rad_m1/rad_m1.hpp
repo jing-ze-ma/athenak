@@ -1098,6 +1098,7 @@ class RadiationM1 {
   int impl_nec;                 // components of `ecache`
   DvceArray5D<Real> ecache;     // (m,nec,k,j,i) the frozen-density e(T) cache
   bool pin_report_newton_fb = false;   // <rad_m1>/report_newton_fb: print fallback cells
+  DvceArray4D<Real> nfb_buf;   // report_newton_fb: the fallback counts copied to the host
   Real newt_nfb;                // Newton fallbacks to the bracketed root find, whole run
   Real gas_ncell;               // cell-passes of the gas solve, whole run (the scale the
                                 // two counters above and below are read against)
@@ -1571,7 +1572,12 @@ class RadiationM1 {
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
-  DvceArray5D<Real> vgd_i;     // (m, d, k, j, i): intensities, ghosts lagged
+  // (m, d, k, j, i): intensities, ghosts lagged.  accel-1009: LayoutLeft (i slowest), so
+  // that one shell of the per-shell sweep and halo is one contiguous ~nd*nk*nj slab (the
+  // LayoutRight array spread every shell over all of its GBs: strided, TLB-bound); the
+  // values and every arithmetic are unchanged (bitwise)
+  using VgdIView = Kokkos::View<Real *****, Kokkos::LayoutLeft, DevMemSpace>;
+  VgdIView vgd_i;
   DvceArray5D<Real> vgd_i_c;
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
@@ -1584,6 +1590,15 @@ class RadiationM1 {
   bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
   DvceArray1D<Real> vgd_twm, vgd_twm2;
   DvceArray5D<Real> vgd_twl, vgd_cs0;
+  // vet_gd_twin_fuse (accel-1009): the twin's own source (ln chi, ln S of the shell
+  // means) and intensities, swept in the main sweep's kernels; vgd_sw2 = this sweep
+  // carries the twin; second compact halo buffers for it
+  bool vgd_twfuse = false, vgd_sw2 = false;
+  bool vgd_twdet = false;      // vet_gd_twin_det: fixed-order (reproducible) shell means
+  DvceArray5D<Real> vgd_cst;
+  VgdIView vgd_itw;
+  DvceArray1D<Real> vgd_csb2, vgd_crb2, vgd_rbuf2;
+  void VetGdTwinFusedMoments();
   Real vgd_ttwin = 0.0;
   void VetGdTwin(const int stage);
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
@@ -1645,16 +1660,33 @@ class RadiationM1 {
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hpb[2];
   int vgd_htag[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1} };
   int vgd_hlast = 1, vgd_hsweep = 0;
+  // vet_gd_halo_cache_mb (accel-1009; default 0 = off): byte budget (MB per rank) of a
+  // cache of the compact-halo masks per (pass, shell), valid while the direction set,
+  // the cut and the depth are unchanged (one prep per shell per rotation window instead
+  // of one per shell per sweep); bitwise the same masks
+  struct VgdHcEntry {
+    DvceArray1D<int> fs, fr;
+    Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> pb;
+    Real alpha = -2.0;
+    int scut = -1, ws = -1;
+  };
+  int vgd_hc_mb = 0;
+  std::vector<VgdHcEntry> vgd_hce;
+  size_t vgd_hc_bytes = 0;
+  Real vgd_hc_nmade = 0.0;
+  int VetGdHcGet(const int i, const bool inw, const int ws);
   int vgd_hnext[3] = {-1, 0, 0};
   bool vgd_hpipe = true;
   void VetGdHcPrep(const int slot, const int i0, const bool inw0, const int ws);
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
-  void VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int i0, const int ws);
+  template <class V>
+  void VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b = nullptr);
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
-  void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,
-                 const int ws, const bool mapd);
+  template <class V>
+  void VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
+                 const bool mapd, V *b = nullptr);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
