@@ -453,7 +453,7 @@ output in the run directory rhd/s4/stream_physics.out.
 | Mdot at onset | ~1e-4 Msun/yr (Sect. 6.4) | 1e-4 | same |
 | gainer Teff, L; donor Teff, L, R | not in the text; read from the HR figure (env13: 28.3 kK, log L 4.73; donor 26.2 kK, log L 4.84, R = R_L 12.8) | same | figure read, not tabulated; the Zenodo MESA files would settle it |
 | mass transfer | conservative (assumed by Wade+), non-rotating models | spin 1 | the run's spin 1 is our choice |
-| L1 Mdot factor | Ryu+2025 Eq. 4: isothermal 0.721 - 0.149 tanh^2(0.522 log q) = 0.721; adiabatic 0.649 + ... = 0.649 | 0.721 (isothermal) | |
+| L1 Mdot factor | Ryu+2025 Eq. 4: isothermal 0.721 - 0.149 tanh^2(0.522 log q) = 0.721; adiabatic 0.649 + ... = 0.649. Ryu+2025 tie the ADIABATIC case to optically thick overflow (photosphere outside the Roche lobe) and the isothermal one to optically thin overflow | 0.721 (isothermal) | Plaskett at 1e-4 Msun/yr overflows from tau ~1.5e3 (10.2): Ryu's adiabatic case applies (Q 0.649, FWHM 1.2x narrower, peak 1.1x); env13 used the isothermal case |
 | L1 structure | Ryu+2025: isothermal: M 1.1-1.3 at L1, vertical HSE, in-plane expansion at 0.2-0.3 of the overflow speed; adiabatic: M 0.9-1, FWHM 1.2x narrower, peak 1.1x the analytic profile | Gaussian widths sigma_y 0.932 c/(Omega sqrt B), sigma_z c/(Omega sqrt C) at T = 26.2 kK | Ryu+2025 simulate the L1 region only (no radiation); nothing in either paper fixes the stream T |
 | stream T | none | isothermal at the donor Teff 26.2 kK | see 10.2: the L1 gas comes from tau ~1.5e3 in the donor atmosphere |
 | r_out state | none (derived) | rho 5.11e-8 g/cc, width 0.735 (arc), v (-122.9, 55.5) km/s, T 26.2 kK | ballistic orbit and pressure-supported widths (env13 RESULTS.md sect. 2-3) |
@@ -489,3 +489,36 @@ output in the run directory rhd/s4/stream_physics.out.
   Implementing it needs an incoming-flux term in the module's x1max Marshak BC (rad_m1_implicit.cpp, phi-dependent),
   i.e. module code; not done. Recommendation: not needed for the first impact/accretion runs (the impact ram pressure
   is ~2e3 P_ph and the core is opaque), needed before quoting the facing-side photosphere or the stream's cooling.
+
+### 10.3 S4 calibration smoke (2026-10-08/09, 98b98ab4, 1 H200 unless stated; rhd/s4/)
+Restart from the S3a-final static state (t = 0.00916) with problem/stream = true; stream radiation not injected,
+env_t_relax_stream = 0 (enforced). Two stream states at r_out (same ballistic v, Mdot 1e-4 at the midplane):
+**env13** (26.2 kK, rho 5.11e-8 g/cc, arc width 0.735; P_rad/P_gas 0.007, tau per arc sigma 2.2e5) and **hot**
+(the one-zone estimate of 10.2: 64.6 kK, rho 1.56e-8 g/cc = 0.306 code, width 1.328; P_rad/P_gas 0.33, tau 4.7e3;
+gas only, so it violates the no-injection premise; run as a sensitivity/cost case).
+- **Stream approach** (both): front r 13.06 / 12.58 / 12.01 / 11.35 / 10.59 at t = 0.0117 / 0.0142 / 0.0167 /
+  0.0192 / 0.0217, max |v| 180 -> 365 km/s; Picard mean 12-13 (static 3-6), max 15-17; dt 1.50-1.53e-6 (unchanged:
+  r-limited); 0.63-0.68 s/cycle (static 0.46).
+- **env13 stream: Picard DIVERGED at t = 0.02411 (cycle 15636)**, resid 3e8 after 200 passes, worst cell
+  (k 51, i 450): r 9.585, phi 9.05 deg, i.e. the MASKED HOT AMBIENT (rho 3-5e-8 code = 2e-15 g/cc, below the
+  absorption mask 1e-6 code; T_gas 6.6-6.9 MK, T_rad 22 kK, v_r -60..-80 km/s) being compressed ahead of the
+  stream's leading edge just outside r_meas (dt had dropped to 1.1e-6). Reproduced bitwise from the t = 0.01916
+  restart. With rad_m1/implicit_res_dmin = 1e-6 (masked cells out of the stopping test) the rest converges but
+  the masked cells themselves diverge (masked_resid 1.4 > implicit_resid_fatal_masked 1, same cycle). This is
+  design risk 1 (2.3, the hot ambient under radiation) materialising; not fixed (module work).
+- **hot stream: impact reached, no NON-CONVERGED** (to t = 0.02816, wall limit): front at r 9.69 (t 0.0242) and
+  9.13-9.24 (t 0.0267-0.0282, below the local photosphere); impact shock at r 9.47, phi 14.5 deg: rho 0.11 code,
+  T 103 kK, P_rad/P_gas 3.7 (10 at t 0.0267); MR (mass in through r_meas) 0.014 code by t 0.028. In the impact
+  phase dt min 9.3e-7, mean 1.29e-6 (t 0.022-0.025), 1.38e-6 (0.025-0.028), 1.44e-6 after; Picard mean 13.5-14,
+  max 15; 0.62-0.67 s/cycle.
+- **2 H200** (2 ranks, restart t 0.01916, hot, 1450 cycles): 0.365 s/cycle vs 0.672 on 1 H200 over the same cycles
+  (1.84x; same dt sequence); static fresh start 0.256 vs 0.42 (1.64x). **nx3 1024** (static, 1 H200): 0.234 s/cycle
+  (0.557x of 2048), dt unchanged (r-limited).
+- **Cost extrapolation** (impact-phase dt 1.35e-6 code, 0.65 s/cycle at nx3 2048 on 1 H200; P_orb 0.458266):
+  | config | s/cycle | half orbit (wall) | 10 orbits (wall) | 10 orbits GPU-days |
+  |---|---|---|---|---|
+  | 2048, 1 H200 | 0.65 | 30.6 h | 25.5 d | 25.5 |
+  | 2048, 2 H200 | 0.353 | 16.6 h | 13.9 d | 27.7 |
+  | 1024, 1 H200 | 0.362 (static ratio) | 17.1 h | 14.2 d | 14.2 |
+  | 1024, 2 H200 | ~0.23 (assumed 1.6x, unmeasured) | ~10.7 h | ~8.9 d | ~17.8 |
+  The impact shock lowers dt further as it deepens (min 9.3e-7 seen); treat these as lower bounds.
