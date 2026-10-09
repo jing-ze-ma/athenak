@@ -974,6 +974,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // vet_gd_twin_lowmem (mem-1009; read only when named, default false): with
+    // vet_gd_twin_fuse, the twin is swept BEFORE the main sweep in the same intensity
+    // array (the unfused path with this build's cut), instead of in a second array that
+    // rides in the main sweep.  Bitwise the fused result (the sweep never reads values of
+    // a previous build: restart = continuous); halves the largest device array (the
+    // ragged band intensities) at the price of a second per-shell sweep and halo
+    if (vgd_twfuse && pin->DoesParameterExist("rad_m1","vet_gd_twin_lowmem") &&
+        pin->GetBoolean("rad_m1","vet_gd_twin_lowmem")) {
+      vgd_twfuse = false;
+      vgd_twseq = true;
+    }
     // vet_gd_twin_det (accel-1009; read only when named, default false = bitwise): the
     // twin's shell means summed in a fixed order (thread per shell, rank-ordered MPI)
     // instead of by atomics, so a GPU run is reproducible run to run

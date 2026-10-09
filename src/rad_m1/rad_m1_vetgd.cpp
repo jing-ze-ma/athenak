@@ -1855,7 +1855,9 @@ void RadiationM1::VetGdBuild() {
   // (diagnostic env VGD_TWIN_CUTFIX, accel-1009: the unfused twin sweeps with THIS
   // build's cut; without it the twin reuses the previous build's vgd_scut, which after a
   // restart is 0 -- the restart != continuous of the unfused twin)
-  if (vgd_twin && !vgd_twfuse && std::getenv("VGD_TWIN_CUTFIX") != nullptr) {
+  // (vet_gd_twin_lowmem: always, as the fused twin it replaces)
+  if (vgd_twin && !vgd_twfuse &&
+      (vgd_twseq || std::getenv("VGD_TWIN_CUTFIX") != nullptr)) {
     vgd_scut = vlat_icut;
   }
   if (vgd_twin) {VetGdTwin(0);}

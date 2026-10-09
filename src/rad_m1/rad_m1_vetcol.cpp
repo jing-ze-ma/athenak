@@ -1594,8 +1594,9 @@ void RadiationM1::VetColReport() {
         std::cout << "<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main "
                   << no << " twin " << nt << std::endl;
       }
-      if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet) {
+      if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet || vgd_twseq) {
         std::cout << "<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=" << vgd_twfuse
+                  << " vet_gd_twin_lowmem=" << vgd_twseq
                   << " vet_gd_twin_det=" << vgd_twdet << " halo mask cache: "
                   << vgd_hc_nmade << " entries made, " << vgd_hc_bytes/1048576.0
                   << " MB of " << vgd_hc_mb << std::endl;

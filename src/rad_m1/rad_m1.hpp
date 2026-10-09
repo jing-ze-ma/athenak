@@ -1666,6 +1666,7 @@ class RadiationM1 {
   // carries the twin; second compact halo buffers for it
   bool vgd_twfuse = false, vgd_sw2 = false;
   bool vgd_twdet = false;      // vet_gd_twin_det: fixed-order (reproducible) shell means
+  bool vgd_twseq = false;      // vet_gd_twin_lowmem: fused twin swept first, one array
   DvceArray5D<Real> vgd_cst;
   VgdIView vgd_itw;
   DvceArray1D<Real> vgd_csb2, vgd_crb2, vgd_rbuf2;
