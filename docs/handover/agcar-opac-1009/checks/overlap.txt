@@ -1,0 +1,18 @@
+== Rosseland AESOPUS-TOPS (dex; both data: log R in [-8,6], log rho >= TOPS floor, log rho <= 0)
+log T 3.77-3.88 n 1121  median -0.113  |d| 90% 0.404 max 0.728 || rho<=1e-8: median -0.080 90% 0.475 max 0.728
+log T 3.88-3.98 n 1122  median -0.040  |d| 90% 0.317 max 1.010 || rho<=1e-8: median -0.006 90% 0.148 max 0.229
+log T 3.98-4.08 n 1118  median -0.060  |d| 90% 0.133 max 1.681 || rho<=1e-8: median -0.057 90% 0.100 max 0.124
+log T 4.08-4.17 n 1096  median -0.076  |d| 90% 0.144 max 1.623 || rho<=1e-8: median -0.084 90% 0.146 max 0.190
+log T 4.18-4.28 n  802  median -0.088  |d| 90% 0.164 max 1.169 || rho<=1e-8: median -0.113 90% 0.152 max 0.168
+log T 4.28-4.38 n 1048  median -0.088  |d| 90% 0.193 max 0.814 || rho<=1e-8: median -0.106 90% 0.171 max 0.199
+log T 4.38-4.47 n 1024  median -0.087  |d| 90% 0.203 max 0.455 || rho<=1e-8: median -0.089 90% 0.166 max 0.229
+log T 4.48-4.58 n  748  median -0.090  |d| 90% 0.231 max 0.385 || rho<=1e-8: median -0.034 90% 0.172 max 0.194
+== Planck Ferguson-TOPS (dex; both data: log R in [-8,1], log rho >= TOPS floor, log rho <= 0)
+log T 3.77-3.88 n  722  median -0.199  |d| 90% 0.390 max 0.620 || rho<=1e-8: median -0.233 90% 0.402 max 0.620
+log T 3.88-3.98 n  722  median +0.035  |d| 90% 0.215 max 1.006 || rho<=1e-8: median +0.036 90% 0.258 max 1.006
+log T 3.98-4.08 n  722  median -0.047  |d| 90% 0.371 max 1.222 || rho<=1e-8: median -0.047 90% 0.486 max 1.222
+log T 4.08-4.17 n  722  median -0.019  |d| 90% 0.102 max 0.153 || rho<=1e-8: median -0.038 90% 0.103 max 0.149
+log T 4.18-4.28 n  542  median -0.002  |d| 90% 0.165 max 0.190 || rho<=1e-8: median -0.065 90% 0.167 max 0.190
+log T 4.28-4.38 n  722  median +0.086  |d| 90% 0.368 max 1.261 || rho<=1e-8: median +0.047 90% 0.434 max 1.261
+log T 4.38-4.47 n  722  median +0.083  |d| 90% 0.768 max 1.464 || rho<=1e-8: median +0.278 90% 0.972 max 1.464
+log T 4.48-4.58 n  542  median -0.078  |d| 90% 0.731 max 1.066 || rho<=1e-8: median -0.233 90% 0.910 max 1.066

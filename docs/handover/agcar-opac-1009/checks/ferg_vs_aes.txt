@@ -1,0 +1,30 @@
+== (a) Rosseland Ferguson - AESOPUS [dex], at Ferguson nodes, both data
+  log T 3.4-3.6: all log R: median +0.011 |d| 90% 0.400 max 0.512 | log R -8..-3: median +0.021 |d| 90% 0.040 max 0.121
+  log T 3.6-3.7: all log R: median -0.011 |d| 90% 0.153 max 0.179 | log R -8..-3: median -0.078 |d| 90% 0.170 max 0.179
+  log T 3.7-3.8: all log R: median +0.051 |d| 90% 0.084 max 0.087 | log R -8..-3: median +0.021 |d| 90% 0.052 max 0.083
+  log T 3.8-3.9: all log R: median +0.048 |d| 90% 0.072 max 0.088 | log R -8..-3: median +0.028 |d| 90% 0.052 max 0.070
+  log T 3.9-4.0: all log R: median +0.023 |d| 90% 0.034 max 0.069 | log R -8..-3: median +0.019 |d| 90% 0.024 max 0.026
+  log T 4.0-4.1: all log R: median +0.025 |d| 90% 0.039 max 0.045 | log R -8..-3: median +0.027 |d| 90% 0.041 max 0.045
+  log T 4.1-4.2: all log R: median +0.032 |d| 90% 0.057 max 0.068 | log R -8..-3: median +0.040 |d| 90% 0.063 max 0.068
+  log T 4.2-4.5: all log R: median +0.025 |d| 90% 0.078 max 0.185 | log R -8..-3: median +0.033 |d| 90% 0.103 max 0.185
+== (b) along the columns: median (min-max) per band; log R max where log T < 4.2
+-- IC A (max log R at log T<4.2: -4.46)
+  0.9-1.0 R_ph T 9051-47757 K: old kR 0.919 kP 885 kP/kR 684 (362-2.25e+03) | ext kR 0.919 kP 877 kP/kR 693 (362-1.43e+03) | ext2 kR 0.919 kP 877 kP/kR 677 (362-1.36e+03) | kR ext2/ext dlog +0.00..+0.05
+  1.0-1.1 R_ph T 9051-9051 K: old kR 0.168 kP 5.63 kP/kR 34.1 (1.35-2.23e+03) | ext kR 0.172 kP 31.1 kP/kR 207 (69.8-1.42e+03) | ext2 kR 0.177 kP 31 kP/kR 197 (69.1-1.34e+03) | kR ext2/ext dlog +0.00..+0.04
+  1.1-1.5 R_ph T 9051-9051 K: old kR 0.168 kP 0.228 kP/kR 1.35 (1.35-1.35) | ext kR 0.194 kP 13.5 kP/kR 69.8 (69.8-69.8) | ext2 kR 0.196 kP 13.5 kP/kR 69.1 (69.1-69.1) | kR ext2/ext dlog +0.00..+0.00
+  1.5-3.2 R_ph T 9051-9051 K: old kR 0.168 kP 0.228 kP/kR 1.35 (1.35-1.35) | ext kR 0.194 kP 13.5 kP/kR 69.8 (69.8-69.8) | ext2 kR 0.196 kP 13.5 kP/kR 69.1 (69.1-69.1) | kR ext2/ext dlog +0.00..+0.00
+-- colA t=5.20e+07 (max log R at log T<4.2: -4.61)
+  0.9-1.0 R_ph T 11289-47295 K: old kR 0.926 kP 891 kP/kR 692 (366-1.27e+03) | ext kR 0.926 kP 891 kP/kR 692 (366-1.27e+03) | ext2 kR 0.926 kP 891 kP/kR 692 (366-1.27e+03) | kR ext2/ext dlog +0.00..+0.04
+  1.0-1.1 R_ph T 6821-72841 K: old kR 0.223 kP 58.6 kP/kR 240 (0.104-6.63e+03) | ext kR 0.24 kP 48.1 kP/kR 215 (10.3-3.75e+03) | ext2 kR 0.24 kP 48.2 kP/kR 215 (10.2-3.75e+03) | kR ext2/ext dlog +0.00..+0.03
+  1.1-1.5 R_ph T 4837-10110 K: old kR 0.102 kP 64.5 kP/kR 631 (0.01-1.76e+03) | ext kR 0.144 kP 1.01 kP/kR 6.97 (1.66-99.2) | ext2 kR 0.146 kP 1.01 kP/kR 6.88 (1.68-99) | kR ext2/ext dlog -0.01..+0.01
+  1.5-3.2 R_ph T 5000-5343 K: old kR 0.0969 kP 170 kP/kR 1.76e+03 (1.76e+03-1.76e+03) | ext kR 0.144 kP 1.85 kP/kR 12.8 (9.53-12.9) | ext2 kR 0.145 kP 1.85 kP/kR 12.8 (9.45-12.8) | kR ext2/ext dlog +0.00..+0.00
+-- IC B (max log R at log T<4.2: nan)
+  0.9-1.0 R_ph T 20138-69518 K: old kR 0.665 kP 403 kP/kR 630 (386-1.84e+03) | ext kR 0.665 kP 403 kP/kR 630 (386-1.84e+03) | ext2 kR 0.665 kP 403 kP/kR 630 (386-1.84e+03) | kR ext2/ext dlog +0.00..+0.00
+  1.0-1.1 R_ph T 20113-20113 K: old kR 0.25 kP 1.78e+03 kP/kR 7.05e+03 (1.54e+03-7.62e+03) | ext kR 0.251 kP 1.68e+03 kP/kR 6.58e+03 (1.54e+03-7.62e+03) | ext2 kR 0.251 kP 1.68e+03 kP/kR 6.58e+03 (1.54e+03-7.62e+03) | kR ext2/ext dlog +0.00..+0.00
+  1.1-1.5 R_ph T 20113-20113 K: old kR 0.25 kP 1.73e+03 kP/kR 6.91e+03 (6.91e+03-6.91e+03) | ext kR 0.248 kP 1.49e+03 kP/kR 6e+03 (6e+03-6e+03) | ext2 kR 0.248 kP 1.49e+03 kP/kR 6e+03 (6e+03-6e+03) | kR ext2/ext dlog +0.00..+0.00
+  1.5-3.2 R_ph T 20113-20113 K: old kR 0.25 kP 1.73e+03 kP/kR 6.91e+03 (6.91e+03-6.91e+03) | ext kR 0.248 kP 1.49e+03 kP/kR 6e+03 (6e+03-6e+03) | ext2 kR 0.248 kP 1.49e+03 kP/kR 6e+03 (6e+03-6e+03) | kR ext2/ext dlog +0.00..+0.00
+-- colB t=4.10e+05 (max log R at log T<4.2: -6.28)
+  0.9-1.0 R_ph T 31081-68350 K: old kR 0.657 kP 346 kP/kR 595 (393-1.09e+03) | ext kR 0.657 kP 346 kP/kR 595 (393-1.09e+03) | ext2 kR 0.657 kP 346 kP/kR 595 (393-1.09e+03) | kR ext2/ext dlog +0.00..+0.00
+  1.0-1.1 R_ph T 14993-29530 K: old kR 0.382 kP 736 kP/kR 2.39e+03 (490-3.23e+03) | ext kR 0.382 kP 736 kP/kR 2.4e+03 (490-3.23e+03) | ext2 kR 0.382 kP 736 kP/kR 2.38e+03 (490-3.23e+03) | kR ext2/ext dlog +0.00..+0.00
+  1.1-1.5 R_ph T 11977-14910 K: old kR 0.212 kP 83.6 kP/kR 397 (196-1.57e+03) | ext kR 0.213 kP 132 kP/kR 621 (432-1.59e+03) | ext2 kR 0.216 kP 132 kP/kR 613 (425-1.57e+03) | kR ext2/ext dlog +0.00..+0.01
+  1.5-3.2 R_ph T 3981-84260 K: old kR 0.193 kP 3.21 kP/kR 16.4 (0.265-8.7e+03) | ext kR 0.206 kP 42.8 kP/kR 209 (9.38-7.32e+03) | ext2 kR 0.209 kP 42.8 kP/kR 206 (9.46-7.32e+03) | kR ext2/ext dlog -0.02..+0.01

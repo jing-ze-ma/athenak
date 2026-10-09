@@ -1,0 +1,29 @@
+== IC A: x=r/R_ph 0.320..3.452
+  r/R_ph 0.0-0.9 n  5173  T  47832-535154 K rho 2.4e-09-2.2e-06 | kR old 0.466-2.72 new 0.466-2.72  dlog max -0.00/+0.00 | kP old 3.75-1.07e+03 new 3.75-1.07e+03 dlog -0.00/+0.00 | bitwise R 1782/5173
+  r/R_ph 0.9-1.0 n   529  T   9051- 47757 K rho 2.5e-11-2.4e-09 | kR old 0.541-1.76 new 0.46-1.76  dlog max -0.08/+0.01 | kP old 321-1.36e+03 new 316-1.27e+03 dlog -0.32/+0.00 | bitwise R 283/529
+  r/R_ph 1.0-1.1 n   164  T   9051-  9051 K rho 1.0e-16-2.3e-11 | kR old 0.165-0.562 new 0.15-0.576  dlog max -0.04/+0.06 | kP old 0.228-1.26e+03 new 13.5-814 dlog -0.24/+1.77 | bitwise R 0/164
+  r/R_ph 1.1-1.5 n    40  T   9051-  9051 K rho 1.0e-16-1.0e-16 | kR old 0.168-0.168 new 0.194-0.194  dlog max +0.06/+0.06 | kP old 0.228-0.228 new 13.5-13.5 dlog +1.77/+1.77 | bitwise R 0/40
+  r/R_ph 1.5-2.0 n    50  T   9051-  9051 K rho 1.0e-16-1.0e-16 | kR old 0.168-0.168 new 0.194-0.194  dlog max +0.06/+0.06 | kP old 0.228-0.228 new 13.5-13.5 dlog +1.77/+1.77 | bitwise R 0/50
+  r/R_ph 2.0-3.2 n   120  T   9051-  9051 K rho 1.0e-16-1.0e-16 | kR old 0.168-0.168 new 0.194-0.194  dlog max +0.06/+0.06 | kP old 0.228-0.228 new 13.5-13.5 dlog +1.77/+1.77 | bitwise R 0/120
+== colA t=5.20e+07 s: x=r/R_ph 0.337..2.994
+  r/R_ph 0.0-0.9 n   230  T  48899-498921 K rho 2.5e-09-1.7e-06 | kR old 0.485-2.71 new 0.485-2.71  dlog max -0.00/+0.00 | kP old 3.95-948 new 3.95-948 dlog -0.00/+0.00 | bitwise R 82/230
+  r/R_ph 0.9-1.0 n    25  T  11289- 47295 K rho 3.1e-11-2.3e-09 | kR old 0.554-1.75 new 0.471-1.75  dlog max -0.07/+0.00 | kP old 332-1.19e+03 new 323-1.19e+03 dlog -0.08/+0.00 | bitwise R 13/25
+  r/R_ph 1.0-1.1 n    22  T   6821- 72841 K rho 1.4e-20-2.3e-11 | kR old 0.144-0.62 new 0.144-0.524  dlog max -0.07/+0.17 | kP old 0.0194-1.69e+03 new 1.51-1.02e+03 dlog -0.40/+3.02 | bitwise R 1/22
+  r/R_ph 1.1-1.5 n    73  T   4837- 10110 K rho 1.1e-20-1.4e-20 | kR old 0.0969-0.189 new 0.144-0.206  dlog max +0.04/+0.17 | kP old 0.00169-170 new 0.335-20.4 dlog -2.19/+3.47 | bitwise R 0/73
+  r/R_ph 1.5-2.0 n    67  T   5000-  5343 K rho 1.0e-20-1.1e-20 | kR old 0.0969-0.0969 new 0.144-0.144  dlog max +0.17/+0.17 | kP old 170-170 new 1.37-1.86 dlog -2.09/-1.96 | bitwise R 0/67
+  r/R_ph 2.0-3.2 n    95  T   5000-  5000 K rho 1.0e-20-1.0e-20 | kR old 0.0969-0.0969 new 0.144-0.144  dlog max +0.17/+0.17 | kP old 170-170 new 1.85-1.85 dlog -1.96/-1.96 | bitwise R 0/95
+== IC B: x=r/R_ph 0.336..3.454
+  r/R_ph 0.0-0.9 n  4931  T  69611-954600 K rho 1.6e-09-8.6e-06 | kR old 0.343-1.72 new 0.343-1.72  dlog max -0.00/+0.00 | kP old 1.32-507 new 1.32-507 dlog -0.00/+0.00 | bitwise R 2110/4931
+  r/R_ph 0.9-1.0 n   527  T  20138- 69518 K rho 8.1e-11-1.6e-09 | kR old 0.472-0.751 new 0.472-0.751  dlog max -0.00/+0.00 | kP old 250-1e+03 new 250-1e+03 dlog -0.00/+0.00 | bitwise R 294/527
+  r/R_ph 1.0-1.1 n   128  T  20113- 20113 K rho 1.0e-16-1.2e-10 | kR old 0.247-0.65 new 0.247-0.65  dlog max -0.00/+0.00 | kP old 1e+03-1.88e+03 new 1e+03-1.88e+03 dlog -0.07/+0.00 | bitwise R 49/128
+  r/R_ph 1.1-1.5 n    40  T  20113- 20113 K rho 1.0e-16-1.0e-16 | kR old 0.25-0.25 new 0.248-0.248  dlog max -0.00/-0.00 | kP old 1.73e+03-1.73e+03 new 1.49e+03-1.49e+03 dlog -0.07/-0.07 | bitwise R 0/40
+  r/R_ph 1.5-2.0 n    50  T  20113- 20113 K rho 1.0e-16-1.0e-16 | kR old 0.25-0.25 new 0.248-0.248  dlog max -0.00/-0.00 | kP old 1.73e+03-1.73e+03 new 1.49e+03-1.49e+03 dlog -0.07/-0.07 | bitwise R 0/50
+  r/R_ph 2.0-3.2 n   120  T  20113- 20113 K rho 1.0e-16-1.0e-16 | kR old 0.25-0.25 new 0.248-0.248  dlog max -0.00/-0.00 | kP old 1.73e+03-1.73e+03 new 1.49e+03-1.49e+03 dlog -0.07/-0.07 | bitwise R 0/120
+== colB t=4.10e+05 s: x=r/R_ph 0.354..2.994
+  r/R_ph 0.0-0.9 n   224  T  70300-846472 K rho 1.7e-09-5.7e-06 | kR old 0.344-1.71 new 0.344-1.71  dlog max -0.00/+0.00 | kP old 1.32-480 new 1.32-480 dlog -0.00/+0.00 | bitwise R 90/224
+  r/R_ph 0.9-1.0 n    25  T  31081- 68350 K rho 4.9e-11-1.5e-09 | kR old 0.409-0.741 new 0.409-0.741  dlog max -0.00/+0.00 | kP old 226-790 new 226-790 dlog -0.00/+0.00 | bitwise R 14/25
+  r/R_ph 1.0-1.1 n    23  T  14993- 29530 K rho 1.1e-13-6.0e-11 | kR old 0.248-0.539 new 0.244-0.539  dlog max -0.01/+0.00 | kP old 221-1.25e+03 new 221-1.25e+03 dlog -0.00/+0.00 | bitwise R 9/23
+  r/R_ph 1.1-1.5 n    74  T  11977- 14910 K rho 1.1e-16-5.9e-14 | kR old 0.203-0.242 new 0.211-0.238  dlog max -0.02/+0.02 | kP old 43.1-380 new 91.2-379 dlog -0.00/+0.33 | bitwise R 0/74
+  r/R_ph 1.5-2.0 n    69  T  10185- 11947 K rho 1.1e-16-1.1e-16 | kR old 0.191-0.221 new 0.206-0.211  dlog max -0.02/+0.03 | kP old 1.43-42.3 new 42.3-90.2 dlog +0.33/+1.47 | bitwise R 0/69
+  r/R_ph 2.0-3.2 n    97  T   3981- 84260 K rho 1.3e-18-1.1e-16 | kR old 0.0969-0.311 new 0.00218-0.312  dlog max -1.65/+0.17 | kP old 0.0439-2.4e+03 new 1.88-2.03e+03 dlog -1.67/+2.32 | bitwise R 0/97
+wrote checks/kappa_columns.png

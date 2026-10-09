@@ -1,0 +1,39 @@
+== rosseland (217, 421) finite True range -5.55..5.92
+  bitwise log T>=4.2, log rho>=-14: 42993/42993 equal
+  new-old (rho>=-14) log T 2.600-3.764: median -1.214, |d| 90% 3.159, max 6.038
+  new-old (rho>=-14) log T 3.764-4.000: median -0.136, |d| 90% 1.806, max 5.321
+  new-old (rho>=-14) log T 4.000-4.200: median -0.036, |d| 90% 0.701, max 3.893
+  max |dlogk| per T step (log T 3.4-4.5, all rho): new 0.669 (old, rho>=-14: 0.625); per rho step: new 0.113 (old 0.461)
+  across log T 3.950->3.975: max |dlogk| 0.268 (rho<=-8)
+  across log T 4.000->4.025: max |dlogk| 0.154 (rho<=-8)
+  across log T 4.100->4.125: max |dlogk| 0.079 (rho<=-8)
+  across log T 4.200->4.225: max |dlogk| 0.059 (rho<=-8)
+  across log T 4.250->4.275: max |dlogk| 0.061 (rho<=-8)
+  kR(log T 7.000, log rho -10) = 0.265
+  kR(log T 7.000, log rho -20) = 0.265
+  kR(log T 6.000, log rho -20) = 0.2706
+  kR(log T 5.000, log rho -20) = 0.3295
+  kR(log T 4.500, log rho -20) = 0.2741
+  kR(log T 4.000, log rho -20) = 0.2059
+  kR(log T 3.800, log rho -20) = 0.148
+  kR(log T 3.600, log rho -20) = 0.1018
+  kR(log T 3.500, log rho -16) = 7.493e-05
+  kR(log T 3.475, log rho -16) = 6.16e-05
+  kR(log T 3.700, log rho -16) = 0.08617
+  kR(log T 3.850, log rho -16) = 0.148
+  Fe bump log rho -10.0: max kR 0.645 at log T 5.175
+  Fe bump log rho -9.0: max kR 0.831 at log T 5.175
+  Fe bump log rho -8.0: max kR 1.327 at log T 5.225
+  Fe bump log rho -7.2: max kR 3.316 at log T 4.925
+  Fe bump log rho -6.0: max kR 40.709 at log T 4.925
+== planck (217, 421) finite True range -17.62..5.95
+  bitwise log T>=4.2, log rho>=-14: 42993/42993 equal
+  new-old (rho>=-14) log T 2.600-3.764: median -1.909, |d| 90% 2.529, max 4.606
+  new-old (rho>=-14) log T 3.764-4.000: median -0.096, |d| 90% 0.561, max 3.139
+  new-old (rho>=-14) log T 4.000-4.200: median +0.001, |d| 90% 0.193, max 1.724
+  max |dlogk| per T step (log T 3.4-4.5, all rho): new 0.570 (old, rho>=-14: 0.442); per rho step: new 0.070 (old 0.332)
+  across log T 3.950->3.975: max |dlogk| 0.570 (rho<=-8)
+  across log T 4.000->4.025: max |dlogk| 0.155 (rho<=-8)
+  across log T 4.100->4.125: max |dlogk| 0.133 (rho<=-8)
+  across log T 4.200->4.225: max |dlogk| 0.239 (rho<=-8)
+  across log T 4.250->4.275: max |dlogk| 0.105 (rho<=-8)

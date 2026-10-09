@@ -1,0 +1,17 @@
+9720fb2933e88be9c245090b200d0b23  rosseland_ext_gs98_x0.36_z0.02.txt
+a88f537358c385cac8b5ef9bea53546f  planck_ext_gs98_x0.36_z0.02.txt
+b28e97c5b5cac3afe0ea3d3fc60b7cfd  rosseland_ext2_gs98_x0.36_z0.02.txt
+dc482452efcfb54e7d3d528474dad6ee  planck_ext2_gs98_x0.36_z0.02.txt
+9b537d42652c4f20105cacfc2503302a  scripts/ana_run1d.py
+d9f3cfddd9ac79bddcc086eea118d6d2  scripts/build_ext.py
+acc279ddd83c647ece70a9547fe8d3f7  scripts/check_overlap.py
+db6ab287f1cdd2cbcdf2e1368daad6da  scripts/column_compare.py
+ab9d38660d2fbcb88e56eb56d0ba8318  scripts/ferg_vs_aes.py
+c6a9962ce78b6fc232906c97cf64f11f  scripts/fetch_aesopus.py
+acc62e4486feec3a2fa4c637b5d90472  scripts/saha_es.py
+bb633613db82fcf8186bd261a2c9c044  scripts/table_check_ext.py
+f29ab5ef012f2473ce17190cd7a85715  raw/tops_lowrho/tops_lo.dat
+975317be4b0a871a4e8f41fba2045e45  raw/aes21_gas/03-GS98.zip
+2057f9baf5b445f8a4425bc20d4da47c  raw/aesopus_form/x036_partial.dat
+96a1b1db04248ce2f59633d44390d881  /viper/u2/jinma/ATHENAK/bench/m1_opac/ferguson05/f05.gs98.tar.gz
+69d8b6d370cafe4655ed7faf55ee14d5  /viper/u2/jinma/ATHENAK/bench/m1_opac/ferguson05/f05.g98.pl.tar.gz

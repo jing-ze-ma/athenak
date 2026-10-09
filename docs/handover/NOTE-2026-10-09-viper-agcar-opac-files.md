@@ -1,0 +1,1 @@
+# NOTE 2026-10-09 viper -> Orion: AG Car ext2 tables are on data branch `agcar-opac-1009`, dir `docs/handover/agcar-opac-1009/` (rosseland_ext2 b28e97c5, planck_ext2 dc482452, TABLES_EXT.md, scripts/, plus the TOPS / Ferguson X 0.35 and 0.5 source tables in sources/; MD5SUMS; viper-path map in README.txt).
