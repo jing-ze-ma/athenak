@@ -150,6 +150,15 @@ Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
 // of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
 DvceArray1D<Real> hs_bd_, hs_be_;
+// bsg-truerepro-1008 (Ma, Bildsten & Jiang 2026 setup, all three default off):
+// problem/he_gravity = pointmass (hs_pm_): NO well-balanced pair; the point-mass momentum
+//   source in the Athena++ form rho GM <1/r>_vol/x1v (etotgrav keeps the energy);
+// problem/he_bc_inner = zerocontact (hs_bzc_): every inner ghost holds the UNSCALED
+//   initial column (rho, eint), v = 0, except the first ghost layer whose v_r is solved
+//   so that the HLLC contact speed of the code's own PLM states at the wall face is 0;
+// problem/he_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
+//   v_r copied where it points out and 0 where it points in.
+bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
 // problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
 bool hs_mlt_ = false;
 DvceArray1D<Real> hs_fm_;
@@ -350,16 +359,39 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                      ((pmbp->punit != nullptr) ? pmbp->punit->temperature_cgs() : 1.0);
   const bool etg = ph->use_etotgrav;
   const bool wbdyn = ph->use_wellbalance_dynamic;
-  if (!(wbdyn && ph->use_wb_x1 && etg)) {
-    HsFatal("needs <hydro>/etotgrav = true, wellbalance_dynamic = true and wb_x1 = true "
-            "(the gravity source reads the x1 well-balanced cache)", __LINE__);
+  {
+    const std::string hg = pin->GetOrAddString("problem","he_gravity","wb");
+    if (hg != "wb" && hg != "pointmass") {
+      HsFatal("problem/he_gravity must be wb|pointmass", __LINE__);
+    }
+    hs_pm_ = (hg == "pointmass");
+  }
+  if (hs_pm_) {
+    // bsg-truerepro-1008: plain (not well-balanced) hydro with the full M1 force
+    if (wbdyn || !etg) {
+      HsFatal("problem/he_gravity = pointmass needs <hydro>/etotgrav = true and "
+              "wellbalance_dynamic = false", __LINE__);
+    }
+    if (pm1->force_ref != radm1::M1_FREF_NONE) {
+      HsFatal("problem/he_gravity = pointmass needs <rad_m1>/force_reference = none "
+              "(no well-balanced pair to carry a reference force)", __LINE__);
+    }
+    if (pin->DoesParameterExist("problem","he_gm_column") &&
+        pin->GetBoolean("problem","he_gm_column")) {
+      HsFatal("problem/he_gravity = pointmass does not support he_gm_column", __LINE__);
+    }
+  } else {
+    if (!(wbdyn && ph->use_wb_x1 && etg)) {
+      HsFatal("needs <hydro>/etotgrav = true, wellbalance_dynamic = true and wb_x1 = "
+              "true (the gravity source reads the x1 well-balanced cache)", __LINE__);
+    }
+    if (pm1->force_ref != radm1::M1_FREF_WB_ARAD) {
+      HsFatal("needs <rad_m1>/force_reference = wb_arad (the well-balanced pair carries "
+              "the reference force of the initial column)", __LINE__);
+    }
   }
   if (pm1->opacity_type != radm1::M1_OPAC_TABLE) {
     HsFatal("needs <rad_m1>/opacity = table", __LINE__);
-  }
-  if (pm1->force_ref != radm1::M1_FREF_WB_ARAD) {
-    HsFatal("needs <rad_m1>/force_reference = wb_arad (the well-balanced pair carries "
-            "the reference force of the initial column)", __LINE__);
   }
 
   // ---- parameters
@@ -877,7 +909,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // ... and the EFFECTIVE one of the x1 well-balanced pair
   const Real rlo = hs_rlo_, dr = hs_dr_;
-  {
+  // (he_gravity = pointmass: no WB pair, no reference force; phicc_wb aliases phicc0)
+  if (!hs_pm_) {
     ph->EnableWBEffectivePotential();
     auto pwc = ph->phicc_wb, pwf = ph->phi_wb_x1f;
     par_for("hs_phieff", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
@@ -889,7 +922,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // the reference acceleration, face form: kt(cell) (F(r_l) + F(r_r))/(2c), from the
   // INITIAL column (identical on a restart)
-  {
+  if (!hs_pm_) {
     DvceArray4D<Real> aref_d("hs_aref", nmb1+1, n3m1+1, n2m1+1, n1m1+1);
     par_for("hs_aref", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -920,6 +953,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (wall_closed_ix1, mirror state) is then balanced by construction.  E and F_r keep the
   // column's values.  Rebuilt on a restart (the BCs read the balanced ghost profiles).
   hs_bal_ = pin->GetOrAddBoolean("problem","he_ic_balance",false);
+  if (hs_bal_ && hs_pm_) {
+    HsFatal("problem/he_ic_balance = true needs the well-balanced pair (he_gravity = wb)",
+            __LINE__);
+  }
   if (hs_bal_) {
     if (ph->wb_option != WBOption::polytropic) {
       HsFatal("problem/he_ic_balance = true needs <hydro>/wb_option = polytropic",
@@ -1409,14 +1446,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   {
     const std::string bi = pin->GetOrAddString("problem","he_bc_inner","wall");
     const std::string bo = pin->GetOrAddString("problem","he_bc_outer","noinflow");
-    if ((bi != "wall" && bi != "inflow") ||
-        (bo != "noinflow" && bo != "outflow" && bo != "hse")) {
-      HsFatal("problem/he_bc_inner must be wall|inflow, he_bc_outer noinflow|outflow|hse",
-              __LINE__);
+    if ((bi != "wall" && bi != "inflow" && bi != "zerocontact") ||
+        (bo != "noinflow" && bo != "outflow" && bo != "hse" && bo != "copy")) {
+      HsFatal("problem/he_bc_inner must be wall|inflow|zerocontact, he_bc_outer "
+              "noinflow|outflow|hse|copy", __LINE__);
     }
     hs_binf_ = (bi == "inflow");
+    hs_bzc_ = (bi == "zerocontact");
     hs_bout_ = (bo == "outflow");
     hs_bhse_ = (bo == "hse");
+    hs_bcopy_ = (bo == "copy");
+    if (hs_bzc_) {
+      // bsg-truerepro-1008: the root find replays the plain (non-WB) spherical-polar
+      // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
+      auto *phy = pmbp->phydro;
+      if (phy->use_wellbalance_dynamic || phy->rsolver_method != Hydro_RSolver::hllc ||
+          phy->recon_method_x1 != ReconstructionMethod::plm ||
+          !pmy_mesh_->use_spherical_polar || eos.IsGeneral() || hs_bal_ ||
+          indcs.nx1 < 2 || ng < 2) {
+        HsFatal("problem/he_bc_inner = zerocontact needs spherical polar, an ideal gas, "
+                "<hydro>/rsolver = hllc, reconstruct_x1 = plm, no well-balanced scheme, "
+                "he_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
+      }
+    }
     if (hs_bhse_) {
       hs_bhse_gmax_ = pin->GetOrAddReal("problem","he_bc_hse_gmax",0.9);
       hs_bhse_tg_ = pin->GetOrAddBoolean("problem","he_bc_hse_tgrad",false);
@@ -1447,9 +1499,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","he_wall_closed",
-                                                       !hs_binf_);
-  if (hs_binf_ && pmbp->phydro->wall_closed_ix1) {
-    HsFatal("problem/he_bc_inner = inflow needs he_wall_closed = false", __LINE__);
+                                                       !(hs_binf_ || hs_bzc_));
+  if ((hs_binf_ || hs_bzc_) && pmbp->phydro->wall_closed_ix1) {
+    HsFatal("problem/he_bc_inner = inflow|zerocontact needs he_wall_closed = false",
+            __LINE__);
   }
   hs_sp_rate_ = pin->GetOrAddReal("problem","he_sponge_rate",0.0);
   hs_sp_r0_ = pin->GetOrAddReal("problem","he_sponge_r0",hs_rint_);
@@ -1793,6 +1846,21 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     ht[4] = fb[0];
     ht[5] = fb[1];
   }
+  if (hs_pm_) {
+    // he_gravity = pointmass (bsg-truerepro-1008): the Athena++ point-mass source
+    // (srcterms PointMass): d(rho v_r) = -dt rho GM coord_src1/x1v, coord_src1 =
+    // (r_+^2 - r_-^2)/2 / ((r_+^3 - r_-^3)/3).  The energy needs no source: etotgrav
+    // carries rho Phi in the total energy and its flux.
+    auto &x1vg = pmbp->pcoord->x1v;
+    auto &x1fg = pmbp->pcoord->xx1f;
+    const Real gmp = hs_gm_;
+    par_for("hs_grav_pm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real rm = x1fg(m,i), rp = x1fg(m,i+1);
+      const Real src1 = 1.5*(rp*rp - rm*rm)/(rp*rp*rp - rm*rm*rm);
+      u0(m,IM1,k,j,i) -= bdt*w0(m,IDN,k,j,i)*gmp*src1/x1vg(m,i);
+    });
+  } else {
   par_for("hs_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
@@ -1803,6 +1871,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     u0(m,IM1,k,j,i) += bdt*(area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))
                        /volume(m,k,j,i);
   });
+  }
   // <rad_m1>/force_reference_work = split: the work of the rho a_ref part of the WB kick
   // at the stage-start velocity; the radiation pays it in its solve
   auto *pm1 = pmbp->pradm1;
@@ -1921,6 +1990,40 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real HsZcAm()
+//! \brief he_bc_inner = zerocontact: the HLLC contact speed S_M at the inner wall face
+//! for a trial v_r = vg of the first ghost (index is-1), exactly as the x1 sweep forms
+//! it: the plain spherical-polar PLM (Hydro::PLM_nonuniform, Mignone 2014) of the left
+//! state from cells (is-2, is-1, is) and of the right state from (is-1, is, is+1), then
+//! hllc_hyd.hpp steps 2-5 (ideal gas).  dl/el, dr/er: the reconstructed density and
+//! internal energy (independent of vg); v2g: v_r of the second ghost (0); va, vb: v_r of
+//! the cells is, is+1; cl* / cr*: the PLM grid factors (dxL, dxR, dxLh, dxRh) of the
+//! cells is-1 and is.
+
+KOKKOS_INLINE_FUNCTION
+Real HsZcAm(const EOS_Data &eos, const Real vg, const Real v2g, const Real va,
+            const Real vb, const Real dl, const Real el, const Real dr, const Real er,
+            const Real *cl4, const Real *cr4) {
+  Real vl, vr, dum;
+  hydro::Hydro::PLM_nonuniform(v2g, vg, va, cl4[0], cl4[1], cl4[2], cl4[3], vl, dum);
+  hydro::Hydro::PLM_nonuniform(vg, va, vb, cr4[0], cr4[1], cr4[2], cr4[3], dum, vr);
+  const Real g = eos.gamma, alpha = (g + 1.0)/(2.0*g);
+  const Real pl = eos.IdealGasPressure(el), pr = eos.IdealGasPressure(er);
+  const Real qa = eos.SoundSpeedFromP(dl, pl, g);
+  const Real qb = eos.SoundSpeedFromP(dr, pr, g);
+  const Real qc = 0.25*(dl + dr)*(qa + qb);
+  const Real pm = 0.5*(pl + pr + (vl - vr)*qc);
+  const Real ql = (pm <= pl) ? 1.0 : sqrt(1.0 + alpha*((pm/pl) - 1.0));
+  const Real qr = (pm <= pr) ? 1.0 : sqrt(1.0 + alpha*((pm/pr) - 1.0));
+  const Real al = vl - qa*ql;
+  const Real ar = vr + qb*qr;
+  const Real vxl = vl - al, vxr = vr - ar;
+  const Real tl = pl + vxl*dl*vl, tr = pr + vxr*dr*vr;
+  const Real ml = dl*vxl, mr = -(dr*vxr);
+  return (tl - tr)/(ml + mr);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void HeStarBC()
 //! \brief x1 ghosts carrying the scaled initial profile (rho and eint scaled by the ratio
 //! of the adjacent active cell to its own initial value), the radial velocity mirrored
@@ -1962,6 +2065,9 @@ void HeStarBC(Mesh *pm) {
   const Real dfl = eos.dfloor;
   const bool bhfc = bhse && hs_bhse_face_;
   auto ff1 = pmbp->pradm1->f0x1;
+  // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
+  const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
+  auto &x1fb = pmbp->pcoord->xx1f;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -1974,6 +2080,118 @@ void HeStarBC(Mesh *pm) {
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - da*phicc(m,k,j,ia);
       const bool inflo = lo && binf, outfl = !lo && bout;
+      if (lo && bzc) {
+        // ZERO-CONTACT INNER WALL (Ma, Bildsten & Jiang 2026, sect. 2.2.3).  All inner
+        // ghosts hold the UNSCALED initial column (rho, eint at their radii) and v = 0,
+        // except the first ghost (is-1): its v_r is the root vg of the HLLC contact speed
+        // S_M(vg) = 0 at the wall face, with the left/right states the x1 sweep will
+        // reconstruct (plain PLM, HsZcAm), v_t = 0 there.  S_M = 0 makes the HLLC mass,
+        // transverse-momentum and energy fluxes vanish; the momentum flux is p*.
+        // S_M increases with vg; bracketed Illinois iteration; no bracket -> mirror v.
+        const int g0 = is - 1, g1 = is - 2, ib = is + 1;
+        const Real d0 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g0));
+        const Real e0 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g0));
+        const Real d1 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g1));
+        const Real e1 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g1));
+        const Real db = uh(m,IDN,k,j,ib);
+        const Real vb = uh(m,IM1,k,j,ib)/db;
+        const Real eb = uh(m,IEN,k,j,ib) - 0.5*(SQR(uh(m,IM1,k,j,ib))
+                        + SQR(uh(m,IM2,k,j,ib)) + SQR(uh(m,IM3,k,j,ib)))/db
+                        - db*phicc(m,k,j,ib);
+        const Real va = uh(m,IM1,k,j,is)/da;
+        Real cl4[4], cr4[4];
+        cl4[0] = x1v(m,g0) - x1v(m,g1);
+        cl4[1] = x1v(m,is) - x1v(m,g0);
+        cl4[2] = x1v(m,g0) - x1fb(m,g0);
+        cl4[3] = x1fb(m,is) - x1v(m,g0);
+        cr4[0] = x1v(m,is) - x1v(m,g0);
+        cr4[1] = x1v(m,ib) - x1v(m,is);
+        cr4[2] = x1v(m,is) - x1fb(m,is);
+        cr4[3] = x1fb(m,ib) - x1v(m,is);
+        Real dlf, elf, drf, erf, dum;
+        hydro::Hydro::PLM_nonuniform(d1, d0, da, cl4[0], cl4[1], cl4[2], cl4[3],
+                                     dlf, dum);
+        hydro::Hydro::PLM_nonuniform(e1, e0, ea, cl4[0], cl4[1], cl4[2], cl4[3],
+                                     elf, dum);
+        hydro::Hydro::PLM_nonuniform(d0, da, db, cr4[0], cr4[1], cr4[2], cr4[3],
+                                     dum, drf);
+        hydro::Hydro::PLM_nonuniform(e0, ea, eb, cr4[0], cr4[1], cr4[2], cr4[3],
+                                     dum, erf);
+        const Real csa = sqrt(eos.gamma*eos.IdealGasPressure(ea)/da);
+        Real w = 2.0*(csa + fabs(va) + fabs(vb));
+        Real xa = -w, xb = w;
+        Real fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+        Real fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+        for (int it=0; it<30 && !(fa < 0.0 && fb > 0.0); ++it) {
+          w *= 2.0;
+          if (!(fa < 0.0)) {
+            xa = -w;
+            fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+          }
+          if (!(fb > 0.0)) {
+            xb = w;
+            fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+          }
+        }
+        Real vg = -va;
+        if (fa < 0.0 && fb > 0.0) {
+          // Illinois (modified regula falsi), stopped at |S_M| <= 1e-14 c_s
+          const Real ftol = 1.0e-14*csa;
+          int side = 0;
+          Real xc = xa, fc = fa;
+          for (int it=0; it<100; ++it) {
+            xc = (xa*fb - xb*fa)/(fb - fa);
+            fc = HsZcAm(eos, xc, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+            if (fabs(fc) <= ftol || !(xb - xa > 1.0e-15*w)) break;
+            if (fc < 0.0) {
+              xa = xc;
+              fa = fc;
+              if (side == -1) fb *= 0.5;
+              side = -1;
+            } else {
+              xb = xc;
+              fb = fc;
+              if (side == 1) fa *= 0.5;
+              side = 1;
+            }
+          }
+          vg = xc;
+        }
+        for (int g=0; g<ng; ++g) {
+          const int ig = is - 1 - g;
+          const Real rg = x1v(m,ig);
+          const Real dg = (g == 0) ? d0 : ((g == 1) ? d1 : HsLogInterp(crho, rlo, dr, nf,
+                                                                       rg));
+          const Real eg = (g == 0) ? e0 : ((g == 1) ? e1 : HsLogInterp(ceint, rlo, dr,
+                                                                       nf, rg));
+          const Real v1 = (g == 0) ? vg : 0.0;
+          uh(m,IDN,k,j,ig) = dg;
+          uh(m,IM1,k,j,ig) = dg*v1;
+          uh(m,IM2,k,j,ig) = 0.0;
+          uh(m,IM3,k,j,ig) = 0.0;
+          uh(m,IEN,k,j,ig) = eg + 0.5*dg*v1*v1 + dg*phicc(m,k,j,ig);
+          radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+        }
+        continue;
+      }
+      if (!lo && bcopy) {
+        // Ma+2026 OUTFLOW TOP: rho, eint and v_t of the edge cell copied into every
+        // ghost, v_r copied where it points out and 0 where it points in
+        const Real v1e = uh(m,IM1,k,j,ia)/da;
+        const Real v1 = (v1e > 0.0) ? v1e : 0.0;
+        const Real v2 = uh(m,IM2,k,j,ia)/da;
+        const Real v3 = uh(m,IM3,k,j,ia)/da;
+        for (int g=0; g<ng; ++g) {
+          const int ig = ie + 1 + g;
+          uh(m,IDN,k,j,ig) = da;
+          uh(m,IM1,k,j,ig) = da*v1;
+          uh(m,IM2,k,j,ig) = da*v2;
+          uh(m,IM3,k,j,ig) = da*v3;
+          uh(m,IEN,k,j,ig) = ea + 0.5*da*(v1*v1 + v2*v2 + v3*v3) + da*phicc(m,k,j,ig);
+          radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 2, 1.0, cl, efl);
+        }
+        continue;
+      }
       if (!lo && bhse) {
         // THE HYDROSTATIC TOP (he_bc_outer = hse).  Every ghost layer continues the LAST
         // ACTIVE cell a = ie (box_convection bc_mode_top 4, ported): with the WB pair's
