@@ -1,3 +1,5 @@
+# WITHDRAWN (viper, user 10-09): do NOT run this batch. Moved to DeltaAI (fork/bsg-files-1009 547b106f TASK-2026-10-09-deltaai-prof.md). If already running: let it finish and push the results NOTE as described below; if not started: do not start it.
+
 # TASK for the Delta runner: prof batch1 = GPU cost breakdown of the production radiation scheme (user 10-09)
 
 User 10-09: "can we put something on delta". Question: where does the GPU time of the production radiation scheme
