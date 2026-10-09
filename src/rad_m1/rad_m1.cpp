@@ -1073,6 +1073,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // vet_gd_halo_list_mb (vgdspeed-1009; read only when named; default 4096; 0 = off):
     // per-rank MB budget of the compact-halo lists (rad_m1_vetgd.cpp VetGdHlBuild);
     // bitwise either way
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_shell_list")) {
+      vgd_shl_on = pin->GetBoolean("rad_m1","vet_gd_shell_list");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_list_mb")) {
       vgd_hl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_list_mb"));
     }

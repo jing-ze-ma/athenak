@@ -1772,6 +1772,12 @@ class RadiationM1 {
     size_t bytes = 0;
   };
   int vgd_hl_mb = 4096;
+  // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): the
+  // shell kernel runs over the (m, k, j, d) of the pass's branch only (VetGdSweep)
+  bool vgd_shl_on = true;
+  DvceArray1D<int> vgd_shl[2];
+  int vgd_shn[2] = {0, 0};
+  Real vgd_shl_alpha = -3.0;
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0;
   int64_t vgd_hl_gen = 0;

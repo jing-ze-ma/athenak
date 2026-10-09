@@ -1245,7 +1245,8 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
     Kokkos::deep_copy(ex_, h, Kokkos::subview(vgd_hl_fn, std::make_pair(rtot, rtot + 1)));
     Kokkos::View<int*, HostMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h2(nrw + 1,
                                                                                  1);
-    Kokkos::deep_copy(ex_, h2, Kokkos::subview(vgd_hl_fw, std::make_pair(rtot, rtot + 1)));
+    Kokkos::deep_copy(ex_, h2,
+                      Kokkos::subview(vgd_hl_fw, std::make_pair(rtot, rtot + 1)));
     ex_.fence();
   }
   const int ns = pbh[np] - pbh[0];
@@ -1518,7 +1519,8 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
     auto sw_ = X.sw;
     auto w3_ = vgd_w3;
     if (nr + nw > 0) {
-      Kokkos::parallel_for("m1_vgd_hl_scatter", Kokkos::RangePolicy<>(vgd_cur, 0, nr + nw),
+      Kokkos::parallel_for("m1_vgd_hl_scatter",
+                           Kokkos::RangePolicy<>(vgd_cur, 0, nr + nw),
       KOKKOS_LAMBDA(const int c) {
         int ad = (c < nr) ? dl_(c) : dw_(c - nr);
         const int jb = ad % c2_;
@@ -1749,6 +1751,46 @@ void RadiationM1::VetGdSweep() {
   const int klo = 0, khi = ke + wb - 1;
   const Real twopi = 2.0*M_PI;
   vgd_hsweep += 1;
+  // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): per
+  // pass the list of (m, k, j, d) whose n . r_hat (at the face midpoints, as the shell
+  // kernel) lies on the pass's branch, widened by 1e-12 (the kernel's own test still
+  // decides), so that the shell launch has no thread of the other branch.  Remade when
+  // the direction set changes.
+  const bool shl = vgd_shl_on;
+  if (shl && vgd_shl_alpha != vgd_alpha) {
+    const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
+    const int ntot = (nmb1 + 1)*nkj*n;
+    for (int p = 0; p < 2; ++p) {
+      const bool inw = (p == 0);
+      if (static_cast<int>(vgd_shl[p].extent(0)) < ntot) {
+        Kokkos::realloc(vgd_shl[p], ntot);
+      }
+      auto L_ = vgd_shl[p];
+      int cnt = 0;
+      Kokkos::parallel_scan("m1_vgd_shl", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+      KOKKOS_LAMBDA(const int c, int &acc, const bool fin) {
+        int t = c;
+        const int d = t % n;
+        t /= n;
+        const int m = t/nkj;
+        t -= m*nkj;
+        const int k = ks + t/nj;
+        const int j = js + (t % nj);
+        const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+        const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+        const Real mr = nx*st*cp + ny*st*sp + nz*ct;
+        const bool keep = inw ? (mr < 1.0e-12) : (mr >= -1.0e-12);
+        if (keep) {
+          if (fin) {L_(acc) = c;}
+          acc += 1;
+        }
+      }, cnt);
+      vgd_shn[p] = cnt;
+    }
+    vgd_shl_alpha = vgd_alpha;
+  }
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     for (int q = 0; q < n1 - lcut; ++q) {
@@ -1772,8 +1814,7 @@ void RadiationM1::VetGdSweep() {
       const bool two = vgd_sw2;      // vet_gd_twin_fuse: the twin field in the same pass
       auto ct_ = vgd_cst;
       auto vt_ = vgd_itw;
-      par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+      auto body = KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -1985,7 +2026,26 @@ void RadiationM1::VetGdSweep() {
         };
         vi_(m,d,k,j,i) = solve(cs_, vi_);
         if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_);}
-      });
+      };
+      if (shl) {
+        // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
+        auto L_ = vgd_shl[pass];
+        const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
+        Kokkos::parallel_for("m1_vgd_shell", Kokkos::RangePolicy<>(vgd_cur, 0,
+                                                                   vgd_shn[pass]),
+        KOKKOS_LAMBDA(const int c) {
+          int t = L_(c);
+          const int d = t % n;
+          t /= n;
+          const int m = t/nkj;
+          t -= m*nkj;
+          const int k = ks + t/nj;
+          const int j = js + (t % nj);
+          body(m, k, j, d);
+        });
+      } else {
+        par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1, body);
+      }
       // the shell is complete on every block: its lateral band, exact (not lagged)
       if (vgd_time_halo) {vgd_cur.fence();}
       Kokkos::Timer th;
