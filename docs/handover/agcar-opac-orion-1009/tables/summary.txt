@@ -1,0 +1,36 @@
+# numerical (R=1e6 opacity sampling) vs exact line-sum Planck: max |dlog| = 0.0005
+# molecules: max fraction of kP 0.18 at (log T, log rho) = (3.450, -12.00)
+#   molecules > 0.01 of kP at log T <= 3.500, log rho >= -16.20 (167 cells)
+#   molecules > 0.1 of kP at log T <= 3.450, log rho >= -14.55 (52 cells)
+# continuum (bf+ff+H-) max fraction of kP: 0.00245
+# Rosseland: max kR/kR_cont (line contribution) 1.326; kR/kes range 1.00..2.30
+# planck vs Ferguson05: N=1689 median +0.025 dex, p10 -0.371 p90 +0.304, max |d| 0.479; |d|<0.2 dex in 43 %
+# planck vs TOPS: N=902 median -0.277 dex, p10 -0.528 p90 +0.058, max |d| 0.849; |d|<0.2 dex in 37 %
+# planck: Ferguson05 - TOPS on the common overlap: median -0.094, p10 -0.361 p90 +0.399
+# rosseland vs Ferguson05: N=1689 median -0.000 dex, p10 -0.046 p90 +0.012, max |d| 0.080; |d|<0.2 dex in 100 %
+# rosseland vs TOPS: N=902 median -0.013 dex, p10 -0.031 p90 +0.034, max |d| 0.097; |d|<0.2 dex in 100 %
+# rosseland: Ferguson05 - TOPS on the common overlap: median -0.016, p10 -0.037 p90 +0.015
+# planck this - ext2, log rho -21..-15: median -0.01, p10 -0.44, p90 +0.50, max |d| 1.21
+# planck this - ext2, log rho -15..-12: median -0.05, p10 -0.46, p90 +0.29, max |d| 0.56
+# planck this - ext2 at rho 1e-20..1e-15 (log T >= 3.5): min -1.02 max +0.81
+# rosseland this - ext2, log rho -21..-15: median +0.00, p10 -0.01, p90 +0.02, max |d| 0.12
+# rosseland this - ext2, log rho -15..-12: median -0.01, p10 -0.04, p90 +0.01, max |d| 0.08
+# rosseland this - ext2 at rho 1e-20..1e-15 (log T >= 3.5): min -0.06 max +0.10
+# conv R 1e+04: kP_num max 1.0441 med 0.2450 | kR max 0.0022 med 0.0001 | kP exact max 8.83e-09
+# conv R 3e+04: kP_num max 0.2933 med 0.0793 | kR max 0.0004 med 0.0000 | kP exact max 8.20e-09
+# conv R 1e+05: kP_num max 0.0018 med 0.0000 | kR max 0.0000 med 0.0000 | kP exact max 2.26e-10
+# conv R 3e+05: kP_num max 0.0006 med 0.0000 | kR max 0.0000 med 0.0000 | kP exact max 2.42e-10
+# sens gfall08oct17 only (no predicted Fe-group lines)  kP: max |d| 0.016 at (log T 3.75, log rho -17.50), median -0.0001
+# sens gfall08oct17 only (no predicted Fe-group lines)  kR: max |d| 0.009 at (log T 4.20, log rho -12.00), median -0.0000
+# sens line wings cut at 0.3 % of nu                    kP: max |d| 0.000 at (log T 3.45, log rho -21.00), median +0.0000
+# sens line wings cut at 0.3 % of nu                    kR: max |d| 0.004 at (log T 4.30, log rho -12.75), median -0.0004
+# sens line wings cut at 3 % of nu                      kP: max |d| 0.000 at (log T 3.45, log rho -21.00), median +0.0000
+# sens line wings cut at 3 % of nu                      kR: max |d| 0.002 at (log T 4.30, log rho -12.25), median +0.0002
+# sens no microturbulence                               kP: max |d| 0.000 at (log T 3.45, log rho -21.00), median +0.0000
+# sens no microturbulence                               kR: max |d| 0.011 at (log T 3.95, log rho -12.00), median -0.0011
+# sens H I/He II n_max 15                               kP: max |d| 0.000 at (log T 4.00, log rho -12.00), median -0.0000
+# sens H I/He II n_max 15                               kR: max |d| 0.000 at (log T 3.85, log rho -12.00), median -0.0000
+# sens H I/He II n_max 60                               kP: max |d| 0.000 at (log T 3.90, log rho -12.00), median +0.0000
+# sens H I/He II n_max 60                               kR: max |d| 0.000 at (log T 3.85, log rho -12.00), median +0.0000
+# sens line skip threshold 1e-12                        kP: max |d| 0.000 at (log T 3.45, log rho -21.00), median +0.0000
+# sens line skip threshold 1e-12                        kR: max |d| 0.000 at (log T 3.45, log rho -12.00), median +0.0000

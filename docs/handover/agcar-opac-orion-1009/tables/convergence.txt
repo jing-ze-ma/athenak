@@ -1,0 +1,5 @@
+# frequency-grid convergence: opacity sampling on a log-uniform grid 300..4e5 cm^-1 (33 um..25 nm) with R = nu/dnu; columns: R, max and median |dlog| vs R=1e6 of kP_num (sampled), kR; exact line-sum kP is grid independent
+R 1e+04: kP_num max 1.0441 med 0.2450 | kR max 0.0022 med 0.0001 | kP exact max 8.83e-09
+R 3e+04: kP_num max 0.2933 med 0.0793 | kR max 0.0004 med 0.0000 | kP exact max 8.20e-09
+R 1e+05: kP_num max 0.0018 med 0.0000 | kR max 0.0000 med 0.0000 | kP exact max 2.26e-10
+R 3e+05: kP_num max 0.0006 med 0.0000 | kR max 0.0000 med 0.0000 | kP exact max 2.42e-10
