@@ -1728,6 +1728,8 @@ void RadiationM1::VetGdMoments() {
       }
     });
   }
+  // hrup-1009: the half-range ratios of this sweep's intensities (main or twin)
+  if (impl_beam_hr) {VetGdHalfRange(0);}
   if (!repq || vgd_noq) {return;}
   // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's FACE form,
   // q = H(face)/J_f, clamped to [vet_col_surface_qmin, _qmax]: H(face) = H_r of the top
@@ -2607,6 +2609,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     vgd_noq = true;
     VetGdMoments();
     vgd_noq = false;
+    if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
     par_for("m1_vgd_tw_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int c = 0; c < M1_TT_NLAT; ++c) {twl_(m,c,k,j,i) = tt_(m,M1_TT_LAT0+c,k,j,i);}
@@ -2629,6 +2632,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - mt_(i);
     for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
   });
+  if (impl_beam_hr) {VetGdHalfRange(2);}   // hrup-1009: the same subtraction
 }
 
 //----------------------------------------------------------------------------------------
@@ -2693,6 +2697,7 @@ void RadiationM1::VetGdTwinFusedMoments() {
   VetGdMoments();
   vgd_noq = false;
   std::swap(vgd_i, vgd_itw);
+  if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
   auto tt_ = tau_ten;
   auto twl_ = vgd_twl;
   par_for("m1_vgd_tw_keep2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -2701,6 +2706,110 @@ void RadiationM1::VetGdTwinFusedMoments() {
   });
   Kokkos::fence();
   vgd_ttwin += tm.seconds();
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHalfRange
+//! \brief hrup-1009 (implicit_flux_beam = halfrange): the HALF-RANGE ratios of the vet_gd
+//! intensities along the local axes, r+_a = sum_{mu_a > 0} w mu_a I / J and
+//! r-_a = sum_{mu_a < 0} w mu_a I / J, a = r, theta, phi, into vgd_hr(m, 2a, ...) and (m,
+//! 2a+1, ...).
+//! Below the vet_gd cut (no formal solution) and where J <= 0: r+ = -1 (flag: the face
+//! stays central).  stage 0: from the current vgd_i (the main or the twin sweep);
+//! stage 1: copy to vgd_hrt (the twin's, kept); stage 2 (vet_gd_twin): r -= (r_twin -
+//! its shell mean), the same ray-noise subtraction as the tensor's LAT0, then clamped to
+//! r+ in [0, 1], r- in [-1, 0].
+
+void RadiationM1::VetGdHalfRange(const int stage) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int ilo = is + vlat_icut;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  if (vgd_hr.extent_int(0) < nmb1 + 1) {
+    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+    Kokkos::realloc(vgd_hr, nmb1 + 1, 6, n3, n2, c1);
+    Kokkos::deep_copy(vgd_hr, 0.0);
+    Kokkos::realloc(vgd_hrt, nmb1 + 1, 6, n3, n2, c1);
+    Kokkos::deep_copy(vgd_hrt, 0.0);
+    Kokkos::realloc(vgd_hrm, c1);
+  }
+  auto hr_ = vgd_hr;
+  auto ht_ = vgd_hrt;
+  if (stage == 0) {
+    const int n = vgd_n;
+    auto vi_ = vgd_i;
+    const int og = vgd_w - indcs.ng;
+    auto dir_ = vgd_dir;
+    auto &mbsize = pmy_pack->pmb->mb_size;
+    par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+      if (i < ilo) {
+        for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
+        return;
+      }
+      const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+      const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+      const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+      Real jm = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      for (int d = 0; d < n; ++d) {
+        const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+        const Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
+                            -nx*sp + ny*cp};
+        const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+        jm += wi;
+        for (int a = 0; a < 3; ++a) {
+          h[2*a] += wi*fmax(mu[a], 0.0);
+          h[2*a+1] += wi*fmin(mu[a], 0.0);
+        }
+      }
+      for (int c = 0; c < 6; ++c) {
+        hr_(m,c,k,j,i) = (jm > 0.0) ? h[c]/jm : ((c % 2 == 0) ? -1.0 : 0.0);
+      }
+    });
+    return;
+  }
+  if (stage == 1) {
+    Kokkos::deep_copy(ht_, hr_);
+    return;
+  }
+  // stage 2: subtract the twin's lateral pattern, shell by shell, component by component
+  const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
+                    pmy_pack->pmesh->mesh_indcs.nx3;
+  for (int c = 0; c < 6; ++c) {
+    Kokkos::deep_copy(vgd_hrm, 0.0);
+    auto mo_ = vgd_hrm;
+    // one thread per shell, a fixed (m, k, j) order: reproducible (as vet_gd_twin_det)
+    const int nm = nmb1 + 1;
+    par_for("m1_vgd_hr_sm", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
+      Real sm = 0.0;
+      for (int m = 0; m < nm; ++m) {
+        for (int k = ks; k <= ke; ++k) {
+          for (int j = js; j <= je; ++j) {sm += ht_(m,c,k,j,i);}
+        }
+      }
+      mo_(i) = sm/ncol;
+    });
+#if MPI_PARALLEL_ENABLED
+    {
+      auto mh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_hrm);
+      MPI_Allreduce(MPI_IN_PLACE, mh.data(), c1, MPI_ATHENA_REAL, MPI_SUM,
+                    MPI_COMM_WORLD);
+      Kokkos::deep_copy(vgd_hrm, mh);
+    }
+#endif
+    const bool plus = (c % 2 == 0);
+    par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
+      Real v = hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i));
+      hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
+    });
+  }
 }
 
 } // namespace radm1

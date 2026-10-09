@@ -62,7 +62,8 @@ constexpr int M1_VET_N1  = 13;
 constexpr int M1_VET_D11 = 16;  // vet_tensor = full: the GUARDED D = K/J handed to the
                                 // solve, 11 22 33 12 13 23, ghosts filled (periodic)
 constexpr int M1_VET_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
-constexpr int M1_VET_NC  = 23;
+constexpr int M1_VET_HP1 = 23;  // hrup-1009: sum w I max(mu_a, 0), a = 1 2 3 (half-range)
+constexpr int M1_VET_NC  = 26;
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
@@ -591,10 +592,33 @@ class RadiationM1 {
   int impl_blend_fmode;         // M1_IBFM_*: max or mean of the two cells' reduced flux
   int impl_blend_mode;          // M1_IBMODE_*: blend the whole flux, or add the HLL
                                 // dissipation alone on top of the full central flux
+  Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
+  Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
   Real impl_blend_fhi;          // smoothstep upper edge in the reduced flux
   DvceArray5D<Real> ifw;        // per-x1-FACE work array, M1_NIFW components
+  // blendall-1009: <rad_m1>/implicit_flux_faces = all.  berthon | blend on EVERY face of
+  // the multi-D solve: Cartesian x1/x2/x3 and the sp LATERAL x2/x3 faces (the sp radial
+  // faces keep the sp-blend-1008 path).  ifw2/ifw3 hold M1_IFW_AL/HCL/HCR of the x2/x3
+  // faces (DG unused); the central part of a transverse face keeps 1 - AL through
+  // thx2/thx3.  Off (the default): nothing allocated, every kernel bitwise unchanged.
+  bool impl_flux_all = false;   // the key
+  bool blat_on = false;         // transverse faces carry the berthon/blend coefficients
+  bool bvec_x1 = false;         // Cartesian x1 faces take the multi-D beam vector
+  bool impl_beam_fs = false;    // implicit_flux_beam = fs: |f| = |H|/J of vet_sc
+  // hrup-1009: implicit_flux_beam = halfrange.  Every face flux of the all-faces blend
+  // is (1 - w) F_central + w c (r+_L E_L + r-_R E_R), r+- = H+-/J the HALF-RANGE ratios
+  // along the face normal (vet_sc / vet_gd rays; otherwise the isotropic + beam model of
+  // the lagged closure), w = exp(-(tau_f/tau0)^2) (implicit_blend = tau) or 1 (berthon)
+  bool impl_beam_hr = false;
+  bool impl_hr_model = false;   // implicit_hr_model (no ray data: closure model)
+  bool hr_q = false;            // the per-column outer q from h+_1 (vcol_q)
+  DvceArray5D<Real> vgd_hr, vgd_hrt;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
+  DvceArray1D<Real> vgd_hrm;           // shell mean of one twin component
+  void VetGdHalfRange(const int stage);
+  DvceArray5D<Real> ifw2, ifw3;
+  void ImplicitLatFaceCoef();
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
   // serial Thomas sweep and sends the solution back.

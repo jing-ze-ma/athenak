@@ -122,6 +122,12 @@ Real hs_bheat_ = 0.0;
 DvceArray1D<Real> hs_fb_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
+// fsanchor-1009 problem/he_clump (TEST, read only when named, default false): a cold
+// opaque sphere of gas held fixed (rho, T, v = 0) at every stage, the absorber of the
+// shadow test in the production geometry; (r, theta, phi) centre, radius (code units)
+bool hs_cl_on_ = false;
+Real hs_cl_r_ = 0.0, hs_cl_th_ = 0.0, hs_cl_ph_ = 0.0, hs_cl_a_ = 0.0;
+Real hs_cl_d_ = 0.0, hs_cl_e_ = 0.0;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
 // (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
 bool hs_binf_ = false, hs_bout_ = false;
@@ -1458,6 +1464,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_sp_dmax_ = pin->GetReal("problem","he_sponge_dmax");
   }
   hs_rtop_ = rtop;
+  if (pin->DoesParameterExist("problem","he_clump")) {
+    hs_cl_on_ = pin->GetBoolean("problem","he_clump");
+  }
+  if (hs_cl_on_) {
+    hs_cl_r_ = pin->GetReal("problem","he_clump_r");
+    hs_cl_th_ = pin->GetReal("problem","he_clump_th");
+    hs_cl_ph_ = pin->GetReal("problem","he_clump_ph");
+    hs_cl_a_ = pin->GetReal("problem","he_clump_a");
+    hs_cl_d_ = pin->GetReal("problem","he_clump_rho");
+    const Real tk = pin->GetReal("problem","he_clump_t_kelvin");
+    Real ee, pp, cr, ct, cv;
+    eos.ThermoAt(hs_cl_d_, tk/hs_tk, ee, pp, cr, ct, cv);
+    hs_cl_e_ = ee;
+    if (global_variable::my_rank == 0) {
+      std::cout << "  he_clump (TEST): r " << hs_cl_r_ << " theta " << hs_cl_th_
+                << " phi " << hs_cl_ph_ << " radius " << hs_cl_a_ << " rho " << hs_cl_d_
+                << " T " << tk << " K, eint " << hs_cl_e_ << std::endl;
+    }
+  }
   user_srcs_func = HeStarGravity;
   user_bcs_func = HeStarBC;
   user_hist_func = HeStarHist;
@@ -1697,6 +1722,29 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   if (hs_mlt_ && hs_mrs_ >= 0.0) {
     const Real w = HsMltW(pm->time);
     if (w != hs_mw_) HsApplyMltW(pm, w);
+  }
+  // fsanchor-1009 he_clump (TEST): re-impose the fixed cold clump (rho, eint, v = 0)
+  if (hs_cl_on_) {
+    auto &cx1v = pmbp->pcoord->x1v;
+    auto &cx2v = pmbp->pcoord->x2v;
+    auto &cx3v = pmbp->pcoord->x3v;
+    auto phc = ph->phicc0;
+    const Real r0 = hs_cl_r_, t0 = hs_cl_th_, p0 = hs_cl_ph_, a2 = SQR(hs_cl_a_);
+    const Real dcl = hs_cl_d_, ecl = hs_cl_e_;
+    const Real x0 = r0*sin(t0)*cos(p0), y0 = r0*sin(t0)*sin(p0), z0 = r0*cos(t0);
+    par_for("hs_clump", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real r = cx1v(m,i), t = cx2v(m,j), p = cx3v(m,k);
+      const Real d2 = SQR(r*sin(t)*cos(p) - x0) + SQR(r*sin(t)*sin(p) - y0)
+                      + SQR(r*cos(t) - z0);
+      if (d2 <= a2) {
+        u0(m,IDN,k,j,i) = dcl;
+        u0(m,IM1,k,j,i) = 0.0;
+        u0(m,IM2,k,j,i) = 0.0;
+        u0(m,IM3,k,j,i) = 0.0;
+        u0(m,IEN,k,j,i) = ecl + dcl*phc(m,k,j,i);
+      }
+    });
   }
   // fixbundle-1009 F6 localisation (<rad_m1>/dbg_energy_tally, output only): sum IEN V
   // after each part of this source and the hydro energy flux through the x1 boundary

@@ -1272,6 +1272,21 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
   //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
   //     written and D = 1/3 (isotropic) as a placeholder.
+  if (name.compare("m1_vsc") == 0) {   // blendall-1009: vet_sc J, F/c
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto vc_ = pm->pmb_pack->pradm1->vet_cell;
+    const bool hv = pm->pmb_pack->pradm1->vet_sc && (vc_.extent_int(0) >= nmb);
+    par_for("m1_vsc_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      for (int c = 0; c < 4; ++c) {
+        dv(m,i_dv+c,k,j,i) = hv ? vc_(m,radm1::M1_VET_J+((c == 0) ? 0 : (6 + c)),k,j,i)
+                                : 0.0;
+      }
+    });
+    i_dv += 4;
+  }
   if (name.compare("m1_vet") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);

@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 164
+#define NOUTPUT_CHOICES 165
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -118,7 +118,10 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   "m1_face",
 
   // grey M1 radiation: moments of the vet_gd formal solution, J and H_r in E units (163)
-  "m1_fs"
+  "m1_fs",
+
+  // blendall-1009: the vet_sc formal solution's J and F/c (E units), Cartesian (164)
+  "m1_vsc"
 };
 
 

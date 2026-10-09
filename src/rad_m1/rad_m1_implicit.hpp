@@ -224,6 +224,11 @@ constexpr int M1_IBLEND_F    = 1;    // w = smoothstep((f_face - f_lo)/(f_hi - f
                                      // DIFFUSE field (f -> 1/2, which is what a grey
                                      // surface with marshak_q = 1/2 has) stays central, a
                                      // beam or a front (f -> 1) goes upwind.
+constexpr int M1_IBLEND_IDF = 5;     // hrup-1009: idort x smoothstep(|H|/J)
+constexpr int M1_IBLEND_IDA = 6;     // hrup-1009: idort x smoothstep(h asymmetry)
+constexpr int M1_IBLEND_KN = 4;      // hrup-1009 (half-range only): Knudsen x tau
+constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + x + x^2/
+                                     // tau0), x = implicit_blend_alpha tau_face
 constexpr int M1_IBLEND_TAUF = 2;    // the product of the two: upwind only where the face
                                      // is thin AND the field is beamed.
 

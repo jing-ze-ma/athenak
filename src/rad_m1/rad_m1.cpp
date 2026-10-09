@@ -800,6 +800,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // 1-D branch) keeps Levermore's
     eddington = false;
     vet_sc = true;
+    // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp), read when named
+    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
+      vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
+    }
   } else if (cl.compare("tau") == 0) {
     // the multi-D implicit solve reads (chi, n) from the column optical depth
     // (rad_m1_tau.cpp), in the uniaxial form; every other use of chi (explicit wave
