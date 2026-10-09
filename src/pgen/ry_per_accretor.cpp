@@ -68,7 +68,9 @@
 //! discrete WB sense with gas pressure only; the module applies the residual
 //! kappa_t F/c - a_ref and this pgen adds the reference work (split).  Bottom: the
 //! column's flux F(r_in) through the implicit face BC (implicit_bc_x1min = flux,
-//! implicit_flux_x1min checked against the column to 1e-3); top: Marshak/vacuum
+//! implicit_flux_x1min checked against env_lin_band_factor x the column's F(r_in) to
+//! 1e-3; the factor, default 1, is the von Zeipel band equivalent of the 2-D slab and
+//! must be 1 in 3-D); top: Marshak/vacuum
 //! (implicit_bc_x1max = marshak, dark ghosts).  IC: E = a T_col^4, F_r = F_col(psi).
 //! The hot ambient keeps its T relaxation and gets no absorption: <rad_m1>/
 //! opac_abs_rho_max (module key) removes kappa_P, kappa_E below that density and keeps
@@ -219,7 +221,7 @@ Real hist_prev_[kNaccR] = {0.0};
 Real hist_tprev_ = -1.0;
 // <rad_m1> on the envelope (stage S3, accretor-rhd-1008; see the header RADIATION)
 bool rad_ = false;
-Real rad_fin_ = 0.0;           // imposed x1min radiative flux (code), = F_col(r_in)
+Real rad_fin_ = 0.0;           // imposed x1min radiative flux (code), = f_band F_col(r_in)
 Real rad_lfac_ = 1.0;          // code band luminosity -> Lsun of the full sphere
 Real rad_pn0_ = 0.0, rad_ps0_ = 0.0;   // Picard counters at the previous history output
 std::vector<Real> rcol_psi_, rcol_g_, rcol_f_;   // column psi, G(psi), F(psi) [code]
@@ -1342,12 +1344,22 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
   // ---- the imposed bottom flux must be the column's F at psi(r_in, phi 90)
   const Real r_in = pmbp->pmesh->mesh_size.x1min;
   const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, r_in, 0.5*M_PI);
+  // problem/env_lin_band_factor (default 1): L_in = band equivalent of the theta-thin
+  // equatorial slab.  With T = T(psi) and F ~ g (von Zeipel) the band of the Roche-
+  // distorted star radiates <(g/g90)(r/r90)^2/cos alpha>_phi of the phi = 90 column's L at
+  // the photosphere (docs/dev/accretor_rhd/band_luminosity.py: 0.960504 for the Plaskett
+  // gainer, geometric only), and the slab cannot shed flux to the poles; the imposed
+  // bottom flux must then be the factor times F_col(r_in) so that the band radiates what
+  // it receives at the column's T_eff.  A 3-D run (full theta) must use 1.
   rad_fin_ = pin->GetReal("rad_m1", "implicit_flux_x1min");
-  const Real fcol = RadColAt(rcol_f_, psi_in);
+  const Real lbf = pin->GetOrAddReal("problem", "env_lin_band_factor", 1.0);
+  if (!(lbf > 0.0 && lbf <= 1.0)) fatal("problem/env_lin_band_factor must be in (0, 1]");
+  const Real fcol = lbf*RadColAt(rcol_f_, psi_in);
   if (!(std::fabs(rad_fin_/fcol - 1.0) <= 1.0e-3)) {
     std::ostringstream os;
-    os << "<rad_m1>/implicit_flux_x1min = " << rad_fin_ << " but the column has F(r_in) = "
-       << fcol << " (code units, " << fcol*fu << " erg/cm^2/s)";
+    os << "<rad_m1>/implicit_flux_x1min = " << rad_fin_ << " but env_lin_band_factor ("
+       << lbf << ") x the column's F(r_in) = " << fcol << " (code units, " << fcol*fu
+       << " erg/cm^2/s)";
     fatal(os.str());
   }
   // band solid angle -> full sphere, code luminosity -> Lsun
@@ -1408,9 +1420,11 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     const Real g_in = RadColAt(rcol_g_, psi_in);
     std::printf("ry_per_accretor: <rad_m1> force reference: G(psi) over the column (psi "
                 "%.5g .. %.5g), G(r_in) %.6g (km/s)^2 = %.4f psi(r_in); max a_ref %.5g; "
-                "bottom flux %.6g code = %.6g erg/cm^2/s (L %.5g Lsun at r_in, phi 90)\n",
+                "bottom flux %.6g code = %.6g erg/cm^2/s (L %.5g Lsun at r_in, phi 90; "
+                "env_lin_band_factor %.6g)\n",
                 cpsi.front(), cpsi.back(), g_in, g_in/psi_in, amax, rad_fin_,
-                rad_fin_*fu, 4.0*M_PI*SQR(r_in*lu)*rad_fin_*fu/3.828e33);
+                rad_fin_*fu, 4.0*M_PI*SQR(r_in*lu)*rad_fin_*fu/3.828e33,
+                pin->GetReal("problem", "env_lin_band_factor"));
   }
 }
 
