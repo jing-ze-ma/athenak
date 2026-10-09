@@ -1645,7 +1645,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux_beam = halfrange");
     }
     if (impl_muscl && cs_geom) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = plm is not implemented on the cubed sphere");
+      ImplFatal("<rad_m1>/implicit_hr_recon = plm is not implemented on the cubed "
+                "sphere");
     }
   }
   std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
@@ -9012,6 +9013,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   od_now = impl_offdiag;
   vimp_now = impl_vimp;
   muscl_now = impl_muscl;   // xthinfix-1009 Fix B
+  muscl_sigdone = false;
   // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
   // form may drop it for the rest of the step, positivity below)
   vlat_now = vlat_on && (vlat_odm > 0);
@@ -10850,7 +10852,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
         if (muscl_now) {muscl_emin = std::min(muscl_emin, emin);}
         if (!(emin > 0.0) && muscl_now) {
-          muscl_now = false;
+          // Fix B: dc (sig = 0) in the cells within 2 of a cell solved to E <= 0, for
+          // the rest of the step; the next pass rebuilds the row from it (counted)
+          ImplicitMusclKill();
           muscl_nfall += 1.0;
         }
         if (!(emin > 0.0) && vimp_now) {
@@ -10920,7 +10924,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             vimp_nfall += 1.0;
           }
           if (muscl_now) {
-            muscl_now = false;
+            ImplicitMusclKill();
             muscl_nfall += 1.0;
           }
         }
@@ -12244,7 +12248,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
 //! \fn void RadiationM1::ImplicitMusclBuild
 //! \brief implicit_hr_recon = plm (xthinfix-1009 Fix B), once per Picard pass after the
 //! face coefficients (x1: ifw, x2/x3: ifw2/ifw3) of the pass are set.
-//!  (1) sig_d per cell from the lagged E (M1_IW_EP): van Leer, sig = 4ab/(a+b)^2 for
+//!  (1) ONCE PER STEP (first pass; a limiter re-made every pass switches on a few cells
+//!      and the Picard loop limit-cycles: cyl, 200 passes per step), sig_d per cell
+//!      from the step-start E (M1_IW_EP): van Leer, sig = 4ab/(a+b)^2 for
 //!      ab > 0 (a, b the two one-sided differences), else 0, so the face value
 //!      E_c +- s_c/2, s_c = sig_c (E_c+1 - E_c-1)/2, lies between E_c and the neighbour
 //!      at the lagged state (TVD).  sig = 0 next to a physical boundary (its ghost is not
@@ -12281,7 +12287,9 @@ void RadiationM1::ImplicitMusclBuild() {
   const int b = iw_muscl;
   const bool l2 = twod && (bw2_.extent_int(0) > 0);
   const bool l3 = thrd && (bw3_.extent_int(0) > 0);
-  // (1) the frozen limiter
+  // (1) the frozen limiter (once per step)
+  if (!muscl_sigdone) {
+  muscl_sigdone = true;
   par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
@@ -12323,6 +12331,7 @@ void RadiationM1::ImplicitMusclBuild() {
     }
   });
   ImplicitHaloExchange(3, b + M1_IM_SIG);
+  }
   // (2) the row
   par_for("m1_muscl_row", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -12391,6 +12400,62 @@ void RadiationM1::ImplicitMusclBuild() {
       iw_(m,b+M1_IM_X3+q,k,j,i) = cf[2][q];
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitMusclKill
+//! \brief implicit_hr_recon = plm POSITIVITY (xthinfix-1009 Fix B): the plm row is not an
+//! M-matrix (the E_c-2 / E_c+2 coefficients of the inflow faces are positive), so a
+//! solve may give E <= 0.  Then sig = 0 (donor cell) in every cell within 2 cells, along
+//! each axis, of a cell the pass solved to E <= 0 (M1_IW_S2), for the rest of the step;
+//! the next pass rebuilds the row.  Elsewhere the faces keep plm.
+
+void RadiationM1::ImplicitMusclKill() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const bool twod = pmy_pack->pmesh->multi_d;
+  const bool thrd = trans_x3;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const int b = iw_muscl;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  ImplicitHaloExchange(1, M1_IW_S2);
+  par_for("m1_muscl_kill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // physical ghosts are not filled: read only block/periodic ones
+    auto open = [&](const BoundaryFace f) {
+      const BoundaryFlag q = mbbcs(m,f);
+      return (q == BoundaryFlag::block) || (q == BoundaryFlag::periodic);
+    };
+    const bool o2l = open(BoundaryFace::inner_x2), o2h = open(BoundaryFace::outer_x2);
+    const bool o3l = open(BoundaryFace::inner_x3), o3h = open(BoundaryFace::outer_x3);
+    bool neg = false;
+    for (int o = -2; o <= 2; ++o) {
+      int ii = i + o;
+      if (cyclic) {
+        const int n = ie - is + 1;
+        while (ii < is) {ii += n;}
+        while (ii > ie) {ii -= n;}
+      } else {
+        ii = (ii < is) ? is : ((ii > ie) ? ie : ii);
+      }
+      neg = neg || !(iw_(m,M1_IW_S2,k,j,ii) > 0.0);
+      const int jj = j + o, kk = k + o;
+      if (twod && (jj >= js || o2l) && (jj <= je || o2h)) {
+        neg = neg || !(iw_(m,M1_IW_S2,k,jj,i) > 0.0);
+      }
+      if (thrd && (kk >= ks || o3l) && (kk <= ke || o3h)) {
+        neg = neg || !(iw_(m,M1_IW_S2,kk,j,i) > 0.0);
+      }
+    }
+    if (neg) {
+      for (int d = 0; d < 3; ++d) {iw_(m,b+M1_IM_SIG+d,k,j,i) = 0.0;}
+    }
+  });
+  ImplicitHaloExchange(3, b + M1_IM_SIG);
 }
 
 } // namespace radm1
