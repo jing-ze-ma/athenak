@@ -1,0 +1,21 @@
+lines: new 91370 ext2 91370
+comment line positions identical: True ; differing header lines: [3, 9]
+data lines differing: 4470; cells with delta != 0: 4470; differing among unchanged: 0
+max |written - computed| 3.3e-06
+3.450-3.475 taper      cells  216  max|delta| 0.131  mean delta +0.013  (rho_f -15.65 -15.55)
+3.500-4.000 Ferguson   cells 2630  max|delta| 1.616  mean delta -0.019  (rho_f -15.50 -15.40 -15.35 -15.25 -15.20 -15.10 -15.05 -14.95 -14.90 -14.80 -14.75 -14.65 -14.60 -14.50 -14.45 -14.35 -14.30 -14.20 -14.15 -14.05 -14.00)
+4.025-4.175 blend      cells 1024  max|delta| 0.997  mean delta +0.296  (rho_f -13.90 -13.85 -13.75 -13.70 -13.60 -13.55 -13.45)
+4.200-4.250 TOPS       cells  360  max|delta| 0.495  mean delta +0.198  (rho_f -15.00 -15.00 -15.00)
+4.275-4.300 taper      cells  240  max|delta| 0.410  mean delta -0.065  (rho_f -15.00 -15.00)
+  delta at log rho -21: min -1.616 max +1.112
+  delta at log rho -19: min -1.211 max +0.907
+  delta at log rho -17: min -0.954 max +0.542
+ext2: max |kP(rho_f) - kP(rho_f - 1 node)| = 0.0180 at log T 3.775
+new: max |kP(rho_f) - kP(rho_f - 1 node)| = 0.0390 at log T 3.850
+ext2: max |T-row jump| over log T 3.400..4.350, log rho < -13.45: 0.5696
+   low edge 3.400-3.500: max T-row jump 0.2020
+   high edge 4.250-4.350: max T-row jump 0.1055
+new: max |T-row jump| over log T 3.400..4.350, log rho < -13.45: 0.6826
+   low edge 3.400-3.500: max T-row jump 0.2270
+   high edge 4.250-4.350: max T-row jump 0.3362
+untapered delta at the edge rows: max|Dfull| 3.450 0.098, 4.300 0.534

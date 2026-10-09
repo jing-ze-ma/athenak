@@ -1,0 +1,45 @@
+# log T, rho_f node log rho (lowest ext2 node with real data), source, taper weight; TOPS rows: log T and first real log rho
+3.450 -15.65 Ferguson 0.3333
+3.475 -15.55 Ferguson 0.6667
+3.500 -15.50 Ferguson 1.0000
+3.525 -15.40 Ferguson 1.0000
+3.550 -15.35 Ferguson 1.0000
+3.575 -15.25 Ferguson 1.0000
+3.600 -15.20 Ferguson 1.0000
+3.625 -15.10 Ferguson 1.0000
+3.650 -15.05 Ferguson 1.0000
+3.675 -14.95 Ferguson 1.0000
+3.700 -14.90 Ferguson 1.0000
+3.725 -14.80 Ferguson 1.0000
+3.750 -14.75 Ferguson 1.0000
+3.775 -14.65 Ferguson 1.0000
+3.800 -14.60 Ferguson 1.0000
+3.825 -14.50 Ferguson 1.0000
+3.850 -14.45 Ferguson 1.0000
+3.875 -14.35 Ferguson 1.0000
+3.900 -14.30 Ferguson 1.0000
+3.925 -14.20 Ferguson 1.0000
+3.950 -14.15 Ferguson 1.0000
+3.975 -14.05 Ferguson 1.0000
+4.000 -14.00 Ferguson 1.0000
+4.025 -13.90 blend 1.0000
+4.050 -13.85 blend 1.0000
+4.075 -13.75 blend 1.0000
+4.100 -13.70 blend 1.0000
+4.125 -13.60 blend 1.0000
+4.150 -13.55 blend 1.0000
+4.175 -13.45 blend 1.0000
+4.200 -15.00 TOPS 1.0000
+4.225 -15.00 TOPS 1.0000
+4.250 -15.00 TOPS 1.0000
+4.275 -15.00 TOPS 0.6667
+4.300 -15.00 TOPS 0.3333
+# TOPS row 3.7636 floor -15.60
+# TOPS row 3.8428 floor -15.40
+# TOPS row 3.9677 floor -15.40
+# TOPS row 4.0646 floor -15.20
+# TOPS row 4.1615 floor -15.20
+# TOPS row 4.2407 floor -15.00
+# TOPS row 4.3657 floor -15.00
+# TOPS row 4.4626 floor -14.80
+# TOPS row 4.5417 floor -14.60
