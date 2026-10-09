@@ -411,3 +411,81 @@ envelope's thermal time until it radiates the imposed L_in (T_eff(phi 90) then +
   (TASK-2026-10-08-viper-accretor-opacity-tables); rebuild the S0 column and rerun S3a with them.
 - **Stream window radiation:** no injection; vacuum/Marshak window (P_rad/P_gas ~0.7 % at the stream peak, 5.1e-8 g/cc,
   26.2 kK; only the low-mass wings reach order unity).
+
+### 9.y S3a final (2026-10-09): Z 0.02 tables, L_in = band equivalent
+- **Tables:** viper's X 0.70 Z 0.02 GS98 ext2 pair (Rosseland ad516c7e, Planck 99d668f6; md5 checked against
+  docs/handover/accretor-tables-1008/MD5SUMS). Run copies and the column in rhd/s3/final/.
+- **S0 column** (make_ic_accretor_column.py, same EOS dump, defaults): L 4.6822e4 Lsun (phi 90 column, unchanged: L =
+  4 pi R_acc^2 sigma T_eff^4), rho_ph 6.02e-10 g/cc (dev Z 0.008: 6.86e-10), Gamma_edd(ph) 0.350, Fe bump at r 8.5:
+  kappa 2.44, P_rad/P_gas 1.41, Gamma 0.557 (dev: 1.71, 0.79, 0.39); HSE residual 2.2e-6. Schwarzschild-unstable
+  (radiative column, convection not included): r 8.961-8.993 (T 31-46 kK, HeII/H, max nabla - nabla_ad 0.047) and
+  r 8.584-8.790 (T 113-203 kK, Fe bump, max 0.069; dev: 8.637-8.786, 0.040). The physical column is kept (user).
+- **Band factor:** problem/env_lin_band_factor = 0.960504 (band_luminosity.py at psi = 0). It is purely geometric (T =
+  T(psi), F ~ g), so the new tables do not change it. implicit_flux_x1min = 0.960504 x 1453030.1277 = 1395641.2498
+  code (L 44973 Lsun at r_in, phi 90). The column's flux and the force reference G(psi) are left at the column's
+  values: at phi 90 the photospheric flux in the band-equivalent state is F_col (the band deficit comes from the
+  other longitudes); deeper, where the band ratio is 0.9875, F(phi 90) is ~2.7 % below F_col, a 0.4 % error in
+  the reference force at Gamma 0.14, absorbed by the hydrostatic adjustment. **3-D: factor 1 and the full flux.**
+- **Gates (9a706823):** env13 and env13_cool vs 76afb8f4, S2 vs 6e314189: hst, bin and cycle/dt lines identical;
+  the S3a dev input without the new key vs ee94815b (= 1377cdb4 code): hst, cycle/dt and bin data identical.
+- **Static run (stream off, 0.02 orbit, 5840 cycles, 1 H200, rhd/s3/final/static):** Lmeas/L_in 1.0027-1.0065 after
+  t = 2e-4 (last 1.0056), Ltop/L_in 1.0055; T_eff(phi 90 equivalent) 28.34 kK (+0.14 %); photosphere (T_rad =
+  T_eff) moved +2e-3 Rsun at phi 90 (< 1 cell), +2e-3 at phi 0; mass through r_meas 1.2e-12 Menv; envelope rms
+  |v| <= 0.4 km/s (KE share 3.6e-6 above r_meas); budget drift after the transient -1.3e-6 of int L_in dt;
+  0 NON-CONVERGED, 0 floor clips; Picard mean 5.7 (last quarter 3.2), max 15; dt 1.53e-6 (1.06 s); 0.46 s/cycle
+  (vet_col 0.32 s = 69 %). The two unstable zones had not developed visible convection in 0.02 orbit (rms v
+  0.19 km/s in 8.6-8.8).
+- **Diagnostic caveat (pre-existing, same in the dev run):** above the photosphere the CELL-centred F1 (bin output)
+  gives 4 pi r^2 F1 = 0.70-0.80 of the face flux that the history (Lmeas, Ltop) and the energy budget use; the face
+  flux is the conserved one. Below the photosphere they agree to 1 %.
+
+## 10. S3b: the physical Plaskett stream (2026-10-08/09, Caltech, accretor-rhd-1008)
+
+Estimates: docs/dev/accretor_rhd/stream_physics.py (EOS dump + the Z 0.02 Rosseland/Planck tables);
+output in the run directory rhd/s4/stream_physics.out.
+
+### 10.1 Parameters: literature vs env13
+
+| quantity | literature (reference) | env13 / run | note |
+|---|---|---|---|
+| initial masses | 18 + 16.2 Msun, q_i 0.9 (Wade+2026 Sect. 5); Fig. 3 caption 18.2 + 16.8 | M_d 18, M_a 16 | Wade's own text and caption disagree; Sect. 6.4: gainer "M ~ 16 Msun, R ~ 9 Rsun" when it starts accreting |
+| initial period | 3.81 d (Sect. 5); "a 3.7-d orbit" (Discussion) | 3.69 d (a 32.5575 Rsun) | 3.81 d gives a 33.27 Rsun (+2.2 %): every geometric quantity (d_L1, r_out, grid, column, band factor) would move; open decision |
+| Mdot at onset | ~1e-4 Msun/yr (Sect. 6.4) | 1e-4 | same |
+| gainer Teff, L; donor Teff, L, R | not in the text; read from the HR figure (env13: 28.3 kK, log L 4.73; donor 26.2 kK, log L 4.84, R = R_L 12.8) | same | figure read, not tabulated; the Zenodo MESA files would settle it |
+| mass transfer | conservative (assumed by Wade+), non-rotating models | spin 1 | the run's spin 1 is our choice |
+| L1 Mdot factor | Ryu+2025 Eq. 4: isothermal 0.721 - 0.149 tanh^2(0.522 log q) = 0.721; adiabatic 0.649 + ... = 0.649 | 0.721 (isothermal) | |
+| L1 structure | Ryu+2025: isothermal: M 1.1-1.3 at L1, vertical HSE, in-plane expansion at 0.2-0.3 of the overflow speed; adiabatic: M 0.9-1, FWHM 1.2x narrower, peak 1.1x the analytic profile | Gaussian widths sigma_y 0.932 c/(Omega sqrt B), sigma_z c/(Omega sqrt C) at T = 26.2 kK | Ryu+2025 simulate the L1 region only (no radiation); nothing in either paper fixes the stream T |
+| stream T | none | isothermal at the donor Teff 26.2 kK | see 10.2: the L1 gas comes from tau ~1.5e3 in the donor atmosphere |
+| r_out state | none (derived) | rho 5.11e-8 g/cc, width 0.735 (arc), v (-122.9, 55.5) km/s, T 26.2 kK | ballistic orbit and pressure-supported widths (env13 RESULTS.md sect. 2-3) |
+
+### 10.2 What the real stream looks like (estimates)
+- **env13's stream is extremely optically thick** with the real tables: at r_out kappa_R 83 cm^2/g (H-ionisation opacity
+  peak at 26 kK, 5e-8 g/cc), tau across one sigma 2e5 (in plane) and 1.3e5 (vertical); diffusion time 2.6e3 flights
+  (flight L1 -> r_out 3.5e4 s, r_out -> impact ~1.2e4 s). Inside the nsig 3 window the column outside any point
+  has tau >= 13; tau = 1 is reached only at 3.5 sigma (rho 1e-10 g/cc), outside the window. Thin gas cools in
+  ~1e-5 s (kappa_P 2.8e3), i.e. it is always at radiative equilibrium.
+- **An isothermal stream at the donor Teff is not consistent with Mdot 1e-4.** Optically thick overflow (Kolb & Ritter
+  1990 form with Ryu's factor, Mdot = Q 2 pi/(Omega^2 sqrt(BC)) int c_T dP_gas over the donor's grey atmosphere, EOS +
+  Rosseland table, mean donor g 3.0e3) needs the overflow to reach tau ~1.5e3: T_L1 ~ 151 kK, rho_L1 5.2e-8 g/cc,
+  P_rad/P_gas 1.2, c_T 45 km/s, sigma_y,z ~1.15 Rsun (2.4x env13's). With g reduced near L1 (x0.3): 250 kK. The
+  isothermal-at-Teff estimate puts 6.2e-7 g/cc at L1 (12x denser, 2.4x narrower).
+- **Along the flight the core is neither isothermal nor adiabatic:** t_diff/t_flight is 3.6 at L1 and 0.4 at r_out for the
+  adiabatic state. Bounds at r_out (pressure-supported widths, Mdot conserved): adiabatic 77 kK, rho 8.5e-9 g/cc
+  (0.17 code), arc width 1.81, P_rad/P_gas 1.0; one-zone adiabatic + diffusion model 65 kK, rho 1.6e-8 g/cc (0.31 code),
+  arc width 1.33, sigma_z 0.81, P_rad/P_gas 0.33, tau across 4e3. The surface is at the thin radiative-equilibrium T,
+  19.4 kK with both stars, 16.9 kK with the gainer only (vacuum r_out).
+- **Consequence for the no-injection decision (9.x):** its premise (P_rad/P_gas 0.7 % at the peak) holds only for the
+  26.2 kK isothermal stream. The physical stream has P_rad/P_gas 0.3-1 at r_out; injected as gas only, its gas
+  would hand ~40 % of its internal energy to the radiation field in the first cells. This is a decision for the user.
+- **Thin wings and M1:** the window carries only the tau >= 13 part. Where gas is thin (stream surface, window edges,
+  hot ambient interface) the implicit coupling (BE, Newton gas update) puts the gas at the local radiation temperature
+  within one step (t_cool ~1e-5 s << dt ~1 s); vet_col sets the closure along radial columns, so the stream's
+  sideways (phi) radiation is closed with the radial Eddington factor (wrong at the flanks, design sect. 8 risk 3);
+  the slab has no vertical losses (tau_z 1e5 makes that a small error for the core, but not for the surface layer).
+  The hot ambient is masked (electron scattering only), so it does not exchange energy with the stream.
+- **Donor irradiation** (point-source dilution of the donor disc, 26.2 kK, R 12.8): F_irr/F_gainer = 0.23 at the
+  substellar point (phi 0), 0.21 at the impact longitude (14 deg), 0.09 at 45 deg, 0 beyond ~75 deg. It raises the
+  facing photosphere T by up to (1.23)^(1/4) = +5 % and the stream's surface equilibrium T from 16.9 to 19.4 kK.
+  Implementing it needs an incoming-flux term in the module's x1max Marshak BC (rad_m1_implicit.cpp, phi-dependent),
+  i.e. module code; not done. Recommendation: not needed for the first impact/accretion runs (the impact ram pressure
+  is ~2e3 P_ph and the core is opaque), needed before quoting the facing-side photosphere or the stream's cooling.
