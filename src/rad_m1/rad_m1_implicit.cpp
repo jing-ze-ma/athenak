@@ -277,7 +277,8 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
     }
   }
   // implicit_blend_xthin = X0 > 0: a face TRANSPARENT over the step goes upwind whatever
-  // the weight, w -> 1 - (1 - w) (1 - X^2/(X^2 + X0^2)), X = (c dt/dx)/(1 + c dt chi_f) the
+  // the weight, w -> 1 - (1 - w) (1 - X^2/(X^2 + X0^2)), X = (c dt/dx)/(1 + c dt chi_f)
+  // the
   // ratio of the central face coefficient to the upwind one (X -> c dt/dx in vacuum, ->
   // 1/tau_cell in a thick cell).  Mixed faces with X >> 1 make the 7-point system
   // ill-conditioned (BiCGStab 200-550 its or stagnation on xb20) and the central flux has
