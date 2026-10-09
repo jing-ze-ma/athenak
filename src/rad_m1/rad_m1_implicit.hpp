@@ -224,6 +224,11 @@ constexpr int M1_IBLEND_F    = 1;    // w = smoothstep((f_face - f_lo)/(f_hi - f
                                      // DIFFUSE field (f -> 1/2, which is what a grey
                                      // surface with marshak_q = 1/2 has) stays central, a
                                      // beam or a front (f -> 1) goes upwind.
+constexpr int M1_IBLEND_IDF = 5;     // hrup-1009: idort x smoothstep(|H|/J)
+constexpr int M1_IBLEND_IDA = 6;     // hrup-1009: idort x smoothstep(h asymmetry)
+constexpr int M1_IBLEND_KN = 4;      // hrup-1009 (half-range only): Knudsen x tau
+constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + x + x^2/
+                                     // tau0), x = implicit_blend_alpha tau_face
 constexpr int M1_IBLEND_TAUF = 2;    // the product of the two: upwind only where the face
                                      // is thin AND the field is beamed.
 
@@ -311,7 +316,8 @@ constexpr int M1_POS_FLR_DE = 4;   // floor energy taken from the gas (erg)
 constexpr int M1_POS_FLR_UN = 5;   // floor energy NOT covered by the gas (created, erg)
 constexpr int M1_POS_FCLIP  = 6;   // cell-solves whose |F| > c E was scaled back
 constexpr int M1_POS_FCLIPM = 7;   // sum of (|F|/(c E) - 1) over those cell-solves
-constexpr int M1_POS_N      = 8;
+constexpr int M1_POS_FLRS   = 8;   // F3: residual raise below 1e-6 e_floor (x volume)
+constexpr int M1_POS_N      = 9;
 constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
 constexpr int M1_IFW_HCL = 1;   // alpha * (coefficient of E'_L in F_HLL), >= 0
 constexpr int M1_IFW_HCR = 2;   // alpha * (coefficient of E'_R in F_HLL), <= 0

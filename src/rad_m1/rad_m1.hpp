@@ -62,7 +62,8 @@ constexpr int M1_VET_N1  = 13;
 constexpr int M1_VET_D11 = 16;  // vet_tensor = full: the GUARDED D = K/J handed to the
                                 // solve, 11 22 33 12 13 23, ghosts filled (periodic)
 constexpr int M1_VET_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
-constexpr int M1_VET_NC  = 23;
+constexpr int M1_VET_HP1 = 23;  // hrup-1009: sum w I max(mu_a, 0), a = 1 2 3 (half-range)
+constexpr int M1_VET_NC  = 26;
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
@@ -276,6 +277,14 @@ class RadiationM1 {
   // he_star_m1: the frozen MLT flux.
   DvceArray4D<Real> esrc;
   bool esrc_on = false;
+  // rad-beam-1008 <rad_m1>/vet_source_noesrc (default false = bitwise): the vet_col /
+  // vet_col_lat / vet_gd source reads E^n WITHOUT the explicit deposit dt (chat/c) esrc
+  // that the implicit solve's old vector E^n carries (the frozen MLT scaffold): the
+  // deposit is transported away inside the step by the solve, but a LOCAL relaxed
+  // source keeps it in the cell (AG Car A: S up to 10 E at 0.985-0.994 R_ph, L_fs 3 L)
+  // fixbundle-1009 F1: every reader (incl. the vet_col inner-boundary intensity) takes
+  // the physical E^n = u0 directly (be only; dt-free, right for nsub > 1)
+  bool vsrc_noes = false;
 
   // m1-mhd (docs/dev/m1_mhd_0927.md): the fluid is <hydro> or <mhd> (FluidRef,
   // m1_fluid.hpp).  Under MHD the conserved energy carries |B|^2/2, which every kernel
@@ -406,7 +415,14 @@ class RadiationM1 {
   bool impl_pos_floor = false;
   Real impl_pos_gas_frac = 1.0e-3;
   DvceArray1D<Real> pos_cnt_d;
-  Real pos_cnt[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  Real pos_cnt[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  // fixbundle-1009 F3 <rad_m1>/implicit_pos_floor_solve (default false = bitwise): the
+  // T-solve / accept no longer raise the iterate to e_floor (EP = max(S2, e_floor) made
+  // energy that implicit_pos_floor never saw, and the face fluxes rebuilt from the raised
+  // EP no longer matched the solve's): EP = max(S2, 1e-6 e_floor), and the write-back
+  // floor raises E to e_floor with the energy taken from the gas (FLR_DE) or counted
+  // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
+  bool impl_pos_floor_s2 = false;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
@@ -452,6 +468,11 @@ class RadiationM1 {
   // for every pass and take the frozen-opacity gas-T find
   Real impl_thin_frz = 0.0;
   DvceArray4D<Real> thin_frz;   // 1 = frozen cell of this solve (implicit_thin_freeze)
+  // fixbundle-1009 F2 <rad_m1>/implicit_face_opac_n (default false = bitwise): the
+  // step-frozen x1 face data of the blend (alpha, tau_f weight) from rho kappa_T at T^n
+  // (snapshot ktn, taken before the pass-0 opacity update), not at the predicted T
+  bool impl_face_ktn = false;
+  DvceArray4D<Real> ktn;
   Real impl_stall_fac = 0.5;    // implicit_stall_fac (implicit_gas_newton_switch test)
   int impl_gn_sw = 0, impl_gn_sw_min = 20;   // implicit_gas_newton_switch (window, min)
   Real impl_gn_nsw = 0.0;       // solves switched off the gas Newton update
@@ -571,10 +592,34 @@ class RadiationM1 {
   int impl_blend_fmode;         // M1_IBFM_*: max or mean of the two cells' reduced flux
   int impl_blend_mode;          // M1_IBMODE_*: blend the whole flux, or add the HLL
                                 // dissipation alone on top of the full central flux
+  Real impl_blend_xthin = 0.0;    // hrup-1009: transparency override X0 (0 off)
+  Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
+  Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
   Real impl_blend_fhi;          // smoothstep upper edge in the reduced flux
   DvceArray5D<Real> ifw;        // per-x1-FACE work array, M1_NIFW components
+  // blendall-1009: <rad_m1>/implicit_flux_faces = all.  berthon | blend on EVERY face of
+  // the multi-D solve: Cartesian x1/x2/x3 and the sp LATERAL x2/x3 faces (the sp radial
+  // faces keep the sp-blend-1008 path).  ifw2/ifw3 hold M1_IFW_AL/HCL/HCR of the x2/x3
+  // faces (DG unused); the central part of a transverse face keeps 1 - AL through
+  // thx2/thx3.  Off (the default): nothing allocated, every kernel bitwise unchanged.
+  bool impl_flux_all = false;   // the key
+  bool blat_on = false;         // transverse faces carry the berthon/blend coefficients
+  bool bvec_x1 = false;         // Cartesian x1 faces take the multi-D beam vector
+  bool impl_beam_fs = false;    // implicit_flux_beam = fs: |f| = |H|/J of vet_sc
+  // hrup-1009: implicit_flux_beam = halfrange.  Every face flux of the all-faces blend
+  // is (1 - w) F_central + w c (r+_L E_L + r-_R E_R), r+- = H+-/J the HALF-RANGE ratios
+  // along the face normal (vet_sc / vet_gd rays; otherwise the isotropic + beam model of
+  // the lagged closure), w = exp(-(tau_f/tau0)^2) (implicit_blend = tau) or 1 (berthon)
+  bool impl_beam_hr = false;
+  bool impl_hr_model = false;   // implicit_hr_model (no ray data: closure model)
+  bool hr_q = false;            // the per-column outer q from h+_1 (vcol_q)
+  DvceArray5D<Real> vgd_hr, vgd_hrt;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
+  DvceArray1D<Real> vgd_hrm;           // shell mean of one twin component
+  void VetGdHalfRange(const int stage);
+  DvceArray5D<Real> ifw2, ifw3;
+  void ImplicitLatFaceCoef();
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
   // serial Thomas sweep and sends the solution back.
@@ -607,6 +652,11 @@ class RadiationM1 {
   // the imposed-flux boundary hand-off, LIMIT 3.  See ImplicitSolve.
   bool impl_recon_freeze;       // implicit_recon_lag = step: evaluate the deferred
                                 // correction once per step, not once per Picard pass
+  // rad-beam-1008: implicit_recon_dgpass (default false): with the face coefficients
+  // frozen for the step (implicit_recon_lag = step) the plm_dc correction is re-made on
+  // every Picard pass from the iterate's E (plm in E only, the frozen face f), instead of
+  // once from E^n (an explicit anti-diffusion that is unstable: pulse amplitude 2.7-3.5)
+  bool impl_recon_dgpass = false;
   int impl_recon_npass;         // implicit_recon_npass: FREEZE the plm deferred
                                 // correction (and with it the limiter's choice) after
                                 // this many Picard passes, to break the limit cycle the
@@ -655,6 +705,9 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_kr;  // the exchange object of krw
   Real bcg_nsolve, bcg_itsum, bcg_itmax;  // inner-iteration statistics
   Real bcg_nbreak, bcg_nfall, bcg_nred;   // breakdowns, line-Jacobi fallbacks, reductions
+  Real bcg_nkeep;               // fallbacks that kept the Krylov iterate (fallback best)
+  int impl_bcg_maxrst;          // <rad_m1>/implicit_bcg_max_restarts (default 2)
+  bool impl_bcg_keep;           // <rad_m1>/implicit_bcg_fallback = best
   int impl_bcg_sync;            // <rad_m1>/implicit_bcg_sync: 0 = the original loop
                                 // (5 blocking reductions per its), 1 = fused reductions
                                 // (3, the DEFAULT), 2 = 1 plus alpha kept on the device
@@ -1070,6 +1123,7 @@ class RadiationM1 {
   int impl_nec;                 // components of `ecache`
   DvceArray5D<Real> ecache;     // (m,nec,k,j,i) the frozen-density e(T) cache
   bool pin_report_newton_fb = false;   // <rad_m1>/report_newton_fb: print fallback cells
+  DvceArray4D<Real> nfb_buf;   // report_newton_fb: the fallback counts copied to the host
   Real newt_nfb;                // Newton fallbacks to the bracketed root find, whole run
   Real gas_ncell;               // cell-passes of the gas solve, whole run (the scale the
                                 // two counters above and below are read against)
@@ -1207,6 +1261,15 @@ class RadiationM1 {
   ParameterInput *pin_cs_ = nullptr;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
+  // fixbundle-1009 <rad_m1>/dbg_energy_tally (default false, output only): rank 0 prints
+  // at the start and end of every be solve the global sums of the gas total energy, E,
+  // the reference-work accumulator and esrc (x volume): line ETALLY
+  bool dbg_etally = false;
+  void DbgEnergyTally(Real *o);
+  // fixbundle-1009 F4: ApplyClosureLimits clips over ACTIVE cells (0 = E raised to
+  // e_floor, 1 = |F| scaled to c E), every stage, and the event-log totals (collective)
+  DvceArray1D<Real> acl_cnt_d;
+  void EventTotals(Real *v);
   void OnePassAuto(const int t, const bool on, const bool one);
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
   void VetInit(ParameterInput *pin);
@@ -1534,7 +1597,58 @@ class RadiationM1 {
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
-  DvceArray5D<Real> vgd_i;     // (m, d, k, j, i): intensities, ghosts lagged
+  // (m, d, k, j, i): intensities, ghosts lagged.  accel-1009: LayoutLeft (i slowest), so
+  // that one shell of the per-shell sweep and halo is one contiguous ~nd*nk*nj slab (the
+  // LayoutRight array spread every shell over all of its GBs: strided, TLB-bound); the
+  // values and every arithmetic are unchanged (bitwise)
+  // accel-1009 (memory): RAGGED per-shell band.  Shell i stores only the lateral band
+  // its own data needs (wi(i) = vgd_wsh, <= vgd_w; the dense array carried the deepest
+  // band of all shells for every shell: 70 % of the device memory of AG Car A), and a
+  // block only on the sides where a neighbour (edge or corner) is NOT on this rank (an
+  // on-rank neighbour is read in its interior, never through the band).  Index space
+  // unchanged: (m, d, k, j, i) with k, j in the band index space of depth vgd_w; one
+  // slab per (m, i), d fastest, then k, then j.  An access outside
+  // the shell's slab (never, by the band construction) goes to one dummy element and is
+  // counted (VgdRag::oos, reported at the end): the values are bitwise those of the
+  // dense array as long as the count is 0.
+  struct VgdRag {
+    DvceArray1D<Real> d;
+    Kokkos::View<int64_t**, DevMemSpace> off;  // (m, i): first element of slab (m, i)
+    DvceArray1D<int> wi;                       // (i): band depth of shell i
+    DvceArray2D<int> sb;                       // (m, 4): band on side k-, k+, j-, j+
+    DvceArray1D<Real> oos;                     // (0): out-of-slab accesses
+    int nmb = 0, n = 0, nx2 = 0, nx3 = 0, w = 0, c1 = 0;
+    int64_t dummy = 0;
+    // is (k, j) of shell i of block m stored?  (band index space of depth w)
+    KOKKOS_INLINE_FUNCTION
+    bool Has(const int m, const int k, const int j, const int i) const {
+      const int wl = wi(i);
+      const int k0 = w - sb(m,0)*wl, k1 = w + nx3 + sb(m,1)*wl;
+      const int j0 = w - sb(m,2)*wl, j1 = w + nx2 + sb(m,3)*wl;
+      return (k >= k0) && (k < k1) && (j >= j0) && (j < j1);
+    }
+    KOKKOS_INLINE_FUNCTION
+    Real &operator()(const int m, const int v, const int k, const int j,
+                     const int i) const {
+      const int wl = wi(i);
+      const int bk0 = sb(m,0)*wl, bj0 = sb(m,2)*wl;
+      const int c3 = nx3 + bk0 + sb(m,1)*wl, c2 = nx2 + bj0 + sb(m,3)*wl;
+      const int kk = k - (w - bk0), jj = j - (w - bj0);
+      if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {
+        Kokkos::atomic_add(&oos(0), 1.0);
+        return d(dummy);
+      }
+      return d(off(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj));
+    }
+    int extent_int(const int r) const {
+      return (r == 0) ? nmb : (r == 1) ? n : (r == 2) ? (nx3 + 2*w) : (r == 3) ?
+             (nx2 + 2*w) : c1;
+    }
+    size_t extent(const int r) const {return static_cast<size_t>(extent_int(r));}
+  };
+  using VgdIView = VgdRag;
+  VgdIView vgd_i;
+  void VgdRagAlloc(VgdRag &a);
   DvceArray5D<Real> vgd_i_c;
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
@@ -1547,6 +1661,16 @@ class RadiationM1 {
   bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
   DvceArray1D<Real> vgd_twm, vgd_twm2;
   DvceArray5D<Real> vgd_twl, vgd_cs0;
+  // vet_gd_twin_fuse (accel-1009): the twin's own source (ln chi, ln S of the shell
+  // means) and intensities, swept in the main sweep's kernels; vgd_sw2 = this sweep
+  // carries the twin; second compact halo buffers for it
+  bool vgd_twfuse = false, vgd_sw2 = false;
+  bool vgd_twdet = false;      // vet_gd_twin_det: fixed-order (reproducible) shell means
+  bool vgd_twseq = false;      // vet_gd_twin_lowmem: fused twin swept first, one array
+  DvceArray5D<Real> vgd_cst;
+  VgdIView vgd_itw;
+  DvceArray1D<Real> vgd_csb2, vgd_crb2, vgd_rbuf2;
+  void VetGdTwinFusedMoments();
   Real vgd_ttwin = 0.0;
   void VetGdTwin(const int stage);
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
@@ -1608,16 +1732,33 @@ class RadiationM1 {
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hpb[2];
   int vgd_htag[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1} };
   int vgd_hlast = 1, vgd_hsweep = 0;
+  // vet_gd_halo_cache_mb (accel-1009; default 0 = off): byte budget (MB per rank) of a
+  // cache of the compact-halo masks per (pass, shell), valid while the direction set,
+  // the cut and the depth are unchanged (one prep per shell per rotation window instead
+  // of one per shell per sweep); bitwise the same masks
+  struct VgdHcEntry {
+    DvceArray1D<int> fs, fr;
+    Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> pb;
+    Real alpha = -2.0;
+    int scut = -1, ws = -1;
+  };
+  int vgd_hc_mb = 0;
+  std::vector<VgdHcEntry> vgd_hce;
+  size_t vgd_hc_bytes = 0;
+  Real vgd_hc_nmade = 0.0;
+  int VetGdHcGet(const int i, const bool inw, const int ws);
   int vgd_hnext[3] = {-1, 0, 0};
   bool vgd_hpipe = true;
   void VetGdHcPrep(const int slot, const int i0, const bool inw0, const int ws);
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
-  void VetGdHaloCompact(DvceArray5D<Real> &a, const int nv, const int i0, const int ws);
+  template <class V>
+  void VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b = nullptr);
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
-  void VetGdHalo(DvceArray5D<Real> &a, const int nv, const int i0, const int i1,
-                 const int ws, const bool mapd);
+  template <class V>
+  void VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
+                 const bool mapd, V *b = nullptr);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;

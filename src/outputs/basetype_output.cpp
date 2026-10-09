@@ -227,6 +227,17 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
+  if (ivar==164 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR: m1_vsc output needs a <rad_m1> block" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if (ivar==163 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output of the M1 formal-solution moments requested in <output> block '"
+       << out_params.block_name << "' but no RadiationM1 object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==162 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of the M1 face fluxes requested in <output> block '"
@@ -702,6 +713,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // diagonal of the Eddington tensor D = P/E in the coordinate basis (D_11 = D_rr on
     // the spherical-polar wedge), so that P_rad,aa = D_aa E is exact in post-processing.
     // Derived (derived_variables.cpp); not part of variable = m1.
+    if (variable.compare("m1_vsc") == 0) {   // blendall-1009
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_vj",0,&(derived_var));
+      outvars.emplace_back("m1_vh1",1,&(derived_var));
+      outvars.emplace_back("m1_vh2",2,&(derived_var));
+      outvars.emplace_back("m1_vh3",3,&(derived_var));
+      out_params.n_derived += 4;
+    }
     if (variable.compare("m1_vet") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_fk",0,&(derived_var));
@@ -725,6 +744,20 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_fx1o",1,&(derived_var));
       outvars.emplace_back("m1_fx2",2,&(derived_var));
       outvars.emplace_back("m1_fx3",3,&(derived_var));
+      out_params.n_derived += 4;
+    }
+
+    // the moments of the vet_gd formal solution of the LAST build (closure = vet_col with
+    // vet_gd): m1_jfs = sum_d w_d I_d (E units, compare m1_e) and m1_hfs = sum_d w_d
+    // (n_d . r_hat) I_d (= F_r/c, compare m1_f1/c).  Zero where vet_gd is off or below
+    // its first shell.  Diagnostic (sp-blend-1008 GATE2); derived, not part of m1.
+    // m1_sfs, m1_cfs: the source S and extinction chi the sweep used (rad-beam-1008).
+    if (variable.compare("m1_fs") == 0) {
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_jfs",0,&(derived_var));
+      outvars.emplace_back("m1_hfs",1,&(derived_var));
+      outvars.emplace_back("m1_sfs",2,&(derived_var));
+      outvars.emplace_back("m1_cfs",3,&(derived_var));
       out_params.n_derived += 4;
     }
 

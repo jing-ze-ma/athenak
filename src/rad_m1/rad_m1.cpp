@@ -186,6 +186,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_itmax = 0.0;
   bcg_nbreak = 0.0;
   bcg_nfall = 0.0;
+  bcg_nkeep = 0.0;
+  impl_bcg_maxrst = 2;
+  impl_bcg_keep = false;
   bcg_nred = 0.0;
   impl_bcg_sync = 0;
   impl_dtrace = 0;
@@ -797,6 +800,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // 1-D branch) keeps Levermore's
     eddington = false;
     vet_sc = true;
+    // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp), read when named
+    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
+      vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
+    }
   } else if (cl.compare("tau") == 0) {
     // the multi-D implicit solve reads (chi, n) from the column optical depth
     // (rad_m1_tau.cpp), in the uniaxial form; every other use of chi (explicit wave
@@ -875,6 +882,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     }
+    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
+      vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
+    }
     vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);
@@ -950,6 +960,37 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // vet_gd_twin_fuse (accel-1009; read only when named, default false = bitwise): the
+    // twin sweep of the shell-mean field rides in the main sweep's kernels and per-shell
+    // halo (one launch and one message round per shell instead of two); needs
+    // vet_gd_twin, vet_gd_iter = 1, no vet_gd_async / vet_gd_band_exit, and with MPI
+    // vet_gd_halo_compact > 0 (checked in VetGdInit)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_fuse")) {
+      vgd_twfuse = pin->GetBoolean("rad_m1","vet_gd_twin_fuse");
+      if (vgd_twfuse && !vgd_twin) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_fuse needs vet_gd_twin = true"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // vet_gd_twin_lowmem (mem-1009; read only when named, default false): with
+    // vet_gd_twin_fuse, the twin is swept BEFORE the main sweep in the same intensity
+    // array (the unfused path with this build's cut), instead of in a second array that
+    // rides in the main sweep.  Bitwise the fused result (the sweep never reads values of
+    // a previous build: restart = continuous); halves the largest device array (the
+    // ragged band intensities) at the price of a second per-shell sweep and halo
+    if (vgd_twfuse && pin->DoesParameterExist("rad_m1","vet_gd_twin_lowmem") &&
+        pin->GetBoolean("rad_m1","vet_gd_twin_lowmem")) {
+      vgd_twfuse = false;
+      vgd_twseq = true;
+    }
+    // vet_gd_twin_det (accel-1009; read only when named, default false = bitwise): the
+    // twin's shell means summed in a fixed order (thread per shell, rank-ordered MPI)
+    // instead of by atomics, so a GPU run is reproducible run to run
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_det")) {
+      vgd_twdet = pin->GetBoolean("rad_m1","vet_gd_twin_det");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }
@@ -970,6 +1011,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
+    }
+    // vet_gd_halo_cache_mb (accel-1009; read only when named; 0 = off = bitwise path):
+    // per-rank MB budget of the compact-halo mask cache (rad_m1_vetgd.cpp VetGdHcGet)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_cache_mb")) {
+      vgd_hc_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_cache_mb"));
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
       vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");
@@ -1129,9 +1175,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(u0, nmb, M1_NVAR, ncells3, ncells2, ncells1);
   Kokkos::realloc(u1, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
+  // accel-1009 (memory): the face fluxes are the explicit stage's (CalculateFluxes,
+  // RKUpdate, flux correction); the implicit task list never adds them
+  {const bool expl = (transport < M1_TRANSPORT_IMPLICIT_X1);
+  const int f3 = expl ? ncells3 : 1, f2 = expl ? ncells2 : 1, f1 = expl ? ncells1 : 1;
+  Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, f3, f2, f1);
+  Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, f3, f2, f1);
+  Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, f3, f2, f1);}
   // rho*kappa is needed in the GHOST cells too: the face opacity at the first and last
   // active face is the arithmetic mean over a ghost and an active cell.
   // vet_scatter: a 4th component, rho kappa_e (M1_OP_S)

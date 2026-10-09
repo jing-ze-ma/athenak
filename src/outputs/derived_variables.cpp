@@ -1272,6 +1272,21 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
   //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
   //     written and D = 1/3 (isotropic) as a placeholder.
+  if (name.compare("m1_vsc") == 0) {   // blendall-1009: vet_sc J, F/c
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto vc_ = pm->pmb_pack->pradm1->vet_cell;
+    const bool hv = pm->pmb_pack->pradm1->vet_sc && (vc_.extent_int(0) >= nmb);
+    par_for("m1_vsc_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      for (int c = 0; c < 4; ++c) {
+        dv(m,i_dv+c,k,j,i) = hv ? vc_(m,radm1::M1_VET_J+((c == 0) ? 0 : (6 + c)),k,j,i)
+                                : 0.0;
+      }
+    });
+    i_dv += 4;
+  }
   if (name.compare("m1_vet") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1351,6 +1366,45 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       dv(m,i_dv+1,k,j,i) = h1 ? fx1(m,k,j,i+1) : 0.0;
       dv(m,i_dv+2,k,j,i) = h2 ? fx2(m,k,j,i) : 0.0;
       dv(m,i_dv+3,k,j,i) = h3 ? fx3(m,k,j,i) : 0.0;
+    });
+    i_dv += 4;
+  }
+
+  // m1_fs: J and H_r of the vet_gd formal solution (basetype_output.cpp)
+  if (name.compare("m1_fs") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto vi_ = prm->vgd_i;
+    auto cs_ = prm->vgd_cs;
+    auto dir_ = prm->vgd_dir;
+    const int nd = prm->vgd_n;
+    const bool hv = prm->vgd_on && (nd > 0) && (vi_.extent_int(0) >= nmb) &&
+                    (vi_.extent_int(1) >= nd);
+    const int og = prm->vgd_w - indcs.ng;
+    const int ilo = is + prm->vlat_icut;
+    auto &mbsize = pm->pmb_pack->pmb->mb_size;
+    par_for("m1_fs_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real jm = 0.0, hr = 0.0, sv = 0.0, cv = 0.0;
+      if (hv && i >= ilo) {
+        sv = exp(cs_(m,1,k+og,j+og,i));
+        cv = exp(cs_(m,0,k+og,j+og,i));
+        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+        const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+        for (int d = 0; d < nd; ++d) {
+          const Real a = dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
+          const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          jm += wi;
+          hr += wi*a;
+        }
+      }
+      dv(m,i_dv  ,k,j,i) = jm;
+      dv(m,i_dv+1,k,j,i) = hr;
+      dv(m,i_dv+2,k,j,i) = sv;
+      dv(m,i_dv+3,k,j,i) = cv;
     });
     i_dv += 4;
   }

@@ -2435,6 +2435,12 @@ void RadiationM1::VetFree() {
 //! alternative, while the self-wrap of a block that spans the whole period stays exact.
 
 void RadiationM1::VetSweepMB(bool lagged) {
+  // blendall-1009: vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
+  // source and the boundary intensity read the PHYSICAL E^n = u0 under be, not the
+  // solve's old vector E^n + dt (chat/c) esrc (M1_IW_EN)
+  const bool noes_ = vsrc_noes && (time_scheme == M1_TIME_BE);
+  auto esv_ = noes_ ? u0 : iw;
+  const int esc_ = noes_ ? M1_E : M1_IW_EN;
   VetMBState &st = *vet_mbs;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -2486,7 +2492,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
       cs_(m,i-is+1,0,k-ks+w3,j-js+w2) = vc_(m,M1_VET_CHX,k,j,i);
       cs_(m,i-is+1,1,k-ks+w3,j-js+w2) = vc_(m,M1_VET_SRC,k,j,i);
       if (i == is) {
-        bw_(m,0,k-ks,j-js) = iw_(m,M1_IW_EN,k,j,i);
+        bw_(m,0,k-ks,j-js) = esv_(m,esc_,k,j,i);
         bw_(m,1,k-ks,j-js) = iw_(m,M1_IW_F1,k,j,i);
         bw_(m,2,k-ks,j-js) = iw_(m,M1_IW_F2,k,j,i);
         bw_(m,3,k-ks,j-js) = iw_(m,M1_IW_F3,k,j,i);
@@ -2817,7 +2823,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
               } else if (milne) {
                 ib = su + 3.0*fmil/cl*m1;
               } else {
-                Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+                Real e = fmax(esv_(m,esc_,k,j,i), efl);
                 Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
                           + iw_(m,M1_IW_F3,k,j,i)*m3;
                 ib = fmax(e + 3.0*fo/cl, 0.0);
@@ -3041,6 +3047,21 @@ void RadiationM1::VetMBSweeps() {
 //! \fn void RadiationM1::VetShortChar
 
 void RadiationM1::VetShortChar() {
+  // blendall-1009: vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
+  // source and the boundary intensity read the PHYSICAL E^n = u0 under be, not the
+  // solve's old vector E^n + dt (chat/c) esrc (M1_IW_EN)
+  const bool noes_ = vsrc_noes && (time_scheme == M1_TIME_BE);
+  auto esv_ = noes_ ? u0 : iw;
+  const int esc_ = noes_ ? M1_E : M1_IW_EN;
+  // hrup-1009: the half-range sums sum w I max(mu_a, 0) (M1_VET_HP1..3), single-block
+  // sweep only (the banded MB sweep does not carry them)
+  const bool hrs_ = impl_beam_hr;
+  if (hrs_ && vet_mbs != nullptr) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/implicit_flux_beam = halfrange with vet_sc needs the single-"
+              << "block sweep (one MeshBlock, one rank)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   Kokkos::fence();
   Kokkos::Timer timer;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3083,7 +3104,7 @@ void RadiationM1::VetShortChar() {
       q /= nj;
       const int k = ks + q%nk, m = q/nk;
       Real chx = fmax(opd_(m,M1_OP_T,k,j,i), 1.0e-300);
-      Real e = fmax(iwd_(m,M1_IW_EN,k,j,i), efl);
+      Real e = fmax(esv_(m,esc_,k,j,i), efl);
       Real s = e;
       if (thermal) {
         Real tg = iwd_(m,M1_IW_TP,k,j,i);
@@ -3101,6 +3122,9 @@ void RadiationM1::VetShortChar() {
       for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {
         vcd_(m,n,k,j,i) = 0.0;
       }
+      if (hrs_) {
+        for (int n = 0; n < 3; ++n) {vcd_(m,M1_VET_HP1+n,k,j,i) = 0.0;}
+      }
     });
   } else {
     par_for("m1_vet_src", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -3109,7 +3133,7 @@ void RadiationM1::VetShortChar() {
       Real tau = 0.0;
       for (int i = ie; i >= is; --i) {
         Real chx = fmax(opac_(m,M1_OP_T,k,j,i), 1.0e-300);
-        Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+        Real e = fmax(esv_(m,esc_,k,j,i), efl);
         Real s = e;
         if (milne) {
           // exact grey Milne problem: S = J = 3 H (tau + q(tau)), Hopf q fitted
@@ -3158,6 +3182,7 @@ void RadiationM1::VetShortChar() {
       const int iu = is + l, id = ie - l;
       Real acu[10], acd[10];
       for (int n = 0; n < 10; ++n) {acu[n] = 0.0; acd[n] = 0.0;}
+      Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -3181,7 +3206,7 @@ void RadiationM1::VetShortChar() {
               ib = su + 3.0*fmil/cl*m1;
             } else {
               // diffusion: eps = E + 3 (F . Omega)/c from the bottom cell's M1 state
-              Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+              Real e = fmax(esv_(m,esc_,k,j,i), efl);
               Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
                         + iw_(m,M1_IW_F3,k,j,i)*m3;
               ib = fmax(e + 3.0*fo/cl, 0.0);
@@ -3257,11 +3282,23 @@ void RadiationM1::VetShortChar() {
         ac[7] += a*m1;
         ac[8] += a*m2;
         ac[9] += a*m3;
+        if (hrs_) {
+          Real *hp = up ? hpu : hpd;
+          hp[0] += a*fmax(m1, 0.0);
+          hp[1] += a*fmax(m2, 0.0);
+          hp[2] += a*fmax(m3, 0.0);
+        }
       }
       if (accum) {
         for (int n = 0; n < 10; ++n) {
           vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
           vc_(m,M1_VET_J+n,k,j,id) += acd[n];
+        }
+        if (hrs_) {
+          for (int n = 0; n < 3; ++n) {
+            vc_(m,M1_VET_HP1+n,k,j,iu) += hpu[n];
+            vc_(m,M1_VET_HP1+n,k,j,id) += hpd[n];
+          }
         }
       }
     });

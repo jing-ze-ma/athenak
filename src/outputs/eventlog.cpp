@@ -20,6 +20,7 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "outputs.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -59,7 +60,12 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, ptset,   1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, pefde, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, pvcde, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &(pm->ecounter.dfloor_ke), 1, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
 #endif
+  // fixbundle-1009 F4: the <rad_m1> totals (collective: every rank has the module)
+  pm->ecounter.m1on = (pm->pmb_pack->pradm1 != nullptr);
+  if (pm->ecounter.m1on) {pm->pmb_pack->pradm1->EventTotals(pm->ecounter.m1tot);}
 
   // check if there is any data to be written
   no_output = true;
@@ -73,7 +79,9 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
       pm->ecounter.neos_tclamp > 0 ||
       pm->ecounter.neos_tset > 0 ||
       pm->ecounter.efloor_de != 0.0 ||
-      pm->ecounter.vceil_de != 0.0) {
+      pm->ecounter.vceil_de != 0.0 ||
+      pm->ecounter.dfloor_ke != 0.0 ||
+      pm->ecounter.m1on) {
     no_output=false;
   }
 }
@@ -124,6 +132,14 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       std::fprintf(pfile,"#  cycle eos_dfloor eos_efloor eos_tfloor eos_vceil");
       std::fprintf(pfile," eos_fail c2p_it fofc  efloor_de eos_tclamp   eos_tset");
       std::fprintf(pfile,"   vceil_de");
+      // fixbundle-1009 F4 (APPENDED): dfloor_keep_velocity KE removed; with <rad_m1>
+      // the module's totals since the start of the run or restart (EventTotals)
+      std::fprintf(pfile,"  dfloor_ke");
+      if (pm->ecounter.m1on) {
+        std::fprintf(pfile," m1_bcg_break m1_bcg_fall m1_bcg_keep m1_newt_fb");
+        std::fprintf(pfile," m1_gn_switch m1_od_fall m1_vlat_fall m1_opn_skip");
+        std::fprintf(pfile," m1_pos_flr m1_pos_un m1_pos_s2 m1_acl_e m1_acl_f");
+      }
       std::fprintf(pfile,"\n");  // terminate line
       header_written = true;
     }
@@ -150,7 +166,15 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       // APPENDED, so every existing column index is unchanged.
       std::fprintf(pfile, " %11.4e",
                    static_cast<double>(pm->ecounter.vceil_de));
+      std::fprintf(pfile, " %11.4e",
+                   static_cast<double>(pm->ecounter.dfloor_ke));
+      if (pm->ecounter.m1on) {
+        for (int q = 0; q < EventCounters::kNM1Tot; ++q) {
+          std::fprintf(pfile, " %12.5e", static_cast<double>(pm->ecounter.m1tot[q]));
+        }
+      }
       std::fprintf(pfile,"\n"); // terminate line
+      std::fflush(pfile);
     }
     std::fclose(pfile);
   }
@@ -167,6 +191,7 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   pm->ecounter.neos_tset = 0;
   pm->ecounter.efloor_de = 0.0;
   pm->ecounter.vceil_de = 0.0;
+  pm->ecounter.dfloor_ke = 0.0;
 
   // increment output time, clean up
   if (out_params.last_time < 0.0) {
