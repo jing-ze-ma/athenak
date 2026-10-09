@@ -1576,8 +1576,43 @@ class RadiationM1 {
   // that one shell of the per-shell sweep and halo is one contiguous ~nd*nk*nj slab (the
   // LayoutRight array spread every shell over all of its GBs: strided, TLB-bound); the
   // values and every arithmetic are unchanged (bitwise)
-  using VgdIView = Kokkos::View<Real *****, Kokkos::LayoutLeft, DevMemSpace>;
+  // accel-1009 (memory): RAGGED per-shell band.  Shell i stores only the lateral band
+  // its own data needs (wi(i) = vgd_wsh, <= vgd_w; the dense array carried the deepest
+  // band of all shells for every shell: 70 % of the device memory of AG Car A).  Index
+  // space unchanged: (m, d, k, j, i) with k, j in the band index space of depth vgd_w;
+  // within a shell (m, d, k, j) is LayoutLeft-ordered (m fastest).  An access outside
+  // the shell's slab (never, by the band construction) goes to one dummy element and is
+  // counted (VgdRag::oos, reported at the end): the values are bitwise those of the
+  // dense array as long as the count is 0.
+  struct VgdRag {
+    DvceArray1D<Real> d;
+    Kokkos::View<int64_t*, DevMemSpace> off;   // (i): first element of shell i
+    DvceArray1D<int> wi;                       // (i): band depth of shell i
+    DvceArray1D<Real> oos;                     // (0): out-of-slab accesses
+    int nmb = 0, n = 0, nx2 = 0, nx3 = 0, w = 0, c1 = 0;
+    int64_t dummy = 0;
+    KOKKOS_INLINE_FUNCTION
+    Real &operator()(const int m, const int v, const int k, const int j,
+                     const int i) const {
+      const int wl = wi(i), s = w - wl;
+      const int kk = k - s, jj = j - s;
+      const int c3 = nx3 + 2*wl, c2 = nx2 + 2*wl;
+      if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {
+        Kokkos::atomic_add(&oos(0), 1.0);
+        return d(dummy);
+      }
+      return d(off(i) + m + static_cast<int64_t>(nmb)*(v + static_cast<int64_t>(n)
+                                                       *(kk + static_cast<int64_t>(c3)*jj)));
+    }
+    int extent_int(const int r) const {
+      return (r == 0) ? nmb : (r == 1) ? n : (r == 2) ? (nx3 + 2*w) : (r == 3) ?
+             (nx2 + 2*w) : c1;
+    }
+    size_t extent(const int r) const {return static_cast<size_t>(extent_int(r));}
+  };
+  using VgdIView = VgdRag;
   VgdIView vgd_i;
+  void VgdRagAlloc(VgdRag &a);
   DvceArray5D<Real> vgd_i_c;
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)

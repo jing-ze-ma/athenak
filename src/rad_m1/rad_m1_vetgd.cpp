@@ -347,8 +347,7 @@ void RadiationM1::VetGdInit() {
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
-  Kokkos::realloc(vgd_i, nmb, n, c3w, c2w, c1);
-  Kokkos::deep_copy(vgd_i, 0.0);
+  VgdRagAlloc(vgd_i);
   Kokkos::realloc(vgd_cs, nmb, 2, c3w, c2w, c1);
   Kokkos::realloc(vgd_wall, nmb, c3w, c2w);
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
@@ -364,8 +363,7 @@ void RadiationM1::VetGdInit() {
       VgdFatal("vet_gd_twin_fuse needs vet_gd_iter = 1, no vet_gd_async / "
                "vet_gd_band_exit, and vet_gd_halo_compact > 0 when the halo uses MPI");
     }
-    Kokkos::realloc(vgd_itw, nmb, n, c3w, c2w, c1);
-    Kokkos::deep_copy(vgd_itw, 0.0);
+    VgdRagAlloc(vgd_itw);
     Kokkos::realloc(vgd_cst, nmb, 2, c3w, c2w, c1);
     if (vgd_hmpi) {
       Kokkos::realloc(vgd_csb2, vgd_csb.extent(0));
@@ -1917,20 +1915,23 @@ void RadiationM1::VetGdPost() {
   const char *fi = std::getenv("VGD_DUMP_I");
   if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
     // the file keeps the LayoutRight (m, d, k, j, i) order of the old array
-    auto vl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i);
-    HostArray5D<Real> vi_h("vgd_i_dump", vl_h.extent(0), vl_h.extent(1),
-                           vl_h.extent(2), vl_h.extent(3), vl_h.extent(4));
-    for (size_t a0 = 0; a0 < vl_h.extent(0); ++a0) {
-      for (size_t a1 = 0; a1 < vl_h.extent(1); ++a1) {
-        for (size_t a2 = 0; a2 < vl_h.extent(2); ++a2) {
-          for (size_t a3 = 0; a3 < vl_h.extent(3); ++a3) {
-            for (size_t a4 = 0; a4 < vl_h.extent(4); ++a4) {
-              vi_h(a0,a1,a2,a3,a4) = vl_h(a0,a1,a2,a3,a4);
-            }
-          }
-        }
+    // (the ragged array expanded on the device; the band beyond a shell's own depth
+    // is written as 0)
+    DvceArray5D<Real> dd("vgd_i_dump", vgd_i.extent(0), vgd_i.extent(1),
+                         vgd_i.extent(2), vgd_i.extent(3), vgd_i.extent(4));
+    auto vr_ = vgd_i;
+    const int dw = vgd_w, dn2 = vr_.nx2, dn3 = vr_.nx3;
+    par_for("m1_vgd_dump", DevExeSpace(), 0, vr_.extent_int(0) - 1, 0,
+            vr_.extent_int(1) - 1, 0, vr_.extent_int(2) - 1, 0, vr_.extent_int(4) - 1,
+    KOKKOS_LAMBDA(const int m, const int v, const int k, const int i) {
+      const int s = dw - vr_.wi(i);
+      for (int j = 0; j < dn2 + 2*dw; ++j) {
+        const bool in = (k >= s) && (k < dn3 + 2*dw - s) && (j >= s) &&
+                        (j < dn2 + 2*dw - s);
+        dd(m,v,k,j,i) = in ? vr_(m,v,k,j,i) : 0.0;
       }
-    }
+    });
+    auto vi_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dd);
     FILE *fp = std::fopen(fi, "wb");
     if (fp != nullptr) {
       int64_t sh[5];
@@ -2628,6 +2629,51 @@ void RadiationM1::VetGdTwin(const int stage) {
     tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - mt_(i);
     for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdRagAlloc
+//! \brief the ragged intensity array (see VgdRag in rad_m1.hpp): shell i gets the band
+//! depth vgd_wsh[i] (its data's deepest read), the ghost shells none; zero-filled
+
+void RadiationM1::VgdRagAlloc(VgdRag &a) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  a.nmb = pmy_pack->nmb_thispack;
+  a.n = vgd_n;
+  a.nx2 = indcs.nx2;
+  a.nx3 = indcs.nx3;
+  a.w = vgd_w;
+  a.c1 = c1;
+  Kokkos::realloc(a.off, c1);
+  Kokkos::realloc(a.wi, c1);
+  Kokkos::realloc(a.oos, 1);
+  auto off_h = Kokkos::create_mirror_view(a.off);
+  auto wi_h = Kokkos::create_mirror_view(a.wi);
+  int64_t tot = 0;
+  for (int i = 0; i < c1; ++i) {
+    int wl = 0;
+    if (i >= indcs.is && i <= indcs.ie) {
+      wl = std::max(vgd_wsh[i], std::max(vgd_wsi[i], vgd_wso[i]));
+      wl = std::min(wl, vgd_w);
+    }
+    wi_h(i) = wl;
+    off_h(i) = tot;
+    tot += static_cast<int64_t>(a.nmb)*a.n*(a.nx3 + 2*wl)*(a.nx2 + 2*wl);
+  }
+  a.dummy = tot;
+  Kokkos::deep_copy(a.off, off_h);
+  Kokkos::deep_copy(a.wi, wi_h);
+  Kokkos::realloc(a.d, tot + 1);
+  Kokkos::deep_copy(a.d, 0.0);
+  Kokkos::deep_copy(a.oos, 0.0);
+  if (global_variable::my_rank == 0) {
+    const double dense = static_cast<double>(a.nmb)*a.n*(a.nx3 + 2*vgd_w)*
+                         (a.nx2 + 2*vgd_w)*c1;
+    std::cout << "<rad_m1> vet_gd: ragged per-shell band intensity array "
+              << tot*sizeof(Real)/1.0e9 << " GB per rank (dense band "
+              << dense*sizeof(Real)/1.0e9 << " GB)" << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------

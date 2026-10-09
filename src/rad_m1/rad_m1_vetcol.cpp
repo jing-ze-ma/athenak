@@ -1580,6 +1580,20 @@ void RadiationM1::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
+      {
+        // accel-1009 ragged band: accesses outside a shell's slab (must be 0)
+        Real no = 0.0, nt = 0.0;
+        if (vgd_i.oos.extent(0) > 0) {
+          auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i.oos);
+          no = h(0);
+        }
+        if (vgd_itw.oos.extent(0) > 0) {
+          auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_itw.oos);
+          nt = h(0);
+        }
+        std::cout << "<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main "
+                  << no << " twin " << nt << std::endl;
+      }
       if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet) {
         std::cout << "<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=" << vgd_twfuse
                   << " vet_gd_twin_det=" << vgd_twdet << " halo mask cache: "
