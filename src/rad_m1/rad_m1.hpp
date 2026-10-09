@@ -1769,6 +1769,7 @@ class RadiationM1 {
     Real alpha = -2.0;
     int scut = -1, ws = -1, ns = 0, nr = 0, nw = 0;
     int64_t gen = -1;             // build id (> 0) while valid
+    bool nofit = false;           // over the budget for (alpha, scut, ws)
     size_t bytes = 0;
   };
   int vgd_hl_mb = 4096;

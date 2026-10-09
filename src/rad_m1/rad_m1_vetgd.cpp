@@ -1266,6 +1266,11 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
   if (after > have) {
     const size_t cap = static_cast<size_t>(vgd_hl_mb) << 20;
     if (vgd_hl_bytes + sizeof(int)*(after - have) > cap) {
+      // over the budget: no new attempt for this mask set (the dense path as before)
+      E.alpha = vgd_alpha;
+      E.scut = vgd_scut;
+      E.ws = ws;
+      E.nofit = true;
       return false;
     }
     for (int q = 0; q < 5; ++q) {
@@ -1337,6 +1342,7 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
   E.scut = vgd_scut;
   E.ws = ws;
   E.gen = ++vgd_hl_gen;
+  E.nofit = false;
   vgd_hl_nmade += 1.0;
   return true;
 #else
@@ -1606,7 +1612,10 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
   // vet_gd_halo_list_mb: the lists of X from this exchange's masks (when X is not valid
   // for them), made before the masks' slot can be reused by the pipelined prep below
   if (lst) {
-    if (!xvalid()) {
+    const VgdHlEntry &X0 = vgd_hle[ex];
+    const bool nofit = X0.nofit && X0.alpha == vgd_alpha && X0.scut == vgd_scut &&
+                       X0.ws == ws;
+    if (!xvalid() && !nofit) {
       std::vector<int> pbv(sp);
       pbv.insert(pbv.end(), rp_.begin(), rp_.end());
       VetGdHlBuild(ex, i, inw, ws, fs_, fr_, pbv);
