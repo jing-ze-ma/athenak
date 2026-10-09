@@ -1055,12 +1055,24 @@ void VetTBLaunch(const char *name, const int nmb, const int nray, const int la,
 //! ac[]: the rays in the order and with the arithmetic of the per-cell kernel; the
 //! intensities are loaded eight at a time so that the loads of a thread overlap.  rl_
 //! maps a ray slot to its angle (the identity unless rl = true).
+//! hrmb-1009: hr = true (implicit_flux_beam = halfrange) also adds the half-range sums
+//! sum w I max(mu_a, 0) into ac[10..12] (ac then has VET_NMOM_HR entries), with the
+//! arithmetic of the single-block sweep (VetShortChar).
+
+constexpr int VET_NMOM = 10;      // J, K_ab (6), H_a (3)
+constexpr int VET_NMOM_HR = 13;   // + the half-range sums (M1_VET_HP1..3)
+
+//! the vet_cell slot of moment n of the banded sweep's moment arrays
+KOKKOS_INLINE_FUNCTION
+int VetMomSlot(const int n) {
+  return (n < VET_NMOM) ? (M1_VET_J + n) : (M1_VET_HP1 + n - VET_NMOM);
+}
 
 template <class IP>
 KOKKOS_INLINE_FUNCTION
-void VetMomAdd(Real ac[10], const bool upw, const int r0, const int r1, const IP &ipr,
+void VetMomAdd(Real ac[], const bool upw, const int r0, const int r1, const IP &ipr,
                const DvceArray2D<Real> &ang_, const DvceArray1D<int> &rl_,
-               const bool rl) {
+               const bool rl, const bool hr = false) {
   for (int q0 = r0; q0 < r1; q0 += 8) {
     Real iv[8];
     for (int u = 0; u < 8; ++u) {
@@ -1081,6 +1093,11 @@ void VetMomAdd(Real ac[10], const bool upw, const int r0, const int r1, const IP
       ac[7] += a*m1;
       ac[8] += a*m2;
       ac[9] += a*m3;
+      if (hr) {
+        ac[10] += a*fmax(m1, 0.0);
+        ac[11] += a*fmax(m2, 0.0);
+        ac[12] += a*fmax(m3, 0.0);
+      }
     }
   }
 }
@@ -1114,6 +1131,7 @@ void VetRayMomLaunch(const char *name, const int nmb, const int nray, const int 
   auto lx_ = rk.lx;
   auto ang_ = rk.ang;
   DvceArray1D<int> nol_;   // VetMomAdd's ray list: not used (rl = false)
+  const bool hr = (vt_.extent_int(1) > VET_NMOM);   // hrmb-1009: + half-range sums
   // launch bounds 512: the default 1024-thread bound caps the registers of the ray
   // arithmetic (spills)
   using Pol = Kokkos::TeamPolicy<Kokkos::LaunchBounds<512, 1>>;
@@ -1160,23 +1178,29 @@ void VetRayMomLaunch(const char *name, const int nmb, const int nray, const int 
       if (h == 1 && same) return;
       const int k = k0 + kk - b3, j = j0 + jj - b2;
       auto ipr = [&](const int r) { return si(r*ch + jx); };
-      Real ac[10];
-      for (int n = 0; n < 10; ++n) {
+      Real ac[VET_NMOM_HR];
+      for (int n = 0; n < VET_NMOM_HR; ++n) {
         ac[n] = 0.0;
       }
       VetMomAdd(ac, h == 0, (h == 0) ? 0 : nh, (h == 0) ? nh : nray, ipr, ang_, nol_,
-                false);
+                false, hr);
       const int i = i0 + ((h == 0) ? lu : ld);
-      for (int n = 0; n < 10; ++n) {
+      for (int n = 0; n < VET_NMOM; ++n) {
         vt_(m,n0 + n,i,k,j) += ac[n];
       }
+      if (hr) {
+        for (int n = VET_NMOM; n < VET_NMOM_HR; ++n) {vt_(m,n0 + n,i,k,j) += ac[n];}
+      }
       if (h == 0 && same) {
-        for (int n = 0; n < 10; ++n) {
+        for (int n = 0; n < VET_NMOM_HR; ++n) {
           ac[n] = 0.0;
         }
-        VetMomAdd(ac, false, nh, nray, ipr, ang_, nol_, false);
-        for (int n = 0; n < 10; ++n) {
+        VetMomAdd(ac, false, nh, nray, ipr, ang_, nol_, false, hr);
+        for (int n = 0; n < VET_NMOM; ++n) {
           vt_(m,n0 + n,i,k,j) += ac[n];
+        }
+        if (hr) {
+          for (int n = VET_NMOM; n < VET_NMOM_HR; ++n) {vt_(m,n0 + n,i,k,j) += ac[n];}
         }
       }
     });
@@ -1203,6 +1227,7 @@ void VetMomLaunch(const int nmb, const int nray, const int l0, const int l1,
                   const DvceArray2D<Real> &ang_, const DvceArray1D<int> &rl_,
                   const int nh, const int n0) {
   const int nl2 = 2*(l1 - l0 + 1);
+  const bool hr = (vc_.extent_int(1) > VET_NMOM);   // hrmb-1009: + half-range sums
   VetFor("m1_vet_mb_mom", nmb*nl2*nx3*nx2, KOKKOS_LAMBDA(const int t) {
     const int jx = t%nx2;
     int q = t/nx2;
@@ -1218,27 +1243,35 @@ void VetMomLaunch(const int nmb, const int nray, const int l0, const int l1,
     const bool both = (lo >= l0 && lo <= l1);
     if (!upt && both) return;
     const int kc = b3 + kx, jc = b2 + jx;
-    Real ac[10];
-    for (int n = 0; n < 10; ++n) {
+    Real ac[VET_NMOM_HR];
+    for (int n = 0; n < VET_NMOM_HR; ++n) {
       ac[n] = 0.0;
     }
     const int pc = lc%nring;
     auto ipr = [&](const int r) { return ip_(m,pc,r,kc,jc); };
-    VetMomAdd(ac, upt, upt ? 0 : nh, upt ? nh : nray, ipr, ang_, rl_, false);
-    Real ad[10];
+    VetMomAdd(ac, upt, upt ? 0 : nh, upt ? nh : nray, ipr, ang_, rl_, false, hr);
+    Real ad[VET_NMOM_HR];
     if (both) {
-      for (int n = 0; n < 10; ++n) {
+      for (int n = 0; n < VET_NMOM_HR; ++n) {
         ad[n] = 0.0;
       }
       const int po = lo%nring;
       auto ipo = [&](const int r) { return ip_(m,po,r,kc,jc); };
-      VetMomAdd(ad, false, nh, nray, ipo, ang_, rl_, false);
+      VetMomAdd(ad, false, nh, nray, ipo, ang_, rl_, false, hr);
     }
     const int k = ks + kx, j = js + jx, i = is + li;
-    for (int n = 0; n < 10; ++n) {
+    for (int n = 0; n < VET_NMOM; ++n) {
       vc_(m,n0+n,i,k,j) += ac[n];
       if (both) {
         vc_(m,n0+n,i,k,j) += ad[n];
+      }
+    }
+    if (hr) {
+      for (int n = VET_NMOM; n < VET_NMOM_HR; ++n) {
+        vc_(m,n0+n,i,k,j) += ac[n];
+        if (both) {
+          vc_(m,n0+n,i,k,j) += ad[n];
+        }
       }
     }
   });
@@ -1261,7 +1294,8 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
                const int js, const int ks) {
   const int cj = 16;
   const int nch = (nx2 + cj - 1)/cj;
-  const int lg = nmb*10*nx3*nch;
+  const int nmo = mo_.extent_int(1);   // 10, or 13 with the half-range sums (hrmb-1009)
+  const int lg = nmb*nmo*nx3*nch;
   const size_t scr = ScrArray1D<Real>::shmem_size(static_cast<size_t>(nx1)*cj);
 #if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA)
   Kokkos::TeamPolicy<> pol(DevExeSpace(), lg, 256);
@@ -1280,7 +1314,7 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
     int q = lgi/nch;
     const int k = q%nx3;
     q /= nx3;
-    const int n = q%10, m = q/10;
+    const int n = q%nmo, m = q/nmo;
     const int j0 = c*cj;
     const int ncj = (nx2 - j0 < cj) ? (nx2 - j0) : cj;
     ScrArray1D<Real> tl(tm.team_scratch(lv), nx1*cj);
@@ -1289,7 +1323,7 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
       const int j = j0 + jj;
       Real v;
       if (ng > 1) {
-        const int t = (((m*10 + n)*nx1 + i)*nx3 + k)*nx2 + j;
+        const int t = (((m*nmo + n)*nx1 + i)*nx3 + k)*nx2 + j;
         Real sum = 0.0;
         for (int p = 0; p < ng; ++p) {
           const Real w = (p == gp) ? mo_(so + m,n,i,k,j) : rv_(p,t);
@@ -1305,7 +1339,7 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
     tm.team_barrier();
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nx1*ncj), [&](const int u) {
       const int i = u%nx1, jj = u/nx1;
-      vc_(m,M1_VET_J + n,ks + k,js + j0 + jj,is + i) = tl(i*cj + jj);
+      vc_(m,VetMomSlot(n),ks + k,js + j0 + jj,is + i) = tl(i*cj + jj);
     });
   });
 }
@@ -1414,6 +1448,8 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
   auto gof_ = st.gofd.d_view;
   auto gdx_ = st.gdx;
   const int nrm = st.nrm, nring = st.nring, nbat = st.nbat;
+  const int nmo = gm_.extent_int(1);         // 10, or 13 with the half-range sums
+  const bool hr = (nmo > VET_NMOM);          // hrmb-1009
   for (int l = 0; l < nx1g; ++l) {
     const int pw = l%nring, pr = (l + nring - 1)%nring;
     VetFor("m1_vet_ang_ray", nrm*n3g*n2g, KOKKOS_LAMBDA(const int t) {
@@ -1511,25 +1547,33 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
       const int lo = upt ? (nx1g - 1 - g) : g;
       const bool both = (lo >= l0 && lo <= l1);
       if (!upt && both) return;
-      Real ac[10], ad[10];
-      for (int n = 0; n < 10; ++n) {
+      Real ac[VET_NMOM_HR], ad[VET_NMOM_HR];
+      for (int n = 0; n < VET_NMOM_HR; ++n) {
         ac[n] = 0.0;
         ad[n] = 0.0;
       }
       const int pc = lc%nring, po = lo%nring;
       auto ipr = [&](const int r) { return gp_(pc,r,k,j); };
-      VetMomAdd(ac, upt, 0, nrm, ipr, ang_, rl_, true);
+      VetMomAdd(ac, upt, 0, nrm, ipr, ang_, rl_, true, hr);
       if (both) {
         auto ipo = [&](const int r) { return gp_(po,r,k,j); };
-        VetMomAdd(ad, false, 0, nrm, ipo, ang_, rl_, true);
+        VetMomAdd(ad, false, 0, nrm, ipo, ang_, rl_, true, hr);
       }
       const int kb = k/nx3, jb = j/nx2;
       const int gg = gof_((kb*nbx2 + jb)*nbx1 + g/nx1);
       const int kl = k - kb*nx3, jl = j - jb*nx2, il = g - (g/nx1)*nx1;
-      for (int n = 0; n < 10; ++n) {
+      for (int n = 0; n < VET_NMOM; ++n) {
         gm_(gg,n,kl,jl,il) += ac[n];
         if (both) {
           gm_(gg,n,kl,jl,il) += ad[n];
+        }
+      }
+      if (hr) {
+        for (int n = VET_NMOM; n < VET_NMOM_HR; ++n) {
+          gm_(gg,n,kl,jl,il) += ac[n];
+          if (both) {
+            gm_(gg,n,kl,jl,il) += ad[n];
+          }
         }
       }
     });
@@ -1557,21 +1601,21 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
     MPI_Waitall(static_cast<int>(rq.size()), rq.data(), MPI_STATUSES_IGNORE);
   }
 #endif
-  const int g0 = st.mdsp[me]/(10*ncb);
-  VetFor("m1_vet_ang_unpk", nmb*10*ncb, KOKKOS_LAMBDA(const int t) {
+  const int g0 = st.mdsp[me]/(nmo*ncb);
+  VetFor("m1_vet_ang_unpk", nmb*nmo*ncb, KOKKOS_LAMBDA(const int t) {
     const int i = t%nx1;
     int q = t/nx1;
     const int j = q%nx2;
     q /= nx2;
     const int k = q%nx3;
     q /= nx3;
-    const int n = q%10, m = q/10;
+    const int n = q%nmo, m = q/nmo;
     Real sum = 0.0;
     for (int p = 0; p < np; ++p) {
       const Real v = (p == me) ? gm_(g0 + m,n,k,j,i) : rv_(p,t);
       sum = (p == 0) ? v : (sum + v);
     }
-    vc_(m,M1_VET_J + n,ks + k,js + j,is + i) = sum;
+    vc_(m,VetMomSlot(n),ks + k,js + j,is + i) = sum;
   });
   Kokkos::deep_copy(gm_, 0.0);
 }
@@ -1729,6 +1773,9 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       (thrd && (mindcs.nx3 % nx3) != 0)) {
     VetFatal("<rad_m1>/closure = vet_sc on several MeshBlocks needs a uniform mesh");
   }
+  // hrmb-1009: moments per cell of the sweep's moment arrays (mom, gmom, rrcv): the ten
+  // of J, K, H, plus the three half-range sums under implicit_flux_beam = halfrange
+  const int nmo = impl_beam_hr ? VET_NMOM_HR : VET_NMOM;
   st.nbx1 = mindcs.nx1/nx1;
   const int nbx2 = mindcs.nx2/nx2;
   const int nbx3 = thrd ? (mindcs.nx3/nx3) : 1;
@@ -2198,9 +2245,9 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     const int ncb = nx3e*nx2*nx1, chunk = 2*ncb + 4*nx3e*nx2;
     Kokkos::realloc(st.gsnd, nmb*chunk);
     Kokkos::realloc(st.gbuf, nsb*chunk);
-    Kokkos::realloc(st.rrcv, ngr, nmb*10*ncb);
+    Kokkos::realloc(st.rrcv, ngr, nmb*nmo*ncb);
   }
-  Kokkos::realloc(st.mom, nsb, 10, nx1, nx3e, nx2);
+  Kokkos::realloc(st.mom, nsb, nmo, nx1, nx3e, nx2);
   Kokkos::deep_copy(st.mom, 0.0);
 
   Kokkos::realloc(st.csw, nsb, nx1 + 2, 2, st.n3w, st.n2w);
@@ -2251,8 +2298,8 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     for (int rk = 0; rk < np; ++rk) {
       st.gcnt[rk] = pm->nmb_eachrank[rk]*chunk;
       st.gdsp[rk] = pm->gids_eachrank[rk]*chunk;
-      st.mcnt[rk] = pm->nmb_eachrank[rk]*10*ncb;
-      st.mdsp[rk] = pm->gids_eachrank[rk]*10*ncb;
+      st.mcnt[rk] = pm->nmb_eachrank[rk]*nmo*ncb;
+      st.mdsp[rk] = pm->gids_eachrank[rk]*nmo*ncb;
     }
     Kokkos::realloc(st.gsnd, nmb*chunk);
     Kokkos::realloc(st.gbuf, st.nmbt*chunk);
@@ -2315,8 +2362,8 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     }
     Kokkos::deep_copy(st.rlist, rlh);
     Kokkos::realloc(st.gip, st.nring, st.nrm, st.n3g, st.n2g);
-    Kokkos::realloc(st.gmom, st.nmbt, 10, nx3e, nx2, nx1);
-    Kokkos::realloc(st.rrcv, np, nmb*10*ncb);
+    Kokkos::realloc(st.gmom, st.nmbt, nmo, nx3e, nx2, nx1);
+    Kokkos::realloc(st.rrcv, np, nmb*nmo*ncb);
     Kokkos::deep_copy(st.gmom, 0.0);
     if (me == 0) {
       const double mb = 8.0e-6*(static_cast<double>(st.gsnd.size()) + st.gbuf.size()
@@ -2326,6 +2373,10 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
                 << " rays on rank 0, whole mesh per rank: " << mb
                 << " MB of angle-sweep buffers on rank 0" << std::endl;
     }
+  }
+  if (st.nlag > 0 && impl_beam_hr) {
+    VetFatal("<rad_m1>/vet_mb_lag (diagnostic) does not carry the half-range sums of "
+             "implicit_flux_beam = halfrange");
   }
   if (st.nlag > 0 && (st.hk > 1 || st.ovl)) {
     VetFatal("<rad_m1>/vet_mb_lag needs vet_mb_halo = 1 and vet_mb_overlap = false");
@@ -2450,6 +2501,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const int nx3 = trans_x3 ? indcs.nx3 : 1;
   const int nmb = pmy_pack->nmb_thispack;
   const bool thrd = trans_x3;
+  const bool hrs_ = impl_beam_hr;   // hrmb-1009: the half-range sums (cell kernel)
   const int nray = vet_nray, nh = vet_nray/2;
   // the sweep blocks and local rays (= nmb, nray, nh without vet_mb_agroup)
   const int nsb = st.nsb, nrl = st.nrl, nhl = st.nhl;
@@ -2803,6 +2855,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
           acu[n] = 0.0;
           acd[n] = 0.0;
         }
+        Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};   // hrmb-1009
         for (int r = 0; r < nray; ++r) {
           const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
           const bool up = (m1 > 0.0);
@@ -2895,6 +2948,12 @@ void RadiationM1::VetSweepMB(bool lagged) {
           ac[7] += a*m1;
           ac[8] += a*m2;
           ac[9] += a*m3;
+          if (hrs_) {   // hrmb-1009: the half-range sums, as VetShortChar
+            Real *hp = up ? hpu : hpd;
+            hp[0] += a*fmax(m1, 0.0);
+            hp[1] += a*fmax(m2, 0.0);
+            hp[2] += a*fmax(m3, 0.0);
+          }
         }
         for (int n = 0; n < 10; ++n) {
           if (ua) {
@@ -2902,6 +2961,12 @@ void RadiationM1::VetSweepMB(bool lagged) {
           }
           if (da) {
             vc_(m,M1_VET_J+n,k,j,id) += acd[n];
+          }
+        }
+        if (hrs_) {
+          for (int n = 0; n < 3; ++n) {
+            if (ua) {vc_(m,M1_VET_HP1+n,k,j,iu) += hpu[n];}
+            if (da) {vc_(m,M1_VET_HP1+n,k,j,id) += hpd[n];}
           }
         }
       });
@@ -2940,7 +3005,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
   Kokkos::fence();
   auto gm_ = st.mom;
   auto rv_ = st.rrcv;
-  const int mc = nmb*10*ncb;
+  const int nmo = gm_.extent_int(1);   // 10, or 13 with the half-range sums
+  const int mc = nmb*nmo*ncb;
 #if MPI_PARALLEL_ENABLED
   {
     std::vector<MPI_Request> rq;
@@ -2953,7 +3019,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
     for (int q = 0; q < ngr; ++q) {
       if (q == gp) continue;
       rq.push_back(MPI_REQUEST_NULL);
-      MPI_Isend(gm_.data() + static_cast<size_t>(st.gso[q])*10*ncb, st.gsn[q]*10*ncb,
+      MPI_Isend(gm_.data() + static_cast<size_t>(st.gso[q])*nmo*ncb, st.gsn[q]*nmo*ncb,
                 MPI_ATHENA_REAL, st.gpr[q], 7, st.comm, &rq.back());
     }
     MPI_Waitall(static_cast<int>(rq.size()), rq.data(), MPI_STATUSES_IGNORE);
@@ -3053,15 +3119,9 @@ void RadiationM1::VetShortChar() {
   const bool noes_ = vsrc_noes && (time_scheme == M1_TIME_BE);
   auto esv_ = noes_ ? u0 : iw;
   const int esc_ = noes_ ? M1_E : M1_IW_EN;
-  // hrup-1009: the half-range sums sum w I max(mu_a, 0) (M1_VET_HP1..3), single-block
-  // sweep only (the banded MB sweep does not carry them)
+  // hrup-1009: the half-range sums sum w I max(mu_a, 0) (M1_VET_HP1..3); hrmb-1009:
+  // every sweep variant carries them (the banded MB sweep in its moment arrays)
   const bool hrs_ = impl_beam_hr;
-  if (hrs_ && vet_mbs != nullptr) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_m1>/implicit_flux_beam = halfrange with vet_sc needs the single-"
-              << "block sweep (one MeshBlock, one rank)" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   Kokkos::fence();
   Kokkos::Timer timer;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3568,8 +3628,11 @@ void RadiationM1::VetDump(const std::string &fname) {
     g << "# closure = vet_sc plane dump, m = " << m << ", k = ks; call "
       << static_cast<int>(vet_ncall) << (vet_full ? " (full)" : " (uniaxial)") << "\n"
       << "# 1 i  2 j  3 J  4-9 K/J 11 22 33 12 13 23  10-12 H/J  13 chi  14-16 n  "
-      << "17-22 D_guarded 11 22 33 12 13 23 (0 unless full)  23 E_m1  24 chi_ext\n";
-    g << std::setprecision((vet_mbs != nullptr) ? 17 : 10);
+      << "17-22 D_guarded 11 22 33 12 13 23 (0 unless full)  23 E_m1  24 chi_ext"
+      << (impl_beam_hr ? "  25-27 H+/J 1 2 3 (halfrange)" : "") << "\n";
+    // hrmb-1009: 17 digits also under implicit_flux_beam = halfrange (single- vs multi-
+    // block comparisons of the sweep)
+    g << std::setprecision((vet_mbs != nullptr || impl_beam_hr) ? 17 : 10);
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
         Real jj = vh(m,M1_VET_J,ks,j,i);
@@ -3581,7 +3644,11 @@ void RadiationM1::VetDump(const std::string &fname) {
         for (int n = 0; n < 6; ++n) {
           g << " " << (vet_full ? vh(m,M1_VET_D11+n,ks,j,i) : 0.0);
         }
-        g << " " << ih(m,M1_IW_EN,ks,j,i) << " " << vh(m,M1_VET_CHX,ks,j,i) << "\n";
+        g << " " << ih(m,M1_IW_EN,ks,j,i) << " " << vh(m,M1_VET_CHX,ks,j,i);
+        if (impl_beam_hr) {
+          for (int n = 0; n < 3; ++n) {g << " " << vh(m,M1_VET_HP1+n,ks,j,i)*ij;}
+        }
+        g << "\n";
       }
     }
   }
