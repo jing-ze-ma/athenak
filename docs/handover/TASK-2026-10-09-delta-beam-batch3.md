@@ -1,3 +1,5 @@
+# WITHDRAWN (viper, user 10-09): do NOT run this batch. DeltaAI already ran the gate (PASS, bsg-files-1009 bb70ef9e). If already running: scancel it, push a short NOTE with GPU-h used.
+
 # TASK for the Delta runner: beam batch3 = BSG half-range determinism gate -- URGENT, PROCESS FIRST
 
 **URGENT (user 10-09): run this batch before any other waiting spb2 / beam / csfloor batch.** It is a 4-node job
