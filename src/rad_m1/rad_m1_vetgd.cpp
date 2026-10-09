@@ -1264,7 +1264,24 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
     after += std::max(arr[q]->extent(0), nsz[q]);
   }
   if (after > have) {
-    const size_t cap = static_cast<size_t>(vgd_hl_mb) << 20;
+    // the budget: vet_gd_halo_list_mb, capped on a GPU at half the device memory free
+    // at the first build (room for the restart-write temporaries and the rest)
+    if (vgd_hl_cap == 0) {
+      vgd_hl_cap = static_cast<size_t>(vgd_hl_mb) << 20;
+      size_t fr = 0, tt = 0;
+#if defined(KOKKOS_ENABLE_CUDA)
+      if (cudaMemGetInfo(&fr, &tt) == cudaSuccess) {
+        vgd_hl_cap = std::min(vgd_hl_cap, fr/2);
+      }
+#elif defined(KOKKOS_ENABLE_HIP)
+      if (hipMemGetInfo(&fr, &tt) == hipSuccess) {
+        vgd_hl_cap = std::min(vgd_hl_cap, fr/2);
+      }
+#endif
+      (void) fr;
+      (void) tt;
+    }
+    const size_t cap = vgd_hl_cap;
     if (vgd_hl_bytes + sizeof(int)*(after - have) > cap) {
       // over the budget: no new attempt for this mask set (the dense path as before)
       E.alpha = vgd_alpha;

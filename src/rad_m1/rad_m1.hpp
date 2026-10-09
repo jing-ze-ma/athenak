@@ -1780,7 +1780,7 @@ class RadiationM1 {
   int vgd_shn[2] = {0, 0};
   Real vgd_shl_alpha = -3.0;
   std::vector<VgdHlEntry> vgd_hle;
-  size_t vgd_hl_bytes = 0;
+  size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;
   Real vgd_hl_nmade = 0.0, vgd_hl_nuse = 0.0, vgd_hl_ndense = 0.0;
   DvceArray1D<int> vgd_hl_fn, vgd_hl_fw;    // build scratch: dest flags -> positions
