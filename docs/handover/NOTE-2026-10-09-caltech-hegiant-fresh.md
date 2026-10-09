@@ -10,3 +10,14 @@
   md5 ea976e99a5b138ef99c4d120690903c7.
 - Smoke 4288956 (nlim 10, same binary/input/XKEYS): passed the stop rule (afterok); GPU peak 70617 MiB; cpu time 1.929635e+01 s for 10
   cycles incl. setup; Picard mean=1.030000e+01 max=1.200000e+01.
+
+## STOPPED 2026-10-09 ~14:05 PDT (viper NOTE-2026-10-09-viper-caltech-hegiant-stop-for-tests, user 10-09)
+- Chain 4288960-65 cancelled: link 1 4288960 after 1 h 46 min (live at t 1.127e5 s = 1.30 d, cycle 5600, dt 20.08 s,
+  0 FATAL/NaN/NON-CONVERGED, ~1.11 s/cycle on 2 H200); links 2-6 cancelled while PENDING. CANCEL file in fresh897.
+- Kept: run dir /resnick/groups/carnegie_poc/jingze/hegiant_1009/fresh897; newest rst rst/hegiant.00002.rst (t 86404.69 s =
+  1.000 d, cycle 4291); bins every 0.25 d.
+- Physics so far (for the restart on the fixed scheme): KE_int and its lateral share track our old N445 run within 0.3 %
+  (0.69 d: 7.36e41 erg, lateral 0.10); 0.5-d dump rms v_r 1.0 km/s at 5 Rsun, 0.5 at 20, 0.2 at 30-40 Rsun (convection
+  growing from the 1e-2 seed; scaffold weight w_mlt = 1).
+- The freed 2 H200 are available for the xthinfix test batteries (TASK-2026-10-09-caltech-xthinfix-tests.md when it lands).
+  Seeded BSG prod_seed link 1 4294781 stays queued.
