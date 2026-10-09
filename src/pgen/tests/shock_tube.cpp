@@ -155,7 +155,9 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wl.vx*u0l;
         w0(m,ivy,k,j,i) = wl.vy*u0l;
         w0(m,ivz,k,j,i) = wl.vz*u0l;
-        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wl.d, pl_) : wl.e;
+        if (eos.is_ideal) {   // isothermal: no energy slot
+          w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wl.d, pl_) : wl.e;
+        }
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yl;
         }
@@ -164,7 +166,9 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wr.vx*u0r;
         w0(m,ivy,k,j,i) = wr.vy*u0r;
         w0(m,ivz,k,j,i) = wr.vz*u0r;
-        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wr.d, pr_) : wr.e;
+        if (eos.is_ideal) {   // isothermal: no energy slot
+          w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wr.d, pr_) : wr.e;
+        }
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yr;
         }
@@ -263,7 +267,9 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wl.vx*u0l;
         w0(m,ivy,k,j,i) = wl.vy*u0l;
         w0(m,ivz,k,j,i) = wl.vz*u0l;
-        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wl.d, pl_) : wl.e;
+        if (eos.is_ideal) {   // isothermal: no energy slot
+          w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wl.d, pl_) : wl.e;
+        }
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yl;
         }
@@ -281,7 +287,9 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wr.vx*u0r;
         w0(m,ivy,k,j,i) = wr.vy*u0r;
         w0(m,ivz,k,j,i) = wr.vz*u0r;
-        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wr.d, pr_) : wr.e;
+        if (eos.is_ideal) {   // isothermal: no energy slot
+          w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wr.d, pr_) : wr.e;
+        }
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yr;
         }

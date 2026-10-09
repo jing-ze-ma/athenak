@@ -335,8 +335,10 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm);
 
 // defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
+// merge-1008: <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
 namespace {
 [[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
+[[maybe_unused]] const bool kMhdFofcPgenDefault = (mhd::fofc_pgen_default = true);
 }  // namespace
 
 namespace {
@@ -1787,7 +1789,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real tcol = ColInterp(ct_dv, zlo_a, dzf_a, nf_a, z)/ot.tunit;
         Real op, oe, of, os;
         radm1::M1TableOpacities(ot, dcol, tcol, op, oe, of, os);
-        aref(m,k,j,i) = of*fin_a/cl_a;
+        // the TOTAL extinction (vet_scatter splits it; os = 0 otherwise: bitwise)
+        aref(m,k,j,i) = (of + os)*fin_a/cl_a;
       });
       // BoxConvSrcs gives the reference work (split); set before SetForceReference,
       // which resolves force_reference_work = auto

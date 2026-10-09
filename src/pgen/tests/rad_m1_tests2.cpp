@@ -101,6 +101,18 @@ Real m1_sh2_rho0 = 1.0, m1_sh2_ratio = 1.0e3, m1_sh2_t0 = 290.0;
 Real m1_sh2_x0 = 0.5, m1_sh2_y0 = 0.0, m1_sh2_ax = 0.1, m1_sh2_ay = 0.06;
 Real m1_sh2_delta = 10.0, m1_sh2_gm1 = 2.0/3.0;
 Real m1_sh2_ein = 1.0, m1_sh2_fin = 1.0 - 1.0e-6, m1_sh2_c = 1.0;
+// fsanchor-1009 m1_test = cyl: up to 3 cylinders (along z) in a thin background, each
+// an EMITTER (opaque, T fixed) or an ABSORBER (opaque, T ~ 0); the gas is prescribed
+// and re-imposed every stage (RadM1CylGas).  (x, y, radius, rho, T) per cylinder.
+int m1_cy_n = 0;
+// blendall-1009: up to 8 objects; (x, y, r, rho, T, rect, half-length, half-width,
+// angle):
+// rect = 1 is an oriented rectangle about (x, y), long axis at `angle` (radians) to x1
+Real m1_cy_p[8][9] = {{0.0}};
+// the object table captured by value in the reset kernel (namespace scope: CUDA does
+// not take a function-local type in an extended lambda)
+struct M1CylP {Real v[8][9];};
+Real m1_cy_rhob = 1.0e-6, m1_cy_tb = 1.0e-3, m1_cy_gm1 = 2.0/3.0;
 
 // radshock: the two Dirichlet end states (rho, v, E_gas, E_rad, F_rad)
 Real m1_rs_l[5] = {1.0, 0.0, 1.0, 0.0, 0.0};
@@ -189,6 +201,7 @@ Real M1ShadowRho(const Real x, const Real y, const Real rho0, const Real ratio,
 // prototypes for the hooks enrolled below
 void RadM1ShadowBC(Mesh *pm);
 void RadM1ShadowGas(Mesh *pm, const Real bdt);
+void RadM1CylGas(Mesh *pm, const Real bdt);
 void RadM1ShockBC(Mesh *pm);
 void RadM1AtmBC(Mesh *pm);
 void RadM1AtmGas(Mesh *pm, const Real bdt);
@@ -273,6 +286,43 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*t0/gm1;
       u0(m,radm1::M1_E,k,j,i) = e_amb;
+      u0(m,radm1::M1_F1,k,j,i) = 0.0;
+      u0(m,radm1::M1_F2,k,j,i) = 0.0;
+      u0(m,radm1::M1_F3,k,j,i) = 0.0;
+    });
+  } else if (test.compare("cyl") == 0) {
+    // fsanchor-1009: crossing beams / shadow by opaque cylinders (RadM1CylGas)
+    m1_cy_n = pin->GetOrAddInteger("problem","cyl_n",2);
+    if (m1_cy_n < 1 || m1_cy_n > 8) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/cyl_n must be 1..8" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    for (int c = 0; c < m1_cy_n; ++c) {
+      const std::string b = "cyl" + std::to_string(c) + "_";
+      m1_cy_p[c][0] = pin->GetReal("problem", b + "x");
+      m1_cy_p[c][1] = pin->GetReal("problem", b + "y");
+      m1_cy_p[c][2] = pin->GetReal("problem", b + "r");
+      m1_cy_p[c][3] = pin->GetReal("problem", b + "rho");
+      m1_cy_p[c][4] = pin->GetReal("problem", b + "t");
+      // blendall-1009: cyl{c}_shape = rect, with _hl, _hw and _ang (degrees)
+      if (pin->GetOrAddString("problem", b + "shape", "cyl").compare("rect") == 0) {
+        m1_cy_p[c][5] = 1.0;
+        m1_cy_p[c][6] = pin->GetReal("problem", b + "hl");
+        m1_cy_p[c][7] = pin->GetReal("problem", b + "hw");
+        m1_cy_p[c][8] = pin->GetReal("problem", b + "ang")*M_PI/180.0;
+      }
+    }
+    m1_cy_rhob = pin->GetOrAddReal("problem","cyl_rho_bg",1.0e-6);
+    m1_cy_tb = pin->GetOrAddReal("problem","cyl_t_bg",1.0e-3);
+    m1_cy_gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    user_srcs_func = RadM1CylGas;
+    if (restart) return;
+    RadM1CylGas(pmy_mesh_, 0.0);
+    const Real eb = fmax(ar*SQR(SQR(m1_cy_tb)), efl);
+    par_for("m1_cyl_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      u0(m,radm1::M1_E,k,j,i) = eb;
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
@@ -934,6 +984,27 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
+    // sp-blend-1008 (read only when named): beam_f = f > 0 makes the shell a radially
+    // BEAMED pulse, F_r = f c E on the cells and the face-normal comoving flux of the
+    // implicit solve f0x1 = f c E(r_f) on every x1 face (the gas is static), so that
+    // the face-eliminated central form starts from the same beam its memory term
+    // carries.  A shell with F = 0 instead splits into an ingoing and an outgoing half.
+    if (pin->DoesParameterExist("problem","beam_f") && pmbp->pradm1 != nullptr &&
+        pmbp->pradm1->f0x1.extent_int(0) > 0) {
+      const Real bf = pin->GetReal("problem","beam_f");
+      auto f0 = pmbp->pradm1->f0x1;
+      auto xf = pmbp->pcoord->xx1f;
+      par_for("m1_sph_beam", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        u0(m,radm1::M1_F1,k,j,i) = bf*cl*u0(m,radm1::M1_E,k,j,i);
+        if (i >= is && i <= is+nx1) {
+          Real rf = spr ? xf(m,i) : LeftEdgeX(i-is, nx1, size.d_view(m).x1min,
+                                              size.d_view(m).x1max);
+          Real x = (rf - r0)/wid;
+          f0(m,k,j,i) = bf*cl*fmax(eout + eamp*exp(-x*x), efl);
+        }
+      });
+    }
   } else if (test.compare("sph_atm") == 0) {
     // STAGE S2 (tests_m1/runs_5b_sp_s2, gate T-S4): an extended grey atmosphere on the
     // spherical-polar wedge.  Gas rho = atm_rho0 (r/r_in)^(-atm_rho_n) at T = atm_temp,
@@ -1140,6 +1211,61 @@ void RadM1ShadowGas(Mesh *pm, const Real bdt) {
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
     uh(m,IEN,k,j,i) = d*t0/gm1;
+  });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1CylGas()
+//! \brief fsanchor-1009 m1_test = cyl: the prescribed static gas (ghosts included),
+//! re-imposed at the end of every hydro stage: background (cyl_rho_bg, cyl_t_bg), and
+//! inside cylinder c (cell centre within cylc_r of (cylc_x, cylc_y)) (cylc_rho, cylc_t).
+
+void RadM1CylGas(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  int &ng = indcs.ng;
+  int n1 = indcs.nx1 + 2*ng;
+  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  int &is = indcs.is;
+  int &js = indcs.js;
+  int nx1 = indcs.nx1;
+  int nx2 = indcs.nx2;
+  int nmb1 = (pmbp->nmb_thispack - 1);
+  auto &size = pmbp->pmb->mb_size;
+  auto uh = pmbp->phydro->u0;
+  const int nc = m1_cy_n;
+  M1CylP p;
+  for (int c = 0; c < 8; ++c) {
+    for (int q = 0; q < 9; ++q) {p.v[c][q] = m1_cy_p[c][q];}
+  }
+  const Real rb = m1_cy_rhob, tb = m1_cy_tb, gm1 = m1_cy_gm1;
+  par_for("m1_cyl_reset", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    Real xv = CellCenterX(i-is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    Real yv = CellCenterX(j-js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    Real d = rb, t = tb;
+    for (int c = 0; c < nc; ++c) {
+      bool in;
+      if (p.v[c][5] > 0.5) {
+        const Real ca = cos(p.v[c][8]), sa = sin(p.v[c][8]);
+        const Real dx = xv - p.v[c][0], dy = yv - p.v[c][1];
+        in = (fabs(dx*ca + dy*sa) <= p.v[c][6]) && (fabs(-dx*sa + dy*ca) <= p.v[c][7]);
+      } else {
+        in = (SQR(xv - p.v[c][0]) + SQR(yv - p.v[c][1]) <= p.v[c][2]*p.v[c][2]);
+      }
+      if (in) {
+        d = p.v[c][3];
+        t = p.v[c][4];
+      }
+    }
+    uh(m,IDN,k,j,i) = d;
+    uh(m,IM1,k,j,i) = 0.0;
+    uh(m,IM2,k,j,i) = 0.0;
+    uh(m,IM3,k,j,i) = 0.0;
+    uh(m,IEN,k,j,i) = d*t/gm1;
   });
   return;
 }

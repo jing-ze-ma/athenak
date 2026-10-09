@@ -89,6 +89,13 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   // the tables are held BY VALUE on the module: copy the whole POD of Views into the
   // kernel's closure rather than touching `this` inside the lambda
   M1OpacTab ot = otab;
+  const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
+  if (ot.scat == 2 && !eos.tbl.active) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/vet_scatter_kappa_e = eos needs a general (tabulated) "
+      << "EOS: the electron fraction comes from its Saha composition" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 
   par_for_lb("m1_opacity", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -111,12 +118,14 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     Real op, oe, of, os;
     if (otype == M1_OPAC_TABLE) {
       M1TableOpacities(ot, d, t, op, oe, of, os);
+      M1ScatterEos(ot, eos, d, t, of, os);
     } else {
       M1Opacities(otype, d, t, kp, ke, kf, ks, rref, tref, aa, bb, op, oe, of, os);
     }
     opac_(m,M1_OP_P,k,j,i) = d*op;
     opac_(m,M1_OP_E,k,j,i) = d*oe;
     opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+    if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
   });
 
   // DIAGNOSTIC <rad_m1>/dbg_opac_patch: a horizontally inhomogeneous absorber (the three
@@ -136,6 +145,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
         opac_(m,M1_OP_P,k,j,i) *= pf;
         opac_(m,M1_OP_E,k,j,i) *= pf;
         opac_(m,M1_OP_T,k,j,i) *= pf;
+        if (osc) {opac_(m,M1_OP_S,k,j,i) *= pf;}
       }
     });
   }

@@ -373,7 +373,20 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // for time-evolving problems, continue to construct methods, allocate arrays
   if (evolution_t.compare("stationary") != 0) {
     // determine if FOFC is enabled
-    use_fofc = pin->GetOrAddBoolean("mhd","fofc",false);
+    // default false; true for the problem generators that set fofc_pgen_default
+    // (mhd.hpp), except on a restart whose file lacks the key (old default kept)
+    bool fofc_dflt = false;
+    if (fofc_pgen_default && !pin->DoesParameterExist("mhd","fofc")) {
+      if (global_variable::restart_run) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "mhd: restart input has no mhd/fofc: keeping the old default "
+                    << "(off); set it true to switch" << std::endl;
+        }
+      } else {
+        fofc_dflt = true;
+      }
+    }
+    use_fofc = pin->GetOrAddBoolean("mhd","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "mhd");}
     // <mhd>/fofc_rsolver: see the note in mhd.hpp.  Default llf keeps every existing
     // run bit-for-bit unchanged.

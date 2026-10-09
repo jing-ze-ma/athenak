@@ -75,6 +75,11 @@ class Coordinates {
   DvceArray4D<Real> dx3;
   DvceArray2D<Real> x1v;
   DvceArray2D<Real> x2v;
+  // x2 positions for the angular reconstruction: x2v, or with sp_x2_periodic_image the
+  // periodic-image ghost centroids at a theta-periodic x2min/x2max (BuildX2vRecon)
+  DvceArray2D<Real> x2v_rec;
+  bool sp_x2_periodic_image = false;
+  void BuildX2vRecon();
   DvceArray2D<Real> x3v;
   DvceArray2D<Real> xx1f;
   DvceArray2D<Real> xx2f;

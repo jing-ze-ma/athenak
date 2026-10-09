@@ -8,6 +8,16 @@
 // implicit_realisable_coupling), M1_RCP 1 = the kernel with the key on.
 // NOLINT(build/header_guard)
     Real ep = iw_(m,M1_IW_EP,k,j,i);
+    // F3 (implicit_pos_floor_solve): the iterate is floored only at 1e-6 e_floor in the
+    // T-solve / accept; the energy that residual raise created over a solved S2 below it
+    // (gas units, per volume; rare) is charged like the e_floor raise below
+    Real s2def = 0.0;
+    if (pfs) {
+      const Real s2 = iw_(m,M1_IW_S2,k,j,i);
+      if (!(ep > 1.0e-6*efl) && s2 < ep) {
+        s2def = (cl/ch)*(1.0 + iw_(m,M1_IW_SRCB,k,j,i))*(ep - s2);
+      }
+    }
     // an M1_IBC_EFIX end cell: its row was replaced by E' = EN (the Dirichlet value),
     // and that is the E it keeps -- the work term below must not move it.  It used to:
     // the replaced row has no transverse coupling, so nothing damped the x2 structure
@@ -238,15 +248,16 @@
           emin = fmax(emin, te);
         }
       }
-      if (pflr && !(ep > efl)) {
-        const Real need = (cl/ch)*(efl - ep);           // gas units
+      if (pflr && (!(ep > efl) || s2def > 0.0)) {
+        const Real need = (cl/ch)*fmax(efl - ep, 0.0) + s2def;   // gas units
         const Real avail = (have_hydro && feedback) ? fmax(eg - emin, 0.0) : 0.0;
         const Real take = fmin(need, avail);
         if (have_hydro && feedback) {eg -= take;}
-        ep = efl;
+        ep = fmax(ep, efl);
         Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
         Kokkos::atomic_add(&pc_(M1_POS_FLR_DE), take*vol);
         Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), (need - take)*vol);
+        if (pfs) {Kokkos::atomic_add(&pc_(M1_POS_FLRS), s2def*vol);}
       }
       if (pgas && feedback && eg < emin) {
         const Real need = emin - eg;                     // gas units

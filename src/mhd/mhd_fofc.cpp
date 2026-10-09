@@ -287,7 +287,8 @@ void MHD::FOFC(Driver *pdriver, int stage) {
     // ORTHONORMAL cell-centred field (built above the way RaiseVelMHD builds it), so the
     // magnetic energy it forms is the right one.  Cells the DENSITY floor already
     // flagged are skipped.
-    if (cs_ && peos->eos_data.defer_cons_floors &&
+    // (isothermal: no energy slot and no energy floor to defer)
+    if (cs_ && peos->eos_data.defer_cons_floors && peos->eos_data.is_ideal &&
         !pmy_pack->pcoord->is_special_relativistic &&
         !pmy_pack->pcoord->is_general_relativistic) {
       auto eos_ = peos->eos_data;

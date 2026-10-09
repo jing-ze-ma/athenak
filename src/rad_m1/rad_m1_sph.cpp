@@ -93,8 +93,17 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
   }
   if (transport == M1_TRANSPORT_IMPLICIT) {
-    if (impl_flux != M1_IFLUX_CENTRAL) {why += " implicit_flux != central;";}
-    if (impl_recon != M1_IRECON_DC) {why += " implicit_recon != dc;";}
+    // sp-blend-1008: berthon | blend on the radial faces (the wedge only; ImplicitInit
+    // refuses them on the cubed sphere and the tau-only weight everywhere multi-D)
+    if (impl_flux != M1_IFLUX_CENTRAL && impl_flux != M1_IFLUX_BERTHON &&
+        impl_flux != M1_IFLUX_BLEND) {
+      why += " implicit_flux = ap_hll;";
+    }
+    // rad-beam-1008: the plm deferred correction of the berthon part (plm_dc) on the
+    // radial faces, with berthon | blend only (central has no upwind part to correct)
+    if (impl_recon != M1_IRECON_DC && impl_flux == M1_IFLUX_CENTRAL) {
+      why += " implicit_recon != dc;";
+    }
     if (impl_tlim != M1_TLIM_NONE) {why += " implicit_trans_limit != none;";}
     // m1-sph2 (tests_m1/runs_5h_sph2): time_scheme = hesdirk2 and implicit_vimp are
     // allowed on the wedge (the stage solves' old vector carries no geometry; the vimp
@@ -167,7 +176,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       << "vet_col, "
       << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
       << "time_scheme = be | hesdirk2, one MeshBlock "
-      << "along x1, no SMR, implicit_flux = central, "
+      << "along x1, no SMR, implicit_flux = central | berthon | blend, "
       << "implicit_recon = dc, implicit_trans_limit = none, no "
       << "dbg_tensor; this input has:" << why << std::endl
       << "See tests_m1/runs_5a_sp_s1/README.md and tests_m1/runs_5b_sp_s2/README.md."

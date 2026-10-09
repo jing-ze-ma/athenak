@@ -146,14 +146,27 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
   // STAGE CS2: on the cubed sphere (f2, f3) are covariant: the metric norm
   const bool csl = pmy_pack->pmesh->use_cubed_sphere;
   auto ccl = pmy_pack->pcoord->cos_cell;
+  // fixbundle-1009 F4: clip counters over the active cells (output only)
+  if (acl_cnt_d.extent_int(0) != 2) {
+    Kokkos::realloc(acl_cnt_d, 2);
+    Kokkos::deep_copy(acl_cnt_d, 0.0);
+  }
+  auto ac_ = acl_cnt_d;
+  const int ais = indcs.is, aie = indcs.ie, ajs = indcs.js, aje = indcs.je;
+  const int aks = indcs.ks, ake = indcs.ke;
   par_for("m1_limits", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = u0_(m,M1_E,k,j,i);
     Real f1 = u0_(m,M1_F1,k,j,i);
     Real f2 = u0_(m,M1_F2,k,j,i);
     Real f3 = u0_(m,M1_F3,k,j,i);
+    const Real ein = e, f1in = f1, f2in = f2, f3in = f3;
     const bool lim = csl ? M1ApplyLimitsCs(cl, efl, ccl(m,k,j), e, f1, f2, f3)
                          : M1ApplyLimits(cl, efl, e, f1, f2, f3);
+    if (lim && i >= ais && i <= aie && j >= ajs && j <= aje && k >= aks && k <= ake) {
+      if (ein < efl) {Kokkos::atomic_add(&ac_(0), 1.0);}
+      if (f1 != f1in || f2 != f2in || f3 != f3in) {Kokkos::atomic_add(&ac_(1), 1.0);}
+    }
     if (lim) {
       u0_(m,M1_E,k,j,i) = e;
       u0_(m,M1_F1,k,j,i) = f1;

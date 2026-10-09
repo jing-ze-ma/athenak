@@ -47,6 +47,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
     sp_face_avg = pin->GetOrAddBoolean("mhd","sp_face_avg",false);
     sp_face_avg_terms = pin->GetOrAddInteger("mhd","sp_face_avg_terms",3);
+    sp_x2_periodic_image = pin->GetOrAddBoolean("mhd","sp_x2_periodic_image",false);
   } else if (pin->DoesBlockExist("hydro")) {
     // pure hydro: the same well-balanced source, through the same shared
     // SrcTermsGnomonicEquiangleImpl -> SrcTermsCurvilinearWB path (is_mhd = false)
@@ -58,6 +59,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
     sp_face_avg = pin->GetOrAddBoolean("hydro","sp_face_avg",false);
     sp_face_avg_terms = pin->GetOrAddInteger("hydro","sp_face_avg_terms",3);
+    sp_x2_periodic_image = pin->GetOrAddBoolean("hydro","sp_x2_periodic_image",false);
   }
 
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
@@ -76,6 +78,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(dx3, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(x1v, nmb, ncells1);
     Kokkos::realloc(x2v, nmb, ncells2);
+    Kokkos::realloc(x2v_rec, nmb, ncells2);
     Kokkos::realloc(x3v, nmb, ncells3);
     Kokkos::realloc(xx1f, nmb, ncells1+1);
     Kokkos::realloc(xx2f, nmb, ncells2+1);
@@ -819,6 +822,24 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   auto wder_ = wder;
   auto wtemp_ = wtemp;
 
+  // ISOTHERMAL EOS: there is no energy slot (IEN is out of range in u0 and w0) and no
+  // energy floor, so only the velocity is raised with the metric.  A separate kernel, so
+  // that the ideal/general kernels below are compiled exactly as before.
+  if (!eos_data.is_ideal) {
+    par_for("cs_raisev_iso", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cos_cell_(m,k,j);
+      const Real det = 1.0 - c*c;
+      const Real d = u0(m,IDN,k,j,i);
+      const Real m2 = u0(m,IM2,k,j,i);   // xi
+      const Real m3 = u0(m,IM3,k,j,i);   // eta
+      w0(m,IVX,k,j,i) = u0(m,IM1,k,j,i)/d;
+      w0(m,IVY,k,j,i) = (m2 - c*m3)/(d*det);
+      w0(m,IVZ,k,j,i) = (m3 - c*m2)/(d*det);
+    });
+    return;
+  }
+
   // THE LEGACY KERNEL.  See the note on EOS_Data::floors_legacy: with no floor switch
   // enabled the kernel below is algebraically the same as this one, but not bitwise --
   // hoisting the kinetic energy, moving the w0 writes and turning the par_for into a
@@ -1025,6 +1046,32 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
   auto eos_ = eos_data;
   auto wder_ = wder;
   auto wtemp_ = wtemp;
+  // ISOTHERMAL EOS: no energy slot (IEN is out of range in u0 and w0), so only the
+  // orthonormal cell-centred field and the raised velocity are formed, with the same
+  // expressions as the kernel below; a separate kernel keeps that one unchanged.
+  if (!eos_data.is_ideal) {
+    auto &x1v_i = x1v;
+    auto &x1f_i = xx1f;
+    par_for("cs_raisev_mhd_iso", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cos_cell_(m,k,j);
+      const Real sn = sin_cell_(m,k,j);
+      const Real det = 1.0 - c*c;
+      const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+      const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+      bcc0(m,IBX,k,j,i) = CellCenteredRadialFld(b0.x1f(m,k,j,i), b0.x1f(m,k,j,i+1),
+                                                x1f_i(m,i), x1f_i(m,i+1), x1v_i(m,i));
+      bcc0(m,IBY,k,j,i) = (by_n + c*bz_n)/sn;
+      bcc0(m,IBZ,k,j,i) = bz_n;
+      const Real d = u0(m,IDN,k,j,i);
+      const Real m2 = u0(m,IM2,k,j,i);   // xi
+      const Real m3 = u0(m,IM3,k,j,i);   // eta
+      w0(m,IVX,k,j,i) = u0(m,IM1,k,j,i)/d;
+      w0(m,IVY,k,j,i) = (m2 - c*m3)/(d*det);
+      w0(m,IVZ,k,j,i) = (m3 - c*m2)/(d*det);
+    });
+    return;
+  }
   // On a STRETCHED radial grid the cell centre is not the midpoint of its two faces, so
   // the radial field at the centre is a weighted interpolation, not the plain average --
   // see CellCenteredRadialFld.  Only when the grid really is stretched: on a uniform one
@@ -1159,6 +1206,28 @@ void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
     const int kl, const int ku) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
+
+  // ISOTHERMAL EOS: no energy slot (IEN is out of range), so only d and the momentum
+  bool iso_ = false;
+  if (pmy_pack->phydro != nullptr) {
+    iso_ = !pmy_pack->phydro->peos->eos_data.is_ideal;
+  } else if (pmy_pack->pmhd != nullptr) {
+    iso_ = !pmy_pack->pmhd->peos->eos_data.is_ideal;
+  }
+  if (iso_) {
+    par_for("cs_lowerm_iso", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cos_cell_(m,k,j);
+      const Real d = w0(m,IDN,k,j,i);
+      const Real v2 = w0(m,IVY,k,j,i);
+      const Real v3 = w0(m,IVZ,k,j,i);
+      u0(m,IDN,k,j,i) = d;
+      u0(m,IM1,k,j,i) = d*w0(m,IVX,k,j,i);
+      u0(m,IM2,k,j,i) = d*(v2 + c*v3);
+      u0(m,IM3,k,j,i) = d*(v3 + c*v2);
+    });
+    return;
+  }
 
   par_for("cs_lowerm", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1806,6 +1875,52 @@ void Coordinates::CoordSphericalPolar() {
     if (k > 0 && i > 0) areaedge_.x2e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * fabs(sin(x2v_(m,j))) * (x3v_(m,k)-x3v_(m,k-1));
     if (i > 0 && j > 0) areaedge_.x3e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * (x2v_(m,j)-x2v_(m,j-1));
   });
+  BuildX2vRecon();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Coordinates::BuildX2vRecon
+//! \brief theta positions used by the angular x2 reconstruction (GridPiecewiseLinearX2).
+//! Equal to x2v except, with <hydro|mhd>/sp_x2_periodic_image on a theta-PERIODIC mesh,
+//! in the ghost rows of blocks at x2min/x2max: there they are the PERIODIC IMAGES of the
+//! cells the ghosts hold (centroid of [theta_l + L, theta_r + L] minus L, L = x2max -
+//! x2min).  x2v is the sin-weighted centroid, which is not invariant under theta ->
+//! theta + L, so with the plain x2v the faces x2min and x2max reconstruct the SAME cell
+//! values with different stencil spacings, F2(x2min) != F2(x2max), and mass, momentum
+//! and energy leak through the periodic seam (measured +2.6e23 g/cycle on the AG Car A
+//! 480x8x8 wedge, mass_1009).  With the images both faces see bitwise-equivalent
+//! stencils up to round-off.  Default off: x2v_rec = x2v, results bitwise unchanged.
+
+void Coordinates::BuildX2vRecon() {
+  Kokkos::deep_copy(x2v_rec, x2v);
+  Mesh *pm = pmy_pack->pmesh;
+  if (!sp_x2_periodic_image || !pm->use_spherical_polar || !pm->multi_d) return;
+  if (pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic) return;
+  if (pm->use_grid_stretch_theta) return;  // images are not translations then
+  auto &indcs = pm->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ng = indcs.ng;
+  const Real x2min = pm->mesh_size.x2min, x2max = pm->mesh_size.x2max;
+  const Real len = x2max - x2min;
+  auto h_x2v = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x2v_rec);
+  auto h_x2f = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), xx2f);
+  auto &size = pmy_pack->pmb->mb_size;
+  auto centroid = [](Real tl, Real tr) {
+    return -((sin(tr)-tr*cos(tr)) - (sin(tl)-tl*cos(tl))) / (cos(tr)-cos(tl));
+  };
+  const Real tol = 1.0e-12*len;
+  for (int m=0; m<pmy_pack->nmb_thispack; ++m) {
+    if (fabs(size.h_view(m).x2min - x2min) < tol) {
+      for (int j=js-ng; j<js; ++j) {
+        h_x2v(m,j) = centroid(h_x2f(m,j) + len, h_x2f(m,j+1) + len) - len;
+      }
+    }
+    if (fabs(size.h_view(m).x2max - x2max) < tol) {
+      for (int j=je+1; j<=je+ng; ++j) {
+        h_x2v(m,j) = centroid(h_x2f(m,j) - len, h_x2f(m,j+1) - len) + len;
+      }
+    }
+  }
+  Kokkos::deep_copy(x2v_rec, h_x2v);
 }
 
 //----------------------------------------------------------------------------------------

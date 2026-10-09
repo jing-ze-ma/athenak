@@ -38,6 +38,11 @@ class Driver;
 // function ptr for user-defined MHD boundary functions enrolled in problem generator
 namespace mhd {
 using MHDBoundaryFnPtr = void (*)(int m, Mesh* pm, MHD* pmhd, DvceArray5D<Real> &u);
+// <mhd>/fofc pgen-level default, the MHD mirror of hydro::fofc_pgen_default (hydro.hpp):
+// false in the core; he_star_m1 and box_convection set it true at static initialisation.
+// An input that names the key is unchanged; a RESTART whose embedded input lacks the key
+// keeps the old default (off).
+inline bool fofc_pgen_default = false;
 }
 
 // constants that enumerate MHD Riemann Solver options

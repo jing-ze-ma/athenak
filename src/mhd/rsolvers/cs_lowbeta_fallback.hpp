@@ -88,8 +88,11 @@ void CSLowBetaFallback(TeamMember_t const &member, const EOS_Data &eos, const bo
 
     // beta from the FACE state, averaged over the two sides.  For a general EOS the
     // pressure was evaluated once per cell in ConsToPrim and reconstructed into dl/dr.
-    const Real pl = gen ? dl(IDPR,i) : eos.IdealGasPressure(wl(IEN,i));
-    const Real pr = gen ? dr(IDPR,i) : eos.IdealGasPressure(wr(IEN,i));
+    // An isothermal EOS has no energy slot (IEN is out of range): p = d c_s^2.
+    const Real pl = gen ? dl(IDPR,i) : (eos.is_ideal ? eos.IdealGasPressure(wl(IEN,i))
+                                                     : wl(IDN,i)*SQR(eos.iso_cs));
+    const Real pr = gen ? dr(IDPR,i) : (eos.is_ideal ? eos.IdealGasPressure(wr(IEN,i))
+                                                     : wr(IDN,i)*SQR(eos.iso_cs));
     const Real bsql = SQR(bxi) + SQR(wli.by) + SQR(wli.bz);
     const Real bsqr = SQR(bxi) + SQR(wri.by) + SQR(wri.bz);
     const Real bsq = 0.5*(bsql + bsqr);

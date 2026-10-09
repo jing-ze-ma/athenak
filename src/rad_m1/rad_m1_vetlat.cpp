@@ -118,7 +118,8 @@ template <class EosT>
 KOKKOS_INLINE_FUNCTION
 Real VlatRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
                        const Real rkp, const Real rke, const Real eth, const Real ar,
-                       const Real cl, const Real ch, const Real dt) {
+                       const Real cl, const Real ch, const Real dt,
+                       const int sf, const Real chi, const Real rkes) {
   const Real ix = 1.0/(1.0 + ch*dt*rke);
   M1EosDirect<EosT> th{eos};
   Real ee, cv;
@@ -130,6 +131,13 @@ Real VlatRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real 
   const Real t2 = ts*ts;
   const Real t4 = t2*t2;
   const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
+  // vet_scatter: B* of the relaxed gas with (sf = 1, 2; vet_scatter_j = current) the
+  // CURRENT J = eb (E^n or the Picard iterate) or (sf = 3, 4; vet_scatter_j = relaxed)
+  // the relaxed E*, the consistent end-of-step pair (S - E* = (E* - eb)/(c dt chi))
+  if (sf != 0) {
+    return VetScatterMix((sf > 2) ? (sf - 2) : sf, rkp, chi, rkes, ar*t4,
+                         (sf > 2) ? es : eb);
+  }
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
@@ -183,12 +191,14 @@ void RadiationM1::VetLatInit() {
   const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   const int nd = vgd_on ? 1 : 2*vlat_nmu*vlat_npsi;   // vet_gd: own arrays (VetGdInit)
-  Kokkos::realloc(vlat_i, nmb, nd, c3, c2, c1);
+  // accel-1009 (memory): under vet_gd the vet_col_lat sweep arrays are never touched
+  const int s3 = vgd_on ? 1 : c3, s2 = vgd_on ? 1 : c2, s1 = vgd_on ? 1 : c1;
+  Kokkos::realloc(vlat_i, nmb, nd, s3, s2, s1);
   Kokkos::deep_copy(vlat_i, 0.0);
-  Kokkos::realloc(vlat_t, nmb, nd, c3, c2, c1);
+  Kokkos::realloc(vlat_t, nmb, nd, s3, s2, s1);
   Kokkos::deep_copy(vlat_t, 0.0);
   Kokkos::realloc(vlat_t_c, nmb, nd, 1, 1, 1);
-  Kokkos::realloc(vlat_d, nmb, nd, c3, c2, c1);
+  Kokkos::realloc(vlat_d, nmb, nd, s3, s2, s1);
   Kokkos::deep_copy(vlat_d, 0.0);
   Kokkos::realloc(vlat_d_c, nmb, nd, 1, 1, 1);
   Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
@@ -529,6 +539,11 @@ void RadiationM1::VetLatSweep(const int stage) {
   // (1) ln chi, ln S of every active cell (vet_col's extinction and source), ghosts
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
+  // vet_source_noesrc (fixbundle-1009 F1): the physical E^n = u0 (see VetColBuild)
+  const bool noes = vsrc_noes && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  auto ur_ = u0;
+  const int vsf = vscat ? vscat_form : 0;   // vet_scatter
+  const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
   auto uh = flv.u0;
@@ -539,15 +554,20 @@ void RadiationM1::VetLatSweep(const int stage) {
   par_for("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
-    Real e = fmax(iw_(m,srcep ? M1_IW_EP : M1_IW_EN,k,j,i), efl);
+    Real e = fmax((noes && !srcep) ? ur_(m,M1_E,k,j,i)
+                                   : iw_(m,srcep ? M1_IW_EP : M1_IW_EN,k,j,i), efl);
     Real s = e;
     if (thermal) {
       Real tg = iw_(m,M1_IW_TP,k,j,i);
       Real t2 = tg*tg;
       Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
+      const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
       if (srx) {
         s = VlatRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts);
+                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr, chi,
+                              rks);
+      } else if (vsf != 0) {
+        s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }
@@ -943,6 +963,14 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
   const Real sg = sgn;
   const int c0 = M1_TT_LAT0;
   const bool tanop = vgd_on && vgd_tan && vgd_tanop;
+  // sp-blend-1008: under implicit_flux = berthon | blend the x1 face keeps 1 - AL of the
+  // central face flux, the lateral term included (as the row and the face update)
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
+  auto ifw_ = ifw;
+  // blendall-1009: the lateral faces keep 1 - AL of their central flux too
+  const bool blt = blat_on;
+  auto bw2_ = ifw2;
+  auto bw3_ = ifw3;
   par_for("m1_vlat_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -985,37 +1013,43 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
       const int ip = i + 1;
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
                                    i, ip, fwd);
-      const Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       y -= carea.x1f(m,k,j,i+1)*iv*cr*th*kk*0.5*(lat(0,k,j,i) + lat(0,k,j,ip));
     }
     if (i > is || !botb) {
       const int im = i - 1;
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
                                    im, i, fwd);
-      const Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       y += carea.x1f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(0,k,j,im) + lat(0,k,j,i));
     }
     // the two x2 faces
     if (!(j == je && p2hi)) {
-      const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
-                                            + iw_(m,M1_IW_KT,k,j+1,i)));
+      Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
+                                      + iw_(m,M1_IW_KT,k,j+1,i)));
+      if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
       y -= carea.x2f(m,k,j+1,i)*iv*cr*th*kk*0.5*(lat(1,k,j,i) + lat(1,k,j+1,i));
     }
     if (!(j == js && p2lo)) {
-      const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j-1,i)
-                                            + iw_(m,M1_IW_KT,k,j,i)));
+      Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j-1,i)
+                                      + iw_(m,M1_IW_KT,k,j,i)));
+      if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
       y += carea.x2f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(1,k,j-1,i) + lat(1,k,j,i));
     }
     // the two x3 faces
     if (thrd) {
       if (!(k == ke && p3hi)) {
-        const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
-                                              + iw_(m,M1_IW_KT,k+1,j,i)));
+        Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
+                                        + iw_(m,M1_IW_KT,k+1,j,i)));
+        if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
         y -= carea.x3f(m,k+1,j,i)*iv*cr*th*kk*0.5*(lat(2,k,j,i) + lat(2,k+1,j,i));
       }
       if (!(k == ks && p3lo)) {
-        const Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k-1,j,i)
-                                              + iw_(m,M1_IW_KT,k,j,i)));
+        Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k-1,j,i)
+                                        + iw_(m,M1_IW_KT,k,j,i)));
+        if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
         y += carea.x3f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(2,k-1,j,i) + lat(2,k,j,i));
       }
     }
@@ -1074,6 +1108,11 @@ void RadiationM1::VetLatStencilAdd() {
   auto carea = pmy_pack->pcoord->area;
   const int c0 = M1_TT_LAT0;
   const bool tanop = vgd_on && vgd_tan && vgd_tanop;
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);   // sp-blend-1008, as VetLatOp
+  auto ifw_ = ifw;
+  const bool blt = blat_on;   // blendall-1009, as VetLatOp
+  auto bw2_ = ifw2;
+  auto bw3_ = ifw3;
   par_for("m1_vlat_stencil", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -1168,39 +1207,45 @@ void RadiationM1::VetLatStencilAdd() {
     if (i < ie || !topb) {
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,i+1), cx1f,
                                    m, i, i+1, fwd);
-      const Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       latc(0, i, j, k, w);
       latc(0, i+1, j, k, w);
     }
     if (i > is || !botb) {
       const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i-1), iw_(m,M1_IW_KT,k,j,i), cx1f,
                                    m, i-1, i, fwd);
-      const Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       latc(0, i-1, j, k, w);
       latc(0, i, j, k, w);
     }
     if (!(j == je && p2hi)) {
       const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
-      const Real w = -0.5*carea.x2f(m,k,j+1,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      Real w = -0.5*carea.x2f(m,k,j+1,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
       latc(1, i, j, k, w);
       latc(1, i, j+1, k, w);
     }
     if (!(j == js && p2lo)) {
       const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
-      const Real w = 0.5*carea.x2f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      Real w = 0.5*carea.x2f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
       latc(1, i, j-1, k, w);
       latc(1, i, j, k, w);
     }
     if (thrd) {
       if (!(k == ke && p3hi)) {
         const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
-        const Real w = -0.5*carea.x3f(m,k+1,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        Real w = -0.5*carea.x3f(m,k+1,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
         latc(2, i, j, k, w);
         latc(2, i, j, k+1, w);
       }
       if (!(k == ks && p3lo)) {
         const Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
-        const Real w = 0.5*carea.x3f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        Real w = 0.5*carea.x3f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
         latc(2, i, j, k-1, w);
         latc(2, i, j, k, w);
       }

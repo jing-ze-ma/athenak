@@ -78,21 +78,24 @@ struct LogicalLocation {
 //! \struct EventCounters
 //! \brief stores various counters used as diagnostics throughout the code
 
+// Counters are 64-bit: they accumulate per-launch (per-rank, int) kernel counts over all
+// cycles between two event-log outputs and overflowed int32 on long runs.
 struct EventCounters {
-  int nfofc, neos_dfloor, neos_efloor, neos_tfloor, neos_vceil, neos_fail, maxit_c2p;
+  std::int64_t nfofc, neos_dfloor, neos_efloor, neos_tfloor, neos_vceil, neos_fail;
+  std::int64_t maxit_c2p;
   // Cells whose tabulated (rho,e) -> T inversion had to be CLAMPED to the table's own
   // lowest or highest tabulated temperature, because the energy handed to it lies
   // outside the tabulated range at that density (EOSTable::ClampLogT).  Not a floor:
   // it says the state has left the EOS, and without the clamp the root find pins on
   // its own bracket three decades outside the table and returns a saturated
   // temperature and sound speed that no longer depend on e at all.
-  int neos_tclamp;
+  std::int64_t neos_tclamp;
   // Cells whose FLOORED state was rebuilt from a TEMPERATURE, under
   // <block>/efloor_as_tfloor: e was set to e(rho,T) for the T the floors and the table
   // clamp left, so that re-inverting the cell returns that same T and the cached p,
   // Gamma_1 and sound speed belong to the energy the cell actually carries.  Counted
   // separately from neos_efloor because it is a repair OF a floor, not a floor.
-  int neos_tset;
+  std::int64_t neos_tset;
   // Energy density CREATED by the internal-energy/pressure floor since the counters were
   // last reset, summed over cells (code units, not volume weighted -- a cell count's
   // worth of erg/cm^3).  A floor that fires is only a diagnostic; a floor that fires
@@ -105,9 +108,19 @@ struct EventCounters {
   // column measures the dissipation the ceiling is doing.  HYDRO only: the general-MHD
   // and ideal-MHD inversions have no accumulator to thread it through.
   Real vceil_de;
+  // fixbundle-1009 F4: kinetic energy density <hydro>/dfloor_keep_velocity removed from
+  // the total energy (sum over cells of (1 - fv^3) KE, not volume weighted, general
+  // hydro EOS, off the cubed sphere), since the last row
+  Real dfloor_ke;
+  // fixbundle-1009 F4: <rad_m1> solver/limiter totals since the start of this run (or
+  // restart), filled at each event-log output (RadiationM1::EventTotals)
+  static constexpr int kNM1Tot = 13;
+  bool m1on;
+  Real m1tot[kNM1Tot];
   EventCounters() : nfofc(0), neos_dfloor(0), neos_efloor(0), neos_tfloor(0),
                     neos_vceil(0), neos_fail(0), maxit_c2p(0), neos_tclamp(0),
-                    neos_tset(0), efloor_de(0.0), vceil_de(0.0) {}
+                    neos_tset(0), efloor_de(0.0), vceil_de(0.0), dfloor_ke(0.0),
+                    m1on(false), m1tot{} {}
 };
 
 //----------------------------------------------------------------------------------------
