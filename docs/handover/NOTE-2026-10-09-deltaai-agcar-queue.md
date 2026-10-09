@@ -12,3 +12,14 @@ Checked 2026-10-09 12:12 CDT (19:12 CEST). Account bivj-dtai-gh: 905 of 1001 GPU
   chained interactive links can wait in the queue.
 - Interactive is charged at 2x (as seen 10-01).
 - Smokes A and B (step 2) go next on ghx4-interactive (20 min each); results follow in this NOTE.
+
+## Smokes (step 2): both PASS
+ghx4-interactive, 1 node gh069, `agcar_dai_link.sh <D> 10` (fresh start, 10 cycles), binary 98835d99a16f md5 c9c6d167
+(verified by the link script); module stack = the build stack (cray-mpich 9.0.1, cudatoolkit 25.5_12.9, PrgEnv-gnu 8.6.0).
+
+| arm | job | rc | FATAL | NaN (run.log, hst) | NON-CONVERGED (last) | steady s/cycle | cycle 1 dt | max GPU mem per GH200 | job elapsed |
+|---|---|---|---|---|---|---|---|---|---|
+| smokeB | 3348878 | 0 | 0 | 0, 0 | 0 | **0.29** (cycles 3-9; 0.54 c1, 1.09 c10 = dump) | 241.9 s | 19205 MiB | 29 s |
+| smokeA | 3349002 | 0 | 0 | 0, 0 | 0 | **0.31** (cycles 3-9; 0.53 c1, 1.07 c10 = dump) | -- | 21037 MiB | 29 s |
+
+At the cycle-1 dt (242 s), B's tlim 1.3e6 s is ~5400 cycles, i.e. ~30 min of compute, unless dt shrinks.
