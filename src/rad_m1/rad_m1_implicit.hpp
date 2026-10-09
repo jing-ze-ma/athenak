@@ -294,6 +294,17 @@ constexpr int M1_NIW_VIMP = 26;
 // DA_d = a_d(old vector) - a_d(stage start) = dv_d + (D dv)_d, dv = t2inc momentum/rho
 constexpr int M1_IV_DA    = 26;
 constexpr int M1_NIW_VIMP_T2 = 3;
+// <rad_m1>/implicit_hr_recon = plm (xthinfix-1009 Fix B): the half-range face values
+// E_L + s_L/2, E_R - s_R/2 with the limited slope s_c = sig_c (E_c+1 - E_c-1)/2, sig_c
+// in [0, 1] the van Leer limiter of the Picard-lagged E, frozen for the pass, applied
+// as a linear operator outside the 7-point row (M1MusclRow): sig per direction, then
+// the row coefficients diag, x1 -2 -1 +1 +2, x2 -2 -1 +1 +2, x3 -2 -1 +1 +2.
+constexpr int M1_IM_SIG   = 0;    // sig_1, sig_2, sig_3
+constexpr int M1_IM_D     = 3;
+constexpr int M1_IM_X1    = 4;    // -2, -1, +1, +2
+constexpr int M1_IM_X2    = 8;
+constexpr int M1_IM_X3    = 12;
+constexpr int M1_NIW_MUSCL = 16;
 
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).

@@ -513,6 +513,42 @@ Real M1VimpRow(const DvceArray5D<Real> &iw, const int b, const int cx, const int
   return y;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1MusclRow
+//! \brief implicit_hr_recon = plm (xthinfix-1009 Fix B): the plm part of the half-range
+//! face fluxes in the row of cell (k,j,i), applied to the component cx: diag, x1 -2..+2,
+//! x2 -2..+2, x3 -2..+2 (no 0).  b = RadiationM1::iw_muscl (ImplicitMusclBuild).
+
+KOKKOS_INLINE_FUNCTION
+Real M1MusclRow(const DvceArray5D<Real> &iw, const int b, const int cx, const int m,
+                const int k, const int j, const int i, const int is, const int ie,
+                const bool cyclic, const bool thrd) {
+  int im2 = i - 2, im1 = i - 1, ip1 = i + 1, ip2 = i + 2;
+  if (cyclic) {
+    const int n = ie - is + 1;
+    while (im2 < is) {im2 += n;}
+    while (im1 < is) {im1 += n;}
+    while (ip1 > ie) {ip1 -= n;}
+    while (ip2 > ie) {ip2 -= n;}
+  }
+  Real y = iw(m,b+M1_IM_D,k,j,i)*iw(m,cx,k,j,i)
+           + iw(m,b+M1_IM_X1,k,j,i)*iw(m,cx,k,j,im2)
+           + iw(m,b+M1_IM_X1+1,k,j,i)*iw(m,cx,k,j,im1)
+           + iw(m,b+M1_IM_X1+2,k,j,i)*iw(m,cx,k,j,ip1)
+           + iw(m,b+M1_IM_X1+3,k,j,i)*iw(m,cx,k,j,ip2)
+           + iw(m,b+M1_IM_X2,k,j,i)*iw(m,cx,k,j-2,i)
+           + iw(m,b+M1_IM_X2+1,k,j,i)*iw(m,cx,k,j-1,i)
+           + iw(m,b+M1_IM_X2+2,k,j,i)*iw(m,cx,k,j+1,i)
+           + iw(m,b+M1_IM_X2+3,k,j,i)*iw(m,cx,k,j+2,i);
+  if (thrd) {
+    y += iw(m,b+M1_IM_X3,k,j,i)*iw(m,cx,k-2,j,i)
+         + iw(m,b+M1_IM_X3+1,k,j,i)*iw(m,cx,k-1,j,i)
+         + iw(m,b+M1_IM_X3+2,k,j,i)*iw(m,cx,k+1,j,i)
+         + iw(m,b+M1_IM_X3+3,k,j,i)*iw(m,cx,k+2,j,i);
+  }
+  return y;
+}
+
 namespace {
 //----------------------------------------------------------------------------------------
 //! \fn ImplBCFromString
@@ -1596,6 +1632,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_hr_recon")) {
+    // xthinfix-1009 Fix B: read only when given (keys-off parameter dump unchanged)
+    std::string shr = pin->GetString("rad_m1","implicit_hr_recon");
+    if (shr.compare("plm") == 0) {
+      impl_muscl = true;
+    } else if (shr.compare("dc") != 0) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = '" + shr + "' is not a choice (dc | plm)");
+    }
+    if (impl_muscl && pin->GetOrAddString("rad_m1","implicit_flux_beam",
+                                          "closure").compare("halfrange") != 0) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux_beam = halfrange");
+    }
+    if (impl_muscl && cs_geom) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = plm is not implemented on the cubed sphere");
+    }
+  }
   std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
   if (sbm.compare("max") == 0) {
     impl_blend_fmode = M1_IBFM_MAX;
@@ -2025,6 +2077,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) {
       niw += M1_NIW_VIMP_T2;
     }
+  }
+  iw_muscl = -1;
+  if (impl_muscl) {
+    iw_muscl = niw;
+    niw += M1_NIW_MUSCL;
   }
   if (impl_eos_cache) {
     impl_nec = M1EosCacheNComp(impl_ecnt);
@@ -3498,6 +3555,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto cx1f = pmy_pack->pcoord->xx1f;
 
   // (1) the x2 face fluxes
+  const bool must = muscl_now;   // xthinfix-1009 Fix B (sig of the latest build)
+  const int imbt = iw_muscl;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
@@ -3609,6 +3668,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     if (blt) {
       f2_(m,k,j,i) += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,jm,i)
                                + bw2_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
+      if (must) {
+        const Real hcl = bw2_(m,M1_IFW_HCL,k,j,i), hcr = bw2_(m,M1_IFW_HCR,k,j,i);
+        Real gm = 0.0;
+        if (hcl != 0.0) {
+          gm += 0.25*hcl*iw_(m,imbt+M1_IM_SIG+1,k,jm,i)
+                *(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EP,k,jm-1,i));
+        }
+        if (hcr != 0.0) {
+          gm -= 0.25*hcr*iw_(m,imbt+M1_IM_SIG+1,k,j,i)
+                *(iw_(m,M1_IW_EP,k,j+1,i) - iw_(m,M1_IW_EP,k,jm,i));
+        }
+        f2_(m,k,j,i) += (cl/ch)*gm;
+      }
     }
   });
 
@@ -3716,6 +3788,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (blt) {
         f3_(m,k,j,i) += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,km,j,i)
                                  + bw3_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
+        if (must) {
+          const Real hcl = bw3_(m,M1_IFW_HCL,k,j,i), hcr = bw3_(m,M1_IFW_HCR,k,j,i);
+          Real gm = 0.0;
+          if (hcl != 0.0) {
+            gm += 0.25*hcl*iw_(m,imbt+M1_IM_SIG+2,km,j,i)
+                  *(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EP,km-1,j,i));
+          }
+          if (hcr != 0.0) {
+            gm -= 0.25*hcr*iw_(m,imbt+M1_IM_SIG+2,k,j,i)
+                  *(iw_(m,M1_IW_EP,k+1,j,i) - iw_(m,M1_IW_EP,km,j,i));
+          }
+          f3_(m,k,j,i) += (cl/ch)*gm;
+        }
       }
     });
   }
@@ -4836,6 +4921,8 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
   const bool odon = w7 ? (od_now == M1_OD_OPERATOR) : true;
   const bool vim = w7 && vimp_now;
   const int ivb = iw_vimp;
+  const bool mus = w7 && muscl_now;   // xthinfix-1009 Fix B
+  const int imb = iw_muscl;
   const int ni = ie - is + 1;
   const int nji = (je - js + 1)*ni;
   const int nkji = (ke - ks + 1)*nji;
@@ -4855,6 +4942,7 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
               + iw_(m,M1_IW_CKP,k,j,i)*iw_(m,cx,k+1,j,i);
       }
       if (vim) {y7 += M1VimpRow(iw_, ivb, cx, m, k, j, i, is, ie, cyclic, thrd);}
+      if (mus) {y7 += M1MusclRow(iw_, imb, cx, m, k, j, i, is, ie, cyclic, thrd);}
     } else {
       y7 = iw_(m,cy,k,j,i);
     }
@@ -5241,6 +5329,8 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out,
   const bool vfold = impl_vfold && vimp_now;
   const bool vim = vimp_now && !vfold;
   const int ivb = iw_vimp;
+  const bool mus = muscl_now;   // xthinfix-1009 Fix B
+  const int imb = iw_muscl;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   auto row = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
     Real y = st_(m,0,k,j,i)*iw_(m,cx,k,j,i)
@@ -5260,6 +5350,7 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out,
       }
     }
     if (vim) {y += M1VimpRow(iw_, ivb, cx, m, k, j, i, is, ie, cyclic, thrd);}
+    if (mus) {y += M1MusclRow(iw_, imb, cx, m, k, j, i, is, ie, cyclic, thrd);}
     if (vfold) {
       y += st_(m,19,k,j,i)*iw_(m,cx,k,j,i-2) + st_(m,20,k,j,i)*iw_(m,cx,k,j,i+2)
            + st_(m,21,k,j,i)*iw_(m,cx,k,j-2,i) + st_(m,22,k,j,i)*iw_(m,cx,k,j+2,i);
@@ -5470,6 +5561,8 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
   const bool vfold = impl_vfold && vimp_now;
   const bool vim = vimp_now && !vfold;
   const int ivb = iw_vimp;
+  const bool mus = muscl_now;   // xthinfix-1009 Fix B
+  const int imb = iw_muscl;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   // the depth of the shell at each face (x1-, x1+, x2-, x2+, x3-, x3+): w at every face
   // of a non-degenerate direction; under implicit_halo_ovl_faces only at the faces
@@ -5500,6 +5593,7 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
       }
     }
     if (vim) {y += M1VimpRow(iw_, ivb, cx, m, k, j, i, is, ie, cyclic, thrd);}
+    if (mus) {y += M1MusclRow(iw_, imb, cx, m, k, j, i, is, ie, cyclic, thrd);}
     if (vfold) {
       y += st_(m,19,k,j,i)*iw_(m,cx,k,j,i-2) + st_(m,20,k,j,i)*iw_(m,cx,k,j,i+2)
            + st_(m,21,k,j,i)*iw_(m,cx,k,j-2,i) + st_(m,22,k,j,i)*iw_(m,cx,k,j+2,i);
@@ -5851,6 +5945,8 @@ void RadiationM1::ImplicitApplyOp(int xc, int yc) {
   const int cx = xc, cy = yc;
   const bool vim = vimp_now;
   const int ivb = iw_vimp;
+  const bool mus = muscl_now;   // xthinfix-1009 Fix B
+  const int imb = iw_muscl;
   par_for("m1_impl_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
@@ -5865,6 +5961,7 @@ void RadiationM1::ImplicitApplyOp(int xc, int yc) {
            + iw_(m,M1_IW_CKP,k,j,i)*iw_(m,cx,k+1,j,i);
     }
     if (vim) {y += M1VimpRow(iw_, ivb, cx, m, k, j, i, is, ie, cyclic, thrd);}
+    if (mus) {y += M1MusclRow(iw_, imb, cx, m, k, j, i, is, ie, cyclic, thrd);}
     iw_(m,cy,k,j,i) = y;
   });
   // MILESTONE 3b phase D: the off-diagonal Eddington coupling, when it is part of the
@@ -6635,6 +6732,8 @@ void RadiationM1::ImplicitBiCGStabEnd(int nit, bool fell_back) {
     // system from the Krylov solve (measured: a Picard 2-cycle, runs_3v_vimplicit)
     const bool vim = vimp_now;
     const int ivb = iw_vimp;
+    const bool mus = muscl_now;   // xthinfix-1009 Fix B (as M1VimpRow, lagged at E^k)
+    const int imb = iw_muscl;
     const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
     par_for("m1_impl_bcg_lj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -6646,6 +6745,7 @@ void RadiationM1::ImplicitBiCGStabEnd(int nit, bool fell_back) {
              + iw_(m,M1_IW_CKP,k,j,i)*iw_(m,M1_IW_EP,k+1,j,i);
       }
       if (vim) {r -= M1VimpRow(iw_, ivb, M1_IW_EP, m, k, j, i, is, ie, cyclic, thrd);}
+      if (mus) {r -= M1MusclRow(iw_, imb, M1_IW_EP, m, k, j, i, is, ie, cyclic, thrd);}
       iw_(m,M1_IW_TR,k,j,i) = r;
     });
     // MILESTONE 3b phase D: the right-hand side of a LINE-JACOBI update is the assembled
@@ -7559,6 +7659,10 @@ void RadiationM1::ImplicitReport() {
   if (impl_vimp) {
     std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
               << " min E from the solve=" << vimp_emin << std::endl;
+  }
+  if (impl_muscl) {
+    std::cout << "<rad_m1> implicit_hr_recon = plm positivity fallbacks=" << muscl_nfall
+              << " min E from the solve=" << muscl_emin << std::endl;
   }
   std::cout << "<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= "
             << "e_floor cell-solves=" << flr_ne
@@ -8907,6 +9011,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // M-matrix, so E' > 0 is no longer guaranteed by construction).
   od_now = impl_offdiag;
   vimp_now = impl_vimp;
+  muscl_now = impl_muscl;   // xthinfix-1009 Fix B
   // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
   // form may drop it for the rest of the step, positivity below)
   vlat_now = vlat_on && (vlat_odm > 0);
@@ -10012,6 +10117,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     // implicit_vimp: the Jacobian of the implicit enthalpy velocity for this pass
     if (vimp_now) {ImplicitVimpBuild();}
+    if (muscl_now) {ImplicitMusclBuild();}   // xthinfix-1009 Fix B
     const bool vim = vimp_now;
     const int ivb = iw_vimp;
 
@@ -10723,9 +10829,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (t2s == M1_T2S_STAGE1) {tmr_cnt[3] += 1.0; tmr_cnt[5] += nin;}
         if (t2s == M1_T2S_STAGE2) {tmr_cnt[4] += 1.0; tmr_cnt[6] += nin;}
       }
-      if (vimp_now && odm != M1_OD_OPERATOR) {
+      if ((vimp_now || muscl_now) && odm != M1_OD_OPERATOR) {
         // implicit_vimp POSITIVITY: the Newton coupling is not an M-matrix either; a
-        // non-positive E drops it for the rest of the step (counted), as for od below
+        // non-positive E drops it for the rest of the step (counted), as for od below.
+        // xthinfix-1009 Fix B: the plm half-range row has positive off-diagonals too
+        // (the E_c-2 / E_c+2 coefficients of the inflow faces): the same fallback to dc
         Real emin = 1.0e300;
         Kokkos::parallel_reduce("m1_impl_vmmin",
         Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
@@ -10739,8 +10847,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         MPI_Allreduce(&emin, &g, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
         emin = g;}
 #endif
-        vimp_emin = std::min(vimp_emin, emin);
-        if (!(emin > 0.0)) {
+        if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
+        if (muscl_now) {muscl_emin = std::min(muscl_emin, emin);}
+        if (!(emin > 0.0) && muscl_now) {
+          muscl_now = false;
+          muscl_nfall += 1.0;
+        }
+        if (!(emin > 0.0) && vimp_now) {
           // DEBUG dbg_t2_admiss (m1-positivity): the rows of the cells this pass solved
           // to E <= 0, WITH the implicit_vimp block, before the block is dropped
           if (t2_dbg_adm_n < t2_dbg_adm) {
@@ -10806,6 +10919,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             vimp_now = false;
             vimp_nfall += 1.0;
           }
+          if (muscl_now) {
+            muscl_now = false;
+            muscl_nfall += 1.0;
+          }
         }
       }
     } else {
@@ -10866,6 +10983,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 
     // (g) the face fluxes of the new iterate, and the derived cell flux
+    const bool musf = muscl_now;   // xthinfix-1009 Fix B: the plm half-range face values
+    const int imbf = iw_muscl;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -10995,6 +11114,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
                     + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
                     + ifw_(m,M1_IFW_DG,k,j,i);
+          if (musf) {
+            const Real hcl = ifw_(m,M1_IFW_HCL,k,j,i), hcr = ifw_(m,M1_IFW_HCR,k,j,i);
+            const int imm = (cyclic && im == is) ? ie : (im-1);
+            const int ipp = (cyclic && ip == ie) ? is : (ip+1);
+            if (hcl != 0.0) {
+              gh += 0.25*hcl*iw_(m,imbf+M1_IM_SIG,k,j,im)
+                    *(iw_(m,M1_IW_EP,k,j,ip) - iw_(m,M1_IW_EP,k,j,imm));
+            }
+            if (hcr != 0.0) {
+              gh -= 0.25*hcr*iw_(m,imbf+M1_IM_SIG,k,j,ip)
+                    *(iw_(m,M1_IW_EP,k,j,ipp) - iw_(m,M1_IW_EP,k,j,im));
+            }
+          }
           fn = (1.0 - al)*fn + (cl/ch)*gh;
         }
         f0_(m,k,j,i) = fn;
@@ -12106,6 +12238,159 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     if (hk[q] > 0) {std::cout << " " << q << ":" << hk[q];}
   }
   std::cout << std::endl;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitMusclBuild
+//! \brief implicit_hr_recon = plm (xthinfix-1009 Fix B), once per Picard pass after the
+//! face coefficients (x1: ifw, x2/x3: ifw2/ifw3) of the pass are set.
+//!  (1) sig_d per cell from the lagged E (M1_IW_EP): van Leer, sig = 4ab/(a+b)^2 for
+//!      ab > 0 (a, b the two one-sided differences), else 0, so the face value
+//!      E_c +- s_c/2, s_c = sig_c (E_c+1 - E_c-1)/2, lies between E_c and the neighbour
+//!      at the lagged state (TVD).  sig = 0 next to a physical boundary (its ghost is not
+//!      filled) and on an efix row.  Halo-exchanged (3 components).
+//!  (2) the row: per direction and face, dG = (HCL s_L - HCR s_R)/2 with the frozen sig,
+//!      row = f+ dG+ - f- dG- (f = dt/dx_d, or dt A_f/V on sp, as the 7-point row's
+//!      HCL/HCR terms), as coefficients on E_c-2..E_c+2.  Linear in E for the pass, so
+//!      the Krylov operator is the 7-point row + M1MusclRow and the line/mg
+//!      preconditioners keep the 7-point (dc) part.  HCL = HCR = 0 at physical faces and
+//!      w = 0 faces, so a central face is untouched.
+
+void RadiationM1::ImplicitMusclBuild() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto ifw_ = ifw;
+  auto bw2_ = ifw2;
+  auto bw3_ = ifw3;
+  auto mbsize = pmy_pack->pmb->mb_size.d_view;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto pos_ = part_pos;
+  const int nblkx1 = part_nblk;
+  const bool thrd = trans_x3;
+  const bool twod = pmy_pack->pmesh->multi_d;
+  const Real dt = dt_sub;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const bool sph = sph_geom;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  const int b = iw_muscl;
+  const bool l2 = twod && (bw2_.extent_int(0) > 0);
+  const bool l3 = thrd && (bw3_.extent_int(0) > 0);
+  // (1) the frozen limiter
+  par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_.d_view(m);
+    const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    const bool efx = !cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                                 (i == ie && topb && bchi == M1_IBC_EFIX));
+    for (int d = 0; d < 3; ++d) {
+      Real sg = 0.0;
+      bool ok = !efx && ((d == 0) || (d == 1 && l2) || (d == 2 && l3));
+      if (ok && d == 0 && !cyclic) {
+        ok = !((i == is && botb) || (i == ie && topb));
+      } else if (ok && d > 0) {
+        const BoundaryFlag blo = mbbcs(m, (d == 1) ? BoundaryFace::inner_x2
+                                                   : BoundaryFace::inner_x3);
+        const BoundaryFlag bhi = mbbcs(m, (d == 1) ? BoundaryFace::outer_x2
+                                                   : BoundaryFace::outer_x3);
+        const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+        const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+        const int c = (d == 1) ? j : k;
+        const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je : ke;
+        ok = !((c == cs && plo) || (c == ce && phi));
+      }
+      if (ok) {
+        int km = k, kp = k, jm = j, jp = j, im = i, ip = i;
+        if (d == 0) {
+          im = (i > is) ? (i-1) : ie;
+          ip = (i < ie) ? (i+1) : is;
+        } else if (d == 1) {
+          jm = j - 1; jp = j + 1;
+        } else {
+          km = k - 1; kp = k + 1;
+        }
+        const Real e0 = iw_(m,M1_IW_EP,k,j,i);
+        const Real ea = e0 - iw_(m,M1_IW_EP,km,jm,im);
+        const Real eb = iw_(m,M1_IW_EP,kp,jp,ip) - e0;
+        if (ea*eb > 0.0) {sg = 4.0*ea*eb/SQR(ea + eb);}
+      }
+      iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
+    }
+  });
+  ImplicitHaloExchange(3, b + M1_IM_SIG);
+  // (2) the row
+  par_for("m1_muscl_row", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real dg = 0.0;
+    Real cf[3][4];
+    for (int d = 0; d < 3; ++d) {
+      for (int q = 0; q < 4; ++q) {cf[d][q] = 0.0;}
+      if ((d == 1 && !l2) || (d == 2 && !l3)) {continue;}
+      int km = k, kp = k, jm = j, jp = j, im = i, ip = i;
+      if (d == 0) {
+        im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
+        ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
+      } else if (d == 1) {
+        jm = j - 1; jp = j + 1;
+      } else {
+        km = k - 1; kp = k + 1;
+      }
+      // the two faces of the cell along d: HCL/HCR, and the row factors f+ f-
+      Real hlp, hrp, hlm, hrm, fp, fm;
+      if (d == 0) {
+        hlp = ifw_(m,M1_IFW_HCL,k,j,i+1); hrp = ifw_(m,M1_IFW_HCR,k,j,i+1);
+        hlm = ifw_(m,M1_IFW_HCL,k,j,i);   hrm = ifw_(m,M1_IFW_HCR,k,j,i);
+        fp = dt/mbsize(m).dx1; fm = fp;
+        if (sph) {
+          const Real iv = dt/cvol(m,k,j,i);
+          fp = carea.x1f(m,k,j,i+1)*iv; fm = carea.x1f(m,k,j,i)*iv;
+        }
+      } else if (d == 1) {
+        hlp = bw2_(m,M1_IFW_HCL,k,j+1,i); hrp = bw2_(m,M1_IFW_HCR,k,j+1,i);
+        hlm = bw2_(m,M1_IFW_HCL,k,j,i);   hrm = bw2_(m,M1_IFW_HCR,k,j,i);
+        fp = dt/mbsize(m).dx2; fm = fp;
+        if (sph) {
+          const Real iv = dt/cvol(m,k,j,i);
+          fp = carea.x2f(m,k,j+1,i)*iv; fm = carea.x2f(m,k,j,i)*iv;
+        }
+      } else {
+        hlp = bw3_(m,M1_IFW_HCL,k+1,j,i); hrp = bw3_(m,M1_IFW_HCR,k+1,j,i);
+        hlm = bw3_(m,M1_IFW_HCL,k,j,i);   hrm = bw3_(m,M1_IFW_HCR,k,j,i);
+        fp = dt/mbsize(m).dx3; fm = fp;
+        if (sph) {
+          const Real iv = dt/cvol(m,k,j,i);
+          fp = carea.x3f(m,k+1,j,i)*iv; fm = carea.x3f(m,k,j,i)*iv;
+        }
+      }
+      const Real sc = iw_(m,b+M1_IM_SIG+d,k,j,i);
+      const Real sp = iw_(m,b+M1_IM_SIG+d,kp,jp,ip);
+      const Real sm = iw_(m,b+M1_IM_SIG+d,km,jm,im);
+      // dG+ = 1/4 [HCL+ sc (x+1 - x-1) - HCR+ sp (x+2 - x0)]
+      // dG- = 1/4 [HCL- sm (x0 - x-2) - HCR- sc (x+1 - x-1)]
+      // a zero face coefficient (physical or central face) never multiplies a ghost sig
+      const Real ca = (hlp != 0.0) ? 0.25*fp*hlp*sc : 0.0;
+      const Real cb = (hrp != 0.0) ? 0.25*fp*hrp*sp : 0.0;
+      const Real cc = (hlm != 0.0) ? 0.25*fm*hlm*sm : 0.0;
+      const Real cd = (hrm != 0.0) ? 0.25*fm*hrm*sc : 0.0;
+      // row = dG+ - dG- : x+2: -cb; x+1: ca + cd; x0: cb - cc; x-1: -(ca + cd); x-2: cc
+      cf[d][0] = cc;
+      cf[d][1] = -(ca + cd);
+      cf[d][2] = ca + cd;
+      cf[d][3] = -cb;
+      dg += cb - cc;
+    }
+    iw_(m,b+M1_IM_D,k,j,i) = dg;
+    for (int q = 0; q < 4; ++q) {
+      iw_(m,b+M1_IM_X1+q,k,j,i) = cf[0][q];
+      iw_(m,b+M1_IM_X2+q,k,j,i) = cf[1][q];
+      iw_(m,b+M1_IM_X3+q,k,j,i) = cf[2][q];
+    }
+  });
 }
 
 } // namespace radm1

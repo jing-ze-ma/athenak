@@ -1121,6 +1121,13 @@ class RadiationM1 {
   DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
   MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
   void ImplicitVimpBuild();     // the Jacobian of a(v') E' for this Picard pass
+  // <rad_m1>/implicit_hr_recon = dc | plm (xthinfix-1009 Fix B, rad_m1_implicit.hpp)
+  bool impl_muscl = false;      // plm half-range face values (default dc: untouched)
+  bool muscl_now = false;       // on for this step (the positivity fallback drops it)
+  int iw_muscl = -1;            // first iw component of the M1_NIW_MUSCL block
+  Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
+  Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on
+  void ImplicitMusclBuild();    // the limiter and the row of this Picard pass
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`

@@ -332,7 +332,7 @@ void M1PCRXD(const DvceArray5D<Real> &iw_, const DvceArray1D<Real> &kd_,
 
 bool RadiationM1::ImplicitKrylovDevOK() {
   if (!((impl_kdev > 0) && (global_variable::nranks == 1) && halo_direct_on
-        && impl_stencil && !(vimp_now && !impl_vfold))) {
+        && impl_stencil && !(vimp_now && !impl_vfold) && !muscl_now)) {
     return false;
   }
   if (kdev_x1p < 0) {   // once: does any block have an x1 neighbour (periodic x1)?
