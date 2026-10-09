@@ -109,6 +109,9 @@ int m1_cy_n = 0;
 // angle):
 // rect = 1 is an oriented rectangle about (x, y), long axis at `angle` (radians) to x1
 Real m1_cy_p[8][9] = {{0.0}};
+// the object table captured by value in the reset kernel (namespace scope: CUDA does
+// not take a function-local type in an extended lambda)
+struct M1CylP {Real v[8][9];};
 Real m1_cy_rhob = 1.0e-6, m1_cy_tb = 1.0e-3, m1_cy_gm1 = 2.0/3.0;
 
 // radshock: the two Dirichlet end states (rho, v, E_gas, E_rad, F_rad)
@@ -1234,8 +1237,7 @@ void RadM1CylGas(Mesh *pm, const Real bdt) {
   auto &size = pmbp->pmb->mb_size;
   auto uh = pmbp->phydro->u0;
   const int nc = m1_cy_n;
-  struct CylP {Real v[8][9];};
-  CylP p;
+  M1CylP p;
   for (int c = 0; c < 8; ++c) {
     for (int q = 0; q < 9; ++q) {p.v[c][q] = m1_cy_p[c][q];}
   }
