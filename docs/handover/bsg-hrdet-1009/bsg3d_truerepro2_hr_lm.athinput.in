@@ -153,6 +153,7 @@ implicit_flux_x1min = 2.2942145641e+13   # L/(4 pi r_in^2), L = 5.581461e+38 (Ma
 implicit_bc_x1max   = marshak
 implicit_flux_x1max = 0.0
 <problem>
+he_ic_eint_from_t = false   # PIN (defaults-1009, 10-09): keeps the pre-10-09 IC (file eint); the new default is true
 he_seed = 0.0             # paper: no seed
 user_srcs   = true
 user_bcs    = true
