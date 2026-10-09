@@ -133,6 +133,10 @@ class M1Evt {
 
 M1Evt &M1EvtA() {static M1Evt e; return e;}
 M1Evt &M1EvtB() {static M1Evt e; return e;}
+//! implicit_halo_mpi: the unpack kernel of the last exchange (it reads hm_rbuf, which the
+//! next exchange's receives overwrite) and whether one is still to be waited for
+M1Evt &M1EvtU() {static M1Evt e; return e;}
+bool &M1HmUnpackPending() {static bool b = false; return b;}
 #if MPI_PARALLEL_ENABLED
 //! implicit_halo_mpi: the requests of the exchange in flight (Post -> Finish)
 std::vector<MPI_Request> &M1HmReqR() {static std::vector<MPI_Request> v; return v;}
@@ -402,6 +406,16 @@ void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
   auto sbuf = hm_sbuf;
   auto rbuf = hm_rbuf;
   constexpr int tag = 4242;
+  // hrdet-1009: the receive buffer is still being read by the PREVIOUS exchange's unpack
+  // kernel until that kernel has run; a receive posted now lets a fast neighbour's
+  // message (GPU-aware MPI, IPC) overwrite it first, so that unpack hands the ghosts the
+  // NEXT component.  Back-to-back exchanges with no host sync in between (the three
+  // single-component halo exchanges of the half-range lateral faces) hit this:
+  // run-to-run differences from cycle 1 on the 16-block BSG layout.
+  if (M1HmUnpackPending()) {
+    M1EvtU().wait();
+    M1HmUnpackPending() = false;
+  }
   for (int s = 0; s < nseg; ++s) {
     if (hm_rlen[s] > 0) {
       MPI_Irecv(rbuf.data() + static_cast<size_t>(hm_roff[s])*nq, hm_rlen[s]*nq,
@@ -484,6 +498,8 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
       const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
       iw_(em(e),nc,k,j,i) = rbuf(off*nq + n*len + (e - off));
     });
+    M1EvtU().record();
+    M1HmUnpackPending() = true;
   }
   MPI_Waitall(nseg, sq.data(), MPI_STATUSES_IGNORE);
 #else
