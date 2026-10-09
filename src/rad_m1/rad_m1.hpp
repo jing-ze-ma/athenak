@@ -592,6 +592,7 @@ class RadiationM1 {
   int impl_blend_fmode;         // M1_IBFM_*: max or mean of the two cells' reduced flux
   int impl_blend_mode;          // M1_IBMODE_*: blend the whole flux, or add the HLL
                                 // dissipation alone on top of the full central flux
+  Real impl_blend_xthin = 0.0;    // hrup-1009: transparency override X0 (0 off)
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
