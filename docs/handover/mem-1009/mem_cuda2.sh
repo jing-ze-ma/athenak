@@ -2,7 +2,9 @@
 # BSG GPU-memory + s/cycle + bitwise, round 2 (mem-1009 vet_gd_twin_lowmem).
 # usage (inside a 1-node allocation with 4 GPUs):
 #   bash mem_cuda2.sh <BO = 98835d99 binary> <BN = mem-1009 6c5d8fb2 binary> <files dir> <out dir> [KT .so]
-# arms "name:B:nranks:mesh:nlim:lm" (B = O|N, mesh = red|full, lm = 1 adds rad_m1/vet_gd_twin_lowmem=true)
+# arms "name:B:nranks:mesh:nlim:lm" (B = O|N, mesh = red|full, lm = 1: input copy with vet_gd_twin_lowmem = true)
+# bitwise: a lowmem bin differs from base only in its header (the extra input line): compare the
+# data after <par_end> (bitcmp.py) and the hst byte-wise
 # default order (the first two answer the Caltech question):
 #   lm_c8   N, FULL mesh, 2 ranks x 8 blocks, lowmem      -> fits? peak/GPU, s/cycle (THE CALTECH LAYOUT)
 #   lm_c4   N, FULL mesh, 4 ranks x 4 blocks, lowmem      -> bitwise vs base_c4 (dumps at 0 and 5), cost/cycle
@@ -24,11 +26,18 @@ go(){ # name bin nranks mesh nlim lm
   D=$S/$1; mkdir -p $D && cd $D || exit 1
   G=""; [ "$4" = red ] && G="$GR"
   L="$SRUN4"; [ "$3" = 2 ] && L="$SRUN2"
-  K=""; [ "$6" = 1 ] && K="rad_m1/vet_gd_twin_lowmem=true"
+  # lowmem: the key must be IN the input file (AthenaK rejects a command-line key that the
+  # input does not have): an input copy with the line after vet_gd_twin_fuse
+  K=""; I=$IH
+  if [ "$6" = 1 ]; then
+    I=$S/bsg_hr_dc5_lm.athinput; K="(in file $I)"
+    [ -f $I ] || sed '/^vet_gd_twin_fuse/a vet_gd_twin_lowmem = true' $IH > $I
+    grep -q '^vet_gd_twin_lowmem = true' $I || { echo "no lowmem line in $I"; return; }
+  fi
   echo "== $1 $(md5sum $2 | cut -c1-32) n=$3 $4 nlim=$5 keys=[$K] start $(date +%T)"; t0=$(date +%s)
   nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits -l 1 > smi.log 2>&1 &
   SP=$!
-  KOKKOS_TOOLS_LIBS=$KT $L $2 -i $IH -d $D $G time/nlim=$5 time/ndiag=1 output5/dt=1e30 $K \
+  KOKKOS_TOOLS_LIBS=$KT $L $2 -i $I -d $D $G time/nlim=$5 time/ndiag=1 output5/dt=1e30 \
     < /dev/null > out.log 2>&1
   rc=$?; kill $SP
   pk=$(awk -F, '{if($2>m[$1])m[$1]=$2} END{for(i in m) printf "gpu%s=%dMiB ", i, m[i]}' smi.log)
