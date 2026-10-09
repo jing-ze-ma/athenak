@@ -2797,8 +2797,24 @@ void RadiationM1::VetGdHalfRange(const int stage) {
 #if MPI_PARALLEL_ENABLED
     {
       auto mh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_hrm);
-      MPI_Allreduce(MPI_IN_PLACE, mh.data(), c1, MPI_ATHENA_REAL, MPI_SUM,
-                    MPI_COMM_WORLD);
+      if (vgd_twdet && global_variable::nranks > 1) {
+        // hrdet-1009: rank-ordered sum (as the twin's shell_mean under vet_gd_twin_det).
+        // MPI_Allreduce of these c1 values is NOT run-to-run reproducible on the 16-rank
+        // 8-node BSG layout (identical runs differed in m1 F2/F3 from cycle 1, in every
+        // block and shell, while E, F1 and the twin-det tensor stayed bitwise).
+        const int nr = global_variable::nranks;
+        std::vector<Real> all(static_cast<size_t>(c1)*nr);
+        MPI_Allgather(mh.data(), c1, MPI_ATHENA_REAL, all.data(), c1, MPI_ATHENA_REAL,
+                      MPI_COMM_WORLD);
+        for (int i = 0; i < c1; ++i) {
+          Real a = 0.0;
+          for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*c1 + i];}
+          mh(i) = a;
+        }
+      } else {
+        MPI_Allreduce(MPI_IN_PLACE, mh.data(), c1, MPI_ATHENA_REAL, MPI_SUM,
+                      MPI_COMM_WORLD);
+      }
       Kokkos::deep_copy(vgd_hrm, mh);
     }
 #endif
