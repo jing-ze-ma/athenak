@@ -522,3 +522,39 @@ gas only, so it violates the no-injection premise; run as a sensitivity/cost cas
   | 1024, 1 H200 | 0.362 (static ratio) | 17.1 h | 14.2 d | 14.2 |
   | 1024, 2 H200 | ~0.23 (assumed 1.6x, unmeasured) | ~10.7 h | ~8.9 d | ~17.8 |
   The impact shock lowers dt further as it deepens (min 9.3e-7 seen); treat these as lower bounds.
+
+## 11. S5: 3.81 d, physical ambient, hot optically thick stream (2026-10-09, Caltech, accretor-rhd-1008)
+
+User decisions 10-09: (1) physical ambient (floor gas at radiative equilibrium, absorption on, no
+mask), (2) the hot one-zone stream with its radiation injected (E = a T^4, F = (4/3) E v; reverses the
+10-08 no-injection decision), (3) P = 3.81 d. Derivation (inputs, approximations, numbers):
+docs/dev/accretor_rhd/plaskett_s5_1009.md; runs rhd/s5/.
+
+### 11.1 Code (keys default off, bitwise)
+- `problem/env_amb_mode = radeq` (default hot): IC atmosphere ends at rho_amb, ambient = rho_amb at T_col;
+  requires env_t_relax = 0, no opac_abs_rho_max, hydro/dfloor = rho_amb. The pgen applies the floor itself
+  after the sources (added gas at the cell's v and T): mass booked in hst column 8 `Mfl` (replaces Jstr),
+  energy in Erel. The existing floor sponge stays.
+- `problem/stream_rad = true` (default false): window M1 ghosts E = a T_s^4, F = (4/3) E v; in the implicit
+  solve (face-flux x1 BC, ghosts not read) the window columns of the outer face are an optically thick
+  INFLOW face (RadiationM1::SetX1maxBathColumns): comoving flux 0, lab inflow (1 + chi) v E_s; elsewhere
+  Marshak/vacuum. The module stores the lab advective radiation flux through r_out (ibadv_x1max), booked in
+  Ebnd. First version (29d5a6c4) used E_s as a Marshak bath, c q (E - E_s): an isotropic 65 kK wall
+  shining ~450x the advected radiation into the thin ambient; it diverged in the first step (rhd/s5/
+  smoke_bath_fail). Final: 3f37ebf8.
+
+### 11.2 Status at the mem-1009 merge (interim, 3f37ebf8)
+- Gates (29d5a6c4, new keys unset): env13, env13_cool vs 76afb8f4, S2 vs 6e314189, S3a-final input vs
+  9a706823: hst, bin, cycle/dt identical. GPU = CPU to round-off (nx3 256, 10 cycles, radeq + stream_rad,
+  stream on from t = 0; both 29d5a6c4 and 3f37ebf8).
+- Static (radeq, stream off, 0.02 orbit, 1340 cycles, rhd/s5/static): Lmeas/L_in 1.0031-1.0060 (last 1.0049),
+  T_eff(phi 90 eq) 28.33 kK, photosphere moved +1-2e-3 Rsun (< 1 cell), MR 4e-14 Menv, budget drift -1.5e-6
+  of int L dt after the IC transient, mass budget closes (Mfl 1.2e-9), floor gas T_gas = T_rad to 1e-4,
+  0 NON-CONVERGED, Picard 2.1; dt 7.04e-6 (4.6x S3a's 1.53e-6: the hot ambient set dt), 0.49-0.58 s/cycle.
+- Stream smoke (rhd/s5/smoke, restart t 0.00946): approach fine (Picard 11-15, dt 7.03e-6, 0.95 s/cycle,
+  budget 4e-7, compressed ambient T_gas/T_rad = 1); the stream core cools 63 kK (r_out) -> 52 (r 12) -> 35
+  (r 11) -> 23 kK (front). Picard DIVERGED at t = 0.02428 (resid 0.58) at r 9.62, phi 6 deg, where the
+  stream head meets the top of the atmosphere near the L1 cap: the same place and time as the S4 env13
+  failure. Before it, the whole column from the photosphere top (r 9.465, f_rr -> 1) to the stream head
+  collapses radiatively 20 -> 9.5 kK in 2e-4 code. Not cured by cfl 0.15 or Anderson acceleration.
+  Open: gas-only stream on the radeq ambient (smoke_gas) and implicit_flux ap_hll/blend from rst 5.
