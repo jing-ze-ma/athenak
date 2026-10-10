@@ -1823,6 +1823,9 @@ class RadiationM1 {
   bool vgd_hx_on = false;
   int vgd_hx_mode = 0;     // 1: masked (bitwise to the dense path), 2: mask-free
   DvceArray1D<int> vgd_hx_mk;              // (m, v, k, j) dense band: read marks
+  int vgd_hx_stamp = 0;                    // the marks of the current build
+  Kokkos::View<int, DevMemSpace> vgd_hx_oc;   // marked ghosts outside the region
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_pin, vgd_hx_pin2;
   DvceArray1D<int> vgd_hx_need, vgd_hx_nc, vgd_hx_ns;   // build scratch
   DvceArray1D<int> vgd_hx_t0, vgd_hx_t1;
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_hb;   // bounds, counts

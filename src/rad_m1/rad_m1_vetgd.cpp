@@ -1830,6 +1830,7 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
   auto fs_ = fs;
   auto fr_ = fr;
   auto mk_ = vgd_hx_mk;
+  const int stamp = vgd_hx_stamp;
   const DevExeSpace ex_ = vgd_cur;
   auto grow = [](DvceArray1D<int> &a, const size_t n) {
     if (a.extent(0) < n) {Kokkos::realloc(Kokkos::WithoutInitializing, a, n);}
@@ -1860,7 +1861,7 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
     const int r1 = t - v*kn*jn;
     const int kk = r1/jn;
     const int jj = r1 - kk*jn;
-    if (mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) == 0) {return;}
+    if (mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) != stamp) {return;}
     const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nv;
     if (wint && wl_(m,kd+kk,jd+jj) != 0) {
       for (int u = 0; u < 3; ++u) {
@@ -1876,7 +1877,7 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
     const int nall = (nmb1 + 1)*nv*c3*c2;
     Kokkos::parallel_reduce("m1_vgd_hx_out", Kokkos::RangePolicy<>(ex_, 0, nall),
     KOKKOS_LAMBDA(const int q, int &acc) {
-      if (mk_(q) == 0) {return;}
+      if (mk_(q) != stamp) {return;}
       const int jj = q % c2;
       const int kk = (q/c2) % c3;
       const bool in = (jj >= w - ws) && (jj < w + nx2 + ws) && (kk >= w - ws) &&
@@ -1937,7 +1938,7 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
     const int kk = r1/jn;
     const int jj = r1 - kk*jn;
     const size_t q = static_cast<size_t>(ro_(ws,8*m + o))*nv + t;
-    const bool rd = mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) != 0;
+    const bool rd = mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) == stamp;
     const bool wa = wint && wl_(m,kd+kk,jd+jj) != 0;
     f0_(q) = (rd && !wa) ? 1 : 0;
     f1_(q) = (rd && wa) ? 1 : 0;
@@ -2123,6 +2124,7 @@ void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
   auto m3_ = vgd_m3;
   const bool wint = vgd_wint;
   auto mk_ = vgd_hx_mk;
+  const int stamp = vgd_hx_stamp;
   const DevExeSpace ex_ = vgd_cur;
   auto grow = [](DvceArray1D<int> &a, const size_t n) {
     if (a.extent(0) < n) {Kokkos::realloc(Kokkos::WithoutInitializing, a, n);}
@@ -2148,7 +2150,7 @@ void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
     const int r1 = t - v*kn*jn;
     const int kk = r1/jn;
     const int jj = r1 - kk*jn;
-    if (mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) == 0) {return;}
+    if (mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) != stamp) {return;}
     const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nv;
     if (wint && wl_(m,kd+kk,jd+jj) != 0) {
       for (int u = 0; u < 3; ++u) {
@@ -2159,18 +2161,10 @@ void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
       nd_(rb0 + (vs*kn + kk)*jn + jj) = 1;
     }
   });
-  int nout = 0;
+  int nout = 0;           // marked ghosts outside the region (counted by the marks)
   {
-    const int nall = nmb*nv*c3*c2;
-    Kokkos::parallel_reduce("m1_vgd_hx_out", Kokkos::RangePolicy<>(ex_, 0, nall),
-    KOKKOS_LAMBDA(const int q, int &acc) {
-      if (mk_(q) == 0) {return;}
-      const int jj = q % c2;
-      const int kk = (q/c2) % c3;
-      const bool in = (jj >= w - ws) && (jj < w + nx2 + ws) && (kk >= w - ws) &&
-                      (kk < w + nx3 + ws);
-      if (!in) {acc += 1;}
-    }, nout);
+    Kokkos::View<int, HostMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h(&nout);
+    Kokkos::deep_copy(ex_, h, vgd_hx_oc);
   }
   // the read ghosts (non-wall f0, wall f1) over the receive layout
   par_for("m1_vgd_hx_dflag", ex_, 0, nmb1, 0, 7, 0, mx - 1,
@@ -2187,7 +2181,7 @@ void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
     const int kk = r1/jn;
     const int jj = r1 - kk*jn;
     const size_t q = static_cast<size_t>(ro_(ws,8*m + o))*nv + t;
-    const bool rd = mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) != 0;
+    const bool rd = mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) == stamp;
     const bool wa = wint && wl_(m,kd+kk,jd+jj) != 0;
     f0_(q) = (rd && !wa) ? 1 : 0;
     f1_(q) = (rd && wa) ? 1 : 0;
@@ -2232,10 +2226,12 @@ void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
     std::vector<int> pst(np + 1);
     for (int p = 0; p < np; ++p) {pst[p] = vgd_prdsp[ws][p]*nv;}
     pst[np] = static_cast<int>(rtot);
-    DvceArray1D<int> pst_d("m1_vgd_hx_pst", np + 1);
-    auto pst_h = Kokkos::create_mirror_view(pst_d);
-    for (int p = 0; p <= np; ++p) {pst_h(p) = pst[p];}
-    Kokkos::deep_copy(ex_, pst_d, pst_h);
+    if (static_cast<int>(vgd_hx_pin.extent(0)) < np + 1) {
+      vgd_hx_pin = Kokkos::View<int*, Kokkos::SharedHostPinnedSpace>("m1_vgd_hx_pin",
+                                                                     np + 1);
+    }
+    auto pst_d = vgd_hx_pin;
+    for (int p = 0; p <= np; ++p) {pst_d(p) = pst[p];}
     const int np_ = np;
     Kokkos::parallel_for("m1_vgd_hx_req", Kokkos::RangePolicy<>(ex_, 0, rtot),
     KOKKOS_LAMBDA(const size_t q) {
@@ -2326,14 +2322,17 @@ void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
     }
     std::sort(pc.begin(), pc.end());
     const int npc = static_cast<int>(pc.size());
-    DvceArray1D<int> ps_d("m1_vgd_hx_ps", 2*npc + 2*np + 2);
-    auto ps_h = Kokkos::create_mirror_view(ps_d);
+    if (static_cast<int>(vgd_hx_pin2.extent(0)) < 2*npc + 2*np + 2) {
+      vgd_hx_pin2 = Kokkos::View<int*, Kokkos::SharedHostPinnedSpace>("m1_vgd_hx_pin2",
+                                                                      2*npc + 2*np + 2);
+    }
+    auto ps_d = vgd_hx_pin2;
+    auto ps_h = ps_d;
     for (int q = 0; q < npc; ++q) {ps_h(q) = pc[q][0]; ps_h(npc + q) = pc[q][1];}
     for (int p = 0; p <= np; ++p) {
       ps_h(2*npc + p) = spx[p];
       ps_h(2*npc + np + 1 + p) = (p < np) ? vgd_pdsp[ws][p]*nv : 0;
     }
-    Kokkos::deep_copy(ex_, ps_d, ps_h);
     const int np_ = np;
     Kokkos::parallel_for("m1_vgd_hx_slist", Kokkos::RangePolicy<>(ex_, 0, nsx),
     KOKKOS_LAMBDA(const int c) {
@@ -3092,9 +3091,19 @@ void RadiationM1::VetGdSweep() {
       if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
       if (VetGdHxKey(pass*n1c + i, wsx)) {return false;}
       const size_t nall = static_cast<size_t>(nmb1 + 1)*n*c3b*c2b;
-      if (vgd_hx_mk.extent(0) < nall) {Kokkos::realloc(vgd_hx_mk, nall);}
-      Kokkos::deep_copy(vgd_cur, Kokkos::subview(vgd_hx_mk,
-                                                 std::make_pair(size_t(0), nall)), 0);
+      // stamped marks (no clearing): a ghost is marked for this build when it holds the
+      // build's stamp
+      if (vgd_hx_mk.extent(0) < nall) {
+        Kokkos::realloc(vgd_hx_mk, nall);
+        vgd_hx_stamp = 0;
+      }
+      if (vgd_hx_oc.size() == 0) {
+        vgd_hx_oc = Kokkos::View<int, DevMemSpace>("m1_vgd_hx_oc");
+      }
+      vgd_hx_stamp += 1;
+      const int stamp = vgd_hx_stamp;
+      Kokkos::deep_copy(vgd_cur, vgd_hx_oc, 0);
+      auto oc_ = vgd_hx_oc;
       auto mk_ = vgd_hx_mk;
       auto mark = [&](const int pr, const int ir, const int lr) {
         const bool inwr = (pr == 0);
@@ -3120,7 +3129,11 @@ void RadiationM1::VetGdSweep() {
                 if (ek == 0 && ej == 0) {continue;}
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
-                mk_(((m*n + d)*c3b + kk)*c2b + jj) = 1;
+                mk_(((m*n + d)*c3b + kk)*c2b + jj) = stamp;
+                if (jj < wb - wsx || jj >= wb + nx2b + wsx || kk < wb - wsx ||
+                    kk >= wb + nx3b + wsx) {
+                  Kokkos::atomic_add(&oc_(), 1);
+                }
               }
             }
           });
