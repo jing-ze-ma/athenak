@@ -227,6 +227,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
+  if (ivar==165 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR: m1_thsw output needs a <rad_m1> block" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==164 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_vsc output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -720,6 +724,21 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_vh2",2,&(derived_var));
       outvars.emplace_back("m1_vh3",3,&(derived_var));
       out_params.n_derived += 4;
+    }
+    // gdthin-1011: the thin switch's cell inputs of the last formal solution (vet_sc
+    // vet_cell or vet_gd vgd_hr): m1_tfb = |H|/J, m1_tc1 = C1 = sum w |I - S|/J,
+    // m1_teps = eps, m1_tw = smoothstep((g - h0)/(h1 - h0)) of the cell thinness g of the
+    // run's implicit_thin_switch (fb for hj and none, max(fb, eps C1/1.5) for fse, ...;
+    // the face weight is that of the larger g of its two cells), m1_tj = J.  -1 where no
+    // formal solution (below the vet_gd cut).  Derived; not part of m1.
+    if (variable.compare("m1_thsw") == 0) {
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_tfb",0,&(derived_var));
+      outvars.emplace_back("m1_tc1",1,&(derived_var));
+      outvars.emplace_back("m1_teps",2,&(derived_var));
+      outvars.emplace_back("m1_tw",3,&(derived_var));
+      outvars.emplace_back("m1_tj",4,&(derived_var));
+      out_params.n_derived += 5;
     }
     if (variable.compare("m1_vet") == 0) {
       out_params.contains_derived = true;
