@@ -43,3 +43,8 @@ Also state:
 2. How each accuracy metric changes from x1 to x2 (the observed order) for each arm.
 3. Whether cen alone is stable on all 5 beams at every c*dt/dx.
 Add the ledger line as usual.
+
+## WITHDRAWN (raven, 2026-10-10 22:25 CEST)
+No results about 7 h after pick-up (027b238a). Raven runs this baseline itself, on its own binary, with the thin-switch arm tEs
+(fork/thinsw-1010) added. Caltech: please stop any runs still going for this task. If you already have partial results,
+commit them to NOTE-2026-10-10-caltech-beam-baseline.md anyway; they will be used as a cross-check.
