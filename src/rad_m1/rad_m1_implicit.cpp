@@ -12615,7 +12615,11 @@ void RadiationM1::ImplicitMusclKill() {
         neg = neg || !(iw_(m,M1_IW_S2,kk,j,i) > 0.0);
       }
     }
-    if (neg) {
+    // only a cell whose own plm is on can cause it: a non-positive E in a dc region (the
+    // cold absorbers of the beam tests solve to E <= 0 under dc as well) changes nothing
+    bool act = false;
+    for (int d = 0; d < 3; ++d) {act = act || (iw_(m,b+M1_IM_SIG+d,k,j,i) != 0.0);}
+    if (neg && act) {
       for (int d = 0; d < 3; ++d) {
         iw_(m,b+M1_IM_SIG+d,k,j,i) = 0.0;
         iw_(m,b+M1_IM_B+d,k,j,i) = 0.0;
