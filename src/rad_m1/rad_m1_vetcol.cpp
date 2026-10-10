@@ -1612,7 +1612,8 @@ void RadiationM1::VetColReport() {
         std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made "
                   << vgd_hx_nmade << ", fallbacks " << vgd_hx_nfall
                   << " (marked reads outside the masks' region " << vgd_hx_nout
-                  << "); received values per list: exact/mask "
+                  << "), read ghosts with an unsent source " << vgd_hx_nun
+                  << "; received values per list: exact/mask "
                   << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
                   << std::endl;
       }

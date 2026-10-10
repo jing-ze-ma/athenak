@@ -1827,7 +1827,7 @@ class RadiationM1 {
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_hb;   // bounds, counts
   int vgd_hx_tag[4] = {-1, -1, -1, -1};    // the marks: pass, shell, scut, ws
   Real vgd_hx_alpha = -7.0;
-  Real vgd_hx_nmade = 0.0, vgd_hx_nout = 0.0, vgd_hx_nfall = 0.0;
+  Real vgd_hx_nmade = 0.0, vgd_hx_nout = 0.0, vgd_hx_nfall = 0.0, vgd_hx_nun = 0.0;
   Real vgd_hx_vmask = 0.0, vgd_hx_vexact = 0.0;   // received values: mask lists, exact
   std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): the exact lists per (pass, shell)
   bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key

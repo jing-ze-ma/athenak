@@ -2060,7 +2060,21 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
       sr_(f0_(q)) = pos(rb0 + (vs*kn + kk)*jn + jj);
     }
   });
-  ex_.fence();
+  // diagnostic: read ghosts with a source the masks do not send (the dense path, and so
+  // these lists, give them 0 for that source)
+  {
+    int nun = 0;
+    Kokkos::parallel_reduce("m1_vgd_hx_unsent", Kokkos::RangePolicy<>(ex_, 0, nrx + nwx),
+    KOKKOS_LAMBDA(const int c, int &acc) {
+      if (c < nrx) {
+        if (sr_(c) < 0) {acc += 1;}
+      } else {
+        const int cw = c - nrx;
+        if (sw_(3*cw) < 0 || sw_(3*cw + 1) < 0 || sw_(3*cw + 2) < 0) {acc += 1;}
+      }
+    }, nun);
+    vgd_hx_nun += nun;
+  }
   E.sp = spx;
   E.rp = rpx;
   E.ns = nsx;
