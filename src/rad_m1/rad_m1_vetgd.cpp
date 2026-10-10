@@ -408,6 +408,14 @@ void RadiationM1::VetGdInit() {
                 << (vgd_ainl ? "INLINE: same numbers, no overlap" :
                                "host thread + own device instance")
                 << "); D of cycle n = build n-1" << std::endl;
+      // vcpred-1010: under hesdirk2 + time2_vet_col = predict | rebuild the tensor of
+      // cycle n is then the build at the PREVIOUS step's predicted state, ~ t^n: the
+      // O(dt) lag that predict removes is back (first order in time)
+      if (time_scheme == M1_TIME_HESDIRK2 && (t2_vcmode == 1 || t2_vcmode == 2)) {
+        std::cout << "<rad_m1> vet_gd_async: WARNING with time_scheme = hesdirk2 and "
+                  << "time2_vet_col = predict | rebuild the tensor of cycle n is the "
+                  << "build of cycle n-1 (D ~ t^n): first order in time" << std::endl;
+      }
     }
   }
   vgd_alpha = -1.0;
