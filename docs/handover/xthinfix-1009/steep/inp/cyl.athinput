@@ -1,0 +1,124 @@
+<comment>
+problem = fsanchor-1009 crossing-beam / shadow test: opaque emitter and absorber cylinders (along z) in a thin static background, Cartesian 2-D, implicit M1 (c dt/dx ~ 300)
+
+<job>
+basename = cyl
+
+<mesh>
+nghost    = 2
+nx1       = 128
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = outflow
+ox1_bc    = outflow
+nx2       = 128
+x2min     = 0.0
+x2max     = 1.0
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 128
+nx2       = 128
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = 20
+tlim       = 1.0e10
+ndiag      = 1
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+implicit_blend_xthin_mode = all
+implicit_hr_recon = dc
+implicit_hr_recon_fresh = 2
+implicit_hr_damp = 0.0
+implicit_blend_xthin_wmin = 0.0
+c_light      = 1.0e3
+chat_over_c  = 1.0
+arad         = 1.0
+e_floor      = 1.0e-30
+closure      = m1
+opacity      = const
+kappa_p      = 1.0
+kappa_e      = 1.0
+kappa_f      = 1.0
+kappa_s      = 0.0
+coupling     = true
+gas_feedback = true
+transport             = implicit
+implicit_solver       = bicgstab
+implicit_offdiag      = auto
+implicit_closure_lag  = step
+implicit_lin_maxit    = 200
+implicit_lin_tol      = 1.0e-10
+implicit_tol          = 1.0e-8
+implicit_res_floor    = 0.0
+implicit_maxit        = 200
+implicit_flux         = central
+implicit_flux_faces   = x1
+implicit_flux_beam    = closure
+implicit_blend        = tau_f
+implicit_blend_flo    = 0.6
+implicit_blend_tau0   = 1.0
+implicit_blend_alpha  = 1.0
+implicit_blend_r0     = 1.5
+implicit_blend_xthin = 0.0
+implicit_blend_fhi    = 0.9
+time_scheme           = be
+implicit_bc_x1min     = marshak
+implicit_bc_x1max     = marshak
+marshak_q             = 0.5
+implicit_ebath_x1min  = 0.0
+implicit_ebath_x1max  = 0.0
+vet_nmu      = 8
+vet_nphi     = 32
+vet_sc_order = 1
+vet_tensor   = full
+vet_source_noesrc = false
+
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = cyl
+user_srcs  = true
+cyl_n      = 2
+cyl_rho_bg = 1.0e-4
+cyl_t_bg   = 1.0e-3
+cyl0_x     = 0.15
+cyl0_y     = 0.3
+cyl0_r     = 0.05
+cyl0_rho   = 128.0
+cyl0_t     = 1.0
+cyl1_x     = 0.15
+cyl1_y     = 0.7
+cyl1_r     = 0.05
+cyl1_rho   = 128.0
+cyl1_t     = 1.0
+
+<output1>
+file_type   = bin
+variable    = m1
+dt          = 1.0
+
+<output2>
+file_type   = bin
+variable    = m1_face
+dt          = 1.0
+
+<output3>
+file_type   = bin
+variable    = m1_vsc
+dt          = 1.0
