@@ -436,6 +436,37 @@ void M1ThinHr(const Real qp, const Real en, const Real jo, const Real fb,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ThinJs
+//! \brief thinfix-1011 (implicit_thin_recon = js): the half-range ratios of one face
+//! reconstructed with the SHAPE of the formal solution.  The upwind face flux
+//! c (h+_L E_L + h-_R E_R) takes h+ = H+_f/J_L and h- = H-_f/J_R, H+-_f = (H+-_L +
+//! H+-_R)/2 the face mean of the formal-solution half-range fluxes: where E is locally
+//! proportional to J (a steady or quasi-static field) the face flux is the formal
+//! solution's own CENTRAL face flux c H_f (2nd order), and it stays homogeneous in the
+//! iterate (no fixed source: HCL >= 0, HCR <= 0, the M-matrix structure and the
+//! realisability bound |h| <= 1 of the cell values are kept).  The face/cell factor is
+//! limited to [1/lim, lim] (inactive in a smooth field, where it is 1 + O(dx)).  No dt,
+//! no tau_cell.  Cells without a formal solution (J <= 0) keep their cell ratios.
+
+KOKKOS_INLINE_FUNCTION
+void M1ThinJs(const Real hpl, const Real hml, const Real hpr, const Real hmr,
+              const Real jl, const Real jr, const Real lim, Real &hpf, Real &hmf) {
+  hpf = hpl;
+  hmf = hmr;
+  if (!(jl > 0.0) || !(jr > 0.0) || hpl < 0.0 || hmr > 0.0) {return;}
+  const Real ppl = hpl*jl, ppr = fmax(hpr, 0.0)*jr;
+  if (ppl > 0.0) {
+    const Real ph = fmin(fmax(0.5*(1.0 + ppr/ppl), 1.0/lim), lim);
+    hpf = fmin(hpl*ph, 1.0);
+  }
+  const Real mml = fmin(hml, 0.0)*jl, mmr = hmr*jr;
+  if (mmr < 0.0) {
+    const Real ph = fmin(fmax(0.5*(1.0 + mml/mmr), 1.0/lim), lim);
+    hmf = fmax(hmr*ph, -1.0);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ThinFace
 //! \brief thinsw-1010: AL, HCL, HCR and the lagged additive flux DG of one half-range
 //! face under implicit_thin_switch.  No dt and no tau_cell enter the weight:
@@ -1869,6 +1900,30 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
                   + "' is not a choice (none | lag | sc | hc | hcs)");
       }
+      // thinfix-1011: the formal-solution shape of the half-range face ratios (js) and
+      // the outer Marshak q at the face (lin); read only with the switch on
+      {
+        std::string srec = pin->GetOrAddString("rad_m1","implicit_thin_recon","dc");
+        if (srec.compare("js") == 0) {
+          thsw_js = true;
+        } else if (srec.compare("dc") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_recon = '" + srec
+                    + "' is not a choice (dc | js)");
+        }
+        std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq","cell");
+        if (sbq.compare("lin") == 0) {
+          thsw_bqlin = true;
+        } else if (sbq.compare("cell") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_bq = '" + sbq
+                    + "' is not a choice (cell | lin)");
+        }
+        if (thsw_js) {
+          thsw_jslim = pin->GetOrAddReal("rad_m1","implicit_thin_jslim",2.0);
+          if (!(thsw_jslim >= 1.0)) {
+            ImplFatal("<rad_m1>/implicit_thin_jslim must be >= 1");
+          }
+        }
+      }
       thsw_c1 = (impl_thsw_corr == M1_THCR_HCS) ||
                 (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                  impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
@@ -3110,6 +3165,8 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                      : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
     const Real tqi = thsw_qp;
+    const bool tjs = thsw && thsw_js && (hsrc == 1);   // thinfix-1011
+    const Real tjl = thsw_jslim;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3144,7 +3201,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
       if (thsw) {
         ImplicitHaloExchange(1, M1_IW_TA);
         ImplicitHaloExchange(1, M1_IW_TB);
-        if (tcorr != M1_THCR_NONE) {ImplicitHaloExchange(1, M1_IW_TC);}
+        if (tcorr != M1_THCR_NONE || tjs) {ImplicitHaloExchange(1, M1_IW_TC);}
         if (tcorr == M1_THCR_HCS) {ImplicitHaloExchange(1, M1_IW_TR);}
       }
       auto fw = (d == 1) ? fw2 : fw3;
@@ -3173,7 +3230,13 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         Real al, hl, hr;
         if (thsw) {   // thinsw-1010
           Real dgt;
-          M1ThinFace(tmode, tcorr, iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,k,j,i),
+          Real hpf = iw_(m,M1_IW_S1,km,jm,i), hmf = iw_(m,M1_IW_S3,k,j,i);
+          if (tjs) {
+            M1ThinJs(iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,km,jm,i),
+                     iw_(m,M1_IW_S1,k,j,i), iw_(m,M1_IW_S3,k,j,i),
+                     iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i), tjl, hpf, hmf);
+          }
+          M1ThinFace(tmode, tcorr, hpf, hmf,
                      iw_(m,M1_IW_RES,km,jm,i), iw_(m,M1_IW_RES,k,j,i), tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
@@ -9934,10 +9997,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int ieq = ie;
     const Real qlo = vet_col ? vcol_qmin : 1.0e-3, qhi = vet_col ? vcol_qmax : 1.0;
     const Real q0 = marshak_q;
+    // thinfix-1011 (implicit_thin_bq = lin, vet_sc): q = H+_f/J of the top cell with
+    // H+_f = (3 H+_N - H+_N-1)/2 the outgoing half-range flux linearly extrapolated to
+    // the face (the vacuum face carries H+ alone), the factor H+_f/H+_N limited as in
+    // M1ThinJs; the cell value H+_N/J_N is O(dx) off the face value
+    const bool bql = (impl_thsw != M1_THSW_NONE) && thsw_bqlin && (hsrc == 1) &&
+                     (ie > is);
+    const Real bqlim = thsw_jslim;
     par_for("m1_impl_hrq", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real hp, hm, fb;
       M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq, 0, 0.0, hp, hm, fb);
+      if (bql && hp > 0.0) {
+        const Real j0 = hvc_(m,M1_VET_J,k,j,ieq), j1 = hvc_(m,M1_VET_J,k,j,ieq-1);
+        Real hp1, hm1, fb1;
+        M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq-1, 0, 0.0, hp1, hm1, fb1);
+        if (j0 > 0.0 && j1 > 0.0) {
+          const Real ph = fmin(fmax(1.5 - 0.5*hp1*j1/(hp*j0), 1.0/bqlim), bqlim);
+          hp *= ph;
+        }
+      }
       vqw_(m,k,j) = (hp >= 0.0) ? fmin(fmax(hp, qlo), qhi) : q0;
     });
   }
@@ -10228,6 +10307,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                        : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
       const Real tqi = thsw_qp;
+      const bool tjs = thsw_js && (hsrc == 1);   // thinfix-1011
+      const Real tjl = thsw_jslim;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -10315,6 +10396,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               dm = 0.0;
               M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,ip), jr, fbr, th0, th1, dm, hmr);
             }
+            if (tjs) {M1ThinJs(hpl, hml, hpr, hmr, jl, jr, tjl, hpl, hmr);}
             M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr == M1_THCR_HCS) ? fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
