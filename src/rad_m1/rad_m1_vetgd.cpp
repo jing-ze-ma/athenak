@@ -3251,6 +3251,10 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     auto cs_ = vgd_hr_tw ? vgd_cst : vgd_cs;
     auto opac_ = opac;
     const bool thermal = fl_on && coupling && !opac_zero;
+    // env VGD_THIN_EPS (diagnostic): eps -> min(eps, value), to exercise the hcs
+    // correction (1 - eps) where the opacity tables give kappa_P >= kappa_R (eps = 1)
+    static const char *epe = std::getenv("VGD_THIN_EPS");
+    const Real epmax = (epe != nullptr) ? std::atof(epe) : 1.0;
     par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
       if (i < ilo) {
@@ -3290,6 +3294,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
         hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
                                    : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
                                                      fmax(kt, 1.0e-300), 1.0) : 0.0);
+        hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
         hr_(m,M1_VGD_HRJ,k,j,i) = jm;
       }
     });
