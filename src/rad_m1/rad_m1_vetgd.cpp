@@ -2134,9 +2134,10 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
     return (gx == 0 || gx == vgd_hle[ex].gen) && (gy == 0 || (vgd_hle[ey].gen > 0 &&
                                                                gy == vgd_hle[ey].gen));
   };
-  if (lst && xvalid() && gwok(gwa) && (!two || gwok(gwb))) {
-    // ---- the list path (vgdfuse-1010: begin + end, as the overlap uses them) ----
-    VetGdHlBegin(a, nv, i0, ws, b);
+  // ---- the list path (vgdfuse-1010: begin + end, as the overlap uses them; Begin
+  // decides: the mask lists X (valid, last writers) or, vet_gd_halo_exact, X's exact
+  // record) ----
+  if (lst && VetGdHlBegin(a, nv, i0, ws, b)) {
     VetGdHlEnd();
     return true;
   }
