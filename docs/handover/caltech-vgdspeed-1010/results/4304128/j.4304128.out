@@ -1,0 +1,80 @@
+
+    libxml2/2.10.3-gcc-11.3.1-m4mk5ab
+GPU 0: NVIDIA H200 (UUID: GPU-95acbb6e-f748-2de7-b56a-f5306eb81fa7)
+GPU 1: NVIDIA H200 (UUID: GPU-8e016df7-84ae-8ed5-5bf0-fb795bd641a9)
+hpc-sm-01-17.cm.cluster
+0c43b8066c31cbf7064fa2918154fcd5  /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_b2f2e897_nofma
+a49754374b6e4d75b9f05676aa673841  /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_ec0757c1_nofma
+######## base1 /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_b2f2e897_nofma 18:32:45
+BIN 0c43b8066c31cbf7064fa2918154fcd5  /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_b2f2e897_nofma
+84eb5faa99ea169913ecef86b53985a1  /resnick/groups/carnegie_poc/jingze/agcarb_1009/files/agcar_rcxB_ge_accel_st_mg_hr.athinput
+be4d08ae7fb8f88eb2665fd04c0f53ed  /resnick/groups/carnegie_poc/jingze/bsg_1009/files/bsg_hr_dc5.athinput
+== agc_plain case=agc mode=plain nlim=60 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:32:46
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=55s s/cycle: mean(6-60)=0.5585 median=0.4688 peak: gpu0=39705MiB gpu1=39705MiB  18:33:41
+<rad_m1> implicit transport: solves=6.000000e+01 Picard iterations mean=4.116667e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+== agc_kt10 case=agc mode=kt nlim=10 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:33:41
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=30s s/cycle: mean(2-10)=0.8892 median=0.5565 peak: gpu0=39705MiB gpu1=39705MiB  18:34:11
+<rad_m1> implicit transport: solves=1.000000e+01 Picard iterations mean=4.700000e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+== agc_kt60 case=agc mode=kt nlim=60 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:34:11
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=60s s/cycle: mean(6-60)=0.6306 median=0.5441 peak: gpu0=39705MiB gpu1=39705MiB  18:35:11
+<rad_m1> implicit transport: solves=6.000000e+01 Picard iterations mean=4.116667e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+== bsg_plain case=bsg mode=plain nlim=30 in=bsg_hr_dc5.athinput keys=[KB] start 18:35:11
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=19s s/cycle: mean(6-30)=0.4271 median=0.2989 peak: gpu0=34121MiB gpu1=34121MiB  18:35:30
+<rad_m1> implicit transport: solves=3.000000e+01 Picard iterations mean=2.700000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+== bsg_kt5 case=bsg mode=kt nlim=5 in=bsg_hr_dc5.athinput keys=[KB] start 18:35:30
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=11s s/cycle: mean(2-5)=0.9042 median=0.4876 peak: gpu0=34121MiB gpu1=34121MiB  18:35:41
+<rad_m1> implicit transport: solves=5.000000e+00 Picard iterations mean=4.800000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+== bsg_kt30 case=bsg mode=kt nlim=30 in=bsg_hr_dc5.athinput keys=[KB] start 18:35:41
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=20s s/cycle: mean(6-30)=0.4574 median=0.3564 peak: gpu0=34121MiB gpu1=34121MiB  18:36:01
+<rad_m1> implicit transport: solves=3.000000e+01 Picard iterations mean=2.700000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+######## new1 /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_ec0757c1_nofma 18:36:01
+BIN a49754374b6e4d75b9f05676aa673841  /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_ec0757c1_nofma
+84eb5faa99ea169913ecef86b53985a1  /resnick/groups/carnegie_poc/jingze/agcarb_1009/files/agcar_rcxB_ge_accel_st_mg_hr.athinput
+be4d08ae7fb8f88eb2665fd04c0f53ed  /resnick/groups/carnegie_poc/jingze/bsg_1009/files/bsg_hr_dc5.athinput
+== agc_plain case=agc mode=plain nlim=60 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:36:02
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=50s s/cycle: mean(6-60)=0.4760 median=0.3292 peak: gpu0=44263MiB gpu1=44275MiB  18:36:52
+<rad_m1> implicit transport: solves=6.000000e+01 Picard iterations mean=4.116667e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+== agc_kt10 case=agc mode=kt nlim=10 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:36:52
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=30s s/cycle: mean(2-10)=0.7620 median=0.3813 peak: gpu0=44137MiB gpu1=44137MiB  18:37:22
+<rad_m1> implicit transport: solves=1.000000e+01 Picard iterations mean=4.700000e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+== agc_kt60 case=agc mode=kt nlim=60 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:37:22
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=51s s/cycle: mean(6-60)=0.4809 median=0.3624 peak: gpu0=44263MiB gpu1=44281MiB  18:38:13
+<rad_m1> implicit transport: solves=6.000000e+01 Picard iterations mean=4.116667e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+== bsg_plain case=bsg mode=plain nlim=30 in=bsg_hr_dc5.athinput keys=[KB] start 18:38:13
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=17s s/cycle: mean(6-30)=0.3265 median=0.2076 peak: gpu0=38275MiB gpu1=38255MiB  18:38:30
+<rad_m1> implicit transport: solves=3.000000e+01 Picard iterations mean=2.700000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+== bsg_kt5 case=bsg mode=kt nlim=5 in=bsg_hr_dc5.athinput keys=[KB] start 18:38:30
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=11s s/cycle: mean(2-5)=0.8102 median=0.3671 peak: gpu0=38235MiB gpu1=38235MiB  18:38:41
+<rad_m1> implicit transport: solves=5.000000e+00 Picard iterations mean=4.800000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+== bsg_kt30 case=bsg mode=kt nlim=30 in=bsg_hr_dc5.athinput keys=[KB] start 18:38:41
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=18s s/cycle: mean(6-30)=0.3804 median=0.2358 peak: gpu0=38275MiB gpu1=38265MiB  18:38:59
+<rad_m1> implicit transport: solves=3.000000e+01 Picard iterations mean=2.700000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+kt: 2 rank files -> kt_*.txt
+######## base2 /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_b2f2e897_nofma 18:38:59
+BIN 0c43b8066c31cbf7064fa2918154fcd5  /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_b2f2e897_nofma
+84eb5faa99ea169913ecef86b53985a1  /resnick/groups/carnegie_poc/jingze/agcarb_1009/files/agcar_rcxB_ge_accel_st_mg_hr.athinput
+be4d08ae7fb8f88eb2665fd04c0f53ed  /resnick/groups/carnegie_poc/jingze/bsg_1009/files/bsg_hr_dc5.athinput
+== agc_plain case=agc mode=plain nlim=60 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:39:00
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=54s s/cycle: mean(6-60)=0.5559 median=0.4689 peak: gpu0=39705MiB gpu1=39705MiB  18:39:54
+<rad_m1> implicit transport: solves=6.000000e+01 Picard iterations mean=4.116667e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+== bsg_plain case=bsg mode=plain nlim=30 in=bsg_hr_dc5.athinput keys=[KB] start 18:39:54
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=19s s/cycle: mean(6-30)=0.4004 median=0.2996 peak: gpu0=34121MiB gpu1=34121MiB  18:40:13
+<rad_m1> implicit transport: solves=3.000000e+01 Picard iterations mean=2.700000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+######## new2 /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_ec0757c1_nofma 18:40:13
+BIN a49754374b6e4d75b9f05676aa673841  /resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_ec0757c1_nofma
+84eb5faa99ea169913ecef86b53985a1  /resnick/groups/carnegie_poc/jingze/agcarb_1009/files/agcar_rcxB_ge_accel_st_mg_hr.athinput
+be4d08ae7fb8f88eb2665fd04c0f53ed  /resnick/groups/carnegie_poc/jingze/bsg_1009/files/bsg_hr_dc5.athinput
+== agc_plain case=agc mode=plain nlim=60 in=agcar_rcxB_ge_accel_st_mg_hr.athinput keys=[KB] start 18:40:13
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=49s s/cycle: mean(6-60)=0.4385 median=0.3288 peak: gpu0=44263MiB gpu1=44275MiB  18:41:02
+<rad_m1> implicit transport: solves=6.000000e+01 Picard iterations mean=4.116667e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+== bsg_plain case=bsg mode=plain nlim=30 in=bsg_hr_dc5.athinput keys=[KB] start 18:41:02
+rc=0 fatal=0 oom=0 nonconv=0 nan=0 wall=16s s/cycle: mean(6-30)=0.3289 median=0.2070 peak: gpu0=38275MiB gpu1=38255MiB  18:41:18
+<rad_m1> implicit transport: solves=3.000000e+01 Picard iterations mean=2.700000e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+DONE 18:41:18
