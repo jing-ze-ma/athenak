@@ -3121,7 +3121,7 @@ void RadiationM1::VetGdSweep() {
         Kokkos::realloc(vgd_hx_mk, nall);
         vgd_hx_stamp = 0;
       }
-      if (vgd_hx_oc.size() == 0) {
+      if (!vgd_hx_oc.is_allocated()) {
         vgd_hx_oc = Kokkos::View<int, DevMemSpace>("m1_vgd_hx_oc");
       }
       vgd_hx_stamp += 1;
