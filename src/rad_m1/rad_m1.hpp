@@ -600,9 +600,9 @@ class RadiationM1 {
   Real impl_blend_xthin_wmin = 0.0;    // xthinfix-1009: threshold of mode = beam
   Real impl_blend_xthin_r0 = 1.5;      // xthinfix-1009: Knudsen R0 of mode = beam_kn
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
-  // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp):
-  // a dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality C1, the
-  // E^n Knudsen number); implicit_thin_corr adds the lagged formal-solution flux (C4)
+  // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
+  // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality
+  // C1, the E^n Knudsen number); implicit_thin_corr adds the lagged formal-solution flux
   int impl_thsw = 0;
   int impl_thsw_corr = 0;
   bool thsw_c1 = false;           // the sweep accumulates M1_VET_NL
