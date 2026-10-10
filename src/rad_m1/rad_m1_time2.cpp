@@ -245,6 +245,30 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << " needs vet_col_every = 1" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // time2_vet_col_source (vcpred-1010; read only when named, default relaxed =
+    // bitwise): the VET source of the predict / rebuild build (vet_col, vet_col_lat,
+    // vet_gd).  vet_col_source = relaxed (default) relaxes the build state's gas and E
+    // by a local backward-Euler exchange over dt, i.e. it moves the source one step
+    // AHEAD of the state it is given.  At U^n (lag, backward Euler) that is the step's
+    // end; at the predicted P = U^n + dt K1, already at t^{n+1} + O(dt^2), it lands near
+    // t^{n+2}: an O(dt) source error, FIRST order in time wherever the exchange is
+    // resolved and out of equilibrium (vcpred_1010 neq1_u_T: E 1.71 1.57 1.40, T 1.67
+    // 1.47 1.23).  state = the source of P itself (eps B + (1 - eps) E, or VetScatterMix
+    // with J = E_P under vet_scatter; vet_col_source = gas for this build only):
+    // 1.92 1.87 1.91 / 1.96 1.98 1.99.  lag / extrap keep the relaxed source.
+    if (pin->DoesParameterExist("rad_m1", "time2_vet_col_source")) {
+      std::string vs = pin->GetString("rad_m1", "time2_vet_col_source");
+      if (vs.compare("relaxed") == 0) {
+        t2_vcsrc = false;
+      } else if (vs.compare("state") == 0) {
+        t2_vcsrc = true;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/time2_vet_col_source = '" << vs
+                  << "' is not a choice (relaxed | state)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
   }
   // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
   // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
@@ -884,7 +908,12 @@ void RadiationM1::Time2VetColAt(int which) {
     });
   }
   if (vcol) {
+    // time2_vet_col_source = state (vcpred-1010): the source of P itself, not relaxed
+    // by a further dt (vet_col, vet_col_lat and vet_gd all read vcol_srelax)
+    const bool srs = vcol_srelax;
+    if (t2_vcsrc) {vcol_srelax = false;}
     VetColBuild();
+    vcol_srelax = srs;
   } else {
     VetShortChar();
   }
@@ -1046,6 +1075,7 @@ void RadiationM1::Time2Report() {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
                                        ((t2_vcmode == 2) ? "rebuild" : "extrap"))
               << " fallbacks=" << t2_vcnfb;
+    if (t2_vcsrc && t2_vcmode != 3) {std::cout << " source=state";}
   }
   if (vet_sc && t2_vsmode != 0) {
     std::cout << " time2_vet_sc=" << ((t2_vsmode == 1) ? "predict" : "rebuild")

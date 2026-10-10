@@ -1057,6 +1057,10 @@ class RadiationM1 {
   void ImplicitWorkRow(bool row);   // time2_vstage: the gas work in the E row
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
+  // time2_vet_col_source (vcpred-1010; read only when named, default relaxed = bitwise):
+  // state = the predict/rebuild build takes its VET source from the predicted state
+  // itself (vet_col_source = gas there), not relaxed by a further dt (rad_m1_time2.cpp)
+  bool t2_vcsrc = false;
   DvceArray4D<Real> vcol_prev;  // extrap: (m,k,j,i) f_K of the previous step
   DvceArray3D<Real> vcol_qprev; // extrap: (m,k,j) q of the previous step
   void Time2VetColAt(int which);    // vet_col build at 1 = U^n + dt K1, 2 = Y1
