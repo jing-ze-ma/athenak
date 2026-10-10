@@ -12650,12 +12650,12 @@ void RadiationM1::ImplicitMusclKill() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitMusclBound
-//! \brief implicit_hr_pos = bound (xthinfix-1009): after every pass, the plm face values of
-//! the SOLVED iterate (M1_IW_S2), E_c +- s_c/2, must lie between E_c and the neighbour on
-//! that side (the local Zalesak / TVD bounds of the new state).  Where they do not, sig of
-//! that cell and axis is set to 0 (donor cell) for the rest of the step (KILL is not used:
-//! the other axes keep plm).  Replaces the global E <= 0 test, which also fires on the E <= 0
-//! of dc regions (cold absorbers) and churns the limiter.
+//! \brief implicit_hr_pos = bound (xthinfix-1009): after every pass, the plm face values
+//! of the SOLVED iterate (M1_IW_S2), E_c +- s_c/2, must lie between E_c and the neighbour
+//! on that side (the local Zalesak / TVD bounds of the new state).  Where they do not,
+//! sig of that cell and axis is set to 0 (donor cell) for the rest of the step (KILL is
+//! not used: the other axes keep plm).  Replaces the global E <= 0 test, which also fires
+//! on the E <= 0 of dc regions (cold absorbers) and churns the limiter.
 
 void RadiationM1::ImplicitMusclBound() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
