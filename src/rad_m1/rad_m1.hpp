@@ -1821,6 +1821,7 @@ class RadiationM1 {
   // (marked from the sweep's own ray geometry, VetGdSweep), the senders told by one
   // request message per list build; no zeros of the other pass's entries needed.
   bool vgd_hx_on = false;
+  int vgd_hx_mode = 0;     // 1: masked (bitwise to the dense path), 2: mask-free
   DvceArray1D<int> vgd_hx_mk;              // (m, v, k, j) dense band: read marks
   DvceArray1D<int> vgd_hx_need, vgd_hx_nc, vgd_hx_ns;   // build scratch
   DvceArray1D<int> vgd_hx_t0, vgd_hx_t1;
@@ -1831,6 +1832,7 @@ class RadiationM1 {
   Real vgd_hx_vmask = 0.0, vgd_hx_vexact = 0.0;   // received values: mask lists, exact
   std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): the exact lists per (pass, shell)
   bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key
+  void VetGdHxBuild2(const int e, const int i, const int ws);
   void VetGdHxBuild(const int e, const int i, const bool inw, const int ws,
                     const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
                     const std::vector<int> &sp, const std::vector<int> &rp);

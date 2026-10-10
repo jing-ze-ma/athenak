@@ -2088,6 +2088,324 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
 #endif
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHxBuild2
+//! \brief vet_gd_halo_exact = 2 (vgdfuse-1010): the exact lists of (pass, shell) record e
+//! WITHOUT the compact-halo masks and without a dense exchange: made in VetGdSweep before
+//! the shell's first exchange of a direction set from the read marks vgd_hx_mk alone.
+//! COLLECTIVE.  (1) the sources of the marked ghosts in the dense receive layout, (2) their
+//! compact positions, (3) per partner the count and then the ascending list of the
+//! wanted offsets (relative to the partner's piece of the layout; the sender's send layout
+//! enumerates the same entries in the same order), (4) a global vote (no marked ghost
+//! outside the region of depth ws, the byte budget), (5) the send addresses decoded from
+//! the received offsets, the read ghosts with their source positions.  Every source of a
+//! read ghost is sent, so a read never sees a value that the exchange did not write
+//! (mode 1 keeps the masks' zeros for unsent sources and is bitwise to the dense path).
+
+void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
+#if MPI_PARALLEL_ENABLED
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nmb = nmb1 + 1;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
+  const int nv = vgd_n;
+  const int mx = std::max(nx2, nx3)*ws*nv;
+  const int c2 = nx2 + 2*w, c3 = nx3 + 2*w;
+  const int np = static_cast<int>(vgd_prk.size());
+  const size_t rtot = static_cast<size_t>(vgd_prdsp[ws].empty() ? 0 :
+                      (vgd_prdsp[ws].back() + vgd_prcnt[ws].back()))*nv;
+  VgdHlEntry &E = vgd_hxe[e];
+  auto hl_ = vgd_hloc;
+  auto ro_ = vgd_roff;
+  auto wl_ = vgd_wall;
+  auto mp_ = vgd_map;
+  auto m3_ = vgd_m3;
+  const bool wint = vgd_wint;
+  auto mk_ = vgd_hx_mk;
+  const DevExeSpace ex_ = vgd_cur;
+  auto grow = [](DvceArray1D<int> &a, const size_t n) {
+    if (a.extent(0) < n) {Kokkos::realloc(Kokkos::WithoutInitializing, a, n);}
+  };
+  grow(vgd_hx_need, rtot + 1);
+  grow(vgd_hx_t0, rtot + 1);
+  grow(vgd_hx_t1, rtot + 1);
+  auto nd_ = vgd_hx_need;
+  auto f0_ = vgd_hx_t0;
+  auto f1_ = vgd_hx_t1;
+  Kokkos::deep_copy(ex_, Kokkos::subview(nd_, std::make_pair(size_t(0), rtot + 1)), 0);
+  // (1) the sources of the marked ghosts (as VetGdHxBuild)
+  par_for("m1_vgd_hx_need", ex_, 0, nmb1, 0, 7, 0, mx - 1,
+  KOKKOS_LAMBDA(const int m, const int o, const int t) {
+    if (hl_(8*m + o) >= 0) {return;}
+    const int oo = (o < 4) ? o : (o + 1);
+    const int dk = oo/3 - 1, dj = oo%3 - 1;
+    const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
+    const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
+    const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
+    if (t >= nv*kn*jn) {return;}
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
+    if (mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) == 0) {return;}
+    const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nv;
+    if (wint && wl_(m,kd+kk,jd+jj) != 0) {
+      for (int u = 0; u < 3; ++u) {
+        nd_(rb0 + (m3_(m,kd+kk,jd+jj,v,u)*kn + kk)*jn + jj) = 1;
+      }
+    } else {
+      const int vs = (wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
+      nd_(rb0 + (vs*kn + kk)*jn + jj) = 1;
+    }
+  });
+  int nout = 0;
+  {
+    const int nall = nmb*nv*c3*c2;
+    Kokkos::parallel_reduce("m1_vgd_hx_out", Kokkos::RangePolicy<>(ex_, 0, nall),
+    KOKKOS_LAMBDA(const int q, int &acc) {
+      if (mk_(q) == 0) {return;}
+      const int jj = q % c2;
+      const int kk = (q/c2) % c3;
+      const bool in = (jj >= w - ws) && (jj < w + nx2 + ws) && (kk >= w - ws) &&
+                      (kk < w + nx3 + ws);
+      if (!in) {acc += 1;}
+    }, nout);
+  }
+  // the read ghosts (non-wall f0, wall f1) over the receive layout
+  par_for("m1_vgd_hx_dflag", ex_, 0, nmb1, 0, 7, 0, mx - 1,
+  KOKKOS_LAMBDA(const int m, const int o, const int t) {
+    if (hl_(8*m + o) >= 0) {return;}
+    const int oo = (o < 4) ? o : (o + 1);
+    const int dk = oo/3 - 1, dj = oo%3 - 1;
+    const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
+    const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
+    const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
+    if (t >= nv*kn*jn) {return;}
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
+    const size_t q = static_cast<size_t>(ro_(ws,8*m + o))*nv + t;
+    const bool rd = mk_(((m*nv + v)*c3 + kd + kk)*c2 + jd + jj) != 0;
+    const bool wa = wint && wl_(m,kd+kk,jd+jj) != 0;
+    f0_(q) = (rd && !wa) ? 1 : 0;
+    f1_(q) = (rd && wa) ? 1 : 0;
+  });
+  // (2) compact receive positions of the needed sources; the read-ghost positions
+  VgdScan2(ex_, nd_, rtot, nd_, 0, "m1_vgd_hx_scan2", vgd_scan_sums);
+  VgdScan2(ex_, f0_, rtot, f1_, rtot, "m1_vgd_hx_scan2", vgd_scan_sums);
+  // per partner: the needed counts (the scanned need at the piece bounds), host
+  std::vector<int> rpx(np + 1), spx(np + 1);
+  int nrx = 0, nwx = 0;
+  {
+    if (static_cast<int>(vgd_hx_hb.extent(0)) < 4*np + 6) {
+      vgd_hx_hb = Kokkos::View<int*, Kokkos::SharedHostPinnedSpace>("m1_vgd_hx_hb",
+                                                                    4*np + 6);
+    }
+    auto hb_ = vgd_hx_hb;
+    const int o2 = 2*np + 4;
+    for (int p = 0; p < np; ++p) {hb_(o2 + p) = vgd_prdsp[ws][p]*nv;}
+    hb_(o2 + np) = static_cast<int>(rtot);
+    const int np_ = np;
+    const size_t rt = rtot;
+    Kokkos::parallel_for("m1_vgd_hx_bnd", Kokkos::RangePolicy<>(ex_, 0, np + 3),
+    KOKKOS_LAMBDA(const int q) {
+      if (q <= np_) {
+        hb_(q) = nd_(hb_(o2 + q));
+      } else if (q == np_ + 1) {
+        hb_(q) = f0_(rt);
+      } else {
+        hb_(q) = f1_(rt);
+      }
+    });
+    ex_.fence();
+    for (int p = 0; p <= np; ++p) {rpx[p] = hb_(p);}
+    nrx = hb_(np + 1);
+    nwx = hb_(np + 2);
+  }
+  const int nneed = rpx[np];
+  // the wanted offsets, ascending, relative to the partner's piece start
+  grow(vgd_hx_nc, nneed + 1);
+  auto rq_ = vgd_hx_nc;
+  {
+    std::vector<int> pst(np + 1);
+    for (int p = 0; p < np; ++p) {pst[p] = vgd_prdsp[ws][p]*nv;}
+    pst[np] = static_cast<int>(rtot);
+    DvceArray1D<int> pst_d("m1_vgd_hx_pst", np + 1);
+    auto pst_h = Kokkos::create_mirror_view(pst_d);
+    for (int p = 0; p <= np; ++p) {pst_h(p) = pst[p];}
+    Kokkos::deep_copy(ex_, pst_d, pst_h);
+    const int np_ = np;
+    Kokkos::parallel_for("m1_vgd_hx_req", Kokkos::RangePolicy<>(ex_, 0, rtot),
+    KOKKOS_LAMBDA(const size_t q) {
+      if (nd_(q + 1) == nd_(q)) {return;}
+      int lo = 0, hi = np_ - 1;
+      while (lo < hi) {             // the partner piece holding q
+        const int md = (lo + hi + 1)/2;
+        if (static_cast<size_t>(pst_d(md)) <= q) {lo = md;} else {hi = md - 1;}
+      }
+      rq_(nd_(q)) = static_cast<int>(q) - pst_d(lo);
+    });
+    ex_.fence();
+  }
+  // (3) counts, then the offsets
+  {
+    std::vector<int> rc(np), sc(np);
+    for (int p = 0; p < np; ++p) {rc[p] = rpx[p+1] - rpx[p];}
+    std::vector<MPI_Request> req;
+    for (int p = 0; p < np; ++p) {
+      req.emplace_back();
+      MPI_Irecv(&sc[p], 1, MPI_INT, vgd_prk[p], 7005, vgd_comm, &req.back());
+      req.emplace_back();
+      MPI_Isend(&rc[p], 1, MPI_INT, vgd_prk[p], 7005, vgd_comm, &req.back());
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    spx[0] = 0;
+    for (int p = 0; p < np; ++p) {spx[p+1] = spx[p] + sc[p];}
+  }
+  const int nsx = spx[np];
+  grow(vgd_hx_ns, nsx + 1);
+  auto so2_ = vgd_hx_ns;
+  {
+    std::vector<MPI_Request> req;
+    for (int p = 0; p < np; ++p) {
+      req.emplace_back();
+      MPI_Irecv(so2_.data() + spx[p], spx[p+1] - spx[p], MPI_INT, vgd_prk[p], 7006,
+                vgd_comm, &req.back());
+      req.emplace_back();
+      MPI_Isend(rq_.data() + rpx[p], rpx[p+1] - rpx[p], MPI_INT, vgd_prk[p], 7006,
+                vgd_comm, &req.back());
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  }
+  // (4) the vote
+  const size_t nsz[5] = {static_cast<size_t>(std::max(nsx, 1)),
+                         static_cast<size_t>(std::max(nrx, 1)),
+                         static_cast<size_t>(std::max(nrx, 1)),
+                         static_cast<size_t>(std::max(nwx, 1)),
+                         static_cast<size_t>(std::max(3*nwx, 1))};
+  DvceArray1D<int> *arr[5] = {&E.sl, &E.dl, &E.sr, &E.dw, &E.sw};
+  size_t have = 0, after = 0;
+  for (int q = 0; q < 5; ++q) {
+    have += arr[q]->extent(0);
+    after += std::max(arr[q]->extent(0), nsz[q]);
+  }
+  int ok = (nout == 0) ? 1 : 0;
+  if (after > have) {
+    if (vgd_hl_cap == 0) {vgd_hl_cap = static_cast<size_t>(vgd_hl_mb) << 20;}
+    if (vgd_hl_bytes + sizeof(int)*(after - have) > vgd_hl_cap) {ok = 0;}
+  }
+  int gok = 0;
+  MPI_Allreduce(&ok, &gok, 1, MPI_INT, MPI_MIN, vgd_comm);
+  vgd_hx_nout += nout;
+  E.alpha = vgd_alpha;
+  E.scut = vgd_scut;
+  E.ws = ws;
+  E.exact = false;
+  E.gen = -2;
+  if (gok == 0) {vgd_hx_nfall += 1.0; return;}
+  if (after > have) {
+    for (int q = 0; q < 5; ++q) {
+      if (arr[q]->extent(0) < nsz[q]) {Kokkos::realloc(*arr[q], nsz[q]);}
+    }
+    vgd_hl_bytes += sizeof(int)*(after - have);
+  }
+  auto sl_ = E.sl;
+  auto dl_ = E.dl;
+  auto sr_ = E.sr;
+  auto dw_ = E.dw;
+  auto sw_ = E.sw;
+  // (5) the send addresses: offset within my piece for partner p -> slot -> (v, k, j)
+  {
+    // my send pieces of depth ws, sorted by start: (start, 8 m + o)
+    auto so_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_soff);
+    std::vector<std::array<int, 2>> pc;
+    for (int t = 0; t < 8*nmb; ++t) {
+      if (so_h(ws,t) >= 0) {pc.push_back({so_h(ws,t)*nv, t});}
+    }
+    std::sort(pc.begin(), pc.end());
+    const int npc = static_cast<int>(pc.size());
+    DvceArray1D<int> ps_d("m1_vgd_hx_ps", 2*npc + 2*np + 2);
+    auto ps_h = Kokkos::create_mirror_view(ps_d);
+    for (int q = 0; q < npc; ++q) {ps_h(q) = pc[q][0]; ps_h(npc + q) = pc[q][1];}
+    for (int p = 0; p <= np; ++p) {
+      ps_h(2*npc + p) = spx[p];
+      ps_h(2*npc + np + 1 + p) = (p < np) ? vgd_pdsp[ws][p]*nv : 0;
+    }
+    Kokkos::deep_copy(ex_, ps_d, ps_h);
+    const int np_ = np;
+    Kokkos::parallel_for("m1_vgd_hx_slist", Kokkos::RangePolicy<>(ex_, 0, nsx),
+    KOKKOS_LAMBDA(const int c) {
+      int lo = 0, hi = np_ - 1;     // the partner of send entry c
+      while (lo < hi) {
+        const int md = (lo + hi + 1)/2;
+        if (ps_d(2*npc + md) <= c) {lo = md;} else {hi = md - 1;}
+      }
+      const int q = ps_d(2*npc + np_ + 1 + lo) + so2_(c);
+      int a = 0, b = npc - 1;       // the piece holding q
+      while (a < b) {
+        const int md = (a + b + 1)/2;
+        if (ps_d(md) <= q) {a = md;} else {b = md - 1;}
+      }
+      const int sid = ps_d(npc + a);
+      const int m = sid/8, o = sid % 8;
+      const int oo = (o < 4) ? o : (o + 1);
+      const int dk = oo/3 - 1, dj = oo%3 - 1;
+      const int jn = (dj == 0) ? nx2 : ws;
+      const int kn = (dk == 0) ? nx3 : ws;
+      const int t = q - ps_d(a);
+      const int v = t/(kn*jn);
+      const int r1 = t - v*kn*jn;
+      const int kk = r1/jn;
+      const int jj = r1 - kk*jn;
+      const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
+      const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
+      sl_(c) = ((m*nv + v)*c3 + ks2 + kk)*c2 + js2 + jj;
+    });
+  }
+  // the read ghosts with their compact source positions (every source is sent)
+  par_for("m1_vgd_hx_rlist", ex_, 0, nmb1, 0, 7, 0, mx - 1,
+  KOKKOS_LAMBDA(const int m, const int o, const int t) {
+    if (hl_(8*m + o) >= 0) {return;}
+    const int oo = (o < 4) ? o : (o + 1);
+    const int dk = oo/3 - 1, dj = oo%3 - 1;
+    const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
+    const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
+    const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
+    if (t >= nv*kn*jn) {return;}
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
+    const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nv;
+    const size_t q = rb0 + t;
+    const int ad = ((m*nv + v)*c3 + kd + kk)*c2 + jd + jj;
+    if (f1_(q + 1) > f1_(q)) {
+      const int c = f1_(q);
+      dw_(c) = ad;
+      for (int u = 0; u < 3; ++u) {
+        sw_(3*c + u) = nd_(rb0 + (m3_(m,kd+kk,jd+jj,v,u)*kn + kk)*jn + jj);
+      }
+    } else if (f0_(q + 1) > f0_(q)) {
+      const int vs = (wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
+      dl_(f0_(q)) = ad;
+      sr_(f0_(q)) = nd_(rb0 + (vs*kn + kk)*jn + jj);
+    }
+  });
+  ex_.fence();
+  E.sp = spx;
+  E.rp = rpx;
+  E.ns = nsx;
+  E.nr = nrx;
+  E.nw = nwx;
+  E.exact = true;
+  E.gen = ++vgd_hl_gen;
+  vgd_hx_nmade += 1.0;
+  vgd_hx_vexact += rpx[np];
+#endif
+}
+
 template <class V>
 bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b) {
 #if MPI_PARALLEL_ENABLED
@@ -2217,7 +2535,7 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
   // match (collective: no rank has a usable record for this key, so every rank is here)
   if (vgd_hx_on && lst) {
     if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
-    if (!VetGdHxKey(ex, ws)) {
+    if (vgd_hx_mode == 1 && !VetGdHxKey(ex, ws)) {
       if (vgd_hx_tag[0] != px || vgd_hx_tag[1] != i || vgd_hx_tag[2] != vgd_scut ||
           vgd_hx_tag[3] != ws || vgd_hx_alpha != vgd_alpha) {
         VgdFatal("vet_gd_halo_exact: no read marks for this exchange");
@@ -2767,10 +3085,10 @@ void RadiationM1::VetGdSweep() {
     // inward exchange of shell i: inward shell i-1 and the turned rays of outward shell
     // i; the outward exchange: outward shell i+1), the shell kernel's own rules
     const int c2b = nx2b + 2*wb, c3b = nx3b + 2*wb;
-    auto hx_mark = [&](const int i, const int l, const int wsx) {
+    auto hx_mark = [&](const int i, const int l, const int wsx) -> bool {
       const int n1c = indcs.nx1 + 2*indcs.ng;
       if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
-      if (VetGdHxKey(pass*n1c + i, wsx)) {return;}
+      if (VetGdHxKey(pass*n1c + i, wsx)) {return false;}
       const size_t nall = static_cast<size_t>(nmb1 + 1)*n*c3b*c2b;
       if (vgd_hx_mk.extent(0) < nall) {Kokkos::realloc(vgd_hx_mk, nall);}
       Kokkos::deep_copy(vgd_cur, Kokkos::subview(vgd_hx_mk,
@@ -2817,6 +3135,7 @@ void RadiationM1::VetGdSweep() {
       vgd_hx_tag[2] = vgd_scut;
       vgd_hx_tag[3] = wsx;
       vgd_hx_alpha = vgd_alpha;
+      return true;
     };
     const bool hxm = vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0) && shl &&
                      !bandx;
@@ -2889,7 +3208,11 @@ void RadiationM1::VetGdSweep() {
       if (vgd_time_halo) {vgd_cur.fence();}
       Kokkos::Timer th;
       vgd_hinw = inw;
-      if (hxm) {hx_mark(i, l, wsx);}
+      if (hxm && hx_mark(i, l, wsx) && vgd_hx_mode == 2) {
+        // vet_gd_halo_exact = 2: the lists from the marks alone, before the exchange (no
+        // masks, no dense exchange at the first sweep of a direction set)
+        VetGdHxBuild2(pass*(indcs.nx1 + 2*indcs.ng) + i, i, wsx);
+      }
       if (ovl && q + 1 < nsh &&
           VetGdHlBegin(vgd_i, n, i, wsx, two ? &vgd_itw : nullptr)) {
         pend = true;                 // completed by the next shell (VetGdHlEnd)
