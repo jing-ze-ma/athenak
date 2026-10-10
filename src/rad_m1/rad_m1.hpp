@@ -1812,6 +1812,7 @@ class RadiationM1 {
   Real vgd_fuse_nskip = 0.0;
   // env VGD_SCAN_SPLIT=1: the paired mask / list scans in two launches (as before 1010)
   bool vgd_scan2 = true;
+  Kokkos::View<int64_t*, DevMemSpace> vgd_scan_sums;   // VgdScan2 chunk sums
   // the pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
   struct VgdHlPend {
     bool on = false, two = false;

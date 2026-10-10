@@ -294,22 +294,70 @@ void VgdGeom(VgdGeo &g, const int m, const int k, const int j, const int d, cons
 }
 
 // vgdfuse-1010: two in-place exclusive int scans (flag -> position, total at index n)
-// in ONE launch: the two counts ride in the low and high 32 bits of one int64 sum (all
-// counts < 2^31, so exact and the positions are those of two separate scans)
+// in one pass: the two counts ride in the low and high 32 bits of one int64 sum (all
+// counts < 2^31, so exact and the positions are those of two separate scans).  The scan
+// is chunked and deterministic (integer sums: the same positions as Kokkos::parallel_scan):
+// per chunk of VGD_SCAN_CH entries a team sum, a scan of the chunk sums, a team scan per
+// chunk from its offset.  env VGD_SCAN_KOKKOS=1: one Kokkos::parallel_scan instead.
+constexpr int VGD_SCAN_CH = 4096;
 void VgdScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
-              const DvceArray1D<int> &b, const size_t nb, const char *name) {
+              const DvceArray1D<int> &b, const size_t nb, const char *name,
+              Kokkos::View<int64_t*, DevMemSpace> &sums) {
   auto a_ = a;
   auto b_ = b;
   const size_t n = (na > nb) ? na : nb;
-  Kokkos::parallel_scan(name, Kokkos::RangePolicy<>(ex, 0, n + 1),
-  KOKKOS_LAMBDA(const size_t q, int64_t &acc, const bool fin) {
+  auto val = KOKKOS_LAMBDA(const size_t q) -> int64_t {
     const int64_t va = (q < na) ? static_cast<int64_t>(a_(q)) : 0;
     const int64_t vb = (q < nb) ? static_cast<int64_t>(b_(q)) : 0;
-    if (fin) {
-      if (q <= na) {a_(q) = static_cast<int>(acc & 0xffffffffLL);}
-      if (q <= nb) {b_(q) = static_cast<int>(acc >> 32);}
-    }
-    acc += va + (vb << 32);
+    return va + (vb << 32);
+  };
+  auto put = KOKKOS_LAMBDA(const size_t q, const int64_t acc) {
+    if (q <= na) {a_(q) = static_cast<int>(acc & 0xffffffffLL);}
+    if (q <= nb) {b_(q) = static_cast<int>(acc >> 32);}
+  };
+  static const bool kok = (std::getenv("VGD_SCAN_KOKKOS") != nullptr);
+  if (kok) {
+    Kokkos::parallel_scan(name, Kokkos::RangePolicy<>(ex, 0, n + 1),
+    KOKKOS_LAMBDA(const size_t q, int64_t &acc, const bool fin) {
+      const int64_t v = val(q);
+      if (fin) {put(q, acc);}
+      acc += v;
+    });
+    return;
+  }
+  // entries [0, n] (the last one gets the total); chunk c = [c CH, (c+1) CH)
+  const size_t ntot = n + 1;
+  const int nch = static_cast<int>((ntot + VGD_SCAN_CH - 1)/VGD_SCAN_CH);
+  if (static_cast<int>(sums.extent(0)) < nch + 1) {
+    Kokkos::realloc(Kokkos::WithoutInitializing, sums, nch + 1);
+  }
+  auto s_ = sums;
+  Kokkos::parallel_for(name, Kokkos::TeamPolicy<>(ex, nch, Kokkos::AUTO),
+  KOKKOS_LAMBDA(const TeamMember_t &tm) {
+    const size_t q0 = static_cast<size_t>(tm.league_rank())*VGD_SCAN_CH;
+    const size_t q1 = (q0 + VGD_SCAN_CH < ntot) ? (q0 + VGD_SCAN_CH) : ntot;
+    int64_t sm = 0;
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, static_cast<int>(q1 - q0)),
+    [&](const int t, int64_t &acc) {acc += val(q0 + t);}, sm);
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {s_(tm.league_rank()) = sm;});
+  });
+  Kokkos::parallel_scan(name, Kokkos::RangePolicy<>(ex, 0, nch),
+  KOKKOS_LAMBDA(const int c, int64_t &acc, const bool fin) {
+    const int64_t v = s_(c);
+    if (fin) {s_(c) = acc;}
+    acc += v;
+  });
+  Kokkos::parallel_for(name, Kokkos::TeamPolicy<>(ex, nch, Kokkos::AUTO),
+  KOKKOS_LAMBDA(const TeamMember_t &tm) {
+    const size_t q0 = static_cast<size_t>(tm.league_rank())*VGD_SCAN_CH;
+    const size_t q1 = (q0 + VGD_SCAN_CH < ntot) ? (q0 + VGD_SCAN_CH) : ntot;
+    const int64_t off = s_(tm.league_rank());
+    Kokkos::parallel_scan(Kokkos::TeamThreadRange(tm, static_cast<int>(q1 - q0)),
+    [&](const int t, int64_t &acc, const bool fin) {
+      const int64_t v = val(q0 + t);
+      if (fin) {put(q0 + t, off + acc);}
+      acc += v;
+    });
   });
 }
 
@@ -1218,7 +1266,8 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
   // vgdfuse-1010: both scans in one launch (two 32-bit counts in one 64-bit sum: exact,
   // the same positions); env VGD_SCAN_SPLIT=1 for the two launches as before
   if (vgd_scan2) {
-    VgdScan2(vgd_cur, vgd_hfs[slot], stot, vgd_hfr[slot], rtot, "m1_vgd_hc_scan2");
+    VgdScan2(vgd_cur, vgd_hfs[slot], stot, vgd_hfr[slot], rtot, "m1_vgd_hc_scan2",
+             vgd_scan_sums);
   } else {
     scan(vgd_hfs[slot], stot);
     scan(vgd_hfr[slot], rtot);
@@ -1371,7 +1420,8 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
     });
   };
   if (vgd_scan2) {
-    VgdScan2(ex_, vgd_hl_fn, rtot, vgd_hl_fw, rtot, "m1_vgd_hl_scan2");
+    VgdScan2(ex_, vgd_hl_fn, rtot, vgd_hl_fw, rtot, "m1_vgd_hl_scan2",
+             vgd_scan_sums);
   } else {
     scan(vgd_hl_fn, rtot);
     scan(vgd_hl_fw, rtot);
