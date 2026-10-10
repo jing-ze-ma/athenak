@@ -1682,6 +1682,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_muscl_qsrel = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs_rel",0.0);
       impl_muscl_qsstep = (pin->GetOrAddString("rad_m1","implicit_hr_recon_qs_mode",
                                                "pass").compare("step") == 0);
+      impl_muscl_pred = pin->GetOrAddBoolean("rad_m1","implicit_hr_recon_pred",false);
+      if (impl_muscl_pred) {impl_muscl_nfresh = 1;}   // the row is fixed after E^dc
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -7744,6 +7746,10 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
               << " min E from the solve=" << vimp_emin << std::endl;
   }
+  if (impl_muscl && impl_muscl_pred) {
+    std::cout << "<rad_m1> implicit_hr_recon_pred: dc-phase passes=" << muscl_pred_dc
+              << " plm-phase passes=" << muscl_pred_hi << std::endl;
+  }
   if (impl_muscl && impl_muscl_bound) {
     std::cout << "<rad_m1> implicit_hr_pos = bound: cell-axes set to dc=" << muscl_nbound
               << std::endl;
@@ -9099,8 +9105,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // M-matrix, so E' > 0 is no longer guaranteed by construction).
   od_now = impl_offdiag;
   vimp_now = impl_vimp;
-  muscl_now = impl_muscl;   // xthinfix-1009 Fix B
+  muscl_now = impl_muscl && !impl_muscl_pred;   // xthinfix-1009 Fix B (pred: dc first)
   muscl_nbuild = 0;
+  int muscl_it0 = -1;   // the pass at which the plm phase starts
   // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
   // form may drop it for the rest of the step, positivity below)
   vlat_now = vlat_on && (vlat_odm > 0);
@@ -11375,6 +11382,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
+    // implicit_hr_recon_pred (xthinfix-1009): the dc phase has converged; switch plm on
+    // for this step (switch and limiter from E^dc, built at the next pass) and continue
+    if (converged && impl_muscl_pred && !muscl_now && muscl_it0 < 0) {
+      muscl_now = true;
+      muscl_nbuild = 0;
+      muscl_it0 = it + 1;
+      muscl_pred_dc += static_cast<Real>(it + 1);
+      converged = false;
+    } else if (converged && impl_muscl_pred && muscl_it0 >= 0) {
+      muscl_pred_hi += static_cast<Real>(it + 1 - muscl_it0);
+    }
     if (gsd) {
       rhist.push_back(resid);
       // the stall test: from pass min on, the minimum of the last nw passes is not below
@@ -12501,8 +12519,8 @@ void RadiationM1::ImplicitMusclBuild() {
       if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = sb;}
     }
   });
-  ImplicitHaloExchange(3, b + M1_IM_SIG);
-  if (led) {ImplicitHaloExchange(3, b + M1_IM_B);}
+  for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
+  if (led) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
   if (qstep) {   // remember E^n for the next step's switch
     par_for("m1_muscl_eprev", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -12658,8 +12676,8 @@ void RadiationM1::ImplicitMusclKill() {
       iw_(m,b+M1_IM_KILL,k,j,i) = 1.0;
     }
   });
-  ImplicitHaloExchange(3, b + M1_IM_SIG);
-  ImplicitHaloExchange(3, b + M1_IM_B);
+  for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
+  for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}
 }
 
 //----------------------------------------------------------------------------------------
@@ -12723,8 +12741,8 @@ void RadiationM1::ImplicitMusclBound() {
 #endif
   muscl_nbound += nb;
   if (nb > 0.0) {
-    ImplicitHaloExchange(3, b + M1_IM_SIG);
-    if (led) {ImplicitHaloExchange(3, b + M1_IM_B);}
+    for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
+    if (led) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
   }
 }
 
