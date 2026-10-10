@@ -306,7 +306,8 @@ constexpr int M1_IM_X2    = 8;
 constexpr int M1_IM_X3    = 12;
 constexpr int M1_IM_KILL  = 16;   // 1: dc for the rest of the step (positivity)
 constexpr int M1_IM_B     = 17;   // led: b_1, b_2, b_3 (SIG holds a_d)
-constexpr int M1_NIW_MUSCL = 20;
+constexpr int M1_IM_EPREV = 20;   // qs_mode = step: E^n of the previous step
+constexpr int M1_NIW_MUSCL = 21;
 
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).

@@ -1135,6 +1135,7 @@ class RadiationM1 {
   Real muscl_nbound = 0.0;       // cell-axes switched to dc by the bound test
   void ImplicitMusclBound();     // the bound test of the solved iterate
   Real impl_muscl_qsrel = 0.0;  // implicit_hr_recon_qs_rel: vacuum-side threshold delta
+  bool impl_muscl_qsstep = false;  // implicit_hr_recon_qs_mode = step (operator fixed)
   int iw_muscl = -1;            // first iw component of the M1_NIW_MUSCL block
   Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on

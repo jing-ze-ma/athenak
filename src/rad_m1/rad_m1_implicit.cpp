@@ -1680,6 +1680,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_muscl_bound = (sp.compare("bound") == 0);
       impl_muscl_kill = (sp.compare("kill") == 0);}
       impl_muscl_qsrel = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs_rel",0.0);
+      impl_muscl_qsstep = (pin->GetOrAddString("rad_m1","implicit_hr_recon_qs_mode","pass")
+                           .compare("step") == 0);
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -12415,7 +12417,13 @@ void RadiationM1::ImplicitMusclBuild() {
   // XTHINFIX.md B2); a steady thin top keeps plm.
   const Real qse = impl_muscl_qs;
   const Real qsr = impl_muscl_qsrel;   // E^n_c >= qsr max(E^n of the neighbours along d)
-  if (led || muscl_nbuild < impl_muscl_nfresh) {
+  // qs_mode = step: the switch from the PREVIOUS step's change |E^n - E^n-1| <= eps E^n and
+  // the limiter from the first pass (E^n), built ONCE: the row is fixed through the Picard
+  // loop, which then converges as the donor-cell one does
+  const bool qstep = impl_muscl_qsstep;
+  const int qref = qstep ? (b + M1_IM_EPREV) : M1_IW_EP;
+  const int nfr = qstep ? 1 : impl_muscl_nfresh;
+  if (led || muscl_nbuild < nfr) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
   par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -12456,7 +12464,7 @@ void RadiationM1::ImplicitMusclBuild() {
         if (qse > 0.0) {
           auto qs = [&](const int kk, const int jj, const int ii) {
             const Real en = iw_(m,M1_IW_EN,kk,jj,ii);
-            return fabs(iw_(m,M1_IW_EP,kk,jj,ii) - en) <= qse*en;
+            return fabs(iw_(m,qref,kk,jj,ii) - en) <= qse*en;
           };
           // the neighbours' E^n is read in the block only (E^n ghosts are not exchanged)
           bool q = qs(k,j,i);
@@ -12495,6 +12503,12 @@ void RadiationM1::ImplicitMusclBuild() {
   });
   ImplicitHaloExchange(3, b + M1_IM_SIG);
   if (led) {ImplicitHaloExchange(3, b + M1_IM_B);}
+  if (qstep) {   // remember E^n for the next step's switch
+    par_for("m1_muscl_eprev", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,b+M1_IM_EPREV,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+    });
+  }
   }
   // (2) the row
   par_for("m1_muscl_row", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
