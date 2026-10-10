@@ -7437,8 +7437,22 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit transverse ("
               << (bicg_on ? "bicgstab" : "line_jacobi")
               << "): final 7-point linear "
-              << "residual mean=" << lmean << " max=" << impl_linmax
-              << " tol=" << impl_lin_tol << std::endl;
+              << "residual (max|r|/max|b|) mean=" << lmean << " max=" << impl_linmax
+              << std::endl;
+    // vgdspeed-1009: say which test stopped the solves.  The max|r|/max|b| above is
+    // compared with implicit_lin_tol only when implicit_lres_test is on (default off for
+    // the fixed closures: eddington, vet_sc, tau / vet_col); the inner BiCGStab stops on
+    // implicit_lin_cnorm (per-cell |r|/(s E)) when > 0, else on |r|/max|b| < lin_tol,
+    // loosened by the Eisenstat-Walker term when implicit_lin_ew_max > 0
+    std::cout << "<rad_m1>   (diagnostic; Picard test on it: "
+              << (impl_lres_test ? "yes, lin_tol=" : "no; lin_tol=") << impl_lin_tol
+              << "; inner stop: "
+              << ((impl_lin_cnorm > 0.0) ? "cnorm=" : "lin_tol relative to max|b|");
+    if (impl_lin_cnorm > 0.0) {std::cout << impl_lin_cnorm;}
+    if (impl_ew_max > 0.0) {
+      std::cout << ", loosened by Eisenstat-Walker ew_max=" << impl_ew_max;
+    }
+    std::cout << ")" << std::endl;
   }
   if (bicg_on) {
     Real imean = (bcg_nsolve > 0.0) ? (bcg_itsum/bcg_nsolve) : 0.0;
