@@ -608,6 +608,12 @@ class RadiationM1 {
   bool thsw_c1 = false;           // the sweep accumulates M1_VET_NL
   Real thsw_h0 = 0.3, thsw_h1 = 0.6, thsw_kn0 = 1.0, thsw_knp = 4.0;
   Real thsw_fsa = 0.0, thsw_fsj = 0.0, thsw_qp = 8.0;
+  // thinfix-1011: implicit_thin_recon = js (M1ThinJs: half-range ratios from the face
+  // mean of the formal-solution H+-), implicit_thin_bq = lin (outer Marshak q from the
+  // face-extrapolated H+ of the top cell), the js factor limit
+  bool thsw_js = false, thsw_bqlin = false;
+  bool thsw_jse = false;   // js weighted by the thermal fraction eps of the face
+  Real thsw_jslim = 2.0;
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
