@@ -1,0 +1,150 @@
+<comment>
+problem = fsanchor-1009 crossing-beam / shadow test: opaque emitter and absorber cylinders (along z) in a thin static background, Cartesian 2-D, implicit M1 (c dt/dx ~ 300)
+
+<job>
+basename = ba20
+
+<mesh>
+nghost    = 2
+nx1       = 128
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = outflow
+ox1_bc    = outflow
+nx2       = 256
+x2min     = 0.0
+x2max     = 2.0
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 128
+nx2       = 256
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = 20
+tlim       = 1.0e10
+ndiag      = 1
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+implicit_blend_xthin_mode = all
+implicit_hr_recon = dc
+implicit_hr_recon_fresh = 2
+implicit_hr_damp = 0.0
+implicit_hr_recon_qs = 0.0
+implicit_hr_recon_qs_rel = 0.0
+implicit_hr_pos = kill
+implicit_accel = none
+implicit_blend_xthin_wmin = 0.0
+c_light      = 1.0e3
+chat_over_c  = 1.0
+arad         = 1.0
+e_floor      = 1.0e-30
+closure      = m1
+opacity      = const
+kappa_p      = 1.0
+kappa_e      = 1.0
+kappa_f      = 1.0
+kappa_s      = 0.0
+coupling     = true
+gas_feedback = true
+transport             = implicit
+implicit_solver       = bicgstab
+implicit_offdiag      = auto
+implicit_closure_lag  = step
+implicit_lin_maxit    = 200
+implicit_lin_tol      = 1.0e-10
+implicit_tol          = 1.0e-8
+implicit_res_floor    = 0.0
+implicit_maxit        = 200
+implicit_flux         = central
+implicit_flux_faces   = x1
+implicit_flux_beam    = closure
+implicit_blend        = tau_f
+implicit_blend_flo    = 0.6
+implicit_blend_tau0   = 1.0
+implicit_blend_alpha  = 1.0
+implicit_blend_r0     = 1.5
+implicit_blend_xthin = 0.0
+implicit_blend_fhi    = 0.9
+time_scheme           = be
+implicit_bc_x1min     = marshak
+implicit_bc_x1max     = marshak
+marshak_q             = 0.5
+implicit_ebath_x1min  = 0.0
+implicit_ebath_x1max  = 0.0
+vet_nmu      = 8
+vet_nphi     = 32
+vet_sc_order = 1
+vet_tensor   = full
+vet_source_noesrc = false
+
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = cyl
+user_srcs  = true
+cyl_n      = 4
+cyl_rho_bg = 1.0e-4
+cyl_t_bg   = 1.0e-3
+cyl0_shape = rect
+cyl0_x = 0.080000
+cyl0_y = 0.700000
+cyl0_r = 0.0
+cyl0_hl = 0.020000
+cyl0_hw = 0.020000
+cyl0_ang = 20.000000
+cyl0_rho = 128
+cyl0_t = 1
+cyl1_shape = rect
+cyl1_x = 0.181818
+cyl1_y = 0.771113
+cyl1_r = 0.0
+cyl1_hl = 0.150000
+cyl1_hw = 0.012000
+cyl1_ang = 20.000000
+cyl1_rho = 10000
+cyl1_t = 0.001
+cyl2_shape = rect
+cyl2_x = 0.203708
+cyl2_y = 0.710972
+cyl2_r = 0.0
+cyl2_hl = 0.150000
+cyl2_hw = 0.012000
+cyl2_ang = 20.000000
+cyl2_rho = 10000
+cyl2_t = 0.001
+cyl3_x = 0.576310
+cyl3_y = 0.944493
+cyl3_r = 0.060000
+cyl3_rho = 1.0e4
+cyl3_t = 1.0e-3
+
+<output1>
+file_type   = bin
+variable    = m1
+dt          = 1.0
+
+<output2>
+file_type   = bin
+variable    = m1_face
+dt          = 1.0
+
+<output3>
+file_type   = bin
+variable    = m1_vsc
+dt          = 1.0
