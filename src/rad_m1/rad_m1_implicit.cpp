@@ -327,6 +327,15 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
       // step: the quasi-static upwind limit, well conditioned and realisable)
       const Real x8 = SQR(SQR(SQR(fmin(x/bx0, 1.0e30))));
       s2 = x8/(x8 + 1.0);
+    } else if (bxmode == 4) {
+      // kn (xthinfix-1009): every face, independent of w, gated by the face radiation
+      // KNUDSEN number Kn = |grad E|/(chi E) = |E_R - E_L|/(tau_f max E): first-order
+      // upwinding only in the transport regime (Kn >~ Kn0), central where Kn << 1 (the
+      // diffusion / AP regime).  Kn is physical and does not grow with c dt/dx.
+      const Real em = fmax(fmax(el, er), 1.0e-300);
+      const Real r = fabs(er - el)/fmax(tauf*em, 1.0e-300*em);
+      const Real r4 = SQR(SQR(fmin(r, 1.0e30)));
+      s2 *= r4/(r4 + SQR(SQR(bxr0)));
     } else if (bxmode != 0 && !(w > bxwmin)) {
       Real g = 0.0;
       if (bxmode == 2) {
@@ -1640,11 +1649,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_blend_xthin_mode = 2;
     } else if (sxm.compare("steep") == 0) {
       impl_blend_xthin_mode = 3;
+    } else if (sxm.compare("kn") == 0) {
+      impl_blend_xthin_mode = 4;
     } else {
       ImplFatal("<rad_m1>/implicit_blend_xthin_mode = '" + sxm
-                + "' is not a choice (all | beam | beam_kn | steep)");
+                + "' is not a choice (all | beam | beam_kn | steep | kn)");
     }
-    if (impl_blend_xthin_mode == 2) {
+    if (impl_blend_xthin_mode == 2 || impl_blend_xthin_mode == 4) {
       impl_blend_xthin_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_r0",1.5);
     }
     impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
