@@ -2098,8 +2098,8 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
 //! wanted offsets (relative to the partner's piece of the layout; the sender's send
 //! layout enumerates the same entries in the same order), (4) a global vote (no marked
 //! ghost outside the region of depth ws, the byte budget), (5) the send addresses decoded
-//! from the received offsets, the read ghosts with their source positions.  Every source of a
-//! read ghost is sent, so a read never sees a value that the exchange did not write
+//! from the received offsets, the read ghosts with their source positions.  Every source
+//! of a read ghost is sent, so a read never sees a value that the exchange did not write
 //! (mode 1 keeps the masks' zeros for unsent sources and is bitwise to the dense path).
 
 void RadiationM1::VetGdHxBuild2(const int e, const int i, const int ws) {
