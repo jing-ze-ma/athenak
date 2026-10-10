@@ -1771,6 +1771,9 @@ class RadiationM1 {
     int64_t gen = -1;             // build id (> 0) while valid
     bool nofit = false;           // over the budget for (alpha, scut, ws)
     size_t bytes = 0;
+    // vgdfuse-1010 vet_gd_halo_exact: the lists hold only the values the sweep READS
+    // (sr / sw = -1: a read ghost whose source is not in the mask: written 0)
+    bool exact = false;
   };
   int vgd_hl_mb = 4096;
   // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): the
@@ -1790,6 +1793,69 @@ class RadiationM1 {
   bool VetGdHlBuild(const int e, const int i, const bool inw, const int ws,
                     const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
                     const std::vector<int> &pbh);
+  // vgdfuse-1010 (all bitwise unless stated)
+  // vet_gd_overlap = G (read only when named; default 0 = off): split each shell launch
+  // into the items that read no remote band of the previous shell (run while that
+  // shell's list-path messages travel) and the rest (run after the scatter).  The split
+  // lists are made per group of G shells (an item is "remote" if it is in any shell of
+  // the group) when the direction set changes; vet_gd_overlap_mb caps their memory.
+  int vgd_ovl_g = 0, vgd_ovl_mb = 1024;
+  DvceArray4D<Real> vgd_trig;   // (m, k, j, 4): sin, cos of theta, phi (shell kernel)
+  DvceArray1D<int> vgd_ovl[2];             // (ngroup cap): per group remote, then local
+  DvceArray1D<int> vgd_ovl_f;              // scratch: flags -> positions
+  std::vector<int> vgd_ovl_nr[2];          // per group: number of remote items
+  std::vector<Real> vgd_ovl_alpha[2];      // per group: direction set of the lists
+  int vgd_ovl_cap[2] = {0, 0};
+  int vgd_ovl_cut = -1;                    // the cut the groups were made for
+  bool vgd_ovl_nofit = false;
+  Real vgd_ovl_nsplit = 0.0, vgd_ovl_nfull = 0.0, vgd_ovl_nrem = 0.0, vgd_ovl_nall = 0.0;
+  // vet_gd_fuse_shells = H (read only when named; default 1): the lateral exchange only
+  // after every H-th shell of a pass (and its last); the other shells read the band of
+  // the last exchange that wrote it.  NOT bitwise for H > 1 (a lagged inflow)
+  int vgd_fuse_h = 1;
+  Real vgd_fuse_nskip = 0.0;
+  // env VGD_SCAN_SPLIT=1: the paired mask / list scans in two launches (as before 1010)
+  bool vgd_scan2 = true;
+  Kokkos::View<int64_t*, DevMemSpace> vgd_scan_sums;   // VgdScan2 chunk sums
+  // vet_gd_halo_exact (read only when named; default false; bitwise): the compact-halo
+  // lists of each (pass, shell) cut down to the band values the sweep actually reads
+  // (marked from the sweep's own ray geometry, VetGdSweep), the senders told by one
+  // request message per list build; no zeros of the other pass's entries needed.
+  bool vgd_hx_on = false;
+  int vgd_hx_mode = 0;     // 1: masked (bitwise to the dense path), 2: mask-free
+  bool vgd_hx_named = false;
+  DvceArray1D<int> vgd_hx_mk;              // (m, v, k, j) dense band: read marks
+  int vgd_hx_stamp = 0;                    // the marks of the current build
+  Kokkos::View<int, DevMemSpace> vgd_hx_oc;   // marked ghosts outside the region
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_pin, vgd_hx_pin2;
+  DvceArray1D<int> vgd_hx_need, vgd_hx_nc, vgd_hx_ns;   // build scratch
+  DvceArray1D<int> vgd_hx_t0, vgd_hx_t1;
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_hb;   // bounds, counts
+  int vgd_hx_tag[4] = {-1, -1, -1, -1};    // the marks: pass, shell, scut, ws
+  Real vgd_hx_alpha = -7.0;
+  Real vgd_hx_nmade = 0.0, vgd_hx_nout = 0.0, vgd_hx_nfall = 0.0, vgd_hx_nun = 0.0;
+  Real vgd_hx_vmask = 0.0, vgd_hx_vexact = 0.0;   // received values: mask lists, exact
+  std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): the exact lists per (pass, shell)
+  bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key
+  void VetGdHxBuild2(const int e, const int i, const int ws);
+  void VetGdHxBuild(const int e, const int i, const bool inw, const int ws,
+                    const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
+                    const std::vector<int> &sp, const std::vector<int> &rp);
+  // the pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
+  struct VgdHlPend {
+    bool on = false, two = false, xe = false;   // xe: X is an exact (vgd_hxe) entry
+    int ex = -1, px = 0, i = -1;
+    std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;
+    VgdRag a, b;
+#if MPI_PARALLEL_ENABLED
+    std::vector<MPI_Request> req;
+#endif
+    Kokkos::Timer tq;
+  };
+  VgdHlPend vgd_hlp;
+  template <class V>
+  bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V *b);
+  void VetGdHlEnd();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
   template <class V>

@@ -1608,6 +1608,24 @@ void RadiationM1::VetColReport() {
                   << ", GPU: <= free/2); exchanges by list " << vgd_hl_nuse << ", dense "
                   << vgd_hl_ndense << std::endl;
       }
+      if (vgd_hx_on) {
+        std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made "
+                  << vgd_hx_nmade << ", fallbacks " << vgd_hx_nfall
+                  << " (marked reads outside the masks' region " << vgd_hx_nout
+                  << "), read ghosts with an unsent source " << vgd_hx_nun
+                  << "; received values per list: exact/mask "
+                  << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
+                  << std::endl;
+      }
+      if (vgd_ovl_g > 0 || vgd_fuse_h > 1) {
+        std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_overlap=" << vgd_ovl_g
+                  << " split shells " << vgd_ovl_nsplit << " (remote items "
+                  << ((vgd_ovl_nall > 0.0) ? vgd_ovl_nrem/vgd_ovl_nall : 0.0)
+                  << " of all), unsplit " << vgd_ovl_nfull
+                  << (vgd_ovl_nofit ? " (over vet_gd_overlap_mb)" : "")
+                  << "; vet_gd_fuse_shells=" << vgd_fuse_h << " skipped exchanges "
+                  << vgd_fuse_nskip << std::endl;
+      }
       if (vgd_async) {
         std::cout << "<rad_m1> vet_gd_async (rank 0): " << vgd_nasync
                   << " overlapped sweeps (" << (vgd_ainl ? "inline" : "thread")
