@@ -2353,10 +2353,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(vcol_q, marshak_q);
     }
     if (blat_on) {
-      Kokkos::realloc(ifw2, nmb, 3, ncells3, ncells2+1, ncells1);
+      // thinsw-1010: implicit_thin_switch also keeps the lagged face flux DG there
+      const int nfw = (impl_thsw != M1_THSW_NONE) ? M1_NIFW : 3;
+      Kokkos::realloc(ifw2, nmb, nfw, ncells3, ncells2+1, ncells1);
       Kokkos::deep_copy(ifw2, 0.0);
       if (trans_x3) {
-        Kokkos::realloc(ifw3, nmb, 3, ncells3+1, ncells2, ncells1);
+        Kokkos::realloc(ifw3, nmb, nfw, ncells3+1, ncells2, ncells1);
         Kokkos::deep_copy(ifw3, 0.0);
       }
     }
