@@ -1667,6 +1667,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_muscl_qs = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs",0.0);
       impl_muscl_kill = (pin->GetOrAddString("rad_m1","implicit_hr_pos","kill")
                          .compare("floor") != 0);
+      impl_muscl_qsrel = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs_rel",0.0);
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -12396,6 +12397,7 @@ void RadiationM1::ImplicitMusclBuild() {
   // there and stays donor cell (no implicit 2nd-order upwind row is an M-matrix there:
   // XTHINFIX.md B2); a steady thin top keeps plm.
   const Real qse = impl_muscl_qs;
+  const Real qsr = impl_muscl_qsrel;   // E^n_c >= qsr max(E^n of the neighbours along d)
   if (led || muscl_nbuild < impl_muscl_nfresh) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
@@ -12447,6 +12449,12 @@ void RadiationM1::ImplicitMusclBuild() {
                                     : ((d == 1) ? (jp <= je) : (kp <= ke));
           if (inm) {q = q && qs(km,jm,im);}
           if (inp) {q = q && qs(kp,jp,ip);}
+          if (qsr > 0.0) {
+            Real nb = 0.0;
+            if (inm) {nb = fmax(nb, iw_(m,M1_IW_EN,km,jm,im));}
+            if (inp) {nb = fmax(nb, iw_(m,M1_IW_EN,kp,jp,ip));}
+            q = q && (iw_(m,M1_IW_EN,k,j,i) >= qsr*nb);
+          }
           ok = ok && q;
         }
         if (ok && ea*eb > 0.0) {

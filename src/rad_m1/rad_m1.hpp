@@ -1131,6 +1131,7 @@ class RadiationM1 {
   Real impl_muscl_damp = 0.0;   // implicit_hr_damp: beta of the consistent damping
   Real impl_muscl_qs = 0.0;     // implicit_hr_recon_qs: quasi-steady threshold eps
   bool impl_muscl_kill = true;  // implicit_hr_pos = kill (default) | floor
+  Real impl_muscl_qsrel = 0.0;  // implicit_hr_recon_qs_rel: vacuum-side threshold delta
   int iw_muscl = -1;            // first iw component of the M1_NIW_MUSCL block
   Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on
