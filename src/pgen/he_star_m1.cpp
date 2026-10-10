@@ -487,7 +487,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the two interpolants (agcar/geos B: 5.8e-6, vs 4.6e-7 for the ideal gas); E = aT^4 of
   // the file is then out of equilibrium with the gas by 4x that.  With this key the
   // code's T equals the column T to round-off (the log-linear resampling aside).
-  const bool eft = pin->GetOrAddBoolean("problem","he_ic_eint_from_t",false);
+  // defaults-1009 (user 10-09): default true on a fresh run whose file carries the T
+  // column (he_ic_cols = 5 and >= 7 columns on its first data line); otherwise (4-column
+  // files, a restart whose file lacks the key) the old default false.  Recorded.
+  bool eft_def = false;
+  if (!global_variable::restart_run && ncols == 5) {
+    std::ifstream f0(fn);
+    std::string l0;
+    while (std::getline(f0, l0)) {
+      if (l0.empty() || l0[0] == '#') continue;
+      std::istringstream s0(l0);
+      int nc = 0;
+      Real v0;
+      while (s0 >> v0) ++nc;
+      eft_def = (nc >= 7);
+      break;
+    }
+  }
+  const bool eft = pin->GetOrAddBoolean("problem","he_ic_eint_from_t",eft_def);
   if (eft && ncols != 5) {
     HsFatal("problem/he_ic_eint_from_t = true needs he_ic_cols = 5 and the 7-column file "
             "(column 6 = T [K])", __LINE__);

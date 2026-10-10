@@ -897,7 +897,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   auto *pmq = pmy_pack->pmesh;
   const bool kdev_named = pin->DoesParameterExist("rad_m1","implicit_krylov_dev") &&
                           pin->GetInteger("rad_m1","implicit_krylov_dev") > 0;
-  const bool mgdef = !sph_geom && !pmq->use_cubed_sphere && !pmq->use_polar_boundary &&
+  // defaults-1009 (user 10-09): mg also on the spherical-polar wedge (the AG Car A and He
+  // giant productions name it there); the cubed sphere, polar boundaries, SMR/AMR, 1-D,
+  // krylov_dev and the non-fast path keep their old default
+  const bool mgdef = !pmq->use_cubed_sphere && !pmq->use_polar_boundary &&
                      !pmq->multilevel && pmq->multi_d && !kdev_named &&
                      !global_variable::restart_run;
   const char *pcdef = fdef ? (mgdef ? "mg" : "rbgs_fwd") : "line";
@@ -1300,8 +1303,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_bcg_maxrst < 0) {
     ImplFatal("<rad_m1>/implicit_bcg_max_restarts must be >= 0");
   }
-  // implicit_face_opac_n (fixbundle-1009 F2, default false = bitwise): rad_m1.hpp
-  impl_face_ktn = pin->GetOrAddBoolean("rad_m1","implicit_face_opac_n",false);
+  // implicit_face_opac_n (fixbundle-1009 F2): rad_m1.hpp.  defaults-1009 (user 10-09):
+  // default true on a fresh run; a restart whose file lacks the key keeps false
+  impl_face_ktn = pin->GetOrAddBoolean("rad_m1","implicit_face_opac_n",
+                                       !global_variable::restart_run);
   if (impl_ew_max < 0.0 || impl_ew_max >= 1.0 || !(impl_ew_gam > 0.0)) {
     ImplFatal("<rad_m1>/implicit_lin_ew_max must lie in [0,1), ew_gamma > 0");
   }
@@ -1423,7 +1428,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   pbool("implicit_g0_exchange", impl_g0_exch);
   pbool("implicit_pos_gas", impl_pos_gas);
   pbool("implicit_pos_floor", impl_pos_floor);
-  impl_pos_floor_s2 = pin->GetOrAddBoolean("rad_m1","implicit_pos_floor_solve",false);
+  // defaults-1009 (user 10-09): default = implicit_pos_floor on a fresh run (it needs
+  // it); a restart whose file lacks the key keeps false
+  impl_pos_floor_s2 = pin->GetOrAddBoolean("rad_m1","implicit_pos_floor_solve",
+                                           impl_pos_floor && !rst);
   if (impl_pos_floor_s2 && !impl_pos_floor) {
     ImplFatal("<rad_m1>/implicit_pos_floor_solve needs implicit_pos_floor = true");
   }
@@ -7605,8 +7613,22 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit transverse ("
               << (bicg_on ? "bicgstab" : "line_jacobi")
               << "): final 7-point linear "
-              << "residual mean=" << lmean << " max=" << impl_linmax
-              << " tol=" << impl_lin_tol << std::endl;
+              << "residual (max|r|/max|b|) mean=" << lmean << " max=" << impl_linmax
+              << std::endl;
+    // vgdspeed-1009: say which test stopped the solves.  The max|r|/max|b| above is
+    // compared with implicit_lin_tol only when implicit_lres_test is on (default off for
+    // the fixed closures: eddington, vet_sc, tau / vet_col); the inner BiCGStab stops on
+    // implicit_lin_cnorm (per-cell |r|/(s E)) when > 0, else on |r|/max|b| < lin_tol,
+    // loosened by the Eisenstat-Walker term when implicit_lin_ew_max > 0
+    std::cout << "<rad_m1>   (diagnostic; Picard test on it: "
+              << (impl_lres_test ? "yes, lin_tol=" : "no; lin_tol=") << impl_lin_tol
+              << "; inner stop: "
+              << ((impl_lin_cnorm > 0.0) ? "cnorm=" : "lin_tol relative to max|b|");
+    if (impl_lin_cnorm > 0.0) {std::cout << impl_lin_cnorm;}
+    if (impl_ew_max > 0.0) {
+      std::cout << ", loosened by Eisenstat-Walker ew_max=" << impl_ew_max;
+    }
+    std::cout << ")" << std::endl;
   }
   if (bicg_on) {
     Real imean = (bcg_nsolve > 0.0) ? (bcg_itsum/bcg_nsolve) : 0.0;
