@@ -2738,6 +2738,22 @@ void RadiationM1::VetGdSweep() {
   const bool ovl = (ovg > 0) && shl && !bandx && vgd_hmpi && (vgd_hcomp > 0) &&
                    (vgd_hl_mb > 0) && !vgd_ovl_nofit;
   const int fh = std::max(vgd_fuse_h, 1);
+  // vgdfuse-1010: per-cell sin / cos of the face-midpoint (theta, phi) of the shell kernel
+  // (static: made once; bitwise the kernel's own evaluation)
+  if (static_cast<int>(vgd_trig.extent(0)) != nmb1 + 1) {
+    Kokkos::realloc(vgd_trig, nmb1 + 1, ke - ks + 1, je - js + 1, 4);
+    auto tw_ = vgd_trig;
+    par_for("m1_vgd_trig", vgd_cur, 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+      const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+      tw_(m,k-ks,j-js,0) = sin(th);
+      tw_(m,k-ks,j-js,1) = cos(th);
+      tw_(m,k-ks,j-js,2) = sin(ph);
+      tw_(m,k-ks,j-js,3) = cos(ph);
+    });
+  }
+  auto tg_ = vgd_trig;
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     const bool two = vgd_sw2;        // vet_gd_twin_fuse: the twin field in the same pass
@@ -2752,7 +2768,10 @@ void RadiationM1::VetGdSweep() {
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
         const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
-        const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+        // vgdfuse-1010: sin / cos of the cell's (theta, phi) from the per-cell table (the
+        // same expressions, evaluated once per cell instead of once per direction)
+        const Real st = tg_(m,k-ks,j-js,0), ct = tg_(m,k-ks,j-js,1);
+        const Real sp = tg_(m,k-ks,j-js,2), cp = tg_(m,k-ks,j-js,3);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
         if (inw == (mr >= 0.0)) {return;}
         // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same

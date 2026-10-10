@@ -1800,6 +1800,7 @@ class RadiationM1 {
   // lists are made per group of G shells (an item is "remote" if it is in any shell of
   // the group) when the direction set changes; vet_gd_overlap_mb caps their memory.
   int vgd_ovl_g = 0, vgd_ovl_mb = 1024;
+  DvceArray4D<Real> vgd_trig;   // (m, k, j, 4): sin, cos of theta, phi (shell kernel)
   DvceArray1D<int> vgd_ovl[2];             // (ngroup cap): per group remote, then local
   DvceArray1D<int> vgd_ovl_f;              // scratch: flags -> positions
   std::vector<int> vgd_ovl_nr[2];          // per group: number of remote items
