@@ -1823,6 +1823,7 @@ class RadiationM1 {
   // request message per list build; no zeros of the other pass's entries needed.
   bool vgd_hx_on = false;
   int vgd_hx_mode = 0;     // 1: masked (bitwise to the dense path), 2: mask-free
+  bool vgd_hx_named = false;
   DvceArray1D<int> vgd_hx_mk;              // (m, v, k, j) dense band: read marks
   int vgd_hx_stamp = 0;                    // the marks of the current build
   Kokkos::View<int, DevMemSpace> vgd_hx_oc;   // marked ghosts outside the region

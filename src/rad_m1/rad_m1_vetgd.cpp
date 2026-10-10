@@ -484,12 +484,17 @@ void RadiationM1::VetGdInit() {
   VetGdHaloInit();
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
-  if (vgd_fuse_h > 1 && !vgd_hx_on) {
-    VgdFatal("vet_gd_fuse_shells > 1 needs vet_gd_halo_exact = true");
+  if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async || !vgd_hmpi ||
+                    vgd_hcomp <= 0 || vgd_hl_mb <= 0)) {
+    if (vgd_hx_named && (!vgd_shl_on || vgd_bandx || vgd_async)) {
+      VgdFatal("vet_gd_halo_exact needs vet_gd_shell_list = true and no vet_gd_band_exit "
+               "/ vet_gd_async");
+    }
+    vgd_hx_on = false;         // the default does not apply (or nothing to exchange)
+    vgd_hx_mode = 0;
   }
-  if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async)) {
-    VgdFatal("vet_gd_halo_exact needs vet_gd_shell_list = true and no vet_gd_band_exit "
-             "/ vet_gd_async");
+  if (vgd_fuse_h > 1 && !vgd_hx_on) {
+    VgdFatal("vet_gd_fuse_shells > 1 needs vet_gd_halo_exact");
   }
   if (vgd_twfuse) {
     // vet_gd_twin_fuse: the twin's intensities and source live in their own arrays

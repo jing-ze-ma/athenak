@@ -1088,12 +1088,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_overlap_mb")) {
       vgd_ovl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_overlap_mb"));
     }
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_exact")) {
-      // true / 1: lists cut from the masks (bitwise); 2: lists from the reads alone
+    // vet_gd_halo_exact (read only when named; default 2 where it applies: MPI halo with
+    // vet_gd_halo_compact > 0 and lists, shell lists, no band_exit / async): true / 1 =
+    // lists cut from the masks, 2 = lists from the reads alone (both bitwise in the 1010
+    // gates), false / 0 = the vgdspeed-1009 mask lists
+    vgd_hx_named = vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_exact");
+    if (vgd_hx_named) {
       const std::string hx = pin->GetString("rad_m1","vet_gd_halo_exact");
       vgd_hx_mode = (hx == "2") ? 2 : ((hx == "true" || hx == "1") ? 1 : 0);
-      vgd_hx_on = (vgd_hx_mode > 0);
+    } else {
+      vgd_hx_mode = 2;
     }
+    vgd_hx_on = (vgd_hx_mode > 0);
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_fuse_shells")) {
       vgd_fuse_h = std::max(1, pin->GetInteger("rad_m1","vet_gd_fuse_shells"));
     }
