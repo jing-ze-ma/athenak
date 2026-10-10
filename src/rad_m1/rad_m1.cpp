@@ -1079,6 +1079,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_list_mb")) {
       vgd_hl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_list_mb"));
     }
+    // vgdfuse-1010 (read only when named): vet_gd_overlap = G (default 0 = off; bitwise)
+    // and its memory cap vet_gd_overlap_mb (default 1024), vet_gd_fuse_shells = H
+    // (default 1; H > 1 is a lagged exchange, NOT bitwise); rad_m1_vetgd.cpp VetGdSweep
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_overlap")) {
+      vgd_ovl_g = std::max(0, pin->GetInteger("rad_m1","vet_gd_overlap"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_overlap_mb")) {
+      vgd_ovl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_overlap_mb"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_fuse_shells")) {
+      vgd_fuse_h = std::max(1, pin->GetInteger("rad_m1","vet_gd_fuse_shells"));
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
       vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");
     }

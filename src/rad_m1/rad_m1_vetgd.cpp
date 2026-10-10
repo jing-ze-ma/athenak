@@ -187,6 +187,132 @@ void VgdProduct(const int nmu, const int nphi, const bool stagger,
   }
 }
 
+// vgdfuse-1010: the ray geometry of one (block m, cell (k, j), direction d) of shell i
+// (sweep position l) in the pass inw: the segment, the upwind point, its bilinear
+// stencil and weights and the branch mask of the stencil.  The expressions of the
+// pre-1010 shell kernel; shared by the shell kernel (main + twin solve) and the overlap
+// split's classification, so both see the same stencil.
+struct VgdGeo {
+  Real th, ph, st, ct, sp, cp, mr, r, zr, p2, ds, fj, fk, uj, uk;
+  int typ, iu, j0, k0, j1, k1;
+  bool skip, top, tan0, clp, all;
+  bool ok[4];
+};
+
+template <class TD, class TB, class TX, class TF, class TM>
+KOKKOS_INLINE_FUNCTION
+void VgdGeom(VgdGeo &g, const int m, const int k, const int j, const int d, const int i,
+             const int l, const bool inw, const int n1, const int lcut, const int js,
+             const int ks, const int ie, const int jlo, const int jhi, const int klo,
+             const int khi, const TD &dir_, const TB &mbsize, const TX &cx1v,
+             const TF &cx1f, const TM &mr_) {
+  const Real twopi = 2.0*M_PI;
+  const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+  // the face midpoints (uniform in index space, as the bilinear reads assume)
+  const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+  const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+  const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+  const Real mr = nx*st*cp + ny*st*sp + nz*ct;
+  g.th = th; g.ph = ph; g.st = st; g.ct = ct; g.sp = sp; g.cp = cp; g.mr = mr;
+  g.skip = (inw == (mr >= 0.0));
+  if (g.skip) {return;}
+  const Real r = cx1v(m,i);
+  const Real zr = r*fabs(mr);
+  const Real p2 = fmax(r*r - zr*zr, 0.0);
+  g.r = r; g.zr = zr; g.p2 = p2;
+  g.top = inw && l == n1 - 1;
+  g.tan0 = !g.top && !inw && zr < 1.0e-12*r;
+  g.typ = 1;                 // 1 upwind shell, 2 inner face, 3 own shell
+  g.iu = i + 1;
+  g.ds = 0.0; g.fj = 0.0; g.fk = 0.0; g.uj = 0.0; g.uk = 0.0;
+  g.j0 = 0; g.k0 = 0; g.j1 = 0; g.k1 = 0;
+  g.clp = false;
+  g.all = true;
+  for (int q = 0; q < 4; ++q) {g.ok[q] = true;}
+  if (g.top) {
+    // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat)
+    const Real rtop = cx1f(m,ie+1);
+    g.ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
+    return;
+  }
+  if (g.tan0) {return;}      // tangent at the cell centre (measure zero)
+  Real ds;
+  if (inw) {
+    const Real ru = cx1v(m,i+1);
+    ds = sqrt(ru*ru - p2) - zr;
+  } else {
+    const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
+    if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
+      g.iu = i - 1;
+      ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+    } else if (l == lcut && p2 <= rd*rd) {
+      g.typ = 2;
+      g.iu = i;
+      ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+    } else {
+      g.typ = 3;
+      g.iu = i;
+      ds = 2.0*zr;
+    }
+  }
+  g.ds = ds;
+  // the upwind point, its lateral cell and bilinear fractions (index space)
+  const Real xu = r*st*cp - ds*nx;
+  const Real yu = r*st*sp - ds*ny;
+  const Real zu = r*ct - ds*nz;
+  const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
+  const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
+  Real dph = atan2(yu, xu) - ph;
+  dph -= twopi*floor((dph + M_PI)/twopi);
+  const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
+  const Real fk = k + dph/mbsize.d_view(m).dx3;
+  int j0 = static_cast<int>(floor(fj));
+  int k0 = static_cast<int>(floor(fk));
+  Real uj = fj - j0, uk = fk - k0;
+  bool clp = false;
+  if (j0 < jlo) {j0 = jlo; uj = 0.0; clp = true;}
+  if (j0 > jhi) {j0 = jhi; uj = 1.0; clp = true;}
+  if (k0 < klo) {k0 = klo; uk = 0.0; clp = true;}
+  if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
+  g.fj = fj; g.fk = fk; g.uj = uj; g.uk = uk; g.j0 = j0; g.k0 = k0;
+  g.j1 = j0 + 1; g.k1 = k0 + 1; g.clp = clp;
+  if (g.typ != 2) {
+    // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat selects;
+    // the ray read here is inward at the upwind point for the inward pass and for a
+    // turned ray, outward otherwise.  Stencil cells of the other pass hold the wrong
+    // branch (near the tangent band): they are dropped and the bilinear weights
+    // renormalised (all valid: the plain bilinear)
+    const bool want_in = inw || (g.typ == 3);
+    for (int q = 0; q < 4; ++q) {
+      const int kk = (q < 2) ? g.k0 : g.k1;
+      const int jj = (q % 2 == 0) ? g.j0 : g.j1;
+      const Real mq = mr_(m,kk,jj,d);
+      g.ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
+      g.all = g.all && g.ok[q];
+    }
+  }
+}
+
+// vgdfuse-1010: two in-place exclusive int scans (flag -> position, total at index n)
+// in ONE launch: the two counts ride in the low and high 32 bits of one int64 sum (all
+// counts < 2^31, so exact and the positions are those of two separate scans)
+void VgdScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
+              const DvceArray1D<int> &b, const size_t nb, const char *name) {
+  auto a_ = a;
+  auto b_ = b;
+  const size_t n = (na > nb) ? na : nb;
+  Kokkos::parallel_scan(name, Kokkos::RangePolicy<>(ex, 0, n + 1),
+  KOKKOS_LAMBDA(const size_t q, int64_t &acc, const bool fin) {
+    const int64_t va = (q < na) ? static_cast<int64_t>(a_(q)) : 0;
+    const int64_t vb = (q < nb) ? static_cast<int64_t>(b_(q)) : 0;
+    if (fin) {
+      if (q <= na) {a_(q) = static_cast<int>(acc & 0xffffffffLL);}
+      if (q <= nb) {b_(q) = static_cast<int>(acc >> 32);}
+    }
+    acc += va + (vb << 32);
+  });
+}
+
 bool VgdLevelSym(const int nl, std::vector<double> &d) {
   double m1;
   switch (nl) {
@@ -375,6 +501,7 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_fk0, nmb, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng, c1);
   }
   vgd_time_halo = (std::getenv("VGD_TIME_HALO") != nullptr);
+  vgd_scan2 = (std::getenv("VGD_SCAN_SPLIT") == nullptr);   // vgdfuse-1010
   if (vgd_async) {
     // vet_gd_async (GD_ASYNC.md): one exact sweep per build, nothing that rereads the
     // source between builds
@@ -1088,8 +1215,14 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
     });
   };
   // keep the flags: pack/expand need flag AND position -> flag = pos(q+1) - pos(q)
-  scan(vgd_hfs[slot], stot);
-  scan(vgd_hfr[slot], rtot);
+  // vgdfuse-1010: both scans in one launch (two 32-bit counts in one 64-bit sum: exact,
+  // the same positions); env VGD_SCAN_SPLIT=1 for the two launches as before
+  if (vgd_scan2) {
+    VgdScan2(vgd_cur, vgd_hfs[slot], stot, vgd_hfr[slot], rtot, "m1_vgd_hc_scan2");
+  } else {
+    scan(vgd_hfs[slot], stot);
+    scan(vgd_hfr[slot], rtot);
+  }
   // (3) the scan values at the partner boundaries, written straight into pinned host
   // memory (read by the host after the exchange's fence; no copy, no sync here)
   const int np = static_cast<int>(vgd_prk.size());
@@ -1237,8 +1370,12 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
       acc += v;
     });
   };
-  scan(vgd_hl_fn, rtot);
-  scan(vgd_hl_fw, rtot);
+  if (vgd_scan2) {
+    VgdScan2(ex_, vgd_hl_fn, rtot, vgd_hl_fw, rtot, "m1_vgd_hl_scan2");
+  } else {
+    scan(vgd_hl_fn, rtot);
+    scan(vgd_hl_fw, rtot);
+  }
   int nrw[2] = {0, 0};
   {
     Kokkos::View<int*, HostMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h(nrw, 1);
@@ -1380,7 +1517,245 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
 //! nonzero values only on the receive lists of X and of the other pass's entry Y (the
 //! dense unpack writes 0 everywhere else on its region).  Then the exchange is the
 //! gather pack of X, MPI, zeros on Y's list inside X's region, the scatter of X: the same
-//! band values as the dense path.  Returns true (band written).
+//! band values as the dense path.  Returns true (band written).  (Defined below
+//! VetGdHlBegin / VetGdHlEnd.)
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VetGdHlBegin
+//! \brief vgdfuse-1010: the first half of the list path of VetGdHaloCompact (the gather
+//! pack, the fence, the posted messages, the zeros on Y's entries), when the list path
+//! applies (else false, nothing done); VetGdHlEnd completes it.  VetGdHaloCompact calls
+//! both back to back; the overlap of VetGdSweep runs the next shell's local items between
+
+template <class V>
+bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V *b) {
+#if MPI_PARALLEL_ENABLED
+  if (vgd_hlp.on) {VgdFatal("VetGdHlBegin: an exchange is still pending");}
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
+  const int i = i0;
+  const bool inw = vgd_hinw;
+  auto a_ = a;
+  auto csb_ = vgd_csb;
+  auto crb_ = vgd_crb;
+  // vet_gd_twin_fuse: the twin array b packed / sent / expanded with the same masks
+  const bool two = (b != nullptr);
+  auto b_ = two ? *b : a;
+  auto csb2_ = vgd_csb2;
+  auto crb2_ = vgd_crb2;
+  const int np = static_cast<int>(vgd_prk.size());
+  const bool nanfill = (std::getenv("VGD_COMPACT_NAN") != nullptr);
+  // vet_gd_halo_list_mb: the list entries X (this pass) and Y (the other pass) of shell
+  // i, and the last writers of the band of a (and b) per pass
+  const int n1c = indcs.nx1 + 2*indcs.ng;
+  const int c2 = nx2 + 2*w, c3 = nx3 + 2*w;
+  bool lst = (vgd_hl_mb > 0) && !nanfill && (nv == vgd_n) && (i >= 0) && (i < n1c) &&
+             (static_cast<int64_t>(nmb1 + 1)*nv*c3*c2 <
+              static_cast<int64_t>(std::numeric_limits<int>::max()));
+  const int px = inw ? 0 : 1;
+  const int ex = px*n1c + i, ey = (1 - px)*n1c + i;
+  std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;
+  if (lst) {
+    if (static_cast<int>(vgd_hle.size()) != 2*n1c) {vgd_hle.resize(2*n1c);}
+    auto gwget = [&](const void *p) {
+      auto &g = vgd_hl_gw[p];
+      if (static_cast<int>(g[0].size()) != n1c) {
+        g[0].assign(n1c, 0);
+        g[1].assign(n1c, 0);
+      }
+      return &g;
+    };
+    if constexpr (std::is_same<V, VgdIView>::value) {
+      gwa = gwget(static_cast<const void *>(a.d.data()));
+      if (two) {gwb = gwget(static_cast<const void *>(b->d.data()));}
+    } else {
+      lst = false;
+    }
+  }
+  auto xvalid = [&]() {
+    const VgdHlEntry &X = vgd_hle[ex];
+    return X.gen > 0 && X.alpha == vgd_alpha && X.scut == vgd_scut && X.ws == ws;
+  };
+  auto gwok = [&](std::array<std::vector<int64_t>, 2> *g) {
+    const int64_t gx = (*g)[px][i], gy = (*g)[1 - px][i];
+    return (gx == 0 || gx == vgd_hle[ex].gen) && (gy == 0 || (vgd_hle[ey].gen > 0 &&
+                                                               gy == vgd_hle[ey].gen));
+  };
+  if (!(lst && xvalid() && gwok(gwa) && (!two || gwok(gwb)))) {return false;}
+  if constexpr (std::is_same<V, VgdIView>::value) {
+    const VgdHlEntry &X = vgd_hle[ex];
+    auto sl_ = X.sl;
+    const int c2_ = c2, c3_ = c3, nv_ = nv;
+    if (X.ns > 0) {
+      Kokkos::parallel_for("m1_vgd_hl_pack", Kokkos::RangePolicy<>(vgd_cur, 0, X.ns),
+      KOKKOS_LAMBDA(const int c) {
+        int ad = sl_(c);
+        const int jb = ad % c2_;
+        ad /= c2_;
+        const int kb = ad % c3_;
+        ad /= c3_;
+        const int v = ad % nv_;
+        const int m = ad/nv_;
+        csb_(c) = a_(m,v,kb,jb,i);
+        if (two) {csb2_(c) = b_(m,v,kb,jb,i);}
+      });
+    }
+    vgd_cur.fence();
+    const std::vector<int> &sp = X.sp, &rp_ = X.rp;
+    vgd_hlp.tq.reset();
+    auto &tq = vgd_hlp.tq;
+    auto &req = vgd_hlp.req;
+    req.clear();
+    for (int p = 0; p < np; ++p) {
+      const int rk = vgd_prk[p];
+      req.emplace_back();
+      MPI_Irecv(crb_.data() + rp_[p], rp_[p+1] - rp_[p], MPI_ATHENA_REAL, rk, 7002,
+                vgd_comm, &req.back());
+      req.emplace_back();
+      MPI_Isend(csb_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7002,
+                vgd_comm, &req.back());
+    }
+    if (two) {
+      for (int p = 0; p < np; ++p) {
+        const int rk = vgd_prk[p];
+        req.emplace_back();
+        MPI_Irecv(crb2_.data() + rp_[p], rp_[p+1] - rp_[p], MPI_ATHENA_REAL, rk, 7003,
+                  vgd_comm, &req.back());
+        req.emplace_back();
+        MPI_Isend(csb2_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7003,
+                  vgd_comm, &req.back());
+      }
+    }
+    vgd_tpost += tq.seconds();
+    // the zeros: Y's receive entries inside X's region (written by the dense unpack of X
+    // as 0, as every value of X's region not on X's lists; X's own entries follow)
+    const VgdHlEntry &Y = vgd_hle[ey];
+    const bool zy = ((*gwa)[1 - px][i] != 0) || (two && (*gwb)[1 - px][i] != 0);
+    if (zy && (Y.nr > 0 || Y.nw > 0)) {
+      const int ny = Y.nr, nyw = Y.nw;
+      auto ydl_ = Y.dl;
+      auto ydw_ = Y.dw;
+      Kokkos::parallel_for("m1_vgd_hl_zero", Kokkos::RangePolicy<>(vgd_cur, 0, ny + nyw),
+      KOKKOS_LAMBDA(const int c) {
+        int ad = (c < ny) ? ydl_(c) : ydw_(c - ny);
+        const int jb = ad % c2_;
+        ad /= c2_;
+        const int kb = ad % c3_;
+        ad /= c3_;
+        const int v = ad % nv_;
+        const int m = ad/nv_;
+        if (jb < w - ws || jb >= w + nx2 + ws || kb < w - ws || kb >= w + nx3 + ws) {
+          return;
+        }
+        a_(m,v,kb,jb,i) = 0.0;
+        if (two) {b_(m,v,kb,jb,i) = 0.0;}
+      });
+    }
+
+    vgd_hlp.on = true;
+    vgd_hlp.two = two;
+    vgd_hlp.ex = ex;
+    vgd_hlp.px = px;
+    vgd_hlp.i = i;
+    vgd_hlp.gwa = gwa;
+    vgd_hlp.gwb = gwb;
+    vgd_hlp.a = a;
+    if (two) {vgd_hlp.b = *b;}
+    return true;
+  }
+#endif
+  return false;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHlEnd
+//! \brief vgdfuse-1010: the second half of a list-path exchange started by VetGdHlBegin:
+//! the MPI wait, the size check, the scatter, the last-writer ids
+
+void RadiationM1::VetGdHlEnd() {
+#if MPI_PARALLEL_ENABLED
+  if (!vgd_hlp.on) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
+  const int c2_ = nx2 + 2*w, c3_ = nx3 + 2*w, nv_ = vgd_n;
+  const int i = vgd_hlp.i, px = vgd_hlp.px;
+  const bool two = vgd_hlp.two;
+  auto a_ = vgd_hlp.a;
+  auto b_ = two ? vgd_hlp.b : vgd_hlp.a;
+  auto crb_ = vgd_crb;
+  auto crb2_ = vgd_crb2;
+  auto &req = vgd_hlp.req;
+  auto &tq = vgd_hlp.tq;
+  auto *gwa = vgd_hlp.gwa;
+  auto *gwb = vgd_hlp.gwb;
+  const int np = static_cast<int>(vgd_prk.size());
+  const VgdHlEntry &X = vgd_hle[vgd_hlp.ex];
+  const std::vector<int> &sp = X.sp, &rp_ = X.rp;
+  std::vector<MPI_Status> stat(req.size());
+  if (vgd_afly && g_vgd_apoll > 0) {
+    int done = 0;
+    while (true) {
+      MPI_Testall(static_cast<int>(req.size()), req.data(), &done, stat.data());
+      if (done) {break;}
+      std::this_thread::sleep_for(std::chrono::microseconds(g_vgd_apoll));
+    }
+  } else {
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
+  }
+  vgd_tmpi += tq.seconds();
+  vgd_nexch += 1.0;
+  for (int p = 0; p < np; ++p) {
+    int got = 0;
+    MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
+    if (got != rp_[p+1] - rp_[p]) {
+      VgdFatal("vet_gd_halo_list: sender and receiver lists disagree");
+    }
+    vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real)*(two ? 2 : 1);
+  }
+  // the scatter (the dense unpack of the expanded buffer, on the written entries)
+  const int nr = X.nr, nw = X.nw;
+  auto dl_ = X.dl;
+  auto sr_ = X.sr;
+  auto dw_ = X.dw;
+  auto sw_ = X.sw;
+  auto w3_ = vgd_w3;
+  if (nr + nw > 0) {
+    Kokkos::parallel_for("m1_vgd_hl_scatter",
+                         Kokkos::RangePolicy<>(vgd_cur, 0, nr + nw),
+    KOKKOS_LAMBDA(const int c) {
+      int ad = (c < nr) ? dl_(c) : dw_(c - nr);
+      const int jb = ad % c2_;
+      ad /= c2_;
+      const int kb = ad % c3_;
+      ad /= c3_;
+      const int v = ad % nv_;
+      const int m = ad/nv_;
+      if (c < nr) {
+        a_(m,v,kb,jb,i) = crb_(sr_(c));
+        if (two) {b_(m,v,kb,jb,i) = crb2_(sr_(c));}
+        return;
+      }
+      const int cw = c - nr;
+      Real val = 0.0, val2 = 0.0;
+      for (int u = 0; u < 3; ++u) {
+        const int s = sw_(3*cw + u);
+        val += w3_(m,kb,jb,v,u)*((s >= 0) ? crb_(s) : 0.0);
+        if (two) {val2 += w3_(m,kb,jb,v,u)*((s >= 0) ? crb2_(s) : 0.0);}
+      }
+      a_(m,v,kb,jb,i) = val;
+      if (two) {b_(m,v,kb,jb,i) = val2;}
+    });
+  }
+  (*gwa)[px][i] = X.gen;
+  if (two) {(*gwb)[px][i] = X.gen;}
+  vgd_hl_nuse += 1.0;
+  vgd_hlp.on = false;
+  vgd_hlp.a = VgdRag();
+  vgd_hlp.b = VgdRag();
+#endif
+}
 
 template <class V>
 bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b) {
@@ -1446,131 +1821,9 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
                                                                gy == vgd_hle[ey].gen));
   };
   if (lst && xvalid() && gwok(gwa) && (!two || gwok(gwb))) {
-    // ---- the list path ----
-    const VgdHlEntry &X = vgd_hle[ex];
-    auto sl_ = X.sl;
-    const int c2_ = c2, c3_ = c3, nv_ = nv;
-    if (X.ns > 0) {
-      Kokkos::parallel_for("m1_vgd_hl_pack", Kokkos::RangePolicy<>(vgd_cur, 0, X.ns),
-      KOKKOS_LAMBDA(const int c) {
-        int ad = sl_(c);
-        const int jb = ad % c2_;
-        ad /= c2_;
-        const int kb = ad % c3_;
-        ad /= c3_;
-        const int v = ad % nv_;
-        const int m = ad/nv_;
-        csb_(c) = a_(m,v,kb,jb,i);
-        if (two) {csb2_(c) = b_(m,v,kb,jb,i);}
-      });
-    }
-    vgd_cur.fence();
-    const std::vector<int> &sp = X.sp, &rp_ = X.rp;
-    Kokkos::Timer tq;
-    std::vector<MPI_Request> req;
-    for (int p = 0; p < np; ++p) {
-      const int rk = vgd_prk[p];
-      req.emplace_back();
-      MPI_Irecv(crb_.data() + rp_[p], rp_[p+1] - rp_[p], MPI_ATHENA_REAL, rk, 7002,
-                vgd_comm, &req.back());
-      req.emplace_back();
-      MPI_Isend(csb_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7002,
-                vgd_comm, &req.back());
-    }
-    if (two) {
-      for (int p = 0; p < np; ++p) {
-        const int rk = vgd_prk[p];
-        req.emplace_back();
-        MPI_Irecv(crb2_.data() + rp_[p], rp_[p+1] - rp_[p], MPI_ATHENA_REAL, rk, 7003,
-                  vgd_comm, &req.back());
-        req.emplace_back();
-        MPI_Isend(csb2_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7003,
-                  vgd_comm, &req.back());
-      }
-    }
-    vgd_tpost += tq.seconds();
-    // the zeros: Y's receive entries inside X's region (written by the dense unpack of X
-    // as 0, as every value of X's region not on X's lists; X's own entries follow)
-    const VgdHlEntry &Y = vgd_hle[ey];
-    const bool zy = ((*gwa)[1 - px][i] != 0) || (two && (*gwb)[1 - px][i] != 0);
-    if (zy && (Y.nr > 0 || Y.nw > 0)) {
-      const int ny = Y.nr, nyw = Y.nw;
-      auto ydl_ = Y.dl;
-      auto ydw_ = Y.dw;
-      Kokkos::parallel_for("m1_vgd_hl_zero", Kokkos::RangePolicy<>(vgd_cur, 0, ny + nyw),
-      KOKKOS_LAMBDA(const int c) {
-        int ad = (c < ny) ? ydl_(c) : ydw_(c - ny);
-        const int jb = ad % c2_;
-        ad /= c2_;
-        const int kb = ad % c3_;
-        ad /= c3_;
-        const int v = ad % nv_;
-        const int m = ad/nv_;
-        if (jb < w - ws || jb >= w + nx2 + ws || kb < w - ws || kb >= w + nx3 + ws) {
-          return;
-        }
-        a_(m,v,kb,jb,i) = 0.0;
-        if (two) {b_(m,v,kb,jb,i) = 0.0;}
-      });
-    }
-    std::vector<MPI_Status> stat(req.size());
-    if (vgd_afly && g_vgd_apoll > 0) {
-      int done = 0;
-      while (true) {
-        MPI_Testall(static_cast<int>(req.size()), req.data(), &done, stat.data());
-        if (done) {break;}
-        std::this_thread::sleep_for(std::chrono::microseconds(g_vgd_apoll));
-      }
-    } else {
-      MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
-    }
-    vgd_tmpi += tq.seconds();
-    vgd_nexch += 1.0;
-    for (int p = 0; p < np; ++p) {
-      int got = 0;
-      MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
-      if (got != rp_[p+1] - rp_[p]) {
-        VgdFatal("vet_gd_halo_list: sender and receiver lists disagree");
-      }
-      vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real)*(two ? 2 : 1);
-    }
-    // the scatter (the dense unpack of the expanded buffer, on the written entries)
-    const int nr = X.nr, nw = X.nw;
-    auto dl_ = X.dl;
-    auto sr_ = X.sr;
-    auto dw_ = X.dw;
-    auto sw_ = X.sw;
-    auto w3_ = vgd_w3;
-    if (nr + nw > 0) {
-      Kokkos::parallel_for("m1_vgd_hl_scatter",
-                           Kokkos::RangePolicy<>(vgd_cur, 0, nr + nw),
-      KOKKOS_LAMBDA(const int c) {
-        int ad = (c < nr) ? dl_(c) : dw_(c - nr);
-        const int jb = ad % c2_;
-        ad /= c2_;
-        const int kb = ad % c3_;
-        ad /= c3_;
-        const int v = ad % nv_;
-        const int m = ad/nv_;
-        if (c < nr) {
-          a_(m,v,kb,jb,i) = crb_(sr_(c));
-          if (two) {b_(m,v,kb,jb,i) = crb2_(sr_(c));}
-          return;
-        }
-        const int cw = c - nr;
-        Real val = 0.0, val2 = 0.0;
-        for (int u = 0; u < 3; ++u) {
-          const int s = sw_(3*cw + u);
-          val += w3_(m,kb,jb,v,u)*((s >= 0) ? crb_(s) : 0.0);
-          if (two) {val2 += w3_(m,kb,jb,v,u)*((s >= 0) ? crb2_(s) : 0.0);}
-        }
-        a_(m,v,kb,jb,i) = val;
-        if (two) {b_(m,v,kb,jb,i) = val2;}
-      });
-    }
-    (*gwa)[px][i] = X.gen;
-    if (two) {(*gwb)[px][i] = X.gen;}
-    vgd_hl_nuse += 1.0;
+    // ---- the list path (vgdfuse-1010: begin + end, as the overlap uses them) ----
+    VetGdHlBegin(a, nv, i0, ws, b);
+    VetGdHlEnd();
     return true;
   }
   // ---- the dense path ----
@@ -1817,39 +2070,31 @@ void RadiationM1::VetGdSweep() {
     }
     vgd_shl_alpha = vgd_alpha;
   }
+  // vgdfuse-1010 vet_gd_overlap = G: the split lists need the list-path halo and the
+  // shell lists; vet_gd_fuse_shells = H: the lagged exchange cadence (H > 1 not bitwise)
+  const int ovg = vgd_ovl_g;
+  const bool ovl = (ovg > 0) && shl && !bandx && vgd_hmpi && (vgd_hcomp > 0) &&
+                   (vgd_hl_mb > 0) && !vgd_ovl_nofit;
+  const int fh = std::max(vgd_fuse_h, 1);
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
-    for (int q = 0; q < n1 - lcut; ++q) {
-      const int l = inw ? (n1 - 1 - q) : (lcut + q);
-      const int i = is + l;
-      // vet_gd_halo_pipe: the shell exchanged after this one (its mask is prepared while
-      // this shell's messages travel)
-      if (q + 1 < n1 - lcut) {
-        const int in = is + (inw ? (n1 - 2 - q) : (lcut + q + 1));
-        vgd_hnext[0] = in;
-        vgd_hnext[1] = inw ? 1 : 0;
-        vgd_hnext[2] = inw ? vgd_wsi[in] : vgd_wso[in];
-      } else if (inw) {
-        const int in = is + lcut;
-        vgd_hnext[0] = in;
-        vgd_hnext[1] = 0;
-        vgd_hnext[2] = vgd_wso[in];
-      } else {
-        vgd_hnext[0] = -1;
-      }
-      const bool two = vgd_sw2;      // vet_gd_twin_fuse: the twin field in the same pass
-      auto ct_ = vgd_cst;
-      auto vt_ = vgd_itw;
-      auto body = KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+    const bool two = vgd_sw2;        // vet_gd_twin_fuse: the twin field in the same pass
+    auto ct_ = vgd_cst;
+    auto vt_ = vgd_itw;
+      auto body = KOKKOS_LAMBDA(const int m, const int k, const int j, const int d,
+                                const int i, const int l) {
+        VgdGeo g;
+        VgdGeom(g, m, k, j, d, i, l, inw, n1, lcut, js, ks, ie, jlo, jhi, klo, khi, dir_,
+                mbsize, cx1v, cx1f, mr_);
+        if (g.skip) {return;}
+        // one clamp count per solve, as before (main + twin)
+        if (g.clp) {Kokkos::atomic_add(&cnt_(0), two ? 2.0 : 1.0);}
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-        // the face midpoints (uniform in index space, as the bilinear reads assume)
-        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
-        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
-        const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-        const Real mr = nx*st*cp + ny*st*sp + nz*ct;
-        if (inw == (mr >= 0.0)) {return;}
-        // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same
-        // thread; one launch and one halo per shell for both sweeps
+        const Real th = g.th, ph = g.ph, st = g.st, ct = g.ct, sp = g.sp, cp = g.cp;
+        const Real r = g.r, p2 = g.p2, ds = g.ds, fj = g.fj, fk = g.fk;
+        const Real uj = g.uj, uk = g.uk;
+        const int typ = g.typ, iu = g.iu, j0 = g.j0, k0 = g.k0, j1 = g.j1, k1 = g.k1;
+        const bool top = g.top, tan0 = g.tan0, clp = g.clp, all = g.all;
         auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix) -> Real {
           auto rd = [&](const int kk, const int jj, const int ii) -> Real {
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
@@ -1869,64 +2114,17 @@ void RadiationM1::VetGdSweep() {
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,d) : d;
             return vix(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
           };
-          const Real r = cx1v(m,i);
-          const Real zr = r*fabs(mr);
-          const Real p2 = fmax(r*r - zr*zr, 0.0);
           const Real ch0 = exp(csx(m,0,k,j,i));
           const Real s0 = exp(csx(m,1,k,j,i));
           Real iv;
-          if (inw && l == n1 - 1) {
-            // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat)
-            const Real rtop = cx1f(m,ie+1);
-            const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
+          if (top) {
             const Real stp = fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i-1)), 1.0e-300);
             Real ex, w0, wu;
             VgdW(ch0*ds, ex, w0, wu);
             iv = wu*stp + w0*s0;
-          } else if (!inw && zr < 1.0e-12*r) {
+          } else if (tan0) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
-            int typ = 1;                 // 1 upwind shell, 2 inner face, 3 own shell
-            int iu = i + 1;
-            Real ds;
-            if (inw) {
-              const Real ru = cx1v(m,i+1);
-              ds = sqrt(ru*ru - p2) - zr;
-            } else {
-              const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
-              if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
-                iu = i - 1;
-                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-              } else if (l == lcut && p2 <= rd*rd) {
-                typ = 2;
-                iu = i;
-                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-              } else {
-                typ = 3;
-                iu = i;
-                ds = 2.0*zr;
-              }
-            }
-            // the upwind point, its lateral cell and bilinear fractions (index space)
-            const Real xu = r*st*cp - ds*nx;
-            const Real yu = r*st*sp - ds*ny;
-            const Real zu = r*ct - ds*nz;
-            const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
-            const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
-            Real dph = atan2(yu, xu) - ph;
-            dph -= twopi*floor((dph + M_PI)/twopi);
-            const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
-            const Real fk = k + dph/mbsize.d_view(m).dx3;
-            int j0 = static_cast<int>(floor(fj));
-            int k0 = static_cast<int>(floor(fk));
-            Real uj = fj - j0, uk = fk - k0;
-            bool clp = false;
-            if (j0 < jlo) {j0 = jlo; uj = 0.0; clp = true;}
-            if (j0 > jhi) {j0 = jhi; uj = 1.0; clp = true;}
-            if (k0 < klo) {k0 = klo; uk = 0.0; clp = true;}
-            if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
-            if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
-            const int j1 = j0 + 1, k1 = k0 + 1;
             bool bdone = false;
             if (clp && bandx && typ == 1) {
               // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead
@@ -2007,21 +2205,6 @@ void RadiationM1::VetGdSweep() {
                                       VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
               iv = bv*ex + wu*qv + w0*s0;
             } else {
-              // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
-              // selects; the ray read here is inward at the upwind point for the inward
-              // pass and for a turned ray, outward otherwise.  Stencil cells of the other
-              // pass hold the wrong branch (near the tangent band): they are dropped and
-              // the bilinear weights renormalised (all valid: the plain bilinear)
-              const bool want_in = inw || (typ == 3);
-              bool ok[4];
-              bool all = true;
-              for (int q = 0; q < 4; ++q) {
-                const int kk = (q < 2) ? k0 : k1;
-                const int jj = (q % 2 == 0) ? j0 : j1;
-                const Real mq = mr_(m,kk,jj,d);
-                ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
-                all = all && ok[q];
-              }
               Real ivu;
               if (all) {
                 ivu = VgdLerp(VgdLerp(rd(k0,j0,iu), rd(k0,j1,iu), uj),
@@ -2033,7 +2216,7 @@ void RadiationM1::VetGdSweep() {
                   const int jj = (q % 2 == 0) ? j0 : j1;
                   const Real wq = ((q < 2) ? (1.0 - uk) : uk)
                                   *((q % 2 == 0) ? (1.0 - uj) : uj);
-                  if (ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
+                  if (g.ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
                 }
                 ivu = (ws > 0.0) ? vs/ws : -1.0;   // none: the upwind source (below)
               }
@@ -2053,36 +2236,192 @@ void RadiationM1::VetGdSweep() {
         vi_(m,d,k,j,i) = solve(cs_, vi_);
         if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_);}
       };
-      if (shl) {
-        // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
-        auto L_ = vgd_shl[pass];
-        const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
-        Kokkos::parallel_for("m1_vgd_shell", Kokkos::RangePolicy<>(vgd_cur, 0,
-                                                                   vgd_shn[pass]),
-        KOKKOS_LAMBDA(const int c) {
-          int t = L_(c);
-          const int d = t % n;
-          t /= n;
-          const int m = t/nkj;
-          t -= m*nkj;
-          const int k = ks + t/nj;
-          const int j = js + (t % nj);
-          body(m, k, j, d);
-        });
+    const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
+    // the shell kernel over the codes cl(c), c in [c0, c1) (vet_gd_shell_list codes)
+    auto run_list = [&](const DvceArray1D<int> &cl, const int c0, const int c1,
+                        const int i, const int l, const char *name) {
+      if (c1 <= c0) {return;}
+      auto L_ = cl;
+      Kokkos::parallel_for(name, Kokkos::RangePolicy<>(vgd_cur, c0, c1),
+      KOKKOS_LAMBDA(const int c) {
+        int t = L_(c);
+        const int d = t % n;
+        t /= n;
+        const int m = t/nkj;
+        t -= m*nkj;
+        const int k = ks + t/nj;
+        const int j = js + (t % nj);
+        body(m, k, j, d, i, l);
+      });
+    };
+    // vet_gd_overlap: the split lists of group g of this pass (made when missing or of
+    // another direction set): codes whose stencil, in any shell of the group, reads the
+    // REMOTE band of the previous shell of the pass (written by the pending exchange)
+    // first, then the rest.  A turned ray (typ 3) reads the own shell's inward band,
+    // complete since the inward pass; typ 2 reads no intensity.
+    const int nsh = n1 - lcut;
+    const int ngr = (ovg > 0) ? (nsh + ovg - 1)/ovg : 0;
+    auto ovl_ready = [&](const int g) -> bool {
+      if (vgd_ovl_nofit) {return false;}
+      const int nl = vgd_shn[pass];
+      if (static_cast<int>(vgd_ovl_alpha[pass].size()) != ngr ||
+          vgd_ovl_cap[pass] < nl || vgd_ovl_cut != lcut) {
+        // (re)allocate both passes' arrays within the budget
+        const int cap = std::max(nl, std::max(vgd_shn[0], vgd_shn[1]));
+        const double mb = 2.0*ngr*static_cast<double>(cap)*sizeof(int)/1048576.0;
+        if (mb > vgd_ovl_mb) {
+          vgd_ovl_nofit = true;
+          if (global_variable::my_rank == 0) {
+            std::cout << "<rad_m1> vet_gd_overlap: the split lists need " << mb
+                      << " MB > vet_gd_overlap_mb = " << vgd_ovl_mb
+                      << ": overlap off" << std::endl;
+          }
+          return false;
+        }
+        for (int p = 0; p < 2; ++p) {
+          Kokkos::realloc(vgd_ovl[p], static_cast<size_t>(ngr)*cap);
+          vgd_ovl_cap[p] = cap;
+          vgd_ovl_alpha[p].assign(ngr, -5.0);
+          vgd_ovl_nr[p].assign(ngr, 0);
+        }
+        Kokkos::realloc(vgd_ovl_f, cap + 1);
+        vgd_ovl_cut = lcut;          // the groups of shells follow the cut
+      }
+      if (vgd_ovl_alpha[pass][g] == vgd_alpha) {return true;}
+      auto L_ = vgd_shl[pass];
+      auto F_ = vgd_ovl_f;
+      auto O_ = vgd_ovl[pass];
+      const size_t off = static_cast<size_t>(g)*vgd_ovl_cap[pass];
+      const int q0 = g*ovg, q1 = std::min((g + 1)*ovg, nsh);
+      Kokkos::parallel_for("m1_vgd_ovl_flag", Kokkos::RangePolicy<>(vgd_cur, 0, nl),
+      KOKKOS_LAMBDA(const int c) {
+        int t = L_(c);
+        const int d = t % n;
+        t /= n;
+        const int m = t/nkj;
+        t -= m*nkj;
+        const int k = ks + t/nj;
+        const int j = js + (t % nj);
+        int rem = 0;
+        for (int qq = q0; qq < q1 && rem == 0; ++qq) {
+          const int l = inw ? (n1 - 1 - qq) : (lcut + qq);
+          const int i = is + l;
+          VgdGeo gg;
+          VgdGeom(gg, m, k, j, d, i, l, inw, n1, lcut, js, ks, ie, jlo, jhi, klo, khi,
+                  dir_, mbsize, cx1v, cx1f, mr_);
+          if (gg.skip || gg.top || gg.tan0 || gg.typ == 2 || gg.iu == i) {continue;}
+          for (int u = 0; u < 4; ++u) {
+            const int kk = (u < 2) ? gg.k0 : gg.k1;
+            const int jj = (u % 2 == 0) ? gg.j0 : gg.j1;
+            const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
+            const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
+            if (ek == 0 && ej == 0) {continue;}
+            const int oo = 3*(ek + 1) + (ej + 1);
+            if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) < 0) {rem = 1;}
+          }
+        }
+        F_(c) = rem;
+      });
+      Kokkos::parallel_scan("m1_vgd_ovl_scan", Kokkos::RangePolicy<>(vgd_cur, 0, nl + 1),
+      KOKKOS_LAMBDA(const int c, int &acc, const bool fin) {
+        const int v = (c < nl) ? F_(c) : 0;
+        if (fin) {F_(c) = acc;}
+        acc += v;
+      });
+      int nr = 0;
+      {
+        Kokkos::View<int*, HostMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h(&nr, 1);
+        Kokkos::deep_copy(vgd_cur, h, Kokkos::subview(vgd_ovl_f, std::make_pair(nl, nl + 1)));
+        vgd_cur.fence();
+      }
+      const int nrr = nr;
+      Kokkos::parallel_for("m1_vgd_ovl_fill", Kokkos::RangePolicy<>(vgd_cur, 0, nl),
+      KOKKOS_LAMBDA(const int c) {
+        const int p0 = F_(c);
+        if (F_(c + 1) > p0) {
+          O_(off + p0) = L_(c);
+        } else {
+          O_(off + nrr + (c - p0)) = L_(c);
+        }
+      });
+      vgd_ovl_nr[pass][g] = nr;
+      vgd_ovl_alpha[pass][g] = vgd_alpha;
+      return true;
+    };
+    bool pend = false;               // a list-path exchange begun, not ended
+    for (int q = 0; q < nsh; ++q) {
+      const int l = inw ? (n1 - 1 - q) : (lcut + q);
+      const int i = is + l;
+      // vet_gd_halo_pipe: the shell exchanged after this one (its mask is prepared while
+      // this shell's messages travel)
+      if (q + 1 < n1 - lcut) {
+        const int in = is + (inw ? (n1 - 2 - q) : (lcut + q + 1));
+        vgd_hnext[0] = in;
+        vgd_hnext[1] = inw ? 1 : 0;
+        vgd_hnext[2] = inw ? vgd_wsi[in] : vgd_wso[in];
+      } else if (inw) {
+        const int in = is + lcut;
+        vgd_hnext[0] = in;
+        vgd_hnext[1] = 0;
+        vgd_hnext[2] = vgd_wso[in];
       } else {
-        par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1, body);
+        vgd_hnext[0] = -1;
+      }
+      if (pend && ovl && ovl_ready(q/ovg)) {
+        // vet_gd_overlap: the local items while the previous shell's messages travel,
+        // then its scatter, then the items that read it
+        const int g = q/ovg;
+        const int nl = vgd_shn[pass], nr = vgd_ovl_nr[pass][g];
+        const int off = g*vgd_ovl_cap[pass];
+        run_list(vgd_ovl[pass], off + nr, off + nl, i, l, "m1_vgd_shell_loc");
+        Kokkos::Timer th;
+        VetGdHlEnd();
+        vgd_thalo += th.seconds();
+        run_list(vgd_ovl[pass], off, off + nr, i, l, "m1_vgd_shell_rem");
+        vgd_ovl_nsplit += 1.0;
+        vgd_ovl_nrem += nr;
+        vgd_ovl_nall += nl;
+      } else {
+        if (pend) {
+          Kokkos::Timer th;
+          VetGdHlEnd();
+          vgd_thalo += th.seconds();
+        }
+        if (shl) {
+          // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
+          run_list(vgd_shl[pass], 0, vgd_shn[pass], i, l, "m1_vgd_shell");
+        } else {
+          par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
+          KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+            body(m, k, j, d, i, l);
+          });
+        }
+        if (ovl) {vgd_ovl_nfull += 1.0;}
+      }
+      pend = false;
+      // vet_gd_fuse_shells = H > 1 (NOT bitwise): exchange only every H-th shell of the
+      // pass and its last one
+      if (fh > 1 && ((q + 1) % fh) != 0 && q + 1 < nsh) {
+        vgd_fuse_nskip += 1.0;
+        continue;
       }
       // the shell is complete on every block: its lateral band, exact (not lagged)
       if (vgd_time_halo) {vgd_cur.fence();}
       Kokkos::Timer th;
       vgd_hinw = inw;
-      VetGdHalo(vgd_i, n, i, i, inw ? vgd_wsi[i] : vgd_wso[i], true,
-                two ? &vgd_itw : nullptr);
+      const int wsx = inw ? vgd_wsi[i] : vgd_wso[i];
+      if (ovl && q + 1 < nsh &&
+          VetGdHlBegin(vgd_i, n, i, wsx, two ? &vgd_itw : nullptr)) {
+        pend = true;                 // completed by the next shell (VetGdHlEnd)
+      } else {
+        VetGdHalo(vgd_i, n, i, i, wsx, true, two ? &vgd_itw : nullptr);
+      }
       // the next shell's kernel is stream-ordered behind the unpack: no fence needed
       // (env VGD_TIME_HALO: fenced, for the per-part timers)
       if (vgd_time_halo) {vgd_cur.fence();}
       vgd_thalo += th.seconds();
     }
+    if (pend) {VetGdHlEnd();}
   }
 }
 

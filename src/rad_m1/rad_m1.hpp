@@ -1790,6 +1790,43 @@ class RadiationM1 {
   bool VetGdHlBuild(const int e, const int i, const bool inw, const int ws,
                     const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
                     const std::vector<int> &pbh);
+  // vgdfuse-1010 (all bitwise unless stated)
+  // vet_gd_overlap = G (read only when named; default 0 = off): split each shell launch
+  // into the items that read no remote band of the previous shell (run while that
+  // shell's list-path messages travel) and the rest (run after the scatter).  The split
+  // lists are made per group of G shells (an item is "remote" if it is in any shell of
+  // the group) when the direction set changes; vet_gd_overlap_mb caps their memory.
+  int vgd_ovl_g = 0, vgd_ovl_mb = 1024;
+  DvceArray1D<int> vgd_ovl[2];             // (ngroup cap): per group remote, then local
+  DvceArray1D<int> vgd_ovl_f;              // scratch: flags -> positions
+  std::vector<int> vgd_ovl_nr[2];          // per group: number of remote items
+  std::vector<Real> vgd_ovl_alpha[2];      // per group: direction set of the lists
+  int vgd_ovl_cap[2] = {0, 0};
+  int vgd_ovl_cut = -1;                    // the cut the groups were made for
+  bool vgd_ovl_nofit = false;
+  Real vgd_ovl_nsplit = 0.0, vgd_ovl_nfull = 0.0, vgd_ovl_nrem = 0.0, vgd_ovl_nall = 0.0;
+  // vet_gd_fuse_shells = H (read only when named; default 1): the lateral exchange only
+  // after every H-th shell of a pass (and its last); the other shells read the band of
+  // the last exchange that wrote it.  NOT bitwise for H > 1 (a lagged inflow)
+  int vgd_fuse_h = 1;
+  Real vgd_fuse_nskip = 0.0;
+  // env VGD_SCAN_SPLIT=1: the paired mask / list scans in two launches (as before 1010)
+  bool vgd_scan2 = true;
+  // the pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
+  struct VgdHlPend {
+    bool on = false, two = false;
+    int ex = -1, px = 0, i = -1;
+    std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;
+    VgdRag a, b;
+#if MPI_PARALLEL_ENABLED
+    std::vector<MPI_Request> req;
+#endif
+    Kokkos::Timer tq;
+  };
+  VgdHlPend vgd_hlp;
+  template <class V>
+  bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V *b);
+  void VetGdHlEnd();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
   template <class V>
