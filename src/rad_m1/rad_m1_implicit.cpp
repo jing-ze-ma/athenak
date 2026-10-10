@@ -1643,9 +1643,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_muscl) {
       impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
     }
-    if (impl_muscl && pin->GetOrAddString("rad_m1","implicit_flux_beam",
-                                          "closure").compare("halfrange") != 0) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux_beam = halfrange");
+    // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
+    // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
+    // closure | fs); a central face has none
+    if (impl_muscl && pin->GetOrAddString("rad_m1","implicit_flux",
+                                          "central").compare("central") == 0) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux = berthon | blend");
     }
     if (impl_muscl && cs_geom) {
       ImplFatal("<rad_m1>/implicit_hr_recon = plm is not implemented on the cubed "
