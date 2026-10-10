@@ -1680,8 +1680,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_muscl_bound = (sp.compare("bound") == 0);
       impl_muscl_kill = (sp.compare("kill") == 0);}
       impl_muscl_qsrel = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs_rel",0.0);
-      impl_muscl_qsstep = (pin->GetOrAddString("rad_m1","implicit_hr_recon_qs_mode","pass")
-                           .compare("step") == 0);
+      impl_muscl_qsstep = (pin->GetOrAddString("rad_m1","implicit_hr_recon_qs_mode",
+                                               "pass").compare("step") == 0);
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -12417,9 +12417,9 @@ void RadiationM1::ImplicitMusclBuild() {
   // XTHINFIX.md B2); a steady thin top keeps plm.
   const Real qse = impl_muscl_qs;
   const Real qsr = impl_muscl_qsrel;   // E^n_c >= qsr max(E^n of the neighbours along d)
-  // qs_mode = step: the switch from the PREVIOUS step's change |E^n - E^n-1| <= eps E^n and
-  // the limiter from the first pass (E^n), built ONCE: the row is fixed through the Picard
-  // loop, which then converges as the donor-cell one does
+  // qs_mode = step: the switch from the PREVIOUS step's change |E^n - E^n-1| <= eps E^n
+  // and the limiter from the first pass (E^n), built ONCE: the row is fixed through the
+  // Picard loop, which then converges as the donor-cell one does
   const bool qstep = impl_muscl_qsstep;
   const int qref = qstep ? (b + M1_IM_EPREV) : M1_IW_EP;
   const int nfr = qstep ? 1 : impl_muscl_nfresh;
