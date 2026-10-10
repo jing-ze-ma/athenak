@@ -1127,6 +1127,7 @@ class RadiationM1 {
   bool muscl_now = false;       // on for this step
   int muscl_nbuild = 0;         // limiter builds this step (then frozen)
   int impl_muscl_nfresh = 2;    // implicit_hr_recon_fresh: passes with a fresh limiter
+  Real impl_muscl_damp = 0.0;   // implicit_hr_damp: beta of the consistent damping
   int iw_muscl = -1;            // first iw component of the M1_NIW_MUSCL block
   Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on

@@ -320,7 +320,14 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
   if (bx0 > 0.0) {
     const Real x = cdx/(1.0 + cdx*tauf);
     Real s2 = x*x/(x*x + bx0*bx0);   // the hrup-1009 expression, kept for bitwise GPU
-    if (bxmode != 0 && !(w > bxwmin)) {
+    if (bxmode == 3) {
+      // steep (xthinfix-1009): every face, independent of w, with the steep transparency
+      // gate X^8/(X^8 + X0^8): ~0 for X < X0 (a field the step resolves in time stays
+      // central and time-consistent), ~1 for X >> X0 (the light crosses many cells per
+      // step: the quasi-static upwind limit, well conditioned and realisable)
+      const Real x8 = SQR(SQR(SQR(fmin(x/bx0, 1.0e30))));
+      s2 = x8/(x8 + 1.0);
+    } else if (bxmode != 0 && !(w > bxwmin)) {
       Real g = 0.0;
       if (bxmode == 2) {
         const Real em = fmax(fmax(el, er), 1.0e-300);
@@ -1631,9 +1638,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_blend_xthin_mode = 1;
     } else if (sxm.compare("beam_kn") == 0) {
       impl_blend_xthin_mode = 2;
+    } else if (sxm.compare("steep") == 0) {
+      impl_blend_xthin_mode = 3;
     } else {
       ImplFatal("<rad_m1>/implicit_blend_xthin_mode = '" + sxm
-                + "' is not a choice (all | beam | beam_kn)");
+                + "' is not a choice (all | beam | beam_kn | steep)");
     }
     if (impl_blend_xthin_mode == 2) {
       impl_blend_xthin_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_r0",1.5);
@@ -1650,6 +1659,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     if (impl_muscl) {
       impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
+      impl_muscl_damp = pin->GetOrAddReal("rad_m1","implicit_hr_damp",0.0);
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -10847,6 +10857,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // vet_col_lat_offdiag = operator: the same for the lateral off-diagonal term (the
       // assembly put -L_lat(E^k) into TR through M1SphLat; the operator adds L_lat(x))
       if (VlatOp()) {VetLatOp(M1_IW_EP, M1_IW_KB, 1.0);}
+      // implicit_hr_damp = beta > 0 (xthinfix-1009, odCMFD-like CONSISTENT damping of the
+      // Picard loop under implicit_hr_recon = plm): beta TB (E' - E^k) on the left, i.e.
+      // + beta TB on the diagonal of the plm row and + beta TB E^k on the right-hand
+      // side.  Zero at the converged fixed point; damps the Picard 2-cycle at mixed plm
+      // faces (cyl, XTHINFIX.md) like an under-relaxation 1/(1 + beta).
+      if (muscl_now && impl_muscl_damp > 0.0) {
+        const Real bdm = impl_muscl_damp;
+        const int imd = iw_muscl + M1_IM_D;
+        par_for("m1_muscl_damp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          const Real d = bdm*iw_(m,M1_IW_TB,k,j,i);
+          iw_(m,imd,k,j,i) += d;
+          iw_(m,M1_IW_KB,k,j,i) += d*iw_(m,M1_IW_EP,k,j,i);
+        });
+      }
       kdev_slot = std::min(it, 2);
       TmrMark(5);
       DetTrace("pre_bcg");
