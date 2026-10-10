@@ -1676,8 +1676,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
       impl_muscl_damp = pin->GetOrAddReal("rad_m1","implicit_hr_damp",0.0);
       impl_muscl_qs = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs",0.0);
-      impl_muscl_kill = (pin->GetOrAddString("rad_m1","implicit_hr_pos","kill")
-                         .compare("floor") != 0);
+      {std::string sp = pin->GetOrAddString("rad_m1","implicit_hr_pos","kill");
+      impl_muscl_bound = (sp.compare("bound") == 0);
+      impl_muscl_kill = (sp.compare("kill") == 0);}
       impl_muscl_qsrel = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs_rel",0.0);
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
@@ -7741,6 +7742,10 @@ void RadiationM1::ImplicitReport() {
     std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
               << " min E from the solve=" << vimp_emin << std::endl;
   }
+  if (impl_muscl && impl_muscl_bound) {
+    std::cout << "<rad_m1> implicit_hr_pos = bound: cell-axes set to dc=" << muscl_nbound
+              << std::endl;
+  }
   if (impl_muscl) {
     std::cout << "<rad_m1> implicit_hr_recon = plm positivity fallbacks=" << muscl_nfall
               << " min E from the solve=" << muscl_emin << std::endl;
@@ -10926,6 +10931,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (t2s == M1_T2S_STAGE1) {tmr_cnt[3] += 1.0; tmr_cnt[5] += nin;}
         if (t2s == M1_T2S_STAGE2) {tmr_cnt[4] += 1.0; tmr_cnt[6] += nin;}
       }
+      if (muscl_now && impl_muscl_bound) {ImplicitMusclBound();}   // xthinfix-1009
       if ((vimp_now || muscl_now) && odm != M1_OD_OPERATOR) {
         // implicit_vimp POSITIVITY: the Newton coupling is not an M-matrix either; a
         // non-positive E drops it for the rest of the step (counted), as for od below.
@@ -12640,6 +12646,72 @@ void RadiationM1::ImplicitMusclKill() {
   });
   ImplicitHaloExchange(3, b + M1_IM_SIG);
   ImplicitHaloExchange(3, b + M1_IM_B);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitMusclBound
+//! \brief implicit_hr_pos = bound (xthinfix-1009): after every pass, the plm face values of
+//! the SOLVED iterate (M1_IW_S2), E_c +- s_c/2, must lie between E_c and the neighbour on
+//! that side (the local Zalesak / TVD bounds of the new state).  Where they do not, sig of
+//! that cell and axis is set to 0 (donor cell) for the rest of the step (KILL is not used:
+//! the other axes keep plm).  Replaces the global E <= 0 test, which also fires on the E <= 0
+//! of dc regions (cold absorbers) and churns the limiter.
+
+void RadiationM1::ImplicitMusclBound() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const bool twod = pmy_pack->pmesh->multi_d;
+  const bool thrd = trans_x3;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool led = impl_muscl_led;
+  const int b = iw_muscl;
+  ImplicitHaloExchange(1, M1_IW_S2);
+  Real nb = 0.0;
+  Kokkos::parallel_reduce("m1_muscl_bound",
+  Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                         {nmb1+1,ke+1,je+1,ie+1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &cnt) {
+    for (int d = 0; d < 3; ++d) {
+      if ((d == 1 && !twod) || (d == 2 && !thrd)) {continue;}
+      const Real sg = iw_(m,b+M1_IM_SIG+d,k,j,i);
+      if (sg == 0.0) {continue;}
+      int km = k, kp = k, jm = j, jp = j, im = i, ip = i;
+      if (d == 0) {
+        im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
+        ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
+      } else if (d == 1) {
+        jm = j - 1; jp = j + 1;
+      } else {
+        km = k - 1; kp = k + 1;
+      }
+      const Real e0 = iw_(m,M1_IW_S2,k,j,i);
+      const Real em = iw_(m,M1_IW_S2,km,jm,im);
+      const Real ep = iw_(m,M1_IW_S2,kp,jp,ip);
+      const Real s = led ? sg*(e0 - em) : 0.5*sg*(ep - em);
+      const Real fr = e0 + 0.5*s, fl = e0 - 0.5*s;
+      const bool okr = (fr >= fmin(e0, ep)) && (fr <= fmax(e0, ep));
+      const bool okl = (fl >= fmin(e0, em)) && (fl <= fmax(e0, em));
+      if (!(okr && okl)) {
+        iw_(m,b+M1_IM_SIG+d,k,j,i) = 0.0;
+        if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = 0.0;}
+        cnt += 1.0;
+      }
+    }
+  }, Kokkos::Sum<Real>(nb));
+#if MPI_PARALLEL_ENABLED
+  {Real g;
+  MPI_Allreduce(&nb, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  nb = g;}
+#endif
+  muscl_nbound += nb;
+  if (nb > 0.0) {
+    ImplicitHaloExchange(3, b + M1_IM_SIG);
+    if (led) {ImplicitHaloExchange(3, b + M1_IM_B);}
+  }
 }
 
 } // namespace radm1

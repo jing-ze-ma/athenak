@@ -1130,7 +1130,10 @@ class RadiationM1 {
   int impl_muscl_nfresh = 2;    // implicit_hr_recon_fresh: passes with a fresh limiter
   Real impl_muscl_damp = 0.0;   // implicit_hr_damp: beta of the consistent damping
   Real impl_muscl_qs = 0.0;     // implicit_hr_recon_qs: quasi-steady threshold eps
-  bool impl_muscl_kill = true;  // implicit_hr_pos = kill (default) | floor
+  bool impl_muscl_kill = true;  // implicit_hr_pos = kill (default) | floor | bound
+  bool impl_muscl_bound = false;  // implicit_hr_pos = bound: per-face bound test
+  Real muscl_nbound = 0.0;       // cell-axes switched to dc by the bound test
+  void ImplicitMusclBound();     // the bound test of the solved iterate
   Real impl_muscl_qsrel = 0.0;  // implicit_hr_recon_qs_rel: vacuum-side threshold delta
   int iw_muscl = -1;            // first iw component of the M1_NIW_MUSCL block
   Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
