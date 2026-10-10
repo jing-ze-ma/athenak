@@ -459,9 +459,9 @@ KOKKOS_INLINE_FUNCTION
 void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
                 const Real gl, const Real gr, const Real tauf, const Real enl,
                 const Real enr, const Real hdl, const Real hdr, const Real jl,
-                const Real jr, const Real h0, const Real h1, const Real kn0,
-                const Real knp, const Real ch, Real &alw, Real &ccl, Real &ccr,
-                Real &dg) {
+                const Real jr, const Real esc, const Real h0, const Real h1,
+                const Real kn0, const Real knp, const Real ch, Real &alw, Real &ccl,
+                Real &ccr, Real &dg) {
   dg = 0.0;
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
@@ -494,7 +494,7 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
   // describe E, and a correction there drains or floods cells (beams, cycle 0).  q = 1
   // in a steady field; it depends on neither dt nor the iterate.
   Real q = 1.0;
-  if (corr == M1_THCR_HC || corr == M1_THCR_LAG) {
+  if (corr == M1_THCR_HC || corr == M1_THCR_HCS || corr == M1_THCR_LAG) {
     const Real al = fmax(enl, 0.0), bl = fmax(jl, 0.0), ar = fmax(enr, 0.0);
     const Real br = fmax(jr, 0.0);
     const Real rl = (fmax(al, bl) > 0.0) ? fmin(al, bl)/fmax(al, bl) : 1.0;
@@ -502,7 +502,12 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
     const Real r = fmin(rl, rr);
     q = r*r;
   }
-  if (corr == M1_THCR_HC && w > 0.0) {
+  // hcs: the correction only in proportion to the scattering fraction esc = 1 - eps
+  // of the face (the smaller of the two cells): its lagged SC source S = E^n is what
+  // the quasi-steadiness gate tests; in a thermal medium (beams in an absorbing
+  // background) the correction is off
+  if (corr == M1_THCR_HCS) {q *= esc;}
+  if ((corr == M1_THCR_HC || corr == M1_THCR_HCS) && w > 0.0) {
     // the formal solution's own central-minus-upwind face flux: O(dx), independent of
     // E^n (no explicit transport at c dt/dx >> 1); the upwind part at the formal
     // solution's J then carries the central SC flux, clamped to |F| <= c J (donor)
@@ -1858,11 +1863,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         impl_thsw_corr = M1_THCR_SC;
       } else if (scr.compare("hc") == 0) {
         impl_thsw_corr = M1_THCR_HC;
+      } else if (scr.compare("hcs") == 0) {
+        impl_thsw_corr = M1_THCR_HCS;
       } else if (scr.compare("none") != 0) {
         ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
-                  + "' is not a choice (none | lag | sc | hc)");
+                  + "' is not a choice (none | lag | sc | hc | hcs)");
       }
-      thsw_c1 = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
+      thsw_c1 = (impl_thsw_corr == M1_THCR_HCS) ||
+                (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                  impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                  impl_thsw == M1_THSW_FSE);
       if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
@@ -3094,7 +3102,9 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const bool thsw = (tmode != M1_THSW_NONE);
     if (thsw && !first) {return;}
     const int tcorr = (hsrc == 1) ? impl_thsw_corr : M1_THCR_NONE;
-    const bool tfs = thsw_c1;
+    const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
+                    impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
+                    impl_thsw == M1_THSW_FSE);
     const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
     const Real tkn0 = thsw_kn0, tknp = thsw_knp;
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
@@ -3120,6 +3130,9 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
           iw_(m,M1_IW_TA,k,j,i) = hd;
           iw_(m,M1_IW_TB,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
           iw_(m,M1_IW_TC,k,j,i) = jo;
+          if (tcorr == M1_THCR_HCS) {
+            iw_(m,M1_IW_TR,k,j,i) = 1.0 - hvc_(m,M1_VET_EPS,k,j,i);
+          }
         }
         // beam_kn: the light-front flag (M1HrJFlag) rides in RES as fb + 2 (fb <= 1)
         if (bxmode == 2) {fb += 2.0*M1HrJFlag(hsrc, iw_, hvc_, m, k, j, i);}
@@ -3132,6 +3145,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         ImplicitHaloExchange(1, M1_IW_TA);
         ImplicitHaloExchange(1, M1_IW_TB);
         if (tcorr != M1_THCR_NONE) {ImplicitHaloExchange(1, M1_IW_TC);}
+        if (tcorr == M1_THCR_HCS) {ImplicitHaloExchange(1, M1_IW_TR);}
       }
       auto fw = (d == 1) ? fw2 : fw3;
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
@@ -3163,8 +3177,10 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
                      iw_(m,M1_IW_RES,km,jm,i), iw_(m,M1_IW_RES,k,j,i), tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
-                     iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i), th0, th1, tkn0,
-                     tknp, ch, al, hl, hr, dgt);
+                     iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i),
+                     (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
+                                                   iw_(m,M1_IW_TR,k,j,i)) : 1.0,
+                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -10204,7 +10220,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // thinsw-1010: the dt-free thin switch (M1ThinFace)
       const int tmode = hrx ? impl_thsw : M1_THSW_NONE;
       const int tcorr = (hsrc == 1) ? impl_thsw_corr : M1_THCR_NONE;
-      const bool tfs = thsw_c1;
+      const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
+                    impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
+                    impl_thsw == M1_THSW_FSE);
       const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
       const Real tkn0 = thsw_kn0, tknp = thsw_knp;
       const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
@@ -10298,8 +10316,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,ip), jr, fbr, th0, th1, dm, hmr);
             }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
-                       iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr, th0, th1, tkn0, tknp,
-                       ch, alb, hlb, hrb, dgt);
+                       iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
+                       (tcorr == M1_THCR_HCS) ? fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
+                                                     1.0 - hvc_(m,M1_VET_EPS,k,j,ip))
+                                              : 1.0,
+                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt);
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
