@@ -368,19 +368,27 @@ template <class V>
 KOKKOS_INLINE_FUNCTION
 Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int j,
                 const int i, const int d, const Real fb, const bool fs, const Real fsa,
-                const Real fsj, Real &hd, Real &jo) {
+                const Real fsj, const Real qp, const Real en, Real &hd, Real &jo) {
   hd = 0.0;
   jo = 0.0;
   if (src != 1) {return fb;}
   const Real jj = vc(m,M1_VET_J,k,j,i);
   jo = fmax(jj, 0.0);
+  // fsq (qp > 0): the non-locality terms count only where the formal solution
+  // describes E, q_c = min(E^n/J, J/E^n)^qp (a time-resolved thin transient has J far
+  // from E^n: its lagged quasi-static rays are not the field, keep it central there)
+  Real qc = 1.0;
+  if (qp > 0.0) {
+    const Real a = fmax(en, 0.0), b = fmax(jj, 0.0);
+    qc = (fmax(a, b) > 0.0) ? pow(fmin(a, b)/fmax(a, b), qp) : 1.0;
+  }
   if (!(jj > 0.0)) {
-    return (fs && vc(m,M1_VET_SRC,k,j,i) > 0.0) ? 1.0 : fb;
+    return (fs && vc(m,M1_VET_SRC,k,j,i) > 0.0) ? fmax(fb, qc) : fb;
   }
   hd = vc(m,M1_VET_H1+d,k,j,i);
   if (!fs) {return fb;}
   const Real ij = 1.0/jj;
-  Real g = fmax(fb, vc(m,M1_VET_NL,k,j,i)*ij/1.5);
+  Real g = vc(m,M1_VET_NL,k,j,i)*ij/1.5;
   if (fsa > 0.0) {
     const Real a11 = vc(m,M1_VET_K11,k,j,i)*ij - 1.0/3.0;
     const Real a22 = vc(m,M1_VET_K11+1,k,j,i)*ij - 1.0/3.0;
@@ -396,7 +404,7 @@ Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int 
     const Real sv = vc(m,M1_VET_SRC,k,j,i);
     g = fmax(g, fsj*fabs(jj - sv)/fmax(jj, sv));
   }
-  return g;
+  return fmax(fb, qc*g);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1795,14 +1803,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {
     // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace)
     std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch","none");
-    const char *tnm[6] = {"none", "hj", "kn", "fs", "hjkn", "fskn"};
+    const char *tnm[7] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq"};
     impl_thsw = -1;
-    for (int q = 0; q < 6; ++q) {
+    for (int q = 0; q < 7; ++q) {
       if (sts.compare(tnm[q]) == 0) {impl_thsw = q;}
     }
     if (impl_thsw < 0) {
       ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
-                + "' is not a choice (none | hj | kn | fs | hjkn | fskn)");
+                + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq)");
     }
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
@@ -1811,6 +1819,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       thsw_knp = pin->GetOrAddReal("rad_m1","implicit_thin_knp",4.0);
       thsw_fsa = pin->GetOrAddReal("rad_m1","implicit_thin_fsa",0.0);
       thsw_fsj = pin->GetOrAddReal("rad_m1","implicit_thin_fsj",0.0);
+      if (impl_thsw == M1_THSW_FSQ) {
+        thsw_qp = pin->GetOrAddReal("rad_m1","implicit_thin_qp",8.0);
+      }
       std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr","none");
       if (scr.compare("lag") == 0) {
         impl_thsw_corr = M1_THCR_LAG;
@@ -1822,7 +1833,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
                   + "' is not a choice (none | lag | sc | hc)");
       }
-      thsw_c1 = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN);
+      thsw_c1 = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
+                 impl_thsw == M1_THSW_FSQ);
       if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
         ImplFatal("<rad_m1>: implicit_thin_h1 must exceed implicit_thin_h0, and "
                   "implicit_thin_kn0 / implicit_thin_knp must be positive");
@@ -3055,6 +3067,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const bool tfs = thsw_c1;
     const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
     const Real tkn0 = thsw_kn0, tknp = thsw_knp;
+    const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp : 0.0;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3064,7 +3077,8 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         iw_(m,M1_IW_S3,k,j,i) = hm;
         if (thsw) {
           Real hd, jo;
-          fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, hd, jo);
+          fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, tqp,
+                          iw_(m,M1_IW_EN,k,j,i), hd, jo);
           iw_(m,M1_IW_TA,k,j,i) = hd;
           iw_(m,M1_IW_TB,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
           iw_(m,M1_IW_TC,k,j,i) = jo;
@@ -10147,6 +10161,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool tfs = thsw_c1;
       const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
       const Real tkn0 = thsw_kn0, tknp = thsw_knp;
+      const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp : 0.0;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -10225,9 +10240,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (tmode != M1_THSW_NONE) {   // thinsw-1010
             Real hdl, hdr, jl, jr, dgt;
             const Real gl = M1ThinCell(hsrc, hvc_, m, k, j, im, 0, fbl, tfs, tfsa, tfsj,
-                                       hdl, jl);
+                                       tqp, iw_(m,M1_IW_EN,k,j,im), hdl, jl);
             const Real gr = M1ThinCell(hsrc, hvc_, m, k, j, ip, 0, fbr, tfs, tfsa, tfsj,
-                                       hdr, jr);
+                                       tqp, iw_(m,M1_IW_EN,k,j,ip), hdr, jr);
             M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr, th0, th1, tkn0, tknp,
                        ch, alb, hlb, hrb, dgt);
