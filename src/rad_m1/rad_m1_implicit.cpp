@@ -413,6 +413,36 @@ Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ThinCellGd
+//! \brief gdthin-1011: M1ThinCell for the vet_gd rays (src 2, vgd_hr with M1_VGD_HRNX
+//! components, VetGdHalfRange): g = max(fb, q_c C1/1.5) with C1 = sum w |I - S|/J of the
+//! gd sweep, q_c = eps (fse), min(E^n/J, J/E^n)^qp (fsq) or 1; hd = (r+_d + r-_d) J and
+//! jo = J (the twin-corrected ratios and J).  fsa / fsj need K and S: not swept, 0.
+//! Without the extra components (hj alone) or below the vet_gd cut: fb, hd = jo = 0.
+
+template <class VH>
+KOKKOS_INLINE_FUNCTION
+Real M1ThinCellGd(const VH &gh, const int m, const int k, const int j, const int i,
+                  const int d, const Real fb, const bool fs, const Real qp, const Real en,
+                  Real &hd, Real &jo) {
+  hd = 0.0;
+  jo = 0.0;
+  if (gh.extent_int(1) < M1_VGD_HRNX || gh(m,0,k,j,i) < 0.0) {return fb;}
+  const Real jj = fmax(gh(m,M1_VGD_HRJ,k,j,i), 0.0);
+  jo = jj;
+  hd = (gh(m,2*d,k,j,i) + gh(m,2*d+1,k,j,i))*jj;
+  if (!fs) {return fb;}
+  Real qc = 1.0;
+  if (qp < 0.0) {
+    qc = gh(m,M1_VGD_HREP,k,j,i);
+  } else if (qp > 0.0) {
+    const Real a = fmax(en, 0.0);
+    qc = (fmax(a, jj) > 0.0) ? pow(fmin(a, jj)/fmax(a, jj), qp) : 1.0;
+  }
+  return fmax(fb, qc*gh(m,M1_VGD_HRC1,k,j,i)/1.5);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ThinHr
 //! \brief thinsw-1010 (implicit_thin_switch = fsi): the half-range ratios of one cell,
 //! hp -> qq hp + (1 - qq)/4 and hm -> qq hm - (1 - qq)/4, qq = max(min(E^n/J, J/E^n)^qp,
@@ -1873,6 +1903,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                  impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                  impl_thsw == M1_THSW_FSE);
+      // gdthin-1011: vet_gd carries C1, eps and J in vgd_hr (VetGdHalfRange)
+      vgd_thx = thsw_c1 || (impl_thsw_corr != M1_THCR_NONE);
       if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
         ImplFatal("<rad_m1>: implicit_thin_h1 must exceed implicit_thin_h0, and "
                   "implicit_thin_kn0 / implicit_thin_knp must be positive");
@@ -3101,7 +3133,9 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const int tmode = impl_thsw;
     const bool thsw = (tmode != M1_THSW_NONE);
     if (thsw && !first) {return;}
-    const int tcorr = (hsrc == 1) ? impl_thsw_corr : M1_THCR_NONE;
+    // gdthin-1011: vet_gd (src 2) with C1, eps, J in vgd_hr takes the correction too
+    const bool tgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
+    const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
     const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                     impl_thsw == M1_THSW_FSE);
@@ -3125,13 +3159,19 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
             iw_(m,M1_IW_S1,k,j,i) = hp;
             iw_(m,M1_IW_S3,k,j,i) = hm;
           }
+          if (hsrc == 2) {   // gdthin-1011
+            fb = M1ThinCellGd(hgh_, m, k, j, i, d, fb, tfs, tqp, iw_(m,M1_IW_EN,k,j,i),
+                              hd, jo);
+          } else {
           fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, tqp,
                           iw_(m,M1_IW_EN,k,j,i), hd, jo);
+          }
           iw_(m,M1_IW_TA,k,j,i) = hd;
           iw_(m,M1_IW_TB,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
           iw_(m,M1_IW_TC,k,j,i) = jo;
           if (tcorr == M1_THCR_HCS) {
-            iw_(m,M1_IW_TR,k,j,i) = 1.0 - hvc_(m,M1_VET_EPS,k,j,i);
+            iw_(m,M1_IW_TR,k,j,i) = 1.0 - ((hsrc == 2) ? hgh_(m,M1_VGD_HREP,k,j,i)
+                                                       : hvc_(m,M1_VET_EPS,k,j,i));
           }
         }
         // beam_kn: the light-front flag (M1HrJFlag) rides in RES as fb + 2 (fb <= 1)
@@ -10219,7 +10259,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       auto hgh_ = vgd_hr;
       // thinsw-1010: the dt-free thin switch (M1ThinFace)
       const int tmode = hrx ? impl_thsw : M1_THSW_NONE;
-      const int tcorr = (hsrc == 1) ? impl_thsw_corr : M1_THCR_NONE;
+      // gdthin-1011: vet_gd (src 2) with C1, eps, J in vgd_hr takes the correction too
+      const bool tgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
+      const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
       const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                     impl_thsw == M1_THSW_FSE);
@@ -10305,9 +10347,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real alb, hlb, hrb;
           if (tmode != M1_THSW_NONE) {   // thinsw-1010
             Real hdl, hdr, jl, jr, dgt;
-            const Real gl = M1ThinCell(hsrc, hvc_, m, k, j, im, 0, fbl, tfs, tfsa, tfsj,
+            const bool sgd = (hsrc == 2);   // gdthin-1011
+            const Real gl = sgd ? M1ThinCellGd(hgh_, m, k, j, im, 0, fbl, tfs, tqp,
+                                               iw_(m,M1_IW_EN,k,j,im), hdl, jl)
+                            : M1ThinCell(hsrc, hvc_, m, k, j, im, 0, fbl, tfs, tfsa, tfsj,
                                        tqp, iw_(m,M1_IW_EN,k,j,im), hdl, jl);
-            const Real gr = M1ThinCell(hsrc, hvc_, m, k, j, ip, 0, fbr, tfs, tfsa, tfsj,
+            const Real gr = sgd ? M1ThinCellGd(hgh_, m, k, j, ip, 0, fbr, tfs, tqp,
+                                               iw_(m,M1_IW_EN,k,j,ip), hdr, jr)
+                            : M1ThinCell(hsrc, hvc_, m, k, j, ip, 0, fbr, tfs, tfsa, tfsj,
                                        tqp, iw_(m,M1_IW_EN,k,j,ip), hdr, jr);
             if (tmode == M1_THSW_FSI) {   // the left cell's h+, the right cell's h-
               Real dm = 0.0;
@@ -10317,9 +10364,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
-                       (tcorr == M1_THCR_HCS) ? fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
-                                                     1.0 - hvc_(m,M1_VET_EPS,k,j,ip))
-                                              : 1.0,
+                       (tcorr != M1_THCR_HCS) ? 1.0
+                       : (sgd ? fmin(1.0 - hgh_(m,M1_VGD_HREP,k,j,im),
+                                     1.0 - hgh_(m,M1_VGD_HREP,k,j,ip))
+                              : fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
+                                     1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
                        th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt);
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;

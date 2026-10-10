@@ -3186,7 +3186,9 @@ void RadiationM1::VetGdTwinFusedMoments() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   std::swap(vgd_i, vgd_itw);
   vgd_noq = true;
+  vgd_hr_tw = true;   // gdthin-1011: the twin's C1 with the twin's source
   VetGdMoments();
+  vgd_hr_tw = false;
   vgd_noq = false;
   std::swap(vgd_i, vgd_itw);
   if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
@@ -3212,6 +3214,11 @@ void RadiationM1::VetGdTwinFusedMoments() {
 //! stage 1: copy to vgd_hrt (the twin's, kept); stage 2 (vet_gd_twin): r -= (r_twin -
 //! its shell mean), the same ray-noise subtraction as the tensor's LAT0, then clamped to
 //! r+ in [0, 1], r- in [-1, 0].
+//! gdthin-1011 (vgd_thx: implicit_thin_switch = fs* or an implicit_thin_corr): in the
+//! same pass also C1 = sum w |I - S| / J (vet_sc's M1_VET_NL / J, S = the sweep's own
+//! cell source), eps = min(kappa_P/chi, 1) (M1_VET_EPS) and J, components M1_VGD_HRC1..;
+//! stage 2 subtracts the twin's C1 pattern as for r+- (clamped >= 0) and divides J by
+//! the twin's J/<J_twin>; eps is cell-local (no ray noise) and kept.
 
 void RadiationM1::VetGdHalfRange(const int stage) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3221,12 +3228,14 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int ilo = is + vlat_icut;
   const int c1 = indcs.nx1 + 2*indcs.ng;
+  const bool thx = vgd_thx;
+  const int nhc = thx ? M1_VGD_HRNX : 6;
   if (vgd_hr.extent_int(0) < nmb1 + 1) {
     const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
     const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-    Kokkos::realloc(vgd_hr, nmb1 + 1, 6, n3, n2, c1);
+    Kokkos::realloc(vgd_hr, nmb1 + 1, nhc, n3, n2, c1);
     Kokkos::deep_copy(vgd_hr, 0.0);
-    Kokkos::realloc(vgd_hrt, nmb1 + 1, 6, n3, n2, c1);
+    Kokkos::realloc(vgd_hrt, nmb1 + 1, nhc, n3, n2, c1);
     Kokkos::deep_copy(vgd_hrt, 0.0);
     Kokkos::realloc(vgd_hrm, c1);
   }
@@ -3238,10 +3247,19 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     const int og = vgd_w - indcs.ng;
     auto dir_ = vgd_dir;
     auto &mbsize = pmy_pack->pmb->mb_size;
+    // gdthin-1011: the sweep's cell source (the fused twin's own in its pass) and opacity
+    auto cs_ = vgd_hr_tw ? vgd_cst : vgd_cs;
+    auto opac_ = opac;
+    const bool thermal = fl_on && coupling && !opac_zero;
     par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
       if (i < ilo) {
         for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
+        if (thx) {
+          hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
+          hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
+          hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
+        }
         return;
       }
       const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -3262,6 +3280,18 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       for (int c = 0; c < 6; ++c) {
         hr_(m,c,k,j,i) = (jm > 0.0) ? h[c]/jm : ((c % 2 == 0) ? -1.0 : 0.0);
       }
+      if (thx) {
+        // C1 (as vet_sc: sum over the rays at the cell of w |I - S|), eps, J
+        const Real s0 = exp(cs_(m,1,k+og,j+og,i));
+        Real nl = 0.0;
+        for (int d = 0; d < n; ++d) {nl += dir_(d,3)*fabs(vi_(m,d,k+og,j+og,i) - s0);}
+        hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
+        const Real kt = opac_(m,M1_OP_T,k,j,i);
+        hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
+                                   : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
+                                                     fmax(kt, 1.0e-300), 1.0) : 0.0);
+        hr_(m,M1_VGD_HRJ,k,j,i) = jm;
+      }
     });
     return;
   }
@@ -3272,7 +3302,8 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   // stage 2: subtract the twin's lateral pattern, shell by shell, component by component
   const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
                     pmy_pack->pmesh->mesh_indcs.nx3;
-  for (int c = 0; c < 6; ++c) {
+  for (int c = 0; c < nhc; ++c) {
+    if (c == M1_VGD_HREP) {continue;}   // gdthin-1011: cell-local, no ray noise
     Kokkos::deep_copy(vgd_hrm, 0.0);
     auto mo_ = vgd_hrm;
     // one thread per shell, a fixed (m, k, j) order: reproducible (as vet_gd_twin_det)
@@ -3311,6 +3342,18 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     }
 #endif
     const bool plus = (c % 2 == 0);
+    if (c >= 6) {   // gdthin-1011: C1 (additive, >= 0) and J (relative)
+      par_for("m1_vgd_hr_sub2", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
+        if (c == M1_VGD_HRC1) {
+          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i)), 0.0);
+        } else if (ht_(m,c,k,j,i) > 0.0 && mo_(i) > 0.0) {
+          hr_(m,c,k,j,i) *= mo_(i)/ht_(m,c,k,j,i);
+        }
+      });
+      continue;
+    }
     par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged

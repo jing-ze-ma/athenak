@@ -1409,5 +1409,63 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
+  // gdthin-1011 m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
+  if (name.compare("m1_thsw") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto vc_ = prm->vet_cell;
+    auto gh_ = prm->vgd_hr;
+    const bool hsc = prm->vet_sc && (vc_.extent_int(0) >= nmb) &&
+                     (vc_.extent_int(1) > radm1::M1_VET_EPS);
+    const bool hgd = !hsc && prm->vgd_on && (gh_.extent_int(0) >= nmb);
+    const bool gx = hgd && (gh_.extent_int(1) >= radm1::M1_VGD_HRNX);
+    const bool c1v = hsc && prm->thsw_c1;
+    const int mode = prm->impl_thsw;
+    const bool fs = (mode == radm1::M1_THSW_FS || mode == radm1::M1_THSW_FSKN ||
+                     mode == radm1::M1_THSW_FSQ || mode == radm1::M1_THSW_FSI ||
+                     mode == radm1::M1_THSW_FSE);
+    const bool fse = (mode == radm1::M1_THSW_FSE);
+    const Real h0 = prm->thsw_h0, h1 = prm->thsw_h1;
+    par_for("m1_thsw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real fb = -1.0, c1 = -1.0, ep = -1.0, jj = -1.0;
+      if (hsc) {
+        jj = vc_(m,radm1::M1_VET_J,k,j,i);
+        if (jj > 0.0) {
+          const Real a = vc_(m,radm1::M1_VET_H1,k,j,i), b = vc_(m,radm1::M1_VET_H1+1,k,j,i);
+          const Real c = vc_(m,radm1::M1_VET_H1+2,k,j,i);
+          fb = fmin(sqrt(a*a + b*b + c*c)/jj, 1.0);
+          if (c1v) {
+            c1 = vc_(m,radm1::M1_VET_NL,k,j,i)/jj;
+            ep = vc_(m,radm1::M1_VET_EPS,k,j,i);
+          }
+        }
+      } else if (hgd && gh_(m,0,k,j,i) >= 0.0) {
+        Real f2 = 0.0;
+        for (int a = 0; a < 3; ++a) {f2 += SQR(gh_(m,2*a,k,j,i) + gh_(m,2*a+1,k,j,i));}
+        fb = fmin(sqrt(f2), 1.0);
+        if (gx) {
+          c1 = gh_(m,radm1::M1_VGD_HRC1,k,j,i);
+          ep = gh_(m,radm1::M1_VGD_HREP,k,j,i);
+          jj = gh_(m,radm1::M1_VGD_HRJ,k,j,i);
+        }
+      }
+      Real w = -1.0;
+      if (fb >= 0.0) {
+        const Real g = (fs && c1 >= 0.0) ? fmax(fb, (fse ? ep : 1.0)*c1/1.5) : fb;
+        Real s = fmin(fmax((g - h0)/(h1 - h0), 0.0), 1.0);
+        w = s*s*(3.0 - 2.0*s);
+      }
+      dv(m,i_dv  ,k,j,i) = fb;
+      dv(m,i_dv+1,k,j,i) = c1;
+      dv(m,i_dv+2,k,j,i) = ep;
+      dv(m,i_dv+3,k,j,i) = w;
+      dv(m,i_dv+4,k,j,i) = jj;
+    });
+    i_dv += 5;
+  }
+
   i_dv = i_dv % n_dv; // reset derived variable index
 }
