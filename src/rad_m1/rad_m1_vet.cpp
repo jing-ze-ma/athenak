@@ -2502,6 +2502,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const int nmb = pmy_pack->nmb_thispack;
   const bool thrd = trans_x3;
   const bool hrs_ = impl_beam_hr;   // hrmb-1009: the half-range sums (cell kernel)
+  const bool nls_ = thsw_c1;   // thinsw-1010: sum w |I - S| (M1_VET_NL)
   const int nray = vet_nray, nh = vet_nray/2;
   // the sweep blocks and local rays (= nmb, nray, nh without vet_mb_agroup)
   const int nsb = st.nsb, nrl = st.nrl, nhl = st.nhl;
@@ -2856,6 +2857,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
           acd[n] = 0.0;
         }
         Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};   // hrmb-1009
+        Real nlu = 0.0, nld = 0.0;   // thinsw-1010
         for (int r = 0; r < nray; ++r) {
           const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
           const bool up = (m1 > 0.0);
@@ -2954,6 +2956,9 @@ void RadiationM1::VetSweepMB(bool lagged) {
             hp[1] += a*fmax(m2, 0.0);
             hp[2] += a*fmax(m3, 0.0);
           }
+          if (nls_) {
+            if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
+          }
         }
         for (int n = 0; n < 10; ++n) {
           if (ua) {
@@ -2968,6 +2973,10 @@ void RadiationM1::VetSweepMB(bool lagged) {
             if (ua) {vc_(m,M1_VET_HP1+n,k,j,iu) += hpu[n];}
             if (da) {vc_(m,M1_VET_HP1+n,k,j,id) += hpd[n];}
           }
+        }
+        if (nls_) {
+          if (ua) {vc_(m,M1_VET_NL,k,j,iu) += nlu;}
+          if (da) {vc_(m,M1_VET_NL,k,j,id) += nld;}
         }
       });
     }
@@ -3122,6 +3131,9 @@ void RadiationM1::VetShortChar() {
   // hrup-1009: the half-range sums sum w I max(mu_a, 0) (M1_VET_HP1..3); hrmb-1009:
   // every sweep variant carries them (the banded MB sweep in its moment arrays)
   const bool hrs_ = impl_beam_hr;
+  // thinsw-1010 (implicit_thin_switch = fs | fskn): the non-locality sum w |I - S| of the
+  // rays at each cell (M1_VET_NL, C1 of M1ThinCell)
+  const bool nls_ = thsw_c1;
   Kokkos::fence();
   Kokkos::Timer timer;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3185,6 +3197,7 @@ void RadiationM1::VetShortChar() {
       if (hrs_) {
         for (int n = 0; n < 3; ++n) {vcd_(m,M1_VET_HP1+n,k,j,i) = 0.0;}
       }
+      if (nls_) {vcd_(m,M1_VET_NL,k,j,i) = 0.0;}
     });
   } else {
     par_for("m1_vet_src", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -3216,6 +3229,7 @@ void RadiationM1::VetShortChar() {
         vc_(m,M1_VET_CHX,k,j,i) = chx;
         vc_(m,M1_VET_SRC,k,j,i) = s;
         for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
+        if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
       }
     });
   }
@@ -3243,6 +3257,7 @@ void RadiationM1::VetShortChar() {
       Real acu[10], acd[10];
       for (int n = 0; n < 10; ++n) {acu[n] = 0.0; acd[n] = 0.0;}
       Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};
+      Real nlu = 0.0, nld = 0.0;   // thinsw-1010
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -3348,6 +3363,9 @@ void RadiationM1::VetShortChar() {
           hp[1] += a*fmax(m2, 0.0);
           hp[2] += a*fmax(m3, 0.0);
         }
+        if (nls_) {
+          if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
+        }
       }
       if (accum) {
         for (int n = 0; n < 10; ++n) {
@@ -3359,6 +3377,10 @@ void RadiationM1::VetShortChar() {
             vc_(m,M1_VET_HP1+n,k,j,iu) += hpu[n];
             vc_(m,M1_VET_HP1+n,k,j,id) += hpd[n];
           }
+        }
+        if (nls_) {
+          vc_(m,M1_VET_NL,k,j,iu) += nlu;
+          vc_(m,M1_VET_NL,k,j,id) += nld;
         }
       }
     });

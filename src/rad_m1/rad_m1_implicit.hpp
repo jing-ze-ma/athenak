@@ -232,6 +232,19 @@ constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + 
 constexpr int M1_IBLEND_TAUF = 2;    // the product of the two: upwind only where the face
                                      // is thin AND the field is beamed.
 
+// thinsw-1010: <rad_m1>/implicit_thin_switch, the dt-free per-face weight of the
+// half-range blend (M1ThinFace, rad_m1_implicit.cpp); none keeps implicit_blend/xthin.
+constexpr int M1_THSW_NONE = 0;
+constexpr int M1_THSW_HJ   = 1;   // smoothstep of the formal-solution |H|/J
+constexpr int M1_THSW_KN   = 2;   // the face Knudsen number of E^n
+constexpr int M1_THSW_FS   = 3;   // smoothstep of max(|H|/J, C1/1.5, ...), C1 = <|I-S|>/J
+constexpr int M1_THSW_HJKN = 4;   // max(hj, kn)
+constexpr int M1_THSW_FSKN = 5;   // max(fs, kn)
+// <rad_m1>/implicit_thin_corr: the lagged formal-solution face flux (C4)
+constexpr int M1_THCR_NONE = 0;
+constexpr int M1_THCR_LAG  = 1;   // + w (F_sc^n - F_hr(E^n)), a fixed source
+constexpr int M1_THCR_SC   = 2;   // w F_sc^n replaces the half-range part
+
 // <rad_m1>/implicit_blend_fmode: which of the two cells' lagged reduced fluxes sets
 // f_face.
 constexpr int M1_IBFM_MAX  = 0;

@@ -355,6 +355,111 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ThinCell
+//! \brief thinsw-1010 (implicit_thin_switch): the per-cell thinness g of the formal
+//! solution and its flux H_d along axis d (E units, hd; 0 without vet_sc).  hj: g = fb =
+//! |H|/J (M1HrCell); fs: g = max(fb, C1/1.5, fsa an, fsj dJS), C1 = sum w |I - S| / J
+//! (M1_VET_NL, the non-locality of the rays: 1.5 |H|/J in a diffusion regime, 1 in
+//! vacuum, O(1) in crossing beams whose H cancels), an = |K/J - I/3|_F/sqrt(2/3) (1 for
+//! one beam), dJS = |J - S|/max(J, S).  All from the sweep of t^n: fixed for the step,
+//! independent of dt and (up to the angular quadrature) of dx.
+
+template <class V>
+KOKKOS_INLINE_FUNCTION
+Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int j,
+                const int i, const int d, const Real fb, const bool fs, const Real fsa,
+                const Real fsj, Real &hd) {
+  hd = 0.0;
+  if (src != 1) {return fb;}
+  const Real jj = vc(m,M1_VET_J,k,j,i);
+  if (!(jj > 0.0)) {
+    return (fs && vc(m,M1_VET_SRC,k,j,i) > 0.0) ? 1.0 : fb;
+  }
+  hd = vc(m,M1_VET_H1+d,k,j,i);
+  if (!fs) {return fb;}
+  const Real ij = 1.0/jj;
+  Real g = fmax(fb, vc(m,M1_VET_NL,k,j,i)*ij/1.5);
+  if (fsa > 0.0) {
+    const Real a11 = vc(m,M1_VET_K11,k,j,i)*ij - 1.0/3.0;
+    const Real a22 = vc(m,M1_VET_K11+1,k,j,i)*ij - 1.0/3.0;
+    const Real a33 = vc(m,M1_VET_K11+2,k,j,i)*ij - 1.0/3.0;
+    const Real a12 = vc(m,M1_VET_K11+3,k,j,i)*ij;
+    const Real a13 = vc(m,M1_VET_K11+4,k,j,i)*ij;
+    const Real a23 = vc(m,M1_VET_K11+5,k,j,i)*ij;
+    const Real an = sqrt(1.5*(a11*a11 + a22*a22 + a33*a33
+                              + 2.0*(a12*a12 + a13*a13 + a23*a23)));
+    g = fmax(g, fsa*an);
+  }
+  if (fsj > 0.0) {
+    const Real sv = vc(m,M1_VET_SRC,k,j,i);
+    g = fmax(g, fsj*fabs(jj - sv)/fmax(jj, sv));
+  }
+  return g;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ThinFace
+//! \brief thinsw-1010: AL, HCL, HCR and the lagged additive flux DG of one half-range
+//! face under implicit_thin_switch.  No dt and no tau_cell enter the weight:
+//!   hj / fs: w_A = smoothstep((max(g_L, g_R) - h0)/(h1 - h0)), exactly 0 below h0;
+//!   kn:      w_B = K^p/(K^p + 1), K = |E^n_R - E^n_L|/(Kn0 tau_f max E^n), the face
+//!            Knudsen number of the START-of-step E (w_B = 1 where tau_f max E^n = 0:
+//!            vacuum or dark, nothing to diffuse);
+//!   hjkn / fskn: max(w_A, w_B).
+//! The face flux is (1 - w) F_central + w c (h+_L E_L + h-_R E_R) as for every blend
+//! (HCL >= 0, HCR <= 0).  implicit_thin_corr (C4, vet_sc only):
+//!   lag: DG = w ch Hf - (HCL E^n_L + HCR E^n_R): the upwind part becomes
+//!        F_hr(E') + (F_sc^n - F_hr(E^n)), the formal-solution flux at the fixed point of
+//!        a steady field, as a FIXED source (no Picard cost);
+//!   sc:  HCL = HCR = 0, DG = w ch Hf (the lagged formal-solution flux itself);
+//! Hf = (H_L + H_R)/2 clamped to [-E^n_R, E^n_L] (|F| <= c E of the donor cell).
+
+KOKKOS_INLINE_FUNCTION
+void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
+                const Real gl, const Real gr, const Real tauf, const Real enl,
+                const Real enr, const Real hdl, const Real hdr, const Real h0,
+                const Real h1, const Real kn0, const Real knp, const Real ch,
+                Real &alw, Real &ccl, Real &ccr, Real &dg) {
+  dg = 0.0;
+  if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
+    alw = 0.0;
+    ccl = 0.0;
+    ccr = 0.0;
+    return;
+  }
+  Real w = 0.0;
+  if (mode != M1_THSW_KN) {
+    Real s = (fmax(gl, gr) - h0)/(h1 - h0);
+    s = fmin(fmax(s, 0.0), 1.0);
+    w = s*s*(3.0 - 2.0*s);
+  }
+  if (mode == M1_THSW_KN || mode == M1_THSW_HJKN || mode == M1_THSW_FSKN) {
+    const Real den = kn0*tauf*fmax(fmax(enl, enr), 0.0);
+    Real wk = 1.0;
+    if (den > 0.0) {
+      const Real x = fmin(fabs(enr - enl)/den, 1.0e30);
+      const Real xp = (knp == 4.0) ? SQR(SQR(x)) : pow(x, knp);
+      wk = xp/(1.0 + xp);
+    }
+    w = fmax(w, wk);
+  }
+  alw = w;
+  ccl = w*ch*hpl;
+  ccr = w*ch*hmr;
+  if (corr != M1_THCR_NONE && w > 0.0) {
+    Real hf = 0.5*(hdl + hdr);
+    hf = fmin(fmax(hf, -fmax(enr, 0.0)), fmax(enl, 0.0));
+    if (corr == M1_THCR_SC) {
+      ccl = 0.0;
+      ccr = 0.0;
+      dg = w*ch*hf;
+    } else {
+      dg = w*ch*hf - ccl*enl - ccr*enr;
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1EnthIdx
 //! \brief implicit_enthalpy: the cell index a face stencil may read along one direction,
 //! for the raw (unwrapped) index ii.  With a periodic wrap inside the block (cyc) the
@@ -1660,6 +1765,51 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
   }
+  {
+    // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace)
+    std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch","none");
+    const char *tnm[6] = {"none", "hj", "kn", "fs", "hjkn", "fskn"};
+    impl_thsw = -1;
+    for (int q = 0; q < 6; ++q) {
+      if (sts.compare(tnm[q]) == 0) {impl_thsw = q;}
+    }
+    if (impl_thsw < 0) {
+      ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
+                + "' is not a choice (none | hj | kn | fs | hjkn | fskn)");
+    }
+    if (impl_thsw != M1_THSW_NONE) {
+      thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
+      thsw_h1 = pin->GetOrAddReal("rad_m1","implicit_thin_h1",0.6);
+      thsw_kn0 = pin->GetOrAddReal("rad_m1","implicit_thin_kn0",1.0);
+      thsw_knp = pin->GetOrAddReal("rad_m1","implicit_thin_knp",4.0);
+      thsw_fsa = pin->GetOrAddReal("rad_m1","implicit_thin_fsa",0.0);
+      thsw_fsj = pin->GetOrAddReal("rad_m1","implicit_thin_fsj",0.0);
+      std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr","none");
+      if (scr.compare("lag") == 0) {
+        impl_thsw_corr = M1_THCR_LAG;
+      } else if (scr.compare("sc") == 0) {
+        impl_thsw_corr = M1_THCR_SC;
+      } else if (scr.compare("none") != 0) {
+        ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
+                  + "' is not a choice (none | lag | sc)");
+      }
+      thsw_c1 = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN);
+      if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
+        ImplFatal("<rad_m1>: implicit_thin_h1 must exceed implicit_thin_h0, and "
+                  "implicit_thin_kn0 / implicit_thin_knp must be positive");
+      }
+      if (pin->GetOrAddString("rad_m1","implicit_flux","central").compare("blend") != 0
+          || pin->GetOrAddString("rad_m1","implicit_flux_beam",
+                                 "closure").compare("halfrange") != 0) {
+        ImplFatal("<rad_m1>/implicit_thin_switch needs implicit_flux = blend and "
+                  "implicit_flux_beam = halfrange");
+      }
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon") &&
+          pin->GetString("rad_m1","implicit_hr_recon").compare("dc") != 0) {
+        ImplFatal("<rad_m1>/implicit_thin_switch takes implicit_hr_recon = dc only");
+      }
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_hr_recon")) {
     // xthinfix-1009 Fix B: read only when given (keys-off parameter dump unchanged)
     std::string shr = pin->GetString("rad_m1","implicit_hr_recon");
@@ -2834,7 +2984,7 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
 //! Called from ImplicitTransverseTerms before ImplicitTransTheta, which multiplies the
 //! face theta by 1 - AL.
 
-void RadiationM1::ImplicitLatFaceCoef() {
+void RadiationM1::ImplicitLatFaceCoef(bool first) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2864,6 +3014,16 @@ void RadiationM1::ImplicitLatFaceCoef() {
     const int hsrc = vet_sc ? 1 : (hgd ? 2 : (impl_hr_model ? 0 : -1));
     auto hvc_ = vet_cell;
     auto hgh_ = vgd_hr;
+    // thinsw-1010 (implicit_thin_switch): the faces are built at the first pass of the
+    // solve only (every input is fixed for it); the cell thinness g rides in RES, the
+    // formal-solution flux H_d in TA and E^n in TB (all free at this point of the pass)
+    const int tmode = impl_thsw;
+    const bool thsw = (tmode != M1_THSW_NONE);
+    if (thsw && !first) {return;}
+    const int tcorr = (hsrc == 1) ? impl_thsw_corr : M1_THCR_NONE;
+    const bool tfs = thsw_c1;
+    const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
+    const Real tkn0 = thsw_kn0, tknp = thsw_knp;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2871,6 +3031,12 @@ void RadiationM1::ImplicitLatFaceCoef() {
         M1HrCell(hsrc, iw_, hvc_, hgh_, m, k, j, i, d, 0.0, hp, hm, fb);
         iw_(m,M1_IW_S1,k,j,i) = hp;
         iw_(m,M1_IW_S3,k,j,i) = hm;
+        if (thsw) {
+          Real hd;
+          fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, hd);
+          iw_(m,M1_IW_TA,k,j,i) = hd;
+          iw_(m,M1_IW_TB,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+        }
         // beam_kn: the light-front flag (M1HrJFlag) rides in RES as fb + 2 (fb <= 1)
         if (bxmode == 2) {fb += 2.0*M1HrJFlag(hsrc, iw_, hvc_, m, k, j, i);}
         iw_(m,M1_IW_RES,k,j,i) = fb;
@@ -2878,6 +3044,10 @@ void RadiationM1::ImplicitLatFaceCoef() {
       ImplicitHaloExchange(1, M1_IW_S1);
       ImplicitHaloExchange(1, M1_IW_S3);
       ImplicitHaloExchange(1, M1_IW_RES);
+      if (thsw) {
+        ImplicitHaloExchange(1, M1_IW_TA);
+        ImplicitHaloExchange(1, M1_IW_TB);
+      }
       auto fw = (d == 1) ? fw2 : fw3;
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
       const int inx = (d == 1) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
@@ -2894,6 +3064,7 @@ void RadiationM1::ImplicitLatFaceCoef() {
           fw(m,M1_IFW_AL,k,j,i) = 0.0;
           fw(m,M1_IFW_HCL,k,j,i) = 0.0;
           fw(m,M1_IFW_HCR,k,j,i) = 0.0;
+          if (thsw) {fw(m,M1_IFW_DG,k,j,i) = 0.0;}
           return;
         }
         const int km = (d == 2) ? k - 1 : k, jm = (d == 1) ? j - 1 : j;
@@ -2901,6 +3072,19 @@ void RadiationM1::ImplicitLatFaceCoef() {
         if (sph) {dx = (d == 1) ? cdxf.x2f(m,k,j,i) : cdxf.x3f(m,k,j,i);}
         const Real tauf = 0.5*(iw_(m,M1_IW_KT,km,jm,i) + iw_(m,M1_IW_KT,k,j,i))*dx;
         Real al, hl, hr;
+        if (thsw) {   // thinsw-1010
+          Real dgt;
+          M1ThinFace(tmode, tcorr, iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,k,j,i),
+                     iw_(m,M1_IW_RES,km,jm,i), iw_(m,M1_IW_RES,k,j,i), tauf,
+                     iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
+                     iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i), th0, th1, tkn0,
+                     tknp, ch, al, hl, hr, dgt);
+          fw(m,M1_IFW_AL,k,j,i) = al;
+          fw(m,M1_IFW_HCL,k,j,i) = hl;
+          fw(m,M1_IFW_HCR,k,j,i) = hr;
+          fw(m,M1_IFW_DG,k,j,i) = dgt;
+          return;
+        }
         Real fbl = iw_(m,M1_IW_RES,km,jm,i), fbr = iw_(m,M1_IW_RES,k,j,i), jfl = 0.0;
         if (fbl > 1.5) {fbl -= 2.0; jfl = 1.0;}
         if (fbr > 1.5) {fbr -= 2.0; jfl = 1.0;}
@@ -3514,7 +3698,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   if (!trans_on) return;
   // blendall-1009: the x2/x3 face coefficients, frozen for the step under
   // implicit_recon_lag = step (the default with implicit_flux_faces = all)
-  if (blat_on && (first || !impl_recon_freeze)) {ImplicitLatFaceCoef();}
+  if (blat_on && (first || !impl_recon_freeze)) {ImplicitLatFaceCoef(first);}
   // the transverse realizability limiter: one evaluation of theta for the whole pass,
   // which everything below and the Krylov operator then READ.  klim itself follows the
   // closure lag (frozen for the step under implicit_closure_lag = step).
@@ -3545,6 +3729,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool blt = blat_on;
   auto bw2_ = ifw2;
   auto bw3_ = ifw3;
+  // thinsw-1010 implicit_thin_corr: the fixed formal-solution flux DG of the face
+  const bool tdg = blat_on && (impl_thsw_corr != M1_THCR_NONE);
   const bool thrd = trans_x3;
   const bool fst = first;
   const Real wmem = dbg_trans_memory;
@@ -3718,6 +3904,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     if (blt) {
       f2_(m,k,j,i) += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,jm,i)
                                + bw2_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
+      if (tdg) {f2_(m,k,j,i) += (cl/ch)*bw2_(m,M1_IFW_DG,k,j,i);}
       if (must) {
         const Real hcl = bw2_(m,M1_IFW_HCL,k,j,i), hcr = bw2_(m,M1_IFW_HCR,k,j,i);
         Real gm = 0.0;
@@ -3849,6 +4036,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (blt) {
         f3_(m,k,j,i) += (cl/ch)*(bw3_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,km,j,i)
                                  + bw3_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
+        if (tdg) {f3_(m,k,j,i) += (cl/ch)*bw3_(m,M1_IFW_DG,k,j,i);}
         if (must) {
           const Real hcl = bw3_(m,M1_IFW_HCL,k,j,i), hcr = bw3_(m,M1_IFW_HCR,k,j,i);
           Real gm = 0.0;
@@ -9880,7 +10068,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // 2, although the answer is the same to five digits.  The correction is a lagged,
     // explicit term in any case, so evaluating it at E^n costs nothing in order.
     const int iter = it;
-    const bool doface = aphll && (it == 0 || !rfreeze);
+    // thinsw-1010: under implicit_thin_switch every input of the face coefficients is
+    // fixed for the solve, and they are built once (the Picard loop sees one operator)
+    const bool doface = aphll && (it == 0 || !(rfreeze || impl_thsw != M1_THSW_NONE));
     if (doface) {
       const bool dodg = plmdc && (it == 0
                                   || (!rfreeze && (rnpass <= 0 || it < rnpass)));
@@ -9917,6 +10107,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                                             (trans ? 0 : 3))));
       auto hvc_ = vet_cell;
       auto hgh_ = vgd_hr;
+      // thinsw-1010: the dt-free thin switch (M1ThinFace)
+      const int tmode = hrx ? impl_thsw : M1_THSW_NONE;
+      const int tcorr = (hsrc == 1) ? impl_thsw_corr : M1_THCR_NONE;
+      const bool tfs = thsw_c1;
+      const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
+      const Real tkn0 = thsw_kn0, tknp = thsw_knp;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -9992,6 +10188,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           M1HrCell(hsrc, iw_, hvc_, hgh_, m, k, j, ip, 0, iw_(m,M1_IW_RF0,k,j,ip), hpr,
                    hmr, fbr);
           Real alb, hlb, hrb;
+          if (tmode != M1_THSW_NONE) {   // thinsw-1010
+            Real hdl, hdr, dgt;
+            const Real gl = M1ThinCell(hsrc, hvc_, m, k, j, im, 0, fbl, tfs, tfsa, tfsj,
+                                       hdl);
+            const Real gr = M1ThinCell(hsrc, hvc_, m, k, j, ip, 0, fbr, tfs, tfsa, tfsj,
+                                       hdr);
+            M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
+                       iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, th0, th1, tkn0, tknp, ch, alb,
+                       hlb, hrb, dgt);
+            ifw_(m,M1_IFW_AL,k,j,i) = alb;
+            ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
+            ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
+            ifw_(m,M1_IFW_DG,k,j,i) = dgt;
+            return;
+          }
           M1HrFace(hpl, hmr, fbl, fbr, tauf, blend, bkind, bfm, btau0, bflo, bfhi, balph,
                    ch, iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip), br0, hml, hpr,
                    ch*dt/dx, bx0, bxmode, bxwmin, bxr0,

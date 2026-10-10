@@ -64,7 +64,8 @@ constexpr int M1_VET_D11 = 16;  // vet_tensor = full: the GUARDED D = K/J handed
                                 // solve, 11 22 33 12 13 23, ghosts filled (periodic)
 constexpr int M1_VET_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
 constexpr int M1_VET_HP1 = 23;  // hrup-1009: sum w I max(mu_a, 0), a = 1 2 3 (half-range)
-constexpr int M1_VET_NC  = 26;
+constexpr int M1_VET_NL  = 26;  // thinsw-1010: sum w |I - S| (C1 non-locality), fs only
+constexpr int M1_VET_NC  = 27;
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;
@@ -598,6 +599,14 @@ class RadiationM1 {
   Real impl_blend_xthin_wmin = 0.0;    // xthinfix-1009: threshold of mode = beam
   Real impl_blend_xthin_r0 = 1.5;      // xthinfix-1009: Knudsen R0 of mode = beam_kn
   Real impl_blend_r0 = 1.5;       // hrup-1009: implicit_blend = knudsen, R0
+  // thinsw-1010: <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp):
+  // a dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality C1, the
+  // E^n Knudsen number); implicit_thin_corr adds the lagged formal-solution flux (C4)
+  int impl_thsw = 0;
+  int impl_thsw_corr = 0;
+  bool thsw_c1 = false;           // the sweep accumulates M1_VET_NL
+  Real thsw_h0 = 0.3, thsw_h1 = 0.6, thsw_kn0 = 1.0, thsw_knp = 4.0;
+  Real thsw_fsa = 0.0, thsw_fsj = 0.0;
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
@@ -623,7 +632,7 @@ class RadiationM1 {
   DvceArray1D<Real> vgd_hrm;           // shell mean of one twin component
   void VetGdHalfRange(const int stage);
   DvceArray5D<Real> ifw2, ifw3;
-  void ImplicitLatFaceCoef();
+  void ImplicitLatFaceCoef(bool first);
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
   // serial Thomas sweep and sends the solution back.
