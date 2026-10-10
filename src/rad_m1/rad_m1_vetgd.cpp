@@ -2293,6 +2293,10 @@ void RadiationM1::VetGdSweep() {
       auto O_ = vgd_ovl[pass];
       const size_t off = static_cast<size_t>(g)*vgd_ovl_cap[pass];
       const int q0 = g*ovg, q1 = std::min((g + 1)*ovg, nsh);
+      // env VGD_OVL_DEBUG = 1: every item remote (no overlap; bitwise by construction),
+      // 2: every item local (a deliberate race; diagnostic only)
+      const int dbg = (std::getenv("VGD_OVL_DEBUG") != nullptr) ?
+                      std::atoi(std::getenv("VGD_OVL_DEBUG")) : 0;
       Kokkos::parallel_for("m1_vgd_ovl_flag", Kokkos::RangePolicy<>(vgd_cur, 0, nl),
       KOKKOS_LAMBDA(const int c) {
         int t = L_(c);
@@ -2320,7 +2324,7 @@ void RadiationM1::VetGdSweep() {
             if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) < 0) {rem = 1;}
           }
         }
-        F_(c) = rem;
+        F_(c) = (dbg == 1) ? 1 : ((dbg == 2) ? 0 : rem);
       });
       Kokkos::parallel_scan("m1_vgd_ovl_scan", Kokkos::RangePolicy<>(vgd_cur, 0, nl + 1),
       KOKKOS_LAMBDA(const int c, int &acc, const bool fin) {
