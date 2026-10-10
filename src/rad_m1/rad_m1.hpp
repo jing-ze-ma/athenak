@@ -989,6 +989,7 @@ class RadiationM1 {
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
+  int t2_vsmode = 0;            // time2_vet_sc: 0 lag, 1 predict, 2 rebuild
   // time2_tableau (ke-dt-0926; read only when named): 0 = hesdirk2 (Heun + H-ESDIRK2),
   // 1 = trbdf2 (TR-BDF2 implicit, stage order 2, with the RK2 hydro of c2 = 2 - sqrt 2;
   // the Driver sets the matching gam0/gam1/beta).  Stage coefficients of Time2FormStage:
