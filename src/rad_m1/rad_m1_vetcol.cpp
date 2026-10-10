@@ -1601,6 +1601,13 @@ void RadiationM1::VetColReport() {
                   << vgd_hc_nmade << " entries made, " << vgd_hc_bytes/1048576.0
                   << " MB of " << vgd_hc_mb << std::endl;
       }
+      if (vgd_hcomp > 0 && vgd_hl_mb > 0) {
+        std::cout << "<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists "
+                  << vgd_hl_nmade << " made, " << vgd_hl_bytes/1048576.0 << " MB of "
+                  << vgd_hl_cap/1048576.0 << " (key " << vgd_hl_mb
+                  << ", GPU: <= free/2); exchanges by list " << vgd_hl_nuse << ", dense "
+                  << vgd_hl_ndense << std::endl;
+      }
       if (vgd_async) {
         std::cout << "<rad_m1> vet_gd_async (rank 0): " << vgd_nasync
                   << " overlapped sweeps (" << (vgd_ainl ? "inline" : "thread")

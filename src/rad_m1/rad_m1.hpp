@@ -23,6 +23,7 @@
 //! T4/T4b (<rad_m1>/source_form).  Still absent: implicit transport (stage 3) and any
 //! geometry but Cartesian (stage 4).
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
@@ -1753,7 +1754,42 @@ class RadiationM1 {
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
   template <class V>
-  void VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b = nullptr);
+  bool VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b = nullptr);
+  // vet_gd_halo_list_mb (vgdspeed-1009; read only when named; default 4096, 0 = off):
+  // MB budget per rank of the compact-halo LISTS per (pass, shell), built from the masks
+  // at the first exchange of a mask set (direction set, cut, depth) and used by every
+  // later sweep of the set: gather pack, MPI, scatter (+ zeros on the other pass's
+  // entries) instead of flag / scan / pack / expand / dense unpack.  Bitwise: the band
+  // gets the same values (see VetGdHaloCompact for when the dense zeros are implied).
+  struct VgdHlEntry {
+    DvceArray1D<int> sl;          // (ns): packed band address of each sent value
+    DvceArray1D<int> dl, sr;      // (nr): packed band address, compact source position
+    DvceArray1D<int> dw, sw;      // (nw), (3 nw): wall_interp ghosts: address, sources
+    std::vector<int> sp, rp;      // (np + 1): partner bounds of the compact messages
+    Real alpha = -2.0;
+    int scut = -1, ws = -1, ns = 0, nr = 0, nw = 0;
+    int64_t gen = -1;             // build id (> 0) while valid
+    bool nofit = false;           // over the budget for (alpha, scut, ws)
+    size_t bytes = 0;
+  };
+  int vgd_hl_mb = 4096;
+  // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): the
+  // shell kernel runs over the (m, k, j, d) of the pass's branch only (VetGdSweep)
+  bool vgd_shl_on = true;
+  DvceArray1D<int> vgd_shl[2];
+  int vgd_shn[2] = {0, 0};
+  Real vgd_shl_alpha = -3.0;
+  std::vector<VgdHlEntry> vgd_hle;
+  size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
+  int64_t vgd_hl_gen = 0;
+  Real vgd_hl_nmade = 0.0, vgd_hl_nuse = 0.0, vgd_hl_ndense = 0.0;
+  DvceArray1D<int> vgd_hl_fn, vgd_hl_fw;    // build scratch: dest flags -> positions
+  // per band array (data pointer) and pass: the build id of the entry whose exchange
+  // last wrote each shell's band (0 = never written: all zero; -1 = unknown)
+  std::map<const void *, std::array<std::vector<int64_t>, 2>> vgd_hl_gw;
+  bool VetGdHlBuild(const int e, const int i, const bool inw, const int ws,
+                    const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
+                    const std::vector<int> &pbh);
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
   template <class V>
