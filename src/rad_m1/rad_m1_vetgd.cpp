@@ -484,6 +484,9 @@ void RadiationM1::VetGdInit() {
   VetGdHaloInit();
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
+  if (vgd_fuse_h > 1 && !vgd_hx_on) {
+    VgdFatal("vet_gd_fuse_shells > 1 needs vet_gd_halo_exact = true");
+  }
   if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async)) {
     VgdFatal("vet_gd_halo_exact needs vet_gd_shell_list = true and no vet_gd_band_exit "
              "/ vet_gd_async");
@@ -2854,17 +2857,22 @@ void RadiationM1::VetGdSweep() {
         if (ovl) {vgd_ovl_nfull += 1.0;}
       }
       pend = false;
+      const int wsx = inw ? vgd_wsi[i] : vgd_wso[i];
       // vet_gd_fuse_shells = H > 1 (NOT bitwise): exchange only every H-th shell of the
-      // pass and its last one
+      // pass and its last one, once the exact lists of the shell exist (the first sweep of
+      // a direction set exchanges every shell); a skipped shell's readers take the band
+      // of the last sweep (a lagged inflow; the exact lists never zero a band value)
       if (fh > 1 && ((q + 1) % fh) != 0 && q + 1 < nsh) {
-        vgd_fuse_nskip += 1.0;
-        continue;
+        const int e = pass*(indcs.nx1 + 2*indcs.ng) + i;
+        if (VetGdHxKey(e, wsx) && vgd_hxe[e].exact) {
+          vgd_fuse_nskip += 1.0;
+          continue;
+        }
       }
       // the shell is complete on every block: its lateral band, exact (not lagged)
       if (vgd_time_halo) {vgd_cur.fence();}
       Kokkos::Timer th;
       vgd_hinw = inw;
-      const int wsx = inw ? vgd_wsi[i] : vgd_wso[i];
       if (hxm) {hx_mark(i, l, wsx);}
       if (ovl && q + 1 < nsh &&
           VetGdHlBegin(vgd_i, n, i, wsx, two ? &vgd_itw : nullptr)) {
