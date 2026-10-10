@@ -1654,8 +1654,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     std::string shr = pin->GetString("rad_m1","implicit_hr_recon");
     if (shr.compare("plm") == 0) {
       impl_muscl = true;
+    } else if (shr.compare("led") == 0) {
+      impl_muscl = true;
+      impl_muscl_led = true;
     } else if (shr.compare("dc") != 0) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = '" + shr + "' is not a choice (dc | plm)");
+      ImplFatal("<rad_m1>/implicit_hr_recon = '" + shr
+                + "' is not a choice (dc | plm | led)");
     }
     if (impl_muscl) {
       impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
@@ -3582,6 +3586,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // (1) the x2 face fluxes
   const bool must = muscl_now;   // xthinfix-1009 Fix B (sig of the latest build)
   const int imbt = iw_muscl;
+  const bool ledt = impl_muscl_led;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
@@ -3696,6 +3701,16 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (must) {
         const Real hcl = bw2_(m,M1_IFW_HCL,k,j,i), hcr = bw2_(m,M1_IFW_HCR,k,j,i);
         Real gm = 0.0;
+        if (ledt) {
+          if (hcl != 0.0) {
+            gm += 0.5*hcl*iw_(m,imbt+M1_IM_SIG+1,k,jm,i)
+                  *(iw_(m,M1_IW_EP,k,jm,i) - iw_(m,M1_IW_EP,k,jm-1,i));
+          }
+          if (hcr != 0.0) {
+            gm -= 0.5*hcr*iw_(m,imbt+M1_IM_SIG+1,k,j,i)
+                  *(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EP,k,jm,i));
+          }
+        } else {
         if (hcl != 0.0) {
           gm += 0.25*hcl*iw_(m,imbt+M1_IM_SIG+1,k,jm,i)
                 *(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EP,k,jm-1,i));
@@ -3703,6 +3718,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         if (hcr != 0.0) {
           gm -= 0.25*hcr*iw_(m,imbt+M1_IM_SIG+1,k,j,i)
                 *(iw_(m,M1_IW_EP,k,j+1,i) - iw_(m,M1_IW_EP,k,jm,i));
+        }
         }
         f2_(m,k,j,i) += (cl/ch)*gm;
       }
@@ -3816,6 +3832,16 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         if (must) {
           const Real hcl = bw3_(m,M1_IFW_HCL,k,j,i), hcr = bw3_(m,M1_IFW_HCR,k,j,i);
           Real gm = 0.0;
+          if (ledt) {
+            if (hcl != 0.0) {
+              gm += 0.5*hcl*iw_(m,imbt+M1_IM_SIG+2,km,j,i)
+                    *(iw_(m,M1_IW_EP,km,j,i) - iw_(m,M1_IW_EP,km-1,j,i));
+            }
+            if (hcr != 0.0) {
+              gm -= 0.5*hcr*iw_(m,imbt+M1_IM_SIG+2,k,j,i)
+                    *(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EP,km,j,i));
+            }
+          } else {
           if (hcl != 0.0) {
             gm += 0.25*hcl*iw_(m,imbt+M1_IM_SIG+2,km,j,i)
                   *(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EP,km-1,j,i));
@@ -3823,6 +3849,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           if (hcr != 0.0) {
             gm -= 0.25*hcr*iw_(m,imbt+M1_IM_SIG+2,k,j,i)
                   *(iw_(m,M1_IW_EP,k+1,j,i) - iw_(m,M1_IW_EP,km,j,i));
+          }
           }
           f3_(m,k,j,i) += (cl/ch)*gm;
         }
@@ -11042,6 +11069,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (g) the face fluxes of the new iterate, and the derived cell flux
     const bool musf = muscl_now;   // xthinfix-1009 Fix B: the plm half-range face values
     const int imbf = iw_muscl;
+    const bool ledf = impl_muscl_led;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -11171,7 +11199,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
                     + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
                     + ifw_(m,M1_IFW_DG,k,j,i);
-          if (musf) {
+          if (musf && ledf) {
+            // led: the plm face values s = a dL (the fixed point's single value)
+            const Real hcl = ifw_(m,M1_IFW_HCL,k,j,i), hcr = ifw_(m,M1_IFW_HCR,k,j,i);
+            const int imm = (cyclic && im == is) ? ie : (im-1);
+            if (hcl != 0.0) {
+              gh += 0.5*hcl*iw_(m,imbf+M1_IM_SIG,k,j,im)
+                    *(iw_(m,M1_IW_EP,k,j,im) - iw_(m,M1_IW_EP,k,j,imm));
+            }
+            if (hcr != 0.0) {
+              gh -= 0.5*hcr*iw_(m,imbf+M1_IM_SIG,k,j,ip)
+                    *(iw_(m,M1_IW_EP,k,j,ip) - iw_(m,M1_IW_EP,k,j,im));
+            }
+          } else if (musf) {
             const Real hcl = ifw_(m,M1_IFW_HCL,k,j,i), hcr = ifw_(m,M1_IFW_HCR,k,j,i);
             const int imm = (cyclic && im == is) ? ie : (im-1);
             const int ipp = (cyclic && ip == ie) ? is : (ip+1);
@@ -12343,8 +12383,11 @@ void RadiationM1::ImplicitMusclBuild() {
   const int b = iw_muscl;
   const bool l2 = twod && (bw2_.extent_int(0) > 0);
   const bool l3 = thrd && (bw3_.extent_int(0) > 0);
-  // (1) the frozen limiter (once per step)
-  if (muscl_nbuild < impl_muscl_nfresh) {
+  // (1) the limiter: plm on the first implicit_hr_recon_fresh passes, then frozen; led on
+  // EVERY pass (the two linearisations of a face value agree only for a and b of the
+  // current iterate, so the fixed point is conservative and the full van Leer scheme)
+  const bool led = impl_muscl_led;
+  if (led || muscl_nbuild < impl_muscl_nfresh) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
   par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -12354,7 +12397,7 @@ void RadiationM1::ImplicitMusclBuild() {
     const bool efx = !cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
                                  (i == ie && topb && bchi == M1_IBC_EFIX));
     for (int d = 0; d < 3; ++d) {
-      Real sg = 0.0;
+      Real sg = 0.0, sb = 0.0;
       bool ok = !efx && ((d == 0) || (d == 1 && l2) || (d == 2 && l3));
       if (ok && d == 0 && !cyclic) {
         ok = !((i == is && botb) || (i == ie && topb));
@@ -12382,17 +12425,27 @@ void RadiationM1::ImplicitMusclBuild() {
         const Real e0 = iw_(m,M1_IW_EP,k,j,i);
         const Real ea = e0 - iw_(m,M1_IW_EP,km,jm,im);
         const Real eb = iw_(m,M1_IW_EP,kp,jp,ip) - e0;
-        if (ea*eb > 0.0) {sg = 4.0*ea*eb/SQR(ea + eb);}
+        if (ea*eb > 0.0) {
+          if (led) {   // s = 2 ea eb/(ea + eb) = a ea = b eb
+            sg = 2.0*eb/(ea + eb);
+            sb = 2.0*ea/(ea + eb);
+          } else {
+            sg = 4.0*ea*eb/SQR(ea + eb);
+          }
+        }
       }
       if (first) {
         if (d == 0) {iw_(m,b+M1_IM_KILL,k,j,i) = 0.0;}
       } else if (iw_(m,b+M1_IM_KILL,k,j,i) > 0.5) {
         sg = 0.0;
+        sb = 0.0;
       }
       iw_(m,b+M1_IM_SIG+d,k,j,i) = sg;
+      if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = sb;}
     }
   });
   ImplicitHaloExchange(3, b + M1_IM_SIG);
+  if (led) {ImplicitHaloExchange(3, b + M1_IM_B);}
   }
   // (2) the row
   par_for("m1_muscl_row", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -12441,6 +12494,23 @@ void RadiationM1::ImplicitMusclBuild() {
       const Real sc = iw_(m,b+M1_IM_SIG+d,k,j,i);
       const Real sp = iw_(m,b+M1_IM_SIG+d,kp,jp,ip);
       const Real sm = iw_(m,b+M1_IM_SIG+d,km,jm,im);
+      if (led) {
+        // per-row sign-preserving linearisation (XTHINFIX.md B2): a = s/dL, b = s/dR
+        const Real bc = iw_(m,b+M1_IM_B+d,k,j,i);
+        const Real bm = iw_(m,b+M1_IM_B+d,km,jm,im);
+        // face +: own-donor HCL (E_c + a_c/2 (E_c - E_c-1)); neighbour-donor HCR
+        //         (E_c+1 + a_c+1/2 (E_c - E_c+1)); face -: neighbour-donor HCL
+        //         (E_c-1 + b_c-1/2 (E_c - E_c-1)); own-donor HCR
+        //         (E_c - b_c/2 (E_c+1 - E_c))
+        const Real p1 = (hlp != 0.0) ? 0.5*fp*hlp*sc : 0.0;    // +x_c, -x_c-1
+        const Real p2 = (hrp != 0.0) ? 0.5*fp*hrp*sp : 0.0;    // +x_c, -x_c+1
+        const Real m1 = (hlm != 0.0) ? 0.5*fm*hlm*bm : 0.0;    // -x_c, +x_c-1
+        const Real m2 = (hrm != 0.0) ? 0.5*fm*hrm*bc : 0.0;    // -x_c, +x_c+1
+        cf[d][1] = -p1 + m1;
+        cf[d][2] = -p2 + m2;
+        dg += p1 + p2 - m1 - m2;
+        continue;
+      }
       // dG+ = 1/4 [HCL+ sc (x+1 - x-1) - HCR+ sp (x+2 - x0)]
       // dG- = 1/4 [HCL- sm (x0 - x-2) - HCR- sc (x+1 - x-1)]
       // a zero face coefficient (physical or central face) never multiplies a ghost sig
@@ -12514,11 +12584,15 @@ void RadiationM1::ImplicitMusclKill() {
       }
     }
     if (neg) {
-      for (int d = 0; d < 3; ++d) {iw_(m,b+M1_IM_SIG+d,k,j,i) = 0.0;}
+      for (int d = 0; d < 3; ++d) {
+        iw_(m,b+M1_IM_SIG+d,k,j,i) = 0.0;
+        iw_(m,b+M1_IM_B+d,k,j,i) = 0.0;
+      }
       iw_(m,b+M1_IM_KILL,k,j,i) = 1.0;
     }
   });
   ImplicitHaloExchange(3, b + M1_IM_SIG);
+  ImplicitHaloExchange(3, b + M1_IM_B);
 }
 
 } // namespace radm1
