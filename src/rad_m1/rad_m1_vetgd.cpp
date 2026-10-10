@@ -248,7 +248,7 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
 // vgdfuse-1010: two in-place exclusive int scans (flag -> position, total at index n)
 // in one pass: the two counts ride in the low and high 32 bits of one int64 sum (all
 // counts < 2^31, so exact and the positions are those of two separate scans).  The scan
-// is chunked and deterministic (integer sums: the same positions as Kokkos::parallel_scan):
+// is chunked and deterministic (integer sums: the positions of Kokkos::parallel_scan):
 // per chunk of VGD_SCAN_CH entries a team sum, a scan of the chunk sums, a team scan per
 // chunk from its offset.  env VGD_SCAN_KOKKOS=1: one Kokkos::parallel_scan instead.
 constexpr int VGD_SCAN_CH = 4096;
@@ -2093,10 +2093,10 @@ void RadiationM1::VetGdHxBuild(const int e, const int i, const bool inw, const i
 //! \brief vet_gd_halo_exact = 2 (vgdfuse-1010): the exact lists of (pass, shell) record e
 //! WITHOUT the compact-halo masks and without a dense exchange: made in VetGdSweep before
 //! the shell's first exchange of a direction set from the read marks vgd_hx_mk alone.
-//! COLLECTIVE.  (1) the sources of the marked ghosts in the dense receive layout, (2) their
-//! compact positions, (3) per partner the count and then the ascending list of the
-//! wanted offsets (relative to the partner's piece of the layout; the sender's send layout
-//! enumerates the same entries in the same order), (4) a global vote (no marked ghost
+//! COLLECTIVE.  (1) the sources of the marked ghosts in the dense receive layout, (2)
+//! their compact positions, (3) per partner the count and then the ascending list of the
+//! wanted offsets (relative to the partner's piece of the layout; the sender's send
+//! layout enumerates the same entries in the same order), (4) a global vote (no marked ghost
 //! outside the region of depth ws, the byte budget), (5) the send addresses decoded from
 //! the received offsets, the read ghosts with their source positions.  Every source of a
 //! read ghost is sent, so a read never sees a value that the exchange did not write
@@ -3061,8 +3061,10 @@ void RadiationM1::VetGdSweep() {
       });
       int nr = 0;
       {
-        Kokkos::View<int*, HostMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> h(&nr, 1);
-        Kokkos::deep_copy(vgd_cur, h, Kokkos::subview(vgd_ovl_f, std::make_pair(nl, nl + 1)));
+        Kokkos::View<int*, HostMemSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+          h(&nr, 1);
+        Kokkos::deep_copy(vgd_cur, h,
+                          Kokkos::subview(vgd_ovl_f, std::make_pair(nl, nl + 1)));
         vgd_cur.fence();
       }
       const int nrr = nr;
