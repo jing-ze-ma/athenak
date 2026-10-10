@@ -187,109 +187,61 @@ void VgdProduct(const int nmu, const int nphi, const bool stagger,
   }
 }
 
-// vgdfuse-1010: the ray geometry of one (block m, cell (k, j), direction d) of shell i
-// (sweep position l) in the pass inw: the segment, the upwind point, its bilinear
-// stencil and weights and the branch mask of the stencil.  The expressions of the
-// pre-1010 shell kernel; shared by the shell kernel (main + twin solve) and the overlap
-// split's classification, so both see the same stencil.
-struct VgdGeo {
-  Real th, ph, st, ct, sp, cp, mr, r, zr, p2, ds, fj, fk, uj, uk;
-  int typ, iu, j0, k0, j1, k1;
-  bool skip, top, tan0, clp, all;
-  bool ok[4];
-};
-
-template <class TD, class TB, class TX, class TF, class TM>
+// vgdfuse-1010: every stencil that the shell kernel's solve of item (block m, cell (k,
+// j), direction d) of shell i (sweep position l) of the pass inw MAY read, as boxes
+// f(iu, k_lo, k_hi, j_lo, j_hi) of band cells (inclusive) of shell iu.  The kernel's
+// expressions, but robust to the rounding of a different compilation (FMA contraction):
+// the branch test is ignored, both segment types are offered when the test is within a
+// relative 1e-9 of its threshold, and the bilinear base index is taken for every floor
+// within 1e-8 of the fractional index (then clamped as the kernel clamps).  Used by the
+// overlap split and by the exact halo lists: a superset of the reads is safe for both.
+template <class TD, class TB, class TX, class TF, class FN>
 KOKKOS_INLINE_FUNCTION
-void VgdGeom(VgdGeo &g, const int m, const int k, const int j, const int d, const int i,
-             const int l, const bool inw, const int n1, const int lcut, const int js,
-             const int ks, const int ie, const int jlo, const int jhi, const int klo,
-             const int khi, const TD &dir_, const TB &mbsize, const TX &cx1v,
-             const TF &cx1f, const TM &mr_) {
+void VgdCand(const int m, const int k, const int j, const int d, const int i, const int l,
+             const bool inw, const int n1, const int lcut, const int js, const int ks,
+             const int jlo, const int jhi, const int klo, const int khi, const TD &dir_,
+             const TB &mbsize, const TX &cx1v, const TF &cx1f, const FN &f) {
+  if (inw && l == n1 - 1) {return;}          // the top shell reads no intensity
   const Real twopi = 2.0*M_PI;
   const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-  // the face midpoints (uniform in index space, as the bilinear reads assume)
   const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
   const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
   const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
   const Real mr = nx*st*cp + ny*st*sp + nz*ct;
-  g.th = th; g.ph = ph; g.st = st; g.ct = ct; g.sp = sp; g.cp = cp; g.mr = mr;
-  g.skip = (inw == (mr >= 0.0));
-  if (g.skip) {return;}
   const Real r = cx1v(m,i);
   const Real zr = r*fabs(mr);
   const Real p2 = fmax(r*r - zr*zr, 0.0);
-  g.r = r; g.zr = zr; g.p2 = p2;
-  g.top = inw && l == n1 - 1;
-  g.tan0 = !g.top && !inw && zr < 1.0e-12*r;
-  g.typ = 1;                 // 1 upwind shell, 2 inner face, 3 own shell
-  g.iu = i + 1;
-  g.ds = 0.0; g.fj = 0.0; g.fk = 0.0; g.uj = 0.0; g.uk = 0.0;
-  g.j0 = 0; g.k0 = 0; g.j1 = 0; g.k1 = 0;
-  g.clp = false;
-  g.all = true;
-  for (int q = 0; q < 4; ++q) {g.ok[q] = true;}
-  if (g.top) {
-    // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat)
-    const Real rtop = cx1f(m,ie+1);
-    g.ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
-    return;
-  }
-  if (g.tan0) {return;}      // tangent at the cell centre (measure zero)
-  Real ds;
+  auto box = [&](const int iu, const Real ds) {
+    const Real xu = r*st*cp - ds*nx;
+    const Real yu = r*st*sp - ds*ny;
+    const Real zu = r*ct - ds*nz;
+    const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
+    const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
+    Real dph = atan2(yu, xu) - ph;
+    dph -= twopi*floor((dph + M_PI)/twopi);
+    const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
+    const Real fk = k + dph/mbsize.d_view(m).dx3;
+    const Real e = 1.0e-8;
+    int ja = static_cast<int>(floor(fj - e)), jb = static_cast<int>(floor(fj + e));
+    int ka = static_cast<int>(floor(fk - e)), kb = static_cast<int>(floor(fk + e));
+    ja = (ja < jlo) ? jlo : ((ja > jhi) ? jhi : ja);
+    jb = (jb < jlo) ? jlo : ((jb > jhi) ? jhi : jb);
+    ka = (ka < klo) ? klo : ((ka > khi) ? khi : ka);
+    kb = (kb < klo) ? klo : ((kb > khi) ? khi : kb);
+    f(iu, ka, kb + 1, ja, jb + 1);
+  };
   if (inw) {
     const Real ru = cx1v(m,i+1);
-    ds = sqrt(ru*ru - p2) - zr;
-  } else {
-    const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
-    if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
-      g.iu = i - 1;
-      ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-    } else if (l == lcut && p2 <= rd*rd) {
-      g.typ = 2;
-      g.iu = i;
-      ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-    } else {
-      g.typ = 3;
-      g.iu = i;
-      ds = 2.0*zr;
-    }
+    box(i + 1, sqrt(fmax(ru*ru - p2, 0.0)) - zr);
+    return;
   }
-  g.ds = ds;
-  // the upwind point, its lateral cell and bilinear fractions (index space)
-  const Real xu = r*st*cp - ds*nx;
-  const Real yu = r*st*sp - ds*ny;
-  const Real zu = r*ct - ds*nz;
-  const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
-  const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
-  Real dph = atan2(yu, xu) - ph;
-  dph -= twopi*floor((dph + M_PI)/twopi);
-  const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
-  const Real fk = k + dph/mbsize.d_view(m).dx3;
-  int j0 = static_cast<int>(floor(fj));
-  int k0 = static_cast<int>(floor(fk));
-  Real uj = fj - j0, uk = fk - k0;
-  bool clp = false;
-  if (j0 < jlo) {j0 = jlo; uj = 0.0; clp = true;}
-  if (j0 > jhi) {j0 = jhi; uj = 1.0; clp = true;}
-  if (k0 < klo) {k0 = klo; uk = 0.0; clp = true;}
-  if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
-  g.fj = fj; g.fk = fk; g.uj = uj; g.uk = uk; g.j0 = j0; g.k0 = k0;
-  g.j1 = j0 + 1; g.k1 = k0 + 1; g.clp = clp;
-  if (g.typ != 2) {
-    // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat selects;
-    // the ray read here is inward at the upwind point for the inward pass and for a
-    // turned ray, outward otherwise.  Stencil cells of the other pass hold the wrong
-    // branch (near the tangent band): they are dropped and the bilinear weights
-    // renormalised (all valid: the plain bilinear)
-    const bool want_in = inw || (g.typ == 3);
-    for (int q = 0; q < 4; ++q) {
-      const int kk = (q < 2) ? g.k0 : g.k1;
-      const int jj = (q % 2 == 0) ? g.j0 : g.j1;
-      const Real mq = mr_(m,kk,jj,d);
-      g.ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
-      g.all = g.all && g.ok[q];
-    }
+  const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
+  const Real t2 = rd*rd, tol = 1.0e-9*t2;
+  if (l > lcut) {
+    if (p2 <= t2*(1.0 + 1.0e-13) + tol) {box(i - 1, zr - sqrt(fmax(t2 - p2, 0.0)));}
+    if (p2 > t2*(1.0 + 1.0e-13) - tol) {box(i, 2.0*zr);}
+  } else if (p2 > t2 - tol) {
+    box(i, 2.0*zr);                         // a turned ray (the inner face reads none)
   }
 }
 
@@ -2456,20 +2408,20 @@ void RadiationM1::VetGdSweep() {
     const bool two = vgd_sw2;        // vet_gd_twin_fuse: the twin field in the same pass
     auto ct_ = vgd_cst;
     auto vt_ = vgd_itw;
+      // (the pre-1010 shell body, unchanged: the main and the twin solve each compute the
+      // ray geometry; sharing it changed the rounding under CUDA FMA contraction and was
+      // not faster on A100, 31040005/06)
       auto body = KOKKOS_LAMBDA(const int m, const int k, const int j, const int d,
                                 const int i, const int l) {
-        VgdGeo g;
-        VgdGeom(g, m, k, j, d, i, l, inw, n1, lcut, js, ks, ie, jlo, jhi, klo, khi, dir_,
-                mbsize, cx1v, cx1f, mr_);
-        if (g.skip) {return;}
-        // one clamp count per solve, as before (main + twin)
-        if (g.clp) {Kokkos::atomic_add(&cnt_(0), two ? 2.0 : 1.0);}
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-        const Real th = g.th, ph = g.ph, st = g.st, ct = g.ct, sp = g.sp, cp = g.cp;
-        const Real r = g.r, p2 = g.p2, ds = g.ds, fj = g.fj, fk = g.fk;
-        const Real uj = g.uj, uk = g.uk;
-        const int typ = g.typ, iu = g.iu, j0 = g.j0, k0 = g.k0, j1 = g.j1, k1 = g.k1;
-        const bool top = g.top, tan0 = g.tan0, clp = g.clp, all = g.all;
+        // the face midpoints (uniform in index space, as the bilinear reads assume)
+        const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
+        const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
+        const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+        const Real mr = nx*st*cp + ny*st*sp + nz*ct;
+        if (inw == (mr >= 0.0)) {return;}
+        // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same
+        // thread; one launch and one halo per shell for both sweeps
         auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix) -> Real {
           auto rd = [&](const int kk, const int jj, const int ii) -> Real {
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
@@ -2489,17 +2441,64 @@ void RadiationM1::VetGdSweep() {
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,d) : d;
             return vix(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
           };
+          const Real r = cx1v(m,i);
+          const Real zr = r*fabs(mr);
+          const Real p2 = fmax(r*r - zr*zr, 0.0);
           const Real ch0 = exp(csx(m,0,k,j,i));
           const Real s0 = exp(csx(m,1,k,j,i));
           Real iv;
-          if (top) {
+          if (inw && l == n1 - 1) {
+            // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat)
+            const Real rtop = cx1f(m,ie+1);
+            const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
             const Real stp = fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i-1)), 1.0e-300);
             Real ex, w0, wu;
             VgdW(ch0*ds, ex, w0, wu);
             iv = wu*stp + w0*s0;
-          } else if (tan0) {
+          } else if (!inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
+            int typ = 1;                 // 1 upwind shell, 2 inner face, 3 own shell
+            int iu = i + 1;
+            Real ds;
+            if (inw) {
+              const Real ru = cx1v(m,i+1);
+              ds = sqrt(ru*ru - p2) - zr;
+            } else {
+              const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
+              if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
+                iu = i - 1;
+                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+              } else if (l == lcut && p2 <= rd*rd) {
+                typ = 2;
+                iu = i;
+                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
+              } else {
+                typ = 3;
+                iu = i;
+                ds = 2.0*zr;
+              }
+            }
+            // the upwind point, its lateral cell and bilinear fractions (index space)
+            const Real xu = r*st*cp - ds*nx;
+            const Real yu = r*st*sp - ds*ny;
+            const Real zu = r*ct - ds*nz;
+            const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
+            const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
+            Real dph = atan2(yu, xu) - ph;
+            dph -= twopi*floor((dph + M_PI)/twopi);
+            const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
+            const Real fk = k + dph/mbsize.d_view(m).dx3;
+            int j0 = static_cast<int>(floor(fj));
+            int k0 = static_cast<int>(floor(fk));
+            Real uj = fj - j0, uk = fk - k0;
+            bool clp = false;
+            if (j0 < jlo) {j0 = jlo; uj = 0.0; clp = true;}
+            if (j0 > jhi) {j0 = jhi; uj = 1.0; clp = true;}
+            if (k0 < klo) {k0 = klo; uk = 0.0; clp = true;}
+            if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
+            if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
+            const int j1 = j0 + 1, k1 = k0 + 1;
             bool bdone = false;
             if (clp && bandx && typ == 1) {
               // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead
@@ -2580,6 +2579,21 @@ void RadiationM1::VetGdSweep() {
                                       VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
               iv = bv*ex + wu*qv + w0*s0;
             } else {
+              // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
+              // selects; the ray read here is inward at the upwind point for the inward
+              // pass and for a turned ray, outward otherwise.  Stencil cells of the other
+              // pass hold the wrong branch (near the tangent band): they are dropped and
+              // the bilinear weights renormalised (all valid: the plain bilinear)
+              const bool want_in = inw || (typ == 3);
+              bool ok[4];
+              bool all = true;
+              for (int q = 0; q < 4; ++q) {
+                const int kk = (q < 2) ? k0 : k1;
+                const int jj = (q % 2 == 0) ? j0 : j1;
+                const Real mq = mr_(m,kk,jj,d);
+                ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
+                all = all && ok[q];
+              }
               Real ivu;
               if (all) {
                 ivu = VgdLerp(VgdLerp(rd(k0,j0,iu), rd(k0,j1,iu), uj),
@@ -2591,7 +2605,7 @@ void RadiationM1::VetGdSweep() {
                   const int jj = (q % 2 == 0) ? j0 : j1;
                   const Real wq = ((q < 2) ? (1.0 - uk) : uk)
                                   *((q % 2 == 0) ? (1.0 - uj) : uj);
-                  if (g.ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
+                  if (ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
                 }
                 ivu = (ws > 0.0) ? vs/ws : -1.0;   // none: the upwind source (below)
               }
@@ -2685,19 +2699,21 @@ void RadiationM1::VetGdSweep() {
         for (int qq = q0; qq < q1 && rem == 0; ++qq) {
           const int l = inw ? (n1 - 1 - qq) : (lcut + qq);
           const int i = is + l;
-          VgdGeo gg;
-          VgdGeom(gg, m, k, j, d, i, l, inw, n1, lcut, js, ks, ie, jlo, jhi, klo, khi,
-                  dir_, mbsize, cx1v, cx1f, mr_);
-          if (gg.skip || gg.top || gg.tan0 || gg.typ == 2 || gg.iu == i) {continue;}
-          for (int u = 0; u < 4; ++u) {
-            const int kk = (u < 2) ? gg.k0 : gg.k1;
-            const int jj = (u % 2 == 0) ? gg.j0 : gg.j1;
-            const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
-            const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
-            if (ek == 0 && ej == 0) {continue;}
-            const int oo = 3*(ek + 1) + (ej + 1);
-            if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) < 0) {rem = 1;}
-          }
+          const int ip = inw ? (i + 1) : (i - 1);   // the previous shell of the pass
+          VgdCand(m, k, j, d, i, l, inw, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
+                  mbsize, cx1v, cx1f,
+          [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
+            if (iu != ip) {return;}
+            for (int kk = ka; kk <= kb; ++kk) {
+              for (int jj = ja; jj <= jb; ++jj) {
+                const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
+                const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
+                if (ek == 0 && ej == 0) {continue;}
+                const int oo = 3*(ek + 1) + (ej + 1);
+                if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) < 0) {rem = 1;}
+              }
+            }
+          });
         }
         F_(c) = (dbg == 1) ? 1 : ((dbg == 2) ? 0 : rem);
       });
@@ -2755,23 +2771,21 @@ void RadiationM1::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
-          VgdGeo gg;
-          VgdGeom(gg, m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, ie, jlo, jhi, klo, khi,
-                  dir_, mbsize, cx1v, cx1f, mr_);
-          if (gg.skip || gg.top || gg.tan0 || gg.typ == 2 || gg.iu != i) {return;}
-          for (int q = 0; q < 4; ++q) {
-            const int kk = (q < 2) ? gg.k0 : gg.k1;
-            const int jj = (q % 2 == 0) ? gg.j0 : gg.j1;
-            const Real wq = ((q < 2) ? (1.0 - gg.uk) : gg.uk)
-                            *((q % 2 == 0) ? (1.0 - gg.uj) : gg.uj);
-            if (!gg.all && !(gg.ok[q] && wq > 0.0)) {continue;}
-            const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
-            const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
-            if (ek == 0 && ej == 0) {continue;}
-            const int oo = 3*(ek + 1) + (ej + 1);
-            if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
-            mk_(((m*n + d)*c3b + kk)*c2b + jj) = 1;
-          }
+          VgdCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
+                  mbsize, cx1v, cx1f,
+          [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
+            if (iu != i) {return;}
+            for (int kk = ka; kk <= kb; ++kk) {
+              for (int jj = ja; jj <= jb; ++jj) {
+                const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
+                const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
+                if (ek == 0 && ej == 0) {continue;}
+                const int oo = 3*(ek + 1) + (ej + 1);
+                if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
+                mk_(((m*n + d)*c3b + kk)*c2b + jj) = 1;
+              }
+            }
+          });
         });
       };
       if (inw) {
