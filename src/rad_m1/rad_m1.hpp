@@ -1762,8 +1762,7 @@ class RadiationM1 {
   // entries) instead of flag / scan / pack / expand / dense unpack.  Bitwise: the band
   // gets the same values (see VetGdHaloCompact for when the dense zeros are implied).
   struct VgdHlEntry {
-    DvceArray1D<int> sl, sq;      // (ns): packed band address of each sent value, its
-                                  // compact position (address order)
+    DvceArray1D<int> sl;          // (ns): packed band address of each sent value
     DvceArray1D<int> dl, sr;      // (nr): packed band address, compact source position
     DvceArray1D<int> dw, sw;      // (nw), (3 nw): wall_interp ghosts: address, sources
     std::vector<int> sp, rp;      // (np + 1): partner bounds of the compact messages
@@ -1784,8 +1783,7 @@ class RadiationM1 {
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;
   Real vgd_hl_nmade = 0.0, vgd_hl_nuse = 0.0, vgd_hl_ndense = 0.0;
-  // build scratch: dest / send flags -> positions (address order)
-  DvceArray1D<int> vgd_hl_fn, vgd_hl_fw, vgd_hl_fs;
+  DvceArray1D<int> vgd_hl_fn, vgd_hl_fw;    // build scratch: dest flags -> positions
   // per band array (data pointer) and pass: the build id of the entry whose exchange
   // last wrote each shell's band (0 = never written: all zero; -1 = unknown)
   std::map<const void *, std::array<std::vector<int64_t>, 2>> vgd_hl_gw;

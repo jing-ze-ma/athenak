@@ -1197,28 +1197,6 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
   auto fr_ = fr;
   auto fn_ = vgd_hl_fn;
   auto fw_ = vgd_hl_fw;
-  const size_t stot = static_cast<size_t>(vgd_pdsp[ws].empty() ? 0 :
-                      (vgd_pdsp[ws].back() + vgd_pscnt[ws].back()))*nv;
-  if (vgd_hl_fs.extent(0) < stot + 1) {Kokkos::realloc(vgd_hl_fs, stot + 1);}
-  auto fa_ = vgd_hl_fs;
-  // (0) the sent values in address order of my interior (the pack gathers coalesced
-  // and writes its compact position)
-  par_for("m1_vgd_hl_sflag", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
-  KOKKOS_LAMBDA(const int m, const int o, const int t) {
-    if (hl_(8*m + o) >= 0) {return;}
-    const int oo = (o < 4) ? o : (o + 1);
-    const int dk = oo/3 - 1, dj = oo%3 - 1;
-    const int jn = (dj == 0) ? nx2 : ws;
-    const int kn = (dk == 0) ? nx3 : ws;
-    if (t >= nv*kn*jn) {return;}
-    const int v = t % nv;
-    const int r1 = t/nv;
-    const int kk = r1 % kn;
-    const int jj = r1/kn;
-    const size_t s0 = static_cast<size_t>(so_(ws,8*m + o))*nv;
-    const size_t q = s0 + (v*kn + kk)*jn + jj;
-    fa_(s0 + t) = (fs_(q + 1) > fs_(q)) ? 1 : 0;
-  });
   // (1) the receiver ghosts that the dense unpack fills from at least one sent value
   par_for("m1_vgd_hl_dflag", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
@@ -1229,11 +1207,10 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
     const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
     const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
     if (t >= nv*kn*jn) {return;}
-    // address order of the band (v fastest, then k, then j): coalesced list kernels
-    const int v = t % nv;
-    const int r1 = t/nv;
-    const int kk = r1 % kn;
-    const int jj = r1/kn;
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
     const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nv;
     const size_t q = rb0 + t;
     int fn = 0, fw = 0;
@@ -1260,7 +1237,6 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
       acc += v;
     });
   };
-  scan(vgd_hl_fs, stot);
   scan(vgd_hl_fn, rtot);
   scan(vgd_hl_fw, rtot);
   int nrw[2] = {0, 0};
@@ -1276,15 +1252,14 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
   const int ns = pbh[np] - pbh[0];
   const int nr = nrw[0], nw = nrw[1];
   // every array at least its new size (capacity kept); the budget on the sum
-  const size_t nsz[6] = {static_cast<size_t>(std::max(ns, 1)),
-                         static_cast<size_t>(std::max(ns, 1)),
+  const size_t nsz[5] = {static_cast<size_t>(std::max(ns, 1)),
                          static_cast<size_t>(std::max(nr, 1)),
                          static_cast<size_t>(std::max(nr, 1)),
                          static_cast<size_t>(std::max(nw, 1)),
                          static_cast<size_t>(std::max(3*nw, 1))};
-  DvceArray1D<int> *arr[6] = {&E.sl, &E.sq, &E.dl, &E.sr, &E.dw, &E.sw};
+  DvceArray1D<int> *arr[5] = {&E.sl, &E.dl, &E.sr, &E.dw, &E.sw};
   size_t have = 0, after = 0;
-  for (int q = 0; q < 6; ++q) {
+  for (int q = 0; q < 5; ++q) {
     have += arr[q]->extent(0);
     after += std::max(arr[q]->extent(0), nsz[q]);
   }
@@ -1315,7 +1290,7 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
       E.nofit = true;
       return false;
     }
-    for (int q = 0; q < 6; ++q) {
+    for (int q = 0; q < 5; ++q) {
       if (arr[q]->extent(0) < nsz[q]) {Kokkos::realloc(*arr[q], nsz[q]);}
     }
     vgd_hl_bytes += sizeof(int)*(after - have);
@@ -1325,8 +1300,7 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
   auto sr_ = E.sr;
   auto dw_ = E.dw;
   auto sw_ = E.sw;
-  // (2) the send list in address order: band address and compact position
-  auto sq_ = E.sq;
+  // (2) the send list (the compact pack's addresses)
   par_for("m1_vgd_hl_slist", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
     if (hl_(8*m + o) >= 0) {return;}
@@ -1335,17 +1309,15 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
     const int jn = (dj == 0) ? nx2 : ws;
     const int kn = (dk == 0) ? nx3 : ws;
     if (t >= nv*kn*jn) {return;}
-    const size_t s0 = static_cast<size_t>(so_(ws,8*m + o))*nv;
-    if (fa_(s0 + t + 1) == fa_(s0 + t)) {return;}
-    const int v = t % nv;
-    const int r1 = t/nv;
-    const int kk = r1 % kn;
-    const int jj = r1/kn;
-    const size_t q = s0 + (v*kn + kk)*jn + jj;
+    const size_t q = static_cast<size_t>(so_(ws,8*m + o))*nv + t;
+    if (fs_(q + 1) == fs_(q)) {return;}
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
     const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
     const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
-    sl_(fa_(s0 + t)) = ((m*nv + v)*c3 + ks2 + kk)*c2 + js2 + jj;
-    sq_(fa_(s0 + t)) = fs_(q);
+    sl_(fs_(q)) = ((m*nv + v)*c3 + ks2 + kk)*c2 + js2 + jj;
   });
   // (3) the receive lists
   par_for("m1_vgd_hl_rlist", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
@@ -1357,11 +1329,10 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
     const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
     const int jn = (dj == 0) ? nx2 : ws, kn = (dk == 0) ? nx3 : ws;
     if (t >= nv*kn*jn) {return;}
-    // address order of the band (v fastest, then k, then j): coalesced list kernels
-    const int v = t % nv;
-    const int r1 = t/nv;
-    const int kk = r1 % kn;
-    const int jj = r1/kn;
+    const int v = t/(kn*jn);
+    const int r1 = t - v*kn*jn;
+    const int kk = r1/jn;
+    const int jj = r1 - kk*jn;
     const size_t rb0 = static_cast<size_t>(ro_(ws,8*m + o))*nv;
     const size_t q = rb0 + t;
     const int ad = ((m*nv + v)*c3 + kd + kk)*c2 + jd + jj;
@@ -1478,7 +1449,6 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
     // ---- the list path ----
     const VgdHlEntry &X = vgd_hle[ex];
     auto sl_ = X.sl;
-    auto sq_ = X.sq;
     const int c2_ = c2, c3_ = c3, nv_ = nv;
     if (X.ns > 0) {
       Kokkos::parallel_for("m1_vgd_hl_pack", Kokkos::RangePolicy<>(vgd_cur, 0, X.ns),
@@ -1490,8 +1460,8 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
         ad /= c3_;
         const int v = ad % nv_;
         const int m = ad/nv_;
-        csb_(sq_(c)) = a_(m,v,kb,jb,i);
-        if (two) {csb2_(sq_(c)) = b_(m,v,kb,jb,i);}
+        csb_(c) = a_(m,v,kb,jb,i);
+        if (two) {csb2_(c) = b_(m,v,kb,jb,i);}
       });
     }
     vgd_cur.fence();
