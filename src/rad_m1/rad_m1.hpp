@@ -612,6 +612,7 @@ class RadiationM1 {
   // mean of the formal-solution H+-), implicit_thin_bq = lin (outer Marshak q from the
   // face-extrapolated H+ of the top cell), the js factor limit
   bool thsw_js = false, thsw_bqlin = false;
+  bool thsw_jse = false;   // js weighted by the thermal fraction eps of the face
   Real thsw_jslim = 2.0;
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
