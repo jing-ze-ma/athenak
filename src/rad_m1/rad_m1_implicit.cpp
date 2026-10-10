@@ -1664,6 +1664,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_muscl) {
       impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
       impl_muscl_damp = pin->GetOrAddReal("rad_m1","implicit_hr_damp",0.0);
+      impl_muscl_qs = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs",0.0);
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -12387,6 +12388,12 @@ void RadiationM1::ImplicitMusclBuild() {
   // EVERY pass (the two linearisations of a face value agree only for a and b of the
   // current iterate, so the fixed point is conservative and the full van Leer scheme)
   const bool led = impl_muscl_led;
+  // implicit_hr_recon_qs = eps > 0 (B3): plm only where the field is QUASI-STEADY over the
+  // step, |E^k - E^n| <= eps E^n in the cell and its neighbours along the axis.  A front
+  // that crosses many cells in one step (X >> 1) changes E by orders of magnitude there and
+  // stays donor cell (no implicit 2nd-order upwind row is an M-matrix there: XTHINFIX.md
+  // B2); a steady thin top keeps plm.
+  const Real qse = impl_muscl_qs;
   if (led || muscl_nbuild < impl_muscl_nfresh) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
@@ -12425,7 +12432,22 @@ void RadiationM1::ImplicitMusclBuild() {
         const Real e0 = iw_(m,M1_IW_EP,k,j,i);
         const Real ea = e0 - iw_(m,M1_IW_EP,km,jm,im);
         const Real eb = iw_(m,M1_IW_EP,kp,jp,ip) - e0;
-        if (ea*eb > 0.0) {
+        if (qse > 0.0) {
+          auto qs = [&](const int kk, const int jj, const int ii) {
+            const Real en = iw_(m,M1_IW_EN,kk,jj,ii);
+            return fabs(iw_(m,M1_IW_EP,kk,jj,ii) - en) <= qse*en;
+          };
+          // the neighbours' E^n is read in the block only (E^n ghosts are not exchanged)
+          bool q = qs(k,j,i);
+          const bool inm = (d == 0) ? (im >= is && im <= ie)
+                                    : ((d == 1) ? (jm >= js) : (km >= ks));
+          const bool inp = (d == 0) ? (ip >= is && ip <= ie)
+                                    : ((d == 1) ? (jp <= je) : (kp <= ke));
+          if (inm) {q = q && qs(km,jm,im);}
+          if (inp) {q = q && qs(kp,jp,ip);}
+          ok = ok && q;
+        }
+        if (ok && ea*eb > 0.0) {
           if (led) {   // s = 2 ea eb/(ea + eb) = a ea = b eb
             sg = 2.0*eb/(ea + eb);
             sb = 2.0*ea/(ea + eb);
