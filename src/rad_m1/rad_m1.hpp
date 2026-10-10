@@ -65,7 +65,8 @@ constexpr int M1_VET_D11 = 16;  // vet_tensor = full: the GUARDED D = K/J handed
 constexpr int M1_VET_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
 constexpr int M1_VET_HP1 = 23;  // hrup-1009: sum w I max(mu_a, 0), a = 1 2 3 (half-range)
 constexpr int M1_VET_NL  = 26;  // thinsw-1010: sum w |I - S| (C1 non-locality), fs only
-constexpr int M1_VET_NC  = 27;
+constexpr int M1_VET_EPS = 27;  // thinsw-1010: thermal fraction min(kappa_P/chi, 1) (fs)
+constexpr int M1_VET_NC  = 28;
 // tau_ten slots of the LATERAL correction (vet_col_lat; the cs CS2 interface): dD_ab in
 // the mesh basis, order rr, r-a, r-b, aa, ab, bb (sp: a = theta, b = phi)
 constexpr int M1_TT_LAT0 = 4;

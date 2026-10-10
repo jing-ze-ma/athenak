@@ -377,8 +377,13 @@ Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int 
   // fsq (qp > 0): the non-locality terms count only where the formal solution
   // describes E, q_c = min(E^n/J, J/E^n)^qp (a time-resolved thin transient has J far
   // from E^n: its lagged quasi-static rays are not the field, keep it central there)
+  // fse (qp < 0): the non-locality terms weighted by the thermal fraction eps of the
+  // cell (M1_VET_EPS): with S from the gas the rays of t^n are the field's own; with
+  // S = E^n (scattering) they lag a transient by a light-crossing time
   Real qc = 1.0;
-  if (qp > 0.0) {
+  if (qp < 0.0) {
+    qc = vc(m,M1_VET_EPS,k,j,i);
+  } else if (qp > 0.0) {
     const Real a = fmax(en, 0.0), b = fmax(jj, 0.0);
     qc = (fmax(a, b) > 0.0) ? pow(fmin(a, b)/fmax(a, b), qp) : 1.0;
   }
@@ -1826,14 +1831,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {
     // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace)
     std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch","none");
-    const char *tnm[8] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi"};
+    const char *tnm[9] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi", "fse"};
     impl_thsw = -1;
-    for (int q = 0; q < 8; ++q) {
+    for (int q = 0; q < 9; ++q) {
       if (sts.compare(tnm[q]) == 0) {impl_thsw = q;}
     }
     if (impl_thsw < 0) {
       ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
-                + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi)");
+                + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi | "
+                + "fse)");
     }
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
@@ -1857,7 +1863,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                   + "' is not a choice (none | lag | sc | hc)");
       }
       thsw_c1 = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
-                 impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI);
+                 impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
+                 impl_thsw == M1_THSW_FSE);
       if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
         ImplFatal("<rad_m1>: implicit_thin_h1 must exceed implicit_thin_h0, and "
                   "implicit_thin_kn0 / implicit_thin_knp must be positive");
@@ -3090,7 +3097,8 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const bool tfs = thsw_c1;
     const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
     const Real tkn0 = thsw_kn0, tknp = thsw_knp;
-    const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp : 0.0;
+    const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
+                     : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
     const Real tqi = thsw_qp;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -10199,7 +10207,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool tfs = thsw_c1;
       const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
       const Real tkn0 = thsw_kn0, tknp = thsw_knp;
-      const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp : 0.0;
+      const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
+                       : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
       const Real tqi = thsw_qp;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

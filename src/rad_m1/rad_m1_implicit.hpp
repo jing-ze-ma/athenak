@@ -242,6 +242,7 @@ constexpr int M1_THSW_HJKN = 4;   // max(hj, kn)
 constexpr int M1_THSW_FSKN = 5;   // max(fs, kn)
 constexpr int M1_THSW_FSI  = 7;   // fs weight; h+- -> isotropic +-1/4 where the rays
                                   // do not describe E^n (M1ThinHr)
+constexpr int M1_THSW_FSE  = 8;   // max(|H|/J, eps C1/1.5), eps the thermal fraction
 constexpr int M1_THSW_FSQ  = 6;   // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
 // <rad_m1>/implicit_thin_corr: the lagged formal-solution face flux (C4)
 constexpr int M1_THCR_NONE = 0;

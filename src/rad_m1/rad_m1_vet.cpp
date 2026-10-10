@@ -3197,7 +3197,12 @@ void RadiationM1::VetShortChar() {
       if (hrs_) {
         for (int n = 0; n < 3; ++n) {vcd_(m,M1_VET_HP1+n,k,j,i) = 0.0;}
       }
-      if (nls_) {vcd_(m,M1_VET_NL,k,j,i) = 0.0;}
+      if (nls_) {
+        vcd_(m,M1_VET_NL,k,j,i) = 0.0;
+        // vacuum (no extinction): no lagged scattering source, eps = 1
+        const Real eps = thermal ? fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0) : 0.0;
+        vcd_(m,M1_VET_EPS,k,j,i) = !(opd_(m,M1_OP_T,k,j,i) > 0.0) ? 1.0 : eps;
+      }
     });
   } else {
     par_for("m1_vet_src", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -3229,7 +3234,12 @@ void RadiationM1::VetShortChar() {
         vc_(m,M1_VET_CHX,k,j,i) = chx;
         vc_(m,M1_VET_SRC,k,j,i) = s;
         for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
-        if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
+        if (nls_) {
+          vc_(m,M1_VET_NL,k,j,i) = 0.0;
+          vc_(m,M1_VET_EPS,k,j,i) = !(opac_(m,M1_OP_T,k,j,i) > 0.0) ? 1.0
+                                    : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/chx, 1.0)
+                                               : 0.0);
+        }
       }
     });
   }
