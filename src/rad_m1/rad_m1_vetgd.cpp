@@ -2859,10 +2859,12 @@ void RadiationM1::VetGdSweep() {
       pend = false;
       const int wsx = inw ? vgd_wsi[i] : vgd_wso[i];
       // vet_gd_fuse_shells = H > 1 (NOT bitwise): exchange only every H-th shell of the
-      // pass and its last one, once the exact lists of the shell exist (the first sweep of
-      // a direction set exchanges every shell); a skipped shell's readers take the band
-      // of the last sweep (a lagged inflow; the exact lists never zero a band value)
-      if (fh > 1 && ((q + 1) % fh) != 0 && q + 1 < nsh) {
+      // pass (the set shifts by one shell per sweep, so every shell is exchanged once in
+      // H sweeps) and its last one, once the exact lists of the shell exist (the first
+      // sweep of a direction set exchanges every shell); a skipped shell's readers take
+      // the band of its last exchange, at most H - 1 sweeps old (a lagged inflow; the
+      // exact lists never zero a band value)
+      if (fh > 1 && ((q + vgd_hsweep) % fh) != 0 && q + 1 < nsh) {
         const int e = pass*(indcs.nx1 + 2*indcs.ng) + i;
         if (VetGdHxKey(e, wsx) && vgd_hxe[e].exact) {
           vgd_fuse_nskip += 1.0;
