@@ -452,13 +452,27 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
   alw = w;
   ccl = w*ch*hpl;
   ccr = w*ch*hmr;
+  // the quasi-steadiness gate of the lagged formal-solution flux: q = r^2, r = the worse
+  // of the two cells' min(E^n/J, J/E^n).  The SC field of t^n is quasi-static (no light
+  // travel time): ahead of a front (E^n << J) or behind it (E^n >> J) its flux does not
+  // describe E, and a correction there drains or floods cells (beams, cycle 0).  q = 1
+  // in a steady field; it depends on neither dt nor the iterate.
+  Real q = 1.0;
+  if (corr == M1_THCR_HC || corr == M1_THCR_LAG) {
+    const Real al = fmax(enl, 0.0), bl = fmax(jl, 0.0), ar = fmax(enr, 0.0);
+    const Real br = fmax(jr, 0.0);
+    const Real rl = (fmax(al, bl) > 0.0) ? fmin(al, bl)/fmax(al, bl) : 1.0;
+    const Real rr = (fmax(ar, br) > 0.0) ? fmin(ar, br)/fmax(ar, br) : 1.0;
+    const Real r = fmin(rl, rr);
+    q = r*r;
+  }
   if (corr == M1_THCR_HC && w > 0.0) {
     // the formal solution's own central-minus-upwind face flux: O(dx), independent of
     // E^n (no explicit transport at c dt/dx >> 1); the upwind part at the formal
     // solution's J then carries the central SC flux, clamped to |F| <= c J (donor)
     const Real hup = hpl*jl + hmr*jr;
     const Real hf = fmin(fmax(0.5*(hdl + hdr), -jr), jl);
-    dg = w*ch*(hf - hup);
+    dg = q*w*ch*(hf - hup);
   } else if (corr != M1_THCR_NONE && w > 0.0) {
     Real hf = 0.5*(hdl + hdr);
     hf = fmin(fmax(hf, -fmax(enr, 0.0)), fmax(enl, 0.0));
@@ -467,7 +481,7 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
       ccr = 0.0;
       dg = w*ch*hf;
     } else {
-      dg = w*ch*hf - ccl*enl - ccr*enr;
+      dg = q*(w*ch*hf - ccl*enl - ccr*enr);
     }
   }
 }
@@ -3065,7 +3079,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
       if (thsw) {
         ImplicitHaloExchange(1, M1_IW_TA);
         ImplicitHaloExchange(1, M1_IW_TB);
-        if (tcorr == M1_THCR_HC) {ImplicitHaloExchange(1, M1_IW_TC);}
+        if (tcorr != M1_THCR_NONE) {ImplicitHaloExchange(1, M1_IW_TC);}
       }
       auto fw = (d == 1) ? fw2 : fw3;
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
