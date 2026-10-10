@@ -1665,6 +1665,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
       impl_muscl_damp = pin->GetOrAddReal("rad_m1","implicit_hr_damp",0.0);
       impl_muscl_qs = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs",0.0);
+      impl_muscl_kill = (pin->GetOrAddString("rad_m1","implicit_hr_pos","kill")
+                         .compare("floor") != 0);
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -10935,7 +10937,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (!(emin > 0.0) && muscl_now) {
           // Fix B: dc (sig = 0) in the cells within 2 of a cell solved to E <= 0, for
           // the rest of the step; the next pass rebuilds the row from it (counted)
-          ImplicitMusclKill();
+          if (impl_muscl_kill) {ImplicitMusclKill();}
           muscl_nfall += 1.0;
         }
         if (!(emin > 0.0) && vimp_now) {
@@ -11005,7 +11007,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             vimp_nfall += 1.0;
           }
           if (muscl_now) {
-            ImplicitMusclKill();
+            if (impl_muscl_kill) {ImplicitMusclKill();}
             muscl_nfall += 1.0;
           }
         }
@@ -12388,11 +12390,11 @@ void RadiationM1::ImplicitMusclBuild() {
   // EVERY pass (the two linearisations of a face value agree only for a and b of the
   // current iterate, so the fixed point is conservative and the full van Leer scheme)
   const bool led = impl_muscl_led;
-  // implicit_hr_recon_qs = eps > 0 (B3): plm only where the field is QUASI-STEADY over the
-  // step, |E^k - E^n| <= eps E^n in the cell and its neighbours along the axis.  A front
-  // that crosses many cells in one step (X >> 1) changes E by orders of magnitude there and
-  // stays donor cell (no implicit 2nd-order upwind row is an M-matrix there: XTHINFIX.md
-  // B2); a steady thin top keeps plm.
+  // implicit_hr_recon_qs = eps > 0 (B3): plm only where the field is QUASI-STEADY over
+  // the step, |E^k - E^n| <= eps E^n in the cell and its neighbours along the axis.  A
+  // front that crosses many cells in one step (X >> 1) changes E by orders of magnitude
+  // there and stays donor cell (no implicit 2nd-order upwind row is an M-matrix there:
+  // XTHINFIX.md B2); a steady thin top keeps plm.
   const Real qse = impl_muscl_qs;
   if (led || muscl_nbuild < impl_muscl_nfresh) {
   const bool first = (muscl_nbuild == 0);
