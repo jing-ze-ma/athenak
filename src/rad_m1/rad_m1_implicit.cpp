@@ -368,10 +368,12 @@ template <class V>
 KOKKOS_INLINE_FUNCTION
 Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int j,
                 const int i, const int d, const Real fb, const bool fs, const Real fsa,
-                const Real fsj, Real &hd) {
+                const Real fsj, Real &hd, Real &jo) {
   hd = 0.0;
+  jo = 0.0;
   if (src != 1) {return fb;}
   const Real jj = vc(m,M1_VET_J,k,j,i);
+  jo = fmax(jj, 0.0);
   if (!(jj > 0.0)) {
     return (fs && vc(m,M1_VET_SRC,k,j,i) > 0.0) ? 1.0 : fb;
   }
@@ -412,14 +414,18 @@ Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int 
 //!        F_hr(E') + (F_sc^n - F_hr(E^n)), the formal-solution flux at the fixed point of
 //!        a steady field, as a FIXED source (no Picard cost);
 //!   sc:  HCL = HCR = 0, DG = w ch Hf (the lagged formal-solution flux itself);
-//! Hf = (H_L + H_R)/2 clamped to [-E^n_R, E^n_L] (|F| <= c E of the donor cell).
+//!   hc:  DG = w ch (Hf - H+_L - H-_R) (formal-solution H+- = h+- J): the SC's own
+//!        central-minus-upwind face flux, O(dx) and free of E^n (stable at any c dt/dx);
+//! Hf = (H_L + H_R)/2 clamped to [-E^n_R, E^n_L] (|F| <= c E of the donor cell; hc:
+//! [-J_R, J_L]).
 
 KOKKOS_INLINE_FUNCTION
 void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
                 const Real gl, const Real gr, const Real tauf, const Real enl,
-                const Real enr, const Real hdl, const Real hdr, const Real h0,
-                const Real h1, const Real kn0, const Real knp, const Real ch,
-                Real &alw, Real &ccl, Real &ccr, Real &dg) {
+                const Real enr, const Real hdl, const Real hdr, const Real jl,
+                const Real jr, const Real h0, const Real h1, const Real kn0,
+                const Real knp, const Real ch, Real &alw, Real &ccl, Real &ccr,
+                Real &dg) {
   dg = 0.0;
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
@@ -446,7 +452,14 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
   alw = w;
   ccl = w*ch*hpl;
   ccr = w*ch*hmr;
-  if (corr != M1_THCR_NONE && w > 0.0) {
+  if (corr == M1_THCR_HC && w > 0.0) {
+    // the formal solution's own central-minus-upwind face flux: O(dx), independent of
+    // E^n (no explicit transport at c dt/dx >> 1); the upwind part at the formal
+    // solution's J then carries the central SC flux, clamped to |F| <= c J (donor)
+    const Real hup = hpl*jl + hmr*jr;
+    const Real hf = fmin(fmax(0.5*(hdl + hdr), -jr), jl);
+    dg = w*ch*(hf - hup);
+  } else if (corr != M1_THCR_NONE && w > 0.0) {
     Real hf = 0.5*(hdl + hdr);
     hf = fmin(fmax(hf, -fmax(enr, 0.0)), fmax(enl, 0.0));
     if (corr == M1_THCR_SC) {
@@ -1789,9 +1802,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         impl_thsw_corr = M1_THCR_LAG;
       } else if (scr.compare("sc") == 0) {
         impl_thsw_corr = M1_THCR_SC;
+      } else if (scr.compare("hc") == 0) {
+        impl_thsw_corr = M1_THCR_HC;
       } else if (scr.compare("none") != 0) {
         ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
-                  + "' is not a choice (none | lag | sc)");
+                  + "' is not a choice (none | lag | sc | hc)");
       }
       thsw_c1 = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN);
       if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
@@ -3018,7 +3033,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     auto hgh_ = vgd_hr;
     // thinsw-1010 (implicit_thin_switch): the faces are built at the first pass of the
     // solve only (every input is fixed for it); the cell thinness g rides in RES, the
-    // formal-solution flux H_d in TA and E^n in TB (all free at this point of the pass)
+    // formal-solution flux H_d in TA, E^n in TB and J in TC (free at this point)
     const int tmode = impl_thsw;
     const bool thsw = (tmode != M1_THSW_NONE);
     if (thsw && !first) {return;}
@@ -3034,10 +3049,11 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         iw_(m,M1_IW_S1,k,j,i) = hp;
         iw_(m,M1_IW_S3,k,j,i) = hm;
         if (thsw) {
-          Real hd;
-          fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, hd);
+          Real hd, jo;
+          fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, hd, jo);
           iw_(m,M1_IW_TA,k,j,i) = hd;
           iw_(m,M1_IW_TB,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+          iw_(m,M1_IW_TC,k,j,i) = jo;
         }
         // beam_kn: the light-front flag (M1HrJFlag) rides in RES as fb + 2 (fb <= 1)
         if (bxmode == 2) {fb += 2.0*M1HrJFlag(hsrc, iw_, hvc_, m, k, j, i);}
@@ -3049,6 +3065,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
       if (thsw) {
         ImplicitHaloExchange(1, M1_IW_TA);
         ImplicitHaloExchange(1, M1_IW_TB);
+        if (tcorr == M1_THCR_HC) {ImplicitHaloExchange(1, M1_IW_TC);}
       }
       auto fw = (d == 1) ? fw2 : fw3;
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
@@ -3079,7 +3096,8 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
           M1ThinFace(tmode, tcorr, iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,k,j,i),
                      iw_(m,M1_IW_RES,km,jm,i), iw_(m,M1_IW_RES,k,j,i), tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
-                     iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i), th0, th1, tkn0,
+                     iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
+                     iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i), th0, th1, tkn0,
                      tknp, ch, al, hl, hr, dgt);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
@@ -10191,14 +10209,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                    hmr, fbr);
           Real alb, hlb, hrb;
           if (tmode != M1_THSW_NONE) {   // thinsw-1010
-            Real hdl, hdr, dgt;
+            Real hdl, hdr, jl, jr, dgt;
             const Real gl = M1ThinCell(hsrc, hvc_, m, k, j, im, 0, fbl, tfs, tfsa, tfsj,
-                                       hdl);
+                                       hdl, jl);
             const Real gr = M1ThinCell(hsrc, hvc_, m, k, j, ip, 0, fbr, tfs, tfsa, tfsj,
-                                       hdr);
+                                       hdr, jr);
             M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
-                       iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, th0, th1, tkn0, tknp, ch, alb,
-                       hlb, hrb, dgt);
+                       iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr, th0, th1, tkn0, tknp,
+                       ch, alb, hlb, hrb, dgt);
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;

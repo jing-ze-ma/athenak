@@ -244,6 +244,7 @@ constexpr int M1_THSW_FSKN = 5;   // max(fs, kn)
 constexpr int M1_THCR_NONE = 0;
 constexpr int M1_THCR_LAG  = 1;   // + w (F_sc^n - F_hr(E^n)), a fixed source
 constexpr int M1_THCR_SC   = 2;   // w F_sc^n replaces the half-range part
+constexpr int M1_THCR_HC   = 3;   // + w (F_sc,central - F_sc,upwind)^n (no E^n term)
 
 // <rad_m1>/implicit_blend_fmode: which of the two cells' lagged reduced fluxes sets
 // f_face.
