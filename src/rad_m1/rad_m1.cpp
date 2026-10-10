@@ -1088,6 +1088,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_overlap_mb")) {
       vgd_ovl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_overlap_mb"));
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_exact")) {
+      vgd_hx_on = pin->GetBoolean("rad_m1","vet_gd_halo_exact");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_fuse_shells")) {
       vgd_fuse_h = std::max(1, pin->GetInteger("rad_m1","vet_gd_fuse_shells"));
     }

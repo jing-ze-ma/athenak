@@ -1608,6 +1608,14 @@ void RadiationM1::VetColReport() {
                   << ", GPU: <= free/2); exchanges by list " << vgd_hl_nuse << ", dense "
                   << vgd_hl_ndense << std::endl;
       }
+      if (vgd_hx_on) {
+        std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made "
+                  << vgd_hx_nmade << ", fallbacks " << vgd_hx_nfall
+                  << " (marked reads outside the masks' region " << vgd_hx_nout
+                  << "); received values per list: exact/mask "
+                  << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
+                  << std::endl;
+      }
       if (vgd_ovl_g > 0 || vgd_fuse_h > 1) {
         std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_overlap=" << vgd_ovl_g
                   << " split shells " << vgd_ovl_nsplit << " (remote items "
