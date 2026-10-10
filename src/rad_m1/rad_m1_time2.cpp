@@ -160,6 +160,39 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
   }
+  // time2_vet_sc (torder-1010, read only when named; default lag): when the vet_sc
+  // tensor of the two stage solves is built.  Both stages sit at t^{n+1} (c = 1), so
+  // D(U^n) is an O(dt) lag and the step is FIRST order in time wherever the tensor
+  // changes (torder_1010: pulse_k12.8 T 1.05 1.03 1.02; eddington or the extrapolated
+  // D* give 2.00).  The modes are those of time2_vet_col (Time2VetColAt):
+  //   lag     : D(U^n) for both stages (time2_vet_extrap = true: D* extrapolated)
+  //   predict : ONE formal solution per step at P = (stage-1 start) + dt K1, i.e. at
+  //             t^{n+1} + O(dt^2); same cost as lag
+  //   rebuild : predict for stage 1, a second formal solution at Y1 for stage 2
+  t2_vsmode = 0;
+  if (vet_sc && pin->DoesParameterExist("rad_m1", "time2_vet_sc")) {
+    std::string vm = pin->GetString("rad_m1", "time2_vet_sc");
+    if (vm.compare("lag") == 0) {
+      t2_vsmode = 0;
+    } else if (vm.compare("predict") == 0) {
+      t2_vsmode = 1;
+    } else if (vm.compare("rebuild") == 0) {
+      t2_vsmode = 2;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_vet_sc = '" << vm
+                << "' is not a choice (lag | predict | rebuild)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    const bool every = pin->DoesParameterExist("rad_m1", "vet_sc_every") &&
+                       (pin->GetInteger("rad_m1", "vet_sc_every") > 1);
+    if (t2_vsmode != 0 && (t2_vext || every)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_vet_sc = " << vm << " excludes "
+                << "time2_vet_extrap = true and vet_sc_every > 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // time2_vet_col (closure = vet_col; m1-sp-order2b, tests_m1/runs_5q_sporder2b): when
   // the vet_col tensor (and surface q) of the two stage solves is built.  Both stages
   // sit at t^{n+1} (c = 1), so D(U^n) is an O(dt) lag and the step first order in time.
@@ -756,8 +789,9 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2VetColAt
-//! \brief closure = vet_col, time2_vet_col = predict | rebuild (m1-sp-order2b): the
-//! formal solution of a state at t^{n+1} accurate to O(dt^2), in place of U^n.
+//! \brief closure = vet_col, time2_vet_col = predict | rebuild (m1-sp-order2b), and
+//! closure = vet_sc, time2_vet_sc = predict | rebuild (torder-1010, no inner face flux):
+//! the formal solution of a state at t^{n+1} accurate to O(dt^2), in place of U^n.
 //!   which = 1 (stage 1): P = the stage-1 start + dt K1: radiation E^n + dt K1_E, the
 //!             inner face flux F^n + dt K1_F, gas = the Heun predictor + dt K1 of the
 //!             momentum and total energy (the implicit coupling's rate; the hydro u0 is
@@ -798,13 +832,18 @@ void RadiationM1::Time2VetColAt(int which) {
   auto f0_ = f0x1;
   auto t2f1_ = t2f1;
   const Real efl = e_floor;
-  // the inner face flux (vet_col_order2 core rays): saved in slot 5 at i = is
-  par_for("m1_t2_vcf", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    const Real f = f0_(m,k,j,is);
-    vn_(m,5,k,j,is) = f;
-    f0_(m,k,j,is) = two ? (2.0*f - t2f1_(m,k,j,is)) : (f + dt*k1_(m,M1_T2_F1,k,j,is));
-  });
+  // the inner face flux (vet_col_order2 core rays): saved in slot 5 at i = is.
+  // closure = vet_sc (time2_vet_sc, torder-1010) does not read it
+  const bool vcol = vet_col;
+  if (vcol) {
+    par_for("m1_t2_vcf", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const Real f = f0_(m,k,j,is);
+      vn_(m,5,k,j,is) = f;
+      f0_(m,k,j,is) = two ? (2.0*f - t2f1_(m,k,j,is))
+                          : (f + dt*k1_(m,M1_T2_F1,k,j,is));
+    });
+  }
   if (hh) {
     Kokkos::deep_copy(DevExeSpace(), vet_opac, opac);
     auto uh = fl.u0;
@@ -844,7 +883,11 @@ void RadiationM1::Time2VetColAt(int which) {
       iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
     });
   }
-  VetColBuild();
+  if (vcol) {
+    VetColBuild();
+  } else {
+    VetShortChar();
+  }
   if (hh) {
     Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
   }
@@ -855,7 +898,7 @@ void RadiationM1::Time2VetColAt(int which) {
       iw_(m,M1_IW_TP,k,j,i) = vn_(m,1,k,j,i);
       iw_(m,M1_IW_KT,k,j,i) = vn_(m,2,k,j,i);
     }
-    if (i == is) {
+    if (vcol && i == is) {
       f0_(m,k,j,is) = vn_(m,5,k,j,is);
     }
   });
@@ -1002,6 +1045,10 @@ void RadiationM1::Time2Report() {
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
                                        ((t2_vcmode == 2) ? "rebuild" : "extrap"))
+              << " fallbacks=" << t2_vcnfb;
+  }
+  if (vet_sc && t2_vsmode != 0) {
+    std::cout << " time2_vet_sc=" << ((t2_vsmode == 1) ? "predict" : "rebuild")
               << " fallbacks=" << t2_vcnfb;
   }
   std::cout << std::endl;

@@ -9695,9 +9695,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   TmrMark(2);
   if (vetsc) {
     if (t2s == M1_T2S_STAGE1) {
-      Time2VetStart();          // at U^n, then D* extrapolated to the stage time
-    } else if (t2s != M1_T2S_STAGE2) {
-      VetShortChar();           // stage 2 keeps D* of stage 1
+      // time2_vet_sc = predict | rebuild (torder-1010): at U^n + dt K1 (t^{n+1});
+      // lag: at U^n, then D* extrapolated to the stage time when time2_vet_extrap
+      if (t2_vsmode != 0) {
+        Time2VetColAt(1);
+      } else {
+        Time2VetStart();
+      }
+    } else if (t2s == M1_T2S_STAGE2) {
+      if (t2_vsmode == 2) {Time2VetColAt(2);}   // rebuild: at the stage-1 solution
+    } else {
+      VetShortChar();           // backward Euler (lag/predict: stage 2 keeps stage 1's)
       if (t2s == M1_T2S_BESTORE) {t2_vprev = false;}
     }
   }
@@ -12340,7 +12348,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // new (E, F) and the sign structure of the last pass's stencil, every N solves
   if (vet_col && tau_ready) {VetGdRealDiag();}
   // time2_vet_col = rebuild: E and T of the stage-1 solution for the stage-2 build
-  if (vet_col && t2_vcmode == 2 && t2s == M1_T2S_STAGE1) {
+  if (((vet_col && t2_vcmode == 2) || (vet_sc && t2_vsmode == 2)) &&
+      t2s == M1_T2S_STAGE1) {
     Time2VetColSaveY1();
   }
   // DIAGNOSTIC <rad_m1>/dbg_cell_lo..hi (default off): per-cell budget after the solve
