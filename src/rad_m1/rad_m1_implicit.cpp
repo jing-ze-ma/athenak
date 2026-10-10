@@ -408,6 +408,29 @@ Real M1ThinCell(const int src, const V &vc, const int m, const int k, const int 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1ThinHr
+//! \brief thinsw-1010 (implicit_thin_switch = fsi): the half-range ratios of one cell,
+//! hp -> qq hp + (1 - qq)/4 and hm -> qq hm - (1 - qq)/4, qq = max(min(E^n/J, J/E^n)^qp,
+//! smoothstep((fb - h0)/(h1 - h0))): where the quasi-static rays of t^n neither
+//! describe E^n (a time-resolved transient: J far from E^n) nor see a beam (|H|/J = fb
+//! small), the upwind part falls back to the ISOTROPIC half-range flux c (E_L - E_R)/4
+//! (consistent, first order, M-matrix) instead of an O(1)-wrong lagged angular shape.
+//! Only vet_sc (src 1) cells with J > 0 change.
+
+KOKKOS_INLINE_FUNCTION
+void M1ThinHr(const Real qp, const Real en, const Real jo, const Real fb,
+              const Real h0, const Real h1, Real &hp, Real &hm) {
+  if (!(jo > 0.0) || hp < 0.0) {return;}
+  const Real a = fmax(en, 0.0);
+  const Real r = fmin(a, jo)/fmax(a, jo);
+  Real s = fmin(fmax((fb - h0)/(h1 - h0), 0.0), 1.0);
+  s = s*s*(3.0 - 2.0*s);
+  const Real qq = fmax(pow(r, qp), s);
+  hp = qq*hp + 0.25*(1.0 - qq);
+  hm = qq*hm - 0.25*(1.0 - qq);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ThinFace
 //! \brief thinsw-1010: AL, HCL, HCR and the lagged additive flux DG of one half-range
 //! face under implicit_thin_switch.  No dt and no tau_cell enter the weight:
@@ -1803,14 +1826,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {
     // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace)
     std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch","none");
-    const char *tnm[7] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq"};
+    const char *tnm[8] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi"};
     impl_thsw = -1;
-    for (int q = 0; q < 7; ++q) {
+    for (int q = 0; q < 8; ++q) {
       if (sts.compare(tnm[q]) == 0) {impl_thsw = q;}
     }
     if (impl_thsw < 0) {
       ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
-                + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq)");
+                + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi)");
     }
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
@@ -1819,7 +1842,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       thsw_knp = pin->GetOrAddReal("rad_m1","implicit_thin_knp",4.0);
       thsw_fsa = pin->GetOrAddReal("rad_m1","implicit_thin_fsa",0.0);
       thsw_fsj = pin->GetOrAddReal("rad_m1","implicit_thin_fsj",0.0);
-      if (impl_thsw == M1_THSW_FSQ) {
+      if (impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI) {
         thsw_qp = pin->GetOrAddReal("rad_m1","implicit_thin_qp",8.0);
       }
       std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr","none");
@@ -1834,7 +1857,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                   + "' is not a choice (none | lag | sc | hc)");
       }
       thsw_c1 = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
-                 impl_thsw == M1_THSW_FSQ);
+                 impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI);
       if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
         ImplFatal("<rad_m1>: implicit_thin_h1 must exceed implicit_thin_h0, and "
                   "implicit_thin_kn0 / implicit_thin_knp must be positive");
@@ -3068,6 +3091,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
     const Real tkn0 = thsw_kn0, tknp = thsw_knp;
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp : 0.0;
+    const Real tqi = thsw_qp;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3077,6 +3101,12 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         iw_(m,M1_IW_S3,k,j,i) = hm;
         if (thsw) {
           Real hd, jo;
+          if (tmode == M1_THSW_FSI && hsrc == 1) {
+            M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,i), fmax(hvc_(m,M1_VET_J,k,j,i), 0.0), fb,
+                     th0, th1, hp, hm);
+            iw_(m,M1_IW_S1,k,j,i) = hp;
+            iw_(m,M1_IW_S3,k,j,i) = hm;
+          }
           fb = M1ThinCell(hsrc, hvc_, m, k, j, i, d, fb, tfs, tfsa, tfsj, tqp,
                           iw_(m,M1_IW_EN,k,j,i), hd, jo);
           iw_(m,M1_IW_TA,k,j,i) = hd;
@@ -10162,6 +10192,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
       const Real tkn0 = thsw_kn0, tknp = thsw_knp;
       const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp : 0.0;
+      const Real tqi = thsw_qp;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -10243,6 +10274,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                        tqp, iw_(m,M1_IW_EN,k,j,im), hdl, jl);
             const Real gr = M1ThinCell(hsrc, hvc_, m, k, j, ip, 0, fbr, tfs, tfsa, tfsj,
                                        tqp, iw_(m,M1_IW_EN,k,j,ip), hdr, jr);
+            if (tmode == M1_THSW_FSI) {   // the left cell's h+, the right cell's h-
+              Real dm = 0.0;
+              M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,im), jl, fbl, th0, th1, hpl, dm);
+              dm = 0.0;
+              M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,ip), jr, fbr, th0, th1, dm, hmr);
+            }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr, th0, th1, tkn0, tknp,
                        ch, alb, hlb, hrb, dgt);

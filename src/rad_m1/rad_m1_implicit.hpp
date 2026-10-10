@@ -240,6 +240,8 @@ constexpr int M1_THSW_KN   = 2;   // the face Knudsen number of E^n
 constexpr int M1_THSW_FS   = 3;   // smoothstep of max(|H|/J, C1/1.5, ...), C1 = <|I-S|>/J
 constexpr int M1_THSW_HJKN = 4;   // max(hj, kn)
 constexpr int M1_THSW_FSKN = 5;   // max(fs, kn)
+constexpr int M1_THSW_FSI  = 7;   // fs weight; h+- -> isotropic +-1/4 where the rays
+                                  // do not describe E^n (M1ThinHr)
 constexpr int M1_THSW_FSQ  = 6;   // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
 // <rad_m1>/implicit_thin_corr: the lagged formal-solution face flux (C4)
 constexpr int M1_THCR_NONE = 0;
