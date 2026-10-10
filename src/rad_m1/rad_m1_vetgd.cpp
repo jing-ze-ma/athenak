@@ -2738,7 +2738,7 @@ void RadiationM1::VetGdSweep() {
   const bool ovl = (ovg > 0) && shl && !bandx && vgd_hmpi && (vgd_hcomp > 0) &&
                    (vgd_hl_mb > 0) && !vgd_ovl_nofit;
   const int fh = std::max(vgd_fuse_h, 1);
-  // vgdfuse-1010: per-cell sin / cos of the face-midpoint (theta, phi) of the shell kernel
+  // vgdfuse-1010: per-cell sin / cos of the face-midpoint (theta, phi), shell kernel
   // (static: made once; bitwise the kernel's own evaluation)
   if (static_cast<int>(vgd_trig.extent(0)) != nmb1 + 1) {
     Kokkos::realloc(vgd_trig, nmb1 + 1, ke - ks + 1, je - js + 1, 4);
