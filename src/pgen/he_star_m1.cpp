@@ -310,6 +310,124 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
   lt_lo = lt0; lt_hi = lt0 + (nT - 1)*dlt;
   ld_lo = ld0; ld_hi = ld0 + (nD - 1)*dld;
 }
+
+//----------------------------------------------------------------------------------------
+// icgen-1011 (problem/he_ic_rad = sph1d): helpers of the 1-D spherical grey
+// radiative-equilibrium solve of the initial column (see HeStarM1)
+
+// kappa_t = of + os (the total, = kappa_R: the vet_col/vet_gd extinction and the pgen's
+// own ckt) of the module's tables at (d, t) [code units], one device thread per point
+void HsKtEval(const radm1::M1OpacTab &ot, const std::vector<Real> &d,
+              const std::vector<Real> &t, std::vector<Real> &k) {
+  const int n = static_cast<int>(d.size());
+  DvceArray1D<Real> dd("hs_icr_d", n), dt("hs_icr_t", n), dk("hs_icr_k", n);
+  auto hd = Kokkos::create_mirror_view(dd);
+  auto ht = Kokkos::create_mirror_view(dt);
+  for (int i=0; i<n; ++i) {
+    hd(i) = d[i];
+    ht(i) = t[i];
+  }
+  Kokkos::deep_copy(dd, hd);
+  Kokkos::deep_copy(dt, ht);
+  par_for("hs_icr_kt", DevExeSpace(), 0, n-1, KOKKOS_LAMBDA(const int i) {
+    Real op, oe, of, os;
+    radm1::M1TableOpacities(ot, dd(i), dt(i), op, oe, of, os);
+    dk(i) = of + os;
+  });
+  auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dk);
+  k.resize(n);
+  for (int i=0; i<n; ++i) k[i] = hk(i);
+}
+
+// mean of chi over an interval with chi log-linear in the path (the arithmetic mean
+// where the two ends are equal or one vanishes)
+inline Real HsLogMean(const Real c0, const Real c1) {
+  if (c0 > 0.0 && c1 > 0.0 && std::fabs(c1 - c0) > 1.0e-8*c0) {
+    return (c1 - c0)/std::log(c1/c0);
+  }
+  return 0.5*(c0 + c1);
+}
+
+// one first-order short-characteristic step (the positive weights of VcolW/VlatW,
+// source linear in tau): I = I_up e^-dtau + w0 S_0 + wu S_up
+inline Real HsScStep(const Real iup, const Real dtau, const Real su, const Real s0) {
+  const Real ex = std::exp(-dtau);
+  Real w0, wu;
+  if (dtau < 1.0e-3) {
+    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
+  } else {
+    const Real g = (1.0 - ex)/dtau;
+    w0 = 1.0 - g;
+    wu = g - ex;
+  }
+  return iup*ex + w0*s0 + wu*su;
+}
+
+// ONE VET pass on the solve grid rg (ascending; rg[0] = r_b, the inner boundary):
+// (a) the p-z formal solution of n.grad I = chi (S - I), S = E (radiative equilibrium,
+//     E units: I 4 pi/c), one ray per shell tangent plus ncore core rays p < r_b uniform
+//     in p^2, no incoming intensity at the top, the diffusion intensity E_b + 3 mu F_b/c
+//     at r_b; J, H, K by the trapezoid in mu (the rays reach every shell in descending
+//     mu, so the sums are accumulated ray by ray);
+// (b) the moment equation d(f E)/dr + (3f - 1) E/r = -chi F/c with f = K/J, integrated
+//     inward (trapezoid; chi log-linear) from E_top = F_top/(c g_top), g = H/J.
+// E is replaced by the new E; jout = J of the formal solution (for diagnostics).
+void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
+                 const std::vector<Real> &F, const int ncore, const Real cl,
+                 std::vector<Real> &E, std::vector<Real> &jout, Real &gtop,
+                 Real &ftop) {
+  const int N = static_cast<int>(rg.size());
+  std::vector<Real> J(N, 0.0), H(N, 0.0), K(N, 0.0), mup(N, -1.0), ap(N), bp(N);
+  std::vector<Real> im(N), ip(N), z(N), dtau(N);
+  const Real rb = rg[0];
+  const int nr = ncore + N;
+  for (int q=0; q<nr; ++q) {
+    const bool core = (q < ncore);
+    const Real p = core ? rb*std::sqrt(static_cast<Real>(q)/ncore) : rg[q - ncore];
+    const int k0 = core ? 0 : (q - ncore);
+    for (int k=k0; k<N; ++k) {
+      z[k] = (!core && k == k0) ? 0.0
+                                : std::sqrt(std::fmax((rg[k] - p)*(rg[k] + p), 0.0));
+    }
+    for (int k=k0; k<N-1; ++k) dtau[k] = (z[k+1] - z[k])*HsLogMean(chi[k], chi[k+1]);
+    im[N-1] = 0.0;
+    for (int k=N-2; k>=k0; --k) im[k] = HsScStep(im[k+1], dtau[k], E[k+1], E[k]);
+    if (core) {
+      const Real mub = std::sqrt(std::fmax(1.0 - (p/rb)*(p/rb), 0.0));
+      ip[k0] = E[0] + 3.0*mub*F[0]/cl;
+    } else {
+      ip[k0] = im[k0];
+    }
+    for (int k=k0+1; k<N; ++k) ip[k] = HsScStep(ip[k-1], dtau[k-1], E[k-1], E[k]);
+    for (int k=k0; k<N; ++k) {
+      const Real mu = z[k]/rg[k], a = ip[k], b = im[k];
+      if (mup[k] >= 0.0) {
+        const Real dm = mup[k] - mu;
+        J[k] += 0.25*dm*((ap[k] + bp[k]) + (a + b));
+        H[k] += 0.25*dm*((ap[k] - bp[k])*mup[k] + (a - b)*mu);
+        K[k] += 0.25*dm*((ap[k] + bp[k])*mup[k]*mup[k] + (a + b)*mu*mu);
+      }
+      mup[k] = mu;
+      ap[k] = a;
+      bp[k] = b;
+    }
+  }
+  std::vector<Real> f(N), y(N);
+  for (int k=0; k<N; ++k) f[k] = K[k]/J[k];
+  gtop = H[N-1]/J[N-1];
+  ftop = f[N-1];
+  y[N-1] = f[N-1]*F[N-1]/(cl*gtop);
+  for (int k=N-2; k>=0; --k) {
+    const Real h = rg[k+1] - rg[k];
+    const Real a0 = (3.0*f[k] - 1.0)/(f[k]*rg[k]);
+    const Real a1 = (3.0*f[k+1] - 1.0)/(f[k+1]*rg[k+1]);
+    const Real b = HsLogMean(chi[k], chi[k+1])*h*0.5*(F[k] + F[k+1])/cl;
+    y[k] = (y[k+1]*(1.0 + 0.5*h*a1) + b)/(1.0 - 0.5*h*a0);
+  }
+  for (int k=0; k<N; ++k) E[k] = y[k]/f[k];
+  jout = J;
+}
 }  // namespace
 
 namespace {
@@ -511,6 +629,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   bool tcol_read = false;
   std::vector<Real> hTcol(nf, -1.0);   // the file's T column [K] on the fine grid
+  std::vector<Real> hfr_keep, hfM_keep;   // he_ic_rad = sph1d: the file's r, fmlt (dump)
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
@@ -553,6 +672,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (hs_mlt_ || eft) hTcol[n] = exp((1.0 - w)*log(fT[kk]) + w*log(fT[kk+1]));
     }
     tcol_read = (hs_mlt_ || eft);
+    hfr_keep = fr;
+    hfM_keep = fM;
     if (eft) {
       for (int n=0; n<nf; ++n) {
         Real ee, pp, cr, ct, cv;
@@ -649,6 +770,354 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
          << pm1->otab.dunit << " but this run's units are (" << tcgs << ", " << dcgs
          << ")";
       HsFatal(os.str(), __LINE__);
+    }
+  }
+
+  // ---- icgen-1011 problem/he_ic_rad (read only when named; default file = bitwise the
+  // old IC).  sph1d: above the depth tau_R = he_ic_rad_taub (from the mesh top, the run's
+  // own kappa_t), the radiation energy density of the column is replaced by the solution
+  // of the 1-D spherical grey transfer problem in radiative equilibrium (S = J = E, the
+  // vet_col/vet_gd source in RE, the vet_scatter split included) with the column's own
+  // radiative flux F_r: a VET iteration of a p-z formal solution (f = K/J, g_top = H/J)
+  // and the radial moment equation (HsSph1dPass).  The file's E above R_ph is an
+  // isothermal-atmosphere guess (2.1-2.6x the relaxed E at 1.0-1.2 R_ph for AG Car A).
+  // E = w E_sph1d + (1 - w) E_col, w a smoothstep LINEAR in tau, 1 at he_ic_rad_taua, 0
+  // at he_ic_rad_taub.  he_ic_rad_gas = column (default): T keeps the column's; re: a T^4
+  // = E at fixed rho (blended with the same w; eint from the code's EOS); re_atm: as re
+  // but the floor gas (rho at the column's floor) keeps the column's T, so its a_ref = kt
+  // F/c is the file IC's (with re its cold floor gas falls 3x faster and the implicit
+  // solve then takes ~6 instead of ~4 Picard iterations, AG Car A).  he_ic_rad_hse
+  // (needs gas = re | re_atm): rho re-integrated outward from r_b at fixed T, dP_gas/dr
+  // = -rho (g - kt F/c) (the continuum balance of the WB pair, whose a_ref = kt F/c is
+  // built below from this column), floored at the column's floor; E solve and HSE
+  // iterated together.
+  // F_r and the MLT fraction are not changed.  Deterministic (host solve, per-point
+  // device opacities) and rebuilt on every start, as the column itself.
+  // he_ic_rad_dump = <file>: rank 0 writes the new column in the IC file format (r rho
+  // eint F_r E T fmlt; usable with he_ic_rad = file; none = no dump).  NOTE-icgen.md.
+  if (pin->DoesParameterExist("problem","he_ic_rad") &&
+      pin->GetString("problem","he_ic_rad") != "file") {
+    const std::string icr = pin->GetString("problem","he_ic_rad");
+    if (icr != "sph1d") HsFatal("problem/he_ic_rad must be file | sph1d", __LINE__);
+    if (wic) {
+      HsFatal("problem/he_ic_rad = sph1d does not combine with he_wind_ic", __LINE__);
+    }
+    if (pin->DoesParameterExist("problem","he_ic_rad_thin") &&
+        pin->GetBoolean("problem","he_ic_rad_thin")) {
+      HsFatal("problem/he_ic_rad = sph1d replaces he_ic_rad_thin (set one)", __LINE__);
+    }
+    Kokkos::Timer tw0;
+    const Real taua = pin->GetOrAddReal("problem","he_ic_rad_taua",30.0);
+    const Real taub = pin->GetOrAddReal("problem","he_ic_rad_taub",3000.0);
+    const Real dtau0 = pin->GetOrAddReal("problem","he_ic_rad_dtau",0.05);
+    const Real dlnr = pin->GetOrAddReal("problem","he_ic_rad_dlnr",2.0e-3);
+    const int ncore = pin->GetOrAddInteger("problem","he_ic_rad_ncore",64);
+    const std::string gasm = pin->GetOrAddString("problem","he_ic_rad_gas","column");
+    const bool hse = pin->GetOrAddBoolean("problem","he_ic_rad_hse",false);
+    const int maxit = pin->GetOrAddInteger("problem","he_ic_rad_maxit",60);
+    const Real tol = pin->GetOrAddReal("problem","he_ic_rad_tol",1.0e-8);
+    const Real htol = pin->GetOrAddReal("problem","he_ic_rad_hse_tol",1.0e-6);
+    if (!(taua > 0.0 && taub > taua && dtau0 > 0.0 && dlnr > 0.0 && ncore >= 4 &&
+          maxit >= 1 && tol > 0.0 && htol > 0.0)) {
+      HsFatal("problem/he_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore >= 4",
+              __LINE__);
+    }
+    if (gasm != "column" && gasm != "re" && gasm != "re_atm") {
+      HsFatal("problem/he_ic_rad_gas must be column | re | re_atm", __LINE__);
+    }
+    // re_atm: radiative equilibrium only where rho is above the column's floor (the floor
+    // gas keeps the column's T, hence its a_ref = kt F/c, as with he_ic_rad = file)
+    const bool gre = (gasm == "re" || gasm == "re_atm");
+    const bool gatm = (gasm == "re_atm");
+    if (hse && !gre) {
+      HsFatal("problem/he_ic_rad_hse = true needs he_ic_rad_gas = re | re_atm", __LINE__);
+    }
+    // the column as read: T [code] (the file's T with he_ic_eint_from_t, else the code's
+    // T(rho, eint)), E (the file's, else a T^4), rho
+    std::vector<Real> d0(hd), t0(nf), e0(nf);
+    for (int n=0; n<nf; ++n) {
+      t0[n] = eft ? hTcol[n]/hs_tk : eos.Temperature(hd[n], he[n]);
+      e0[n] = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(t0[n]));
+    }
+    std::vector<Real> tcur(t0), ef(e0), kt, tauf(nf, 0.0);
+    radm1::M1OpacTab otr = pm1->otab;
+    auto ftau = [&]() {   // kappa_t and tau from the mesh top (as the pgen's tau below)
+      HsKtEval(otr, hd, tcur, kt);
+      tauf[nf-1] = 0.0;
+      for (int n=nf-2; n>=0; --n) {
+        const Real a0 = (hr[n] < rtop) ? hd[n]*kt[n] : 0.0;
+        const Real a1 = (hr[n+1] < rtop) ? hd[n+1]*kt[n+1] : 0.0;
+        tauf[n] = tauf[n+1] + 0.5*hs_dr_*(a0 + a1);
+      }
+    };
+    auto frph = [&]() {   // tau_R = 2/3
+      for (int n=nf-2; n>=0; --n) {
+        if (tauf[n] >= 2.0/3.0 && tauf[n+1] < 2.0/3.0) {
+          return hr[n] + hs_dr_*(tauf[n] - 2.0/3.0)/(tauf[n] - tauf[n+1]);
+        }
+      }
+      return -1.0;
+    };
+    auto flog = [&](const std::vector<Real> &a, const Real r) {   // fine grid, log-linear
+      Real x = (r - hs_rlo_)/hs_dr_;
+      int i = static_cast<int>(floor(x));
+      i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
+      Real w = x - i;
+      w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+      return exp((1.0 - w)*log(a[i]) + w*log(a[i+1]));
+    };
+    auto glog = [](const std::vector<Real> &x, const std::vector<Real> &y, const Real r) {
+      const int n = static_cast<int>(x.size());
+      int i = static_cast<int>(std::upper_bound(x.begin(), x.end(), r) - x.begin()) - 1;
+      i = (i < 0) ? 0 : ((i > n - 2) ? (n - 2) : i);
+      Real w = (r - x[i])/(x[i+1] - x[i]);
+      w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+      return exp((1.0 - w)*log(y[i]) + w*log(y[i+1]));
+    };
+    ftau();
+    const Real rph0 = frph();
+    int nb = 0;
+    for (int n=nf-1; n>=0; --n) {
+      if (tauf[n] >= taub) {
+        nb = n;
+        break;
+      }
+    }
+    if (tauf[0] < taub && global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: he_ic_rad = sph1d: WARNING the column's bottom tau ("
+                << tauf[0] << ") is below he_ic_rad_taub; r_b = the fine-grid bottom"
+                << std::endl;
+    }
+    Real dfl = 1.0e300;   // the column's floor: its minimum density at and above r_b
+    for (int n=nb; n<nf; ++n) dfl = std::min(dfl, d0[n]);
+    // gravity of the HSE march: the point mass, or (he_gm_column) the static monopole of
+    // the current column, as built below
+    Real gcode = 0.0;
+    if (hs_gmc_) {
+      if (pmbp->punit == nullptr) HsFatal("problem/he_gm_column needs <units>", __LINE__);
+      const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
+      gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/(lu*lu*lu);
+    }
+    std::vector<Real> rg, dg, tg, fg, eg, cg, jg, kg;
+    Real gtop = 0.0, ftop = 0.0, dlr = 0.0, rmx = 0.0;
+    int nit = 0, nout = 0, nflo = -1;
+    for (int outer=0; outer<(hse ? maxit : 1); ++outer) {
+      ++nout;
+      // the solve grid: uniform in s = int dr/(dlnr r) + dtau/(dtau0 max(1, tau)^0.7)
+      std::vector<Real> sm(nf, 0.0);
+      for (int n=nb+1; n<nf; ++n) {
+        const Real a0 = (hr[n-1] < rtop) ? hd[n-1]*kt[n-1] : 0.0;
+        const Real a1 = (hr[n] < rtop) ? hd[n]*kt[n] : 0.0;
+        sm[n] = sm[n-1] + hs_dr_*(1.0/(dlnr*hr[n]) +
+                                  0.5*(a0 + a1)/(dtau0*pow(std::max(1.0, tauf[n]), 0.7)));
+      }
+      const int ngr = std::min(std::max(16, static_cast<int>(ceil(sm[nf-1])) + 1), 50000);
+      rg.assign(ngr, 0.0);
+      {
+        int n = nb + 1;
+        for (int g=0; g<ngr; ++g) {
+          const Real s = sm[nf-1]*g/(ngr - 1);
+          while (n < nf - 1 && sm[n] < s) ++n;
+          rg[g] = hr[n-1] + hs_dr_*(s - sm[n-1])/(sm[n] - sm[n-1]);
+        }
+        rg[0] = hr[nb];
+        rg[ngr-1] = hr[nf-1];
+      }
+      dg.resize(ngr); tg.resize(ngr); fg.resize(ngr); eg.resize(ngr); cg.resize(ngr);
+      for (int g=0; g<ngr; ++g) {
+        dg[g] = flog(hd, rg[g]);
+        tg[g] = flog(tcur, rg[g]);
+        fg[g] = flog(hF, rg[g]);
+        eg[g] = flog(ef, rg[g]);
+      }
+      for (int it=0; it<maxit; ++it) {
+        if (gre) {
+          for (int g=0; g<ngr; ++g) {
+            tg[g] = (gatm && dg[g] <= dfl*(1.0 + 1.0e-6)) ? flog(t0, rg[g])
+                                                         : pow(eg[g]/ar, 0.25);
+          }
+        }
+        HsKtEval(otr, dg, tg, kg);
+        for (int g=0; g<ngr; ++g) cg[g] = (rg[g] < rtop) ? dg[g]*kg[g] : 0.0;
+        const std::vector<Real> ep(eg);
+        HsSph1dPass(rg, cg, fg, ncore, cl, eg, jg, gtop, ftop);
+        ++nit;
+        Real de = 0.0;
+        for (int g=0; g<ngr; ++g) de = std::max(de, std::fabs(eg[g]/ep[g] - 1.0));
+        if (!(eg[0] > 0.0) || !std::isfinite(de)) {
+          HsFatal("problem/he_ic_rad = sph1d: the VET iteration failed", __LINE__);
+        }
+        if (de < tol) break;
+      }
+      // the blended column on the fine grid
+      for (int n=nb; n<nf; ++n) {
+        const Real x = (taub - tauf[n])/(taub - taua);
+        const Real w = (x >= 1.0) ? 1.0 : ((x <= 0.0) ? 0.0 : x*x*(3.0 - 2.0*x));
+        ef[n] = w*glog(rg, eg, hr[n]) + (1.0 - w)*e0[n];
+        if (gre) tcur[n] = w*pow(ef[n]/ar, 0.25) + (1.0 - w)*t0[n];
+        if (gatm && hd[n] <= dfl*(1.0 + 1.0e-9)) tcur[n] = t0[n];
+      }
+      if (!hse) {
+        if (gre) ftau();
+        break;
+      }
+      // hydrostatic balance at fixed T, outward from r_b (kappa_t at the previous rho):
+      // P(rho_{n+1}) + dr/2 rho_{n+1} g_{n+1} = P(rho_n) - dr/2 rho_n g_n
+      HsKtEval(otr, hd, tcur, kt);
+      std::vector<Real> gm(nf, hs_gm_);
+      if (hs_gmc_) {
+        std::vector<Real> cm(nf, 0.0);
+        for (int n=1; n<nf; ++n) {
+          cm[n] = cm[n-1] + 0.5*hs_dr_*4.0*M_PI*(hr[n-1]*hr[n-1]*hd[n-1] +
+                                                 hr[n]*hr[n]*hd[n]);
+        }
+        const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
+        const int i0 = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
+        const Real cm0 = (1.0 - (x - i0))*cm[i0] + (x - i0)*cm[i0+1];
+        for (int n=0; n<nf; ++n) gm[n] = hs_gm_ + gcode*(cm[n] - cm0);
+      }
+      std::vector<Real> dn(hd);
+      bool flo = false;
+      nflo = -1;
+      rmx = 0.0;
+      for (int n=nb; n<nf-1; ++n) {
+        if (flo) {
+          dn[n+1] = dfl;
+          continue;
+        }
+        const Real g0 = gm[n]/SQR(hr[n]) - kt[n]*hF[n]/cl;
+        const Real g1 = gm[n+1]/SQR(hr[n+1]) - kt[n+1]*hF[n+1]/cl;
+        Real ee, p0, cr, ct, cv;
+        eos.ThermoAt(dn[n], tcur[n], ee, p0, cr, ct, cv);
+        const Real rhs = p0 - 0.5*hs_dr_*dn[n]*g0;
+        auto res = [&](const Real lx) {
+          Real e1, p1, c1, c2, c3;
+          eos.ThermoAt(exp(lx), tcur[n+1], e1, p1, c1, c2, c3);
+          return (p1 + 0.5*hs_dr_*exp(lx)*g1)/rhs - 1.0;
+        };
+        Real x0 = log(dn[n]) + log(hd[n+1]/hd[n]), x1 = x0 + 1.0e-6;
+        Real f0 = res(x0), f1 = res(x1);
+        for (int it=0; it<60 && fabs(f1) > 1.0e-14 && f1 != f0; ++it) {
+          const Real x2 = x1 - f1*(x1 - x0)/(f1 - f0);
+          x0 = x1; f0 = f1; x1 = x2;
+          f1 = res(x1);
+        }
+        rmx = std::max(rmx, fabs(f1));
+        if (!(rhs > 0.0) || !std::isfinite(x1) || !(exp(x1) > dfl)) {
+          flo = true;
+          nflo = n + 1;
+          dn[n+1] = dfl;
+        } else {
+          dn[n+1] = exp(x1);
+        }
+      }
+      dlr = 0.0;
+      for (int n=nb; n<nf; ++n) dlr = std::max(dlr, std::fabs(log(dn[n]/hd[n])));
+      hd = dn;
+      ftau();
+      if (dlr < htol) break;
+    }
+    // write back: E, and with gas = re the T (file column) and eint of the code's EOS
+    for (int n=nb; n<nf; ++n) {
+      hE[n] = ef[n];
+      if (gre) {
+        hTcol[n] = tcur[n]*hs_tk;
+        Real ee, pp, cr, ct, cv;
+        eos.ThermoAt(hd[n], tcur[n], ee, pp, cr, ct, cv);
+        he[n] = ee;
+      }
+    }
+    const Real rph1 = frph();
+    const double wsec = tw0.seconds();
+    if (global_variable::my_rank == 0) {
+      const Real x1a = pmy_mesh_->mesh_size.x1min;
+      Real emx = 0.0, tmx = 0.0, dmx = 0.0, rem = 0.0, rtm = 0.0, rdm = 0.0;
+      for (int n=nb; n<nf; ++n) {
+        if (hr[n] < x1a || hr[n] > rtop) continue;
+        if (fabs(ef[n]/e0[n] - 1.0) > emx) {
+          emx = fabs(ef[n]/e0[n] - 1.0);
+          rem = hr[n];
+        }
+        if (fabs(tcur[n]/t0[n] - 1.0) > tmx) {
+          tmx = fabs(tcur[n]/t0[n] - 1.0);
+          rtm = hr[n];
+        }
+        if (fabs(hd[n]/d0[n] - 1.0) > dmx) {
+          dmx = fabs(hd[n]/d0[n] - 1.0);
+          rdm = hr[n];
+        }
+      }
+      std::cout << "he_star_m1: he_ic_rad = sph1d (gas " << gasm << ", hse "
+                << (hse ? "on" : "off") << "): r_b = " << hr[nb] << " (tau "
+                << tauf[nb] << "), blend tau " << taua << " .. " << taub << ", "
+                << rg.size() << " solve points + " << ncore << " core rays, " << nit
+                << " VET passes, " << nout << " outer, g_top = H/J " << gtop
+                << ", f_top = K/J " << ftop << ", " << wsec << " s" << std::endl;
+      std::cout << "he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) "
+                << rph0 << " -> " << rph1 << "; max |E/E_col - 1| " << emx << " at r = "
+                << rem << ", |T/T_col - 1| " << tmx << " at " << rtm << ", |rho/rho_col"
+                << " - 1| " << dmx << " at " << rdm;
+      if (hse) {
+        std::cout << "; HSE last max |dln rho| " << dlr << ", residual " << rmx
+                  << ", floor " << dfl << " from r = "
+                  << ((nflo >= 0) ? hr[nflo] : -1.0);
+      }
+      std::cout << std::endl;
+      const Real xs[] = {0.9, 0.95, 0.98, 0.99, 0.995, 1.0, 1.003, 1.006, 1.01, 1.02,
+                         1.05, 1.1, 1.2, 1.5, 2.0, 2.5, 2.9};
+      for (const Real xx : xs) {
+        const Real r = xx*rph0;
+        if (r < hr[nb] || r > rtop) continue;
+        std::cout << "he_star_m1:   r/R_ph " << xx << ": E/E_col "
+                  << flog(ef, r)/flog(e0, r)
+                  << ", T [K] " << flog(tcur, r)*hs_tk << " (/T_col " << flog(tcur, r)/
+                  flog(t0, r) << "), rho/rho_col " << flog(hd, r)/flog(d0, r)
+                  << ", F/(cE) " << flog(hF, r)/(cl*flog(ef, r)) << std::endl;
+      }
+    }
+    // he_ic_rad_dump: the new column on the union of the file radii and the solve grid
+    if (pin->DoesParameterExist("problem","he_ic_rad_dump") &&
+        pin->GetString("problem","he_ic_rad_dump") != "none" &&
+        global_variable::my_rank == 0) {
+      const std::string dfn = pin->GetString("problem","he_ic_rad_dump");
+      // (the fine grid's span: this mesh plus its ghost margin, ends included)
+      std::vector<Real> ru = {hr[0], hr[nf-1]};
+      for (const Real r : hfr_keep) if (r > hr[0] && r < hr[nf-1]) ru.push_back(r);
+      for (const Real r : rg) ru.push_back(r);
+      std::sort(ru.begin(), ru.end());
+      ru.erase(std::unique(ru.begin(), ru.end()), ru.end());
+      std::vector<Real> tk(nf);
+      for (int n=0; n<nf; ++n) tk[n] = tcur[n]*hs_tk;
+      FILE *fp = fopen(dfn.c_str(), "w");
+      if (fp == nullptr) HsFatal("cannot write problem/he_ic_rad_dump", __LINE__);
+      {
+        std::ifstream f0(fn);
+        std::string l0;
+        while (std::getline(f0, l0)) {
+          if (!l0.empty() && l0[0] == '#') fprintf(fp, "%s\n", l0.c_str());
+        }
+      }
+      fprintf(fp, "# icgen-1011 he_ic_rad = sph1d (he_star_m1): E (and with gas = re T, "
+              "eint; with hse rho) above tau_R %g replaced; gas %s hse %d taua %g dtau "
+              "%g dlnr %g ncore %d; R_ph %.10e -> %.10e; resampled from the fine grid\n",
+              taub, gasm.c_str(), hse ? 1 : 0, taua, dtau0, dlnr, ncore, rph0, rph1);
+      for (const Real r : ru) {
+        Real fm = 0.0;
+        if (hfr_keep.size() > 1) {
+          const int nk = static_cast<int>(hfr_keep.size());
+          int i = static_cast<int>(std::upper_bound(hfr_keep.begin(), hfr_keep.end(), r) -
+                                   hfr_keep.begin()) - 1;
+          i = (i < 0) ? 0 : ((i > nk - 2) ? (nk - 2) : i);
+          Real w = (r - hfr_keep[i])/(hfr_keep[i+1] - hfr_keep[i]);
+          w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+          fm = (1.0 - w)*hfM_keep[i] + w*hfM_keep[i+1];
+        }
+        fprintf(fp, "%.10e %.10e %.10e %.10e %.10e %.10e %.6e\n", r, flog(hd, r),
+                flog(he, r), flog(hF, r), flog(ef, r), flog(tk, r), fm);
+      }
+      fclose(fp);
+      std::cout << "he_star_m1: he_ic_rad = sph1d: column written to " << dfn << " ("
+                << ru.size() << " lines)" << std::endl;
     }
   }
 
