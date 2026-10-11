@@ -773,8 +773,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // ---- icgen-1011 problem/he_ic_rad (read only when named; default file = bitwise the
-  // old IC).  sph1d: above the depth tau_R = he_ic_rad_taub (from the mesh top, the run's
+  // ---- icgen-1011 problem/he_ic_rad (file = the old IC; the default is set below).
+  // sph1d: above the depth tau_R = he_ic_rad_taub (from the mesh top, the run's
   // own kappa_t), the radiation energy density of the column is replaced by the solution
   // of the 1-D spherical grey transfer problem in radiative equilibrium (S = J = E, the
   // vet_col/vet_gd source in RE, the vet_scatter split included) with the column's own
@@ -782,7 +782,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // and the radial moment equation (HsSph1dPass).  The file's E above R_ph is an
   // isothermal-atmosphere guess (2.1-2.6x the relaxed E at 1.0-1.2 R_ph for AG Car A).
   // E = w E_sph1d + (1 - w) E_col, w a smoothstep LINEAR in tau, 1 at he_ic_rad_taua, 0
-  // at he_ic_rad_taub.  he_ic_rad_gas = column (default): T keeps the column's; re: a T^4
+  // at he_ic_rad_taub.  he_ic_rad_gas = column (old default): T of the column; re: T^4
   // = E at fixed rho (blended with the same w; eint from the code's EOS); re_atm: as re
   // but the floor gas (rho at the column's floor) keeps the column's T, so its a_ref = kt
   // F/c is the file IC's (with re its cold floor gas falls 3x faster and the implicit
@@ -795,9 +795,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // device opacities) and rebuilt on every start, as the column itself.
   // he_ic_rad_dump = <file>: rank 0 writes the new column in the IC file format (r rho
   // eint F_r E T fmlt; usable with he_ic_rad = file; none = no dump).  NOTE-icgen.md.
-  if (pin->DoesParameterExist("problem","he_ic_rad") &&
-      pin->GetString("problem","he_ic_rad") != "file") {
-    const std::string icr = pin->GetString("problem","he_ic_rad");
+  // prodfinal-1011: DEFAULT sph1d (with he_ic_rad_gas = re_atm, he_ic_rad_hse = true) on
+  // a FRESH start of every he_star_m1 run where it applies: opacity = table, no
+  // he_wind_ic, he_ic_rad_thin not set.  Elsewhere the default stays file (the old IC),
+  // silently.  A restart whose file lacks the key keeps file (the column is rebuilt on
+  // every start, so this matters for the restart too).  The resolved value is echoed
+  // (later restarts keep it); explicit input overrides.  To keep the old IC on a fresh
+  // start name problem/he_ic_rad = file (and rad_m1/ic_rad = none for the old radiation
+  // start).
+  const bool icrdef = !global_variable::restart_run &&
+      (pm1->opacity_type == radm1::M1_OPAC_TABLE) && !wic &&
+      !(pin->DoesParameterExist("problem","he_ic_rad_thin") &&
+        pin->GetBoolean("problem","he_ic_rad_thin"));
+  const std::string icr0 = pin->GetOrAddString("problem","he_ic_rad",
+                                               icrdef ? "sph1d" : "file");
+  if (icr0 != "file") {
+    const std::string icr = icr0;
     if (icr != "sph1d") HsFatal("problem/he_ic_rad must be file | sph1d", __LINE__);
     if (wic) {
       HsFatal("problem/he_ic_rad = sph1d does not combine with he_wind_ic", __LINE__);
@@ -812,8 +825,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real dtau0 = pin->GetOrAddReal("problem","he_ic_rad_dtau",0.05);
     const Real dlnr = pin->GetOrAddReal("problem","he_ic_rad_dlnr",2.0e-3);
     const int ncore = pin->GetOrAddInteger("problem","he_ic_rad_ncore",64);
-    const std::string gasm = pin->GetOrAddString("problem","he_ic_rad_gas","column");
-    const bool hse = pin->GetOrAddBoolean("problem","he_ic_rad_hse",false);
+    // prodfinal-1011: fresh-start defaults re_atm + hse (the recommended IC, NOTE-icgen);
+    // a restart whose file lacks the keys keeps column / false
+    const bool icgdef = !global_variable::restart_run;
+    const std::string gasm = pin->GetOrAddString("problem","he_ic_rad_gas",
+                                                 icgdef ? "re_atm" : "column");
+    const bool hse = pin->GetOrAddBoolean("problem","he_ic_rad_hse",icgdef);
     const int maxit = pin->GetOrAddInteger("problem","he_ic_rad_maxit",60);
     const Real tol = pin->GetOrAddReal("problem","he_ic_rad_tol",1.0e-8);
     const Real htol = pin->GetOrAddReal("problem","he_ic_rad_hse_tol",1.0e-6);

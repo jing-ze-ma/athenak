@@ -2014,8 +2014,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
   }
   {
-    // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace)
-    std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch","none");
+    // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace).
+    // prodfinal-1011: DEFAULT fse on a fresh run wherever the switch is accepted and has
+    // ray data: implicit_flux = blend with implicit_flux_beam = halfrange,
+    // implicit_hr_recon dc (or not named), and vet_sc, vet_gd or implicit_hr_model.
+    // Elsewhere (central, ap_hll, berthon, a blend without halfrange, ...) the default
+    // stays none, silently, so those runs are bitwise unchanged and need no key.  A
+    // restart whose file lacks the key keeps none.  The resolved value is echoed (later
+    // restarts keep it); explicit input overrides.
+    const bool thdef = !global_variable::restart_run &&
+        (impl_flux == M1_IFLUX_BLEND) && impl_beam_hr &&
+        (vet_sc || vgd_on || impl_hr_model) &&
+        (!pin->DoesParameterExist("rad_m1","implicit_hr_recon") ||
+         pin->GetString("rad_m1","implicit_hr_recon").compare("dc") == 0);
+    std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch",
+                                          thdef ? "fse" : "none");
     const char *tnm[9] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi", "fse"};
     impl_thsw = -1;
     for (int q = 0; q < 9; ++q) {
@@ -2036,7 +2049,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       if (impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI) {
         thsw_qp = pin->GetOrAddReal("rad_m1","implicit_thin_qp",8.0);
       }
-      std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr","none");
+      // prodfinal-1011: DEFAULT hc on a fresh run with the switch fse (the production
+      // pair fse + hc); none otherwise and on a restart whose file lacks the key
+      const bool tcdef = !global_variable::restart_run && (impl_thsw == M1_THSW_FSE);
+      std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr",
+                                            tcdef ? "hc" : "none");
       if (scr.compare("lag") == 0) {
         impl_thsw_corr = M1_THCR_LAG;
       } else if (scr.compare("sc") == 0) {
