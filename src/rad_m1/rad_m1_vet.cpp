@@ -3160,6 +3160,10 @@ void RadiationM1::VetShortChar() {
   const Real bblo = (vet_bc_bath && !milne && ibc_x1min == M1_IBC_MARSHAK) ?
                      iebath_x1min : -1.0;
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
+  // littests-1011: the boundary beam rays (ImplBeamInit)
+  const int bmn_ = ibm_nr;
+  const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
+  auto bmi_ = ibm_i;
 
   // (1) extinction and source: cell by cell, or column by column for the Milne
   // diagnostic, which needs tau (the same arithmetic; a column loop per thread leaves
@@ -3295,6 +3299,11 @@ void RadiationM1::VetShortChar() {
               Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
                         + iw_(m,M1_IW_F3,k,j,i)*m3;
               ib = fmax(e + 3.0*fo/cl, 0.0);
+            }
+            if (bmn_ > 0) {   // littests-1011: boundary beams
+              const int q = (r == bmr0) ? 0 : ((r == bmr1) ? 1 : ((r == bmr2) ? 2
+                                                                  : ((r == bmr3) ? 3 : -1)));
+              if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
             }
           }
           const Real dtau = 0.5*c0*dx1/am1;
@@ -3743,6 +3752,102 @@ void RadiationM1::VetReport() {
                 << std::endl;
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplBeamInit
+//! \brief littests-1011: boundary-injected collimated beams (the Jiang et al. 2012 /
+//! Jiang 2021 beam and shadow tests).  <rad_m1>/implicit_beam_n = 1 or 2 (read only
+//! when given); beam b (b = 0, 1): implicit_beam<b>_e (energy density E_b of the beam),
+//! implicit_beam<b>_ang (in-plane angle in degrees from +x1 toward +x2, |ang| < 90),
+//! implicit_beam<b>_y0 / _y1 (the x2 patch of the x1min face).  The beam is carried by
+//! the up-going SC ray whose in-plane direction atan2(mu2, mu1) is closest to ang (ties:
+//! the smallest |mu3|); in 2-D its mu3 mirror gets half of it, so F3 = 0.  The entering
+//! intensity frac E_b / (n w_r) (frac = the covered fraction of the column's x2 extent,
+//! n = 1 or 2 rays) is added to whatever the x1min face gives that ray (the Marshak bath,
+//! 0 for vacuum), and the moment solve takes the same rays' face flux
+//! F_in = c frac E_b mu1 as an imposed flux on those columns (Marshak elsewhere).
+//! Needs closure = vet_sc, implicit_bc_x1min = marshak and ONE MeshBlock (VetShortChar).
+
+void RadiationM1::ImplBeamInit(ParameterInput *pin) {
+  ibm_n = 0;
+  if (!pin->DoesParameterExist("rad_m1", "implicit_beam_n")) return;
+  ibm_n = pin->GetInteger("rad_m1", "implicit_beam_n");
+  if (ibm_n <= 0) {ibm_n = 0; return;}
+  if (ibm_n > 2) VetFatal("<rad_m1>/implicit_beam_n must be 0, 1 or 2");
+  if (!vet_sc) VetFatal("<rad_m1>/implicit_beam_n needs closure = vet_sc");
+  if (ibc_x1min != M1_IBC_MARSHAK)
+    VetFatal("<rad_m1>/implicit_beam_n needs implicit_bc_x1min = marshak");
+  if (vet_mbs != nullptr || pmy_pack->pmesh->nmb_total > 1)
+    VetFatal("<rad_m1>/implicit_beam_n needs a single MeshBlock (VetShortChar sweep)");
+  if (vet_x1per) VetFatal("<rad_m1>/implicit_beam_n is not for a periodic x1 sweep");
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nx2 = indcs.nx2, nx3 = trans_x3 ? indcs.nx3 : 1;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto ah = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
+  const int nray = vet_nray;
+  ibm_nr = 0;
+  Kokkos::realloc(ibm_i, nmb, 4, nx3, nx2);
+  Kokkos::realloc(ibm_f, nmb, nx3, nx2);
+  auto hi = Kokkos::create_mirror_view(ibm_i);
+  auto hf = Kokkos::create_mirror_view(ibm_f);
+  Kokkos::deep_copy(hi, 0.0);
+  Kokkos::deep_copy(hf, 0.0);
+  auto &msz = pmy_pack->pmb->mb_size;
+  for (int b = 0; b < ibm_n; ++b) {
+    const std::string p = "implicit_beam" + std::to_string(b) + "_";
+    const Real eb = pin->GetReal("rad_m1", p + "e");
+    const Real ang = pin->GetReal("rad_m1", p + "ang")*M_PI/180.0;
+    const Real y0 = pin->GetReal("rad_m1", p + "y0");
+    const Real y1 = pin->GetReal("rad_m1", p + "y1");
+    int rb = -1;
+    Real best = 1.0e30;
+    for (int r = 0; r < nray; ++r) {
+      if (!(ah(r,0) > 0.0)) continue;
+      const Real d = std::fabs(std::atan2(ah(r,1), ah(r,0)) - ang)
+                     + 1.0e-6*std::fabs(ah(r,2));
+      if (d < best - 1.0e-12) {best = d; rb = r;}
+    }
+    int rs[2] = {rb, -1};
+    int nr = 1;
+    if (!trans_x3) {
+      for (int r = 0; r < nray; ++r) {
+        if (r != rb && std::fabs(ah(r,0) - ah(rb,0)) < 1.0e-12 &&
+            std::fabs(ah(r,1) - ah(rb,1)) < 1.0e-12 &&
+            std::fabs(ah(r,2) + ah(rb,2)) < 1.0e-12) {
+          rs[1] = r;
+          nr = 2;
+          break;
+        }
+      }
+    }
+    for (int q = 0; q < nr; ++q) {
+      const int qq = ibm_nr++;
+      ibm_ray[qq] = rs[q];
+      const Real wr = ah(rs[q],3);
+      for (int m = 0; m < nmb; ++m) {
+        const Real x2a = msz.h_view(m).x2min, dx2 = msz.h_view(m).dx2;
+        for (int k = 0; k < nx3; ++k) {
+          for (int j = 0; j < nx2; ++j) {
+            const Real ya = x2a + j*dx2, yb = ya + dx2;
+            const Real fr = std::fmax(std::fmin(yb, y1) - std::fmax(ya, y0), 0.0)/dx2;
+            if (!(fr > 0.0)) continue;
+            hi(m,qq,k,j) += fr*eb/(nr*wr);
+            hf(m,k,j) += c_light*wr*ah(rs[q],0)*fr*eb/(nr*wr);
+          }
+        }
+      }
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "  implicit_beam" << b << ": E_b=" << eb << " requested ang="
+                << ang*180.0/M_PI << " deg -> ray " << rb << " (mu1 mu2 mu3) = ("
+                << ah(rb,0) << " " << ah(rb,1) << " " << ah(rb,2) << "), in-plane ang="
+                << std::atan2(ah(rb,1), ah(rb,0))*180.0/M_PI << " deg, " << nr
+                << " ray(s), x2 patch [" << y0 << ", " << y1 << "]" << std::endl;
+    }
+  }
+  Kokkos::deep_copy(ibm_i, hi);
+  Kokkos::deep_copy(ibm_f, hf);
 }
 
 } // namespace radm1

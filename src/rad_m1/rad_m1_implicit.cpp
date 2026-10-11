@@ -2722,6 +2722,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << " flux_max=" << iflux_x1max << std::endl;
   }
   if (vet_sc) {VetInit(pin);}
+  ImplBeamInit(pin);   // littests-1011 (rad_m1_vet.cpp)
   Time2Init(pin);
   MRInit(pin);         // implicit_mr_every (rad_m1_mr.cpp)
   // accel-1009 (memory): u1 is used only by the explicit stage copy, hesdirk2 and the
@@ -9613,6 +9614,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   int bclo = ibc_x1min, bchi = ibc_x1max;
   Real fxlo = iflux_x1min, fxhi = iflux_x1max;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
+  const int bmn_ = ibm_n;   // littests-1011: boundary beams (imposed x1min flux)
+  auto bmf_ = ibm_f;
   const bool badv = impl_bc_advect;
   bool cyclic = (bclo == M1_IBC_PERIODIC);
   // MILESTONE 3b, LIMIT 4.  With more than one MeshBlock along x1 a block is at a
@@ -10966,6 +10969,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                  vf);
           }
         }
+      } else if (bmn_ > 0 && bmf_(m,k-ks,j-js) > 0.0) {
+        rr += nu*cr*bmf_(m,k-ks,j-js);   // littests-1011: the beam's own face flux
       } else if (bclo == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
         rr += nu*ch*mq*eblo;
@@ -11593,7 +11598,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         int ic = lo ? is : ie;
         Real sgn = lo ? -1.0 : 1.0;
         Real fb = 0.0;
-        if (bc == M1_IBC_MARSHAK) {
+        if (lo && bmn_ > 0 && bmf_(m,k-ks,j-js) > 0.0) {
+          fb = bmf_(m,k-ks,j-js);   // littests-1011: the beam's own face flux
+        } else if (bc == M1_IBC_MARSHAK) {
           const Real mq = (hi && vqs) ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           fb = sgn*cl*mq*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebhi));
           if (mfl && !(hi && vqs && !sqf) && ie > is) {
