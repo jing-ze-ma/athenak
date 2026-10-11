@@ -314,6 +314,118 @@ The staircase changes L_ex by -11 % to +1 % (open area 1.01 x the cone). So the 
   82ef2e9c (tab/bin cmp). E/J-1 at R_ph = -0.73 / -0.26 / -0.05 % (patm N 64/128/256) and -0.80 / -0.24 / +0.004 % (patmT).
   pinc L/L_ex = 2.25 (rotate 10) and 0.88 (rotate 0). The Stage-P verdict holds on the final code.
 
+## Stage C. Does production's vet_col_source = relaxed bias a coupled-gas atmosphere? (coordinator 10-11 item 1)
+
+Case `patmT_L16_e<k>_s` is patmT (rho kappa = 896 r^-8, flux 1 in, vacuum top, coupled gas, poly r, 16 x 16 lateral
+cells, two-stage steady state ending at c dt/dx 1e3). The extinction is split into absorption eps chi and scattering
+(1 - eps) chi, with eps = 1e-2 and 1e-4. In the steady state the gas is in radiative equilibrium (B = J), so S = J. The
+exact reference is the same as for patm. Binary xs1 (prodcand e66ee669 + the opt-in limiter, default off; data-bitwise to
+prodcand), run tree runs_xs.
+
+| arm | eps | N | E/J-1 at R_ph | dR_ph/R_ph | band 0.1-1 L1 | env | Picard |
+|---|---|---|---|---|---|---|---|
+| Ff (be, relaxed) | 1e-2 | 64 / 256 | -0.724 / -0.052 % | -2.7e-4 / -4.9e-5 | 7.8e-3 / 2.7e-3 | +1.14 % (256) | 2.98 / 2.87 |
+| FfSg (be, gas) | 1e-2 | 64 / 256 | -0.724 / -0.052 % | -2.7e-4 / -4.9e-5 | 7.8e-3 / 2.7e-3 | +1.14 % | 2.97 / 2.95 |
+| HFf (hesdirk2 predict, relaxed) | 1e-2 | 64 / 256 | -0.729 / -0.035 % | -2.7e-4 / -2.0e-5 | 7.8e-3 / 2.7e-3 | +1.14 % | 2.89 / 2.94 |
+| HFfSt (hesdirk2, time2_vet_col_source state) | 1e-2 | 64 / 256 | -0.730 / -0.035 % | -2.8e-4 / -2.0e-5 | | +1.14 % | 2.98 / 3.00 |
+| Ff / FfSg / HFf / HFfSt | 1e-4 | 256 | -0.051 / -0.051 / -0.035 / -0.035 % | | | +1.14 % | 2.80 / 2.81 / 2.99 / 3.00 |
+
+- **No bias.** With coupled gas in radiative equilibrium, relaxed and gas agree to <= 1e-5 in E at R_ph, for both eps.
+  So does hesdirk2's state source. Picard is unchanged (2.8-3.0).
+- The relaxed source is biased only where the gas is held away from radiative equilibrium (B != J), as in the IDORT
+  non-LTE test of Stage L. There E* -> B at large c dt kappa_a.
+- In production such layers are dynamic: shocks, adiabatically cooled wind, a thermal time longer than dt. The size there
+  is set by how far B is from J, not by the photosphere.
+- **Recommendation: no change to production.** If a non-equilibrium scattering layer matters, `vet_col_source = gas` is
+  exact there (Stage L) and costs no Picard (2.0 vs 2.0 in nlte2); `state` is not needed.
+- vet_scatter_j = current (the cheap variant) is refused by the code with vet_scatter_form = ma (non-convergence on the BSG).
+
+## Stage X. P2 consistency limiter `implicit_hr_excess = iso` (opt-in, vet_gd only; coordinator item 2)
+
+Code (branch sptests-1011):
+- 8af6b2ae: merge of prodcand e66ee669 into sptests-1011.
+- f94ce268: the limiter.
+- b6f91052: its steady-regime gate.
+
+Binary bin/athena_cpu_xs2 (md5 4ac3fba2f2bf3e2915c907a95e08b1cd), run tree runs_xs2. With the key unnamed, the data are
+bitwise those of prodcand (pinc bin arrays, pulse tab; the bin header differs only by the added default key in the
+parameter dump).
+
+- **Rule (M1HrExcess).** In a cell where the lagged E^n exceeds the vet_gd formal-solution J (vgd_hr HRJ), only the J
+  part of E keeps the formal solution's half-range shape; the excess gets the isotropic +-1/4:
+  `q = J/E^n, h+ -> q h+ + (1 - q)/4, h- -> q h- - (1 - q)/4`.
+  - It is applied on the x1 and lateral faces, and only where c dt/dx1 >= implicit_hr_excess_cfl (default 10).
+  - HCL >= 0 and HCR <= 0 are kept; the hc correction is untouched.
+- **Why the gate.** Ungated, the time-resolved pulse (c dt/dx 0.5) changed by 9 %: in a light front E^n differs from the
+  steady formal solution's J legitimately. Gated, the pulse is bitwise unchanged.
+
+| pinc (fse+hc, 100 cycles, c dt/dx 300) | directions | rotate | L_M1/L_ex r 4.3 / 4.9 | L_fs/L_ex | beam E/J_ex median r 4.3 | Picard mean/max |
+|---|---|---|---|---|---|---|
+| Ff | 120 | 10 | 2.25 / 2.35 | 0.29 | 0.90 | 3.6 / 5 |
+| **FfX** | 120 | 10 | **0.31 / 0.32** | 0.29 | 0.061 (J_fs 0.062) | 7.0 / **198** |
+| Ff R0 | 120 | 0 | 0.88 / 0.92 | 0.53 | 0.19 | 2.2 / 4 |
+| FfX R0 | 120 | 0 | 0.32 / 0.34 | 0.53 | 0.033 | 3.2 / 4 |
+| FfQ | 432 (18x24) | 10 | 2.29 / 2.38 | 0.76 | 1.88 | 3.7 / 5 |
+| **FfQX** | 432 | 10 | **0.69 / 0.71** | 0.76-0.80 | 0.55 (J_fs 0.54) | 4.3 / 8 |
+| FfQ R0 | 432 | 0 | 2.02 / 2.10 | 0.78 | 1.55 | 2.2 / 4 |
+| FfQX R0 | 432 | 0 | 0.63 / 0.65 | 0.78-0.82 | 0.53 | 3.9 / 5 |
+
+- **The limiter makes the moment solution consistent with the formal solution.** The channel luminosity goes from a
+  non-converging 2.0-2.4x to 0.31 (120 directions) and 0.69 (432 directions). That is within 10-40 % below the formal
+  solution's own L_fs, which converges to exact with the direction count (0.29 -> 0.76; 0.8 at 480).
+- The remaining error is an under-luminosity set by angular resolution, and it converges.
+- **Atmosphere (P1) is barely touched** (16 x 16, poly r):
+  - patm N 64: E/J-1 at R_ph -0.58 % (off -0.73 %), env +0.54 % (off +0.42 %).
+  - patm N 256: R_ph -0.044 % (off -0.051 %), env +1.14 % (unchanged).
+  - patmT N 256: R_ph +0.011 % (off +0.004 %).
+  - Picard 2.8-3.0 in all of them.
+- **Cartesian beams (vet_sc) are untouched by construction** (vet_gd src 2 only). CFfX equals CFf bitwise.
+- **Open:**
+  - The 120-direction FfX run has one step at Picard 198 (mean 7.0); the 432-direction runs do not (max 8).
+  - Not tested on AG Car; its cost and effect there should be measured before any default change.
+
+## Stage 3a. Exact-solution tests, fse+hc (binary xs2 = prodcand + opt-in, run tree runs_xs2, ic_rad = none)
+
+ana/s3_eval.py (modes thin / dif / relax / core / shd).
+
+- **T6a black-body sphere in a thin medium** (r_in = 1, flux 1, r in [1, 10], 4 x 4 lateral cells, vet_gd_inner = emit).
+  Exact E = 2(1 - sqrt(1 - 1/r^2)), F r^2 = 1.
+
+  | grid | N 64 | N 128 | N 256 |
+  |---|---|---|---|
+  | uniform r: L1 E/E_ex-1 | 1.2 % | 2.4 % | 3.2 % |
+  | uniform r: max\|F r^2 - 1\| | 1.9e-2 | 5.0e-3 | 1.3e-3 |
+  | poly r: L1 E/E_ex-1 | 1.2 % | 2.0 % | 2.8 % |
+  | poly r: max\|F r^2 - 1\| | 2.7e-2 | 6.8e-3 | 1.7e-3 |
+
+  - The flux converges at second order.
+  - E grows with N: this is the 4 x 4 lateral-interpolation error of P1b (more shells, more interpolations).
+    16 x 16: queued (s3b).
+  - vet_bc_diff cell = face bitwise here, because the emit start does not use the diffusion intensity.
+- **T4 spherical diffusion** (J21 static diffusion on the sphere, r0 = 3, rho kappa_s = 4e4, c = 10; exact = image-free
+  Gaussian convolution of u = rE). L1 relative error at sqrt(Dt) = 0.22, dt = T/512:
+
+  | arm | N 64 | N 128 | N 256 | X order |
+  |---|---|---|---|---|
+  | be, uniform | 4.3e-3 | 1.5e-3 | 7.8e-4 | 1.6, 0.9 (the dt error floor) |
+  | be, poly r | 9.5e-3 | 2.8e-3 | 1.1e-3 | 1.8, 1.3 |
+  | hesdirk2 predict, uniform | 3.8e-3 | 9.4e-4 | 2.4e-4 | **2.0, 2.0** |
+
+  - T ladder at N 128 (self-convergence): be order 1.2-1.6; hesdirk2 order 2.3 (1e-6 level).
+- **T1 thermal relaxation** (rho kappa_a = 100, c = 100: 1/(c kappa) = 1e-4).
+  - Outputs at 2.5-10 relaxation times: both schemes are at 1e-9 by t = 5e-4. relax2 (T0 = 100) at dt0/1: be 4e-5 in E,
+    hesdirk2 5e-4 (the stiff first step of hesdirk2).
+  - The early-time ladder (0.5-2 relaxation times, `relax*_early_T`) is queued (s3b).
+- **T9 radiation-acoustic shell** (rsw, P_rad/P_gas ~ 10, rho kappa_s = 1000):
+  - Interior (r < 2.7) X self-convergence order 2.5-2.8 (be) and 1.8-2.0 (hesdirk2) in E, rho, v.
+  - T order: be 1.0; hesdirk2 1.4-1.8.
+  - The outermost cell pair at the Marshak top does NOT converge (rho 1.0001 vs 1.013 at N 128 / 256). This is a top
+    boundary layer of the hydro with radiation force; it is excluded from the order.
+- T6b IDORT sphere (exact by quadrature, s3_eval core), T7 shadow (exact visible-disk quadrature, s3_eval shd) and T8 beams:
+  queued (s3b).
+  - Smoke (hr, 32 radial cells): shadow lit-region L1 42 %. This is ray effects of 120 directions against a star of
+    0.2 sr; the queued runs include the 432-direction set.
+
 ## Status of the rest of the suite (at this hand-back)
 
 - Done: Stage 0 design; code (82ef2e9c: vet_gd_inner = emit, vet_gd_beam, pgen core / clump / screen / gas_hold /
