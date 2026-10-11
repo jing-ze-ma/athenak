@@ -227,6 +227,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
+  if (ivar==166 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR: m1_gdhr output needs a <rad_m1> block" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==165 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_thsw output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -731,6 +735,19 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // run's implicit_thin_switch (fb for hj and none, max(fb, eps C1/1.5) for fse, ...;
     // the face weight is that of the larger g of its two cells), m1_tj = J.  -1 where no
     // formal solution (below the vet_gd cut).  Derived; not part of m1.
+    // sptests-1011 P2: the vet_gd half-range ratios (vgd_hr) the halfrange face flux uses:
+    // m1_ghp1/ghm1 = H+_r/J, H-_r/J, then theta, phi.  hp < 0 flags no formal solution.
+    // Derived; not part of m1.
+    if (variable.compare("m1_gdhr") == 0) {
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_ghp1",0,&(derived_var));
+      outvars.emplace_back("m1_ghm1",1,&(derived_var));
+      outvars.emplace_back("m1_ghp2",2,&(derived_var));
+      outvars.emplace_back("m1_ghm2",3,&(derived_var));
+      outvars.emplace_back("m1_ghp3",4,&(derived_var));
+      outvars.emplace_back("m1_ghm3",5,&(derived_var));
+      out_params.n_derived += 6;
+    }
     if (variable.compare("m1_thsw") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_tfb",0,&(derived_var));
