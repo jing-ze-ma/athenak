@@ -933,12 +933,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // vet_seg (segfix-1011): mean (default, bitwise older runs) integrates the SC segment
+    // vet_seg (segfix-1011): mean (bitwise older runs) integrates the SC segment
     // upwind point -> cell centre with chi = (chi_u + chi_0)/2 and S linear in tau; split
     // integrates its two parts at the cell face with chi_u, chi_0 and a face S limited
-    // toward S_u at an opaque -> thin interface (rad_m1_vetseg.hpp)
+    // toward S_u at an opaque -> thin interface (rad_m1_vetseg.hpp); emit applies that
+    // limiter only where S_u > S_0.  DEFAULT emit since prodfinal-1011; a restart whose
+    // file lacks the key keeps mean (bitwise older runs).
     {
-      std::string sg = pin->GetOrAddString("rad_m1","vet_seg","mean");
+      const char *sgd = global_variable::restart_run ? "mean" : "emit";
+      std::string sg = pin->GetOrAddString("rad_m1","vet_seg",sgd);
       if (sg.compare("split") == 0) {
         vet_seg_split = true;
         vet_seg_emit = false;

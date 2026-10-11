@@ -1693,9 +1693,11 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_bc_diff must be cell or face");
     }
   }
-  // segfix-1011: vet_seg = mean (default, bitwise) | split (rad_m1_vetseg.hpp)
+  // segfix-1011: vet_seg = mean | split | emit (rad_m1_vetseg.hpp).  DEFAULT emit since
+  // prodfinal-1011; a restart whose file lacks the key keeps mean (bitwise older runs).
   {
-    std::string sg = pin->GetOrAddString("rad_m1", "vet_seg", "mean");
+    std::string sg = pin->GetOrAddString("rad_m1", "vet_seg",
+                                         global_variable::restart_run ? "mean" : "emit");
     if (sg.compare("split") == 0) {
       vet_seg_split = true;
       vet_seg_emit = false;
