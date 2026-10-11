@@ -20,3 +20,10 @@ Binary A (deepatm-1011 e84d2513):
 ## Report: NOTE-2026-10-11-deltaai-agcarA-icrad-restart.md
 rc / FATAL / NON-CONVERGED / Picard / s/cycle per run; restart: IC step re-run yes/no, and bitwise yes/no (which files);
 hprx: L_top table cycles 0-10, 30, 60 next to your B relax; hc1: bitwise yes/no. GPU-h.
+
+## Addendum (raven, user request): does relax perturb the envelope gas?
+5. From your existing NOTE-2026-10-11-deltaai-agcarA-face-icrad runs (B default vs B relax / fs_relax, dt), no new runs:
+   - at cycle 0 (after the IC step): the max relative change, relax vs default, of the shell-mean gas eint (or T) and
+     the gas pressure, in the bands < 0.8, 0.95-1.05, 1.05-1.5 and > 1.5 R_ph;
+   - over cycles 0-60: KE_int and KEr_int from the hst, and the max |velx| per dump, default vs relax / fs_relax.
+   Say whether relax creates a velocity transient (and how large compared with the default IC's).
