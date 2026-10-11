@@ -13067,6 +13067,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto ciw_ = csinc;
   const bool csok = csinc_ok && t2st;
   auto ckw_ = (t2s == M1_T2S_STAGE1) ? csk2 : csk1;
+  const bool gfst = gcs_first;
+  auto f2nw_ = f0x2n;
+  auto f3nw_ = f0x3n;
   if (!rcpw) {
     par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -13085,6 +13088,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
   if (gcs && t2k && coupling && dbg_gas_force && t2s != M1_T2S_STAGE1) {csk1_ok = true;}
+  if (gcs) {gcs_first = false;}
   csinc_ok = false;
   if (vfx && have_hydro && feedback && csw && trans && thrd) {
     // STAGE CS3: the vimp re-forming of the cell F on the cubed sphere, as a kernel of

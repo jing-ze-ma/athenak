@@ -289,7 +289,7 @@
         // consrc-1011, implicit_gas_src = conservative (gas_feedback = true): the gas
         // takes minus the radiation's own source of the solve,
         //   dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_{interior faces} Z_f
-        //        + (1/2) sum_{physical x1 faces} (F0'_b - F0old_b)/(c chat),
+        //        + sum_{physical x1 faces} [(F0'_b - F0old_b)/(2 c chat) + w dt k F0'_b/c],
         // F_c the STORED cell flux (u0; F^old of a hesdirk2 stage + its increment) and
         // Z_f the face's transport part (face kernels).  A physical face has no face
         // equation: its F0 change is inflow, not a source.  The work W (exact kinetic
@@ -299,13 +299,16 @@
         const Real icc = 1.0/(cl*ch);
         const int ipq = pos_.d_view(m);
         Real x1 = 0.0, x2 = 0.0, x3 = 0.0;
+        // a physical face: its F0 change is inflow, and it keeps the matched drag
+        // deposit of the boundary half cell (dt k F0_b/c, a boundary momentum source)
+        const Real wbq = bmhalf ? 0.5 : 1.0;
         if (i == is && ipq == 0 && !cyclic) {
-          x1 += 0.5*(fl - f0n_(m,k,j,i))*icc;
+          x1 += 0.5*(fl - f0n_(m,k,j,i))*icc + wbq*(dt/cl)*iw_(m,M1_IW_KT,k,j,i)*fl;
         } else {
           x1 -= 0.5*gz1w_(m,k,j,i);
         }
         if (i == ie && ipq == nblkx1-1 && !cyclic) {
-          x1 += 0.5*(fr - f0n_(m,k,j,i+1))*icc;
+          x1 += 0.5*(fr - f0n_(m,k,j,i+1))*icc + wbq*(dt/cl)*iw_(m,M1_IW_KT,k,j,i)*fr;
         } else {
           x1 -= 0.5*gz1w_(m,k,j,i+1);
         }
@@ -338,6 +341,26 @@
         go1 = u0_(m,M1_F1,k,j,i);
         go2 = u0_(m,M1_F2,k,j,i);
         go3 = u0_(m,M1_F3,k,j,i);
+        if (gfst) {
+          // the first solve of the run: the problem generator's F is not (yet) the
+          // radiation's state (F0 faces + a E), whose old value is taken instead (the
+          // difference is a cold-start mismatch, not a source)
+          const Real eo = iw_(m,M1_IW_EN,k,j,i);
+          go1 = 0.5*(f0n_(m,k,j,i) + f0n_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
+          if (trans) {
+            Real a = 0.5*(f2nw_(m,k,j,i) + f2nw_(m,k,j+1,i)) + iw_(m,M1_IW_A2,k,j,i)*eo;
+            Real b = thrd ? (0.5*(f3nw_(m,k,j,i) + f3nw_(m,k+1,j,i))
+                             + iw_(m,M1_IW_A3,k,j,i)*eo) : 0.0;
+            if (csw && thrd) {
+              const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+              const Real a0 = a;
+              a = (a0 + c*b)*si;
+              b = (b + c*a0)*si;
+            }
+            go2 = a;
+            go3 = b;
+          }
+        }
         if (t2st) {
           if (csok) {
             go1 += ciw_(m,0,k,j,i);
