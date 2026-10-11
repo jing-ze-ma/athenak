@@ -780,7 +780,8 @@ class RadiationM1 {
   bool cs2_dav = false;                 // the dA components hold a pass's prediction
   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
-                                        // 2 no vimp prediction, 4 no hydro shift
+                                        // 2 no vimp prediction, 4 no hydro shift,
+                                        // 8 no x1 split, 16 no x2/x3 split
   bool Cs2Active();
   void ImplicitCs2DeltaA(bool usedv);
   void ImplicitCs2Vimp();

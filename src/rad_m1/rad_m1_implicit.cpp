@@ -9493,6 +9493,7 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool fwd = sph_geom && impl_face_wdist;
   const bool rs = restore;
+  const bool nx1s = (cs2_dbg & 8), ntrs = (cs2_dbg & 16);   // diagnostic: no x1 / x2,x3 split
   par_for("m1_cs2_px1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
@@ -9500,7 +9501,7 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
     if ((lo || hi) && !cyclic) return;
     if (cyclic && i == ie+1) return;   // the wrapped face: copied below
     Real nf = 0.0;
-    if (!rs) {
+    if (!rs && !nx1s) {
       const int im = (cyclic && i == is) ? ie : (i-1);
       nf = M1FaceAvgX1(iw_(m,cd,k,j,im), iw_(m,cd,k,j,i), cx1f, m, im, i, fwd);
     }
@@ -9533,7 +9534,7 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
       const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je+1 : ke+1;
       if ((c == cs && plo) || (c == ce && phi)) return;
       Real nf = 0.0;
-      if (!rs) {
+      if (!rs && !ntrs) {
         const int jm = (d == 1) ? (j-1) : j, km = (d == 2) ? (k-1) : k;
         nf = 0.5*(iw_(m,cd+d,km,jm,i) + iw_(m,cd+d,k,j,i));
       }
@@ -9704,6 +9705,7 @@ void RadiationM1::ImplicitCs2Vimp() {
   const int b = iw_vimp;
   const int ca = iw_cs2, cd = iw_cs2 + 3;
   const bool nos = (cs2_dbg & 1);   // diagnostic: no face split (the gas pays all of dA)
+  const bool nx1s = (cs2_dbg & 8), ntrs = (cs2_dbg & 16);
   par_for("m1_cs2_vimp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = fmax(uh(m,IDN,k,j,i), 1.0e-300);
@@ -9737,7 +9739,8 @@ void RadiationM1::ImplicitCs2Vimp() {
     for (int d = 0; d < 3; ++d) {
       if (d > 0 && !(ftr && (d == 1 || thrd))) continue;
       Real cown = 0.0, nb = 0.0;
-      for (int s = 0; s < (nos ? 0 : 2); ++s) {
+      const bool nod = nos || (d == 0 && nx1s) || (d > 0 && ntrs);
+      for (int s = 0; s < (nod ? 0 : 2); ++s) {
         if (d == 0) {
           const int fi = i + s;
           const bool lo = (fi == is) && botb && !cyclic;
