@@ -1271,6 +1271,26 @@ class RadiationM1 {
   //! read the implicit-solver parameters and allocate its arrays; a no-op in
   //! transport = explicit
   void ImplicitInit(ParameterInput *pin);
+  // icrad-1011 (rad_m1_icrad.cpp): opt-in IC radiation start, fresh starts only
+  int icr_mode = 0;             // <rad_m1>/ic_rad: 0 none, 1 fs, 2 relax, 3 fs_relax
+  int icr_fs_iter = 3;          // ic_rad_fs_iter: E := J passes
+  int icr_relax_n = 20;         // ic_rad_relax_n: max radiation-only steps
+  Real icr_relax_tol = 1.0e-3;  // ic_rad_relax_tol: stop at |dL_top/L_top| below this
+  Real icr_relax_dtfac = 1.0;   // ic_rad_relax_dtfac: dt of the relaxation steps / dt
+  int icr_diag = 0;             // ic_rad_diag = N: E/J shell profiles (icrad_ej.txt)
+  int icr_ndiag_done = 0, icr_nrx = 0;
+  bool icr_fs_pending = false, icr_fs_only = false, icr_active = false;
+  bool icr_warned = false;
+  Real icr_tfs = 0.0, icr_trx = 0.0;
+  std::string icr_tag;
+  void IcRadInit(ParameterInput *pin);
+  void IcRadRun(Driver *pdrive);
+  bool IcRadHook();
+  void IcRadJ(DvceArray5D<Real> &jc);
+  void IcRadProfile(const std::string &tag, DvceArray5D<Real> &jc);
+  void IcRadShellSum(DvceArray5D<Real> &a, const int c0, const int nc,
+                     std::vector<Real> &out);
+  Real IcRadLtop();
   //! STAGE S1 (rad_m1_sph.cpp): the configuration the spherical-polar wedge supports;
   //! fatal on anything else.  Called after ImplicitInit when sph_geom is set.
   void SphericalS1Check(ParameterInput *pin);
