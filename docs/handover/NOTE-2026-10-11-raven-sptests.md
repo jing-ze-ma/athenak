@@ -400,7 +400,8 @@ ana/s3_eval.py (modes thin / dif / relax / core / shd).
 
   - The flux converges at second order.
   - E grows with N: this is the 4 x 4 lateral-interpolation error of P1b (more shells, more interpolations).
-    16 x 16: queued (s3b).
+    With 16 x 16 lateral cells: L1 0.18 / 0.62 / 0.95 % (N 64 / 128 / 256). This is 6x smaller, but it still grows with
+    N_r.
   - vet_bc_diff cell = face bitwise here, because the emit start does not use the diffusion intensity.
 - **T4 spherical diffusion** (J21 static diffusion on the sphere, r0 = 3, rho kappa_s = 4e4, c = 10; exact = image-free
   Gaussian convolution of u = rE). L1 relative error at sqrt(Dt) = 0.22, dt = T/512:
@@ -415,16 +416,61 @@ ana/s3_eval.py (modes thin / dif / relax / core / shd).
 - **T1 thermal relaxation** (rho kappa_a = 100, c = 100: 1/(c kappa) = 1e-4).
   - Outputs at 2.5-10 relaxation times: both schemes are at 1e-9 by t = 5e-4. relax2 (T0 = 100) at dt0/1: be 4e-5 in E,
     hesdirk2 5e-4 (the stiff first step of hesdirk2).
-  - The early-time ladder (0.5-2 relaxation times, `relax*_early_T`) is queued (s3b).
+  - Early-time ladder (`relax*_early_T`, outputs at 0.5-2 relaxation times, dt = 2.5e-5 / l), error at t = 0.5 tau:
+    - be: 7e-5 / 2e-6 / 2e-8 / 6e-11 / 2e-12 (relax1, l = 1..16); relax2 5.8e-4 at l = 1.
+    - hesdirk2: 2e-4 / 2e-5 / 2e-8 / 2e-12.
+    - The error falls much faster than any power of dt, down to round-off at dt <= tau/32. The 0-D exchange is solved
+      by the per-cell gas Newton, so a plain time order does not apply.
+    - Matches the ODE: PASS.
 - **T9 radiation-acoustic shell** (rsw, P_rad/P_gas ~ 10, rho kappa_s = 1000):
   - Interior (r < 2.7) X self-convergence order 2.5-2.8 (be) and 1.8-2.0 (hesdirk2) in E, rho, v.
   - T order: be 1.0; hesdirk2 1.4-1.8.
   - The outermost cell pair at the Marshak top does NOT converge (rho 1.0001 vs 1.013 at N 128 / 256). This is a top
     boundary layer of the hydro with radiation force; it is excluded from the order.
 - T6b IDORT sphere (exact by quadrature, s3_eval core), T7 shadow (exact visible-disk quadrature, s3_eval shd) and T8 beams:
-  queued (s3b).
+  see Stage 3b.
   - Smoke (hr, 32 radial cells): shadow lit-region L1 42 %. This is ray effects of 120 directions against a star of
     0.2 sr; the queued runs include the 432-direction set.
+
+## Stage 3b. IDORT sphere, shadow, injected beams (fse+hc, binary xs2, runs_xs2)
+
+- **T6b IDORT homogeneous sphere** (rho kappa_a = 10, B = 1 for r < 1, thin outside, r in [0.2, 7], 4 x 4 lateral cells;
+  exact by mu quadrature, s3_eval core). Mean E/J_ex - 1 per band, and F r^2 over the exact r^2 H (r > 3):
+
+  | grid | N | r < 0.9 | 0.9-1.1 (edge) | 1.1-3 | r > 3 | F r^2 / exact |
+  |---|---|---|---|---|---|---|
+  | uniform | 64 / 128 / 256 | +0.7 / -0.2 / -0.13 % | +56 / -6 / -1.7 % | +8.7 / +3.6 / +9.5 % | +12.7 / +4.8 / +8.6 % | 1.10 / 1.02 / 1.05 |
+  | poly | 64 / 128 / 256 | -2.3 / -0.6 / -0.05 % | -33 / -22 / -1.5 % | -15 / -8.8 / +6.7 % | -6.7 / -5.1 / +7.6 % | 0.92 / 0.93 / 1.05 |
+
+  - The interior and the edge converge.
+  - The thin exterior does not: +5-9 % with the luminosity off by 2-10 %. This is the same 4 x 4 lateral error as T6a
+    and P1b. 16 x 16 is the next run.
+- **T7 shadow** (black-body star r = 1 + an opaque cold clump at r = 3, a = 0.4, on the wedge axis; 48 x 48 lateral
+  cells, 32 or 64 radial cells). Exact = visible-disk quadrature (s3_eval shd); cells are classed umbra / penumbra / lit
+  by the exact visible fraction.
+
+  | run | directions | umbra E/E_free (r 4) | penumbra L1 (r 4 / 5) | lit L1 (r 4 / 5) | lit mean (r 4) |
+  |---|---|---|---|---|---|
+  | hr smoke (cited) | 120 | 0.41 | 0.96 / 0.87 | 0.42 / 0.42 | |
+  | Ff, N 32 | 120 | 0.049 | 0.51 / 0.65 | 0.39 / 0.51 | -7.6 % |
+  | Ff, N 64 | 120 | 0.029 | 0.48 / 0.66 | 0.38 / 0.55 | -5.9 % |
+  | Ff R0, N 32 | 120 | 0.036 | 0.51 / 0.63 | 0.39 / 0.57 | -10 % |
+  | **FfQ, N 32** | **432** | **0.037** | **0.14 / 0.13** | **0.08 / 0.09** | +0.3 % |
+
+  - fse+hc keeps a dark umbra (3-5 % of the unshadowed field; hr 41 %).
+  - The lit and penumbra errors are ray effects of the discrete direction set against a star that subtends 0.2 sr. They
+    fall 4-5x from 120 to 432 directions.
+  - **The shadow is resolution-limited by vet_gd's directions, not by the moment scheme.**
+- **T8 beams injected at the inner boundary (vet_gd_beam): FAIL, code problem.**
+  - beam / beam1 at c dt/dx 1e3 diverge (Picard resid 1e33) or end with E 1e3x e_b. This happens with fse+hc, the
+    limiter, hesdirk2, and twin off; the hr smoke was 1e3x too.
+  - At c dt/dx 30 the run is stable, but the beam is smeared out: E in the tube is 0.3 % of exact and 99.7 % of E lies
+    outside it.
+  - The formal solution itself is not conservative for this tilted collimated beam: its luminosity grows 0.012 -> 0.017
+    (+40 %) from r = 1 to 5, with or without the twin. The moment luminosity tracks it.
+  - Likely cause: the per-shell lateral interpolation of a single-direction, non-radial beam does not conserve flux.
+  - Production has no injected beams; the production-relevant channel beam (pinc) is stable. vet_gd_beam stays a
+    smoke-level feature until the sweep's lateral interpolation is made flux-conservative for it.
 
 ## Status of the rest of the suite (at this hand-back)
 
@@ -438,12 +484,12 @@ ana/s3_eval.py (modes thin / dif / relax / core / shd).
   - rad_signal_speed is now off for static gas: it had capped dt at 5e-4.
 - Done since: P1b lateral study, Stage L large-radius control (pulse, nlte2, nlte4), P2b diagnosis (a)-(d) and the cbfix
   check, prodcand confirmation.
-- Running at this hand-back: pinc 4x GL directions (FfG4, FfG4R0; sptests build gdhr2), staircase exact at 96 x 96.
+- Done since: Stage C (relaxed source, coupled gas), Stage X (limiter), Stage 3a/3b (T1, T4, T6a, T6b, T7, T8, T9
+  with fse+hc). The 4x GL pinc (1920 directions, rotate 0) reached t = 438: L_M1/L_ex 2.2-2.3, L_fs/L_ex 0.82-0.87.
 - Open:
-  - vet_col_source = relaxed in a coupled-gas electron-scattering envelope (production): is E* ~ J there? Test: nlte2
-    with coupled gas.
-  - the fse+hc channel excess: a consistency limiter (M1 thin-cell flux vs the FS flux when E >> J_fs) would be the next
-    code experiment;
-  - Picard 30 at c dt/dx 3000.
-- Not started: Stage-3 exact-solution tests (point/sphere source, shadow, inner-boundary beams, spherical Marshak,
-  radial waves, 0-D relaxation), the cell/face and hesdirk2 arms (fse+hc only, per the scope change).
+  - T5 spherical Marshak wave (not built);
+  - T6b and T6a at 16 x 16 lateral cells (the thin-exterior lateral error);
+  - vet_gd_beam flux conservation (T8 FAIL);
+  - the limiter on AG Car (cost, effect) before any default change;
+  - Picard 30 at c dt/dx 3000 (P2) not re-examined;
+  - rsw: the top-boundary cell pair does not converge.
