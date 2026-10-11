@@ -15,6 +15,21 @@ tau_cell >= 10.
 With ``--nyquist`` the script instead measures the decay rate of a seeded
 odd-even mode and compares it with the rate of the compact 3-point diffusion
 operator at the Nyquist wavenumber, 4 D / dx^2.
+
+Validity / fit window (G5 fix, g5fix-1011).  For isotropic scattering and an
+isotropic initial condition the x-integrated transport (or Eddington-1/3 P1)
+equations close EXACTLY on the second moment:
+
+    sigma^2(t) = sigma0^2 + 2 D [t - tau (1 - exp(-t/tau))],  tau = 1/(c rho kappa)
+
+so the slope is 2 D after the free-streaming transient (t >> tau) at ANY
+optical width, PROVIDED (i) the known background is subtracted (--background,
+not --subtract-min: the min of a profile that has spread to the box edge is
+not the background), (ii) the pulse never reaches the periodic box edge
+(4 sigma(tlim) < half the box), and (iii) the fit skips the transient
+(--tau-skip N drops dumps with t < N tau and the t = 0 dump).  For the
+diffusion LIMIT the solver is meant to reproduce, the pulse must also be many
+mean free paths wide, rho kappa w >> 1 (G5 uses rho kappa w >= 5).
 """
 
 import numpy as np
@@ -83,6 +98,13 @@ def main():
                    help="predicted excess X; target ratio is 1 + X")
     p.add_argument("--skip", type=int, default=0,
                    help="drop this many early dumps from the fit")
+    p.add_argument("--tmin", type=float, default=None,
+                   help="fit only dumps with t >= tmin (and t > 0)")
+    p.add_argument("--tau-skip", type=float, default=None,
+                   help="fit only dumps with t >= N/(c rho kappa) and t > 0 "
+                        "(skip the free-streaming transient)")
+    p.add_argument("--series-out", default=None,
+                   help="write t, sigma^2, used-in-fit to this text file")
     p.add_argument("--background", type=float, default=0.0,
                    help="constant background subtracted from E")
     p.add_argument("--subtract-min", action="store_true",
@@ -122,7 +144,20 @@ def main():
                        % (rate, expect, ratio, target, args.tol))
 
     t, s2 = series_variance(dumps, args)
-    slope, _ = common.linfit(t, s2)
+    use = np.ones(t.size, dtype=bool)
+    tmin = args.tmin
+    if args.tau_skip is not None:
+        tts = args.tau_skip / (args.c * args.rho * args.kappa)
+        tmin = tts if tmin is None else max(tmin, tts)
+    if tmin is not None:
+        use = (t >= tmin) & (t > 0.0)
+        if use.sum() < 3:
+            common.verdict(False, "T3 pulse: fewer than 3 dumps after "
+                                  "tmin=%.4g" % tmin)
+    if args.series_out:
+        np.savetxt(args.series_out, np.column_stack([t, s2, use]),
+                   header="t sigma2 used_in_fit  (D=%.9e)" % diff)
+    slope, _ = common.linfit(t[use], s2[use])
     ratio = slope / (2.0 * diff)
     for tt, vv in zip(t, s2):
         common.report(args, "t=%.6e  sigma^2=%.6e" % (tt, vv))
