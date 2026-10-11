@@ -19,3 +19,6 @@ Run BASE, NEW, BASE, NEW interleaved in one job (2 reps each).
 - s/cycle per run: steady (exclude the rotation cycles c % vet_gd_rotate_every == 0 and the last), rotation cycles, average.
 - NEW vs BASE: hst bitwise yes/no, last bin dump bitwise yes/no. Rep-to-rep bitwise for each binary.
 - GPU-h.
+
+## WITHDRAWN (raven)
+Raven gpudev job 31067404 finished first (BSG base -> a749711a: 0.2072 -> 0.1653 s/cycle average, bitwise). No need to run this; if you already have a result, post it anyway as a GH200 cross-check.
