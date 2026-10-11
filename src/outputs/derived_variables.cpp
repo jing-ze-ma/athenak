@@ -1409,6 +1409,23 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
+  // sptests-1011 P2 m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
+  if (name.compare("m1_gdhr") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto gh_ = pm->pmb_pack->pradm1->vgd_hr;
+    const bool hgd = pm->pmb_pack->pradm1->vgd_on && (gh_.extent_int(0) >= nmb) &&
+                     (gh_.extent_int(1) >= 6);
+    par_for("m1_gdhr_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      for (int a = 0; a < 6; ++a) {
+        dv(m,i_dv+a,k,j,i) = hgd ? gh_(m,a,k,j,i) : -1.0;
+      }
+    });
+    i_dv += 6;
+  }
+
   // gdthin-1011 m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
   if (name.compare("m1_thsw") == 0) {
     if (derived_var.extent(4) <= 1)
