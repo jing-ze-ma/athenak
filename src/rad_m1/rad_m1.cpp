@@ -1065,6 +1065,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
     }
+    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc_h2be")) {
+      vsrc_noes_h2be = pin->GetBoolean("rad_m1","vet_source_noesrc_h2be");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }
@@ -1335,6 +1338,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (4b) MILESTONE 3a hook: the implicit solver's own parameters, checks and arrays.
   // Returns immediately with transport = explicit.
   ImplicitInit(pin);
+  IcRadInit(pin);   // icrad-1011 (keys read only when named)
   if (sph_geom) {SphericalS1Check(pin);}
   if (cs_geom) {
     pin_cs_ = pin;

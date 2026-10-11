@@ -9873,6 +9873,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         t2_vcprev = false;
       }
     }
+    // icrad-1011 (rad_m1_icrad.cpp): the IC formal-solution start (E := J, a pass of
+    // Driver::Initialize on a fresh start, then no solve) and the E/J diagnostic; both
+    // off by default (icr_fs_pending false, icr_diag 0)
+    if ((icr_fs_pending || icr_diag > 0) && IcRadHook()) {
+      impl_lin_tol = t2_lin_save;
+      return TaskStatus::complete;
+    }
   }
   TmrMark(3);
 
@@ -11949,7 +11956,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   if (onep_el && impl_onep_auto) {OnePassAuto(otyp, onep, converged && it == 1);}
   // implicit_predictor_order = 2 under hesdirk2: a backward-Euler step keeps ipred
-  const bool pskip = (impl_pord == 2) && (time_scheme == M1_TIME_HESDIRK2) && !t2st;
+  // (icrad-1011: not in the ic_rad passes, which are plain backward-Euler steps)
+  const bool pskip = (impl_pord == 2) && (time_scheme == M1_TIME_HESDIRK2) && !t2st &&
+                     !icr_active;
   if (pred && !pskip) {
     const bool hh = have_hydro;
     const bool po2 = (impl_pord == 2);

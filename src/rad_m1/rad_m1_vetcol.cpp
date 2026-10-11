@@ -761,7 +761,7 @@ void RadiationM1::VetColBuild() {
   const bool srx = thermal && vcol_srelax;
   // vet_source_noesrc (fixbundle-1009 F1): read the PHYSICAL E^n = u0 (the stage start
   // under be) instead of the solve's old vector E^n + dt (chat/c) esrc; no dt involved
-  const bool noes = vsrc_noes && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  const bool noes = VsrcNoes();   // rad_m1.hpp
   auto ur_ = u0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
@@ -1090,7 +1090,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   // vet_source_noesrc (fixbundle-1009 F1): read the PHYSICAL E^n = u0 (the stage start
   // under be) instead of the solve's old vector E^n + dt (chat/c) esrc; no dt involved
-  const bool noes = vsrc_noes && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  const bool noes = VsrcNoes();   // rad_m1.hpp
   auto ur_ = u0;
   const bool srx = thermal && vcol_srelax;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter

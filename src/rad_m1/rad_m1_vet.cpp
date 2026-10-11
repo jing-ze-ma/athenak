@@ -2516,7 +2516,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   // blendall-1009: vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
   // source and the boundary intensity read the PHYSICAL E^n = u0 under be, not the
   // solve's old vector E^n + dt (chat/c) esrc (M1_IW_EN)
-  const bool noes_ = vsrc_noes && (time_scheme == M1_TIME_BE);
+  const bool noes_ = VsrcNoes();
   auto esv_ = noes_ ? u0 : iw;
   const int esc_ = noes_ ? M1_E : M1_IW_EN;
   VetMBState &st = *vet_mbs;
@@ -3157,7 +3157,7 @@ void RadiationM1::VetShortChar() {
   // blendall-1009: vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
   // source and the boundary intensity read the PHYSICAL E^n = u0 under be, not the
   // solve's old vector E^n + dt (chat/c) esrc (M1_IW_EN)
-  const bool noes_ = vsrc_noes && (time_scheme == M1_TIME_BE);
+  const bool noes_ = VsrcNoes();
   auto esv_ = noes_ ? u0 : iw;
   const int esc_ = noes_ ? M1_E : M1_IW_EN;
   // hrup-1009: the half-range sums sum w I max(mu_a, 0) (M1_VET_HP1..3); hrmb-1009:

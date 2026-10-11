@@ -386,6 +386,25 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     if (res_flag && dt_rst > 0.0) { pmesh->dt = dt_rst; }
   }
 
+  //---- Step 2b. icrad-1011: <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
+  // restart): the IC radiation passes (rad_m1_icrad.cpp) at the first dt, then the
+  // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
+  if (!res_flag && time_evolution != TimeEvolution::tstatic &&
+      pmesh->pmb_pack->pradm1 != nullptr && pmesh->pmb_pack->pradm1->icr_mode != 0) {
+    pmesh->pmb_pack->pradm1->IcRadRun(this);
+    InitBoundaryValuesAndPrimitives(pmesh, false);
+    if (((phydro != nullptr && phydro->rad_signal_speed) ||
+         (pmhd != nullptr && pmhd->rad_signal_speed))) {
+      pmesh->pmb_pack->pradm1->RssPrime(res_flag);
+    }
+    if (phydro != nullptr) {(void) phydro->NewTimeStep(this, nexp_stages);}
+    if (pmhd != nullptr) {(void) pmhd->NewTimeStep(this, nexp_stages);}
+    if (prad != nullptr) {(void) prad->NewTimeStep(this, nexp_stages);}
+    (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, nexp_stages);
+    if (pz4c != nullptr) {(void) pz4c->NewTimeStep(this, nexp_stages);}
+    pmesh->NewTimeStep(tlim);
+  }
+
   //---- Step 3.  Cycle through output Types and load data / write files.
   if (!res_flag) { // only write outputs at the beginning of the run
     for (auto &out : pout->pout_list) {
