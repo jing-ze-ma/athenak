@@ -18,9 +18,12 @@ Remember `export MPICH_GPU_SUPPORT_ENABLED=1`.
 
 ## Files
 Use `docs/handover/agcarA_files/` on bsg-files-1009: the IC, the Rosseland and Planck tables, and agcar_A_va.athinput.
-Point he_ic_file, he_opac_table and he_planck_table at your copies. One deck serves all arms.
-If your AthenaK refuses a command-line key the deck does not name, add the key to a per-run copy of the deck instead.
-Arm ic needs the `problem/he_ic_rad*` keys; all arms need `rad_m1/ic_rad`.
+Point he_ic_file, he_opac_table and he_planck_table at your copies.
+**AthenaK rejects a command-line key that the deck does not name** ("Parameter ... on command line not found"; this
+happened on Raven). Make one deck copy for all arms, with these keys added at their default values:
+- in `<rad_m1>`: `vet_seg = mean`, `implicit_hr_excess = none`, `ic_rad = fs_relax`;
+- in `<problem>`: `he_ic_rad = file`, `he_ic_rad_gas = column`, `he_ic_rad_hse = false`.
+With every key at its default, this deck runs exactly like agcar_A_va.athinput.
 
 ## Runs: one job, 1 node x 4 GH200, 1 rank per GPU (4 blocks 480x64x64), --time 0:40, plain srun
 Common keys for all runs:
