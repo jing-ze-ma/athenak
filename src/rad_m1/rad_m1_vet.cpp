@@ -48,8 +48,8 @@
 //!
 //! BOUNDARIES.  Bottom (x1min face), upward rays: the diffusion intensity
 //! eps = E + 3 (F . Omega) / c of the bottom cell's M1 state, carried half a cell with
-//! S of that cell (vet_bc_diff = face, deepatm-1011: E moved to the face by the
-//! source's linear extrapolation).  Top (x1max face), downward rays: vacuum.  With
+//! S of that cell (vet_bc_diff = face, deepatm-1011, DEFAULT since gdface-1011: E moved
+//! to the face by the source's linear extrapolation; cell: the old bottom-cell E).  Top (x1max face), downward rays: vacuum.  With
 //! vet_bc_bath (default true, m1-h2div) an x1 end whose implicit_bc is marshak gives
 //! its entering rays the isotropic incident bath eps = implicit_ebath of that end
 //! instead (0: vacuum).
@@ -1667,13 +1667,16 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // the bottom FACE, E + (S_f - S_0) with S_f = 1.5 S_0 - 0.5 S_1 the face source the
   // half-cell carry already uses (face).  The cell value is low by dE/dtau dtau_cell/2,
   // a first-order boundary error that the sweep carries ~1 mean free path into the
-  // atmosphere (deep atm order 1.5).  Read only when named.
-  vet_bc_face = false;
-  if (pin->DoesParameterExist("rad_m1", "vet_bc_diff")) {
-    std::string bd = pin->GetString("rad_m1", "vet_bc_diff");
+  // atmosphere (deep atm order 1.5).  DEFAULT face since gdface-1011; a restart whose
+  // file lacks the key keeps cell (the old boundary); cell reproduces older runs bitwise.
+  {
+    std::string bd = pin->GetOrAddString("rad_m1", "vet_bc_diff",
+                                         global_variable::restart_run ? "cell" : "face");
     if (bd.compare("face") == 0) {
       vet_bc_face = true;
-    } else if (bd.compare("cell") != 0) {
+    } else if (bd.compare("cell") == 0) {
+      vet_bc_face = false;
+    } else {
       VetFatal("<rad_m1>/vet_bc_diff must be cell or face");
     }
   }
@@ -1774,7 +1777,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
               << "), lagged per hydro step" << (vet_milne ? ", MILNE source (diag)" : "")
               << (vet_full ? ", FULL tensor D = K/J (eigenvalue floor " : "")
               << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
-              << std::endl;
+              << ", vet_bc_diff = " << (vet_bc_face ? "face" : "cell") << std::endl;
   }
 }
 

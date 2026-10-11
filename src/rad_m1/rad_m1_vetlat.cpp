@@ -645,6 +645,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const int klo = thrd ? (ks - ng) : ks, khi = thrd ? (ke + ng - 1) : ks;
   const Real twopi = 2.0*M_PI;
   const bool tw = (stage == 0);
+  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   auto vd_ = vlat_d;
   for (int pass = 0; pass < 2; ++pass) {
     const int dir = pass;                     // 0 inward, 1 outward
@@ -708,13 +709,14 @@ void RadiationM1::VetLatSweep(const int stage) {
           const int ka = tw ? k : k0, kb = tw ? k : k1;
           const int ja = tw ? j : j0, jb = tw ? j : (j0 + 1);
           if (typ == VL_START) {
-            // the diffusion intensity at the inner face of shell icut (sc_he.py)
+            // the diffusion intensity at the inner face of shell icut (sc_he.py);
+            // vet_bc_diff = face (gdface-1011): S of the face, 1.5 S_a - 0.5 S_b
             const Real muf = geo_(l, 2*a+dir, 3);
             const int i1 = i + 1;
             auto ib = [&](const int kk, const int jj) {
               const Real sa = exp(cs_(m,1,kk,jj,i)), sb = exp(cs_(m,1,kk,jj,i1));
               const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(cs_(m,0,kk,jj,i));
-              return sa + g0*muf;
+              return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;
             };
             auto sbt = [&](const int kk, const int jj) {
               return fmax(1.5*exp(cs_(m,1,kk,jj,i)) - 0.5*exp(cs_(m,1,kk,jj,i1)),

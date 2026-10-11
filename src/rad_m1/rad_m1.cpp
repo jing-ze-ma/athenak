@@ -912,7 +912,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
     }
-    vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
+    // vet_bc_diff (gdface-1011; the vet_sc key, rad_m1_vet.cpp): the inner diffusion
+    // intensity of the formal solutions at the FACE (face) or from the first CELL (cell):
+    // vet_gd / vet_col_lat start S + mu(-dS/dtau) with S of the face, 1.5 S_a - 0.5 S_b
+    // (the S their half-cell carry starts from), vet_col's core rays E + (S_f - S_0)
+    // (vet_col_order2 keeps its own face start).  Read only when named (cell).
+    if (pin->DoesParameterExist("rad_m1","vet_bc_diff")) {
+      std::string bd = pin->GetString("rad_m1","vet_bc_diff");
+      if (bd.compare("face") == 0) {
+        vet_bc_face = true;
+      } else if (bd.compare("cell") == 0) {
+        vet_bc_face = false;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_bc_diff must be cell or face" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    vcol_team =pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);
     std::string ax = pin->GetOrAddString("rad_m1","vet_col_axis","radial");

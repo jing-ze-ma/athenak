@@ -1778,6 +1778,7 @@ void RadiationM1::VetGdSweep() {
   auto m3_ = vgd_m3;
   auto w3_ = vgd_w3;
   const bool bandx = vgd_bandx;
+  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -1994,14 +1995,17 @@ void RadiationM1::VetGdSweep() {
             if (bdone) {
               // done: the shortened segment from the band edge
             } else if (typ == 2) {
-              // the diffusion intensity at the inner face of the first shell
+              // the diffusion intensity at the inner face of the first shell,
+              // S + mu (-dS/dtau_r); vet_bc_diff = face (gdface-1011): S of the FACE,
+              // 1.5 S_a - 0.5 S_b (the S the half-cell carry below starts from), not of
+              // the first shell's cell (O(dtau_cell) low isotropic part otherwise)
               const Real rf = cx1f(m,i);
               const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
               const int i1 = i + 1;
               auto ib = [&](const int kk, const int jj) {
                 const Real sa = exp(csx(m,1,kk,jj,i)), sb = exp(csx(m,1,kk,jj,i1));
                 const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(csx(m,0,kk,jj,i));
-                return sa + g0*muf;
+                return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;
               };
               auto sbt = [&](const int kk, const int jj) {
                 return fmax(1.5*exp(csx(m,1,kk,jj,i)) - 0.5*exp(csx(m,1,kk,jj,i1)),

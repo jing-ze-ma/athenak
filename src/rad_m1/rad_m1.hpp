@@ -349,7 +349,8 @@ class RadiationM1 {
   int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
   bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
   bool vet_bc_bath;          // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
-  bool vet_bc_face;          // vet_bc_diff = face: bottom diffusion I at the face E
+  bool vet_bc_face = false;  // vet_bc_diff = face: inner diffusion I at the face (vet_sc,
+                             // vet_gd, vet_col_lat, vet_col core; gdface-1011)
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis

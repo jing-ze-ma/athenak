@@ -715,6 +715,7 @@ void RadiationM1::VetColInit() {
               << (vcol_axis_flux ? "M1 flux" : "radial") << ", rebuilt every "
               << vcol_every << " step(s)";
     if (vcol_o2) {std::cout << "; vet_col_order2 (quadratic mu, face core)";}
+    std::cout << "; vet_bc_diff = " << (vet_bc_face ? "face" : "cell");
     if (vcol_fkmin != 1.0/3.0) {
       std::cout << "; f_K >= " << vcol_fkmin;
     }
@@ -796,6 +797,7 @@ void RadiationM1::VetColBuild() {
   // vet_col_order2 with a reflecting inner x1 boundary: the core rays start from the
   // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
   const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
+  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray;
@@ -901,7 +903,9 @@ void RadiationM1::VetColBuild() {
     // F1: the inner-boundary intensity from the physical E^n too (noes)
     const Real en0 = noes ? fmax(ur_(m,M1_E,k,j,is), efl) : iw_(m,M1_IW_EN,k,j,is);
     const Real en1 = noes ? fmax(ur_(m,M1_E,k,j,is+1), efl) : iw_(m,M1_IW_EN,k,j,is+1);
-    Real e0 = fmax(en0, efl);
+    // vet_bc_diff = face (gdface-1011; vet_col_order2 has its own face start): E moved
+    // to the inner face by the source's extrapolation, E + (S_f - S_0) as vet_sc
+    Real e0 = fmax(bfc ? (en0 + 0.5*(src(0) - src(1))) : en0, efl);
     Real f0 = iw_(m,M1_IW_F1,k,j,is);
     if (o2) {
       e0 = fmax(1.5*en0 - 0.5*en1, efl);
@@ -1121,6 +1125,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   // vet_col_order2 with a reflecting inner x1 boundary: the core rays start from the
   // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
   const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
+  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray, lc = vcol_lc;
@@ -1267,7 +1272,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     // F1: the inner-boundary intensity from the physical E^n too (noes)
     const Real en0 = noes ? fmax(ur_(m,M1_E,k,j,is), efl) : iw_(m,M1_IW_EN,k,j,is);
     const Real en1 = noes ? fmax(ur_(m,M1_E,k,j,is+1), efl) : iw_(m,M1_IW_EN,k,j,is+1);
-    Real e0 = fmax(en0, efl);
+    // vet_bc_diff = face (gdface-1011; vet_col_order2 has its own face start): E moved
+    // to the inner face by the source's extrapolation, E + (S_f - S_0) as vet_sc
+    Real e0 = fmax(bfc ? (en0 + 0.5*(pr_(n1) - pr_(n1+1))) : en0, efl);
     Real f0 = iw_(m,M1_IW_F1,k,j,is);
     if (o2) {
       e0 = fmax(1.5*en0 - 0.5*en1, efl);
