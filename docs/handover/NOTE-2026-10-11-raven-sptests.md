@@ -9,8 +9,15 @@ Branch `sptests-1011` (local, NOT pushed) in the worktree /raven/u/jinma/ATHENAK
   production-like c dt/dx 1e3), hr is 2.2 % low in E at R_ph at N 256 (7.1 % at N 64), and it converges at first order.
   fse+hc is within 0.05-0.3 % and converges at order 1.5-2.4. The same holds for the thermal radiative-equilibrium
   version. AG Car's +4-6 % E at 1.000-1.006 R_ph under fse+hc is therefore the removal of hr's deficit.
-- **Thin envelope:** the two arms are identical, about +1 % above J. The limit here is vet_gd's lateral angular
-  resolution, not the switch.
+- **Thin envelope:** the two arms are identical, about +1 % above J at 16 x 16 lateral cells. This is vet_gd's lateral
+  angular resolution, not the switch. It falls about linearly with the lateral cell angle: +0.3 % at the production 0.008 rad
+  (Stage P1b).
+- **Large-radius control (Stage L):** vet_gd on a thin shell converges to the Cartesian vet_sc answer and to the exact
+  answer as 1/r0. Pulse: 1e-3 floor. Non-LTE atmosphere: 0.25 %. This requires `vet_col_source = gas` in that
+  held-temperature scattering test. The default `relaxed` source is -5 % (c dt/dx 1e3) to +13 % (cfl 1e6) there.
+- **P2 diagnosis (Stage P2b):** the channel over-luminosity of fse+hc (2.2-2.5x) comes from the moment step, not from the
+  formal solution: L_fs = 0.3 -> 0.8 of exact with 120 -> 480 directions. The cbfix sf mechanism is absent; no port.
+- Final code: prodcand e66ee669 reproduces the Stage-P fse+hc results bitwise (with ic_rad = none).
 - **Thermal channel beam on vet_gd:** both arms are stable at c dt/dx 30-3000 and over 1000 cycles. hr sends 41x the
   exact luminosity through the channel; fse+hc sends 2.3-3.4x. fse+hc costs Picard 30 at c dt/dx 3000 (hr: 11.5).
 - New opt-in code: commit 82ef2e9c. With the new keys unnamed, output is bitwise identical to the base build.
@@ -168,6 +175,145 @@ GL 10x12, twin+fuse+det, scatter ma, offdiag operator, `vet_bc_diff = face` name
   Not a production regime. Fix: rho x 1e20, kappa x 1e-20 (rho kappa unchanged), rerun: all patmT runs now complete (Picard 3.0, no NaN); results in P1. Code note: in that
   extreme limit the exchange solve produces NaN instead of clamping / falling back.
 
+## Binaries from here on (coordinator 10-11)
+
+- **prodcand e66ee669** = bin/athena_cpu_e66ee669 (copy of /raven/ptmp/jinma/prodcand_1011/bin, md5 39ab667b48f4e15d29bf13e39f8179ce):
+  prodcand-1011 with sptests 82ef2e9c + 9b8552ff merged, M1_VGD_NMAX kept at 432. Run tree `runs_pc/` (env SPT_RUNS).
+  - prodcand turns on `ic_rad = fs_relax` by default on fresh vet_col + vet_gd starts with a fluid. It relaxes the
+    initial radiation field over 40 steps before cycle 0. The time-dependent pulse then lost 62 % of its energy before
+    cycle 0. All test inputs now set `ic_rad = none` (spt.rad_base). With it, prodcand reproduces 82ef2e9c bitwise
+    (pulse, cart and sp).
+- **sptests 9b8552ff** = bin/athena_cpu_gdhr2 (CPU only): adds the `m1_gdhr` output (the vet_gd half-range ratios) and
+  M1_VGD_NMAX 2048. It is used only for the 2x/4x GL direction study of P2. Default output is bitwise identical to 82ef2e9c
+  (nlte2 cmp).
+- Scope change (user 10-11): production hr is no longer an arm. Only fse+hc arms are run; the hr numbers above are cited.
+
+## Stage P1b. Lateral resolution of the thin-envelope error (patm, fse+hc)
+
+Thin envelope = r > 1.2 R_ph. `env` is the volume-weighted SIGNED mean of E/J_ref - 1 there; the 'tau<0.1' column is L1.
+Binary 82ef2e9c, poly r, c dt/dx_min 1e3.
+
+| lateral cells (angular size) | N 64 env | N 128 env | N 256 env | N 512 env | N 1024 env | E/J-1 at R_ph, N 256 |
+|---|---|---|---|---|---|---|
+| 4 x 4 (0.2 rad) | +3.1 % | +5.5 % | +9.9 % | +16 % | +22 % | -0.19 % |
+| 8 x 8 (0.1) | | | +2.3 % | | | -0.02 % |
+| 16 x 16 (0.05) | +0.42 % | +0.87 % | +1.14 % | +1.34 % | +1.59 % | -0.05 % |
+| 32 x 32 (0.025) | | | +0.64 % | | | -0.09 % |
+| Lq 64 x 64 (0.008, production-like) | -0.03 % | +0.24 % | +0.34 % | | | -0.05 % |
+
+- **The +1 % thin-envelope "floor" is not a floor.** It falls about linearly with the lateral cell angle: +9.9, 2.3, 1.14,
+  0.64 % from 4x4 to 32x32 at N 256. At the production angular cell (0.008 rad) it is +0.24 % (N 128) and +0.34 % (N 256).
+- At fixed lateral cells it grows slowly with N_r: 4x4 +3 % -> +22 %; 16x16 +0.4 % -> +1.6 % over N 64-1024.
+  The likely cause is the per-shell bilinear lateral interpolation of the global-direction intensities. Each shell
+  crossing adds an error of about (lateral cell angle) x (dI/dmu), so it accumulates with the number of shells.
+- The photosphere (R_ph) values do not depend on the lateral grid (Lq = L16 to 1e-4). The P1 verdict on R_ph stands.
+  fse+hc reaches +0.10 % at N 1024 (16x16), so its R_ph error has hit its floor. hr is at -0.33 %, still first order.
+- Lq at N 64-128 has a smaller dt than L16, because its lateral cell sets dx_min. fse+hc is insensitive to this; the hr
+  rows of the Lq runs are not dt-matched.
+
+## Stage L. Large-radius control: vet_gd on a thin shell -> the Cartesian vet_sc answer
+
+Same 1-D problem on a shell of width w at r0/w = 1, 10, 100, 1000 (uniform r, 4 x 4 lateral cells), against the same
+binary's Cartesian vet_sc slab (CFf: vet_sc + the same fse+hc keys). Data: runs_pc (prodcand e66ee669) and runs (82ef2e9c,
+identical where both ran). ana/lr_eval.py.
+
+**T3 pulse** (Gaussian, rho kappa_s = 1, vacuum ends, t = 1, c dt/dx 0.5 at N 64; L1 of (E_sp - E_cart)/max E_cart):
+
+| r0/w | N 64 | N 128 | N 256 | E_peak sp/cart (N 256) |
+|---|---|---|---|---|
+| 1 | 8.3e-2 | 7.9e-2 | 7.4e-2 | 1.166 (true spherical focusing) |
+| 10 | 9.2e-3 | 8.4e-3 | 7.9e-3 | 1.011 |
+| 100 | 1.8e-3 | 1.7e-3 | 1.7e-3 | 1.0005 |
+| 1000 | 1.1e-3 | 1.1e-3 | 1.1e-3 | 0.9995 |
+
+- The difference falls as 1/r0 down to a 1.1e-3 floor. The floor is independent of N, so it is the difference between
+  the two formal solvers (vet_gd GL 10x12 product set vs vet_sc Gauss 8x32), not curvature or resolution.
+  The hr arm (82ef2e9c) gives the same numbers to 2 digits.
+
+**T2 non-LTE atmosphere** (IDORT 4.1.3: chi = 1e-3 e^(20-z), eps = 1e-2, held gas B = 1, bath 1 below, vacuum top).
+Exact reference: plane-parallel Lambda-matrix solve (ana/ref_nlte.py -> ref/nlte2_ref.npz, 700 vs 1400 nodes 3e-3).
+Two-stage steady state (`_tb`: 80 steps at cfl 1e6, then 300 at c dt/dx 1e3). Mean E/J_exact - 1 per tau band:
+
+| run (N 320) | tau < 0.1 | 0.1-1 | 1-10 |
+|---|---|---|---|
+| Cartesian vet_sc CFf | -0.02 % | +0.05 % | +0.09 % |
+| sp r0/w 1, FfSg | -40 % | -23 % | -8.4 % (true sphere: dilution) |
+| sp r0/w 10, FfSg | -7.1 % | -3.8 % | -1.1 % |
+| sp r0/w 100, FfSg | -1.05 % | -0.42 % | -0.04 % |
+| sp r0/w 1000, FfSg | -0.26 % | -0.03 % | +0.07 % |
+| sp r0/w 1000, FfSg, N 640 | -0.24 % | -0.02 % | +0.07 % |
+| eps = 1e-4 (nlte4), r0/w 1000 vs cart, FfSg | -0.25 % | -0.10 % | -0.04 % |
+| sp r0/w 1000, Ff (default vet_col_source = relaxed), c dt/dx 1e3 | **-5.4 %** | **-2.7 %** | +0.4 % |
+| same at implicit_cfl 1e6 | **+13 %** | **+10 %** | -0.02 % |
+| hr (82ef2e9c, relaxed), c dt/dx 1e3 / cfl 1e6 | -5.3 % / +8.5 % | -7.3 % / +23 % | -0.8 % / +7.5 % |
+
+- **vet_gd converges to vet_sc and to the exact answer as r0 -> inf** (FfSg: 1/r0 down to 0.25 % at the thin top).
+  This ties vet_gd to the Cartesian evidence.
+- **But only with `vet_col_source = gas`** (arm suffix Sg). With the production default `relaxed`, vet_gd's formal-solution
+  source in a scattering-dominated layer is wrong for held gas:
+  - The relaxed source takes the scattering part from the 0-D end-of-step E* = (E^n + c dt kappa_a B)/(1 + c dt kappa_a).
+    At large c dt kappa_a, E* -> B.
+  - The dump (m1_fs) at implicit_cfl 1e6 shows S_fs = 0.999 where the exact S = eps B + (1 - eps) J = 0.36.
+    J_fs = 5.4 J_exact at the top; the M1 E stays within 13 %, because only the closure shape is wrong.
+  - This test holds T (B != J). In production the gas is coupled and near radiative equilibrium, so E* ~ J there. The
+    effect is limited to non-equilibrium scattering layers at large c dt kappa_a. patmT (coupled gas, absorption) shows
+    nothing. This is not proven for an electron-scattering envelope with coupled gas; see "open" below.
+- Lateral cells do not matter in the plane limit: 16 x 16 equals 4 x 4 to 3e-3 at r0/w 1000.
+- The steady state is reached: 240 vs 80 steps changes E by < 3e-3. rotate_every 0 vs 10 makes no difference.
+- The deep base cells (first 2 of 320, tau ~ 5e5) carry a start-up artefact (E = 7e4, 5e-3). It is identical in every
+  geometry and arm, and excluded from the bands.
+
+## Stage P2b. Thermal channel beam diagnosis (why fse+hc is 2.3x the exact luminosity)
+
+ana/pin_eval.py (now also reports the formal solution's own luminosity L_fs and the face luminosity) and ana/pin_hr.py (the
+M1 budget of the channel and the vet_gd half-range ratios). 100 cycles, c dt/dx 300, N_r 64.
+
+| run | lateral cells | vet_gd directions | rotate | L_M1/L_ex (r 4.3 / 4.9) | L_fs/L_ex | J_fs/J_ex in beam |
+|---|---|---|---|---|---|---|
+| F | 48 x 48 | 120 (GL 10x12) | 10 | 2.25 / 2.35 | 0.29 | 0.06 |
+| F R0 | 48 x 48 | 120 | 0 | 0.88 / 0.92 | 0.53-0.58 | 0.04 |
+| F G2 | 48 x 48 | 480 (20x24) | 10 | 2.22 / 2.30 | 0.79-0.82 | 0.59 |
+| F G2 R0 | 48 x 48 | 480 | 0 | 1.94 / 2.01 | 0.80-0.84 | 0.57 |
+| F | 96 x 96 | 120 | 10 | 2.44 / 2.56 | 0.13 | |
+| F R0 | 96 x 96 | 120 | 0 | 1.23 / 1.28 | 0.38-0.41 | |
+| hr (P), cited | 48 x 48 / G2 R0 / 96 x 96 | | | 41 / 41 / 20 | same FS | |
+
+Exact references: smooth cone (ref/pinc_exact_64.npz) and the code's staircase hole (PIN_STAIR, ref/pincs_exact_64.npz).
+The staircase changes L_ex by -11 % to +1 % (open area 1.01 x the cone). So the reference geometry is not the cause.
+
+- **(a) The formal solution is not the cause.** Its own luminosity is LOW, 0.29 x exact with 120 directions, because the
+  0.011-sr cone is undersampled. It rises to 0.8 with 480 directions. The M1 luminosity stays at 2-2.3x throughout.
+  The moment step therefore adds the excess, about 2.5-8x the formal solution's own transmission.
+- **(b) Angular resolution** fixes the formal solution (0.29 -> 0.8), not the M1 answer (2.25 -> 2.2; R0 1.9-2.0).
+  The 120-direction R0 run at 0.9 is a coincidence: the fixed set happens to lie off the channel axis.
+  4x GL (1920 directions, rotate 10 and 0): still running (job p2d) at this hand-back.
+- **(c) Lateral resolution 2x** does not help fse+hc (2.25 -> 2.5). The formal solution gets worse (0.29 -> 0.13; more
+  shell interpolations of a narrow beam). hr halves (41 -> 20).
+- **(d) The walls are held:** gas_hold re-imposes rho, T, v of the whole gas every stage, with gas_feedback false. The
+  shell is a fixed cold black absorber, as the exact solution assumes.
+- **Budget of the M1 channel** (pin_hr, F):
+  - 6.43e-3 enters at r = 2;
+  - 94.2 % leaks laterally into the walls;
+  - 5.8 % leaves at r = 4 (2.3x the exact outflow).
+  - In the channel E/J_fs = 3-10, with the formal solution's ratios hp_r = 0.98 and |h_theta| <= 0.1 (beam-like).
+  - The gap below the inlet has hp_r = 0.81.
+  - So energy entering the channel at broad angles is given the narrow beam shape of the channel's own formal solution,
+    and too little of it is sent into the walls.
+- **cbfix mechanism (implicit_hr_face = sf) on vet_gd: not the cause here.**
+  - sf triggers where a cell's net FS face flux exceeds c J (Jh/J > 1).
+  - In the channel and on the axis Jh/J = 1.000 everywhere: the FS flux there is consistent with its own J.
+  - It triggers only in the opaque wall cells (J_fs ~ 1e-11, 37 % of wall-ring cells). Their faces have dtau ~ 30 per
+    cell, so the AP weight makes them central faces and the half-range ratios are not used.
+  - The over-luminosity is the opposite mismatch: M1 E >> J_fs in cells whose FS shape is right. The sf donor scale does
+    not see it.
+  - **No sf port to vet_gd** (it would not change this case).
+
+### Stage-P verdict on the final code (prodcand e66ee669, runs_pc, ic_rad = none)
+
+- patm L16 fse+hc at N 64-512, patmT L16 fse+hc at N 64-256, and pinc fse+hc (rotate 10 and 0) are **bitwise identical** to
+  82ef2e9c (tab/bin cmp). E/J-1 at R_ph = -0.73 / -0.26 / -0.05 % (patm N 64/128/256) and -0.80 / -0.24 / +0.004 % (patmT).
+  pinc L/L_ex = 2.25 (rotate 10) and 0.88 (rotate 0). The Stage-P verdict holds on the final code.
+
 ## Status of the rest of the suite (at this hand-back)
 
 - Done: Stage 0 design; code (82ef2e9c: vet_gd_inner = emit, vet_gd_beam, pgen core / clump / screen / gas_hold /
@@ -178,8 +324,14 @@ GL 10x12, twin+fuse+det, scatter ma, offdiag operator, `vet_bc_diff = face` name
     is 0.88 (P) and 0.99 (F).
   - The first held-gas inputs did not emit (gas heat capacity << exchange). They are now rescaled (kscale).
   - rad_signal_speed is now off for static gas: it had capped dt at 5e-4.
-- Still running when this was written:
-  - patm with production-like lateral cells (Lq: 64 x 64 at 0.008 rad), N 64-256;
-  - L32 lateral at N 256;
-  - L16 at N 1024.
-- Not started: T1-T10 ladders, large-radius control, cell vs face, hesdirk2 arms, shadow / beam exact, ports.
+- Done since: P1b lateral study, Stage L large-radius control (pulse, nlte2, nlte4), P2b diagnosis (a)-(d) and the cbfix
+  check, prodcand confirmation.
+- Running at this hand-back: pinc 4x GL directions (FfG4, FfG4R0; sptests build gdhr2), staircase exact at 96 x 96.
+- Open:
+  - vet_col_source = relaxed in a coupled-gas electron-scattering envelope (production): is E* ~ J there? Test: nlte2
+    with coupled gas.
+  - the fse+hc channel excess: a consistency limiter (M1 thin-cell flux vs the FS flux when E >> J_fs) would be the next
+    code experiment;
+  - Picard 30 at c dt/dx 3000.
+- Not started: Stage-3 exact-solution tests (point/sphere source, shadow, inner-boundary beams, spherical Marshak,
+  radial waves, 0-D relaxation), the cell/face and hesdirk2 arms (fse+hc only, per the scope change).
