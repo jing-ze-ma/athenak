@@ -142,6 +142,8 @@ M1ShellGasP m1_shg = {1.0, 1.0e-8, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0e-
                       0.0, 0.0, 1.0, 1.0e-8, 0.0, 0.0, 1.0, 2.0};
 bool m1_shg_hold = false;
 Real m1_shg_gm1 = 2.0/3.0;
+// h2order-1011 (gas_hold_v): the radial flow v_r = vr sin(pi (x1 - x1a)/x1l) re-imposed
+Real m1_shv_vr = 0.0, m1_shv_x1a = 0.0, m1_shv_x1l = 1.0;
 
 // STAGE CS2 (radwave, rw_hist): the plane-wave vector / the cs sectoral mode frame
 Real m1_rw_k[3] = {0.0, 0.0, 0.0};
@@ -250,6 +252,7 @@ void RadM1AtmBC(Mesh *pm);
 void RadM1AtmGas(Mesh *pm, const Real bdt);
 void RadM1SphAtmGas(Mesh *pm, const Real bdt);
 void RadM1ShellHold(Mesh *pm, const Real bdt);
+void RadM1ShellHoldV(Mesh *pm, const Real bdt);
 void RadM1ShellReport(ParameterInput *pin, Mesh *pm);
 void RadM1CsHistory(HistoryData *pdata, Mesh *pm);
 void RadM1RwHistory(HistoryData *pdata, Mesh *pm);
@@ -976,6 +979,17 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       m1_shg_hold = pin->GetBoolean("problem","gas_hold");
       if (m1_shg_hold) {user_srcs_func = RadM1ShellHold;}
     }
+    // h2order-1011 (read only when named): gas_hold_v = true re-imposes the IC radial
+    // velocity v_r = gas_vr sin(pi (x1 - x1min)/(x1max - x1min)) every stage, keeping
+    // rho and e_int (a flow FIXED in time, for the time-order tests of the radiation in
+    // a moving medium; gas_feedback = false)
+    if (pin->DoesParameterExist("problem","gas_hold_v") &&
+        pin->GetBoolean("problem","gas_hold_v")) {
+      m1_shv_vr = gvr;
+      m1_shv_x1a = pmy_mesh_->mesh_size.x1min;
+      m1_shv_x1l = pmy_mesh_->mesh_size.x1max - pmy_mesh_->mesh_size.x1min;
+      user_srcs_func = RadM1ShellHoldV;
+    }
     const M1ShellGasP shp = m1_shg;
     if (restart) return;
     auto uh = pmbp->phydro->u0;
@@ -1567,6 +1581,39 @@ void RadM1ShellHold(Mesh *pm, const Real bdt) {
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
     uh(m,IEN,k,j,i) = dd*tt/gm1;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1ShellHoldV()
+//! \brief h2order-1011, problem/gas_hold_v: the x1 momentum back to rho v_r(x1) of the IC
+//! every stage (e_int kept), the transverse momenta to 0
+
+void RadM1ShellHoldV(Mesh *pm, const Real bdt) {
+  (void) bdt;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  int &ng = indcs.ng;
+  int n1 = indcs.nx1 + 2*ng;
+  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  int is = indcs.is, nx1 = indcs.nx1;
+  int nmb1 = (pmbp->nmb_thispack - 1);
+  auto uh = pmbp->phydro->u0;
+  auto &size = pmbp->pmb->mb_size;
+  const Real vr0 = m1_shv_vr, x1a = m1_shv_x1a, x1l = m1_shv_x1l;
+  par_for("m1_shg_holdv", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    const Real r = CellCenterX(i-is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    const Real dd = uh(m,IDN,k,j,i);
+    const Real ei = uh(m,IEN,k,j,i) - 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i))
+                                           + SQR(uh(m,IM3,k,j,i)))/dd;
+    const Real vr = vr0*sin(M_PI*(r - x1a)/x1l);
+    uh(m,IM1,k,j,i) = dd*vr;
+    uh(m,IM2,k,j,i) = 0.0;
+    uh(m,IM3,k,j,i) = 0.0;
+    uh(m,IEN,k,j,i) = ei + 0.5*dd*vr*vr;
   });
 }
 

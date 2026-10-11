@@ -481,6 +481,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         pm1->MRSolve(this, pmesh->dt);
       }
       const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
+      // time2_start = slope (h2order-1011): a step without a stored slope gets K1 from a
+      // probe solve and runs the stages (no-op otherwise)
+      if (pm1 != nullptr && !m1mr) {(void) pm1->Time2StartProbe(this, pmesh->dt);}
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
       const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;

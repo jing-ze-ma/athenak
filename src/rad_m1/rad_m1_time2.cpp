@@ -335,6 +335,32 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // time2_start / time2_start_frac (h2order-1011, rad_m1.hpp; read only when named):
+  // be (default, bitwise) | slope.  The Lie-split backward-Euler first step leaves an
+  // O(dt) start-up error that the second-order steps after it carry along as a free
+  // mode (h2order_1011: P = 10 linear wave, tau 100, v 1.1 1.2 1.0 -> see NOTE).
+  if (pin->DoesParameterExist("rad_m1", "time2_start")) {
+    std::string st = pin->GetString("rad_m1", "time2_start");
+    if (st.compare("be") == 0) {
+      t2_start = 0;
+    } else if (st.compare("slope") == 0) {
+      t2_start = 1;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_start = '" << st
+                << "' is not a choice (be | slope)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (pin->DoesParameterExist("rad_m1", "time2_start_frac")) {
+    t2_start_frac = pin->GetReal("rad_m1", "time2_start_frac");
+    if (!(t2_start_frac > 0.0 && t2_start_frac <= 1.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_start_frac must be in (0, 1]"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
@@ -540,6 +566,66 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   pred_ok = false;
   pred2_ok = false;
   t2_solve = M1_T2S_NONE;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::Time2StartProbe
+//! \brief time2_start = slope (h2order-1011): on a hesdirk2 step without a stored slope,
+//! a backward-Euler probe solve of dt_p = time2_start_frac dt from U^n (radiation, faces
+//! and gas; no hydro) stores K1 = (Y_p - U^n)/dt_p = f_I(U^n) + O(dt_p); U^n is then put
+//! back and the step runs the two stages, so no step of the run is Lie split.  Returns
+//! true when a probe was taken.  The predictor history the probe leaves is dropped (it
+//! only moves Picard starting points).
+
+bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
+  if (time_scheme != M1_TIME_HESDIRK2 || t2_start != 1) return false;
+  if (Time2Active()) return false;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  if (fl.on && fl.mhd) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_start = slope is not wired for MHD"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
+  Kokkos::deep_copy(DevExeSpace(), u1, u0);
+  Kokkos::deep_copy(DevExeSpace(), t2f1, f0x1);
+  if (trans_on) {
+    Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
+    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
+  }
+  if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
+  // the cold-start face init (implicit_f0_init) of the probe moves the copy too
+  // (ImplicitF0Init, t2_inprobe), so it survives the put-back
+  Mesh *pmesh = pmy_pack->pmesh;
+  t2_inprobe = true;
+  t2_solve = M1_T2S_BESTORE;
+  t2_fail = false;
+  nsub = 1;
+  dt_sub = t2_start_frac*dt;
+  pdrive->ExecuteTaskList(pmesh, "m1_before_stagen", 1);
+  pdrive->ExecuteTaskList(pmesh, "m1_stagen", 1);
+  pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
+  t2_inprobe = false;
+  // U^n back
+  Kokkos::deep_copy(DevExeSpace(), u0, u1);
+  Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
+  if (trans_on) {
+    Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
+    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
+  }
+  if (fl.on) {
+    Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
+    FluidRefresh(pdrive);
+  }
+  t2_solve = M1_T2S_NONE;
+  t2_fail = false;
+  pred_ok = false;
+  pred2_ok = false;
+  t2_ok = true;
+  t2_dtprev = dt;
+  t2_nprobe += 1.0;
+  return true;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1295,6 +1381,10 @@ void RadiationM1::Time2Report() {
   if (t2_pcap > 0.0) {
     std::cout << " time2_pred_cap=" << t2_pcap << " limited cell-builds=" << t2_pnlim
               << " of " << t2_pncell;
+  }
+  if (t2_start == 1) {
+    std::cout << " time2_start=slope probes=" << t2_nprobe << " (frac " << t2_start_frac
+              << ")";
   }
   std::cout << std::endl;
 }
