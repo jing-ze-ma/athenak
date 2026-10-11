@@ -109,10 +109,10 @@ int m1_cy_n = 0;
 // blendall-1009: up to 8 objects; (x, y, r, rho, T, rect, half-length, half-width,
 // angle):
 // rect = 1 is an oriented rectangle about (x, y), long axis at `angle` (radians) to x1
-Real m1_cy_p[8][9] = {{0.0}};
+Real m1_cy_p[24][9] = {{0.0}};
 // the object table captured by value in the reset kernel (namespace scope: CUDA does
 // not take a function-local type in an extended lambda)
-struct M1CylP {Real v[8][9];};
+struct M1CylP {Real v[24][9];};
 Real m1_cy_rhob = 1.0e-6, m1_cy_tb = 1.0e-3, m1_cy_gm1 = 2.0/3.0;
 
 // radshock: the two Dirichlet end states (rho, v, E_gas, E_rad, F_rad)
@@ -342,9 +342,9 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
   } else if (test.compare("cyl") == 0) {
     // fsanchor-1009: crossing beams / shadow by opaque cylinders (RadM1CylGas)
     m1_cy_n = pin->GetOrAddInteger("problem","cyl_n",2);
-    if (m1_cy_n < 1 || m1_cy_n > 8) {
+    if (m1_cy_n < 1 || m1_cy_n > 24) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "problem/cyl_n must be 1..8" << std::endl;
+                << std::endl << "problem/cyl_n must be 1..24" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     for (int c = 0; c < m1_cy_n; ++c) {
@@ -1339,7 +1339,7 @@ void RadM1CylGas(Mesh *pm, const Real bdt) {
   auto uh = pmbp->phydro->u0;
   const int nc = m1_cy_n;
   M1CylP p;
-  for (int c = 0; c < 8; ++c) {
+  for (int c = 0; c < 24; ++c) {
     for (int q = 0; q < 9; ++q) {p.v[c][q] = m1_cy_p[c][q];}
   }
   const Real rb = m1_cy_rhob, tb = m1_cy_tb, gm1 = m1_cy_gm1;
