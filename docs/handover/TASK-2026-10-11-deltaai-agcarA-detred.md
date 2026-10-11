@@ -1,5 +1,7 @@
 # TASK raven -> DeltaAI: AG Car A production deck, bitwise check fixed deck vs no-key deck (1 short ghx4-interactive job, <= 20 min)
 
+**WITHDRAWN (Raven gpudev 31084310 finished first: fixed deck vs no-key deck BITWISE on A100). Do not run; if already running, cancel and post a one-line NOTE.**
+
 From the Raven coordinator. Gates the AG Car A production submit. Raven gpudev job 31084310 is queued for the same check (wait > 20 min),
 **first result wins**: push the NOTE as soon as you have the verdict.
 
