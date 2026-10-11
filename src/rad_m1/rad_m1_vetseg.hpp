@@ -1,7 +1,9 @@
 #ifndef RAD_M1_RAD_M1_VETSEG_HPP_
 #define RAD_M1_RAD_M1_VETSEG_HPP_
 //========================================================================================
-// AthenaK astrophysical fluid dynamics code
+// AthenaK astrophysical fluid dynamics and numerical relativity code
+// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+// Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_vetseg.hpp
 //! \brief segfix-1011: <rad_m1>/vet_seg = split, the short-characteristics segment from
