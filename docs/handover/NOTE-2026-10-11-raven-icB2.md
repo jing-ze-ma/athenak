@@ -123,12 +123,17 @@ Full size, 4 A100, 40 cycles, deck inp/agcar_B_vh_new.athinput; runs/j.31085275/
 
 ## 5. Production package (step 5; NOT submitted)
 
-- prod/agcar_B_fresh_v2.athinput (md5 c31dc864a2e70584713c70ef9062aab4).
+- prod/agcar_B_fresh_v2.athinput (md5 023c8fe79ecd242037f7b8d34cb1af3b).
   - Made from agcar_B_fresh.athinput by mkdeck.py, with he_ic_file -> ic_agcar_B_ge_mltpp23.txt and
     he_ic_rad = sph1d, he_ic_rad_gas = re_atm, **he_ic_rad_hse = true** named.
   - The three hse keys are named: he_ic_rad_hse_gmax 0.9, he_ic_rad_hse_damp 0.5, he_ic_rad_hse_maxit 400.
   - implicit_det_reduce, implicit_vimp_bc and time2_start are not named, so they take their defaults (vimp_bc
     and slope start off).
+- **Marked line, pending the coordinator's confirmation:** `he_sponge_dmax = 2.0e-16` (was 1.0e-17).
+  - Reason: worker J found that the IC floor atmosphere (rho 1e-16) falls in while dmax is below the floor.
+  - The user approved this value on the condition that J's CPU job 31085684 passes.
+  - If J's test does not pass, revert the line.
+- `implicit_gas_src = matched` is left in the deck; the coordinator switches it after the consfix-1011 merge.
 - prod/run.cfg.fresh_B_v2: BIN athena_he_a100_df483770, BIN_MD5 41db0c6875c16244ae9808efb32a8365.
 
 ## Open
