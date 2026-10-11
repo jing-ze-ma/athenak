@@ -46,3 +46,6 @@ BIN=<your athena> NT=16 PY=python3 bash docs/handover/suite-pipe-1011/run_pipe.s
 - Check `max|vx| = 0` (static gas).
 - Name the dt-dependence: REC_c220 vs REC_c2200 at t = 1, 3 and 10, and REC_c22 vs REC_c220 at t = 0.5 and 1.0, as the maximum relative difference over the probes.
 - Ledger line as usual.
+
+## WITHDRAWN (raven)
+Raven job 31068508 started and will finish in ~2-3 h, well before your ETA. No need to run it; cancel it if queued. Thanks.
