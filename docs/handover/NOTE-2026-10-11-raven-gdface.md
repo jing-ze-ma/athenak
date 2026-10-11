@@ -26,7 +26,7 @@ In every case the half-cell carry already started from the face source S_f = 1.5
 GPU determinism and halo:
 - The change is pure per-thread arithmetic, with no new data, reductions or messages. vet_gd_twin_det and the compact halo are untouched.
 - face is run-to-run bitwise on 4 A100: 18 bin files + 2 hst identical.
-- The halo_compact = 1 vs 2 check (hc1 arm) runs in the combined job, see section 4.
+- halo_compact = 1 vs 2 is bitwise with face (job 31066834, section 4).
 - vet_gd_halo_compact = 0 is FATAL with vet_gd_twin_fuse + MPI. That is a pre-existing constraint, not a regression.
 
 ## 2. Bitwise status
@@ -121,7 +121,32 @@ Field differences, face vs cell. The metric is the per-shell max over (theta, ph
 The AG Car v_r maximum sits in the near-floor envelope above the photosphere (rho ~ 1e-16 g/cc, 407 Rsun):
 - That gas has almost no inertia and responds to any perturbation of the radiation field.
 - In the dense layers the difference stays at 1e-7 or below.
-- The noise-reference arm tol9 (implicit_tol 1e-9 instead of 1e-8, same binary) runs in the combined job, see section 4.
+- The tol9 noise-reference arm was dropped by the coordinator. The bitwise repeats on A100 and GH200 show that the code itself is deterministic, and the DeltaAI and Caltech runs reproduce the same localized differences.
+
+### Independent confirmation (bsg-files-1009, docs/handover/)
+
+Two other sites ran the same face-vs-cell A/B on AG Car A and found the same result.
+
+**DeltaAI** (NOTE-2026-10-11-deltaai-agcarA-face-icrad.md):
+- Setup: 4 GH200, e84d2513, agcar_A_va, 50 cycles.
+- E: 8.88e-4 at 0.977 R_ph.
+- dens: 2.42e-4 at 0.977 R_ph.
+- v_r: 1.97e-2 at 0.984 R_ph, where v_r is near zero.
+- Below 0.8 R_ph: bitwise or at round-off.
+- L_top: max 4.97e-6.
+- Cost (0.199 s/cycle) and Picard (3.90 / 9) are the same for cell and face.
+- **The face repeat is bitwise on GH200.**
+
+**Caltech** (NOTE-2026-10-11-caltech-cpu-agcarA-face.md):
+- Setup: CPU, reduced 32x32 wedge, 40 cycles.
+- E: 8.9e-4 at 0.977 R_ph.
+- dens: 2.3e-4 at 0.977 R_ph.
+- f_rr: 9.1e-4 at 0.977 R_ph.
+- Innermost 5 shells and everything below 0.8 R_ph: bitwise.
+- L_top: max 5.0e-6, at cycle 3.
+- The difference does not grow over the run.
+
+**The location answers the open question in the Caltech note.** 0.977 R_ph = 379.4 Rsun is exactly the vet_gd first shell icut, the tau = 30 cut. There the formal solution starts from the inner-face diffusion intensity that this change moves. The domain wall itself sits below the cut, where the tensor is isotropic. So face vs cell cannot act there, and it is bitwise.
 
 ### Plain answer to Q3
 
@@ -140,16 +165,13 @@ The large deep-atm effect of deepatm-1011 (order 1.5 -> 2) is specific to vet_sc
 
 Production runs should switch to the default at their next fresh start. A continuing restart keeps `cell` automatically and stays bitwise.
 
-## 4. Pending (combined GPU job of the icrad agent, see COMBINED_JOB.txt)
+## 4. Halo check (hc1)
 
-- **tol9**: agc cell with implicit_tol 1e-9. The noise reference for the A/B differences.
-- **hc1**: agc face with vet_gd_halo_compact = 1. It should be bitwise to face (halo_compact 2).
+- The combined job 31066055 was cancelled, and the tol9 arm was dropped (see section 3).
+- hc1 (agc face with vet_gd_halo_compact = 1 vs the default 2) runs in the slim job 31066834 (gpudev) or 31066835 (gpu), whichever starts first. Its runs land in runs/j.<id>.
+- To check it: `bash ../bitcmp.sh runs/j.31065032/agc_face runs/j.<id>/agc_face_hc1`. Expect 0 differing.
 
-At 04:47 the job was still pending (Priority), with an estimated start of 10:40.
-
-To finish when it is done (S = runs/j.31066055, R = runs/j.31065032):
-- `bash ../bitcmp.sh $R/agc_face $S/agc_face_hc1`: halo exactness. Expect 0 differing.
-- `python ana_ab.py $R/agc_cell $S/agc_cell_tol9 tol9`: the size of a solver-tolerance perturbation, to compare with the cell-vs-face table above. Mainly the v_r in the floor envelope at r ~ 407 Rsun.
+**Result:** job 31066834 (gpudev), agc face with halo_compact = 1 vs halo_compact = 2 at 50 cycles: **bitwise**. All 18 bin files and both hst files are identical, so halo exactness holds with face.
 
 ## Files
 
