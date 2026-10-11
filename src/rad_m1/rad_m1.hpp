@@ -77,7 +77,10 @@ constexpr int M1_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J (twin-corrected as 
 constexpr int M1_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
 constexpr int M1_VGD_HRJ  = 8;     // J (E units; twin-corrected by J_tw/<J_tw>)
 constexpr int M1_VGD_HRNX = 9;
-constexpr int M1_VGD_NMAX = 2048;  // vet_gd: at most 2048 directions (sptests P2: 4x GL)
+constexpr int M1_VGD_NMAX = 432;   // vet_gd: at most 432 directions.  prodcand-1011: kept at 432
+                                    // (sizes the per-thread Real buf[M1_VGD_NMAX] in VetGdWall; 2048
+                                    // would spill on A100).  The 4x-GL angular study (sptests P2)
+                                    // needs a local build with 2048.
 constexpr int M1_OP_P = 0;  // rho kappa_P, Planck (emission) mean
 constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
 constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s), the TRANSPORT opacity: what the
