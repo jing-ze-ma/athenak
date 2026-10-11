@@ -770,13 +770,15 @@ class RadiationM1 {
   //      of it (thick: all, the radiation inertia; thin: the lab flux is kept);
   //  (b) implicit_vimp predicts the velocity the conservative write-back gives
   //      (ImplicitCs2Vimp): the E rows' enthalpy flux and the stored F share one v;
-  //  (c) the hydro's velocity change since the stored F is F0's EXPLICIT tendency
-  //      -dA/dt (ImplicitCs2Shift at the solve start; the lab F is kept), so it never
-  //      enters an implicit (ESDIRK) slope.
+  //  (c) opt-in, implicit_cs2_shift = true (default false since consfix2): the hydro's
+  //      velocity change since the stored F as F0's EXPLICIT tendency -dA/dt
+  //      (ImplicitCs2Shift at the solve start; the lab F is kept).  Off, it is part of
+  //      the solve's dA (which gives clean order 2 on the T ladders).
   // iw components behind the other blocks: A^old (3), dA (3, exchanged)
   bool impl_gas_src_cs2 = false;
   int iw_cs2 = -1;
   bool cs2_dav = false;                 // the dA components hold a pass's prediction
+  bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
                                         // 2 no vimp prediction, 4 no hydro shift
   bool Cs2Active();

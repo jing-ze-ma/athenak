@@ -2437,6 +2437,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_gas_src_cons = true;
       impl_gas_src_cs2 = true;
       cs2_dbg = pin->GetOrAddInteger("rad_m1","implicit_cs2_dbg",0);
+      // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
+      // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
+      cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
     } else {
       ImplFatal("<rad_m1>/implicit_gas_src = '" + gs + "' is not a choice (matched | "
                 "conservative | conservative2 | conservative_full)");
@@ -10752,7 +10755,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // each new iterate, so the backward-Euler right-hand side needs its own copy
   auto f0n_ = f0x1n;
   // consfix-1011 (conservative2): the explicit -dA/dt of the hydro step into F0 first
-  if (Cs2Active() && !gcs_first && !(cs2_dbg & 4)) {ImplicitCs2Shift();}
+  if (Cs2Active() && cs2_shift && !gcs_first && !(cs2_dbg & 4)) {ImplicitCs2Shift();}
   Kokkos::deep_copy(DevExeSpace(), f0x1n, f0x1);
   if (impl_gas_src_cs2) {   // consfix-1011: nothing of this solve's dA in F0^n yet
     Kokkos::deep_copy(DevExeSpace(), cs2f1, 0.0);
