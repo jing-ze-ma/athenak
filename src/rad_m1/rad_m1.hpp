@@ -363,6 +363,7 @@ class RadiationM1 {
                              // vet_gd, vet_col_lat, vet_col core; gdface-1011)
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
+  bool vet_x1src = false;    // vet_x1_periodic_inflow = source (predfix-1011)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
@@ -1108,10 +1109,20 @@ class RadiationM1 {
   // state = the predict/rebuild build takes its VET source from the predicted state
   // itself (vet_col_source = gas there), not relaxed by a further dt (rad_m1_time2.cpp)
   bool t2_vcsrc = false;
+  // time2_pred_cap (predfix-1011): the predicted P = U^n + theta dt K1 of a predict /
+  // rebuild build takes per cell theta = min(1, cap/r), r the relative change of E and
+  // of the gas internal energy (0 = off, the unlimited predictor)
+  Real t2_pcap = 0.0;
+  Real t2_pnlim = 0.0, t2_pncell = 0.0;   // limited / all cell-builds (Time2Report)
+  int t2_dbg_pred = 0, t2_dbg_pred_n = 0; // DEBUG dbg_t2_pred = N: the first N builds
+  DvceArray4D<Real> t2pth;      // (m,k,j,i) theta of the current build
+  DvceArray1D<Real> vet_dbgclip;  // DEBUG dbg_t2_pred: sweep intensities clipped at 0
   DvceArray4D<Real> vcol_prev;  // extrap: (m,k,j,i) f_K of the previous step
   DvceArray3D<Real> vcol_qprev; // extrap: (m,k,j) q of the previous step
   void Time2VetColAt(int which);    // vet_col build at 1 = U^n + dt K1, 2 = Y1
   void Time2VetColSaveY1();         // end of the stage-1 solve: E, T of Y1 (rebuild)
+  void Time2PredTheta(const Real dt, const Real gdt, const bool dbg);  // predfix-1011
+  void Time2PredDebugSc();
   void Time2VetColExtrap();
   void Time2Report();
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)

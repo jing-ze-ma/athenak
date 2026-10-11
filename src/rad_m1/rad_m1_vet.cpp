@@ -1733,6 +1733,27 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     }
     vet_x1npass = pin->GetOrAddInteger("rad_m1", "vet_x1_npass", 64);
     if (vet_x1npass < 1) {VetFatal("<rad_m1>/vet_x1_npass must be >= 1");}
+    // vet_x1_periodic_inflow (predfix-1011): the first pass's entry intensity.
+    //   source   : BOTH directions enter with the face source S (the intensity of an
+    //              infinite uniform medium): a uniform state gives I = S on every ray and
+    //              H = 0 exactly, whatever npass (default on fresh runs)
+    //   boundary : the ordinary boundary intensities, upward E + 3 F.Omega/c, downward 0
+    //              (the old form; a restart whose file lacks the key).  One-sided: at
+    //              npass = 2 a uniform state far from S (E >> S) gets a spurious net
+    //              upward H ~ J (predfix_1011 eq2: H1/J = 0.77, which the thin switch and
+    //              the half-range flux turned into F1 = 0.77 c E in one step), and an
+    //              existing F feeds back through the upward inflow
+    std::string vin = pin->GetOrAddString("rad_m1", "vet_x1_periodic_inflow",
+                                          global_variable::restart_run ? "boundary"
+                                                                       : "source");
+    if (vin.compare("source") == 0) {
+      vet_x1src = true;
+    } else if (vin.compare("boundary") == 0) {
+      vet_x1src = false;
+    } else {
+      VetFatal("<rad_m1>/vet_x1_periodic_inflow = '" + vin
+               + "' is not a choice (source | boundary)");
+    }
   }
   vet_nray = 2*vet_nmu*vet_nphi;
   // littests-1011: vet_ring = N (read only when given; 2-D tests) replaces the angle set by
@@ -3228,6 +3249,9 @@ void RadiationM1::VetShortChar() {
                      iebath_x1min : -1.0;
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;   // deepatm-1011
+  const bool x1src = vet_x1per && vet_x1src;   // predfix-1011
+  const bool dbgc = (t2_dbg_pred > 0) && (vet_dbgclip.extent_int(0) > 0);
+  auto dcl_ = vet_dbgclip;
   // littests-1011: the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
@@ -3356,7 +3380,9 @@ void RadiationM1::VetShortChar() {
           const Real s1 = vc_(m,M1_VET_SRC,k,j,iin);
           const Real su = fmax(1.5*s0 - 0.5*s1, 0.0);
           Real ib = up ? 0.0 : bbhi;
-          if (up) {
+          if (x1src) {
+            ib = su;   // vet_x1_periodic_inflow = source: symmetric entry
+          } else if (up) {
             if (bblo >= 0.0) {
               ib = bblo;
             } else if (milne) {
@@ -3436,6 +3462,7 @@ void RadiationM1::VetShortChar() {
           }
           iv = iup_v*ex + wu*su + w0*s0;
         }
+        if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
         iv = fmax(iv, 0.0);
         ip_(m,pw,r,k,j) = iv;
         Real *ac = up ? acu : acd;

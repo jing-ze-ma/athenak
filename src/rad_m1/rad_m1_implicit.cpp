@@ -10011,6 +10011,7 @@ void RadiationM1::DbgEnergyTally(Real *o) {
 #endif
 }
 
+
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
   if (dbg_etally) {
@@ -12770,7 +12771,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       std::cout << " worst cell of rank 0 (m,k,j,i)=(" << lmb << "," << (lk+ks) << ","
                 << (lj+js) << "," << (li+is) << ")" << std::endl;
     }
-    if (impl_res_fatal > 0.0 && (!(resid <= impl_res_fatal) || !std::isfinite(lresid))) {
+    // predfix-1011: a hesdirk2 STAGE solve already found not admissible is redone from
+    // U^n with backward Euler (Time2Restore), whose own divergence test still applies;
+    // stopping the run on the stage's residual killed runs whose redo converges
+    // (littests cb ring 4, c dt/dx = 256: the stage-1 Picard of cycle 2 ends at 1e25,
+    // the backward-Euler step from the same U^n converges in 4 passes)
+    const bool t2redo = t2st && t2_fail;
+    if (!t2redo && impl_res_fatal > 0.0 &&
+        (!(resid <= impl_res_fatal) || !std::isfinite(lresid))) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1> Picard solve DIVERGED: resid=" << resid
                 << " lin_resid=" << lresid << " > implicit_resid_fatal=" << impl_res_fatal
@@ -12782,7 +12790,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   // implicit_resid_fatal_masked: the excluded cells are still solved every pass; a
   // diverging one must stop the run before its state spreads (NaN maps to 1e300)
-  if (rmask && impl_res_fatal_masked > 0.0 &&
+  if (rmask && impl_res_fatal_masked > 0.0 && !(t2st && t2_fail) &&
       !(rexcl_last <= impl_res_fatal_masked && rexcl_last < 1.0e300)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_m1> Picard solve DIVERGED in the masked cells: "
