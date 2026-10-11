@@ -979,6 +979,15 @@ void RadiationM1::VetGdTables(const Real alpha) {
   const int nwall = H.nwall, nexact = H.nexact, nmap = H.nmap;
   const bool first = (vgd_alpha < 0.0);
   vgd_alpha = alpha;
+  if (first && vgd_beam) {
+    // prodcand-1011 (sptests x vgdrot merge): the set directions of this angle from the
+    // host tables (H.alpha == alpha on both branches above), packed as VgdTabCompute's d
+    std::vector<double> d(4*static_cast<size_t>(n));
+    for (int q = 0; q < n; ++q) {
+      for (int c = 0; c < 4; ++c) {d[4*q+c] = H.dir(q,c);}
+    }
+    VetGdBeamInit(d);
+  }
   if (first && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_gd: global-direction SC closure on the sp wedge, "
               << ((vgd_gl_nmu > 0) ? ("product GL" + std::to_string(vgd_gl_nmu) + "x"
@@ -992,6 +1001,93 @@ void RadiationM1::VetGdTables(const Real alpha) {
               << nexact << " of " << nmap << " (the rest: nearest direction)"
               << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdBeamInit
+//! \brief sptests-1011, vet_gd_beam (needs vet_gd_inner = emit): a collimated beam
+//! injected at the inner sphere.  The set direction d_b nearest the target (theta_b,
+//! phi_b) carries I_b = e_b/w_b on the outward rays that start in the patch [th0, th1] x
+//! [ph0, ph1] of the inner face; no other direction enters.  The M1 solve gets the matching
+//! inner face flux F_in(k, j) = c e_b (n_b . r_hat) (patch area fraction of the face, 8 x 8
+//! sub-samples), so rays and moments inject the same luminosity.  The twin's inflow is
+//! the shell mean e_b f_patch.  The set must not rotate (vet_gd_rotate_every = 0).
+
+void RadiationM1::VetGdBeamInit(const std::vector<double> &d) {
+  if (vgd_rot > 0) {VgdFatal("vet_gd_beam needs vet_gd_rotate_every = 0");}
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int n = vgd_n;
+  const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
+  const double p0 = pm->mesh_size.x3min, p1 = pm->mesh_size.x3max;
+  const int c2 = indcs.nx2 + 2*indcs.ng, c3 = indcs.nx3 + 2*indcs.ng;
+  Kokkos::realloc(vgd_bfx, nmb, c3, c2);
+  auto f_h = Kokkos::create_mirror_view(vgd_bfx);
+  Kokkos::deep_copy(f_h, 0.0);
+  auto &mbs = pmy_pack->pmb->mb_size;
+  const double rin = pm->mesh_size.x1min;
+  const int ns = 8;
+  for (int bm = 0; bm < vgd_nbeam; ++bm) {
+    const double tb = vgd_bang[bm][0], pb = vgd_bang[bm][1];
+    const double bx = std::sin(tb)*std::cos(pb), by = std::sin(tb)*std::sin(pb);
+    const double bz = std::cos(tb);
+    int qb = 0;
+    double best = -2.0;
+    for (int q = 0; q < n; ++q) {
+      const double c = d[4*q]*bx + d[4*q+1]*by + d[4*q+2]*bz;
+      if (c > best) {best = c; qb = q;}
+    }
+    if (bm == 1 && qb == vgd_bdir[0]) {
+      VgdFatal("vet_gd_beam2 picks the same set direction as beam 1");
+    }
+    vgd_bdir[bm] = qb;
+    const double nx = d[4*qb], ny = d[4*qb+1], nz = d[4*qb+2], wb = d[4*qb+3];
+    vgd_bib[bm] = vgd_be[bm]/wb;
+    const double *bt = vgd_bth[bm], *bp = vgd_bph[bm];
+    // the patch's share of the inner sphere's wedge (solid angle)
+    const double th0 = std::max(bt[0], t0), th1 = std::min(bt[1], t1);
+    const double ph0 = std::max(bp[0], p0), ph1 = std::min(bp[1], p1);
+    vgd_bfp[bm] = std::max(std::cos(th0) - std::cos(th1), 0.0)*std::max(ph1 - ph0, 0.0)
+                  /((std::cos(t0) - std::cos(t1))*(p1 - p0));
+    double ltot = 0.0;
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = indcs.ks; k <= indcs.ke; ++k) {
+        for (int j = indcs.js; j <= indcs.je; ++j) {
+          const double ta = mbs.h_view(m).x2min + (j - indcs.js)*mbs.h_view(m).dx2;
+          const double pa = mbs.h_view(m).x3min + (k - indcs.ks)*mbs.h_view(m).dx3;
+          double acc = 0.0, wsum = 0.0;
+          for (int b = 0; b < ns; ++b) {
+            for (int a = 0; a < ns; ++a) {
+              const double th = ta + (a + 0.5)*mbs.h_view(m).dx2/ns;
+              const double ph = pa + (b + 0.5)*mbs.h_view(m).dx3/ns;
+              const double w = std::sin(th);
+              wsum += w;
+              if (th < bt[0] || th > bt[1] || ph < bp[0] || ph > bp[1]) {continue;}
+              const double mu = nx*std::sin(th)*std::cos(ph) + ny*std::sin(th)*std::sin(ph)
+                                + nz*std::cos(th);
+              if (mu > 0.0) {acc += w*mu;}
+            }
+          }
+          const double fb = c_light*vgd_be[bm]*acc/wsum;
+          f_h(m,k,j) += fb;
+          ltot += fb*rin*rin*(std::cos(ta) - std::cos(ta + mbs.h_view(m).dx2))
+                  *mbs.h_view(m).dx3;
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &ltot, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("<rad_m1> vet_gd_beam %d: direction %d n = (%.15e, %.15e, %.15e) "
+                  "w = %.15e (target cos %.8f), I_b = %.10e, patch theta [%.10g, %.10g] "
+                  "phi [%.10g, %.10g], f_patch %.6e, luminosity (wedge) %.10e\n", bm + 1,
+                  qb, nx, ny, nz, wb, best, vgd_bib[bm], bt[0], bt[1], bp[0], bp[1],
+                  vgd_bfp[bm], ltot);
+    }
+  }
+  Kokkos::deep_copy(vgd_bfx, f_h);
 }
 
 //----------------------------------------------------------------------------------------
@@ -3651,6 +3747,23 @@ void RadiationM1::VetGdSweep() {
   auto w3_ = vgd_w3;
   const bool bandx = vgd_bandx;
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
+  // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
+  // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
+  const bool emi = vgd_emit && (lcut == 0) &&
+                   (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
+  const Real iemit = vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
+                     4.0*iflux_x1min/c_light : iebath_x1min);
+  const bool bm = vgd_beam;
+  const int nbm = vgd_nbeam;
+  const int bdir0 = vgd_bdir[0], bdir1 = vgd_bdir[1];
+  const Real bib0 = vgd_bib[0], bfp0 = vgd_bfp[0], bib1 = vgd_bib[1], bfp1 = vgd_bfp[1];
+  const Real b0t0 = vgd_bth[0][0], b0t1 = vgd_bth[0][1];
+  const Real b0p0 = vgd_bph[0][0], b0p1 = vgd_bph[0][1];
+  const Real b1t0 = vgd_bth[1][0], b1t1 = vgd_bth[1][1];
+  const Real b1p0 = vgd_bph[1][0], b1p1 = vgd_bph[1][1];
+  const bool tws = vgd_tws;
+  const Real mt0 = pm->mesh_size.x2min, mtl = pm->mesh_size.x2max - mt0;
+  const Real mp0 = pm->mesh_size.x3min, mpl = pm->mesh_size.x3max - mp0;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -3768,7 +3881,8 @@ void RadiationM1::VetGdSweep() {
         if (inw == (mr >= 0.0)) {return;}
         // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same
         // thread; one launch and one halo per shell for both sweeps
-        auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix) -> Real {
+        auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix,
+                         const bool twn) -> Real {
           auto rd = [&](const int kk, const int jj, const int ii) -> Real {
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
@@ -3903,6 +4017,40 @@ void RadiationM1::VetGdSweep() {
             }
             if (bdone) {
               // done: the shortened segment from the band edge
+            } else if (typ == 2 && emi) {
+              // sptests-1011 vet_gd_inner = emit: the inner boundary's emission at the
+              // upwind point of the inner face, carried to the cell with the face source
+              Real ie0 = iemit;
+              if (bm) {
+                ie0 = 0.0;
+                const int bq = (d == bdir0) ? 0 : ((nbm > 1 && d == bdir1) ? 1 : -1);
+                if (bq >= 0) {
+                  const Real bib = (bq == 0) ? bib0 : bib1;
+                  if (twn) {
+                    ie0 = bib*((bq == 0) ? bfp0 : bfp1);   // the twin: shell-mean inflow
+                  } else {
+                    Real tu = thu - mt0, pu = ph + dph - mp0;
+                    tu -= mtl*floor(tu/mtl);
+                    pu -= mpl*floor(pu/mpl);
+                    tu += mt0;
+                    pu += mp0;
+                    const bool in = (bq == 0) ?
+                      (tu >= b0t0 && tu <= b0t1 && pu >= b0p0 && pu <= b0p1) :
+                      (tu >= b1t0 && tu <= b1t1 && pu >= b1p0 && pu <= b1p1);
+                    if (in) {ie0 = bib;}
+                  }
+                }
+              }
+              const int i1 = i + 1;
+              auto sbt = [&](const int kk, const int jj) {
+                return fmax(1.5*exp(csx(m,1,kk,jj,i)) - 0.5*exp(csx(m,1,kk,jj,i1)),
+                            1.0e-300);
+              };
+              Real ex, w0, wu;
+              VgdW(ch0*ds, ex, w0, wu);
+              const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
+                                      VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
+              iv = ie0*ex + wu*qv + w0*s0;
             } else if (typ == 2) {
               // the diffusion intensity at the inner face of the first shell,
               // S + mu (-dS/dtau_r); vet_bc_diff = face (gdface-1011): S of the FACE,
@@ -3971,8 +4119,8 @@ void RadiationM1::VetGdSweep() {
           }
           return iv;
         };
-        vi_(m,d,k,j,i) = solve(cs_, vi_);
-        if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_);}
+        vi_(m,d,k,j,i) = solve(cs_, vi_, tws);
+        if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_, true);}
       };
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
     // the shell kernel over the codes cl(c), c in [c0, c1) (vet_gd_shell_list codes)
@@ -5316,7 +5464,9 @@ void RadiationM1::VetGdTwin(const int stage) {
       cw_(m,0,k,j,i) = log(fmax(mc_(i), 1.0e-300));
       cw_(m,1,k,j,i) = log(fmax(ms_(i), 1.0e-300));
     });
+    vgd_tws = true;    // sptests-1011: the twin's inner inflow (vet_gd_beam)
     VetGdSweep();
+    vgd_tws = false;
     vgd_noq = true;
     VetGdMoments();
     vgd_noq = false;

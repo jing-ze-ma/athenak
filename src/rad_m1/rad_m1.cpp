@@ -976,6 +976,49 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
       vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
     }
+    // sptests-1011: vet_gd_inner = diff | emit, vet_gd_beam* (read only when named)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_inner")) {
+      std::string vi = pin->GetString("rad_m1","vet_gd_inner");
+      if (vi.compare("emit") == 0) {
+        vgd_emit = true;
+      } else if (vi.compare("diff") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_inner must be diff or emit" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_beam")) {
+      vgd_beam = pin->GetBoolean("rad_m1","vet_gd_beam");
+      if (vgd_beam) {
+        if (!vgd_emit) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_gd_beam needs vet_gd_inner = emit"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        vgd_nbeam = 1;
+        for (int b = 0; b < 2; ++b) {
+          // beam 2 (vet_gd_beam2_th named): every other key defaults to beam 1's
+          const std::string p = (b == 0) ? "vet_gd_beam_" : "vet_gd_beam2_";
+          if (b == 1 && !pin->DoesParameterExist("rad_m1","vet_gd_beam2_th")) {break;}
+          if (b == 1) {vgd_nbeam = 2;}
+          auto rd = [&](const std::string &k) -> Real {
+            if (b == 1 && !pin->DoesParameterExist("rad_m1",p + k)) {
+              return pin->GetReal("rad_m1","vet_gd_beam_" + k);
+            }
+            return pin->GetReal("rad_m1",p + k);
+          };
+          vgd_bang[b][0] = rd("th");
+          vgd_bang[b][1] = rd("ph");
+          vgd_bth[b][0] = rd("th0");
+          vgd_bth[b][1] = rd("th1");
+          vgd_bph[b][0] = rd("ph0");
+          vgd_bph[b][1] = rd("ph1");
+          vgd_be[b] = (b == 0 || pin->DoesParameterExist("rad_m1","vet_gd_beam2_e")) ?
+                      pin->GetOrAddReal("rad_m1",p + "e",1.0) : vgd_be[0];
+        }
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_exit")) {
       vgd_bandx = pin->GetBoolean("rad_m1","vet_gd_band_exit");
     }
