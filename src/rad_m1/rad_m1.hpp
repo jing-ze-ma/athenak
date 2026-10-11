@@ -704,6 +704,20 @@ class RadiationM1 {
                                 // relative change of 3a, x > 0 = |dE|/max(E, x*max(E))
   bool impl_bmom_half;          // give a physical boundary face HALF its flux to the one
                                 // interior cell (the cell-averaged share) instead of all
+  // moveq-1011 (moving media, NOTE-moveq.md): the radiation momentum of the enthalpy flux
+  //   implicit_rad_inertia  the F0 face equation's dropped -dA/dt: after the solve
+  //                         each face takes -theta_f dA_f (dA = A' - A^n, A = a E),
+  //                         so the deposit dt k F0/c hands the gas -(1-theta) dA/
+  //                         (c chat), plus the dt v_f g0_f/c the face equation
+  //                         removed from the radiation
+  //   implicit_f0_init      cold-start face flux: zero (old) | lab (F0 = F_pgen - A) |
+  //                         auto (lab on faces with A != 0, else zero: static bitwise)
+  //   implicit_nofb_work    gas_feedback = false: E still pays the work v.dm (fixed v)
+  bool impl_rad_inertia = false;
+  int impl_f0_init = 0;          // 0 zero, 1 lab, 2 auto
+  bool impl_f0_init_done = false;
+  bool impl_nofb_work = false;
+  bool nofb_wrow = false;         // the last assembled E rows carried v.dm (nofb)
 
   // ---- MILESTONE 3b phase B: transport = implicit, the TRANSVERSE (x2/x3) couplings.
   // All inert with transport = explicit | implicit_x1.
@@ -1365,7 +1379,10 @@ class RadiationM1 {
   void ImplicitPartitionInit();
   //! exchange the x1 ghost layers the multi-block solve needs; `eponly` picks the
   //! one-quantity set (E of the new iterate) instead of the six lagged ones
-  void ImplicitX1Halo(bool eponly);
+  void ImplicitX1Halo(bool eponly, int comp = -1);
+  void ImplicitRadInertia();
+  void ImplicitNofbWorkRow();
+  void ImplicitF0Init();
   //! gather the assembled rows onto the roots, run Thomas there, scatter back
   void ImplicitGatherSolve();
   //! milestone 3b phase B: exchange the LAGGED quantities the x2/x3 faces need with

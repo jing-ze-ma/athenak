@@ -2284,6 +2284,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // which gave that cell 1.5 face-shares of radiative force: He column bottom-cell |v1|
   // 10.3 -> 0.47 v_MLT).  The key is kept so that `false` reproduces runs_3a/RESULTS.txt.
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
+  // moveq-1011: the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
+  impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",true);
+  impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
+  {
+    const std::string fi = pin->GetOrAddString("rad_m1","implicit_f0_init","auto");
+    if (fi.compare("zero") == 0) {
+      impl_f0_init = 0;
+    } else if (fi.compare("lab") == 0) {
+      impl_f0_init = 1;
+    } else if (fi.compare("auto") == 0) {
+      impl_f0_init = 2;
+    } else {
+      ImplFatal("<rad_m1>/implicit_f0_init = '" + fi + "' is not a choice (auto | zero | "
+                "lab)");
+    }
+  }
+  impl_f0_init_done = false;
   if (impl_lin_maxit < 1) {
     ImplFatal("<rad_m1>/implicit_lin_maxit must be >= 1");
   }
@@ -2895,8 +2912,10 @@ void RadiationM1::ImplicitPartitionInit() {
 //! the ghost value a block reads is the VERY NUMBER its neighbour computed, copied, and
 //! never a quantity recomputed from a hydro ghost: this routine moves nothing else.
 
-void RadiationM1::ImplicitX1Halo(bool eponly) {
+void RadiationM1::ImplicitX1Halo(bool eponly, int comp) {
   if (part_nblk <= 1) return;
+  // moveq-1011: eponly with comp >= 0 moves that one component instead of M1_IW_EP
+  const int c1 = (comp >= 0) ? comp : static_cast<int>(M1_IW_EP);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2913,7 +2932,7 @@ void RadiationM1::ImplicitX1Halo(bool eponly) {
   par_for("m1_impl_halo_loc", DevExeSpace(), 0, nmb-1, 0, nq-1, 0, nl-1,
           ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int n, const int l, const int k, const int j) {
-    int nc = ep1 ? M1_IW_EP : M1HaloCompA(n);
+    int nc = ep1 ? c1 : M1HaloCompA(n);
     int mlo = nbr_.d_view(2*m);
     int mhi = nbr_.d_view(2*m+1);
     if (mlo >= 0) {iw_(m,nc,k,j,is-1-l) = iw_(mlo,nc,k,j,ie-l);}
@@ -2928,7 +2947,7 @@ void RadiationM1::ImplicitX1Halo(bool eponly) {
   par_for("m1_impl_halo_pack", DevExeSpace(), 0, nmb-1, 0, nq-1, 0, nl-1,
           ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int n, const int l, const int k, const int j) {
-    int nc = ep1 ? M1_IW_EP : M1HaloCompA(n);
+    int nc = ep1 ? c1 : M1HaloCompA(n);
     int idx = (((n*nl + l)*nk + (k-ks))*nj + (j-js));
     hb_(m,0,idx) = iw_(m,nc,k,j,is+l);
     hb_(m,1,idx) = iw_(m,nc,k,j,ie-l);
@@ -2966,7 +2985,7 @@ void RadiationM1::ImplicitX1Halo(bool eponly) {
   par_for("m1_impl_halo_unpack", DevExeSpace(), 0, nmb-1, 0, nq-1, 0, nl-1,
           ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int n, const int l, const int k, const int j) {
-    int nc = ep1 ? M1_IW_EP : M1HaloCompA(n);
+    int nc = ep1 ? c1 : M1HaloCompA(n);
     int idx = (((n*nl + l)*nk + (k-ks))*nj + (j-js));
     if (nbrk.d_view(2*m) < 0) {iw_(m,nc,k,j,is-1-l) = hb_(m,2,idx);}
     if (nbrk.d_view(2*m+1) < 0) {iw_(m,nc,k,j,ie+1+l) = hb_(m,3,idx);}
@@ -8597,6 +8616,290 @@ void RadiationM1::ImplicitWorkRow(bool row) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitNofbWorkRow
+//! \brief moveq-1011, implicit_nofb_work with gas_feedback = false: the work v.dm^k of
+//! the iterate's face fluxes (the deposit rule of the write-back, at the fixed gas v) in
+//! the E row, TR -= (chat/c) v.dm^k, instead of after the solve.  Picard-lagged; at
+//! convergence the row carries the work of the solved fluxes and the write-back adds
+//! nothing.  After the solve alone it is an O(dt) split of the (1/3) v.grad E term
+//! against the (4/3) v E enthalpy flux of the row (dynamic diffusion: BE D_eff +26 %).
+
+void RadiationM1::ImplicitNofbWorkRow() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto f0_ = f0x1;
+  auto f2_ = f0x2;
+  auto f3_ = f0x3;
+  auto uh = FluidRef::Get(pmy_pack).u0;
+  const bool trans = trans_on, thrd = trans_x3;
+  const bool dbgft = dbg_gas_force_trans;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const bool bmhalf = impl_bmom_half;
+  auto pos_ = part_pos;
+  const int nblkx1 = part_nblk;
+  const Real cl = c_light, cr = chat/c_light, dt = dt_sub;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  const bool fwd = sph_geom && impl_face_wdist;
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
+  par_for("m1_impl_nfwk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_.d_view(m);
+    if (!cyclic && ((i == is && ipos == 0 && bclo == M1_IBC_EFIX) ||
+                    (i == ie && ipos == nblkx1-1 && bchi == M1_IBC_EFIX))) {
+      return;
+    }
+    const Real idd = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+    const Real v1 = uh(m,IM1,k,j,i)*idd;
+    Real ktl, ktr, wl = 0.5, wr = 0.5;
+    if (i == is && ipos == 0 && !cyclic) {
+      ktl = iw_(m,M1_IW_KT,k,j,i);
+      wl = bmhalf ? 0.5 : 1.0;
+    } else {
+      const int im = (cyclic && i == is) ? ie : (i-1);
+      ktl = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m, im, i,
+                        fwd);
+    }
+    if (i == ie && ipos == nblkx1-1 && !cyclic) {
+      ktr = iw_(m,M1_IW_KT,k,j,i);
+      wr = bmhalf ? 0.5 : 1.0;
+    } else {
+      const int ip = (cyclic && i == ie) ? is : (i+1);
+      ktr = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, i, ip,
+                        fwd);
+    }
+    Real w = v1*(dt/cl)*(wl*ktl*f0_(m,k,j,i) + wr*ktr*f0_(m,k,j,i+1));
+    if (trans && dbgft) {
+      const Real v2 = uh(m,IM2,k,j,i)*idd;
+      BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+      BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+      const bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+      const bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+      const Real ktc = iw_(m,M1_IW_KT,k,j,i);
+      const Real kl2 = (j == js && p2lo) ? ktc : 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + ktc);
+      const Real kr2 = (j == je && p2hi) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k,j+1,i));
+      const Real u2 = ((j == js && p2lo) && !bmhalf) ? 1.0 : 0.5;
+      const Real w2 = ((j == je && p2hi) && !bmhalf) ? 1.0 : 0.5;
+      w += v2*(dt/cl)*(u2*kl2*f2_(m,k,j,i) + w2*kr2*f2_(m,k,j+1,i));
+      if (thrd) {
+        const Real v3 = uh(m,IM3,k,j,i)*idd;
+        BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+        BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+        const bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+        const bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+        const Real kl3 = (k == ks && p3lo) ? ktc : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
+        const Real kr3 = (k == ke && p3hi) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
+        const Real u3 = ((k == ks && p3lo) && !bmhalf) ? 1.0 : 0.5;
+        const Real w3 = ((k == ke && p3hi) && !bmhalf) ? 1.0 : 0.5;
+        w += v3*(dt/cl)*(u3*kl3*f3_(m,k,j,i) + w3*kr3*f3_(m,k+1,j,i));
+      }
+    }
+    if (w != 0.0) {iw_(m,M1_IW_TR,k,j,i) -= cr*w;}
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitF0Init
+//! \brief moveq-1011, <rad_m1>/implicit_f0_init: the cold-start face fluxes.  The
+//! persistent radiation state is (E, F0_f) with the lab flux DERIVED as F = F0 + A,
+//! A = a E, a = v + v.D.  A zero-initialised f0x1 therefore means F = A at t = 0: the
+//! radiation already co-moves with the gas, and the problem generator's lab F is ignored.
+//! For a gas that moves through a radiation field that is at rest (the moving thermal
+//! equilibrium of J21 4.1 / IDORT 4.3.1, F = 0) the radiation momentum (4/3) v E/c^2 is
+//! then created out of nothing.  `lab` sets F0_f = face mean of (F - a E) from the
+//! problem generator's F; `auto` does so only on faces where a != 0 in one of the two
+//! cells (a static medium keeps the zero start, bitwise).  Called once, on the first
+//! Picard pass of the first solve of a fresh (ncycle 0) run, after the lagged-quantity
+//! halo (a, A2, A3, F in the ghosts) and before anything reads F0^n.
+
+void RadiationM1::ImplicitF0Init() {
+  const bool first = !impl_f0_init_done;
+  impl_f0_init_done = true;
+  if (!first || impl_f0_init == 0 || !fl_on || pmy_pack->pmesh->ncycle != 0) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto u0_ = u0;
+  auto f0_ = f0x1;
+  auto f0n_ = f0x1n;
+  auto pos_ = part_pos;
+  const int nblkx1 = part_nblk;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool trans = trans_on, thrd = trans_x3;
+  const bool lab = (impl_f0_init == 1);
+  const Real efl = e_floor;
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
+  // the cell's comoving flux F - a E (x1): the work array under trans (its F, E and a are
+  // in the transverse halo), u0 on a 1-D mesh (the problem generator fills the ghosts)
+  par_for("m1_f0init_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_.d_view(m);
+    const bool lo = (i == is) && (ipos == 0), hi = (i == ie+1) && (ipos == nblkx1-1);
+    if ((lo || hi) && !cyclic) return;
+    const int im = (cyclic && i == is) ? ie : (i-1);
+    const int ip = (cyclic && i == ie+1) ? is : i;
+    const Real al = iw_(m,M1_IW_ADV,k,j,im), ar = iw_(m,M1_IW_ADV,k,j,ip);
+    if (!lab && al == 0.0 && ar == 0.0) return;
+    Real fl, fr, el, er;
+    if (trans) {
+      fl = iw_(m,M1_IW_F1,k,j,im);  fr = iw_(m,M1_IW_F1,k,j,ip);
+      el = iw_(m,M1_IW_EP,k,j,im);  er = iw_(m,M1_IW_EP,k,j,ip);
+    } else {
+      fl = u0_(m,M1_F1,k,j,im);  fr = u0_(m,M1_F1,k,j,ip);
+      el = fmax(u0_(m,M1_E,k,j,im), efl);  er = fmax(u0_(m,M1_E,k,j,ip), efl);
+    }
+    const Real fv = 0.5*((fl - al*el) + (fr - ar*er));
+    const Real d = fv - f0_(m,k,j,i);
+    f0_(m,k,j,i) = fv;
+    f0n_(m,k,j,i) += d;
+  });
+  if (cyclic) {
+    par_for("m1_f0init_wrap", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      f0_(m,k,j,ie+1) = f0_(m,k,j,is);
+      f0n_(m,k,j,ie+1) = f0n_(m,k,j,is);
+    });
+  }
+  // the cubed sphere's transverse F0 are face-normal: not handled (zero start, as before)
+  if (!trans || cs_geom) return;
+  for (int d = 1; d < 3; ++d) {
+    if (d == 2 && !thrd) break;
+    auto fd_ = (d == 1) ? f0x2 : f0x3;
+    auto fdn_ = (d == 1) ? f0x2n : f0x3n;
+    const int ca = (d == 1) ? M1_IW_A2 : M1_IW_A3;
+    const int cf = (d == 1) ? M1_F2 : M1_F3;
+    const int jhi = (d == 1) ? je+1 : je, khi = (d == 2) ? ke+1 : ke;
+    par_for("m1_f0init_tr", DevExeSpace(), 0, nmb1, ks, khi, js, jhi, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      BoundaryFlag blo = mbbcs.d_view(m,(d == 1) ? BoundaryFace::inner_x2
+                                                 : BoundaryFace::inner_x3);
+      BoundaryFlag bhi = mbbcs.d_view(m,(d == 1) ? BoundaryFace::outer_x2
+                                                 : BoundaryFace::outer_x3);
+      const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+      const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+      const int c = (d == 1) ? j : k;
+      const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je+1 : ke+1;
+      if ((c == cs && plo) || (c == ce && phi)) return;
+      const int jm = (d == 1) ? (j-1) : j, km = (d == 2) ? (k-1) : k;
+      const Real al = iw_(m,ca,km,jm,i), ar = iw_(m,ca,k,j,i);
+      if (!lab && al == 0.0 && ar == 0.0) return;
+      // u0 (F2/F3 are not in the transverse halo; the generator fills the ghosts)
+      const Real fv = 0.5*((u0_(m,cf,km,jm,i) - al*fmax(u0_(m,M1_E,km,jm,i), efl))
+                           + (u0_(m,cf,k,j,i) - ar*fmax(u0_(m,M1_E,k,j,i), efl)));
+      const Real dd = fv - fd_(m,k,j,i);
+      fd_(m,k,j,i) = fv;
+      fdn_(m,k,j,i) += dd;
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitRadInertia
+//! \brief moveq-1011, <rad_m1>/implicit_rad_inertia: the radiation momentum carried by
+//! the enthalpy flux.  The lab-frame flux equation is dF/dt + c chat div P = -chat
+//! (rho k F0 + v g0) with F = F0 + A; the face equation of the solve evolves F0 and drops
+//! -dA/dt.  F0 is the only persistent part, A = a E is re-derived from (E, v) every
+//! solve, so the radiation momentum (F0 + A)/(c chat) changed by dA/(c chat) with nobody
+//! paying for it: in a gas moving through radiation (moving thermal equilibrium) the
+//! radiation gains (4/3) v E/c^2 and the gas is never decelerated.
+//!
+//! Backward Euler with the term kept gives F0' = theta [F0^n - dA - ...] (theta =
+//! 1/(1 + chat dt rho k_t)_f), i.e. the solve's F0' minus theta dA.  Applied here, after
+//! the solve, with dA_f the face mean of dA_c = a_c (E'_c - E^n_c) (a frozen for the
+//! step, as in the solve):
+//!  - each interior face takes F0 -= theta_f dA_f (x1 with the (1 - alpha) of the
+//!    ap_hll/blend face, x2/x3 with the face theta the transverse terms used);
+//!  - the write-back's deposit dt (rho k)_f F0_f/c then hands the gas exactly
+//!    -(1 - theta_f) dA_f/(c chat), the rest of dA staying in F0 (thick: all to the
+//!    gas; thin: the radiation keeps its lab flux);
+//!  - with the face equation's own dt v_f g0_f/c added to the deposit (write-back), the
+//!    exchanged momentum is conservative face by face (central faces).
+//! E is not touched (the energy row was solved without dA: in a uniform medium dA has no
+//! divergence; elsewhere the F0 memory carries it into the next step).  Exactly a no-op
+//! where a = 0 (static gas: bitwise).  Needs E^n in the ghosts: one scalar exchange.
+
+void RadiationM1::ImplicitRadInertia() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool trans = trans_on, thrd = trans_x3;
+  if (trans) {
+    ImplicitHaloExchange(1, M1_IW_EN);
+  } else {
+    ImplicitX1Halo(true, M1_IW_EN);
+  }
+  auto iw_ = iw;
+  auto ifw_ = ifw;
+  auto f0_ = f0x1;
+  auto pos_ = part_pos;
+  const int nblkx1 = part_nblk;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
+  const Real ch = chat, dt = dt_sub;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  const bool fwd = sph_geom && impl_face_wdist;
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
+  par_for("m1_rinr_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_.d_view(m);
+    const bool lo = (i == is) && (ipos == 0), hi = (i == ie+1) && (ipos == nblkx1-1);
+    if ((lo || hi) && !cyclic) return;
+    const int im = (cyclic && i == is) ? ie : (i-1);
+    const int ip = (cyclic && i == ie+1) ? is : i;
+    const Real al = iw_(m,M1_IW_ADV,k,j,im), ar = iw_(m,M1_IW_ADV,k,j,ip);
+    if (al == 0.0 && ar == 0.0) return;
+    const Real dl = al*(iw_(m,M1_IW_EP,k,j,im) - iw_(m,M1_IW_EN,k,j,im));
+    const Real dr = ar*(iw_(m,M1_IW_EP,k,j,ip) - iw_(m,M1_IW_EN,k,j,ip));
+    const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
+                                 im, ip, fwd);
+    Real th = 1.0/(1.0 + ch*dt*ktf);
+    if (aphll) {th *= (1.0 - ifw_(m,M1_IFW_AL,k,j,i));}
+    f0_(m,k,j,i) -= th*M1FaceAvgX1(dl, dr, cx1f, m, im, ip, fwd);
+  });
+  if (cyclic) {
+    par_for("m1_rinr_wrap", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      f0_(m,k,j,ie+1) = f0_(m,k,j,is);
+    });
+  }
+  if (!trans) return;
+  const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
+  for (int d = 1; d < 3; ++d) {
+    if (d == 2 && !thrd) break;
+    auto fd_ = (d == 1) ? f0x2 : f0x3;
+    auto thd_ = (d == 1) ? thx2 : thx3;
+    const int ca = (d == 1) ? M1_IW_A2 : M1_IW_A3;
+    const int jhi = (d == 1) ? je+1 : je, khi = (d == 2) ? ke+1 : ke;
+    par_for("m1_rinr_tr", DevExeSpace(), 0, nmb1, ks, khi, js, jhi, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      BoundaryFlag blo = mbbcs.d_view(m,(d == 1) ? BoundaryFace::inner_x2
+                                                 : BoundaryFace::inner_x3);
+      BoundaryFlag bhi = mbbcs.d_view(m,(d == 1) ? BoundaryFace::outer_x2
+                                                 : BoundaryFace::outer_x3);
+      const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+      const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+      const int c = (d == 1) ? j : k;
+      const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je+1 : ke+1;
+      if ((c == cs && plo) || (c == ce && phi)) return;
+      const int jm = (d == 1) ? (j-1) : j, km = (d == 2) ? (k-1) : k;
+      const Real al = iw_(m,ca,km,jm,i), ar = iw_(m,ca,k,j,i);
+      if (al == 0.0 && ar == 0.0) return;
+      const Real dl = al*(iw_(m,M1_IW_EP,km,jm,i) - iw_(m,M1_IW_EN,km,jm,i));
+      const Real dr = ar*(iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EN,k,j,i));
+      const Real ktf = 0.5*(iw_(m,M1_IW_KT,km,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+      const Real th = lm ? thd_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
+      fd_(m,k,j,i) -= th*0.5*(dl + dr);
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitVimpBuild
 //! \brief implicit_vimp (rad_m1_implicit.hpp, tests_m1/runs_3v_vimplicit): the Newton
 //! form of the enthalpy flux with the gas velocity implicit, for this Picard pass.
@@ -10291,6 +10594,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // ...and only the M1_NHALO_Q of them a pass can still move when the
       // closure is frozen for the step (see M1HaloCompT).
       ImplicitTransverseHalo(dofreeze ? M1_NHALO_Q : M1_NHALO_T);
+      // moveq-1011: the cold-start face fluxes (implicit_f0_init), before F0^n is read
+      if (it == 0 && !impl_f0_init_done) {ImplicitF0Init();}
       // (b1) the lagged transverse operator: the x2/x3 face fluxes of this iterate, their
       // diagonal contribution to the matrix and their lagged right-hand side.
       if (t2dav && (it == 0 || !(edd || vetsc || dofreeze))) {
@@ -10299,6 +10604,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ImplicitTransverseTerms(it == 0);
     } else {
       ImplicitX1Halo(false);
+      if (it == 0 && !impl_f0_init_done) {ImplicitF0Init();}
     }
 
     // (b2) the FACE coefficients of the asymptotic-preserving HLL blend.  Nothing here
@@ -10733,6 +11039,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool wimp = t2st && vim && have_hydro && feedback &&
                       ((t2_fvnew && !fref) || fws);
     t2_wk = wimp;
+    const bool nfwr = impl_nofb_work && !feedback && have_hydro && coupling && dbgf;
+    nofb_wrow = nfwr;
     // (d) assemble the tridiagonal system of every column
     // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
     const int enm = impl_enth;
@@ -11366,6 +11674,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (wimp) {
       ImplicitWorkRow(true);
     }
+    // moveq-1011: gas_feedback = false, the work at the fixed v in the row as well
+    if (nfwr) {ImplicitNofbWorkRow();}
 
     // (e) SOLVE the linear system of this pass.  With implicit_solver = line_jacobi
     // that is ONE x1 line solve with the lagged transverse term already on the
@@ -12338,6 +12648,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ec_tmax = std::max(ec_tmax, qmx);
   }
 
+  // moveq-1011: the radiation momentum of the enthalpy flux (implicit_rad_inertia)
+  if (impl_rad_inertia && have_hydro) {ImplicitRadInertia();}
   //------------------------------------------------------------------------- write back
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
   // time2_vstage, default true on sp, false = the old stage-start form)
@@ -12370,6 +12682,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto cclw = pmy_pack->pcoord->cos_cell;
   auto csnw = pmy_pack->pcoord->sin_cell;
   const bool rcpw = impl_real_couple;
+  const bool rinr = impl_rad_inertia && have_hydro;   // moveq-1011
+  const bool nfbw = impl_nofb_work;                   // moveq-1011
+  const bool rwk = t2_wk || vfx;                      // moveq-1011: row carried W
+  const bool nfwr = nofb_wrow;                        // moveq-1011: row carried v.dm
   if (!rcpw) {
     par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
