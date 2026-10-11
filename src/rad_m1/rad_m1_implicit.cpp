@@ -226,8 +226,8 @@ void M1HrCell(const int src, const V &iw, const V &vc, const VH &gh, const int m
 template <class V, class VH>
 KOKKOS_INLINE_FUNCTION
 void M1HrExcess(const V &iw, const VH &gh, const int m, const int k, const int j,
-                const int i, Real &hp, Real &hm) {
-  if (hp < 0.0) {return;}
+                const int i, const Real cfl, const Real cmin, Real &hp, Real &hm) {
+  if (hp < 0.0 || cfl < cmin) {return;}
   const Real en = iw(m,M1_IW_EN,k,j,i);
   const Real jj = gh(m,M1_VGD_HRJ,k,j,i);
   if (!(en > jj) || !(jj >= 0.0)) {return;}
@@ -1932,6 +1932,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       std::string sxs = pin->GetOrAddString("rad_m1","implicit_hr_excess","none");
       if (sxs.compare("iso") == 0) {
         impl_hr_xs = true;
+        // steady-regime gate: in a time-resolved transient (c dt/dx ~ 1) E^n differs from
+        // the steady formal solution's J legitimately (the light front), so the excess
+        // test is meaningless there
+        impl_hr_xs_cfl = pin->GetOrAddReal("rad_m1","implicit_hr_excess_cfl",10.0);
       } else if (sxs.compare("none") != 0) {
         ImplFatal("<rad_m1>/implicit_hr_excess = '" + sxs + "' is not a choice (none | iso)");
       }
@@ -3506,12 +3510,15 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const Real tjl = thsw_jslim;
     const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
     const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
+    const Real xcfl = impl_hr_xs_cfl;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real hp, hm, fb;
         M1HrCell(hsrc, iw_, hvc_, hgh_, m, k, j, i, d, 0.0, hp, hm, fb);
-        if (hxs) {M1HrExcess(iw_, hgh_, m, k, j, i, hp, hm);}   // sptests-1011 P2
+        if (hxs) {   // sptests-1011 P2
+          M1HrExcess(iw_, hgh_, m, k, j, i, ch*dtl/mbsize.d_view(m).dx1, xcfl, hp, hm);
+        }
         iw_(m,M1_IW_S1,k,j,i) = hp;
         iw_(m,M1_IW_S3,k,j,i) = hm;
         if (thsw) {
@@ -10979,6 +10986,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real tjl = thsw_jslim;
       const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
       const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
+      const Real xcfl = impl_hr_xs_cfl;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -11054,8 +11062,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           M1HrCell(hsrc, iw_, hvc_, hgh_, m, k, j, ip, 0, iw_(m,M1_IW_RF0,k,j,ip), hpr,
                    hmr, fbr);
           if (hxs) {   // sptests-1011 P2
-            M1HrExcess(iw_, hgh_, m, k, j, im, hpl, hml);
-            M1HrExcess(iw_, hgh_, m, k, j, ip, hpr, hmr);
+            M1HrExcess(iw_, hgh_, m, k, j, im, ch*dt/dx, xcfl, hpl, hml);
+            M1HrExcess(iw_, hgh_, m, k, j, ip, ch*dt/dx, xcfl, hpr, hmr);
           }
           Real alb, hlb, hrb;
           if (tmode != M1_THSW_NONE) {   // thinsw-1010
