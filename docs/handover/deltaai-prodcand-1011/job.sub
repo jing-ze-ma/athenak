@@ -1,0 +1,69 @@
+#!/bin/bash -l
+# TASK-2026-10-11-deltaai-prodcand-agcarA (raven -> DeltaAI, bsg-files-1009 58ee4a14): AG Car A production-candidate gate.
+#   sbatch --export=ALL,BC=<e66ee669 bin>,BR=<d28dacd8 bin> job.sub      (DRY=1 bash job.sub: decks + commands only)
+# 1 node x 4 GH200, 1 rank per GPU (4 blocks 480x64x64), 60 cycles, fixed dt, dumps at 0 and 60, all keys in a per-run deck.
+#SBATCH -J agcA_prodcand
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=00:40:00
+#SBATCH -o /work/nvme/bivj/jma20/prodcand_1011/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/prodcand_1011; F=$G/files
+BC=${BC:?BC}; BR=${BR:?BR}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+T0=$(date +%s); TEND=$((T0 + 37*60))
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1   # GPU-aware Cray MPICH (else process_vm_readv at startup)
+SRUN="srun -n 4 --ntasks-per-node=4 -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+for b in $BC $BR; do echo "$b $(md5sum < $b | cut -c1-32) (expect $(cat $b.md5))"; done
+md5sum $F/*
+mkdir -p $S
+
+# mkdeck <out> [block/key=val ...]: common keys, then each extra key replaces its line in <block> or is added to <block>
+mkdeck() {
+  local out=$1; shift
+  awk '
+    /^<[a-z0-9_]+>/{blk=substr($0,2,length($0)-2)}
+    blk=="output5" {next}                                   # no restart output
+    /^he_ic_file /{print "he_ic_file  = '$F'/ic_agcar_A_ge.txt"; next}
+    /^he_opac_table /{print "he_opac_table   = '$F'/rosseland_ext2_gs98_x0.36_z0.02.txt"; next}
+    /^he_planck_table /{print "he_planck_table = '$F'/planck_ext2orion_gs98_x0.36_z0.02.txt"; next}
+    blk=="time" && /^nlim /{print "nlim       = 60"; next}
+    blk=="time" && /^ndiag /{print "ndiag      = 1"; next}
+    blk=="rad_m1" && /^implicit_cfl /{print "implicit_cfl = 1251.3"; next}
+    blk ~ /^output[2367]$/ && /^dcycle /{print "dcycle = 60"; next}
+    {print}' $F/agcar_A_va.athinput > $out
+  local a b k v
+  for a in "$@"; do
+    b=${a%%/*}; k=${a#*/}; v=${k#*=}; k=${k%%=*}
+    if awk -v b="$b" -v k="$k" '/^<[a-z0-9_]+>/{blk=substr($0,2,length($0)-2)} blk==b && $1==k{f=1} END{exit !f}' $out; then
+      awk -v b="$b" -v k="$k" -v v="$v" '/^<[a-z0-9_]+>/{blk=substr($0,2,length($0)-2)} blk==b && $1==k{print k " = " v; next} {print}' $out > $out.t && mv $out.t $out
+    else
+      sed -i "/^<$b>/a $k = $v" $out
+    fi
+  done
+}
+run() {
+  local n=$1 bin=$2; shift 2; local D=$S/$n; mkdir -p $D
+  mkdeck $D/deck.athinput "$@"
+  # REF (d28dacd8) has no m1_thsw output (FATAL at startup, job 3357631): drop <output6> from its deck
+  [ "$bin" = "$BR" ] && awk '/^<[a-z0-9_]+>/{blk=substr($0,2,length($0)-2)} blk=="output6"{next} {print}' $D/deck.athinput > $D/deck.t && mv $D/deck.t $D/deck.athinput
+  local now=$(date +%s); [ $now -ge $TEND ] && { echo "SKIP $n (wall budget)"; return; }
+  echo "RUN $n bin=$(basename $bin) extra=[$*] $(date +%T)"
+  [ -n "${DRY:-}" ] && { echo "  $SRUN $bin -i $D/deck.athinput -d $D"; return; }
+  local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SRUN $bin -i $D/deck.athinput -d $D > $D/out.txt 2>&1; LASTRC=$?
+  echo "END $n rc=$LASTRC wall=$(echo "$(date +%s.%N) - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) $(date +%T)"
+}
+if [ "${ONLY:-}" = ref ]; then run ref $BR; [ -z "${DRY:-}" ] && [ "${LASTRC:-1}" != 0 ] && echo "ref failed (rc $LASTRC)"; echo "end $(date)"; exit 0; fi
+CK="rad_m1/time_scheme=hesdirk2 rad_m1/time2_vet_col=predict rad_m1/implicit_vimp=true rad_m1/time2_vstage=true rad_m1/implicit_blend_xthin=0 rad_m1/implicit_thin_switch=fse rad_m1/implicit_thin_corr=hc"
+run cand1 $BC $CK
+[ -z "${DRY:-}" ] && [ "${LASTRC:-1}" != 0 ] && { echo "cand1 failed (rc $LASTRC): stop the job"; exit 1; }
+run cand2 $BC $CK
+run ref   $BR
+echo "end $(date)"
