@@ -9,7 +9,8 @@
 //! ONLY: Driver::Initialize calls IcRadRun when res_flag is false, after the first dt
 //! and before the cycle-0 outputs; a restart never runs it (the keys are then inert).
 //!
-//! <rad_m1>/ic_rad (read only when named; default none = bitwise the old start):
+//! <rad_m1>/ic_rad (default fs_relax for implicit vet_col + vet_gd with a fluid, none for
+//! every other configuration; none = bitwise the old start):
 //!   fs        (a) formal-solution start: ic_rad_fs_iter passes of E := J, J the vet_gd
 //!             formal solution of the current state (twin-corrected under the fused
 //!             twin: J *= <J_twin>/J_twin, the same correction as vgd_hr's J), the IC
@@ -22,7 +23,8 @@
 //!             force on the gas (dbg_gas_force(_trans) = false for the IC steps only:
 //!             the velocity stays the IC's), the gas-radiation ENERGY exchange on (the
 //!             envelope gas relaxes to the radiation temperature with it).  Stops when
-//!             |L_top/L_top(prev) - 1| < ic_rad_relax_tol (deterministic sums).
+//!             |L_top/L_top(prev) - 1| < ic_rad_relax_tol (default 1e-4; at most
+//!             ic_rad_relax_n = 40 steps; deterministic sums).
 //!   fs_relax  (a) then (b).
 //! ic_rad_diag = N (default 0): the shell means of E, J (twin-corrected) and F1 at every
 //!   IC pass and after the vet_col build of the first N solves of the run, appended to
@@ -81,6 +83,12 @@ void IcrDetSum(std::vector<Real> &v) {
 //! \brief the ic_rad keys (read only when named) and their restrictions
 
 void RadiationM1::IcRadInit(ParameterInput *pin) {
+  // icrad-1011 default (user 10-11): fs_relax on a FRESH start of an implicit vet_col +
+  // vet_gd run with a fluid (the configuration it was tested on); none for every other
+  // problem (no M1 / explicit / no vet_gd: the hook is not even armed).  A restart never
+  // runs it (Driver::Initialize, res_flag), whatever its input says.  Opt out: none.
+  const bool elig = (transport >= M1_TRANSPORT_IMPLICIT_X1) && vet_col && vgd_on && fl_on;
+  icr_mode = elig ? 3 : 0;
   if (pin->DoesParameterExist("rad_m1","ic_rad")) {
     const std::string s = pin->GetString("rad_m1","ic_rad");
     if (s == "none") {
@@ -100,8 +108,8 @@ void RadiationM1::IcRadInit(ParameterInput *pin) {
   }
   if (icr_mode == 0 && icr_diag <= 0) return;
   icr_fs_iter = pin->GetOrAddInteger("rad_m1","ic_rad_fs_iter",3);
-  icr_relax_n = pin->GetOrAddInteger("rad_m1","ic_rad_relax_n",20);
-  icr_relax_tol = pin->GetOrAddReal("rad_m1","ic_rad_relax_tol",1.0e-3);
+  icr_relax_n = pin->GetOrAddInteger("rad_m1","ic_rad_relax_n",40);
+  icr_relax_tol = pin->GetOrAddReal("rad_m1","ic_rad_relax_tol",1.0e-4);
   icr_relax_dtfac = pin->GetOrAddReal("rad_m1","ic_rad_relax_dtfac",1.0);
   if (transport < M1_TRANSPORT_IMPLICIT_X1 || !vet_col || !vgd_on) {
     IcrFatal("<rad_m1>/ic_rad and ic_rad_diag need transport = implicit, closure = "

@@ -1273,9 +1273,10 @@ class RadiationM1 {
   void ImplicitInit(ParameterInput *pin);
   // icrad-1011 (rad_m1_icrad.cpp): opt-in IC radiation start, fresh starts only
   int icr_mode = 0;             // <rad_m1>/ic_rad: 0 none, 1 fs, 2 relax, 3 fs_relax
+                                // (default 3 when eligible, IcRadInit)
   int icr_fs_iter = 3;          // ic_rad_fs_iter: E := J passes
-  int icr_relax_n = 20;         // ic_rad_relax_n: max radiation-only steps
-  Real icr_relax_tol = 1.0e-3;  // ic_rad_relax_tol: stop at |dL_top/L_top| below this
+  int icr_relax_n = 40;         // ic_rad_relax_n: max radiation-only steps
+  Real icr_relax_tol = 1.0e-4;  // ic_rad_relax_tol: stop at |dL_top/L_top| below this
   Real icr_relax_dtfac = 1.0;   // ic_rad_relax_dtfac: dt of the relaxation steps / dt
   int icr_diag = 0;             // ic_rad_diag = N: E/J shell profiles (icrad_ej.txt)
   int icr_ndiag_done = 0, icr_nrx = 0;
