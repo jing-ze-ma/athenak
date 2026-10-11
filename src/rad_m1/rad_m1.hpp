@@ -762,6 +762,29 @@ class RadiationM1 {
   bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
   bool csinc_ok = false;                // csinc was formed for the coming stage solve
   bool gcs_first = true;                // the first conservative solve of this run
+  // consfix-1011, implicit_gas_src = conservative2 (NOTE-consfix.md): conservative, plus
+  //  (a) the face equation is the lab-F one, F0' = theta (F0^n - dA_f - ...): dA_c =
+  //      A'_c - A^old_c the whole change of the cell's enthalpy flux (A^old = F^old -
+  //      F0^old face mean), put into F0^n INSIDE the solve (ImplicitCs2Pass), so the E
+  //      rows transport the F0 the faces end on.  The drag then hands the gas (1 - theta)
+  //      of it (thick: all, the radiation inertia; thin: the lab flux is kept);
+  //  (b) implicit_vimp predicts the velocity the conservative write-back gives
+  //      (ImplicitCs2Vimp): the E rows' enthalpy flux and the stored F share one v;
+  //  (c) the hydro's velocity change since the stored F is F0's EXPLICIT tendency
+  //      -dA/dt (ImplicitCs2Shift at the solve start; the lab F is kept), so it never
+  //      enters an implicit (ESDIRK) slope.
+  // iw components behind the other blocks: A^old (3), dA (3, exchanged)
+  bool impl_gas_src_cs2 = false;
+  int iw_cs2 = -1;
+  bool cs2_dav = false;                 // the dA components hold a pass's prediction
+  int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
+                                        // 2 no vimp prediction, 4 no hydro shift
+  bool Cs2Active();
+  void ImplicitCs2DeltaA(bool usedv);
+  void ImplicitCs2Vimp();
+  void ImplicitCs2Shift();
+  void ImplicitCs2Pass(bool restore);
+  DvceArray4D<Real> cs2f1, cs2f2, cs2f3;   // the dA face means applied to F0^n (x1..x3)
 
   // ---- MILESTONE 3b phase B: transport = implicit, the TRANSVERSE (x2/x3) couplings.
   // All inert with transport = explicit | implicit_x1.
