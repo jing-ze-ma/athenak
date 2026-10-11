@@ -3796,7 +3796,7 @@ void RadiationM1::VetReport() {
 //! when given); beam b (b = 0, 1): implicit_beam<b>_e (energy density E_b of the beam),
 //! implicit_beam<b>_ang (in-plane angle in degrees from +x1 toward +x2, |ang| < 90),
 //! implicit_beam<b>_y0 / _y1 (the x2 patch of the x1min face).  The beam is carried by
-//! the up-going SC ray whose in-plane direction atan2(mu2, mu1) is closest to ang (ties:
+//! the up-going SC ray nearest (largest Omega . n_b) the in-plane direction n_b (ties:
 //! the smallest |mu3|); in 2-D its mu3 mirror gets half of it, so F3 = 0.  The entering
 //! intensity frac E_b / (n w_r) (frac = the covered fraction of the column's x2 extent,
 //! n = 1 or 2 rays) is added to whatever the x1min face gives that ray (the Marshak bath,
@@ -3839,8 +3839,9 @@ void RadiationM1::ImplBeamInit(ParameterInput *pin) {
     Real best = 1.0e30;
     for (int r = 0; r < nray; ++r) {
       if (!(ah(r,0) > 0.0)) continue;
-      const Real d = std::fabs(std::atan2(ah(r,1), ah(r,0)) - ang)
-                     + 1.0e-6*std::fabs(ah(r,2));
+      // the ray nearest the in-plane beam direction (cos ang, sin ang, 0) in 3-D
+      const Real d = -(ah(r,0)*std::cos(ang) + ah(r,1)*std::sin(ang))
+                     + 1.0e-9*std::fabs(ah(r,2));
       if (d < best - 1.0e-12) {best = d; rb = r;}
     }
     int rs[2] = {rb, -1};
