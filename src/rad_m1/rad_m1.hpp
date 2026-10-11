@@ -1129,6 +1129,7 @@ class RadiationM1 {
   bool impl_vimp_bc = false;
   Real t2_start_frac = 1.0;     // time2_start_frac
   Real t2_nprobe = 0.0;         // probe solves taken (counter)
+  bool t2_inprobe = false;      // inside the probe solve (ImplicitF0Init moves t2f*)
   bool Time2StartProbe(Driver *pdrive, Real dt);
   void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
   void Time2VetExtrapolate();

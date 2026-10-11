@@ -9108,10 +9108,10 @@ void RadiationM1::ImplicitF0Init() {
   const bool lab = (impl_f0_init == 1);
   const Real efl = e_floor;
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
-  // h2order-1011 (time2_start = slope): the first solve of the run can be a hesdirk2
-  // STAGE-1 solve, whose stage-start face copy (t2f1/2/3, the U^n of the Heun average and
-  // of Time2Restore) was taken before this init: it takes the same change
-  const bool st1 = (t2_solve == M1_T2S_STAGE1);
+  // h2order-1011 (time2_start = slope): the first solve of the run can be the probe of
+  // Time2StartProbe, which puts the faces back from its copy (t2f1/2/3) afterwards: the
+  // copy takes the same change, so that the init survives the probe
+  const bool st1 = t2_inprobe;
   auto t1_ = t2f1;
   // the cell's comoving flux F - a E (x1): the work array under trans (its F, E and a are
   // in the transverse halo), u0 on a 1-D mesh (the problem generator fills the ghosts)
