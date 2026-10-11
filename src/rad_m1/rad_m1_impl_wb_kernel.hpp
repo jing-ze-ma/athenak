@@ -52,6 +52,7 @@
 
     Real work = 0.0, dm1 = 0.0, dmref = 0.0, eg = 0.0, ekin = 0.0, egrv = 0.0;
     Real dm2 = 0.0, dm3 = 0.0;
+    Real go1 = 0.0, go2 = 0.0, go3 = 0.0;   // consrc-1011: F^old of the cell
     Real dd = 0.0, v1 = 0.0, v2 = 0.0, v3 = 0.0;
     if (have_hydro) {
       dd = uh(m,IDN,k,j,i);
@@ -86,7 +87,7 @@
       // each of its two cells (a physical boundary face gives all of it to its one
       // interior cell), which is exactly what the implicit face source removed from the
       // radiation: sum_cells dm = sum_faces dt (rho k_t)_f F0'_f/c.
-      if (coupling_ && dbgf) {
+      if (coupling_ && dbgf && !gcs) {
         Real ktl, ktr;
         Real wl = 0.5, wr = 0.5;
         int ipos = pos_.d_view(m);
@@ -284,6 +285,177 @@
           }
         }
       }
+      if (coupling_ && dbgf && gcs) {
+        // consrc-1011, implicit_gas_src = conservative (gas_feedback = true): the gas
+        // takes minus the radiation's own source of the solve,
+        //   dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_{interior faces} Z_f
+        //        + sum_{physical x1 faces} [(F0'_b - F0old_b)/(2 c chat) + w dt k F0'/c],
+        // F_c the STORED cell flux (u0; F^old of a hesdirk2 stage + its increment) and
+        // Z_f the face's transport part (face kernels).  A physical face has no face
+        // equation: its F0 change is inflow, not a source.  The work W (exact kinetic
+        // energy change of dm) leaves E as before; F' depends on dm through the clip
+        // (and the vimp re-forming), so a few fixed-point passes, the last dm being the
+        // one of the stored F' (exact conservation)
+        const Real icc = 1.0/(cl*ch);
+        const int ipq = pos_.d_view(m);
+        Real x1 = 0.0, x2 = 0.0, x3 = 0.0;
+        // a physical face: its F0 change is inflow, and it keeps the matched drag
+        // deposit of the boundary half cell (dt k F0_b/c, a boundary momentum source)
+        const Real wbq = bmhalf ? 0.5 : 1.0;
+        if (i == is && ipq == 0 && !cyclic) {
+          x1 += 0.5*(fl - f0n_(m,k,j,i))*icc + wbq*(dt/cl)*iw_(m,M1_IW_KT,k,j,i)*fl;
+        } else {
+          x1 -= 0.5*gz1w_(m,k,j,i);
+        }
+        if (i == ie && ipq == nblkx1-1 && !cyclic) {
+          x1 += 0.5*(fr - f0n_(m,k,j,i+1))*icc + wbq*(dt/cl)*iw_(m,M1_IW_KT,k,j,i)*fr;
+        } else {
+          x1 -= 0.5*gz1w_(m,k,j,i+1);
+        }
+        const bool tq = trans && dbgft;
+        if (tq) {
+          BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+          BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+          const bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+          const bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+          if (!(j == js && p2lo)) {x2 -= 0.5*gz2w_(m,k,j,i);}
+          if (!(j == je && p2hi)) {x2 -= 0.5*gz2w_(m,k,j+1,i);}
+          if (thrd) {
+            BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+            BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+            const bool p3lo = (q5 != BoundaryFlag::block) &&
+                              (q5 != BoundaryFlag::periodic);
+            const bool p3hi = (q6 != BoundaryFlag::block) &&
+                              (q6 != BoundaryFlag::periodic);
+            if (!(k == ks && p3lo)) {x3 -= 0.5*gz3w_(m,k,j,i);}
+            if (!(k == ke && p3hi)) {x3 -= 0.5*gz3w_(m,k+1,j,i);}
+          }
+          if (csw && thrd) {
+            const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+            const Real a = x2, b = x3;
+            x2 = (a + c*b)*si;   // covariant, as the hydro momentum and u0 F
+            x3 = (b + c*a)*si;
+          }
+        }
+        // F^old: the stored cell flux of the old vector
+        go1 = u0_(m,M1_F1,k,j,i);
+        go2 = u0_(m,M1_F2,k,j,i);
+        go3 = u0_(m,M1_F3,k,j,i);
+        if (gfst) {
+          // the first solve of the run: the problem generator's F is not (yet) the
+          // radiation's state (F0 faces + a E), whose old value is taken instead (the
+          // difference is a cold-start mismatch, not a source)
+          const Real eo = iw_(m,M1_IW_EN,k,j,i);
+          go1 = 0.5*(f0n_(m,k,j,i) + f0n_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
+          if (trans) {
+            Real a = 0.5*(f2nw_(m,k,j,i) + f2nw_(m,k,j+1,i)) + iw_(m,M1_IW_A2,k,j,i)*eo;
+            Real b = thrd ? (0.5*(f3nw_(m,k,j,i) + f3nw_(m,k+1,j,i))
+                             + iw_(m,M1_IW_A3,k,j,i)*eo) : 0.0;
+            if (csw && thrd) {
+              const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+              const Real a0 = a;
+              a = (a0 + c*b)*si;
+              b = (b + c*a0)*si;
+            }
+            go2 = a;
+            go3 = b;
+          }
+        }
+        if (t2st) {
+          if (csok) {
+            go1 += ciw_(m,0,k,j,i);
+            go2 += ciw_(m,1,k,j,i);
+            go3 += ciw_(m,2,k,j,i);
+          } else {
+            // no cell-F increment (restart, multirate): the face means of the F0
+            // increments plus a times the E increment
+            const Real tie = t2i_(m,M1_T2_E,k,j,i);
+            go1 += 0.5*(t2i_(m,M1_T2_F1,k,j,i) + t2i_(m,M1_T2_F1,k,j,i+1))
+                   + iw_(m,M1_IW_ADV,k,j,i)*tie;
+            if (trans) {
+              go2 += 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+                     + iw_(m,M1_IW_A2,k,j,i)*tie;
+              if (thrd) {
+                go3 += 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+                       + iw_(m,M1_IW_A3,k,j,i)*tie;
+              }
+            }
+          }
+        }
+        const Real idg = 1.0/fmax(dd, 1.0e-300);
+        // the exact kinetic-energy change of the kick (the matched path's work)
+        auto kew = [&](const Real a1, const Real a2, const Real a3) {
+          Real w = 0.5*(v1 + (uh(m,IM1,k,j,i) + a1)*idg)*a1;
+          if (tq) {
+            if (csw && thrd) {
+              const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
+              const Real n2 = uh(m,IM2,k,j,i) + a2, n3 = uh(m,IM3,k,j,i) + a3;
+              const Real u2 = (n2 - c*n3)*idg*id2, u3 = (n3 - c*n2)*idg*id2;
+              w += 0.5*(v2 + u2)*a2 + 0.5*(v3 + u3)*a3;
+            } else {
+              w += 0.5*(v2 + (uh(m,IM2,k,j,i) + a2)*idg)*a2;
+              if (thrd) {w += 0.5*(v3 + (uh(m,IM3,k,j,i) + a3)*idg)*a3;}
+            }
+          }
+          return w;
+        };
+        dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;
+        const Real r1 = fp1, r2 = fp2, r3 = fp3;   // the cell flux before the kick
+        Real q1 = fp1, q2 = fp2, q3 = fp3;
+        for (int q = 0; q < 4; ++q) {
+          dm1 = x1 - (q1 - go1)*icc;
+          dm2 = tq ? (x2 - (q2 - go2)*icc) : 0.0;
+          dm3 = (tq && thrd) ? (x3 - (q3 - go3)*icc) : 0.0;
+          if (q == 3) break;
+          const Real wq = kew(dm1, dm2, dm3);
+          Real eq = efc ? ep : (ep - (ch/cl)*wq);
+          q1 = r1;  q2 = r2;  q3 = r3;
+          if (vfx && !csw) {
+            // m1-sp-order2b: the cell F at the velocity the kick gives the gas
+            const Real w1 = (uh(m,IM1,k,j,i) + dm1 - dmref)*idg;
+            Real w2 = v2, w3 = v3;
+            if (tq) {
+              w2 = (uh(m,IM2,k,j,i) + dm2)*idg;
+              if (thrd) {w3 = (uh(m,IM3,k,j,i) + dm3)*idg;}
+            }
+            const Real chi = iw_(m,M1_IW_WCHI,k,j,i);
+            const Real n1 = iw_(m,M1_IW_N1,k,j,i), n2 = iw_(m,M1_IW_N2,k,j,i);
+            const Real n3 = iw_(m,M1_IW_N3,k,j,i);
+            Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2);
+            Real d33 = M1EddDiag(chi,n3);
+            Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
+            Real d23 = M1EddOff(chi,n2,n3);
+            if (dfull) {
+              d11 = vd_(m,M1_VET_D11,k,j,i);
+              d22 = vd_(m,M1_VET_D11+1,k,j,i);
+              d33 = vd_(m,M1_VET_D11+2,k,j,i);
+              d12 = vd_(m,M1_VET_D11+3,k,j,i);
+              d13 = vd_(m,M1_VET_D11+4,k,j,i);
+              d23 = vd_(m,M1_VET_D11+5,k,j,i);
+            }
+            const Real es = iw_(m,M1_IW_EP,k,j,i);
+            q1 = 0.5*(fl + fr) + (w1 + (w1*d11 + w2*d12 + w3*d13))*es;
+            if (trans) {
+              q2 = 0.5*(g2l + g2r) + (w2 + (w1*d12 + w2*d22 + w3*d23))*es;
+              if (thrd) {
+                q3 = 0.5*(g3l + g3r) + (w3 + (w1*d13 + w2*d23 + w3*d33))*es;
+              }
+            }
+          }
+          if (csw) {
+            M1ApplyLimitsCs(cl, efl, cclw(m,k,j), eq, q1, q2, q3);
+          } else {
+            M1ApplyLimits(cl, efl, eq, q1, q2, q3);
+          }
+        }
+        fp1 = q1;
+        fp2 = q2;
+        fp3 = q3;
+        work = kew(dm1, dm2, dm3);
+        if (!efc) {
+          ep -= (ch/cl)*work;
+        }
+      }
     }
 
     // m1-sp-order2b: a hesdirk2 stage solve under implicit_vimp.  The derived cell flux
@@ -291,7 +463,7 @@
     // radiative kick of the stage (the solved E already carries the implicit v'): an
     // O(dt) error in the cell F (rsw_u_T: F order 1.0, E, T, gas 1.9-2.0).  It is
     // re-formed with the velocity the write-back below gives the gas.
-    if (vfx && have_hydro && feedback) {
+    if (vfx && have_hydro && feedback && !gcs) {
       Real idg = 1.0/fmax(dd, 1.0e-300);
       Real w1 = (uh(m,IM1,k,j,i) + dm1 - dmref)*idg;
       Real w2 = v2, w3 = v3;
@@ -372,10 +544,38 @@
         Kokkos::atomic_add(&pc_(M1_POS_FCLIPM), fq/(cl*ep) - 1.0);
       }
     }
+    const Real cb1 = fp1, cb2 = fp2, cb3 = fp3;
     if (csw) {
       M1ApplyLimitsCs(cl, efl, cclw(m,k,j), ep, fp1, fp2, fp3);
     } else {
       M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
+    }
+    if (gcs && coupling_ && dbgf && (fp1 != cb1 || fp2 != cb2 || fp3 != cb3)) {
+      // consrc-1011: a clip the positivity moves made bind after the kick (rare): the
+      // gas takes the clipped momentum too, its kinetic-energy change from eint (the
+      // total gas energy is unchanged)
+      const Real icc = 1.0/(cl*ch), idg = 1.0/fmax(dd, 1.0e-300);
+      const bool tq = trans && dbgft;
+      const Real a1 = dm1 - (fp1 - cb1)*icc;
+      const Real a2 = tq ? (dm2 - (fp2 - cb2)*icc) : dm2;
+      const Real a3 = (tq && thrd) ? (dm3 - (fp3 - cb3)*icc) : dm3;
+      Real wn = 0.5*(v1 + (uh(m,IM1,k,j,i) + a1)*idg)*a1;
+      if (tq) {
+        if (csw && thrd) {
+          const Real c = cclw(m,k,j), id2 = 1.0/(1.0 - c*c);
+          const Real n2 = uh(m,IM2,k,j,i) + a2, n3 = uh(m,IM3,k,j,i) + a3;
+          const Real u2 = (n2 - c*n3)*idg*id2, u3 = (n3 - c*n2)*idg*id2;
+          wn += 0.5*(v2 + u2)*a2 + 0.5*(v3 + u3)*a3;
+        } else {
+          wn += 0.5*(v2 + (uh(m,IM2,k,j,i) + a2)*idg)*a2;
+          if (thrd) {wn += 0.5*(v3 + (uh(m,IM3,k,j,i) + a3)*idg)*a3;}
+        }
+      }
+      eg -= (wn - work);
+      work = wn;
+      dm1 = a1;
+      dm2 = a2;
+      dm3 = a3;
     }
     // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
     if (t2k) {
@@ -388,6 +588,13 @@
       kk_(m,M1_T2_M1+2,k,j,i) = (gk && trans && dbgft && thrd) ? (dm3*fk) : 0.0;
       kk_(m,M1_T2_EN,k,j,i) = gk ? ((eg + ekin + egrv + work - uh(m,IEN,k,j,i))*fk)
                                  : 0.0;
+      if (gcs && coupling_ && dbgf) {
+        // consrc-1011: the slope of the stored cell F, which the next stage's old
+        // vector takes (Time2FormStage -> csinc)
+        ckw_(m,0,k,j,i) = (fp1 - go1)*fk;
+        ckw_(m,1,k,j,i) = (fp2 - go2)*fk;
+        ckw_(m,2,k,j,i) = (fp3 - go3)*fk;
+      }
     }
     u0_(m,M1_E,k,j,i) = ep;
     u0_(m,M1_F1,k,j,i) = fp1;

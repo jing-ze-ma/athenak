@@ -750,6 +750,18 @@ class RadiationM1 {
   bool impl_f0_init_done = false;
   bool impl_nofb_work = false;
   bool nofb_wrow = false;         // the last assembled E rows carried v.dm (nofb)
+  // consrc-1011 <rad_m1>/implicit_gas_src = matched (default: the term-by-term deposit
+  // above, bitwise) | conservative: the gas takes minus the radiation's own source of the
+  // solve, dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_faces Z_f, with F_c the STORED
+  // cell flux and Z_f the face's transport (and non-momentum-equation) part, written by
+  // the face kernels of the solve (rad_m1_implicit.cpp, NOTE-consrc.md)
+  bool impl_gas_src_cons = false;
+  bool impl_gas_src_full = false;      // conservative_full: no drag-only HLL exception
+  DvceArray4D<Real> gcz1, gcz2, gcz3;   // Z_f on the x1 / x2 / x3 faces (as f0x1..3)
+  DvceArray5D<Real> csk1, csk2, csinc;  // hesdirk2: slopes / increment of the cell F (3)
+  bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
+  bool csinc_ok = false;                // csinc was formed for the coming stage solve
+  bool gcs_first = true;                // the first conservative solve of this run
 
   // ---- MILESTONE 3b phase B: transport = implicit, the TRANSVERSE (x2/x3) couplings.
   // All inert with transport = explicit | implicit_x1.

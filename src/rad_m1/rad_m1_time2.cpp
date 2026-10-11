@@ -480,6 +480,21 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     if (two) {v += c2*k2_(m,n,k,j,i);}
     in_(m,n,k,j,i) = v;
   });
+  // consrc-1011 (implicit_gas_src = conservative): the same increment of the stored
+  // cell F, from its slopes (the old vector of the write-back's F^old)
+  csinc_ok = false;
+  if (impl_gas_src_cons && csk1_ok && csk1.extent(0) == t2k1.extent(0)) {
+    auto ck1_ = csk1;
+    auto ck2_ = csk2;
+    auto ci_ = csinc;
+    par_for("m1_t2_csinc", DevExeSpace(), 0, nmb1, 0, 2, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      Real v = c1*ck1_(m,n,k,j,i);
+      if (two) {v += c2*ck2_(m,n,k,j,i);}
+      ci_(m,n,k,j,i) = v;
+    });
+    csinc_ok = true;
+  }
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
   nsub = 1;
