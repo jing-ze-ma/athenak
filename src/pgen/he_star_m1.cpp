@@ -783,10 +783,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // isothermal-atmosphere guess (2.1-2.6x the relaxed E at 1.0-1.2 R_ph for AG Car A).
   // E = w E_sph1d + (1 - w) E_col, w a smoothstep LINEAR in tau, 1 at he_ic_rad_taua, 0
   // at he_ic_rad_taub.  he_ic_rad_gas = column (default): T keeps the column's; re: a T^4
-  // = E at fixed rho (blended with the same w; eint from the code's EOS).  he_ic_rad_hse
-  // (needs gas = re): rho re-integrated outward from r_b at fixed T, dP_gas/dr = -rho (g
-  // - kt F/c) (the continuum balance of the WB pair, whose a_ref = kt F/c is built below
-  // from this column), floored at the column's floor; E solve and HSE iterated together.
+  // = E at fixed rho (blended with the same w; eint from the code's EOS); re_atm: as re
+  // but the floor gas (rho at the column's floor) keeps the column's T, so its a_ref = kt
+  // F/c is the file IC's (with re its cold floor gas falls 3x faster and the implicit
+  // solve then takes ~6 instead of ~4 Picard iterations, AG Car A).  he_ic_rad_hse
+  // (needs gas = re | re_atm): rho re-integrated outward from r_b at fixed T, dP_gas/dr
+  // = -rho (g - kt F/c) (the continuum balance of the WB pair, whose a_ref = kt F/c is
+  // built below from this column), floored at the column's floor; E solve and HSE
+  // iterated together.
   // F_r and the MLT fraction are not changed.  Deterministic (host solve, per-point
   // device opacities) and rebuilt on every start, as the column itself.
   // he_ic_rad_dump = <file>: rank 0 writes the new column in the IC file format (r rho
@@ -818,12 +822,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       HsFatal("problem/he_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore >= 4",
               __LINE__);
     }
-    if (gasm != "column" && gasm != "re") {
-      HsFatal("problem/he_ic_rad_gas must be column | re", __LINE__);
+    if (gasm != "column" && gasm != "re" && gasm != "re_atm") {
+      HsFatal("problem/he_ic_rad_gas must be column | re | re_atm", __LINE__);
     }
-    const bool gre = (gasm == "re");
-    if (hse && !gre) HsFatal("problem/he_ic_rad_hse = true needs he_ic_rad_gas = re",
-                             __LINE__);
+    // re_atm: radiative equilibrium only where rho is above the column's floor (the floor
+    // gas keeps the column's T, hence its a_ref = kt F/c, as with he_ic_rad = file)
+    const bool gre = (gasm == "re" || gasm == "re_atm");
+    const bool gatm = (gasm == "re_atm");
+    if (hse && !gre) {
+      HsFatal("problem/he_ic_rad_hse = true needs he_ic_rad_gas = re | re_atm", __LINE__);
+    }
     // the column as read: T [code] (the file's T with he_ic_eint_from_t, else the code's
     // T(rho, eint)), E (the file's, else a T^4), rho
     std::vector<Real> d0(hd), t0(nf), e0(nf);
@@ -924,7 +932,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       for (int it=0; it<maxit; ++it) {
         if (gre) {
-          for (int g=0; g<ngr; ++g) tg[g] = pow(eg[g]/ar, 0.25);
+          for (int g=0; g<ngr; ++g) {
+            tg[g] = (gatm && dg[g] <= dfl*(1.0 + 1.0e-6)) ? flog(t0, rg[g])
+                                                         : pow(eg[g]/ar, 0.25);
+          }
         }
         HsKtEval(otr, dg, tg, kg);
         for (int g=0; g<ngr; ++g) cg[g] = (rg[g] < rtop) ? dg[g]*kg[g] : 0.0;
@@ -944,6 +955,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real w = (x >= 1.0) ? 1.0 : ((x <= 0.0) ? 0.0 : x*x*(3.0 - 2.0*x));
         ef[n] = w*glog(rg, eg, hr[n]) + (1.0 - w)*e0[n];
         if (gre) tcur[n] = w*pow(ef[n]/ar, 0.25) + (1.0 - w)*t0[n];
+        if (gatm && hd[n] <= dfl*(1.0 + 1.0e-9)) tcur[n] = t0[n];
       }
       if (!hse) {
         if (gre) ftau();
