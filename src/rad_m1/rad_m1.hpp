@@ -446,6 +446,16 @@ class RadiationM1 {
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
+  // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
+  // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
+  // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,
+  // active index); ibm_f(m,k,j): its x1 face flux c sum w mu1 I, which replaces the
+  // Marshak row of every column it is > 0 on (an imposed-flux face).
+  int ibm_n = 0, ibm_nr = 0;
+  int ibm_ray[4] = {-1, -1, -1, -1};
+  DvceArray4D<Real> ibm_i;
+  DvceArray3D<Real> ibm_f;
+  void ImplBeamInit(ParameterInput *pin);
   // implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge only): the
   // Marshak face flux takes the face E extrapolated from r^2 E of the two end cells
   // (M1SphMarshakCoef in the row, limiter remainder deferred) instead of the end cell's
@@ -648,6 +658,13 @@ class RadiationM1 {
   // the lagged closure), w = exp(-(tau_f/tau0)^2) (implicit_blend = tau) or 1 (berthon)
   bool impl_beam_hr = false;
   bool impl_hr_model = false;   // implicit_hr_model (no ray data: closure model)
+  // cbfix-1011 implicit_hr_face = sf (default with vet_sc): the half-range face ratios
+  // from the face mean of the formal-solution half-range fluxes over the DONOR SCALE
+  // Jh = max(J, the outgoing face SC fluxes) wherever the cell's own J does not carry
+  // the SC flux through its faces (M1HrSf); cell = the hrup-1009 cell ratios (opt-out)
+  bool impl_hr_sf = false;
+  int iw_hsf = -1;              // first iw component of the M1_NIW_HSF block
+  double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
   bool hr_q = false;            // the per-column outer q from h+_1 (vcol_q)
   DvceArray5D<Real> vgd_hr, vgd_hrt;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
   DvceArray1D<Real> vgd_hrm;           // shell mean of one twin component
@@ -660,6 +677,8 @@ class RadiationM1 {
   void VetGdHalfRange(const int stage);
   DvceArray5D<Real> ifw2, ifw3;
   void ImplicitLatFaceCoef(bool first);
+  void CbDebugDump();
+  void ImplicitHrSfBuild();   // cbfix-1011: the M1_NIW_HSF block (implicit_hr_face=sf)   // cbfix-1011: env M1_CBDBG=<prefix> per-step face/budget dump
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
   // serial Thomas sweep and sends the solution back.

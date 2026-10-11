@@ -306,8 +306,19 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     bool md = pmy_mesh_->multi_d && !p1d;
     bool td = pmy_mesh_->three_d && !p1d;
     int nx2 = indcs.nx2, nx3 = indcs.nx3;
+    // littests-1011 gas_vx: a uniform x1 velocity of the (evolved, still uniform) gas, for
+    // the dynamic-diffusion test (Jiang 2021 Sect. 4.4 / Ma et al. 2025 Sect. 4.2.1)
+    Real gvx = pin->GetOrAddReal("problem","gas_vx",0.0);
     if (restart) return;
     M1SetUniformGas(pmbp, dgas, egas);
+    if (gvx != 0.0) {
+      auto uhv = pmbp->phydro->u0;
+      par_for("m1_thickpulse_v", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        uhv(m,IM1,k,j,i) = uhv(m,IDN,k,j,i)*gvx;
+        uhv(m,IEN,k,j,i) += 0.5*uhv(m,IDN,k,j,i)*gvx*gvx;
+      });
+    }
 
     // the Nyquist seed is (-1)^(global cell index), so it must not restart at each
     // MeshBlock: the index is rebuilt from the block's own x1min
@@ -604,8 +615,17 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0e-7);
     Real egas = pin->GetReal("problem","gas_eint");
     Real erad = pin->GetReal("problem","e_rad");
+    Real gvx = pin->GetOrAddReal("problem","gas_vx",0.0);   // littests-1011 (J21 4.1)
     if (restart) return;
     M1SetUniformGas(pmbp, dgas, egas);
+    if (gvx != 0.0) {
+      auto uhv = pmbp->phydro->u0;
+      par_for("m1_equil_v", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        uhv(m,IM1,k,j,i) = uhv(m,IDN,k,j,i)*gvx;
+        uhv(m,IEN,k,j,i) += 0.5*uhv(m,IDN,k,j,i)*gvx*gvx;
+      });
+    }
     par_for("m1_equil_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       u0(m,radm1::M1_E,k,j,i) = erad;
