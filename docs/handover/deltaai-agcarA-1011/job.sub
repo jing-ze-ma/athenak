@@ -1,0 +1,77 @@
+#!/bin/bash -l
+# TASK-2026-10-11-deltaai-agcarA-face-icrad (raven -> DeltaAI, bsg-files-1009 f1123525).
+#   sbatch --export=ALL,BA=<e84d2513 bin>,BB=<7045bc14 bin> job.sub      (DRY=1 bash job.sub: decks + commands only)
+# 1 node x 4 GH200, 1 rank per GPU (4 blocks 480x64x64). Fixed dt via rad_m1/implicit_cfl. All keys are baked into
+# a per-run deck (no command-line overrides). Order: run 1 (A), run 2 (B, dt), run 2 dt/2 (B, default + all ic_rad).
+#SBATCH -J agcA_face_icrad
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=01:00:00
+#SBATCH -o /work/nvme/bivj/jma20/agcarA_1011/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/agcarA_1011; F=$G/files
+BA=${BA:?BA}; BB=${BB:?BB}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+T0=$(date +%s); TEND=$((T0 + 57*60))     # stop launching runs 3 min before the 1 h limit
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+# job-env rule (agcar_dai_link.sh): GPU-aware Cray MPICH. Without it: process_vm_readv Bad address (job 3357111)
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1
+SRUN="srun -n 4 --ntasks-per-node=4 -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+chk(){ echo "$1 $(md5sum < $1 | cut -c1-32) (expect $(cat $1.md5))"; }
+chk $BA
+md5sum $F/*
+mkdir -p $S
+
+# mkdeck <out> <implicit_cfl> <nlim> <rotate_every> [extra rad_m1 lines...]
+mkdeck() {
+  local out=$1 cfl=$2 nl=$3 rot=$4; shift 4
+  sed -e "s|^he_ic_file .*|he_ic_file  = $F/ic_agcar_A_ge.txt|" \
+      -e "s|^he_opac_table .*|he_opac_table   = $F/rosseland_ext2_gs98_x0.36_z0.02.txt|" \
+      -e "s|^he_planck_table .*|he_planck_table = $F/planck_ext2orion_gs98_x0.36_z0.02.txt|" \
+      -e "s|^ndiag .*|ndiag      = 1|" \
+      -e "s|^nlim .*|nlim       = $nl|" \
+      -e "s|^implicit_cfl .*|implicit_cfl = $cfl|" \
+      -e "s|^vet_gd_rotate_every .*|vet_gd_rotate_every = $rot|" \
+      $F/agcar_A_va.athinput > $out
+  local l; for l in "$@"; do sed -i "/^<rad_m1>/a $l" $out; done
+}
+
+# run <name> <bin> <cfl> <nlim> <rot> [extra...]
+run() {
+  local n=$1 bin=$2 cfl=$3 nl=$4 rot=$5; shift 5
+  local D=$S/$n; mkdir -p $D
+  mkdeck $D/deck.athinput $cfl $nl $rot "$@"
+  local now=$(date +%s)
+  if [ $now -ge $TEND ]; then echo "SKIP $n (wall budget) $(date +%T)"; return; fi
+  echo "RUN $n bin=$(basename $bin) cfl=$cfl nlim=$nl rot=$rot extra=[$*] $(date +%T)"
+  if [ -n "${DRY:-}" ]; then echo "  $SRUN $bin -i $D/deck.athinput -d $D"; return; fi
+  local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SRUN $bin -i $D/deck.athinput -d $D > $D/out.txt 2>&1; local rc=$?
+  local t2=$(date +%s.%N); LASTRC=$rc
+  echo "END $n rc=$rc wall=$(echo "$t2 - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) $(date +%T)"
+}
+
+C1=1251.3; C2=625.65
+run A_cell  $BA $C1 50 10 "vet_bc_diff = cell"
+[ -z "${DRY:-}" ] && [ "${LASTRC:-1}" != 0 ] && { echo "A_cell failed (rc $LASTRC): stop the job"; exit 1; }
+run A_face  $BA $C1 50 10 "vet_bc_diff = face"
+run A_face2 $BA $C1 50 10 "vet_bc_diff = face"
+# binary B may still be building at submit time: wait up to 15 min for its .md5 (written after the link)
+for i in $(seq 90); do [ -f $BB.md5 ] && break; [ -n "${DRY:-}" ] && break; sleep 10; done
+[ -f $BB.md5 ] || { echo "binary B missing after wait, stopping $(date +%T)"; exit 0; }
+chk $BB
+RX="ic_rad_relax_n = 40"; RT="ic_rad_relax_tol = 1.0e-4"
+run B_def      $BB $C1 60 10 "$RX" "$RT"
+run B_fs       $BB $C1 60 10 "$RX" "$RT" "ic_rad = fs"
+run B_relax    $BB $C1 60 10 "$RX" "$RT" "ic_rad = relax"
+run B_fsrelax  $BB $C1 60 10 "$RX" "$RT" "ic_rad = fs_relax"
+run B_def_h      $BB $C2 120 20 "$RX" "$RT"
+run B_fsrelax_h  $BB $C2 120 20 "$RX" "$RT" "ic_rad = fs_relax"
+run B_relax_h    $BB $C2 120 20 "$RX" "$RT" "ic_rad = relax"
+run B_fs_h       $BB $C2 120 20 "$RX" "$RT" "ic_rad = fs"
+echo "end $(date)"
