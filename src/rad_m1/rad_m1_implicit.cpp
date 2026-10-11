@@ -10529,9 +10529,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // res = |dE|/max(E, implicit_res_floor*max(E)).
   Real emax0 = 0.0;
   if (rfl_ > 0.0) {
-    Kokkos::parallel_reduce("m1_impl_emax",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_emax", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
       Real r = iw_(m,M1_IW_EN,k,j,i);
       lmax = (r > lmax) ? r : lmax;
@@ -10549,9 +10547,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   Real rhsmax = 1.0;
   if (trans) {
     Real rm = 0.0;
-    Kokkos::parallel_reduce("m1_impl_rhsmax",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_rhsmax", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
       Real r = fabs(iw_(m,M1_IW_EN,k,j,i));
       lmax = (r > lmax) ? r : lmax;
@@ -12212,9 +12208,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // xthinfix-1009 Fix B: the plm half-range row has positive off-diagonals too
         // (the E_c-2 / E_c+2 coefficients of the inflow faces): the same fallback to dc
         Real emin = 1.0e300;
-        Kokkos::parallel_reduce("m1_impl_vmmin",
-        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                               {nmb1+1,ke+1,je+1,ie+1}),
+        par_reduce_flat("m1_impl_vmmin", 0, nmb1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
           Real r = iw_(m,M1_IW_S2,k,j,i);
           lmin = (r < lmin) ? r : lmin;
@@ -13006,15 +13000,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // MILESTONE 3g: the per-cell counters of the gas coupling, reduced ONCE per step.
   if (gasx) {
     Real sfb = 0.0, sms = 0.0;
-    Kokkos::parallel_reduce("m1_impl_gcnt",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_gcnt", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lf) {
       lf += iw_(m,igf,k,j,i);
     }, Kokkos::Sum<Real>(sfb));
-    Kokkos::parallel_reduce("m1_impl_gms",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_gms", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls) {
       ls += iw_(m,igm,k,j,i);
     }, Kokkos::Sum<Real>(sms));
@@ -13127,9 +13117,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (bkt > 0.0) {qt += emis*4.0*t3*(rkt + cl*dt*rkev*ep)/bkt;}
       iw_(m,igm,k,j,i) = fabs(qt - qc)/fmax(fabs(qt), 1.0e-300);
     }, Kokkos::Max<Real>(emx));
-    Kokkos::parallel_reduce("m1_impl_eckq",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_eckq", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
       lmax = fmax(lmax, iw_(m,igm,k,j,i));
     }, Kokkos::Max<Real>(qmx));
