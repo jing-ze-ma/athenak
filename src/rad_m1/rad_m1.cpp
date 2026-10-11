@@ -933,6 +933,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // vet_seg (segfix-1011): mean (default, bitwise older runs) integrates the SC segment
+    // upwind point -> cell centre with chi = (chi_u + chi_0)/2 and S linear in tau; split
+    // integrates its two parts at the cell face with chi_u, chi_0 and a face S limited
+    // toward S_u at an opaque -> thin interface (rad_m1_vetseg.hpp)
+    {
+      std::string sg = pin->GetOrAddString("rad_m1","vet_seg","mean");
+      if (sg.compare("split") == 0) {
+        vet_seg_split = true;
+        vet_seg_emit = false;
+      } else if (sg.compare("emit") == 0) {
+        vet_seg_split = true;
+        vet_seg_emit = true;
+      } else if (sg.compare("mean") == 0) {
+        vet_seg_split = false;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_seg must be mean, split or emit"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     vcol_team =pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
     vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
     vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);
