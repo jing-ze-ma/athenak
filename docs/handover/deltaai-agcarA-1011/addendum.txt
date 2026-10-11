@@ -1,0 +1,60 @@
+cycle-0 dumps (written after the IC step); bitwise identical arrays vs B_def:
+  B_relax    dens  identical=True  max|rel| cellwise=0.000e+00
+  B_relax    velx  identical=True  max|rel| cellwise=nan
+  B_relax    vely  identical=True  max|rel| cellwise=nan
+  B_relax    velz  identical=True  max|rel| cellwise=nan
+  B_relax    eint  identical=False  max|rel| cellwise=9.719e-01
+  B_fsrelax  dens  identical=True  max|rel| cellwise=0.000e+00
+  B_fsrelax  velx  identical=True  max|rel| cellwise=nan
+  B_fsrelax  vely  identical=True  max|rel| cellwise=nan
+  B_fsrelax  velz  identical=True  max|rel| cellwise=nan
+  B_fsrelax  eint  identical=False  max|rel| cellwise=9.719e-01
+
+cycle 0: max rel change of shell means vs B_def, per band
+  B_relax    eint  <0.8: 1.080e-05 | 0.95-1.05: 3.935e-01 | 1.05-1.5: 4.677e-01 | >1.5: 9.718e-01
+  B_relax    dens  <0.8: 0.000e+00 | 0.95-1.05: 0.000e+00 | 1.05-1.5: 0.000e+00 | >1.5: 0.000e+00
+  B_fsrelax  eint  <0.8: 1.080e-05 | 0.95-1.05: 3.935e-01 | 1.05-1.5: 4.677e-01 | >1.5: 9.718e-01
+  B_fsrelax  dens  <0.8: 0.000e+00 | 0.95-1.05: 0.000e+00 | 1.05-1.5: 0.000e+00 | >1.5: 0.000e+00
+
+max |velx| (cm/s) per dump
+  B_def      c0: 0.0000e+00  c50: 7.3204e+05  c60: 8.8425e+05
+  B_relax    c0: 0.0000e+00  c50: 7.5834e+05  c60: 9.1056e+05
+  B_fsrelax  c0: 0.0000e+00  c50: 7.5834e+05  c60: 9.1056e+05
+
+KE_int, KEr_int (hst cols 11, 12) per cycle
+cycle       B_def KE      B_def KEr     B_relax KE    B_relax KEr   B_fsrelax KE  B_fsrelax KEr
+    0   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00
+    1   1.575674e+39   5.408248e+37   1.429649e+39   4.956652e+37   1.429649e+39   4.956652e+37
+    2   6.014298e+39   2.072146e+38   5.711661e+39   1.977518e+38   5.711661e+39   1.977518e+38
+    3   1.329980e+40   4.582228e+38   1.282704e+40   4.433445e+38   1.282704e+40   4.433445e+38
+    4   2.340124e+40   8.053191e+38   2.274552e+40   7.846404e+38   2.274552e+40   7.846404e+38
+    5   3.627665e+40   1.246340e+39   3.542584e+40   1.219541e+39   3.542584e+40   1.219541e+39
+    6   5.187336e+40   1.778850e+39   5.081605e+40   1.745629e+39   5.081605e+40   1.745629e+39
+    7   7.012829e+40   2.400133e+39   6.885382e+40   2.360214e+39   6.885382e+40   2.360214e+39
+    8   9.096828e+40   3.107227e+39   8.946679e+40   3.060369e+39   8.946679e+40   3.060369e+39
+    9   1.143106e+41   3.896972e+39   1.125730e+41   3.842969e+39   1.125730e+41   3.842969e+39
+   10   1.400632e+41   4.766095e+39   1.380815e+41   4.704758e+39   1.380815e+41   4.704758e+39
+   15   3.011901e+41   1.017789e+40   2.978961e+41   1.007770e+40   2.978961e+41   1.007770e+40
+   20   5.044956e+41   1.702365e+40   4.998218e+41   1.688270e+40   4.998218e+41   1.688270e+40
+   30   9.640225e+41   3.327119e+40   9.568200e+41   3.304902e+40   9.568200e+41   3.304902e+40
+   40   1.375764e+42   5.101165e+40   1.366855e+42   5.070897e+40   1.366855e+42   5.070897e+40
+   50   1.642566e+42   6.990412e+40   1.632967e+42   6.950969e+40   1.632967e+42   6.950969e+40
+   60   1.740868e+42   9.163882e+40   1.731347e+42   9.112065e+40   1.731347e+42   9.112065e+40
+  B_def      KE_int max 1.7409e+42 at cycle 60, KEr_int max 9.1639e+40 at cycle 60
+  B_relax    KE_int max 1.7313e+42 at cycle 60, KEr_int max 9.1121e+40 at cycle 60
+  B_fsrelax  KE_int max 1.7313e+42 at cycle 60, KEr_int max 9.1121e+40 at cycle 60
+
+cycle 0: signed shell-mean eint ratio relax/default at sample radii, and eint ratio at cycle 50, 60
+  r/Rph 0.501: c0 1.0000  c50 1.0000  c60 1.0000
+  r/Rph 0.799: c0 1.0000  c50 1.0000  c60 1.0000
+  r/Rph 0.901: c0 1.0000  c50 1.0000  c60 1.0000
+  r/Rph 0.950: c0 0.9998  c50 1.0000  c60 1.0000
+  r/Rph 0.979: c0 0.9957  c50 1.0000  c60 1.0000
+  r/Rph 1.000: c0 0.9528  c50 1.0020  c60 1.0022
+  r/Rph 1.020: c0 0.8965  c50 0.9972  c60 0.9966
+  r/Rph 1.050: c0 0.6064  c50 1.0000  c60 0.9984
+  r/Rph 1.198: c0 0.5969  c50 1.0085  c60 1.0090
+  r/Rph 1.501: c0 0.5242  c50 1.0002  c60 1.0002
+  r/Rph 1.987: c0 0.1265  c50 1.0000  c60 1.0001
+  r/Rph 2.500: c0 0.0389  c50 1.0001  c60 1.0001
+  r/Rph 2.911: c0 0.0286  c50 1.0000  c60 1.0000

@@ -1,0 +1,21 @@
+== rs10 (restart from cycle 10, to 20)
+  ic_rad lines in the restart log:
+    <rad_m1> ic_rad = relax (fresh starts only) relax_n = 40 relax_tol = 0.0001 relax_dtfac = 1 diag = 0 [RESTART: the IC passes are skipped]
+  IC step re-run on restart: no; NON-CONVERGED: ['0.000000e+00']
+  agcar3d.user.hst: 10 rows matched by time (cycles 11..20), 10 identical text; rows only in restart: 0
+  agcar3d.hydro.hst: 10 rows matched by time (cycles 11..20), 10 identical text; rows only in restart: 0
+  bin hydro_w at cycle 20: arrays bitwise True
+  bin m1 at cycle 20: arrays bitwise True
+  bin m1_fs at cycle 20: arrays bitwise True
+  bin m1_thsw at cycle 20: arrays bitwise True
+  rst agcar3d.00002.rst vs berx agcar3d.00002.rst (cycle 20): data after <par_end> identical True (1983659334 / 1983659334 bytes)
+  rst agcar3d.00003.rst vs berx agcar3d.00002.rst (cycle 20): data after <par_end> identical True (1983659334 / 1983659334 bytes)
+== rs0 (restart from cycle 0, to 10)
+  ic_rad lines in the restart log:
+    <rad_m1> ic_rad = relax (fresh starts only) relax_n = 40 relax_tol = 0.0001 relax_dtfac = 1 diag = 0 [RESTART: the IC passes are skipped]
+  IC step re-run on restart: no; NON-CONVERGED: ['0.000000e+00']
+  agcar3d.user.hst: 10 rows matched by time (cycles 1..10), 10 identical text; rows only in restart: 0
+  agcar3d.hydro.hst: 10 rows matched by time (cycles 1..10), 10 identical text; rows only in restart: 0
+  no bin at cycle 10 in both (berx bins at cycles 0, 20)
+  rst agcar3d.00001.rst vs berx agcar3d.00001.rst (cycle 10): data after <par_end> identical True (1983659334 / 1983659334 bytes)
+  rst agcar3d.00002.rst vs berx agcar3d.00001.rst (cycle 10): data after <par_end> identical True (1983659334 / 1983659334 bytes)

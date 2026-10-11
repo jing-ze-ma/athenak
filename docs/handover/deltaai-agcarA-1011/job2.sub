@@ -1,0 +1,92 @@
+#!/bin/bash -l
+# TASK-2026-10-11-deltaai-agcarA-icrad-restart (raven -> DeltaAI, bsg-files-1009 69a09d13).
+#   sbatch --export=ALL,BA=<e84d2513 bin>,BB=<7045bc14 bin> job2.sub      (DRY=1 bash job.sub: decks + commands only)
+# 1 node x 4 GH200, 1 rank per GPU (4 blocks 480x64x64). Fixed dt via rad_m1/implicit_cfl. All keys are baked into
+# a per-run deck (no command-line overrides). Order: run 1 (A), run 2 (B, dt), run 2 dt/2 (B, default + all ic_rad).
+#SBATCH -J agcA_icrad_rst
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=00:30:00
+#SBATCH -o /work/nvme/bivj/jma20/agcarA_1011/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/agcarA_1011; F=$G/files
+BA=${BA:?BA}; BB=${BB:?BB}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+T0=$(date +%s); TEND=$((T0 + 27*60))     # stop launching runs 3 min before the 30 min limit
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+# job-env rule (agcar_dai_link.sh): GPU-aware Cray MPICH. Without it: process_vm_readv Bad address (job 3357111)
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1
+SRUN="srun -n 4 --ntasks-per-node=4 -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+chk(){ echo "$1 $(md5sum < $1 | cut -c1-32) (expect $(cat $1.md5))"; }
+chk $BA
+md5sum $F/*
+mkdir -p $S
+
+# mkdeck <out> <implicit_cfl> <nlim> <rotate_every> [extra rad_m1 lines...]
+mkdeck() {
+  local out=$1 cfl=$2 nl=$3 rot=$4; shift 4
+  sed -e "s|^he_ic_file .*|he_ic_file  = $F/ic_agcar_A_ge.txt|" \
+      -e "s|^he_opac_table .*|he_opac_table   = $F/rosseland_ext2_gs98_x0.36_z0.02.txt|" \
+      -e "s|^he_planck_table .*|he_planck_table = $F/planck_ext2orion_gs98_x0.36_z0.02.txt|" \
+      -e "s|^ndiag .*|ndiag      = 1|" \
+      -e "s|^nlim .*|nlim       = $nl|" \
+      -e "s|^implicit_cfl .*|implicit_cfl = $cfl|" \
+      -e "s|^vet_gd_rotate_every .*|vet_gd_rotate_every = $rot|" \
+      $F/agcar_A_va.athinput > $out
+  [ -n "${RSTC:-}" ] && sed -i "/^file_type = rst/{n;s|^dt = .*|dcycle = $RSTC|}" $out
+  local l k; for l in "$@"; do k=${l%% =*}   # existing <rad_m1> key -> replace the line, else add it to <rad_m1>
+    if grep -q "^$k *=" $out; then sed -i "s|^$k *=.*|$l|" $out; else sed -i "/^<rad_m1>/a $l" $out; fi; done
+}
+
+# run <name> <bin> <cfl> <nlim> <rot> [extra...]
+run() {
+  local n=$1 bin=$2 cfl=$3 nl=$4 rot=$5; shift 5
+  local D=$S/$n; mkdir -p $D
+  mkdeck $D/deck.athinput $cfl $nl $rot "$@"
+  local now=$(date +%s)
+  if [ $now -ge $TEND ]; then echo "SKIP $n (wall budget) $(date +%T)"; return; fi
+  echo "RUN $n bin=$(basename $bin) cfl=$cfl nlim=$nl rot=$rot extra=[$*] $(date +%T)"
+  if [ -n "${DRY:-}" ]; then echo "  $SRUN $bin -i $D/deck.athinput -d $D"; return; fi
+  local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SRUN $bin -i $D/deck.athinput -d $D > $D/out.txt 2>&1; local rc=$?
+  local t2=$(date +%s.%N); LASTRC=$rc
+  echo "END $n rc=$rc wall=$(echo "$t2 - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) $(date +%T)"
+}
+
+
+# rerun <name> <bin> <rstfile> <nlim>: restart into its own dir (keys from the rst; nlim exists there)
+rerun() {
+  local n=$1 bin=$2 rf=$3 nl=$4; local D=$S/$n; mkdir -p $D
+  local now=$(date +%s); [ $now -ge $TEND ] && { echo "SKIP $n (wall budget)"; return; }
+  [ -f "$rf" ] || { echo "SKIP $n: no rst $rf"; return; }
+  echo "RUN $n bin=$(basename $bin) restart=$rf nlim=$nl $(date +%T)"
+  if [ -n "${DRY:-}" ]; then echo "  $SRUN $bin -r $rf -d $D time/nlim=$nl"; return; fi
+  local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SRUN $bin -r $rf -d $D time/nlim=$nl > $D/out.txt 2>&1; local rc=$?
+  local t2=$(date +%s.%N)
+  echo "END $n rc=$rc wall=$(echo "$t2 - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) $(date +%T)"
+}
+C1=1251.3
+RX="ic_rad_relax_n = 40"; RT="ic_rad_relax_tol = 1.0e-4"
+chk $BB
+RSTC=10 run berx $BB $C1 20 10 "$RX" "$RT" "ic_rad = relax"
+[ -z "${DRY:-}" ] && [ "${LASTRC:-1}" != 0 ] && { echo "berx failed (rc $LASTRC): stop the job"; exit 1; }
+ls -la $S/berx/rst 2>/dev/null
+R10=""; R0=""
+# cycle of each rst from the file index: dcycle 10 -> index k = cycle 10k (or 10(k-1) if a cycle-0 rst is absent)
+PY=/u/jma20/ATHENAK/venv/bin/python
+for f in $S/berx/rst/*.rst; do [ -f "$f" ] && echo "$($PY -I $G/rstcyc.py $f 1239.996) $f"; done | sort -n > $S/berx/rstlist.txt
+cat $S/berx/rstlist.txt; NR=$(wc -l < $S/berx/rstlist.txt)
+R0=$(awk '$1==0{print $2; exit}' $S/berx/rstlist.txt); R10=$(awk '$1==10{print $2; exit}' $S/berx/rstlist.txt)
+echo "NR=$NR R0=$R0 R10=$R10"
+rerun rs10 $BB "$R10" 20
+[ -n "$R0" ] && rerun rs0 $BB "$R0" 10
+run hprx $BB $C1 60 10 "$RX" "$RT" "ic_rad = relax" "time_scheme = hesdirk2" "time2_vet_col = predict" \
+  "implicit_vimp = true" "time2_vstage = true"
+run hc1  $BA $C1 50 10 "vet_bc_diff = face" "vet_gd_halo_compact = 1"
+echo "end $(date)"
