@@ -2050,6 +2050,9 @@ class RadiationM1 {
   // sweep).  env VGD_IPC=0/1 overrides.
   bool vgd_ipc_on = false;
   bool vgd_ipc_tfs = false;
+  bool vgd_merge = true;         // bsgaccel-1011: env VGD_MERGE=0: twin in own messages
+  DvceArray1D<Real> vgd_csbm, vgd_crbm;   // bsgaccel-1011: merged send / receive
+  bool vgd_ipc_lean = true;      // bsgaccel-1011: env VGD_IPC_LEAN=0: the ack kernel k1
   int vgd_ipc_mode = 1;          // env VGD_IPC=2: local pack + peer copies
   int vgd_ipc_state = 0;        // 0 not built, 1 on, -1 not possible (MPI path)
   Real *vgd_ipc_rbuf = nullptr;
@@ -2071,6 +2074,7 @@ class RadiationM1 {
   struct VgdHlPend {
     bool on = false, two = false, xe = false;   // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // vgdrot-1011: the IPC path
+    bool mrg = false;                           // bsgaccel-1011: merged twin messages
     long long seq = 0;
     int ex = -1, px = 0, i = -1;
     std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;
