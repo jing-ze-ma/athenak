@@ -1846,6 +1846,8 @@ class RadiationM1 {
   // vgdrot-1011: the exact lists of many shells in a few collectives (VetGdHxBatch);
   // per-slot scratch pools, the per-depth partner / piece tables, pinned bounds
   bool vgd_hxb_on = true;
+  bool vgd_hxb_cub = true;      // env VGD_HXB_CUB=0: the VgdScan2 scans
+  DvceArray1D<char> vgd_hxb_tmp;
   int vgd_hxb_g = 0, vgd_hxb_npc = 0;
   size_t vgd_hxb_rcap = 0, vgd_hxb_scap = 0;
   DvceArray1D<int> vgd_hxb_nd, vgd_hxb_f0, vgd_hxb_f1, vgd_hxb_rq, vgd_hxb_so, vgd_hxb_oc;
@@ -1859,6 +1861,8 @@ class RadiationM1 {
   // the GPU (spin / flag kernels on the sweep's stream; the host never waits in the
   // sweep).  env VGD_IPC=0/1 overrides.
   bool vgd_ipc_on = false;
+  bool vgd_ipc_tfs = false;
+  int vgd_ipc_mode = 1;          // env VGD_IPC=2: local pack + peer copies
   int vgd_ipc_state = 0;        // 0 not built, 1 on, -1 not possible (MPI path)
   Real *vgd_ipc_rbuf = nullptr;
   long long *vgd_ipc_sig = nullptr;

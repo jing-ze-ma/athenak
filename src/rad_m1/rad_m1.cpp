@@ -1107,6 +1107,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (std::getenv("VGD_IPC") != nullptr) {
       vgd_ipc_on = (std::atoi(std::getenv("VGD_IPC")) != 0);
+      vgd_ipc_mode = std::atoi(std::getenv("VGD_IPC"));
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_fuse_shells")) {
       vgd_fuse_h = std::max(1, pin->GetInteger("rad_m1","vet_gd_fuse_shells"));

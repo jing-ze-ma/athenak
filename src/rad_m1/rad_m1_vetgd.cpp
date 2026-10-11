@@ -77,6 +77,9 @@
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#if defined(KOKKOS_ENABLE_CUDA)
+#include <cub/cub.cuh>
+#endif
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -96,6 +99,16 @@ void VgdFatal(const std::string &msg) {
 
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
+
+// vgdrot-1011: a range policy whose functor rides as a KERNEL ARGUMENT (HintLightWeight,
+// as VetFor in rad_m1_vet.cpp): the per-shell sweep kernels (shell, pack, scatter) have
+// 0.5-4 kB functors, which by default take the constant-memory launch with a host wait
+// on the previous such launch; without it the host can run ahead of the device (the
+// same kernels, the same numbers)
+inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
+  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
+                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+}
 
 // vgdrot-1011 vet_gd_halo_ipc: flags in device memory written over NVLink by the peers
 // (as implicit_halo_ipc): [0, NS) arrivals by partner slot, [NS, 2 NS) acks; a spin gives
@@ -347,6 +360,29 @@ void VgdScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
   });
 }
 
+// vgdrot-1011: in-place exclusive int scan of a[0, n] (a[n] = 0 first, then the total)
+// on the instance's stream with CUB (one launch pair instead of the 3 team launches of
+// VgdScan2; integer sums: the same positions).  Non-CUDA: VgdScan2.
+void VgdScanOne(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t n,
+                Kokkos::View<int64_t*, DevMemSpace> &sums, DvceArray1D<char> &tmp) {
+#if defined(KOKKOS_ENABLE_CUDA)
+  int *p = a.data();
+  cudaStream_t st = ex.cuda_stream();
+  (void)cudaMemsetAsync(p + n, 0, sizeof(int), st);
+  size_t need = 0;
+  cub::DeviceScan::ExclusiveSum(nullptr, need, p, p, static_cast<int>(n + 1), st);
+  if (tmp.extent(0) < need) {
+    ex.fence();
+    Kokkos::realloc(Kokkos::WithoutInitializing, tmp, need + need/2 + 1024);
+  }
+  size_t have = tmp.extent(0);
+  cub::DeviceScan::ExclusiveSum(tmp.data(), have, p, p, static_cast<int>(n + 1), st);
+#else
+  VgdScan2(ex, a, n, a, 0, "m1_vgd_hxb_scan", sums);
+  (void)tmp;
+#endif
+}
+
 bool VgdLevelSym(const int nl, std::vector<double> &d) {
   double m1;
   switch (nl) {
@@ -552,6 +588,8 @@ void RadiationM1::VetGdInit() {
   {   // vgdrot-1011: env VGD_HXB=0: the exact lists per shell in the sweep (as before)
     const char *e = std::getenv("VGD_HXB");
     vgd_hxb_on = (e == nullptr) || (std::atoi(e) != 0);
+    const char *e2 = std::getenv("VGD_HXB_CUB");
+    vgd_hxb_cub = (e2 == nullptr) || (std::atoi(e2) != 0);
   }
   if (vgd_async) {
     // vet_gd_async (GD_ASYNC.md): one exact sweep per build, nothing that rereads the
@@ -1804,11 +1842,42 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
         }
         for (int p = 0; p < np_; ++p) {VgdIpcWaitGE(sig + VGD_IPC_NS + p, seq - 2, err);}
       });
+      const bool tfs = vgd_ipc_tfs;
       VgdIpcIdx spi, doi;
       for (int p = 0; p <= np; ++p) {spi.v[p] = X.sp[p];}
       for (int p = 0; p < np; ++p) {doi.v[p] = X.dsto[p];}
-      if (X.ns > 0) {
-        Kokkos::parallel_for("m1_vgd_ipc_pack", Kokkos::RangePolicy<>(vgd_cur, 0, X.ns),
+      if (X.ns > 0 && vgd_ipc_mode == 2) {
+        // VGD_IPC=2: the local gather pack, then one peer copy per partner and array
+        // (copy engines over NVLink) instead of scattered remote stores
+        auto csb_ = vgd_csb;
+        auto csb2_ = vgd_csb2;
+        Kokkos::parallel_for("m1_vgd_ipc_lpack", VgdLight(vgd_cur, 0, X.ns),
+        KOKKOS_LAMBDA(const int c) {
+          int ad = sl_(c);
+          const int jb = ad % c2_;
+          ad /= c2_;
+          const int kb = ad % c3_;
+          ad /= c3_;
+          const int v = ad % nv_;
+          const int m = ad/nv_;
+          csb_(c) = a_(m,v,kb,jb,i);
+          if (two) {csb2_(c) = b_(m,v,kb,jb,i);}
+        });
+        cudaStream_t st = vgd_cur.cuda_stream();
+        for (int p = 0; p < np; ++p) {
+          const int cnt = X.sp[p+1] - X.sp[p];
+          if (cnt <= 0) {continue;}
+          Real *rb = reinterpret_cast<Real *>(vgd_ipc_prb.h_view(p)) +
+                     par*vgd_ipc_phalf.h_view(p) + X.dsto[p];
+          (void)cudaMemcpyAsync(rb, csb_.data() + X.sp[p], cnt*sizeof(Real),
+                                cudaMemcpyDeviceToDevice, st);
+          if (two) {
+            (void)cudaMemcpyAsync(rb + vgd_ipc_pcs.h_view(p), csb2_.data() + X.sp[p],
+                                  cnt*sizeof(Real), cudaMemcpyDeviceToDevice, st);
+          }
+        }
+      } else if (X.ns > 0) {
+        Kokkos::parallel_for("m1_vgd_ipc_pack", VgdLight(vgd_cur, 0, X.ns),
         KOKKOS_LAMBDA(const int c) {
           int p = 0;
           while (p + 1 < np_ && spi.v[p+1] <= c) {++p;}
@@ -1823,9 +1892,11 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
                       (c - spi.v[p]);
           *dst = a_(m,v,kb,jb,i);
           if (two) {dst[pcs(p)] = b_(m,v,kb,jb,i);}
+          if (tfs) {
 #if defined(__CUDA_ARCH__)
-          __threadfence_system();
+            __threadfence_system();
 #endif
+          }
         });
       }
       Kokkos::parallel_for("m1_vgd_ipc_k2", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
@@ -1852,7 +1923,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
     }
 #endif
     if (X.ns > 0) {
-      Kokkos::parallel_for("m1_vgd_hl_pack", Kokkos::RangePolicy<>(vgd_cur, 0, X.ns),
+      Kokkos::parallel_for("m1_vgd_hl_pack", VgdLight(vgd_cur, 0, X.ns),
       KOKKOS_LAMBDA(const int c) {
         int ad = sl_(c);
         const int jb = ad % c2_;
@@ -1900,7 +1971,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       const int ny = Y.nr, nyw = Y.nw;
       auto ydl_ = Y.dl;
       auto ydw_ = Y.dw;
-      Kokkos::parallel_for("m1_vgd_hl_zero", Kokkos::RangePolicy<>(vgd_cur, 0, ny + nyw),
+      Kokkos::parallel_for("m1_vgd_hl_zero", VgdLight(vgd_cur, 0, ny + nyw),
       KOKKOS_LAMBDA(const int c) {
         int ad = (c < ny) ? ydl_(c) : ydw_(c - ny);
         const int jb = ad % c2_;
@@ -2000,7 +2071,7 @@ void RadiationM1::VetGdHlEnd() {
   auto w3_ = vgd_w3;
   if (nr + nw > 0) {
     Kokkos::parallel_for("m1_vgd_hl_scatter",
-                         Kokkos::RangePolicy<>(vgd_cur, 0, nr + nw),
+                         VgdLight(vgd_cur, 0, nr + nw),
     KOKKOS_LAMBDA(const int c) {
       int ad = (c < nr) ? dl_(c) : dw_(c - nr);
       const int jb = ad % c2_;
@@ -2913,8 +2984,14 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
           nd_(rb0 + (vs*kn + kk)*jn + jj) = 1;
         }
       });
-      VgdScan2(ex_, nd_, rtot, nd_, 0, "m1_vgd_hxb_scan2", vgd_scan_sums);
-      VgdScan2(ex_, f0_, rtot, f1_, rtot, "m1_vgd_hxb_scan2", vgd_scan_sums);
+      if (vgd_hxb_cub) {
+        VgdScanOne(ex_, nd_, rtot, vgd_scan_sums, vgd_hxb_tmp);
+        VgdScanOne(ex_, f0_, rtot, vgd_scan_sums, vgd_hxb_tmp);
+        VgdScanOne(ex_, f1_, rtot, vgd_scan_sums, vgd_hxb_tmp);
+      } else {
+        VgdScan2(ex_, nd_, rtot, nd_, 0, "m1_vgd_hxb_scan2", vgd_scan_sums);
+        VgdScan2(ex_, f0_, rtot, f1_, rtot, "m1_vgd_hxb_scan2", vgd_scan_sums);
+      }
       // the needed counts at the partner bounds, the read-ghost counts, the out count
       {
         const int np_ = np, so = s, nb_ = nb;
@@ -3480,6 +3557,10 @@ void RadiationM1::VetGdIpcInit() {
   }
   vgd_ipc_state = ok ? 1 : -1;
   vgd_ipc_seq = 0;
+  // env VGD_IPC_TFS=1: a system fence after every remote store of the pack (the flag
+  // kernel's fence after the pack kernel's completion orders them already)
+  vgd_ipc_tfs = (std::getenv("VGD_IPC_TFS") != nullptr) &&
+                (std::atoi(std::getenv("VGD_IPC_TFS")) != 0);
   if (me == 0) {
     std::cout << "<rad_m1> vgdrot-1011 vet_gd_halo_ipc: "
               << (ok ? "ON (node-local CUDA IPC, GPU-driven per-shell halo of the exact "
@@ -3887,7 +3968,7 @@ void RadiationM1::VetGdSweep() {
                         const int i, const int l, const char *name) {
       if (c1 <= c0) {return;}
       auto L_ = cl;
-      Kokkos::parallel_for(name, Kokkos::RangePolicy<>(vgd_cur, c0, c1),
+      Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
       KOKKOS_LAMBDA(const int c) {
         int t = L_(c);
         const int d = t % n;
