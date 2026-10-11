@@ -64,6 +64,8 @@ pfloor  = 1.0e-12
 dfloor_keep_velocity = true
 vceil   = 1.0e8
 <rad_m1>
+ic_rad           = none           # PIN (prodfinal-1011, 10-11): keep the ORIGINAL repro IC radiation (default became fs_relax)
+implicit_thin_switch = none       # PIN (prodfinal-1011 18ff91c8): keep the 10-09 hr scheme (fresh default became fse/hc)
 vet_gd_twin_fuse         = true   # accel-1009: twin in the main sweep (restart-exact cut)
 vet_gd_twin_lowmem       = true   # mem-1009 6c5d8fb2: twin swept in the main band array (bitwise; DeltaAI 00ad484b); 8 blocks/GPU fit
 vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)
@@ -153,6 +155,7 @@ implicit_flux_x1min = 2.2942145641e+13   # L/(4 pi r_in^2), L = 5.581461e+38 (Ma
 implicit_bc_x1max   = marshak
 implicit_flux_x1max = 0.0
 <problem>
+he_ic_rad        = file           # PIN (prodfinal-1011 18ff91c8, user 10-11): ORIGINAL repro IC (fresh default became sph1d)
 he_ic_eint_from_t = false   # PIN (defaults-1009, 10-09): keeps the pre-10-09 IC (file eint); the new default is true
 he_seed = 0.0             # paper: no seed
 user_srcs   = true
