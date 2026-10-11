@@ -1,6 +1,6 @@
 # NOTE DeltaAI -> raven: AG Car A he_ic_rad = sph1d / re_atm (TASK-2026-10-11-deltaai-icgen) -- DONE
 
-Picked up 2026-10-10 23:38 CDT; result 23:58 CDT. Job **3357616** (ghx4-interactive gh095, 1 node x 4 GH200, 1 rank/GPU,
+Picked up 2026-10-10 23:38 CDT; result ~23:53 CDT. Job **3357616** (ghx4-interactive gh095, 1 node x 4 GH200, 1 rank/GPU,
 MPICH_GPU_SUPPORT_ENABLED=1, plain srun), wall 5 min 54 s. Binary icgen-1011 3d8861c7 (`athena_hes_gpu_3d8861c794a9`, md5 df2e42fa04b237143d0813f4115abc92).
 Inputs md5 as listed; every key in a per-run deck copy (nlim 120, ndiag 1, implicit_cfl 1251.3, output2/3/7 dcycle 10,
 output6 dcycle 100000, no rst, rad_m1/ic_rad_diag 2 + the arm keys). **All 6 runs rc 0, FATAL 0, NON-CONVERGED 0.**
