@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -1099,6 +1100,38 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_list_mb")) {
       vgd_hl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_list_mb"));
     }
+    // vgdfuse-1010 (read only when named): vet_gd_overlap = G (default 0 = off; bitwise)
+    // and its memory cap vet_gd_overlap_mb (default 1024), vet_gd_fuse_shells = H
+    // (default 1; H > 1 is a lagged exchange, NOT bitwise); rad_m1_vetgd.cpp VetGdSweep
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_overlap")) {
+      vgd_ovl_g = std::max(0, pin->GetInteger("rad_m1","vet_gd_overlap"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_overlap_mb")) {
+      vgd_ovl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_overlap_mb"));
+    }
+    // vet_gd_halo_exact (read only when named; default 2 where it applies: MPI halo with
+    // vet_gd_halo_compact > 0 and lists, shell lists, no band_exit / async): true / 1 =
+    // lists cut from the masks, 2 = lists from the reads alone (both bitwise in the 1010
+    // gates), false / 0 = the vgdspeed-1009 mask lists
+    vgd_hx_named = vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_exact");
+    if (vgd_hx_named) {
+      const std::string hx = pin->GetString("rad_m1","vet_gd_halo_exact");
+      vgd_hx_mode = (hx == "2") ? 2 : ((hx == "true" || hx == "1") ? 1 : 0);
+    } else {
+      vgd_hx_mode = 2;
+    }
+    vgd_hx_on = (vgd_hx_mode > 0);
+    // vgdrot-1011 vet_gd_halo_ipc (read only when named; default false); env VGD_IPC
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc")) {
+      vgd_ipc_on = pin->GetBoolean("rad_m1","vet_gd_halo_ipc");
+    }
+    if (std::getenv("VGD_IPC") != nullptr) {
+      vgd_ipc_on = (std::atoi(std::getenv("VGD_IPC")) != 0);
+      vgd_ipc_mode = std::atoi(std::getenv("VGD_IPC"));
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_fuse_shells")) {
+      vgd_fuse_h = std::max(1, pin->GetInteger("rad_m1","vet_gd_fuse_shells"));
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
       vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");
     }
@@ -1505,6 +1538,17 @@ void RadiationM1::RssPrime(bool restart) {
 
 RadiationM1::~RadiationM1() {
   VetGdAsyncJoin();   // vet_gd_async: the helper thread of the pending build
+  if (vgd_tab_state == 1) {vgd_tabf.wait();}   // vgdrot-1011: the table prefetch
+  if (vgd_tab_state == 3) {vgd_tex.fence();}
+#if defined(KOKKOS_ENABLE_CUDA)
+  if (vgd_ipc_state == 1) {     // vgdrot-1011 vet_gd_halo_ipc
+    (void)cudaDeviceSynchronize();
+    for (void *q : vgd_ipc_open) {if (q != nullptr) {(void)cudaIpcCloseMemHandle(q);}}
+    (void)cudaFree(vgd_ipc_rbuf);
+    (void)cudaFree(vgd_ipc_sig);
+    (void)cudaFree(vgd_ipc_err);
+  }
+#endif
   if (tau_closure) {TauClosureReport();}
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
