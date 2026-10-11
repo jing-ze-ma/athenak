@@ -49,10 +49,10 @@
 //! BOUNDARIES.  Bottom (x1min face), upward rays: the diffusion intensity
 //! eps = E + 3 (F . Omega) / c of the bottom cell's M1 state, carried half a cell with
 //! S of that cell (vet_bc_diff = face, deepatm-1011, DEFAULT since gdface-1011: E moved
-//! to the face by the source's linear extrapolation; cell: the old bottom-cell E).  Top (x1max face), downward rays: vacuum.  With
-//! vet_bc_bath (default true, m1-h2div) an x1 end whose implicit_bc is marshak gives
-//! its entering rays the isotropic incident bath eps = implicit_ebath of that end
-//! instead (0: vacuum).
+//! to the face by the source's linear extrapolation; cell: the old bottom-cell E).
+//! Top (x1max face), downward rays: vacuum.  With vet_bc_bath (default true, m1-h2div)
+//! an x1 end whose implicit_bc is marshak gives its entering rays the isotropic incident
+//! bath eps = implicit_ebath of that end instead (0: vacuum).
 //!
 //! SEVERAL MESHBLOCKS / MPI RANKS (VetSweepMB).  The same sweep over the GLOBAL layers,
 //! EXACT: the planes are banded by w = floor(max dx1 |mu_perp/mu_1|/dx_perp) + 1 cells

@@ -23,7 +23,7 @@
 //!   outward, bottom-up, for n . r_hat >= 0: the sphere of shell i-1, or, for a ray that
 //!     misses it, the same shell beyond the tangent point (an inward value of the first
 //!     pass), or the inner face of the first shell (the diffusion intensity, as
-//!     vet_col_lat).
+//!     vet_col_lat; S of the FACE with vet_bc_diff = face, default since gdface-1011).
 //! For straight rays this order has no cycles (r is monotone on either side of the one
 //! tangent point).  At the upwind point I (the SAME direction index), ln chi and ln S are
 //! bilinear in (theta, phi) index space; the source is linear in tau along the segment

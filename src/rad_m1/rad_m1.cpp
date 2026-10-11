@@ -916,16 +916,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // intensity of the formal solutions at the FACE (face) or from the first CELL (cell):
     // vet_gd / vet_col_lat start S + mu(-dS/dtau) with S of the face, 1.5 S_a - 0.5 S_b
     // (the S their half-cell carry starts from), vet_col's core rays E + (S_f - S_0)
-    // (vet_col_order2 keeps its own face start).  Read only when named (cell).
-    if (pin->DoesParameterExist("rad_m1","vet_bc_diff")) {
-      std::string bd = pin->GetString("rad_m1","vet_bc_diff");
+    // (vet_col_order2 keeps its own face start).  DEFAULT face (gdface-1011); a restart
+    // whose file lacks the key keeps cell; cell reproduces older runs bitwise.
+    {
+      const char *bdd = global_variable::restart_run ? "cell" : "face";
+      std::string bd = pin->GetOrAddString("rad_m1","vet_bc_diff",bdd);
       if (bd.compare("face") == 0) {
         vet_bc_face = true;
       } else if (bd.compare("cell") == 0) {
         vet_bc_face = false;
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_bc_diff must be cell or face" << std::endl;
+                  << std::endl << "<rad_m1>/vet_bc_diff must be cell or face"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
