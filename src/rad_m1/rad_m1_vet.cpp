@@ -3770,6 +3770,10 @@ void RadiationM1::VetReport() {
             << " implicit-solve seconds incl. SC=" << vet_itime
             << " SC/(implicit solve without SC)="
             << vet_time/std::fmax(vet_itime - vet_time, 1.0e-300) << std::endl;
+  if (impl_hr_sf) {
+    std::cout << "<rad_m1> implicit_hr_face=sf: cells with Jh > J (sf face ratios) "
+              << hsf_nsf << " of " << hsf_ncell << " cell-solves (rank 0)" << std::endl;
+  }
   if (vet_full) {
     std::cout << "<rad_m1> vet_tensor=full: guard triggered in " << vet_nguard << " of "
               << vet_ncell << " cell-calls (eigenvalue floor " << vet_eig_min

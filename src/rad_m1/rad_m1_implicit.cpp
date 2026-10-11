@@ -502,6 +502,79 @@ void M1ThinJs(const Real hpl, const Real hml, const Real hpr, const Real hmr,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1HrSf
+//! \brief cbfix-1011 (implicit_hr_face = sf): the half-range ratios of ONE face d between
+//! the cells L and R from the formal solution's half-range fluxes (iw block b, M1HrSfBuild)
+//!   h+_f = [(1 - om_L) H+_L + om_L H+_f]/Jh_L,  h-_f = [(1 - om_R) H-_R + om_R H-_f]/Jh_R,
+//! H+-_f = (H+-_L + H+-_R)/2 the SC's own central half-range face fluxes, and the DONOR
+//! SCALE Jh = max(J, the largest NET SC flux (H_c + H_nb)/2 leaving through any face of
+//! the cell): Jh > J where the formal solution moves more energy through the cell than
+//! c J_c can carry (|F| <= c E), i.e. a neighbour's beam crosses it; never in a diffusive
+//! field (|H| << J).  Only where Jh > J -- a cell whose own formal solution cannot carry the SC flux
+//! through its faces: next to a 1-cell beam, an empty (J = 0) or merely glowing (J << E)
+//! cell -- and then with om = max(wt, 1 - J/Jh) (wt the face weight of thin_recon js/jse,
+//! 0 without).  There the cell ratios H+-/J describe the cell's OWN (negligible) field,
+//! not the beam energy the upwind fluxes put into it: a glow with a downward shape near
+//! x1min sent a crossing beam back to the boundary within 5-10 cells (NOTE-cbfix).  With
+//! the face fluxes over Jh the cell passes the energy on in the SC direction, a beam
+//! stays 1-2 cells wide and E = Jh at the fixed point of a steady field.  A donor with
+//! its own formal solution (Jh = J) next to such a cell keeps its upwind ratio under js /
+//! jse: the face share wt is scaled by J/Jh of the neighbour (an empty neighbour's SC flux
+//! does not halve the donor's, which slowed a beam to mu c/2).  Elsewhere (Jh = J on both
+//! sides: every smooth field) the ratios are untouched (bitwise).  |h| <= 1, h+ >= 0,
+//! h- <= 0: the M-matrix structure and conservation are kept.  No dt, no tau_cell.
+
+template <class V>
+KOKKOS_INLINE_FUNCTION
+void M1HrSf(const V &iw, const int b, const int m, const int kl, const int jl,
+            const int il, const int kr, const int jr, const int ir, const int d,
+            const Real wtl, const Real wtr, Real &hpl, Real &hmr) {
+  const int cp = b + M1_HSF_HP + 2*d, cm = b + M1_HSF_HM + 2*d;
+  const Real jhl = iw(m,b+M1_HSF_JH,kl,jl,il), jl0 = iw(m,b+M1_HSF_J,kl,jl,il);
+  const Real jhr = iw(m,b+M1_HSF_JH,kr,jr,ir), jr0 = iw(m,b+M1_HSF_J,kr,jr,ir);
+  const bool sfl = (jhl > jl0 && jhl > 0.0), sfr = (jhr > jr0 && jhr > 0.0);
+  // the face share of a donor with its own formal solution (js / jse, wt > 0) next to
+  // an sf cell counts that cell's SC flux only by its weight J/Jh: the faint field of
+  // an empty neighbour does not halve the donor's upwind flux (a 1-cell beam keeps
+  // its speed mu c instead of slowing to mu c/2 behind a half-weight face mean)
+  const Real rl = sfl ? fmax(jl0, 0.0)/jhl : 1.0, rr = sfr ? fmax(jr0, 0.0)/jhr : 1.0;
+  if (sfl) {
+    const Real om = fmax(wtl, 1.0 - rl);
+    const Real hpf = 0.5*(iw(m,cp,kl,jl,il) + iw(m,cp,kr,jr,ir));
+    hpl = fmin(fmax(((1.0 - om)*iw(m,cp,kl,jl,il) + om*hpf)/jhl, 0.0), 1.0);
+  } else if (sfr && wtl > 0.0 && jl0 > 0.0) {
+    const Real om = wtl*rr;
+    const Real hpf = 0.5*(iw(m,cp,kl,jl,il) + iw(m,cp,kr,jr,ir));
+    hpl = fmin(fmax(((1.0 - om)*iw(m,cp,kl,jl,il) + om*hpf)/jl0, 0.0), 1.0);
+  }
+  if (sfr) {
+    const Real om = fmax(wtr, 1.0 - rr);
+    const Real hmf = 0.5*(iw(m,cm,kl,jl,il) + iw(m,cm,kr,jr,ir));
+    hmr = fmax(fmin(((1.0 - om)*iw(m,cm,kr,jr,ir) + om*hmf)/jhr, 0.0), -1.0);
+  } else if (sfl && wtr > 0.0 && jr0 > 0.0) {
+    const Real om = wtr*rl;
+    const Real hmf = 0.5*(iw(m,cm,kl,jl,il) + iw(m,cm,kr,jr,ir));
+    hmr = fmax(fmin(((1.0 - om)*iw(m,cm,kr,jr,ir) + om*hmf)/jr0, 0.0), -1.0);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1HrSfFb
+//! \brief cbfix-1011: the beam measure (|H|/J of M1HrCell, or the thinness g of
+//! M1ThinCell) of a cell whose own J does not carry the SC face flux (Jh > J, M1HrSf):
+//! max(fb, 1 - J/Jh).  The energy such a cell holds is the SC flux passing through it
+//! (a transport regime by construction), so its faces take the upwind weight of a beam
+//! instead of the measure of its own faint glow.  fb unchanged where Jh = J.
+
+template <class V>
+KOKKOS_INLINE_FUNCTION
+Real M1HrSfFb(const V &iw, const int b, const int m, const int k, const int j,
+              const int i, const Real fb) {
+  const Real jh = iw(m,b+M1_HSF_JH,k,j,i), j0 = iw(m,b+M1_HSF_J,k,j,i);
+  return (jh > j0 && jh > 0.0) ? fmax(fb, 1.0 - fmax(j0, 0.0)/jh) : fb;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1ThinFace
 //! \brief thinsw-1010: AL, HCL, HCR and the lagged additive flux DG of one half-range
 //! face under implicit_thin_switch.  No dt and no tau_cell enter the weight:
@@ -1825,6 +1898,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // lagged closure: it is NEUTRAL in a thick layer -- the lagged flux carries the
       // whole flux with no gradient -- and fails G1, tests: blendall_1009/gates/g1)
       impl_hr_model = pin->GetOrAddBoolean("rad_m1","implicit_hr_model",false);
+      // cbfix-1011: implicit_hr_face = sf (default) | cell (the hrup-1009 cell ratios)
+      std::string shf = pin->GetOrAddString("rad_m1","implicit_hr_face","sf");
+      if (shf.compare("sf") == 0) {
+        impl_hr_sf = vet_sc;
+      } else if (shf.compare("cell") != 0) {
+        ImplFatal("<rad_m1>/implicit_hr_face = '" + shf + "' is not a choice (sf | cell)");
+      }
     } else if (sbb.compare("closure") != 0) {
       ImplFatal("<rad_m1>/implicit_flux_beam = '" + sbb + "' is not a choice "
                 "(closure | fs | halfrange)");
@@ -2455,6 +2535,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_muscl) {
     iw_muscl = niw;
     niw += M1_NIW_MUSCL;
+  }
+  iw_hsf = -1;
+  if (impl_hr_sf) {   // cbfix-1011
+    iw_hsf = niw;
+    niw += M1_NIW_HSF;
   }
   if (impl_eos_cache) {
     impl_nec = M1EosCacheNComp(impl_ecnt);
@@ -3151,6 +3236,165 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CbDebugDump
+//! \brief cbfix-1011 diagnostic: with the environment variable M1_CBDBG=<prefix> set,
+//! every implicit solve of the first M1_CBDBG_N (default 4) calls writes <prefix>.<n>.bin:
+//! a header of 8 int32 (ncells1, ncells2, nvar, ng, 0...) then nvar planes (k = ks,
+//! m = 0) of doubles: EN, EP, J, HP1, HP2, H1, H2, x1 AL HCL HCR DG, x2 AL HCL HCR DG,
+//! f0x1, f0x2, thx2 (or 0), BMF (x1min beam flux, i = is plane, else 0).  Read-only.
+
+void RadiationM1::CbDebugDump() {
+  static int ncall = 0;
+  const char *pre = std::getenv("M1_CBDBG");
+  if (pre == nullptr) {return;}
+  int nmax = 4;
+  if (const char *q = std::getenv("M1_CBDBG_N")) {nmax = std::atoi(q);}
+  if (ncall >= nmax) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = indcs.nx2 + 2*indcs.ng;
+  const int ks = indcs.ks;
+  const int nv = 21;
+  auto hiw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), iw);
+  auto hvc = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_cell);
+  auto hf1 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ifw);
+  auto hf0 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), f0x1);
+  const bool h2 = (ifw2.extent_int(0) > 0);
+  const bool g2 = (f0x2.extent_int(0) > 0);
+  const bool t2 = (thx2.extent_int(0) > 0);
+  const bool bm = (ibm_f.extent_int(0) > 0);
+  auto hw2 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ifw2);
+  auto hg2 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), f0x2);
+  auto ht2 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), thx2);
+  auto hbm = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ibm_f);
+  std::vector<double> buf(static_cast<size_t>(nv)*n1*n2, 0.0);
+  auto at = [&](int v, int j, int i) -> double & {
+    return buf[(static_cast<size_t>(v)*n2 + j)*n1 + i];
+  };
+  for (int j = 0; j < n2; ++j) {
+    for (int i = 0; i < n1; ++i) {
+      at(0,j,i) = hiw(0,M1_IW_EN,ks,j,i);
+      at(1,j,i) = hiw(0,M1_IW_EP,ks,j,i);
+      if (hvc.extent_int(0) > 0) {
+        at(2,j,i) = hvc(0,M1_VET_J,ks,j,i);
+        at(3,j,i) = hvc(0,M1_VET_HP1,ks,j,i);
+        at(4,j,i) = hvc(0,M1_VET_HP1+1,ks,j,i);
+        at(5,j,i) = hvc(0,M1_VET_H1,ks,j,i);
+        at(6,j,i) = hvc(0,M1_VET_H1+1,ks,j,i);
+      }
+      if (hf1.extent_int(0) > 0) {
+        for (int c = 0; c < 4; ++c) {at(7+c,j,i) = hf1(0,c,ks,j,i);}
+      }
+      if (h2) {
+        for (int c = 0; c < 4 && c < hw2.extent_int(1); ++c) {
+          at(11+c,j,i) = hw2(0,c,ks,j,i);
+        }
+      }
+      at(15,j,i) = hf0(0,ks,j,i);
+      if (g2) {at(16,j,i) = hg2(0,ks,j,i);}
+      if (t2) {at(17,j,i) = ht2(0,ks,j,i);}
+      if (bm && j >= indcs.js && j <= indcs.je && i == indcs.is) {
+        at(18,j,i) = hbm(0,0,j-indcs.js);
+      }
+      at(19,j,i) = dt_sub;
+      at(20,j,i) = chat;
+    }
+  }
+  char fn[512];
+  std::snprintf(fn, sizeof(fn), "%s.%d.bin", pre, ncall);
+  FILE *fp = std::fopen(fn, "wb");
+  if (fp != nullptr) {
+    int32_t hd[8] = {n1, n2, nv, indcs.ng, M1_IFW_HCL, M1_IFW_HCR, M1_IFW_DG, 0};
+    std::fwrite(hd, sizeof(int32_t), 8, fp);
+    std::fwrite(buf.data(), sizeof(double), buf.size(), fp);
+    std::fclose(fp);
+  }
+  ++ncall;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHrSfBuild
+//! \brief cbfix-1011 (implicit_hr_face = sf): fill the M1_NIW_HSF block of iw from the
+//! formal solution of the step (vet_cell: H+_d, H-_d, J), through the transverse halo,
+//! then the donor scale Jh = max(J, max over the 2 dim faces of the outgoing face-mean
+//! NET SC flux) and its halo.  Ghosts past a physical face stay 0.  Called once
+//! per solve (vet_cell is fixed for it), before the first face build.
+
+void RadiationM1::ImplicitHrSfBuild() {
+  if (!impl_hr_sf || iw_hsf < 0) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int b = iw_hsf;
+  auto iw_ = iw;
+  auto vc_ = vet_cell;
+  const bool tr = trans_on;
+  const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
+  const bool cyc = (ibc_x1min == M1_IBC_PERIODIC);
+  Kokkos::deep_copy(Kokkos::subview(iw, Kokkos::ALL, std::make_pair(b, b + M1_NIW_HSF),
+                                    Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), 0.0);
+  par_for("m1_impl_hsf", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int d = 0; d < nd; ++d) {
+      const Real hp = fmax(vc_(m,M1_VET_HP1+d,k,j,i), 0.0);
+      iw_(m,b+M1_HSF_HP+2*d,k,j,i) = hp;
+      iw_(m,b+M1_HSF_HM+2*d,k,j,i) = fmin(vc_(m,M1_VET_H1+d,k,j,i) - hp, 0.0);
+    }
+    iw_(m,b+M1_HSF_J,k,j,i) = fmax(vc_(m,M1_VET_J,k,j,i), 0.0);
+  });
+  if (tr) {
+    for (int c = 0; c < 2*nd; ++c) {ImplicitHaloExchange(1, b + c);}
+  }
+  par_for("m1_impl_hsfj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real jh = iw_(m,b+M1_HSF_J,k,j,i);
+    for (int d = 0; d < nd; ++d) {
+      int ip1 = i, jp1 = j, kp1 = k, im1 = i, jm1 = j, km1 = k;
+      if (d == 0) {
+        ip1 = (cyc && i == ie) ? is : i + 1;
+        im1 = (cyc && i == is) ? ie : i - 1;
+      } else if (d == 1) {
+        jp1 = j + 1;
+        jm1 = j - 1;
+      } else {
+        kp1 = k + 1;
+        km1 = k - 1;
+      }
+      const int cp = b + M1_HSF_HP + 2*d, cm = b + M1_HSF_HM + 2*d;
+      // the NET SC flux H_f = (H_c + H_nb)/2 leaving through the face (H = H+ + H-): in a
+      // diffusive field |H| << J and Jh = J whatever the jump of J between the cells
+      const Real hc = iw_(m,cp,k,j,i) + iw_(m,cm,k,j,i);
+      const Real up = 0.5*(hc + iw_(m,cp,kp1,jp1,ip1) + iw_(m,cm,kp1,jp1,ip1));
+      const Real dn = -0.5*(iw_(m,cp,km1,jm1,im1) + iw_(m,cm,km1,jm1,im1) + hc);
+      jh = fmax(jh, fmax(up, dn));
+    }
+    iw_(m,b+M1_HSF_JH,k,j,i) = jh;
+  });
+  {   // diagnostic: how many cells take the sf face ratios (Jh > J)
+    Real nsf = 0.0;
+    const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
+    Kokkos::parallel_reduce("m1_impl_hsfn",
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+    KOKKOS_LAMBDA(const int n, Real &sum) {
+      int t = n/fni;
+      const int i = is + (n - t*fni);
+      const int j = js + (t % fnj);
+      t /= fnj;
+      const int k = ks + (t % fnk);
+      const int m = t/fnk;
+      sum += (iw_(m,b+M1_HSF_JH,k,j,i) > iw_(m,b+M1_HSF_J,k,j,i)) ? 1.0 : 0.0;
+    }, Kokkos::Sum<Real>(nsf));
+    hsf_nsf += nsf;
+    hsf_ncell += static_cast<double>((nmb1+1)*fnk*fnj*fni);
+  }
+  if (tr) {
+    ImplicitHaloExchange(1, b + M1_HSF_J);
+    ImplicitHaloExchange(1, b + M1_HSF_JH);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitLatFaceCoef
 //! \brief blendall-1009 (implicit_flux_faces = all): the berthon / blend coefficients
 //! AL, HCL, HCR of every x2 (and x3) face, from the lagged closure of the two cells
@@ -3211,6 +3455,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const bool tjs = thsw && thsw_js && (hsrc == 1);   // thinfix-1011
     const bool tjse = tjs && thsw_jse;
     const Real tjl = thsw_jslim;
+    const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3281,15 +3526,24 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         if (thsw) {   // thinsw-1010
           Real dgt;
           Real hpf = iw_(m,M1_IW_S1,km,jm,i), hmf = iw_(m,M1_IW_S3,k,j,i);
+          const Real wjs = !tjs ? 0.0
+                           : (tjse ? 1.0 - fmax(iw_(m,M1_IW_TR,km,jm,i),
+                                                iw_(m,M1_IW_TR,k,j,i)) : 1.0);
           if (tjs) {
             M1ThinJs(iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,km,jm,i),
                      iw_(m,M1_IW_S1,k,j,i), iw_(m,M1_IW_S3,k,j,i),
                      iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i), tjl,
-                     tjse ? 1.0 - fmax(iw_(m,M1_IW_TR,km,jm,i), iw_(m,M1_IW_TR,k,j,i))
-                          : 1.0, hpf, hmf);
+                     wjs, hpf, hmf);
           }
-          M1ThinFace(tmode, tcorr, hpf, hmf,
-                     iw_(m,M1_IW_RES,km,jm,i), iw_(m,M1_IW_RES,k,j,i), tauf,
+          if (hsfb >= 0) {   // cbfix-1011
+            M1HrSf(iw_, hsfb, m, km, jm, i, k, j, i, d, wjs, wjs, hpf, hmf);
+          }
+          Real gfl = iw_(m,M1_IW_RES,km,jm,i), gfr = iw_(m,M1_IW_RES,k,j,i);
+          if (hsfb >= 0) {   // cbfix-1011
+            gfl = M1HrSfFb(iw_, hsfb, m, km, jm, i, gfl);
+            gfr = M1HrSfFb(iw_, hsfb, m, k, j, i, gfr);
+          }
+          M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
                      iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i),
@@ -3305,7 +3559,13 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         Real fbl = iw_(m,M1_IW_RES,km,jm,i), fbr = iw_(m,M1_IW_RES,k,j,i), jfl = 0.0;
         if (fbl > 1.5) {fbl -= 2.0; jfl = 1.0;}
         if (fbr > 1.5) {fbr -= 2.0; jfl = 1.0;}
-        M1HrFace(iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,k,j,i), fbl, fbr, tauf, blend,
+        Real hpf = iw_(m,M1_IW_S1,km,jm,i), hmf = iw_(m,M1_IW_S3,k,j,i);
+        if (hsfb >= 0) {   // cbfix-1011
+          M1HrSf(iw_, hsfb, m, km, jm, i, k, j, i, d, 0.0, 0.0, hpf, hmf);
+          fbl = M1HrSfFb(iw_, hsfb, m, km, jm, i, fbl);
+          fbr = M1HrSfFb(iw_, hsfb, m, k, j, i, fbr);
+        }
+        M1HrFace(hpf, hmf, fbl, fbr, tauf, blend,
                  bkind, bfm, btau0, bflo, bfhi, balph,
                  ch, iw_(m,M1_IW_EP,km,jm,i), iw_(m,M1_IW_EP,k,j,i), br0,
                  iw_(m,M1_IW_S3,km,jm,i), iw_(m,M1_IW_S1,k,j,i), ch*dtl/dx, bx0, bxmode,
@@ -10284,6 +10544,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if ((tmode == 1 || tmode == 2) && it == 0) {dbg_tensor_init = true;}
     if (ctr) {ctr_init = true;}
 
+    // cbfix-1011: the formal-solution half-range block of implicit_hr_face = sf (once per
+    // solve: vet_cell is fixed for it)
+    if (it == 0 && impl_hr_sf && aphll) {ImplicitHrSfBuild();}
     // the x1 halo of the LAGGED quantities (w, a, g0, v1, the comoving reduced flux and
     // the transport opacity).  Every face of the stack is then assembled by both of its
     // blocks from bit-identical numbers.
@@ -10366,6 +10629,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool tjs = thsw_js && (hsrc == 1);   // thinfix-1011
       const bool tjse = thsw_jse;
       const Real tjl = thsw_jslim;
+      const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -10458,12 +10722,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               dm = 0.0;
               M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,ip), jr, fbr, th0, th1, dm, hmr);
             }
+            const Real wjs = !tjs ? 0.0 : (tjse ? fmin(hvc_(m,M1_VET_EPS,k,j,im),
+                                                       hvc_(m,M1_VET_EPS,k,j,ip)) : 1.0);
             if (tjs) {
-              const Real wjs = tjse ? fmin(hvc_(m,M1_VET_EPS,k,j,im),
-                                           hvc_(m,M1_VET_EPS,k,j,ip)) : 1.0;
               M1ThinJs(hpl, hml, hpr, hmr, jl, jr, tjl, wjs, hpl, hmr);
             }
-            M1ThinFace(tmode, tcorr, hpl, hmr, gl, gr, tauf, iw_(m,M1_IW_EN,k,j,im),
+            if (hsfb >= 0) {   // cbfix-1011
+              M1HrSf(iw_, hsfb, m, k, j, im, k, j, ip, 0, wjs, wjs, hpl, hmr);
+            }
+            const Real gl2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, im, gl) : gl;
+            const Real gr2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, ip, gr) : gr;
+            M1ThinFace(tmode, tcorr, hpl, hmr, gl2, gr2, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0
                        : (sgd ? fmin(1.0 - hgh_(m,M1_VGD_HREP,k,j,im),
@@ -10476,6 +10745,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
             ifw_(m,M1_IFW_DG,k,j,i) = dgt;
             return;
+          }
+          if (hsfb >= 0) {   // cbfix-1011
+            M1HrSf(iw_, hsfb, m, k, j, im, k, j, ip, 0, 0.0, 0.0, hpl, hmr);
+            fbl = M1HrSfFb(iw_, hsfb, m, k, j, im, fbl);
+            fbr = M1HrSfFb(iw_, hsfb, m, k, j, ip, fbr);
           }
           M1HrFace(hpl, hmr, fbl, fbr, tauf, blend, bkind, bfm, btau0, bflo, bfhi, balph,
                    ch, iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip), br0, hml, hpr,
@@ -12386,6 +12660,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #undef M1_RCP
     });
   }
+  CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
   if (vfx && have_hydro && feedback && csw && trans && thrd) {
     // STAGE CS3: the vimp re-forming of the cell F on the cubed sphere, as a kernel of
     // its own (an overwrite inside the write-back above changed the GPU code of the

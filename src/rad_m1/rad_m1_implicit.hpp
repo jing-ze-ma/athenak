@@ -464,6 +464,13 @@ constexpr int M1_NIW_K = 48;
 // The five components below are APPENDED after whichever base component count the solve
 // uses (M1_NIW_X1 / M1_NIW / M1_NIW_K), so the base indices above never move; the offset
 // of the block is RadiationM1::iw_gas, a runtime int the kernels capture.
+// cbfix-1011 (implicit_hr_face = sf): per cell, the formal-solution half-range fluxes
+// H+_d, H-_d (d = 1..3), J and the donor scale Jh (M1HrSf), appended like the gas block
+constexpr int M1_NIW_HSF = 8;
+constexpr int M1_HSF_HP = 0;   // + 2 d: H+_d = sum w I max(mu_d, 0) (E units)
+constexpr int M1_HSF_HM = 1;   // + 2 d: H-_d = H_d - H+_d <= 0
+constexpr int M1_HSF_J  = 6;   // J of the formal solution
+constexpr int M1_HSF_JH = 7;   // Jh = max(J, max over the faces of the outgoing face SC flux)
 constexpr int M1_NIW_GAS = 5;
 constexpr int M1_IWG_BK = 0;   // B_k = rho c_v + 4 c dt rho kappa_P a T_k^3, the
                                // derivative d/dT of the LOCAL gas energy equation
