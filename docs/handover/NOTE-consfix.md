@@ -230,3 +230,76 @@ below the test's L1(E) criterion (0.02).
   - runs/rw_27c35877, runs/rwbit_27c35877, reg/runs_cs/eq3f/*_fin;
   - ladder/run_fin, ladder/run_w4..w7 (diagnostic bits), ladder/run_mt;
   - sp/runs_fin, agcar/.
+
+## 7. Follow-up (consfix2): the shift is off by default; rlat
+
+Commits on top of prodfinal ed29da1a, which already merges 27c35877:
+
+- **ad8bd227**: ImplicitCs2Shift becomes opt-in, `<rad_m1>/implicit_cs2_shift` (default false).
+- **1fbe8621**: diagnostic `implicit_cs2_dbg` bits 8 (no x1 split) and 16 (no x2/x3 split). The default is bitwise
+  equal to ad8bd227.
+
+Binaries in bin/ (`*_cf2a` is the ad8bd227 build):
+
+- athena_cpu_1fbe8621 (a copy of cf2b);
+- athena_he_cpu_1fbe8621;
+- athena_he_a100_1fbe8621.
+
+Runs are in h2/ (h2order FIN decks: time2_start = slope + implicit_vimp_bc; h.py tord). Orders are over the level
+pairs 1-2, 2-4, 4-8 (and 8-16).
+
+### 7.1 Shift off vs on
+
+| case | matched FIN | c2, shift off (now the default) | c2, shift on |
+|---|---|---|---|
+| rw_p10t100, tol 1e-14 | 2.00 (N) | E 2.00 2.00 2.00; F1 1.99 1.96 1.92; v 2.01 2.01 1.95 | E 1.88 1.70 1.48; rho 2.02 1.39 0.68 |
+| rw_p10t1 | E 1.79 1.73 1.29; rho 1.99 2.06 2.00 | E 1.81 1.92 2.00; rho 1.91 1.84 1.70; F1 1.86 1.67 1.56 | rho 1.99 1.98 1.94; F1 1.79 1.58 1.08 |
+| rsw_T (vet_gd) | E 1.82 1.47; v 1.78 1.29 | **2.00 in every variable** | |
+| rw_t10a | 2.0 | E, rho 2.0; F1 1.90 1.98 1.29 | |
+| rlat_T | 1.94 / 2.16 | 1.81 / 1.73 | 1.81-1.84 / 1.69-1.77 (N) |
+
+Conservation and AG Car with the shift off:
+
+- eq3f: P_tot 8.9e-16 (hesdirk2 and BE), E 1.13260.
+- rlat_om5 L_z: +5.2e-6 (hesdirk2) and +5.5e-6 (BE).
+- Reduced AG Car A, 120 cycles (agcar/cf2_*, a deck copy with implicit_cs2_shift named):
+  - c2 with the shift off: Picard 2.94, the same as matched (2.98 with the shift on).
+  - Budget, L_top and E_rad are identical to matched.
+  - Dumps vs matched: v1 1.6e-3 of max, the rest ≤ 7e-7.
+  - The shift-on run is bitwise equal to 27c35877.
+
+### 7.2 rlat_T at about 1.8
+
+rlat_T: rho kappa_s 1000, c dt rho kappa about 8-60, theta 0.02-0.1. All variants below have the shift off.
+
+| variant | orders | Picard mean |
+|---|---|---|
+| c2 | 1.81 / 1.73 | 4.1 |
+| tol 1e-14 | identical to c2 | |
+| bit 8 (no x1 split, so not the Marshak end face) | 1.81 / 1.72 | |
+| bit 16 (no x2/x3 split) | 1.81 / 1.73 | 3.4 |
+| bits 8+16 (no split at all) | 1.81 / 1.73 | |
+| bit 1 + implicit_rad_inertia false | 1.81 / 1.73 | |
+| **bit 1** (no velocity split; the E part split after the solve, as matched / conservative) | **1.96 / 2.12** | 3.17 |
+
+- So the deficit is how the E part a (E' - E^n) of dA is treated: inside the solve, or not at all, gives 1.8; the
+  post-solve ImplicitRadInertia rule gives 2.0.
+- It is not the shift, the end face or the Picard tolerance.
+- Its size is small: the finest-pair error is 2.2e-6 against matched 1.65e-6.
+- Possible follow-up, not done: keep the E part on the post-solve rule and put only the velocity part into the
+  solve's dA. This needs the vimp prediction adapted to the drag share of the E part.
+
+## 8. A100 smoke (1fbe8621, gpudev 1 node x 4 A100, full-size AG Car A, 60 cycles; gpu/runs/j.31087519)
+
+| run | deck | rc / FATAL / NON-CONV | Picard mean / max | s/cycle (cpu time / 60) | L_top | vs reference |
+|---|---|---|---|---|---|---|
+| c2P | prod FRESH copy + he_sponge_dmax 2e-16 + conservative2, implicit_cs2_shift = false named | 0 / 0 / 0 | 2.63 / 6 | 0.458 | 2.8430e38 | production smoke |
+| mtA | pfmerge agcar_A_dc60 (+ the shift key), matched | 0 / 0 / 0 | 2.80 / 6 | 0.417 | 2.8430e38 | **BITWISE** vs N's ed29da1a mtA (dump data, hst) |
+| c2A | same, conservative2 (shift off) | 0 / 0 / 0 | 2.80 / 6 | 0.419 | 2.8430e38 | vs N's c2A (shift on): v1 1.0e-3 of max, F1 1.3e-6, rest ≤ 1e-7 |
+| c2As | same, conservative2 with the shift on | 0 / 0 / 0 | 2.94 / 6 | 0.417 | 2.8430e38 | **BITWISE** vs N's c2A |
+
+Notes:
+
+- The bin files differ by bytes only in the parameter header (the extra shift key).
+- The energy budget residual is identical in all runs: -4.9e-10 of Etot.
+- c2P differs from the others also by he_sponge_dmax.
