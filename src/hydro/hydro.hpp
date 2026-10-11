@@ -80,6 +80,10 @@ inline DvceArray1D<Real> *rsolv_nanrep_rec = nullptr;
 inline DvceArray1D<int> *wbrec_nanrep_cnt = nullptr;
 inline DvceArray1D<Real> *wbrec_nanrep_rec = nullptr;
 inline int wbrec_nanrep_lines = 0;
+// vgdrot-1011: the 1-element stand-ins passed to the solvers when nan_report is off, made
+// once (were 4 device allocations + frees per Fluxes call); never written
+inline DvceArray1D<int> *nanrep_dummy_i = nullptr;
+inline DvceArray1D<Real> *nanrep_dummy_r = nullptr;
 inline int rsolv_nanrep_lines = 0;
 
 // <hydro>/fofc pgen-level default (defaults-1002): false in the core; a problem generator

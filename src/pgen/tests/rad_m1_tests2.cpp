@@ -100,6 +100,7 @@ namespace {
 Real m1_sh2_rho0 = 1.0, m1_sh2_ratio = 1.0e3, m1_sh2_t0 = 290.0;
 Real m1_sh2_x0 = 0.5, m1_sh2_y0 = 0.0, m1_sh2_ax = 0.1, m1_sh2_ay = 0.06;
 Real m1_sh2_delta = 10.0, m1_sh2_gm1 = 2.0/3.0;
+bool m1_sh2_dsq = false, m1_sh2_peq = false;   // littests-1011
 Real m1_sh2_ein = 1.0, m1_sh2_fin = 1.0 - 1.0e-6, m1_sh2_c = 1.0;
 // fsanchor-1009 m1_test = cyl: up to 3 cylinders (along z) in a thin background, each
 // an EMITTER (opaque, T fixed) or an ABSORBER (opaque, T ~ 0); the gas is prescribed
@@ -205,8 +206,10 @@ Real M1AtmTau(const Real z, const Real rho_top, const Real kap, const Real hh,
 KOKKOS_INLINE_FUNCTION
 Real M1ShadowRho(const Real x, const Real y, const Real rho0, const Real ratio,
                  const Real x0, const Real y0, const Real ax, const Real ay,
-                 const Real delta) {
-  Real dd = sqrt(SQR((x - x0)/ax) + SQR((y - y0)/ay));
+                 const Real delta, const bool dsq = false) {
+  // littests-1011 shadow_dsq: D^2 - 1 in the exponent (Jiang 2021 / Ma et al. 2025)
+  Real dd = SQR((x - x0)/ax) + SQR((y - y0)/ay);
+  if (!dsq) dd = sqrt(dd);
   Real ex = delta*(dd - 1.0);
   // exp() of a large positive argument overflows; the limit is rho0
   Real w = (ex > 60.0) ? 0.0 : (1.0/(1.0 + exp(ex)));
@@ -298,6 +301,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     m1_sh2_ax = ax;
     m1_sh2_ay = ay;
     m1_sh2_delta = delta;
+    // littests-1011: shadow_dsq (exponent in D^2) and shadow_peq (pressure equilibrium,
+    // T = t0 rho0/rho: Jiang et al. 2012 / Jiang 2021 / Ma et al. 2025)
+    m1_sh2_dsq = pin->GetOrAddBoolean("problem","shadow_dsq",false);
+    m1_sh2_peq = pin->GetOrAddBoolean("problem","shadow_peq",false);
+    const bool dsq = m1_sh2_dsq, peq = m1_sh2_peq;
     m1_sh2_gm1 = gm1;
     m1_sh2_c = cl;
     m1_sh2_fin = fin;
@@ -320,12 +328,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       Real &x2max = size.d_view(m).x2max;
       Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
       Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-      Real d = M1ShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta);
+      Real d = M1ShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta, dsq);
       uh(m,IDN,k,j,i) = d;
       uh(m,IM1,k,j,i) = 0.0;
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
-      uh(m,IEN,k,j,i) = d*t0/gm1;
+      uh(m,IEN,k,j,i) = (peq ? rho0 : d)*t0/gm1;
       u0(m,radm1::M1_E,k,j,i) = e_amb;
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -1288,6 +1296,7 @@ void RadM1ShadowGas(Mesh *pm, const Real bdt) {
   Real rho0 = m1_sh2_rho0, ratio = m1_sh2_ratio, t0 = m1_sh2_t0;
   Real x0 = m1_sh2_x0, y0 = m1_sh2_y0, ax = m1_sh2_ax, ay = m1_sh2_ay;
   Real delta = m1_sh2_delta, gm1 = m1_sh2_gm1;
+  const bool dsq = m1_sh2_dsq, peq = m1_sh2_peq;
 
   par_for("m1_shadow_reset", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -1297,12 +1306,12 @@ void RadM1ShadowGas(Mesh *pm, const Real bdt) {
     Real &x2max = size.d_view(m).x2max;
     Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
     Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-    Real d = M1ShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta);
+    Real d = M1ShadowRho(x1v, x2v, rho0, ratio, x0, y0, ax, ay, delta, dsq);
     uh(m,IDN,k,j,i) = d;
     uh(m,IM1,k,j,i) = 0.0;
     uh(m,IM2,k,j,i) = 0.0;
     uh(m,IM3,k,j,i) = 0.0;
-    uh(m,IEN,k,j,i) = d*t0/gm1;
+    uh(m,IEN,k,j,i) = (peq ? rho0 : d)*t0/gm1;
   });
   return;
 }
