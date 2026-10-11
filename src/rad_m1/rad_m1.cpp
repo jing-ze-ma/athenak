@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -1100,6 +1101,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_hx_mode = 2;
     }
     vgd_hx_on = (vgd_hx_mode > 0);
+    // vgdrot-1011 vet_gd_halo_ipc (read only when named; default false); env VGD_IPC
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc")) {
+      vgd_ipc_on = pin->GetBoolean("rad_m1","vet_gd_halo_ipc");
+    }
+    if (std::getenv("VGD_IPC") != nullptr) {
+      vgd_ipc_on = (std::atoi(std::getenv("VGD_IPC")) != 0);
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_fuse_shells")) {
       vgd_fuse_h = std::max(1, pin->GetInteger("rad_m1","vet_gd_fuse_shells"));
     }
@@ -1509,6 +1517,17 @@ void RadiationM1::RssPrime(bool restart) {
 
 RadiationM1::~RadiationM1() {
   VetGdAsyncJoin();   // vet_gd_async: the helper thread of the pending build
+  if (vgd_tab_state == 1) {vgd_tabf.wait();}   // vgdrot-1011: the table prefetch
+  if (vgd_tab_state == 3) {vgd_tex.fence();}
+#if defined(KOKKOS_ENABLE_CUDA)
+  if (vgd_ipc_state == 1) {     // vgdrot-1011 vet_gd_halo_ipc
+    (void)cudaDeviceSynchronize();
+    for (void *q : vgd_ipc_open) {if (q != nullptr) {(void)cudaIpcCloseMemHandle(q);}}
+    (void)cudaFree(vgd_ipc_rbuf);
+    (void)cudaFree(vgd_ipc_sig);
+    (void)cudaFree(vgd_ipc_err);
+  }
+#endif
   if (tau_closure) {TauClosureReport();}
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit

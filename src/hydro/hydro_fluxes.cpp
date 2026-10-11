@@ -63,8 +63,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     wbrec_nanrep_cnt = new DvceArray1D<int>("wbrec_nanrep_cnt", 1);
     wbrec_nanrep_rec = new DvceArray1D<Real>("wbrec_nanrep_rec", 48);
   }
-  auto wbcnt_ = nanrep_r_ ? *wbrec_nanrep_cnt : DvceArray1D<int>("d", 1);
-  auto wbrec_ = nanrep_r_ ? *wbrec_nanrep_rec : DvceArray1D<Real>("d", 1);
+  if (!nanrep_r_ && nanrep_dummy_i == nullptr) {
+    nanrep_dummy_i = new DvceArray1D<int>("d", 1);
+    nanrep_dummy_r = new DvceArray1D<Real>("d", 1);
+  }
+  auto wbcnt_ = nanrep_r_ ? *wbrec_nanrep_cnt : *nanrep_dummy_i;
+  auto wbrec_ = nanrep_r_ ? *wbrec_nanrep_rec : *nanrep_dummy_r;
   if (nanrep_r_) {
     Kokkos::deep_copy(wbcnt_, 0);
     Kokkos::deep_copy(wbrec_, 0.0);
@@ -75,8 +79,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     rsolv_nanrep_cnt = new DvceArray1D<int>("rsolv_nanrep_cnt", 1);
     rsolv_nanrep_rec = new DvceArray1D<Real>("rsolv_nanrep_rec", 40);
   }
-  auto rscnt_ = nanrep_r_ ? *rsolv_nanrep_cnt : DvceArray1D<int>("d", 1);
-  auto rsrec_ = nanrep_r_ ? *rsolv_nanrep_rec : DvceArray1D<Real>("d", 1);
+  auto rscnt_ = nanrep_r_ ? *rsolv_nanrep_cnt : *nanrep_dummy_i;
+  auto rsrec_ = nanrep_r_ ? *rsolv_nanrep_rec : *nanrep_dummy_r;
   if (nanrep_r_) {
     Kokkos::deep_copy(rscnt_, 0);
     Kokkos::deep_copy(rsrec_, 0.0);

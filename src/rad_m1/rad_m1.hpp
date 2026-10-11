@@ -27,6 +27,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <future>
 #include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
@@ -618,6 +619,8 @@ class RadiationM1 {
   bool hr_q = false;            // the per-column outer q from h+_1 (vcol_q)
   DvceArray5D<Real> vgd_hr, vgd_hrt;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
   DvceArray1D<Real> vgd_hrm;           // shell mean of one twin component
+  DvceArray1D<Real> vgd_hrm6;          // vgdrot-1011: the 6 shell means at once
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_hr, vgd_pin_tw, vgd_pin_cnt;
   void VetGdHalfRange(const int stage);
   DvceArray5D<Real> ifw2, ifw3;
   void ImplicitLatFaceCoef();
@@ -1766,6 +1769,8 @@ class RadiationM1 {
     DvceArray1D<int> dl, sr;      // (nr): packed band address, compact source position
     DvceArray1D<int> dw, sw;      // (nw), (3 nw): wall_interp ghosts: address, sources
     std::vector<int> sp, rp;      // (np + 1): partner bounds of the compact messages
+    std::vector<int> dsto;        // vgdrot-1011 (np): start of my values in each
+                                  // partner's receive layout (batch-made exact lists)
     Real alpha = -2.0;
     int scut = -1, ws = -1, ns = 0, nr = 0, nw = 0;
     int64_t gen = -1;             // build id (> 0) while valid
@@ -1838,12 +1843,43 @@ class RadiationM1 {
   std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): the exact lists per (pass, shell)
   bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key
   void VetGdHxBuild2(const int e, const int i, const int ws);
+  // vgdrot-1011: the exact lists of many shells in a few collectives (VetGdHxBatch);
+  // per-slot scratch pools, the per-depth partner / piece tables, pinned bounds
+  bool vgd_hxb_on = true;
+  int vgd_hxb_g = 0, vgd_hxb_npc = 0;
+  size_t vgd_hxb_rcap = 0, vgd_hxb_scap = 0;
+  DvceArray1D<int> vgd_hxb_nd, vgd_hxb_f0, vgd_hxb_f1, vgd_hxb_rq, vgd_hxb_so, vgd_hxb_oc;
+  Kokkos::View<int**, LayoutWrapper, DevMemSpace> vgd_hxb_pst, vgd_hxb_pcs, vgd_hxb_pci,
+                                                  vgd_hxb_pds;
+  Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hxb_hb, vgd_hxb_sp;
+  Real vgd_hxb_t = 0.0, vgd_hxb_ngroup = 0.0, vgd_hxb_nrealloc = 0.0;
+  void VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs);
+  // vgdrot-1011 vet_gd_halo_ipc (read only when named; default false; bitwise): the
+  // per-shell exchange of the batch-made exact lists over node-local CUDA IPC, driven by
+  // the GPU (spin / flag kernels on the sweep's stream; the host never waits in the
+  // sweep).  env VGD_IPC=0/1 overrides.
+  bool vgd_ipc_on = false;
+  int vgd_ipc_state = 0;        // 0 not built, 1 on, -1 not possible (MPI path)
+  Real *vgd_ipc_rbuf = nullptr;
+  long long *vgd_ipc_sig = nullptr;
+  int *vgd_ipc_err = nullptr;
+  size_t vgd_ipc_cs = 0, vgd_ipc_half = 0;
+  long long vgd_ipc_seq = 0;
+  Real vgd_ipc_n = 0.0;
+  DualArray1D<unsigned long long> vgd_ipc_prb, vgd_ipc_psig;
+  DualArray1D<long long> vgd_ipc_phalf, vgd_ipc_pcs;
+  DualArray1D<int> vgd_ipc_pslot;
+  std::vector<void *> vgd_ipc_open;
+  void VetGdIpcInit();
+  void VetGdIpcCheck();
   void VetGdHxBuild(const int e, const int i, const bool inw, const int ws,
                     const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
                     const std::vector<int> &sp, const std::vector<int> &rp);
   // the pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
   struct VgdHlPend {
     bool on = false, two = false, xe = false;   // xe: X is an exact (vgd_hxe) entry
+    bool ipc = false;                           // vgdrot-1011: the IPC path
+    long long seq = 0;
     int ex = -1, px = 0, i = -1;
     std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;
     VgdRag a, b;
@@ -1865,6 +1901,39 @@ class RadiationM1 {
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
   void VetGdTables(const Real alpha);
+  // vgdrot-1011: the tables' host part in persistent pinned buffers (no per-rotation
+  // mirrors), and the next rotation's tables prefetched (host thread + upload into a
+  // second device set on vgd_tex, swapped in at the rotation); env VGD_TAB_PREFETCH=0 off
+  struct VgdTabHost {
+    Kokkos::View<Real **, LayoutWrapper, Kokkos::SharedHostPinnedSpace> dir;
+    Kokkos::View<int ***, LayoutWrapper, Kokkos::SharedHostPinnedSpace> w;
+    Kokkos::View<int ****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> mp;
+    Kokkos::View<Real ****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> mr;
+    Kokkos::View<int *****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> m3;
+    Kokkos::View<Real *****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> w3;
+    std::vector<double> mt;
+    Real alpha = -9.0;
+    int nwall = 0, nexact = 0, nmap = 0;
+  };
+  struct VgdTabDev {
+    DvceArray2D<Real> dir;
+    Kokkos::View<int ***, LayoutWrapper, DevMemSpace> wall;
+    Kokkos::View<int ****, LayoutWrapper, DevMemSpace> map;
+    DvceArray4D<Real> mr;
+    Kokkos::View<int *****, LayoutWrapper, DevMemSpace> m3;
+    DvceArray5D<Real> w3;
+  };
+  VgdTabHost vgd_tabh;
+  VgdTabDev vgd_tabd;
+  std::future<void> vgd_tabf;
+  bool vgd_tab_pre = true;
+  int vgd_tab_state = 0;       // 0 idle, 1 host thread running, 3 uploaded (vgd_tabd)
+  Real vgd_tab_nswap = 0.0;
+  DevExeSpace vgd_tex;
+  void VgdTabCompute(const Real alpha, const int nthr);
+  void VgdTabAlloc(const bool dev);
+  void VetGdTabPrefetch(const int cyc);
+  void VetGdTabPoll();
   void VetGdBuild();
   void VetGdSweep();
   void VetGdWall(const int i0, const int i1);

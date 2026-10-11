@@ -1617,6 +1617,10 @@ void RadiationM1::VetColReport() {
                   << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
                   << std::endl;
       }
+      std::cout << "<rad_m1> vgdrot-1011 (rank 0): exact-list batches " << vgd_hxb_ngroup
+                << " (group " << vgd_hxb_g << ", " << vgd_hxb_t << " s, list reallocs "
+                << vgd_hxb_nrealloc << "); table prefetch " << (vgd_tab_pre ? 1 : 0)
+                << " swapped in " << vgd_tab_nswap << " of the rotations" << std::endl;
       if (vgd_ovl_g > 0 || vgd_fuse_h > 1) {
         std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_overlap=" << vgd_ovl_g
                   << " split shells " << vgd_ovl_nsplit << " (remote items "
