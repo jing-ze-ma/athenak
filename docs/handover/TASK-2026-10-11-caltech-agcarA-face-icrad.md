@@ -19,8 +19,9 @@ AG Car A, production RT keys (be, vet_col + vet_gd), with files (md5):
 - IC: ic_agcar_A_ge.txt, md5 4ab9e3f3dd2539fe12eb029ba9188fca
 - Rosseland: rosseland_ext2_gs98_x0.36_z0.02.txt, md5 b28e97c5b5cac3afe0ea3d3fc60b7cfd
 - Planck: planck_ext2orion_gs98_x0.36_z0.02.txt, md5 493f9d014bbc7d7ee0c6abb813330244
-- Input deck: Raven's agcar_A_va.athinput (= agcar_A_xtf + named keys + hst every cycle). If you do not have the AG Car A
-  files with these md5s, say "NEEDFILES" in your NOTE; the user will transfer them. Do not substitute other tables.
+- Input deck: agcar_A_va.athinput (= agcar_A_xtf + named keys + hst every cycle), md5 255f7a17...
+- **All four files are in docs/handover/agcarA_files/ on this branch.** Point he_ic_file, he_opac_table and
+  he_planck_table in the deck at your copies. Check the md5s; do not substitute other tables.
 
 ## Runs (1 node, 4 GPUs, 1 block per GPU, as Raven: 4 blocks of 480x64x64)
 Fixed dt: `rad_m1/implicit_cfl=1251.3` (dt = 1239.996 s; dt/2 runs use 625.65 and twice the cycles), hst every cycle.
