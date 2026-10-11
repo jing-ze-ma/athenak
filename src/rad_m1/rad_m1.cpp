@@ -1000,6 +1000,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
       vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
     }
+    // vgdbath-1011: the inward rays of the top shell start from the incident bath
+    // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
+    // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
+    // top).  With implicit_ebath_x1max = 0 (production) the sweep is unchanged, bitwise.
+    if (vgd_on) {
+      vgd_tbath = pin->GetOrAddBoolean("rad_m1", "vet_bc_bath",
+                                       !global_variable::restart_run);
+    }
     // sptests-1011: vet_gd_inner = diff | emit, vet_gd_beam* (read only when named)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_inner")) {
       std::string vi = pin->GetString("rad_m1","vet_gd_inner");
