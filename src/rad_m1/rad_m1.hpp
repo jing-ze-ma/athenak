@@ -1776,6 +1776,7 @@ class RadiationM1 {
   // the inner boundary's own emission (flux: black sphere I = 4 F_in/c; marshak: the bath;
   // vet_gd_beam: one set direction from a patch) instead of the diffusion intensity
   bool vgd_emit = false;
+  bool vgd_tbath = false;   // vgdbath-1011: the top (x1max Marshak) bath enters the sweep
   bool vgd_beam = false;       // vet_gd_beam (needs emit)
   int vgd_nbeam = 0;           // 1, or 2 with the vet_gd_beam2_* keys
   int vgd_bdir[2] = {-1, -1};  // each beam's set direction

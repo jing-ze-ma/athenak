@@ -3756,6 +3756,11 @@ void RadiationM1::VetGdSweep() {
                    (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
   const Real iemit = vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
                      4.0*iflux_x1min/c_light : iebath_x1min);
+  // vgdbath-1011: the top bath (vet_bc_bath with a MARSHAK outer x1 and a nonzero
+  // implicit_ebath_x1max): the inward ray of the top shell carries it, attenuated over
+  // the path from the top face, as vet_sc's downward rays (ib*ex + wu*S_u + w0*S_0)
+  const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
+  const Real itop = tbh ? iebath_x1max : 0.0;
   const bool bm = vgd_beam;
   const int nbm = vgd_nbeam;
   const int bdir0 = vgd_bdir[0], bdir1 = vgd_bdir[1];
@@ -3911,13 +3916,18 @@ void RadiationM1::VetGdSweep() {
           const Real s0 = exp(csx(m,1,k,j,i));
           Real iv;
           if (inw && l == n1 - 1) {
-            // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat)
+            // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat),
+            // or with the top bath (vgdbath-1011) its incident intensity attenuated
             const Real rtop = cx1f(m,ie+1);
             const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
             const Real stp = fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i-1)), 1.0e-300);
             Real ex, w0, wu;
             VgdW(ch0*ds, ex, w0, wu);
-            iv = wu*stp + w0*s0;
+            if (tbh) {
+              iv = itop*ex + wu*stp + w0*s0;
+            } else {
+              iv = wu*stp + w0*s0;
+            }
           } else if (!inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
