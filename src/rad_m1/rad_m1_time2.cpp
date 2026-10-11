@@ -595,6 +595,9 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
+  // the cold-start face init (implicit_f0_init) of the probe is undone with the faces:
+  // the first stage solve does it again (and moves the stage-start copy with it)
+  const bool f0d = impl_f0_init_done;
   Mesh *pmesh = pmy_pack->pmesh;
   t2_solve = M1_T2S_BESTORE;
   t2_fail = false;
@@ -614,6 +617,7 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);
   }
+  impl_f0_init_done = f0d;
   t2_solve = M1_T2S_NONE;
   t2_fail = false;
   pred_ok = false;

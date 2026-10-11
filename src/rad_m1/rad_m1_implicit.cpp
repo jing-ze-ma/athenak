@@ -2480,6 +2480,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // before 5c9e4432) the old value false is kept; files since then echo their value.
   impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",
                                         !global_variable::restart_run);
+  // h2order-1011 implicit_vimp_bc (ImplicitVimpBuild; read only when named)
+  if (pin->DoesParameterExist("rad_m1","implicit_vimp_bc")) {
+    impl_vimp_bc = pin->GetBoolean("rad_m1","implicit_vimp_bc");
+  }
   if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> implicit x1 boundaries: periodic must be set on BOTH "
@@ -9104,6 +9108,11 @@ void RadiationM1::ImplicitF0Init() {
   const bool lab = (impl_f0_init == 1);
   const Real efl = e_floor;
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
+  // h2order-1011 (time2_start = slope): the first solve of the run can be a hesdirk2
+  // STAGE-1 solve, whose stage-start face copy (t2f1/2/3, the U^n of the Heun average and
+  // of Time2Restore) was taken before this init: it takes the same change
+  const bool st1 = (t2_solve == M1_T2S_STAGE1);
+  auto t1_ = t2f1;
   // the cell's comoving flux F - a E (x1): the work array under trans (its F, E and a are
   // in the transverse halo), u0 on a 1-D mesh (the problem generator fills the ghosts)
   par_for("m1_f0init_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -9127,12 +9136,14 @@ void RadiationM1::ImplicitF0Init() {
     const Real d = fv - f0_(m,k,j,i);
     f0_(m,k,j,i) = fv;
     f0n_(m,k,j,i) += d;
+    if (st1) {t1_(m,k,j,i) += d;}
   });
   if (cyclic) {
     par_for("m1_f0init_wrap", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       f0_(m,k,j,ie+1) = f0_(m,k,j,is);
       f0n_(m,k,j,ie+1) = f0n_(m,k,j,is);
+      if (st1) {t1_(m,k,j,ie+1) = t1_(m,k,j,is);}
     });
   }
   // the cubed sphere's transverse F0 are face-normal: not handled (zero start, as before)
@@ -9141,6 +9152,7 @@ void RadiationM1::ImplicitF0Init() {
     if (d == 2 && !thrd) break;
     auto fd_ = (d == 1) ? f0x2 : f0x3;
     auto fdn_ = (d == 1) ? f0x2n : f0x3n;
+    auto td_ = (d == 1) ? t2f2 : t2f3;
     const int ca = (d == 1) ? M1_IW_A2 : M1_IW_A3;
     const int cf = (d == 1) ? M1_F2 : M1_F3;
     const int jhi = (d == 1) ? je+1 : je, khi = (d == 2) ? ke+1 : ke;
@@ -9164,6 +9176,7 @@ void RadiationM1::ImplicitF0Init() {
       const Real dd = fv - fd_(m,k,j,i);
       fd_(m,k,j,i) = fv;
       fdn_(m,k,j,i) += dd;
+      if (st1) {td_(m,k,j,i) += dd;}
     });
   }
 }
@@ -9533,6 +9546,15 @@ void RadiationM1::ImplicitVimpBuild() {
     });
   }
 
+  // h2order-1011 implicit_vimp_bc (read only when named, default false = bitwise): a
+  // Marshak x1 end face carries the enthalpy flux A E of implicit_bc_advect (outflow:
+  // the end cell's E, inflow: the bath) with the end cell's a at the OLD-vector velocity;
+  // the stage's own radiative kick dv is missing there, an O(dt) lag (first order in
+  // time wherever the end cell's gas is pushed: rswv, Marshak top + exchange).  true:
+  // the face takes the same lagged-dv + Jacobian terms as an interior face, with the end
+  // cell's own dv, D and P row (the face has one cell).
+  const bool vbc = impl_vimp_bc && impl_bc_advect;
+  const Real ebl = iebath_x1min, ebh = iebath_x1max;
   // (2) the operator coefficients and the right-hand side
   par_for_lb("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -9597,9 +9619,32 @@ void RadiationM1::ImplicitVimpBuild() {
         }
       }
       Real phf[2] = {0.0, 0.0};
+      Real phb[2] = {0.0, 0.0};   // implicit_vimp_bc: the end face's own weight
       const Real jr0 = jr;
+      // implicit_vimp_bc: the end face of side s takes A E with this cell's dv
+      auto vbface = [&](const int s, const Real nus) {
+        const Real sg = (s == 0) ? -1.0 : 1.0;
+        const Real vi = V[1];
+        const bool out = (s == 0) ? (vi < 0.0) : (vi > 0.0);
+        const Real ef = out ? E[2] : ((s == 0) ? ebl : ebh);
+        const Real pb = nus*cr*ef*(1.0 + D[2]);
+        Real ps = 0.0;
+        for (int e = 0; e < 3; ++e) {
+          if (e == d) continue;
+          ps += DO[1][e]*DV[1][e];
+        }
+        ps *= nus*cr*ef;
+        const Real pe = P[1][0]*E[1] + P[1][1]*E[2] + P[1][2]*E[3];
+        jr -= sg*(pb*DV[1][d] + ps - pb*pe);
+        phb[s] = sg*pb;
+      };
+      const bool vbl = vbc && (d == 0) && flo && (bclo == M1_IBC_MARSHAK);
+      const bool vbh = vbc && (d == 0) && fhi && (bchi == M1_IBC_MARSHAK);
       for (int s = 0; s < 2; ++s) {
-        if ((s == 0) ? flo : fhi) continue;
+        if ((s == 0) ? flo : fhi) {
+          if ((s == 0) ? vbl : vbh) {vbface(s, nu);}
+          continue;
+        }
         const Real sg = (s == 0) ? -1.0 : 1.0;
         const int ol = s - 1;        // offset of the face's L cell
         const int xl = ol + 2;       // its index into E/A/D
@@ -9635,7 +9680,11 @@ void RadiationM1::ImplicitVimpBuild() {
         const Real iv = dt/cvol(m,k,j,i);
         for (int s = 0; s < 2; ++s) {
           phf[s] = 0.0;
-          if ((s == 0) ? flo : fhi) continue;
+          phb[s] = 0.0;
+          if ((s == 0) ? flo : fhi) {
+            if ((s == 0) ? vbl : vbh) {vbface(s, carea.x1f(m,k,j,i+s)*iv);}
+            continue;
+          }
           Real af;
           if (d == 0) {
             af = carea.x1f(m,k,j,i+s);
@@ -9676,9 +9725,11 @@ void RadiationM1::ImplicitVimpBuild() {
       }
       const Real pl = 0.5*phf[0], ph = 0.5*phf[1];
       const Real cm2 = -pl*P[0][0];
-      const Real cm1 = ph*P[1][0] - pl*(P[0][1] + P[1][0]);
-      const Real c00 = ph*(P[1][1] + P[2][0]) - pl*(P[0][2] + P[1][1]);
-      const Real cp1 = ph*(P[1][2] + P[2][1]) - pl*P[1][2];
+      // implicit_vimp_bc: the end face (one cell, signed weight phb) adds its P row
+      const Real pbs = phb[0] + phb[1];
+      const Real cm1 = ph*P[1][0] - pl*(P[0][1] + P[1][0]) + pbs*P[1][0];
+      const Real c00 = ph*(P[1][1] + P[2][0]) - pl*(P[0][2] + P[1][1]) + pbs*P[1][1];
+      const Real cp1 = ph*(P[1][2] + P[2][1]) - pl*P[1][2] + pbs*P[1][2];
       const Real cp2 = ph*P[2][2];
       jd += c00;
       if (d == 0) {

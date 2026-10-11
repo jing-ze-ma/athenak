@@ -1116,10 +1116,18 @@ class RadiationM1 {
   // without a stored slope K1 (the first step, a restart without the slope) starts.
   // be: the step is Lie split (Heun hydro, then one backward-Euler solve), first order
   // in time for that step.  slope: a backward-Euler PROBE solve of dt_p =
-  // time2_start_frac x dt from U^n gives K1 = f_I(U^n) + O(dt_p), U^n is put back, and
-  // the step runs the hesdirk2 stages.
+  // time2_start_frac x dt from U^n gives K1 = (Y_p - U^n)/dt_p = f_I(Y_p), U^n is put
+  // back, and the step runs the hesdirk2 stages.  Default frac 1: K1 = f_I(U^n) + O(dt)
+  // is enough for order 2 (one step), and where U^n is off the stiff manifold (a pulse
+  // with F = 0, a moving gas in a radiation field at rest) Y_p is the relaxed state, so
+  // (1 - g) dt K1 stays a bounded move toward it.  A small frac makes K1 ~ jump/dt_p and
+  // the stage-1 old vector overshoots by dt/dt_p (h2order_1011: rsw, rlat floors).
   int t2_start = 0;             // 0 be, 1 slope
-  Real t2_start_frac = 1.0e-3;  // time2_start_frac
+  // implicit_vimp_bc (h2order-1011, ImplicitVimpBuild; read only when named, default
+  // false = bitwise): the implicit_bc_advect enthalpy flux of a Marshak x1 end face takes
+  // the stage's radiative kick dv of its cell, as the interior faces do under vimp
+  bool impl_vimp_bc = false;
+  Real t2_start_frac = 1.0;     // time2_start_frac
   Real t2_nprobe = 0.0;         // probe solves taken (counter)
   bool Time2StartProbe(Driver *pdrive, Real dt);
   void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
