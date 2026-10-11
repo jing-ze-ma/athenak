@@ -250,5 +250,12 @@ if (NOT ${PROBLEM} STREQUAL "built_in_pgens")
   )
 endif()
 
+# prodcand-1011: the rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only
+# (rad_m1_icrad.cpp IcRadInit); every other problem defaults to ic_rad = none
+if (${PROBLEM} STREQUAL "he_star_m1")
+  set_source_files_properties(rad_m1/rad_m1_icrad.cpp PROPERTIES
+      COMPILE_DEFINITIONS M1_ICRAD_DEFAULT_FS_RELAX=1)
+endif()
+
 # enable include of header files with /src/ as root of path
 target_include_directories(athena PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

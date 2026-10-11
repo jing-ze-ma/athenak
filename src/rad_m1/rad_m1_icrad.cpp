@@ -100,7 +100,15 @@ void RadiationM1::IcRadInit(ParameterInput *pin) {
   // vet_gd run with a fluid (the configuration it was tested on); none for every other
   // problem (no M1 / explicit / no vet_gd: the hook is not even armed).  A restart never
   // runs it (Driver::Initialize, res_flag), whatever its input says.  Opt out: none.
+  // prodcand-1011: and only in a he_star_m1 build (the stellar-envelope problems: AG Car,
+  // He giant, BSG; CMake defines M1_ICRAD_DEFAULT_FS_RELAX for this file).  Every other
+  // pgen (the built-in tests: a time-dependent pulse must keep its IC radiation) defaults
+  // to none.  An explicit ic_rad key wins everywhere.
+#if defined(M1_ICRAD_DEFAULT_FS_RELAX)
   const bool elig = (transport >= M1_TRANSPORT_IMPLICIT_X1) && vet_col && vgd_on && fl_on;
+#else
+  const bool elig = false;
+#endif
   icr_mode = elig ? 3 : 0;
   if (pin->DoesParameterExist("rad_m1","ic_rad")) {
     const std::string s = pin->GetString("rad_m1","ic_rad");
