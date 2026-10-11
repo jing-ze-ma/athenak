@@ -834,9 +834,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int maxit = pin->GetOrAddInteger("problem","he_ic_rad_maxit",60);
     const Real tol = pin->GetOrAddReal("problem","he_ic_rad_tol",1.0e-8);
     const Real htol = pin->GetOrAddReal("problem","he_ic_rad_hse_tol",1.0e-6);
+    // hsefix-1011 (NOTE-hsefix): the HSE outer loop on a near-Eddington column.
+    // (1) Gamma = kt F/(c g) of the HSE march is clamped at he_ic_rad_hse_gmax (as
+    //     he_bc_hse_gmax).  Where Gamma > 1 (AG Car B: the kappa rise at T 20-25 kK, tau
+    //     0.5-3 just below R_ph, Gamma 1.3; the file column has a density inversion
+    //     there) the fixed-T march makes rho grow outward, kappa_t(rho) grows with it and
+    //     the E-solve <-> HSE loop ran away (rho overflowed, the solve grid became NaN and
+    //     the VET pass failed).  Clamped cells keep a net outward force (Gamma - gmax) g.
+    // (2) At the first rise of the outer residual max |dln rho| the update is damped,
+    //     ln rho <- (1 - w) ln rho + w ln rho_HSE, w = he_ic_rad_hse_damp, from then on.
+    // (3) The outer loop has its own limit he_ic_rad_hse_maxit (was he_ic_rad_maxit) and
+    //     warns when it does not converge.
+    // A column with Gamma <= gmax and a monotone residual (AG Car A: Gamma <= 0.80) is
+    // bitwise unchanged.
+    const Real hgmax = pin->GetOrAddReal("problem","he_ic_rad_hse_gmax",0.9);
+    const Real hsdamp = pin->GetOrAddReal("problem","he_ic_rad_hse_damp",0.5);
+    const int hsmaxo = pin->GetOrAddInteger("problem","he_ic_rad_hse_maxit",400);
     if (!(taua > 0.0 && taub > taua && dtau0 > 0.0 && dlnr > 0.0 && ncore >= 4 &&
-          maxit >= 1 && tol > 0.0 && htol > 0.0)) {
-      HsFatal("problem/he_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore >= 4",
+          maxit >= 1 && tol > 0.0 && htol > 0.0 && hgmax > 0.0 && hgmax < 1.0 &&
+          hsdamp > 0.0 && hsdamp <= 1.0 && hsmaxo >= 1)) {
+      HsFatal("problem/he_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore >= 4,"
+              " 0 < hse_gmax < 1, 0 < hse_damp <= 1, hse_maxit >= 1",
               __LINE__);
     }
     if (gasm != "column" && gasm != "re" && gasm != "re_atm") {
@@ -917,8 +935,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     std::vector<Real> rg, dg, tg, fg, eg, cg, jg, kg;
     Real gtop = 0.0, ftop = 0.0, dlr = 0.0, rmx = 0.0;
-    int nit = 0, nout = 0, nflo = -1;
-    for (int outer=0; outer<(hse ? maxit : 1); ++outer) {
+    int nit = 0, nout = 0, nflo = -1, ncl = 0, ngcl = -1;
+    Real hsom = 1.0, dlrp = 1.0e300;
+    int hsodmp = -1;
+    for (int outer=0; outer<(hse ? hsmaxo : 1); ++outer) {
       ++nout;
       // the solve grid: uniform in s = int dr/(dlnr r) + dtau/(dtau0 max(1, tau)^0.7)
       std::vector<Real> sm(nf, 0.0);
@@ -996,14 +1016,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::vector<Real> dn(hd);
       bool flo = false;
       nflo = -1;
+      ncl = 0;
+      ngcl = -1;
       rmx = 0.0;
       for (int n=nb; n<nf-1; ++n) {
         if (flo) {
           dn[n+1] = dfl;
           continue;
         }
-        const Real g0 = gm[n]/SQR(hr[n]) - kt[n]*hF[n]/cl;
-        const Real g1 = gm[n+1]/SQR(hr[n+1]) - kt[n+1]*hF[n+1]/cl;
+        Real g0 = gm[n]/SQR(hr[n]) - kt[n]*hF[n]/cl;
+        Real g1 = gm[n+1]/SQR(hr[n+1]) - kt[n+1]*hF[n+1]/cl;
+        if (kt[n]*hF[n]/cl > hgmax*gm[n]/SQR(hr[n])) {
+          g0 = (1.0 - hgmax)*gm[n]/SQR(hr[n]);
+        }
+        if (kt[n+1]*hF[n+1]/cl > hgmax*gm[n+1]/SQR(hr[n+1])) {
+          g1 = (1.0 - hgmax)*gm[n+1]/SQR(hr[n+1]);
+          if (n + 1 > ngcl) ngcl = n + 1;
+          ++ncl;
+        }
         Real ee, p0, cr, ct, cv;
         eos.ThermoAt(dn[n], tcur[n], ee, p0, cr, ct, cv);
         const Real rhs = p0 - 0.5*hs_dr_*dn[n]*g0;
@@ -1030,6 +1060,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       dlr = 0.0;
       for (int n=nb; n<nf; ++n) dlr = std::max(dlr, std::fabs(log(dn[n]/hd[n])));
+      // the outer loop oscillates (the first rise of the residual): damp from now on
+      if (outer > 0 && dlr > dlrp && hsom == 1.0) {
+        hsom = hsdamp;
+        hsodmp = outer;
+      }
+      dlrp = dlr;
+      if (hsom < 1.0) {
+        for (int n=nb; n<nf; ++n) {
+          dn[n] = exp((1.0 - hsom)*log(hd[n]) + hsom*log(dn[n]));
+        }
+      }
       hd = dn;
       ftau();
       if (dlr < htol) break;
@@ -1077,7 +1118,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (hse) {
         std::cout << "; HSE last max |dln rho| " << dlr << ", residual " << rmx
                   << ", floor " << dfl << " from r = "
-                  << ((nflo >= 0) ? hr[nflo] : -1.0);
+                  << ((nflo >= 0) ? hr[nflo] : -1.0) << ", Gamma > " << hgmax
+                  << " (clamped) in " << ncl << " fine cells"
+                  << ((ncl > 0) ? ", outermost r = " + std::to_string(hr[ngcl]) : "")
+                  << ", damped (" << hsdamp << ") from outer "
+                  << ((hsodmp >= 0) ? std::to_string(hsodmp) : std::string("none"));
+        if (!(dlr < htol)) {
+          std::cout << std::endl << "he_star_m1: he_ic_rad = sph1d: WARNING the HSE "
+                    << "outer loop did NOT converge in he_ic_rad_hse_maxit = " << hsmaxo
+                    << " (max |dln rho| " << dlr << " > he_ic_rad_hse_tol " << htol
+                    << ")";
+        }
       }
       std::cout << std::endl;
       const Real xs[] = {0.9, 0.95, 0.98, 0.99, 0.995, 1.0, 1.003, 1.006, 1.01, 1.02,
