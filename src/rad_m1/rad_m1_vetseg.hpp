@@ -23,8 +23,9 @@
 //! second order.  At an opaque -> thin interface (hu >> 1 >> h0) with a uniform hot
 //! upwind body (I_u = S_u, gb = 0) or a single hot cell (gb opposite to gf), S_f = S_u
 //! and the emergent intensity is ~S_u (vet_seg = mean gives ~S_0 + S_u/hu).  An
-//! unresolved diffusion photosphere (S linear in tau inside the opaque cell: gb = gf) keeps the mean
-//! result.  S_f lies between S_u and S_0 and all weights are >= 0: positive, monotone.
+//! unresolved diffusion photosphere (S linear in tau inside the opaque cell: gb = gf)
+//! keeps the mean result.  S_f lies between S_u and S_0 and all weights are >= 0:
+//! positive, monotone.
 //! vet_seg = emit (emit = true): the limiter acts only where S_u > S_0, the opaque cell
 //! EMITTING into the thinner one; an opaque cell heated from its thin side (S_u <= S_0:
 //! the unresolved skin is near the incident field) keeps the mean face value.
