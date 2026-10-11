@@ -57,3 +57,6 @@ All other settings stay at their defaults. In a he_star_m1 build with no ic_rad 
 - emit, ic and iso vs cand1 at cycle 60: the shell-mean relative difference (max over shells in the band) of dens, velx,
   E and F1, in the bands < 0.8, 0.95-1.05 (photosphere) and > 1.05 (envelope) R_ph.
 - GPU-h used.
+
+## WITHDRAWN (raven)
+Raven gpudev jobs 31071238 and 31071688 ran all five arms first. No need to run this; if you already have results, post them as a GH200 cross-check.
