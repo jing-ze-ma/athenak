@@ -666,6 +666,10 @@ class RadiationM1 {
   // Jh = max(J, the outgoing face SC fluxes) wherever the cell's own J does not carry
   // the SC flux through its faces (M1HrSf); cell = the hrup-1009 cell ratios (opt-out)
   bool impl_hr_sf = false;
+  // sptests-1011 P2 (opt-in, vet_gd only): implicit_hr_excess = iso gives the part of the
+  // lagged E^n that exceeds the formal-solution J of the cell the ISOTROPIC half-range
+  // shape (+-1/4) instead of the formal solution's (M1HrExcess); none = off (default)
+  bool impl_hr_xs = false;
   int iw_hsf = -1;              // first iw component of the M1_NIW_HSF block
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
   bool hr_q = false;            // the per-column outer q from h+_1 (vcol_q)
