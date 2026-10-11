@@ -752,7 +752,6 @@ class RadiationM1 {
   DvceArray5D<Real> csk1, csk2, csinc;  // hesdirk2: slopes / increment of the cell F (3)
   bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
   bool csinc_ok = false;                // csinc was formed for the coming stage solve
-  bool gcs_kry = false;                 // the last Picard pass solved the Krylov system
 
   // ---- MILESTONE 3b phase B: transport = implicit, the TRANSVERSE (x2/x3) couplings.
   // All inert with transport = explicit | implicit_x1.

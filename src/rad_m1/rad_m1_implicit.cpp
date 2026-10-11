@@ -12191,10 +12191,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     } else {
       ImplicitTridiagSolve();
     }
-    // consrc-1011: the pass solved the full (Krylov) system KB = A x, whose residual at
-    // the solution the conservative energy source takes (the line solve is exact)
-    gcs_kry = bicg_on && trans;
-
     // (f) accept E', solve for T' and measure the Picard residual
     // F3 implicit_pos_floor_solve: the iterate keeps the solved S2 down to 1e-6 e_floor
     // (no hidden raise to e_floor here), so the face fluxes rebuilt from it are the
@@ -13024,18 +13020,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ec_tmax = std::max(ec_tmax, qmx);
   }
 
-  // consrc-1011 (implicit_gas_src = conservative): the residual R = b - A E'_solve of
-  // the last pass's full system (KV).  E' - E^old + dt div F' = q + R exactly with the
-  // row's own transport, so the gas energy takes -(c/chat)(q + R)
-  const bool gcsr = impl_gas_src_cons && have_hydro && coupling && dbg_gas_heat &&
-                    gcs_kry;
-  if (gcsr) {
-    ImplicitApplyOp(M1_IW_S2, M1_IW_KV);
-    par_for("m1_impl_gcsr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      iw_(m,M1_IW_KV,k,j,i) = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KV,k,j,i);
-    });
-  }
   // moveq-1011: the radiation momentum of the enthalpy flux (implicit_rad_inertia)
   if (impl_rad_inertia && have_hydro) {ImplicitRadInertia();}
   //------------------------------------------------------------------------- write back

@@ -81,7 +81,6 @@
       // one 0.  At convergence the two agree, so T' stays the consistent temperature.
       if (coupling_ && dbgh) {
         Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*ep;
-        if (gcsr) {qq += iw_(m,M1_IW_KV,k,j,i);}   // consrc-1011: + the row residual
         eg -= (cl/ch)*qq;
       }
       // (b) MOMENTUM.  Each x1 face hands dt (rho k_t)_f F0'_f/c to the gas, half to
