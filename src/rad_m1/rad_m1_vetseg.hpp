@@ -8,7 +8,8 @@
 //! \file rad_m1_vetseg.hpp
 //! \brief segfix-1011: <rad_m1>/vet_seg = split, the short-characteristics segment from
 //! the upwind point u to the cell centre 0 integrated as TWO sub-segments split at the
-//! cell face: the upwind part with chi_u (optical depth hu), the own part with chi_0 (h0).
+//! cell face: the upwind part with chi_u (optical depth hu), the own part with chi_0
+//! (h0).
 //!
 //! The source is piecewise linear in tau, continuous at the face value
 //!   S_f = S_u + hu*g,   g = gf + th*(minmod(gb, gf) - gf),
@@ -20,10 +21,13 @@
 //! value of the single linear-in-tau S of vet_seg = mean and the two sub-segments are
 //! that segment exactly (to round-off).  In a smooth field th = O(dx), so the change is
 //! second order.  At an opaque -> thin interface (hu >> 1 >> h0) with a uniform hot
-//! upwind body (I_u = S_u, gb = 0) or a single hot cell (gb opposite to gf), S_f = S_u and
-//! the emergent intensity is ~S_u (vet_seg = mean gives ~S_0 + S_u/hu).  An unresolved
-//! diffusion photosphere (S linear in tau inside the opaque cell: gb = gf) keeps the mean
+//! upwind body (I_u = S_u, gb = 0) or a single hot cell (gb opposite to gf), S_f = S_u
+//! and the emergent intensity is ~S_u (vet_seg = mean gives ~S_0 + S_u/hu).  An
+//! unresolved diffusion photosphere (S linear in tau inside the opaque cell: gb = gf) keeps the mean
 //! result.  S_f lies between S_u and S_0 and all weights are >= 0: positive, monotone.
+//! vet_seg = emit (emit = true): the limiter acts only where S_u > S_0, the opaque cell
+//! EMITTING into the thinner one; an opaque cell heated from its thin side (S_u <= S_0:
+//! the unresolved skin is near the incident field) keeps the mean face value.
 
 #include <cmath>
 
@@ -46,12 +50,12 @@ void VetSegW(const Real dtau, Real &ex, Real &w0, Real &wu) {
 // the face source S_f of the split segment (see above)
 KOKKOS_INLINE_FUNCTION
 Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
-                const Real h0) {
+                const Real h0, const bool emit) {
   const Real ht = hu + h0;
   if (!(ht > 0.0)) {return su;}
   const Real gf = (s0 - su)/ht;
   Real g = gf;
-  if (hu > h0) {
+  if (hu > h0 && (!emit || su > s0)) {
     const Real th = (hu - h0)/ht*(1.0 - exp(-hu));
     const Real gb = su - iu;
     const Real mm = (gb*gf > 0.0) ? ((fabs(gb) < fabs(gf)) ? gb : gf) : 0.0;
@@ -63,8 +67,8 @@ Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
 // the intensity at the cell centre from I_u at the upwind point, the split segment
 KOKKOS_INLINE_FUNCTION
 Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
-                 const Real h0) {
-  const Real sf = VetSegFace(iu, su, s0, hu, h0);
+                 const Real h0, const bool emit) {
+  const Real sf = VetSegFace(iu, su, s0, hu, h0, emit);
   Real exu, w0u, wuu, ex0, w00, wu0;
   VetSegW(hu, exu, w0u, wuu);
   VetSegW(h0, ex0, w00, wu0);

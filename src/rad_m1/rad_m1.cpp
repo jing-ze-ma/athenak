@@ -941,11 +941,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::string sg = pin->GetOrAddString("rad_m1","vet_seg","mean");
       if (sg.compare("split") == 0) {
         vet_seg_split = true;
+        vet_seg_emit = false;
+      } else if (sg.compare("emit") == 0) {
+        vet_seg_split = true;
+        vet_seg_emit = true;
       } else if (sg.compare("mean") == 0) {
         vet_seg_split = false;
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_seg must be mean or split" << std::endl;
+                  << std::endl << "<rad_m1>/vet_seg must be mean, split or emit"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }

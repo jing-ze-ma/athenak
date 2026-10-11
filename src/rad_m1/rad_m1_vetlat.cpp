@@ -648,6 +648,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const bool tw = (stage == 0);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
+  const bool spe = vet_seg_emit;
   auto vd_ = vlat_d;
   for (int pass = 0; pass < 2; ++pass) {
     const int dir = pass;                     // 0 inward, 1 outward
@@ -794,7 +795,8 @@ void RadiationM1::VetLatSweep(const int stage) {
                 const Real zf = sqrt(fmax(rf*rf - p2, 0.0));
                 dso = fmin(fmax((dir == 0) ? (zf - zr) : (zr - zf), 0.0), ds);
               }
-              iv = fmax(VetSegSplit(ivu, su, s0, chu*(ds - dso), ch0*dso), 0.0);
+              iv = fmax(VetSegSplit(ivu, su, s0, chu*(ds - dso), ch0*dso, spe),
+                        0.0);
             } else {
               Real ex, w0, wu;
               VlatW(0.5*(chu + ch0)*ds, ex, w0, wu);

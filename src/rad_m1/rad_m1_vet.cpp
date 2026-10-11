@@ -800,7 +800,7 @@ struct VetRayK {
   Real fmil, cl, efl;
   Real bblo, bbhi;             // the x1 bath intensities (vet_bc_bath; bblo < 0: off)
   bool bfc;                    // deepatm-1011: vet_bc_diff = face (bottom E at the face)
-  bool spl;                    // segfix-1011: vet_seg = split
+  bool spl, spe;               // segfix-1011: vet_seg = split / emit
   DvceArray2D<int> rd;
   DvceArray4D<Real> bw;
   DvceArray5D<Real> cs, ip;
@@ -931,7 +931,7 @@ struct VetRayK {
                       + wba*cs(m,li,1,kb,ja) + wbb*cs(m,li,1,kb,jb);
       if (spl) {
         // segfix-1011: vet_seg = split, the two halves at the x1 face
-        iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1);
+        iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
       } else {
         const Real dtau = 0.5*(cu + c0)*dx1/am1;
         const Real ex = exp(-dtau);
@@ -1372,7 +1372,8 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
 void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                  const int ks, const int nx1, const int nx2, const int nx3,
                  const bool thrd, const bool milne, const Real fmil, const Real bblo,
-                 const Real bbhi, const bool bfc, const bool spl, const Real cl,
+                 const Real bbhi, const bool bfc, const bool spl, const bool spe,
+                 const Real cl,
                  const Real efl, const DvceArray5D<Real> &iw_,
                  const DvceArray5D<Real> &vc_, const DvceArray2D<Real> &ang_) {
   const int nx1g = st.nx1g, n2g = st.n2g, n3g = st.n3g, nbx2 = st.nbx2;
@@ -1536,7 +1537,7 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                         + wba*gc_(iup,1,kb,ja) + wbb*gc_(iup,1,kb,jb);
         if (spl) {
           // segfix-1011: vet_seg = split, the two halves at the x1 face
-          iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1);
+          iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
         } else {
           const Real dtau = 0.5*(cu + c0)*dx1/am1;
           const Real ex = exp(-dtau);
@@ -1697,10 +1698,14 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     std::string sg = pin->GetOrAddString("rad_m1", "vet_seg", "mean");
     if (sg.compare("split") == 0) {
       vet_seg_split = true;
+      vet_seg_emit = false;
+    } else if (sg.compare("emit") == 0) {
+      vet_seg_split = true;
+      vet_seg_emit = true;
     } else if (sg.compare("mean") == 0) {
       vet_seg_split = false;
     } else {
-      VetFatal("<rad_m1>/vet_seg must be mean or split");
+      VetFatal("<rad_m1>/vet_seg must be mean, split or emit");
     }
   }
   vet_dump = pin->GetOrAddString("rad_m1", "vet_dump", "none");
@@ -1836,7 +1841,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
               << (vet_full ? ", FULL tensor D = K/J (eigenvalue floor " : "")
               << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
               << ", vet_bc_diff = " << (vet_bc_face ? "face" : "cell")
-              << ", vet_seg = " << (vet_seg_split ? "split" : "mean") << std::endl;
+              << ", vet_seg = "
+              << (vet_seg_emit ? "emit" : (vet_seg_split ? "split" : "mean"))
+              << std::endl;
   }
 }
 
@@ -2613,6 +2620,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;   // deepatm-1011
   const bool spl = vet_seg_split;   // segfix-1011
+  const bool spe = vet_seg_emit;
   auto bw_ = st.bwe;
   const int ncb = nx3*nx2*nx1, npb = nx3*nx2;
 #if MPI_PARALLEL_ENABLED
@@ -2742,6 +2750,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   rk.bbhi = bbhi;
   rk.bfc = bfc;
   rk.spl = vet_seg_split;
+  rk.spe = vet_seg_emit;
   rk.cl = cl;
   rk.efl = efl;
   rk.rd = rd_;
@@ -3018,7 +3027,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
                             + wba*cs_(m,li,1,kb,ja) + wbb*cs_(m,li,1,kb,jb);
             if (spl) {
               // segfix-1011: vet_seg = split, the two halves at the x1 face
-              iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1);
+              iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
             } else {
               const Real dtau = 0.5*(cu + c0)*dx1/am1;
               const Real ex = exp(-dtau);
@@ -3153,8 +3162,8 @@ void RadiationM1::VetMBSweeps() {
     const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
     VetSweepAng(st, pmy_pack->nmb_thispack, indcs.is, indcs.js, indcs.ks, indcs.nx1,
                 indcs.nx2, trans_x3 ? indcs.nx3 : 1, trans_x3, vet_milne, iflux_x1min,
-                bblo, bbhi, vet_bc_face, vet_seg_split, c_light, e_floor, iw, vet_cell,
-                vet_ang);
+                bblo, bbhi, vet_bc_face, vet_seg_split, vet_seg_emit, c_light, e_floor,
+                iw, vet_cell, vet_ang);
     return;
   }
   VetSweepMB(false);
@@ -3261,6 +3270,7 @@ void RadiationM1::VetShortChar() {
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;   // deepatm-1011
   const bool spl = vet_seg_split;   // segfix-1011
+  const bool spe = vet_seg_emit;
   // littests-1011: the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
@@ -3458,7 +3468,7 @@ void RadiationM1::VetShortChar() {
                           + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
           if (spl) {
             // segfix-1011: vet_seg = split, the two halves at the x1 face
-            iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1);
+            iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
           } else {
             const Real dtau = 0.5*(cu + c0)*dx1/am1;
             const Real ex = exp(-dtau);

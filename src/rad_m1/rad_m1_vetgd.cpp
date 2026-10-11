@@ -3749,6 +3749,7 @@ void RadiationM1::VetGdSweep() {
   const bool bandx = vgd_bandx;
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
+  const bool spe = vet_seg_emit;
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   const bool emi = vgd_emit && (lcut == 0) &&
@@ -4023,7 +4024,7 @@ void RadiationM1::VetGdSweep() {
                 if (spl) {
                   const Real dxo = fmin(dso, dsx);
                   iv = fmax(VetSegSplit(isum/wsum, sx, s0, chx*(dsx - dxo),
-                                        ch0*dxo), 0.0);
+                                        ch0*dxo, spe), 0.0);
                 } else {
                   Real ex, w0, wu;
                   VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
@@ -4131,7 +4132,7 @@ void RadiationM1::VetGdSweep() {
               const Real su = exp(lin(1));
               if (spl) {
                 iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
-                                      ch0*dso), 0.0);
+                                      ch0*dso, spe), 0.0);
               } else {
                 Real ex, w0, wu;
                 VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
