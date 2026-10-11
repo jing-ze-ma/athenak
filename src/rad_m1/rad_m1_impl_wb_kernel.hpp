@@ -145,6 +145,59 @@
             dm3 = (b + c*a)*si;
           }
         }
+        // moveq-1011 (implicit_rad_inertia): the face equation also removes
+        // chat dt v_f g0_f from the radiation flux; the gas gets dt v_f g0_f/c, half per
+        // interior face (as the k F0 deposit; a physical face has no face equation).
+        // Exactly 0 where v = 0 (static gas: bitwise)
+        if (rinr) {
+          int ipq = pos_.d_view(m);
+          if (!(i == is && ipq == 0 && !cyclic)) {
+            const int im = (cyclic && i == is) ? ie : (i-1);
+            Real g = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,im), iw_(m,M1_IW_V1,k,j,i), cx1f, m,
+                                 im, i, fwd)
+                     *M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,im), iw_(m,M1_IW_G0,k,j,i), cx1f, m,
+                                  im, i, fwd);
+            if (aphll) {g *= (1.0 - ifw_(m,M1_IFW_AL,k,j,i));}
+            if (g != 0.0) {dm1 += 0.5*(dt/cl)*g;}
+          }
+          if (!(i == ie && ipq == nblkx1-1 && !cyclic)) {
+            const int ip = (cyclic && i == ie) ? is : (i+1);
+            Real g = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,i), iw_(m,M1_IW_V1,k,j,ip), cx1f, m,
+                                 i, ip, fwd)
+                     *M1FaceAvgX1(iw_(m,M1_IW_G0,k,j,i), iw_(m,M1_IW_G0,k,j,ip), cx1f, m,
+                                  i, ip, fwd);
+            if (aphll) {g *= (1.0 - ifw_(m,M1_IFW_AL,k,j,i+1));}
+            if (g != 0.0) {dm1 += 0.5*(dt/cl)*g;}
+          }
+          if (trans && dbgft && !csw) {
+            // x2 (and x3): the arithmetic face means of the transverse face equation
+            auto vg = [&](const int c, const int k0, const int j0, const int k1,
+                          const int j1) {
+              return 0.125*(dt/cl)*(iw_(m,c,k0,j0,i) + iw_(m,c,k1,j1,i))
+                     *(iw_(m,M1_IW_G0,k0,j0,i) + iw_(m,M1_IW_G0,k1,j1,i));
+            };
+            BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+            BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+            const bool p2lo = (q3 != BoundaryFlag::block) &&
+                              (q3 != BoundaryFlag::periodic);
+            const bool p2hi = (q4 != BoundaryFlag::block) &&
+                              (q4 != BoundaryFlag::periodic);
+            Real g = (j == js && p2lo) ? 0.0 : vg(M1_IW_V2, k, j-1, k, j);
+            if (!(j == je && p2hi)) {g += vg(M1_IW_V2, k, j, k, j+1);}
+            if (g != 0.0) {dm2 += g;}
+            if (thrd) {
+              BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+              BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+              const bool p3lo = (q5 != BoundaryFlag::block) &&
+                                (q5 != BoundaryFlag::periodic);
+              const bool p3hi = (q6 != BoundaryFlag::block) &&
+                                (q6 != BoundaryFlag::periodic);
+              g = (k == ks && p3lo) ? 0.0 : vg(M1_IW_V3, k-1, j, k, j);
+              if (!(k == ke && p3hi)) {g += vg(M1_IW_V3, k, j, k+1, j);}
+              if (g != 0.0) {dm3 += g;}
+            }
+          }
+        }
 #if M1_RCP
         // implicit_realisable_coupling: the deposit of the realisable cell flux, scaled
         // by s = min(1, c E/|F_iter|) (the factor the write-back clip applies to F); the
@@ -182,8 +235,52 @@
               work = 0.5*(v1 + w1)*dm1 + 0.5*(v2 + u2)*dm2 + 0.5*(v3 + u3)*dm3;
             }
           }
+          // moveq-1011 (implicit_rad_inertia): the work moves (chat/c) W of energy into
+          // E after the solve, and the cell's enthalpy flux a E carries its momentum
+          // a W/c^2: the gas pays it (else the next solve, whose E^n includes W, counts
+          // it as created).  W depends on the kick: a few fixed-point passes (the
+          // factor is v a/c^2).  Off where the row already carried the work (vstage)
+          const Real ax = iw_(m,M1_IW_ADV,k,j,i);
+          const Real ay = (trans && dbgft) ? iw_(m,M1_IW_A2,k,j,i) : 0.0;
+          const Real az = (trans && dbgft && thrd) ? iw_(m,M1_IW_A3,k,j,i) : 0.0;
+          if (rinr && !rwk && !efc && !csw && (ax != 0.0 || ay != 0.0 || az != 0.0)) {
+            const Real ic2 = 1.0/(cl*cl);
+            Real wq = work;
+            Real x1 = dm1, x2 = dm2, x3 = dm3;
+            for (int q = 0; q < 3; ++q) {
+              x1 = dm1 + ax*wq*ic2;
+              x2 = dm2 + ay*wq*ic2;
+              x3 = dm3 + az*wq*ic2;
+              wq = 0.5*(v1 + (uh(m,IM1,k,j,i) + x1)*idg)*x1;
+              if (trans && dbgft) {
+                wq += 0.5*(v2 + (uh(m,IM2,k,j,i) + x2)*idg)*x2;
+                if (thrd) {wq += 0.5*(v3 + (uh(m,IM3,k,j,i) + x3)*idg)*x3;}
+              }
+            }
+            dm1 = x1;
+            dm2 = x2;
+            dm3 = x3;
+            work = wq;
+            // the cell flux takes the a E of the E it ends on
+            fp1 -= ax*(ch/cl)*work;
+            fp2 -= ay*(ch/cl)*work;
+            fp3 -= az*(ch/cl)*work;
+          }
           if (!efc) {
             ep -= (ch/cl)*work;
+          }
+        } else if (nfbw) {
+          // moveq-1011 (implicit_nofb_work): gas_feedback = false is a gas of infinite
+          // inertia, not a gas at rest: the radiation still does the work v.dm on it
+          // (the lab-frame v.G of the E equation), at the fixed v.  Without it a pulse
+          // diffusing in a moving medium is advected at (4/3) v (enthalpy flux alone)
+          Real wnf = v1*dm1;
+          if (trans && dbgft) {
+            wnf += v2*dm2;
+            if (thrd) {wnf += v3*dm3;}
+          }
+          if (!efc && wnf != 0.0 && !nfwr) {
+            ep -= (ch/cl)*wnf;
           }
         }
       }
