@@ -783,6 +783,18 @@ class RadiationM1 {
                                         // 2 no vimp prediction, 4 no hydro shift,
                                         // 8 no x1 split, 16 no x2/x3 split
   bool Cs2Active();
+  // h2order2-1011 <rad_m1>/implicit_rad_inertia_solve (read only when named; default
+  // false = the after-solve split, bitwise): the -theta dA of implicit_rad_inertia
+  // (dA_c = a_c (E'_c - E^ov_c), a frozen for the solve) goes into the face equation
+  // INSIDE the Picard passes (the F0^n shift of ImplicitCs2Pass, Picard-lagged by one
+  // pass; the Picard stop then takes no contraction estimate), so the E rows transport
+  // the F0 the faces end on and the ESDIRK slope of F0 carries it.  The after-solve
+  // split leaves the E update and the stored F0 inconsistent by theta a dE: a first-
+  // order (in dt) splitting error ~ v^2, suppressed in the stiff limit (rswv / NHvk0
+  // floor, NOTE-h2order2).  matched / conservative only (conservative2 has it).
+  bool impl_rinr_solve = false;
+  bool RinrActive();
+  void ImplicitRinrDeltaA();
   void ImplicitCs2DeltaA(bool usedv);
   void ImplicitCs2Vimp();
   void ImplicitCs2Shift();

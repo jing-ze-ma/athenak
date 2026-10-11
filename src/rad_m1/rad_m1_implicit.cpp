@@ -2417,6 +2417,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
   // moveq-1011: the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
   impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",true);
+  // h2order2-1011: implicit_rad_inertia_solve (read only when named; rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","implicit_rad_inertia_solve")) {
+    impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
+  }
   impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
   // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md)
   {
@@ -2590,7 +2594,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(gcz1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(gcz1, 0.0);
   }
-  if (impl_gas_src_cs2) {   // consfix-1011: the dA face means inside F0^n
+  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: dA face means in F0^n
     Kokkos::realloc(cs2f1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(cs2f1, 0.0);
     if (trans_on) {
@@ -2657,7 +2661,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     niw += M1_NIW_HSF;
   }
   iw_cs2 = -1;
-  if (impl_gas_src_cs2) {   // consfix-1011: A^old (3), dA (3)
+  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: A^old (3), dA (3)
     if (cs_geom) {
       ImplFatal("<rad_m1>/implicit_gas_src = conservative2 is not wired for the cubed "
                 "sphere (covariant cell F)");
@@ -9461,6 +9465,47 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::RinrActive
+//! \brief h2order2-1011: implicit_rad_inertia_solve acts in this solve
+//! (implicit_rad_inertia with a fluid, conservative2 not active: it carries the whole dA)
+
+bool RadiationM1::RinrActive() {
+  return impl_rinr_solve && impl_rad_inertia && (iw_cs2 >= 0) &&
+         FluidRef::Get(pmy_pack).on && !Cs2Active();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitRinrDeltaA
+//! \brief h2order2-1011 (implicit_rad_inertia_solve): per cell dA = a (E^k - E^ov) of
+//! this Picard pass's iterate (x1: ADV, x2/x3: A2, A3; a frozen for the solve, as
+//! ImplicitRadInertia), into iw_cs2 + 3..5, and to the ghosts
+
+void RadiationM1::ImplicitRinrDeltaA() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool trans = trans_on, thrd = trans_x3;
+  auto iw_ = iw;
+  const int cd = iw_cs2 + 3;
+  par_for("m1_rinr_da", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real de = iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EN,k,j,i);
+    iw_(m,cd,k,j,i) = iw_(m,M1_IW_ADV,k,j,i)*de;
+    iw_(m,cd+1,k,j,i) = trans ? iw_(m,M1_IW_A2,k,j,i)*de : 0.0;
+    iw_(m,cd+2,k,j,i) = thrd ? iw_(m,M1_IW_A3,k,j,i)*de : 0.0;
+  });
+  const int nc = trans ? (thrd ? 3 : 2) : 1;
+  for (int c = 0; c < nc; ++c) {
+    if (trans) {
+      ImplicitHaloExchange(1, cd + c);
+    } else {
+      ImplicitX1Halo(true, cd + c);
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitCs2Pass
 //! \brief consfix-1011 (implicit_gas_src = conservative2), once per Picard pass after
 //! the vimp build: dA of this pass (ImplicitCs2DeltaA, with the vimp prediction of the
@@ -9477,8 +9522,17 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool trans = trans_on, thrd = trans_x3;
-  const bool tq = trans && dbg_gas_force_trans;
-  if (!restore) {ImplicitCs2DeltaA(impl_vimp && vimp_now);}
+  // h2order2-1011: implicit_rad_inertia_solve uses the same F0^n shift with its own dA
+  // (ImplicitRadInertia's transverse faces do not depend on dbg_gas_force_trans)
+  const bool rinr = RinrActive();
+  const bool tq = trans && (dbg_gas_force_trans || rinr);
+  if (!restore) {
+    if (rinr) {
+      ImplicitRinrDeltaA();
+    } else {
+      ImplicitCs2DeltaA(impl_vimp && vimp_now);
+    }
+  }
   auto iw_ = iw;
   auto f1_ = f0x1n;
   auto f2_ = f0x2n;
@@ -10760,7 +10814,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // consfix-1011 (conservative2): the explicit -dA/dt of the hydro step into F0 first
   if (Cs2Active() && cs2_shift && !gcs_first && !(cs2_dbg & 4)) {ImplicitCs2Shift();}
   Kokkos::deep_copy(DevExeSpace(), f0x1n, f0x1);
-  if (impl_gas_src_cs2) {   // consfix-1011: nothing of this solve's dA in F0^n yet
+  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: no dA in F0^n yet
     Kokkos::deep_copy(DevExeSpace(), cs2f1, 0.0);
     if (trans_on) {
       Kokkos::deep_copy(DevExeSpace(), cs2f2, 0.0);
@@ -12017,7 +12071,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_vimp: the Jacobian of the implicit enthalpy velocity for this pass
     if (vimp_now) {ImplicitVimpBuild();}
     // consfix-1011 (conservative2): this pass's dA into the face equation's F0^n
-    if (Cs2Active() && !(cs2_dbg & 1)) {ImplicitCs2Pass(false);}
+    if ((Cs2Active() && !(cs2_dbg & 1)) || RinrActive()) {ImplicitCs2Pass(false);}
     if (muscl_now) {ImplicitMusclBuild();}   // xthinfix-1009 Fix B
     const bool vim = vimp_now;
     const int ivb = iw_vimp;
@@ -13201,11 +13255,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // the Picard test, optionally without the confirming pass: q is the contraction
       // of the last two passes, and q/(1-q) times this change bounds what is left
       bool pc = (resid < impl_tol);
-      if (impl_conv_est && !pc && rprev > 0.0) {
+      // h2order2-1011: implicit_rad_inertia_solve lags dA by one pass, so the stop must
+      // see the last pass's own change (no contraction estimate, no one-pass stop)
+      const bool rinrc = RinrActive();
+      if (impl_conv_est && !pc && rprev > 0.0 && !rinrc) {
         Real q = resid/rprev;
         pc = (q < 0.5) && (resid*q/(1.0 - q) < impl_tol);
       }
-      if (onep && it == 0 && !pc && !ocheck) {
+      if (onep && it == 0 && !pc && !ocheck && !rinrc) {
         const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
         // time2_one_pass_safety for the stage solves (otyp 1, 2)
         const Real sf = (otyp != 0 && t2_onep_s > 0.0) ? t2_onep_s : impl_onep_s;
@@ -13694,8 +13751,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // moveq-1011: the radiation momentum of the enthalpy flux (implicit_rad_inertia)
   // consfix-1011: conservative2 always takes the face split (of the whole dA)
-  if (Cs2Active()) {ImplicitCs2Pass(true);}   // consfix-1011: F0^n back to the old value
-  if (impl_rad_inertia && have_hydro) {ImplicitRadInertia();}
+  if (Cs2Active() || RinrActive()) {   // consfix-1011: F0^n back to the old value
+    ImplicitCs2Pass(true);
+  }
+  // h2order2-1011: implicit_rad_inertia_solve carried it inside the passes
+  if (impl_rad_inertia && have_hydro && !RinrActive()) {ImplicitRadInertia();}
   cs2_dav = false;
   //------------------------------------------------------------------------- write back
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
