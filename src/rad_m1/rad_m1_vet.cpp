@@ -1708,6 +1708,19 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     if (vet_x1npass < 1) {VetFatal("<rad_m1>/vet_x1_npass must be >= 1");}
   }
   vet_nray = 2*vet_nmu*vet_nphi;
+  // littests-1011: vet_ring = N (read only when given; 2-D tests) replaces the angle set by
+  // the IDORT / Jiang 2021 2-D ring: N in-plane directions theta = (l + 1/2) 2 pi/N from
+  // +x1 toward +x2 (N a multiple of 4: no ray along x2), equal weights.  vet_ring_groups
+  // = 2 adds the tilted ring sqrt(1/3) (cos, sin) theta, +-sqrt(2/3) in x3 (weights 1/2 :
+  // 1/4 : 1/4), which gives f = 1/3 for an isotropic field (Ma et al. 2025 Sect. 3.1).
+  int vring = 0, vrgrp = 1;
+  if (pin->DoesParameterExist("rad_m1", "vet_ring")) {
+    vring = pin->GetInteger("rad_m1", "vet_ring");
+    vrgrp = pin->GetOrAddInteger("rad_m1", "vet_ring_groups", 1);
+    if (vring < 4 || vring % 4 != 0) VetFatal("<rad_m1>/vet_ring must be a multiple of 4");
+    if (vrgrp != 1 && vrgrp != 2) VetFatal("<rad_m1>/vet_ring_groups must be 1 or 2");
+    vet_nray = vring*((vrgrp == 2) ? 3 : 1);
+  }
 
   // the angle set: (mu1, mu2, mu3, weight), upward hemisphere first
   std::vector<double> xg, wg;
@@ -1715,7 +1728,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   Kokkos::realloc(vet_ang, vet_nray, 4);
   auto ah = Kokkos::create_mirror_view(vet_ang);
   int r = 0;
-  for (int h = 0; h < 2; ++h) {
+  for (int h = 0; h < ((vring > 0) ? 0 : 2); ++h) {
     for (int a = 0; a < vet_nmu; ++a) {
       double m1 = (h == 0) ? xg[a] : -xg[a];
       double st = std::sqrt(1.0 - m1*m1);
@@ -1726,6 +1739,28 @@ void RadiationM1::VetInit(ParameterInput *pin) {
         ah(r, 2) = st*std::sin(ph);
         ah(r, 3) = 0.5*wg[a]/vet_nphi;
         ++r;
+      }
+    }
+  }
+  if (vring > 0) {   // littests-1011: the 2-D ring (up rays first, ray r + nray/2 its
+                     // x1 mirror, as the double-Gauss set)
+    std::vector<std::array<double, 4>> up;
+    for (int g = 0; g < ((vrgrp == 2) ? 3 : 1); ++g) {
+      const double sz = (g == 0) ? 0.0 : std::sqrt(2.0/3.0)*((g == 1) ? 1.0 : -1.0);
+      const double sp = (g == 0) ? 1.0 : std::sqrt(1.0/3.0);
+      const double wg0 = (vrgrp == 1) ? 1.0 : ((g == 0) ? 0.5 : 0.25);
+      for (int l = 0; l < vring; ++l) {
+        const double th = 2.0*M_PI*(l + 0.5)/vring;
+        if (std::cos(th) > 0.0) {
+          up.push_back({sp*std::cos(th), sp*std::sin(th), sz, wg0/vring});
+        }
+      }
+    }
+    const int nhu = static_cast<int>(up.size());
+    for (int q = 0; q < nhu; ++q) {
+      for (int c = 0; c < 4; ++c) {
+        ah(q, c) = up[q][c];
+        ah(q + nhu, c) = (c == 0) ? -up[q][c] : up[q][c];
       }
     }
   }
