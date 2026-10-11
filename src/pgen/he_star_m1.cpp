@@ -1068,8 +1068,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pin->GetString("problem","he_ic_rad_dump") != "none" &&
         global_variable::my_rank == 0) {
       const std::string dfn = pin->GetString("problem","he_ic_rad_dump");
-      std::vector<Real> ru;
-      for (const Real r : hfr_keep) if (r >= hr[0] && r <= hr[nf-1]) ru.push_back(r);
+      // (the fine grid's span: this mesh plus its ghost margin, ends included)
+      std::vector<Real> ru = {hr[0], hr[nf-1]};
+      for (const Real r : hfr_keep) if (r > hr[0] && r < hr[nf-1]) ru.push_back(r);
       for (const Real r : rg) ru.push_back(r);
       std::sort(ru.begin(), ru.end());
       ru.erase(std::unique(ru.begin(), ru.end()), ru.end());
