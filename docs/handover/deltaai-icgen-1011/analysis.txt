@@ -1,0 +1,61 @@
+== per run
+g0     cycles 120 FATAL 0 NONCONV 0 Picard 3.82/9 (solves 120)  s/cycle median 0.207 (rotation 0.487, all 0.275)  setup elapsed@c0 12.1 s
+    <rad_m1> ic_rad run_c0       cycle=0 max|<E>/<J>-1| (gd shells) = 1.0608e+00 <E>/<J>(top) = 1.07961
+gha    cycles 120 FATAL 0 NONCONV 0 Picard 3.53/7 (solves 120)  s/cycle median 0.201 (rotation 0.467, all 0.267)  setup elapsed@c0 17.4 s
+    he_star_m1: he_ic_rad = sph1d (gas re_atm, hse on): r_b = 2.43206e+13 (tau 3002.59), blend tau 30 .. 3000, 1343 solve points + 64 core rays, 331 VET passes, 29 outer, g_top = H/J 0.97864, f_top = K/J 0.957965, 5.21367 s
+    he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 2.70169e+13 -> 2.70237e+13; max |E/E_col - 1| 0.619061 at r = 2.90868e+13, |T/T_col - 1| 0.230252 at 2.78315e+13, |rho/rho_col - 1| 1.01295 at 2.71452e+13; HSE l
+    <rad_m1> ic_rad run_c0       cycle=0 max|<E>/<J>-1| (gd shells) = 1.7659e-02 <E>/<J>(top) = 1.01766
+gha2   cycles 120 FATAL 0 NONCONV 0 Picard 3.53/7 (solves 120)  s/cycle median 0.200 (rotation 0.455, all 0.266)  setup elapsed@c0 17.3 s
+    he_star_m1: he_ic_rad = sph1d (gas re_atm, hse on): r_b = 2.43206e+13 (tau 3002.59), blend tau 30 .. 3000, 1343 solve points + 64 core rays, 331 VET passes, 29 outer, g_top = H/J 0.97864, f_top = K/J 0.957965, 5.19595 s
+    he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 2.70169e+13 -> 2.70237e+13; max |E/E_col - 1| 0.619061 at r = 2.90868e+13, |T/T_col - 1| 0.230252 at 2.78315e+13, |rho/rho_col - 1| 1.01295 at 2.71452e+13; HSE l
+    <rad_m1> ic_rad run_c0       cycle=0 max|<E>/<J>-1| (gd shells) = 1.7659e-02 <E>/<J>(top) = 1.01766
+ghafr  cycles 120 FATAL 0 NONCONV 0 Picard 3.37/7 (solves 123)  s/cycle median 0.206 (rotation 0.876, all 0.300)  setup elapsed@c0 20.2 s
+    he_star_m1: he_ic_rad = sph1d (gas re_atm, hse on): r_b = 2.43206e+13 (tau 3002.59), blend tau 30 .. 3000, 1343 solve points + 64 core rays, 331 VET passes, 29 outer, g_top = H/J 0.97864, f_top = K/J 0.957965, 5.21649 s
+    he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 2.70169e+13 -> 2.70237e+13; max |E/E_col - 1| 0.619061 at r = 2.90868e+13, |T/T_col - 1| 0.230252 at 2.78315e+13, |rho/rho_col - 1| 1.01295 at 2.71452e+13; HSE l
+    <rad_m1> ic_rad: done, 2.186 s (fs 0.422 s, relax 3 steps 0.689 s), L_top = 2.8430856815e+38 (L/L_IC = 0.999997)
+    <rad_m1> ic_rad run_c0       cycle=0 max|<E>/<J>-1| (gd shells) = 2.8909e-02 <E>/<J>(top) = 1.02891
+gra    cycles 120 FATAL 0 NONCONV 0 Picard 3.52/6 (solves 120)  s/cycle median 0.208 (rotation 0.935, all 0.316)  setup elapsed@c0 14.0 s
+    he_star_m1: he_ic_rad = sph1d (gas re_atm, hse off): r_b = 2.43206e+13 (tau 3001.62), blend tau 30 .. 3000, 1342 solve points + 64 core rays, 18 VET passes, 1 outer, g_top = H/J 0.978701, f_top = K/J 0.958084, 0.28566 s
+    he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 2.70169e+13 -> 2.70075e+13; max |E/E_col - 1| 0.619786 at r = 2.90653e+13, |T/T_col - 1| 0.232115 at 2.78675e+13, |rho/rho_col - 1| 0 at 0
+    <rad_m1> ic_rad run_c0       cycle=0 max|<E>/<J>-1| (gd shells) = 3.2589e-02 <E>/<J>(top) = 1.03259
+gh     cycles 120 FATAL 0 NONCONV 0 Picard 5.33/6 (solves 120)  s/cycle median 0.229 (rotation 1.000, all 0.339)  setup elapsed@c0 19.9 s
+    he_star_m1: he_ic_rad = sph1d (gas re, hse on): r_b = 2.43206e+13 (tau 3002.59), blend tau 30 .. 3000, 1343 solve points + 64 core rays, 340 VET passes, 29 outer, g_top = H/J 0.978822, f_top = K/J 0.958269, 6.10175 s
+    he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 2.70169e+13 -> 2.70236e+13; max |E/E_col - 1| 0.619139 at r = 2.90862e+13, |T/T_col - 1| 0.591369 at 8.10422e+13, |rho/rho_col - 1| 1.01219 at 2.71452e+13; HSE l
+    <rad_m1> ic_rad run_c0       cycle=0 max|<E>/<J>-1| (gd shells) = 1.8313e-02 <E>/<J>(top) = 1.01831
+
+== Picard (hst) mean per 20-cycle window
+arm      1-20   21-40   41-60   61-80   81-100 101-120
+g0        4.90    3.30    3.15    3.65    3.90    4.00
+gha       4.20    3.20    3.10    3.15    3.55    4.00
+gha2      4.20    3.20    3.10    3.15    3.55    4.00
+ghafr     3.55    3.30    3.15    3.05    3.10    3.60
+gra       3.95    3.25    3.10    3.25    3.60    4.00
+gh        4.70    4.60    4.65    6.00    6.00    6.00
+
+== L_top / L_top(g0, cycle 0)
+cycle        g0       gha      gha2     ghafr       gra        gh
+    0   1.00000   1.00000   1.00000   1.00000   1.00000   1.00000
+    1   1.53558   1.01036   1.01036   0.99997   1.00995   1.01034
+    2   1.44485   1.00550   1.00550   0.99995   1.00481   1.00485
+    3   1.24912   1.00221   1.00221   0.99990   1.00158   1.00187
+    4   1.10827   1.00078   1.00078   0.99986   1.00037   1.00064
+    5   1.04033   1.00020   1.00020   0.99983   1.00000   1.00016
+    6   1.01441   0.99998   0.99998   0.99982   0.99990   0.99996
+    7   1.00573   0.99988   0.99988   0.99981   0.99987   0.99988
+    8   1.00289   0.99984   0.99984   0.99981   0.99987   0.99984
+    9   1.00185   0.99982   0.99982   0.99981   0.99988   0.99982
+   10   1.00138   0.99981   0.99981   0.99981   0.99988   0.99981
+   20   1.00051   0.99983   0.99983   0.99985   0.99999   0.99983
+   60   1.00035   0.99996   0.99996   0.99997   1.00020   0.99996
+  120   1.00046   1.00004   1.00004   1.00004   1.00041   1.00003
+
+== photosphere 0.97-1.028 R_ph: max|v_r| km/s, max|<rho>/<rho>(c0)-1|; shell-mean v_r at 2.0 R_ph km/s
+g0     c10: 0.987 / 0.0522 / -1.194 | c30: 1.995 / 0.1638 / -4.096 | c60: 2.416 / 0.3895 / -8.471 | c120: 2.922 / 0.9550 / -17.297
+gha    c10: 0.031 / 0.0009 / -1.336 | c30: 0.090 / 0.0042 / -4.240 | c60: 0.158 / 0.0116 / -8.616 | c120: 0.472 / 0.0891 / -17.446
+gha2   c10: 0.031 / 0.0009 / -1.336 | c30: 0.090 / 0.0042 / -4.240 | c60: 0.158 / 0.0116 / -8.616 | c120: 0.472 / 0.0891 / -17.446
+ghafr  c10: 0.036 / 0.0009 / -1.448 | c30: 0.094 / 0.0043 / -4.353 | c60: 0.160 / 0.0120 / -8.730 | c120: 0.459 / 0.0873 / -17.561
+gra    c10: 0.922 / 0.0513 / -1.337 | c30: 1.937 / 0.1604 / -4.241 | c60: 2.405 / 0.3865 / -8.618 | c120: 2.837 / 0.9290 / -17.446
+gh     c10: 0.031 / 0.0009 / -4.010 | c30: 0.089 / 0.0043 / -12.158 | c60: 0.156 / 0.0115 / -24.670 | c120: 0.478 / 0.0898 / -51.009
+  (shells in band: 50, r/R_ph 0.9705-1.0274; 2.0 R_ph shell at 1.9873)
+
+== gha vs gha2: bin arrays identical 44/44, bin files md5-identical 44/44; hst {'agcar3d.user.hst': True, 'agcar3d.hydro.hst': True}

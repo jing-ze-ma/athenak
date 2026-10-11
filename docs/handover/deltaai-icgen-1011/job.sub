@@ -1,0 +1,72 @@
+#!/bin/bash -l
+# TASK-2026-10-11-deltaai-icgen (raven -> DeltaAI, bsg-files-1009 66167aa9): AG Car A he_ic_rad = sph1d, gas re_atm arms.
+#   sbatch --export=ALL,BI=<3d8861c7 bin> job.sub      (DRY=1 bash job.sub: decks + commands only)
+# 1 node x 4 GH200, 1 rank per GPU (4 blocks 480x64x64), 120 cycles, fixed dt, all keys in a per-run deck.
+#SBATCH -J agcA_icgen
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=01:00:00
+#SBATCH -o /work/nvme/bivj/jma20/icgen_1011/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/icgen_1011; F=$G/files
+BI=${BI:?BI}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+T0=$(date +%s); TEND=$((T0 + 57*60))
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1   # GPU-aware Cray MPICH (else process_vm_readv at startup)
+SRUN="srun -n 4 --ntasks-per-node=4 -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+echo "$BI $(md5sum < $BI | cut -c1-32) (expect $(cat $BI.md5))"
+md5sum $F/*
+mkdir -p $S
+
+# mkdeck <out> [block/key=val ...]: common keys, then each extra key replaces its line in <block> or is added to <block>
+mkdeck() {
+  local out=$1; shift
+  awk '
+    /^<[a-z0-9_]+>/{blk=substr($0,2,length($0)-2)}
+    blk=="output5" {next}                                   # no restart output
+    /^he_ic_file /{print "he_ic_file  = '$F'/ic_agcar_A_ge.txt"; next}
+    /^he_opac_table /{print "he_opac_table   = '$F'/rosseland_ext2_gs98_x0.36_z0.02.txt"; next}
+    /^he_planck_table /{print "he_planck_table = '$F'/planck_ext2orion_gs98_x0.36_z0.02.txt"; next}
+    blk=="time" && /^nlim /{print "nlim       = 120"; next}
+    blk=="time" && /^ndiag /{print "ndiag      = 1"; next}
+    blk=="rad_m1" && /^implicit_cfl /{print "implicit_cfl = 1251.3"; next}
+    blk ~ /^output[237]$/ && /^dcycle /{print "dcycle = 10"; next}
+    blk=="output6" && /^dcycle /{print "dcycle = 100000"; next}
+    {print}' $F/agcar_A_va.athinput > $out
+  local a b k v
+  for a in "rad_m1/ic_rad_diag=2" "$@"; do
+    b=${a%%/*}; k=${a#*/}; v=${k#*=}; k=${k%%=*}
+    if awk -v b="$b" -v k="$k" '/^<[a-z0-9_]+>/{blk=substr($0,2,length($0)-2)} blk==b && $1==k{f=1} END{exit !f}' $out; then
+      awk -v b="$b" -v k="$k" -v v="$v" '/^<[a-z0-9_]+>/{blk=substr($0,2,length($0)-2)} blk==b && $1==k{print k " = " v; next} {print}' $out > $out.t && mv $out.t $out
+    else
+      sed -i "/^<$b>/a $k = $v" $out
+    fi
+  done
+}
+run() {
+  local n=$1; shift; local D=$S/$n; mkdir -p $D
+  mkdeck $D/deck.athinput "$@"
+  local now=$(date +%s); [ $now -ge $TEND ] && { echo "SKIP $n (wall budget)"; return; }
+  echo "RUN $n extra=[$*] $(date +%T)"
+  [ -n "${DRY:-}" ] && { echo "  $SRUN $BI -i $D/deck.athinput -d $D"; return; }
+  local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SRUN $BI -i $D/deck.athinput -d $D > $D/out.txt 2>&1; LASTRC=$?
+  echo "END $n rc=$LASTRC wall=$(echo "$(date +%s.%N) - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) $(date +%T)"
+}
+SPH="problem/he_ic_rad=sph1d problem/he_ic_rad_gas=re_atm problem/he_ic_rad_hse=true"
+SPHR="problem/he_ic_rad=sph1d problem/he_ic_rad_gas=re problem/he_ic_rad_hse=true"
+FR="rad_m1/ic_rad=fs_relax rad_m1/ic_rad_relax_n=40 rad_m1/ic_rad_relax_tol=1e-4"
+run g0
+[ -z "${DRY:-}" ] && [ "${LASTRC:-1}" != 0 ] && { echo "g0 failed (rc $LASTRC): stop the job"; exit 1; }
+run gha   $SPH
+run gha2  $SPH
+run ghafr $SPH $FR
+run gra   problem/he_ic_rad=sph1d problem/he_ic_rad_gas=re_atm
+run gh    $SPHR
+echo "end $(date)"
