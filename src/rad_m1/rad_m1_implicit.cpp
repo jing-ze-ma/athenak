@@ -2367,6 +2367,24 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // moveq-1011: the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
   impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",true);
   impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
+  // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md)
+  {
+    const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src","matched");
+    if (gs.compare("matched") == 0) {
+      impl_gas_src_cons = false;
+    } else if (gs.compare("conservative") == 0) {
+      impl_gas_src_cons = true;
+    } else if (gs.compare("conservative_full") == 0) {
+      // the AP-HLL / blend part of a face too (no drag-only exception): exact total
+      // momentum on every face, at the price of the HLL flux's own (non-momentum-
+      // equation) changes going to the gas
+      impl_gas_src_cons = true;
+      impl_gas_src_full = true;
+    } else {
+      ImplFatal("<rad_m1>/implicit_gas_src = '" + gs
+                + "' is not a choice (matched | conservative | conservative_full)");
+    }
+  }
   {
     const std::string fi = pin->GetOrAddString("rad_m1","implicit_f0_init","auto");
     if (fi.compare("zero") == 0) {
@@ -2504,6 +2522,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::deep_copy(f0x1, 0.0);
   Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1n, 0.0);
+  if (impl_gas_src_cons) {
+    Kokkos::realloc(gcz1, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::deep_copy(gcz1, 0.0);
+  }
   // MILESTONE 3b phase C: the BiCGStab wrapper needs the four/six transverse off-diagonal
   // coefficients and ten Krylov vectors on top of the phase-B work array.  They are
   // allocated only when it is selected AND the mesh is multi-D, so line_jacobi keeps the
@@ -2611,6 +2633,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(f0x3, 0.0);
       Kokkos::realloc(f0x3n, nmb, ncells3+1, ncells2, ncells1);
       Kokkos::deep_copy(f0x3n, 0.0);
+      if (impl_gas_src_cons) {
+        Kokkos::realloc(gcz3, nmb, ncells3+1, ncells2, ncells1);
+        Kokkos::deep_copy(gcz3, 0.0);
+      }
+    }
+    if (impl_gas_src_cons) {
+      Kokkos::realloc(gcz2, nmb, ncells3, ncells2+1, ncells1);
+      Kokkos::deep_copy(gcz2, 0.0);
     }
     if (impl_tlim != M1_TLIM_NONE || blat_on) {
       Kokkos::realloc(thx2, nmb, ncells3, ncells2+1, ncells1);
@@ -4230,6 +4260,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool thrd = trans_x3;
   const bool fst = first;
   const Real wmem = dbg_trans_memory;
+  // consrc-1011 (implicit_gas_src = conservative): Z_f of the face, see rad_m1.hpp
+  const bool gcst = impl_gas_src_cons;
+  const bool gcft = impl_gas_src_full;
+  auto gz2_ = gcz2;
+  auto gz3_ = gcz3;
   // MILESTONE 3b phase C: also store the transverse OFF-DIAGONAL coefficients of the
   // frozen row, which is what the BiCGStab operator applies and what turns TRHS back into
   // the right-hand side of the full system.
@@ -4426,6 +4461,16 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         f2_(m,k,j,i) += (cl/ch)*gm;
       }
     }
+    if (gcst) {
+      // consrc-1011: Z_f of the x2 face (as x1; om = theta (1 + chat dt kt), which is
+      // 1 - AL under the blend and < 1 only where the realizability limiter damps)
+      const Real fb = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+      const Real hh = f2_(m,k,j,i) - fb;
+      const Real om = th*(1.0 + ch*dt*ktf);
+      gz2_(m,k,j,i) = gcft ? (dt*(gr + off))
+                      : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
+                         + (1.0 - om)*f2n_(m,k,j,i)/(cl*ch));
+    }
   });
 
   // (2) the x3 face fluxes
@@ -4557,6 +4602,15 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           }
           f3_(m,k,j,i) += (cl/ch)*gm;
         }
+      }
+      if (gcst) {
+        const Real fb = th*(wmem*f3n_(m,k,j,i)
+                            - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+        const Real hh = f3_(m,k,j,i) - fb;
+        const Real om = th*(1.0 + ch*dt*ktf);
+        gz3_(m,k,j,i) = gcft ? (dt*(gr + off))
+                        : (-(1.0 + ch*dt*ktf)*hh/(cl*ch) + om*dt*(gr + off)
+                           + (1.0 - om)*f3n_(m,k,j,i)/(cl*ch));
       }
     });
   }
@@ -10114,6 +10168,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool t2dav = t2vs && (t2_afmode == 1);   // the DA split is needed
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
   auto kk_ = (t2s == M1_T2S_STAGE1) ? t2k2 : t2k1;
+  if (impl_gas_src_cons && t2k && csk1.extent(0) != t2k1.extent(0)) {
+    // consrc-1011: the cell-F slopes of hesdirk2 (not in the restart file: the first
+    // stage after a restart takes the face/E increments instead, see the write-back)
+    const int q0 = static_cast<int>(t2k1.extent(0)), q3 = static_cast<int>(t2k1.extent(2));
+    const int q2 = static_cast<int>(t2k1.extent(3)), q1 = static_cast<int>(t2k1.extent(4));
+    Kokkos::realloc(csk1, q0, 3, q3, q2, q1);
+    Kokkos::realloc(csk2, q0, 3, q3, q2, q1);
+    Kokkos::realloc(csinc, q0, 3, q3, q2, q1);
+    Kokkos::deep_copy(csk1, 0.0);
+    Kokkos::deep_copy(csk2, 0.0);
+    Kokkos::deep_copy(csinc, 0.0);
+    csk1_ok = false;
+    csinc_ok = false;
+  }
   if (t2st) {
     par_for("m1_t2_f1n", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -12123,6 +12191,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     } else {
       ImplicitTridiagSolve();
     }
+    // consrc-1011: the pass solved the full (Krylov) system KB = A x, whose residual at
+    // the solution the conservative energy source takes (the line solve is exact)
+    gcs_kry = bicg_on && trans;
 
     // (f) accept E', solve for T' and measure the Picard residual
     // F3 implicit_pos_floor_solve: the iterate keeps the solved S2 down to 1e-6 e_floor
@@ -12181,6 +12252,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool musf = muscl_now;   // xthinfix-1009 Fix B: the plm half-range face values
     const int imbf = iw_muscl;
     const bool ledf = impl_muscl_led;
+    // consrc-1011 (implicit_gas_src = conservative): Z_f of the face, see rad_m1.hpp
+    const bool gcsf = impl_gas_src_cons;
+    const bool gcff = impl_gas_src_full;
+    auto gz1_ = gcz1;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -12308,6 +12383,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // (3c) the test is on the FLUX FORM, not on al: with implicit_blend_mode =
         // dissipation the central weight is 1 (al = 0) and the HLL part is still there.
         Real al = ifw_(m,M1_IFW_AL,k,j,i);
+        Real hhz = 0.0;   // consrc-1011: the AP-HLL part (c/chat) gh of the face
         if (aphll) {
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
                     + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
@@ -12338,8 +12414,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
           }
           fn = (1.0 - al)*fn + (cl/ch)*gh;
+          hhz = (cl/ch)*gh;
         }
         f0_(m,k,j,i) = fn;
+        if (gcsf) {
+          // consrc-1011: F0' = om th (F0old - chat c dt G - chat dt v g0) + H, with
+          // G = gr + od the face's transport and H the AP-HLL part.  The gas share of
+          // the face is -(F0' - om F0old)/(c chat) - om dt G + (1 + chat dt kt) H/(c
+          // chat) (the H part keeps its drag dt kt H/c); Z_f is all of it but -F0'/(c
+          // chat), so the write-back takes dm = -dF_c/(c chat) - sum Z_f/2
+          const int iq = (i == ie+1 && cyclic) ? is : i;
+          const Real om = aphll ? (1.0 - al) : 1.0;
+          gz1_(m,k,j,i) = gcff ? (dt*(gr + od))
+                          : (-(1.0 + ch*dt*ktf)*hhz/(cl*ch) + om*dt*(gr + od)
+                             + (1.0 - om)*f0n_(m,k,j,iq)/(cl*ch));
+        }
       }
     });
     if (cyclic) {
@@ -12347,6 +12436,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       par_for("m1_impl_facewrap", DevExeSpace(), 0, nmb1, ks, ke, js, je,
       KOKKOS_LAMBDA(const int m, const int k, const int j) {
         f0_(m,k,j,ie+1) = f0_(m,k,j,is);
+        if (gcsf) {gz1_(m,k,j,ie+1) = gz1_(m,k,j,is);}
       });
     }
     par_for("m1_impl_f1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -12934,6 +13024,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ec_tmax = std::max(ec_tmax, qmx);
   }
 
+  // consrc-1011 (implicit_gas_src = conservative): the residual R = b - A E'_solve of
+  // the last pass's full system (KV).  E' - E^old + dt div F' = q + R exactly with the
+  // row's own transport, so the gas energy takes -(c/chat)(q + R)
+  const bool gcsr = impl_gas_src_cons && have_hydro && coupling && dbg_gas_heat &&
+                    gcs_kry;
+  if (gcsr) {
+    ImplicitApplyOp(M1_IW_S2, M1_IW_KV);
+    par_for("m1_impl_gcsr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,M1_IW_KV,k,j,i) = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KV,k,j,i);
+    });
+  }
   // moveq-1011: the radiation momentum of the enthalpy flux (implicit_rad_inertia)
   if (impl_rad_inertia && have_hydro) {ImplicitRadInertia();}
   //------------------------------------------------------------------------- write back
@@ -12972,6 +13074,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool nfbw = impl_nofb_work;                   // moveq-1011
   const bool rwk = t2_wk || vfx;                      // moveq-1011: row carried W
   const bool nfwr = nofb_wrow;                        // moveq-1011: row carried v.dm
+  // consrc-1011: implicit_gas_src = conservative (gas_feedback = true only; with the
+  // gas fixed the matched path and its nofb work stay)
+  const bool gcs = impl_gas_src_cons && have_hydro && feedback;
+  auto gz1w_ = gcz1;
+  auto gz2w_ = gcz2;
+  auto gz3w_ = gcz3;
+  auto ciw_ = csinc;
+  const bool csok = csinc_ok && t2st;
+  auto ckw_ = (t2s == M1_T2S_STAGE1) ? csk2 : csk1;
   if (!rcpw) {
     par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -12989,6 +13100,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
   }
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
+  if (gcs && t2k && coupling && dbg_gas_force && t2s != M1_T2S_STAGE1) {csk1_ok = true;}
+  csinc_ok = false;
   if (vfx && have_hydro && feedback && csw && trans && thrd) {
     // STAGE CS3: the vimp re-forming of the cell F on the cubed sphere, as a kernel of
     // its own (an overwrite inside the write-back above changed the GPU code of the
