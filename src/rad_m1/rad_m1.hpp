@@ -1112,6 +1112,16 @@ class RadiationM1 {
   bool Time2Active();           // the next step runs the stages (else BE)
   void Time2FormStage(int stage, Real dt);
   void Time2Restore(Driver *pdrive);
+  // time2_start (h2order-1011; read only when named, default be = bitwise): how a step
+  // without a stored slope K1 (the first step, a restart without the slope) starts.
+  // be: the step is Lie split (Heun hydro, then one backward-Euler solve), first order
+  // in time for that step.  slope: a backward-Euler PROBE solve of dt_p =
+  // time2_start_frac x dt from U^n gives K1 = f_I(U^n) + O(dt_p), U^n is put back, and
+  // the step runs the hesdirk2 stages.
+  int t2_start = 0;             // 0 be, 1 slope
+  Real t2_start_frac = 1.0e-3;  // time2_start_frac
+  Real t2_nprobe = 0.0;         // probe solves taken (counter)
+  bool Time2StartProbe(Driver *pdrive, Real dt);
   void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
   void Time2VetExtrapolate();
   // closure = vet_col under hesdirk2 (m1-sp-order2b): time2_vet_col = lag (D^n in both
