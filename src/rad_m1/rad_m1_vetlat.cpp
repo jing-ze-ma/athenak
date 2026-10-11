@@ -76,6 +76,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/rad_m1_vetseg.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -646,6 +647,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const Real twopi = 2.0*M_PI;
   const bool tw = (stage == 0);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
+  const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   auto vd_ = vlat_d;
   for (int pass = 0; pass < 2; ++pass) {
     const int dir = pass;                     // 0 inward, 1 outward
@@ -782,9 +784,22 @@ void RadiationM1::VetLatSweep(const int stage) {
             };
             const Real chu = exp(lin(0));
             const Real su = exp(lin(1));
-            Real ex, w0, wu;
-            VlatW(0.5*(chu + ch0)*ds, ex, w0, wu);
-            iv = fmax(ivu*ex + wu*su + w0*s0, 0.0);
+            if (spl) {
+              // segfix-1011 (vet_seg = split): the two parts at the radial face shared
+              // with the upwind shell (VL_TURN: half the chord)
+              Real dso = 0.5*ds;
+              if (typ == VL_NORM) {
+                const Real rf = (dir == 0) ? cx1f(m,i+1) : cx1f(m,i);
+                const Real zr = r*mu, p2 = fmax(r*r - zr*zr, 0.0);
+                const Real zf = sqrt(fmax(rf*rf - p2, 0.0));
+                dso = fmin(fmax((dir == 0) ? (zf - zr) : (zr - zf), 0.0), ds);
+              }
+              iv = fmax(VetSegSplit(ivu, su, s0, chu*(ds - dso), ch0*dso), 0.0);
+            } else {
+              Real ex, w0, wu;
+              VlatW(0.5*(chu + ch0)*ds, ex, w0, wu);
+              iv = fmax(ivu*ex + wu*su + w0*s0, 0.0);
+            }
           }
         }
         if (tw) {

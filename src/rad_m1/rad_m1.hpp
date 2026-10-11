@@ -361,6 +361,8 @@ class RadiationM1 {
   bool vet_bc_bath;          // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
   bool vet_bc_face = false;  // vet_bc_diff = face: inner diffusion I at the face (vet_sc,
                              // vet_gd, vet_col_lat, vet_col core; gdface-1011)
+  bool vet_seg_split = false;  // vet_seg = split (segfix-1011): the SC segment u -> 0
+                               // as two sub-segments split at the face
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis

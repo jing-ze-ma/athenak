@@ -77,6 +77,7 @@
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/rad_m1_vetseg.hpp"
 #if defined(KOKKOS_ENABLE_CUDA)
 #include <cub/cub.cuh>
 #endif
@@ -3747,6 +3748,7 @@ void RadiationM1::VetGdSweep() {
   auto w3_ = vgd_w3;
   const bool bandx = vgd_bandx;
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
+  const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   const bool emi = vgd_emit && (lcut == 0) &&
@@ -3939,6 +3941,15 @@ void RadiationM1::VetGdSweep() {
                 ds = 2.0*zr;
               }
             }
+            // segfix-1011 (vet_seg = split): the path length from the cell centre back
+            // to the radial face it shares with the upwind shell (typ 3: half the chord)
+            Real dso = 0.5*ds;
+            if (spl && typ == 1) {
+              const Real rf = inw ? cx1f(m,i+1) : cx1f(m,i);
+              dso = inw ? (sqrt(fmax(rf*rf - p2, 0.0)) - zr)
+                        : (zr - sqrt(fmax(rf*rf - p2, 0.0)));
+              dso = fmin(fmax(dso, 0.0), ds);
+            }
             // the upwind point, its lateral cell and bilinear fractions (index space)
             const Real xu = r*st*cp - ds*nx;
             const Real yu = r*st*sp - ds*ny;
@@ -4009,9 +4020,15 @@ void RadiationM1::VetGdSweep() {
                 };
                 const Real chx = exp((1.0 - wr)*linx(0,i) + wr*linx(0,iu));
                 const Real sx = exp((1.0 - wr)*linx(1,i) + wr*linx(1,iu));
-                Real ex, w0, wu;
-                VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
-                iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
+                if (spl) {
+                  const Real dxo = fmin(dso, dsx);
+                  iv = fmax(VetSegSplit(isum/wsum, sx, s0, chx*(dsx - dxo),
+                                        ch0*dxo), 0.0);
+                } else {
+                  Real ex, w0, wu;
+                  VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
+                  iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
+                }
                 bdone = true;
               }
             }
@@ -4112,9 +4129,14 @@ void RadiationM1::VetGdSweep() {
               };
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
-              Real ex, w0, wu;
-              VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
-              iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
+              if (spl) {
+                iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
+                                      ch0*dso), 0.0);
+              } else {
+                Real ex, w0, wu;
+                VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
+                iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
+              }
             }
           }
           return iv;
