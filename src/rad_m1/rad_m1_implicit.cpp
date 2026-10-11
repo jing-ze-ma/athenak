@@ -9612,6 +9612,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const Real mqo = marshak_q;
   int bclo = ibc_x1min, bchi = ibc_x1max;
   Real fxlo = iflux_x1min, fxhi = iflux_x1max;
+  // sptests-1011 vet_gd_beam: the inner face flux per (k, j) of the injected beam
+  const bool bfxm = (vgd_bfx.extent_int(0) > 0);
+  auto bfx_ = vgd_bfx;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
   const bool badv = impl_bc_advect;
   bool cyclic = (bclo == M1_IBC_PERIODIC);
@@ -10977,7 +10980,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         }
       } else if (bclo == M1_IBC_FLUX) {
-        rr += nu*cr*fxlo;
+        rr += nu*cr*(bfxm ? bfx_(m,k,j) : fxlo);
       }
 
       // implicit_vimp: the diagonal and x1 +-1 part of the implicit enthalpy velocity
@@ -11272,7 +11275,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
           }
         } else if (bclo == M1_IBC_FLUX) {
-          rr += num*cr*fxlo;
+          rr += num*cr*(bfxm ? bfx_(m,k,j) : fxlo);
         }
         // m1-sph2: implicit_vimp, as in the Cartesian row above (ImplicitVimpBuild
         // builds its coefficients with the sp areas, volumes and face distances)
@@ -11605,7 +11608,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             fb = sgn*cl*mq*(ef - (lo ? eblo : ebhi));
           }
         } else if (bc == M1_IBC_FLUX) {
-          fb = lo ? fxlo : fxhi;
+          fb = lo ? (bfxm ? bfx_(m,k,j) : fxlo) : fxhi;
         } else if (bc == M1_IBC_EFIX) {
           // the Dirichlet row does not define a face flux; the adjacent interior face is
           // copied so that the cell flux and the momentum deposit stay finite.  The

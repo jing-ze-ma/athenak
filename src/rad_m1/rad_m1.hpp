@@ -1652,6 +1652,22 @@ class RadiationM1 {
   bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
   int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
+  // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with
+  // the first gd shell at the physical inner face (icut = 0) the outward rays start from
+  // the inner boundary's own emission (flux: black sphere I = 4 F_in/c; marshak: the bath;
+  // vet_gd_beam: one set direction from a patch) instead of the diffusion intensity
+  bool vgd_emit = false;
+  bool vgd_beam = false;       // vet_gd_beam (needs emit)
+  int vgd_nbeam = 0;           // 1, or 2 with the vet_gd_beam2_* keys
+  int vgd_bdir[2] = {-1, -1};  // each beam's set direction
+  Real vgd_bib[2] = {0.0, 0.0};    // its intensity e_b / w_d
+  Real vgd_bfp[2] = {0.0, 0.0};    // patch fraction of the inner sphere (twin inflow)
+  Real vgd_bth[2][2] = {{0.0, 0.0}, {0.0, 0.0}};   // the patches (theta, phi ranges)
+  Real vgd_bph[2][2] = {{0.0, 0.0}, {0.0, 0.0}};
+  Real vgd_bang[2][2] = {{0.0, 0.0}, {0.0, 0.0}};  // target directions (theta, phi)
+  Real vgd_be[2] = {1.0, 1.0};     // vet_gd_beam_e: E of each beam
+  DvceArray3D<Real> vgd_bfx;   // (m, k, j): the matching inner face flux of the M1 solve
+  bool vgd_tws = false;        // the unfused twin's sweep is running (its inflow)
   std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
   // (m, d, k, j, i): intensities, ghosts lagged.  accel-1009: LayoutLeft (i slowest), so
@@ -1855,6 +1871,7 @@ class RadiationM1 {
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
   void VetGdTables(const Real alpha);
+  void VetGdBeamInit(const std::vector<double> &d);   // sptests-1011: vet_gd_beam
   void VetGdBuild();
   void VetGdSweep();
   void VetGdWall(const int i0, const int i1);
