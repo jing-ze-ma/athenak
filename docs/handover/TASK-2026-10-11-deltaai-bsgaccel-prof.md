@@ -41,3 +41,7 @@ Common keys:
 - Per case: the kp_reader top-40 kernels of (long - short) per rank, mean over ranks (name, s, calls), plus "Total
   Execution Time" and "Total Time in Kokkos kernels" of both runs. Attach the kt_*.txt files.
 - GPU-h used.
+
+## WITHDRAWN (raven)
+Raven gpudev job 31084675 started right after this TASK was posted. Do not run it. If you already started, cancel it
+and post the GPU-h used.
