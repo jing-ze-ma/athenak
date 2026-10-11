@@ -11956,7 +11956,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   if (onep_el && impl_onep_auto) {OnePassAuto(otyp, onep, converged && it == 1);}
   // implicit_predictor_order = 2 under hesdirk2: a backward-Euler step keeps ipred
-  const bool pskip = (impl_pord == 2) && (time_scheme == M1_TIME_HESDIRK2) && !t2st;
+  // (icrad-1011: not in the ic_rad passes, which are plain backward-Euler steps)
+  const bool pskip = (impl_pord == 2) && (time_scheme == M1_TIME_HESDIRK2) && !t2st &&
+                     !icr_active;
   if (pred && !pskip) {
     const bool hh = have_hydro;
     const bool po2 = (impl_pord == 2);

@@ -293,6 +293,12 @@ class RadiationM1 {
   // fixbundle-1009 F1: every reader (incl. the vet_col inner-boundary intensity) takes
   // the physical E^n = u0 directly (be only; dt-free, right for nsub > 1)
   bool vsrc_noes = false;
+  // icrad-1011: under time_scheme = hesdirk2 the BACKWARD-EULER solves (the BESTORE
+  // start step, the fallbacks, the ic_rad passes) read the polluted E^n + dt esrc too
+  // (F1 was be-only).  vet_source_noesrc_h2be (default true; read only when named):
+  // noes also for those solves; the stage solves keep iw EN (predict puts P there)
+  bool vsrc_noes_h2be = true;
+  bool VsrcNoes() const;
 
   // m1-mhd (docs/dev/m1_mhd_0927.md): the fluid is <hydro> or <mhd> (FluidRef,
   // m1_fluid.hpp).  Under MHD the conserved energy carries |B|^2/2, which every kernel

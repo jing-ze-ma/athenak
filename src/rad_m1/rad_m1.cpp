@@ -1044,6 +1044,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
     }
+    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc_h2be")) {
+      vsrc_noes_h2be = pin->GetBoolean("rad_m1","vet_source_noesrc_h2be");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }

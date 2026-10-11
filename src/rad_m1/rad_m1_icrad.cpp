@@ -79,6 +79,19 @@ void IcrDetSum(std::vector<Real> &v) {
 } // namespace
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VsrcNoes
+//! \brief vet_source_noesrc in force for the current solve: every backward-Euler solve
+//! (time_scheme = be; under hesdirk2 the BESTORE / fallback / ic_rad solves unless
+//! vet_source_noesrc_h2be = false); never a hesdirk2 STAGE solve (its build reads iw EN,
+//! where time2_vet_col = predict puts the predicted state)
+
+bool RadiationM1::VsrcNoes() const {
+  if (!vsrc_noes) return false;
+  if (time_scheme == M1_TIME_BE) return true;
+  return vsrc_noes_h2be && (t2_solve != M1_T2S_STAGE1) && (t2_solve != M1_T2S_STAGE2);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::IcRadInit
 //! \brief the ic_rad keys (read only when named) and their restrictions
 
