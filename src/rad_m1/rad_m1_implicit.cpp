@@ -10171,8 +10171,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (impl_gas_src_cons && t2k && csk1.extent(0) != t2k1.extent(0)) {
     // consrc-1011: the cell-F slopes of hesdirk2 (not in the restart file: the first
     // stage after a restart takes the face/E increments instead, see the write-back)
-    const int q0 = static_cast<int>(t2k1.extent(0)), q3 = static_cast<int>(t2k1.extent(2));
-    const int q2 = static_cast<int>(t2k1.extent(3)), q1 = static_cast<int>(t2k1.extent(4));
+    const int q0 = static_cast<int>(t2k1.extent(0));
+    const int q3 = static_cast<int>(t2k1.extent(2));
+    const int q2 = static_cast<int>(t2k1.extent(3));
+    const int q1 = static_cast<int>(t2k1.extent(4));
     Kokkos::realloc(csk1, q0, 3, q3, q2, q1);
     Kokkos::realloc(csk2, q0, 3, q3, q2, q1);
     Kokkos::realloc(csinc, q0, 3, q3, q2, q1);

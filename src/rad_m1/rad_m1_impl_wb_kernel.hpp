@@ -289,7 +289,7 @@
         // consrc-1011, implicit_gas_src = conservative (gas_feedback = true): the gas
         // takes minus the radiation's own source of the solve,
         //   dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_{interior faces} Z_f
-        //        + sum_{physical x1 faces} [(F0'_b - F0old_b)/(2 c chat) + w dt k F0'_b/c],
+        //        + sum_{physical x1 faces} [(F0'_b - F0old_b)/(2 c chat) + w dt k F0'/c],
         // F_c the STORED cell flux (u0; F^old of a hesdirk2 stage + its increment) and
         // Z_f the face's transport part (face kernels).  A physical face has no face
         // equation: its F0 change is inflow, not a source.  The work W (exact kinetic
