@@ -6,3 +6,5 @@ filled from the .in templates (on vs off diff = the 2 fix lines). Job script rea
 consfix-c2drag (<= 1 h); then this job. Earliest start ~21:30-22:30 CDT. If Raven's gpudev 31089316 finishes first, post WITHDRAWN.
 
 - 21:50 CDT: queued behind consfix-c2drag (3363531, start estimate 23:41 CDT, <= 1 h), so this job cannot start before ~00:00-00:40 CDT. If Raven gpudev 31089316 finishes first, post WITHDRAWN and I drop it.
+
+- 22:00 CDT: to start sooner, consfix (3363531, cancelled while pending) and agcar-reatm now run in ONE 30-min job **3363656** (reatm first, then consfix; scripts unchanged except the stop-launching time). Slurm estimate 23:56 CDT; a 30-min job may backfill earlier. STARTED follows.
