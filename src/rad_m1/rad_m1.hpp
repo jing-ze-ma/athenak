@@ -24,6 +24,7 @@
 //! geometry but Cartesian (stage 4).
 
 #include <array>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -77,6 +78,14 @@ constexpr int M1_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J (twin-corrected as 
 constexpr int M1_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
 constexpr int M1_VGD_HRJ  = 8;     // J (E units; twin-corrected by J_tw/<J_tw>)
 constexpr int M1_VGD_HRNX = 9;
+// vgdlat-1012 vet_gd_symref: the per-shell quantities of the 1-D reference (vgd_srm)
+constexpr int M1_VGD_SR_F = 0;    // K/J
+constexpr int M1_VGD_SR_HP = 1;   // H+_r/J
+constexpr int M1_VGD_SR_HM = 2;   // H-_r/J (<= 0)
+constexpr int M1_VGD_SR_HL = 3;   // H+_theta/J = H+_phi/J = -H-_theta/J
+constexpr int M1_VGD_SR_C1 = 4;   // int |I - S|/J
+constexpr int M1_VGD_SR_J = 5;    // J (E units)
+constexpr int M1_VGD_SR_N = 6;
 constexpr int M1_VGD_NMAX = 432;   // vet_gd: at most 432 directions.  prodcand-1011: kept at 432
                                     // (sizes the per-thread Real buf[M1_VGD_NMAX] in VetGdWall; 2048
                                     // would spill on A100).  The 4x-GL angular study (sptests P2)
@@ -364,6 +373,9 @@ class RadiationM1 {
   bool vet_seg_split = false;  // vet_seg = split (segfix-1011): the SC segment u -> 0
   bool vet_seg_emit = false;   // vet_seg = emit: split, limiter only where S_u > S_0
                                // as two sub-segments split at the face
+  bool vet_seg_jump = false;   // vet_seg = jump (coreL-1012): emit + the contrast rule
+  // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump (rad_m1_vetseg.hpp)
+  int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_x1src = false;    // vet_x1_periodic_inflow = source (predfix-1011)
@@ -644,7 +656,15 @@ class RadiationM1 {
   // face-extrapolated H+ of the top cell), the js factor limit
   bool thsw_js = false, thsw_bqlin = false;
   bool thsw_jse = false;   // js weighted by the thermal fraction eps of the face
+  bool thsw_hctau = false;  // coreL-1012 implicit_thin_hcface = tau (M1ThinFace)
+  bool thsw_hctau_lat = false;  // ... and on the sp wedge's transverse faces (gd = all)
   Real thsw_jslim = 2.0;
+  // unify-1012: implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh as the cell's
+  // formal-solution scale on faces with sf ratios (vet_sc); default j = the old J
+  // (jh opt-in: +16 % in vacuum crossing beams, NOTE-unify)
+  bool thsw_hcjh = false;
+  bool thsw_bqgd = false;   // unify-1012: thin_bq lin also on vet_gd (opt-in)
+  int thsw_jsgd = 1;   // unify-1012: js/jse on vet_gd, bit 1 x1, bit 2 lateral
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
@@ -786,6 +806,18 @@ class RadiationM1 {
                                         // 2 no vimp prediction, 4 no hydro shift,
                                         // 8 no x1 split, 16 no x2/x3 split
   bool Cs2Active();
+  // h2order2-1011 <rad_m1>/implicit_rad_inertia_solve (read only when named; default
+  // false = the after-solve split, bitwise): the -theta dA of implicit_rad_inertia
+  // (dA_c = a_c (E'_c - E^ov_c), a frozen for the solve) goes into the face equation
+  // INSIDE the Picard passes (the F0^n shift of ImplicitCs2Pass, Picard-lagged by one
+  // pass; the Picard stop then takes no contraction estimate), so the E rows transport
+  // the F0 the faces end on and the ESDIRK slope of F0 carries it.  The after-solve
+  // split leaves the E update and the stored F0 inconsistent by theta a dE: a first-
+  // order (in dt) splitting error ~ v^2, suppressed in the stiff limit (rswv / NHvk0
+  // floor, NOTE-h2order2).  matched / conservative only (conservative2 has it).
+  bool impl_rinr_solve = false;
+  bool RinrActive();
+  void ImplicitRinrDeltaA();
   void ImplicitCs2DeltaA(bool usedv);
   void ImplicitCs2Vimp();
   void ImplicitCs2Shift();
@@ -1152,8 +1184,8 @@ class RadiationM1 {
   // (1 - g) dt K1 stays a bounded move toward it.  A small frac makes K1 ~ jump/dt_p and
   // the stage-1 old vector overshoots by dt/dt_p (h2order_1011: rsw, rlat floors).
   int t2_start = 0;             // 0 be, 1 slope
-  // implicit_vimp_bc (h2order-1011, ImplicitVimpBuild; read only when named, default
-  // false = bitwise): the implicit_bc_advect enthalpy flux of a Marshak x1 end face takes
+  // implicit_vimp_bc (h2order-1011, ImplicitVimpBuild; default true on fresh runs with
+  // implicit_vimp since vimpbcdef-1011, false on a restart whose file lacks it): the implicit_bc_advect enthalpy flux of a Marshak x1 end face takes
   // the stage's radiative kick dv of its cell, as the interior faces do under vimp
   bool impl_vimp_bc = false;
   Real t2_start_frac = 1.0;     // time2_start_frac
@@ -1177,6 +1209,7 @@ class RadiationM1 {
   // state = the predict/rebuild build takes its VET source from the predicted state
   // itself (vet_col_source = gas there), not relaxed by a further dt (rad_m1_time2.cpp)
   bool t2_vcsrc = false;
+  bool t2_vcsbl = false;       // sporder-1012: time2_vet_col_source = blend
   // time2_pred_cap (predfix-1011): the predicted P = U^n + theta dt K1 of a predict /
   // rebuild build takes per cell theta = min(1, cap/r), r the relative change of E and
   // of the gas internal energy (0 = off, the unlimited predictor)
@@ -1647,6 +1680,8 @@ class RadiationM1 {
   // backward-Euler exchange over the step (VcolRelaxedSource, rad_m1_vetcol.cpp); `gas`:
   // the start-of-step gas temperature as before (bitwise the old build)
   bool vcol_srelax = true;
+  bool vcol_sbl = false;       // sporder-1012: this build blends the relaxed source
+  Real vcol_sx0 = 1.0;         // sporder-1012: time2_vet_col_source_x0 (blend)
   // vet_scatter (vet-scatter-1006, read only when named; default off = bitwise): ONE
   // switch for electron scattering: the opacity split (otab.scat, opac M1_OP_S) and the
   // closure source VetScatterMix.  vscat_form 1 = ma (Jiang 2021 eq. 6), 2 = absorption
@@ -1799,6 +1834,30 @@ class RadiationM1 {
   int vgd_gl_nphi = 12;        // vet_gd_gl_nphi (C_nphi about z)
   bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
   int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
+  // vgdrot2-1012: vet_gd_rotate_dt > 0 (read only when named): the rotation in PHYSICAL
+  // time instead (block b of the step = floor((t + dt/2 - t0)/dt_rot), the same angle
+  // at the same t on every dt), vet_gd_rotate_t0 its origin; vet_gd_rotate_align (default
+  // true): Mesh::NewTimeStep lands a step on every block boundary (VetGdAlignDt)
+  Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
+  Real vgd_rot_stretch = 0.0;   // vet_gd_rotate_stretch: VetGdAlignDt may lengthen dt by <= this
+  // defaults-1012: vet_gd_rotate_dt = auto (the fresh vet_gd default): resolved by the
+  // first VetGdAlignDt to vgd_rot_auto_fac x that dt and recorded in pin_rot_
+  bool vgd_rot_auto = false;
+  Real vgd_rot_auto_fac = 20.0;
+  ParameterInput *pin_rot_ = nullptr;
+  bool vgd_rot_align = false;
+  double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
+  // vet_gd_rotate_slope (with vet_gd_rotate_dt; probe | be | keep): the hesdirk2 FSAL
+  // slope K1 of the first step of a new rotation block belongs to the OLD set (an O(dt)
+  // stage-1 error per jump = first order); probe: a time2_start=slope probe solve of the
+  // new set gives K1 (VetGdRotStep), be: that step is backward Euler, keep (default): as
+  // before.  probe / be measured WORSE than keep (vgdrot2 NOTE: the BE probe slope is not
+  // f(U^n) in stiff cells; be is Lie split): opt-in diagnostics only
+  int vgd_rot_slope = 0;
+  int64_t vgd_rot_lastblk = INT64_MIN;
+  bool t2_rotprobe = false;
+  double vgd_rot_nprobe = 0.0;
+  void VetGdRotStep();
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with
   // the first gd shell at the physical inner face (icut = 0) the outward rays start from
@@ -1883,6 +1942,19 @@ class RadiationM1 {
   bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
   DvceArray1D<Real> vgd_twm, vgd_twm2;
   DvceArray5D<Real> vgd_twl, vgd_cs0;
+  // vgdlat-1012 vet_gd_symref = col (read only when named, default none; needs
+  // vet_gd_twin): the twin's laterally symmetric reference (its shell mean) replaced by
+  // the 1-D spherical p-ray solution of the same shell-mean state (VetGdSymRef)
+  bool vgd_symref = false, vgd_sr_ok = false;
+  int vgd_sr_nc = 64, vgd_sr_ns = 4;
+  std::vector<Real> vgd_sr_chi, vgd_sr_s, vgd_sr_x1v, vgd_sr_x1f;
+  DvceArray1D<Real> vgd_srm;   // (q c1 + i), q = M1_VGD_SR_*
+  double vgd_tsr = 0.0, vgd_tsrj = 0.0;
+  bool vgd_sr_pend = false;
+  std::vector<double> vgd_sr_h;
+  std::future<std::vector<double>> vgd_sr_fut;
+  void VetGdSymRef();
+  void VetGdSymRefJoin();
   // vet_gd_twin_fuse (accel-1009): the twin's own source (ln chi, ln S of the shell
   // means) and intensities, swept in the main sweep's kernels; vgd_sw2 = this sweep
   // carries the twin; second compact halo buffers for it
@@ -2126,6 +2198,10 @@ class RadiationM1 {
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
+  bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
+  int64_t VetGdBlock(const int cyc) const;       // vgdrot2-1012: the rotation block
+  Real VetGdAngleBlk(const int64_t b) const;
+  Real VetGdAlignDt(const Real time, const Real dt);
   void VetGdTables(const Real alpha);
   // vgdrot-1011: the tables' host part in persistent pinned buffers (no per-rotation
   // mirrors), and the next rotation's tables prefetched (host thread + upload into a

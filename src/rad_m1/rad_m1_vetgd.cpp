@@ -101,6 +101,30 @@ void VgdFatal(const std::string &msg) {
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
+// vgdlat-1012 vet_gd_symref: the weight of the symmetric shift (ref - shell mean) in a
+// cell: the fraction of the cell's formal-solution J that the shell-mean (twin) field
+// explains, min(J_twin/J, 1) (1 on a laterally uniform state; -> 0 in a beam or channel
+// much brighter than the mean field, where the mean's bias says nothing); 1 without the
+// stored J (vgd_thx false)
+template <typename V>
+KOKKOS_INLINE_FUNCTION
+Real VgdSrW(const V &hr, const V &ht, const bool thx, const int m, const int k,
+            const int j, const int i) {
+  if (!thx) {return 1.0;}
+  const Real jm = hr(m,M1_VGD_HRJ,k,j,i), jt = ht(m,M1_VGD_HRJ,k,j,i);
+  return (jm > jt && jm > 0.0) ? fmax(jt, 0.0)/jm : 1.0;
+}
+
+// vgdlat-1012 vet_gd_symref: the reference of vgd_hr component c at shell i (vgd_srm)
+KOKKOS_INLINE_FUNCTION
+Real VgdSrRef(const DvceArray1D<Real> &sr, const int c, const int i, const int c1) {
+  if (c == 0) {return sr(M1_VGD_SR_HP*c1 + i);}
+  if (c == 1) {return sr(M1_VGD_SR_HM*c1 + i);}
+  if (c < 6) {return ((c % 2 == 0) ? 1.0 : -1.0)*sr(M1_VGD_SR_HL*c1 + i);}
+  if (c == M1_VGD_HRC1) {return sr(M1_VGD_SR_C1*c1 + i);}
+  return sr(M1_VGD_SR_J*c1 + i);   // M1_VGD_HRJ
+}
+
 // vgdrot-1011: a range policy whose functor rides as a KERNEL ARGUMENT (HintLightWeight,
 // as VetFor in rad_m1_vet.cpp): the per-shell sweep kernels (shell, pack, scatter) have
 // 0.5-4 kB functors, which by default take the constant-memory launch with a host wait
@@ -668,12 +692,15 @@ void RadiationM1::VetGdInit() {
       }
     }
   }
+  if (vgd_async && (vgd_rot_dt > 0.0 || vgd_rot_auto)) {
+    VgdFatal("vet_gd_rotate_dt (the physical-time rotation) needs vet_gd_async = false");
+  }
   vgd_alpha = -1.0;
   // vgdrot-1011: the table prefetch (its own device instance for the upload)
   {
     const char *e = std::getenv("VGD_TAB_PREFETCH");
     vgd_tab_pre = (e == nullptr) || (std::atoi(e) != 0);
-    if (vgd_tab_pre && vgd_rot > 0) {
+    if (vgd_tab_pre && VgdRotOn()) {
       vgd_tex = Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0];
     }
   }
@@ -688,10 +715,104 @@ void RadiationM1::VetGdInit() {
 //! bitwise; pi/2 is the C4 period of the set)
 
 Real RadiationM1::VetGdAngle(const int cyc) const {
-  if (vgd_rot <= 0) {return 0.0;}
-  const double b = static_cast<double>(cyc/vgd_rot);
+  if (!VgdRotOn()) {return 0.0;}
+  return VetGdAngleBlk(VetGdBlock(cyc));
+}
+
+Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
+  const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
   return 0.5*M_PI*(b*g - std::floor(b*g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int64_t RadiationM1::VetGdBlock
+//! \brief vgdrot2-1012: the rotation block of the step of cycle cyc.  Cycle clock
+//! (vet_gd_rotate_every = N): cyc/N, as before.  Physical clock (vet_gd_rotate_dt =
+//! dt_rot > 0): the block holding the step's MIDPOINT, floor((t + dt/2 - t0)/dt_rot)
+//! with t, dt the mesh time and step (constant over the stages of a step, so both
+//! hesdirk2 stages and every build of the step share the set).  The angle is then a
+//! function of the physical time only: every dt samples the same set at the same t, the
+//! closure is piecewise constant in t with jumps at t0 + k dt_rot, and with
+//! vet_gd_rotate_align (VetGdAlignDt) every jump sits on a step boundary on every dt, so
+//! a dt ladder converges at the integrator's order.  Restart-safe (t, dt from the file).
+
+int64_t RadiationM1::VetGdBlock(const int cyc) const {
+  if (vgd_rot_dt > 0.0) {
+    const Mesh *pm = pmy_pack->pmesh;
+    const Real dt = (pm->dt > 0.0 && pm->dt < vgd_rot_dt) ? pm->dt : 0.0;
+    return static_cast<int64_t>(std::floor((pm->time + 0.5*dt - vgd_rot_t0)/vgd_rot_dt));
+  }
+  return (vgd_rot > 0) ? static_cast<int64_t>(cyc/vgd_rot) : 0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdRotStep
+//! \brief vgdrot2-1012 (Driver, before Time2StartProbe): on the first step of a new
+//! rotation block (physical clock) the stored hesdirk2 slope K1 is f(U^{n-1..n}) of the
+//! OLD set; the FSAL stage 1 would then carry O(dt) of the old closure per jump (first
+//! order however the jumps are aligned).  probe: t2_ok = false + a probe solve (the
+//! time2_start = slope path, its build at U^n with the new set) gives K1 = f_new(U^n) +
+//! O(dt_p); be: t2_ok = false (a backward-Euler step).  The first call (fresh start or
+//! restart) takes the block just before t as the last one, so a restart exactly on a
+//! boundary re-seeds the slope too.
+
+void RadiationM1::VetGdRotStep() {
+  if (!(vgd_rot_dt > 0.0) || !vgd_on) {return;}
+  const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
+  if (vgd_rot_lastblk == INT64_MIN) {
+    const Mesh *pm = pmy_pack->pmesh;
+    vgd_rot_lastblk = static_cast<int64_t>(
+        std::floor((pm->time - vgd_rot_t0)/vgd_rot_dt - 1.0e-9));
+  }
+  if (b != vgd_rot_lastblk && vgd_rot_slope != 0 && time_scheme == M1_TIME_HESDIRK2 &&
+      t2_ok) {
+    t2_ok = false;
+    t2_rotprobe = (vgd_rot_slope == 1);
+    vgd_rot_nprobe += 1.0;
+  }
+  vgd_rot_lastblk = b;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VetGdAlignDt
+//! \brief vgdrot2-1012, vet_gd_rotate_dt > 0 with vet_gd_rotate_align (from
+//! Mesh::NewTimeStep after the global min, before the tlim clamp): the next boundary
+//! t_k = t0 + k dt_rot > t is reached in n = ceil(rem/dt) EQUAL steps, dt' = rem/n
+//! (never a sliver step; dt' >= dt/2; dt' = dt when dt divides rem).  Same on every rank.
+//! vet_gd_rotate_stretch = s > 0: n - 1 steps when that needs dt' <= (1 + s) dt (a step
+//! up to s longer than the limit, instead of a whole extra step per interval).
+
+Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
+  // defaults-1012: vet_gd_rotate_dt = auto -> vgd_rot_auto_fac x the first dt this sees
+  // (the global step, before any alignment), fixed for the run and recorded as the number
+  // so a restart (and the parameter dump) keeps it
+  if (vgd_rot_auto && !(vgd_rot_dt > 0.0) && dt > 0.0) {
+    vgd_rot_dt = vgd_rot_auto_fac*dt;
+    vgd_rot_auto = false;
+    if (pin_rot_ != nullptr) {pin_rot_->SetReal("rad_m1","vet_gd_rotate_dt",vgd_rot_dt);}
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_rotate_dt = auto: " << vgd_rot_auto_fac
+                << " x the first dt " << dt << " = " << ParameterInput::RealToString(vgd_rot_dt)
+                << " (recorded; t0 " << vgd_rot_t0 << ", align "
+                << (vgd_rot_align ? "on" : "off") << ", stretch " << vgd_rot_stretch
+                << ")" << std::endl;
+    }
+  }
+  if (!(vgd_rot_dt > 0.0) || !vgd_rot_align || !(dt > 0.0)) {return dt;}
+  const double x = (time - vgd_rot_t0)/vgd_rot_dt;
+  double k = std::floor(x) + 1.0;
+  // time already on a boundary (to round-off): the NEXT one
+  if ((k - x)*vgd_rot_dt < 1.0e-9*dt) {k += 1.0;}
+  const double rem = vgd_rot_t0 + k*vgd_rot_dt - time;
+  double n = std::ceil(rem/dt*(1.0 - 1.0e-9));
+  if (n > 1.0e6) {return dt;}
+  if (vgd_rot_stretch > 0.0 && n > 1.0 && rem/(n - 1.0) <= (1.0 + vgd_rot_stretch)*dt) {
+    n -= 1.0;
+  }
+  const Real dtn = static_cast<Real>(rem/std::max(n, 1.0));
+  if (dtn < dt) {vgd_rot_nalign += 1.0;}
+  return (vgd_rot_stretch > 0.0) ? dtn : std::min(dt, dtn);
 }
 
 //----------------------------------------------------------------------------------------
@@ -948,8 +1069,8 @@ void RadiationM1::VgdTabAlloc(const bool dev) {
 //! VetGdTables at the next rotation swaps them in (no host work, no copy, at that point)
 
 void RadiationM1::VetGdTabPrefetch(const int cyc) {
-  if (!vgd_tab_pre || vgd_rot <= 0 || vgd_tab_state != 0) {return;}
-  const Real an = VetGdAngle((cyc/vgd_rot + 1)*vgd_rot);
+  if (!vgd_tab_pre || !VgdRotOn() || vgd_tab_state != 0) {return;}
+  const Real an = VetGdAngleBlk(VetGdBlock(cyc) + 1);
   if (an == vgd_alpha) {return;}
   VgdTabAlloc(true);
   vgd_tab_state = 1;
@@ -1029,8 +1150,12 @@ void RadiationM1::VetGdTables(const Real alpha) {
                                       + (vgd_gl_stag ? " staggered" : ""))
                   : ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
                                   : ("HEALPix nside " + std::to_string(vgd_nside))))
-              << " (" << n << " directions); z-rotation every " << vgd_rot
-              << " cycle(s) (0 = fixed), first angle " << alpha << ";"
+              << " (" << n << " directions); z-rotation every "
+              << ((vgd_rot_dt > 0.0) ? (std::to_string(vgd_rot_dt) + " in time (t0 "
+                                        + std::to_string(vgd_rot_t0) + ", align "
+                                        + (vgd_rot_align ? "on" : "off") + ")")
+                                     : (std::to_string(vgd_rot) + " cycle(s)"))
+              << " (0 = fixed), first angle " << alpha << ";"
               << " rank 0 wall ghost columns " << nwall << ", direction maps exact "
               << nexact << " of " << nmap << " (the rest: nearest direction)"
               << std::endl;
@@ -1048,7 +1173,7 @@ void RadiationM1::VetGdTables(const Real alpha) {
 //! the shell mean e_b f_patch.  The set must not rotate (vet_gd_rotate_every = 0).
 
 void RadiationM1::VetGdBeamInit(const std::vector<double> &d) {
-  if (vgd_rot > 0) {VgdFatal("vet_gd_beam needs vet_gd_rotate_every = 0");}
+  if (VgdRotOn()) {VgdFatal("vet_gd_beam needs vet_gd_rotate_every = 0");}
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
@@ -3859,7 +3984,7 @@ void RadiationM1::VetGdSweep() {
   const bool bandx = vgd_bandx;
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
-  const bool spe = vet_seg_emit;
+  const int spe = VetSegMode();
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   const bool emi = vgd_emit && (lcut == 0) &&
@@ -4250,7 +4375,24 @@ void RadiationM1::VetGdSweep() {
               };
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
-              if (spl) {
+              const Real rfi = cx1f(m,i);
+              if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
+                // coreL-1012 vet_seg = jump: the turned ray dips below the own inner face;
+                // its chord there takes chi, S of the cell below (log-mean of the own
+                // column and the upwind point), the two own parts their own: piecewise
+                // constant per cell (the limb of an emitting body inside the half cell)
+                auto lind = [&](const int c) {
+                  const Real a = VgdLerp(VgdLerp(csx(m,c,k0,j0,i-1), csx(m,c,k0,j1,i-1), uj),
+                                         VgdLerp(csx(m,c,k1,j0,i-1), csx(m,c,k1,j1,i-1),
+                                                 uj), uk);
+                  return exp(0.5*(a + csx(m,c,k,j,i-1)));
+                };
+                const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
+                const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
+                const Real e3 = exp(-ch0*(zr - zf));
+                const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
+                iv = fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
+              } else if (spl) {
                 iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
                                       ch0*dso, spe), 0.0);
               } else {
@@ -5418,6 +5560,326 @@ void RadiationM1::VetGdRealDiag() {
   }
 }
 
+namespace {
+// vgdlat-1012: the inputs of one VgdSymRefSolve (a copy: it may run on a host thread)
+struct VgdSrIn {
+  int c1 = 0, ilo = 0, ns = 0, nc = 64, nsb = 4;
+  bool emi = false, bfc = false, spl = false;
+  int spe = 0;
+  double iemit = 0.0, itop = 0.0;
+  std::vector<double> R, F, chi, S;
+};
+
+// the 1-D p-ray solve of RadiationM1::VetGdSymRef: out (M1_VGD_SR_N c1) as vgd_srm
+std::vector<double> VgdSymRefSolve(const VgdSrIn in) {
+  const int ns = in.ns, c1 = in.c1, ilo = in.ilo;
+  const std::vector<double> &R = in.R, &F = in.F, &chi = in.chi, &S = in.S;
+  const bool emi = in.emi, bfc = in.bfc, spl = in.spl;
+  const int spe = in.spe;
+  const double iemit = in.iemit, itop = in.itop;
+  auto segw = [](const double dtau, double &ex, double &w0, double &wu) {
+    ex = std::exp(-dtau);
+    if (dtau < 1.0e-3) {
+      w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+      wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
+    } else {
+      const double g = (1.0 - ex)/dtau;
+      w0 = 1.0 - g;
+      wu = g - ex;
+    }
+  };
+  // the ray set (p, core), in decreasing p; at p = F0 the ray just outside the inner
+  // sphere (turned) before the core ray tangent to it (the same mu at every shell)
+  const int nc = in.nc, nsb = in.nsb;
+  std::vector<std::pair<double, int>> rays;
+  rays.reserve(nc + 2 + static_cast<size_t>(nsb)*ns);
+  for (int l = ns - 1; l >= 0; --l) {
+    const double lo = (l == 0) ? F[0] : R[l - 1];
+    for (int q = nsb; q >= 1; --q) {rays.emplace_back(lo + (R[l] - lo)*q/nsb, 0);}
+  }
+  rays.emplace_back(F[0], 0);
+  for (int q = 0; q <= nc; ++q) {
+    const double mu = static_cast<double>(q)/nc;
+    rays.emplace_back(F[0]*std::sqrt(std::max(1.0 - mu*mu, 0.0)), 1);
+  }
+  // per shell: the running node of each hemisphere and the moment sums
+  std::vector<double> pmo(ns, -1.0), pio(ns, 0.0), pmi(ns, -1.0), pii(ns, 0.0);
+  std::vector<double> sJ(ns, 0.0), sK(ns, 0.0), sHp(ns, 0.0), sHm(ns, 0.0),
+                      sHl(ns, 0.0), sC(ns, 0.0);
+  std::vector<double> Iin(ns), Iout(ns);
+  // exact integrals over [m0, m1] of the linear I(mu) between two nodes
+  auto sq0 = [](double x) {
+    x = std::min(std::max(x, -1.0), 1.0);
+    return 0.5*(x*std::sqrt(1.0 - x*x) + std::asin(x));
+  };
+  auto sq1 = [](double x) {
+    x = std::min(std::max(x, -1.0), 1.0);
+    const double u = 1.0 - x*x;
+    return -u*std::sqrt(u)/3.0;
+  };
+  auto acc = [&](const int l, const double m0, const double i0, const double m1,
+                 const double i1, const bool out) {
+    if (!(m1 > m0)) {return;}
+    const double b = (i1 - i0)/(m1 - m0), a = i0 - b*m0;
+    const double p0[5] = {1.0, m0, m0*m0, m0*m0*m0, m0*m0*m0*m0};
+    const double p1[5] = {1.0, m1, m1*m1, m1*m1*m1, m1*m1*m1*m1};
+    auto mom = [&](const int n) {
+      return a*(p1[n + 1] - p0[n + 1])/(n + 1) + b*(p1[n + 2] - p0[n + 2])/(n + 2);
+    };
+    sJ[l] += 0.5*mom(0);
+    sK[l] += 0.5*mom(2);
+    if (out) {
+      sHp[l] += 0.5*mom(1);
+    } else {
+      sHm[l] -= 0.5*mom(1);
+    }
+    sHl[l] += 0.5*(a*(sq0(m1) - sq0(m0)) + b*(sq1(m1) - sq1(m0)))/M_PI;
+    const double d0 = i0 - S[l], d1 = i1 - S[l];
+    if (d0*d1 >= 0.0) {
+      sC[l] += 0.25*std::fabs(d0 + d1)*(m1 - m0);
+    } else {
+      const double t = d0/(d0 - d1);
+      sC[l] += 0.25*(std::fabs(d0)*t + std::fabs(d1)*(1.0 - t))*(m1 - m0);
+    }
+  };
+  for (const auto &ry : rays) {
+    const double p = ry.first, p2 = p*p;
+    const bool core = (ry.second != 0);
+    int lmin = 0;
+    while (lmin < ns && R[lmin]*R[lmin] < p2*(1.0 - 1.0e-13)) {++lmin;}
+    if (lmin >= ns) {continue;}
+    // inward, top down
+    for (int l = ns - 1; l >= lmin; --l) {
+      const double r = R[l];
+      const double zr = std::sqrt(std::max(r*r - p2, 0.0));
+      double ex, w0, wu;
+      if (l == ns - 1) {
+        const double ds = std::sqrt(std::max(F[ns]*F[ns] - p2, 0.0)) - zr;
+        const double stp = std::max(1.5*S[l] - 0.5*S[l-1], 1.0e-300);
+        segw(chi[l]*ds, ex, w0, wu);
+        Iin[l] = itop*ex + wu*stp + w0*S[l];
+      } else {
+        const double ru = R[l+1];
+        const double ds = std::sqrt(std::max(ru*ru - p2, 0.0)) - zr;
+        if (spl) {
+          double dso = std::sqrt(std::max(F[l+1]*F[l+1] - p2, 0.0)) - zr;
+          dso = std::min(std::max(dso, 0.0), ds);
+          Iin[l] = std::max(static_cast<double>(VetSegSplit(Iin[l+1], S[l+1], S[l],
+                                     chi[l+1]*(ds - dso), chi[l]*dso, spe)), 0.0);
+        } else {
+          segw(0.5*(chi[l+1] + chi[l])*ds, ex, w0, wu);
+          Iin[l] = std::max(Iin[l+1]*ex + wu*S[l+1] + w0*S[l], 0.0);
+        }
+      }
+    }
+    // outward, bottom up
+    for (int l = lmin; l < ns; ++l) {
+      const double r = R[l];
+      const double zr = std::sqrt(std::max(r*r - p2, 0.0));
+      double ex, w0, wu;
+      if (zr < 1.0e-12*r) {
+        // the ray tangent AT this shell: out = in (mu = 0).  (The sweep's S there is a
+        // measure-zero case; here every shell carries one such node, and S would be
+        // carried outward along it.)
+        Iout[l] = Iin[l];
+      } else if (l > 0 && p2 <= R[l-1]*R[l-1]*(1.0 + 1.0e-13)) {
+        const double rd = R[l-1];
+        const double ds = zr - std::sqrt(std::max(rd*rd - p2, 0.0));
+        if (spl) {
+          double dso = zr - std::sqrt(std::max(F[l]*F[l] - p2, 0.0));
+          dso = std::min(std::max(dso, 0.0), ds);
+          Iout[l] = std::max(static_cast<double>(VetSegSplit(Iout[l-1], S[l-1], S[l],
+                                      chi[l-1]*(ds - dso), chi[l]*dso, spe)), 0.0);
+        } else {
+          segw(0.5*(chi[l-1] + chi[l])*ds, ex, w0, wu);
+          Iout[l] = std::max(Iout[l-1]*ex + wu*S[l-1] + w0*S[l], 0.0);
+        }
+      } else if (l == 0 && core) {
+        // the inner face of the first shell (typ 2)
+        const double ds = zr - std::sqrt(std::max(F[0]*F[0] - p2, 0.0));
+        const double qv = std::max(1.5*S[0] - 0.5*S[1], 1.0e-300);
+        segw(chi[0]*ds, ex, w0, wu);
+        double bv;
+        if (emi) {
+          bv = iemit;
+        } else {
+          const double muf = std::sqrt(std::max(1.0 - p2/(F[0]*F[0]), 0.0));
+          const double g0 = -(S[1] - S[0])/(R[1] - R[0])/chi[0];
+          bv = std::max((bfc ? (1.5*S[0] - 0.5*S[1]) : S[0]) + g0*muf, 0.0);
+        }
+        Iout[l] = bv*ex + wu*qv + w0*S[0];
+      } else if (spl && spe == 2 && l > 0 && p2 < F[l]*F[l]) {
+        // coreL-1012 vet_seg = jump: the turned ray's chord below the own inner face
+        // takes chi, S of the shell below (the sweep's rule)
+        const double zf = std::sqrt(std::max(F[l]*F[l] - p2, 0.0));
+        const double e1 = std::exp(-chi[l]*(zr - zf)), e2 = std::exp(-chi[l-1]*2.0*zf);
+        const double ia = Iin[l]*e1 + S[l]*(1.0 - e1);
+        Iout[l] = std::max((ia*e2 + S[l-1]*(1.0 - e2))*e1 + S[l]*(1.0 - e1), 0.0);
+      } else {
+        // turned in its own shell (typ 3)
+        const double ds = 2.0*zr;
+        if (spl) {
+          Iout[l] = std::max(static_cast<double>(VetSegSplit(Iin[l], S[l], S[l],
+                                      chi[l]*0.5*ds, chi[l]*0.5*ds, spe)), 0.0);
+        } else {
+          segw(chi[l]*ds, ex, w0, wu);
+          Iout[l] = std::max(Iin[l]*ex + wu*S[l] + w0*S[l], 0.0);
+        }
+      }
+    }
+    for (int l = lmin; l < ns; ++l) {
+      const double mu = std::sqrt(std::max(1.0 - p2/(R[l]*R[l]), 0.0));
+      if (pmo[l] >= 0.0) {acc(l, pmo[l], pio[l], mu, Iout[l], true);}
+      if (pmi[l] >= 0.0) {acc(l, pmi[l], pii[l], mu, Iin[l], false);}
+      pmo[l] = mu;
+      pio[l] = Iout[l];
+      pmi[l] = mu;
+      pii[l] = Iin[l];
+    }
+  }
+  std::vector<double> h(static_cast<size_t>(M1_VGD_SR_N)*c1, 0.0);
+  for (int l = 0; l < ns; ++l) {
+    const int i = ilo + l;
+    const double J = sJ[l];
+    const bool ok = (J > 0.0);
+    h[M1_VGD_SR_F*c1 + i] = ok ? sK[l]/J : 1.0/3.0;
+    h[M1_VGD_SR_HP*c1 + i] = ok ? sHp[l]/J : 0.25;
+    h[M1_VGD_SR_HM*c1 + i] = ok ? sHm[l]/J : -0.25;
+    h[M1_VGD_SR_HL*c1 + i] = ok ? sHl[l]/J : 0.25;
+    h[M1_VGD_SR_C1*c1 + i] = ok ? sC[l]/J : 0.0;
+    h[M1_VGD_SR_J*c1 + i] = J;
+  }
+  return h;
+}
+}  // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdSymRef
+//! \brief vgdlat-1012 vet_gd_symref = col: the 1-D spherical formal solution of the
+//! twin's SHELL-MEAN state (vgd_twm = <chi>, vgd_twm2 = <S> per shell, all ranks), on the
+//! host, every build.  It is the SC sweep of VetGdSweep without its two approximations
+//! that a laterally uniform state does not need:
+//!   - no lateral interpolation: on a spherically symmetric state every intensity is a
+//!     function of (r, mu) alone and is carried along its own straight ray (impact
+//!     parameter p), from shell centre to shell centre, with the SC's own segment rules
+//!     term for term (VetSegSplit at the face / the mean segment, the inner face start
+//!     (diffusion intensity or vet_gd_inner = emit), the turned ray in its own shell,
+//!     the top segment with the top bath; a ray tangent at a shell leaves it with its
+//!     incoming intensity);
+//!   - no direction sampling: the moments at a shell integrate the piecewise-linear-in-mu
+//!     intensity of its rays EXACTLY (1, mu, mu^2, the lateral half-range weight
+//!     sqrt(1 - mu^2)/pi, |I - S|), so a linear (diffusion) intensity is exact.
+//! Rays (as vet_col): vet_gd_symref_ncore + 1 core rays uniform in mu at the inner face
+//! of the first shell, the ray just outside it, and per shell interval
+//! vet_gd_symref_nsub rays with their tangent point in it (the last at the shell).
+//! Rays are processed in decreasing p, so each shell sees its mu nodes in increasing
+//! order: one running node per shell and hemisphere, O(nx1) memory.
+//! Out (vgd_srm, comp q at q c1 + i, i in [ilo, ie]): f = K/J, H+_r/J, H-_r/J, the
+//! lateral half-range H+_theta/J (= H+_phi/J = -H-_a/J), C1 = int |I - S| / J, J.
+//! VetGdTwin(1) and VetGdHalfRange(2) then use these in place of the twin's shell means:
+//! the corrected quantity is  main - twin + reference.  Deterministic, identical on every
+//! rank (the same gathered shell means); vgd_sr_ok = false (shell means kept) when the
+//! vet_gd range has fewer than 2 shells.
+
+void RadiationM1::VetGdSymRef() {
+  Kokkos::Timer tm;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int lcut = vlat_icut;
+  const int ilo = is + lcut;
+  const int ns = ie - ilo + 1;
+  vgd_sr_ok = false;
+  if (static_cast<int>(vgd_sr_x1v.size()) != c1) {
+    auto xv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+    auto xf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx1f);
+    vgd_sr_x1v.assign(c1, 0.0);
+    vgd_sr_x1f.assign(c1 + 1, 0.0);
+    for (int i = 0; i < c1; ++i) {vgd_sr_x1v[i] = xv(0,i);}
+    for (int i = 0; i <= c1 && i < xf.extent_int(1); ++i) {vgd_sr_x1f[i] = xf(0,i);}
+  }
+  if (vgd_srm.extent_int(0) != M1_VGD_SR_N*c1) {
+    Kokkos::realloc(vgd_srm, M1_VGD_SR_N*c1);
+  }
+  if (ns < 2) {return;}
+  // the shell means (c1 values each; the same on every rank after the twin's gather)
+  auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_twm);
+  auto hs = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_twm2);
+  VgdSrIn in;
+  in.c1 = c1;
+  in.ilo = ilo;
+  in.ns = ns;
+  in.nc = vgd_sr_nc;
+  in.nsb = vgd_sr_ns;
+  in.R.resize(ns);
+  in.F.resize(ns + 1);
+  in.chi.resize(ns);
+  in.S.resize(ns);
+  for (int l = 0; l < ns; ++l) {
+    const int i = ilo + l;
+    in.R[l] = vgd_sr_x1v[i];
+    in.F[l] = vgd_sr_x1f[i];
+    in.chi[l] = std::max(static_cast<double>(hc(i)), 1.0e-300);   // exp(log(fmax(mean)))
+    in.S[l] = std::max(static_cast<double>(hs(i)), 1.0e-300);
+  }
+  in.F[ns] = vgd_sr_x1f[ie + 1];
+  // the boundary rules of VetGdSweep (twin: no beam; vet_gd_symref refuses vet_gd_beam)
+  in.emi = vgd_emit && (lcut == 0) &&
+           (ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
+  in.iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
+  const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
+  in.itop = tbh ? iebath_x1max : 0.0;
+  in.bfc = vet_bc_face;
+  in.spl = vet_seg_split;
+  in.spe = VetSegMode();
+  // on a host thread, overlapping the sweep (joined in VetGdSymRefJoin before the first
+  // use); env VGD_SR_SYNC=1: inline (timing)
+  static const bool sync = (std::getenv("VGD_SR_SYNC") != nullptr) &&
+                           (std::atoi(std::getenv("VGD_SR_SYNC")) != 0);
+  if (sync) {
+    vgd_sr_h = VgdSymRefSolve(std::move(in));
+  } else {
+    vgd_sr_fut = std::async(std::launch::async, VgdSymRefSolve, std::move(in));
+  }
+  vgd_sr_pend = true;
+  vgd_tsr += tm.seconds();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdSymRefJoin
+//! \brief vgdlat-1012: wait for the pending VetGdSymRef solve and upload it (vgd_srm)
+
+void RadiationM1::VetGdSymRefJoin() {
+  if (!vgd_sr_pend) {return;}
+  Kokkos::Timer tm;
+  if (vgd_sr_fut.valid()) {vgd_sr_h = vgd_sr_fut.get();}
+  vgd_sr_pend = false;
+  auto h = Kokkos::create_mirror_view(vgd_srm);
+  const int nt = vgd_srm.extent_int(0);
+  for (int c = 0; c < nt; ++c) {h(c) = vgd_sr_h[c];}
+  Kokkos::deep_copy(vgd_srm, h);
+  // diagnostic env VGD_SR_DUMP=<file>: rank 0's reference of the latest build
+  static const char *fdump = std::getenv("VGD_SR_DUMP");
+  if (fdump != nullptr && global_variable::my_rank == 0) {
+    FILE *fp = std::fopen(fdump, "w");
+    if (fp != nullptr) {
+      const int c1 = nt/M1_VGD_SR_N;
+      std::fprintf(fp, "# i x1v f hp hm hl c1 J\n");
+      for (int i = 0; i < c1; ++i) {
+        if (!(vgd_sr_h[M1_VGD_SR_J*c1 + i] > 0.0)) {continue;}
+        std::fprintf(fp, "%d %.16e", i, vgd_sr_x1v[i]);
+        for (int q = 0; q < M1_VGD_SR_N; ++q) {
+          std::fprintf(fp, " %.16e", vgd_sr_h[q*c1 + i]);
+        }
+        std::fprintf(fp, "\n");
+      }
+      std::fclose(fp);
+    }
+  }
+  vgd_sr_ok = true;
+  vgd_tsrj += tm.seconds();
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdTwin
 //! \brief vet_gd_twin (read only when named, default false): uniform-state twin
@@ -5577,6 +6039,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     shell_mean(vgd_cs, 0, og, true, vgd_twm);
     shell_mean(vgd_cs, 1, og, true, vgd_twm2);
 #endif
+    if (vgd_symref) {VetGdSymRef();}   // vgdlat-1012: from the same shell means
     auto mc_ = vgd_twm;
     auto ms_ = vgd_twm2;
     const int n3 = static_cast<int>(ct_.extent(2)) - 1;
@@ -5598,6 +6061,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     Kokkos::deep_copy(c0_, cw_);
     shell_mean(vgd_cs, 0, og, true, vgd_twm);
     shell_mean(vgd_cs, 1, og, true, vgd_twm2);
+    if (vgd_symref) {VetGdSymRef();}   // vgdlat-1012: from the same shell means
     auto mc_ = vgd_twm;
     auto ms_ = vgd_twm2;
     const int n3 = static_cast<int>(cw_.extent(2)) - 1;
@@ -5623,6 +6087,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     vgd_ttwin += tm.seconds();
     return;
   }
+  if (vgd_symref) {VetGdSymRefJoin();}   // vgdlat-1012
   // stage 1: subtract the noise pattern.  vet_gd_twin_full: the full twin LAT0 (its
   // shell mean not added back), so D_rr = f_K(vet_col) + D_rr,gd - D_rr,twin
   if (vgd_twfull) {
@@ -5631,9 +6096,24 @@ void RadiationM1::VetGdTwin(const int stage) {
     shell_mean(vgd_twl, 0, 0, false, vgd_twm);
   }
   auto mt_ = vgd_twm;
+  // vgdlat-1012 vet_gd_symref: the reference D_rr is the 1-D solution's f (LAT0 is
+  // D_rr - f_K(vet_col) of the cell, slot 0 still f_K here): D_rr = D_gd - D_twin + f_ref
+  // weighted by VgdSrW (the main and twin J of VetGdHalfRange(0)/(1), when stored)
+  const bool sref = vgd_symref && vgd_sr_ok;
+  auto sr_ = vgd_srm;
+  const int sc1 = c1;
+  const bool sthx = vgd_thx && impl_beam_hr && (vgd_hr.extent_int(0) > nmb1) &&
+                    (vgd_hr.extent_int(1) > M1_VGD_HRJ);
+  auto shr_ = vgd_hr;
+  auto sht_ = vgd_hrt;
   par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - mt_(i);
+    Real ref = mt_(i);
+    if (sref) {
+      const Real w = VgdSrW(shr_, sht_, sthx, m, k, j, i);
+      ref += w*((sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) - mt_(i));
+    }
+    tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - ref;
     for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
   });
   if (impl_beam_hr) {VetGdHalfRange(2);}   // hrup-1009: the same subtraction
@@ -5842,6 +6322,10 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     return;
   }
   // stage 2: subtract the twin's lateral pattern, shell by shell, component by component
+  // vgdlat-1012 vet_gd_symref: and shift by w (ref - shell mean), w = VgdSrW
+  const bool sref = vgd_symref && vgd_sr_ok;
+  auto sr_ = vgd_srm;
+  const int c1x = c1;
   const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
                     pmy_pack->pmesh->mesh_indcs.nx3;
 #if MPI_PARALLEL_ENABLED
@@ -5892,10 +6376,14 @@ void RadiationM1::VetGdHalfRange(const int stage) {
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
           const Real mo = m6_(off + i);
+          const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
+          const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo;
           if (c == M1_VGD_HRC1) {
-            hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo), 0.0);
+            hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo) + w*(rf - mo),
+                                  0.0);
           } else if (ht_(m,c,k,j,i) > 0.0 && mo > 0.0) {
             hr_(m,c,k,j,i) *= mo/ht_(m,c,k,j,i);
+            if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo, w);}
           }
         });
         continue;
@@ -5904,6 +6392,10 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
         Real v = hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - m6_(off + i));
+        if (sref) {
+          v += VgdSrW(hr_, ht_, thx, m, k, j, i)*
+               (VgdSrRef(sr_, c, i, c1x) - m6_(off + i));
+        }
         hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
       });
     }
@@ -5954,10 +6446,14 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       par_for("m1_vgd_hr_sub2", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
+        const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
+        const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo_(i);
         if (c == M1_VGD_HRC1) {
-          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i)), 0.0);
+          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i))
+                                + w*(rf - mo_(i)), 0.0);
         } else if (ht_(m,c,k,j,i) > 0.0 && mo_(i) > 0.0) {
           hr_(m,c,k,j,i) *= mo_(i)/ht_(m,c,k,j,i);
+          if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo_(i), w);}
         }
       });
       continue;
@@ -5966,6 +6462,9 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
       Real v = hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i));
+      if (sref) {
+        v += VgdSrW(hr_, ht_, thx, m, k, j, i)*(VgdSrRef(sr_, c, i, c1x) - mo_(i));
+      }
       hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
     });
   }

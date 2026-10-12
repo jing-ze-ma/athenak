@@ -169,9 +169,17 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   //   predict : ONE formal solution per step at P = (stage-1 start) + dt K1, i.e. at
   //             t^{n+1} + O(dt^2); same cost as lag
   //   rebuild : predict for stage 1, a second formal solution at Y1 for stage 2
+  // unify-1012: DEFAULT predict on a fresh run (as time2_vet_col on the wedge), unless
+  // time2_vet_extrap = true or vet_sc_every > 1 (which predict excludes: lag, silently);
+  // a restart whose file lacks the key keeps lag (echoed).  torder-1010: lag is first
+  // order in time wherever the tensor changes (pulse_k12.8 T 1.05), predict 2.0.
   t2_vsmode = 0;
-  if (vet_sc && pin->DoesParameterExist("rad_m1", "time2_vet_sc")) {
-    std::string vm = pin->GetString("rad_m1", "time2_vet_sc");
+  const bool vs_named = pin->DoesParameterExist("rad_m1", "time2_vet_sc");
+  const bool vs_every = pin->DoesParameterExist("rad_m1", "vet_sc_every") &&
+                        (pin->GetInteger("rad_m1", "vet_sc_every") > 1);
+  if (vet_sc && (vs_named || (!t2_vext && !vs_every))) {
+    std::string vm = pin->GetOrAddString("rad_m1", "time2_vet_sc",
+                                         global_variable::restart_run ? "lag" : "predict");
     if (vm.compare("lag") == 0) {
       t2_vsmode = 0;
     } else if (vm.compare("predict") == 0) {
@@ -212,13 +220,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // order in time (rsw_u_T: 1.00, E/T/gas 1.9-2.0).  Default true on the spherical-polar
   // wedge (a restart whose file lacks the key keeps false, echoed); elsewhere false
   // unless named.
-  t2_fvnew = false;
-  if (sph_geom) {
-    t2_fvnew = pin->GetOrAddBoolean("rad_m1", "time2_vstage",
-                                    !global_variable::restart_run);
-  } else if (pin->DoesParameterExist("rad_m1", "time2_vstage")) {
-    t2_fvnew = pin->GetBoolean("rad_m1", "time2_vstage");
-  }
+  // unify-1012: default true on every mesh (was the wedge only): the Cartesian vet_sc
+  // ladders need it as much (torder-1010 cenPvs: rw_t10a F1 1.58 2.32 1.97 vs 1.07 1.04
+  // 1.02 without); a restart whose file lacks the key keeps false (echoed)
+  t2_fvnew = pin->GetOrAddBoolean("rad_m1", "time2_vstage",
+                                  !global_variable::restart_run);
   t2_vcmode = 0;
   if (vet_col) {
     const bool vdef = sph_geom && !global_variable::restart_run;
@@ -256,16 +262,38 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     // 1.47 1.23).  state = the source of P itself (eps B + (1 - eps) E, or VetScatterMix
     // with J = E_P under vet_scatter; vet_col_source = gas for this build only):
     // 1.92 1.87 1.91 / 1.96 1.98 1.99.  lag / extrap keep the relaxed source.
-    if (pin->DoesParameterExist("rad_m1", "time2_vet_col_source")) {
-      std::string vs = pin->GetString("rad_m1", "time2_vet_col_source");
+    // defaults-1012: DEFAULT blend on a fresh run with time2_vet_col = predict | rebuild
+    // (where it acts); a restart whose file lacks the key keeps relaxed (bitwise older
+    // runs); the resolved value is echoed; explicit input overrides.  Otherwise read
+    // only when named.
+    const bool vsdef = (t2_vcmode == 1 || t2_vcmode == 2);
+    if (vsdef || pin->DoesParameterExist("rad_m1", "time2_vet_col_source")) {
+      std::string vs = vsdef ?
+          pin->GetOrAddString("rad_m1", "time2_vet_col_source",
+                              global_variable::restart_run ? "relaxed" : "blend") :
+          pin->GetString("rad_m1", "time2_vet_col_source");
       if (vs.compare("relaxed") == 0) {
         t2_vcsrc = false;
       } else if (vs.compare("state") == 0) {
         t2_vcsrc = true;
+      } else if (vs.compare("blend") == 0) {
+        // sporder-1012: blend = S*(0) + w (S*(dt) - S*(0)), w = x^2/(x0^2 + x^2) with x
+        // the cell's exchange stiffness c dt rho kappa (radiation + gas temperature):
+        // the state's own source where the exchange is resolved (x << x0, O(dt^3) from
+        // it), the relaxed source where it is stiff (VcolRelaxedSourceB).
+        // time2_vet_col_source_x0 (default 1)
+        t2_vcsbl = true;
+        vcol_sx0 = pin->GetOrAddReal("rad_m1", "time2_vet_col_source_x0", 1.0);
+        if (!(vcol_sx0 > 0.0)) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/time2_vet_col_source_x0 must be > 0"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_m1>/time2_vet_col_source = '" << vs
-                  << "' is not a choice (relaxed | state)" << std::endl;
+                  << "' is not a choice (relaxed | state | blend)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -578,7 +606,9 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! only moves Picard starting points).
 
 bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
-  if (time_scheme != M1_TIME_HESDIRK2 || t2_start != 1) return false;
+  // vgdrot2-1012: VetGdRotStep asks for the probe at a rotation (any time2_start)
+  if (time_scheme != M1_TIME_HESDIRK2 || (t2_start != 1 && !t2_rotprobe)) return false;
+  t2_rotprobe = false;
   if (Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (fl.on && fl.mhd) {
@@ -1065,7 +1095,9 @@ void RadiationM1::Time2VetColAt(int which) {
     // by a further dt (vet_col, vet_col_lat and vet_gd all read vcol_srelax)
     const bool srs = vcol_srelax;
     if (t2_vcsrc) {vcol_srelax = false;}
+    vcol_sbl = t2_vcsbl;
     VetColBuild();
+    vcol_sbl = false;
     vcol_srelax = srs;
   } else {
     VetShortChar();
@@ -1373,6 +1405,7 @@ void RadiationM1::Time2Report() {
                                        ((t2_vcmode == 2) ? "rebuild" : "extrap"))
               << " fallbacks=" << t2_vcnfb;
     if (t2_vcsrc && t2_vcmode != 3) {std::cout << " source=state";}
+    if (t2_vcsbl && t2_vcmode != 3) {std::cout << " source=blend x0=" << vcol_sx0;}
   }
   if (vet_sc && t2_vsmode != 0) {
     std::cout << " time2_vet_sc=" << ((t2_vsmode == 1) ? "predict" : "rebuild")

@@ -800,7 +800,8 @@ struct VetRayK {
   Real fmil, cl, efl;
   Real bblo, bbhi;             // the x1 bath intensities (vet_bc_bath; bblo < 0: off)
   bool bfc;                    // deepatm-1011: vet_bc_diff = face (bottom E at the face)
-  bool spl, spe;               // segfix-1011: vet_seg = split / emit
+  bool spl;                    // segfix-1011: vet_seg = split
+  int spe;                     // VetSegMode(): 0 split, 1 emit, 2 jump
   DvceArray2D<int> rd;
   DvceArray4D<Real> bw;
   DvceArray5D<Real> cs, ip;
@@ -1372,7 +1373,7 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
 void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                  const int ks, const int nx1, const int nx2, const int nx3,
                  const bool thrd, const bool milne, const Real fmil, const Real bblo,
-                 const Real bbhi, const bool bfc, const bool spl, const bool spe,
+                 const Real bbhi, const bool bfc, const bool spl, const int spe,
                  const Real cl,
                  const Real efl, const DvceArray5D<Real> &iw_,
                  const DvceArray5D<Real> &vc_, const DvceArray2D<Real> &ang_) {
@@ -1693,21 +1694,26 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_bc_diff must be cell or face");
     }
   }
-  // segfix-1011: vet_seg = mean | split | emit (rad_m1_vetseg.hpp).  DEFAULT emit since
-  // prodfinal-1011; a restart whose file lacks the key keeps mean (bitwise older runs).
+  // segfix-1011: vet_seg = mean | split | emit | jump (rad_m1_vetseg.hpp).  DEFAULT emit
+  // since prodfinal-1011, jump since defaults-1012 (fresh runs); a restart whose file
+  // lacks the key keeps mean (bitwise older runs).
   {
     std::string sg = pin->GetOrAddString("rad_m1", "vet_seg",
-                                         global_variable::restart_run ? "mean" : "emit");
+                                         global_variable::restart_run ? "mean" : "jump");
     if (sg.compare("split") == 0) {
       vet_seg_split = true;
       vet_seg_emit = false;
     } else if (sg.compare("emit") == 0) {
       vet_seg_split = true;
       vet_seg_emit = true;
+    } else if (sg.compare("jump") == 0) {
+      vet_seg_split = true;
+      vet_seg_emit = true;
+      vet_seg_jump = true;
     } else if (sg.compare("mean") == 0) {
       vet_seg_split = false;
     } else {
-      VetFatal("<rad_m1>/vet_seg must be mean, split or emit");
+      VetFatal("<rad_m1>/vet_seg must be mean, split, emit or jump");
     }
   }
   vet_dump = pin->GetOrAddString("rad_m1", "vet_dump", "none");
@@ -1865,7 +1871,8 @@ void RadiationM1::VetInit(ParameterInput *pin) {
               << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
               << ", vet_bc_diff = " << (vet_bc_face ? "face" : "cell")
               << ", vet_seg = "
-              << (vet_seg_emit ? "emit" : (vet_seg_split ? "split" : "mean"))
+              << (vet_seg_jump ? "jump" : (vet_seg_emit ? "emit"
+                  : (vet_seg_split ? "split" : "mean")))
               << std::endl;
   }
 }
@@ -2643,7 +2650,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;   // deepatm-1011
   const bool spl = vet_seg_split;   // segfix-1011
-  const bool spe = vet_seg_emit;
+  const int spe = VetSegMode();
   auto bw_ = st.bwe;
   const int ncb = nx3*nx2*nx1, npb = nx3*nx2;
 #if MPI_PARALLEL_ENABLED
@@ -2773,7 +2780,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   rk.bbhi = bbhi;
   rk.bfc = bfc;
   rk.spl = vet_seg_split;
-  rk.spe = vet_seg_emit;
+  rk.spe = VetSegMode();
   rk.cl = cl;
   rk.efl = efl;
   rk.rd = rd_;
@@ -3185,7 +3192,7 @@ void RadiationM1::VetMBSweeps() {
     const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
     VetSweepAng(st, pmy_pack->nmb_thispack, indcs.is, indcs.js, indcs.ks, indcs.nx1,
                 indcs.nx2, trans_x3 ? indcs.nx3 : 1, trans_x3, vet_milne, iflux_x1min,
-                bblo, bbhi, vet_bc_face, vet_seg_split, vet_seg_emit, c_light, e_floor,
+                bblo, bbhi, vet_bc_face, vet_seg_split, VetSegMode(), c_light, e_floor,
                 iw, vet_cell, vet_ang);
     return;
   }
@@ -3296,7 +3303,7 @@ void RadiationM1::VetShortChar() {
   const bool dbgc = (t2_dbg_pred > 0) && (vet_dbgclip.extent_int(0) > 0);
   auto dcl_ = vet_dbgclip;
   const bool spl = vet_seg_split;   // segfix-1011
-  const bool spe = vet_seg_emit;
+  const int spe = VetSegMode();
   // littests-1011: the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];

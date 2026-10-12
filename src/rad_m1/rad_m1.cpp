@@ -937,10 +937,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // upwind point -> cell centre with chi = (chi_u + chi_0)/2 and S linear in tau; split
     // integrates its two parts at the cell face with chi_u, chi_0 and a face S limited
     // toward S_u at an opaque -> thin interface (rad_m1_vetseg.hpp); emit applies that
-    // limiter only where S_u > S_0.  DEFAULT emit since prodfinal-1011; a restart whose
-    // file lacks the key keeps mean (bitwise older runs).
+    // limiter only where S_u > S_0; jump (coreL-1012) adds the opaque -> thin jump
+    // term.  DEFAULT emit since prodfinal-1011, jump since defaults-1012 (fresh runs); a
+    // restart whose file lacks the key keeps mean (bitwise older runs); files since
+    // prodfinal-1011 echo their value.
     {
-      const char *sgd = global_variable::restart_run ? "mean" : "emit";
+      const char *sgd = global_variable::restart_run ? "mean" : "jump";
       std::string sg = pin->GetOrAddString("rad_m1","vet_seg",sgd);
       if (sg.compare("split") == 0) {
         vet_seg_split = true;
@@ -948,11 +950,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       } else if (sg.compare("emit") == 0) {
         vet_seg_split = true;
         vet_seg_emit = true;
+      } else if (sg.compare("jump") == 0) {
+        vet_seg_split = true;
+        vet_seg_emit = true;
+        vet_seg_jump = true;
       } else if (sg.compare("mean") == 0) {
         vet_seg_split = false;
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_seg must be mean, split or emit"
+                  << std::endl << "<rad_m1>/vet_seg must be mean, split, emit or jump"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -999,6 +1005,64 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
       vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
+    }
+    // vgdrot2-1012: the rotation on a physical-time clock (absent or 0 = the cycle clock of
+    // vet_gd_rotate_every, bitwise).  defaults-1012: vet_gd_rotate_dt = <dt_rot> | auto.
+    // auto = 20 x the FIRST step's dt (the dt of the first Mesh::NewTimeStep, after its
+    // global min, so the same on every rank), fixed for the run and recorded in the
+    // parameters as the number (VetGdAlignDt), so a restart keeps it.  DEFAULT auto on a
+    // FRESH vet_gd run that names neither vet_gd_rotate_dt nor vet_gd_rotate_every (either
+    // named = explicit input, kept) and has no vet_gd_beam / vet_gd_async (which exclude a
+    // rotation); a restart whose file lacks both keys keeps the old default (no rotation).
+    // The sub-keys are read (and echoed) with the physical clock: vet_gd_rotate_t0 (0),
+    // _align (true), _stretch (0.02 on a fresh run since defaults-1012, 0 on a restart
+    // whose file lacks it), _slope (keep).
+    {
+      const bool rdt_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt");
+      const bool rev_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_every");
+      const bool beam_named = pin->DoesParameterExist("rad_m1","vet_gd_beam") &&
+                              pin->GetBoolean("rad_m1","vet_gd_beam");
+      const bool async_named = pin->DoesParameterExist("rad_m1","vet_gd_async") &&
+                               pin->GetBoolean("rad_m1","vet_gd_async");
+      bool rot_phys = false;
+      if (vgd_on && rdt_named) {
+        const std::string rv = pin->GetString("rad_m1","vet_gd_rotate_dt");
+        if (rv.compare("auto") == 0) {
+          vgd_rot_auto = true;
+        } else {
+          vgd_rot_dt = pin->GetReal("rad_m1","vet_gd_rotate_dt");
+        }
+        rot_phys = vgd_rot_auto || (vgd_rot_dt > 0.0);
+      } else if (vgd_on && !rev_named && fresh && !beam_named && !async_named) {
+        vgd_rot_auto = true;
+        rot_phys = true;
+      }
+      if (rot_phys) {
+        vgd_rot = 0;
+        pin_rot_ = pin;
+        vgd_rot_t0 = pin->GetOrAddReal("rad_m1","vet_gd_rotate_t0",0.0);
+        vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
+        vgd_rot_stretch = pin->GetOrAddReal("rad_m1","vet_gd_rotate_stretch",
+                                            fresh ? 0.02 : 0.0);
+        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope","keep");
+        if (rs.compare("keep") == 0) {
+          vgd_rot_slope = 0;
+        } else if (rs.compare("probe") == 0) {
+          vgd_rot_slope = 1;
+        } else if (rs.compare("be") == 0) {
+          vgd_rot_slope = 2;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_gd_rotate_slope = '" << rs
+                    << "' is not a choice (probe | be | keep)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (vgd_rot_auto) {
+          vgd_rot_auto_fac = 20.0;
+          // the value is recorded once resolved; until then the key reads "auto"
+          pin->SetString("rad_m1","vet_gd_rotate_dt","auto");
+        }
+      }
     }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
@@ -1089,6 +1153,40 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << std::endl << "<rad_m1>/vet_gd_twin_full needs vet_gd_twin = true"
                   << std::endl;
         std::exit(EXIT_FAILURE);
+      }
+    }
+    // vgdlat-1012 vet_gd_symref (read only when named; none | col): the twin's laterally
+    // symmetric reference (the shell mean of the twin's D_rr, half-range ratios, C1, J)
+    // replaced by the 1-D spherical p-ray formal solution of the same shell-mean state
+    // (rad_m1_vetgd.cpp VetGdSymRef); vet_gd_symref_ncore / _nsub: its ray set.
+    // defaults-1012: DEFAULT col on a fresh vet_gd run where it is valid (vet_gd_twin on,
+    // no vet_gd_twin_full, no vet_gd_beam); a restart whose file lacks the key keeps none
+    // (bitwise older runs); the resolved value is echoed; explicit input overrides.
+    // Elsewhere read only when named.
+    const bool srdef = vgd_on && vgd_twin && !vgd_twfull && !vgd_beam;
+    if (vgd_on && (srdef || pin->DoesParameterExist("rad_m1","vet_gd_symref"))) {
+      const std::string sr = srdef ?
+          pin->GetOrAddString("rad_m1","vet_gd_symref",
+                              global_variable::restart_run ? "none" : "col") :
+          pin->GetString("rad_m1","vet_gd_symref");
+      if (sr.compare("col") == 0) {
+        vgd_symref = true;
+      } else if (sr.compare("none") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_symref must be none or col" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vgd_symref && (!vgd_twin || vgd_twfull || vgd_beam)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_symref = col needs vet_gd_twin = true "
+                  << "and vet_gd_twin_full = false (no vet_gd_beam)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vgd_symref && pin->DoesParameterExist("rad_m1","vet_gd_symref_ncore")) {
+        vgd_sr_nc = std::max(2, pin->GetInteger("rad_m1","vet_gd_symref_ncore"));
+      }
+      if (vgd_symref && pin->DoesParameterExist("rad_m1","vet_gd_symref_nsub")) {
+        vgd_sr_ns = std::max(1, pin->GetInteger("rad_m1","vet_gd_symref_nsub"));
       }
     }
     // vet_gd_twin_fuse (accel-1009; read only when named, default false = bitwise): the

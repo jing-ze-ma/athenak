@@ -623,8 +623,12 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
                 const Real enr, const Real hdl, const Real hdr, const Real jl,
                 const Real jr, const Real esc, const Real h0, const Real h1,
                 const Real kn0, const Real knp, const Real ch, Real &alw, Real &ccl,
-                Real &ccr, Real &dg) {
+                Real &ccr, Real &dg, const Real hwl = -1.0, const Real hwr = 0.0) {
   dg = 0.0;
+  // coreL-1012 implicit_thin_hcface = tau: the face value of the formal-solution flux
+  // Hf = hwl H_L + hwr H_R (optical-depth weights x (r/r_f)^2, see the x1 kernel);
+  // hwl < 0: the arithmetic mean (H_L + H_R)/2 (default, bitwise)
+  const Real hmean = (hwl < 0.0) ? 0.5*(hdl + hdr) : (hwl*hdl + hwr*hdr);
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
     ccl = 0.0;
@@ -674,10 +678,10 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
     // E^n (no explicit transport at c dt/dx >> 1); the upwind part at the formal
     // solution's J then carries the central SC flux, clamped to |F| <= c J (donor)
     const Real hup = hpl*jl + hmr*jr;
-    const Real hf = fmin(fmax(0.5*(hdl + hdr), -jr), jl);
+    const Real hf = fmin(fmax(hmean, -jr), jl);
     dg = q*w*ch*(hf - hup);
   } else if (corr != M1_THCR_NONE && w > 0.0) {
-    Real hf = 0.5*(hdl + hdr);
+    Real hf = hmean;
     hf = fmin(fmax(hf, -fmax(enr, 0.0)), fmax(enl, 0.0));
     if (corr == M1_THCR_SC) {
       ccl = 0.0;
@@ -2069,7 +2073,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // thinfix-1011: the formal-solution shape of the half-range face ratios (js) and
       // the outer Marshak q at the face (lin); read only with the switch on
       {
-        std::string srec = pin->GetOrAddString("rad_m1","implicit_thin_recon","dc");
+        // unify-1012: DEFAULT jse + lin on a fresh run (vet_sc and vet_gd alike: the
+        // unified thin set fse + hc + jse + lin); a restart whose file lacks the keys keeps
+        // dc / cell (bitwise older runs); the resolved values are echoed
+        const bool tjdef = !global_variable::restart_run;
+        std::string srec = pin->GetOrAddString("rad_m1","implicit_thin_recon",
+                                               tjdef ? "jse" : "dc");
         if (srec.compare("js") == 0) {
           thsw_js = true;
         } else if (srec.compare("jse") == 0) {
@@ -2079,18 +2088,87 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           ImplFatal("<rad_m1>/implicit_thin_recon = '" + srec
                     + "' is not a choice (dc | js | jse)");
         }
-        std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq","cell");
+        // coreL-1012: implicit_thin_hcface = mean | tau, the optical-depth weighted face
+        // value of the formal-solution flux of thin_corr (x1 faces).  defaults-1012: DEFAULT
+        // tau on a fresh run with implicit_thin_corr = hc | hcs (where it acts); a restart
+        // whose file lacks the key keeps mean (bitwise older runs), echoed; otherwise read
+        // only when named.  Explicit input overrides.
+        const bool hfdef = (impl_thsw_corr == M1_THCR_HC || impl_thsw_corr == M1_THCR_HCS);
+        if (hfdef || pin->DoesParameterExist("rad_m1","implicit_thin_hcface")) {
+          std::string shf = hfdef ?
+              pin->GetOrAddString("rad_m1","implicit_thin_hcface",
+                                  global_variable::restart_run ? "mean" : "tau") :
+              pin->GetString("rad_m1","implicit_thin_hcface");
+          if (shf.compare("tau") == 0) {
+            thsw_hctau = true;
+          } else if (shf.compare("mean") != 0) {
+            ImplFatal("<rad_m1>/implicit_thin_hcface = '" + shf
+                      + "' is not a choice (mean | tau)");
+          }
+          // which faces on the sp wedge (vet_gd): x1 (default) | all.  The transverse
+          // faces carry the per-shell lateral interpolation error of the sweep (as
+          // implicit_thin_js_gd): with tau there the P2 channel luminosity rose 1.5 ->
+          // 1.9 L_ex.  Cartesian (vet_sc) meshes take every face.
+          std::string sgd = pin->GetOrAddString("rad_m1","implicit_thin_hcface_gd","x1");
+          if (sgd.compare("all") == 0) {
+            thsw_hctau_lat = true;
+          } else if (sgd.compare("x1") != 0) {
+            ImplFatal("<rad_m1>/implicit_thin_hcface_gd = '" + sgd
+                      + "' is not a choice (x1 | all)");
+          }
+        }
+        std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq",
+                                              tjdef ? "lin" : "cell");
         if (sbq.compare("lin") == 0) {
           thsw_bqlin = true;
+          // unify-1012: on vet_gd only with implicit_thin_bq_gd = lin (opt-in; default
+          // cell): the r^2 H+ extrapolation put a +1.3 % kink into the top-cell E of
+          // AG Car A (E/J-1 1.6e-2 vs 2.7e-3, E r^2 smooth without it) and raised the
+          // patm thin-top max error (NOTE-unify)
+          thsw_bqgd = (pin->GetOrAddString("rad_m1", "implicit_thin_bq_gd", "cell")
+                       == "lin");
         } else if (sbq.compare("cell") != 0) {
           ImplFatal("<rad_m1>/implicit_thin_bq = '" + sbq
                     + "' is not a choice (cell | lin)");
         }
         if (thsw_js) {
           thsw_jslim = pin->GetOrAddReal("rad_m1","implicit_thin_jslim",2.0);
+          // unify-1012: js/jse on vet_gd per direction, x1 | lat | all | none (vet_sc
+          // unaffected).  DEFAULT x1 on a fresh run: the vet_gd LATERAL half-range data
+          // come from the per-shell lateral interpolation of the GD formal solution, and
+          // the lateral face shape amplifies its beam-edge errors (P2 pinhole beam L/L_ex
+          // 3.5 and 9 NONCONV with all / lat vs 1.5 and 2 with x1, NOTE-unify); a restart
+          // whose file lacks the key keeps none (0197f020: js was inert on vet_gd)
+          {
+            const bool rr = global_variable::restart_run;
+            std::string sg = pin->GetOrAddString("rad_m1","implicit_thin_js_gd",
+                                                 rr ? "none" : "x1");
+            thsw_jsgd = (sg == "all") ? 3 : (sg == "x1") ? 1 : (sg == "lat") ? 2
+                        : (sg == "none") ? 0 : -1;
+            if (thsw_jsgd < 0) {
+              ImplFatal("<rad_m1>/implicit_thin_js_gd = '" + sg
+                        + "' is not a choice (all | x1 | lat | none)");
+            }
+          }
           if (!(thsw_jslim >= 1.0)) {
             ImplFatal("<rad_m1>/implicit_thin_jslim must be >= 1");
           }
+        }
+      }
+      // unify-1012: implicit_thin_hcsf = jh | j.  hc/hcs subtract the upwind flux of the
+      // formal solution, h+-_f x (the cell scale); where the face ratios are the sf ratios
+      // over the donor scale Jh > J (implicit_hr_face = sf, beam-crossed cells) the cell
+      // scale must be Jh, else the correction is the O(1) part of the SC flux the sf face
+      // carries via E = Jh.  OPT-IN (default j, bitwise older runs): validation
+      // (NOTE-unify) found jh does NOT rescue cbg with dc (jse does), and with hc it
+      // puts +16 % energy into every vacuum crossing beam (cb row 1.164 vs 1.006); it
+      // only cuts the Picard count of hc + jse on cbg (34 -> 3.9).
+      {
+        std::string shj = pin->GetOrAddString("rad_m1","implicit_thin_hcsf","j");
+        if (shj.compare("jh") == 0) {
+          thsw_hcjh = true;
+        } else if (shj.compare("j") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_hcsf = '" + shj + "' is not a choice (jh | j)");
         }
       }
       thsw_c1 = (impl_thsw_corr == M1_THCR_HCS) || thsw_jse ||
@@ -2233,11 +2311,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // a multi-D mesh with implicit_solver = bicgstab, nghost >= 2, hydro with coupling,
   // gas_feedback and dbg_gas_force.  Otherwise off, silently.  A restart whose file lacks
   // the key (read only when named before) keeps off; the resolved value is echoed;
-  // explicit input overrides.
+  // explicit input overrides.  defaults-1012: only where the gas is LIVE, <time>/
+  // evolution = dynamic (a kinematic or static medium never takes the solve's radiative
+  // kick, so the implicit velocity has nothing to predict; the validated test decks name
+  // false there).  Before defaults-1012 such a fresh deck took true.
   {auto *pmh = pmy_pack->pmesh;
+  const bool gas_live = !pin->DoesParameterExist("time","evolution") ||
+                        (pin->GetString("time","evolution").compare("dynamic") == 0);
   const bool vdef = (pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) &&
                     full && pmh->multi_d && (impl_solver == M1_ISOLV_BICGSTAB) &&
-                    (pmh->mb_indcs.ng >= 2) && fl_on &&
+                    (pmh->mb_indcs.ng >= 2) && fl_on && gas_live &&
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
@@ -2417,10 +2500,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
   // moveq-1011: the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
   impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",true);
+  // h2order2-1011: implicit_rad_inertia_solve (read only when named; rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","implicit_rad_inertia_solve")) {
+    impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
+  }
   impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
-  // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md)
+  // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md).
+  // defaults-1012 (user sign-off of method-1012): DEFAULT conservative2 (with its
+  // implicit_cs2_hll = drag, implicit_cs2_shift = false) on a FRESH run with gas coupling
+  // (hydro, coupling, gas_feedback); matched without it and on a restart whose file
+  // lacks the key (files since consrc-1011 echo it).  Explicit input overrides.
   {
-    const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src","matched");
+    const bool gsdef = !global_variable::restart_run && fl_on && coupling && gas_feedback;
+    const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src",
+                                               gsdef ? "conservative2" : "matched");
     if (gs.compare("matched") == 0) {
       impl_gas_src_cons = false;
     } else if (gs.compare("conservative") == 0) {
@@ -2504,8 +2597,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // before 5c9e4432) the old value false is kept; files since then echo their value.
   impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",
                                         !global_variable::restart_run);
-  // h2order-1011 implicit_vimp_bc (ImplicitVimpBuild; read only when named)
-  if (pin->DoesParameterExist("rad_m1","implicit_vimp_bc")) {
+  // h2order-1011 implicit_vimp_bc (ImplicitVimpBuild).  DEFAULT true since
+  // vimpbcdef-1011 where implicit_vimp is on (the only place it acts): a fresh run takes
+  // true, a restart whose file lacks the key keeps the old value false; the resolved
+  // value is echoed (later restarts keep it); explicit input overrides.  Without
+  // implicit_vimp the key is read only when named (default false, not echoed).
+  if (impl_vimp) {
+    impl_vimp_bc = pin->GetOrAddBoolean("rad_m1","implicit_vimp_bc",
+                                        !global_variable::restart_run);
+  } else if (pin->DoesParameterExist("rad_m1","implicit_vimp_bc")) {
     impl_vimp_bc = pin->GetBoolean("rad_m1","implicit_vimp_bc");
   }
   if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
@@ -2605,7 +2705,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(gcz1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(gcz1, 0.0);
   }
-  if (impl_gas_src_cs2) {   // consfix-1011: the dA face means inside F0^n
+  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: dA face means in F0^n
     Kokkos::realloc(cs2f1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(cs2f1, 0.0);
     if (trans_on) {
@@ -2672,7 +2772,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     niw += M1_NIW_HSF;
   }
   iw_cs2 = -1;
-  if (impl_gas_src_cs2) {   // consfix-1011: A^old (3), dA (3)
+  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: A^old (3), dA (3)
     if (cs_geom) {
       ImplFatal("<rad_m1>/implicit_gas_src = conservative2 is not wired for the cubed "
                 "sphere (covariant cell F)");
@@ -3601,10 +3701,12 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                      : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
     const Real tqi = thsw_qp;
-    const bool tjs = thsw && thsw_js && (hsrc == 1);   // thinfix-1011
+    // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
+    const bool tjs = thsw && thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 2)));
     const bool tjse = tjs && thsw_jse;
     const Real tjl = thsw_jslim;
     const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
+    const bool hcjh = thsw_hcjh;   // unify-1012
     const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
     const Real xcfl = impl_hr_xs_cfl;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
@@ -3654,6 +3756,8 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         if (tcorr == M1_THCR_HCS || tjse) {ImplicitHaloExchange(1, M1_IW_TR);}
       }
       auto fw = (d == 1) ? fw2 : fw3;
+      // coreL-1012: on the sp wedge the transverse faces only with hcface_gd = all
+      const bool thct = thsw_hctau && (!sph || thsw_hctau_lat);
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
       const int inx = (d == 1) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
       const int onx = (d == 1) ? BoundaryFace::outer_x2 : BoundaryFace::outer_x3;
@@ -3697,13 +3801,30 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
             gfl = M1HrSfFb(iw_, hsfb, m, km, jm, i, gfl);
             gfr = M1HrSfFb(iw_, hsfb, m, k, j, i, gfr);
           }
+          // unify-1012 (implicit_thin_hcsf = jh): the hc/hcs correction of a face whose
+          // ratios are the sf ratios over the donor scale Jh takes Jh as the cell's
+          // formal-solution scale (M1HrSf: E = Jh at the steady fixed point)
+          Real jcl = iw_(m,M1_IW_TC,km,jm,i), jcr = iw_(m,M1_IW_TC,k,j,i);
+          if (hsfb >= 0 && hcjh) {
+            jcl = fmax(jcl, iw_(m,hsfb+M1_HSF_JH,km,jm,i));
+            jcr = fmax(jcr, iw_(m,hsfb+M1_HSF_JH,k,j,i));
+          }
+          // coreL-1012 implicit_thin_hcface = tau: optical-depth weights (equal
+          // half-cell lengths on a transverse face)
+          Real hwl = -1.0, hwr = 0.0;
+          if (thct) {
+            const Real tl = fmax(iw_(m,M1_IW_KT,km,jm,i), 0.0);
+            const Real tr = fmax(iw_(m,M1_IW_KT,k,j,i), 0.0);
+            hwl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
+            hwr = 1.0 - hwl;
+          }
           M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
-                     iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i),
+                     jcl, jcr,
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
-                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt);
+                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -9532,6 +9653,47 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::RinrActive
+//! \brief h2order2-1011: implicit_rad_inertia_solve acts in this solve
+//! (implicit_rad_inertia with a fluid, conservative2 not active: it carries the whole dA)
+
+bool RadiationM1::RinrActive() {
+  return impl_rinr_solve && impl_rad_inertia && (iw_cs2 >= 0) &&
+         FluidRef::Get(pmy_pack).on && !Cs2Active();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitRinrDeltaA
+//! \brief h2order2-1011 (implicit_rad_inertia_solve): per cell dA = a (E^k - E^ov) of
+//! this Picard pass's iterate (x1: ADV, x2/x3: A2, A3; a frozen for the solve, as
+//! ImplicitRadInertia), into iw_cs2 + 3..5, and to the ghosts
+
+void RadiationM1::ImplicitRinrDeltaA() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool trans = trans_on, thrd = trans_x3;
+  auto iw_ = iw;
+  const int cd = iw_cs2 + 3;
+  par_for("m1_rinr_da", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real de = iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EN,k,j,i);
+    iw_(m,cd,k,j,i) = iw_(m,M1_IW_ADV,k,j,i)*de;
+    iw_(m,cd+1,k,j,i) = trans ? iw_(m,M1_IW_A2,k,j,i)*de : 0.0;
+    iw_(m,cd+2,k,j,i) = thrd ? iw_(m,M1_IW_A3,k,j,i)*de : 0.0;
+  });
+  const int nc = trans ? (thrd ? 3 : 2) : 1;
+  for (int c = 0; c < nc; ++c) {
+    if (trans) {
+      ImplicitHaloExchange(1, cd + c);
+    } else {
+      ImplicitX1Halo(true, cd + c);
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitCs2Pass
 //! \brief consfix-1011 (implicit_gas_src = conservative2), once per Picard pass after
 //! the vimp build: dA of this pass (ImplicitCs2DeltaA, with the vimp prediction of the
@@ -9548,8 +9710,17 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool trans = trans_on, thrd = trans_x3;
-  const bool tq = trans && dbg_gas_force_trans;
-  if (!restore) {ImplicitCs2DeltaA(impl_vimp && vimp_now);}
+  // h2order2-1011: implicit_rad_inertia_solve uses the same F0^n shift with its own dA
+  // (ImplicitRadInertia's transverse faces do not depend on dbg_gas_force_trans)
+  const bool rinr = RinrActive();
+  const bool tq = trans && (dbg_gas_force_trans || rinr);
+  if (!restore) {
+    if (rinr) {
+      ImplicitRinrDeltaA();
+    } else {
+      ImplicitCs2DeltaA(impl_vimp && vimp_now);
+    }
+  }
   auto iw_ = iw;
   auto f1_ = f0x1n;
   auto f2_ = f0x2n;
@@ -10155,7 +10326,8 @@ void RadiationM1::ImplicitVimpBuild() {
     });
   }
 
-  // h2order-1011 implicit_vimp_bc (read only when named, default false = bitwise): a
+  // h2order-1011 implicit_vimp_bc (default true on fresh runs with implicit_vimp, see the
+  // key's parse; a restart whose file lacks it keeps false): a
   // Marshak x1 end face carries the enthalpy flux A E of implicit_bc_advect (outflow:
   // the end cell's E, inflow: the bath) with the end cell's a at the OLD-vector velocity;
   // the stage's own radiative kick dv is missing there, an O(dt) lag (first order in
@@ -10834,7 +11006,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // consfix-1011 (conservative2): the explicit -dA/dt of the hydro step into F0 first
   if (Cs2Active() && cs2_shift && !gcs_first && !(cs2_dbg & 4)) {ImplicitCs2Shift();}
   Kokkos::deep_copy(DevExeSpace(), f0x1n, f0x1);
-  if (impl_gas_src_cs2) {   // consfix-1011: nothing of this solve's dA in F0^n yet
+  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: no dA in F0^n yet
     Kokkos::deep_copy(DevExeSpace(), cs2f1, 0.0);
     if (trans_on) {
       Kokkos::deep_copy(DevExeSpace(), cs2f2, 0.0);
@@ -11420,19 +11592,37 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // H+_f = (3 H+_N - H+_N-1)/2 the outgoing half-range flux linearly extrapolated to
     // the face (the vacuum face carries H+ alone), the factor H+_f/H+_N limited as in
     // M1ThinJs; the cell value H+_N/J_N is O(dx) off the face value
-    const bool bql = (impl_thsw != M1_THSW_NONE) && thsw_bqlin && (hsrc == 1) &&
+    // unify-1012: vet_gd (src 2) only with implicit_thin_bq_gd = lin (opt-in): there the
+    // extrapolated quantity is r^2 H+ (the flux through the shell), linear in r to the
+    // face x1f(ie+1) from the two top cell centres, H+_f = (r^2 H+)_f/r_f^2 (Cartesian:
+    // the vet_sc expression)
+    const bool bgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
+    const bool bql = (impl_thsw != M1_THSW_NONE) && thsw_bqlin &&
+                     (hsrc == 1 || (bgx && thsw_bqgd)) &&
                      (ie > is);
     const Real bqlim = thsw_jslim;
+    auto bx1v = pmy_pack->pcoord->x1v;
+    auto bx1f = pmy_pack->pcoord->xx1f;
     par_for("m1_impl_hrq", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real hp, hm, fb;
       M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq, 0, 0.0, hp, hm, fb);
       if (bql && hp > 0.0) {
-        const Real j0 = hvc_(m,M1_VET_J,k,j,ieq), j1 = hvc_(m,M1_VET_J,k,j,ieq-1);
+        const bool g = (hsrc == 2);
+        const Real j0 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq) : hvc_(m,M1_VET_J,k,j,ieq);
+        const Real j1 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq-1) : hvc_(m,M1_VET_J,k,j,ieq-1);
         Real hp1, hm1, fb1;
         M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq-1, 0, 0.0, hp1, hm1, fb1);
-        if (j0 > 0.0 && j1 > 0.0) {
-          const Real ph = fmin(fmax(1.5 - 0.5*hp1*j1/(hp*j0), 1.0/bqlim), bqlim);
+        if (j0 > 0.0 && j1 > 0.0 && hp1 >= 0.0) {
+          Real ph;
+          if (g) {
+            const Real r0 = bx1v(m,ieq), r1 = bx1v(m,ieq-1), rf = bx1f(m,ieq+1);
+            const Real a0 = r0*r0*hp*j0, a1 = r1*r1*hp1*j1;
+            const Real af = a0 + (a0 - a1)*(rf - r0)/(r0 - r1);
+            ph = fmin(fmax(af/(rf*rf*hp*j0), 1.0/bqlim), bqlim);
+          } else {
+            ph = fmin(fmax(1.5 - 0.5*hp1*j1/(hp*j0), 1.0/bqlim), bqlim);
+          }
           hp *= ph;
         }
       }
@@ -11734,12 +11924,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                        : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
       const Real tqi = thsw_qp;
-      const bool tjs = thsw_js && (hsrc == 1);   // thinfix-1011
+      // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
+      const bool tjs = thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 1)));
       const bool tjse = thsw_jse;
       const Real tjl = thsw_jslim;
       const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
+      const bool hcjh = thsw_hcjh;   // unify-1012
       const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
       const Real xcfl = impl_hr_xs_cfl;
+      const bool thct = thsw_hctau;   // coreL-1012
+      auto cx1vv = pmy_pack->pcoord->x1v;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -11836,8 +12030,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               dm = 0.0;
               M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,ip), jr, fbr, th0, th1, dm, hmr);
             }
-            const Real wjs = !tjs ? 0.0 : (tjse ? fmin(hvc_(m,M1_VET_EPS,k,j,im),
-                                                       hvc_(m,M1_VET_EPS,k,j,ip)) : 1.0);
+            const Real wjs = !tjs ? 0.0
+                             : (!tjse ? 1.0
+                                : (sgd ? fmin(hgh_(m,M1_VGD_HREP,k,j,im),
+                                              hgh_(m,M1_VGD_HREP,k,j,ip))
+                                       : fmin(hvc_(m,M1_VET_EPS,k,j,im),
+                                              hvc_(m,M1_VET_EPS,k,j,ip))));
             if (tjs) {
               M1ThinJs(hpl, hml, hpr, hmr, jl, jr, tjl, wjs, hpl, hmr);
             }
@@ -11846,6 +12044,29 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
             const Real gl2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, im, gl) : gl;
             const Real gr2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, ip, gr) : gr;
+            if (hsfb >= 0 && hcjh) {   // unify-1012 (implicit_thin_hcsf = jh)
+              jl = fmax(jl, iw_(m,hsfb+M1_HSF_JH,k,j,im));
+              jr = fmax(jr, iw_(m,hsfb+M1_HSF_JH,k,j,ip));
+            }
+            // coreL-1012 implicit_thin_hcface = tau: the formal-solution face flux
+            // interpolated linearly in OPTICAL DEPTH between the two cell centres (the
+            // flux changes with tau, not with r): Hf = (tau_R H_L + tau_L H_R)/(tau_L +
+            // tau_R), tau the half-cell depths; on the sp wedge of r^2 H (exact for a
+            // free-streaming exterior).  An opaque cell next to a thin one: Hf -> H of
+            // the thin cell (the flux the surface emits), not the mean across the kink
+            Real hwl = -1.0, hwr = 0.0;
+            if (thct) {
+              const Real dl = sphf ? (cx1ff(m,i) - cx1vv(m,im)) : 0.5*dx;
+              const Real dr = sphf ? (cx1vv(m,ip) - cx1ff(m,i)) : 0.5*dx;
+              const Real tl = fmax(ktl, 0.0)*dl, tr = fmax(ktr, 0.0)*dr;
+              hwl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
+              hwr = 1.0 - hwl;
+              if (sphf) {
+                const Real rf2 = SQR(cx1ff(m,i));
+                hwl *= SQR(cx1vv(m,im))/rf2;
+                hwr *= SQR(cx1vv(m,ip))/rf2;
+              }
+            }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl2, gr2, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0
@@ -11853,7 +12074,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hgh_(m,M1_VGD_HREP,k,j,ip))
                               : fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
-                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt);
+                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr);
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;
@@ -12087,7 +12308,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_vimp: the Jacobian of the implicit enthalpy velocity for this pass
     if (vimp_now) {ImplicitVimpBuild();}
     // consfix-1011 (conservative2): this pass's dA into the face equation's F0^n
-    if (Cs2Active() && !(cs2_dbg & 1)) {ImplicitCs2Pass(false);}
+    if ((Cs2Active() && !(cs2_dbg & 1)) || RinrActive()) {ImplicitCs2Pass(false);}
     if (muscl_now) {ImplicitMusclBuild();}   // xthinfix-1009 Fix B
     const bool vim = vimp_now;
     const int ivb = iw_vimp;
@@ -13269,11 +13490,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // the Picard test, optionally without the confirming pass: q is the contraction
       // of the last two passes, and q/(1-q) times this change bounds what is left
       bool pc = (resid < impl_tol);
-      if (impl_conv_est && !pc && rprev > 0.0) {
+      // h2order2-1011: implicit_rad_inertia_solve lags dA by one pass, so the stop must
+      // see the last pass's own change (no contraction estimate, no one-pass stop)
+      const bool rinrc = RinrActive();
+      if (impl_conv_est && !pc && rprev > 0.0 && !rinrc) {
         Real q = resid/rprev;
         pc = (q < 0.5) && (resid*q/(1.0 - q) < impl_tol);
       }
-      if (onep && it == 0 && !pc && !ocheck) {
+      if (onep && it == 0 && !pc && !ocheck && !rinrc) {
         const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
         // time2_one_pass_safety for the stage solves (otyp 1, 2)
         const Real sf = (otyp != 0 && t2_onep_s > 0.0) ? t2_onep_s : impl_onep_s;
@@ -13756,8 +13980,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // moveq-1011: the radiation momentum of the enthalpy flux (implicit_rad_inertia)
   // consfix-1011: conservative2 always takes the face split (of the whole dA)
-  if (Cs2Active()) {ImplicitCs2Pass(true);}   // consfix-1011: F0^n back to the old value
-  if (impl_rad_inertia && have_hydro) {ImplicitRadInertia();}
+  if (Cs2Active() || RinrActive()) {   // consfix-1011: F0^n back to the old value
+    ImplicitCs2Pass(true);
+  }
+  // h2order2-1011: implicit_rad_inertia_solve carried it inside the passes
+  if (impl_rad_inertia && have_hydro && !RinrActive()) {ImplicitRadInertia();}
   cs2_dav = false;
   //------------------------------------------------------------------------- write back
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
