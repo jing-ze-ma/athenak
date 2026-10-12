@@ -723,6 +723,34 @@ int64_t RadiationM1::VetGdBlock(const int cyc) const {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdRotStep
+//! \brief vgdrot2-1012 (Driver, before Time2StartProbe): on the first step of a new
+//! rotation block (physical clock) the stored hesdirk2 slope K1 is f(U^{n-1..n}) of the
+//! OLD set; the FSAL stage 1 would then carry O(dt) of the old closure per jump (first
+//! order however the jumps are aligned).  probe: t2_ok = false + a probe solve (the
+//! time2_start = slope path, its build at U^n with the new set) gives K1 = f_new(U^n) +
+//! O(dt_p); be: t2_ok = false (a backward-Euler step).  The first call (fresh start or
+//! restart) takes the block just before t as the last one, so a restart exactly on a
+//! boundary re-seeds the slope too.
+
+void RadiationM1::VetGdRotStep() {
+  if (!(vgd_rot_dt > 0.0) || !vgd_on) {return;}
+  const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
+  if (vgd_rot_lastblk == INT64_MIN) {
+    const Mesh *pm = pmy_pack->pmesh;
+    vgd_rot_lastblk = static_cast<int64_t>(
+        std::floor((pm->time - vgd_rot_t0)/vgd_rot_dt - 1.0e-9));
+  }
+  if (b != vgd_rot_lastblk && vgd_rot_slope != 0 && time_scheme == M1_TIME_HESDIRK2 &&
+      t2_ok) {
+    t2_ok = false;
+    t2_rotprobe = (vgd_rot_slope == 1);
+    vgd_rot_nprobe += 1.0;
+  }
+  vgd_rot_lastblk = b;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::VetGdAlignDt
 //! \brief vgdrot2-1012, vet_gd_rotate_dt > 0 with vet_gd_rotate_align (from
 //! Mesh::NewTimeStep after the global min, before the tlim clamp): the next boundary

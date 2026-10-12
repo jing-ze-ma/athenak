@@ -487,6 +487,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
       // time2_start = slope (h2order-1011): a step without a stored slope gets K1 from a
       // probe solve and runs the stages (no-op otherwise)
+      // vgdrot2-1012: the first step of a new vet_gd rotation block drops the old set's
+      // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
+      if (pm1 != nullptr && !m1mr) {pm1->VetGdRotStep();}
       if (pm1 != nullptr && !m1mr) {(void) pm1->Time2StartProbe(this, pmesh->dt);}
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;

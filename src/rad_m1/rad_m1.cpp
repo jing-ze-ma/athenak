@@ -1008,6 +1008,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vgd_rot = 0;
         vgd_rot_t0 = pin->GetOrAddReal("rad_m1","vet_gd_rotate_t0",0.0);
         vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
+        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope","probe");
+        if (rs.compare("keep") == 0) {
+          vgd_rot_slope = 0;
+        } else if (rs.compare("probe") == 0) {
+          vgd_rot_slope = 1;
+        } else if (rs.compare("be") == 0) {
+          vgd_rot_slope = 2;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_gd_rotate_slope = '" << rs
+                    << "' is not a choice (probe | be | keep)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       }
     }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath

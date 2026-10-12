@@ -1807,6 +1807,15 @@ class RadiationM1 {
   Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
   bool vgd_rot_align = false;
   double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
+  // vet_gd_rotate_slope (with vet_gd_rotate_dt; probe | be | keep): the hesdirk2 FSAL
+  // slope K1 of the first step of a new rotation block belongs to the OLD set (an O(dt)
+  // stage-1 error per jump = first order); probe: a time2_start=slope probe solve of the
+  // new set gives K1 (VetGdRotStep), be: that step is backward Euler, keep: as before
+  int vgd_rot_slope = 1;
+  int64_t vgd_rot_lastblk = INT64_MIN;
+  bool t2_rotprobe = false;
+  double vgd_rot_nprobe = 0.0;
+  void VetGdRotStep();
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with
   // the first gd shell at the physical inner face (icut = 0) the outward rays start from

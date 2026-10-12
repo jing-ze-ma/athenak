@@ -578,7 +578,9 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! only moves Picard starting points).
 
 bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
-  if (time_scheme != M1_TIME_HESDIRK2 || t2_start != 1) return false;
+  // vgdrot2-1012: VetGdRotStep asks for the probe at a rotation (any time2_start)
+  if (time_scheme != M1_TIME_HESDIRK2 || (t2_start != 1 && !t2_rotprobe)) return false;
+  t2_rotprobe = false;
   if (Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (fl.on && fl.mhd) {
