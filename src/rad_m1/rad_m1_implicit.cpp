@@ -2093,6 +2093,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
             ImplFatal("<rad_m1>/implicit_thin_hcface = '" + shf
                       + "' is not a choice (mean | tau)");
           }
+          // which faces on the sp wedge (vet_gd): x1 (default) | all.  The transverse
+          // faces carry the per-shell lateral interpolation error of the sweep (as
+          // implicit_thin_js_gd): with tau there the P2 channel luminosity rose 1.5 ->
+          // 1.9 L_ex.  Cartesian (vet_sc) meshes take every face.
+          std::string sgd = pin->GetOrAddString("rad_m1","implicit_thin_hcface_gd","x1");
+          if (sgd.compare("all") == 0) {
+            thsw_hctau_lat = true;
+          } else if (sgd.compare("x1") != 0) {
+            ImplFatal("<rad_m1>/implicit_thin_hcface_gd = '" + sgd
+                      + "' is not a choice (x1 | all)");
+          }
         }
         std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq","cell");
         if (sbq.compare("lin") == 0) {
@@ -3654,7 +3665,8 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         if (tcorr == M1_THCR_HCS || tjse) {ImplicitHaloExchange(1, M1_IW_TR);}
       }
       auto fw = (d == 1) ? fw2 : fw3;
-      const bool thct = thsw_hctau;   // coreL-1012
+      // coreL-1012: on the sp wedge the transverse faces only with hcface_gd = all
+      const bool thct = thsw_hctau && (!sph || thsw_hctau_lat);
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
       const int inx = (d == 1) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
       const int onx = (d == 1) ? BoundaryFace::outer_x2 : BoundaryFace::outer_x3;

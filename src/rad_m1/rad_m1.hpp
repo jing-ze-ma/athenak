@@ -656,6 +656,7 @@ class RadiationM1 {
   bool thsw_js = false, thsw_bqlin = false;
   bool thsw_jse = false;   // js weighted by the thermal fraction eps of the face
   bool thsw_hctau = false;  // coreL-1012 implicit_thin_hcface = tau (M1ThinFace)
+  bool thsw_hctau_lat = false;  // ... and on the sp wedge's transverse faces (gd = all)
   Real thsw_jslim = 2.0;
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
