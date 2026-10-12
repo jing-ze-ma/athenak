@@ -42,3 +42,10 @@ md5 63528bf7f170366e4fd5cbc05f4b74b6 (deck keys implicit_thin_js_face, vet_gd_ro
 Link 2 = job 3367462, submitted 12:18:47 by the chain (restart from bsg3d.00007.rst + rst_info last_time keys).
 Projection at 0.54 s/cycle: ~56.7k cycles = ~8.5 h compute = ~9-10 links to tlim 4.96e6 s.
 Page: the BSG True Reproduction artifact now shows this run (t = 4.1 d at publish; refreshed from DeltaAI with the Caltech pagework, 822df54e).
+
+- 12:30 CDT: links shortened to 40 min (code -t 35 min) to backfill sooner; the 1 h link 2 (3367462) was cancelled while pending.
+- 12:58 CDT (user): also a 12 h ghx4 batch job **3367703** for the remainder (est. 10-13 afternoon). link.sub now takes an atomic run lock
+  (run/LOCKD, owner job id; a job that finds the run held by a running job exits at once); the chain waits while the ghx4 job
+  holds the run and cancels it if still pending at DONE.
+- **Link 2 STARTED**: job **3367704** (ghx4-interactive, 40 min) on gh081 since 15:41:44 CDT, holds the lock, restarted from
+  rst/bsg3d.00007.rst (t 5.317e5 s, cycle 6077); cycle 6100 reached at 15:42.
