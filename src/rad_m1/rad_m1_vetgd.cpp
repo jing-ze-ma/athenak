@@ -101,6 +101,20 @@ void VgdFatal(const std::string &msg) {
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
+// vgdlat-1012 vet_gd_symref: the weight of the symmetric shift (ref - shell mean) in a
+// cell: the fraction of the cell's formal-solution J that the shell-mean (twin) field
+// explains, min(J_twin/J, 1) (1 on a laterally uniform state; -> 0 in a beam or channel
+// much brighter than the mean field, where the mean's bias says nothing); 1 without the
+// stored J (vgd_thx false)
+template <typename V>
+KOKKOS_INLINE_FUNCTION
+Real VgdSrW(const V &hr, const V &ht, const bool thx, const int m, const int k,
+            const int j, const int i) {
+  if (!thx) {return 1.0;}
+  const Real jm = hr(m,M1_VGD_HRJ,k,j,i), jt = ht(m,M1_VGD_HRJ,k,j,i);
+  return (jm > jt && jm > 0.0) ? fmax(jt, 0.0)/jm : 1.0;
+}
+
 // vgdlat-1012 vet_gd_symref: the reference of vgd_hr component c at shell i (vgd_srm)
 KOKKOS_INLINE_FUNCTION
 Real VgdSrRef(const DvceArray1D<Real> &sr, const int c, const int i, const int c1) {
@@ -5957,12 +5971,21 @@ void RadiationM1::VetGdTwin(const int stage) {
   auto mt_ = vgd_twm;
   // vgdlat-1012 vet_gd_symref: the reference D_rr is the 1-D solution's f (LAT0 is
   // D_rr - f_K(vet_col) of the cell, slot 0 still f_K here): D_rr = D_gd - D_twin + f_ref
+  // weighted by VgdSrW (the main and twin J of VetGdHalfRange(0)/(1), when stored)
   const bool sref = vgd_symref && vgd_sr_ok;
   auto sr_ = vgd_srm;
   const int sc1 = c1;
+  const bool sthx = vgd_thx && impl_beam_hr && (vgd_hr.extent_int(0) > nmb1) &&
+                    (vgd_hr.extent_int(1) > M1_VGD_HRJ);
+  auto shr_ = vgd_hr;
+  auto sht_ = vgd_hrt;
   par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real ref = sref ? (sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) : mt_(i);
+    Real ref = mt_(i);
+    if (sref) {
+      const Real w = VgdSrW(shr_, sht_, sthx, m, k, j, i);
+      ref += w*((sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) - mt_(i));
+    }
     tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - ref;
     for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
   });
@@ -6172,6 +6195,10 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     return;
   }
   // stage 2: subtract the twin's lateral pattern, shell by shell, component by component
+  // vgdlat-1012 vet_gd_symref: and shift by w (ref - shell mean), w = VgdSrW
+  const bool sref = vgd_symref && vgd_sr_ok;
+  auto sr_ = vgd_srm;
+  const int c1x = c1;
   const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
                     pmy_pack->pmesh->mesh_indcs.nx3;
 #if MPI_PARALLEL_ENABLED
@@ -6213,14 +6240,6 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       mh(i) = a;
     }
     Kokkos::deep_copy(vgd_hrm6, mh);
-    if (vgd_symref && vgd_sr_ok) {   // vgdlat-1012: the 1-D reference, not the means
-      auto sr_ = vgd_srm;
-      par_for("m1_vgd_hr_sr6", DevExeSpace(), 0, nhc - 1, ilo, ie,
-      KOKKOS_LAMBDA(const int c, const int i) {
-        if (c == M1_VGD_HREP) {return;}
-        m6_(c*c1_ + i) = VgdSrRef(sr_, c, i, c1_);
-      });
-    }
     for (int c = 0; c < nhc; ++c) {
       if (c == M1_VGD_HREP) {continue;}
       const bool plus = (c % 2 == 0);
@@ -6230,10 +6249,14 @@ void RadiationM1::VetGdHalfRange(const int stage) {
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
           const Real mo = m6_(off + i);
+          const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
+          const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo;
           if (c == M1_VGD_HRC1) {
-            hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo), 0.0);
+            hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo) + w*(rf - mo),
+                                  0.0);
           } else if (ht_(m,c,k,j,i) > 0.0 && mo > 0.0) {
             hr_(m,c,k,j,i) *= mo/ht_(m,c,k,j,i);
+            if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo, w);}
           }
         });
         continue;
@@ -6242,6 +6265,10 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
         Real v = hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - m6_(off + i));
+        if (sref) {
+          v += VgdSrW(hr_, ht_, thx, m, k, j, i)*
+               (VgdSrRef(sr_, c, i, c1x) - m6_(off + i));
+        }
         hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
       });
     }
@@ -6287,22 +6314,19 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       Kokkos::deep_copy(vgd_hrm, mh);
     }
 #endif
-    if (vgd_symref && vgd_sr_ok) {   // vgdlat-1012: the 1-D reference, not the mean
-      auto sr_ = vgd_srm;
-      const int c1_ = c1;
-      par_for("m1_vgd_hr_sr", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
-        mo_(i) = VgdSrRef(sr_, c, i, c1_);
-      });
-    }
     const bool plus = (c % 2 == 0);
     if (c >= 6) {   // gdthin-1011: C1 (additive, >= 0) and J (relative)
       par_for("m1_vgd_hr_sub2", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
+        const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
+        const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo_(i);
         if (c == M1_VGD_HRC1) {
-          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i)), 0.0);
+          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i))
+                                + w*(rf - mo_(i)), 0.0);
         } else if (ht_(m,c,k,j,i) > 0.0 && mo_(i) > 0.0) {
           hr_(m,c,k,j,i) *= mo_(i)/ht_(m,c,k,j,i);
+          if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo_(i), w);}
         }
       });
       continue;
@@ -6311,6 +6335,9 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
       Real v = hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i));
+      if (sref) {
+        v += VgdSrW(hr_, ht_, thx, m, k, j, i)*(VgdSrRef(sr_, c, i, c1x) - mo_(i));
+      }
       hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
     });
   }
