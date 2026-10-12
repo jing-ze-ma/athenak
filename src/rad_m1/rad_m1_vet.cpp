@@ -3943,9 +3943,10 @@ void RadiationM1::VetShortCharSweep() {
 
   // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then
   // the mean over the last K sets of J and the J-normalised moments (not on a snapshot)
-  if (vra_on && vsc_rot && !vra_raw && vra_state == 1) {
+  if (vra_on && vsc_rot && !vra_raw && vra_state == 1) {VetScRotAvgSetup();}
+  // rotavg-rst-1012: a history loaded from the restart file must fit the table
+  if (vra_on && vsc_rot && !vra_raw && vra_state == 1 && RotAvgRstCheck()) {
     Kokkos::Timer tr;
-    VetScRotAvgSetup();
     if (vra_last) {RotAvgSnap(vra_k - 1, is);}   // the current set's raw moments (Delta)
     RotAvgUpdate(is);
     RotAvgApply(is);

@@ -5139,9 +5139,10 @@ void RadiationM1::VetGdBuild() {
   const int64_t blk = VetGdBlock(pmy_pack->pmesh->ncycle);
   if (ra && vra_state == 1 && blk != vra_blk) {
     if (vra_pend == 3) {
-      VetGdRotAvgSetup();
-      RotAvgShift(vra_k - 1);
-      vra_pend = 0;
+      // rotavg-rst-1012: the shift itself in VetGdPost (pend 4), where the field table is
+      // complete (vgd_hr exists only after the first sweep of a run: a restart on a
+      // block boundary); no sweep between reads or writes the history
+      vra_pend = 4;
       vra_nrot += 1.0;
     } else {
       vra_state = 0;
@@ -5303,9 +5304,15 @@ void RadiationM1::VetGdPost() {
   // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then
   // the mean over the last K sets into the hand-over fields (not on a snapshot sweep)
   if (vra_on && VgdRotOn() && !vra_raw && vra_state == 1) {
+    VetGdRotAvgSetup();
+    if (vra_pend == 4) {   // the shift of the first build of a block (VetGdBuild)
+      vra_pend = 0;
+      if (RotAvgRstCheck()) {RotAvgShift(vra_k - 1);}
+    }
+  }
+  if (vra_on && VgdRotOn() && !vra_raw && vra_state == 1 && RotAvgRstCheck()) {
     Kokkos::Timer tr;
     const int ilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
-    VetGdRotAvgSetup();
     if (vra_last) {
       // the backups of the next-set sweep (VetGdBuild), sized once
       if (vra_bk_tt.extent(0) != tau_ten.extent(0) ||

@@ -308,4 +308,140 @@ void RadiationM1::RotAvgApply(const int ilo) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! rotavg-rst-1012: the averaging state in the restart file (radm1::kM1RaRstMagic), so a
+//! restart with vet_rotate_avg = K is a bitwise continuation.  The header (int64 x
+//! M1_RA_RST_NH): have = 1, nslab, K, nf, closure (1 vet_gd, 2 vet_sc), head, pend,
+//! nslot (ring slots written: K-1, or K with the Delta slot when pend = 3), blk, the
+//! interior cells per MeshBlock.  The slots' interior values (nslot (nf+1) nx3 nx2 nx1
+//! per MeshBlock) are packed densely into nslab slabs of the record's (ghosted) slab
+//! size, the LAST of each MeshBlock record, so the history moves with its MeshBlock (any
+//! rank count / distribution).  Written only with a complete history (vra_state = 1).
+
+// the registered field count of the history: the table's, or (a restart written before
+// the first build of the run, e.g. a 0-step restart) the one loaded from the file
+int RadiationM1::RotAvgNf() const {
+  return (vra_tab.nf > 0) ? vra_tab.nf : vra_rst_nf;
+}
+
+int RadiationM1::RotAvgRstNslab(const int ncell) const {
+  const int nf = RotAvgNf();
+  if (!vra_on || vra_state != 1 || nf <= 0 || vra_d.extent_int(0) == 0 || ncell <= 0) {
+    return 0;
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int64_t nslot = (vra_pend == 3) ? vra_k : vra_k - 1;
+  const int64_t nv = nslot*(nf + 1)*static_cast<int64_t>(indcs.nx1)*indcs.nx2*
+                     indcs.nx3;
+  return static_cast<int>((nv + ncell - 1)/ncell);
+}
+
+void RadiationM1::RotAvgRstHdr(int64_t *h) const {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  h[0] = 1;
+  h[2] = vra_k;
+  h[3] = RotAvgNf();
+  h[4] = vgd_on ? 1 : 2;
+  h[5] = vra_head;
+  h[6] = vra_pend;
+  h[7] = (vra_pend == 3) ? vra_k : vra_k - 1;
+  h[8] = vra_blk;
+  h[9] = static_cast<int64_t>(indcs.nx1)*indcs.nx2*indcs.nx3;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  h[1] = RotAvgRstNslab((indcs.nx1 + 2*indcs.ng)*n2*n3);
+}
+
+namespace {
+// the flat copy between vra_d's first nslot (nf+1) components (interior) and the dense
+// slabs of the record (dir 0: vra_d -> slabs, zero-padded; 1: slabs -> vra_d)
+void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const int nmb,
+               const int ncomp, const int dir) {
+  const int ni = d.extent_int(4), nj = d.extent_int(3), nk = d.extent_int(2);
+  const int n1 = sl.extent_int(4), n2 = sl.extent_int(3), n3 = sl.extent_int(2);
+  const int64_t ncint = static_cast<int64_t>(ni)*nj*nk;
+  const int64_t ncout = static_cast<int64_t>(n1)*n2*n3;
+  const int64_t nv = ncomp*ncint;
+  const int64_t ntot = sl.extent_int(1)*ncout;
+  for (int m = 0; m < nmb; ++m) {   // one MeshBlock per launch (int range)
+  par_for("m1_ra_rst", DevExeSpace(), 0, static_cast<int>(ntot - 1),
+  KOKKOS_LAMBDA(const int qi) {
+    const int64_t q = qi;
+    const int s = static_cast<int>(q/ncout);
+    const int64_t r2 = q - s*ncout;
+    const int k = static_cast<int>(r2/(static_cast<int64_t>(n2)*n1));
+    const int j = static_cast<int>((r2/n1) % n2);
+    const int i = static_cast<int>(r2 % n1);
+    if (q >= nv) {
+      if (dir == 0) {sl(m,s,k,j,i) = 0.0;}
+      return;
+    }
+    const int n = static_cast<int>(q/ncint);
+    const int64_t r = q - n*ncint;
+    const int kk = static_cast<int>(r/(static_cast<int64_t>(nj)*ni));
+    const int jj = static_cast<int>((r/ni) % nj);
+    const int ii = static_cast<int>(r % ni);
+    if (dir == 0) {
+      sl(m,s,k,j,i) = d(m,n,kk,jj,ii);
+    } else {
+      d(m,n,kk,jj,ii) = sl(m,s,k,j,i);
+    }
+  });
+  }
+}
+}  // namespace
+
+void RadiationM1::RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb) {
+  RaRstCopy(vra_d, dst, nmb, ((vra_pend == 3) ? vra_k : vra_k - 1)*(RotAvgNf() + 1), 0);
+}
+
+//! the history of the file into vra_d + the scalars, when it fits this run (the same K
+//! and closure, the same MeshBlock size); else nothing (the first build re-measures)
+bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
+                                const int nmb) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int64_t ncint = static_cast<int64_t>(indcs.nx1)*indcs.nx2*indcs.nx3;
+  const int64_t close = vgd_on ? 1 : 2;
+  const bool ok = vra_on && h[0] == 1 && h[2] == vra_k && h[4] == close && h[3] > 0 &&
+                  h[3] < M1_RA_NF && h[9] == ncint && h[5] >= 0 && h[5] < vra_k - 1 &&
+                  (h[6] == 0 || h[6] == 3) && h[7] == ((h[6] == 3) ? vra_k : vra_k - 1);
+  if (!ok) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "### WARNING: the <rad_m1> vet_rotate_avg history of this restart file "
+                << "does not fit this run (K " << h[2] << ", closure " << h[4] << "); it "
+                << "is re-measured at the first build and this restart is not bitwise."
+                << std::endl;
+    }
+    return false;
+  }
+  const int nf = static_cast<int>(h[3]);
+  Kokkos::realloc(vra_d, nmb, vra_k*(nf + 1), indcs.nx3, indcs.nx2, indcs.nx1);
+  Kokkos::deep_copy(vra_d, 0.0);
+  RaRstCopy(vra_d, src, nmb, static_cast<int>(h[7])*(nf + 1), 1);
+  vra_head = static_cast<int>(h[5]);
+  vra_pend = static_cast<int>(h[6]);
+  vra_blk = h[8];
+  vra_state = 1;
+  vra_rst_nf = nf;
+  return true;
+}
+
+//! the first averaging call after a load (the table is complete there): the registered
+//! fields must be those of the file, else the history is dropped (re-measured)
+bool RadiationM1::RotAvgRstCheck() {
+  if (vra_rst_nf < 0) {return true;}
+  const bool ok = (vra_tab.nf == vra_rst_nf);
+  vra_rst_nf = -1;
+  if (!ok) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "### WARNING: <rad_m1> vet_rotate_avg: the restart file's history has "
+                << "other fields than this run's closure; re-measured at the next build "
+                << "(not bitwise)." << std::endl;
+    }
+    vra_state = 0;
+    vra_pend = 0;
+  }
+  return ok;
+}
+
 }  // namespace radm1

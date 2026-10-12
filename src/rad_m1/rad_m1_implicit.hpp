@@ -73,6 +73,19 @@ constexpr char kM1RssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
 // only when vet_gd_async is on with a pending build; a file without it restarts with a
 // synchronous first build (D of the restart cycle unlagged: not bitwise).
 constexpr char kM1VgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
+// <rad_m1>/vet_rotate_avg (rotavg-rst-1012): the averaging history (the ring of offsets,
+// the pending Delta and the scalars), header behind the vet_gd_async one: int64 x
+// RadiationM1::M1_RA_RST_NH (RotAvgRstHdr); its nslab slabs are the LAST of each
+// MeshBlock record.  Written only with a complete history; a file without it restarts
+// re-measuring the history at the first build (not bitwise).
+// <rad_m1>/implicit_gas_src = conservative(2) with hesdirk2 (rotavg-rst-1012): the stored
+// cell-F slope csk1 of the write-back's F^old increment and the first-solve flag, header
+// behind the vet_gd_async one: int32 have = 1, nch (3 or 0), csk1_ok, 0; its nch slabs
+// follow the vet_gd_async ones.  Written once a conservative solve has run; a file
+// without it restarts with the cold-start F^old (gcs_first) and the face/E increments
+// (not bitwise).
+constexpr char kM1CskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
+constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled

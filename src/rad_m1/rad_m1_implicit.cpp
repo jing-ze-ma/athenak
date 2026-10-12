@@ -11209,8 +11209,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
   auto kk_ = (t2s == M1_T2S_STAGE1) ? t2k2 : t2k1;
   if (impl_gas_src_cons && t2k && csk1.extent(0) != t2k1.extent(0)) {
-    // consrc-1011: the cell-F slopes of hesdirk2 (not in the restart file: the first
-    // stage after a restart takes the face/E increments instead, see the write-back)
+    // consrc-1011: the cell-F slopes of hesdirk2 (rotavg-rst-1012: csk1 is in the
+    // restart file, kM1CskRstMagic, and sized there; a file without it: the first stage
+    // after a restart takes the face/E increments instead, see the write-back)
     const int q0 = static_cast<int>(t2k1.extent(0));
     const int q3 = static_cast<int>(t2k1.extent(2));
     const int q2 = static_cast<int>(t2k1.extent(3));

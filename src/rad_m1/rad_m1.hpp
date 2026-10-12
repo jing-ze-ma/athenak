@@ -858,6 +858,12 @@ class RadiationM1 {
   bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
   bool csinc_ok = false;                // csinc was formed for the coming stage solve
   bool gcs_first = true;                // the first conservative solve of this run
+  // rotavg-rst-1012: csk1 (+ csk1_ok, gcs_first) in the restart file (kM1CskRstMagic):
+  // the header whenever a conservative solve has run, the 3 slabs when csk1 holds a slope
+  bool CskRstHdr() const {return impl_gas_src_cons && !gcs_first;}
+  int CskRstNch() const {
+    return (CskRstHdr() && csk1_ok && csk1.extent_int(0) > 0) ? 3 : 0;
+  }
   // consfix-1011, implicit_gas_src = conservative2 (NOTE-consfix.md): conservative, plus
   //  (a) the face equation is the lab-F one, F0' = theta (F0^n - dA_f - ...): dA_c =
   //      A'_c - A^old_c the whole change of the cell's enthalpy flux (A^old = F^old -
@@ -1996,6 +2002,15 @@ class RadiationM1 {
   void RotAvgDelta(const int slot, const int ilo);
   void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
+  // rotavg-rst-1012: the history in the restart file (kM1RaRstMagic, rad_m1_rotavg.cpp)
+  static constexpr int M1_RA_RST_NH = 10;   // int64 header entries
+  int RotAvgNf() const;
+  int RotAvgRstNslab(const int ncell) const;
+  void RotAvgRstHdr(int64_t *h) const;
+  void RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb);
+  bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);
+  bool RotAvgRstCheck();
+  int vra_rst_nf = -1;         // nf of a history loaded from the file (-1: none/checked)
   int64_t vra_blk = INT64_MIN; // the block of the last build
   bool vra_last = false;       // this build is on the last step of its block
   DvceArray5D<Real> vra_bk_tt, vra_bk_hr;   // vet_gd: the hand-over fields kept over
