@@ -1936,7 +1936,9 @@ void RadiationM1::VetRotUpdate() {
 //! \brief the vet_sc set rotation of block blk (VetRotUpdate's formula)
 
 Real RadiationM1::VetRotBeta(const int64_t blk) const {
-  const Real q = VetGdAngleBlk(blk)/(0.5*M_PI);
+  // rotavg-1012: the stratified phase with vet_rotate_avg (RotPhase); else as before
+  const Real q = vra_on ? static_cast<Real>(RotPhase(blk))
+                        : VetGdAngleBlk(blk)/(0.5*M_PI);
   return (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n : q*2.0*M_PI/vet_nphi;
 }
 

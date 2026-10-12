@@ -813,9 +813,34 @@ Real RadiationM1::VetGdAngle(const int cyc) const {
 }
 
 Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
+  // rotavg-1012: with vet_rotate_avg = K the angle is the set's own period times
+  // RotPhase = (b mod K)/K, so that ANY K consecutive blocks hold K equispaced rotations
+  // (the averaged closure is then that of the K-fold refined azimuth set); the golden
+  // sequence on pi/2 clusters for a product set of period 2 pi/nphi (12: consecutive
+  // blocks step only -0.146 of the period)
+  if (vra_on) {
+    const double per = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : 0.5*M_PI;
+    return static_cast<Real>(per*RotPhase(blk));
+  }
   const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
   return 0.5*M_PI*(b*g - std::floor(b*g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::RotPhase
+//! \brief the rotation of block blk as a fraction of the set's period, in [0, 1): the
+//! golden sequence frac(b g) (vgdrot), or with vet_rotate_avg = K the stratified (b mod
+//! K)/K (rotavg-1012; shared by vet_gd and vet_sc)
+
+double RadiationM1::RotPhase(const int64_t blk) const {
+  if (vra_on && vra_k >= 2) {
+    const int64_t r = ((blk % vra_k) + vra_k) % vra_k;
+    return static_cast<double>(r)/static_cast<double>(vra_k);
+  }
+  const double b = static_cast<double>(blk);
+  const double g = 0.5*(std::sqrt(5.0) - 1.0);
+  return b*g - std::floor(b*g);
 }
 
 //----------------------------------------------------------------------------------------

@@ -2283,6 +2283,7 @@ class RadiationM1 {
   bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
   int64_t VetGdBlock(const int cyc) const;       // vgdrot2-1012: the rotation block
   Real VetGdAngleBlk(const int64_t b) const;
+  double RotPhase(const int64_t b) const;   // rotavg-1012: block -> fraction of period
   Real VetGdAlignDt(const Real time, const Real dt);
   void VetGdTables(const Real alpha);
   // vgdrot-1011: the tables' host part in persistent pinned buffers (no per-rotation
