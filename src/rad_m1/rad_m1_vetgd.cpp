@@ -202,6 +202,24 @@ void VgdIpcWaitN(const long long *f, const int np, const long long target, int *
 }
 
 // the positive first-order SC weights (VcolW of rad_m1_vetcol.cpp, term for term)
+// unify-sc-gd-1012 (#6) vet_interp = auto: a material edge in the upwind stencil, the
+// extinction contrast max/min over the corners of nonzero weight > kVetCornerRatio
+// (rad_m1_vetseg.hpp; csx holds ln chi)
+template <class CS>
+KOKKOS_INLINE_FUNCTION
+bool VgdCornerEdge(const CS &csx, const int m, const int k0, const int k1, const int j0,
+                   const int j1, const int iu, const Real uk, const Real uj) {
+  Real lmn = 1.0e300, lmx = -1.0e300;
+  for (int q = 0; q < 4; ++q) {
+    const Real wq = ((q < 2) ? (1.0 - uk) : uk)*((q % 2 == 0) ? (1.0 - uj) : uj);
+    if (!(wq > 0.0)) {continue;}
+    const Real l = csx(m,0,(q < 2) ? k0 : k1,(q % 2 == 0) ? j0 : j1,iu);
+    lmn = fmin(lmn, l);
+    lmx = fmax(lmx, l);
+  }
+  return (lmx - lmn) > log(kVetCornerRatio);
+}
+
 KOKKOS_INLINE_FUNCTION
 void VgdW(const Real dtau, Real &ex, Real &w0, Real &wu) {
   ex = exp(-dtau);
@@ -3989,6 +4007,7 @@ void RadiationM1::VetGdSweep() {
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   const int spe = VetSegMode();
+  const int vim = vet_interp;   // unify-sc-gd-1012 (#6) vet_interp: 2 corner, 3 auto
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   // unify-sc-gd-1012 (#2): vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
@@ -4397,6 +4416,33 @@ void RadiationM1::VetGdSweep() {
                 const Real e3 = exp(-ch0*(zr - zf));
                 const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
                 iv = fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
+              } else if (vim == 2 ||
+                         (vim == 3 && VgdCornerEdge(csx, m, k0, k1, j0, j1, iu, uk, uj))) {
+                // unify-sc-gd-1012 (#6) vet_interp = corner (VetUpCorner of vet_sc): one
+                // segment per stencil corner from its own (I, chi, S), the outcome
+                // interpolated (renormalised over the corners of the right branch, as the
+                // intensity above; none: from the corner's own source)
+                Real ws = 0.0, vs = 0.0;
+                for (int q = 0; q < 4; ++q) {
+                  const int kk = (q < 2) ? k0 : k1;
+                  const int jj = (q % 2 == 0) ? j0 : j1;
+                  const Real wq = ((q < 2) ? (1.0 - uk) : uk)
+                                  *((q % 2 == 0) ? (1.0 - uj) : uj);
+                  if (!(wq > 0.0) || !(ok[q] || ivu < 0.0)) {continue;}
+                  const Real cq = exp(csx(m,0,kk,jj,iu)), sq = exp(csx(m,1,kk,jj,iu));
+                  const Real iq = (ivu < 0.0) ? sq : rd(kk,jj,iu);
+                  Real vq;
+                  if (spl) {
+                    vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
+                  } else {
+                    Real ex, w0, wu;
+                    VgdW(0.5*(cq + ch0)*ds, ex, w0, wu);
+                    vq = iq*ex + wu*sq + w0*s0;
+                  }
+                  ws += wq;
+                  vs += wq*vq;
+                }
+                iv = fmax(vs/ws, 0.0);
               } else if (spl) {
                 iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
                                       ch0*dso, spe), 0.0);
