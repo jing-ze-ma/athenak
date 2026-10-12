@@ -115,6 +115,22 @@ Real VgdSrW(const V &hr, const V &ht, const bool thx, const int m, const int k,
   return (jm > jt && jm > 0.0) ? fmax(jt, 0.0)/jm : 1.0;
 }
 
+// twinfix-1012 vet_gd_twin_weight = j: the weight of the twin's pattern subtraction in a
+// cell, w = min(1, min(J/J_tw, J_tw/J)/q) from the stored main and twin J (1 where they
+// agree within the factor 1/q, so a near-uniform shell is unchanged bitwise; -> 0 in a
+// shadow, beam or channel where the twin's field is not the main field's); 1 when off or
+// without the stored J
+template <typename V>
+KOKKOS_INLINE_FUNCTION
+Real VgdTwW(const V &hr, const V &ht, const bool on, const Real q, const int m,
+            const int k, const int j, const int i) {
+  if (!on) {return 1.0;}
+  const Real jm = hr(m,M1_VGD_HRJ,k,j,i), jt = ht(m,M1_VGD_HRJ,k,j,i);
+  if (!(jm > 0.0) && !(jt > 0.0)) {return 1.0;}
+  if (!(jm > 0.0) || !(jt > 0.0)) {return 0.0;}
+  return fmin(fmin(jm/jt, jt/jm)/q, 1.0);
+}
+
 // vgdlat-1012 vet_gd_symref: the reference of vgd_hr component c at shell i (vgd_srm)
 KOKKOS_INLINE_FUNCTION
 Real VgdSrRef(const DvceArray1D<Real> &sr, const int c, const int i, const int c1) {
@@ -6043,6 +6059,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     shell_mean(vgd_cs, 0, og, true, vgd_twm);
     shell_mean(vgd_cs, 1, og, true, vgd_twm2);
 #endif
+    if (vgd_twtr) {VetGdTwinTrans();}  // twinfix-1012: transmission-consistent state
     if (vgd_symref) {VetGdSymRef();}   // vgdlat-1012: from the same shell means
     auto mc_ = vgd_twm;
     auto ms_ = vgd_twm2;
@@ -6065,6 +6082,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     Kokkos::deep_copy(c0_, cw_);
     shell_mean(vgd_cs, 0, og, true, vgd_twm);
     shell_mean(vgd_cs, 1, og, true, vgd_twm2);
+    if (vgd_twtr) {VetGdTwinTrans();}  // twinfix-1012: transmission-consistent state
     if (vgd_symref) {VetGdSymRef();}   // vgdlat-1012: from the same shell means
     auto mc_ = vgd_twm;
     auto ms_ = vgd_twm2;
@@ -6110,12 +6128,22 @@ void RadiationM1::VetGdTwin(const int stage) {
                     (vgd_hr.extent_int(1) > M1_VGD_HRJ);
   auto shr_ = vgd_hr;
   auto sht_ = vgd_hrt;
+  const bool twwt = vgd_twwt && sthx;
+  const Real twwq = vgd_twwq;
   par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ref = mt_(i);
     if (sref) {
       const Real w = VgdSrW(shr_, sht_, sthx, m, k, j, i);
       ref += w*((sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) - mt_(i));
+    }
+    if (twwt) {   // twinfix-1012 vet_gd_twin_weight = j (w = 1: the same numbers)
+      const Real ww = VgdTwW(shr_, sht_, true, twwq, m, k, j, i);
+      tt_(m,M1_TT_LAT0,k,j,i) -= ww*(twl_(m,0,k,j,i) - ref);
+      for (int c = 1; c < M1_TT_NLAT; ++c) {
+        tt_(m,M1_TT_LAT0+c,k,j,i) -= ww*twl_(m,c,k,j,i);
+      }
+      return;
     }
     tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - ref;
     for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
@@ -6191,6 +6219,91 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
               << tot*sizeof(Real)/1.0e9 << " GB on rank 0 (dense band "
               << dense*sizeof(Real)/1.0e9 << " GB)" << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdTwinTrans
+//! \brief twinfix-1012 vet_gd_twin_state = trans: the twin's laterally uniform shell
+//! state (vgd_twm = chi_tw, vgd_twm2 = S_tw, set by VetGdTwin stage 0 to the arithmetic
+//! shell means) replaced, shell by shell, by the state of the same mean TRANSMISSION:
+//!   chi_tw = -ln <exp(-chi dr)> / dr,   S_tw = <S (1 - e^-chi dr)> / <1 - e^-chi dr>
+//! (S weighted by what each cell emits through the shell).  The arithmetic <chi> lets a
+//! few opaque cells (a clump covering 8 % of the shell: <chi> dr = 12 for a true mean
+//! transmission e^-0.08) make the twin's shell opaque, so the twin's field and its ray
+//! pattern are no longer the main field's.  A shell whose chi is laterally CONSTANT keeps
+//! the mean values (bitwise).  Sums in a fixed (m, k, j) order per shell, rank-ordered
+//! over ranks (as vet_gd_twin_det); laterally constant = global min ln chi == max.
+
+void RadiationM1::VetGdTwinTrans() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int c1 = indcs.nx1 + 2*indcs.ng;
+  const int ilo = indcs.is + vlat_icut;
+  const int og = vgd_w - indcs.ng;
+  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3;
+  if (vgd_twtb.extent_int(0) != 5*c1) {Kokkos::realloc(vgd_twtb, 5*c1);}
+  Kokkos::deep_copy(vgd_twtb, 0.0);
+  auto tb_ = vgd_twtb;
+  auto cs_ = vgd_cs;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  const int c1_ = c1;
+  par_for("m1_vgd_twtr_sum", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
+    Real st = 0.0, sw = 0.0, ssw = 0.0, mn = 1.0e300, mx = -1.0e300;
+    for (int m = 0; m <= nmb1; ++m) {
+      const Real dr = cx1f(m,i+1) - cx1f(m,i);
+      for (int k = ks; k <= ke; ++k) {
+        for (int j = js; j <= je; ++j) {
+          const Real lc = cs_(m,0,k+og,j+og,i);
+          const Real tau = exp(lc)*dr;
+          const Real w = -expm1(-tau);
+          st += exp(-tau);
+          sw += w;
+          ssw += w*exp(cs_(m,1,k+og,j+og,i));
+          mn = fmin(mn, lc);
+          mx = fmax(mx, lc);
+        }
+      }
+    }
+    tb_(i) = st;
+    tb_(c1_ + i) = sw;
+    tb_(2*c1_ + i) = ssw;
+    tb_(3*c1_ + i) = mn;
+    tb_(4*c1_ + i) = mx;
+  });
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_twtb);
+    const int nr = global_variable::nranks;
+    std::vector<Real> all(static_cast<size_t>(3*c1)*nr);
+    MPI_Allgather(h.data(), 3*c1, MPI_ATHENA_REAL, all.data(), 3*c1, MPI_ATHENA_REAL,
+                  MPI_COMM_WORLD);
+    for (int i = 0; i < 3*c1; ++i) {
+      Real a = 0.0;
+      for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*3*c1 + i];}
+      h(i) = a;
+    }
+    MPI_Allreduce(MPI_IN_PLACE, h.data() + 3*c1, c1, MPI_ATHENA_REAL, MPI_MIN,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, h.data() + 4*c1, c1, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+    Kokkos::deep_copy(vgd_twtb, h);
+  }
+#endif
+  auto mc_ = vgd_twm;
+  auto ms_ = vgd_twm2;
+  par_for("m1_vgd_twtr_set", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
+    if (!(tb_(4*c1_ + i) > tb_(3*c1_ + i))) {return;}   // laterally constant chi: mean
+    const Real dr = cx1f(0,i+1) - cx1f(0,i);
+    const Real tm = tb_(i)/ncol, wm = tb_(c1_ + i)/ncol;
+    // -ln<t>: from <t> where the shell is thick, from log1p(-<1 - t>) where it is thin
+    const Real tau = (tm < 0.5) ? -log(fmax(tm, 1.0e-300)) : -log1p(-wm);
+    mc_(i) = tau/dr;
+    if (tb_(c1_ + i) > 0.0) {ms_(i) = tb_(2*c1_ + i)/tb_(c1_ + i);}
+  });
+  Kokkos::fence();
 }
 
 //----------------------------------------------------------------------------------------
@@ -6328,6 +6441,10 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   // stage 2: subtract the twin's lateral pattern, shell by shell, component by component
   // vgdlat-1012 vet_gd_symref: and shift by w (ref - shell mean), w = VgdSrW
   const bool sref = vgd_symref && vgd_sr_ok;
+  // twinfix-1012 vet_gd_twin_weight = j: the pattern subtracted with the weight VgdTwW
+  // (J is the last component, so every component reads the cell's uncorrected J)
+  const bool twwt = vgd_twwt && thx;
+  const Real twwq = vgd_twwq;
   auto sr_ = vgd_srm;
   const int c1x = c1;
   const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
@@ -6382,11 +6499,16 @@ void RadiationM1::VetGdHalfRange(const int stage) {
           const Real mo = m6_(off + i);
           const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
           const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo;
+          const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
           if (c == M1_VGD_HRC1) {
-            hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo) + w*(rf - mo),
-                                  0.0);
+            const Real d = (ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo) : ht_(m,c,k,j,i) - mo;
+            hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - d + w*(rf - mo), 0.0);
           } else if (ht_(m,c,k,j,i) > 0.0 && mo > 0.0) {
-            hr_(m,c,k,j,i) *= mo/ht_(m,c,k,j,i);
+            if (ww < 1.0) {
+              hr_(m,c,k,j,i) *= pow(mo/ht_(m,c,k,j,i), ww);
+            } else {
+              hr_(m,c,k,j,i) *= mo/ht_(m,c,k,j,i);
+            }
             if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo, w);}
           }
         });
@@ -6395,7 +6517,9 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
-        Real v = hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - m6_(off + i));
+        const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
+        Real v = hr_(m,c,k,j,i) - ((ww < 1.0) ? ww*(ht_(m,c,k,j,i) - m6_(off + i))
+                                              : ht_(m,c,k,j,i) - m6_(off + i));
         if (sref) {
           v += VgdSrW(hr_, ht_, thx, m, k, j, i)*
                (VgdSrRef(sr_, c, i, c1x) - m6_(off + i));
@@ -6452,11 +6576,17 @@ void RadiationM1::VetGdHalfRange(const int stage) {
         if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
         const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
         const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo_(i);
+        const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
         if (c == M1_VGD_HRC1) {
-          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i))
-                                + w*(rf - mo_(i)), 0.0);
+          const Real d = (ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo_(i))
+                                    : ht_(m,c,k,j,i) - mo_(i);
+          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - d + w*(rf - mo_(i)), 0.0);
         } else if (ht_(m,c,k,j,i) > 0.0 && mo_(i) > 0.0) {
-          hr_(m,c,k,j,i) *= mo_(i)/ht_(m,c,k,j,i);
+          if (ww < 1.0) {
+            hr_(m,c,k,j,i) *= pow(mo_(i)/ht_(m,c,k,j,i), ww);
+          } else {
+            hr_(m,c,k,j,i) *= mo_(i)/ht_(m,c,k,j,i);
+          }
           if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo_(i), w);}
         }
       });
@@ -6465,7 +6595,9 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
-      Real v = hr_(m,c,k,j,i) - (ht_(m,c,k,j,i) - mo_(i));
+      const Real ww = VgdTwW(hr_, ht_, twwt, twwq, m, k, j, i);
+      Real v = hr_(m,c,k,j,i) - ((ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo_(i))
+                                            : ht_(m,c,k,j,i) - mo_(i));
       if (sref) {
         v += VgdSrW(hr_, ht_, thx, m, k, j, i)*(VgdSrRef(sr_, c, i, c1x) - mo_(i));
       }
