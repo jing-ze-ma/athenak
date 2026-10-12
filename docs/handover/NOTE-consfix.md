@@ -303,3 +303,41 @@ Notes:
 - The bin files differ by bytes only in the parameter header (the extra shift key).
 - The energy budget residual is identical in all runs: -4.9e-10 of Etot.
 - c2P differs from the others also by he_sponge_dmax.
+
+## 9. BSG failure and the fix: implicit_cs2_hll = drag (commit 8cba89a6, on prodfinal 0197f020)
+
+### 9.1 Symptom and cause
+- Symptom: on the reduced BSG (bsgR/bsgx deck, 4 blocks 256x64x64, CPU), conservative2 at 1fbe8621 had hesdirk2
+  stage 1 NOT ADMISSIBLE at every cycle from cycle 2 on; dt fell from 97 s to 58-63 s. Old conservative did the
+  same.
+- Where it went wrong (dbg_t2_admiss, run bsg/runs/b.31088967):
+  - every bad cell is floor gas, rho = 1e-20, at r = 4.99-5.55e12 cm, with E = 20-60 erg/cm^3, so
+    E/(rho c^2) ≈ 2-6;
+  - the old-vector v there is -6e9 to -1.6e10 cm/s and the eint is negative;
+  - 8192 cells have E < 0.
+- Cause: there the faces are AP-HLL or blend (AL close to 1), and the top face is a physical Marshak face.
+  Neither has a face equation, so the theta split cannot act, and the gas paid all of d(aE)/dt.
+
+### 9.2 The fix
+- New key `<rad_m1>/implicit_cs2_hll`: `drag` (the default) or `inertia` (the old behaviour; it reproduces
+  1fbe8621 bitwise, checked on reduced AG Car A).
+- With `drag`, the gas pays om_bar dA instead of dA, both in the write-back and in the vimp prediction:
+  - om_bar_d = the mean over the cell's two faces normal to d of om = 1 - AL;
+  - om = 0 on a physical face.
+- On the AP-HLL part and on physical faces the gas then gets only the matched drag, and the radiation keeps its
+  lab flux.
+- Total momentum is exact on central faces only. That was already the case for the H part.
+
+### 9.3 Results with drag (cf3b build = 8cba89a6)
+
+| test | result |
+|---|---|
+| reduced BSG, 30 cycles | 0 NOT ADMISSIBLE; dt and Picard (2.90) the same as matched; user.hst vs matched: L_top 6e-9, E_rad 2e-11, Etot 3e-14 |
+| reduced AG Car A, 120 cycles | c2 vs matched ≤ 1e-7 (v1 7e-8); Picard 2.94 (the same) |
+| P=10 waves, hesdirk2 | tau 0.01 / 1 / 100: orders 2.19 / 1.90 / 2.01 at N 256, omega at vetqs_d (unchanged) |
+| FIN T-ladders: rw_p10t100 (tol 1e-14), rw_t10a, rsw_T | unchanged to the printed digits: 2.0 |
+| rlat_T | 1.73-1.77 (was 1.81/1.73; the physical faces now have om = 0) |
+| eq3f P_tot drift | 4.4e-16 / 8.9e-16 |
+| rlat_om5 L_z | +5.3e-6 of L_rad |
+
+- DeltaAI full-size gate: TASK bsg-files-1009 3f85aa0f (docs/handover/consfix-c2drag-1012); files in deltaai/.
