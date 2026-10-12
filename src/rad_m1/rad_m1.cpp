@@ -901,7 +901,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
     {
-      std::string vs = pin->GetOrAddString("rad_m1","vet_col_source","relaxed");
+      // unify-sc-gd-1012 (#3): the canonical key vet_source (vet_col_source its alias),
+      // read by vet_sc too (VetInit)
+      std::string vs = pin->GetOrAddString("rad_m1",
+                           M1KeyName(pin, "vet_source", {"vet_col_source"}), "relaxed");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("gas") == 0) {

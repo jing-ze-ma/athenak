@@ -1257,6 +1257,7 @@ class RadiationM1 {
   // itself (vet_col_source = gas there), not relaxed by a further dt (rad_m1_time2.cpp)
   bool t2_vcsrc = false;
   bool t2_vcsbl = false;       // sporder-1012: time2_vet_col_source = blend
+  void Time2VetSourceInit(ParameterInput *pin, const bool act, const bool col);
   // time2_pred_cap (predfix-1011): the predicted P = U^n + theta dt K1 of a predict /
   // rebuild build takes per cell theta = min(1, cap/r), r the relative change of E and
   // of the gas internal energy (0 = off, the unlimited predictor)

@@ -101,8 +101,10 @@
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vetsrc.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -1692,6 +1694,25 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // diffuse-wall shadow the wall cell went to f = 1, E = 1.5-1.6 E_bath (exact 0.5) at
   // every dt and time scheme, and under hesdirk2 its stages failed every step.  Default
   // true; a restart whose file lacks the key keeps the old boundary (false).
+  // unify-sc-gd-1012 (#3): vet_source = relaxed | gas, the VET source of a lagged build
+  // (and of predict / rebuild unless time2_vet_source overrides it), as vet_col / vet_gd
+  // (vet_col_source there).  DEFAULT relaxed on a fresh run (vet_col's default; blend
+  // needs it: with gas the predict build takes the state's source); a restart whose
+  // file lacks the key keeps gas (vet_sc's old source, echoed).  OPEN (both closures):
+  // relaxed / blend force S -> B where c dt rho kappa_a >> 1 in a scattering-dominated
+  // atmosphere (nlte2 two-stage A at c dt/dx 1e6: top bands -5 %; gas fixes it there but
+  // costs bsgR Picard 2.8 -> 5.0).
+  {
+    const std::string vs = pin->GetOrAddString("rad_m1", "vet_source",
+                               global_variable::restart_run ? "gas" : "relaxed");
+    if (vs.compare("relaxed") == 0) {
+      vcol_srelax = true;
+    } else if (vs.compare("gas") == 0) {
+      vcol_srelax = false;
+    } else {
+      VetFatal("<rad_m1>/vet_source = '" + vs + "' is not a choice (relaxed | gas)");
+    }
+  }
   // unify-sc-gd-1012 (#2): vet_bc_inner / vet_bc_reflect (VetBcInit, rad_m1.cpp; read
   // before vet_bc_bath is recorded, whose old inner meaning a restart keeps).  The inner
   // end now follows vet_bc_inner (VetBathLo); vet_bc_bath keeps the top bath.
@@ -3339,6 +3360,20 @@ void RadiationM1::VetShortChar() {
     auto iwd_ = iw;
     auto vcd_ = vet_cell;
     const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+    // unify-sc-gd-1012 (#3): the VET source rule of vet_col / vet_gd (VetLatSweep):
+    // vet_source = relaxed (srx: the state relaxed by a local backward-Euler exchange over
+    // the step, VetRelaxedSource) or gas (the state's own source); under time2_vet =
+    // predict | rebuild time2_vet_source = state | relaxed | blend (Time2VetColAt sets
+    // vcol_srelax / vcol_sbl for the build).  vet_sc before: always the state's source.
+    const bool srx = thermal && vcol_srelax;
+    const bool sbl = vcol_sbl;
+    const Real sx0 = vcol_sx0;
+    const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
+    FluidRef flv = FluidRef::Get(pmy_pack);
+    auto eos = flv.eos;
+    auto uh = flv.u0;
+    const Real chs = chat;
+    const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
     VetFor("m1_vet_srcc", (nmb1 + 1)*nk*nj*ni, KOKKOS_LAMBDA(const int t) {
       const int i = is + t%ni;
       int q = t/ni;
@@ -3351,7 +3386,16 @@ void RadiationM1::VetShortChar() {
       if (thermal) {
         Real tg = iwd_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
-        if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
+        if (srx) {
+          const Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
+          const Real rks = (vsf != 0) ? opd_(m,M1_OP_S,k,j,i) : 0.0;
+          s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+                                      opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                      chx, rks, sx0)
+                  : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+                                     opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                     chx, rks);
+        } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
           s = VetScatterMix(vsf, opd_(m,M1_OP_P,k,j,i), chx, opd_(m,M1_OP_S,k,j,i),
                             ar*t2*t2, e);
         } else {
