@@ -847,7 +847,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_nc = pin->GetOrAddInteger("rad_m1","vet_col_ncore",8);
     vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
-    vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
+    // unify-sc-gd-1012 (#13): the canonical key vet_every, vet_col_every its alias
+    vcol_every = pin->GetOrAddInteger("rad_m1",
+                                      M1KeyName(pin, "vet_every", {"vet_col_every"}), 1);
     // vet_col_order2 (m1-sp-order2, tests_m1/runs_5o_sporder2); see rad_m1_vetcol.cpp.
     // DEFAULT true on the spherical-polar wedge since m1-sp-order2b
     // (tests_m1/runs_5q_sporder2b); a restart whose file lacks the key keeps false, the

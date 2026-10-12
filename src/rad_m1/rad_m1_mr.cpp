@@ -53,9 +53,11 @@ namespace radm1 {
 
 void RadiationM1::MRInit(ParameterInput *pin) {
   // vet_sc_every (read only when named): see VscSkip below
+  // unify-sc-gd-1012 (#13): the canonical key vet_every, vet_sc_every its alias
   vsc_every = 1;
-  if (vet_sc && pin->DoesParameterExist("rad_m1", "vet_sc_every")) {
-    vsc_every = std::max(1, pin->GetInteger("rad_m1", "vet_sc_every"));
+  const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
+  if (vet_sc && pin->DoesParameterExist("rad_m1", kev)) {
+    vsc_every = std::max(1, pin->GetInteger("rad_m1", kev));
     if (vsc_every > 1) {
       if (time_scheme != M1_TIME_HESDIRK2) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

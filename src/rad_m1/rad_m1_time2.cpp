@@ -173,14 +173,25 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // time2_vet_extrap = true or vet_sc_every > 1 (which predict excludes: lag, silently);
   // a restart whose file lacks the key keeps lag (echoed).  torder-1010: lag is first
   // order in time wherever the tensor changes (pulse_k12.8 T 1.05), predict 2.0.
+  // unify-sc-gd-1012 (#13): ONE key time2_vet for both formal solutions (lag | predict |
+  // rebuild | extrap); the old spellings time2_vet_sc (vet_sc) and time2_vet_col (vet_col
+  // / vet_gd) are read as aliases of their own closure (M1KeyName), so an input or a
+  // restart file that names only the old key is unchanged.  vet_sc: extrap = lag with
+  // time2_vet_extrap = true (the D* extrapolation, as before).  vet_every likewise for
+  // vet_sc_every / vet_col_every.
   t2_vsmode = 0;
-  const bool vs_named = pin->DoesParameterExist("rad_m1", "time2_vet_sc");
-  const bool vs_every = pin->DoesParameterExist("rad_m1", "vet_sc_every") &&
-                        (pin->GetInteger("rad_m1", "vet_sc_every") > 1);
+  const std::string kvs = M1KeyName(pin, "time2_vet", {"time2_vet_sc"});
+  const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
+  const bool vs_named = pin->DoesParameterExist("rad_m1", kvs);
+  const bool vs_every = pin->DoesParameterExist("rad_m1", kev) &&
+                        (pin->GetInteger("rad_m1", kev) > 1);
+  if (vet_sc && vs_named && pin->GetString("rad_m1", kvs).compare("extrap") == 0) {
+    t2_vext = true;
+  }
   if (vet_sc && (vs_named || (!t2_vext && !vs_every))) {
-    std::string vm = pin->GetOrAddString("rad_m1", "time2_vet_sc",
+    std::string vm = pin->GetOrAddString("rad_m1", kvs,
                                          global_variable::restart_run ? "lag" : "predict");
-    if (vm.compare("lag") == 0) {
+    if (vm.compare("lag") == 0 || vm.compare("extrap") == 0) {
       t2_vsmode = 0;
     } else if (vm.compare("predict") == 0) {
       t2_vsmode = 1;
@@ -188,16 +199,15 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       t2_vsmode = 2;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_vet_sc = '" << vm
-                << "' is not a choice (lag | predict | rebuild)" << std::endl;
+                << std::endl << "<rad_m1>/" << kvs << " = '" << vm
+                << "' is not a choice (lag | predict | rebuild | extrap)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    const bool every = pin->DoesParameterExist("rad_m1", "vet_sc_every") &&
-                       (pin->GetInteger("rad_m1", "vet_sc_every") > 1);
+    const bool every = vs_every;
     if (t2_vsmode != 0 && (t2_vext || every)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_vet_sc = " << vm << " excludes "
-                << "time2_vet_extrap = true and vet_sc_every > 1" << std::endl;
+                << std::endl << "<rad_m1>/" << kvs << " = " << vm << " excludes "
+                << "time2_vet_extrap = true and " << kev << " > 1" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -228,8 +238,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   t2_vcmode = 0;
   if (vet_col) {
     const bool vdef = sph_geom && !global_variable::restart_run;
-    std::string vm = (sph_geom || pin->DoesParameterExist("rad_m1", "time2_vet_col")) ?
-        pin->GetOrAddString("rad_m1", "time2_vet_col", vdef ? "predict" : "lag") :
+    const std::string kvc = M1KeyName(pin, "time2_vet", {"time2_vet_col"});
+    std::string vm = (sph_geom || pin->DoesParameterExist("rad_m1", kvc)) ?
+        pin->GetOrAddString("rad_m1", kvc, vdef ? "predict" : "lag") :
         std::string("lag");
     if (vm.compare("lag") == 0) {
       t2_vcmode = 0;
@@ -241,14 +252,14 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       t2_vcmode = 3;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_vet_col = '" << vm
+                << std::endl << "<rad_m1>/" << kvc << " = '" << vm
                 << "' is not a choice (lag | predict | rebuild | extrap)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     if (t2_vcmode != 0 && vcol_every != 1) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_vet_col = " << vm
-                << " needs vet_col_every = 1" << std::endl;
+                << std::endl << "<rad_m1>/" << kvc << " = " << vm
+                << " needs vet_every (vet_col_every) = 1" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     // time2_vet_col_source (vcpred-1010; read only when named, default relaxed =
