@@ -262,10 +262,24 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
         t2_vcsrc = false;
       } else if (vs.compare("state") == 0) {
         t2_vcsrc = true;
+      } else if (vs.compare("blend") == 0) {
+        // sporder-1012: blend = S*(0) + w (S*(dt) - S*(0)), w = x^2/(x0^2 + x^2) with x
+        // the cell's exchange stiffness c dt rho kappa (radiation + gas temperature):
+        // the state's own source where the exchange is resolved (x << x0, O(dt^3) from
+        // it), the relaxed source where it is stiff (VcolRelaxedSourceB).
+        // time2_vet_col_source_x0 (default 1)
+        t2_vcsbl = true;
+        vcol_sx0 = pin->GetOrAddReal("rad_m1", "time2_vet_col_source_x0", 1.0);
+        if (!(vcol_sx0 > 0.0)) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/time2_vet_col_source_x0 must be > 0"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_m1>/time2_vet_col_source = '" << vs
-                  << "' is not a choice (relaxed | state)" << std::endl;
+                  << "' is not a choice (relaxed | state | blend)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -1065,7 +1079,9 @@ void RadiationM1::Time2VetColAt(int which) {
     // by a further dt (vet_col, vet_col_lat and vet_gd all read vcol_srelax)
     const bool srs = vcol_srelax;
     if (t2_vcsrc) {vcol_srelax = false;}
+    vcol_sbl = t2_vcsbl;
     VetColBuild();
+    vcol_sbl = false;
     vcol_srelax = srs;
   } else {
     VetShortChar();
@@ -1373,6 +1389,7 @@ void RadiationM1::Time2Report() {
                                        ((t2_vcmode == 2) ? "rebuild" : "extrap"))
               << " fallbacks=" << t2_vcnfb;
     if (t2_vcsrc && t2_vcmode != 3) {std::cout << " source=state";}
+    if (t2_vcsbl && t2_vcmode != 3) {std::cout << " source=blend x0=" << vcol_sx0;}
   }
   if (vet_sc && t2_vsmode != 0) {
     std::cout << " time2_vet_sc=" << ((t2_vsmode == 1) ? "predict" : "rebuild")

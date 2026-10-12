@@ -142,6 +142,33 @@ Real VlatRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real 
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
+// sporder-1012, time2_vet_col_source = blend: S = S*(0) + w (S*(dt) - S*(0)),
+// w = x^2/(x0^2 + x^2), x = x_E + x_g the cell's exchange stiffness over the step,
+// x_E = chat dt rho kappa_E, x_g = c dt rho kappa_P 4 a T^3/((1 + x_E) rho c_v).  The
+// relaxed source of the PREDICTED state (~ t^{n+1}) relaxes it by a further dt: O(dt)
+// error where the exchange is resolved (first order in time, vcpred-1010).  blend is the
+// state's own source there (O(x^3) from it) and the relaxed source where the exchange is
+// stiff (x >> x0, w -> 1: no current-J vet_scatter source, which state amplifies).
+template <class EosT>
+KOKKOS_INLINE_FUNCTION
+Real VlatRelaxedSourceB(const EosT &eos, const Real d, const Real tb, const Real eb,
+                       const Real rkp, const Real rke, const Real eth, const Real ar,
+                       const Real cl, const Real ch, const Real dt,
+                       const int sf, const Real chi, const Real rkes, const Real x0) {
+  const Real s1 = VlatRelaxedSource(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, dt, sf,
+                                    chi, rkes);
+  const Real s0 = VlatRelaxedSource(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, 0.0, sf,
+                                    chi, rkes);
+  M1EosDirect<EosT> th{eos};
+  Real ee, cv;
+  th(d, tb, ee, cv);
+  const Real xe = ch*dt*rke;
+  const Real xg = cl*dt*rkp*ar*4.0*tb*tb*tb/((1.0 + xe)*fmax(d*cv, 1.0e-300));
+  const Real x = xe + xg;
+  const Real w = (x*x)/(x0*x0 + x*x);
+  return s0 + w*(s1 - s0);
+}
+
 // mu label of a ray at the upwind shell: position between the descending nodes
 void VlatLabel(const std::vector<double> &nd, const double mu, double &a0, double &fa) {
   const int n = static_cast<int>(nd.size());
@@ -540,6 +567,8 @@ void RadiationM1::VetLatSweep(const int stage) {
   // (1) ln chi, ln S of every active cell (vet_col's extinction and source), ghosts
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
+  const bool sbl = vcol_sbl;   // sporder-1012: time2_vet_col_source = blend
+  const Real sx0 = vcol_sx0;
   // vet_source_noesrc (fixbundle-1009 F1): the physical E^n = u0 (see VetColBuild)
   const bool noes = VsrcNoes();   // rad_m1.hpp
   auto ur_ = u0;
@@ -564,9 +593,12 @@ void RadiationM1::VetLatSweep(const int stage) {
       Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
       const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
       if (srx) {
-        s = VlatRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr, chi,
-                              rks);
+        s = sbl ? VlatRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+                                     opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i), eth,
+                                     ar, cl, chs, dts, vsr, chi, rks, sx0)
+                : VlatRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
+                                    opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                    chi, rks);
       } else if (vsf != 0) {
         s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
       } else {
