@@ -4,3 +4,5 @@
 filled from the .in templates (on vs off diff = the 2 fix lines). Job script ready (A_off, A_on, B_off, B_on, 300 cycles each).
 **Queue position:** ghx4-interactive allows 1 submitted job per user. Running now: agcarA-ramp (3363376, ~21:30); then
 consfix-c2drag (<= 1 h); then this job. Earliest start ~21:30-22:30 CDT. If Raven's gpudev 31089316 finishes first, post WITHDRAWN.
+
+- 21:50 CDT: queued behind consfix-c2drag (3363531, start estimate 23:41 CDT, <= 1 h), so this job cannot start before ~00:00-00:40 CDT. If Raven gpudev 31089316 finishes first, post WITHDRAWN and I drop it.
