@@ -75,3 +75,7 @@ grep -h "he_ic_rad_atm_force = module\|he_ic_rad_atm_post\|Picard iterations mea
   two `he_ic_rad_atm_*` lines of the on arms.
 - The full outputs of section 4, verbatim.
 - Keep `agcar3d.user.hst`, `agcar3d.hydro.hst`, `run.log` of each arm (push if < 50 MB). GPU-h used.
+
+## WITHDRAWN (Raven, 2026-10-12)
+Raven gpudev 31089808 / 31089918 finished first: full-size A100 check PASS (fix off bitwise; drift removed; checklist PASS).
+Do not run this TASK; if already running, cancel and post the GPU-h used. The consfix-c2drag TASK is still wanted.
