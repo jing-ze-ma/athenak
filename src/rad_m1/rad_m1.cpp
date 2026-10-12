@@ -1170,10 +1170,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // vet_gd_twin_weight = none | j: the twin's pattern subtracted with the per-cell
     // weight w = min(1, min(J/J_tw, J_tw/J)/vet_gd_twin_wq) (j; w = 1 where the main and
     // twin J agree within the factor 1/wq, so near-uniform shells are bitwise; needs the
-    // stored J of the thin switch, else w = 1).  Defaults mean / none (fresh and
-    // restart, until validated).
+    // stored J of the thin switch, else w = 1).  Defaults: vet_gd_twin_state = trans on a
+    // FRESH run (twinfix-1012 validation), mean on a restart whose file lacks the key
+    // (bitwise older runs); vet_gd_twin_weight = none (validated: no gain, Picard cost).
     if (vgd_on && vgd_twin) {
-      const std::string ts = pin->GetOrAddString("rad_m1","vet_gd_twin_state","mean");
+      const std::string ts = pin->GetOrAddString("rad_m1","vet_gd_twin_state",
+                                                  fresh ? "trans" : "mean");
       if (ts.compare("trans") == 0) {
         vgd_twtr = true;
       } else if (ts.compare("mean") != 0) {
