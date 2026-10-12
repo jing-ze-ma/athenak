@@ -901,7 +901,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
     {
-      std::string vs = pin->GetOrAddString("rad_m1","vet_col_source","relaxed");
+      // unify-sc-gd-1012 (#3): the canonical key vet_source (vet_col_source its alias),
+      // read by vet_sc too (VetInit)
+      // DEFAULT gas on a fresh run since unify-sc-gd-1012 (was relaxed; a restart whose
+      // file lacks the key keeps relaxed): with time2_vet_source = blend, the relaxed
+      // lagged source drives S -> B wherever c dt rho kappa_a >> 1 and loses the non-LTE
+      // structure of a scattering atmosphere (nlte2 eps 1e-2, two-stage A at c dt/dx
+      // 1e6: E -5.4 % / -6.8 % in the top tau bands on BOTH vet_gd and vet_sc; gas: 2e-4)
+      std::string vs = pin->GetOrAddString("rad_m1",
+                           M1KeyName(pin, "vet_source", {"vet_col_source"}),
+                           global_variable::restart_run ? "relaxed" : "gas");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("gas") == 0) {

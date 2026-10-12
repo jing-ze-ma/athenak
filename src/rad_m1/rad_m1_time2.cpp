@@ -262,52 +262,15 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << " needs vet_every (vet_col_every) = 1" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // time2_vet_col_source (vcpred-1010; read only when named, default relaxed =
-    // bitwise): the VET source of the predict / rebuild build (vet_col, vet_col_lat,
-    // vet_gd).  vet_col_source = relaxed (default) relaxes the build state's gas and E
-    // by a local backward-Euler exchange over dt, i.e. it moves the source one step
-    // AHEAD of the state it is given.  At U^n (lag, backward Euler) that is the step's
-    // end; at the predicted P = U^n + dt K1, already at t^{n+1} + O(dt^2), it lands near
-    // t^{n+2}: an O(dt) source error, FIRST order in time wherever the exchange is
-    // resolved and out of equilibrium (vcpred_1010 neq1_u_T: E 1.71 1.57 1.40, T 1.67
-    // 1.47 1.23).  state = the source of P itself (eps B + (1 - eps) E, or VetScatterMix
-    // with J = E_P under vet_scatter; vet_col_source = gas for this build only):
-    // 1.92 1.87 1.91 / 1.96 1.98 1.99.  lag / extrap keep the relaxed source.
-    // defaults-1012: DEFAULT blend on a fresh run with time2_vet_col = predict | rebuild
-    // (where it acts); a restart whose file lacks the key keeps relaxed (bitwise older
-    // runs); the resolved value is echoed; explicit input overrides.  Otherwise read
-    // only when named.
-    const bool vsdef = (t2_vcmode == 1 || t2_vcmode == 2);
-    if (vsdef || pin->DoesParameterExist("rad_m1", "time2_vet_col_source")) {
-      std::string vs = vsdef ?
-          pin->GetOrAddString("rad_m1", "time2_vet_col_source",
-                              global_variable::restart_run ? "relaxed" : "blend") :
-          pin->GetString("rad_m1", "time2_vet_col_source");
-      if (vs.compare("relaxed") == 0) {
-        t2_vcsrc = false;
-      } else if (vs.compare("state") == 0) {
-        t2_vcsrc = true;
-      } else if (vs.compare("blend") == 0) {
-        // sporder-1012: blend = S*(0) + w (S*(dt) - S*(0)), w = x^2/(x0^2 + x^2) with x
-        // the cell's exchange stiffness c dt rho kappa (radiation + gas temperature):
-        // the state's own source where the exchange is resolved (x << x0, O(dt^3) from
-        // it), the relaxed source where it is stiff (VcolRelaxedSourceB).
-        // time2_vet_col_source_x0 (default 1)
-        t2_vcsbl = true;
-        vcol_sx0 = pin->GetOrAddReal("rad_m1", "time2_vet_col_source_x0", 1.0);
-        if (!(vcol_sx0 > 0.0)) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_m1>/time2_vet_col_source_x0 must be > 0"
-                    << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/time2_vet_col_source = '" << vs
-                  << "' is not a choice (relaxed | state | blend)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
+    // time2_vet_source (was time2_vet_col_source): Time2VetSourceInit
+    Time2VetSourceInit(pin, t2_vcmode == 1 || t2_vcmode == 2, true);
+  }
+  // unify-sc-gd-1012 (#3): vet_sc reads the same time2_vet_source (its builds take the
+  // VET source rule of vet_col / vet_gd, rad_m1_vet.cpp).  A restart whose file lacks the
+  // key keeps vet_sc's old source of the predicted state (state); the old spelling
+  // time2_vet_col_source is vet_col's own (a vet_sc file may name it, inert there).
+  if (vet_sc) {
+    Time2VetSourceInit(pin, t2_vsmode == 1 || t2_vsmode == 2, false);
   }
   // time2_pred_cap (predfix-1011): the predicted state of time2_vet_sc / time2_vet_col =
   // predict | rebuild is P = U^n + theta dt K1 with, per cell,
@@ -1111,6 +1074,59 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2VetSourceInit
+//! \brief time2_vet_source = relaxed | state | blend (vcpred-1010, sporder-1012; was
+//! time2_vet_col_source, its alias on vet_col): the VET source of the predict / rebuild
+//! build, for every formal solution (unify-sc-gd-1012 #3).  vet_source = relaxed relaxes
+//! the build state's gas and E by a local backward-Euler exchange over dt, i.e. it moves
+//! the source one step AHEAD of the state it is given.  At U^n (lag, backward Euler)
+//! that is the step's end; at the predicted P = U^n + dt K1, already at t^{n+1} +
+//! O(dt^2), it lands near t^{n+2}: an O(dt) source error, FIRST order in time wherever
+//! the exchange is resolved and out of equilibrium (vcpred_1010 neq1_u_T: E 1.71 1.57
+//! 1.40, T 1.67 1.47 1.23).  state = the source of P itself (eps B + (1 - eps) E, or
+//! VetScatterMix with J = E_P under vet_scatter): 1.92 1.87 1.91 / 1.96 1.98 1.99.
+//! blend (sporder-1012) = S*(0) + w (S*(dt) - S*(0)), w = x^2/(x0^2 + x^2) with x the
+//! cell's exchange stiffness c dt rho kappa (radiation + gas temperature): the state's
+//! own source where the exchange is resolved (x << x0, O(dt^3) from it), the relaxed
+//! source where it is stiff (VetRelaxedSourceB); time2_vet_source_x0 (alias
+//! time2_vet_col_source_x0; default 1).  lag / extrap keep vet_source.
+//! DEFAULT blend on a fresh run with predict | rebuild (where it acts); a restart whose
+//! file lacks the key keeps the closure's old source (vet_col / vet_gd relaxed, vet_sc
+//! state); the resolved value is echoed; explicit input overrides.  Otherwise read only
+//! when named.
+
+void RadiationM1::Time2VetSourceInit(ParameterInput *pin, const bool act, const bool col) {
+  const std::string key = col ? M1KeyName(pin, "time2_vet_source", {"time2_vet_col_source"})
+                              : std::string("time2_vet_source");
+  if (!act && !pin->DoesParameterExist("rad_m1", key)) {return;}
+  const char *old = col ? "relaxed" : "state";
+  std::string vs = act ?
+      pin->GetOrAddString("rad_m1", key, global_variable::restart_run ? old : "blend") :
+      pin->GetString("rad_m1", key);
+  if (vs.compare("relaxed") == 0) {
+    t2_vcsrc = false;
+  } else if (vs.compare("state") == 0) {
+    t2_vcsrc = true;
+  } else if (vs.compare("blend") == 0) {
+    t2_vcsbl = true;
+    const std::string kx = col ? M1KeyName(pin, "time2_vet_source_x0",
+                                           {"time2_vet_col_source_x0"})
+                               : std::string("time2_vet_source_x0");
+    vcol_sx0 = pin->GetOrAddReal("rad_m1", kx, 1.0);
+    if (!(vcol_sx0 > 0.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/" << kx << " must be > 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/" << key << " = '" << vs
+              << "' is not a choice (relaxed | state | blend)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2VetColAt
 //! \brief closure = vet_col, time2_vet_col = predict | rebuild (m1-sp-order2b), and
 //! closure = vet_sc, time2_vet_sc = predict | rebuild (torder-1010, no inner face flux):
@@ -1223,7 +1239,13 @@ void RadiationM1::Time2VetColAt(int which) {
     vcol_sbl = false;
     vcol_srelax = srs;
   } else {
+    // unify-sc-gd-1012 (#3): time2_vet_source for vet_sc too, the same flag swap
+    const bool srs = vcol_srelax;
+    if (t2_vcsrc) {vcol_srelax = false;}
+    vcol_sbl = t2_vcsbl;
     VetShortChar();
+    vcol_sbl = false;
+    vcol_srelax = srs;
     if (dbg) {Time2PredDebugSc();}
   }
   if (hh) {
@@ -1533,6 +1555,9 @@ void RadiationM1::Time2Report() {
   if (vet_sc && t2_vsmode != 0) {
     std::cout << " time2_vet_sc=" << ((t2_vsmode == 1) ? "predict" : "rebuild")
               << " fallbacks=" << t2_vcnfb;
+    if (t2_vcsrc) {std::cout << " source=state";}
+    if (t2_vcsbl) {std::cout << " source=blend x0=" << vcol_sx0;}
+    if (!t2_vcsrc && !t2_vcsbl) {std::cout << (vcol_srelax ? " source=relaxed" : " source=gas");}
   }
   if (t2_pcap > 0.0) {
     std::cout << " time2_pred_cap=" << t2_pcap << " limited cell-builds=" << t2_pnlim
