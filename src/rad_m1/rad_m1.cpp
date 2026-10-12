@@ -1091,6 +1091,32 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // vgdlat-1012 vet_gd_symref (read only when named; none | col): the twin's laterally
+    // symmetric reference (the shell mean of the twin's D_rr, half-range ratios, C1, J)
+    // replaced by the 1-D spherical p-ray formal solution of the same shell-mean state
+    // (rad_m1_vetgd.cpp VetGdSymRef); vet_gd_symref_ncore / _nsub: its ray set
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_symref")) {
+      const std::string sr = pin->GetString("rad_m1","vet_gd_symref");
+      if (sr.compare("col") == 0) {
+        vgd_symref = true;
+      } else if (sr.compare("none") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_symref must be none or col" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vgd_symref && (!vgd_twin || vgd_twfull || vgd_beam)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_symref = col needs vet_gd_twin = true "
+                  << "and vet_gd_twin_full = false (no vet_gd_beam)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vgd_symref && pin->DoesParameterExist("rad_m1","vet_gd_symref_ncore")) {
+        vgd_sr_nc = std::max(2, pin->GetInteger("rad_m1","vet_gd_symref_ncore"));
+      }
+      if (vgd_symref && pin->DoesParameterExist("rad_m1","vet_gd_symref_nsub")) {
+        vgd_sr_ns = std::max(1, pin->GetInteger("rad_m1","vet_gd_symref_nsub"));
+      }
+    }
     // vet_gd_twin_fuse (accel-1009; read only when named, default false = bitwise): the
     // twin sweep of the shell-mean field rides in the main sweep's kernels and per-shell
     // halo (one launch and one message round per shell instead of two); needs
