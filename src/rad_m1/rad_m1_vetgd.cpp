@@ -668,12 +668,15 @@ void RadiationM1::VetGdInit() {
       }
     }
   }
+  if (vgd_async && vgd_rot_dt > 0.0) {
+    VgdFatal("vet_gd_rotate_dt (the physical-time rotation) needs vet_gd_async = false");
+  }
   vgd_alpha = -1.0;
   // vgdrot-1011: the table prefetch (its own device instance for the upload)
   {
     const char *e = std::getenv("VGD_TAB_PREFETCH");
     vgd_tab_pre = (e == nullptr) || (std::atoi(e) != 0);
-    if (vgd_tab_pre && vgd_rot > 0) {
+    if (vgd_tab_pre && VgdRotOn()) {
       vgd_tex = Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0];
     }
   }
@@ -688,10 +691,56 @@ void RadiationM1::VetGdInit() {
 //! bitwise; pi/2 is the C4 period of the set)
 
 Real RadiationM1::VetGdAngle(const int cyc) const {
-  if (vgd_rot <= 0) {return 0.0;}
-  const double b = static_cast<double>(cyc/vgd_rot);
+  if (!VgdRotOn()) {return 0.0;}
+  return VetGdAngleBlk(VetGdBlock(cyc));
+}
+
+Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
+  const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
   return 0.5*M_PI*(b*g - std::floor(b*g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int64_t RadiationM1::VetGdBlock
+//! \brief vgdrot2-1012: the rotation block of the step of cycle cyc.  Cycle clock
+//! (vet_gd_rotate_every = N): cyc/N, as before.  Physical clock (vet_gd_rotate_dt =
+//! dt_rot > 0): the block holding the step's MIDPOINT, floor((t + dt/2 - t0)/dt_rot)
+//! with t, dt the mesh time and step (constant over the stages of a step, so both
+//! hesdirk2 stages and every build of the step share the set).  The angle is then a
+//! function of the physical time only: every dt samples the same set at the same t, the
+//! closure is piecewise constant in t with jumps at t0 + k dt_rot, and with
+//! vet_gd_rotate_align (VetGdAlignDt) every jump sits on a step boundary on every dt, so
+//! a dt ladder converges at the integrator's order.  Restart-safe (t, dt from the file).
+
+int64_t RadiationM1::VetGdBlock(const int cyc) const {
+  if (vgd_rot_dt > 0.0) {
+    const Mesh *pm = pmy_pack->pmesh;
+    const Real dt = (pm->dt > 0.0 && pm->dt < vgd_rot_dt) ? pm->dt : 0.0;
+    return static_cast<int64_t>(std::floor((pm->time + 0.5*dt - vgd_rot_t0)/vgd_rot_dt));
+  }
+  return (vgd_rot > 0) ? static_cast<int64_t>(cyc/vgd_rot) : 0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VetGdAlignDt
+//! \brief vgdrot2-1012, vet_gd_rotate_dt > 0 with vet_gd_rotate_align (from
+//! Mesh::NewTimeStep after the global min, before the tlim clamp): the next boundary
+//! t_k = t0 + k dt_rot > t is reached in n = ceil(rem/dt) EQUAL steps, dt' = rem/n
+//! (never a sliver step; dt' >= dt/2; dt' = dt when dt divides rem).  Same on every rank.
+
+Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
+  if (!(vgd_rot_dt > 0.0) || !vgd_rot_align || !(dt > 0.0)) {return dt;}
+  const double x = (time - vgd_rot_t0)/vgd_rot_dt;
+  double k = std::floor(x) + 1.0;
+  // time already on a boundary (to round-off): the NEXT one
+  if ((k - x)*vgd_rot_dt < 1.0e-9*dt) {k += 1.0;}
+  const double rem = vgd_rot_t0 + k*vgd_rot_dt - time;
+  const double n = std::ceil(rem/dt*(1.0 - 1.0e-9));
+  if (n > 1.0e6) {return dt;}
+  const Real dtn = static_cast<Real>(rem/std::max(n, 1.0));
+  if (dtn < dt) {vgd_rot_nalign += 1.0;}
+  return std::min(dt, dtn);
 }
 
 //----------------------------------------------------------------------------------------
@@ -948,8 +997,8 @@ void RadiationM1::VgdTabAlloc(const bool dev) {
 //! VetGdTables at the next rotation swaps them in (no host work, no copy, at that point)
 
 void RadiationM1::VetGdTabPrefetch(const int cyc) {
-  if (!vgd_tab_pre || vgd_rot <= 0 || vgd_tab_state != 0) {return;}
-  const Real an = VetGdAngle((cyc/vgd_rot + 1)*vgd_rot);
+  if (!vgd_tab_pre || !VgdRotOn() || vgd_tab_state != 0) {return;}
+  const Real an = VetGdAngleBlk(VetGdBlock(cyc) + 1);
   if (an == vgd_alpha) {return;}
   VgdTabAlloc(true);
   vgd_tab_state = 1;
@@ -1029,8 +1078,12 @@ void RadiationM1::VetGdTables(const Real alpha) {
                                       + (vgd_gl_stag ? " staggered" : ""))
                   : ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
                                   : ("HEALPix nside " + std::to_string(vgd_nside))))
-              << " (" << n << " directions); z-rotation every " << vgd_rot
-              << " cycle(s) (0 = fixed), first angle " << alpha << ";"
+              << " (" << n << " directions); z-rotation every "
+              << ((vgd_rot_dt > 0.0) ? (std::to_string(vgd_rot_dt) + " in time (t0 "
+                                        + std::to_string(vgd_rot_t0) + ", align "
+                                        + (vgd_rot_align ? "on" : "off") + ")")
+                                     : (std::to_string(vgd_rot) + " cycle(s)"))
+              << " (0 = fixed), first angle " << alpha << ";"
               << " rank 0 wall ghost columns " << nwall << ", direction maps exact "
               << nexact << " of " << nmap << " (the rest: nearest direction)"
               << std::endl;
@@ -1048,7 +1101,7 @@ void RadiationM1::VetGdTables(const Real alpha) {
 //! the shell mean e_b f_patch.  The set must not rotate (vet_gd_rotate_every = 0).
 
 void RadiationM1::VetGdBeamInit(const std::vector<double> &d) {
-  if (vgd_rot > 0) {VgdFatal("vet_gd_beam needs vet_gd_rotate_every = 0");}
+  if (VgdRotOn()) {VgdFatal("vet_gd_beam needs vet_gd_rotate_every = 0");}
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;

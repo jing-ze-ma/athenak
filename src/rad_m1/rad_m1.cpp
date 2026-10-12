@@ -1000,6 +1000,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
       vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
     }
+    // vgdrot2-1012: the rotation on a physical-time clock (read only when named; absent
+    // or 0 = the cycle clock of vet_gd_rotate_every, bitwise)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt")) {
+      vgd_rot_dt = pin->GetReal("rad_m1","vet_gd_rotate_dt");
+      if (vgd_rot_dt > 0.0) {
+        vgd_rot = 0;
+        vgd_rot_t0 = pin->GetOrAddReal("rad_m1","vet_gd_rotate_t0",0.0);
+        vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
+      }
+    }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum

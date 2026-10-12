@@ -24,6 +24,7 @@
 //! geometry but Cartesian (stage 4).
 
 #include <array>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -1799,6 +1800,13 @@ class RadiationM1 {
   int vgd_gl_nphi = 12;        // vet_gd_gl_nphi (C_nphi about z)
   bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
   int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
+  // vgdrot2-1012: vet_gd_rotate_dt > 0 (read only when named): the rotation in PHYSICAL
+  // time instead (block b of the step = floor((t + dt/2 - t0)/dt_rot), the same angle
+  // at the same t on every dt), vet_gd_rotate_t0 its origin; vet_gd_rotate_align (default
+  // true): Mesh::NewTimeStep lands a step on every block boundary (VetGdAlignDt)
+  Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
+  bool vgd_rot_align = false;
+  double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with
   // the first gd shell at the physical inner face (icut = 0) the outward rays start from
@@ -2126,6 +2134,10 @@ class RadiationM1 {
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
+  bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0;}
+  int64_t VetGdBlock(const int cyc) const;       // vgdrot2-1012: the rotation block
+  Real VetGdAngleBlk(const int64_t b) const;
+  Real VetGdAlignDt(const Real time, const Real dt);
   void VetGdTables(const Real alpha);
   // vgdrot-1011: the tables' host part in persistent pinned buffers (no per-rotation
   // mirrors), and the next rotation's tables prefetched (host thread + upload into a
