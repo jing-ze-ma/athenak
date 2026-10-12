@@ -2088,6 +2088,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                               tjdef ? "lin" : "cell");
         if (sbq.compare("lin") == 0) {
           thsw_bqlin = true;
+          // unify-1012: on vet_gd only with implicit_thin_bq_gd = lin (opt-in; default
+          // cell): the r^2 H+ extrapolation put a +1.3 % kink into the top-cell E of
+          // AG Car A (E/J-1 1.6e-2 vs 2.7e-3, E r^2 smooth without it) and raised the
+          // patm thin-top max error (NOTE-unify)
+          thsw_bqgd = (pin->GetOrAddString("rad_m1", "implicit_thin_bq_gd", "cell")
+                       == "lin");
         } else if (sbq.compare("cell") != 0) {
           ImplFatal("<rad_m1>/implicit_thin_bq = '" + sbq
                     + "' is not a choice (cell | lin)");
@@ -11469,11 +11475,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // H+_f = (3 H+_N - H+_N-1)/2 the outgoing half-range flux linearly extrapolated to
     // the face (the vacuum face carries H+ alone), the factor H+_f/H+_N limited as in
     // M1ThinJs; the cell value H+_N/J_N is O(dx) off the face value
-    // unify-1012: also vet_gd (src 2) with J in vgd_hr; there the extrapolated quantity
-    // is r^2 H+ (the flux through the shell), linear in r to the face x1f(ie+1) from the
-    // two top cell centres, H+_f = (r^2 H+)_f/r_f^2 (Cartesian: the vet_sc expression)
+    // unify-1012: vet_gd (src 2) only with implicit_thin_bq_gd = lin (opt-in): there the
+    // extrapolated quantity is r^2 H+ (the flux through the shell), linear in r to the
+    // face x1f(ie+1) from the two top cell centres, H+_f = (r^2 H+)_f/r_f^2 (Cartesian:
+    // the vet_sc expression)
     const bool bgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
-    const bool bql = (impl_thsw != M1_THSW_NONE) && thsw_bqlin && (hsrc == 1 || bgx) &&
+    const bool bql = (impl_thsw != M1_THSW_NONE) && thsw_bqlin &&
+                     (hsrc == 1 || (bgx && thsw_bqgd)) &&
                      (ie > is);
     const Real bqlim = thsw_jslim;
     auto bx1v = pmy_pack->pcoord->x1v;
