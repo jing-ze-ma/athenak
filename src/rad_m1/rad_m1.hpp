@@ -1979,6 +1979,13 @@ class RadiationM1 {
   bool vgd_twin = false, vgd_noq = false;
   bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
   DvceArray1D<Real> vgd_twm, vgd_twm2;
+  // twinfix-1012: vet_gd_twin_state = trans (the twin's shell state from the shell's mean
+  // TRANSMISSION, not its mean opacity; vgd_twtr) and vet_gd_twin_weight = j (the twin
+  // subtraction weighted per cell by the main/twin J agreement; vgd_twwt, vgd_twwq)
+  bool vgd_twtr = false, vgd_twwt = false;
+  Real vgd_twwq = 0.5;
+  DvceArray1D<Real> vgd_twtb;  // (5*c1): sum t, sum (1-t), sum S(1-t), min, max ln chi
+  void VetGdTwinTrans();
   DvceArray5D<Real> vgd_twl, vgd_cs0;
   // vgdlat-1012 vet_gd_symref = col (read only when named, default none; needs
   // vet_gd_twin): the twin's laterally symmetric reference (its shell mean) replaced by

@@ -1099,6 +1099,57 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     } else if (vgd_on && fresh && !vgd_async_named) {
       vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",true);
     }
+    // twinfix-1012 (rad_m1_vetgd.cpp VetGdTwinTrans, VgdTwW).
+    // vet_gd_twin_state = mean | trans: the twin's laterally uniform shell state from
+    // the arithmetic shell means <chi>, <S> (mean, the old rule) or from the shell's mean
+    // TRANSMISSION, chi_tw = -ln<exp(-chi dr)>/dr, S_tw = <S (1 - e^-chi dr)>/<1 - e^-chi
+    // dr> (trans; a shell whose chi is laterally constant keeps the means, bitwise).
+    // vet_gd_twin_weight = none | j: the twin's pattern subtracted with the per-cell
+    // weight w = min(1, min(J/J_tw, J_tw/J)/vet_gd_twin_wq) (j; w = 1 where the main and
+    // twin J agree within the factor 1/wq, so near-uniform shells are bitwise; needs the
+    // stored J of the thin switch, else w = 1).  Defaults: vet_gd_twin_state = trans on a
+    // FRESH run (twinfix-1012 validation), mean on a restart whose file lacks the key
+    // (bitwise older runs); vet_gd_twin_weight = none (validated: no gain, Picard cost).
+    if (vgd_on && vgd_twin) {
+      const std::string ts = pin->GetOrAddString("rad_m1","vet_gd_twin_state",
+                                                  fresh ? "trans" : "mean");
+      if (ts.compare("trans") == 0) {
+        vgd_twtr = true;
+      } else if (ts.compare("mean") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_state must be mean or trans"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      const std::string tw = pin->GetOrAddString("rad_m1","vet_gd_twin_weight","none");
+      if (tw.compare("j") == 0) {
+        vgd_twwt = true;
+      } else if (tw.compare("none") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_weight must be none or j"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      vgd_twwq = pin->GetOrAddReal("rad_m1","vet_gd_twin_wq",0.5);
+      if (!(vgd_twwq > 0.0 && vgd_twwq <= 1.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_wq must be in (0, 1]"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    } else if (vgd_on && (pin->DoesParameterExist("rad_m1","vet_gd_twin_state") ||
+                          pin->DoesParameterExist("rad_m1","vet_gd_twin_weight"))) {
+      const bool bad = (pin->DoesParameterExist("rad_m1","vet_gd_twin_state") &&
+                        pin->GetString("rad_m1","vet_gd_twin_state").compare("mean")) ||
+                       (pin->DoesParameterExist("rad_m1","vet_gd_twin_weight") &&
+                        pin->GetString("rad_m1","vet_gd_twin_weight").compare("none"));
+      if (bad) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_twin_state = trans and "
+                  << "vet_gd_twin_weight = j need vet_gd_twin = true" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // vet_gd_twin_full (read only when named, default false; needs vet_gd_twin): subtract
     // the FULL twin D_rr correction, so that the laterally symmetric part of D_rr is
     // vet_col's column f_K and gd supplies only the 3-D deviation D_gd - D_gd,twin
