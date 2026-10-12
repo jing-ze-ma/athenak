@@ -1016,7 +1016,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // rotation); a restart whose file lacks both keys keeps the old default (no rotation).
     // The sub-keys are read (and echoed) with the physical clock: vet_gd_rotate_t0 (0),
     // _align (true), _stretch (0.02 on a fresh run since defaults-1012, 0 on a restart
-    // whose file lacks it), _slope (keep).
+    // whose file lacks it), _slope (correct on a fresh run since defaults2-1012, keep on a
+    // restart whose file lacks it).
     {
       const bool rdt_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt");
       const bool rev_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_every");
@@ -1044,7 +1045,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
         vgd_rot_stretch = pin->GetOrAddReal("rad_m1","vet_gd_rotate_stretch",
                                             fresh ? 0.02 : 0.0);
-        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope","keep");
+        // defaults2-1012: _slope DEFAULT correct on a FRESH run (Time2RotCorrect; acts
+        // only under time_scheme = hesdirk2, inert otherwise); a restart whose file lacks
+        // the key keeps keep (bitwise older runs).  Echoed, so a later restart keeps it.
+        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope",
+                                             fresh ? "correct" : "keep");
         if (rs.compare("keep") == 0) {
           vgd_rot_slope = 0;
         } else if (rs.compare("probe") == 0) {
