@@ -1923,8 +1923,10 @@ class RadiationM1 {
     Real lo[M1_RA_NF], hi[M1_RA_NF];
     int farr = -1, fcomp = 0;  // validity flag field: invalid where < 0 (-1: none)
     int jf = -1;               // the J field (index into the table) of kind-3 fields
+    int jw = -1;               // the ratio field weighting the sets (-1: equal)
   };
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
+  bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
   RotAvgTab vra_tab;
   DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)

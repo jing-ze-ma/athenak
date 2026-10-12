@@ -5134,6 +5134,7 @@ void RadiationM1::VetGdRotAvgSetup() {
   RotAvgTab &t = vra_tab;
   t.nf = 0;
   t.jf = -1;
+  t.jw = -1;
   vra_a0 = tau_ten;
   for (int c = 0; c < M1_TT_NLAT; ++c) {
     t.arr[t.nf] = 0; t.comp[t.nf] = M1_TT_LAT0 + c; t.kind[t.nf] = 0;
@@ -5152,7 +5153,9 @@ void RadiationM1::VetGdRotAvgSetup() {
       t.arr[t.nf] = 1; t.comp[t.nf] = M1_VGD_HRC1; t.kind[t.nf] = 1;
       t.lo[t.nf] = 0.0; t.hi[t.nf] = 1.0e300; ++t.nf;
       t.arr[t.nf] = 1; t.comp[t.nf] = M1_VGD_HRJ; t.kind[t.nf] = 2;
-      t.lo[t.nf] = 0.0; t.hi[t.nf] = 0.0; ++t.nf;
+      t.lo[t.nf] = 0.0; t.hi[t.nf] = 0.0;
+      if (!vra_eq) {t.jw = t.nf;}   // the sets weighted by their J (union of the sets)
+      ++t.nf;
     }
     t.farr = 1;
     t.fcomp = 0;

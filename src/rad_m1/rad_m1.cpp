@@ -1033,6 +1033,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
       vra_on = (vra_k >= 2) && (vgd_on || vet_sc);
+      // vet_rotate_avg_weight = j (default: the sets weighted by their formal-solution
+      // J, i.e. the normalised moments of the union of the K sets) | equal
+      if (vra_on && pin->DoesParameterExist("rad_m1","vet_rotate_avg_weight")) {
+        const std::string w = pin->GetString("rad_m1","vet_rotate_avg_weight");
+        if (w.compare("equal") == 0) {
+          vra_eq = true;
+        } else if (w.compare("j") != 0) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_rotate_avg_weight must be j or equal"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
       const bool rot = vgd_on ? VgdRotOn() : vsc_rot;
       if (vra_on && !rot && global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": the direction set does "

@@ -1981,6 +1981,7 @@ void RadiationM1::VetScRotAvgSetup() {
     t.lo[t.nf] = lo; t.hi[t.nf] = hi; ++t.nf;
   };
   t.jf = 0;
+  t.jw = vra_eq ? -1 : 0;   // the sets weighted by their J (union of the sets)
   add(M1_VET_J, 2, 0.0, 0.0);
   for (int c = 0; c < 3; ++c) {add(M1_VET_K11 + c, 3, 0.0, 1.0);}
   for (int c = 3; c < 6; ++c) {add(M1_VET_K11 + c, 3, -1.0, 1.0);}

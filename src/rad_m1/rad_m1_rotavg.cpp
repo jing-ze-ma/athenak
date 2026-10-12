@@ -198,7 +198,8 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotAvgApply
 //! \brief the registered fields := the mean over the current set and the valid offsets
-//! (kind 3: (X/J)_avg times the averaged J)
+//! (ratio fields: the plain mean; the others J-weighted with the ratio field jw, i.e.
+//! the normalised moments of the union of the K sets; kind 3: (X/J)_avg times the mean J)
 
 void RadiationM1::RotAvgApply(const int ilo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -227,19 +228,32 @@ void RadiationM1::RotAvgApply(const int ilo) {
       }
       ju = jr*sm/nv;
     }
+    // the weight of each older set: its J over the current set's (field jw, a ratio
+    // field), so the normalised fields are those of the UNION of the sets' intensities,
+    // sum_s M_s / sum_s J_s (equal weights 1 without a J field or vet_rotate_avg_weight =
+    // equal)
+    Real ws[M1_RA_NF], wsum = 1.0;
+    for (int s = 0; s < nslot; ++s) {
+      const int o = s*nf1;
+      ws[s] = (d_(m,o+t.nf,kk,jj,ii) > 0.5) ? ((t.jw >= 0) ? d_(m,o+t.jw,kk,jj,ii) : 1.0)
+                                             : 0.0;
+      wsum += ws[s];
+    }
     for (int f = 0; f < t.nf; ++f) {
       Real g;
       if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
-      Real sm = (t.kind[f] == 2) ? 1.0 : 0.0;
+      const bool mul = (t.kind[f] == 2);
+      Real sm = mul ? 1.0 : 0.0;
       for (int s = 0; s < nslot; ++s) {
         const int o = s*nf1;
-        if (d_(m,o+t.nf,kk,jj,ii) > 0.5) sm += d_(m,o+f,kk,jj,ii);
+        if (d_(m,o+t.nf,kk,jj,ii) > 0.5) sm += mul ? d_(m,o+f,kk,jj,ii)
+                                                    : ws[s]*d_(m,o+f,kk,jj,ii);
       }
       Real v;
-      if (t.kind[f] == 2) {
+      if (mul) {
         v = g*sm/nv;
       } else {
-        v = g + sm/nv;
+        v = g + sm/wsum;
         if (t.kind[f] == 1 || (t.kind[f] == 3 && t.lo[f] < t.hi[f])) {
           v = fmin(fmax(v, t.lo[f]), t.hi[f]);
         }
