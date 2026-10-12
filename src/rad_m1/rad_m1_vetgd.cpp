@@ -765,8 +765,12 @@ void RadiationM1::VetGdRotStep() {
     vgd_rot_lastblk = static_cast<int64_t>(
         std::floor((pm->time - vgd_rot_t0)/vgd_rot_dt - 1.0e-9));
   }
-  if (b != vgd_rot_lastblk && vgd_rot_slope != 0 && time_scheme == M1_TIME_HESDIRK2 &&
-      t2_ok) {
+  // rotslope-1012: correct keeps the slope and asks Time2RotCorrect for its jump
+  if (b != vgd_rot_lastblk && vgd_rot_slope == 3 && time_scheme == M1_TIME_HESDIRK2 &&
+      Time2Active()) {
+    t2_rotcorr = true;
+  } else if (b != vgd_rot_lastblk && vgd_rot_slope != 0 && vgd_rot_slope != 3 &&
+      time_scheme == M1_TIME_HESDIRK2 && t2_ok) {
     t2_ok = false;
     t2_rotprobe = (vgd_rot_slope == 1);
     vgd_rot_nprobe += 1.0;
