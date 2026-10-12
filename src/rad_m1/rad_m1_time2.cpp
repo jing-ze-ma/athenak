@@ -169,9 +169,17 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   //   predict : ONE formal solution per step at P = (stage-1 start) + dt K1, i.e. at
   //             t^{n+1} + O(dt^2); same cost as lag
   //   rebuild : predict for stage 1, a second formal solution at Y1 for stage 2
+  // unify-1012: DEFAULT predict on a fresh run (as time2_vet_col on the wedge), unless
+  // time2_vet_extrap = true or vet_sc_every > 1 (which predict excludes: lag, silently);
+  // a restart whose file lacks the key keeps lag (echoed).  torder-1010: lag is first
+  // order in time wherever the tensor changes (pulse_k12.8 T 1.05), predict 2.0.
   t2_vsmode = 0;
-  if (vet_sc && pin->DoesParameterExist("rad_m1", "time2_vet_sc")) {
-    std::string vm = pin->GetString("rad_m1", "time2_vet_sc");
+  const bool vs_named = pin->DoesParameterExist("rad_m1", "time2_vet_sc");
+  const bool vs_every = pin->DoesParameterExist("rad_m1", "vet_sc_every") &&
+                        (pin->GetInteger("rad_m1", "vet_sc_every") > 1);
+  if (vet_sc && (vs_named || (!t2_vext && !vs_every))) {
+    std::string vm = pin->GetOrAddString("rad_m1", "time2_vet_sc",
+                                         global_variable::restart_run ? "lag" : "predict");
     if (vm.compare("lag") == 0) {
       t2_vsmode = 0;
     } else if (vm.compare("predict") == 0) {
@@ -212,13 +220,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // order in time (rsw_u_T: 1.00, E/T/gas 1.9-2.0).  Default true on the spherical-polar
   // wedge (a restart whose file lacks the key keeps false, echoed); elsewhere false
   // unless named.
-  t2_fvnew = false;
-  if (sph_geom) {
-    t2_fvnew = pin->GetOrAddBoolean("rad_m1", "time2_vstage",
-                                    !global_variable::restart_run);
-  } else if (pin->DoesParameterExist("rad_m1", "time2_vstage")) {
-    t2_fvnew = pin->GetBoolean("rad_m1", "time2_vstage");
-  }
+  // unify-1012: default true on every mesh (was the wedge only): the Cartesian vet_sc
+  // ladders need it as much (torder-1010 cenPvs: rw_t10a F1 1.58 2.32 1.97 vs 1.07 1.04
+  // 1.02 without); a restart whose file lacks the key keeps false (echoed)
+  t2_fvnew = pin->GetOrAddBoolean("rad_m1", "time2_vstage",
+                                  !global_variable::restart_run);
   t2_vcmode = 0;
   if (vet_col) {
     const bool vdef = sph_geom && !global_variable::restart_run;

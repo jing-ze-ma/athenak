@@ -2069,7 +2069,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // thinfix-1011: the formal-solution shape of the half-range face ratios (js) and
       // the outer Marshak q at the face (lin); read only with the switch on
       {
-        std::string srec = pin->GetOrAddString("rad_m1","implicit_thin_recon","dc");
+        // unify-1012: DEFAULT jse + lin on a fresh run (vet_sc and vet_gd alike: the
+        // unified thin set fse + hc + jse + lin); a restart whose file lacks the keys keeps
+        // dc / cell (bitwise older runs); the resolved values are echoed
+        const bool tjdef = !global_variable::restart_run;
+        std::string srec = pin->GetOrAddString("rad_m1","implicit_thin_recon",
+                                               tjdef ? "jse" : "dc");
         if (srec.compare("js") == 0) {
           thsw_js = true;
         } else if (srec.compare("jse") == 0) {
@@ -2079,7 +2084,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           ImplFatal("<rad_m1>/implicit_thin_recon = '" + srec
                     + "' is not a choice (dc | js | jse)");
         }
-        std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq","cell");
+        std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq",
+                                              tjdef ? "lin" : "cell");
         if (sbq.compare("lin") == 0) {
           thsw_bqlin = true;
         } else if (sbq.compare("cell") != 0) {
@@ -2091,6 +2097,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           if (!(thsw_jslim >= 1.0)) {
             ImplFatal("<rad_m1>/implicit_thin_jslim must be >= 1");
           }
+        }
+      }
+      // unify-1012: implicit_thin_hcsf = jh | j.  hc/hcs subtract the upwind flux of the
+      // formal solution, h+-_f x (the cell scale); where the face ratios are the sf ratios
+      // over the donor scale Jh > J (implicit_hr_face = sf, beam-crossed cells) the cell
+      // scale must be Jh, else the correction is the O(1) part of the SC flux the sf face
+      // carries via E = Jh, a fixed source that drove cbg (Gauss 8x32) Picard to 1e19.
+      // DEFAULT jh on a fresh run; a restart whose file lacks the key keeps j (bitwise).
+      {
+        std::string shj = pin->GetOrAddString("rad_m1","implicit_thin_hcsf",
+                                              global_variable::restart_run ? "j" : "jh");
+        if (shj.compare("jh") == 0) {
+          thsw_hcjh = true;
+        } else if (shj.compare("j") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_hcsf = '" + shj + "' is not a choice (jh | j)");
         }
       }
       thsw_c1 = (impl_thsw_corr == M1_THCR_HCS) || thsw_jse ||
@@ -3601,10 +3622,12 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                      : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
     const Real tqi = thsw_qp;
-    const bool tjs = thsw && thsw_js && (hsrc == 1);   // thinfix-1011
+    // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
+    const bool tjs = thsw && thsw_js && (hsrc == 1 || tgx);
     const bool tjse = tjs && thsw_jse;
     const Real tjl = thsw_jslim;
     const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
+    const bool hcjh = thsw_hcjh;   // unify-1012
     const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
     const Real xcfl = impl_hr_xs_cfl;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
@@ -3697,10 +3720,18 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
             gfl = M1HrSfFb(iw_, hsfb, m, km, jm, i, gfl);
             gfr = M1HrSfFb(iw_, hsfb, m, k, j, i, gfr);
           }
+          // unify-1012 (implicit_thin_hcsf = jh): the hc/hcs correction of a face whose
+          // ratios are the sf ratios over the donor scale Jh takes Jh as the cell's
+          // formal-solution scale (M1HrSf: E = Jh at the steady fixed point)
+          Real jcl = iw_(m,M1_IW_TC,km,jm,i), jcr = iw_(m,M1_IW_TC,k,j,i);
+          if (hsfb >= 0 && hcjh) {
+            jcl = fmax(jcl, iw_(m,hsfb+M1_HSF_JH,km,jm,i));
+            jcr = fmax(jcr, iw_(m,hsfb+M1_HSF_JH,k,j,i));
+          }
           M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
-                     iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i),
+                     jcl, jcr,
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
                      th0, th1, tkn0, tknp, ch, al, hl, hr, dgt);
@@ -11420,19 +11451,35 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // H+_f = (3 H+_N - H+_N-1)/2 the outgoing half-range flux linearly extrapolated to
     // the face (the vacuum face carries H+ alone), the factor H+_f/H+_N limited as in
     // M1ThinJs; the cell value H+_N/J_N is O(dx) off the face value
-    const bool bql = (impl_thsw != M1_THSW_NONE) && thsw_bqlin && (hsrc == 1) &&
+    // unify-1012: also vet_gd (src 2) with J in vgd_hr; there the extrapolated quantity
+    // is r^2 H+ (the flux through the shell), linear in r to the face x1f(ie+1) from the
+    // two top cell centres, H+_f = (r^2 H+)_f/r_f^2 (Cartesian: the vet_sc expression)
+    const bool bgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
+    const bool bql = (impl_thsw != M1_THSW_NONE) && thsw_bqlin && (hsrc == 1 || bgx) &&
                      (ie > is);
     const Real bqlim = thsw_jslim;
+    auto bx1v = pmy_pack->pcoord->x1v;
+    auto bx1f = pmy_pack->pcoord->xx1f;
     par_for("m1_impl_hrq", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real hp, hm, fb;
       M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq, 0, 0.0, hp, hm, fb);
       if (bql && hp > 0.0) {
-        const Real j0 = hvc_(m,M1_VET_J,k,j,ieq), j1 = hvc_(m,M1_VET_J,k,j,ieq-1);
+        const bool g = (hsrc == 2);
+        const Real j0 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq) : hvc_(m,M1_VET_J,k,j,ieq);
+        const Real j1 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq-1) : hvc_(m,M1_VET_J,k,j,ieq-1);
         Real hp1, hm1, fb1;
         M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq-1, 0, 0.0, hp1, hm1, fb1);
-        if (j0 > 0.0 && j1 > 0.0) {
-          const Real ph = fmin(fmax(1.5 - 0.5*hp1*j1/(hp*j0), 1.0/bqlim), bqlim);
+        if (j0 > 0.0 && j1 > 0.0 && hp1 >= 0.0) {
+          Real ph;
+          if (g) {
+            const Real r0 = bx1v(m,ieq), r1 = bx1v(m,ieq-1), rf = bx1f(m,ieq+1);
+            const Real a0 = r0*r0*hp*j0, a1 = r1*r1*hp1*j1;
+            const Real af = a0 + (a0 - a1)*(rf - r0)/(r0 - r1);
+            ph = fmin(fmax(af/(rf*rf*hp*j0), 1.0/bqlim), bqlim);
+          } else {
+            ph = fmin(fmax(1.5 - 0.5*hp1*j1/(hp*j0), 1.0/bqlim), bqlim);
+          }
           hp *= ph;
         }
       }
@@ -11734,10 +11781,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
                        : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
       const Real tqi = thsw_qp;
-      const bool tjs = thsw_js && (hsrc == 1);   // thinfix-1011
+      // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
+      const bool tjs = thsw_js && (hsrc == 1 || tgx);
       const bool tjse = thsw_jse;
       const Real tjl = thsw_jslim;
       const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
+      const bool hcjh = thsw_hcjh;   // unify-1012
       const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
       const Real xcfl = impl_hr_xs_cfl;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -11836,8 +11885,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               dm = 0.0;
               M1ThinHr(tqi, iw_(m,M1_IW_EN,k,j,ip), jr, fbr, th0, th1, dm, hmr);
             }
-            const Real wjs = !tjs ? 0.0 : (tjse ? fmin(hvc_(m,M1_VET_EPS,k,j,im),
-                                                       hvc_(m,M1_VET_EPS,k,j,ip)) : 1.0);
+            const Real wjs = !tjs ? 0.0
+                             : (!tjse ? 1.0
+                                : (sgd ? fmin(hgh_(m,M1_VGD_HREP,k,j,im),
+                                              hgh_(m,M1_VGD_HREP,k,j,ip))
+                                       : fmin(hvc_(m,M1_VET_EPS,k,j,im),
+                                              hvc_(m,M1_VET_EPS,k,j,ip))));
             if (tjs) {
               M1ThinJs(hpl, hml, hpr, hmr, jl, jr, tjl, wjs, hpl, hmr);
             }
@@ -11846,6 +11899,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
             const Real gl2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, im, gl) : gl;
             const Real gr2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, ip, gr) : gr;
+            if (hsfb >= 0 && hcjh) {   // unify-1012 (implicit_thin_hcsf = jh)
+              jl = fmax(jl, iw_(m,hsfb+M1_HSF_JH,k,j,im));
+              jr = fmax(jr, iw_(m,hsfb+M1_HSF_JH,k,j,ip));
+            }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl2, gr2, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0

@@ -645,6 +645,9 @@ class RadiationM1 {
   bool thsw_js = false, thsw_bqlin = false;
   bool thsw_jse = false;   // js weighted by the thermal fraction eps of the face
   Real thsw_jslim = 2.0;
+  // unify-1012: implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh as the cell's
+  // formal-solution scale on faces with sf ratios (vet_sc); j = the old J (opt-out)
+  bool thsw_hcjh = false;
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
