@@ -774,11 +774,14 @@ class RadiationM1 {
   //      velocity change since the stored F as F0's EXPLICIT tendency -dA/dt
   //      (ImplicitCs2Shift at the solve start; the lab F is kept).  Off, it is part of
   //      the solve's dA (which gives clean order 2 on the T ladders).
-  // iw components behind the other blocks: A^old (3), dA (3, exchanged)
+  //  (d) implicit_cs2_hll = drag (default, consfix3): the AP-HLL (thin) part of a face
+  //      has no face equation; there the gas pays only its drag, as matched, not dA.
+  // iw components behind the other blocks: A^old (3), dA (3, exchanged), om_bar (3)
   bool impl_gas_src_cs2 = false;
   int iw_cs2 = -1;
   bool cs2_dav = false;                 // the dA components hold a pass's prediction
   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
+  bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
                                         // 2 no vimp prediction, 4 no hydro shift,
                                         // 8 no x1 split, 16 no x2/x3 split

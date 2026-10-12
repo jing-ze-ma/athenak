@@ -406,6 +406,20 @@
           dm1 = x1 - (q1 - go1)*icc;
           dm2 = tq ? (x2 - (q2 - go2)*icc) : 0.0;
           dm3 = (tq && thrd) ? (x3 - (q3 - go3)*icc) : 0.0;
+          if (c2h) {
+            // consfix3 (implicit_cs2_hll = drag): the AP-HLL part of dA stays with the
+            // radiation (no face equation there): the gas pays om_bar dA, not dA
+            dm1 += (1.0 - iw_(m,c2a+6,k,j,i))
+                   *(q1 - 0.5*(fl + fr) - iw_(m,c2a,k,j,i))*icc;
+            if (tq) {
+              dm2 += (1.0 - iw_(m,c2a+7,k,j,i))
+                     *(q2 - 0.5*(g2l + g2r) - iw_(m,c2a+1,k,j,i))*icc;
+              if (thrd) {
+                dm3 += (1.0 - iw_(m,c2a+8,k,j,i))
+                       *(q3 - 0.5*(g3l + g3r) - iw_(m,c2a+2,k,j,i))*icc;
+              }
+            }
+          }
           if (q == 3) break;
           const Real wq = kew(dm1, dm2, dm3);
           Real eq = efc ? ep : (ep - (ch/cl)*wq);
