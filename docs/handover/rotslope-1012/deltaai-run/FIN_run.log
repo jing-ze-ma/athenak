@@ -1,0 +1,313 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 2 x 2 MeshBlocks
+Total number of MeshBlocks = 4
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 4
+  Rank = 0: 1 MeshBlocks, cost = 1
+  Rank = 1: 1 MeshBlocks, cost = 1
+  Rank = 2: 1 MeshBlocks, cost = 1
+  Rank = 3: 1 MeshBlocks, cost = 1
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+<hydro>/tfloor_kelvin = 3000 K -> tfloor = 2.49434e+11 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 951 x 801 nodes (92 MB), log10 rho[cgs] in [-21, -2], log10 T[K] in [3.4, 6.6]
+             X = 0.36, Y = 0.62, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 0.84729, n_e/n_tot = 0.565093
+General EOS: tabulated on 951 x 801 nodes (92 MB), log10 rho[cgs] in [-21, -2], log10 T[K] in [3.4, 6.6]
+             X = 0.36, Y = 0.62, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 0.84729, n_e/n_tot = 0.565093
+General EOS: tabulated on 951 x 801 nodes (92 MB), log10 rho[cgs] in [-21, -2], log10 T[K] in [3.4, 6.6]
+             X = 0.36, Y = 0.62, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 0.84729, n_e/n_tot = 0.565093
+General EOS: tabulated on 951 x 801 nodes (92 MB), log10 rho[cgs] in [-21, -2], log10 T[K] in [3.4, 6.6]
+             X = 0.36, Y = 0.62, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 0.84729, n_e/n_tot = 0.565093
+Radial (x1) reconstruction on the spherical polar grid (<hydro>/reconstruct_x1) = plm
+rad_m1: vet_scatter on, form ma, J (relaxed source) relaxed (default), table split kappa_e = eos (kappa_e 0.34, floor 1e-05, sigma_T/m_u 0.40062, code units)
+<rad_m1>/c_light = 2.99792e+10 [code] ; <units> implies 2.99792e+10 (c in code velocity), rel. diff 0
+<rad_m1>/arad = 1.58312e-46 [code] ; <units> implies 1.58312e-46 (a_rad T_unit^4 / p_unit), rel. diff 1.51153e-09
+<rad_m1>/temp_unit_kelvin = 1.20272e-08 [code] ; <units> implies 1.20272e-08 (K per code temperature), rel. diff 3.16964e-07
+<rad_m1>/rho_unit_cgs = 1 [code] ; <units> implies 1 (g/cm^3 per code density), rel. diff 0
+<rad_m1>/kappa_unit = 1 [code] ; <units> implies 1 (code opacity per cm^2/g), rel. diff 0
+<rad_m1>/implicit_face_weight = distance (from the input)
+<rad_m1>: transport=implicit (3-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=true marshak_q=0.5
+         implicit_flux=blend:idort_f/max/flux implicit_recon=dc implicit_partition=none
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+         implicit_enthalpy=plm (deferred correction)
+         implicit_bc_advect=true (Marshak x1 end carries A E)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=3.28177e+12 flux_max=0
+<rad_m1> time_scheme=hesdirk2 (g=0.292893; first step, restarts without the slope and failed stages take backward Euler)
+<rad_m1> ic_rad = fs_relax (fresh starts only) fs_iter = 3 relax_n = 40 relax_tol = 0.0001 relax_dtfac = 1 diag = 0
+<rad_m1>: spherical-polar wedge (stage S2: chi(f) closure, radial integrating factor, lagged curvature, offdiag none; implicit with areas/volumes/face distances from Coordinates (stretched radial grid)
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=1.58312e-46
+         opacity=table force_reference=wb_arad temp_unit_kelvin=1.20272e-08 rho_unit_cgs=1
+he_star_m1: he_ic_rad = sph1d (gas re_atm, hse on): r_b = 2.43206e+13 (tau 3002.59), blend tau 30 .. 3000, 1343 solve points + 64 core rays, 331 VET passes, 29 outer, g_top = H/J 0.97864, f_top = K/J 0.957965, 5.18604 s
+he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 2.70169e+13 -> 2.70237e+13; max |E/E_col - 1| 0.619061 at r = 2.90868e+13, |T/T_col - 1| 0.230252 at 2.78315e+13, |rho/rho_col - 1| 1.01295 at 2.71452e+13; HSE last max |dln rho| 5.71948e-07, residual 9.99201e-15, floor 1e-16 from r = 2.78318e+13, Gamma > 0.9 (clamped) in 0 fine cells, damped (0.5) from outer none
+he_star_m1:   r/R_ph 0.95: E/E_col 0.999236, T [K] 28643.2 (/T_col 0.999811), rho/rho_col 1, F/(cE) 0.00141153
+he_star_m1:   r/R_ph 0.98: E/E_col 0.963492, T [K] 16306 (/T_col 0.990745), rho/rho_col 1.01803, F/(cE) 0.0113045
+he_star_m1:   r/R_ph 0.99: E/E_col 0.859098, T [K] 12584.2 (/T_col 0.962744), rho/rho_col 1.00374, F/(cE) 0.040071
+he_star_m1:   r/R_ph 0.995: E/E_col 0.853472, T [K] 11019.3 (/T_col 0.961164), rho/rho_col 0.886903, F/(cE) 0.112345
+he_star_m1:   r/R_ph 1: E/E_col 1.0321, T [K] 9121.77 (/T_col 1.00784), rho/rho_col 0.712883, F/(cE) 0.236866
+he_star_m1:   r/R_ph 1.003: E/E_col 0.607753, T [K] 7969.65 (/T_col 0.880544), rho/rho_col 1.71398, F/(cE) 0.404074
+he_star_m1:   r/R_ph 1.006: E/E_col 0.465173, T [K] 7434.88 (/T_col 0.821458), rho/rho_col 1.95732, F/(cE) 0.53031
+he_star_m1:   r/R_ph 1.01: E/E_col 0.420115, T [K] 7222.74 (/T_col 0.79802), rho/rho_col 1.55606, F/(cE) 0.590704
+he_star_m1:   r/R_ph 1.02: E/E_col 0.397107, T [K] 7060.62 (/T_col 0.780108), rho/rho_col 1.24329, F/(cE) 0.634233
+he_star_m1:   r/R_ph 1.05: E/E_col 0.383184, T [K] 9050.83 (/T_col 1), rho/rho_col 1, F/(cE) 0.686184
+he_star_m1:   r/R_ph 1.1: E/E_col 0.381897, T [K] 9050.83 (/T_col 1), rho/rho_col 1, F/(cE) 0.736742
+he_star_m1:   r/R_ph 1.2: E/E_col 0.398382, T [K] 9050.83 (/T_col 1), rho/rho_col 1, F/(cE) 0.797834
+he_star_m1:   r/R_ph 1.5: E/E_col 0.476422, T [K] 9050.83 (/T_col 1), rho/rho_col 1, F/(cE) 0.884314
+he_star_m1:   r/R_ph 2: E/E_col 0.600995, T [K] 9050.83 (/T_col 1), rho/rho_col 1, F/(cE) 0.938666
+he_star_m1:   r/R_ph 2.5: E/E_col 0.695888, T [K] 9050.83 (/T_col 1), rho/rho_col 1, F/(cE) 0.961546
+he_star_m1:   r/R_ph 2.9: E/E_col 0.752509, T [K] 9050.83 (/T_col 1), rho/rho_col 1, F/(cE) 0.971778
+he_star_m1: IC column T(rho,eint)/T_col - 1: max 1.07692e-13 at r = 2.7769e+13 (he_ic_eint_from_t = true)
+he_star_m1: column inside the tables: log10 rho -16 .. -5.69136, log10 T 3.84304 .. 5.71821
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 3.75692e-07 at r = 2.70463e+13
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.000124918 at r = 9.12545e+12, max face residual |PR/PL - 1| = 7.10543e-15, wall cells a_ref (module form), last change 3.55271e-15
+he_star_m1: mlt_flux_frozen: max F_MLT/F on the faces = 0.806895 at r = 1.7037e+13; F_MLT at the bottom/top faces = 0 / 0
+he_star_m1: mlt ramp start = 4.032e+06, time = 4.032e+06, w(t = 0) = 1, max L_MLT (unscaled) = 2.29408e+38
+he_star_m1: GM = 7.29918e+27, F_in = 3.28177e+12, tau(r_in) = 3.82893e+06, r_int (tau = 1) = 2.69884e+13, r_top = 8.10422e+13, sponge rate = 0.001 above r = 7.2938e+13
+he_star_m1: seed 16 modes, amplitude 0.01 (temperature: eint and E), k in [2,4], signs random, kdist box, r 1.01572e+13 .. 2.64366e+13
+  seed mode 0: k2 3 k3 4 a 0.307274
+  seed mode 1: k2 -4 k3 -2 a 0.159861
+  seed mode 2: k2 2 k3 2 a 0.0937057
+  seed mode 3: k2 2 k3 -4 a 0.124124
+  seed mode 4: k2 -3 k3 -2 a 0.192727
+  seed mode 5: k2 -4 k3 4 a 0.440942
+  seed mode 6: k2 3 k3 3 a 0.280912
+  seed mode 7: k2 3 k3 3 a 0.292079
+  seed mode 8: k2 2 k3 3 a 0.253977
+  seed mode 9: k2 2 k3 -4 a 0.31955
+  seed mode 10: k2 -4 k3 4 a 0.420415
+  seed mode 11: k2 4 k3 -3 a 0.182711
+  seed mode 12: k2 4 k3 -3 a 0.117956
+  seed mode 13: k2 -2 k3 -2 a 0.206065
+  seed mode 14: k2 -2 k3 -3 a 0.13136
+  seed mode 15: k2 4 k3 3 a 0.0983059
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=7.4715e+06, measured v_max=0)
+<rad_m1> ic_rad: start L_top = 2.8430947447e+38 dt = 1.250000e+03
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 489 rays, 480 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0; 407 shell(s) kept trapezoid weights; team build, 1 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [0.001, 1]
+<rad_m1> vet_gd: exact per-shell lateral halo, band 60 cells (needed 60), per-shell depth mean 27
+<rad_m1> vet_gd: ragged per-shell band intensity array 6.67579 GB on rank 0 (dense band 15.7959 GB)
+<rad_m1> vet_gd: ragged per-shell band intensity array 6.67579 GB on rank 0 (dense band 15.7959 GB)
+<rad_m1> vet_gd: global-direction SC closure on the sp wedge, product GL10x12 staggered (120 directions); z-rotation every 25000.000000 in time (t0 0.000000, align on) (0 = fixed), first angle 0; rank 0 wall ghost columns 18480, direction maps exact 892800 of 2217600 (the rest: nearest direction)
+<rad_m1> implicit_halo_mpi: ON, rank 0 has 3 neighbour ranks, 385920 cells sent per component
+<rad_m1> vgdrot-1011: vet_gd_halo_exact lists made in groups of 15 shells (pool 1021.73 MB per rank)
+<rad_m1> ic_rad fs0          cycle=0 max|<E>/<J>-1| (gd shells) = 1.5075e-02 <E>/<J>(top) = 1.01208
+<rad_m1> ic_rad fs1          cycle=0 max|<E>/<J>-1| (gd shells) = 9.7136e-03 <E>/<J>(top) = 1.00153
+<rad_m1> ic_rad fs2          cycle=0 max|<E>/<J>-1| (gd shells) = 6.6668e-03 <E>/<J>(top) = 1.00246
+<rad_m1> ic_rad fs_end       cycle=0 max|<E>/<J>-1| (gd shells) = 4.8870e-03 <E>/<J>(top) = 1.00243
+<rad_m1> ic_rad fs: 3 passes, 0.297 s (L_top keeps the IC flux)
+<rad_m1> ic_rad relax  0: L_top = 2.8272956198e+38 (L/L_IC = 0.994443) |dL/L| = 5.557e-03 max|dE/E| = 3.564e-02 0.185 s
+<rad_m1> ic_rad relax  1: L_top = 2.8394961381e+38 (L/L_IC = 0.998734) |dL/L| = 4.315e-03 max|dE/E| = 5.679e-03 0.167 s
+<rad_m1> ic_rad relax  2: L_top = 2.8412901944e+38 (L/L_IC = 0.999365) |dL/L| = 6.318e-04 max|dE/E| = 2.536e-03 0.180 s
+<rad_m1> ic_rad relax  3: L_top = 2.8414957960e+38 (L/L_IC = 0.999438) |dL/L| = 7.236e-05 max|dE/E| = 1.286e-03 0.164 s
+<rad_m1> ic_rad: done, 1.412 s (fs 0.297 s, relax 4 steps 0.695 s), L_top = 2.8414957960e+38 (L/L_IC = 0.999438)
+
+Setup complete, executing task list(s)...
+
+elapsed=1.929621e+01 cycle=0 time=0.000000e+00 dt=1.250000e+03
+elapsed=1.950098e+01 cycle=1 time=1.250000e+03 dt=1.250000e+03
+elapsed=1.973782e+01 cycle=2 time=2.500000e+03 dt=1.250000e+03
+elapsed=1.998714e+01 cycle=3 time=3.750000e+03 dt=1.250000e+03
+<hydro> fofc_report t=3.750000e+03 cycle=3 stages=7 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.023686e+01 cycle=4 time=5.000000e+03 dt=1.250000e+03
+elapsed=2.048460e+01 cycle=5 time=6.250000e+03 dt=1.250000e+03
+elapsed=2.070304e+01 cycle=6 time=7.500000e+03 dt=1.250000e+03
+<hydro> fofc_report t=7.500000e+03 cycle=6 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.091974e+01 cycle=7 time=8.750000e+03 dt=1.250000e+03
+elapsed=2.112674e+01 cycle=8 time=1.000000e+04 dt=1.250000e+03
+elapsed=2.132081e+01 cycle=9 time=1.125000e+04 dt=1.250000e+03
+<hydro> fofc_report t=1.125000e+04 cycle=9 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.150951e+01 cycle=10 time=1.250000e+04 dt=1.250000e+03
+elapsed=2.171485e+01 cycle=11 time=1.375000e+04 dt=1.250000e+03
+elapsed=2.192003e+01 cycle=12 time=1.500000e+04 dt=1.250000e+03
+<hydro> fofc_report t=1.500000e+04 cycle=12 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.211002e+01 cycle=13 time=1.625000e+04 dt=1.250000e+03
+elapsed=2.230279e+01 cycle=14 time=1.750000e+04 dt=1.250000e+03
+elapsed=2.249427e+01 cycle=15 time=1.875000e+04 dt=1.250000e+03
+<hydro> fofc_report t=1.875000e+04 cycle=15 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.268715e+01 cycle=16 time=2.000000e+04 dt=1.250000e+03
+elapsed=2.287790e+01 cycle=17 time=2.125000e+04 dt=1.250000e+03
+elapsed=2.306864e+01 cycle=18 time=2.250000e+04 dt=1.250000e+03
+<hydro> fofc_report t=2.250000e+04 cycle=18 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.326042e+01 cycle=19 time=2.375000e+04 dt=1.250000e+03
+elapsed=2.345157e+01 cycle=20 time=2.500000e+04 dt=1.250000e+03
+elapsed=2.374459e+01 cycle=21 time=2.625000e+04 dt=1.250000e+03
+<hydro> fofc_report t=2.625000e+04 cycle=21 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.397791e+01 cycle=22 time=2.750000e+04 dt=1.250000e+03
+elapsed=2.419680e+01 cycle=23 time=2.875000e+04 dt=1.250000e+03
+elapsed=2.441390e+01 cycle=24 time=3.000000e+04 dt=1.250000e+03
+<hydro> fofc_report t=3.000000e+04 cycle=24 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.461518e+01 cycle=25 time=3.125000e+04 dt=1.250000e+03
+elapsed=2.481729e+01 cycle=26 time=3.250000e+04 dt=1.250000e+03
+<hydro> fofc_report t=3.250000e+04 cycle=26 stages=4 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.500272e+01 cycle=27 time=3.375000e+04 dt=1.250000e+03
+elapsed=2.519150e+01 cycle=28 time=3.500000e+04 dt=1.250000e+03
+elapsed=2.537762e+01 cycle=29 time=3.625000e+04 dt=1.250000e+03
+<hydro> fofc_report t=3.625000e+04 cycle=29 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.556727e+01 cycle=30 time=3.750000e+04 dt=1.250000e+03
+elapsed=2.575575e+01 cycle=31 time=3.875000e+04 dt=1.250000e+03
+elapsed=2.596189e+01 cycle=32 time=4.000000e+04 dt=1.250000e+03
+<hydro> fofc_report t=4.000000e+04 cycle=32 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.616343e+01 cycle=33 time=4.125000e+04 dt=1.250000e+03
+elapsed=2.636645e+01 cycle=34 time=4.250000e+04 dt=1.250000e+03
+elapsed=2.655622e+01 cycle=35 time=4.375000e+04 dt=1.250000e+03
+<hydro> fofc_report t=4.375000e+04 cycle=35 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.674870e+01 cycle=36 time=4.500000e+04 dt=1.250000e+03
+elapsed=2.695234e+01 cycle=37 time=4.625000e+04 dt=1.250000e+03
+elapsed=2.717547e+01 cycle=38 time=4.750000e+04 dt=1.250000e+03
+<hydro> fofc_report t=4.750000e+04 cycle=38 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.739545e+01 cycle=39 time=4.875000e+04 dt=1.250000e+03
+elapsed=2.761738e+01 cycle=40 time=5.000000e+04 dt=1.250000e+03
+elapsed=2.789969e+01 cycle=41 time=5.125000e+04 dt=1.250000e+03
+<hydro> fofc_report t=5.125000e+04 cycle=41 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.812178e+01 cycle=42 time=5.250000e+04 dt=1.250000e+03
+elapsed=2.834607e+01 cycle=43 time=5.375000e+04 dt=1.250000e+03
+elapsed=2.856204e+01 cycle=44 time=5.500000e+04 dt=1.250000e+03
+<hydro> fofc_report t=5.500000e+04 cycle=44 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.877914e+01 cycle=45 time=5.625000e+04 dt=1.250000e+03
+elapsed=2.899398e+01 cycle=46 time=5.750000e+04 dt=1.250000e+03
+elapsed=2.920860e+01 cycle=47 time=5.875000e+04 dt=1.250000e+03
+<hydro> fofc_report t=5.875000e+04 cycle=47 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.942835e+01 cycle=48 time=6.000000e+04 dt=1.250000e+03
+elapsed=2.964395e+01 cycle=49 time=6.125000e+04 dt=1.250000e+03
+<hydro> fofc_report t=6.125000e+04 cycle=49 stages=4 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=2.985941e+01 cycle=50 time=6.250000e+04 dt=1.250000e+03
+elapsed=3.007389e+01 cycle=51 time=6.375000e+04 dt=1.250000e+03
+elapsed=3.029394e+01 cycle=52 time=6.500000e+04 dt=1.250000e+03
+<hydro> fofc_report t=6.500000e+04 cycle=52 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.051172e+01 cycle=53 time=6.625000e+04 dt=1.250000e+03
+elapsed=3.071217e+01 cycle=54 time=6.750000e+04 dt=1.250000e+03
+elapsed=3.089608e+01 cycle=55 time=6.875000e+04 dt=1.250000e+03
+<hydro> fofc_report t=6.875000e+04 cycle=55 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.109948e+01 cycle=56 time=7.000000e+04 dt=1.250000e+03
+elapsed=3.131592e+01 cycle=57 time=7.125000e+04 dt=1.250000e+03
+elapsed=3.153231e+01 cycle=58 time=7.250000e+04 dt=1.250000e+03
+<hydro> fofc_report t=7.250000e+04 cycle=58 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.174929e+01 cycle=59 time=7.375000e+04 dt=1.250000e+03
+elapsed=3.196712e+01 cycle=60 time=7.500000e+04 dt=1.250000e+03
+elapsed=3.224847e+01 cycle=61 time=7.625000e+04 dt=1.250000e+03
+<hydro> fofc_report t=7.625000e+04 cycle=61 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.246853e+01 cycle=62 time=7.750000e+04 dt=1.250000e+03
+elapsed=3.269005e+01 cycle=63 time=7.875000e+04 dt=1.250000e+03
+elapsed=3.290788e+01 cycle=64 time=8.000000e+04 dt=1.250000e+03
+<hydro> fofc_report t=8.000000e+04 cycle=64 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.312277e+01 cycle=65 time=8.125000e+04 dt=1.250000e+03
+elapsed=3.334029e+01 cycle=66 time=8.250000e+04 dt=1.250000e+03
+elapsed=3.355411e+01 cycle=67 time=8.375000e+04 dt=1.250000e+03
+<hydro> fofc_report t=8.375000e+04 cycle=67 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.376797e+01 cycle=68 time=8.500000e+04 dt=1.250000e+03
+elapsed=3.398266e+01 cycle=69 time=8.625000e+04 dt=1.250000e+03
+elapsed=3.419824e+01 cycle=70 time=8.750000e+04 dt=1.250000e+03
+<hydro> fofc_report t=8.750000e+04 cycle=70 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.441345e+01 cycle=71 time=8.875000e+04 dt=1.250000e+03
+elapsed=3.463230e+01 cycle=72 time=9.000000e+04 dt=1.250000e+03
+<hydro> fofc_report t=9.000000e+04 cycle=72 stages=4 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.483884e+01 cycle=73 time=9.125000e+04 dt=1.250000e+03
+elapsed=3.505663e+01 cycle=74 time=9.250000e+04 dt=1.250000e+03
+elapsed=3.527736e+01 cycle=75 time=9.375000e+04 dt=1.250000e+03
+<hydro> fofc_report t=9.375000e+04 cycle=75 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.549451e+01 cycle=76 time=9.500000e+04 dt=1.250000e+03
+elapsed=3.571352e+01 cycle=77 time=9.625000e+04 dt=1.250000e+03
+elapsed=3.593183e+01 cycle=78 time=9.750000e+04 dt=1.250000e+03
+<hydro> fofc_report t=9.750000e+04 cycle=78 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.615446e+01 cycle=79 time=9.875000e+04 dt=1.250000e+03
+elapsed=3.637637e+01 cycle=80 time=1.000000e+05 dt=1.250000e+03
+elapsed=3.665019e+01 cycle=81 time=1.012500e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.012500e+05 cycle=81 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.689821e+01 cycle=82 time=1.025000e+05 dt=1.250000e+03
+elapsed=3.711629e+01 cycle=83 time=1.037500e+05 dt=1.250000e+03
+elapsed=3.732992e+01 cycle=84 time=1.050000e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.050000e+05 cycle=84 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.754418e+01 cycle=85 time=1.062500e+05 dt=1.250000e+03
+elapsed=3.775882e+01 cycle=86 time=1.075000e+05 dt=1.250000e+03
+elapsed=3.797242e+01 cycle=87 time=1.087500e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.087500e+05 cycle=87 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.819261e+01 cycle=88 time=1.100000e+05 dt=1.250000e+03
+elapsed=3.840687e+01 cycle=89 time=1.112500e+05 dt=1.250000e+03
+elapsed=3.862453e+01 cycle=90 time=1.125000e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.125000e+05 cycle=90 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.883915e+01 cycle=91 time=1.137500e+05 dt=1.250000e+03
+elapsed=3.905746e+01 cycle=92 time=1.150000e+05 dt=1.250000e+03
+elapsed=3.927227e+01 cycle=93 time=1.162500e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.162500e+05 cycle=93 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=3.949145e+01 cycle=94 time=1.175000e+05 dt=1.250000e+03
+elapsed=3.972721e+01 cycle=95 time=1.187500e+05 dt=1.250000e+03
+elapsed=3.996413e+01 cycle=96 time=1.200000e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.200000e+05 cycle=96 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.018251e+01 cycle=97 time=1.212500e+05 dt=1.250000e+03
+elapsed=4.039607e+01 cycle=98 time=1.225000e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.225000e+05 cycle=98 stages=4 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.059499e+01 cycle=99 time=1.237500e+05 dt=1.250000e+03
+elapsed=4.079403e+01 cycle=100 time=1.250000e+05 dt=1.250000e+03
+elapsed=4.106845e+01 cycle=101 time=1.262500e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.262500e+05 cycle=101 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.128540e+01 cycle=102 time=1.275000e+05 dt=1.250000e+03
+elapsed=4.150161e+01 cycle=103 time=1.287500e+05 dt=1.250000e+03
+elapsed=4.171690e+01 cycle=104 time=1.300000e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.300000e+05 cycle=104 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.193172e+01 cycle=105 time=1.312500e+05 dt=1.250000e+03
+elapsed=4.214811e+01 cycle=106 time=1.325000e+05 dt=1.250000e+03
+elapsed=4.236183e+01 cycle=107 time=1.337500e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.337500e+05 cycle=107 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.258025e+01 cycle=108 time=1.350000e+05 dt=1.250000e+03
+elapsed=4.279603e+01 cycle=109 time=1.362500e+05 dt=1.250000e+03
+elapsed=4.301366e+01 cycle=110 time=1.375000e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.375000e+05 cycle=110 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.323676e+01 cycle=111 time=1.387500e+05 dt=1.250000e+03
+elapsed=4.347875e+01 cycle=112 time=1.400000e+05 dt=1.250000e+03
+elapsed=4.370247e+01 cycle=113 time=1.412500e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.412500e+05 cycle=113 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.392488e+01 cycle=114 time=1.425000e+05 dt=1.250000e+03
+elapsed=4.414933e+01 cycle=115 time=1.437500e+05 dt=1.250000e+03
+elapsed=4.437339e+01 cycle=116 time=1.450000e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.450000e+05 cycle=116 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.459617e+01 cycle=117 time=1.462500e+05 dt=1.250000e+03
+elapsed=4.481263e+01 cycle=118 time=1.475000e+05 dt=1.250000e+03
+elapsed=4.503066e+01 cycle=119 time=1.487500e+05 dt=1.250000e+03
+<hydro> fofc_report t=1.487500e+05 cycle=119 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+elapsed=4.648168e+01 cycle=120 time=1.500000e+05 dt=1.250000e+03
+
+Terminating on cycle limit
+time=1.500000e+05 cycle=120
+tlim=8.064000e+06 nlim=120
+
+MeshBlock-cycles = 480
+cpu time used  = 2.718549e+01
+zone-cycles/cpu_second = 3.471404e+07
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> closure = vet_col: 1.280000e+02 tensor builds (0.000000e+00 skipped), 4.906872e-03 s (rank 0, fenced), 3.833494e-02 ms per build
+<rad_m1> vet_col_lat: 1.280000e+02 sweeps (incl. the first build's 3 inflow iterations), 1.173509e+01 s (rank 0, fenced), 9.168041e+01 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 7.773729e-01, sweeps 9.460172e+00 (of which per-shell halo+walls 8.627028e+00, of which MPI wait 2.197224e+00), tables (rotation) 2.179100e-05, uniform twin 9.325319e-01, moments 5.546547e-01; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_gd_symref: host start 1.481560e-02 s, join 1.306110e-02 s (rank 0)
+<rad_m1> vet_gd halo (rank 0): exchanges 5.926400e+04, bytes sent 3.098376e+10 (5.228092e+05 per exchange), post 8.460693e-01 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=1 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 1.434142e+02 MB of 4.096000e+03 (key 4096, GPU: <= free/2); exchanges by list 5.913600e+04, dense 0.000000e+00
+<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made 2.772000e+03, fallbacks 0.000000e+00 (marked reads outside the masks' region 0.000000e+00), read ghosts with an unsent source 0.000000e+00; received values per list: exact/mask 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 1.860000e+02 (group 15, 4.407959e-01 s, list reallocs 2.310000e+03); table prefetch 1 swapped in 5.000000e+00 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=2.430000e+02 Picard iterations mean=2.893004e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=0.000000e+00 per solve=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=4.602927e+08 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) of which solve undershoot (pos_floor_solve)=0.000000e+00 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=1.573483e-09 max=1.650518e-08
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: cnorm=1.000000e-10, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=7.030000e+02 linear solves=7.030000e+02 inner iterations mean=2.627312e+00 max=6.000000e+00 total=1.847000e+03
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=6.947000e+03 (3.761234e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=5.528617e+09 newton fallbacks=9.564912e+07 (1.730073e-02 per cell-pass)
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.437538e+00
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.437538e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=1.190000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 source=blend x0=1.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=0.000000e+00 of 9.358541e+08 rotate_align shortened steps=1.220000e+02
