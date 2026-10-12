@@ -2022,26 +2022,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // ---- reatm-1011: a RESTART of a run whose fresh start re-balanced the atmosphere
   // (HeStarIcPost) applies the a_ref it recorded in the input, and the Phi_eff rebuilt
   // from it above the face x1f(ia), exactly as the fresh start did
-  if (restart && pin->DoesParameterExist("problem","he_ic_rad_atm_aref")) {
-    std::istringstream is(pin->GetString("problem","he_ic_rad_atm_aref"));
-    int ia = -1, na = -1;
-    is >> ia >> na;
-    std::vector<Real> a(std::max(na, 0));
-    for (int n=0; n<na; ++n) {
-      std::string w;
-      is >> w;
-      a[n] = std::strtod(w.c_str(), nullptr);
-    }
-    if (ia < indcs.is + 2 || na != indcs.ie - ia + 1 || !is) {
-      HsFatal("problem/he_ic_rad_atm_aref does not match this radial grid", __LINE__);
+  if (restart && pin->DoesParameterExist("problem","he_ic_rad_atm_na")) {
+    const int ia = pin->GetInteger("problem","he_ic_rad_atm_ia");
+    const int na = pin->GetInteger("problem","he_ic_rad_atm_na");
+    if (ia < indcs.is + 2 || na < 0 || ia + na - 1 > indcs.ie) {
+      HsFatal("problem/he_ic_rad_atm_ia, _na do not match this radial grid", __LINE__);
     }
     std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0, pc, pf;
     HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+    std::vector<Real> a(indcs.ie - ia + 1);
+    for (int i=ia; i<=indcs.ie; ++i) a[i - ia] = ar0[i];
+    char key[40];
+    for (int n=0; n<na; ++n) {
+      snprintf(key, sizeof(key), "he_ic_rad_atm_a%03d", n);
+      a[n] = std::strtod(pin->GetString("problem", key).c_str(), nullptr);
+    }
     HsAtmPhiEff(ia, indcs.ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
     HsAtmWrite(pmbp, ia, a, pc, pf);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_m1: he_ic_rad_atm_aref: a_ref and Phi_eff of cells " << ia
-                << " .. " << indcs.ie << " from the fresh start's re-balance"
+      std::cout << "he_star_m1: he_ic_rad_atm_a*: a_ref (cells " << ia << " .. "
+                << ia + na - 1 << ") and Phi_eff from the fresh start's re-balance"
                 << std::endl;
     }
   }
@@ -3643,10 +3643,11 @@ void HeStarIcPost(Mesh *pm) {
   // a_ref of the cells ia..ie: start from the pgen's
   std::vector<Real> a(ie - ia + 1), an(ie - ia + 1);
   for (int i=ia; i<=ie; ++i) a[i - ia] = ar0[i];
-  int ilast = ia - 1, npass = 0;
+  int ilast = ia - 1, npass = 0, iprev = -1;
   Real rmx = 0.0, chg = 0.0;
   for (int pass=0; pass<60; ++pass) {
     ++npass;
+    iprev = ilast;
     HsAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
     // outward: PL_i(d_i) = PR_{i-1}(d_{i-1}), from ia; stop where rho reaches the floor
     for (int i=ia; i<=ie+1; ++i) {
@@ -3705,9 +3706,13 @@ void HeStarIcPost(Mesh *pm) {
       an[i - ia] = 0.5*(rkl*f0[i] + rkr*f0[i+1])/(cl*bd[i]);
       chg = std::max(chg, fabs(an[i - ia]/a[i - ia] - 1.0));
     }
-    if (chg < 1.0e-12) break;
+    if (chg < 1.0e-12 && ilast == iprev) break;
     a = an;
   }
+  // the cells above ilast keep the pgen's a_ref (what a restart rebuilds; a no-op after
+  // a converged pass) and Phi_eff follows a
+  for (int i=ilast+1; i<=ie; ++i) a[i - ia] = ar0[i];
+  HsAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
   // write back: rho of the column, e from (rho, the cell's own T), v kept; a_ref and
   // Phi_eff of the pass that produced this rho
   Real dmx = 0.0, rdm = 0.0, tsp = 0.0, amx = 0.0, ram = 0.0;
@@ -3743,16 +3748,19 @@ void HeStarIcPost(Mesh *pm) {
   Kokkos::deep_copy(fl.u0, hu);
   HsAtmWrite(pmbp, ia, a, pc, pf);
   // recorded in the input (and so in every restart file): a restart rebuilds the pgen's
-  // a_ref and Phi_eff and then applies these (UserProblem), bit for bit
+  // a_ref and Phi_eff and then applies these (UserProblem), bit for bit.  One short key
+  // per re-balanced cell (a long value would pad every line of the restart file's
+  // parameter dump past its 40 KB header limit); the cells above keep the pgen's a_ref
   {
-    std::ostringstream os;
-    os << ia << " " << a.size();
-    char buf[40];
-    for (const Real x : a) {
-      snprintf(buf, sizeof(buf), " %.17g", x);
-      os << buf;
+    const int na = std::max(ilast - ia + 1, 0);
+    hs_pin_->SetString("problem", "he_ic_rad_atm_ia", std::to_string(ia));
+    hs_pin_->SetString("problem", "he_ic_rad_atm_na", std::to_string(na));
+    char key[40], buf[40];
+    for (int n=0; n<na; ++n) {
+      snprintf(key, sizeof(key), "he_ic_rad_atm_a%03d", n);
+      snprintf(buf, sizeof(buf), "%.17g", a[n]);
+      hs_pin_->SetString("problem", key, buf);
     }
-    hs_pin_->SetString("problem", "he_ic_rad_atm_aref", os.str());
   }
   if (global_variable::my_rank == 0) {
     std::cout << "he_star_m1: he_ic_rad_atm_post: cells " << ia << " .. " << ilast
