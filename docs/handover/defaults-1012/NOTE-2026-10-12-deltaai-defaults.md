@@ -5,3 +5,5 @@ Decks resolved (@FILES@ -> agcarA_files copies, md5 4ab9e3f3 / b28e97c5 / 493f9d
 ATHENA_VIS = DeltaAI checkout vis/python); dry run OK (GU, then GN with @RV@ from GU's log).
 Runs in ONE ghx4-interactive job **3366761** together with TASK rotslope-cost (defaults first, then rotslope FINC/FIN; 1 submitted job per user).
 Dir /work/nvme/bivj/jma20/defaults_1012. STARTED line follows when it runs.
+
+**STARTED**: job 3366761 RUNNING on gh143 since 10:18:55 CDT (defaults part first: GU, then GN, then cmpout).
