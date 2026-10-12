@@ -648,6 +648,7 @@ class RadiationM1 {
   // unify-1012: implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh as the cell's
   // formal-solution scale on faces with sf ratios (vet_sc); j = the old J (opt-out)
   bool thsw_hcjh = false;
+  int thsw_jsgd = 1;   // unify-1012: js/jse on vet_gd, bit 1 x1, bit 2 lateral
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux

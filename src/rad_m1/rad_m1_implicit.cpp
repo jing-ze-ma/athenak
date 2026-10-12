@@ -2094,6 +2094,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         }
         if (thsw_js) {
           thsw_jslim = pin->GetOrAddReal("rad_m1","implicit_thin_jslim",2.0);
+          // unify-1012: js/jse on vet_gd per direction, x1 | lat | all | none (vet_sc
+          // unaffected).  DEFAULT x1 on a fresh run: the vet_gd LATERAL half-range data
+          // come from the per-shell lateral interpolation of the GD formal solution, and
+          // the lateral face shape amplifies its beam-edge errors (P2 pinhole beam L/L_ex
+          // 3.5 and 9 NONCONV with all / lat vs 1.5 and 2 with x1, NOTE-unify); a restart
+          // whose file lacks the key keeps none (0197f020: js was inert on vet_gd)
+          {
+            const bool rr = global_variable::restart_run;
+            std::string sg = pin->GetOrAddString("rad_m1","implicit_thin_js_gd",
+                                                 rr ? "none" : "x1");
+            thsw_jsgd = (sg == "all") ? 3 : (sg == "x1") ? 1 : (sg == "lat") ? 2
+                        : (sg == "none") ? 0 : -1;
+            if (thsw_jsgd < 0) {
+              ImplFatal("<rad_m1>/implicit_thin_js_gd = '" + sg
+                        + "' is not a choice (all | x1 | lat | none)");
+            }
+          }
           if (!(thsw_jslim >= 1.0)) {
             ImplFatal("<rad_m1>/implicit_thin_jslim must be >= 1");
           }
@@ -2103,11 +2120,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // formal solution, h+-_f x (the cell scale); where the face ratios are the sf ratios
       // over the donor scale Jh > J (implicit_hr_face = sf, beam-crossed cells) the cell
       // scale must be Jh, else the correction is the O(1) part of the SC flux the sf face
-      // carries via E = Jh, a fixed source that drove cbg (Gauss 8x32) Picard to 1e19.
-      // DEFAULT jh on a fresh run; a restart whose file lacks the key keeps j (bitwise).
+      // carries via E = Jh.  OPT-IN (default j, bitwise older runs): validation
+      // (NOTE-unify) found jh does NOT rescue cbg with dc (jse does), and with hc it
+      // puts +16 % energy into every vacuum crossing beam (cb row 1.164 vs 1.006); it
+      // only cuts the Picard count of hc + jse on cbg (34 -> 3.9).
       {
-        std::string shj = pin->GetOrAddString("rad_m1","implicit_thin_hcsf",
-                                              global_variable::restart_run ? "j" : "jh");
+        std::string shj = pin->GetOrAddString("rad_m1","implicit_thin_hcsf","j");
         if (shj.compare("jh") == 0) {
           thsw_hcjh = true;
         } else if (shj.compare("j") != 0) {
@@ -3623,7 +3641,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
                      : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
     const Real tqi = thsw_qp;
     // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
-    const bool tjs = thsw && thsw_js && (hsrc == 1 || tgx);
+    const bool tjs = thsw && thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 2)));
     const bool tjse = tjs && thsw_jse;
     const Real tjl = thsw_jslim;
     const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
@@ -11782,7 +11800,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                        : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
       const Real tqi = thsw_qp;
       // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
-      const bool tjs = thsw_js && (hsrc == 1 || tgx);
+      const bool tjs = thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 1)));
       const bool tjse = thsw_jse;
       const Real tjl = thsw_jslim;
       const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
