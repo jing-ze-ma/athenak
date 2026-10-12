@@ -13,7 +13,7 @@ submitted the moment that job ends (expected by ~21:50 CDT). STARTED line follow
 
 **STARTED**: job 3363656 RUNNING on gh056 since 22:31:54 CDT (consfix runs only).
 
-## RESULT (posted ~22:40 CDT): job 3363656, gh056, consfix part 22:31:59-22:34:35, 5/5 runs rc 0, FATAL 0, NaN 0
+## RESULT (posted ~22:35 CDT): job 3363656, gh056, consfix part 22:31:59-22:34:35, 5/5 runs rc 0, FATAL 0, NaN 0
 **Verdict: conservative2 (implicit_cs2_hll = drag, 8cba89a6) OK on the full-size BSG and OK on full-size AG Car A.**
 - **BSG:** no NOT ADMISSIBLE (0 in bC2 and bC2g; the old conservative and conservative2@0197f020 had it on every cycle from 2);
   stage fallbacks 0; dt path identical to bM (87.37 -> 87.33 s over 30 cycles); NON-CONV 0; min E 7.76 (bC2) / 7.87 (bC2g) as matched.
