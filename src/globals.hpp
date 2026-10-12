@@ -11,6 +11,7 @@
 namespace global_variable {
 extern int my_rank, nranks;
 extern bool restart_run;   // true when started with -r <restart_file>
+extern bool final_outputs; // Driver::Finalize is writing its (unscheduled) outputs
 }
 
 #endif // GLOBALS_HPP_

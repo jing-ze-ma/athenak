@@ -853,10 +853,45 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.
+  // rotavg-rst-1012 (bitwise chained runs): the final outputs of a run that ends before
+  // tlim (nlim, wall time) are EXTRA snapshots that must not move the output schedule,
+  // or the next link (restarted from the restart file written here) skips the next
+  // scheduled dump / history row and numbers its files one ahead of the continuous run:
+  //  - a non-restart output keeps its last_time and file_number (out_params and the
+  //    parameters the restart file stores), so the next scheduled dump of the next link
+  //    takes the same number (and overwrites this snapshot);
+  //  - the history output (appended rows) is written only at tlim, where the in-loop
+  //    schedule writes nothing (so a chain has exactly the continuous run's rows);
+  //  - the restart file is written last, with every schedule as it was, and does not
+  //    advance its own last_time (global_variable::final_outputs, restart.cpp).
+  // At tlim (the run's true end) every output is written as before.
+  const bool at_tlim = !(static_cast<float>(pmesh->time) < static_cast<float>(tlim));
   for (auto &out : pout->pout_list) {
+    if (out->out_params.file_type.compare("rst") == 0) {continue;}
+    if (out->out_params.file_type.compare("hst") == 0 && !at_tlim) {continue;}
+    const std::string &bn = out->out_params.block_name;
+    const Real lt = out->out_params.last_time;
+    const int fnum = out->out_params.file_number;
+    const bool hlt = pin->DoesParameterExist(bn, "last_time");
+    const bool hfn = pin->DoesParameterExist(bn, "file_number");
+    const std::string slt = hlt ? pin->GetString(bn, "last_time") : std::string();
+    const std::string sfn = hfn ? pin->GetString(bn, "file_number") : std::string();
+    out->LoadOutputData(pmesh);
+    out->WriteOutputFile(pmesh, pin);
+    if (!at_tlim) {
+      out->out_params.last_time = lt;
+      out->out_params.file_number = fnum;
+      if (hlt) {pin->SetString(bn, "last_time", slt);}
+      if (hfn) {pin->SetString(bn, "file_number", sfn);}
+    }
+  }
+  global_variable::final_outputs = !at_tlim;
+  for (auto &out : pout->pout_list) {
+    if (out->out_params.file_type.compare("rst") != 0) {continue;}
     out->LoadOutputData(pmesh);
     out->WriteOutputFile(pmesh, pin);
   }
+  global_variable::final_outputs = false;
 
   // call any problem specific functions to do work after main loop
   if (pmesh->pgen->pgen_final_func != nullptr) {

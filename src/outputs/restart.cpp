@@ -488,7 +488,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   // increment counters now so values for *next* dump are stored in restart file
   out_params.file_number++;
-  if (out_params.last_time < 0.0) {
+  // rotavg-rst-1012: Driver::Finalize's restart file before tlim keeps the schedule
+  // (the next link writes its next restart file when the continuous run would)
+  if (global_variable::final_outputs && out_params.last_time >= 0.0) {
+    // last_time unchanged
+  } else if (out_params.last_time < 0.0) {
     out_params.last_time = pm->time;
   } else {
     out_params.last_time += out_params.dt;
