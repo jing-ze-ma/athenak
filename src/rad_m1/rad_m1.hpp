@@ -1194,6 +1194,7 @@ class RadiationM1 {
   // state = the predict/rebuild build takes its VET source from the predicted state
   // itself (vet_col_source = gas there), not relaxed by a further dt (rad_m1_time2.cpp)
   bool t2_vcsrc = false;
+  bool t2_vcsbl = false;       // sporder-1012: time2_vet_col_source = blend
   // time2_pred_cap (predfix-1011): the predicted P = U^n + theta dt K1 of a predict /
   // rebuild build takes per cell theta = min(1, cap/r), r the relative change of E and
   // of the gas internal energy (0 = off, the unlimited predictor)
@@ -1664,6 +1665,8 @@ class RadiationM1 {
   // backward-Euler exchange over the step (VcolRelaxedSource, rad_m1_vetcol.cpp); `gas`:
   // the start-of-step gas temperature as before (bitwise the old build)
   bool vcol_srelax = true;
+  bool vcol_sbl = false;       // sporder-1012: this build blends the relaxed source
+  Real vcol_sx0 = 1.0;         // sporder-1012: time2_vet_col_source_x0 (blend)
   // vet_scatter (vet-scatter-1006, read only when named; default off = bitwise): ONE
   // switch for electron scattering: the opacity split (otab.scat, opac M1_OP_S) and the
   // closure source VetScatterMix.  vscat_form 1 = ma (Jiang 2021 eq. 6), 2 = absorption
