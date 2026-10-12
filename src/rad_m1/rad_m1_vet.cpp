@@ -2010,10 +2010,27 @@ void RadiationM1::VetBuildAngles(const Real beta) {
 
 void RadiationM1::VetRotUpdate() {
   if (!vsc_rot) {return;}
-  const Real q = VetGdAngleBlk(VetGdBlock(pmy_pack->pmesh->ncycle))/(0.5*M_PI);
-  const Real beta = (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n
-                                     : q*2.0*M_PI/vet_nphi;
+  const Real beta = VetRotBeta(VetGdBlock(pmy_pack->pmesh->ncycle));
   if (beta == vsc_beta) {return;}
+  VetRotSet(beta);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VetRotBeta
+//! \brief the vet_sc set rotation of block blk (VetRotUpdate's formula)
+
+Real RadiationM1::VetRotBeta(const int64_t blk) const {
+  // rotavg-1012: the stratified phase with vet_rotate_avg (RotPhase); else as before
+  const Real q = vra_on ? static_cast<Real>(RotPhase(blk))
+                        : VetGdAngleBlk(blk)/(0.5*M_PI);
+  return (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n : q*2.0*M_PI/vet_nphi;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetRotSet
+//! \brief the vet_sc set turned by beta (and the banded sweep's local copy)
+
+void RadiationM1::VetRotSet(const Real beta) {
   vsc_beta = beta;
   VetBuildAngles(beta);
   if (vet_mbs != nullptr) {
@@ -2027,6 +2044,38 @@ void RadiationM1::VetRotUpdate() {
       al_(r,c) = ang_(rl_(r),c);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetScRotAvgSetup
+//! \brief rotavg-1012: the vet_sc fields averaged by vet_rotate_avg (rad_m1_rotavg.cpp):
+//! J (ratio) and, normalised by J (kind 3), K_ab, H_a, the half-range sums (implicit_flux_
+//! beam = halfrange) and the C1 sum (thin switch fs*); the source, extinction and eps are
+//! set-independent.  The uniaxial projection and the full tensor follow from the averaged
+//! K/J in VetShortCharSweep.
+
+void RadiationM1::VetScRotAvgSetup() {
+  RotAvgTab &t = vra_tab;
+  t.nf = 0;
+  vra_a0 = vet_cell;
+  vra_a1 = vet_cell;
+  vra_c = DvceArray3D<Real>();
+  auto add = [&](const int comp, const int kind, const Real lo, const Real hi) {
+    t.arr[t.nf] = 0; t.comp[t.nf] = comp; t.kind[t.nf] = kind;
+    t.lo[t.nf] = lo; t.hi[t.nf] = hi; ++t.nf;
+  };
+  t.jf = 0;
+  t.jw = vra_eq ? -1 : 0;   // the sets weighted by their J (union of the sets)
+  add(M1_VET_J, 2, 0.0, 0.0);
+  for (int c = 0; c < 3; ++c) {add(M1_VET_K11 + c, 3, 0.0, 1.0);}
+  for (int c = 3; c < 6; ++c) {add(M1_VET_K11 + c, 3, -1.0, 1.0);}
+  for (int c = 0; c < 3; ++c) {add(M1_VET_H1 + c, 3, -1.0, 1.0);}
+  if (impl_beam_hr) {
+    for (int c = 0; c < 3; ++c) {add(M1_VET_HP1 + c, 3, 0.0, 1.0);}
+  }
+  if (thsw_c1) {add(M1_VET_NL, 3, 0.0, 1.0e300);}
+  t.farr = -1;
+  t.fcomp = 0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -3439,7 +3488,72 @@ void RadiationM1::VetMBSweeps() {
 //! \fn void RadiationM1::VetShortChar
 
 void RadiationM1::VetShortChar() {
+  // rotavg-1012 (vet_rotate_avg; as VetGdBuild): the first build of a new block moves
+  // the ring on by the Delta of the old block's last build (else re-init); the first
+  // build of a run sweeps the K-1 previous sets; the last build of a block also sweeps
+  // the NEXT set at the same state (Delta), the set then stays on the next one and
+  // vet_cell of this build is put back
+  const bool ra = vra_on && vsc_rot;
+  const int ilo = pmy_pack->pmesh->mb_indcs.is;
+  const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
+  if (ra && vra_state == 1 && b != vra_blk) {
+    if (vra_pend == 3) {
+      VetScRotAvgSetup();
+      RotAvgShift(vra_k - 1);
+      vra_pend = 0;
+      vra_nrot += 1.0;
+    } else {
+      vra_state = 0;
+    }
+  }
+  if (ra && vra_state == 0) {
+    Kokkos::Timer tr;
+    vra_head = 0;
+    for (int jb = 1; jb < vra_k; ++jb) {
+      VetRotSet(VetRotBeta(b - jb));
+      vra_raw = true;
+      VetShortCharSweep();
+      vra_raw = false;
+      VetScRotAvgSetup();
+      RotAvgSnap(jb - 1, ilo);
+      vra_nsweep += 1.0;
+    }
+    vra_pend = 1;
+    vra_state = 1;
+    vra_ninit += 1.0;
+    vra_time += tr.seconds();
+  }
   VetRotUpdate();   // bubbles-1012: the set of this step's rotation block
+  vra_last = ra && vra_state == 1 && RotLastStep();
+  VetShortCharSweep();
+  if (vra_last) {
+    Kokkos::Timer tr;
+    if (vra_bk_vc.extent(0) != vet_cell.extent(0) ||
+        vra_bk_vc.extent(1) != vet_cell.extent(1)) {
+      Kokkos::realloc(vra_bk_vc, vet_cell.extent(0), vet_cell.extent(1),
+                      vet_cell.extent(2), vet_cell.extent(3), vet_cell.extent(4));
+    }
+    Kokkos::deep_copy(vra_bk_vc, vet_cell);
+    VetRotSet(VetRotBeta(b + 1));
+    vra_raw = true;
+    VetShortCharSweep();
+    vra_raw = false;
+    VetScRotAvgSetup();
+    RotAvgDelta(vra_k - 1, ilo);
+    Kokkos::deep_copy(vet_cell, vra_bk_vc);
+    vra_pend = 3;
+    vra_nsweep += 1.0;
+    vra_time += tr.seconds();
+  }
+  vra_last = false;
+  vra_blk = b;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetShortCharSweep
+//! \brief the vet_sc build with the current set (rotavg-1012: split from VetShortChar)
+
+void RadiationM1::VetShortCharSweep() {
   // blendall-1009: vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
   // source and the boundary intensity read the PHYSICAL E^n = u0 under be, not the
   // solve's old vector E^n + dt (chat/c) esrc (M1_IW_EN)
@@ -3826,6 +3940,18 @@ void RadiationM1::VetShortChar() {
   }
   }
 
+  // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then
+  // the mean over the last K sets of J and the J-normalised moments (not on a snapshot)
+  if (vra_on && vsc_rot && !vra_raw && vra_state == 1) {
+    Kokkos::Timer tr;
+    VetScRotAvgSetup();
+    if (vra_last) {RotAvgSnap(vra_k - 1, is);}   // the current set's raw moments (Delta)
+    RotAvgUpdate(is);
+    RotAvgApply(is);
+    Kokkos::fence();
+    vra_time += tr.seconds();
+  }
+
   // (3) the uniaxial projection (chi, n) of D = K/J
   const bool axflux = vet_axis_flux;
   par_for("m1_vet_proj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -4159,6 +4285,11 @@ void RadiationM1::VetReport() {
             << " implicit-solve seconds incl. SC=" << vet_itime
             << " SC/(implicit solve without SC)="
             << vet_time/std::fmax(vet_itime - vet_time, 1.0e-300) << std::endl;
+  if (vra_on && vsc_rot) {
+    std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
+              << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit
+              << "), " << vra_time << " s incl. offsets (rank 0, fenced)" << std::endl;
+  }
   if (impl_hr_sf) {
     std::cout << "<rad_m1> implicit_hr_face=sf: cells with Jh > J (sf face ratios) "
               << hsf_nsf << " of " << hsf_ncell << " cell-solves (rank 0)" << std::endl;

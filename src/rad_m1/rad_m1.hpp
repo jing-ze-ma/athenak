@@ -112,7 +112,11 @@ constexpr int M1_VGD_SR_HL = 3;   // H+_theta/J = H+_phi/J = -H-_theta/J
 constexpr int M1_VGD_SR_C1 = 4;   // int |I - S|/J
 constexpr int M1_VGD_SR_J = 5;    // J (E units)
 constexpr int M1_VGD_SR_N = 6;
+#ifdef M1_VGD_NMAX_BUILD
+constexpr int M1_VGD_NMAX = M1_VGD_NMAX_BUILD;   // rotavg-1012: cmake -D Athena_M1_VGD_NMAX
+#else
 constexpr int M1_VGD_NMAX = 432;   // vet_gd: at most 432 directions.  prodcand-1011: kept at 432
+#endif
                                     // (sizes the per-thread Real buf[M1_VGD_NMAX] in VetGdWall; 2048
                                     // would spill on A100).  The 4x-GL angular study (sptests P2)
                                     // needs a local build with 2048.
@@ -439,6 +443,10 @@ class RadiationM1 {
   void VetBuildAngles(const Real beta);
   void VetRotInit(ParameterInput *pin);   // the shared rotation keys (rad_m1_vetgd.cpp)
   void VetRotUpdate();
+  Real VetRotBeta(const int64_t blk) const;   // rotavg-1012: the set of block blk
+  void VetRotSet(const Real beta);
+  void VetScRotAvgSetup();     // rotavg-1012: vet_sc's averaged fields (vet_cell)
+  void VetShortCharSweep();    // the build with the current set
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
@@ -1948,6 +1956,53 @@ class RadiationM1 {
   double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;
   bool Time2RotCorrect(Driver *pdrive, Real dt);
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
+  // rotavg-1012: <rad_m1>/vet_rotate_avg = K >= 2 (read only when named; default 0 = off,
+  // bitwise): the closure handed to the moment step is the mean over the LAST K rotated
+  // direction sets, not the current set's alone (rad_m1_rotavg.cpp).  Closure-agnostic:
+  // a closure registers its NORMALISED hand-over fields (ratios to J: the Eddington
+  // tensor parts, the half-range ratios, C1/J; J itself as a ratio), and the average is
+  // kept as per-set OFFSETS d_j = g_{b-j} - g_b of each older set from the current one,
+  // every difference taken from two sweeps of the SAME state (the old set re-swept once
+  // at the first build of a new block): used = g_b(now) + sum_j d_j / K.  The current set
+  // is live (no lag of the closure); only the ray-pattern differences are carried
+  // between blocks.  On a fresh start or a restart the K-1 older sets are swept once at
+  // the first build.  Needs a rotating closure (vet_gd: vet_gd_rotate_dt / _every).
+  static constexpr int M1_RA_NF = 16;
+  struct RotAvgTab {           // the registered fields (POD: captured by the kernels)
+    int nf = 0;
+    int arr[M1_RA_NF], comp[M1_RA_NF], kind[M1_RA_NF];
+    Real lo[M1_RA_NF], hi[M1_RA_NF];
+    int farr = -1, fcomp = 0;  // validity flag field: invalid where < 0 (-1: none)
+    int jf = -1;               // the J field (index into the table) of kind-3 fields
+    int jw = -1;               // the ratio field weighting the sets (-1: equal)
+  };
+  int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
+  bool vra_eq = false;         // vet_rotate_avg_weight = equal (default j: J-weighted)
+  bool vra_on = false;
+  RotAvgTab vra_tab;
+  DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)
+  DvceArray3D<Real> vra_c;     // a column field (m, k, j) at the top cell (arr 2)
+  DvceArray5D<Real> vra_d;     // (m, (K-1)(nf+1), k, j, i) interior: offsets + valid
+  int vra_head = 0;            // the ring slot of d_1 (the previous set)
+  int vra_state = 0;           // 0: no history yet (init at the next build), 1: ready
+  int vra_pend = 0;            // 1: init slots raw, 3: Delta of the coming boundary held
+  bool vra_raw = false;        // a snapshot sweep: the closure leaves its fields raw
+  double vra_nsweep = 0.0, vra_nrot = 0.0, vra_ninit = 0.0;
+  Real vra_time = 0.0;
+  void RotAvgSnap(const int slot, const int ilo);
+  void RotAvgUpdate(const int ilo);
+  void RotAvgApply(const int ilo);
+  void RotAvgParse(ParameterInput *pin);
+  void RotAvgDelta(const int slot, const int ilo);
+  void RotAvgShift(const int ds);
+  bool RotLastStep() const;    // the step is the last of its rotation block
+  int64_t vra_blk = INT64_MIN; // the block of the last build
+  bool vra_last = false;       // this build is on the last step of its block
+  DvceArray5D<Real> vra_bk_tt, vra_bk_hr;   // vet_gd: the hand-over fields kept over
+  DvceArray3D<Real> vra_bk_q;               // the next-set sweep of a last build
+  DvceArray5D<Real> vra_bk_vc;              // vet_sc: the same (vet_cell)
+  void VetGdRotAvgSetup();     // vet_gd: registers tau_ten LAT + vgd_hr
+  void VetGdSweepPost();       // twin, sweep(s), fused moments, VetGdPost
   // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with
   // the first gd shell at the physical inner face (icut = 0) the outward rays start from
   // the inner boundary's own emission (flux: black sphere I = 4 F_in/c; marshak: the bath;
@@ -2297,6 +2352,7 @@ class RadiationM1 {
   bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
   int64_t VetGdBlock(const int cyc) const;       // vgdrot2-1012: the rotation block
   Real VetGdAngleBlk(const int64_t b) const;
+  double RotPhase(const int64_t b) const;   // rotavg-1012: block -> fraction of period
   Real VetGdAlignDt(const Real time, const Real dt);
   void VetGdTables(const Real alpha);
   // vgdrot-1011: the tables' host part in persistent pinned buffers (no per-rotation

@@ -858,9 +858,34 @@ Real RadiationM1::VetGdAngle(const int cyc) const {
 }
 
 Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
+  // rotavg-1012: with vet_rotate_avg = K the angle is the set's own period times
+  // RotPhase = (b mod K)/K, so that ANY K consecutive blocks hold K equispaced rotations
+  // (the averaged closure is then that of the K-fold refined azimuth set); the golden
+  // sequence on pi/2 clusters for a product set of period 2 pi/nphi (12: consecutive
+  // blocks step only -0.146 of the period)
+  if (vra_on) {
+    const double per = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : 0.5*M_PI;
+    return static_cast<Real>(per*RotPhase(blk));
+  }
   const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
   return 0.5*M_PI*(b*g - std::floor(b*g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::RotPhase
+//! \brief the rotation of block blk as a fraction of the set's period, in [0, 1): the
+//! golden sequence frac(b g) (vgdrot), or with vet_rotate_avg = K the stratified (b mod
+//! K)/K (rotavg-1012; shared by vet_gd and vet_sc)
+
+double RadiationM1::RotPhase(const int64_t blk) const {
+  if (vra_on && vra_k >= 2) {
+    const int64_t r = ((blk % vra_k) + vra_k) % vra_k;
+    return static_cast<double>(r)/static_cast<double>(vra_k);
+  }
+  const double b = static_cast<double>(blk);
+  const double g = 0.5*(std::sqrt(5.0) - 1.0);
+  return b*g - std::floor(b*g);
 }
 
 //----------------------------------------------------------------------------------------
@@ -882,6 +907,24 @@ int64_t RadiationM1::VetGdBlock(const int cyc) const {
     return static_cast<int64_t>(std::floor((pm->time + 0.5*dt - vgd_rot_t0)/vgd_rot_dt));
   }
   return (vgd_rot > 0) ? static_cast<int64_t>(cyc/vgd_rot) : 0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::RotLastStep
+//! \brief rotavg-1012: is the current step the last of its rotation block (the next step
+//! belongs to the next block)?  Physical clock: t + dt reaches the next boundary t0 +
+//! (b+1) dt_rot (exact with vet_gd_rotate_align); cycle clock: (cyc+1) % N == 0.  Shared
+//! by vet_gd and vet_sc.
+
+bool RadiationM1::RotLastStep() const {
+  const Mesh *pm = pmy_pack->pmesh;
+  if (vgd_rot_dt > 0.0) {
+    const int64_t b = VetGdBlock(pm->ncycle);
+    const double tk = vgd_rot_t0 + (static_cast<double>(b) + 1.0)*vgd_rot_dt;
+    return pm->time + pm->dt >= tk - 1.0e-9*vgd_rot_dt;
+  }
+  if (vgd_rot > 0) {return ((pm->ncycle + 1) % vgd_rot) == 0;}
+  return false;
 }
 
 //----------------------------------------------------------------------------------------
@@ -5088,6 +5131,40 @@ void RadiationM1::VetGdBuild() {
   // to the old directions, so the lagged inflow is re-converged as at the first build
   const Real al = VetGdAngle(pmy_pack->pmesh->ncycle);
   bool rotated = false;
+  // rotavg-1012 (vet_rotate_avg): the first build of a new block moves the ring on by the
+  // Delta the last build of the old block measured (RotAvgShift); without one (a restart
+  // inside a block, a missed last build) the history is re-initialised.  The first build
+  // of a run (fresh or restart) sweeps the K-1 previous sets
+  const bool ra = vra_on && VgdRotOn();
+  const int64_t blk = VetGdBlock(pmy_pack->pmesh->ncycle);
+  if (ra && vra_state == 1 && blk != vra_blk) {
+    if (vra_pend == 3) {
+      VetGdRotAvgSetup();
+      RotAvgShift(vra_k - 1);
+      vra_pend = 0;
+      vra_nrot += 1.0;
+    } else {
+      vra_state = 0;
+    }
+  }
+  if (ra && vra_state == 0) {
+    Kokkos::Timer tr;
+    const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
+    vra_head = 0;
+    for (int jb = 1; jb < vra_k; ++jb) {
+      VetGdTables(VetGdAngleBlk(b - jb));
+      vra_raw = true;
+      VetGdSweepPost();
+      vra_raw = false;
+      VetGdRotAvgSetup();
+      RotAvgSnap(jb - 1, pmy_pack->pmesh->mb_indcs.is + vlat_icut);
+      vra_nsweep += 1.0;
+    }
+    vra_pend = 1;
+    vra_state = 1;
+    vra_ninit += 1.0;
+    vra_time += tr.seconds();
+  }
   if (al != vgd_alpha) {
     Kokkos::Timer tt;
     VetGdTables(al);
@@ -5095,6 +5172,44 @@ void RadiationM1::VetGdBuild() {
     rotated = true;
   }
   VetGdTabPrefetch(pmy_pack->pmesh->ncycle);
+  (void) rotated;
+  // rotavg-1012: on the LAST step of a block the current set's raw fields are kept
+  // (VetGdPost) and, after this build, the NEXT set is swept at the same state for the
+  // Delta of the coming boundary (the tables stay on the next set; the hand-over fields
+  // of this build are put back)
+  vra_last = ra && vra_state == 1 && RotLastStep();
+  VetGdSweepPost();
+  if (vra_last) {
+    Kokkos::Timer tr;
+    const int ilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
+    Kokkos::deep_copy(vra_bk_tt, tau_ten);
+    if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_hr, vgd_hr);}
+    if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_q, vcol_q);}
+    VetGdTables(VetGdAngleBlk(blk + 1));
+    vra_raw = true;
+    VetGdSweepPost();
+    vra_raw = false;
+    VetGdRotAvgSetup();
+    RotAvgDelta(vra_k - 1, ilo);
+    Kokkos::deep_copy(tau_ten, vra_bk_tt);
+    if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
+    if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vcol_q, vra_bk_q);}
+    VetLatOdMax();
+    vra_pend = 3;
+    vra_nsweep += 1.0;
+    vra_time += tr.seconds();
+  }
+  vra_last = false;
+  vra_blk = blk;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdSweepPost
+//! \brief the sweep part of a gd build with the CURRENT tables (twin, sweep(s), fused
+//! moments) and VetGdPost; rotavg-1012: also the snapshot sweeps of other sets
+
+void RadiationM1::VetGdSweepPost() {
+  Kokkos::Timer tm;
   // vet_gd_twin: the RAY-NOISE pattern of the set on the laterally uniform field (the
   // shell means of chi and S), same angle, subtracted below
   // (diagnostic env VGD_TWIN_CUTFIX, accel-1009: the unfused twin sweeps with THIS
@@ -5107,7 +5222,6 @@ void RadiationM1::VetGdBuild() {
   }
   if (vgd_twin) {VetGdTwin(0);}
   // the per-shell halo makes one sweep exact; vet_gd_iter > 1 only repeats it
-  (void) rotated;
   const int nit = vgd_iter;
   vgd_cur = DevExeSpace();
   vgd_scut = vlat_icut;
@@ -5126,6 +5240,57 @@ void RadiationM1::VetGdBuild() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdRotAvgSetup
+//! \brief rotavg-1012: the vet_gd hand-over fields averaged by vet_rotate_avg
+//! (rad_m1_rotavg.cpp): tau_ten LAT0..LAT5 (D_rr - f_K, D_rt, D_rp, the tangential
+//! anisotropy; additive, D_rr clamped by the fold), and with implicit_flux_beam =
+//! halfrange vgd_hr: r+- along r, theta, phi (clamped to [0, 1] / [-1, 0]; r+_r < 0 flags
+//! "no formal solution" = invalid), C1 (>= 0) and J (ratio); eps is cell-local (kept);
+//! with vet_gd_replace + vet_col_surface_q the outer q of the top cell (vcol_q)
+
+void RadiationM1::VetGdRotAvgSetup() {
+  RotAvgTab &t = vra_tab;
+  t.nf = 0;
+  t.jf = -1;
+  t.jw = -1;
+  vra_a0 = tau_ten;
+  for (int c = 0; c < M1_TT_NLAT; ++c) {
+    t.arr[t.nf] = 0; t.comp[t.nf] = M1_TT_LAT0 + c; t.kind[t.nf] = 0;
+    t.lo[t.nf] = 0.0; t.hi[t.nf] = 0.0; ++t.nf;
+  }
+  t.farr = -1;
+  t.fcomp = 0;
+  if (impl_beam_hr && vgd_hr.extent_int(0) > 0) {
+    vra_a1 = vgd_hr;
+    for (int c = 0; c < 6; ++c) {
+      t.arr[t.nf] = 1; t.comp[t.nf] = c; t.kind[t.nf] = 1;
+      t.lo[t.nf] = (c % 2 == 0) ? 0.0 : -1.0; t.hi[t.nf] = (c % 2 == 0) ? 1.0 : 0.0;
+      ++t.nf;
+    }
+    if (vgd_hr.extent_int(1) >= M1_VGD_HRNX) {
+      t.arr[t.nf] = 1; t.comp[t.nf] = M1_VGD_HRC1; t.kind[t.nf] = 1;
+      t.lo[t.nf] = 0.0; t.hi[t.nf] = 1.0e300; ++t.nf;
+      t.arr[t.nf] = 1; t.comp[t.nf] = M1_VGD_HRJ; t.kind[t.nf] = 2;
+      t.lo[t.nf] = 0.0; t.hi[t.nf] = 0.0;
+      if (!vra_eq) {t.jw = t.nf;}   // the sets weighted by their J (union of the sets)
+      ++t.nf;
+    }
+    t.farr = 1;
+    t.fcomp = 0;
+  } else {
+    vra_a1 = tau_ten;
+  }
+  // vet_gd_replace with vet_col_surface_q: the outer Marshak q of the gd top cell
+  if (vgd_replace && vcol_sq && vcol_q.extent_int(0) > 0) {
+    vra_c = vcol_q;
+    t.arr[t.nf] = 2; t.comp[t.nf] = 0; t.kind[t.nf] = 1;
+    t.lo[t.nf] = vcol_qmin; t.hi[t.nf] = vcol_qmax; ++t.nf;
+  } else {
+    vra_c = DvceArray3D<Real>();
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdPost
 //! \brief after a sweep: the moments -> tau_ten LAT slots (+ twin, smooth, the operator
 //! bound of D_r,lat), then the clamp check over all ranks and the debug dump
@@ -5135,6 +5300,34 @@ void RadiationM1::VetGdPost() {
   VetGdMoments();
   if (vgd_twin) {VetGdTwin(1);}
   if (vgd_smooth > 0) {VetGdSmooth();}
+  // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then
+  // the mean over the last K sets into the hand-over fields (not on a snapshot sweep)
+  if (vra_on && VgdRotOn() && !vra_raw && vra_state == 1) {
+    Kokkos::Timer tr;
+    const int ilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
+    VetGdRotAvgSetup();
+    if (vra_last) {
+      // the backups of the next-set sweep (VetGdBuild), sized once
+      if (vra_bk_tt.extent(0) != tau_ten.extent(0) ||
+          vra_bk_tt.extent(1) != tau_ten.extent(1)) {
+        Kokkos::realloc(vra_bk_tt, tau_ten.extent(0), tau_ten.extent(1),
+                        tau_ten.extent(2), tau_ten.extent(3), tau_ten.extent(4));
+      }
+      if (vgd_hr.extent(0) != vra_bk_hr.extent(0) ||
+          vgd_hr.extent(1) != vra_bk_hr.extent(1)) {
+        Kokkos::realloc(vra_bk_hr, vgd_hr.extent(0), vgd_hr.extent(1), vgd_hr.extent(2),
+                        vgd_hr.extent(3), vgd_hr.extent(4));
+      }
+      if (vcol_q.extent(0) != vra_bk_q.extent(0)) {
+        Kokkos::realloc(vra_bk_q, vcol_q.extent(0), vcol_q.extent(1), vcol_q.extent(2));
+      }
+      RotAvgSnap(vra_k - 1, ilo);   // the current set's raw fields (RotAvgDelta)
+    }
+    RotAvgUpdate(ilo);
+    RotAvgApply(ilo);
+    Kokkos::fence();
+    vra_time += tr.seconds();
+  }
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();
