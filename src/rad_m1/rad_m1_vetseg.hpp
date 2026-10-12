@@ -102,4 +102,58 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
   return ia*ex0 + wu0*sf + w00*s0;
 }
 
+// unify-sc-gd-1012 (#6): one SC segment from the upwind point (I_u, chi_u, S_u) to the
+// cell centre (chi_0, S_0) over the path length hl = dx1/|mu1|, vet_seg split or mean
+KOKKOS_INLINE_FUNCTION
+Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const Real c0,
+               const Real hl, const bool spl, const int spe) {
+  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe);}
+  Real ex, w0, wu;
+  VetSegW(0.5*(cu + c0)*hl, ex, w0, wu);
+  return iu*ex + wu*su + w0*s0;
+}
+
+// unify-sc-gd-1012 (#6) vet_interp: the upwind segment from the (bi)linear stencil of
+// the upwind plane, weights w[4] (sum 1), corner intensities, extinctions, sources.
+//   1 log:    I_u = sum w I_q, chi_u and S_u geometric (sum w ln), one segment (vet_gd's
+//             interpolation);
+//   2 corner: one segment per corner, I = sum w I(segment from corner q): the OUTCOME is
+//             interpolated.  At a sharp opaque edge the plain interpolation (0 lin: chi_u,
+//             S_u linear, one segment) puts the opaque chi_u on a ray that passes the
+//             edge and replaces its intensity by the interpolated S_u (a ray grazing an
+//             opaque disc of S = B loses the limb: L_fs 0.58-0.66 of exact, resolution
+//             independent, scemu.py); corner keeps the thin corner's intensity with its
+//             weight (0.95-1.0).  Smooth fields: corner - lin = O(dx^2).
+//   3 auto:   corner where the stencil's extinction contrast max/min chi exceeds
+//             kVetCornerRatio (a material edge), log elsewhere (a smooth field: the two
+//             agree to O(dx^2) there, and log costs one segment instead of up to four)
+constexpr Real kVetCornerRatio = 4.0;
+
+KOKKOS_INLINE_FUNCTION
+Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
+                 const Real sq[4], const Real s0, const Real c0, const Real hl,
+                 const bool spl, const int spe) {
+  if (mode == 3) {
+    Real cmn = 1.0e300, cmx = 0.0;
+    for (int q = 0; q < 4; ++q) {
+      if (w[q] > 0.0) {cmn = fmin(cmn, cq[q]); cmx = fmax(cmx, cq[q]);}
+    }
+    mode = (cmx > kVetCornerRatio*cmn) ? 2 : 1;
+  }
+  if (mode == 2) {
+    Real iv = 0.0;
+    for (int q = 0; q < 4; ++q) {
+      if (w[q] > 0.0) {iv += w[q]*VetSegOne(iq[q], sq[q], s0, cq[q], c0, hl, spl, spe);}
+    }
+    return iv;
+  }
+  Real iu = 0.0, lc = 0.0, ls = 0.0;
+  for (int q = 0; q < 4; ++q) {
+    iu += w[q]*iq[q];
+    lc += w[q]*log(fmax(cq[q], 1.0e-300));
+    ls += w[q]*log(fmax(sq[q], 1.0e-300));
+  }
+  return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe);
+}
+
 #endif  // RAD_M1_RAD_M1_VETSEG_HPP_

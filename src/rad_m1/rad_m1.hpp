@@ -418,6 +418,7 @@ class RadiationM1 {
   int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
+  int vet_interp = 0;        // unify-sc-gd-1012 (#6): upwind stencil 0 lin, 1 log, 2 corner
   int vet_mirror_npass = 4;  // unify-sc-gd-1012: passes of a cavity mirrored at both x1
                              // ends (vet_bc_reflect; vet_x1_npass when named)
   bool vet_x1src = false;    // vet_x1_periodic_inflow = source (predfix-1011)

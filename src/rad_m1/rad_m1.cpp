@@ -1100,6 +1100,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // sptests-1011: vet_gd_inner = diff | emit, vet_gd_beam* (read only when named).
     // unify-sc-gd-1012 (#2): vet_bc_inner / vet_bc_reflect, shared with vet_sc
     // (VetBcInit); vet_gd_inner is read as the alias of vet_bc_inner
+    // unify-sc-gd-1012 (#6): vet_interp = auto | log | corner, shared with vet_sc (lin
+    // is vet_sc's old form only).  vet_gd: log = its old bilinear in ln chi, ln S;
+    // corner = one segment per stencil corner (VetGdSweep); auto = corner where the
+    // stencil's chi contrast exceeds kVetCornerRatio, log elsewhere (as vet_sc).  DEFAULT
+    // auto on a fresh run; a restart whose file lacks the key keeps log.
+    if (vgd_on) {
+      const std::string vi = pin->GetOrAddString("rad_m1","vet_interp",
+                                 global_variable::restart_run ? "log" : "auto");
+      if (vi.compare("log") == 0) {
+        vet_interp = 1;
+      } else if (vi.compare("corner") == 0) {
+        vet_interp = 2;
+      } else if (vi.compare("auto") == 0) {
+        vet_interp = 3;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_interp = " << vi << " is not available "
+                  << "on vet_gd (auto | log | corner)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (vgd_on) {
       VetBcInit(pin, true);
       vgd_emit = (vet_bc_inner != 0);   // the vet_gd_beam inflow (emit or auto)
