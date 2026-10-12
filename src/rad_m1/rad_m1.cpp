@@ -1020,6 +1020,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // whose file lacks it), _slope (correct on a fresh run since defaults2-1012, keep on a
     // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
+    VetCausalInit(pin);   // retard-1012: vet_causal, shared with vet_sc (rad_m1_vet.cpp)
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
@@ -1693,6 +1694,22 @@ RadiationM1::~RadiationM1() {
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   Time2Report();      // time_scheme = hesdirk2; a no-op otherwise
   if (vet_sc) {VetReport();}
+  if (vcz_mode == 2) {   // retard-1012 vet_causal = cap (all ranks)
+    auto ch = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcz_cnt);
+    Real nc = ch(0);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nc, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_causal=cap (" << vcz_cap << " E): capped ray-cells="
+                << nc << " (all ranks)" << std::endl;
+    }
+  }
+  if (vgd_on && vcz_mode == 1 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> vet_causal=blend (vet_gd; lo " << vcz_lo << ", hi " << vcz_hi
+              << "): blended cell-builds=" << vcz_nfire << " of " << vcz_ncell
+              << " (all ranks), min VET weight=" << vcz_wmin << std::endl;
+  }
   VetFree();
   delete pbval_u;
   if (pbval_th != nullptr) {delete pbval_th;}

@@ -461,6 +461,8 @@ void RadiationM1::VetLatBuild() {
       VetLatSweep(2);
     }
     vlat_nbuild += 1;
+    // retard-1012: vet_causal = blend on the vet_gd moments of this build
+    if (vgd_on && vcz_mode == 1) {VetCausalBlendGd();}
     Kokkos::fence();
     vlat_time += timer.seconds();
   }

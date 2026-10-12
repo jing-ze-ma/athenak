@@ -396,7 +396,46 @@ class RadiationM1 {
   void VetBuildAngles(const Real beta);
   void VetRotInit(ParameterInput *pin);   // the shared rotation keys (rad_m1_vetgd.cpp)
   void VetRotUpdate();
-  bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
+  // retard-1012 REFERENCE (Cartesian vet_sc only, not a production method):
+  // <rad_m1>/vet_sc_retard = true (read only when named, default false) makes the
+  // formal solution TIME-DEPENDENT, (1/c) dI/dt + n.grad I = chi (S - I), backward Euler
+  // over the step: per ray the SC segment takes chi + 1/(c dt) and the source
+  // (chi S + I^n/(c dt))/(chi + 1/(c dt)), with I^n the ray's stored intensity of the
+  // previous step (vrt_ib), so the tensor is retarded.  First call: I^0 = E + 3 F.n/c of
+  // the M1 state.  Memory 2 x nray x cells; single MeshBlock, no rotation, no periodic
+  // x1 sweep; not written to restarts.
+  bool vrt_on = false, vrt_init = false;
+  Real vrt_tb = 0.0, vrt_tc = 0.0;      // the times of vrt_ib and vrt_ic
+  DvceArray5D<Real> vrt_ib, vrt_ic;     // (m, ray, k, j, i): I^n (base) and the new I
+  // retard-1012 CAUSAL BLEND, <rad_m1>/vet_causal = none (default) | blend, both
+  // closures (vet_sc, vet_gd): where the M1 energy E is well below the formal-solution J
+  // (rho = E/J < vet_causal_hi: the light the steady formal solution counts has not
+  // arrived in the causal moments), every normalized moment the solve reads from the
+  // formal solution (K/J, H/J, the half-range sums) is blended toward the LOCAL
+  // two-moment closure of (E, F): D = (1 - a) D_iso + a n n with n.D.n = chi_Lev(f),
+  // H = F/c, h+ = (1 - f) h+_iso + f max(n, 0), and J -> w J + (1 - w) E; weight
+  // w = smoothstep((rho - lo)/(hi - lo)), exactly 1 (bitwise untouched) for rho >= hi.
+  // vet_causal = cap (retard-1012, the candidate): a CAUSAL formal solution.  Light
+  // that the causal M1 field has not carried to a cell cannot be in it: in the SC sweep
+  // every ray is capped, w_r I_r <= C_r, C_r = max(cap E h_r, C_r(foot) exp(-ds/(c dt)))
+  // (vet_causal_cap, default 4; E, F the M1 state the formal solution is built from,
+  // h_r = (1 + F.n_r/(c E))/2 the M1 half-range share along the ray: a ray against a
+  // streaming M1 flux has not arrived; the carried C_r lets a ray run c dt beyond the M1
+  // field, the reach of one step).  A physical field has w_r I_r <= E h_r-ish, so where
+  // the light has arrived (E ~ J) the cap never binds and the sweep is bitwise.
+  int vcz_mode = 0;                     // 0 none, 1 blend, 2 cap
+  Real vcz_cap = 4.0;                   // vet_causal_cap
+  DvceArray5D<Real> vcz_cpl;            // (m, 2, ray, k, j): the carried cap planes
+  DvceArray1D<Real> vcz_cnt;            // device count of capped ray-cells
+  Real vcz_lo = 0.1, vcz_hi = 0.5;      // vet_causal_lo, vet_causal_hi
+  Real vcz_kiso[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};   // sum w mu_a mu_b of the set
+  Real vcz_hpiso[3] = {0.0, 0.0, 0.0};                 // sum w max(mu_a, 0)
+  Real vcz_nfire = 0.0, vcz_ncell = 0.0, vcz_wmin = 1.0;  // statistics (this rank)
+  void VetCausalInit(ParameterInput *pin);
+  void VetCausalBlendSc();
+  void VetCausalBlendGd();
+  void VetRetardPrep();
+  bool vet_axis_flux;       // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
   Real vet_nguard, vet_ncell;  // full: cell-calls the guard changed D / all cell-calls

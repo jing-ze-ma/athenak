@@ -76,6 +76,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -809,6 +810,109 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
       }
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetCausalBlendGd
+//! \brief retard-1012 vet_causal = blend on vet_gd (VetCausalBlendSc's rule): in every
+//! cell above the gd cut with rho = E/J < vet_causal_hi (J = the twin-corrected J of the
+//! sweep, vgd_hr M1_VGD_HRJ) the tensor D = (f_K + LAT0, LAT1.., in the (r, theta, phi)
+//! basis) and the half-range ratios r+-_a are blended toward the local closure of (E, F):
+//! D_m1 = (1 - chi)/2 I + (3 chi - 1)/2 n n (chi_Lev(f)), r+-_a = +-(1 - f)/4 + f
+//! max/min(n_a, 0); J -> w J + (1 - w) E.  w = 1 cells untouched.  Needs the half-range
+//! ratios and J (implicit_flux_beam = halfrange with a thin switch or correction).
+
+void RadiationM1::VetCausalBlendGd() {
+  if (!impl_beam_hr || !vgd_thx || vgd_hr.extent_int(0) == 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/vet_causal = blend on vet_gd needs implicit_flux_beam = "
+              << "halfrange and an implicit_thin_switch fs* or implicit_thin_corr (the "
+              << "formal-solution J of vgd_hr)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int ilo = is + vlat_icut;
+  const bool noes = VsrcNoes();
+  auto ur_ = u0;
+  auto iw_ = iw;
+  auto tt_ = tau_ten;
+  auto hr_ = vgd_hr;
+  const Real cl = c_light, efl = e_floor;
+  const Real lo = vcz_lo, hi = vcz_hi;
+  const int ni = ie - ilo + 1, nj = je - js + 1, nk = ke - ks + 1;
+  const int nc = (ni > 0) ? (nmb1 + 1)*nk*nj*ni : 0;
+  Real nfire = 0.0, wmin = 1.0;
+  if (nc > 0) {
+  Kokkos::parallel_reduce("m1_vcz_gd", Kokkos::RangePolicy<>(DevExeSpace(), 0, nc),
+  KOKKOS_LAMBDA(const int idx, Real &sf, Real &sw) {
+    const int m = idx/(nk*nj*ni);
+    int q = idx - m*(nk*nj*ni);
+    const int k = ks + q/(nj*ni);
+    q -= (k - ks)*(nj*ni);
+    const int j = js + q/ni;
+    const int i = ilo + q - (j - js)*ni;
+    if (hr_(m,0,k,j,i) < 0.0) return;   // no formal solution here
+    const Real jj = hr_(m,M1_VGD_HRJ,k,j,i);
+    if (!(jj > 0.0)) return;
+    const Real e = fmax(noes ? ur_(m,M1_E,k,j,i) : iw_(m,M1_IW_EN,k,j,i), efl);
+    const Real rho = e/jj;
+    if (rho >= hi) return;
+    Real x = (rho - lo)/(hi - lo);
+    x = fmin(fmax(x, 0.0), 1.0);
+    const Real w = x*x*(3.0 - 2.0*x);
+    sf += 1.0;
+    sw = fmin(sw, w);
+    const Real f1 = iw_(m,M1_IW_F1,k,j,i), f2 = iw_(m,M1_IW_F2,k,j,i);
+    const Real f3 = iw_(m,M1_IW_F3,k,j,i);
+    const Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
+    const Real ff = fmin(fm/(cl*e), 1.0);
+    Real nv[3] = {1.0, 0.0, 0.0};
+    if (fm > 0.0) {
+      nv[0] = f1/fm;
+      nv[1] = f2/fm;
+      nv[2] = f3/fm;
+    }
+    const Real chi = M1Chi(ff);
+    const Real a0 = 0.5*(1.0 - chi), a1 = 0.5*(3.0*chi - 1.0);
+    // the formal-solution D in (r, theta, phi)
+    const Real fk = tt_(m,0,k,j,i);
+    const Real drr = fk + tt_(m,M1_TT_LAT0,k,j,i);
+    const Real dfs[6] = {drr, tt_(m,M1_TT_LAT0+1,k,j,i), tt_(m,M1_TT_LAT0+2,k,j,i),
+                         tt_(m,M1_TT_LAT0+3,k,j,i) + 0.5*(1.0 - drr),
+                         tt_(m,M1_TT_LAT0+4,k,j,i),
+                         tt_(m,M1_TT_LAT0+5,k,j,i) + 0.5*(1.0 - drr)};
+    // rr rt rp tt tp pp
+    const Real dm[6] = {a0 + a1*nv[0]*nv[0], a1*nv[0]*nv[1], a1*nv[0]*nv[2],
+                        a0 + a1*nv[1]*nv[1], a1*nv[1]*nv[2], a0 + a1*nv[2]*nv[2]};
+    Real db[6];
+    for (int c = 0; c < 6; ++c) {db[c] = w*dfs[c] + (1.0 - w)*dm[c];}
+    tt_(m,M1_TT_LAT0,k,j,i) = db[0] - fk;
+    tt_(m,M1_TT_LAT0+1,k,j,i) = db[1];
+    tt_(m,M1_TT_LAT0+2,k,j,i) = db[2];
+    tt_(m,M1_TT_LAT0+3,k,j,i) = db[3] - 0.5*(1.0 - db[0]);
+    tt_(m,M1_TT_LAT0+4,k,j,i) = db[4];
+    tt_(m,M1_TT_LAT0+5,k,j,i) = db[5] - 0.5*(1.0 - db[0]);
+    for (int a = 0; a < 3; ++a) {
+      hr_(m,2*a,k,j,i) = w*hr_(m,2*a,k,j,i)
+                         + (1.0 - w)*(0.25*(1.0 - ff) + ff*fmax(nv[a], 0.0));
+      hr_(m,2*a+1,k,j,i) = w*hr_(m,2*a+1,k,j,i)
+                           + (1.0 - w)*(-0.25*(1.0 - ff) + ff*fmin(nv[a], 0.0));
+    }
+    hr_(m,M1_VGD_HRJ,k,j,i) = w*jj + (1.0 - w)*e;
+  }, Kokkos::Sum<Real>(nfire), Kokkos::Min<Real>(wmin));
+  }
+  Real ncl = static_cast<Real>(nc);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &nfire, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &ncl, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &wmin, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+#endif
+  vcz_nfire += nfire;
+  vcz_ncell += ncl;
+  vcz_wmin = std::min(vcz_wmin, wmin);
 }
 
 //----------------------------------------------------------------------------------------
@@ -4093,6 +4197,17 @@ void RadiationM1::VetGdSweep() {
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   const int spe = VetSegMode();
+  // retard-1012 vet_causal = cap: w_d I_d <= cap E of the cell (E of the build's state,
+  // as the source; no carried reach on vet_gd); the twin field is not capped
+  const bool gcap = (vcz_mode == 2);
+  if (gcap && vgd_async) {VgdFatal("vet_causal = cap excludes vet_gd_async");}
+  const bool gnoes = VsrcNoes() && !vlat_src_ep;
+  auto gce_ = gnoes ? u0 : iw;
+  const int gcc = gnoes ? M1_E : (vlat_src_ep ? M1_IW_EP : M1_IW_EN);
+  const Real gkc = vcz_cap, gefl = e_floor, gcl = c_light;
+  auto giw_ = iw;
+  const int gog = vgd_w - indcs.ng;
+  auto gcn_ = vcz_cnt;
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   const bool emi = vgd_emit && (lcut == 0) &&
@@ -4513,6 +4628,19 @@ void RadiationM1::VetGdSweep() {
           return iv;
         };
         vi_(m,d,k,j,i) = solve(cs_, vi_, tws);
+        if (gcap) {
+          // w I <= cap E h, h = (1 + F.n/(c E))/2 in the cell's (r, theta, phi) basis
+          const Real ec = fmax(gce_(m,gcc,k-gog,j-gog,i), gefl);
+          const Real nb = nx*ct*cp + ny*ct*sp - nz*st, nc = -nx*sp + ny*cp;
+          const Real fo = (giw_(m,M1_IW_F1,k-gog,j-gog,i)*mr
+                           + giw_(m,M1_IW_F2,k-gog,j-gog,i)*nb
+                           + giw_(m,M1_IW_F3,k-gog,j-gog,i)*nc)/(gcl*ec);
+          const Real cc = gkc*ec*0.5*(1.0 + fmin(fmax(fo, -1.0), 1.0));
+          if (dir_(d,3)*vi_(m,d,k,j,i) > cc) {
+            vi_(m,d,k,j,i) = cc/dir_(d,3);
+            Kokkos::atomic_add(&gcn_(0), 1.0);
+          }
+        }
         if (two) {vt_(m,d,k,j,i) = solve(ct_, vt_, true);}
       };
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;

@@ -96,6 +96,7 @@
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 
@@ -1826,6 +1827,20 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   vet_ring_n = vring;
   vet_ring_g = vrgrp;
   VetBuildAngles(0.0);
+  VetCausalInit(pin);   // retard-1012: vet_causal (shared with vet_gd)
+  // retard-1012 REFERENCE: the time-dependent formal solution (vet_sc_retard)
+  if (pin->DoesParameterExist("rad_m1", "vet_sc_retard")) {
+    vrt_on = pin->GetBoolean("rad_m1", "vet_sc_retard");
+  }
+  if (vrt_on) {
+    if (mbpath) {VetFatal("<rad_m1>/vet_sc_retard needs a single MeshBlock on one rank");}
+    if (vsc_rot) {
+      VetFatal("<rad_m1>/vet_sc_retard needs a fixed angle set: vet_gd_rotate_dt = 0");
+    }
+    if (vet_x1per || vet_milne) {
+      VetFatal("<rad_m1>/vet_sc_retard excludes vet_x1_periodic and vet_milne");
+    }
+  }
 
   auto &indcs = pm->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pm->nmb_maxperrank));
@@ -1839,6 +1854,23 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   } else {
     Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
     Kokkos::deep_copy(vet_ipl, 0.0);
+    if (vcz_mode == 2) {
+      Kokkos::realloc(vcz_cpl, nmb, 2, vet_nray, ncells3, ncells2);
+      Kokkos::deep_copy(vcz_cpl, 0.0);
+    }
+  }
+  if (vcz_mode == 2 && mbpath) {
+    VetFatal("<rad_m1>/vet_causal = cap on vet_sc: single MeshBlock sweep only so far");
+  }
+  if (vrt_on) {
+    Kokkos::realloc(vrt_ib, nmb, vet_nray, ncells3, ncells2, ncells1);
+    Kokkos::realloc(vrt_ic, nmb, vet_nray, ncells3, ncells2, ncells1);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_sc_retard = true: TIME-DEPENDENT formal solution "
+                << "(reference), stored intensities "
+                << 2.0*8.0*nmb*vet_nray*ncells3*ncells2*ncells1/1.0e9 << " GB"
+                << std::endl;
+    }
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> closure = vet_sc: short characteristics, " << vet_nray
@@ -1914,6 +1946,20 @@ void RadiationM1::VetBuildAngles(const Real beta) {
     }
   }
   Kokkos::deep_copy(vet_ang, ah);
+  // retard-1012: the isotropic moments of this set (vet_causal = blend)
+  for (int c = 0; c < 6; ++c) {vcz_kiso[c] = 0.0;}
+  for (int c = 0; c < 3; ++c) {vcz_hpiso[c] = 0.0;}
+  for (int q = 0; q < vet_nray; ++q) {
+    const double m[3] = {ah(q, 0), ah(q, 1), ah(q, 2)};
+    const double w = ah(q, 3);
+    vcz_kiso[0] += w*m[0]*m[0];
+    vcz_kiso[1] += w*m[1]*m[1];
+    vcz_kiso[2] += w*m[2]*m[2];
+    vcz_kiso[3] += w*m[0]*m[1];
+    vcz_kiso[4] += w*m[0]*m[2];
+    vcz_kiso[5] += w*m[1]*m[2];
+    for (int c = 0; c < 3; ++c) {vcz_hpiso[c] += w*std::fmax(m[c], 0.0);}
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1943,6 +1989,189 @@ void RadiationM1::VetRotUpdate() {
       al_(r,c) = ang_(rl_(r),c);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetCausalInit
+//! \brief retard-1012: <rad_m1>/vet_causal = none | blend (read only when named; default
+//! none on fresh runs and restarts alike until validated), vet_causal_lo (0.1),
+//! vet_causal_hi (0.5); the sub-keys are read only with blend.  Shared by vet_sc (VetInit) and vet_gd.
+
+void RadiationM1::VetCausalInit(ParameterInput *pin) {
+  // read only when named: an input without the key writes the same parameter dump
+  if (!pin->DoesParameterExist("rad_m1", "vet_causal")) {
+    vcz_mode = 0;
+    return;
+  }
+  std::string cm = pin->GetString("rad_m1", "vet_causal");
+  if (cm.compare("none") == 0) {
+    vcz_mode = 0;
+  } else if (cm.compare("blend") == 0) {
+    vcz_mode = 1;
+  } else if (cm.compare("cap") == 0) {
+    vcz_mode = 2;
+    vcz_cap = pin->GetOrAddReal("rad_m1", "vet_causal_cap", 4.0);
+    if (!(vcz_cap >= 1.0)) {VetFatal("<rad_m1>/vet_causal_cap must be >= 1");}
+    Kokkos::realloc(vcz_cnt, 1);
+    Kokkos::deep_copy(vcz_cnt, 0.0);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_causal = cap: causal formal solution, w I <= "
+                << "max(" << vcz_cap << " E, carried cap x exp(-ds/(c dt)))" << std::endl;
+    }
+  } else {
+    VetFatal("<rad_m1>/vet_causal = '" + cm + "' is not a choice (none | blend | cap)");
+  }
+  if (vcz_mode == 1) {
+    vcz_lo = pin->GetOrAddReal("rad_m1", "vet_causal_lo", 0.1);
+    vcz_hi = pin->GetOrAddReal("rad_m1", "vet_causal_hi", 0.5);
+    if (!(vcz_lo >= 0.0 && vcz_hi > vcz_lo)) {
+      VetFatal("<rad_m1>/vet_causal_lo, vet_causal_hi: need 0 <= lo < hi");
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_causal = blend: formal-solution moments blended toward "
+                << "the local two-moment closure where E/J < " << vcz_hi
+                << " (fully at E/J <= " << vcz_lo << ")" << std::endl;
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetRetardPrep
+//! \brief vet_sc_retard (reference): the target time of this build is t + dt (the end of
+//! the step the tensor serves).  A build for a later target than the last one moves the
+//! last result into the base (I^n); a repeated build of the same step (stage fallback,
+//! rebuild) restarts from the same base.  First call: base = E + 3 F.n/c of u0.
+
+void RadiationM1::VetRetardPrep() {
+  const Real t = pmy_pack->pmesh->time;
+  const Real tt = t + (mr_on ? mr_dt : pmy_pack->pmesh->dt);
+  if (!vrt_init) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    const int nmb1 = pmy_pack->nmb_thispack - 1;
+    const int nray = vet_nray;
+    auto ib_ = vrt_ib;
+    auto ic_ = vrt_ic;
+    auto u0_ = u0;
+    auto ang_ = vet_ang;
+    const Real cl = c_light, efl = e_floor;
+    par_for("m1_vrt_init", DevExeSpace(), 0, nmb1, indcs.ks, indcs.ke, indcs.js,
+            indcs.je, indcs.is, indcs.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real e = fmax(u0_(m,M1_E,k,j,i), efl);
+      for (int r = 0; r < nray; ++r) {
+        const Real fo = u0_(m,M1_F1,k,j,i)*ang_(r,0) + u0_(m,M1_F2,k,j,i)*ang_(r,1)
+                        + u0_(m,M1_F3,k,j,i)*ang_(r,2);
+        const Real v = fmax(e + 3.0*fo/cl, 0.0);
+        ib_(m,r,k,j,i) = v;
+        ic_(m,r,k,j,i) = v;
+      }
+    });
+    vrt_tb = t;
+    vrt_tc = t;
+    vrt_init = true;
+  }
+  if (tt > vrt_tc + 1.0e-12*std::fabs(tt)) {
+    std::swap(vrt_ib, vrt_ic);
+    vrt_tb = vrt_tc;
+  }
+  vrt_tc = tt;
+  if (!(vrt_tc > vrt_tb)) {
+    VetFatal("<rad_m1>/vet_sc_retard: the build's target time is not after the base");
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetCausalBlendSc
+//! \brief vet_causal = blend on vet_sc: the raw moments of the sweep in vet_cell (J, K,
+//! H, the half-range sums, the non-locality sum) of every active cell with
+//! rho = E/J < vet_causal_hi are replaced by J_b q_b, q_b = w q_fs + (1 - w) q_m1 for
+//! each normalized moment q (K/J, H/J, H+/J; NL/J kept), J_b = w J + (1 - w) E, with E
+//! and F the M1 state the formal solution was built from.  w = 1 cells are untouched.
+
+void RadiationM1::VetCausalBlendSc() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool noes_ = VsrcNoes();
+  auto esv_ = noes_ ? u0 : iw;
+  const int esc_ = noes_ ? M1_E : M1_IW_EN;
+  auto iw_ = iw;
+  auto vc_ = vet_cell;
+  const Real cl = c_light, efl = e_floor;
+  const Real lo = vcz_lo, hi = vcz_hi;
+  const bool hrs_ = impl_beam_hr, nls_ = thsw_c1;
+  const Real ki0 = vcz_kiso[0], ki1 = vcz_kiso[1], ki2 = vcz_kiso[2];
+  const Real ki3 = vcz_kiso[3], ki4 = vcz_kiso[4], ki5 = vcz_kiso[5];
+  const Real hi0 = vcz_hpiso[0], hi1 = vcz_hpiso[1], hi2 = vcz_hpiso[2];
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  const int nc = (nmb1 + 1)*nk*nj*ni;
+  Real nfire = 0.0, wmin = 1.0;
+  Kokkos::parallel_reduce("m1_vcz_sc", Kokkos::RangePolicy<>(DevExeSpace(), 0, nc),
+  KOKKOS_LAMBDA(const int idx, Real &sf, Real &sw) {
+    const int m = idx/(nk*nj*ni);
+    int q = idx - m*(nk*nj*ni);
+    const int k = ks + q/(nj*ni);
+    q -= (k - ks)*(nj*ni);
+    const int j = js + q/ni;
+    const int i = is + q - (j - js)*ni;
+    const Real jj = vc_(m,M1_VET_J,k,j,i);
+    if (!(jj > 0.0)) return;
+    const Real e = fmax(esv_(m,esc_,k,j,i), efl);
+    const Real rho = e/jj;
+    if (rho >= hi) return;
+    Real x = (rho - lo)/(hi - lo);
+    x = fmin(fmax(x, 0.0), 1.0);
+    const Real w = x*x*(3.0 - 2.0*x);
+    sf += 1.0;
+    sw = fmin(sw, w);
+    // the local two-moment closure of (E, F)
+    const Real f1 = iw_(m,M1_IW_F1,k,j,i), f2 = iw_(m,M1_IW_F2,k,j,i);
+    const Real f3 = iw_(m,M1_IW_F3,k,j,i);
+    const Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
+    const Real ff = fmin(fm/(cl*e), 1.0);
+    Real n1 = 1.0, n2 = 0.0, n3 = 0.0;
+    if (fm > 0.0) {
+      n1 = f1/fm;
+      n2 = f2/fm;
+      n3 = f3/fm;
+    }
+    const Real chi = M1Chi(ff);
+    const Real dn = n1*(ki0*n1 + ki3*n2 + ki4*n3) + n2*(ki3*n1 + ki1*n2 + ki5*n3)
+                    + n3*(ki4*n1 + ki5*n2 + ki2*n3);
+    const Real al = (dn < 1.0) ? fmin(fmax((chi - dn)/(1.0 - dn), 0.0), 1.0) : 1.0;
+    const Real km[6] = {(1.0 - al)*ki0 + al*n1*n1, (1.0 - al)*ki1 + al*n2*n2,
+                        (1.0 - al)*ki2 + al*n3*n3, (1.0 - al)*ki3 + al*n1*n2,
+                        (1.0 - al)*ki4 + al*n1*n3, (1.0 - al)*ki5 + al*n2*n3};
+    const Real nv[3] = {n1, n2, n3};
+    const Real hiso[3] = {hi0, hi1, hi2};
+    const Real ij = 1.0/jj;
+    const Real jb = w*jj + (1.0 - w)*e;
+    for (int c = 0; c < 6; ++c) {
+      vc_(m,M1_VET_K11+c,k,j,i) = jb*(w*vc_(m,M1_VET_K11+c,k,j,i)*ij + (1.0 - w)*km[c]);
+    }
+    for (int c = 0; c < 3; ++c) {
+      vc_(m,M1_VET_H1+c,k,j,i) = jb*(w*vc_(m,M1_VET_H1+c,k,j,i)*ij
+                                     + (1.0 - w)*ff*nv[c]);
+    }
+    if (hrs_) {
+      for (int c = 0; c < 3; ++c) {
+        vc_(m,M1_VET_HP1+c,k,j,i) = jb*(w*vc_(m,M1_VET_HP1+c,k,j,i)*ij + (1.0 - w)
+                                        *((1.0 - ff)*hiso[c] + ff*fmax(nv[c], 0.0)));
+      }
+    }
+    if (nls_) {vc_(m,M1_VET_NL,k,j,i) *= jb*ij;}
+    vc_(m,M1_VET_J,k,j,i) = jb;
+  }, Kokkos::Sum<Real>(nfire), Kokkos::Min<Real>(wmin));
+  Real ncl = static_cast<Real>(nc);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &nfire, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &ncl, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &wmin, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+#endif
+  vcz_nfire += nfire;
+  vcz_ncell += ncl;
+  vcz_wmin = std::min(vcz_wmin, wmin);
 }
 
 //----------------------------------------------------------------------------------------
@@ -3346,6 +3575,18 @@ void RadiationM1::VetMBSweeps() {
 
 void RadiationM1::VetShortChar() {
   VetRotUpdate();   // bubbles-1012: the set of this step's rotation block
+  // retard-1012 REFERENCE (vet_sc_retard): the base I^n and the BE coefficient 1/(c dt)
+  if (vrt_on) {VetRetardPrep();}
+  const bool rtd = vrt_on;
+  const Real grt = vrt_on ? 1.0/(c_light*(vrt_tc - vrt_tb)) : 0.0;
+  auto rb_ = vrt_ib;
+  auto rc_ = vrt_ic;
+  // retard-1012 vet_causal = cap: the carried cap planes, 1/(c dt) of its reach
+  const bool capo = (vcz_mode == 2);
+  auto cp_ = vcz_cpl;
+  auto cn_ = vcz_cnt;
+  const Real kcap = vcz_cap;
+  const Real ilc = capo ? 1.0/(c_light*(mr_on ? mr_dt : pmy_pack->pmesh->dt)) : 0.0;
   // blendall-1009: vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
   // source and the boundary intensity read the PHYSICAL E^n = u0 under be, not the
   // solve's old vector E^n + dt (chat/c) esrc (M1_IW_EN)
@@ -3503,6 +3744,7 @@ void RadiationM1::VetShortChar() {
       for (int n = 0; n < 10; ++n) {acu[n] = 0.0; acd[n] = 0.0;}
       Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};
       Real nlu = 0.0, nld = 0.0;   // thinsw-1010
+      Real ncap = 0.0;             // retard-1012 cap: capped ray-cells of this thread
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -3511,6 +3753,7 @@ void RadiationM1::VetShortChar() {
         const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
         const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
         Real iv;
+        Real cfoot = 0.0;   // cap: the carried cap at the foot (0 entering the box)
         if (l == 0 && !wrap) {
           // half a cell from the boundary face; S at the face linearly extrapolated
           // from the two boundary cells (exact for the deep linear S of a diffusion
@@ -3545,7 +3788,14 @@ void RadiationM1::VetShortChar() {
               if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
             }
           }
-          const Real dtau = 0.5*c0*dx1/am1;
+          Real c0b = c0, sub = su, s0b = s0;
+          if (rtd) {   // retard-1012: the time-dependent segment (BE)
+            const Real ibn = rb_(m,r,k,j,i);
+            c0b = c0 + grt;
+            sub = (c0*su + grt*ibn)/c0b;
+            s0b = (c0*s0 + grt*ibn)/c0b;
+          }
+          const Real dtau = 0.5*c0b*dx1/am1;
           const Real ex = exp(-dtau);
           Real w0, wu;
           if (dtau < 1.0e-3) {
@@ -3556,7 +3806,7 @@ void RadiationM1::VetShortChar() {
             w0 = 1.0 - g;
             wu = g - ex;
           }
-          iv = ib*ex + wu*su + w0*s0;
+          iv = ib*ex + wu*sub + w0*s0b;
         } else {
           const int iup = (l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1));
           // the foot of the characteristic on the upwind plane, in cell units
@@ -3595,6 +3845,11 @@ void RadiationM1::VetShortChar() {
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
           const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
+          if (capo) {
+            cfoot = (waa*ga*ka_g*cp_(m,pr,r,ka,ja) + wab*gb*ka_g*cp_(m,pr,r,ka,jb)
+                     + wba*ga*kb_g*cp_(m,pr,r,kb,ja) + wbb*gb*kb_g*cp_(m,pr,r,kb,jb))
+                    *exp(-dx1*ilc/am1);
+          }
           Real iup_v;
           if (x2o || x3o) {
             iup_v = waa*ga*ka_g*ip_(m,pr,r,ka,ja) + wab*gb*ka_g*ip_(m,pr,r,ka,jb)
@@ -3603,19 +3858,31 @@ void RadiationM1::VetShortChar() {
             iup_v = waa*ip_(m,pr,r,ka,ja) + wab*ip_(m,pr,r,ka,jb)
                     + wba*ip_(m,pr,r,kb,ja) + wbb*ip_(m,pr,r,kb,jb);
           }
-          const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
+          const Real cu0 = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
                           + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
                           + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
                           + wbb*vc_(m,M1_VET_CHX,kb,jb,iup);
-          const Real su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
-                          + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
-                          + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
-                          + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+          Real su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
+                    + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
+                    + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
+                    + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+          Real cu = cu0, c0r = c0, s0r = s0;
+          if (rtd) {
+            // retard-1012: chi -> chi + 1/(c dt), S -> (chi S + I^n/(c dt))/(...) at
+            // both ends (I^n of the foot interpolated as chi and S)
+            const Real ibu = waa*rb_(m,r,ka,ja,iup) + wab*rb_(m,r,ka,jb,iup)
+                             + wba*rb_(m,r,kb,ja,iup) + wbb*rb_(m,r,kb,jb,iup);
+            const Real ib0 = rb_(m,r,k,j,i);
+            cu = cu0 + grt;
+            su = (cu0*su + grt*ibu)/cu;
+            c0r = c0 + grt;
+            s0r = (c0*s0 + grt*ib0)/c0r;
+          }
           if (spl) {
             // segfix-1011: vet_seg = split, the two halves at the x1 face
-            iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
+            iv = VetSegSplit(iup_v, su, s0r, 0.5*cu*dx1/am1, 0.5*c0r*dx1/am1, spe);
           } else {
-            const Real dtau = 0.5*(cu + c0)*dx1/am1;
+            const Real dtau = 0.5*(cu + c0r)*dx1/am1;
             const Real ex = exp(-dtau);
             Real w0, wu;
             if (dtau < 1.0e-3) {
@@ -3626,12 +3893,28 @@ void RadiationM1::VetShortChar() {
               w0 = 1.0 - g;
               wu = g - ex;
             }
-            iv = iup_v*ex + wu*su + w0*s0;
+            iv = iup_v*ex + wu*su + w0*s0r;
           }
         }
         if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
         iv = fmax(iv, 0.0);
+        if (capo) {
+          // retard-1012 vet_causal = cap: w I <= C = max(cap E h, carried C), h = the
+          // half-range share (1 + f.n)/2 of the M1 state along the ray (0 against a
+          // free-streaming M1 flux, 1 along it, 1/2 isotropic)
+          const Real ec = fmax(esv_(m,esc_,k,j,i), efl);
+          const Real fo = (iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
+                           + iw_(m,M1_IW_F3,k,j,i)*m3)/(cl*ec);
+          const Real hc = 0.5*(1.0 + fmin(fmax(fo, -1.0), 1.0));
+          const Real cc = fmax(kcap*ec*hc, cfoot);
+          if (wr*iv > cc) {
+            iv = cc/wr;
+            ncap += 1.0;
+          }
+          cp_(m,pw,r,k,j) = cc;
+        }
         ip_(m,pw,r,k,j) = iv;
+        if (rtd) {rc_(m,r,k,j,i) = iv;}
         Real *ac = up ? acu : acd;
         const Real a = wr*iv;
         ac[0] += a;
@@ -3654,6 +3937,7 @@ void RadiationM1::VetShortChar() {
           if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
         }
       }
+      if (capo && ncap > 0.0) {Kokkos::atomic_add(&cn_(0), ncap);}
       if (accum) {
         for (int n = 0; n < 10; ++n) {
           vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
@@ -3673,6 +3957,10 @@ void RadiationM1::VetShortChar() {
     });
   }
   }
+
+  // retard-1012: vet_causal = blend, the moments toward the local closure where the
+  // light the formal solution counts has not reached the M1 field
+  if (vcz_mode == 1) {VetCausalBlendSc();}
 
   // (3) the uniaxial projection (chi, n) of D = K/J
   const bool axflux = vet_axis_flux;
@@ -4010,6 +4298,15 @@ void RadiationM1::VetReport() {
   if (impl_hr_sf) {
     std::cout << "<rad_m1> implicit_hr_face=sf: cells with Jh > J (sf face ratios) "
               << hsf_nsf << " of " << hsf_ncell << " cell-solves (rank 0)" << std::endl;
+  }
+  if (vcz_mode == 1) {
+    std::cout << "<rad_m1> vet_causal=blend (lo " << vcz_lo << ", hi " << vcz_hi
+              << "): blended cell-builds=" << vcz_nfire << " of " << vcz_ncell
+              << " (all ranks), min VET weight=" << vcz_wmin << std::endl;
+  }
+  if (vrt_on) {
+    std::cout << "<rad_m1> vet_sc_retard=true: time-dependent formal solution "
+              << "(reference)" << std::endl;
   }
   if (vet_full) {
     std::cout << "<rad_m1> vet_tensor=full: guard triggered in " << vet_nguard << " of "
