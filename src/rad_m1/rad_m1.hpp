@@ -1870,7 +1870,7 @@ class RadiationM1 {
   bool t2_vcreuse = false;
   bool vgd_rot_creuse = true;
   Real vgd_rot_cfrac = 0.0;
-  double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0;
+  double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;
   bool Time2RotCorrect(Driver *pdrive, Real dt);
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with

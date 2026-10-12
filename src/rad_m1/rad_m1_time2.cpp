@@ -732,9 +732,11 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   t2_fail = false;
   nsub = 1;
   dt_sub = dtc;
+  const Real its0 = impl_itsum;
   pdrive->ExecuteTaskList(pmesh, "m1_before_stagen", 1);
   pdrive->ExecuteTaskList(pmesh, "m1_stagen", 1);
   pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
+  vgd_rot_ncpass += static_cast<double>(impl_itsum - its0);
   t2_inprobe = false;
   impl_pred = pred_save;
   const bool ok = !t2_fail;
@@ -1531,10 +1533,12 @@ void RadiationM1::Time2Report() {
   }
   if (vgd_rot_slope == 3) {
     std::cout << " vet_gd_rotate_slope=correct solves=" << vgd_rot_ncorr << " failed="
-              << vgd_rot_ncfail << " (frac " << vgd_rot_cfrac << ", reuse "
+              << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass << " (frac "
+              << vgd_rot_cfrac << ", reuse "
               << (vgd_rot_creuse ? "on" : "off") << ")";
   }
-  if (vgd_rot_align) {std::cout << " rotate_align shortened steps=" << vgd_rot_nalign;}
+  // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
+  if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
 }
 
