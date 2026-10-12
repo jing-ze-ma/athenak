@@ -1,0 +1,171 @@
+RUN C4 bin=athena_hes_gpu_0197f0202e10 np=4 extra=[rad_m1/implicit_gas_src=conservative2] 20:09:16
+END C4 rc=0 wall=57.904146076 s fatal=0 peak: GPU0 49789 MiB  GPU1 49789 MiB  GPU2 49789 MiB  GPU3 49789 MiB   20:10:14
+RUN C4g bin=athena_hes_gpu_0197f0202e10 np=4 extra=[rad_m1/implicit_gas_src=conservative2 rad_m1/implicit_precond=mg_gf rad_m1/vet_gd_halo_ipc=true] 20:10:14
+END C4g rc=0 wall=56.435393177 s fatal=0 peak: GPU0 50219 MiB  GPU1 50219 MiB  GPU2 50219 MiB  GPU3 50219 MiB   20:11:11
+RUN N4 bin=athena_hes_gpu_0197f0202e10 np=4 extra=[rad_m1/implicit_precond=mg_gf rad_m1/vet_gd_halo_ipc=true] 20:11:11
+END N4 rc=0 wall=19.923506975 s fatal=0 peak: GPU0 49391 MiB  GPU1 49391 MiB  GPU2 49391 MiB  GPU3 49391 MiB   20:11:31
+RUN N4n bin=athena_hes_gpu_0197f0202e10 np=4 extra=[rad_m1/implicit_precond=mg_gf rad_m1/vet_gd_halo_ipc=true rad_m1/vet_gd_twin_lowmem=false] 20:11:31
+END N4n rc=0 wall=21.356051753 s fatal=0 peak: GPU0 79209 MiB  GPU1 79209 MiB  GPU2 79209 MiB  GPU3 79209 MiB   20:11:52
+RUN N2 bin=athena_hes_gpu_0197f0202e10 np=2 extra=[rad_m1/implicit_precond=mg_gf rad_m1/vet_gd_halo_ipc=true] 20:11:52
+END N2 rc=0 wall=23.060353359 s fatal=0 peak: GPU0 78089 MiB  GPU1 78089 MiB  GPU2 0 MiB  GPU3 0 MiB   20:12:15
+RUN B4 bin=athena_hes_gpu_422c2af767be np=4 extra=[] 20:12:16
+END B4 rc=0 wall=27.977694677 s fatal=0 peak: GPU0 48961 MiB  GPU1 48961 MiB  GPU2 48961 MiB  GPU3 48961 MiB   20:12:43
+RUN B2 bin=athena_hes_gpu_422c2af767be np=2 extra=[] 20:12:43
+END B2 rc=0 wall=33.741408585 s fatal=0 peak: GPU0 77487 MiB  GPU1 77487 MiB  GPU2 0 MiB  GPU3 0 MiB   20:13:17
+
+=== C4
+FATAL 0  NaN-lines 0  NON-CONVERGED=6.000000e+00
+  <rad_m1> implicit transport: solves=4.800000e+01 Picard iterations mean=3.487500e+01 max=2.000000e+02 NON-CONVERGED=6.000000e+00
+  <rad_m1> bicgstab: outer passes=1.674000e+03 linear solves=1.674000e+03 inner iterations mean=1.856033e+00 max=8.500000e+01 total=3.107000e+03
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.808506e+10 newton fallbacks=4.504543e+08 (1.603893e-02 per cell-pass)
+  <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 4.100000e+01) min E from the solve=-4.047818e+06
+  <rad_m1> implicit_vimp positivity fallbacks=4.100000e+01 min E from the solve=-4.047818e+06
+  <rad_m1> time_scheme=hesdirk2: stage steps=1.000000e+00 backward-Euler steps=2.300000e+01 stage fallbacks=2.200000e+01 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=5.815984e+07 of 3.858760e+08
+  NOT ADMISSIBLE lines: 22 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,
+  setup 2.7 s; last cycle 24; steady (3..22 not x10) mean 1.782 median 1.119 (n 18); rotation c10 4.070 c20 0.600; average 1.903 s/cycle
+  dt per cycle: 0:87.37 1:87.37 2:87.37 3:0.008361 4:0.01672 5:0.03344 6:0.06689 7:0.1338 8:0.2675 9:0.5351 10:1.07 11:2.14 12:0.001511 13:0.003023 14:0.006045 15:0.01209 16:0.02418 17:0.04836 18:0.07473 19:0.01931 20:0.03863 21:0.07725 22:0.1163 23:0.0184 24:0.0368
+  peak MiB: GPU0 49789  GPU1 49789  GPU2 49789  GPU3 49789  
+
+=== C4g
+FATAL 0  NaN-lines 0  NON-CONVERGED=4.000000e+00
+  <rad_m1> vgdrot-1011 vet_gd_halo_ipc: ON (node-local CUDA IPC, GPU-driven per-shell halo of the exact lists, no host wait)
+  <rad_m1> implicit transport: solves=4.900000e+01 Picard iterations mean=3.169388e+01 max=2.000000e+02 NON-CONVERGED=4.000000e+00
+  <rad_m1> bicgstab: outer passes=1.553000e+03 linear solves=1.553000e+03 inner iterations mean=1.023825e+00 max=3.500000e+01 total=1.590000e+03
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.605502e+10 newton fallbacks=7.041683e+08 (2.702621e-02 per cell-pass)
+  <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 3.100000e+01) min E from the solve=-2.972552e+04
+  <rad_m1> implicit_vimp positivity fallbacks=3.100000e+01 min E from the solve=-2.972552e+04
+  <rad_m1> time_scheme=hesdirk2: stage steps=1.000000e+00 backward-Euler steps=2.300000e+01 stage fallbacks=2.200000e+01 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=6.114509e+07 of 3.858760e+08
+  NOT ADMISSIBLE lines: 22 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,
+  setup 2.5 s; last cycle 24; steady (3..22 not x10) mean 1.801 median 1.250 (n 18); rotation c10 4.452 c20 1.197; average 2.029 s/cycle
+  dt per cycle: 0:87.37 1:87.37 2:87.37 3:0.008361 4:0.01672 5:0.03344 6:0.06689 7:0.1338 8:0.2675 9:0.5351 10:1.07 11:2.14 12:0.5154 13:0.7455 14:1.076 15:1.542 16:2.21 17:3.152 18:4.465 19:6.313 20:8.886 21:12.28 22:15.81 23:0.001617 24:0.003234
+  peak MiB: GPU0 50219  GPU1 50219  GPU2 50219  GPU3 50219  
+
+=== N4
+FATAL 0  NaN-lines 0  NON-CONVERGED=0.000000e+00
+  <rad_m1> vgdrot-1011 vet_gd_halo_ipc: ON (node-local CUDA IPC, GPU-driven per-shell halo of the exact lists, no host wait)
+  <rad_m1> implicit transport: solves=4.700000e+01 Picard iterations mean=2.723404e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> bicgstab: outer passes=1.280000e+02 linear solves=1.280000e+02 inner iterations mean=9.765625e-01 max=2.000000e+00 total=1.250000e+02
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.147484e+09 newton fallbacks=1.009254e+07 (4.699707e-03 per cell-pass)
+  <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=7.872306e+00
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.872306e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.300000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 3.858760e+08
+  NOT ADMISSIBLE lines: 0 
+  setup 2.5 s; last cycle 24; steady (3..22 not x10) mean 0.415 median 0.409 (n 18); rotation c10 0.350 c20 0.351; average 0.522 s/cycle
+  dt per cycle: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34
+  peak MiB: GPU0 49391  GPU1 49391  GPU2 49391  GPU3 49391  
+
+=== N4n
+FATAL 0  NaN-lines 0  NON-CONVERGED=0.000000e+00
+  <rad_m1> vgdrot-1011 vet_gd_halo_ipc: ON (node-local CUDA IPC, GPU-driven per-shell halo of the exact lists, no host wait)
+  <rad_m1> implicit transport: solves=4.700000e+01 Picard iterations mean=2.723404e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> bicgstab: outer passes=1.280000e+02 linear solves=1.280000e+02 inner iterations mean=9.765625e-01 max=2.000000e+00 total=1.250000e+02
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.147484e+09 newton fallbacks=1.009254e+07 (4.699707e-03 per cell-pass)
+  <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=7.872306e+00
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.872306e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.300000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 3.858760e+08
+  NOT ADMISSIBLE lines: 0 
+  setup 2.3 s; last cycle 24; steady (3..22 not x10) mean 0.421 median 0.418 (n 18); rotation c10 0.355 c20 0.353; average 0.529 s/cycle
+  dt per cycle: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34
+  peak MiB: GPU0 79209  GPU1 79209  GPU2 79209  GPU3 79209  
+
+=== N2
+FATAL 0  NaN-lines 0  NON-CONVERGED=0.000000e+00
+  <rad_m1> vgdrot-1011 vet_gd_halo_ipc: ON (node-local CUDA IPC, GPU-driven per-shell halo of the exact lists, no host wait)
+  <rad_m1> implicit transport: solves=4.700000e+01 Picard iterations mean=2.723404e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> bicgstab: outer passes=1.280000e+02 linear solves=1.280000e+02 inner iterations mean=9.765625e-01 max=2.000000e+00 total=1.250000e+02
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.147484e+09 newton fallbacks=1.009254e+07 (4.699707e-03 per cell-pass)
+  <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=7.872306e+00
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.872306e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.300000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 3.858760e+08
+  NOT ADMISSIBLE lines: 0 
+  setup 3.0 s; last cycle 24; steady (3..22 not x10) mean 0.565 median 0.539 (n 18); rotation c10 0.501 c20 0.500; average 0.743 s/cycle
+  dt per cycle: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34
+  peak MiB: GPU0 78089  GPU1 78089  GPU2 0  GPU3 0  
+
+=== B4
+FATAL 0  NaN-lines 0  NON-CONVERGED=0.000000e+00
+  <rad_m1> implicit transport: solves=4.700000e+01 Picard iterations mean=3.021277e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> bicgstab: outer passes=1.420000e+02 linear solves=1.420000e+02 inner iterations mean=2.171831e+01 max=4.800000e+01 total=3.084000e+03
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.382365e+09 newton fallbacks=1.013382e+07 (4.253681e-03 per cell-pass)
+  <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=7.762313e+00
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.762313e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.300000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 3.858760e+08
+  NOT ADMISSIBLE lines: 0 
+  setup 2.5 s; last cycle 24; steady (3..22 not x10) mean 0.665 median 0.645 (n 18); rotation c10 0.591 c20 0.565; average 0.773 s/cycle
+  dt per cycle: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34
+  peak MiB: GPU0 48961  GPU1 48961  GPU2 48961  GPU3 48961  
+
+=== B2
+FATAL 0  NaN-lines 0  NON-CONVERGED=0.000000e+00
+  <rad_m1> implicit transport: solves=4.700000e+01 Picard iterations mean=3.021277e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> bicgstab: outer passes=1.420000e+02 linear solves=1.420000e+02 inner iterations mean=2.171831e+01 max=4.800000e+01 total=3.084000e+03
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.382365e+09 newton fallbacks=1.013382e+07 (4.253681e-03 per cell-pass)
+  <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=7.762313e+00
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.762313e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.300000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 3.858760e+08
+  NOT ADMISSIBLE lines: 0 
+  setup 2.7 s; last cycle 24; steady (3..22 not x10) mean 1.013 median 1.010 (n 18); rotation c10 0.915 c20 0.850; average 1.182 s/cycle
+  dt per cycle: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34
+  peak MiB: GPU0 77487  GPU1 77487  GPU2 0  GPU3 0  
+
+=== B4 vs N4 user.hst (26 rows): max relative difference over rows
+  L_int  5.995e-08  (last row: B4 4.6457906010e+37 N4 4.6457906006e+37)
+  L_top  3.870e-10  (last row: B4 4.6462113595e+37 N4 4.6462113595e+37)
+  E_rad  3.536e-13  (last row: B4 4.1475368808e+45 N4 4.1475368808e+45)
+  Etot   1.021e-13  (last row: B4 1.5689558944e+46 N4 1.5689558944e+46)
+
+=== C4 user.hst: t, dt, L_top, L_in, Etot, Picard
+  0.00000000e+00  8.73700279e+01  0.00000000e+00  4.65121750e+37  1.56895735e+46  0.00000000e+00
+  8.73700279e+01  8.73700279e+01  1.67164895e+38  4.65121750e+37  1.56895630e+46  5.00000000e+00
+  1.74739303e+02  8.73692747e+01  4.45670713e+37  4.65121750e+37  1.56895584e+46  1.10000000e+01
+  2.62108873e+02  8.73695700e+01  1.85412990e+37  4.65121750e+37  1.56895648e+46  2.00000000e+00
+  2.62117234e+02  8.36091235e-03  1.76523487e+37  4.65121750e+37  1.56895647e+46  4.43333333e+01
+  2.62133955e+02  1.67218247e-02  1.95276371e+37  4.65121750e+37  1.56895647e+46  2.20000000e+01
+  2.62167399e+02  3.34436494e-02  2.68060864e+37  4.65121750e+37  1.56895646e+46  2.00000000e+00
+  2.62234286e+02  6.68872988e-02  2.68056110e+37  4.65121750e+37  1.56895646e+46  3.50000000e+00
+  2.62368061e+02  1.33774598e-01  2.68236086e+37  4.65121750e+37  1.56895645e+46  2.00000000e+00
+  2.62635610e+02  2.67549195e-01  2.67965458e+37  4.65121750e+37  1.56895644e+46  2.00000000e+00
+  2.63170708e+02  5.35098390e-01  2.68624460e+37  4.65121750e+37  1.56895642e+46  1.01000000e+02
+  2.64240905e+02  1.07019678e+00  2.67437048e+37  4.65121750e+37  1.56895637e+46  1.01000000e+02
+  2.66381299e+02  2.14039356e+00  2.53348974e+37  4.65121750e+37  1.56895634e+46  1.11000000e+02
+  2.66382810e+02  1.51130199e-03  2.16310412e+37  4.65121750e+37  1.56895633e+46  2.70000000e+01
+  2.66385833e+02  3.02260399e-03  2.60706778e+37  4.65121750e+37  1.56895633e+46  4.00000000e+00
+  2.66391878e+02  6.04520797e-03  2.65677907e+37  4.65121750e+37  1.56895633e+46  3.35000000e+01
+  2.66403968e+02  1.20904159e-02  2.65115333e+37  4.65121750e+37  1.56895633e+46  2.55000000e+01
+  2.66428149e+02  2.41808319e-02  2.65356334e+37  4.65121750e+37  1.56895633e+46  4.00000000e+00
+  2.66476511e+02  4.83616638e-02  2.57229693e+37  4.65121750e+37  1.56895633e+46  4.50000000e+00
+  2.66551245e+02  7.47344059e-02  2.62210266e+37  4.65121750e+37  1.56895632e+46  1.01000000e+02
+  2.66570559e+02  1.93137209e-02  1.83084235e+37  4.65121750e+37  1.56895632e+46  2.00000000e+00
+  2.66609186e+02  3.86274418e-02  2.50113899e+37  4.65121750e+37  1.56895632e+46  4.00000000e+00
+  2.66686441e+02  7.72548835e-02  2.59886583e+37  4.65121750e+37  1.56895632e+46  1.01000000e+02
+  2.66802782e+02  1.16340311e-01  2.58784466e+37  4.65121750e+37  1.56895632e+46  1.01000000e+02
+  2.66821180e+02  1.83986183e-02  2.03146612e+37  4.65121750e+37  1.56895632e+46  3.00000000e+00
+  2.66821180e+02  3.67972367e-02  2.03146612e+37  4.65121750e+37  1.56895632e+46  0.00000000e+00
+
+=== C4g user.hst: t, dt, L_top, L_in, Etot, Picard
+  0.00000000e+00  8.73700279e+01  0.00000000e+00  4.65121750e+37  1.56895735e+46  0.00000000e+00
+  8.73700279e+01  8.73700279e+01  1.67164895e+38  4.65121750e+37  1.56895630e+46  5.00000000e+00
+  1.74739303e+02  8.73692747e+01  4.45670713e+37  4.65121750e+37  1.56895584e+46  1.10000000e+01
+  2.62108873e+02  8.73695700e+01  1.83664842e+37  4.65121750e+37  1.56895649e+46  2.00000000e+00
+  2.62117234e+02  8.36091234e-03  1.74797638e+37  4.65121750e+37  1.56895648e+46  4.43333333e+01
+  2.62133955e+02  1.67218247e-02  1.93390298e+37  4.65121750e+37  1.56895648e+46  2.20000000e+01
+  2.62167399e+02  3.34436494e-02  2.65432263e+37  4.65121750e+37  1.56895647e+46  2.00000000e+00
+  2.62234286e+02  6.68872988e-02  2.65423625e+37  4.65121750e+37  1.56895647e+46  3.50000000e+00
+  2.62368061e+02  1.33774598e-01  2.65582087e+37  4.65121750e+37  1.56895646e+46  2.00000000e+00
+  2.62635610e+02  2.67549195e-01  2.65297122e+37  4.65121750e+37  1.56895645e+46  2.00000000e+00
+  2.63170708e+02  5.35098390e-01  2.65915605e+37  4.65121750e+37  1.56895643e+46  1.01000000e+02
+  2.64240905e+02  1.07019678e+00  2.64688688e+37  4.65121750e+37  1.56895638e+46  1.01000000e+02
+  2.66381299e+02  2.14039356e+00  2.65448052e+37  4.65121750e+37  1.56895634e+46  1.01000000e+02
+  2.66896721e+02  5.15421772e-01  2.63154513e+37  4.65121750e+37  1.56895633e+46  2.00000000e+00
+  2.67642217e+02  7.45496194e-01  2.64592814e+37  4.65121750e+37  1.56895633e+46  1.01000000e+02
+  2.68718037e+02  1.07582062e+00  2.66224861e+37  4.65121750e+37  1.56895632e+46  1.20000000e+01
+  2.70260363e+02  1.54232607e+00  2.77690159e+37  4.65121750e+37  1.56895632e+46  3.50000000e+00
+  2.72470803e+02  2.21043949e+00  3.11266357e+37  4.65121750e+37  1.56895632e+46  1.20000000e+01
+  2.75623138e+02  3.15233521e+00  3.88866209e+37  4.65121750e+37  1.56895631e+46  2.50000000e+01
+  2.80087714e+02  4.46457626e+00  4.65906286e+37  4.65121750e+37  1.56895631e+46  2.80000000e+01
+  2.86400686e+02  6.31297204e+00  4.73343952e+37  4.65121750e+37  1.56895631e+46  1.30000000e+01
+  2.95286709e+02  8.88602302e+00  4.05353182e+37  4.65121750e+37  1.56895632e+46  2.55000000e+01
+  3.07562820e+02  1.22761104e+01  3.83806622e+37  4.65121750e+37  1.56895632e+46  2.90000000e+01
+  3.23377315e+02  1.58144955e+01  3.21866232e+38  4.65121750e+37  1.56896709e+46  5.10000000e+01
+  3.23378933e+02  1.61718223e-03  3.19029774e+38  4.65121750e+37  1.56896707e+46  3.86666667e+01
+  3.23378933e+02  3.23436445e-03  3.19029774e+38  4.65121750e+37  1.56896707e+46  0.00000000e+00

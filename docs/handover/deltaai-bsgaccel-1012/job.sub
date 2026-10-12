@@ -1,0 +1,52 @@
+#!/bin/bash -l
+# TASK-2026-10-12-deltaai-bsgaccel-fullbsg (raven -> DeltaAI, bsg-files-1009 b93d8d8e): full 256^3 BSG, BASE 422c2af7 vs NEW 0197f020,
+# plus the URGENT conservative2 health check (C4, C4g run first). 1 node x 4 GH200, 1 rank per GPU.
+#   sbatch --export=ALL,BB=<422c2af7 bin>,BN=<0197f020 bin> job.sub     (DRY=1 bash job.sub: commands only)
+#SBATCH -J bsgaccel_full
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=00:40:00
+#SBATCH -o /work/nvme/bivj/jma20/bsgaccel_1012/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/bsgaccel_1012; IN=$G/bsgA.athinput
+BB=${BB:?BB}; BN=${BN:?BN}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+T0=$(date +%s); TEND=$((T0 + 38*60))
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1   # GPU-aware Cray MPICH (job-env rule)
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+chk(){ echo "$1 $(md5sum < $1 | cut -c1-32) (expect $(cat $1.md5))"; }
+chk $BN; md5sum $IN /work/nvme/bivj/jma20/bsgrec_1011/files/*
+mkdir -p $S
+COMMON="time/nlim=24 time/ndiag=1 output1/dt=1e-6 output2/dt=1e30 output3/dt=1e30 output4/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30"
+GF="rad_m1/implicit_precond=mg_gf rad_m1/vet_gd_halo_ipc=true"
+run() {   # run <name> <bin> <nranks> [extra keys]
+  local n=$1 bin=$2 np=$3; shift 3; local D=$S/$n; mkdir -p $D
+  local now=$(date +%s); [ $now -ge $TEND ] && { echo "SKIP $n (wall budget)"; return; }
+  local SR="srun -n $np --ntasks-per-node=$np -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+  echo "RUN $n bin=$(basename $bin) np=$np extra=[$*] $(date +%T)"
+  [ -n "${DRY:-}" ] && { echo "  $SR $bin -i $IN -d $D $COMMON $*"; LASTRC=0; return; }
+  ( while true; do echo "$(date +%T) $(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | tr '\n' ' ')"; sleep 2; done ) > $D/gpumem.log 2>&1 &
+  local MP=$!; local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SR $bin -i $IN -d $D $COMMON "$@" > $D/out.txt 2>&1; LASTRC=$?
+  kill $MP 2>/dev/null; wait $MP 2>/dev/null
+  local pk=$(awk '{for(i=2;i<=NF;i+=2){g=$i; sub(",","",g); v=$(i+1); if(v+0>m[g]) m[g]=v+0}} END{for(g in m) printf "GPU%s %d MiB  ", g, m[g]}' $D/gpumem.log)
+  echo "END $n rc=$LASTRC wall=$(echo "$(date +%s.%N) - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) peak: $pk $(date +%T)"
+}
+fatalstop() { [ -z "${DRY:-}" ] && grep -q FATAL $S/$1/out.txt && { echo "$1 FATAL: stop the job"; exit 1; }; true; }
+# NEW-binary runs first (C4/C4g urgent); BASE may still be building at submit time
+run C4  $BN 4 rad_m1/implicit_gas_src=conservative2;          fatalstop C4
+run C4g $BN 4 rad_m1/implicit_gas_src=conservative2 $GF;      fatalstop C4g
+run N4  $BN 4 $GF;                                            fatalstop N4
+run N4n $BN 4 $GF rad_m1/vet_gd_twin_lowmem=false             # OOM is an answer: no stop
+run N2  $BN 2 $GF;                                            fatalstop N2
+for i in $(seq 60); do [ -f $BB.md5 ] && break; [ -n "${DRY:-}" ] && break; sleep 10; done
+[ -f $BB.md5 ] || [ -n "${DRY:-}" ] || { echo "BASE binary missing after 10 min: stop"; exit 1; }
+[ -z "${DRY:-}" ] && chk $BB
+run B4  $BB 4;  fatalstop B4
+run B2  $BB 2
+echo "end $(date)"
