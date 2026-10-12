@@ -1734,15 +1734,16 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   }
   // unify-sc-gd-1012 (#3): vet_source = relaxed | gas, the VET source of a lagged build
   // (and of predict / rebuild unless time2_vet_source overrides it), as vet_col / vet_gd
-  // (vet_col_source there).  DEFAULT relaxed on a fresh run (vet_col's default; blend
-  // needs it: with gas the predict build takes the state's source); a restart whose
-  // file lacks the key keeps gas (vet_sc's old source, echoed).  OPEN (both closures):
-  // relaxed / blend force S -> B where c dt rho kappa_a >> 1 in a scattering-dominated
-  // atmosphere (nlte2 two-stage A at c dt/dx 1e6: top bands -5 %; gas fixes it there but
-  // costs bsgR Picard 2.8 -> 5.0).
+  // (vet_col_source there).  DEFAULT gas on vet_sc (fresh and restart: its old source).
+  // NOT unified (unify-sc-gd-1012 #3, OPEN): relaxed / blend force S -> B where c dt
+  // rho kappa_a >> 1 in a scattering-dominated atmosphere with held gas -- the Cartesian
+  // non-LTE tests nltek eps 1e-1..1e-5 degrade (E_top/ex 0.9994 -> 1.079 / 0.858, L1
+  // x2) and nlte2 loses 5 % in the top tau bands (vet_gd shows the same with relaxed,
+  // which is why its nlte2 deck names vet_col_source = gas); gas on vet_gd costs bsgR
+  // Picard 2.8 -> 5.0.  The key and the source function are shared; the defaults stay
+  // per closure until the relaxation is weighted by the escape stiffness.
   {
-    const std::string vs = pin->GetOrAddString("rad_m1", "vet_source",
-                               global_variable::restart_run ? "gas" : "relaxed");
+    const std::string vs = pin->GetOrAddString("rad_m1", "vet_source", "gas");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("gas") == 0) {

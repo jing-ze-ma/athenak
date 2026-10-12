@@ -1090,18 +1090,19 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 //! own source where the exchange is resolved (x << x0, O(dt^3) from it), the relaxed
 //! source where it is stiff (VetRelaxedSourceB); time2_vet_source_x0 (alias
 //! time2_vet_col_source_x0; default 1).  lag / extrap keep vet_source.
-//! DEFAULT blend on a fresh run with predict | rebuild (where it acts); a restart whose
-//! file lacks the key keeps the closure's old source (vet_col / vet_gd relaxed, vet_sc
-//! state); the resolved value is echoed; explicit input overrides.  Otherwise read only
-//! when named.
+//! DEFAULT on vet_col / vet_gd: blend on a fresh run with predict | rebuild (where it
+//! acts), relaxed on a restart whose file lacks the key; vet_sc: state (its old source;
+//! OPEN, see VetInit); the resolved value is echoed; explicit input overrides.
 
 void RadiationM1::Time2VetSourceInit(ParameterInput *pin, const bool act, const bool col) {
   const std::string key = col ? M1KeyName(pin, "time2_vet_source", {"time2_vet_col_source"})
                               : std::string("time2_vet_source");
   if (!act && !pin->DoesParameterExist("rad_m1", key)) {return;}
-  const char *old = col ? "relaxed" : "state";
+  // unify-sc-gd-1012 #3 (OPEN, rad_m1_vet.cpp VetInit): vet_sc keeps state (fresh and
+  // restart), vet_col / vet_gd blend (restart lacking the key: relaxed)
+  const char *dflt = col ? (global_variable::restart_run ? "relaxed" : "blend") : "state";
   std::string vs = act ?
-      pin->GetOrAddString("rad_m1", key, global_variable::restart_run ? old : "blend") :
+      pin->GetOrAddString("rad_m1", key, dflt) :
       pin->GetString("rad_m1", key);
   if (vs.compare("relaxed") == 0) {
     t2_vcsrc = false;
