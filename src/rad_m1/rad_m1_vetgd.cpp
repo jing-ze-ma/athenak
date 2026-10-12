@@ -144,6 +144,39 @@ void VgdIpcSet(long long *f, const long long v) {
 #endif
 }
 
+// bsgaccel-1011 lean IPC protocol: ONE system fence (orders this rank's earlier peer
+// stores, the pack, before the flags), then the arrival flag of exchange v into every
+// partner's slot; the wait: every own arrival flag >= v, then ONE fence
+KOKKOS_INLINE_FUNCTION
+void VgdIpcSetN(const unsigned long long *psig, const int *pslot, const int np,
+                const long long v) {
+#if defined(__CUDA_ARCH__)
+  __threadfence_system();
+  for (int p = 0; p < np; ++p) {
+    volatile long long *vf = reinterpret_cast<long long *>(psig[p]) + pslot[p];
+    *vf = v;
+  }
+#else
+  (void)psig; (void)pslot; (void)np; (void)v;
+#endif
+}
+
+KOKKOS_INLINE_FUNCTION
+void VgdIpcWaitN(const long long *f, const int np, const long long target, int *err) {
+#if defined(__CUDA_ARCH__)
+  const long long t0 = clock64();
+  for (int p = 0; p < np; ++p) {
+    const volatile long long *vf = f + p;
+    while (*vf < target) {
+      if (clock64() - t0 > VGD_IPC_SPIN) {*err = 1; return;}
+    }
+  }
+  __threadfence_system();
+#else
+  (void)f; (void)np; (void)target; (void)err;
+#endif
+}
+
 // the positive first-order SC weights (VcolW of rad_m1_vetcol.cpp, term for term)
 KOKKOS_INLINE_FUNCTION
 void VgdW(const Real dtau, Real &ex, Real &w0, Real &wu) {
@@ -1937,6 +1970,15 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       auto phalf = vgd_ipc_phalf.d_view;
       auto pcs = vgd_ipc_pcs.d_view;
       const int np_ = np;
+      // bsgaccel-1011 (lean protocol, default; env VGD_IPC_LEAN=0: the k1 kernel below):
+      // no ack kernel.  Partner p sets my arrival flag of exchange s in its k2(s), which
+      // its stream runs after its scatter of s-1; my k2(s) waits for that flag, so once
+      // it is past, p has read its buffer of parity (s-1)&1 and my pack of s+1 may write
+      // there.  The acks of k1 are implied by the arrival flags (the partner sets are
+      // symmetric and every exchange flags every partner); the same values land in the
+      // same places (bitwise).  k2 also fences once per kernel instead of per flag.
+      const bool lean = vgd_ipc_lean;
+      if (!lean) {
       Kokkos::parallel_for("m1_vgd_ipc_k1", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
       KOKKOS_LAMBDA(const int) {
         // my scatter of exchange seq-1 is done (stream order): ack it to its senders;
@@ -1947,6 +1989,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
         }
         for (int p = 0; p < np_; ++p) {VgdIpcWaitGE(sig + VGD_IPC_NS + p, seq - 2, err);}
       });
+      }
       const bool tfs = vgd_ipc_tfs;
       VgdIpcIdx spi, doi;
       for (int p = 0; p <= np; ++p) {spi.v[p] = X.sp[p];}
@@ -2004,6 +2047,13 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
           }
         });
       }
+      if (lean) {
+      Kokkos::parallel_for("m1_vgd_ipc_k2", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
+      KOKKOS_LAMBDA(const int) {
+        VgdIpcSetN(psig.data(), pslot.data(), np_, seq);
+        VgdIpcWaitN(sig, np_, seq, err);
+      });
+      } else {
       Kokkos::parallel_for("m1_vgd_ipc_k2", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
       KOKKOS_LAMBDA(const int) {
         for (int p = 0; p < np_; ++p) {
@@ -2011,6 +2061,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
         }
         for (int p = 0; p < np_; ++p) {VgdIpcWaitGE(sig + p, seq, err);}
       });
+      }
       vgd_hlp.on = true;
       vgd_hlp.ipc = true;
       vgd_hlp.seq = seq;
@@ -2027,6 +2078,22 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       return true;
     }
 #endif
+    // bsgaccel-1011 vet_gd twin merge (default; env VGD_MERGE=0: two messages per
+    // partner): with the fused twin, ONE message per partner carries the main values of
+    // its list piece, then the twin's (send position c + sp[p] and c + sp[p+1] for list
+    // entry c of partner p; receive s + rp[p] and s + rp[p+1]).  The same values reach
+    // the same band cells (bitwise); half the MPI messages per shell.
+    const bool mrg = two && vgd_merge && (np <= VGD_IPC_NS);
+    VgdIpcIdx spm{};
+    for (int p = 0; p <= np && p <= VGD_IPC_NS; ++p) {spm.v[p] = X.sp[p];}
+    if (mrg) {
+      const size_t nsm = 2*static_cast<size_t>(std::max(X.sp[np], 1));
+      const size_t nrm = 2*static_cast<size_t>(std::max(X.rp[np], 1));
+      if (vgd_csbm.extent(0) < nsm) {Kokkos::realloc(vgd_csbm, nsm);}
+      if (vgd_crbm.extent(0) < nrm) {Kokkos::realloc(vgd_crbm, nrm);}
+    }
+    auto csbm_ = vgd_csbm;
+    const int npm = np;
     if (X.ns > 0) {
       Kokkos::parallel_for("m1_vgd_hl_pack", VgdLight(vgd_cur, 0, X.ns),
       KOKKOS_LAMBDA(const int c) {
@@ -2037,6 +2104,13 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
         ad /= c3_;
         const int v = ad % nv_;
         const int m = ad/nv_;
+        if (mrg) {
+          int p = 0;
+          while (p + 1 < npm && spm.v[p+1] <= c) {++p;}
+          csbm_(c + spm.v[p]) = a_(m,v,kb,jb,i);
+          csbm_(c + spm.v[p+1]) = b_(m,v,kb,jb,i);
+          return;
+        }
         csb_(c) = a_(m,v,kb,jb,i);
         if (two) {csb2_(c) = b_(m,v,kb,jb,i);}
       });
@@ -2047,16 +2121,29 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
     auto &tq = vgd_hlp.tq;
     auto &req = vgd_hlp.req;
     req.clear();
-    for (int p = 0; p < np; ++p) {
-      const int rk = vgd_prk[p];
-      req.emplace_back();
-      MPI_Irecv(crb_.data() + rp_[p], rp_[p+1] - rp_[p], MPI_ATHENA_REAL, rk, 7002,
-                vgd_comm, &req.back());
-      req.emplace_back();
-      MPI_Isend(csb_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7002,
-                vgd_comm, &req.back());
+    vgd_hlp.mrg = mrg;
+    if (mrg) {
+      for (int p = 0; p < np; ++p) {
+        const int rk = vgd_prk[p];
+        req.emplace_back();
+        MPI_Irecv(vgd_crbm.data() + 2*rp_[p], 2*(rp_[p+1] - rp_[p]), MPI_ATHENA_REAL,
+                  rk, 7004, vgd_comm, &req.back());
+        req.emplace_back();
+        MPI_Isend(vgd_csbm.data() + 2*sp[p], 2*(sp[p+1] - sp[p]), MPI_ATHENA_REAL, rk,
+                  7004, vgd_comm, &req.back());
+      }
+    } else {
+      for (int p = 0; p < np; ++p) {
+        const int rk = vgd_prk[p];
+        req.emplace_back();
+        MPI_Irecv(crb_.data() + rp_[p], rp_[p+1] - rp_[p], MPI_ATHENA_REAL, rk, 7002,
+                  vgd_comm, &req.back());
+        req.emplace_back();
+        MPI_Isend(csb_.data() + sp[p], sp[p+1] - sp[p], MPI_ATHENA_REAL, rk, 7002,
+                  vgd_comm, &req.back());
+      }
     }
-    if (two) {
+    if (two && !mrg) {
       for (int p = 0; p < np; ++p) {
         const int rk = vgd_prk[p];
         req.emplace_back();
@@ -2161,12 +2248,21 @@ void RadiationM1::VetGdHlEnd() {
   for (int p = 0; p < np; ++p) {
     int got = 0;
     MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
-    if (got != rp_[p+1] - rp_[p]) {
+    if (got != (vgd_hlp.mrg ? 2 : 1)*(rp_[p+1] - rp_[p])) {
       VgdFatal("vet_gd_halo_list: sender and receiver lists disagree");
     }
     vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real)*(two ? 2 : 1);
   }
   }   // !ipc
+  // bsgaccel-1011 twin merge: one receive buffer, main at s + rp[p], twin at s + rp[p+1]
+  const bool mrg = vgd_hlp.mrg && !vgd_hlp.ipc;
+  VgdIpcIdx rpm{};
+  const int npm = np;
+  if (mrg) {
+    for (int p = 0; p <= np; ++p) {rpm.v[p] = rp_[p];}
+    crb_ = vgd_crbm;
+    crb2_ = vgd_crbm;
+  }
   // the scatter (the dense unpack of the expanded buffer, on the written entries)
   const int nr = X.nr, nw = X.nw;
   auto dl_ = X.dl;
@@ -2189,16 +2285,30 @@ void RadiationM1::VetGdHlEnd() {
         // (exact lists: sr = -1 is a read ghost the masks do not send: 0, as the dense
         // path; never on the mask lists)
         const int s = sr_(c);
-        a_(m,v,kb,jb,i) = (s >= 0) ? crb_(s) : 0.0;
-        if (two) {b_(m,v,kb,jb,i) = (s >= 0) ? crb2_(s) : 0.0;}
+        int s1 = s, s2 = s;
+        if (mrg && s >= 0) {
+          int p = 0;
+          while (p + 1 < npm && rpm.v[p+1] <= s) {++p;}
+          s1 = s + rpm.v[p];
+          s2 = s + rpm.v[p+1];
+        }
+        a_(m,v,kb,jb,i) = (s >= 0) ? crb_(s1) : 0.0;
+        if (two) {b_(m,v,kb,jb,i) = (s >= 0) ? crb2_(s2) : 0.0;}
         return;
       }
       const int cw = c - nr;
       Real val = 0.0, val2 = 0.0;
       for (int u = 0; u < 3; ++u) {
         const int s = sw_(3*cw + u);
-        val += w3_(m,kb,jb,v,u)*((s >= 0) ? crb_(s) : 0.0);
-        if (two) {val2 += w3_(m,kb,jb,v,u)*((s >= 0) ? crb2_(s) : 0.0);}
+        int s1 = s, s2 = s;
+        if (mrg && s >= 0) {
+          int p = 0;
+          while (p + 1 < npm && rpm.v[p+1] <= s) {++p;}
+          s1 = s + rpm.v[p];
+          s2 = s + rpm.v[p+1];
+        }
+        val += w3_(m,kb,jb,v,u)*((s >= 0) ? crb_(s1) : 0.0);
+        if (two) {val2 += w3_(m,kb,jb,v,u)*((s >= 0) ? crb2_(s2) : 0.0);}
       }
       a_(m,v,kb,jb,i) = val;
       if (two) {b_(m,v,kb,jb,i) = val2;}
