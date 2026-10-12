@@ -1618,6 +1618,12 @@ void RadiationM1::VetColReport() {
                 << "), tables (rotation) " << vgd_ttab << ", uniform twin " << vgd_ttwin
                 << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
                 << vgd_trb << " s)" << std::endl;
+      if (vra_on) {
+        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
+                  << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit
+                  << "), " << vra_time << " s incl. offsets (rank 0, fenced)"
+                  << std::endl;
+      }
       if (vgd_symref) {
         std::cout << "<rad_m1> vet_gd_symref: host start " << vgd_tsr << " s, join "
                   << vgd_tsrj << " s (rank 0)" << std::endl;

@@ -1078,6 +1078,28 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         }
       }
     }
+    // rotavg-1012: vet_rotate_avg = K (read only when named; absent or < 2 = off, bitwise;
+    // a restart whose file lacks the key keeps the old behaviour): the closure averaged
+    // over the last K rotated direction sets (rad_m1_rotavg.cpp).  The key is shared by
+    // every rotating closure; vet_gd: needs vet_gd_rotate_dt or _every (inert otherwise)
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg")) {
+      vra_k = pin->GetInteger("rad_m1","vet_rotate_avg");
+      if (vra_k > M1_RA_NF) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_rotate_avg must be <= " << M1_RA_NF
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      vra_on = (vra_k >= 2) && vgd_on;
+      if (vra_on && !VgdRotOn() && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": the vet_gd set does not "
+                  << "rotate (vet_gd_rotate_dt / _every 0): inert" << std::endl;
+      }
+      if (vra_on && VgdRotOn() && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": the vet_gd closure is "
+                  << "the mean over the last " << vra_k << " rotated sets" << std::endl;
+      }
+    }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
