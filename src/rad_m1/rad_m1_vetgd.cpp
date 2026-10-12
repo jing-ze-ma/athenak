@@ -3991,7 +3991,8 @@ void RadiationM1::VetGdSweep() {
   const int spe = VetSegMode();
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
-  const bool emi = vgd_emit && (lcut == 0) &&
+  // unify-sc-gd-1012 (#2): vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
+  const bool emi = (VetBcEmit() || (vgd_beam && vgd_emit)) && (lcut == 0) &&
                    (vgd_beam || ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
   const Real iemit = vgd_beam ? 0.0 : ((ibc_x1min == M1_IBC_FLUX) ?
                      4.0*iflux_x1min/c_light : iebath_x1min);
@@ -5828,7 +5829,7 @@ void RadiationM1::VetGdSymRef() {
   }
   in.F[ns] = vgd_sr_x1f[ie + 1];
   // the boundary rules of VetGdSweep (twin: no beam; vet_gd_symref refuses vet_gd_beam)
-  in.emi = vgd_emit && (lcut == 0) &&
+  in.emi = VetBcEmit() && (lcut == 0) &&
            (ibc_x1min == M1_IBC_FLUX || ibc_x1min == M1_IBC_MARSHAK);
   in.iemit = (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
   const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
