@@ -623,8 +623,12 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
                 const Real enr, const Real hdl, const Real hdr, const Real jl,
                 const Real jr, const Real esc, const Real h0, const Real h1,
                 const Real kn0, const Real knp, const Real ch, Real &alw, Real &ccl,
-                Real &ccr, Real &dg) {
+                Real &ccr, Real &dg, const Real hwl = -1.0, const Real hwr = 0.0) {
   dg = 0.0;
+  // coreL-1012 implicit_thin_hcface = tau: the face value of the formal-solution flux
+  // Hf = hwl H_L + hwr H_R (optical-depth weights x (r/r_f)^2, see the x1 kernel);
+  // hwl < 0: the arithmetic mean (H_L + H_R)/2 (default, bitwise)
+  const Real hmean = (hwl < 0.0) ? 0.5*(hdl + hdr) : (hwl*hdl + hwr*hdr);
   if (hpl < 0.0 || hmr > 0.0) {   // no formal solution in one of the two cells
     alw = 0.0;
     ccl = 0.0;
@@ -674,10 +678,10 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
     // E^n (no explicit transport at c dt/dx >> 1); the upwind part at the formal
     // solution's J then carries the central SC flux, clamped to |F| <= c J (donor)
     const Real hup = hpl*jl + hmr*jr;
-    const Real hf = fmin(fmax(0.5*(hdl + hdr), -jr), jl);
+    const Real hf = fmin(fmax(hmean, -jr), jl);
     dg = q*w*ch*(hf - hup);
   } else if (corr != M1_THCR_NONE && w > 0.0) {
-    Real hf = 0.5*(hdl + hdr);
+    Real hf = hmean;
     hf = fmin(fmax(hf, -fmax(enr, 0.0)), fmax(enl, 0.0));
     if (corr == M1_THCR_SC) {
       ccl = 0.0;
@@ -2078,6 +2082,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         } else if (srec.compare("dc") != 0) {
           ImplFatal("<rad_m1>/implicit_thin_recon = '" + srec
                     + "' is not a choice (dc | js | jse)");
+        }
+        // coreL-1012 (read only when named): implicit_thin_hcface = tau, the optical-
+        // depth weighted face value of the formal-solution flux of thin_corr (x1 faces)
+        if (pin->DoesParameterExist("rad_m1","implicit_thin_hcface")) {
+          std::string shf = pin->GetString("rad_m1","implicit_thin_hcface");
+          if (shf.compare("tau") == 0) {
+            thsw_hctau = true;
+          } else if (shf.compare("mean") != 0) {
+            ImplFatal("<rad_m1>/implicit_thin_hcface = '" + shf
+                      + "' is not a choice (mean | tau)");
+          }
         }
         std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq","cell");
         if (sbq.compare("lin") == 0) {
@@ -3639,6 +3654,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         if (tcorr == M1_THCR_HCS || tjse) {ImplicitHaloExchange(1, M1_IW_TR);}
       }
       auto fw = (d == 1) ? fw2 : fw3;
+      const bool thct = thsw_hctau;   // coreL-1012
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
       const int inx = (d == 1) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
       const int onx = (d == 1) ? BoundaryFace::outer_x2 : BoundaryFace::outer_x3;
@@ -3682,13 +3698,22 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
             gfl = M1HrSfFb(iw_, hsfb, m, km, jm, i, gfl);
             gfr = M1HrSfFb(iw_, hsfb, m, k, j, i, gfr);
           }
+          // coreL-1012 implicit_thin_hcface = tau: optical-depth weights (equal
+          // half-cell lengths on a transverse face)
+          Real hwl = -1.0, hwr = 0.0;
+          if (thct) {
+            const Real tl = fmax(iw_(m,M1_IW_KT,km,jm,i), 0.0);
+            const Real tr = fmax(iw_(m,M1_IW_KT,k,j,i), 0.0);
+            hwl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
+            hwr = 1.0 - hwl;
+          }
           M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
                      iw_(m,M1_IW_TA,km,jm,i), iw_(m,M1_IW_TA,k,j,i),
                      iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i),
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
-                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt);
+                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -11666,6 +11691,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
       const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
       const Real xcfl = impl_hr_xs_cfl;
+      const bool thct = thsw_hctau;   // coreL-1012
+      auto cx1vv = pmy_pack->pcoord->x1v;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -11772,6 +11799,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             }
             const Real gl2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, im, gl) : gl;
             const Real gr2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, ip, gr) : gr;
+            // coreL-1012 implicit_thin_hcface = tau: the formal-solution face flux
+            // interpolated linearly in OPTICAL DEPTH between the two cell centres (the
+            // flux changes with tau, not with r): Hf = (tau_R H_L + tau_L H_R)/(tau_L +
+            // tau_R), tau the half-cell depths; on the sp wedge of r^2 H (exact for a
+            // free-streaming exterior).  An opaque cell next to a thin one: Hf -> H of
+            // the thin cell (the flux the surface emits), not the mean across the kink
+            Real hwl = -1.0, hwr = 0.0;
+            if (thct) {
+              const Real dl = sphf ? (cx1ff(m,i) - cx1vv(m,im)) : 0.5*dx;
+              const Real dr = sphf ? (cx1vv(m,ip) - cx1ff(m,i)) : 0.5*dx;
+              const Real tl = fmax(ktl, 0.0)*dl, tr = fmax(ktr, 0.0)*dr;
+              hwl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
+              hwr = 1.0 - hwl;
+              if (sphf) {
+                const Real rf2 = SQR(cx1ff(m,i));
+                hwl *= SQR(cx1vv(m,im))/rf2;
+                hwr *= SQR(cx1vv(m,ip))/rf2;
+              }
+            }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl2, gr2, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
                        (tcorr != M1_THCR_HCS) ? 1.0
@@ -11779,7 +11825,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hgh_(m,M1_VGD_HREP,k,j,ip))
                               : fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
-                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt);
+                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr);
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;

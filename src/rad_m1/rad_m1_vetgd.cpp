@@ -3883,7 +3883,7 @@ void RadiationM1::VetGdSweep() {
   const bool bandx = vgd_bandx;
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
-  const bool spe = vet_seg_emit;
+  const int spe = VetSegMode();
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   const bool emi = vgd_emit && (lcut == 0) &&
@@ -4274,7 +4274,24 @@ void RadiationM1::VetGdSweep() {
               };
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
-              if (spl) {
+              const Real rfi = cx1f(m,i);
+              if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
+                // coreL-1012 vet_seg = jump: the turned ray dips below the own inner face;
+                // its chord there takes chi, S of the cell below (log-mean of the own
+                // column and the upwind point), the two own parts their own: piecewise
+                // constant per cell (the limb of an emitting body inside the half cell)
+                auto lind = [&](const int c) {
+                  const Real a = VgdLerp(VgdLerp(csx(m,c,k0,j0,i-1), csx(m,c,k0,j1,i-1), uj),
+                                         VgdLerp(csx(m,c,k1,j0,i-1), csx(m,c,k1,j1,i-1),
+                                                 uj), uk);
+                  return exp(0.5*(a + csx(m,c,k,j,i-1)));
+                };
+                const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
+                const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
+                const Real e3 = exp(-ch0*(zr - zf));
+                const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
+                iv = fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
+              } else if (spl) {
                 iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
                                       ch0*dso, spe), 0.0);
               } else {
@@ -5446,7 +5463,8 @@ namespace {
 // vgdlat-1012: the inputs of one VgdSymRefSolve (a copy: it may run on a host thread)
 struct VgdSrIn {
   int c1 = 0, ilo = 0, ns = 0, nc = 64, nsb = 4;
-  bool emi = false, bfc = false, spl = false, spe = false;
+  bool emi = false, bfc = false, spl = false;
+  int spe = 0;
   double iemit = 0.0, itop = 0.0;
   std::vector<double> R, F, chi, S;
 };
@@ -5455,7 +5473,8 @@ struct VgdSrIn {
 std::vector<double> VgdSymRefSolve(const VgdSrIn in) {
   const int ns = in.ns, c1 = in.c1, ilo = in.ilo;
   const std::vector<double> &R = in.R, &F = in.F, &chi = in.chi, &S = in.S;
-  const bool emi = in.emi, bfc = in.bfc, spl = in.spl, spe = in.spe;
+  const bool emi = in.emi, bfc = in.bfc, spl = in.spl;
+  const int spe = in.spe;
   const double iemit = in.iemit, itop = in.itop;
   auto segw = [](const double dtau, double &ex, double &w0, double &wu) {
     ex = std::exp(-dtau);
@@ -5588,6 +5607,13 @@ std::vector<double> VgdSymRefSolve(const VgdSrIn in) {
           bv = std::max((bfc ? (1.5*S[0] - 0.5*S[1]) : S[0]) + g0*muf, 0.0);
         }
         Iout[l] = bv*ex + wu*qv + w0*S[0];
+      } else if (spl && spe == 2 && l > 0 && p2 < F[l]*F[l]) {
+        // coreL-1012 vet_seg = jump: the turned ray's chord below the own inner face
+        // takes chi, S of the shell below (the sweep's rule)
+        const double zf = std::sqrt(std::max(F[l]*F[l] - p2, 0.0));
+        const double e1 = std::exp(-chi[l]*(zr - zf)), e2 = std::exp(-chi[l-1]*2.0*zf);
+        const double ia = Iin[l]*e1 + S[l]*(1.0 - e1);
+        Iout[l] = std::max((ia*e2 + S[l-1]*(1.0 - e2))*e1 + S[l]*(1.0 - e1), 0.0);
       } else {
         // turned in its own shell (typ 3)
         const double ds = 2.0*zr;
@@ -5704,7 +5730,7 @@ void RadiationM1::VetGdSymRef() {
   in.itop = tbh ? iebath_x1max : 0.0;
   in.bfc = vet_bc_face;
   in.spl = vet_seg_split;
-  in.spe = vet_seg_emit;
+  in.spe = VetSegMode();
   // on a host thread, overlapping the sweep (joined in VetGdSymRefJoin before the first
   // use); env VGD_SR_SYNC=1: inline (timing)
   static const bool sync = (std::getenv("VGD_SR_SYNC") != nullptr) &&

@@ -648,7 +648,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const bool tw = (stage == 0);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
-  const bool spe = vet_seg_emit;
+  const int spe = VetSegMode();
   auto vd_ = vlat_d;
   for (int pass = 0; pass < 2; ++pass) {
     const int dir = pass;                     // 0 inward, 1 outward

@@ -372,6 +372,9 @@ class RadiationM1 {
   bool vet_seg_split = false;  // vet_seg = split (segfix-1011): the SC segment u -> 0
   bool vet_seg_emit = false;   // vet_seg = emit: split, limiter only where S_u > S_0
                                // as two sub-segments split at the face
+  bool vet_seg_jump = false;   // vet_seg = jump (coreL-1012): emit + the contrast rule
+  // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump (rad_m1_vetseg.hpp)
+  int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_x1src = false;    // vet_x1_periodic_inflow = source (predfix-1011)
@@ -652,6 +655,7 @@ class RadiationM1 {
   // face-extrapolated H+ of the top cell), the js factor limit
   bool thsw_js = false, thsw_bqlin = false;
   bool thsw_jse = false;   // js weighted by the thermal fraction eps of the face
+  bool thsw_hctau = false;  // coreL-1012 implicit_thin_hcface = tau (M1ThinFace)
   Real thsw_jslim = 2.0;
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
