@@ -735,7 +735,11 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
           pin->GetInteger("rad_m1","implicit_beam_n") > 0) ||
          (pin->DoesParameterExist("rad_m1","vet_milne") &&
           pin->GetBoolean("rad_m1","vet_milne")));
-    const bool rot_cl = vgd_on || (vet_sc && !sc_pin);
+    // one rule for both closures: a set pinned by boundary beams (vet_gd_beam,
+    // implicit_beam_n; vet_sc's Milne diagnostic) gets no DEFAULT rotation, and a named
+    // rotation with it is FATAL (vet_gd: VetGdBeamInit; vet_sc: below) -- the beams are
+    // injected along fixed rays of the set
+    const bool rot_cl = vgd_on || vet_sc;
     bool rot_phys = false;
     if (rot_cl && rdt_named) {
       const std::string rv = pin->GetString("rad_m1","vet_gd_rotate_dt");
@@ -752,6 +756,13 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
       vgd_rot_auto = true;
       rot_phys = true;
     }
+    if (rot_phys && vet_sc && sc_pin) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/vet_gd_rotate_dt: the vet_sc set is pinned by "
+                << "boundary beams (implicit_beam_n) or vet_milne; no rotation (as "
+                << "vet_gd_beam)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (rot_phys) {
       vsc_rot = vet_sc;
       vgd_rot = 0;
@@ -760,7 +771,11 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
       vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
       vgd_rot_stretch = pin->GetOrAddReal("rad_m1","vet_gd_rotate_stretch",
                                           fresh ? 0.02 : 0.0);
-      std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope","keep");
+      // defaults2-1012: _slope DEFAULT correct on a FRESH run (Time2RotCorrect; acts
+      // only under time_scheme = hesdirk2, inert otherwise); a restart whose file lacks
+      // the key keeps keep (bitwise older runs).  Echoed, so a later restart keeps it.
+      std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope",
+                                           fresh ? "correct" : "keep");
       if (rs.compare("keep") == 0) {
         vgd_rot_slope = 0;
       } else if (rs.compare("probe") == 0) {

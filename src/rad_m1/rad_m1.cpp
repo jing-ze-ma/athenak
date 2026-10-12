@@ -1017,7 +1017,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // rotation); a restart whose file lacks both keys keeps the old default (no rotation).
     // The sub-keys are read (and echoed) with the physical clock: vet_gd_rotate_t0 (0),
     // _align (true), _stretch (0.02 on a fresh run since defaults-1012, 0 on a restart
-    // whose file lacks it), _slope (keep).
+    // whose file lacks it), _slope (correct on a fresh run since defaults2-1012, keep on a
+    // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
