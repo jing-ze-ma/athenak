@@ -379,6 +379,23 @@ class RadiationM1 {
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_x1src = false;    // vet_x1_periodic_inflow = source (predfix-1011)
+  // bubbles-1012: a NON-periodic x2 (x3) mesh boundary (outflow, reflect, user, ...) is
+  // a VACUUM face for the formal solution: a ray whose foot leaves the box through it
+  // enters with I = 0 (no incoming radiation; single MeshBlock sweep only).  Periodic
+  // x2 (x3) keeps the wrap, bit for bit.
+  bool vet_x2open = false, vet_x3open = false;
+  // bubbles-1012: the vet_sc angle set and its ROTATION on the vet_gd clock (the same
+  // keys vet_gd_rotate_dt | _t0 | _align | _stretch | _slope and the same fresh default
+  // auto = 20 x the first dt; VetGdBlock / VetGdAngleBlk / VetGdAlignDt / VetGdRotStep).
+  // Double-Gauss: the azimuths about x1 turn by (2 pi/nphi) q; ring: the in-plane angles
+  // turn by 0.8 (q - 1/2) (2 pi/N) (never past +-x2, where an x1 sweep has no ray);
+  // q = alpha/(pi/2) in [0, 1) the low-discrepancy fraction of the block.
+  int vet_ring_n = 0, vet_ring_g = 1;   // vet_ring, vet_ring_groups (0: double-Gauss)
+  bool vsc_rot = false;                 // vet_sc rotates (physical clock)
+  Real vsc_beta = 0.0;                  // the current rotation of the vet_sc set
+  void VetBuildAngles(const Real beta);
+  void VetRotInit(ParameterInput *pin);   // the shared rotation keys (rad_m1_vetgd.cpp)
+  void VetRotUpdate();
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
@@ -463,6 +480,12 @@ class RadiationM1 {
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
+  // bubbles-1012: the transverse (x2, x3) physical faces of the implicit solve,
+  // <rad_m1>/implicit_bc_x2min|x2max|x3min|x3max = auto (default: periodic on a
+  // periodic mesh, else REFLECT = zero flux, as always) | reflect | marshak (the vacuum
+  // free surface F_f = c marshak_q E of the boundary cell, outward; the formal solution
+  // enters there with I = 0).  Read only when named.
+  int ibc_x2min = 2, ibc_x2max = 2, ibc_x3min = 2, ibc_x3max = 2;
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering

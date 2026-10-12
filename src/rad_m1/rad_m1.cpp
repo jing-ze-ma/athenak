@@ -828,6 +828,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // 1-D branch) keeps Levermore's
     eddington = false;
     vet_sc = true;
+    VetRotInit(pin);   // bubbles-1012: the vet_gd rotation keys and defaults
     // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp), read when named
     if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
@@ -1017,67 +1018,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // The sub-keys are read (and echoed) with the physical clock: vet_gd_rotate_t0 (0),
     // _align (true), _stretch (0.02 on a fresh run since defaults-1012, 0 on a restart
     // whose file lacks it), _slope (keep).
-    {
-      const bool rdt_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt");
-      const bool rev_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_every");
-      const bool beam_named = pin->DoesParameterExist("rad_m1","vet_gd_beam") &&
-                              pin->GetBoolean("rad_m1","vet_gd_beam");
-      const bool async_named = pin->DoesParameterExist("rad_m1","vet_gd_async") &&
-                               pin->GetBoolean("rad_m1","vet_gd_async");
-      bool rot_phys = false;
-      if (vgd_on && rdt_named) {
-        const std::string rv = pin->GetString("rad_m1","vet_gd_rotate_dt");
-        if (rv.compare("auto") == 0) {
-          vgd_rot_auto = true;
-        } else {
-          vgd_rot_dt = pin->GetReal("rad_m1","vet_gd_rotate_dt");
-        }
-        rot_phys = vgd_rot_auto || (vgd_rot_dt > 0.0);
-      } else if (vgd_on && !rev_named && fresh && !beam_named && !async_named) {
-        vgd_rot_auto = true;
-        rot_phys = true;
-      }
-      if (rot_phys) {
-        vgd_rot = 0;
-        pin_rot_ = pin;
-        vgd_rot_t0 = pin->GetOrAddReal("rad_m1","vet_gd_rotate_t0",0.0);
-        vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
-        vgd_rot_stretch = pin->GetOrAddReal("rad_m1","vet_gd_rotate_stretch",
-                                            fresh ? 0.02 : 0.0);
-        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope","keep");
-        if (rs.compare("keep") == 0) {
-          vgd_rot_slope = 0;
-        } else if (rs.compare("probe") == 0) {
-          vgd_rot_slope = 1;
-        } else if (rs.compare("be") == 0) {
-          vgd_rot_slope = 2;
-        } else if (rs.compare("correct") == 0) {
-          // rotslope-1012 (Time2RotCorrect); frac in units of the step (default the
-          // stage size gamma = 1 - 1/sqrt 2)
-          vgd_rot_slope = 3;
-          vgd_rot_cfrac = pin->GetOrAddReal("rad_m1","vet_gd_rotate_slope_frac",
-                                            1.0 - 1.0/std::sqrt(2.0));
-          vgd_rot_creuse = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_slope_reuse",
-                                                true);
-          if (!(vgd_rot_cfrac > 0.0 && vgd_rot_cfrac <= 1.0)) {
-            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "<rad_m1>/vet_gd_rotate_slope_frac must be in "
-                      << "(0, 1]" << std::endl;
-            std::exit(EXIT_FAILURE);
-          }
-        } else {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_m1>/vet_gd_rotate_slope = '" << rs
-                    << "' is not a choice (probe | be | correct | keep)" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        if (vgd_rot_auto) {
-          vgd_rot_auto_fac = 20.0;
-          // the value is recorded once resolved; until then the key reads "auto"
-          pin->SetString("rad_m1","vet_gd_rotate_dt","auto");
-        }
-      }
-    }
+    VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
