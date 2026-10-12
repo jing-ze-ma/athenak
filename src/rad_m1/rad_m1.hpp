@@ -393,6 +393,19 @@ class RadiationM1 {
   int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
   bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
   bool vet_bc_bath;          // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
+  // unify-sc-gd-1012 (#2): the x1 boundary intensity of the formal solutions, one rule
+  // for vet_sc and vet_gd (VetBcInit, rad_m1.cpp).  vet_bc_inner (alias vet_gd_inner on
+  // vet_gd): the entering intensity at a MARSHAK or FLUX inner x1 face, 0 diff (the
+  // diffusion intensity), 1 emit (the face's own emission: the Marshak bath, or the
+  // black sphere 4 F/c of a flux face), 2 auto (emit at a Marshak face, diff at a flux
+  // face).  vet_bc_reflect: a REFLECTING x1 end, vet_bc_mirror = the entering rays
+  // carry the mirrored leaving intensity (vet_sc; vet_gd: the vet_col column mirrors,
+  // the gd sweep keeps diff at x1min and refuses a reflecting x1max).
+  int vet_bc_inner = 0;
+  bool vet_bc_mirror = false;
+  void VetBcInit(ParameterInput *pin, const bool gd);
+  bool VetBcEmit() const;    // the inner rule at the current implicit_bc_x1min is emit
+  Real VetBathLo() const;    // vet_sc: the entering inner intensity of emit (-1: diff)
   bool vet_bc_face = false;  // vet_bc_diff = face: inner diffusion I at the face (vet_sc,
                              // vet_gd, vet_col_lat, vet_col core; gdface-1011)
   bool vet_seg_split = false;  // vet_seg = split (segfix-1011): the SC segment u -> 0
@@ -403,6 +416,8 @@ class RadiationM1 {
   int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
+  int vet_mirror_npass = 4;  // unify-sc-gd-1012: passes of a cavity mirrored at both x1
+                             // ends (vet_bc_reflect; vet_x1_npass when named)
   bool vet_x1src = false;    // vet_x1_periodic_inflow = source (predfix-1011)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
