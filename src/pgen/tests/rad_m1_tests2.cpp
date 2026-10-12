@@ -144,6 +144,8 @@ bool m1_shg_hold = false;
 Real m1_shg_gm1 = 2.0/3.0;
 // h2order-1011 (gas_hold_v): the radial flow v_r = vr sin(pi (x1 - x1a)/x1l) re-imposed
 Real m1_shv_vr = 0.0, m1_shv_x1a = 0.0, m1_shv_x1l = 1.0;
+// h2order2-1011 (gas_hold_rho, with gas_hold_v): the density re-imposed too (<= 0: off)
+Real m1_shv_rho = 0.0;
 
 // STAGE CS2 (radwave, rw_hist): the plane-wave vector / the cs sectoral mode frame
 Real m1_rw_k[3] = {0.0, 0.0, 0.0};
@@ -989,6 +991,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       m1_shv_x1a = pmy_mesh_->mesh_size.x1min;
       m1_shv_x1l = pmy_mesh_->mesh_size.x1max - pmy_mesh_->mesh_size.x1min;
       user_srcs_func = RadM1ShellHoldV;
+      // h2order2-1011 (read only when named): gas_hold_rho = true also re-imposes rho =
+      // gas_rho (a medium fixed in time: velocity AND opacity constant)
+      if (pin->DoesParameterExist("problem","gas_hold_rho") &&
+          pin->GetBoolean("problem","gas_hold_rho")) {
+        m1_shv_rho = pin->GetReal("problem","gas_rho");
+      }
     }
     const M1ShellGasP shp = m1_shg;
     if (restart) return;
@@ -1603,12 +1611,15 @@ void RadM1ShellHoldV(Mesh *pm, const Real bdt) {
   auto uh = pmbp->phydro->u0;
   auto &size = pmbp->pmb->mb_size;
   const Real vr0 = m1_shv_vr, x1a = m1_shv_x1a, x1l = m1_shv_x1l;
+  const Real rh0 = m1_shv_rho;
   par_for("m1_shg_holdv", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     const Real r = CellCenterX(i-is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    const Real dd = uh(m,IDN,k,j,i);
+    const Real d0 = uh(m,IDN,k,j,i);
     const Real ei = uh(m,IEN,k,j,i) - 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i))
-                                           + SQR(uh(m,IM3,k,j,i)))/dd;
+                                           + SQR(uh(m,IM3,k,j,i)))/d0;
+    const Real dd = (rh0 > 0.0) ? rh0 : d0;
+    if (rh0 > 0.0) {uh(m,IDN,k,j,i) = rh0;}
     const Real vr = vr0*sin(M_PI*(r - x1a)/x1l);
     uh(m,IM1,k,j,i) = dd*vr;
     uh(m,IM2,k,j,i) = 0.0;
