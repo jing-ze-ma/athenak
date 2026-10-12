@@ -657,6 +657,7 @@ class RadiationM1 {
   bool thsw_js = false, thsw_bqlin = false;
   bool thsw_jse = false;   // js weighted by the thermal fraction eps of the face
   bool thsw_hctau = false;  // coreL-1012 implicit_thin_hcface = tau (M1ThinFace)
+  bool thsw_jsmean = false;  // jsfix-1012 implicit_thin_js_face = mean (M1ThinJs)
   bool thsw_hctau_lat = false;  // ... and on the sp wedge's transverse faces (gd = all)
   Real thsw_jslim = 2.0;
   // unify-1012: implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh as the cell's
