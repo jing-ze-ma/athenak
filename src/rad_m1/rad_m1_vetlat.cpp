@@ -455,6 +455,12 @@ void RadiationM1::VetLatCsFinish() {
   // there (one global min); the shells below keep dD = 0
   {
     const Real tcut = vlat_taucut;
+    // unify-sc-gd-1012 (opaque surfaces): vet_col_lat_cut_thin = t > 0 also keeps every
+    // cell of optical thickness < t inside the sweep: the cut never lies above a locally
+    // THIN cell (a cavity under an opaque shell, a gap below a cold layer), whose faces
+    // would otherwise get no half-range data from the formal solution (central faces:
+    // the cavity E of a closed cold shell ~ tau_cell x E_free)
+    const Real tthin = vlat_cut_thin;
     const int nk = ke - ks + 1, nj = je - js + 1;
     int lmin = n1 - 2;
     Kokkos::parallel_reduce("m1_vlat_icut",
@@ -469,6 +475,14 @@ void RadiationM1::VetLatCsFinish() {
           const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
           if (tau + 0.5*dt_ >= tcut) {lc = i - is; break;}
           tau += dt_;
+        }
+        if (tthin > 0.0) {
+          for (int i = is; i < is + lc; ++i) {
+            if (exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i)) < tthin) {
+              lc = i - is;
+              break;
+            }
+          }
         }
         lm = (lc < lm) ? lc : lm;
       }, Kokkos::Min<int>(lmin));

@@ -1399,6 +1399,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taucut")) {
         vlat_taucut = pin->GetReal("rad_m1","vet_col_lat_taucut");
       }
+      // unify-sc-gd-1012: vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
+      // run; a restart whose file lacks the key keeps 0 (the depth cut alone, bitwise)
+      vlat_cut_thin = pin->GetOrAddReal("rad_m1","vet_col_lat_cut_thin",
+                                        global_variable::restart_run ? 0.0 : 1.0);
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumin")) {
         vlat_taumin = pin->GetReal("rad_m1","vet_col_lat_taumin");
       }

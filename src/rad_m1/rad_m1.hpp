@@ -1820,6 +1820,8 @@ class RadiationM1 {
   Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
                                // has tau_top >= this (global shell index vlat_icut)
   int vlat_icut = 0;
+  Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin (unify-sc-gd-1012): no cut above a
+                               // cell thinner than this (0 off)
   Real vlat_taumax = 0.0;      // vet_col_lat_taumax: depth taper (0 off)
   Real vlat_taumin = 0.0;      // vet_col_lat_taumin: thin-top cap (0 off)
   DvceArray4D<Real> vlat_wt;   // (m, k, j, i): the taper weight
