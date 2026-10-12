@@ -1716,6 +1716,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_predictor = '" + pr
               + "' is not a choice (none | step)");
   }
+  // unify-sc-gd-1012 (#10) implicit_predictor_frozen: with a fixed-tensor closure the
+  // step predictor was switched off under berthon / blend + implicit_recon_lag = step
+  // except on the sp wedge (spfx: the face reduced flux is f(D_rr) of the lagged
+  // closure there, not the iterate's).  Under implicit_flux_beam = halfrange with an
+  // implicit_thin_switch every face coefficient is built from the formal solution and
+  // E^n alone (M1ThinFace), on every mesh, so the predictor moves only the starting
+  // point there as on the wedge.  true: that rule on every mesh (DEFAULT on a fresh run);
+  // false: the old sp-only gate (a restart whose file lacks the key; echoed).
+  if (impl_pred) {
+    impl_pred_frz = pin->GetOrAddBoolean("rad_m1","implicit_predictor_frozen",
+                                         !global_variable::restart_run);
+  }
   }
   if (impl_ecnt < 0 || impl_ecnt > M1_EC_NTMAX) {
     ImplFatal("<rad_m1>/implicit_eos_cache_nt must lie in [0,8]");
@@ -1940,6 +1952,27 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         impl_hr_sf = vet_sc;
       } else if (shf.compare("cell") != 0) {
         ImplFatal("<rad_m1>/implicit_hr_face = '" + shf + "' is not a choice (sf | cell)");
+      }
+      // unify-sc-gd-1012 (#4): sf on vet_gd too.  The donor scale Jh and the face fluxes
+      // H+-_d = h+-_d J come from vgd_hr (VetGdHalfRange: twin-corrected ratios and J),
+      // on the face set implicit_hr_face_gd = x1 | all | none (the lateral gd half-range
+      // data are the per-shell lateral interpolation whose beam-edge error forced
+      // implicit_thin_js_gd = x1).  DEFAULT none (opt-in; the old behaviour, bitwise):
+      // x1 is bitwise on AG Car A and bsgR (no cell with Jh > J) but in the P2 channel
+      // beam (pinc) the twin-corrected gd ratios make Jh > J cells that turn the Picard
+      // loop into a limit cycle (Picard 5.1 -> 36.8, 21 NONCONV; L/L_ex 0.566 -> 0.535;
+      // pinc + implicit_hr_excess DIVERGED), the same gd lateral-data limit as js_gd.
+      if (vgd_on && sph_geom && shf.compare("sf") == 0) {
+        std::string sg = pin->GetOrAddString("rad_m1","implicit_hr_face_gd","none");
+        if (sg.compare("x1") == 0) {
+          impl_hr_sfgd = 1;
+        } else if (sg.compare("all") == 0) {
+          impl_hr_sfgd = 3;
+        } else if (sg.compare("none") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_face_gd = '" + sg
+                    + "' is not a choice (x1 | all | none)");
+        }
+        if (impl_hr_sfgd != 0) {impl_hr_sf = true;}
       }
       // sptests-1011 P2: implicit_hr_excess = none (default) | iso (vet_gd ratios only)
       std::string sxs = pin->GetOrAddString("rad_m1","implicit_hr_excess","none");
@@ -2815,6 +2848,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     iw_muscl = niw;
     niw += M1_NIW_MUSCL;
   }
+  if (impl_hr_sfgd != 0) {vgd_thx = true;}   // unify-sc-gd-1012 (#4): J in vgd_hr
   iw_hsf = -1;
   if (impl_hr_sf) {   // cbfix-1011
     iw_hsf = niw;
@@ -3632,6 +3666,25 @@ void RadiationM1::ImplicitHrSfBuild() {
   const bool cyc = (ibc_x1min == M1_IBC_PERIODIC);
   Kokkos::deep_copy(Kokkos::subview(iw, Kokkos::ALL, std::make_pair(b, b + M1_NIW_HSF),
                                     Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), 0.0);
+  // unify-sc-gd-1012 (#4): vet_gd fills the same block from vgd_hr, H+-_d = h+-_d J
+  // (twin-corrected ratios, J in E units); a cell without a formal solution (below the
+  // vet_gd cut, hp < 0) takes Jh = J = E^n and no face flux (never an sf cell)
+  const bool gd = (impl_hr_sfgd != 0) && !vet_sc;
+  if (gd && vgd_hr.extent_int(1) < M1_VGD_HRNX) {return;}
+  auto gh_ = vgd_hr;
+  if (gd) {
+    par_for("m1_impl_hsfg", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool ok = (gh_(m,0,k,j,i) >= 0.0);
+      const Real jj = ok ? fmax(gh_(m,M1_VGD_HRJ,k,j,i), 0.0)
+                         : fmax(iw_(m,M1_IW_EN,k,j,i), 0.0);
+      for (int d = 0; d < nd; ++d) {
+        iw_(m,b+M1_HSF_HP+2*d,k,j,i) = ok ? fmax(gh_(m,2*d,k,j,i), 0.0)*jj : 0.0;
+        iw_(m,b+M1_HSF_HM+2*d,k,j,i) = ok ? fmin(gh_(m,2*d+1,k,j,i), 0.0)*jj : 0.0;
+      }
+      iw_(m,b+M1_HSF_J,k,j,i) = jj;
+    });
+  } else {
   par_for("m1_impl_hsf", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int d = 0; d < nd; ++d) {
@@ -3641,6 +3694,7 @@ void RadiationM1::ImplicitHrSfBuild() {
     }
     iw_(m,b+M1_HSF_J,k,j,i) = fmax(vc_(m,M1_VET_J,k,j,i), 0.0);
   });
+  }
   if (tr) {
     for (int c = 0; c < 2*nd; ++c) {ImplicitHaloExchange(1, b + c);}
   }
@@ -3755,7 +3809,9 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const bool tjse = tjs && thsw_jse;
     const Real tjl = thsw_jslim;
     const bool tjm = thsw_jsmean;   // jsfix-1012
-    const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
+    // cbfix-1011; unify-sc-gd-1012 (#4): vet_gd on implicit_hr_face_gd = all
+    const int hsfb = (impl_hr_sf && (hsrc == 1 || (hsrc == 2 && (impl_hr_sfgd & 2))))
+                     ? iw_hsf : -1;
     const bool hcjh = thsw_hcjh;   // unify-1012
     const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
     const Real xcfl = impl_hr_xs_cfl;
@@ -11515,7 +11571,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // sp-blend-1008: on the multi-D wedge with a fixed-tensor closure the frozen face
   // coefficients read f(D_rr) of the step's lagged closure, not the iterate, so the
   // predicted start does not enter them and the predictor stays on
-  const bool spfx = sph_geom && trans_on && !edd && (vetsc || tauc);
+  const bool spfx = trans_on && !edd && (vetsc || tauc) &&
+                    (sph_geom || (impl_pred_frz && impl_beam_hr &&
+                                  impl_thsw != M1_THSW_NONE));
   const bool pred = impl_pred && (edd || vetsc || tauc) && !(aphll && rfreeze && !spfx);
   if (impl_pred && (static_cast<int>(ipred.extent(0)) != nmb1 + 1)) {
     pred_ok = false;   // the pack changed size (AMR): start cold
@@ -12018,7 +12076,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool tjse = thsw_jse;
       const Real tjl = thsw_jslim;
       const bool tjm = thsw_jsmean;   // jsfix-1012
-      const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
+      // cbfix-1011; unify-sc-gd-1012 (#4): vet_gd on implicit_hr_face_gd = x1 | all
+      const int hsfb = (impl_hr_sf && (hsrc == 1 || (hsrc == 2 && (impl_hr_sfgd & 1))))
+                       ? iw_hsf : -1;
       const bool hcjh = thsw_hcjh;   // unify-1012
       const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
       const Real xcfl = impl_hr_xs_cfl;

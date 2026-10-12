@@ -53,6 +53,11 @@
 //! Top (x1max face), downward rays: vacuum.  With vet_bc_bath (default true, m1-h2div)
 //! an x1 end whose implicit_bc is marshak gives its entering rays the isotropic incident
 //! bath eps = implicit_ebath of that end instead (0: vacuum).
+//! unify-sc-gd-1012 (#2, VetBcInit in rad_m1.cpp): the inner end follows vet_bc_inner
+//! (shared with vet_gd): emit = the Marshak bath or the black sphere 4 F/c of a flux
+//! face, diff = the diffusion intensity above, auto (default) = emit at a Marshak face;
+//! a REFLECTING x1max takes the mirrored leaving intensity (vet_bc_reflect = auto, the
+//! default; mirror: both ends; open = the old diffusion / vacuum).
 //!
 //! SEVERAL MESHBLOCKS / MPI RANKS (VetSweepMB).  The same sweep over the GLOBAL layers,
 //! EXACT: the planes are banded by w = floor(max dx1 |mu_perp/mu_1|/dx_perp) + 1 cells
@@ -96,8 +101,10 @@
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vetsrc.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -802,6 +809,7 @@ struct VetRayK {
   bool bfc;                    // deepatm-1011: vet_bc_diff = face (bottom E at the face)
   bool spl;                    // segfix-1011: vet_seg = split
   int spe;                     // VetSegMode(): 0 split, 1 emit, 2 jump
+  int vim = 0;                 // unify-sc-gd-1012 vet_interp: 0 lin 1 log 2 corner 3 auto
   DvceArray2D<int> rd;
   DvceArray4D<Real> bw;
   DvceArray5D<Real> cs, ip;
@@ -930,7 +938,15 @@ struct VetRayK {
                       + wba*cs(m,li,0,kb,ja) + wbb*cs(m,li,0,kb,jb);
       const Real su = waa*cs(m,li,1,ka,ja) + wab*cs(m,li,1,ka,jb)
                       + wba*cs(m,li,1,kb,ja) + wbb*cs(m,li,1,kb,jb);
-      if (spl) {
+      if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
+        const Real wq[4] = {waa, wab, wba, wbb};
+        const Real iq[4] = {iaa, iab, iba, ibb};
+        const Real cq[4] = {cs(m,li,0,ka,ja), cs(m,li,0,ka,jb), cs(m,li,0,kb,ja),
+                            cs(m,li,0,kb,jb)};
+        const Real sq[4] = {cs(m,li,1,ka,ja), cs(m,li,1,ka,jb), cs(m,li,1,kb,ja),
+                            cs(m,li,1,kb,jb)};
+        iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+      } else if (spl) {
         // segfix-1011: vet_seg = split, the two halves at the x1 face
         iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
       } else {
@@ -1374,7 +1390,7 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                  const int ks, const int nx1, const int nx2, const int nx3,
                  const bool thrd, const bool milne, const Real fmil, const Real bblo,
                  const Real bbhi, const bool bfc, const bool spl, const int spe,
-                 const Real cl,
+                 const int vim, const Real cl,
                  const Real efl, const DvceArray5D<Real> &iw_,
                  const DvceArray5D<Real> &vc_, const DvceArray2D<Real> &ang_) {
   const int nx1g = st.nx1g, n2g = st.n2g, n3g = st.n3g, nbx2 = st.nbx2;
@@ -1536,7 +1552,16 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                         + wba*gc_(iup,0,kb,ja) + wbb*gc_(iup,0,kb,jb);
         const Real su = waa*gc_(iup,1,ka,ja) + wab*gc_(iup,1,ka,jb)
                         + wba*gc_(iup,1,kb,ja) + wbb*gc_(iup,1,kb,jb);
-        if (spl) {
+        if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
+          const Real wq[4] = {waa, wab, wba, wbb};
+          const Real iq[4] = {gp_(pr,rr,ka,ja), gp_(pr,rr,ka,jb), gp_(pr,rr,kb,ja),
+                              gp_(pr,rr,kb,jb)};
+          const Real cq[4] = {gc_(iup,0,ka,ja), gc_(iup,0,ka,jb), gc_(iup,0,kb,ja),
+                              gc_(iup,0,kb,jb)};
+          const Real sq[4] = {gc_(iup,1,ka,ja), gc_(iup,1,ka,jb), gc_(iup,1,kb,ja),
+                              gc_(iup,1,kb,jb)};
+          iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+        } else if (spl) {
           // segfix-1011: vet_seg = split, the two halves at the x1 face
           iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
         } else {
@@ -1646,6 +1671,19 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
 } // namespace
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VetBathLo
+//! \brief unify-sc-gd-1012 (#2): the isotropic intensity entering the vet_sc sweep at the
+//! inner x1 face when vet_bc_inner resolves to emit (VetBcEmit): the Marshak bath
+//! implicit_ebath_x1min, or the black sphere 4 F/c of a flux face; -1 = the diffusion
+//! intensity (or the Milne diagnostic's exact one).  The old rule (vet_bc_bath at a
+//! Marshak face) is vet_bc_inner = auto, bitwise.
+
+Real RadiationM1::VetBathLo() const {
+  if (vet_milne || !VetBcEmit()) {return -1.0;}
+  return (ibc_x1min == M1_IBC_MARSHAK) ? iebath_x1min : 4.0*iflux_x1min/c_light;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetInit
 
 void RadiationM1::VetInit(ParameterInput *pin) {
@@ -1691,6 +1729,49 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // diffuse-wall shadow the wall cell went to f = 1, E = 1.5-1.6 E_bath (exact 0.5) at
   // every dt and time scheme, and under hesdirk2 its stages failed every step.  Default
   // true; a restart whose file lacks the key keeps the old boundary (false).
+  // unify-sc-gd-1012 (#6): vet_interp = auto | lin | log | corner, the upwind stencil of
+  // the SC segment (VetUpCorner, rad_m1_vetseg.hpp).  auto = corner at a material edge
+  // (stencil chi contrast > 4), log elsewhere (as vet_gd, which reads the same key).  DEFAULT auto on a fresh run; a
+  // restart whose file lacks the key keeps lin (the old vet_sc form, bitwise).
+  {
+    const std::string vi = pin->GetOrAddString("rad_m1", "vet_interp",
+                               global_variable::restart_run ? "lin" : "auto");
+    if (vi.compare("lin") == 0) {
+      vet_interp = 0;
+    } else if (vi.compare("log") == 0) {
+      vet_interp = 1;
+    } else if (vi.compare("corner") == 0) {
+      vet_interp = 2;
+    } else if (vi.compare("auto") == 0) {
+      vet_interp = 3;
+    } else {
+      VetFatal("<rad_m1>/vet_interp = '" + vi + "' is not a choice (auto | lin | log | "
+               "corner)");
+    }
+  }
+  // unify-sc-gd-1012 (#3): vet_source = relaxed | gas, the VET source of a lagged build
+  // (and of predict / rebuild unless time2_vet_source overrides it), as vet_col / vet_gd
+  // (vet_col_source there).  DEFAULT relaxed on a fresh run (vet_col's default; blend
+  // needs it: with gas the predict build takes the state's source); a restart whose
+  // file lacks the key keeps gas (vet_sc's old source, echoed).  OPEN (both closures):
+  // relaxed / blend force S -> B where c dt rho kappa_a >> 1 in a scattering-dominated
+  // atmosphere (nlte2 two-stage A at c dt/dx 1e6: top bands -5 %; gas fixes it there but
+  // costs bsgR Picard 2.8 -> 5.0).
+  {
+    const std::string vs = pin->GetOrAddString("rad_m1", "vet_source",
+                               global_variable::restart_run ? "gas" : "relaxed");
+    if (vs.compare("relaxed") == 0) {
+      vcol_srelax = true;
+    } else if (vs.compare("gas") == 0) {
+      vcol_srelax = false;
+    } else {
+      VetFatal("<rad_m1>/vet_source = '" + vs + "' is not a choice (relaxed | gas)");
+    }
+  }
+  // unify-sc-gd-1012 (#2): vet_bc_inner / vet_bc_reflect (VetBcInit, rad_m1.cpp; read
+  // before vet_bc_bath is recorded, whose old inner meaning a restart keeps).  The inner
+  // end now follows vet_bc_inner (VetBathLo); vet_bc_bath keeps the top bath.
+  VetBcInit(pin, false);
   vet_bc_bath = pin->GetOrAddBoolean("rad_m1", "vet_bc_bath",
                                      !global_variable::restart_run);
   // deepatm-1011: the bottom (x1min) diffusion intensity of the formal solution,
@@ -1775,6 +1856,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // each ray per box crossing.  Single MeshBlock only.  Read only when named.
   vet_x1per = false;
   vet_x1npass = 1;
+  if (pin->DoesParameterExist("rad_m1", "vet_x1_npass")) {
+    vet_mirror_npass = std::max(2, pin->GetInteger("rad_m1", "vet_x1_npass"));
+  }
   if (pin->DoesParameterExist("rad_m1", "vet_x1_periodic")) {
     vet_x1per = pin->GetBoolean("rad_m1", "vet_x1_periodic");
   }
@@ -2730,12 +2814,12 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const Real efl = e_floor;
   const bool milne = vet_milne;
   const Real fmil = iflux_x1min;
-  const Real bblo = (vet_bc_bath && !milne && ibc_x1min == M1_IBC_MARSHAK) ?
-                     iebath_x1min : -1.0;
+  const Real bblo = VetBathLo();   // unify-sc-gd-1012 (#2): vet_bc_inner
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;   // deepatm-1011
   const bool spl = vet_seg_split;   // segfix-1011
   const int spe = VetSegMode();
+  const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
   auto bw_ = st.bwe;
   const int ncb = nx3*nx2*nx1, npb = nx3*nx2;
 #if MPI_PARALLEL_ENABLED
@@ -2866,6 +2950,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   rk.bfc = bfc;
   rk.spl = vet_seg_split;
   rk.spe = VetSegMode();
+  rk.vim = vet_interp;
   rk.cl = cl;
   rk.efl = efl;
   rk.rd = rd_;
@@ -3140,7 +3225,16 @@ void RadiationM1::VetSweepMB(bool lagged) {
                             + wba*cs_(m,li,0,kb,ja) + wbb*cs_(m,li,0,kb,jb);
             const Real su = waa*cs_(m,li,1,ka,ja) + wab*cs_(m,li,1,ka,jb)
                             + wba*cs_(m,li,1,kb,ja) + wbb*cs_(m,li,1,kb,jb);
-            if (spl) {
+            if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
+              const Real wq[4] = {waa, wab, wba, wbb};
+              const Real iq[4] = {ip_(m,pr,r,ka,ja), ip_(m,pr,r,ka,jb), ip_(m,pr,r,kb,ja),
+                                  ip_(m,pr,r,kb,jb)};
+              const Real cq[4] = {cs_(m,li,0,ka,ja), cs_(m,li,0,ka,jb), cs_(m,li,0,kb,ja),
+                                  cs_(m,li,0,kb,jb)};
+              const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
+                                  cs_(m,li,1,kb,jb)};
+              iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+            } else if (spl) {
               // segfix-1011: vet_seg = split, the two halves at the x1 face
               iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
             } else {
@@ -3272,12 +3366,12 @@ void RadiationM1::VetMBSweeps() {
   VetMBState &st = *vet_mbs;
   if (st.ang) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
-    const Real bblo = (vet_bc_bath && !vet_milne && ibc_x1min == M1_IBC_MARSHAK) ?
-                      iebath_x1min : -1.0;
+    const Real bblo = VetBathLo();   // unify-sc-gd-1012 (#2): vet_bc_inner
     const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
     VetSweepAng(st, pmy_pack->nmb_thispack, indcs.is, indcs.js, indcs.ks, indcs.nx1,
                 indcs.nx2, trans_x3 ? indcs.nx3 : 1, trans_x3, vet_milne, iflux_x1min,
-                bblo, bbhi, vet_bc_face, vet_seg_split, VetSegMode(), c_light, e_floor,
+                bblo, bbhi, vet_bc_face, vet_seg_split, VetSegMode(), vet_interp, c_light,
+                e_floor,
                 iw, vet_cell, vet_ang);
     return;
   }
@@ -3381,8 +3475,7 @@ void RadiationM1::VetShortChar() {
   const bool milne = vet_milne;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const Real fmil = iflux_x1min;
-  const Real bblo = (vet_bc_bath && !milne && ibc_x1min == M1_IBC_MARSHAK) ?
-                     iebath_x1min : -1.0;
+  const Real bblo = VetBathLo();   // unify-sc-gd-1012 (#2): vet_bc_inner
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;   // deepatm-1011
   const bool x1src = vet_x1per && vet_x1src;   // predfix-1011
@@ -3391,6 +3484,7 @@ void RadiationM1::VetShortChar() {
   const bool spl = vet_seg_split;   // segfix-1011
   const int spe = VetSegMode();
   const bool x2o = vet_x2open, x3o = vet_x3open;   // bubbles-1012: vacuum x2 (x3) faces
+  const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
   // littests-1011: the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
@@ -3404,6 +3498,20 @@ void RadiationM1::VetShortChar() {
     auto iwd_ = iw;
     auto vcd_ = vet_cell;
     const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+    // unify-sc-gd-1012 (#3): the VET source rule of vet_col / vet_gd (VetLatSweep):
+    // vet_source = relaxed (srx: the state relaxed by a local backward-Euler exchange over
+    // the step, VetRelaxedSource) or gas (the state's own source); under time2_vet =
+    // predict | rebuild time2_vet_source = state | relaxed | blend (Time2VetColAt sets
+    // vcol_srelax / vcol_sbl for the build).  vet_sc before: always the state's source.
+    const bool srx = thermal && vcol_srelax;
+    const bool sbl = vcol_sbl;
+    const Real sx0 = vcol_sx0;
+    const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
+    FluidRef flv = FluidRef::Get(pmy_pack);
+    auto eos = flv.eos;
+    auto uh = flv.u0;
+    const Real chs = chat;
+    const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
     VetFor("m1_vet_srcc", (nmb1 + 1)*nk*nj*ni, KOKKOS_LAMBDA(const int t) {
       const int i = is + t%ni;
       int q = t/ni;
@@ -3416,7 +3524,16 @@ void RadiationM1::VetShortChar() {
       if (thermal) {
         Real tg = iwd_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
-        if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
+        if (srx) {
+          const Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
+          const Real rks = (vsf != 0) ? opd_(m,M1_OP_S,k,j,i) : 0.0;
+          s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+                                      opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                      chx, rks, sx0)
+                  : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+                                     opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                     chx, rks);
+        } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
           s = VetScatterMix(vsf, opd_(m,M1_OP_P,k,j,i), chx, opd_(m,M1_OP_S,k,j,i),
                             ar*t2*t2, e);
         } else {
@@ -3486,9 +3603,28 @@ void RadiationM1::VetShortChar() {
     VetMBSweeps();
   }
   const int nlaunch = (vet_mbs != nullptr) ? 0 : nx1;   // the banded sweep ran instead
-  const int npass = vet_x1per ? vet_x1npass : 1;
+  // unify-sc-gd-1012 (#2) vet_bc_reflect = mirror: at a REFLECTING x1 end the entering
+  // rays carry the leaving intensity of their x1 mirror ray (ray r +- nray/2: both angle
+  // sets list the upward half first, the mirror of up ray r at r + nray/2).  A second
+  // pass reads it from the plane buffer the first pass left at the boundary layer, as the
+  // periodic image is read (the mirror image of the boundary cell is the cell itself):
+  // the interior SC segment of length dx1/|mu1| through the boundary cell and its image.
+  // One reflecting end: exact in 2 passes (the leaving rays do not depend on it); both:
+  // a closed cavity, vet_x1_npass passes (default 4; each pass adds one round trip).
+  const bool mlo = vet_bc_mirror && (ibc_x1min == M1_IBC_REFLECT) && !vet_x1per;
+  const bool mhi = vet_bc_mirror_hi && (ibc_x1max == M1_IBC_REFLECT) && !vet_x1per;
+  if ((mlo || mhi) && vet_mbs != nullptr) {
+    VetFatal("<rad_m1>/vet_bc_reflect = mirror (the default with a reflecting x1 end) "
+             "needs a single MeshBlock on vet_sc (the banded sweep has no mirror); name "
+             "vet_bc_reflect = open");
+  }
+  if ((mlo || mhi) && milne) {VetFatal("<rad_m1>/vet_milne excludes a mirrored x1 end");}
+  const int nhray = nray/2;
+  const int npass = vet_x1per ? vet_x1npass : ((mlo && mhi) ? vet_mirror_npass
+                                               : ((mlo || mhi) ? 2 : 1));
   for (int p = 0; p < npass; ++p) {
-  const bool wrap = (p > 0);            // layer is (ie) reads the periodic image
+  const bool wrap = vet_x1per && (p > 0);   // layer is (ie) reads the periodic image
+  const bool mrlo = mlo && (p > 0), mrhi = mhi && (p > 0);   // ... or the mirror image
   const bool accum = (p == npass - 1);  // only the last pass adds to the moments
   for (int l = 0; l < nlaunch; ++l) {
     const int gl = p*nlaunch + l;
@@ -3511,7 +3647,8 @@ void RadiationM1::VetShortChar() {
         const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
         const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
         Real iv;
-        if (l == 0 && !wrap) {
+        const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
+        if (l == 0 && !wrap && !mimg) {
           // half a cell from the boundary face; S at the face linearly extrapolated
           // from the two boundary cells (exact for the deep linear S of a diffusion
           // regime), and linear in tau along the segment
@@ -3558,7 +3695,8 @@ void RadiationM1::VetShortChar() {
           }
           iv = ib*ex + wu*su + w0*s0;
         } else {
-          const int iup = (l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1));
+          const int iup = mimg ? i : ((l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1)));
+          const int rb = mimg ? ((r < nhray) ? (r + nhray) : (r - nhray)) : r;
           // the foot of the characteristic on the upwind plane, in cell units
           const Real sh2 = -dx1*m2/(am1*dx2);
           const Real fl2 = floor(sh2);
@@ -3570,11 +3708,11 @@ void RadiationM1::VetShortChar() {
           // I = 0 (the ray entered through the face) and the edge cell's chi and S
           Real ga = 1.0, gb = 1.0;
           if (x2o) {
-            const int ra = j - js + o2, rb = ra + 1;
-            ga = (ra >= 0 && ra < nx2) ? 1.0 : 0.0;
-            gb = (rb >= 0 && rb < nx2) ? 1.0 : 0.0;
-            ja = js + ((ra < 0) ? 0 : ((ra >= nx2) ? (nx2 - 1) : ra));
-            jb = js + ((rb < 0) ? 0 : ((rb >= nx2) ? (nx2 - 1) : rb));
+            const int qa = j - js + o2, qb = qa + 1;
+            ga = (qa >= 0 && qa < nx2) ? 1.0 : 0.0;
+            gb = (qb >= 0 && qb < nx2) ? 1.0 : 0.0;
+            ja = js + ((qa < 0) ? 0 : ((qa >= nx2) ? (nx2 - 1) : qa));
+            jb = js + ((qb < 0) ? 0 : ((qb >= nx2) ? (nx2 - 1) : qb));
           }
           int ka = k, kb = k;
           Real a3 = 0.0, ka_g = 1.0, kb_g = 1.0;
@@ -3586,22 +3724,25 @@ void RadiationM1::VetShortChar() {
             ka = ks + VetWrap(k - ks + o3, nx3);
             kb = ks + VetWrap(k - ks + o3 + 1, nx3);
             if (x3o) {
-              const int ra = k - ks + o3, rb = ra + 1;
-              ka_g = (ra >= 0 && ra < nx3) ? 1.0 : 0.0;
-              kb_g = (rb >= 0 && rb < nx3) ? 1.0 : 0.0;
-              ka = ks + ((ra < 0) ? 0 : ((ra >= nx3) ? (nx3 - 1) : ra));
-              kb = ks + ((rb < 0) ? 0 : ((rb >= nx3) ? (nx3 - 1) : rb));
+              const int qa = k - ks + o3, qb = qa + 1;
+              ka_g = (qa >= 0 && qa < nx3) ? 1.0 : 0.0;
+              kb_g = (qb >= 0 && qb < nx3) ? 1.0 : 0.0;
+              ka = ks + ((qa < 0) ? 0 : ((qa >= nx3) ? (nx3 - 1) : qa));
+              kb = ks + ((qb < 0) ? 0 : ((qb >= nx3) ? (nx3 - 1) : qb));
             }
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
           const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
+          // fin3-1012: the vacuum-face gates (bubbles-1012) on the mirror-aware ray rb
+          // (unify-sc-gd-1012 #2); a gate is exactly 1 off the open faces
+          const Real gaa = ga*ka_g, gab = gb*ka_g, gba = ga*kb_g, gbb = gb*kb_g;
           Real iup_v;
           if (x2o || x3o) {
-            iup_v = waa*ga*ka_g*ip_(m,pr,r,ka,ja) + wab*gb*ka_g*ip_(m,pr,r,ka,jb)
-                    + wba*ga*kb_g*ip_(m,pr,r,kb,ja) + wbb*gb*kb_g*ip_(m,pr,r,kb,jb);
+            iup_v = waa*gaa*ip_(m,pr,rb,ka,ja) + wab*gab*ip_(m,pr,rb,ka,jb)
+                    + wba*gba*ip_(m,pr,rb,kb,ja) + wbb*gbb*ip_(m,pr,rb,kb,jb);
           } else {
-            iup_v = waa*ip_(m,pr,r,ka,ja) + wab*ip_(m,pr,r,ka,jb)
-                    + wba*ip_(m,pr,r,kb,ja) + wbb*ip_(m,pr,r,kb,jb);
+            iup_v = waa*ip_(m,pr,rb,ka,ja) + wab*ip_(m,pr,rb,ka,jb)
+                    + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
           }
           const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
                           + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
@@ -3611,7 +3752,18 @@ void RadiationM1::VetShortChar() {
                           + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
                           + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
                           + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
-          if (spl) {
+          if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
+            const Real wq[4] = {waa, wab, wba, wbb};
+            // fin3-1012: a corner outside a vacuum face carries I = 0 (gate exactly 1
+            // elsewhere, bitwise), its segment the edge cell's chi and S, as lin above
+            const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja), gab*ip_(m,pr,rb,ka,jb),
+                                gba*ip_(m,pr,rb,kb,ja), gbb*ip_(m,pr,rb,kb,jb)};
+            const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
+                                vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
+            const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
+                                vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
+            iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+          } else if (spl) {
             // segfix-1011: vet_seg = split, the two halves at the x1 face
             iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
           } else {

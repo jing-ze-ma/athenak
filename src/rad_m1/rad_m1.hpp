@@ -25,14 +25,17 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <string>
 #include <future>
+#include <iostream>
 #include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "bvals/bvals.hpp"
@@ -52,6 +55,29 @@ constexpr int M1_NVAR = 4;
 // number of explicit stages of the PD-ARS (Chu et al. 2019) integrator used per substep.
 // With S == 0 it reduces to Heun / SSP-RK2.
 constexpr int M1_NSTAGE = 2;
+
+//! unify-sc-gd-1012: ONE canonical key name per concept for both formal solutions
+//! (vet_sc, vet_col / vet_gd), the older closure-specific spellings accepted as aliases.
+//! Returns the name to read in <rad_m1>: the canonical key if the input has it, else the
+//! first alias it has, else the canonical key (a GetOrAdd* on it then records the
+//! resolved default).  An alias is read under its own name, so an input (or a restart
+//! file) that names only the old spelling behaves exactly as before.  The canonical key
+//! wins over an alias given with a different value (printed).
+inline std::string M1KeyName(ParameterInput *pin, const std::string &canon,
+                             const std::vector<std::string> &alias) {
+  const bool hc = pin->DoesParameterExist("rad_m1", canon);
+  for (const auto &a : alias) {
+    if (!pin->DoesParameterExist("rad_m1", a)) {continue;}
+    if (!hc) {return a;}
+    if (pin->GetString("rad_m1", a).compare(pin->GetString("rad_m1", canon)) != 0 &&
+        global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> NOTE: " << canon << " = " << pin->GetString("rad_m1", canon)
+                << " overrides its old spelling " << a << " = "
+                << pin->GetString("rad_m1", a) << std::endl;
+    }
+  }
+  return canon;
+}
 
 // components of the per-cell opacity array, all stored as rho*kappa (inverse length)
 // components of RadiationM1::vet_cell (closure = vet_sc)
@@ -368,6 +394,20 @@ class RadiationM1 {
   int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
   bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
   bool vet_bc_bath;          // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
+  // unify-sc-gd-1012 (#2): the x1 boundary intensity of the formal solutions, one rule
+  // for vet_sc and vet_gd (VetBcInit, rad_m1.cpp).  vet_bc_inner (alias vet_gd_inner on
+  // vet_gd): the entering intensity at a MARSHAK or FLUX inner x1 face, 0 diff (the
+  // diffusion intensity), 1 emit (the face's own emission: the Marshak bath, or the
+  // black sphere 4 F/c of a flux face), 2 auto (emit at a Marshak face, diff at a flux
+  // face).  vet_bc_reflect: a REFLECTING x1 end, vet_bc_mirror = the entering rays
+  // carry the mirrored leaving intensity (vet_sc; vet_gd: the vet_col column mirrors,
+  // the gd sweep keeps diff at x1min and refuses a reflecting x1max).
+  int vet_bc_inner = 0;
+  bool vet_bc_mirror = false;   // mirror at a reflecting x1min (vet_bc_reflect = mirror)
+  bool vet_bc_mirror_hi = false;   // ... at a reflecting x1max (mirror or auto, vet_sc)
+  void VetBcInit(ParameterInput *pin, const bool gd);
+  bool VetBcEmit() const;    // the inner rule at the current implicit_bc_x1min is emit
+  Real VetBathLo() const;    // vet_sc: the entering inner intensity of emit (-1: diff)
   bool vet_bc_face = false;  // vet_bc_diff = face: inner diffusion I at the face (vet_sc,
                              // vet_gd, vet_col_lat, vet_col core; gdface-1011)
   bool vet_seg_split = false;  // vet_seg = split (segfix-1011): the SC segment u -> 0
@@ -378,6 +418,9 @@ class RadiationM1 {
   int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
+  int vet_interp = 0;        // unify-sc-gd-1012 (#6): upwind stencil 0 lin, 1 log, 2 corner
+  int vet_mirror_npass = 4;  // unify-sc-gd-1012: passes of a cavity mirrored at both x1
+                             // ends (vet_bc_reflect; vet_x1_npass when named)
   bool vet_x1src = false;    // vet_x1_periodic_inflow = source (predfix-1011)
   // bubbles-1012: a NON-periodic x2 (x3) mesh boundary (outflow, reflect, user, ...) is
   // a VACUUM face for the formal solution: a ray whose foot leaves the box through it
@@ -714,6 +757,7 @@ class RadiationM1 {
   // Jh = max(J, the outgoing face SC fluxes) wherever the cell's own J does not carry
   // the SC flux through its faces (M1HrSf); cell = the hrup-1009 cell ratios (opt-out)
   bool impl_hr_sf = false;
+  int impl_hr_sfgd = 0;   // unify-sc-gd-1012 (#4) implicit_hr_face_gd: 1 x1, 3 all faces
   // sptests-1011 P2 (opt-in, vet_gd only): implicit_hr_excess = iso gives the part of the
   // lagged E^n that exceeds the formal-solution J of the cell the ISOTROPIC half-range
   // shape (+-1/4) instead of the formal solution's (M1HrExcess); none = off (default)
@@ -1142,6 +1186,10 @@ class RadiationM1 {
   Real ew_fprev, ew_etaprev;    // max|r0| and eta of the previous pass of this step
                                 // (* = for eddington | vet_sc | tau; m1-type closures
                                 // default to the opposite, the pre-0923 path)
+  // unify-sc-gd-1012 (#10) implicit_predictor_frozen: the predictor runs wherever the
+  // face coefficients of the solve do not read the iterate (sp: vfix; any mesh:
+  // halfrange + implicit_thin_switch), not on the sp wedge only
+  bool impl_pred_frz = false;
   bool impl_pred;               // <rad_m1>/implicit_predictor = step (default step*):
                                 // start the Picard loop from E^n + (dt/dt_prev) dE_prev
                                 // (and T likewise); none = cold start
@@ -1234,6 +1282,7 @@ class RadiationM1 {
   // itself (vet_col_source = gas there), not relaxed by a further dt (rad_m1_time2.cpp)
   bool t2_vcsrc = false;
   bool t2_vcsbl = false;       // sporder-1012: time2_vet_col_source = blend
+  void Time2VetSourceInit(ParameterInput *pin, const bool act, const bool col);
   // time2_pred_cap (predfix-1011): the predicted P = U^n + theta dt K1 of a predict /
   // rebuild build takes per cell theta = min(1, cap/r), r the relative change of E and
   // of the gas internal energy (0 = off, the unlimited predictor)
@@ -1794,6 +1843,8 @@ class RadiationM1 {
   Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
                                // has tau_top >= this (global shell index vlat_icut)
   int vlat_icut = 0;
+  Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin (unify-sc-gd-1012): no cut above a
+                               // cell thinner than this (0 off)
   Real vlat_taumax = 0.0;      // vet_col_lat_taumax: depth taper (0 off)
   Real vlat_taumin = 0.0;      // vet_col_lat_taumin: thin-top cap (0 off)
   DvceArray4D<Real> vlat_wt;   // (m, k, j, i): the taper weight

@@ -829,10 +829,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     eddington = false;
     vet_sc = true;
     VetRotInit(pin);   // bubbles-1012: the vet_gd rotation keys and defaults
-    // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp), read when named
-    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
-      vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
-    }
+    // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp).  unify-sc-gd-1012
+    // (#11): DEFAULT true on a fresh run, as on vet_col / vet_gd (the VET source of a
+    // backward-Euler solve reads the physical E^n, not E^n + dt (chat/c) esrc); a restart
+    // whose file lacks the key keeps false (echoed).  Bitwise wherever esrc = 0.
+    vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",fresh);
   } else if (cl.compare("tau") == 0) {
     // the multi-D implicit solve reads (chi, n) from the column optical depth
     // (rad_m1_tau.cpp), in the uniaxial form; every other use of chi (explicit wave
@@ -848,7 +849,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_nc = pin->GetOrAddInteger("rad_m1","vet_col_ncore",8);
     vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
-    vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
+    // unify-sc-gd-1012 (#13): the canonical key vet_every, vet_col_every its alias
+    vcol_every = pin->GetOrAddInteger("rad_m1",
+                                      M1KeyName(pin, "vet_every", {"vet_col_every"}), 1);
     // vet_col_order2 (m1-sp-order2, tests_m1/runs_5o_sporder2); see rad_m1_vetcol.cpp.
     // DEFAULT true on the spherical-polar wedge since m1-sp-order2b
     // (tests_m1/runs_5q_sporder2b); a restart whose file lacks the key keeps false, the
@@ -899,7 +902,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
     {
-      std::string vs = pin->GetOrAddString("rad_m1","vet_col_source","relaxed");
+      // unify-sc-gd-1012 (#3): the canonical key vet_source (vet_col_source its alias),
+      // read by vet_sc too (VetInit)
+      std::string vs = pin->GetOrAddString("rad_m1",
+                           M1KeyName(pin, "vet_source", {"vet_col_source"}), "relaxed");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("gas") == 0) {
@@ -1028,24 +1034,41 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_tbath = pin->GetOrAddBoolean("rad_m1", "vet_bc_bath",
                                        !global_variable::restart_run);
     }
-    // sptests-1011: vet_gd_inner = diff | emit, vet_gd_beam* (read only when named)
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_inner")) {
-      std::string vi = pin->GetString("rad_m1","vet_gd_inner");
-      if (vi.compare("emit") == 0) {
-        vgd_emit = true;
-      } else if (vi.compare("diff") != 0) {
+    // sptests-1011: vet_gd_inner = diff | emit, vet_gd_beam* (read only when named).
+    // unify-sc-gd-1012 (#2): vet_bc_inner / vet_bc_reflect, shared with vet_sc
+    // (VetBcInit); vet_gd_inner is read as the alias of vet_bc_inner
+    // unify-sc-gd-1012 (#6): vet_interp = auto | log | corner, shared with vet_sc (lin
+    // is vet_sc's old form only).  vet_gd: log = its old bilinear in ln chi, ln S;
+    // corner = one segment per stencil corner (VetGdSweep); auto = corner where the
+    // stencil's chi contrast exceeds kVetCornerRatio, log elsewhere (as vet_sc).  DEFAULT
+    // auto on a fresh run; a restart whose file lacks the key keeps log.
+    if (vgd_on) {
+      const std::string vi = pin->GetOrAddString("rad_m1","vet_interp",
+                                 global_variable::restart_run ? "log" : "auto");
+      if (vi.compare("log") == 0) {
+        vet_interp = 1;
+      } else if (vi.compare("corner") == 0) {
+        vet_interp = 2;
+      } else if (vi.compare("auto") == 0) {
+        vet_interp = 3;
+      } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_inner must be diff or emit" << std::endl;
+                  << std::endl << "<rad_m1>/vet_interp = " << vi << " is not available "
+                  << "on vet_gd (auto | log | corner)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+    }
+    if (vgd_on) {
+      VetBcInit(pin, true);
+      vgd_emit = (vet_bc_inner != 0);   // the vet_gd_beam inflow (emit or auto)
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_beam")) {
       vgd_beam = pin->GetBoolean("rad_m1","vet_gd_beam");
       if (vgd_beam) {
-        if (!vgd_emit) {
+        if (vet_bc_inner == 0) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_m1>/vet_gd_beam needs vet_gd_inner = emit"
-                    << std::endl;
+                    << std::endl << "<rad_m1>/vet_gd_beam needs vet_bc_inner "
+                    << "(vet_gd_inner) = emit" << std::endl;
           std::exit(EXIT_FAILURE);
         }
         vgd_nbeam = 1;
@@ -1245,6 +1268,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
     }
+    // unify-sc-gd-1012 (#11): the same fresh default for a plain vet_col (no vet_gd), as
+    // vet_sc.  vet_gd without the twin keeps false: there the pair is needed together
+    // (NOTE-2026-10-09-viper-sp-seam-mass-leak: noesrc alone exposes the gd ray effect)
+    if (!vgd_on && fresh && !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
+      vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
+    }
     if (pin->DoesParameterExist("rad_m1","vet_source_noesrc_h2be")) {
       vsrc_noes_h2be = pin->GetBoolean("rad_m1","vet_source_noesrc_h2be");
     }
@@ -1358,6 +1387,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taucut")) {
         vlat_taucut = pin->GetReal("rad_m1","vet_col_lat_taucut");
       }
+      // unify-sc-gd-1012: vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
+      // run; a restart whose file lacks the key keeps 0 (the depth cut alone, bitwise)
+      vlat_cut_thin = pin->GetOrAddReal("rad_m1","vet_col_lat_cut_thin",
+                                        global_variable::restart_run ? 0.0 : 1.0);
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taumin")) {
         vlat_taumin = pin->GetReal("rad_m1","vet_col_lat_taumin");
       }
@@ -1725,6 +1758,109 @@ void RadiationM1::RssPrime(bool restart) {
 
 //----------------------------------------------------------------------------------------
 // destructor
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetBcInit
+//! \brief unify-sc-gd-1012 (#2): the x1 boundary intensity of the formal solutions, ONE
+//! rule for vet_sc and vet_gd.
+//!   vet_bc_inner = auto | diff | emit (alias vet_gd_inner on vet_gd), the rays entering
+//!     at a MARSHAK or FLUX inner x1 face: diff = the diffusion intensity of the bottom
+//!     cell (each closure's form, vet_bc_diff); emit = the face's own emission, the
+//!     isotropic bath implicit_ebath_x1min of a Marshak face or the black sphere 4 F/c of
+//!     a flux face (F = implicit_flux_x1min); auto = emit at a Marshak face, diff at a
+//!     flux face.  DEFAULT auto on a fresh run.  A restart whose file lacks the key keeps
+//!     the closure's old rule: vet_sc auto if its vet_bc_bath is on (the bath at a
+//!     Marshak inner face, m1-h2div), else diff; vet_gd diff (vet_gd_inner unset).  A
+//!     fresh vet_sc input that names vet_bc_bath = false (both ends off, the old meaning)
+//!     and not vet_bc_inner keeps diff too.
+//!   vet_bc_reflect = auto | mirror | open, a REFLECTING x1 end: mirror = the entering
+//!     rays carry the leaving intensity of the mirror ray (specular reflection, H = 0 at
+//!     the face, the M1 solve's zero-flux face); open = the old vet_sc rule (diffusion
+//!     intensity at x1min, VACUUM at x1max: inconsistent with the zero-flux M1 face).
+//!     auto = the diffusion intensity at a reflecting x1min (consistent with H = 0; the
+//!     sp/Cartesian twin pair rswt_r1000 / rswt_cart agrees better with it) and the
+//!     mirror at a reflecting x1max on vet_sc; vet_gd cannot mirror (FORCED: its direction
+//!     set is global, so the specular image of a direction is not in the set; the vet_col
+//!     column of the hybrid mirrors at a reflecting x1min, vet_col_order2, and vet_gd
+//!     refuses a reflecting x1max).  DEFAULT auto on a fresh run; a restart whose file lacks the
+//!     key keeps open.  vet_sc mirror: single MeshBlock along x1 (VetShortChar).
+
+void RadiationM1::VetBcInit(ParameterInput *pin, const bool gd) {
+  const bool rst = global_variable::restart_run;
+  const std::string kin = gd ? M1KeyName(pin, "vet_bc_inner", {"vet_gd_inner"})
+                             : std::string("vet_bc_inner");
+  const bool bnamed = pin->DoesParameterExist("rad_m1", "vet_bc_bath");
+  const bool bath = bnamed ? pin->GetBoolean("rad_m1", "vet_bc_bath") : !rst;
+  std::string vi;
+  if (pin->DoesParameterExist("rad_m1", kin)) {
+    vi = pin->GetString("rad_m1", kin);
+  } else if (!gd && (rst || (bnamed && !bath))) {
+    vi = bath ? "auto" : "diff";     // vet_sc: the old vet_bc_bath rule
+  } else if (gd && rst) {
+    vi = "diff";                     // vet_gd: the old default (vet_gd_inner unset)
+  } else {
+    vi = pin->GetOrAddString("rad_m1", "vet_bc_inner", "auto");
+  }
+  if (vi.compare("diff") == 0) {
+    vet_bc_inner = 0;
+  } else if (vi.compare("emit") == 0) {
+    vet_bc_inner = 1;
+  } else if (vi.compare("auto") == 0) {
+    vet_bc_inner = 2;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/" << kin << " = '" << vi << "' is not a choice "
+              << "(auto | diff | emit)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  std::string vr;
+  if (pin->DoesParameterExist("rad_m1", "vet_bc_reflect")) {
+    vr = pin->GetString("rad_m1", "vet_bc_reflect");
+  } else if (rst) {
+    vr = "open";
+  } else {
+    vr = pin->GetOrAddString("rad_m1", "vet_bc_reflect", "auto");
+  }
+  if (vr.compare("auto") == 0) {
+    // the inner end keeps the diffusion intensity (H = 0 of a zero-flux face is its
+    // isotropic part; the rswt_cart / rswt_r1000 pair agrees 1.5x better with it than
+    // with the mirror, and vet_gd cannot mirror); the outer end mirrors (its old vacuum
+    // contradicts the zero-flux M1 face)
+    vet_bc_mirror = false;
+    vet_bc_mirror_hi = !gd;
+  } else if (vr.compare("mirror") == 0) {
+    if (gd) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/vet_bc_reflect = mirror is not available on "
+                << "vet_gd (its direction set is global: the specular image of a "
+                << "direction is not in it); use auto or open" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    vet_bc_mirror = true;
+    vet_bc_mirror_hi = true;
+  } else if (vr.compare("open") == 0) {
+    vet_bc_mirror = false;
+    vet_bc_mirror_hi = false;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/vet_bc_reflect = '" << vr << "' is not a choice "
+              << "(auto | mirror | open)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VetBcEmit
+//! \brief unify-sc-gd-1012 (#2): vet_bc_inner resolves to emit at the current inner x1
+//! face (emit: a Marshak or flux face; auto: a Marshak face)
+
+bool RadiationM1::VetBcEmit() const {
+  if (vet_bc_inner == 1) {
+    return (ibc_x1min == M1_IBC_MARSHAK) || (ibc_x1min == M1_IBC_FLUX);
+  }
+  if (vet_bc_inner == 2) {return (ibc_x1min == M1_IBC_MARSHAK);}
+  return false;
+}
 
 RadiationM1::~RadiationM1() {
   VetGdAsyncJoin();   // vet_gd_async: the helper thread of the pending build
