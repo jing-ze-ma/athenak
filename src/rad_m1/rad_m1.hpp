@@ -1934,13 +1934,21 @@ class RadiationM1 {
   DvceArray5D<Real> vra_d;     // (m, (K-1)(nf+1), k, j, i) interior: offsets + valid
   int vra_head = 0;            // the ring slot of d_1 (the previous set)
   int vra_state = 0;           // 0: no history yet (init at the next build), 1: ready
-  int vra_pend = 0;            // 1: init slots raw, 2: rotation (head slot raw S_old)
+  int vra_pend = 0;            // 1: init slots raw, 3: Delta of the coming boundary held
   bool vra_raw = false;        // a snapshot sweep: the closure leaves its fields raw
   double vra_nsweep = 0.0, vra_nrot = 0.0, vra_ninit = 0.0;
   Real vra_time = 0.0;
   void RotAvgSnap(const int slot, const int ilo);
   void RotAvgUpdate(const int ilo);
   void RotAvgApply(const int ilo);
+  void RotAvgDelta(const int slot, const int ilo);
+  void RotAvgShift(const int ds);
+  bool RotLastStep() const;    // the step is the last of its rotation block
+  int64_t vra_blk = INT64_MIN; // the block of the last build
+  bool vra_last = false;       // this build is on the last step of its block
+  DvceArray5D<Real> vra_bk_tt, vra_bk_hr;   // vet_gd: the hand-over fields kept over
+  DvceArray3D<Real> vra_bk_q;               // the next-set sweep of a last build
+  DvceArray5D<Real> vra_bk_vc;              // vet_sc: the same (vet_cell)
   void VetGdRotAvgSetup();     // vet_gd: registers tau_ten LAT + vgd_hr
   void VetGdSweepPost();       // twin, sweep(s), fused moments, VetGdPost
   // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with

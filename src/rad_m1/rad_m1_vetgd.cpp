@@ -865,6 +865,24 @@ int64_t RadiationM1::VetGdBlock(const int cyc) const {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::RotLastStep
+//! \brief rotavg-1012: is the current step the last of its rotation block (the next step
+//! belongs to the next block)?  Physical clock: t + dt reaches the next boundary t0 +
+//! (b+1) dt_rot (exact with vet_gd_rotate_align); cycle clock: (cyc+1) % N == 0.  Shared
+//! by vet_gd and vet_sc.
+
+bool RadiationM1::RotLastStep() const {
+  const Mesh *pm = pmy_pack->pmesh;
+  if (vgd_rot_dt > 0.0) {
+    const int64_t b = VetGdBlock(pm->ncycle);
+    const double tk = vgd_rot_t0 + (static_cast<double>(b) + 1.0)*vgd_rot_dt;
+    return pm->time + pm->dt >= tk - 1.0e-9*vgd_rot_dt;
+  }
+  if (vgd_rot > 0) {return ((pm->ncycle + 1) % vgd_rot) == 0;}
+  return false;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdRotStep
 //! \brief vgdrot2-1012 (Driver, before Time2StartProbe): on the first step of a new
 //! rotation block (physical clock) the stored hesdirk2 slope K1 is f(U^{n-1..n}) of the
@@ -5039,22 +5057,21 @@ void RadiationM1::VetGdBuild() {
   // to the old directions, so the lagged inflow is re-converged as at the first build
   const Real al = VetGdAngle(pmy_pack->pmesh->ncycle);
   bool rotated = false;
-  // rotavg-1012 (vet_rotate_avg): a new block re-sweeps the OLD set at this state first
-  // (its raw fields -> the ring slot of the dropped oldest set); the first build of a run
-  // (fresh or restart) sweeps the K-1 previous sets
+  // rotavg-1012 (vet_rotate_avg): the first build of a new block moves the ring on by the
+  // Delta the last build of the old block measured (RotAvgShift); without one (a restart
+  // inside a block, a missed last build) the history is re-initialised.  The first build
+  // of a run (fresh or restart) sweeps the K-1 previous sets
   const bool ra = vra_on && VgdRotOn();
-  if (ra && vra_state == 1 && al != vgd_alpha) {
-    Kokkos::Timer tr;
-    vra_head = (vra_head + vra_k - 2) % (vra_k - 1);
-    vra_raw = true;
-    VetGdSweepPost();
-    vra_raw = false;
-    VetGdRotAvgSetup();
-    RotAvgSnap(vra_head, pmy_pack->pmesh->mb_indcs.is + vlat_icut);
-    vra_pend = 2;
-    vra_nsweep += 1.0;
-    vra_nrot += 1.0;
-    vra_time += tr.seconds();
+  const int64_t blk = VetGdBlock(pmy_pack->pmesh->ncycle);
+  if (ra && vra_state == 1 && blk != vra_blk) {
+    if (vra_pend == 3) {
+      VetGdRotAvgSetup();
+      RotAvgShift(vra_k - 1);
+      vra_pend = 0;
+      vra_nrot += 1.0;
+    } else {
+      vra_state = 0;
+    }
   }
   if (ra && vra_state == 0) {
     Kokkos::Timer tr;
@@ -5082,7 +5099,34 @@ void RadiationM1::VetGdBuild() {
   }
   VetGdTabPrefetch(pmy_pack->pmesh->ncycle);
   (void) rotated;
+  // rotavg-1012: on the LAST step of a block the current set's raw fields are kept
+  // (VetGdPost) and, after this build, the NEXT set is swept at the same state for the
+  // Delta of the coming boundary (the tables stay on the next set; the hand-over fields
+  // of this build are put back)
+  vra_last = ra && vra_state == 1 && RotLastStep();
   VetGdSweepPost();
+  if (vra_last) {
+    Kokkos::Timer tr;
+    const int ilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
+    Kokkos::deep_copy(vra_bk_tt, tau_ten);
+    if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_hr, vgd_hr);}
+    if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vra_bk_q, vcol_q);}
+    VetGdTables(VetGdAngleBlk(blk + 1));
+    vra_raw = true;
+    VetGdSweepPost();
+    vra_raw = false;
+    VetGdRotAvgSetup();
+    RotAvgDelta(vra_k - 1, ilo);
+    Kokkos::deep_copy(tau_ten, vra_bk_tt);
+    if (vgd_hr.extent_int(0) > 0) {Kokkos::deep_copy(vgd_hr, vra_bk_hr);}
+    if (vcol_q.extent_int(0) > 0) {Kokkos::deep_copy(vcol_q, vra_bk_q);}
+    VetLatOdMax();
+    vra_pend = 3;
+    vra_nsweep += 1.0;
+    vra_time += tr.seconds();
+  }
+  vra_last = false;
+  vra_blk = blk;
 }
 
 //----------------------------------------------------------------------------------------
@@ -5188,6 +5232,23 @@ void RadiationM1::VetGdPost() {
     Kokkos::Timer tr;
     const int ilo = pmy_pack->pmesh->mb_indcs.is + vlat_icut;
     VetGdRotAvgSetup();
+    if (vra_last) {
+      // the backups of the next-set sweep (VetGdBuild), sized once
+      if (vra_bk_tt.extent(0) != tau_ten.extent(0) ||
+          vra_bk_tt.extent(1) != tau_ten.extent(1)) {
+        Kokkos::realloc(vra_bk_tt, tau_ten.extent(0), tau_ten.extent(1),
+                        tau_ten.extent(2), tau_ten.extent(3), tau_ten.extent(4));
+      }
+      if (vgd_hr.extent(0) != vra_bk_hr.extent(0) ||
+          vgd_hr.extent(1) != vra_bk_hr.extent(1)) {
+        Kokkos::realloc(vra_bk_hr, vgd_hr.extent(0), vgd_hr.extent(1), vgd_hr.extent(2),
+                        vgd_hr.extent(3), vgd_hr.extent(4));
+      }
+      if (vcol_q.extent(0) != vra_bk_q.extent(0)) {
+        Kokkos::realloc(vra_bk_q, vcol_q.extent(0), vcol_q.extent(1), vcol_q.extent(2));
+      }
+      RotAvgSnap(vra_k - 1, ilo);   // the current set's raw fields (RotAvgDelta)
+    }
     RotAvgUpdate(ilo);
     RotAvgApply(ilo);
     Kokkos::fence();

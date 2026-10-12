@@ -3394,45 +3394,65 @@ void RadiationM1::VetMBSweeps() {
 //! \fn void RadiationM1::VetShortChar
 
 void RadiationM1::VetShortChar() {
-  // rotavg-1012 (vet_rotate_avg): a new block re-sweeps the OLD set at this state first
-  // (its raw moments -> the ring slot of the dropped oldest set); the first build of a run
-  // (fresh or restart) sweeps the K-1 previous sets (as VetGdBuild)
-  if (vra_on && vsc_rot) {
-    const int ilo = pmy_pack->pmesh->mb_indcs.is;
-    const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
-    if (vra_state == 1 && VetRotBeta(b) != vsc_beta) {
-      Kokkos::Timer tr;
-      vra_head = (vra_head + vra_k - 2) % (vra_k - 1);
+  // rotavg-1012 (vet_rotate_avg; as VetGdBuild): the first build of a new block moves
+  // the ring on by the Delta of the old block's last build (else re-init); the first
+  // build of a run sweeps the K-1 previous sets; the last build of a block also sweeps
+  // the NEXT set at the same state (Delta), the set then stays on the next one and
+  // vet_cell of this build is put back
+  const bool ra = vra_on && vsc_rot;
+  const int ilo = pmy_pack->pmesh->mb_indcs.is;
+  const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
+  if (ra && vra_state == 1 && b != vra_blk) {
+    if (vra_pend == 3) {
+      VetScRotAvgSetup();
+      RotAvgShift(vra_k - 1);
+      vra_pend = 0;
+      vra_nrot += 1.0;
+    } else {
+      vra_state = 0;
+    }
+  }
+  if (ra && vra_state == 0) {
+    Kokkos::Timer tr;
+    vra_head = 0;
+    for (int jb = 1; jb < vra_k; ++jb) {
+      VetRotSet(VetRotBeta(b - jb));
       vra_raw = true;
       VetShortCharSweep();
       vra_raw = false;
       VetScRotAvgSetup();
-      RotAvgSnap(vra_head, ilo);
-      vra_pend = 2;
+      RotAvgSnap(jb - 1, ilo);
       vra_nsweep += 1.0;
-      vra_nrot += 1.0;
-      vra_time += tr.seconds();
     }
-    if (vra_state == 0) {
-      Kokkos::Timer tr;
-      vra_head = 0;
-      for (int jb = 1; jb < vra_k; ++jb) {
-        VetRotSet(VetRotBeta(b - jb));
-        vra_raw = true;
-        VetShortCharSweep();
-        vra_raw = false;
-        VetScRotAvgSetup();
-        RotAvgSnap(jb - 1, ilo);
-        vra_nsweep += 1.0;
-      }
-      vra_pend = 1;
-      vra_state = 1;
-      vra_ninit += 1.0;
-      vra_time += tr.seconds();
-    }
+    vra_pend = 1;
+    vra_state = 1;
+    vra_ninit += 1.0;
+    vra_time += tr.seconds();
   }
   VetRotUpdate();   // bubbles-1012: the set of this step's rotation block
+  vra_last = ra && vra_state == 1 && RotLastStep();
   VetShortCharSweep();
+  if (vra_last) {
+    Kokkos::Timer tr;
+    if (vra_bk_vc.extent(0) != vet_cell.extent(0) ||
+        vra_bk_vc.extent(1) != vet_cell.extent(1)) {
+      Kokkos::realloc(vra_bk_vc, vet_cell.extent(0), vet_cell.extent(1),
+                      vet_cell.extent(2), vet_cell.extent(3), vet_cell.extent(4));
+    }
+    Kokkos::deep_copy(vra_bk_vc, vet_cell);
+    VetRotSet(VetRotBeta(b + 1));
+    vra_raw = true;
+    VetShortCharSweep();
+    vra_raw = false;
+    VetScRotAvgSetup();
+    RotAvgDelta(vra_k - 1, ilo);
+    Kokkos::deep_copy(vet_cell, vra_bk_vc);
+    vra_pend = 3;
+    vra_nsweep += 1.0;
+    vra_time += tr.seconds();
+  }
+  vra_last = false;
+  vra_blk = b;
 }
 
 //----------------------------------------------------------------------------------------
@@ -3773,6 +3793,7 @@ void RadiationM1::VetShortCharSweep() {
   if (vra_on && vsc_rot && !vra_raw && vra_state == 1) {
     Kokkos::Timer tr;
     VetScRotAvgSetup();
+    if (vra_last) {RotAvgSnap(vra_k - 1, is);}   // the current set's raw moments (Delta)
     RotAvgUpdate(is);
     RotAvgApply(is);
     Kokkos::fence();

@@ -101,9 +101,9 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nf = vra_tab.nf;
-  const int nslot = vra_k - 1;
-  if (vra_d.extent_int(0) < nmb1 + 1 || vra_d.extent_int(1) != nslot*(nf + 1)) {
-    Kokkos::realloc(vra_d, nmb1 + 1, nslot*(nf + 1), ke - ks + 1, je - js + 1,
+  const int nalloc = vra_k;   // the ring (K-1 slots) + the Delta slot K-1
+  if (vra_d.extent_int(0) < nmb1 + 1 || vra_d.extent_int(1) != nalloc*(nf + 1)) {
+    Kokkos::realloc(vra_d, nmb1 + 1, nalloc*(nf + 1), ke - ks + 1, je - js + 1,
                     ie - is + 1);
     Kokkos::deep_copy(vra_d, 0.0);
   }
@@ -125,12 +125,11 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotAvgUpdate
-//! \brief with the CURRENT set's raw fields in place: turn the pending raw snapshots into
-//! offsets (init: every slot S_j -> S_j - g; rotation: the head slot S_old -> S_old - g =
-//! -Delta, every other slot += -Delta; ratio fields multiplicatively)
+//! \brief init (the first build of a run): with the CURRENT set's raw fields in place, the
+//! raw snapshots S_j of the K-1 previous sets -> offsets S_j - g (ratio fields S_j/g)
 
 void RadiationM1::RotAvgUpdate(const int ilo) {
-  if (vra_pend == 0) return;
+  if (vra_pend != 1) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -140,7 +139,6 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
   const RaArr a{vra_a0, vra_a1, vra_c};
   const Tab t = vra_tab;
   const int nf1 = t.nf + 1;
-  const int h = vra_head;
   const bool init = (vra_pend == 1);
   par_for("m1_ra_upd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -160,39 +158,85 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
         }
         d_(m,o+t.nf,kk,jj,ii) = v ? 1.0 : 0.0;
       }
-      return;
     }
-    // rotation: the head slot holds the old set's raw fields of this state
-    const int oh = h*nf1;
-    const bool vh = vg && (d_(m,oh+t.nf,kk,jj,ii) > 0.5);
-    for (int f = 0; f < t.nf; ++f) {
-      Real g;
-      if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
-      const Real sv = d_(m,oh+f,kk,jj,ii);
-      const bool mul = (t.kind[f] == 2);
-      const Real x = mul ? ((vh && g > 0.0 && sv > 0.0) ? sv/g : 1.0)
-                         : (vh ? (sv - g) : 0.0);
-      d_(m,oh+f,kk,jj,ii) = x;
-      for (int s = 0; s < nslot; ++s) {
-        if (s == h) continue;
-        const int o = s*nf1;
-        if (!(vh && d_(m,o+t.nf,kk,jj,ii) > 0.5)) {
-          d_(m,o+f,kk,jj,ii) = mul ? 1.0 : 0.0;
-        } else if (mul) {
-          d_(m,o+f,kk,jj,ii) *= x;
-        } else {
-          d_(m,o+f,kk,jj,ii) += x;
-        }
-      }
-    }
-    for (int s = 0; s < nslot; ++s) {
-      if (s == h) continue;
-      const int o = s*nf1;
-      d_(m,o+t.nf,kk,jj,ii) = (vh && d_(m,o+t.nf,kk,jj,ii) > 0.5) ? 1.0 : 0.0;
-    }
-    d_(m,oh+t.nf,kk,jj,ii) = vh ? 1.0 : 0.0;
   });
   vra_pend = 0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotAvgDelta
+//! \brief the LAST build of a block: slot holds the current set's raw fields g_b, the
+//! fields now hold the NEXT set's raw S at the same state -> slot := Delta = S - g_b
+//! (ratio fields S/g_b), valid where both are.  The state of the last build is the
+//! predicted P ~ U(t_k) + O(dt^2) at the block boundary t_k on every dt (the first build
+//! of the next block would sample U(t_k + dt): an O(dt) offset on a dt ladder)
+
+void RadiationM1::RotAvgDelta(const int slot, const int ilo) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto d_ = vra_d;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
+  const int o = slot*(t.nf + 1);
+  par_for("m1_ra_delta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool v = RaValid(a, t, ilo, m, k, j, i) && (d_(m,o+t.nf,kk,jj,ii) > 0.5);
+    const Real jr = RaJ(a, t, m, k, j, i);
+    for (int f = 0; f < t.nf; ++f) {
+      Real sn;
+      if (!RaGet(a, t, f, ie, m, k, j, i, jr, sn)) continue;
+      const Real g = d_(m,o+f,kk,jj,ii);
+      d_(m,o+f,kk,jj,ii) = (t.kind[f] == 2) ? ((v && g > 0.0 && sn > 0.0) ? sn/g : 1.0)
+                                            : (v ? (sn - g) : 0.0);
+    }
+    d_(m,o+t.nf,kk,jj,ii) = v ? 1.0 : 0.0;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::RotAvgShift
+//! \brief the first build of a new block: the ring moves on by one set with the Delta of
+//! the last build (slot ds): the dropped oldest slot becomes d_1 = -Delta (1/R), every
+//! other d_j -= Delta (/= R)
+
+void RadiationM1::RotAvgShift(const int ds) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nslot = vra_k - 1;
+  vra_head = (vra_head + nslot - 1) % nslot;
+  const int h = vra_head;
+  auto d_ = vra_d;
+  const Tab t = vra_tab;
+  const int nf1 = t.nf + 1;
+  const int od = ds*nf1;
+  par_for("m1_ra_shift", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int kk = k - ks, jj = j - js, ii = i - is;
+    const bool vd = d_(m,od+t.nf,kk,jj,ii) > 0.5;
+    for (int s = 0; s < nslot; ++s) {
+      const int o = s*nf1;
+      const bool v = vd && ((s == h) || d_(m,o+t.nf,kk,jj,ii) > 0.5);
+      for (int f = 0; f < t.nf; ++f) {
+        const bool mul = (t.kind[f] == 2);
+        const Real x = d_(m,od+f,kk,jj,ii);
+        Real y;
+        if (!v) {
+          y = mul ? 1.0 : 0.0;
+        } else if (s == h) {
+          y = mul ? 1.0/x : -x;
+        } else {
+          y = mul ? d_(m,o+f,kk,jj,ii)/x : d_(m,o+f,kk,jj,ii) - x;
+        }
+        d_(m,o+f,kk,jj,ii) = y;
+      }
+      d_(m,o+t.nf,kk,jj,ii) = v ? 1.0 : 0.0;
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
