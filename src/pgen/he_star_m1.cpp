@@ -194,6 +194,11 @@ std::vector<Real> hs_tap_, hs_r2o_;
 char hs_ad_file_[1024] = {0};
 // Picard counters at the previous history output (HeStarHist)
 Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
+// rotavg-rst-1012: the open Picard window travels in the pgen restart block as a tagged
+// trailer (tag, solves, passes since the last history output), so the first user.hst row
+// after a restart is the continuous run's
+constexpr char kHsPicTag[8] = {'H', 'S', 'P', 'I', 'C', 'W', '0', '1'};
+Mesh *hs_mesh_ = nullptr;   // the mesh (HsAdaptiveRstWrite: the rad_m1 counters)
 
 //! the frozen-MLT weight w(t): a function of the time only (restart-safe)
 Real HsMltW(const Real t) {
@@ -2177,6 +2182,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (hs_mrs_ >= 0.0 && !hs_mlt_) {
     HsFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true", __LINE__);
   }
+  // rotavg-rst-1012: the Picard window trailer of the pgen restart block (stripped here,
+  // so the adaptive state below reads the block as before); the rad_m1 counters restart
+  // at 0, so the window base is minus the open window's sums
+  hs_mesh_ = pmy_mesh_;
+  if (restart) {
+    auto &blk = pgen_rststate;
+    const std::size_t nt = sizeof(kHsPicTag) + 2*sizeof(Real);
+    if (blk.size() >= nt &&
+        std::memcmp(blk.data() + blk.size() - nt, &(kHsPicTag[0]), sizeof(kHsPicTag)) == 0) {
+      Real w[2];
+      std::memcpy(&(w[0]), blk.data() + blk.size() - 2*sizeof(Real), 2*sizeof(Real));
+      hs_pic_n0_ = -w[0];
+      hs_pic_s0_ = -w[1];
+      blk.resize(blk.size() - nt);
+    }
+  }
   // problem/mlt_closure: frozen (default: the IC's F_MLT, times w(t)) or adaptive (see
   // hs_ad_ above; w(t) caps it as an overall factor)
   {
@@ -2241,7 +2262,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       hs_ad_tout_ = hs_ad_dout_*floor(pmy_mesh_->time/hs_ad_dout_ + 1.0);
       if (!restart) hs_ad_tout_ = 0.0;
     }
-    pgen_rst_write_func = HsAdaptiveRstWrite;
     // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
     HsApplyMltW(pmy_mesh_, HsMltW(pmy_mesh_->time));
     if (global_variable::my_rank == 0) {
@@ -2373,6 +2393,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   user_srcs_func = HeStarGravity;
   user_bcs_func = HeStarBC;
   user_hist_func = HeStarHist;
+  pgen_rst_write_func = HsAdaptiveRstWrite;   // adaptive state + the Picard window
   pgen_final_func = HeStarFinal;
   // reatm-1011 problem/he_ic_rad_atm_post (default true with he_ic_rad_atm_force =
   // module; a fresh start whose <rad_m1>/ic_rad runs; the x1 WB pair): after the ic_rad
@@ -3439,7 +3460,22 @@ void HsAdaptiveUpdate(Mesh *pm) {
 
 std::vector<char> HsAdaptiveRstWrite() {
   std::vector<char> out;
-  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) return out;
+  // rotavg-rst-1012: the open Picard window (solves, passes since the last history
+  // output) as a tagged trailer behind the adaptive state (if any)
+  auto pic = [&out]() {
+    Real w[2] = {0.0, 0.0};
+    const radm1::RadiationM1 *pm1 = (hs_mesh_ != nullptr) ? hs_mesh_->pmb_pack->pradm1
+                                                          : nullptr;
+    if (pm1 != nullptr) {
+      w[0] = pm1->impl_nstep - hs_pic_n0_;
+      w[1] = pm1->impl_itsum - hs_pic_s0_;
+    }
+    const std::size_t o = out.size();
+    out.resize(o + sizeof(kHsPicTag) + sizeof(w));
+    std::memcpy(out.data() + o, &(kHsPicTag[0]), sizeof(kHsPicTag));
+    std::memcpy(out.data() + o + sizeof(kHsPicTag), &(w[0]), sizeof(w));
+  };
+  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); return out;}
   const int nfc = hs_fsub_.extent_int(0);
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
   const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
@@ -3449,6 +3485,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   out.resize(sizeof(hdr) + (nfc + 1)*sizeof(Real));
   std::memcpy(out.data(), &(hdr[0]), sizeof(hdr));
   std::memcpy(out.data() + sizeof(hdr), tmp.data(), (nfc + 1)*sizeof(Real));
+  pic();
   return out;
 }
 
