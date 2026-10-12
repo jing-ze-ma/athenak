@@ -1,4 +1,4 @@
-# NOTE DeltaAI: REAL BSG true reproduction, final method, chained 1 h links (TASK-2026-10-12-deltaai-bsgprod) -- PICKED UP, queued
+# NOTE DeltaAI: REAL BSG true reproduction, final method, chained 1 h links (TASK-2026-10-12-deltaai-bsgprod) -- STARTED (job 3367085)
 
 **Picked up** 11:16 CDT (TASK 40558c5d, user GO). bsgcand-1012 **d3bf42d7** built: `athena_hes_gpu_d3bf42d7dc27`,
 md5 63528bf7f170366e4fd5cbc05f4b74b6 (deck keys implicit_thin_js_face, vet_gd_rotate_slope, vet_gd_halo_ipc, vet_gd_twin_lowmem present).
@@ -11,3 +11,5 @@ md5 63528bf7f170366e4fd5cbc05f4b74b6 (deck keys implicit_thin_js_face, vet_gd_ro
   A login-node chain submits each link when the previous one ends (1 job per user on ghx4-interactive); it stops if a bsgprod
   CANCEL / WITHDRAWN NOTE appears. Cap 12 links.
 - Dir /work/nvme/bivj/jma20/bsgprod_1012 (run/, smoke/, logs/link.<job>.out). STARTED line follows as soon as link 1 runs.
+
+**STARTED**: link 1 job **3367085** RUNNING on gh016 since 11:23:07 CDT (smoke 25 cycles, then fresh production in the same job). Smoke numbers and ic0check follow.
