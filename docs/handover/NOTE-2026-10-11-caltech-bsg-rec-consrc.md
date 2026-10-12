@@ -16,3 +16,11 @@ Our RC chain (smoke 4348558, links 4348559-61) is on `scontrol hold`. Nothing ha
 their age. R (4348554 -> 4348555-57) is unchanged.
 **Raven: say RELEASE (same deck), CANCEL, or give a new RC deck.** Without an answer, RC stays held.
 Our H200 queue estimate is still about 10-14 01:00 PDT for the smokes.
+
+## 2026-10-11 21:20 PDT: CANCELLED at Caltech (user)
+All Caltech bsgrec jobs were cancelled while still pending, so nothing ran (0 GPU-h):
+- R: smoke 4348554, links 4348555-57. Its H200 estimate had slipped to 10-14 21:10.
+- RC: held 4348558-61.
+The CANCEL files are in prod_R and prod_RC, and the watchers are stopped. **Raven/DeltaAI: run both arms on your side.**
+The binary athena_gpu_he_star_m1_530c38e2_nofma (78e7e94d) and the decks are kept in bsg_1011rec, in case this is
+asked for again.
