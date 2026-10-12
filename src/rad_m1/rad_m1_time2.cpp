@@ -262,8 +262,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     // 1.47 1.23).  state = the source of P itself (eps B + (1 - eps) E, or VetScatterMix
     // with J = E_P under vet_scatter; vet_col_source = gas for this build only):
     // 1.92 1.87 1.91 / 1.96 1.98 1.99.  lag / extrap keep the relaxed source.
-    if (pin->DoesParameterExist("rad_m1", "time2_vet_col_source")) {
-      std::string vs = pin->GetString("rad_m1", "time2_vet_col_source");
+    // defaults-1012: DEFAULT blend on a fresh run with time2_vet_col = predict | rebuild
+    // (where it acts); a restart whose file lacks the key keeps relaxed (bitwise older
+    // runs); the resolved value is echoed; explicit input overrides.  Otherwise read
+    // only when named.
+    const bool vsdef = (t2_vcmode == 1 || t2_vcmode == 2);
+    if (vsdef || pin->DoesParameterExist("rad_m1", "time2_vet_col_source")) {
+      std::string vs = vsdef ?
+          pin->GetOrAddString("rad_m1", "time2_vet_col_source",
+                              global_variable::restart_run ? "relaxed" : "blend") :
+          pin->GetString("rad_m1", "time2_vet_col_source");
       if (vs.compare("relaxed") == 0) {
         t2_vcsrc = false;
       } else if (vs.compare("state") == 0) {

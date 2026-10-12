@@ -692,7 +692,7 @@ void RadiationM1::VetGdInit() {
       }
     }
   }
-  if (vgd_async && vgd_rot_dt > 0.0) {
+  if (vgd_async && (vgd_rot_dt > 0.0 || vgd_rot_auto)) {
     VgdFatal("vet_gd_rotate_dt (the physical-time rotation) needs vet_gd_async = false");
   }
   vgd_alpha = -1.0;
@@ -784,6 +784,21 @@ void RadiationM1::VetGdRotStep() {
 //! up to s longer than the limit, instead of a whole extra step per interval).
 
 Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
+  // defaults-1012: vet_gd_rotate_dt = auto -> vgd_rot_auto_fac x the first dt this sees
+  // (the global step, before any alignment), fixed for the run and recorded as the number
+  // so a restart (and the parameter dump) keeps it
+  if (vgd_rot_auto && !(vgd_rot_dt > 0.0) && dt > 0.0) {
+    vgd_rot_dt = vgd_rot_auto_fac*dt;
+    vgd_rot_auto = false;
+    if (pin_rot_ != nullptr) {pin_rot_->SetReal("rad_m1","vet_gd_rotate_dt",vgd_rot_dt);}
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_rotate_dt = auto: " << vgd_rot_auto_fac
+                << " x the first dt " << dt << " = " << ParameterInput::RealToString(vgd_rot_dt)
+                << " (recorded; t0 " << vgd_rot_t0 << ", align "
+                << (vgd_rot_align ? "on" : "off") << ", stretch " << vgd_rot_stretch
+                << ")" << std::endl;
+    }
+  }
   if (!(vgd_rot_dt > 0.0) || !vgd_rot_align || !(dt > 0.0)) {return dt;}
   const double x = (time - vgd_rot_t0)/vgd_rot_dt;
   double k = std::floor(x) + 1.0;

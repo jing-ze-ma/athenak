@@ -2088,10 +2088,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           ImplFatal("<rad_m1>/implicit_thin_recon = '" + srec
                     + "' is not a choice (dc | js | jse)");
         }
-        // coreL-1012 (read only when named): implicit_thin_hcface = tau, the optical-
-        // depth weighted face value of the formal-solution flux of thin_corr (x1 faces)
-        if (pin->DoesParameterExist("rad_m1","implicit_thin_hcface")) {
-          std::string shf = pin->GetString("rad_m1","implicit_thin_hcface");
+        // coreL-1012: implicit_thin_hcface = mean | tau, the optical-depth weighted face
+        // value of the formal-solution flux of thin_corr (x1 faces).  defaults-1012: DEFAULT
+        // tau on a fresh run with implicit_thin_corr = hc | hcs (where it acts); a restart
+        // whose file lacks the key keeps mean (bitwise older runs), echoed; otherwise read
+        // only when named.  Explicit input overrides.
+        const bool hfdef = (impl_thsw_corr == M1_THCR_HC || impl_thsw_corr == M1_THCR_HCS);
+        if (hfdef || pin->DoesParameterExist("rad_m1","implicit_thin_hcface")) {
+          std::string shf = hfdef ?
+              pin->GetOrAddString("rad_m1","implicit_thin_hcface",
+                                  global_variable::restart_run ? "mean" : "tau") :
+              pin->GetString("rad_m1","implicit_thin_hcface");
           if (shf.compare("tau") == 0) {
             thsw_hctau = true;
           } else if (shf.compare("mean") != 0) {
@@ -2304,11 +2311,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // a multi-D mesh with implicit_solver = bicgstab, nghost >= 2, hydro with coupling,
   // gas_feedback and dbg_gas_force.  Otherwise off, silently.  A restart whose file lacks
   // the key (read only when named before) keeps off; the resolved value is echoed;
-  // explicit input overrides.
+  // explicit input overrides.  defaults-1012: only where the gas is LIVE, <time>/
+  // evolution = dynamic (a kinematic or static medium never takes the solve's radiative
+  // kick, so the implicit velocity has nothing to predict; the validated test decks name
+  // false there).  Before defaults-1012 such a fresh deck took true.
   {auto *pmh = pmy_pack->pmesh;
+  const bool gas_live = !pin->DoesParameterExist("time","evolution") ||
+                        (pin->GetString("time","evolution").compare("dynamic") == 0);
   const bool vdef = (pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) &&
                     full && pmh->multi_d && (impl_solver == M1_ISOLV_BICGSTAB) &&
-                    (pmh->mb_indcs.ng >= 2) && fl_on &&
+                    (pmh->mb_indcs.ng >= 2) && fl_on && gas_live &&
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
@@ -2493,9 +2505,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
   }
   impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
-  // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md)
+  // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md).
+  // defaults-1012 (user sign-off of method-1012): DEFAULT conservative2 (with its
+  // implicit_cs2_hll = drag, implicit_cs2_shift = false) on a FRESH run with gas coupling
+  // (hydro, coupling, gas_feedback); matched without it and on a restart whose file
+  // lacks the key (files since consrc-1011 echo it).  Explicit input overrides.
   {
-    const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src","matched");
+    const bool gsdef = !global_variable::restart_run && fl_on && coupling && gas_feedback;
+    const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src",
+                                               gsdef ? "conservative2" : "matched");
     if (gs.compare("matched") == 0) {
       impl_gas_src_cons = false;
     } else if (gs.compare("conservative") == 0) {

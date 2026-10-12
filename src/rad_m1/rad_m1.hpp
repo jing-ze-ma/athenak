@@ -1840,6 +1840,11 @@ class RadiationM1 {
   // true): Mesh::NewTimeStep lands a step on every block boundary (VetGdAlignDt)
   Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
   Real vgd_rot_stretch = 0.0;   // vet_gd_rotate_stretch: VetGdAlignDt may lengthen dt by <= this
+  // defaults-1012: vet_gd_rotate_dt = auto (the fresh vet_gd default): resolved by the
+  // first VetGdAlignDt to vgd_rot_auto_fac x that dt and recorded in pin_rot_
+  bool vgd_rot_auto = false;
+  Real vgd_rot_auto_fac = 20.0;
+  ParameterInput *pin_rot_ = nullptr;
   bool vgd_rot_align = false;
   double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
   // vet_gd_rotate_slope (with vet_gd_rotate_dt; probe | be | keep): the hesdirk2 FSAL
@@ -2193,7 +2198,7 @@ class RadiationM1 {
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
-  bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0;}
+  bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
   int64_t VetGdBlock(const int cyc) const;       // vgdrot2-1012: the rotation block
   Real VetGdAngleBlk(const int64_t b) const;
   Real VetGdAlignDt(const Real time, const Real dt);
