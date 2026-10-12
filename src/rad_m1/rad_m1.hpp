@@ -783,6 +783,13 @@ class RadiationM1 {
   bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
   bool csinc_ok = false;                // csinc was formed for the coming stage solve
   bool gcs_first = true;                // the first conservative solve of this run
+  // d3rst-1013 (from rotavg-rst-1012): csk1 (+ csk1_ok, gcs_first) in the restart file
+  // (kM1CskRstMagic): the header whenever a conservative solve has run, the 3 slabs when
+  // csk1 holds a slope
+  bool CskRstHdr() const {return impl_gas_src_cons && !gcs_first;}
+  int CskRstNch() const {
+    return (CskRstHdr() && csk1_ok && csk1.extent_int(0) > 0) ? 3 : 0;
+  }
   // consfix-1011, implicit_gas_src = conservative2 (NOTE-consfix.md): conservative, plus
   //  (a) the face equation is the lab-F one, F0' = theta (F0^n - dA_f - ...): dA_c =
   //      A'_c - A^old_c the whole change of the cell's enthalpy flux (A^old = F^old -

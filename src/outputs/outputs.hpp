@@ -323,6 +323,8 @@ class BaseTypeOutput {
   // <rad_m1>/vet_gd_async: the pending gd build's source (vlat_cs, 2 channels); empty
   // unless one is pending.  radm1::kM1VgdRstMagic.
   HostArray5D<Real> outarray_m1g;
+  // implicit_gas_src = conservative(2): the cell-F slope csk1 (rotavg-rst-1012)
+  HostArray5D<Real> outarray_m1k;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

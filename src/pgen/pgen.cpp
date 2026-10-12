@@ -771,6 +771,43 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     vgd_cyc_file = static_cast<int>(hdr[2]);
   }
 
+  // --- THE <rad_m1>/implicit_gas_src = conservative(2) HEADER (radm1::kM1CskRstMagic,
+  // rotavg-rst-1012), behind the vet_gd_async one: ncsk_file (3 or 0) slabs of csk1 and
+  // the flags (csk1_ok; its presence means gcs_first = false)
+  int ncsk_file = 0, csk_ok_file = 0;
+  bool csk_have = false;
+  if (std::memcmp(variabledata, &(radm1::kM1CskRstMagic[0]),
+                  sizeof(radm1::kM1CskRstMagic)) == 0) {
+    char csk_hdr[4*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(csk_hdr));
+      ok = ok && (resfile.Read_bytes(&(csk_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(csk_hdr[0]), sizeof(csk_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    if (ok) {std::memcpy(&(hdr[0]), &(csk_hdr[0]), sizeof(hdr));}
+    if (!ok || hdr[0] != 1 || (hdr[1] != 0 && hdr[1] != 3)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <rad_m1> conservative cell-F slope header of this "
+                << "restart file is broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    csk_have = true;
+    ncsk_file = static_cast<int>(hdr[1]);
+    csk_ok_file = static_cast<int>(hdr[2]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -857,7 +894,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file + neint_file + nck_file
-                            + nctr_file + nrss_file + nvgd_file)
+                            + nctr_file + nrss_file + nvgd_file + ncsk_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1498,8 +1535,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "the first gd build is synchronous and this restart is not bitwise."
               << std::endl;
   }
+  // implicit_gas_src = conservative(2): csk1 and the flags, when this run is one too
+  // (with hesdirk2 for the slabs: csk1 is sized as its slope t2k1)
+  const bool csk_read = csk_have && (pradm1 != nullptr) && pradm1->impl_gas_src_cons;
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
-      ctr_read || rss_read || vgd_read) {
+      ctr_read || rss_read || vgd_read || csk_read) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -1707,6 +1747,34 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
       pradm1->vgd_rst_cyc = vgd_cyc_file;
+    }
+    // the conservative cell-F slope (kM1CskRstMagic), behind the vet_gd_async slabs
+    if (csk_read) {
+      pradm1->gcs_first = false;
+      const int q0 = static_cast<int>(pradm1->t2k1.extent(0));
+      if (ncsk_file == 3 && q0 > 0) {
+        int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                    + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                    + nck_file + nctr_file + nrss_file + nvgd_file;
+        offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+        myoffset = offset_myrank;
+        const int q3 = static_cast<int>(pradm1->t2k1.extent(2));
+        const int q2 = static_cast<int>(pradm1->t2k1.extent(3));
+        const int q1 = static_cast<int>(pradm1->t2k1.extent(4));
+        Kokkos::realloc(pradm1->csk1, q0, 3, q3, q2, q1);
+        Kokkos::realloc(pradm1->csk2, q0, 3, q3, q2, q1);
+        Kokkos::realloc(pradm1->csinc, q0, 3, q3, q2, q1);
+        Kokkos::deep_copy(pradm1->csk1, 0.0);
+        Kokkos::deep_copy(pradm1->csk2, 0.0);
+        Kokkos::deep_copy(pradm1->csinc, 0.0);
+        for (int n=0; n<3; ++n) {
+          read_slab("rad_m1 conservative cell-F slope");
+          DeepCopyAcross(Kokkos::subview(pradm1->csk1, std::make_pair(0,nmb), n,
+                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
+        }
+        pradm1->csk1_ok = (csk_ok_file == 1);
+        pradm1->csinc_ok = false;
+      }
     }
   }
 
