@@ -1,0 +1,46 @@
+#!/bin/bash -l
+# TASK-2026-10-11-deltaai-bsgrec-smoke (raven -> DeltaAI, bsg-files-1009 3c86fbb3): BSG true repro R / RC smoke + cycle-0 IC check.
+#   sbatch --export=ALL,BP=<prodfinal 530c38e2 bin> job.sub      (DRY=1 bash job.sub: commands only)
+# 1 node x 4 GH200. R4, RC4: 4 ranks x 4 blocks; R2: 2 ranks x 8 blocks (GPUs 0,1). Stop the job on any rc != 0 / FATAL.
+# Command-line keys (all named in the decks): time/nlim, time/ndiag, output1/dt (hst every cycle), output5/dt (no rst).
+#SBATCH -J bsgrec_smoke
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=00:45:00
+#SBATCH -o /work/nvme/bivj/jma20/bsgrec_1011/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/bsgrec_1011
+BP=${BP:?BP}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+T0=$(date +%s); TEND=$((T0 + 42*60))
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1   # GPU-aware Cray MPICH (job-env rule)
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+echo "$BP $(md5sum < $BP | cut -c1-32) (expect $(cat $BP.md5))"
+md5sum $G/files/* $G/bsgR.athinput $G/bsgRC.athinput
+mkdir -p $S
+run() {   # run <name> <deck> <nranks> <nlim>
+  local n=$1 in=$2 np=$3 nl=$4; local D=$S/$n; mkdir -p $D
+  local now=$(date +%s); [ $now -ge $TEND ] && { echo "SKIP $n (wall budget)"; return; }
+  local SR="srun -n $np --ntasks-per-node=$np -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+  local K="time/nlim=$nl time/ndiag=1 output1/dt=1.0e-3 output5/dt=1.0e30"
+  echo "RUN $n np=$np nlim=$nl $(date +%T)"
+  [ -n "${DRY:-}" ] && { echo "  $SR $BP -i $in -d $D $K"; LASTRC=0; return; }
+  # GPU memory sample every 2 s on this node for the duration of the run
+  ( while true; do echo "$(date +%T.%N | cut -c1-12) $(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | tr '\n' ' ')"; sleep 2; done ) > $D/gpumem.log 2>&1 &
+  local MP=$!
+  local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SR $BP -i $in -d $D $K > $D/out.txt 2>&1; LASTRC=$?
+  kill $MP 2>/dev/null
+  local pk=$(awk '{for(i=2;i<=NF;i+=2){g=$i; sub(",","",g); v=$(i+1); if(v+0>m[g]) m[g]=v+0}} END{for(g in m) printf "GPU%s %d MiB  ", g, m[g]}' $D/gpumem.log)
+  echo "END $n rc=$LASTRC wall=$(echo "$(date +%s.%N) - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) nan=$(grep -ci nan $D/out.txt) peak: $pk $(date +%T)"
+}
+stopchk() { [ -z "${DRY:-}" ] && { [ "${LASTRC:-1}" != 0 ] || grep -q FATAL $S/$1/out.txt; } && { echo "$1 failed (rc $LASTRC): stop the job"; exit 1; }; true; }
+run R4  $G/bsgR.athinput  4 10;  stopchk R4
+run RC4 $G/bsgRC.athinput 4 10;  stopchk RC4
+run R2  $G/bsgR.athinput  2 4
+echo "end $(date)"

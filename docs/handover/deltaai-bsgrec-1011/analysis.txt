@@ -1,0 +1,101 @@
+RUN R4 np=4 nlim=10 09:05:37
+END R4 rc=0 wall=25.805093909 s fatal=0 nan=0 peak: GPU0 48961 MiB  GPU1 48961 MiB  GPU2 48961 MiB  GPU3 48961 MiB   09:06:03
+RUN RC4 np=4 nlim=10 09:06:03
+END RC4 rc=0 wall=28.150838283 s fatal=0 nan=0 peak: GPU0 49435 MiB  GPU1 49435 MiB  GPU2 49435 MiB  GPU3 49435 MiB   09:06:31
+RUN R2 np=2 nlim=4 09:06:31
+END R2 rc=0 wall=16.086387486 s fatal=0 nan=0 peak: GPU0 77497 MiB  GPU1 77487 MiB  GPU2 0 MiB  GPU3 0 MiB   09:06:47
+
+=== R4
+FATAL 0  NaN-lines 0  NON-CONVERGED: NON-CONVERGED=0.000000e+00
+<rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=3.947368e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+      1 <rad_m1> bicgstab: breakdowns=1.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=5.283000e+03 (3.087668e+00 per inner iteration)
+      1 <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=1.258291e+09 newton fallbacks=1.563864e+06 (1.242847e-03 per cell-pass)
+      1 <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.762313e+00
+      1 <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=7.762313e+00
+      1 <rad_m1> time_scheme=hesdirk2: stage steps=9.000000e+00 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 1.509949e+08
+      1 <rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made 2.100000e+02, fallbacks 0.000000e+00 (marked reads outside the masks' region 0.000000e+00), read ghosts with an unsent source 0.000000e+00; received values per list: exact/mask 0.000000e+00
+setup (elapsed at cycle 0) 5.2 s; cycles 10; dt 8.736927e+01 s (cycle 0 dt 8.737003e+01)
+per-cycle wall s: 1:1.226 2:0.878 3:0.900 4:0.969 5:0.790 6:0.850 7:0.712 8:0.655 9:0.712 10:6.735
+steady s/cycle (cycles 3..10 excl. rotation and last): mean 0.798 median 0.790 (n 7); rotation cycles [(10, 6.735)]
+
+=== RC4
+FATAL 0  NaN-lines 0  NON-CONVERGED: NON-CONVERGED=0.000000e+00
+<rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=1.536842e+01 max=5.100000e+01 NON-CONVERGED=0.000000e+00
+      1 <rad_m1> bicgstab: breakdowns=1.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=1.019400e+04 (3.175701e+00 per inner iteration)
+      1 <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=4.898947e+09 newton fallbacks=5.531702e+07 (1.129161e-02 per cell-pass)
+      1 <rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 2 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler
+      1 <rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 4 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler
+      1 <rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 5 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler
+      1 <rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 6 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler
+      1 <rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 7 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler
+      1 <rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 8 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler
+      1 <rad_m1> hesdirk2 stage 1 NOT ADMISSIBLE at cycle 9 (converged=1 min(E,T)=-1.000000e+00): the step is redone with backward Euler
+      1 <rad_m1> implicit_vimp positivity fallbacks=6.000000e+00 min E from the solve=-9.192631e+03
+      1 <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 6.000000e+00) min E from the solve=-9.192631e+03
+      1 <rad_m1> time_scheme=hesdirk2: stage steps=2.000000e+00 backward-Euler steps=8.000000e+00 stage fallbacks=7.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=2.457600e+07 of 1.509949e+08
+setup (elapsed at cycle 0) 4.3 s; cycles 10; dt 8.736927e+01 s (cycle 0 dt 8.737003e+01)
+per-cycle wall s: 1:1.241 2:1.205 3:5.846 4:1.704 5:1.625 6:1.178 7:0.860 8:0.753 9:0.922 10:3.221
+steady s/cycle (cycles 3..10 excl. rotation and last): mean 1.841 median 1.178 (n 7); rotation cycles [(10, 3.221)]
+
+=== R2
+FATAL 0  NaN-lines 0  NON-CONVERGED: NON-CONVERGED=0.000000e+00
+<rad_m1> implicit transport: solves=7.000000e+00 Picard iterations mean=5.000000e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+      1 <rad_m1> bicgstab: breakdowns=1.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=2.509000e+03 (3.086101e+00 per inner iteration)
+      1 <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=5.872026e+08 newton fallbacks=1.425448e+06 (2.427523e-03 per cell-pass)
+      1 <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.762313e+00
+      1 <rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=7.762313e+00
+      1 <rad_m1> time_scheme=hesdirk2: stage steps=3.000000e+00 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 5.033165e+07
+      1 <rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made 2.100000e+02, fallbacks 0.000000e+00 (marked reads outside the masks' region 0.000000e+00), read ghosts with an unsent source 0.000000e+00; received values per list: exact/mask 0.000000e+00
+setup (elapsed at cycle 0) 2.5 s; cycles 4; dt 8.736927e+01 s (cycle 0 dt 8.737003e+01)
+per-cycle wall s: 1:1.850 2:1.438 3:1.476 4:6.304
+steady s/cycle (cycles 3..4 excl. rotation and last): mean 1.476 median 1.476 (n 1); rotation cycles []
+
+=== R4 user.hst: t, L_top, L_in, Etot, Picard
+             time            L_top             L_in             Etot           Picard
+   0.00000000e+00   0.00000000e+00   4.65121750e+37   1.56895735e+46   0.00000000e+00
+   8.73700279e+01   1.67165832e+38   4.65121750e+37   1.56895630e+46   5.00000000e+00
+   1.74739303e+02   4.45655061e+37   4.65121750e+37   1.56895584e+46   5.50000000e+00
+   2.62108873e+02   4.32384983e+37   4.65121750e+37   1.56895588e+46   4.50000000e+00
+   3.49478050e+02   4.74501134e+37   4.65121750e+37   1.56895588e+46   5.00000000e+00
+   4.36846697e+02   4.55244711e+37   4.65121750e+37   1.56895589e+46   4.50000000e+00
+   5.24214676e+02   4.68489328e+37   4.65121750e+37   1.56895589e+46   3.50000000e+00
+   6.11581858e+02   4.63792351e+37   4.65121750e+37   1.56895589e+46   3.50000000e+00
+   6.98948116e+02   4.64906632e+37   4.65121750e+37   1.56895589e+46   3.00000000e+00
+   7.86313334e+02   4.64595730e+37   4.65121750e+37   1.56895589e+46   3.00000000e+00
+   8.73677401e+02   4.64744008e+37   4.65121750e+37   1.56895589e+46   2.50000000e+00
+   8.73677401e+02   4.64744008e+37   4.65121750e+37   1.56895589e+46   0.00000000e+00
+--- ic0check R4
+dens     BITWISE
+velx     BITWISE
+vely     BITWISE
+velz     BITWISE
+eint     BITWISE
+m1_e     BITWISE
+m1_f1    BITWISE
+m1_f2    BITWISE
+m1_f3    BITWISE
+
+=== RC4 user.hst: t, L_top, L_in, Etot, Picard
+             time            L_top             L_in             Etot           Picard
+   0.00000000e+00   0.00000000e+00   4.65121750e+37   1.56895735e+46   0.00000000e+00
+   8.73700279e+01   1.67165832e+38   4.65121750e+37   1.56895630e+46   5.00000000e+00
+   1.74739303e+02   4.45553525e+37   4.65121750e+37   1.56895584e+46   1.10000000e+01
+   2.62108873e+02   3.04614651e+37   4.65121750e+37   1.56895638e+46   1.25000000e+01
+   2.62117242e+02   6.99570316e+37   4.65121750e+37   1.56895638e+46   3.85000000e+01
+   2.62133981e+02   1.10331657e+34   4.65121750e+37   1.56895634e+46   2.65000000e+01
+   2.62153331e+02   6.51706207e+31   4.65121750e+37   1.56895634e+46   1.75000000e+01
+   2.62192031e+02   8.69676527e+31   4.65121750e+37   1.56895631e+46   9.00000000e+00
+   2.62269432e+02   8.69417400e+31   4.65121750e+37   1.56895631e+46   6.00000000e+00
+   2.62424233e+02   8.68178989e+31   4.65121750e+37   1.56895631e+46   7.50000000e+00
+   2.62733836e+02   8.66765106e+31   4.65121750e+37   1.56895630e+46   1.50000000e+01
+   2.62733836e+02   8.66765106e+31   4.65121750e+37   1.56895630e+46   0.00000000e+00
+--- ic0check RC4
+dens     BITWISE
+velx     BITWISE
+vely     BITWISE
+velz     BITWISE
+eint     BITWISE
+m1_e     BITWISE
+m1_f1    BITWISE
+m1_f2    BITWISE
+m1_f3    BITWISE
