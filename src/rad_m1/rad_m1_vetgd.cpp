@@ -5009,7 +5009,8 @@ void RadiationM1::VetGdSweepPost() {
 //! (rad_m1_rotavg.cpp): tau_ten LAT0..LAT5 (D_rr - f_K, D_rt, D_rp, the tangential
 //! anisotropy; additive, D_rr clamped by the fold), and with implicit_flux_beam =
 //! halfrange vgd_hr: r+- along r, theta, phi (clamped to [0, 1] / [-1, 0]; r+_r < 0 flags
-//! "no formal solution" = invalid), C1 (>= 0) and J (ratio); eps is cell-local (kept)
+//! "no formal solution" = invalid), C1 (>= 0) and J (ratio); eps is cell-local (kept);
+//! with vet_gd_replace + vet_col_surface_q the outer q of the top cell (vcol_q)
 
 void RadiationM1::VetGdRotAvgSetup() {
   RotAvgTab &t = vra_tab;
@@ -5038,6 +5039,14 @@ void RadiationM1::VetGdRotAvgSetup() {
     t.fcomp = 0;
   } else {
     vra_a1 = tau_ten;
+  }
+  // vet_gd_replace with vet_col_surface_q: the outer Marshak q of the gd top cell
+  if (vgd_replace && vcol_sq && vcol_q.extent_int(0) > 0) {
+    vra_c = vcol_q;
+    t.arr[t.nf] = 2; t.comp[t.nf] = 0; t.kind[t.nf] = 1;
+    t.lo[t.nf] = vcol_qmin; t.hi[t.nf] = vcol_qmax; ++t.nf;
+  } else {
+    vra_c = DvceArray3D<Real>();
   }
 }
 

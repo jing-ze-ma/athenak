@@ -1900,6 +1900,7 @@ class RadiationM1 {
   bool vra_on = false;
   RotAvgTab vra_tab;
   DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)
+  DvceArray3D<Real> vra_c;     // a column field (m, k, j) at the top cell (arr 2)
   DvceArray5D<Real> vra_d;     // (m, (K-1)(nf+1), k, j, i) interior: offsets + valid
   int vra_head = 0;            // the ring slot of d_1 (the previous set)
   int vra_state = 0;           // 0: no history yet (init at the next build), 1: ready

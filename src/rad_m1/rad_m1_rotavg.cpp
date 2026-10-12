@@ -26,8 +26,9 @@
 //! normalised intensities, i.e. a realizable closure with the tensor and the half-range
 //! ratios from the SAME mixture.  In a changing state the current set is live (no lag of
 //! the closure); only the ray-pattern differences are carried, aged <= K rotate_dt.
-//! Clamps (kind 1): the half-range ratios to their ranges, C1 >= 0; the tensor's D_rr is
-//! clamped by the fold (VetLatBuild).
+//! Clamps (kind 1): the half-range ratios to their ranges, C1 >= 0, the outer q to its
+//! range; the tensor's D_rr is clamped by the fold (VetLatBuild).  Field arrays: two
+//! (m, n, k, j, i) arrays and one column array (m, k, j) held at the top cell i = ie.
 //!
 //! VALIDITY.  A cell is valid in a set when i >= the closure's first shell (ilo) and the
 //! flag field (if any) is >= 0; an offset is kept only where both sweeps were valid, and
@@ -77,12 +78,17 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
   auto d_ = vra_d;
   auto a0_ = vra_a0;
   auto a1_ = vra_a1;
+  auto c_ = vra_c;
   const RotAvgTab t = vra_tab;
   const int o = slot*(nf + 1);
   par_for("m1_ra_snap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const bool v = RaValid(a0_, a1_, t.farr, t.fcomp, ilo, m, k, j, i);
     for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2) {   // a column field (m, k, j) of the top cell
+        if (i == ie) d_(m,o+f,k-ks,j-js,i-is) = c_(m,k,j);
+        continue;
+      }
       d_(m,o+f,k-ks,j-js,i-is) = (t.arr[f] == 0) ? a0_(m,t.comp[f],k,j,i)
                                                  : a1_(m,t.comp[f],k,j,i);
     }
@@ -106,6 +112,7 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
   auto d_ = vra_d;
   auto a0_ = vra_a0;
   auto a1_ = vra_a1;
+  auto c_ = vra_c;
   const RotAvgTab t = vra_tab;
   const int nf1 = t.nf + 1;
   const int h = vra_head;
@@ -119,7 +126,9 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
         const int o = s*nf1;
         const bool v = vg && (d_(m,o+t.nf,kk,jj,ii) > 0.5);
         for (int f = 0; f < t.nf; ++f) {
-          const Real g = (t.arr[f] == 0) ? a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i);
+          if (t.arr[f] == 2 && i != ie) continue;
+          const Real g = (t.arr[f] == 2) ? c_(m,k,j) : ((t.arr[f] == 0) ?
+                         a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i));
           const Real sv = d_(m,o+f,kk,jj,ii);
           Real x;
           if (t.kind[f] == 2) {
@@ -137,7 +146,9 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
     const int oh = h*nf1;
     const bool vh = vg && (d_(m,oh+t.nf,kk,jj,ii) > 0.5);
     for (int f = 0; f < t.nf; ++f) {
-      const Real g = (t.arr[f] == 0) ? a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i);
+      if (t.arr[f] == 2 && i != ie) continue;
+      const Real g = (t.arr[f] == 2) ? c_(m,k,j) : ((t.arr[f] == 0) ?
+                     a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i));
       const Real sv = d_(m,oh+f,kk,jj,ii);
       const bool mul = (t.kind[f] == 2);
       Real x;
@@ -182,6 +193,7 @@ void RadiationM1::RotAvgApply(const int ilo) {
   auto d_ = vra_d;
   auto a0_ = vra_a0;
   auto a1_ = vra_a1;
+  auto c_ = vra_c;
   const RotAvgTab t = vra_tab;
   const int nf1 = t.nf + 1;
   par_for("m1_ra_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -192,12 +204,14 @@ void RadiationM1::RotAvgApply(const int ilo) {
     for (int s = 0; s < nslot; ++s) {nv += d_(m,s*nf1+t.nf,kk,jj,ii);}
     if (nv < 1.5) return;
     for (int f = 0; f < t.nf; ++f) {
+      if (t.arr[f] == 2 && i != ie) continue;
       Real sm = (t.kind[f] == 2) ? 1.0 : 0.0;
       for (int s = 0; s < nslot; ++s) {
         const int o = s*nf1;
         if (d_(m,o+t.nf,kk,jj,ii) > 0.5) sm += d_(m,o+f,kk,jj,ii);
       }
-      Real &g = (t.arr[f] == 0) ? a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i);
+      Real &g = (t.arr[f] == 2) ? c_(m,k,j) : ((t.arr[f] == 0) ?
+                a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i));
       if (t.kind[f] == 2) {
         g *= sm/nv;
       } else {
