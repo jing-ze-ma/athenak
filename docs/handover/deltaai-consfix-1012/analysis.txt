@@ -1,0 +1,81 @@
+=== bM: FATAL 0  NaN-lines 0  last cycle 30
+  <rad_m1> implicit transport: solves=5.900000e+01 Picard iterations mean=2.813559e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.785018e+09 newton fallbacks=2.538858e+07 (9.116129e-03 per cell-pass)
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.762313e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.900000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 4.865393e+08
+  NOT ADMISSIBLE: 0 at cycles 
+  s/cycle steady (c>2, not x10, not last): mean 0.613 median 0.562 (n 25); setup 2.4 s
+  dt: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34 25:87.33 26:87.33 27:87.33 28:87.33 29:87.33 30:87.32
+  L_top per row: 0.00000e+00 1.67166e+38 4.45655e+37 4.32385e+37 4.74501e+37 4.55245e+37 4.68489e+37 4.63792e+37 4.64907e+37 4.64596e+37 4.64744e+37 4.64746e+37 4.64755e+37 4.64755e+37 4.64760e+37 4.64761e+37 4.64760e+37 4.64756e+37 4.64748e+37 4.64737e+37 4.64723e+37 4.64704e+37 4.64681e+37 4.64653e+37 4.64621e+37 4.64584e+37 4.64543e+37 4.64497e+37 4.64447e+37 4.64392e+37 4.64332e+37 4.64332e+37
+=== bC2: FATAL 0  NaN-lines 0  last cycle 30
+  <rad_m1> implicit transport: solves=5.900000e+01 Picard iterations mean=2.813559e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.785018e+09 newton fallbacks=2.539442e+07 (9.118224e-03 per cell-pass)
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.762313e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.900000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 4.865393e+08
+  NOT ADMISSIBLE: 0 at cycles 
+  s/cycle steady (c>2, not x10, not last): mean 0.630 median 0.579 (n 25); setup 2.3 s
+  dt: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34 25:87.33 26:87.33 27:87.33 28:87.33 29:87.33 30:87.32
+  L_top per row: 0.00000e+00 1.67166e+38 4.45655e+37 4.32385e+37 4.74501e+37 4.55245e+37 4.68489e+37 4.63792e+37 4.64907e+37 4.64596e+37 4.64744e+37 4.64746e+37 4.64755e+37 4.64755e+37 4.64760e+37 4.64761e+37 4.64760e+37 4.64756e+37 4.64748e+37 4.64737e+37 4.64723e+37 4.64704e+37 4.64681e+37 4.64653e+37 4.64621e+37 4.64584e+37 4.64543e+37 4.64497e+37 4.64447e+37 4.64392e+37 4.64332e+37 4.64332e+37
+=== bC2g: FATAL 0  NaN-lines 0  last cycle 30
+  <rad_m1> implicit transport: solves=5.900000e+01 Picard iterations mean=2.576271e+00 max=7.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.550137e+09 newton fallbacks=2.549350e+07 (9.996916e-03 per cell-pass)
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=7.872306e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=2.900000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=1.094451e+07 of 4.865393e+08
+  NOT ADMISSIBLE: 0 at cycles 
+  s/cycle steady (c>2, not x10, not last): mean 0.421 median 0.383 (n 25); setup 2.3 s
+  dt: 0:87.37 1:87.37 2:87.37 3:87.37 4:87.37 5:87.37 6:87.37 7:87.37 8:87.37 9:87.36 10:87.36 11:87.36 12:87.36 13:87.36 14:87.36 15:87.36 16:87.35 17:87.35 18:87.35 19:87.35 20:87.35 21:87.34 22:87.34 23:87.34 24:87.34 25:87.33 26:87.33 27:87.33 28:87.33 29:87.33 30:87.32
+  L_top per row: 0.00000e+00 1.67166e+38 4.45655e+37 4.32385e+37 4.74501e+37 4.55245e+37 4.68489e+37 4.63792e+37 4.64907e+37 4.64596e+37 4.64744e+37 4.64746e+37 4.64755e+37 4.64755e+37 4.64760e+37 4.64761e+37 4.64760e+37 4.64756e+37 4.64748e+37 4.64737e+37 4.64723e+37 4.64704e+37 4.64681e+37 4.64653e+37 4.64621e+37 4.64584e+37 4.64543e+37 4.64497e+37 4.64447e+37 4.64392e+37 4.64332e+37 4.64332e+37
+=== aM: FATAL 0  NaN-lines 0  last cycle 60
+  <rad_m1> implicit transport: solves=1.270000e+02 Picard iterations mean=2.629921e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.626683e+09 newton fallbacks=9.015767e+06 (3.432377e-03 per cell-pass)
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.438297e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=5.900000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=0.000000e+00 of 4.639949e+08
+  NOT ADMISSIBLE: 0 at cycles 
+  s/cycle steady (c>2, not x10, not last): mean 0.186 median 0.177 (n 52); setup 19.8 s
+  dt: 0:1253 1:1253 2:1253 3:1253 4:1253 5:1253 6:1253 7:1253 8:1253 9:1253 10:1253 11:1253 12:1253 13:1253 14:1253 15:1253 16:1253 17:1253 18:1253 19:1253 20:1253 21:1253 22:1253 23:1253 24:1253 25:1253 26:1253 27:1253 28:1253 29:1253 30:1253 31:1253 32:1253 33:1253 34:1253 35:1253 36:1253 37:1253 38:1253 39:1253 40:1253 41:1253 42:1253 43:1253 44:1253 45:1253 46:1253 47:1253 48:1253 49:1253 50:1253 51:1253 52:1253 53:1253 54:1253 55:1253 56:1253 57:1253 58:1253 59:1252 60:1252
+  L_top per row: 2.84215e+38 2.84222e+38 2.84228e+38 2.84231e+38 2.84234e+38 2.84237e+38 2.84240e+38 2.84242e+38 2.84244e+38 2.84246e+38 2.84249e+38 2.84241e+38 2.84248e+38 2.84255e+38 2.84257e+38 2.84258e+38 2.84260e+38 2.84261e+38 2.84263e+38 2.84264e+38 2.84266e+38 2.84266e+38 2.84267e+38 2.84269e+38 2.84271e+38 2.84272e+38 2.84273e+38 2.84275e+38 2.84276e+38 2.84277e+38 2.84278e+38 2.84288e+38 2.84285e+38 2.84281e+38 2.84281e+38 2.84283e+38 2.84283e+38 2.84285e+38 2.84285e+38 2.84286e+38 2.84287e+38 2.84280e+38 2.84285e+38 2.84289e+38 2.84291e+38 2.84291e+38 2.84292e+38 2.84292e+38 2.84293e+38 2.84294e+38 2.84294e+38 2.84294e+38 2.84294e+38 2.84296e+38 2.84297e+38 2.84297e+38 2.84298e+38 2.84299e+38 2.84299e+38 2.84300e+38 2.84300e+38 2.84300e+38
+=== aC2: FATAL 0  NaN-lines 0  last cycle 60
+  <rad_m1> implicit transport: solves=1.270000e+02 Picard iterations mean=2.629921e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+  <rad_m1> gas coupling: newton=true eos_cache=false cell-passes=2.626683e+09 newton fallbacks=9.015796e+06 (3.432388e-03 per cell-pass)
+  <rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.438297e+00
+  <rad_m1> time_scheme=hesdirk2: stage steps=5.900000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00 time2_pred_cap=5.000000e-01 limited cell-builds=0.000000e+00 of 4.639949e+08
+  NOT ADMISSIBLE: 0 at cycles 
+  s/cycle steady (c>2, not x10, not last): mean 0.193 median 0.181 (n 52); setup 20.3 s
+  dt: 0:1253 1:1253 2:1253 3:1253 4:1253 5:1253 6:1253 7:1253 8:1253 9:1253 10:1253 11:1253 12:1253 13:1253 14:1253 15:1253 16:1253 17:1253 18:1253 19:1253 20:1253 21:1253 22:1253 23:1253 24:1253 25:1253 26:1253 27:1253 28:1253 29:1253 30:1253 31:1253 32:1253 33:1253 34:1253 35:1253 36:1253 37:1253 38:1253 39:1253 40:1253 41:1253 42:1253 43:1253 44:1253 45:1253 46:1253 47:1253 48:1253 49:1253 50:1253 51:1253 52:1253 53:1253 54:1253 55:1253 56:1253 57:1253 58:1253 59:1252 60:1252
+  L_top per row: 2.84215e+38 2.84222e+38 2.84228e+38 2.84231e+38 2.84234e+38 2.84237e+38 2.84240e+38 2.84242e+38 2.84244e+38 2.84246e+38 2.84249e+38 2.84241e+38 2.84248e+38 2.84255e+38 2.84257e+38 2.84258e+38 2.84260e+38 2.84261e+38 2.84263e+38 2.84264e+38 2.84266e+38 2.84266e+38 2.84267e+38 2.84269e+38 2.84271e+38 2.84272e+38 2.84273e+38 2.84275e+38 2.84276e+38 2.84277e+38 2.84278e+38 2.84288e+38 2.84285e+38 2.84281e+38 2.84281e+38 2.84283e+38 2.84283e+38 2.84285e+38 2.84285e+38 2.84286e+38 2.84287e+38 2.84280e+38 2.84285e+38 2.84289e+38 2.84291e+38 2.84291e+38 2.84292e+38 2.84292e+38 2.84293e+38 2.84294e+38 2.84294e+38 2.84294e+38 2.84294e+38 2.84296e+38 2.84297e+38 2.84297e+38 2.84298e+38 2.84299e+38 2.84299e+38 2.84300e+38 2.84300e+38 2.84300e+38
+
+=== BSG: bC2 / bC2g vs bM at cycles 10, 20, 30 (hst row = cycle when dt is the same; else by row index)
+  bC2 row 10 (t 8.736774e+02 vs 8.736774e+02): L_top 1.272e-09 E_rad 1.203e-11 Etot 1.099e-14
+  bC2 row 20 (t 1.747234e+03 vs 1.747234e+03): L_top 4.437e-10 E_rad 1.872e-11 Etot 1.309e-14
+  bC2 row 30 (t 2.620593e+03 vs 2.620593e+03): L_top 7.522e-11 E_rad 1.776e-11 Etot 1.406e-14
+  bC2g row 10 (t 8.736774e+02 vs 8.736774e+02): L_top 9.521e-10 E_rad 1.203e-11 Etot 1.099e-14
+  bC2g row 20 (t 1.747234e+03 vs 1.747234e+03): L_top 4.317e-10 E_rad 1.870e-11 Etot 2.101e-14
+  bC2g row 30 (t 2.620593e+03 vs 2.620593e+03): L_top 7.814e-11 E_rad 1.791e-11 Etot 1.163e-13
+
+=== AG Car A: aC2 vs aM, per user.hst column, max relative difference over the rows
+  time       1.146e-11 (normalised by max|aM|: column has zeros)
+  dt         1.566e-10
+  L_bot      2.528e-10
+  L_mid      1.646e-11
+  L_int      6.842e-12
+  L_top      1.375e-11
+  L_in       0.000e+00
+  E_rad      4.236e-12
+  e_gas      9.651e-13
+  M_int      2.355e-16
+  KE_int     2.374e-07 (normalised by max|aM|: column has zeros)
+  KEr_int    2.456e-07 (normalised by max|aM|: column has zeros)
+  Mr_int     3.621e-07 (normalised by max|aM|: column has zeros)
+  PV_int     1.296e-12
+  V_int      0.000e+00
+  M_tot      1.178e-16
+  Mdot_top   0.000e+00 (normalised by max|aM|: column has zeros)
+  Mdot_bot   0.000e+00 (normalised by max|aM|: column has zeros)
+  Etot       2.886e-16
+  Min_top    4.379e-12 (normalised by max|aM|: column has zeros)
+  v1sq_wall  3.743e-06 (normalised by max|aM|: column has zeros)
+  Picard     0.000e+00 (normalised by max|aM|: column has zeros)
+  w_mlt      0.000e+00
+  L_MLT      0.000e+00
+  P_esrc     0.000e+00
+  P_sponge   8.853e-11 (normalised by max|aM|: column has zeros)

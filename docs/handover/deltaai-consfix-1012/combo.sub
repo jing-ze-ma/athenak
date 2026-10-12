@@ -1,0 +1,22 @@
+#!/bin/bash -l
+# One short job for two DeltaAI TASKs (ghx4-interactive allows 1 job per user; one 30-min job backfills sooner than two 1-h jobs):
+#   1) TASK-2026-10-12-deltaai-agcar-reatm      (reatm_1011/job.sub, binary a70ce799)   -- gates A production, first
+#   2) TASK-2026-10-12-deltaai-consfix-c2drag   (consfix_1011/job.sub, binary 8cba89a6)
+# Each script runs unchanged except that TEND (its stop-launching time) is passed in. Run dirs: <task>/runs/<this job id>.
+#SBATCH -J deltaai_combo
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=00:30:00
+#SBATCH -o /work/nvme/bivj/jma20/combo_1012/logs/%x.%j.out
+T0=$(date +%s)
+echo "===== reatm ($(date +%T))"
+TEND=$((T0 + 13*60)) BP=/u/jma20/ATHENAK/builds/bin/athena_hes_gpu_a70ce7992070 bash /work/nvme/bivj/jma20/reatm_1011/job.sub
+echo "===== consfix ($(date +%T))"
+TEND=$((T0 + 28*60)) BP=/u/jma20/ATHENAK/builds/bin/athena_hes_gpu_8cba89a695bf bash /work/nvme/bivj/jma20/consfix_1011/job.sub
+echo "===== combo end $(date)"
