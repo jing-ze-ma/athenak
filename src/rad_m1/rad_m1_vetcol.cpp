@@ -1581,6 +1581,10 @@ void RadiationM1::VetColReport() {
                 << "), tables (rotation) " << vgd_ttab << ", uniform twin " << vgd_ttwin
                 << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
                 << vgd_trb << " s)" << std::endl;
+      if (vgd_symref) {
+        std::cout << "<rad_m1> vet_gd_symref: host start " << vgd_tsr << " s, join "
+                  << vgd_tsrj << " s (rank 0)" << std::endl;
+      }
       std::cout << "<rad_m1> vet_gd halo (rank 0): exchanges " << vgd_nexch
                 << ", bytes sent "
                 << vgd_nbyte << " (" << ((vgd_nexch > 0.0) ? vgd_nbyte/vgd_nexch : 0.0)

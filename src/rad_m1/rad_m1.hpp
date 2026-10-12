@@ -77,6 +77,14 @@ constexpr int M1_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J (twin-corrected as 
 constexpr int M1_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
 constexpr int M1_VGD_HRJ  = 8;     // J (E units; twin-corrected by J_tw/<J_tw>)
 constexpr int M1_VGD_HRNX = 9;
+// vgdlat-1012 vet_gd_symref: the per-shell quantities of the 1-D reference (vgd_srm)
+constexpr int M1_VGD_SR_F = 0;    // K/J
+constexpr int M1_VGD_SR_HP = 1;   // H+_r/J
+constexpr int M1_VGD_SR_HM = 2;   // H-_r/J (<= 0)
+constexpr int M1_VGD_SR_HL = 3;   // H+_theta/J = H+_phi/J = -H-_theta/J
+constexpr int M1_VGD_SR_C1 = 4;   // int |I - S|/J
+constexpr int M1_VGD_SR_J = 5;    // J (E units)
+constexpr int M1_VGD_SR_N = 6;
 constexpr int M1_VGD_NMAX = 432;   // vet_gd: at most 432 directions.  prodcand-1011: kept at 432
                                     // (sizes the per-thread Real buf[M1_VGD_NMAX] in VetGdWall; 2048
                                     // would spill on A100).  The 4x-GL angular study (sptests P2)
@@ -1880,6 +1888,19 @@ class RadiationM1 {
   bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
   DvceArray1D<Real> vgd_twm, vgd_twm2;
   DvceArray5D<Real> vgd_twl, vgd_cs0;
+  // vgdlat-1012 vet_gd_symref = col (read only when named, default none; needs
+  // vet_gd_twin): the twin's laterally symmetric reference (its shell mean) replaced by
+  // the 1-D spherical p-ray solution of the same shell-mean state (VetGdSymRef)
+  bool vgd_symref = false, vgd_sr_ok = false;
+  int vgd_sr_nc = 64, vgd_sr_ns = 4;
+  std::vector<Real> vgd_sr_chi, vgd_sr_s, vgd_sr_x1v, vgd_sr_x1f;
+  DvceArray1D<Real> vgd_srm;   // (q c1 + i), q = M1_VGD_SR_*
+  double vgd_tsr = 0.0, vgd_tsrj = 0.0;
+  bool vgd_sr_pend = false;
+  std::vector<double> vgd_sr_h;
+  std::future<std::vector<double>> vgd_sr_fut;
+  void VetGdSymRef();
+  void VetGdSymRefJoin();
   // vet_gd_twin_fuse (accel-1009): the twin's own source (ln chi, ln S of the shell
   // means) and intensities, swept in the main sweep's kernels; vgd_sw2 = this sweep
   // carries the twin; second compact halo buffers for it
