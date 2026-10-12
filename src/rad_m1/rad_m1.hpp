@@ -1805,6 +1805,7 @@ class RadiationM1 {
   // at the same t on every dt), vet_gd_rotate_t0 its origin; vet_gd_rotate_align (default
   // true): Mesh::NewTimeStep lands a step on every block boundary (VetGdAlignDt)
   Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
+  Real vgd_rot_stretch = 0.0;   // vet_gd_rotate_stretch: VetGdAlignDt may lengthen dt by <= this
   bool vgd_rot_align = false;
   double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
   // vet_gd_rotate_slope (with vet_gd_rotate_dt; probe | be | keep): the hesdirk2 FSAL

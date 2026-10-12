@@ -756,6 +756,8 @@ void RadiationM1::VetGdRotStep() {
 //! Mesh::NewTimeStep after the global min, before the tlim clamp): the next boundary
 //! t_k = t0 + k dt_rot > t is reached in n = ceil(rem/dt) EQUAL steps, dt' = rem/n
 //! (never a sliver step; dt' >= dt/2; dt' = dt when dt divides rem).  Same on every rank.
+//! vet_gd_rotate_stretch = s > 0: n - 1 steps when that needs dt' <= (1 + s) dt (a step
+//! up to s longer than the limit, instead of a whole extra step per interval).
 
 Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
   if (!(vgd_rot_dt > 0.0) || !vgd_rot_align || !(dt > 0.0)) {return dt;}
@@ -764,11 +766,14 @@ Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
   // time already on a boundary (to round-off): the NEXT one
   if ((k - x)*vgd_rot_dt < 1.0e-9*dt) {k += 1.0;}
   const double rem = vgd_rot_t0 + k*vgd_rot_dt - time;
-  const double n = std::ceil(rem/dt*(1.0 - 1.0e-9));
+  double n = std::ceil(rem/dt*(1.0 - 1.0e-9));
   if (n > 1.0e6) {return dt;}
+  if (vgd_rot_stretch > 0.0 && n > 1.0 && rem/(n - 1.0) <= (1.0 + vgd_rot_stretch)*dt) {
+    n -= 1.0;
+  }
   const Real dtn = static_cast<Real>(rem/std::max(n, 1.0));
   if (dtn < dt) {vgd_rot_nalign += 1.0;}
-  return std::min(dt, dtn);
+  return (vgd_rot_stretch > 0.0) ? dtn : std::min(dt, dtn);
 }
 
 //----------------------------------------------------------------------------------------
