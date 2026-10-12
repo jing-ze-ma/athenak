@@ -660,8 +660,10 @@ class RadiationM1 {
   bool thsw_hctau_lat = false;  // ... and on the sp wedge's transverse faces (gd = all)
   Real thsw_jslim = 2.0;
   // unify-1012: implicit_thin_hcsf = jh: hc/hcs take the sf donor scale Jh as the cell's
-  // formal-solution scale on faces with sf ratios (vet_sc); j = the old J (opt-out)
+  // formal-solution scale on faces with sf ratios (vet_sc); default j = the old J
+  // (jh opt-in: +16 % in vacuum crossing beams, NOTE-unify)
   bool thsw_hcjh = false;
+  bool thsw_bqgd = false;   // unify-1012: thin_bq lin also on vet_gd (opt-in)
   int thsw_jsgd = 1;   // unify-1012: js/jse on vet_gd, bit 1 x1, bit 2 lateral
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
