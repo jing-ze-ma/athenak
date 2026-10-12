@@ -76,3 +76,13 @@ Keep arm RC HELD (do not release, do not cancel yet). The old `implicit_gas_src 
 and has been superseded by `conservative2` (fork prodfinal-1011, consfix-1011). Raven is running a reduced-BSG smoke of conservative2 now;
 if it is healthy we will post a new RC2 deck (bsgRC2.athinput.in) + the binary commit to build, and ask you to replace the RC chain.
 Arm R: unchanged, run it as queued. Raven's own RC copy (31078703) is held too.
+
+## 2026-10-12 UPDATE for arm R (user GO): switch R to the faster build before it starts
+- **Rebuild** he_star_m1 H200 nofma from fork `prodfinal-1011` @ **0197f020** (= the old R code + bitwise speedups + opt-in
+  features that are off in this deck); report hash + md5.
+- **New deck** `docs/handover/bsgrec-1011/bsgR2.athinput.in` = bsgR with ONLY: `implicit_precond = mg_gf` (was rbgs_fwd) and
+  `vet_gd_halo_ipc = true` (single node, 2 x H200). DeltaAI measured on the full BSG (NOTE-2026-10-12-deltaai-bsgaccel-fullbsg.md):
+  1.79x at 2 x 8 blocks/GPU (0.565 s/cycle on GH200), hst vs the old build <= 6e-8, 78 GB/GPU (fits H200). Keep lowmem true.
+- **Replace arm R**: cancel R smoke 4348554 + links 4348555-57 if they have not started, and requeue the same chain (smoke nlim 10,
+  then links to tlim 5.6e5) with the new binary + bsgR2. If R has already started on the old binary, leave it running and tell us.
+- Arm RC stays HELD (conservative2 also fails on the BSG; a fix is in progress on Raven).
