@@ -55,5 +55,37 @@ inline void par_for_lb(const std::string &name, ExeSpace exec_space,
   });
 }
 
+//! par_reduce_flat (bsgaccel-1011): a 4-D (m, k, j, i) parallel_reduce on the flattened
+//! 1-D RangePolicy of par_for, in place of Kokkos::MDRangePolicy<Rank<4>> (whose CUDA
+//! reduction ran ~50x below bandwidth: 0.9 ms for one 2M-cell field on A100).  The cell
+//! set and the body are unchanged; only the order in which the partial results are
+//! combined differs, so Max / Min / MaxLoc reductions and sums of integer-valued Reals
+//! are bitwise the MDRange result (a general floating-point sum is not).
+template <typename Function, typename Reducer>
+inline void par_reduce_flat(const std::string &name, const int &nl, const int &nu,
+                            const int &kl, const int &ku, const int &jl, const int &ju,
+                            const int &il, const int &iu, const Function &function,
+                            const Reducer &reducer) {
+  const int nn = nu - nl + 1;
+  const int nk = ku - kl + 1;
+  const int nj = ju - jl + 1;
+  const int ni = iu - il + 1;
+  const int nnkji = nn * nk * nj * ni;
+  const int nkji  = nk * nj * ni;
+  const int nji   = nj * ni;
+  using VT = typename Reducer::value_type;
+  Kokkos::parallel_reduce(name, Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nnkji),
+  KOKKOS_LAMBDA(const int &idx, VT &v) {
+    int n = (idx)/nkji;
+    int k = (idx - n*nkji)/nji;
+    int j = (idx - n*nkji - k*nji)/ni;
+    int i = (idx - n*nkji - k*nji - j*ni) + il;
+    n += nl;
+    k += kl;
+    j += jl;
+    function(n, k, j, i, v);
+  }, reducer);
+}
+
 } // namespace radm1
 #endif // RAD_M1_RAD_M1_PARFOR_HPP_

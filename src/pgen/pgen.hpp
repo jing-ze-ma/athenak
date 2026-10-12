@@ -124,6 +124,11 @@ class ProblemGenerator {
   std::vector<char> pgen_rststate;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
+  // reatm-1011: called ONCE on a fresh start, in Driver::Initialize right after the
+  // <rad_m1>/ic_rad passes (IcRadRun) and before the boundaries/primitives are rebuilt,
+  // so a pgen can adjust its initial state to the relaxed radiation (he_star_m1:
+  // he_ic_rad_atm_post).  Left null (every other pgen, ic_rad = none) it is never called.
+  UserCycleFnPtr user_icpost_func=nullptr;
   // predefined problem generator functions (default test suite)
   void CallProblemGenerator(ParameterInput *pin, bool is_restart);
   void Advection(ParameterInput *pin, const bool restart);

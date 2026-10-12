@@ -774,11 +774,14 @@ class RadiationM1 {
   //      velocity change since the stored F as F0's EXPLICIT tendency -dA/dt
   //      (ImplicitCs2Shift at the solve start; the lab F is kept).  Off, it is part of
   //      the solve's dA (which gives clean order 2 on the T ladders).
-  // iw components behind the other blocks: A^old (3), dA (3, exchanged)
+  //  (d) implicit_cs2_hll = drag (default, consfix3): the AP-HLL (thin) part of a face
+  //      has no face equation; there the gas pays only its drag, as matched, not dA.
+  // iw components behind the other blocks: A^old (3), dA (3, exchanged), om_bar (3)
   bool impl_gas_src_cs2 = false;
   int iw_cs2 = -1;
   bool cs2_dav = false;                 // the dA components hold a pass's prediction
   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
+  bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
                                         // 2 no vimp prediction, 4 no hydro shift,
                                         // 8 no x1 split, 16 no x2/x3 split
@@ -2089,6 +2092,9 @@ class RadiationM1 {
   // sweep).  env VGD_IPC=0/1 overrides.
   bool vgd_ipc_on = false;
   bool vgd_ipc_tfs = false;
+  bool vgd_merge = true;         // bsgaccel-1011: env VGD_MERGE=0: twin in own messages
+  DvceArray1D<Real> vgd_csbm, vgd_crbm;   // bsgaccel-1011: merged send / receive
+  bool vgd_ipc_lean = true;      // bsgaccel-1011: env VGD_IPC_LEAN=0: the ack kernel k1
   int vgd_ipc_mode = 1;          // env VGD_IPC=2: local pack + peer copies
   int vgd_ipc_state = 0;        // 0 not built, 1 on, -1 not possible (MPI path)
   Real *vgd_ipc_rbuf = nullptr;
@@ -2110,6 +2116,7 @@ class RadiationM1 {
   struct VgdHlPend {
     bool on = false, two = false, xe = false;   // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // vgdrot-1011: the IPC path
+    bool mrg = false;                           // bsgaccel-1011: merged twin messages
     long long seq = 0;
     int ex = -1, px = 0, i = -1;
     std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;

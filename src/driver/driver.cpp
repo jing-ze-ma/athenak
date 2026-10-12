@@ -392,6 +392,10 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
       pmesh->pmb_pack->pradm1 != nullptr && pmesh->pmb_pack->pradm1->icr_mode != 0) {
     pmesh->pmb_pack->pradm1->IcRadRun(this);
+    // reatm-1011: the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
+    if (pmesh->pgen->user_icpost_func != nullptr) {
+      (pmesh->pgen->user_icpost_func)(pmesh);
+    }
     InitBoundaryValuesAndPrimitives(pmesh, false);
     if (((phydro != nullptr && phydro->rad_signal_speed) ||
          (pmhd != nullptr && pmhd->rad_signal_speed))) {

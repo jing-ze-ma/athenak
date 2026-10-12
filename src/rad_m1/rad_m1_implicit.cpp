@@ -2444,6 +2444,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
+      // consfix3: the AP-HLL (thin) part of a face has no face equation, so the theta
+      // split cannot act there; `drag` (default): that part charges the gas only its
+      // drag, as matched (the radiation keeps its lab flux), `inertia`: all of dA (the
+      // pre-consfix3 conservative2; floor gas with E/(rho c^2) >~ 1 then takes kicks ~c)
+      {
+        const std::string hm = pin->GetOrAddString("rad_m1","implicit_cs2_hll","drag");
+        if (hm.compare("drag") == 0) {
+          cs2_hll_drag = true;
+        } else if (hm.compare("inertia") == 0) {
+          cs2_hll_drag = false;
+        } else {
+          ImplFatal("<rad_m1>/implicit_cs2_hll = '" + hm + "' is not a choice (drag | "
+                    "inertia)");
+        }
+      }
     } else {
       ImplFatal("<rad_m1>/implicit_gas_src = '" + gs + "' is not a choice (matched | "
                 "conservative | conservative2 | conservative_full)");
@@ -2667,7 +2682,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 "sphere (covariant cell F)");
     }
     iw_cs2 = niw;
-    niw += 6;
+    niw += 9;   // + the per-axis mean face-equation weight om (implicit_cs2_hll = drag)
   }
   if (impl_eos_cache) {
     impl_nec = M1EosCacheNComp(impl_ecnt);
@@ -9371,9 +9386,65 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
   const bool vfx = t2st && impl_vimp && t2_fvnew;
   const bool udv = usedv && impl_vimp && (iw_vimp >= 0);
   const int ivd = udv ? (iw_vimp + M1_IV_DV) : 0;
-  const int ca = iw_cs2, cd = iw_cs2 + 3;
+  const int ca = iw_cs2, cd = iw_cs2 + 3, cw = iw_cs2 + 6;
+  // consfix3 (implicit_cs2_hll = drag): om_bar_d, the mean over the cell's two faces
+  // normal to d of the face-equation weight om = 1 - AL (a physical face: 1)
+  auto ifw_ = ifw;
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
+  auto th2_ = thx2;
+  auto th3_ = thx3;
+  const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
+  const Real ch = chat, dts = dt_sub;
+  auto pos_ = part_pos;
+  const int nblkx1 = part_nblk;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  auto &mbbcs = pmy_pack->pmb->mb_bcs;
   par_for("m1_cs2_da", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    {
+      // a physical face has no face equation either: om = 0 there (its F0 is the
+      // boundary flux; the gas keeps the matched half-cell drag)
+      const int ipos = pos_.d_view(m);
+      const bool pl = (i == is) && (ipos == 0) && !cyclic;
+      const bool pr = (i == ie) && (ipos == nblkx1-1) && !cyclic;
+      Real wl = pl ? 0.0 : 1.0, wr = pr ? 0.0 : 1.0;
+      if (aphll) {
+        if (!pl) {wl = 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
+        if (!pr) {wr = 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
+      }
+      iw_(m,cw,k,j,i) = 0.5*(wl + wr);
+      iw_(m,cw+1,k,j,i) = 1.0;
+      iw_(m,cw+2,k,j,i) = 1.0;
+      if (tq) {
+        for (int d = 1; d < 3; ++d) {
+          if (d == 2 && !thrd) break;
+          BoundaryFlag qlo = mbbcs.d_view(m,(d == 1) ? BoundaryFace::inner_x2
+                                                     : BoundaryFace::inner_x3);
+          BoundaryFlag qhi = mbbcs.d_view(m,(d == 1) ? BoundaryFace::outer_x2
+                                                     : BoundaryFace::outer_x3);
+          const bool plo = (qlo != BoundaryFlag::block) &&
+                           (qlo != BoundaryFlag::periodic);
+          const bool phi = (qhi != BoundaryFlag::block) &&
+                           (qhi != BoundaryFlag::periodic);
+          const int c = (d == 1) ? j : k;
+          const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je : ke;
+          Real ws = 0.0;
+          for (int s = 0; s < 2; ++s) {
+            if ((s == 0) ? (c == cs && plo) : (c == ce && phi)) continue;   // om 0
+            const int cf = c + s;
+            const int kq = (d == 2) ? cf : k, jq = (d == 1) ? cf : j;
+            const int kl = (d == 2) ? (cf-1) : k, jl = (d == 1) ? (cf-1) : j;
+            const Real ktf = 0.5*(iw_(m,M1_IW_KT,kl,jl,i) + iw_(m,M1_IW_KT,kq,jq,i));
+            Real om = 1.0;
+            if (lm) {
+              om = ((d == 1) ? th2_(m,k,cf,i) : th3_(m,cf,j,i))*(1.0 + ch*dts*ktf);
+            }
+            ws += fmin(fmax(om, 0.0), 1.0);
+          }
+          iw_(m,cw+d,k,j,i) = 0.5*ws;
+        }
+      }
+    }
     // (a) the write-back's F^old and the old face mean
     // (f0x*n carry this solve's applied dA face means, cs2f*: added back)
     const Real m1 = 0.5*(f0n_(m,k,j,i) + q1_(m,k,j,i) + f0n_(m,k,j,i+1) + q1_(m,k,j,i+1));
@@ -9757,7 +9828,8 @@ void RadiationM1::ImplicitCs2Vimp() {
   const bool t2st = (t2s == M1_T2S_STAGE1) || (t2s == M1_T2S_STAGE2);
   const bool vfx = t2st && impl_vimp && t2_fvnew;
   const int b = iw_vimp;
-  const int ca = iw_cs2, cd = iw_cs2 + 3;
+  const int ca = iw_cs2, cd = iw_cs2 + 3, cw = iw_cs2 + 6;
+  const bool hdrag = cs2_hll_drag;
   const bool nos = (cs2_dbg & 1);   // diagnostic: no face split (the gas pays all of dA)
   const bool nx1s = (cs2_dbg & 8), ntrs = (cs2_dbg & 16);
   par_for("m1_cs2_vimp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -9839,7 +9911,9 @@ void RadiationM1::ImplicitCs2Vimp() {
           nb += 0.25*th*((s == 0) ? iw_(m,cd+d,kl,jl,i) : iw_(m,cd+d,kq,jq,i));
         }
       }
-      // A'_d at v (+ the lagged cross terms), less A^old
+      // A'_d at v (+ the lagged cross terms), less A^old.  The gas pays ob dA of its
+      // own (ob = om_bar_d under implicit_cs2_hll = drag, else 1)
+      const Real ob = hdrag ? iw_(m,cw+d,k,j,i) : 1.0;
       Real h, eta = 0.0;
       if (vfx) {
         Real ax = vv[d];
@@ -9848,11 +9922,11 @@ void RadiationM1::ImplicitCs2Vimp() {
           if (e != d) {ax += dm[d][e]*dv0[e];}
         }
         h = ax*es - iw_(m,ca+d,k,j,i);
-        eta = (1.0 - cown)*(1.0 + dm[d][d])*es*icr;
+        eta = (ob - cown)*(1.0 + dm[d][d])*es*icr;
       } else {
         h = iw_(m,aw[d],k,j,i)*es - iw_(m,ca+d,k,j,i);
       }
-      dvn[d] = (dv0[d] - ((1.0 - cown)*h - nb)*icr)/(1.0 + eta);
+      dvn[d] = (dv0[d] - ((ob - cown)*h - nb)*icr)/(1.0 + eta);
       if (eta != 0.0) {
         const Real sc = 1.0/(1.0 + eta);
         for (int r = 0; r < 3; ++r) {iw_(m,b+3*d+r,k,j,i) *= sc;}
@@ -11127,9 +11201,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // res = |dE|/max(E, implicit_res_floor*max(E)).
   Real emax0 = 0.0;
   if (rfl_ > 0.0) {
-    Kokkos::parallel_reduce("m1_impl_emax",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_emax", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
       Real r = iw_(m,M1_IW_EN,k,j,i);
       lmax = (r > lmax) ? r : lmax;
@@ -11147,9 +11219,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   Real rhsmax = 1.0;
   if (trans) {
     Real rm = 0.0;
-    Kokkos::parallel_reduce("m1_impl_rhsmax",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_rhsmax", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
       Real r = fabs(iw_(m,M1_IW_EN,k,j,i));
       lmax = (r > lmax) ? r : lmax;
@@ -12812,9 +12882,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // xthinfix-1009 Fix B: the plm half-range row has positive off-diagonals too
         // (the E_c-2 / E_c+2 coefficients of the inflow faces): the same fallback to dc
         Real emin = 1.0e300;
-        Kokkos::parallel_reduce("m1_impl_vmmin",
-        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                               {nmb1+1,ke+1,je+1,ie+1}),
+        par_reduce_flat("m1_impl_vmmin", 0, nmb1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
           Real r = iw_(m,M1_IW_S2,k,j,i);
           lmin = (r < lmin) ? r : lmin;
@@ -13612,15 +13680,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // MILESTONE 3g: the per-cell counters of the gas coupling, reduced ONCE per step.
   if (gasx) {
     Real sfb = 0.0, sms = 0.0;
-    Kokkos::parallel_reduce("m1_impl_gcnt",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_gcnt", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lf) {
       lf += iw_(m,igf,k,j,i);
     }, Kokkos::Sum<Real>(sfb));
-    Kokkos::parallel_reduce("m1_impl_gms",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_gms", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls) {
       ls += iw_(m,igm,k,j,i);
     }, Kokkos::Sum<Real>(sms));
@@ -13733,9 +13797,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (bkt > 0.0) {qt += emis*4.0*t3*(rkt + cl*dt*rkev*ep)/bkt;}
       iw_(m,igm,k,j,i) = fabs(qt - qc)/fmax(fabs(qt), 1.0e-300);
     }, Kokkos::Max<Real>(emx));
-    Kokkos::parallel_reduce("m1_impl_eckq",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
+    par_reduce_flat("m1_impl_eckq", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
       lmax = fmax(lmax, iw_(m,igm,k,j,i));
     }, Kokkos::Max<Real>(qmx));
@@ -13805,6 +13867,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool gfst = gcs_first;
   auto f2nw_ = f0x2n;
   auto f3nw_ = f0x3n;
+  // consfix3: implicit_cs2_hll = drag, the AP-HLL part (1 - om_bar) of the cell's own dA
+  // is not charged to the gas (A^old in iw_cs2 + 0.., om_bar in iw_cs2 + 6..)
+  const bool c2h = gcs && Cs2Active() && cs2_hll_drag && !(cs2_dbg & 1);
+  const int c2a = c2h ? iw_cs2 : 0;
   if (!rcpw) {
     par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
