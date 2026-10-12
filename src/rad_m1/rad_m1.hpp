@@ -791,8 +791,7 @@ class RadiationM1 {
   // the F0 the faces end on and the ESDIRK slope of F0 carries it.  The after-solve
   // split leaves the E update and the stored F0 inconsistent by theta a dE: a first-
   // order (in dt) splitting error ~ v^2, suppressed in the stiff limit (rswv / NHvk0
-  // floor, NOTE-h2order2).  x1 faces only: the x2/x3 faces keep the after-solve rule
-  // (rlat_T).  matched / conservative only (conservative2 carries the whole dA itself).
+  // floor, NOTE-h2order2).  matched / conservative only (conservative2 has it).
   bool impl_rinr_solve = false;
   bool RinrActive();
   void ImplicitRinrDeltaA();

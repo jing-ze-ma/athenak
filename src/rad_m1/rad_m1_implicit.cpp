@@ -9254,9 +9254,6 @@ void RadiationM1::ImplicitRadInertia() {
   // consfix-1011 (conservative2): the whole dA went into the face equation inside the
   // solve (ImplicitCs2Pass); only the diagnostic split-off mode keeps the E part here
   if (Cs2Active() && !(cs2_dbg & 1)) return;
-  // h2order2-1011: implicit_rad_inertia_solve carried the x1 faces inside the passes
-  const bool rx1 = RinrActive();
-  if (rx1 && !trans_on) return;
   if (trans) {
     ImplicitHaloExchange(1, M1_IW_EN);
   } else {
@@ -9273,7 +9270,6 @@ void RadiationM1::ImplicitRadInertia() {
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool fwd = sph_geom && impl_face_wdist;
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
-  if (!rx1) {
   par_for("m1_rinr_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
@@ -9297,7 +9293,6 @@ void RadiationM1::ImplicitRadInertia() {
       f0_(m,k,j,ie+1) = f0_(m,k,j,is);
     });
   }
-  }   // !rx1
   if (!trans) return;
   const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
   for (int d = 1; d < 3; ++d) {
@@ -9528,9 +9523,9 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool trans = trans_on, thrd = trans_x3;
   // h2order2-1011: implicit_rad_inertia_solve uses the same F0^n shift with its own dA
-  // (its x2/x3 faces keep the after-solve rule of ImplicitRadInertia: rlat_T, NOTE)
+  // (ImplicitRadInertia's transverse faces do not depend on dbg_gas_force_trans)
   const bool rinr = RinrActive();
-  const bool tq = trans && dbg_gas_force_trans && !rinr;
+  const bool tq = trans && (dbg_gas_force_trans || rinr);
   if (!restore) {
     if (rinr) {
       ImplicitRinrDeltaA();
@@ -13760,7 +13755,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ImplicitCs2Pass(true);
   }
   // h2order2-1011: implicit_rad_inertia_solve carried it inside the passes
-  if (impl_rad_inertia && have_hydro) {ImplicitRadInertia();}
+  if (impl_rad_inertia && have_hydro && !RinrActive()) {ImplicitRadInertia();}
   cs2_dav = false;
   //------------------------------------------------------------------------- write back
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
