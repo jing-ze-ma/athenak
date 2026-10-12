@@ -1,0 +1,41 @@
+#!/bin/bash -l
+# TASK-2026-10-12-deltaai-defaults (raven -> DeltaAI): method-1012 fresh-run defaults, full AG Car A 60 cycles.
+#   GU = deck with NO method key named (fresh defaults, incl. vet_gd_rotate_dt = auto);
+#   GN = every method key named (vet_gd_rotate_dt = GU's resolved auto value, read from GU's log).
+#   sbatch --export=ALL,BP=<binary> job.sub      (DRY=1 BP=x bash job.sub: print the commands only)
+#SBATCH -J defaults_1012
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=00:45:00
+#SBATCH -o /work/nvme/bivj/jma20/defaults_1012/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/defaults_1012
+BP=${BP:?BP}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+echo "$BP $(md5sum < $BP | cut -c1-32)"
+mkdir -p $S
+K="time/nlim=60 time/ndiag=1 output2/dt=2.5e4 output3/dt=2.5e4 output4/dt=1e30 output5/dt=1e30"
+run() {   # run <name> <deck>
+  local n=$1 in=$2; local D=$S/$n; mkdir -p $D
+  local SR="srun -n 4 --ntasks-per-node=4 -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+  echo "RUN $n $(date +%T)"
+  [ -n "${DRY:-}" ] && { echo "  $SR $BP -i $in -d $D $K"; return; }
+  local t1=$(date +%s.%N)
+  $SR $BP -i $in -d $D $K > $D/out.txt 2>&1; local rc=$?
+  echo "END $n rc=$rc wall=$(echo "$(date +%s.%N) - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) $(grep 'Picard iterations mean' $D/out.txt | tail -1) $(date +%T)"
+}
+run GU $G/agcA_GU.athinput
+AU=$(grep 'vet_gd_rotate_dt = auto' $S/GU/out.txt | head -1); echo "$AU"
+RV=$(echo "$AU" | sed -E 's/.* = ([^ ]+) \(recorded.*/\1/'); [ -n "${DRY:-}" ] && RV=DRY
+sed "s#@RV@#$RV#" $G/agcA_GN.athinput.tmpl > $G/agcA_GN.athinput
+grep -n "vet_gd_rotate_dt" $G/agcA_GN.athinput
+run GN $G/agcA_GN.athinput
+[ -z "${DRY:-}" ] && python3 $G/cmpout.py $S/GU $S/GN
+echo "end $(date)"
