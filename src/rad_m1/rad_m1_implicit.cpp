@@ -2489,8 +2489,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // before 5c9e4432) the old value false is kept; files since then echo their value.
   impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",
                                         !global_variable::restart_run);
-  // h2order-1011 implicit_vimp_bc (ImplicitVimpBuild; read only when named)
-  if (pin->DoesParameterExist("rad_m1","implicit_vimp_bc")) {
+  // h2order-1011 implicit_vimp_bc (ImplicitVimpBuild).  DEFAULT true since
+  // vimpbcdef-1011 where implicit_vimp is on (the only place it acts): a fresh run takes
+  // true, a restart whose file lacks the key keeps the old value false; the resolved
+  // value is echoed (later restarts keep it); explicit input overrides.  Without
+  // implicit_vimp the key is read only when named (default false, not echoed).
+  if (impl_vimp) {
+    impl_vimp_bc = pin->GetOrAddBoolean("rad_m1","implicit_vimp_bc",
+                                        !global_variable::restart_run);
+  } else if (pin->DoesParameterExist("rad_m1","implicit_vimp_bc")) {
     impl_vimp_bc = pin->GetBoolean("rad_m1","implicit_vimp_bc");
   }
   if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
@@ -10081,7 +10088,8 @@ void RadiationM1::ImplicitVimpBuild() {
     });
   }
 
-  // h2order-1011 implicit_vimp_bc (read only when named, default false = bitwise): a
+  // h2order-1011 implicit_vimp_bc (default true on fresh runs with implicit_vimp, see the
+  // key's parse; a restart whose file lacks it keeps false): a
   // Marshak x1 end face carries the enthalpy flux A E of implicit_bc_advect (outflow:
   // the end cell's E, inflow: the bath) with the end cell's a at the OLD-vector velocity;
   // the stage's own radiative kick dv is missing there, an O(dt) lag (first order in
