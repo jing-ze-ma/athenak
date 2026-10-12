@@ -1184,8 +1184,8 @@ class RadiationM1 {
   // (1 - g) dt K1 stays a bounded move toward it.  A small frac makes K1 ~ jump/dt_p and
   // the stage-1 old vector overshoots by dt/dt_p (h2order_1011: rsw, rlat floors).
   int t2_start = 0;             // 0 be, 1 slope
-  // implicit_vimp_bc (h2order-1011, ImplicitVimpBuild; read only when named, default
-  // false = bitwise): the implicit_bc_advect enthalpy flux of a Marshak x1 end face takes
+  // implicit_vimp_bc (h2order-1011, ImplicitVimpBuild; default true on fresh runs with
+  // implicit_vimp since vimpbcdef-1011, false on a restart whose file lacks it): the implicit_bc_advect enthalpy flux of a Marshak x1 end face takes
   // the stage's radiative kick dv of its cell, as the interior faces do under vimp
   bool impl_vimp_bc = false;
   Real t2_start_frac = 1.0;     // time2_start_frac
