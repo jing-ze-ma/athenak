@@ -1,4 +1,4 @@
-# NOTE DeltaAI: REAL BSG true reproduction, final method, chained 1 h links (TASK-2026-10-12-deltaai-bsgprod) -- STARTED (job 3367085)
+# NOTE DeltaAI: REAL BSG true reproduction, final method, chained 1 h links (TASK-2026-10-12-deltaai-bsgprod) -- RUNNING (link 2 queued)
 
 **Picked up** 11:16 CDT (TASK 40558c5d, user GO). bsgcand-1012 **d3bf42d7** built: `athena_hes_gpu_d3bf42d7dc27`,
 md5 63528bf7f170366e4fd5cbc05f4b74b6 (deck keys implicit_thin_js_face, vet_gd_rotate_slope, vet_gd_halo_ipc, vet_gd_twin_lowmem present).
@@ -33,3 +33,12 @@ md5 63528bf7f170366e4fd5cbc05f4b74b6 (deck keys implicit_thin_js_face, vet_gd_ro
   ```
   The eint / m1_e shell means differ only in shells 64-112 = **37.62-45.12 Rsun** (cell centres), i.e. exactly the seeded band;
   ic0check reports shell means (angle-averaged), so the ~2e-6 / ~9e-6 per-cell seed shows as ~5e-8 here.
+
+## Links
+| link | job | wall (CDT) | t end [s] (d) | cycle end | dt | s/cycle | Picard mean / max | FATAL / NaN / NOT ADM / DIVERGED / NON-CONV | slope solves (failed) | newest rst |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 3367085 | 11:23:35-12:18:17 (-t 54:35) | 5.317375e5 (6.15 d) | 6077 | 87.5 s throughout | 0.540 (cycles 100-6050, incl. dump cycles) | 3.34 / 13 (12456 solves) | 0 / 0 / 0 / 0 / 0 | 303 (0) | rst/bsg3d.00007.rst |
+
+Link 2 = job 3367462, submitted 12:18:47 by the chain (restart from bsg3d.00007.rst + rst_info last_time keys).
+Projection at 0.54 s/cycle: ~56.7k cycles = ~8.5 h compute = ~9-10 links to tlim 4.96e6 s.
+Page: the BSG True Reproduction artifact now shows this run (t = 4.1 d at publish; refreshed from DeltaAI with the Caltech pagework, 822df54e).
