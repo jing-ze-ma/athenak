@@ -25,14 +25,17 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <string>
 #include <future>
+#include <iostream>
 #include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "bvals/bvals.hpp"
@@ -52,6 +55,29 @@ constexpr int M1_NVAR = 4;
 // number of explicit stages of the PD-ARS (Chu et al. 2019) integrator used per substep.
 // With S == 0 it reduces to Heun / SSP-RK2.
 constexpr int M1_NSTAGE = 2;
+
+//! unify-sc-gd-1012: ONE canonical key name per concept for both formal solutions
+//! (vet_sc, vet_col / vet_gd), the older closure-specific spellings accepted as aliases.
+//! Returns the name to read in <rad_m1>: the canonical key if the input has it, else the
+//! first alias it has, else the canonical key (a GetOrAdd* on it then records the
+//! resolved default).  An alias is read under its own name, so an input (or a restart
+//! file) that names only the old spelling behaves exactly as before.  The canonical key
+//! wins over an alias given with a different value (printed).
+inline std::string M1KeyName(ParameterInput *pin, const std::string &canon,
+                             const std::vector<std::string> &alias) {
+  const bool hc = pin->DoesParameterExist("rad_m1", canon);
+  for (const auto &a : alias) {
+    if (!pin->DoesParameterExist("rad_m1", a)) {continue;}
+    if (!hc) {return a;}
+    if (pin->GetString("rad_m1", a).compare(pin->GetString("rad_m1", canon)) != 0 &&
+        global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> NOTE: " << canon << " = " << pin->GetString("rad_m1", canon)
+                << " overrides its old spelling " << a << " = "
+                << pin->GetString("rad_m1", a) << std::endl;
+    }
+  }
+  return canon;
+}
 
 // components of the per-cell opacity array, all stored as rho*kappa (inverse length)
 // components of RadiationM1::vet_cell (closure = vet_sc)
