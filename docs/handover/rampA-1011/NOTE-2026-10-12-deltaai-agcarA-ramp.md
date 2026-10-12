@@ -6,7 +6,7 @@
 - 1 node x 4 GH200, 4 ranks, 1 block/GPU. ghx4-interactive allows 1 submitted job per user, so link 2 (if needed) and the
   consfix-c2drag job are submitted one after another as each job ends.
 
-## FATAL during the ramp (posted 21:45 CDT; analysis follows)
+## FATAL during the ramp (posted ~21:37 CDT; analysis follows)
 **Job 3363376 stopped with rc 134 at cycle 6695, t = 7.1827e6 s (ramp weight w = 0.114): Picard solve DIVERGED on all 4 ranks**
 ```
 <rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.001984e-02 (tol 1.000000e-08) lin_resid=3.331631e-08 worst cell of rank 0 (m,k,j,i)=(0,66,25,456)
@@ -24,7 +24,7 @@
 - Wall 43.8 min x 4 GH200 = 2.9 GPU-h.
 Next: hstA.py / reduceA.py / fluxA.py on the 15 dumps (running now on DeltaAI).
 
-## FINAL (22:05 CDT)
+## FINAL (~21:38 CDT)
 **Verdict: AG Car A collapses through the ramp in full-size 3D, as B does.** Resolved convection never takes over the MLT flux
 (L_conv <= 0.02 L0 at every radius and time); as w goes 1 -> 0.16 the total L at 0.55-0.90 R_ph falls to 0.30-0.54 L0 and
 L_top/L0 0.96 -> 0.55; the envelope falls in (band <v_r> -23 / -30 / -34 km/s at 0.70-0.95 R_ph at t = 7e6 s) and the
