@@ -1,0 +1,44 @@
+#!/bin/bash -l
+# TASK-2026-10-12-deltaai-consfix-c2drag (raven -> DeltaAI): conservative2 + implicit_cs2_hll=drag (consfix-1011 8cba89a6)
+#   on the full-size BSG and full-size AG Car A, against matched.  sbatch --export=ALL,BP=<binary> job.sub
+#   (DRY=1 BP=x bash job.sub: print the commands only)
+# 1 node x 4 GH200, 4 ranks (1 per GPU). Every command-line key is named in the decks.
+#SBATCH -J consfix_c2drag
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=01:00:00
+#SBATCH -o /work/nvme/bivj/jma20/consfix_1011/logs/%x.%j.out
+G=/work/nvme/bivj/jma20/consfix_1011
+BP=${BP:?BP}; J=${SLURM_JOB_ID:-dry}; S=$G/runs/$J
+T0=$(date +%s); TEND=$((T0 + 57*60))
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1
+echo "job=$J node=${SLURM_JOB_NODELIST:-} start $(date)"
+echo "$BP $(md5sum < $BP | cut -c1-32)"
+md5sum $G/bsgR.athinput $G/agcA.athinput
+mkdir -p $S
+run() {   # run <name> <deck> <nlim> [extra keys]
+  local n=$1 in=$2 nl=$3; shift 3; local D=$S/$n; mkdir -p $D
+  local now=$(date +%s); [ $now -ge $TEND ] && { echo "SKIP $n (wall budget)"; return; }
+  local SR="srun -n 4 --ntasks-per-node=4 -c 72 --cpu-bind=cores $G/gpuwrap.sh"
+  local K="time/nlim=$nl time/ndiag=1 output1/dt=1.0e-3 output2/dt=1.0e30 output3/dt=1.0e30 output5/dt=1.0e30"
+  echo "RUN $n nlim=$nl $* $(date +%T)"
+  [ -n "${DRY:-}" ] && { echo "  $SR $BP -i $in -d $D $K $*"; return; }
+  local t1=$(date +%s.%N)
+  timeout $((TEND - now)) $SR $BP -i $in -d $D $K "$@" > $D/out.txt 2>&1; local rc=$?
+  echo "END $n rc=$rc wall=$(echo "$(date +%s.%N) - $t1" | bc) s fatal=$(grep -c FATAL $D/out.txt) notadm=$(grep -c 'NOT ADMISSIBLE' $D/out.txt) $(grep 'Picard iterations mean' $D/out.txt | tail -1) $(date +%T)"
+}
+# (1) full-size BSG (bsgR, 4 ranks x 4 blocks), 30 cycles
+run bM   $G/bsgR.athinput 30 rad_m1/implicit_gas_src=matched
+run bC2  $G/bsgR.athinput 30 rad_m1/implicit_gas_src=conservative2 rad_m1/dbg_t2_admiss=2
+run bC2g $G/bsgR.athinput 30 rad_m1/implicit_gas_src=conservative2 rad_m1/dbg_t2_admiss=2 rad_m1/implicit_precond=mg_gf
+# (2) full-size AG Car A, current production deck (4 ranks x 1 block), 60 cycles
+run aM   $G/agcA.athinput 60 rad_m1/implicit_gas_src=matched
+run aC2  $G/agcA.athinput 60 rad_m1/implicit_gas_src=conservative2 rad_m1/dbg_t2_admiss=2
+echo "end $(date)"
