@@ -1698,9 +1698,26 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "vet_mb_force")) {
     mbpath = mbpath || pin->GetBoolean("rad_m1", "vet_mb_force");
   }
-  if (pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic ||
-      (trans_x3 && pm->mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic)) {
-    VetFatal("<rad_m1>/closure = vet_sc needs periodic x2 (and x3) boundaries");
+  // bubbles-1012: a non-periodic x2 (x3) mesh boundary is a vacuum face of the formal
+  // solution (rays entering through it carry I = 0), on the single-MeshBlock sweep; the
+  // banded multi-block sweep still needs the periodic wrap
+  vet_x2open = (pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic ||
+                pm->mesh_bcs[BoundaryFace::outer_x2] != BoundaryFlag::periodic);
+  vet_x3open = trans_x3 &&
+               (pm->mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic ||
+                pm->mesh_bcs[BoundaryFace::outer_x3] != BoundaryFlag::periodic);
+  // the moment solve's transverse faces must be the same vacuum (implicit_bc_x2min|max,
+  // x3min|max = marshak): a reflecting (zero-flux) face has no formal-solution
+  // counterpart here
+  if ((vet_x2open && (ibc_x2min != M1_IBC_MARSHAK || ibc_x2max != M1_IBC_MARSHAK)) ||
+      (vet_x3open && (ibc_x3min != M1_IBC_MARSHAK || ibc_x3max != M1_IBC_MARSHAK))) {
+    VetFatal("<rad_m1>/closure = vet_sc on a non-periodic x2 (x3) mesh needs "
+             "implicit_bc_x2min = implicit_bc_x2max (x3min, x3max) = marshak: the "
+             "vacuum face of both the formal solution and the moment solve");
+  }
+  if ((vet_x2open || vet_x3open) && mbpath) {
+    VetFatal("<rad_m1>/closure = vet_sc with non-periodic x2 (x3) boundaries (vacuum "
+             "faces of the formal solution) needs a single MeshBlock on one rank");
   }
   vet_nmu = pin->GetOrAddInteger("rad_m1", "vet_nmu", 4);
   vet_nphi = pin->GetOrAddInteger("rad_m1", "vet_nphi", 8);
@@ -1890,49 +1907,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     vet_nray = vring*((vrgrp == 2) ? 3 : 1);
   }
 
-  // the angle set: (mu1, mu2, mu3, weight), upward hemisphere first
-  std::vector<double> xg, wg;
-  GaussLegendre01(vet_nmu, xg, wg);
-  Kokkos::realloc(vet_ang, vet_nray, 4);
-  auto ah = Kokkos::create_mirror_view(vet_ang);
-  int r = 0;
-  for (int h = 0; h < ((vring > 0) ? 0 : 2); ++h) {
-    for (int a = 0; a < vet_nmu; ++a) {
-      double m1 = (h == 0) ? xg[a] : -xg[a];
-      double st = std::sqrt(1.0 - m1*m1);
-      for (int l = 0; l < vet_nphi; ++l) {
-        double ph = 2.0*M_PI*(l + 0.5)/vet_nphi;
-        ah(r, 0) = m1;
-        ah(r, 1) = st*std::cos(ph);
-        ah(r, 2) = st*std::sin(ph);
-        ah(r, 3) = 0.5*wg[a]/vet_nphi;
-        ++r;
-      }
-    }
-  }
-  if (vring > 0) {   // littests-1011: the 2-D ring (up rays first, ray r + nray/2 its
-                     // x1 mirror, as the double-Gauss set)
-    std::vector<std::array<double, 4>> up;
-    for (int g = 0; g < ((vrgrp == 2) ? 3 : 1); ++g) {
-      const double sz = (g == 0) ? 0.0 : std::sqrt(2.0/3.0)*((g == 1) ? 1.0 : -1.0);
-      const double sp = (g == 0) ? 1.0 : std::sqrt(1.0/3.0);
-      const double wg0 = (vrgrp == 1) ? 1.0 : ((g == 0) ? 0.5 : 0.25);
-      for (int l = 0; l < vring; ++l) {
-        const double th = 2.0*M_PI*(l + 0.5)/vring;
-        if (std::cos(th) > 0.0) {
-          up.push_back({sp*std::cos(th), sp*std::sin(th), sz, wg0/vring});
-        }
-      }
-    }
-    const int nhu = static_cast<int>(up.size());
-    for (int q = 0; q < nhu; ++q) {
-      for (int c = 0; c < 4; ++c) {
-        ah(q, c) = up[q][c];
-        ah(q + nhu, c) = (c == 0) ? -up[q][c] : up[q][c];
-      }
-    }
-  }
-  Kokkos::deep_copy(vet_ang, ah);
+  vet_ring_n = vring;
+  vet_ring_g = vrgrp;
+  VetBuildAngles(0.0);
 
   auto &indcs = pm->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pm->nmb_maxperrank));
@@ -1958,6 +1935,97 @@ void RadiationM1::VetInit(ParameterInput *pin) {
               << (vet_seg_jump ? "jump" : (vet_seg_emit ? "emit"
                   : (vet_seg_split ? "split" : "mean")))
               << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetBuildAngles
+//! \brief the vet_sc angle set (mu1, mu2, mu3, weight), upward hemisphere first, turned
+//! by beta (bubbles-1012 rotation; beta = 0 is the fixed set, bit for bit): double-Gauss
+//! azimuths about x1 + beta, ring angles + beta (|beta| < pi/N keeps N/2 rays up).
+
+void RadiationM1::VetBuildAngles(const Real beta) {
+  const int vring = vet_ring_n, vrgrp = vet_ring_g;
+  // the angle set: (mu1, mu2, mu3, weight), upward hemisphere first
+  std::vector<double> xg, wg;
+  GaussLegendre01(vet_nmu, xg, wg);
+  if (vet_ang.extent_int(0) != vet_nray) {Kokkos::realloc(vet_ang, vet_nray, 4);}
+  auto ah = Kokkos::create_mirror_view(vet_ang);
+  int r = 0;
+  for (int h = 0; h < ((vring > 0) ? 0 : 2); ++h) {
+    for (int a = 0; a < vet_nmu; ++a) {
+      double m1 = (h == 0) ? xg[a] : -xg[a];
+      double st = std::sqrt(1.0 - m1*m1);
+      for (int l = 0; l < vet_nphi; ++l) {
+        double ph = 2.0*M_PI*(l + 0.5)/vet_nphi;
+        if (beta != 0.0) {ph += beta;}
+        ah(r, 0) = m1;
+        ah(r, 1) = st*std::cos(ph);
+        ah(r, 2) = st*std::sin(ph);
+        ah(r, 3) = 0.5*wg[a]/vet_nphi;
+        ++r;
+      }
+    }
+  }
+  if (vring > 0) {   // littests-1011: the 2-D ring (up rays first, ray r + nray/2 its
+                     // x1 mirror, as the double-Gauss set)
+    std::vector<std::array<double, 4>> up, dn;
+    for (int g = 0; g < ((vrgrp == 2) ? 3 : 1); ++g) {
+      const double sz = (g == 0) ? 0.0 : std::sqrt(2.0/3.0)*((g == 1) ? 1.0 : -1.0);
+      const double sp = (g == 0) ? 1.0 : std::sqrt(1.0/3.0);
+      const double wg0 = (vrgrp == 1) ? 1.0 : ((g == 0) ? 0.5 : 0.25);
+      for (int l = 0; l < vring; ++l) {
+        double th = 2.0*M_PI*(l + 0.5)/vring;
+        if (beta != 0.0) {th += beta;}
+        if (std::cos(th) > 0.0) {
+          up.push_back({sp*std::cos(th), sp*std::sin(th), sz, wg0/vring});
+        } else {
+          dn.push_back({sp*std::cos(th), sp*std::sin(th), sz, wg0/vring});
+        }
+      }
+    }
+    const int nhu = static_cast<int>(up.size());
+    if (beta != 0.0 && static_cast<int>(dn.size()) != nhu) {
+      VetFatal("<rad_m1>/vet_ring: the rotated ring lost its up/down balance");
+    }
+    for (int q = 0; q < nhu; ++q) {
+      for (int c = 0; c < 4; ++c) {
+        ah(q, c) = up[q][c];
+        // the fixed ring: the x1 mirror of the up ray (bitwise as before); a rotated
+        // ring is not x1-symmetric, its own down rays
+        ah(q + nhu, c) = (beta != 0.0) ? dn[q][c] : ((c == 0) ? -up[q][c] : up[q][c]);
+      }
+    }
+  }
+  Kokkos::deep_copy(vet_ang, ah);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetRotUpdate
+//! \brief bubbles-1012: the vet_sc set of the current rotation block (VetGdBlock, the
+//! vet_gd clock: the block of the step's midpoint, the same for every stage and build of
+//! a step).  q = VetGdAngleBlk/(pi/2) in [0, 1); double-Gauss: azimuth (2 pi/nphi) q;
+//! ring: 0.8 (q - 1/2) (2 pi/N) (rays stay at least 0.1 of a ring step from +-x2).
+//! Rebuilt only when the angle changes; the banded sweep's local copy follows.
+
+void RadiationM1::VetRotUpdate() {
+  if (!vsc_rot) {return;}
+  const Real q = VetGdAngleBlk(VetGdBlock(pmy_pack->pmesh->ncycle))/(0.5*M_PI);
+  const Real beta = (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n
+                                     : q*2.0*M_PI/vet_nphi;
+  if (beta == vsc_beta) {return;}
+  vsc_beta = beta;
+  VetBuildAngles(beta);
+  if (vet_mbs != nullptr) {
+    VetMBState &st = *vet_mbs;
+    auto al_ = st.angl;
+    auto rl_ = st.rlist;
+    auto ang_ = vet_ang;
+    const int nrl = st.nrl;
+    par_for("m1_vet_rot_angl", DevExeSpace(), 0, nrl - 1, 0, 3,
+    KOKKOS_LAMBDA(const int r, const int c) {
+      al_(r,c) = ang_(rl_(r),c);
+    });
   }
 }
 
@@ -2066,6 +2134,23 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   for (int r = 0; r < vet_nray; ++r) {
     s2 = std::max(s2, dx1*std::fabs(ah(r,1))/(std::fabs(ah(r,0))*dx2));
     s3 = std::max(s3, dx1*std::fabs(ah(r,2))/(std::fabs(ah(r,0))*dx3));
+  }
+  if (vsc_rot) {
+    // bubbles-1012: the band covers every rotated set: the transverse reach
+    // |mu_perp|/|mu1| bounds both axes (double-Gauss, rotation about x1); the ring's
+    // steepest ray, 0.1 of a ring step from x2, at either extreme of the rotation
+    for (int r = 0; r < vet_nray; ++r) {
+      const Real tp = std::sqrt(ah(r,1)*ah(r,1) + ah(r,2)*ah(r,2))/std::fabs(ah(r,0));
+      if (vet_ring_n == 0) {
+        s2 = std::max(s2, dx1*tp/dx2);
+        s3 = std::max(s3, dx1*tp/dx3);
+      }
+    }
+    if (vet_ring_n > 0) {
+      const Real tm = std::tan(0.5*M_PI - 0.1*2.0*M_PI/vet_ring_n);
+      s2 = std::max(s2, dx1*tm/dx2);
+      s3 = std::max(s3, dx1*tm/dx3);
+    }
   }
   st.w2 = static_cast<int>(std::floor(s2)) + 1;
   st.w3 = thrd ? (static_cast<int>(std::floor(s3)) + 1) : 0;
@@ -3354,6 +3439,7 @@ void RadiationM1::VetMBSweeps() {
 //! \fn void RadiationM1::VetShortChar
 
 void RadiationM1::VetShortChar() {
+  VetRotUpdate();   // bubbles-1012: the set of this step's rotation block
   // blendall-1009: vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
   // source and the boundary intensity read the PHYSICAL E^n = u0 under be, not the
   // solve's old vector E^n + dt (chat/c) esrc (M1_IW_EN)
@@ -3398,6 +3484,7 @@ void RadiationM1::VetShortChar() {
   const bool spl = vet_seg_split;   // segfix-1011
   const int spe = VetSegMode();
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
+  const bool x2o = vet_x2open, x3o = vet_x3open;   // bubbles-1012: vacuum x2 (x3) faces
   // littests-1011: the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
@@ -3615,10 +3702,20 @@ void RadiationM1::VetShortChar() {
           const Real fl2 = floor(sh2);
           const Real a2 = sh2 - fl2;
           const int o2 = static_cast<int>(fl2);
-          const int ja = js + VetWrap(j - js + o2, nx2);
-          const int jb = js + VetWrap(j - js + o2 + 1, nx2);
+          int ja = js + VetWrap(j - js + o2, nx2);
+          int jb = js + VetWrap(j - js + o2 + 1, nx2);
+          // bubbles-1012: vacuum x2 (x3) faces: a foot point outside the box carries
+          // I = 0 (the ray entered through the face) and the edge cell's chi and S
+          Real ga = 1.0, gb = 1.0;
+          if (x2o) {
+            const int ra = j - js + o2, rb = ra + 1;
+            ga = (ra >= 0 && ra < nx2) ? 1.0 : 0.0;
+            gb = (rb >= 0 && rb < nx2) ? 1.0 : 0.0;
+            ja = js + ((ra < 0) ? 0 : ((ra >= nx2) ? (nx2 - 1) : ra));
+            jb = js + ((rb < 0) ? 0 : ((rb >= nx2) ? (nx2 - 1) : rb));
+          }
           int ka = k, kb = k;
-          Real a3 = 0.0;
+          Real a3 = 0.0, ka_g = 1.0, kb_g = 1.0;
           if (thrd) {
             const Real sh3 = -dx1*m3/(am1*dx3);
             const Real fl3 = floor(sh3);
@@ -3626,11 +3723,24 @@ void RadiationM1::VetShortChar() {
             const int o3 = static_cast<int>(fl3);
             ka = ks + VetWrap(k - ks + o3, nx3);
             kb = ks + VetWrap(k - ks + o3 + 1, nx3);
+            if (x3o) {
+              const int ra = k - ks + o3, rb = ra + 1;
+              ka_g = (ra >= 0 && ra < nx3) ? 1.0 : 0.0;
+              kb_g = (rb >= 0 && rb < nx3) ? 1.0 : 0.0;
+              ka = ks + ((ra < 0) ? 0 : ((ra >= nx3) ? (nx3 - 1) : ra));
+              kb = ks + ((rb < 0) ? 0 : ((rb >= nx3) ? (nx3 - 1) : rb));
+            }
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
           const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
-          const Real iup_v = waa*ip_(m,pr,rb,ka,ja) + wab*ip_(m,pr,rb,ka,jb)
-                             + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
+          Real iup_v;
+          if (x2o || x3o) {
+            iup_v = waa*ga*ka_g*ip_(m,pr,rb,ka,ja) + wab*gb*ka_g*ip_(m,pr,rb,ka,jb)
+                    + wba*ga*kb_g*ip_(m,pr,rb,kb,ja) + wbb*gb*kb_g*ip_(m,pr,rb,kb,jb);
+          } else {
+            iup_v = waa*ip_(m,pr,rb,ka,ja) + wab*ip_(m,pr,rb,ka,jb)
+                    + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
+          }
           const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
                           + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
                           + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
@@ -3641,8 +3751,8 @@ void RadiationM1::VetShortChar() {
                           + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
           if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
             const Real wq[4] = {waa, wab, wba, wbb};
-            const Real iq[4] = {ip_(m,pr,rb,ka,ja), ip_(m,pr,rb,ka,jb), ip_(m,pr,rb,kb,ja),
-                                ip_(m,pr,rb,kb,jb)};
+            const Real iq[4] = {ga*ka_g*ip_(m,pr,rb,ka,ja), gb*ka_g*ip_(m,pr,rb,ka,jb),
+                                ga*kb_g*ip_(m,pr,rb,kb,ja), gb*kb_g*ip_(m,pr,rb,kb,jb)};
             const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
                                 vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
             const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
@@ -3811,6 +3921,7 @@ void RadiationM1::VetFullTensor() {
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*(indcs.ng)) : 1;
   const bool thrd = trans_x3;
   const Real emin = vet_eig_min;
+  const bool x2o = vet_x2open, x3o = vet_x3open;
   auto vc_ = vet_cell;
 
   par_for("m1_vet_full", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -3912,8 +4023,11 @@ void RadiationM1::VetFullTensor() {
       const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
       if (act) return;
       const int ii = (i < is) ? is : ((i > ie) ? ie : i);
-      const int jj = js + VetWrap(j - js, nx2);
-      const int kk = thrd ? (ks + VetWrap(k - ks, nx3)) : k;
+      // bubbles-1012: edge copy at a vacuum (non-periodic) x2 (x3) face
+      const int jj = x2o ? ((j < js) ? js : ((j > je) ? je : j))
+                         : (js + VetWrap(j - js, nx2));
+      const int kk = thrd ? (x3o ? ((k < ks) ? ks : ((k > ke) ? ke : k))
+                                 : (ks + VetWrap(k - ks, nx3))) : k;
       for (int n = 0; n < 6; ++n) {
         vc_(m,M1_VET_D11+n,k,j,i) = vc_(m,M1_VET_D11+n,kk,jj,ii);
       }

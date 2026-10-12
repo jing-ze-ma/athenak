@@ -2643,6 +2643,29 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   ibc_x1max = ImplBCFromString(
       pin->GetOrAddString("rad_m1","implicit_bc_x1max","auto"),
       mbcs[static_cast<int>(BoundaryFace::outer_x1)]);
+  // bubbles-1012: the transverse faces (read only when named; auto = the old rule)
+  {
+    auto tbc = [&](const char *key, const BoundaryFace f) -> int {
+      const bool per = (mbcs[static_cast<int>(f)] == BoundaryFlag::periodic);
+      std::string v = "auto";
+      if (pin->DoesParameterExist("rad_m1", key)) {v = pin->GetString("rad_m1", key);}
+      if (v.compare("auto") == 0) {return per ? M1_IBC_PERIODIC : M1_IBC_REFLECT;}
+      int r = -1;
+      if (v.compare("reflect") == 0) {r = M1_IBC_REFLECT;}
+      if (v.compare("marshak") == 0) {r = M1_IBC_MARSHAK;}
+      if (r < 0 || per) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/" << key << " = '" << v << "': auto | reflect | "
+          << "marshak, the last two on a NON-periodic mesh face" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      return r;
+    };
+    ibc_x2min = tbc("implicit_bc_x2min", BoundaryFace::inner_x2);
+    ibc_x2max = tbc("implicit_bc_x2max", BoundaryFace::outer_x2);
+    ibc_x3min = tbc("implicit_bc_x3min", BoundaryFace::inner_x3);
+    ibc_x3max = tbc("implicit_bc_x3max", BoundaryFace::outer_x3);
+  }
   iflux_x1min = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
@@ -4941,6 +4964,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   const bool t2afc = (t2_afmode == 2);
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
+  // bubbles-1012: Marshak (vacuum) transverse faces, F_f = c q E_c outward
+  const Real tmq = marshak_q;
+  const bool vm2lo = (ibc_x2min == M1_IBC_MARSHAK), vm2hi = (ibc_x2max == M1_IBC_MARSHAK);
+  const bool vm3lo = (ibc_x3min == M1_IBC_MARSHAK), vm3hi = (ibc_x3max == M1_IBC_MARSHAK);
   par_for_lb("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dx2 = mbsize.d_view(m).dx2;
@@ -4995,6 +5022,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         if (bcg) {cjp += nu2*bw2_(m,M1_IFW_HCR,k,j+1,i);}
       }
     }
+    if (j == je && p2hi && vm2hi) {   // bubbles-1012: vacuum face, outflow c q E
+      fp = cl*tmq*ec;
+      dia += nu2*ch*tmq;
+    }
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
       Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
@@ -5032,6 +5063,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         dia -= nu2*bw2_(m,M1_IFW_HCR,k,j,i);
         if (bcg) {cjm -= nu2*bw2_(m,M1_IFW_HCL,k,j,i);}
       }
+    }
+    if (j == js && p2lo && vm2lo) {   // bubbles-1012: vacuum face, outflow c q E
+      fm = -cl*tmq*ec;
+      dia += nu2*ch*tmq;
     }
     tt += nu2*cr*(fp - fm);
     Real gps = 0.0, gms = 0.0;   // (sp) the x3 face fluxes, copied out below
@@ -5131,6 +5166,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           if (bcg) {ckm -= nu3*bw3_(m,M1_IFW_HCL,k,j,i);}
         }
       }
+      if (k == ke && p3hi && vm3hi) {gp = cl*tmq*ec; dia += nu3*ch*tmq;}
+      if (k == ks && p3lo && vm3lo) {gm = -cl*tmq*ec; dia += nu3*ch*tmq;}
       tt += nu3*cr*(gp - gm);
       gps = gp;
       gms = gm;
@@ -5158,6 +5195,27 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       M1CsTransRow(iw_, vd_, dfull, cvol, carea, cdxf, csn2, csn3, csg2_, csg3_, cseam,
                    cx1v, cx1f, m, k, j, i, js, je, ks, ke, p2lo, p2hi, thrd, q3lo, q3hi,
                    bcg, ch, cl, dt, fp, fm, gps, gms, dia, tt);
+    }
+    if ((sph || csg) && ((j == je && p2hi && vm2hi) || (j == js && p2lo && vm2lo) ||
+                         (thrd && ((k == ke && vm3hi && (mbbcs.d_view(m,
+                           BoundaryFace::outer_x3) != BoundaryFlag::block)) ||
+                                   (k == ks && vm3lo && (mbbcs.d_view(m,
+                           BoundaryFace::inner_x3) != BoundaryFlag::block)))))) {
+      // bubbles-1012: the curvilinear rows rebuilt dia without the vacuum faces (their
+      // fluxes fp/fm/gp/gm above are in tt): c q dt A_f/V on the diagonal
+      const Real iv = dt/cvol(m,k,j,i);
+      if (j == je && p2hi && vm2hi) {dia += carea.x2f(m,k,j+1,i)*iv*ch*tmq;}
+      if (j == js && p2lo && vm2lo) {dia += carea.x2f(m,k,j,i)*iv*ch*tmq;}
+      if (thrd && k == ke && vm3hi &&
+          mbbcs.d_view(m,BoundaryFace::outer_x3) != BoundaryFlag::block &&
+          mbbcs.d_view(m,BoundaryFace::outer_x3) != BoundaryFlag::periodic) {
+        dia += carea.x3f(m,k+1,j,i)*iv*ch*tmq;
+      }
+      if (thrd && k == ks && vm3lo &&
+          mbbcs.d_view(m,BoundaryFace::inner_x3) != BoundaryFlag::block &&
+          mbbcs.d_view(m,BoundaryFace::inner_x3) != BoundaryFlag::periodic) {
+        dia += carea.x3f(m,k,j,i)*iv*ch*tmq;
+      }
     }
     Real unew = tt - dia*ec;
     Real uold = -iw_(m,M1_IW_TRHS,k,j,i);
