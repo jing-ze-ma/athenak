@@ -1145,6 +1145,10 @@ class RadiationM1 {
   Real ew_fprev, ew_etaprev;    // max|r0| and eta of the previous pass of this step
                                 // (* = for eddington | vet_sc | tau; m1-type closures
                                 // default to the opposite, the pre-0923 path)
+  // unify-sc-gd-1012 (#10) implicit_predictor_frozen: the predictor runs wherever the
+  // face coefficients of the solve do not read the iterate (sp: vfix; any mesh:
+  // halfrange + implicit_thin_switch), not on the sp wedge only
+  bool impl_pred_frz = false;
   bool impl_pred;               // <rad_m1>/implicit_predictor = step (default step*):
                                 // start the Picard loop from E^n + (dt/dt_prev) dE_prev
                                 // (and T likewise); none = cold start

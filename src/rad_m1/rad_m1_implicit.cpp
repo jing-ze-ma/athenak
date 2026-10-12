@@ -1716,6 +1716,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_predictor = '" + pr
               + "' is not a choice (none | step)");
   }
+  // unify-sc-gd-1012 (#10) implicit_predictor_frozen: with a fixed-tensor closure the
+  // step predictor was switched off under berthon / blend + implicit_recon_lag = step
+  // except on the sp wedge (spfx: the face reduced flux is f(D_rr) of the lagged
+  // closure there, not the iterate's).  Under implicit_flux_beam = halfrange with an
+  // implicit_thin_switch every face coefficient is built from the formal solution and
+  // E^n alone (M1ThinFace), on every mesh, so the predictor moves only the starting
+  // point there as on the wedge.  true: that rule on every mesh (DEFAULT on a fresh run);
+  // false: the old sp-only gate (a restart whose file lacks the key; echoed).
+  if (impl_pred) {
+    impl_pred_frz = pin->GetOrAddBoolean("rad_m1","implicit_predictor_frozen",
+                                         !global_variable::restart_run);
+  }
   }
   if (impl_ecnt < 0 || impl_ecnt > M1_EC_NTMAX) {
     ImplFatal("<rad_m1>/implicit_eos_cache_nt must lie in [0,8]");
@@ -11457,7 +11469,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // sp-blend-1008: on the multi-D wedge with a fixed-tensor closure the frozen face
   // coefficients read f(D_rr) of the step's lagged closure, not the iterate, so the
   // predicted start does not enter them and the predictor stays on
-  const bool spfx = sph_geom && trans_on && !edd && (vetsc || tauc);
+  const bool spfx = trans_on && !edd && (vetsc || tauc) &&
+                    (sph_geom || (impl_pred_frz && impl_beam_hr &&
+                                  impl_thsw != M1_THSW_NONE));
   const bool pred = impl_pred && (edd || vetsc || tauc) && !(aphll && rfreeze && !spfx);
   if (impl_pred && (static_cast<int>(ipred.extent(0)) != nmb1 + 1)) {
     pred_ok = false;   // the pack changed size (AMR): start cold
