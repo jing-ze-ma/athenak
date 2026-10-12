@@ -659,6 +659,116 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::Time2RotCorrect
+//! \brief rotslope-1012, vet_gd_rotate_slope = correct (asked for by VetGdRotStep on the
+//! first step of a new vet_gd rotation block, with a valid FSAL slope K1 = f_old(U^n) of
+//! the OLD set): one stage-type solve of dt_c = vet_gd_rotate_slope_frac dt from U^n
+//! (radiation, faces, gas; no hydro) with the NEW set and the old vector U^n - dt_c K1
+//! (cell F: - dt_c csk1).  Its slope (Y - old)/dt_c = K1 + z/dt_c with, to first order in
+//! z = Y - U^n,  z = dt_c (I - dt_c A_new)^{-1} (f_new - f_old)(U^n): the stored slope is
+//! K1 + (I - dt_c A)^{-1} Delta f -- the closure jump of the slope where dt_c A is small
+//! (the thin regime, where keep leaves an O(dt Delta f) error per jump = first order), and
+//! keep's K1 where the cell is stiff (there the L-stable stages forget a stage-1 slope
+//! error and keep is second order; replacing all of K1 by a BE probe slope is what broke
+//! the stiff ladders).  Only the jump steps change, so an O(dt) error of the correction
+//! itself stays O(dt^2) globally.  The solve runs as a STAGE1 solve (its slope lands in
+//! t2k2 / csk2 and is copied to t2k1 / csk1); the predictor history is kept
+//! (implicit_predictor is off for this solve); U^n is put back.  With
+//! vet_gd_rotate_slope_reuse the stage-1 solve of the step keeps this solve's closure
+//! build (the same set, built by Time2VetColAt(1) at U^n + theta dt K1_old with the gas
+//! at U^n instead of after the Heun stage: an O(dt) state shift on the jump steps only).
+//! A failed correction solve keeps K1 (keep).  Returns true when a solve was taken.
+
+bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
+  if (!t2_rotcorr) return false;
+  t2_rotcorr = false;
+  if (time_scheme != M1_TIME_HESDIRK2 || !Time2Active()) return false;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  if (fl.on && fl.mhd) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/vet_gd_rotate_slope = correct is not wired for "
+              << "MHD" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const Real dtc = vgd_rot_cfrac*dt;
+  // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
+  Kokkos::deep_copy(DevExeSpace(), u1, u0);
+  Kokkos::deep_copy(DevExeSpace(), t2f1, f0x1);
+  if (trans_on) {
+    Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
+    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
+  }
+  if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
+  // the old vector U^n - dt_c K1 (every channel; the cell F of conservative2 too)
+  {
+    auto k1_ = t2k1;
+    auto in_ = t2inc;
+    const Real c = -dtc;
+    int nmb1 = static_cast<int>(t2inc.extent(0)) - 1;
+    int n3 = static_cast<int>(t2inc.extent(2)), n2 = static_cast<int>(t2inc.extent(3));
+    int n1 = static_cast<int>(t2inc.extent(4));
+    par_for("m1_t2_rcinc", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, n3-1, 0, n2-1,
+            0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
+    });
+    csinc_ok = false;
+    if (impl_gas_src_cons && csk1_ok && csk1.extent(0) == t2k1.extent(0)) {
+      auto ck1_ = csk1;
+      auto ci_ = csinc;
+      par_for("m1_t2_rccs", DevExeSpace(), 0, nmb1, 0, 2, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+        ci_(m,n,k,j,i) = c*ck1_(m,n,k,j,i);
+      });
+      csinc_ok = true;
+    }
+  }
+  const bool csok0 = csk1_ok;
+  const bool pred_save = impl_pred;
+  impl_pred = false;
+  Mesh *pmesh = pmy_pack->pmesh;
+  t2_inprobe = true;
+  t2_solve = M1_T2S_STAGE1;
+  t2_fail = false;
+  nsub = 1;
+  dt_sub = dtc;
+  pdrive->ExecuteTaskList(pmesh, "m1_before_stagen", 1);
+  pdrive->ExecuteTaskList(pmesh, "m1_stagen", 1);
+  pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
+  t2_inprobe = false;
+  impl_pred = pred_save;
+  const bool ok = !t2_fail;
+  if (ok) {
+    Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
+    if (csok0 && impl_gas_src_cons && csk2.extent(0) == csk1.extent(0)) {
+      Kokkos::deep_copy(DevExeSpace(), csk1, csk2);
+    }
+    vgd_rot_ncorr += 1.0;
+  } else {
+    vgd_rot_ncfail += 1.0;
+  }
+  csk1_ok = csok0;
+  csinc_ok = false;
+  // U^n back
+  Kokkos::deep_copy(DevExeSpace(), u0, u1);
+  Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
+  if (trans_on) {
+    Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
+    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
+  }
+  if (fl.on) {
+    Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
+    FluidRefresh(pdrive);
+  }
+  t2_solve = M1_T2S_NONE;
+  t2_fail = false;
+  // the stage-1 solve keeps this build (vet_col predict | rebuild only)
+  t2_vcreuse = ok && vgd_rot_creuse && vet_col && !vet_sc &&
+               (t2_vcmode == 1 || t2_vcmode == 2);
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2VetStart
 //! \brief closure = vet_sc, stage 1: the formal solution at U^n -- E^n, T^n and the
 //! opacities of U^n (the hydro's u1) -- and then the extrapolated tensor
@@ -1419,6 +1529,12 @@ void RadiationM1::Time2Report() {
     std::cout << " time2_start=slope probes=" << t2_nprobe << " (frac " << t2_start_frac
               << ")";
   }
+  if (vgd_rot_slope == 3) {
+    std::cout << " vet_gd_rotate_slope=correct solves=" << vgd_rot_ncorr << " failed="
+              << vgd_rot_ncfail << " (frac " << vgd_rot_cfrac << ", reuse "
+              << (vgd_rot_creuse ? "on" : "off") << ")";
+  }
+  if (vgd_rot_align) {std::cout << " rotate_align shortened steps=" << vgd_rot_nalign;}
   std::cout << std::endl;
 }
 

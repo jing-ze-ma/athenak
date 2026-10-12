@@ -1858,6 +1858,20 @@ class RadiationM1 {
   bool t2_rotprobe = false;
   double vgd_rot_nprobe = 0.0;
   void VetGdRotStep();
+  // rotslope-1012, vet_gd_rotate_slope = correct (3): on the first step of a new block a
+  // CORRECTION solve (Time2RotCorrect) of size dt_c = vet_gd_rotate_slope_frac x dt from
+  // U^n with the new set and the old vector U^n - dt_c K1 turns the stored slope into
+  // K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n): the closure jump of the slope in
+  // the non-stiff cells, and keep's K1 in the stiff ones (where keep is 2nd order).
+  // vet_gd_rotate_slope_reuse (default true): the stage-1 solve of that step keeps the
+  // correction solve's closure build (the same set, P = U^n + theta dt K1) instead of a
+  // second sweep
+  bool t2_rotcorr = false;
+  bool t2_vcreuse = false;
+  bool vgd_rot_creuse = true;
+  Real vgd_rot_cfrac = 0.0;
+  double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0;
+  bool Time2RotCorrect(Driver *pdrive, Real dt);
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
   // sptests-1011: vet_gd_inner = emit (read only when named; default diff = bitwise): with
   // the first gd shell at the physical inner face (icut = 0) the outward rays start from

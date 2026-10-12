@@ -1051,10 +1051,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           vgd_rot_slope = 1;
         } else if (rs.compare("be") == 0) {
           vgd_rot_slope = 2;
+        } else if (rs.compare("correct") == 0) {
+          // rotslope-1012 (Time2RotCorrect); frac in units of the step (default the
+          // stage size gamma = 1 - 1/sqrt 2)
+          vgd_rot_slope = 3;
+          vgd_rot_cfrac = pin->GetOrAddReal("rad_m1","vet_gd_rotate_slope_frac",
+                                            1.0 - 1.0/std::sqrt(2.0));
+          vgd_rot_creuse = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_slope_reuse",
+                                                true);
+          if (!(vgd_rot_cfrac > 0.0 && vgd_rot_cfrac <= 1.0)) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "<rad_m1>/vet_gd_rotate_slope_frac must be in "
+                      << "(0, 1]" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
         } else {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "<rad_m1>/vet_gd_rotate_slope = '" << rs
-                    << "' is not a choice (probe | be | keep)" << std::endl;
+                    << "' is not a choice (probe | be | correct | keep)" << std::endl;
           std::exit(EXIT_FAILURE);
         }
         if (vgd_rot_auto) {

@@ -11388,7 +11388,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // m1-sp-order2b: time2_vet_col (rad_m1_time2.cpp) moves the stage builds to t^{n+1}
   if (vet_col) {
     if (t2s == M1_T2S_STAGE1) {
-      if (t2_vcmode == 1 || t2_vcmode == 2) {
+      if (t2_vcreuse) {
+        // rotslope-1012: Time2RotCorrect's build of this step (vet_gd_rotate_slope_reuse)
+        t2_vcreuse = false;
+      } else if (t2_vcmode == 1 || t2_vcmode == 2) {
         Time2VetColAt(1);
       } else {
         Time2VetStart();
