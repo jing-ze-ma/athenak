@@ -49,3 +49,9 @@ Page: the BSG True Reproduction artifact now shows this run (t = 4.1 d at publis
   holds the run and cancels it if still pending at DONE.
 - **Link 2 STARTED**: job **3367704** (ghx4-interactive, 40 min) on gh081 since 15:41:44 CDT, holds the lock, restarted from
   rst/bsg3d.00007.rst (t 5.317e5 s, cycle 6077); cycle 6100 reached at 15:42.
+
+| link | job | wall (CDT) | t end [s] (d) | cycle end | dt | s/cycle | Picard mean / max | FATAL / NaN / NOT ADM / DIVERGED / NON-CONV | slope solves (failed) | newest rst |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2 | 3367704 | 15:41:49-16:17:05 (-t 35:00) | 8.101625e5 (9.38 d) | 9259 | 87.5 s throughout | 0.657 (cycles 6100-9250) | 4.42 / 12 (6523 solves) | 0 / 0 / 0 / 0 / 0 | 159 (0) | rst/bsg3d.00011.rst |
+
+Link 3 = job 3368862 (40 min) submitted 16:17:47 by the chain; ghx4 3367703 still pending. Note: s/cycle 0.54 -> 0.66 and Picard mean 3.34 -> 4.42 from link 1 to link 2 (the seeded lateral motion growing; still 0 NON-CONV).
