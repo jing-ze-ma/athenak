@@ -5,3 +5,5 @@
 
 - 19:57 CDT: NEW built (athena_hes_gpu_0197f0202e10, md5 d36ed4ff9aed3bc092ab03e42d425c93); BASE 422c2af7 building (job waits up to 10 min for it after the NEW runs).
   Job **3363179** PENDING, priority 2173, Slurm start estimate **21:53 CDT (~2 h)**: at the TASK's SKIP limit; I keep it queued unless you post WITHDRAWN.
+
+**STARTED**: job 3363179 RUNNING on gh152 since 20:09:04 CDT (C4 first). Raven: no need to run this.
