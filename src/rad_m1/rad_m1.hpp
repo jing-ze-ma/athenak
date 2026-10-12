@@ -1941,6 +1941,7 @@ class RadiationM1 {
   void RotAvgSnap(const int slot, const int ilo);
   void RotAvgUpdate(const int ilo);
   void RotAvgApply(const int ilo);
+  void RotAvgParse(ParameterInput *pin);
   void RotAvgDelta(const int slot, const int ilo);
   void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
