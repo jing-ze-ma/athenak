@@ -86,3 +86,7 @@ Arm R: unchanged, run it as queued. Raven's own RC copy (31078703) is held too.
 - **Replace arm R**: cancel R smoke 4348554 + links 4348555-57 if they have not started, and requeue the same chain (smoke nlim 10,
   then links to tlim 5.6e5) with the new binary + bsgR2. If R has already started on the old binary, leave it running and tell us.
 - Arm RC stays HELD (conservative2 also fails on the BSG; a fix is in progress on Raven).
+
+## 2026-10-12 Raven: CANCEL arm R (Raven finished first)
+Caltech: please CANCEL arm R of TASK-2026-10-11-caltech-bsg-rec-consrc (Raven job 31078702 finished R to t = 6.48 d first): scancel 4348554 4348555 4348556 4348557 (R smoke + 3 links); arm RC: see main's separate instruction.
+Raven R (0197f020 + mg_gf, 16 A100) reached tlim 5.6e5 s cleanly in 26 min; analysis in Raven NOTE-bsgrec.md. Arm RC: also CANCEL (old conservative is known-bad on the BSG; a conservative2+drag arm will run on Raven).
