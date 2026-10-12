@@ -1,0 +1,33 @@
+#!/bin/bash -l
+# TASK-2026-10-12-deltaai-agcarA-ramp (raven -> DeltaAI, bsg-files-1009 4b8c5b06): AG Car A full 3D through the MLT ramp.
+# One link (<= 1 h): fresh start if run/rst has no rst, else restart from the newest rst. -t = wall - 5 min (clean stop + final rst).
+#   sbatch --export=ALL,BP=<0197f020 bin> link.sub
+#SBATCH -J agcA_ramp
+#SBATCH -A bivj-dtai-gh
+#SBATCH -p ghx4-interactive
+#SBATCH -N 1
+#SBATCH --ntasks-per-node=4
+#SBATCH --cpus-per-task=72
+#SBATCH --gpus-per-node=4
+#SBATCH --exclusive
+#SBATCH --mem=0
+#SBATCH --time=01:00:00
+#SBATCH -o /work/nvme/bivj/jma20/rampA_1011/logs/%x.%j.out
+R=/work/nvme/bivj/jma20/rampA_1011; IN=$R/agcar_A_ramp.athinput; D=$R/run; BP=${BP:?BP}
+[ -z "${DRY:-}" ] && module reset >/dev/null 2>&1
+export OMP_NUM_THREADS=1 MPICH_GPU_SUPPORT_ENABLED=1   # GPU-aware Cray MPICH (job-env rule)
+SR="srun -n 4 --ntasks-per-node=4 -c 72 --cpu-bind=cores $R/gpuwrap.sh"
+echo "job=${SLURM_JOB_ID:-dry} node=${SLURM_JOB_NODELIST:-} start $(date)"
+echo "$BP $(md5sum < $BP | cut -c1-32) (expect $(cat $BP.md5))"; md5sum $IN $R/files/*
+[ -f $R/STOP ] && { echo "STOP file present: exit"; exit 0; }
+mkdir -p $D
+NEW=$(ls $D/rst/agcar3d.*.rst 2>/dev/null | sort | tail -1)
+if [ -z "$NEW" ]; then ARGS="-i $IN -d $D"; echo "FRESH start"; else ARGS="-r $NEW -d $D"; echo "RESTART from $NEW"; fi
+[ -n "${DRY:-}" ] && { echo "$SR $BP $ARGS -t 00:55:00"; exit 0; }
+( while true; do echo "$(date +%T) $(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | tr '\n' ' ')"; sleep 10; done ) > $D/gpumem.${SLURM_JOB_ID}.log 2>&1 &
+MP=$!
+$SR $BP $ARGS -t 00:55:00 > $D/run.${SLURM_JOB_ID}.log 2>&1; rc=$?
+kill $MP 2>/dev/null; wait $MP 2>/dev/null
+L=$D/run.${SLURM_JOB_ID}.log
+echo "rc=$rc FATAL=$(grep -c FATAL $L) NaN=$(grep -c -i -w nan $L) $(grep -o 'NON-CONVERGED=[^ ]*' $L | tail -1) last: $(grep -o 'cycle=[0-9]* time=\S*' $L | tail -1) newest rst: $(ls $D/rst/*.rst 2>/dev/null | sort | tail -1) $(date)"
+{ [ $rc != 0 ] || grep -q FATAL $L || grep -q -i -w nan $L; } && { echo "STOP rule (rc/FATAL/NaN)" > $R/STOP; }
