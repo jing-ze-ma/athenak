@@ -10,3 +10,5 @@ submitted the moment that job ends (expected by ~21:50 CDT). STARTED line follow
 - 22:00 CDT: to start sooner, consfix (3363531, cancelled while pending) and agcar-reatm now run in ONE 30-min job **3363656** (reatm first, then consfix; scripts unchanged except the stop-launching time). Slurm estimate 23:56 CDT; a 30-min job may backfill earlier. STARTED follows.
 
 - 22:06 CDT: reatm withdrawn, so job 3363656 runs only consfix; its wall limit lowered to 20 min (estimate still 23:56 CDT).
+
+**STARTED**: job 3363656 RUNNING on gh056 since 22:31:54 CDT (consfix runs only).
