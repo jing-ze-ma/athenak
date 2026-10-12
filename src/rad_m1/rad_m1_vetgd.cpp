@@ -527,6 +527,11 @@ void RadiationM1::VetGdInit() {
     VgdFatal("reflecting outer x1 not supported; use implicit_bc_x1max = marshak "
              "(+ vet_col_surface_q)");
   }
+  if (ibc_x2min == M1_IBC_MARSHAK || ibc_x2max == M1_IBC_MARSHAK ||
+      ibc_x3min == M1_IBC_MARSHAK || ibc_x3max == M1_IBC_MARSHAK) {
+    // bubbles-1012: the gd sweep has no vacuum transverse face (vet_sc has)
+    VgdFatal("implicit_bc_x2*/x3* = marshak is not wired into the vet_gd sweep");
+  }
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
@@ -708,6 +713,94 @@ void RadiationM1::VetGdInit() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetRotInit
+//! \brief the rotation keys of the angle set (vgdrot2-1012 / defaults-1012), shared by
+//! vet_gd and (bubbles-1012) vet_sc: ONE clock, one key set, one fresh default.  Called
+//! from the closure parse of vet_col (vet_gd rides on it) and of vet_sc.
+
+void RadiationM1::VetRotInit(ParameterInput *pin) {
+  const bool fresh = !global_variable::restart_run;
+  {
+    const bool rdt_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt");
+    const bool rev_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_every");
+    const bool beam_named = pin->DoesParameterExist("rad_m1","vet_gd_beam") &&
+                            pin->GetBoolean("rad_m1","vet_gd_beam");
+    const bool async_named = pin->DoesParameterExist("rad_m1","vet_gd_async") &&
+                             pin->GetBoolean("rad_m1","vet_gd_async");
+    // bubbles-1012: vet_sc rotates its set on the same clock, with the same keys and
+    // the same fresh default (auto), except where the set is pinned: boundary beams
+    // along given rays (implicit_beam_n) and the Milne diagnostic
+    const bool sc_pin = vet_sc &&
+        ((pin->DoesParameterExist("rad_m1","implicit_beam_n") &&
+          pin->GetInteger("rad_m1","implicit_beam_n") > 0) ||
+         (pin->DoesParameterExist("rad_m1","vet_milne") &&
+          pin->GetBoolean("rad_m1","vet_milne")));
+    const bool rot_cl = vgd_on || (vet_sc && !sc_pin);
+    bool rot_phys = false;
+    if (rot_cl && rdt_named) {
+      const std::string rv = pin->GetString("rad_m1","vet_gd_rotate_dt");
+      if (rv.compare("auto") == 0) {
+        vgd_rot_auto = true;
+      } else {
+        vgd_rot_dt = pin->GetReal("rad_m1","vet_gd_rotate_dt");
+      }
+      rot_phys = vgd_rot_auto || (vgd_rot_dt > 0.0);
+    } else if (vgd_on && !rev_named && fresh && !beam_named && !async_named) {
+      vgd_rot_auto = true;
+      rot_phys = true;
+    } else if (vet_sc && !sc_pin && !rev_named && fresh) {
+      vgd_rot_auto = true;
+      rot_phys = true;
+    }
+    if (rot_phys) {
+      vsc_rot = vet_sc;
+      vgd_rot = 0;
+      pin_rot_ = pin;
+      vgd_rot_t0 = pin->GetOrAddReal("rad_m1","vet_gd_rotate_t0",0.0);
+      vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
+      vgd_rot_stretch = pin->GetOrAddReal("rad_m1","vet_gd_rotate_stretch",
+                                          fresh ? 0.02 : 0.0);
+      // defaults2-1012: _slope DEFAULT correct on a FRESH run (Time2RotCorrect; acts
+      // only under time_scheme = hesdirk2, inert otherwise); a restart whose file lacks
+      // the key keeps keep (bitwise older runs).  Echoed, so a later restart keeps it.
+      std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope",
+                                           fresh ? "correct" : "keep");
+      if (rs.compare("keep") == 0) {
+        vgd_rot_slope = 0;
+      } else if (rs.compare("probe") == 0) {
+        vgd_rot_slope = 1;
+      } else if (rs.compare("be") == 0) {
+        vgd_rot_slope = 2;
+      } else if (rs.compare("correct") == 0) {
+        // rotslope-1012 (Time2RotCorrect); frac in units of the step (default the
+        // stage size gamma = 1 - 1/sqrt 2)
+        vgd_rot_slope = 3;
+        vgd_rot_cfrac = pin->GetOrAddReal("rad_m1","vet_gd_rotate_slope_frac",
+                                          1.0 - 1.0/std::sqrt(2.0));
+        vgd_rot_creuse = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_slope_reuse",
+                                              true);
+        if (!(vgd_rot_cfrac > 0.0 && vgd_rot_cfrac <= 1.0)) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_gd_rotate_slope_frac must be in "
+                    << "(0, 1]" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_rotate_slope = '" << rs
+                  << "' is not a choice (probe | be | correct | keep)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (vgd_rot_auto) {
+        vgd_rot_auto_fac = 20.0;
+        // the value is recorded once resolved; until then the key reads "auto"
+        pin->SetString("rad_m1","vet_gd_rotate_dt","auto");
+      }
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::VetGdAngle
 //! \brief vet_gd_rotate_every = N > 0: the z-rotation of the set for cycle c, constant
 //! over each block of N cycles: alpha = (pi/2) frac((c/N) g), g = (sqrt 5 - 1)/2 (a
@@ -758,7 +851,7 @@ int64_t RadiationM1::VetGdBlock(const int cyc) const {
 //! boundary re-seeds the slope too.
 
 void RadiationM1::VetGdRotStep() {
-  if (!(vgd_rot_dt > 0.0) || !vgd_on) {return;}
+  if (!(vgd_rot_dt > 0.0) || !(vgd_on || vsc_rot)) {return;}
   const int64_t b = VetGdBlock(pmy_pack->pmesh->ncycle);
   if (vgd_rot_lastblk == INT64_MIN) {
     const Mesh *pm = pmy_pack->pmesh;
@@ -5015,6 +5108,7 @@ void RadiationM1::VetGdSweepPost() {
 void RadiationM1::VetGdRotAvgSetup() {
   RotAvgTab &t = vra_tab;
   t.nf = 0;
+  t.jf = -1;
   vra_a0 = tau_ten;
   for (int c = 0; c < M1_TT_NLAT; ++c) {
     t.arr[t.nf] = 0; t.comp[t.nf] = M1_TT_LAT0 + c; t.kind[t.nf] = 0;

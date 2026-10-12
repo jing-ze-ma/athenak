@@ -29,13 +29,17 @@
 //! Clamps (kind 1): the half-range ratios to their ranges, C1 >= 0, the outer q to its
 //! range; the tensor's D_rr is clamped by the fold (VetLatBuild).  Field arrays: two
 //! (m, n, k, j, i) arrays and one column array (m, k, j) held at the top cell i = ie.
+//! Kinds: 0 additive, 1 additive clamped to [lo, hi], 2 ratio (J itself), 3 a raw moment
+//! normalised by the J field (vet_sc's K_ab, H_a, the half-range sums, C1 in E units):
+//! averaged as X/J, handed back as (X/J)_avg J_avg.
 //!
 //! VALIDITY.  A cell is valid in a set when i >= the closure's first shell (ilo) and the
-//! flag field (if any) is >= 0; an offset is kept only where both sweeps were valid, and
+//! flag field (if any) is >= 0 (and the J field > 0 when kind-3 fields exist); an offset is kept only where both sweeps were valid, and
 //! the mean runs over the valid offsets (+ the current set).
 //!
 //! COST.  One extra sweep per rotation block (+ K-1 sweeps at the first build); memory
 //! (K-1)(nf+1) reals per active cell.
+
 
 #include <iostream>
 
@@ -47,21 +51,49 @@
 namespace radm1 {
 
 namespace {
+// the field arrays of one call (device copies)
+struct RaArr {
+  DvceArray5D<Real> a0, a1;
+  DvceArray3D<Real> c;
+  KOKKOS_INLINE_FUNCTION
+  Real &At(const int arr, const int comp, const int m, const int k, const int j,
+           const int i) const {
+    return (arr == 2) ? c(m,k,j) : ((arr == 0) ? a0(m,comp,k,j,i) : a1(m,comp,k,j,i));
+  }
+};
+
+using Tab = RadiationM1::RotAvgTab;
+
 KOKKOS_INLINE_FUNCTION
-bool RaValid(const DvceArray5D<Real> &a0, const DvceArray5D<Real> &a1, const int farr,
-             const int fcomp, const int ilo, const int m, const int k, const int j,
-             const int i) {
+Real RaJ(const RaArr &a, const Tab &t, const int m, const int k, const int j,
+         const int i) {
+  return (t.jf >= 0) ? a.At(t.arr[t.jf], t.comp[t.jf], m, k, j, i) : 1.0;
+}
+
+KOKKOS_INLINE_FUNCTION
+bool RaValid(const RaArr &a, const Tab &t, const int ilo, const int m, const int k,
+             const int j, const int i) {
   if (i < ilo) return false;
-  if (farr < 0) return true;
-  const Real f = (farr == 0) ? a0(m,fcomp,k,j,i) : a1(m,fcomp,k,j,i);
-  return f >= 0.0;
+  if (t.farr >= 0 && a.At(t.farr, t.fcomp, m, k, j, i) < 0.0) return false;
+  if (t.jf >= 0 && !(RaJ(a, t, m, k, j, i) > 0.0)) return false;
+  return true;
+}
+
+// field f of the cell in its averaged form (kind 3: / J), or false when not held here
+KOKKOS_INLINE_FUNCTION
+bool RaGet(const RaArr &a, const Tab &t, const int f, const int ie, const int m,
+           const int k, const int j, const int i, const Real jr, Real &g) {
+  if (t.arr[f] == 2 && i != ie) return false;
+  g = a.At(t.arr[f], t.comp[f], m, k, j, i);
+  if (t.kind[f] == 3) g = (jr > 0.0) ? g/jr : 0.0;
+  return true;
 }
 }  // namespace
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotAvgSnap
-//! \brief the registered fields as they are (raw, one set) -> ring slot `slot`, with the
-//! validity of each cell
+//! \brief the registered fields as they are (raw, one set; kind 3 as X/J) -> ring slot
+//! `slot`, with the validity of each cell
 
 void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -76,21 +108,16 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
     Kokkos::deep_copy(vra_d, 0.0);
   }
   auto d_ = vra_d;
-  auto a0_ = vra_a0;
-  auto a1_ = vra_a1;
-  auto c_ = vra_c;
-  const RotAvgTab t = vra_tab;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
   const int o = slot*(nf + 1);
   par_for("m1_ra_snap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const bool v = RaValid(a0_, a1_, t.farr, t.fcomp, ilo, m, k, j, i);
+    const bool v = RaValid(a, t, ilo, m, k, j, i);
+    const Real jr = RaJ(a, t, m, k, j, i);
     for (int f = 0; f < t.nf; ++f) {
-      if (t.arr[f] == 2) {   // a column field (m, k, j) of the top cell
-        if (i == ie) d_(m,o+f,k-ks,j-js,i-is) = c_(m,k,j);
-        continue;
-      }
-      d_(m,o+f,k-ks,j-js,i-is) = (t.arr[f] == 0) ? a0_(m,t.comp[f],k,j,i)
-                                                 : a1_(m,t.comp[f],k,j,i);
+      Real g;
+      if (RaGet(a, t, f, ie, m, k, j, i, jr, g)) d_(m,o+f,k-ks,j-js,i-is) = g;
     }
     d_(m,o+t.nf,k-ks,j-js,i-is) = v ? 1.0 : 0.0;
   });
@@ -110,33 +137,26 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nslot = vra_k - 1;
   auto d_ = vra_d;
-  auto a0_ = vra_a0;
-  auto a1_ = vra_a1;
-  auto c_ = vra_c;
-  const RotAvgTab t = vra_tab;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
   const int nf1 = t.nf + 1;
   const int h = vra_head;
   const bool init = (vra_pend == 1);
   par_for("m1_ra_upd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int kk = k - ks, jj = j - js, ii = i - is;
-    const bool vg = RaValid(a0_, a1_, t.farr, t.fcomp, ilo, m, k, j, i);
+    const bool vg = RaValid(a, t, ilo, m, k, j, i);
+    const Real jr = RaJ(a, t, m, k, j, i);
     if (init) {
       for (int s = 0; s < nslot; ++s) {
         const int o = s*nf1;
         const bool v = vg && (d_(m,o+t.nf,kk,jj,ii) > 0.5);
         for (int f = 0; f < t.nf; ++f) {
-          if (t.arr[f] == 2 && i != ie) continue;
-          const Real g = (t.arr[f] == 2) ? c_(m,k,j) : ((t.arr[f] == 0) ?
-                         a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i));
+          Real g;
+          if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
           const Real sv = d_(m,o+f,kk,jj,ii);
-          Real x;
-          if (t.kind[f] == 2) {
-            x = (v && g > 0.0 && sv > 0.0) ? sv/g : 1.0;
-          } else {
-            x = v ? (sv - g) : 0.0;
-          }
-          d_(m,o+f,kk,jj,ii) = x;
+          d_(m,o+f,kk,jj,ii) = (t.kind[f] == 2) ? ((v && g > 0.0 && sv > 0.0) ? sv/g : 1.0)
+                                                : (v ? (sv - g) : 0.0);
         }
         d_(m,o+t.nf,kk,jj,ii) = v ? 1.0 : 0.0;
       }
@@ -146,17 +166,12 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
     const int oh = h*nf1;
     const bool vh = vg && (d_(m,oh+t.nf,kk,jj,ii) > 0.5);
     for (int f = 0; f < t.nf; ++f) {
-      if (t.arr[f] == 2 && i != ie) continue;
-      const Real g = (t.arr[f] == 2) ? c_(m,k,j) : ((t.arr[f] == 0) ?
-                     a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i));
+      Real g;
+      if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
       const Real sv = d_(m,oh+f,kk,jj,ii);
       const bool mul = (t.kind[f] == 2);
-      Real x;
-      if (mul) {
-        x = (vh && g > 0.0 && sv > 0.0) ? sv/g : 1.0;
-      } else {
-        x = vh ? (sv - g) : 0.0;
-      }
+      const Real x = mul ? ((vh && g > 0.0 && sv > 0.0) ? sv/g : 1.0)
+                         : (vh ? (sv - g) : 0.0);
       d_(m,oh+f,kk,jj,ii) = x;
       for (int s = 0; s < nslot; ++s) {
         if (s == h) continue;
@@ -183,6 +198,7 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotAvgApply
 //! \brief the registered fields := the mean over the current set and the valid offsets
+//! (kind 3: (X/J)_avg times the averaged J)
 
 void RadiationM1::RotAvgApply(const int ilo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -191,34 +207,45 @@ void RadiationM1::RotAvgApply(const int ilo) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nslot = vra_k - 1;
   auto d_ = vra_d;
-  auto a0_ = vra_a0;
-  auto a1_ = vra_a1;
-  auto c_ = vra_c;
-  const RotAvgTab t = vra_tab;
+  const RaArr a{vra_a0, vra_a1, vra_c};
+  const Tab t = vra_tab;
   const int nf1 = t.nf + 1;
   par_for("m1_ra_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    if (!RaValid(a0_, a1_, t.farr, t.fcomp, ilo, m, k, j, i)) return;
+    if (!RaValid(a, t, ilo, m, k, j, i)) return;
     const int kk = k - ks, jj = j - js, ii = i - is;
     Real nv = 1.0;
     for (int s = 0; s < nslot; ++s) {nv += d_(m,s*nf1+t.nf,kk,jj,ii);}
     if (nv < 1.5) return;
+    const Real jr = RaJ(a, t, m, k, j, i);
+    Real ju = jr;   // the averaged J (kind 3 fields are handed back with it)
+    if (t.jf >= 0) {
+      Real sm = 1.0;
+      for (int s = 0; s < nslot; ++s) {
+        const int o = s*nf1;
+        if (d_(m,o+t.nf,kk,jj,ii) > 0.5) sm += d_(m,o+t.jf,kk,jj,ii);
+      }
+      ju = jr*sm/nv;
+    }
     for (int f = 0; f < t.nf; ++f) {
-      if (t.arr[f] == 2 && i != ie) continue;
+      Real g;
+      if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
       Real sm = (t.kind[f] == 2) ? 1.0 : 0.0;
       for (int s = 0; s < nslot; ++s) {
         const int o = s*nf1;
         if (d_(m,o+t.nf,kk,jj,ii) > 0.5) sm += d_(m,o+f,kk,jj,ii);
       }
-      Real &g = (t.arr[f] == 2) ? c_(m,k,j) : ((t.arr[f] == 0) ?
-                a0_(m,t.comp[f],k,j,i) : a1_(m,t.comp[f],k,j,i));
+      Real v;
       if (t.kind[f] == 2) {
-        g *= sm/nv;
+        v = g*sm/nv;
       } else {
-        Real v = g + sm/nv;
-        if (t.kind[f] == 1) v = fmin(fmax(v, t.lo[f]), t.hi[f]);
-        g = v;
+        v = g + sm/nv;
+        if (t.kind[f] == 1 || (t.kind[f] == 3 && t.lo[f] < t.hi[f])) {
+          v = fmin(fmax(v, t.lo[f]), t.hi[f]);
+        }
+        if (t.kind[f] == 3) v *= ju;
       }
+      a.At(t.arr[f], t.comp[f], m, k, j, i) = v;
     }
   });
 }

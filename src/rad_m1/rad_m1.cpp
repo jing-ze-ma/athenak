@@ -828,6 +828,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // 1-D branch) keeps Levermore's
     eddington = false;
     vet_sc = true;
+    VetRotInit(pin);   // bubbles-1012: the vet_gd rotation keys and defaults
     // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp), read when named
     if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
@@ -1018,71 +1019,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // _align (true), _stretch (0.02 on a fresh run since defaults-1012, 0 on a restart
     // whose file lacks it), _slope (correct on a fresh run since defaults2-1012, keep on a
     // restart whose file lacks it).
-    {
-      const bool rdt_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt");
-      const bool rev_named = pin->DoesParameterExist("rad_m1","vet_gd_rotate_every");
-      const bool beam_named = pin->DoesParameterExist("rad_m1","vet_gd_beam") &&
-                              pin->GetBoolean("rad_m1","vet_gd_beam");
-      const bool async_named = pin->DoesParameterExist("rad_m1","vet_gd_async") &&
-                               pin->GetBoolean("rad_m1","vet_gd_async");
-      bool rot_phys = false;
-      if (vgd_on && rdt_named) {
-        const std::string rv = pin->GetString("rad_m1","vet_gd_rotate_dt");
-        if (rv.compare("auto") == 0) {
-          vgd_rot_auto = true;
-        } else {
-          vgd_rot_dt = pin->GetReal("rad_m1","vet_gd_rotate_dt");
-        }
-        rot_phys = vgd_rot_auto || (vgd_rot_dt > 0.0);
-      } else if (vgd_on && !rev_named && fresh && !beam_named && !async_named) {
-        vgd_rot_auto = true;
-        rot_phys = true;
-      }
-      if (rot_phys) {
-        vgd_rot = 0;
-        pin_rot_ = pin;
-        vgd_rot_t0 = pin->GetOrAddReal("rad_m1","vet_gd_rotate_t0",0.0);
-        vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
-        vgd_rot_stretch = pin->GetOrAddReal("rad_m1","vet_gd_rotate_stretch",
-                                            fresh ? 0.02 : 0.0);
-        // defaults2-1012: _slope DEFAULT correct on a FRESH run (Time2RotCorrect; acts
-        // only under time_scheme = hesdirk2, inert otherwise); a restart whose file lacks
-        // the key keeps keep (bitwise older runs).  Echoed, so a later restart keeps it.
-        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope",
-                                             fresh ? "correct" : "keep");
-        if (rs.compare("keep") == 0) {
-          vgd_rot_slope = 0;
-        } else if (rs.compare("probe") == 0) {
-          vgd_rot_slope = 1;
-        } else if (rs.compare("be") == 0) {
-          vgd_rot_slope = 2;
-        } else if (rs.compare("correct") == 0) {
-          // rotslope-1012 (Time2RotCorrect); frac in units of the step (default the
-          // stage size gamma = 1 - 1/sqrt 2)
-          vgd_rot_slope = 3;
-          vgd_rot_cfrac = pin->GetOrAddReal("rad_m1","vet_gd_rotate_slope_frac",
-                                            1.0 - 1.0/std::sqrt(2.0));
-          vgd_rot_creuse = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_slope_reuse",
-                                                true);
-          if (!(vgd_rot_cfrac > 0.0 && vgd_rot_cfrac <= 1.0)) {
-            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "<rad_m1>/vet_gd_rotate_slope_frac must be in "
-                      << "(0, 1]" << std::endl;
-            std::exit(EXIT_FAILURE);
-          }
-        } else {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_m1>/vet_gd_rotate_slope = '" << rs
-                    << "' is not a choice (probe | be | correct | keep)" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        if (vgd_rot_auto) {
-          vgd_rot_auto_fac = 20.0;
-          // the value is recorded once resolved; until then the key reads "auto"
-          pin->SetString("rad_m1","vet_gd_rotate_dt","auto");
-        }
-      }
-    }
+    VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
     // rotavg-1012: vet_rotate_avg = K (read only when named; absent or < 2 = off, bitwise;
     // a restart whose file lacks the key keeps the old behaviour): the closure averaged
     // over the last K rotated direction sets (rad_m1_rotavg.cpp).  The key is shared by
@@ -1095,14 +1032,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      vra_on = (vra_k >= 2) && vgd_on;
-      if (vra_on && !VgdRotOn() && global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": the vet_gd set does not "
-                  << "rotate (vet_gd_rotate_dt / _every 0): inert" << std::endl;
+      vra_on = (vra_k >= 2) && (vgd_on || vet_sc);
+      const bool rot = vgd_on ? VgdRotOn() : vsc_rot;
+      if (vra_on && !rot && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": the direction set does "
+                  << "not rotate (vet_gd_rotate_dt / _every 0, or pinned): inert"
+                  << std::endl;
       }
-      if (vra_on && VgdRotOn() && global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": the vet_gd closure is "
-                  << "the mean over the last " << vra_k << " rotated sets" << std::endl;
+      if (vra_on && rot && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": the "
+                  << (vgd_on ? "vet_gd" : "vet_sc") << " closure is the mean over the "
+                  << "last " << vra_k << " rotated sets" << std::endl;
       }
     }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
