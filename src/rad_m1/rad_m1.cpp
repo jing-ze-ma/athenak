@@ -1009,7 +1009,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vgd_rot_t0 = pin->GetOrAddReal("rad_m1","vet_gd_rotate_t0",0.0);
         vgd_rot_align = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_align",true);
         vgd_rot_stretch = pin->GetOrAddReal("rad_m1","vet_gd_rotate_stretch",0.0);
-        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope","probe");
+        std::string rs = pin->GetOrAddString("rad_m1","vet_gd_rotate_slope","keep");
         if (rs.compare("keep") == 0) {
           vgd_rot_slope = 0;
         } else if (rs.compare("probe") == 0) {

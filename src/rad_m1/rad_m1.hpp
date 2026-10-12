@@ -1811,8 +1811,10 @@ class RadiationM1 {
   // vet_gd_rotate_slope (with vet_gd_rotate_dt; probe | be | keep): the hesdirk2 FSAL
   // slope K1 of the first step of a new rotation block belongs to the OLD set (an O(dt)
   // stage-1 error per jump = first order); probe: a time2_start=slope probe solve of the
-  // new set gives K1 (VetGdRotStep), be: that step is backward Euler, keep: as before
-  int vgd_rot_slope = 1;
+  // new set gives K1 (VetGdRotStep), be: that step is backward Euler, keep (default): as
+  // before.  probe / be measured WORSE than keep (vgdrot2 NOTE: the BE probe slope is not
+  // f(U^n) in stiff cells; be is Lie split): opt-in diagnostics only
+  int vgd_rot_slope = 0;
   int64_t vgd_rot_lastblk = INT64_MIN;
   bool t2_rotprobe = false;
   double vgd_rot_nprobe = 0.0;
