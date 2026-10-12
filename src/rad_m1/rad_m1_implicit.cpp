@@ -508,18 +508,27 @@ void M1ThinHr(const Real qp, const Real en, const Real jo, const Real fb,
 KOKKOS_INLINE_FUNCTION
 void M1ThinJs(const Real hpl, const Real hml, const Real hpr, const Real hmr,
               const Real jl, const Real jr, const Real lim, const Real wt, Real &hpf,
-              Real &hmf) {
+              Real &hmf, const Real hwl = -1.0, const Real hwr = 0.0) {
   hpf = hpl;
   hmf = hmr;
   if (!(jl > 0.0) || !(jr > 0.0) || hpl < 0.0 || hmr > 0.0 || !(wt > 0.0)) {return;}
+  // jsfix-1012: the face value of H+- is the SAME interpolation as the hc face flux
+  // (implicit_thin_hcface): hwl < 0 the arithmetic mean (bitwise), else the
+  // optical-depth weights (x (r/r_f)^2 on the sp x1 faces) of M1ThinFace.  At a thin ->
+  // opaque step the opaque cell's centre value (H+ attenuated by e^{-tau}, or the
+  // isotropic interior) does not describe the face; the mean halved the donor's h+ and
+  // piled E up in front of a cold absorber (T7).  Equal depths: the mean (2nd order).
+  const Real wl = hwl, wr = hwr;
   const Real ppl = hpl*jl, ppr = fmax(hpr, 0.0)*jr;
   if (ppl > 0.0) {
-    const Real ph = fmin(fmax(0.5*(1.0 + ppr/ppl), 1.0/lim), lim);
+    const Real pf = (hwl < 0.0) ? 0.5*(1.0 + ppr/ppl) : (wl + wr*ppr/ppl);
+    const Real ph = fmin(fmax(pf, 1.0/lim), lim);
     hpf = hpl + wt*(fmin(hpl*ph, 1.0) - hpl);
   }
   const Real mml = fmin(hml, 0.0)*jl, mmr = hmr*jr;
   if (mmr < 0.0) {
-    const Real ph = fmin(fmax(0.5*(1.0 + mml/mmr), 1.0/lim), lim);
+    const Real pf = (hwl < 0.0) ? 0.5*(1.0 + mml/mmr) : (wr + wl*mml/mmr);
+    const Real ph = fmin(fmax(pf, 1.0/lim), lim);
     hmf = hmr + wt*(fmax(hmr*ph, -1.0) - hmr);
   }
 }
@@ -2153,6 +2162,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           if (!(thsw_jslim >= 1.0)) {
             ImplFatal("<rad_m1>/implicit_thin_jslim must be >= 1");
           }
+          // jsfix-1012: implicit_thin_js_face = hcface | mean, the face value of the
+          // formal-solution H+- in the js/jse shape.  hcface (DEFAULT on a fresh run):
+          // the face interpolation of implicit_thin_hcface (tau: optical-depth weights,
+          // r^2 on the sp x1 faces; mean: the arithmetic mean) -- js and hc see ONE face
+          // value.  The arithmetic mean at a thin -> opaque step halved the donor's
+          // upwind ratio and piled E up in front of a cold absorber (T7 front E/E_free
+          // 1.56).  A restart whose file lacks the key keeps mean (bitwise).
+          {
+            std::string sjf = pin->GetOrAddString("rad_m1","implicit_thin_js_face",
+                global_variable::restart_run ? "mean" : "hcface");
+            if (sjf.compare("mean") == 0) {
+              thsw_jsmean = true;
+            } else if (sjf.compare("hcface") != 0) {
+              ImplFatal("<rad_m1>/implicit_thin_js_face = '" + sjf
+                        + "' is not a choice (hcface | mean)");
+            }
+          }
         }
       }
       // unify-1012: implicit_thin_hcsf = jh | j.  hc/hcs subtract the upwind flux of the
@@ -3705,6 +3731,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const bool tjs = thsw && thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 2)));
     const bool tjse = tjs && thsw_jse;
     const Real tjl = thsw_jslim;
+    const bool tjm = thsw_jsmean;   // jsfix-1012
     const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
     const bool hcjh = thsw_hcjh;   // unify-1012
     const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
@@ -3787,11 +3814,21 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
           const Real wjs = !tjs ? 0.0
                            : (tjse ? 1.0 - fmax(iw_(m,M1_IW_TR,km,jm,i),
                                                 iw_(m,M1_IW_TR,k,j,i)) : 1.0);
+          // coreL-1012 implicit_thin_hcface = tau: optical-depth weights (equal
+          // half-cell lengths on a transverse face)
+          Real hwl = -1.0, hwr = 0.0;
+          if (thct) {
+            const Real tl = fmax(iw_(m,M1_IW_KT,km,jm,i), 0.0);
+            const Real tr = fmax(iw_(m,M1_IW_KT,k,j,i), 0.0);
+            hwl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
+            hwr = 1.0 - hwl;
+          }
+          // jsfix-1012: the js / jse face shape takes the same face interpolation
           if (tjs) {
             M1ThinJs(iw_(m,M1_IW_S1,km,jm,i), iw_(m,M1_IW_S3,km,jm,i),
                      iw_(m,M1_IW_S1,k,j,i), iw_(m,M1_IW_S3,k,j,i),
                      iw_(m,M1_IW_TC,km,jm,i), iw_(m,M1_IW_TC,k,j,i), tjl,
-                     wjs, hpf, hmf);
+                     wjs, hpf, hmf, tjm ? -1.0 : hwl, hwr);
           }
           if (hsfb >= 0) {   // cbfix-1011
             M1HrSf(iw_, hsfb, m, km, jm, i, k, j, i, d, wjs, wjs, hpf, hmf);
@@ -3808,15 +3845,6 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
           if (hsfb >= 0 && hcjh) {
             jcl = fmax(jcl, iw_(m,hsfb+M1_HSF_JH,km,jm,i));
             jcr = fmax(jcr, iw_(m,hsfb+M1_HSF_JH,k,j,i));
-          }
-          // coreL-1012 implicit_thin_hcface = tau: optical-depth weights (equal
-          // half-cell lengths on a transverse face)
-          Real hwl = -1.0, hwr = 0.0;
-          if (thct) {
-            const Real tl = fmax(iw_(m,M1_IW_KT,km,jm,i), 0.0);
-            const Real tr = fmax(iw_(m,M1_IW_KT,k,j,i), 0.0);
-            hwl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
-            hwr = 1.0 - hwl;
           }
           M1ThinFace(tmode, tcorr, hpf, hmf, gfl, gfr, tauf,
                      iw_(m,M1_IW_TB,km,jm,i), iw_(m,M1_IW_TB,k,j,i),
@@ -11931,6 +11959,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool tjs = thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 1)));
       const bool tjse = thsw_jse;
       const Real tjl = thsw_jslim;
+      const bool tjm = thsw_jsmean;   // jsfix-1012
       const int hsfb = (impl_hr_sf && hsrc == 1) ? iw_hsf : -1;   // cbfix-1011
       const bool hcjh = thsw_hcjh;   // unify-1012
       const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
@@ -12039,18 +12068,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               hgh_(m,M1_VGD_HREP,k,j,ip))
                                        : fmin(hvc_(m,M1_VET_EPS,k,j,im),
                                               hvc_(m,M1_VET_EPS,k,j,ip))));
-            if (tjs) {
-              M1ThinJs(hpl, hml, hpr, hmr, jl, jr, tjl, wjs, hpl, hmr);
-            }
-            if (hsfb >= 0) {   // cbfix-1011
-              M1HrSf(iw_, hsfb, m, k, j, im, k, j, ip, 0, wjs, wjs, hpl, hmr);
-            }
-            const Real gl2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, im, gl) : gl;
-            const Real gr2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, ip, gr) : gr;
-            if (hsfb >= 0 && hcjh) {   // unify-1012 (implicit_thin_hcsf = jh)
-              jl = fmax(jl, iw_(m,hsfb+M1_HSF_JH,k,j,im));
-              jr = fmax(jr, iw_(m,hsfb+M1_HSF_JH,k,j,ip));
-            }
             // coreL-1012 implicit_thin_hcface = tau: the formal-solution face flux
             // interpolated linearly in OPTICAL DEPTH between the two cell centres (the
             // flux changes with tau, not with r): Hf = (tau_R H_L + tau_L H_R)/(tau_L +
@@ -12069,6 +12086,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 hwl *= SQR(cx1vv(m,im))/rf2;
                 hwr *= SQR(cx1vv(m,ip))/rf2;
               }
+            }
+            // jsfix-1012: the js / jse face shape takes the same face interpolation
+            if (tjs) {
+              M1ThinJs(hpl, hml, hpr, hmr, jl, jr, tjl, wjs, hpl, hmr,
+                       tjm ? -1.0 : hwl, hwr);
+            }
+            if (hsfb >= 0) {   // cbfix-1011
+              M1HrSf(iw_, hsfb, m, k, j, im, k, j, ip, 0, wjs, wjs, hpl, hmr);
+            }
+            const Real gl2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, im, gl) : gl;
+            const Real gr2 = (hsfb >= 0) ? M1HrSfFb(iw_, hsfb, m, k, j, ip, gr) : gr;
+            if (hsfb >= 0 && hcjh) {   // unify-1012 (implicit_thin_hcsf = jh)
+              jl = fmax(jl, iw_(m,hsfb+M1_HSF_JH,k,j,im));
+              jr = fmax(jr, iw_(m,hsfb+M1_HSF_JH,k,j,ip));
             }
             M1ThinFace(tmode, tcorr, hpl, hmr, gl2, gr2, tauf, iw_(m,M1_IW_EN,k,j,im),
                        iw_(m,M1_IW_EN,k,j,ip), hdl, hdr, jl, jr,
