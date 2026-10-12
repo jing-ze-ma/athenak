@@ -27,4 +27,11 @@ Worker DF2, 2026-10-12, MPCDF Raven. Work dir /raven/ptmp/jinma/defaults2_1012. 
 (c) d3bf42d7 rst without the key (cycle-clock run, rst t = 2 / AG Car cycle ~30) restarted with rotate_dt on the
     command line: new vs d3bf42d7 restart.
 (d) BSG production deck (names correct) reduced to 4 blocks, 5 cycles: new vs d3bf42d7.
-RESULTS: see logs/all.31107661.out (pending at the time of writing).
+RESULTS (job 31107661, COMPLETED in 18m45s; logs/all.31107661.out): ALL CHECKS BITWISE.
+- (a) fresh default == named correct: rlatt_om5_T U1==N1, U2==N2, auto A1==AN1, A2==AN2 (27 files each, 0 differ);
+  reduced AG Car A U==N (14 files). Auto default resolves vet_gd_rotate_slope=correct, rotate_dt = 20 x first dt.
+- (b) cycle clock E1 and rotate 0 Z1: new == d3bf42d7, data and RAW (whole files incl. headers). N1 == N1o (named correct) RAW too.
+- (c) restart lacking the key keeps keep: rlatt RPn==RPo, RQn==RQo (RAW); AG Car A RN==RO (RAW).
+- (d) BSG production deck (reduced 4 blocks, 5 cycles): new == d3bf42d7, data and RAW (30 files).
+- Extra cross-check N vs rotslope FINC_c3 differs: expected, FINC_c3 used the pre-jsfix rotslope binary athena_he_cpu_c3
+  (implicit_thin_js_face did not exist; d3bf42d7 fresh default is hcface).
