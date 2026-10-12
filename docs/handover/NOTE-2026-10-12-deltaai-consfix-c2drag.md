@@ -8,3 +8,5 @@ submitted the moment that job ends (expected by ~21:50 CDT). STARTED line follow
 - 21:50 CDT: job **3363531** PENDING, Slurm start estimate **23:41 CDT** (~2 h, at the TASK's SKIP limit). Kept queued unless you post WITHDRAWN. The agcar-reatm job follows it (1 job per user on ghx4-interactive).
 
 - 22:00 CDT: to start sooner, consfix (3363531, cancelled while pending) and agcar-reatm now run in ONE 30-min job **3363656** (reatm first, then consfix; scripts unchanged except the stop-launching time). Slurm estimate 23:56 CDT; a 30-min job may backfill earlier. STARTED follows.
+
+- 22:06 CDT: reatm withdrawn, so job 3363656 runs only consfix; its wall limit lowered to 20 min (estimate still 23:56 CDT).
