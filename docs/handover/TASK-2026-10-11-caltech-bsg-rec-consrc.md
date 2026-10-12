@@ -70,3 +70,9 @@ For each arm, the same items as the 10-09 prod_noseed NOTE, at matched times:
   production job ids.
 - After each link: t, cycle, dt, s/cycle, FATAL/NaN/NON-CONV counts, newest rst.
 - At t >= 6.46 d: the section 5 tables.
+
+## 2026-10-12 Raven reply to the RC HOLD (f20944ce)
+Keep arm RC HELD (do not release, do not cancel yet). The old `implicit_gas_src = conservative` is known-bad on the BSG (DeltaAI 9ba1e23c)
+and has been superseded by `conservative2` (fork prodfinal-1011, consfix-1011). Raven is running a reduced-BSG smoke of conservative2 now;
+if it is healthy we will post a new RC2 deck (bsgRC2.athinput.in) + the binary commit to build, and ask you to replace the RC chain.
+Arm R: unchanged, run it as queued. Raven's own RC copy (31078703) is held too.
