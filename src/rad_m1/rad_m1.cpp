@@ -828,10 +828,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // 1-D branch) keeps Levermore's
     eddington = false;
     vet_sc = true;
-    // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp), read when named
-    if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
-      vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
-    }
+    // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp).  unify-sc-gd-1012
+    // (#11): DEFAULT true on a fresh run, as on vet_col / vet_gd (the VET source of a
+    // backward-Euler solve reads the physical E^n, not E^n + dt (chat/c) esrc); a restart
+    // whose file lacks the key keeps false (echoed).  Bitwise wherever esrc = 0.
+    vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",fresh);
   } else if (cl.compare("tau") == 0) {
     // the multi-D implicit solve reads (chi, n) from the column optical depth
     // (rad_m1_tau.cpp), in the uniaxial form; every other use of chi (explicit wave
@@ -1257,6 +1258,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // when named)
     if (vgd_on && fresh && vgd_twin &&
         !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
+      vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
+    }
+    // unify-sc-gd-1012 (#11): the same fresh default for a plain vet_col (no vet_gd), as
+    // vet_sc.  vet_gd without the twin keeps false: there the pair is needed together
+    // (NOTE-2026-10-09-viper-sp-seam-mass-leak: noesrc alone exposes the gd ray effect)
+    if (!vgd_on && fresh && !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
     }
     if (pin->DoesParameterExist("rad_m1","vet_source_noesrc_h2be")) {
