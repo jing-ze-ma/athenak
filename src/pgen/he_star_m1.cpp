@@ -205,7 +205,7 @@ Mesh *hs_mesh_ = nullptr;   // the mesh (HsAdaptiveRstWrite: the rad_m1 counters
 // hs_eq_ on; hs_eq_it_ the hook calls so far; hs_eq_dfl_ the column's floor density;
 // hs_eq_a_ a_ref of the active cells is..ie (the restart trailer kHsDicTag); hs_sfac_ the
 // he_seed factor of every cell, applied after the equilibrium (deferred seed)
-bool hs_eq_ = false, hs_eq_srad_ = false, hs_eq_seed_ = false;
+bool hs_eq_ = false, hs_eq_srad_ = false, hs_eq_seed_ = false, hs_eq_last_ = false;
 int hs_eq_it_ = 0, hs_eq_maxit_ = 30;
 Real hs_eq_tol_ = 1.0e-9, hs_eq_dfl_ = 0.0;
 std::vector<Real> hs_eq_a_;
@@ -2497,6 +2497,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     if (wic) HsFatal("problem/he_ic_equil does not combine with he_wind_ic", __LINE__);
     hs_eq_maxit_ = pin->GetOrAddInteger("problem","he_ic_equil_maxit",30);
+    // he_ic_equil_last_march (default false = the last round only checks): the round
+    // he_ic_equil_maxit still updates (march at the relaxed T, a_i = f_i/rho_i) and the
+    // equilibrium stops there WITHOUT a further ic_rad relax: E, F, T are the relaxed
+    // ones of that round, rho/a_ref/Phi_eff the march's (module deposit and WB faces
+    // balanced at fixed E; the face luminosities then differ by the rho change)
+    hs_eq_last_ = pin->GetOrAddBoolean("problem","he_ic_equil_last_march",false);
     hs_eq_tol_ = pin->GetOrAddReal("problem","he_ic_equil_tol",1.0e-9);
     const Real eqdt = pin->GetOrAddReal("problem","he_ic_equil_dtfac",1.0e6);
     const int eqn = pin->GetOrAddInteger("problem","he_ic_equil_relax_n",40);
@@ -4095,14 +4101,17 @@ void HeStarIcEquil(Mesh *pm) {
       rld = x1f[i];
     }
   }
-  const bool done = (std::max(rmm, rmh) < hs_eq_tol_) || (hs_eq_it_ >= hs_eq_maxit_);
+  const bool conv = (std::max(rmm, rmh) < hs_eq_tol_);
+  const bool lastm = !conv && hs_eq_last_ && (hs_eq_it_ >= hs_eq_maxit_);
+  const bool done = conv || (hs_eq_it_ >= hs_eq_maxit_);
   if (global_variable::my_rank == 0) {
     std::printf("he_star_m1: he_ic_equil round %d: module residual max |a_net|/g = %.3e "
                 "(r %.5e), WB face residual %.3e (r %.5e), max |L(face)/L_in - 1| = "
                 "%.3e (r %.5e), L_in %.10e, L_top %.10e%s\n", hs_eq_it_, rmm, rrm, rmh,
                 rrh, ldv, rld, lin, lf[ie+1] + lm[ie+1],
                 done ? ((std::max(rmm, rmh) < hs_eq_tol_) ? " CONVERGED" :
-                        " (he_ic_equil_maxit: STOP, not converged)") : "");
+                        (lastm ? " (he_ic_equil_maxit: last round, march then STOP)" :
+                         " (he_ic_equil_maxit: STOP, not converged)")) : "");
     // the profile of this round (appended): i r rho T a_ref f/rho resm resh L/L_in
     FILE *fp = std::fopen("he_ic_equil.txt", "a");
     if (fp != nullptr) {
@@ -4114,7 +4123,9 @@ void HeStarIcEquil(Mesh *pm) {
       std::fclose(fp);
     }
   }
-  if (done) {
+  // the end of the equilibrium: the deferred seed, a_ref kept for the restarts (af0 = the
+  // a_ref of the cells is..ie now in place), no further ic_rad
+  auto finish = [&](const std::vector<Real> &af0) {
     // the deferred he_seed: eint (and with he_seed_rad E) of every cell times its factor
     if (hs_eq_seed_) {
       auto hsf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_sfac_);
@@ -4138,13 +4149,16 @@ void HeStarIcEquil(Mesh *pm) {
       Kokkos::deep_copy(fl.u0, hu);
       Kokkos::deep_copy(pm1->u0, hr);
     }
-    hs_eq_a_.assign(ar0.begin() + is, ar0.begin() + ie + 1);
+    hs_eq_a_.assign(af0.begin(), af0.end());
     pm1->icr_fmeas = false;
     pm->pgen->user_icpost_again = false;
     if (global_variable::my_rank == 0) {
       std::printf("he_star_m1: he_ic_equil: done after %d rounds%s\n", hs_eq_it_,
                   hs_eq_seed_ ? " (deferred he_seed applied)" : "");
     }
+  };
+  if (done && !lastm) {
+    finish(std::vector<Real>(ar0.begin() + is, ar0.begin() + ie + 1));
     return;
   }
   // ---- the update: a = f/rho, Phi_eff from a above x1f(is), rho re-marched
@@ -4267,6 +4281,7 @@ void HeStarIcEquil(Mesh *pm) {
   Kokkos::deep_copy(fl.u0, hu);
   HsAtmWrite(pmbp, is, a, pc, pf);
   pm->pgen->user_icpost_again = true;
+  if (lastm) finish(a);
   if (global_variable::my_rank == 0) {
     std::printf("he_star_m1: he_ic_equil round %d update: anchor cell %d (r %.5e), "
                 "cells %d .. %d re-marched, %d passes (last max |da/a| %.3e, face "
