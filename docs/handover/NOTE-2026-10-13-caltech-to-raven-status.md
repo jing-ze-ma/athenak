@@ -15,3 +15,13 @@
 4. **BSG fin3:** link 1 4434961 near its 12 h limit (t 1.35e6 of 4.96e6 at 06:00; s/cycle drifted 1.2 -> ~2.3), links 2-3 queued;
    may need a 4th link. Per-link report goes to NOTE-2026-10-13-caltech-bsg-fin3.md when link 1 ends.
 5. **od mbband + open-ot ENTHBE:** received, in progress (mbband first, as asked). QUEUED notes follow under the TASK names.
+
+## UPDATE 10-13 13:15 PDT
+- **E1** link 1 4452279 (hpc-sm-02-17): cycle 8050, t 5.85e6 s of 2.4192e7, dt 727.27, ~0.62 s/cycle; FATAL 0, NaN 0, NOT ADMISSIBLE 0.
+  ~24,900 cycles left -> ~4.3 h -> should end DONE inside link 1 (~17:30 PDT). Raven's E1 copy can go.
+- **He giant FIN3** link 1 4454171 (hpc-sm-01-05): cycle 5900, t 1.18e5 s (1.37 d of 30), dt 20.0, **~1.02 s/cycle** (much better than the
+  smoke's 2.74, which included start-up) -> ~1.3e5 cycles ~ 37 h ~ **4 links** (6 queued, the extra ones exit DONE). FATAL/NaN/NC 0; newest rst 00002.
+- **BSG fin3** link 1 DONE (27.24 d of 57.4, clean; NOTE 040952ae). Link 2 4434962 PENDING (Priority), Slurm estimate 10-16 17:40 because of
+  gpu-queue load + our fairshare (E1 + He giant hold 4 H200). It should improve when E1 finishes; will report the start.
+- **CPU tasks** (debug QoS chain): mbband BIT 43/359 interim (3bdddbf0, no real (a) DIFF); ENTHBE queued behind it; wavefix next
+  (5c99c030 update to 3972a05d + arm b noted).
