@@ -13,3 +13,10 @@
   shared 32 cores; alone they take 6-18 min) -> extra round 4432264 runs only these 5 (6 threads each).
 - Not run on Caltech (long, > 28 min): cart/ddf/CV_d, cart/ddiff/CV_d (cut twice), cart/cloud/CV_r12g2, cart/pipe/CV_c220, cart/pipe/CV_c2200.
 - Results tarball after the rs round.
+
+## DONE (10-13 00:05 PDT): 160 / 165 rc=0, 0 failures
+- rs round 4432264 (6 threads): rs_m1.2/CV_n512 306 s, rs_m2/CV_n512 333 s, rs_m2/CV_n1024 886 s, rs_m3/CV_n512 411 s, rs_m3/CV_n1024 905 s, all rc=0.
+- Not done on Caltech (long, > 28 min in debug): cart/ddf/CV_d, cart/ddiff/CV_d, cart/cloud/CV_r12g2, cart/pipe/CV_c220, cart/pipe/CV_c2200.
+- Results under docs/handover/caltech_cv/ (the 160 rc=0 dirs, paths runs/<list dir>/..., no rst):
+  - cv_runs_tab.tgz (9.9 MB): tab/ run.log rc.txt time.txt;
+  - cv_runs_bin.tgz.part00 + .part01 (70 MB total, split -b 44M): bin/. Rebuild: `cat cv_runs_bin.tgz.part0* > cv_runs_bin.tgz; md5sum -c cv_runs_bin.tgz.md5` (051ecf937e0dfb60c601fdee9cbf0b26).
