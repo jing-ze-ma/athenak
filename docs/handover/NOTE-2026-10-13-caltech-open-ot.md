@@ -23,3 +23,12 @@
   - sp/runs/rlatt/R0Q_128: vet_gd: too many directions
   - sp/runs/rswtv/RRT_128, sp/runs/rswtv/RRT_256, sp/runs/rswv/RRT_256: vet_gd: reflecting outer x1 not supported (use implicit_bc_x1max = marshak + vet_col_surface_q)
   Likely every RRT_* deck in rswtv/rswv hits the same check; full list in the final report.
+
+## ROUND 2 DONE (20:08 PDT) -- round 3 running
+- Job 4422142: **128 / 144 rc=0.** 12 FATAL at start (3 deck classes, every level):
+  - vet_gd_twin_state = trans needs vet_gd_twin = true: sp/runs/rlatt/R0W_{32,64,128}
+  - vet_gd: too many directions: sp/runs/rlatt/R0Q_{32,64,128}
+  - vet_gd reflecting outer x1 not supported: sp/runs/rswtv/RRT_{64,128,256}, sp/runs/rswv/RRT_{64,128,256}
+- 4 runs did not finish within 28 min at 1 thread (restarted from scratch each round): lad/runs/rw_p10t1/NM_hesdirk2_T_32,
+  sp/runs/rlatt_om5/R0_256, sp/runs/rlatt/R0_256, sp/runs/rswv/B_2048. Round 3 = debug job 4423131 runs only these 4 with
+  **8 OpenMP threads each** (list.txt says 1) -- flagging in case thread count matters for your comparison.
