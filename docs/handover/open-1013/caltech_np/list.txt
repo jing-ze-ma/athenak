@@ -1,0 +1,4 @@
+lad/runs/rw_p10t1/N3_hesdirk2_T_64 1
+lad/runs/rw_p10t1/N3_hesdirk2_T_32 1
+lad/runs/rw_p10t1/N5_hesdirk2_T_64 1
+lad/runs/rw_p10t1/N5_hesdirk2_T_32 1

@@ -1,0 +1,55 @@
+From 112b41c50641567e1cc0d874cc8455051192dd82 Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Tue, 13 Oct 2026 07:49:29 +0200
+Subject: [PATCH 3/3] rad_m1: implicit_cs2_vimp_npass experiment (min Picard
+ passes with the cs2 vimp prediction; read only when named)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_m1/rad_m1.hpp          |  1 +
+ src/rad_m1/rad_m1_implicit.cpp | 10 ++++++++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index e974fd92..41375b93 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -886,6 +886,7 @@ class RadiationM1 {
+   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
+   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
+   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
++  int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (experiment)
+   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
+                                         // 2 no vimp prediction, 4 no hydro shift,
+                                         // 8 no x1 split, 16 no x2/x3 split
+diff --git a/src/rad_m1/rad_m1_implicit.cpp b/src/rad_m1/rad_m1_implicit.cpp
+index 12946ce2..b3219417 100644
+--- a/src/rad_m1/rad_m1_implicit.cpp
++++ b/src/rad_m1/rad_m1_implicit.cpp
+@@ -2601,6 +2601,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
+       // implicit_cs2_dbg = 2.
+       cs2_vimp = pin->GetOrAddBoolean("rad_m1","implicit_cs2_vimp",
+                                       global_variable::restart_run);
++      if (pin->DoesParameterExist("rad_m1","implicit_cs2_vimp_npass")) {
++        cs2_vnp = pin->GetInteger("rad_m1","implicit_cs2_vimp_npass");
++      }
+       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
+       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
+       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
+@@ -13673,6 +13676,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
+       converged = pc && lc;
+     }
++    // open-ot-1013 implicit_cs2_vimp_npass (EXPERIMENT, read only when named): with the
++    // conservative2 vimp prediction on, at least this many Picard passes, so its lagged
++    // neighbour dA (one pass behind) reaches the fixed point
++    if (converged && cs2_vnp > 0 && Cs2Active() && cs2_vimp && impl_vimp &&
++        it + 1 < cs2_vnp) {
++      converged = false;
++    }
+     // implicit_hr_recon_pred (xthinfix-1009): the dc phase has converged; switch plm on
+     // for this step (switch and limiter from E^dc, built at the next pass) and continue
+     if (converged && impl_muscl_pred && !muscl_now && muscl_it0 < 0) {
+-- 
+2.51.0
+

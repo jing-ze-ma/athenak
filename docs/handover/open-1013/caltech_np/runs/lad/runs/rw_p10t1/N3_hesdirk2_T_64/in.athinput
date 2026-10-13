@@ -1,0 +1,146 @@
+<comment>
+problem = runs_3r_radwave vetf_impl_x1_P3.33333_t1_N128_nt64_armtJe_rm_time2_vet_scpredict_rm_time2_vstagetrue_tshesdirk2_vimptrue
+
+<job>
+basename = rw
+
+<mesh>
+nghost = 2
+nx1                      = 128
+x1min = 0.0
+x1max = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = 0.0
+x2max = 1.0
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = 0.0
+x3max = 1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1                      = 128
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number               = 0.8
+nlim                     = -1
+tlim                     = 1.0078913661536923
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_m1>
+implicit_cfl             = 0.0787415129808
+implicit_cs2_vimp        = true
+implicit_cs2_vimp_npass  = 3
+implicit_predictor_frozen = false
+vet_rotate_avg           = 4
+c_light = 10
+chat_over_c = 1.0
+cfl_rad = 0.4
+thick_flux = none
+closure                  = vet_sc
+e_floor = 1.0e-30
+subcycle = true
+opacity = const
+kappa_p = 1
+kappa_e = 1
+kappa_f = 1
+kappa_s = 0.0
+arad = 10
+coupling = true
+gas_feedback = true
+transport                = implicit
+implicit_tol             = 1.0e-12
+implicit_maxit           = 200
+implicit_lin_tol         = 1.0e-13
+implicit_lin_maxit       = 400
+implicit_solver          = bicgstab
+implicit_offdiag = operator
+implicit_closure_lag = step
+implicit_recon = dc
+implicit_vimp            = true
+time_scheme              = hesdirk2
+implicit_flux_faces      = all
+implicit_flux_beam       = halfrange
+implicit_flux            = blend
+implicit_blend           = idort_f
+implicit_blend_tau0      = 1.0
+implicit_blend_alpha     = 1.0
+implicit_blend_flo       = 0.3
+implicit_blend_fhi       = 0.6
+implicit_blend_xthin     = 0
+implicit_thin_switch     = fse
+implicit_thin_corr       = hc
+implicit_thin_recon      = jse
+implicit_thin_bq         = lin
+time2_vet_sc             = predict
+time2_vstage             = true
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+vet_x1_periodic = true
+vet_x1_npass = 15
+
+implicit_thin_hcsf       = j
+implicit_thin_js_gd      = x1
+implicit_thin_bq_gd      = cell
+implicit_thin_hcface     = tau
+implicit_thin_hcface_gd  = x1
+vet_seg                  = jump
+vet_bc_diff              = face
+vet_gd_symref            = col
+time2_vet_col_source     = blend
+implicit_gas_src         = conservative2
+implicit_cs2_hll         = drag
+implicit_cs2_shift       = false
+implicit_vimp_bc         = true
+time2_vet_col            = predict
+time2_pred_cap           = 0.5
+time2_start              = be
+<problem>
+pgen_name = rad_m1_beam
+m1_test = radwave
+radwave_dir = x1
+radwave_amp = 1.0000000000000001e-05
+radwave_rho = 1.0
+radwave_t = 1.0
+radwave_eig = true
+radwave_eig_e_im = -0.087953832892782136
+radwave_eig_e_re = -0.061026619947505814
+radwave_eig_f_im = -0.007014621055777848
+radwave_eig_f_re = -0.017529087672614203
+radwave_eig_t_im = -0.038086788438045312
+radwave_eig_t_re = -0.016609823732459211
+radwave_eig_v_im = -0.13935625104742316
+radwave_eig_v_re = 0.9921704199294743
+
+<output1>
+file_type = tab
+variable = hydro_w
+data_format = %.16e
+dt = 0.062993210384605772
+slice_x2 = 0.125
+
+
+<output2>
+file_type = tab
+variable = m1
+data_format = %.16e
+dt = 0.062993210384605772
+slice_x2 = 0.125
+
+
+
