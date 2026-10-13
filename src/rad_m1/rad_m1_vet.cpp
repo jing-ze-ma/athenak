@@ -2285,6 +2285,20 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_mb_kernel = '" + kn + "' not implemented (ray | cell)");
     }
   }
+  // mbband-1013 (bug fix): the thin switch's C1 sum sum w |I - S| (M1_VET_NL, thsw_c1:
+  // implicit_thin_switch = fs*, thin_corr = hcs, thin_recon = jse) is accumulated by the
+  // per-cell kernel only; the ray kernel's moments (VetMomAdd) and the angle-parallel
+  // sweep never wrote it, so on several MeshBlocks the switch read C1 = 0 (pipe: E 4 %
+  // off the single-block run after one cycle).  With thsw_c1 the per-cell kernel is the
+  // default; naming the ray kernel or vet_mb_angles with it is FATAL.
+  if (thsw_c1) {
+    if (pin->DoesParameterExist("rad_m1", "vet_mb_kernel") && st.raypar) {
+      VetFatal("<rad_m1>/vet_mb_kernel = ray does not accumulate the thin-switch C1 sum "
+               "(M1_VET_NL) that implicit_thin_switch / thin_corr / thin_recon need; use "
+               "vet_mb_kernel = cell (the default with them)");
+    }
+    st.raypar = false;
+  }
   // vet_mb_tblock = B (exact, default 1 = off; tests_m1/runs_4i_sctb/README.md): up to
   // B launches per kernel launch, never across a band exchange, so B <= vet_mb_halo
   // matters; without vet_mb_halo in the input, the default halo becomes max(3, B).
@@ -2722,6 +2736,10 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   // PROTOTYPE vet_mb_angles: the angle-decomposed sweep (VetSweepAng)
   if (pin->DoesParameterExist("rad_m1", "vet_mb_angles")) {
     st.ang = pin->GetBoolean("rad_m1", "vet_mb_angles");
+    if (st.ang && thsw_c1) {   // mbband-1013: no C1 sum there either (see vet_mb_kernel)
+      VetFatal("<rad_m1>/vet_mb_angles does not accumulate the thin-switch C1 sum "
+               "(M1_VET_NL) that implicit_thin_switch / thin_corr / thin_recon need");
+    }
   }
   if (st.ang) {
     if (vet_milne || st.nlag > 0) {
