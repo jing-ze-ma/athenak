@@ -606,7 +606,10 @@ void RadiationM1::VetGdInit() {
     // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
-    const int nmax = std::min(indcs.nx2, indcs.nx3);
+    const int nmax0 = std::min(indcs.nx2, indcs.nx3);
+    // wavefix-1013 vet_gd_band_dir: per-direction caps (single rank)
+    const bool pdir = vgd_banddir && (global_variable::nranks == 1);
+    const int nmax = pdir ? std::max(indcs.nx2, indcs.nx3) : nmax0;
     vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
     vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
     vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
@@ -630,13 +633,24 @@ void RadiationM1::VetGdInit() {
       vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
     }
     vgd_w = std::min(wneed, nmax);
-    vgd_capped = (vgd_w < wneed);
+    if (pdir) {
+      vgd_rch2 = std::min(wneed, indcs.nx2);
+      vgd_rch3 = std::min(wneed, indcs.nx3);
+    } else {
+      vgd_rch2 = vgd_w;
+      vgd_rch3 = vgd_w;
+    }
+    vgd_capped = (std::min(vgd_rch2, vgd_rch3) < wneed);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
                 << " cells (needed " << wneed << "), per-shell depth mean "
                 << std::accumulate(vgd_wsh.begin(), vgd_wsh.end(), 0.0)/indcs.nx1
-                << ((vgd_w < wneed) ? ": MeshBlocks too small, the deepest near-tangent "
-                                      "reads are clamped (counted)" : "") << std::endl;
+                << (vgd_capped ? ": MeshBlocks too small, the deepest near-tangent "
+                                 "reads are clamped (counted)" : "") << std::endl;
+      if (pdir && vgd_rch2 != vgd_rch3) {
+        std::cout << "<rad_m1> vet_gd: vet_gd_band_dir reach theta " << vgd_rch2
+                  << " phi " << vgd_rch3 << " cells" << std::endl;
+      }
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
@@ -1063,7 +1077,11 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
         if (th > t1) {thw = th - (t1 - t0);}
         if (ph < p0) {phw = ph + (p1 - p0);}
         if (ph > p1) {phw = ph - (p1 - p0);}
-        const bool wall = (thw != th) || (phw != ph);
+        // wavefix-1013 vet_gd_band_dir: a column beyond the per-direction reach is never
+        // read (the sweep clamps there): no map (all columns when off / uncapped)
+        const bool reach = (j >= jsg - vgd_rch2) && (j < jsg + indcs.nx2 + vgd_rch2) &&
+                           (k >= ksg - vgd_rch3) && (k < ksg + indcs.nx3 + vgd_rch3);
+        const bool wall = reach && ((thw != th) || (phw != ph));
         w_h(m,k,j) = wall ? 1 : 0;
         for (int q = 0; q < n; ++q) {mp_h(m,k,j,q) = q;}
         if (!wall) {continue;}
@@ -1636,13 +1654,15 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
   // vgdspeed-1009: true when the list path of the compact halo wrote the band itself
   bool done = false;
   if (hcomp) {done = VetGdHaloCompact(a, nv, i0, ws, two ? b : nullptr);}
+  // wavefix-1013 vet_gd_band_dir: the depth per direction (= ws when off / uncapped)
+  const int ws2 = std::min(ws, vgd_rch2), ws3 = std::min(ws, vgd_rch3);
   if (!hcomp) {
   par_for("m1_vgd_halo", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
     const int oo = (o < 4) ? o : (o + 1);
     const int dk = oo/3 - 1, dj = oo%3 - 1;
-    const int jn = (dj == 0) ? nx2 : ws;
-    const int kn = (dk == 0) ? nx3 : ws;
+    const int jn = (dj == 0) ? nx2 : ws2;
+    const int kn = (dk == 0) ? nx3 : ws3;
     const int cnt = nv*kn*jn*ni;
     if (t >= cnt) {return;}
     const int v = t/(kn*jn*ni);
@@ -1654,10 +1674,10 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
     const int nl = hl_(8*m + o);
     if (nl >= 0 && mapd) {return;}    // the sweep reads on-rank neighbours directly
     if (nl >= 0) {
-      const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
-      const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
-      const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
-      const int ks_ = (dk < 0) ? (w + nx3 - ws) : w;
+      const int jd = (dj < 0) ? (w - ws2) : ((dj == 0) ? w : (w + nx2));
+      const int kd = (dk < 0) ? (w - ws3) : ((dk == 0) ? w : (w + nx3));
+      const int js_ = (dj < 0) ? (w + nx2 - ws2) : w;
+      const int ks_ = (dk < 0) ? (w + nx3 - ws3) : w;
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
       a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_+kk,js_+jj,i);
     } else if (mpi) {
@@ -4197,8 +4217,10 @@ void RadiationM1::VetGdSweep() {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  const int jlo = 0, jhi = je + wb - 1;
-  const int klo = 0, khi = ke + wb - 1;
+  // wavefix-1013 vet_gd_band_dir: the reach per direction (= wb, i.e. 0 / je + wb - 1,
+  // when off or uncapped)
+  const int jlo = wb - vgd_rch2, jhi = je + vgd_rch2 - 1;
+  const int klo = wb - vgd_rch3, khi = ke + vgd_rch3 - 1;
   const Real twopi = 2.0*M_PI;
   vgd_hsweep += 1;
   // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): per

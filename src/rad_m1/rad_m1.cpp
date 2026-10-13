@@ -1096,6 +1096,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         }
       }
     }
+    // wavefix-1013 vet_gd_band_dir (DEFAULT true on a fresh run; a restart whose file
+    // lacks the key keeps false): the lateral band reach capped per direction (theta by
+    // nx2, phi by nx3) instead of both by min(nx2, nx3).  A wedge with few theta cells
+    // (rlatt: nx2 = 4) otherwise clamps every in-shell phi read beyond 4 cells, an O(1)
+    // tensor defect at each lateral block face / periodic seam (F1 X order 0).  Single
+    // rank only (the MPI halo layouts carry one depth): with several ranks the old cap.
+    // Bitwise wherever the reach was not capped, or nx2 = nx3.
+    if (vgd_on) {
+      vgd_banddir = pin->GetOrAddBoolean("rad_m1","vet_gd_band_dir",
+                                         !global_variable::restart_run);
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_exit")) {
       vgd_bandx = pin->GetBoolean("rad_m1","vet_gd_band_exit");
     }

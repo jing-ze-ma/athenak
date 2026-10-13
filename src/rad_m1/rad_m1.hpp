@@ -2183,6 +2183,12 @@ class RadiationM1 {
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
+  // wavefix-1013 vet_gd_band_dir: the lateral reach per direction (theta, phi), each capped
+  // by the MeshBlock's own extent in that direction (nx2, nx3) instead of min(nx2, nx3);
+  // the storage band vgd_w = max(vgd_rch2, vgd_rch3).  Equal to vgd_w (old) when off, under
+  // MPI, or wherever min(nx2, nx3) did not cap the reach (bitwise there).
+  bool vgd_banddir = false;
+  int vgd_rch2 = 0, vgd_rch3 = 0;
   Real vgd_nclamp_seen = 0.0;
   bool vgd_hinw = true;
   int vgd_nb2 = 1, vgd_nb3 = 1;
