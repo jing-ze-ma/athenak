@@ -773,6 +773,12 @@ class RadiationM1 {
   // lagged E^n that exceeds the formal-solution J of the cell the ISOTROPIC half-range
   // shape (+-1/4) instead of the formal solution's (M1HrExcess); none = off (default)
   bool impl_hr_xs = false;
+  // wavefix-1013 implicit_hr_q_face (read only when named, default false): the half-range
+  // top q = H+_f/J_f with BOTH extrapolated to the face (r^2 H+ and J linear in r from the
+  // two top cell centres), consistent with the linear face E of the Marshak flux; the old
+  // q (H+ of the cell, or H+_f with implicit_thin_bq(_gd) = lin, over J of the CELL) is
+  // O(dx) off the face (rswtv / rswt + top flux: first-order top region)
+  bool impl_hrq_face = false;
   Real impl_hr_xs_cfl = 10.0;   // ... only where c dt/dx1 of the cell >= this
   int iw_hsf = -1;              // first iw component of the M1_NIW_HSF block
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
