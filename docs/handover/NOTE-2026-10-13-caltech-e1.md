@@ -48,3 +48,16 @@
   he_star_m1: he_ic_equil: done after 1 rounds (deferred he_seed applied)
 - First check (11:53): cycle 650, t 4.727e5 s, dt 727.27, elapsed 305.8 s -> ~0.47 s/cycle so far. Links 4452280 -> 4452281 queued afterany.
 - **Raven may cancel its own E1 copy now.**
+
+## LINK 1 STOPPED: Picard DIVERGED at t = 1.24255e7 s, cycle 17085 (10-13 16:19 PDT) -- chain halted, NOT restarted
+- Job 4452279 rc 134 (abort): `Picard solve DIVERGED: resid=1.167511e-01 lin_resid=2.701759e-08 > implicit_resid_fatal=1.000000e-02 at time 1.242545e+07 cycle 17085`
+  (FATAL at rad_m1_implicit.cpp:13979, both ranks). Hook wrote STOP ("srun rc=134 FATAL DIVERGED"); links 4452280 / 4452281 exited at once on STOP; no pruning.
+- **Onset** (no earlier warnings): first hesdirk2 `NOT ADMISSIBLE` at cycle 13622 (t ~9.9e6); per 1000 cycles: 13k 4, 15k 274, 16k 351, 17k 30 (659 total,
+  redone with backward Euler). First NC-local line at cycle=15198; 93 `Picard NON-CONVERGED after 200 passes` lines before the divergence
+  (resid 1e-7 .. 1e-1). Worst cells: rank 0 (m,k,j,i) (0,66,41,511), (0,66,49,478); rank 1 (0,18,45,347), (0,11,50,350) -> i ~ 350-512 of 536.
+  min(E,T) in the NOT ADMISSIBLE lines ~2e-5, once -1 (cycle 17077).
+- fofc_report at-floor 0 throughout. dt stayed 727.27 to the end (no dt shrink before the failure).
+- Speed: 0.56-0.65 s/cycle until cycle 14000, then 1.3 s (15k) -> 2.2 s (16k) -> 3.4 s/cycle (16k-17k) as the BE redos and 200-pass Picards piled up.
+- rst on disk (prune only runs after a clean link): agcar3d.00000 .. 00024 (every 5e5 s; 00024 = t 1.2e7, inside the troubled phase;
+  00019 = 9.5e6 is the last before the first NOT ADMISSIBLE). All bins + hst kept. Full log: e1_1013/prod/run.log.4452279.
+- **Waiting for the coordinator / DR / user**: do not restart until told which rst and what change. Same binary dad00933 / deck d29e4615.
