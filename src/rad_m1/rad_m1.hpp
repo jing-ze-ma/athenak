@@ -891,6 +891,8 @@ class RadiationM1 {
                                         // 2 no vimp prediction, 4 no hydro shift,
                                         // 8 no x1 split, 16 no x2/x3 split
   bool Cs2Active();
+  // open-ot-1013 time2_enth_be: this (non-stage) solve takes the stage a_f rule
+  bool T2EnthBe() const;
   // h2order2-1011 <rad_m1>/implicit_rad_inertia_solve (read only when named; default
   // false = the after-solve split, bitwise): the -theta dA of implicit_rad_inertia
   // (dA_c = a_c (E'_c - E^ov_c), a frozen for the solve) goes into the face equation
@@ -1222,6 +1224,9 @@ class RadiationM1 {
   int t2_afmode;                // time2_enth_vel: 0 old | 1 start (plm a_f from the
                                 // stage-start a, the rest as a face mean) | 2 central
                                 // (a_f central, E_f plm), in stage solves with vimp
+  bool t2_enth_be;              // open-ot-1013 time2_enth_be: the non-stage (backward-
+                                // Euler) solves of a hesdirk2 run take the stage solves'
+                                // a_f rule (time2_enth_vel = central only)
   int t2_solve;                 // what the next ImplicitSolve does (M1_T2S_*)
   bool t2_fail;                 // the last stage solve was not admissible
   int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
