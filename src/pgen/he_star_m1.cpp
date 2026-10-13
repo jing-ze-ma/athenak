@@ -167,7 +167,8 @@ Real hs_atp_dfl_ = 0.0;
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
 // marelax-1013 (reproduction probes, default off = 9972a56d bitwise):
 // problem/he_bc_zc_vg = solve (default: first-ghost v_r from HLLC S_M = 0) | zero (v = 0 in
-// every ghost, the paper's "naive" setup) | copy (first-ghost v_r = first active cell's v_r);
+// every ghost, the paper's "naive" setup) | copy (first-ghost v_r = first active cell's v_r)
+// | pcm (S_M = 0 solved from the cell-centred ghost/active states, not the PLM face states);
 // problem/he_bc_outer_inflow = true: he_bc_outer = copy copies v_r also where it points in.
 int hs_zcvg_ = 0;
 bool hs_boinf_ = false;
@@ -2318,10 +2319,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_bcopy_ = (bo == "copy");
     if (pin->DoesParameterExist("problem","he_bc_zc_vg")) {
       const std::string zv = pin->GetString("problem","he_bc_zc_vg");
-      if (zv != "solve" && zv != "zero" && zv != "copy") {
-        HsFatal("problem/he_bc_zc_vg must be solve|zero|copy", __LINE__);
+      if (zv != "solve" && zv != "zero" && zv != "copy" && zv != "pcm") {
+        HsFatal("problem/he_bc_zc_vg must be solve|zero|copy|pcm", __LINE__);
       }
-      hs_zcvg_ = (zv == "zero") ? 1 : ((zv == "copy") ? 2 : 0);
+      hs_zcvg_ = (zv == "zero") ? 1 : ((zv == "copy") ? 2 : ((zv == "pcm") ? 3 : 0));
     }
     if (pin->DoesParameterExist("problem","he_bc_outer_inflow")) {
       hs_boinf_ = pin->GetBoolean("problem","he_bc_outer_inflow");
@@ -2894,10 +2895,14 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
 KOKKOS_INLINE_FUNCTION
 Real HsZcAm(const EOS_Data &eos, const Real vg, const Real v2g, const Real va,
             const Real vb, const Real dl, const Real el, const Real dr, const Real er,
-            const Real *cl4, const Real *cr4) {
+            const Real *cl4, const Real *cr4, const bool pcm = false) {
   Real vl, vr, dum;
   hydro::Hydro::PLM_nonuniform(v2g, vg, va, cl4[0], cl4[1], cl4[2], cl4[3], vl, dum);
   hydro::Hydro::PLM_nonuniform(vg, va, vb, cr4[0], cr4[1], cr4[2], cr4[3], dum, vr);
+  if (pcm) {   // marelax-1013 he_bc_zc_vg = pcm: cell-centred (first-order) states
+    vl = vg;
+    vr = va;
+  }
   const Real g = eos.gamma, alpha = (g + 1.0)/(2.0*g);
   const Real pl = eos.IdealGasPressure(el), pr = eos.IdealGasPressure(er);
   const Real qa = eos.SoundSpeedFromP(dl, pl, g);
@@ -3010,20 +3015,27 @@ void HeStarBC(Mesh *pm) {
                                      dum, drf);
         hydro::Hydro::PLM_nonuniform(e0, ea, eb, cr4[0], cr4[1], cr4[2], cr4[3],
                                      dum, erf);
+        const bool zpcm = (zcvg == 3);
+        if (zpcm) {
+          dlf = d0;
+          elf = e0;
+          drf = da;
+          erf = ea;
+        }
         const Real csa = sqrt(eos.gamma*eos.IdealGasPressure(ea)/da);
         Real w = 2.0*(csa + fabs(va) + fabs(vb));
         Real xa = -w, xb = w;
-        Real fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
-        Real fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+        Real fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4, zpcm);
+        Real fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4, zpcm);
         for (int it=0; it<30 && !(fa < 0.0 && fb > 0.0); ++it) {
           w *= 2.0;
           if (!(fa < 0.0)) {
             xa = -w;
-            fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+            fa = HsZcAm(eos, xa, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4, zpcm);
           }
           if (!(fb > 0.0)) {
             xb = w;
-            fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+            fb = HsZcAm(eos, xb, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4, zpcm);
           }
         }
         Real vg = -va;
@@ -3034,7 +3046,7 @@ void HeStarBC(Mesh *pm) {
           Real xc = xa, fc = fa;
           for (int it=0; it<100; ++it) {
             xc = (xa*fb - xb*fa)/(fb - fa);
-            fc = HsZcAm(eos, xc, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4);
+            fc = HsZcAm(eos, xc, 0.0, va, vb, dlf, elf, drf, erf, cl4, cr4, zpcm);
             if (fabs(fc) <= ftol || !(xb - xa > 1.0e-15*w)) break;
             if (fc < 0.0) {
               xa = xc;
