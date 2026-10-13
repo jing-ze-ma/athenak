@@ -886,7 +886,7 @@ class RadiationM1 {
   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
-  int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (experiment)
+  int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)
   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
                                         // 2 no vimp prediction, 4 no hydro shift,
                                         // 8 no x1 split, 16 no x2/x3 split

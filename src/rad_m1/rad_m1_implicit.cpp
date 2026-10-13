@@ -2592,17 +2592,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_gas_src_cs2 = true;
       cs2_dbg = pin->GetOrAddInteger("rad_m1","implicit_cs2_dbg",0);
       // open-ot-1013 implicit_cs2_vimp: the vimp prediction of the conservative
-      // write-back velocity (ImplicitCs2Vimp, (b) in rad_m1.hpp).  It lags the
-      // neighbours' dA and the cross terms by one Picard pass and leaves a PER-STEP
-      // O(dt) term in the stage solves (rw_p10t1 hesdirk2 T: rho 1.58 -> 2.01, F1 1.27
-      // -> 2.05 at l 16-32 without it; pre-relaxed restart ladder rho 1.68 -> 2.00).
-      // DEFAULT false on a fresh run (the drag-rule dv of the E rows); a restart whose
-      // file lacks the key keeps true (FIN3, bitwise).  false is bitwise
-      // implicit_cs2_dbg = 2.
-      cs2_vimp = pin->GetOrAddBoolean("rad_m1","implicit_cs2_vimp",
-                                      global_variable::restart_run);
-      if (pin->DoesParameterExist("rad_m1","implicit_cs2_vimp_npass")) {
-        cs2_vnp = pin->GetInteger("rad_m1","implicit_cs2_vimp_npass");
+      // write-back velocity (ImplicitCs2Vimp, (b) in rad_m1.hpp).  DEFAULT true (FIN3);
+      // false (diagnostic, bitwise implicit_cs2_dbg = 2) drops it: rw_p10t1 gas order 2
+      // but rw_p10t100 E 1.75 at l 16-32, so not adopted.
+      cs2_vimp = pin->GetOrAddBoolean("rad_m1","implicit_cs2_vimp",true);
+      // open-ot-1013 implicit_cs2_vimp_npass: the prediction lags the neighbours' dA
+      // and the cross terms by one Picard pass, and the solves stop at 2 passes, so the
+      // E rows' dv misses the write-back's by O(dt) relative (implicit_cs2_dbg bit 32:
+      // 2.7e-3 / 1.4e-3 at rw_p10t1 l 1 / 2): a PER-STEP O(dt) term (rw_p10t1 hesdirk2 T
+      // rho 1.58 at l 16-32, rw_p10t100 rho 1.29 at l 32-64).  At least npass Picard
+      // passes while the prediction is active close it (npass 3: rw_p10t1 rho 1.98-2.0
+      // to l 64, rw_p10t100 rho 2.03; AG Car E1 +9 %, BSG +4 % s/cycle on MI300A).
+      // DEFAULT 3 on a fresh run; a restart whose file lacks the key keeps 0 (FIN3,
+      // bitwise).  0 = off.
+      cs2_vnp = pin->GetOrAddInteger("rad_m1","implicit_cs2_vimp_npass",
+                                     global_variable::restart_run ? 0 : 3);
+      if (cs2_vnp < 0) {
+        ImplFatal("<rad_m1>/implicit_cs2_vimp_npass must be >= 0");
       }
       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
@@ -13676,9 +13682,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
-    // open-ot-1013 implicit_cs2_vimp_npass (EXPERIMENT, read only when named): with the
-    // conservative2 vimp prediction on, at least this many Picard passes, so its lagged
-    // neighbour dA (one pass behind) reaches the fixed point
+    // open-ot-1013 implicit_cs2_vimp_npass: with the conservative2 vimp prediction on,
+    // at least this many Picard passes, so its lagged neighbour dA (one pass behind)
+    // reaches the fixed point
     if (converged && cs2_vnp > 0 && Cs2Active() && cs2_vimp && impl_vimp &&
         it + 1 < cs2_vnp) {
       converged = false;
