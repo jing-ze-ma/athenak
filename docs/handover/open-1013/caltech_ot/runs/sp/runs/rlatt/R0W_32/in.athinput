@@ -134,7 +134,6 @@ vet_gd_rotate_t0             = 0.0
 vet_gd_rotate_stretch        = 0.02
 vet_gd_rotate_slope          = correct
 implicit_thin_js_face        = hcface
-vet_gd_twin_state            = trans
 
 <problem>
 pgen_name                    = rad_m1_beam
