@@ -41,3 +41,10 @@
   truncated newest (100 MB head of 00002 as 00003) -> sanity FAILED, no pruning; unreadable newest (4 KB random) -> sanity FAILED, no pruning. 6/6 correct.
 - **Link estimate**: 0.60 s/cycle x 33,300 cycles = 5.6 h + outputs -> 1 link if dt holds. 3 links queued (4452279 HELD -> 80 -> 81).
 - Next: on GO-e1-caltech.txt -> copy to prod/GO_e1, scontrol release 4452279, push STARTED.
+
+## STARTED (10-13 11:48 PDT)
+- GO-e1-caltech.txt (a7b887f5) copied to prod/GO_e1; smoke/VERIFIED present; `scontrol release 4452279` at ~11:45 PDT.
+- **Link 1 4452279 RUNNING since 11:48:26 PDT on hpc-sm-02-17**, FRESH start t = 0 (`e1chain: FRESH start`, -t 11:49:55), halo_ipc ON.
+  he_star_m1: he_ic_equil: done after 1 rounds (deferred he_seed applied)
+- First check (11:53): cycle 650, t 4.727e5 s, dt 727.27, elapsed 305.8 s -> ~0.47 s/cycle so far. Links 4452280 -> 4452281 queued afterany.
+- **Raven may cancel its own E1 copy now.**
