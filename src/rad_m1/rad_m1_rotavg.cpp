@@ -41,6 +41,7 @@
 //! (K-1)(nf+1) reals per active cell.
 
 
+#include <algorithm>
 #include <iostream>
 
 #include "athena.hpp"
@@ -317,11 +318,47 @@ void RadiationM1::RotAvgApply(const int ilo) {
 //! per MeshBlock) are packed densely into nslab slabs of the record's (ghosted) slab
 //! size, the LAST of each MeshBlock record, so the history moves with its MeshBlock (any
 //! rank count / distribution).  Written only with a complete history (vra_state = 1).
+//! rotavg-rst2-1013: only the radial range i >= i0 is written, i0 = the first interior
+//! i (over all MeshBlocks and ranks) where a written slot is valid: the closure's shells
+//! (vet_gd: i >= is + vlat_icut).  Cells below are invalid in every slot and never read;
+//! they load as zero (flag 0).  Header entry 10 = i0 (a 10-entry header: i0 = 0, the
+//! full range, as written by rotavg-rst-1012).
 
 // the registered field count of the history: the table's, or (a restart written before
 // the first build of the run, e.g. a 0-step restart) the one loaded from the file
 int RadiationM1::RotAvgNf() const {
   return (vra_tab.nf > 0) ? vra_tab.nf : vra_rst_nf;
+}
+
+// the first interior i where a written slot is valid, over all MeshBlocks and ranks
+// (nx1 - 1 at most, so at least one radial cell is written)
+int RadiationM1::RotAvgRstI0() const {
+  const int nf = RotAvgNf();
+  const int nslot = (vra_pend == 3) ? vra_k : vra_k - 1;
+  auto d_ = vra_d;
+  const int nmb = vra_d.extent_int(0), nk = vra_d.extent_int(2);
+  const int nj = vra_d.extent_int(3), ni = vra_d.extent_int(4);
+  int i0 = ni - 1;
+  if (nmb > 0 && nf > 0) {
+    const int nf1 = nf + 1;
+    Kokkos::parallel_reduce("m1_ra_rst_i0",
+        Kokkos::RangePolicy<DevExeSpace>(0, nmb*nk*nj),
+    KOKKOS_LAMBDA(const int q, int &lmin) {
+      const int m = q/(nk*nj);
+      const int k = (q/nj) % nk;
+      const int j = q % nj;
+      for (int i = 0; i < lmin; ++i) {
+        bool v = false;
+        for (int s = 0; s < nslot; ++s) {v = v || (d_(m,s*nf1+nf,k,j,i) > 0.5);}
+        if (v) {lmin = i; break;}
+      }
+    }, Kokkos::Min<int>(i0));
+  }
+  i0 = std::min(i0, ni - 1);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &i0, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+#endif
+  return i0;
 }
 
 int RadiationM1::RotAvgRstNslab(const int ncell) const {
@@ -331,12 +368,14 @@ int RadiationM1::RotAvgRstNslab(const int ncell) const {
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int64_t nslot = (vra_pend == 3) ? vra_k : vra_k - 1;
-  const int64_t nv = nslot*(nf + 1)*static_cast<int64_t>(indcs.nx1)*indcs.nx2*
+  const int i0 = RotAvgRstI0();
+  const int64_t nv = nslot*(nf + 1)*static_cast<int64_t>(indcs.nx1 - i0)*indcs.nx2*
                      indcs.nx3;
   return static_cast<int>((nv + ncell - 1)/ncell);
 }
 
 void RadiationM1::RotAvgRstHdr(int64_t *h) const {
+  h[10] = 0;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   h[0] = 1;
   h[2] = vra_k;
@@ -350,14 +389,16 @@ void RadiationM1::RotAvgRstHdr(int64_t *h) const {
   const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   h[1] = RotAvgRstNslab((indcs.nx1 + 2*indcs.ng)*n2*n3);
+  if (h[1] > 0) {h[10] = RotAvgRstI0();}
 }
 
 namespace {
-// the flat copy between vra_d's first nslot (nf+1) components (interior) and the dense
-// slabs of the record (dir 0: vra_d -> slabs, zero-padded; 1: slabs -> vra_d)
+// the flat copy between vra_d's first nslot (nf+1) components (interior, radial range
+// i >= i0) and the dense slabs of the record (dir 0: vra_d -> slabs, zero-padded; 1:
+// slabs -> vra_d)
 void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const int nmb,
-               const int ncomp, const int dir) {
-  const int ni = d.extent_int(4), nj = d.extent_int(3), nk = d.extent_int(2);
+               const int ncomp, const int dir, const int i0) {
+  const int ni = d.extent_int(4) - i0, nj = d.extent_int(3), nk = d.extent_int(2);
   const int n1 = sl.extent_int(4), n2 = sl.extent_int(3), n3 = sl.extent_int(2);
   const int64_t ncint = static_cast<int64_t>(ni)*nj*nk;
   const int64_t ncout = static_cast<int64_t>(n1)*n2*n3;
@@ -380,7 +421,7 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
     const int64_t r = q - n*ncint;
     const int kk = static_cast<int>(r/(static_cast<int64_t>(nj)*ni));
     const int jj = static_cast<int>((r/ni) % nj);
-    const int ii = static_cast<int>(r % ni);
+    const int ii = static_cast<int>(r % ni) + i0;
     if (dir == 0) {
       sl(m,s,k,j,i) = d(m,n,kk,jj,ii);
     } else {
@@ -392,7 +433,8 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
 }  // namespace
 
 void RadiationM1::RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb) {
-  RaRstCopy(vra_d, dst, nmb, ((vra_pend == 3) ? vra_k : vra_k - 1)*(RotAvgNf() + 1), 0);
+  RaRstCopy(vra_d, dst, nmb, ((vra_pend == 3) ? vra_k : vra_k - 1)*(RotAvgNf() + 1), 0,
+            RotAvgRstI0());
 }
 
 //! the history of the file into vra_d + the scalars, when it fits this run (the same K
@@ -404,7 +446,8 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
   const int64_t close = vgd_on ? 1 : 2;
   const bool ok = vra_on && h[0] == 1 && h[2] == vra_k && h[4] == close && h[3] > 0 &&
                   h[3] < M1_RA_NF && h[9] == ncint && h[5] >= 0 && h[5] < vra_k - 1 &&
-                  (h[6] == 0 || h[6] == 3) && h[7] == ((h[6] == 3) ? vra_k : vra_k - 1);
+                  (h[6] == 0 || h[6] == 3) && h[7] == ((h[6] == 3) ? vra_k : vra_k - 1) &&
+                  h[10] >= 0 && h[10] < indcs.nx1;
   if (!ok) {
     if (global_variable::my_rank == 0) {
       std::cout << "### WARNING: the <rad_m1> vet_rotate_avg history of this restart file "
@@ -417,7 +460,7 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
   const int nf = static_cast<int>(h[3]);
   Kokkos::realloc(vra_d, nmb, vra_k*(nf + 1), indcs.nx3, indcs.nx2, indcs.nx1);
   Kokkos::deep_copy(vra_d, 0.0);
-  RaRstCopy(vra_d, src, nmb, static_cast<int>(h[7])*(nf + 1), 1);
+  RaRstCopy(vra_d, src, nmb, static_cast<int>(h[7])*(nf + 1), 1, static_cast<int>(h[10]));
   vra_head = static_cast<int>(h[5]);
   vra_pend = static_cast<int>(h[6]);
   vra_blk = h[8];

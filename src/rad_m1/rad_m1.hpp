@@ -2003,9 +2003,10 @@ class RadiationM1 {
   void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
   // rotavg-rst-1012: the history in the restart file (kM1RaRstMagic, rad_m1_rotavg.cpp)
-  static constexpr int M1_RA_RST_NH = 10;   // int64 header entries
+  static constexpr int M1_RA_RST_NH = 11;   // int64 header entries (rotavg-rst-1012: 10)
   int RotAvgNf() const;
   int RotAvgRstNslab(const int ncell) const;
+  int RotAvgRstI0() const;     // rotavg-rst2-1013: the first written radial cell
   void RotAvgRstHdr(int64_t *h) const;
   void RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb);
   bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);

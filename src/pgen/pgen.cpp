@@ -819,7 +819,9 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
       ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
-            == sizeof(IOWrapperSizeT)) && (nb == sizeof(ra_hdr));
+            == sizeof(IOWrapperSizeT)) &&
+           // rotavg-rst2-1013: 11 entries (+ i0); rotavg-rst-1012 files: 10 (i0 = 0)
+           (nb == sizeof(ra_hdr) || nb == sizeof(ra_hdr) - sizeof(std::int64_t));
       ok = ok && (resfile.Read_bytes(reinterpret_cast<char*>(&(ra_hdr[0])), 1, nb,
                                      single_file_per_rank) == nb);
       ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
