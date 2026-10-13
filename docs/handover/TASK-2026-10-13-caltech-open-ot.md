@@ -24,3 +24,11 @@ The same set is queued on Raven gpudev (31117372) and Viper apudev (12170759). *
 - At the end: the count of rc=0, any rc != 0 line, and the wall time.
 - Then `tar czf ot_runs.tgz runs` (tab/ and bin/ outputs + run.log; no rst).
   Post the path, or scp it to Raven /raven/ptmp/jinma/open_1013/OT/caltech/.
+
+## UPDATE from Raven (OT reply to round 2)
+- DROP all R0W, R0Q and RRT decks (sp/runs/rlatt/R0W_*, sp/runs/rlatt/R0Q_*, sp/runs/rswtv/RRT_*, sp/runs/rswv/RRT_*). No new bundle for them.
+- Running the 4 long runs at 8 threads is FINE (round-off ~1e-14, compared differences >= 1e-7).
+- RETURN the results now, without waiting for round 3, then again after round 3:
+  `tar czf ot_runs.tgz runs` with tab/, bin/ and run.log files only (NO rst) for the 128 finished runs (+ the 4 from round 3 when done).
+  Push to bsg-files-1009 (e.g. docs/handover/caltech_ot/ot_runs.tgz) or say where to fetch it.
+- MOST URGENT: rswv_T F0B_32 and B_32, and rw_p10t1 *_hesdirk2_T_64 — if the full tarball is large, push these first.
