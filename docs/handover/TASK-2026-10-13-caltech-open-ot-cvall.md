@@ -42,3 +42,6 @@ Dirs:
 - Fixes two bundle issues: decks that already carry an rst block ("more than one restart output"), and rs_m* shock refs at Raven paths
   (now in caltech_cvall/shockref/).
 - Use the new run_cvall.sh. For any dir whose bit.txt says FAIL, delete bit.txt and rerun; BITWISE / DIFF dirs stay.
+
+## UPDATE: STOP the CVALL FULL step (superseded by NPALL, TASK-2026-10-13-caltech-open-ot-npall.md)
+- The key-off variant is rejected. Finish/keep only the BIT step counts (useful cross-check); do not start new FULL runs.
