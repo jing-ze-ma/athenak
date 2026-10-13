@@ -34,3 +34,13 @@ Jobs: 4454667 -> 4454668 -> 4454669 (afterany chain; more added as needed).
 - Raven b77ed1c1 check (bin/ and tab/ of bitO vs bitA, bin compared after <par_end>): all 43 dirs BINTAB_BITWISE, incl. the
   RAHIST one. Per-dir list: bintab_all.txt (final tarball).
 - full_b: 31 rc files so far, all rc = 0.
+
+## INTERIM 10-13 14:50 PDT (debug rounds 4461226-28 done, 4461229 running; expansion 4456442 running since 14:34)
+- BIT 359 / 359: arm (a) 299 BITWISE + 58 RAHIST + 2 FAIL; arm (b) 260 BITWISE + 58 RAHIST + 39 DIFF + 2 FAIL.
+  NO real (a) DIFF. All 58 RAHIST dirs (sp/dif_r1*, patm*, rlat*, nlte2_r1000_tb ...: i0 > 0 so NEW stores fewer history
+  slabs) have bin/ and tab/ BITWISE OLD vs (a) (Raven b77ed1c1 check: 357 BINTAB_BITWISE + the 2 FAIL dirs).
+- The 2 FAIL dirs: p2/pinc_ha20_sr30_n40/HFfZR0G2_66bdd7_64 and _d747a5_64 (GL 20 x 24 = 480 directions): every binary
+  (OLD and NEW, all arms, full_b too) stops at start with "FATAL <rad_m1>/vet_gd: too many directions" (default
+  M1_VGD_NMAX 432; no Athena_M1_VGD_NMAX in OLD 9ae9f09a, so not in NEW either). NOTE: CVALL's Caltech bit_all listed these 2
+  as BITWISE; that was false (both arms FATAL, the compare saw the t = 0 rst). The runners now return FAIL when any arm rc != 0.
+- full_b: 355 rc files, all rc = 0 except the 2 FAIL dirs (rc 1); cart/ddf, cart/ddiff in the expansion job, 2 more running.

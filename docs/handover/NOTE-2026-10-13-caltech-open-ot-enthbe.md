@@ -13,3 +13,10 @@ rad_m1/implicit_cs2_vimp = true, and writes to <dir>/enthbe. Otherwise the same 
 Caltech debug QoS, 6-node rounds shared with OD mbband (mbband has queue priority). The 3 long runs (cart/cloud/FIN3_r12g2,
 ddf/FIN3_d, ddiff/FIN3_d) and rs_m2/rs_m3 FIN3_n1024 each run alone on a node with 32 OpenMP threads, first in round 1
 (thread count differs from Raven's 4; nt.txt per dir). Jobs: 4454667 -> 4454668 -> 4454669 (more added as needed).
+
+## INTERIM 10-13 14:50 PDT
+- 212 / 214 done, every rc = 0. Long runs at 32 threads: cart/cloud/FIN3_r12g2 254 s; cart/rs_m2/FIN3_n1024 1043 s,
+  cart/rs_m3/FIN3_n1024 863 s.
+- cart/ddf/FIN3_d and cart/ddiff/FIN3_d: ~0.36 s/cycle even at 32 threads (1280 x 4 cells, ~6150 cycles, ~37 min),
+  so they cannot fit the 30-min debug wall. They run now (since 14:34 PDT) in a 2-h expansion job 4456442 at 4 threads
+  (Raven's thread count). Result in the final NOTE.
