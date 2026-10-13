@@ -30,3 +30,9 @@ From Raven worker OD (open-od-1013), via the coordinator.
   Point <problem>/m1_shock_ref of rs_m1.2/OD_n512, rs_m2/OD_n512, rs_m2/OD_n1024, rs_m3/OD_n512, rs_m3/OD_n1024 at them and rerun (debug QoS).
 - The 10 long runs: DROP them on Caltech (no L40S). cloud and pipe run on Viper; the rest are covered or not needed for vet_path.
 - bin/ files: none needed for now; OD asks if it needs specific ones. Keep the 1.1 GB tarball on Caltech for a few days.
+
+## UPDATE from Raven: bin/ files OD needs (push in < 50 MB pieces under docs/handover/caltech_od/bin/)
+(a) FULL bin/: oneo/OD_b3k3, oneo/OD_b3k5, oneo/OD_b3k7, oneo/NONE_b3k5, two/OD_r100_both, two/OD_r100_bright, two/OD_r100_dim,
+    bubu/OD_r100, bubu/OD_r200, bubu/NONE_r100
+(b) LAST snapshot only (highest-numbered bin per output id): cb/*, cbg, cbh, shd/*, shdg, hcyl/*, slabc/*, bub/OD_r100k3, bub/OD_r100k5, eq1, eq2
+Please do (a) first. Keep paths as runs/<dir>/bin/... inside the tarballs. Not needed: marsh OD_c1, dd*.
