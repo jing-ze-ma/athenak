@@ -395,6 +395,12 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // reatm-1011: the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
     if (pmesh->pgen->user_icpost_func != nullptr) {
       (pmesh->pgen->user_icpost_func)(pmesh);
+      // dic-1013: a pgen that iterates its IC with the radiation (he_star_m1
+      // he_ic_equil) asks for the IC passes again (false = once, as before)
+      while (pmesh->pgen->user_icpost_again) {
+        pmesh->pmb_pack->pradm1->IcRadRun(this);
+        (pmesh->pgen->user_icpost_func)(pmesh);
+      }
     }
     InitBoundaryValuesAndPrimitives(pmesh, false);
     if (((phydro != nullptr && phydro->rad_signal_speed) ||

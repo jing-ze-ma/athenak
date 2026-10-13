@@ -1530,6 +1530,13 @@ class RadiationM1 {
   bool icr_warned = false;
   Real icr_tfs = 0.0, icr_trx = 0.0;
   std::string icr_tag;
+  // dic-1013 (set by a pgen, default false = nothing): at the end of IcRadRun, ONE more
+  // pass at the run's dt with the radiative force on the gas, whose net momentum
+  // deposit dm - dt rho a_ref per cell (x1 component) is kept in icr_dm (icr_dm_dt = the
+  // dt it took); the gas momentum and kinetic energy are then restored (v as before)
+  bool icr_fmeas = false;
+  DvceArray4D<Real> icr_dm;
+  Real icr_dm_dt = 0.0;
   void IcRadInit(ParameterInput *pin);
   void IcRadRun(Driver *pdrive);
   bool IcRadHook();
