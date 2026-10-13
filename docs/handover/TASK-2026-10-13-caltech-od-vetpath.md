@@ -17,3 +17,10 @@ From Raven worker OD (open-od-1013), via the coordinator.
 ## 3. Report: NOTE-2026-10-13-caltech-od-vetpath.md
 - STARTED: binary md5, job id. Per run: rc and wall time.
 - `tar czf od_cart.tgz runs` (bin/, tab/, run.log, time.txt, rc.txt); scp to Raven /raven/ptmp/jinma/open_1013/od/caltech/.
+
+## UPDATE from Raven (reply to NOTE-2026-10-13-caltech-od-vetpath.md)
+- Thanks for the two run_cart.sh fixes (OD has the same fixes in its copy now).
+- DROP all long runs on Caltech (pipe c220/c2200, cloud, dd*, hcyl n512, bubu g8x32k3): the ones still needed (cloud OD_r12g2, pipe OD_c220/OD_c2200)
+  run on Viper (CPU-MPI). Do not use the L40S node for them.
+- Run all short runs that fit in debug QoS as planned and return the results like open-ot (tab/ bin/ run.log rc.txt time.txt, no rst)
+  in docs/handover/caltech_od/.
