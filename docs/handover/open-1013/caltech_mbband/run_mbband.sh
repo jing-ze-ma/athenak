@@ -1,7 +1,7 @@
 #!/bin/bash
-# OD mbband-1013: the FULL IDORT suite (no bubbles / 2-source) in two arms on ONE binary NEW = mbband-1013 @ d98f8868:
+# OD mbband-1013: the FULL IDORT suite (no bubbles / 2-source) in two arms on ONE binary NEW = mbband-1013 @ 34f79349:
 #   (a) NEW, deck as is (vet_path default none): band fix alone; (b) NEW + rad_m1/vet_path=cells (vet_sc and vet_gd).
-# bash run_mbband.sh <OLD = plain CPU 281dd686> <NEW = plain CPU mbband-1013 @ d98f8868> [parallel=16] [NBIT=10]
+# bash run_mbband.sh <OLD = plain CPU 281dd686> <NEW = plain CPU mbband-1013 @ 34f79349> [parallel=16] [NBIT=10]
 # Per run dir (list.txt "<dir> <threads>"; in.athinput + args.txt [+ two.txt "nlimB cflB rotB" = two-stage]):
 #  1. BIT: OLD, NEW(a), NEW(b) NBIT cycles each, same threads, final rst; cmprst.py -> bit.txt:
 #     "<OLD vs a> <OLD vs b> <dir> <sec OLD> <sec a> <sec b>"  (a must be BITWISE everywhere).

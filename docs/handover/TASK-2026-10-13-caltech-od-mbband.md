@@ -5,7 +5,7 @@ then "run the IDORT suite in TWO arms on the mbband binary: (a) cells OFF, (b) c
 
 ## 1. Binaries (report both md5)
 - OLD = your plain CPU build of `fin3-1012` @ 281dd686 (the caltech_ot / CVALL OLD; md5 9ae9f09a...).
-- NEW = branch **`mbband-1013` @ `d98f8868`** (fork; = 9972a56d + the band fix 60882a63 + the vet_path cells commits), built with
+- NEW = branch **`mbband-1013` @ `34f79349`** (fork; = 9972a56d + the band fix 60882a63 + the vet_path cells commits + the thin-switch C1 kernel fix 34f79349), built with
   EXACTLY the same flags as OLD (same compiler, OpenMP, MPI, Release, and the same Athena_M1_VGD_NMAX if OLD set one).
 
 ## 2. Run
