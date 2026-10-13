@@ -300,6 +300,12 @@ constexpr int M1_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
 constexpr int M1_IENTH_PLM     = 2;  // DEFAULT: a_f E_f, E_f the van Leer plm value from
                                      // the side upwind of a_f; central where the 4-cell
                                      // stencil is not available on both sides of the face
+// open-ot-1013 HIDDEN TERM diagnostics (read only when named; every mode >= PLM takes the
+// plm a_f and stencil rule, only E_f differs):
+constexpr int M1_IENTH_PLMC    = 3;  // E_f = mean of the two van Leer plm face values (no
+                                     // upwind-side switch, limiter kept)
+constexpr int M1_IENTH_LIN     = 4;  // E_f the UNLIMITED linear (Fromm) value from the side
+                                     // upwind of a_f (side switch kept, no limiter)
 
 // <rad_m1>/implicit_vimp: the gas velocity v' of the enthalpy flux a(v') E' taken
 // IMPLICIT through the radiative force of the same solve (tests_m1/runs_3v_vimplicit).
