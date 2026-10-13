@@ -2601,6 +2601,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // implicit_cs2_dbg = 2.
       cs2_vimp = pin->GetOrAddBoolean("rad_m1","implicit_cs2_vimp",
                                       global_variable::restart_run);
+      if (pin->DoesParameterExist("rad_m1","implicit_cs2_vimp_npass")) {
+        cs2_vnp = pin->GetInteger("rad_m1","implicit_cs2_vimp_npass");
+      }
       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
@@ -13672,6 +13675,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
+    }
+    // open-ot-1013 implicit_cs2_vimp_npass (EXPERIMENT, read only when named): with the
+    // conservative2 vimp prediction on, at least this many Picard passes, so its lagged
+    // neighbour dA (one pass behind) reaches the fixed point
+    if (converged && cs2_vnp > 0 && Cs2Active() && cs2_vimp && impl_vimp &&
+        it + 1 < cs2_vnp) {
+      converged = false;
     }
     // implicit_hr_recon_pred (xthinfix-1009): the dc phase has converged; switch plm on
     // for this step (switch and limiter from E^dc, built at the next pass) and continue
