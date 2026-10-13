@@ -1,0 +1,61 @@
+From 371575083ad9f59fe9939165481e6e7eeea79ae2 Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Tue, 13 Oct 2026 06:37:51 +0200
+Subject: [PATCH] rad_m1: implicit_cs2_vimp key (conservative2 vimp prediction;
+ fresh default false, restart without key keeps true)
+
+open-ot-1013: ImplicitCs2Vimp lags the neighbours' dA by one Picard pass and leaves a
+per-step O(dt) term in the hesdirk2 stage solves (rw_p10t1 T rho 1.58 -> 2.01, F1 1.27 ->
+2.05 at l 16-32 without it).  false is bitwise implicit_cs2_dbg = 2.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_m1/rad_m1.hpp          |  1 +
+ src/rad_m1/rad_m1_implicit.cpp | 12 +++++++++++-
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index db52cc79..aa517e83 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -884,6 +884,7 @@ class RadiationM1 {
+   bool cs2_dav = false;                 // the dA components hold a pass's prediction
+   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
+   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
++  bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
+   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
+                                         // 2 no vimp prediction, 4 no hydro shift,
+                                         // 8 no x1 split, 16 no x2/x3 split
+diff --git a/src/rad_m1/rad_m1_implicit.cpp b/src/rad_m1/rad_m1_implicit.cpp
+index 3bbea704..09a4de8d 100644
+--- a/src/rad_m1/rad_m1_implicit.cpp
++++ b/src/rad_m1/rad_m1_implicit.cpp
+@@ -2591,6 +2591,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
+       impl_gas_src_cons = true;
+       impl_gas_src_cs2 = true;
+       cs2_dbg = pin->GetOrAddInteger("rad_m1","implicit_cs2_dbg",0);
++      // open-ot-1013 implicit_cs2_vimp: the vimp prediction of the conservative
++      // write-back velocity (ImplicitCs2Vimp, (b) in rad_m1.hpp).  It lags the
++      // neighbours' dA and the cross terms by one Picard pass and leaves a PER-STEP
++      // O(dt) term in the stage solves (rw_p10t1 hesdirk2 T: rho 1.58 -> 2.01, F1 1.27
++      // -> 2.05 at l 16-32 without it; pre-relaxed restart ladder rho 1.68 -> 2.00).
++      // DEFAULT false on a fresh run (the drag-rule dv of the E rows); a restart whose
++      // file lacks the key keeps true (FIN3, bitwise).  false is bitwise
++      // implicit_cs2_dbg = 2.
++      cs2_vimp = pin->GetOrAddBoolean("rad_m1","implicit_cs2_vimp",
++                                      global_variable::restart_run);
+       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
+       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
+       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
+@@ -10446,7 +10456,7 @@ void RadiationM1::ImplicitVimpBuild() {
+       ImplicitCs2DeltaA(true);
+       cs2_dav = true;
+     }
+-    if (!(cs2_dbg & 2)) {ImplicitCs2Vimp();}
++    if (cs2_vimp && !(cs2_dbg & 2)) {ImplicitCs2Vimp();}
+   }
+   ImplicitHaloExchange(M1_NVIMP_X, b);
+   if (cs_geom) {
+-- 
+2.51.0
+
