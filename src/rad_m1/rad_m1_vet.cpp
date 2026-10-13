@@ -1911,6 +1911,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   vet_ring_n = vring;
   vet_ring_g = vrgrp;
   VetBuildAngles(0.0);
+  VetHorizonInit(pin);   // open-or-1013
 
   auto &indcs = pm->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pm->nmb_maxperrank));
@@ -1924,6 +1925,12 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   } else {
     Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
     Kokkos::deep_copy(vet_ipl, 0.0);
+    if (vhz_on) {   // open-or-1013: the age-moment planes
+      Kokkos::realloc(vhz_pa, nmb, 2, vet_nray, ncells3, ncells2);
+      Kokkos::realloc(vhz_pb, nmb, 2, vet_nray, ncells3, ncells2);
+      Kokkos::deep_copy(vhz_pa, 0.0);
+      Kokkos::deep_copy(vhz_pb, 0.0);
+    }
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> closure = vet_sc: short characteristics, " << vet_nray
@@ -1999,6 +2006,66 @@ void RadiationM1::VetBuildAngles(const Real beta) {
     }
   }
   Kokkos::deep_copy(vet_ang, ah);
+  // open-or-1013 vet_horizon: |mu| of the set for the longest path (VetHorizonLmax)
+  vhz_amu.resize(3*vet_nray);
+  for (int q = 0; q < vet_nray; ++q) {
+    for (int c = 0; c < 3; ++c) {vhz_amu[3*q + c] = std::fabs(ah(q, c));}
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetHorizonInit
+//! \brief open-or-1013: <rad_m1>/vet_horizon (read only when named, default false),
+//! vet_horizon_t0 (the emission onset, default <time>/start_time or 0),
+//! vet_horizon_lo / _hi (the arrival gate on E/J_full, 0.1 / 0.5).  vet_sc (single
+//! MeshBlock sweep).
+
+void RadiationM1::VetHorizonInit(ParameterInput *pin) {
+  if (!pin->DoesParameterExist("rad_m1", "vet_horizon")) {
+    vhz_on = false;
+    return;
+  }
+  vhz_on = pin->GetBoolean("rad_m1", "vet_horizon");
+  if (!vhz_on) {return;}
+  const Real ts = pin->DoesParameterExist("time", "start_time") ?
+                  pin->GetReal("time", "start_time") : 0.0;
+  vhz_t0 = pin->GetOrAddReal("rad_m1", "vet_horizon_t0", ts);
+  vhz_lo = pin->GetOrAddReal("rad_m1", "vet_horizon_lo", 0.1);
+  vhz_hi = pin->GetOrAddReal("rad_m1", "vet_horizon_hi", 0.5);
+  if (!(vhz_lo >= 0.0 && vhz_hi > vhz_lo)) {
+    VetFatal("<rad_m1>/vet_horizon_lo, vet_horizon_hi: need 0 <= lo < hi");
+  }
+  Kokkos::realloc(vhz_cnt, 2);
+  Kokkos::deep_copy(vhz_cnt, 0.0);
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> vet_horizon = true: light horizon c (t - " << vhz_t0
+              << ") of the formal solution (age-moment rays), arrival gate E_h/J_h in ["
+              << vhz_lo << ", " << vhz_hi << "]" << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::VetHorizonLmax
+//! \brief open-or-1013: an upper bound of every age the sweep can carry with the current
+//! set: per ray the x1 path through npass passes of the box, at most the x2 (x3) path
+//! across a vacuum (non-periodic) face; the maximum over the rays.  L >= this bound:
+//! no ray-cell can be cut (the clipped age distribution never exceeds it), and the sweep
+//! skips the horizon entirely (bitwise the plain sweep).
+
+Real RadiationM1::VetHorizonLmax(const int npass) const {
+  Mesh *pm = pmy_pack->pmesh;
+  const Real l1 = pm->mesh_size.x1max - pm->mesh_size.x1min;
+  const Real l2 = pm->mesh_size.x2max - pm->mesh_size.x2min;
+  const Real l3 = pm->mesh_size.x3max - pm->mesh_size.x3min;
+  Real lm = 0.0;
+  for (int q = 0; q < vet_nray; ++q) {
+    const Real a1 = vhz_amu[3*q], a2 = vhz_amu[3*q + 1], a3 = vhz_amu[3*q + 2];
+    Real s = (a1 > 0.0) ? (npass*l1/a1) : 1.0e300;
+    if (vet_x2open && a2 > 0.0) {s = std::min(s, l2/a2);}
+    if (vet_x3open && trans_x3 && a3 > 0.0) {s = std::min(s, l3/a3);}
+    lm = std::max(lm, s);
+  }
+  return lm;
 }
 
 //----------------------------------------------------------------------------------------
@@ -3737,6 +3804,25 @@ void RadiationM1::VetShortCharSweep() {
   const int nhray = nray/2;
   const int npass = vet_x1per ? vet_x1npass : ((mlo && mhi) ? vet_mirror_npass
                                                : ((mlo || mhi) ? 2 : 1));
+  // open-or-1013 vet_horizon: L = c (t + dt - t0), the reach of light emitted since t0
+  // at the end of the step the tensor serves; hza = L below the longest path of the set
+  // (else the plain sweep, bitwise)
+  const Real hzl = vhz_on ? c_light*(pmy_pack->pmesh->time
+                                     + (mr_on ? mr_dt : pmy_pack->pmesh->dt) - vhz_t0)
+                          : 0.0;
+  const bool hza = vhz_on && (hzl < VetHorizonLmax(npass));
+  if (vhz_on) {
+    vhz_nbuild += 1.0;
+    if (hza) {vhz_nact += 1.0;}
+  }
+  if (hza && vet_mbs != nullptr) {
+    VetFatal("<rad_m1>/vet_horizon: the light horizon is active (L = c (t - t0) below "
+             "the longest path) but needs the single-MeshBlock sweep so far");
+  }
+  auto pa_ = vhz_pa;
+  auto pb_ = vhz_pb;
+  auto hc_ = vhz_cnt;
+  const Real hlo = vhz_lo, hhi = vhz_hi;
   for (int p = 0; p < npass; ++p) {
   const bool wrap = vet_x1per && (p > 0);   // layer is (ie) reads the periodic image
   const bool mrlo = mlo && (p > 0), mrhi = mhi && (p > 0);   // ... or the mirror image
@@ -3754,6 +3840,33 @@ void RadiationM1::VetShortCharSweep() {
       for (int n = 0; n < 10; ++n) {acu[n] = 0.0; acd[n] = 0.0;}
       Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};
       Real nlu = 0.0, nld = 0.0;   // thinsw-1010
+      // the moment sums of one ray (open-or-1013: shared by the plain sweep and the
+      // horizon's second ray loop; the same arithmetic in the same order)
+      auto addray = [&](const Real m1, const Real m2, const Real m3, const Real wr,
+                        const bool up, const Real s0, const Real iv) {
+        Real *ac = up ? acu : acd;
+        const Real a = wr*iv;
+        ac[0] += a;
+        ac[1] += a*m1*m1;
+        ac[2] += a*m2*m2;
+        ac[3] += a*m3*m3;
+        ac[4] += a*m1*m2;
+        ac[5] += a*m1*m3;
+        ac[6] += a*m2*m3;
+        ac[7] += a*m1;
+        ac[8] += a*m2;
+        ac[9] += a*m3;
+        if (hrs_) {
+          Real *hp = up ? hpu : hpd;
+          hp[0] += a*fmax(m1, 0.0);
+          hp[1] += a*fmax(m2, 0.0);
+          hp[2] += a*fmax(m3, 0.0);
+        }
+        if (nls_) {
+          if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
+        }
+      };
+      Real hju = 0.0, hjd = 0.0;   // open-or-1013: uncut hemisphere J of cells iu, id
       for (int r = 0; r < nray; ++r) {
         const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
         const bool up = (m1 > 0.0);
@@ -3762,6 +3875,9 @@ void RadiationM1::VetShortCharSweep() {
         const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
         const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
         Real iv;
+        // open-or-1013 vet_horizon: the transmitted upwind intensity, its mean age and
+        // mean squared age, and the segment length
+        Real hp_ = 0.0, ha_ = 0.0, hb_ = 0.0, hds = 0.0;
         const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
         if (l == 0 && !wrap && !mimg) {
           // half a cell from the boundary face; S at the face linearly extrapolated
@@ -3809,6 +3925,10 @@ void RadiationM1::VetShortCharSweep() {
             wu = g - ex;
           }
           iv = ib*ex + wu*su + w0*s0;
+          if (hza) {
+            hp_ = ib*ex;
+            hds = 0.5*dx1/am1;
+          }
         } else {
           const int iup = mimg ? i : ((l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1)));
           const int rb = mimg ? ((r < nhray) ? (r + nhray) : (r - nhray)) : r;
@@ -3867,6 +3987,22 @@ void RadiationM1::VetShortCharSweep() {
                           + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
                           + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
                           + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+          if (hza) {
+            // open-or-1013: the foot's intensity and age moments, linear in the plane
+            // (the gates of the vacuum faces as I), carried over the segment
+            const Real iw0 = waa*gaa*ip_(m,pr,rb,ka,ja) + wab*gab*ip_(m,pr,rb,ka,jb)
+                             + wba*gba*ip_(m,pr,rb,kb,ja) + wbb*gbb*ip_(m,pr,rb,kb,jb);
+            const Real aw0 = waa*gaa*pa_(m,pr,rb,ka,ja) + wab*gab*pa_(m,pr,rb,ka,jb)
+                             + wba*gba*pa_(m,pr,rb,kb,ja) + wbb*gbb*pa_(m,pr,rb,kb,jb);
+            const Real bw0 = waa*gaa*pb_(m,pr,rb,ka,ja) + wab*gab*pb_(m,pr,rb,ka,jb)
+                             + wba*gba*pb_(m,pr,rb,kb,ja) + wbb*gbb*pb_(m,pr,rb,kb,jb);
+            hds = dx1/am1;
+            hp_ = iw0*exp(-0.5*(cu + c0)*hds);
+            if (iw0 > 0.0) {
+              ha_ = aw0/iw0;
+              hb_ = bw0/iw0;
+            }
+          }
           if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
             const Real wq[4] = {waa, wab, wba, wbb};
             // fin3-1012: a corner outside a vacuum face carries I = 0 (gate exactly 1
@@ -3899,27 +4035,106 @@ void RadiationM1::VetShortCharSweep() {
         if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
         iv = fmax(iv, 0.0);
         ip_(m,pw,r,k,j) = iv;
-        Real *ac = up ? acu : acd;
-        const Real a = wr*iv;
-        ac[0] += a;
-        ac[1] += a*m1*m1;
-        ac[2] += a*m2*m2;
-        ac[3] += a*m3*m3;
-        ac[4] += a*m1*m2;
-        ac[5] += a*m1*m3;
-        ac[6] += a*m2*m3;
-        ac[7] += a*m1;
-        ac[8] += a*m2;
-        ac[9] += a*m3;
-        if (hrs_) {
-          Real *hp = up ? hpu : hpd;
-          hp[0] += a*fmax(m1, 0.0);
-          hp[1] += a*fmax(m2, 0.0);
-          hp[2] += a*fmax(m3, 0.0);
+        if (hza) {
+          // open-or-1013: the age moments after the segment: the transmitted part ages
+          // by ds, the segment's own emission (iv - transmitted) is uniform in [0, ds]
+          const Real pt = fmin(hp_, iv), qe = iv - pt;
+          pa_(m,pw,r,k,j) = pt*(ha_ + hds) + qe*0.5*hds;
+          pb_(m,pw,r,k,j) = pt*(hb_ + 2.0*ha_*hds + hds*hds) + qe*hds*hds/3.0;
+          if (up) {hju += wr*iv;} else {hjd += wr*iv;}
+        } else {
+          addray(m1, m2, m3, wr, up, s0, iv);
         }
-        if (nls_) {
-          if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
+      }
+      if (hza) {
+        // open-or-1013: the horizon cut, per x1 hemisphere h of each cell.  E_h = the
+        // M1 energy in that hemisphere, E (1 +- F_1/(c E))/2 (E/2 isotropic), J_h the
+        // uncut formal solution's.  Gate rho = smoothstep((E_h/J_h - lo)/(hi - lo)): a
+        // cell whose causal M1 field already holds the light keeps it (rho = 1: no cut,
+        // bitwise).  Budget: the hemisphere never loses more than (1 - rho)
+        // max(J_h - E_h, 0), so J_h stays >= the light the M1 field has: the requested
+        // removal of every ray is scaled by min(1, budget/requested).
+        auto ehemi = [&](const int ic, const bool upw) -> Real {
+          const Real e = fmax(esv_(m,esc_,k,j,ic), efl);
+          const Real f1 = fmin(fmax(iw_(m,M1_IW_F1,k,j,ic)/(cl*e), -1.0), 1.0);
+          return 0.5*e*(1.0 + (upw ? f1 : -f1));
+        };
+        auto gate = [&](const Real eh, const Real jh) -> Real {
+          if (!(jh > 0.0)) {return 1.0;}
+          Real x = (eh/jh - hlo)/(hhi - hlo);
+          x = fmin(fmax(x, 0.0), 1.0);
+          return x*x*(3.0 - 2.0*x);
+        };
+        const Real eu = ehemi(iu, true), ed = ehemi(id, false);
+        const Real gu = gate(eu, hju), gd = gate(ed, hjd);
+        const int gl1 = p*nlaunch + l + 1;   // layers of path, the entry layer counted
+        // the window fraction f (uniform age model [alo, ahi] clipped to the geometric
+        // path sb back to the entry face) of ray r; -1: nothing beyond the horizon
+        auto win = [&](const int r, const Real iv, Real &alo, Real &ahi) -> Real {
+          const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2);
+          Real sb = gl1*dx1/fabs(m1);
+          if (x2o && m2 != 0.0) {
+            sb = fmin(sb, ((m2 > 0.0) ? (j - js + 1) : (je - j + 1))*dx2/fabs(m2));
+          }
+          if (x3o && thrd && m3 != 0.0) {
+            sb = fmin(sb, ((m3 > 0.0) ? (k - ks + 1) : (ke - k + 1))*dx3/fabs(m3));
+          }
+          const Real am = pa_(m,pw,r,k,j)/iv;
+          const Real sd = sqrt(3.0*fmax(pb_(m,pw,r,k,j)/iv - am*am, 0.0));
+          ahi = fmin(am + sd, sb);
+          alo = fmax(fmin(am - sd, ahi), 0.0);
+          if (!(ahi > hzl)) {return -1.0;}
+          return (alo < hzl) ? (hzl - alo)/(ahi - alo) : 0.0;
+        };
+        // pass 1: the requested removal per hemisphere
+        Real rqu = 0.0, rqd = 0.0;
+        if (gu < 1.0 || gd < 1.0) {
+          for (int r = 0; r < nray; ++r) {
+            const bool up = (ang_(r,0) > 0.0);
+            const Real rg = up ? gu : gd;
+            const Real iv = ip_(m,pw,r,k,j);
+            if (!(iv > 0.0) || !(rg < 1.0)) {continue;}
+            Real alo, ahi;
+            const Real f = win(r, iv, alo, ahi);
+            if (f < 0.0) {continue;}
+            const Real rm = ang_(r,3)*iv*(1.0 - f)*(1.0 - rg);
+            if (up) {rqu += rm;} else {rqd += rm;}
+          }
         }
+        const Real bu = (1.0 - gu)*fmax(hju - eu, 0.0), bd = (1.0 - gd)*fmax(hjd - ed, 0.0);
+        const Real su = (rqu > bu) ? bu/rqu : 1.0, sdn = (rqd > bd) ? bd/rqd : 1.0;
+        // pass 2: apply (the old part keeps 1 - s (1 - rho) of itself)
+        Real ncut = 0.0;
+        for (int r = 0; r < nray; ++r) {
+          const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
+          const bool up = (m1 > 0.0);
+          const int i = up ? iu : id;
+          const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
+          Real iv = ip_(m,pw,r,k,j);
+          const Real rg = up ? gu : gd;
+          const Real sc = up ? su : sdn;
+          if (iv > 0.0 && rg < 1.0 && sc > 0.0) {
+            Real alo, ahi;
+            const Real f = win(r, iv, alo, ahi);
+            if (f >= 0.0) {
+              const Real ko = (1.0 - f)*(1.0 - sc*(1.0 - rg));
+              const Real keep = f + ko;
+              if (keep < 1.0) {
+                const Real lb = fmax(alo, hzl);
+                const Real m1n = f*0.5*(alo + hzl) + ko*0.5*(lb + ahi);
+                const Real m2n = f*(alo*alo + alo*hzl + hzl*hzl)/3.0
+                                 + ko*(lb*lb + lb*ahi + ahi*ahi)/3.0;
+                pa_(m,pw,r,k,j) = iv*m1n;
+                pb_(m,pw,r,k,j) = iv*m2n;
+                iv *= keep;
+                ip_(m,pw,r,k,j) = iv;
+                ncut += 1.0;
+              }
+            }
+          }
+          addray(m1, m2, m3, wr, up, s0, iv);
+        }
+        if (ncut > 0.0) {Kokkos::atomic_add(&hc_(0), ncut);}
       }
       if (accum) {
         for (int n = 0; n < 10; ++n) {
@@ -4287,6 +4502,11 @@ void RadiationM1::VetReport() {
             << " implicit-solve seconds incl. SC=" << vet_itime
             << " SC/(implicit solve without SC)="
             << vet_time/std::fmax(vet_itime - vet_time, 1.0e-300) << std::endl;
+  if (vhz_on) {   // open-or-1013 (single MeshBlock: rank 0 holds every count)
+    auto hh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vhz_cnt);
+    std::cout << "<rad_m1> vet_horizon: builds=" << vhz_nbuild << " active (L below the "
+              << "longest path)=" << vhz_nact << " cut ray-cells=" << hh(0) << std::endl;
+  }
   if (vra_on && vsc_rot) {
     std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
               << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit

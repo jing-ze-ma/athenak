@@ -447,6 +447,31 @@ class RadiationM1 {
   void VetRotSet(const Real beta);
   void VetScRotAvgSetup();     // rotavg-1012: vet_sc's averaged fields (vet_cell)
   void VetShortCharSweep();    // the build with the current set
+  // open-or-1013: the LIGHT HORIZON of the formal solution, <rad_m1>/vet_horizon (read
+  // only when named; default false).  The steady formal solution counts all emission
+  // along a ray, also light emitted farther than c (t - t0) away that cannot have
+  // arrived.  The sweep carries per ray in flight the first two age moments of its
+  // intensity (I <a>, I <a^2>, a = path length since emission; boundary inflow counts
+  // as emission at the face), two plane buffers like vet_ipl, no per-cell storage.  At
+  // each ray-cell the age distribution is modelled as uniform with that mean and
+  // variance, clipped to [0, s_b] (s_b the geometric path back to the entry face); the
+  // part older than L = c (t + dt - t0) is removed, times (1 - rho), rho =
+  // smoothstep((E/J_full - lo)/(hi - lo)) the arrival gate (E the M1 state, J_full the
+  // uncut formal solution of the cell): a cell whose causal M1 field already holds the
+  // light (an initial field in equilibrium, production) keeps it.  EXACTLY inactive
+  // (bitwise, no work) once L >= the longest possible path of the angle set in the box.
+  bool vhz_on = false;                  // vet_horizon
+  Real vhz_t0 = 0.0;                    // vet_horizon_t0 (the emission onset)
+  Real vhz_lo = 0.1, vhz_hi = 0.5;      // vet_horizon_lo, vet_horizon_hi (gate)
+  Real vhz_lmax = 0.0;                  // the longest path (fixed set; per rotation)
+  DvceArray5D<Real> vhz_pa, vhz_pb;     // (nmb, 2, nray, k, j): I <a>, I <a^2> planes
+  DvceArray1D<Real> vhz_cnt;            // device: [0] cut ray-cells, [1] active builds
+  Real vhz_nbuild = 0.0, vhz_nact = 0.0;  // builds / builds with L below the longest path
+  void VetHorizonInit(ParameterInput *pin);
+  void VetGdHorizonDiag();              // vet_gd: the gate census of active builds
+  Real vhz_gopen = 0.0, vhz_gcell = 0.0;  // vet_gd: gate-open / all cell-builds (active)
+  std::vector<double> vhz_amu;          // (3 nray) |mu1|, |mu2|, |mu3| of the set (host)
+  Real VetHorizonLmax(const int npass) const;   // the longest path of the set (host)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D

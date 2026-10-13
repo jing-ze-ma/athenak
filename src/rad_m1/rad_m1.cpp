@@ -1028,6 +1028,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
     RotAvgParse(pin);   // rotavg-1012 (also after vet_sc's VetRotInit)
+    if (vgd_on) {VetHorizonInit(pin);}   // open-or-1013 (vet_gd: the gate census)
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
@@ -1882,6 +1883,11 @@ RadiationM1::~RadiationM1() {
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   Time2Report();      // time_scheme = hesdirk2; a no-op otherwise
   if (vet_sc) {VetReport();}
+  if (vgd_on && vhz_on && global_variable::my_rank == 0) {   // open-or-1013
+    std::cout << "<rad_m1> vet_horizon (vet_gd census): builds=" << vhz_nbuild
+              << " active (L < 2 r_out)=" << vhz_nact << " gate-open cell-builds="
+              << vhz_gopen << " of " << vhz_gcell << " (all ranks)" << std::endl;
+  }
   VetFree();
   delete pbval_u;
   if (pbval_th != nullptr) {delete pbval_th;}

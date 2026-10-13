@@ -5112,6 +5112,54 @@ void RadiationM1::VetGdSource() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHorizonDiag
+//! \brief open-or-1013 vet_horizon on vet_gd (CENSUS ONLY, the cut needs the age fields):
+//! in a build with L = c (t + dt - t0) below 2 r_out (the longest chord), count the
+//! cells whose arrival gate is not closed, E < vet_horizon_hi J_full: only there could
+//! the horizon change a ray.  Zero = the horizon is provably inactive (bitwise).
+
+void RadiationM1::VetGdHorizonDiag() {
+  Mesh *pm = pmy_pack->pmesh;
+  const Real hzl = c_light*(pm->time + (mr_on ? mr_dt : pm->dt) - vhz_t0);
+  vhz_nbuild += 1.0;
+  if (!(hzl < 2.0*pm->mesh_size.x1max)) {return;}
+  vhz_nact += 1.0;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ilo = is + vlat_icut;
+  const int n = vgd_n;
+  auto vi_ = vgd_i;
+  const int og = vgd_w - indcs.ng;
+  auto dir_ = vgd_dir;
+  auto u0_ = u0;
+  const Real hhi = vhz_hi, efl = e_floor;
+  const int ni = ie - ilo + 1, nj = je - js + 1, nk = ke - ks + 1;
+  Real nop = 0.0;
+  Kokkos::parallel_reduce("m1_vgd_hzd", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                               nmb*nk*nj*ni),
+  KOKKOS_LAMBDA(const int t, Real &acc) {
+    const int i = ilo + t%ni;
+    int q = t/ni;
+    const int j = js + q%nj;
+    q /= nj;
+    const int k = ks + q%nk, m = q/nk;
+    Real jm = 0.0;
+    for (int d = 0; d < n; ++d) {jm += dir_(d,3)*vi_(m,d,k+og,j+og,i);}
+    if (fmax(u0_(m,M1_E,k,j,i), efl) < hhi*jm) {acc += 1.0;}
+  }, Kokkos::Sum<Real>(nop));
+  Real nc = static_cast<Real>(nmb*nk*nj*ni);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &nop, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &nc, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  vhz_gopen += nop;
+  vhz_gcell += nc;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdBuild
 //! \brief the gd build inside VetLatBuild: source and first shell (VetLatSweep(0)), the
 //! sweep(s) with the lagged lateral inflow, the moments; timed per part (fenced)
@@ -5299,6 +5347,7 @@ void RadiationM1::VetGdRotAvgSetup() {
 void RadiationM1::VetGdPost() {
   Kokkos::Timer tm;
   VetGdMoments();
+  if (vhz_on && !vra_raw) {VetGdHorizonDiag();}   // open-or-1013
   if (vgd_twin) {VetGdTwin(1);}
   if (vgd_smooth > 0) {VetGdSmooth();}
   // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then
