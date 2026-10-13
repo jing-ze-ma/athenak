@@ -18,3 +18,22 @@
 - Built 9972a56d (incremental) -> athena_gpu_he_star_m1_9972a56d_nofma, md5 4235b7dc74668a1331f3fbdfc2b338c4.
 - prod/run.cfg -> 9972a56d binary + md5 (backup run.cfg.pre_9972); links 4404881-83 keep their places. Smoke 4418238 stays on 281dd686 (your NOTE: valid for the method).
 - Sect. 4b rst pruning: your prune_rst.sh (unchanged) is installed as an EXIT trap in prod/run.cfg (all queued links source it), args: prod dir, keep 3, the link's srun rc (unset -> no pruning), job id. Dummy-dir test (success / rc!=0 / STOP / FATAL / truncated / unreadable) will be run on the smoke's rst files as soon as the smoke has run, before link 1 can end; result reported here.
+
+## SMOKE PASS (4418238 on 281dd686, 10-13 00:44-00:51 PDT, hpc-sm-02-17)
+- A (25 cycles): rc 0, dt 87.5 s on every cycle, Picard mean 2.68 max 7, NON-CONVERGED 0, no FATAL / NaN / NOT ADMISSIBLE, GPU peak 88669 MiB
+  (2 H200, 8 blocks/GPU), ~3.4 s/cycle incl. smoke I/O; echo lines present (vet_rotate_avg = 4: "the vet_gd closure is the mean over the last 4 rotated sets").
+- ic0check: dens, velx/y/z, m1_f1-3 BITWISE; eint / m1_e differ (shell-mean 4.7e-8 = the seed), as expected.
+- Restart check A vs B (-r rst 00001 at cycle 12 -> 25): 4/4 cycle-25 bins byte-for-byte SAME; user.hst + hydro.hst rows 13/13 verbatim. **BITWISE.**
+- Cadence check C (continuous, output1/dt=200 output2/dt=500) vs D (to 12, restart from its final rst into the same dir, to 25): hst rows IDENTICAL 11/11
+  (user + hydro); 12/12 scheduled bins, none missing or extra, data after <par_end> identical. The bin HEADERS differ only in metadata (nlim 25 vs 12,
+  file_number counters, header offset). **BITWISE.**
+
+## INCIDENT: production links lost their queue places (my gate false positive)
+- My smoke gate in prod/run.cfg compared whole bin files, so it flagged the C/D header metadata as DIFF; links 4404881, 4404882, 4404883 each
+  started and exited after 2 s with STOP (00:51-00:52 PDT). Nothing ran, no rst written.
+- Fixed: verdict recorded in smoke_fin3.VERIFIED (gate passes on it); STOP removed. **New chain: 4434961 -> 4434962 -> 4434963** (12 h, 2 H200, 9972a56d md5 4235b7dc).
+
+## Sect. 4b prune test (your prune_rst.sh, dummy dirs of hard links to smoke A's 4 rst files: cycles 0/12/24/25, keep 3)
+- success (rc 0): deleted only bsg3d.00000.rst (cycle 0), kept 00001-00003; log: "newest bsg3d.00003.rst OK (t=2187.5 ncycle=25 size=12822819873 = lead 6249763873 + history 6573056000)".
+- rc 1 -> "link rc=1: no pruning"; STOP -> "STOP present: no pruning"; FATAL in run.log -> "FATAL ...: no pruning";
+  truncated newest (100 MB) -> "unreadable header ... no pruning"; unreadable newest (mode 000) -> "Permission denied ... no pruning". Nothing deleted in all 5.
