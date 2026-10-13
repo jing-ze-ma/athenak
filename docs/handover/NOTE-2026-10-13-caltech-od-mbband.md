@@ -20,3 +20,17 @@ block, dt 1e30), both shockref paths (raven + viper), gtime stand-in, killed run
 Long dirs (full_b of cart/cloud/FIN3_r12g2, ddf/FIN3_d, ddiff/FIN3_d, shd/FIN3_r12g2, rs_m2/FIN3_n1024, rs_m3/FIN3_n1024)
 run alone on a node with 32 threads (BIT arms of those dirs too); all others with the list threads, 8 dirs per node.
 Jobs: 4454667 -> 4454668 -> 4454669 (afterany chain; more added as needed).
+
+## INTERIM 10-13 13:05 PDT (rounds 4454667, 4456444 done; 4456533 running)
+- Round-1 lessons: the BIT step with 3 x 32 threads on a 32-core node was 10x oversubscribed (cloud BIT 985 s); now each
+  node has a 32-core token pool (a BIT dir reserves 3 x nt) and long dirs run BIT at 10 threads/arm, full_b at 32.
+  Rounds 4454668/9 and 4455794-6 were cancelled (old scripts); chain now 4456444 -> 4456533 -> 4456535 (+ more).
+- cart/ddf/FIN3_d and cart/ddiff/FIN3_d full_b need ~37 min even at 32 threads (> the 30-min debug wall): they are in the
+  2-h expansion job 4456442 (4 threads), Slurm start estimate 19:10 PDT.
+- bit.txt 43 / 359: arm (a) 42 BITWISE + 1 RAHIST, arm (b) 24 BITWISE + 18 DIFF (cells acting).
+- The RAHIST dir: sp/dif_r1/HFfZ_1841da_128 (single MeshBlock 128x4x4). There i0 = 126, so NEW stores 1 history slab vs
+  OLD 12; RA header entries other than nra (+ i0) equal; every rst byte before the history identical (except the data_size
+  word, which counts nra). (cmprst_ra.py was extended for nra != nra; the first pass had called it DIFF. Not a real DIFF.)
+- Raven b77ed1c1 check (bin/ and tab/ of bitO vs bitA, bin compared after <par_end>): all 43 dirs BINTAB_BITWISE, incl. the
+  RAHIST one. Per-dir list: bintab_all.txt (final tarball).
+- full_b: 31 rc files so far, all rc = 0.
