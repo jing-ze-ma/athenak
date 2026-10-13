@@ -23,7 +23,7 @@ DeltaAI's running d3bf42d7 copy is NOT affected (it continues unchanged as the o
 - It is your current deck `docs/handover/bsgprod-1012/bsgP_seed.athinput.in` (53995cf9) with ONLY these rad_m1 method keys added,
   every one NAMED, so a restart never falls back to an old default:
   `vet_gd_twin_state = trans`, `vet_rotate_avg = 4`, `vet_gd_twin_weight = none`, `vet_interp = auto`,
-  `vet_col_lat_cut_thin = 1.0`, `implicit_predictor_frozen = true`, `vet_bc_inner = auto`, `vet_bc_reflect = auto`,
+  `vet_col_lat_cut_thin = 1.0`, `implicit_predictor_frozen = false` (updated 2026-10-13: the frozen predictor was dropped from FIN3), `vet_bc_inner = auto`, `vet_bc_reflect = auto`,
   `implicit_hr_face_gd = none`, `vet_source = relaxed` (`vet_source_noesrc = true` was already named).
 - Physics, IC, seed, layout keys (halo_ipc true, lowmem true, 8 blocks/GPU), outputs and tlim 4.96e6 are unchanged. Change no key.
 
