@@ -37,3 +37,8 @@
 - success (rc 0): deleted only bsg3d.00000.rst (cycle 0), kept 00001-00003; log: "newest bsg3d.00003.rst OK (t=2187.5 ncycle=25 size=12822819873 = lead 6249763873 + history 6573056000)".
 - rc 1 -> "link rc=1: no pruning"; STOP -> "STOP present: no pruning"; FATAL in run.log -> "FATAL ...: no pruning";
   truncated newest (100 MB) -> "unreadable header ... no pruning"; unreadable newest (mode 000) -> "Permission denied ... no pruning". Nothing deleted in all 5.
+
+## STARTED (10-13 00:54:02 PDT)
+- Link 1 job 4434961 RUNNING on hpc-sm-02-16 (1 node x 2 H200, 2 ranks x 8 MeshBlocks), fresh t = 0, binary athena_gpu_he_star_m1_9972a56d_nofma
+  md5 4235b7dc74668a1331f3fbdfc2b338c4, deck bsgP_seed_fin3.athinput (prodswitch-1013 deck, @FILES@ only), -t 11:44:57. Cycle 0 dt 87.5 s, no FATAL.
+- Next links 4434962 -> 4434963 (afterany). rst pruning (keep 3) active from the end of link 1. Per-link report follows here.
