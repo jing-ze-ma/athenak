@@ -12,7 +12,10 @@ one() { r=$1; nt=$2; d=$HERE/runs/$r; cd $d || return
     rm -rf bitO bitN; mkdir -p bitO bitN
     python3 $HERE/setkeys.py in.athinput bitO/in.athinput time/nlim=$NBIT
     python3 $HERE/setkeys.py in.athinput bitN/in.athinput time/nlim=$NBIT rad_m1/implicit_cs2_vimp=false
-    for x in O N; do printf '\n<output99>\nfile_type = rst\ndt = 1.0e30\n' >> bit$x/in.athinput; done
+    for x in O N; do
+      grep -qE '^ *file_type *= *rst' bit$x/in.athinput || printf '\n<output99>\nfile_type = rst\ndt = 1.0e30\n' >> bit$x/in.athinput
+      sed -i "s#/raven/ptmp/jinma/suite_1011/shock/#$HERE/shockref/#" bit$x/in.athinput
+    done
     ( cd bitO; OMP_NUM_THREADS=$nt OMP_PROC_BIND=false $BO -i in.athinput -d $d/bitO $(cat ../args.txt) > run.log 2>&1; echo $? > rc.txt ) &
     ( cd bitN; OMP_NUM_THREADS=$nt OMP_PROC_BIND=false $BN -i in.athinput -d $d/bitN $(cat ../args.txt) > run.log 2>&1; echo $? > rc.txt ) &
     wait
@@ -21,9 +24,10 @@ one() { r=$1; nt=$2; d=$HERE/runs/$r; cd $d || return
     echo "$s $r" > bit.txt; rm -rf bitO/rst bitN/rst
   fi
   echo "$(cat bit.txt)"
-  if grep -q '^DIFF' bit.txt && ! grep -qx "$r" $HERE/full_skip.txt && ! { [ -f full/rc.txt ] && [ "$(cat full/rc.txt)" = 0 ]; }; then
+  if [ -z "$NOFULL" ] && grep -q '^DIFF' bit.txt && ! grep -qx "$r" $HERE/full_skip.txt && ! { [ -f full/rc.txt ] && [ "$(cat full/rc.txt)" = 0 ]; }; then
     rm -rf full; mkdir -p full; cd full
     python3 $HERE/setkeys.py ../in.athinput in.athinput rad_m1/implicit_cs2_vimp=false
+    sed -i "s#/raven/ptmp/jinma/suite_1011/shock/#$HERE/shockref/#" in.athinput
     if [ -f ../two.txt ]; then
       read nb cb rb < ../two.txt
       OMP_NUM_THREADS=$nt $BN -i in.athinput -d $d/full $(cat ../args.txt) > logA 2>&1
@@ -35,6 +39,6 @@ one() { r=$1; nt=$2; d=$HERE/runs/$r; cd $d || return
     fi
     rm -rf rst; echo "FULL $r rc=$(cat rc.txt) $(cat time.txt)"
   fi; }
-export -f one; export HERE BO BN NBIT
+export -f one; export HERE BO BN NBIT NOFULL
 md5sum $BO $BN; xargs -P $P -L 1 bash -c 'one "$@"' _ < $HERE/list.txt; echo "done $(date)"
 cat $HERE/runs/*/*/*/bit.txt $HERE/runs/ss/*/bit.txt 2>/dev/null | sort > $HERE/bit_all.txt; awk '{print $1}' $HERE/bit_all.txt | sort | uniq -c

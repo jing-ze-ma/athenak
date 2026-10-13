@@ -37,3 +37,8 @@ Dirs:
 - Bundle on the fork: docs/handover/open-1013/caltech_cvall/. Priority: after the CV rerun (d57b1ed2) and the od-vetpath shock reruns.
 - This is large (359 dirs). If the debug QoS is too slow, you MAY use the L40S node's CPU cores (as you offered for cartlong) for this TASK.
 - Post interim counts (bit_all so far) every few hours. METHOD candidate test only; production is NOT affected.
+
+## UPDATE (runner fix): re-pushed run_cvall.sh + shockref/
+- Fixes two bundle issues: decks that already carry an rst block ("more than one restart output"), and rs_m* shock refs at Raven paths
+  (now in caltech_cvall/shockref/).
+- Use the new run_cvall.sh. For any dir whose bit.txt says FAIL, delete bit.txt and rerun; BITWISE / DIFF dirs stay.
