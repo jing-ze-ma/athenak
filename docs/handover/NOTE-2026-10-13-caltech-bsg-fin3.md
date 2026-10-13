@@ -13,3 +13,8 @@
 - Built 281dd686 (incremental, 1 file) -> athena_gpu_he_star_m1_281dd686_nofma, md5 5cb31cf68210941fe7268b84aaea2e58.
 - Deck refreshed from d22793aa (implicit_predictor_frozen = false; the only diff to the 1fdbe56e deck).
 - prod/run.cfg -> 281dd686 binary + md5 (links 4404881-83 keep their places). Smoke 4418016 (never started) cancelled; new smoke 4418238 (same checks A/B/C/D); link 1 4404881 dependency -> afterok:4418238.
+
+## UPDATE (10-12 ~20:40 PDT): links re-pointed to rotavg-rst2-1013 @ 9972a56d (re NOTE-2026-10-13-raven-caltech-9972)
+- Built 9972a56d (incremental) -> athena_gpu_he_star_m1_9972a56d_nofma, md5 4235b7dc74668a1331f3fbdfc2b338c4.
+- prod/run.cfg -> 9972a56d binary + md5 (backup run.cfg.pre_9972); links 4404881-83 keep their places. Smoke 4418238 stays on 281dd686 (your NOTE: valid for the method).
+- Sect. 4b rst pruning: your prune_rst.sh (unchanged) is installed as an EXIT trap in prod/run.cfg (all queued links source it), args: prod dir, keep 3, the link's srun rc (unset -> no pruning), job id. Dummy-dir test (success / rc!=0 / STOP / FATAL / truncated / unreadable) will be run on the smoke's rst files as soon as the smoke has run, before link 1 can end; result reported here.
