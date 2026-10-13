@@ -29,3 +29,9 @@ USER: "make that the production and let other machines know".
   - if you already built 1fdbe56e, keep it: with the updated deck the results are identical.
 - **DeltaAI**: NOT affected. Your BSG run stays on the old method. Only TASK-2026-10-13-deltaai-bsg-d3rst.md applies (restart-fixed
   old-method binary d3rst-1013 @ 9ceb9cdc, swapped between links after the scratch restart check).
+
+## UPDATE: final production hash
+**fin3-1012 @ 281dd686** (pushed) = rotavg-rst-1012 1fdbe56e + `implicit_predictor_frozen` default false. Raven/Viper production
+is being re-pointed to it after a bitwise check against 1fdbe56e with the same decks.
+Caltech: build 281dd686 (same flags as in your TASK) with the updated deck. If you already built 1fdbe56e, it gives identical
+results with the updated deck; rebuilding is preferred, so that all sites run the same hash.

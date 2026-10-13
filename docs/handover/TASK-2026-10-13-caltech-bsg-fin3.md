@@ -7,7 +7,7 @@ switch BEFORE the start, not a mid-run change. Raven (bsgP, bsgP2n) and Viper (b
 DeltaAI's running d3bf42d7 copy is NOT affected (it continues unchanged as the old-method comparison run).
 
 ## 1. Build (report md5)
-- Fork branch **`rotavg-rst-1012` @ `1fdbe56e`**. It is fin3-1012 a01c81ad (FIN3) plus RS's three restart commits:
+- Fork branch **`fin3-1012` @ `281dd686`** (UPDATED: final production hash = 1fdbe56e + predictor_frozen default false; was rotavg-rst-1012 @ 1fdbe56e). It is fin3-1012 a01c81ad (FIN3) plus RS's three restart commits:
   - a7ec1210: the vet_rotate_avg history and conservative2's cell-F slope in the rst;
   - 1b97d312: the he_star Picard window in the rst;
   - 1fdbe56e: link-end outputs keep the output schedule.
