@@ -1,0 +1,4 @@
+GO for the Caltech AG Car E1 production chain (TASK-2026-10-13-caltech-e1.md).
+- Deck: agcA_E1_final + wb_rmax = 2.9715e13 (user-approved), binary dic-prod-1013 @ dad00933.
+- wb_rmax restart-bitwise validated on Raven A100 (chain test BITWISE) and by your own smoke gate on H200 (C/L/Coff bitwise).
+- Release 4452279 now, push STARTED, and report per link as for BSG. Raven's E1 copy is held by the coordinator and will be cancelled once yours is running.
