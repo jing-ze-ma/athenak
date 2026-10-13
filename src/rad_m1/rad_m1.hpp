@@ -540,6 +540,13 @@ class RadiationM1 {
   int ibc_x2min = 2, ibc_x2max = 2, ibc_x3min = 2, ibc_x3max = 2;
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
+  // marelax-1013 implicit_ghost_x1min (default false; sp, implicit_bc_x1min = flux): the
+  // inner face flux is NOT imposed but built by the interior face-flux formula across the
+  // face between a fixed ghost (E = implicit_ghost_e_x1min, the IC a T^4 at the first
+  // ghost radius; Ma+2026 sect. 2.2.3 / Athena++ ghost intensities) and the first cell,
+  // implicit in E of the first cell (a heat bath through the diffusion conductance)
+  bool impl_ghx = false;
+  Real impl_ghx_e = 0.0;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,

@@ -2705,6 +2705,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_m1","implicit_ebath_x1max",0.0);
+  if (pin->DoesParameterExist("rad_m1","implicit_ghost_x1min")) {
+    impl_ghx = pin->GetBoolean("rad_m1","implicit_ghost_x1min");
+  }
+  if (impl_ghx) {
+    impl_ghx_e = pin->GetReal("rad_m1","implicit_ghost_e_x1min");
+    if (ibc_x1min != M1_IBC_FLUX || !sph_geom || !(impl_ghx_e > 0.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/implicit_ghost_x1min = true needs implicit_bc_x1min = "
+        << "flux, spherical-polar geometry and implicit_ghost_e_x1min > 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // runs_4f_drift: without it the Marshak end face carries only the comoving flux
   // c q (E - E_bath), so the lab-frame radiation energy advected with the gas,
   // A E = v (1 + chi) E, cannot leave (or enter) through the end: the end cell's E is
@@ -11329,6 +11341,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool bfxm = (vgd_bfx.extent_int(0) > 0);
   auto bfx_ = vgd_bfx;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
+  const bool ghx = impl_ghx;   // marelax-1013 ghost bath (see rad_m1.hpp)
+  const Real ghe = impl_ghx_e;
   const int bmn_ = ibm_n;   // littests-1011: boundary beams (imposed x1min flux)
   auto bmf_ = ibm_f;
   const bool badv = impl_bc_advect;
@@ -13080,6 +13094,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               bb -= num*cr*ai;
             }
           }
+        } else if (bclo == M1_IBC_FLUX && ghx) {
+          // marelax-1013 ghost bath: F = A - B E_is, the face formula of the interior
+          // (central part) with the fixed ghost E (ghe) at x1v(is-1) and the cell's
+          // own opacity, Eddington weight and velocity standing in for the ghost's
+          Real ga, gb;
+          M1GhostBathAB(iw_, f0n_, cx1v, cx1f, m, k, j, is, ghe, ch, cl, dt, sphq, trans,
+                        ga, gb);
+          bb += num*cr*gb;
+          rr += num*cr*ga;
         } else if (bclo == M1_IBC_FLUX) {
           rr += num*cr*(bfxm ? bfx_(m,k,j) : fxlo);
         }
@@ -13420,6 +13443,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               cx1v(m,in), cx1f(m,i));
             fb = sgn*cl*mq*(ef - (lo ? eblo : ebhi));
           }
+        } else if (bc == M1_IBC_FLUX && lo && ghx) {
+          Real ga, gb;   // marelax-1013 ghost bath: the flux the row was built with
+          M1GhostBathAB(iw_, f0n_, cx1v, cx1f, m, k, j, is, ghe, ch, cl, dt, sphq, trans,
+                        ga, gb);
+          fb = ga - gb*iw_(m,M1_IW_EP,k,j,is);
         } else if (bc == M1_IBC_FLUX) {
           fb = lo ? (bfxm ? bfx_(m,k,j) : fxlo) : fxhi;
         } else if (bc == M1_IBC_EFIX) {

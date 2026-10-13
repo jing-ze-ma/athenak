@@ -810,6 +810,37 @@ Real M1SphDrr(const Real chi, const Real n1, const Real s2) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1GhostBathAB
+//! \brief marelax-1013 <rad_m1>/implicit_ghost_x1min: the inner face flux of the first
+//! cell is,  F = A - B E_is,  from the interior face formula (the central part of the
+//! m1_impl_face expression)
+//!   F = th (F0^n - ch cl dt (D_is E_is - D_g E_g)/dr_g - ch dt v g0),
+//!   th = 1/(1 + ch dt kt_is),  dr_g = x1v(is) - x1v(is-1),
+//! with the fixed ghost E_g at x1v(is-1) (the IC radiation of the ghost) and the first
+//! cell's own opacity kt, Eddington weight chi (n1) and v, g0 standing in for the ghost's.
+//! On sp (sphq) D = M1SphDrr(chi, n1, (r_c/r_f)^2) as in the row; else D = chi.
+template <typename IW, typename FN, typename CV, typename CF>
+KOKKOS_INLINE_FUNCTION
+void M1GhostBathAB(const IW &iw, const FN &f0n, const CV &x1v, const CF &x1f,
+                   const int m, const int k, const int j, const int is, const Real eg,
+                   const Real ch, const Real cl, const Real dt, const bool sphq,
+                   const bool trans, Real &a, Real &b) {
+  const Real th = 1.0/(1.0 + ch*dt*iw(m,M1_IW_KT,k,j,is));
+  const Real chi = iw(m,M1_IW_WCHI,k,j,is);
+  Real di = chi, dg = chi;
+  if (sphq) {
+    const Real rf = x1f(m,is);
+    const Real n1 = trans ? iw(m,M1_IW_N1,k,j,is) : 1.0;
+    di = M1SphDrr(chi, n1, (x1v(m,is)/rf)*(x1v(m,is)/rf));
+    dg = M1SphDrr(chi, n1, (x1v(m,is-1)/rf)*(x1v(m,is-1)/rf));
+  }
+  const Real drg = x1v(m,is) - x1v(m,is-1);
+  b = th*ch*cl*dt*di/drg;
+  a = th*(f0n(m,k,j,is) + ch*cl*dt*dg*eg/drg
+          - ch*dt*iw(m,M1_IW_V1,k,j,is)*iw(m,M1_IW_G0,k,j,is));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1FaceAvg
 //! \brief <rad_m1>/implicit_face_weight: the x1 face value of a cell quantity from the
 //! left (ql, radial width dl) and right (qr, dr) cells.  equal (dist false): 0.5 (ql+qr),
