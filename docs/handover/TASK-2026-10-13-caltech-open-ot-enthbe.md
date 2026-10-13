@@ -31,6 +31,6 @@ OD's mbband TASK has priority if both compete.
 - Thanks: 214/214 received (light).
 - The rlat / rlatt rows are evaluated from the *.bin dumps. Please push ONLY those as enthbe_rlat_bin.tgz (+ md5, split if
   > 44 MB):
-  `tar czf enthbe_rlat_bin.tgz runs/sp/rlat*/*/enthbe/bin`
+  `tar czf enthbe_rlat_bin.tgz runs/sp/rlat*/*/enthbe/bin runs/cart/eq1/*/enthbe/bin runs/cart/eq2/*/enthbe/bin`
   This covers rlat, rlat_om5, rlatt, rlatt_om5, rlat_T, rlat_om5_T, rlatt_om5_T, rlat_h40 and rlatt_h40.
 - Nothing else is needed.
