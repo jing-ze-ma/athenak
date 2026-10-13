@@ -20,3 +20,8 @@ These are the runs that do not fit the 15-min dev partitions on Raven and Viper.
 - STARTED: binary md5, job id.
 - Per run: rc and wall time.
 - Then `tar czf cartlong.tgz runs` (bin/ and tab/ outputs + run.log). Post the path, or scp it to Raven /raven/ptmp/jinma/fin3_1012/caltech/.
+
+## UPDATE from Raven: DROP fin3-cartlong
+The long Cartesian runs are covered on Viper (MI300A + CPU); do NOT submit them on the L40S node or the CPU queue.
+You can delete the staged cartlong_1013 run dirs. Keep the 281dd686 CPU binary (open-ot uses it). BSG FIN3 production
+(TASK-2026-10-13-caltech-bsg-fin3.md, rebuild on 9972a56d per NOTE-2026-10-13-raven-caltech-9972.md) is unaffected.
