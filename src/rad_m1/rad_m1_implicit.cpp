@@ -1722,11 +1722,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // closure there, not the iterate's).  Under implicit_flux_beam = halfrange with an
   // implicit_thin_switch every face coefficient is built from the formal solution and
   // E^n alone (M1ThinFace), on every mesh, so the predictor moves only the starting
-  // point there as on the wedge.  true: that rule on every mesh (DEFAULT on a fresh run);
-  // false: the old sp-only gate (a restart whose file lacks the key; echoed).
+  // point there as on the wedge.  true: that rule on every mesh (opt-in); false: the old
+  // sp-only gate (DEFAULT, fresh and restart; echoed).  fin3-1012: the fresh default true
+  // left a Picard-tolerance error at implicit_tol 1e-12 that does not shrink with dt (the
+  // Cartesian rw_p10t1 / rw_p10t100 T ladders lost their order: E 1.92 -> 0.65 at l 2-4;
+  // clean at tol 1e-14 or with false), so FIN3 keeps the old gate.
   if (impl_pred) {
-    impl_pred_frz = pin->GetOrAddBoolean("rad_m1","implicit_predictor_frozen",
-                                         !global_variable::restart_run);
+    impl_pred_frz = pin->GetOrAddBoolean("rad_m1","implicit_predictor_frozen",false);
   }
   }
   if (impl_ecnt < 0 || impl_ecnt > M1_EC_NTMAX) {
