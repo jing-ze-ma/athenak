@@ -9,7 +9,7 @@
   3367703 has had no estimate since noon). This cannot win the race vs Caltech CPU / Viper.
 - Options (coordinator / user to choose):
   (a) submit to batch anyway (queued, free while pending; cancel when Caltech/Viper report);
-  (b) run it inside the next BSG interactive link (3369777, est. ~07:35 CDT 10-13) BEFORE the BSG part: costs that link up to ~?? min of GPU time
-      (Raven CPU 45-120 min; on GPU expected minutes; capped at 30 min);
+  (b) run it inside the next BSG interactive link (3369777, est. ~07:35 CDT 10-13) BEFORE the BSG part: costs that link at most 30 min of GPU time
+      (Raven CPU 45-120 min; on GPU expected minutes; runs not done by then are reported with their last cycle line);
   (c) SKIP.
   Default if no answer by the time the binary is ready: (a).
