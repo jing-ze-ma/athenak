@@ -1,22 +1,26 @@
-# NOTE Caltech -> raven (OT): open-ot ENTHBE — QUEUED (10-13 11:45 PDT)
+# NOTE Caltech -> raven (OT): open-ot ENTHBE — DONE (10-13 15:40 PDT)
 
 ## Binary
 - open-ot-1013-ht @ c685e6dd, plain CPU (same flags as NPALL: gcc 13.2.0 + openmpi 5.0.1, Kokkos OpenMP, MPI, Release,
-  built_in_pgens): `athena_cpu_omp_c685e6dd` md5 70199d65354ada08349aaea2db2c4400
-
-## Runner fix (please check)
-The bundle's run_enthbe.sh sets ONLY rad_m1/implicit_cs2_vimp_npass = 3 and writes to <dir>/full. The Caltech copy
-(en_one.sh) sets all three keys the TASK names: rad_m1/time2_enth_be = true, rad_m1/implicit_cs2_vimp_npass = 3,
-rad_m1/implicit_cs2_vimp = true, and writes to <dir>/enthbe. Otherwise the same (both shockref paths, two-stage A then -r).
+  built_in_pgens): `athena_cpu_omp_c685e6dd` md5 **70199d65354ada08349aaea2db2c4400**
 
 ## Run
-Caltech debug QoS, 6-node rounds shared with OD mbband (mbband has queue priority). The 3 long runs (cart/cloud/FIN3_r12g2,
-ddf/FIN3_d, ddiff/FIN3_d) and rs_m2/rs_m3 FIN3_n1024 each run alone on a node with 32 OpenMP threads, first in round 1
-(thread count differs from Raven's 4; nt.txt per dir). Jobs: 4454667 -> 4454668 -> 4454669 (more added as needed).
+- Per dir: deck + rad_m1/time2_enth_be = true, rad_m1/implicit_cs2_vimp_npass = 3, rad_m1/implicit_cs2_vimp = true, run to
+  the end in <dir>/enthbe (Caltech en_one.sh = the updated bundle runner eb36eea3/2851cfc3; both shockref paths fixed).
+- Jobs: Caltech debug QoS, 6-node rounds shared with OD mbband / WV wavefix: 4454667, 4456444, 4456533, 4461226-30,
+  4468250-53 (cancelled before start or mid-round, results not used: 4454668/9, 4455794-6, 4456535, 4459852-5, 4468254/5);
+  expansion 2-h job 4456442 for cart/ddf + cart/ddiff.
 
-## INTERIM 10-13 14:50 PDT
-- 212 / 214 done, every rc = 0. Long runs at 32 threads: cart/cloud/FIN3_r12g2 254 s; cart/rs_m2/FIN3_n1024 1043 s,
-  cart/rs_m3/FIN3_n1024 863 s.
-- cart/ddf/FIN3_d and cart/ddiff/FIN3_d: ~0.36 s/cycle even at 32 threads (1280 x 4 cells, ~6150 cycles, ~37 min),
-  so they cannot fit the 30-min debug wall. They run now (since 14:34 PDT) in a 2-h expansion job 4456442 at 4 threads
-  (Raven's thread count). Result in the final NOTE.
+## Result: 214 / 214 rc = 0 (no rc != 0 line)
+The 3 long runs (all rc = 0, all ran this time):
+- cart/cloud/FIN3_r12g2: 254 s at 32 OpenMP threads (debug round)
+- cart/ddf/FIN3_d: 1994 s at 4 threads (expansion job 4456442; ~37 min even at 32 threads, did not fit the 30-min debug wall)
+- cart/ddiff/FIN3_d: 1997 s at 4 threads (same job)
+Also at 32 threads: cart/rs_m2/FIN3_n1024 1043 s, cart/rs_m3/FIN3_n1024 863 s (4 threads would exceed the debug wall).
+All others at the list thread count. Thread count per dir: <dir>/enthbe/nt.txt; table enthbe_rc_times.txt (dir rc time nt).
+
+## Files (docs/handover/caltech_enthbe/)
+- enthbe_runs_light.tgz (25 MB, md5 in .md5) = `tar czf --exclude='*.rst' --exclude='*.bin' runs` + table + en_one.sh.
+  The *.bin outputs are left out: the TASK tarball with bin is 131 MB, and the three Caltech results together exceed the
+  300-MB push limit. The full tarball is at Caltech /resnick/groups/carnegie_poc/jingze/enthbe_1013/enthbe_runs.tgz
+  (131 MB); say if you want it pushed (3 x 44 MB parts).
