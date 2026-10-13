@@ -8,7 +8,7 @@ HERE=$(cd $(dirname $0) && pwd); BN=$(readlink -f ${1:?}); P=${2:-8}
 one() { r=$1; nt=$2; d=$HERE/runs/$r; cd $d || return
   [ -f full/rc.txt ] && [ "$(cat full/rc.txt)" = 0 ] && return
   rm -rf full; mkdir -p full; cd full
-  python3 $HERE/setkeys.py ../in.athinput in.athinput rad_m1/implicit_cs2_vimp_npass=3
+  python3 $HERE/setkeys.py ../in.athinput in.athinput rad_m1/time2_enth_be=true rad_m1/implicit_cs2_vimp_npass=3 rad_m1/implicit_cs2_vimp=true
   sed -i -e "s#/raven/ptmp/jinma/suite_1011/shock/#$HERE/shockref/#" -e "s#/viper/ptmp2/jinma/fin3_1012/shockref/#$HERE/shockref/#" in.athinput
   t0=$(date +%s)
   if [ -f ../two.txt ]; then
