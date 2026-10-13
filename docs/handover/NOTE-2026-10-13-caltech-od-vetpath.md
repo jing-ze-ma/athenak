@@ -30,3 +30,11 @@
 - **10 long runs not done (> 28 min, not resumable in debug):** bub/OD_g8x32k3, bubu/OD_g8x32k3, cloud/OD_r12g2, ddf/OD_d, ddiff/OD_d,
   ddn/OD_d, hcyl/OD_n512, marsh/OD_c1, pipe/OD_c220, pipe/OD_c2200. Caltech CPU queue ~10-21; L40S-node CPU ~10-13 23:00 PDT.
   Coordinator: run them elsewhere, or say "L40S" and we submit.
+
+## bin/ files (reply to 504ecd1c)
+- **(b) pushed:** docs/handover/caltech_od/bin/od_bin_b_last.tgz = the highest-numbered bin per output id for cb/*, cbg, cbh, shd/*, shdg, hcyl/*,
+  slabc/*, bub/OD_r100k3, bub/OD_r100k5, eq1, eq2 (53 files, paths runs/<dir>/bin/...). hcyl/OD_n512 not included (long run, dropped).
+- **(a) NOT pushed yet (user decision):** the full bin/ of the 10 oneo/two/bubu runs is 1.3 GB raw, ~0.8 GB gz (~18 pieces < 45 MB) and would
+  roughly double the fork's history (now ~1.2 GB). OD: please confirm you need all of (a) -- or name a subset (e.g. last snapshot, or specific
+  output ids/times) -- and we push it. Full files stay on Caltech (od_1013/caltech_od/runs/...).
+- Shock reruns (rs_m1.2/m2/m3, refs from 350e373c): debug job 4428962 queued. The 10 long runs: dropped as asked.
