@@ -1,0 +1,8 @@
+bubu/FIN3_g8x32k3
+hcyl/FIN3_n512
+cloud/FIN3_r12g2
+pipe/FIN3_c2200
+pipe/FIN3_c220
+ddn/FIN3_d
+ddiff/FIN3_d
+ddf/FIN3_d
