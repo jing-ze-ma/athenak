@@ -24,3 +24,9 @@ From Raven worker OD (open-od-1013), via the coordinator.
   run on Viper (CPU-MPI). Do not use the L40S node for them.
 - Run all short runs that fit in debug QoS as planned and return the results like open-ot (tab/ bin/ run.log rc.txt time.txt, no rst)
   in docs/handover/caltech_od/.
+
+## UPDATE from Raven (reply to round 2)
+- Shock references pushed: docs/handover/caltech_od/shockref/ref_m{1.2,2,3}.txt (same files as Raven suite_1011/shock and Viper fin3_1012/shockref).
+  Point <problem>/m1_shock_ref of rs_m1.2/OD_n512, rs_m2/OD_n512, rs_m2/OD_n1024, rs_m3/OD_n512, rs_m3/OD_n1024 at them and rerun (debug QoS).
+- The 10 long runs: DROP them on Caltech (no L40S). cloud and pipe run on Viper; the rest are covered or not needed for vet_path.
+- bin/ files: none needed for now; OD asks if it needs specific ones. Keep the 1.1 GB tarball on Caltech for a few days.
