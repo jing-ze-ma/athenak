@@ -1,0 +1,63 @@
+From f9f6d66306a7bd6b5ae9eed4a99648d7e859ab5c Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Tue, 13 Oct 2026 08:37:19 +0200
+Subject: [PATCH 2/6] rad_m1: implicit_cs2_dbg bit 32 diagnostic (write-back dv
+ vs the E rows' vimp dv), read only
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_m1/rad_m1.hpp          |  1 +
+ src/rad_m1/rad_m1_implicit.cpp | 25 +++++++++++++++++++++++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index aa517e83..e974fd92 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -885,6 +885,7 @@ class RadiationM1 {
+   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
+   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
+   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
++  int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
+   int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
+                                         // 2 no vimp prediction, 4 no hydro shift,
+                                         // 8 no x1 split, 16 no x2/x3 split
+diff --git a/src/rad_m1/rad_m1_implicit.cpp b/src/rad_m1/rad_m1_implicit.cpp
+index 09a4de8d..12946ce2 100644
+--- a/src/rad_m1/rad_m1_implicit.cpp
++++ b/src/rad_m1/rad_m1_implicit.cpp
+@@ -14220,6 +14220,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+     });
+   }
+   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
++  // open-ot-1013 DIAGNOSTIC (implicit_cs2_dbg bit 32): the x1 velocity change the
++  // write-back gave the gas (uh/rho - the old-vector v) against the vimp dv the E rows
++  // used (iw_vimp + M1_IV_DV); rank-0 line per solve, the first 64 solves.  Read only.
++  if ((cs2_dbg & 32) && impl_vimp && (iw_vimp >= 0) && have_hydro && feedback &&
++      cs2_dbg_n < 64) {
++    const int ivd = iw_vimp + M1_IV_DV;
++    Real dmax = 0.0, amax = 0.0, pmax = 0.0;
++    Kokkos::parallel_reduce("m1_cs2_dbg32",
++      Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0, ks, js, is},
++                                             {nmb1+1, ke+1, je+1, ie+1}),
++      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &d,
++                    Real &a, Real &p) {
++        const Real va = uh(m,IM1,k,j,i)/uh(m,IDN,k,j,i) - iw_(m,M1_IW_V1,k,j,i);
++        const Real vp = iw_(m,ivd,k,j,i);
++        d = fmax(d, fabs(va - vp));
++        a = fmax(a, fabs(va));
++        p = fmax(p, fabs(vp));
++      }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(amax), Kokkos::Max<Real>(pmax));
++    if (global_variable::my_rank == 0) {
++      std::cout << "cs2dbg32 solve " << cs2_dbg_n << " t2s " << t2s << " dt " << dt
++                << " max|dv_wb - dv_rows| " << dmax << " max|dv_wb| " << amax
++                << " max|dv_rows| " << pmax << std::endl;
++    }
++    cs2_dbg_n += 1;
++  }
+   if (gcs && t2k && coupling && dbg_gas_force && t2s != M1_T2S_STAGE1) {csk1_ok = true;}
+   if (gcs) {gcs_first = false;}
+   csinc_ok = false;
+-- 
+2.51.0
+

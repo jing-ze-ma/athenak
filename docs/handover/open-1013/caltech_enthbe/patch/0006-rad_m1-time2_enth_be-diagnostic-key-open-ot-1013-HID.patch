@@ -1,0 +1,137 @@
+From c685e6dd9cba35bdfe1a8ad43792fd5795d31fe3 Mon Sep 17 00:00:00 2001
+From: Jingze Ma <jingzema0211@gmail.com>
+Date: Tue, 13 Oct 2026 17:17:31 +0200
+Subject: [PATCH 6/6] rad_m1: time2_enth_be diagnostic key (open-ot-1013 HIDDEN
+ TERM; read only when named): non-stage solves of a hesdirk2 run take the
+ stage a_f rule
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_m1/rad_m1.cpp          |  1 +
+ src/rad_m1/rad_m1.hpp          |  5 +++++
+ src/rad_m1/rad_m1_implicit.cpp | 14 ++++++++------
+ src/rad_m1/rad_m1_time2.cpp    | 20 ++++++++++++++++++++
+ 4 files changed, 34 insertions(+), 6 deletions(-)
+
+diff --git a/src/rad_m1/rad_m1.cpp b/src/rad_m1/rad_m1.cpp
+index a545a478..e1d283f5 100644
+--- a/src/rad_m1/rad_m1.cpp
++++ b/src/rad_m1/rad_m1.cpp
+@@ -213,6 +213,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
+   od_emin = 1.0e300;
+   impl_vimp = false;
+   vimp_now = false;
++  t2_enth_be = false;
+   iw_vimp = -1;
+   vimp_nfall = 0.0;
+   flr_ne = 0.0;
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index ab77652c..2bf33f2d 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -891,6 +891,8 @@ class RadiationM1 {
+                                         // 2 no vimp prediction, 4 no hydro shift,
+                                         // 8 no x1 split, 16 no x2/x3 split
+   bool Cs2Active();
++  // open-ot-1013 time2_enth_be: this (non-stage) solve takes the stage a_f rule
++  bool T2EnthBe() const;
+   // h2order2-1011 <rad_m1>/implicit_rad_inertia_solve (read only when named; default
+   // false = the after-solve split, bitwise): the -theta dA of implicit_rad_inertia
+   // (dA_c = a_c (E'_c - E^ov_c), a frozen for the solve) goes into the face equation
+@@ -1222,6 +1224,9 @@ class RadiationM1 {
+   int t2_afmode;                // time2_enth_vel: 0 old | 1 start (plm a_f from the
+                                 // stage-start a, the rest as a face mean) | 2 central
+                                 // (a_f central, E_f plm), in stage solves with vimp
++  bool t2_enth_be;              // open-ot-1013 time2_enth_be: the non-stage (backward-
++                                // Euler) solves of a hesdirk2 run take the stage solves'
++                                // a_f rule (time2_enth_vel = central only)
+   int t2_solve;                 // what the next ImplicitSolve does (M1_T2S_*)
+   bool t2_fail;                 // the last stage solve was not admissible
+   int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
+diff --git a/src/rad_m1/rad_m1_implicit.cpp b/src/rad_m1/rad_m1_implicit.cpp
+index 5800cdf9..c468223d 100644
+--- a/src/rad_m1/rad_m1_implicit.cpp
++++ b/src/rad_m1/rad_m1_implicit.cpp
+@@ -3128,7 +3128,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
+     }
+     if (impl_enth != M1_IENTH_UPWIND) {
+       std::cout << "         implicit_enthalpy="
+-                << ((impl_enth == M1_IENTH_PLM) ? "plm" : (impl_enth == M1_IENTH_PLMC) ? "plmc"
++                << ((impl_enth == M1_IENTH_PLM) ? "plm"
++                    : (impl_enth == M1_IENTH_PLMC) ? "plmc"
+                     : (impl_enth == M1_IENTH_LIN) ? "lin" : "central")
+                 << " (deferred correction)" << std::endl;
+     }
+@@ -4996,8 +4997,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
+   const bool enth2 = (enm != M1_IENTH_UPWIND);
+   const int ngh = indcs.ng;
+   // hesdirk2 stage solve, time2_enth_vel = start: see M1EnthCorrT
+-  const bool t2vs = (t2_afmode != 0) && impl_vimp &&
+-                    (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
++  const bool t2vs = ((t2_afmode != 0) && impl_vimp &&
++                     (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2)) ||
++                    (impl_vimp && T2EnthBe());
+   const bool t2afc = (t2_afmode == 2);
+   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
+   // bubbles-1012: Marshak (vacuum) transverse faces, F_f = c q E_c outward
+@@ -10301,8 +10303,8 @@ void RadiationM1::ImplicitVimpBuild() {
+   const Real jsc = impl_vimp_jscale;
+   // hesdirk2, time2_enth_vel = start: the plm face a is built from the stage-start a
+   // (a - DA) and DA enters as its face mean (M1EnthEfT)
+-  const bool t2vs = (t2_afmode != 0) && (t2_solve == M1_T2S_STAGE1 ||
+-                                          t2_solve == M1_T2S_STAGE2);
++  const bool t2vs = ((t2_afmode != 0) && (t2_solve == M1_T2S_STAGE1 ||
++                                           t2_solve == M1_T2S_STAGE2)) || T2EnthBe();
+   const bool t2afc = (t2_afmode == 2);
+   const int bda = b + M1_IV_DA;
+   // m1-sph2 (tests_m1/runs_5h_sph2): on the spherical-polar wedge the face-flux rows
+@@ -11239,7 +11241,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+   if (t2st) {impl_lin_tol = (t2_lin_tol > 0.0) ? t2_lin_tol : (t2_lin_fac*impl_lin_tol);}
+   auto t2i_ = t2inc;
+   const bool t2k = (t2s != M1_T2S_NONE);
+-  const bool t2vs = t2st && (t2_afmode != 0) && impl_vimp && trans;
++  const bool t2vs = ((t2st && (t2_afmode != 0)) || T2EnthBe()) && impl_vimp && trans;
+   const bool t2afc = (t2_afmode == 2);
+   const bool t2dav = t2vs && (t2_afmode == 1);   // the DA split is needed
+   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
+diff --git a/src/rad_m1/rad_m1_time2.cpp b/src/rad_m1/rad_m1_time2.cpp
+index 8176c3bb..9afede8e 100644
+--- a/src/rad_m1/rad_m1_time2.cpp
++++ b/src/rad_m1/rad_m1_time2.cpp
+@@ -138,6 +138,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
+   // P = 100, tau_lambda = 1e5; `start` = plm a_f of the stage-start a plus the rest as a
+   // face mean, also unstable there; `central` = a_f the mean of the two cells, E_f plm)
+   t2_afmode = 2;
++  // open-ot-1013 time2_enth_be (HIDDEN TERM; read only when named): with time2_enth_vel =
++  // central the stage solves build a_f as the mean of the two cells, but the backward-Euler
++  // solves of the same run (the start step, the time2_start slope probe, the rotation
++  // probe, the step after a failed stage) take implicit_enthalpy's own a_f (plm: the
++  // 4-point plm mean).  That changes the operator for one step of length dt, an O(dt)
++  // term of the T ladders (rw_p10t100 E / eint 1.78 / 1.84 at l 16-32).  true: those
++  // solves take the stage rule too.
++  if (pin->DoesParameterExist("rad_m1", "time2_enth_be")) {
++    t2_enth_be = pin->GetBoolean("rad_m1", "time2_enth_be");
++  }
+   if (pin->DoesParameterExist("rad_m1", "time2_enth_vel")) {
+     std::string ev = pin->GetString("rad_m1", "time2_enth_vel");
+     if (ev.compare("old") == 0) {
+@@ -570,6 +580,16 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
+   t2_solve = M1_T2S_NONE;
+ }
+ 
++//----------------------------------------------------------------------------------------
++//! \fn bool RadiationM1::T2EnthBe
++//! \brief open-ot-1013 time2_enth_be: this (non-stage, backward-Euler) solve of a hesdirk2
++//! run builds the enthalpy face a_f with the stage rule (time2_enth_vel = central)
++
++bool RadiationM1::T2EnthBe() const {
++  return t2_enth_be && (time_scheme == M1_TIME_HESDIRK2) && (t2_afmode == 2) &&
++         (t2_solve != M1_T2S_STAGE1) && (t2_solve != M1_T2S_STAGE2);
++}
++
+ //----------------------------------------------------------------------------------------
+ //! \fn bool RadiationM1::Time2StartProbe
+ //! \brief time2_start = slope (h2order-1011): on a hesdirk2 step without a stored slope,
+-- 
+2.51.0
+
