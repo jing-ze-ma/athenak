@@ -15,3 +15,11 @@
   - sp/runs/rlatt/R0Q_128: `<rad_m1>/vet_gd: too many directions` (rad_m1_vetgd.cpp; default Athena_M1_VGD_NMAX in our build, as the TASK says -- needs a larger NMAX?)
   - sp/runs/rswtv/RRT_256: `<rad_m1>/vet_gd: reflecting outer x1 not supported; use implicit_bc_x1max = marshak (+ vet_col_surface_q)`
   We will not rerun these unless you push fixed decks (or ask for an NMAX build).
+
+## ROUND 1 DONE (19:37 PDT) -- round 2 running
+- Job 4421275 (28 min, 32 cores): **70 / 144 rc=0**, 5 FATAL at start, 69 not yet run. Round 2 = debug job 4422142 (rc=0 dirs skipped).
+- FATAL list now 5 (all input checks, < 1 s); two more of the reflecting-top class than above:
+  - sp/runs/rlatt/R0W_128: vet_gd_twin_state = trans needs vet_gd_twin = true
+  - sp/runs/rlatt/R0Q_128: vet_gd: too many directions
+  - sp/runs/rswtv/RRT_128, sp/runs/rswtv/RRT_256, sp/runs/rswv/RRT_256: vet_gd: reflecting outer x1 not supported (use implicit_bc_x1max = marshak + vet_col_surface_q)
+  Likely every RRT_* deck in rswtv/rswv hits the same check; full list in the final report.
