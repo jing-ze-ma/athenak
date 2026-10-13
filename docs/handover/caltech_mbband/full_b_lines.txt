@@ -1,0 +1,359 @@
+FULL_b cart/cb/FIN3_r12 rc=0 6.50 s nt=4 
+FULL_b cart/cb/FIN3_r4 rc=0 55.29 s nt=4 
+FULL_b cart/cb/FIN3_r4c0.5 rc=0 63.57 s nt=4 
+FULL_b cart/cb/FIN3_r4c32 rc=0 3.90 s nt=4 
+FULL_b cart/cb/FIN3_r4n4x rc=0 161.08 s nt=4 
+FULL_b cart/cbg/FIN3_g8x32 rc=0 33.35 s nt=4 
+FULL_b cart/cbh/FIN3_r4 rc=0 460.08 s nt=4 
+FULL_b cart/cloud/FIN3_r12g2 rc=0 229.12 s nt=32 
+FULL_b cart/ddf/FIN3_d rc=0 2128.54 s nt=4 
+FULL_b cart/ddiff/FIN3_d rc=0 2135.00 s nt=4 
+FULL_b cart/ddn/FIN3_d rc=0 2136.32 s nt=4 
+FULL_b cart/eq1/FIN3_fine rc=0 30.13 s nt=4 
+FULL_b cart/eq2/FIN3_fine rc=0 27.52 s nt=4 
+FULL_b cart/eq3t/FIN3_t rc=0 39.69 s nt=4 
+FULL_b cart/hcyl/FIN3_g8x32 rc=0 196.79 s nt=4 
+FULL_b cart/hcyl/FIN3_n512 rc=0 227.44 s nt=32 
+FULL_b cart/marsh/FIN3_c1 rc=0 440.33 s nt=4 
+FULL_b cart/marsh/FIN3_c10 rc=0 50.50 s nt=4 
+FULL_b cart/nltek1/FIN3_d rc=0 15.08 s nt=4 
+FULL_b cart/nltek2/FIN3_d rc=0 19.96 s nt=4 
+FULL_b cart/nltek3/FIN3_d rc=0 15.96 s nt=4 
+FULL_b cart/nltek4/FIN3_d rc=0 16.33 s nt=4 
+FULL_b cart/nltek5/FIN3_d rc=0 16.76 s nt=4 
+FULL_b cart/nltek6/FIN3_d rc=0 13.25 s nt=4 
+FULL_b cart/nltek7/FIN3_d rc=0 13.15 s nt=4 
+FULL_b cart/nltek8/FIN3_d rc=0 15.69 s nt=4 
+FULL_b cart/oneo/FIN3_b3k3 rc=0 116.42 s nt=4 
+FULL_b cart/oneo/FIN3_b3k5 rc=0 122.22 s nt=4 
+FULL_b cart/oneo/FIN3_b3k7 rc=0 131.20 s nt=4 
+FULL_b cart/pipe/FIN3_c220 rc=0 2743.44 s nt=24 
+FULL_b cart/pipe/FIN3_c2200 rc=0 346.52 s nt=32 
+FULL_b cart/rs_m1.2/FIN3_n512 rc=0 314.36 s nt=4 
+FULL_b cart/rs_m2/FIN3_n1024 rc=0 1168.23 s nt=32 
+FULL_b cart/rs_m2/FIN3_n512 rc=0 336.74 s nt=4 
+FULL_b cart/rs_m3/FIN3_n1024 rc=0 938.71 s nt=32 
+FULL_b cart/rs_m3/FIN3_n512 rc=0 484.25 s nt=4 
+FULL_b cart/sdifk/FIN3_d rc=0 27.96 s nt=4 
+FULL_b cart/shd/FIN3_r12g2 rc=0 24.56 s nt=32 
+FULL_b cart/shd/FIN3_r36g2 rc=0 25.55 s nt=4 
+FULL_b cart/shdg/FIN3_g8x32 rc=0 72.64 s nt=4 
+FULL_b cart/slabc/FIN3_n128 rc=0 4.36 s nt=4 
+FULL_b cart/slabc/FIN3_n256 rc=0 6.96 s nt=4 
+FULL_b cart/slabc/FIN3_n32 rc=0 2.21 s nt=4 
+FULL_b cart/slabc/FIN3_n512 rc=0 11.19 s nt=4 
+FULL_b cart/slabc/FIN3_n64 rc=0 2.80 s nt=4 
+FULL_b sp/core_L16_u/HFfZ_1841da_128 rc=0 306.05 s nt=2 subdivided steps (ALL ranks, all sweeps) 2.179584e+06
+FULL_b sp/core_L16_u/HFfZ_1841da_256 rc=0 290.52 s nt=4 subdivided steps (ALL ranks, all sweeps) 1.439328e+06
+FULL_b sp/core_L16_u/HFfZ_1841da_64 rc=0 164.19 s nt=2 subdivided steps (ALL ranks, all sweeps) 2.565024e+06
+FULL_b sp/core_u/HFfZ_1841da_128 rc=0 19.39 s nt=2 subdivided steps (ALL ranks, all sweeps) 2.073600e+04
+FULL_b sp/core_u/HFfZ_1841da_256 rc=0 22.72 s nt=4 subdivided steps (ALL ranks, all sweeps) 1.056000e+03
+FULL_b sp/core_u/HFfZ_1841da_64 rc=0 12.34 s nt=2 subdivided steps (ALL ranks, all sweeps) 5.385600e+04
+FULL_b sp/dif_r1/HFfZ_1841da_128 rc=0 14.25 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1/HFfZ_1841da_256 rc=0 13.59 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1/HFfZ_1841da_64 rc=0 8.29 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_1 rc=0 13.51 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_16 rc=0 101.05 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_2 rc=0 25.49 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_4 rc=0 52.90 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_8 rc=0 104.46 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_1 rc=0 15.89 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_16 rc=0 102.18 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_2 rc=0 30.69 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_4 rc=0 54.42 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_8 rc=0 95.62 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_cart/HCFfZ_d842e3_128 rc=0 9.58 s nt=2 
+FULL_b sp/marsh_r1000_u/HFfZ_1841da_128 rc=0 33.54 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_s/HFfZ_1841da_128 rc=0 36.61 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_s/HFfZ_1841da_256 rc=0 34.59 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_s/HFfZ_1841da_64 rc=0 18.95 s nt=2 subdivided steps (ALL ranks, all sweeps) 1.408000e+03
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_1 rc=0 32.99 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_2 rc=0 65.38 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_4 rc=0 127.81 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_8 rc=0 246.73 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_1 rc=0 35.46 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_2 rc=0 68.57 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_4 rc=0 133.83 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_8 rc=0 254.34 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_u/HFfZ_1841da_128 rc=0 39.35 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_u/HFfZ_1841da_256 rc=0 36.96 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/marsh_r1_u/HFfZ_1841da_64 rc=0 22.21 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/nlte2_r1000_tb/HFfSgZ_74a24b_320 rc=0 25.47 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/nlte2_tb_cart/HCFfZ_d842e3_320 rc=0 9.92 s nt=2 
+FULL_b sp/patm_L16_s/HFfZ_1841da_128 rc=0 503.91 s nt=2 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patm_L16_s/HFfZ_1841da_256 rc=0 453.25 s nt=4 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patm_L16_s/HFfZ_1841da_64 rc=0 254.62 s nt=2 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patmT_L16_e2_s/HFfZ_1841da_256 rc=0 508.39 s nt=4 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patmT_L16_e2_s/HFfZ_1841da_64 rc=0 273.44 s nt=2 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patmT_L16_e4_s/HFfZ_1841da_256 rc=0 488.68 s nt=4 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patmT_L16_s/HFfZ_1841da_128 rc=0 486.33 s nt=2 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patmT_L16_s/HFfZ_1841da_256 rc=0 501.21 s nt=4 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/patmT_L16_s/HFfZ_1841da_64 rc=0 257.01 s nt=2 subdivided steps (ALL ranks, all sweeps) 0
+FULL_b sp/pinc/HFfZ_1841da_64 rc=0 211.13 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.569215e+08
+FULL_b sp/pinc/HFfZX_11fa5e_64 rc=0 223.17 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.569229e+08
+FULL_b sp/pulse_cart/HCFfZ_d842e3_128 rc=0 3.44 s nt=2 
+FULL_b sp/pulse_r1000/HFfZ_1841da_128 rc=0 8.81 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/pulse_r1/HFfZ_1841da_128 rc=0 10.64 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/pulse_r1/HFfZ_1841da_256 rc=0 9.28 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/pulse_r1/HFfZ_1841da_64 rc=0 5.82 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_1 rc=0 2.99 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_16 rc=0 10.02 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_2 rc=0 3.93 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_4 rc=0 6.36 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_8 rc=0 8.90 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_1 rc=0 2.55 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_16 rc=0 10.46 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_2 rc=0 3.83 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_4 rc=0 6.87 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_8 rc=0 10.34 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_1 rc=0 2.82 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_16 rc=0 10.76 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_2 rc=0 4.21 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_4 rc=0 5.97 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_8 rc=0 9.41 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_h40/HFfZ_1841da_64 rc=0 57.39 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat/HFfZ_1841da_128 rc=0 167.50 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat/HFfZ_1841da_32 rc=0 9.57 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat/HFfZ_1841da_64 rc=0 41.30 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5/HFfZ_1841da_128 rc=0 181.62 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5/HFfZ_1841da_32 rc=0 6.60 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5/HFfZ_1841da_64 rc=0 41.96 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_1 rc=0 44.82 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_2 rc=0 72.64 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_4 rc=0 124.22 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_8 rc=0 250.39 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZ_1841da_1 rc=0 45.47 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZ_1841da_2 rc=0 77.00 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZ_1841da_4 rc=0 124.59 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_om5_T/HFfZ_1841da_8 rc=0 237.95 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_h40/HFfZ_1841da_64 rc=0 97.42 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZR0_72ca83_1 rc=0 36.89 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZR0_72ca83_2 rc=0 69.52 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZR0_72ca83_4 rc=0 121.27 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZR0_72ca83_8 rc=0 280.37 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZ_1841da_1 rc=0 44.68 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt/HFfZ_1841da_128 rc=0 466.20 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZ_1841da_2 rc=0 72.12 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt/HFfZ_1841da_32 rc=0 12.95 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZ_1841da_4 rc=0 116.33 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt/HFfZ_1841da_64 rc=0 80.98 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlat_T/HFfZ_1841da_8 rc=0 220.20 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5/HFfZ_1841da_128 rc=0 353.81 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5/HFfZ_1841da_32 rc=0 17.50 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5/HFfZ_1841da_64 rc=0 83.00 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_1 rc=0 78.39 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_2 rc=0 150.49 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_4 rc=0 304.73 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_8 rc=0 594.11 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_1 rc=0 89.35 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_2 rc=0 157.25 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_4 rc=0 310.33 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_8 rc=0 577.37 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_cart/HCFfZ_d842e3_128 rc=0 6.18 s nt=2 
+FULL_b sp/rsw_cart/HCFfZ_d842e3_64 rc=0 3.85 s nt=2 
+FULL_b sp/rsw_h20/HFfZ_1841da_128 rc=0 11.03 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw/HFfZ_1841da_128 rc=0 10.49 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw/HFfZ_1841da_256 rc=0 12.77 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw/HFfZ_1841da_64 rc=0 6.08 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_r1000/HFfZ_1841da_128 rc=0 7.57 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_r1000/HFfZ_1841da_64 rc=0 6.35 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_cart/HCFfZ_d842e3_128 rc=0 5.94 s nt=2 
+FULL_b sp/rswt_cart/HCFfZ_d842e3_64 rc=0 3.84 s nt=2 
+FULL_b sp/rswt_h20/HFfZ_1841da_128 rc=0 19.16 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_1 rc=0 9.42 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_2 rc=0 13.14 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_4 rc=0 25.24 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_8 rc=0 47.79 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_1 rc=0 9.86 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt/HFfZ_1841da_128 rc=0 22.39 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_2 rc=0 14.00 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt/HFfZ_1841da_256 rc=0 18.90 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_4 rc=0 25.44 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt/HFfZ_1841da_64 rc=0 10.71 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_8 rc=0 46.74 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_q/HFfZ_1841da_128 rc=0 20.58 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_q/HFfZ_1841da_256 rc=0 25.58 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_q/HFfZ_1841da_64 rc=0 9.59 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_r1000/HFfZ_1841da_128 rc=0 18.08 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_r1000/HFfZ_1841da_64 rc=0 10.25 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_1 rc=0 18.03 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_2 rc=0 42.26 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_4 rc=0 64.04 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_8 rc=0 133.06 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_1 rc=0 18.91 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_2 rc=0 34.13 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_4 rc=0 67.75 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_8 rc=0 126.04 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_h20/HFfZ_1841da_128 rc=0 27.78 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv/HFfZF0_1d8ac5_128 rc=0 20.19 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv/HFfZF0_1d8ac5_256 rc=0 20.12 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv/HFfZF0_1d8ac5_64 rc=0 13.05 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv/HFfZ_1841da_128 rc=0 21.59 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv/HFfZ_1841da_256 rc=0 21.62 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv/HFfZ_1841da_64 rc=0 11.01 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_1 rc=0 22.42 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_2 rc=0 35.37 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_4 rc=0 64.09 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_8 rc=0 156.50 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_1 rc=0 20.51 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_2 rc=0 36.91 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_4 rc=0 69.84 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_8 rc=0 127.84 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_1 rc=0 22.87 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_2 rc=0 35.39 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_4 rc=0 69.31 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_8 rc=0 132.05 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_1 rc=0 20.17 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_2 rc=0 37.57 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_4 rc=0 81.81 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_8 rc=0 130.80 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_h20/HFfZ_1841da_128 rc=0 9.39 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv/HFfZF0_1d8ac5_128 rc=0 9.58 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv/HFfZF0_1d8ac5_256 rc=0 9.59 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv/HFfZF0_1d8ac5_64 rc=0 5.32 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv/HFfZ_1841da_128 rc=0 7.65 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv/HFfZ_1841da_256 rc=0 9.56 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv/HFfZ_1841da_64 rc=0 5.66 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_1 rc=0 9.92 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_2 rc=0 16.26 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_4 rc=0 25.33 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_8 rc=0 48.24 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_1 rc=0 9.41 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_2 rc=0 16.90 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_4 rc=0 25.58 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_8 rc=0 49.60 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_1 rc=0 8.90 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_2 rc=0 18.05 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_4 rc=0 25.14 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_8 rc=0 47.76 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_1 rc=0 9.14 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_2 rc=0 16.42 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_4 rc=0 27.34 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_8 rc=0 49.26 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/shd/HFfZ_1841da_32 rc=0 262.97 s nt=4 subdivided steps (ALL ranks, all sweeps) 2.425432e+07
+FULL_b sp/thin_L16_u/HFfZ_1841da_128 rc=0 76.33 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/thin_L16_u/HFfZ_1841da_256 rc=0 85.10 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/thin_L16_u/HFfZ_1841da_64 rc=0 44.09 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/thin_u/HFfZ_1841da_128 rc=0 6.58 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/thin_u/HFfZ_1841da_256 rc=0 6.39 s nt=4 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b sp/thin_u/HFfZ_1841da_64 rc=0 4.04 s nt=2 subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+FULL_b ss/n128 rc=0 4.03 s nt=4 subdivided steps (ALL ranks, all sweeps) 2.048880e+05
+FULL_b ss/n256 rc=0 3.80 s nt=4 subdivided steps (ALL ranks, all sweeps) 2.048880e+05
+FULL_b ss/n32 rc=0 6.52 s nt=2 subdivided steps (ALL ranks, all sweeps) 2.048880e+05
+FULL_b ss/n64 rc=0 3.84 s nt=4 subdivided steps (ALL ranks, all sweeps) 2.048880e+05
+FULL_b p2/pinc_ha20_sr30/HFfZR0_72ca83_64 rc=0 223.47 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.656281e+08
+FULL_b p2/pinc_ha20_sr30/HFfZR0_ca772d_64 rc=0 255.20 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.627538e+08
+FULL_b p2/pinc_ha20_sr30/HFfZ_1841da_64 rc=0 227.06 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.750047e+08
+FULL_b p2/pinc_ha20_sr30/HFfZ_07d451_64 rc=0 188.75 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.765658e+08
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0G2_66bdd7_64 rc=1 0.99 s nt=4 
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0G2_d747a5_64 rc=1 0.87 s nt=4 
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0_72ca83_64 rc=0 514.27 s nt=4 subdivided steps (ALL ranks, all sweeps) 7.445668e+07
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0_ca772d_64 rc=0 583.09 s nt=4 subdivided steps (ALL ranks, all sweeps) 7.149001e+07
+FULL_b p2/pinc/HFfZ_1841da_64 rc=0 185.82 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.569215e+08
+FULL_b p2/pinc/HFfZ_07d451_64 rc=0 244.77 s nt=32 subdivided steps (ALL ranks, all sweeps) 1.540730e+08
+FULL_b lad/atm/FINs_hesdirk2_S_1024 rc=0 60.67 s nt=2 
+FULL_b lad/atm/FINs_hesdirk2_S_128 rc=0 1.42 s nt=2 
+FULL_b lad/atm/FINs_hesdirk2_S_2048 rc=0 241.42 s nt=2 
+FULL_b lad/atm/FINs_hesdirk2_S_256 rc=0 4.40 s nt=2 
+FULL_b lad/atm/FINs_hesdirk2_S_32 rc=0 0.40 s nt=2 
+FULL_b lad/atm/FINs_hesdirk2_S_512 rc=0 16.08 s nt=2 
+FULL_b lad/atm/FINs_hesdirk2_S_64 rc=0 0.58 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_C_128 rc=0 72.95 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_C_256 rc=0 311.04 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_C_32 rc=0 6.28 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_C_512 rc=0 1271.34 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_C_64 rc=0 20.70 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_X_128 rc=0 147.79 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_X_256 rc=0 290.31 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_X_32 rc=0 41.41 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_X_512 rc=0 546.97 s nt=2 
+FULL_b lad/pulse_k0.128/FINs_hesdirk2_X_64 rc=0 75.87 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_C_128 rc=0 11.37 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_C_256 rc=0 43.73 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_C_32 rc=0 1.16 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_C_512 rc=0 171.56 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_C_64 rc=0 3.16 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_X_128 rc=0 20.69 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_X_256 rc=0 41.81 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_X_32 rc=0 5.91 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_X_512 rc=0 80.23 s nt=2 
+FULL_b lad/pulse_k1280/FINs_hesdirk2_X_64 rc=0 10.89 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_C_128 rc=0 18.12 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_C_256 rc=0 64.05 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_C_32 rc=0 1.63 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_C_512 rc=0 248.54 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_C_64 rc=0 5.08 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_X_128 rc=0 36.41 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_X_256 rc=0 58.77 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_X_32 rc=0 9.00 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_X_512 rc=0 119.57 s nt=2 
+FULL_b lad/pulse_k12.8/FINs_hesdirk2_X_64 rc=0 18.86 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_C_128 rc=0 6.09 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_C_256 rc=0 15.39 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_C_32 rc=0 0.88 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_C_512 rc=0 55.14 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_C_64 rc=0 1.96 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_T_1 rc=0 5.16 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_T_16 rc=0 55.28 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_T_2 rc=0 8.57 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_T_32 rc=0 106.59 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_T_4 rc=0 21.25 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_T_8 rc=0 33.92 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_X_128 rc=0 17.12 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_X_256 rc=0 28.39 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_X_32 rc=0 5.83 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_X_512 rc=0 55.60 s nt=2 
+FULL_b lad/rw_p10t100/FIN_hesdirk2_X_64 rc=0 11.97 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_C_128 rc=0 19.81 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_C_256 rc=0 63.48 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_C_32 rc=0 2.59 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_C_512 rc=0 254.49 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_C_64 rc=0 5.17 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_T_1 rc=0 17.23 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_T_16 rc=0 285.58 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_T_2 rc=0 30.69 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_T_32 rc=0 631.03 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_T_4 rc=0 64.46 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_T_8 rc=0 153.51 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_X_128 rc=0 72.27 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_X_256 rc=0 128.78 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_X_32 rc=0 19.65 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_X_512 rc=0 289.20 s nt=2 
+FULL_b lad/rw_p10t1/FIN_hesdirk2_X_64 rc=0 32.95 s nt=2 
+FULL_b lad/rw_p10t1/FINQ_hesdirk2_T_1 rc=0 18.76 s nt=2 
+FULL_b lad/rw_p10t1/FINQ_hesdirk2_T_16 rc=0 247.58 s nt=2 
+FULL_b lad/rw_p10t1/FINQ_hesdirk2_T_2 rc=0 40.86 s nt=2 
+FULL_b lad/rw_p10t1/FINQ_hesdirk2_T_32 rc=0 585.71 s nt=2 
+FULL_b lad/rw_p10t1/FINQ_hesdirk2_T_4 rc=0 75.26 s nt=2 
+FULL_b lad/rw_p10t1/FINQ_hesdirk2_T_8 rc=0 129.95 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_C_128 rc=0 4.25 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_C_256 rc=0 10.57 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_C_32 rc=0 0.84 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_C_512 rc=0 35.39 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_C_64 rc=0 1.45 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_T_1 rc=0 3.63 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_T_16 rc=0 27.98 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_T_2 rc=0 4.45 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_T_4 rc=0 8.85 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_T_8 rc=0 16.00 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_X_128 rc=0 9.00 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_X_256 rc=0 14.08 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_X_32 rc=0 2.96 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_X_512 rc=0 37.96 s nt=2 
+FULL_b lad/rw_t1000a/FIN_hesdirk2_X_64 rc=0 4.92 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_C_128 rc=0 21.93 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_C_256 rc=0 97.45 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_C_32 rc=0 3.06 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_C_512 rc=0 324.61 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_C_64 rc=0 7.42 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_T_1 rc=0 20.58 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_T_16 rc=0 302.73 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_T_2 rc=0 44.44 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_T_32 rc=0 585.79 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_T_4 rc=0 110.30 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_T_8 rc=0 175.76 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_X_128 rc=0 82.07 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_X_256 rc=0 137.84 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_X_32 rc=0 21.37 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_X_512 rc=0 385.21 s nt=2 
+FULL_b lad/rw_t10a/FIN_hesdirk2_X_64 rc=0 41.64 s nt=2 
