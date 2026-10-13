@@ -37,3 +37,9 @@
 - URGENT first: docs/handover/caltech_ot/ot_urgent.tgz (0.7 MB): rswv_T F0B_32 + B_32, rw_p10t1 {A3,B,PC0,S}_hesdirk2_T_64 (all rc=0).
 - Full set follows in the next push: docs/handover/caltech_ot/ot_runs_r2.tgz (79 MB) = every rc=0 dir so far (130 incl. 2 of the round-3 four), bin/ tab/ run.log rc.txt time.txt, no rst. Paths inside: runs/<list.txt dir>/...
 - Round 3 (job 4423131, 8 threads) still running for the last 2; a final tarball with only those follows.
+
+## FINAL (10-12 20:29 PDT): 132 / 132 non-dropped runs rc=0
+- Round 3 (job 4423131, 8 threads): NM_hesdirk2_T_32 948 s, rlatt_om5/R0_256 326 s, rlatt/R0_256 303 s, rswv/B_2048 1133 s, all rc=0.
+- docs/handover/caltech_ot/ot_runs_r3.tgz = these 4 runs (2 of them are already in ot_runs_r2.tgz; identical files).
+- Totals: 144 decks, 132 rc=0, 12 dropped FATAL decks (R0W_*, R0Q_*, RRT_*), 0 other failures. Wall: 3 debug jobs (28 + 28 + 19 min) on 32 cores.
+- Binary athena_cpu_omp_281dd686 md5 9ae9f09aeb81841a275e8d046a0eebe4. Done on Caltech.
