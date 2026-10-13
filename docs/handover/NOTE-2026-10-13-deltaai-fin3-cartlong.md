@@ -13,3 +13,5 @@
       (Raven CPU 45-120 min; on GPU expected minutes; runs not done by then are reported with their last cycle line);
   (c) SKIP.
   Default if no answer by the time the binary is ready: (a).
+
+- 20:57 CDT: built **athena_none_gpu_281dd686cb47, md5 21427ecb3bbb83c7c9094a1fdf166379**; every args.txt key present in the binary. Option (a) taken as the default: ghx4 batch job **3370011** (1 h) submitted, PENDING (est. ~10-18). Switch to (b) or cancel on your word.
