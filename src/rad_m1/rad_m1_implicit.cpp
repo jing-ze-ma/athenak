@@ -739,6 +739,34 @@ int M1EnthIdx(const int ii, const int lo, const int hi, const bool cyc, const in
 //!            smooth and monotone), E_f = the van Leer plm value of E from the side
 //!            upwind of a_f (monotone, E_f <= 2 E_donor).  Central where !ok.
 
+//! open-ot-1013 M1EnthEfPlm: the E_f of the modes >= plm at the face with advective
+//! coefficient af (ef0 = the central E_f, kept where af = 0).  plm: the van Leer value
+//! from the side upwind of af (the computation of the original code, bitwise); plmc
+//! (diagnostic): the mean of the two van Leer values; lin (diagnostic): the unlimited
+//! Fromm value from the upwind side.
+KOKKOS_INLINE_FUNCTION
+Real M1EnthEfPlm(const int mode, const Real el2, const Real el, const Real er,
+                 const Real er2, const Real af, const Real ef0) {
+  Real ef = ef0, dum;
+  if (mode == M1_IENTH_PLMC) {
+    Real efl, efr;
+    PLM(el2, el, er, efl, dum);
+    PLM(el, er, er2, dum, efr);
+    return 0.5*(efl + efr);
+  }
+  if (mode == M1_IENTH_LIN) {
+    if (af > 0.0) {return el + 0.25*(er - el2);}
+    if (af < 0.0) {return er - 0.25*(er2 - el);}
+    return ef0;
+  }
+  if (af > 0.0) {
+    PLM(el2, el, er, ef, dum);
+  } else if (af < 0.0) {
+    PLM(el, er, er2, dum, ef);
+  }
+  return ef;
+}
+
 KOKKOS_INLINE_FUNCTION
 Real M1EnthCorr(const int mode, const Real el2, const Real el, const Real er,
                 const Real er2, const bool ok, const Real al2, const Real al,
@@ -746,16 +774,12 @@ Real M1EnthCorr(const int mode, const Real el2, const Real el, const Real er,
   const Real alow = (vf > 0.0) ? (al*el) : (ar*er);
   Real af = 0.5*(al + ar);
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     Real dum, afl, afr;
     PLM(al2, al, ar, afl, dum);
     PLM(al, ar, ar2, dum, afr);
     af = 0.5*(afl + afr);
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return af*ef - alow;
 }
@@ -772,16 +796,12 @@ Real M1EnthEf(const int mode, const Real el2, const Real el, const Real er,
               const Real ar, const Real ar2, const Real vf) {
   if (mode == M1_IENTH_UPWIND) {return (vf > 0.0) ? el : er;}
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     Real dum, afl, afr;
     PLM(al2, al, ar, afl, dum);
     PLM(al, ar, ar2, dum, afr);
     Real af = 0.5*(afl + afr);
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return ef;
 }
@@ -800,7 +820,7 @@ Real M1EnthAfT(const int mode, const bool ok, const Real al2, const Real al,
   if (afc) {return 0.5*(al + ar);}   // time2_enth_vel = central: a_f central
   const Real sl2 = al2 - dl2, sl = al - dl, sr = ar - dr, sr2 = ar2 - dr2;
   Real af = 0.5*(sl + sr);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     Real dum, afl, afr;
     PLM(sl2, sl, sr, afl, dum);
     PLM(sl, sr, sr2, dum, afr);
@@ -817,13 +837,8 @@ Real M1EnthCorrT(const int mode, const Real el2, const Real el, const Real er,
   const Real alow = (vf > 0.0) ? (al*el) : (ar*er);
   const Real af = M1EnthAfT(mode, ok, al2, al, ar, ar2, dl2, dl, dr, dr2, afc);
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
-    Real dum;
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+  if (mode >= M1_IENTH_PLM && ok) {
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return af*ef - alow;
 }
@@ -835,14 +850,9 @@ Real M1EnthEfT(const int mode, const Real el2, const Real el, const Real er,
                const Real dr, const Real dr2, const Real vf, const bool afc) {
   if (mode == M1_IENTH_UPWIND) {return (vf > 0.0) ? el : er;}
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     const Real af = M1EnthAfT(mode, ok, al2, al, ar, ar2, dl2, dl, dr, dr2, afc);
-    Real dum;
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return ef;
 }
@@ -2362,6 +2372,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_enth = M1_IENTH_CENTRAL;
   } else if (sen.compare("plm") == 0) {
     impl_enth = M1_IENTH_PLM;
+  } else if (sen.compare("plmc") == 0) {   // open-ot-1013 diagnostic (rad_m1_implicit.hpp)
+    impl_enth = M1_IENTH_PLMC;
+  } else if (sen.compare("lin") == 0) {    // open-ot-1013 diagnostic (rad_m1_implicit.hpp)
+    impl_enth = M1_IENTH_LIN;
   } else {
     ImplFatal("<rad_m1>/implicit_enthalpy = '" + sen
               + "' is not a choice (upwind | central | plm)");
@@ -3114,7 +3128,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     if (impl_enth != M1_IENTH_UPWIND) {
       std::cout << "         implicit_enthalpy="
-                << ((impl_enth == M1_IENTH_PLM) ? "plm" : "central")
+                << ((impl_enth == M1_IENTH_PLM) ? "plm" : (impl_enth == M1_IENTH_PLMC) ? "plmc"
+                    : (impl_enth == M1_IENTH_LIN) ? "lin" : "central")
                 << " (deferred correction)" << std::endl;
     }
     if (ibc_x1min == M1_IBC_MARSHAK || ibc_x1max == M1_IBC_MARSHAK) {
