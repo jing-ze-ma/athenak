@@ -2956,6 +2956,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // top cell (the vacuum sends nothing back), per column, in vcol_q
     hr_q = impl_beam_hr && (vet_sc || (vgd_on && sph_geom)) &&
            (ibc_x1max == M1_IBC_MARSHAK);
+    // wavefix-1013 implicit_hr_q_face = true: no half-range top q.  hr_q takes q from the
+    // top CELL's outgoing half-range flux h+ (M1HrCell), which also multiplies the
+    // incident bath; its error is O(dx) where the top carries a net flux (rswt / rswtv:
+    // first-order top region).  With the key the top q is the formal solution's face
+    // H over the face J (vet_col_surface_q / vet_col_surface_face), as without the
+    // half-range beam.
+    if (impl_hrq_face) {hr_q = false;}
     if (hr_q && vcol_q.extent_int(0) < nmb) {
       Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
       Kokkos::deep_copy(vcol_q, marshak_q);
@@ -11776,31 +11783,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const Real bqlim = thsw_jslim;
     auto bx1v = pmy_pack->pcoord->x1v;
     auto bx1f = pmy_pack->pcoord->xx1f;
-    // wavefix-1013 implicit_hr_q_face: q = H+_f/J_f (both at the face); vet_sc or vet_gd
-    // with the J-carrying half-range array
-    const bool hqf = impl_hrq_face && (hsrc == 1 || bgx) && (ie > is);
-    const bool hqsp = sph_geom;
     par_for("m1_impl_hrq", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real hp, hm, fb;
       M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq, 0, 0.0, hp, hm, fb);
-      if (hqf && hp > 0.0) {
-        const bool g = (hsrc == 2);
-        const Real j0 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq) : hvc_(m,M1_VET_J,k,j,ieq);
-        const Real j1 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq-1) : hvc_(m,M1_VET_J,k,j,ieq-1);
-        Real hp1, hm1, fb1;
-        M1HrCell(hsrc, iwq_, hvc_, hgh_, m, k, j, ieq-1, 0, 0.0, hp1, hm1, fb1);
-        if (j0 > 0.0 && j1 > 0.0 && hp1 >= 0.0) {
-          const Real r0 = bx1v(m,ieq), r1 = bx1v(m,ieq-1), rf = bx1f(m,ieq+1);
-          const Real g0 = hqsp ? r0*r0 : 1.0, g1 = hqsp ? r1*r1 : 1.0;
-          const Real gf = hqsp ? rf*rf : 1.0;
-          const Real t = (rf - r0)/(r0 - r1);
-          const Real a0 = g0*hp*j0, a1 = g1*hp1*j1;
-          const Real af = a0 + (a0 - a1)*t;          // (r^2 H+) at the face
-          const Real jf = j0 + (j0 - j1)*t;          // J at the face
-          if (af > 0.0 && jf > 0.0) {hp = af/(gf*jf);}
-        }
-      } else if (bql && hp > 0.0) {
+      if (bql && hp > 0.0) {
         const bool g = (hsrc == 2);
         const Real j0 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq) : hvc_(m,M1_VET_J,k,j,ieq);
         const Real j1 = g ? hgh_(m,M1_VGD_HRJ,k,j,ieq-1) : hvc_(m,M1_VET_J,k,j,ieq-1);
