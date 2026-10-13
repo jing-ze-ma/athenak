@@ -569,6 +569,9 @@ class RadiationM1 {
   // implicit_bc_advect: a MARSHAK x1 end also carries the advected enthalpy flux
   // A E (outflow: the end cell's E; inflow: the bath).  Default off (bitwise).
   bool impl_bc_advect;
+  // wavefix-1013 implicit_bc_advect_wall: false at a Marshak x1 end whose gas boundary is
+  // reflect (face v = 0: no A E, no implicit_vimp_bc term there)
+  bool impl_bcadv_lo = true, impl_bcadv_hi = true;
                                 // energy density, F_f = +-c q (E - E_bath);
                                 // 0 is the plain free surface
   DvceArray4D<Real> f0x1;       // face-normal comoving flux on x1 faces, (m,k,j,i);

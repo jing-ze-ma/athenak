@@ -2681,6 +2681,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // before 5c9e4432) the old value false is kept; files since then echo their value.
   impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",
                                         !global_variable::restart_run);
+  // wavefix-1013 implicit_bc_advect_wall (bug fix; DEFAULT true on a fresh run, a restart
+  // whose file lacks the key keeps false, the resolved value is echoed): at a Marshak x1
+  // end whose MESH (gas) boundary is reflect no mass crosses the face, so the face
+  // velocity is 0 and the face carries NO enthalpy flux A E (implicit_bc_advect) and no
+  // implicit_vimp_bc term.  The old form took the END CELL's v there, an O(dx) energy
+  // leak where v -> 0 at the wall (rswtv X order 1).  Bitwise wherever the gas x1 end is
+  // not reflect (outflow / user / periodic).
+  {
+    const bool bw = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect_wall",
+                                         !global_variable::restart_run);
+    auto *pmw = pmy_pack->pmesh;
+    impl_bcadv_lo = !(bw && pmw->mesh_bcs[BoundaryFace::inner_x1] == BoundaryFlag::reflect);
+    impl_bcadv_hi = !(bw && pmw->mesh_bcs[BoundaryFace::outer_x1] == BoundaryFlag::reflect);
+  }
   // h2order-1011 implicit_vimp_bc (ImplicitVimpBuild).  DEFAULT true since
   // vimpbcdef-1011 where implicit_vimp is on (the only place it acts): a fresh run takes
   // true, a restart whose file lacks the key keeps the old value false; the resolved
@@ -3101,6 +3115,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (ibc_x1min == M1_IBC_MARSHAK || ibc_x1max == M1_IBC_MARSHAK) {
       std::cout << "         implicit_bc_advect=" << (impl_bc_advect ? "true" : "false")
                 << " (Marshak x1 end carries A E)" << std::endl;
+      std::cout << "         implicit_bc_advect_wall: x1min "
+                << (impl_bcadv_lo ? "advects" : "reflecting gas wall, no A E") << ", x1max "
+                << (impl_bcadv_hi ? "advects" : "reflecting gas wall, no A E") << std::endl;
     }
     if (trans_on) {
       std::cout << "         implicit_offdiag="
@@ -10479,6 +10496,7 @@ void RadiationM1::ImplicitVimpBuild() {
   // the face takes the same lagged-dv + Jacobian terms as an interior face, with the end
   // cell's own dv, D and P row (the face has one cell).
   const bool vbc = impl_vimp_bc && impl_bc_advect;
+  const bool vbcl = vbc && impl_bcadv_lo, vbch = vbc && impl_bcadv_hi;   // wavefix-1013
   const Real ebl = iebath_x1min, ebh = iebath_x1max;
   // (2) the operator coefficients and the right-hand side
   par_for_lb("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -10563,8 +10581,8 @@ void RadiationM1::ImplicitVimpBuild() {
         jr -= sg*(pb*DV[1][d] + ps - pb*pe);
         phb[s] = sg*pb;
       };
-      const bool vbl = vbc && (d == 0) && flo && (bclo == M1_IBC_MARSHAK);
-      const bool vbh = vbc && (d == 0) && fhi && (bchi == M1_IBC_MARSHAK);
+      const bool vbl = vbcl && (d == 0) && flo && (bclo == M1_IBC_MARSHAK);
+      const bool vbh = vbch && (d == 0) && fhi && (bchi == M1_IBC_MARSHAK);
       for (int s = 0; s < 2; ++s) {
         if ((s == 0) ? flo : fhi) {
           if ((s == 0) ? vbl : vbh) {vbface(s, nu);}
@@ -11296,6 +11314,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const int bmn_ = ibm_n;   // littests-1011: boundary beams (imposed x1min flux)
   auto bmf_ = ibm_f;
   const bool badv = impl_bc_advect;
+  // wavefix-1013 implicit_bc_advect_wall: no A E through a Marshak end at a reflecting gas
+  const bool badvl = badv && impl_bcadv_lo, badvh = badv && impl_bcadv_hi;
   bool cyclic = (bclo == M1_IBC_PERIODIC);
   // MILESTONE 3b, LIMIT 4.  With more than one MeshBlock along x1 a block is at a
   // PHYSICAL x1 boundary only when it sits at the corresponding end of its stack; the
@@ -12661,7 +12681,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         rr += nu*ch*mq*ebhi;
         // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
         // the end cell's velocity (outflow: this cell's E; inflow: the bath)
-        if (badv) {
+        if (badvh) {
           if (vi > 0.0) {
             bb += nu*cr*ai;
           } else {
@@ -12742,7 +12762,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else if (bclo == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
         rr += nu*ch*mq*eblo;
-        if (badv) {
+        if (badvl) {
           if (vi > 0.0) {
             rr += nu*cr*ai*eblo;
           } else {
@@ -12908,12 +12928,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             // the face flux c q E_f, and the outflowing enthalpy flux of
             // implicit_bc_advect at the same face E
             Real wq = nup*ch*mq;
-            if (badv && vi > 0.0) {wq += nup*cr*ai;}
+            if (badvh && vi > 0.0) {wq += nup*cr*ai;}
             bb += wq*(ca - 1.0);
             aa -= wq*cb;
             rr -= wq*dl;
           }
-          if (badv) {
+          if (badvh) {
             if (vi > 0.0) {
               bb += nup*cr*ai;
             } else {
@@ -13032,12 +13052,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             const Real dl = M1SphMarshakFaceE(e0, e1, cx1v(m,is), cx1v(m,is+1),
                                               cx1f(m,is)) - (ca*e0 - cb*e1);
             Real wq = num*ch*mq;
-            if (badv && vi < 0.0) {wq -= num*cr*ai;}
+            if (badvl && vi < 0.0) {wq -= num*cr*ai;}
             bb += wq*(ca - 1.0);
             cc -= wq*cb;
             rr -= wq*dl;
           }
-          if (badv) {
+          if (badvl) {
             if (vi > 0.0) {
               rr += num*cr*ai*eblo;
             } else {
