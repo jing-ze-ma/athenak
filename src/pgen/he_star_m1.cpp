@@ -165,6 +165,12 @@ Real hs_atp_dfl_ = 0.0;
 // problem/he_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
 //   v_r copied where it points out and 0 where it points in.
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
+// marelax-1013 (reproduction probes, default off = 9972a56d bitwise):
+// problem/he_bc_zc_vg = solve (default: first-ghost v_r from HLLC S_M = 0) | zero (v = 0 in
+// every ghost, the paper's "naive" setup) | copy (first-ghost v_r = first active cell's v_r);
+// problem/he_bc_outer_inflow = true: he_bc_outer = copy copies v_r also where it points in.
+int hs_zcvg_ = 0;
+bool hs_boinf_ = false;
 // problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
 bool hs_mlt_ = false;
 DvceArray1D<Real> hs_fm_;
@@ -2310,6 +2316,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_bout_ = (bo == "outflow");
     hs_bhse_ = (bo == "hse");
     hs_bcopy_ = (bo == "copy");
+    if (pin->DoesParameterExist("problem","he_bc_zc_vg")) {
+      const std::string zv = pin->GetString("problem","he_bc_zc_vg");
+      if (zv != "solve" && zv != "zero" && zv != "copy") {
+        HsFatal("problem/he_bc_zc_vg must be solve|zero|copy", __LINE__);
+      }
+      hs_zcvg_ = (zv == "zero") ? 1 : ((zv == "copy") ? 2 : 0);
+    }
+    if (pin->DoesParameterExist("problem","he_bc_outer_inflow")) {
+      hs_boinf_ = pin->GetBoolean("problem","he_bc_outer_inflow");
+    }
     if (hs_bzc_) {
       // bsg-truerepro-1008: the root find replays the plain (non-WB) spherical-polar
       // PLM (Hydro::PLM_nonuniform) and the ideal-gas HLLC contact speed
@@ -2942,6 +2958,8 @@ void HeStarBC(Mesh *pm) {
   auto ff1 = pmbp->pradm1->f0x1;
   // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
+  const int zcvg = hs_zcvg_;
+  const bool boinf = hs_boinf_;
   auto &x1fb = pmbp->pcoord->xx1f;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -3032,6 +3050,8 @@ void HeStarBC(Mesh *pm) {
           }
           vg = xc;
         }
+        if (zcvg == 1) vg = 0.0;
+        if (zcvg == 2) vg = va;
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g;
           const Real rg = x1v(m,ig);
@@ -3053,7 +3073,7 @@ void HeStarBC(Mesh *pm) {
         // Ma+2026 OUTFLOW TOP: rho, eint and v_t of the edge cell copied into every
         // ghost, v_r copied where it points out and 0 where it points in
         const Real v1e = uh(m,IM1,k,j,ia)/da;
-        const Real v1 = (v1e > 0.0) ? v1e : 0.0;
+        const Real v1 = (v1e > 0.0 || boinf) ? v1e : 0.0;
         const Real v2 = uh(m,IM2,k,j,ia)/da;
         const Real v3 = uh(m,IM3,k,j,ia)/da;
         for (int g=0; g<ng; ++g) {
