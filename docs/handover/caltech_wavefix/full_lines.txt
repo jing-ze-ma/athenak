@@ -1,0 +1,406 @@
+FULL_b cart/cb/FIN3_r12 rc=0 14.93 s nt=4 Picard iterations mean=1.828205e+01  
+FULL_b cart/cb/FIN3_r4 rc=0 6.03 s nt=4 Picard iterations mean=3.128205e+00  
+FULL_b cart/cb/FIN3_r4c0.5 rc=0 16.97 s nt=32 Picard iterations mean=2.942701e+00  
+FULL_b cart/cb/FIN3_r4c32 rc=0 4.78 s nt=4 Picard iterations mean=3.978723e+00  
+FULL_b cart/cb/FIN3_r4n4x rc=0 227.09 s nt=4 Picard iterations mean=3.948718e+00  
+FULL_b cart/cbg/FIN3_g8x32 rc=0 30.98 s nt=4 Picard iterations mean=3.412821e+01  
+FULL_b cart/cbh/FIN3_r4 rc=0 447.91 s nt=4 Picard iterations mean=3.897436e+00  
+FULL_b cart/cloud/FIN3_r12g2 rc=0 230.29 s nt=32 Picard iterations mean=3.507966e+00  
+FULL_b cart/hcyl/FIN3_g8x32 rc=0 115.65 s nt=4 Picard iterations mean=2.207692e+00  
+FULL_b cart/hcyl/FIN3_n512 rc=0 145.62 s nt=32 Picard iterations mean=2.203065e+00  
+FULL_b cart/marsh/FIN3_c1 rc=0 428.00 s nt=4 Picard iterations mean=2.028734e+00  
+FULL_b cart/marsh/FIN3_c10 rc=0 46.81 s nt=4 Picard iterations mean=3.047736e+00  
+FULL_b cart/nltek1/FIN3_d rc=0 15.56 s nt=4 Picard iterations mean=2.140496e+00  
+FULL_b cart/nltek2/FIN3_d rc=0 14.82 s nt=4 Picard iterations mean=2.140496e+00  
+FULL_b cart/nltek3/FIN3_d rc=0 14.76 s nt=4 Picard iterations mean=2.239669e+00  
+FULL_b cart/nltek4/FIN3_d rc=0 14.59 s nt=4 Picard iterations mean=2.206612e+00  
+FULL_b cart/nltek5/FIN3_d rc=0 16.08 s nt=4 Picard iterations mean=2.206612e+00  
+FULL_b cart/nltek6/FIN3_d rc=0 13.44 s nt=4 Picard iterations mean=1.619835e+00  
+FULL_b cart/nltek7/FIN3_d rc=0 12.29 s nt=4 Picard iterations mean=1.652893e+00  
+FULL_b cart/nltek8/FIN3_d rc=0 12.04 s nt=4 Picard iterations mean=1.611570e+00  
+FULL_b cart/oneo/FIN3_b3k3 rc=0 148.52 s nt=4 Picard iterations mean=4.050000e+00  
+FULL_b cart/oneo/FIN3_b3k5 rc=0 160.93 s nt=4 Picard iterations mean=4.287500e+00  
+FULL_b cart/oneo/FIN3_b3k7 rc=0 169.01 s nt=4 Picard iterations mean=3.412500e+00  
+FULL_b cart/pipe/FIN3_c220 rc=0 1322.88 s nt=32 Picard iterations mean=3.015656e+00  
+FULL_b cart/pipe/FIN3_c2200 rc=0 326.70 s nt=32 Picard iterations mean=3.527094e+00  
+FULL_b cart/rs_m1.2/FIN3_n512 rc=0 295.57 s nt=4 Picard iterations mean=2.030977e+00  
+FULL_b cart/rs_m2/FIN3_n1024 rc=0 767.83 s nt=32 Picard iterations mean=2.180289e+00  
+FULL_b cart/rs_m2/FIN3_n512 rc=0 362.21 s nt=4 Picard iterations mean=2.529496e+00  
+FULL_b cart/rs_m3/FIN3_n1024 rc=0 755.26 s nt=32 Picard iterations mean=2.549674e+00  
+FULL_b cart/rs_m3/FIN3_n512 rc=0 570.87 s nt=4 Picard iterations mean=3.610387e+00  
+FULL_b cart/sdifk/FIN3_d rc=0 21.37 s nt=4 Picard iterations mean=1.978013e+00  
+FULL_b cart/shd/FIN3_r12g2 rc=0 5.00 s nt=32 Picard iterations mean=3.000000e+00  
+FULL_b cart/shd/FIN3_r36g2 rc=0 23.43 s nt=4 Picard iterations mean=3.000000e+00  
+FULL_b cart/shdg/FIN3_g8x32 rc=0 45.58 s nt=4 Picard iterations mean=3.000000e+00  
+FULL_b cart/slabc/FIN3_n128 rc=0 2.90 s nt=4 Picard iterations mean=2.092308e+00  
+FULL_b cart/slabc/FIN3_n256 rc=0 5.04 s nt=4 Picard iterations mean=2.100000e+00  
+FULL_b cart/slabc/FIN3_n32 rc=0 1.28 s nt=4 Picard iterations mean=2.046154e+00  
+FULL_b cart/slabc/FIN3_n512 rc=0 9.69 s nt=4 Picard iterations mean=2.123077e+00  
+FULL_b cart/slabc/FIN3_n64 rc=0 1.84 s nt=4 Picard iterations mean=2.069231e+00  
+FULL_b sp/core_L16_u/HFfZ_1841da_128 rc=0 385.33 s nt=2 Picard iterations mean=1.491803e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 9.032800e+04
+FULL_b sp/core_L16_u/HFfZ_1841da_256 rc=0 327.45 s nt=4 Picard iterations mean=1.532787e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 9.504000e+03
+FULL_b sp/core_L16_u/HFfZ_1841da_64 rc=0 204.08 s nt=2 Picard iterations mean=1.483607e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 3.020320e+05
+FULL_b sp/core_u/HFfZ_1841da_128 rc=0 18.00 s nt=2 Picard iterations mean=2.073770e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 1.016000e+04
+FULL_b sp/core_u/HFfZ_1841da_256 rc=0 27.13 s nt=4 Picard iterations mean=2.090909e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 6.720000e+02
+FULL_b sp/core_u/HFfZ_1841da_64 rc=0 11.35 s nt=2 Picard iterations mean=2.090164e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 2.997600e+04
+FULL_b sp/dif_r1/HFfZ_1841da_128 rc=0 15.41 s nt=2 Picard iterations mean=1.974286e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1/HFfZ_1841da_256 rc=0 15.95 s nt=4 Picard iterations mean=1.974286e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1/HFfZ_1841da_64 rc=0 10.09 s nt=2 Picard iterations mean=1.974286e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_1 rc=0 16.72 s nt=2 Picard iterations mean=1.998049e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_16 rc=0 117.23 s nt=4 Picard iterations mean=1.999878e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_2 rc=0 29.67 s nt=2 Picard iterations mean=1.999024e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_4 rc=0 53.77 s nt=2 Picard iterations mean=2.000000e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZR0_72ca83_8 rc=0 99.36 s nt=2 Picard iterations mean=2.000000e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_1 rc=0 17.00 s nt=2 Picard iterations mean=1.952602e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_16 rc=0 116.14 s nt=4 Picard iterations mean=1.996877e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_2 rc=0 26.56 s nt=2 Picard iterations mean=1.975714e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_4 rc=0 58.44 s nt=2 Picard iterations mean=1.987705e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/dif_r1_T/HFfZ_1841da_8 rc=0 102.54 s nt=2 Picard iterations mean=1.993735e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_cart/HCFfZ_d842e3_128 rc=0 10.17 s nt=2 Picard iterations mean=3.510516e+00  
+FULL_b sp/marsh_cart/HCFfZ_d842e3_128 rc=0 8.72 s nt=2 Picard iterations mean=3.510516e+00  
+FULL_a sp/marsh_r1000_u/HFfZ_1841da_128 rc=0 33.79 s nt=2 Picard iterations mean=2.977055e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1000_u/HFfZ_1841da_128 rc=0 34.14 s nt=2 Picard iterations mean=2.977055e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_s/HFfZ_1841da_128 rc=0 37.14 s nt=2 Picard iterations mean=3.076482e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_s/HFfZ_1841da_128 rc=0 33.16 s nt=2 Picard iterations mean=3.076482e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_s/HFfZ_1841da_256 rc=0 38.31 s nt=4 Picard iterations mean=3.097514e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_s/HFfZ_1841da_256 rc=0 38.48 s nt=4 Picard iterations mean=3.097514e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_s/HFfZ_1841da_64 rc=0 19.95 s nt=2 Picard iterations mean=3.057361e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_s/HFfZ_1841da_64 rc=0 19.74 s nt=2 Picard iterations mean=3.057361e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZR0_72ca83_1 rc=0 34.81 s nt=2 Picard iterations mean=3.054795e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_1 rc=0 33.45 s nt=2 Picard iterations mean=3.054795e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZR0_72ca83_2 rc=0 66.54 s nt=2 Picard iterations mean=3.022483e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_2 rc=0 67.55 s nt=2 Picard iterations mean=3.021505e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZR0_72ca83_4 rc=0 120.89 s nt=2 Picard iterations mean=2.832601e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_4 rc=0 121.19 s nt=2 Picard iterations mean=2.832601e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZR0_72ca83_8 rc=0 244.19 s nt=2 Picard iterations mean=2.786429e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZR0_72ca83_8 rc=0 235.81 s nt=2 Picard iterations mean=2.786429e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZ_1841da_1 rc=0 39.23 s nt=2 Picard iterations mean=3.135688e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_1 rc=0 40.01 s nt=2 Picard iterations mean=3.135688e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZ_1841da_2 rc=0 67.94 s nt=2 Picard iterations mean=3.012381e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_2 rc=0 66.39 s nt=2 Picard iterations mean=3.012381e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZ_1841da_4 rc=0 141.75 s nt=2 Picard iterations mean=2.816297e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_4 rc=0 139.22 s nt=2 Picard iterations mean=2.809065e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_T/HFfZ_1841da_8 rc=0 244.28 s nt=2 Picard iterations mean=2.748157e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_T/HFfZ_1841da_8 rc=0 237.47 s nt=2 Picard iterations mean=2.742260e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_u/HFfZ_1841da_128 rc=0 37.97 s nt=2 Picard iterations mean=3.103250e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_u/HFfZ_1841da_128 rc=0 37.77 s nt=2 Picard iterations mean=3.103250e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_u/HFfZ_1841da_256 rc=0 38.60 s nt=4 Picard iterations mean=3.112811e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_u/HFfZ_1841da_256 rc=0 38.64 s nt=4 Picard iterations mean=3.112811e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/marsh_r1_u/HFfZ_1841da_64 rc=0 20.01 s nt=2 Picard iterations mean=3.080306e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/marsh_r1_u/HFfZ_1841da_64 rc=0 20.21 s nt=2 Picard iterations mean=3.080306e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/nlte2_r1000_tb/HFfSgZ_74a24b_320 rc=0 20.25 s nt=2 Picard iterations mean=4.938272e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/nlte2_tb_cart/HCFfZ_d842e3_320 rc=0 8.57 s nt=2 Picard iterations mean=2.166667e+00  
+FULL_b sp/patm_L16_s/HFfZ_1841da_128 rc=0 51.57 s nt=32 Picard iterations mean=2.01789  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patm_L16_s/HFfZ_1841da_256 rc=0 94.38 s nt=32 Picard iterations mean=2.01301  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patm_L16_s/HFfZ_1841da_64 rc=0 264.33 s nt=2 Picard iterations mean=2.00649  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patmT_L16_e2_s/HFfZ_1841da_256 rc=0 555.46 s nt=4 Picard iterations mean=2.01626  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patmT_L16_e2_s/HFfZ_1841da_64 rc=0 366.16 s nt=2 Picard iterations mean=1.93182  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patmT_L16_e4_s/HFfZ_1841da_256 rc=0 475.76 s nt=4 Picard iterations mean=2.02602  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patmT_L16_s/HFfZ_1841da_128 rc=0 43.88 s nt=32 Picard iterations mean=1.84065  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patmT_L16_s/HFfZ_1841da_256 rc=0 488.85 s nt=4 Picard iterations mean=1.96585  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/patmT_L16_s/HFfZ_1841da_64 rc=0 244.64 s nt=2 Picard iterations mean=1.5276  lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+FULL_b sp/pinc/HFfZ_1841da_64 rc=0 196.01 s nt=32 Picard iterations mean=2.379310e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/pinc/HFfZX_11fa5e_64 rc=0 186.27 s nt=32 Picard iterations mean=3.270936e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/pulse_cart/HCFfZ_d842e3_128 rc=0 2.95 s nt=2 Picard iterations mean=2.976923e+00  
+FULL_b sp/pulse_r1000/HFfZ_1841da_128 rc=0 9.56 s nt=2 Picard iterations mean=2.000000e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/pulse_r1/HFfZ_1841da_128 rc=0 8.53 s nt=2 Picard iterations mean=2.961538e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/pulse_r1/HFfZ_1841da_256 rc=0 10.11 s nt=4 Picard iterations mean=2.976923e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/pulse_r1/HFfZ_1841da_64 rc=0 5.49 s nt=2 Picard iterations mean=2.869231e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_early_T/HFfZ_1841da_1 rc=0 2.84 s nt=2 Picard iterations mean=3.352941e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_1 rc=0 3.26 s nt=2 Picard iterations mean=3.352941e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_early_T/HFfZ_1841da_16 rc=0 12.48 s nt=4 Picard iterations mean=3.015686e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_16 rc=0 13.31 s nt=4 Picard iterations mean=2.988235e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_early_T/HFfZ_1841da_2 rc=0 3.87 s nt=2 Picard iterations mean=2.666667e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_2 rc=0 4.27 s nt=2 Picard iterations mean=2.666667e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_early_T/HFfZ_1841da_4 rc=0 6.31 s nt=2 Picard iterations mean=2.369231e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_4 rc=0 6.17 s nt=2 Picard iterations mean=2.369231e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_early_T/HFfZ_1841da_8 rc=0 10.71 s nt=2 Picard iterations mean=2.165354e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_early_T/HFfZ_1841da_8 rc=0 9.79 s nt=2 Picard iterations mean=2.165354e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_T/HFfZ_1841da_1 rc=0 2.19 s nt=2 Picard iterations mean=2.823529e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_1 rc=0 3.20 s nt=2 Picard iterations mean=3.058824e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_T/HFfZ_1841da_16 rc=0 9.05 s nt=4 Picard iterations mean=2.098039e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_16 rc=0 9.23 s nt=4 Picard iterations mean=2.098039e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_T/HFfZ_1841da_2 rc=0 4.01 s nt=2 Picard iterations mean=2.454545e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_2 rc=0 4.00 s nt=2 Picard iterations mean=2.454545e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_T/HFfZ_1841da_4 rc=0 6.58 s nt=2 Picard iterations mean=2.338462e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_4 rc=0 6.06 s nt=2 Picard iterations mean=2.338462e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax1_T/HFfZ_1841da_8 rc=0 9.03 s nt=2 Picard iterations mean=2.173228e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax1_T/HFfZ_1841da_8 rc=0 9.32 s nt=2 Picard iterations mean=2.173228e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax2_early_T/HFfZ_1841da_1 rc=0 2.76 s nt=2 Picard iterations mean=4.058824e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_1 rc=0 2.73 s nt=2 Picard iterations mean=4.058824e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax2_early_T/HFfZ_1841da_16 rc=0 10.29 s nt=4 Picard iterations mean=2.117647e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_16 rc=0 10.69 s nt=4 Picard iterations mean=2.117647e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax2_early_T/HFfZ_1841da_2 rc=0 4.00 s nt=2 Picard iterations mean=3.151515e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_2 rc=0 4.02 s nt=2 Picard iterations mean=3.151515e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax2_early_T/HFfZ_1841da_4 rc=0 6.12 s nt=2 Picard iterations mean=2.538462e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_4 rc=0 6.17 s nt=2 Picard iterations mean=2.538462e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/relax2_early_T/HFfZ_1841da_8 rc=0 8.85 s nt=2 Picard iterations mean=2.259843e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/relax2_early_T/HFfZ_1841da_8 rc=0 8.87 s nt=2 Picard iterations mean=2.259843e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_h40/HFfZ_1841da_64 rc=1 6.95 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_h40/HFfZ_1841da_64 rc=0 55.45 s nt=2 Picard iterations mean=4.991984e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat/HFfZ_1841da_128 rc=1 16.99 s nt=2  reach theta 4 phi 96 
+FULL_b sp/rlat/HFfZ_1841da_128 rc=0 126.52 s nt=2 Picard iterations mean=4.546092e+00 reach theta 4 phi 96 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat/HFfZ_1841da_32 rc=1 2.43 s nt=4  reach theta 4 phi 26 
+FULL_b sp/rlat/HFfZ_1841da_32 rc=0 8.31 s nt=4 Picard iterations mean=4.991968e+00 reach theta 4 phi 26 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat/HFfZ_1841da_64 rc=1 5.72 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat/HFfZ_1841da_64 rc=0 40.65 s nt=2 Picard iterations mean=4.991984e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5/HFfZ_1841da_128 rc=1 17.47 s nt=2  reach theta 4 phi 96 
+FULL_b sp/rlat_om5/HFfZ_1841da_128 rc=0 155.18 s nt=2 Picard iterations mean=4.997996e+00 reach theta 4 phi 96 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5/HFfZ_1841da_32 rc=1 1.84 s nt=4  reach theta 4 phi 26 
+FULL_b sp/rlat_om5/HFfZ_1841da_32 rc=0 7.06 s nt=4 Picard iterations mean=5.008032e+00 reach theta 4 phi 26 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5/HFfZ_1841da_64 rc=1 7.26 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5/HFfZ_1841da_64 rc=0 36.36 s nt=2 Picard iterations mean=4.997996e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZR0_72ca83_1 rc=1 6.42 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_1 rc=0 35.32 s nt=2 Picard iterations mean=4.997912e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZR0_72ca83_2 rc=1 8.00 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_2 rc=0 74.27 s nt=2 Picard iterations mean=4.997910e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZR0_72ca83_4 rc=1 14.14 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_4 rc=0 126.77 s nt=2 Picard iterations mean=4.002091e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZR0_72ca83_8 rc=1 23.29 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZR0_72ca83_8 rc=0 221.60 s nt=2 Picard iterations mean=3.827974e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZ_1841da_1 rc=1 6.45 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZ_1841da_1 rc=0 42.75 s nt=2 Picard iterations mean=4.990706e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZ_1841da_2 rc=1 11.00 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZ_1841da_2 rc=0 74.43 s nt=2 Picard iterations mean=4.997996e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZ_1841da_4 rc=1 14.12 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZ_1841da_4 rc=0 127.98 s nt=2 Picard iterations mean=4.002083e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_om5_T/HFfZ_1841da_8 rc=1 23.41 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_om5_T/HFfZ_1841da_8 rc=0 219.72 s nt=2 Picard iterations mean=3.834819e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_h40/HFfZ_1841da_64 rc=0 76.86 s nt=2 Picard iterations mean=4.012024e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_h40/HFfZ_1841da_64 rc=0 77.35 s nt=2 Picard iterations mean=4.012024e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZR0_72ca83_1 rc=1 5.36 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZR0_72ca83_1 rc=0 37.59 s nt=2 Picard iterations mean=4.991649e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZR0_72ca83_2 rc=1 8.16 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZR0_72ca83_2 rc=0 60.08 s nt=2 Picard iterations mean=4.563218e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZR0_72ca83_4 rc=1 12.92 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZR0_72ca83_4 rc=0 110.98 s nt=2 Picard iterations mean=3.999477e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZR0_72ca83_8 rc=1 24.16 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZR0_72ca83_8 rc=0 242.22 s nt=2 Picard iterations mean=3.799739e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZ_1841da_1 rc=1 6.06 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZ_1841da_1 rc=0 42.81 s nt=2 Picard iterations mean=4.985130e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt/HFfZ_1841da_128 rc=0 308.18 s nt=2 Picard iterations mean=3.980962e+00 reach theta 4 phi 96 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt/HFfZ_1841da_128 rc=0 308.16 s nt=2 Picard iterations mean=3.980962e+00 reach theta 4 phi 96 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZ_1841da_2 rc=1 10.44 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZ_1841da_2 rc=0 64.50 s nt=2 Picard iterations mean=4.537074e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt/HFfZ_1841da_32 rc=0 15.19 s nt=4 Picard iterations mean=5.008032e+00 reach theta 4 phi 26 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt/HFfZ_1841da_32 rc=0 14.93 s nt=4 Picard iterations mean=5.004016e+00 reach theta 4 phi 26 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZ_1841da_4 rc=1 13.92 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZ_1841da_4 rc=0 126.80 s nt=2 Picard iterations mean=3.999479e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt/HFfZ_1841da_64 rc=0 69.38 s nt=2 Picard iterations mean=4.012024e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt/HFfZ_1841da_64 rc=0 67.06 s nt=2 Picard iterations mean=4.012024e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlat_T/HFfZ_1841da_8 rc=1 24.09 s nt=2  reach theta 4 phi 49 
+FULL_b sp/rlat_T/HFfZ_1841da_8 rc=0 242.58 s nt=2 Picard iterations mean=3.799685e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5/HFfZ_1841da_128 rc=0 280.19 s nt=2 Picard iterations mean=4.067134e+00 reach theta 4 phi 96 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5/HFfZ_1841da_128 rc=0 285.45 s nt=2 Picard iterations mean=4.065130e+00 reach theta 4 phi 96 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5/HFfZ_1841da_32 rc=0 16.48 s nt=4 Picard iterations mean=5.277108e+00 reach theta 4 phi 26 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5/HFfZ_1841da_32 rc=0 15.35 s nt=4 Picard iterations mean=5.248996e+00 reach theta 4 phi 26 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5/HFfZ_1841da_64 rc=0 69.58 s nt=2 Picard iterations mean=4.641283e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5/HFfZ_1841da_64 rc=0 80.62 s nt=2 Picard iterations mean=4.478958e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZR0_72ca83_1 rc=0 66.80 s nt=2 Picard iterations mean=4.597077e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_1 rc=0 64.18 s nt=2 Picard iterations mean=4.484342e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZR0_72ca83_2 rc=0 128.50 s nt=2 Picard iterations mean=4.009404e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_2 rc=0 129.94 s nt=2 Picard iterations mean=4.006270e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZR0_72ca83_4 rc=0 250.09 s nt=2 Picard iterations mean=4.003659e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_4 rc=0 255.98 s nt=2 Picard iterations mean=4.001568e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZR0_72ca83_8 rc=0 507.55 s nt=2 Picard iterations mean=3.922092e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZR0_72ca83_8 rc=0 479.18 s nt=2 Picard iterations mean=3.935686e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZ_1841da_1 rc=0 75.34 s nt=2 Picard iterations mean=4.263941e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_1 rc=0 74.82 s nt=2 Picard iterations mean=4.252788e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZ_1841da_2 rc=0 135.16 s nt=2 Picard iterations mean=4.009018e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_2 rc=0 136.64 s nt=2 Picard iterations mean=4.005010e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZ_1841da_4 rc=0 286.80 s nt=2 Picard iterations mean=4.003646e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_4 rc=0 283.85 s nt=2 Picard iterations mean=4.001563e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rlatt_om5_T/HFfZ_1841da_8 rc=0 496.84 s nt=2 Picard iterations mean=3.980073e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rlatt_om5_T/HFfZ_1841da_8 rc=0 464.94 s nt=2 Picard iterations mean=3.969324e+00 reach theta 4 phi 49 lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_cart/HCFfZ_d842e3_128 rc=0 5.64 s nt=2 Picard iterations mean=3.739464e+00  
+FULL_b sp/rsw_cart/HCFfZ_d842e3_128 rc=0 4.95 s nt=2 Picard iterations mean=3.739464e+00  
+FULL_a sp/rsw_cart/HCFfZ_d842e3_64 rc=0 3.34 s nt=2 Picard iterations mean=3.720307e+00  
+FULL_b sp/rsw_cart/HCFfZ_d842e3_64 rc=0 3.67 s nt=2 Picard iterations mean=3.720307e+00  
+FULL_a sp/rsw_h20/HFfZ_1841da_128 rc=0 10.49 s nt=2 Picard iterations mean=4.030651e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_h20/HFfZ_1841da_128 rc=0 8.47 s nt=2 Picard iterations mean=3.904215e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw/HFfZ_1841da_128 rc=0 8.77 s nt=2 Picard iterations mean=4.030651e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw/HFfZ_1841da_128 rc=0 8.61 s nt=2 Picard iterations mean=3.904215e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw/HFfZ_1841da_256 rc=0 10.25 s nt=4 Picard iterations mean=3.915709e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw/HFfZ_1841da_256 rc=0 9.97 s nt=4 Picard iterations mean=3.904215e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw/HFfZ_1841da_64 rc=0 7.97 s nt=2 Picard iterations mean=7.235741e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw/HFfZ_1841da_64 rc=0 5.52 s nt=2 Picard iterations mean=3.885057e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_r1000/HFfZ_1841da_128 rc=0 9.77 s nt=2 Picard iterations mean=3.896552e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_r1000/HFfZ_1841da_128 rc=0 8.66 s nt=2 Picard iterations mean=3.896552e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_r1000/HFfZ_1841da_64 rc=0 5.32 s nt=2 Picard iterations mean=3.885057e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_r1000/HFfZ_1841da_64 rc=0 5.29 s nt=2 Picard iterations mean=3.885057e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_cart/HCFfZ_d842e3_128 rc=0 6.02 s nt=2 Picard iterations mean=3.406130e+00  
+FULL_b sp/rswt_cart/HCFfZ_d842e3_128 rc=0 5.31 s nt=2 Picard iterations mean=3.406130e+00  
+FULL_a sp/rswt_cart/HCFfZ_d842e3_64 rc=0 2.74 s nt=2 Picard iterations mean=3.402299e+00  
+FULL_b sp/rswt_cart/HCFfZ_d842e3_64 rc=0 2.65 s nt=2 Picard iterations mean=3.402299e+00  
+FULL_a sp/rswt_h20/HFfZ_1841da_128 rc=0 18.57 s nt=2 Picard iterations mean=3.264368e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_h20/HFfZ_1841da_128 rc=0 18.55 s nt=2 Picard iterations mean=3.264368e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZR0_72ca83_1 rc=0 7.74 s nt=2 Picard iterations mean=4.054902e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_1 rc=0 8.71 s nt=2 Picard iterations mean=3.925490e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZR0_72ca83_2 rc=0 13.75 s nt=2 Picard iterations mean=3.299413e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_2 rc=0 11.84 s nt=2 Picard iterations mean=2.996086e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZR0_72ca83_4 rc=0 27.68 s nt=2 Picard iterations mean=3.123167e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_4 rc=0 26.71 s nt=2 Picard iterations mean=2.984360e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZR0_72ca83_8 rc=0 49.16 s nt=2 Picard iterations mean=2.993161e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZR0_72ca83_8 rc=0 48.59 s nt=2 Picard iterations mean=2.979971e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZ_1841da_1 rc=0 9.02 s nt=2 Picard iterations mean=3.992565e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_1 rc=0 9.02 s nt=2 Picard iterations mean=3.869888e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt/HFfZ_1841da_128 rc=0 19.27 s nt=2 Picard iterations mean=3.264368e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt/HFfZ_1841da_128 rc=0 18.32 s nt=2 Picard iterations mean=3.264368e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZ_1841da_2 rc=0 15.53 s nt=2 Picard iterations mean=3.287619e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_2 rc=0 11.95 s nt=2 Picard iterations mean=2.992381e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt/HFfZ_1841da_256 rc=0 18.66 s nt=4 Picard iterations mean=3.268199e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt/HFfZ_1841da_256 rc=0 18.17 s nt=4 Picard iterations mean=3.264368e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZ_1841da_4 rc=0 23.60 s nt=2 Picard iterations mean=3.116683e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_4 rc=0 24.13 s nt=2 Picard iterations mean=2.975892e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt/HFfZ_1841da_64 rc=0 10.67 s nt=2 Picard iterations mean=3.252874e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt/HFfZ_1841da_64 rc=0 9.74 s nt=2 Picard iterations mean=3.252874e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rsw_T/HFfZ_1841da_8 rc=0 47.25 s nt=2 Picard iterations mean=2.991646e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rsw_T/HFfZ_1841da_8 rc=0 45.51 s nt=2 Picard iterations mean=2.973956e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_q/HFfZ_1841da_128 rc=0 16.17 s nt=2 Picard iterations mean=2.003831e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_q/HFfZ_1841da_128 rc=0 15.73 s nt=2 Picard iterations mean=1.716475e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_q/HFfZ_1841da_256 rc=0 16.85 s nt=4 Picard iterations mean=2.003831e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_q/HFfZ_1841da_256 rc=0 16.44 s nt=4 Picard iterations mean=1.697318e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_q/HFfZ_1841da_64 rc=0 9.14 s nt=2 Picard iterations mean=2.003831e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_q/HFfZ_1841da_64 rc=0 8.83 s nt=2 Picard iterations mean=1.701149e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_r1000/HFfZ_1841da_128 rc=0 19.98 s nt=2 Picard iterations mean=3.256705e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_r1000/HFfZ_1841da_128 rc=0 20.03 s nt=2 Picard iterations mean=3.256705e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_r1000/HFfZ_1841da_64 rc=0 9.85 s nt=2 Picard iterations mean=3.237548e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_r1000/HFfZ_1841da_64 rc=0 8.64 s nt=2 Picard iterations mean=3.237548e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZR0_72ca83_1 rc=0 19.81 s nt=2 Picard iterations mean=3.270588e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_1 rc=0 18.79 s nt=2 Picard iterations mean=3.270588e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZR0_72ca83_2 rc=0 32.40 s nt=2 Picard iterations mean=3.013699e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_2 rc=0 32.71 s nt=2 Picard iterations mean=3.013699e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZR0_72ca83_4 rc=0 62.06 s nt=2 Picard iterations mean=2.980450e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_4 rc=0 61.47 s nt=2 Picard iterations mean=2.980450e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZR0_72ca83_8 rc=0 120.69 s nt=2 Picard iterations mean=2.973620e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZR0_72ca83_8 rc=0 122.18 s nt=2 Picard iterations mean=2.973620e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZ_1841da_1 rc=0 19.62 s nt=2 Picard iterations mean=3.249071e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_1 rc=0 19.29 s nt=2 Picard iterations mean=3.249071e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZ_1841da_2 rc=0 37.81 s nt=2 Picard iterations mean=3.009524e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_2 rc=0 37.91 s nt=2 Picard iterations mean=3.009524e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZ_1841da_4 rc=0 66.85 s nt=2 Picard iterations mean=2.978785e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_4 rc=0 66.17 s nt=2 Picard iterations mean=2.978785e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswt_T/HFfZ_1841da_8 rc=0 142.55 s nt=2 Picard iterations mean=2.972973e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswt_T/HFfZ_1841da_8 rc=0 141.55 s nt=2 Picard iterations mean=2.972482e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_h20/HFfZ_1841da_128 rc=0 19.53 s nt=2 Picard iterations mean=4.003831e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_h20/HFfZ_1841da_128 rc=0 17.95 s nt=2 Picard iterations mean=4.011494e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv/HFfZF0_1d8ac5_128 rc=0 19.57 s nt=2 Picard iterations mean=3.973180e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv/HFfZF0_1d8ac5_128 rc=0 20.19 s nt=2 Picard iterations mean=3.988506e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv/HFfZF0_1d8ac5_256 rc=0 20.31 s nt=4 Picard iterations mean=3.977011e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv/HFfZF0_1d8ac5_256 rc=0 19.12 s nt=4 Picard iterations mean=3.988506e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv/HFfZF0_1d8ac5_64 rc=0 10.80 s nt=2 Picard iterations mean=3.961686e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv/HFfZF0_1d8ac5_64 rc=0 10.47 s nt=2 Picard iterations mean=3.977011e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv/HFfZ_1841da_128 rc=0 18.87 s nt=2 Picard iterations mean=4.003831e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv/HFfZ_1841da_128 rc=0 19.07 s nt=2 Picard iterations mean=4.011494e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv/HFfZ_1841da_256 rc=0 20.51 s nt=4 Picard iterations mean=4.003831e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv/HFfZ_1841da_256 rc=0 19.71 s nt=4 Picard iterations mean=4.015326e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv/HFfZ_1841da_64 rc=0 10.64 s nt=2 Picard iterations mean=3.992337e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv/HFfZ_1841da_64 rc=0 10.66 s nt=2 Picard iterations mean=4.000000e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0R0_cfea02_1 rc=0 18.28 s nt=2 Picard iterations mean=3.996078e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_1 rc=0 20.60 s nt=2 Picard iterations mean=4.011765e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0R0_cfea02_2 rc=0 34.19 s nt=2 Picard iterations mean=3.477495e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_2 rc=0 35.06 s nt=2 Picard iterations mean=3.479452e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0R0_cfea02_4 rc=0 64.90 s nt=2 Picard iterations mean=3.079179e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_4 rc=0 65.29 s nt=2 Picard iterations mean=3.079179e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0R0_cfea02_8 rc=0 129.71 s nt=2 Picard iterations mean=3.010259e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0R0_cfea02_8 rc=0 124.91 s nt=2 Picard iterations mean=3.010259e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0_1d8ac5_1 rc=0 21.48 s nt=2 Picard iterations mean=3.936803e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_1 rc=0 21.86 s nt=2 Picard iterations mean=3.951673e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0_1d8ac5_2 rc=0 35.02 s nt=2 Picard iterations mean=3.460952e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_2 rc=0 34.48 s nt=2 Picard iterations mean=3.462857e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0_1d8ac5_4 rc=0 66.22 s nt=2 Picard iterations mean=3.076181e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_4 rc=0 61.69 s nt=2 Picard iterations mean=3.076181e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZF0_1d8ac5_8 rc=0 120.01 s nt=2 Picard iterations mean=3.010319e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZF0_1d8ac5_8 rc=0 120.20 s nt=2 Picard iterations mean=3.010319e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZR0_72ca83_1 rc=0 18.69 s nt=2 Picard iterations mean=4.027451e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_1 rc=0 18.16 s nt=2 Picard iterations mean=4.039216e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZR0_72ca83_2 rc=0 33.88 s nt=2 Picard iterations mean=3.504892e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_2 rc=0 31.75 s nt=2 Picard iterations mean=3.504892e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZR0_72ca83_4 rc=0 65.34 s nt=2 Picard iterations mean=3.110459e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_4 rc=0 62.10 s nt=2 Picard iterations mean=3.110459e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZR0_72ca83_8 rc=0 128.41 s nt=2 Picard iterations mean=3.036639e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZR0_72ca83_8 rc=0 123.21 s nt=2 Picard iterations mean=3.036639e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZ_1841da_1 rc=0 21.38 s nt=2 Picard iterations mean=3.966543e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_1 rc=0 21.53 s nt=2 Picard iterations mean=3.977695e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZ_1841da_2 rc=0 36.33 s nt=2 Picard iterations mean=3.487619e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_2 rc=0 36.34 s nt=2 Picard iterations mean=3.487619e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZ_1841da_4 rc=0 62.26 s nt=2 Picard iterations mean=3.107040e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_4 rc=0 62.26 s nt=2 Picard iterations mean=3.107040e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswtv_T/HFfZ_1841da_8 rc=0 123.15 s nt=2 Picard iterations mean=3.036855e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswtv_T/HFfZ_1841da_8 rc=0 121.44 s nt=2 Picard iterations mean=3.036855e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_h20/HFfZ_1841da_128 rc=0 12.93 s nt=2 Picard iterations mean=6.601533e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_h20/HFfZ_1841da_128 rc=0 8.95 s nt=2 Picard iterations mean=4.015326e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv/HFfZF0_1d8ac5_128 rc=0 12.69 s nt=2 Picard iterations mean=6.616858e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv/HFfZF0_1d8ac5_128 rc=0 8.72 s nt=2 Picard iterations mean=3.984674e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv/HFfZF0_1d8ac5_256 rc=0 9.51 s nt=4 Picard iterations mean=4.042146e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv/HFfZF0_1d8ac5_256 rc=0 8.93 s nt=4 Picard iterations mean=3.984674e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv/HFfZF0_1d8ac5_64 rc=0 8.22 s nt=2 Picard iterations mean=8.444444e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv/HFfZF0_1d8ac5_64 rc=0 4.63 s nt=2 Picard iterations mean=3.984674e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv/HFfZ_1841da_128 rc=0 12.71 s nt=2 Picard iterations mean=6.601533e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv/HFfZ_1841da_128 rc=0 8.65 s nt=2 Picard iterations mean=4.015326e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv/HFfZ_1841da_256 rc=0 11.05 s nt=4 Picard iterations mean=4.057471e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv/HFfZ_1841da_256 rc=0 9.51 s nt=4 Picard iterations mean=4.015326e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv/HFfZ_1841da_64 rc=0 8.83 s nt=2 Picard iterations mean=8.429119e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv/HFfZ_1841da_64 rc=0 5.87 s nt=2 Picard iterations mean=4.015326e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0R0_cfea02_1 rc=0 13.58 s nt=2 Picard iterations mean=6.643137e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_1 rc=0 9.50 s nt=2 Picard iterations mean=4.007843e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0R0_cfea02_2 rc=0 21.80 s nt=2 Picard iterations mean=5.622309e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_2 rc=0 15.25 s nt=2 Picard iterations mean=3.522505e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0R0_cfea02_4 rc=0 35.30 s nt=2 Picard iterations mean=4.916911e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_4 rc=0 25.67 s nt=2 Picard iterations mean=3.001955e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0R0_cfea02_8 rc=0 62.24 s nt=2 Picard iterations mean=4.312164e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0R0_cfea02_8 rc=0 48.16 s nt=2 Picard iterations mean=3.001466e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0_1d8ac5_1 rc=0 13.06 s nt=2 Picard iterations mean=6.542751e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_1 rc=0 9.78 s nt=2 Picard iterations mean=3.947955e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0_1d8ac5_2 rc=0 20.83 s nt=2 Picard iterations mean=5.579048e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_2 rc=0 16.64 s nt=2 Picard iterations mean=3.504762e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0_1d8ac5_4 rc=0 38.34 s nt=2 Picard iterations mean=4.896818e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_4 rc=0 31.48 s nt=2 Picard iterations mean=3.000000e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZF0_1d8ac5_8 rc=0 62.08 s nt=2 Picard iterations mean=4.309582e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZF0_1d8ac5_8 rc=0 63.04 s nt=2 Picard iterations mean=2.998526e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZR0_72ca83_1 rc=0 12.38 s nt=2 Picard iterations mean=6.627451e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_1 rc=0 8.96 s nt=2 Picard iterations mean=4.039216e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZR0_72ca83_2 rc=0 21.85 s nt=2 Picard iterations mean=5.604697e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_2 rc=0 15.07 s nt=2 Picard iterations mean=3.459883e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZR0_72ca83_4 rc=0 38.34 s nt=2 Picard iterations mean=4.902248e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_4 rc=0 27.00 s nt=2 Picard iterations mean=3.005865e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZR0_72ca83_8 rc=0 69.38 s nt=2 Picard iterations mean=4.303859e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZR0_72ca83_8 rc=0 53.27 s nt=2 Picard iterations mean=3.003420e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZ_1841da_1 rc=0 13.03 s nt=2 Picard iterations mean=6.527881e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_1 rc=0 8.94 s nt=2 Picard iterations mean=3.977695e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZ_1841da_2 rc=0 20.88 s nt=2 Picard iterations mean=5.561905e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_2 rc=0 14.78 s nt=2 Picard iterations mean=3.443810e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZ_1841da_4 rc=0 37.37 s nt=2 Picard iterations mean=4.883317e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_4 rc=0 24.96 s nt=2 Picard iterations mean=3.003857e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a sp/rswv_T/HFfZ_1841da_8 rc=0 62.87 s nt=2 Picard iterations mean=4.300737e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/rswv_T/HFfZ_1841da_8 rc=0 50.58 s nt=2 Picard iterations mean=3.001966e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/shd/HFfZ_1841da_32 rc=0 256.66 s nt=4 Picard iterations mean=2.246914e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 1.380160e+05
+FULL_b sp/thin_L16_u/HFfZ_1841da_128 rc=0 70.81 s nt=2 Picard iterations mean=1.950617e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/thin_L16_u/HFfZ_1841da_256 rc=0 90.68 s nt=4 Picard iterations mean=1.687500e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/thin_L16_u/HFfZ_1841da_64 rc=0 38.46 s nt=2 Picard iterations mean=2.135802e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 7.920000e+03
+FULL_b sp/thin_u/HFfZ_1841da_128 rc=0 5.35 s nt=2 Picard iterations mean=1.762500e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/thin_u/HFfZ_1841da_256 rc=0 6.77 s nt=4 Picard iterations mean=1.662500e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b sp/thin_u/HFfZ_1841da_64 rc=0 3.85 s nt=2 Picard iterations mean=2.000000e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 3.520000e+02
+FULL_b ss/n128 rc=0 3.53 s nt=4 Picard iterations mean=2.202532e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 1.190392e+06
+FULL_b ss/n256 rc=0 3.38 s nt=4 Picard iterations mean=2.202532e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 1.190392e+06
+FULL_b ss/n32 rc=0 6.96 s nt=2 Picard iterations mean=2.202532e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 1.190392e+06
+FULL_b ss/n64 rc=0 3.27 s nt=4 Picard iterations mean=2.202532e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 1.190392e+06
+FULL_b p2/pinc_ha20_sr30/HFfZR0_72ca83_64 rc=0 935.40 s nt=4 Picard iterations mean=3.035176e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b p2/pinc_ha20_sr30/HFfZR0_ca772d_64 rc=0 878.84 s nt=4 Picard iterations mean=2.160804e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b p2/pinc_ha20_sr30/HFfZ_1841da_64 rc=0 1104.47 s nt=4 Picard iterations mean=2.123153e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b p2/pinc_ha20_sr30/HFfZ_07d451_64 rc=0 977.31 s nt=4 Picard iterations mean=2.078818e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_a p2/pinc_ha20_sr30_n40/HFfZR0G2_66bdd7_64 rc=1 1.47 s nt=4   
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0G2_66bdd7_64 rc=1 1.07 s nt=4   
+FULL_a p2/pinc_ha20_sr30_n40/HFfZR0G2_d747a5_64 rc=1 0.99 s nt=4   
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0G2_d747a5_64 rc=1 0.96 s nt=4   
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0_72ca83_64 rc=0 423.83 s nt=4 Picard iterations mean=3.075949e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b p2/pinc_ha20_sr30_n40/HFfZR0_ca772d_64 rc=0 459.35 s nt=4 Picard iterations mean=2.405063e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b p2/pinc/HFfZ_1841da_64 rc=0 895.62 s nt=4 Picard iterations mean=2.379310e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b p2/pinc/HFfZ_07d451_64 rc=0 873.24 s nt=4 Picard iterations mean=2.137931e+00  lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+FULL_b lad/atm/FINs_hesdirk2_S_1024 rc=0 50.05 s nt=2 Picard iterations mean=2.284010e+00  
+FULL_b lad/atm/FINs_hesdirk2_S_128 rc=0 1.89 s nt=2 Picard iterations mean=3.288462e+00  
+FULL_b lad/atm/FINs_hesdirk2_S_2048 rc=0 202.47 s nt=2 Picard iterations mean=2.380215e+00  
+FULL_b lad/atm/FINs_hesdirk2_S_256 rc=0 5.12 s nt=2 Picard iterations mean=2.571429e+00  
+FULL_b lad/atm/FINs_hesdirk2_S_32 rc=0 0.72 s nt=2 Picard iterations mean=3.000000e+00  
+FULL_b lad/atm/FINs_hesdirk2_S_512 rc=0 16.98 s nt=2 Picard iterations mean=2.119048e+00  
+FULL_b lad/atm/FINs_hesdirk2_S_64 rc=0 1.32 s nt=2 Picard iterations mean=3.000000e+00  
