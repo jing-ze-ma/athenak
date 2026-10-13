@@ -1063,11 +1063,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // open-od-1013: vet_path = cells | none, shared with vet_sc (VetInit): the step of a
     // ray that jumps more than one lateral cell subdivided at the theta-row / phi-layer
     // nodes where its cells have a chi (or non-thin S) contrast > kVetCornerRatio
-    // (VetGdSweep).  DEFAULT cells on a fresh run; a restart whose file lacks the key
-    // keeps none (bitwise).
+    // (VetGdSweep).  OPT-IN: DEFAULT none (fresh and restart; bitwise 281dd686), cells
+    // only when named.
     if (vgd_on) {
-      const std::string vp = pin->GetOrAddString("rad_m1","vet_path",
-                                 global_variable::restart_run ? "none" : "cells");
+      const std::string vp = pin->GetOrAddString("rad_m1","vet_path", "none");
       if (vp.compare("none") == 0) {
         vet_path = 0;
       } else if (vp.compare("cells") == 0) {

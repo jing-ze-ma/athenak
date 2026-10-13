@@ -1790,11 +1790,10 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     }
   }
   // open-od-1013: vet_path = cells | none (VetPathStep, rad_m1_vetseg.hpp): the x1 step
-  // of a ray steeper than the cell diagonal subdivided at the row / layer nodes.  DEFAULT
-  // cells on a fresh run; a restart whose file lacks the key keeps none (bitwise).
+  // of a ray steeper than the cell diagonal subdivided at the row / layer nodes.  OPT-IN:
+  // DEFAULT none (fresh and restart; bitwise 281dd686), cells only when named.
   {
-    const std::string vp = pin->GetOrAddString("rad_m1", "vet_path",
-                               global_variable::restart_run ? "none" : "cells");
+    const std::string vp = pin->GetOrAddString("rad_m1", "vet_path", "none");
     if (vp.compare("none") == 0) {
       vet_path = 0;
     } else if (vp.compare("cells") == 0) {
