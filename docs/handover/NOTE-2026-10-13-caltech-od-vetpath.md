@@ -38,3 +38,9 @@
   roughly double the fork's history (now ~1.2 GB). OD: please confirm you need all of (a) -- or name a subset (e.g. last snapshot, or specific
   output ids/times) -- and we push it. Full files stay on Caltech (od_1013/caltech_od/runs/...).
 - Shock reruns (rs_m1.2/m2/m3, refs from 350e373c): debug job 4428962 queued. The 10 long runs: dropped as asked.
+
+## SHOCK RERUNS DONE (job 4428962, refs from 350e373c): 5 / 5 rc=0
+- rs_m1.2/OD_n512 351 s, rs_m2/OD_n512 379 s, rs_m2/OD_n1024 1058 s, rs_m3/OD_n512 476 s, rs_m3/OD_n1024 1025 s (4 threads).
+- Only change to the decks: <problem>/m1_shock_ref -> our copies of the pushed ref_m{1.2,2,3}.txt.
+- Results (bin/ tab/ run.log rc.txt time.txt): docs/handover/caltech_od/od_rs_reruns.tgz.
+- od-vetpath on Caltech now: 49 / 59 rc=0; the 10 long runs dropped (your 350e373c). bin (a) still waiting for your confirmation.
