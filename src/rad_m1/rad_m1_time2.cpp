@@ -138,6 +138,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // P = 100, tau_lambda = 1e5; `start` = plm a_f of the stage-start a plus the rest as a
   // face mean, also unstable there; `central` = a_f the mean of the two cells, E_f plm)
   t2_afmode = 2;
+  // open-ot-1013 time2_enth_be (HIDDEN TERM; read only when named): with time2_enth_vel =
+  // central the stage solves build a_f as the mean of the two cells, but the backward-Euler
+  // solves of the same run (the start step, the time2_start slope probe, the rotation
+  // probe, the step after a failed stage) take implicit_enthalpy's own a_f (plm: the
+  // 4-point plm mean).  That changes the operator for one step of length dt, an O(dt)
+  // term of the T ladders (rw_p10t100 E / eint 1.78 / 1.84 at l 16-32).  true: those
+  // solves take the stage rule too.
+  if (pin->DoesParameterExist("rad_m1", "time2_enth_be")) {
+    t2_enth_be = pin->GetBoolean("rad_m1", "time2_enth_be");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_enth_vel")) {
     std::string ev = pin->GetString("rad_m1", "time2_enth_vel");
     if (ev.compare("old") == 0) {
@@ -568,6 +578,16 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   pred_ok = false;
   pred2_ok = false;
   t2_solve = M1_T2S_NONE;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::T2EnthBe
+//! \brief open-ot-1013 time2_enth_be: this (non-stage, backward-Euler) solve of a hesdirk2
+//! run builds the enthalpy face a_f with the stage rule (time2_enth_vel = central)
+
+bool RadiationM1::T2EnthBe() const {
+  return t2_enth_be && (time_scheme == M1_TIME_HESDIRK2) && (t2_afmode == 2) &&
+         (t2_solve != M1_T2S_STAGE1) && (t2_solve != M1_T2S_STAGE2);
 }
 
 //----------------------------------------------------------------------------------------

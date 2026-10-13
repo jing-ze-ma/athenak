@@ -3128,7 +3128,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     if (impl_enth != M1_IENTH_UPWIND) {
       std::cout << "         implicit_enthalpy="
-                << ((impl_enth == M1_IENTH_PLM) ? "plm" : (impl_enth == M1_IENTH_PLMC) ? "plmc"
+                << ((impl_enth == M1_IENTH_PLM) ? "plm"
+                    : (impl_enth == M1_IENTH_PLMC) ? "plmc"
                     : (impl_enth == M1_IENTH_LIN) ? "lin" : "central")
                 << " (deferred correction)" << std::endl;
     }
@@ -4996,8 +4997,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool enth2 = (enm != M1_IENTH_UPWIND);
   const int ngh = indcs.ng;
   // hesdirk2 stage solve, time2_enth_vel = start: see M1EnthCorrT
-  const bool t2vs = (t2_afmode != 0) && impl_vimp &&
-                    (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  const bool t2vs = ((t2_afmode != 0) && impl_vimp &&
+                     (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2)) ||
+                    (impl_vimp && T2EnthBe());
   const bool t2afc = (t2_afmode == 2);
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
   // bubbles-1012: Marshak (vacuum) transverse faces, F_f = c q E_c outward
@@ -10301,8 +10303,8 @@ void RadiationM1::ImplicitVimpBuild() {
   const Real jsc = impl_vimp_jscale;
   // hesdirk2, time2_enth_vel = start: the plm face a is built from the stage-start a
   // (a - DA) and DA enters as its face mean (M1EnthEfT)
-  const bool t2vs = (t2_afmode != 0) && (t2_solve == M1_T2S_STAGE1 ||
-                                          t2_solve == M1_T2S_STAGE2);
+  const bool t2vs = ((t2_afmode != 0) && (t2_solve == M1_T2S_STAGE1 ||
+                                           t2_solve == M1_T2S_STAGE2)) || T2EnthBe();
   const bool t2afc = (t2_afmode == 2);
   const int bda = b + M1_IV_DA;
   // m1-sph2 (tests_m1/runs_5h_sph2): on the spherical-polar wedge the face-flux rows
@@ -11239,7 +11241,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (t2st) {impl_lin_tol = (t2_lin_tol > 0.0) ? t2_lin_tol : (t2_lin_fac*impl_lin_tol);}
   auto t2i_ = t2inc;
   const bool t2k = (t2s != M1_T2S_NONE);
-  const bool t2vs = t2st && (t2_afmode != 0) && impl_vimp && trans;
+  const bool t2vs = ((t2st && (t2_afmode != 0)) || T2EnthBe()) && impl_vimp && trans;
   const bool t2afc = (t2_afmode == 2);
   const bool t2dav = t2vs && (t2_afmode == 1);   // the DA split is needed
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
