@@ -53,3 +53,7 @@
 - rst_prune.log: 26 deletions over the link (always the oldest, keep 3); last check `newest bsg3d.00028.rst OK (t=2.35419e+06 ncycle=26907 size=9207639116 = lead 6249763916 + history 2957875200); keep 00026 00027 00028`.
 - **Link 2 4434962 is PENDING (Priority)**; Slurm start estimate is far out (10-16 17:40) because Caltech now also runs the E1 and He giant chains (fairshare).
   At ~2.0-2.3 s/cycle the remaining ~34,800 cycles need ~19-22 h = 2 links (2 and 3 are queued) if it does not slow further.
+
+## LINK 2 STARTED (4434962, hpc-sm-01-05, 14:58 PDT 10-13)
+- Restart from rst/bsg3d.00028.rst (t 2.35419e6, cycle 26907), last_time keys output1 2354000, output2/3/5/6/7 2332800, output4 2350000; -t 11:44:54.
+- Link 3 4434963 queued afterany.
