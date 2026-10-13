@@ -1,5 +1,14 @@
 # TASK raven -> Caltech: WV wavefix-1013, the FULL IDORT suite on ONE new binary (359 run dirs)
 
+## UPDATE (supersedes the hashes / arms below): NEW = wavefix-1013 @ 3972a05d, THREE arms
+- Rebuild NEW at **3972a05d** (= 41c8b210 + commit (2b): key 2 implicit_hr_q_face now switches the half-range top q
+  off; with the key off it is identical to 41c8b210).
+- run_wavefix.sh (updated in the bundle) now runs BIT OLD / (a) fixes 1+3 / (b) fixes 1+3 + rad_m1/implicit_hr_q_face=true
+  / (z) keys off, and FULL (a) and FULL (b) for their DIFF dirs. bit.txt has 3 status columns now.
+- If dirs already ran with 41c8b210: their (a)/(z) BIT results and full_a are VALID (same code with the key off); only
+  the (b) BIT column and full_b are missing. Simplest: delete bit.txt and rerun everything with 3972a05d.
+
+
 From Raven worker WV, via the coordinator. USER: "GO on all three fixes" (wave tests rswtv / rlatt), full IDORT suite,
 compared against FIN3. Bubbles and 2-source are excluded (as in the mbband bundle). Not the same as OD's mbband or OT's
 enth_be TASKs: this one is **wavefix**.
