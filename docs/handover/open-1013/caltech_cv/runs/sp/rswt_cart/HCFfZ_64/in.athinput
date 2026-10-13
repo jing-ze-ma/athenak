@@ -39,6 +39,7 @@ rsolver                      = hllc
 gamma                        = 1.666666666666667
 
 <rad_m1>
+implicit_cs2_vimp        = false
 c_light                      = 1.0
 chat_over_c                  = 1.0
 e_floor                      = 1.0e-30

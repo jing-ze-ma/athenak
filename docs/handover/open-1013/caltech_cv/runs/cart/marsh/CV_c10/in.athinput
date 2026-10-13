@@ -68,6 +68,7 @@ rsolver     = hllc
 gamma       = 1.666666666666667
 
 <rad_m1>
+implicit_cs2_vimp        = false
 implicit_thin_hcsf       = j
 implicit_thin_js_gd      = x1
 implicit_thin_bq_gd      = cell

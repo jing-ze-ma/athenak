@@ -73,6 +73,7 @@ rsolver     = hllc
 gamma       = 1.666666666666667
 
 <rad_m1>
+implicit_cs2_vimp        = false
 vet_tensor               = full
 implicit_flux_faces      = all
 implicit_flux_beam       = halfrange

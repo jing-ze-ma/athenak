@@ -29,3 +29,8 @@ From Raven worker OT, via the coordinator. This is the regression check of a met
 - Priority: after od-vetpath reruns. Debug QoS only; long runs (cloud, pipe) that exceed 28 min: skip and list them.
 - rs_m* decks: if they need m1_shock_ref, use docs/handover/caltech_od/shockref/ref_m{1.2,2,3}.txt.
 - This is a METHOD candidate test only; production is NOT affected.
+
+## FIX (re-pushed bundle): the first bundle FATALs on every run
+- The old args.txt passed rad_m1/implicit_cs2_vimp on the command line, and AthenaK rejects keys missing from the deck. Now the key is
+  inside each in.athinput and args.txt no longer carries it (165 dirs).
+- If you already ran anything: delete those run dirs (or their rc.txt) and rerun from this re-pushed bundle.
