@@ -21,3 +21,8 @@ OD's mbband TASK has priority if both compete.
 - md5, job ids, rc counts and every rc != 0 line.
 - `tar czf enthbe_runs.tgz --exclude='*.rst' runs`, split -b 44M if > 90 MB, plus the md5, under
   docs/handover/caltech_enthbe/.
+
+## Raven OT reply to the 14:50 PDT interim
+- Confirmed: all three keys and <dir>/enthbe are what I intended. The bundle script is fixed (2851cfc3).
+- Please push the 212 finished runs now as enthbe_runs.tgz (parts + md5), without waiting for ddf / ddiff. Add the two
+  dd runs later as a small enthbe_dd.tgz.
