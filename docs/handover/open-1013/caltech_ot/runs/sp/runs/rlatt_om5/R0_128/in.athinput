@@ -1,0 +1,168 @@
+<job>
+basename                     = sp
+
+<mesh>
+nghost                       = 2
+nx1                          = 16
+x1min                        = 1.0
+x1max                        = 2.0
+ix1_bc                       = reflect
+ox1_bc                       = reflect
+nx2                          = 4
+x2min                        = 1.1707963267948966
+x2max                        = 1.9707963267948967
+ix2_bc                       = reflect
+ox2_bc                       = reflect
+nx3                          = 128
+x3min                        = 0
+x3max                        = 1.0471975511965976
+ix3_bc                       = periodic
+ox3_bc                       = periodic
+use_spherical_polar          = true
+
+<meshblock>
+nx1                          = 16
+nx2                          = 4
+nx3                          = 128
+
+<time>
+evolution                    = dynamic
+integrator                   = rk2
+cfl_number                   = 0.3
+nlim                         = 1000000
+tlim                         = 4
+ndiag                        = 1000000
+
+<hydro>
+eos                          = ideal
+reconstruct                  = plm
+rsolver                      = hllc
+gamma                        = 1.666666666666667
+
+<rad_m1>
+vet_gd_rotate_dt         = 0
+vet_gd_rotate_every      = 0
+vet_rotate_avg           = 0
+c_light                      = 1.0
+chat_over_c                  = 1.0
+e_floor                      = 1.0e-30
+opacity                      = const
+kappa_p                      = 1.0
+kappa_e                      = 1.0
+kappa_f                      = 1.0
+kappa_s                      = 10.0
+arad                         = 3.0e10
+coupling                     = true
+gas_feedback                 = true
+transport                    = implicit
+implicit_cfl                 = 1.0367713590837186
+implicit_solver              = bicgstab
+implicit_precond             = line
+implicit_maxit               = 200
+implicit_tol                 = 1.0e-12
+implicit_lin_tol             = 1.0e-13
+implicit_closure_lag         = step
+marshak_q                    = 0.5
+ic_rad                       = none
+implicit_bc_x1min            = reflect
+implicit_bc_x1max            = marshak
+implicit_ebath_x1max         = 0.03
+closure                      = vet_col
+vet_gd                       = true
+vet_gd_replace               = true
+vet_col_lat_taucut           = 30.0
+vet_gd_gl_nmu                = 10
+vet_gd_gl_nphi               = 12
+vet_gd_gl_stagger            = true
+vet_col_lat_offdiag          = operator
+implicit_op_stencil          = true
+vet_gd_tangential            = false
+vet_gd_wall_interp           = true
+vet_gd_twin                  = true
+vet_gd_twin_fuse             = true
+vet_gd_twin_det              = true
+vet_source_noesrc            = true
+vet_scatter                  = true
+vet_scatter_form             = ma
+vet_scatter_j                = relaxed
+implicit_face_opac_n         = true
+implicit_pos_floor           = true
+implicit_pos_floor_solve     = true
+vet_gd_allow_clamp           = true
+implicit_flux                = blend
+implicit_flux_faces          = all
+implicit_flux_beam           = halfrange
+implicit_blend               = idort_f
+implicit_blend_tau0          = 1
+implicit_blend_alpha         = 1
+implicit_blend_flo           = 0.3
+implicit_blend_fhi           = 0.6
+implicit_blend_xthin         = 0
+implicit_blend_xthin_mode    = all
+implicit_blend_xthin_wmin    = 0.0
+implicit_blend_xthin_r0      = 1.5
+implicit_hr_recon            = dc
+implicit_hr_recon_fresh      = 2
+implicit_hr_damp             = 0.0
+implicit_hr_pos              = kill
+implicit_thin_switch         = fse
+implicit_thin_corr           = hc
+implicit_thin_recon          = jse
+implicit_thin_bq             = lin
+time_scheme                  = hesdirk2
+time2_vet_col                = predict
+implicit_vimp                = true
+time2_vstage                 = true
+vet_bc_diff                  = face
+implicit_thin_hcsf           = j
+implicit_thin_js_gd          = x1
+implicit_thin_bq_gd          = cell
+implicit_thin_hcface         = tau
+implicit_thin_hcface_gd      = x1
+vet_seg                      = jump
+vet_gd_symref                = col
+time2_vet_col_source         = blend
+implicit_gas_src             = conservative2
+implicit_cs2_hll             = drag
+implicit_cs2_shift           = false
+implicit_vimp_bc             = true
+time2_vet_sc                 = predict
+time2_pred_cap               = 0.5
+time2_start                  = be
+vet_gd_rotate_align          = true
+vet_gd_rotate_t0             = 0.0
+vet_gd_rotate_stretch        = 0.02
+vet_gd_rotate_slope          = correct
+implicit_thin_js_face        = hcface
+vet_gd_twin_state            = trans
+
+<problem>
+pgen_name                    = rad_m1_beam
+m1_test                      = sph_shell
+gas_rho                      = 1.0
+gas_temp                     = 1.0e-16
+e_out                        = 0.03
+e_amp                        = 0.0
+r0                           = 2.0
+width                        = 0.2
+gas_teq                      = true
+lat_amp                      = 0.1
+lat_l2                       = 0.0
+lat_l3                       = 1.0
+gas_rot                      = 0.0050000000000000001
+
+<output1>
+file_type                    = bin
+variable                     = m1
+dt                           = 0.5
+
+<output2>
+file_type                    = bin
+variable                     = hydro_w
+dt                           = 0.5
+
+<output3>
+file_type                    = bin
+variable                     = hydro_u
+dt                           = 0.5
+
