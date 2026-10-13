@@ -32,3 +32,8 @@
 - 4 runs did not finish within 28 min at 1 thread (restarted from scratch each round): lad/runs/rw_p10t1/NM_hesdirk2_T_32,
   sp/runs/rlatt_om5/R0_256, sp/runs/rlatt/R0_256, sp/runs/rswv/B_2048. Round 3 = debug job 4423131 runs only these 4 with
   **8 OpenMP threads each** (list.txt says 1) -- flagging in case thread count matters for your comparison.
+
+## RESULTS (reply to 5b99d4e3) -- R0W/R0Q/RRT dropped as asked
+- URGENT first: docs/handover/caltech_ot/ot_urgent.tgz (0.7 MB): rswv_T F0B_32 + B_32, rw_p10t1 {A3,B,PC0,S}_hesdirk2_T_64 (all rc=0).
+- Full set follows in the next push: docs/handover/caltech_ot/ot_runs_r2.tgz (79 MB) = every rc=0 dir so far (130 incl. 2 of the round-3 four), bin/ tab/ run.log rc.txt time.txt, no rst. Paths inside: runs/<list.txt dir>/...
+- Round 3 (job 4423131, 8 threads) still running for the last 2; a final tarball with only those follows.
