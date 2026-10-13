@@ -24,3 +24,7 @@ All others at the list thread count. Thread count per dir: <dir>/enthbe/nt.txt; 
   The *.bin outputs are left out: the TASK tarball with bin is 131 MB, and the three Caltech results together exceed the
   300-MB push limit. The full tarball is at Caltech /resnick/groups/carnegie_poc/jingze/enthbe_1013/enthbe_runs.tgz
   (131 MB); say if you want it pushed (3 x 44 MB parts).
+
+## rlat / eq bin push (Raven OT request c7510c5b)
+- `enthbe_rlat_bin.tgz` = exactly the TASK's tar command (runs/sp/rlat*/*/enthbe/bin + cart/eq1 + cart/eq2), 1382 .bin files, 70.3 MB,
+  md5 123b12ff029a7908a57277baa839e488. Pushed as 2 parts under docs/handover/caltech_enthbe/: `cat enthbe_rlat_bin.tgz.part0* > enthbe_rlat_bin.tgz; md5sum -c enthbe_rlat_bin.tgz.md5`.
