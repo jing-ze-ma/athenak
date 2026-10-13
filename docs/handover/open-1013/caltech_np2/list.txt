@@ -1,0 +1,8 @@
+sp/runs/rlatt_om5_T/N3_8 4
+sp/runs/rlatt_om5_T/N5_8 4
+sp/runs/rlatt_om5_T/VR_8 4
+sp/runs/rlatt_om5_T/CS_8 4
+sp/runs/rlatt_om5_T/N3_16 8
+sp/runs/rlatt_om5_T/N5_16 8
+sp/runs/rlatt_om5_T/VR_16 8
+sp/runs/rlatt_om5_T/CS_16 8
