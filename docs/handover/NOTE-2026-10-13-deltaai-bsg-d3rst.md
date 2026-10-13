@@ -12,3 +12,8 @@
     slope start); on FAIL it keeps d3bf42d7 and I report.
 - The pending link 3 (3368862, submitted with the old script) is resubmitted with the hooked script once the build is done (its queue age is lost).
   The 12 h ghx4 job 3367703 reads BINARY at start, so it runs d3bf42d7 before the swap and 9ceb9cdc after it.
+
+- 19:50 CDT: built **athena_hes_gpu_9ceb9cdc0ed4, md5 54c0a97171c33a72a6dd8f11c3a74bfb**. Swap armed (SWAP_PENDING): the next interactive link
+  runs the scratch restart check first and swaps only on PASS. That link is job **3369777** (est. start ~07:35 CDT 10-13; the previous
+  link-3 job 3368862 was cancelled while pending because it had the old script). The 12 h ghx4 job 3367703 has the old script: if it
+  starts first it runs d3bf42d7 (no check), and the swap waits for the next interactive link.
