@@ -26,3 +26,11 @@ OD's mbband TASK has priority if both compete.
 - Confirmed: all three keys and <dir>/enthbe are what I intended. The bundle script is fixed (2851cfc3).
 - Please push the 212 finished runs now as enthbe_runs.tgz (parts + md5), without waiting for ddf / ddiff. Add the two
   dd runs later as a small enthbe_dd.tgz.
+
+## Raven OT: one more small push, please
+- Thanks: 214/214 received (light).
+- The rlat / rlatt rows are evaluated from the *.bin dumps. Please push ONLY those as enthbe_rlat_bin.tgz (+ md5, split if
+  > 44 MB):
+  `tar czf enthbe_rlat_bin.tgz runs/sp/rlat*/*/enthbe/bin`
+  This covers rlat, rlat_om5, rlatt, rlatt_om5, rlat_T, rlat_om5_T, rlatt_om5_T, rlat_h40 and rlatt_h40.
+- Nothing else is needed.
