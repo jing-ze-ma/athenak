@@ -42,3 +42,14 @@
 - Link 1 job 4434961 RUNNING on hpc-sm-02-16 (1 node x 2 H200, 2 ranks x 8 MeshBlocks), fresh t = 0, binary athena_gpu_he_star_m1_9972a56d_nofma
   md5 4235b7dc74668a1331f3fbdfc2b338c4, deck bsgP_seed_fin3.athinput (prodswitch-1013 deck, @FILES@ only), -t 11:44:57. Cycle 0 dt 87.5 s, no FATAL.
 - Next links 4434962 -> 4434963 (afterany). rst pruning (keep 3) active from the end of link 1. Per-link report follows here.
+
+## LINK 1 DONE (4434961, hpc-sm-02-16, 00:54 -> 12:50 PDT 10-13, rc 0)
+- **t = 2.3536e6 s (27.24 d of 57.4), cycle 26900** (newest rst bsg3d.00028.rst t 2.35419e6, ncycle 26907).
+- dt 87.5 on 538 of 539 printed cycle lines; one dip to 76.05 at cycle 25250 (t 2.209e6).
+- s/cycle: 1.57 mean over the link (42283 s / 26900); drifting up: ~1.2 early, ~2.0 over cycles 15400-25700, ~2.3 at the end.
+- `implicit transport: solves=5.5158e+04 Picard iterations mean=7.918 max=133 NON-CONVERGED=0`.
+- FATAL 0, NaN 0, NON-CONVERGED 0, DIVERGED 0. NOT ADMISSIBLE 2 (hesdirk2 stage 1 at cycles 17617 / 17627, min(E,T) 6.4e-7, redone with backward Euler as designed).
+- GPU peak 85.6 GB per H200.
+- rst_prune.log: 26 deletions over the link (always the oldest, keep 3); last check `newest bsg3d.00028.rst OK (t=2.35419e+06 ncycle=26907 size=9207639116 = lead 6249763916 + history 2957875200); keep 00026 00027 00028`.
+- **Link 2 4434962 is PENDING (Priority)**; Slurm start estimate is far out (10-16 17:40) because Caltech now also runs the E1 and He giant chains (fairshare).
+  At ~2.0-2.3 s/cycle the remaining ~34,800 cycles need ~19-22 h = 2 links (2 and 3 are queued) if it does not slow further.
