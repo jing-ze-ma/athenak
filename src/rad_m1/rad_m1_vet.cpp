@@ -2430,7 +2430,9 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       // every set VetRotBeta can give: double-Gauss beta = q 2 pi/nphi, ring beta =
       // 0.8 (q - 1/2) 2 pi/N, q in [0, 1]
       const int nsam = 512;
-      auto keep = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
+      // a real copy (create_mirror, not _view: on a host build the mirror view IS vet_ang)
+      auto keep = Kokkos::create_mirror(Kokkos::HostSpace(), vet_ang);
+      Kokkos::deep_copy(keep, vet_ang);
       std::vector<Real> smn(2*st.nrl, 1.0e300), smx(2*st.nrl, -1.0e300);
       std::vector<Real> sprev(2*st.nrl, 0.0), dmax(2*st.nrl, 0.0);
       for (int qs = 0; qs <= nsam; ++qs) {
