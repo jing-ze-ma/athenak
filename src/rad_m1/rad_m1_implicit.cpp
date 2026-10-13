@@ -14220,6 +14220,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
   }
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
+  // open-ot-1013 DIAGNOSTIC (implicit_cs2_dbg bit 32): the x1 velocity change the
+  // write-back gave the gas (uh/rho - the old-vector v) against the vimp dv the E rows
+  // used (iw_vimp + M1_IV_DV); rank-0 line per solve, the first 64 solves.  Read only.
+  if ((cs2_dbg & 32) && impl_vimp && (iw_vimp >= 0) && have_hydro && feedback &&
+      cs2_dbg_n < 64) {
+    const int ivd = iw_vimp + M1_IV_DV;
+    Real dmax = 0.0, amax = 0.0, pmax = 0.0;
+    Kokkos::parallel_reduce("m1_cs2_dbg32",
+      Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0, ks, js, is},
+                                             {nmb1+1, ke+1, je+1, ie+1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &d,
+                    Real &a, Real &p) {
+        const Real va = uh(m,IM1,k,j,i)/uh(m,IDN,k,j,i) - iw_(m,M1_IW_V1,k,j,i);
+        const Real vp = iw_(m,ivd,k,j,i);
+        d = fmax(d, fabs(va - vp));
+        a = fmax(a, fabs(va));
+        p = fmax(p, fabs(vp));
+      }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(amax), Kokkos::Max<Real>(pmax));
+    if (global_variable::my_rank == 0) {
+      std::cout << "cs2dbg32 solve " << cs2_dbg_n << " t2s " << t2s << " dt " << dt
+                << " max|dv_wb - dv_rows| " << dmax << " max|dv_wb| " << amax
+                << " max|dv_rows| " << pmax << std::endl;
+    }
+    cs2_dbg_n += 1;
+  }
   if (gcs && t2k && coupling && dbg_gas_force && t2s != M1_T2S_STAGE1) {csk1_ok = true;}
   if (gcs) {gcs_first = false;}
   csinc_ok = false;
