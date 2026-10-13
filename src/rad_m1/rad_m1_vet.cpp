@@ -2330,6 +2330,13 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   // per layer, below and above in x2 (x3): floor of the foot offset (one more cell when
   // the offset is within round-off of an integer, where blocks might floor differently).
   // Local rays only (index rl, angle rlist(rl)).
+  // mbband-1013: with the vet_sc set rotation (vsc_rot, VetRotSet) a ray slot's foot
+  // offset moves with the angle while this band is built once, so a turned ray read
+  // ghost cells that were never exchanged (stale intensity: the banded sweep depended on
+  // the MeshBlock layout, J up to 6 % of its maximum on oneo).  The band of each slot is
+  // now the union over the WHOLE rotation range (sampled finely, padded by the largest
+  // offset change between samples, capped at the band w, which already bounds every
+  // rotated set).  Without rotation: as before (bitwise); one MeshBlock: not used.
   {
     auto rlh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), st.rlist);
     Kokkos::realloc(st.rdep, st.nrl, 4);
@@ -2349,6 +2356,46 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
         if (rdh(rl,2*d) > ((d == 0) ? st.w2 : st.w3) ||
             rdh(rl,2*d + 1) > ((d == 0) ? st.w2 : st.w3)) {
           VetFatal("<rad_m1>/closure = vet_sc: per-ray band wider than the band");
+        }
+      }
+    }
+    if (vsc_rot) {
+      // every set VetRotBeta can give: double-Gauss beta = q 2 pi/nphi, ring beta =
+      // 0.8 (q - 1/2) 2 pi/N, q in [0, 1]
+      const int nsam = 512;
+      auto keep = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
+      std::vector<Real> smn(2*st.nrl, 1.0e300), smx(2*st.nrl, -1.0e300);
+      std::vector<Real> sprev(2*st.nrl, 0.0), dmax(2*st.nrl, 0.0);
+      for (int qs = 0; qs <= nsam; ++qs) {
+        const Real q = static_cast<Real>(qs)/nsam;
+        const Real beta = (vet_ring_n > 0) ? 0.8*(q - 0.5)*2.0*M_PI/vet_ring_n
+                                           : q*2.0*M_PI/vet_nphi;
+        VetBuildAngles(beta);
+        auto bh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
+        for (int rl = 0; rl < st.nrl; ++rl) {
+          const int r = rlh(rl);
+          for (int d = 0; d < 2; ++d) {
+            if (d == 1 && !thrd) continue;
+            const Real dxp = (d == 0) ? dx2 : dx3;
+            const Real sh = -dx1*bh(r,1 + d)/(std::fabs(bh(r,0))*dxp);
+            const int x = 2*rl + d;
+            smn[x] = std::min(smn[x], sh);
+            smx[x] = std::max(smx[x], sh);
+            if (qs > 0) {dmax[x] = std::max(dmax[x], std::fabs(sh - sprev[x]));}
+            sprev[x] = sh;
+          }
+        }
+      }
+      Kokkos::deep_copy(vet_ang, keep);   // the current set, bit for bit
+      for (int rl = 0; rl < st.nrl; ++rl) {
+        for (int d = 0; d < 2; ++d) {
+          if (d == 1 && !thrd) continue;
+          const int x = 2*rl + d;
+          const int w = (d == 0) ? st.w2 : st.w3;
+          const int olo = static_cast<int>(std::floor(smn[x] - dmax[x] - 1.0e-9));
+          const int ohi = static_cast<int>(std::floor(smx[x] + dmax[x] + 1.0e-9));
+          rdh(rl,2*d) = std::min(w, std::max(rdh(rl,2*d), std::max(0, -olo)));
+          rdh(rl,2*d + 1) = std::min(w, std::max(rdh(rl,2*d + 1), std::max(0, ohi + 1)));
         }
       }
     }
