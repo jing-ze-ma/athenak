@@ -2182,6 +2182,7 @@ class RadiationM1 {
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
   Real vgd_nclamp_seen = 0.0;
+  Real vgd_npath = 0.0;   // open-od-1013: vet_path subdivided steps (ALL ranks, all sweeps)
   bool vgd_hinw = true;
   int vgd_nb2 = 1, vgd_nb3 = 1;
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3

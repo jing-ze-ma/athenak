@@ -1561,6 +1561,8 @@ void RadiationM1::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
+      std::cout << "<rad_m1> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
+                << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath << std::endl;
       {
         // accel-1009 ragged band: accesses outside a shell's slab (must be 0)
         Real no = 0.0, nt = 0.0;
