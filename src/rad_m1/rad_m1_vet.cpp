@@ -1930,6 +1930,10 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       Kokkos::realloc(vhz_pb, nmb, 2, vet_nray, ncells3, ncells2);
       Kokkos::deep_copy(vhz_pa, 0.0);
       Kokkos::deep_copy(vhz_pb, 0.0);
+      if (vhz_shape) {
+        Kokkos::realloc(vhz_j0, nmb, ncells3, ncells2, ncells1);
+        Kokkos::deep_copy(vhz_j0, 0.0);
+      }
     }
   }
   if (global_variable::my_rank == 0) {
@@ -2032,6 +2036,17 @@ void RadiationM1::VetHorizonInit(ParameterInput *pin) {
   vhz_t0 = pin->GetOrAddReal("rad_m1", "vet_horizon_t0", ts);
   vhz_lo = pin->GetOrAddReal("rad_m1", "vet_horizon_lo", 0.1);
   vhz_hi = pin->GetOrAddReal("rad_m1", "vet_horizon_hi", 0.5);
+  {
+    const std::string gm = pin->GetOrAddString("rad_m1", "vet_horizon_gate", "state");
+    if (gm == "state") {
+      vhz_gmode = 0;
+    } else if (gm == "geom") {
+      vhz_gmode = 1;
+    } else {
+      VetFatal("<rad_m1>/vet_horizon_gate: state | geom");
+    }
+  }
+  vhz_shape = pin->GetOrAddBoolean("rad_m1", "vet_horizon_shape", false);
   if (!(vhz_lo >= 0.0 && vhz_hi > vhz_lo)) {
     VetFatal("<rad_m1>/vet_horizon_lo, vet_horizon_hi: need 0 <= lo < hi");
   }
@@ -2040,7 +2055,8 @@ void RadiationM1::VetHorizonInit(ParameterInput *pin) {
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_horizon = true: light horizon c (t - " << vhz_t0
               << ") of the formal solution (age-moment rays), arrival gate E_h/J_h in ["
-              << vhz_lo << ", " << vhz_hi << "]" << std::endl;
+              << vhz_lo << ", " << vhz_hi << "] gate=" << (vhz_gmode ? "geom" : "state")
+              << " shape=" << vhz_shape << std::endl;
   }
 }
 
@@ -3814,6 +3830,12 @@ void RadiationM1::VetShortCharSweep() {
   if (vhz_on) {
     vhz_nbuild += 1.0;
     if (hza) {vhz_nact += 1.0;}
+    if (std::getenv("VHZ_DBG") != nullptr && global_variable::my_rank == 0) {   // DEBUG
+      auto hh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vhz_cnt);
+      std::cout << "<vhz> cycle=" << pmy_pack->pmesh->ncycle << " L=" << hzl << " Lmax="
+                << VetHorizonLmax(npass) << " active=" << hza << " raw=" << vra_raw
+                << " cut so far=" << hh(0) << std::endl;
+    }
   }
   if (hza && vet_mbs != nullptr) {
     VetFatal("<rad_m1>/vet_horizon: the light horizon is active (L = c (t - t0) below "
@@ -3823,6 +3845,10 @@ void RadiationM1::VetShortCharSweep() {
   auto pb_ = vhz_pb;
   auto hc_ = vhz_cnt;
   const Real hlo = vhz_lo, hhi = vhz_hi;
+  const bool hgeo = (vhz_gmode == 1);
+  const bool hsh = hza && vhz_shape;
+  auto hj0_ = vhz_j0;
+  if (hsh) {Kokkos::deep_copy(vhz_j0, 0.0);}
   for (int p = 0; p < npass; ++p) {
   const bool wrap = vet_x1per && (p > 0);   // layer is (ie) reads the periodic image
   const bool mrlo = mlo && (p > 0), mrhi = mhi && (p > 0);   // ... or the mirror image
@@ -4061,6 +4087,7 @@ void RadiationM1::VetShortCharSweep() {
         };
         auto gate = [&](const Real eh, const Real jh) -> Real {
           if (!(jh > 0.0)) {return 1.0;}
+          if (hgeo) {return 0.0;}   // vet_horizon_gate = geom
           Real x = (eh/jh - hlo)/(hhi - hlo);
           x = fmin(fmax(x, 0.0), 1.0);
           return x*x*(3.0 - 2.0*x);
@@ -4102,7 +4129,8 @@ void RadiationM1::VetShortCharSweep() {
           }
         }
         const Real bu = (1.0 - gu)*fmax(hju - eu, 0.0), bd = (1.0 - gd)*fmax(hjd - ed, 0.0);
-        const Real su = (rqu > bu) ? bu/rqu : 1.0, sdn = (rqd > bd) ? bd/rqd : 1.0;
+        const Real su = (hgeo || !(rqu > bu)) ? 1.0 : bu/rqu;
+        const Real sdn = (hgeo || !(rqd > bd)) ? 1.0 : bd/rqd;
         // pass 2: apply (the old part keeps 1 - s (1 - rho) of itself)
         Real ncut = 0.0;
         for (int r = 0; r < nray; ++r) {
@@ -4135,6 +4163,10 @@ void RadiationM1::VetShortCharSweep() {
           addray(m1, m2, m3, wr, up, s0, iv);
         }
         if (ncut > 0.0) {Kokkos::atomic_add(&hc_(0), ncut);}
+        if (hsh && accum) {   // vet_horizon_shape: the uncut J of both cells
+          hj0_(m,k,j,iu) += hju;
+          hj0_(m,k,j,id) += hjd;
+        }
       }
       if (accum) {
         for (int n = 0; n < 10; ++n) {
@@ -4154,6 +4186,30 @@ void RadiationM1::VetShortCharSweep() {
       }
     });
   }
+  }
+
+  // open-or-1013 vet_horizon_shape: the cut keeps J; every moment is rescaled by J0/J (a
+  // cell cut to J = 0 becomes isotropic with J0)
+  if (hsh) {
+    par_for("m1_vet_hzshape", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real j0 = hj0_(m,k,j,i), jc = vc_(m,M1_VET_J,k,j,i);
+      if (!(j0 > 0.0) || jc == j0) {return;}
+      if (jc > 0.0) {
+        const Real sc = j0/jc;
+        for (int n = M1_VET_J; n < M1_VET_J + 10; ++n) {vc_(m,n,k,j,i) *= sc;}
+        if (hrs_) {
+          for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) *= sc;}
+        }
+        if (nls_) {vc_(m,M1_VET_NL,k,j,i) *= sc;}
+      } else {
+        vc_(m,M1_VET_J,k,j,i) = j0;
+        for (int n = 1; n < 10; ++n) {vc_(m,M1_VET_J+n,k,j,i) = (n <= 3) ? j0/3.0 : 0.0;}
+        if (hrs_) {
+          for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.25*j0;}
+        }
+      }
+    });
   }
 
   // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then

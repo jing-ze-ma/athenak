@@ -463,6 +463,13 @@ class RadiationM1 {
   bool vhz_on = false;                  // vet_horizon
   Real vhz_t0 = 0.0;                    // vet_horizon_t0 (the emission onset)
   Real vhz_lo = 0.1, vhz_hi = 0.5;      // vet_horizon_lo, vet_horizon_hi (gate)
+  // vet_horizon_gate = state (default: rho from E_h/J_h, with the budget) | geom (rho = 0,
+  // no budget: the pure light-travel-time cut, state independent)
+  int vhz_gmode = 0;
+  // vet_horizon_shape (default false): the cut changes only the SHAPE of the cell's
+  // moments (D, H/J, H+/J); every moment is rescaled so that J keeps the uncut value
+  bool vhz_shape = false;
+  DvceArray4D<Real> vhz_j0;             // (nmb, k, j, i): the uncut J of a build (shape)
   Real vhz_lmax = 0.0;                  // the longest path (fixed set; per rotation)
   DvceArray5D<Real> vhz_pa, vhz_pb;     // (nmb, 2, nray, k, j): I <a>, I <a^2> planes
   DvceArray1D<Real> vhz_cnt;            // device: [0] cut ray-cells, [1] active builds
