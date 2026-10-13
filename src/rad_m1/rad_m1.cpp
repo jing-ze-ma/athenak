@@ -1060,6 +1060,25 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // open-od-1013: vet_path = cells | none, shared with vet_sc (VetInit): the step of a
+    // ray that jumps more than one lateral cell subdivided at the theta-row / phi-layer
+    // nodes where its cells have a chi (or non-thin S) contrast > kVetCornerRatio
+    // (VetGdSweep).  DEFAULT cells on a fresh run; a restart whose file lacks the key
+    // keeps none (bitwise).
+    if (vgd_on) {
+      const std::string vp = pin->GetOrAddString("rad_m1","vet_path",
+                                 global_variable::restart_run ? "none" : "cells");
+      if (vp.compare("none") == 0) {
+        vet_path = 0;
+      } else if (vp.compare("cells") == 0) {
+        vet_path = 1;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_path = " << vp << " is not a choice "
+                  << "(cells | none)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (vgd_on) {
       VetBcInit(pin, true);
       vgd_emit = (vet_bc_inner != 0);   // the vet_gd_beam inflow (emit or auto)
