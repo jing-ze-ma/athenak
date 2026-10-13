@@ -6,3 +6,10 @@
 - Rerun from the fixed bundle: debug job 4429421 (32 cores, 16 parallel, 28-min cutoff), rounds until done. Caltech changes only:
   m1_shock_ref -> our copies of caltech_od/shockref/ref_m*.txt; /usr/bin/time -> stand-in; cloud + pipe c220/c2200 left out (long; listed as not done).
 - Counts and results follow here.
+
+## INTERIM (10-12 23:35 PDT, after 3 debug rounds)
+- **155 / 165 rc=0, 0 failures.**
+- Not done: rs_m1.2/CV_n512, rs_m2/CV_n512, rs_m2/CV_n1024, rs_m3/CV_n512, rs_m3/CV_n1024 (cut by the 28-min limit while 16 x 8-thread runs
+  shared 32 cores; alone they take 6-18 min) -> extra round 4432264 runs only these 5 (6 threads each).
+- Not run on Caltech (long, > 28 min): cart/ddf/CV_d, cart/ddiff/CV_d (cut twice), cart/cloud/CV_r12g2, cart/pipe/CV_c220, cart/pipe/CV_c2200.
+- Results tarball after the rs round.
