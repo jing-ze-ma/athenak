@@ -6861,6 +6861,10 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     vgd_pd_alpha = -2.0;
     return;
   }
+  // (the per-direction tables of the branch-free accessor, at the indices it reads off)
+  a.pd = false;
+  a.prk = DvceArray1D<int>("m1_vgd_pd_rk", a.n);
+  a.pq = Kokkos::View<int64_t*, DevMemSpace>("m1_vgd_pd_q", a.w + 1);
   Kokkos::realloc(a.d, tot + 1);
   Kokkos::deep_copy(a.d, 0.0);
   Kokkos::deep_copy(a.oos, 0.0);

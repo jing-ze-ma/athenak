@@ -2103,70 +2103,67 @@ class RadiationM1 {
       const int j0 = w - sb(m,2)*wl, j1 = w + nx2 + sb(m,3)*wl;
       return (k >= k0) && (k < k1) && (j >= j0) && (j < j1);
     }
-    // vet_gd_band_pd: the element of (m, v, k, j, i), or -1 when not stored
+    // vet_gd_band_pd: the element of (m, v, k, j, i), or -1 when not stored.  mem-1014:
+    // BRANCH-FREE (selects only; every table read at a valid index), so that the
+    // accessor adds no basic-block boundary to the kernels that read through it: nvcc
+    // contracts mul/add into FMA per basic block, and the shell kernel's arithmetic must
+    // round exactly as with the dense ragged accessor (one branch, the out-of-slab test)
     KOKKOS_INLINE_FUNCTION
     int64_t PdIdx(const int m, const int v, const int k, const int j, const int i) const {
       const int kk = k - w, jj = j - w;
-      if (static_cast<unsigned>(kk) < static_cast<unsigned>(nx3) &&
-          static_cast<unsigned>(jj) < static_cast<unsigned>(nx2)) {
-        return ((static_cast<int64_t>(m)*c1 + i)*nx2*nx3 + kk +
-                static_cast<int64_t>(nx3)*jj)*n + v;
-      }
-      return PdBand(m, v, kk, jj, i);
-    }
-    KOKKOS_INLINE_FUNCTION
-    int64_t PdBand(const int m, const int v, const int kk, const int jj, const int i) const {
       const int ek = (kk < 0) ? -1 : ((kk >= nx3) ? 1 : 0);
       const int ej = (jj < 0) ? -1 : ((jj >= nx2) ? 1 : 0);
+      const bool in = (ek == 0) && (ej == 0);
+      const int64_t qi = ((static_cast<int64_t>(m)*c1 + i)*nx2*nx3 + kk +
+                          static_cast<int64_t>(nx3)*jj)*n + v;
       const int dk = (ek < 0) ? -kk : (kk - nx3 + 1);
       const int dj = (ej < 0) ? -jj : (jj - nx2 + 1);
-      int dl, p, g;
-      if (ek == 0) {            // a j side: along k
-        dl = dj;
-        g = ((ej < 0) ? 2 : 3)*ps + (kk >> psh);
-        p = kk & (pseg - 1);
-      } else if (ej == 0) {     // a k side: along j
-        dl = dk;
-        g = ((ek < 0) ? 0 : 1)*ps + (jj >> psh);
-        p = jj & (pseg - 1);
-      } else {                  // a corner
-        dl = (dk > dj) ? dk : dj;
-        g = 4*ps + ((ek < 0) ? 0 : 2) + ((ej < 0) ? 0 : 1);
-        p = (dk == dl) ? (dj - 1) : (dl + dk - 1);
-      }
-      if (dl > w) {return -1;}
-      const int64_t b = (static_cast<int64_t>(m)*c1 + i)*png + g;
-      const int64_t q = pq(b*(w + 1) + dl);
+      const int dc = (dk > dj) ? dk : dj;
+      const int dl = (ek == 0) ? dj : ((ej == 0) ? dk : dc);
+      const int gs = (ek == 0) ? (((ej < 0) ? 2 : 3)*ps + (kk >> psh))
+                               : (((ek < 0) ? 0 : 1)*ps + (jj >> psh));
+      const int gc = 4*ps + ((ek < 0) ? 0 : 2) + ((ej < 0) ? 0 : 1);
+      const bool cor = (ek != 0) && (ej != 0);
+      const int g = in ? 0 : (cor ? gc : gs);
+      const int p = (ek == 0) ? (kk & (pseg - 1)) : ((ej == 0) ? (jj & (pseg - 1))
+                                                   : ((dk == dc) ? (dj - 1) : (dc + dk - 1)));
+      const bool dok = !in && (dl >= 1) && (dl <= w);
+      const int dls = dok ? dl : 0;
+      const int64_t b = pd ? ((static_cast<int64_t>(m)*c1 + i)*png + g) : 0;
+      const int64_t q = pq(b*(w + 1) + dls);
       const int c = static_cast<int>(q & 4095);
       const int r = prk(b*n + v);
-      if (r >= c) {return -1;}
-      return (q >> 12) + static_cast<int64_t>(p)*c + r;
+      const int64_t qb = (q >> 12) + static_cast<int64_t>(p)*c + r;
+      return in ? qi : ((dok && r < c) ? qb : static_cast<int64_t>(-1));
+    }
+    // the dense ragged slab's element, or -1 outside the slab (branch-free)
+    KOKKOS_INLINE_FUNCTION
+    int64_t RagIdx(const int m, const int v, const int k, const int j, const int i) const {
+      const int wl = wi(i);
+      const int bk0 = sb(m,0)*wl, bj0 = sb(m,2)*wl;
+      const int c3 = nx3 + bk0 + sb(m,1)*wl, c2 = nx2 + bj0 + sb(m,3)*wl;
+      const int kk = k - (w - bk0), jj = j - (w - bj0);
+      const bool oob = (kk < 0) | (kk >= c3) | (jj < 0) | (jj >= c2);
+      return oob ? static_cast<int64_t>(-1)
+                 : (off(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj));
     }
     // is the element (m, v, k, j, i) stored?  (the band writers skip the others)
     KOKKOS_INLINE_FUNCTION
     bool Stored(const int m, const int v, const int k, const int j, const int i) const {
       return pd ? (PdIdx(m, v, k, j, i) >= 0) : Has(m, k, j, i);
     }
+    // one branch (the out-of-slab test), as the dense ragged accessor had: the index of
+    // either layout by a select
     KOKKOS_INLINE_FUNCTION
     Real &operator()(const int m, const int v, const int k, const int j,
                      const int i) const {
-      if (pd) {
-        const int64_t q = PdIdx(m, v, k, j, i);
-        if (q < 0) {
-          Kokkos::atomic_add(&oos(0), 1.0);
-          return d(dummy);
-        }
-        return d(q);
-      }
-      const int wl = wi(i);
-      const int bk0 = sb(m,0)*wl, bj0 = sb(m,2)*wl;
-      const int c3 = nx3 + bk0 + sb(m,1)*wl, c2 = nx2 + bj0 + sb(m,3)*wl;
-      const int kk = k - (w - bk0), jj = j - (w - bj0);
-      if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {
+      const int64_t qp = PdIdx(m, v, k, j, i), qr = RagIdx(m, v, k, j, i);
+      const int64_t q = pd ? qp : qr;
+      if (q < 0) {
         Kokkos::atomic_add(&oos(0), 1.0);
         return d(dummy);
       }
-      return d(off(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj));
+      return d(q);
     }
     int extent_int(const int r) const {
       return (r == 0) ? nmb : (r == 1) ? n : (r == 2) ? (nx3 + 2*w) : (r == 3) ?
