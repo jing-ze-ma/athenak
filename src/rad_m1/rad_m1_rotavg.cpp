@@ -437,6 +437,54 @@ void RadiationM1::RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb) {
             RotAvgRstI0());
 }
 
+//! mem-1014: the same record straight into the host array of the restart output
+//! (nmb, nslab, n3, n2, n1), through a device buffer of at most nsc slabs of one
+//! MeshBlock instead of the whole (nmb, nslab) record: every element is the value
+//! RaRstCopy(dir 0) puts there (the same index map), so the file is byte-identical
+void RadiationM1::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const int nsc) {
+  const DvceArray5D<Real> d = vra_d;
+  const int ncomp = ((vra_pend == 3) ? vra_k : vra_k - 1)*(RotAvgNf() + 1);
+  const int i0 = RotAvgRstI0();
+  const int ni = d.extent_int(4) - i0, nj = d.extent_int(3), nk = d.extent_int(2);
+  const int n1 = out.extent_int(4), n2 = out.extent_int(3), n3 = out.extent_int(2);
+  const int nsl = out.extent_int(1);
+  const int64_t ncint = static_cast<int64_t>(ni)*nj*nk;
+  const int64_t ncout = static_cast<int64_t>(n1)*n2*n3;
+  const int64_t nv = ncomp*ncint;
+  const int cs = std::max(1, std::min(nsc, nsl));
+  DvceArray5D<Real> sl("rst-m1r-chunk", 1, cs, n3, n2, n1);
+  for (int m = 0; m < nmb; ++m) {
+    for (int s0 = 0; s0 < nsl; s0 += cs) {
+      const int ns = std::min(cs, nsl - s0);
+      const int64_t q0 = static_cast<int64_t>(s0)*ncout;
+      par_for("m1_ra_rst", DevExeSpace(), 0, static_cast<int>(ns*ncout - 1),
+      KOKKOS_LAMBDA(const int qi) {
+        const int64_t q = q0 + qi;
+        const int s = static_cast<int>(q/ncout);
+        const int64_t r2 = q - s*ncout;
+        const int k = static_cast<int>(r2/(static_cast<int64_t>(n2)*n1));
+        const int j = static_cast<int>((r2/n1) % n2);
+        const int i = static_cast<int>(r2 % n1);
+        if (q >= nv) {
+          sl(0,s-s0,k,j,i) = 0.0;
+          return;
+        }
+        const int n = static_cast<int>(q/ncint);
+        const int64_t r = q - n*ncint;
+        const int kk = static_cast<int>(r/(static_cast<int64_t>(nj)*ni));
+        const int jj = static_cast<int>((r/ni) % nj);
+        const int ii = static_cast<int>(r % ni) + i0;
+        sl(0,s-s0,k,j,i) = d(m,n,kk,jj,ii);
+      });
+      Kokkos::deep_copy(Kokkos::subview(out, std::make_pair(m, m+1),
+                                        std::make_pair(s0, s0+ns), Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL),
+                        Kokkos::subview(sl, Kokkos::ALL, std::make_pair(0, ns),
+                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    }
+  }
+}
+
 //! the history of the file into vra_d + the scalars, when it fits this run (the same K
 //! and closure, the same MeshBlock size); else nothing (the first build re-measures)
 bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
