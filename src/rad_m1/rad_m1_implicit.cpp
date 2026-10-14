@@ -11517,6 +11517,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Kokkos::realloc(lbath_g, nmb1 + 1, 7, iw.extent_int(2), iw.extent_int(3));
       Kokkos::deep_copy(lbath_g, 0.0);
     }
+    if (lbath_f.extent_int(0) != nmb1 + 1) {
+      Kokkos::realloc(lbath_f, nmb1 + 1, 4, iw.extent_int(2), iw.extent_int(3));
+      Kokkos::deep_copy(lbath_f, 0.0);
+    }
+    if (t2s == M1_T2S_STAGE1 || t2s == M1_T2S_STAGE2) {
+      // the wall-flux diagnostic: keep the previous solve's flux (rad_m1.hpp lbath_f)
+      auto lf_ = lbath_f;
+      const int q = (t2s == M1_T2S_STAGE1) ? 1 : 2;
+      par_for("m1_impl_lbath_f", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        lf_(m,q,k,j) = lf_(m,3,k,j);
+      });
+    }
+    lbath_t2 = t2s;
     auto lg_ = lbath_g;
     auto eos = flr.eos;
     const bool ovl = ovc;
@@ -13532,6 +13546,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto q1z_ = cs2f1;
     const bool lbathf = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
     auto lgf_ = lbath_g;
+    auto lff_ = lbath_f;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -13585,6 +13600,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           fn = (1.0 - al)*fn + (cl/ch)*gh;
         }
         f0_(m,k,j,i) = fn;
+        // the wall-flux diagnostic: + the donor enthalpy flux of the row
+        const Real adf = (vf > 0.0) ? lgf_(m,5,k,j)*eg1
+                         : iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip);
+        lff_(m,3,k,j) = fn + adf;
       } else if ((lo || hi) && !cyclic) {
         int bc = lo ? bclo : bchi;
         int ic = lo ? is : ie;

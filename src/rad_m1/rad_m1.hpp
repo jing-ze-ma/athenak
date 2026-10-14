@@ -560,6 +560,14 @@ class RadiationM1 {
   // per solve (q: 0 E1, 1 E2, 2 kT1, 3 v1, 4 g0, 5 a1, 6 a2).
   bool impl_lbath = false;
   DvceArray4D<Real> lbath_g;
+  // the wall flux diagnostic (history L_in): lbath_f(m, q, k, j), q = 3 the lab flux of
+  // the last solve (comoving face flux + donor enthalpy flux), 1 its value at the start
+  // of a hesdirk2 stage-1 solve (the FSAL slope's), 2 at the start of stage 2 (stage
+  // 1's); lbath_t2 = the kind of the last solve (t2_solve).  Step-effective flux:
+  // stage 2 ->
+  // F1/2 + b2 F(stage 1) + g F(stage 2) (ESDIRK weights of the energy update), else F.
+  DvceArray4D<Real> lbath_f;
+  int lbath_t2 = 0;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,

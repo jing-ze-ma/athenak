@@ -3627,7 +3627,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   const Real rint = hs_rint_, fin = hs_fin_;
-  const bool lbcd = hs_lbc_;   // fin4-linhao-bc
+  const bool lbcd = hs_lbc_ && (pmbp->pradm1->lbath_f.extent_int(0) > 0);
+  auto lbf = pmbp->pradm1->lbath_f;
+  const bool lst2 = (pmbp->pradm1->lbath_t2 == radm1::M1_T2S_STAGE2);
+  const Real lg2 = 1.0 - 1.0/std::sqrt(2.0), lb2 = lg2/(2.0*(1.0 - lg2));
   // v1sq_wall: mean v_r^2 over the wall (first active) cells of the whole mesh
   const Real inwall = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3);
   const bool eso = pm1->esrc_on;
@@ -3656,14 +3659,13 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       if (i == ie) h.the_array[3] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
     }
     if (i == is) h.the_array[4] = fin*area1(m,k,j,i);
-    if (i == is && lbcd && haveff) {
-      // fin4-linhao-bc: nothing is imposed at the wall; L_in is the flux the solve put
-      // through it: the stored comoving face flux plus the donor enthalpy flux (4/3) v_f E
-      const Real v1 = u0(m,IM1,k,j,i)/u0(m,IDN,k,j,i);
-      const Real vg = u0(m,IM1,k,j,i-1)/u0(m,IDN,k,j,i-1);
-      const Real vf = 0.5*(v1 + vg);
-      const Real ed = (vf > 0.0) ? ur(m,radm1::M1_E,k,j,i-1) : ur(m,radm1::M1_E,k,j,i);
-      h.the_array[4] = (ff0(m,k,j,i) + (4.0/3.0)*vf*ed)*area1(m,k,j,i);
+    if (i == is && lbcd) {
+      // fin4-linhao-bc: nothing is imposed at the wall; L_in is the lab flux the solves
+      // put through it this step (rad_m1.hpp lbath_f: comoving face flux + the donor
+      // enthalpy flux of the row), with the ESDIRK weights after a hesdirk2 step
+      const Real fw = lst2 ? (0.5*lbf(m,1,k,j) + lb2*lbf(m,2,k,j) + lg2*lbf(m,3,k,j))
+                           : lbf(m,3,k,j);
+      h.the_array[4] = fw*area1(m,k,j,i);
     }
     h.the_array[5] = ur(m,radm1::M1_E,k,j,i)*vol;
     h.the_array[6] = w0(m,IEN,k,j,i)*vol;
