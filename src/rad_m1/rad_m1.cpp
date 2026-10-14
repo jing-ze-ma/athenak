@@ -1132,6 +1132,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
+    // mem-1014 vet_gd_band_pd (a memory layout, bitwise; read only when named, default
+    // 2; env VGD_BAND_PD overrides): 0 the per-shell band (as before), 1 the per-direction
+    // band with the mesh-edge slots full, 2 the per-direction band everywhere.  Taken only
+    // with MPI neighbours and vet_gd_halo_compact = 2 (its keep rule sizes the band)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_pd")) {
+      vgd_pd_mode = pin->GetInteger("rad_m1","vet_gd_band_pd");
+      vgd_pd_named = true;
+    }
+    if (const char *e = std::getenv("VGD_BAND_PD")) {vgd_pd_mode = std::atoi(e);}
     // defaults-1009 (user 10-09): vet_gd_twin, vet_gd_twin_fuse (where its needs below
     // hold), vet_gd_twin_det and vet_source_noesrc (with the twin) default ON on a FRESH
     // vet_gd run; a restart whose file lacks a key keeps the old default (off).  The

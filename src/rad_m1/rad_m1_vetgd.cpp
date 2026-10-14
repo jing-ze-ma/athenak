@@ -326,6 +326,19 @@ void VgdProduct(const int nmu, const int nphi, const bool stagger,
   }
 }
 
+// mem-1014 vet_gd_band_pd: may a band writer store (m, v, k, j, i)?  (the dense source
+// arrays always; the intensities only where the layout holds the element)
+KOKKOS_INLINE_FUNCTION
+bool VgdStored(const DvceArray5D<Real> &, const int, const int, const int, const int,
+               const int) {
+  return true;
+}
+KOKKOS_INLINE_FUNCTION
+bool VgdStored(const RadiationM1::VgdRag &a, const int m, const int v, const int k,
+               const int j, const int i) {
+  return a.Stored(m, v, k, j, i);
+}
+
 // vgdfuse-1010: every stencil that the shell kernel's solve of item (block m, cell (k,
 // j), direction d) of shell i (sweep position l) of the pass inw MAY read, as boxes
 // f(iu, k_lo, k_hi, j_lo, j_hi) of band cells (inclusive) of shell iu.  The kernel's
@@ -649,6 +662,9 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   VetGdHaloInit();
+  // mem-1014 vet_gd_band_pd: the per-direction band (needs the compact keep rule, mode 2)
+  vgd_pd = (vgd_pd_mode > 0) && vgd_hmpi && (vgd_hcomp == 2) && !vgd_async && !vgd_bandx &&
+           (vgd_fuse_h <= 1);
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
   if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async || !vgd_hmpi ||
@@ -1670,7 +1686,9 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
       const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
       const int ks_ = (dk < 0) ? (w + nx3 - ws) : w;
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
-      a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_+kk,js_+jj,i);
+      if (VgdStored(a_, m, v, kd+kk, jd+jj, i)) {
+        a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_+kk,js_+jj,i);
+      }
     } else if (mpi) {
       // my interior that the remote neighbour needs in ITS opposite slot
       const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
@@ -1736,12 +1754,14 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
           val += w3_(m,kd+kk,jd+jj,v,q)*rb_(at);
           if (two) {val2 += w3_(m,kd+kk,jd+jj,v,q)*rb2_(at);}
         }
+        if (!VgdStored(a_, m, v, kd+kk, jd+jj, i0+ii)) {return;}   // mem-1014
         a_(m,v,kd+kk,jd+jj,i0+ii) = val;
         if (two) {b_(m,v,kd+kk,jd+jj,i0+ii) = val2;}
         return;
       }
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
       const size_t at = rb0 + ((vs*kn + kk)*jn + jj)*ni + ii;
+      if (!VgdStored(a_, m, v, kd+kk, jd+jj, i0+ii)) {return;}   // mem-1014
       a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(at);
       if (two) {b_(m,v,kd+kk,jd+jj,i0+ii) = rb2_(at);}
     });
@@ -2511,6 +2531,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
         if (jb < w - ws || jb >= w + nx2 + ws || kb < w - ws || kb >= w + nx3 + ws) {
           return;
         }
+        if (!a_.Stored(m, v, kb, jb, i)) {return;}   // mem-1014
         a_(m,v,kb,jb,i) = 0.0;
         if (two) {b_(m,v,kb,jb,i) = 0.0;}
       });
@@ -2628,6 +2649,7 @@ void RadiationM1::VetGdHlEnd() {
           s1 = s + rpm.v[p];
           s2 = s + rpm.v[p+1];
         }
+        if (!a_.Stored(m, v, kb, jb, i)) {return;}   // mem-1014
         a_(m,v,kb,jb,i) = (s >= 0) ? crb_(s1) : 0.0;
         if (two) {b_(m,v,kb,jb,i) = (s >= 0) ? crb2_(s2) : 0.0;}
         return;
@@ -2646,6 +2668,7 @@ void RadiationM1::VetGdHlEnd() {
         val += w3_(m,kb,jb,v,u)*((s >= 0) ? crb_(s1) : 0.0);
         if (two) {val2 += w3_(m,kb,jb,v,u)*((s >= 0) ? crb2_(s2) : 0.0);}
       }
+      if (!a_.Stored(m, v, kb, jb, i)) {return;}   // mem-1014
       a_(m,v,kb,jb,i) = val;
       if (two) {b_(m,v,kb,jb,i) = val2;}
     });
@@ -4168,6 +4191,7 @@ void RadiationM1::VetGdWall(const int i0, const int i1) {
 //! \brief one sweep (inward then outward) of every direction
 
 void RadiationM1::VetGdSweep() {
+  VgdPdUpdate();   // mem-1014 vet_gd_band_pd: the band layout of this set (before any copy)
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -6780,6 +6804,49 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
   Kokkos::deep_copy(a.off, off_h);
   Kokkos::deep_copy(a.wi, wi_h);
   Kokkos::deep_copy(a.sb, sb_h);
+  if (vgd_pd) {
+    // mem-1014 vet_gd_band_pd: the interior slabs + a band capacity = the largest band of
+    // the set rotated by a sample of angles over its period (+ 2 %); the layout itself
+    // follows the set in use (VgdPdUpdate, at a sweep start; grown if ever needed)
+    a.pd = true;
+    a.pdint = static_cast<int64_t>(a.nmb)*c1*a.n*a.nx3*a.nx2;
+    const int nsamp = 16;
+    const double per = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : 2.0*M_PI;
+    int64_t cap = 0;
+    DvceArray2D<Real> dsm("m1_vgd_pd_dir", a.n, 4);
+    auto dsm_h = Kokkos::create_mirror_view(dsm);
+    for (int q = 0; q < nsamp; ++q) {
+      const double al = per*q/nsamp;
+      const double ca = std::cos(al), sa = std::sin(al);
+      for (int v = 0; v < a.n; ++v) {
+        const double x = vgd_base[4*v], y = vgd_base[4*v+1];
+        dsm_h(v,0) = ca*x - sa*y;
+        dsm_h(v,1) = sa*x + ca*y;
+        dsm_h(v,2) = vgd_base[4*v+2];
+        dsm_h(v,3) = vgd_base[4*v+3];
+      }
+      Kokkos::deep_copy(dsm, dsm_h);
+      cap = std::max(cap, VgdPdLayout(a, dsm, false));
+    }
+    a.pdcap = cap + cap/50 + 1024;
+    a.dummy = a.pdint + a.pdcap;
+    const size_t nt = static_cast<size_t>(a.nmb)*c1*8;
+    a.prk = DvceArray1D<int>("m1_vgd_pd_rk", nt*a.n);
+    a.pcn = DvceArray1D<int>("m1_vgd_pd_cn", nt*(a.w + 1));   // 0: nothing stored yet
+    a.pbo = Kokkos::View<int64_t*, DevMemSpace>("m1_vgd_pd_bo", nt*(a.w + 1));
+    Kokkos::realloc(a.d, a.dummy + 1);
+    Kokkos::deep_copy(a.d, 0.0);
+    Kokkos::deep_copy(a.oos, 0.0);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_band_pd = " << vgd_pd_mode << ": per-direction band, "
+                << "intensity array " << (a.dummy + 1)*sizeof(Real)/1.0e9 << " GB on rank 0"
+                << " (interior " << a.pdint*sizeof(Real)/1.0e9 << ", band capacity "
+                << a.pdcap*sizeof(Real)/1.0e9 << "; the per-shell band was "
+                << (tot - a.pdint)*sizeof(Real)/1.0e9 << ")" << std::endl;
+    }
+    vgd_pd_alpha = -2.0;
+    return;
+  }
   Kokkos::realloc(a.d, tot + 1);
   Kokkos::deep_copy(a.d, 0.0);
   Kokkos::deep_copy(a.oos, 0.0);
@@ -6790,6 +6857,228 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
               << tot*sizeof(Real)/1.0e9 << " GB on rank 0 (dense band "
               << dense*sizeof(Real)/1.0e9 << " GB)" << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int64_t RadiationM1::VgdPdLayout
+//! \brief mem-1014 vet_gd_band_pd: the per-direction band of a (its tables when apply)
+//! for the direction set dir; returns the band size (elements).  A direction d is stored
+//! in region R (neighbour slot) of shell i down to the deepest layer dl in which some
+//! band cell may hold a value the compact halo SENDS (VgdHaloKeep, mode 2, the inward
+//! pass at depth <= vgd_wsi[i], the outward at <= vgd_wso[i]), bounded from above per
+//! (R, d, dl) by the largest psi of the layer's cells of each branch (the NORM reach
+//! increases with psi; the TURN reach is <= 2 acos(r_m/r_s) whenever its condition holds
+//! at the largest psi), + 1 cell for rounding.  Cell positions: the band cell's own
+//! (global, unwrapped) position = the halo's source cell off the mesh edges.  Edge
+//! (wall) slots: mode 1 every direction (<= the pass depth), mode 2 as the others (the
+//! sweep reads a ghost only within the ray's own reach).
+
+int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
+                                 const bool apply) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = a.nmb, n = a.n, nx2 = a.nx2, nx3 = a.nx3, w = a.w, c1 = a.c1;
+  const int W1 = w + 1;
+  const int nb2 = vgd_nb2, nb3 = vgd_nb3;
+  const Real t0 = pm->mesh_size.x2min, p0 = pm->mesh_size.x3min;
+  const Real dth = (pm->mesh_size.x2max - t0)/pm->mesh_indcs.nx2;
+  const Real dph = (pm->mesh_size.x3max - p0)/pm->mesh_indcs.nx3;
+  const Real smin = fmin(sin(t0), sin(pm->mesh_size.x2max));
+  const Real dmin = fmin(dth, smin*dph);
+  const Real gam = 2.0*fmax(dth, dph);
+  const bool wfull = (vgd_pd_mode == 1);
+  auto lx_ = vgd_lxy;
+  auto sb_ = a.sb;
+  auto wi_ = a.wi;
+  auto dir_ = dir;
+  // (A) per (m, R, d, dl): the largest psi of the layer's cells on the inward (mu < 0)
+  // and outward (mu >= 0) branch (-1: none), and whether a cell is tangent (|mu| < 1e-12)
+  const size_t nl = static_cast<size_t>(nmb)*8*n*W1;
+  DvceArray1D<Real> pin("m1_vgd_pd_pin", nl), pou("m1_vgd_pd_pou", nl);
+  DvceArray1D<int> ptn("m1_vgd_pd_tan", nl);
+  par_for("m1_vgd_pd_psi", DevExeSpace(), 0, nmb - 1, 0, 7, 0, n - 1, 1, w,
+  KOKKOS_LAMBDA(const int m, const int r8, const int d, const int dl) {
+    const int oo = (r8 < 4) ? r8 : (r8 + 1);
+    const int ek = oo/3 - 1, ej = oo%3 - 1;
+    const int lx2 = lx_(m,0), lx3 = lx_(m,1);
+    const int np = (ek != 0 && ej != 0) ? (2*dl - 1) : ((ek != 0) ? nx2 : nx3);
+    const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+    Real mi = -1.0, mo = -1.0;
+    int tn = 0;
+    for (int p = 0; p < np; ++p) {
+      int dlk = 0, dlj = 0, pk = 0, pj = 0;
+      if (ek != 0 && ej != 0) {
+        if (p < dl) {dlk = dl; dlj = p + 1;} else {dlj = dl; dlk = p - dl + 1;}
+      } else if (ek != 0) {
+        dlk = dl; pj = p;
+      } else {
+        dlj = dl; pk = p;
+      }
+      const int gj = (ej < 0) ? (lx2*nx2 - dlj) : ((ej > 0) ? ((lx2 + 1)*nx2 + dlj - 1)
+                                                            : (lx2*nx2 + pj));
+      const int gk = (ek < 0) ? (lx3*nx3 - dlk) : ((ek > 0) ? ((lx3 + 1)*nx3 + dlk - 1)
+                                                            : (lx3*nx3 + pk));
+      const Real th = t0 + (gj + 0.5)*dth, ph = p0 + (gk + 0.5)*dph;
+      const Real st = sin(th);
+      const Real mu = nx*st*cos(ph) + ny*st*sin(ph) + nz*cos(th);
+      if (fabs(mu) < 1.0e-12) {tn = 1;}
+      const Real psi = acos(fmin(fabs(mu), 1.0));
+      if (mu < 0.0) {mi = fmax(mi, psi);} else {mo = fmax(mo, psi);}
+    }
+    const size_t q = ((static_cast<size_t>(m)*8 + r8)*n + d)*W1 + dl;
+    pin(q) = mi;
+    pou(q) = mo;
+    ptn(q) = tn;
+  });
+  // (B) per (m, i, R, d): the deepest stored layer
+  const int is = indcs.is, ie = indcs.ie;
+  const int lcut = indcs.is + vgd_scut;
+  DvceArray1D<Real> shr("m1_vgd_pd_shr", 3*c1);
+  DvceArray1D<int> shi("m1_vgd_pd_shi", 4*c1);
+  {
+    auto shr_h = Kokkos::create_mirror_view(shr);
+    auto shi_h = Kokkos::create_mirror_view(shi);
+    for (int i = 0; i < c1; ++i) {
+      const bool act = (i >= is && i <= ie);
+      shr_h(3*i) = act ? vgd_r1v[i] : 1.0;
+      shr_h(3*i+1) = (act && i > lcut) ? vgd_r1v[i-1] : (act ? vgd_r1f[i] : 1.0);
+      shr_h(3*i+2) = (act && i < ie) ? vgd_r1v[i+1] : shr_h(3*i);
+      shi_h(4*i) = (act && i >= lcut) ? 1 : 0;           // hasm
+      shi_h(4*i+1) = (act && i < ie) ? 1 : 0;            // hasp
+      shi_h(4*i+2) = act ? vgd_wsi[i] : 0;
+      shi_h(4*i+3) = act ? vgd_wso[i] : 0;
+    }
+    Kokkos::deep_copy(shr, shr_h);
+    Kokkos::deep_copy(shi, shi_h);
+  }
+  const size_t nt = static_cast<size_t>(nmb)*c1*8;
+  DvceArray1D<int> wd("m1_vgd_pd_wd", nt*n);
+  par_for("m1_vgd_pd_wd", DevExeSpace(), 0, nmb - 1, 0, c1 - 1, 0, 7, 0, n - 1,
+  KOKKOS_LAMBDA(const int m, const int i, const int r8, const int d) {
+    const int oo = (r8 < 4) ? r8 : (r8 + 1);
+    const int ek = oo/3 - 1, ej = oo%3 - 1;
+    const int sk = (ek < 0) ? sb_(m,0) : ((ek > 0) ? sb_(m,1) : 1);
+    const int sj = (ej < 0) ? sb_(m,2) : ((ej > 0) ? sb_(m,3) : 1);
+    int wout = 0;
+    const int wl = wi_(i);
+    if (sk != 0 && sj != 0 && wl > 0) {
+      const int lx2 = lx_(m,0), lx3 = lx_(m,1);
+      const bool wall = (lx2 + ej < 0) || (lx2 + ej >= nb2) || (lx3 + ek < 0) ||
+                        (lx3 + ek >= nb3);
+      const Real rs = shr(3*i), rm = shr(3*i+1), rp = shr(3*i+2);
+      const bool hasm = (shi(4*i) != 0), hasp = (shi(4*i+1) != 0);
+      const int wsi = shi(4*i+2), wso = shi(4*i+3);
+      for (int dl = 1; dl <= wl; ++dl) {
+        const size_t q = ((static_cast<size_t>(m)*8 + r8)*n + d)*W1 + dl;
+        bool kin = false, kout = false;
+        if (wall && wfull) {
+          kin = (dl <= wsi);
+          kout = (dl <= wso);
+        } else {
+          const bool tn = (ptn(q) != 0);
+          const Real mi = pin(q), mo = pou(q);
+          if (dl <= wsi && (tn || mi >= 0.0)) {
+            Real dlr = 0.0;
+            if (hasm && mi >= 0.0) {
+              const Real ph_ = rs*sin(fmin(mi + gam, 0.5*M_PI));
+              const Real pp = fmin(ph_, rm);
+              dlr = asin(fmin(pp/rm, 1.0)) - asin(fmin(pp/rs, 1.0));
+              if (ph_ > rm) {dlr = fmax(dlr, 2.0*acos(fmin(rm/rs, 1.0)));}
+            }
+            kin = tn || (dl <= static_cast<int>(dlr/dmin) + 4);
+          }
+          if (dl <= wso && (tn || mo >= 0.0)) {
+            Real dlr = 0.0;
+            if (hasp && mo >= 0.0) {
+              const Real ph_ = rs*sin(fmin(mo + gam, 0.5*M_PI));
+              const Real pp = fmin(ph_, rs);
+              dlr = asin(fmin(pp/rs, 1.0)) - asin(fmin(pp/rp, 1.0));
+            }
+            kout = tn || (dl <= static_cast<int>(dlr/dmin) + 4);
+          }
+        }
+        if (kin || kout) {wout = dl;}
+      }
+    }
+    wd(((static_cast<size_t>(m)*c1 + i)*8 + r8)*n + d) = wout;
+  });
+  // (C) per (m, i, R): the order (deepest first, then d) and the counts per layer
+  DvceArray1D<int> prk("m1_vgd_pd_rk", nt*n), pcn("m1_vgd_pd_cn", nt*W1);
+  par_for("m1_vgd_pd_rank", DevExeSpace(), 0, static_cast<int>(nt) - 1,
+  KOKKOS_LAMBDA(const int b) {
+    const size_t b0 = static_cast<size_t>(b)*n;
+    for (int dl = 0; dl < W1; ++dl) {pcn(static_cast<size_t>(b)*W1 + dl) = 0;}
+    for (int d = 0; d < n; ++d) {
+      const int wv = wd(b0 + d);
+      int r = 0;
+      for (int e = 0; e < n; ++e) {
+        const int we = wd(b0 + e);
+        if (we > wv || (we == wv && e < d)) {++r;}
+      }
+      prk(b0 + d) = r;
+      for (int dl = 1; dl <= wv; ++dl) {pcn(static_cast<size_t>(b)*W1 + dl) += 1;}
+    }
+  });
+  // (D) the layer offsets (an exclusive scan in (m, i, R, dl) order) behind the interior
+  Kokkos::View<int64_t*, DevMemSpace> pbo("m1_vgd_pd_bo", nt*W1);
+  const int64_t pint = a.pdint;
+  int64_t tot = 0;
+  Kokkos::parallel_scan("m1_vgd_pd_scan", Kokkos::RangePolicy<>(0, nt*W1),
+  KOKKOS_LAMBDA(const size_t q, int64_t &acc, const bool fin) {
+    const int dl = static_cast<int>(q % W1);
+    const int r8 = static_cast<int>((q/W1) % 8);
+    const int oo = (r8 < 4) ? r8 : (r8 + 1);
+    const int ek = oo/3 - 1, ej = oo%3 - 1;
+    const int64_t ring = (dl == 0) ? 0 : ((ek != 0 && ej != 0) ? (2*dl - 1)
+                                         : ((ek != 0) ? nx2 : nx3));
+    if (fin) {pbo(q) = pint + acc;}
+    acc += ring*pcn(q);
+  }, tot);
+  if (apply) {
+    a.prk = prk;
+    a.pcn = pcn;
+    a.pbo = pbo;
+  }
+  return tot;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdPdUpdate
+//! \brief mem-1014 vet_gd_band_pd: at a sweep start, re-lay the band of vgd_i (and of the
+//! fused twin, the same tables) when the direction set or the cut changed; the band part
+//! zeroed (every value the sweep reads is written in this sweep, before it is read: the
+//! halo of the upwind shell, exact; a value the compact halo does not send reads 0, as
+//! the dense compact path's unsent entries)
+
+void RadiationM1::VgdPdUpdate() {
+  if (!vgd_i.pd) {return;}
+  if (vgd_pd_alpha == vgd_alpha && vgd_pd_scut == vgd_scut) {return;}
+  const int64_t tot = VgdPdLayout(vgd_i, vgd_dir, true);
+  auto fix = [&](VgdRag &a) {
+    if (tot > a.pdcap) {
+      a.pdcap = tot + tot/50 + 1024;
+      a.dummy = a.pdint + a.pdcap;
+      a.d = DvceArray1D<Real>();
+      a.d = DvceArray1D<Real>("m1_vgd_pd_d", a.dummy + 1);
+      vgd_pd_ngrow += 1.0;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_gd_band_pd: band capacity grown to "
+                  << a.pdcap*sizeof(Real)/1.0e9 << " GB (rank 0)" << std::endl;
+      }
+    }
+    Kokkos::deep_copy(Kokkos::subview(a.d, std::make_pair(a.pdint, a.dummy + 1)), 0.0);
+  };
+  fix(vgd_i);
+  if (vgd_itw.pd) {
+    vgd_itw.prk = vgd_i.prk;
+    vgd_itw.pcn = vgd_i.pcn;
+    vgd_itw.pbo = vgd_i.pbo;
+    fix(vgd_itw);
+  }
+  vgd_pd_alpha = vgd_alpha;
+  vgd_pd_scut = vgd_scut;
+  vgd_pd_nrelay += 1.0;
+  vgd_pd_lastband = tot;
 }
 
 //----------------------------------------------------------------------------------------

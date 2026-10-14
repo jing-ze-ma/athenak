@@ -1525,7 +1525,29 @@ void RadiationM1::VetColSpread(int ncall) {
 //! \brief one cost line at the end of the run (rank 0)
 
 void RadiationM1::VetColReport() {
+  // mem-1014: every rank reports its own ragged-band out-of-slab accesses when nonzero
+  if (vgd_on && vgd_i.oos.extent(0) > 0) {
+    Real no = 0.0, nt = 0.0;
+    {
+      auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i.oos);
+      no = h(0);
+    }
+    if (vgd_itw.oos.extent(0) > 0) {
+      auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_itw.oos);
+      nt = h(0);
+    }
+    if (no != 0.0 || nt != 0.0) {
+      std::cout << "### mem-1014 rank " << global_variable::my_rank << ": vet_gd ragged "
+                << "band out-of-slab accesses main " << no << " twin " << nt << std::endl;
+    }
+  }
   if (global_variable::my_rank != 0) return;
+  if (vgd_on && vgd_pd) {
+    std::cout << "<rad_m1> vet_gd_band_pd = " << vgd_pd_mode << " (rank 0): layouts "
+              << vgd_pd_nrelay << ", grown " << vgd_pd_ngrow << ", last band "
+              << vgd_pd_lastband*sizeof(Real)/1.0e9 << " GB of capacity "
+              << vgd_i.pdcap*sizeof(Real)/1.0e9 << " GB" << std::endl;
+  }
   std::cout << "<rad_m1> closure = vet_col: " << vcol_ncall << " tensor builds ("
             << vcol_nskip << " skipped), " << vcol_time << " s (rank 0, fenced), "
             << ((vcol_ncall > 0.0) ? (1.0e3*vcol_time/vcol_ncall) : 0.0)
