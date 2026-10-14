@@ -6974,6 +6974,131 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
 //! the saved band values back, then the device tables of both shells).  Pure copies of
 //! values: the sweep reads exactly the values of the dense-band layout.
 
+// the band_ring copy kernel (one thread per value; the last thread sets the tables)
+struct VgdRingK {
+  Real *da, *db, *st;
+  int64_t *aoff, *boff;
+  int *awi, *bwi;
+  const int64_t *oc, *so;
+  const int *sb, *svdl, *svdw, *rsdl, *rsdw;
+  int64_t offs0, offs1, ocs0, ocs1, sos0, sos1;
+  int64_t nsv, nrl, ncp, nrs, svso, rsso, svn, rsn;
+  int sbs0, sbs1, n, nx2, nx3, w, c2b, c3b, nm, svk, rsk, svnr, rsnr;
+  int svs, svw, rli, rls, rlw, aqi, aqs, aqw;
+  bool two, hrl, haq;
+  // a value of the wide slab of slot s (depth wl) of block m at band index (kb, jb):
+  // the accessor's own address arithmetic; -1 outside the shell's rectangle
+  KOKKOS_INLINE_FUNCTION
+  int64_t Wadr(const int s, const int wl, const int m, const int v, const int kb,
+               const int jb) const {
+    const int bk0 = sb[m*sbs0]*wl, bj0 = sb[m*sbs0 + 2*sbs1]*wl;
+    const int c3 = nx3 + bk0 + sb[m*sbs0 + sbs1]*wl;
+    const int c2 = nx2 + bj0 + sb[m*sbs0 + 3*sbs1]*wl;
+    const int kk = kb - (w - bk0), jj = jb - (w - bj0);
+    if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {return -1;}
+    return so[s*sos0 + m*sos1] + v +
+           static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj);
+  }
+  // the t-th saved value of a record: its band index (m, v, kb, jb); false: none
+  KOKKOS_INLINE_FUNCTION
+  bool Rec(const int k, const int wl, const int *dl, const int *dw, const int nr,
+           const int64_t t, int &m, int &v, int &kb, int &jb) const {
+    if (k == 1) {
+      int a = (t < nr) ? dl[t] : dw[t - nr];
+      jb = a % c2b;
+      a /= c2b;
+      kb = a % c3b;
+      a /= c3b;
+      v = a % n;
+      m = a/n;
+      return true;
+    }
+    // dense: (m, v, kb, jb) over the band index rectangle of depth wl, interior out
+    const int64_t c3w = nx3 + 2*wl, c2w = nx2 + 2*wl;
+    int64_t r = t;
+    v = static_cast<int>(r % n);
+    r /= n;
+    const int kw = static_cast<int>(r % c3w);
+    r /= c3w;
+    const int jw = static_cast<int>(r % c2w);
+    m = static_cast<int>(r/c2w);
+    kb = kw + (w - wl);
+    jb = jw + (w - wl);
+    return !(kb >= w && kb < w + nx3 && jb >= w && jb < w + nx2);
+  }
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const int64_t tt) const {
+    int64_t t = tt;
+    if (t < nsv) {
+      int m, v, kb, jb;
+      if (!Rec(svk, svw, svdl, svdw, svnr, t, m, v, kb, jb)) {return;}
+      const int64_t q = Wadr(svs, svw, m, v, kb, jb);
+      if (q < 0) {return;}
+      st[svso + t] = da[q];
+      if (two) {st[svso + svn + t] = db[q];}
+      return;
+    }
+    t -= nsv;
+    if (t < nrl + ncp) {
+      const bool out = (t < nrl);
+      if (!out) {t -= nrl;}
+      const int i = out ? rli : aqi;
+      const int s = out ? rls : aqs;
+      const int wl = out ? rlw : aqw;
+      // 32-bit index arithmetic (nrl, ncp < 2^31, checked on the host)
+      int r = static_cast<int>(t);
+      const int v = r % n;
+      r /= n;
+      const int kk = r % nx3;
+      r /= nx3;
+      const int jj = r % nx2;
+      const int m = r/nx2;
+      const int64_t qc = oc[m*ocs0 + i*ocs1] + v +
+                         static_cast<int64_t>(n)*(kk + static_cast<int64_t>(nx3)*jj);
+      const int64_t qw = Wadr(s, wl, m, v, kk + w, jj + w);
+      if (out) {
+        da[qc] = da[qw];
+        if (two) {db[qc] = db[qw];}
+      } else {
+        da[qw] = da[qc];
+        if (two) {db[qw] = db[qc];}
+      }
+      return;
+    }
+    t -= nrl + ncp;
+    if (t < nrs) {
+      int m, v, kb, jb;
+      if (!Rec(rsk, aqw, rsdl, rsdw, rsnr, t, m, v, kb, jb)) {return;}
+      const int64_t q = Wadr(aqs, aqw, m, v, kb, jb);
+      if (q < 0) {return;}
+      da[q] = st[rsso + t];
+      if (two) {db[q] = st[rsso + rsn + t];}
+      return;
+    }
+    // the tables (no other thread of this kernel reads them)
+    for (int m = 0; m < nm; ++m) {
+      if (hrl) {
+        aoff[m*offs0 + rli*offs1] = oc[m*ocs0 + rli*ocs1];
+        if (two) {boff[m*offs0 + rli*offs1] = oc[m*ocs0 + rli*ocs1];}
+      }
+      if (haq) {
+        aoff[m*offs0 + aqi*offs1] = so[aqs*sos0 + m*sos1];
+        if (two) {boff[m*offs0 + aqi*offs1] = so[aqs*sos0 + m*sos1];}
+      }
+    }
+    if (hrl) {
+      awi[rli] = 0;
+      if (two) {bwi[rli] = 0;}
+    }
+    if (haq) {
+      awi[aqi] = aqw;
+      if (two) {bwi[aqi] = aqw;}
+    }
+  }
+};
+
+static_assert(sizeof(VgdRingK) <= 512, "VgdRingK: keep below the by-value launch limit");
+
 void RadiationM1::VetGdRingSweepBegin(const bool two) {
   vgd_ring_act = vgd_ring;
   if (!vgd_ring_act) {return;}
@@ -7138,124 +7263,66 @@ void RadiationM1::VetGdRingFlush() {
     if (nin >= static_cast<int64_t>(INT32_MAX)) {
       VgdFatal("vet_gd_band_ring: shell interior >= 2^31 values (32-bit copy index)");
     }
-    const int svi = sv.i, svs = sv.slot, svw = sv.kind ? vgd_rg_wfull[sv.i] : 0;
-    const int rli = rl.i, rls = rl.slot, rlw = rl.kind ? vgd_rg_wfull[rl.i] : 0;
-    const int aqi = aq.i, aqs = aq.slot, aqw = aq.kind ? vgd_rg_wfull[aq.i] : 0;
-    const bool hrl = rl.kind, haq = aq.kind;
-    const int nm = nmb;
-    // a value of the wide slab of slot s (depth wl) of block m at band index (kb, jb):
-    // the accessor's own address arithmetic; -1 outside the shell's rectangle
-    auto wadr = KOKKOS_LAMBDA(const int s, const int wl, const int m, const int v,
-                                     const int kb, const int jb) -> int64_t {
-      const int bk0 = sb_(m,0)*wl, bj0 = sb_(m,2)*wl;
-      const int c3 = nx3 + bk0 + sb_(m,1)*wl, c2 = nx2 + bj0 + sb_(m,3)*wl;
-      const int kk = kb - (w - bk0), jj = jb - (w - bj0);
-      if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {return -1;}
-      return so_(s,m) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj);
-    };
-    // the t-th saved value of a record: its band index (m, v, kb, jb); false: none
-    auto rec = KOKKOS_LAMBDA(const int k, const int wl, const DvceArray1D<int> &dl,
-                                    const DvceArray1D<int> &dw, const int nr,
-                                    const int64_t t, int &m, int &v, int &kb,
-                                    int &jb) -> bool {
-      if (k == 1) {
-        int a = (t < nr) ? dl(t) : dw(t - nr);
-        jb = a % c2b;
-        a /= c2b;
-        kb = a % c3b;
-        a /= c3b;
-        v = a % n;
-        m = a/n;
-        return true;
-      }
-      // dense: (m, v, kb, jb) over the band index rectangle of depth wl, interior out
-      const int64_t c3w = nx3 + 2*wl, c2w = nx2 + 2*wl;
-      int64_t r = t;
-      v = static_cast<int>(r % n);
-      r /= n;
-      const int kw = static_cast<int>(r % c3w);
-      r /= c3w;
-      const int jw = static_cast<int>(r % c2w);
-      m = static_cast<int>(r/c2w);
-      kb = kw + (w - wl);
-      jb = jw + (w - wl);
-      return !(kb >= w && kb < w + nx3 && jb >= w && jb < w + nx2);
-    };
-    const int svk = sv_k, rsk = rs_k, svnr = sv_nr, rsnr = rs_nr;
-    auto svdl = sv_dl, svdw = sv_dw, rsdl = rs_dl, rsdw = rs_dw;
-    const int64_t svso = sv_so, rsso = rs_so, svn = sv_n, rsn = rs_n;
-    auto da = a_.d, db = b_.d;
-    auto aoff = a_.off, boff = b_.off;
-    auto awi = a_.wi, bwi = b_.wi;
-    Kokkos::parallel_for("m1_vgd_ring", Kokkos::RangePolicy<>(vgd_cur, 0, ntot),
-    KOKKOS_LAMBDA(const int64_t tt) {
-      int64_t t = tt;
-      if (t < nsv) {
-        int m, v, kb, jb;
-        if (!rec(svk, svw, svdl, svdw, svnr, t, m, v, kb, jb)) {return;}
-        const int64_t q = wadr(svs, svw, m, v, kb, jb);
-        if (q < 0) {return;}
-        st_(svso + t) = da(q);
-        if (two) {st_(svso + svn + t) = db(q);}
-        return;
-      }
-      t -= nsv;
-      if (t < nrl + ncp) {
-        const bool out = (t < nrl);
-        if (!out) {t -= nrl;}
-        const int i = out ? rli : aqi;
-        const int s = out ? rls : aqs;
-        const int wl = out ? rlw : aqw;
-        // 32-bit index arithmetic (nrl, ncp < 2^31, checked on the host): the 64-bit
-        // divisions dominated this pure-copy kernel
-        int r = static_cast<int>(t);
-        const int v = r % n;
-        r /= n;
-        const int kk = r % nx3;
-        r /= nx3;
-        const int jj = r % nx2;
-        const int m = r/nx2;
-        const int64_t qc = oc_(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(nx3)*jj);
-        const int64_t qw = wadr(s, wl, m, v, kk + w, jj + w);
-        if (out) {
-          da(qc) = da(qw);
-          if (two) {db(qc) = db(qw);}
-        } else {
-          da(qw) = da(qc);
-          if (two) {db(qw) = db(qc);}
-        }
-        return;
-      }
-      t -= nrl + ncp;
-      if (t < nrs) {
-        int m, v, kb, jb;
-        if (!rec(rsk, aqw, rsdl, rsdw, rsnr, t, m, v, kb, jb)) {return;}
-        const int64_t q = wadr(aqs, aqw, m, v, kb, jb);
-        if (q < 0) {return;}
-        da(q) = st_(rsso + t);
-        if (two) {db(q) = st_(rsso + rsn + t);}
-        return;
-      }
-      // the tables (no other thread of this kernel reads them)
-      for (int m = 0; m < nm; ++m) {
-        if (hrl) {
-          aoff(m,rli) = oc_(m,rli);
-          if (two) {boff(m,rli) = oc_(m,rli);}
-        }
-        if (haq) {
-          aoff(m,aqi) = so_(aqs,m);
-          if (two) {boff(m,aqi) = so_(aqs,m);}
-        }
-      }
-      if (hrl) {
-        awi(rli) = 0;
-        if (two) {bwi(rli) = 0;}
-      }
-      if (haq) {
-        awi(aqi) = aqw;
-        if (two) {bwi(aqi) = aqw;}
-      }
-    });
+    // the copy kernel: a small POD functor of raw pointers (a functor of Views is above
+    // the 512 B limit of a by-value launch: launched through constant memory, one
+    // functor copy + a wait for the previous such kernel per launch)
+    VgdRingK k;
+    k.da = a_.d.data();
+    k.db = b_.d.data();
+    k.st = st_.data();
+    k.aoff = a_.off.data();
+    k.boff = b_.off.data();
+    k.awi = a_.wi.data();
+    k.bwi = b_.wi.data();
+    k.oc = oc_.data();
+    k.so = so_.data();
+    k.sb = sb_.data();
+    k.offs0 = a_.off.stride(0);
+    k.offs1 = a_.off.stride(1);
+    k.ocs0 = oc_.stride(0);
+    k.ocs1 = oc_.stride(1);
+    k.sos0 = so_.stride(0);
+    k.sos1 = so_.stride(1);
+    k.sbs0 = static_cast<int>(sb_.stride(0));
+    k.sbs1 = static_cast<int>(sb_.stride(1));
+    if (b_.off.stride(0) != a_.off.stride(0) || b_.off.stride(1) != a_.off.stride(1)) {
+      VgdFatal("vet_gd_band_ring: main / twin offset tables differ in layout");
+    }
+    k.svdl = sv_dl.data();
+    k.svdw = sv_dw.data();
+    k.rsdl = rs_dl.data();
+    k.rsdw = rs_dw.data();
+    k.nsv = nsv;
+    k.nrl = nrl;
+    k.ncp = ncp;
+    k.nrs = nrs;
+    k.svso = sv_so;
+    k.rsso = rs_so;
+    k.svn = sv_n;
+    k.rsn = rs_n;
+    k.n = n;
+    k.nx2 = nx2;
+    k.nx3 = nx3;
+    k.w = w;
+    k.c2b = c2b;
+    k.c3b = c3b;
+    k.nm = nmb;
+    k.svk = sv_k;
+    k.rsk = rs_k;
+    k.svnr = sv_nr;
+    k.rsnr = rs_nr;
+    k.svs = sv.slot;
+    k.svw = sv.kind ? vgd_rg_wfull[sv.i] : 0;
+    k.rli = rl.i;
+    k.rls = rl.slot;
+    k.rlw = rl.kind ? vgd_rg_wfull[rl.i] : 0;
+    k.aqi = aq.i;
+    k.aqs = aq.slot;
+    k.aqw = aq.kind ? vgd_rg_wfull[aq.i] : 0;
+    k.two = two;
+    k.hrl = rl.kind;
+    k.haq = aq.kind;
+    Kokkos::parallel_for("m1_vgd_ring", Kokkos::RangePolicy<>(vgd_cur, 0, ntot), k);
     if (rl.kind) {
       vgd_rg_sown[rl.slot] = -1;
       vgd_rg_state[rl.i] = -1;
