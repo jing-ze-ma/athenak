@@ -72,6 +72,17 @@
 #include <vector>
 
 #include "athena.hpp"
+#if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
+#include <nccl.h>
+#define M1_VGD_NCCL_ON 1
+#define M1_VGD_STREAM(ex) (ex).cuda_stream()
+#elif defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_HIP)
+#include <rccl/rccl.h>
+#define M1_VGD_NCCL_ON 1
+#define M1_VGD_STREAM(ex) (ex).hip_stream()
+#else
+#define M1_VGD_NCCL_ON 0
+#endif
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
@@ -2237,6 +2248,40 @@ bool RadiationM1::VetGdHlBuild(const int e, const int i, const bool inw, const i
 //! applies (else false, nothing done); VetGdHlEnd completes it.  VetGdHaloCompact calls
 //! both back to back; the overlap of VetGdSweep runs the next shell's local items between
 
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::VgdNcclOn
+//! \brief accel-1014: the NCCL list exchange is used (env ACC_NCCL=1 in a build with
+//! -DM1_VGD_NCCL); the communicator (over vgd_comm) is made at the first call
+
+bool RadiationM1::VgdNcclOn() {
+#if M1_VGD_NCCL_ON
+  if (acc_nccl < 0) {
+    const char *e = std::getenv("ACC_NCCL");
+    acc_nccl = (e != nullptr && std::atoi(e) != 0) ? 1 : 0;
+    if (acc_nccl) {
+      int rk = 0, nr = 1;
+      MPI_Comm_rank(vgd_comm, &rk);
+      MPI_Comm_size(vgd_comm, &nr);
+      ncclUniqueId id;
+      if (rk == 0) {ncclGetUniqueId(&id);}
+      MPI_Bcast(&id, sizeof(id), MPI_BYTE, 0, vgd_comm);
+      ncclComm_t c;
+      if (ncclCommInitRank(&c, nr, id, rk) != ncclSuccess) {
+        VgdFatal("accel-1014 ACC_NCCL: ncclCommInitRank failed");
+      }
+      acc_ncomm = static_cast<void *>(c);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> accel-1014: vet_gd list halo over NCCL (ACC_NCCL=1)"
+                  << std::endl;
+      }
+    }
+  }
+  return acc_nccl == 1;
+#else
+  return false;
+#endif
+}
+
 template <class V>
 bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V *b) {
 #if MPI_PARALLEL_ENABLED
@@ -2467,8 +2512,40 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
         if (two) {csb2_(c) = b_(m,v,kb,jb,i);}
       });
     }
-    vgd_cur.fence();
     const std::vector<int> &sp = X.sp, &rp_ = X.rp;
+    vgd_hlp.nccl = false;
+#if M1_VGD_NCCL_ON
+    if (VgdNcclOn()) {
+      // accel-1014: stream-ordered behind the pack; the scatter (VetGdHlEnd) is
+      // stream-ordered behind the receives
+      ncclComm_t nc = static_cast<ncclComm_t>(acc_ncomm);
+      auto st = M1_VGD_STREAM(vgd_cur);
+      vgd_hlp.tq.reset();
+      vgd_hlp.req.clear();
+      vgd_hlp.mrg = mrg;
+      ncclGroupStart();
+      for (int p = 0; p < np; ++p) {
+        const int rk = vgd_prk[p];
+        const size_t nrv = static_cast<size_t>(rp_[p+1] - rp_[p]);
+        const size_t nsd = static_cast<size_t>(sp[p+1] - sp[p]);
+        if (mrg) {
+          if (nrv > 0) {ncclRecv(vgd_crbm.data() + 2*rp_[p], 2*nrv, ncclDouble, rk, nc, st);}
+          if (nsd > 0) {ncclSend(vgd_csbm.data() + 2*sp[p], 2*nsd, ncclDouble, rk, nc, st);}
+        } else {
+          if (nrv > 0) {ncclRecv(crb_.data() + rp_[p], nrv, ncclDouble, rk, nc, st);}
+          if (nsd > 0) {ncclSend(csb_.data() + sp[p], nsd, ncclDouble, rk, nc, st);}
+          if (two) {
+            if (nrv > 0) {ncclRecv(crb2_.data() + rp_[p], nrv, ncclDouble, rk, nc, st);}
+            if (nsd > 0) {ncclSend(csb2_.data() + sp[p], nsd, ncclDouble, rk, nc, st);}
+          }
+        }
+      }
+      ncclGroupEnd();
+      vgd_hlp.nccl = true;
+      vgd_tpost += vgd_hlp.tq.seconds();
+    } else {
+#endif
+    vgd_cur.fence();
     vgd_hlp.tq.reset();
     auto &tq = vgd_hlp.tq;
     auto &req = vgd_hlp.req;
@@ -2507,7 +2584,12 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       }
     }
     vgd_tpost += tq.seconds();
-    // mem2-1014 vet_gd_band_ring: the slab copies of the sweep while the messages travel
+#if M1_VGD_NCCL_ON
+    }   // !NCCL
+#endif
+    // mem2-1014 vet_gd_band_ring: the slab copies of the sweep (other shells' slabs only;
+    // pure copies) on vgd_cur: MPI path = while the messages travel; NCCL path
+    // (fin5-1014) = stream-ordered behind the NCCL group, before the scatter
     VetGdRingFlush();
     // the zeros: Y's receive entries inside X's region (written by the dense unpack of X
     // as 0, as every value of X's region not on X's lists; X's own entries follow)
@@ -2581,6 +2663,13 @@ void RadiationM1::VetGdHlEnd() {
     const long long par = vgd_hlp.seq & 1;
     crb_ = DvceArray1D<Real>(vgd_ipc_rbuf + par*vgd_ipc_half, vgd_ipc_cs);
     crb2_ = DvceArray1D<Real>(vgd_ipc_rbuf + par*vgd_ipc_half + vgd_ipc_cs, vgd_ipc_cs);
+    vgd_nexch += 1.0;
+    for (int p = 0; p < np; ++p) {
+      vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real)*(two ? 2 : 1);
+    }
+  } else if (vgd_hlp.nccl) {
+    // accel-1014: the receives are stream-ordered before the scatter (counts agreed
+    // when the lists were made)
     vgd_nexch += 1.0;
     for (int p = 0; p < np; ++p) {
       vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real)*(two ? 2 : 1);
@@ -6631,7 +6720,17 @@ void RadiationM1::VetGdTwin(const int stage) {
         Real acc = 0.0;
         for (int m = 0; m <= nmb1; ++m) {
           for (int k = ks; k <= ke; ++k) {
-            for (int j = js; j <= je; ++j) {
+            int j = js;
+            // accel-1014: 8 loads (and exps) ahead of the adds, which keep their order
+            for (; j + 7 <= je; j += 8) {
+              Real t[8];
+              for (int q = 0; q < 8; ++q) {t[q] = a_(m,c,k+og,j+q+og,i);}
+              if (ex) {
+                for (int q = 0; q < 8; ++q) {t[q] = exp(t[q]);}
+              }
+              for (int q = 0; q < 8; ++q) {acc += t[q];}
+            }
+            for (; j <= je; ++j) {
               const Real v = a_(m,c,k+og,j+og,i);
               acc += ex ? exp(v) : v;
             }
@@ -6676,7 +6775,17 @@ void RadiationM1::VetGdTwin(const int stage) {
         Real acc = 0.0;
         for (int m = 0; m <= nmb1; ++m) {
           for (int k = ks; k <= ke; ++k) {
-            for (int j = js; j <= je; ++j) {
+            int j = js;
+            // accel-1014: 8 loads (and exps) ahead of the adds, which keep their order
+            for (; j + 7 <= je; j += 8) {
+              Real t[8];
+              for (int q = 0; q < 8; ++q) {t[q] = a_(m,c,k+og,j+q+og,i);}
+              if (ex) {
+                for (int q = 0; q < 8; ++q) {t[q] = exp(t[q]);}
+              }
+              for (int q = 0; q < 8; ++q) {acc += t[q];}
+            }
+            for (; j <= je; ++j) {
               const Real v = a_(m,c,k+og,j+og,i);
               acc += ex ? exp(v) : v;
             }
@@ -7369,7 +7478,29 @@ void RadiationM1::VetGdTwinTrans() {
     for (int m = 0; m <= nmb1; ++m) {
       const Real dr = cx1f(m,i+1) - cx1f(m,i);
       for (int k = ks; k <= ke; ++k) {
-        for (int j = js; j <= je; ++j) {
+        int j = js;
+        // accel-1014: the terms of 8 cells ahead of the sums, which keep their order
+        for (; j + 7 <= je; j += 8) {
+          Real tl[8], te[8], tw[8], ts[8];
+          for (int q = 0; q < 8; ++q) {
+            tl[q] = cs_(m,0,k+og,j+q+og,i);
+            ts[q] = cs_(m,1,k+og,j+q+og,i);
+          }
+          for (int q = 0; q < 8; ++q) {
+            const Real tau = exp(tl[q])*dr;
+            tw[q] = -expm1(-tau);
+            te[q] = exp(-tau);
+            ts[q] = exp(ts[q]);
+          }
+          for (int q = 0; q < 8; ++q) {
+            st += te[q];
+            sw += tw[q];
+            ssw += tw[q]*ts[q];
+            mn = fmin(mn, tl[q]);
+            mx = fmax(mx, tl[q]);
+          }
+        }
+        for (; j <= je; ++j) {
           const Real lc = cs_(m,0,k+og,j+og,i);
           const Real tau = exp(lc)*dr;
           const Real w = -expm1(-tau);
@@ -7584,7 +7715,13 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       Real sm = 0.0;
       for (int m = 0; m < nm; ++m) {
         for (int k = ks; k <= ke; ++k) {
-          for (int j = js; j <= je; ++j) {sm += ht_(m,c,k,j,i);}
+          int j = js;
+          for (; j + 7 <= je; j += 8) {   // accel-1014: loads ahead, adds in order
+            Real t[8];
+            for (int q = 0; q < 8; ++q) {t[q] = ht_(m,c,k,j+q,i);}
+            for (int q = 0; q < 8; ++q) {sm += t[q];}
+          }
+          for (; j <= je; ++j) {sm += ht_(m,c,k,j,i);}
         }
       }
       m6_(c*c1_ + i) = sm/ncol;
@@ -7654,7 +7791,13 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       Real sm = 0.0;
       for (int m = 0; m < nm; ++m) {
         for (int k = ks; k <= ke; ++k) {
-          for (int j = js; j <= je; ++j) {sm += ht_(m,c,k,j,i);}
+          int j = js;
+          for (; j + 7 <= je; j += 8) {   // accel-1014: loads ahead, adds in order
+            Real t[8];
+            for (int q = 0; q < 8; ++q) {t[q] = ht_(m,c,k,j+q,i);}
+            for (int q = 0; q < 8; ++q) {sm += t[q];}
+          }
+          for (; j <= je; ++j) {sm += ht_(m,c,k,j,i);}
         }
       }
       mo_(i) = sm/ncol;

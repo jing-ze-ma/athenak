@@ -1153,6 +1153,10 @@ class RadiationM1 {
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gf_gh;   // (gi*nm + q) multi-rank
   DvceArray1D<Real> gf_hg, gf_hx;   // ((c*n2+gj)*n1+gi): sum_a u_a(gj) (gn, x)(a, c)
   DvceArray1D<Real> gf_gn, gf_x;    // (gi*nm + q): P^T r / |phi|^2, x_g
+  DvceArray1D<Real> gf_y;           // accel-1014: (q*n1 + gi) the layer sums of gf_solve
+  DvceArray1D<Real> gf_el;          // accel-1014: banded LU of each mode (gf_inv)
+  DvceArray1D<int> gf_pv;           // accel-1014: its pivots
+  int acc_gfs = 1;                  // accel-1014: parallel gf_solve (env ACC_GFS=0: old)
   DvceArray1D<Real> gf_ainv;        // ((q*n1 + c)*n1 + gi): inverse of the mode-q matrix
   DvceArray1D<int> gf_okd;          // (q) the mode-q factorisation is usable
   void ImplicitGFInit();
@@ -2407,6 +2411,7 @@ class RadiationM1 {
     bool on = false, two = false, xe = false;   // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // vgdrot-1011: the IPC path
     bool mrg = false;                           // bsgaccel-1011: merged twin messages
+    bool nccl = false;                          // accel-1014: NCCL (stream-ordered) path
     long long seq = 0;
     int ex = -1, px = 0, i = -1;
     std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;
@@ -2417,6 +2422,12 @@ class RadiationM1 {
     Kokkos::Timer tq;
   };
   VgdHlPend vgd_hlp;
+  // accel-1014 (compile -DM1_VGD_NCCL, env ACC_NCCL=1): the per-shell list exchange of
+  // the MPI path as stream-ordered NCCL send/recv on the sweep's stream (no host fence and
+  // no MPI wait per shell; the same values reach the same band cells)
+  int acc_nccl = -1;            // -1 not decided, 0 off, 1 on
+  void *acc_ncomm = nullptr;    // ncclComm_t
+  bool VgdNcclOn();
   template <class V>
   bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V *b);
   void VetGdHlEnd();

@@ -1202,6 +1202,8 @@ void RadiationM1::ImplicitGFInit() {
   gf_g = DvceArray1D<Real>("m1_gf_g", nqm*n1);
   gf_gn = DvceArray1D<Real>("m1_gf_gn", gf_nm*n1);
   gf_x = DvceArray1D<Real>("m1_gf_x", gf_nm*n1);
+  gf_y = DvceArray1D<Real>("m1_gf_y", gf_nm*n1);
+  acc_gfs = (std::getenv("ACC_GFS") != nullptr) ? std::atoi(std::getenv("ACC_GFS")) : 1;
   gf_hg = DvceArray1D<Real>("m1_gf_hg", static_cast<size_t>(gf_nb3)*gc_n2*n1);
   gf_hx = DvceArray1D<Real>("m1_gf_hx", static_cast<size_t>(gf_nb3)*gc_n2*n1);
   gf_ainv = DvceArray1D<Real>("m1_gf_ainv", static_cast<size_t>(gf_nm)*n1*n1);
@@ -1260,6 +1262,16 @@ void RadiationM1::ImplicitGFBuild() {
                  ? 1 : 128;
   size_t scr = ScrArray1D<Real>::shmem_size(7*n1) + ScrArray1D<int>::shmem_size(n1);
   auto ai_ = gf_ainv;
+  // accel-1014: the inverse columns in a second kernel, one thread per (mode, column)
+  // (the same per-column arithmetic: bitwise); the LU of each mode stays one team
+  const bool spl = (acc_gfs != 0) &&
+                   !std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value;
+  if (spl && gf_el.extent_int(0) != gf_nm*7*n1) {
+    gf_el = DvceArray1D<Real>("m1_gf_el", gf_nm*7*n1);
+    gf_pv = DvceArray1D<int>("m1_gf_pv", gf_nm*n1);
+  }
+  auto gel_ = gf_el;
+  auto gpv_ = gf_pv;
   Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), gf_nm, ts);
   const int lv = TeamScratchLevel(scr, 0, ts);   // level 1 only if level 0 cannot fit
   Kokkos::parallel_for("m1_gf_fac", pol.set_scratch_size(lv, Kokkos::PerTeam(scr)),
@@ -1323,6 +1335,13 @@ void RadiationM1::ImplicitGFBuild() {
       ok_(q) = good;
     });
     tm.team_barrier();
+    if (spl) {
+      for (int r = tm.team_rank(); r < 7*n1; r += tm.team_size()) {
+        gel_(q*7*n1 + r) = el(r);
+      }
+      for (int r = tm.team_rank(); r < n1; r += tm.team_size()) {gpv_(q*n1 + r) = pvs(r);}
+      return;
+    }
     // the inverse, one column per thread: ai_((q*n1 + col)*n1 + r) = (A_q^{-1})(r, col),
     // the forward / back substitution of ImplicitGFPre's former per-application solve
     const bool okq = (ok_(q) != 0);
@@ -1356,6 +1375,40 @@ void RadiationM1::ImplicitGFBuild() {
       }
     }
   });
+  if (spl) {
+    Kokkos::parallel_for("m1_gf_inv", Kokkos::RangePolicy<DevExeSpace>(0, gf_nm*n1),
+    KOKKOS_LAMBDA(const int idx) {
+      const int q = idx/n1, col = idx%n1;
+      const size_t oa = (static_cast<size_t>(q)*n1 + col)*n1;
+      const int oe = q*7*n1, op = q*n1;
+      if (ok_(q) == 0) {
+        for (int r = 0; r < n1; ++r) {ai_(oa + r) = 0.0;}
+        return;
+      }
+      Real w0 = (col == 0) ? 1.0 : 0.0;
+      Real w1 = (col == 1) ? 1.0 : 0.0;
+      Real w2 = (col == 2) ? 1.0 : 0.0;
+      for (int cc = 0; cc < n1; ++cc) {
+        const int p = gpv_(op + cc) - cc;
+        if (p == 1) {const Real t = w0; w0 = w1; w1 = t;}
+        if (p == 2) {const Real t = w0; w0 = w2; w2 = t;}
+        if (cc + 1 < n1) w1 -= gel_(oe + (cc + 1)*7 + 1)*w0;
+        if (cc + 2 < n1) w2 -= gel_(oe + (cc + 2)*7 + 0)*w0;
+        ai_(oa + cc) = w0;
+        w0 = w1;
+        w1 = w2;
+        w2 = (cc + 3 == col) ? 1.0 : 0.0;
+      }
+      Real x1 = 0.0, x2 = 0.0, x3 = 0.0, x4 = 0.0;
+      for (int r = n1 - 1; r >= 0; --r) {
+        const int o = oe + r*7 + 2;
+        const Real xr = (ai_(oa + r) - gel_(o + 1)*x1 - gel_(o + 2)*x2 - gel_(o + 3)*x3
+                         - gel_(o + 4)*x4)/gel_(o);
+        ai_(oa + r) = xr;
+        x4 = x3; x3 = x2; x2 = x1; x1 = xr;
+      }
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1425,6 +1478,77 @@ void RadiationM1::ImplicitGFPre(int rc, int upd, Real c1, Real c2) {
     const int ts = std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value
                    ? 1 : 128;
     auto ai_ = gf_ainv;
+    if (acc_gfs && !std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value) {
+      // accel-1014: the same per-row arithmetic as the one-team-per-mode kernel below
+      // (bitwise), spread over the GPU: (1) the layer sums y(q, gi) one thread each;
+      // (2) x(gi, q) = sum_c Ainv(gi, c) y(c) with its four partial sums a[0..3] (the
+      // c = 0, 4, .. / 1, 5, .. / 2, 6, .. / 3, 7, .. chains, the tail into a[0]) one warp
+      // each, combined as (a[0] + a[1]) + (a[2] + a[3]) as before
+      auto y_ = gf_y;
+      Kokkos::parallel_for("m1_gf_y", Kokkos::RangePolicy<DevExeSpace>(0, nm*n1),
+      KOKKOS_LAMBDA(const int idx) {
+        const int q = idx/n1, gi = idx%n1;
+        const bool ok = (ok_(q) != 0);
+        const Real nq = nr_(q);
+        Real s = 0.0;
+        if (mpi) {
+          s = g_(gi*nm + q);
+        } else {
+          for (int m = 0; m < nmb; ++m) {
+            const int li = gi - go_(3*m);
+            if (li < 0 || li >= nx) continue;
+            const size_t o = (static_cast<size_t>(m)*nkc*nm + q)*nx + li;
+            const size_t st = static_cast<size_t>(nm)*nx;
+            Real a[4] = {0.0, 0.0, 0.0, 0.0};
+            int kc = 0;
+            for (; kc + 3 < nkc; kc += 4) {
+              a[0] += p_(o + kc*st);
+              a[1] += p_(o + (kc + 1)*st);
+              a[2] += p_(o + (kc + 2)*st);
+              a[3] += p_(o + (kc + 3)*st);
+            }
+            for (; kc < nkc; ++kc) {a[0] += p_(o + kc*st);}
+            s += (a[0] + a[1]) + (a[2] + a[3]);
+          }
+        }
+        y_(q*n1 + gi) = s;
+        gn_(gi*nm + q) = ok ? s*nq : 0.0;
+      });
+      // teams of 4 warps: warp w = chain w of 32 rows gi0 .. gi0 + 31 of mode q
+      constexpr int nw = 32;
+      const int nblk = (n1 + nw - 1)/nw;
+      const int cmain = (n1 >= 4) ? (((n1 - 4)/4)*4 + 4) : 0;   // first c of the tail
+      size_t scr2 = ScrArray1D<Real>::shmem_size(n1) + ScrArray1D<Real>::shmem_size(4*nw);
+      Kokkos::TeamPolicy<DevExeSpace> pol2(DevExeSpace(), nm*nblk, 4*nw);
+      const int lv2 = TeamScratchLevel(scr2, 0, 4*nw);
+      Kokkos::parallel_for("m1_gf_solve",
+                           pol2.set_scratch_size(lv2, Kokkos::PerTeam(scr2)),
+      KOKKOS_LAMBDA(const TeamMember_t &tm) {
+        const int q = tm.league_rank()/nblk;
+        const int gi0 = (tm.league_rank() % nblk)*nw;
+        ScrArray1D<Real> y(tm.team_scratch(lv2), n1);
+        ScrArray1D<Real> pa(tm.team_scratch(lv2), 4*nw);
+        for (int c = tm.team_rank(); c < n1; c += tm.team_size()) {y(c) = y_(q*n1 + c);}
+        tm.team_barrier();
+        const int w = tm.team_rank()/nw, l = tm.team_rank()%nw;
+        const int gi = gi0 + l;
+        Real a = 0.0;
+        if (gi < n1) {
+          const size_t oa = static_cast<size_t>(q)*n1*n1 + gi;
+          for (int c = w; c < cmain; c += 4) {
+            a += ai_(oa + static_cast<size_t>(c)*n1)*y(c);
+          }
+          if (w == 0) {
+            for (int c = cmain; c < n1; ++c) {a += ai_(oa + static_cast<size_t>(c)*n1)*y(c);}
+          }
+        }
+        pa(w*nw + l) = a;
+        tm.team_barrier();
+        if (w == 0 && gi < n1) {
+          x_(gi*nm + q) = (pa(l) + pa(nw + l)) + (pa(2*nw + l) + pa(3*nw + l));
+        }
+      });
+    } else {
     size_t scr = ScrArray1D<Real>::shmem_size(n1);
     Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nm, ts);
     const int lv = TeamScratchLevel(scr, 0, ts);   // level 1 only if level 0 cannot fit
@@ -1477,6 +1601,7 @@ void RadiationM1::ImplicitGFPre(int rc, int upd, Real c1, Real c2) {
         x_(gi*nm + q) = s;
       }
     });
+    }
   }
   // the tables hg / hx ((c*n2 + gj)*n1 + gi) = sum_a u_a(gj) (gn, x)(gi, c*nb2 + a)
   {
