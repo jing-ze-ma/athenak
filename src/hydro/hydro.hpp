@@ -100,6 +100,7 @@ class Hydro {
  public:
   Hydro(MeshBlockPack *ppack, ParameterInput *pin);
   ~Hydro();
+  template <class V> void DtRetryVisit(V &v);   // hydro_dtretry_visit.hpp (generated)
 
   // data
   ReconstructionMethod recon_method;

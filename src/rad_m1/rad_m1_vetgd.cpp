@@ -7150,3 +7150,36 @@ void RadiationM1::VetGdHalfRange(const int stage) {
 }
 
 } // namespace radm1
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::DtRetryQuiesce
+//! \brief fin4-dtretry: before the dt-retry checkpoint is taken (restoring = false) or
+//! put back (true).  A symmetric-reference solve still pending is joined (it is launched
+//! and joined inside one build, so this is normally nothing).  Before a restore no host
+//! thread or table instance may still be writing into the module: the vet_gd table
+//! prefetch is waited for.  Waiting changes no number.  (vet_gd_async's build thread is
+//! refused with dt_retry at startup.)
+
+void RadiationM1::DtRetryQuiesce(bool restoring) {
+  if (vgd_sr_pend) {VetGdSymRefJoin();}
+  if (!restoring) return;
+  if (vgd_tab_state == 1 && vgd_tabf.valid()) {vgd_tabf.wait();}
+  if (vgd_on) {vgd_tex.fence();}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::DtRetryAfterRestore
+//! \brief fin4-dtretry: after the checkpoint is put back, the vet_gd table prefetch state
+//! (whose future the failed attempt may have consumed, and whose pinned host / second
+//! device buffers it may have rewritten; they are not checkpointed) is reset to "nothing
+//! prefetched, host tables of no angle": the next rotation computes its tables
+//! synchronously with the same function (VgdTabCompute), so the same numbers.
+
+void RadiationM1::DtRetryAfterRestore() {
+  if (vgd_tabf.valid()) {vgd_tabf.get();}
+  if (vgd_on) {
+    vgd_tex.fence();
+    vgd_tab_state = 0;
+    vgd_tabh.alpha = -9.0;
+  }
+}

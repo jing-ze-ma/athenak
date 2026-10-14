@@ -13923,6 +13923,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ImplicitNCDump(it, 1, gasx, igb, igr, igf, igy);
     }
     flr_ng += nfg;
+    // fin4-dtretry: a solve outside a hesdirk2 stage (a stage that writes eint <= 0 is not
+    // admissible and is redone with backward Euler) that writes back eint <= 0 anywhere
+    if (dtr_on && nfg > 0.0 && !t2st) {
+      if (!dtr_fail) {dtr_why = 4; dtr_resid = nfg;}
+      dtr_fail = true;
+    }
     // DEBUG dbg_t2_admiss (m1-positivity): a solve that ENDS with E <= e_floor or a
     // written-back eint <= 0 anywhere (the BE redo included) lists its cells and rows
     if ((nfe > 0.0 || nfg > 0.0) && (t2_dbg_adm_n < t2_dbg_adm)) {
@@ -14017,7 +14023,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (littests cb ring 4, c dt/dx = 256: the stage-1 Picard of cycle 2 ends at 1e25,
     // the backward-Euler step from the same U^n converges in 4 passes)
     const bool t2redo = t2st && t2_fail;
-    if (!t2redo && impl_res_fatal > 0.0 &&
+    // fin4-dtretry: with <time>/dt_retry the cycle is taken again with a smaller dt (the
+    // Driver puts the checkpoint back) instead of going on NON-CONVERGED or stopping
+    if (dtr_on && !t2redo) {
+      const bool div = impl_res_fatal > 0.0 &&
+                       (!(resid <= impl_res_fatal) || !std::isfinite(lresid));
+      if (!dtr_fail) {dtr_why = div ? 2 : 1; dtr_resid = resid;}
+      dtr_fail = true;
+    }
+    if (!dtr_on && !t2redo && impl_res_fatal > 0.0 &&
         (!(resid <= impl_res_fatal) || !std::isfinite(lresid))) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1> Picard solve DIVERGED: resid=" << resid
@@ -14031,6 +14045,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // implicit_resid_fatal_masked: the excluded cells are still solved every pass; a
   // diverging one must stop the run before its state spreads (NaN maps to 1e300)
   if (rmask && impl_res_fatal_masked > 0.0 && !(t2st && t2_fail) &&
+      !(rexcl_last <= impl_res_fatal_masked && rexcl_last < 1.0e300) && dtr_on) {
+    if (!dtr_fail) {dtr_why = 3; dtr_resid = rexcl_last;}
+    dtr_fail = true;
+  } else if (rmask && impl_res_fatal_masked > 0.0 && !(t2st && t2_fail) &&
       !(rexcl_last <= impl_res_fatal_masked && rexcl_last < 1.0e300)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_m1> Picard solve DIVERGED in the masked cells: "

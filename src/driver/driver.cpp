@@ -97,6 +97,8 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
     ndiag = pin->GetOrAddInteger("time", "ndiag", 1);
     nan_check_cycles = pin->GetOrAddInteger("time", "nan_check_cycles", 100);
     dt_min = pin->GetOrAddReal("time", "dt_min", 0.0);
+    // fin4-dtretry: <time>/dt_retry (fresh default true; restart without the key false)
+    pdtr_ = std::make_shared<dtretry::DtRetry>(pin, pmesh);
 
     if (integrator == "rk1") {
       // RK1: first-order Runge-Kutta / the forward Euler (FE) method
@@ -469,9 +471,13 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     if (wall_time > 0.) {
       elapsed_time = UpdateWallClock();
     }
+    // fin4-dtretry: a retried cycle starts from the checkpoint already in place
+    bool dtr_retrying = false;
     while ((pmesh->time < tlim) && (pmesh->ncycle < nlim || nlim < 0) &&
            (elapsed_time < wall_time)) {
-      if (global_variable::my_rank == 0) {OutputCycleDiagnostics(pmesh);}
+      if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
+      if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
+      dtr_retrying = false;
 
       // Execute TaskLists
       // Work before time integrator indicated by "0" in stage
@@ -596,6 +602,20 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
+      // fin4-dtretry: a module raised a failure in this cycle -> the checkpoint back, a
+      // smaller dt, and the cycle again (nothing of the failed attempt is output)
+      if (pdtr_ != nullptr && pdtr_->on && pdtr_->Failed(pmesh)) {
+        if (!pdtr_->Retry(pmesh, this)) {
+#if MPI_PARALLEL_ENABLED
+          MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+#else
+          std::_Exit(EXIT_FAILURE);
+#endif
+        }
+        dtr_retrying = true;
+        continue;
+      }
+
       // Work after time integrator indicated by "1" in stage
       ExecuteTaskList(pmesh, "after_timeintegrator", 1);
 
@@ -639,7 +659,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // AMR
       if (pmesh->adaptive) {pmesh->pmr->AdaptiveMeshRefinement(this, pin);}
       // compute new timestep AFTER all Meshblocks refined/derefined
+      if (pdtr_ != nullptr) {pdtr_->Accept(pmesh);}
       pmesh->NewTimeStep(tlim);
+      if (pdtr_ != nullptr) {pdtr_->AfterNewDt(pmesh, pin);}
 
       // restart files, now that pmesh->dt holds the next cycle's timestep
       for (auto &out : pout->pout_list) {

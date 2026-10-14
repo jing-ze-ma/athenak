@@ -1275,6 +1275,11 @@ void Mesh::NewTimeStep(const Real tlim) {
     }
   }
 
+  // fin4-dtretry: the cap a dt-retry left (driver/dt_retry.cpp; none = -1, and then dt is
+  // untouched, bit for bit)
+  dt_uncapped = dt;
+  if (dt_cap > 0.0 && dt > dt_cap) {dt = dt_cap;}
+
   // vgdrot2-1012: vet_gd_rotate_dt + vet_gd_rotate_align: land on the rotation times
   if (pmb_pack->pradm1 != nullptr) {dt = pmb_pack->pradm1->VetGdAlignDt(time, dt);}
 
