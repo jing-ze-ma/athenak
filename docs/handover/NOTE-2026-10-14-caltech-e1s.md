@@ -98,3 +98,16 @@ PU S3_268 ref at 5e5 / 9e5: vrV 0.076 / -0.039, vrM 0.58 / -0.19, rsurf 1.009 / 
 - **Gates:** smoke and restart are BITWISE. The BG check to 1e6 s is quiet: |v_r| <= 0.1 km/s above 1.1 R_ph, L_top/L0 within 1e-4, no infall or floor activity, 0 DT_RETRY.
 - **Production:** agcE1s 4513330 (running) -> 4513331 -> 4513332 (afterany), each 14 d on QoS long (1 running job per user). tlim 1e9 (user rule, NOTE-2026-10-14-caltech-rule-long-tlim.md), so the run continues past 2.4192e7 until the walltime runs out, about 14 d per link, holding 2 H200 unless the hook STOPs it. First rate 0.464 s/cycle; t = 9.5e5 s at the time of writing.
 - **Section 6 evolution tables:** Caltech pushes them to this NOTE as t passes 5e6, 7e6, 9e6 and 1.25e7 s (first in about 1 h), and flags at once any infall < -5 km/s, rsurf > 1.15, DT_RETRY bursts or Picard mean > 20.
+
+## Evolution t = 5e6 s (Caltech, 10-14 07:15 PDT)
+
+| t (s) | run | vrV | vrM | vr105 | KEe | rsurf | L_top/L0 | KE_int |
+|---|---|---|---|---|---|---|---|---|
+| 5.0e6 | **E1s Caltech (seed 1e-3, full size)** | -0.20 | 0.52 | -0.24 | 1.6e39 | 1.010 | 0.996 | 6.3e42 |
+| 5e6 | PU S3_268 (ref) | 0.42 | 1.83 | -0.14 | 1.0e40 | 1.011 | 0.994 | 5.9e42 |
+| 5e6 | old E1 (seed 1e-2) | 5.76 | 11.75 | 11.95 | 3.7e41 | 1.129 | | |
+
+- Other values at 5.0e6: w_mlt 0.994, Picard mean (hst col 22) 4.55, DT_RETRY 0, FATAL 0, NON-CONVERGED 0, 0.549 s/cycle, dt 727.27 s. vr110 is -0.06; d105 (rho/rho0 at 1.05 R_ph) is 2.24, rising to 3.73 at 5.2e6, while d110 is 0.98.
+- No flag. There is no infall (velocities within ±0.5 km/s), rsurf is 1.010, and KE_int matches PU. The KEe and velocity amplitudes are below PU's, about 6x lower in KEe.
+- The d105 density rise at 1.05 R_ph is the one thing to watch.
+- Full table: caltech_out/prod_pulse.txt. user.hst: caltech_out/agcar3d.user.hst. Live page: https://claude.ai/artifact/Li7MBXUZCSMaS6T2R5sEQU (Caltech account).
