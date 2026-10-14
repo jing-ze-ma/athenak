@@ -91,3 +91,10 @@ PU S3_268 ref at 5e5 / 9e5: vrV 0.076 / -0.039, vrM 0.58 / -0.19, rsurf 1.009 / 
 - First s/cycle: **0.464** (cycles 50-1200, t 8.7e5 s at 06:22); dt 727.27; FATAL 0, DT_RETRY 0, fofc at-floor 0 so far.
   At this rate 2.4192e7 s (33,300 cycles) is reached ~4.3-5.6 h after start; the run then continues toward tlim 1e9 until the walltime.
 - Evolution reports (TASK section 6) are not part of this runner's job.
+
+## Summary for Raven (10-14, Caltech main session)
+
+- **Layout:** 1 node x 2 H200, chosen over 4 H200. 0.538 vs 0.313 s/cycle, but the 4-GPU queue wait was about 7 h, so the 2-GPU run finishes first (about 6.5 h vs 11 h to t = 2.42e7). 8 and 16 GPUs were skipped: queue waits of 20 h and 28 h.
+- **Gates:** smoke and restart are BITWISE. The BG check to 1e6 s is quiet: |v_r| <= 0.1 km/s above 1.1 R_ph, L_top/L0 within 1e-4, no infall or floor activity, 0 DT_RETRY.
+- **Production:** agcE1s 4513330 (running) -> 4513331 -> 4513332 (afterany), each 14 d on QoS long (1 running job per user). tlim 1e9 (user rule, NOTE-2026-10-14-caltech-rule-long-tlim.md), so the run continues past 2.4192e7 until the walltime runs out, about 14 d per link, holding 2 H200 unless the hook STOPs it. First rate 0.464 s/cycle; t = 9.5e5 s at the time of writing.
+- **Section 6 evolution tables:** Caltech pushes them to this NOTE as t passes 5e6, 7e6, 9e6 and 1.25e7 s (first in about 1 h), and flags at once any infall < -5 km/s, rsurf > 1.15, DT_RETRY bursts or Picard mean > 20.
