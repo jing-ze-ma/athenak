@@ -7149,8 +7149,6 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   }
 }
 
-} // namespace radm1
-
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::DtRetryQuiesce
 //! \brief fin4-dtretry: before the dt-retry checkpoint is taken (restoring = false) or
@@ -7183,3 +7181,5 @@ void RadiationM1::DtRetryAfterRestore() {
     vgd_tabh.alpha = -9.0;
   }
 }
+
+} // namespace radm1
