@@ -129,3 +129,9 @@ Flag at once: any infall (vrV, vrM < -5 km/s), rsurf > 1.15, DT_RETRY bursts, or
 ## NOTE skeleton (`NOTE-2026-10-14-caltech-e1s.md`)
 Build/deck md5 | scaling table (arm, layout, s/cycle, GB/GPU, Picard, counts) | limits + queue estimates | chosen layout + arithmetic |
 gate (BITWISE lines, BG check) | STARTED (jobs, walltime) | evolution tables.
+
+## ADDENDUM (USER 10-14): very long time limit
+USER: "make the max time limit very long probably". For production links use the LONGEST walltime the partition/QoS allows
+(e.g. several days if permitted), not 24 h; pick the layout/partition with this in mind (a long-walltime queue on fewer nodes is fine
+if its total time-to-solution is competitive). Set athena -t to walltime minus ~20 min so the final rst is written. Keep the 2 afterany
+backup links (same long walltime). Report the chosen walltime and the queue/QoS limits in the QUEUED NOTE.
