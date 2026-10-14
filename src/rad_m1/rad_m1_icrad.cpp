@@ -47,6 +47,7 @@
 #include "driver/driver.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/m1_fluid.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -475,6 +476,56 @@ void RadiationM1::IcRadRun(Driver *pdrive) {
       if (dl < icr_relax_tol && n >= 1) break;
     }
     pm->dt = dt0;
+  }
+  // dic-1013 (icr_fmeas, set by the pgen; default false = nothing): one pass at the run's
+  // dt with the radiative force on the gas (as the first step will apply it); the net
+  // x1 momentum it deposits, dm - dt rho a_ref, is kept per cell in icr_dm, then the gas
+  // momentum is restored and its kinetic-energy change taken back out of IEN (the gas
+  // keeps the internal energy of the pass)
+  FluidRef flr = FluidRef::Get(pmy_pack);
+  if (icr_fmeas && flr.on) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+    const int ks = indcs.ks, ke = indcs.ke;
+    const int nmb1 = pmy_pack->nmb_thispack - 1;
+    auto uh = flr.u0;
+    DvceArray5D<Real> sv("icr_fm_sv", nmb1 + 1, 3, uh.extent_int(2), uh.extent_int(3),
+                         uh.extent_int(4));
+    par_for("icr_fm_save", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      sv(m,0,k,j,i) = uh(m,IM1,k,j,i);
+      sv(m,1,k,j,i) = uh(m,IM2,k,j,i);
+      sv(m,2,k,j,i) = uh(m,IM3,k,j,i);
+    });
+    Kokkos::realloc(icr_dm, nmb1 + 1, uh.extent_int(2), uh.extent_int(3),
+                    uh.extent_int(4));
+    Kokkos::deep_copy(icr_dm, 0.0);
+    pm->dt = dt0;
+    dbg_gas_force = sgf;
+    dbg_gas_force_trans = sgft;
+    icr_tag = "fmeas";
+    pass();
+    dbg_gas_force = false;
+    dbg_gas_force_trans = false;
+    auto dm_ = icr_dm;
+    par_for("icr_fm_rest", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = uh(m,IDN,k,j,i);
+      const Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
+      const Real o1 = sv(m,0,k,j,i), o2 = sv(m,1,k,j,i), o3 = sv(m,2,k,j,i);
+      dm_(m,k,j,i) = m1 - o1;
+      uh(m,IEN,k,j,i) -= 0.5*((m1*m1 + m2*m2 + m3*m3) - (o1*o1 + o2*o2 + o3*o3))/d;
+      uh(m,IM1,k,j,i) = o1;
+      uh(m,IM2,k,j,i) = o2;
+      uh(m,IM3,k,j,i) = o3;
+    });
+    icr_dm_dt = dt0;
+    if (global_variable::my_rank == 0) {
+      std::printf("<rad_m1> ic_rad: force pass (dic-1013) at dt = %.6e, L_top = "
+                  "%.10e\n", dt0, IcRadLtop());
+    } else {
+      (void) IcRadLtop();
+    }
   }
   icr_active = false;
   dbg_gas_force = sgf;

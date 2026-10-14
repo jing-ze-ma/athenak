@@ -129,6 +129,9 @@ class ProblemGenerator {
   // so a pgen can adjust its initial state to the relaxed radiation (he_star_m1:
   // he_ic_rad_atm_post).  Left null (every other pgen, ic_rad = none) it is never called.
   UserCycleFnPtr user_icpost_func=nullptr;
+  // dic-1013: while true after user_icpost_func, Driver::Initialize runs the ic_rad
+  // passes and the hook again (the hook clears it; default false = once)
+  bool user_icpost_again=false;
   // predefined problem generator functions (default test suite)
   void CallProblemGenerator(ParameterInput *pin, bool is_restart);
   void Advection(ParameterInput *pin, const bool restart);
