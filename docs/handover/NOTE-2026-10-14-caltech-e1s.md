@@ -136,3 +136,16 @@ PU S3_268 ref at 5e5 / 9e5: vrV 0.076 / -0.039, vrM 0.58 / -0.19, rsurf 1.009 / 
 - No flag. There is no infall (the old E1 was at -21 km/s by now), and rsurf is starting to rise (1.021).
 - L_top/L0 tracks PU almost exactly (0.911 vs 0.909). KE_int is about half of PU's, and KEe about 10x lower.
 - caltech_out files have been updated.
+
+## Evolution t = 1.25e7 s
+
+| t (s) | run | vrV | vrM | vr105 | KEe | rsurf | L_top/L0 | KE_int |
+|---|---|---|---|---|---|---|---|---|
+| 1.25e7 | **E1s Caltech** | 0.02 | 0.77 | -0.35 | 3.4e40 | 1.031 | 0.780 | 8.3e43 |
+| 1.25e7 | PU S3_268 (ref) | 0.03 | 0.93 | 0.39 | 1.2e41 | 1.072 | 0.794 | 1.1e44 |
+| 1.24e7 | old E1 (seed 1e-2) | -45.9 | -26.4 | -50.6 | 3.5e41 | 1.074 | | |
+
+- Other values: w_mlt 0.624, Picard (col 22) 5.9, d105 4.33, d110 0.98; DT_RETRY 0, FATAL 0, NON-CONVERGED 0; dt 727.27. t 1.30e7 at 9422 s elapsed, about 0.53 s/cycle.
+- No flag. The run passed the old E1's divergence time (1.24e7) with no retries and no infall. It is now close to PU: vrV and vrM match, L_top/L0 0.780 vs 0.794, KE_int 8.3e43 vs 1.1e44. rsurf 1.031 is below PU's 1.072.
+- d105 (rho/rho0 at 1.05 R_ph) keeps rising: 2.2 -> 4.3 between 5e6 and 1.25e7. That is the one quantity to watch.
+- This completes the section 6 schedule. Caltech will report the end (t = 2.42e7, the old tlim) and anything flagged; the run continues past it under tlim 1e9.
