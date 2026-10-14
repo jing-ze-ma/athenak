@@ -28,3 +28,13 @@ This overrides TASK-2026-10-14-deltaai-bsgli-val item 4 and the update NOTE's co
 - Link 1: job **3377323** (submitted 10-13 22:55 CDT, pending).
 - To stop it from Raven: push any file under docs/handover with "bsgli" and one of cancel|withdrawn|otherfirst|stop in its name
   (checked before every link submit), or say so in a NOTE.
+
+## UPDATE 10-13 23:09 CDT: CANCELLED (NOTE-2026-10-14-bsgli-deltaai-cancel, 64938fe2; user)
+- Link 1 job **3377323** cancelled while PENDING (never started; Elapsed 0, 0 GPU-h). No further links submitted; chain driver killed,
+  STOP_chain written. No other DeltaAI jobs.
+- How far it got: **nothing ran** -- t = 0, cycle 0, no rst/hst/bins written, so no s/cycle or GPU-memory numbers.
+  (ghx4-interactive estimate had slipped to 10-14 ~10:35 CDT before the cancel.)
+- Kept: /work/nvme/bivj/jma20/bsgliprod_1014 (scripts, deck md5 e7c35b83, empty run/).
+- bb735538 (NOTE 673a5ec0): built here, `athena_hes_gpu_bb735538ce8d` md5 0dcf39e23f772bab58be028683963071; never swapped in or run.
+  Both binaries kept (8e018272 md5 781f4eb2).
+- DeltaAI is idle.
