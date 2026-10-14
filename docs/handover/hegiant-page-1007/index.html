@@ -1,0 +1,118 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>He Giant Expansion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Source+Sans+3:wght@400;600&family=Source+Code+Pro:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; star facts and run status first, then the figures in the order the expansion story unfolds. */
+:root {
+  --bg: #f6f5f2; --surface: #ffffff; --fg: #23201b; --muted: #635d52; --rule: #ddd8cf;
+  --accent: #a4481c; --note-bg: #fbf0e6; --note-fg: #7a3410; --plate: #ffffff;
+  --display: "Fraunces", Georgia, serif;
+  --body: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Source Code Pro", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #16140f; --surface: #1f1c16; --fg: #ece6db; --muted: #a59d8e;
+    --rule: #34302a; --accent: #e8915f; --note-bg: #3a2516; --note-fg: #f2c3a2; --plate: #ffffff; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #16140f; --surface: #1f1c16; --fg: #ece6db; --muted: #a59d8e;
+  --rule: #34302a; --accent: #e8915f; --note-bg: #3a2516; --note-fg: #f2c3a2; --plate: #ffffff; color-scheme: dark; }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.55; padding-inline: 18px; padding-block: 28px 56px; }
+main { max-width: 1100px; margin: 0 auto; display: grid; gap: 34px; }
+header { display: grid; gap: 12px; }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.1; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 1.35rem; margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 74ch; }
+.lede { color: var(--muted); }
+.note { background: var(--note-bg); color: var(--note-fg); border-radius: 6px; padding: 10px 14px; font-size: 0.93rem; max-width: 80ch; }
+section { display: grid; gap: 12px; border-top: 1px solid var(--rule); padding-top: 20px; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+.plate { background: var(--plate); border: 1px solid var(--rule); border-radius: 4px; padding: 6px; display: block; }
+.plate img { display: block; width: 100%; height: auto; }
+.narrow .plate { max-width: 760px; }
+figcaption { font-size: 0.9rem; color: var(--muted); max-width: 82ch; }
+.tbl { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 520px; font-size: 0.9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+thead th { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tbody tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+code { font-family: var(--mono); font-size: 0.88em; }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); padding-top: 14px; }
+</style>
+
+<main>
+<header>
+  <h1>A helium giant swelling weeks before core collapse</h1>
+  <p class="lede">3-D radiation-hydrodynamics (AthenaK, implicit two-moment radiation with a short-characteristics Eddington tensor) of the envelope of a hydrogen-free star caught during core silicon burning. Its helium-burning shell pumps far more energy into the envelope than the surface radiates, so the envelope is absorbing heat and expanding. The run follows that expansion.</p>
+  <div class="two">
+    <div class="tbl"><table>
+      <thead><tr><th>The star (MESA profile)</th><th>value</th></tr></thead>
+      <tbody>
+        <tr><td>Model</td><td>Wu's grid, initial He-star mass 2.754 M<sub>☉</sub>, 100-day binary (MESA r15140)</td></tr>
+        <tr><td>Mass</td><td class="n">2.56 M<sub>☉</sub></td></tr>
+        <tr><td>Luminosity (surface)</td><td class="n">1.62 × 10<sup>4</sup> L<sub>☉</sub></td></tr>
+        <tr><td>Radius</td><td class="n">61.8 R<sub>☉</sub></td></tr>
+        <tr><td>Surface temperature</td><td class="n">8.3 kK</td></tr>
+        <tr><td>Envelope</td><td>X = 0, Y 0.93, C 0.033, O 0.016; ~1 M<sub>☉</sub> above 1 R<sub>☉</sub></td></tr>
+        <tr><td>Centre</td><td>Si burning, no iron core yet</td></tr>
+      </tbody>
+    </table></div>
+    <div class="tbl"><table>
+      <thead><tr><th>The simulation</th><th>value</th></tr></thead>
+      <tbody>
+        <tr><td>Domain</td><td>r = 3–200 R<sub>☉</sub>; wedge θ 60–120°, φ 0–60°</td></tr>
+        <tr><td>Grid</td><td class="n">445 × 128 × 128</td></tr>
+        <tr><td>Energy input at 3 R<sub>☉</sub></td><td class="n">6.8 × 10<sup>6</sup> L<sub>☉</sub> (≈ 420 L<sub>surf</sub>)</td></tr>
+        <tr><td>Initial state</td><td>MESA T(r) in hydrostatic balance with our EOS and opacities</td></tr>
+        <tr><td>Convective scaffold</td><td>on until 5 d, ramped off 5→10 d</td></tr>
+        <tr><td>Now</td><td class="n">10.4 d · 0.83 s/step on 4 MI300A · 0 failed solves</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</header>
+
+<section>
+  <h2>The star grows as MESA predicts</h2>
+  <figure class="narrow">
+    <a class="plate" href="img/fig_rph.png" target="_blank" rel="noopener"><img src="img/fig_rph.png" alt="Photosphere radius rising from 61.9 to 68.4 solar radii over 8.5 days, close to the MESA expansion line; the radius of the outer density contour overshoots to 69.4 at 3.5 days, dips and rises again"></a>
+    <figcaption>Blue: photosphere radius (where the shell-mean Rosseland optical depth reaches 2/3). Black dashed: the MESA star's expansion, 61.8 R<sub>☉</sub> plus its 6.6 km/s surface speed. Orange: where the shell-mean density drops to 10<sup>−12</sup> g cm<sup>−3</sup>. The photosphere grew from 61.9 to 69.4 R<sub>☉</sub> in 9.5 days, within about 0.4 R<sub>☉</sub> of the MESA line. Then, as the scaffold finished switching off, it sped up: 73.5 R<sub>☉</sub> at 10.4 d, roughly 40 km/s over the last day, about six times the MESA rate. The outer atmosphere first overshot (puffing out to 69.4 R<sub>☉</sub> at 3.5 d), fell back, and now rises with the star. Grey: the window in which the convective scaffold is switched off.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>Structure: the envelope holds, the surface reorganises</h2>
+  <figure>
+    <a class="plate" href="img/fig_profiles.png" target="_blank" rel="noopener"><img src="img/fig_profiles.png" alt="Shell-mean density, radiation temperature, mean radial velocity and rms radial velocity against radius at 0, 2.5, 5 and 8.5 days, with the MESA profile"></a>
+    <figcaption>Shell means at 0, 2.5, 5 and 10.4 d, with the MESA profile dashed. Top: density and radiation temperature. Inside about 55 R<sub>☉</sub> the envelope stays on the MESA profile while slowly lifting. The surface layers reorganise: a dense shell (about 10<sup>−8</sup> g cm<sup>−3</sup>) builds up at 62–68 R<sub>☉</sub>, with a temperature inversion at its top. Bottom left: mean radial velocity. The envelope expands at a few km/s, rising outward like the MESA velocity profile and faster near the surface (up to 36 km/s at 10.4 d). Bottom right: rms velocity about the mean, i.e. convection. It is strong (15–23 km/s) below about 30 R<sub>☉</sub>, reaching further out with time, plus a new turbulent layer near 78 R<sub>☉</sub> at the expanding surface.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>What the flow looks like</h2>
+  <figure>
+    <a class="plate" href="img/fig_slices.png" target="_blank" rel="noopener"><img src="img/fig_slices.png" alt="Meridional slice at 8.5 days: log density, radial velocity and log radiation temperature, full wedge and a zoom on 50 to 75 solar radii"></a>
+    <figcaption>Meridional slice through the middle of the wedge at the latest dump (10.4 d): density, radial velocity (clipped at ±30 km/s) and radiation temperature, with a zoom on 50–75 R<sub>☉</sub>. Convective plumes are visible near the base (5–20 R<sub>☉</sub>), while the outer envelope moves outward almost uniformly, with shells of faster expansion near the surface.</figcaption>
+  </figure>
+  <figure>
+    <a class="plate" href="img/fig_shell.png" target="_blank" rel="noopener"><img src="img/fig_shell.png" alt="Maps of radial velocity and relative density on a deep shell at 20 solar radii and on a shell just below the photosphere at 66.4 solar radii"></a>
+    <figcaption>Maps across the wedge at the latest dump (10.4 d). Top, deep in the envelope (20 R<sub>☉</sub>): convective cells, up- and downflows of about ±25 km/s with density contrasts of a few percent. Bottom, just below the photosphere (71.3 R<sub>☉</sub>): the whole layer now moves outward at about 25 km/s, with weak density structure (±10 %); at 8.5 d this layer was slower (5–15 km/s) and more structured (±40 %).</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>Energy budget</h2>
+  <figure class="narrow">
+    <a class="plate" href="img/fig_hst.png" target="_blank" rel="noopener"><img src="img/fig_hst.png" alt="Time series of the emergent and base radiative luminosity, kinetic energy, and fractional mass change"></a>
+    <figcaption>Top: luminosity leaving the top of the domain (blue) and the radiative part of the luminosity entering at the base (orange), in units of the MESA surface luminosity, scaled from the wedge to the whole star. Middle: kinetic energy, now about 3 × 10<sup>45</sup> erg and still growing. Bottom: total mass change, −8.5 × 10<sup>−8</sup> of the mass, from the density floor and boundaries. Nothing has reached the domain top at 200 R<sub>☉</sub> yet.</figcaption>
+  </figure>
+  <p class="note">Open points. (0) The photosphere's speed-up after 9.5 d coincides with the end of the scaffold switch-off and with the surface moving onto coarse radial cells; it is not yet known whether it is physical or partly resolution. (1) The light leaving the top is only about 0.3–0.6 of the MESA surface luminosity and oscillates strongly; most of the energy put in at the base goes into heating and lifting the envelope, as in MESA, but the low emergent value needs checking against the top boundary treatment. (2) The photosphere has already moved off the finely resolved radial band (60.3–64.2 R<sub>☉</sub>). A finer grid and a conservative remap are ready. A slow first solve after remapping has been traced to the remapped radiation field (the hydro remap is fine) and is being fixed before the switch.</p>
+</section>
+
+<footer>Run: <code>/viper/ptmp2/jinma/he_giant_1006/runs/scout128</code> (viper apu, 2 nodes). Figures: <code>he_giant_1006/page/make_figs.py</code>. Setup notes: <code>PROFILE_CHECK.md</code>, <code>SETUP.md</code>. Wedge sums are scaled to the whole star by 4π/Ω.</footer>
+</main>
+
+</body></html>

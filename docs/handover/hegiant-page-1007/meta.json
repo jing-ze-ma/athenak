@@ -1,0 +1,17 @@
+{
+ "title": "He Giant Expansion",
+ "url": "https://claude.ai/artifact/4oYAmNEsU2dAbR8sJcSDNN",
+ "updated": "2026-10-07",
+ "version": "1791387258-72e9",
+ "files": 6,
+ "bytes": 782318,
+ "capabilities": "none (no contract pin, no runtime capabilities)",
+ "paths": [
+  "img/fig_hst.png",
+  "img/fig_profiles.png",
+  "img/fig_rph.png",
+  "img/fig_shell.png",
+  "img/fig_slices.png",
+  "index.html"
+ ]
+}
