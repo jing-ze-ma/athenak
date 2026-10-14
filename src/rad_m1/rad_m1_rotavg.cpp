@@ -403,11 +403,16 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
   const int64_t ncint = static_cast<int64_t>(ni)*nj*nk;
   const int64_t ncout = static_cast<int64_t>(n1)*n2*n3;
   const int64_t nv = ncomp*ncint;
-  const int64_t ntot = sl.extent_int(1)*ncout;
-  for (int m = 0; m < nmb; ++m) {   // one MeshBlock per launch (int range)
-  par_for("m1_ra_rst", DevExeSpace(), 0, static_cast<int>(ntot - 1),
+  const int64_t ntot = static_cast<int64_t>(sl.extent_int(1))*ncout;
+  // fin51-1014: one MeshBlock per launch, and launches of at most 2^30 values (the
+  // index range is int; a block's record can exceed 2^31 values); one launch = as before
+  const int64_t nch = int64_t(1) << 30;
+  for (int m = 0; m < nmb; ++m) {
+  for (int64_t q0 = 0; q0 < ntot; q0 += nch) {
+  const int64_t nq = std::min(nch, ntot - q0);
+  par_for("m1_ra_rst", DevExeSpace(), 0, static_cast<int>(nq - 1),
   KOKKOS_LAMBDA(const int qi) {
-    const int64_t q = qi;
+    const int64_t q = q0 + qi;
     const int s = static_cast<int>(q/ncout);
     const int64_t r2 = q - s*ncout;
     const int k = static_cast<int>(r2/(static_cast<int64_t>(n2)*n1));
@@ -428,6 +433,7 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
       d(m,n,kk,jj,ii) = sl(m,s,k,j,i);
     }
   });
+  }
   }
 }
 }  // namespace

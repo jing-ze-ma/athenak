@@ -743,21 +743,21 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     data_size += 2*nout1*nout2*nout3*sizeof(Real);      // mhd wder (IDPR, IDG1)
   }
   if (nwarm > 0) {
-    data_size += nwarm*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
+    data_size += static_cast<IOWrapperSizeT>(nwarm)*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
   }
   if (npred > 0) {
-    data_size += npred*nout1*nout2*nout3*sizeof(Real);  // rad_m1 ipred
+    data_size += static_cast<IOWrapperSizeT>(npred)*nout1*nout2*nout3*sizeof(Real);  // rad_m1 ipred
   }
   if (nt2 > 0) {
-    data_size += nt2*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
+    data_size += static_cast<IOWrapperSizeT>(nt2)*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
   }
-  data_size += neint*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
-  data_size += nck*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
-  data_size += nctr*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
-  data_size += nrss*nout1*nout2*nout3*sizeof(Real);     // rad_signal_speed inputs
-  data_size += nvgd*nout1*nout2*nout3*sizeof(Real);     // vet_gd_async source
-  data_size += ncsk*nout1*nout2*nout3*sizeof(Real);     // conservative csk1
-  data_size += nra*nout1*nout2*nout3*sizeof(Real);      // vet_rotate_avg history
+  data_size += static_cast<IOWrapperSizeT>(neint)*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
+  data_size += static_cast<IOWrapperSizeT>(nck)*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
+  data_size += static_cast<IOWrapperSizeT>(nctr)*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
+  data_size += static_cast<IOWrapperSizeT>(nrss)*nout1*nout2*nout3*sizeof(Real);     // rad_signal_speed inputs
+  data_size += static_cast<IOWrapperSizeT>(nvgd)*nout1*nout2*nout3*sizeof(Real);     // vet_gd_async source
+  data_size += static_cast<IOWrapperSizeT>(ncsk)*nout1*nout2*nout3*sizeof(Real);     // conservative csk1
+  data_size += static_cast<IOWrapperSizeT>(nra)*nout1*nout2*nout3*sizeof(Real);      // vet_rotate_avg history
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);

@@ -204,8 +204,11 @@ void RadiationM1::IcRadJ(DvceArray5D<Real> &jc) {
   const int ilo = is + vlat_icut;
   const int og = vgd_w - indcs.ng;
   const int nd = vgd_n;
+  // fin51-1014: extent(0), not extent_int(0): the flat per-rank twin array can hold more
+  // than 2^31 values (He giant fused twin, 2 blocks per rank: 2.9e9), and the int wrapped
+  // negative -> the twin J correction of the fresh-start IC was skipped
   const bool tw = vgd_twin && vgd_twfuse && !vgd_twseq &&
-                  (vgd_itw.d.extent_int(0) > 1);
+                  (vgd_itw.d.extent(0) > 1);
   auto vi_ = vgd_i;
   auto vt_ = vgd_itw;
   auto dir_ = vgd_dir;

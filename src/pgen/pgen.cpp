@@ -928,9 +928,9 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
-  IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file + neint_file + nck_file
-                            + nctr_file + nrss_file + nvgd_file + ncsk_file
-                            + nra_file)
+  IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
+                            + neint_file + nck_file + nctr_file + nrss_file + nvgd_file
+                            + ncsk_file + nra_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1675,7 +1675,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     if (pred_read) {
       // step over the warm-start slabs this run did not want
-      offset_myrank += (nwarm_file - nwarm_read)*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank += static_cast<IOWrapperSizeT>(nwarm_file - nwarm_read)*nout1*nout2*nout3
+                       *sizeof(Real);
       myoffset = offset_myrank;
       for (int n=0; n<npred_file; ++n) {
         read_slab("rad_m1 predictor");
@@ -1690,7 +1691,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0)
                   + nwarm_file + npred_file;
-      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       for (int n=0; n<nt2_file; ++n) {
         read_slab("rad_m1 hesdirk2 slope");
@@ -1709,7 +1710,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         wd_mhd == wt_mhd) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file;
-      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       if (wt_hyd) {
         read_slab("hydro internal energy");
@@ -1734,7 +1735,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (nck_file > 0) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file;
-      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       two_stream_rt::ck_rst_stage.assign(two_stream_rt::kCkRstMaxSlab,
                                          std::vector<Real>());
@@ -1755,7 +1756,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
                   + nck_file;
-      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       for (int n=0; n<nctr_file; ++n) {
         read_slab("rad_m1 thin_relax closure");
@@ -1769,7 +1770,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
                   + nck_file + nctr_file;
-      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       Kokkos::realloc(pradm1->rss_stage, nmb, nrss_file, nout3, nout2, nout1);
       for (int n=0; n<nrss_file; ++n) {
@@ -1784,7 +1785,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
                   + nck_file + nctr_file + nrss_file;
-      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       Kokkos::realloc(pradm1->vgd_rst, nmb, nvgd_file, nout3, nout2, nout1);
       for (int n=0; n<nvgd_file; ++n) {
@@ -1802,7 +1803,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                     + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
                     + nck_file + nctr_file + nrss_file + nvgd_file;
-        offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+        offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
         myoffset = offset_myrank;
         const int q3 = static_cast<int>(pradm1->t2k1.extent(2));
         const int q2 = static_cast<int>(pradm1->t2k1.extent(3));
@@ -1827,7 +1828,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file;
-      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       DvceArray5D<Real> rin("rst-m1r-in", nmb, nra_file, nout3, nout2, nout1);
       for (int n=0; n<nra_file; ++n) {
