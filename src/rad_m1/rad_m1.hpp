@@ -271,6 +271,18 @@ class RadiationM1 {
   RadiationM1(MeshBlockPack *ppack, ParameterInput *pin);
   ~RadiationM1();
 
+  // fin4-dtretry (driver/dt_retry.cpp): <time>/dt_retry.  dtr_on: the driver checkpoints
+  // the cycle and takes a failed one again with a smaller dt; then a solve that would
+  // stop the run (DIVERGED) or end NON-CONVERGED outside a hesdirk2 stage (whose own redo
+  // is the backward-Euler step) raises dtr_fail with the reason instead.
+  bool dtr_on = false;
+  bool dtr_fail = false;
+  int dtr_why = 0;           // 1 NON-CONVERGED, 2 DIVERGED, 3 DIVERGED (masked), 4 eint<=0
+  Real dtr_resid = 0.0;
+  template <class V> void DtRetryVisit(V &v);   // rad_m1_dtretry_visit.hpp (generated)
+  void DtRetryQuiesce(bool restoring);          // no host thread writes while restoring
+  void DtRetryAfterRestore();                   // async table prefetch state made safe
+
   // parameters read from <rad_m1>
   Real c_light;        // speed of light in code units (required)
   Real chat_over_c;    // reduced speed of light factor (default 1)
