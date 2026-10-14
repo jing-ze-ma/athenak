@@ -739,6 +739,34 @@ int M1EnthIdx(const int ii, const int lo, const int hi, const bool cyc, const in
 //!            smooth and monotone), E_f = the van Leer plm value of E from the side
 //!            upwind of a_f (monotone, E_f <= 2 E_donor).  Central where !ok.
 
+//! open-ot-1013 M1EnthEfPlm: the E_f of the modes >= plm at the face with advective
+//! coefficient af (ef0 = the central E_f, kept where af = 0).  plm: the van Leer value
+//! from the side upwind of af (the computation of the original code, bitwise); plmc
+//! (diagnostic): the mean of the two van Leer values; lin (diagnostic): the unlimited
+//! Fromm value from the upwind side.
+KOKKOS_INLINE_FUNCTION
+Real M1EnthEfPlm(const int mode, const Real el2, const Real el, const Real er,
+                 const Real er2, const Real af, const Real ef0) {
+  Real ef = ef0, dum;
+  if (mode == M1_IENTH_PLMC) {
+    Real efl, efr;
+    PLM(el2, el, er, efl, dum);
+    PLM(el, er, er2, dum, efr);
+    return 0.5*(efl + efr);
+  }
+  if (mode == M1_IENTH_LIN) {
+    if (af > 0.0) {return el + 0.25*(er - el2);}
+    if (af < 0.0) {return er - 0.25*(er2 - el);}
+    return ef0;
+  }
+  if (af > 0.0) {
+    PLM(el2, el, er, ef, dum);
+  } else if (af < 0.0) {
+    PLM(el, er, er2, dum, ef);
+  }
+  return ef;
+}
+
 KOKKOS_INLINE_FUNCTION
 Real M1EnthCorr(const int mode, const Real el2, const Real el, const Real er,
                 const Real er2, const bool ok, const Real al2, const Real al,
@@ -746,16 +774,12 @@ Real M1EnthCorr(const int mode, const Real el2, const Real el, const Real er,
   const Real alow = (vf > 0.0) ? (al*el) : (ar*er);
   Real af = 0.5*(al + ar);
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     Real dum, afl, afr;
     PLM(al2, al, ar, afl, dum);
     PLM(al, ar, ar2, dum, afr);
     af = 0.5*(afl + afr);
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return af*ef - alow;
 }
@@ -772,16 +796,12 @@ Real M1EnthEf(const int mode, const Real el2, const Real el, const Real er,
               const Real ar, const Real ar2, const Real vf) {
   if (mode == M1_IENTH_UPWIND) {return (vf > 0.0) ? el : er;}
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     Real dum, afl, afr;
     PLM(al2, al, ar, afl, dum);
     PLM(al, ar, ar2, dum, afr);
     Real af = 0.5*(afl + afr);
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return ef;
 }
@@ -800,7 +820,7 @@ Real M1EnthAfT(const int mode, const bool ok, const Real al2, const Real al,
   if (afc) {return 0.5*(al + ar);}   // time2_enth_vel = central: a_f central
   const Real sl2 = al2 - dl2, sl = al - dl, sr = ar - dr, sr2 = ar2 - dr2;
   Real af = 0.5*(sl + sr);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     Real dum, afl, afr;
     PLM(sl2, sl, sr, afl, dum);
     PLM(sl, sr, sr2, dum, afr);
@@ -817,13 +837,8 @@ Real M1EnthCorrT(const int mode, const Real el2, const Real el, const Real er,
   const Real alow = (vf > 0.0) ? (al*el) : (ar*er);
   const Real af = M1EnthAfT(mode, ok, al2, al, ar, ar2, dl2, dl, dr, dr2, afc);
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
-    Real dum;
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+  if (mode >= M1_IENTH_PLM && ok) {
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return af*ef - alow;
 }
@@ -835,14 +850,9 @@ Real M1EnthEfT(const int mode, const Real el2, const Real el, const Real er,
                const Real dr, const Real dr2, const Real vf, const bool afc) {
   if (mode == M1_IENTH_UPWIND) {return (vf > 0.0) ? el : er;}
   Real ef = 0.5*(el + er);
-  if (mode == M1_IENTH_PLM && ok) {
+  if (mode >= M1_IENTH_PLM && ok) {
     const Real af = M1EnthAfT(mode, ok, al2, al, ar, ar2, dl2, dl, dr, dr2, afc);
-    Real dum;
-    if (af > 0.0) {
-      PLM(el2, el, er, ef, dum);
-    } else if (af < 0.0) {
-      PLM(el, er, er2, dum, ef);
-    }
+    ef = M1EnthEfPlm(mode, el2, el, er, er2, af, ef);
   }
   return ef;
 }
@@ -2362,6 +2372,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_enth = M1_IENTH_CENTRAL;
   } else if (sen.compare("plm") == 0) {
     impl_enth = M1_IENTH_PLM;
+  } else if (sen.compare("plmc") == 0) {   // open-ot-1013 diagnostic (rad_m1_implicit.hpp)
+    impl_enth = M1_IENTH_PLMC;
+  } else if (sen.compare("lin") == 0) {    // open-ot-1013 diagnostic (rad_m1_implicit.hpp)
+    impl_enth = M1_IENTH_LIN;
   } else {
     ImplFatal("<rad_m1>/implicit_enthalpy = '" + sen
               + "' is not a choice (upwind | central | plm)");
@@ -2591,6 +2605,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_gas_src_cons = true;
       impl_gas_src_cs2 = true;
       cs2_dbg = pin->GetOrAddInteger("rad_m1","implicit_cs2_dbg",0);
+      // open-ot-1013 implicit_cs2_vimp: the vimp prediction of the conservative
+      // write-back velocity (ImplicitCs2Vimp, (b) in rad_m1.hpp).  It lags the
+      // neighbours' dA and the cross terms by one Picard pass and leaves a PER-STEP
+      // O(dt) term in the stage solves (rw_p10t1 hesdirk2 T: rho 1.58 -> 2.01, F1 1.27
+      // -> 2.05 at l 16-32 without it; pre-relaxed restart ladder rho 1.68 -> 2.00).
+      // DEFAULT false on a fresh run (the drag-rule dv of the E rows); a restart whose
+      // file lacks the key keeps true (FIN3, bitwise).  false is bitwise
+      // implicit_cs2_dbg = 2.
+      cs2_vimp = pin->GetOrAddBoolean("rad_m1","implicit_cs2_vimp",
+                                      global_variable::restart_run);
+      if (pin->DoesParameterExist("rad_m1","implicit_cs2_vimp_npass")) {
+        cs2_vnp = pin->GetInteger("rad_m1","implicit_cs2_vimp_npass");
+      }
       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
@@ -3095,7 +3122,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     if (impl_enth != M1_IENTH_UPWIND) {
       std::cout << "         implicit_enthalpy="
-                << ((impl_enth == M1_IENTH_PLM) ? "plm" : "central")
+                << ((impl_enth == M1_IENTH_PLM) ? "plm"
+                    : (impl_enth == M1_IENTH_PLMC) ? "plmc"
+                    : (impl_enth == M1_IENTH_LIN) ? "lin" : "central")
                 << " (deferred correction)" << std::endl;
     }
     if (ibc_x1min == M1_IBC_MARSHAK || ibc_x1max == M1_IBC_MARSHAK) {
@@ -4962,8 +4991,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool enth2 = (enm != M1_IENTH_UPWIND);
   const int ngh = indcs.ng;
   // hesdirk2 stage solve, time2_enth_vel = start: see M1EnthCorrT
-  const bool t2vs = (t2_afmode != 0) && impl_vimp &&
-                    (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  const bool t2vs = ((t2_afmode != 0) && impl_vimp &&
+                     (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2)) ||
+                    (impl_vimp && T2EnthBe());
   const bool t2afc = (t2_afmode == 2);
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
   // bubbles-1012: Marshak (vacuum) transverse faces, F_f = c q E_c outward
@@ -10267,8 +10297,8 @@ void RadiationM1::ImplicitVimpBuild() {
   const Real jsc = impl_vimp_jscale;
   // hesdirk2, time2_enth_vel = start: the plm face a is built from the stage-start a
   // (a - DA) and DA enters as its face mean (M1EnthEfT)
-  const bool t2vs = (t2_afmode != 0) && (t2_solve == M1_T2S_STAGE1 ||
-                                          t2_solve == M1_T2S_STAGE2);
+  const bool t2vs = ((t2_afmode != 0) && (t2_solve == M1_T2S_STAGE1 ||
+                                           t2_solve == M1_T2S_STAGE2)) || T2EnthBe();
   const bool t2afc = (t2_afmode == 2);
   const int bda = b + M1_IV_DA;
   // m1-sph2 (tests_m1/runs_5h_sph2): on the spherical-polar wedge the face-flux rows
@@ -10446,7 +10476,7 @@ void RadiationM1::ImplicitVimpBuild() {
       ImplicitCs2DeltaA(true);
       cs2_dav = true;
     }
-    if (!(cs2_dbg & 2)) {ImplicitCs2Vimp();}
+    if (cs2_vimp && !(cs2_dbg & 2)) {ImplicitCs2Vimp();}
   }
   ImplicitHaloExchange(M1_NVIMP_X, b);
   if (cs_geom) {
@@ -11205,7 +11235,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (t2st) {impl_lin_tol = (t2_lin_tol > 0.0) ? t2_lin_tol : (t2_lin_fac*impl_lin_tol);}
   auto t2i_ = t2inc;
   const bool t2k = (t2s != M1_T2S_NONE);
-  const bool t2vs = t2st && (t2_afmode != 0) && impl_vimp && trans;
+  const bool t2vs = ((t2st && (t2_afmode != 0)) || T2EnthBe()) && impl_vimp && trans;
   const bool t2afc = (t2_afmode == 2);
   const bool t2dav = t2vs && (t2_afmode == 1);   // the DA split is needed
   const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
@@ -13663,6 +13693,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
+    // open-ot-1013 implicit_cs2_vimp_npass (EXPERIMENT, read only when named): with the
+    // conservative2 vimp prediction on, at least this many Picard passes, so its lagged
+    // neighbour dA (one pass behind) reaches the fixed point
+    if (converged && cs2_vnp > 0 && Cs2Active() && cs2_vimp && impl_vimp &&
+        it + 1 < cs2_vnp) {
+      converged = false;
+    }
     // implicit_hr_recon_pred (xthinfix-1009): the dc phase has converged; switch plm on
     // for this step (switch and limiter from E^dc, built at the next pass) and continue
     if (converged && impl_muscl_pred && !muscl_now && muscl_it0 < 0) {
@@ -14210,6 +14247,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
   }
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise
+  // open-ot-1013 DIAGNOSTIC (implicit_cs2_dbg bit 32): the x1 velocity change the
+  // write-back gave the gas (uh/rho - the old-vector v) against the vimp dv the E rows
+  // used (iw_vimp + M1_IV_DV); rank-0 line per solve, the first 64 solves.  Read only.
+  if ((cs2_dbg & 32) && impl_vimp && (iw_vimp >= 0) && have_hydro && feedback &&
+      cs2_dbg_n < 64) {
+    const int ivd = iw_vimp + M1_IV_DV;
+    Real dmax = 0.0, amax = 0.0, pmax = 0.0;
+    Kokkos::parallel_reduce("m1_cs2_dbg32",
+      Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0, ks, js, is},
+                                             {nmb1+1, ke+1, je+1, ie+1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &d,
+                    Real &a, Real &p) {
+        const Real va = uh(m,IM1,k,j,i)/uh(m,IDN,k,j,i) - iw_(m,M1_IW_V1,k,j,i);
+        const Real vp = iw_(m,ivd,k,j,i);
+        d = fmax(d, fabs(va - vp));
+        a = fmax(a, fabs(va));
+        p = fmax(p, fabs(vp));
+      }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(amax), Kokkos::Max<Real>(pmax));
+    if (global_variable::my_rank == 0) {
+      std::cout << "cs2dbg32 solve " << cs2_dbg_n << " t2s " << t2s << " dt " << dt
+                << " max|dv_wb - dv_rows| " << dmax << " max|dv_wb| " << amax
+                << " max|dv_rows| " << pmax << std::endl;
+    }
+    cs2_dbg_n += 1;
+  }
   if (gcs && t2k && coupling && dbg_gas_force && t2s != M1_T2S_STAGE1) {csk1_ok = true;}
   if (gcs) {gcs_first = false;}
   csinc_ok = false;
