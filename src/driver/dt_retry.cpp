@@ -227,6 +227,11 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   }
   if (pin->DoesParameterExist("time", "dt_retry_poison")) {
     poison_ = pin->GetInteger("time", "dt_retry_poison");
+    if (pin->DoesParameterExist("time", "dt_retry_poison_match")) {
+      std::stringstream ss(pin->GetString("time", "dt_retry_poison_match"));
+      std::string w;
+      while (std::getline(ss, w, ',')) {if (!w.empty()) poison_match_.push_back(w);}
+    }
     if (poison_ > 0 && !all_views_) {
       std::cout << "### FATAL ERROR: <time>/dt_retry_poison needs dt_retry_views = all"
                 << std::endl;
@@ -352,7 +357,12 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
     // straight one only if each of them is scratch (written before it is read)
     int np = 0;
     for (auto *e : changed) {
-      if (sel_.count(e->name) == 0) {e->Poison(); np += 1;}
+      if (sel_.count(e->name) > 0) continue;
+      bool hit = poison_match_.empty();
+      for (auto &m : poison_match_) {
+        if (e->name.find(m) != std::string::npos) {hit = true; break;}
+      }
+      if (hit) {e->Poison(); np += 1;}
     }
     Kokkos::fence();
     if (global_variable::my_rank == 0) {
@@ -363,7 +373,9 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   if (audit_ && global_variable::my_rank == 0) {
     std::cout << "<time> dt_retry audit cycle " << pm->ncycle << ": " << changed.size()
               << " checkpointed Views changed by the failed attempt:";
-    for (auto *e : changed) {std::cout << " " << e->name;}
+    for (auto *e : changed) {
+      std::cout << " " << e->name << "(" << static_cast<double>(e->Bytes())/1.0e6 << ")";
+    }
     std::cout << std::endl;
   }
   Real dtn = f*dto;

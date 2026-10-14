@@ -86,6 +86,7 @@ class DtRetry {
   bool forced_done_ = false;
   std::vector<std::string> extra_views_;
   std::set<std::string> sel_;
+  std::vector<std::string> poison_match_;
   std::vector<std::unique_ptr<Entry>> ent_;
   std::size_t bytes_dev_ = 0;
   double tsave_ = 0.0;
