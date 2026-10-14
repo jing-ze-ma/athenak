@@ -649,6 +649,22 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   VetGdHaloInit();
+  {
+    // mem2-1014 vet_gd_band_ring: where every band value the sweep reads comes from an
+    // exact-list exchange of this sweep (the halo_exact gate below, no overlap / fused
+    // shells / async / band_exit) and some block has a remote side (else no band)
+    const bool hxok = vgd_hx_on && vgd_shl_on && !vgd_bandx && !vgd_async && vgd_hmpi &&
+                      (vgd_hcomp > 0) && (vgd_hl_mb > 0);
+    bool anyside = false;
+    auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
+    for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
+    vgd_ring = vgd_ring_par && hxok && (vgd_ovl_g == 0) && (vgd_fuse_h <= 1) && anyside;
+    if (vgd_ring_named && vgd_ring_par && !vgd_ring && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_band_ring: does not apply here (needs the exact halo "
+                << "lists, no vet_gd_overlap / fuse_shells / async / band_exit, MPI band)"
+                << std::endl;
+    }
+  }
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
   if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async || !vgd_hmpi ||
@@ -2465,6 +2481,8 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       }
     }
     vgd_tpost += tq.seconds();
+    // mem2-1014 vet_gd_band_ring: the slab copies of the sweep while the messages travel
+    VetGdRingFlush();
     // the zeros: Y's receive entries inside X's region (written by the dense unpack of X
     // as 0, as every value of X's region not on X's lists; X's own entries follow)
     const VgdHlEntry &Y = vgd_hle[ey];
@@ -2624,6 +2642,8 @@ void RadiationM1::VetGdHlEnd() {
       if (two) {b_(m,v,kb,jb,i) = val2;}
     });
   }
+  vgd_rg_lastx = vgd_hlp.xe;          // mem2-1014: the band of this exchange by list
+  vgd_rg_lastx_e = vgd_hlp.ex;
   if (!vgd_hlp.xe) {
     (*gwa)[px][i] = X.gen;
     if (two) {(*gwb)[px][i] = X.gen;}
@@ -4293,6 +4313,9 @@ void RadiationM1::VetGdSweep() {
     }
     VetGdHxBatch(jobs);
   }
+  // mem2-1014 vet_gd_band_ring: shells lent a wide slab while their band is needed
+  VetGdRingSweepBegin(vgd_sw2);
+  const bool rga = vgd_ring_act;
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     const bool two = vgd_sw2;        // vet_gd_twin_fuse: the twin field in the same pass
@@ -5039,6 +5062,19 @@ void RadiationM1::VetGdSweep() {
       } else {
         vgd_hnext[0] = -1;
       }
+      if (rga) {
+        // this shell's wide slab (queued while the previous shell's messages travelled,
+        // else now): inward from scratch, outward with its interior and inward band
+        if (vgd_rg_state[i] < 0) {
+          VgdRingOp o;
+          o.kind = 3;
+          o.i = i;
+          o.copyin = !inw;
+          o.restore = !inw;
+          vgd_rg_pend.push_back(o);
+        }
+        VetGdRingFlush();
+      }
       if (pend && ovl && ovl_ready(q/ovg)) {
         // vet_gd_overlap: the local items while the previous shell's messages travel,
         // then its scatter, then the items that read it
@@ -5078,6 +5114,32 @@ void RadiationM1::VetGdSweep() {
         if (ovl) {vgd_ovl_nfull += 1.0;}
       }
       pend = false;
+      if (rga) {
+        // the previous shell of the pass has been read (stream order): its inward band
+        // values saved (inward pass), its interior back to the compact slab; the next
+        // shell lent a slab.  Run in the hook of this shell's exchange (VetGdHlBegin,
+        // while the messages travel) or before the next shell's kernel
+        if (q > 0) {
+          const int ip = inw ? (i + 1) : (i - 1);
+          VgdRingOp o;
+          if (inw) {
+            o.kind = 1;
+            o.i = ip;
+            vgd_rg_pend.push_back(o);
+          }
+          o.kind = 2;
+          o.i = ip;
+          vgd_rg_pend.push_back(o);
+        }
+        if (q + 1 < nsh) {
+          VgdRingOp o;
+          o.kind = 3;
+          o.i = inw ? (i - 1) : (i + 1);
+          o.copyin = !inw;
+          o.restore = !inw;
+          vgd_rg_pend.push_back(o);
+        }
+      }
       const int wsx = inw ? vgd_wsi[i] : vgd_wso[i];
       // vet_gd_fuse_shells = H > 1 (NOT bitwise): exchange only every H-th shell of the
       // pass (the set shifts by one shell per sweep, so every shell is exchanged once in
@@ -5105,15 +5167,42 @@ void RadiationM1::VetGdSweep() {
           VetGdHlBegin(vgd_i, n, i, wsx, two ? &vgd_itw : nullptr)) {
         pend = true;                 // completed by the next shell (VetGdHlEnd)
       } else {
+        vgd_rg_lastx = false;
         VetGdHalo(vgd_i, n, i, i, wsx, true, two ? &vgd_itw : nullptr);
+        if (rga && inw) {
+          // the record of the values to save from this shell's inward band: the exact
+          // list of the exchange, else (another halo path) the whole band
+          const int ex = i;
+          const bool xl = vgd_rg_lastx && (vgd_rg_lastx_e == ex);
+          vgd_rg_sk[i] = xl ? 1 : 2;
+          vgd_rg_se[i] = xl ? ex : -1;
+        }
       }
+      if (rga) {VetGdRingFlush();}
       // the next shell's kernel is stream-ordered behind the unpack: no fence needed
       // (env VGD_TIME_HALO: fenced, for the per-part timers)
       if (vgd_time_halo) {vgd_cur.fence();}
       vgd_thalo += th.seconds();
     }
     if (pend) {VetGdHlEnd();}
+    if (rga) {
+      // the last shell of the pass: saved (inward) and back to its compact slab
+      const int il = is + (inw ? lcut : (n1 - 1));
+      if (vgd_rg_state[il] >= 0) {
+        VgdRingOp o;
+        if (inw) {
+          o.kind = 1;
+          o.i = il;
+          vgd_rg_pend.push_back(o);
+        }
+        o.kind = 2;
+        o.i = il;
+        vgd_rg_pend.push_back(o);
+      }
+      VetGdRingFlush();
+    }
   }
+  VetGdRingSweepEnd();
 }
 
 //----------------------------------------------------------------------------------------
@@ -6764,6 +6853,61 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     wi_h(i) = wl;
   }
   int64_t tot = 0;
+  if (vgd_ring) {
+    // mem2-1014 vet_gd_band_ring: every shell compact (depth 0) at [0, ...), then
+    // VGD_RING_K wide slots, each holding one shell of every block at the deepest band
+    // of all shells; the full depth of shell i is kept in vgd_rg_wfull (identical for
+    // both arrays: the same alloc on the same halo)
+    vgd_rg_wfull.assign(c1, 0);
+    vgd_rg_offc.assign(static_cast<size_t>(a.nmb)*c1, 0);
+    for (int i = 0; i < c1; ++i) {vgd_rg_wfull[i] = wi_h(i);}
+    for (int m = 0; m < a.nmb; ++m) {
+      for (int i = 0; i < c1; ++i) {
+        off_h(m,i) = tot;
+        vgd_rg_offc[static_cast<size_t>(m)*c1 + i] = tot;
+        tot += static_cast<int64_t>(a.n)*a.nx3*a.nx2;
+      }
+    }
+    const int64_t ncomp = tot;
+    vgd_rg_soff.assign(static_cast<size_t>(VGD_RING_K)*a.nmb, 0);
+    for (int s = 0; s < VGD_RING_K; ++s) {
+      for (int m = 0; m < a.nmb; ++m) {
+        int64_t mx = 0;
+        for (int i = 0; i < c1; ++i) {
+          const int wl = wi_h(i);
+          mx = std::max(mx, static_cast<int64_t>(a.n)*(a.nx3 + (sb_h(m,0) + sb_h(m,1))*wl)*
+                            (a.nx2 + (sb_h(m,2) + sb_h(m,3))*wl));
+        }
+        vgd_rg_soff[static_cast<size_t>(s)*a.nmb + m] = tot;
+        tot += mx;
+      }
+    }
+    for (int i = 0; i < c1; ++i) {wi_h(i) = 0;}
+    vgd_rg_state.assign(c1, -1);
+    vgd_rg_sown.assign(VGD_RING_K, -1);
+    vgd_rg_so.assign(c1, 0);
+    vgd_rg_sn.assign(c1, 0);
+    vgd_rg_sk.assign(c1, 0);
+    vgd_rg_se.assign(c1, -1);
+    vgd_rg_pend.clear();
+    Kokkos::realloc(vgd_rg_doffc, a.nmb, c1);
+    Kokkos::realloc(vgd_rg_dsoff, VGD_RING_K, a.nmb);
+    auto oc_h = Kokkos::create_mirror_view(vgd_rg_doffc);
+    auto so_h = Kokkos::create_mirror_view(vgd_rg_dsoff);
+    for (int m = 0; m < a.nmb; ++m) {
+      for (int i = 0; i < c1; ++i) {oc_h(m,i) = vgd_rg_offc[static_cast<size_t>(m)*c1 + i];}
+      for (int s = 0; s < VGD_RING_K; ++s) {
+        so_h(s,m) = vgd_rg_soff[static_cast<size_t>(s)*a.nmb + m];
+      }
+    }
+    Kokkos::deep_copy(vgd_rg_doffc, oc_h);
+    Kokkos::deep_copy(vgd_rg_dsoff, so_h);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_band_ring: compact intensities " << ncomp*sizeof(Real)/1.0e9
+                << " GB + " << VGD_RING_K << " band slots "
+                << (tot - ncomp)*sizeof(Real)/1.0e9 << " GB on rank 0" << std::endl;
+    }
+  } else {
   for (int m = 0; m < a.nmb; ++m) {
     for (int i = 0; i < c1; ++i) {
       const int wl = wi_h(i);
@@ -6771,6 +6915,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
       tot += static_cast<int64_t>(a.n)*(a.nx3 + (sb_h(m,0) + sb_h(m,1))*wl)*
              (a.nx2 + (sb_h(m,2) + sb_h(m,3))*wl);
     }
+  }
   }
   a.dummy = tot;
   Kokkos::deep_copy(a.off, off_h);
@@ -6786,6 +6931,302 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
               << tot*sizeof(Real)/1.0e9 << " GB on rank 0 (dense band "
               << dense*sizeof(Real)/1.0e9 << " GB)" << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdRingSweepBegin / VetGdRingSweepEnd / VetGdRingFlush
+//! \brief mem2-1014 vet_gd_band_ring (see rad_m1.hpp): the per-sweep bookkeeping and the
+//! one kernel that runs a group of slab operations (save of a shell's inward band values,
+//! release = interior back to the compact slab, acquire = interior in (outward pass) and
+//! the saved band values back, then the device tables of both shells).  Pure copies of
+//! values: the sweep reads exactly the values of the dense-band layout.
+
+void RadiationM1::VetGdRingSweepBegin(const bool two) {
+  vgd_ring_act = vgd_ring;
+  if (!vgd_ring_act) {return;}
+  for (size_t i = 0; i < vgd_rg_state.size(); ++i) {
+    if (vgd_rg_state[i] >= 0) {VgdFatal("vet_gd_band_ring: a shell still holds a slot");}
+  }
+  for (int s = 0; s < VGD_RING_K; ++s) {vgd_rg_sown[s] = -1;}
+  vgd_rg_pend.clear();
+  vgd_rg_two = two;
+  vgd_rg_stop = 0;
+  vgd_rg_nk += 1.0;
+  // the store for the saved inward band values: the exact lists of this sweep's inward
+  // exchanges (made before the shell loop by the batch; grown below if needed)
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1c = indcs.nx1 + 2*indcs.ng;
+  int64_t need = 0;
+  if (static_cast<int>(vgd_hxe.size()) == 2*n1c) {
+    for (int i = indcs.is; i <= indcs.ie; ++i) {
+      const VgdHlEntry &X = vgd_hxe[i];
+      if (X.gen != -1 && X.exact && X.alpha == vgd_alpha && X.scut == vgd_scut) {
+        need += static_cast<int64_t>(X.nr) + X.nw;
+      }
+    }
+  }
+  need *= (two ? 2 : 1);
+  if (static_cast<int64_t>(vgd_rg_store.extent(0)) < need) {
+    Kokkos::fence();
+    vgd_rg_store = DvceArray1D<Real>();
+    Kokkos::realloc(vgd_rg_store, need + need/16 + 1024);
+  }
+}
+
+void RadiationM1::VetGdRingSweepEnd() {
+  if (!vgd_ring_act) {return;}
+  VetGdRingFlush();
+  for (size_t i = 0; i < vgd_rg_state.size(); ++i) {
+    if (vgd_rg_state[i] >= 0) {VgdFatal("vet_gd_band_ring: a shell kept its slot");}
+  }
+  vgd_ring_act = false;
+}
+
+int RadiationM1::VetGdRingFreeSlot(const int avoid) const {
+  for (int s = 0; s < VGD_RING_K; ++s) {
+    if (vgd_rg_sown[s] < 0 && s != avoid) {return s;}
+  }
+  return -1;
+}
+
+void RadiationM1::VetGdRingFlush() {
+  if (!vgd_ring_act || vgd_rg_pend.empty()) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int n = vgd_n, nx2 = indcs.nx2, nx3 = indcs.nx3, w = vgd_w;
+  const int c2b = nx2 + 2*w, c3b = nx3 + 2*w;
+  const bool two = vgd_rg_two;
+  const bool poison = vgd_ring_poison;
+  // one group: at most one save, one release, one acquire (else several launches)
+  size_t p = 0;
+  while (p < vgd_rg_pend.size()) {
+    VgdRingOp sv, rl, aq;
+    while (p < vgd_rg_pend.size()) {
+      const VgdRingOp &o = vgd_rg_pend[p];
+      if ((o.kind == 1 && sv.kind) || (o.kind == 2 && rl.kind) || (o.kind == 3 && aq.kind)) {
+        break;
+      }
+      if (o.kind == 1) {
+        sv = o;
+        sv.slot = vgd_rg_state[o.i];
+        if (sv.slot < 0) {VgdFatal("vet_gd_band_ring: save of a compact shell");}
+      } else if (o.kind == 2) {
+        rl = o;
+        rl.slot = vgd_rg_state[o.i];
+        if (rl.slot < 0) {VgdFatal("vet_gd_band_ring: release of a compact shell");}
+        if (sv.kind && sv.i != o.i) {VgdFatal("vet_gd_band_ring: save / release differ");}
+      } else {
+        aq = o;
+        if (vgd_rg_state[o.i] >= 0) {VgdFatal("vet_gd_band_ring: shell already lent");}
+        aq.slot = VetGdRingFreeSlot(rl.kind ? rl.slot : -1);
+        if (aq.slot < 0) {VgdFatal("vet_gd_band_ring: no free slot");}
+      }
+      ++p;
+    }
+    // the save record of the shell saved here, and the store
+    int64_t sv_so = 0, sv_n = 0;
+    int sv_k = 0;
+    DvceArray1D<int> sv_dl, sv_dw;
+    int sv_nr = 0;
+    if (sv.kind) {
+      const int i = sv.i;
+      const int wl = vgd_rg_wfull[i];
+      sv_k = vgd_rg_sk[i];
+      if (sv_k == 1) {
+        const VgdHlEntry &X = vgd_hxe[vgd_rg_se[i]];
+        sv_dl = X.dl;
+        sv_dw = X.dw;
+        sv_nr = X.nr;
+        sv_n = static_cast<int64_t>(X.nr) + X.nw;
+      } else {
+        sv_n = static_cast<int64_t>(nmb)*n*(nx3 + 2*wl)*(nx2 + 2*wl);
+        vgd_rg_ndense += 1.0;
+      }
+      const int64_t need = vgd_rg_stop + sv_n*(two ? 2 : 1);
+      if (static_cast<int64_t>(vgd_rg_store.extent(0)) < need) {
+        Kokkos::fence();
+        Kokkos::resize(vgd_rg_store, need + need/8 + 1024);
+      }
+      sv_so = vgd_rg_stop;
+      vgd_rg_so[i] = sv_so;
+      vgd_rg_sn[i] = sv_n;
+      vgd_rg_stop = need;
+      // keep the lists of the saved values with the record (the restore reads them)
+    }
+    // the restore record of the acquired shell (outward pass)
+    int64_t rs_so = 0, rs_n = 0;
+    int rs_k = 0, rs_nr = 0;
+    DvceArray1D<int> rs_dl, rs_dw;
+    if (aq.kind && aq.restore) {
+      const int i = aq.i;
+      rs_k = vgd_rg_sk[i];
+      rs_so = vgd_rg_so[i];
+      rs_n = vgd_rg_sn[i];
+      if (rs_k == 1) {
+        const VgdHlEntry &X = vgd_hxe[vgd_rg_se[i]];
+        rs_dl = X.dl;
+        rs_dw = X.dw;
+        rs_nr = X.nr;
+        if (static_cast<int64_t>(X.nr) + X.nw != rs_n) {
+          VgdFatal("vet_gd_band_ring: the exact list changed between save and restore");
+        }
+      } else if (rs_k != 2) {
+        VgdFatal("vet_gd_band_ring: restore without a save");
+      }
+    }
+    auto a_ = vgd_i;
+    auto b_ = two ? vgd_itw : vgd_i;
+    auto sb_ = vgd_i.sb;
+    auto oc_ = vgd_rg_doffc;
+    auto so_ = vgd_rg_dsoff;
+    auto st_ = vgd_rg_store;
+    const int64_t ad = a_.dummy;
+    // debug: the lent slab NaN (every value the sweep reads must be written first)
+    if (poison && aq.kind) {
+      const int s = aq.slot;
+      const int64_t s0 = vgd_rg_soff[static_cast<size_t>(s)*nmb];
+      const int64_t s1 = (s + 1 < VGD_RING_K) ? vgd_rg_soff[static_cast<size_t>(s + 1)*nmb]
+                                              : ad;
+      auto da = a_.d, db = b_.d;
+      const Real qn = std::numeric_limits<Real>::quiet_NaN();
+      Kokkos::parallel_for("m1_vgd_ring_nan", Kokkos::RangePolicy<>(vgd_cur, 0, s1 - s0),
+      KOKKOS_LAMBDA(const int64_t t) {
+        da(s0 + t) = qn;
+        if (two) {db(s0 + t) = qn;}
+      });
+    }
+    const int64_t nsv = sv.kind ? sv_n : 0;
+    const int64_t nin = static_cast<int64_t>(nmb)*n*nx3*nx2;
+    const int64_t nrl = rl.kind ? nin : 0;
+    const int64_t ncp = (aq.kind && aq.copyin) ? nin : 0;
+    const int64_t nrs = (aq.kind && aq.restore) ? rs_n : 0;
+    const int64_t ntot = nsv + nrl + ncp + nrs + 1;
+    const int svi = sv.i, svs = sv.slot, svw = sv.kind ? vgd_rg_wfull[sv.i] : 0;
+    const int rli = rl.i, rls = rl.slot, rlw = rl.kind ? vgd_rg_wfull[rl.i] : 0;
+    const int aqi = aq.i, aqs = aq.slot, aqw = aq.kind ? vgd_rg_wfull[aq.i] : 0;
+    const bool hrl = rl.kind, haq = aq.kind;
+    const int nm = nmb;
+    // a value of the wide slab of slot s (depth wl) of block m at band index (kb, jb):
+    // the accessor's own address arithmetic; -1 outside the shell's rectangle
+    auto wadr = KOKKOS_LAMBDA(const int s, const int wl, const int m, const int v,
+                                     const int kb, const int jb) -> int64_t {
+      const int bk0 = sb_(m,0)*wl, bj0 = sb_(m,2)*wl;
+      const int c3 = nx3 + bk0 + sb_(m,1)*wl, c2 = nx2 + bj0 + sb_(m,3)*wl;
+      const int kk = kb - (w - bk0), jj = jb - (w - bj0);
+      if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {return -1;}
+      return so_(s,m) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj);
+    };
+    // the t-th saved value of a record: its band index (m, v, kb, jb); false: none
+    auto rec = KOKKOS_LAMBDA(const int k, const int wl, const DvceArray1D<int> &dl,
+                                    const DvceArray1D<int> &dw, const int nr,
+                                    const int64_t t, int &m, int &v, int &kb,
+                                    int &jb) -> bool {
+      if (k == 1) {
+        int a = (t < nr) ? dl(t) : dw(t - nr);
+        jb = a % c2b;
+        a /= c2b;
+        kb = a % c3b;
+        a /= c3b;
+        v = a % n;
+        m = a/n;
+        return true;
+      }
+      // dense: (m, v, kb, jb) over the band index rectangle of depth wl, interior out
+      const int64_t c3w = nx3 + 2*wl, c2w = nx2 + 2*wl;
+      int64_t r = t;
+      v = static_cast<int>(r % n);
+      r /= n;
+      const int kw = static_cast<int>(r % c3w);
+      r /= c3w;
+      const int jw = static_cast<int>(r % c2w);
+      m = static_cast<int>(r/c2w);
+      kb = kw + (w - wl);
+      jb = jw + (w - wl);
+      return !(kb >= w && kb < w + nx3 && jb >= w && jb < w + nx2);
+    };
+    const int svk = sv_k, rsk = rs_k, svnr = sv_nr, rsnr = rs_nr;
+    auto svdl = sv_dl, svdw = sv_dw, rsdl = rs_dl, rsdw = rs_dw;
+    const int64_t svso = sv_so, rsso = rs_so, svn = sv_n, rsn = rs_n;
+    auto da = a_.d, db = b_.d;
+    auto aoff = a_.off, boff = b_.off;
+    auto awi = a_.wi, bwi = b_.wi;
+    Kokkos::parallel_for("m1_vgd_ring", Kokkos::RangePolicy<>(vgd_cur, 0, ntot),
+    KOKKOS_LAMBDA(const int64_t tt) {
+      int64_t t = tt;
+      if (t < nsv) {
+        int m, v, kb, jb;
+        if (!rec(svk, svw, svdl, svdw, svnr, t, m, v, kb, jb)) {return;}
+        const int64_t q = wadr(svs, svw, m, v, kb, jb);
+        if (q < 0) {return;}
+        st_(svso + t) = da(q);
+        if (two) {st_(svso + svn + t) = db(q);}
+        return;
+      }
+      t -= nsv;
+      if (t < nrl + ncp) {
+        const bool out = (t < nrl);
+        if (!out) {t -= nrl;}
+        const int i = out ? rli : aqi;
+        const int s = out ? rls : aqs;
+        const int wl = out ? rlw : aqw;
+        int64_t r = t;
+        const int v = static_cast<int>(r % n);
+        r /= n;
+        const int kk = static_cast<int>(r % nx3);
+        r /= nx3;
+        const int jj = static_cast<int>(r % nx2);
+        const int m = static_cast<int>(r/nx2);
+        const int64_t qc = oc_(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(nx3)*jj);
+        const int64_t qw = wadr(s, wl, m, v, kk + w, jj + w);
+        if (out) {
+          da(qc) = da(qw);
+          if (two) {db(qc) = db(qw);}
+        } else {
+          da(qw) = da(qc);
+          if (two) {db(qw) = db(qc);}
+        }
+        return;
+      }
+      t -= nrl + ncp;
+      if (t < nrs) {
+        int m, v, kb, jb;
+        if (!rec(rsk, aqw, rsdl, rsdw, rsnr, t, m, v, kb, jb)) {return;}
+        const int64_t q = wadr(aqs, aqw, m, v, kb, jb);
+        if (q < 0) {return;}
+        da(q) = st_(rsso + t);
+        if (two) {db(q) = st_(rsso + rsn + t);}
+        return;
+      }
+      // the tables (no other thread of this kernel reads them)
+      for (int m = 0; m < nm; ++m) {
+        if (hrl) {
+          aoff(m,rli) = oc_(m,rli);
+          if (two) {boff(m,rli) = oc_(m,rli);}
+        }
+        if (haq) {
+          aoff(m,aqi) = so_(aqs,m);
+          if (two) {boff(m,aqi) = so_(aqs,m);}
+        }
+      }
+      if (hrl) {
+        awi(rli) = 0;
+        if (two) {bwi(rli) = 0;}
+      }
+      if (haq) {
+        awi(aqi) = aqw;
+        if (two) {bwi(aqi) = aqw;}
+      }
+    });
+    if (rl.kind) {
+      vgd_rg_sown[rl.slot] = -1;
+      vgd_rg_state[rl.i] = -1;
+    }
+    if (aq.kind) {
+      vgd_rg_sown[aq.slot] = aq.i;
+      vgd_rg_state[aq.i] = aq.slot;
+    }
+  }
+  vgd_rg_pend.clear();
 }
 
 //----------------------------------------------------------------------------------------
