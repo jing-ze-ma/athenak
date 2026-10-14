@@ -2087,10 +2087,12 @@ class RadiationM1 {
     // is needed in (VgdHaloKeep, mode 2, either pass) is >= dl.  Same index space as the
     // dense band.
     bool pd = false;
-    int pseg = 1, ps = 1, png = 8;              // segment length, segments per side, groups
+    int pseg = 1, psh = 0, ps = 1, png = 8;     // segment length (2^psh), segments/side, groups
     DvceArray1D<int> prk;                       // ((m c1 + i) png + g) n + d
     DvceArray1D<int> pcn;                       // ((m c1 + i) png + g)(w + 1) + dl
     Kokkos::View<int64_t*, DevMemSpace> pbo;    // ((m c1 + i) png + g)(w + 1) + dl
+    // the same as one word per layer: (first element << 12) | count (one load per read)
+    Kokkos::View<int64_t*, DevMemSpace> pq;
     int64_t pdint = 0;                          // the interior elements (band at pdint)
     int64_t pdcap = 0;                          // the band capacity (elements)
     // is (k, j) of shell i of block m stored?  (band index space of depth w)
@@ -2105,23 +2107,28 @@ class RadiationM1 {
     KOKKOS_INLINE_FUNCTION
     int64_t PdIdx(const int m, const int v, const int k, const int j, const int i) const {
       const int kk = k - w, jj = j - w;
+      if (static_cast<unsigned>(kk) < static_cast<unsigned>(nx3) &&
+          static_cast<unsigned>(jj) < static_cast<unsigned>(nx2)) {
+        return ((static_cast<int64_t>(m)*c1 + i)*nx2*nx3 + kk +
+                static_cast<int64_t>(nx3)*jj)*n + v;
+      }
+      return PdBand(m, v, kk, jj, i);
+    }
+    KOKKOS_INLINE_FUNCTION
+    int64_t PdBand(const int m, const int v, const int kk, const int jj, const int i) const {
       const int ek = (kk < 0) ? -1 : ((kk >= nx3) ? 1 : 0);
       const int ej = (jj < 0) ? -1 : ((jj >= nx2) ? 1 : 0);
-      if (ek == 0 && ej == 0) {
-        return (static_cast<int64_t>(m)*c1 + i)*n*nx3*nx2 + v +
-               static_cast<int64_t>(n)*(kk + static_cast<int64_t>(nx3)*jj);
-      }
-      const int dk = (ek < 0) ? -kk : ((ek > 0) ? (kk - nx3 + 1) : 0);
-      const int dj = (ej < 0) ? -jj : ((ej > 0) ? (jj - nx2 + 1) : 0);
+      const int dk = (ek < 0) ? -kk : (kk - nx3 + 1);
+      const int dj = (ej < 0) ? -jj : (jj - nx2 + 1);
       int dl, p, g;
       if (ek == 0) {            // a j side: along k
         dl = dj;
-        g = ((ej < 0) ? 2 : 3)*ps + kk/pseg;
-        p = kk % pseg;
+        g = ((ej < 0) ? 2 : 3)*ps + (kk >> psh);
+        p = kk & (pseg - 1);
       } else if (ej == 0) {     // a k side: along j
         dl = dk;
-        g = ((ek < 0) ? 0 : 1)*ps + jj/pseg;
-        p = jj % pseg;
+        g = ((ek < 0) ? 0 : 1)*ps + (jj >> psh);
+        p = jj & (pseg - 1);
       } else {                  // a corner
         dl = (dk > dj) ? dk : dj;
         g = 4*ps + ((ek < 0) ? 0 : 2) + ((ej < 0) ? 0 : 1);
@@ -2129,10 +2136,11 @@ class RadiationM1 {
       }
       if (dl > w) {return -1;}
       const int64_t b = (static_cast<int64_t>(m)*c1 + i)*png + g;
-      const int c = pcn(b*(w + 1) + dl);
+      const int64_t q = pq(b*(w + 1) + dl);
+      const int c = static_cast<int>(q & 4095);
       const int r = prk(b*n + v);
       if (r >= c) {return -1;}
-      return pbo(b*(w + 1) + dl) + static_cast<int64_t>(p)*c + r;
+      return (q >> 12) + static_cast<int64_t>(p)*c + r;
     }
     // is the element (m, v, k, j, i) stored?  (the band writers skip the others)
     KOKKOS_INLINE_FUNCTION

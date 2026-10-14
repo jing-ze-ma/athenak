@@ -663,8 +663,8 @@ void RadiationM1::VetGdInit() {
   }
   VetGdHaloInit();
   // mem-1014 vet_gd_band_pd: the per-direction band (needs the compact keep rule, mode 2)
-  vgd_pd = (vgd_pd_mode > 0) && vgd_hmpi && (vgd_hcomp == 2) && !vgd_async && !vgd_bandx &&
-           (vgd_fuse_h <= 1);
+  vgd_pd = (vgd_pd_mode > 0) && vgd_hmpi && (vgd_hcomp == 2) && !vgd_async &&
+           !vgd_bandx && (vgd_fuse_h <= 1) && (vgd_n < 4096);
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
   if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async || !vgd_hmpi ||
@@ -6814,7 +6814,12 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     // follows the set in use (VgdPdUpdate, at a sweep start; grown if ever needed)
     a.pd = true;
     a.pdint = static_cast<int64_t>(a.nmb)*c1*a.n*a.nx3*a.nx2;
-    a.pseg = std::max(1, std::min(vgd_pd_seg, std::max(a.nx2, a.nx3)));
+    // the segment: a power of two (shift and mask in the accessor)
+    a.psh = 0;
+    while ((2 << a.psh) <= std::max(1, std::min(vgd_pd_seg, std::max(a.nx2, a.nx3)))) {
+      ++a.psh;
+    }
+    a.pseg = 1 << a.psh;
     a.ps = (std::max(a.nx2, a.nx3) + a.pseg - 1)/a.pseg;
     a.png = 4*a.ps + 4;
     const int nsamp = 16;
@@ -6841,6 +6846,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     a.prk = DvceArray1D<int>("m1_vgd_pd_rk", nt*a.n);
     a.pcn = DvceArray1D<int>("m1_vgd_pd_cn", nt*(a.w + 1));   // 0: nothing stored yet
     a.pbo = Kokkos::View<int64_t*, DevMemSpace>("m1_vgd_pd_bo", nt*(a.w + 1));
+    a.pq = Kokkos::View<int64_t*, DevMemSpace>("m1_vgd_pd_q", nt*(a.w + 1));
     Kokkos::realloc(a.d, a.dummy + 1);
     Kokkos::deep_copy(a.d, 0.0);
     Kokkos::deep_copy(a.oos, 0.0);
@@ -7071,9 +7077,15 @@ int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
     acc += static_cast<int64_t>(pb - pa)*pcn(q);
   }, tot);
   if (apply) {
+    Kokkos::View<int64_t*, DevMemSpace> pq("m1_vgd_pd_q", nt*W1);
+    par_for("m1_vgd_pd_pack", DevExeSpace(), 0, static_cast<int>(nt*W1) - 1,
+    KOKKOS_LAMBDA(const int q) {
+      pq(q) = (pbo(q) << 12) | static_cast<int64_t>(pcn(q));
+    });
     a.prk = prk;
     a.pcn = pcn;
     a.pbo = pbo;
+    a.pq = pq;
   }
   return tot;
 }
@@ -7109,6 +7121,7 @@ void RadiationM1::VgdPdUpdate() {
     vgd_itw.prk = vgd_i.prk;
     vgd_itw.pcn = vgd_i.pcn;
     vgd_itw.pbo = vgd_i.pbo;
+    vgd_itw.pq = vgd_i.pq;
     fix(vgd_itw);
   }
   vgd_pd_alpha = vgd_alpha;
