@@ -35,7 +35,7 @@ R 0.5686; N 0.5704 (+0.3 %); F22 0.5780; F88 0.5830 (one extra cycle each, as ex
 - D1 report (DT_RETRY lines, Picard, dt trace, prof_*) follows in a later NOTE.
 
 ## Part 2
-- R0/R1 (part 2 restart arms) were cancelled before starting (user, to free GPUs for the Linhao BSG). Their dirs e1div_rst/R0, R1 are kept
+- R0/R1 (part 2 restart arms) were stopped before starting (user, to free GPUs for the Linhao BSG). Their dirs e1div_rst/R0, R1 are kept
   (R0/rst/agcar3d.00022.rst also feeds D1). No part-2 reports.
 
 ## D1 result (job 4492078, hpc-sm-02-04, 2 H200; 2026-10-13 22:29:41 -> 2026-10-14 00:59:46, elapsed 02:30:05)
