@@ -4171,7 +4171,10 @@ void RadiationM1::VetGdSweep() {
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6) vet_interp: 2 corner, 3 auto
-  const bool vpa = (vet_path != 0);   // open-od-1013 vet_path = cells
+  // open-od-1013 vet_path = cells.  fin4-1014: the shell body takes it as an ARGUMENT and each
+  // launch passes a literal, so the default (none) kernel is compiled without the cells branch
+  // (the dormant branch cost ~7-9 % per sweep on A100); results bitwise either way
+  const bool vpa_h = (vet_path != 0);
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   // unify-sc-gd-1012 (#2): vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
@@ -4299,7 +4302,7 @@ void RadiationM1::VetGdSweep() {
       // ray geometry; sharing it changed the rounding under CUDA FMA contraction and was
       // not faster on A100, 31040005/06)
       auto body = KOKKOS_LAMBDA(const int m, const int k, const int j, const int d,
-                                const int i, const int l) {
+                                const int i, const int l, const bool vpa) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
         const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -4815,17 +4818,31 @@ void RadiationM1::VetGdSweep() {
                         const int i, const int l, const char *name) {
       if (c1 <= c0) {return;}
       auto L_ = cl;
-      Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
-      KOKKOS_LAMBDA(const int c) {
-        int t = L_(c);
-        const int d = t % n;
-        t /= n;
-        const int m = t/nkj;
-        t -= m*nkj;
-        const int k = ks + t/nj;
-        const int j = js + (t % nj);
-        body(m, k, j, d, i, l);
-      });
+      if (vpa_h) {
+        Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+        KOKKOS_LAMBDA(const int c) {
+          int t = L_(c);
+          const int d = t % n;
+          t /= n;
+          const int m = t/nkj;
+          t -= m*nkj;
+          const int k = ks + t/nj;
+          const int j = js + (t % nj);
+          body(m, k, j, d, i, l, true);
+        });
+      } else {
+        Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+        KOKKOS_LAMBDA(const int c) {
+          int t = L_(c);
+          const int d = t % n;
+          t /= n;
+          const int m = t/nkj;
+          t -= m*nkj;
+          const int k = ks + t/nj;
+          const int j = js + (t % nj);
+          body(m, k, j, d, i, l, false);
+        });
+      }
     };
     // vet_gd_overlap: the split lists of group g of this pass (made when missing or of
     // another direction set): codes whose stencil, in any shell of the group, reads the
@@ -5046,10 +5063,17 @@ void RadiationM1::VetGdSweep() {
           // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch
           run_list(vgd_shl[pass], 0, vgd_shn[pass], i, l, "m1_vgd_shell");
         } else {
-          par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
-          KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-            body(m, k, j, d, i, l);
-          });
+          if (vpa_h) {
+            par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+              body(m, k, j, d, i, l, true);
+            });
+          } else {
+            par_for("m1_vgd_shell", vgd_cur, 0, nmb1, ks, ke, js, je, 0, n - 1,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+              body(m, k, j, d, i, l, false);
+            });
+          }
         }
         if (ovl) {vgd_ovl_nfull += 1.0;}
       }
