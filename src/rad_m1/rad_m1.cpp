@@ -1133,9 +1133,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
     // mem-1014 vet_gd_band_pd (a memory layout, bitwise; read only when named, default
-    // 2; env VGD_BAND_PD overrides): 0 the per-shell band (as before), 1 the per-direction
-    // band with the mesh-edge slots full, 2 the per-direction band everywhere.  Taken only
-    // with MPI neighbours and vet_gd_halo_compact = 2 (its keep rule sizes the band)
+    // 1; env VGD_BAND_PD overrides): 0 the per-shell band (as before), 1 the per-direction
+    // band with the mesh-edge (wall) slots full, 2 the per-direction band everywhere
+    // (EXPERIMENTAL: not bitwise on the He giant with 2 blocks per rank, Viper vpd
+    // 12197503).  Taken only with MPI neighbours and vet_gd_halo_compact = 2 (its keep
+    // rule sizes the band) and, under CUDA, only in a -DM1_VGD_BAND_PD_CUDA build
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_pd")) {
       vgd_pd_mode = pin->GetInteger("rad_m1","vet_gd_band_pd");
       vgd_pd_named = true;

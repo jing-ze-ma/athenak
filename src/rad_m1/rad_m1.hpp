@@ -2207,7 +2207,7 @@ class RadiationM1 {
   // (VgdHaloKeep, mode 2) into a's tables (apply) or only its size; VgdPdUpdate re-lays
   // vgd_i (and the fused twin) when the set or the cut changed (at a sweep start)
   bool vgd_pd = false, vgd_pd_named = false;
-  int vgd_pd_mode = 2, vgd_pd_seg = 8;
+  int vgd_pd_mode = 1, vgd_pd_seg = 8;
   int64_t vgd_pd_lastband = 0;
   Real vgd_pd_alpha = -2.0;
   int vgd_pd_scut = -1;
