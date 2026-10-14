@@ -5065,6 +5065,7 @@ void RadiationM1::VetGdSweep() {
       if (rga) {
         // this shell's wide slab (queued while the previous shell's messages travelled,
         // else now): inward from scratch, outward with its interior and inward band
+        VetGdRingFlush();
         if (vgd_rg_state[i] < 0) {
           VgdRingOp o;
           o.kind = 3;
@@ -7031,6 +7032,7 @@ void RadiationM1::VetGdRingFlush() {
     if (sv.kind) {
       const int i = sv.i;
       const int wl = vgd_rg_wfull[i];
+      if (vgd_rg_sk[i] != 1) {vgd_rg_sk[i] = 2;}   // no exact record: the whole band
       sv_k = vgd_rg_sk[i];
       if (sv_k == 1) {
         const VgdHlEntry &X = vgd_hxe[vgd_rg_se[i]];
