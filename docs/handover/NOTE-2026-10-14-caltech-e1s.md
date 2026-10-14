@@ -63,3 +63,31 @@ HST agcar3d.user.hst BITWISE
 IPC-OFF (Coff vs C): CMPLAST BITWISE, HST hydro BITWISE, HST user BITWISE
 GATE PASS 2026-10-14_05:59:27   (-> gate/smoke/VERIFIED)
 ```
+
+### Background check BG (same job; fresh via link_e1.sh, E1C_NCYC=1400, production cadence; t = 1.018e6 s)
+rc 0; FATAL 0, NaN 0, DIVERGED 0, DT_RETRY 0, NON-CONVERGED 0, NOT ADMISSIBLE 0; fofc_report at-floor=0 other=0 in all 282 reports;
+Picard mean 3.00 max 6; dt 727.27; s/cycle (10-1400) 0.504. `gate/BG_pulse.txt` (pulse_ana.py run):
+| t (s) | vrV | vrM | vr105 | vr110 | d105 | d110 | KEe | rsurf |
+|---|---|---|---|---|---|---|---|---|
+| 1.0e5 | -0.042 | 0.015 | -0.060 | -0.055 | 0.9992 | 0.9982 | 1.1e36 | 1.009 |
+| 5.0e5 | -0.026 | 0.109 | -0.060 | -0.055 | 1.009 | 0.990 | 9.1e36 | 1.009 |
+| 9.0e5 | -0.066 | -0.045 | -0.060 | -0.055 | 1.010 | 0.988 | 1.4e37 | 1.009 |
+| 1.0e6 | -0.103 | -0.043 | -0.060 | -0.055 | 1.010 | 0.988 | 2.4e37 | 1.009 |
+PU S3_268 ref at 5e5 / 9e5: vrV 0.076 / -0.039, vrM 0.58 / -0.19, rsurf 1.009 / 1.011 -> same magnitudes (|v| <~ 0.1 km/s), no infall.
+- shell-mean <v_r> above 1.1 R_ph: max |v_r| 0.093 km/s (same value from the first dump on, not growing); sponge (r > 7.29e13, 6 cells)
+  max |v_r| 0.069 km/s; <rho>/<rho>(0) above 1.1 R_ph within 0.9949-1.003.
+- user.hst (102 rows): L_top/L0 0.99987-1.00007 (last 1.00007); Mdot_top 0 -> 9.6e14 (>= 0, outward); Min_top 0 throughout;
+  Picard 3.0-3.6; w_mlt 1.0; P_sponge 0 -> 9.9e29.
+**BG PASS** (quiet, like the S3 reference). `prod/GO_e1` written.
+
+## 6. STARTED (production, `e1s_1014/prod`)
+- **tlim raised to 1e9 per user 10-14; the run is limited by walltime links.** Deck 680dadb0 (tlim 1e9), run.cfg TLIM=1e9, KEYS empty,
+  STOP_NC=1, E1C_GATE=1, E1C_VERIFIED=gate/smoke/VERIFIED, LAUNCH=e1s_1014/launch2.sh, E1C_DIR=e1s_1014/scripts, E1C_MARGIN=1200.
+- Links `agcE1s` (link_e1.sh + e1s-1014 hook), 1 node x 2 H200, `-A carnegie_poc -p gpu --qos=long --exclude=hpc-sm-01-09
+  --ntasks=2 -c 8 --gres=gpu:nvidia_h200:2 --mem=240G -t 14-00:00:00` (longest allowed: partition MaxTime 14 d = long QoS MaxWall;
+  normal is 7 d): **4513330** (link 1) -> 4513331 -> 4513332 (afterany, same walltime).
+- Link 1 RUNNING since 2026-10-14 06:12:20 PDT on hpc-sm-01-05; fresh start (prod/rst was empty), athena `-t 335:39:57`
+  (= 14 d - 20 min). md5 checked in job.4513330.out (bin 6252e58e, deck 680dadb0, IC/tables as section 1).
+- First s/cycle: **0.464** (cycles 50-1200, t 8.7e5 s at 06:22); dt 727.27; FATAL 0, DT_RETRY 0, fofc at-floor 0 so far.
+  At this rate 2.4192e7 s (33,300 cycles) is reached ~4.3-5.6 h after start; the run then continues toward tlim 1e9 until the walltime.
+- Evolution reports (TASK section 6) are not part of this runner's job.
