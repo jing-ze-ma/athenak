@@ -42,3 +42,20 @@ Addendum (details from the test log):
 - FATAL, NaN, DIVERGED, NON-CONVERGED and NOT ADMISSIBLE counts are 0 in all four runs.
 - Picard passes match between layouts: 6 for BSG, 11 for the He giant.
 - s/cycle on 2 vs 4 GPUs (short runs, includes init): BSG 2.14 vs 1.53, He giant 1.39 vs 0.96.
+
+## 10-14 morning: the 4-GPU runs are now the production runs; the 2-GPU chains are stopped (user)
+
+Both 4-GPU runs overtook their 2-GPU parents overnight, so the user had both 2-GPU chains stopped. That covers the running link 1 plus the queued links: BSG 4487415 and 4487610-13, He giant 4489484 and 4489485-87. Their rst dirs are kept as a fallback (BSG prod/rst up to 00018, He giant fin4/rst up to 00012).
+
+| run | job | t at check / tlim | s/cycle | dt | est. left |
+|---|---|---|---|---|---|
+| BSG 2 GPU (stopped) | 4487415 | 1.59e6 / 4.96e6 | 1.55 | 83.3 | - |
+| BSG 4 GPU | 4490079 (30 h limit) | 1.70e6 / 4.96e6 | 1.09 | 83.3 | ~12 h |
+| He giant 2 GPU (stopped) | 4489484 | 5.5e5 / 2.592e6 | 0.94 | 18.2 | - |
+| He giant 4 GPU | 4489939 (2 d limit) | 8.4e5 / 2.592e6 | 0.48 | 19.0 | ~12 h |
+
+On 4 GPUs: BSG is 1.42x faster per cycle and the He giant 1.95x. There is no FATAL or NaN in any log. Both 4-GPU runs should reach tlim inside a single job, and a report will follow when each ends.
+
+Run dirs:
+- BSG: /resnick/groups/carnegie_poc/jingze/bsgli_1014/wide4/run
+- He giant: /resnick/groups/carnegie_poc/jingze/hegiant_1014/wide4/run
