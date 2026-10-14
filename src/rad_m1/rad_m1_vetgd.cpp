@@ -674,7 +674,15 @@ void RadiationM1::VetGdInit() {
     if (vgd_hmpi) {
       Kokkos::realloc(vgd_csb2, vgd_csb.extent(0));
       Kokkos::realloc(vgd_crb2, vgd_crb.extent(0));
-      Kokkos::realloc(vgd_rbuf2, vgd_rbuf.extent(0));
+      // mem-1014: the twin's expanded buffer only ever holds one shell of the compact
+      // exchange (VetGdHaloCompact: q < rtot of the deepest band), not the dense size
+      {
+        const auto &pd = vgd_prdsp[vgd_w];
+        const auto &pc = vgd_prcnt[vgd_w];
+        const size_t rt = static_cast<size_t>(pd.empty() ? 0 : (pd.back() + pc.back()))*
+                          vgd_n;
+        Kokkos::realloc(vgd_rbuf2, std::max<size_t>(rt, 1));
+      }
     }
   }
   if (vgd_rbe > 0) {
@@ -1499,7 +1507,10 @@ void RadiationM1::VetGdHaloInit() {
   // (all directions of one shell, or ln chi and ln S of every shell)
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int nreg = std::max(indcs.nx2, indcs.nx3)*vgd_w;
-  vgd_maxcnt = nreg*std::max(vgd_n, 2*c1);
+  // mem-1014: one shell of all directions (the multi-shell ln chi, ln S exchange is
+  // chunked to fit, VetGdHaloCs); was nreg*max(vgd_n, 2*c1)
+  (void) c1;
+  vgd_maxcnt = nreg*std::max(vgd_n, 2);
   if (vgd_hmpi) {
     Kokkos::realloc(vgd_sbuf, static_cast<size_t>(nmb)*8*vgd_maxcnt);
     Kokkos::realloc(vgd_rbuf, static_cast<size_t>(nmb)*8*vgd_maxcnt);
@@ -1736,6 +1747,21 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
     });
   }
 #endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdHaloCs
+//! \brief mem-1014: VetGdHalo of the 2 source fields (ln chi, ln S) over shells [i0, i1]
+//! at the full band depth, in chunks of shells whose messages fit vgd_maxcnt per slot
+//! (each value is copied exactly as by the one-call exchange: bitwise)
+
+void RadiationM1::VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int per = std::max(indcs.nx2, indcs.nx3)*vgd_w*2;   // one shell, one slot
+  const int nch = std::max(1, (per > 0) ? vgd_maxcnt/per : 1);
+  for (int c0 = i0; c0 <= i1; c0 += nch) {
+    VetGdHalo(a, 2, c0, std::min(c0 + nch - 1, i1), vgd_w, false);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -5296,7 +5322,7 @@ void RadiationM1::VetGdSource() {
     cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
   });
   vgd_cur = DevExeSpace();
-  VetGdHalo(vgd_cs, 2, ilo, ie, vgd_w, false);
+  VetGdHaloCs(vgd_cs, ilo, ie);
 }
 
 //----------------------------------------------------------------------------------------
@@ -5666,7 +5692,7 @@ void RadiationM1::VetGdBuildAsync() {
         cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
       });
       vgd_cur = DevExeSpace();
-      VetGdHalo(vgd_cs, 2, ilo, ie, vgd_w, false);
+      VetGdHaloCs(vgd_cs, ilo, ie);
     }
     Kokkos::fence();
     vgd_tsrc += tm.seconds();

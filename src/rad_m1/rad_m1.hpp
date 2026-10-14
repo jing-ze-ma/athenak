@@ -2379,6 +2379,10 @@ class RadiationM1 {
   template <class V>
   void VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
                  const bool mapd, V *b = nullptr);
+  // mem-1014: the multi-shell (ln chi, ln S) halo in chunks of shells that fit the
+  // per-shell message buffers (the same values; the buffers sized for one shell of all
+  // directions instead of all shells of the 2 source fields)
+  void VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
