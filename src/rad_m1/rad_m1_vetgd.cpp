@@ -7135,6 +7135,9 @@ void RadiationM1::VetGdRingFlush() {
     const int64_t ncp = (aq.kind && aq.copyin) ? nin : 0;
     const int64_t nrs = (aq.kind && aq.restore) ? rs_n : 0;
     const int64_t ntot = nsv + nrl + ncp + nrs + 1;
+    if (nin >= static_cast<int64_t>(INT32_MAX)) {
+      VgdFatal("vet_gd_band_ring: shell interior >= 2^31 values (32-bit copy index)");
+    }
     const int svi = sv.i, svs = sv.slot, svw = sv.kind ? vgd_rg_wfull[sv.i] : 0;
     const int rli = rl.i, rls = rl.slot, rlw = rl.kind ? vgd_rg_wfull[rl.i] : 0;
     const int aqi = aq.i, aqs = aq.slot, aqw = aq.kind ? vgd_rg_wfull[aq.i] : 0;
@@ -7203,13 +7206,15 @@ void RadiationM1::VetGdRingFlush() {
         const int i = out ? rli : aqi;
         const int s = out ? rls : aqs;
         const int wl = out ? rlw : aqw;
-        int64_t r = t;
-        const int v = static_cast<int>(r % n);
+        // 32-bit index arithmetic (nrl, ncp < 2^31, checked on the host): the 64-bit
+        // divisions dominated this pure-copy kernel
+        int r = static_cast<int>(t);
+        const int v = r % n;
         r /= n;
-        const int kk = static_cast<int>(r % nx3);
+        const int kk = r % nx3;
         r /= nx3;
-        const int jj = static_cast<int>(r % nx2);
-        const int m = static_cast<int>(r/nx2);
+        const int jj = r % nx2;
+        const int m = r/nx2;
         const int64_t qc = oc_(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(nx3)*jj);
         const int64_t qw = wadr(s, wl, m, v, kk + w, jj + w);
         if (out) {
