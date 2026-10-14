@@ -149,3 +149,21 @@ PU S3_268 ref at 5e5 / 9e5: vrV 0.076 / -0.039, vrM 0.58 / -0.19, rsurf 1.009 / 
 - No flag. The run passed the old E1's divergence time (1.24e7) with no retries and no infall. It is now close to PU: vrV and vrM match, L_top/L0 0.780 vs 0.794, KE_int 8.3e43 vs 1.1e44. rsurf 1.031 is below PU's 1.072.
 - d105 (rho/rho0 at 1.05 R_ph) keeps rising: 2.2 -> 4.3 between 5e6 and 1.25e7. That is the one quantity to watch.
 - This completes the section 6 schedule. Caltech will report the end (t = 2.42e7, the old tlim) and anything flagged; the run continues past it under tlim 1e9.
+
+## Old tlim t = 2.42e7 s reached (10-14 ~16:40 PDT) — FLAGGED: Picard > 20 and DT_RETRY bursts; run continues (tlim 1e9)
+
+| t (s) | vrV | vrM | vr105 | vr110 | d105 | KEe | KEt | rsurf | L_top/L0 | KE_int | Picard (col 22) | w_mlt |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1.25e7 | 0.02 | 0.77 | -0.35 | | 4.33 | 3.4e40 | | 1.031 | 0.780 | 8.3e43 | 5.9 | 0.624 |
+| 2.0e7 | -0.09 | 0.54 | -0.45 | -0.066 | 3.0 | 3.6e40 | 7.6e40 | 1.033 | 0.50 | 1.74e44 | 21.4 | 0.103 |
+| 2.1e7 | -0.30 | 0.55 | -1.85 | -0.069 | 6.7 | 7.1e40 | 1.4e41 | 1.033 | 0.47 | 1.87e44 | 38.1 | 0.061 |
+| 2.2e7 | | | | | | | | | 0.45 | 2.01e44 | 54.7 | 0.029 |
+| 2.39e7 | -0.26 | 0.50 | -2.93 | -0.073 | 66.9 | 1.06e41 | 3.17e41 | 1.039 | 0.44 | 2.14e44 | 33-44 | 0.0002 |
+
+(pulse columns from the bin dumps, hst columns from agcar3d.user.hst; L_top/L0 = L_top(t)/L_top(0); at 2.42e7: L_top/L0 0.441, KE_int 2.15e44, Picard 44.2, w_mlt 0.)
+
+- **Solver stiffness (flag):** current link run.log.4513330: 220 `DT_RETRY cycle` events (rate ~1 per 1000 cycles before t 2.0e7, 25-45 per 1000 since cycle ~31000), 491 Picard NON-CONVERGED (200 passes, resid ~5e-8 vs tol 1e-8), 3061 hesdirk2 NOT ADMISSIBLE -> BE redo. FATAL 0. Every retry recovered; dt 627-734 s (was 727 flat). s/cycle 1.8 -> ~3.0. Coincides with the MLT scaffold ramp reaching w = 0 (0.10 at 2.0e7 -> 0 at 2.4e7) and the Picard mean peaking at ~55 at 2.2e7 (now 33-44, easing).
+- **d105 (rho/rho0 at 1.05 R_ph) jumped:** 4.3 (1.25e7) -> 6.7 (2.11e7) -> 65-83 (2.37-2.39e7). Dense material is building just above the photosphere while rsurf stays 1.039.
+- **Infall above the surface starting:** vr105 -0.35 -> -1.9 -> -2.9 km/s (flag level -5 not reached). vrV/vrM small (-0.26 / +0.50).
+- **Luminosity:** L_top/L0 fell 0.78 -> 0.44 and is flattening (0.441 at 2.42e7). Caltech Eddington analysis (edd_1014): emergent L ~4.0e5 Lsun vs 8.9e5 in the IC at 256 d; force-based Gamma shell mean 0.5-0.73 below R_ph (no super-Eddington layer); lab-frame Gamma > 1 over 0.38-0.70 R_ph is convective radiation-enthalpy transport (Fe-bump CZ, v_rms 7-10 km/s).
+- caltech_out/prod_pulse.txt and agcar3d.user.hst updated. Next: report if vr105 < -5 km/s, rsurf > 1.15, or the retry rate keeps rising; otherwise every ~1e7 s.
