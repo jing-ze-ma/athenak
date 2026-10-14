@@ -13,3 +13,10 @@ VERIFIED only when BLC_GATE=1). No other change from the TASK.
 - Start estimate: sbatch --test-only 2026-10-13T23:49 (hpc-sm-01-05); squeue estimate for 4487415 2026-10-14T11:40.
 
 Next: STARTED when link 1 runs, then per-link reports as in TASK section 6.
+
+## STARTED
+- Link 1 4487415 RUNNING on hpc-sm-01-05 since 2026-10-13T21:02:01, fresh t = 0 (no rst in prod/rst).
+- he_ic_linhao line: linhao_profile_full.txt (327682 rows, r 1.14819e+12 .. rmax 3.65147e+12), T(rmax) 63364.2 K, rho(rmax) 2.64193e-11.
+- he_bc_linhao ghost lines printed (ghost 0: rho 6.462e-05, T 1.0963e6, F_r 2.330e13).
+- vet_gd_halo_ipc: ON (node-local CUDA IPC). dt 87.5 s from cycle 50; ~0.86 s/cycle over cycles 50-150.
+- NOT ADMISSIBLE (redone with BE) at cycles 3 and 4 only so far; 0 FATAL / DIVERGED / NON-CONVERGED.
