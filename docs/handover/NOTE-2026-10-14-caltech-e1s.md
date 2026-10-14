@@ -37,3 +37,29 @@ Run time = 33,300 cycles x s/cycle x 1.3:
 - G8/G16: queue 20-28 h alone exceeds G2's whole run.
 **Choice: G2 = 1 node x 2 H200, deck meshblock 536x64x64 (no second deck), LAUNCH launch2.sh, QoS long, -t 14-00:00:00**
 (longest allowed; start estimate identical to 7 d normal; one link covers the run, 2 afterany backups at the same walltime).
+
+### Production deck (coordinator relay of USER 10-14: raise tlim)
+**tlim raised to 1e9 per user 10-14; the run is limited by walltime links.** Production deck
+`e1s_1014/agcA_E1_fin4dtr_s3_tlim1e9.athinput` (a-w) md5 **680dadb0a706715b5c9187211e0b431c**; diff vs d32cbb98 (only line):
+```
+50c50
+< tlim                     = 2.4192e+07   # agcmodel-1012
+---
+> tlim                     = 1.0e+09      # e1s-1014: USER 10-14 tlim raised to 1e9; the run is limited by walltime links
+```
+Meshblock unchanged (G2 = deck 536x64x64). run.cfg TLIM=1e9. The gate below ran on d32cbb98 (submitted before the tlim relay);
+tlim only sets the stop time, so the restart/IPC bitwise result carries over.
+
+## 5. Gate (job 4513204, 1x2 H200 hpc-sm-01-05, launch2.sh, deck d32cbb98)
+Smoke (`e1s_1014/gate/smoke`): C fresh 60 / L 30+30 hook restart / Coff ipc=false; rc 0, FATAL 0 in all 4 runs; Picard C 3.09/6.
+```
+hst agcar3d.hydro.hst: C rows 11, chain rows 11, missing 0 [], extra 0 [], differing 0
+hst agcar3d.user.hst: C rows 11, chain rows 11, missing 0 [], extra 0 [], differing 0
+bin: C dumps 8, chain dumps 8, extra in chain 0 []
+CHAINCMP BITWISE
+CMPLAST BITWISE
+HST agcar3d.hydro.hst BITWISE
+HST agcar3d.user.hst BITWISE
+IPC-OFF (Coff vs C): CMPLAST BITWISE, HST hydro BITWISE, HST user BITWISE
+GATE PASS 2026-10-14_05:59:27   (-> gate/smoke/VERIFIED)
+```
