@@ -387,12 +387,17 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
     dtn = pm->pmb_pack->pradm1->VetGdAlignDt(pm->time, dtn);
   }
   pm->dt = dtn;
-  static const char *whys[] = {"?", "NON-CONVERGED", "DIVERGED", "DIVERGED(masked)",
-                               "eint<=0", "?", "?", "?", "?", "forced"};
+  // the words the production link scripts STOP on (DIVERGED, nan, NON-CONVERGED=) are not
+  // used here: a retried cycle is not a failed run
+  static const char *whys[] = {"?", "NON-CONVERGED", "resid>implicit_resid_fatal",
+                               "masked_resid>implicit_resid_fatal_masked", "eint<=0",
+                               "?", "?", "?", "?", "forced"};
   if (global_variable::my_rank == 0) {
     std::cout << "DT_RETRY cycle=" << pm->ncycle << " t=" << pm->time << " dt " << dto
               << " -> " << dtn << " reason=" << whys[std::min(std::max(why, 0), 9)]
-              << " resid=" << res << " cut " << ncut_ << std::endl;
+              << " resid=";
+    if (std::isfinite(res)) {std::cout << res;} else {std::cout << "nonfinite";}
+    std::cout << " cut " << ncut_ << std::endl;
   }
   (void) pd;
   return true;
