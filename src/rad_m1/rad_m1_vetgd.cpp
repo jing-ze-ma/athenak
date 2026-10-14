@@ -4171,6 +4171,7 @@ void RadiationM1::VetGdSweep() {
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6) vet_interp: 2 corner, 3 auto
+  const bool vpa = (vet_path != 0);   // open-od-1013 vet_path = cells
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath, or the beam)
   // unify-sc-gd-1012 (#2): vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
@@ -4563,7 +4564,194 @@ void RadiationM1::VetGdSweep() {
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
               const Real rfi = cx1f(m,i);
-              if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
+              // open-od-1013 vet_path = cells (vet_sc's VetPathStep, rad_m1_vetseg.hpp):
+              // a ray whose segment jumps more than one lateral cell (|fj - j| or
+              // |fk - k| > 1: dr tan(psi)/(r dtheta) > 1) sees chi and S only at its two
+              // ends and misses a lateral material edge narrower than the jump.  Where
+              // the cells the step passes (the foot stencil, the cell that holds each
+              // node, the own cell) have a chi contrast > kVetCornerRatio (or an S
+              // contrast > kVetCornerRatio among those not thin over the step, chi ds
+              // > 0.01), the step is subdivided at the NODES where it crosses a theta-row
+              // or phi-layer centre (index linear in the path fraction, as
+              // vet_gd_band_exit): each node takes chi, S trilinear in ln (theta, phi
+              // index; radius between the own and upwind shells at the node's true r),
+              // or at a material edge (corner contrast > kVetCornerRatio) the cell that
+              // holds it (own shell below the radial face dso, upwind above).  Each
+              // sub-segment is the code's own segment (vet_seg split / jump), split at
+              // the radial face where that lies inside it, at its midpoint otherwise;
+              // the first one from the foot (vet_interp corner / auto as below).  A
+              // smooth step (no contrast) keeps the single segment: bitwise.  Not taken
+              // on a clamped foot or on the turned ray that dips below its inner face
+              // (vet_seg = jump branch below: piecewise per cell in radius already).
+              bool pdone = false;
+              if (vpa && !clp && !(spl && spe == 2 && typ == 3 && l > lcut &&
+                                   p2 < rfi*rfi)) {
+                const Real gj = fj - j, gk = fk - k;
+                const Real a2 = fabs(gj), a3 = fabs(gk);
+                const int n2 = (a2 > 1.0) ? (static_cast<int>(ceil(a2)) - 1) : 0;
+                const int n3 = (a3 > 1.0) ? (static_cast<int>(ceil(a3)) - 1) : 0;
+                if (n2 + n3 > 0) {
+                  const int g2 = (gj < 0.0) ? -1 : 1, g3 = (gk < 0.0) ? -1 : 1;
+                  const Real rup = cx1v(m,iu);
+                  const bool own3 = (typ != 1);
+                  // the node: path fraction sn from the foot (0) to the cell (1), its
+                  // lateral fractional indices; returns ln chi, ln S (edge: holder cell)
+                  auto node = [&](const Real sn, const Real yj, const Real yk, Real &lcn,
+                                  Real &lsn, Real &lch, Real &lsh) {
+                    const Real q = (1.0 - sn)*ds;   // the path distance from the cell
+                    const int jn = static_cast<int>(floor(yj));
+                    const int kn = static_cast<int>(floor(yk));
+                    const Real aj = yj - jn, ak = yk - kn;
+                    Real wr = 0.0;
+                    if (!own3) {
+                      const Real rq = sqrt(fmax(r*r - 2.0*q*r*mr + q*q, 0.0));
+                      wr = fmin(fmax((rq - r)/(rup - r), 0.0), 1.0);
+                    }
+                    const int ih = (own3 || q < dso) ? i : iu;
+                    const int jh = jn + ((aj < 0.5) ? 0 : 1);
+                    const int kh = kn + ((ak < 0.5) ? 0 : 1);
+                    lch = csx(m,0,kh,jh,ih);
+                    lsh = csx(m,1,kh,jh,ih);
+                    Real lmn = 1.0e300, lmx = -1.0e300, ws = 0.0, lc = 0.0, ls = 0.0;
+                    for (int c = 0; c < 2; ++c) {
+                      const Real wc = (c == 0) ? (1.0 - wr) : wr;
+                      if (!(wc > 0.0)) {continue;}
+                      const int ic = (c == 0) ? i : iu;
+                      for (int b = 0; b < 2; ++b) {
+                        const Real wk = (b == 0) ? (1.0 - ak) : ak;
+                        if (!(wk > 0.0)) {continue;}
+                        for (int a = 0; a < 2; ++a) {
+                          const Real wj = (a == 0) ? (1.0 - aj) : aj;
+                          if (!(wj > 0.0)) {continue;}
+                          const Real w = wc*wk*wj;
+                          const Real cl = csx(m,0,kn + b,jn + a,ic);
+                          lmn = fmin(lmn, cl);
+                          lmx = fmax(lmx, cl);
+                          ws += w;
+                          lc += w*cl;
+                          ls += w*csx(m,1,kn + b,jn + a,ic);
+                        }
+                      }
+                    }
+                    if ((lmx - lmn) > log(kVetCornerRatio)) {
+                      lcn = lch;
+                      lsn = lsh;
+                    } else {
+                      lcn = lc/ws;
+                      lsn = ls/ws;
+                    }
+                  };
+                  // the next node after (t2, t3) in path order from the foot
+                  auto next = [&](int &t2, int &t3, Real &sn, Real &yj, Real &yk) {
+                    const Real s2 = (t2 < n2) ? (1.0 - (n2 - t2)/a2) : 2.0;
+                    const Real s3 = (t3 < n3) ? (1.0 - (n3 - t3)/a3) : 2.0;
+                    if (s2 <= s3) {
+                      sn = s2;
+                      yj = j + g2*(n2 - t2);
+                      yk = k + gk*(1.0 - sn);
+                      ++t2;
+                      if (s3 == s2) {++t3;}   // a row-layer corner: one node
+                    } else {
+                      sn = s3;
+                      yk = k + g3*(n3 - t3);
+                      yj = j + gj*(1.0 - sn);
+                      ++t3;
+                    }
+                  };
+                  // the gate (ln values): foot stencil, node holder cells, own cell
+                  const Real ltn = log(1.0e-2/fmax(ds, 1.0e-300));
+                  Real cmn = csx(m,0,k,j,i), cmx = cmn, smn = 1.0e300, smx = -1.0e300;
+                  if (cmn > ltn) {smn = csx(m,1,k,j,i); smx = smn;}
+                  for (int q = 0; q < 4; ++q) {
+                    const Real wq = ((q < 2) ? (1.0 - uk) : uk)
+                                    *((q % 2 == 0) ? (1.0 - uj) : uj);
+                    if (!(wq > 0.0)) {continue;}
+                    const int kk = (q < 2) ? k0 : k1, jj = (q % 2 == 0) ? j0 : j1;
+                    const Real cl = csx(m,0,kk,jj,iu);
+                    cmn = fmin(cmn, cl);
+                    cmx = fmax(cmx, cl);
+                    if (cl > ltn) {
+                      smn = fmin(smn, csx(m,1,kk,jj,iu));
+                      smx = fmax(smx, csx(m,1,kk,jj,iu));
+                    }
+                  }
+                  {
+                    int t2 = 0, t3 = 0;
+                    while (t2 < n2 || t3 < n3) {
+                      Real sn, yj, yk;
+                      next(t2, t3, sn, yj, yk);
+                      const Real q = (1.0 - sn)*ds;
+                      const int ih = (own3 || q < dso) ? i : iu;
+                      const int jn = static_cast<int>(floor(yj));
+                      const int kn = static_cast<int>(floor(yk));
+                      const int jh = jn + ((yj - jn < 0.5) ? 0 : 1);
+                      const int kh = kn + ((yk - kn < 0.5) ? 0 : 1);
+                      const Real cl = csx(m,0,kh,jh,ih);
+                      cmn = fmin(cmn, cl);
+                      cmx = fmax(cmx, cl);
+                      if (cl > ltn) {
+                        smn = fmin(smn, csx(m,1,kh,jh,ih));
+                        smx = fmax(smx, csx(m,1,kh,jh,ih));
+                      }
+                    }
+                  }
+                  const Real lr = log(kVetCornerRatio);
+                  if ((cmx - cmn) > lr || (smx - smn) > lr) {
+                    // one sub-segment from (I, chi, S) at path distance qa to (chi, S)
+                    // at qb < qa: split at the radial face dso if inside, else midway
+                    auto seg = [&](const Real ia, const Real ca, const Real sa,
+                                   const Real qa, const Real cb, const Real sb,
+                                   const Real qb) -> Real {
+                      const Real f = (typ == 1 && spl && dso < qa && dso > qb) ? dso
+                                     : 0.5*(qa + qb);
+                      if (spl) {return VetSegSplit(ia, sa, sb, ca*(qa - f), cb*(f - qb),
+                                                   spe);}
+                      Real ex, w0, wu;
+                      VgdW(0.5*(ca + cb)*(qa - qb), ex, w0, wu);
+                      return ia*ex + wu*sa + w0*sb;
+                    };
+                    int t2 = 0, t3 = 0;
+                    Real sn, yj, yk, lcn, lsn, lch, lsh;
+                    next(t2, t3, sn, yj, yk);
+                    node(sn, yj, yk, lcn, lsn, lch, lsh);
+                    Real cb = exp(lcn), sb = exp(lsn), qb = (1.0 - sn)*ds;
+                    Real ivp;
+                    if (vim == 2 ||
+                        (vim == 3 && VgdCornerEdge(csx, m, k0, k1, j0, j1, iu, uk, uj))) {
+                      Real ws = 0.0, vs = 0.0;
+                      for (int q = 0; q < 4; ++q) {
+                        const int kk = (q < 2) ? k0 : k1;
+                        const int jj = (q % 2 == 0) ? j0 : j1;
+                        const Real wq = ((q < 2) ? (1.0 - uk) : uk)
+                                        *((q % 2 == 0) ? (1.0 - uj) : uj);
+                        if (!(wq > 0.0) || !(ok[q] || ivu < 0.0)) {continue;}
+                        const Real cq = exp(csx(m,0,kk,jj,iu)), sq = exp(csx(m,1,kk,jj,iu));
+                        const Real iq = (ivu < 0.0) ? sq : rd(kk,jj,iu);
+                        ws += wq;
+                        vs += wq*seg(iq, cq, sq, ds, cb, sb, qb);
+                      }
+                      ivp = vs/ws;
+                    } else {
+                      ivp = seg((ivu < 0.0) ? su : ivu, chu, su, ds, cb, sb, qb);
+                    }
+                    while (t2 < n2 || t3 < n3) {
+                      const Real ca = cb, sa = sb, qa = qb;
+                      next(t2, t3, sn, yj, yk);
+                      node(sn, yj, yk, lcn, lsn, lch, lsh);
+                      cb = exp(lcn);
+                      sb = exp(lsn);
+                      qb = (1.0 - sn)*ds;
+                      ivp = seg(ivp, ca, sa, qa, cb, sb, qb);
+                    }
+                    iv = fmax(seg(ivp, cb, sb, qb, ch0, s0, 0.0), 0.0);
+                    pdone = true;
+                    Kokkos::atomic_add(&cnt_(1), 1.0);
+                  }
+                }
+              }
+              if (pdone) {
+                // done: the subdivided step (vet_path = cells)
+              } else if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
                 // coreL-1012 vet_seg = jump: the turned ray dips below the own inner face;
                 // its chord there takes chi, S of the cell below (log-mean of the own
                 // column and the upwind point), the two own parts their own: piecewise
@@ -5345,11 +5533,15 @@ void RadiationM1::VetGdPost() {
   }
   Kokkos::deep_copy(vgd_pin_cnt, vlat_cnt);
   vlat_nclamp = vgd_pin_cnt(0);
+  vgd_npath = vgd_pin_cnt(1);   // open-od-1013 vet_path (all ranks below)
   // all ranks (exactness of the sweep: any read beyond the band is clamped and counted)
   vgd_nclamp_all = vlat_nclamp;
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, &vgd_nclamp_all, 1, MPI_ATHENA_REAL, MPI_SUM,
                 MPI_COMM_WORLD);
+  if (vet_path != 0) {
+    MPI_Allreduce(MPI_IN_PLACE, &vgd_npath, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  }
 #endif
   // the band is capped at the block size: a read beyond it would be clamped (inexact
   // sweep).  Checked at every build: FATAL unless vet_gd_allow_clamp = true (warning)

@@ -192,7 +192,7 @@ void RadiationM1::VetLatInit() {
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
   Kokkos::realloc(vlat_w, vlat_nmu);
-  Kokkos::realloc(vlat_cnt, 1);
+  Kokkos::realloc(vlat_cnt, 2);   // (1): open-od-1013 vet_gd vet_path subdivided steps
   Kokkos::deep_copy(vlat_cnt, 0.0);
   // Gauss-Legendre nodes on [0, 1] (descending) and weights summing to 1/2 per hemisphere
   {

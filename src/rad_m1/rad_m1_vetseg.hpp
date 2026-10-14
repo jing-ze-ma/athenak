@@ -156,4 +156,168 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
   return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe);
 }
 
+
+// open-od-1013: vet_path = cells.  The x1-plane sweep steps ONE x1 column per segment; a
+// ray steeper than the cell diagonal (|sh2| = dx1|mu2|/(|mu1| dx2) > 1, or |sh3| > 1)
+// jumps |sh| rows in that one segment and sees chi and S only at its two ends, so an
+// opaque body narrower than the jump is invisible to it (the single opaque disc: the
+// formal solution J near the x2 axis 0.86 of the exact staircase J at 15 cells per
+// diameter, first order in dx/diameter; the x1-near rays are exact).  vet_path = cells
+// subdivides the step at the NODES where the characteristic crosses a row (x2) or layer
+// (x3) centre between the foot and the cell: each sub-segment is the code's own segment
+// (VetSegOne: vet_seg split / jump, linear S in tau), the first one from the foot
+// stencil as before (VetUpCorner / lin), the node chi and S linear in x1 between the
+// upwind and own columns (and in the other transverse index), or, at a material edge
+// (stencil chi contrast > kVetCornerRatio, as vet_interp auto), the cell that contains
+// the node.  A linear S with constant chi gives the single segment again (linear-in-tau
+// sub-segments of a linear source are exact): the diffusion limit is kept.  Rays with
+// |sh2|, |sh3| <= 1 have no node: bitwise the single segment.  Only a step whose cells
+// (foot stencil, node cells, own cell) have a chi contrast > kVetCornerRatio, or an S
+// contrast > kVetCornerRatio among those not thin over the step (chi hl > 0.01), is
+// subdivided (the material edge the single segment misses); a smooth step keeps the
+// single segment bitwise.
+// The accessor acc(col, dk, dj, chi, S) returns the extinction and source of the column
+// col (0 upwind, 1 own) at the transverse offsets (dk, dj) from the cell, and false
+// where that cell lies outside an OPEN (vacuum) face (the ray there carries I = 0).
+template <class A>
+KOKKOS_INLINE_FUNCTION
+bool VetPathNode(const A &acc, const int vim, const Real s, const int dj0, const Real aj,
+                 const int dk0, const Real ak, Real &cn, Real &sn) {
+  const Real wc[2] = {1.0 - s, s}, wj[2] = {1.0 - aj, aj}, wk[2] = {1.0 - ak, ak};
+  Real wv[8], cv[8], sv[8];
+  int nv = 0;
+  Real cmn = 1.0e300, cmx = 0.0;
+  for (int c = 0; c < 2; ++c) {
+    for (int b = 0; b < 2; ++b) {
+      for (int a = 0; a < 2; ++a) {
+        const Real w = wc[c]*wk[b]*wj[a];
+        if (!(w > 0.0)) continue;
+        acc(c, dk0 + b, dj0 + a, cv[nv], sv[nv]);
+        wv[nv] = w;
+        cmn = fmin(cmn, cv[nv]);
+        cmx = fmax(cmx, cv[nv]);
+        ++nv;
+      }
+    }
+  }
+  const int cc = (s < 0.5) ? 0 : 1;
+  const int dj = dj0 + ((aj < 0.5) ? 0 : 1), dk = dk0 + ((ak < 0.5) ? 0 : 1);
+  Real ce, se;
+  const bool in = acc(cc, dk, dj, ce, se);
+  if (cmx > kVetCornerRatio*cmn) {   // a material edge: the cell that holds the node
+    cn = ce;
+    sn = se;
+    return in;
+  }
+  Real ws = 0.0, lc = 0.0, ls = 0.0;
+  const bool lg = (vim == 1 || vim == 3);
+  for (int q = 0; q < nv; ++q) {
+    ws += wv[q];
+    lc += wv[q]*(lg ? log(fmax(cv[q], 1.0e-300)) : cv[q]);
+    ls += wv[q]*(lg ? log(fmax(sv[q], 1.0e-300)) : sv[q]);
+  }
+  cn = lg ? exp(lc/ws) : lc/ws;
+  sn = lg ? exp(ls/ws) : ls/ws;
+  return in;
+}
+
+// the subdivided step (see above): returns false (iv untouched) where the step has no
+// node; iul, cul, sul: the lin (vet_interp = lin) upwind values; hl = dx1/|mu1|
+template <class A>
+KOKKOS_INLINE_FUNCTION
+bool VetPathStep(const A &acc, const int vim, const Real w[4], const Real iq[4],
+                 const Real cq[4], const Real sq[4], const Real iul, const Real cul,
+                 const Real sul, const Real s0, const Real c0, const Real hl,
+                 const bool spl, const int spe, const Real sh2, const Real sh3,
+                 Real &iv) {
+  const Real a2 = fabs(sh2), a3 = fabs(sh3);
+  const int n2 = (a2 > 1.0) ? (static_cast<int>(ceil(a2)) - 1) : 0;
+  const int n3 = (a3 > 1.0) ? (static_cast<int>(ceil(a3)) - 1) : 0;
+  if (n2 + n3 == 0) return false;
+  const int g2 = (sh2 < 0.0) ? -1 : 1, g3 = (sh3 < 0.0) ? -1 : 1;
+  // the gate: subdivide only where the cells the step passes (the cell that holds each
+  // node, the foot stencil, the cell itself) have a chi or S contrast > kVetCornerRatio;
+  // a smooth path keeps the single segment (bitwise; the diffusion limit untouched)
+  {
+    // S counts only in cells not thin over the step (chi hl > 1e-2): a skipped emitter
+    const Real tmin = 1.0e-2/hl;
+    Real cmn = c0, cmx = c0, smn = 1.0e300, smx = 0.0;
+    if (c0 > tmin) {smn = s0; smx = s0;}
+    for (int q = 0; q < 4; ++q) {
+      if (w[q] > 0.0) {
+        cmn = fmin(cmn, cq[q]); cmx = fmax(cmx, cq[q]);
+        if (cq[q] > tmin) {smn = fmin(smn, sq[q]); smx = fmax(smx, sq[q]);}
+      }
+    }
+    int u2 = 0, u3 = 0;
+    while (u2 < n2 || u3 < n3) {
+      const Real s2 = (u2 < n2) ? (1.0 - (n2 - u2)/a2) : 2.0;
+      const Real s3 = (u3 < n3) ? (1.0 - (n3 - u3)/a3) : 2.0;
+      int dj, dk;
+      Real sn;
+      if (s2 <= s3) {
+        sn = s2;
+        dj = g2*(n2 - u2);
+        dk = static_cast<int>(floor(sh3*(1.0 - sn) + 0.5));
+        ++u2;
+        if (s3 == s2) ++u3;
+      } else {
+        sn = s3;
+        dk = g3*(n3 - u3);
+        dj = static_cast<int>(floor(sh2*(1.0 - sn) + 0.5));
+        ++u3;
+      }
+      Real cv, sv;
+      acc((sn < 0.5) ? 0 : 1, dk, dj, cv, sv);
+      cmn = fmin(cmn, cv); cmx = fmax(cmx, cv);
+      if (cv > tmin) {smn = fmin(smn, sv); smx = fmax(smx, sv);}
+    }
+    if (!(cmx > kVetCornerRatio*cmn) && !(smx > kVetCornerRatio*smn)) return false;
+  }
+  int t2 = 0, t3 = 0;
+  Real sp = 0.0, cp = 0.0, spv = 0.0;
+  bool first = true;
+  Real ivc = 0.0;
+  while (true) {
+    const Real s2 = (t2 < n2) ? (1.0 - (n2 - t2)/a2) : 2.0;
+    const Real s3 = (t3 < n3) ? (1.0 - (n3 - t3)/a3) : 2.0;
+    Real sn, cn, snv;
+    bool in = true;
+    if (s2 > 1.0 && s3 > 1.0) {
+      sn = 1.0;
+      cn = c0;
+      snv = s0;
+    } else if (s2 <= s3) {
+      sn = s2;
+      const Real z = sh3*(1.0 - sn);
+      const Real fz = floor(z);
+      in = VetPathNode(acc, vim, sn, g2*(n2 - t2), 0.0, static_cast<int>(fz), z - fz,
+                       cn, snv);
+      ++t2;
+      if (s3 == s2) ++t3;   // a row-layer corner: one node
+    } else {
+      sn = s3;
+      const Real y = sh2*(1.0 - sn);
+      const Real fy = floor(y);
+      in = VetPathNode(acc, vim, sn, static_cast<int>(fy), y - fy, g3*(n3 - t3), 0.0,
+                       cn, snv);
+      ++t3;
+    }
+    if (first) {
+      ivc = (vim != 0) ? VetUpCorner(vim, w, iq, cq, sq, snv, cn, hl*sn, spl, spe)
+                       : VetSegOne(iul, sul, snv, cul, cn, hl*sn, spl, spe);
+      first = false;
+    } else {
+      ivc = VetSegOne(ivc, spv, snv, cp, cn, hl*(sn - sp), spl, spe);
+    }
+    if (!in) ivc = 0.0;   // the node lies beyond an open face: the ray entered there
+    if (sn >= 1.0) break;
+    sp = sn;
+    cp = cn;
+    spv = snv;
+  }
+  iv = ivc;
+  return true;
+}
+
 #endif  // RAD_M1_RAD_M1_VETSEG_HPP_
