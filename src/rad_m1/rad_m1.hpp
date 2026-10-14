@@ -560,14 +560,19 @@ class RadiationM1 {
   // per solve (q: 0 E1, 1 E2, 2 kT1, 3 v1, 4 g0, 5 a1, 6 a2).
   bool impl_lbath = false;
   DvceArray4D<Real> lbath_g;
-  // the wall flux diagnostic (history L_in): lbath_f(m, q, k, j), q = 3 the lab flux of
-  // the last solve (comoving face flux + donor enthalpy flux), 1 its value at the start
-  // of a hesdirk2 stage-1 solve (the FSAL slope's), 2 at the start of stage 2 (stage
-  // 1's); lbath_t2 = the kind of the last solve (t2_solve).  Step-effective flux:
-  // stage 2 ->
-  // F1/2 + b2 F(stage 1) + g F(stage 2) (ESDIRK weights of the energy update), else F.
+  // the wall flux diagnostic (history L_in): lbath_f(m, 0, k, j) = the lab flux of the
+  // last solve through the wall face of column (k, j) (comoving face flux + the row's
+  // donor enthalpy flux and its plm correction).  lbath_l1 / lbath_l2: the wall
+  // luminosity (sum of area x flux, all ranks) of the solve before a hesdirk2 stage-1
+  // solve (the FSAL
+  // slope's) and of stage 1; lbath_t2 = the kind of the last solve.  Step-effective:
+  // after stage 2  L1/2 + b2 L(stage 1) + g L(stage 2) (ESDIRK weights of the energy
+  // update), else L.  lbath_l1 is restored from the pgen restart trailer (lbath_rst).
   DvceArray4D<Real> lbath_f;
   int lbath_t2 = 0;
+  Real lbath_l1 = 0.0, lbath_l2 = 0.0, lbath_rstl = 0.0;
+  bool lbath_rst = false;
+  Real LbathWallSum();
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,

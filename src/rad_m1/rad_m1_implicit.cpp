@@ -11099,6 +11099,34 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
 //! the write-back into u0 and into the gas.
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::LbathWallSum
+//! \brief fin4-linhao-bc: the wall luminosity of the last solve, sum over the x1min wall
+//! faces of area x lbath_f (all ranks; 0 before the first solve)
+
+Real RadiationM1::LbathWallSum() {
+  Real s = 0.0;
+  if (lbath_f.extent_int(0) > 0) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+    const int nj = indcs.nx2, nk = indcs.nx3;
+    const int nm = pmy_pack->nmb_thispack;
+    auto lf_ = lbath_f;
+    auto pos_ = part_pos;
+    auto ar_ = pmy_pack->pcoord->area.x1f;
+    Kokkos::parallel_reduce("m1_lbath_sum", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            nm*nk*nj),
+    KOKKOS_LAMBDA(const int n, Real &ls) {
+      const int m = n/(nk*nj), k = ks + (n/nj) % nk, j = js + n % nj;
+      if (pos_.d_view(m) == 0) {ls += lf_(m,0,k,j)*ar_(m,k,j,is);}
+    }, s);
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &s, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  return s;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::DbgEnergyTally
 //! \brief dbg_energy_tally: all-rank sums over active cells of (gas IEN, E, fref_wacc,
 //! esrc) x cell volume into o[0..3]
@@ -11518,18 +11546,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Kokkos::deep_copy(lbath_g, 0.0);
     }
     if (lbath_f.extent_int(0) != nmb1 + 1) {
-      Kokkos::realloc(lbath_f, nmb1 + 1, 4, iw.extent_int(2), iw.extent_int(3));
+      Kokkos::realloc(lbath_f, nmb1 + 1, 1, iw.extent_int(2), iw.extent_int(3));
       Kokkos::deep_copy(lbath_f, 0.0);
     }
-    if (t2s == M1_T2S_STAGE1 || t2s == M1_T2S_STAGE2) {
-      // the wall-flux diagnostic: keep the previous solve's flux (rad_m1.hpp lbath_f)
-      auto lf_ = lbath_f;
-      const int q = (t2s == M1_T2S_STAGE1) ? 1 : 2;
-      par_for("m1_impl_lbath_f", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-      KOKKOS_LAMBDA(const int m, const int k, const int j) {
-        lf_(m,q,k,j) = lf_(m,3,k,j);
-      });
+    // the wall-flux diagnostic: the previous solve's wall luminosity (rad_m1.hpp)
+    if (t2s == M1_T2S_STAGE1) {
+      lbath_l1 = lbath_rst ? lbath_rstl : LbathWallSum();
+    } else if (t2s == M1_T2S_STAGE2) {
+      lbath_l2 = LbathWallSum();
     }
+    lbath_rst = false;
     lbath_t2 = t2s;
     auto lg_ = lbath_g;
     auto eos = flr.eos;
@@ -13619,7 +13645,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                               iw_(m,M1_IW_ADV,k,j,i3), vf);
           }
         }
-        lff_(m,3,k,j) = fn + adf;
+        lff_(m,0,k,j) = fn + adf;
       } else if ((lo || hi) && !cyclic) {
         int bc = lo ? bclo : bchi;
         int ic = lo ? is : ie;

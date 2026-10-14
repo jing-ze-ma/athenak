@@ -221,6 +221,9 @@ Real hs_eq_tol_ = 1.0e-9, hs_eq_dfl_ = 0.0;
 std::vector<Real> hs_eq_a_;
 DvceArray4D<Real> hs_sfac_;
 constexpr char kHsDicTag[8] = {'H', 'S', 'D', 'I', 'C', 'E', '0', '1'};
+// fin4-linhao-bc (he_bc_linhao only): the wall luminosity of the last solve (the FSAL
+// slope's part of the history's L_in) as the LAST tagged trailer (Real L, tag)
+constexpr char kHsLbcTag[8] = {'H', 'S', 'L', 'B', 'A', 'T', 'H', '1'};
 
 //! the frozen-MLT weight w(t): a function of the time only (restart-safe)
 Real HsMltW(const Real t) {
@@ -2235,6 +2238,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
   // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
   if (restart) {
+    // fin4-linhao-bc: strip the wall-luminosity trailer first (it is the last one)
+    auto &blk = pgen_rststate;
+    const std::size_t nt = sizeof(kHsLbcTag) + sizeof(Real);
+    if (blk.size() >= nt &&
+        std::memcmp(blk.data() + blk.size() - sizeof(kHsLbcTag), &(kHsLbcTag[0]),
+                    sizeof(kHsLbcTag)) == 0) {
+      Real l;
+      std::memcpy(&l, blk.data() + blk.size() - nt, sizeof(Real));
+      blk.resize(blk.size() - nt);
+      pm1->lbath_rstl = l;   // used only with he_bc_linhao (impl_lbath)
+      pm1->lbath_rst = true;
+    }
+  }
+  if (restart) {
     auto &blk = pgen_rststate;
     const std::size_t nt = sizeof(kHsDicTag) + sizeof(Real);
     if (blk.size() >= nt &&
@@ -3629,8 +3646,13 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const Real rint = hs_rint_, fin = hs_fin_;
   const bool lbcd = hs_lbc_ && (pmbp->pradm1->lbath_f.extent_int(0) > 0);
   auto lbf = pmbp->pradm1->lbath_f;
+  // fin4-linhao-bc: after a hesdirk2 step L_in = L1/2 + b2 L(stage 1) + g L(stage 2)
   const bool lst2 = (pmbp->pradm1->lbath_t2 == radm1::M1_T2S_STAGE2);
   const Real lg2 = 1.0 - 1.0/std::sqrt(2.0), lb2 = lg2/(2.0*(1.0 - lg2));
+  const Real lw3 = lst2 ? lg2 : 1.0;
+  const Real l12 = (lst2 && global_variable::my_rank == 0) ?
+                   (0.5*pmbp->pradm1->lbath_l1 + lb2*pmbp->pradm1->lbath_l2) : 0.0;
+  const int js0 = indcs.js, ks0 = indcs.ks;
   // v1sq_wall: mean v_r^2 over the wall (first active) cells of the whole mesh
   const Real inwall = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3);
   const bool eso = pm1->esrc_on;
@@ -3660,12 +3682,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     }
     if (i == is) h.the_array[4] = fin*area1(m,k,j,i);
     if (i == is && lbcd) {
-      // fin4-linhao-bc: nothing is imposed at the wall; L_in is the lab flux the solves
-      // put through it this step (rad_m1.hpp lbath_f: comoving face flux + the donor
-      // enthalpy flux of the row), with the ESDIRK weights after a hesdirk2 step
-      const Real fw = lst2 ? (0.5*lbf(m,1,k,j) + lb2*lbf(m,2,k,j) + lg2*lbf(m,3,k,j))
-                           : lbf(m,3,k,j);
-      h.the_array[4] = fw*area1(m,k,j,i);
+      // fin4-linhao-bc: nothing is imposed at the wall; L_in is the lab luminosity the
+      // solves put through it this step (rad_m1.hpp lbath_f, lbath_l1/l2)
+      h.the_array[4] = lw3*lbf(m,0,k,j)*area1(m,k,j,i);
+      if (m == 0 && k == ks0 && j == js0) {h.the_array[4] += l12;}
     }
     h.the_array[5] = ur(m,radm1::M1_E,k,j,i)*vol;
     h.the_array[6] = w0(m,IEN,k,j,i)*vol;
@@ -3908,7 +3928,16 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o + (na + 1)*sizeof(Real), &(kHsDicTag[0]),
                 sizeof(kHsDicTag));
   };
-  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); return out;}
+  // fin4-linhao-bc: the wall luminosity of the last solve (collective: every rank calls)
+  auto lbt = [&out]() {
+    if (!hs_lbc_ || hs_mesh_ == nullptr) return;
+    const Real l = hs_mesh_->pmb_pack->pradm1->LbathWallSum();
+    const std::size_t o = out.size();
+    out.resize(o + sizeof(Real) + sizeof(kHsLbcTag));
+    std::memcpy(out.data() + o, &l, sizeof(Real));
+    std::memcpy(out.data() + o + sizeof(Real), &(kHsLbcTag[0]), sizeof(kHsLbcTag));
+  };
+  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); lbt(); return out;}
   const int nfc = hs_fsub_.extent_int(0);
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
   const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
@@ -3920,6 +3949,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   std::memcpy(out.data() + sizeof(hdr), tmp.data(), (nfc + 1)*sizeof(Real));
   pic();
   dic();
+  lbt();
   return out;
 }
 
