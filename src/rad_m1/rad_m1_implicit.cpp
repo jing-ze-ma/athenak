@@ -7682,11 +7682,23 @@ void RadiationM1::ImplicitAccelApply(int it) {
   for (int t = 0; t < nh; ++t) {
     const int qr = cid[t];
     array_sum::GlobalSum row;
+    // accel-1014: a flat RangePolicy with 128-thread blocks (the 5-D MDRange reduce of
+    // the 24-double GlobalSum asked for more shared memory than an A100 block has:
+    // "shared memory request is too large"); opt-in path only
+    const int n1a = ie - is + 1, n2a = je - js + 1, n3a = ke - ks + 1;
+    const int nall = (nmb1 + 1)*nc*n3a*n2a*n1a;
     Kokkos::parallel_reduce("m1_acc_dot",
-    Kokkos::MDRangePolicy<Kokkos::Rank<5>>(DevExeSpace(), {0,0,ks,js,is},
-                                           {nmb1+1,nc,ke+1,je+1,ie+1}),
-    KOKKOS_LAMBDA(const int m, const int c, const int k, const int j, const int i,
-                  array_sum::GlobalSum &lsum) {
+    Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<128,1>>(DevExeSpace(), 0, nall),
+    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &lsum) {
+      int t = idx;
+      const int i = is + t % n1a;
+      t /= n1a;
+      const int j = js + t % n2a;
+      t /= n2a;
+      const int k = ks + t % n3a;
+      t /= n3a;
+      const int c = t % nc;
+      const int m = t/nc;
       Real dq = df_(m,qr,c,k,j,i);
       for (int r = 0; r < nh; ++r) {
         lsum.the_array[r] += dq*df_(m,cid[r],c,k,j,i);
