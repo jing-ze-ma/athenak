@@ -35,3 +35,10 @@ No crash, no NaN, rc 0 for all 4 runs. As expected, the 2-GPU and 4-GPU runs are
 - He giant, 50 cycles from fin4 rst: dens rel 1.1e-9; eint 9.9e-8; m1_e 1.2e-7; vely/velz maxabs/max ~1e-6. **velx maxabs/max 4.8e-2** (one or a few cells; not localized yet, may be a near-floor or fast cell where round-off grows quickly). hydro.hst last row 2.4e-10; user.hst 2.1e-4 at col 19.
 
 Verdict: a layout change only causes round-off-level divergence (apart from the one He giant velx cell to check), so the wide jobs continue. hgF4w 4489939 has started and seeded from fin4/rst/hegiant.00004.rst; bsgLIw4 4490079 is pending (Priority). The laytest rst hard links are removed.
+
+Addendum (details from the test log):
+- The He giant layout test started from hegiant.00000.rst (t=0, cycle 0), not from a fin4 rst.
+- The He giant velx difference sits in the outer floor cells only (i >= 888 of 897, density 1e-20). That is floor noise, not a concern.
+- FATAL, NaN, DIVERGED, NON-CONVERGED and NOT ADMISSIBLE counts are 0 in all four runs.
+- Picard passes match between layouts: 6 for BSG, 11 for the He giant.
+- s/cycle on 2 vs 4 GPUs (short runs, includes init): BSG 2.14 vs 1.53, He giant 1.39 vs 0.96.
