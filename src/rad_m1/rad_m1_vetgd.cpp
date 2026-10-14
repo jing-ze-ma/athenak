@@ -260,6 +260,39 @@ void VgdW(const Real dtau, Real &ex, Real &w0, Real &wu) {
   }
 }
 
+// mixprec-1014 (study, build flag -DM1_VGD_FP32T, default off = bitwise): the shell
+// kernel's transcendentals (exp of ln chi / ln S and of -dtau, acos, atan2) with a float
+// core (rad_m1_vetseg.hpp VetExpF: range-reduced, rel. error ~1e-7); the ray geometry
+// (chords, the tangent-point sqrt cancellations), the bilinear weights and the moment
+// sums stay in Real.  Without the flag these are the original calls (bitwise).
+#if defined(M1_VGD_FP32T)
+KOKKOS_INLINE_FUNCTION Real VgEx(const Real x) {return VetExpF(x);}
+#if defined(M1_VGD_FP32T)
+KOKKOS_INLINE_FUNCTION Real VgAc(const Real x) {
+  return static_cast<Real>(acosf(static_cast<float>(x)));
+}
+KOKKOS_INLINE_FUNCTION Real VgAt(const Real y, const Real x) {
+  return static_cast<Real>(atan2f(static_cast<float>(y), static_cast<float>(x)));
+}
+#else
+#define VgAc acos
+#define VgAt atan2
+#endif
+KOKKOS_INLINE_FUNCTION
+void VgWx(const Real dtau, Real &ex, Real &w0, Real &wu) {VetSegWF(dtau, ex, w0, wu);}
+KOKKOS_INLINE_FUNCTION
+Real VgSeg(const Real iu, const Real su, const Real s0, const Real hu, const Real h0,
+           const int emit) {
+  return VetSegSplitF(iu, su, s0, hu, h0, emit);
+}
+#else
+#define VgEx exp
+#define VgAc acos
+#define VgAt atan2
+#define VgWx VgdW
+#define VgSeg VetSegSplit
+#endif
+
 // HEALPix ring-scheme centres (12 ns^2) with the moment-fixed weights
 void VgdDirections(const int ns, std::vector<double> &d) {
   d.clear();
@@ -4478,17 +4511,17 @@ void RadiationM1::VetGdSweep() {
           const Real r = cx1v(m,i);
           const Real zr = r*fabs(mr);
           const Real p2 = fmax(r*r - zr*zr, 0.0);
-          const Real ch0 = exp(csx(m,0,k,j,i));
-          const Real s0 = exp(csx(m,1,k,j,i));
+          const Real ch0 = VgEx(csx(m,0,k,j,i));
+          const Real s0 = VgEx(csx(m,1,k,j,i));
           Real iv;
           if (inw && l == n1 - 1) {
             // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat),
             // or with the top bath (vgdbath-1011) its incident intensity attenuated
             const Real rtop = cx1f(m,ie+1);
             const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
-            const Real stp = fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i-1)), 1.0e-300);
+            const Real stp = fmax(1.5*s0 - 0.5*VgEx(csx(m,1,k,j,i-1)), 1.0e-300);
             Real ex, w0, wu;
-            VgdW(ch0*ds, ex, w0, wu);
+            VgWx(ch0*ds, ex, w0, wu);
             if (tbh) {
               iv = itop*ex + wu*stp + w0*s0;
             } else {
@@ -4532,8 +4565,8 @@ void RadiationM1::VetGdSweep() {
             const Real yu = r*st*sp - ds*ny;
             const Real zu = r*ct - ds*nz;
             const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
-            const Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
-            Real dph = atan2(yu, xu) - ph;
+            const Real thu = VgAc(fmin(fmax(zu/ru, -1.0), 1.0));
+            Real dph = VgAt(yu, xu) - ph;
             dph -= twopi*floor((dph + M_PI)/twopi);
             const Real fj = j + (thu - th)/mbsize.d_view(m).dx2;
             const Real fk = k + dph/mbsize.d_view(m).dx3;
@@ -4564,8 +4597,8 @@ void RadiationM1::VetGdSweep() {
               const Real dsx = s*ds;
               const Real xx = r*st*cp - dsx*nx, yx = r*st*sp - dsx*ny, zx = r*ct - dsx*nz;
               const Real rx = sqrt(xx*xx + yx*yx + zx*zx);
-              const Real thx = acos(fmin(fmax(zx/rx, -1.0), 1.0));
-              Real dpx = atan2(yx, xx) - ph;
+              const Real thx = VgAc(fmin(fmax(zx/rx, -1.0), 1.0));
+              Real dpx = VgAt(yx, xx) - ph;
               dpx -= twopi*floor((dpx + M_PI)/twopi);
               const Real fjx = fmin(fmax(j + (thx - th)/mbsize.d_view(m).dx2, Real(jlo)),
                                     Real(jhi + 1));
@@ -4595,15 +4628,15 @@ void RadiationM1::VetGdSweep() {
                                  VgdLerp(csx(m,c,kx0+1,jx0,ii), csx(m,c,kx0+1,jx0+1,ii),
                                          ujx), ukx);
                 };
-                const Real chx = exp((1.0 - wr)*linx(0,i) + wr*linx(0,iu));
-                const Real sx = exp((1.0 - wr)*linx(1,i) + wr*linx(1,iu));
+                const Real chx = VgEx((1.0 - wr)*linx(0,i) + wr*linx(0,iu));
+                const Real sx = VgEx((1.0 - wr)*linx(1,i) + wr*linx(1,iu));
                 if (spl) {
                   const Real dxo = fmin(dso, dsx);
-                  iv = fmax(VetSegSplit(isum/wsum, sx, s0, chx*(dsx - dxo),
+                  iv = fmax(VgSeg(isum/wsum, sx, s0, chx*(dsx - dxo),
                                         ch0*dxo, spe), 0.0);
                 } else {
                   Real ex, w0, wu;
-                  VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
+                  VgWx(0.5*(chx + ch0)*dsx, ex, w0, wu);
                   iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
                 }
                 bdone = true;
@@ -4637,11 +4670,11 @@ void RadiationM1::VetGdSweep() {
               }
               const int i1 = i + 1;
               auto sbt = [&](const int kk, const int jj) {
-                return fmax(1.5*exp(csx(m,1,kk,jj,i)) - 0.5*exp(csx(m,1,kk,jj,i1)),
+                return fmax(1.5*VgEx(csx(m,1,kk,jj,i)) - 0.5*VgEx(csx(m,1,kk,jj,i1)),
                             1.0e-300);
               };
               Real ex, w0, wu;
-              VgdW(ch0*ds, ex, w0, wu);
+              VgWx(ch0*ds, ex, w0, wu);
               const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
                                       VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
               iv = ie0*ex + wu*qv + w0*s0;
@@ -4654,16 +4687,16 @@ void RadiationM1::VetGdSweep() {
               const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
               const int i1 = i + 1;
               auto ib = [&](const int kk, const int jj) {
-                const Real sa = exp(csx(m,1,kk,jj,i)), sb = exp(csx(m,1,kk,jj,i1));
-                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(csx(m,0,kk,jj,i));
+                const Real sa = VgEx(csx(m,1,kk,jj,i)), sb = VgEx(csx(m,1,kk,jj,i1));
+                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/VgEx(csx(m,0,kk,jj,i));
                 return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;
               };
               auto sbt = [&](const int kk, const int jj) {
-                return fmax(1.5*exp(csx(m,1,kk,jj,i)) - 0.5*exp(csx(m,1,kk,jj,i1)),
+                return fmax(1.5*VgEx(csx(m,1,kk,jj,i)) - 0.5*VgEx(csx(m,1,kk,jj,i1)),
                             1.0e-300);
               };
               Real ex, w0, wu;
-              VgdW(ch0*ds, ex, w0, wu);
+              VgWx(ch0*ds, ex, w0, wu);
               const Real bv = fmax(VgdLerp(VgdLerp(ib(k0,j0), ib(k0,j1), uj),
                                            VgdLerp(ib(k1,j0), ib(k1,j1), uj), uk), 0.0);
               const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
@@ -4704,8 +4737,8 @@ void RadiationM1::VetGdSweep() {
                 return VgdLerp(VgdLerp(csx(m,c,k0,j0,iu), csx(m,c,k0,j1,iu), uj),
                                VgdLerp(csx(m,c,k1,j0,iu), csx(m,c,k1,j1,iu), uj), uk);
               };
-              const Real chu = exp(lin(0));
-              const Real su = exp(lin(1));
+              const Real chu = VgEx(lin(0));
+              const Real su = VgEx(lin(1));
               const Real rfi = cx1f(m,i);
               // open-od-1013 vet_path = cells (vet_sc's VetPathStep, rad_m1_vetseg.hpp):
               // a ray whose segment jumps more than one lateral cell (|fj - j| or
@@ -4847,17 +4880,17 @@ void RadiationM1::VetGdSweep() {
                                    const Real qb) -> Real {
                       const Real f = (typ == 1 && spl && dso < qa && dso > qb) ? dso
                                      : 0.5*(qa + qb);
-                      if (spl) {return VetSegSplit(ia, sa, sb, ca*(qa - f), cb*(f - qb),
+                      if (spl) {return VgSeg(ia, sa, sb, ca*(qa - f), cb*(f - qb),
                                                    spe);}
                       Real ex, w0, wu;
-                      VgdW(0.5*(ca + cb)*(qa - qb), ex, w0, wu);
+                      VgWx(0.5*(ca + cb)*(qa - qb), ex, w0, wu);
                       return ia*ex + wu*sa + w0*sb;
                     };
                     int t2 = 0, t3 = 0;
                     Real sn, yj, yk, lcn, lsn, lch, lsh;
                     next(t2, t3, sn, yj, yk);
                     node(sn, yj, yk, lcn, lsn, lch, lsh);
-                    Real cb = exp(lcn), sb = exp(lsn), qb = (1.0 - sn)*ds;
+                    Real cb = VgEx(lcn), sb = VgEx(lsn), qb = (1.0 - sn)*ds;
                     Real ivp;
                     if (vim == 2 ||
                         (vim == 3 && VgdCornerEdge(csx, m, k0, k1, j0, j1, iu, uk, uj))) {
@@ -4868,7 +4901,7 @@ void RadiationM1::VetGdSweep() {
                         const Real wq = ((q < 2) ? (1.0 - uk) : uk)
                                         *((q % 2 == 0) ? (1.0 - uj) : uj);
                         if (!(wq > 0.0) || !(ok[q] || ivu < 0.0)) {continue;}
-                        const Real cq = exp(csx(m,0,kk,jj,iu)), sq = exp(csx(m,1,kk,jj,iu));
+                        const Real cq = VgEx(csx(m,0,kk,jj,iu)), sq = VgEx(csx(m,1,kk,jj,iu));
                         const Real iq = (ivu < 0.0) ? sq : rd(kk,jj,iu);
                         ws += wq;
                         vs += wq*seg(iq, cq, sq, ds, cb, sb, qb);
@@ -4881,8 +4914,8 @@ void RadiationM1::VetGdSweep() {
                       const Real ca = cb, sa = sb, qa = qb;
                       next(t2, t3, sn, yj, yk);
                       node(sn, yj, yk, lcn, lsn, lch, lsh);
-                      cb = exp(lcn);
-                      sb = exp(lsn);
+                      cb = VgEx(lcn);
+                      sb = VgEx(lsn);
                       qb = (1.0 - sn)*ds;
                       ivp = seg(ivp, ca, sa, qa, cb, sb, qb);
                     }
@@ -4903,11 +4936,11 @@ void RadiationM1::VetGdSweep() {
                   const Real a = VgdLerp(VgdLerp(csx(m,c,k0,j0,i-1), csx(m,c,k0,j1,i-1), uj),
                                          VgdLerp(csx(m,c,k1,j0,i-1), csx(m,c,k1,j1,i-1),
                                                  uj), uk);
-                  return exp(0.5*(a + csx(m,c,k,j,i-1)));
+                  return VgEx(0.5*(a + csx(m,c,k,j,i-1)));
                 };
                 const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
-                const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
-                const Real e3 = exp(-ch0*(zr - zf));
+                const Real e1 = VgEx(-chu*(zr - zf)), e2 = VgEx(-lind(0)*2.0*zf);
+                const Real e3 = VgEx(-ch0*(zr - zf));
                 const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
                 iv = fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
               } else if (vim == 2 ||
@@ -4923,14 +4956,14 @@ void RadiationM1::VetGdSweep() {
                   const Real wq = ((q < 2) ? (1.0 - uk) : uk)
                                   *((q % 2 == 0) ? (1.0 - uj) : uj);
                   if (!(wq > 0.0) || !(ok[q] || ivu < 0.0)) {continue;}
-                  const Real cq = exp(csx(m,0,kk,jj,iu)), sq = exp(csx(m,1,kk,jj,iu));
+                  const Real cq = VgEx(csx(m,0,kk,jj,iu)), sq = VgEx(csx(m,1,kk,jj,iu));
                   const Real iq = (ivu < 0.0) ? sq : rd(kk,jj,iu);
                   Real vq;
                   if (spl) {
-                    vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
+                    vq = VgSeg(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
                   } else {
                     Real ex, w0, wu;
-                    VgdW(0.5*(cq + ch0)*ds, ex, w0, wu);
+                    VgWx(0.5*(cq + ch0)*ds, ex, w0, wu);
                     vq = iq*ex + wu*sq + w0*s0;
                   }
                   ws += wq;
@@ -4938,11 +4971,11 @@ void RadiationM1::VetGdSweep() {
                 }
                 iv = fmax(vs/ws, 0.0);
               } else if (spl) {
-                iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
+                iv = fmax(VgSeg((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
                                       ch0*dso, spe), 0.0);
               } else {
                 Real ex, w0, wu;
-                VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
+                VgWx(0.5*(chu + ch0)*ds, ex, w0, wu);
                 iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
               }
             }
@@ -7045,9 +7078,9 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     Kokkos::deep_copy(vgd_rg_doffc, oc_h);
     Kokkos::deep_copy(vgd_rg_dsoff, so_h);
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd_band_ring: compact intensities " << ncomp*sizeof(Real)/1.0e9
+      std::cout << "<rad_m1> vet_gd_band_ring: compact intensities " << ncomp*sizeof(VgdSt)/1.0e9
                 << " GB + " << VGD_RING_K << " band slots "
-                << (tot - ncomp)*sizeof(Real)/1.0e9 << " GB on rank 0" << std::endl;
+                << (tot - ncomp)*sizeof(VgdSt)/1.0e9 << " GB on rank 0" << std::endl;
     }
   } else {
   for (int m = 0; m < a.nmb; ++m) {
@@ -7070,7 +7103,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     const double dense = static_cast<double>(a.nmb)*a.n*(a.nx3 + 2*vgd_w)*
                          (a.nx2 + 2*vgd_w)*c1;
     std::cout << "<rad_m1> vet_gd: ragged per-shell band intensity array "
-              << tot*sizeof(Real)/1.0e9 << " GB on rank 0 (dense band "
+              << tot*sizeof(VgdSt)/1.0e9 << " GB on rank 0 (dense band "
               << dense*sizeof(Real)/1.0e9 << " GB)" << std::endl;
   }
 }
@@ -7085,7 +7118,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
 
 // the band_ring copy kernel (one thread per value; the last thread sets the tables)
 struct VgdRingK {
-  Real *da, *db, *st;
+  RadiationM1::VgdSt *da, *db, *st;
   int64_t *aoff, *boff;
   int *awi, *bwi;
   const int64_t *oc, *so;
@@ -7235,7 +7268,7 @@ void RadiationM1::VetGdRingSweepBegin(const bool two) {
   need *= (two ? 2 : 1);
   if (static_cast<int64_t>(vgd_rg_store.extent(0)) < need) {
     Kokkos::fence();
-    vgd_rg_store = DvceArray1D<Real>();
+    vgd_rg_store = DvceArray1D<VgdSt>();
     Kokkos::realloc(vgd_rg_store, need + need/16 + 1024);
   }
 }
@@ -7356,7 +7389,7 @@ void RadiationM1::VetGdRingFlush() {
       const int64_t s1 = (s + 1 < VGD_RING_K) ? vgd_rg_soff[static_cast<size_t>(s + 1)*nmb]
                                               : ad;
       auto da = a_.d, db = b_.d;
-      const Real qn = std::numeric_limits<Real>::quiet_NaN();
+      const VgdSt qn = std::numeric_limits<VgdSt>::quiet_NaN();
       Kokkos::parallel_for("m1_vgd_ring_nan", Kokkos::RangePolicy<>(vgd_cur, 0, s1 - s0),
       KOKKOS_LAMBDA(const int64_t t) {
         da(s0 + t) = qn;

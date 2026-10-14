@@ -2073,8 +2073,16 @@ class RadiationM1 {
   // the shell's slab (never, by the band construction) goes to one dummy element and is
   // counted (VgdRag::oos, reported at the end): the values are bitwise those of the
   // dense array as long as the count is 0.
+  // mixprec-1014 (study, build flag -DM1_VGD_FP32S, default off = bitwise): the vet_gd
+  // intensity STORAGE (vgd_i, vgd_itw, the band-ring store) in float; every arithmetic
+  // and the moment sums stay in Real (values rounded once when stored)
+#if defined(M1_VGD_FP32S)
+  using VgdSt = float;
+#else
+  using VgdSt = Real;
+#endif
   struct VgdRag {
-    DvceArray1D<Real> d;
+    DvceArray1D<VgdSt> d;
     Kokkos::View<int64_t**, DevMemSpace> off;  // (m, i): first element of slab (m, i)
     DvceArray1D<int> wi;                       // (i): band depth of shell i
     DvceArray2D<int> sb;                       // (m, 4): band on side k-, k+, j-, j+
@@ -2090,8 +2098,8 @@ class RadiationM1 {
       return (k >= k0) && (k < k1) && (j >= j0) && (j < j1);
     }
     KOKKOS_INLINE_FUNCTION
-    Real &operator()(const int m, const int v, const int k, const int j,
-                     const int i) const {
+    VgdSt &operator()(const int m, const int v, const int k, const int j,
+                      const int i) const {
       const int wl = wi(i);
       const int bk0 = sb(m,0)*wl, bj0 = sb(m,2)*wl;
       const int c3 = nx3 + bk0 + sb(m,1)*wl, c2 = nx2 + bj0 + sb(m,3)*wl;
@@ -2146,7 +2154,7 @@ class RadiationM1 {
   std::vector<int> vgd_rg_sk;         // (i): save kind: 1 exact list, 2 dense band
   std::vector<int> vgd_rg_se;         // (i): the exact list record of the save
   int64_t vgd_rg_stop = 0;            // store fill this sweep
-  DvceArray1D<Real> vgd_rg_store;     // saved inward band values (main, then twin)
+  DvceArray1D<VgdSt> vgd_rg_store;     // saved inward band values (main, then twin)
   Kokkos::View<int64_t**, DevMemSpace> vgd_rg_doffc;   // (m, i)
   Kokkos::View<int64_t**, DevMemSpace> vgd_rg_dsoff;   // (s, m)
   std::vector<VgdRingOp> vgd_rg_pend;

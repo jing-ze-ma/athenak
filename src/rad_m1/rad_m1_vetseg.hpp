@@ -44,6 +44,7 @@
 #include <cmath>
 
 #include "athena.hpp"
+#include <cstring>
 
 // the positive first-order SC weights of one linear-in-tau sub-segment
 KOKKOS_INLINE_FUNCTION
@@ -96,6 +97,73 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
     // coreL-1012 jump: the OWN cell the thicker and the hotter (a ray entering an
     // emitting body): its side of the face keeps S_0 by the contrast (S may jump at
     // the face; the upwind part keeps S_u -> S_f)
+    const Real sf0 = sf + (h0 - hu)/(h0 + hu)*(s0 - sf);
+    return ia*ex0 + wu0*sf0 + w00*s0;
+  }
+  return ia*ex0 + wu0*sf + w00*s0;
+}
+
+// mixprec-1014 (study, build flag -DM1_VGD_FP32T; used only by the vet_gd shell kernel):
+// copies of VetSegW / VetSegFace / VetSegSplit whose exponentials have a float core,
+// VetExpF: range-reduced in Real (n = rint(x / ln 2), r = x - n ln 2), exp(r) in float,
+// scaled by 2^n: relative error ~1e-7 at any argument.  The originals above are unchanged.
+KOKKOS_INLINE_FUNCTION
+Real VetExpF(const Real x) {
+  if (!(x > -708.0)) {return (x == x) ? 0.0 : x;}
+  if (x > 709.0) {return exp(x);}
+  const Real nn = rint(x*1.4426950408889634);
+  const float r = static_cast<float>(x - nn*0.6931471805599453);
+  // 2^n built from its exponent bits (n in [-1021, 1023] by the range tests above)
+  const long long eb = static_cast<long long>(static_cast<int>(nn) + 1023) << 52;
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+  const Real sc = __longlong_as_double(eb);
+#else
+  Real sc;
+  std::memcpy(&sc, &eb, sizeof(sc));
+#endif
+  return static_cast<Real>(expf(r))*sc;
+}
+KOKKOS_INLINE_FUNCTION
+void VetSegWF(const Real dtau, Real &ex, Real &w0, Real &wu) {
+  ex = VetExpF(-dtau);
+  if (dtau < 1.0e-3) {
+    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
+  } else {
+    const Real g = (1.0 - ex)/dtau;
+    w0 = 1.0 - g;
+    wu = g - ex;
+  }
+}
+KOKKOS_INLINE_FUNCTION
+Real VetSegFaceF(const Real iu, const Real su, const Real s0, const Real hu,
+                 const Real h0, const int emit) {
+  const Real ht = hu + h0;
+  if (!(ht > 0.0)) {return su;}
+  const Real gf = (s0 - su)/ht;
+  Real g = gf;
+  if (hu > h0 && (!emit || su > s0)) {
+    const Real gb = su - iu;
+    const Real mm = (gb*gf > 0.0) ? ((fabs(gb) < fabs(gf)) ? gb : gf) : 0.0;
+    if (emit == 2) {
+      const Real th = (hu - h0)/ht;
+      g = gf + th*((1.0 - VetExpF(-hu))*mm - gf);
+    } else {
+      const Real th = (hu - h0)/ht*(1.0 - VetExpF(-hu));
+      g = gf + th*(mm - gf);
+    }
+  }
+  return su + hu*g;
+}
+KOKKOS_INLINE_FUNCTION
+Real VetSegSplitF(const Real iu, const Real su, const Real s0, const Real hu,
+                  const Real h0, const int emit) {
+  const Real sf = VetSegFaceF(iu, su, s0, hu, h0, emit);
+  Real exu, w0u, wuu, ex0, w00, wu0;
+  VetSegWF(hu, exu, w0u, wuu);
+  VetSegWF(h0, ex0, w00, wu0);
+  const Real ia = iu*exu + wuu*su + w0u*sf;
+  if (emit == 2 && h0 > hu && s0 > su) {
     const Real sf0 = sf + (h0 - hu)/(h0 + hu)*(s0 - sf);
     return ia*ex0 + wu0*sf0 + w00*s0;
   }
