@@ -8,3 +8,6 @@ Now, please:
 2. Reply with the list of rst times (and bin dump times / cadence and whether bins are float32 or float64) that exist.
 Preferred source: the rst just BEFORE the MLT scaffold reaches w = 0 (t ~2.0-2.4e7 s) if it still exists; else the newest.
 The fresh-start TASK e1w (not pushed) is replaced by this remap plan.
+
+UPDATE (USER): the remap source is simply the NEWEST e1s rst at the time the remap TASK runs. No need to keep old rst; item 1 is
+withdrawn (normal pruning is fine). Item 2 (rst/bin times, bin precision) still useful.
