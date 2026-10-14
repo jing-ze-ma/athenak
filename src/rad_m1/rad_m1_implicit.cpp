@@ -14024,8 +14024,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // the backward-Euler step from the same U^n converges in 4 passes)
     const bool t2redo = t2st && t2_fail;
     // fin4-dtretry: with <time>/dt_retry the cycle is taken again with a smaller dt (the
-    // Driver puts the checkpoint back) instead of going on NON-CONVERGED or stopping
-    if (dtr_on && !t2redo) {
+    // Driver puts the checkpoint back) instead of going on NON-CONVERGED or stopping --
+    // a NON-CONVERGED hesdirk2 stage too (its backward-Euler redo is skipped: the retry
+    // restores more than Time2Restore does)
+    if (dtr_on) {
       const bool div = impl_res_fatal > 0.0 &&
                        (!(resid <= impl_res_fatal) || !std::isfinite(lresid));
       if (!dtr_fail) {dtr_why = div ? 2 : 1; dtr_resid = resid;}

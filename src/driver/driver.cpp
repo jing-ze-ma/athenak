@@ -535,7 +535,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           }
         }
       }
-      if (m1t2fail) {
+      // fin4-dtretry: a stage that raised the retry flag is not redone here (the retry
+      // puts the whole cycle back); the check below the radiation update takes it
+      const bool dtr_now = (pm1 != nullptr) && pm1->dtr_on && pm1->dtr_fail;
+      if (m1t2fail && !dtr_now) {
         pm1->Time2Restore(this);
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
@@ -574,7 +577,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         (void) pm1->ApplyClosureLimits(this, 1);
         (void) pm1->NewTimeStep(this, 1);
         pm1->t2_dtprev = pmesh->dt;
-      } else if (pmesh->pmb_pack->pradm1 != nullptr) {
+      } else if (pmesh->pmb_pack->pradm1 != nullptr && !dtr_now) {
         // hesdirk2 without a valid slope: backward Euler, which stores K1
         const bool m1be2 = (pm1->time_scheme == radm1::M1_TIME_HESDIRK2);
         pm1->t2_solve = m1be2 ? radm1::M1_T2S_BESTORE : radm1::M1_T2S_NONE;
