@@ -117,6 +117,18 @@ constexpr int M1_VGD_NMAX = M1_VGD_NMAX_BUILD;   // rotavg-1012: cmake -D Athena
 #else
 constexpr int M1_VGD_NMAX = 432;   // vet_gd: at most 432 directions.  prodcand-1011: kept at 432
 #endif
+// mem-1014 vet_gd_band_pd (per-direction band): compiled in on HIP / CPU (bitwise there:
+// MI300A BSG / E1 / He giant rst + hst identical to FIN4).  Under CUDA, ANY change to the
+// intensity accessor changes the shell kernel's FMA fusion (ptxas, -fmad=true): results
+// then differ from the unchanged code at round-off (1e-16, Raven rpd 31151906) and the
+// sweep is slower; so a CUDA build keeps the dense ragged accessor byte-for-byte (pd off)
+// unless built with -DM1_VGD_BAND_PD_CUDA (the layout itself is exact: pd 0/1/2 bitwise
+// among themselves on A100)
+#if defined(KOKKOS_ENABLE_CUDA) && !defined(M1_VGD_BAND_PD_CUDA)
+#define M1_VGD_PD 0
+#else
+#define M1_VGD_PD 1
+#endif
                                     // (sizes the per-thread Real buf[M1_VGD_NMAX] in VetGdWall; 2048
                                     // would spill on A100).  The 4x-GL angular study (sptests P2)
                                     // needs a local build with 2048.
@@ -2152,6 +2164,7 @@ class RadiationM1 {
     bool Stored(const int m, const int v, const int k, const int j, const int i) const {
       return pd ? (PdIdx(m, v, k, j, i) >= 0) : Has(m, k, j, i);
     }
+#if M1_VGD_PD
     // one branch (the out-of-slab test), as the dense ragged accessor had: the index of
     // either layout by a select
     KOKKOS_INLINE_FUNCTION
@@ -2165,6 +2178,22 @@ class RadiationM1 {
       }
       return d(q);
     }
+#else
+    // (the dense ragged accessor of FIN4, unchanged)
+    KOKKOS_INLINE_FUNCTION
+    Real &operator()(const int m, const int v, const int k, const int j,
+                     const int i) const {
+      const int wl = wi(i);
+      const int bk0 = sb(m,0)*wl, bj0 = sb(m,2)*wl;
+      const int c3 = nx3 + bk0 + sb(m,1)*wl, c2 = nx2 + bj0 + sb(m,3)*wl;
+      const int kk = k - (w - bk0), jj = j - (w - bj0);
+      if (kk < 0 || kk >= c3 || jj < 0 || jj >= c2) {
+        Kokkos::atomic_add(&oos(0), 1.0);
+        return d(dummy);
+      }
+      return d(off(m,i) + v + static_cast<int64_t>(n)*(kk + static_cast<int64_t>(c3)*jj));
+    }
+#endif
     int extent_int(const int r) const {
       return (r == 0) ? nmb : (r == 1) ? n : (r == 2) ? (nx3 + 2*w) : (r == 3) ?
              (nx2 + 2*w) : c1;

@@ -663,7 +663,8 @@ void RadiationM1::VetGdInit() {
   }
   VetGdHaloInit();
   // mem-1014 vet_gd_band_pd: the per-direction band (needs the compact keep rule, mode 2)
-  vgd_pd = (vgd_pd_mode > 0) && vgd_hmpi && (vgd_hcomp == 2) && !vgd_async &&
+  vgd_pd = (M1_VGD_PD != 0) && (vgd_pd_mode > 0) && vgd_hmpi && (vgd_hcomp == 2) &&
+           !vgd_async &&
            !vgd_bandx && (vgd_fuse_h <= 1) && (vgd_n < 4096);
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
@@ -1686,9 +1687,13 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
       const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
       const int ks_ = (dk < 0) ? (w + nx3 - ws) : w;
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
+#if M1_VGD_PD
       if (VgdStored(a_, m, v, kd+kk, jd+jj, i)) {
         a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_+kk,js_+jj,i);
       }
+#else
+      a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_+kk,js_+jj,i);
+#endif
     } else if (mpi) {
       // my interior that the remote neighbour needs in ITS opposite slot
       const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
@@ -1754,14 +1759,18 @@ void RadiationM1::VetGdHalo(V &a, const int nv, const int i0, const int i1, cons
           val += w3_(m,kd+kk,jd+jj,v,q)*rb_(at);
           if (two) {val2 += w3_(m,kd+kk,jd+jj,v,q)*rb2_(at);}
         }
+#if M1_VGD_PD
         if (!VgdStored(a_, m, v, kd+kk, jd+jj, i0+ii)) {return;}   // mem-1014
+#endif
         a_(m,v,kd+kk,jd+jj,i0+ii) = val;
         if (two) {b_(m,v,kd+kk,jd+jj,i0+ii) = val2;}
         return;
       }
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
       const size_t at = rb0 + ((vs*kn + kk)*jn + jj)*ni + ii;
+#if M1_VGD_PD
       if (!VgdStored(a_, m, v, kd+kk, jd+jj, i0+ii)) {return;}   // mem-1014
+#endif
       a_(m,v,kd+kk,jd+jj,i0+ii) = rb_(at);
       if (two) {b_(m,v,kd+kk,jd+jj,i0+ii) = rb2_(at);}
     });
@@ -2531,7 +2540,9 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
         if (jb < w - ws || jb >= w + nx2 + ws || kb < w - ws || kb >= w + nx3 + ws) {
           return;
         }
+#if M1_VGD_PD
         if (!a_.Stored(m, v, kb, jb, i)) {return;}   // mem-1014
+#endif
         a_(m,v,kb,jb,i) = 0.0;
         if (two) {b_(m,v,kb,jb,i) = 0.0;}
       });
@@ -2649,7 +2660,9 @@ void RadiationM1::VetGdHlEnd() {
           s1 = s + rpm.v[p];
           s2 = s + rpm.v[p+1];
         }
+#if M1_VGD_PD
         if (!a_.Stored(m, v, kb, jb, i)) {return;}   // mem-1014
+#endif
         a_(m,v,kb,jb,i) = (s >= 0) ? crb_(s1) : 0.0;
         if (two) {b_(m,v,kb,jb,i) = (s >= 0) ? crb2_(s2) : 0.0;}
         return;
@@ -2668,7 +2681,9 @@ void RadiationM1::VetGdHlEnd() {
         val += w3_(m,kb,jb,v,u)*((s >= 0) ? crb_(s1) : 0.0);
         if (two) {val2 += w3_(m,kb,jb,v,u)*((s >= 0) ? crb2_(s2) : 0.0);}
       }
+#if M1_VGD_PD
       if (!a_.Stored(m, v, kb, jb, i)) {return;}   // mem-1014
+#endif
       a_(m,v,kb,jb,i) = val;
       if (two) {b_(m,v,kb,jb,i) = val2;}
     });
