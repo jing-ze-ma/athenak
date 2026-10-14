@@ -138,16 +138,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // P = 100, tau_lambda = 1e5; `start` = plm a_f of the stage-start a plus the rest as a
   // face mean, also unstable there; `central` = a_f the mean of the two cells, E_f plm)
   t2_afmode = 2;
-  // open-ot-1013 time2_enth_be (HIDDEN TERM; read only when named): with time2_enth_vel =
-  // central the stage solves build a_f as the mean of the two cells, but the backward-Euler
-  // solves of the same run (the start step, the time2_start slope probe, the rotation
-  // probe, the step after a failed stage) take implicit_enthalpy's own a_f (plm: the
-  // 4-point plm mean).  That changes the operator for one step of length dt, an O(dt)
-  // term of the T ladders (rw_p10t100 E / eint 1.78 / 1.84 at l 16-32).  true: those
-  // solves take the stage rule too.
-  if (pin->DoesParameterExist("rad_m1", "time2_enth_be")) {
-    t2_enth_be = pin->GetBoolean("rad_m1", "time2_enth_be");
-  }
+  // open-ot-1013 time2_enth_be: with time2_enth_vel = central the stage solves build a_f
+  // as the mean of the two cells, but the backward-Euler solves of the same run (the start
+  // step, the time2_start slope probe, the rotation probe, the step after a failed stage)
+  // take implicit_enthalpy's own a_f (plm: the 4-point plm mean).  That changes the
+  // operator for one step of length dt, an O(dt) term of the T ladders (rw_p10t100 E /
+  // eint 1.78 / 1.84 at l 16-32).  true: those solves take the stage rule too.
+  // fin4-1014: DEFAULT true on a fresh run; a restart whose file lacks the key keeps false
+  // (FIN3, bitwise) -- the same rule as implicit_cs2_vimp_npass (fresh 3, restart 0).
+  t2_enth_be = pin->GetOrAddBoolean("rad_m1", "time2_enth_be",
+                                    !global_variable::restart_run);
   if (pin->DoesParameterExist("rad_m1", "time2_enth_vel")) {
     std::string ev = pin->GetString("rad_m1", "time2_enth_vel");
     if (ev.compare("old") == 0) {
@@ -438,6 +438,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
+    std::cout << "         time2_enth_be=" << (t2_enth_be ? "true" : "false")
+              << " implicit_cs2_vimp_npass=" << cs2_vnp << std::endl;
   }
 }
 
