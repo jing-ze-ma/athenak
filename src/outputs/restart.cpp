@@ -271,10 +271,10 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     // vet_rotate_avg (rotavg-rst-1012): the averaging history, densely packed slabs
     const int nra = pradm1->RotAvgRstNslab(nout1*nout2*nout3);
     if (nra > 0) {
-      DvceArray5D<Real> tmp("rst-m1r", nmb, nra, nout3, nout2, nout1);
-      pradm1->RotAvgRstPack(tmp, nmb);
+      // mem-1014: packed per MeshBlock in chunks of 4 slabs (was a device copy of the
+      // whole record, the largest transient on top of the steady state); same bytes
       Kokkos::realloc(outarray_m1r, nmb, nra, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1r, tmp);
+      pradm1->RotAvgRstPackHost(outarray_m1r, nmb, 4);
     }
   }
   if (pturb != nullptr) {

@@ -2025,6 +2025,7 @@ class RadiationM1 {
   int RotAvgRstI0() const;     // rotavg-rst2-1013: the first written radial cell
   void RotAvgRstHdr(int64_t *h) const;
   void RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb);
+  void RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const int nsc);   // mem-1014
   bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);
   bool RotAvgRstCheck();
   int vra_rst_nf = -1;         // nf of a history loaded from the file (-1: none/checked)
@@ -2106,6 +2107,51 @@ class RadiationM1 {
   using VgdIView = VgdRag;
   VgdIView vgd_i;
   void VgdRagAlloc(VgdRag &a);
+  // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact
+  // halo lists, no overlap / async / fused shells; read when named; env VGD_RING=0 off):
+  // the ragged array keeps every shell's INTERIOR only (compact slab, depth 0) and lends
+  // a shell one of VGD_RING_K wide slabs (its full band depth wi, the same rectangle as
+  // before) only while the sweep needs its band: inward pass from just before the shell
+  // is computed until the next shell has read it; outward pass from just before the
+  // shell is computed (its interior copied in, and the band values of its INWARD
+  // exchange, saved per shell after that exchange, put back: the turned rays read them)
+  // until the next shell has read it.  The accessor (VgdRag::operator()) is unchanged:
+  // only the device tables off(m, i) / wi(i) are switched (in stream order), so the
+  // shell kernel's code and every value it reads are those of the dense-band array
+  // (bitwise).  One extra small kernel per shell (copies), launched while the shell's
+  // halo messages travel.
+  static constexpr int VGD_RING_K = 3;
+  struct VgdRingOp {
+    int kind = 0;      // 1 save (inward band -> store), 2 release, 3 acquire
+    int i = -1, slot = -1;
+    bool copyin = false, restore = false;
+  };
+  bool vgd_ring = false;              // the ring layout is allocated (both arrays)
+  bool vgd_ring_named = false, vgd_ring_par = true;
+  bool vgd_ring_act = false;          // the ring runs in this sweep
+  bool vgd_ring_poison = false;       // env VGD_RING_POISON=1: NaN in lent slabs (test)
+  bool vgd_rg_two = false;            // this sweep carries vgd_itw too
+  bool vgd_rg_lastx = false;          // the last halo used an exact list
+  int vgd_rg_lastx_e = -1;
+  std::vector<int64_t> vgd_rg_offc;   // (m c1 + i): compact slab offsets (host)
+  std::vector<int64_t> vgd_rg_soff;   // (s nmb + m): slot offsets (host)
+  std::vector<int> vgd_rg_wfull;      // (i): a shell's band depth when lent a slot
+  std::vector<int> vgd_rg_state;      // (i): -1 compact, else slot
+  std::vector<int> vgd_rg_sown;       // (s): the shell holding slot s, -1 free
+  std::vector<int64_t> vgd_rg_so, vgd_rg_sn;   // (i): save store offset, count/array
+  std::vector<int> vgd_rg_sk;         // (i): save kind: 1 exact list, 2 dense band
+  std::vector<int> vgd_rg_se;         // (i): the exact list record of the save
+  int64_t vgd_rg_stop = 0;            // store fill this sweep
+  DvceArray1D<Real> vgd_rg_store;     // saved inward band values (main, then twin)
+  Kokkos::View<int64_t**, DevMemSpace> vgd_rg_doffc;   // (m, i)
+  Kokkos::View<int64_t**, DevMemSpace> vgd_rg_dsoff;   // (s, m)
+  std::vector<VgdRingOp> vgd_rg_pend;
+  Real vgd_rg_nk = 0.0, vgd_rg_ndense = 0.0;
+  void VetGdRingAlloc();
+  void VetGdRingFlush();
+  void VetGdRingSweepBegin(const bool two);
+  void VetGdRingSweepEnd();
+  int VetGdRingFreeSlot(const int avoid) const;
   DvceArray5D<Real> vgd_i_c;
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
@@ -2379,6 +2425,10 @@ class RadiationM1 {
   template <class V>
   void VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
                  const bool mapd, V *b = nullptr);
+  // mem-1014: the multi-shell (ln chi, ln S) halo in chunks of shells that fit the
+  // per-shell message buffers (the same values; the buffers sized for one shell of all
+  // directions instead of all shells of the 2 source fields)
+  void VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_texc = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
