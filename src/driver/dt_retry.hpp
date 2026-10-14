@@ -68,6 +68,8 @@ class DtRetry {
   void Accept(Mesh *pm);
   // after Mesh::NewTimeStep: the cap is dropped once the CFL dt is below it; recorded
   void AfterNewDt(Mesh *pm, ParameterInput *pin);
+  // end of run: checkpoints, retries, checkpoint time
+  void Report(Mesh *pm);
 
  private:
   void Build(Mesh *pm);

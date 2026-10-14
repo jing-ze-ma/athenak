@@ -879,6 +879,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 //!  and printing diagnostic messages
 
 void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
+  if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.
   // rotavg-rst-1012 (bitwise chained runs): the final outputs of a run that ends before

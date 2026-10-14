@@ -409,4 +409,12 @@ void DtRetry::AfterNewDt(Mesh *pm, ParameterInput *pin) {
   }
 }
 
+//----------------------------------------------------------------------------------------
+void DtRetry::Report(Mesh *pm) {
+  if (!on || global_variable::my_rank != 0) return;
+  std::cout << "<time> dt_retry: " << nsave_ << " checkpoints (" << tsave_ << " s, "
+            << static_cast<double>(bytes_dev_)/1.0e6 << " MB on rank 0), " << nretry_
+            << " retries, cap " << pm->dt_cap << std::endl;
+}
+
 }  // namespace dtretry
