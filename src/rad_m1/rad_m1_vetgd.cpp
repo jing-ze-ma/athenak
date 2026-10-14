@@ -3376,7 +3376,9 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
     }
     const char *em = std::getenv("VGD_HXB_MB");
     const char *eg = std::getenv("VGD_HXB_G");
-    const double mb = (em != nullptr) ? std::atof(em) : 1024.0;
+    // mem-1014: default pool 256 MB (was 1024): the same exact lists, built in more,
+    // smaller groups of shells (only at a new direction set); env VGD_HXB_MB as before
+    const double mb = (em != nullptr) ? std::atof(em) : 256.0;
     const int gmax = (eg != nullptr) ? std::max(1, std::atoi(eg)) : 64;
     const double per = (4.0*rcap + scap)*sizeof(int);
     int g = static_cast<int>(std::floor(mb*1048576.0/per));
