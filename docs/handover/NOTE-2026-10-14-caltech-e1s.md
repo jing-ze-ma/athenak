@@ -111,3 +111,15 @@ PU S3_268 ref at 5e5 / 9e5: vrV 0.076 / -0.039, vrM 0.58 / -0.19, rsurf 1.009 / 
 - No flag. There is no infall (velocities within ±0.5 km/s), rsurf is 1.010, and KE_int matches PU. The KEe and velocity amplitudes are below PU's, about 6x lower in KEe.
 - The d105 density rise at 1.05 R_ph is the one thing to watch.
 - Full table: caltech_out/prod_pulse.txt. user.hst: caltech_out/agcar3d.user.hst. Live page: https://claude.ai/artifact/Li7MBXUZCSMaS6T2R5sEQU (Caltech account).
+
+## Evolution t = 7e6 s
+
+| t (s) | run | vrV | vrM | vr105 | KEe | rsurf | L_top/L0 | KE_int |
+|---|---|---|---|---|---|---|---|---|
+| 7.0e6 | **E1s Caltech** | -0.09 | 1.15 | -0.06 | 7.0e39 | 1.012 | 0.965 | 1.4e43 |
+| 7e6 | PU S3_268 (ref) | 0.29 | 3.91 | -0.89 | 9.5e40 | 1.025 | 0.960 | 2.4e43 |
+| 7e6 | old E1 (seed 1e-2) | 1.27 | -0.18 | -1.05 | 3.4e40 | 1.227 | | |
+
+- Other values: w_mlt 0.947 (ramp started 4.03e6), d105 1.89, d110 0.98; DT_RETRY 0, FATAL 0; dt 727.27; about 0.52 s/cycle (t 7.89e6 at 5629 s elapsed).
+- No flag. The trend follows PU: L_top/L0 falls the same way (0.965 vs 0.960), KE_int grows about 2.2x since 5e6, and rsurf barely moves. Surface velocities stay smaller than PU's: KEe is about 14x lower, though growing 4.4x since 5e6.
+- caltech_out/prod_pulse.txt and agcar3d.user.hst have been updated.
