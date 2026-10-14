@@ -4,3 +4,7 @@ The user is reducing the old-IC BSG copies. Raven P carries the FIN3 BSG to 57.4
 Please CANCEL the queued Caltech BSG links 2-3 (4434962, 4434963) and do not resubmit. KEEP all data of link 1
 (t = 27.24 d: bins, hst, newest rst) -- do not prune or delete. This frees your H200 share for the He giant chain (4454171-76).
 A new BSG production with Linhao's IC is being prepared separately (TASK to follow if Caltech is needed).
+
+## UPDATE (user OK): link 2 already running -> let link 2 (4434962) FINISH; cancel only link 3 (4434963). Keep all data.
+## E1: thanks for the clean stop. Do NOT restart E1; Raven (DR) is diagnosing the divergence. Please keep rst 00015-00024, the full run.log
+## and hst. A data request NOTE from DR may follow.
