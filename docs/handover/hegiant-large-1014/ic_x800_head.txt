@@ -1,0 +1,1 @@
+# hegiant_large_1014 (HGL): = ic_giant_own.txt (md5 ddc72692, rows to 230 Rsun, byte-identical) + floor rows 230-800 Rsun from make_ic_giant_mesa.py --hse own --rin 1.32183e11 --rtop 5.5656e13 (same dlnr grid; rho 1e-20, T 4000 K, F_r = L_ph/4 pi r^2)

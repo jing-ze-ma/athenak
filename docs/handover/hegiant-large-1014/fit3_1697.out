@@ -1,0 +1,59 @@
+RTOP 700.0 RB 525.0: target cells 1697.2, plateau dr 0.0390 Rsun; fitting N = 1697
+  it 0 cost 222.4
+N 1697 cost 222.4; dr/target min 0.596 max 1.319; max neighbour ratio 1.096; dr min 0.0375 Rsun; monotone True
+  r    3.05 Rsun: dr 0.0904 Rsun dr/r 0.02968 target 0.1000  cells below 0
+  r    5.03 Rsun: dr 0.1035 Rsun dr/r 0.02057 target 0.1000  cells below 21
+  r   10.06 Rsun: dr 0.1755 Rsun dr/r 0.01745 target 0.1509  cells below 58
+  r   19.95 Rsun: dr 0.2849 Rsun dr/r 0.01428 target 0.2993  cells below 101
+  r   29.91 Rsun: dr 0.3554 Rsun dr/r 0.01188 target 0.4487  cells below 132
+  r   40.17 Rsun: dr 0.4018 Rsun dr/r 0.01000 target 0.6026  cells below 159
+  r   50.10 Rsun: dr 0.4152 Rsun dr/r 0.00829 target 0.5342  cells below 183
+  r   55.12 Rsun: dr 0.3323 Rsun dr/r 0.00603 target 0.2829  cells below 196
+  r   57.97 Rsun: dr 0.1427 Rsun dr/r 0.00246 target 0.1405  cells below 208
+  r   59.99 Rsun: dr 0.0446 Rsun dr/r 0.00074 target 0.0397  cells below 239
+  r   62.02 Rsun: dr 0.0376 Rsun dr/r 0.00061 target 0.0393  cells below 289
+  r   66.00 Rsun: dr 0.0510 Rsun dr/r 0.00077 target 0.0445  cells below 382
+  r   69.98 Rsun: dr 0.0525 Rsun dr/r 0.00075 target 0.0500  cells below 457
+  r   75.01 Rsun: dr 0.0529 Rsun dr/r 0.00070 target 0.0575  cells below 555
+  r   79.98 Rsun: dr 0.0671 Rsun dr/r 0.00084 target 0.0654  cells below 639
+  r   85.03 Rsun: dr 0.0812 Rsun dr/r 0.00095 target 0.0739  cells below 707
+  r   90.01 Rsun: dr 0.0899 Rsun dr/r 0.00100 target 0.0828  cells below 765
+  r   95.01 Rsun: dr 0.0946 Rsun dr/r 0.00100 target 0.0922  cells below 819
+  r  100.01 Rsun: dr 0.0980 Rsun dr/r 0.00098 target 0.1022  cells below 871
+  r  110.01 Rsun: dr 0.1136 Rsun dr/r 0.00103 target 0.1237  cells below 967
+  r  130.05 Rsun: dr 0.1840 Rsun dr/r 0.00142 target 0.1728  cells below 1106
+  r  160.12 Rsun: dr 0.2628 Rsun dr/r 0.00164 target 0.2620  cells below 1239
+  r  200.19 Rsun: dr 0.3922 Rsun dr/r 0.00196 target 0.4095  cells below 1369
+  r  249.85 Rsun: dr 0.6922 Rsun dr/r 0.00277 target 0.6379  cells below 1462
+  r  299.69 Rsun: dr 0.8609 Rsun dr/r 0.00287 target 0.9177  cells below 1526
+  r  350.35 Rsun: dr 1.2054 Rsun dr/r 0.00344 target 1.2542  cells below 1577
+  r  400.64 Rsun: dr 1.4896 Rsun dr/r 0.00372 target 1.6402  cells below 1613
+  r  450.18 Rsun: dr 2.3862 Rsun dr/r 0.00530 target 2.0708  cells below 1639
+  r  500.75 Rsun: dr 3.2815 Rsun dr/r 0.00655 target 2.5622  cells below 1657
+  r  525.25 Rsun: dr 3.7326 Rsun dr/r 0.00711 target 2.8291  cells below 1664
+  r  549.01 Rsun: dr 4.2043 Rsun dr/r 0.00766 target 4.0167  cells below 1670
+  r  598.05 Rsun: dr 5.4645 Rsun dr/r 0.00914 target 6.4690  cells below 1680
+  r  650.73 Rsun: dr 6.2406 Rsun dr/r 0.00959 target 9.1026  cells below 1689
+  r  696.57 Rsun: dr 6.8628 Rsun dr/r 0.00985 target 11.3948  cells below 1696
+f_stretch_r_c1 = -1.347359244595e+00
+f_stretch_r_c2 = -1.546360408013e+00
+f_stretch_r_c3 = 9.261077769394e+01
+f_stretch_r_c4 = -6.454027549981e+02
+f_stretch_r_c5 = 2.026848362195e+03
+f_stretch_r_c6 = -3.350052746748e+03
+f_stretch_r_c7 = 2.830587584935e+03
+f_stretch_r_c8 = -9.665498094054e+02
+f_stretch_r_b1_amp = -2.514959582581e-01
+f_stretch_r_b1_x = 1.680656038411e-01
+f_stretch_r_b1_w = 6.664551046703e-02
+f_stretch_r_b2_amp = 2.426099146303e+00
+f_stretch_r_b2_x = 8.838595542139e-01
+f_stretch_r_b2_w = 7.552410743693e-02
+f_stretch_r_p_amp = -9.804185426393e-01
+f_stretch_r_p_xa = 1.192283943784e-01
+f_stretch_r_p_xb = 9.860793532956e-01
+f_stretch_r_p_w = 6.686835504722e-03
+f_stretch_r_p2_amp = -9.989996806179e-01
+f_stretch_r_p2_xa = 9.450319910532e-01
+f_stretch_r_p2_xb = 9.861773068347e-01
+f_stretch_r_p2_w = 1.000000000000e-03
