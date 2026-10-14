@@ -1,0 +1,314 @@
+<title>BSG True Reproduction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; each figure is a paired row (ours | paper) that stacks on phones. */
+:root {
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --fg: #1b2530;
+  --muted: #5a6774;
+  --rule: #d6dde4;
+  --accent: #1f5f8b;      /* the paper's blue colour-map family */
+  --warn-bg: #fdf3e2;
+  --warn-fg: #8a5300;
+  --plate: #ffffff;       /* figures are rendered on white in both themes */
+  --display: "Literata", Georgia, "Times New Roman", serif;
+  --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171d; --surface: #182029; --fg: #e3e9ef; --muted: #9aa8b5; --rule: #2b3642;
+    --accent: #7fb6dd; --warn-bg: #3a2c12; --warn-fg: #f2c27a; --plate: #ffffff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171d; --surface: #182029; --fg: #e3e9ef; --muted: #9aa8b5; --rule: #2b3642;
+  --accent: #7fb6dd; --warn-bg: #3a2c12; --warn-fg: #f2c27a; --plate: #ffffff; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; display: grid; gap: 40px; }
+header { display: grid; gap: 14px; }
+h1 { font-family: var(--display); font-weight: 650; font-size: clamp(1.6rem, 3.2vw, 2.3rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); }
+.lede a { color: var(--accent); }
+.status { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status b { color: var(--fg); font-weight: 500; }
+.banner { background: var(--warn-bg); color: var(--warn-fg); border-radius: 6px; padding: 10px 14px; font-size: 0.9rem; max-width: 80ch; }
+section { display: grid; gap: 14px; border-top: 1px solid var(--rule); padding-top: 22px; }
+section h2 { font-family: var(--display); font-weight: 500; font-size: 1.35rem; margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+section h2 .tag { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+.label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.label .when { letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+.plate { background: var(--plate); border: 1px solid var(--rule); border-radius: 4px; padding: 8px; display: block; }
+.plate img { display: block; width: 100%; height: auto; }
+.pair .plate { padding: 0; }
+.plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mv-ctrl { margin-bottom: 8px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.mv-ctrl input[type=range] { flex: 1 1 240px; min-width: 0; accent-color: var(--accent); }
+.mv-ctrl button { font: 600 0.85rem var(--body); padding: 6px 14px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--fg); cursor: pointer; }
+.mv-time { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 9ch; }
+figcaption { font-size: 0.88rem; color: var(--muted); max-width: 70ch; }
+details { font-size: 0.86rem; color: var(--muted); max-width: 90ch; }
+details summary { cursor: pointer; color: var(--fg); font-weight: 600; }
+details p { margin: 8px 0 0; }
+footer { border-top: 1px solid var(--rule); padding-top: 18px; font-size: 0.82rem; color: var(--muted); display: grid; gap: 6px; }
+code { font-family: var(--mono); font-size: 0.85em; overflow-wrap: anywhere; }
+.tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); max-width: 100%; }
+.cmp { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 0.84rem; line-height: 1.4; }
+.cmp th, .cmp td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+.cmp thead th { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--bg); }
+.cmp tbody th { font-weight: 600; white-space: nowrap; width: 11ch; }
+.cmp td { width: 44%; }
+.cmp4 { min-width: 760px; }
+.cmp4 td { width: 30%; }
+.cmp4 td:last-child { width: 18%; }
+.cmp tbody tr:last-child th, .cmp tbody tr:last-child td { border-bottom: 0; }
+.cmp .ns { color: var(--muted); font-style: italic; }
+.cmp a, .tnote a { color: var(--accent); }
+.tnote { margin: 0; font-size: 0.84rem; color: var(--muted); max-width: 100ch; }
+.cost { display: flex; flex-wrap: wrap; gap: 14px 40px; align-items: baseline; padding: 16px 20px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+.cost div { display: grid; gap: 2px; }
+.cost .big { font-family: var(--display); font-weight: 650; font-size: clamp(2rem, 6vw, 3.2rem); line-height: 1.05; color: var(--accent); font-variant-numeric: tabular-nums; }
+.cost .cap { font-size: 0.85rem; color: var(--muted); }
+.cost p { flex-basis: 100%; margin: 0; font-size: 0.84rem; color: var(--muted); max-width: 90ch; }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>BSG true reproduction vs Ma, Bildsten &amp; Jiang (2026)</h1>
+    <div class="cost" aria-label="Run cost">
+      <div><span class="big" id="c-wall">3.7 h</span><span class="cap" id="c-wallcap">wall-clock so far (20.6 d of model time)</span></div>
+      <div><span class="big" id="c-proj">~13 h</span><span class="cap" id="c-projcap">projected wall-clock for 57.4 d at the current dt</span></div>
+      <div><span class="big">16 A100</span><span class="cap">GPUs (4 Raven nodes &times; 4 A100; 16 MeshBlocks, 1 per GPU)</span></div>
+      <div><span class="big" id="c-gpuh">59</span><span class="cap" id="c-gpuhcap">GPU-hours so far, 59 A100 (~202 projected)</span></div>
+      <p id="c-note">Measured from the run log (elapsed= lines) and sacct (Raven (4 Raven nodes x 4 A100): 3.67 h wall (sacct, job(s) 31107715), 59 A100 GPU-hours, t = 0.0&ndash;20.6 d): 3.67 h wall-clock for 20.56 model days (cycle 20300). Mean pace: Raven 0.65 s per step; dt = 87.5 s now (it started at 87 s), 16,777,216 cells. GPU-hours = 16 &times; wall-clock. The projection assumes the current pace holds to 57.4 d. Ma+2026 do not state their cost.</p>
+    </div>
+    <p class="lede">Our AthenaK <b>true reproduction</b> of the 20 M<sub>&#9737;</sub> blue supergiant of
+      <a href="https://arxiv.org/abs/2609.28656">arXiv:2609.28656</a>: the paper's own 1-D initial profile, domain,
+      opacity tables and boundary rules, with no well-balanced scheme, as the paper, and a 10<sup>&minus;6</sup> temperature
+      seed to break the exact lateral symmetry. Only the radiative transfer differs: our implicit two-moment radiation
+      module with a global-direction VET closure (the final method, FIN3) instead of the paper's discrete ordinates. Plotted the same way as the paper's Figures 2, 3, 4 and 6, with the published
+      figure beside each one.</p>
+    <p class="lede">Run shown: <b id="s-run">true reproduction run, final method FIN3 (bsgP, 9972a56d): the paper's 1-D IC as is (F<sub>r</sub> = 0 above r<sub>photo</sub>), 20&ndash;80 R<sub>&#9737;</sub>, 10<sup>&minus;6</sup> temperature seed in 37.5&ndash;45.2 R<sub>&#9737;</sub> (radiation in equilibrium with it), no well-balanced scheme (full M1 radiation force), Ma zero-contact inner ghosts, Ma outflow top, no flux surgery, no sponge, vet_gd closure (rotated every 1750 s, slope-corrected, averaged over the last 4 rotated sets), hesdirk2 time integration, conservative2 gas source; 4 Raven nodes, 16 A100, 16 MeshBlocks (1 per GPU)</b>.</p>
+    <div class="status" aria-label="Run status">
+      <span>model time <b id="s-time">20.59 d</b> of 57.4 d planned</span>
+      <span>snapshots <b id="s-snaps">0&ndash;20.59 d, every 0.5 d (43)</b></span>
+      <span>grid <b id="s-grid">256 &times; 256 &times; 256</b></span>
+      <span>wedge <b>&theta; &pi;/3&ndash;2&pi;/3, &phi; 0&ndash;&pi;/3</b></span>
+      <span>updated <b id="s-updated">2026-10-13 15:49 CEST</b></span>
+    </div>
+    <p class="banner" id="s-banner">The run is at day 20.6 of 57.4. It is in its start-up transient: it starts, like the paper, from the radiative-only 1-D profile, which is out of thermal and hydrostatic balance, and the paper calls its envelope steady only after 30 d, so every panel on our side is still transient. Convection has developed from the seed: KE<sub>int</sub> fell to 2.5&times;10<sup>39</sup> erg at 7.3 d, grew to a peak of 1.4&times;10<sup>42</sup> erg at 10.7 d and is 1.1&times;10<sup>42</sup> erg now, about 0.11 of the paper's ~10<sup>43</sup> erg. From the 10<sup>&minus;6</sup> seed, lateral motion has appeared: the lateral share of KE<sub>int</sub> is 5.2e-01 now (largest so far 5.3e-01). At 40.6 R<sub>&#9737;</sub> convective flows have developed (v<sub>r</sub> -86.2 to +42.0 km/s). The 3D photosphere has moved from 53.0 to 53.2 R<sub>&#9737;</sub>.</p>
+  </header>
+
+  <section id="settings">
+    <h2><span class="tag">Setup</span>Settings: Ma+2026 against the true reproduction run</h2>
+    <div class="tbl-wrap" role="region" aria-label="Settings comparison" tabindex="0">
+    <table class="cmp">
+      <thead><tr><th scope="col">Setting</th><th scope="col">Ma+2026</th><th scope="col">Ours (true reproduction, final method FIN3 at 9972a56d, Raven)</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Code</th><td>Athena++ [1] with implicit discrete-ordinates RT [2]</td><td>AthenaK [3], our implicit two-moment VET module (<code>rad_m1</code>), pgen <code>he_star_m1</code></td></tr>
+        <tr><th scope="row">Domain</th><td>r 20&ndash;80 R<sub>&#9737;</sub>; &theta; &pi;/3&ndash;2&pi;/3, &phi; 0&ndash;&pi;/3 (&pi;/3 sr)</td><td>r 20&ndash;80 R<sub>&#9737;</sub>; same &theta;, &phi; wedge</td></tr>
+        <tr><th scope="row">Lateral BCs</th><td>periodic in &theta; and &phi;</td><td>periodic in &theta; and &phi;</td></tr>
+        <tr><th scope="row">Inner BC</th><td>ghosts = IC &rho;, P; HLLC-solved v<sub>r</sub> for zero mass flux; two-zone intensities, F = L/4&pi;r<sup>2</sup></td><td><b>Ma's zero-contact ghosts</b>: IC &rho;, P (unscaled); v<sub>r</sub> of the first ghost from the HLLC contact speed S<sub>M</sub> = 0 (zero mass flux), v = 0 in the others; no flux surgery at the wall; radiative face flux fixed at L/4&pi;r<sub>in</sub><sup>2</sup> = 2.294&times;10<sup>13</sup> erg cm<sup>&minus;2</sup> s<sup>&minus;1</sup></td></tr>
+        <tr><th scope="row">Outer BC</th><td>outflow, v<sub>r</sub>&lt;0 set to 0; outgoing I copied, incoming I = 0</td><td><b>Ma's outflow</b>: &rho;, P, v<sub>t</sub> copied, v<sub>r</sub> copied if &gt; 0, else 0; radiation Marshak (vacuum) BC</td></tr>
+        <tr><th scope="row">Sponge, floor</th><td>no sponge stated; density floor value <span class="ns">not stated</span></td><td>no sponge; floors &rho; 10<sup>&minus;20</sup> g cm<sup>&minus;3</sup>, T 5000 K</td></tr>
+        <tr><th scope="row">Grid</th><td>uniform r, &theta;, &phi;; base 196 &times; 128 &times; 128 (&Delta;r 0.306 R<sub>&#9737;</sub>); SMR in 35&ndash;55 R<sub>&#9737;</sub></td><td>256 &times; 256 &times; 256, no SMR; stretched r: &Delta;r 0.156 R<sub>&#9737;</sub> on 35.3&ndash;54.6 R<sub>&#9737;</sub> (transitions over 34&ndash;35.3 and 54.6&ndash;56), 0.3125 R<sub>&#9737;</sub> elsewhere; 256 &times; 256 angular cells everywhere (their refined level)</td></tr>
+        <tr><th scope="row">Cells / H<sub>p</sub></th><td>&ge;6 everywhere, &gt;10 in 35&ndash;55 R<sub>&#9737;</sub></td><td>on the IC, with H<sub>p</sub> = P<sub>tot</sub>/&rho;g: <span id="c-hpfe">22</span> at the Fe peak, &ge;6.5 in 20&ndash;35 R<sub>&#9737;</sub>, 3.3 at the photosphere (H<sub>p</sub> 0.51 R<sub>&#9737;</sub>)</td></tr>
+        <tr><th scope="row">Total cells</th><td>2560 blocks &times; 16<sup>3</sup> = 10,485,760</td><td>16,777,216 (16 MeshBlocks of 256 &times; 64 &times; 64, 1 per GPU)</td></tr>
+        <tr><th scope="row">EOS</th><td>ideal gas, &mu; = 0.62, &gamma; = 5/3 (+ radiation)</td><td>ideal gas, &mu; = 0.62, &gamma; = 5/3 (+ radiation)</td></tr>
+        <tr><th scope="row">Opacity</th><td>grey; TOPS [4] Rosseland + Planck; &kappa;<sub>a</sub> = &kappa;<sub>R</sub> &minus; &kappa;<sub>e</sub>, &kappa;<sub>e</sub> = 0.34 cm<sup>2</sup> g<sup>&minus;1</sup> (Thomson)</td><td>grey; <b>Linhao Ma's own tables</b> (TOPS, X 0.7, Z 0.008), Rosseland + Planck, padded below their data box with the edge values (the clamp both codes apply); &kappa;<sub>F</sub> = &kappa;<sub>R</sub> (incl. e<sup>&minus;</sup> scattering); &kappa;<sub>P</sub> for emission/absorption</td></tr>
+        <tr><th scope="row">Hydro</th><td>HLLC [5]; reconstruction and time integrator <span class="ns">not stated</span>; CFL 0.3</td><td>HLLC [5], PLM, RK2; first-order flux correction; <b>no well-balanced scheme</b>; CFL 0.3 (rad-modified signal speed)</td></tr>
+        <tr><th scope="row">Gravity</th><td>point mass, M = 20 M<sub>&#9737;</sub>, no self-gravity</td><td>point mass as an Athena++-style source term, GM = 2.654&times;10<sup>27</sup> cm<sup>3</sup> s<sup>&minus;2</sup> (20 M<sub>&#9737;</sub>)</td></tr>
+        <tr><th scope="row">Radiation</th><td>implicit transport of specific intensities, 120 angles per cell; grey; radiation CFL 0.025</td><td>implicit grey two-moment (E, F) with a variable Eddington tensor from global-direction short characteristics on the spherical-polar grid (10 &times; 12 = 120 directions, rotated every 1750 s of model time, with a slope-correction solve at each rotation; the closure is the mean over the last 4 rotated direction sets, vet_rotate_avg 4); Ma's absorption/scattering split; half-range blended face fluxes in thin cells; optical-depth-weighted face fluxes; full radiation force (no well-balanced reference); second-order implicit time integration (hesdirk2); conservative radiation&ndash;gas energy exchange (conservative2)</td></tr>
+        <tr><th scope="row">Rad&ndash;gas coupling</th><td>implicit (&kappa;<sub>a</sub>, &kappa;<sub>e</sub>, &kappa;<sub>P</sub>); tolerance 10<sup>&minus;6</sup>, &lt;10 iterations per step</td><td>implicit, with gas feedback; Newton tolerance 10<sup>&minus;8</sup>, linear tolerance 10<sup>&minus;10</sup></td></tr>
+        <tr><th scope="row">IC</th><td>MESA [6] 20 M<sub>&#9737;</sub> BSG merger model [7], re-integrated radiative-only (F<sub>conv</sub> = 0) from 16.5 R<sub>&#9737;</sub>; isothermal atmosphere above; v = 0</td><td><b>the paper's IC as is</b> (Linhao Ma's profile, 18&ndash;48.3 R<sub>&#9737;</sub>), integrated radiative-only outward to the photosphere, reconstructed at 53.03 R<sub>&#9737;</sub> (T 15.5 kK, &rho; 3.4&times;10<sup>&minus;11</sup> g cm<sup>&minus;3</sup>), isothermal atmosphere above to the floor; no re-balancing; v = 0; radiation F<sub>r</sub> = 0 above the photosphere (the paper's intensity IC)</td></tr>
+        <tr><th scope="row">Seed</th><td><span class="ns">not stated</span> (zero initial velocity)</td><td><b>10<sup>&minus;6</sup> temperature seed</b> in 37.5&ndash;45.2 R<sub>&#9737;</sub> (16 lateral modes, at fixed &rho;, radiation in equilibrium with it); zero velocity</td></tr>
+        <tr><th scope="row">Composition</th><td>X = 0.7, Y = 0.292, Z = 0.008 (GS98 [8] metals scaled)</td><td>X = 0.7, Y = 0.292, Z = 0.008 (Ma's tables)</td></tr>
+        <tr><th scope="row">Star</th><td>T<sub>eff</sub> 15835 K, log L/L<sub>&#9737;</sub> 5.161; 1-D R<sub>ph</sub> &asymp; 50 R<sub>&#9737;</sub> (3-D steady: 43 R<sub>&#9737;</sub>)</td><td>L = 5.581&times;10<sup>38</sup> erg s<sup>&minus;1</sup> (from Ma's profile); 1-D R<sub>ph</sub> 53.03 R<sub>&#9737;</sub> (our radiative integration; MESA's is ~50&ndash;51)</td></tr>
+        <tr><th scope="row">Run length</th><td>57.4 d; steady from 30 d; analysis 30&ndash;57.4 d (one 27.4-d TESS sector)</td><td>57.4 d planned (tlim); current time in the status line above</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="tnote">Our radiation: implicit two-moment (E, F) transport with a variable Eddington tensor from short characteristics (120 directions, rotated every 1750 s of model time, averaged over the last 4 rotated sets), not the analytic M1 closure.</p>
+    <p class="tnote"><b>What is the same and what is not:</b> IC, domain, opacity tables, the inner zero-contact ghosts, the outer outflow rule, HLLC, CFL, the point-mass gravity without a well-balanced scheme and the absence of a sponge follow the paper. Differences: the two-moment VET transport instead of 120 transported intensities (the one intended difference), the stretched radial grid instead of SMR (the same ~0.156 R<sub>&#9737;</sub> in 35&ndash;55 R<sub>&#9737;</sub>, 256 angular cells everywhere where theirs has 128 outside the SMR zone), and the 1-D photosphere (our radiative integration of the same profile reaches it at 53.03 R<sub>&#9737;</sub>; the paper quotes MESA's, about 50&ndash;51 R<sub>&#9737;</sub>), and our 10<sup>&minus;6</sup> temperature seed (see below). The paper writes r<sub>max</sub> = &ldquo;80 M<sub>&#9737;</sub>&rdquo; (a typo for R<sub>&#9737;</sub>).</p>
+    <p class="tnote"><b>Seed.</b> The paper states no perturbation. Our unseeded true reproduction on Caltech (truerepro2, 10-09) stayed exactly laterally symmetric to day 6 (KE<sub>int</sub> entirely radial, the 40.6 R<sub>&#9737;</sub> shell uniform to the last bit), so convection could not start from round-off. This run therefore adds a numerical-noise seed: a 10<sup>&minus;6</sup> relative temperature perturbation at fixed density in 37.5&ndash;45.2 R<sub>&#9737;</sub> (16 lateral modes, random signs), with the radiation set in equilibrium with it. It is far below any physical amplitude and only breaks the exact symmetry; the banner above gives the current state.</p>
+    <p class="tnote">[1] Stone et al. 2020, ApJS 249, 4 (<a href="https://doi.org/10.3847/1538-4365/ab929b">doi</a>) &middot; [2] Jiang 2021, ApJS 253, 49 (<a href="https://doi.org/10.3847/1538-4365/abe303">doi</a>) &middot; [3] Stone et al. 2024 (AthenaK) &middot; [4] TOPS, LANL (Colgan et al. 2016) &middot; [5] Toro, Spruce &amp; Speares 1994 &middot; [6] Paxton et al. 2011 (<a href="https://doi.org/10.1088/0067-0049/192/1/3">doi</a>)&ndash;2019; Jermyn et al. 2023 (<a href="https://doi.org/10.3847/1538-4365/acae8d">doi</a>) &middot; [7] Bellinger et al. 2023 (<a href="https://arxiv.org/abs/2311.00038">arXiv:2311.00038</a>) &middot; [8] Grevesse &amp; Sauval 1998 (<a href="https://doi.org/10.1023/A:1005161325181">doi</a>)</p>
+  </section>
+
+  <section id="cmp57">
+    <h2><span class="tag">57.4 d</span>End of the run: Ma+2026 against ours</h2>
+    <p class="tnote">The paper's steady window is 30&ndash;57.4 d. Our values are averages over that window (<span id="w-cmp57">pending</span>) unless a time is given. The paper's numbers are from its text and Figs. 2&ndash;7, mostly for its snapshot at 40 d.</p>
+    <div class="tbl-wrap" role="region" aria-label="Comparison at 57.4 d" tabindex="0">
+    <table class="cmp cmp4">
+      <thead><tr><th scope="col">Quantity</th><th scope="col">Ma+2026</th><th scope="col">Ours</th><th scope="col">Verdict</th></tr></thead>
+      <tbody id="cmp-body"><tr><td colspan="4">pending: the run reaches the 30&ndash;57.4 d window later (now at day 20.6)</td></tr></tbody>
+    </table>
+    </div>
+    <div id="cmp-fig"><p class="tnote">Figure pending: Figs. 5 and 7 analogues and the time-averaged L(r) need dumps in 30&ndash;57.4 d (run now at day 20.6).</p></div>
+  </section>
+
+  <section id="fig2">
+    <h2><span class="tag">Fig. 2</span>Relaxation history</h2>
+    <div class="pair">
+      <figure>
+        <div class="label"><span>Ours</span><span class="when" id="w-fig2">t = 0&ndash;20.59 d</span></div>
+        <a class="plate" href="img/ours_fig2.png" target="_blank" rel="noopener"><img src="img/ours_fig2.png" alt="Our relaxation history: energy changes, kinetic energy, radial mass flow, and angle-averaged density and temperature against time with the 3D photosphere"></a>
+        <figcaption>Changes of binding and internal energy, gas kinetic energy, the radial mass flow <i>&#7744;<sub>r</sub>/M</i><sub>env</sub>, and angle-averaged &rho; and T against time, with the 3D photosphere (mean &tau;<sub>R</sub> = 1) dashed.</figcaption>
+      </figure>
+      <figure>
+        <div class="label"><span>Ma+2026</span><span class="when">t = 0&ndash;57.4 d</span></div>
+        <a class="plate" href="img/paper_fig2.png" target="_blank" rel="noopener"><img src="img/paper_fig2.png" alt="Ma, Bildsten and Jiang 2026 Figure 2"></a>
+        <figcaption>Binding and internal energy drop by about 5&times;10<sup>44</sup> erg over 20&ndash;25 d while the kinetic energy grows to about 10<sup>43</sup> erg. A large radial mass flow below about 40 R<sub>&#9737;</sub> bounces off the inner wall and damps after 30 d.</figcaption>
+      </figure>
+    </div>
+    <details><summary>Definitions and differences</summary>
+      <p id="n-fig2">Energies are sums over our wedge (&pi;/3 sr), as in the paper's appendix. M<sub>env</sub> is the whole-star equivalent of the wedge mass, 0.175 M<sub>&#9737;</sub> for 20&ndash;80 R<sub>&#9737;</sub> (the paper's domain). Colour maps have one column per 0.5-d snapshot and are drawn to 65 R<sub>&#9737;</sub> like the paper's. So far &Delta;E<sub>grav</sub> = -5.4&times;10<sup>43</sup> erg, &Delta;U = 5.3&times;10<sup>43</sup> erg and E<sub>k</sub> = 1.1&times;10<sup>42</sup> erg (paper: about 5&times;10<sup>44</sup> and 10<sup>43</sup> erg in its transient). The 3D photosphere is at 50.9&ndash;60.0 R<sub>&#9737;</sub>; the IC's is at 52.9 R<sub>&#9737;</sub>.</p>
+    </details>
+  </section>
+
+  <section id="ke">
+    <h2><span class="tag">KE</span>Kinetic energy of the true reproduction run</h2>
+    <figure>
+      <div class="label"><span>Ours</span><span class="when" id="w-ke">t = 0&ndash;20.59 d</span></div>
+      <a class="plate" href="img/ours_ke.png" target="_blank" rel="noopener"><img src="img/ours_ke.png" alt="Kinetic energy against time for the true reproduction run, with the paper's level of about ten to the 43 erg as a dashed line"></a>
+      <figcaption>KE<sub>int</sub>(t) from user.hst (blue) and its lateral part KE<sub>int</sub> &minus; KEr<sub>int</sub> (dotted green, drawn only where it exceeds 10<sup>&minus;10</sup> KE<sub>int</sub>: absent while the run is laterally symmetric, with a note in the panel); dashed, the paper's kinetic-energy level from its Fig. 2.</figcaption>
+    </figure>
+    <details><summary>Definitions</summary>
+      <p id="n-ke">KE<sub>int</sub> is column 11 of user.hst (gas kinetic energy inside r<sub>int</sub>, summed over the wedge); KEr<sub>int</sub> (column 12) is its radial part, so KE<sub>int</sub> &minus; KEr<sub>int</sub> is the lateral kinetic energy (dotted green; drawn only where it exceeds 10<sup>&minus;10</sup> KE<sub>int</sub>, below which the difference is round-off). Peak 1.4&times;10<sup>42</sup> erg at 10.7 d (the onset of convection), 1.3&times;10<sup>41</sup> erg at 0.5 d, lowest after 1 d 2.5&times;10<sup>39</sup> erg at 7.3 d, 1.1&times;10<sup>42</sup> erg now; KEr<sub>int</sub>/KE<sub>int</sub> = 0.476088 now. The dashed line is the paper's kinetic-energy level read from its Fig. 2 (~10<sup>43</sup> erg), a reference only.</p>
+    </details>
+  </section>
+
+  <section id="fig3">
+    <h2><span class="tag">Fig. 3</span>Ram pressure and opacity in the &phi; = 0 plane</h2>
+    <div class="pair">
+      <figure>
+        <div class="label"><span>Ours</span><span class="when" id="w-fig3">t = 20.59 d</span></div>
+        <a class="plate" href="img/ours_fig3.png" target="_blank" rel="noopener"><img src="img/ours_fig3.png" alt="Our phi equals zero plane: ram over total pressure, Rosseland opacity, and the paper's radiative-only 1D initial profile"></a>
+        <figcaption>Ram over total pressure, &frac12;&rho;v<sup>2</sup>/(P<sub>gas</sub> + P<sub>rad,rr</sub>), and &kappa;<sub>R</sub> from Ma's tables, up to 65 R<sub>&#9737;</sub>. Right: the paper's 1-D IC as run; it is radiative only, so no convective shell is shaded. The dark red arc marks its Fe opacity peak (<span id="c-fig3fe">41.4 R<sub>&#9737;</sub></span>, not the paper's 35).</figcaption>
+      </figure>
+      <figure>
+        <div class="label"><span>Ma+2026</span><span class="when">t = 40 d</span></div>
+        <a class="plate" href="img/paper_fig3.png" target="_blank" rel="noopener"><img src="img/paper_fig3.png" alt="Ma, Bildsten and Jiang 2026 Figure 3"></a>
+        <figcaption>Ram pressure becomes significant above about 33 R<sub>&#9737;</sub>. Convection follows the Fe (35 R<sub>&#9737;</sub>) and He (42 R<sub>&#9737;</sub>) opacity peaks up to the photosphere at about 43 R<sub>&#9737;</sub>; the 1-D MESA model has two separate zones and a photosphere near 51 R<sub>&#9737;</sub>.</figcaption>
+      </figure>
+    </div>
+    <details><summary>Definitions and differences</summary>
+      <p id="n-fig3">P<sub>rad</sub> = D<sub>rr</sub>E, the Eddington tensor the vet_gd closure used, from the m1_vet dump of the same time. The right panel is the paper's IC as run: radiative only (F<sub>MLT</sub> = 0), so it has no convective shell to shade, where the paper's panel marks the two MESA convection zones. Its Fe opacity peak is at 41.4 R<sub>&#9737;</sub> (&kappa;<sub>R</sub> = 1.59 cm<sup>2</sup> g<sup>&minus;1</sup>, &kappa;/&kappa;<sub>Edd</sub> = 0.89 with &kappa;<sub>Edd</sub> = 4&pi;cGM/L = 1.79), not at the 35 R<sub>&#9737;</sub> the paper quotes. At 20.59 d the shell-mean Fe peak is at 40.4 R<sub>&#9737;</sub> (&kappa;<sub>R</sub> = 1.63); the He&nbsp;II bump near 50.6 R<sub>&#9737;</sub> (T &asymp; 4&times;10<sup>4</sup> K) reaches &kappa;<sub>R</sub> = 1.18. Largest &kappa;/&kappa;<sub>Edd</sub> in the plane: 1.15. Largest ram/total pressure below the photosphere: 4.7 (paper: about 0.5 above 33 R<sub>&#9737;</sub> in steady state). Opacities: Linhao Ma's TOPS tables (padded with the edge values), the tables the run uses.</p>
+    </details>
+  </section>
+
+  <section id="fig4">
+    <h2><span class="tag">Fig. 4</span>The shell at r = 40.6 R<sub>&#9737;</sub></h2>
+    <div class="pair">
+      <figure>
+        <div class="label"><span>Ours</span><span class="when" id="w-fig4">t = 20.59 d, r = 40.59 R<sub>&#9737;</sub></span></div>
+        <a class="plate" href="img/ours_fig4.png" target="_blank" rel="noopener"><img src="img/ours_fig4.png" alt="Our theta-phi maps of radial velocity, density and temperature at 40.6 solar radii"></a>
+        <figcaption>v<sub>r</sub>, &rho; and T on the shell nearest 40.6 R<sub>&#9737;</sub>. Ma+2026 take their shell 1 R<sub>&#9737;</sub> above their Fe opacity peak (35 &rarr; 36 R<sub>&#9737;</sub>). <span id="c-fig4">This run starts from the paper's own IC, but with Ma's tables its Fe peak lies at 41.4 R<sub>&#9737;</sub> (&kappa;<sub>R</sub> 1.59, &kappa;/&kappa;<sub>Edd</sub> 0.89) at t = 0 and at 40.4 R<sub>&#9737;</sub> (shell mean) at 20.59 d, so 40.6 R<sub>&#9737;</sub> sits 0.2 R<sub>&#9737;</sub> above the peak, not 1 R<sub>&#9737;</sub> above it; the paper's 35 R<sub>&#9737;</sub> is not reproduced by its own profile.</span> Colours are absolute values; &rho; and T use a range fixed for all frames (shell mean of the newest dump &plusmn; a relative amplitude, stated under each colour bar).</figcaption>
+      </figure>
+      <figure>
+        <div class="label"><span>Ma+2026</span><span class="when">t = 40 d</span></div>
+        <a class="plate" href="img/paper_fig4.png" target="_blank" rel="noopener"><img src="img/paper_fig4.png" alt="Ma, Bildsten and Jiang 2026 Figure 4"></a>
+        <figcaption>Hot, light upflows and narrow cold, dense downflows with |v<sub>r</sub>| up to about 60 km/s; radiative diffusion blurs the temperature field.</figcaption>
+      </figure>
+    </div>
+    <details><summary>Definitions and differences</summary>
+      <p id="n-fig4">The shell stays at 40.6 R<sub>&#9737;</sub> (nearest cell 40.59), as on the earlier reproduction page. The paper puts it 1 R<sub>&#9737;</sub> above its Fe peak (35 &rarr; 36 R<sub>&#9737;</sub>); in this run the shell-mean Fe peak is at 40.4 R<sub>&#9737;</sub> at 20.59 d, so 40.6 lies 0.2 R<sub>&#9737;</sub> above it. At 20.59 d: v<sub>r</sub> from -86.185 to +41.982 km/s; shell means &rho; = 4.77&times;10<sup>&minus;8</sup> g cm<sup>&minus;3</sup> and T = 1.712&times;10<sup>5</sup> K (paper, steady: 5&ndash;8&times;10<sup>&minus;8</sup>, 1.5&ndash;1.7&times;10<sup>5</sup> K). v<sub>r</sub> uses the paper's range (&plusmn;60 km/s) once our flows reach 5 % of it, else our own; &rho; and T are absolute values with a fixed range = shell mean of the newest dump &plusmn; a relative amplitude (1&ndash;99th percentile, at least 0.1 %, so round-off is not painted as structure).</p>
+    </details>
+  </section>
+
+  <section id="fig6">
+    <h2><span class="tag">Fig. 6</span>Synthetic light curve and power spectrum</h2>
+    <div class="pair">
+      <figure>
+        <div class="label"><span>Ours</span><span class="when" id="w-fig6">t = 0.01&ndash;20.59 d</span></div>
+        <a class="plate" href="img/ours_fig6.png" target="_blank" rel="noopener"><img src="img/ours_fig6.png" alt="Our bolometric light curve and its power spectral density"></a>
+        <figcaption>Outgoing luminosity at the top boundary over its mean, every 1000 s, and its Lomb&ndash;Scargle power spectrum with the cumulative power. Bolometric, wedge to whole star by the paper's eq. 8 (linear detrend, fluctuation &times; &radic;(&Omega;/4&pi;)), as in the paper; the cyan band marks the &plusmn;3 % TESS-band range of SK&nbsp;&minus;67&nbsp;133. A TESS-band curve would be about 0.4 of this amplitude (blackbody over 600&ndash;1000 nm at 15&ndash;18 kK).</figcaption>
+      </figure>
+      <figure>
+        <div class="label"><span>Ma+2026</span><span class="when">t = 30&ndash;57.4 d</span></div>
+        <a class="plate" href="img/paper_fig6.png" target="_blank" rel="noopener"><img src="img/paper_fig6.png" alt="Ma, Bildsten and Jiang 2026 Figure 6"></a>
+        <figcaption>One TESS sector of the steady state shows up to about 10 % stochastic variability. The spectrum is red noise peaking near 10&ndash;20 &micro;Hz, against about 2&ndash;4 &micro;Hz for SK&nbsp;&minus;67&nbsp;133 in TESS sector 96 (Ma+2026; SLF fit &nu;<sub>peak</sub> = 2.58 &micro;Hz, &nu;<sub>char</sub> = 3.14 &micro;Hz, Ma+2024). Top: the full light curve from t = 0; the shaded band is the analysis window (dark blue, paper eq. 8, linearly detrended over the window). Before the window (light blue, not detrended): 1 + &radic;(&Omega;/4&pi;) (L<sub>top</sub> / &lang;L<sub>top</sub>&rang;<sub>window</sub> &minus; 1). Lower right: the observed TESS sector 96 PSD, cropped from Ma+2026 Fig. 6 (ppm<sup>2</sup>/&micro;Hz).</figcaption>
+      </figure>
+    </div>
+    <details><summary>Definitions and differences</summary>
+      <p id="n-fig6">Normalised as the paper's eq. 8: the wedge luminosity (L<sub>top</sub>, the Marshak top face) is linearly detrended and its fluctuation scaled by &radic;(&Omega;/4&pi;) = 0.289 to a whole-star equivalent. Both panels use (&Delta;F/F)<sup>2</sup>/&micro;Hz and the paper's axis range. Our flux spans 0.910&ndash;1.188 over 0.01&ndash;20.59 d; mean whole-star L<sub>top</sub> = 5.6&times;10<sup>38</sup> erg/s (IC: 5.58&times;10<sup>38</sup>). The dotted line marks our Nyquist frequency (hst every 962 s). Before 30 d the whole curve is the start-up transient (the window falls back to the full record), so the orange "radial mode" fit is not meaningful yet.</p>
+    </details>
+  </section>
+
+  <section id="int">
+    <h2><span class="tag">Intensity</span>Emergent flux and local T<sub>eff</sub> (ours only)</h2>
+    <figure>
+      <div class="label"><span>Ours</span><span class="when" id="w-int">t = 20.59 d, own &tau;<sub>R</sub> = 1, r = 51.5&ndash;54.2 R<sub>&#9737;</sub></span></div>
+      <a class="plate" href="img/ours_int.png" target="_blank" rel="noopener"><img src="img/ours_int.png" alt="Map of emergent radial flux over its mean and local effective temperature at each column's own optical depth 1"></a>
+      <figcaption>The brightness a distant observer would see looking down each local radius. Left: radial radiative flux F<sub>r</sub>(&theta;,&phi;) over its solid-angle-weighted wedge mean. Right: local T<sub>eff</sub> = (F<sub>r</sub>/&sigma;<sub>SB</sub>)<sup>1/4</sup> in K. <b>F<sub>r</sub> at each column's own &tau;<sub>R</sub> = 1</b>: in every (&theta;,&phi;) column we take the first cell outward where the column optical depth, integrated from the top (the same &tau; as &tau;&#772;), drops below 1. A fixed layer at mean &tau;&#772; = 1 does not work: &tau;&#772; is the mean of a very skewed distribution, so that layer lies above the photosphere of most columns and cuts the thin infalling channels, and in optically thin cells the cell-centred (implicit) flux is not a transport flux (streaks, F<sub>r</sub> &lt; 0). At each column's own &tau;<sub>R</sub> = 1 the flux is still diffusive; 4&pi;&lang;r<sup>2</sup>F<sub>r</sub>&rang; there is close to, but not exactly, L (value below). &theta; runs down, &phi; across. Colour ranges are fixed for all frames from the newest dump (1st&ndash;99th percentiles). Ma+2026 show no intensity map; they use the outermost-layer radial flux only for L<sub>bol</sub> (A6&ndash;A7).</figcaption>
+    </figure>
+    <details><summary>Definitions and differences</summary>
+      <p id="n-int">At 20.59 d, F<sub>r</sub> is taken at each column's own &tau;<sub>R</sub> = 1 cell, at 51.52&ndash;54.18 R<sub>&#9737;</sub> (1st&ndash;99th percentile; median 52.93). There F<sub>r</sub>/&lang;F<sub>r</sub>&rang; spans 0.178&ndash;3.505 (rms 0.296; F<sub>r</sub> &lt; 0 in 0.00 % of the columns), &lang;T<sub>eff</sub>&rang; = 15517 K and 4&pi;&lang;r<sup>2</sup>F<sub>r</sub>&rang; = 5.6&times;10<sup>38</sup> erg/s = 0.997 L.</p>
+      <p>Why not a fixed layer: above the photosphere the cell-centred radiative flux of an M1/VET run no longer carries the luminosity (its wedge mean falls to 0.1&ndash;0.2 L in the thin top), while the energy leaves through the Marshak top face (history L<sub>top</sub>). On the earlier reproduction page a map at the first cell with mean &tau;&#772; &lt; 1 had up to 11 % of its cells with F<sub>r</sub> &lt; 0 in porous episodes, where most columns are already thin at that layer; at each column's own &tau;<sub>R</sub> = 1 the same dump had no negative-flux bands.</p>
+    </details>
+  </section>
+
+  <section id="movies">
+    <h2><span class="tag">Movies</span>Figs. 3, 4 and the intensity map over time</h2>
+    <figure><div class="label"><span>Fig. 3 &middot; ram pressure and opacity, &phi; = 0 plane</span></div>
+      <div class="mv-ctrl"><button type="button" class="mv-play" data-k="f3">Play</button>
+        <input type="range" class="mv-slider" data-k="f3" min="0" max="42" value="42" step="1" aria-label="f3 snapshot">
+        <span class="mv-time" id="mv-time-f3">t = 20.59 d</span></div>
+      <div class="plate"><img id="mv-f3" src="movie/f3/f3_00042.png" alt="f3 frame"></div></figure>
+    <figure><div class="label"><span>Fig. 4 &middot; shell at 40.6 R<sub>&#9737;</sub></span></div>
+      <div class="mv-ctrl"><button type="button" class="mv-play" data-k="f4">Play</button>
+        <input type="range" class="mv-slider" data-k="f4" min="0" max="42" value="42" step="1" aria-label="f4 snapshot">
+        <span class="mv-time" id="mv-time-f4">t = 20.59 d</span></div>
+      <div class="plate"><img id="mv-f4" src="movie/f4/f4_00042.png" alt="f4 frame"></div></figure>
+    <figure><div class="label"><span>Intensity map &middot; emergent flux at each column's own &tau;<sub>R</sub> = 1</span></div>
+      <div class="mv-ctrl"><button type="button" class="mv-play" data-k="fint">Play</button>
+        <input type="range" class="mv-slider" data-k="fint" min="0" max="42" value="42" step="1" aria-label="fint snapshot">
+        <span class="mv-time" id="mv-time-fint">t = 20.59 d</span></div>
+      <div class="plate"><img id="mv-fint" src="movie/fint/fint_00042.png" alt="Emergent flux map frame"></div>
+      <figcaption class="lede">Not in Ma+2026, who show no intensity map and use the outermost-layer radial flux only for L<sub>bol</sub> (their A6&ndash;A7). Left: F<sub>r</sub>/&lang;F<sub>r</sub>&rang; at each column's own &tau;<sub>R</sub> = 1 (the first cell outward where the column &tau; from the top drops below 1). A mean-&tau;&#772; layer would cut thin channels, where the cell-centred flux is unreliable. Right: local T<sub>eff</sub> = (F<sub>r</sub>/&sigma;<sub>SB</sub>)<sup>1/4</sup> in K. &theta; down, &phi; across. Ranges are fixed for all frames, from the newest dump.</figcaption></figure>
+    <p class="lede">Drag a slider to pick a snapshot (about one every 0.5 d; the time shown is the dump's own), or press Play. Colour ranges are fixed within each movie, chosen from the newest dump at each page refresh. The first frame is the IC with the 10<sup>&minus;6</sup> seed, laterally uniform to the eye.</p>
+  </section>
+
+  <footer>
+    <span>Paper figures: Ma, Bildsten &amp; Jiang 2026, &ldquo;3D Radiation Hydrodynamics of Blue Supergiant Envelopes&rdquo;, <a href="https://arxiv.org/abs/2609.28656">arXiv:2609.28656</a>, Figs. 2, 3, 4, 6, shown for comparison.</span>
+    <span>Our run: AthenaK on 16 A100 (4 Raven nodes, chained 3.7-h links; production run bsgP), the paper's IC, opacity tables and boundary rules, 10<sup>&minus;6</sup> temperature seed, no well-balancing, the final implicit two-moment radiation method FIN3 with a short-characteristics variable Eddington tensor averaged over the last 4 rotated direction sets, hesdirk2 time integration and the conservative2 gas source (rotavg-rst2-1013 9972a56d, deck bsgP_seed_fin3.athinput), ideal gas &mu; = 0.62, CFL 0.3. Regenerated on Raven with viper's page pipeline (bsg-files-1009 docs/handover/bsg-hrdet-1009/page) with Caltech's edits (bsgprod-1012/pagework) via <code>bsgpage_1013/pagework/make_page_raven.sh</code>.</span>
+  </footer>
+</div>
+
+<script>window.__ST={"c-wall": "3.7 h", "c-wallcap": "wall-clock so far (20.6 d of model time)", "c-proj": "~13 h", "c-projcap": "projected wall-clock for 57.4 d at the current dt", "c-gpuh": "59", "c-gpuhcap": "GPU-hours so far, 59 A100 (~202 projected)", "c-note": "Measured from the run log (elapsed= lines) and sacct (Raven (4 Raven nodes x 4 A100): 3.67 h wall (sacct, job(s) 31107715), 59 A100 GPU-hours, t = 0.0&ndash;20.6 d): 3.67 h wall-clock for 20.56 model days (cycle 20300). Mean pace: Raven 0.65 s per step; dt = 87.5 s now (it started at 87 s), 16,777,216 cells. GPU-hours = 16 &times; wall-clock. The projection assumes the current pace holds to 57.4 d. Ma+2026 do not state their cost.", "s-time": "20.59 d", "s-run": "true reproduction run, final method FIN3 (bsgP, 9972a56d): the paper's 1-D IC as is (F<sub>r</sub> = 0 above r<sub>photo</sub>), 20&ndash;80 R<sub>&#9737;</sub>, 10<sup>&minus;6</sup> temperature seed in 37.5&ndash;45.2 R<sub>&#9737;</sub> (radiation in equilibrium with it), no well-balanced scheme (full M1 radiation force), Ma zero-contact inner ghosts, Ma outflow top, no flux surgery, no sponge, vet_gd closure (rotated every 1750 s, slope-corrected, averaged over the last 4 rotated sets), hesdirk2 time integration, conservative2 gas source; 4 Raven nodes, 16 A100, 16 MeshBlocks (1 per GPU)", "s-grid": "256 &times; 256 &times; 256", "s-snaps": "0&ndash;20.59 d, every 0.5 d (43)", "s-updated": "2026-10-13 15:49 CEST", "s-banner": "The run is at day 20.6 of 57.4. It is in its start-up transient: it starts, like the paper, from the radiative-only 1-D profile, which is out of thermal and hydrostatic balance, and the paper calls its envelope steady only after 30 d, so every panel on our side is still transient. Convection has developed from the seed: KE<sub>int</sub> fell to 2.5&times;10<sup>39</sup> erg at 7.3 d, grew to a peak of 1.4&times;10<sup>42</sup> erg at 10.7 d and is 1.1&times;10<sup>42</sup> erg now, about 0.11 of the paper's ~10<sup>43</sup> erg. From the 10<sup>&minus;6</sup> seed, lateral motion has appeared: the lateral share of KE<sub>int</sub> is 5.2e-01 now (largest so far 5.3e-01). At 40.6 R<sub>&#9737;</sub> convective flows have developed (v<sub>r</sub> -86.2 to +42.0 km/s). The 3D photosphere has moved from 53.0 to 53.2 R<sub>&#9737;</sub>.", "w-fig2": "t = 0&ndash;20.59 d", "w-fig3": "t = 20.59 d", "w-fig4": "t = 20.59 d, r = 40.59 R<sub>&#9737;</sub>", "w-fig6": "t = 0.01&ndash;20.59 d", "n-fig2": "Energies are sums over our wedge (&pi;/3 sr), as in the paper's appendix. M<sub>env</sub> is the whole-star equivalent of the wedge mass, 0.175 M<sub>&#9737;</sub> for 20&ndash;80 R<sub>&#9737;</sub> (the paper's domain). Colour maps have one column per 0.5-d snapshot and are drawn to 65 R<sub>&#9737;</sub> like the paper's. So far &Delta;E<sub>grav</sub> = -5.4&times;10<sup>43</sup> erg, &Delta;U = 5.3&times;10<sup>43</sup> erg and E<sub>k</sub> = 1.1&times;10<sup>42</sup> erg (paper: about 5&times;10<sup>44</sup> and 10<sup>43</sup> erg in its transient). The 3D photosphere is at 50.9&ndash;60.0 R<sub>&#9737;</sub>; the IC's is at 52.9 R<sub>&#9737;</sub>.", "n-fig3": "P<sub>rad</sub> = D<sub>rr</sub>E, the Eddington tensor the vet_gd closure used, from the m1_vet dump of the same time. The right panel is the paper's IC as run: radiative only (F<sub>MLT</sub> = 0), so it has no convective shell to shade, where the paper's panel marks the two MESA convection zones. Its Fe opacity peak is at 41.4 R<sub>&#9737;</sub> (&kappa;<sub>R</sub> = 1.59 cm<sup>2</sup> g<sup>&minus;1</sup>, &kappa;/&kappa;<sub>Edd</sub> = 0.89 with &kappa;<sub>Edd</sub> = 4&pi;cGM/L = 1.79), not at the 35 R<sub>&#9737;</sub> the paper quotes. At 20.59 d the shell-mean Fe peak is at 40.4 R<sub>&#9737;</sub> (&kappa;<sub>R</sub> = 1.63); the He&nbsp;II bump near 50.6 R<sub>&#9737;</sub> (T &asymp; 4&times;10<sup>4</sup> K) reaches &kappa;<sub>R</sub> = 1.18. Largest &kappa;/&kappa;<sub>Edd</sub> in the plane: 1.15. Largest ram/total pressure below the photosphere: 4.7 (paper: about 0.5 above 33 R<sub>&#9737;</sub> in steady state). Opacities: Linhao Ma's TOPS tables (padded with the edge values), the tables the run uses.", "n-fig4": "The shell stays at 40.6 R<sub>&#9737;</sub> (nearest cell 40.59), as on the earlier reproduction page. The paper puts it 1 R<sub>&#9737;</sub> above its Fe peak (35 &rarr; 36 R<sub>&#9737;</sub>); in this run the shell-mean Fe peak is at 40.4 R<sub>&#9737;</sub> at 20.59 d, so 40.6 lies 0.2 R<sub>&#9737;</sub> above it. At 20.59 d: v<sub>r</sub> from -86.185 to +41.982 km/s; shell means &rho; = 4.77&times;10<sup>&minus;8</sup> g cm<sup>&minus;3</sup> and T = 1.712&times;10<sup>5</sup> K (paper, steady: 5&ndash;8&times;10<sup>&minus;8</sup>, 1.5&ndash;1.7&times;10<sup>5</sup> K). v<sub>r</sub> uses the paper's range (&plusmn;60 km/s) once our flows reach 5 % of it, else our own; &rho; and T are absolute values with a fixed range = shell mean of the newest dump &plusmn; a relative amplitude (1&ndash;99th percentile, at least 0.1 %, so round-off is not painted as structure).", "n-fig6": "Normalised as the paper's eq. 8: the wedge luminosity (L<sub>top</sub>, the Marshak top face) is linearly detrended and its fluctuation scaled by &radic;(&Omega;/4&pi;) = 0.289 to a whole-star equivalent. Both panels use (&Delta;F/F)<sup>2</sup>/&micro;Hz and the paper's axis range. Our flux spans 0.910&ndash;1.188 over 0.01&ndash;20.59 d; mean whole-star L<sub>top</sub> = 5.6&times;10<sup>38</sup> erg/s (IC: 5.58&times;10<sup>38</sup>). The dotted line marks our Nyquist frequency (hst every 962 s). Before 30 d the whole curve is the start-up transient (the window falls back to the full record), so the orange \"radial mode\" fit is not meaningful yet.", "w-int": "t = 20.59 d, own &tau;<sub>R</sub> = 1, r = 51.5&ndash;54.2 R<sub>&#9737;</sub>", "n-int": "At 20.59 d, F<sub>r</sub> is taken at each column's own &tau;<sub>R</sub> = 1 cell, at 51.52&ndash;54.18 R<sub>&#9737;</sub> (1st&ndash;99th percentile; median 52.93). There F<sub>r</sub>/&lang;F<sub>r</sub>&rang; spans 0.178&ndash;3.505 (rms 0.296; F<sub>r</sub> &lt; 0 in 0.00 % of the columns), &lang;T<sub>eff</sub>&rang; = 15517 K and 4&pi;&lang;r<sup>2</sup>F<sub>r</sub>&rang; = 5.6&times;10<sup>38</sup> erg/s = 0.997 L.", "w-ke": "t = 0&ndash;20.59 d", "n-ke": "KE<sub>int</sub> is column 11 of user.hst (gas kinetic energy inside r<sub>int</sub>, summed over the wedge); KEr<sub>int</sub> (column 12) is its radial part, so KE<sub>int</sub> &minus; KEr<sub>int</sub> is the lateral kinetic energy (dotted green; drawn only where it exceeds 10<sup>&minus;10</sup> KE<sub>int</sub>, below which the difference is round-off). Peak 1.4&times;10<sup>42</sup> erg at 10.7 d (the onset of convection), 1.3&times;10<sup>41</sup> erg at 0.5 d, lowest after 1 d 2.5&times;10<sup>39</sup> erg at 7.3 d, 1.1&times;10<sup>42</sup> erg now; KEr<sub>int</sub>/KE<sub>int</sub> = 0.476088 now. The dashed line is the paper's kinetic-energy level read from its Fig. 2 (~10<sup>43</sup> erg), a reference only.", "c-fig3fe": "41.4 R<sub>&#9737;</sub>", "c-fig4": "This run starts from the paper's own IC, but with Ma's tables its Fe peak lies at 41.4 R<sub>&#9737;</sub> (&kappa;<sub>R</sub> 1.59, &kappa;/&kappa;<sub>Edd</sub> 0.89) at t = 0 and at 40.4 R<sub>&#9737;</sub> (shell mean) at 20.59 d, so 40.6 R<sub>&#9737;</sub> sits 0.2 R<sub>&#9737;</sub> above the peak, not 1 R<sub>&#9737;</sub> above it; the paper's 35 R<sub>&#9737;</sub> is not reproduced by its own profile.", "__v": "1791899396", "cmp-body": "<tr><td colspan=\"4\">pending: the run reaches the 30&ndash;57.4 d window later (now at day 20.6)</td></tr>", "w-cmp57": "pending", "w-cmp": "", "cmp-fig": "<p class=\"tnote\">Figure pending: Figs. 5 and 7 analogues and the time-averaged L(r) need dumps in 30&ndash;57.4 d (run now at day 20.6).</p>"};window.__NJ={"n": 43, "t": [0.0, 0.5, 1.001, 1.501, 2.0, 2.5, 3.001, 3.5, 4.0, 4.501, 5.001, 5.5, 6.0, 6.501, 7.0, 7.5, 8.001, 8.501, 9.0, 9.5, 10.001, 10.5, 11.0, 11.501, 12.001, 12.5, 13.0, 13.501, 14.0, 14.5, 15.001, 15.501, 16.0, 16.5, 17.001, 17.5, 18.0, 18.501, 19.001, 19.5, 20.0, 20.501, 20.592]};(function(){var d=window.__ST;Object.keys(d).forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML=d[id];});})();</script>
+<script>
+// Fills run status, labels and notes from status.json (written by scripts_repro/gen_status.py).
+(function () {
+  fetch('status.json?v=' + Date.now(), { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d) return;
+      Object.keys(d).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = d[id];
+      });
+      document.querySelectorAll('img[src^="img/"]').forEach(function (im) {
+        if (d.__v) im.src = im.getAttribute('src').split('?')[0] + '?v=' + d.__v;
+      });
+    })
+    .catch(function () {});
+})();
+</script>
+<script>
+(function(){function pad(n){return ('00000'+n).slice(-5)}
+fetch('movie/n.json?v='+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).catch(function(){return null}).then(function(d){d=d||window.__NJ;
+document.querySelectorAll('.mv-slider').forEach(function(sl){if(d&&d.n){sl.max=d.n-1;sl.value=d.n-1;}var k=sl.dataset.k,img=document.getElementById('mv-'+k),tt=document.getElementById('mv-time-'+k),pb=document.querySelector('.mv-play[data-k="'+k+'"]'),tm=null;
+for(var i=0;i<=+sl.max;i++)(new Image()).src='movie/'+k+'/'+k+'_'+pad(i)+'.png';
+function show(i){img.src='movie/'+k+'/'+k+'_'+pad(i)+'.png';tt.textContent='t = '+((d&&d.t&&d.t[i]!=null)?d.t[i]:0.5*i).toFixed(2)+' d';}
+sl.addEventListener('input',function(){show(+sl.value)});
+pb.addEventListener('click',function(){if(tm){clearInterval(tm);tm=null;pb.textContent='Play';return;}pb.textContent='Pause';if(+sl.value>=+sl.max)sl.value=0;tm=setInterval(function(){var v=+sl.value+1;if(v>+sl.max){clearInterval(tm);tm=null;pb.textContent='Play';return;}sl.value=v;show(v);},250);});show(+sl.value);});});
+})();
+</script>
+
+</body></html>
