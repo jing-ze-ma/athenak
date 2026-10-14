@@ -26,3 +26,12 @@ per variable). Results will follow in this NOTE.
 ## Other
 - He giant FIN4 link 1 4489484 running ~1.1 s/cycle (FIN3 0.93); Linhao BSG link 1 at t 2.6e5 s, ~1.28 s/cycle, all clean.
 - fin4-mem CPU bitwise TASK: running (debug QoS); its own NOTE follows.
+
+## Layout test result (job 4490288, 6 min, 2 GPUs vs 4 GPUs from the same rst)
+
+No crash, no NaN, rc 0 for all 4 runs. As expected, the 2-GPU and 4-GPU runs are NOT bitwise equal (different rank layout gives different sum orders).
+
+- BSG, 30 cycles from bsg3d.00002.rst: dens rel 4.6e-10; eint 1.1e-7; velx 1.2e-7; vely/velz maxabs/max 2e-8; m1_e 1e-7; m1 f2/f3 maxabs/max ~1e-9. hydro.hst last row 7e-12; user.hst 2.5e-3 at col 17.
+- He giant, 50 cycles from fin4 rst: dens rel 1.1e-9; eint 9.9e-8; m1_e 1.2e-7; vely/velz maxabs/max ~1e-6. **velx maxabs/max 4.8e-2** (one or a few cells; not localized yet, may be a near-floor or fast cell where round-off grows quickly). hydro.hst last row 2.4e-10; user.hst 2.1e-4 at col 19.
+
+Verdict: a layout change only causes round-off-level divergence (apart from the one He giant velx cell to check), so the wide jobs continue. hgF4w 4489939 has started and seeded from fin4/rst/hegiant.00004.rst; bsgLIw4 4490079 is pending (Priority). The laytest rst hard links are removed.
