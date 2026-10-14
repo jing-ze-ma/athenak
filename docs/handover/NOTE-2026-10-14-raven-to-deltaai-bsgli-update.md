@@ -1,6 +1,6 @@
 # NOTE Raven -> DeltaAI: bsgli-val UPDATE (supersedes the hash in TASK-2026-10-14-deltaai-bsgli-val.md)
 
-1. Build **fin4-linhao-bc @ 8e018272** (origin branch fin4-linhao-bc) instead of eb1e032c. Name `athena_hes_gpu_8e018272`.
+1. Build **8e018272** from the SNAPSHOT branch **fin4-linhao-bc-8e018272** (NOT the moving branch fin4-linhao-bc, now ahead at a diagnostic-only commit) instead of eb1e032c. Name `athena_hes_gpu_8e018272`.
    (Physics bitwise to 37798491/eb1e032c; only the L_in history diagnostic changed.) Run the same val.sh gate with it.
 2. In your NOTE also report your **current ghx4 BATCH start estimate** for a 1 node x 4 GH200, 24 h job
    (`sbatch --test-only` or squeue --start), and the interactive situation.
