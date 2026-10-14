@@ -6630,8 +6630,6 @@ void RadiationM1::VetGdTwin(const int stage) {
     Kokkos::realloc(vgd_twm2, c1);
     Kokkos::realloc(vgd_twl, pmy_pack->nmb_thispack, M1_TT_NLAT, indcs.nx3 + 2*indcs.ng,
                     indcs.nx2 + 2*indcs.ng, c1);
-    Kokkos::realloc(vgd_cs0, vgd_cs.extent(0), vgd_cs.extent(1), vgd_cs.extent(2),
-                    vgd_cs.extent(3), vgd_cs.extent(4));
   }
   auto twl_ = vgd_twl;
   if (stage == 0 && vgd_twfuse) {
@@ -6672,6 +6670,12 @@ void RadiationM1::VetGdTwin(const int stage) {
   if (stage == 0) {
     Kokkos::Timer tm;
     const int og = vgd_w - indcs.ng;
+    // mem-1014: the saved source only on this (unfused / lowmem) path (the fused twin
+    // never touches it: it was allocated for every twin run)
+    if (vgd_cs0.extent(0) != vgd_cs.extent(0) || vgd_cs0.extent(4) != vgd_cs.extent(4)) {
+      Kokkos::realloc(vgd_cs0, vgd_cs.extent(0), vgd_cs.extent(1), vgd_cs.extent(2),
+                      vgd_cs.extent(3), vgd_cs.extent(4));
+    }
     auto cw_ = vgd_cs;
     auto c0_ = vgd_cs0;
     Kokkos::deep_copy(c0_, cw_);
