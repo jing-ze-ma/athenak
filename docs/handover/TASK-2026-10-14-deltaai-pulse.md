@@ -18,7 +18,7 @@ Raven runs the same arms at nx1 = 268 (gpudev, 15-min links); DeltaAI gives the 
   `planck_ext2orion_gs98_x0.36_z0.02.txt` (493f9d01) (both in agcarA_files/). Change no other key.
 - `pulse_dai.sh`: one link = 4 independent single-rank arms, 1 GH200 each (536 x 32 x 32 = one MeshBlock):
   A536 (prod), S0_536 (`he_seed=0`), S3_536 (`he_seed=1e-3`), F536 (`mlt_ramp_start=1e6 mlt_ramp_time=2e6`).
-  Overrides are on the command line (lateral 32x32, dt_retry on, tlim 1.25e7, m1 bins + rst every 1e6 s). Adapt LAUNCH to your srun
+  Overrides are on the command line (lateral 32x32, dt_retry is on by default on a fresh start -- do NOT add time/dt_retry on the command line (absent key -> FATAL); tlim 1.25e7, m1 bins + rst every 1e6 s). Adapt LAUNCH to your srun
   (one process per GPU; 4 concurrent). `sbatch --export=ALL,BIN=..,DECK=..,S=<scratch>,WALL=01:52:00 <flags> pulse_dai.sh`.
 - Next link: the same command; every arm restarts from its newest rst. Stop after link 3 or when all arms reach 1.25e7 s.
 - STOP an arm only on rc != 0 / FATAL. `DT_RETRY` lines are expected (dt halving on a failed Picard solve) -- not a stop.

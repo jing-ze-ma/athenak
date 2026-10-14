@@ -6,7 +6,7 @@ export MPICH_GPU_SUPPORT_ENABLED=1 OMP_NUM_THREADS=1
 LAUNCH=${LAUNCH:-"srun --exact -n 1 -c 16 --gpus-per-task=1"}
 TL=1.25e7
 RED="mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32"
-OUTK="time/ndiag=200 time/dt_retry=true output3/dt=1e6 output5/dt=1e6 time/tlim=$TL"
+OUTK="time/ndiag=200 output3/dt=1e6 output5/dt=1e6 time/tlim=$TL"
 ARMS=("A536|" "S0_536|problem/he_seed=0" "S3_536|problem/he_seed=1.0e-3" "F536|problem/mlt_ramp_start=1.0e6 problem/mlt_ramp_time=2.0e6")
 for a in "${ARMS[@]}"; do
   IFS='|' read -r NM KY <<< "$a"; D=$S/$NM; mkdir -p $D
