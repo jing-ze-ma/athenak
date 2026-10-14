@@ -476,11 +476,11 @@ void RadiationM1::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const
         const int ii = static_cast<int>(r % ni) + i0;
         sl(0,s-s0,k,j,i) = d(m,n,kk,jj,ii);
       });
-      Kokkos::deep_copy(Kokkos::subview(out, std::make_pair(m, m+1),
-                                        std::make_pair(s0, s0+ns), Kokkos::ALL,
+      // (4-D subviews, both contiguous with equal strides: a device -> host copy)
+      Kokkos::deep_copy(Kokkos::subview(out, m, std::make_pair(s0, s0+ns), Kokkos::ALL,
                                         Kokkos::ALL, Kokkos::ALL),
-                        Kokkos::subview(sl, Kokkos::ALL, std::make_pair(0, ns),
-                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+                        Kokkos::subview(sl, 0, std::make_pair(0, ns), Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL));
     }
   }
 }
