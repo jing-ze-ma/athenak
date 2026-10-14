@@ -71,7 +71,7 @@ struct M1HDLoad {
 //! the stored-stencil row of ImplicitStencilOp (same terms, same order), x read by `ld`
 template <class LD>
 KOKKOS_INLINE_FUNCTION
-Real M1StRowL(const DvceArray5D<Real> &st_, const LD &ld, const int m, const int k,
+Real M1StRowL(const DvceArray5D<M1OstT> &st_, const LD &ld, const int m, const int k,
               const int j, const int i, const bool edg, const bool thrd,
               const bool vfold) {
   Real y = st_(m,0,k,j,i)*ld(k,j,i)
@@ -104,7 +104,8 @@ Real M1StRowL(const DvceArray5D<Real> &st_, const LD &ld, const int m, const int
 //! ((rhat,y), max|r|) or red = 3 ((y,s), (y,y), (rhat,y)); `final` advances the scalars
 struct M1DevOp {
   using value_type = M1DVal;
-  DvceArray5D<Real> iw, st;
+  DvceArray5D<Real> iw;
+  DvceArray5D<M1OstT> st;
   DvceArray1D<Real> kd;
   M1HDLoad hl;
   int is, js, ks, ie, je, ke, ni, nji, nkji, cx, cy, rm, reach;

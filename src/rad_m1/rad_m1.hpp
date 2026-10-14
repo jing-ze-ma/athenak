@@ -45,6 +45,16 @@ class Driver;
 
 namespace radm1 {
 
+// mixprec-1014 (study, build flag -DM1_OST_FP32, default off = bitwise): the 19/25-point
+// operator stencil of the implicit pass (ost) stored in float: the matrix-vector product
+// and the preconditioner read float coefficients, every accumulation and the Krylov
+// vectors / residuals stay in Real
+#if defined(M1_OST_FP32)
+using M1OstT = float;
+#else
+using M1OstT = Real;
+#endif
+
 // indices of the evolved moments in u0(m,n,k,j,i)
 constexpr int M1_E  = 0;
 constexpr int M1_F1 = 1;
@@ -972,7 +982,7 @@ class RadiationM1 {
   DvceArray5D<Real> odc;        // (m,3,k,j,i) that cache
   bool impl_stencil;            // <rad_m1>/implicit_op_stencil: the operator of each
                                 // Picard pass as a 19-point stencil, built once
-  DvceArray5D<Real> ost;        // (m,19,k,j,i) that stencil
+  DvceArray5D<M1OstT> ost;      // (m,19,k,j,i) that stencil
   bool st_edges;                // ...and whether any edge coefficient is non-zero
   bool impl_vfold;              // <rad_m1>/implicit_vimp_fold (tests_m1/runs_4a_accel):
                                 // the implicit_vimp operator part folded into the stored

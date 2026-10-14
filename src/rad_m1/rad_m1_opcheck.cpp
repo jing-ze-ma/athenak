@@ -749,7 +749,7 @@ void RadiationM1::ImplicitOpCheck() {
   if (impl_stencil && vimp_now) {
     // the other fold state, on a stencil array of its own
     impl_vfold = !s_vfold;
-    ost = DvceArray5D<Real>("m1_chk_ost", nmb, 25, n3, n2, n1);
+    ost = DvceArray5D<M1OstT>("m1_chk_ost", nmb, 25, n3, n2, n1);
     ImplicitStencilBuild();
     run_ops(impl_vfold ? "+fold" : "+nofold");
     impl_vfold = s_vfold;

@@ -26,6 +26,16 @@
 #include "mesh/mesh.hpp"
 #include "outputs.hpp"
 
+namespace {
+// mixprec-1014 (study diagnostic): env ATHENA_BIN_DOUBLE=1 writes the variables in double
+// (header "size of variable=8"; bin_convert.py reads both).  Default: float, unchanged.
+bool BinDouble() {
+  static const bool b = (std::getenv("ATHENA_BIN_DOUBLE") != nullptr) &&
+                        (std::string(std::getenv("ATHENA_BIN_DOUBLE")) == "1");
+  return b;
+}
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 // Constructor: also calls BaseTypeOutput base class constructor
 
@@ -105,7 +115,8 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         << "  time=" << pm->time << std::endl
         << "  cycle=" << pm->ncycle << std::endl
         << "  size of location=" << sizeof(Real) << std::endl
-        << "  size of variable=" << sizeof(float) << std::endl;
+        << "  size of variable=" << (BinDouble() ? sizeof(double) : sizeof(float))
+        << std::endl;
     if (coord_arrays) {
       msg << "  coordinate arrays=1" << std::endl;
     }
@@ -155,7 +166,8 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // ois, oie, ojs, oje, oks, oke + il1, il2, il3, level +
   // x1min, x1max, x2min, x2max, x3min, x3max + [coordinate arrays] + data
   std::size_t data_size = 10*sizeof(int32_t) + 6*sizeof(Real)
-                        + ncoord*sizeof(Real) + (cells*nout_vars)*sizeof(float);
+                        + ncoord*sizeof(Real) +
+                          (cells*nout_vars)*(BinDouble() ? sizeof(double) : sizeof(float));
 
   // host copies of the 1-D coordinate arrays (only on stretched grids)
   HostArray2D<Real> hx1v, hx1f, hx2v, hx2f, hx3v, hx3f;
@@ -266,6 +278,20 @@ void MeshBinaryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
     // output variables
     float tmp_data;
+    if (BinDouble()) {   // mixprec-1014 study: env ATHENA_BIN_DOUBLE=1 (full precision)
+      for (int n=0; n<nout_vars; n++) {
+        for (int k=oks; k<=oke; k++) {
+          for (int j=ojs; j<=oje; j++) {
+            for (int i=ois; i<=oie; i++) {
+              const double xd = static_cast<double>(outarray(n,m,k-oks,j-ojs,i-ois));
+              memcpy(pdata,&xd,sizeof(xd));
+              pdata+=sizeof(xd);
+            }
+          }
+        }
+      }
+      continue;
+    }
     for (int n=0; n<nout_vars; n++) {
       int cnt=0;
       for (int k=oks; k<=oke; k++) {
