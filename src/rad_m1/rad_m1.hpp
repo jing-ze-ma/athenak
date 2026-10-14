@@ -488,6 +488,11 @@ class RadiationM1 {
   int nstage;                   // stages per substep: M1_NSTAGE explicit, 1 implicit
   Real impl_cfl;                // <rad_m1>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
   Real impl_tol;                // Picard tolerance on max(|dE|/E, |dT|/T)
+  // picard-1014 implicit_tol_rel = kappa (default 0 = off): a solve that starts from the
+  // step predictor stops at max(implicit_tol, kappa r_0), r_0 = its first change
+  Real impl_tol_rel = 0.0;
+  Real impl_tol_rel_max = 1.0e-4;   // implicit_tol_rel_max: cap on tol_eff
+  Real impl_tolr_sum = 0.0, impl_tolr_n = 0.0;
   int impl_maxit;               // maximum Picard iterations per solve
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
   int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
@@ -529,6 +534,18 @@ class RadiationM1 {
   // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
   bool impl_pos_floor_s2 = false;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
+  // picard-1014 implicit_src_opac_newton (default false): the gas Newton row also takes
+  // d(rho kappa_P)/dT and d(rho kappa_E)/dT (sond(m,0|1,k,j,i), one-sided like ktd), floored
+  // at implicit_src_opac_newton_floor x the frozen-opacity coupling derivative
+  bool impl_son = false;
+  // picard-1014 implicit_gas_newton_u4: emission-dominated cells take the gas Newton
+  // step in u = T^4 (T' = (T^4 + 4 T^3 dT)^(1/4)); implicit_opac_lag = pred: the
+  // opacities are evaluated at pass 0 (the predicted T) and frozen for the solve
+  bool impl_gn_u4 = false;
+  bool impl_opac_lagp = false;
+  int impl_opac_lagn = 1;       // implicit_opac_lag_passes: updates in passes < N
+  Real impl_son_fl = 0.25;
+  DvceArray5D<Real> sond;
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min, ibc_x1max;     // M1_IBC_*

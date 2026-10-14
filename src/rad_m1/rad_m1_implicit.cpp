@@ -989,6 +989,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_m1","implicit_cfl",-1.0);
   impl_tol = pin->GetOrAddReal("rad_m1","implicit_tol",1.0e-8);
+  // picard-1014 implicit_tol_rel = kappa (default 0 = off; opt-in study key).  A solve
+  // that starts from the step predictor measures its first change r_0 = max |x_1 -
+  // x_pred|/x: the predictor (an extrapolation of the last increments, O(dt^3) off
+  // under predictor_order 2) misses the fixed point by about the local truncation
+  // error of the step, so an iteration error kappa r_0 is kappa x that error and
+  // shrinks with dt as it does (the absolute implicit_tol does not scale).  The
+  // solve then stops at tol_eff = max(implicit_tol, kappa r_0) (both the plain and
+  // the contraction-estimate tests); cold starts keep implicit_tol.
+  impl_tol_rel = pin->GetOrAddReal("rad_m1","implicit_tol_rel",0.0);
+  impl_tol_rel_max = pin->GetOrAddReal("rad_m1","implicit_tol_rel_max",1.0e-4);
+  if (impl_tol_rel < 0.0 || impl_tol_rel >= 1.0) {
+    ImplFatal("<rad_m1>/implicit_tol_rel must lie in [0,1)");
+  }
   // a lagged transverse coupling needs more outer passes than a pure column solve, so
   // the ceiling is raised (not the count: the loop still stops at convergence).
   impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit", full ? 200 : 30);
@@ -1788,6 +1801,40 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // point is the same: the term vanishes there).  <= 0 turns the guard off (the
   // unguarded rows of m1-perf-0928, bitwise).
   impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
+  // picard-1014 implicit_src_opac_newton (default false, opt-in study key): the gas
+  // Newton row of step (c) linearises the WHOLE exchange X(T) = c dt (rho kappa_P(T) a
+  // T^4 - rho kappa_E(T) (E + de0)) in T, not only T^4 (the opacities were Picard-lagged
+  // one pass: in a steep-opacity cell, |dln kappa/dln T| > ~4, that lag oscillates).
+  // dX/dT is floored at implicit_src_opac_newton_floor x its frozen-opacity value 4 c dt
+  // rho kappa_P a T^3 (a falling kappa_P must not take B_k towards 0).  Only the
+  // Jacobian changes: the fixed point is the same.  Needs implicit_opac_newton.
+  impl_son = pin->GetOrAddBoolean("rad_m1","implicit_src_opac_newton",false);
+  // picard-1014 implicit_gas_newton_u4 (default false, opt-in study key): the gas Newton
+  // update of step (f) in a cell whose linearised row is EMISSION-dominated (4 c dt rho
+  // kappa_P a T^3 > rho c_v) moves u = T^4 by the Newton step, T' = (T^4 + 4 T^3 dT)^(1/4),
+  // instead of T by dT: then a T'^4 is exactly the emission the radiation row was built
+  // with, and a hot start (T >> T_eq in a tenuous cell: plain Newton on T^4 shrinks T by
+  // only 1/4 per pass) lands in one step.  Same fixed point (dT = 0 there).
+  impl_gn_u4 = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton_u4",false);
+  // picard-1014 implicit_opac_lag = none (default) | pred: pred evaluates the opacities
+  // ONCE, at pass 0 (the predicted T of the step predictor, or T^n on a cold start), and
+  // freezes them (and drops the opac_newton face terms) for the remaining passes: the
+  // opacity becomes a predicted (O(dt^2) under predictor_order 2) rather than an iterated
+  // quantity -- a change of the discretisation, not only of the iteration.
+  {const std::string ol = pin->GetOrAddString("rad_m1","implicit_opac_lag","none");
+  if (ol.compare("none") == 0) {
+    impl_opac_lagp = false;
+  } else if (ol.compare("pred") == 0) {
+    impl_opac_lagp = true;
+  } else {
+    ImplFatal("<rad_m1>/implicit_opac_lag = '" + ol + "' is not a choice (none | pred)");
+  }
+  // implicit_opac_lag_passes = N (default 1): under pred the opacities are re-evaluated
+  // in passes 0 .. N-1 (pass k at the iterate T_k) and frozen from pass N on
+  impl_opac_lagn = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_passes",1);
+  if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1");}
+  }
+  impl_son_fl = pin->GetOrAddReal("rad_m1","implicit_src_opac_newton_floor",0.25);
   // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
   // implicit_g0_limit = 1, implicit_pos_gas = true, implicit_pos_floor = true and
   // implicit_opac_newton_guard_mode = 6 below; every he_star_m1 production ran this set;
@@ -2908,6 +2955,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thin_frz, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(thin_frz, 0.0);
   }
+  if (impl_son && !impl_opac_newton) {
+    ImplFatal("<rad_m1>/implicit_src_opac_newton needs implicit_opac_newton = true");
+  }
+  if (!(impl_son_fl > 0.0) || impl_son_fl > 1.0) {
+    ImplFatal("<rad_m1>/implicit_src_opac_newton_floor must lie in (0,1]");
+  }
   if (impl_opac_newton) {
     if (!impl_opac_update || !impl_gas_newton) {
       ImplFatal("<rad_m1>/implicit_opac_newton needs implicit_opac_update = true and "
@@ -2915,6 +2968,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     Kokkos::realloc(ktd, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(ktd, 0.0);
+    if (impl_son) {
+      Kokkos::realloc(sond, nmb, 2, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(sond, 0.0);
+    }
     Kokkos::realloc(opn_nskip_d, 1);
     Kokkos::deep_copy(opn_nskip_d, 0.0);
   }
@@ -8763,6 +8820,11 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_tol_rel > 0.0) {
+    std::cout << "<rad_m1> implicit_tol_rel=" << impl_tol_rel << ": predicted solves "
+              << impl_tolr_n << ", mean tol_eff "
+              << ((impl_tolr_n > 0.0) ? impl_tolr_sum/impl_tolr_n : 0.0) << std::endl;
+  }
   if (impl_gn_sw > 0) {
     std::cout << "<rad_m1> implicit_gas_newton_switch=" << impl_gn_sw << " (min pass "
               << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
@@ -10756,6 +10818,9 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
   auto is = std::get<24>(ctx_);
   auto ie = std::get<25>(ctx_);
   auto sstab = std::get<26>(ctx_);
+  auto sond_ = std::get<27>(ctx_);
+  auto son = std::get<28>(ctx_);
+  auto sonfl = std::get<29>(ctx_);
   auto srb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -10765,6 +10830,7 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)ch; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)eos; (void)gam;
     (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr; (void)igy;
     (void)iw_; (void)opac_; (void)uh; (void)usec; (void)sstab;
+    (void)sond_; (void)son; (void)sonfl;
 #endif
     Real rkpv = opac_(m,M1_OP_P,k,j,i);
     Real rkev = opac_(m,M1_OP_E,k,j,i);
@@ -10846,6 +10912,18 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
           }
         }
       }
+    }
+    // emission derivative of the exchange per unit (ch dt): 4 kappa_P a T^3 frozen;
+    // picard-1014 implicit_src_opac_newton: + kappa_P' a T^4 - kappa_E' (E^k + de0)
+    Real dxt = 4.0*dt*rkpv*ar*t3;
+    if (son) {
+      const Real ek = iw_(m,M1_IW_EP,k,j,i);
+      const Real dfull = dt*(4.0*rkpv*ar*t3 + sond_(m,0,k,j,i)*ar*t4
+                             - sond_(m,1,k,j,i)*(ek + de0));
+      dxt = fmax(dfull, sonfl*dxt);
+      bk = dd*cv + cl*dxt;
+    }
+    if (gnewt) {
       iw_(m,igb,k,j,i) = bk;
       iw_(m,igr,k,j,i) = rk;
     }
@@ -10865,16 +10943,18 @@ void M1ImplSrcLaunch(const Ctx &ctx_, Idl) {
       //   SRCR = w (emis T^4 - ch dt k_E de0) + (ch/cl) q (e^n - e_k)
       // with w = rho c_v/bk and q = 1 - w = 4 cl dt k_P a T^3/bk.
       const Real w = dd*cv/bk;
-      const Real q = 4.0*cl*dt*rkpv*ar*t3/bk;
+      const Real q = son ? (cl*dxt/bk) : (4.0*cl*dt*rkpv*ar*t3/bk);
       iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev*w;
       iw_(m,M1_IW_SRCR,k,j,i) = w*(emis*t4 - dt*ch*rkev*de0)
                                 + (ch/cl)*q*(iw_(m,M1_IW_EGN,k,j,i) - ee);
       return;
     }
-    Real kk = (bk > 0.0) ? (emis*4.0*t3*cl*dt*rkev/bk) : 0.0;
+    // (emis 4 T^3 = ch dxt without implicit_src_opac_newton; kept literally: bitwise)
+    const Real ed = son ? (ch*dxt) : (emis*4.0*t3);
+    Real kk = (bk > 0.0) ? (ed*cl*dt*rkev/bk) : 0.0;
     iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
     iw_(m,M1_IW_SRCR,k,j,i) = emis*t4 - dt*ch*rkev*de0
-                              + ((bk > 0.0) ? (emis*4.0*t3*rk/bk) : 0.0);
+                              + ((bk > 0.0) ? (ed*rk/bk) : 0.0);
   };
   par_for("m1_impl_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -10943,6 +11023,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto tsmin = std::get<30>(ctx_);
   auto tf_ = std::get<31>(ctx_);
   auto tfz = std::get<32>(ctx_);
+  auto gu4 = std::get<33>(ctx_);
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -10952,7 +11033,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)efl; (void)eos;
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
-    (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz;
+    (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -10984,6 +11065,15 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
         Real rk = iw_(m,igr,k,j,i);
         Real yk = rk + cl*dt*rkev*enew;
         Real dtk = (bk > 0.0) ? (yk/bk) : 0.0;
+        if (gu4 && bk > 0.0) {
+          // picard-1014 implicit_gas_newton_u4 (emission-dominated row: step in T^4)
+          const Real t3 = told*told*told;
+          const Real em = 4.0*cl*dt*rkpv*ar*t3;
+          if (em > 0.5*bk) {
+            const Real u = told*t3 + 4.0*t3*dtk;
+            dtk = (u > 0.0) ? (sqrt(sqrt(u)) - told) : (-told);
+          }
+        }
         if (bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told && (told + dtk) > 0.0) {
           tnew = told + dtk;
           iw_(m,igy,k,j,i) = fabs(yk);
@@ -11715,6 +11805,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
 
   //--------------------------------------------------------------------- the Picard loop
+  const bool tolr = (impl_tol_rel > 0.0);
+  Real tol_eff = impl_tol;
   int it = 0;
   Real resid = 0.0;
   bool converged = false;
@@ -11894,13 +11986,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         ktn_(m,k,j,i) = iw_(m,M1_IW_KT,k,j,i);
       });
     }
-    if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero) {
+    // picard-1014 implicit_opac_lag = pred: pass 0 only (opac_newton evaluates at pass 0)
+    const bool olp = impl_opac_lagp && (it >= impl_opac_lagn);
+    if (olp && opn && it == impl_opac_lagn) {Kokkos::deep_copy(ktd, 0.0);}
+    if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero && !olp) {
       int otype = opacity_type;
       Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kscat = kappa_s;
       Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
       M1OpacTab ot = otab;
       const int opart = dbg_opac_part;
       auto ktd_ = ktd;
+      auto sond_ = sond;
+      const bool son = impl_son;
       auto tf_ = thin_frz;
       const bool osc = vscat;   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
       const Real soff = impl_opn_soff, smax = impl_opn_smax;
@@ -11910,6 +12007,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (tfz && tf_(m,k,j,i) > 0.5) {
           if (opn) {ktd_(m,k,j,i) = 0.0;}
+          if (son) {sond_(m,0,k,j,i) = 0.0; sond_(m,1,k,j,i) = 0.0;}
           return;
         }
         Real d = uh(m,IDN,k,j,i);
@@ -11943,6 +12041,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         oe2, of2, os2);
           }
           ktd_(m,k,j,i) = d*((of2 + os2) - (of + os))/th;
+          if (son) {
+            sond_(m,0,k,j,i) = d*(op2 - op)/th;
+            sond_(m,1,k,j,i) = d*(oe2 - oe)/th;
+          }
           if (oscl) {
             // logarithmic slope of kappa_T over the same difference
             const Real kt0 = of + os;
@@ -12500,7 +12602,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // (above); srb_ctx is what the helper captured, by value.
       auto srb_ctx = std::make_tuple(ar, ch, cl, dt, ec_, ecnt, eos, gam, gasx, gnw,
                                      igb, igf, igm, igr, igy, iw_, opac_, uh, usec, nmb1,
-                                     ks, ke, js, je, is, ie, impl_src_stable);
+                                     ks, ke, js, je, is, ie, impl_src_stable,
+                                     sond, impl_son && gnw, impl_son_fl);
       if (srid) {
         M1ImplSrcLaunch(srb_ctx, std::true_type{});
       } else {
@@ -13371,7 +13474,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
-                                     thin_frz, (impl_thin_frz > 0.0));
+                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {
@@ -13688,24 +13791,30 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     } else {
       lresid = 0.0;
     }
-    converged = (resid < impl_tol) && (!trans || (lresid < impl_lin_tol));
+    // picard-1014 implicit_tol_rel: the tolerance of this solve from its first change
+    if (it == 0 && tolr && pred_started) {
+      tol_eff = std::max(impl_tol, std::min(impl_tol_rel*resid, impl_tol_rel_max));
+      impl_tolr_sum += tol_eff;
+      impl_tolr_n += 1.0;
+    }
+    converged = (resid < tol_eff) && (!trans || (lresid < impl_lin_tol));
     if (impl_conv_est || !impl_lres_test) {
       // the Picard test, optionally without the confirming pass: q is the contraction
       // of the last two passes, and q/(1-q) times this change bounds what is left
-      bool pc = (resid < impl_tol);
+      bool pc = (resid < tol_eff);
       // h2order2-1011: implicit_rad_inertia_solve lags dA by one pass, so the stop must
       // see the last pass's own change (no contraction estimate, no one-pass stop)
       const bool rinrc = RinrActive();
       if (impl_conv_est && !pc && rprev > 0.0 && !rinrc) {
         Real q = resid/rprev;
-        pc = (q < 0.5) && (resid*q/(1.0 - q) < impl_tol);
+        pc = (q < 0.5) && (resid*q/(1.0 - q) < tol_eff);
       }
       if (onep && it == 0 && !pc && !ocheck && !rinrc) {
         const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
         // time2_one_pass_safety for the stage solves (otyp 1, 2)
         const Real sf = (otyp != 0 && t2_onep_s > 0.0) ? t2_onep_s : impl_onep_s;
         const Real qe = std::max(sf*qm, 1.0e-6);
-        pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < impl_tol);
+        pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < tol_eff);
         if (pc) {impl_onep_n += 1.0;}
       }
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
