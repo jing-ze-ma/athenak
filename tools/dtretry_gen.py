@@ -20,7 +20,9 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # members that count the exchanges of a peer-to-peer protocol (CUDA IPC halos): the peers'
 # flags in device memory have moved on with the failed attempt, so these stay monotonic
 # (rolled back, the next exchange would wait for -- or accept -- a stale flag)
-SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq'}
+# fin51-1014: acc_nccl is the lazily made NCCL communicator's state (with acc_ncomm, a
+# pointer, not visited): rolled back to -1 a retry would make a second communicator
+SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab']   # structs holding Views: recurse
 
 def ast(header, name):
@@ -56,7 +58,7 @@ def emit(fields, pre, out, skipped):
         base = re.sub(r'(\[\d+\])+$', '', t).strip()
         dims = re.findall(r'\[(\d+)\]', t[len(base):])
         if n in SKIP_NAMES:
-            skipped.append(nm + ' : ' + t + ' (protocol counter, kept monotonic)'); continue
+            skipped.append(nm + ' : ' + t + (' (communicator state, kept)' if n == 'acc_nccl' else ' (protocol counter, kept monotonic)')); continue
         if t.startswith('const ') or t.endswith('*') or '(*)' in t or t.endswith('&'):
             skipped.append(nm + ' : ' + t); continue
         if any(re.search(p, base) for p in SKIP_RE):

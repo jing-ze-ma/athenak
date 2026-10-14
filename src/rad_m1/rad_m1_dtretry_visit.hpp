@@ -517,6 +517,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("gf_hx", gf_hx);
   v.view("gf_gn", gf_gn);
   v.view("gf_x", gf_x);
+  v.view("gf_y", gf_y);
+  v.view("gf_el", gf_el);
+  v.view("gf_pv", gf_pv);
+  v.value("acc_gfs", acc_gfs);
   v.view("gf_ainv", gf_ainv);
   v.view("gf_okd", gf_okd);
   v.value("impl_rho_direct", impl_rho_direct);
@@ -927,6 +931,30 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_base", vgd_base);
   v.view("vgd_dir", vgd_dir);
   v.value("vgd_i", vgd_i);
+  v.value("vgd_ring", vgd_ring);
+  v.value("vgd_ring_named", vgd_ring_named);
+  v.value("vgd_ring_par", vgd_ring_par);
+  v.value("vgd_ring_act", vgd_ring_act);
+  v.value("vgd_ring_poison", vgd_ring_poison);
+  v.value("vgd_rg_two", vgd_rg_two);
+  v.value("vgd_rg_lastx", vgd_rg_lastx);
+  v.value("vgd_rg_lastx_e", vgd_rg_lastx_e);
+  v.value("vgd_rg_offc", vgd_rg_offc);
+  v.value("vgd_rg_soff", vgd_rg_soff);
+  v.value("vgd_rg_wfull", vgd_rg_wfull);
+  v.value("vgd_rg_state", vgd_rg_state);
+  v.value("vgd_rg_sown", vgd_rg_sown);
+  v.value("vgd_rg_so", vgd_rg_so);
+  v.value("vgd_rg_sn", vgd_rg_sn);
+  v.value("vgd_rg_sk", vgd_rg_sk);
+  v.value("vgd_rg_se", vgd_rg_se);
+  v.value("vgd_rg_stop", vgd_rg_stop);
+  v.view("vgd_rg_store", vgd_rg_store);
+  v.view("vgd_rg_doffc", vgd_rg_doffc);
+  v.view("vgd_rg_dsoff", vgd_rg_dsoff);
+  v.value("vgd_rg_pend", vgd_rg_pend);
+  v.value("vgd_rg_nk", vgd_rg_nk);
+  v.value("vgd_rg_ndense", vgd_rg_ndense);
   v.view("vgd_i_c", vgd_i_c);
   v.view("vgd_wall", vgd_wall);
   v.view("vgd_map", vgd_map);
@@ -1191,6 +1219,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   vgd_ipc_err : int *
 //   vgd_ipc_seq : long long (protocol counter, kept monotonic)
 //   vgd_hlp : VgdHlPend
+//   acc_nccl : int (communicator state, kept)
+//   acc_ncomm : void *
 //   vgd_tabf : std::future<void>
 //   vgd_tex : DevExeSpace
 //   vgd_athr : std::thread
