@@ -75,6 +75,11 @@
 #if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
 #include <nccl.h>
 #define M1_VGD_NCCL_ON 1
+#define M1_VGD_STREAM(ex) (ex).cuda_stream()
+#elif defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_HIP)
+#include <rccl/rccl.h>
+#define M1_VGD_NCCL_ON 1
+#define M1_VGD_STREAM(ex) (ex).hip_stream()
 #else
 #define M1_VGD_NCCL_ON 0
 #endif
@@ -2472,7 +2477,7 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       // accel-1014: stream-ordered behind the pack; the scatter (VetGdHlEnd) is
       // stream-ordered behind the receives
       ncclComm_t nc = static_cast<ncclComm_t>(acc_ncomm);
-      cudaStream_t st = vgd_cur.cuda_stream();
+      auto st = M1_VGD_STREAM(vgd_cur);
       vgd_hlp.tq.reset();
       vgd_hlp.req.clear();
       vgd_hlp.mrg = mrg;
