@@ -70,3 +70,13 @@ Run dirs:
 - **BSG:** tlim stays at 4.96e6 (57.4 d, the paper comparison).
 - **E1 (e1s task):** the user asked the same for E1. The production deck copy gets tlim = 1e9 and run.cfg TLIM=1e9, with the longest walltime.
 - **Walltime policy:** new links use the longest walltime allowed, 7 d on QoS normal. QoS long allows 14 d but only 1 job per user at lowest priority.
+
+## 10-14 07:30 PDT: BSG 4-GPU job hung and was restarted
+
+- **The hang:** bsgLIw4 4490079 stopped advancing at 05:36 PDT, at cycle 21300, t = 1.777e6. The GPUs sat at 0 % and the log was idle for about 2 h. The log ends with `UCX ERROR failed to attach xpmem ... Cannot allocate memory` and `failed to unpack remote key`.
+- **The fix:**
+  - 4490079 was stopped.
+  - `export UCX_TLS=^xpmem` (transport only; numerics unchanged) was added to bsgli wide4/run/run.cfg, the hegiant wide4/run/run.cfg (applies from the next link) and the e1s prod/run.cfg (from the next link).
+  - The run was resubmitted as bsgLIw4 4514246, 7 d, restarting from the newest valid rst (00020, t ~1.75e6). The layout is the same 4 ranks, so the restart is bitwise-capable.
+- **New watcher:** Caltech now runs a stall watcher that wakes if any run's log is idle for more than 30 min while its job is RUNNING.
+- Raven's dc7dc645 (Mdot_top = 0 is expected) is noted, thanks.
