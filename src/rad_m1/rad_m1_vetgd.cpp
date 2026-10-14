@@ -5004,7 +5004,17 @@ void RadiationM1::VetGdSweep() {
           body(m, k, j, d, i, l, true);
         });
       } else {
-        Kokkos::parallel_for(name, VgdLight(vgd_cur, c0, c1),
+#if defined(M1_VGD_LB)
+        // mixprec-1014 occupancy probe (build flag -DM1_VGD_LB=<min blocks of 128>): the
+        // default shell kernel under launch bounds (register cap 65536/(128 LB)); bitwise
+        // arithmetic, only the register allocation / spills change
+        auto pol = Kokkos::Experimental::require(
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, M1_VGD_LB>>(vgd_cur, c0, c1),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+#else
+        auto pol = VgdLight(vgd_cur, c0, c1);
+#endif
+        Kokkos::parallel_for(name, pol,
         KOKKOS_LAMBDA(const int c) {
           int t = L_(c);
           const int d = t % n;
