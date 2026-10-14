@@ -6810,6 +6810,9 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     // follows the set in use (VgdPdUpdate, at a sweep start; grown if ever needed)
     a.pd = true;
     a.pdint = static_cast<int64_t>(a.nmb)*c1*a.n*a.nx3*a.nx2;
+    a.pseg = std::max(1, std::min(vgd_pd_seg, std::max(a.nx2, a.nx3)));
+    a.ps = (std::max(a.nx2, a.nx3) + a.pseg - 1)/a.pseg;
+    a.png = 4*a.ps + 4;
     const int nsamp = 16;
     const double per = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : 2.0*M_PI;
     int64_t cap = 0;
@@ -6830,7 +6833,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     }
     a.pdcap = cap + cap/50 + 1024;
     a.dummy = a.pdint + a.pdcap;
-    const size_t nt = static_cast<size_t>(a.nmb)*c1*8;
+    const size_t nt = static_cast<size_t>(a.nmb)*c1*a.png;
     a.prk = DvceArray1D<int>("m1_vgd_pd_rk", nt*a.n);
     a.pcn = DvceArray1D<int>("m1_vgd_pd_cn", nt*(a.w + 1));   // 0: nothing stored yet
     a.pbo = Kokkos::View<int64_t*, DevMemSpace>("m1_vgd_pd_bo", nt*(a.w + 1));
@@ -6838,7 +6841,8 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     Kokkos::deep_copy(a.d, 0.0);
     Kokkos::deep_copy(a.oos, 0.0);
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd_band_pd = " << vgd_pd_mode << ": per-direction band, "
+      std::cout << "<rad_m1> vet_gd_band_pd = " << vgd_pd_mode << " (segments of " << a.pseg
+                << " cells): per-direction band, "
                 << "intensity array " << (a.dummy + 1)*sizeof(Real)/1.0e9 << " GB on rank 0"
                 << " (interior " << a.pdint*sizeof(Real)/1.0e9 << ", band capacity "
                 << a.pdcap*sizeof(Real)/1.0e9 << "; the per-shell band was "
@@ -6891,21 +6895,49 @@ int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
   auto sb_ = a.sb;
   auto wi_ = a.wi;
   auto dir_ = dir;
-  // (A) per (m, R, d, dl): the largest psi of the layer's cells on the inward (mu < 0)
+  const int ps = a.ps, pseg = a.pseg, ng = a.png;
+  // group g -> (ek, ej) of its neighbour slot and its side segment s
+  auto grp = [=] KOKKOS_FUNCTION (const int g, int &ek, int &ej, int &sg) {
+    if (g < 4*ps) {
+      const int side = g/ps;
+      sg = g % ps;
+      ek = (side == 0) ? -1 : ((side == 1) ? 1 : 0);
+      ej = (side == 2) ? -1 : ((side == 3) ? 1 : 0);
+    } else {
+      const int c = g - 4*ps;
+      ek = (c < 2) ? -1 : 1;
+      ej = (c % 2 == 0) ? -1 : 1;
+      sg = 0;
+    }
+  };
+  // the cells of group g in layer dl: [p0, p1) (sides: the segment; corners: the ring)
+  auto cells = [=] KOKKOS_FUNCTION (const int ek, const int ej, const int sg, const int dl,
+                                    int &pa, int &pb) {
+    if (ek != 0 && ej != 0) {
+      pa = 0;
+      pb = 2*dl - 1;
+    } else {
+      const int L = (ek != 0) ? nx2 : nx3;
+      pa = sg*pseg;
+      pb = (pa + pseg < L) ? (pa + pseg) : L;
+      if (pb < pa) {pb = pa;}
+    }
+  };
+  // (A) per (m, g, d, dl): the largest psi of the layer's cells on the inward (mu < 0)
   // and outward (mu >= 0) branch (-1: none), and whether a cell is tangent (|mu| < 1e-12)
-  const size_t nl = static_cast<size_t>(nmb)*8*n*W1;
+  const size_t nl = static_cast<size_t>(nmb)*ng*n*W1;
   DvceArray1D<Real> pin("m1_vgd_pd_pin", nl), pou("m1_vgd_pd_pou", nl);
   DvceArray1D<int> ptn("m1_vgd_pd_tan", nl);
-  par_for("m1_vgd_pd_psi", DevExeSpace(), 0, nmb - 1, 0, 7, 0, n - 1, 1, w,
-  KOKKOS_LAMBDA(const int m, const int r8, const int d, const int dl) {
-    const int oo = (r8 < 4) ? r8 : (r8 + 1);
-    const int ek = oo/3 - 1, ej = oo%3 - 1;
+  par_for("m1_vgd_pd_psi", DevExeSpace(), 0, nmb - 1, 0, ng - 1, 0, n - 1, 1, w,
+  KOKKOS_LAMBDA(const int m, const int g, const int d, const int dl) {
+    int ek, ej, sg, pa, pb;
+    grp(g, ek, ej, sg);
+    cells(ek, ej, sg, dl, pa, pb);
     const int lx2 = lx_(m,0), lx3 = lx_(m,1);
-    const int np = (ek != 0 && ej != 0) ? (2*dl - 1) : ((ek != 0) ? nx2 : nx3);
     const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
     Real mi = -1.0, mo = -1.0;
     int tn = 0;
-    for (int p = 0; p < np; ++p) {
+    for (int p = pa; p < pb; ++p) {
       int dlk = 0, dlj = 0, pk = 0, pj = 0;
       if (ek != 0 && ej != 0) {
         if (p < dl) {dlk = dl; dlj = p + 1;} else {dlj = dl; dlk = p - dl + 1;}
@@ -6925,12 +6957,12 @@ int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
       const Real psi = acos(fmin(fabs(mu), 1.0));
       if (mu < 0.0) {mi = fmax(mi, psi);} else {mo = fmax(mo, psi);}
     }
-    const size_t q = ((static_cast<size_t>(m)*8 + r8)*n + d)*W1 + dl;
+    const size_t q = ((static_cast<size_t>(m)*ng + g)*n + d)*W1 + dl;
     pin(q) = mi;
     pou(q) = mo;
     ptn(q) = tn;
   });
-  // (B) per (m, i, R, d): the deepest stored layer
+  // (B) per (m, i, g, d): the deepest stored layer
   const int is = indcs.is, ie = indcs.ie;
   const int lcut = indcs.is + vgd_scut;
   DvceArray1D<Real> shr("m1_vgd_pd_shr", 3*c1);
@@ -6951,17 +6983,18 @@ int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
     Kokkos::deep_copy(shr, shr_h);
     Kokkos::deep_copy(shi, shi_h);
   }
-  const size_t nt = static_cast<size_t>(nmb)*c1*8;
+  const size_t nt = static_cast<size_t>(nmb)*c1*ng;
   DvceArray1D<int> wd("m1_vgd_pd_wd", nt*n);
-  par_for("m1_vgd_pd_wd", DevExeSpace(), 0, nmb - 1, 0, c1 - 1, 0, 7, 0, n - 1,
-  KOKKOS_LAMBDA(const int m, const int i, const int r8, const int d) {
-    const int oo = (r8 < 4) ? r8 : (r8 + 1);
-    const int ek = oo/3 - 1, ej = oo%3 - 1;
+  par_for("m1_vgd_pd_wd", DevExeSpace(), 0, nmb - 1, 0, c1 - 1, 0, ng - 1, 0, n - 1,
+  KOKKOS_LAMBDA(const int m, const int i, const int g, const int d) {
+    int ek, ej, sg, pa, pb;
+    grp(g, ek, ej, sg);
+    cells(ek, ej, sg, 1, pa, pb);
     const int sk = (ek < 0) ? sb_(m,0) : ((ek > 0) ? sb_(m,1) : 1);
     const int sj = (ej < 0) ? sb_(m,2) : ((ej > 0) ? sb_(m,3) : 1);
     int wout = 0;
     const int wl = wi_(i);
-    if (sk != 0 && sj != 0 && wl > 0) {
+    if (sk != 0 && sj != 0 && wl > 0 && pb > pa) {
       const int lx2 = lx_(m,0), lx3 = lx_(m,1);
       const bool wall = (lx2 + ej < 0) || (lx2 + ej >= nb2) || (lx3 + ek < 0) ||
                         (lx3 + ek >= nb3);
@@ -6969,7 +7002,7 @@ int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
       const bool hasm = (shi(4*i) != 0), hasp = (shi(4*i+1) != 0);
       const int wsi = shi(4*i+2), wso = shi(4*i+3);
       for (int dl = 1; dl <= wl; ++dl) {
-        const size_t q = ((static_cast<size_t>(m)*8 + r8)*n + d)*W1 + dl;
+        const size_t q = ((static_cast<size_t>(m)*ng + g)*n + d)*W1 + dl;
         bool kin = false, kout = false;
         if (wall && wfull) {
           kin = (dl <= wsi);
@@ -7000,9 +7033,9 @@ int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
         if (kin || kout) {wout = dl;}
       }
     }
-    wd(((static_cast<size_t>(m)*c1 + i)*8 + r8)*n + d) = wout;
+    wd(((static_cast<size_t>(m)*c1 + i)*ng + g)*n + d) = wout;
   });
-  // (C) per (m, i, R): the order (deepest first, then d) and the counts per layer
+  // (C) per (m, i, g): the order (deepest first, then d) and the counts per layer
   DvceArray1D<int> prk("m1_vgd_pd_rk", nt*n), pcn("m1_vgd_pd_cn", nt*W1);
   par_for("m1_vgd_pd_rank", DevExeSpace(), 0, static_cast<int>(nt) - 1,
   KOKKOS_LAMBDA(const int b) {
@@ -7019,20 +7052,19 @@ int64_t RadiationM1::VgdPdLayout(VgdRag &a, const DvceArray2D<Real> &dir,
       for (int dl = 1; dl <= wv; ++dl) {pcn(static_cast<size_t>(b)*W1 + dl) += 1;}
     }
   });
-  // (D) the layer offsets (an exclusive scan in (m, i, R, dl) order) behind the interior
+  // (D) the layer offsets (an exclusive scan in (m, i, g, dl) order) behind the interior
   Kokkos::View<int64_t*, DevMemSpace> pbo("m1_vgd_pd_bo", nt*W1);
   const int64_t pint = a.pdint;
   int64_t tot = 0;
   Kokkos::parallel_scan("m1_vgd_pd_scan", Kokkos::RangePolicy<>(0, nt*W1),
   KOKKOS_LAMBDA(const size_t q, int64_t &acc, const bool fin) {
     const int dl = static_cast<int>(q % W1);
-    const int r8 = static_cast<int>((q/W1) % 8);
-    const int oo = (r8 < 4) ? r8 : (r8 + 1);
-    const int ek = oo/3 - 1, ej = oo%3 - 1;
-    const int64_t ring = (dl == 0) ? 0 : ((ek != 0 && ej != 0) ? (2*dl - 1)
-                                         : ((ek != 0) ? nx2 : nx3));
+    const int g = static_cast<int>((q/W1) % ng);
+    int ek, ej, sg, pa = 0, pb = 0;
+    grp(g, ek, ej, sg);
+    if (dl > 0) {cells(ek, ej, sg, dl, pa, pb);}
     if (fin) {pbo(q) = pint + acc;}
-    acc += ring*pcn(q);
+    acc += static_cast<int64_t>(pb - pa)*pcn(q);
   }, tot);
   if (apply) {
     a.prk = prk;

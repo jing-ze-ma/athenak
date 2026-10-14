@@ -2079,16 +2079,18 @@ class RadiationM1 {
     int64_t dummy = 0;
     // mem-1014 vet_gd_band_pd (per-direction band): the interior slabs first, (m, i) at
     // ((m c1 + i) n nx3 nx2), d fastest, then k, then j (as the dense slab), then the
-    // band: per (m, i, region R, depth dl) one layer of ring cells, each holding the
-    // directions stored there (pcn of them, in the order prk).  Region R = the 8 lateral
-    // neighbour slots o (o = 3 (ek+1) + (ej+1), the centre skipped); depth dl >= 1 the
-    // distance beyond the block edge (corners: max of the two); a direction d is stored
-    // in (m, i, R, dl) iff prk < pcn, i.e. iff the deepest layer it is needed in
-    // (VgdHaloKeep, mode 2, either pass) is >= dl.  Same index space as the dense band.
+    // band: per (m, i, group g, depth dl) one layer of cells, each holding the directions
+    // stored there (pcn of them, in the order prk).  Groups: the 4 sides (k-, k+, j-, j+)
+    // in segments of pseg cells along the side (ps per side), then the 4 corners; depth
+    // dl >= 1 the distance beyond the block edge (corners: the larger of the two); a
+    // direction d is stored in (m, i, g, dl) iff prk < pcn, i.e. iff the deepest layer it
+    // is needed in (VgdHaloKeep, mode 2, either pass) is >= dl.  Same index space as the
+    // dense band.
     bool pd = false;
-    DvceArray1D<int> prk;                       // ((m c1 + i) 8 + R) n + d
-    DvceArray1D<int> pcn;                       // ((m c1 + i) 8 + R)(w + 1) + dl
-    Kokkos::View<int64_t*, DevMemSpace> pbo;    // ((m c1 + i) 8 + R)(w + 1) + dl
+    int pseg = 1, ps = 1, png = 8;              // segment length, segments per side, groups
+    DvceArray1D<int> prk;                       // ((m c1 + i) png + g) n + d
+    DvceArray1D<int> pcn;                       // ((m c1 + i) png + g)(w + 1) + dl
+    Kokkos::View<int64_t*, DevMemSpace> pbo;    // ((m c1 + i) png + g)(w + 1) + dl
     int64_t pdint = 0;                          // the interior elements (band at pdint)
     int64_t pdcap = 0;                          // the band capacity (elements)
     // is (k, j) of shell i of block m stored?  (band index space of depth w)
@@ -2111,21 +2113,22 @@ class RadiationM1 {
       }
       const int dk = (ek < 0) ? -kk : ((ek > 0) ? (kk - nx3 + 1) : 0);
       const int dj = (ej < 0) ? -jj : ((ej > 0) ? (jj - nx2 + 1) : 0);
-      const int oo = 3*(ek + 1) + (ej + 1);
-      const int r8 = (oo < 4) ? oo : (oo - 1);
-      int dl, p;
-      if (ek == 0) {
+      int dl, p, g;
+      if (ek == 0) {            // a j side: along k
         dl = dj;
-        p = kk;
-      } else if (ej == 0) {
+        g = ((ej < 0) ? 2 : 3)*ps + kk/pseg;
+        p = kk % pseg;
+      } else if (ej == 0) {     // a k side: along j
         dl = dk;
-        p = jj;
-      } else {
+        g = ((ek < 0) ? 0 : 1)*ps + jj/pseg;
+        p = jj % pseg;
+      } else {                  // a corner
         dl = (dk > dj) ? dk : dj;
+        g = 4*ps + ((ek < 0) ? 0 : 2) + ((ej < 0) ? 0 : 1);
         p = (dk == dl) ? (dj - 1) : (dl + dk - 1);
       }
       if (dl > w) {return -1;}
-      const int64_t b = (static_cast<int64_t>(m)*c1 + i)*8 + r8;
+      const int64_t b = (static_cast<int64_t>(m)*c1 + i)*png + g;
       const int c = pcn(b*(w + 1) + dl);
       const int r = prk(b*n + v);
       if (r >= c) {return -1;}
@@ -2170,7 +2173,7 @@ class RadiationM1 {
   // (VgdHaloKeep, mode 2) into a's tables (apply) or only its size; VgdPdUpdate re-lays
   // vgd_i (and the fused twin) when the set or the cut changed (at a sweep start)
   bool vgd_pd = false, vgd_pd_named = false;
-  int vgd_pd_mode = 2;
+  int vgd_pd_mode = 2, vgd_pd_seg = 8;
   int64_t vgd_pd_lastband = 0;
   Real vgd_pd_alpha = -2.0;
   int vgd_pd_scut = -1;

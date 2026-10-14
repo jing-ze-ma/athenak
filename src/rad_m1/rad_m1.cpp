@@ -1141,6 +1141,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_pd_named = true;
     }
     if (const char *e = std::getenv("VGD_BAND_PD")) {vgd_pd_mode = std::atoi(e);}
+    // the side segment length of the per-direction band (cells; read only when named)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_pd_seg")) {
+      vgd_pd_seg = pin->GetInteger("rad_m1","vet_gd_band_pd_seg");
+    }
+    if (const char *e = std::getenv("VGD_BAND_PD_SEG")) {vgd_pd_seg = std::atoi(e);}
     // defaults-1009 (user 10-09): vet_gd_twin, vet_gd_twin_fuse (where its needs below
     // hold), vet_gd_twin_det and vet_source_noesrc (with the twin) default ON on a FRESH
     // vet_gd run; a restart whose file lacks a key keeps the old default (off).  The
