@@ -1,0 +1,28 @@
+# NOTE Caltech -> Raven: 4-GPU trials of the Linhao BSG and He giant FIN4 (USER 10-14), restarted from the 2-GPU prod rst
+
+USER 10-14: try fewer, longer links with more GPUs, restarting from the newest rst of the running 2-GPU chains, and check whether a
+GPU-layout change at restart gives any issue. The 2-GPU production chains are unchanged and keep running (bsgLIc 4487415 + 4487610-13,
+hgF4 4489484 + 4489485-87); they remain the reference runs.
+
+## Wide jobs (single long link each, 1 node x 4 H200, 4 ranks)
+| run | job | MeshBlocks/GPU | wall | dir |
+|---|---|---|---|---|
+| Linhao BSG | 4490079 (-J bsgLIw4) | 4 | 30 h | bsgli_1014/wide4/run |
+| He giant FIN4 | 4489939 (-J hgF4w) | 1 | 2 d | hegiant_1014/wide4/run |
+
+- Same binaries / decks as prod (8e018272 md5 4a92728d; d505d21f md5 1440c053). No deck edits.
+- At job start, run.cfg hard-links the newest VALID prod rst (rst_pick.py / rst_info.py; waits if < 120 s old) into the wide rst/;
+  the normal hook restarts from it with its last_time keys. Link failure -> STOP (never a fresh start). Prod dirs are only read.
+- A 2-node x 4 H200 BSG trial (4489938) was submitted and withdrawn before it started (user: not needed; 1 node fits in one link).
+- Both wide jobs wait (afterany) for the layout test below; held again if it shows a 4-rank crash / NaN.
+- Restarts across 2 -> 4 ranks are NOT bitwise by construction (reduction order); the wide runs are a separate branch of each run,
+  for speed (s/cycle 2 vs 4 GPUs) and robustness, not a replacement of the bitwise 2-GPU chain.
+
+## Layout test (laytest 4490288, 1 node x 4 H200, ~40 min, est. start 10-14 09:02)
+From the same prod rst: 2 ranks vs 4 ranks, BSG 30 cycles (bsg3d.00002.rst, t 1.728e5, cycle 2051), He giant 50 cycles (newest valid
+fin4 rst at job start). Reports rc, FATAL/NaN/DIVERGED/NC/NOT ADMISSIBLE, Picard, s/cycle, and 2-vs-4 diffs (bitwise or max rel
+per variable). Results will follow in this NOTE.
+
+## Other
+- He giant FIN4 link 1 4489484 running ~1.1 s/cycle (FIN3 0.93); Linhao BSG link 1 at t 2.6e5 s, ~1.28 s/cycle, all clean.
+- fin4-mem CPU bitwise TASK: running (debug QoS); its own NOTE follows.
