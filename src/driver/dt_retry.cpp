@@ -291,7 +291,13 @@ void DtRetry::Save(Mesh *pm) {
     if (global_variable::my_rank == 0) {
       std::cout << "<time> dt_retry checkpoint: " << ent_.size() << " members, " << nv
                 << " Views (" << nd << " copied, " << static_cast<double>(b)/1.0e6
-                << " MB on rank 0)" << std::endl;
+                << " MB on rank 0):";
+      for (auto &e : ent_) {
+        if (e->Bytes() > 0) {
+          std::cout << " " << e->name << " " << static_cast<double>(e->Bytes())/1.0e6;
+        }
+      }
+      std::cout << std::endl;
     }
   }
   nsave_ += 1;
