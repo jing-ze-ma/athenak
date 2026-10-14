@@ -11503,6 +11503,50 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
   }
+  // fin4-linhao-bc (impl_lbath, rad_m1.hpp): the ghost side of the inner face, from the
+  // x1 ghosts the problem generator's BC filled (fixed over the solve)
+  if (impl_lbath) {
+    if (!(sph_geom && sph_q && have_hydro) || bclo != M1_IBC_FLUX || cyclic) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/he_bc_linhao: the inner ghost bath needs the "
+                << "spherical-polar wedge with the chi closure (sph_q), a fluid and "
+                << "implicit_bc_x1min = flux" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (lbath_g.extent_int(0) != nmb1 + 1) {
+      Kokkos::realloc(lbath_g, nmb1 + 1, 7, iw.extent_int(2), iw.extent_int(3));
+      Kokkos::deep_copy(lbath_g, 0.0);
+    }
+    auto lg_ = lbath_g;
+    auto eos = flr.eos;
+    const bool ovl = ovc;
+    par_for("m1_impl_lbath", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (pos_.d_view(m) != 0) return;
+      const int g1 = is - 1, g2 = is - 2;
+      const Real e1 = fmax(u0_(m,M1_E,k,j,g1), efl);
+      const Real e2 = fmax(u0_(m,M1_E,k,j,g2), efl);
+      const Real f1 = u0_(m,M1_F1,k,j,g1);
+      const Real d1 = uh(m,IDN,k,j,g1), d2 = uh(m,IDN,k,j,g2);
+      const Real v1 = uh(m,IM1,k,j,g1)/d1, v2 = uh(m,IM1,k,j,g2)/d2;
+      Real eg = uh(m,IEN,k,j,g1) - 0.5*(SQR(uh(m,IM1,k,j,g1)) + SQR(uh(m,IM2,k,j,g1))
+                                      + SQR(uh(m,IM3,k,j,g1)))/d1;
+      if (etg) {eg -= d1*phicc(m,k,j,g1);}
+      const Real tg = eos.Temperature(d1, fmax(eg, 1.0e-300));
+      // the lag kernel's g0 = rho (kappa_E (E + dE0) - kappa_P a T^4) with D = I/3
+      const Real b1 = v1/cl;
+      const Real bf = b1*f1/cl;
+      const Real de0 = ovl ? (-2.0*bf) : (b1*b1*e1 - 2.0*bf + b1*b1*e1/3.0);
+      lg_(m,0,k,j) = e1;
+      lg_(m,1,k,j) = e2;
+      lg_(m,2,k,j) = opac_(m,M1_OP_T,k,j,g1);
+      lg_(m,3,k,j) = v1;
+      lg_(m,4,k,j) = opac_(m,M1_OP_E,k,j,g1)*(e1 + de0)
+                     - opac_(m,M1_OP_P,k,j,g1)*ar*SQR(SQR(tg));
+      lg_(m,5,k,j) = v1 + v1/3.0;
+      lg_(m,6,k,j) = v2 + v2/3.0;
+    });
+  }
 
   // The SCALE of the Picard convergence test.  With implicit_res_floor = 0 (the 3a
   // default) the residual is the pure relative change |dE|/E, which in a run with a large
@@ -12585,6 +12629,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int ogm = impl_opn_guard_mode;
     const bool opgd = (opg > 0.0) && (opnr || opns);
     auto nsk_ = opn_nskip_d;
+    const bool lbath = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
+    auto lgr_ = lbath_g;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -12973,7 +13019,72 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         } else if (bchi == M1_IBC_FLUX) {
           rr -= nup*cr*fxhi;
         }
-        if (i > is || !botb) {
+        if (lbath && i == is && botb) {
+          // fin4-linhao-bc: the face i-1/2 of the branch below (an interior face whose
+          // other cell is a ghost) with the ghost's own quantities (lgr_, rad_m1.hpp):
+          // D = 1/3 and no curvature / lateral term on the ghost side; its E is fixed,
+          // so the neighbour entry goes to the right-hand side.  No opac Newton term (as
+          // at a block edge, im < is); the plm enthalpy stencil reads ghosts 1 and 2.
+          const int im = is - 1;
+          const Real eg1 = lgr_(m,0,k,j), eg2 = lgr_(m,1,k,j);
+          const Real ag1 = lgr_(m,5,k,j), ag2 = lgr_(m,6,k,j);
+          Real ktf = M1FaceAvgX1(lgr_(m,2,k,j), iw_(m,M1_IW_KT,k,j,i), cx1f, m, im, i,
+                                 fwd);
+          Real th = 1.0/(1.0 + ch*dt*ktf);
+          Real tw = th;
+          if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i))*th;}
+          Real df = tw*ch*ch*dt/cdxf.x1f(m,k,j,i);
+          Real rf = cx1f(m,i);
+          Real si = SQR(cx1v(m,i)/rf), sm = SQR(cx1v(m,im)/rf);
+          Real n1i = trans ? iw_(m,M1_IW_N1,k,j,i) : 1.0;
+          Real wil = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1i, si);
+          Real wm = M1SphDrr(1.0/3.0, 0.0, sm);
+          if (trans) {
+            Real od = 0.5*(0.0 + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,
+                                           ju,kl,ku,M1_IW_EP));
+            if (vlat) {
+              od += 0.5*(0.0 + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,i,thrd,il,iu,
+                                        jl,ju,kl,ku,M1_IW_EP));
+            }
+            rr -= num*cr*tw*ch*cl*dt*od;
+            d_[10] -= num*cr*tw*ch*cl*dt*od;
+          }
+          bb += num*df*wil;
+          d_[0] += num*df*wil;
+          rr += num*df*wm*eg1;
+          Real vf = M1FaceAvgX1(lgr_(m,3,k,j), vi, cx1f, m, im, i, fwd);
+          Real g0f = M1FaceAvgX1(lgr_(m,4,k,j), iw_(m,M1_IW_G0,k,j,i), cx1f, m, im, i,
+                                 fwd);
+          rr += num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+          d_[11] += num*cr*tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+          if (aphll) {
+            rr += num*ifw_(m,M1_IFW_HCL,k,j,i)*eg1;
+            bb -= num*ifw_(m,M1_IFW_HCR,k,j,i);
+            rr += num*ifw_(m,M1_IFW_DG,k,j,i);
+          }
+          if (vf > 0.0) {
+            rr += num*cr*ag1*eg1;
+          } else {
+            bb -= num*cr*ai;
+            d_[2] -= num*cr*ai;
+          }
+          const Real re1_ = rr;
+          if (enth2) {
+            bool o3;
+            int i3 = M1EnthIdx(i+1, is, ie, false, hxl, hxh, o3);
+            if (t2vs) {
+              rr += num*cr*M1EnthCorrT(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,i),
+                                       iw_(m,M1_IW_EP,k,j,i3), o3, ag2, ag1, ai,
+                                       iw_(m,M1_IW_ADV,k,j,i3), 0.0, 0.0,
+                                       iw_(m,t2da,k,j,i), iw_(m,t2da,k,j,i3), vf, t2afc);
+            } else {
+              rr += num*cr*M1EnthCorr(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,i),
+                                      iw_(m,M1_IW_EP,k,j,i3), o3, ag2, ag1, ai,
+                                      iw_(m,M1_IW_ADV,k,j,i3), vf);
+            }
+          }
+          d_[13] += rr - re1_;
+        } else if (i > is || !botb) {
           int im = (i > is) ? (i-1) : (is-1);
           Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
                                  im, i, fwd);
@@ -13419,13 +13530,62 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto gz1_ = gcz1;
     const bool cs2z = impl_gas_src_cs2;   // consfix-1011: Z with the true F0^n
     auto q1z_ = cs2f1;
+    const bool lbathf = impl_lbath;   // fin4-linhao-bc (rad_m1.hpp)
+    auto lgf_ = lbath_g;
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
       int ipos = pos_.d_view(m);
       bool lo = (i == is) && (ipos == 0);
       bool hi = (i == ie+1) && (ipos == nblkx1-1);
-      if ((lo || hi) && !cyclic) {
+      if (lbathf && lo) {
+        // fin4-linhao-bc: the interior face formula below (sphq) between the ghost
+        // (lgf_: E, kappa_T, v, g0 of ghost 1; D = 1/3, no curvature / lateral term)
+        // and the first cell -- the flux the row was assembled with (m1_impl_asm)
+        const int im = is - 1, ip = is;
+        const Real eg1 = lgf_(m,0,k,j);
+        Real ktf = M1FaceAvgX1(lgf_(m,2,k,j), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, im, ip,
+                               fwd);
+        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real vf = M1FaceAvgX1(lgf_(m,3,k,j), iw_(m,M1_IW_V1,k,j,ip), cx1f, m, im, ip,
+                              fwd);
+        Real g0f = M1FaceAvgX1(lgf_(m,4,k,j), iw_(m,M1_IW_G0,k,j,ip), cx1f, m, im, ip,
+                               fwd);
+        Real rf = cx1f(m,i);
+        Real n1p = trans ? iw_(m,M1_IW_N1,k,j,ip) : 1.0;
+        Real wps = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), n1p, SQR(cx1v(m,ip)/rf));
+        Real wms = M1SphDrr(1.0/3.0, 0.0, SQR(cx1v(m,im)/rf));
+        Real gr = (wps*iw_(m,M1_IW_EP,k,j,ip) - wms*eg1)/cdxf.x1f(m,k,j,i);
+        Real od = 0.0;
+        if (trans) {
+          int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
+          BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+          BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+          BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+          BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+          if ((q3 == BoundaryFlag::block) || (q3 == BoundaryFlag::periodic)) {jl = js-1;}
+          if ((q4 == BoundaryFlag::block) || (q4 == BoundaryFlag::periodic)) {ju = je+1;}
+          if (thrd && ((q5 == BoundaryFlag::block) ||
+                       (q5 == BoundaryFlag::periodic))) {kl = ks-1;}
+          if (thrd && ((q6 == BoundaryFlag::block) ||
+                       (q6 == BoundaryFlag::periodic))) {ku = ke+1;}
+          od = 0.5*(0.0 + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,ju,kl,
+                                    ku,M1_IW_EP));
+          if (vlat) {
+            od += 0.5*(0.0 + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,0,k,j,ip,thrd,il,iu,
+                                      jl,ju,kl,ku,M1_IW_EP));
+          }
+        }
+        Real fn = th*(f0n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);
+        if (aphll) {
+          Real al = ifw_(m,M1_IFW_AL,k,j,i);
+          Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*eg1
+                    + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
+                    + ifw_(m,M1_IFW_DG,k,j,i);
+          fn = (1.0 - al)*fn + (cl/ch)*gh;
+        }
+        f0_(m,k,j,i) = fn;
+      } else if ((lo || hi) && !cyclic) {
         int bc = lo ? bclo : bchi;
         int ic = lo ? is : ie;
         Real sgn = lo ? -1.0 : 1.0;

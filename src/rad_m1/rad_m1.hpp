@@ -547,6 +547,19 @@ class RadiationM1 {
   // implicit in E of the first cell (a heat bath through the diffusion conductance)
   bool impl_ghx = false;
   Real impl_ghx_e = 0.0;
+  // fin4-linhao-bc (set by the problem generator, problem/he_bc_linhao; default false):
+  // L. Ma's Athena++ inner radiation BC (bsg_star.cpp Inflow_rad_X1).  Nothing is imposed
+  // at the inner x1 face (implicit_bc_x1min = flux is required but its flux is unused):
+  // the face is built by the INTERIOR face formula of the solve (m1_impl_asm sp row,
+  // m1_impl_face) between the first cell and the x1 ghosts, whose state the problem
+  // generator's BC sets in every ghost layer (E = a T_g^4 and F_r of his profile at the
+  // ghost radius, boosted to the lab frame with the ghost velocity).  The ghost side of
+  // the formula: E of ghosts 1 and 2 (u0), kappa_T of ghost 1 (opac), its v_r, the
+  // isotropic Eddington tensor of his two-zone intensities (D = 1/3, no curvature / lateral
+  // term), a = (4/3) v_r and the pointwise g0 of the ghost; lbath_g(m, q, k, j) holds them
+  // per solve (q: 0 E1, 1 E2, 2 kT1, 3 v1, 4 g0, 5 a1, 6 a2).
+  bool impl_lbath = false;
+  DvceArray4D<Real> lbath_g;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,

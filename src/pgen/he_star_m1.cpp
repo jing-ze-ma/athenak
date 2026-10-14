@@ -62,6 +62,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -166,6 +167,15 @@ Real hs_atp_dfl_ = 0.0;
 // problem/he_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
 //   v_r copied where it points out and 0 where it points in.
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
+// fin4-linhao-bc problem/he_bc_linhao (read only when named; default false = bitwise):
+// L. Ma's Athena++ inner boundary (bsg_star.cpp InitUserMeshBlockData bd_data, Inflow_X1,
+// Inflow_rad_X1) on top of he_bc_inner = zerocontact.  hs_lbc_d_(m, g, q): the ghost
+// i = is-1-g of block m, from his profile (problem/he_ic_linhao_file, LINEAR in r at
+// x1v(is-1-g), his lleft/lright search): q = 0 rho, 1 eint (this EOS at his T, i.e. his
+// P = rho T), 2 E = a T^4 (comoving), 3 F_r (comoving).  Built on every start (fresh and
+// restart) from the file alone, so a restart rebuilds the very same numbers.
+bool hs_lbc_ = false;
+DvceArray3D<Real> hs_lbc_d_;
 // problem/mlt_flux_frozen: the frozen MLT flux of the IC on the x1 faces (index = face)
 bool hs_mlt_ = false;
 DvceArray1D<Real> hs_fm_;
@@ -2391,6 +2401,78 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "he_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
       }
     }
+    // fin4-linhao-bc: problem/he_bc_linhao (see hs_lbc_)
+    if (pin->DoesParameterExist("problem","he_bc_linhao")) {
+      hs_lbc_ = pin->GetBoolean("problem","he_bc_linhao");
+    }
+    if (hs_lbc_) {
+      if (!hs_bzc_ || hcs || pm1->ibc_x1min != radm1::M1_IBC_FLUX ||
+          pm1->f0x1.extent_int(0) == 0) {
+        HsFatal("problem/he_bc_linhao needs he_bc_inner = zerocontact, the spherical-polar "
+                "wedge and the implicit rad_m1 transport with implicit_bc_x1min = flux "
+                "(its flux is not used)", __LINE__);
+      }
+      if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
+          || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
+        HsFatal("problem/he_bc_linhao needs <units> length_cgs = mass_cgs = 1", __LINE__);
+      }
+      const std::string lfn = pin->GetString("problem","he_ic_linhao_file");
+      std::vector<Real> pr, pT, pd, pF;
+      {
+        std::ifstream f(lfn);
+        if (!f.good()) HsFatal("cannot open problem/he_ic_linhao_file '" + lfn + "'",
+                               __LINE__);
+        std::string line;
+        while (std::getline(f, line)) {
+          if (line.empty() || line[0] == '#') continue;
+          std::istringstream ss(line);
+          Real a, b, c, d, e, g;
+          if (!(ss >> a >> b >> c >> d >> e >> g)) continue;
+          pr.push_back(a); pT.push_back(b); pd.push_back(c); pF.push_back(g);
+        }
+      }
+      const int np = static_cast<int>(pr.size());
+      if (np < 2) HsFatal("problem/he_ic_linhao_file: fewer than 2 rows", __LINE__);
+      auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+      const int nm = nmb1 + 1, is0 = indcs.is;
+      DualArray3D<Real> lb("hs_lbc", nm, ng, 4);
+      for (int m=0; m<nm; ++m) {
+        for (int g=0; g<ng; ++g) {
+          const Real x1 = hx1v(m,is0-1-g);
+          if (!(x1 >= pr[0] && x1 <= pr[np-1])) {
+            HsFatal("problem/he_bc_linhao: a ghost radius is outside the profile",
+                    __LINE__);
+          }
+          // bsg_star.cpp InitUserMeshBlockData, verbatim
+          int lleft = 0, lright = 1;
+          while ((x1 > pr[lright]) && (lright < np - 1)) lright = lright + 1;
+          if (lright - lleft > 1) lleft = lright - 1;
+          const Real rho = pd[lleft] + (x1 - pr[lleft])*(pd[lright] - pd[lleft])
+                           /(pr[lright] - pr[lleft]);
+          const Real tem = pT[lleft] + (x1 - pr[lleft])*(pT[lright] - pT[lleft])
+                           /(pr[lright] - pr[lleft]);
+          const Real flx = pF[lleft] + (x1 - pr[lleft])*(pF[lright] - pF[lleft])
+                           /(pr[lright] - pr[lleft]);
+          Real ee, pp, cr, ct, cv;
+          const Real tc = tem/hs_tk;
+          eos.ThermoAt(rho, tc, ee, pp, cr, ct, cv);
+          lb.h_view(m,g,0) = rho;
+          lb.h_view(m,g,1) = ee;
+          lb.h_view(m,g,2) = ar*tc*tc*tc*tc;
+          lb.h_view(m,g,3) = flx;
+          if (global_variable::my_rank == 0 && m == 0) {
+            std::cout << std::setprecision(17) << "he_star_m1: he_bc_linhao ghost " << g
+                      << " r " << x1 << " rho " << rho << " T " << tem << " eint " << ee
+                      << " P " << pp << " E " << lb.h_view(m,g,2) << " F_r " << flx
+                      << std::setprecision(6) << std::endl;
+          }
+        }
+      }
+      lb.modify_host();
+      lb.sync_device();
+      hs_lbc_d_ = lb.d_view;
+      pm1->impl_lbath = true;
+    }
     if (hs_bhse_) {
       hs_bhse_gmax_ = pin->GetOrAddReal("problem","he_bc_hse_gmax",0.9);
       hs_bhse_tg_ = pin->GetOrAddBoolean("problem","he_bc_hse_tgrad",false);
@@ -3247,6 +3329,8 @@ void HeStarBC(Mesh *pm) {
   // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
   auto &x1fb = pmbp->pcoord->xx1f;
+  const bool lbc = hs_lbc_;   // fin4-linhao-bc
+  auto lbd = hs_lbc_d_;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -3268,10 +3352,17 @@ void HeStarBC(Mesh *pm) {
         // transverse-momentum and energy fluxes vanish; the momentum flux is p*.
         // S_M increases with vg; bracketed Illinois iteration; no bracket -> mirror v.
         const int g0 = is - 1, g1 = is - 2, ib = is + 1;
-        const Real d0 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g0));
-        const Real e0 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g0));
-        const Real d1 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g1));
-        const Real e1 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g1));
+        Real d0 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g0));
+        Real e0 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g0));
+        Real d1 = HsLogInterp(crho, rlo, dr, nf, x1v(m,g1));
+        Real e1 = HsLogInterp(ceint, rlo, dr, nf, x1v(m,g1));
+        if (lbc) {
+          // fin4-linhao-bc: his bd_data (linear in r in his profile, fixed in time)
+          d0 = lbd(m,0,0);
+          e0 = lbd(m,0,1);
+          d1 = lbd(m,1,0);
+          e1 = lbd(m,1,1);
+        }
         const Real db = uh(m,IDN,k,j,ib);
         const Real vb = uh(m,IM1,k,j,ib)/db;
         const Real eb = uh(m,IEN,k,j,ib) - 0.5*(SQR(uh(m,IM1,k,j,ib))
@@ -3339,17 +3430,31 @@ void HeStarBC(Mesh *pm) {
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g;
           const Real rg = x1v(m,ig);
-          const Real dg = (g == 0) ? d0 : ((g == 1) ? d1 : HsLogInterp(crho, rlo, dr, nf,
-                                                                       rg));
-          const Real eg = (g == 0) ? e0 : ((g == 1) ? e1 : HsLogInterp(ceint, rlo, dr,
-                                                                       nf, rg));
+          Real dg = (g == 0) ? d0 : ((g == 1) ? d1 : HsLogInterp(crho, rlo, dr, nf, rg));
+          Real eg = (g == 0) ? e0 : ((g == 1) ? e1 : HsLogInterp(ceint, rlo, dr, nf, rg));
+          if (lbc) {
+            dg = lbd(m,g,0);
+            eg = lbd(m,g,1);
+          }
           const Real v1 = (g == 0) ? vg : 0.0;
           uh(m,IDN,k,j,ig) = dg;
           uh(m,IM1,k,j,ig) = dg*v1;
           uh(m,IM2,k,j,ig) = 0.0;
           uh(m,IM3,k,j,ig) = 0.0;
           uh(m,IEN,k,j,ig) = eg + 0.5*dg*v1*v1 + dg*phicc(m,k,j,ig);
-          radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+          if (lbc) {
+            // fin4-linhao-bc: his Inflow_rad_X1 in every ghost layer: the two-zone
+            // intensities of E0 = a T^4 and F0 = F_r (comoving; D = 1/3) taken to the lab
+            // frame with the ghost velocity (ComToLab), here the boost of the moments
+            const Real e0r = lbd(m,g,2), f0r = lbd(m,g,3);
+            const Real b = v1/cl, gg = 1.0/(1.0 - b*b);
+            ur(m,radm1::M1_E,k,j,ig) = gg*(e0r + 2.0*b*f0r/cl + b*b*e0r/3.0);
+            ur(m,radm1::M1_F1,k,j,ig) = gg*((1.0 + b*b)*f0r + b*cl*(4.0/3.0)*e0r);
+            ur(m,radm1::M1_F2,k,j,ig) = 0.0;
+            ur(m,radm1::M1_F3,k,j,ig) = 0.0;
+          } else {
+            radm1::M1FillGhost(ur, m, k, j, ig, k, j, ia, 1, 0, -1.0, cl, efl);
+          }
         }
         continue;
       }
