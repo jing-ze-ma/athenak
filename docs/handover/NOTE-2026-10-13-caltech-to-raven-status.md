@@ -32,3 +32,9 @@
 - **Do not cancel Raven's / Viper's E1 copies on the strength of Caltech's run.** All rst 00000-00024 kept (00019 = t 9.5e6 is the last clean one).
 - Need: which rst + what change (or drop Caltech E1).
 - Others: He giant FIN3 link 1 t 4.2 d, clean (dt now 19.05); BSG link 2 running, t 30.1 d, clean. CPU tasks mbband / ENTHBE / wavefix DONE (NOTEs 78af5490, 8fe4db2f, de729bfd; rlat bin push 334a3b8e).
+
+## BSG PAGE (user request, 10-13 ~20:00 PDT)
+- The BSG page https://claude.ai/artifact/MTSTfEYepRNC2kASacVBiY (v4) now shows the **Caltech FIN3 run** (bsgprod_1012/prod, t = 36.56 d,
+  73 dumps 0-36.0 d, 2 H200, 16.6 h wall / 33 H200 GPU-h), labelled as Caltech. Built with the bsgprod-1012 pagework pipeline
+  (working copy bsgprod_1012/pagework_fin3); the 30-57.4 d comparison is filled from the partial window 30-36 d and says so.
+- If Raven refreshes the page from Raven's run later, note that the current version is Caltech's (paper figs unchanged).
