@@ -13600,9 +13600,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           fn = (1.0 - al)*fn + (cl/ch)*gh;
         }
         f0_(m,k,j,i) = fn;
-        // the wall-flux diagnostic: + the donor enthalpy flux of the row
-        const Real adf = (vf > 0.0) ? lgf_(m,5,k,j)*eg1
-                         : iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip);
+        // the wall-flux diagnostic: the whole lab flux the row applies, i.e. + the donor
+        // enthalpy flux and its plm correction, with the row's own arguments
+        Real adf = (vf > 0.0) ? lgf_(m,5,k,j)*eg1
+                   : iw_(m,M1_IW_ADV,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip);
+        if (enth2) {
+          const int i3 = (ip + 1 <= ie) ? (ip + 1) : ip;
+          const bool o3 = (ip + 1 <= ie);
+          const Real eg2 = lgf_(m,1,k,j), ag1 = lgf_(m,5,k,j), ag2 = lgf_(m,6,k,j);
+          if (t2vs) {
+            adf += M1EnthCorrT(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,ip),
+                               iw_(m,M1_IW_EP,k,j,i3), o3, ag2, ag1,
+                               iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), 0.0, 0.0,
+                               iw_(m,t2da,k,j,ip), iw_(m,t2da,k,j,i3), vf, t2afc);
+          } else {
+            adf += M1EnthCorr(enm, eg2, eg1, iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
+                              o3, ag2, ag1, iw_(m,M1_IW_ADV,k,j,ip),
+                              iw_(m,M1_IW_ADV,k,j,i3), vf);
+          }
+        }
         lff_(m,3,k,j) = fn + adf;
       } else if ((lo || hi) && !cyclic) {
         int bc = lo ? bclo : bchi;
