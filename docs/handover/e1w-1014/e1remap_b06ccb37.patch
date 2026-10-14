@@ -1,0 +1,230 @@
+diff --git a/src/pgen/he_star_m1.cpp b/src/pgen/he_star_m1.cpp
+index 06693475..eab5ab59 100644
+--- a/src/pgen/he_star_m1.cpp
++++ b/src/pgen/he_star_m1.cpp
+@@ -463,6 +463,8 @@ std::vector<char> HsAdaptiveRstWrite();
+ void HeStarFinal(ParameterInput *pin, Mesh *pm);
+ void HeStarIcPost(Mesh *pm);
+ void HeStarIcEquil(Mesh *pm);
++void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
++                 const int *n);
+ void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
+                  const std::vector<Real> &pc0, const std::vector<Real> &pf0,
+                  const std::vector<Real> &p0c, const std::vector<Real> &p0f,
+@@ -2207,11 +2209,74 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+   // so the adaptive state below reads the block as before); the rad_m1 counters restart
+   // at 0, so the window base is minus the open window's sums
+   hs_mesh_ = pmy_mesh_;
++  // e1remap-1014 problem/he_ic_remap_file (read only when named; absent = nothing,
++  // bitwise the old code): a FRESH start whose state is a remapped restart of another
++  // run (tools: remap_e1w.py).  The file carries the parent's time, its pgen restart
++  // block (Picard window + the he_ic_equil a_ref trailer, applied below exactly as a
++  // restart applies them) and u0, the M1 u0 and f0x1 of this mesh including ghosts.
++  // <time>/start_time must equal the parent's time (bitwise; the generated deck sets it)
++  // so that w_mlt(t), the vet_gd rotation clock (physical) and the outputs continue.  No
++  // ic_rad, no he_ic_equil, no seed; everything else is a fresh start (hesdirk2 starts
++  // with time2_start, the implicit F0 faces from implicit_f0_init, empty rotavg history).
++  const bool hs_rmp = !restart &&
++                      pin->DoesParameterExist("problem","he_ic_remap_file");
++  std::string hs_rmp_fn;
++  std::int64_t hs_rmp_data = 0;   // byte offset of the arrays
++  int hs_rmp_n[4] = {0, 0, 0, 0};  // ng, nx1, nx2, nx3
++  if (hs_rmp) {
++    hs_rmp_fn = pin->GetString("problem","he_ic_remap_file");
++    std::ifstream rf(hs_rmp_fn, std::ios::binary);
++    if (!rf) HsFatal("cannot open problem/he_ic_remap_file " + hs_rmp_fn, __LINE__);
++    char mg[8];
++    std::int32_t hi[8];
++    double hd[7];
++    std::uint64_t npg = 0;
++    rf.read(mg, 8);
++    rf.read(reinterpret_cast<char*>(hi), sizeof(hi));
++    rf.read(reinterpret_cast<char*>(hd), sizeof(hd));
++    rf.read(reinterpret_cast<char*>(&npg), sizeof(npg));
++    if (!rf || std::memcmp(mg, "HSREMAP1", 8) != 0 || hi[0] != 1 || hi[5] != 5 ||
++        hi[6] != 4 || npg > (1u << 30)) {
++      HsFatal("problem/he_ic_remap_file: not a version-1 HSREMAP1 file", __LINE__);
++    }
++    auto &ms = pmy_mesh_->mesh_size;
++    auto &mi = pmy_mesh_->mesh_indcs;
++    auto rel = [](Real a, Real b) {return std::abs(a - b) <= 1.0e-12*std::abs(b) +
++                                          1.0e-14;};
++    if (hi[1] != mi.ng || hi[2] != mi.nx1 || hi[3] != mi.nx2 || hi[4] != mi.nx3 ||
++        !rel(hd[1], ms.x1min) || !rel(hd[2], ms.x1max) || !rel(hd[3], ms.x2min) ||
++        !rel(hd[4], ms.x2max) || !rel(hd[5], ms.x3min) || !rel(hd[6], ms.x3max)) {
++      HsFatal("problem/he_ic_remap_file: its mesh (ng, nx1..3, extents) differs from "
++              "<mesh>", __LINE__);
++    }
++    if (hd[0] != pmy_mesh_->time) {
++      char buf[128];
++      snprintf(buf, sizeof(buf), "%.17g", hd[0]);
++      HsFatal(std::string("problem/he_ic_remap_file: set <time>/start_time = ") + buf +
++              " (the parent's time; the remap deck from remap_e1w.py does)", __LINE__);
++    }
++    pgen_rststate.resize(npg);
++    if (npg > 0) rf.read(pgen_rststate.data(), npg);
++    if (!rf) HsFatal("problem/he_ic_remap_file: truncated pgen block", __LINE__);
++    hs_rmp_data = 8 + sizeof(hi) + sizeof(hd) + sizeof(npg) + npg;
++    for (int n=0; n<4; ++n) hs_rmp_n[n] = hi[n+1];
++    const std::int64_t c1 = hi[2] + 2*hi[1], c2 = hi[3] + 2*hi[1], c3 = hi[4] + 2*hi[1];
++    const std::int64_t want = hs_rmp_data + 8*(9*c1*c2*c3 + (c1 + 1)*c2*c3);
++    rf.seekg(0, std::ios::end);
++    if (static_cast<std::int64_t>(rf.tellg()) != want) {
++      HsFatal("problem/he_ic_remap_file: file size does not match its header", __LINE__);
++    }
++    if (global_variable::my_rank == 0) {
++      std::cout << "he_star_m1: he_ic_remap_file " << hs_rmp_fn << ": t = " << hd[0]
++                << ", pgen block " << npg << " bytes (remapped fresh start)" << std::endl;
++    }
++  }
+   // dic-1013 (he_ic_equil): the equilibrium's a_ref of the active cells travels in the
+   // pgen restart block as the LAST tagged trailer (a_ref..., Real n, tag); a restart
+   // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
+   // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
+-  if (restart) {
++  // (e1remap-1014: also from a he_ic_remap_file's copy of the parent's block)
++  if (restart || hs_rmp) {
+     auto &blk = pgen_rststate;
+     const std::size_t nt = sizeof(kHsDicTag) + sizeof(Real);
+     if (blk.size() >= nt &&
+@@ -2241,17 +2306,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+               "trailer", __LINE__);
+     }
+   }
+-  if (restart) {
++  if (restart || hs_rmp) {
+     auto &blk = pgen_rststate;
+     const std::size_t nt = sizeof(kHsPicTag) + 2*sizeof(Real);
+     if (blk.size() >= nt &&
+         std::memcmp(blk.data() + blk.size() - nt, &(kHsPicTag[0]), sizeof(kHsPicTag)) == 0) {
+       Real w[2];
+       std::memcpy(&(w[0]), blk.data() + blk.size() - 2*sizeof(Real), 2*sizeof(Real));
+-      hs_pic_n0_ = -w[0];
+-      hs_pic_s0_ = -w[1];
++      // e1remap-1014: a remapped start opens a new window (the trailer is only stripped)
++      if (restart) {
++        hs_pic_n0_ = -w[0];
++        hs_pic_s0_ = -w[1];
++      }
+       blk.resize(blk.size() - nt);
+     }
++    if (hs_rmp && !blk.empty()) {
++      HsFatal("problem/he_ic_remap_file: the parent's pgen block carries state this "
++              "start cannot take (adaptive MLT?)", __LINE__);
++    }
+   }
+   // problem/mlt_closure: frozen (default: the IC's F_MLT, times w(t)) or adaptive (see
+   // hs_ad_ above; w(t) caps it as an overall factor)
+@@ -2262,6 +2334,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+     }
+     hs_ad_ = (mc == "adaptive");
+   }
++  if (hs_ad_ && hs_rmp) {
++    HsFatal("problem/he_ic_remap_file does not support mlt_closure = adaptive", __LINE__);
++  }
+   if (hs_ad_) {
+     if (!hs_mlt_) {
+       HsFatal("problem/mlt_closure = adaptive needs problem/mlt_flux_frozen = true (the "
+@@ -2467,7 +2542,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+       HsFatal("problem/he_ic_rad_atm_post = true needs he_ic_rad_atm_force = module",
+               __LINE__);
+     }
+-    hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_;
++    hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_ && !hs_rmp;
+     if (hs_atp_) user_icpost_func = HeStarIcPost;
+   }
+   // dic-1013 problem/he_ic_equil (read only when named; default false = nothing, bitwise
+@@ -2490,7 +2565,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+   // he_ic_equil_maxit rounds.  The he_seed factor is applied after it (deferred).  a_ref
+   // travels in the restart files (kHsDicTag).  Needs he_ic_balance, ic_rad, the WB pair,
+   // a fresh start; replaces he_ic_rad_atm_post.
+-  if (hs_eq_ && !restart) {
++  if (hs_eq_ && !restart && !hs_rmp) {
+     if (!hs_bal_ || hs_pm_ || pm1->icr_mode == 0 || hs_atp_) {
+       HsFatal("problem/he_ic_equil = true needs he_ic_balance = true, he_gravity = wb, "
+               "<rad_m1>/ic_rad != none and he_ic_rad_atm_post = false", __LINE__);
+@@ -2530,6 +2605,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+               << std::endl;
+   }
+   if (restart) return;
++  if (hs_rmp) {
++    // e1remap-1014: no <rad_m1>/ic_rad (the state is an evolved one), then the arrays
++    pm1->icr_mode = 0;
++    HsRemapLoad(pmy_mesh_, hs_rmp_fn, hs_rmp_data, hs_rmp_n);
++    return;
++  }
+ 
+   // ---- the initial state (active + ghost cells)
+   const Real seed = pin->GetOrAddReal("problem","he_seed",0.0);
+@@ -4294,6 +4375,71 @@ void HeStarIcEquil(Mesh *pm) {
+ //! \fn void HeStarFinal()
+ //! \brief release the namespace-scope Views before Kokkos::finalize.
+ 
++//----------------------------------------------------------------------------------------
++//! \fn void HsRemapLoad()
++//! \brief e1remap-1014 problem/he_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
++//! every MeshBlock of this rank, ghosts included, from the file's global arrays
++//! [nx3+2ng][nx2+2ng][nx1+2ng(+1)] (header checked by the caller; uniform mesh only)
++
++void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const int *n) {
++  MeshBlockPack *pmbp = pm->pmb_pack;
++  auto *pm1 = pmbp->pradm1;
++  auto &indcs = pm->mb_indcs;
++  const int ng = indcs.ng;
++  if (pm->multilevel) HsFatal("he_ic_remap_file needs a uniform mesh", __LINE__);
++  const int nout1 = indcs.nx1 + 2*ng, nout2 = indcs.nx2 + 2*ng, nout3 = indcs.nx3 + 2*ng;
++  const std::int64_t c1 = n[1] + 2*n[0], c2 = n[2] + 2*n[0], c3 = n[3] + 2*n[0];
++  const std::int64_t cc = c1*c2*c3;
++  std::ifstream rf(fn, std::ios::binary);
++  if (!rf) HsFatal("cannot open problem/he_ic_remap_file " + fn, __LINE__);
++  auto uh = Kokkos::create_mirror_view(pmbp->phydro->u0);
++  auto ur = Kokkos::create_mirror_view(pm1->u0);
++  const bool hf0 = (pm1->f0x1.extent_int(0) >= pmbp->nmb_thispack);
++  auto uf = Kokkos::create_mirror_view(pm1->f0x1);
++  std::vector<double> row(nout1 + 1);
++  auto rd = [&](const std::int64_t pos, const int len) {
++    rf.seekg(pos);
++    rf.read(reinterpret_cast<char*>(row.data()), len*sizeof(double));
++    if (!rf) HsFatal("problem/he_ic_remap_file: read failed", __LINE__);
++  };
++  for (int m=0; m<pmbp->nmb_thispack; ++m) {
++    const LogicalLocation &ll = pm->lloc_eachmb[pmbp->gids + m];
++    const std::int64_t o1 = static_cast<std::int64_t>(ll.lx1)*indcs.nx1;
++    const std::int64_t o2 = static_cast<std::int64_t>(ll.lx2)*indcs.nx2;
++    const std::int64_t o3 = static_cast<std::int64_t>(ll.lx3)*indcs.nx3;
++    for (int v=0; v<9; ++v) {
++      for (int k=0; k<nout3; ++k) {
++        for (int j=0; j<nout2; ++j) {
++          rd(off + 8*(v*cc + ((o3 + k)*c2 + (o2 + j))*c1 + o1), nout1);
++          for (int i=0; i<nout1; ++i) {
++            if (v < 5) {
++              uh(m,v,k,j,i) = row[i];
++            } else {
++              ur(m,v-5,k,j,i) = row[i];
++            }
++          }
++        }
++      }
++    }
++    if (hf0) {
++      for (int k=0; k<nout3; ++k) {
++        for (int j=0; j<nout2; ++j) {
++          rd(off + 8*(9*cc + ((o3 + k)*c2 + (o2 + j))*(c1 + 1) + o1), nout1 + 1);
++          for (int i=0; i<=nout1; ++i) uf(m,k,j,i) = row[i];
++        }
++      }
++    }
++  }
++  Kokkos::deep_copy(pmbp->phydro->u0, uh);
++  Kokkos::deep_copy(pm1->u0, ur);
++  if (hf0) Kokkos::deep_copy(pm1->f0x1, uf);
++  if (global_variable::my_rank == 0) {
++    std::cout << "he_star_m1: he_ic_remap_file: u0, M1 u0" << (hf0 ? ", f0x1" : "")
++              << " loaded (" << pmbp->nmb_thispack << " MeshBlock(s) on rank 0); "
++              << "no ic_rad, no he_ic_equil, no seed" << std::endl;
++  }
++}
++
+ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
+   (void) pin; (void) pm;
+   hs_rho_ = DvceArray1D<Real>();

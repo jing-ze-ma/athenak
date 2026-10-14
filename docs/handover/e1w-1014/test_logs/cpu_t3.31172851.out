@@ -1,0 +1,84 @@
+270e89276706fa07e2c79a4b4db9c096  /raven/ptmp/jinma/drift_1013/dtr/bin/athena_he_cpu_5b7e1bc5
+d34b380b379c2302aa247ad08f13c843  /raven/ptmp/jinma/e1remap_1014/bin/athena_he_cpu_b06ccb37
+9d7830943101b35ef344e7bd5efaf810  /raven/ptmp/jinma/e1remap_1014/test/r3/a536.remap
+aaa4cab1b10e946f6714fd98bf5f83fc  /raven/ptmp/jinma/e1remap_1014/test/r3/a536.athinput
+RUN C rc=0 fatal=0 nan=0 retry=0 clamp=3
+he_star_m1: he_ic_remap_file /raven/ptmp/jinma/e1remap_1014/test/r3/a536.remap: t = 9.00047e+06, pgen block 4328 bytes (remapped fresh start)
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt ramp start = 4.032e+06, time = 2.016e+07, w(t = 9.00047e+06) = 0.857472, max L_MLT (unscaled) = 5.93999e+37
+he_star_m1: he_ic_remap_file: u0, M1 u0, f0x1 loaded (1 MeshBlock(s) on rank 0); no ic_rad, no he_ic_equil, no seed
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+<rad_m1> vet_gd: exact per-shell lateral halo, band 27 cells (needed 27), per-shell depth mean 1.410448e+01
+elapsed=3.864311e+01 cycle=0 time=9.000471e+06 dt=9.411765e+02
+elapsed=4.443337e+01 cycle=1 time=9.001412e+06 dt=9.411765e+02
+elapsed=4.637397e+01 cycle=2 time=9.002353e+06 dt=9.411765e+02
+elapsed=9.870498e+01 cycle=29 time=9.027765e+06 dt=9.411765e+02
+elapsed=1.007496e+02 cycle=30 time=9.028706e+06 dt=9.411765e+02
+Picard iterations mean=9.590164e+00 max=1.600000e+01 NON-CONVERGED=0.000000e+00
+RUN L rc=0 fatal=0 nan=0 retry=0 clamp=3
+he_star_m1: he_ic_remap_file /raven/ptmp/jinma/e1remap_1014/test/r3/a536.remap: t = 9.00047e+06, pgen block 4328 bytes (remapped fresh start)
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt ramp start = 4.032e+06, time = 2.016e+07, w(t = 9.00047e+06) = 0.857472, max L_MLT (unscaled) = 5.93999e+37
+he_star_m1: he_ic_remap_file: u0, M1 u0, f0x1 loaded (1 MeshBlock(s) on rank 0); no ic_rad, no he_ic_equil, no seed
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+<rad_m1> vet_gd: exact per-shell lateral halo, band 27 cells (needed 27), per-shell depth mean 1.410448e+01
+elapsed=3.854730e+01 cycle=0 time=9.000471e+06 dt=9.411765e+02
+elapsed=4.434491e+01 cycle=1 time=9.001412e+06 dt=9.411765e+02
+elapsed=4.629382e+01 cycle=2 time=9.002353e+06 dt=9.411765e+02
+elapsed=7.106156e+01 cycle=14 time=9.013647e+06 dt=9.411765e+02
+elapsed=7.319442e+01 cycle=15 time=9.014588e+06 dt=9.411765e+02
+Picard iterations mean=1.030000e+01 max=1.600000e+01 NON-CONVERGED=0.000000e+00
+restart from rst/agcar3d.00019.rst
+RUN L rc=0 fatal=0 nan=0 retry=0 clamp=3
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt ramp start = 4.032e+06, time = 2.016e+07, w(t = 9.01459e+06) = 0.856702, max L_MLT (unscaled) = 5.93999e+37
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+<rad_m1> vet_gd: exact per-shell lateral halo, band 27 cells (needed 27), per-shell depth mean 14.1045
+elapsed=3.907939e+01 cycle=15 time=9.014588e+06 dt=9.411765e+02
+elapsed=4.153368e+01 cycle=16 time=9.015529e+06 dt=9.411765e+02
+elapsed=4.342804e+01 cycle=17 time=9.016471e+06 dt=9.411765e+02
+elapsed=6.581057e+01 cycle=29 time=9.027765e+06 dt=9.411765e+02
+elapsed=6.787875e+01 cycle=30 time=9.028706e+06 dt=9.411765e+02
+Picard iterations mean=8.903226e+00 max=1.000000e+01 NON-CONVERGED=0.000000e+00
+hst agcar3d.hydro.hst: rows A 18 B 18 common 18 differing 0
+hst agcar3d.user.hst: rows A 18 B 18 common 18 differing 0
+bins compared 10 differing 0
+CMPRUNS BITWISE
+# /raven/ptmp/jinma/e1remap_1014/t/c.31172851/C  W=8  dumps 5
+#  t(s)        cyc  vr_env_seam vr_env_int vr_sur_seam vr_sur_int  max|vr|  KE_lat     KE_rad     rho_seam_phi rho_seam_th
+9.000470e+06      0     4.5098     8.9971     8.6768     9.0854    28.986 1.743e+43 2.449e+43    0.000    0.000
+9.008000e+06      8     4.5053     9.0016     8.7217     9.1306    29.030 1.750e+43 2.448e+43    0.130    0.114
+9.016470e+06     17     4.4955     9.0075     8.7730     9.1818    29.081 1.755e+43 2.445e+43    0.277    0.229
+9.024000e+06     25     4.4854     9.0139     8.8196     9.2275    29.128 1.759e+43 2.444e+43    0.372    0.296
+9.028710e+06     30     4.4791     9.0185     8.8490     9.2562    29.158 1.761e+43 2.445e+43    0.406    0.316
+CPU_T3_DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  rmpcpu
+Node list: ravc4138
+Job start: Wed Oct 14 22:35:50 CEST 2026
+Job end:   Wed Oct 14 22:40:16 CEST 2026
+Work dir:  /raven/ptmp/jinma/e1remap_1014
+Command:   /raven/ptmp/jinma/e1remap_1014/cpu_t3.sbatch
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+31172851          rmpcpu      1           144                             00:04:26      0:0
+31172851.0    athena_he_      1      1    144     5479.48M     5479.48M   00:01:45      0:0
+31172851.1    athena_he_      1      1    144     5477.56M     5477.56M   00:01:18      0:0
+31172851.2    athena_he_      1      1    144     5478.04M     5478.04M   00:01:12      0:0
+  
+Maximum memory per node: 5.745652 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 45.6 %
+  

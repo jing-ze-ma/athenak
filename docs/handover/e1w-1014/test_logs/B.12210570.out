@@ -1,0 +1,41 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+8b0ca2c3e66a959e45e5a814c64edadb  /viper/ptmp2/jinma/drift_1013/dtr/bin/athena_he_apu_053bd996
+d542e40b419d375c91c5d1eb875a7593  /viper/ptmp2/jinma/e1remap_1014/bin/athena_he_apu_b06ccb37
+26a680a288a8b23c7637e473b534f7a7  /viper/ptmp2/jinma/e1remap_1014/e1w_viper.athinput
+RUN B0 rc=0 fatal=0
+RUN B1 rc=0 fatal=0
+hst agcar3d.user.hst: rows A 5 B 5 common 5 differing 0
+bins compared 12 differing 0
+CMPRUNS BITWISE
+B final rst BYTE-IDENTICAL
+JOBB_DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  rmpB
+Node list: vipa1001
+Job start: Wed Oct 14 22:20:46 CEST 2026
+Job end:   Wed Oct 14 22:23:42 CEST 2026
+Work dir:  /viper/ptmp2/jinma/e1remap_1014
+Command:   /viper/ptmp2/jinma/e1remap_1014/jobB.sbatch
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+12210570            rmpB      1            48                             00:02:56      0:0
+12210570.0    athena_he_      1      1     48     5861.19M     5861.19M   00:01:24      0:0
+12210570.1    athena_he_      1      1     48     5497.42M     5497.42M   00:01:18      0:0
+  
+Maximum memory per node: 6.145904 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 7.0 %
+  

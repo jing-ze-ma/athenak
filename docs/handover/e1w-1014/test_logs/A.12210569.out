@@ -1,0 +1,137 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+d542e40b419d375c91c5d1eb875a7593  /viper/ptmp2/jinma/e1remap_1014/bin/athena_he_apu_b06ccb37
+b1c18dcb5b27385e0ead3cf891c625b0  /viper/ptmp2/jinma/e1remap_1014/e1s_viper.athinput
+0e5797cdc83da1bf0a214a28024d2679  /viper/ptmp2/jinma/e1remap_1014/e1w_viper_t.athinput
+RUN P rc=0 fatal=0 nan=0 retry=0 clamp=1
+he_star_m1: mlt ramp start = 4.032e+06, time = 2.016e+07, w(t = 0) = 1, max L_MLT (unscaled) = 2.29503e+38
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+<rad_m1> vet_gd: exact per-shell lateral halo, band 58 cells (needed 58), per-shell depth mean 28.1922
+elapsed=4.202107e+01 cycle=0 time=0.000000e+00 dt=7.272727e+02
+elapsed=4.327583e+01 cycle=1 time=7.272727e+02 dt=7.272727e+02
+elapsed=4.720083e+01 cycle=5 time=3.636364e+03 dt=7.272727e+02
+elapsed=4.913458e+01 cycle=6 time=4.363636e+03 dt=7.272727e+02
+Picard iterations mean=3.571429e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+peak card0 63.5 GB
+peak card1 63.5 GB
+total 8039840
+-rw-r--r-- 1 jinma mpa 3317066269 Oct 14 22:15 agcar3d.00000.rst
+-rw-r--r-- 1 jinma mpa 5101763941 Oct 14 22:15 agcar3d.00001.rst
+parent rst /viper/ptmp2/jinma/e1remap_1014/t/A.12210569/P/rst/agcar3d.00001.rst size 5101763941
+  t = 4363.636363636364  dt = 727.27272727272725  ncycle 6  nmb 4  mesh (536, 128, 128)  meshblock (536, 64, 64)  ng 3
+  blocks ['PGENST01', 'M1PRED01', 'M1TIME2A', 'EINTRST1', 'M1RSSIG1', 'M1CSK1S1', 'M1ROTAV1']  nhydro 5  f0x2/f0x3 (1, 1)  counts {'npred': 5, 'nt2': 13, 'neint': 1, 'nctr': 0, 'nrss': 5, 'nvgd': 0, 'ncsk': 3, 'nra': 18}
+  parent theta [1.0471975511966, 2.0943951023932] 128, phi [0, 1.0471975511966] 128; child theta [1.30899693899575, 1.83259571459405] 128, phi [0, 0.523598775598299] 128
+  sub-wedge: parent theta cells 32..95 (64), phi 64 cells
+  MeshBlock-border check rho  rms jump across borders / elsewhere: theta 0.837 phi 0.688
+  MeshBlock-border check eint rms jump across borders / elsewhere: theta 0.908 phi 0.575
+  MeshBlock-border check E    rms jump across borders / elsewhere: theta 0.905 phi 0.577
+  rho*Phi from the parent (ET - KE - eint): Phi lateral spread (max rel, active) 4.535e-13; min eint 2.2500e-05, min rho 8.9084e-17
+  phi0 auto: parent phi cell offset 35 (seam mismatch / mean adjacent jump 5.484; k0=0: 6.515; median 6.475)
+  KE non-linearity moved into eint: max |dKE|/eint_parent 1.279e-10
+  prolongation conservation per shell (max rel over all radial cells) rho   1.046e-14
+  prolongation conservation per shell (max rel over all radial cells) ET    1.244e-14
+  prolongation conservation per shell (max rel over all radial cells) E     1.586e-14
+  prolongation conservation per shell (max rel over all radial cells) eint  3.705e-11
+  prolongation conservation per shell (max rel over all radial cells) f0x1  5.735e-15
+  blend conservation per shell rho   max rel 9.412e-15
+  blend conservation per shell ET    max rel 9.511e-15
+  blend conservation per shell E     max rel 7.991e-15
+  blend conservation per shell m1    max rel 1.501e-12
+  blend conservation per shell f0x1  max rel 9.203e-15
+  after blend: min eint 2.2501e-05 (min eint/parent-min 1.000), min rho 8.9084e-17, min E 1.0000e-04
+  seam metric = rms(seam jump)/rms(adjacent jump), active radial cells: [phi seam, theta seam] before -> after (W=8)
+    rho  [9.591, 9.078] -> [0.00e+00, 0.00e+00]
+    ET   [15.474, 13.776] -> [0.00e+00, 0.00e+00]
+    E    [14.133, 12.657] -> [0.00e+00, 0.00e+00]
+    m1   [14.122, 12.645] -> [0.00e+00, 0.00e+00]
+    v_r  [14.114, 12.643] -> [0.00e+00, 0.00e+00]
+    rho phi-adjacent jumps: rms in blend band 5.831e-14, rms interior 6.305e-14
+    v_r phi-adjacent jumps: rms in blend band 7.152e+00, rms interior 7.317e+00
+  child wedge totals (lateral-weighted sums, radial factor omitted): rho 1.2791618129e-04 ET 4.4104458038e+10 E 3.4901577972e+10
+  wrote /viper/ptmp2/jinma/e1remap_1014/t/A.12210569/rm/e1wv.remap (778720240 bytes) md5 ccea9ef051ed5462dbca1c111e1319bd; pgen block 4328 bytes
+  wrote deck /viper/ptmp2/jinma/e1remap_1014/t/A.12210569/rm/e1wv.athinput md5 9710dec166525a6df069cb239c355dce
+RUN C rc=0 fatal=0 nan=0 retry=0 clamp=1
+he_star_m1: he_ic_remap_file /viper/ptmp2/jinma/e1remap_1014/t/A.12210569/rm/e1wv.remap: t = 4363.64, pgen block 4328 bytes (remapped fresh start)
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt ramp start = 4.032e+06, time = 2.016e+07, w(t = 4363.64) = 1, max L_MLT (unscaled) = 5.93999e+37
+he_star_m1: he_ic_remap_file: u0, M1 u0, f0x1 loaded (1 MeshBlock(s) on rank 0); no ic_rad, no he_ic_equil, no seed
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+<rad_m1> vet_gd: exact per-shell lateral halo, band 102 cells (needed 102), per-shell depth mean 4.863060e+01
+elapsed=2.661600e+01 cycle=0 time=4.363636e+03 dt=4.012539e+02
+elapsed=3.413325e+01 cycle=1 time=4.764890e+03 dt=4.012539e+02
+elapsed=6.819185e+01 cycle=19 time=1.198746e+04 dt=4.012539e+02
+elapsed=7.364797e+01 cycle=20 time=1.238871e+04 dt=4.012539e+02
+Picard iterations mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+peak card0 70.5 GB
+peak card1 0.0 GB
+RUN L rc=0 fatal=0 nan=0 retry=0 clamp=1
+he_star_m1: he_ic_remap_file /viper/ptmp2/jinma/e1remap_1014/t/A.12210569/rm/e1wv.remap: t = 4363.64, pgen block 4328 bytes (remapped fresh start)
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt ramp start = 4.032e+06, time = 2.016e+07, w(t = 4363.64) = 1, max L_MLT (unscaled) = 5.93999e+37
+he_star_m1: he_ic_remap_file: u0, M1 u0, f0x1 loaded (1 MeshBlock(s) on rank 0); no ic_rad, no he_ic_equil, no seed
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+<rad_m1> vet_gd: exact per-shell lateral halo, band 102 cells (needed 102), per-shell depth mean 4.863060e+01
+elapsed=2.660246e+01 cycle=0 time=4.363636e+03 dt=4.012539e+02
+elapsed=3.404820e+01 cycle=1 time=4.764890e+03 dt=4.012539e+02
+elapsed=5.071038e+01 cycle=9 time=7.974922e+03 dt=4.012539e+02
+elapsed=5.904155e+01 cycle=10 time=8.376176e+03 dt=4.012539e+02
+Picard iterations mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+peak card0 70.5 GB
+peak card1 0.0 GB
+restart from rst/agcar3d.00001.rst
+RUN L rc=0 fatal=0 nan=0 retry=0 clamp=1
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt ramp start = 4.032e+06, time = 2.016e+07, w(t = 8376.18) = 1, max L_MLT (unscaled) = 5.93999e+37
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+<rad_m1> vet_gd: exact per-shell lateral halo, band 102 cells (needed 102), per-shell depth mean 48.6306
+elapsed=2.707861e+01 cycle=10 time=8.376176e+03 dt=4.012539e+02
+elapsed=2.884879e+01 cycle=11 time=8.777429e+03 dt=4.012539e+02
+elapsed=4.222003e+01 cycle=19 time=1.198746e+04 dt=4.012539e+02
+elapsed=4.769276e+01 cycle=20 time=1.238871e+04 dt=4.012539e+02
+Picard iterations mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+peak card0 70.4 GB
+peak card1 0.0 GB
+hst agcar3d.hydro.hst: rows A 21 B 21 common 21 differing 0
+hst agcar3d.user.hst: rows A 21 B 21 common 21 differing 0
+bins compared 12 differing 0
+CMPRUNS BITWISE
+# /viper/ptmp2/jinma/e1remap_1014/t/A.12210569/C  W=8  dumps 6
+#  t(s)        cyc  vr_env_seam vr_env_int vr_sur_seam vr_sur_int  max|vr|  KE_lat     KE_rad     rho_seam_phi rho_seam_th
+4.363640e+03      0     0.0013     0.0013     0.0494     0.0494     0.072 3.572e+37 1.396e+36    0.000    0.000
+6.369910e+03      5     0.0019     0.0019     0.0544     0.0544     0.085 7.345e+37 2.937e+36    2.724    2.532
+8.376180e+03     10     0.0025     0.0025     0.0555     0.0555     0.110 1.256e+38 5.019e+36    3.790    3.567
+1.038240e+04     15     0.0031     0.0031     0.0560     0.0560     0.134 1.913e+38 7.616e+36    3.817    3.785
+1.238870e+04     20     0.0038     0.0037     0.0565     0.0565     0.156 2.700e+38 1.070e+37    3.444    3.709
+1.238870e+04     20     0.0038     0.0037     0.0565     0.0565     0.156 2.700e+38 1.070e+37    3.444    3.709
+JOBA_DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  rmpA
+Node list: vipa1327
+Job start: Wed Oct 14 22:15:05 CEST 2026
+Job end:   Wed Oct 14 22:19:54 CEST 2026
+Work dir:  /viper/ptmp2/jinma/e1remap_1014
+Command:   /viper/ptmp2/jinma/e1remap_1014/jobA.sbatch
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+12210569            rmpA      1            96                             00:04:49      0:0
+12210569.0    memmon_wra      1      2     96     2447.58M     2183.69M   00:00:52      0:0
+12210569.1    memmon_wra      1      1     48     3783.41M     3783.41M   00:01:16      0:0
+12210569.2    memmon_wra      1      1     48     3785.29M     3785.29M   00:01:02      0:0
+12210569.3    memmon_wra      1      1     48     2535.15M     2535.15M   00:00:52      0:0
+  
+Maximum memory per node: 5.132943 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 2.9 %
+  
