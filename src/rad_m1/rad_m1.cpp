@@ -1274,6 +1274,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_twfuse = false;
       vgd_twseq = true;
     }
+    // mem2-1014 vet_gd_band_ring (read only when named; default true where it applies,
+    // bitwise; VetGdInit): the band intensities lent per shell from a few wide slabs
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_ring")) {
+      vgd_ring_named = true;
+      vgd_ring_par = pin->GetBoolean("rad_m1","vet_gd_band_ring");
+    }
+    if (std::getenv("VGD_RING") != nullptr) {
+      vgd_ring_par = (std::atoi(std::getenv("VGD_RING")) != 0);
+    }
+    vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
+                      (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
     // vet_gd_twin_det (accel-1009; read only when named, default false = bitwise): the
     // twin's shell means summed in a fixed order (thread per shell, rank-ordered MPI)
     // instead of by atomics, so a GPU run is reproducible run to run
