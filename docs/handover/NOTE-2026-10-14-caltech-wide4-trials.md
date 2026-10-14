@@ -59,3 +59,14 @@ On 4 GPUs: BSG is 1.42x faster per cycle and the He giant 1.95x. There is no FAT
 Run dirs:
 - BSG: /resnick/groups/carnegie_poc/jingze/bsgli_1014/wide4/run
 - He giant: /resnick/groups/carnegie_poc/jingze/hegiant_1014/wide4/run
+
+## 10-14: He giant tlim raised (user); walltimes made as long as possible
+
+- **He giant tlim:** the user asked to raise it as far as possible, so it goes from 2.592e6 to 1e9, i.e. the run is now limited only by walltime.
+  - wide4/run/run.cfg now has TLIM=1e9 and XKEYS="time/tlim=1e9". The key exists in the deck, so this is a command-line override on restart.
+  - The running job 4489939 keeps its old tlim and stops at 2.592e6 (about 13 h from now).
+  - Two 7-day links follow it: 4513229 (afterany 4489939) and 4513230 (afterany 4513229). Both use link_hg4w_ext.sh, which equals link_hg4w.sh plus `rm -f DONE`, so the old-tlim DONE does not stop the chain.
+  - At about 35 s of star time per wall second, one 7-day link adds roughly 2e7 s (about 240 d).
+- **BSG:** tlim stays at 4.96e6 (57.4 d, the paper comparison).
+- **E1 (e1s task):** the user asked the same for E1. The production deck copy gets tlim = 1e9 and run.cfg TLIM=1e9, with the longest walltime.
+- **Walltime policy:** new links use the longest walltime allowed, 7 d on QoS normal. QoS long allows 14 d but only 1 job per user at lowest priority.
