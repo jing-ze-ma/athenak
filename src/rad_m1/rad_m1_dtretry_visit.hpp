@@ -157,6 +157,16 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("iflux_x1max", iflux_x1max);
   v.value("iebath_x1min", iebath_x1min);
   v.value("iebath_x1max", iebath_x1max);
+  v.value("impl_ghx", impl_ghx);
+  v.value("impl_ghx_e", impl_ghx_e);
+  v.value("impl_lbath", impl_lbath);
+  v.view("lbath_g", lbath_g);
+  v.view("lbath_f", lbath_f);
+  v.value("lbath_t2", lbath_t2);
+  v.value("lbath_l1", lbath_l1);
+  v.value("lbath_l2", lbath_l2);
+  v.value("lbath_rstl", lbath_rstl);
+  v.value("lbath_rst", lbath_rst);
   v.value("ibm_n", ibm_n);
   v.value("ibm_nr", ibm_nr);
   v.value("ibm_ray", ibm_ray);
