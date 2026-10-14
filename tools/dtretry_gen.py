@@ -17,6 +17,10 @@ import json, re, subprocess, sys, os
 CLANG, FLAGS, SRC = sys.argv[1], sys.argv[2], sys.argv[3]
 SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace', r'TaskIDs$',
            r'^VgdHlPend$', r'^VgdRag', r'^std::vector<MPI_Request>', r'^FofcReport$']
+# members that count the exchanges of a peer-to-peer protocol (CUDA IPC halos): the peers'
+# flags in device memory have moved on with the failed attempt, so these stay monotonic
+# (rolled back, the next exchange would wait for -- or accept -- a stale flag)
+SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab']   # structs holding Views: recurse
 
 def ast(header, name):
@@ -51,6 +55,8 @@ def emit(fields, pre, out, skipped):
         nm = pre + n
         base = re.sub(r'(\[\d+\])+$', '', t).strip()
         dims = re.findall(r'\[(\d+)\]', t[len(base):])
+        if n in SKIP_NAMES:
+            skipped.append(nm + ' : ' + t + ' (protocol counter, kept monotonic)'); continue
         if t.startswith('const ') or t.endswith('*') or '(*)' in t or t.endswith('&'):
             skipped.append(nm + ' : ' + t); continue
         if any(re.search(p, base) for p in SKIP_RE):

@@ -443,7 +443,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("hm_rbuf", hm_rbuf);
   v.value("impl_halo_ipc", impl_halo_ipc);
   v.value("hi_state", hi_state);
-  v.value("hi_seq", hi_seq);
   v.value("hi_nchk", hi_nchk);
   v.value("hi_half", hi_half);
   v.dual("hi_prb", hi_prb);
@@ -1119,7 +1118,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_ipc_state", vgd_ipc_state);
   v.value("vgd_ipc_cs", vgd_ipc_cs);
   v.value("vgd_ipc_half", vgd_ipc_half);
-  v.value("vgd_ipc_seq", vgd_ipc_seq);
   v.value("vgd_ipc_n", vgd_ipc_n);
   v.dual("vgd_ipc_prb", vgd_ipc_prb);
   v.dual("vgd_ipc_psig", vgd_ipc_psig);
@@ -1174,6 +1172,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   pbval_tq : MeshBoundaryValuesCC *
 //   pbval_kr : MeshBoundaryValuesCC *
 //   hm_comm : void *
+//   hi_seq : long long (protocol counter, kept monotonic)
 //   hi_rbuf : Real *
 //   hi_sig : long long *
 //   hi_err : int *
@@ -1190,6 +1189,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   vgd_ipc_rbuf : Real *
 //   vgd_ipc_sig : long long *
 //   vgd_ipc_err : int *
+//   vgd_ipc_seq : long long (protocol counter, kept monotonic)
 //   vgd_hlp : VgdHlPend
 //   vgd_tabf : std::future<void>
 //   vgd_tex : DevExeSpace
