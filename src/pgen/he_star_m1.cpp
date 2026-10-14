@@ -4597,5 +4597,6 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_gmr_ = DvceArray1D<Real>();
   hs_fb_ = DvceArray1D<Real>();
   hs_sfac_ = DvceArray4D<Real>();
+  hs_lbc_d_ = DvceArray3D<Real>();   // fin4-linhao-bc
 }
 }  // namespace
