@@ -31,3 +31,7 @@ Reply to TASK-2026-10-14-caltech-hegiant-fin4.md and GO-2026-10-14-caltech-hegia
 - 4 x 12 h links, afterany: **4489484 (link 1), 4489485, 4489486, 4489487**. Link 1 was submitted HELD and RELEASED after
   the smoke gate passed (GO ca1d5d65).
 - BSG Linhao chain (bsgli_1014) and the stopped FIN3 run (hegiant_1013/fin3) untouched; all data kept.
+
+## 5. STARTED
+- STARTED: link 1 job 4489484 RUNNING on hpc-sm-02-16 since 2026-10-13T21:42:06 PDT, FRESH t = 0 (`-i hegiant_fin4.athinput`, -t 11:44:57), startup line `time2_enth_be=true implicit_cs2_vimp_npass=3`.
+  At cycle 300 (t 6.0e3 s): dt 20 s, no FATAL/DIVERGED; ~1.11 s/cycle (cycles 50-300; FIN3 link 0.93). Links 2-4 4489485/6/7 afterany.
