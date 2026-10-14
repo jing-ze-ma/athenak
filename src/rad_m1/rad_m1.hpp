@@ -2025,6 +2025,7 @@ class RadiationM1 {
   int RotAvgRstI0() const;     // rotavg-rst2-1013: the first written radial cell
   void RotAvgRstHdr(int64_t *h) const;
   void RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb);
+  void RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const int nsc);   // mem-1014
   bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);
   bool RotAvgRstCheck();
   int vra_rst_nf = -1;         // nf of a history loaded from the file (-1: none/checked)
