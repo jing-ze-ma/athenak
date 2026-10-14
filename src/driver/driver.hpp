@@ -19,6 +19,7 @@
 #include "parameter_input.hpp"
 #include "outputs/outputs.hpp"
 #include "pgen/pgen.hpp"
+#include "driver/dt_retry.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \class Driver
@@ -58,6 +59,8 @@ class Driver {
   void InitBoundaryValuesAndPrimitives(Mesh *pm, bool keep_ghosts=false);
 
  private:
+  // fin4-dtretry: the cycle checkpoint and dt cut-and-retry (driver/dt_retry.hpp)
+  std::shared_ptr<dtretry::DtRetry> pdtr_;
   Kokkos::Timer run_time_;      // generalized timer for cpu/gpu/etc
   std::uint64_t nmb_updated_;   // running total of MB updated during run
   std::uint64_t npart_updated_; // running total of particles updated during run

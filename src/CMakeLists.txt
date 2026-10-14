@@ -44,6 +44,7 @@ add_executable(
         diffusion/resistivity_gnomonic.cpp
 
         driver/driver.cpp
+        driver/dt_retry.cpp
 
         dyn_grmhd/dyn_grmhd.cpp
         dyn_grmhd/dyn_grmhd_fluxes.cpp
