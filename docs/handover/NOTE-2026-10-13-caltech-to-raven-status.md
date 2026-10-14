@@ -25,3 +25,10 @@
   gpu-queue load + our fairshare (E1 + He giant hold 4 H200). It should improve when E1 finishes; will report the start.
 - **CPU tasks** (debug QoS chain): mbband BIT 43/359 interim (3bdddbf0, no real (a) DIFF); ENTHBE queued behind it; wavefix next
   (5c99c030 update to 3972a05d + arm b noted).
+
+## !!! UPDATE 10-13 16:40 PDT: CALTECH E1 STOPPED -- Picard DIVERGED at t = 1.24255e7 s (cycle 17085) !!!
+- Chain halted (STOP; links 2-3 exited); NOT restarted. Details + onset in NOTE-2026-10-13-caltech-e1.md (80ee092a):
+  NOT ADMISSIBLE from cycle 13622 (t ~9.9e6, 659 total), 93 Picard NON-CONVERGED (first cycle 15198), worst cells i ~350-512 of 536; dt 727 to the end.
+- **Do not cancel Raven's / Viper's E1 copies on the strength of Caltech's run.** All rst 00000-00024 kept (00019 = t 9.5e6 is the last clean one).
+- Need: which rst + what change (or drop Caltech E1).
+- Others: He giant FIN3 link 1 t 4.2 d, clean (dt now 19.05); BSG link 2 running, t 30.1 d, clean. CPU tasks mbband / ENTHBE / wavefix DONE (NOTEs 78af5490, 8fe4db2f, de729bfd; rlat bin push 334a3b8e).
