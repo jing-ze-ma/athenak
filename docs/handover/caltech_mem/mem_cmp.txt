@@ -1,0 +1,20 @@
+MEM BITWISE cart/marsh/FIN3_c1 
+MEM BITWISE cart/nltek1/FIN3_d 
+MEM BITWISE cart/ddn/FIN3_d 
+MEM BITWISE cart/cbg/FIN3_g8x32 
+MEM BITWISE cart/hcyl/FIN3_g8x32 
+MEM BITWISE cart/eq1/FIN3_fine 
+MEM BITWISE cart/shd/FIN3_r12g2 
+MEM BITWISE cart/rs_m2/FIN3_n512 
+MEM BITWISE sp/marsh_r1_T/HFfZ_1841da_1 
+MEM BITWISE sp/rsw_T/HFfZ_1841da_1 restart: BITWISE
+MEM BITWISE sp/dif_r1_T/HFfZ_1841da_1 
+MEM BITWISE sp/rlat_T/HFfZ_1841da_1 
+MEM BITWISE sp/pulse_r1/HFfZ_1841da_128 
+MEM BITWISE cart/pipe/FIN3_c220 
+MEM BITWISE sp/rswt_T/HFfZ_1841da_1 
+MEM BITWISE sp/shd/HFfZ_1841da_32 
+MEM BITWISE sp/relax1_T/HFfZ_1841da_1 
+MEM BITWISE cart/cb/FIN3_r4 restart: BITWISE
+MEM BITWISE sp/patmT_L16_s/HFfZ_1841da_128 
+MEM BITWISE sp/core_L16_u/HFfZ_1841da_128 restart: BITWISE
