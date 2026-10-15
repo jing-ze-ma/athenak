@@ -546,6 +546,13 @@ class RadiationM1 {
   // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
   bool impl_pos_floor_s2 = false;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
+  // picard-1014 implicit_gas_newton_u4: emission-dominated cells take the gas Newton
+  // step in u = T^4 (T' = (T^4 + 4 T^3 dT)^(1/4)); implicit_opac_lag = pred: the
+  // opacities are evaluated at pass 0 (the predicted T) and frozen for the solve
+  bool impl_gn_u4 = false;
+  bool impl_opac_lagp = false;
+  int impl_opac_lagn = 1;       // implicit_opac_lag_passes: updates in passes < N
+  Real impl_ol_nlag = 0.0;      // solves run with the opacity lag (report)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min, ibc_x1max;     // M1_IBC_*

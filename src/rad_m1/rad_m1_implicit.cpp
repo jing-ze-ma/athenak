@@ -1801,6 +1801,29 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // point is the same: the term vanishes there).  <= 0 turns the guard off (the
   // unguarded rows of m1-perf-0928, bitwise).
   impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
+  // picard-1014 implicit_gas_newton_u4 (default false, opt-in study key): the gas Newton
+  // update of step (f) in a cell whose linearised row is EMISSION-dominated (4 c dt rho
+  // kappa_P a T^3 > rho c_v) moves u = T^4 by the Newton step, T' = (T^4 + 4 T^3 dT)^(1/4),
+  // instead of T by dT: then a T'^4 is exactly the emission the radiation row was built
+  // with, and a hot start (T >> T_eq in a tenuous cell: plain Newton on T^4 shrinks T by
+  // only 1/4 per pass) lands in one step.  Same fixed point (dT = 0 there).
+  impl_gn_u4 = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton_u4",false);
+  // picard-1014 implicit_opac_lag = none (default) | pred: pred evaluates the opacities
+  // in passes 0 .. N-1 only (pass 0 at the predicted T of the step predictor, or T^n on a
+  // cold start; N = implicit_opac_lag_passes, default 1) and freezes them (and drops the
+  // opac_newton face terms) for the remaining passes -- a change of the discretisation,
+  // not only of the iteration (oplag-1014: N = 2 keeps order 2 also without a predictor).
+  {const std::string ol = pin->GetOrAddString("rad_m1","implicit_opac_lag","none");
+  if (ol.compare("none") == 0) {
+    impl_opac_lagp = false;
+  } else if (ol.compare("pred") == 0) {
+    impl_opac_lagp = true;
+  } else {
+    ImplFatal("<rad_m1>/implicit_opac_lag = '" + ol + "' is not a choice (none | pred)");
+  }
+  impl_opac_lagn = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_passes",1);
+  if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1");}
+  }
   // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
   // implicit_g0_limit = 1, implicit_pos_gas = true, implicit_pos_floor = true and
   // implicit_opac_newton_guard_mode = 6 below; every he_star_m1 production ran this set;
@@ -8776,6 +8799,10 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_opac_lagp) {
+    std::cout << "<rad_m1> implicit_opac_lag=pred passes=" << impl_opac_lagn
+              << ": lagged solves=" << impl_ol_nlag << std::endl;
+  }
   if (impl_tol_rel > 0.0) {
     std::cout << "<rad_m1> implicit_tol_rel=" << impl_tol_rel << ": predicted solves "
               << impl_tolr_n << ", mean tol_eff "
@@ -10961,6 +10988,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
   auto tsmin = std::get<30>(ctx_);
   auto tf_ = std::get<31>(ctx_);
   auto tfz = std::get<32>(ctx_);
+  auto gu4 = std::get<33>(ctx_);
   auto tsb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -10970,7 +10998,7 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
     (void)ar; (void)cl; (void)dt; (void)ec_; (void)ecnt; (void)efl; (void)eos;
     (void)escale; (void)gasx; (void)gnewt; (void)igb; (void)igf; (void)igm; (void)igr;
     (void)igy; (void)iw_; (void)opac_; (void)plog; (void)uh; (void)usec;
-    (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz;
+    (void)tso; (void)opf; (void)tsm; (void)tsmin; (void)tf_; (void)tfz; (void)gu4;
 #endif
     Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
     Real eold = iw_(m,M1_IW_EP,k,j,i);
@@ -11002,6 +11030,15 @@ void M1ImplTsolveLaunch(const Ctx &ctx_, Idl) {
         Real rk = iw_(m,igr,k,j,i);
         Real yk = rk + cl*dt*rkev*enew;
         Real dtk = (bk > 0.0) ? (yk/bk) : 0.0;
+        if (gu4 && bk > 0.0) {
+          // picard-1014 implicit_gas_newton_u4 (emission-dominated row: step in T^4)
+          const Real t3 = told*told*told;
+          const Real em = 4.0*cl*dt*rkpv*ar*t3;
+          if (em > 0.5*bk) {
+            const Real u = told*t3 + 4.0*t3*dtk;
+            dtk = (u > 0.0) ? (sqrt(sqrt(u)) - told) : (-told);
+          }
+        }
         if (bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told && (told + dtk) > 0.0) {
           tnew = told + dtk;
           iw_(m,igy,k,j,i) = fabs(yk);
@@ -11734,6 +11771,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   //--------------------------------------------------------------------- the Picard loop
   const bool tolr = (impl_tol_rel > 0.0);
+  if (impl_opac_lagp) {impl_ol_nlag += 1.0;}
   Real tol_eff = impl_tol;
   int it = 0;
   Real resid = 0.0;
@@ -11914,7 +11952,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         ktn_(m,k,j,i) = iw_(m,M1_IW_KT,k,j,i);
       });
     }
-    if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero) {
+    // picard-1014 implicit_opac_lag = pred: passes < implicit_opac_lag_passes only
+    const bool olp = impl_opac_lagp && (it >= impl_opac_lagn);
+    if (olp && opn && it == impl_opac_lagn) {Kokkos::deep_copy(ktd, 0.0);}
+    if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero && !olp) {
       int otype = opacity_type;
       Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kscat = kappa_s;
       Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
@@ -13391,7 +13432,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               kappa_f, kappa_s, opac_rho_ref,
                                               opac_t_ref, opac_a, opac_b},
                                      impl_tsolve_opac_mode, impl_tsolve_opac_smin,
-                                     thin_frz, (impl_thin_frz > 0.0));
+                                     thin_frz, (impl_thin_frz > 0.0), impl_gn_u4);
       if (tsid) {
         M1ImplTsolveLaunch(tsb_ctx, std::true_type{});
       } else {

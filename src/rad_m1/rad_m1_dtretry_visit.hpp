@@ -149,6 +149,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("pos_cnt", pos_cnt);
   v.value("impl_pos_floor_s2", impl_pos_floor_s2);
   v.view("ktd", ktd);
+  v.value("impl_gn_u4", impl_gn_u4);
+  v.value("impl_opac_lagp", impl_opac_lagp);
+  v.value("impl_opac_lagn", impl_opac_lagn);
+  v.value("impl_ol_nlag", impl_ol_nlag);
   v.value("impl_allow_multid", impl_allow_multid);
   v.value("marshak_q", marshak_q);
   v.value("ibc_x1min", ibc_x1min);
