@@ -126,7 +126,7 @@ def main():
     mesa = None
     if s.get('mesa_profile'):
         mp = s['mesa_profile']
-        mesa = MS.read(mp['path'], mp.get('format', 'mesa'))
+        mesa = MS.read(mp['path'], mp.get('format', 'mesa'), mp.get('r_max_rsun'))
         log('MESA profile %s (md5 %s): %s' % (mp['path'], TB.md5(mp['path']), mesa['note']))
     mode = s.get('mode') or ('mesa' if mesa is not None else 'global')
     if mode == 'mesa' and mesa is None:
@@ -154,6 +154,18 @@ def main():
     tfloor = float(bg['tfloor']) if bg.get('tfloor') else 100.0*np.floor(
         bg['tfloor_rel']*trad/100.0)
     e = s['eos']
+    if os.environ.get('ICSTD_EOS_RANGE'):           # the automatic re-run with a wider table
+        e.update(json.loads(os.environ['ICSTD_EOS_RANGE']))
+        log('EOS range extended (automatic re-run): %s' % os.environ['ICSTD_EOS_RANGE'])
+    elif mode == 'mesa' and not e.get('dump'):       # cover MESA's base with margin up front
+        rb_ = SP.rsun_or_cm(s['r_in'], 'bottom') or SP.rsun_or_cm(s['r_in'], 'r')
+        if rb_ is None:
+            rb_ = mesa['rc'][0]
+        kk = int(np.argmin(abs(mesa['rc'] - rb_)))
+        lt_b = np.log10(mesa['T'][:kk + 1].max())
+        ld_b = np.log10(mesa['rho'][:kk + 1].max())
+        e['logt_max'] = max(e['logt_max'], np.ceil(10*(lt_b + 0.1))/10)
+        e['logd_max'] = max(e['logd_max'], np.ceil(ld_b + 0.5))
     if e.get('logt_min') is None:
         e['logt_min'] = float(np.floor(10*np.log10(tfloor) + 1e-9)/10.0)
     # ---------------------------------------------------------------- tables
@@ -271,6 +283,7 @@ def main():
     else:
         col = COL.build(st, c)
     col['L'] = L
+    check_tables(log, s, st, col, ed, a)
     log('column (%s): %d rows, %.0f s; rho_ph %.6e, tau-%g join %.6e (%.5f R_ph), floor from '
         '%.6e (%.4f R_ph)' % (col['scheme'], col['r'].size, time.time() - t1, col['rho_R'],
                               c['tauj'], col['rj'], col['rj']/R, col['r_floor'],
@@ -426,12 +439,21 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
         nb0 = AN.hp_between(r, pr['Hp'], r[0], fz['r_base'])
         log('  H_p buffer below the CZ base: from x1min %.3f H_p, from the column bottom %.3f'
             % (nb, nb0))
-        mb = (r >= x1min) & (r < fz['r_base'])        # (the CZ base row itself excluded)
+        # Schwarzschild boundary: the lowest row above x1min with nabla_rad > nabla_ad that is
+        # contiguous with the Fe CZ (the 1 %-F_MLT base sits slightly above it)
+        k0 = int(np.searchsorted(r, x1min))
+        kb = fz['i_base']
+        while kb - 1 > k0 and pr['nrad'][kb-1] > pr['nad'][kb-1]:
+            kb -= 1
+        rS = r[kb]
+        mb = (r >= x1min) & (r < rS)
         if mb.any():
             q = np.nanmax(pr['nrad'][mb]/pr['nad'][mb])
-            log('  wall buffer x1min..CZ base: max nabla_rad/nabla_ad %.4f -> %s; max F_MLT/F '
-                '%.2e' % (q, 'RADIATIVE' if q < 1 else 'NOT radiative (FAIL)',
-                          col['fmlt'][mb].max()))
+            log('  Schwarzschild CZ base %.4f Rsun; x1min..there: %.3f H_p, max nabla_rad/nabla_ad '
+                '%.4f -> %s; nabla_rad/nabla_ad at x1min %.4f'
+                % (rS/RSUN, AN.hp_between(r, pr['Hp'], x1min, rS), q,
+                   'RADIATIVE' if q < 1 else 'NOT radiative (FAIL)',
+                   pr['nrad'][k0]/pr['nad'][k0]))
             if nb < 4.0:
                 log('  WARNING: buffer %.2f H_p < 4 (standard: >= 4-5 H_p)' % nb)
         log('  t_Fe = H_p/v_MLT (textbook alpha %g) at r %.3f Rsun: %.4e s -> mlt_ramp_start '
@@ -440,6 +462,9 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
     i0 = int(np.argmin(abs(r - x1min)))
     log('  at x1min: T %.4e rho %.4e nabla_rad/nabla_ad %.4f F_MLT/F %.2e tau %.4e'
         % (T[i0], rho[i0], pr['nrad'][i0]/pr['nad'][i0], col['fmlt'][i0], pr['tau'][i0]))
+    log('  ghost margin: the column starts %.4f Rsun below x1min; he_star_m1 needs it to cover '
+        'x1min - 3 dx1(wall) - 2 dx1 -> the grid must have dx1(wall) < ~%.4f Rsun'
+        % ((x1min - r[0])/RSUN, (x1min - r[0])/5.5/RSUN))
     log('  implicit_flux_x1min = F_r(x1min) %.12e; L/(4 pi x1min^2) %.12e (ratio %.8f)'
         % (F_rin, L/(4*np.pi*x1min**2), F_rin/(L/(4*np.pi*x1min**2))))
     dV = 4*np.pi*r**2*np.gradient(r)
@@ -520,6 +545,12 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
             i = int(np.argmin(abs(r - rr)))
             log('  %7.4f  %8.4f  %8.4f' % (r[i]/R, T[i]/MS.at(mesa, 'T', r[i], True),
                                           rho[i]/MS.at(mesa, 'rho', r[i], True)))
+        for rr_ in s.get('report_radii_rsun', []):
+            i = int(np.argmin(abs(r - rr_*RSUN)))
+            log('  at %g Rsun: T %.4e (MESA %.4e, ratio %.4f), rho %.4e (MESA %.4e, ratio %.4f)'
+                % (rr_, T[i], MS.at(mesa, 'T', r[i], True), T[i]/MS.at(mesa, 'T', r[i], True),
+                   rho[i], MS.at(mesa, 'rho', r[i], True),
+                   rho[i]/MS.at(mesa, 'rho', r[i], True)))
         mm = (mesa['r'] >= x1min)
         menv = mesa['M_tot'] - MS.at(mesa, 'm', x1min)
         log('  envelope mass above x1min: MESA %.4e g (column above, x1min..R_ph, see above)'
@@ -571,7 +602,7 @@ def diag_mesa(log, s, st, col, ms, mesa, x1min, czf):
             i = k + 1
         else:
             i += 1
-    zm = MC.mesa_zones(ms, czf)
+    zm = [z for z in MC.mesa_zones(ms, czf) if z[1] >= col['r'][0]]   # the column's range
     log('  convective zones (F_MLT/F > %g), ours (our kappa on MESA T(P)):' % czf)
     for z in zo:
         log('    %.4f-%.4f Rsun max %.3f' % (z[0]/RSUN, z[1]/RSUN, z[2]))
@@ -613,6 +644,12 @@ def diag_global(log, s, st, col, pr, c, x1min, no_scan):
     log('---- mode global physicality checks')
     M = st.GM/G_CODE
     menv, inv, fb, br = classify(col, pr, x1min, M)
+    if inv:
+        mm_ = pr['below'] & (col['r'] >= x1min)
+        rr_ = col['r'][mm_][1:][np.diff(np.log(col['rho'][mm_])) > 1e-6]
+        log('  density inversion rows: %.4f-%.4f R_ph (%d rows)' % (rr_.min()/col['rph'],
+                                                                 rr_.max()/col['rph'],
+                                                                 rr_.size))
     log('  m_env(x1min..R_ph) %.4e g = %.4e M (%s)' % (menv, menv/M,
                                                     'OK << M' if menv < 0.05*M else
                                                     'FLAG: not << M (point-mass gravity wrong)'))
@@ -644,6 +681,52 @@ def diag_global(log, s, st, col, pr, c, x1min, no_scan):
             except Exception as e:                       # noqa: BLE001
                 log('    %4.1f  %-5s  FAILED (%s)' % (al, 'on' if pp > 0 else 'off', str(e)[:80]))
     st.ALPHA, st.PP_ALPHA = a0, p0
+
+
+def check_tables(log, s, st, col, ed, a):
+    """HARD CHECK: every column row inside the EOS dump and the opacity grid (with margin).
+    EOS outside and the dump made by the recipe: re-run once with the range widened (0.1 dex
+    in T, 0.5 dex in rho beyond the column).  Otherwise FATAL (spec allow_outside_tables:
+    true only for reproducing an old file)."""
+    lt, lr = np.log10(col['T']), np.log10(col['rho'])
+    ex, ey = st.eos.xr, st.eos.yr
+    t0, t1, d0, d1 = st.ross_lims
+    me, mt = 0.2, 0.05
+    eo = (lr < ex[0] + me) | (lr > ex[1] - me) | (lt < ey[0] + mt) | (lt > ey[1] - mt)
+    oo = (lr < d0) | (lr > d1) | (lt < t0) | (lt > t1)
+    r = col['r']
+    msg = []
+    if eo.any():
+        msg.append('EOS dump %s (log rho %.2f..%.2f, log T %.2f..%.2f; margin %g/%g dex): %d '
+                   'rows OUTSIDE, r %.4f..%.4f Rsun, column log rho %.3f..%.3f log T %.3f..%.3f'
+                   % (st.eos.fn, ex[0], ex[1], ey[0], ey[1], me, mt, eo.sum(),
+                      r[eo].min()/RSUN, r[eo].max()/RSUN, lr.min(), lr.max(), lt.min(),
+                      lt.max()))
+    if oo.any():
+        msg.append('opacity grid (log rho %.2f..%.2f, log T %.2f..%.2f): %d rows OUTSIDE, '
+                   'r %.4f..%.4f Rsun' % (d0, d1, t0, t1, oo.sum(), r[oo].min()/RSUN,
+                                          r[oo].max()/RSUN))
+    if not msg:
+        log('table check: every column row inside the EOS dump (with margin) and the '
+            'opacity grid')
+        return
+    for m_ in msg:
+        log('TABLE CHECK: ' + m_)
+    if s.get('allow_outside_tables'):
+        log('TABLE CHECK: allow_outside_tables = true (reproduction of an old file only)')
+        return
+    if eo.any() and not oo.any() and not s['eos'].get('dump') and \
+            not os.environ.get('ICSTD_EOS_RANGE'):
+        e = s['eos']
+        new = dict(logd_max=float(max(e['logd_max'], np.ceil(lr.max() + 0.5))),
+                   logd_min=float(min(e['logd_min'], np.floor(lr.min() - 0.5))),
+                   logt_max=float(max(e['logt_max'], np.ceil(10*(lt.max() + 0.1))/10)),
+                   logt_min=float(min(e['logt_min'], np.floor(10*(lt.min() - 0.1))/10)))
+        log('TABLE CHECK: re-running with the EOS range %s' % new)
+        os.environ['ICSTD_EOS_RANGE'] = json.dumps(new)
+        sys.stdout.flush()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    raise SystemExit('FATAL table check: ' + ' | '.join(msg))
 
 
 if __name__ == '__main__':

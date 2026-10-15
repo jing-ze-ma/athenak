@@ -88,6 +88,8 @@ def mixture_string(comp):
 def comp_hash(comp, mix):
     key = dict(X=round(comp['X'], 10), Z=round(comp['Z'], 10), mix=mix,
                ferg=comp.get('ferguson_xz'), recipe=RECIPE_VERSION)
+    if comp.get('saha_mixture'):
+        key['saha'] = comp['saha_mixture'].strip()
     return hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:12]
 
 
@@ -385,6 +387,9 @@ def opacity_tables(spec, cache, log=print):
         os.makedirs(outdir, exist_ok=True)
         mixfile = os.path.join(outdir, 'mixture.txt')
         open(mixfile, 'w').write(mix + '\n')
+        if comp.get('saha_mixture'):     # the star's own mixture for the Saha-es extension
+            mixfile = os.path.join(outdir, 'mixture_saha.txt')   # (when TOPS is interim)
+            open(mixfile, 'w').write(comp['saha_mixture'].strip() + '\n')
         tops = tops_raw(cache, h, mix, dict(hi=op.get('tops_hi'), lo=op.get('tops_lo')), log)
         ferg = op.get('ferguson_dir', os.path.join(cache, 'raw', 'ferguson05'))
         log('  opacity: building ext2 for X %g Z %g (hash %s)' % (comp['X'], comp['Z'], h))

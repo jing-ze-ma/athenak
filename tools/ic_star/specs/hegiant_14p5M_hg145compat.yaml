@@ -3,6 +3,7 @@
 # (grid anchored at r_j, rtol 1e-9, MLT++ 'f2' form).  Not the standard sampling: use
 # hegiant_14p5M.yaml for production.
 name: hegiant_14p5M_hg145compat
+allow_outside_tables: true   # ONLY to reproduce ic2 (its column leaves the EOS/opacity grids)
 star: {L: 1.421236e38, GM: 3.6562325478560006e+26, R_ph_cm: 7.642290e12}
 composition: {X: 9.496e-4, Y: 0.97752, Z: 0.0215304, a_metal: 1.8047, mixture: custom,
               tops_mixture: "see hegiant_14p5M.yaml"}

@@ -10,6 +10,8 @@ composition: {X: 0.7, Y: 0.292, Z: 0.008, mixture: GS98, a_metal: 16.0}
 mesa_profile:
   path: /raven/ptmp/jinma/ic_star_cache/raw/mesa/bsg_ma2026_MESA_profile_combined_cgs.txt
   format: cgs6
+  r_max_rsun: 48.32     # the file's last row (52.49 Rsun, T 63 kK, after a 4.2 Rsun gap) is not
+                        # an envelope row; both earlier builders cut at 48.318 Rsun
 opacity:
   # TOPS X 0.7 Z 0.008 rho 1e-14..1 (Viper bsg_1001/opac); the low-rho file could not be fetched
   # (LANL down 10-15): extension from log rho -14 (= bsg_newsetup_1015 ext2nolo)

@@ -14,7 +14,18 @@ RSUN_MESA = 6.957e10
 LSUN_MESA = 3.828e33
 
 
-def read(path, fmt='mesa'):
+def read(path, fmt='mesa', r_max_rsun=None):
+    m = _read(path, fmt)
+    if r_max_rsun:                  # drop rows above r_max (e.g. a non-envelope top row)
+        k = m['r'] <= r_max_rsun*RSUN_MESA
+        for key, v in list(m.items()):
+            if isinstance(v, np.ndarray) and v.size == k.size:
+                m[key] = v[k]
+        m['note'] += '; rows above %g Rsun dropped (spec r_max_rsun)' % r_max_rsun
+    return m
+
+
+def _read(path, fmt='mesa'):
     if fmt == 'cgs6':
         d = np.loadtxt(path)
         d = d[np.concatenate([[True], np.diff(d[:, 0]) > 0])]
