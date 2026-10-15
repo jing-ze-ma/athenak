@@ -2624,8 +2624,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // <time>/dt_retry checkpoint.  The boundary-flux registers acc0_/acc1_ and the stage
   // counter advance in every stage of a cycle, so a failed attempt would otherwise be
   // booked twice in Min..Ebnd/Erel (history only; the state is not affected).  The outer
-  // face's advective radiation flux ibadv_x1max (S5 per-column bath) is read by the
-  // hydro-stage accumulator from the PREVIOUS cycle's solve, like f0x1 (m1 minimal list).
+  // face's advective radiation flux ibadv_x1max (S5 per-column bath), read by the
+  // hydro-stage accumulator from the PREVIOUS cycle's solve like f0x1, is in the m1
+  // minimal list (driver/dt_retry.cpp kDtrMinimal), not registered here (an alias entry
+  // would be poisoned after its restore by dt_retry_poison).
   // History-output state (hist_prev_, hist_tprev_, rad_pn0_/ps0_) changes only at outputs,
   // which a failed attempt never reaches; rbath_, tcol_, rhoamb_, cref2_, gpl_ are set
   // at setup only.
@@ -2633,9 +2635,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   for (int n=0; n<kNaccR; ++n) {
     dtretry::RegisterValue(("ry_acc0_" + std::to_string(n)).c_str(), &acc0_[n]);
     dtretry::RegisterValue(("ry_acc1_" + std::to_string(n)).c_str(), &acc1_[n]);
-  }
-  if (pmbp->pradm1 != nullptr) {
-    dtretry::RegisterView("ry_ibadv_x1max", &(pmbp->pradm1->ibadv_x1max));
   }
 
   if (root) {
