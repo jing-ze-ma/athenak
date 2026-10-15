@@ -593,3 +593,56 @@ docs/dev/accretor_rhd/plaskett_s5_1009.md; runs rhd/s5/.
   and the cell-centred L collapses) up through the arriving head (rho 3e-5..1e-3 code, v -420 km/s) cools
   21 -> 10 kK with T_gas = T_rad; the head above radiates inward (F < 0). Stopped per instruction; module
   work (option d) not started.
+
+## 12. New binary: fin51-r-fix merged, dt_retry + ROL2U on the S5 stream smoke (2026-10-15, Caltech, accretor-rhd-1015)
+
+User 10-15: "continue the accretor work with the new binary"; tests only (budget ~15 H200-h, used 0.97).
+Runs: /resnick/groups/carnegie_poc/jingze/accretor_1015 (gates/, smoke/, JOBS.txt); builds nofma HOPPER90
+(bsg_1009/build_inc_nofma.sh, BUILD_ROOT builds_accr): fdb18517 md5 4e89a437..., f960ed04 md5 c2ed9dda...,
+reference a844c97d (old accretor code, same tree and flags) md5 8b004c6e....
+
+### 12.1 Merge (eb880b72, f960ed04, fdb18517)
+- origin/fin51-r-fix b16b66db merged into accretor-rhd-1008 7fedd194. Two conflicts, both unions: rad_m1.hpp
+  members (per-column outer bath iebath_hi_col/ibadv_x1max + littests-1011 boundary beams ibm_*) and the
+  ImplicitSolve face flux (the inner beam face first, then the Marshak branch with the per-column inflow face).
+- dt_retry visitors regenerated (tools/dtretry_gen.py, clang 16.0.6): + hyd wb_phimax, m1 otab.amask_rho/kes,
+  iebath_hi_col_on, iebath_hi_col, ibadv_x1max; nothing else changed against the fin51-r-fix files.
+- ry_per_accretor per-cycle state: stage_ctr_ and the 13 flux/budget registers acc0_/acc1_ advance in every
+  stage, so they are registered with dtretry::RegisterValue (a failed attempt was booked twice in Min..Ebnd/Erel).
+  ibadv_x1max (read by the hydro-stage budget from the previous solve, like f0x1) is in the m1 minimal list
+  (driver/dt_retry.cpp; empty elsewhere). Setup-only arrays (rbath_, tcol_, rhoamb_, cref2_, gpl_) and
+  output-time state (hist_prev_, rad_pn0_/ps0_) need nothing.
+
+### 12.2 Gates (1 H200, debug QoS, 20 cycles unless noted)
+| gate | result |
+|---|---|
+| keys absent vs a844c97d: env13 | state bitwise (bin, cycle/dt); hst: the new code writes no extra final row at nlim (t = 0 row identical) |
+| keys absent: S3a-final, S5 uniform, S5 profile | NOT bitwise: fresh-run defaults changed since 10-08 (implicit_gas_src conservative2, implicit_rad_inertia, implicit_nofb_work, implicit_f0_init auto, vet_bc_diff face, vet_seg jump, vet_source_noesrc, implicit_face_opac_n, implicit_pos_floor_solve). S5 profile fresh: dt 7.05e-6 -> 2.4-2.7e-6 from cycle 7 (stream on from t = 0) |
+| same, those 9 keys pinned to the old values | S3a-final bitwise (bin, cycle/dt); S5 uniform / profile: cycle/dt identical, bin differs at round-off (max rel 1.2e-7 in E, eint after 20 cycles; Lmeas/Ltop first differ at cycle 9); source not isolated (code change in the merged rad_m1, no key) |
+| restart (S5 profile deck, 20 straight vs 10 + rst + 10) | bin bitwise, hst state columns bitwise (budget registers restart at 0 as before) |
+| forced retry at cycle 5, dt_retry_force_fac 1 | hst, bin, cycle/dt bitwise to no retry |
+| same + dt_retry_views = all + poison of every changed non-minimal View except m1.iw, m1.fref_wacc (19 Views) | bitwise |
+| forced retry fac 0.5, minimal vs + dt_retry_views_add = m1.iw,m1.fref_wacc | bitwise (they are scratch) |
+Poison notes: fref_wacc is reset by acc = g0 acc + w with g0 = 0 at stage 1, so NaN survives as 0*NaN (scratch,
+not a bug); iw likewise is fully rewritten (fac 0.5 test above), poison hits a NaN-propagating read.
+
+### 12.3 S5 option (a) stream smoke on the new binary (restart of rhd/s5/smoke_prof rst 00005, t 0.02366)
+Keys: time/dt_retry = true + the full ROL2U set (rad_m1/implicit_tol_rel 0.1, implicit_tol_rel_max 1e-4,
+implicit_opac_lag pred, implicit_opac_lag_passes 2, implicit_gas_newton_u4 true). New fresh-run defaults stay
+off on this restart (old values kept). Binary f960ed04 (= fdb18517 bitwise on the gates; only the budget
+checkpoint differs). smoke/smoke_a, job 4591413.
+- **Passes the first impact and runs to t = 0.0300 (cycle 7370), no FATAL, NON-CONVERGED 0.** 21 dt retries,
+  all `eint<=0` (5-216 cells), all in t 0.02432-0.02443 (the 10-09 divergence time), one cut each except chains
+  of 2-3 (dt down to 1.8e-7), cap released after ~10-20 cycles.
+- Picard mean 4.15 per solve (10-09: 12-15), max 15; tol_eff mean 1e-4 (tol_rel); BiCGStab 13.5 inner its.
+- 0.51-0.56 s/cycle (10-09 approach 0.95-1.05); vet_col tensor builds take 1332 of 2159 s (333 ms each, 62 %).
+- Column at the 10-09 failure cell (k 50, i 440; r 9.55, phi 8.9): T 21.5 kK (t 0.02406) -> 17.8 kK (t 0.02426,
+  head arriving, 10-09: 10 kK and divergence) -> 19.7 kK under the head (t 0.02446, rho 1-3e-4 code, v -425
+  km/s), T_gas = T_rad to 4e-4.
+- Impact: hottest dense gas r 9.43 phi 15: 66 kK (t 0.0261) -> 119 kK (t 0.0300), rho 0.116 code, P_rad/P_gas
+  5.4 (gas-only control: 110 kK, 3.4); MR 0.0322 code by t 0.030; Lmeas/L_in 1.01 -> 1.11.
+- Budgets: mass closes (residual -1.2e-9); energy residual 1.0e-5 of int L_in dt (max 2.2e-4 after the transient;
+  10-09 approach 1.7e-7): the looser tol_rel solve.
+- Variant without ROL2U (dt_retry only, smoke_b_norol): fails at the same cycle 3642 (t 0.024316): 4 cuts to
+  1.0e-7, then dt 6.3e-8 < time/dt_min 1e-7 FATAL at cycle 3654. So ROL2U is what carries the impact; dt_retry
+  absorbs the 21 eint<=0 events on top. The smaller-CFL variant was not needed.
