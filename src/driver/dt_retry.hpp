@@ -53,6 +53,70 @@ struct Entry {
   virtual void Poison() {}                 // audit: fill a View with NaN
 };
 
+// fin51-r-fix: file-scope state of a problem generator that a cycle reads from the cycle
+// before (or that a once-per-cycle update guards with a cycle stamp) joins the checkpoint:
+// the pgen registers it once at setup (RegisterValue / RegisterView, below) and
+// DtRetry::Build adds it as "pgen.<name>" entries (Views always deep-copied).  Without it
+// a retried cycle keeps what the failed attempt left there (he_star_m1: the frozen-MLT
+// ramp weight hs_mw_ was already at w(t) on the retry, so esrc kept w(t) where the straight
+// run's start-of-cycle solves still saw w(t - dt)).
+std::vector<std::unique_ptr<Entry>> &PgenEntries();
+
+template <class T>
+struct PgenValEntry : public Entry {
+  T *p;
+  T c{};
+  explicit PgenValEntry(T *pp) : p(pp) {}
+  void Save() override {c = *p;}
+  void Restore() override {*p = c;}
+};
+
+template <class V>
+struct PgenViewEntry : public Entry {
+  using Clone = Kokkos::View<typename V::non_const_data_type, typename V::array_layout,
+                             typename V::memory_space>;
+  V *p;
+  V orig;
+  Clone clone;
+  bool have = false;
+  explicit PgenViewEntry(V *pp) : p(pp) {is_view = true;}
+  void Save() override {
+    orig = *p;
+    have = false;
+    if (p->data() == nullptr || p->span() == 0) return;
+    bool same = (clone.data() != nullptr);
+    for (int r = 0; r < static_cast<int>(V::rank) && same; ++r) {
+      same = (clone.extent(r) == p->extent(r));
+    }
+    if (!same) {
+      clone = Clone(Kokkos::view_alloc(std::string("dtr:") + name,
+                                       Kokkos::WithoutInitializing), p->layout());
+    }
+    Kokkos::deep_copy(clone, *p);
+    have = true;
+  }
+  void Restore() override {
+    if (p->data() != orig.data()) {*p = orig;}
+    if (have) {Kokkos::deep_copy(*p, clone);}
+  }
+  std::size_t Bytes() const override {
+    return have ? clone.span()*sizeof(typename V::non_const_value_type) : 0;
+  }
+};
+
+template <class T>
+void RegisterValue(const char *name, T *p) {
+  auto e = std::make_unique<PgenValEntry<T>>(p);
+  e->name = std::string("pgen.") + name;
+  PgenEntries().push_back(std::move(e));
+}
+template <class V>
+void RegisterView(const char *name, V *p) {
+  auto e = std::make_unique<PgenViewEntry<V>>(p);
+  e->name = std::string("pgen.") + name;
+  PgenEntries().push_back(std::move(e));
+}
+
 class DtRetry {
  public:
   DtRetry(ParameterInput *pin, Mesh *pm);
