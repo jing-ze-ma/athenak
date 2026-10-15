@@ -287,6 +287,25 @@ Mesh::Mesh(ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // optional log tail (StretchRPoly): mesh/f_stretch_r_tail_nin (the older grid's nx1;
+    // read only when given), _x1max (its x1max), _ij (the junction face of the older grid)
+    if (pin->DoesParameterExist("mesh", "f_stretch_r_tail_nin")) {
+      const int nin = pin->GetInteger("mesh", "f_stretch_r_tail_nin");
+      const Real r1o = pin->GetReal("mesh", "f_stretch_r_tail_x1max");
+      const int ij = pin->GetInteger("mesh", "f_stretch_r_tail_ij");
+      const int nx1 = pin->GetInteger("mesh", "nx1");
+      const Real x1a = pin->GetReal("mesh", "x1min"), x1b = pin->GetReal("mesh", "x1max");
+      if (!(nin > 0 && ij > 0 && ij < nin && ij < nx1 && r1o > x1a && r1o <= x1b)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mesh/f_stretch_r_tail_*: need 0 < ij < nin, ij < nx1 "
+                  << "and x1min < tail_x1max <= x1max" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      Real *ct = fStretchRPoly + NSTRETCH_R_TAIL_OFF;
+      ct[0] = static_cast<Real>(nx1)/static_cast<Real>(nin);
+      ct[1] = static_cast<Real>(ij)/static_cast<Real>(nx1);
+      ct[2] = r1o;
+    }
     // The mapping must be strictly increasing, or the grid folds over and cell widths go
     // negative. A bad coefficient set has to fatal here rather than corrupt the run, so
     // sample du/dxi densely across [0,1] and require it to stay positive.

@@ -28,7 +28,12 @@
 #define NSTRETCH_R_BUMP 2
 #define NSTRETCH_R_NPLAT 2
 #define NSTRETCH_R_PLAT (4*NSTRETCH_R_NPLAT)
-#define NSTRETCH_R_POLY (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT)
+// the optional LOG TAIL (mesh/f_stretch_r_tail_*, see StretchRPoly): 3 slots after the
+// plateaus, (s, xi_j, r1_old); s = 0 = off
+#define NSTRETCH_R_TAIL 3
+#define NSTRETCH_R_POLY (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT + \
+                         NSTRETCH_R_TAIL)
+#define NSTRETCH_R_TAIL_OFF (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT)
 
 //! ln cosh(x) without overflow: |x| + ln(1 + exp(-2|x|)) - ln 2
 KOKKOS_INLINE_FUNCTION
@@ -82,8 +87,7 @@ void StretchR(const Real a, const Real r0, const Real r1, Real &r) {
 //! The mapping must be strictly increasing; Mesh's constructor samples du/dxi over
 //! [0,1] and fatals if it is not, since a fold-over gives negative cell widths.
 KOKKOS_INLINE_FUNCTION
-void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
-  Real xi = (r-r0)/(r1-r0);
+Real StretchRPolyU(const Real *c, const Real xi) {
   Real u = xi;
   Real xik = xi;                      // xi^k, built up as k increases
   for (int k=1; k<=NSTRETCH_R_PCOEF; ++k) {
@@ -111,7 +115,32 @@ void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
                   - xi*StretchRPlateauG(cp[1], cp[2], cp[3], 1.0));
     }
   }
-  r = r0 + (r1-r0)*u;
+  return u;
+}
+
+//! StretchRPoly with the optional LOG TAIL (accretor-bigdom-1015, mesh/f_stretch_r_tail_nin,
+//! _x1max, _ij): the grid of an OLDER, smaller run (the same polynomial/plateau map on
+//! [r0, r1_old] with nin cells) is kept face for face up to its face ij (r_j), and the
+//! domain continues above r_j to r1 = x1max with a constant face ratio (log spacing),
+//!     r = r_j (r1/r_j)^((xi - xi_j)/(1 - xi_j)),   xi_j = ij/nx1.
+//! Slots c[NSTRETCH_R_TAIL_OFF + 0..2] = (s = nx1/nin, xi_j, r1_old), set by Mesh; s = 0
+//! (default) is the plain map, bit for bit.  Choose nx1 so that the tail's ratio matches
+//! the old grid's at r_j (no jump in dr).
+KOKKOS_INLINE_FUNCTION
+void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
+  const Real xi = (r-r0)/(r1-r0);
+  const Real *ct = c + NSTRETCH_R_TAIL_OFF;
+  if (ct[0] > 0.0) {
+    const Real s = ct[0], xj = ct[1], r1o = ct[2];
+    if (xi <= xj) {
+      r = r0 + (r1o - r0)*StretchRPolyU(c, xi*s);
+    } else {
+      const Real rj = r0 + (r1o - r0)*StretchRPolyU(c, xj*s);
+      r = rj*exp(log(r1/rj)*(xi - xj)/(1.0 - xj));
+    }
+    return;
+  }
+  r = r0 + (r1-r0)*StretchRPolyU(c, xi);
 }
 //----------------------------------------------------------------------------------------
 //! \fn ApplyRStretch()

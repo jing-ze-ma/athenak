@@ -117,6 +117,29 @@
 //!    v_theta, v_phi copied, density hydrostatically extrapolated (outer_rho = hse,
 //!    default) or copied (= copy).
 //!
+//! STREAM AS A VOLUME SOURCE + DONOR SINK (accretor-bigdom-1015, design sect. 13; keys read
+//! only when given, defaults = the boundary window above):
+//!  problem/stream_inject = volume: the domain extends beyond the old r_out (e.g. 1.5 d_L1)
+//!    and the stream is injected in a NOZZLE, a shell of problem/stream_ncell (2) cells
+//!    whose inner face is the x1 face nearest problem/stream_r (default x1max), inside
+//!    the same phi window: after the sources of every stage those cells are RESET to the
+//!    window state of the old ghosts (rho_s Gaussian, ballistic v at stream_r, T(phi),
+//!    E = a T^4, F = (4/3) E v) -- an internal Dirichlet region, so the face below it sees
+//!    exactly what the old r_out face saw.  The mass, inertial Lz, gas energy and
+//!    radiation energy the reset adds are booked as Min, Jin and (with negative sign) in
+//!    the hydro / radiation energy-out registers of Ebnd.  The outer x1 boundary has no
+//!    window then: outflow everywhere (v_r = max(v_r, 0); problem/outer_rho = copy gives
+//!    a zero-gradient density and T, honoured with thermo = general), radiation Marshak
+//!    with a dark (zero) bath, as the old top outside the window.  problem/env_r_top_max
+//!    caps the WB top radius (set it to the old r_out: beyond L1 the Roche potential falls
+//!    below the envelope's top cap again and would look like envelope).
+//!  problem/donor_mask = roche: the donor's Roche lobe in the band (Phi < Phi(L1) and x >
+//!    d_L1) is a sink: after the sources of every stage its cells are reset to the floor
+//!    ambient (rho_amb, at rest in the rotating frame, T = the IC's ambient T_col); the
+//!    removed mass and gas energy are booked in history columns Mmsk and Emsk (in place
+//!    of Mwal, Jwal: identically 0 with the closed free-slip wall).  Radiation is not
+//!    touched.
+//!
 //! HISTORY (problem/user_hist = true), all in code units, the plain sums over ranks:
 //!   Mdom, Jdom           mass and INERTIAL z angular momentum about the accretor axis,
 //!                        rho r (v_phi + Omega r), in the domain
@@ -256,6 +279,14 @@ Real gen_tsurf_ = 0.0;         // problem/stream_t_surf (code T): the profile's 
 Real strad_ar_ = 0.0;          // <rad_m1> arad, for E = a T(phi)^4 in the window ghosts
 DvceArray3D<Real> rbath_;      // per-column outer Marshak bath (m,k,j), handed to <rad_m1>
 std::vector<Real> rcol_psi_, rcol_g_, rcol_f_;   // column psi, G(psi), F(psi) [code]
+// accretor-bigdom-1015 (design sect. 13): the stream as a VOLUME source inside a larger
+// domain (problem/stream_inject = volume), the donor's Roche lobe as a sink
+// (problem/donor_mask = roche); see the header STREAM AS A VOLUME SOURCE
+bool stvol_ = false;           // stream_inject = volume
+Real str_r_ = 0.0;             // problem/stream_r: radius of the injection (default x1max)
+Real nz_rlo_ = 0.0, nz_rhi_ = 0.0;   // the nozzle shell: cells with x1v in (rlo, rhi)
+bool msk_ = false;             // donor_mask = roche
+Real msk_phl1_ = 0.0, msk_xl1_ = 0.0;   // Phi(L1) and the L1 distance from the accretor
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -622,6 +653,7 @@ void RyPerBCEnv(Mesh *pm) {
   const RocheParams p = rp_;
   const Real vwall = (spin_ - 1.0)*rp_.omega;
   const bool noslip = env_noslip_, strm = stream_on_;
+  const bool stvol = stvol_, ohse = outer_hse_ || !gen_;
   const Real rhos = rho_s_, phis = phi_s_, sig = sig_, wwin = nsig_*sig_;
   const Real vrs = vr_s_, vps = vp_s_, cap = hse_cap_;
   const Real dlt = env_dlt_, rtop = env_rtop_, cph2 = env_cph2_, phtop = env_phtop_;
@@ -708,7 +740,7 @@ void RyPerBCEnv(Mesh *pm) {
       }
       if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
         const Real dph = WrapPhi(ph - phis);
-        const bool win = strm && (fabs(dph) < wwin);
+        const bool win = strm && !stvol && (fabs(dph) < wwin);
         const Real da = u0(m,IDN,k,j,ie);
         const Real v1a = u0(m,IM1,k,j,ie)/da;
         const Real v2a = u0(m,IM2,k,j,ie)/da;
@@ -728,12 +760,14 @@ void RyPerBCEnv(Mesh *pm) {
             dg = rhos*exp(-0.5*SQR(dph/sig));
             v1 = vrs; v2 = 0.0; v3 = vps; tg = StreamT(stp, tstr, tsf, dph/sig);
           } else {
-            const Real pg = RochePot(p, x1v(m,ig), ph);
-            Real eg = ea, tw = ta;
             dg = da;
-            WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
-            if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
-            dg = fmin(dg, da*exp(cap));
+            if (ohse) {
+              const Real pg = RochePot(p, x1v(m,ig), ph);
+              Real eg = ea, tw = ta;
+              WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
+              if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+              dg = fmin(dg, da*exp(cap));
+            }
             v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
           }
           dg = fmax(dg, dfl);
@@ -1029,6 +1063,78 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     }
   }
 
+  // accretor-bigdom-1015: the stream nozzle (stream_inject = volume) and the donor sink
+  // (donor_mask = roche), reset after every other source of the stage; sums: 0 nozzle
+  // mass added, 1 its inertial Lz, 2 its gas energy (incl. KE, rho Phi), 3 its radiation
+  // energy, 4 mask mass removed, 5 mask gas energy removed (per rank)
+  array_sum::GlobalSum zs;
+  for (int n=0; n<NREDUCTION_VARIABLES; ++n) zs.the_array[n] = 0.0;
+  if ((stvol_ && stream_on_) || msk_) {
+    const bool nzon = stvol_ && stream_on_, mskon = msk_;
+    const Real nlo = nz_rlo_, nhi = nz_rhi_;
+    const Real rhos = rho_s_, phs = phi_s_, sg = sig_, ww = nsig_*sig_;
+    const Real vrs = vr_s_, vps = vp_s_, om = rp_.omega;
+    const Real tcs = gen_tstr_, tsf = gen_tsurf_, sar = strad_ar_, sre = strad_e_;
+    const bool stp = stprof_, srad = rad && strad_;
+    const Real phl1 = msk_phl1_, xl1 = msk_xl1_, dfl = eosd.dfloor;
+    const RocheParams pr = rp_;
+    auto phc = ph->phicc0;
+    auto &x3c = pmbp->pcoord->x3v;
+    DvceArray5D<Real> urd;
+    if (rad) urd = pmbp->pradm1->u0;
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Kokkos::parallel_reduce("ryper_nzmsk", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+      const int m = idx/nkji;
+      const int k = (idx - m*nkji)/nji + ks;
+      const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+      const int i = idx%ni + is;
+      const Real r = x1v(m,i), phv = x3c(m,k), dv = volume(m,k,j,i);
+      const Real dph = WrapPhi(phv - phs);
+      const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww;
+      bool inmk = false;
+      if (mskon && !innz) {
+        inmk = (r*cos(phv) > xl1) && (RochePot(pr, r, phv) < phl1);
+      }
+      if (!(innz || inmk)) return;
+      array_sum::GlobalSum v;
+      for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+      const Real d0 = u0(m,IDN,k,j,i), m30 = u0(m,IM3,k,j,i), e0 = u0(m,IEN,k,j,i);
+      Real dn, v1, v3, tn;
+      if (innz) {
+        dn = fmax(rhos*exp(-0.5*SQR(dph/sg)), dfl);
+        v1 = vrs; v3 = vps; tn = StreamT(stp, tcs, tsf, dph/sg);
+      } else {
+        dn = rfl; v1 = 0.0; v3 = 0.0; tn = tcol(m,k,i);
+      }
+      const Real en = eosd.EnergyFromTemperature(dn, tn) + 0.5*dn*(v1*v1 + v3*v3)
+                      + dn*phc(m,k,j,i);
+      u0(m,IDN,k,j,i) = dn;
+      u0(m,IM1,k,j,i) = dn*v1;
+      u0(m,IM2,k,j,i) = 0.0;
+      u0(m,IM3,k,j,i) = dn*v3;
+      u0(m,IEN,k,j,i) = en;
+      if (innz) {
+        v.the_array[0] = (dn - d0)*dv;
+        v.the_array[1] = ((dn*v3 - m30) + om*r*(dn - d0))*r*dv;
+        v.the_array[2] = (en - e0)*dv;
+        if (srad) {
+          const Real er = stp ? sar*SQR(SQR(tn)) : sre;
+          v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
+          urd(m,radm1::M1_E,k,j,i) = er;
+          urd(m,radm1::M1_F1,k,j,i) = (4.0/3.0)*er*v1;
+          urd(m,radm1::M1_F2,k,j,i) = 0.0;
+          urd(m,radm1::M1_F3,k,j,i) = (4.0/3.0)*er*v3;
+        }
+      } else {
+        v.the_array[4] = (d0 - dn)*dv;
+        v.the_array[5] = (e0 - en)*dv;
+      }
+      sum += v;
+    }, Kokkos::Sum<array_sum::GlobalSum>(zs));
+  }
+
   if (nstages_ <= 0) return;
   auto &flx = ph->uflx.x1f;
   auto &xf = pmbp->pcoord->xx1f;
@@ -1036,7 +1142,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto &mbbcs = pmbp->pmb->mb_bcs;
   auto ira = iracc_;
   const Real om = rp_.omega, phis = phi_s_, wwin = nsig_*sig_;
-  const bool strm = stream_on_;
+  const bool strm = stream_on_ && !stvol_;   // the r_out window (boundary injection only)
   const int nj = je - js + 1, nk = ke - ks + 1;
   const int ntot = (nmb1 + 1)*nk*nj;
   DvceArray4D<Real> ff0;
@@ -1096,6 +1202,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   // env_amb_mode = radeq: register 4 (the wall-stress part Jstr of Jacc, meaningless deep in
   // the envelope) holds the cumulative floor mass Mfl instead
   if (amb_radeq_) fs.the_array[4] = 0.0;
+  // donor_mask: registers 2, 3 (Mwal, Jwal: zero with the closed free-slip wall) hold the
+  // cumulative mass and gas energy removed by the mask
+  if (msk_) fs.the_array[2] = fs.the_array[3] = 0.0;
   if (s == 0) {
     for (int n=0; n<nacc; ++n) acc1_[n] = acc0_[n];
   }
@@ -1103,11 +1212,22 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
   }
   if (amb_radeq_) acc0_[4] += dmfl;
+  // the nozzle's additions (Min, Jin) and the mask's removals (Mmsk, Emsk), as increments
+  // (they act on the stage's u like the floor, after its RK combination)
+  acc0_[0] += zs.the_array[0];
+  acc0_[8] += zs.the_array[1];
+  if (msk_) {
+    acc0_[2] += zs.the_array[4];
+    acc0_[3] += zs.the_array[5];
+  }
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
       acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
     }
     acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
+    // the nozzle's energy enters Ebnd = in - rad out (10) - hydro out (11)
+    acc0_[10] -= zs.the_array[3];
+    acc0_[11] -= zs.the_array[2];
   }
   stage_ctr_++;
 }
@@ -1183,6 +1303,10 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   pdata->nhist = 22;
   for (int n=0; n<22; ++n) pdata->label[n] = lab[n];
   if (amb_radeq_) pdata->label[8] = "Mfl";   // cumulative floor mass (env_amb_mode = radeq)
+  if (msk_) {                                  // donor_mask = roche (bigdom-1015)
+    pdata->label[6] = "Mmsk";
+    pdata->label[7] = "Emsk";
+  }
   for (int n=0; n<4; ++n) pdata->hdata[n] = s.the_array[n];
   if (rad) {
     // <rad_m1>: the nine RATE columns are replaced (they are the differences of the
@@ -1436,7 +1560,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
       sk(1) = op;
     });
     auto hsk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sk);
-    const Real wa = sig_*pmbp->pmesh->mesh_size.x1max;     // arc sigma at r_out (code)
+    const Real wa = sig_*str_r_;      // arc sigma at the injection radius (code)
     if (root) {
       std::printf("ry_per_accretor: <rad_m1> stream window peak: rho %.4g g/cc, T %.1f K, "
                   "P_rad/P_gas %.4g (%s), kappa_R %.4g "
@@ -2014,7 +2138,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       Kokkos::realloc(rbath_, nb, m3, m2);
       auto rb = rbath_;
       auto &x3c = pmbp->pcoord->x3v;
-      const bool on = strad_ && stream_on_;
+      const bool on = strad_ && stream_on_ && !stvol_;   // volume: dark top everywhere
       strad_ar_ = pm1->arad;
       const Real es = strad_e_, phs = phi_s_, ww = nsig_*sig_, sg = sig_;
       const bool stp = stprof_;
@@ -2108,6 +2232,12 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
         }
       }
     }
+  }
+  // accretor-bigdom-1015: problem/env_r_top_max caps r_top (read only when given): in a
+  // domain beyond L1 the Roche potential drops below the top cap again inside the donor's
+  // lobe, which the uncapped Phi_wb would take for envelope (psi > 0)
+  if (pin->DoesParameterExist("problem", "env_r_top_max")) {
+    env_rtop_ = fmin(env_rtop_, pin->GetReal("problem", "env_r_top_max"));
   }
   const Real rtop = env_rtop_, phtop = env_phtop_;
   env_rspin_ = fmin(rspk, rtop90);
@@ -2583,10 +2713,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real mu = md/(ma + md);
   const Real aom = asep*rp_.omega;               // km/s
   const Real csd = std::sqrt(kKB*tdon/(mudon*kMH))/kVel;   // km/s
-  BallisticOut bo = IntegrateStream(mu, csd/aom, r_out/asep);
+  // accretor-bigdom-1015: stream_inject = boundary (default: the r_out window) | volume
+  // (the nozzle at stream_r inside the domain); keys read only when given
+  stvol_ = false;
+  if (pin->DoesParameterExist("problem", "stream_inject")) {
+    const std::string si = pin->GetString("problem", "stream_inject");
+    stvol_ = (si.compare("volume") == 0);
+    if (!stvol_ && si.compare("boundary") != 0) {
+      fatal("stream_inject must be boundary | volume");
+    }
+  }
+  str_r_ = r_out;
+  if (pin->DoesParameterExist("problem", "stream_r")) {
+    str_r_ = pin->GetReal("problem", "stream_r");
+    if (!stvol_ && str_r_ != r_out) fatal("stream_r != x1max needs stream_inject = volume");
+  }
+  BallisticOut bo = IntegrateStream(mu, csd/aom, str_r_/asep);
   BallisticOut bi = IntegrateStream(mu, csd/aom, racc/asep);
   const Real width = pin->GetOrAddReal("problem", "stream_width", csd/rp_.omega);
-  if (!bo.ok_cross) fatal("the ballistic stream never reaches r_out = x1max");
+  if (!bo.ok_cross) fatal("the ballistic stream never reaches stream_r (default x1max)");
   phi_s_ = bo.phi;
   vr_s_ = bo.vr*aom;
   vp_s_ = bo.vt*aom;
@@ -2599,7 +2744,37 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem", "stream_vphi")) {
     vp_s_ = pin->GetReal("problem", "stream_vphi");
   }
-  sig_ = width/r_out;
+  sig_ = width/str_r_;
+  // the nozzle shell: stream_ncell cells above the x1 face nearest stream_r
+  msk_ = false;
+  if (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) {
+    if (!env_ || !gen_) fatal("stream_inject = volume / donor_mask need inner = envelope "
+                              "and thermo = general");
+  }
+  if (stvol_) {
+    if (pmy_mesh_->mesh_indcs.nx1 != pmy_mesh_->mb_indcs.nx1) {
+      fatal("stream_inject = volume needs one MeshBlock in x1");
+    }
+    const int nzc = pin->GetOrAddInteger("problem", "stream_ncell", 2);
+    auto hxf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+    const int is = pmy_mesh_->mb_indcs.is, ie = pmy_mesh_->mb_indcs.ie;
+    int fb = is;
+    for (int i=is; i<=ie+1; ++i) {
+      if (std::fabs(hxf(0,i) - str_r_) < std::fabs(hxf(0,fb) - str_r_)) fb = i;
+    }
+    if (!(nzc >= 1 && fb > is && fb + nzc <= ie + 1)) {
+      fatal("the nozzle (stream_r, stream_ncell) must lie inside the domain");
+    }
+    nz_rlo_ = hxf(0,fb);
+    nz_rhi_ = hxf(0,fb + nzc);
+  }
+  if (pin->DoesParameterExist("problem", "donor_mask")) {
+    const std::string dm = pin->GetString("problem", "donor_mask");
+    msk_ = (dm.compare("roche") == 0);
+    if (!msk_ && dm.compare("none") != 0) fatal("donor_mask must be none | roche");
+    msk_xl1_ = bo.dl1*asep;
+    msk_phl1_ = RochePot(rp_, msk_xl1_, 0.0);
+  }
 
   // ---- integrator weights for the boundary flux integrals
   std::string integ = pin->GetString("time", "integrator");
@@ -2650,6 +2825,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::printf("ry_per_accretor: ballistic at r_out: phi %.3f deg, v_r %.2f, v_phi %.2f "
                 "km/s; stream state used: phi %.3f deg, v_r %.2f, v_phi %.2f km/s\n",
                 bo.phi*180.0/M_PI, bo.vr*aom, bo.vt*aom, phi_s_*180.0/M_PI, vr_s_, vp_s_);
+    if (stvol_) {
+      std::printf("ry_per_accretor: stream_inject = volume: the ballistic state above is at "
+                  "stream_r %.4f Rsun = %.4f d_L1; nozzle cells r %.5f .. %.5f, |dphi| < "
+                  "%.4f rad; outer boundary: outflow (outer_rho %s), dark Marshak top\n",
+                  str_r_, str_r_/(bo.dl1*asep), nz_rlo_, nz_rhi_, nsig_*sig_,
+                  orho.c_str());
+    }
+    if (msk_) {
+      std::printf("ry_per_accretor: donor_mask = roche: sink where Phi < Phi(L1) = %.6g "
+                  "(km/s)^2 and x > d_L1 = %.4f Rsun; Mmsk/Emsk in hst columns 7/8\n",
+                  msk_phl1_, msk_xl1_);
+    }
     std::printf("ry_per_accretor: ballistic r_min %.4f a = %.4f Rsun at phi %.2f deg; at "
                 "R_acc: phi %.3f deg, v_r %.2f, v_phi %.2f km/s (angle from inward normal"
                 " %.2f deg)\n", bo.rmin, bo.rmin*asep, bo.phimin*180.0/M_PI,
