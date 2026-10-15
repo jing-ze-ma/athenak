@@ -544,6 +544,13 @@ class RadiationM1 {
   bool impl_gn_u4 = false;
   bool impl_opac_lagp = false;
   int impl_opac_lagn = 1;       // implicit_opac_lag_passes: updates in passes < N
+  // oplag-1014 implicit_opac_lag_corr = N (default 0): after the frozen-opacity solve
+  // converges, re-evaluate the opacities at the converged T and iterate to convergence
+  // again, N times; implicit_opac_lag_pred_only (default false): lag only in solves that
+  // start from the step predictor (cold solves iterate the opacity as without the lag)
+  int impl_opac_lagc = 0;
+  bool impl_opac_lag_po = false;
+  Real impl_olc_n = 0.0, impl_ol_nlag = 0.0, impl_ol_ncold = 0.0;
   Real impl_son_fl = 0.25;
   DvceArray5D<Real> sond;
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns

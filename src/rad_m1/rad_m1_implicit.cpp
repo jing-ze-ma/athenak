@@ -1833,6 +1833,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // in passes 0 .. N-1 (pass k at the iterate T_k) and frozen from pass N on
   impl_opac_lagn = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_passes",1);
   if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1");}
+  // oplag-1014 implicit_opac_lag_corr = N (default 0): once the frozen-opacity iteration
+  // has converged, the opacities are re-evaluated at the converged T (and frozen again)
+  // and the solve iterates to convergence again; N such corrections.  The opacity error
+  // of the step is then that of the converged T, not of the predicted T.
+  impl_opac_lagc = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_corr",0);
+  if (impl_opac_lagc < 0) {ImplFatal("<rad_m1>/implicit_opac_lag_corr must be >= 0");}
+  // implicit_opac_lag_pred_only (default false): the lag only in a solve that starts
+  // from the step predictor; a cold solve (first steps, after a fallback, no predictor
+  // on this mesh) re-evaluates the opacities every pass as without the lag (there the
+  // pass-0 T is the stage START T, an O(dt) lag)
+  impl_opac_lag_po = pin->GetOrAddBoolean("rad_m1","implicit_opac_lag_pred_only",false);
   }
   impl_son_fl = pin->GetOrAddReal("rad_m1","implicit_src_opac_newton_floor",0.25);
   // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
@@ -8825,6 +8836,12 @@ void RadiationM1::ImplicitReport() {
               << impl_tolr_n << ", mean tol_eff "
               << ((impl_tolr_n > 0.0) ? impl_tolr_sum/impl_tolr_n : 0.0) << std::endl;
   }
+  if (impl_opac_lagp) {
+    std::cout << "<rad_m1> implicit_opac_lag=pred passes=" << impl_opac_lagn << " corr="
+              << impl_opac_lagc << " pred_only=" << impl_opac_lag_po << ": lagged solves="
+              << impl_ol_nlag << " cold (iterated) solves=" << impl_ol_ncold
+              << " correction passes=" << impl_olc_n << std::endl;
+  }
   if (impl_gn_sw > 0) {
     std::cout << "<rad_m1> implicit_gas_newton_switch=" << impl_gn_sw << " (min pass "
               << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
@@ -11919,6 +11936,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       vqw_(m,k,j) = (hp >= 0.0) ? fmin(fmax(hp, qlo), qhi) : q0;
     });
   }
+  // oplag-1014: the opacity lag of THIS solve, and its pending corrections
+  const bool ol_on = impl_opac_lagp && (pred_started || !impl_opac_lag_po);
+  if (impl_opac_lagp) {
+    if (ol_on) {impl_ol_nlag += 1.0;} else {impl_ol_ncold += 1.0;}
+  }
+  int olc_left = ol_on ? impl_opac_lagc : 0;
+  bool olc_eval = false;
   for (it = 0; it < impl_maxit && !converged; ++it) {
     // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k
     if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0) {
@@ -11987,7 +12011,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
     // picard-1014 implicit_opac_lag = pred: pass 0 only (opac_newton evaluates at pass 0)
-    const bool olp = impl_opac_lagp && (it >= impl_opac_lagn);
+    // oplag-1014: not in a correction pass (olc_eval), nor in a cold solve under pred_only
+    const bool olp = ol_on && (it >= impl_opac_lagn) && !olc_eval;
     if (olp && opn && it == impl_opac_lagn) {Kokkos::deep_copy(ktd, 0.0);}
     if (impl_opac_update && (it > 0 || opn) && have_hydro && !opac_zero && !olp) {
       int otype = opacity_type;
@@ -12059,6 +12084,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
 
+    // oplag-1014 correction pass: the opacities re-evaluated at the converged T are frozen
+    // again (no face opac-Newton slope, as in the lagged passes)
+    if (olc_eval) {
+      if (opn) {Kokkos::deep_copy(ktd, 0.0);}
+      if (impl_son && opn) {Kokkos::deep_copy(sond, 0.0);}
+      olc_eval = false;
+      impl_olc_n += 1.0;
+    }
     if (tauc && it == 0) {TauClosureBuild();}
     // (b) the lagged closure, the enthalpy-flux coefficient, de0 and g0
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
@@ -13837,6 +13870,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       converged = false;
     } else if (converged && impl_muscl_pred && muscl_it0 >= 0) {
       muscl_pred_hi += static_cast<Real>(it + 1 - muscl_it0);
+    }
+    // oplag-1014 implicit_opac_lag_corr: converged on frozen opacities -> re-evaluate
+    // them at this T and iterate again (the next pass is the correction pass)
+    if (converged && olc_left > 0 && it >= impl_opac_lagn && (it + 1 < impl_maxit)) {
+      converged = false;
+      olc_left -= 1;
+      olc_eval = true;
     }
     if (gsd) {
       rhist.push_back(resid);
