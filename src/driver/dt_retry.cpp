@@ -45,6 +45,13 @@ const char *kDtrMinimal[] = {
   "m1.vet_prev", "m1.vsc_d0", "m1.vsc_d1", "m1.ctr_mem", "m1.csk1", "m1.csk2",
   "m1.csinc", "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell", "m1.vgd_rst",
   "m1.vlat_cs",
+  // fin51-r-fix: esrc (the explicit energy source, OLD vector of E in every solve) is
+  // rewritten by the pgen only when its ramp weight changes, at the first Heun stage; the
+  // solves that run before it (time2 start probe / rotation correction) read last cycle's
+  "m1.esrc",
+  // fin51-r-fix (linhao-bc branches): the wall flux of the last solve, read by the next
+  // stage-1 solve for the L_in history (lbath_l1); absent elsewhere (no entry matches)
+  "m1.lbath_f",
 };
 
 // copy-assign anything, arrays element by element
@@ -180,6 +187,11 @@ struct Binder {
 
 }  // namespace
 
+std::vector<std::unique_ptr<Entry>> &PgenEntries() {
+  static std::vector<std::unique_ptr<Entry>> v;
+  return v;
+}
+
 //----------------------------------------------------------------------------------------
 DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   const bool fresh = !global_variable::restart_run;
@@ -268,6 +280,9 @@ void DtRetry::Build(Mesh *pm) {
     Binder b{&ent_, "m1.", &sel, all_views_};
     pk->pradm1->DtRetryVisit(b);
   }
+  // fin51-r-fix: the problem generator's registered state (PgenEntries)
+  for (auto &e : PgenEntries()) {ent_.push_back(std::move(e));}
+  PgenEntries().clear();
   {
     auto e = std::make_unique<ValEntry<EventCounters>>(&(pm->ecounter));
     e->name = "mesh.ecounter";
