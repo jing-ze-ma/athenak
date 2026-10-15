@@ -150,6 +150,7 @@
 #include "hydro/hydro.hpp"
 #include "utils/wb_background.hpp"
 #include "outputs/outputs.hpp"
+#include "driver/dt_retry.hpp"
 #include "units/units.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
@@ -2619,6 +2620,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     acc0_[n] = acc1_[n] = hist_prev_[n] = 0.0;
   }
   hist_tprev_ = -1.0;
+  // accretor-rhd-1015: the per-cycle state of the source/flux accumulators joins the
+  // <time>/dt_retry checkpoint.  The boundary-flux registers acc0_/acc1_ and the stage
+  // counter advance in every stage of a cycle, so a failed attempt would otherwise be
+  // booked twice in Min..Ebnd/Erel (history only; the state is not affected).  The outer
+  // face's advective radiation flux ibadv_x1max (S5 per-column bath) is read by the
+  // hydro-stage accumulator from the PREVIOUS cycle's solve, like f0x1 (m1 minimal list).
+  // History-output state (hist_prev_, hist_tprev_, rad_pn0_/ps0_) changes only at outputs,
+  // which a failed attempt never reaches; rbath_, tcol_, rhoamb_, cref2_, gpl_ are set
+  // at setup only.
+  dtretry::RegisterValue("ry_stage_ctr", &stage_ctr_);
+  for (int n=0; n<kNaccR; ++n) {
+    dtretry::RegisterValue(("ry_acc0_" + std::to_string(n)).c_str(), &acc0_[n]);
+    dtretry::RegisterValue(("ry_acc1_" + std::to_string(n)).c_str(), &acc1_[n]);
+  }
+  if (pmbp->pradm1 != nullptr) {
+    dtretry::RegisterView("ry_ibadv_x1max", &(pmbp->pradm1->ibadv_x1max));
+  }
 
   if (root) {
     std::printf("ry_per_accretor: M_a %.4g M_d %.4g Msun, a %.4g Rsun, q %.4f, Omega %.6e"
