@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 165
+#define NOUTPUT_CHOICES 167
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -121,7 +121,10 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   "m1_fs",
 
   // blendall-1009: the vet_sc formal solution's J and F/c (E units), Cartesian (164)
-  "m1_vsc"
+  "m1_vsc",
+
+  // gdthin-1011: the thin switch's cell inputs |H|/J, C1, eps, the cell weight, J (165)
+  "m1_thsw", "m1_gdhr"
 };
 
 
@@ -320,6 +323,11 @@ class BaseTypeOutput {
   // <rad_m1>/vet_gd_async: the pending gd build's source (vlat_cs, 2 channels); empty
   // unless one is pending.  radm1::kM1VgdRstMagic.
   HostArray5D<Real> outarray_m1g;
+  // <rad_m1>/vet_rotate_avg: the averaging history (rotavg-rst-1012), densely packed
+  // slabs; empty without a complete history.  radm1::kM1RaRstMagic.
+  HostArray5D<Real> outarray_m1r;
+  // implicit_gas_src = conservative(2): the cell-F slope csk1 (rotavg-rst-1012)
+  HostArray5D<Real> outarray_m1k;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

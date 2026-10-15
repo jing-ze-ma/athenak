@@ -139,6 +139,8 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vetsrc.hpp"
 
 namespace radm1 {
 
@@ -309,54 +311,6 @@ bool VcolQuad2(const std::vector<double> &mu, const int split,
     wout[r] = w[r]*(ca + cb*m + cc*m*m);
   }
   return true;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn VcolRelaxedSource
-//! \brief vet_col_source = relaxed: the thermal source eth a T*^4 + (1 - eth) E* of one
-//! cell, T* and E* the state after a LOCAL backward-Euler gas-radiation exchange over the
-//! step dt from the build state (rho, T_b, E_b):
-//!   E* - E_b = chat dt (rho kappa_P a T*^4 - rho kappa_E E*)
-//!   rho e(T*) - rho e(T_b) = -(c/chat) (E* - E_b)
-//!   rho e(T*) + c dt rho kappa_P a T*^4/(1+x) = rho e(T_b) + c dt rho kappa_E E_b/(1+x)
-//! with x = chat dt rho kappa_E, by the safeguarded root find of the implicit gas solve.
-//! WHY: the tensor is lagged, built from the start-of-step state, where T_b is the gas
-//! temperature after the operator-split hydro step (gas-only EOS).  Where the exchange is
-//! stiff (dt/t_eq >> 1) that T_b is a transient the solve removes at once: in a
-//! radiation-dominated cell it carries the gas-only adiabatic response to the step's
-//! compression, (gamma_gas - 1) drho/rho, of which the coupled state keeps only the gas
-//! heat-capacity share ~ rho c_v/(4 a T^3) (~1/800 at P_gas/P = 0.01).  The per-column
-//! (laterally homogeneous) formal solution turned that transient into an Eddington factor
-//! perturbation on cell scales wherever the cells are optically thin to thick (tau_cell
-//! ~ 0.1-1), and a transverse checkerboard of it drives grid-scale radial flows through
-//! -(c/chi) E d(f)/dr (the he_presn wedge instability, 0929).  Where the exchange is weak
-//! (x, c dt rho kappa_P small) T* -> T_b and E* -> E_b: the old source.
-
-template <class EosT>
-KOKKOS_INLINE_FUNCTION
-Real VcolRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
-                       const Real rkp, const Real rke, const Real eth, const Real ar,
-                       const Real cl, const Real ch, const Real dt,
-                       const int sf, const Real chi, const Real rkes) {
-  const Real ix = 1.0/(1.0 + ch*dt*rke);
-  M1EosDirect<EosT> th{eos};
-  Real ee, cv;
-  th(d, tb, ee, cv);
-  Real ts = tb;
-  bool ok = true;
-  (void) M1ImplTemperatureT(th, d, tb, ee, cl*dt*rkp*ar*ix, cl*dt*rke*eb*ix, ts, ok);
-  if (!(ok && ts > 0.0)) {ts = tb;}
-  const Real t2 = ts*ts;
-  const Real t4 = t2*t2;
-  const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
-  // vet_scatter: B* of the relaxed gas with (sf = 1, 2; vet_scatter_j = current) the
-  // CURRENT J = eb (E^n or the Picard iterate) or (sf = 3, 4; vet_scatter_j = relaxed)
-  // the relaxed E*, the consistent end-of-step pair (S - E* = (E* - eb)/(c dt chi))
-  if (sf != 0) {
-    return VetScatterMix((sf > 2) ? (sf - 2) : sf, rkp, chi, rkes, ar*t4,
-                         (sf > 2) ? es : eb);
-  }
-  return eth*ar*t4 + (1.0 - eth)*es;
 }
 
 // ray types in vcol_ray(r, 1)
@@ -715,6 +669,7 @@ void RadiationM1::VetColInit() {
               << (vcol_axis_flux ? "M1 flux" : "radial") << ", rebuilt every "
               << vcol_every << " step(s)";
     if (vcol_o2) {std::cout << "; vet_col_order2 (quadratic mu, face core)";}
+    std::cout << "; vet_bc_diff = " << (vet_bc_face ? "face" : "cell");
     if (vcol_fkmin != 1.0/3.0) {
       std::cout << "; f_K >= " << vcol_fkmin;
     }
@@ -758,9 +713,11 @@ void RadiationM1::VetColBuild() {
   const bool thermal = fl_on && coupling && !opac_zero;
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   const bool srx = thermal && vcol_srelax;
+  const bool sbl = vcol_sbl;   // sporder-1012: time2_vet_col_source = blend
+  const Real sx0 = vcol_sx0;
   // vet_source_noesrc (fixbundle-1009 F1): read the PHYSICAL E^n = u0 (the stage start
   // under be) instead of the solve's old vector E^n + dt (chat/c) esrc; no dt involved
-  const bool noes = vsrc_noes && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  const bool noes = VsrcNoes();   // rad_m1.hpp
   auto ur_ = u0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
@@ -796,6 +753,7 @@ void RadiationM1::VetColBuild() {
   // vet_col_order2 with a reflecting inner x1 boundary: the core rays start from the
   // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
   const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
+  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray;
@@ -841,9 +799,12 @@ void RadiationM1::VetColBuild() {
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
         const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
         if (srx) {
-          s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr, chi,
-                                rks);
+          s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+                                       opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),
+                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0)
+                  : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
+                                      opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                      chi, rks);
         } else if (vsf != 0) {
           s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
         } else {
@@ -901,7 +862,9 @@ void RadiationM1::VetColBuild() {
     // F1: the inner-boundary intensity from the physical E^n too (noes)
     const Real en0 = noes ? fmax(ur_(m,M1_E,k,j,is), efl) : iw_(m,M1_IW_EN,k,j,is);
     const Real en1 = noes ? fmax(ur_(m,M1_E,k,j,is+1), efl) : iw_(m,M1_IW_EN,k,j,is+1);
-    Real e0 = fmax(en0, efl);
+    // vet_bc_diff = face (gdface-1011; vet_col_order2 has its own face start): E moved
+    // to the inner face by the source's extrapolation, E + (S_f - S_0) as vet_sc
+    Real e0 = fmax(bfc ? (en0 + 0.5*(src(0) - src(1))) : en0, efl);
     Real f0 = iw_(m,M1_IW_F1,k,j,is);
     if (o2) {
       e0 = fmax(1.5*en0 - 0.5*en1, efl);
@@ -1086,9 +1049,11 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   // vet_col_source = relaxed (VcolRelaxedSource): the fluid's EOS and density, the step
   // vet_source_noesrc (fixbundle-1009 F1): read the PHYSICAL E^n = u0 (the stage start
   // under be) instead of the solve's old vector E^n + dt (chat/c) esrc; no dt involved
-  const bool noes = vsrc_noes && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  const bool noes = VsrcNoes();   // rad_m1.hpp
   auto ur_ = u0;
   const bool srx = thermal && vcol_srelax;
+  const bool sbl = vcol_sbl;   // sporder-1012: time2_vet_col_source = blend
+  const Real sx0 = vcol_sx0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
   FluidRef flv = FluidRef::Get(pmy_pack);
@@ -1121,6 +1086,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   // vet_col_order2 with a reflecting inner x1 boundary: the core rays start from the
   // MIRRORED incoming intensity at the inner face (specular reflection, H = 0 there)
   const bool mir = vcol_o2 && (ibc_x1min == M1_IBC_REFLECT);
+  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray, lc = vcol_lc;
@@ -1167,9 +1133,12 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
         const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
         if (srx) {
-          s = VcolRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                                opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr, chi,
-                                rks);
+          s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+                                       opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),
+                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0)
+                  : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
+                                      opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                      chi, rks);
         } else if (vsf != 0) {
           s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
         } else {
@@ -1267,7 +1236,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     // F1: the inner-boundary intensity from the physical E^n too (noes)
     const Real en0 = noes ? fmax(ur_(m,M1_E,k,j,is), efl) : iw_(m,M1_IW_EN,k,j,is);
     const Real en1 = noes ? fmax(ur_(m,M1_E,k,j,is+1), efl) : iw_(m,M1_IW_EN,k,j,is+1);
-    Real e0 = fmax(en0, efl);
+    // vet_bc_diff = face (gdface-1011; vet_col_order2 has its own face start): E moved
+    // to the inner face by the source's extrapolation, E + (S_f - S_0) as vet_sc
+    Real e0 = fmax(bfc ? (en0 + 0.5*(pr_(n1) - pr_(n1+1))) : en0, efl);
     Real f0 = iw_(m,M1_IW_F1,k,j,is);
     if (o2) {
       e0 = fmax(1.5*en0 - 0.5*en1, efl);
@@ -1573,6 +1544,16 @@ void RadiationM1::VetColReport() {
                 << "), tables (rotation) " << vgd_ttab << ", uniform twin " << vgd_ttwin
                 << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
                 << vgd_trb << " s)" << std::endl;
+      if (vra_on) {
+        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
+                  << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit
+                  << "), " << vra_time << " s incl. offsets (rank 0, fenced)"
+                  << std::endl;
+      }
+      if (vgd_symref) {
+        std::cout << "<rad_m1> vet_gd_symref: host start " << vgd_tsr << " s, join "
+                  << vgd_tsrj << " s (rank 0)" << std::endl;
+      }
       std::cout << "<rad_m1> vet_gd halo (rank 0): exchanges " << vgd_nexch
                 << ", bytes sent "
                 << vgd_nbyte << " (" << ((vgd_nexch > 0.0) ? vgd_nbyte/vgd_nexch : 0.0)
@@ -1580,6 +1561,8 @@ void RadiationM1::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
+      std::cout << "<rad_m1> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
+                << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath << std::endl;
       {
         // accel-1009 ragged band: accesses outside a shell's slab (must be 0)
         Real no = 0.0, nt = 0.0;
@@ -1593,6 +1576,12 @@ void RadiationM1::VetColReport() {
         }
         std::cout << "<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main "
                   << no << " twin " << nt << std::endl;
+        if (vgd_ring) {
+          std::cout << "<rad_m1> vet_gd_band_ring (rank 0): sweeps " << vgd_rg_nk
+                    << ", dense band saves " << vgd_rg_ndense << ", save store "
+                    << vgd_rg_store.extent(0)*sizeof(Real)/1.0e9 << " GB"
+                    << (vgd_ring_poison ? " (POISON test)" : "") << std::endl;
+        }
       }
       if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet || vgd_twseq) {
         std::cout << "<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=" << vgd_twfuse
@@ -1600,6 +1589,35 @@ void RadiationM1::VetColReport() {
                   << " vet_gd_twin_det=" << vgd_twdet << " halo mask cache: "
                   << vgd_hc_nmade << " entries made, " << vgd_hc_bytes/1048576.0
                   << " MB of " << vgd_hc_mb << std::endl;
+      }
+      if (vgd_hcomp > 0 && vgd_hl_mb > 0) {
+        std::cout << "<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists "
+                  << vgd_hl_nmade << " made, " << vgd_hl_bytes/1048576.0 << " MB of "
+                  << vgd_hl_cap/1048576.0 << " (key " << vgd_hl_mb
+                  << ", GPU: <= free/2); exchanges by list " << vgd_hl_nuse << ", dense "
+                  << vgd_hl_ndense << std::endl;
+      }
+      if (vgd_hx_on) {
+        std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made "
+                  << vgd_hx_nmade << ", fallbacks " << vgd_hx_nfall
+                  << " (marked reads outside the masks' region " << vgd_hx_nout
+                  << "), read ghosts with an unsent source " << vgd_hx_nun
+                  << "; received values per list: exact/mask "
+                  << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
+                  << std::endl;
+      }
+      std::cout << "<rad_m1> vgdrot-1011 (rank 0): exact-list batches " << vgd_hxb_ngroup
+                << " (group " << vgd_hxb_g << ", " << vgd_hxb_t << " s, list reallocs "
+                << vgd_hxb_nrealloc << "); table prefetch " << (vgd_tab_pre ? 1 : 0)
+                << " swapped in " << vgd_tab_nswap << " of the rotations" << std::endl;
+      if (vgd_ovl_g > 0 || vgd_fuse_h > 1) {
+        std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_overlap=" << vgd_ovl_g
+                  << " split shells " << vgd_ovl_nsplit << " (remote items "
+                  << ((vgd_ovl_nall > 0.0) ? vgd_ovl_nrem/vgd_ovl_nall : 0.0)
+                  << " of all), unsplit " << vgd_ovl_nfull
+                  << (vgd_ovl_nofit ? " (over vet_gd_overlap_mb)" : "")
+                  << "; vet_gd_fuse_shells=" << vgd_fuse_h << " skipped exchanges "
+                  << vgd_fuse_nskip << std::endl;
       }
       if (vgd_async) {
         std::cout << "<rad_m1> vet_gd_async (rank 0): " << vgd_nasync

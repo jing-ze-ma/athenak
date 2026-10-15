@@ -146,15 +146,24 @@ void M1ScatterEos(const M1OpacTab &tab, const EosT &eos, const Real d, const Rea
 
 KOKKOS_INLINE_FUNCTION
 void M1UserOpacity(const Real d, const Real t, const Real kp, const Real ke,
-                   const Real kf, const Real ks,
+                   const Real kf, const Real ks, const Real rho_ref, const Real t_ref,
+                   const Real aa, const Real bb,
                    Real &op, Real &oe, Real &of, Real &os) {
-  // TODO(@user): replace with the problem's own kappa(rho,T)
-  (void) d;
-  (void) t;
-  op = kp;
-  oe = ke;
-  of = kf;
-  os = ks;
+  // oplag-1014 study law (a PEAKED kappa(T), Fe-bump-like): the four constants times
+  //   (d/rho_ref)^a [1 + b exp(-ln^2(t/t_ref)/(2 s^2))],  s = 0.2,
+  // i.e. a bump of height 1 + b at t_ref, |d ln kappa/d ln T| up to ~3.5 for b = 4 on its
+  // flanks.  b = 0 (opac_b default) is the constant law of the stub (a = 0 likewise).
+  const Real fd = (aa == 0.0) ? 1.0 : pow(fmax(d, 0.0)/rho_ref, aa);
+  Real fb = 1.0;
+  if (bb != 0.0) {
+    const Real x = log(fmax(t, 1.0e-300)/t_ref);
+    fb = 1.0 + bb*exp(-x*x/(2.0*0.04));
+  }
+  const Real sc = fd*fb;
+  op = kp*sc;
+  oe = ke*sc;
+  of = kf*sc;
+  os = ks*sc;
 }
 
 //----------------------------------------------------------------------------------------
@@ -163,7 +172,7 @@ void M1UserOpacity(const Real d, const Real t, const Real kp, const Real ke,
 //!   const     kappa = kappa0
 //!   powerlaw  kappa = kappa0 (d/rho_ref)^a (t/t_ref)^b,  ONE pair of exponents for all
 //!             four opacities (design sect. 4 wants no more than that in stage 1)
-//!   user      M1UserOpacity above
+//!   user      M1UserOpacity above (oplag-1014: a bump law, see there)
 
 KOKKOS_INLINE_FUNCTION
 void M1Opacities(const int otype, const Real d, const Real t,
@@ -179,7 +188,7 @@ void M1Opacities(const int otype, const Real d, const Real t,
     of = kf*sc;
     os = ks*sc;
   } else if (otype == M1_OPAC_USER) {
-    M1UserOpacity(d, t, kp, ke, kf, ks, op, oe, of, os);
+    M1UserOpacity(d, t, kp, ke, kf, ks, rho_ref, t_ref, aa, bb, op, oe, of, os);
   } else {
     op = kp;
     oe = ke;

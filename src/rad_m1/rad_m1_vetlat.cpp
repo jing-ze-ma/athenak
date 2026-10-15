@@ -76,6 +76,8 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vetsrc.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -113,33 +115,6 @@ void VlatW(const Real dtau, Real &ex, Real &w0, Real &wu) {
   }
 }
 
-// vet_col_source = relaxed: VcolRelaxedSource of rad_m1_vetcol.cpp, term for term
-template <class EosT>
-KOKKOS_INLINE_FUNCTION
-Real VlatRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
-                       const Real rkp, const Real rke, const Real eth, const Real ar,
-                       const Real cl, const Real ch, const Real dt,
-                       const int sf, const Real chi, const Real rkes) {
-  const Real ix = 1.0/(1.0 + ch*dt*rke);
-  M1EosDirect<EosT> th{eos};
-  Real ee, cv;
-  th(d, tb, ee, cv);
-  Real ts = tb;
-  bool ok = true;
-  (void) M1ImplTemperatureT(th, d, tb, ee, cl*dt*rkp*ar*ix, cl*dt*rke*eb*ix, ts, ok);
-  if (!(ok && ts > 0.0)) {ts = tb;}
-  const Real t2 = ts*ts;
-  const Real t4 = t2*t2;
-  const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
-  // vet_scatter: B* of the relaxed gas with (sf = 1, 2; vet_scatter_j = current) the
-  // CURRENT J = eb (E^n or the Picard iterate) or (sf = 3, 4; vet_scatter_j = relaxed)
-  // the relaxed E*, the consistent end-of-step pair (S - E* = (E* - eb)/(c dt chi))
-  if (sf != 0) {
-    return VetScatterMix((sf > 2) ? (sf - 2) : sf, rkp, chi, rkes, ar*t4,
-                         (sf > 2) ? es : eb);
-  }
-  return eth*ar*t4 + (1.0 - eth)*es;
-}
 
 // mu label of a ray at the upwind shell: position between the descending nodes
 void VlatLabel(const std::vector<double> &nd, const double mu, double &a0, double &fa) {
@@ -217,7 +192,7 @@ void RadiationM1::VetLatInit() {
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
   Kokkos::realloc(vlat_w, vlat_nmu);
-  Kokkos::realloc(vlat_cnt, 1);
+  Kokkos::realloc(vlat_cnt, 2);   // (1): open-od-1013 vet_gd vet_path subdivided steps
   Kokkos::deep_copy(vlat_cnt, 0.0);
   // Gauss-Legendre nodes on [0, 1] (descending) and weights summing to 1/2 per hemisphere
   {
@@ -480,6 +455,12 @@ void RadiationM1::VetLatCsFinish() {
   // there (one global min); the shells below keep dD = 0
   {
     const Real tcut = vlat_taucut;
+    // unify-sc-gd-1012 (opaque surfaces): vet_col_lat_cut_thin = t > 0 also keeps every
+    // cell of optical thickness < t inside the sweep: the cut never lies above a locally
+    // THIN cell (a cavity under an opaque shell, a gap below a cold layer), whose faces
+    // would otherwise get no half-range data from the formal solution (central faces:
+    // the cavity E of a closed cold shell ~ tau_cell x E_free)
+    const Real tthin = vlat_cut_thin;
     const int nk = ke - ks + 1, nj = je - js + 1;
     int lmin = n1 - 2;
     Kokkos::parallel_reduce("m1_vlat_icut",
@@ -494,6 +475,14 @@ void RadiationM1::VetLatCsFinish() {
           const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
           if (tau + 0.5*dt_ >= tcut) {lc = i - is; break;}
           tau += dt_;
+        }
+        if (tthin > 0.0) {
+          for (int i = is; i < is + lc; ++i) {
+            if (exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i)) < tthin) {
+              lc = i - is;
+              break;
+            }
+          }
         }
         lm = (lc < lm) ? lc : lm;
       }, Kokkos::Min<int>(lmin));
@@ -539,8 +528,10 @@ void RadiationM1::VetLatSweep(const int stage) {
   // (1) ln chi, ln S of every active cell (vet_col's extinction and source), ghosts
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
+  const bool sbl = vcol_sbl;   // sporder-1012: time2_vet_col_source = blend
+  const Real sx0 = vcol_sx0;
   // vet_source_noesrc (fixbundle-1009 F1): the physical E^n = u0 (see VetColBuild)
-  const bool noes = vsrc_noes && (time_scheme == M1_TIME_BE);   // rad_m1.hpp
+  const bool noes = VsrcNoes();   // rad_m1.hpp
   auto ur_ = u0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
@@ -563,9 +554,12 @@ void RadiationM1::VetLatSweep(const int stage) {
       Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
       const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
       if (srx) {
-        s = VlatRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                              opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr, chi,
-                              rks);
+        s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+                                     opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i), eth,
+                                     ar, cl, chs, dts, vsr, chi, rks, sx0)
+                : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
+                                    opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                    chi, rks);
       } else if (vsf != 0) {
         s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
       } else {
@@ -645,6 +639,9 @@ void RadiationM1::VetLatSweep(const int stage) {
   const int klo = thrd ? (ks - ng) : ks, khi = thrd ? (ke + ng - 1) : ks;
   const Real twopi = 2.0*M_PI;
   const bool tw = (stage == 0);
+  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
+  const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
+  const int spe = VetSegMode();
   auto vd_ = vlat_d;
   for (int pass = 0; pass < 2; ++pass) {
     const int dir = pass;                     // 0 inward, 1 outward
@@ -708,13 +705,14 @@ void RadiationM1::VetLatSweep(const int stage) {
           const int ka = tw ? k : k0, kb = tw ? k : k1;
           const int ja = tw ? j : j0, jb = tw ? j : (j0 + 1);
           if (typ == VL_START) {
-            // the diffusion intensity at the inner face of shell icut (sc_he.py)
+            // the diffusion intensity at the inner face of shell icut (sc_he.py);
+            // vet_bc_diff = face (gdface-1011): S of the face, 1.5 S_a - 0.5 S_b
             const Real muf = geo_(l, 2*a+dir, 3);
             const int i1 = i + 1;
             auto ib = [&](const int kk, const int jj) {
               const Real sa = exp(cs_(m,1,kk,jj,i)), sb = exp(cs_(m,1,kk,jj,i1));
               const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(cs_(m,0,kk,jj,i));
-              return sa + g0*muf;
+              return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;
             };
             auto sbt = [&](const int kk, const int jj) {
               return fmax(1.5*exp(cs_(m,1,kk,jj,i)) - 0.5*exp(cs_(m,1,kk,jj,i1)),
@@ -780,9 +778,23 @@ void RadiationM1::VetLatSweep(const int stage) {
             };
             const Real chu = exp(lin(0));
             const Real su = exp(lin(1));
-            Real ex, w0, wu;
-            VlatW(0.5*(chu + ch0)*ds, ex, w0, wu);
-            iv = fmax(ivu*ex + wu*su + w0*s0, 0.0);
+            if (spl) {
+              // segfix-1011 (vet_seg = split): the two parts at the radial face shared
+              // with the upwind shell (VL_TURN: half the chord)
+              Real dso = 0.5*ds;
+              if (typ == VL_NORM) {
+                const Real rf = (dir == 0) ? cx1f(m,i+1) : cx1f(m,i);
+                const Real zr = r*mu, p2 = fmax(r*r - zr*zr, 0.0);
+                const Real zf = sqrt(fmax(rf*rf - p2, 0.0));
+                dso = fmin(fmax((dir == 0) ? (zf - zr) : (zr - zf), 0.0), ds);
+              }
+              iv = fmax(VetSegSplit(ivu, su, s0, chu*(ds - dso), ch0*dso, spe),
+                        0.0);
+            } else {
+              Real ex, w0, wu;
+              VlatW(0.5*(chu + ch0)*ds, ex, w0, wu);
+              iv = fmax(ivu*ex + wu*su + w0*s0, 0.0);
+            }
           }
         }
         if (tw) {

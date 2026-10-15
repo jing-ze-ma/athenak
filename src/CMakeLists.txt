@@ -44,6 +44,7 @@ add_executable(
         diffusion/resistivity_gnomonic.cpp
 
         driver/driver.cpp
+        driver/dt_retry.cpp
 
         dyn_grmhd/dyn_grmhd.cpp
         dyn_grmhd/dyn_grmhd_fluxes.cpp
@@ -170,6 +171,7 @@ add_executable(
         rad_m1/rad_m1_coupling.cpp
         rad_m1/rad_m1_fluxes.cpp
         rad_m1/rad_m1_implicit.cpp
+        rad_m1/rad_m1_icrad.cpp
         rad_m1/rad_m1_sph.cpp
         rad_m1/rad_m1_krylov.cpp
         rad_m1/rad_m1_launch.cpp
@@ -183,6 +185,7 @@ add_executable(
         rad_m1/rad_m1_vetcol.cpp
         rad_m1/rad_m1_vetlat.cpp
         rad_m1/rad_m1_vetgd.cpp
+        rad_m1/rad_m1_rotavg.cpp
         rad_m1/rad_m1_tasks.cpp
         rad_m1/rad_m1_update.cpp
         rad_m1/rad_m1_vet.cpp
@@ -247,6 +250,20 @@ if (NOT ${PROBLEM} STREQUAL "built_in_pgens")
       PRIVATE
           pgen/${PROBLEM}.cpp
   )
+endif()
+
+# prodcand-1011: the rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only
+# (rad_m1_icrad.cpp IcRadInit); every other problem defaults to ic_rad = none
+if (${PROBLEM} STREQUAL "he_star_m1")
+  set_source_files_properties(rad_m1/rad_m1_icrad.cpp PROPERTIES
+      COMPILE_DEFINITIONS M1_ICRAD_DEFAULT_FS_RELAX=1)
+endif()
+
+# rotavg-1012: -D Athena_M1_VGD_NMAX=<n> raises the vet_gd direction cap (default 432 in
+# rad_m1.hpp; it sizes a per-thread buffer of VetGdWall, so a large cap is a CPU /
+# diagnostic build: 480 = GL 20x24 needs it)
+if (DEFINED Athena_M1_VGD_NMAX AND NOT "${Athena_M1_VGD_NMAX}" STREQUAL "")
+  target_compile_definitions(athena PRIVATE M1_VGD_NMAX_BUILD=${Athena_M1_VGD_NMAX})
 endif()
 
 # enable include of header files with /src/ as root of path

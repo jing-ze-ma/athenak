@@ -32,6 +32,7 @@ struct FofcReport {
   std::string who;
   DvceArray2D<Real> cnt;       // (nb, 2): [0] density at the floor, [1] not
   DvceArray1D<int> ioff;       // per MeshBlock: global x1 index of its first active cell
+  std::vector<int> ioff_h;     // its host copy (the values on the device)
 
   void Init(ParameterInput *pin, const std::string &blk) {
     if (!pin->DoesParameterExist(blk, "fofc_report")) {return;}
@@ -54,12 +55,19 @@ struct FofcReport {
     Mesh *pm = pp->pmesh;
     auto &indcs = pm->mb_indcs;
     const int nmb = pp->nmb_thispack;
-    if (ioff.extent_int(0) != nmb) {ioff = DvceArray1D<int>("fofc_rep_ioff", nmb);}
-    auto hio = Kokkos::create_mirror_view(ioff);
+    // vgdrot-1011: ioff copied to the device only when it changes (was a host mirror and
+    // a blocking copy every stage)
+    std::vector<int> io(nmb);
     for (int m = 0; m < nmb; ++m) {
-      hio(m) = static_cast<int>(pm->lloc_eachmb[pp->gids + m].lx1)*indcs.nx1;
+      io[m] = static_cast<int>(pm->lloc_eachmb[pp->gids + m].lx1)*indcs.nx1;
     }
-    Kokkos::deep_copy(ioff, hio);
+    if (io != ioff_h) {
+      if (ioff.extent_int(0) != nmb) {ioff = DvceArray1D<int>("fofc_rep_ioff", nmb);}
+      auto hio = Kokkos::create_mirror_view(ioff);
+      for (int m = 0; m < nmb; ++m) {hio(m) = io[m];}
+      Kokkos::deep_copy(ioff, hio);
+      ioff_h = io;
+    }
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
     const int ks = indcs.ks, ke = indcs.ke;
     const int nbin = nb, ntot = pm->mesh_indcs.nx1;

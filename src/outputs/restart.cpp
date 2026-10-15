@@ -262,6 +262,20 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       Kokkos::realloc(outarray_m1g, nmb, 2, nout3, nout2, nout1);
       Kokkos::deep_copy(outarray_m1g, tmp);
     }
+    // implicit_gas_src = conservative(2) (rotavg-rst-1012): the cell-F slope csk1
+    if (pradm1->CskRstNch() > 0) {
+      Kokkos::realloc(outarray_m1k, nmb, 3, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_m1k, Kokkos::subview(pradm1->csk1, std::make_pair(0,nmb),
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    }
+    // vet_rotate_avg (rotavg-rst-1012): the averaging history, densely packed slabs
+    const int nra = pradm1->RotAvgRstNslab(nout1*nout2*nout3);
+    if (nra > 0) {
+      // mem-1014: packed per MeshBlock in chunks of 4 slabs (was a device copy of the
+      // whole record, the largest transient on top of the steady state); same bytes
+      Kokkos::realloc(outarray_m1r, nmb, nra, nout3, nout2, nout1);
+      pradm1->RotAvgRstPackHost(outarray_m1r, nmb, 4);
+    }
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
@@ -421,6 +435,21 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                                            pradm1->vgd_acyc : -1), 0};
     std::memcpy(&(vgd_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
+  // <rad_m1>/implicit_gas_src = conservative(2) (rotavg-rst-1012): csk1 + the flags,
+  // ncsk slabs behind the vet_gd_async ones (radm1::kM1CskRstMagic)
+  const bool wcsk = (pradm1 != nullptr) && pradm1->CskRstHdr();
+  const int ncsk = wcsk ? pradm1->CskRstNch() : 0;
+  char csk_hdr[4*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[4] = {wcsk ? 1 : 0, static_cast<std::int32_t>(ncsk),
+                                 (wcsk && pradm1->csk1_ok) ? 1 : 0, 0};
+    std::memcpy(&(csk_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
+  // <rad_m1>/vet_rotate_avg (rotavg-rst-1012): the averaging history, nra slabs behind
+  // even the csk ones (radm1::kM1RaRstMagic; RadiationM1::RotAvgRstHdr)
+  std::int64_t ra_hdr[radm1::RadiationM1::M1_RA_RST_NH] = {0};
+  if (pradm1 != nullptr) {pradm1->RotAvgRstHdr(&(ra_hdr[0]));}
+  const int nra = static_cast<int>(ra_hdr[1]);
   char eint_hdr[2*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[2] = {static_cast<std::int32_t>(neint), 0};
@@ -472,7 +501,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   // increment counters now so values for *next* dump are stored in restart file
   out_params.file_number++;
-  if (out_params.last_time < 0.0) {
+  // rotavg-rst-1012: Driver::Finalize's restart file before tlim keeps the schedule
+  // (the next link writes its next restart file when the continuous run would)
+  if (global_variable::final_outputs && out_params.last_time >= 0.0) {
+    // last_time unchanged
+  } else if (out_params.last_time < 0.0) {
     out_params.last_time = pm->time;
   } else {
     out_params.last_time += out_params.dt;
@@ -635,6 +668,22 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(vgd_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the conservative cell-F slope header, same marked form, behind the vet_gd_async one
+    if (wcsk) {
+      IOWrapperSizeT nb = sizeof(csk_hdr);
+      resfile.Write_any_type(&(radm1::kM1CskRstMagic[0]), sizeof(radm1::kM1CskRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(csk_hdr[0]), nb, "byte", single_file_per_rank);
+    }
+    // the vet_rotate_avg header, same marked form, behind the csk one
+    if (nra > 0) {
+      IOWrapperSizeT nb = sizeof(ra_hdr);
+      resfile.Write_any_type(&(radm1::kM1RaRstMagic[0]), sizeof(radm1::kM1RaRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(ra_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -694,19 +743,21 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     data_size += 2*nout1*nout2*nout3*sizeof(Real);      // mhd wder (IDPR, IDG1)
   }
   if (nwarm > 0) {
-    data_size += nwarm*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
+    data_size += static_cast<IOWrapperSizeT>(nwarm)*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
   }
   if (npred > 0) {
-    data_size += npred*nout1*nout2*nout3*sizeof(Real);  // rad_m1 ipred
+    data_size += static_cast<IOWrapperSizeT>(npred)*nout1*nout2*nout3*sizeof(Real);  // rad_m1 ipred
   }
   if (nt2 > 0) {
-    data_size += nt2*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
+    data_size += static_cast<IOWrapperSizeT>(nt2)*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
   }
-  data_size += neint*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
-  data_size += nck*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
-  data_size += nctr*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
-  data_size += nrss*nout1*nout2*nout3*sizeof(Real);     // rad_signal_speed inputs
-  data_size += nvgd*nout1*nout2*nout3*sizeof(Real);     // vet_gd_async source
+  data_size += static_cast<IOWrapperSizeT>(neint)*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
+  data_size += static_cast<IOWrapperSizeT>(nck)*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
+  data_size += static_cast<IOWrapperSizeT>(nctr)*nout1*nout2*nout3*sizeof(Real);     // rad_m1 thin_relax ctr_mem
+  data_size += static_cast<IOWrapperSizeT>(nrss)*nout1*nout2*nout3*sizeof(Real);     // rad_signal_speed inputs
+  data_size += static_cast<IOWrapperSizeT>(nvgd)*nout1*nout2*nout3*sizeof(Real);     // vet_gd_async source
+  data_size += static_cast<IOWrapperSizeT>(ncsk)*nout1*nout2*nout3*sizeof(Real);     // conservative csk1
+  data_size += static_cast<IOWrapperSizeT>(nra)*nout1*nout2*nout3*sizeof(Real);      // vet_rotate_avg history
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -757,6 +808,12 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nvgd > 0) {
     step3size += sizeof(radm1::kM1VgdRstMagic) + sizeof(IOWrapperSizeT) + sizeof(vgd_hdr);
+  }
+  if (wcsk) {
+    step3size += sizeof(radm1::kM1CskRstMagic) + sizeof(IOWrapperSizeT) + sizeof(csk_hdr);
+  }
+  if (nra > 0) {
+    step3size += sizeof(radm1::kM1RaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1262,6 +1319,16 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<nvgd; ++n) {
     write_wtemp(Kokkos::subview(outarray_m1g, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "vet_gd_async source");
+  }
+  // and the conservative cell-F slope behind it (kM1CskRstMagic)
+  for (int n=0; n<ncsk; ++n) {
+    write_wtemp(Kokkos::subview(outarray_m1k, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "rad_m1 conservative cell-F slope");
+  }
+  // and the vet_rotate_avg history behind it (kM1RaRstMagic)
+  for (int n=0; n<nra; ++n) {
+    write_wtemp(Kokkos::subview(outarray_m1r, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "vet_rotate_avg history");
   }
 
   // close file, clean up

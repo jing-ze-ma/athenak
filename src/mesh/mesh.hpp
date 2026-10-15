@@ -375,6 +375,9 @@ class Mesh {
   int *nprtcl_eachrank;    // number of particles on each rank
 
   Real time, dt, dtold, cfl_no;
+  // fin4-dtretry: cap on dt after a dt-retry (driver/dt_retry.cpp; < 0 = none) and the
+  // dt NewTimeStep found before the cap (the recovery compares against it)
+  Real dt_cap = -1.0, dt_uncapped = 0.0;
   Real dt_diff;
   int ncycle;
   EventCounters ecounter;

@@ -33,6 +33,8 @@
 // outlives Kokkos::finalize.  Nothing is allocated or run unless the switch is on.
 namespace {
 DvceArray1D<int> *cnd_nanrep_cnt = nullptr;
+DvceArray1D<int> *cnd_nanrep_dmy_i = nullptr;
+DvceArray1D<Real> *cnd_nanrep_dmy_r = nullptr;
 DvceArray1D<Real> *cnd_nanrep_rec = nullptr;
 int cnd_nanrep_lines = 0;
 const int cnd_nanrep_maxlines = 400;
@@ -1420,8 +1422,13 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     cnd_nanrep_cnt = new DvceArray1D<int>("cnd_nanrep_cnt", 1);
     cnd_nanrep_rec = new DvceArray1D<Real>("cnd_nanrep_rec", 16);
   }
-  auto cndcnt = nanrep_c ? *cnd_nanrep_cnt : DvceArray1D<int>("d", 1);
-  auto cndrec = nanrep_c ? *cnd_nanrep_rec : DvceArray1D<Real>("d", 1);
+  // vgdrot-1011: the off-switch stand-ins made once (were 2 allocations + frees per call)
+  if (!nanrep_c && cnd_nanrep_dmy_i == nullptr) {
+    cnd_nanrep_dmy_i = new DvceArray1D<int>("d", 1);
+    cnd_nanrep_dmy_r = new DvceArray1D<Real>("d", 1);
+  }
+  auto cndcnt = nanrep_c ? *cnd_nanrep_cnt : *cnd_nanrep_dmy_i;
+  auto cndrec = nanrep_c ? *cnd_nanrep_rec : *cnd_nanrep_dmy_r;
   if (nanrep_c) {
     Kokkos::deep_copy(cndcnt, 0);
     Kokkos::deep_copy(cndrec, 0.0);

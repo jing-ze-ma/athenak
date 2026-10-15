@@ -6,6 +6,7 @@
 //! \file hydro_fluxes.cpp
 //! \brief Calculate 3D fluxes for hydro
 
+#include <algorithm>
 #include <iostream>
 
 #include "athena.hpp"
@@ -33,6 +34,10 @@
 #include "hydro/rsolvers/hlle_grhyd.hpp"
 
 namespace hydro {
+
+// bsgaccel-1011: the x2 / x3 flux sweeps are chunked below this many (m, pencil) teams
+constexpr int kHFluxMinTeams = 432;
+
 //----------------------------------------------------------------------------------------
 //! \fn void Hydro::CalculateFluxes
 //! \brief Calls reconstruction and Riemann solver functions to compute hydro fluxes
@@ -63,8 +68,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     wbrec_nanrep_cnt = new DvceArray1D<int>("wbrec_nanrep_cnt", 1);
     wbrec_nanrep_rec = new DvceArray1D<Real>("wbrec_nanrep_rec", 48);
   }
-  auto wbcnt_ = nanrep_r_ ? *wbrec_nanrep_cnt : DvceArray1D<int>("d", 1);
-  auto wbrec_ = nanrep_r_ ? *wbrec_nanrep_rec : DvceArray1D<Real>("d", 1);
+  if (!nanrep_r_ && nanrep_dummy_i == nullptr) {
+    nanrep_dummy_i = new DvceArray1D<int>("d", 1);
+    nanrep_dummy_r = new DvceArray1D<Real>("d", 1);
+  }
+  auto wbcnt_ = nanrep_r_ ? *wbrec_nanrep_cnt : *nanrep_dummy_i;
+  auto wbrec_ = nanrep_r_ ? *wbrec_nanrep_rec : *nanrep_dummy_r;
   if (nanrep_r_) {
     Kokkos::deep_copy(wbcnt_, 0);
     Kokkos::deep_copy(wbrec_, 0.0);
@@ -75,8 +84,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     rsolv_nanrep_cnt = new DvceArray1D<int>("rsolv_nanrep_cnt", 1);
     rsolv_nanrep_rec = new DvceArray1D<Real>("rsolv_nanrep_rec", 40);
   }
-  auto rscnt_ = nanrep_r_ ? *rsolv_nanrep_cnt : DvceArray1D<int>("d", 1);
-  auto rsrec_ = nanrep_r_ ? *rsolv_nanrep_rec : DvceArray1D<Real>("d", 1);
+  auto rscnt_ = nanrep_r_ ? *rsolv_nanrep_cnt : *nanrep_dummy_i;
+  auto rsrec_ = nanrep_r_ ? *rsolv_nanrep_rec : *nanrep_dummy_r;
   if (nanrep_r_) {
     Kokkos::deep_copy(rscnt_, 0);
     Kokkos::deep_copy(rsrec_, 0.0);
@@ -527,8 +536,25 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
+    // bsgaccel-1011: the j sweep of each (m, k) pencil split into nch2 chunks of jc2
+    // faces when the pack has too few (m, k) pencils to fill the GPU (one MeshBlock per
+    // GPU: 66 teams on 108 SMs).  A chunk re-makes the reconstruction of its first row
+    // (the previous chunk's last); every face flux is computed once, by the same
+    // arithmetic (bitwise).  nch2 = 1 (the plain sweep) whenever the pencils suffice.
+    const int njf2 = ju - jl;                         // faces (jl, ju]
+    const int npen2 = (nmb1 + 1)*(ku - kl + 1);
+    int nch2 = 1;
+    if (npen2 < kHFluxMinTeams && njf2 >= 8) {
+      nch2 = std::min((kHFluxMinTeams + npen2 - 1)/npen2, njf2/4);
+    }
+    const int jc2 = (njf2 + nch2 - 1)/nch2;
+    nch2 = (njf2 + jc2 - 1)/jc2;
+    const int jl0 = jl, ju0 = ju;
     par_for_outer("hflux_x2",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku,
-    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k) {
+                  0, nch2 - 1,
+    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int jch) {
+      const int ja = jl0 + jch*jc2;
+      const int jb = (ja + jc2 < ju0) ? (ja + jc2) : ju0;
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr2(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr3(member.team_scratch(scr_level), nvars, ncells1);
@@ -536,7 +562,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       ScrArray2D<Real> dscr2(member.team_scratch(scr_level), nder, ncells1);
       ScrArray2D<Real> dscr3(member.team_scratch(scr_level), nder, ncells1);
 
-      for (int j=jl; j<=ju; ++j) {
+      for (int j=ja; j<=jb; ++j) {
         // Permute scratch arrays.
         auto wl     = scr1;
         auto wl_jp1 = scr2;
@@ -638,7 +664,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         member.team_barrier();
 
         // compute fluxes over [js,je+1].  RS returns flux in input wr array
-        if (j>jl) {
+        if (j>ja) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
           auto eos = eos_;
           const bool nanrep_r = nanrep_r_;
@@ -682,8 +708,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           member.team_barrier();
         }
 
-        // calculate fluxes of scalars (if any)
-        if (nvars > nhyd_) {
+        // calculate fluxes of scalars (if any); a later chunk's first row is the
+        // previous chunk's last face (done there)
+        if (nvars > nhyd_ && (j > ja || ja == jl0)) {
           for (int n=nhyd_; n<nvars; ++n) {
             par_for_inner(member, is, ie, [&](const int i) {
               if (flx2_(m,IDN,k,j,i) >= 0.0) {
@@ -721,8 +748,21 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
 
     scr_level = TeamScratchLevel(scr_size, scratch_level);
+    // bsgaccel-1011: the k sweep split into chunks as the x2 j sweep (bitwise)
+    const int nkf3 = ku - kl;
+    const int npen3 = (nmb1 + 1)*(ju - jl + 1);
+    int nch3 = 1;
+    if (npen3 < kHFluxMinTeams && nkf3 >= 8) {
+      nch3 = std::min((kHFluxMinTeams + npen3 - 1)/npen3, nkf3/4);
+    }
+    const int kc3 = (nkf3 + nch3 - 1)/nch3;
+    nch3 = (nkf3 + kc3 - 1)/kc3;
+    const int kl0 = kl, ku0 = ku;
     par_for_outer("hflux_x3",DevExeSpace(), scr_size, scr_level, 0, nmb1, jl, ju,
-    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
+                  0, nch3 - 1,
+    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j, const int kch) {
+      const int ka = kl0 + kch*kc3;
+      const int kb = (ka + kc3 < ku0) ? (ka + kc3) : ku0;
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr2(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr3(member.team_scratch(scr_level), nvars, ncells1);
@@ -730,7 +770,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       ScrArray2D<Real> dscr2(member.team_scratch(scr_level), nder, ncells1);
       ScrArray2D<Real> dscr3(member.team_scratch(scr_level), nder, ncells1);
 
-      for (int k=kl; k<=ku; ++k) {
+      for (int k=ka; k<=kb; ++k) {
         // Permute scratch arrays.
         auto wl     = scr1;
         auto wl_kp1 = scr2;
@@ -845,7 +885,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         member.team_barrier();
 
         // compute fluxes over [ks,ke+1].  RS returns flux in input wr array
-        if (k>kl) {
+        if (k>ka) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
           auto eos = eos_;
           const bool nanrep_r = nanrep_r_;
@@ -889,8 +929,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           member.team_barrier();
         }
 
-        // calculate fluxes of scalars (if any)
-        if (nvars > nhyd_) {
+        // calculate fluxes of scalars (if any); see the x2 sweep
+        if (nvars > nhyd_ && (k > ka || ka == kl0)) {
           for (int n=nhyd_; n<nvars; ++n) {
             par_for_inner(member, is, ie, [&](const int i) {
               if (flx3_(m,IDN,k,j,i) >= 0.0) {

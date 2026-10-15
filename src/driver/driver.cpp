@@ -97,6 +97,8 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
     ndiag = pin->GetOrAddInteger("time", "ndiag", 1);
     nan_check_cycles = pin->GetOrAddInteger("time", "nan_check_cycles", 100);
     dt_min = pin->GetOrAddReal("time", "dt_min", 0.0);
+    // fin4-dtretry: <time>/dt_retry (fresh default true; restart without the key false)
+    pdtr_ = std::make_shared<dtretry::DtRetry>(pin, pmesh);
 
     if (integrator == "rk1") {
       // RK1: first-order Runge-Kutta / the forward Euler (FE) method
@@ -386,6 +388,35 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     if (res_flag && dt_rst > 0.0) { pmesh->dt = dt_rst; }
   }
 
+  //---- Step 2b. icrad-1011: <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
+  // restart): the IC radiation passes (rad_m1_icrad.cpp) at the first dt, then the
+  // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
+  if (!res_flag && time_evolution != TimeEvolution::tstatic &&
+      pmesh->pmb_pack->pradm1 != nullptr && pmesh->pmb_pack->pradm1->icr_mode != 0) {
+    pmesh->pmb_pack->pradm1->IcRadRun(this);
+    // reatm-1011: the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
+    if (pmesh->pgen->user_icpost_func != nullptr) {
+      (pmesh->pgen->user_icpost_func)(pmesh);
+      // dic-1013: a pgen that iterates its IC with the radiation (he_star_m1
+      // he_ic_equil) asks for the IC passes again (false = once, as before)
+      while (pmesh->pgen->user_icpost_again) {
+        pmesh->pmb_pack->pradm1->IcRadRun(this);
+        (pmesh->pgen->user_icpost_func)(pmesh);
+      }
+    }
+    InitBoundaryValuesAndPrimitives(pmesh, false);
+    if (((phydro != nullptr && phydro->rad_signal_speed) ||
+         (pmhd != nullptr && pmhd->rad_signal_speed))) {
+      pmesh->pmb_pack->pradm1->RssPrime(res_flag);
+    }
+    if (phydro != nullptr) {(void) phydro->NewTimeStep(this, nexp_stages);}
+    if (pmhd != nullptr) {(void) pmhd->NewTimeStep(this, nexp_stages);}
+    if (prad != nullptr) {(void) prad->NewTimeStep(this, nexp_stages);}
+    (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, nexp_stages);
+    if (pz4c != nullptr) {(void) pz4c->NewTimeStep(this, nexp_stages);}
+    pmesh->NewTimeStep(tlim);
+  }
+
   //---- Step 3.  Cycle through output Types and load data / write files.
   if (!res_flag) { // only write outputs at the beginning of the run
     for (auto &out : pout->pout_list) {
@@ -440,9 +471,13 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     if (wall_time > 0.) {
       elapsed_time = UpdateWallClock();
     }
+    // fin4-dtretry: a retried cycle starts from the checkpoint already in place
+    bool dtr_retrying = false;
     while ((pmesh->time < tlim) && (pmesh->ncycle < nlim || nlim < 0) &&
            (elapsed_time < wall_time)) {
-      if (global_variable::my_rank == 0) {OutputCycleDiagnostics(pmesh);}
+      if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
+      if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
+      dtr_retrying = false;
 
       // Execute TaskLists
       // Work before time integrator indicated by "0" in stage
@@ -462,6 +497,14 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         pm1->MRSolve(this, pmesh->dt);
       }
       const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
+      // time2_start = slope (h2order-1011): a step without a stored slope gets K1 from a
+      // probe solve and runs the stages (no-op otherwise)
+      // vgdrot2-1012: the first step of a new vet_gd rotation block drops the old set's
+      // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
+      if (pm1 != nullptr && !m1mr) {pm1->VetGdRotStep();}
+      if (pm1 != nullptr && !m1mr) {(void) pm1->Time2StartProbe(this, pmesh->dt);}
+      // rotslope-1012: vet_gd_rotate_slope = correct, the slope's closure jump
+      if (pm1 != nullptr && !m1mr) {(void) pm1->Time2RotCorrect(this, pmesh->dt);}
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
       const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
@@ -492,7 +535,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           }
         }
       }
-      if (m1t2fail) {
+      // fin4-dtretry: a stage that raised the retry flag is not redone here (the retry
+      // puts the whole cycle back); the check below the radiation update takes it
+      const bool dtr_now = (pm1 != nullptr) && pm1->dtr_on && pm1->dtr_fail;
+      if (m1t2fail && !dtr_now) {
         pm1->Time2Restore(this);
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
@@ -531,7 +577,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         (void) pm1->ApplyClosureLimits(this, 1);
         (void) pm1->NewTimeStep(this, 1);
         pm1->t2_dtprev = pmesh->dt;
-      } else if (pmesh->pmb_pack->pradm1 != nullptr) {
+      } else if (pmesh->pmb_pack->pradm1 != nullptr && !dtr_now) {
         // hesdirk2 without a valid slope: backward Euler, which stores K1
         const bool m1be2 = (pm1->time_scheme == radm1::M1_TIME_HESDIRK2);
         pm1->t2_solve = m1be2 ? radm1::M1_T2S_BESTORE : radm1::M1_T2S_NONE;
@@ -557,6 +603,20 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           pm1->t2_nbe += 1.0;
           pm1->t2_dtprev = pmesh->dt;
         }
+      }
+
+      // fin4-dtretry: a module raised a failure in this cycle -> the checkpoint back, a
+      // smaller dt, and the cycle again (nothing of the failed attempt is output)
+      if (pdtr_ != nullptr && pdtr_->on && pdtr_->Failed(pmesh)) {
+        if (!pdtr_->Retry(pmesh, this)) {
+#if MPI_PARALLEL_ENABLED
+          MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+#else
+          std::_Exit(EXIT_FAILURE);
+#endif
+        }
+        dtr_retrying = true;
+        continue;
       }
 
       // Work after time integrator indicated by "1" in stage
@@ -602,7 +662,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // AMR
       if (pmesh->adaptive) {pmesh->pmr->AdaptiveMeshRefinement(this, pin);}
       // compute new timestep AFTER all Meshblocks refined/derefined
+      if (pdtr_ != nullptr) {pdtr_->Accept(pmesh);}
       pmesh->NewTimeStep(tlim);
+      if (pdtr_ != nullptr) {pdtr_->AfterNewDt(pmesh, pin);}
 
       // restart files, now that pmesh->dt holds the next cycle's timestep
       for (auto &out : pout->pout_list) {
@@ -820,12 +882,48 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 //!  and printing diagnostic messages
 
 void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
+  if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.
+  // rotavg-rst-1012 (bitwise chained runs): the final outputs of a run that ends before
+  // tlim (nlim, wall time) are EXTRA snapshots that must not move the output schedule,
+  // or the next link (restarted from the restart file written here) skips the next
+  // scheduled dump / history row and numbers its files one ahead of the continuous run:
+  //  - a non-restart output keeps its last_time and file_number (out_params and the
+  //    parameters the restart file stores), so the next scheduled dump of the next link
+  //    takes the same number (and overwrites this snapshot);
+  //  - the history output (appended rows) is written only at tlim, where the in-loop
+  //    schedule writes nothing (so a chain has exactly the continuous run's rows);
+  //  - the restart file is written last, with every schedule as it was, and does not
+  //    advance its own last_time (global_variable::final_outputs, restart.cpp).
+  // At tlim (the run's true end) every output is written as before.
+  const bool at_tlim = !(static_cast<float>(pmesh->time) < static_cast<float>(tlim));
   for (auto &out : pout->pout_list) {
+    if (out->out_params.file_type.compare("rst") == 0) {continue;}
+    if (out->out_params.file_type.compare("hst") == 0 && !at_tlim) {continue;}
+    const std::string &bn = out->out_params.block_name;
+    const Real lt = out->out_params.last_time;
+    const int fnum = out->out_params.file_number;
+    const bool hlt = pin->DoesParameterExist(bn, "last_time");
+    const bool hfn = pin->DoesParameterExist(bn, "file_number");
+    const std::string slt = hlt ? pin->GetString(bn, "last_time") : std::string();
+    const std::string sfn = hfn ? pin->GetString(bn, "file_number") : std::string();
+    out->LoadOutputData(pmesh);
+    out->WriteOutputFile(pmesh, pin);
+    if (!at_tlim) {
+      out->out_params.last_time = lt;
+      out->out_params.file_number = fnum;
+      if (hlt) {pin->SetString(bn, "last_time", slt);}
+      if (hfn) {pin->SetString(bn, "file_number", sfn);}
+    }
+  }
+  global_variable::final_outputs = !at_tlim;
+  for (auto &out : pout->pout_list) {
+    if (out->out_params.file_type.compare("rst") != 0) {continue;}
     out->LoadOutputData(pmesh);
     out->WriteOutputFile(pmesh, pin);
   }
+  global_variable::final_outputs = false;
 
   // call any problem specific functions to do work after main loop
   if (pmesh->pgen->pgen_final_func != nullptr) {

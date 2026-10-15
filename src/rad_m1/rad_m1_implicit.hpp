@@ -73,6 +73,19 @@ constexpr char kM1RssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
 // only when vet_gd_async is on with a pending build; a file without it restarts with a
 // synchronous first build (D of the restart cycle unlagged: not bitwise).
 constexpr char kM1VgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
+// <rad_m1>/vet_rotate_avg (rotavg-rst-1012): the averaging history (the ring of offsets,
+// the pending Delta and the scalars), header behind the vet_gd_async one: int64 x
+// RadiationM1::M1_RA_RST_NH (RotAvgRstHdr); its nslab slabs are the LAST of each
+// MeshBlock record.  Written only with a complete history; a file without it restarts
+// re-measuring the history at the first build (not bitwise).
+// <rad_m1>/implicit_gas_src = conservative(2) with hesdirk2 (rotavg-rst-1012): the stored
+// cell-F slope csk1 of the write-back's F^old increment and the first-solve flag, header
+// behind the vet_gd_async one: int32 have = 1, nch (3 or 0), csk1_ok, 0; its nch slabs
+// follow the vet_gd_async ones.  Written once a conservative solve has run; a file
+// without it restarts with the cold-start F^old (gcs_first) and the face/E increments
+// (not bitwise).
+constexpr char kM1CskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
+constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled
@@ -232,6 +245,25 @@ constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + 
 constexpr int M1_IBLEND_TAUF = 2;    // the product of the two: upwind only where the face
                                      // is thin AND the field is beamed.
 
+// thinsw-1010: <rad_m1>/implicit_thin_switch, the dt-free per-face weight of the
+// half-range blend (M1ThinFace, rad_m1_implicit.cpp); none keeps implicit_blend/xthin.
+constexpr int M1_THSW_NONE = 0;
+constexpr int M1_THSW_HJ   = 1;   // smoothstep of the formal-solution |H|/J
+constexpr int M1_THSW_KN   = 2;   // the face Knudsen number of E^n
+constexpr int M1_THSW_FS   = 3;   // smoothstep of max(|H|/J, C1/1.5, ...), C1 = <|I-S|>/J
+constexpr int M1_THSW_HJKN = 4;   // max(hj, kn)
+constexpr int M1_THSW_FSKN = 5;   // max(fs, kn)
+constexpr int M1_THSW_FSI  = 7;   // fs weight; h+- -> isotropic +-1/4 where the rays
+                                  // do not describe E^n (M1ThinHr)
+constexpr int M1_THSW_FSE  = 8;   // max(|H|/J, eps C1/1.5), eps the thermal fraction
+constexpr int M1_THSW_FSQ  = 6;   // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
+// <rad_m1>/implicit_thin_corr: the lagged formal-solution face flux (C4)
+constexpr int M1_THCR_NONE = 0;
+constexpr int M1_THCR_LAG  = 1;   // + w (F_sc^n - F_hr(E^n)), a fixed source
+constexpr int M1_THCR_SC   = 2;   // w F_sc^n replaces the half-range part
+constexpr int M1_THCR_HCS  = 4;   // hc weighted by the scattering fraction 1 - eps
+constexpr int M1_THCR_HC   = 3;   // + w (F_sc,central - F_sc,upwind)^n (no E^n term)
+
 // <rad_m1>/implicit_blend_fmode: which of the two cells' lagged reduced fluxes sets
 // f_face.
 constexpr int M1_IBFM_MAX  = 0;
@@ -268,6 +300,12 @@ constexpr int M1_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
 constexpr int M1_IENTH_PLM     = 2;  // DEFAULT: a_f E_f, E_f the van Leer plm value from
                                      // the side upwind of a_f; central where the 4-cell
                                      // stencil is not available on both sides of the face
+// open-ot-1013 HIDDEN TERM diagnostics (read only when named; every mode >= PLM takes the
+// plm a_f and stencil rule, only E_f differs):
+constexpr int M1_IENTH_PLMC    = 3;  // E_f = mean of the two van Leer plm face values (no
+                                     // upwind-side switch, limiter kept)
+constexpr int M1_IENTH_LIN     = 4;  // E_f the UNLIMITED linear (Fromm) value from the side
+                                     // upwind of a_f (side switch kept, no limiter)
 
 // <rad_m1>/implicit_vimp: the gas velocity v' of the enthalpy flux a(v') E' taken
 // IMPLICIT through the radiative force of the same solve (tests_m1/runs_3v_vimplicit).
@@ -294,6 +332,20 @@ constexpr int M1_NIW_VIMP = 26;
 // DA_d = a_d(old vector) - a_d(stage start) = dv_d + (D dv)_d, dv = t2inc momentum/rho
 constexpr int M1_IV_DA    = 26;
 constexpr int M1_NIW_VIMP_T2 = 3;
+// <rad_m1>/implicit_hr_recon = plm (xthinfix-1009 Fix B): the half-range face values
+// E_L + s_L/2, E_R - s_R/2 with the limited slope s_c = sig_c (E_c+1 - E_c-1)/2, sig_c
+// in [0, 1] the van Leer limiter of the Picard-lagged E, frozen for the pass, applied
+// as a linear operator outside the 7-point row (M1MusclRow): sig per direction, then
+// the row coefficients diag, x1 -2 -1 +1 +2, x2 -2 -1 +1 +2, x3 -2 -1 +1 +2.
+constexpr int M1_IM_SIG   = 0;    // sig_1, sig_2, sig_3
+constexpr int M1_IM_D     = 3;
+constexpr int M1_IM_X1    = 4;    // -2, -1, +1, +2
+constexpr int M1_IM_X2    = 8;
+constexpr int M1_IM_X3    = 12;
+constexpr int M1_IM_KILL  = 16;   // 1: dc for the rest of the step (positivity)
+constexpr int M1_IM_B     = 17;   // led: b_1, b_2, b_3 (SIG holds a_d)
+constexpr int M1_IM_EPREV = 20;   // qs_mode = step: E^n of the previous step
+constexpr int M1_NIW_MUSCL = 21;
 
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).
@@ -431,6 +483,13 @@ constexpr int M1_NIW_K = 48;
 // The five components below are APPENDED after whichever base component count the solve
 // uses (M1_NIW_X1 / M1_NIW / M1_NIW_K), so the base indices above never move; the offset
 // of the block is RadiationM1::iw_gas, a runtime int the kernels capture.
+// cbfix-1011 (implicit_hr_face = sf): per cell, the formal-solution half-range fluxes
+// H+_d, H-_d (d = 1..3), J and the donor scale Jh (M1HrSf), appended like the gas block
+constexpr int M1_NIW_HSF = 8;
+constexpr int M1_HSF_HP = 0;   // + 2 d: H+_d = sum w I max(mu_d, 0) (E units)
+constexpr int M1_HSF_HM = 1;   // + 2 d: H-_d = H_d - H+_d <= 0
+constexpr int M1_HSF_J  = 6;   // J of the formal solution
+constexpr int M1_HSF_JH = 7;   // Jh = max(J, max over the faces of the outgoing face SC flux)
 constexpr int M1_NIW_GAS = 5;
 constexpr int M1_IWG_BK = 0;   // B_k = rho c_v + 4 c dt rho kappa_P a T_k^3, the
                                // derivative d/dT of the LOCAL gas energy equation

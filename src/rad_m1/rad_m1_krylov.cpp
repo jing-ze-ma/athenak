@@ -525,7 +525,8 @@ void RadiationM1::ImplicitHaloOp(int xc, int yc, int red, Real *out) {
   if (ovl && hm_state == 0) {ImplicitHaloMPIInit();}
   ovl = ovl && (hm_state == 1);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int w = vimp_now ? 2 : 1;       // the reach of the operator (M1VimpRow: 2)
+  const int w = (vimp_now || muscl_now) ? 2 : 1;   // the operator's reach (M1VimpRow,
+                                                   // M1MusclRow: 2)
   if (ovl) {
     // an interior box that is not empty in every non-degenerate direction
     ovl = (indcs.nx1 > 2*w) && ((indcs.nx2 == 1) || (indcs.nx2 > 2*w)) &&

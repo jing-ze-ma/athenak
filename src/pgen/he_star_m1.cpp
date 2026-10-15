@@ -66,6 +66,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -87,6 +88,7 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
+#include "driver/dt_retry.hpp"
 
 // defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
@@ -150,6 +152,12 @@ Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
 // of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
 DvceArray1D<Real> hs_bd_, hs_be_;
+// reatm-1011 problem/he_ic_rad_atm_post (HeStarIcPost): the thin atmosphere's first
+// mesh cell above R_ph (x1 index incl. ghosts) and the column's floor density
+bool hs_atp_ = false;
+ParameterInput *hs_pin_ = nullptr;   // the run's input (HeStarIcPost records a_ref)
+int hs_atp_ia_ = -1;
+Real hs_atp_dfl_ = 0.0;
 // bsg-truerepro-1008 (Ma, Bildsten & Jiang 2026 setup, all three default off):
 // problem/he_gravity = pointmass (hs_pm_): NO well-balanced pair; the point-mass momentum
 //   source in the Athena++ form rho GM <1/r>_vol/x1v (etotgrav keeps the energy);
@@ -188,6 +196,22 @@ std::vector<Real> hs_tap_, hs_r2o_;
 char hs_ad_file_[1024] = {0};
 // Picard counters at the previous history output (HeStarHist)
 Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
+// rotavg-rst-1012: the open Picard window travels in the pgen restart block as a tagged
+// trailer (tag, solves, passes since the last history output), so the first user.hst row
+// after a restart is the continuous run's
+constexpr char kHsPicTag[8] = {'H', 'S', 'P', 'I', 'C', 'W', '0', '1'};
+Mesh *hs_mesh_ = nullptr;   // the mesh (HsAdaptiveRstWrite: the rad_m1 counters)
+// dic-1013 problem/he_ic_equil (HeStarIcEquil; read only when named, default false =
+// nothing): the discrete equilibrium of the initial state on the code's own operators.
+// hs_eq_ on; hs_eq_it_ the hook calls so far; hs_eq_dfl_ the column's floor density;
+// hs_eq_a_ a_ref of the active cells is..ie (the restart trailer kHsDicTag); hs_sfac_ the
+// he_seed factor of every cell, applied after the equilibrium (deferred seed)
+bool hs_eq_ = false, hs_eq_srad_ = false, hs_eq_seed_ = false, hs_eq_last_ = false;
+int hs_eq_it_ = 0, hs_eq_maxit_ = 30;
+Real hs_eq_tol_ = 1.0e-9, hs_eq_dfl_ = 0.0;
+std::vector<Real> hs_eq_a_;
+DvceArray4D<Real> hs_sfac_;
+constexpr char kHsDicTag[8] = {'H', 'S', 'D', 'I', 'C', 'E', '0', '1'};
 
 //! the frozen-MLT weight w(t): a function of the time only (restart-safe)
 Real HsMltW(const Real t) {
@@ -310,6 +334,124 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
   lt_lo = lt0; lt_hi = lt0 + (nT - 1)*dlt;
   ld_lo = ld0; ld_hi = ld0 + (nD - 1)*dld;
 }
+
+//----------------------------------------------------------------------------------------
+// icgen-1011 (problem/he_ic_rad = sph1d): helpers of the 1-D spherical grey
+// radiative-equilibrium solve of the initial column (see HeStarM1)
+
+// kappa_t = of + os (the total, = kappa_R: the vet_col/vet_gd extinction and the pgen's
+// own ckt) of the module's tables at (d, t) [code units], one device thread per point
+void HsKtEval(const radm1::M1OpacTab &ot, const std::vector<Real> &d,
+              const std::vector<Real> &t, std::vector<Real> &k) {
+  const int n = static_cast<int>(d.size());
+  DvceArray1D<Real> dd("hs_icr_d", n), dt("hs_icr_t", n), dk("hs_icr_k", n);
+  auto hd = Kokkos::create_mirror_view(dd);
+  auto ht = Kokkos::create_mirror_view(dt);
+  for (int i=0; i<n; ++i) {
+    hd(i) = d[i];
+    ht(i) = t[i];
+  }
+  Kokkos::deep_copy(dd, hd);
+  Kokkos::deep_copy(dt, ht);
+  par_for("hs_icr_kt", DevExeSpace(), 0, n-1, KOKKOS_LAMBDA(const int i) {
+    Real op, oe, of, os;
+    radm1::M1TableOpacities(ot, dd(i), dt(i), op, oe, of, os);
+    dk(i) = of + os;
+  });
+  auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dk);
+  k.resize(n);
+  for (int i=0; i<n; ++i) k[i] = hk(i);
+}
+
+// mean of chi over an interval with chi log-linear in the path (the arithmetic mean
+// where the two ends are equal or one vanishes)
+inline Real HsLogMean(const Real c0, const Real c1) {
+  if (c0 > 0.0 && c1 > 0.0 && std::fabs(c1 - c0) > 1.0e-8*c0) {
+    return (c1 - c0)/std::log(c1/c0);
+  }
+  return 0.5*(c0 + c1);
+}
+
+// one first-order short-characteristic step (the positive weights of VcolW/VlatW,
+// source linear in tau): I = I_up e^-dtau + w0 S_0 + wu S_up
+inline Real HsScStep(const Real iup, const Real dtau, const Real su, const Real s0) {
+  const Real ex = std::exp(-dtau);
+  Real w0, wu;
+  if (dtau < 1.0e-3) {
+    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
+  } else {
+    const Real g = (1.0 - ex)/dtau;
+    w0 = 1.0 - g;
+    wu = g - ex;
+  }
+  return iup*ex + w0*s0 + wu*su;
+}
+
+// ONE VET pass on the solve grid rg (ascending; rg[0] = r_b, the inner boundary):
+// (a) the p-z formal solution of n.grad I = chi (S - I), S = E (radiative equilibrium,
+//     E units: I 4 pi/c), one ray per shell tangent plus ncore core rays p < r_b uniform
+//     in p^2, no incoming intensity at the top, the diffusion intensity E_b + 3 mu F_b/c
+//     at r_b; J, H, K by the trapezoid in mu (the rays reach every shell in descending
+//     mu, so the sums are accumulated ray by ray);
+// (b) the moment equation d(f E)/dr + (3f - 1) E/r = -chi F/c with f = K/J, integrated
+//     inward (trapezoid; chi log-linear) from E_top = F_top/(c g_top), g = H/J.
+// E is replaced by the new E; jout = J of the formal solution (for diagnostics).
+void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
+                 const std::vector<Real> &F, const int ncore, const Real cl,
+                 std::vector<Real> &E, std::vector<Real> &jout, Real &gtop,
+                 Real &ftop) {
+  const int N = static_cast<int>(rg.size());
+  std::vector<Real> J(N, 0.0), H(N, 0.0), K(N, 0.0), mup(N, -1.0), ap(N), bp(N);
+  std::vector<Real> im(N), ip(N), z(N), dtau(N);
+  const Real rb = rg[0];
+  const int nr = ncore + N;
+  for (int q=0; q<nr; ++q) {
+    const bool core = (q < ncore);
+    const Real p = core ? rb*std::sqrt(static_cast<Real>(q)/ncore) : rg[q - ncore];
+    const int k0 = core ? 0 : (q - ncore);
+    for (int k=k0; k<N; ++k) {
+      z[k] = (!core && k == k0) ? 0.0
+                                : std::sqrt(std::fmax((rg[k] - p)*(rg[k] + p), 0.0));
+    }
+    for (int k=k0; k<N-1; ++k) dtau[k] = (z[k+1] - z[k])*HsLogMean(chi[k], chi[k+1]);
+    im[N-1] = 0.0;
+    for (int k=N-2; k>=k0; --k) im[k] = HsScStep(im[k+1], dtau[k], E[k+1], E[k]);
+    if (core) {
+      const Real mub = std::sqrt(std::fmax(1.0 - (p/rb)*(p/rb), 0.0));
+      ip[k0] = E[0] + 3.0*mub*F[0]/cl;
+    } else {
+      ip[k0] = im[k0];
+    }
+    for (int k=k0+1; k<N; ++k) ip[k] = HsScStep(ip[k-1], dtau[k-1], E[k-1], E[k]);
+    for (int k=k0; k<N; ++k) {
+      const Real mu = z[k]/rg[k], a = ip[k], b = im[k];
+      if (mup[k] >= 0.0) {
+        const Real dm = mup[k] - mu;
+        J[k] += 0.25*dm*((ap[k] + bp[k]) + (a + b));
+        H[k] += 0.25*dm*((ap[k] - bp[k])*mup[k] + (a - b)*mu);
+        K[k] += 0.25*dm*((ap[k] + bp[k])*mup[k]*mup[k] + (a + b)*mu*mu);
+      }
+      mup[k] = mu;
+      ap[k] = a;
+      bp[k] = b;
+    }
+  }
+  std::vector<Real> f(N), y(N);
+  for (int k=0; k<N; ++k) f[k] = K[k]/J[k];
+  gtop = H[N-1]/J[N-1];
+  ftop = f[N-1];
+  y[N-1] = f[N-1]*F[N-1]/(cl*gtop);
+  for (int k=N-2; k>=0; --k) {
+    const Real h = rg[k+1] - rg[k];
+    const Real a0 = (3.0*f[k] - 1.0)/(f[k]*rg[k]);
+    const Real a1 = (3.0*f[k+1] - 1.0)/(f[k+1]*rg[k+1]);
+    const Real b = HsLogMean(chi[k], chi[k+1])*h*0.5*(F[k] + F[k+1])/cl;
+    y[k] = (y[k+1]*(1.0 + 0.5*h*a1) + b)/(1.0 - 0.5*h*a0);
+  }
+  for (int k=0; k<N; ++k) E[k] = y[k]/f[k];
+  jout = J;
+}
 }  // namespace
 
 namespace {
@@ -320,6 +462,18 @@ void HsApplyMltW(Mesh *pm, const Real w);
 void HsAdaptiveUpdate(Mesh *pm);
 std::vector<char> HsAdaptiveRstWrite();
 void HeStarFinal(ParameterInput *pin, Mesh *pm);
+void HeStarIcPost(Mesh *pm);
+void HeStarIcEquil(Mesh *pm);
+void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
+                 const std::vector<Real> &pc0, const std::vector<Real> &pf0,
+                 const std::vector<Real> &p0c, const std::vector<Real> &p0f,
+                 const std::vector<Real> &x1v, const std::vector<Real> &x1f,
+                 std::vector<Real> &pc, std::vector<Real> &pf);
+void HsAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> &pf0,
+                 std::vector<Real> &p0c, std::vector<Real> &p0f, std::vector<Real> &x1v,
+                 std::vector<Real> &x1f, std::vector<Real> &ar0);
+void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
+                const std::vector<Real> &pc, const std::vector<Real> &pf);
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -329,6 +483,7 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm);
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto *pm1 = pmbp->pradm1;
+  hs_pin_ = pin;
   // STAGE CS3 (m1-cs-implicit): the cubed sphere as well (x1 = r on both meshes; the
   // column, the potentials, the WB pair and the x1 BCs are radial).  On cs the solid
   // angle is 4 pi and the multi-mode seed is laid down in the global (theta, phi) of the
@@ -487,13 +642,31 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the two interpolants (agcar/geos B: 5.8e-6, vs 4.6e-7 for the ideal gas); E = aT^4 of
   // the file is then out of equilibrium with the gas by 4x that.  With this key the
   // code's T equals the column T to round-off (the log-linear resampling aside).
-  const bool eft = pin->GetOrAddBoolean("problem","he_ic_eint_from_t",false);
+  // defaults-1009 (user 10-09): default true on a fresh run whose file carries the T
+  // column (he_ic_cols = 5 and >= 7 columns on its first data line); otherwise (4-column
+  // files, a restart whose file lacks the key) the old default false.  Recorded.
+  bool eft_def = false;
+  if (!global_variable::restart_run && ncols == 5) {
+    std::ifstream f0(fn);
+    std::string l0;
+    while (std::getline(f0, l0)) {
+      if (l0.empty() || l0[0] == '#') continue;
+      std::istringstream s0(l0);
+      int nc = 0;
+      Real v0;
+      while (s0 >> v0) ++nc;
+      eft_def = (nc >= 7);
+      break;
+    }
+  }
+  const bool eft = pin->GetOrAddBoolean("problem","he_ic_eint_from_t",eft_def);
   if (eft && ncols != 5) {
     HsFatal("problem/he_ic_eint_from_t = true needs he_ic_cols = 5 and the 7-column file "
             "(column 6 = T [K])", __LINE__);
   }
   bool tcol_read = false;
   std::vector<Real> hTcol(nf, -1.0);   // the file's T column [K] on the fine grid
+  std::vector<Real> hfr_keep, hfM_keep;   // he_ic_rad = sph1d: the file's r, fmlt (dump)
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
@@ -536,6 +709,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (hs_mlt_ || eft) hTcol[n] = exp((1.0 - w)*log(fT[kk]) + w*log(fT[kk+1]));
     }
     tcol_read = (hs_mlt_ || eft);
+    hfr_keep = fr;
+    hfM_keep = fM;
     if (eft) {
       for (int n=0; n<nf; ++n) {
         Real ee, pp, cr, ct, cv;
@@ -635,6 +810,649 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
+  // ---- icgen-1011 problem/he_ic_rad (file = the old IC; the default is set below).
+  // sph1d: above the depth tau_R = he_ic_rad_taub (from the mesh top, the run's
+  // own kappa_t), the radiation energy density of the column is replaced by the solution
+  // of the 1-D spherical grey transfer problem in radiative equilibrium (S = J = E, the
+  // vet_col/vet_gd source in RE, the vet_scatter split included) with the column's own
+  // radiative flux F_r: a VET iteration of a p-z formal solution (f = K/J, g_top = H/J)
+  // and the radial moment equation (HsSph1dPass).  The file's E above R_ph is an
+  // isothermal-atmosphere guess (2.1-2.6x the relaxed E at 1.0-1.2 R_ph for AG Car A).
+  // E = w E_sph1d + (1 - w) E_col, w a smoothstep LINEAR in tau, 1 at he_ic_rad_taua, 0
+  // at he_ic_rad_taub.  he_ic_rad_gas = column (old default): T of the column; re: T^4
+  // = E at fixed rho (blended with the same w; eint from the code's EOS); re_atm: as re
+  // but the floor gas (rho at the column's floor) keeps the column's T, so its a_ref = kt
+  // F/c is the file IC's (with re its cold floor gas falls 3x faster and the implicit
+  // solve then takes ~6 instead of ~4 Picard iterations, AG Car A).  he_ic_rad_hse
+  // (needs gas = re | re_atm): rho re-integrated outward from r_b at fixed T, dP_gas/dr
+  // = -rho (g - kt F/c) (the continuum balance of the WB pair, whose a_ref = kt F/c is
+  // built below from this column), floored at the column's floor; E solve and HSE
+  // iterated together.
+  // F_r and the MLT fraction are not changed.  Deterministic (host solve, per-point
+  // device opacities) and rebuilt on every start, as the column itself.
+  // he_ic_rad_dump = <file>: rank 0 writes the new column in the IC file format (r rho
+  // eint F_r E T fmlt; usable with he_ic_rad = file; none = no dump).  NOTE-icgen.md.
+  // prodfinal-1011: DEFAULT sph1d (with he_ic_rad_gas = re_atm, he_ic_rad_hse = true) on
+  // a FRESH start of every he_star_m1 run where it applies: opacity = table, no
+  // he_wind_ic, he_ic_rad_thin not set.  Elsewhere the default stays file (the old IC),
+  // silently.  A restart whose file lacks the key keeps file (the column is rebuilt on
+  // every start, so this matters for the restart too).  The resolved value is echoed
+  // (later restarts keep it); explicit input overrides.  To keep the old IC on a fresh
+  // start name problem/he_ic_rad = file (and rad_m1/ic_rad = none for the old radiation
+  // start).
+  // reatm-1011 (he_ic_rad_atm_force = module): the factor phi = a_module/a_continuum of
+  // the radiative acceleration of each mesh cell of the thin atmosphere (hatm_c, index
+  // = the x1 cell index of block 0 incl. ghosts) and on the fine grid (hatm_f); 1 (and
+  // unused) elsewhere / when off
+  bool hatm_on = false;
+  std::vector<Real> hatm_c, hatm_f;
+  const bool icrdef = !global_variable::restart_run &&
+      (pm1->opacity_type == radm1::M1_OPAC_TABLE) && !wic &&
+      !(pin->DoesParameterExist("problem","he_ic_rad_thin") &&
+        pin->GetBoolean("problem","he_ic_rad_thin"));
+  const std::string icr0 = pin->GetOrAddString("problem","he_ic_rad",
+                                               icrdef ? "sph1d" : "file");
+  if (icr0 != "file") {
+    const std::string icr = icr0;
+    if (icr != "sph1d") HsFatal("problem/he_ic_rad must be file | sph1d", __LINE__);
+    if (wic) {
+      HsFatal("problem/he_ic_rad = sph1d does not combine with he_wind_ic", __LINE__);
+    }
+    if (pin->DoesParameterExist("problem","he_ic_rad_thin") &&
+        pin->GetBoolean("problem","he_ic_rad_thin")) {
+      HsFatal("problem/he_ic_rad = sph1d replaces he_ic_rad_thin (set one)", __LINE__);
+    }
+    Kokkos::Timer tw0;
+    const Real taua = pin->GetOrAddReal("problem","he_ic_rad_taua",30.0);
+    const Real taub = pin->GetOrAddReal("problem","he_ic_rad_taub",3000.0);
+    const Real dtau0 = pin->GetOrAddReal("problem","he_ic_rad_dtau",0.05);
+    const Real dlnr = pin->GetOrAddReal("problem","he_ic_rad_dlnr",2.0e-3);
+    const int ncore = pin->GetOrAddInteger("problem","he_ic_rad_ncore",64);
+    // prodfinal-1011: fresh-start defaults re_atm + hse (the recommended IC, NOTE-icgen);
+    // a restart whose file lacks the keys keeps column / false
+    const bool icgdef = !global_variable::restart_run;
+    const std::string gasm = pin->GetOrAddString("problem","he_ic_rad_gas",
+                                                 icgdef ? "re_atm" : "column");
+    const bool hse = pin->GetOrAddBoolean("problem","he_ic_rad_hse",icgdef);
+    const int maxit = pin->GetOrAddInteger("problem","he_ic_rad_maxit",60);
+    const Real tol = pin->GetOrAddReal("problem","he_ic_rad_tol",1.0e-8);
+    const Real htol = pin->GetOrAddReal("problem","he_ic_rad_hse_tol",1.0e-6);
+    // hsefix-1011 (NOTE-hsefix): the HSE outer loop on a near-Eddington column.
+    // (1) Gamma = kt F/(c g) of the HSE march is clamped at he_ic_rad_hse_gmax (as
+    //     he_bc_hse_gmax).  Where Gamma > 1 (AG Car B: the kappa rise at T 20-25 kK, tau
+    //     0.5-3 just below R_ph, Gamma 1.3; the file column has a density inversion
+    //     there) the fixed-T march makes rho grow outward, kappa_t(rho) grows with it and
+    //     the E-solve <-> HSE loop ran away (rho overflowed, the solve grid became NaN and
+    //     the VET pass failed).  Clamped cells keep a net outward force (Gamma - gmax) g.
+    // (2) At the first rise of the outer residual max |dln rho| the update is damped,
+    //     ln rho <- (1 - w) ln rho + w ln rho_HSE, w = he_ic_rad_hse_damp, from then on.
+    // (3) The outer loop has its own limit he_ic_rad_hse_maxit (was he_ic_rad_maxit) and
+    //     warns when it does not converge.
+    // A column with Gamma <= gmax and a monotone residual (AG Car A: Gamma <= 0.80) is
+    // bitwise unchanged.
+    const Real hgmax = pin->GetOrAddReal("problem","he_ic_rad_hse_gmax",0.9);
+    const Real hsdamp = pin->GetOrAddReal("problem","he_ic_rad_hse_damp",0.5);
+    const int hsmaxo = pin->GetOrAddInteger("problem","he_ic_rad_hse_maxit",400);
+    if (!(taua > 0.0 && taub > taua && dtau0 > 0.0 && dlnr > 0.0 && ncore >= 4 &&
+          maxit >= 1 && tol > 0.0 && htol > 0.0 && hgmax > 0.0 && hgmax < 1.0 &&
+          hsdamp > 0.0 && hsdamp <= 1.0 && hsmaxo >= 1)) {
+      HsFatal("problem/he_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore >= 4,"
+              " 0 < hse_gmax < 1, 0 < hse_damp <= 1, hse_maxit >= 1",
+              __LINE__);
+    }
+    if (gasm != "column" && gasm != "re" && gasm != "re_atm") {
+      HsFatal("problem/he_ic_rad_gas must be column | re | re_atm", __LINE__);
+    }
+    // re_atm: radiative equilibrium only where rho is above the column's floor (the floor
+    // gas keeps the column's T, hence its a_ref = kt F/c, as with he_ic_rad = file)
+    const bool gre = (gasm == "re" || gasm == "re_atm");
+    const bool gatm = (gasm == "re_atm");
+    if (hse && !gre) {
+      HsFatal("problem/he_ic_rad_hse = true needs he_ic_rad_gas = re | re_atm", __LINE__);
+    }
+    // the column as read: T [code] (the file's T with he_ic_eint_from_t, else the code's
+    // T(rho, eint)), E (the file's, else a T^4), rho
+    std::vector<Real> d0(hd), t0(nf), e0(nf);
+    for (int n=0; n<nf; ++n) {
+      t0[n] = eft ? hTcol[n]/hs_tk : eos.Temperature(hd[n], he[n]);
+      e0[n] = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(t0[n]));
+    }
+    std::vector<Real> tcur(t0), ef(e0), kt, tauf(nf, 0.0);
+    radm1::M1OpacTab otr = pm1->otab;
+    auto ftau = [&]() {   // kappa_t and tau from the mesh top (as the pgen's tau below)
+      HsKtEval(otr, hd, tcur, kt);
+      tauf[nf-1] = 0.0;
+      for (int n=nf-2; n>=0; --n) {
+        const Real a0 = (hr[n] < rtop) ? hd[n]*kt[n] : 0.0;
+        const Real a1 = (hr[n+1] < rtop) ? hd[n+1]*kt[n+1] : 0.0;
+        tauf[n] = tauf[n+1] + 0.5*hs_dr_*(a0 + a1);
+      }
+    };
+    auto frph = [&]() {   // tau_R = 2/3
+      for (int n=nf-2; n>=0; --n) {
+        if (tauf[n] >= 2.0/3.0 && tauf[n+1] < 2.0/3.0) {
+          return hr[n] + hs_dr_*(tauf[n] - 2.0/3.0)/(tauf[n] - tauf[n+1]);
+        }
+      }
+      return -1.0;
+    };
+    auto flog = [&](const std::vector<Real> &a, const Real r) {   // fine grid, log-linear
+      Real x = (r - hs_rlo_)/hs_dr_;
+      int i = static_cast<int>(floor(x));
+      i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
+      Real w = x - i;
+      w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+      return exp((1.0 - w)*log(a[i]) + w*log(a[i+1]));
+    };
+    auto glog = [](const std::vector<Real> &x, const std::vector<Real> &y, const Real r) {
+      const int n = static_cast<int>(x.size());
+      int i = static_cast<int>(std::upper_bound(x.begin(), x.end(), r) - x.begin()) - 1;
+      i = (i < 0) ? 0 : ((i > n - 2) ? (n - 2) : i);
+      Real w = (r - x[i])/(x[i+1] - x[i]);
+      w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+      return exp((1.0 - w)*log(y[i]) + w*log(y[i+1]));
+    };
+    ftau();
+    const Real rph0 = frph();
+    int nb = 0;
+    for (int n=nf-1; n>=0; --n) {
+      if (tauf[n] >= taub) {
+        nb = n;
+        break;
+      }
+    }
+    if (tauf[0] < taub && global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: he_ic_rad = sph1d: WARNING the column's bottom tau ("
+                << tauf[0] << ") is below he_ic_rad_taub; r_b = the fine-grid bottom"
+                << std::endl;
+    }
+    Real dfl = 1.0e300;   // the column's floor: its minimum density at and above r_b
+    for (int n=nb; n<nf; ++n) dfl = std::min(dfl, d0[n]);
+    // gravity of the HSE march: the point mass, or (he_gm_column) the static monopole of
+    // the current column, as built below
+    Real gcode = 0.0;
+    if (hs_gmc_) {
+      if (pmbp->punit == nullptr) HsFatal("problem/he_gm_column needs <units>", __LINE__);
+      const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
+      gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/(lu*lu*lu);
+    }
+    std::vector<Real> rg, dg, tg, fg, eg, cg, jg, kg;
+    Real gtop = 0.0, ftop = 0.0, dlr = 0.0, rmx = 0.0;
+    int nit = 0, nout = 0, nflo = -1, ncl = 0, ngcl = -1;
+    Real hsom = 1.0, dlrp = 1.0e300;
+    int hsodmp = -1;
+    for (int outer=0; outer<(hse ? hsmaxo : 1); ++outer) {
+      ++nout;
+      // the solve grid: uniform in s = int dr/(dlnr r) + dtau/(dtau0 max(1, tau)^0.7)
+      std::vector<Real> sm(nf, 0.0);
+      for (int n=nb+1; n<nf; ++n) {
+        const Real a0 = (hr[n-1] < rtop) ? hd[n-1]*kt[n-1] : 0.0;
+        const Real a1 = (hr[n] < rtop) ? hd[n]*kt[n] : 0.0;
+        sm[n] = sm[n-1] + hs_dr_*(1.0/(dlnr*hr[n]) +
+                                  0.5*(a0 + a1)/(dtau0*pow(std::max(1.0, tauf[n]), 0.7)));
+      }
+      const int ngr = std::min(std::max(16, static_cast<int>(ceil(sm[nf-1])) + 1), 50000);
+      rg.assign(ngr, 0.0);
+      {
+        int n = nb + 1;
+        for (int g=0; g<ngr; ++g) {
+          const Real s = sm[nf-1]*g/(ngr - 1);
+          while (n < nf - 1 && sm[n] < s) ++n;
+          rg[g] = hr[n-1] + hs_dr_*(s - sm[n-1])/(sm[n] - sm[n-1]);
+        }
+        rg[0] = hr[nb];
+        rg[ngr-1] = hr[nf-1];
+      }
+      dg.resize(ngr); tg.resize(ngr); fg.resize(ngr); eg.resize(ngr); cg.resize(ngr);
+      for (int g=0; g<ngr; ++g) {
+        dg[g] = flog(hd, rg[g]);
+        tg[g] = flog(tcur, rg[g]);
+        fg[g] = flog(hF, rg[g]);
+        eg[g] = flog(ef, rg[g]);
+      }
+      for (int it=0; it<maxit; ++it) {
+        if (gre) {
+          for (int g=0; g<ngr; ++g) {
+            tg[g] = (gatm && dg[g] <= dfl*(1.0 + 1.0e-6)) ? flog(t0, rg[g])
+                                                         : pow(eg[g]/ar, 0.25);
+          }
+        }
+        HsKtEval(otr, dg, tg, kg);
+        for (int g=0; g<ngr; ++g) cg[g] = (rg[g] < rtop) ? dg[g]*kg[g] : 0.0;
+        const std::vector<Real> ep(eg);
+        HsSph1dPass(rg, cg, fg, ncore, cl, eg, jg, gtop, ftop);
+        ++nit;
+        Real de = 0.0;
+        for (int g=0; g<ngr; ++g) de = std::max(de, std::fabs(eg[g]/ep[g] - 1.0));
+        if (!(eg[0] > 0.0) || !std::isfinite(de)) {
+          HsFatal("problem/he_ic_rad = sph1d: the VET iteration failed", __LINE__);
+        }
+        if (de < tol) break;
+      }
+      // the blended column on the fine grid
+      for (int n=nb; n<nf; ++n) {
+        const Real x = (taub - tauf[n])/(taub - taua);
+        const Real w = (x >= 1.0) ? 1.0 : ((x <= 0.0) ? 0.0 : x*x*(3.0 - 2.0*x));
+        ef[n] = w*glog(rg, eg, hr[n]) + (1.0 - w)*e0[n];
+        if (gre) tcur[n] = w*pow(ef[n]/ar, 0.25) + (1.0 - w)*t0[n];
+        if (gatm && hd[n] <= dfl*(1.0 + 1.0e-9)) tcur[n] = t0[n];
+      }
+      if (!hse) {
+        if (gre) ftau();
+        break;
+      }
+      // hydrostatic balance at fixed T, outward from r_b (kappa_t at the previous rho):
+      // P(rho_{n+1}) + dr/2 rho_{n+1} g_{n+1} = P(rho_n) - dr/2 rho_n g_n
+      HsKtEval(otr, hd, tcur, kt);
+      std::vector<Real> gm(nf, hs_gm_);
+      if (hs_gmc_) {
+        std::vector<Real> cm(nf, 0.0);
+        for (int n=1; n<nf; ++n) {
+          cm[n] = cm[n-1] + 0.5*hs_dr_*4.0*M_PI*(hr[n-1]*hr[n-1]*hd[n-1] +
+                                                 hr[n]*hr[n]*hd[n]);
+        }
+        const Real x = (hs_rin_ - hs_rlo_)/hs_dr_;
+        const int i0 = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
+        const Real cm0 = (1.0 - (x - i0))*cm[i0] + (x - i0)*cm[i0+1];
+        for (int n=0; n<nf; ++n) gm[n] = hs_gm_ + gcode*(cm[n] - cm0);
+      }
+      std::vector<Real> dn(hd);
+      bool flo = false;
+      nflo = -1;
+      ncl = 0;
+      ngcl = -1;
+      rmx = 0.0;
+      for (int n=nb; n<nf-1; ++n) {
+        if (flo) {
+          dn[n+1] = dfl;
+          continue;
+        }
+        Real g0 = gm[n]/SQR(hr[n]) - kt[n]*hF[n]/cl;
+        Real g1 = gm[n+1]/SQR(hr[n+1]) - kt[n+1]*hF[n+1]/cl;
+        if (kt[n]*hF[n]/cl > hgmax*gm[n]/SQR(hr[n])) {
+          g0 = (1.0 - hgmax)*gm[n]/SQR(hr[n]);
+        }
+        if (kt[n+1]*hF[n+1]/cl > hgmax*gm[n+1]/SQR(hr[n+1])) {
+          g1 = (1.0 - hgmax)*gm[n+1]/SQR(hr[n+1]);
+          if (n + 1 > ngcl) ngcl = n + 1;
+          ++ncl;
+        }
+        Real ee, p0, cr, ct, cv;
+        eos.ThermoAt(dn[n], tcur[n], ee, p0, cr, ct, cv);
+        const Real rhs = p0 - 0.5*hs_dr_*dn[n]*g0;
+        auto res = [&](const Real lx) {
+          Real e1, p1, c1, c2, c3;
+          eos.ThermoAt(exp(lx), tcur[n+1], e1, p1, c1, c2, c3);
+          return (p1 + 0.5*hs_dr_*exp(lx)*g1)/rhs - 1.0;
+        };
+        Real x0 = log(dn[n]) + log(hd[n+1]/hd[n]), x1 = x0 + 1.0e-6;
+        Real f0 = res(x0), f1 = res(x1);
+        for (int it=0; it<60 && fabs(f1) > 1.0e-14 && f1 != f0; ++it) {
+          const Real x2 = x1 - f1*(x1 - x0)/(f1 - f0);
+          x0 = x1; f0 = f1; x1 = x2;
+          f1 = res(x1);
+        }
+        rmx = std::max(rmx, fabs(f1));
+        if (!(rhs > 0.0) || !std::isfinite(x1) || !(exp(x1) > dfl)) {
+          flo = true;
+          nflo = n + 1;
+          dn[n+1] = dfl;
+        } else {
+          dn[n+1] = exp(x1);
+        }
+      }
+      dlr = 0.0;
+      for (int n=nb; n<nf; ++n) dlr = std::max(dlr, std::fabs(log(dn[n]/hd[n])));
+      // the outer loop oscillates (the first rise of the residual): damp from now on
+      if (outer > 0 && dlr > dlrp && hsom == 1.0) {
+        hsom = hsdamp;
+        hsodmp = outer;
+      }
+      dlrp = dlr;
+      if (hsom < 1.0) {
+        for (int n=nb; n<nf; ++n) {
+          dn[n] = exp((1.0 - hsom)*log(hd[n]) + hsom*log(dn[n]));
+        }
+      }
+      hd = dn;
+      ftau();
+      if (dlr < htol) break;
+    }
+    // reatm-1011 problem/he_ic_rad_atm_force = module | continuum (needs hse and gas =
+    // re_atm; default continuum = bitwise the old IC; recorded).  In the optically thin
+    // atmosphere above R_ph the flux is fixed by the luminosity (F0 = L/(4 pi r^2) to
+    // 3e-4 after ic_rad, measured) and <rad_m1> gives cell i the force
+    // [(rho k)_{i-1/2} F_{i-1/2} + (rho k)_{i+1/2} F_{i+1/2}]/(2c), (rho k)_face the
+    // distance-weighted mean of the two cells (the matched deposit, and the steady-state
+    // conservative one), not rho_i kt_i F/c: with ~2 cells per density scale height the
+    // face means exceed the cell value by phi = (1 + cosh(dln(rho k)))/2 ~ 1.06 (AG Car
+    // A), an uncompensated outward acceleration (phi - 1) Gamma g ~ 1-4 % g that lifted
+    // the atmosphere (NOTE-vimpbc 4a).  Here, after the HSE loop, rho is re-marched
+    // outward from the lower face of the first mesh cell above R_ph (tau_R 2/3 of the
+    // converged column) with the acceleration phi(r) kt F/c, phi from the code's own mesh
+    // cells (piecewise linear between their centres) at the current rho, T held at the
+    // column's (RE where rho is above the floor, the column's in the floor, as re_atm),
+    // iterated to a fixed point; a_ref of those cells (and Phi_eff above that face) take
+    // the same phi, so the WB pair and the module's force agree.  E, F and everything at
+    // and below that face (fine grid, a_ref, Phi_eff, cells) are bitwise unchanged; the
+    // change reaches below R_ph only through <rad_m1>/ic_rad's relaxation (|de/e| <= 5e-4
+    // at 0.99 R_ph, <= 1e-6 below 0.95 R_ph at cycle 0, AG Car A), hence opt-in.  See
+    // also he_ic_rad_atm_post (HeStarIcPost).
+    {
+      const std::string afm = pin->GetOrAddString("problem","he_ic_rad_atm_force",
+                                                   "continuum");
+      if (afm != "module" && afm != "continuum") {
+        HsFatal("problem/he_ic_rad_atm_force must be module | continuum", __LINE__);
+      }
+      if (afm == "module" && !(hse && gatm)) {
+        HsFatal("problem/he_ic_rad_atm_force = module needs he_ic_rad_hse = true and "
+                "he_ic_rad_gas = re_atm", __LINE__);
+      }
+      if (afm == "module") {
+        const int amaxit = pin->GetOrAddInteger("problem","he_ic_rad_atm_maxit",200);
+        const Real atol = pin->GetOrAddReal("problem","he_ic_rad_atm_tol",1.0e-12);
+        auto ax1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                        pmbp->pcoord->x1v);
+        auto ax1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                        pmbp->pcoord->xx1f);
+        const int n1 = n1m1 + 1, aie = indcs.ie;
+        const Real rpa = frph();
+        int ia = -1;
+        for (int i=0; i<n1; ++i) {
+          if (ax1v(0,i) >= rpa) {
+            ia = i;
+            break;
+          }
+        }
+        if (!(rpa > 0.0) || ia < 1 || ia > aie) {
+          HsFatal("problem/he_ic_rad_atm_force = module: R_ph not inside the mesh",
+                  __LINE__);
+        }
+        const int n0 = static_cast<int>(floor((ax1f(0,ia) - hs_rlo_)/hs_dr_));
+        auto lin = [&](const std::vector<Real> &a, const Real r) {   // as HsLinInterp
+          Real x = (r - hs_rlo_)/hs_dr_;
+          int n = static_cast<int>(floor(x));
+          n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
+          Real w = x - n;
+          w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+          return (1.0 - w)*a[n] + w*a[n+1];
+        };
+        std::vector<Real> cf(n1 + 1), cd(n1), ctt(n1), ckk, cdx(n1), ph0(n1, 1.0);
+        for (int i=0; i<=n1; ++i) cf[i] = lin(hF, ax1f(0,i));
+        for (int i=0; i<n1; ++i) cdx[i] = ax1f(0,i+1) - ax1f(0,i);
+        hatm_c.assign(n1, 1.0);
+        hatm_f.assign(nf, 1.0);
+        int ait = 0, natm = 0;
+        Real dph = 0.0, rmxa = 0.0, gpre = 0.0, rgpre = 0.0, gpost = 0.0;
+        for (int it=0; it<amaxit; ++it) {
+          ++ait;
+          for (int i=0; i<n1; ++i) {
+            cd[i] = flog(hd, ax1v(0,i));
+            ctt[i] = flog(tcur, ax1v(0,i));
+          }
+          HsKtEval(otr, cd, ctt, ckk);
+          dph = 0.0;
+          natm = 0;
+          for (int i=ia; i<=aie; ++i) {
+            Real ph = 1.0;
+            if (cd[i] > dfl*(1.0 + 1.0e-6)) {
+              const Real rkc = cd[i]*ckk[i];
+              const Real rkl = (cdx[i]*cd[i-1]*ckk[i-1] + cdx[i-1]*rkc)
+                               /(cdx[i-1] + cdx[i]);
+              const Real rkr = (i == aie) ? rkc
+                  : (cdx[i+1]*rkc + cdx[i]*cd[i+1]*ckk[i+1])/(cdx[i] + cdx[i+1]);
+              ph = (rkl*cf[i] + rkr*cf[i+1])/(rkc*(cf[i] + cf[i+1]));
+              ++natm;
+            }
+            dph = std::max(dph, std::fabs(ph/hatm_c[i] - 1.0));
+            hatm_c[i] = ph;
+          }
+          if (it == 0) {   // the old IC's uncompensated acceleration (phi - 1) Gamma
+            ph0 = hatm_c;
+            for (int i=ia; i<=aie; ++i) {
+              const Real gg = (hatm_c[i] - 1.0)*ckk[i]*0.5*(cf[i] + cf[i+1])/cl
+                              /(hs_gm_/SQR(ax1v(0,i)));
+              if (gg > gpre) {
+                gpre = gg;
+                rgpre = ax1v(0,i);
+              }
+            }
+          }
+          if (it > 0 && dph < atol) break;
+          // phi on the fine grid above the face x1f(ia): constant up to x1v(ia), then
+          // linear between the cell centres (1 above the last active cell)
+          for (int n=n0+1; n<nf; ++n) {
+            const Real r = hr[n];
+            Real p = 1.0;
+            if (r <= ax1v(0,ia)) {
+              p = hatm_c[ia];
+            } else if (r < ax1v(0,aie)) {
+              int i = ia;
+              while (i < aie && ax1v(0,i+1) <= r) ++i;
+              const Real w = (r - ax1v(0,i))/(ax1v(0,i+1) - ax1v(0,i));
+              p = (1.0 - w)*hatm_c[i] + w*hatm_c[i+1];
+            } else {
+              p = hatm_c[aie];
+            }
+            hatm_f[n] = p;
+          }
+          // the outward march at fixed T from fine node n0 (as the HSE loop's, the
+          // radiative acceleration times phi; the same Gamma clamp)
+          HsKtEval(otr, hd, tcur, kt);
+          bool flo = false;
+          rmxa = 0.0;
+          for (int n=n0; n<nf-1; ++n) {
+            if (flo) {
+              hd[n+1] = dfl;
+              continue;
+            }
+            const Real gg0 = hs_gm_/SQR(hr[n]), gg1 = hs_gm_/SQR(hr[n+1]);
+            const Real ar0 = hatm_f[n]*kt[n]*hF[n]/cl;
+            const Real ar1 = hatm_f[n+1]*kt[n+1]*hF[n+1]/cl;
+            const Real g0 = (ar0 > hgmax*gg0) ? (1.0 - hgmax)*gg0 : (gg0 - ar0);
+            const Real g1 = (ar1 > hgmax*gg1) ? (1.0 - hgmax)*gg1 : (gg1 - ar1);
+            Real ee, p0, cr, ct, cv;
+            eos.ThermoAt(hd[n], tcur[n], ee, p0, cr, ct, cv);
+            const Real rhs = p0 - 0.5*hs_dr_*hd[n]*g0;
+            auto res = [&](const Real lx) {
+              Real e1, p1, c1, c2, c3;
+              eos.ThermoAt(exp(lx), tcur[n+1], e1, p1, c1, c2, c3);
+              return (p1 + 0.5*hs_dr_*exp(lx)*g1)/rhs - 1.0;
+            };
+            Real x0 = log(hd[n]) + log(std::max(hd[n+1], dfl)/hd[n]), x1 = x0 + 1.0e-6;
+            Real f0 = res(x0), f1 = res(x1);
+            for (int k=0; k<60 && fabs(f1) > 1.0e-14 && f1 != f0; ++k) {
+              const Real x2 = x1 - f1*(x1 - x0)/(f1 - f0);
+              x0 = x1; f0 = f1; x1 = x2;
+              f1 = res(x1);
+            }
+            rmxa = std::max(rmxa, fabs(f1));
+            if (!(rhs > 0.0) || !std::isfinite(x1) || !(exp(x1) > dfl)) {
+              flo = true;
+              hd[n+1] = dfl;
+            } else {
+              hd[n+1] = exp(x1);
+            }
+          }
+          // T as re_atm: the RE T (the blend weight is 1 this far out) above the floor,
+          // the column's in it
+          for (int n=n0+1; n<nf; ++n) {
+            const Real x = (taub - tauf[n])/(taub - taua);
+            const Real w = (x >= 1.0) ? 1.0 : ((x <= 0.0) ? 0.0 : x*x*(3.0 - 2.0*x));
+            tcur[n] = (hd[n] <= dfl*(1.0 + 1.0e-9)) ? t0[n]
+                      : (w*pow(ef[n]/ar, 0.25) + (1.0 - w)*t0[n]);
+          }
+        }
+        // the converged cells: the remaining uncompensated acceleration (0 by
+        // construction up to the fixed-point tolerance; printed)
+        for (int i=ia; i<=aie; ++i) {
+          const Real gg = (hatm_c[i] - 1.0)*ckk[i]*0.5*(cf[i] + cf[i+1])/cl
+                          /(hs_gm_/SQR(ax1v(0,i)));
+          gpost = std::max(gpost, gg);
+        }
+        ftau();
+        hatm_on = true;
+        hs_atp_ia_ = ia;
+        hs_atp_dfl_ = dfl;
+        if (global_variable::my_rank == 0) {
+          Real pmx = 1.0, pmx0 = 1.0;
+          for (int i=ia; i<=aie; ++i) {
+            pmx = std::max(pmx, hatm_c[i]);
+            pmx0 = std::max(pmx0, ph0[i]);
+          }
+          std::cout << "he_star_m1: he_ic_rad_atm_force = module: atmosphere from cell "
+                    << ia << " (lower face " << ax1f(0,ia) << ", R_ph " << rpa << " -> "
+                    << frph() << "), " << natm << " cells above the floor, " << ait
+                    << " passes (last max |dphi| " << dph << ", march residual " << rmxa
+                    << "); phi max " << pmx0 << " (old IC) -> " << pmx
+                    << "; the old IC's (phi - 1) Gamma max " << gpre << " at r/R_ph "
+                    << rgpre/rpa << "; floor from r = ";
+          Real rfl = -1.0;
+          for (int n=n0; n<nf; ++n) {
+            if (hd[n] <= dfl*(1.0 + 1.0e-9)) {
+              rfl = hr[n];
+              break;
+            }
+          }
+          std::cout << rfl << " (" << rfl/rpa << " R_ph)" << std::endl;
+          if (!(dph < atol)) {
+            std::cout << "he_star_m1: he_ic_rad_atm_force: WARNING not converged in "
+                      << "he_ic_rad_atm_maxit = " << amaxit << std::endl;
+          }
+          for (int i=ia; i<=aie; ++i) {
+            if (!(cd[i] > dfl*(1.0 + 1.0e-6))) break;
+            std::cout << "he_star_m1:   atm cell " << i << " r/R_ph " << ax1v(0,i)/rpa
+                      << " rho " << cd[i] << " T [K] " << ctt[i]*hs_tk << " phi "
+                      << ph0[i] << " -> " << hatm_c[i] << ", Gamma "
+                      << ckk[i]*0.5*(cf[i] + cf[i+1])/cl/(hs_gm_/SQR(ax1v(0,i)))
+                      << std::endl;
+          }
+        }
+        (void) gpost;
+      }
+    }
+    // write back: E, and with gas = re the T (file column) and eint of the code's EOS
+    for (int n=nb; n<nf; ++n) {
+      hE[n] = ef[n];
+      if (gre) {
+        hTcol[n] = tcur[n]*hs_tk;
+        Real ee, pp, cr, ct, cv;
+        eos.ThermoAt(hd[n], tcur[n], ee, pp, cr, ct, cv);
+        he[n] = ee;
+      }
+    }
+    const Real rph1 = frph();
+    const double wsec = tw0.seconds();
+    if (global_variable::my_rank == 0) {
+      const Real x1a = pmy_mesh_->mesh_size.x1min;
+      Real emx = 0.0, tmx = 0.0, dmx = 0.0, rem = 0.0, rtm = 0.0, rdm = 0.0;
+      for (int n=nb; n<nf; ++n) {
+        if (hr[n] < x1a || hr[n] > rtop) continue;
+        if (fabs(ef[n]/e0[n] - 1.0) > emx) {
+          emx = fabs(ef[n]/e0[n] - 1.0);
+          rem = hr[n];
+        }
+        if (fabs(tcur[n]/t0[n] - 1.0) > tmx) {
+          tmx = fabs(tcur[n]/t0[n] - 1.0);
+          rtm = hr[n];
+        }
+        if (fabs(hd[n]/d0[n] - 1.0) > dmx) {
+          dmx = fabs(hd[n]/d0[n] - 1.0);
+          rdm = hr[n];
+        }
+      }
+      std::cout << "he_star_m1: he_ic_rad = sph1d (gas " << gasm << ", hse "
+                << (hse ? "on" : "off") << "): r_b = " << hr[nb] << " (tau "
+                << tauf[nb] << "), blend tau " << taua << " .. " << taub << ", "
+                << rg.size() << " solve points + " << ncore << " core rays, " << nit
+                << " VET passes, " << nout << " outer, g_top = H/J " << gtop
+                << ", f_top = K/J " << ftop << ", " << wsec << " s" << std::endl;
+      std::cout << "he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) "
+                << rph0 << " -> " << rph1 << "; max |E/E_col - 1| " << emx << " at r = "
+                << rem << ", |T/T_col - 1| " << tmx << " at " << rtm << ", |rho/rho_col"
+                << " - 1| " << dmx << " at " << rdm;
+      if (hse) {
+        std::cout << "; HSE last max |dln rho| " << dlr << ", residual " << rmx
+                  << ", floor " << dfl << " from r = "
+                  << ((nflo >= 0) ? hr[nflo] : -1.0) << ", Gamma > " << hgmax
+                  << " (clamped) in " << ncl << " fine cells"
+                  << ((ncl > 0) ? ", outermost r = " + std::to_string(hr[ngcl]) : "")
+                  << ", damped (" << hsdamp << ") from outer "
+                  << ((hsodmp >= 0) ? std::to_string(hsodmp) : std::string("none"));
+        if (!(dlr < htol)) {
+          std::cout << std::endl << "he_star_m1: he_ic_rad = sph1d: WARNING the HSE "
+                    << "outer loop did NOT converge in he_ic_rad_hse_maxit = " << hsmaxo
+                    << " (max |dln rho| " << dlr << " > he_ic_rad_hse_tol " << htol
+                    << ")";
+        }
+      }
+      std::cout << std::endl;
+      const Real xs[] = {0.9, 0.95, 0.98, 0.99, 0.995, 1.0, 1.003, 1.006, 1.01, 1.02,
+                         1.05, 1.1, 1.2, 1.5, 2.0, 2.5, 2.9};
+      for (const Real xx : xs) {
+        const Real r = xx*rph0;
+        if (r < hr[nb] || r > rtop) continue;
+        std::cout << "he_star_m1:   r/R_ph " << xx << ": E/E_col "
+                  << flog(ef, r)/flog(e0, r)
+                  << ", T [K] " << flog(tcur, r)*hs_tk << " (/T_col " << flog(tcur, r)/
+                  flog(t0, r) << "), rho/rho_col " << flog(hd, r)/flog(d0, r)
+                  << ", F/(cE) " << flog(hF, r)/(cl*flog(ef, r)) << std::endl;
+      }
+    }
+    // he_ic_rad_dump: the new column on the union of the file radii and the solve grid
+    if (pin->DoesParameterExist("problem","he_ic_rad_dump") &&
+        pin->GetString("problem","he_ic_rad_dump") != "none" &&
+        global_variable::my_rank == 0) {
+      const std::string dfn = pin->GetString("problem","he_ic_rad_dump");
+      // (the fine grid's span: this mesh plus its ghost margin, ends included)
+      std::vector<Real> ru = {hr[0], hr[nf-1]};
+      for (const Real r : hfr_keep) if (r > hr[0] && r < hr[nf-1]) ru.push_back(r);
+      for (const Real r : rg) ru.push_back(r);
+      std::sort(ru.begin(), ru.end());
+      ru.erase(std::unique(ru.begin(), ru.end()), ru.end());
+      std::vector<Real> tk(nf);
+      for (int n=0; n<nf; ++n) tk[n] = tcur[n]*hs_tk;
+      FILE *fp = fopen(dfn.c_str(), "w");
+      if (fp == nullptr) HsFatal("cannot write problem/he_ic_rad_dump", __LINE__);
+      {
+        std::ifstream f0(fn);
+        std::string l0;
+        while (std::getline(f0, l0)) {
+          if (!l0.empty() && l0[0] == '#') fprintf(fp, "%s\n", l0.c_str());
+        }
+      }
+      fprintf(fp, "# icgen-1011 he_ic_rad = sph1d (he_star_m1): E (and with gas = re T, "
+              "eint; with hse rho) above tau_R %g replaced; gas %s hse %d taua %g dtau "
+              "%g dlnr %g ncore %d; R_ph %.10e -> %.10e; resampled from the fine grid\n",
+              taub, gasm.c_str(), hse ? 1 : 0, taua, dtau0, dlnr, ncore, rph0, rph1);
+      for (const Real r : ru) {
+        Real fm = 0.0;
+        if (hfr_keep.size() > 1) {
+          const int nk = static_cast<int>(hfr_keep.size());
+          int i = static_cast<int>(std::upper_bound(hfr_keep.begin(), hfr_keep.end(), r) -
+                                   hfr_keep.begin()) - 1;
+          i = (i < 0) ? 0 : ((i > nk - 2) ? (nk - 2) : i);
+          Real w = (r - hfr_keep[i])/(hfr_keep[i+1] - hfr_keep[i]);
+          w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+          fm = (1.0 - w)*hfM_keep[i] + w*hfM_keep[i+1];
+        }
+        fprintf(fp, "%.10e %.10e %.10e %.10e %.10e %.10e %.6e\n", r, flog(hd, r),
+                flog(he, r), flog(hF, r), flog(ef, r), flog(tk, r), fm);
+      }
+      fclose(fp);
+      std::cout << "he_star_m1: he_ic_rad = sph1d: column written to " << dfn << " ("
+                << ru.size() << " lines)" << std::endl;
+    }
+  }
+
+  // dic-1013 problem/he_ic_equil (read only when named; default false = nothing): see
+  // HeStarIcEquil.  Its floor density is the column's minimum (the sph1d floor)
+  hs_eq_ = pin->DoesParameterExist("problem","he_ic_equil") &&
+           pin->GetBoolean("problem","he_ic_equil");
+  if (hs_eq_) {
+    hs_eq_dfl_ = 1.0e300;
+    for (int n=0; n<nf; ++n) hs_eq_dfl_ = std::min(hs_eq_dfl_, hd[n]);
+  }
   // ---- the column on the device: T, E = a T^4 and kappa_t
   Kokkos::realloc(hs_rho_, nf);
   Kokkos::realloc(hs_eint_, nf);
@@ -744,6 +1562,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // tau from the top face, r_int (tau = he_tau_int), Phi_eff = Phi - int a_ref dr
   std::vector<Real> tau(nf, 0.0), aref(nf), cum(nf, 0.0);
   for (int n=0; n<nf; ++n) aref[n] = hkt(n)*hF[n]/cl;
+  // reatm-1011: the module form in the thin atmosphere (hatm_f = 1 elsewhere: bitwise)
+  if (hatm_on) {
+    for (int n=0; n<nf; ++n) aref[n] *= hatm_f[n];
+  }
   for (int n=nf-2; n>=0; --n) {
     const Real a0 = (hr[n] < rtop) ? hd[n]*hkt(n) : 0.0;
     const Real a1 = (hr[n+1] < rtop) ? hd[n+1]*hkt(n+1) : 0.0;
@@ -931,6 +1753,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       aref_d(m,k,j,i) = 0.5*kt*(HsLinInterp(cF, rlo, dr, nf, rl)
                                 + HsLinInterp(cF, rlo, dr, nf, rr))/cl;
     });
+    // reatm-1011 (he_ic_rad_atm_force = module): the thin-atmosphere cells take the
+    // module's face-mean form, phi times the continuum value (phi = 1 elsewhere)
+    if (hatm_on) {
+      DvceArray1D<Real> aphi("hs_aphi", n1m1+1);
+      auto hp = Kokkos::create_mirror_view(aphi);
+      for (int i=0; i<=n1m1; ++i) hp(i) = hatm_c[i];
+      Kokkos::deep_copy(aphi, hp);
+      par_for("hs_aref_atm", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        aref_d(m,k,j,i) *= aphi(i);
+      });
+    }
     // HeStarGravity gives the reference work (split); set before SetForceReference,
     // which resolves force_reference_work = auto
     pm1->fref_wsplit_ok = true;
@@ -1212,6 +2046,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
+  // ---- reatm-1011: a RESTART of a run whose fresh start re-balanced the atmosphere
+  // (HeStarIcPost) applies the a_ref it recorded in the input, and the Phi_eff rebuilt
+  // from it above the face x1f(ia), exactly as the fresh start did
+  if (restart && pin->DoesParameterExist("problem","he_ic_rad_atm_na")) {
+    const int ia = pin->GetInteger("problem","he_ic_rad_atm_ia");
+    const int na = pin->GetInteger("problem","he_ic_rad_atm_na");
+    if (ia < indcs.is + 2 || na < 0 || ia + na - 1 > indcs.ie) {
+      HsFatal("problem/he_ic_rad_atm_ia, _na do not match this radial grid", __LINE__);
+    }
+    std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0, pc, pf;
+    HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+    std::vector<Real> a(indcs.ie - ia + 1);
+    for (int i=ia; i<=indcs.ie; ++i) a[i - ia] = ar0[i];
+    char key[40];
+    for (int n=0; n<na; ++n) {
+      snprintf(key, sizeof(key), "he_ic_rad_atm_a%03d", n);
+      a[n] = std::strtod(pin->GetString("problem", key).c_str(), nullptr);
+    }
+    HsAtmPhiEff(ia, indcs.ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+    HsAtmWrite(pmbp, ia, a, pc, pf);
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: he_ic_rad_atm_a*: a_ref (cells " << ia << " .. "
+                << ia + na - 1 << ") and Phi_eff from the fresh start's re-balance"
+                << std::endl;
+    }
+  }
+
   // ---- the frozen MLT flux on the x1 faces (problem/mlt_flux_frozen)
   if (hs_mlt_) {
     auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1f);
@@ -1343,6 +2204,56 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (hs_mrs_ >= 0.0 && !hs_mlt_) {
     HsFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true", __LINE__);
   }
+  // rotavg-rst-1012: the Picard window trailer of the pgen restart block (stripped here,
+  // so the adaptive state below reads the block as before); the rad_m1 counters restart
+  // at 0, so the window base is minus the open window's sums
+  hs_mesh_ = pmy_mesh_;
+  // dic-1013 (he_ic_equil): the equilibrium's a_ref of the active cells travels in the
+  // pgen restart block as the LAST tagged trailer (a_ref..., Real n, tag); a restart
+  // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
+  // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
+  if (restart) {
+    auto &blk = pgen_rststate;
+    const std::size_t nt = sizeof(kHsDicTag) + sizeof(Real);
+    if (blk.size() >= nt &&
+        std::memcmp(blk.data() + blk.size() - sizeof(kHsDicTag), &(kHsDicTag[0]),
+                    sizeof(kHsDicTag)) == 0) {
+      Real rn;
+      std::memcpy(&rn, blk.data() + blk.size() - nt, sizeof(Real));
+      const int na = static_cast<int>(rn);
+      const std::size_t nb = nt + static_cast<std::size_t>(na)*sizeof(Real);
+      if (na != indcs.nx1 || blk.size() < nb) {
+        HsFatal("the restart file's he_ic_equil trailer does not match this radial grid",
+                __LINE__);
+      }
+      hs_eq_a_.assign(na, 0.0);
+      std::memcpy(hs_eq_a_.data(), blk.data() + blk.size() - nb, na*sizeof(Real));
+      blk.resize(blk.size() - nb);
+      std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0, pc, pf;
+      HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+      HsAtmPhiEff(indcs.is, indcs.ie, hs_eq_a_, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+      HsAtmWrite(pmbp, indcs.is, hs_eq_a_, pc, pf);
+      if (global_variable::my_rank == 0) {
+        std::cout << "he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the "
+                  << "fresh start's equilibrium (restart trailer)" << std::endl;
+      }
+    } else if (hs_eq_) {
+      HsFatal("problem/he_ic_equil = true but the restart file carries no he_ic_equil "
+              "trailer", __LINE__);
+    }
+  }
+  if (restart) {
+    auto &blk = pgen_rststate;
+    const std::size_t nt = sizeof(kHsPicTag) + 2*sizeof(Real);
+    if (blk.size() >= nt &&
+        std::memcmp(blk.data() + blk.size() - nt, &(kHsPicTag[0]), sizeof(kHsPicTag)) == 0) {
+      Real w[2];
+      std::memcpy(&(w[0]), blk.data() + blk.size() - 2*sizeof(Real), 2*sizeof(Real));
+      hs_pic_n0_ = -w[0];
+      hs_pic_s0_ = -w[1];
+      blk.resize(blk.size() - nt);
+    }
+  }
   // problem/mlt_closure: frozen (default: the IC's F_MLT, times w(t)) or adaptive (see
   // hs_ad_ above; w(t) caps it as an overall factor)
   {
@@ -1407,7 +2318,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       hs_ad_tout_ = hs_ad_dout_*floor(pmy_mesh_->time/hs_ad_dout_ + 1.0);
       if (!restart) hs_ad_tout_ = 0.0;
     }
-    pgen_rst_write_func = HsAdaptiveRstWrite;
     // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
     HsApplyMltW(pmy_mesh_, HsMltW(pmy_mesh_->time));
     if (global_variable::my_rank == 0) {
@@ -1537,9 +2447,90 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   user_srcs_func = HeStarGravity;
+  // fin51-r-fix: the per-cycle state of HeStarGravity joins the <time>/dt_retry
+  // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly
+  // as the straight cycle; esrc itself is in the m1 minimal list)
+  dtretry::RegisterValue("hs_mw", &hs_mw_);
+  dtretry::RegisterValue("hs_ad_cyc", &hs_ad_cyc_);
+  dtretry::RegisterValue("hs_ad_tl", &hs_ad_tl_);
+  dtretry::RegisterValue("hs_ad_tout", &hs_ad_tout_);
+  dtretry::RegisterValue("hs_lsub", &hs_lsub_);
+  dtretry::RegisterView("hs_fsub", &hs_fsub_);
   user_bcs_func = HeStarBC;
   user_hist_func = HeStarHist;
+  pgen_rst_write_func = HsAdaptiveRstWrite;   // adaptive state + the Picard window
   pgen_final_func = HeStarFinal;
+  // reatm-1011 problem/he_ic_rad_atm_post (default true with he_ic_rad_atm_force =
+  // module; a fresh start whose <rad_m1>/ic_rad runs; the x1 WB pair): after the ic_rad
+  // passes the thin atmosphere's gas sits at the code's own radiative-equilibrium T
+  // (0.2-1.8 % in e/rho above the pgen's sph1d RE T, AG Car A; the same shift happens in
+  // the first ~10 cycles with ic_rad = none), which leaves it out of hydrostatic balance
+  // by ~0.5 % g.  HeStarIcPost re-marches rho of the atmosphere cells outward from the
+  // first cell above R_ph in the DISCRETE balance of the x1 WB pair (the face condition
+  // of he_ic_balance, walk of the code's own WBBackgroundStencil along Phi_eff) at the
+  // relaxed T (shell mean; each cell keeps its own T), until rho reaches the floor.
+  // a_ref and Phi_eff are NOT changed (restart-exact: a restart rebuilds them from the
+  // input); the cells below R_ph are not touched.
+  {
+    const bool atp = pin->GetOrAddBoolean("problem","he_ic_rad_atm_post",hatm_on);
+    if (atp && !hatm_on) {
+      HsFatal("problem/he_ic_rad_atm_post = true needs he_ic_rad_atm_force = module",
+              __LINE__);
+    }
+    hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_;
+    if (hs_atp_) user_icpost_func = HeStarIcPost;
+  }
+  // dic-1013 problem/he_ic_equil (read only when named; default false = nothing, bitwise
+  // the old start): the DISCRETE EQUILIBRIUM of the initial state on the code's own
+  // operators, iterated with <rad_m1>/ic_rad (HeStarIcEquil, called after every ic_rad
+  // run; Driver::Initialize repeats ic_rad + hook while user_icpost_again).  Each round:
+  // (1) ic_rad relaxes E, F and the gas T at fixed rho (the relax steps of
+  //     he_ic_equil_dtfac x dt: the steady state of the transport, the frozen MLT
+  //     scaffold (w = 1) and the gas-radiation exchange, i.e. L_rad + L_MLT = L_in at
+  //     every face), then ONE pass with the radiative force on (rad_m1 icr_fmeas) gives
+  //     the module's own net momentum deposit dm - dt rho a_ref of every cell;
+  // (2) the force per volume f = dm/dt + rho a_ref (radiation pressure gradient form,
+  //     independent of rho at fixed E) gives a_ref = f/rho; Phi_eff is rebuilt above the
+  //     face x1f(is) from these a_ref (HsAtmPhiEff) and rho is re-marched at the relaxed
+  //     T in the discrete balance of the x1 WB pair (the he_ic_balance face condition)
+  //     OUTWARD from the wall cell (its rho kept) to the floor, a_i = f_i/rho_i solved
+  //     with rho_i in each face solve; e from (rho, T).
+  // It stops (no update) when both residuals -- the measured module deposit and the WB
+  // face condition, as accelerations / g -- are below he_ic_equil_tol, or after
+  // he_ic_equil_maxit rounds.  The he_seed factor is applied after it (deferred).  a_ref
+  // travels in the restart files (kHsDicTag).  Needs he_ic_balance, ic_rad, the WB pair,
+  // a fresh start; replaces he_ic_rad_atm_post.
+  if (hs_eq_ && !restart) {
+    if (!hs_bal_ || hs_pm_ || pm1->icr_mode == 0 || hs_atp_) {
+      HsFatal("problem/he_ic_equil = true needs he_ic_balance = true, he_gravity = wb, "
+              "<rad_m1>/ic_rad != none and he_ic_rad_atm_post = false", __LINE__);
+    }
+    if (wic) HsFatal("problem/he_ic_equil does not combine with he_wind_ic", __LINE__);
+    hs_eq_maxit_ = pin->GetOrAddInteger("problem","he_ic_equil_maxit",30);
+    // he_ic_equil_last_march (default false = the last round only checks): the round
+    // he_ic_equil_maxit still updates (march at the relaxed T, a_i = f_i/rho_i) and the
+    // equilibrium stops there WITHOUT a further ic_rad relax: E, F, T are the relaxed
+    // ones of that round, rho/a_ref/Phi_eff the march's (module deposit and WB faces
+    // balanced at fixed E; the face luminosities then differ by the rho change)
+    hs_eq_last_ = pin->GetOrAddBoolean("problem","he_ic_equil_last_march",false);
+    hs_eq_tol_ = pin->GetOrAddReal("problem","he_ic_equil_tol",1.0e-9);
+    const Real eqdt = pin->GetOrAddReal("problem","he_ic_equil_dtfac",1.0e6);
+    const int eqn = pin->GetOrAddInteger("problem","he_ic_equil_relax_n",40);
+    const Real eqrt = pin->GetOrAddReal("problem","he_ic_equil_relax_tol",1.0e-12);
+    if (hs_eq_maxit_ < 1 || !(hs_eq_tol_ > 0.0) || !(eqdt > 0.0) || eqn < 1 ||
+        !(eqrt > 0.0)) {
+      HsFatal("problem/he_ic_equil_maxit, _relax_n >= 1, _tol, _dtfac, _relax_tol > 0",
+              __LINE__);
+    }
+    pm1->icr_mode |= 2;   // the relax steps are the steady-state solve
+    pm1->icr_relax_dtfac = eqdt;
+    pm1->icr_relax_n = eqn;
+    pm1->icr_relax_tol = eqrt;
+    pm1->icr_fmeas = true;
+    hs_eq_it_ = 0;
+    user_icpost_func = HeStarIcEquil;
+    user_icpost_again = false;
+  }
   if (global_variable::my_rank == 0) {
     const int i0 = static_cast<int>((hs_rin_ - hs_rlo_)/hs_dr_);
     std::cout << "he_star_m1: GM = " << hs_gm_ << ", F_in = " << hs_fin_
@@ -1668,6 +2659,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int n=0; n<nf; ++n) hw(n) = hV[n];
     Kokkos::deep_copy(cwv, hw);
   }
+  // dic-1013 (he_ic_equil): the seed factor is stored and applied after the equilibrium
+  const bool sdef = hs_eq_ && (seed != 0.0);
+  hs_eq_seed_ = sdef;
+  hs_eq_srad_ = srad;
+  if (sdef) {
+    Kokkos::realloc(hs_sfac_, nmb1 + 1, n3m1 + 1, n2m1 + 1, n1m1 + 1);
+    Kokkos::deep_copy(hs_sfac_, 1.0);
+  }
+  auto sfc = hs_sfac_;
   par_for("hs_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
@@ -1703,8 +2703,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                         *sin(2.0*M_PI*seedk*(ph3 - x3a)/lph + 1.1);
         if (hcs) {fac = 1.0 + (fac - 1.0)*tap;}
       }
-      e *= fac;
-      if (srad) er *= SQR(SQR(fac));
+      if (sdef) {
+        sfc(m,k,j,i) = fac;
+      } else {
+        e *= fac;
+        if (srad) er *= SQR(SQR(fac));
+      }
     }
     const Real vr = wic ? HsLinInterp(cwv, rlo, dr, nf, r) : 0.0;
     uh(m,IDN,k,j,i) = d;
@@ -2585,7 +3589,34 @@ void HsAdaptiveUpdate(Mesh *pm) {
 
 std::vector<char> HsAdaptiveRstWrite() {
   std::vector<char> out;
-  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) return out;
+  // rotavg-rst-1012: the open Picard window (solves, passes since the last history
+  // output) as a tagged trailer behind the adaptive state (if any)
+  auto pic = [&out]() {
+    Real w[2] = {0.0, 0.0};
+    const radm1::RadiationM1 *pm1 = (hs_mesh_ != nullptr) ? hs_mesh_->pmb_pack->pradm1
+                                                          : nullptr;
+    if (pm1 != nullptr) {
+      w[0] = pm1->impl_nstep - hs_pic_n0_;
+      w[1] = pm1->impl_itsum - hs_pic_s0_;
+    }
+    const std::size_t o = out.size();
+    out.resize(o + sizeof(kHsPicTag) + sizeof(w));
+    std::memcpy(out.data() + o, &(kHsPicTag[0]), sizeof(kHsPicTag));
+    std::memcpy(out.data() + o + sizeof(kHsPicTag), &(w[0]), sizeof(w));
+  };
+  // dic-1013: the he_ic_equil a_ref as the last trailer (only when it ran / was restored)
+  auto dic = [&out]() {
+    if (hs_eq_a_.empty()) return;
+    const std::size_t na = hs_eq_a_.size();
+    const Real rn = static_cast<Real>(na);
+    const std::size_t o = out.size();
+    out.resize(o + (na + 1)*sizeof(Real) + sizeof(kHsDicTag));
+    std::memcpy(out.data() + o, hs_eq_a_.data(), na*sizeof(Real));
+    std::memcpy(out.data() + o + na*sizeof(Real), &rn, sizeof(Real));
+    std::memcpy(out.data() + o + (na + 1)*sizeof(Real), &(kHsDicTag[0]),
+                sizeof(kHsDicTag));
+  };
+  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); return out;}
   const int nfc = hs_fsub_.extent_int(0);
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
   const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
@@ -2595,7 +3626,678 @@ std::vector<char> HsAdaptiveRstWrite() {
   out.resize(sizeof(hdr) + (nfc + 1)*sizeof(Real));
   std::memcpy(out.data(), &(hdr[0]), sizeof(hdr));
   std::memcpy(out.data() + sizeof(hdr), tmp.data(), (nfc + 1)*sizeof(Real));
+  pic();
+  dic();
   return out;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void HeStarFinal()
+//! \brief release the namespace-scope Views before Kokkos::finalize.
+
+//----------------------------------------------------------------------------------------
+//! \fn void HsAtmPhiEff
+//! \brief reatm-1011: the x1 WB pair's Phi_eff rebuilt above the face x1f(ia) from the
+//! per-cell reference accelerations a[i - ia] (cells ia..ie), each segment taking the
+//! true potential's own difference minus a dr; the ghosts above ie are shifted with the
+//! face x1f(ie+1).  Radial vectors (block 0): pc0/pf0 the pgen's Phi_eff at the cells /
+//! x1 faces, p0c/p0f the true potential, x1v/x1f the grid; out pc (n1), pf (n1 + 1),
+//! equal to pc0/pf0 at and below the face x1f(ia).
+
+void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
+                 const std::vector<Real> &pc0, const std::vector<Real> &pf0,
+                 const std::vector<Real> &p0c, const std::vector<Real> &p0f,
+                 const std::vector<Real> &x1v, const std::vector<Real> &x1f,
+                 std::vector<Real> &pc, std::vector<Real> &pf) {
+  const int n1 = static_cast<int>(pc0.size());
+  pc = pc0;
+  pf = pf0;
+  for (int i=ia; i<=ie; ++i) {
+    const Real ai = a[i - ia];
+    pf[i+1] = pf[i] + (p0f[i+1] - p0f[i]) - ai*(x1f[i+1] - x1f[i]);
+    pc[i] = pf[i] + (p0c[i] - p0f[i]) - ai*(x1v[i] - x1f[i]);
+  }
+  const Real dsh = pf[ie+1] - pf0[ie+1];
+  for (int i=ie+1; i<n1; ++i) {
+    pc[i] = pc0[i] + dsh;
+    pf[i+1] = pf0[i+1] + dsh;
+  }
+}
+
+//! \fn void HsAtmRadial
+//! \brief the radial (block 0, k = ks, j = js) profiles HsAtmPhiEff reads (device)
+void HsAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> &pf0,
+                 std::vector<Real> &p0c, std::vector<Real> &p0f, std::vector<Real> &x1v,
+                 std::vector<Real> &x1f, std::vector<Real> &ar0) {
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ks = indcs.ks, js = indcs.js;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc_wb);
+  auto hpf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phi_wb_x1f);
+  auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
+  auto hq0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phi0->x1f);
+  auto hxv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hxf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pradm1->arad_ref);
+  pc0.resize(n1); pf0.resize(n1 + 1); p0c.resize(n1); p0f.resize(n1 + 1);
+  x1v.resize(n1); x1f.resize(n1 + 1); ar0.resize(n1);
+  for (int i=0; i<n1; ++i) {
+    pc0[i] = hpc(0,ks,js,i);
+    p0c[i] = hp0(0,ks,js,i);
+    x1v[i] = hxv(0,i);
+    ar0[i] = har(0,ks,js,i);
+  }
+  for (int i=0; i<=n1; ++i) {
+    pf0[i] = hpf(0,ks,js,i);
+    p0f[i] = hq0(0,ks,js,i);
+    x1f[i] = hxf(0,i);
+  }
+}
+
+//! \fn void HsAtmWrite
+//! \brief Phi_eff (cells >= ia, x1 faces >= ia + 1, ghosts included) and a_ref (cells
+//! ia..ie) of every block from the radial vectors
+void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
+                const std::vector<Real> &pc, const std::vector<Real> &pf) {
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ie = indcs.ie;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc_wb);
+  auto hpf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phi_wb_x1f);
+  auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pradm1->arad_ref);
+  for (int m=0; m<hpc.extent_int(0); ++m) {
+    for (int k=0; k<hpc.extent_int(1); ++k) {
+      for (int j=0; j<hpc.extent_int(2); ++j) {
+        for (int i=ia; i<n1; ++i) {
+          hpc(m,k,j,i) = pc[i];
+          hpf(m,k,j,i+1) = pf[i+1];
+        }
+        for (int i=ia; i<=ie; ++i) har(m,k,j,i) = a[i - ia];
+      }
+    }
+  }
+  Kokkos::deep_copy(fl.phicc_wb, hpc);
+  Kokkos::deep_copy(fl.phi_wb_x1f, hpf);
+  Kokkos::deep_copy(pmbp->pradm1->arad_ref, har);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void HeStarIcPost
+//! \brief reatm-1011 problem/he_ic_rad_atm_post: the thin atmosphere's discrete
+//! hydrostatic re-balance at the gas T left by <rad_m1>/ic_rad, with a_ref = the
+//! module's own face-mean force at that state (see the enrolment in UserProblem).
+//! Called once, on a fresh start, by Driver::Initialize after IcRadRun.
+
+void HeStarIcPost(Mesh *pm) {
+  if (!hs_atp_) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto *pm1 = pmbp->pradm1;
+  auto eos = fl.eos;
+  const WBOption wbo = fl.wb_option;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmbp->nmb_thispack;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int ia = hs_atp_ia_;
+  const Real dfl = hs_atp_dfl_, cl = pm1->c_light;
+  if (ia < is + 2 || ia > ie) {
+    HsFatal("he_ic_rad_atm_post: the first atmosphere cell is not inside the mesh",
+            __LINE__);
+  }
+  std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0;
+  HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+  auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
+  auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
+  auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->f0x1);
+  // the cell T (host, the code's EOS) of every cell i >= ia - 2, its shell sums
+  const int i0 = ia - 2;
+  const int nr = ie - i0 + 1;
+  const int nk = ke - ks + 1, nj = je - js + 1;
+  std::vector<Real> tcell(static_cast<std::size_t>(nmb)*nk*nj*nr);
+  // per radial index: sum T, sum rho, count, sum F0 (x1 face i); min T, max T
+  std::vector<Real> sh(4*nr, 0.0), tmn(nr, 1.0e300), tmx(nr, -1.0e300);
+  auto cid = [&](const int m, const int k, const int j, const int i) {
+    return ((static_cast<std::size_t>(m)*nk + (k - ks))*nj + (j - js))*nr + (i - i0);
+  };
+  Real ff = 0.0;   // F0 of the top face x1f(ie+1), summed
+  for (int m=0; m<nmb; ++m) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=i0; i<=ie; ++i) {
+          const Real d = hu(m,IDN,k,j,i);
+          const Real ek = 0.5*(SQR(hu(m,IM1,k,j,i)) + SQR(hu(m,IM2,k,j,i)) +
+                               SQR(hu(m,IM3,k,j,i)))/d;
+          const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
+          const Real t = eos.Temperature(d, e);
+          tcell[cid(m,k,j,i)] = t;
+          sh[4*(i - i0)] += t;
+          sh[4*(i - i0) + 1] += d;
+          sh[4*(i - i0) + 2] += 1.0;
+          sh[4*(i - i0) + 3] += hf0(m,k,j,i);
+          tmn[i - i0] = std::min(tmn[i - i0], t);
+          tmx[i - i0] = std::max(tmx[i - i0], t);
+        }
+        ff += hf0(m,k,j,ie+1);
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*nr, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &ff, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, tmn.data(), nr, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, tmx.data(), nr, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  // the 1-D column on x1 indices (shell means): T, rho, the face flux F0
+  std::vector<Real> bd(n1, 0.0), be(n1, 0.0), tc(n1, 0.0), d0(n1, 0.0), f0(n1 + 1, 0.0);
+  for (int i=i0; i<=ie; ++i) {
+    const Real cnt = sh[4*(i - i0) + 2];
+    tc[i] = sh[4*(i - i0)]/cnt;
+    bd[i] = sh[4*(i - i0) + 1]/cnt;
+    f0[i] = sh[4*(i - i0) + 3]/cnt;
+    d0[i] = bd[i];
+  }
+  f0[ie+1] = ff/sh[4*(ie - i0) + 2];
+  tc[ie+1] = tc[ie];   // the outflow ghost: the edge cell's T and rho
+  bd[ie+1] = bd[ie];
+  d0[ie+1] = bd[ie+1];
+  for (int i=i0; i<=ie+1; ++i) {
+    Real p, cr, ct, cv;
+    eos.ThermoAt(bd[i], tc[i], be[i], p, cr, ct, cv);
+  }
+  std::vector<Real> pc, pf;
+  auto walk = [&](const int i, const Real di, Real &pimh, Real &piph) {
+    Real ei, p, cr, ct, cv;
+    eos.ThermoAt(di, tc[i], ei, p, cr, ct, cv);
+    WBState s0, s1, s2, s3, s4;
+    WBBackgroundStencil(eos, wbo, bd[i-1], di, bd[i+1], be[i-1], ei, be[i+1],
+                        pc[i-1], pf[i], pc[i], pf[i+1], pc[i+1], s0, s1, s2, s3, s4,
+                        tc[i-1], tc[i], tc[i+1]);
+    pimh = s1.p;
+    piph = s3.p;
+  };
+  // a_ref of the cells ia..ie: start from the pgen's
+  std::vector<Real> a(ie - ia + 1), an(ie - ia + 1);
+  for (int i=ia; i<=ie; ++i) a[i - ia] = ar0[i];
+  int ilast = ia - 1, npass = 0, iprev = -1;
+  Real rmx = 0.0, chg = 0.0;
+  for (int pass=0; pass<60; ++pass) {
+    ++npass;
+    iprev = ilast;
+    HsAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+    // outward: PL_i(d_i) = PR_{i-1}(d_{i-1}), from ia; stop where rho reaches the floor
+    for (int i=ia; i<=ie+1; ++i) {
+      bd[i] = d0[i];
+      Real p, cr, ct, cv;
+      eos.ThermoAt(bd[i], tc[i], be[i], p, cr, ct, cv);
+    }
+    ilast = ia - 1;
+    rmx = 0.0;
+    for (int i=ia; i<=ie; ++i) {
+      Real pl, pr;
+      walk(i-1, bd[i-1], pl, pr);
+      const Real target = pr;
+      auto res = [&](const Real lx) {
+        Real q1, q2;
+        walk(i, exp(lx), q1, q2);
+        return q1/target - 1.0;
+      };
+      Real x0 = log(bd[i]), x1 = x0 + 1.0e-6;
+      Real fa = res(x0), fb = res(x1);
+      for (int it=0; it<60 && fabs(fb) > 1.0e-15 && fb != fa; ++it) {
+        const Real x2 = x1 - fb*(x1 - x0)/(fb - fa);
+        x0 = x1; fa = fb; x1 = x2;
+        fb = res(x1);
+      }
+      if (!std::isfinite(x1) || !(exp(x1) > dfl*(1.0 + 1.0e-6)) || fabs(fb) > 1.0e-10) {
+        break;
+      }
+      rmx = std::max(rmx, fabs(fb));
+      bd[i] = exp(x1);
+      Real p, cr, ct, cv;
+      eos.ThermoAt(bd[i], tc[i], be[i], p, cr, ct, cv);
+      ilast = i;
+    }
+    if (ilast < ia) break;
+    // the module's face-mean force at this state (cells ia..ilast; the floor above keeps
+    // the pgen's a_ref)
+    std::vector<Real> kd, kt, kk;
+    for (int i=ia-1; i<=ie+1; ++i) {
+      kd.push_back(bd[i]);
+      kt.push_back(tc[i]);
+    }
+    HsKtEval(pm1->otab, kd, kt, kk);
+    chg = 0.0;
+    for (int i=ia; i<=ie; ++i) {
+      if (i > ilast) {
+        an[i - ia] = ar0[i];
+        continue;
+      }
+      const int q = i - (ia - 1);
+      const Real dl = x1f[i] - x1f[i-1], dc = x1f[i+1] - x1f[i];
+      const Real du = x1f[i+2] - x1f[i+1];
+      const Real rkc = bd[i]*kk[q];
+      const Real rkl = (dc*bd[i-1]*kk[q-1] + dl*rkc)/(dl + dc);
+      const Real rkr = (i == ie) ? rkc : (du*rkc + dc*bd[i+1]*kk[q+1])/(dc + du);
+      an[i - ia] = 0.5*(rkl*f0[i] + rkr*f0[i+1])/(cl*bd[i]);
+      chg = std::max(chg, fabs(an[i - ia]/a[i - ia] - 1.0));
+    }
+    if (chg < 1.0e-12 && ilast == iprev) break;
+    a = an;
+  }
+  // the cells above ilast keep the pgen's a_ref (what a restart rebuilds; a no-op after
+  // a converged pass) and Phi_eff follows a
+  for (int i=ilast+1; i<=ie; ++i) a[i - ia] = ar0[i];
+  HsAtmPhiEff(ia, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+  // write back: rho of the column, e from (rho, the cell's own T), v kept; a_ref and
+  // Phi_eff of the pass that produced this rho
+  Real dmx = 0.0, rdm = 0.0, tsp = 0.0, amx = 0.0, ram = 0.0;
+  for (int i=ia; i<=ilast; ++i) {
+    if (fabs(bd[i]/d0[i] - 1.0) > dmx) {
+      dmx = fabs(bd[i]/d0[i] - 1.0);
+      rdm = x1v[i];
+    }
+    if (fabs(a[i - ia] - ar0[i])/(hs_gm_/SQR(x1v[i])) > amx) {
+      amx = fabs(a[i - ia] - ar0[i])/(hs_gm_/SQR(x1v[i]));
+      ram = x1v[i];
+    }
+    tsp = std::max(tsp, tmx[i - i0]/tmn[i - i0] - 1.0);
+  }
+  for (int m=0; m<nmb; ++m) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=ia; i<=ilast; ++i) {
+          const Real dold = hu(m,IDN,k,j,i), d = bd[i];
+          const Real v1 = hu(m,IM1,k,j,i)/dold, v2 = hu(m,IM2,k,j,i)/dold;
+          const Real v3 = hu(m,IM3,k,j,i)/dold;
+          Real e, p, cr, ct, cv;
+          eos.ThermoAt(d, tcell[cid(m,k,j,i)], e, p, cr, ct, cv);
+          hu(m,IDN,k,j,i) = d;
+          hu(m,IM1,k,j,i) = d*v1;
+          hu(m,IM2,k,j,i) = d*v2;
+          hu(m,IM3,k,j,i) = d*v3;
+          hu(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3) + d*hp0(m,k,j,i);
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(fl.u0, hu);
+  HsAtmWrite(pmbp, ia, a, pc, pf);
+  // recorded in the input (and so in every restart file): a restart rebuilds the pgen's
+  // a_ref and Phi_eff and then applies these (UserProblem), bit for bit.  One short key
+  // per re-balanced cell (a long value would pad every line of the restart file's
+  // parameter dump past its 40 KB header limit); the cells above keep the pgen's a_ref
+  {
+    const int na = std::max(ilast - ia + 1, 0);
+    hs_pin_->SetString("problem", "he_ic_rad_atm_ia", std::to_string(ia));
+    hs_pin_->SetString("problem", "he_ic_rad_atm_na", std::to_string(na));
+    char key[40], buf[40];
+    for (int n=0; n<na; ++n) {
+      snprintf(key, sizeof(key), "he_ic_rad_atm_a%03d", n);
+      snprintf(buf, sizeof(buf), "%.17g", a[n]);
+      hs_pin_->SetString("problem", key, buf);
+    }
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "he_star_m1: he_ic_rad_atm_post: cells " << ia << " .. " << ilast
+              << " (r " << x1v[ia] << " .. " << x1v[std::max(ilast, ia)] << ") "
+              << "re-balanced at the ic_rad gas T, " << npass << " passes (last max "
+              << "|da/a| " << chg << ", face residual " << rmx << "): max |rho/rho_ic - "
+              << "1| " << dmx << " at r = " << rdm << ", max |a_ref - a_ref,pgen|/g "
+              << amx << " at r = " << ram << ", lateral T spread " << tsp << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void HeStarIcEquil
+//! \brief dic-1013 problem/he_ic_equil: one round of the discrete equilibrium of the
+//! initial state (see the enrolment in UserProblem).  Called by Driver::Initialize after
+//! every <rad_m1>/ic_rad run (fresh start); sets user_icpost_again while it wants another
+//! round.  The x1 structure is taken from the shell means (the initial state is l = 0);
+//! each cell keeps its own T and its rho/<rho> ratio.
+
+void HeStarIcEquil(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  auto *pm1 = pmbp->pradm1;
+  auto eos = fl.eos;
+  const WBOption wbo = fl.wb_option;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmbp->nmb_thispack;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const Real dfl = hs_eq_dfl_;
+  // the march's anchor: the WALL cell (its rho kept), marched OUTWARD.  At fixed force
+  // per volume f (fixed E) the hydrostatic march is stable only outward: a rho error
+  // grows inward relative to rho like (rho_in/rho_out)^(Gamma/(1 - Gamma)) (from the
+  // he_ic_balance anchor at 342 Rsun inward: 1 %/cell in the CZ, then NaN, run d4)
+  const int ianc = is;
+  ++hs_eq_it_;
+  std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0;
+  HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
+  auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.u0);
+  auto hp0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fl.phicc0);
+  auto hf0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->f0x1);
+  auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
+  const bool hdm = (pm1->icr_dm.extent_int(0) == nmb);
+  if (!hdm || !(pm1->icr_dm_dt > 0.0)) {
+    HsFatal("he_ic_equil: no force pass from <rad_m1>/ic_rad", __LINE__);
+  }
+  auto hdmv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->icr_dm);
+  const Real dtm = pm1->icr_dm_dt;
+  // shell sums per x1 index: rho, T, the net deposit dm, count; per x1 face: F0 area
+  std::vector<Real> sh(4*n1, 0.0), lf(n1 + 1, 0.0), af(n1 + 1, 0.0);
+  for (int m=0; m<nmb; ++m) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          const Real d = hu(m,IDN,k,j,i);
+          const Real ek = 0.5*(SQR(hu(m,IM1,k,j,i)) + SQR(hu(m,IM2,k,j,i)) +
+                               SQR(hu(m,IM3,k,j,i)))/d;
+          const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
+          sh[4*i] += d;
+          sh[4*i + 1] += eos.Temperature(d, e);
+          sh[4*i + 2] += hdmv(m,k,j,i);
+          sh[4*i + 3] += 1.0;
+        }
+        for (int i=is; i<=ie+1; ++i) {
+          lf[i] += hf0(m,k,j,i)*har(m,k,j,i);
+          af[i] += har(m,k,j,i);
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, sh.data(), 4*n1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, lf.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, af.data(), n1 + 1, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+#endif
+  // the 1-D column on x1 indices: rho, T, e, the force per volume f = dm/dt + rho a_ref
+  std::vector<Real> bd(n1, 0.0), be(n1, 0.0), tc(n1, 0.0), d0(n1, 0.0), fv(n1, 0.0);
+  std::vector<Real> resm(n1, 0.0), resh(n1, 0.0);
+  for (int i=is; i<=ie; ++i) {
+    const Real cnt = sh[4*i + 3];
+    bd[i] = sh[4*i]/cnt;
+    tc[i] = sh[4*i + 1]/cnt;
+    d0[i] = bd[i];
+    const Real dmi = sh[4*i + 2]/cnt;
+    fv[i] = dmi/dtm + bd[i]*ar0[i];
+    resm[i] = std::fabs(dmi/dtm)/(bd[i]*hs_gm_/SQR(x1v[i]));
+  }
+  // ghosts as HeStarBC makes them: inner = the balanced profile scaled to the edge cell,
+  // outer = the edge cell (the floor; the march stops below it)
+  std::vector<Real> gbd(n1), gbe(n1);
+  {
+    auto h1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_bd_);
+    auto h2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_be_);
+    for (int i=0; i<n1; ++i) {
+      gbd[i] = h1(i);
+      gbe[i] = h2(i);
+    }
+  }
+  auto setcell = [&](const int i) {
+    Real p, cr, ct, cv;
+    eos.ThermoAt(bd[i], tc[i], be[i], p, cr, ct, cv);
+  };
+  for (int i=is; i<=ie; ++i) setcell(i);
+  auto ghosts = [&]() {
+    for (int g=0; g<is; ++g) {
+      bd[g] = gbd[g]*bd[is]/gbd[is];
+      be[g] = gbe[g]*be[is]/gbe[is];
+      tc[g] = eos.Temperature(bd[g], be[g]);
+    }
+    for (int g=ie+1; g<n1; ++g) {
+      bd[g] = bd[ie];
+      be[g] = be[ie];
+      tc[g] = tc[ie];
+    }
+  };
+  ghosts();
+  std::vector<Real> pc, pf;
+  auto walk = [&](const int i, const Real di, Real &pimh, Real &piph) {
+    Real ei, p, cr, ct, cv;
+    eos.ThermoAt(di, tc[i], ei, p, cr, ct, cv);
+    WBState s0, s1, s2, s3, s4;
+    WBBackgroundStencil(eos, wbo, bd[i-1], di, bd[i+1], be[i-1], ei, be[i+1],
+                        pc[i-1], pf[i], pc[i], pf[i+1], pc[i+1], s0, s1, s2, s3, s4,
+                        tc[i-1], tc[i], tc[i+1]);
+    pimh = s1.p;
+    piph = s3.p;
+  };
+  // the floor: the cells at the column's floor density are not hydrostatic (sponge)
+  auto above = [&](const int i) { return bd[i] > dfl*(1.0 + 1.0e-6); };
+  // residual 2: the WB face condition at the current state with the current Phi_eff,
+  // as an acceleration (Delta p / (rho_face dr)) / g, interior faces below the floor
+  pc = pc0;
+  pf = pf0;
+  Real rmm = 0.0, rmh = 0.0, rrm = 0.0, rrh = 0.0;
+  for (int i=is; i<ie; ++i) {
+    if (!above(i) || !above(i+1)) continue;
+    Real pl0, pr0, pl1, pr1;
+    walk(i, bd[i], pl0, pr0);
+    walk(i+1, bd[i+1], pl1, pr1);
+    const Real g = hs_gm_/SQR(x1f[i+1]);
+    resh[i] = std::fabs(pr0 - pl1)/(0.5*(bd[i] + bd[i+1])*(x1v[i+1] - x1v[i])*g);
+    if (resh[i] > rmh) {
+      rmh = resh[i];
+      rrh = x1f[i+1];
+    }
+  }
+  for (int i=is; i<=ie; ++i) {
+    if (!above(i)) continue;
+    if (resm[i] > rmm) {
+      rmm = resm[i];
+      rrm = x1v[i];
+    }
+  }
+  // L_rad + L_MLT (w = 1) through every x1 face against L_in (the wall face)
+  std::vector<Real> lm(n1 + 1, 0.0);
+  if (hs_mlt_ && hs_fm_.extent_int(0) >= n1 + 1) {
+    auto hfm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fm_);
+    for (int i=is; i<=ie+1; ++i) lm[i] = hfm(i)*af[i];
+  }
+  const Real lin = lf[is] + lm[is];
+  Real ldv = 0.0, rld = 0.0;
+  for (int i=is; i<=ie+1; ++i) {
+    const Real dv = std::fabs((lf[i] + lm[i])/lin - 1.0);
+    if (dv > ldv) {
+      ldv = dv;
+      rld = x1f[i];
+    }
+  }
+  const bool conv = (std::max(rmm, rmh) < hs_eq_tol_);
+  const bool lastm = !conv && hs_eq_last_ && (hs_eq_it_ >= hs_eq_maxit_);
+  const bool done = conv || (hs_eq_it_ >= hs_eq_maxit_);
+  if (global_variable::my_rank == 0) {
+    std::printf("he_star_m1: he_ic_equil round %d: module residual max |a_net|/g = %.3e "
+                "(r %.5e), WB face residual %.3e (r %.5e), max |L(face)/L_in - 1| = "
+                "%.3e (r %.5e), L_in %.10e, L_top %.10e%s\n", hs_eq_it_, rmm, rrm, rmh,
+                rrh, ldv, rld, lin, lf[ie+1] + lm[ie+1],
+                done ? ((std::max(rmm, rmh) < hs_eq_tol_) ? " CONVERGED" :
+                        (lastm ? " (he_ic_equil_maxit: last round, march then STOP)" :
+                         " (he_ic_equil_maxit: STOP, not converged)")) : "");
+    // the profile of this round (appended): i r rho T a_ref f/rho resm resh L/L_in
+    FILE *fp = std::fopen("he_ic_equil.txt", "a");
+    if (fp != nullptr) {
+      for (int i=is; i<=ie; ++i) {
+        std::fprintf(fp, "%d %d %.12e %.12e %.12e %.12e %.12e %.6e %.6e %.12e\n",
+                     hs_eq_it_, i - is, x1v[i], bd[i], tc[i], ar0[i], fv[i]/bd[i],
+                     resm[i], resh[i], (lf[i] + lm[i])/lin);
+      }
+      std::fclose(fp);
+    }
+  }
+  // the end of the equilibrium: the deferred seed, a_ref kept for the restarts (af0 = the
+  // a_ref of the cells is..ie now in place), no further ic_rad
+  auto finish = [&](const std::vector<Real> &af0) {
+    // the deferred he_seed: eint (and with he_seed_rad E) of every cell times its factor
+    if (hs_eq_seed_) {
+      auto hsf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_sfac_);
+      auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->u0);
+      for (int m=0; m<nmb; ++m) {
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je; ++j) {
+            for (int i=is; i<=ie; ++i) {
+              const Real fac = hsf(m,k,j,i);
+              if (fac == 1.0) continue;
+              const Real d = hu(m,IDN,k,j,i);
+              const Real ek = 0.5*(SQR(hu(m,IM1,k,j,i)) + SQR(hu(m,IM2,k,j,i)) +
+                                   SQR(hu(m,IM3,k,j,i)))/d;
+              const Real e = hu(m,IEN,k,j,i) - ek - d*hp0(m,k,j,i);
+              hu(m,IEN,k,j,i) = e*fac + ek + d*hp0(m,k,j,i);
+              if (hs_eq_srad_) hr(m,radm1::M1_E,k,j,i) *= SQR(SQR(fac));
+            }
+          }
+        }
+      }
+      Kokkos::deep_copy(fl.u0, hu);
+      Kokkos::deep_copy(pm1->u0, hr);
+    }
+    hs_eq_a_.assign(af0.begin(), af0.end());
+    pm1->icr_fmeas = false;
+    pm->pgen->user_icpost_again = false;
+    if (global_variable::my_rank == 0) {
+      std::printf("he_star_m1: he_ic_equil: done after %d rounds%s\n", hs_eq_it_,
+                  hs_eq_seed_ ? " (deferred he_seed applied)" : "");
+    }
+  };
+  if (done && !lastm) {
+    finish(std::vector<Real>(ar0.begin() + is, ar0.begin() + ie + 1));
+    return;
+  }
+  // ---- the update: a = f/rho, Phi_eff from a above x1f(is), rho re-marched
+  std::vector<Real> a(ie - is + 1), an(ie - is + 1);
+  for (int i=is; i<=ie; ++i) a[i - is] = above(i) ? fv[i]/bd[i] : ar0[i];
+  std::vector<Real> ap(a);   // a of the previous pass (convergence of the passes)
+  int ilast = ie, npass = 0;
+  Real chg = 0.0, rmx = 0.0;
+  // Phi_eff of cell i for a trial a_i = f_i/d_i, the march's known face kept: inward
+  // (face x1f(i+1) known) pc[i], pf[i] and pc[i-1] shifted with pf[i]; outward (face
+  // x1f(i) known) pc[i], pf[i+1] and pc[i+1] shifted with pf[i+1].  Only differences
+  // of Phi_eff enter the walk, so the frame below (inward) / above (outward) is carried
+  // by these shifts; the final HsAtmPhiEff rebuilds the same differences.  Solving a_i
+  // WITH d_i is what makes the march converge: lagged (a = f/rho of the previous pass)
+  // it amplifies a global rho error by ~ sum Gamma dr/H_p > 1 (diverged, run d1)
+  auto setphi = [&](const int i, const Real ai, const bool outward) {
+    if (outward) {
+      const Real sh0 = pf[i+1];
+      pc[i] = pf[i] + (p0c[i] - p0f[i]) - ai*(x1v[i] - x1f[i]);
+      pf[i+1] = pf[i] + (p0f[i+1] - p0f[i]) - ai*(x1f[i+1] - x1f[i]);
+      pc[i+1] += pf[i+1] - sh0;
+    } else {
+      const Real sh0 = pf[i];
+      pc[i] = pf[i+1] - (p0f[i+1] - p0c[i]) + ai*(x1f[i+1] - x1v[i]);
+      pf[i] = pc[i] - (p0c[i] - p0f[i]) + ai*(x1v[i] - x1f[i]);
+      pc[i-1] += pf[i] - sh0;
+    }
+  };
+  auto solve = [&](const int i, const Real target, const bool outward) {
+    // outward: PL_i(d_i) = target; inward: PR_i(d_i) = target; a_i = f_i/d_i
+    auto res = [&](const Real lx) {
+      Real q1, q2;
+      const Real d = exp(lx);
+      setphi(i, fv[i]/d, outward);
+      walk(i, d, q1, q2);
+      return (outward ? q1 : q2)/target - 1.0;
+    };
+    Real x0 = log(bd[i]), x1 = x0 + 1.0e-6;
+    Real fa = res(x0), fb = res(x1);
+    for (int it=0; it<60 && fabs(fb) > 1.0e-15 && fb != fa; ++it) {
+      const Real x2 = x1 - fb*(x1 - x0)/(fb - fa);
+      x0 = x1; fa = fb; x1 = x2;
+      fb = res(x1);
+    }
+    setphi(i, fv[i]/exp(x1), outward);   // the Phi_eff of the solution
+    a[i - is] = fv[i]/exp(x1);
+    return std::make_pair(x1, fb);
+  };
+  for (int pass=0; pass<200; ++pass) {
+    ++npass;
+    HsAtmPhiEff(is, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+    rmx = 0.0;
+    ghosts();
+    // outward from the wall cell to the floor
+    ilast = ianc;
+    for (int i=ianc+1; i<=ie; ++i) {
+      if (!(d0[i] > dfl*(1.0 + 1.0e-6))) break;
+      Real pl, pr;
+      walk(i-1, bd[i-1], pl, pr);
+      const Real asv = a[i - is];
+      auto r = solve(i, pr, true);
+      if (!std::isfinite(r.first) || !(exp(r.first) > dfl*(1.0 + 1.0e-6)) ||
+          fabs(r.second) > 1.0e-10) {
+        a[i - is] = asv;
+        break;
+      }
+      rmx = std::max(rmx, fabs(r.second));
+      bd[i] = exp(r.first);
+      setcell(i);
+      ilast = i;
+    }
+    for (int i=ilast+1; i<=ie; ++i) {
+      bd[i] = d0[i];
+      setcell(i);
+    }
+    ghosts();
+    chg = 0.0;
+    for (int i=is; i<=ie; ++i) {
+      an[i - is] = (i <= ilast) ? fv[i]/bd[i] : ar0[i];
+      chg = std::max(chg, fabs(an[i - is]/ap[i - is] - 1.0));
+    }
+    a = an;
+    ap = an;
+    if (chg < 1.0e-14) break;
+  }
+  HsAtmPhiEff(is, ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
+  // write back: rho of every cell times its shell's ratio, e from (rho, the cell's own
+  // T), v kept; a_ref and Phi_eff of the last pass
+  Real dmx = 0.0, rdm = 0.0;
+  for (int i=is; i<=ie; ++i) {
+    if (fabs(bd[i]/d0[i] - 1.0) > dmx) {
+      dmx = fabs(bd[i]/d0[i] - 1.0);
+      rdm = x1v[i];
+    }
+  }
+  for (int m=0; m<nmb; ++m) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          const Real q = bd[i]/d0[i];
+          if (q == 1.0) continue;
+          const Real dold = hu(m,IDN,k,j,i);
+          const Real v1 = hu(m,IM1,k,j,i)/dold, v2 = hu(m,IM2,k,j,i)/dold;
+          const Real v3 = hu(m,IM3,k,j,i)/dold;
+          const Real eo = hu(m,IEN,k,j,i) - 0.5*dold*(v1*v1 + v2*v2 + v3*v3)
+                          - dold*hp0(m,k,j,i);
+          const Real t = eos.Temperature(dold, eo);
+          const Real d = dold*q;
+          Real e, p, cr, ct, cv;
+          eos.ThermoAt(d, t, e, p, cr, ct, cv);
+          hu(m,IDN,k,j,i) = d;
+          hu(m,IM1,k,j,i) = d*v1;
+          hu(m,IM2,k,j,i) = d*v2;
+          hu(m,IM3,k,j,i) = d*v3;
+          hu(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3) + d*hp0(m,k,j,i);
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(fl.u0, hu);
+  HsAtmWrite(pmbp, is, a, pc, pf);
+  pm->pgen->user_icpost_again = true;
+  if (lastm) finish(a);
+  if (global_variable::my_rank == 0) {
+    std::printf("he_star_m1: he_ic_equil round %d update: anchor cell %d (r %.5e), "
+                "cells %d .. %d re-marched, %d passes (last max |da/a| %.3e, face "
+                "residual %.3e), max |drho/rho| %.3e at r %.5e\n", hs_eq_it_, ianc - is,
+                x1v[ianc], 0, ilast - is, npass, chg, rmx, dmx, rdm);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -2614,5 +4316,6 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_phig_ = DvceArray1D<Real>();
   hs_gmr_ = DvceArray1D<Real>();
   hs_fb_ = DvceArray1D<Real>();
+  hs_sfac_ = DvceArray4D<Real>();
 }
 }  // namespace
