@@ -138,7 +138,9 @@
 //!    ambient (rho_amb, at rest in the rotating frame, T = the IC's ambient T_col); the
 //!    removed mass and gas energy are booked in history columns Mmsk and Emsk (in place
 //!    of Mwal, Jwal: identically 0 with the closed free-slip wall).  Radiation is not
-//!    touched.
+//!    touched, unless problem/donor_irr = true: then the lobe also holds E = a T_d^4,
+//!    F = 0 (T_d = problem/donor_teff, default 26200 K), a black-body surface whose light
+//!    enters the grid by the M1 transport (booked in Ebnd as radiation in).
 //!
 //! HISTORY (problem/user_hist = true), all in code units, the plain sums over ranks:
 //!   Mdom, Jdom           mass and INERTIAL z angular momentum about the accretor axis,
@@ -287,6 +289,8 @@ Real str_r_ = 0.0;             // problem/stream_r: radius of the injection (def
 Real nz_rlo_ = 0.0, nz_rhi_ = 0.0;   // the nozzle shell: cells with x1v in (rlo, rhi)
 bool msk_ = false;             // donor_mask = roche
 Real msk_phl1_ = 0.0, msk_xl1_ = 0.0;   // Phi(L1) and the L1 distance from the accretor
+bool mirr_ = false;            // problem/donor_irr: the mask radiates at donor_teff
+Real mirr_e_ = 0.0;            // a T_d^4 (code)
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -1077,6 +1081,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const Real tcs = gen_tstr_, tsf = gen_tsurf_, sar = strad_ar_, sre = strad_e_;
     const bool stp = stprof_, srad = rad && strad_;
     const Real phl1 = msk_phl1_, xl1 = msk_xl1_, dfl = eosd.dfloor;
+    const bool mirr = rad && mirr_;
+    const Real med = mirr_e_;
     const RocheParams pr = rp_;
     auto phc = ph->phicc0;
     auto &x3c = pmbp->pcoord->x3v;
@@ -1130,6 +1136,15 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       } else {
         v.the_array[4] = (d0 - dn)*dv;
         v.the_array[5] = (e0 - en)*dv;
+        if (mirr) {
+          // donor_irr: the lobe is a black body at T_d (isotropic, comoving F = 0); its
+          // light leaves through the mask surface by the M1 transport
+          v.the_array[6] = (med - urd(m,radm1::M1_E,k,j,i))*dv;
+          urd(m,radm1::M1_E,k,j,i) = med;
+          urd(m,radm1::M1_F1,k,j,i) = 0.0;
+          urd(m,radm1::M1_F2,k,j,i) = 0.0;
+          urd(m,radm1::M1_F3,k,j,i) = 0.0;
+        }
       }
       sum += v;
     }, Kokkos::Sum<array_sum::GlobalSum>(zs));
@@ -1225,8 +1240,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
     }
     acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
-    // the nozzle's energy enters Ebnd = in - rad out (10) - hydro out (11)
-    acc0_[10] -= zs.the_array[3];
+    // the nozzle's energy (and the donor_irr radiation) enters Ebnd = in - rad out (10)
+    // - hydro out (11)
+    acc0_[10] -= zs.the_array[3] + zs.the_array[6];
     acc0_[11] -= zs.the_array[2];
   }
   stage_ctr_++;
@@ -2774,6 +2790,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!msk_ && dm.compare("none") != 0) fatal("donor_mask must be none | roche");
     msk_xl1_ = bo.dl1*asep;
     msk_phl1_ = RochePot(rp_, msk_xl1_, 0.0);
+  }
+  // problem/donor_irr (default false; needs donor_mask = roche and <rad_m1>): the masked
+  // lobe holds E = a T_d^4, F = 0 every stage, T_d = problem/donor_teff [K] (default 26200,
+  // the donor T_eff of the Wade+2026 MESA track used by the S5 deck)
+  mirr_ = pin->DoesParameterExist("problem", "donor_irr") &&
+          pin->GetBoolean("problem", "donor_irr");
+  if (mirr_) {
+    if (!msk_ || !rad_) fatal("donor_irr needs donor_mask = roche and <rad_m1>");
+    const Real tdk = pin->GetOrAddReal("problem", "donor_teff", 26200.0);
+    const Real tdc = tdk/pmbp->phydro->peos->eos_data.temp_cgs;
+    mirr_e_ = pmbp->pradm1->arad*SQR(SQR(tdc));
+    if (root) {
+      std::printf("ry_per_accretor: donor_irr: the donor lobe radiates at T_d %.1f K (E = "
+                  "a T^4 = %.6g code, F = 0); booked in Ebnd as radiation in\n", tdk,
+                  mirr_e_);
+    }
   }
 
   // ---- integrator weights for the boundary flux integrals
