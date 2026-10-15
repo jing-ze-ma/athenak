@@ -126,6 +126,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("nstage", nstage);
   v.value("impl_cfl", impl_cfl);
   v.value("impl_tol", impl_tol);
+  v.value("impl_tol_rel", impl_tol_rel);
+  v.value("impl_tol_rel_max", impl_tol_rel_max);
+  v.value("impl_tolr_sum", impl_tolr_sum);
+  v.value("impl_tolr_n", impl_tolr_n);
   v.value("impl_maxit", impl_maxit);
   v.value("impl_opac_update", impl_opac_update);
   v.value("dbg_opac_part", dbg_opac_part);

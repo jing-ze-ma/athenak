@@ -989,6 +989,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_m1","implicit_cfl",-1.0);
   impl_tol = pin->GetOrAddReal("rad_m1","implicit_tol",1.0e-8);
+  // picard-1014 implicit_tol_rel = kappa (default 0 = off; opt-in study key).  A solve
+  // that starts from the step predictor measures its first change r_0 = max |x_1 -
+  // x_pred|/x: the predictor (an extrapolation of the last increments, O(dt^3) off
+  // under predictor_order 2) misses the fixed point by about the local truncation
+  // error of the step, so an iteration error kappa r_0 is kappa x that error and
+  // shrinks with dt as it does (the absolute implicit_tol does not scale).  The
+  // solve then stops at tol_eff = max(implicit_tol, kappa r_0) (both the plain and
+  // the contraction-estimate tests); cold starts keep implicit_tol.
+  impl_tol_rel = pin->GetOrAddReal("rad_m1","implicit_tol_rel",0.0);
+  impl_tol_rel_max = pin->GetOrAddReal("rad_m1","implicit_tol_rel_max",1.0e-4);
+  if (impl_tol_rel < 0.0 || impl_tol_rel >= 1.0) {
+    ImplFatal("<rad_m1>/implicit_tol_rel must lie in [0,1)");
+  }
   // a lagged transverse coupling needs more outer passes than a pure column solve, so
   // the ceiling is raised (not the count: the loop still stops at convergence).
   impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit", full ? 200 : 30);
@@ -8763,6 +8776,11 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_tol_rel > 0.0) {
+    std::cout << "<rad_m1> implicit_tol_rel=" << impl_tol_rel << ": predicted solves "
+              << impl_tolr_n << ", mean tol_eff "
+              << ((impl_tolr_n > 0.0) ? impl_tolr_sum/impl_tolr_n : 0.0) << std::endl;
+  }
   if (impl_gn_sw > 0) {
     std::cout << "<rad_m1> implicit_gas_newton_switch=" << impl_gn_sw << " (min pass "
               << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
@@ -11715,6 +11733,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
 
   //--------------------------------------------------------------------- the Picard loop
+  const bool tolr = (impl_tol_rel > 0.0);
+  Real tol_eff = impl_tol;
   int it = 0;
   Real resid = 0.0;
   bool converged = false;
@@ -13688,24 +13708,30 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     } else {
       lresid = 0.0;
     }
-    converged = (resid < impl_tol) && (!trans || (lresid < impl_lin_tol));
+    // picard-1014 implicit_tol_rel: the tolerance of this solve from its first change
+    if (it == 0 && tolr && pred_started) {
+      tol_eff = std::max(impl_tol, std::min(impl_tol_rel*resid, impl_tol_rel_max));
+      impl_tolr_sum += tol_eff;
+      impl_tolr_n += 1.0;
+    }
+    converged = (resid < tol_eff) && (!trans || (lresid < impl_lin_tol));
     if (impl_conv_est || !impl_lres_test) {
       // the Picard test, optionally without the confirming pass: q is the contraction
       // of the last two passes, and q/(1-q) times this change bounds what is left
-      bool pc = (resid < impl_tol);
+      bool pc = (resid < tol_eff);
       // h2order2-1011: implicit_rad_inertia_solve lags dA by one pass, so the stop must
       // see the last pass's own change (no contraction estimate, no one-pass stop)
       const bool rinrc = RinrActive();
       if (impl_conv_est && !pc && rprev > 0.0 && !rinrc) {
         Real q = resid/rprev;
-        pc = (q < 0.5) && (resid*q/(1.0 - q) < impl_tol);
+        pc = (q < 0.5) && (resid*q/(1.0 - q) < tol_eff);
       }
       if (onep && it == 0 && !pc && !ocheck && !rinrc) {
         const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
         // time2_one_pass_safety for the stage solves (otyp 1, 2)
         const Real sf = (otyp != 0 && t2_onep_s > 0.0) ? t2_onep_s : impl_onep_s;
         const Real qe = std::max(sf*qm, 1.0e-6);
-        pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < impl_tol);
+        pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < tol_eff);
         if (pc) {impl_onep_n += 1.0;}
       }
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);

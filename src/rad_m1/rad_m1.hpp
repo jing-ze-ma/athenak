@@ -500,6 +500,11 @@ class RadiationM1 {
   int nstage;                   // stages per substep: M1_NSTAGE explicit, 1 implicit
   Real impl_cfl;                // <rad_m1>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
   Real impl_tol;                // Picard tolerance on max(|dE|/E, |dT|/T)
+  // picard-1014 implicit_tol_rel = kappa (default 0 = off): a solve that starts from the
+  // step predictor stops at max(implicit_tol, kappa r_0), r_0 = its first change
+  Real impl_tol_rel = 0.0;
+  Real impl_tol_rel_max = 1.0e-4;   // implicit_tol_rel_max: cap on tol_eff
+  Real impl_tolr_sum = 0.0, impl_tolr_n = 0.0;
   int impl_maxit;               // maximum Picard iterations per solve
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
   int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
