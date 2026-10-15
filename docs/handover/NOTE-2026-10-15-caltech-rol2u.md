@@ -11,6 +11,11 @@ chain runs on 2 H200 (user change).
   gcc 13.2 + cuda 12.9 + hpcx 2.17.1, Kokkos 4.6.2).
 - `/resnick/home/jingze/ATHENAK/builds/bin/athena_gpu_he_star_m1_1bd0c2ce_nofma`, md5 **dd5f68261ad6a2d3d8050cfefe3cb2db**.
 
+- Header fix (user 10-15, coordinator build): branch **fin51-r-hdr @ 5ab8c87e1e3f953752268d0ff89bf0636bc1fe70** = 1bd0c2ce +
+  src/parameter_input.cpp only (`<par_end>` search limit 10 x 4096 -> 256 x 4096 bytes, ~1 MB; no effect on results).
+  Binary `builds/bin/athena_gpu_he_star_m1_5ab8c87e_nofma`, md5 **0677cd3be292391bc64225823bbf6bb4**. hgR2w run.cfg now uses
+  it (BIN/BIN_MD5), so the first hgR2w link runs 5ab8c87e. The gates below ran 1bd0c2ce.
+
 ## 2. Seeds (copies)
 | case | source rst | t | cycle | md5 | `<par_end>` |
 |---|---|---|---|---|---|
@@ -83,7 +88,7 @@ slower. GPU peak = nvidia-smi peak per GPU.
 ## 5. Chains
 - He giant **hgR2w** `rol2u_1015/hg/chain`:
   - Setup: 1 node x 2 H200, 2 ranks x 2 MeshBlocks; link_hgR2w.sh = link_hg4w_ext.sh with -n 2, gres 2, mem 240G.
-  - run.cfg: BIN 1bd0c2ce, XKEYS tlim 1e9 + dt_retry + ROL2U keys, prune keep 3 on this dir.
+  - run.cfg: BIN 5ab8c87e (hdr fix; was 1bd0c2ce at submission), XKEYS tlim 1e9 + dt_retry + ROL2U keys, prune keep 3 on this dir.
   - Seed: hard link of OUR seed copy. Submitted with `-t 7-00:00:00 --time-min=12:00:00`.
   - Jobs: 4552184 -> 4552185 -> 4552186 (afterany), released (coordinator, user decision), pending at the time of this note.
   - rmax guard: rmax_guard_r2.sh, RLIM 150, jobs 4552218 + afterany 4552229. Own guardwork/ cache, merged page run =
