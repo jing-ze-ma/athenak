@@ -89,6 +89,7 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
+#include "driver/dt_retry.hpp"
 
 // defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
@@ -2558,6 +2559,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
   user_srcs_func = HeStarGravity;
+  // fin51-r-fix: the per-cycle state of HeStarGravity joins the <time>/dt_retry
+  // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly as
+  // the straight cycle; esrc itself is in the m1 minimal list)
+  dtretry::RegisterValue("hs_mw", &hs_mw_);
+  dtretry::RegisterValue("hs_ad_cyc", &hs_ad_cyc_);
+  dtretry::RegisterValue("hs_ad_tl", &hs_ad_tl_);
+  dtretry::RegisterValue("hs_ad_tout", &hs_ad_tout_);
+  dtretry::RegisterValue("hs_lsub", &hs_lsub_);
+  dtretry::RegisterView("hs_fsub", &hs_fsub_);
   user_bcs_func = HeStarBC;
   user_hist_func = HeStarHist;
   pgen_rst_write_func = HsAdaptiveRstWrite;   // adaptive state + the Picard window
