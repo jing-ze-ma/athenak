@@ -2448,8 +2448,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   user_srcs_func = HeStarGravity;
   // fin51-r-fix: the per-cycle state of HeStarGravity joins the <time>/dt_retry
-  // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly as
-  // the straight cycle; esrc itself is in the m1 minimal list)
+  // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly
+  // as the straight cycle; esrc itself is in the m1 minimal list)
   dtretry::RegisterValue("hs_mw", &hs_mw_);
   dtretry::RegisterValue("hs_ad_cyc", &hs_ad_cyc_);
   dtretry::RegisterValue("hs_ad_tl", &hs_ad_tl_);
