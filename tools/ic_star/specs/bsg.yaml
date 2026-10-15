@@ -1,0 +1,17 @@
+# New BSG (Ma, Bildsten & Jiang 2026 model; L. Ma MESA_profile_combined_cgs.txt md5 f2a08bad):
+# L = MESA median 4 pi r^2 F_r, R_ph = Ma's 53.0298 Rsun (T_eff 15488 K = deck P), M 20 Msun
+# point mass; X 0.7 Z 0.008 GS98 (SK67 / Ma+2026 mixture).
+name: bsg
+star:
+  L: 5.581461e38
+  R_ph_rsun: 53.0298
+  M: 20.0
+composition: {X: 0.7, Y: 0.292, Z: 0.008, mixture: GS98, a_metal: 16.0}
+mesa_profile:
+  path: /raven/ptmp/jinma/ic_star_cache/raw/mesa/bsg_ma2026_MESA_profile_combined_cgs.txt
+  format: cgs6
+opacity:
+  # TOPS X 0.7 Z 0.008 rho 1e-14..1 (Viper bsg_1001/opac); the low-rho file could not be fetched
+  # (LANL down 10-15): extension from log rho -14 (= bsg_newsetup_1015 ext2nolo)
+  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/bsg_x0.7_z0.008_hi.dat
+r_in: {rule: hp_below_cz, n_hp: 4.5}

@@ -1,0 +1,19 @@
+# OLD He giant M2pt754_Porb100_profile29 (hgF4w production; FOR REFERENCE ONLY).  MESA: Teff 8282 K,
+# L_ph 1.618e4 Lsun, R_ph 61.78 Rsun, M 2.556 Msun.  NOT in thermal equilibrium: L(3 Rsun) = 418 L_ph
+# (the r_in L-flatness check flags it).  Wall 3 Rsun as hgF4w, X 0 Y 0.9265 Z 0.0735 a_metal 1.77.
+name: hegiant_M2pt754
+star: {L: mesa, R_ph: mesa, M: mesa}
+composition:
+  X: 0.0
+  Y: 0.9265
+  Z: 0.0735
+  a_metal: 1.77
+  mixture: custom
+  tops_mixture: "9.92685e-01 he 1.64551e-03 c 3.47644e-03 n 6.67545e-04 o 6.67126e-04 ne 7.52232e-06 na 5.00027e-04 mg 1.03837e-05 al 1.24840e-04 si 9.91635e-07 p 7.52232e-05 s 1.11263e-06 cl 8.83794e-06 ar 4.63823e-07 k 8.06031e-06 ca 3.68427e-07 ti 1.64571e-06 cr 8.63680e-07 mn 1.11263e-04 fe 2.92652e-07 co 6.25678e-06 ni 1.40072e-07 zn"
+mesa_profile:
+  path: /raven/ptmp/jinma/ic_star_cache/raw/mesa/M2pt754_Porb100_profile29.data
+  format: mesa
+opacity:
+  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/hegiant_surf_hi.dat
+r_in: {rule: explicit, r_rsun: 3.0, bottom_rsun: 2.85}
+grid: {rho_lo: 1.0e-13, rho_hi: 3.0e-7}
