@@ -19,9 +19,12 @@ build_ext_bsg.py generalisation):
     absorption (rho/rho_e)^s, Planck = kP_e (rho/rho_e)^s, s = local slope over 0.6 dex clamped
     [0, 1], boxcar-smoothed over +-0.1 dex in log T (saha_es.py);
   * grid log T 2.6..8.0 (0.025), log rho -21..0 (0.05); printed '%.5f'.
-  NOT included (and listed so): the AG Car E1 table's 'bitwise patch' (log T >= 4.2 and log rho
-  >= -14 copied from the older plain-TOPS table) and the 'Orion' low-rho Planck stitch
-  (planck_ext2orion, an X 0.36 Z 0.02 product).
+  The AG Car E1 table's 'bitwise patch' (log T >= 4.2, log rho >= -14 copied as text from the
+  older plain-TOPS table) is not needed: rebuilt here, X 0.36 Z 0.02 gives every value of E1's
+  rosseland_ext2 b28e97c5 and planck_ext2 dc482452.  NOT included: the 'Orion' low-rho Planck
+  stitch (planck_ext2orion 493f9d01, an X 0.36 Z 0.02 product; 4462 of 91357 values differ).
+  composition.saha_mixture: the star's own mixture for the Saha-es extension when the TOPS data
+  are of another (interim) mixture.
 
 EOS = the code's general-EOS table dump (<hydro>/eos_table_dump) from a 1-cell shock_tube deck
 with the composition keys (eos_xh, eos_yhe, eos_a_metal) and the table range keys; the

@@ -161,9 +161,9 @@ def main():
         rb_ = SP.rsun_or_cm(s['r_in'], 'bottom') or SP.rsun_or_cm(s['r_in'], 'r')
         if rb_ is None:
             rb_ = mesa['rc'][0]
-        kk = int(np.argmin(abs(mesa['rc'] - rb_)))
-        lt_b = np.log10(mesa['T'][:kk + 1].max())
-        ld_b = np.log10(mesa['rho'][:kk + 1].max())
+        env = mesa['rc'] >= 0.98*rb_                 # the envelope part the column uses
+        lt_b = np.log10(mesa['T'][env].max())
+        ld_b = np.log10(mesa['rho'][env].max())
         e['logt_max'] = max(e['logt_max'], np.ceil(10*(lt_b + 0.1))/10)
         e['logd_max'] = max(e['logd_max'], np.ceil(ld_b + 0.5))
     if e.get('logt_min') is None:
