@@ -23,24 +23,25 @@ def png(fn, col, pr, info, mesa=None):
             a.axvspan(info['r_base']/R, info['r_top']/R, color='#f0efec', zorder=0)
         a.set_xlabel('r / R_ph', color=INK2, fontsize=9)
     xm = min(1.5, info['x1max']/R)
+    mk = None if mesa is None else (mesa['rc'] >= r[0])
     a = ax[0, 0]
     a.semilogy(x, col['T'], color=C1, lw=1.6, label='T [K] (column)')
     if mesa is not None:
-        a.semilogy(mesa['rc']/R, mesa['T'], color=C1, lw=1, ls=':', label='T MESA')
+        a.semilogy(mesa['rc'][mk]/R, mesa['T'][mk], color=C1, lw=1, ls=':', label='T MESA')
     a.set_xlim(x[0], xm)
     a.set_title('temperature (dashed line: x1min; shaded: Fe CZ)', fontsize=10)
     a.legend(fontsize=8, frameon=False)
     a = ax[0, 1]
     a.semilogy(x, col['rho'], color=C2, lw=1.6, label='rho [g/cc] (column)')
     if mesa is not None:
-        a.semilogy(mesa['rc']/R, mesa['rho'], color=C2, lw=1, ls=':', label='rho MESA')
+        a.semilogy(mesa['rc'][mk]/R, mesa['rho'][mk], color=C2, lw=1, ls=':', label='rho MESA')
     a.axhline(info['dmax'], color=C4, lw=1, label='sponge dmax')
     a.axhline(info['rho_floor'], color=C5, lw=1, ls='--', label='column floor')
     a.set_xlim(x[0], info['x1max']/R*1.02)
     a.set_title('density, floor layer and sponge threshold', fontsize=10)
     a.legend(fontsize=8, frameon=False)
     a = ax[1, 0]
-    a.plot(x[m], pr['nab'][m], color=C1, lw=1.6, label='nabla (column, MLT++)')
+    a.plot(x[m], pr['nab'][m], color=C1, lw=1.6, label='nabla (column)')
     a.plot(x[m], pr['nad'][m], color=C2, lw=1.2, label='nabla_ad')
     a.plot(x[m], pr['nrad'][m], color=C3, lw=1.2, label='nabla_rad')
     a.set_ylim(0, min(2.0, np.nanmax(pr['nrad'][m])*1.05))
@@ -69,7 +70,7 @@ def png(fn, col, pr, info, mesa=None):
     mm = m & (col['fmlt'] < 1e-6) & (r < col['rj'])
     a.plot(x[mm], dd[mm], '.', ms=2, color=C2, label='F_diff(column T grad) / F_r (radiative rows)')
     if mesa is not None:
-        a.plot(mesa['r']/R, mesa['L']/col['L'], color=C3, lw=1, ls=':', label='L_MESA(r) / L')
+        a.plot(mesa['r'][mk]/R, mesa['L'][mk]/col['L'], color=C3, lw=1, ls=':', label='L_MESA(r) / L')
     a.set_ylim(0.9, 1.1)
     a.set_xlim(x[0], 1.0)
     a.set_title('luminosity consistency', fontsize=10)

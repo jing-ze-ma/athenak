@@ -66,6 +66,11 @@ wall):
 - rows on a log grid dln r 2e-4 with x1min as an exact row; atmosphere rows every 2e-4 R_ph;
   floor rows every 50 x that.
 
+Validation on 14p5M (regress/RESULTS.md sect. 5): even with MESA's gated MLT++, global mode
+does not reproduce a super-Eddington MESA envelope. The inward integration sits on a separatrix
+between an inflated branch and a dense adiabat (2.8x MESA's m_env at alpha 2; the branch flips
+with alpha, MLT++ and even the ODE tolerance). Use mode mesa whenever a MESA model exists.
+
 **Mandatory physicality checks (they flag, never accept silently):**
 - m_env(x1min..R_ph) << M (FLAG at > 5 % M);
 - a smooth base (second difference of ln rho in the bottom rows vs above);

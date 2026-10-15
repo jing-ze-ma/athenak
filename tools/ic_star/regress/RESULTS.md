@@ -104,5 +104,35 @@ there. R_ph 1.055; m_env 1.064.
 
 ## 5. Mode global validation on 14p5M (MESA r15140 gated MLT++, alpha 2, Cox, alt H_p, ext2)
 
-See `/raven/ptmp/jinma/ic_star_runs/hegiant_14p5M_global/diag_hegiant_14p5M_global.txt`
-(filled in below when the run ends).
+`specs/hegiant_14p5M_global.yaml` (validation only; x1min 8, bottom 6 Rsun; L, M, R_ph = MESA):
+- MESA gate fixed point gradT_excess_alpha* = 0.528. The rule(alpha) jumps between 0 and 1 near
+  0.53: beta_min 0.31-0.42 at 19 Rsun, lambda 0.70-0.87.
+- Main column (dlnr 2e-4, rtol 1e-12):
+  - CZ base (Schwarzschild) 19.35 Rsun, MESA 18.6-19.4: it coincides;
+  - wall buffer 4.32 H_p, radiative;
+  - **m_env(8 Rsun..R_ph) = 0.095 Msun = 2.8 x MESA's 0.034**;
+  - **at 25 Rsun T 3.33e5 K = 1.31 x MESA, rho 8.70e-7 = 3.86 x MESA**;
+  - T/T_MESA 1.17-1.36 and rho/rho_MESA 1.5-4.3 over 0.05-0.8 R_ph;
+  - a density inversion at 0.975-0.995 R_ph;
+  - classified INFLATED (an inversion) but with m_env/M 0.035, an intermediate state between
+    the two branches.
+- Branch scan (coarse, MLT++ 'on' = the same alpha* 0.528):
+
+  | alpha_MLT | MLT++ | T(8 Rsun) | rho(8 Rsun) | m_env/M | branch |
+  |---|---|---|---|---|---|
+  | 1.0 | on | 6.12e5 | 8.2e-6 | 3.2e-3 | inflated |
+  | 1.0 | off | 4.78e5 | 2.6e-6 | 1.8e-3 | inflated |
+  | 1.5 | on | 3.84e6 | 4.3 | 1.2e4 | DENSE ADIABAT |
+  | 1.5 | off | 5.66e5 | 5.8e-6 | 2.3e-3 | inflated |
+  | 2.0 | on | 3.84e6 | 4.4 | 1.25e4 | DENSE ADIABAT |
+  | 2.0 | off | 6.21e5 | 8.7e-6 | 2.9e-3 | inflated |
+
+  MESA itself has T(8) 9.0e5 K, rho 4.0e-5 and m_env/M 0.0124.
+- Verdict: **global mode does NOT reproduce this MESA envelope.** Without MLT++ every alpha
+  gives the inflated branch (m_env 0.1-0.2 x MESA). With MESA-gated MLT++:
+  - alpha 1.5-2 at coarse tolerance gives the dense adiabat;
+  - alpha 2 at full tolerance gives an intermediate envelope 2.8x MESA's mass.
+  So in this super-Eddington envelope (Gamma_L up to 5.6) the inward integration sits on a
+  separatrix, and the branch depends even on the ODE tolerance.
+- Mode mesa is the IC for stars with MESA models. Global mode stays for stars without one
+  (AG Car), always with its flags and the scan.
