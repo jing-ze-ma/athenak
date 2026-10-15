@@ -7893,6 +7893,21 @@ void RadiationM1::DtRetryAfterRestore() {
     vgd_tex.fence();
     vgd_tab_state = 0;
     vgd_tabh.alpha = -9.0;
+    // fin51-r-fix: the halo caches of the sweep (compact masks vgd_hce, lists vgd_hle,
+    // exact lists vgd_hxe, the pipelined mask slots vgd_htag, the overlap groups) are
+    // records whose KEY (direction set, cut, depth, build id, sweep) is a checkpointed
+    // value while their arrays are remade IN PLACE (capacity kept) and are not: a failed
+    // attempt that remade a record for another cut (vlat_icut moves between the builds
+    // of a cycle) left the restored key naming the other cut's lists.  Every record is
+    // dropped here; the next sweep remakes the ones it needs (VetGdHxBatch, VetGdHcGet,
+    // VetGdHlBuild: the same lists from the same masks, so the same numbers).
+    for (auto &c : vgd_hce) {c.alpha = -9.0; c.scut = -9; c.ws = -9;}
+    for (auto &x : vgd_hle) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
+    for (auto &x : vgd_hxe) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
+    for (int s = 0; s < 2; ++s) {vgd_htag[s][0] = -1;}
+    for (int p = 0; p < 2; ++p) {
+      for (auto &a : vgd_ovl_alpha[p]) {a = -5.0;}
+    }
   }
 }
 
