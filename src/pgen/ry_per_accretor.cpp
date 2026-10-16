@@ -1126,6 +1126,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       bool inmk = false;
       if (mskon && !innz) {
         inmk = (r*cos(phv) > xl1) && (RochePot(pr, r, phv) < phl1);
+        // stream_inject = l1: the sector BEHIND the nozzle (r above its outer face, |dphi|
+        // < 3 sigma + 1 sigma) joins the sink.  The sonic L1 state expands backward into
+        // the near-vacuum beyond L1 (v + 3 c_s > 0), where the floor gas got garbage
+        // energies and 1e5-1e9 km/s (dt collapse, g8/g9 10-15); the donor's atmosphere
+        // that really lies there is not modelled, so it is a sink like the lobe.
+        if (l1 && r > nhi && fabs(dph) < ww + sg) inmk = true;
       }
       if (!(innz || inmk)) return;
       array_sum::GlobalSum v;
