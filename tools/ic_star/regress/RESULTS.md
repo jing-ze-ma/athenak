@@ -326,3 +326,24 @@ excited at the photosphere and steepens in the falling density.
   still the discriminator.
 - Caveat: g also changes Gamma (0.47 / 0.67 / 0.94 x the base's at the Fe peak), and with it the
   interior structure (m_env/M 0.08 for H07).
+
+## 8. Exact TOPS tables and the startup gamma cap (10-16, USER: BSG R_ph 51.6 accepted, 14p5M option A)
+
+### 8a. Tables rebuilt by the recipe; the cache key now includes the md5 of the TOPS raw files
+
+- **14p5M**: TOPS of the exact mixture (hg145 tables/tops_hg145.dat, LANL OK on try 35 10-16
+  10:25, rho 1e-18..1). Cache opac_416a61196c64, Saha mixture = the 14p5M mixture.
+  Change vs the interim table (old-surface-mixture TOPS, opac_ef4dcdfaea5b), in log10 kappa:
+
+  | region | Rosseland | Planck |
+  |---|---|---|
+  | log T >= 4.2, log rho >= -14 | max 0.126, mean -0.011 | max 1.12, mean -0.036 |
+  | log T >= 4.2, log rho < -14 (extension) | max 0.005 | max 1.44, mean -0.10 |
+  | log T < 4.2 (Ferguson, blend) | max 0.40 (mostly the old surface-mixture Saha-es extension) | max 1.16 |
+
+- **BSG**: the TOPS low-density file (Viper retry OK on try 37, 10:18) added. Cache
+  opac_5b8e2fdfefea. Change vs ext2nolo:
+  - Rosseland: max 0.006 dex, only at log rho < -14;
+  - Planck: max 0.43 dex at log T >= 4.2 / log rho < -14 and 0.52 dex at log T < 4.2 (the
+    extension), mean +0.003.
+  - The BSG IC was not regenerated: the Rosseland change is below log rho -14 only.

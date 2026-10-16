@@ -88,9 +88,11 @@ def mixture_string(comp):
     return s
 
 
-def comp_hash(comp, mix):
+def comp_hash(comp, mix, tops_src=None):
     key = dict(X=round(comp['X'], 10), Z=round(comp['Z'], 10), mix=mix,
                ferg=comp.get('ferguson_xz'), recipe=RECIPE_VERSION)
+    if tops_src:                # 10-16: the TOPS raw data (e.g. with/without the low-rho file)
+        key['tops'] = {k: md5(v) for k, v in sorted(tops_src.items()) if v}
     if comp.get('saha_mixture'):
         key['saha'] = comp['saha_mixture'].strip()
     return hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:12]
@@ -379,7 +381,7 @@ def opacity_tables(spec, cache, log=print):
                     mixture=None, built=False, fields=None,
                     note='explicit tables from the spec (no build)')
     mix = mixture_string(comp)
-    h = comp_hash(comp, mix)
+    h = comp_hash(comp, mix, dict(hi=op.get('tops_hi'), lo=op.get('tops_lo')))
     tag = 'x%g_z%g_%s' % (comp['X'], comp['Z'], h)
     outdir = os.path.join(cache, 'tables', 'opac_' + h)
     fr = os.path.join(outdir, 'rosseland_ext2_%s.txt' % tag)

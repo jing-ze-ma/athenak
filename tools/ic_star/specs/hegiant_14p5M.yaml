@@ -1,8 +1,8 @@
 # He giant 14p5M_widebinary_profile14 (Wu; MESA approx21), the STANDARD scheme.
 # L, M, R_ph from the MESA header; GM = G_code x M_MESA (as hg145 ic2); wall 8 Rsun (radiative in
-# MESA, CZ base 19.4 Rsun), column bottom 7 Rsun.  Composition = hg145 TOPS mixture (X 9.496e-4,
-# Z 0.02153, a_metal 1.8047 fully ionized metals).  TOPS for this mixture is NOT available
-# (LANL down 10-15): INTERIM = TOPS of the old He giant surface mixture (Y 0.971 Z 0.029).
+# MESA, CZ base 19.4 Rsun), column bottom 6 Rsun.  Composition = hg145 TOPS mixture (X 9.496e-4,
+# Z 0.02153, a_metal 1.8047 fully ionized metals); TOPS of this exact mixture (LANL answered 10-16:
+# hg145 tops_hg145.dat, rho 1e-18..1).
 name: hegiant_14p5M
 # mode mesa (default with a MESA profile): MESA T(P) + our EOS/kappa/gravity.
 star: {L: mesa, R_ph: mesa, M: mesa}
@@ -13,28 +13,22 @@ composition:
   a_metal: 1.8047
   mixture: custom
   saha_mixture: "3.82309e-03 h 9.91068e-01 he 8.73340e-05 c 3.76382e-03 n 1.01567e-04 o 3.05414e-04 ne 7.46004e-06 na 4.95870e-04 mg 1.02977e-05 al 1.23806e-04 si 9.83425e-07 p 7.46004e-05 s 1.10342e-06 cl 8.76476e-06 ar 4.59982e-07 k 7.99358e-06 ca 3.65377e-07 ti 1.63208e-06 cr 8.56529e-07 mn 1.10342e-04 fe 2.90229e-07 co 6.20498e-06 ni"   # the star's mixture (hg145 mixture_hg145.txt) for the Saha-es extension
-  tops_mixture: "9.92685e-01 he 1.64551e-03 c 3.47644e-03 n 6.67545e-04 o 6.67126e-04 ne 7.52232e-06 na 5.00027e-04 mg 1.03837e-05 al 1.24840e-04 si 9.91635e-07 p 7.52232e-05 s 1.11263e-06 cl 8.83794e-06 ar 4.63823e-07 k 8.06031e-06 ca 3.68427e-07 ti 1.64571e-06 cr 8.63680e-07 mn 1.11263e-04 fe 2.92652e-07 co 6.25678e-06 ni 1.40072e-07 zn"
+  tops_mixture: "3.82309e-03 h 9.91068e-01 he 8.73340e-05 c 3.76382e-03 n 1.01567e-04 o 3.05414e-04 ne 7.46004e-06 na 4.95870e-04 mg 1.02977e-05 al 1.23806e-04 si 9.83425e-07 p 7.46004e-05 s 1.10342e-06 cl 8.76476e-06 ar 4.59982e-07 k 7.99358e-06 ca 3.65377e-07 ti 1.63208e-06 cr 8.56529e-07 mn 1.10342e-04 fe 2.90229e-07 co 6.20498e-06 ni 1.38913e-07 zn"   # EXACT 14p5M mixture (LANL TOPS answered 10-16 10:25)
 mesa_profile:
   path: /raven/ptmp/jinma/ic_star_cache/raw/mesa/14p5M_widebinary_profile14.data
   format: mesa
-  top: surface
 opacity:
-  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/hegiant_surf_hi.dat
+  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/hg145_exact_hi.dat   # TOPS of the exact mixture, rho 1e-18..1
 r_in: {rule: explicit, r_rsun: 8.0, bottom_rsun: 6.0}   # bottom: the code needs x1min - ~5 dr(wall) (hg145 31206125: 6.68)
 grid: {rho_lo: 1.0e-13, rho_hi: 3.0e-7}
 r_top: {x1max_cm: 2.473909e13}   # = hg145e1_raven.athinput (355.6 Rsun)
 seam:
   deck: /raven/ptmp/jinma/hegiant145_1015/decks/hg145e1_raven.athinput
-  # 10-16: OFF -- the code's own sph1d + re_atm + HSE startup does not converge on any 14p5M column
-  # tried (400 outer, Gamma > 0.9 clamped in 7.8e3-1.3e4 fine cells, R_ph +3..+4 % per pass); hg145
-  # ic3 only 'converged' because its tau jumps from 0.76 to > 3000 at 112.6 Rsun (sph1d then solved
-  # only the thin layer above it).  A code-side issue (super-Eddington RE photosphere in HSE).
-  enable: false
-# 10-16 seam task: with the default top (MESA T(P) to the Hopf tau-3 temperature, Hopf layer to
-# tau 2/3, scaffold ~0 above tau 3) the code's own sph1d + re_atm + HSE startup does NOT converge for
-# this star, with or without the taper (tau 30 -> 3, or extended 30 -> 2/3): Gamma = kappa F_r/(c g)
-# > 0.9 clamped in 3e3-1e4 fine cells, 400 outer HSE iterations, R_ph +1..+4 % per pass.  MESA's
-# own structure carries F_MLT/F ~0.5 to its photosphere (the hg145 ic3 column, whose code startup
-# converges).  So the column follows MESA's T(P) to MESA's surface (mesa_profile.top = surface) and
-# the scaffold is tapered just above it, in the optically thin layer (tau 1 -> 0.1).
-taper: {tau_hi: 1.0, tau_lo: 0.1, extend: true}
+  binary: /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_843ce3e4   # ic-gammacap-1016
+  overrides: ['problem/he_ic_rad_gamma_cap=0.3']
+# 10-16: without a cap the code's own sph1d + re_atm + HSE startup does not converge for this star
+# (super-Eddington RE photosphere on the He/H opacity cliff; RESULTS sect. 6).  With the opt-in
+# startup cap he_ic_rad_gamma_cap = 0.3 (branch ic-gammacap-1016, he_star_m1) the radiative flux
+# is capped at 0.3 c g/kappa per cell and the excess goes into the frozen scaffold (as MESA's
+# convection there); the standard top (Hopf) and taper (tau 30 -> 3) are used.
+deck_extra: ['problem/he_ic_rad_gamma_cap=0.3']

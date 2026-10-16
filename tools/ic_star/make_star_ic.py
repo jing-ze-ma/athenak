@@ -344,7 +344,8 @@ def main():
               why_vceil=why['vceil'], why_sponge=why['he_sponge_rate'],
               wb_rmax_rel=bg['wb_rmax_rel'], dfloor_rel=bg['dfloor_rel'],
               dmax_rel=bg['dmax_rel'], sponge_r0_rel=bg['sponge_r0_rel'],
-              balance_rmax_rel=bg['balance_rmax_rel'], **{k: v for k, v in bgv.items()
+              balance_rmax_rel=bg['balance_rmax_rel'], deck_extra=s.get('deck_extra', []),
+              **{k: v for k, v in bgv.items()
                                                           if k != 'eos_logt_min'})
     dfn = os.path.join(out, 'deck_%s.athinput' % name)
     open(dfn, 'w').write(DK.block(dv))

@@ -54,7 +54,7 @@ DEFAULTS = {
     'taper': {'enable': True, 'tau_lo': 3.0, 'tau_hi': 30.0},
     'seam': {'enable': True, 'deck': None,
              'binary': '/raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db',
-             'tol_cells': 0.1, 'maxit': 8, 'omp': 8, 'timeout': 7200,
+             'tol_cells': 0.1, 'maxit': 8, 'omp': 36, 'timeout': 7200,
              'launcher': ['bash', '-lc', 'module purge >/dev/null 2>&1; '
                           'module load gcc/13 openmpi/5.0; exec "$0" "$@"']},
     'eos': {'logd_min': -21.0, 'logd_max': -1.0, 'logt_max': 6.8, 'dlog': 0.02},

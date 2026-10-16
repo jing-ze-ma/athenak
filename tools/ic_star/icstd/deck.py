@@ -100,6 +100,9 @@ def block(v):
     k(p, 'he_seed_rlo', g(c['seed_rlo']), 'CZ base x 1.007 (E1 146.0/145.0 Rsun)')
     k(p, 'he_seed_rhi', g(c['seed_rhi']), '0.9786 R_ph (E1 380/388.3)')
     k(p, 'he_grid_dump', 'true', '')
+    for kv in c.get('deck_extra', []):      # spec deck_extra: 'problem/key=value' (opt-in keys)
+        b_, kv_ = kv.split('/', 1)
+        k(b_, kv_.split('=')[0], kv_.split('=', 1)[1], 'spec deck_extra')
     out = ['# ---- tools/ic_star deck block for %s (spec %s)' % (c['name'], c['spec']),
            '# ---- star/IC keys of the standard; grid (nx1, f_stretch_*), <rad_m1> solver set,'
            ' outputs, tlim, he_seed amplitude/k band from the E1 deck']
