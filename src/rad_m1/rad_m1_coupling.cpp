@@ -68,6 +68,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
+#include "pgen/pgen.hpp"
 
 namespace radm1 {
 
@@ -388,6 +389,9 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
 TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   if (!coupling || !gas_feedback) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
+  if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {
+    (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);
+  }
   FluidRefresh(pdrive);
   TmrMark(9);
   return TaskStatus::complete;

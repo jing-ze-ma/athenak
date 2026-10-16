@@ -290,7 +290,14 @@ Real nz_rlo_ = 0.0, nz_rhi_ = 0.0;   // the nozzle shell: cells with x1v in (rlo
 bool msk_ = false;             // donor_mask = roche
 Real msk_phl1_ = 0.0, msk_xl1_ = 0.0;   // Phi(L1) and the L1 distance from the accretor
 bool mirr_ = false;            // problem/donor_irr: the mask radiates at T_d
-Real mirr_e_ = 0.0;            // a T_d^4 (code)
+Real mirr_e_ = 0.0;            // a T_d^4 (code), x donor_irr_scale
+// accretor-bigdom-v4 (10-16): donor_irr_scale (2-D band: auto = physical 3-D dilution),
+// donor_gdark (von Zeipel beta: E = s a T_loc^4, T_loc^4 = C g_eff^(4 beta), floored),
+// sink_zero_v (zero v in the sink cells after the M1 coupling)
+Real mirr_sc_ = 1.0;
+Real mirr_beta_ = 0.0;
+Real mirr_ec_ = 0.0, mirr_ef_ = 0.0;   // s a C (code E per g^(4 beta)) and s a T_floor^4
+bool szv_ = false;
 bool stl1_ = false;            // stream_inject = l1 (the nozzle at L1, Lubow-Shu state)
 int nz_if_ = -1;               // local x1 face index of the nozzle's inner face
 Real l1_c_ = 0.0, l1_t_ = 0.0; // L1 nozzle: speed along -x (km/s) and uniform T (code)
@@ -329,6 +336,71 @@ Real RochePot3(const RocheParams &p, const Real r, const Real sth, const Real ph
   const Real rd = sqrt(fmax(r*r + p.asep*p.asep - 2.0*p.asep*xs, 1.0e-30));
   return -p.gma/r - p.gmd/rd
          - 0.5*SQR(p.omega)*(r*r*sth*sth + p.xcm*p.xcm - 2.0*p.xcm*xs);
+}
+
+//! accretor-bigdom-v4 (10-16): the Roche potential and |grad Phi| (effective gravity) at a
+//! Cartesian point (accretor at the origin, donor at (a, 0, 0), centrifugal about the z
+//! axis through the CM at (xcm, 0, 0)), and the donor's von Zeipel gravity: |grad Phi| at
+//! the point where the ray from the donor centre through (x, y, z) leaves the L1 lobe
+//! (Phi = Phi_L1).  A ray that never leaves it (exactly through the L1 neck) gives 0.
+KOKKOS_INLINE_FUNCTION
+Real RochePotXYZ(const RocheParams &p, const Real x, const Real y, const Real z) {
+  const Real r = sqrt(fmax(x*x + y*y + z*z, 1.0e-30));
+  const Real rd = sqrt(fmax(SQR(x - p.asep) + y*y + z*z, 1.0e-30));
+  return -p.gma/r - p.gmd/rd - 0.5*SQR(p.omega)*(SQR(x - p.xcm) + y*y);
+}
+
+KOKKOS_INLINE_FUNCTION
+Real RocheGeffXYZ(const RocheParams &p, const Real x, const Real y, const Real z,
+                  Real *gx = nullptr, Real *gy = nullptr, Real *gz = nullptr) {
+  const Real r = sqrt(fmax(x*x + y*y + z*z, 1.0e-30));
+  const Real rd = sqrt(fmax(SQR(x - p.asep) + y*y + z*z, 1.0e-30));
+  const Real ar = p.gma/(r*r*r), ad = p.gmd/(rd*rd*rd), o2 = SQR(p.omega);
+  const Real dx = ar*x + ad*(x - p.asep) - o2*(x - p.xcm);
+  const Real dy = ar*y + ad*y - o2*y;
+  const Real dz = ar*z + ad*z;
+  if (gx != nullptr) {*gx = dx; *gy = dy; *gz = dz;}
+  return sqrt(dx*dx + dy*dy + dz*dz);
+}
+
+//! surface point along the unit ray (nx, ny, nz) from the donor centre: march out in steps
+//! of 0.005 a from t0, bisect the first crossing of Phi_L1.  Returns t (0 = none).  The
+//! march stops at the L1 distance a - x_L1 (+0.1 %), the farthest point of the lobe: a ray
+//! that slips through the thin neck would otherwise find the gainer side
+KOKKOS_INLINE_FUNCTION
+Real DonorSurfT(const RocheParams &p, const Real phl1, const Real xl1, const Real nx,
+                const Real ny, const Real nz, const Real t0) {
+  const Real tmx = 1.001*(p.asep - xl1);
+  const Real st = 0.005*p.asep;
+  Real ta = t0, tb = -1.0;
+  for (int n=0; n<400; ++n) {
+    const Real t = ta + st;
+    if (t > tmx) break;
+    if (RochePotXYZ(p, p.asep + t*nx, t*ny, t*nz) > phl1) {tb = t; break;}
+    ta = t;
+  }
+  if (tb < 0.0) return 0.0;
+  for (int n=0; n<40; ++n) {
+    const Real tm = 0.5*(ta + tb);
+    if (RochePotXYZ(p, p.asep + tm*nx, tm*ny, tm*nz) > phl1) tb = tm; else ta = tm;
+  }
+  return 0.5*(ta + tb);
+}
+
+KOKKOS_INLINE_FUNCTION
+Real DonorSurfGeff(const RocheParams &p, const Real phl1, const Real xl1, const Real x,
+                   const Real y, const Real z) {
+  Real nx = x - p.asep, ny = y, nz = z;
+  Real t0 = sqrt(nx*nx + ny*ny + nz*nz);
+  if (t0 < 1.0e-6*p.asep) {nx = 0.0; ny = 1.0; nz = 0.0; t0 = 0.0;} else {
+    nx /= t0; ny /= t0; nz /= t0;
+  }
+  // a cell centre a little outside the lobe surface (the mask uses its own Phi test) is
+  // started from the centre
+  if (RochePotXYZ(p, x, y, z) > phl1) t0 = 0.0;
+  const Real t = DonorSurfT(p, phl1, xl1, nx, ny, nz, t0);
+  if (t <= 0.0) return 0.0;
+  return RocheGeffXYZ(p, p.asep + t*nx, t*ny, t*nz);
 }
 
 //! stage 2: the potential of the x1 well-balanced pair.  Below r_top: Phi - Delta,
@@ -914,6 +986,70 @@ Real RyPerEsum(MeshBlockPack *pmbp) {
 //! RK-weighted boundary flux integrals incl. the face r = R_acc and the stream AM.
 //! The work of gravity is in the etotgrav energy flux (TRUE Phi incl. the orbital
 //! centrifugal term); no explicit centrifugal work is added (09-28 double-count guard).
+//----------------------------------------------------------------------------------------
+//! accretor-bigdom-v4 (10-16): the sink cells (the donor lobe and the back-sink sector) are
+//! reset to floor gas AT REST after the other sources of every stage, but the M1 implicit
+//! coupling that follows gives that 1e-8 floor gas the radiation momentum of the light it
+//! holds (Raven 10-16: v_r 2e5-1e6 km/s in the first back-sink row behind the nozzle, in
+//! every output and in Emsk).  This hook (RadiationM1::HydroConToPrim, after the coupling,
+//! before the fluid refresh) zeroes their momentum again and books the kinetic energy it
+//! removes in Emsk.  The hydro dt is unchanged (computed before the M1 stage, and these
+//! cells never set it).  Active only while a sink can hold light or follow the stream
+//! (donor_irr on, or the back sink with the stream on); problem/sink_zero_v = false: off.
+void RyPerM1Post(Mesh *pm) {
+  if (!szv_ || !msk_) return;
+  if (!(mirr_ || (nzback_ && stvol_ && stream_on_))) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto u0 = pmbp->phydro->u0;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x2c = pmbp->pcoord->x2v;
+  auto &x3c = pmbp->pcoord->x3v;
+  auto &volume = pmbp->pcoord->volume;
+  const bool nzon = stvol_ && stream_on_, nzbk = nzback_ && nzon, g3 = g3d_;
+  const Real nlo = nz_rlo_, nhi = nz_rhi_, phs = phi_s_, sg = sig_, ww = nsig_*sig_;
+  const Real szz = sz_, wz = nsig_*sz_;
+  const Real phl1 = msk_phl1_, xl1 = msk_xl1_;
+  const RocheParams pr = rp_;
+  const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+  Real eke = 0.0;
+  Kokkos::parallel_reduce("ryper_m1post", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &sum) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+    const int i = idx%ni + is;
+    const Real r = x1v(m,i), phv = x3c(m,k);
+    const Real dph = WrapPhi(phv - phs);
+    const Real zc = g3 ? nlo*cos(x2c(m,j)) : 0.0;
+    const Real sth = g3 ? sin(x2c(m,j)) : 1.0;
+    const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
+    if (innz) return;
+    bool inmk;
+    if (g3) {
+      inmk = (r*sth*cos(phv) > xl1) && (RochePot3(pr, r, sth, phv) < phl1);
+    } else {
+      inmk = (r*cos(phv) > xl1) && (RochePot(pr, r, phv) < phl1);
+    }
+    if (nzbk && r > nhi && fabs(dph) < ww + sg && (!g3 || fabs(zc) < wz + szz)) inmk = true;
+    if (!inmk) return;
+    const Real d = u0(m,IDN,k,j,i);
+    const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+    if (!(d > 0.0)) return;
+    const Real ke = 0.5*(m1*m1 + m2*m2 + m3*m3)/d;
+    u0(m,IM1,k,j,i) = 0.0;
+    u0(m,IM2,k,j,i) = 0.0;
+    u0(m,IM3,k,j,i) = 0.0;
+    u0(m,IEN,k,j,i) -= ke;
+    sum += ke*volume(m,k,j,i);
+  }, Kokkos::Sum<Real>(eke));
+  acc0_[3] += eke;
+}
+
 void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -1127,6 +1263,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const Real phl1 = msk_phl1_, xl1 = msk_xl1_, dfl = eosd.dfloor;
     const bool mirr = rad && mirr_;
     const Real med = mirr_e_;
+    const Real gdb = 4.0*mirr_beta_, gdc = mirr_ec_, gdf = mirr_ef_;
+    const bool gdk = mirr_beta_ > 0.0;
     const bool l1 = stl1_, nzbk = nzback_ && nzon;
     const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
@@ -1153,7 +1291,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       const Real zc = g3 ? nlo*cos(x2c(m,j)) : 0.0;
       const Real sth = g3 ? sin(x2c(m,j)) : 1.0;
       const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
-      bool inmk = false;
+      bool inmk = false, inbk = false;
       if (mskon && !innz) {
         if (g3) {
           inmk = (r*sth*cos(phv) > xl1) && (RochePot3(pr, r, sth, phv) < phl1);
@@ -1165,7 +1303,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         // the near-vacuum beyond L1 (v + 3 c_s > 0), where the floor gas got garbage
         // energies and 1e5-1e9 km/s (dt collapse, g8/g9 10-15); the donor's atmosphere
         // that really lies there is not modelled, so it is a sink like the lobe.
-        if (nzbk && r > nhi && fabs(dph) < ww + sg && (!g3 || fabs(zc) < wz + szz)) inmk = true;
+        if (!inmk && nzbk && r > nhi && fabs(dph) < ww + sg && (!g3 || fabs(zc) < wz + szz)) {
+          inmk = true; inbk = true;
+        }
       }
       if (!(innz || inmk)) return;
       array_sum::GlobalSum v;
@@ -1211,11 +1351,37 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       } else {
         v.the_array[4] = (d0 - dn)*dv;
         v.the_array[5] = (e0 - en)*dv;
-        if (mirr) {
-          // donor_irr: the lobe is a black body at T_d (isotropic, comoving F = 0); its
-          // light leaves through the mask surface by the M1 transport
-          v.the_array[6] = (med - urd(m,radm1::M1_E,k,j,i))*dv;
-          urd(m,radm1::M1_E,k,j,i) = med;
+        if (inbk) {
+          // v4 (user 10-16): the back-sink sector between the nozzle and L1 holds the
+          // STREAM's own light, the nozzle's radiation state continued backward (core T
+          // env_t_stream, the same diffusion profile in phi (and z), floor stream_t_surf),
+          // at rest (F = 0), within the nozzle's width (3 sigma); outside it, its radiation
+          // is left to the transport (dark, as the ambient).  Not scaled (not donor light);
+          // booked with the nozzle's radiation (register 3)
+          const bool inw = fabs(dph) < ww && (!g3 || fabs(zc) < wz);
+          if (srad && inw) {
+            const Real tb = g3 ? StreamT(stp, tcs, tsf, sqrt(SQR(dph/sg) + SQR(zc/szz)))
+                               : StreamT(stp, tcs, tsf, dph/sg);
+            const Real er = stp ? sar*SQR(SQR(tb)) : sre;
+            v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
+            urd(m,radm1::M1_E,k,j,i) = er;
+            urd(m,radm1::M1_F1,k,j,i) = 0.0;
+            urd(m,radm1::M1_F2,k,j,i) = 0.0;
+            urd(m,radm1::M1_F3,k,j,i) = 0.0;
+          }
+        } else if (mirr) {
+          // donor_irr: the lobe is a black body (isotropic, comoving F = 0); its light
+          // leaves through the mask surface by the M1 transport.  donor_gdark > 0: the
+          // local T of the von Zeipel surface along the ray from the donor centre
+          Real eh = med;
+          if (gdk) {
+            const Real cph = cos(phv), sph = sin(phv);
+            const Real xx = r*sth*cph, yy = r*sth*sph, zz = g3 ? r*cos(x2c(m,j)) : 0.0;
+            const Real ge = DonorSurfGeff(pr, phl1, xl1, xx, yy, zz);
+            eh = fmax(gdc*pow(ge, gdb), gdf);
+          }
+          v.the_array[6] = (eh - urd(m,radm1::M1_E,k,j,i))*dv;
+          urd(m,radm1::M1_E,k,j,i) = eh;
           urd(m,radm1::M1_F1,k,j,i) = 0.0;
           urd(m,radm1::M1_F2,k,j,i) = 0.0;
           urd(m,radm1::M1_F3,k,j,i) = 0.0;
@@ -3055,14 +3221,130 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   "Rsun -> T_d %.1f K%s\n", ldon, rlv, tdk,
                   pin->DoesParameterExist("problem", "donor_teff") ? " (donor_teff key)" : "");
     }
-    const Real tdc = tdk/pmbp->phydro->peos->eos_data.temp_cgs;
+    const Real tunit = pmbp->phydro->peos->eos_data.temp_cgs;
+    const Real tdc = tdk/tunit;
     mirr_e_ = pmbp->pradm1->arad*SQR(SQR(tdc));
     if (root) {
       std::printf("ry_per_accretor: donor_irr: the donor lobe radiates at T_d %.1f K (E = "
                   "a T^4 = %.6g code, F = 0); booked in Ebnd as radiation in\n", tdk,
                   mirr_e_);
     }
+    // ---- v4 (user 10-16) gravity darkening, problem/donor_gdark = beta (default 0.25,
+    // von Zeipel, radiative envelope; 0 = the uniform T_d above): T_loc^4 = C g^(4 beta),
+    // g = |grad Phi| (rotating-frame Roche) on the L1 lobe surface, floored at
+    // donor_gdark_tfloor (0.3) x T_mean, C from  int sigma T_loc^4 dA = L_d  over the FULL
+    // 3-D lobe surface (also in the 2-D band: the band holds the equatorial cut of the 3-D
+    // donor; T_mean^4 = L_d/(sigma A_lobe)).  With donor_teff given, L_d = 4 pi R_L^2
+    // sigma T_d^4.  The surface integral and the in-plane line integral are by rays from
+    // the donor centre (DonorSurfT), polar axis toward L1.
+    mirr_beta_ = pin->GetOrAddReal("problem", "donor_gdark", 0.25);
+    const Real tfr = pin->GetOrAddReal("problem", "donor_gdark_tfloor", 0.3);
+    const RocheParams rpp = rp_;
+    const Real q4 = SQR(SQR(tdk))*4.0*M_PI*SQR(rlv);   // L_d/sigma [K^4 Rsun^2]
+    const int na = 720, nq = 48;   // alpha (0..pi), psi quarter (0..pi/2), symmetric in y, z
+    std::vector<Real> ga(na*nq), da(na*nq);
+    std::vector<Real> gl(2*na), dl(2*na);
+    Real atot = 0.0, ltot = 0.0;
+    for (int ia=0; ia<na; ++ia) {
+      const Real al = (ia + 0.5)*M_PI/na, sa = std::sin(al), ca = std::cos(al);
+      for (int iq=0; iq<nq; ++iq) {
+        const Real ps = (iq + 0.5)*0.5*M_PI/nq;
+        const Real nx = -ca, ny = sa*std::cos(ps), nz = sa*std::sin(ps);
+        const Real t = DonorSurfT(rpp, msk_phl1_, msk_xl1_, nx, ny, nz, 0.0);
+        Real gx, gy, gz;
+        const Real g = (t > 0.0) ? RocheGeffXYZ(rpp, rpp.asep + t*nx, t*ny, t*nz,
+                                                &gx, &gy, &gz) : 0.0;
+        const Real cf = (t > 0.0) ? std::fmax(std::fabs(nx*gx + ny*gy + nz*gz)/
+                                              std::fmax(g, 1.0e-30), 0.05) : 1.0;
+        ga[ia*nq + iq] = g;
+        da[ia*nq + iq] = 4.0*SQR(t)*sa*(M_PI/na)*(0.5*M_PI/nq)/cf;
+        atot += da[ia*nq + iq];
+      }
+      // the in-plane (z = 0) cut, both y signs (symmetric): the band's 2-D source
+      const Real nx = -ca, ny = sa;
+      const Real t = DonorSurfT(rpp, msk_phl1_, msk_xl1_, nx, ny, 0.0, 0.0);
+      Real gx, gy, gz;
+      const Real g = (t > 0.0) ? RocheGeffXYZ(rpp, rpp.asep + t*nx, t*ny, 0.0,
+                                              &gx, &gy, &gz) : 0.0;
+      const Real cf = (t > 0.0) ? std::fmax(std::fabs(nx*gx + ny*gy)/std::fmax(g, 1.0e-30),
+                                            0.05) : 1.0;
+      gl[ia] = g;
+      dl[ia] = 2.0*t*(M_PI/na)/cf;
+      ltot += dl[ia];
+    }
+    const Real tm4 = q4/atot, fl4 = SQR(SQR(tfr))*tm4;
+    const Real b4 = 4.0*mirr_beta_;
+    Real cc = tm4;   // C [K^4 per g^(4 beta)], solved for int max(C g^4b, floor) dA = q4
+    if (mirr_beta_ > 0.0) {
+      Real gm = 0.0;
+      for (int n=0; n<na*nq; ++n) gm += ga[n]*da[n];
+      gm /= atot;
+      Real clo = 1.0e-6*tm4/std::pow(gm, b4), chi = 1.0e6*tm4/std::pow(gm, b4);
+      for (int it=0; it<200; ++it) {
+        const Real cm = std::sqrt(clo*chi);
+        Real lsum = 0.0;
+        for (int n=0; n<na*nq; ++n) lsum += std::fmax(cm*std::pow(ga[n], b4), fl4)*da[n];
+        if (lsum > q4) chi = cm; else clo = cm;
+      }
+      cc = std::sqrt(clo*chi);
+    }
+    auto t4loc = [&](const Real g) {
+      return (mirr_beta_ > 0.0) ? std::fmax(cc*std::pow(g, b4), fl4) : SQR(SQR(tdk));
+    };
+    // T^4-weighted lobe area and in-plane perimeter: the 3-D luminosity and the band's
+    // per-length luminosity
+    Real lw3 = 0.0, lw2 = 0.0;
+    for (int n=0; n<na*nq; ++n) lw3 += t4loc(ga[n])*da[n];
+    for (int ia=0; ia<na; ++ia) lw2 += t4loc(gl[ia])*dl[ia];
+    // ---- v4 (user 10-16) problem/donor_irr_scale: the factor on the held donor light.
+    // Default: 1 in 3-D; AUTO in the 2-D band, s = s_geo x s_m1:
+    //  s_geo = (L_3D/(4 pi D^2)) / (L_2D/(2 pi D)) = int T^4 dA / (2 D oint T^4 dl): the
+    //    band (reflecting theta walls = a donor infinitely extended in z) dilutes its light
+    //    as 1/D (cylinder), the 3-D donor as 1/D^2 (sphere); for a sphere s_geo = R/D.
+    //    D = a_sep - problem/donor_irr_rcmp (default 9.6, the gainer's facing photosphere)
+    //  s_m1 = problem/donor_irr_m1fac: the band M1/vet_col transport's excess over the
+    //    ideal cylindrical dilution at the facing point (CALIBRATED on Caltech, v4 static
+    //    check; see accretor_rhd_design.md 15)
+    const Real rcmp = pin->GetOrAddReal("problem", "donor_irr_rcmp", 9.6);
+    const Real dcmp = asep - rcmp;
+    const Real sgeo = lw3/(2.0*dcmp*lw2);
+    const Real sm1 = pin->GetOrAddReal("problem", "donor_irr_m1fac", 1.0);
+    if (pin->DoesParameterExist("problem", "donor_irr_scale")) {
+      mirr_sc_ = pin->GetReal("problem", "donor_irr_scale");
+    } else {
+      mirr_sc_ = g3d_ ? 1.0 : sgeo*sm1;
+    }
+    const Real arc = pmbp->pradm1->arad/SQR(SQR(tunit));
+    mirr_ec_ = mirr_sc_*arc*cc;
+    mirr_ef_ = mirr_sc_*arc*fl4;
+    mirr_e_ *= mirr_sc_;
+    if (root) {
+      std::printf("ry_per_accretor: donor_gdark beta %.4g: lobe area %.5g Rsun^2 (4 pi R_L^2 "
+                  "%.5g), in-plane perimeter %.5g Rsun, T_mean %.1f K, floor %.3g T_mean; "
+                  "C %.6g K^4/g^%.3g\n", mirr_beta_, atot, 4.0*M_PI*SQR(rlv), ltot,
+                  std::pow(tm4, 0.25), tfr, cc, b4);
+      const int ias[8] = {0, na/36, na/12, na/6, na/3, na/2, 2*na/3, na - 1};
+      for (int n=0; n<8; ++n) {
+        const int ia = ias[n];
+        std::printf("ry_per_accretor: donor_gdark: in-plane alpha %6.1f deg from L1: g %.5g, "
+                    "T_loc %.1f K\n", (ia + 0.5)*180.0/na, gl[ia], std::pow(t4loc(gl[ia]),
+                    0.25));
+      }
+      {
+        const Real t = DonorSurfT(rpp, msk_phl1_, msk_xl1_, 0.0, 0.0, 1.0, 0.0);
+        const Real g = RocheGeffXYZ(rpp, rpp.asep, 0.0, t);
+        std::printf("ry_per_accretor: donor_gdark: pole (z, R_pole %.4f): g %.5g, T_loc "
+                    "%.1f K\n", t, g, std::pow(t4loc(g), 0.25));
+      }
+      std::printf("ry_per_accretor: donor_irr_scale %.6g (%s; s_geo %.6g = int T^4 dA / "
+                  "(2 D oint T^4 dl), D = %.4f, s_m1 %.4g); 3-D target flux at D: "
+                  "L_d/(4 pi D^2) = %.6g code\n", mirr_sc_,
+                  pin->DoesParameterExist("problem", "donor_irr_scale") ? "key" :
+                  (g3d_ ? "3-D default" : "2-D auto"), sgeo, dcmp, sm1,
+                  0.25*pmbp->pradm1->c_light*arc*lw3/(4.0*M_PI*SQR(dcmp)));
+    }
   }
+  szv_ = pin->GetOrAddBoolean("problem", "sink_zero_v", true);
 
   // ---- integrator weights for the boundary flux integrals
   std::string integ = pin->GetString("time", "integrator");
@@ -3201,6 +3483,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_bcs_func = RyPerBCEnv;
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
+    if (msk_) user_m1post_func = RyPerM1Post;
     return;
   }
   if (restart) return;
