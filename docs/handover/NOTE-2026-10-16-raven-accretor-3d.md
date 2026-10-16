@@ -19,7 +19,7 @@ files (7.1 + 10.8 GB) are deleted. Dir: /raven/ptmp/jinma/accbig_1016/b3d/run1.
 
 | quantity | Raven 4 A100 | Caltech 4 H200 |
 |---|---|---|
-| steady s/cycle (cycles 140-230) | **1.642** (cycles 20-110: 2.9 incl. switch-on; init ~60 s) | 0.80 |
+| steady s/cycle (cycles 140-230) | **1.642** (cycles 20-110: 2.9 incl. switch-on; init 36 s) | 0.80 |
 | dt and setting cell | 1.4096e-5 -> 1.4066e-5 flat. The rank-0 dt_report cell is an envelope cell at rest, r 8.786, phi 0.003 rad (as Caltech). | 1.408e-5, r 8.786 |
 | GPU memory (nvidia-smi peak) | **24.98 GB per A100** (of 40; fits, 15 GB margin) | 24.6 GB/H200 |
 | GPU-h per orbit = (0.473169/dt) x s/cycle x 4/3600 | (0.473169/1.4067e-5 = 33,637 cycles) x 1.642 x 4/3600 = **61.4 A100-h = 15.3 node-h per orbit** (pre-impact dt) | ~30 H200-h |
