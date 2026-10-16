@@ -347,3 +347,78 @@ excited at the photosphere and steepens in the falling density.
   - Planck: max 0.43 dex at log T >= 4.2 / log rho < -14 and 0.52 dex at log T < 4.2 (the
     extension), mean +0.003.
   - The BSG IC was not regenerated: the Rosseland change is below log rho -14 only.
+
+### 8b. Option A: problem/he_ic_rad_gamma_cap (branch ic-gammacap-1016, commit 843ce3e4, from b16b66db)
+
+Implementation: src/pgen/he_star_m1.cpp, about 60 lines in the sph1d block.
+- The key is read only when named.
+- Inside the HSE outer loop, after kt and the march gravity are known, the column's F_r is capped
+  at cap c g/kt per fine cell above r_b, and the excess goes into the frozen scaffold:
+  F_MLT/F = 1 - F_r/F_tot, with F_tot = F_r0/(1 - F_MLT0/F) of the column, so F_r + F_MLT = L.
+- The cap is re-applied from the column's own F_r each outer iteration (no compounding).
+- The dump writes the capped scaffold.
+- It needs he_ic_rad_hse = true and mlt_flux_frozen = true.
+- Binaries: /raven/ptmp/jinma/icstd_1016/bin/athena_he_{cpu,a100}_843ce3e4.
+
+**Key off is bitwise** (b16b66db vs 843ce3e4, 16x16 lateral, seed 0; every .bin and .hst output
+and the sph1d R_ph line compared):
+
+| deck | CPU (3 cycles) | A100 (10 cycles) |
+|---|---|---|
+| E1 (e1_prod_rol2u) | 9 files, 0 differ | 16 files, 0 differ |
+| BSG (bsg_seam_g480) | 13 files, 0 differ | 20 files, 0 differ |
+| He giant (hg145_seam) | 11 files, 0 differ | 18 files, 0 differ |
+
+**AG Car B, on vs off** (documented only; shakeB deck + ic_agcar_B_ge.txt, 0 cycles, CPU,
+cap 0.9):
+
+| | off | on |
+|---|---|---|
+| R_ph | 7.04718e12 -> 7.12966e12 | 7.04718e12 -> 7.12992e12 (+2.6e8 cm) |
+| capped cells | - | 542 fine cells, max F_MLT/F added 0.061 |
+| Gamma > 0.9 clamped cells | 538 | 60 (equality at round-off) |
+| HSE | converged (7.0e-7) | converged (9.2e-7) |
+
+**14p5M** (mode mesa, exact TOPS tables, taper 30 -> 3; CPU 0-cycle passes on the hg145 deck):
+
+| cap | R_ph 7.96114e12 -> | HSE last max \|dln rho\| | F_r capped (last outer) |
+|---|---|---|---|
+| 0.9 | 8.10596e12 (+17 cells) | 2.0, not converged | 6193 cells, max +0.88 F_MLT/F |
+| 0.7 | 8.00198e12 | 1.85, not converged | 1975 cells |
+| 0.5 | 8.11212e12 | 1.59, not converged | 6475 cells |
+| 0.3 | 7.96504e12 (+0.5 cell) | 3.8, not converged | 0 cells |
+
+- Seam iteration at cap 0.3: pass 0 gives 7.961 -> 7.965 (not converged); pass 1 gives
+  7.965 -> 7.814 (HSE converged, but the collapsed branch, -22 cells); pass 2 gives
+  7.814 -> 8.024 (not converged, +26 cells). **It flips between a collapsed and an inflated
+  branch; there is no fixed point.**
+- The same column and key in the A100 gate startup gives 7.961 -> 8.094 (inflated), while the CPU
+  pass gives 7.965. The branch is picked by round-off (device vs host opacity evaluation): the
+  startup problem is ill-conditioned for this photosphere.
+- With cap 0.3 no cell is capped in the final outer iteration, yet the loop still oscillates. The
+  Gamma limit is not what drives it. The driver is the Picard alternation (E solve at fixed rho
+  <-> HSE at fixed T) on the steep kappa(T) of the He/H recombination cliff.
+- **Option A therefore does NOT give a converged, reproducible startup for 14p5M.** The next step
+  is option B of README sect. 2c: a damped or coupled E-HSE update, or a continuation that detects
+  the fold. It needs the USER.
+
+### 8c. 14p5M gate (a) with the cap (cap 0.3, exact TOPS tables, column = the tool's mode-mesa column after the taper)
+
+Setup: A100 843ce3e4, 16x16 lateral, seed 0, 3 d. Deck hg145_cap2 = the hg145 deck + tool block +
+he_ic_rad_gamma_cap 0.3 + the new tables + implicit_flux_x1min 3.6060e13 (the new tables change
+F_r(8 Rsun) by +4.6 %).
+
+Startup: R_ph 7.961e12 -> 8.094e12 (704) and 8.084e12 (1408): the inflated branch, HSE not
+converged.
+
+Band 0.99-1.1 R_ph, max |<v_r>| [km/s] / max |rho/rho0 - 1|:
+
+| grid | 0.45 d | 1.05 d | 1.65 d | 2.25 d | 2.85 d | verdict |
+|---|---|---|---|---|---|---|
+| 704 | 2.8/0.56 | 3.8/1.4 | 7.0/5.6 | 12.0/25 | 19.3/182 | FAIL (growth) |
+| 1408 | 5.5/1.3 | 6.9/5.6 | 11.1/24 | 20.3/161 | 27.3/3456 | FAIL (growth) |
+
+- The interior below 0.9 R_ph stays <= 0.3 km/s.
+- This is worse than the uncapped run of sect. 6, whose startup collapsed and then refilled
+  without growth.
+- **The cap neither converges the startup nor passes the gate. No 14p5M production IC.**
