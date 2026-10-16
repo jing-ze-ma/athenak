@@ -72,7 +72,7 @@ def column_mesa(st, c, mesa, ms, log=print):
     lnPmin = lnPs[keep][0]
     r0 = c['r_bot']
     P0 = float(np.exp(np.interp(np.log(r0), np.log(ms['r']), np.log(ms['P']))))
-    m0 = float(np.interp(r0, ms['r'], ms['m']))
+    m0 = float(np.interp(r0, ms['r'], ms['m']))*c.get('gm_scale', 1.0)   # (diagnostic variants)
     guess = [float(np.exp(np.interp(np.log(r0), np.log(ms['r']), np.log(ms['rho']))))]
 
     def rho_of(P, T):
@@ -397,7 +397,11 @@ def two_sided(st, c, mesa, ms, s, fT, dT, rho_of, guess, log):
             st.GM = gm_save
 
     def resid(R, dlnr=1e-3, full=False):
-        col = track(R, dlnr)
+        try:
+            col = track(R, dlnr)
+        except Exception as e:                           # noqa: BLE001
+            log('    two-sided fit: the inward column for R_ph %.6e failed (%s)' % (R, str(e)[:80]))
+            return (None, None, None) if full else np.nan
         m = (col['r'] >= rlo*0.995) & (col['r'] < col['rj'])
         P = st.thermo(col['T'][m], col['rho'][m])[0]
         lPi = np.interp(rr, col['r'][m], np.log(P))

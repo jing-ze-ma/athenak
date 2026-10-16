@@ -279,3 +279,50 @@ of the code EOS + radiation, G m(r)):
   - if it disappears, the VET thin-layer coupling drives it.
 - Cheaper partial test with existing keys: halve and double the IC atmosphere scale height
   (he_ic_rad_taua/taub or the floor) to see whether the period tracks the cut-off (period ~ H/c_s).
+
+### 7c. Cut-off period test: the atmosphere scale height at R_ph changed x0.7 / x1.4
+
+**Knob.** There is no key that changes only the atmosphere, so the test used three consistent
+diagnostic stars (specs/bsgG_{base,H07,H14}.yaml, mode global):
+- L and composition of the BSG, R_ph fixed at the BSG fixed point (51.6 Rsun);
+- M = 20 / 28.57 / 14.29 Msun, so g at R_ph = 205 / 294 / 146 cm/s^2 and the gas scale height
+  at fixed T_ph goes x1 / x0.7 / x1.4;
+- each passed through the seam fixed point: 2 passes each, HSE converged, 0 clamped cells.
+
+Gates: P grid, 1 A100, seed 0, 5 d (runs/cut_bsgG_*). The base of sect. 7a (mode mesa, runs/bsg_P10)
+is listed for comparison.
+
+**Predicted cut-off** 4 pi H_P/c_s at R_ph, H_P = P/(rho g) with the total P, from the IC column.
+Because the radiation pressure fraction changes too, the real H ratios are 0.58 / 1.77, not
+0.7 / 1.4.
+
+| star | g_ph | H_P [Rsun] | c_s [km/s] | cut-off (g) [d] | cut-off (g_eff) [d] | observed period [d], 0.5-5 / 2-5 d | max / rms \|<v_r>\| [km/s] (0.99-1.1 R_ph) |
+|---|---|---|---|---|---|---|---|
+| H07 (M 28.6) | 294 | 0.201 | 23.5 | 0.87 | 1.48 | 0.87 / 0.77 (zero crossings 0.80) | 6.1 / 1.3-2.0 |
+| base (M 20, global) | 205 | 0.347 | 25.9 | 1.36 | 2.73 | 1.01 / 0.97 (0.98-1.00) | 11.5 / 4.2-4.3 |
+| H14 (M 14.3) | 146 | 0.616 | 29.1 | 2.14 | 5.36 | 1.21 / 1.43 (1.17-1.27) | 28.7 / 8.9-10.7 |
+| base (mode mesa, bsg_P10) | 194 | | | 1.35 | 2.72 | 1.39 / 1.27 (1.27-1.68) | 54 / 17-21 |
+
+- Periods are FFTs of the linearly detrended shell-mean v_r (Hann window, zero-padded), median
+  over the 5 radii of largest rms in 0.99-1.1 R_ph; the peak sits at 1.02-1.03 R_ph, and at
+  1.05 R_ph for H14.
+
+**Result.**
+- **The period tracks the scale height monotonically:** H07 < base < H14, ratio 0.8 : 1 : 1.3-1.4.
+  It does so sub-linearly: the predicted cut-off ratio is 0.64 : 1 : 1.57 (period ~ H^0.5-0.6).
+- The observed period is 0.9-1.0x the g cut-off for H07 and the mesa base, 0.7x for the global
+  base, 0.6-0.67x for H14. The g_eff cut-off is too long in every case.
+- **The saturated amplitude grows with the scale height:** max |v| 6 -> 11.5 -> 29 km/s, rms
+  ~1.6 -> 4.3 -> ~10 km/s. In H14 the oscillation sits higher (1.05 R_ph).
+- The amplitude also depends on the interior: global base 11.5 km/s vs mesa base 54 km/s at
+  similar g; the deeper structure differs.
+
+**Interpretation.** The atmospheric oscillation is set by the stratification of the photosphere
+and thin atmosphere, consistent with an acoustic resonance near the cut-off frequency that is
+excited at the photosphere and steepens in the falling density.
+- This test does NOT separate physics from closure: a thin-layer VET-coupling instability would
+  also scale with H.
+- The described closure-switch test (sect. 7, a key for an M1/Eddington closure at tau < 1) is
+  still the discriminator.
+- Caveat: g also changes Gamma (0.47 / 0.67 / 0.94 x the base's at the Fe peak), and with it the
+  interior structure (m_env/M 0.08 for H07).

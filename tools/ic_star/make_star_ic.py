@@ -275,6 +275,7 @@ def main():
         c['R_target'] = R
         c['mesa_top'] = s['mesa_profile'].get('top', 'hopf')
         c['top_fit'] = s['mesa_profile'].get('top_fit', 'two_sided')
+        c['gm_scale'] = s['mesa_profile'].get('gm_scale', 1.0)   # 10-16 diagnostic: m x scale
         col = MC.column_mesa(st, c, mesa, ms, log)
         c['rho_floor'] = col['rho_floor']
         st.GM, st.RSTAR = col['GM_wall'], col['rph']
@@ -769,8 +770,7 @@ def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
           'meshblock/nx1=%s' % dk['nx1'], 'problem/he_opac_table=%s' % ot['ross'],
           'problem/he_planck_table=%s' % ot['planck'],
           'problem/he_gm=%.10e' % st.GM] + list(sm.get('overrides', []))
-    if mode == 'mesa':
-        ov.append('problem/he_gm_column=true')
+    ov.append('problem/he_gm_column=%s' % ('true' if mode == 'mesa' else 'false'))
     cfg = dict(sm, workdir=wd, overrides=ov)
     hdr = ['# tools/ic_star %s column, seam fixed point' % name]
 

@@ -53,6 +53,8 @@ def block(v):
     k(p, 'he_gm', g(c['GM']), c['gm_src'])
     if c.get('gm_column'):
         k(p, 'he_gm_column', 'true', "mode mesa: G m(r) = he_gm + G int 4 pi r^2 rho_IC dr")
+    else:
+        k(p, 'he_gm_column', 'false', 'mode global: point mass, as the column')
     k(p, 'he_ic_file', c['ic_file'], 'md5 %s' % c['ic_md5'])
     k(p, 'he_opac_table', c['ross'], 'md5 %s' % c['ross_md5'])
     k(p, 'he_planck_table', c['planck'], 'md5 %s' % c['planck_md5'])
