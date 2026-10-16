@@ -3344,7 +3344,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   0.25*pmbp->pradm1->c_light*arc*lw3/(4.0*M_PI*SQR(dcmp)));
     }
   }
-  szv_ = pin->GetOrAddBoolean("problem", "sink_zero_v", true);
+  // (read, not added: the key stays out of the PAR_DUMP of runs that do not set it)
+  szv_ = !pin->DoesParameterExist("problem", "sink_zero_v") ||
+         pin->GetBoolean("problem", "sink_zero_v");
 
   // ---- integrator weights for the boundary flux integrals
   std::string integ = pin->GetString("time", "integrator");
