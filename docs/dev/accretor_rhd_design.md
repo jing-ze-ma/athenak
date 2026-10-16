@@ -753,3 +753,31 @@ only approximately (M1 closure at the edge); check the band's donor luminosity f
 
 **History**: with a nozzle or the mask the user hst has 24 columns (23 Mnzf, 24 Eirr; NHISTORY_VARIABLES is 24);
 older decks keep 22 and their dt_retry registration list.
+
+### 13.6 Regression gate and smokes on Caltech (10-15, 1 H200, debug QoS; accretor_1015/gates/g6-g10)
+**Regression gate g6 (84b55d97 vs the orbit1 binary fdb18517, new keys absent, 20 cycles): BITWISE** on all five:
+env13, S3a-final, S5 uniform, S5 profile (fresh, nx3 256 as gate 1) and the orbit1 lineage restart (smoke_a rst
+00009 + the orbit1 ROL2U/dt_retry keys): hst files identical, bin files identical as whole files, cycle/time/dt lines
+identical. The later commits (5fc471d5, 82197717) change only code under accx_on_ (nozzle or mask keys), so this
+carries over; not re-run.
+
+**L1 nozzle, first attempts (g6-g9): dt collapse at cycle 2-3** in every variant (mask on/off, stream radiation on/off,
+T_L1 155 or 64.8 kK): the sonic L1 state expands BACKWARD (v + 3 c_s > 0) into the near-vacuum beyond L1; cells
+there reached 1e5-1e9 km/s with garbage energies (the 13.79 nozzle is supersonic, v + 3 c_s < 0, and runs). Two
+fixes, both active only with the new keys:
+- 5fc471d5: the radeq floor keeps momentum (v = m/rho_amb) and caps |v| at env_v_floor_max (old: v = m/du, which
+  blows up when du << rho_amb). Not sufficient alone.
+- 82197717: with stream_inject = l1 the sector BEHIND the nozzle (r above its outer face, |dphi| < 3 sigma + 1
+  sigma) is part of the donor sink (that space is the donor's atmosphere, which is not modelled).
+
+**L1 smoke g10 (82197717, the handover deck, donor_irr on, stream on from t = 0, no static phase, 24 min):**
+1563 cycles to t 0.0078, no FATAL, 1 NON-CONVERGED, no dt retry. Nozzle face rate Mnzf 21.5 (t 0.0002) -> 20.84
+(t 0.0074), still falling: +5 % over stream_mdot = 19.795 (the sonic face's HLLC flux exceeds rho c_T A; the
+design rate counts only the upwind part). Min - Mnzf ~ 0 (the back sector sink takes 1.4e-4 in total, Mmsk).
+dt 7.05e-6 -> 4.0e-6 by t 0.006 (location not measured: no bin output; static-first ordering not run).
+0.84 s/cycle vs 0.51-0.56 for orbit1 during its approach (840 cells, donor_irr). Eirr grows (2.3e4 code by
+0.0074); Ltop 6.0e5 -> 1.12e6 (the donor's light leaving through r_out).
+**Volume nozzle at 13.79 (g8, 5fc471d5, from t = 0): 217 cycles stable**, Mnzf rate 19.4 over the first 3e-4 (fill
+transient), dt 1e-6 to 3.8e-6 with eint<=0 retries (start0's fresh stream-on-at-t=0 also dropped to 2.4e-6).
+Open: whether to calibrate stream_mdot (about 18.8 for a 19.795 face rate at t ~0.007) or accept the sonic-face
+excess; where dt is set after the stream switch-on.
