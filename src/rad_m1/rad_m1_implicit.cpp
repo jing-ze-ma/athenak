@@ -3852,7 +3852,12 @@ void RadiationM1::ImplicitHrSfBuild() {
 
 void RadiationM1::ImplicitLatFaceCoef(bool first) {
   // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {ImplFatal("<rad_m1> cubed sphere: internal guard, implicit_flux_faces = all (lateral beam / thin-switch faces: raw mb_bcs closes the seams, two-point dx on skew faces) is not ported");}
+  if (cs_geom) {
+    ImplFatal(
+              "<rad_m1> cubed sphere: internal guard, implicit_flux_faces = all "
+              "(lateral beam / thin-switch faces: raw mb_bcs closes the seams, two-"
+              "point dx on skew faces) is not ported");
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -9601,7 +9606,8 @@ void RadiationM1::ImplicitF0Init() {
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &n) {
           const int jm = (d == 1) ? (j-1) : j, km = (d == 2) ? (k-1) : k;
           const Real al = iw_(m,ca,km,jm,i), ar = iw_(m,ca,k,j,i);
-          const Real el = fmax(u0_(m,M1_E,km,jm,i), efl), er = fmax(u0_(m,M1_E,k,j,i), efl);
+          const Real el = fmax(u0_(m,M1_E,km,jm,i), efl);
+          const Real er = fmax(u0_(m,M1_E,k,j,i), efl);
           const bool act = (fabs(al) > atol || fabs(ar) > atol) ||
                            (lab && (fabs(u0_(m,cf,km,jm,i)) > atol*el ||
                                     fabs(u0_(m,cf,k,j,i)) > atol*er));
@@ -9782,7 +9788,12 @@ bool RadiationM1::Cs2Active() {
 
 void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
   // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {ImplFatal("<rad_m1> cubed sphere: internal guard, implicit_gas_src = conservative2 (theta split: raw mb_bcs, face-normal vs covariant pairs) is not ported");}
+  if (cs_geom) {
+    ImplFatal(
+              "<rad_m1> cubed sphere: internal guard, implicit_gas_src = "
+              "conservative2 (theta split: raw mb_bcs, face-normal vs covariant "
+              "pairs) is not ported");
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10011,7 +10022,11 @@ void RadiationM1::ImplicitRinrDeltaA() {
 
 void RadiationM1::ImplicitCs2Pass(bool restore) {
   // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {ImplFatal("<rad_m1> cubed sphere: internal guard, implicit_gas_src = conservative2 (theta split: raw mb_bcs) is not ported");}
+  if (cs_geom) {
+    ImplFatal(
+              "<rad_m1> cubed sphere: internal guard, implicit_gas_src = "
+              "conservative2 (theta split: raw mb_bcs) is not ported");
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10108,7 +10123,11 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
 
 void RadiationM1::ImplicitCs2Shift() {
   // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {ImplFatal("<rad_m1> cubed sphere: internal guard, implicit_cs2_shift (raw mb_bcs) is not ported");}
+  if (cs_geom) {
+    ImplFatal(
+              "<rad_m1> cubed sphere: internal guard, implicit_cs2_shift (raw mb_bcs)"
+              " is not ported");
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10229,7 +10248,11 @@ void RadiationM1::ImplicitCs2Shift() {
 
 void RadiationM1::ImplicitCs2Vimp() {
   // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {ImplFatal("<rad_m1> cubed sphere: internal guard, implicit_cs2_vimp (raw mb_bcs, Cartesian/sp momentum algebra) is not ported");}
+  if (cs_geom) {
+    ImplFatal(
+              "<rad_m1> cubed sphere: internal guard, implicit_cs2_vimp (raw mb_bcs, "
+              "Cartesian/sp momentum algebra) is not ported");
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -14443,8 +14466,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                                             : BoundaryFace::inner_x3);
               const BoundaryFlag qh = mbc.d_view(m,(d == 1) ? BoundaryFace::outer_x2
                                                             : BoundaryFace::outer_x3);
-              const bool plo = (ql != BoundaryFlag::block) && (ql != BoundaryFlag::periodic);
-              const bool phi = (qh != BoundaryFlag::block) && (qh != BoundaryFlag::periodic);
+              const bool plo = (ql != BoundaryFlag::block) &&
+                               (ql != BoundaryFlag::periodic);
+              const bool phi = (qh != BoundaryFlag::block) &&
+                               (qh != BoundaryFlag::periodic);
               const int c = (d == 1) ? j : k;
               const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je : ke;
               for (int s = 0; s < 2; ++s) {
@@ -15022,7 +15047,11 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
 
 void RadiationM1::ImplicitMusclBuild() {
   // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {ImplFatal("<rad_m1> cubed sphere: internal guard, implicit_hr_recon = plm (raw mb_bcs) is not ported");}
+  if (cs_geom) {
+    ImplFatal(
+              "<rad_m1> cubed sphere: internal guard, implicit_hr_recon = plm (raw "
+              "mb_bcs) is not ported");
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
