@@ -9584,6 +9584,10 @@ void RadiationM1::ImplicitF0Init() {
   // or purely radially moving gas (a_2 = a_3 = 0 with the uniaxial-about-r closures of
   // cs) passes, bitwise as before.
   if (cs_geom) {
+    // significance: the skipped F0 change is ~ a E (F2/F3 for lab) against c E; a round-
+    // off gas velocity (a cold static test drifts to |v| ~ 1e-29) is not a transverse
+    // flow, so only |a|/c > 1e-10 counts
+    const Real atol = 1.0e-10*c_light;
     int nbad = 0;
     for (int d = 1; d < 3; ++d) {
       if (d == 2 && !thrd) break;
@@ -9597,19 +9601,13 @@ void RadiationM1::ImplicitF0Init() {
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &n) {
           const int jm = (d == 1) ? (j-1) : j, km = (d == 2) ? (k-1) : k;
           const Real al = iw_(m,ca,km,jm,i), ar = iw_(m,ca,k,j,i);
-          const bool act = (al != 0.0 || ar != 0.0) ||
-                           (lab && (u0_(m,cf,km,jm,i) != 0.0 || u0_(m,cf,k,j,i) != 0.0));
+          const Real el = fmax(u0_(m,M1_E,km,jm,i), efl), er = fmax(u0_(m,M1_E,k,j,i), efl);
+          const bool act = (fabs(al) > atol || fabs(ar) > atol) ||
+                           (lab && (fabs(u0_(m,cf,km,jm,i)) > atol*el ||
+                                    fabs(u0_(m,cf,k,j,i)) > atol*er));
           if (act) {n += 1;}
         }, Kokkos::Sum<int>(nd));
       nbad += nd;
-      if (nd > 0 && std::getenv("M1_CSDBG") != nullptr) {
-        auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), iw);
-        std::cout << "CSDBG d=" << d << " A(m0,ks,js-1..js+1,is): "
-                  << h(0,ca,ks,js-1,is) << " " << h(0,ca,ks,js,is) << " "
-                  << h(0,ca,ks,js+1,is) << " V: " << h(0,M1_IW_V2,ks,js,is) << " "
-                  << h(0,M1_IW_V3,ks,js,is) << " ADV " << h(0,M1_IW_ADV,ks,js,is)
-                  << std::endl;
-      }
     }
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, &nbad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
@@ -14421,6 +14419,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (csw && rinr && coupling_ && dbgf && !gcs) {
     const bool chk1 = trans && dbgft;
     const bool chk2 = feedback && !rwk;
+    // significance as in ImplicitF0Init: |a|/c, |v|/c > 1e-10 (round-off motion of a
+    // static test does not count)
+    const Real atol = 1.0e-10*c_light;
     if (chk1 || chk2) {
       auto iwc_ = iw;
       auto mbc = mbbcs;
@@ -14431,9 +14432,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &n) {
           bool act = false;
           if (chk2) {
-            act = (iwc_(m,M1_IW_ADV,k,j,i) != 0.0) ||
-                  (trans && dbgft && iwc_(m,M1_IW_A2,k,j,i) != 0.0) ||
-                  (trans && dbgft && thrd && iwc_(m,M1_IW_A3,k,j,i) != 0.0);
+            act = (fabs(iwc_(m,M1_IW_ADV,k,j,i)) > atol) ||
+                  (trans && dbgft && fabs(iwc_(m,M1_IW_A2,k,j,i)) > atol) ||
+                  (trans && dbgft && thrd && fabs(iwc_(m,M1_IW_A3,k,j,i)) > atol);
           }
           if (chk1 && !act) {
             for (int d = 1; d < (thrd ? 3 : 2); ++d) {
@@ -14452,7 +14453,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 const int j1 = (d == 1) ? (j + (s ? 1 : -1)) : j;
                 const Real vv = iwc_(m,cv,k,j,i) + iwc_(m,cv,k1,j1,i);
                 const Real gg = iwc_(m,M1_IW_G0,k,j,i) + iwc_(m,M1_IW_G0,k1,j1,i);
-                if (vv*gg != 0.0) {act = true;}
+                if (fabs(vv) > atol && gg != 0.0) {act = true;}
               }
             }
           }
