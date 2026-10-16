@@ -1327,6 +1327,29 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tan_operator")) {
       vgd_tanop = pin->GetBoolean("rad_m1","vet_gd_tan_operator");
     }
+    if (pin->DoesParameterExist("rad_m1","thin_closure_switch")) {
+      std::string tcs = pin->GetString("rad_m1","thin_closure_switch");
+      if (tcs.compare("m1") == 0) {
+        thin_clos = 1;
+      } else if (tcs.compare("eddington") == 0) {
+        thin_clos = 2;
+      } else if (tcs.compare("off") != 0) {
+        std::cout << "### FATAL ERROR <rad_m1>/thin_closure_switch = " << tcs
+                  << " (m1 | eddington | off)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pin->DoesParameterExist("rad_m1","thin_closure_tau")) {
+        thin_clos_tau = pin->GetReal("rad_m1","thin_closure_tau");
+      }
+      if (pin->DoesParameterExist("rad_m1","thin_closure_start")) {
+        thin_clos_start = pin->GetInteger("rad_m1","thin_closure_start");
+      }
+      if (thin_clos != 0 && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> thinclos-1016 DEBUG: thin_closure_switch="
+                  << (thin_clos == 1 ? "m1" : "eddington") << " tau<" << thin_clos_tau
+                  << " from cycle " << thin_clos_start << std::endl;
+      }
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
     }

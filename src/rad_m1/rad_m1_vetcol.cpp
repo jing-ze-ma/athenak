@@ -1024,6 +1024,64 @@ void RadiationM1::VetColBuild() {
   vcol_ncall += 1.0;
   vcol_built = true;
   if (vlat_on) {VetLatBuild();}
+  if (thin_clos != 0 && pmy_pack->pmesh->ncycle >= thin_clos_start) {ThinClosureOverride();}
+}
+
+//----------------------------------------------------------------------------------------
+//! n void RadiationM1::ThinClosureOverride
+//! rief thinclos-1016 (rad_m1.hpp): the M1 / Eddington tensor in the optically thin top
+//! layer, written over the vet_col/vet_gd tensor of this build (tau_ten slots 0..3, the
+//! lateral slots zeroed).  The column tau is summed inside the block: x1 must be one block.
+
+void RadiationM1::ThinClosureOverride() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  if (indcs.nx1 != pmy_pack->pmesh->mesh_indcs.nx1) {
+    std::cout << "### FATAL ERROR thin_closure_switch needs ONE MeshBlock along x1"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto tt_ = tau_ten;
+  auto ur_ = u0;
+  auto op_ = opac;
+  auto &x1f = pmy_pack->pcoord->xx1f;
+  const int mode = thin_clos, chk = chi_kind;
+  const Real tth = thin_clos_tau, cl = c_light, efl = e_floor;
+  const bool lat = (static_cast<int>(tau_ten.extent(1)) >= M1_TT_LAT0 + M1_TT_NLAT);
+  Real ncell = 0.0;
+  Kokkos::parallel_reduce("m1_thinclos", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
+      DevExeSpace(), {0, ks, js}, {nmb1 + 1, ke + 1, je + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, Real &cnt) {
+    Real tau = 0.0;
+    for (int i = ie; i >= is; --i) {
+      const Real dt = op_(m,M1_OP_T,k,j,i)*(x1f(m,i+1) - x1f(m,i));
+      const Real tc = tau + 0.5*dt;
+      tau += dt;
+      if (tc >= tth) break;
+      const Real e = fmax(ur_(m,M1_E,k,j,i), efl);
+      const Real f1 = ur_(m,M1_F1,k,j,i), f2 = ur_(m,M1_F2,k,j,i);
+      const Real f3 = ur_(m,M1_F3,k,j,i);
+      const Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
+      const Real rf = fmin(fm/(cl*e), 1.0);
+      const Real ifm = (fm > 0.0) ? 1.0/fm : 0.0;
+      tt_(m,0,k,j,i) = (mode == 1) ? M1Chi(rf, chk) : (1.0/3.0);
+      tt_(m,1,k,j,i) = (fm > 0.0) ? f1*ifm : 1.0;
+      tt_(m,2,k,j,i) = (fm > 0.0) ? f2*ifm : 0.0;
+      tt_(m,3,k,j,i) = (fm > 0.0) ? f3*ifm : 0.0;
+      if (lat) {
+        for (int s = 0; s < M1_TT_NLAT; ++s) {tt_(m,M1_TT_LAT0+s,k,j,i) = 0.0;}
+      }
+      cnt += 1.0;
+    }
+  }, Kokkos::Sum<Real>(ncell));
+  thin_clos_ncell = ncell;
+  if (global_variable::my_rank == 0 && (pmy_pack->pmesh->ncycle % 1000) == 0) {
+    std::cout << "<rad_m1> thinclos cycle " << pmy_pack->pmesh->ncycle << ": cells switched "
+              << ncell << " (rank 0)" << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------

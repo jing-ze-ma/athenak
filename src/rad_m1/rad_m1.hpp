@@ -1870,6 +1870,17 @@ class RadiationM1 {
   DvceArray1D<Real> vcol_wf;   // (ray): hemisphere weight at the top face
   void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
   void VetColBuild();          // the formal solution -> tau_ten (chi, n)
+  // thinclos-1016 (DEBUG, opt-in, read only when named): <rad_m1>/thin_closure_switch =
+  // m1 | eddington.  From cycle thin_closure_start (default 1: the IC chain at cycle 0
+  // keeps vet_col/vet_gd) every cell with column tau_R from the top < thin_closure_tau
+  // (default 1, half own cell included) gets the M1 (chi(|F|/cE), n = F/|F|) or the
+  // Eddington (1/3) uniaxial tensor in tau_ten instead of the VET one, lateral slots 0
+  // (ThinClosureOverride, end of every VetColBuild).
+  int thin_clos = 0;           // 0 off, 1 m1, 2 eddington
+  Real thin_clos_tau = 1.0;
+  int thin_clos_start = 1;
+  Real thin_clos_ncell = 0.0;  // cells switched in the last build (diagnostic)
+  void ThinClosureOverride();
   void VetColSpread(int ncall);   // vet_col_spread (CS2, gate T-S6)
   int vcol_spread = 0;
   void VetColBuildTeam(bool dmp);   // the same, one team per column (vet_col_team)
