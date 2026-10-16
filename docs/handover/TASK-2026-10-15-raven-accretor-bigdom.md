@@ -47,9 +47,11 @@ H200, Ltop 6.0e5 -> 1.12e6 code (donor light), Eirr 2.3e4 by t 0.0074.
 ## Test plan (1 GPU)
 1. Static phase: `athena -i run.athinput -d <dir>` (deck: stream = false, tlim 0.00946, rst at 0.00946).
 2. Stream phase: restart from that rst with
-   `problem/stream=true time/tlim=0.045 output2/dt=0.0011829 output4/dt=0.0047317 output3/dt=0.005`.
-   The stream now starts at L1 (16.2 Rsun, not 13.8): the first impact is later than orbit1's t ~0.025, at about
-   0.025 + 0.012 = ~0.037 (stop at 0.045 or at first impact + 0.005; rst links fine if the wall is short).
+   `problem/stream=true time/tlim=0.070 output2/dt=0.0023658 output4/dt=0.0047317 output3/dt=0.005`.
+   The stream now starts at L1 (16.2 Rsun, not 13.8): ballistic flight L1 -> 13.79 is 0.0348 code (design doc
+   plaskett_s5_1009 sect. 4), then ~0.015 to the star as in orbit1, so the first impact is near t ~0.060 (vs
+   orbit1's ~0.025). Run to first impact + ~0.005 (tlim 0.070 at most); chain short links from the rst if needed.
+   At ~0.6-0.9 s/cycle and dt ~4-7e-6 this is ~1e4 cycles (~2-3 h on one H200-class GPU).
 3. Report the cost per cycle and the time-to-impact.
 
 ## Pass checks
