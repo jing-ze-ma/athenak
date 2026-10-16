@@ -781,3 +781,38 @@ dt 7.05e-6 -> 4.0e-6 by t 0.006 (location not measured: no bin output; static-fi
 transient), dt 1e-6 to 3.8e-6 with eint<=0 retries (start0's fresh stream-on-at-t=0 also dropped to 2.4e-6).
 Open: whether to calibrate stream_mdot (about 18.8 for a 19.795 face rate at t ~0.007) or accept the sonic-face
 excess; where dt is set after the stream switch-on.
+
+### 13.7 Pinned stream rate: supersonic nozzle at r 14.5 (user 10-15; supersedes the L1 nozzle for production)
+User: the stream rate must be PINNED at stream_mdot = 19.795. The sonic L1 face (13.5) delivers +5-8 % (HLLC
+star-region flux), so the nozzle moves inward to where the stream is clearly supersonic and the face flux is the
+upwind rho v_r A. **stream_path_1015.py** (docs/dev/accretor_rhd/, output stream_path_1015.out; run with the spack
+python 3.10 + py-scipy 1.11.1 + py-numpy 1.25.2): the one-zone core of stream_physics_1009 (adiabatic gas + trapped
+radiation, diffusion loss) along the TRUE ballistic path from L1 (launch c_T 45.45 km/s) with the true transverse
+curvature; at 13.79 it gives T 65.7 kK, arc width 1.568, rho 0.231 code (stream_physics_1009's linear-ramp model:
+64.8 kK, 1.536, 0.241). Mach of |v| with c_tot (adiabatic, gas + radiation, EOS table) and c_gas (gas only):
+
+| r | t from L1 | phi deg | v_r | v_phi | T K | Prad/Pgas | c_gas | c_tot | M_gas | M_tot | arc width |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 16.20 | 0.0005 | 0.00 | -45.5 | 0.6 | 107042 | 1.23 | 48.7 | 67.0 | 0.93 | 0.68 | 1.604 |
+| 16.00 | 0.0049 | 0.05 | -46.7 | 5.9 | 104550 | 1.14 | 48.2 | 65.0 | 0.98 | 0.73 | 1.607 |
+| 15.75 | 0.0100 | 0.22 | -50.9 | 12.5 | 98752 | 1.03 | 46.8 | 61.6 | 1.12 | 0.85 | 1.674 |
+| 15.50 | 0.0147 | 0.49 | -57.2 | 18.9 | 92072 | 0.91 | 45.2 | 57.9 | 1.33 | 1.04 | 1.749 |
+| 15.25 | 0.0188 | 0.82 | -65.2 | 25.1 | 85927 | 0.81 | 43.7 | 54.5 | 1.60 | 1.28 | 1.791 |
+| 15.00 | 0.0223 | 1.21 | -74.4 | 31.2 | 80747 | 0.72 | 42.3 | 51.7 | 1.91 | 1.56 | 1.793 |
+| 14.75 | 0.0255 | 1.62 | -84.3 | 37.3 | 76482 | 0.65 | 41.2 | 49.3 | 2.24 | 1.87 | 1.765 |
+| **14.50** | **0.0283** | **2.06** | **-94.8** | **43.3** | **72966** | 0.58 | 40.2 | 47.3 | 2.59 | **2.20** | **1.720** |
+| 14.25 | 0.0308 | 2.52 | -105.7 | 49.4 | 70024 | 0.53 | 39.4 | 45.7 | 2.96 | 2.55 | 1.667 |
+| 14.00 | 0.0330 | 3.00 | -116.9 | 55.5 | 67534 | 0.49 | 38.7 | 44.3 | 3.35 | 2.92 | 1.612 |
+| 13.79 | 0.0348 | 3.41 | -126.5 | 60.7 | 65743 | 0.46 | 38.1 | 43.3 | 3.68 | 3.24 | 1.568 |
+
+Chosen: **inner face at stream_r = 14.5** (closest to L1 with M_tot >= 2; radial |v_r|/c_tot 2.00, |v_r|/c_gas 2.36,
+so the code's gas-only HLLC flux is upwind). Deck: stream_inject = volume, stream_r 14.5, stream_mdot 19.795 (the
+peak density 0.2726 code follows from the discrete face sum; rho_stream unused), env_t_stream 72966 K (diffusion
+T profile, floor 19239 K, as before), stream_width 1.720 (arc). The pgen's ballistic state at 14.5 (phi 2.06 deg,
+v_r -94.8, v_phi 43.3) is used. Nozzle cells r 14.5106-14.5878.
+Stabilisers (keys, defaults): problem/stream_back_sink = true for any nozzle (the sector behind it, |dphi| < 4 sigma,
+is sink): NEEDED also at 14.5: without it the gas behind the nozzle (v_r + 3 c_gas > 0 there) expanded into the
+vacuum at 4e3-7e3 km/s and set dt (dt_report, g11: dt 2.9e-7, DT_RETRY eint<=0). problem/floor_keep_momentum =
+true (radeq floor: v = m/rho_amb, |v| <= env_v_floor_max): kept on; not separately re-tested at 14.5 (timebox).
+problem/dt_report = true prints the hydro dt-setting cell at every hst output.
+g11 (14.5, back sink OFF): dMnzf 19.10 over the first 1e-4 (startup), then **19.796** (t 1e-4 to 2e-4).

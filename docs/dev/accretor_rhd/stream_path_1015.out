@@ -1,0 +1,42 @@
+# donor R_L 12.9433 Rsun, L 7.112e+04 Lsun (log 4.852) at Teff 26200 K
+# Mdot 6.3028e+21 g/s, flight L1->r_out 2.421e+04 s, r_out->impact ~1.405e+04 s
+
+## (1) env13 stream (isothermal 26.2 kK) with the Z 0.02 tables
+L1 (Ryu analytic x0.721)           rho 6.200e-07 T   26200  kR 1026.169 kP 25012.250  Prad/Pgas 0.0006  tau_perp 2.13e+07 tau_z 2.13e+07  t_diff 1.87e+11 s = 7.73e+06 flights; thin t_cool 5.67e-06 s
+r_out peak (env13 widths)          rho 5.110e-08 T   26200  kR 82.536 kP 2764.593  Prad/Pgas 0.0070  tau_perp 1.97e+05 tau_z 1.32e+05  t_diff 9.31e+07 s = 3.85e+03 flights; thin t_cool 5.31e-05 s
+  r_out wing x = 0.0 sigma: rho 5.110e-08  tau(>x) 2.46e+05  Prad/Pgas 0.007
+  r_out wing x = 0.5 sigma: rho 4.510e-08  tau(>x) 1.33e+05  Prad/Pgas 0.008
+  r_out wing x = 1.0 sigma: rho 3.099e-08  tau(>x) 4.68e+04  Prad/Pgas 0.012
+  r_out wing x = 1.5 sigma: rho 1.659e-08  tau(>x) 1.04e+04  Prad/Pgas 0.022
+  r_out wing x = 2.0 sigma: rho 6.916e-09  tau(>x) 1.52e+03  Prad/Pgas 0.052
+  r_out wing x = 2.5 sigma: rho 2.245e-09  tau(>x) 155  Prad/Pgas 0.159
+  r_out wing x = 3.0 sigma: rho 5.677e-10  tau(>x) 13  Prad/Pgas 0.628
+  r_out wing x = 3.5 sigma: rho 1.118e-10  tau(>x) 1.1  Prad/Pgas 3.189
+  r_out wing x = 4.0 sigma: rho 1.714e-11  tau(>x) 0.0965  Prad/Pgas 20.758
+  r_out wing x = 4.5 sigma: rho 2.047e-12  tau(>x) 0.00829  Prad/Pgas 172.054
+  r_out wing x = 5.0 sigma: rho 1.904e-13  tau(>x) 0.000633  Prad/Pgas 1807.115
+  r_out wing x = 5.5 sigma: rho 1.379e-14  tau(>x) 4.1e-05  Prad/Pgas 24736.005
+  r_out wing x = 6.0 sigma: rho 7.783e-16  tau(>x) 2.09e-06  Prad/Pgas 438104.746
+
+## (2) L1 state from the donor atmosphere (grey, Eddington T(tau), EOS + Rosseland, gas + rad)
+g 2.95e+03 (x1.0), Q iso 0.721: L1 at tau 1381: T 148649 K, rho 5.007e-08, P_gas 9.902e+05, Prad/Pgas 1.244, c_T 44.47 km/s, sigma_y 1.180 sigma_z 1.184 Rsun, kappa 2.309
+g 2.95e+03 (x1.0), Q adiab 0.649: L1 at tau 1646: T 155310 K, rho 5.245e-08, P_gas 1.084e+06, Prad/Pgas 1.354, c_T 45.45 km/s, sigma_y 1.206 sigma_z 1.211 Rsun, kappa 2.426
+   donor photosphere (tau 2/3, g x1.0): rho 3.932e-10 g/cc, P_gas 1.311e+03
+g 884 (x0.3), Q iso 0.721: L1 at tau 1.103e+04: T 249853 K, rho 2.146e-08, P_gas 7.134e+05, Prad/Pgas 13.776, c_T 57.65 km/s, sigma_y 1.530 sigma_z 1.536 Rsun, kappa 0.859
+g 884 (x0.3), Q adiab 0.649: L1 at tau 1.154e+04: T 252710 K, rho 2.338e-08, P_gas 7.861e+05, Prad/Pgas 13.083, c_T 57.98 km/s, sigma_y 1.539 sigma_z 1.544 Rsun, kappa 0.852
+   donor photosphere (tau 2/3, g x0.3): rho 9.581e-11 g/cc, P_gas 3.196e+02
+
+## stream_path_1015: one-zone core along the true ballistic path from L1
+       r  t_code    phi      v_r   v_phi     |v|   rho_g/cc    code     T_K  Pr/Pg    c_T  c_gad  c_tot    M_g  M_tot  sperp   arcw    Pnn
+ 16.2000  0.0005   0.00   -45.47    0.62   45.48  1.894e-08  0.3707  107042  1.228  37.74  48.72  67.00   0.93   0.68  1.604  1.604   6.99
+ 16.1000  0.0027   0.02   -45.86    3.28   45.98  1.914e-08  0.3745  106114  1.184  37.57  48.50  66.09   0.95   0.70  1.594  1.598   6.88
+ 16.0000  0.0049   0.05   -46.74    5.94   47.11  1.901e-08  0.3721  104550  1.139  37.29  48.15  64.98   0.98   0.73  1.594  1.607   6.64
+ 15.7500  0.0100   0.22   -50.86   12.52   52.38  1.779e-08  0.3481   98752  1.026  36.25  46.79  61.58   1.12   0.85  1.625  1.674   5.72
+ 15.5000  0.0147   0.49   -57.23   18.91   60.28  1.619e-08  0.3169   92072  0.914  35.00  45.18  57.92   1.33   1.04  1.660  1.749   4.82
+ 15.2500  0.0188   0.82   -65.23   25.13   69.91  1.484e-08  0.2905   85927  0.810  33.81  43.65  54.54   1.60   1.28  1.671  1.791   4.20
+ 15.0000  0.0223   1.21   -74.36   31.22   80.65  1.386e-08  0.2711   80747  0.720  32.77  42.31  51.67   1.91   1.56  1.653  1.793   3.83
+ 14.7500  0.0255   1.62   -84.28   37.26   92.15  1.316e-08  0.2575   76482  0.645  31.90  41.17  49.28   2.24   1.87  1.614  1.765   3.64
+ 14.5000  0.0283   2.06   -94.78   43.28  104.19  1.265e-08  0.2476   72966  0.582  31.16  40.21  47.30   2.59   2.20  1.564  1.720   3.56
+ 14.2500  0.0308   2.52  -105.69   49.35  116.65  1.228e-08  0.2404   70024  0.530  30.52  39.38  45.66   2.96   2.55  1.510  1.667   3.54
+ 14.0000  0.0330   3.00  -116.94   55.50  129.44  1.200e-08  0.2348   67534  0.487  29.97  38.66  44.28   3.35   2.92  1.456  1.612   3.57
+ 13.7926  0.0348   3.41  -126.47   60.68  140.27  1.181e-08  0.2311   65743  0.456  29.57  38.13  43.29   3.68   3.24  1.414  1.568   3.61
