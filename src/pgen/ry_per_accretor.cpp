@@ -1147,8 +1147,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       const int i = idx%ni + is;
       const Real r = x1v(m,i), phv = x3c(m,k), dv = volume(m,k,j,i);
       const Real dph = WrapPhi(phv - phs);
-      // 3-D: height above the orbital plane and sin(theta) of the cell centre
-      const Real zc = g3 ? r*cos(x2c(m,j)) : 0.0;
+      // 3-D: the nozzle's height coordinate z = r_f cos(theta) at its INNER FACE radius r_f
+      // (every nozzle cell of a theta row has the same state, as every cell of a phi column,
+      // so the upwind face flux equals the normalisation sum exactly); sin(theta) for the mask
+      const Real zc = g3 ? nlo*cos(x2c(m,j)) : 0.0;
       const Real sth = g3 ? sin(x2c(m,j)) : 1.0;
       const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
       bool inmk = false;

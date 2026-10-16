@@ -822,3 +822,67 @@ interval), Min - Mnzf constant 0.0162 (the nozzle's initial fill), Mmsk 4.6e-6; 
 **dt 7.047e-6 flat**, set by the envelope (cell r 8.787 in the fine plateau, at rest), not by the nozzle or the mask.
 (The L1 nozzle's dt 4e-6 is therefore L1-specific.) First impact: flight from 14.5 to the star ~0.045 - 0.0283 =
 ~0.017 after the stream reaches the nozzle state... i.e. stream on at 0.00946 -> impact near t ~0.027-0.030.
+
+## 14. 3-D version: theta range +-20 deg (2026-10-16, Caltech, accretor-bigdom-1015)
+
+User request 10-16: a 3-D version of the bigdom accretor (nozzle, donor sink/mask, donor irradiation, band-to-sphere
+bookkeeping) and a half-resolution benchmark for Raven. Code 7ef6d8af.
+
+### 14.1 Scope: what is 3-D now, and what is NOT
+- **3-D mode** switches on automatically when the theta range reaches beyond 2 deg from the orbital plane (the 2-D
+  band is +-0.35 deg; no key). It changes only the nozzle, the donor mask, the back sink and the Mnzf register;
+  every 2-D path is the old code (gate 14.5: bitwise).
+- **NOT 3-D yet (required before any 3-D production):** the forces, IC and WB are still the band's: gravity is the
+  discrete gradient of Phi(r, phi) IN THE PLANE (arrays (m,k,i), no theta component, no theta dependence), Coriolis
+  is the in-plane pair (a_r += 2 Omega v_phi, a_phi -= 2 Omega v_r; no sin/cos theta factors, no theta component),
+  and the envelope IC, the WB background, the ambient (rhoamb_, tcol_, cref2_) are theta-invariant. The star is
+  therefore a theta-extruded copy of the equatorial band: no vertical gravity confines the stream or the splash,
+  and the tidal/centrifugal terms at latitude are the equatorial ones (centrifugal off by cos^2 20 = 0.88 at the
+  walls). The +-20 deg deck is a COST AND PLUMBING benchmark (cells, dt, s/cycle, nozzle/mask/irradiation), not
+  physics. The physics step: Phi(r, theta, phi) on (m,k,j,i) for g_r, g_theta, g_phi, the full rotating-frame
+  Coriolis, and the IC/WB/ambient on the 3-D equipotentials (EnvICGeneral, PhiWB, tcol_ with j).
+
+### 14.2 Nozzle Gaussian in z (problem/stream_sigma_z, stream_mdot = the full stream)
+- State in the nozzle cells (r in the stream_ncell shell above stream_r, |dphi| < 3 sigma_phi, |z| < 3 sigma_z,
+  z = r_f cos theta with r_f the nozzle's inner face, so all nozzle cells of a theta row share one state, as all
+  cells of a phi column do in 2-D): rho = rho_s exp(-(x^2 + (z/sigma_z)^2)/2), x = dphi/sigma_phi; v = the ballistic (v_r, v_phi),
+  v_theta = 0 (vertical hydrostatic stream); T = the diffusion profile in the elliptical radius sqrt(x^2 + (z/sz)^2);
+  stream_rad E = a T^4, F = (4/3) E v as in 2-D.
+- **sigma_z = 1.0054 Rsun**: the same one-zone core as the 2-D deck (stream_path_1015.py at r 14.5: c_iso =
+  sqrt(P_tot/rho) = 39.19 km/s, Phi_zz = 8.622 Omega^2 there, sigma_z = c_iso/(Omega sqrt(Phi_zz)); the identity
+  Mdot = rho_pk |v| 2 pi sigma_perp sigma_z with the script's rho 1.265e-8 g/cc, |v| 104.19, sigma_perp 1.564 gives
+  the same 1.0054). For reference sigma_z at L1 is 1.21 (Lubow-Shu/Ryu), at 13.79 0.867 (S5 window model).
+  3 sigma_z = 3.02 Rsun = +-12.0 deg at r 14.5: inside the +-20 deg walls.
+- **stream_mdot (3-D) = 254.843 code = 1.0e-4 Msun/yr** (6.3028e21 g/s x 6.957e5 s / 1.7206e25 g). The peak density
+  follows from the exact discrete sum over the 3-D window cells of the nozzle's inner face (r_f^2 (cos th_j - cos
+  th_j+1) dphi), so the supersonic nozzle delivers exactly stream_mdot (as in 2-D). The pgen prints the central
+  slice: the rate per unit height at z = 0 and its 2-D band equivalent (height r_f x 0.0122718).
+- **Consistency with the 2-D deck (19.795):** at the same peak density the 2-D band rate is the central slice,
+  Mdot_band = Mdot_3D r_f dtheta_band / (sqrt(2 pi) sigma_z). With sigma_z 1.0054 and 1e-4 Msun/yr this is
+  **18.01**, 9 % below 19.795; the 3-D peak density is then 0.2480 code = the one-zone core at 14.5 (0.2476). The
+  2-D value 19.795 is the 13.79 window rate (S5 one-zone with sigma_z 0.867 there) carried unchanged to the 14.5
+  nozzle, i.e. the 2-D nozzle at 14.5 runs 10 % denser than the one-zone core there (0.2726 vs 0.2476). Two exact
+  alternatives if the 3-D run must reproduce 19.795 in its central slice: stream_mdot = **280.1** (1.099e-4
+  Msun/yr) with sigma_z 1.0054, or sigma_z = **0.9146** with 254.843. The deck uses the physical pair (1e-4, the
+  one-zone sigma_z); USER DECISION.
+
+### 14.3 Theta boundaries: reflecting at +-20 deg
+Chosen: reflect (hydro and M1, as the band). Why: (i) the mass/energy budgets (Min, Mout, Macc, Mmsk, Ebnd) count
+only the x1 faces, so reflecting theta walls keep them closed without new registers; (ii) with the theta-invariant
+forces (14.1) there is no vertical gravity, so an outflow (zero-gradient) wall would let the unconfined
+atmosphere/splash drain or inflow with no restoring force; (iii) the stream stays > 3 sigma_z from the walls
+(nozzle +-12 deg; sigma_z shrinks toward the star as Phi_zz grows), so only the splash and the envelope circulation
+at latitude see the walls. Revisit with the 3-D gravity: then an outflow wall above the stream (or a wider range)
+is the alternative.
+
+### 14.4 Mask, irradiation, back sink, bookkeeping in 3-D
+- Donor mask = the exact 3-D Roche lobe: RochePot3(r, theta, phi) < Phi(L1) and x = r sin(theta) cos(phi) > d_L1
+  (centrifugal about the z axis through the CM: -Omega^2 [(x - x_cm)^2 + y^2]/2). At latitude the lobe shrinks as
+  the true equipotential does.
+- donor_irr: unchanged (E = a T_d^4, F = 0 in the 3-D lobe; T_d from donor_lum over 4 pi R_L^2).
+- Back sink (stream_back_sink): the sector behind the nozzle also limited to |z| < 4 sigma_z.
+- Mnzf: the nozzle's inner face inside |dphi| < 3 sigma_phi AND |z| < 3 sigma_z (the face outside the window is
+  ambient).
+- Band-to-sphere: Lmeas/Ltop scale the domain sum by 4 pi / (domain solid angle) (= 4 pi / (2 sin 20 deg x 2 pi) for
+  +-20 deg); unchanged code. env_lin_band_factor stays 0.963286: the star in this code is the equatorial band
+  extruded in theta (14.1), so the bottom flux of every theta column is the band's.
