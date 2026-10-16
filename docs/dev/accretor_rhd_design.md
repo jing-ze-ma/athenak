@@ -646,3 +646,73 @@ checkpoint differs). smoke/smoke_a, job 4591413.
 - Variant without ROL2U (dt_retry only, smoke_b_norol): fails at the same cycle 3642 (t 0.024316): 4 cuts to
   1.0e-7, then dt 6.3e-8 < time/dt_min 1e-7 FATAL at cycle 3654. So ROL2U is what carries the impact; dt_retry
   absorbs the 21 eint<=0 events on top. The smaller-CFL variant was not needed.
+
+## 13. Bigger domain: the stream as a volume source, donor Roche-lobe sink (2026-10-15, Caltech, accretor-bigdom-1015)
+
+User request 10-15 (option a): put r_out well beyond L1 and inject the stream inside the domain, not as the r_out
+boundary window. Branch accretor-bigdom-1015 off accretor-rhd-1015 (af45fa46); keys default off (old decks bitwise).
+
+### 13.1 Grid: the old grid kept face for face, then a log tail (mesh/f_stretch_r_tail_*)
+- New StretchRPoly option: `f_stretch_r_tail_nin` (old nx1 640), `f_stretch_r_tail_x1max` (old x1max 13.7926),
+  `f_stretch_r_tail_ij` (junction face 520). Faces 0..520 are the old map evaluated at xi_old = i/640 (agree with
+  the 640-cell grid to 5e-15); above r_j = 10.4157 the faces grow by a constant ratio up to x1max:
+  r = r_j (x1max/r_j)^((xi - xi_j)/(1 - xi_j)). The old grid is fully coarse (dr 0.0278) from face ~515, so r <= 10.4
+  (the whole envelope, the 8.756-9.598 plateau, the WB region r < 8.605, r_meas 9.573) is unchanged.
+- x1max = 1.5 d_L1 = 24.33996, nx1 = 840: tail ratio 1.002656 vs the old grid's 1.002675 at the junction (dr steps
+  down by 0.45 % once, then grows smoothly). dr = 0.0366 at r 13.8 (old 0.0282), 0.0645 at r_out (dr/r 0.00265, the
+  phi cell is r dphi = 0.00307 r: cells near square).
+- Cost: 840/640 = 1.31x cells per cycle; dt is set near the star (unchanged grid there), so ~1.31x per unit time
+  (measured in 13.4).
+- Restart from the old 640-cell rst is not possible (different mesh) -> fresh static phase.
+
+### 13.2 Stream nozzle (problem/stream_inject = volume, stream_r, stream_ncell)
+Choice: an internal Dirichlet region (a "nozzle") rather than an explicit mass-source term S = Mdot/V.
+- The nozzle is stream_ncell = 2 cells above the x1 face nearest stream_r = 13.7926 (the old r_out; face 626 at
+  13.7974, nozzle r 13.7974-13.8708), inside the same phi window |dphi| < 3 sigma. After all other sources of every
+  stage these cells are reset to exactly the old ghost state: rho_s exp(-x^2/2), the ballistic (v_r, v_phi) at
+  stream_r (unchanged: phi 3.410 deg, v_r -126.46, v_phi 60.68 km/s), T(phi) of the diffusion profile, and with
+  stream_rad E = a T^4, F = (4/3) E v.
+- Why: the face below the nozzle then sees the same states the old r_out face saw (PLM slopes vanish across the
+  two equal cells, as across the two ghosts), so the inflow and its radiation are the old ones by construction,
+  including the Riemann-flux response if the gas below pushes back. An explicit source would fix Mdot but spread
+  the mass over the source cells and need an injection velocity mixing rule; the reset needs neither. The stream
+  is supersonic (Mach ~4, v_r + 3 c_s < 0), so the nozzle does not leak outward.
+- Booking: the mass, inertial Lz, gas energy and radiation energy the reset adds per stage are Min, Jin and
+  (negative) the hydro / radiation out registers of Ebnd, so Mdom and Etot budgets close as before. Expected Min
+  rate = sum rho_s e^{-x^2/2} |v_r| r^2 dtheta dphi = 19.80 code/time (old run start0: 19.80).
+- Outer boundary: no window; outflow everywhere (v_r = max(v_r, 0)), problem/outer_rho = copy (now honoured under
+  thermo = general: ghost rho and T copied; the hse walk in the true Roche potential would pile e^cap densities
+  into ghosts near the donor). Radiation: Marshak with a dark per-column bath (= the old top outside the window).
+  Mout = all of r_out.
+- problem/env_r_top_max = 13.7926 caps the WB top radius: beyond L1 the Roche potential falls below the envelope's
+  top cap again inside the donor lobe, and an uncapped Phi_wb would give psi > 0 there (envelope T(psi), envelope
+  radiation IC near the donor). With the cap Phi_wb is flat above the old r_out: everything r <= 13.79 is identical.
+
+### 13.3 Donor sink (problem/donor_mask = roche) and donor irradiation (problem/donor_irr)
+- Mask = the exact equatorial Roche lobe of the donor: Phi(r, phi) < Phi(L1) and x = r cos phi > d_L1 (the
+  equipotential, no sphere approximation needed: RochePot is already there and the band is the orbital plane; the
+  condition x > d_L1 picks the donor's lobe, L2/L3 lie outside r < 24.34). It touches L1 at r = 16.23 and reaches
+  |phi| = 7.9 / 13.7 / 20.3 deg at r = 18 / 20 / 24.34.
+- Reset after every stage to the floor ambient: rho_amb, at rest in the rotating frame, T = the IC's ambient
+  T_col (the capped column top). Removed mass and gas energy (incl. KE, rho Phi) are booked in hst columns
+  Mmsk, Emsk (replacing Mwal, Jwal, which are identically 0 with the closed free-slip wall). Radiation untouched.
+- Why a reset sink: the simplest robust choice; the gas has v = 0 there so no CFL limit; inflow from L1 is
+  absorbed exactly like a donor surface (no momentum/energy feedback), and a reset at floor density never creates
+  pressure gradients that push gas out.
+- donor_irr = true (default false; needs donor_mask and <rad_m1>): the lobe also holds E = a T_d^4, F = 0
+  (isotropic black body, comoving) every stage, T_d = problem/donor_teff [K], default 26200 K (the donor T_eff of
+  the Wade+2026 MESA track in the S5 deck comment; no luminosity key). The light leaves the lobe surface through
+  the M1 transport (a transparent region at E = aT^4 radiates ~ sigma T^4 per area into the half space); the
+  radiation energy the reset adds is booked in Ebnd as radiation in.
+
+### 13.4 Test (1 H200, deck accretor_1015/bigdom/bigdom.athinput)
+NOT RUN on Caltech (user 10-15: handed to Raven, TASK-2026-10-15-raven-accretor-bigdom.md on bsg-files-1009).
+Status: code c22b696e builds (Caltech GPU nofma, H200; binary builds_accr/bin/athena_gpu_ry_per_accretor_c22b696e_nofma)
+but has NOT been executed: no regression gate (old decks bitwise with the new keys absent) and no run of the
+nozzle, mask or donor_irr yet. Deck + the S5 column and opacity tables: docs/handover/accretor-bigdom-1015/
+(replace @HDIR@). Plan: fresh static phase (stream false) to t 0.00946, then restart with problem/stream=true to
+t 0.025 (first impact ~0.024-0.026), ROL2U keys and time/dt_retry as in orbit1. Reference (start0/orbit1, 640
+cells, boundary window): Min rate 19.795 code/time (analytic 19.80), dt 7.03e-6 before impact, 0.51-0.56 s/cycle
+during the approach; ballistic at R_acc phi 16.5 deg; impact hottest gas r 9.43 phi 15 deg near t 0.026.
+Pass checks: no FATAL; dMin 19.8 +- 1 %; stream path as in start0 (bin snapshots at t 0.0189, 0.0237); Mmsk small
+and the mask quiet; dt not set in the nozzle or the mask; cost per cycle ~1.31x.
