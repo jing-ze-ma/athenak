@@ -148,6 +148,10 @@ bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false;
 // embedded input lacks the key keeps cell (no silent change mid-run).
 bool hs_bhse_face_ = true;
 Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
+// thinclos-1016 BSG-ATMOS (DEBUG, opt-in; read only when named): problem/he_damp_rate > 0
+// damps v_r at that rate in he_damp_r0 < r < he_damp_r1 while time < he_damp_tend (the KE
+// removed leaves the total energy, as the top sponge)
+Real hs_dp_rate_ = 0.0, hs_dp_r0_ = 0.0, hs_dp_r1_ = 0.0, hs_dp_tend_ = 0.0;
 // problem/he_ic_balance: the discretely balanced initial cells (all x1 cells incl. ghosts
 // of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
@@ -2426,6 +2430,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem","he_sponge_dmax")) {
     hs_sp_dmax_ = pin->GetReal("problem","he_sponge_dmax");
   }
+  if (pin->DoesParameterExist("problem","he_damp_rate")) {
+    hs_dp_rate_ = pin->GetReal("problem","he_damp_rate");
+    hs_dp_r0_ = pin->GetReal("problem","he_damp_r0");
+    hs_dp_r1_ = pin->GetReal("problem","he_damp_r1");
+    hs_dp_tend_ = pin->GetReal("problem","he_damp_tend");
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_damp (DEBUG): v_r damped at " << hs_dp_rate_ << "/s in " << hs_dp_r0_
+                << " < r < " << hs_dp_r1_ << " until t = " << hs_dp_tend_ << std::endl;
+    }
+  }
   hs_rtop_ = rtop;
   if (pin->DoesParameterExist("problem","he_clump")) {
     hs_cl_on_ = pin->GetBoolean("problem","he_clump");
@@ -2936,6 +2950,19 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
                   ht[1] - ht[0],
                   ht[2] - ht[1], 0.0, ht[4], ht[5], ht[0], ht[3]);
     }
+  }
+  if (hs_dp_rate_ > 0.0 && pm->time < hs_dp_tend_) {
+    auto &x1d = pmbp->pcoord->x1v;
+    const Real drt = hs_dp_rate_, dr0 = hs_dp_r0_, dr1 = hs_dp_r1_;
+    par_for("hs_damp_band", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real r = x1d(m,i);
+      if (r <= dr0 || r >= dr1) return;
+      const Real f = exp(-bdt*drt);
+      const Real ke1 = 0.5*SQR(u0(m,IM1,k,j,i))/u0(m,IDN,k,j,i);
+      u0(m,IM1,k,j,i) *= f;
+      u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke1;
+    });
   }
   if (hs_sp_rate_ <= 0.0) return;
   // top sponge: the velocity relaxes to zero at the rate he_sponge_rate*w,
