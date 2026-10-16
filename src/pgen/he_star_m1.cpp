@@ -893,6 +893,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real hgmax = pin->GetOrAddReal("problem","he_ic_rad_hse_gmax",0.9);
     const Real hsdamp = pin->GetOrAddReal("problem","he_ic_rad_hse_damp",0.5);
     const int hsmaxo = pin->GetOrAddInteger("problem","he_ic_rad_hse_maxit",400);
+    // ic-gammacap-1016 problem/he_ic_rad_gamma_cap (read only when named; absent =
+    // bitwise):
+    // inside the startup's HSE outer loop, cap the column's radiative flux at
+    // F_r <= cap c g/kt per fine cell above r_b (kt at the current RE T and rho, g = the
+    // HSE march's gravity) and move the excess into the frozen MLT scaffold, F_MLT/F =
+    // 1 - F_r/F_tot with F_tot = the column's F_r/(1 - F_MLT/F) (F_r + F_MLT = L kept).
+    // For a photosphere on an opacity cliff (He giant 14p5M: kappa 0.01 -> 5, 7.5-20 kK)
+    // where the RE layer cannot be hydrostatic with the full radiative flux (Gamma > 1).
+    // Needs he_ic_rad_hse = true and mlt_flux_frozen = true.  The cap is re-applied from
+    // the column's own F_r each outer iteration (no compounding).
+    const bool gcap_on = pin->DoesParameterExist("problem","he_ic_rad_gamma_cap");
+    const Real gcap = gcap_on ? pin->GetReal("problem","he_ic_rad_gamma_cap") : 0.0;
+    if (gcap_on && !(gcap > 0.0 && gcap < 1.0)) {
+      HsFatal("problem/he_ic_rad_gamma_cap must be in (0, 1)", __LINE__);
+    }
     if (!(taua > 0.0 && taub > taua && dtau0 > 0.0 && dlnr > 0.0 && ncore >= 4 &&
           maxit >= 1 && tol > 0.0 && htol > 0.0 && hgmax > 0.0 && hgmax < 1.0 &&
           hsdamp > 0.0 && hsdamp <= 1.0 && hsmaxo >= 1)) {
@@ -909,6 +924,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const bool gatm = (gasm == "re_atm");
     if (hse && !gre) {
       HsFatal("problem/he_ic_rad_hse = true needs he_ic_rad_gas = re | re_atm", __LINE__);
+    }
+    if (gcap_on && (!hse || !hs_mlt_)) {
+      HsFatal("problem/he_ic_rad_gamma_cap needs he_ic_rad_hse = true and mlt_flux_frozen"
+              " = true", __LINE__);
+    }
+    // the column's own radiative and total flux (the cap's reference)
+    std::vector<Real> gc_fr0, gc_ft;
+    int gc_n = 0;
+    Real gc_dmax = 0.0;
+    if (gcap_on) {
+      gc_fr0 = hF;
+      gc_ft.resize(nf);
+      for (int n=0; n<nf; ++n) gc_ft[n] = hF[n]/std::max(1.0 - hM[n], 1.0e-12);
     }
     // the column as read: T [code] (the file's T with he_ic_eint_from_t, else the code's
     // T(rho, eint)), E (the file's, else a T^4), rho
@@ -1055,6 +1083,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const int i0 = std::min(std::max(static_cast<int>(floor(x)), 0), nf - 2);
         const Real cm0 = (1.0 - (x - i0))*cm[i0] + (x - i0)*cm[i0+1];
         for (int n=0; n<nf; ++n) gm[n] = hs_gm_ + gcode*(cm[n] - cm0);
+      }
+      if (gcap_on) {   // ic-gammacap-1016: F_r <= cap c g/kt above r_b, excess -> MLT
+        gc_n = 0;
+        gc_dmax = 0.0;
+        for (int n=nb; n<nf; ++n) {
+          Real fr = gc_fr0[n];
+          const Real fcap = gcap*cl*gm[n]/(SQR(hr[n])*kt[n]);
+          if (fr > fcap) {
+            fr = fcap;
+            ++gc_n;
+          }
+          hF[n] = fr;
+          const Real fmn = 1.0 - fr/gc_ft[n];
+          gc_dmax = std::max(gc_dmax, fmn - (1.0 - gc_fr0[n]/gc_ft[n]));
+          hM[n] = fmn;
+        }
       }
       std::vector<Real> dn(hd);
       bool flo = false;
@@ -1379,6 +1423,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << ((ncl > 0) ? ", outermost r = " + std::to_string(hr[ngcl]) : "")
                   << ", damped (" << hsdamp << ") from outer "
                   << ((hsodmp >= 0) ? std::to_string(hsodmp) : std::string("none"));
+        if (gcap_on) {
+          std::cout << "; he_ic_rad_gamma_cap " << gcap << ": F_r capped in " << gc_n
+                    << " fine cells (last outer), max F_MLT/F added " << gc_dmax;
+        }
         if (!(dlr < htol)) {
           std::cout << std::endl << "he_star_m1: he_ic_rad = sph1d: WARNING the HSE "
                     << "outer loop did NOT converge in he_ic_rad_hse_maxit = " << hsmaxo
@@ -1427,7 +1475,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               taub, gasm.c_str(), hse ? 1 : 0, taua, dtau0, dlnr, ncore, rph0, rph1);
       for (const Real r : ru) {
         Real fm = 0.0;
-        if (hfr_keep.size() > 1) {
+        if (gcap_on) {   // ic-gammacap-1016: the capped scaffold (fine grid)
+          Real x = (r - hs_rlo_)/hs_dr_;
+          int i = static_cast<int>(floor(x));
+          i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
+          Real w = x - i;
+          w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+          fm = (1.0 - w)*hM[i] + w*hM[i+1];
+        } else if (hfr_keep.size() > 1) {
           const int nk = static_cast<int>(hfr_keep.size());
           int i = static_cast<int>(std::upper_bound(hfr_keep.begin(), hfr_keep.end(), r) -
                                    hfr_keep.begin()) - 1;
