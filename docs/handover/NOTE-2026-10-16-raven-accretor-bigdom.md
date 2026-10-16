@@ -97,3 +97,21 @@ cycles), same binary efe33e6a. Dir /raven/ptmp/jinma/accbig_1016/v3/noirr. Compa
 
 Ack d7b8e051 (link STOP rule): Raven bsgnc_raven.sh / e1chain_raven.sh and Viper link_viper.sh / e1chain_viper.sh already stop only on the summary count NON-CONVERGED=[1-9] (+FATAL/DIVERGED/NaN/rc); DT_RETRY reasons never contain DIVERGED; no change needed; rule recorded.
 (The accbig chain script jobs/chain.sbatch of 31212975 does not test NON-CONVERGED at all: it continues a phase only after "Terminating on time limit".)
+
+## ADDENDUM 2 (2026-10-16 evening): v3 through impact (gpu job 31212975, 4 A100, 53 min) - over-irradiated v3 deck, for comparison
+Restart from the link-3 rst (t 0.02506), the v3 deck unchanged (donor_irr on at full strength), tlim 0.036 reached
+(cycle 13258, 8463 cycles in 3189 s = 0.37 s/cycle).
+- **No FATAL; 0 NON-CONVERGED; 0 dt retries in this link** (the whole v3 run has 8 retries, all at the switch-on).
+  orbit1 needed ROL2U + 21 retries at its impact; here dt was already 2-6x smaller when the stream arrived.
+- **dt through impact**: 2.8-3.3e-6 (t 0.025), 1.53e-6 from t 0.026 (stream infall onto the atmosphere, v_r ~ -500
+  km/s at rho 1e-5..1e-2), 1.15e-6 from t 0.0315, 0.84-1.03e-6 at t 0.034-0.036. The rank-0 dt_report cells are
+  stream/atmosphere gas at r 9.4-9.6 (v_r -330..-510, v_phi 200-680 km/s).
+- **First impact**: dense infalling stream gas (v_r < -50, rho > 1e-3) first reaches r 9.4-9.65 at **t ~0.027** (587
+  cells at t 0.0272, phi 0.6-18.9 deg; 8010 at t 0.0284). Shock heating of dense gas starts at **t ~0.031-0.032**:
+  hottest dense gas at r 9.30 with e/rho 3294 (t 0.0319) -> 4044 (t 0.036; the far side stays at 2470), at **phi 14.0 ->
+  15.2 deg**, v_r -346..-378 km/s.
+- **Arrival phi**: density ridge at r 9.4-9.6 at phi 13.4-14.3 deg (t 0.033-0.036); hottest impact gas at phi 14.0-15.2
+  deg. **Within/at the lower edge of the orbit1 window (15-16.5 deg; orbit1 hottest gas r 9.43, phi 15 deg).** The
+  impact time (~0.031 for the heating) matches the TASK estimate.
+- This deck over-irradiates (ADDENDUM 1), so the dt numbers are not representative. v4 (scaled, gravity-darkened
+  donor light) is being tested now (NOTE-2026-10-16/17-raven-accretor-v4.md).
