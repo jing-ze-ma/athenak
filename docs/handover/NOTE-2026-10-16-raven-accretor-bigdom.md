@@ -47,3 +47,50 @@ continues from the newest stream rst. Raven work dir: /raven/ptmp/jinma/accbig_1
 4. dt_report: reduce over ranks (MPI MINLOC) so that multi-rank runs report the global cell.
 
 Scripts: /raven/ptmp/jinma/accbig_1016/jobs/{chain,bw,env}.sbatch, tool/{ana_v3,dtcell,envloc}.py.
+
+## ADDENDUM 1 (2026-10-16 morning): donor_irr = false diagnostic - the donor light drives the dt drop (CONFIRMED)
+Job 31214095 (gpudev, 4 A100, 638 s): the v3 deck with `problem/donor_irr=false`, fresh static phase to t 0.00946 (1345
+cycles), same binary efe33e6a. Dir /raven/ptmp/jinma/accbig_1016/v3/noirr. Compared with the v3 static run (donor_irr on).
+- **dt**: no irradiation: 7.0473e-6 -> 7.0291e-6 flat to the end (0 retries, 0 NC, Picard mean 2.02). With irradiation:
+  6.90e-6 at cycle 1200 and 6.43e-6 at cycle 1300. **The static dt drop is caused by donor_irr.**
+- **Thin atmosphere r 9.1-9.6** (equatorial pair, rho < 1e-4 for the mean):
+  | t | max\|v\| irr | max\|v\| no irr | mean\|v_phi\| irr | no irr |
+  |---|---|---|---|---|
+  | 0.00237 | 67 | 12 | 6.5 | 1.1 |
+  | 0.00473 | 116 | 22 | 23.6 | 1.9 |
+  | 0.00710 | 172 | 40 | 58.7 | 3.1 |
+  | 0.00946 | 228 | 47 | 62.2 | 5.6 |
+  This is 5x the speed. orbit1-like slow atmosphere motions remain without irradiation (max 47 km/s); 200-940 km/s needs
+  the donor light.
+- **How much donor light reaches r 9-10 (m1 bins at t 0.00946):**
+  - E_rad rises by a nearly uniform **factor 4.7-5.6 at all radii 9.2-16 and at all phi, including the far side
+    (phi 180: 4.85x)**. Median E at r 9.6-10.4 is 13.7 with irradiation vs 2.8 without, i.e. **2x the donor's own a T_d^4
+    (6.787)** and above donor + star (9.6). At r 9.0-9.6 it is 17.8 vs 3.5.
+  - \|F\| ~ cE (4.6e6 vs cE 4.1e6, free streaming), mostly AZIMUTHAL: dF_phi = +3.6..+4.5e6 at phi 30-90 and 210-240,
+    -3.4..-4.5e6 at phi 120-150 and 270-330 (r 9.6). That is 5-20x the star's own radial flux there (median 2.2e5).
+  - Expected donor flux on the star's facing side: real 3-D dilution L_d/(4 pi D^2), D = a - R ~ 23.8, gives 1.5e5 code. An
+    in-band view-factor estimate (lobe subtends ~40 deg) gives ~1-2e5. The model's excess flux at r 9.6 is **~30x larger
+    and present on the night side too**, so the donor irradiation as implemented over-irradiates the star by over an
+    order of magnitude.
+  - Budget: injected Eirr 6.87e4 by t 0.00946 (7.3e6 per time unit). Excess radiation energy resident in the domain
+    is only ~1.0e3 (r 9-24), so it is not a trapped reservoir. It is a strong, continuously replenished azimuthal flux.
+  - **Back-sink sector**: NOT needed for the effect. The whole effect is present in the static phase, where the back
+    sink is off (it needs the stream on). In the stream phase the back sector also shines at T_d and doubles Eirr
+    (1.55e7), and the atmosphere speeds kept growing (630 -> 940 km/s), so it adds to the problem.
+- **Probable causes (no code changed):**
+  (a) band geometry: the +-0.35 deg band with reflecting theta walls has no vertical dilution (in-plane 1/d instead of
+  1/d^2), so a lobe held at a T_d^4 over its full in-band surface is far brighter at the star than a 3-D donor would be;
+  (b) closure = vet_col builds the Eddington tensor from RADIAL columns. A lateral source (the donor light comes in from
+  the side) cannot be represented: the uniform ~5x E at all phi and the strong azimuthal F (> star's flux) point to the
+  closure, not to geometry alone.
+- **Proposed fixes (for Caltech to choose; not implemented):**
+  1. Do not irradiate from the back-sink sector (mask only).
+  2. Replace "lobe holds E = a T_d^4" with a diluted, directed source: an inward flux of the 3-D value L_d/(4 pi d^2)
+     (d from the donor centre) entering through the r_out boundary (or the lobe surface) only within the donor's solid
+     angle. Or keep the lobe but scale T_d so that the band flux at the star's sub-donor point equals the 3-D value
+     (here ~1/30 of the present flux, i.e. T_d,eff ~ 26 kK x 30^-1/4 ~ 11 kK).
+  3. Check the vet_col closure with a lateral beam (a short test with closure = m1 or the VET recomputed from the full
+     angular field) before trusting any irradiated run.
+  4. As a guard: limit the radiation force on floor/atmosphere gas (rho < ~1e-4 code) or extend the floor sponge to
+     the atmosphere above the photosphere.
+  The v3 gpu job (31212975) is left running unchanged as instructed: it tests v3 as specified, impact included.
