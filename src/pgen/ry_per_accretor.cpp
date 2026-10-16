@@ -1367,16 +1367,23 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   if (dtrep_ && global_variable::my_rank == 0 && pmbp->phydro->dtnew_m >= 0) {
     auto *phd = pmbp->phydro;
     const int dm = phd->dtnew_m, dk = phd->dtnew_k, dj = phd->dtnew_j, di = phd->dtnew_i;
-    auto wv = Kokkos::subview(phd->w0, dm, Kokkos::ALL, dk, dj, di);
-    auto hw = Kokkos::create_mirror_view_and_copy(HostMemSpace(), wv);
-    auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                  Kokkos::subview(x1v, dm, di));
-    auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                  Kokkos::subview(pmbp->pcoord->x3v, dm, dk));
+    DvceArray1D<Real> dv("ryper_dtrep", 7);
+    auto w0d = phd->w0;
+    auto &x3d = pmbp->pcoord->x3v;
+    par_for("ryper_dtrep_f", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
+      dv(0) = x1v(dm,di);
+      dv(1) = x3d(dm,dk);
+      dv(2) = w0d(dm,IDN,dk,dj,di);
+      dv(3) = w0d(dm,IVX,dk,dj,di);
+      dv(4) = w0d(dm,IVY,dk,dj,di);
+      dv(5) = w0d(dm,IVZ,dk,dj,di);
+      dv(6) = w0d(dm,IEN,dk,dj,di);
+    });
+    auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dv);
     std::printf("ry_per_accretor dt_report: t %.6e dt %.4e cell (m,k,j,i) (%d,%d,%d,%d) r %.5f "
                 "phi %.4f rad: rho %.4g v_r %.4g v_th %.4g v_phi %.4g km/s e/rho %.4g "
-                "(km/s)^2\n", pm->time, pm->dt, dm, dk, dj, di, hr(), hp(), hw(IDN), hw(IVX),
-                hw(IVY), hw(IVZ), hw(IEN)/hw(IDN));
+                "(km/s)^2\n", pm->time, pm->dt, dm, dk, dj, di, hv(0), hv(1), hv(2), hv(3),
+                hv(4), hv(5), hv(6)/hv(2));
   }
   const char *lab[22] = {"Mdom", "Jdom", "Menv", "Jenv",
                          "Min", "Mout", "Mwal", "Jwal", "Jstr", "Jout", "MR", "JR", "Jin",
