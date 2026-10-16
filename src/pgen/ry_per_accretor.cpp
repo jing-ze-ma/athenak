@@ -303,6 +303,14 @@ bool nzback_ = false;          // problem/stream_back_sink: the sector behind th
 bool flmom_ = false;           // problem/floor_keep_momentum (radeq floor: v = m/rho_amb, capped)
 bool dtrep_ = false;           // problem/dt_report: print the hydro dt-setting cell at hst outputs
 Real accx0_[2] = {0.0, 0.0}, accx1_[2] = {0.0, 0.0};
+// accretor-3d-1016: a WIDE theta range (half-width about the orbital plane > 2 deg, e.g.
+// +-20 deg) switches the nozzle, the donor mask and the nozzle-face register to 3-D: the
+// nozzle is Gaussian in z = r cos(theta) with sigma_z (problem/stream_sigma_z, Rsun), its
+// peak density normalised to the FULL stream rate stream_mdot over the 3-D window, and the
+// mask is the exact 3-D Roche lobe.  The thin 2-D band (+-0.35 deg) never enters these
+// branches (bitwise unchanged).  Forces, IC and WB stay those of the band (theta-invariant).
+bool g3d_ = false;
+Real sz_ = 0.0;                // sigma_z of the nozzle (Rsun)
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -310,6 +318,17 @@ Real RochePot(const RocheParams &p, const Real r, const Real phi) {
   const Real rd = sqrt(fmax(r*r + p.asep*p.asep - 2.0*p.asep*r*cp, 1.0e-30));
   return -p.gma/r - p.gmd/rd
          - 0.5*SQR(p.omega)*(r*r + p.xcm*p.xcm - 2.0*p.xcm*r*cp);
+}
+
+//! accretor-3d-1016: the exact 3-D Roche potential at (r, theta, phi), sth = sin(theta)
+//! (x = r sth cos phi, y = r sth sin phi, z = r cos theta; centrifugal about the z axis
+//! through the CM).  Used only by the 3-D donor mask.
+KOKKOS_INLINE_FUNCTION
+Real RochePot3(const RocheParams &p, const Real r, const Real sth, const Real phi) {
+  const Real xs = r*sth*cos(phi);
+  const Real rd = sqrt(fmax(r*r + p.asep*p.asep - 2.0*p.asep*xs, 1.0e-30));
+  return -p.gma/r - p.gmd/rd
+         - 0.5*SQR(p.omega)*(r*r*sth*sth + p.xcm*p.xcm - 2.0*p.xcm*xs);
 }
 
 //! stage 2: the potential of the x1 well-balanced pair.  Below r_top: Phi - Delta,
@@ -1111,8 +1130,11 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const bool l1 = stl1_, nzbk = nzback_ && nzon;
     const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
+    const bool g3 = g3d_;
+    const Real szz = sz_, wz = nsig_*sz_;
     auto phc = ph->phicc0;
     auto &x3c = pmbp->pcoord->x3v;
+    auto &x2c = pmbp->pcoord->x2v;
     DvceArray5D<Real> urd;
     if (rad) urd = pmbp->pradm1->u0;
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
@@ -1125,16 +1147,23 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       const int i = idx%ni + is;
       const Real r = x1v(m,i), phv = x3c(m,k), dv = volume(m,k,j,i);
       const Real dph = WrapPhi(phv - phs);
-      const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww;
+      // 3-D: height above the orbital plane and sin(theta) of the cell centre
+      const Real zc = g3 ? r*cos(x2c(m,j)) : 0.0;
+      const Real sth = g3 ? sin(x2c(m,j)) : 1.0;
+      const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
       bool inmk = false;
       if (mskon && !innz) {
-        inmk = (r*cos(phv) > xl1) && (RochePot(pr, r, phv) < phl1);
+        if (g3) {
+          inmk = (r*sth*cos(phv) > xl1) && (RochePot3(pr, r, sth, phv) < phl1);
+        } else {
+          inmk = (r*cos(phv) > xl1) && (RochePot(pr, r, phv) < phl1);
+        }
         // stream_inject = l1: the sector BEHIND the nozzle (r above its outer face, |dphi|
         // < 3 sigma + 1 sigma) joins the sink.  The sonic L1 state expands backward into
         // the near-vacuum beyond L1 (v + 3 c_s > 0), where the floor gas got garbage
         // energies and 1e5-1e9 km/s (dt collapse, g8/g9 10-15); the donor's atmosphere
         // that really lies there is not modelled, so it is a sink like the lobe.
-        if (nzbk && r > nhi && fabs(dph) < ww + sg) inmk = true;
+        if (nzbk && r > nhi && fabs(dph) < ww + sg && (!g3 || fabs(zc) < wz + szz)) inmk = true;
       }
       if (!(innz || inmk)) return;
       array_sum::GlobalSum v;
@@ -1146,6 +1175,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         // across the stream; in the rotating frame v = -c_T e_x
         dn = fmax(rhos*exp(-0.5*SQR(dph/sg)), dfl);
         v1 = -l1c*cos(phv); v3 = l1c*sin(phv); tn = l1t;
+      } else if (innz && g3) {
+        // 3-D: Gaussian in phi (arc sigma) and in z (sigma_z); the diffusion T profile in
+        // the elliptical radius of the cross-section
+        const Real q2 = SQR(dph/sg) + SQR(zc/szz);
+        dn = fmax(rhos*exp(-0.5*q2), dfl);
+        v1 = vrs; v3 = vps; tn = StreamT(stp, tcs, tsf, sqrt(q2));
       } else if (innz) {
         dn = fmax(rhos*exp(-0.5*SQR(dph/sg)), dfl);
         v1 = vrs; v3 = vps; tn = StreamT(stp, tcs, tsf, dph/sg);
@@ -1197,6 +1232,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const Real om = rp_.omega, phis = phi_s_, wwin = nsig_*sig_;
   const bool strm = stream_on_ && !stvol_;   // the r_out window (boundary injection only)
   const int nzif = (stvol_ && stream_on_) ? nz_if_ : -1;
+  const bool g3f = g3d_;
+  const Real wzf = nsig_*sz_;
+  auto &x2vf = pmbp->pcoord->x2v;
   const int nj = je - js + 1, nk = ke - ks + 1;
   const int ntot = (nmb1 + 1)*nk*nj;
   DvceArray4D<Real> ff0;
@@ -1249,7 +1287,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       v.the_array[7] = -(f3 + om*r*fd)*r*a;
     }
     // the nozzle's inner face (Mnzf), inside its phi window
-    if (nzif >= 0 && fabs(WrapPhi(x3v(m,k) - phis)) < wwin) {
+    if (nzif >= 0 && fabs(WrapPhi(x3v(m,k) - phis)) < wwin &&
+        (!g3f || fabs(xf(m,nzif)*cos(x2vf(m,j))) < wzf)) {
       v.the_array[13] = -flx(m,IDN,k,j,nzif)*area1(m,k,j,nzif);
     }
     sum += v;
@@ -2871,6 +2910,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       l1_t_ = pin->GetOrAddReal("problem", "stream_l1_t", 155300.0)/eos.temp_cgs;
     }
   }
+  // accretor-3d-1016: 3-D mode from the theta range (the 2-D band is +-0.35 deg)
+  {
+    const auto &ms = pmy_mesh_->mesh_size;
+    g3d_ = (std::fmax(std::fabs(ms.x2min - 0.5*M_PI), std::fabs(ms.x2max - 0.5*M_PI))
+            > 2.0*M_PI/180.0);
+    sz_ = 0.0;
+    if (g3d_ && (stvol_ || pin->DoesParameterExist("problem", "donor_mask"))) {
+      if (stvol_) {
+        if (!pin->DoesParameterExist("problem", "stream_sigma_z") ||
+            !pin->DoesParameterExist("problem", "stream_mdot")) {
+          fatal("3-D (wide theta) nozzle needs problem/stream_sigma_z [Rsun] and "
+                "problem/stream_mdot (the FULL stream rate, code mass/time)");
+        }
+        sz_ = pin->GetReal("problem", "stream_sigma_z");
+        if (!(sz_ > 0.0)) fatal("problem/stream_sigma_z must be > 0");
+      }
+      if (root) {
+        std::printf("ry_per_accretor: 3-D mode (theta %.3f..%.3f deg): nozzle Gaussian in z, "
+                    "exact 3-D Roche-lobe mask; forces/IC/WB stay theta-invariant (band)\n",
+                    ms.x2min*180.0/M_PI, ms.x2max*180.0/M_PI);
+      }
+    }
+  }
   // the nozzle shell: stream_ncell cells above the x1 face nearest stream_r
   msk_ = false;
   if (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) {
@@ -2909,6 +2971,39 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real dphk = (ms.x3max - ms.x3min)/nk, rf = nz_rlo_;
       const Real ath = rf*rf*(std::cos(ms.x2min) - std::cos(ms.x2max))*dphk;
       Real sum = 0.0;
+      if (g3d_) {
+        // 3-D: stream_mdot is the FULL stream; the discrete sum over the window cells
+        // (|dphi| < nsig sigma_phi, |z| < nsig sigma_z, z = r_f cos theta) of the inner
+        // face's e^{-q^2/2} |v_r| A, A = r_f^2 (cos th_j - cos th_j+1) dphi
+        if (stl1_) fatal("stream_inject = l1 is 2-D only (use volume in 3-D)");
+        const int nj = pmy_mesh_->mesh_indcs.nx2;
+        const Real dth = (ms.x2max - ms.x2min)/nj;
+        Real sum0 = 0.0;          // per unit height at z = 0 (central slice), for the report
+        for (int k=0; k<nk; ++k) {
+          const Real phk = ms.x3min + (k + 0.5)*dphk;
+          const Real dph = WrapPhi(phk - phi_s_);
+          if (std::fabs(dph) >= nsig_*sig_) continue;
+          sum0 += std::exp(-0.5*SQR(dph/sig_))*std::fabs(vr_s_)*rf*dphk;
+          for (int j=0; j<nj; ++j) {
+            const Real t0 = ms.x2min + j*dth, t1 = t0 + dth;
+            const Real zj = rf*std::cos(0.5*(t0 + t1));
+            if (std::fabs(zj) >= nsig_*sz_) continue;
+            sum += std::exp(-0.5*(SQR(dph/sig_) + SQR(zj/sz_)))*std::fabs(vr_s_)*
+                   rf*rf*(std::cos(t0) - std::cos(t1))*dphk;
+          }
+        }
+        rho_s_ = mdot/sum;
+        if (global_variable::my_rank == 0) {
+          std::printf("ry_per_accretor: 3-D nozzle: sigma_z %.4f Rsun (|z| < %.4f, theta "
+                      "%.3f..%.3f deg), full rate stream_mdot %.6g code -> peak rho %.6g "
+                      "code; central slice %.6g code/time per Rsun of height = %.6g in the "
+                      "2-D band of height r_f 0.0122718 (r_f %.5f)\n", sz_, nsig_*sz_,
+                      90.0 - std::asin(std::fmin(nsig_*sz_/rf, 1.0))*180.0/M_PI,
+                      90.0 + std::asin(std::fmin(nsig_*sz_/rf, 1.0))*180.0/M_PI, mdot,
+                      rho_s_, rho_s_*sum0, rho_s_*sum0*rf*0.0122718, rf);
+        }
+        sum = 0.0;
+      }
       for (int k=0; k<nk; ++k) {
         const Real phk = ms.x3min + (k + 0.5)*dphk;
         const Real dph = WrapPhi(phk - phi_s_);
@@ -2917,7 +3012,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           sum += std::exp(-0.5*SQR(dph/sig_))*vr*ath;
         }
       }
-      rho_s_ = mdot/sum;
+      if (!g3d_) rho_s_ = mdot/sum;
     }
   }
   // the two stabilisers added for the L1 nozzle (10-15), keys default: on for l1, off for
