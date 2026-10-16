@@ -216,3 +216,66 @@ A100 binary b16b66db (md5 042157c1), 1 A100, 16x16 lateral, seed 0, 3 d, `regres
 - Verdict for 14p5M: no growing oscillation on either grid. The failure is the startup collapse
   of the thin atmosphere (rho x0.006 by the in-code sph1d HSE), which refills. That is a setup
   defect of the in-code chain for this star, which the IC tool alone cannot remove.
+
+## 7. BSG physics vs closure, cheap diagnostics (10-16; regress/bsg_puls.py, gate_atm.py)
+
+**(a) 10-d gate** on the P grid (runs/bsg_P10, same IC/deck as bsg_P, tlim 8.64e5). Band max
+|<v_r>| [km/s] / max |rho/rho0 - 1|:
+
+| t [d] | 0.9-0.99 R_ph | 0.99-1.01 | 1.01-1.03 | 1.03-1.1 |
+|---|---|---|---|---|
+| 0.85 | 0.52/0.02 | 0.37/0.04 | 1.8/0.21 | 0.39/0.53 |
+| 1.85 | 2.6/0.24 | 2.2/0.61 | 4.4/2.1 | 6.7/3.6 |
+| 2.85 | 2.7/0.10 | 12.6/0.93 | 9.6/94 | 17.8/201 |
+| 3.35 | 0.93/0.01 | 39.2/0.95 | 36.5/8.2 | 24.9/39 |
+| 4.85 | 0.37/0.05 | 3.4/0.22 | 53.4/0.93 | 7.5/1.1 |
+| 6.85 | 0.20/0.04 | 3.3/0.22 | 7.2/7.0 | 13.8/7.7 |
+| 8.35 | 0.68/0.13 | 4.5/0.35 | 22.8/1.1 | 22.1/6.8 |
+| 9.85 | 0.20/0.07 | 0.24/0.12 | 10.2/0.89 | 0.20/1.0 |
+
+- **It saturates:**
+  - growth until about 3.3-4.8 d (peak 54 km/s at 1.01-1.03 R_ph);
+  - after that an irregular, shock-dominated 5-50 km/s state in 1.01-1.1 R_ph to 10 d;
+  - 0.99-1.01 R_ph falls back to 0.2-6 km/s;
+  - 0.9-0.99 R_ph to 0.2-0.9 km/s;
+  - the interior (0.5-0.9 R_ph) stays at <= 0.3 km/s throughout.
+- Periods (FFT of the shell-mean v_r, 3-10 d): 1.46 d at 51.1-52.8 Rsun (R_ph 51.57),
+  1.04 d at 53.6 Rsun, 2.43 d at 50.0 Rsun. In 0-3 d it is ~0.8-1.0 d at 52.8 Rsun (zero
+  crossings 0.85-1.0 d); the window is too short to resolve the rest.
+
+**(b) Mode estimates** for the IC column (closed wall at 20 Rsun, outer bound 52.06 Rsun, Gamma_1
+of the code EOS + radiation, G m(r)):
+- linear adiabatic radial modes: n = 0 3.47 d, n = 1 2.13 d, n = 2 1.72 d, n = 3 1.39 d;
+- sound crossing 20 Rsun..top: 3.06 d;
+- **acoustic cut-off of the photosphere**: 2 pi/w_c with w_c = c_s/(2 H_P) is 1.35 d at R_ph
+  (1.34-1.58 d over tau 0.1-3) with g. With g_eff = g(1 - Gamma_rad) it is 2.7 d (2.6-3.0 d);
+- thermal time U/L of the layer above tau 30: 630 s (0.007 d); above tau 100: 0.036 d; above
+  tau 1000: 0.57 d.
+- So the observed 1.46 d at and just above R_ph sits at the photospheric acoustic cut-off
+  (with g), and the 2.4 d at 50 Rsun is near the n = 1 mode and the g_eff cut-off. The early
+  ~0.85-1 d is near n = 3 and the cut-off.
+- The layer where the amplitude lives has a thermal time << period: strongly non-adiabatic,
+  isothermal waves. It is an atmospheric acoustic resonance (waves at the cut-off steepening in
+  the falling density), not a deep kappa-mechanism mode.
+
+**(c) Gamma along the column:**
+- Gamma_rad = Gamma_L, since the layer is radiative with F_MLT = 0 above 44 Rsun;
+- 0.53-0.67 over 43.8-50.5 Rsun, max 0.673 at tau 35 (50.0 Rsun), falling to 0.50 at R_ph;
+- the rms <v_r> peaks at 51.8-53.2 Rsun, i.e. at and above R_ph where Gamma 0.39-0.50, NOT where
+  Gamma -> 1 (no layer of this IC reaches Gamma > 0.68);
+- there is no He II / H convection zone in this column (F_MLT/F = 0 above 44 Rsun; MESA is
+  radiative too).
+
+**Closure test (described only; a code path is needed for a clean one).**
+- Ingredients: the same P-grid gate with the thin-atmosphere closure changed: vet_col
+  (production) vs an M1/Eddington-factor closure in the optically thin layer, keeping the IC chain
+  (ic_rad needs vet_gd/vet_col: the worker's e1 run FATALed with vet_gd off).
+- A clean test needs a key that switches only the closure above tau ~1 after the startup, e.g.
+  `rad_m1/closure_thin = m1` applied for tau < 1 from cycle 1.
+- Interpretation:
+  - if the oscillation persists at the same 1.4-1.5 d period with an M1 thin closure, it is the
+    hydrodynamic atmospheric resonance (physical, set by the cut-off frequency of this
+    near-Eddington photosphere);
+  - if it disappears, the VET thin-layer coupling drives it.
+- Cheaper partial test with existing keys: halve and double the IC atmosphere scale height
+  (he_ic_rad_taua/taub or the floor) to see whether the period tracks the cut-off (period ~ H/c_s).

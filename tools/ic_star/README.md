@@ -218,6 +218,55 @@ The standard now removes it:
    deep70 regression). `specs/agcar_A_deep70_seam.yaml` shows how the E1 IC would change if
    regenerated with the defaults.
 
+### 2c. SCOPED, not implemented: the code's startup solve for a super-Eddington photosphere (14p5M)
+
+**What fails.** he_star_m1.cpp ~813-1125 runs an outer Picard loop of two steps:
+- (i) the E solve at fixed rho (HsSph1dPass VET passes, T = (E/a)^1/4 in the RE zone tau <
+  taua);
+- (ii) the HSE march at fixed T, with g_eff = g - kt F_r/c. Where Gamma = kt F_r/(c g) >
+  he_ic_rad_hse_gmax (0.9), g_eff is set to (1 - gmax) g.
+
+For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.01 -> 5 between
+7.5 and 20 kK, Gamma_L up to 6):
+- a slightly hotter RE T raises kappa 100x, so Gamma > 0.9;
+- the clamp gives an artificial 0.1 g scale height, so rho is pushed out, tau grows and RE T
+  rises again. The loop has no contraction when dln kappa/dln T is large: 400 outer iterations,
+  max |dln rho| 0.9-1.9, R_ph +1..+4 % per pass (seam passes), or the opposite collapse
+  (rho x 0.006 above r_b) in the gate startup.
+- hg145 ic3 "converged" only because a tau jump (0.76 -> > 3000) confined the solve to the thin
+  top layer.
+
+**Options** (each opt-in through a new problem key, default off = bitwise):
+- **A. Scaffold takes the super-Eddington excess** (`he_ic_rad_hse_scaffold`, suggested):
+  - in step (i)/(ii), cap the radiative flux of each fine cell at F_r <= gmax c g/kt(T, rho) and
+    move the excess into the frozen scaffold (hM), so that F_r + F_MLT = L is kept;
+  - the column's F_MLT and the frozen deposit then follow the code's own RE solution. This is
+    what MESA does there: convection, F_MLT/F 0.76-0.95 at tau 30-100;
+  - the change is local to the sph1d block (cap + bookkeeping, also written by he_ic_rad_dump);
+  - about 150-250 lines; 1-2 days including the CPU seam passes (2-20 min each) and the gates.
+- **B. Robust nonlinear solve:**
+  - replace the Picard alternation by a damped coupled update (damp T as well as rho), or by a
+    continuation in the flux (F_r from 0.5 F to F over the outer iterations);
+  - report a fold, i.e. when no static solution exists, instead of clamping to 0.1 g;
+  - this also answers whether a static radiative photosphere exists at all for this L/M;
+  - 3-5 days; higher risk for the existing productions.
+- **C. No code change:** a tool pre-check (Gamma_rad of the RE T > ~0.9 near the photosphere)
+  that flags the star and keeps the scaffold through the photosphere (mesa_profile.top =
+  surface, taper above tau 1). The seam then remains, as now.
+
+**Risks.**
+- A changes the IC energy bookkeeping wherever Gamma > gmax. AG Car B (Gamma 1.3 at tau 0.5-3)
+  would change if opted in; E1 and the BSG (Gamma <= 0.8 and 0.67) would not.
+- If no static solution exists, the right IC is not static: it is an outflow, and neither A nor
+  B makes it static.
+- B can change convergence for every star.
+
+**Gates.**
+1. Option off: E1 and BSG startup bitwise (sph1d dump and R_ph line identical).
+2. 14p5M seam fixed point: HSE dln rho < 1e-6 and R_ph pass to pass < 0.1 cell.
+3. Gate (a) 14p5M on 704 and 1408, band 0.99-1.1 R_ph: |<v_r>| < 1 km/s, drho < 10 %, no growth.
+4. AG Car B startup with the option on vs off (documented change).
+
 ## 3. Step by step for a new star
 
 1. Write `specs/<name>.yaml` (copy `bsg.yaml` with a MESA profile or `agcar_A_deep70.yaml`
