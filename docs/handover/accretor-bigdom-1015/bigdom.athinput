@@ -199,7 +199,7 @@ env_opac_table   = @HDIR@/rosseland_ext2_gs98_x0.70_z0.02.txt             # fina
 env_planck_table = @HDIR@/planck_ext2_gs98_x0.70_z0.02.txt           # final: planck_ext2_gs98_x0.70_z0.02.txt (md5 99d668f6)
 env_t_ph    = 28300.0                # K
 env_t_amb   = 6.758e6                # K; unused with env_amb_mode = radeq (only the EOS range check)
-env_t_stream = 64767.1              # K, one-zone (adiabatic + diffusion) core at r_out (stream_physics_1009.py)
+env_t_stream = 72966.0              # K, one-zone core at r 14.5 along the true path (stream_path_1015.py; 13.79: 65743)
 inner       = envelope
 m_acc       = 16.0                   # Msun, Wade+2026 (gainer at the start of accretion)
 m_don       = 18.0                   # Msun (M1,i = 18.2 less winds)
@@ -230,9 +230,9 @@ env_v_floor_max = 100.0              # km/s, |v| cap of sponge cells
 env_r_spin  = 9.00129260997162       # rotation only below R_acc
 env_wall_slip = free                 # free | noslip
 stream      = false                  # bigdom test: static phase to 0.00946, then the stream on by restart
-stream_inject = l1                   # bigdom-1015 (user 10-15): Lubow-Shu nozzle, 2 cells just inside L1
-stream_mdot = 19.795                 # code mass/time through the band = the orbit1 Min rate (rho_L1 follows)
-stream_l1_t = 155300.0               # K, T_L1 (stream_physics_1009 L1 state); speed c_T = launch speed of t_don
+stream_inject = volume               # bigdom-1015 (user 10-15): 2-cell nozzle inside L1 where the stream is supersonic
+stream_r    = 14.5                   # inner face of the nozzle: Mach |v|/c_tot 2.20 (|v_r|/c_tot 2.00, |v_r|/c_gas 2.36), stream_path_1015
+stream_mdot = 19.795                 # code mass/time through the band (orbit1 Min rate): sets the peak density (rho_stream unused)
 outer_rho   = copy                   # bigdom-1015: plain outflow at the new r_out
 env_r_top_max = 13.7926              # WB top capped at the old r_out (no fake envelope in the donor lobe)
 donor_mask  = roche                  # bigdom-1015: donor Roche lobe = sink (Mmsk, Emsk)
@@ -245,7 +245,7 @@ stream_nsig = 3.0
 stream_t_profile = diffusion        # user 10-09: T falls from the core (env_t_stream) to the surface as the lowest diffusion mode,
                                      # T^4 = T_c^4 cos(pi/2 erf(|x|/sqrt2)), x = dphi/sigma, clamped at stream_t_surf (stream_physics_1009.py sect. 6)
 stream_t_surf = 19239.0              # K, thin radiative-equilibrium T at r_out with both stars (stream_physics_1009.py)
-stream_width = 1.5362                # Rsun at r_out (sigma_phi 6.38 deg): sigma_perp 1.3850 / cos 25.6 deg (one-zone c_iso 34.96 km/s)
+stream_width = 1.7200                # Rsun arc width at r 14.5 (stream_path_1015.py); was 1.5362 at r_out (sigma_phi 6.38 deg): sigma_perp 1.3850 / cos 25.6 deg (one-zone c_iso 34.96 km/s)
 
 <output1>
 file_type  = hst

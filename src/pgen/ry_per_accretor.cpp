@@ -299,6 +299,9 @@ Real l1_c_ = 0.0, l1_t_ = 0.0; // L1 nozzle: speed along -x (km/s) and uniform T
 // integral, the stream that actually leaves the nozzle toward the star), Eirr = cumulative
 // radiation energy put into the lobe by donor_irr
 bool accx_on_ = false;
+bool nzback_ = false;          // problem/stream_back_sink: the sector behind the nozzle is sink
+bool flmom_ = false;
+bool dtrep_ = false;           // problem/dt_report: print the hydro dt-setting cell at hst outputs           // problem/floor_keep_momentum (radeq floor: v = m/rho_amb, capped)
 Real accx0_[2] = {0.0, 0.0}, accx1_[2] = {0.0, 0.0};
 
 KOKKOS_INLINE_FUNCTION
@@ -1021,7 +1024,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   if (amb_radeq_) {
     auto phc = ph->phicc0;
     const Real tfl = gen_tfl_;
-    const bool fmom = accx_on_;
+    const bool fmom = flmom_;
     const Real vcf = env_vcap_;
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
     Kokkos::parallel_reduce("ryper_flr", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -1105,7 +1108,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const Real phl1 = msk_phl1_, xl1 = msk_xl1_, dfl = eosd.dfloor;
     const bool mirr = rad && mirr_;
     const Real med = mirr_e_;
-    const bool l1 = stl1_;
+    const bool l1 = stl1_, nzbk = nzback_ && nzon;
     const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
     auto phc = ph->phicc0;
@@ -1131,7 +1134,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         // the near-vacuum beyond L1 (v + 3 c_s > 0), where the floor gas got garbage
         // energies and 1e5-1e9 km/s (dt collapse, g8/g9 10-15); the donor's atmosphere
         // that really lies there is not modelled, so it is a sink like the lobe.
-        if (l1 && r > nhi && fabs(dph) < ww + sg) inmk = true;
+        if (nzbk && r > nhi && fabs(dph) < ww + sg) inmk = true;
       }
       if (!(innz || inmk)) return;
       array_sum::GlobalSum v;
@@ -1360,6 +1363,21 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(s));
 
+  // problem/dt_report (bigdom-1015): which cell sets the hydro dt, at every hst output
+  if (dtrep_ && global_variable::my_rank == 0 && pmbp->phydro->dtnew_m >= 0) {
+    auto *phd = pmbp->phydro;
+    const int dm = phd->dtnew_m, dk = phd->dtnew_k, dj = phd->dtnew_j, di = phd->dtnew_i;
+    auto wv = Kokkos::subview(phd->w0, dm, Kokkos::ALL, dk, dj, di);
+    auto hw = Kokkos::create_mirror_view_and_copy(HostMemSpace(), wv);
+    auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                  Kokkos::subview(x1v, dm, di));
+    auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                  Kokkos::subview(pmbp->pcoord->x3v, dm, dk));
+    std::printf("ry_per_accretor dt_report: t %.6e dt %.4e cell (m,k,j,i) (%d,%d,%d,%d) r %.5f "
+                "phi %.4f rad: rho %.4g v_r %.4g v_th %.4g v_phi %.4g km/s e/rho %.4g "
+                "(km/s)^2\n", pm->time, pm->dt, dm, dk, dj, di, hr(), hp(), hw(IDN), hw(IVX),
+                hw(IVY), hw(IVZ), hw(IEN)/hw(IDN));
+  }
   const char *lab[22] = {"Mdom", "Jdom", "Menv", "Jenv",
                          "Min", "Mout", "Mwal", "Jwal", "Jstr", "Jout", "MR", "JR", "Jin",
                          "dMin", "dMout", "dMwal", "dJwal", "dJstr", "dJout", "dMR",
@@ -2870,9 +2888,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     nz_rlo_ = hxf(0,fb);
     nz_rhi_ = hxf(0,fb + nzc);
     nz_if_ = fb;
-    if (stl1_) {
-      // peak density from the band's mass rate: the discrete sum of the inner face's
-      // rho c_T cos(phi) A over the window (A = r^2 (cos th1 - cos th2) dphi)
+    if (stl1_ || pin->DoesParameterExist("problem", "stream_mdot")) {
+      // peak density from the band's mass rate (problem/stream_mdot; required for l1, optional
+      // for volume, where it replaces rho_stream): the discrete sum over the window cells of
+      // the inner face's rho |v_r| A (A = r^2 (cos th1 - cos th2) dphi), so a supersonic
+      // nozzle delivers exactly stream_mdot (upwind face flux)
       if (!pin->DoesParameterExist("problem", "stream_mdot")) {
         fatal("stream_inject = l1 needs problem/stream_mdot (code mass/time in the band)");
       }
@@ -2883,14 +2903,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real ath = rf*rf*(std::cos(ms.x2min) - std::cos(ms.x2max))*dphk;
       Real sum = 0.0;
       for (int k=0; k<nk; ++k) {
-        const Real dph = WrapPhi(ms.x3min + (k + 0.5)*dphk);
+        const Real phk = ms.x3min + (k + 0.5)*dphk;
+        const Real dph = WrapPhi(phk - phi_s_);
         if (std::fabs(dph) < nsig_*sig_) {
-          sum += std::exp(-0.5*SQR(dph/sig_))*l1_c_*std::cos(dph)*ath;
+          const Real vr = stl1_ ? l1_c_*std::cos(phk) : std::fabs(vr_s_);
+          sum += std::exp(-0.5*SQR(dph/sig_))*vr*ath;
         }
       }
       rho_s_ = mdot/sum;
     }
   }
+  // the two stabilisers added for the L1 nozzle (10-15), keys default: on for l1, off for
+  // volume (stream_back_sink); on with any nozzle/mask (floor_keep_momentum)
+  nzback_ = stvol_ && pin->GetOrAddBoolean("problem", "stream_back_sink", stl1_);
+  dtrep_ = pin->DoesParameterExist("problem", "dt_report") &&
+           pin->GetBoolean("problem", "dt_report");
+  flmom_ = (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) &&
+           pin->GetOrAddBoolean("problem", "floor_keep_momentum", true);
   if (pin->DoesParameterExist("problem", "donor_mask")) {
     const std::string dm = pin->GetString("problem", "donor_mask");
     msk_ = (dm.compare("roche") == 0);
@@ -3002,9 +3031,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     } else if (stvol_) {
       std::printf("ry_per_accretor: stream_inject = volume: the ballistic state above is at "
                   "stream_r %.4f Rsun = %.4f d_L1; nozzle cells r %.5f .. %.5f, |dphi| < "
-                  "%.4f rad; outer boundary: outflow (outer_rho %s), dark Marshak top\n",
-                  str_r_, str_r_/(bo.dl1*asep), nz_rlo_, nz_rhi_, nsig_*sig_,
-                  orho.c_str());
+                  "%.4f rad; peak rho %.6g code%s; back sink %s, floor_keep_momentum %s; "
+                  "outer boundary: outflow (outer_rho %s), dark Marshak top\n",
+                  str_r_, str_r_/(bo.dl1*asep), nz_rlo_, nz_rhi_, nsig_*sig_, rho_s_,
+                  pin->DoesParameterExist("problem", "stream_mdot") ? " (from stream_mdot)" : "",
+                  nzback_ ? "on" : "off", flmom_ ? "on" : "off", orho.c_str());
     }
     if (msk_) {
       std::printf("ry_per_accretor: donor_mask = roche: sink where Phi < Phi(L1) = %.6g "
