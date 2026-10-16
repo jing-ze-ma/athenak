@@ -1,0 +1,1 @@
+pagerun: R_ph 54.02 Rsun, dr(R_ph) 0.1563 Rsun, H_P 1673.4930 Rsun, cells per H 10709.31, nx1 256, r 20.0-80.0 Rsun
