@@ -110,10 +110,18 @@ def column_mesa(st, c, mesa, ms, log=print):
     ev_pmin.terminal = True
     rmax = 3.0*ms['r'][-1]
     s = solve_ivp(rhs, [r0, rmax], [np.log(P0), m0], method='LSODA', rtol=1e-10,
-                  atol=[1e-12, m0*1e-12], dense_output=True, events=[ev_join, ev_pmin])
+                  atol=[1e-12, m0*1e-12], dense_output=True,
+                  events=[ev_pmin] if c.get('mesa_top') == 'surface' else [ev_join, ev_pmin])
     dl = c['dlnr']
     ext = None
-    if s.t_events[0].size:
+    surf = c.get('mesa_top') == 'surface'
+    if surf:
+        # 10-16 mesa_top = surface: MESA's T(P) all the way to its surface zone (its
+        # photosphere); R_ph = that radius, the iso atmosphere directly on top (no Hopf layer).
+        # The scaffold then reaches the photosphere as in MESA (F_MLT/F of our kappa on MESA's
+        # T gradient); the taper (extend) removes it above.
+        if not s.t_events[0].size:
+            raise RuntimeError('mode mesa (surface): the MESA profile top was not reached')
         rj = s.t_events[0][0]
         yj = s.y_events[0][0]
         Tj = float(np.exp(fT(yj[0])))
@@ -122,6 +130,17 @@ def column_mesa(st, c, mesa, ms, log=print):
         rhoj = rho_of(np.exp(yj[0]), Tj)
         mj = yj[1]
         r_e = rj
+    elif s.t_events[0].size:
+        rj = s.t_events[0][0]
+        yj = s.y_events[0][0]
+        Tj = float(np.exp(fT(yj[0])))
+        guess[0] = float(np.exp(np.interp(np.log(min(rj, ms['r'][-1])), np.log(ms['r']),
+                                          np.log(ms['rho']))))
+        rhoj = rho_of(np.exp(yj[0]), Tj)
+        mj = yj[1]
+        r_e = rj
+    elif s.t_events[1].size and c.get('top_fit', 'two_sided') == 'two_sided':
+        return two_sided(st, c, mesa, ms, s, fT, dT, rho_of, guess, log)
     elif s.t_events[1].size:
         # the MESA profile ends below tau_j (e.g. L. Ma's BSG file, top row T 63 kK): continue
         # OUTWARD with the mode-'global' interior equations (local MLT++ with OUR kappa,
@@ -238,18 +257,23 @@ def column_mesa(st, c, mesa, ms, log=print):
     excess = fr > 1.0
     fm = np.clip(1.0 - fr, 0.0, 1.0)
     Fr = F*np.minimum(fr, 1.0)
-    # Hopf layer OUTWARD from (r_j, rho_j, tau_j) to tau 2/3
-    R, rho_ph, s1 = hopf_out(st, rj, rhoj, tauj, GMj, c['rtol'])
-    if R is None:
-        raise RuntimeError('mode mesa: the Hopf layer never reached tau 2/3')
-    Tph = (3.0*(LUM/(4*np.pi*R**2))/(4.0*SIG)*(2.0/3.0 + q_hopf(2.0/3.0)))**0.25
-    drn = c['drn_atm_rph']*R
-    r_h = rj + drn*np.arange(1, int(np.ceil((R - rj)/drn)) + 1)
-    r_h = np.concatenate([r_h[r_h < R*(1.0 - 1e-9)], [R]])
-    yh = s1.sol(r_h)
-    tau_h = np.maximum(yh[1], 1e-8)
-    T_h = (3.0*(LUM/(4*np.pi*r_h**2))/(4.0*SIG)*(tau_h + q_hopf(tau_h)))**0.25
-    rho_h = np.exp(yh[0])
+    if surf:
+        R, rho_ph, Tph = rj, rhoj, Tj
+        drn = c['drn_atm_rph']*R
+        r_h, T_h, rho_h = np.array([]), np.array([]), np.array([])
+    else:
+        # Hopf layer OUTWARD from (r_j, rho_j, tau_j) to tau 2/3
+        R, rho_ph, s1 = hopf_out(st, rj, rhoj, tauj, GMj, c['rtol'])
+        if R is None:
+            raise RuntimeError('mode mesa: the Hopf layer never reached tau 2/3')
+        Tph = (3.0*(LUM/(4*np.pi*R**2))/(4.0*SIG)*(2.0/3.0 + q_hopf(2.0/3.0)))**0.25
+        drn = c['drn_atm_rph']*R
+        r_h = rj + drn*np.arange(1, int(np.ceil((R - rj)/drn)) + 1)
+        r_h = np.concatenate([r_h[r_h < R*(1.0 - 1e-9)], [R]])
+        yh = s1.sol(r_h)
+        tau_h = np.maximum(yh[1], 1e-8)
+        T_h = (3.0*(LUM/(4*np.pi*r_h**2))/(4.0*SIG)*(tau_h + q_hopf(tau_h)))**0.25
+        rho_h = np.exp(yh[0])
     # column floor (rule needs rho_ph) and the isothermal atmosphere above R_ph
     rho_floor = c['rho_floor'] if c.get('rho_floor') else \
         10.0**np.round(np.log10(c['rho_floor_rel']*rho_ph))
@@ -338,3 +362,124 @@ def hopf_out(st, rj, rhoj, tauj, GM, rtol):
     if s1.t_events[0].size == 0:
         return None, None, None
     return s1.t_events[0][0], float(np.exp(s1.y_events[0][0][0])), s1
+
+
+def two_sided(st, c, mesa, ms, s, fT, dT, rho_of, guess, log):
+    """10-16: the MESA profile is truncated below tau_j (L. Ma's BSG file).  Two-sided fit
+    instead of a density jump:
+      outward: MESA T(P) + our HSE (G m(r)) from the column bottom to the profile top r_e;
+      inward:  the mode-global surface column (Hopf + iso atmosphere, local MLT of the spec,
+               MESA defaults = plain Cox MLT alpha 2) from R_ph down into [0.9 r_e, r_e],
+               point mass G m(r_e);
+    FREE PARAMETER: R_ph (within c['fit_dR'] = 4 % of the target; fit points in [0.75, 1] r_e).  For each R_ph the fit point
+    r* is where P_in = P_out (P continuous); R_ph is chosen so that T is continuous there too
+    (then rho is continuous through the EOS).  If no root: the R_ph with the smallest |dlnT|."""
+    from scipy.optimize import brentq
+    from .column import column_agcar_ge
+    LUM = st.LUM
+    r_e = s.t_events[1][0]
+    m_e = float(s.y_events[1][0][1])
+    gm_save, R_save = st.GM, st.RSTAR
+    rlo = c.get('fit_rlo', 0.75)*r_e
+    rr = np.linspace(rlo, r_e*(1 - 1e-9), 600)
+    yo = s.sol(rr)
+    lnPo, lnTo = yo[0], fT(yo[0])
+    Rt = c['R_target']
+
+    def track(R, dlnr):
+        st.RSTAR, st.GM = R, G_CODE*m_e
+        cc = dict(c, scheme='agcar_ge', legacy_deep=False, r_bot=rlo*0.995, r_wall=rlo*0.995,
+                  dlnr=dlnr, drn_atm=c['drn_atm_rph']*R,
+                  rho_floor=c.get('rho_floor') or 1e-16)
+        try:
+            return column_agcar_ge(st, cc)
+        finally:
+            st.GM = gm_save
+
+    def resid(R, dlnr=1e-3, full=False):
+        col = track(R, dlnr)
+        m = (col['r'] >= rlo*0.995) & (col['r'] < col['rj'])
+        P = st.thermo(col['T'][m], col['rho'][m])[0]
+        lPi = np.interp(rr, col['r'][m], np.log(P))
+        lTi = np.interp(rr, col['r'][m], np.log(col['T'][m]))
+        dP = lPi - lnPo
+        k = np.where(np.sign(dP[1:]) != np.sign(dP[:-1]))[0]
+        if k.size == 0:
+            return (None, None, col) if full else np.nan
+        k = k[-1]
+        w = dP[k]/(dP[k] - dP[k+1])
+        rs = rr[k] + w*(rr[k+1] - rr[k])
+        dTs = (1 - w)*(lTi[k] - lnTo[k]) + w*(lTi[k+1] - lnTo[k+1])
+        return (rs, dTs, col) if full else dTs
+    dR = c.get('fit_dR', 0.04)
+    Rs = Rt*(1 + dR*np.linspace(-1, 1, 17))
+    fs = [resid(R) for R in Rs]
+    for R, f in zip(Rs, fs):
+        log('    two-sided fit scan: R_ph %.6e (%.4f target): dlnT at the P-match point %s'
+            % (R, R/Rt, 'no P match in [%g, 1] r_e' % (rlo/r_e) if f != f else '%+.4e' % f))
+    ok = [i for i in range(len(fs) - 1) if fs[i] == fs[i] and fs[i+1] == fs[i+1] and
+          np.sign(fs[i]) != np.sign(fs[i+1])]
+    if ok:
+        i = min(ok, key=lambda j: abs(Rs[j] - Rt))
+        Rbest = brentq(lambda R: resid(R, 2e-4), Rs[i], Rs[i+1], xtol=1e-7*Rt)
+        how = 'root'
+    else:
+        good = [i for i in range(len(fs)) if fs[i] == fs[i]]
+        if not good:
+            st.RSTAR = R_save
+            raise RuntimeError('two-sided fit: no P match for R_ph within +-%g' % dR)
+        i = min(good, key=lambda j: abs(fs[j]))
+        Rbest, how = Rs[i], 'min |dlnT| (no root within +-%g)' % dR
+    if not c.get('rho_floor'):          # the floor rule on the fitted photosphere
+        c['rho_floor'] = 10.0**np.round(np.log10(c['rho_floor_rel']*track(Rbest, 1e-3)['rho_R']))
+    rs, dTs, col = resid(Rbest, c['dlnr'], full=True)
+    # the outward MESA part below r*, the inward column at and above r*
+    dl = c['dlnr']
+    r0 = c['r_bot']
+    rg = np.exp(np.arange(np.log(r0), np.log(rs), dl))
+    rg = np.unique(np.concatenate([rg, [c['r_wall']]]))
+    rg = rg[rg < rs]
+    yi = s.sol(rg)
+    Ti = np.exp(fT(yi[0]))
+    guess[0] = float(np.exp(np.interp(np.log(r0), np.log(ms['r']), np.log(ms['rho']))))
+    rhoi = np.array([rho_of(np.exp(a), b) for a, b in zip(yi[0], Ti)])
+    mi = yi[1]
+    nab = dT(yi[0])
+    Pi = np.exp(yi[0])
+    kap = st.kap(Ti, rhoi)
+    F = LUM/(4*np.pi*rg**2)
+    nrad = 3.0*kap*Pi*F/(4.0*A_RAD_*CL*(G_CODE*mi/rg**2)*Ti**4)
+    fr = nab/nrad
+    excess = fr > 1.0
+    fm = np.clip(1.0 - fr, 0.0, 1.0)
+    Fr = F*np.minimum(fr, 1.0)
+    eint = rhoi*10.0**st.eos.le(np.log10(Ti), np.log10(rhoi))
+    up = col['r'] >= rs
+    out = dict(col)
+    for k_, v_ in (('r', rg), ('rho', rhoi), ('T', Ti), ('eint', eint), ('Fr', Fr),
+                   ('E', A_RAD_*Ti**4), ('fmlt', fm)):
+        out[k_] = np.concatenate([v_, col[k_][up]])
+    # continuity residuals at r*
+    Ps = np.exp(np.interp(rs, rr, lnPo))
+    Tin = np.interp(rs, col['r'], col['T'])
+    rin = np.exp(np.interp(rs, col['r'], np.log(col['rho'])))
+    Tout = float(np.exp(fT(np.log(Ps))))
+    guess[0] = rin
+    rout = rho_of(Ps, Tout)
+    Pin = st.thermo(Tin, rin)[0]
+    mw = float(np.interp(c['r_wall'], rg, mi))
+    st.RSTAR, st.GM = Rbest, G_CODE*m_e
+    out.update(scheme='mesa+two_sided', rho_floor=c['rho_floor'],
+               m_wall=mw, m_top=m_e, GM_wall=G_CODE*mw,
+               excess=dict(n=int(excess.sum()),
+                           max=float((fr[excess] - 1).max()) if excess.any() else 0.0,
+                           rlo=float(rg[excess].min()) if excess.any() else np.nan,
+                           rhi=float(rg[excess].max()) if excess.any() else np.nan),
+               interior=dict(r=rg, m=mi, nab=nab, nrad=nrad, frad=fr), ext=None,
+               fit=dict(R=Rbest, how=how, r_star=rs, r_e=r_e, dlnP=float(np.log(Pin/Ps)),
+                        dlnT=float(np.log(Tin/Tout)), dlnrho=float(np.log(rin/rout))))
+    log('  mode mesa TWO-SIDED FIT (%s): R_ph %.8e (%.5f x target %.6e); fit point r* %.6e '
+        '(%.4f Rsun; MESA top reached at %.4f Rsun); continuity residuals dlnP %+.2e dlnT %+.2e '
+        'dln rho %+.2e' % (how, Rbest, Rbest/Rt, Rt, rs, rs/6.957e10, r_e/6.957e10,
+                           out['fit']['dlnP'], out['fit']['dlnT'], out['fit']['dlnrho']))
+    return out

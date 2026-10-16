@@ -17,3 +17,5 @@ grid: {scheme: mltpp_inward, dlnr: 2.0e-4, tauj: 3.0, rho_lo: 1.0e-13, rho_hi: 3
 r_in: {rule: explicit, r_cm: 5.5656e11, bottom_cm: 4.8699e11}
 r_top: {col_top_cm: 2.7828e13, x1max_cm: 2.473909e13}
 background: {rho_floor: 1.0e-16}
+taper: {enable: false}
+seam: {enable: false}

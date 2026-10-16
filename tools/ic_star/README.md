@@ -162,6 +162,62 @@ star_utils.f90 e999399f.
   nabla_ad + f2 (nabla - nabla_ad), the make_ic_agcar_mltpp.py form. The AG Car A deep70
   regression uses it.
 
+## 2b. Photosphere seam removal (10-16; spec `taper`, `seam`, `mesa_profile.top_fit`)
+
+The hg145 and BSG gates failed in the atmosphere for the same reason, a seam at the
+photosphere:
+- the code's startup (he_ic_rad = sph1d + re_atm + he_ic_rad_hse) put tau 2/3 at a different
+  radius than the column (hg145: 112.6 vs 113.9 Rsun; BSG: 51.5 vs 53.03 Rsun);
+- the frozen F_MLT (~0.5 F for the He giant) ended abruptly there.
+
+The standard now removes it:
+1. **Taper** (`taper: {enable, tau_hi 30, tau_lo 3}`, on by default):
+   - F_MLT/F x smoothstep(ln tau): 1 at tau >= 30, 0 at tau <= 3 (tau from the mesh top with the
+     run kappa_R);
+   - F_r = F (1 - F_MLT/F), so F_r + F_MLT = L holds exactly.
+   - Why 30 -> 3: sph1d sets T to radiative equilibrium with weight 1 for tau < he_ic_rad_taua =
+     30 (he_star_m1.cpp ~821). The taper therefore lives entirely in the code's full-RE zone, and
+     radiation carries the whole flux by the Hopf join at tau 3, as it does in the RE atmosphere.
+2. **Code-consistent atmosphere** (`seam: {deck, binary, tol_cells 0.1, maxit 8}`): the column
+   is passed through the code's OWN startup solve:
+   - the binary is the CPU build of the production commit, /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db;
+   - it runs 0 cycles on the run deck with lateral 4x4, he_ic_equil and ic_rad off (they come
+     after the dump), and he_ic_rad_dump;
+   - the dumped column (sph1d E, RE T, HSE rho; F_r and F_MLT kept), with the taper re-applied,
+     becomes the new column;
+   - the loop iterates to the fixed point R_ph(column) = R_ph(sph1d) within 0.1 of the radial
+     cell at R_ph. The code prints both: 'R_ph (tau_R 2/3, run kappa) rph0 -> rph1'.
+   - The deck must have the spec's x1min and x1max, because the fine grid and tau are measured
+     from the mesh top.
+3. **Two-sided fit** for a truncated MESA profile (`mesa_profile.top_fit: two_sided`, the
+   default; `shoot` = the old eps density jump):
+   - outward: MESA T(P) + our HSE up to the profile top r_e;
+   - inward: the mode-global surface column (Hopf + iso atmosphere, local MLT of the spec =
+     MESA defaults, point mass G m(r_e)) from R_ph into [0.9 r_e, r_e];
+   - **free parameter R_ph** (within 1 %): for each R_ph the fit point r* is where P_in = P_out,
+     and R_ph is chosen so that T is continuous there too (rho then follows from the EOS). The
+     continuity residuals dlnP, dlnT and dln rho are reported. If no root exists within 1 %, the
+     smallest |dlnT| is used (reported).
+4. **Results** (regress/RESULTS.md sect. 6):
+   - **BSG:**
+     - seam fixed point in 2 passes, R_ph 51.57 Rsun;
+     - the run's startup reproduces it to 0.12-0.14 cell;
+     - two-sided fit dlnT -5e-3, dln rho +3.8e-2 at R_ph 0.970 x 53.03;
+     - gate (a) still fails: the oscillation survives without the seam, so it is likely
+       physical/closure.
+   - **AG Car A** if regenerated: +0.64 % R_ph.
+   - **He giant 14p5M:** the code's own startup does not converge (a super-Eddington RE
+     photosphere at the He/H opacity cliff), so `seam: {enable: false}` and
+     `mesa_profile.top: surface` with the taper at tau 1 -> 0.1 (`extend: true`). This is a
+     code-side limit, not an IC defect.
+5. Options:
+   - `taper.extend` continues the scaffold outward at its tau_hi value before tapering;
+   - `mesa_profile.top: surface` follows MESA's T(P) to MESA's surface zone (R_ph there, no
+     Hopf layer), for stars whose MESA convective flux reaches the photosphere.
+6. **Legacy**: `taper: {enable: false}, seam: {enable: false}` reproduces the old columns (AG Car A
+   deep70 regression). `specs/agcar_A_deep70_seam.yaml` shows how the E1 IC would change if
+   regenerated with the defaults.
+
 ## 3. Step by step for a new star
 
 1. Write `specs/<name>.yaml` (copy `bsg.yaml` with a MESA profile or `agcar_A_deep70.yaml`

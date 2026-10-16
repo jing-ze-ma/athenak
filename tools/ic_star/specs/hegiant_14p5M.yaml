@@ -17,7 +17,24 @@ composition:
 mesa_profile:
   path: /raven/ptmp/jinma/ic_star_cache/raw/mesa/14p5M_widebinary_profile14.data
   format: mesa
+  top: surface
 opacity:
   tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/hegiant_surf_hi.dat
 r_in: {rule: explicit, r_rsun: 8.0, bottom_rsun: 6.0}   # bottom: the code needs x1min - ~5 dr(wall) (hg145 31206125: 6.68)
 grid: {rho_lo: 1.0e-13, rho_hi: 3.0e-7}
+r_top: {x1max_cm: 2.473909e13}   # = hg145e1_raven.athinput (355.6 Rsun)
+seam:
+  deck: /raven/ptmp/jinma/hegiant145_1015/decks/hg145e1_raven.athinput
+  # 10-16: OFF -- the code's own sph1d + re_atm + HSE startup does not converge on any 14p5M column
+  # tried (400 outer, Gamma > 0.9 clamped in 7.8e3-1.3e4 fine cells, R_ph +3..+4 % per pass); hg145
+  # ic3 only 'converged' because its tau jumps from 0.76 to > 3000 at 112.6 Rsun (sph1d then solved
+  # only the thin layer above it).  A code-side issue (super-Eddington RE photosphere in HSE).
+  enable: false
+# 10-16 seam task: with the default top (MESA T(P) to the Hopf tau-3 temperature, Hopf layer to
+# tau 2/3, scaffold ~0 above tau 3) the code's own sph1d + re_atm + HSE startup does NOT converge for
+# this star, with or without the taper (tau 30 -> 3, or extended 30 -> 2/3): Gamma = kappa F_r/(c g)
+# > 0.9 clamped in 3e3-1e4 fine cells, 400 outer HSE iterations, R_ph +1..+4 % per pass.  MESA's
+# own structure carries F_MLT/F ~0.5 to its photosphere (the hg145 ic3 column, whose code startup
+# converges).  So the column follows MESA's T(P) to MESA's surface (mesa_profile.top = surface) and
+# the scaffold is tapered just above it, in the optically thin layer (tau 1 -> 0.1).
+taper: {tau_hi: 1.0, tau_lo: 0.1, extend: true}

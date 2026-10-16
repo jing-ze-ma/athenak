@@ -33,6 +33,7 @@ from icstd import column as COL  # noqa: E402
 from icstd import deck as DK  # noqa: E402
 from icstd import mesa as MS  # noqa: E402
 from icstd import mesacol as MC  # noqa: E402
+from icstd import seam as SM  # noqa: E402
 from icstd import spec as SP  # noqa: E402
 from icstd import tables as TB  # noqa: E402
 from icstd.micro import RSUN, LSUN, Star, SIG, q_hopf  # noqa: E402
@@ -272,6 +273,8 @@ def main():
     t1 = time.time()
     if mode == 'mesa':
         c['R_target'] = R
+        c['mesa_top'] = s['mesa_profile'].get('top', 'hopf')
+        c['top_fit'] = s['mesa_profile'].get('top_fit', 'two_sided')
         col = MC.column_mesa(st, c, mesa, ms, log)
         c['rho_floor'] = col['rho_floor']
         st.GM, st.RSTAR = col['GM_wall'], col['rph']
@@ -288,6 +291,7 @@ def main():
         '%.6e (%.4f R_ph)' % (col['scheme'], col['r'].size, time.time() - t1, col['rho_R'],
                               c['tauj'], col['rj'], col['rj']/R, col['r_floor'],
                               col['r_floor']/R))
+    taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name)
     # ---------------------------------------------------------------- analysis
     pr = AN.profile(st, col)
     if mode == 'mesa':             # the column's own gradient (MESA T(P)), not local MLT
@@ -727,6 +731,70 @@ def check_tables(log, s, st, col, ed, a):
         sys.stdout.flush()
         os.execv(sys.executable, [sys.executable] + sys.argv)
     raise SystemExit('FATAL table check: ' + ' | '.join(msg))
+
+
+def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
+    """the F_MLT taper (tau_hi -> tau_lo) and the code-consistent atmosphere (seam fixed
+    point through the code's own sph1d + re_atm + hse startup solve; icstd/seam.py)"""
+    tp, sm = s['taper'], s['seam']
+    if not tp['enable']:
+        log('taper: off')
+        return
+    L = col['L']
+    fm0 = col['fmlt'].copy()
+    r0 = col['r'].copy()
+    fm, Fr, tau = SM.taper(col['r'], col['rho'], col['T'], fm0, L, st.kap, x1max,
+                           tp['tau_lo'], tp['tau_hi'], tp.get('extend', False))
+    col['fmlt'], col['Fr'] = fm, Fr
+    k = (tau < tp['tau_hi']) & (tau > tp['tau_lo'])
+    log('taper%s: F_MLT/F x smoothstep(ln tau) from tau %g (1) to %g (0): rows %.5f-%.5f R_ph; '
+        'max F_MLT/F removed %.3f; F_r + F_MLT = L kept' % (
+            ' (scaffold extended outward from tau_hi)' if tp.get('extend') else '',
+            tp['tau_hi'], tp['tau_lo'], col['r'][k].min()/col['rph'] if k.any() else np.nan,
+            col['r'][k].max()/col['rph'] if k.any() else np.nan, float(np.max(fm0 - fm))))
+    if not sm.get('enable') or not sm.get('deck'):
+        log('seam: off (no seam.deck)')
+        return
+    wd = sm.get('workdir') or os.path.join(out, 'seam')
+    os.makedirs(wd, exist_ok=True)
+    c0 = os.path.join(wd, 'col_0.txt')
+    SM.write_col(c0, ['# tools/ic_star %s: column after build + taper (seam pass input)' % name],
+                 col['r'], col['rho'], col['eint'], col['Fr'], col['E'], col['T'], col['fmlt'])
+    blk = SM._block(open(sm['deck']).read().splitlines(), 'mesh')
+    dk = {x.split('=')[0].strip(): x.split('=')[1].split('#')[0].strip() for x in blk}
+    if abs(float(dk['x1min'])/x1min - 1) > 1e-8 or abs(float(dk['x1max'])/x1max - 1) > 1e-8:
+        raise SystemExit('seam: the deck %s has x1min/x1max %s/%s, the spec %.10e/%.10e'
+                         % (sm['deck'], dk['x1min'], dk['x1max'], x1min, x1max))
+    ov = ['mesh/nx2=4', 'mesh/nx3=4', 'meshblock/nx2=4', 'meshblock/nx3=4',
+          'meshblock/nx1=%s' % dk['nx1'], 'problem/he_opac_table=%s' % ot['ross'],
+          'problem/he_planck_table=%s' % ot['planck'],
+          'problem/he_gm=%.10e' % st.GM] + list(sm.get('overrides', []))
+    if mode == 'mesa':
+        ov.append('problem/he_gm_column=true')
+    cfg = dict(sm, workdir=wd, overrides=ov)
+    hdr = ['# tools/ic_star %s column, seam fixed point' % name]
+
+    def fm0_of(r):
+        return np.interp(r, r0, fm0)
+    cur = c0
+    cfg['overrides'] = ov + ['rad_m1/implicit_flux_x1min=%.12e' % AN.flux_at(col, x1min)]
+    fin, hist = SM.fixed_point(cfg, None, fm0_of, L, st.kap, x1max, hdr, cur, log,
+                               tp['tau_lo'], tp['tau_hi'], tp.get('extend', False))
+    r, rho, eint, Fr, E, T, fm = SM.read_col(fin)
+    if mode == 'mesa':            # the interior diagnostics on the new rows
+        ii = col['interior']
+        keep = r <= ii['r'][-1]
+        col['interior'] = {kk: (np.interp(r[keep], ii['r'], ii[kk]) if kk != 'r' else r[keep])
+                           for kk in ii}
+    col.update(r=r, rho=rho, eint=eint, Fr=Fr, E=E, T=T, fmlt=fm)
+    col['rph'] = hist[-1][2]
+    col['rho_R'] = float(np.exp(np.interp(col['rph'], r, np.log(rho))))
+    up = (r > col['rph']) & (rho <= rho.min()*(1 + 1e-6))
+    col['r_floor'] = float(r[up][0]) if up.any() else r[-1]
+    col['seam'] = hist
+    log('seam: FIXED POINT R_ph(column) = R_ph(code sph1d) = %.8e (%d passes; last dR %.3e cm = '
+        '%.4f cells); column = %s' % (col['rph'], len(hist), hist[-1][2] - hist[-1][1],
+                                      (hist[-1][2] - hist[-1][1])/hist[-1][3], fin))
 
 
 if __name__ == '__main__':

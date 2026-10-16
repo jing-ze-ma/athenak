@@ -46,3 +46,5 @@ r_top:
   rtop_fac: 3.0
 background:
   rho_floor: 1.0e-16    # = the rule's value (decade of 4e-6 rho_ph)
+taper: {enable: false}   # legacy: the E1 column has no taper / no seam pass (README sect. 2b)
+seam: {enable: false}

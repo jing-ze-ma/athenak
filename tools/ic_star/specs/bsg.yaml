@@ -16,4 +16,7 @@ opacity:
   # TOPS X 0.7 Z 0.008 rho 1e-14..1 (Viper bsg_1001/opac); the low-rho file could not be fetched
   # (LANL down 10-15): extension from log rho -14 (= bsg_newsetup_1015 ext2nolo)
   tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/bsg_x0.7_z0.008_hi.dat
-r_in: {rule: hp_below_cz, n_hp: 4.5}
+r_in: {rule: explicit, r_rsun: 20.0, bottom_rsun: 18.0}   # = the gate decks (g480 ghost margin needs < 18.3)
+r_top: {x1max_cm: 5.5656009644e12}   # = bsg_s0p_std_g480.athinput (80 Rsun)
+seam:
+  deck: /raven/ptmp/jinma/bsg_newsetup_1015/decks/bsg_s0p_std_g480.athinput

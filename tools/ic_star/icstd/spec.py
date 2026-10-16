@@ -49,6 +49,14 @@ DEFAULTS = {
         'balance_rmax_rel': 0.8808,     # he_ic_balance_rmax x R_ph (E1 342/388.3 Rsun)
     },
     'ramp': {'start_turnovers': 2.0, 'time_turnovers': 10.0},
+    # 10-16 seam removal (icstd/seam.py): F_MLT taper tau 30 -> 3 (on for new stars) and the
+    # code-consistent atmosphere through the code's own sph1d (needs seam.deck = the run deck)
+    'taper': {'enable': True, 'tau_lo': 3.0, 'tau_hi': 30.0},
+    'seam': {'enable': True, 'deck': None,
+             'binary': '/raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db',
+             'tol_cells': 0.1, 'maxit': 8, 'omp': 8, 'timeout': 7200,
+             'launcher': ['bash', '-lc', 'module purge >/dev/null 2>&1; '
+                          'module load gcc/13 openmpi/5.0; exec "$0" "$@"']},
     'eos': {'logd_min': -21.0, 'logd_max': -1.0, 'logt_max': 6.8, 'dlog': 0.02},
     'opacity': {'ld_ext': -21.0},
 }

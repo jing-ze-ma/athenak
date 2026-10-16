@@ -136,3 +136,83 @@ there. R_ph 1.055; m_env 1.064.
   separatrix, and the branch depends even on the ODE tolerance.
 - Mode mesa is the IC for stars with MESA models. Global mode stays for stars without one
   (AG Car), always with its flags and the scan.
+
+## 6. Photosphere seam removal (10-16)
+
+Binary for the seam passes: /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db (CPU build of
+fin51-r-fix b16b66db, md5 13782668). Gates: /raven/ptmp/jinma/icstd_1016/runs/<name>, production
+A100 binary b16b66db (md5 042157c1), 1 A100, 16x16 lateral, seed 0, 3 d, `regress/gate_atm.py`.
+
+**Regressions after the change** (taper and seam off in the legacy specs):
+- AG Car A deep70: unchanged (max rel 3.06e-6 = F_MLT/F last digit; rho 3.65e-8);
+- hg145 ic2: still bit for bit (14354/14354).
+
+**AG Car A, if regenerated with the defaults** (`specs/agcar_A_deep70_seam.yaml`, seam on the E1 deck):
+- the taper removes up to F_MLT/F 0.32 at 0.978-0.995 R_ph;
+- the seam fixed point converges in 7 passes, oscillating with ratio -0.48 (+7.1, -2.9, +1.4,
+  -0.66, +0.32, -0.15, +0.07 cells) to **R_ph 2.71877e13 = 390.8 Rsun (+0.64 % vs 388.3)**;
+- the interior is identical below 370 Rsun; rho at 388-400 Rsun is 1.3-16x the old isothermal
+  cap (the RE + HSE atmosphere).
+
+**BSG** (`specs/bsg.yaml`, cut 48.32 Rsun, two-sided fit, taper 30 -> 3, seam on the g480 deck):
+- Two-sided fit, free parameter R_ph:
+  - P is continuous at the fit point (dlnP 3e-6);
+  - the T-continuity root lies just beyond the profile top, so the fit takes min |dlnT| over the
+    +-4 % scan;
+  - result: **R_ph 3.5786e12 (0.970 x Ma's 53.03 Rsun)**, fit point r* 42.31 Rsun;
+  - **continuity residuals dlnT -5.3e-3, dln rho +3.8e-2** (the previous eps-shoot jump was
+    +37 %);
+  - no root exists with |dR_ph| <= 1 %: the T(P) match needs R_ph ~0.970-0.975.
+- Seam: pass 0 gives 3.5786e12 -> 3.5877e12 (+3.9 cells); pass 1 gives 3.5877e12 -> 3.5877e12
+  (0 cells). **R_ph = 3.5877e12 = 51.57 Rsun.**
+  - In the gate runs (full in-code chain) the startup sph1d gives 3.58803e12 on g480 (+0.14
+    cell) and 3.589e12 on the P grid (+0.12 cell), with max |E/E_col - 1| 2e-5 (g480) and 3e-4.
+  - The worker's old tool column had a 1.5 Rsun mismatch (53.03 vs 51.5).
+- Gate (a), band 0.99-1.1 R_ph, max |<v_r>| in km/s / max |rho/rho_0 - 1|:
+
+  | grid | 0.45 d | 0.75 d | 1.05 d | 1.65 d | 2.25 d | 2.85 d | verdict |
+  |---|---|---|---|---|---|---|---|
+  | g480 | 0.61/0.18 | 1.13/0.27 | 4.38/0.26 | 14.0/1.0 | 10.2/2.1 | 15.2/129 | FAIL (growth) |
+  | P (256) | 0.38/0.41 | 1.28/0.51 | 2.23/0.57 | 7.3/0.94 | 8.7/2.6 | 17.8/201 | FAIL (growth) |
+
+  - The interior 0.5-0.9 R_ph stays at <= 0.4 km/s.
+  - The 0.9-0.99 R_ph band grows to 2-3.7 km/s.
+  - The growth matches the worker's d0/d1 (4-8 km/s at 1-1.25 d, 40-50 by 2-3 d) at about half
+    the amplitude.
+  - **The seam and the density jump are removed, and the oscillation survives:** not a setup
+    defect of the IC, most likely a physical (or closure) pulsation of the near-Eddington outer
+    envelope.
+
+**He giant 14p5M** (`specs/hegiant_14p5M.yaml`, mode mesa):
+- The code's own startup (sph1d + re_atm + HSE) does NOT converge in the seam passes for any
+  column with a radiative photosphere. Configurations tried:
+  1. default taper 30 -> 3;
+  2. no taper (the column's F_MLT/F is ~0 by tau 3);
+  3. scaffold extended from tau 30 to 2/3;
+  4. MESA T(P) to MESA's surface with the taper at tau 1 -> 0.1.
+
+  Every one ran 400 outer HSE iterations with Gamma > 0.9 clamped in 7.8e3-1.3e4 fine cells,
+  and R_ph moved +1..+4 % per pass. That is about +31-35 cells in one pass; with the default taper
+  R_ph grew another 3.3 % in pass 1, so the iteration diverges.
+- hg145 ic3 'converged' only because its tau jumps from 0.76 to > 3000 at 112.6 Rsun: sph1d then
+  solved only the thin layer above. That jump is the dense shell seen in the hg145 gate.
+- The seam is a code-side limit for this super-Eddington photosphere: the He/H recombination
+  opacity cliff, kappa 0.01 -> 5 between 7.5 and 20 kK, Gamma_L up to 6.
+- Gate column: specs/hegiant_14p5M.yaml with `top: surface`, taper tau 1 -> 0.1 (extend), seam off.
+- In the gate startup the sph1d HSE converged, but to a collapsed atmosphere:
+  - R_ph 7.964e12 -> 7.8635e12 (-1.26 %, ~11 cells);
+  - rho above x 0.006;
+  - photosphere at the r_b of the RE zone.
+- Gate (a) on the deck grid 704, band 0.99-1.1 R_ph:
+  - max |<v_r>| 1.42 km/s (0.4 d), DECAYING to 0.7-1.2 km/s by 2.85 d (no growth);
+  - max |drho| 2.3: the collapsed thin atmosphere refills over the first ~1 d, then stays;
+  - interior quiet (<= 0.02 km/s);
+  - FAIL on the 10 % rho criterion, no oscillation.
+  - Compare the worker gate: +16 km/s and rho x548 by 3.2 d.
+- Gate (a), 2x radial (1408, same startup R_ph 7.8636e12), band 0.99-1.1 R_ph:
+  - max |<v_r>| 5.9 km/s at 1.0 d (1.03-1.1 R_ph), decaying to 1.8-2.0 km/s by 2.85 d (no growth);
+  - max |drho| 14 (the collapsed thin atmosphere refills);
+  - FAIL on the thresholds.
+- Verdict for 14p5M: no growing oscillation on either grid. The failure is the startup collapse
+  of the thin atmosphere (rho x0.006 by the in-code sph1d HSE), which refills. That is a setup
+  defect of the in-code chain for this star, which the IC tool alone cannot remove.
