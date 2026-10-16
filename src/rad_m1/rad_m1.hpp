@@ -617,6 +617,8 @@ class RadiationM1 {
   // step-frozen x1 face data of the blend (alpha, tau_f weight) from rho kappa_T at T^n
   // (snapshot ktn, taken before the pass-0 opacity update), not at the predicted T
   bool impl_face_ktn = false;
+  // beamsign-1016 <rad_m1>/implicit_beam_sign = bright (rad_m1_implicit.cpp)
+  bool impl_beam_sign = false;
   DvceArray4D<Real> ktn;
   Real impl_stall_fac = 0.5;    // implicit_stall_fac (implicit_gas_newton_switch test)
   int impl_gn_sw = 0, impl_gn_sw_min = 20;   // implicit_gas_newton_switch (window, min)

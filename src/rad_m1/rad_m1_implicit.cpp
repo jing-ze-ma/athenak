@@ -1692,6 +1692,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // implicit_face_opac_n (fixbundle-1009 F2): rad_m1.hpp.  defaults-1009 (user 10-09):
   // default true on a fresh run; a restart whose file lacks the key keeps false
+  // beamsign-1016: implicit_beam_sign = lagged (default, bitwise) | bright (opt-in):
+  // the x1 berthon/blend wave fan of a fixed-tensor closure on sp/cs takes its
+  // direction from the brighter cell of the face (see m1_impl_aphll).  Read only when
+  // named (parameter dump unchanged)
+  if (pin->DoesParameterExist("rad_m1","implicit_beam_sign")) {
+    const std::string bs = pin->GetString("rad_m1","implicit_beam_sign");
+    if (bs.compare("bright") == 0) {
+      impl_beam_sign = true;
+    } else if (bs.compare("lagged") != 0) {
+      ImplFatal("<rad_m1>/implicit_beam_sign = '" + bs + "' is not a choice (lagged | "
+                "bright)");
+    }
+  }
   impl_face_ktn = pin->GetOrAddBoolean("rad_m1","implicit_face_opac_n",
                                        !global_variable::restart_run);
   if (impl_ew_max < 0.0 || impl_ew_max >= 1.0 || !(impl_ew_gam > 0.0)) {
@@ -12155,6 +12168,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // thin limit (berthon keeps whatever f it is given), so a beam from a photosphere
       // kept f ~ 0.89 where the formal solution says 0.97 (AG Car A column, 3 R_ph).
       const bool vfix = sphf && trans && !edd && (vetsc || tauc);
+      const bool bsgn = impl_beam_sign;   // beamsign-1016
       const bool fktn = impl_face_ktn && (it == 0);   // F2: kappa_T at T^n
       auto ktn_ = ktn;
       const bool bvx = bvec_x1 && !impl_beam_hr;   // blendall-1009
@@ -12236,6 +12250,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real rfl = iw_(m,M1_IW_RF0,k,j,im);
         Real rfr = iw_(m,M1_IW_RF0,k,j,ip);
         if (vfix) {
+          // beamsign-1016 (implicit_beam_sign = bright, opt-in): the sign of a cell's
+          // lagged comoving flux RF0 is round-off noise where E sits at the floor (ahead
+          // of a light front RF0 = F/(cE) is O(1) with a random sign), and the fixed-
+          // tensor magnitude f(D_rr) ~ 1 turns that sign into a one-sided wave fan: the
+          // face upwinds from the dark side in some columns and not in others.  `bright`
+          // takes the beam direction of BOTH cells from the brighter cell of the face
+          if (bsgn) {
+            const bool lb = (iw_(m,M1_IW_EP,k,j,im) >= iw_(m,M1_IW_EP,k,j,ip));
+            const Real sg = lb ? rfl : rfr;
+            rfl = sg;
+            rfr = sg;
+          }
           Real cq = fmin(fmax(M1DDiag(iw_,vd_,dfull,m,0,k,j,im), 1.0/3.0), 1.0);
           Real sq = 0.5*(5.0 - 3.0*cq);
           rfl = copysign(sqrt(fmax((4.0 - sq*sq)/3.0, 0.0)), rfl);
