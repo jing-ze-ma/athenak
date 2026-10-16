@@ -9602,6 +9602,14 @@ void RadiationM1::ImplicitF0Init() {
           if (act) {n += 1;}
         }, Kokkos::Sum<int>(nd));
       nbad += nd;
+      if (nd > 0 && std::getenv("M1_CSDBG") != nullptr) {
+        auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), iw);
+        std::cout << "CSDBG d=" << d << " A(m0,ks,js-1..js+1,is): "
+                  << h(0,ca,ks,js-1,is) << " " << h(0,ca,ks,js,is) << " "
+                  << h(0,ca,ks,js+1,is) << " V: " << h(0,M1_IW_V2,ks,js,is) << " "
+                  << h(0,M1_IW_V3,ks,js,is) << " ADV " << h(0,M1_IW_ADV,ks,js,is)
+                  << std::endl;
+      }
     }
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, &nbad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
