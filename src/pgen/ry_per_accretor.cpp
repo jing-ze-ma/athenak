@@ -300,8 +300,8 @@ Real l1_c_ = 0.0, l1_t_ = 0.0; // L1 nozzle: speed along -x (km/s) and uniform T
 // radiation energy put into the lobe by donor_irr
 bool accx_on_ = false;
 bool nzback_ = false;          // problem/stream_back_sink: the sector behind the nozzle is sink
-bool flmom_ = false;
-bool dtrep_ = false;           // problem/dt_report: print the hydro dt-setting cell at hst outputs           // problem/floor_keep_momentum (radeq floor: v = m/rho_amb, capped)
+bool flmom_ = false;           // problem/floor_keep_momentum (radeq floor: v = m/rho_amb, capped)
+bool dtrep_ = false;           // problem/dt_report: print the hydro dt-setting cell at hst outputs
 Real accx0_[2] = {0.0, 0.0}, accx1_[2] = {0.0, 0.0};
 
 KOKKOS_INLINE_FUNCTION
@@ -2922,7 +2922,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // the two stabilisers added for the L1 nozzle (10-15), keys default: on for l1, off for
   // volume (stream_back_sink); on with any nozzle/mask (floor_keep_momentum)
-  nzback_ = stvol_ && pin->GetOrAddBoolean("problem", "stream_back_sink", stl1_);
+  nzback_ = stvol_ && pin->GetOrAddBoolean("problem", "stream_back_sink", true);
   dtrep_ = pin->DoesParameterExist("problem", "dt_report") &&
            pin->GetBoolean("problem", "dt_report");
   flmom_ = (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) &&
