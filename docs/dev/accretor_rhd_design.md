@@ -886,3 +886,32 @@ is the alternative.
 - Band-to-sphere: Lmeas/Ltop scale the domain sum by 4 pi / (domain solid angle) (= 4 pi / (2 sin 20 deg x 2 pi) for
   +-20 deg); unchanged code. env_lin_band_factor stays 0.963286: the star in this code is the equatorial band
   extruded in theta (14.1), so the bottom flux of every theta column is the band's.
+
+### 14.5 2-D regression gate (Caltech, 1 H200, debug QoS; accretor_1015/g3d/gate)
+7fb237a8 (the bigdom code head) vs 049c1f39, the handover deck as run (b145: nozzle 14.5, mask, donor_irr, stream on
+from t = 0, dt_report), 20 cycles: **BITWISE** - user and hydro hst, all hydro_w and m1 bins, both rst files
+identical as whole files; cycle/time/dt and dt_report lines identical (only the wall-clock field differs). Same
+result for the first 3-D commit 7ef6d8af.
+
+### 14.6 3-D half-resolution benchmark (deck docs/handover/accretor-bigdom-1015/b3d_half.athinput)
+- Grid: nx1 420 (the bigdom 840 halved: old 640-cell map at half resolution, f_stretch_r_tail_nin 320 / ij 260, every
+  other face of the 2-D grid; nozzle cells r 14.472-14.627), nx2 114 (theta 69.96..110.04 deg, dtheta = dphi =
+  2 pi/1024), nx3 1024: **49,029,120 cells**; 4 MeshBlocks 420 x 114 x 256 on 4 H200 (one block in x1 for the nozzle
+  and vet_col). (The 320 x 114 x 1024 = 37,355,520 of the old domain at half resolution.)
+- Keys as the 2-D handover deck plus stream = true from t = 0, stream_mdot 254.843, stream_sigma_z 1.0054;
+  env_lin_band_factor 0.963286 kept (14.4).
+- **Sanity run (049c1f39, 4 H200, debug QoS, 200 cycles to t 0.00282; accretor_1015/g3d/b3d):** no FATAL, 0
+  NON-CONVERGED, 0 dt retries, Picard mean 2.8 (max 5). dt **1.408e-5** flat (2 x the full-resolution 2-D 7.05e-6),
+  set by an envelope cell at rest (r 8.786, the fine plateau), not by the nozzle or the mask. Nozzle face rate
+  Mnzf **254.93 -> 254.89** per 2e-4 interval after the fill (+0.02-0.04 % of 254.843); peak rho 0.249341, central
+  slice 18.011 in 2-D band units (14.2). z profile at the nozzle (bin, phi cell 0.034 rad): Gaussian in z_f with
+  sigma_z 1.0054 to 0.2-2 % (first commit, cell-centre z; the r_f fix of 049c1f39 makes it exact), cut at
+  |z| = 3 sigma_z, floor outside. Mask Mmsk 7.4e-5 by t 0.0028, smooth; Eirr grows linearly, Ltop 1.44e5 -> 1.90e5
+  Lsun-equivalent (donor light leaving r_out; Lmeas 4.45e4 -> 4.54e4 as in 2-D). GPU memory 24.6 GB per H200.
+- Cost: **0.80 s/cycle** steady (cycles 130-200), 1.0-1.9 s/cycle during the first ~120 cycles (switch-on
+  transient). P_orb 0.473169 code / dt 1.408e-5 = 33,600 cycles/orbit -> **~30 H200-h per orbit** at 0.80 s
+  (~45 at 1.2 s/cycle), pre-impact. Per GPU 15.3 M cell-cycles/s, consistent with the 2-D run (6.9 M cells, 0.51-0.56
+  s/cycle, 13 M/s). Full resolution (8x cells, 2x cycles): ~480 H200-h per orbit on the big domain, memory ~0.8 TB
+  (>= 8-16 H200). These are pre-impact, quiet-envelope numbers: the 2-D orbit1 impact needed dt retries and more
+  Picard passes, and the true 3-D forces (14.1) are not in yet; the user's planning numbers (~300 half / ~2,500 full
+  per orbit on the old domain, x1.3 for the big one) are 5-10x above this measurement.
