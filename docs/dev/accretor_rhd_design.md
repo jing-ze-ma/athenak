@@ -915,3 +915,66 @@ result for the first 3-D commit 7ef6d8af.
   (>= 8-16 H200). These are pre-impact, quiet-envelope numbers: the 2-D orbit1 impact needed dt retries and more
   Picard passes, and the true 3-D forces (14.1) are not in yet; the user's planning numbers (~300 half / ~2,500 full
   per orbit on the old domain, x1.3 for the big one) are 5-10x above this measurement.
+
+## 15. v4: donor light scaled to the 3-D dilution, gravity-darkened donor, stream-lit back sink, clean sinks (2026-10-16, Caltech, accretor-bigdom-1015)
+
+Raven (NOTE-2026-10-16-raven-accretor-bigdom.md, ADDENDUM 1) showed that in the 2-D band the donor light (13.3,
+lobe held at a T_d^4) over-irradiates the gainer: E_rad near the star ~5x at all phi, |F| ~ cE mostly azimuthal,
+~30x the 3-D dilution L_d/(4 pi D^2) ~1.5e5 code at the facing side; this drives the thin atmosphere (r 9.1-9.6)
+to 200-940 km/s and dt down 2-3x (donor_irr = false: dt 7.03e-6 flat, 47 km/s). User decisions 10-16:
+scale the donor light down to the physical strength (keep it on); gravity-darken the donor; the back-sink sector
+holds the stream's own light; zero the sink momentum after the radiation step. **Status: implemented (5b0d4bc1),
+builds (GPU nofma, md5 064f2963), NOT RUN.** The project was handed to Raven on 10-16 (user) before the Caltech
+static check and the bitwise gate ran; Raven owns the tests (TASK-2026-10-16-raven-accretor-bigdom-HANDOVER.md).
+
+### 15.1 Gravity darkening (problem/donor_gdark = beta, default 0.25; donor_gdark_tfloor, default 0.3)
+- The lobe surface is the L1 equipotential of the rotating-frame Roche potential the code uses (RochePotXYZ =
+  RochePot3 in Cartesian). g_eff = |grad Phi| (analytic, RocheGeffXYZ). Von Zeipel for a radiative envelope:
+  F ~ g_eff, T_loc^4 = C g_eff^(4 beta), floored at (tfloor T_mean)^4.
+- Each mask cell holds E = s a T_loc^4 (F = 0), with g_eff taken at the SURFACE point where the ray from the donor
+  centre through the cell leaves the lobe (DonorSurfT: march in 0.005 a steps, capped at the L1 distance, then
+  40 bisections), not the cell's own |grad Phi| (which goes to 0 at the donor centre and is not a surface value).
+  A ray through the neck (no crossing) gives g = 0 -> the floor.
+- Normalisation: int sigma T_loc^4 dA = L_d (problem/donor_lum) over the FULL 3-D lobe surface (rays on a 720 x 48
+  quarter grid about the L1 axis; the lobe is symmetric in y and z), also in the 2-D band (the band holds the
+  equatorial cut of the 3-D donor). T_mean^4 = L_d/(sigma A_lobe). beta = 0 keeps the old uniform T_d
+  (4 pi R_L^2 Eggleton normalisation) exactly.
+- Values (a 33.2596, q 1.125, L_d 69183 Lsun): A_lobe 2133 Rsun^2 (4 pi R_L^2 2105), in-plane perimeter 86.27 Rsun,
+  T_mean 25934 K; in-plane T_loc (python twin of the host integral, 360 x 24 rays) by angle alpha from the L1
+  axis: 7.8 kK (0.25 deg, the 0.3 T_mean floor), 16.9 kK (5 deg), 21.4 kK (15), 24.2 kK (30), 26.2 kK (60, 90),
+  25.5 kK (120), 24.2 kK (180, the back; outside the domain, r_out 24.34 < a). The code prints its own table
+  (alpha 0..180 and the pole) at start-up; check it against these.
+
+### 15.2 donor_irr_scale (multiplies the held lobe E, uniform or gravity-darkened)
+- problem/donor_irr_scale given: used as is. Absent: **1 in 3-D**; **auto in the 2-D band: s = s_geo x s_m1**.
+- s_geo = (L_3D/(4 pi D^2)) / (L_2D/(2 pi D)) = int T_loc^4 dA / (2 D oint T_loc^4 dl): the band with reflecting
+  theta walls is a donor infinitely extended in z, whose light dilutes as 1/D (cylinder) instead of 1/D^2 (sphere);
+  for a sphere s_geo = R/D. D = a - problem/donor_irr_rcmp (default 9.6, the facing photosphere) = 23.66.
+  s_geo = 0.523 (uniform), 0.636 (beta 0.25). Target 3-D flux at D: 1.54e5 (uniform) / 1.52e5 code (printed).
+- s_m1 = problem/donor_irr_m1fac (default 1): the band M1/vet_col transport's excess over ideal cylindrical
+  dilution. **Not calibrated.** Raven measured the facing flux ~30x the target with s = 1 (uniform); ideal
+  transport would give only 1/s_geo ~2x, so the remaining ~15x is M1 numerics (held isotropic cell emits ~cE/2,
+  beams do not spread, vet_col radial columns cannot represent the lateral light; fix 3). If that holds,
+  s_m1 ~ 1/15 and s ~ 0.035-0.04 (Raven's stopgap: ~1/30, T_d,eff ~11 kK). Calibrate from a static arm with s = 1:
+  s_m1 = target / (measured facing donor flux at r 9.6, minus the donor_irr = false arm) / s_geo.
+
+### 15.3 Back-sink sector (nozzle -> L1): the stream's own light (user 10-16)
+- Was: held a T_d^4 like the lobe (doubled Eirr in the stream phase). Now: within the nozzle width (|dphi| < 3 sigma,
+  3-D also |z_f| < 3 sigma_z) it holds E = a T^4 with the NOZZLE's T profile (core env_t_stream, diffusion profile
+  StreamT, floor stream_t_surf), F = 0 (the sink gas is at rest); outside it (3-4 sigma) its radiation is left to the
+  transport (dark, like the ambient). Only with stream_rad = true. The T(r) of the one-zone model
+  (stream_path_1015.py) is not in the code, so the nozzle profile is held unchanged back to L1. Not scaled (it is the
+  stream's light, not diluted donor light). Booked with the nozzle radiation (register 3 -> Ebnd).
+
+### 15.4 Sink momentum (problem/sink_zero_v, default true)
+- New pgen hook user_m1post_func (pgen.hpp), called by RadiationM1::HydroConToPrim after the M1 coupling and before
+  the fluid refresh. RyPerM1Post zeroes the momentum of every sink cell (lobe and back sector, not the nozzle),
+  removes the kinetic energy from E_tot and books it in Emsk. Active only with donor_irr on or the back sink live
+  (stream on). The hydro dt is computed before the M1 stage, so dt is unchanged. Removes Raven's r 14.6 row artefact
+  (v_r up to 1e6 km/s at floor density) from outputs and Emsk (untested).
+
+### 15.5 Gate status
+- Not run. Expected bitwise vs 08625ed7 (binary 049c1f39) on the 2-D v3 deck with donor_irr = false and the new keys
+  absent: every new path is behind donor_irr or the live back sink, and sink_zero_v is read without being added to
+  the parameter dump (5b0d4bc1). The hook is called (empty) in every M1 run of this pgen.
+
