@@ -1021,6 +1021,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   if (amb_radeq_) {
     auto phc = ph->phicc0;
     const Real tfl = gen_tfl_;
+    const bool fmom = accx_on_;
+    const Real vcf = env_vcap_;
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
     Kokkos::parallel_reduce("ryper_flr", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             (nmb1 + 1)*nkji),
@@ -1039,6 +1041,17 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         const Real ei = u0(m,IEN,k,j,i) - 0.5*du*(v1*v1 + v2*v2 + v3*v3)
                         - du*phc(m,k,j,i);
         if (ei > 0.0) tc = eosd.Temperature(du, ei, tc);
+      }
+      if (fmom) {
+        // bigdom-1015 (nozzle/mask runs only): the added gas is at REST, i.e. momentum is
+        // kept (v = m/rho_amb), and |v| is capped at env_v_floor_max.  Next to the dense
+        // L1 nozzle a near-vacuum cell can lose mass to the HLLC flux while the pressure
+        // term gives it momentum: m/du then reached 7e5 km/s (dt collapse, g7 10-15)
+        v1 = u0(m,IM1,k,j,i)/rfl; v2 = u0(m,IM2,k,j,i)/rfl; v3 = u0(m,IM3,k,j,i)/rfl;
+        const Real vv = sqrt(v1*v1 + v2*v2 + v3*v3);
+        if (vv > vcf) {
+          v1 *= vcf/vv; v2 *= vcf/vv; v3 *= vcf/vv;
+        }
       }
       tc = fmax(tc, tfl);
       u0(m,IDN,k,j,i) = rfl;

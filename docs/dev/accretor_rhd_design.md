@@ -716,3 +716,40 @@ cells, boundary window): Min rate 19.795 code/time (analytic 19.80), dt 7.03e-6 
 during the approach; ballistic at R_acc phi 16.5 deg; impact hottest gas r 9.43 phi 15 deg near t 0.026.
 Pass checks: no FATAL; dMin 19.8 +- 1 %; stream path as in start0 (bin snapshots at t 0.0189, 0.0237); Mmsk small
 and the mask quiet; dt not set in the nozzle or the mask; cost per cycle ~1.31x.
+
+### 13.5 User decisions 10-15 (84b55d97): L1 nozzle, donor luminosity, extra history columns
+**Stream from L1 (problem/stream_inject = l1; supersedes the 13.2 nozzle at 13.79 for production, which stays
+available as stream_inject = volume).** Lubow & Shu (1975) state at L1, the same reset-nozzle mechanism as 13.2:
+- Nozzle = stream_ncell (2) cells whose OUTER face is the x1 face nearest d_L1 (face 687, r 16.2165; nozzle r
+  16.130-16.2165), phi window |phi| < 3 sigma_phi about phi = 0.
+- State: isothermal sonic flow along -x, v = -c_T e_x (v_r = -c_T cos phi, v_phi = +c_T sin phi, rotating frame),
+  c_T = 45.45 km/s (the launch speed of t_don, problem/stream_l1_v); uniform T_L1 = 155.3 kK (problem/stream_l1_t,
+  the stream_physics_1009 L1 state); E = a T_L1^4, F = (4/3) E v.
+- Width: the in-plane hydrostatic Gaussian of the L1 saddle, sigma_y = c_T/(Omega sqrt(B)), B = A - 1, A = (1-mu)/d_a^3
+  + mu/d_d^3 = 7.994 (a = 1 units), B = 6.994: sigma_y = 3.4228/2.6446 = 1.294 Rsun (sigma_phi 0.0798 rad = 4.57 deg
+  at d_L1), narrower than the 1.536 Rsun arc width at 13.79 (problem/stream_l1_width overrides).
+- Mass rate: the peak density follows from problem/stream_mdot = 19.795 (the orbit1 Min rate) as the exact discrete
+  sum of rho c_T cos(phi) A over the window cells of the nozzle's inner face (the face flux of a supersonic/sonic
+  state is its upwind flux). rho_L1 = 0.675 code (3.45e-8 g/cc) vs the 3-D one-zone 5.25e-8 g/cc: the band carries
+  the old window's rate per unit height, not the 3-D Gaussian. P_rad/P_gas ~2 at L1 (radiation is in M1, the EOS is
+  gas only); the gas then expands along the ballistic path (the r = 13.79 window state of 13.2 was this path's one-zone
+  result).
+- Booking: Min = mass added by the reset (closes the mass budget); the new column **Mnzf** = mass through the
+  nozzle's inner face (RK flux integral) = the stream that leaves L1 toward the star; Min - Mnzf = what leaves the
+  nozzle backward/sideways (expansion over the saddle; into the mask = Mmsk). The pass check is Mnzf rate = 19.795.
+- Mask vs nozzle: nozzle cells have r < d_L1, so x = r cos phi < d_L1 and the mask (x > d_L1) never contains them
+  (the kernel also gives the nozzle precedence). The lobe's cusp touches the nozzle's outer face at phi = 0 only; no
+  gap was added (if the back-leak into the mask is large, a mask offset x > d_L1 + gap is the knob to add).
+
+**Donor irradiation by luminosity (problem/donor_lum [Lsun], default 10^4.84 = 69183, the log L of the S5 deck header
+from the Wade+2026 track).** T_d from sigma T_d^4 = L_d / (4 pi R_L^2), R_L the volume-equivalent Roche-lobe radius
+(Eggleton 1983, q = M_d/M_a = 1.125: 12.943 Rsun) -> T_d = 26.0 kK (vs the 26.2 kK HR read). Area definition: the
+band is an equatorial slice of the 3-D donor, so it must carry the PER-AREA flux of the whole donor; L_d is the
+full-sphere luminosity and 4 pi R_L^2 the full donor surface (the same band <-> sphere convention as Lmeas/Ltop,
+which scale the band by 4 pi / band solid angle). problem/donor_teff overrides when given (fallback). On in the
+handover deck (intended on for production). Column **Eirr** = cumulative radiation energy the lobe reset adds.
+Caveat: E = a T_d^4 isotropic in a transparent (floor-density) lobe emits ~ sigma T_d^4 per area through its edge
+only approximately (M1 closure at the edge); check the band's donor luminosity from Eirr/Ltop in the test.
+
+**History**: with a nozzle or the mask the user hst has 24 columns (23 Mnzf, 24 Eirr; NHISTORY_VARIABLES is 24);
+older decks keep 22 and their dt_retry registration list.
