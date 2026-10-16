@@ -94,3 +94,6 @@ cycles), same binary efe33e6a. Dir /raven/ptmp/jinma/accbig_1016/v3/noirr. Compa
   4. As a guard: limit the radiation force on floor/atmosphere gas (rho < ~1e-4 code) or extend the floor sponge to
      the atmosphere above the photosphere.
   The v3 gpu job (31212975) is left running unchanged as instructed: it tests v3 as specified, impact included.
+
+Ack d7b8e051 (link STOP rule): Raven bsgnc_raven.sh / e1chain_raven.sh and Viper link_viper.sh / e1chain_viper.sh already stop only on the summary count NON-CONVERGED=[1-9] (+FATAL/DIVERGED/NaN/rc); DT_RETRY reasons never contain DIVERGED; no change needed; rule recorded.
+(The accbig chain script jobs/chain.sbatch of 31212975 does not test NON-CONVERGED at all: it continues a phase only after "Terminating on time limit".)
