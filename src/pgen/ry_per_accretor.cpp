@@ -289,8 +289,17 @@ Real str_r_ = 0.0;             // problem/stream_r: radius of the injection (def
 Real nz_rlo_ = 0.0, nz_rhi_ = 0.0;   // the nozzle shell: cells with x1v in (rlo, rhi)
 bool msk_ = false;             // donor_mask = roche
 Real msk_phl1_ = 0.0, msk_xl1_ = 0.0;   // Phi(L1) and the L1 distance from the accretor
-bool mirr_ = false;            // problem/donor_irr: the mask radiates at donor_teff
+bool mirr_ = false;            // problem/donor_irr: the mask radiates at T_d
 Real mirr_e_ = 0.0;            // a T_d^4 (code)
+bool stl1_ = false;            // stream_inject = l1 (the nozzle at L1, Lubow-Shu state)
+int nz_if_ = -1;               // local x1 face index of the nozzle's inner face
+Real l1_c_ = 0.0, l1_t_ = 0.0; // L1 nozzle: speed along -x (km/s) and uniform T (code)
+// two extra history registers (columns 23/24, only with a nozzle or the mask, so older
+// decks keep 22 columns): Mnzf = cumulative mass through the nozzle's inner face (RK flux
+// integral, the stream that actually leaves the nozzle toward the star), Eirr = cumulative
+// radiation energy put into the lobe by donor_irr
+bool accx_on_ = false;
+Real accx0_[2] = {0.0, 0.0}, accx1_[2] = {0.0, 0.0};
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -1083,6 +1092,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const Real phl1 = msk_phl1_, xl1 = msk_xl1_, dfl = eosd.dfloor;
     const bool mirr = rad && mirr_;
     const Real med = mirr_e_;
+    const bool l1 = stl1_;
+    const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
     auto phc = ph->phicc0;
     auto &x3c = pmbp->pcoord->x3v;
@@ -1108,7 +1119,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
       const Real d0 = u0(m,IDN,k,j,i), m30 = u0(m,IM3,k,j,i), e0 = u0(m,IEN,k,j,i);
       Real dn, v1, v3, tn;
-      if (innz) {
+      if (innz && l1) {
+        // L1 nozzle (Lubow & Shu 1975): isothermal sonic outflow along -x at c_T, Gaussian
+        // across the stream; in the rotating frame v = -c_T e_x
+        dn = fmax(rhos*exp(-0.5*SQR(dph/sg)), dfl);
+        v1 = -l1c*cos(phv); v3 = l1c*sin(phv); tn = l1t;
+      } else if (innz) {
         dn = fmax(rhos*exp(-0.5*SQR(dph/sg)), dfl);
         v1 = vrs; v3 = vps; tn = StreamT(stp, tcs, tsf, dph/sg);
       } else {
@@ -1126,7 +1142,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         v.the_array[1] = ((dn*v3 - m30) + om*r*(dn - d0))*r*dv;
         v.the_array[2] = (en - e0)*dv;
         if (srad) {
-          const Real er = stp ? sar*SQR(SQR(tn)) : sre;
+          const Real er = (stp || l1) ? sar*SQR(SQR(tn)) : sre;
           v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
           urd(m,radm1::M1_E,k,j,i) = er;
           urd(m,radm1::M1_F1,k,j,i) = (4.0/3.0)*er*v1;
@@ -1158,6 +1174,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto ira = iracc_;
   const Real om = rp_.omega, phis = phi_s_, wwin = nsig_*sig_;
   const bool strm = stream_on_ && !stvol_;   // the r_out window (boundary injection only)
+  const int nzif = (stvol_ && stream_on_) ? nz_if_ : -1;
   const int nj = je - js + 1, nk = ke - ks + 1;
   const int ntot = (nmb1 + 1)*nk*nj;
   DvceArray4D<Real> ff0;
@@ -1209,6 +1226,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       v.the_array[6] = -fd*a;
       v.the_array[7] = -(f3 + om*r*fd)*r*a;
     }
+    // the nozzle's inner face (Mnzf), inside its phi window
+    if (nzif >= 0 && fabs(WrapPhi(x3v(m,k) - phis)) < wwin) {
+      v.the_array[13] = -flx(m,IDN,k,j,nzif)*area1(m,k,j,nzif);
+    }
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(fs));
 
@@ -1234,6 +1255,14 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   if (msk_) {
     acc0_[2] += zs.the_array[4];
     acc0_[3] += zs.the_array[5];
+  }
+  if (accx_on_) {
+    if (s == 0) {
+      accx1_[0] = accx0_[0];
+      accx1_[1] = accx0_[1];
+    }
+    accx0_[0] = rk_g0_[s]*accx0_[0] + rk_g1_[s]*accx1_[0] + bdt*fs.the_array[13];
+    accx0_[1] = rk_g0_[s]*accx0_[1] + rk_g1_[s]*accx1_[1] + zs.the_array[6];
   }
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
@@ -1322,6 +1351,13 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   if (msk_) {                                  // donor_mask = roche (bigdom-1015)
     pdata->label[6] = "Mmsk";
     pdata->label[7] = "Emsk";
+  }
+  if (accx_on_) {                              // columns 23/24 (bigdom-1015)
+    pdata->nhist = 24;
+    pdata->label[22] = "Mnzf";
+    pdata->label[23] = "Eirr";
+    pdata->hdata[22] = accx0_[0];
+    pdata->hdata[23] = accx0_[1];
   }
   for (int n=0; n<4; ++n) pdata->hdata[n] = s.the_array[n];
   if (rad) {
@@ -1563,7 +1599,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
       fatal("stream on under <rad_m1> needs problem/env_t_relax_stream = 0 (the stream's T "
             "is set by the EOS state at the window and by radiation, not relaxed)");
     }
-    const Real d = rho_s_, t = gen_tstr_;
+    const Real d = rho_s_, t = stl1_ ? l1_t_ : gen_tstr_;
     const Real e = eos.EnergyFromTemperature(d, t);
     const Real pg = eos.Pressure(d, e, t);
     const Real prad = ar*SQR(SQR(t))/3.0;
@@ -2732,11 +2768,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // accretor-bigdom-1015: stream_inject = boundary (default: the r_out window) | volume
   // (the nozzle at stream_r inside the domain); keys read only when given
   stvol_ = false;
+  stl1_ = false;
+  nz_if_ = -1;
   if (pin->DoesParameterExist("problem", "stream_inject")) {
     const std::string si = pin->GetString("problem", "stream_inject");
-    stvol_ = (si.compare("volume") == 0);
+    stl1_ = (si.compare("l1") == 0);
+    stvol_ = (si.compare("volume") == 0) || stl1_;
     if (!stvol_ && si.compare("boundary") != 0) {
-      fatal("stream_inject must be boundary | volume");
+      fatal("stream_inject must be boundary | volume | l1");
     }
   }
   str_r_ = r_out;
@@ -2744,7 +2783,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     str_r_ = pin->GetReal("problem", "stream_r");
     if (!stvol_ && str_r_ != r_out) fatal("stream_r != x1max needs stream_inject = volume");
   }
-  BallisticOut bo = IntegrateStream(mu, csd/aom, str_r_/asep);
+  // (stream_inject = l1: the trajectory only gives d_L1 and the reported path; the
+  // reported crossing radius is then R_acc)
+  BallisticOut bo = IntegrateStream(mu, csd/aom, (stl1_ ? racc : str_r_)/asep);
   BallisticOut bi = IntegrateStream(mu, csd/aom, racc/asep);
   const Real width = pin->GetOrAddReal("problem", "stream_width", csd/rp_.omega);
   if (!bo.ok_cross) fatal("the ballistic stream never reaches stream_r (default x1max)");
@@ -2761,6 +2802,31 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     vp_s_ = pin->GetReal("problem", "stream_vphi");
   }
   sig_ = width/str_r_;
+  // stream_inject = l1 (bigdom-1015, user 10-15): the nozzle sits just inside L1 with the
+  // Lubow & Shu (1975) state: isothermal, sonic flow along -x at c_T (problem/stream_l1_v,
+  // default the launch speed c_s,don of t_don), uniform T (problem/stream_l1_t [K], default
+  // T_L1 155300 K of stream_physics_1009), Gaussian across the stream with the in-plane
+  // hydrostatic width sigma_y = c_T/(Omega sqrt(B)), B = A - 1, A = (1 - mu)/d_a^3 + mu/d_d^3
+  // the potential curvature at L1 (a = 1 units; problem/stream_l1_width overrides), and
+  // the peak density from the band's mass rate problem/stream_mdot (code mass/time, the
+  // discrete face flux of the window, set after the nozzle faces below)
+  Real l1a = 0.0, l1b = 0.0;
+  if (stl1_) {
+    const Real da = bo.dl1, dd = 1.0 - bo.dl1;
+    l1a = (1.0 - mu)/(da*da*da) + mu/(dd*dd*dd);
+    l1b = l1a - 1.0;
+    l1_c_ = pin->GetOrAddReal("problem", "stream_l1_v", csd);
+    const Real wl1 = pin->GetOrAddReal("problem", "stream_l1_width",
+                                       l1_c_/(rp_.omega*std::sqrt(l1b)));
+    str_r_ = bo.dl1*asep;
+    sig_ = wl1/str_r_;
+    phi_s_ = 0.0;
+    vr_s_ = -l1_c_;
+    vp_s_ = 0.0;
+    if (gen_) {
+      l1_t_ = pin->GetOrAddReal("problem", "stream_l1_t", 155300.0)/eos.temp_cgs;
+    }
+  }
   // the nozzle shell: stream_ncell cells above the x1 face nearest stream_r
   msk_ = false;
   if (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) {
@@ -2778,11 +2844,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int i=is; i<=ie+1; ++i) {
       if (std::fabs(hxf(0,i) - str_r_) < std::fabs(hxf(0,fb) - str_r_)) fb = i;
     }
+    if (stl1_) fb -= nzc;     // l1: the nozzle's OUTER face is the face nearest d_L1
     if (!(nzc >= 1 && fb > is && fb + nzc <= ie + 1)) {
       fatal("the nozzle (stream_r, stream_ncell) must lie inside the domain");
     }
     nz_rlo_ = hxf(0,fb);
     nz_rhi_ = hxf(0,fb + nzc);
+    nz_if_ = fb;
+    if (stl1_) {
+      // peak density from the band's mass rate: the discrete sum of the inner face's
+      // rho c_T cos(phi) A over the window (A = r^2 (cos th1 - cos th2) dphi)
+      if (!pin->DoesParameterExist("problem", "stream_mdot")) {
+        fatal("stream_inject = l1 needs problem/stream_mdot (code mass/time in the band)");
+      }
+      const Real mdot = pin->GetReal("problem", "stream_mdot");
+      const auto &ms = pmy_mesh_->mesh_size;
+      const int nk = pmy_mesh_->mesh_indcs.nx3;
+      const Real dphk = (ms.x3max - ms.x3min)/nk, rf = nz_rlo_;
+      const Real ath = rf*rf*(std::cos(ms.x2min) - std::cos(ms.x2max))*dphk;
+      Real sum = 0.0;
+      for (int k=0; k<nk; ++k) {
+        const Real dph = WrapPhi(ms.x3min + (k + 0.5)*dphk);
+        if (std::fabs(dph) < nsig_*sig_) {
+          sum += std::exp(-0.5*SQR(dph/sig_))*l1_c_*std::cos(dph)*ath;
+        }
+      }
+      rho_s_ = mdot/sum;
+    }
   }
   if (pin->DoesParameterExist("problem", "donor_mask")) {
     const std::string dm = pin->GetString("problem", "donor_mask");
@@ -2798,7 +2886,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           pin->GetBoolean("problem", "donor_irr");
   if (mirr_) {
     if (!msk_ || !rad_) fatal("donor_irr needs donor_mask = roche and <rad_m1>");
-    const Real tdk = pin->GetOrAddReal("problem", "donor_teff", 26200.0);
+    // T_d from the donor luminosity problem/donor_lum [Lsun] (default 10^4.84 = 69183, the
+    // Wade+2026 track value of the S5 deck) over the Roche lobe's volume-equivalent sphere,
+    // 4 pi R_L^2 (Eggleton 1983 at q = M_d/M_a): the per-area flux of the full 3-D donor,
+    // which the 2-D band samples (the band's luminosities scale by 4 pi / band solid angle,
+    // as Lmeas/Ltop).  problem/donor_teff [K], if given, overrides.
+    const Real qd = md/ma, q3 = std::cbrt(qd);
+    const Real rlv = asep*0.49*q3*q3/(0.6*q3*q3 + std::log(1.0 + q3));
+    const Real ldon = pin->GetOrAddReal("problem", "donor_lum", std::pow(10.0, 4.84));
+    Real tdk = std::pow(ldon*3.828e33/(4.0*M_PI*SQR(rlv*kRsun)*5.6704e-5), 0.25);
+    if (pin->DoesParameterExist("problem", "donor_teff")) {
+      tdk = pin->GetReal("problem", "donor_teff");
+    }
+    if (root) {
+      std::printf("ry_per_accretor: donor_irr: L_d %.6g Lsun, R_L (Eggleton, volume) %.4f "
+                  "Rsun -> T_d %.1f K%s\n", ldon, rlv, tdk,
+                  pin->DoesParameterExist("problem", "donor_teff") ? " (donor_teff key)" : "");
+    }
     const Real tdc = tdk/pmbp->phydro->peos->eos_data.temp_cgs;
     mirr_e_ = pmbp->pradm1->arad*SQR(SQR(tdc));
     if (root) {
@@ -2843,6 +2947,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     dtretry::RegisterValue(("ry_acc0_" + std::to_string(n)).c_str(), &acc0_[n]);
     dtretry::RegisterValue(("ry_acc1_" + std::to_string(n)).c_str(), &acc1_[n]);
   }
+  // bigdom-1015: the two extra registers (only with a nozzle or the mask)
+  accx_on_ = stvol_ || msk_;
+  for (int n=0; n<2; ++n) accx0_[n] = accx1_[n] = 0.0;
+  if (accx_on_) {
+    for (int n=0; n<2; ++n) {
+      dtretry::RegisterValue(("ry_accx0_" + std::to_string(n)).c_str(), &accx0_[n]);
+      dtretry::RegisterValue(("ry_accx1_" + std::to_string(n)).c_str(), &accx1_[n]);
+    }
+  }
 
   if (root) {
     std::printf("ry_per_accretor: M_a %.4g M_d %.4g Msun, a %.4g Rsun, q %.4f, Omega %.6e"
@@ -2857,7 +2970,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::printf("ry_per_accretor: ballistic at r_out: phi %.3f deg, v_r %.2f, v_phi %.2f "
                 "km/s; stream state used: phi %.3f deg, v_r %.2f, v_phi %.2f km/s\n",
                 bo.phi*180.0/M_PI, bo.vr*aom, bo.vt*aom, phi_s_*180.0/M_PI, vr_s_, vp_s_);
-    if (stvol_) {
+    if (stl1_) {
+      std::printf("ry_per_accretor: stream_inject = l1 (Lubow-Shu nozzle): L1 curvature A "
+                  "%.4f B %.4f; c_T %.3f km/s along -x, T_L1 %.1f K, sigma_y %.4f Rsun "
+                  "(sigma_phi %.5f rad at d_L1), peak rho %.6g code (%.4g g/cc) for "
+                  "stream_mdot %.6g; nozzle cells r %.5f .. %.5f (outer face at d_L1 %.5f), "
+                  "|phi| < %.4f rad; outer boundary: outflow (outer_rho %s), dark Marshak "
+                  "top\n", l1a, l1b, l1_c_, l1_t_*eos.temp_cgs, sig_*str_r_, sig_, rho_s_,
+                  rho_s_*(pmbp->punit ? pmbp->punit->density_cgs() : 1.0),
+                  pin->GetReal("problem", "stream_mdot"), nz_rlo_, nz_rhi_, str_r_,
+                  nsig_*sig_, orho.c_str());
+    } else if (stvol_) {
       std::printf("ry_per_accretor: stream_inject = volume: the ballistic state above is at "
                   "stream_r %.4f Rsun = %.4f d_L1; nozzle cells r %.5f .. %.5f, |dphi| < "
                   "%.4f rad; outer boundary: outflow (outer_rho %s), dark Marshak top\n",

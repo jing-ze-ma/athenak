@@ -230,11 +230,14 @@ env_v_floor_max = 100.0              # km/s, |v| cap of sponge cells
 env_r_spin  = 9.00129260997162       # rotation only below R_acc
 env_wall_slip = free                 # free | noslip
 stream      = false                  # bigdom test: static phase to 0.00946, then the stream on by restart
-stream_inject = volume               # bigdom-1015: the nozzle at stream_r (2 cells), not the r_out window
-stream_r    = 13.7926                # the old r_out (0.85 d_L1): same ballistic state as before
+stream_inject = l1                   # bigdom-1015 (user 10-15): Lubow-Shu nozzle, 2 cells just inside L1
+stream_mdot = 19.795                 # code mass/time through the band = the orbit1 Min rate (rho_L1 follows)
+stream_l1_t = 155300.0               # K, T_L1 (stream_physics_1009 L1 state); speed c_T = launch speed of t_don
 outer_rho   = copy                   # bigdom-1015: plain outflow at the new r_out
 env_r_top_max = 13.7926              # WB top capped at the old r_out (no fake envelope in the donor lobe)
 donor_mask  = roche                  # bigdom-1015: donor Roche lobe = sink (Mmsk, Emsk)
+donor_irr   = true                   # bigdom-1015 (user 10-15): the lobe radiates, E = a T_d^4, F = 0
+donor_lum   = 69183.1                # Lsun, 10^4.84 (Wade+2026 track, this deck's header); T_d over 4 pi R_L^2 -> 26.0 kK
 stream_rad  = true                   # S5: the window injects the stream's radiation, E = a T_s^4, F = (4/3) E v (inert while stream = false)
 rho_stream  = 0.240807               # code (1.2305e-8 g/cc): one-zone core at r_out, Mdot 1e-4 Msun/yr, Ryu adiabatic Q 0.649
 rho_amb     = 1.0e-8                 # FLOOR density (= hydro dfloor) = the ambient (5.1e-16 g/cc)
