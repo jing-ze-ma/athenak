@@ -816,3 +816,9 @@ vacuum at 4e3-7e3 km/s and set dt (dt_report, g11: dt 2.9e-7, DT_RETRY eint<=0).
 true (radeq floor: v = m/rho_amb, |v| <= env_v_floor_max): kept on; not separately re-tested at 14.5 (timebox).
 problem/dt_report = true prints the hydro dt-setting cell at every hst output.
 g11 (14.5, back sink OFF): dMnzf 19.10 over the first 1e-4 (startup), then **19.796** (t 1e-4 to 2e-4).
+**g12 (7fb237a8, the handover deck + dt_report, back sink ON, stream on from t = 0, 1 H200):** to t 0.0021 (interim,
+job still running at the push): dMnzf **19.802 -> 19.798** per 1e-4 interval (pinned to 0.04 % from the first
+interval), Min - Mnzf constant 0.0162 (the nozzle's initial fill), Mmsk 4.6e-6; no DT_RETRY, no NON-CONVERGED;
+**dt 7.047e-6 flat**, set by the envelope (cell r 8.787 in the fine plateau, at rest), not by the nozzle or the mask.
+(The L1 nozzle's dt 4e-6 is therefore L1-specific.) First impact: flight from 14.5 to the star ~0.045 - 0.0283 =
+~0.017 after the stream reaches the nozzle state... i.e. stream on at 0.00946 -> impact near t ~0.027-0.030.
