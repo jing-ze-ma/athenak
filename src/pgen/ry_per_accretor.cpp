@@ -307,6 +307,11 @@ Real l1_c_ = 0.0, l1_t_ = 0.0; // L1 nozzle: speed along -x (km/s) and uniform T
 // radiation energy put into the lobe by donor_irr
 bool accx_on_ = false;
 bool nzback_ = false;          // problem/stream_back_sink: the sector behind the nozzle is sink
+// accretor-sector-light-1017: problem/stream_sector_light, the radiation held in the back-sink
+// sector (stream_back_sink with stream_rad): 0 full (v4 default: the stream's own light,
+// unscaled), 1 scaled (x donor_irr_scale), 2 surface (the donor lobe's surface light, as
+// the lobe; v3 rule), 3 dark (left to the transport, as the ambient)
+int ssl_ = 0;
 bool flmom_ = false;           // problem/floor_keep_momentum (radeq floor: v = m/rho_amb, capped)
 bool dtrep_ = false;           // problem/dt_report: print the hydro dt-setting cell at hst outputs
 Real accx0_[2] = {0.0, 0.0}, accx1_[2] = {0.0, 0.0};
@@ -1266,6 +1271,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const Real gdb = 4.0*mirr_beta_, gdc = mirr_ec_, gdf = mirr_ef_;
     const bool gdk = mirr_beta_ > 0.0;
     const bool l1 = stl1_, nzbk = nzback_ && nzon;
+    const int ssl = ssl_;
+    const Real ssc = mirr_sc_;
     const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
     const bool g3 = g3d_;
@@ -1351,18 +1358,22 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       } else {
         v.the_array[4] = (d0 - dn)*dv;
         v.the_array[5] = (e0 - en)*dv;
-        if (inbk) {
+        if (inbk && ssl != 2) {
           // v4 (user 10-16): the back-sink sector between the nozzle and L1 holds the
           // STREAM's own light, the nozzle's radiation state continued backward (core T
           // env_t_stream, the same diffusion profile in phi (and z), floor stream_t_surf),
           // at rest (F = 0), within the nozzle's width (3 sigma); outside it, its radiation
           // is left to the transport (dark, as the ambient).  Not scaled (not donor light);
-          // booked with the nozzle's radiation (register 3)
+          // booked with the nozzle's radiation (register 3).
+          // stream_sector_light (10-17): full = this; scaled = x donor_irr_scale (the band's
+          // 2-D -> 3-D factor of the held donor light); dark = no light held (all of the
+          // sector left to the transport); surface = the lobe rule below (donor light)
           const bool inw = fabs(dph) < ww && (!g3 || fabs(zc) < wz);
-          if (srad && inw) {
+          if (srad && inw && ssl != 3) {
             const Real tb = g3 ? StreamT(stp, tcs, tsf, sqrt(SQR(dph/sg) + SQR(zc/szz)))
                                : StreamT(stp, tcs, tsf, dph/sg);
-            const Real er = stp ? sar*SQR(SQR(tb)) : sre;
+            Real er = stp ? sar*SQR(SQR(tb)) : sre;
+            if (ssl == 1) er *= ssc;
             v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
             urd(m,radm1::M1_E,k,j,i) = er;
             urd(m,radm1::M1_F1,k,j,i) = 0.0;
@@ -3186,6 +3197,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the two stabilisers added for the L1 nozzle (10-15), keys default: on for l1, off for
   // volume (stream_back_sink); on with any nozzle/mask (floor_keep_momentum)
   nzback_ = stvol_ && pin->GetOrAddBoolean("problem", "stream_back_sink", true);
+  // accretor-sector-light-1017 (user 10-17): problem/stream_sector_light (read, not added:
+  // the key stays out of the PAR_DUMP of runs that do not set it; default full = v4)
+  ssl_ = 0;
+  if (pin->DoesParameterExist("problem", "stream_sector_light")) {
+    const std::string sl = pin->GetString("problem", "stream_sector_light");
+    if (sl.compare("full") == 0) {
+      ssl_ = 0;
+    } else if (sl.compare("scaled") == 0) {
+      ssl_ = 1;
+    } else if (sl.compare("surface") == 0) {
+      ssl_ = 2;
+    } else if (sl.compare("dark") == 0) {
+      ssl_ = 3;
+    } else {
+      fatal("stream_sector_light must be full | scaled | surface | dark");
+    }
+    if (root) {
+      std::printf("ry_per_accretor: stream_sector_light %s (back-sink sector radiation)\n",
+                  sl.c_str());
+    }
+  }
   dtrep_ = pin->DoesParameterExist("problem", "dt_report") &&
            pin->GetBoolean("problem", "dt_report");
   flmom_ = (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) &&
@@ -3202,6 +3234,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the donor T_eff of the Wade+2026 MESA track used by the S5 deck)
   mirr_ = pin->DoesParameterExist("problem", "donor_irr") &&
           pin->GetBoolean("problem", "donor_irr");
+  if ((ssl_ == 1 || ssl_ == 2) && !mirr_) {
+    fatal("stream_sector_light = scaled | surface needs donor_irr = true");
+  }
   if (mirr_) {
     if (!msk_ || !rad_) fatal("donor_irr needs donor_mask = roche and <rad_m1>");
     // T_d from the donor luminosity problem/donor_lum [Lsun] (default 10^4.84 = 69183, the
