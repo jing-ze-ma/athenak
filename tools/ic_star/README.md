@@ -313,7 +313,8 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
 - seam fixed point in 2 passes: R_ph 7.96114e12 -> 7.95671e12 (-0.58 cell) -> 7.95704e12
   (+0.043 cell) = 114.38 Rsun;
 - HSE 5.8e-7, no Gamma clamp;
-- gates: RESULTS sect. 9.
+- CPU = A100 startup (R_ph identical, dump 3e-10); gate (a') FAILS: the run restructures the cliff
+  top within 0.25 d, also with MESA-like kappa and at 4x radial resolution (RESULTS sect. 9e).
 
 ## 3. Step by step for a new star
 
