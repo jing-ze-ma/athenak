@@ -183,6 +183,24 @@
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "pgen.hpp"
 
+// mi300a-1017: ROCm 7.2 (amdclang 22, tested 7.2.4, gfx942 APU) MISCOMPILES the
+// nozzle/donor-mask reduction in RyPerSrcEnv ("ryper_nzmsk"): a 64-bit index register is
+// overwritten by a floating-point constant before the load of phicc0(m,k,j,i), so cycle 0
+// dies with HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION (reported in a later deep copy).
+// The SAME source built with ROCm 6.4.3 or 7.1.0 runs, and the two give bitwise-identical
+// output; a bounds guard on the indices (never triggered) also hides it, i.e. there is no
+// out-of-bounds access in the source.  Changing the reducer (24 -> 8 entries), adding
+// only partial sums, or noinline on the donor-surface march did NOT remove it, so no
+// source workaround is trusted.  Build this problem generator on AMD with ROCm <= 7.1
+// (Viper: module load gcc/16 rocm/7.1 openmpi_gpu/5.0).  -DRYPER_ALLOW_ROCM72 overrides
+// (e.g. to test a newer 7.2.x).  CUDA/CPU builds are unaffected.
+#if defined(KOKKOS_ENABLE_HIP)
+#include <hip/hip_version.h>
+#if (HIP_VERSION_MAJOR == 7) && (HIP_VERSION_MINOR == 2) && !defined(RYPER_ALLOW_ROCM72)
+#error "ry_per_accretor: ROCm 7.2 miscompiles RyPerSrcEnv; use ROCm <= 7.1 (see above)"
+#endif
+#endif
+
 namespace {
 
 // physical constants (cgs) and the code units
