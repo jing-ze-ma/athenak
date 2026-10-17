@@ -464,3 +464,24 @@ the build; the 1e-15 control rebuild reproduces ic_bsg.txt bit for bit; seam fix
 MESA-anchored IC). The completed hg704 12-d run fails (a') items 1 (2.50 cells/H), 3 (sat rms 7.6 >
 c_s,iso 4.05 km/s) and 4 (0.5-0.9 R_ph 2.5 km/s, 0.9-0.99 R_ph 12.4, L_top/L_in 0.81-1.37); the band
 grows to ~4 d and then saturates (bounded, ~8-d period): /raven/ptmp/jinma/hegiant145_1015/NOTE.md sect. 8.
+
+### 9a. Refined candidate BSG production grid r496 (USER 2026-10-17: refine g480; keep the 1e-15 floor rule)
+
+Grid: /raven/ptmp/jinma/bsgres_1017/grid/grid_refine.py (= grid_2xatm.py with the plateau factor as an
+argument): g480 fine plateau dr 0.0336 -> 0.0319 Rsun (factor 0.951), unchanged elsewhere within 0.5 %
+(transitions 0.88-0.97); nx1 496, fit rms 0.012 cells, max neighbour ratio 1.155; 249 cells in
+0.95-1.1 R_ph (g480 236). Pair r808 = r496 with the plateau halved (dr 0.0159, nx1 808, ratio 1.138).
+Decks decks/bsgres_r496.athinput (f14ecdaa) and bsgres_r808.athinput (88ce6a1e), only the 10 mesh keys
+changed from bsgres_g480. Jobs 31251042 (r496, 10 min) and 31250837 (r808, 46 min), gpu1, 1 A100 each,
+b16b66db, 12 d, seed 0, 16x16, floor 1e-15 rule. Background clean (floor plateau from 1.034 R_ph, sponge
+active, 0 dfloor cells, top infall -0.07 km/s).
+
+**gate (a') PASS, every item** (ana/aprime_r496_r808.txt/json):
+- 1: 4.46 cells per H_rho (H_rho 0.1423 Rsun at 1.031 R_ph); pair 8.92.
+- 2: same floor rule; band rms 6.18 / 6.26 km/s (1.2 %), profile L2 2.7 %, period 0.953 / 0.947 d (0.7 %).
+- 3: no growth (max 55.4 / 55.9 km/s), rms 6.2-6.3 <= c_s,iso 14.2 km/s.
+- 4: 0.5-0.9 R_ph 0.33 / 0.35 km/s; 0.9-0.99 R_ph sat 1.56 / 1.58 (growth phase 3.96 / 4.08); R_ph(tau)
+  max dev 0.61 / 0.64 %; L_top/L_in 1.003-1.024; dM/M 2e-14; Mdot_top 5e-13 Msun/yr.
+- 5: NC 0, FATAL/DIVERGED/NaN 0, rc 0, dt_min/median 0.36 / 0.29, 0 retries.
+r496 vs g480: same oscillation (rms 6.18 vs 6.04, period 0.953 vs 0.938 d). **r496 is the candidate BSG
+production radial grid** (the full wedge needs 496 x 256 x 256; no production submitted).
