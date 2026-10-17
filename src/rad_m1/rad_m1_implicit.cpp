@@ -15325,10 +15325,10 @@ void M1FrCopy(V &snap, const V &src, bool restore) {
     Kokkos::deep_copy(src, snap);
   }
 }
-constexpr int M1_FR_NS = 34;   // sums of the per-solve reduction (see ImplicitFinalResid)
+constexpr int M1_FR_NS = 35;   // sums of the per-solve reduction (see ImplicitFinalResid)
 struct M1FrVal {
   Real s[M1_FR_NS];
-  Real mx[4];
+  Real mx[5];
 };
 struct M1FrRed {
  public:
@@ -15344,12 +15344,12 @@ struct M1FrRed {
   KOKKOS_INLINE_FUNCTION
   void join(value_type &d, const value_type &s) const {
     for (int q = 0; q < M1_FR_NS; ++q) {d.s[q] += s.s[q];}
-    for (int q = 0; q < 4; ++q) {d.mx[q] = (s.mx[q] > d.mx[q]) ? s.mx[q] : d.mx[q];}
+    for (int q = 0; q < 5; ++q) {d.mx[q] = (s.mx[q] > d.mx[q]) ? s.mx[q] : d.mx[q];}
   }
   KOKKOS_INLINE_FUNCTION
   void init(value_type &v) const {
     for (int q = 0; q < M1_FR_NS; ++q) {v.s[q] = 0.0;}
-    for (int q = 0; q < 4; ++q) {v.mx[q] = 0.0;}
+    for (int q = 0; q < 5; ++q) {v.mx[q] = 0.0;}
   }
   KOKKOS_INLINE_FUNCTION
   value_type &reference() const {return *value.data();}
@@ -15418,6 +15418,7 @@ void RadiationM1::ImplicitFinalResidSave(bool restore) {
 //!   rg = |y| / (|rho e^n| + |rho e(T')| + c dt rho kappa_P a T'^4 + c dt rho kappa_E |E'+de0|)
 //! One PICRES line per solve (rank 0): maxima, counts above 1e-6/1e-4/1e-2/tol/10 tol,
 //! the cells with max(rc, rT) > tol_eff by log10 rho and by cell tau, the worst cells,
+//! the cells at e_floor (counted apart: their rows are not satisfied by design),
 //! the times.  Then the saved state is put back (ImplicitFinalResidSave(true)).
 
 void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
@@ -15476,6 +15477,12 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
     if (!(rt == rt)) {rt = 1.0e300;}
     if (!(rT == rT)) {rT = 1.0e300;}
     if (!(rg == rg)) {rg = 1.0e300;}
+    // a cell whose iterate sits at or below e_floor (the solve keeps S2 down to 1e-6
+    // e_floor, the write-back floor raises it): its row is not satisfied BY DESIGN, so it
+    // is counted apart (KTT = max(rc, rT) there) and left out of the statistics
+    const bool flc = !(e > efl);
+    iw_(m,M1_IW_KTT,k,j,i) = flc ? fmax(fmax(rc, rT), 1.0e-300) : 0.0;
+    if (flc) {rc = 0.0; rt = 0.0; rT = 0.0; rg = 0.0;}
     iw_(m,M1_IW_KR,k,j,i) = rc;
     iw_(m,M1_IW_KRH,k,j,i) = rt;
     iw_(m,M1_IW_KP,k,j,i) = rT;
@@ -15484,7 +15491,8 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
   // the reduction: s[5q + t] = count of quantity q (rc, rT, rt, rg) above threshold t
   // (1e-6, 1e-4, 1e-2, tol, 10 tol); s[20..27] max(rc,rT) > tol by log10 rho (< -19,
   // [-19,-17), ..., >= -7); s[28..31] by cell tau_x1 (< 1e-2, < 1, < 1e2, >= 1e2);
-  // s[32] cells; s[33] max(rc,rT) > 10 tol
+  // s[32] cells; s[33] max(rc,rT) > 10 tol; s[34] floor cells (E' <= e_floor, left out of
+  // everything else; mx[4] = their largest max(rc, rT))
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
   auto x1f = pmy_pack->pcoord->xx1f;
   M1FrVal fv;
@@ -15516,14 +15524,19 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
     }
     if (w > 10.0*tol) {v.s[33] += 1.0;}
     v.s[32] += 1.0;
+    const Real fq = iw_(m,M1_IW_KTT,k,j,i);
+    if (fq > 0.0) {
+      v.s[34] += 1.0;
+      v.mx[4] = (fq > v.mx[4]) ? fq : v.mx[4];
+    }
   }, M1FrRed(fv));
 #if MPI_PARALLEL_ENABLED
   {
-    Real gs[M1_FR_NS], gm[4];
+    Real gs[M1_FR_NS], gm[5];
     MPI_Allreduce(fv.s, gs, M1_FR_NS, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(fv.mx, gm, 4, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(fv.mx, gm, 5, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     for (int q = 0; q < M1_FR_NS; ++q) {fv.s[q] = gs[q];}
-    for (int q = 0; q < 4; ++q) {fv.mx[q] = gm[q];}
+    for (int q = 0; q < 5; ++q) {fv.mx[q] = gm[q];}
   }
 #endif
   // the worst cell of rc and of rT: r, theta, rho, T, E/e_floor, tau_x1, rc, rT, rt, rg,
@@ -15645,7 +15658,7 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
     for (int b = 0; b < 8; ++b) {o << (b ? "," : "") << fv.s[20+b];}
     o << " ntau=";
     for (int b = 0; b < 4; ++b) {o << (b ? "," : "") << fv.s[28+b];}
-    o << " n10=" << fv.s[33];
+    o << " n10=" << fv.s[33] << " nfl=" << fv.s[34] << " rfl=" << fv.mx[4];
     const char *wn[2] = {"wc", "wT"};
     for (int w = 0; w < 2; ++w) {
       o << " " << wn[w] << "=";
