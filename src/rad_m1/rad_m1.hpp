@@ -505,6 +505,27 @@ class RadiationM1 {
   Real impl_tol_rel = 0.0;
   Real impl_tol_rel_max = 1.0e-4;   // implicit_tol_rel_max: cap on tol_eff
   Real impl_tolr_sum = 0.0, impl_tolr_n = 0.0;
+  // picres-1017 implicit_final_resid_log (read only when named; default false = off).
+  // DIAGNOSTIC: after every converged Picard solve ONE more pass is assembled at the
+  // accepted iterate (the "shadow" pass: the next pass up to its linear solve) and the
+  // nonlinear residual r = b(x) - A(x) x of that pass is evaluated per row and logged
+  // (PICRES lines, rank 0) and summed (ImplicitReport); the state the shadow pass
+  // touched is then put back, so the step continues exactly as without it.  The stop
+  // test is NOT changed.  Needs implicit_solver = bicgstab.
+  bool impl_frlog = false;
+  bool impl_fr_sh = false;      // the current Picard pass is the shadow pass
+  int impl_fr_how = 0;          // stop of the converged pass: 1 plain, 2 conv_est, 3 onep
+  int impl_fr_it = 0;           // its number of passes
+  Real impl_fr_tol = 0.0;       // its tol_eff
+  Real impl_fr_chg = 0.0;       // its last change (the Picard resid)
+  Real impl_fr_chp = 0.0;       // the change of the pass before (-1: none)
+  double impl_fr_t0 = 0.0;      // wall time at the start of the snapshot
+  double impl_fr_tsnap = 0.0;   // wall time of the snapshot copy
+  Real impl_fr_sum[32] = {};    // summary accumulators (ImplicitFinalResid)
+  DvceArray5D<Real> fr_iw, fr_opac, fr_ifw, fr_ifw2, fr_ifw3;
+  DvceArray4D<Real> fr_ktd, fr_f0x1n, fr_f0x2n, fr_f0x3n, fr_cs2f1, fr_cs2f2, fr_cs2f3;
+  DvceArray4D<Real> fr_f0x2, fr_f0x3, fr_thx2, fr_thx3;
+  DvceArray1D<Real> fr_nsk;
   int impl_maxit;               // maximum Picard iterations per solve
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
   int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
@@ -1753,6 +1774,8 @@ class RadiationM1 {
   //! left in M1_IW_S2, exactly where the line-Jacobi pass leaves it.  Returns the number
   //! of inner iterations taken.
   int ImplicitBiCGStab(Real rhsmax);
+  void ImplicitFinalResidSave(bool restore);   // picres-1017 (implicit_final_resid_log)
+  void ImplicitFinalResid(bool gnw, int igb, int igr, int igy);
   //! the same BiCGStab with fused reductions and vector updates (implicit_bcg_sync > 0)
   int ImplicitBiCGStabFused(Real rhsmax);
   void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics

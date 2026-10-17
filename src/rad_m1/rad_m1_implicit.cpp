@@ -41,6 +41,7 @@
 #include <float.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -75,6 +76,10 @@
 #endif
 
 namespace radm1 {
+
+namespace {
+double M1FrNow();   // picres-1017 (defined with ImplicitFinalResid)
+} // namespace
 
 //----------------------------------------------------------------------------------------
 //! \fn M1FLev
@@ -1001,6 +1006,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_tol_rel_max = pin->GetOrAddReal("rad_m1","implicit_tol_rel_max",1.0e-4);
   if (impl_tol_rel < 0.0 || impl_tol_rel >= 1.0) {
     ImplFatal("<rad_m1>/implicit_tol_rel must lie in [0,1)");
+  }
+  // picres-1017 implicit_final_resid_log (DIAGNOSTIC, read only when named so that a
+  // run without it has the parameter dump of the run before the key)
+  if (pin->DoesParameterExist("rad_m1","implicit_final_resid_log")) {
+    impl_frlog = pin->GetBoolean("rad_m1","implicit_final_resid_log");
   }
   // a lagged transverse coupling needs more outer passes than a pure column solve, so
   // the ceiling is raised (not the count: the loop still stops at convergence).
@@ -8808,6 +8818,21 @@ void RadiationM1::ImplicitReport() {
               << impl_tolr_n << ", mean tol_eff "
               << ((impl_tolr_n > 0.0) ? impl_tolr_sum/impl_tolr_n : 0.0) << std::endl;
   }
+  if (impl_frlog) {
+    // picres-1017 implicit_final_resid_log: the per-run sums of ImplicitFinalResid
+    const Real *S = impl_fr_sum;
+    std::cout << "<rad_m1> implicit_final_resid_log: solves=" << S[0]
+              << " max rc=" << S[14] << " max rT=" << S[15]
+              << " | solves with max rc > tol " << S[1] << ", > 10 tol " << S[2]
+              << ", > 1e-6 " << S[3] << ", > 1e-4 " << S[4] << ", > 1e-2 " << S[5]
+              << " | max rT > tol " << S[6] << ", > 10 tol " << S[7]
+              << " | max(rc,rT) > tol " << S[19] << ", > 10 tol " << S[8]
+              << " | conv_est stops " << S[16] << " (of them > 10 tol " << S[17] << ")"
+              << " | cells > 10 tol " << S[12] << " of " << S[13]
+              << " | no gas row " << S[18]
+              << " | time loop " << S[11] << " s, shadow eval " << S[9]
+              << " s, snapshot " << S[10] << " s" << std::endl;
+  }
   if (impl_gn_sw > 0) {
     std::cout << "<rad_m1> implicit_gas_newton_switch=" << impl_gn_sw << " (min pass "
               << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
@@ -11885,9 +11910,22 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       vqw_(m,k,j) = (hp >= 0.0) ? fmin(fmax(hp, qlo), qhi) : q0;
     });
   }
-  for (it = 0; it < impl_maxit && !converged; ++it) {
+  // picres-1017: the shadow pass of implicit_final_resid_log may run at it = maxit
+  if (impl_frlog && !bicg) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_final_resid_log needs implicit_solver = bicgstab: "
+                << "off" << std::endl;
+    }
+    impl_frlog = false;
+  }
+  impl_fr_sh = false;
+  if (impl_frlog) {DevExeSpace().fence(); impl_fr_t0 = M1FrNow();}
+  int frh = 0;   // picres-1017: which test stopped the pass (host bookkeeping only)
+  for (it = 0; (it < impl_maxit || impl_fr_sh) && !converged; ++it) {
     // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k
-    if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0) {
+    // (not in the shadow pass of implicit_final_resid_log: its state is not put back)
+    if (vgd_on && vlat_ready && vgd_rbe > 0 && it > 0 && (it % vgd_rbe) == 0 &&
+        !impl_fr_sh) {
       VetGdIterRebuild();
     }
     // the gas Newton update of THIS pass (off after a detected stall, see above)
@@ -11896,7 +11934,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
-    if (accel) {ImplicitAccelSave();}
+    if (accel && !impl_fr_sh) {ImplicitAccelSave();}
     // the off-diagonal mode of THIS pass (the positivity fallback can change it)
     const int odm = od_now;
     // the closure moves only after the first pass, and not at all under
@@ -12550,6 +12588,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
     // (c) the emission/absorption source, linearised in T about the iterate
     if (src_on) {
+      // picres-1017 shadow pass: no Newton safeguard (yprev = 0), so that the gas row
+      // the kernel leaves in igr/igb is the one of the accepted iterate itself
+      if (impl_fr_sh && gnw) {
+        auto iy_ = iw;
+        const int iyc = igy;
+        par_for("m1_fr_noguard", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          iy_(m,iyc,k,j,i) = 0.0;
+        });
+      }
       auto eos = flr.eos;
       // m1-fast5-sp: an ideal-gas EOS without the cache gets its own kernel (e and c_v by
       // M1EosIdeal, the ideal branch of ThermoAt: bitwise); the generic one carries the
@@ -13294,6 +13342,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           iw_(m,M1_IW_KB,k,j,i) += d*iw_(m,M1_IW_EP,k,j,i);
         });
       }
+      // picres-1017 implicit_final_resid_log: the shadow pass stops here (the system
+      // of the accepted iterate is assembled), logs b - A x and puts the state back
+      if (impl_fr_sh) {
+        ImplicitFinalResid(gnw, igb, igr, igy);
+        converged = true;
+        break;
+      }
       kdev_slot = std::min(it, 2);
       TmrMark(5);
       DetTrace("pre_bcg");
@@ -13756,6 +13811,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       impl_tolr_n += 1.0;
     }
     converged = (resid < tol_eff) && (!trans || (lresid < impl_lin_tol));
+    frh = 1;
     if (impl_conv_est || !impl_lres_test) {
       // the Picard test, optionally without the confirming pass: q is the contraction
       // of the last two passes, and q/(1-q) times this change bounds what is left
@@ -13766,6 +13822,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (impl_conv_est && !pc && rprev > 0.0 && !rinrc) {
         Real q = resid/rprev;
         pc = (q < 0.5) && (resid*q/(1.0 - q) < tol_eff);
+        if (pc) {frh = 2;}
       }
       if (onep && it == 0 && !pc && !ocheck && !rinrc) {
         const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
@@ -13773,7 +13830,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         const Real sf = (otyp != 0 && t2_onep_s > 0.0) ? t2_onep_s : impl_onep_s;
         const Real qe = std::max(sf*qm, 1.0e-6);
         pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < tol_eff);
-        if (pc) {impl_onep_n += 1.0;}
+        if (pc) {impl_onep_n += 1.0; frh = 3;}
       }
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
@@ -13822,6 +13879,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         for (int q = 0; q <= it; ++q) {rhist.push_back(resid);}
       }
     }
+    const Real frpo = rprev;   // picres-1017: the change of the pass before
     rprev = resid;
     if (it == 0) {ores0 = resid;}
     if (it == 1) {ores1 = resid;}
@@ -13852,6 +13910,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else {
         ImplicitX1Halo(true);
       }
+    }
+    // picres-1017 implicit_final_resid_log: a converged solve takes one shadow pass
+    // (assembly only, ImplicitFinalResid at step (e)); the state is saved here
+    if (impl_frlog && converged) {
+      impl_fr_how = frh;
+      impl_fr_it = it + 1;
+      impl_fr_tol = tol_eff;
+      impl_fr_chg = resid;
+      impl_fr_chp = frpo;
+      ImplicitFinalResidSave(false);
+      impl_fr_sh = true;
+      converged = false;
     }
   }
   TmrMark(7);
@@ -15227,6 +15297,362 @@ void RadiationM1::ImplicitMusclBound() {
   if (nb > 0.0) {
     for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
     if (led) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
+  }
+}
+
+//----------------------------------------------------------------------------------------
+// picres-1017 implicit_final_resid_log (DIAGNOSTIC, default off)
+namespace {
+double M1FrNow() {
+  return std::chrono::duration<double>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+// a clone of src (same layout) holds its contents between save and restore
+template <class V>
+void M1FrCopy(V &snap, const V &src, bool restore) {
+  if (src.data() == nullptr || src.span() == 0) return;
+  if (!restore) {
+    bool same = (snap.data() != nullptr);
+    for (int r = 0; r < static_cast<int>(V::rank) && same; ++r) {
+      same = (snap.extent(r) == src.extent(r));
+    }
+    if (!same) {
+      snap = V(Kokkos::view_alloc(Kokkos::WithoutInitializing, std::string("m1_fr_snap")),
+               src.layout());
+    }
+    Kokkos::deep_copy(snap, src);
+  } else {
+    Kokkos::deep_copy(src, snap);
+  }
+}
+constexpr int M1_FR_NS = 34;   // sums of the per-solve reduction (see ImplicitFinalResid)
+struct M1FrVal {
+  Real s[M1_FR_NS];
+  Real mx[4];
+};
+struct M1FrRed {
+ public:
+  using reducer = M1FrRed;
+  using value_type = M1FrVal;
+  using result_view_type = Kokkos::View<value_type, Kokkos::HostSpace,
+                                        Kokkos::MemoryUnmanaged>;
+ private:
+  result_view_type value;
+ public:
+  KOKKOS_INLINE_FUNCTION
+  explicit M1FrRed(value_type &v) : value(&v) {}
+  KOKKOS_INLINE_FUNCTION
+  void join(value_type &d, const value_type &s) const {
+    for (int q = 0; q < M1_FR_NS; ++q) {d.s[q] += s.s[q];}
+    for (int q = 0; q < 4; ++q) {d.mx[q] = (s.mx[q] > d.mx[q]) ? s.mx[q] : d.mx[q];}
+  }
+  KOKKOS_INLINE_FUNCTION
+  void init(value_type &v) const {
+    for (int q = 0; q < M1_FR_NS; ++q) {v.s[q] = 0.0;}
+    for (int q = 0; q < 4; ++q) {v.mx[q] = 0.0;}
+  }
+  KOKKOS_INLINE_FUNCTION
+  value_type &reference() const {return *value.data();}
+  KOKKOS_INLINE_FUNCTION
+  result_view_type view() const {return value;}
+  KOKKOS_INLINE_FUNCTION
+  bool references_scalar() const {return true;}
+};
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitFinalResidSave
+//! \brief picres-1017: save (restore = false) or put back (true) every array the shadow
+//! pass of implicit_final_resid_log can change: iw (all components, ghosts included),
+//! the opacities, the x1/x2/x3 face work arrays, d kappa/dT, the start-of-step face
+//! fluxes F0^n with the conservative2 shifts, the x2/x3 face fluxes and thetas, and the
+//! Newton-guard counter.  Host counters the assembly bumps (hsf_*, muscl_nbuild) are
+//! diagnostics and are left as they are.
+
+void RadiationM1::ImplicitFinalResidSave(bool restore) {
+  DevExeSpace().fence();
+  const double t0 = M1FrNow();
+  if (!restore) {impl_fr_sum[11] += t0 - impl_fr_t0;}   // the Picard loop of the solve
+  M1FrCopy(fr_iw, iw, restore);
+  M1FrCopy(fr_opac, opac, restore);
+  M1FrCopy(fr_ifw, ifw, restore);
+  M1FrCopy(fr_ifw2, ifw2, restore);
+  M1FrCopy(fr_ifw3, ifw3, restore);
+  M1FrCopy(fr_ktd, ktd, restore);
+  M1FrCopy(fr_f0x1n, f0x1n, restore);
+  M1FrCopy(fr_f0x2n, f0x2n, restore);
+  M1FrCopy(fr_f0x3n, f0x3n, restore);
+  M1FrCopy(fr_cs2f1, cs2f1, restore);
+  M1FrCopy(fr_cs2f2, cs2f2, restore);
+  M1FrCopy(fr_cs2f3, cs2f3, restore);
+  M1FrCopy(fr_f0x2, f0x2, restore);
+  M1FrCopy(fr_f0x3, f0x3, restore);
+  M1FrCopy(fr_thx2, thx2, restore);
+  M1FrCopy(fr_thx3, thx3, restore);
+  M1FrCopy(fr_nsk, opn_nskip_d, restore);
+  DevExeSpace().fence();
+  const double t1 = M1FrNow();
+  if (restore) {
+    impl_fr_tsnap += t1 - t0;
+  } else {
+    impl_fr_tsnap = t1 - t0;
+    impl_fr_t0 = t1;   // the shadow assembly starts now
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitFinalResid
+//! \brief picres-1017 implicit_final_resid_log: called in the shadow pass at step (e),
+//! i.e. with the system of the ACCEPTED iterate x = (E', T') assembled exactly as the
+//! next Picard pass would assemble it (opacities, closure, Newton terms, implicit_vimp,
+//! conservative2 dA, transverse terms at x).  r = b - A x is the nonlinear residual of
+//! the Schur-reduced E row (the F rows are eliminated face by face and the gas row by
+//! the linearised T update, so r carries all three); the gas row is also evaluated on
+//! its own, y(T') = rho e(T') - rho e^n + c dt (rho kappa_P a T'^4 - rho kappa_E (E'+de0))
+//! (rk, bk of the shadow src kernel, Newton safeguard off).  Per cell:
+//!   rc = |r| / ((1 + SRCB) max(E', e_floor))   (the implicit_lin_cnorm scale: for the
+//!        M-matrix rows a bound of the next Picard correction |dE|/E)
+//!   rt = |r| / (|E'| + |E^n| + |SRCB E'| + |SRCR| + |A x - (1+SRCB) E'| + |b - E^n - SRCR|)
+//!        (the row scaled by the magnitude of its terms: time, exchange, transport)
+//!   rT = |y| / (bk T')   (the gas Newton correction |dT|/T)
+//!   rg = |y| / (|rho e^n| + |rho e(T')| + c dt rho kappa_P a T'^4 + c dt rho kappa_E |E'+de0|)
+//! One PICRES line per solve (rank 0): maxima, counts above 1e-6/1e-4/1e-2/tol/10 tol,
+//! the cells with max(rc, rT) > tol_eff by log10 rho and by cell tau, the worst cells,
+//! the times.  Then the saved state is put back (ImplicitFinalResidSave(true)).
+
+void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
+  (void) igy;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  // A x at the accepted iterate with this pass's operator
+  if (impl_stencil) {ImplicitStencilBuild();}
+  auto iw_ = iw;
+  par_for("m1_fr_x0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_KX,k,j,i) = iw_(m,M1_IW_EP,k,j,i);
+  });
+  ImplicitApplyOp(M1_IW_KX, M1_IW_KV);
+  FluidRef flr = FluidRef::Get(pmy_pack);
+  const bool hh = flr.on;
+  auto uh = hh ? flr.u0 : u0;
+  auto op_ = opac;
+  const bool gq = gnw && hh;
+  const Real efl = e_floor, cl = c_light, dt = dt_sub, ar = arad;
+  const Real tol = impl_fr_tol;
+  const int gb = igb, gr = igr;
+  par_for("m1_fr_res", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real e = iw_(m,M1_IW_EP,k,j,i);
+    const Real b = iw_(m,M1_IW_KB,k,j,i);
+    const Real ax = iw_(m,M1_IW_KV,k,j,i);
+    const Real sb = iw_(m,M1_IW_SRCB,k,j,i);
+    const Real sr = iw_(m,M1_IW_SRCR,k,j,i);
+    const Real en = iw_(m,M1_IW_EN,k,j,i);
+    const Real r = fabs(b - ax);
+    const Real s1 = (1.0 + fmax(sb, 0.0))*fmax(e, efl);
+    const Real s2 = fabs(e) + fabs(en) + fabs(sb*e) + fabs(sr) + fabs(ax - (1.0 + sb)*e)
+                    + fabs(b - en - sr);
+    Real rc = r/fmax(s1, 1.0e-300);
+    Real rt = r/fmax(s2, 1.0e-300);
+    Real rT = 0.0, rg = 0.0;
+    if (gq) {
+      const Real kp = op_(m,M1_OP_P,k,j,i), ke_ = op_(m,M1_OP_E,k,j,i);
+      if (kp != 0.0 || ke_ != 0.0) {
+        const Real t = iw_(m,M1_IW_TP,k,j,i);
+        const Real t4 = t*t*t*t;
+        const Real de0 = iw_(m,M1_IW_DE0,k,j,i);
+        const Real rk = iw_(m,gr,k,j,i), bk = iw_(m,gb,k,j,i);
+        const Real egn = iw_(m,M1_IW_EGN,k,j,i);
+        const Real y = fabs(rk + cl*dt*ke_*e);
+        const Real ee = egn - rk - cl*dt*kp*ar*t4 + cl*dt*ke_*de0;
+        const Real sg = fabs(egn) + fabs(ee) + cl*dt*kp*ar*t4 + cl*dt*ke_*fabs(e + de0);
+        rT = (bk > 0.0 && t > 0.0) ? y/(bk*t) : 0.0;
+        rg = y/fmax(sg, 1.0e-300);
+      }
+    }
+    if (!(rc == rc)) {rc = 1.0e300;}   // NaN: counted as the largest
+    if (!(rt == rt)) {rt = 1.0e300;}
+    if (!(rT == rT)) {rT = 1.0e300;}
+    if (!(rg == rg)) {rg = 1.0e300;}
+    iw_(m,M1_IW_KR,k,j,i) = rc;
+    iw_(m,M1_IW_KRH,k,j,i) = rt;
+    iw_(m,M1_IW_KP,k,j,i) = rT;
+    iw_(m,M1_IW_KS,k,j,i) = rg;
+  });
+  // the reduction: s[5q + t] = count of quantity q (rc, rT, rt, rg) above threshold t
+  // (1e-6, 1e-4, 1e-2, tol, 10 tol); s[20..27] max(rc,rT) > tol by log10 rho (< -19,
+  // [-19,-17), ..., >= -7); s[28..31] by cell tau_x1 (< 1e-2, < 1, < 1e2, >= 1e2);
+  // s[32] cells; s[33] max(rc,rT) > 10 tol
+  const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+  auto x1f = pmy_pack->pcoord->xx1f;
+  M1FrVal fv;
+  Kokkos::parallel_reduce("m1_fr_red",
+  Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, M1FrVal &v) {
+    const int m = idx/nkji;
+    int q = idx - m*nkji;
+    const int k = q/nji + ks;
+    q -= (k - ks)*nji;
+    const int j = q/ni + js;
+    const int i = q - (j - js)*ni + is;
+    const Real x[4] = {iw_(m,M1_IW_KR,k,j,i), iw_(m,M1_IW_KP,k,j,i),
+                       iw_(m,M1_IW_KRH,k,j,i), iw_(m,M1_IW_KS,k,j,i)};
+    const Real th[5] = {1.0e-6, 1.0e-4, 1.0e-2, tol, 10.0*tol};
+    for (int a = 0; a < 4; ++a) {
+      for (int t = 0; t < 5; ++t) {if (x[a] > th[t]) {v.s[5*a+t] += 1.0;}}
+      v.mx[a] = (x[a] > v.mx[a]) ? x[a] : v.mx[a];
+    }
+    const Real w = fmax(x[0], x[1]);
+    if (w > tol) {
+      const Real lr = hh ? log10(fmax(uh(m,IDN,k,j,i), 1.0e-300)) : -30.0;
+      int bnr = static_cast<int>(floor((lr + 21.0)*0.5));
+      bnr = (bnr < 0) ? 0 : ((bnr > 7) ? 7 : bnr);
+      v.s[20 + bnr] += 1.0;
+      const Real tau = iw_(m,M1_IW_KT,k,j,i)*(x1f(m,i+1) - x1f(m,i));
+      const int bt = (tau < 1.0e-2) ? 0 : ((tau < 1.0) ? 1 : ((tau < 1.0e2) ? 2 : 3));
+      v.s[28 + bt] += 1.0;
+    }
+    if (w > 10.0*tol) {v.s[33] += 1.0;}
+    v.s[32] += 1.0;
+  }, M1FrRed(fv));
+#if MPI_PARALLEL_ENABLED
+  {
+    Real gs[M1_FR_NS], gm[4];
+    MPI_Allreduce(fv.s, gs, M1_FR_NS, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(fv.mx, gm, 4, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    for (int q = 0; q < M1_FR_NS; ++q) {fv.s[q] = gs[q];}
+    for (int q = 0; q < 4; ++q) {fv.mx[q] = gm[q];}
+  }
+#endif
+  // the worst cell of rc and of rT: r, theta, rho, T, E/e_floor, tau_x1, rc, rT, rt, rg,
+  // i - is (on its block), its block's gid
+  constexpr int NW = 12;
+  Real wc[2][NW];
+  auto x1v = pmy_pack->pcoord->x1v;
+  auto x2v = pmy_pack->pcoord->x2v;
+  auto gids = pmy_pack->pmb->mb_gid;
+  for (int w = 0; w < 2; ++w) {
+    const int sc = (w == 0) ? M1_IW_KR : M1_IW_KP;
+    Kokkos::MaxLoc<Real,int>::value_type ml;
+    Kokkos::parallel_reduce("m1_fr_loc",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Kokkos::MaxLoc<Real,int>::value_type &v) {
+      const int m = idx/nkji;
+      int q = idx - m*nkji;
+      const int k = q/nji + ks;
+      q -= (k - ks)*nji;
+      const int j = q/ni + js;
+      const int i = q - (j - js)*ni + is;
+      const Real x = iw_(m,sc,k,j,i);
+      if (x > v.val) {v.val = x; v.loc = idx;}
+    }, Kokkos::MaxLoc<Real,int>(ml));
+    for (int q = 0; q < NW; ++q) {wc[w][q] = 0.0;}
+    int own = global_variable::my_rank;
+#if MPI_PARALLEL_ENABLED
+    {
+      struct {double v; int r;} a, g;
+      a.v = static_cast<double>(ml.val);
+      a.r = global_variable::my_rank;
+      MPI_Allreduce(&a, &g, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+      own = g.r;
+    }
+#endif
+    if (own == global_variable::my_rank && ml.loc >= 0) {
+      const int idx = ml.loc;
+      const int m = idx/nkji;
+      int q = idx - m*nkji;
+      const int k = q/nji + ks;
+      q -= (k - ks)*nji;
+      const int j = q/ni + js;
+      const int i = q - (j - js)*ni + is;
+      DvceArray1D<Real> cv("m1_fr_cell", NW);
+      const int gid = gids.h_view(m);
+      par_for("m1_fr_cell", DevExeSpace(), 0, 0,
+      KOKKOS_LAMBDA(const int) {
+        cv(0) = x1v(m,i);
+        cv(1) = x2v(m,j);
+        cv(2) = hh ? uh(m,IDN,k,j,i) : 0.0;
+        cv(3) = iw_(m,M1_IW_TP,k,j,i);
+        cv(4) = iw_(m,M1_IW_EP,k,j,i)/efl;
+        cv(5) = iw_(m,M1_IW_KT,k,j,i)*(x1f(m,i+1) - x1f(m,i));
+        cv(6) = iw_(m,M1_IW_KR,k,j,i);
+        cv(7) = iw_(m,M1_IW_KP,k,j,i);
+        cv(8) = iw_(m,M1_IW_KRH,k,j,i);
+        cv(9) = iw_(m,M1_IW_KS,k,j,i);
+      });
+      auto ch_ = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cv);
+      for (int qq = 0; qq < 10; ++qq) {wc[w][qq] = ch_(qq);}
+      wc[w][10] = static_cast<Real>(i - is);
+      wc[w][11] = static_cast<Real>(gid);
+    }
+#if MPI_PARALLEL_ENABLED
+    {
+      Real g[NW];
+      MPI_Allreduce(wc[w], g, NW, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      for (int q = 0; q < NW; ++q) {wc[w][q] = g[q];}
+    }
+#endif
+  }
+  DevExeSpace().fence();
+  const double teval = M1FrNow() - impl_fr_t0;
+  ImplicitFinalResidSave(true);
+  impl_fr_sh = false;
+  // per-run sums (ImplicitReport)
+  Real *S = impl_fr_sum;
+  const Real mrc = fv.mx[0], mrT = fv.mx[1];
+  const Real mw = std::max(mrc, mrT);
+  S[0] += 1.0;
+  if (mrc > tol) {S[1] += 1.0;}
+  if (mrc > 10.0*tol) {S[2] += 1.0;}
+  if (mrc > 1.0e-6) {S[3] += 1.0;}
+  if (mrc > 1.0e-4) {S[4] += 1.0;}
+  if (mrc > 1.0e-2) {S[5] += 1.0;}
+  if (mrT > tol) {S[6] += 1.0;}
+  if (mrT > 10.0*tol) {S[7] += 1.0;}
+  if (mw > 10.0*tol) {S[8] += 1.0;}
+  S[9] += teval;
+  S[10] += impl_fr_tsnap;
+  S[12] += fv.s[33];
+  S[13] += fv.s[32];
+  S[14] = std::max(S[14], mrc);
+  S[15] = std::max(S[15], mrT);
+  if (impl_fr_how == 2) {
+    S[16] += 1.0;
+    if (mw > 10.0*tol) {S[17] += 1.0;}
+  }
+  if (!gq) {S[18] += 1.0;}
+  if (mw > tol) {S[19] += 1.0;}
+  if (global_variable::my_rank == 0) {
+    const int ts = t2_solve;
+    const char *kind = (ts == M1_T2S_STAGE1) ? "s1" : ((ts == M1_T2S_STAGE2) ? "s2" : "be");
+    const char *how[4] = {"none", "plain", "est", "onep"};
+    std::ostringstream o;
+    o.precision(4);
+    o << "PICRES cyc=" << pmy_pack->pmesh->ncycle << " t=" << pmy_pack->pmesh->time
+      << " kind=" << kind << " it=" << impl_fr_it
+      << " how=" << how[std::min(std::max(impl_fr_how, 0), 3)]
+      << " tol=" << tol << " chg=" << impl_fr_chg << " chp=" << impl_fr_chp
+      << " rc=" << mrc << " rT=" << mrT << " rt=" << fv.mx[2] << " rg=" << fv.mx[3]
+      << " gas=" << (gq ? 1 : 0) << " ncell=" << fv.s[32] << " n";
+    const char *qn[4] = {"rc", "rT", "rt", "rg"};
+    for (int a = 0; a < 4; ++a) {
+      o << " " << qn[a] << "=";
+      for (int t = 0; t < 5; ++t) {o << (t ? "," : "") << fv.s[5*a+t];}
+    }
+    o << " nrho=";
+    for (int b = 0; b < 8; ++b) {o << (b ? "," : "") << fv.s[20+b];}
+    o << " ntau=";
+    for (int b = 0; b < 4; ++b) {o << (b ? "," : "") << fv.s[28+b];}
+    o << " n10=" << fv.s[33];
+    const char *wn[2] = {"wc", "wT"};
+    for (int w = 0; w < 2; ++w) {
+      o << " " << wn[w] << "=";
+      for (int q = 0; q < NW; ++q) {o << (q ? "," : "") << wc[w][q];}
+    }
+    o << " teval=" << teval << " tsnap=" << impl_fr_tsnap << std::endl;
+    std::cout << o.str();
   }
 }
 
