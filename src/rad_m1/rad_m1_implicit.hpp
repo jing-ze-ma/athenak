@@ -163,6 +163,10 @@ constexpr int M1_IBC_FLUX     = 1;   // imposed flux, F_f = implicit_flux_x1min/
 constexpr int M1_IBC_REFLECT  = 2;   // F_f = 0
 constexpr int M1_IBC_PERIODIC = 3;   // cyclic tridiagonal (Sherman-Morrison)
 constexpr int M1_IBC_EFIX     = 4;   // Dirichlet: the boundary CELL keeps the E it has
+// acc3d-1017: transverse (x2) OUTFLOW face, read only when named: the face carries the
+// edge cell's own outgoing x2 flux (zero gradient of F, outflow only; lagged in the Picard
+// pass), F_f = max(+-F2_cell, 0); never the default (auto stays reflect)
+constexpr int M1_IBC_OUTFLOW  = 5;
                                      // at the start of every step, i.e. it is frozen at
                                      // its initial value.  This is the face-flux form of
                                      // the fixed-E ghost the explicit tests T3b and T6

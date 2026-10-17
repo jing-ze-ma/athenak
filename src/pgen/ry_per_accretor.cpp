@@ -1019,8 +1019,12 @@ void RyPerBCEnv(Mesh *pm) {
   const bool thh = thhse_;
   int rm2lo = 1, rm2hi = 1;
   if (rad) {
-    rm2lo = (pmbp->pradm1->ibc_x2min == radm1::M1_IBC_MARSHAK) ? 2 : 1;
-    rm2hi = (pmbp->pradm1->ibc_x2max == radm1::M1_IBC_MARSHAK) ? 2 : 1;
+    // acc3d-1017: implicit_bc_x2 = outflow (zero-gradient outgoing flux) -> copied ghosts
+    auto rmode = [](const int b) {
+      return (b == radm1::M1_IBC_MARSHAK) ? 2 : ((b == radm1::M1_IBC_OUTFLOW) ? 0 : 1);
+    };
+    rm2lo = rmode(pmbp->pradm1->ibc_x2min);
+    rm2hi = rmode(pmbp->pradm1->ibc_x2max);
   }
   par_for("ryper_bcth", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int i) {

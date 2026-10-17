@@ -2724,10 +2724,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       int r = -1;
       if (v.compare("reflect") == 0) {r = M1_IBC_REFLECT;}
       if (v.compare("marshak") == 0) {r = M1_IBC_MARSHAK;}
+      // acc3d-1017: zero-gradient outgoing flux, x2 faces only
+      if (v.compare("outflow") == 0 && (f == BoundaryFace::inner_x2 ||
+                                        f == BoundaryFace::outer_x2)) {r = M1_IBC_OUTFLOW;}
       if (r < 0 || per) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
           << std::endl << "<rad_m1>/" << key << " = '" << v << "': auto | reflect | "
-          << "marshak, the last two on a NON-periodic mesh face" << std::endl;
+          << "marshak (| outflow on x2), the last ones on a NON-periodic mesh face"
+          << std::endl;
         std::exit(EXIT_FAILURE);
       }
       return r;
@@ -5042,6 +5046,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const Real tmq = marshak_q;
   const bool vm2lo = (ibc_x2min == M1_IBC_MARSHAK), vm2hi = (ibc_x2max == M1_IBC_MARSHAK);
   const bool vm3lo = (ibc_x3min == M1_IBC_MARSHAK), vm3hi = (ibc_x3max == M1_IBC_MARSHAK);
+  const bool vo2lo = (ibc_x2min == M1_IBC_OUTFLOW), vo2hi = (ibc_x2max == M1_IBC_OUTFLOW);
   par_for_lb("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dx2 = mbsize.d_view(m).dx2;
@@ -5100,6 +5105,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       fp = cl*tmq*ec;
       dia += nu2*ch*tmq;
     }
+    if (j == je && p2hi && vo2hi) {   // acc3d-1017: outflow face, the cell's own F2 > 0
+      fp = fmax(iw_(m,M1_IW_F2,k,j,i), 0.0);
+    }
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
       Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
@@ -5141,6 +5149,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     if (j == js && p2lo && vm2lo) {   // bubbles-1012: vacuum face, outflow c q E
       fm = -cl*tmq*ec;
       dia += nu2*ch*tmq;
+    }
+    if (j == js && p2lo && vo2lo) {   // acc3d-1017: outflow face, the cell's own F2 < 0
+      fm = fmin(iw_(m,M1_IW_F2,k,j,i), 0.0);
     }
     tt += nu2*cr*(fp - fm);
     Real gps = 0.0, gms = 0.0;   // (sp) the x3 face fluxes, copied out below
