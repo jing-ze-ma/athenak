@@ -11834,7 +11834,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto f3_ = f0x3;
   if (trans) {
     if (cs_geom && thrd) {CubedSeamFaceAverage();}   // STAGE CS1 (C5)
-    if (cs_geom && impl_beam_hr) {VetGdCsHrPrep();}    // cs-s4-1017
     Kokkos::deep_copy(DevExeSpace(), f0x2n, f0x2);
     if (thrd) {Kokkos::deep_copy(DevExeSpace(), f0x3n, f0x3);}
   }
@@ -12206,6 +12205,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       return TaskStatus::complete;
     }
   }
+  // cs-s4-1017: the cs half-range data of this solve's closure (|H|/J, seam ghosts),
+  // after the build above and before the first face coefficients
+  if (cs_geom && impl_beam_hr) {VetGdCsHrPrep();}
   TmrMark(3);
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit

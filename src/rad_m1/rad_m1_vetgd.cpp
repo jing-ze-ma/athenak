@@ -7969,6 +7969,20 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*nt + i];}
       mh(i) = a;
     }
+    // cs-s4-1017: on the cubed sphere the two LATERAL axes share one shell mean (r+ and
+    // r- each the mean of the xi and eta ratios): a seam joins one panel's xi axis to
+    // its neighbour's eta axis, and with a set that is not cube-symmetric (GL about z)
+    // the per-axis means differ; the symmetric-state reference of the twin correction
+    // is the same for every tangential axis
+    if (vgd_csg) {
+      for (int i = 0; i < c1; ++i) {
+        for (int c = 2; c <= 3; ++c) {
+          const Real a = 0.5*(mh(c*c1 + i) + mh((c + 2)*c1 + i));
+          mh(c*c1 + i) = a;
+          mh((c + 2)*c1 + i) = a;
+        }
+      }
+    }
     Kokkos::deep_copy(vgd_hrm6, mh);
     for (int c = 0; c < nhc; ++c) {
       if (c == M1_VGD_HREP) {continue;}
@@ -8018,6 +8032,21 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     auto mo_ = vgd_hrm;
     // one thread per shell, a fixed (m, k, j) order: reproducible (as vet_gd_twin_det)
     const int nm = nmb1 + 1;
+    if (vgd_csg && c >= 2 && c <= 5) {
+      // cs-s4-1017: the lateral pair (xi, eta) shares one shell mean (see the MPI path)
+      const int pc = (c <= 3) ? (c + 2) : (c - 2);
+      par_for("m1_vgd_hr_smcs", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
+        Real sm = 0.0;
+        for (int m = 0; m < nm; ++m) {
+          for (int k = ks; k <= ke; ++k) {
+            for (int j = js; j <= je; ++j) {
+              sm += 0.5*(ht_(m,(c <= 3) ? c : pc,k,j,i) + ht_(m,(c <= 3) ? pc : c,k,j,i));
+            }
+          }
+        }
+        mo_(i) = sm/ncol;
+      });
+    } else {
     par_for("m1_vgd_hr_sm", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
       Real sm = 0.0;
       for (int m = 0; m < nm; ++m) {
@@ -8033,6 +8062,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       }
       mo_(i) = sm/ncol;
     });
+    }  // !(vgd_csg lateral)
 #if MPI_PARALLEL_ENABLED
     {
       auto mh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_hrm);
