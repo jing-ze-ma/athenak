@@ -582,6 +582,12 @@ class RadiationM1 {
   // the advected radiation, and diverged in the first step, rhd/s5/smoke.)
   bool iebath_hi_col_on = false;
   DvceArray3D<Real> iebath_hi_col;
+  // acc3d-1017: <rad_m1>/implicit_bc_x2min|max = flux: the x2 physical face carries an
+  // IMPOSED radiative flux F_theta(m,k,i) (lab frame, + = toward larger theta), set by the
+  // problem generator through SetX2FaceFlux (an equilibrium lateral flux, e.g. the von
+  // Zeipel flux of a tilted stellar photosphere at a wedge wall); explicit in the solve
+  bool ifx2_on = false;
+  DvceArray3D<Real> ifx2_lo, ifx2_hi;
   DvceArray3D<Real> ibadv_x1max;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
@@ -1567,6 +1573,7 @@ class RadiationM1 {
   //! the array and must keep it alive for the run
   void SetForceReference(const DvceArray4D<Real> &a);
   void SetX1maxBathColumns(const DvceArray3D<Real> &eb);
+  void SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<Real> &fhi);
   //! design sect. 2: evaluate and print v_max*tau_max/chat.  Runs once, from the first
   //! Opacity task that has a filled array (tau needs rho*kappa, which the ctor has not).
   void RSLACheck();

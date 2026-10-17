@@ -346,6 +346,10 @@ bool thhse_ = false;           // theta_bc = hse: closed hydrostatic wall (v_the
 Real thsp_w_ = 0.0, thsp_tau_ = 0.0;   // theta sponge width (rad), time (code)
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
 DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
+// <rad_m1>/implicit_bc_x2min|max = flux (phys_3d): the imposed equilibrium lateral flux at the
+// theta walls (RadSetup) and its total outward rate on this rank (booked as radiation out)
+DvceArray3D<Real> fx2lo_, fx2hi_;
+Real fx2leak_ = 0.0;
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -1674,6 +1678,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   // env_amb_mode = radeq: register 4 (the wall-stress part Jstr of Jacc, meaningless deep in
   // the envelope) holds the cumulative floor mass Mfl instead
   if (amb_radeq_) fs.the_array[4] = 0.0;
+  // acc3d-1017: the imposed x2-wall radiative flux (implicit_bc_x2 = flux) leaves as radiation
+  if (rad) fs.the_array[10] += fx2leak_;
   // donor_mask: registers 2, 3 (Mwal, Jwal: zero with the closed free-slip wall) hold the
   // cumulative mass and gas energy removed by the mask
   if (msk_) fs.the_array[2] = fs.the_array[3] = 0.0;
@@ -1903,6 +1909,8 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   gpl_ = DvceArray3D<Real>();
   iracc_ = DvceArray1D<int>();
   rbath_ = DvceArray3D<Real>();
+  fx2lo_ = DvceArray3D<Real>();
+  fx2hi_ = DvceArray3D<Real>();
   gr4_ = DvceArray4D<Real>();
   gt4_ = DvceArray4D<Real>();
   gp4_ = DvceArray4D<Real>();
@@ -2225,6 +2233,65 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
       }
     }
     Kokkos::deep_copy(gpl4_, hgl4);
+    // acc3d-1017: <rad_m1>/implicit_bc_x2min|max = flux: the wall faces carry the column's
+    // EQUILIBRIUM lateral flux, F_theta = F_col(psi) (dPhi/(r dtheta))/|grad Phi| at the face
+    // (F along grad Phi of the true 3-D Roche potential, i.e. normal to the tilted
+    // equipotentials; F_col at the face's psi, no von Zeipel g factor), so the wall neither
+    // blocks the poleward flux of the tilted photosphere (reflect) nor drains the star
+    // (outflow/Marshak).  Explicit (imposed); its outward total is booked in Ebnd.
+    fx2leak_ = 0.0;
+    if (pm1->ibc_x2min == radm1::M1_IBC_X2FLUX || pm1->ibc_x2max == radm1::M1_IBC_X2FLUX) {
+      Kokkos::realloc(fx2lo_, nmb, n3, n1);
+      Kokkos::realloc(fx2hi_, nmb, n3, n1);
+      auto hlo = Kokkos::create_mirror_view(fx2lo_);
+      auto hhi = Kokkos::create_mirror_view(fx2hi_);
+      auto hx2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx2f);
+      auto ha2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
+      auto hbc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmb->mb_bcs.d_view);
+      const int js = indcs.js, je = indcs.je, is = indcs.is, ie = indcs.ie, ks = indcs.ks;
+      const int ke = indcs.ke;
+      auto fth = [&](const Real r, const Real th, const Real ph) {
+        const Real e = 1.0e-6;
+        const Real gt = (RochePot3(p, r, std::sin(th + e), ph) -
+                         RochePot3(p, r, std::sin(th - e), ph))/(2.0*e*r);
+        const Real gr = (RochePot3(p, r*(1.0 + e), std::sin(th), ph) -
+                         RochePot3(p, r*(1.0 - e), std::sin(th), ph))/(2.0*e*r);
+        const Real gp = (RochePot3(p, r, std::sin(th), ph + e) -
+                         RochePot3(p, r, std::sin(th), ph - e))/(2.0*e*r*std::sin(th));
+        const Real g = std::sqrt(gt*gt + gr*gr + gp*gp);
+        const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, r, std::sin(th), ph);
+        return RadColAt(rcol_f_, phis - w)*gt/std::fmax(g, 1.0e-30);
+      };
+      Real lk = 0.0;
+      for (int m=0; m<nmb; ++m) {
+        const Real tlo = hx2f(m,js), thi = hx2f(m,je+1);
+        const bool plo = (hbc(m, BoundaryFace::inner_x2) != BoundaryFlag::block &&
+                          hbc(m, BoundaryFace::inner_x2) != BoundaryFlag::periodic);
+        const bool phi2 = (hbc(m, BoundaryFace::outer_x2) != BoundaryFlag::block &&
+                           hbc(m, BoundaryFace::outer_x2) != BoundaryFlag::periodic);
+        for (int k=0; k<n3; ++k) {
+          for (int i=0; i<n1; ++i) {
+            hlo(m,k,i) = fth(hx1(m,i), tlo, hx3(m,k));
+            hhi(m,k,i) = fth(hx1(m,i), thi, hx3(m,k));
+            if (k >= ks && k <= ke && i >= is && i <= ie) {
+              if (plo && pm1->ibc_x2min == radm1::M1_IBC_X2FLUX) lk -= hlo(m,k,i)*ha2(m,k,js,i);
+              if (phi2 && pm1->ibc_x2max == radm1::M1_IBC_X2FLUX) {
+                lk += hhi(m,k,i)*ha2(m,k,je+1,i);
+              }
+            }
+          }
+        }
+      }
+      fx2leak_ = lk;
+      Kokkos::deep_copy(fx2lo_, hlo);
+      Kokkos::deep_copy(fx2hi_, hhi);
+      pm1->SetX2FaceFlux(fx2lo_, fx2hi_);
+      if (root) {
+        std::printf("ry_per_accretor: <rad_m1> x2 walls: IMPOSED equilibrium lateral flux "
+                    "F_col(psi) dPhi/(r dth)/|grad Phi|; outward total (rank 0) %.6g code "
+                    "(= %.4g Lsun of the full sphere scale)\n", lk, lk*rad_lfac_);
+      }
+    }
   }
   for (int m=0; m<nmb && !p3_; ++m) {
     for (int k=0; k<n3; ++k) {

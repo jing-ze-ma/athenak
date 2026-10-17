@@ -1699,6 +1699,16 @@ void RadiationM1::SetX1maxBathColumns(const DvceArray3D<Real> &eb) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::SetX2FaceFlux
+//! \brief acc3d-1017: the imposed x2-face fluxes (m,k,i) of implicit_bc_x2min|max = flux
+
+void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<Real> &fhi) {
+  ifx2_lo = flo;
+  ifx2_hi = fhi;
+  ifx2_on = true;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn RadiationM1::FrefWaccOn, FrefWaccGam0, FrefWacc
 //! \brief force_reference_work = split, time_scheme = be: the accumulator of the
 //! reference work the gas receives in the hydro stages (rad_m1.hpp, fref_wacc)

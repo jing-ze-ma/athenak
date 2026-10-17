@@ -167,6 +167,9 @@ constexpr int M1_IBC_EFIX     = 4;   // Dirichlet: the boundary CELL keeps the E
 // edge cell's own outgoing x2 flux (zero gradient of F, outflow only; lagged in the Picard
 // pass), F_f = max(+-F2_cell, 0); never the default (auto stays reflect)
 constexpr int M1_IBC_OUTFLOW  = 5;
+// acc3d-1017: transverse (x2) IMPOSED-flux face (read only when named): F_f = ifx2_lo/hi(m,k,i)
+// from the problem generator (RadiationM1::SetX2FaceFlux)
+constexpr int M1_IBC_X2FLUX   = 6;
                                      // at the start of every step, i.e. it is frozen at
                                      // its initial value.  This is the face-flux form of
                                      // the fixed-E ghost the explicit tests T3b and T6
