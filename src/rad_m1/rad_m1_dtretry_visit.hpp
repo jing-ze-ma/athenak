@@ -157,6 +157,14 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("fr_thx2", fr_thx2);
   v.view("fr_thx3", fr_thx3);
   v.view("fr_nsk", fr_nsk);
+  v.value("impl_ce_guard", impl_ce_guard);
+  v.value("impl_ce_nofl", impl_ce_nofl);
+  v.value("impl_frs_on", impl_frs_on);
+  v.value("impl_frs", impl_frs);
+  v.value("impl_frs_rel", impl_frs_rel);
+  v.value("impl_fr_nchk", impl_fr_nchk);
+  v.value("impl_fr_it1", impl_fr_it1);
+  v.value("impl_frs_sum", impl_frs_sum);
   v.value("impl_maxit", impl_maxit);
   v.value("impl_opac_update", impl_opac_update);
   v.value("dbg_opac_part", dbg_opac_part);

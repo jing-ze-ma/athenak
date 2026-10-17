@@ -526,6 +526,35 @@ class RadiationM1 {
   DvceArray4D<Real> fr_ktd, fr_f0x1n, fr_f0x2n, fr_f0x3n, fr_cs2f1, fr_cs2f2, fr_cs2f3;
   DvceArray4D<Real> fr_f0x2, fr_f0x3, fr_thx2, fr_thx3;
   DvceArray1D<Real> fr_nsk;
+  // picstop-1017 (Picard stop, OPT-IN; every key read only when named, default off =
+  // the stop of picres-1017 bit for bit):
+  //  implicit_conv_est_guard = K > 0: the contraction-estimate stop (implicit_conv_est)
+  //    accepts only a pass whose own change is below K tol_eff;
+  //  implicit_conv_est_nofloor = true: q of that stop is the ratio of the last two
+  //    changes over the cells whose new E is above e_floor (a cell dropped to the floor
+  //    makes a change ~1e10 that fakes q ~ 1e-10, picres_1017/NOTE.md);
+  //  implicit_final_resid_stop = thr > 0 (and implicit_final_resid_stop_rel = s: the
+  //    threshold is max(thr, s tol_eff)): a solve the change test accepts is accepted
+  //    only if the scaled nonlinear residual max(rc, rT) of the accepted iterate over
+  //    the cells above e_floor (ImplicitFinalResid, the shadow pass of
+  //    implicit_final_resid_log) is <= the threshold; otherwise that assembly IS the
+  //    next Picard pass (its linear solve follows) and the loop goes on, up to
+  //    implicit_maxit (a check that fails with no pass left: NON-CONVERGED, the usual
+  //    dt_retry / stage-redo handling).  Needs implicit_solver = bicgstab.
+  //  Experiment 2 (picstop_1017, picres_1017/NOTE.md): nofloor brings the AG Car tail to
+  //  the level of a tol 1e-10 reference; the residual stop is NOT recommended (in ~2-4 %
+  //  of solves the change stalls at 1e-14 with rc > 1e-4: maxit, NC, dt retries).
+  Real impl_ce_guard = 0.0;
+  bool impl_ce_nofl = false;
+  bool impl_frs_on = false;
+  Real impl_frs = 0.0, impl_frs_rel = 0.0;
+  int impl_fr_nchk = 0;           // residual checks of the current solve
+  int impl_fr_it1 = 0;            // its passes at the first check
+  // [0] checks [1] failed + continued [2] failed, no pass left (NC) [3] solves accepted
+  // after >= 1 failed check [4] passes taken after a failed check [5] conv_est stops
+  // refused by the guard [6] by nofloor (the plain q would have stopped) [7] nofloor
+  // stops the plain q would have refused [8] logging time (fenced, s)
+  Real impl_frs_sum[12] = {};
   int impl_maxit;               // maximum Picard iterations per solve
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
   int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
@@ -1775,7 +1804,9 @@ class RadiationM1 {
   //! of inner iterations taken.
   int ImplicitBiCGStab(Real rhsmax);
   void ImplicitFinalResidSave(bool restore);   // picres-1017 (implicit_final_resid_log)
-  void ImplicitFinalResid(bool gnw, int igb, int igr, int igy);
+  // returns 0: go on (implicit_final_resid_stop failed, this pass continues), 1: accept,
+  // 2: failed with no pass left (non-converged); 1 and 2 put the saved state back
+  int ImplicitFinalResid(bool gnw, int igb, int igr, int igy, int it);
   //! the same BiCGStab with fused reductions and vector updates (implicit_bcg_sync > 0)
   int ImplicitBiCGStabFused(Real rhsmax);
   void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics
