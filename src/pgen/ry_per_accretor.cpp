@@ -158,6 +158,7 @@
 //! The cumulative integrals restart from zero on a restart.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -3394,6 +3395,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       rd_taumax_ = pin->GetOrAddReal("problem", "donor_ray_taumax", 40.0);
       rd_force_ = pin->GetOrAddBoolean("problem", "donor_ray_force", true);
       rd_dump_dt_ = pin->GetOrAddReal("problem", "donor_ray_dump_dt", 0.0);
+      rd_grow_ = pin->GetOrAddInteger("problem", "donor_ray_grow", 4);
+      {
+        const std::string dg = pin->GetOrAddString("problem", "donor_ray_deposit", "rad");
+        if (dg.compare("gas") == 0) {
+          rd_dgas_ = true;
+        } else if (dg.compare("rad") != 0) {
+          fatal("donor_ray_deposit must be rad | gas");
+        }
+        const std::string op = pin->GetOrAddString("problem", "donor_ray_opac", "total");
+        if (op.compare("rosseland") == 0) {
+          rd_oros_ = true;
+        } else if (op.compare("total") != 0) {
+          fatal("donor_ray_opac must be total | rosseland");
+        }
+      }
       if (rd_npsi_ < 1 || nel < 1 || nel > kRdNelMax || rd_every_ < 1 || !(rd_fh_ > 0.0)) {
         fatal("donor_ray_npsi >= 1, 1 <= donor_ray_nel <= 8, donor_ray_every >= 1, "
               "donor_ray_step > 0");

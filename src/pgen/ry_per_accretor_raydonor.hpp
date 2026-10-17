@@ -47,11 +47,22 @@
 //! (40), at the in-plane lobe entry, at r_out (vacuum) or r_in (opaque).
 //! DEPOSITION (photon conserving): per ray, I dOmega exp(-tau_up/cos e) (1 - exp(-chi L/cos e))
 //! / (L/cos e), L = the in-plane chord of the cell along psi (1/max(|n_r|/dr, |n_phi|/(r dphi))).
-//! The removed power q splits by eps = rho kappa_E / chi: eps q heats the gas (u(IEN), every
-//! hydro stage, RK weighted); (1 - eps) q (scattering) is added to the M1 E at the last
-//! hydro stage (isotropic, F unchanged), so it is transported as diffuse light.  Momentum:
-//! the whole removed beam momentum q/c along the propagation direction goes to the gas
-//! (problem/donor_ray_force, default true), with its work v.f in u(IEN).
+//! problem/donor_ray_deposit = rad (DEFAULT): the whole removed power q is added to the M1 E
+//! at the last hydro stage (isotropic, F unchanged); the implicit gas-radiation coupling then
+//! hands the absorbed part to the gas at the iterate's kappa(T).  = gas: eps = rho kappa_E/chi
+//! of q heats u(IEN) explicitly every stage (RK weighted), the rest goes to E.  The explicit
+//! gas split is UNSTABLE in the thin atmosphere (10-17 smoke: kappa_P ~ 2000 cm^2/g at
+//! rho 1e-13 g/cc took e/rho 2e3 -> 8e5 in one step, the hot gas then cannot cool through
+//! its now tiny kappa_P; dt 7e-6 -> 6e-7).  With rad the beam's local energy density
+//! (|F_inc|/c ~ 0.1-0.3) is < 1 % of the gainer's own E near the photosphere, so the thin gas
+//! T barely depends on where the deposit goes; in thick cells the deposit is absorbed in place.
+//! Momentum: the whole removed beam momentum q/c along the propagation direction goes to the
+//! gas (problem/donor_ray_force, default true), with its work v.f in u(IEN).
+//! EXTINCTION: problem/donor_ray_opac = total (default; max(rho kappa_T, rho kappa_E), the
+//! M1 module's own absorption + Rosseland) | rosseland (rho kappa_T: Rosseland incl. electron
+//! scattering, a continuum beam).  NOTE: with total, the 1e-8 floor gas (20-30 kK, Planck mean
+//! 300-1600 cm^2/g of the table's low-rho extension) has tau ~ 1 between the stars.
+//! The march step grows x2 per step up to donor_ray_grow (4) cell sizes while chi h < 1e-3.
 //! The incident flux at the cell centre (exp(-chi L/2 cos e) inside the own cell) is kept as
 //! a diagnostic (dump).
 //! LEDGER: everything the beam gives the domain (gas heat + force work + scattered E) is
@@ -90,6 +101,10 @@ RdPar rd_par_;
 int rd_npsi_ = 24, rd_every_ = 1;
 Real rd_fh_ = 0.5, rd_taumax_ = 40.0, rd_scale_ = 1.0;
 bool rd_force_ = true;
+bool rd_dgas_ = false;             // donor_ray_deposit = gas (eps q into u(IEN)); default rad
+bool rd_oros_ = false;             // donor_ray_opac = rosseland (rho kappa_T only); default total
+int rd_grow_ = 4;                  // donor_ray_grow: max step growth in thin gas
+int rd_nupd_ = 0;
 bool rd_have_ = false;
 Real rd_dump_dt_ = 0.0, rd_dump_next_ = 0.0;
 int rd_dump_n_ = 0;
@@ -422,6 +437,8 @@ void RayDonorUpdate(MeshBlockPack *pmbp, Mesh *pm) {
   auto koff = rd_koff_, ioff = rd_ioff_;
   const int n1g = rd_n1g_, n3g = rd_n3g_;
   const Real rn2 = 1.0/nj;
+  const bool oros = rd_oros_;
+  const auto tw0 = std::chrono::steady_clock::now();
   Kokkos::deep_copy(chi, 0.0f);
   const int nki = nk*ni, ncol = nmb*nki;
   Kokkos::parallel_for("ryper_rd_map", Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
@@ -429,7 +446,8 @@ void RayDonorUpdate(MeshBlockPack *pmbp, Mesh *pm) {
     const int m = c/nki, k = (c - m*nki)/ni + ks, i = c%ni + is;
     Real s = 0.0;
     for (int j=js; j<js+nj; ++j) {
-      s += fmax(opac(m,radm1::M1_OP_T,k,j,i), opac(m,radm1::M1_OP_E,k,j,i));
+      s += oros ? opac(m,radm1::M1_OP_T,k,j,i)
+                : fmax(opac(m,radm1::M1_OP_T,k,j,i), opac(m,radm1::M1_OP_E,k,j,i));
     }
     chi(koff(m) + k - ks, ioff(m) + i - is) = static_cast<float>(s*rn2);
   });
@@ -453,6 +471,7 @@ void RayDonorUpdate(MeshBlockPack *pmbp, Mesh *pm) {
   const bool per = std::fabs(rd_x3max_ - rd_x3min_ - 2.0*M_PI) < 1.0e-10;
   const Real cl = pm1->c_light;
   const bool frc = rd_force_;
+  const Real gmx = static_cast<Real>(rd_grow_);
   Real qsum = 0.0;
   auto &vol = pmbp->pcoord->volume;
   Kokkos::parallel_reduce("ryper_rd_march", Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
@@ -473,7 +492,7 @@ void RayDonorUpdate(MeshBlockPack *pmbp, Mesh *pm) {
       const Real nr = nx*cp0 + ny*sp0, nph = -nx*sp0 + ny*cp0;
       const Real lp = 1.0/fmax(fabs(nr)/dr0, fabs(nph)/(r0*dph));
       // march from the donor-side face of the own cell
-      Real s = 0.5*lp, tau = 0.0;
+      Real s = 0.5*lp, tau = 0.0, gf = 1.0;
       int ig = ig0;
       for (int it=0; it<100000; ++it) {
         const Real x = x0 + s*nx, y = y0 + s*ny;
@@ -485,14 +504,20 @@ void RayDonorUpdate(MeshBlockPack *pmbp, Mesh *pm) {
         while (ig < n1g - 1 && r >= rf(ig + 1)) ++ig;
         Real ph = atan2(y, x);
         if (ph < x3a) ph += 2.0*M_PI;
-        const Real h = fh*fmin(rf(ig + 1) - rf(ig), r*dph);
+        // the step grows (x2 per step, up to donor_ray_grow) while it stays optically thin
+        // (chi h < 1e-3) and falls back to one cell size as soon as it is not
+        const Real h0 = fh*fmin(rf(ig + 1) - rf(ig), r*dph);
+        Real h = gf*h0, dt = 0.0;
         if (ph < x3b) {
           int kg = static_cast<int>((ph - x3a)/dph);
           kg = (kg < 0) ? 0 : ((kg > n3g - 1) ? n3g - 1 : kg);
-          tau += chi(kg, ig)*h;
-        } else if (!per) {
-          // outside a phi wedge: vacuum
+          dt = chi(kg, ig)*h;
+          if (dt > 1.0e-3 && gf > 1.0) {h = h0; dt = chi(kg, ig)*h;}
+        } else if (per) {
+          dt = 0.0;
         }
+        tau += dt;
+        gf = (dt < 1.0e-3) ? fmin(2.0*gf, gmx) : 1.0;
         s += h;
         if (tau > tmx) break;
       }
@@ -526,6 +551,13 @@ void RayDonorUpdate(MeshBlockPack *pmbp, Mesh *pm) {
 #endif
   rd_qtot_ = qsum;
   rd_have_ = true;
+  rd_nupd_++;
+  if (rd_nupd_ <= 3 && global_variable::my_rank == 0) {
+    const double tw = std::chrono::duration<double>(std::chrono::steady_clock::now()
+                                                    - tw0).count();
+    std::printf("ry_per_accretor: raydonor update %d (cycle %d): %.3f s wall (rank 0), "
+                "removed power %.6g code\n", rd_nupd_, pm->ncycle, tw, qsum);
+  }
   // the dump
   if (rd_dump_dt_ > 0.0 && pm->time >= rd_dump_next_) {
     const size_t nn = static_cast<size_t>(n3g)*n1g;
@@ -588,6 +620,7 @@ Real RayDonorApply(MeshBlockPack *pmbp, Mesh *pm, const Real bdt, const bool las
   auto qq = rd_q_;
   auto &vol = pmbp->pcoord->volume;
   const Real dtl = pm->dt;
+  const bool dgas = rd_dgas_;
   Real esum = 0.0;
   const int ntot = (nmb1 + 1)*(ke - ks + 1)*(je - js + 1)*ni;
   const int nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
@@ -605,13 +638,14 @@ Real RayDonorApply(MeshBlockPack *pmbp, Mesh *pm, const Real bdt, const bool las
     const Real eps = (ch > 0.0) ? fmin(ka/ch, 1.0) : 1.0;
     const Real fr = qq(c, 1), fp = qq(c, 2);
     const Real wk = fr*w0(m,IVX,k,j,i) + fp*w0(m,IVZ,k,j,i);
-    const Real de = bdt*(eps*qt + wk);
+    const Real epg = dgas ? eps : 0.0;
+    const Real de = bdt*(epg*qt + wk);
     u0(m,IEN,k,j,i) += de;
     u0(m,IM1,k,j,i) += bdt*fr;
     u0(m,IM3,k,j,i) += bdt*fp;
     Real dr = 0.0;
     if (last) {
-      dr = dtl*(1.0 - eps)*qt;
+      dr = dtl*(1.0 - epg)*qt;
       urd(m,radm1::M1_E,k,j,i) += dr;
     }
     sum += (de + dr)*vol(m,k,j,i);

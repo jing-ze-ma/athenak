@@ -1020,3 +1020,62 @@ with the key absent, over 20 cycles:
   starts at t ~0.031 at phi 13.6-13.8 deg (v3: 14.0).
 - Floor-gas e/rho stays at 2.0-2.3e3 in every arm (v4 full: up to 1.8e6).
 - **Conclusion: the unscaled sector light caused the v4 dt collapse.**
+
+## 17. Ray-traced external donor irradiation: problem/donor_irr_mode = ray (2026-10-17, Raven, branch accretor-raydonor-1017)
+
+USER 10-17 (night): fix option (A) for the vet_col lateral-beam artefact (accbig_1016 NOTE "Fix 3"; vet_col's per-column
+tensor diag(f_K, (1-f_K)/2, (1-f_K)/2) and the diagonal-only M1SphCurv turn the donor's lateral light into an azimuthal
+beam wrapping the star: night/facing dE ~1). The donor's light is taken OUT of the M1 field. It becomes an external
+beam, traced along straight rays with exp(-tau) and the star's exact shadow, and deposited where it is removed. Only
+what the gas re-emits (and the scattered part) is M1 radiation. Code: src/pgen/ry_per_accretor_raydonor.hpp (included
+in ry_per_accretor.cpp); the hooks in ry_per_accretor.cpp touch only the donor-irradiation path.
+
+### 17.1 Keys (read only when donor_irr_mode is given; default m1 = sect. 15 bitwise)
+- problem/donor_irr_mode = m1 | ray (needs donor_irr = true, donor_mask = roche, <rad_m1>; ray: the 2-D band only).
+- donor_ray_scale (1): factor on the surface intensity (test knob). donor_irr_scale is NOT applied in ray mode.
+- donor_ray_npsi (24), donor_ray_nel (4, <= 8): azimuths and Gauss-Legendre elevations per column.
+- donor_ray_every (1): the beam is recomputed every N cycles (first hydro stage).
+- donor_ray_step (0.5): march step / min(dr, r dphi). donor_ray_taumax (40). donor_ray_force (true).
+- donor_ray_dump_dt (0 = off): rank 0 writes ryper.raydonor.NNNNN.bin (q, f_r, f_phi, F_r, F_phi, chi on the global
+  r-phi grid; reader tool accray_1017/tool/rdump.py).
+
+### 17.2 Method
+- Source: the exact 3-D Roche L1 lobe, each surface point a grey isotropic emitter I = (c/4 pi) a T_loc^4 with the
+  donor_gdark law of sect. 15 (same C, same floor, L_d over the full lobe). The 3-D solid angle is integrated
+  directly, so there is no band dilution factor.
+- Directions, per (r, phi) column P: npsi azimuth midpoints over the lobe's in-plane angular span seen from P (from a
+  720-vertex polygon of the in-plane cut), x nel GL nodes in elevation on [0, e_max(psi)], doubled for -e. e_max is
+  where the 3-D ray grazes the lobe, from the lobe height z_s(x, y) sampled at 32 points along the in-plane chord; the
+  hit point of each ray (first s with z_s >= s tan e) gives g and hence I. This geometry is static and tabulated at
+  setup (float W = I cos e w dpsi, cos e; ~330 MB per A100 for the 840 x 2048 band on 4 ranks).
+- Band = z-uniform (reflecting theta walls), so an elevated ray crosses the gas of its in-plane projection over a path
+  longer by 1/cos e: tau_3D = tau_proj / cos e. At the photosphere this is the plane-parallel slab of the sphere (the
+  band cylinder's tangent plane is the sphere's at the equator), so horizon and limb are those of the 3-D star.
+  Beyond the in-plane lobe entry the ray is in the masked lobe (floor, tau ~ 0); beyond r_out it is vacuum; below r_in
+  it is opaque.
+- Attenuation (long characteristics): one march per (column, psi) from the cell's donor-side face through a GLOBAL
+  extinction map chi(k, i) = theta mean of max(rho kappa_T, rho kappa_E) from <rad_m1>/opac (the last M1 solve; the
+  first update calls Opacity() on the current state), gathered over ranks by MPI_Allreduce every update.
+- Deposition (photon conserving): per ray I dOmega exp(-tau_up/cos e)(1 - exp(-chi L/cos e))/(L/cos e), with L the
+  in-plane chord of the cell. eps = rho kappa_E/chi of it heats the gas (u(IEN), every stage, RK weighted); the rest
+  (scattering) is added to M1 E at the last stage. The removed momentum q/c along the beam goes to the gas, with work
+  v.f.
+- Booking: the energy given (heat + work + scattered E) is radiation IN, in Eirr (hst 24) and Ebnd.
+- The lobe and the stream_sector_light = surface sector hold no light (as donor_irr = false): the lobe becomes a
+  transparent sink for the gainer's light (no reflection effect).
+- 3-D wedge: FATAL. The z-uniform projection no longer holds, so each (cell, direction) needs its own 3-D march
+  (12.5 M cells x ~200 directions). Options: a coarse ray grid with interpolation, or a short-characteristics sweep
+  per direction.
+
+### 17.3 Reference: the gravity-darkened donor's facing flux (accray_1017/tool/ref_flux.py)
+This is an independent surface integral over the 3-D lobe, sum I cos dA u/d^2, with the same gdark law and the same
+normalisation. Unattenuated F_r on the line of centres:
+
+| r | beta 0.25 | beta 0 | sphere L/(4 pi D^2) |
+|---|---|---|---|
+| 9.6 | 7.09e4 | 1.46e5 | 1.52e5 |
+| 10.0 | 7.18e4 | 1.51e5 | 1.58e5 |
+| 10.4 | 7.25e4 | 1.57e5 | 1.63e5 |
+
+**The gravity-darkened L1 face gives 0.47x the uniform-sphere value.** The old calibration target 1.52e5 was the
+uniform sphere.
