@@ -545,3 +545,49 @@ What happens (scripts/prof.py):
   2.9 (superadiabatic) with a Gamma_rad ~ 1 density inversion. The static MESA envelope is not
   held by frozen-scaffold radiation hydro.
 - **No 14p5M production IC.**
+
+## 10. 14p5M convective-flux hand-over (10-18, USER option 1; code branch mltp-1017 @ d2239c5e off fin51-r-fix bc5d24c1)
+
+Arms (704, 9 d, seed 0, 16x16, the sect. 9 IC/deck). he_base_heat is removed from the deck for the closures that
+need mlt_closure != frozen (it acts only once the ramp starts, at 14.8 d, i.e. after the run).
+- **(a) scaffold frozen in pressure**: new opt-in `problem/mlt_closure = pressure` (he_star_m1, mltp-1017).
+  - F_sub = fm_IC(ln P_face) F_tot,IC(face), with P_face the shell-mean P_gas + E/3;
+  - relaxed over mlt_relax_time (1500 s), every cycle;
+  - the adaptive closure's restart state is reused.
+- **(b) live/relaxing closure**: the existing `mlt_closure = adaptive`, the shell-mean deficit
+  max(0, L - L_rad - L_conv)/A relaxed over 1500 s, masked by fm_IC/0.01.
+- **(c) the hand-over at the join** is what (b) adjusts itself. No separate taper was built: a taper over a few H_p
+  would leave MESA's T(P) inconsistent with F_r, i.e. the ill-conditioned cliff of sect. 9c.
+
+Single-run (a') items. Columns: startup L_top/L_IC; band 0.99-1.1 saturated rms / max |v| [km/s];
+0.5-0.9 R_ph max; 0.9-0.99 R_ph saturated max; R_ph drift; L_top/L_in after 2 d:
+
+| arm | L_top(0) | band rms / max | 0.5-0.9 | 0.9-0.99 | R_ph | L_top/L_in |
+|---|---|---|---|---|---|---|
+| frozen-r, our kappa (hg704) | 0.60 | 8.5 / 24 | 4.0 | 8.1 | +5.7 % | 0.46-1.08 |
+| adaptive, our kappa (adaptg704) | 0.60 (1.00 by 0.35 d) | 6.8 / 21 | 3.0 | 5.0 | +2.3 % | 0.36-1.42 |
+| pressure, our kappa (pres704) | 0.60 | 8.0 / 20 | 1.7 | 5.4 | +3.2 % | 0.76-1.14 |
+| frozen-r, MESA-like kappa (kapM704) | 0.91 | 7.2 / 24 | 3.5 | 5.1 | +2.8 % | 0.57-1.28 |
+| pressure, MESA-like kappa (presKM704) | 0.91 | 4.3 / 19 (grows) | 0.6 | 4.0 | +1.1 % | 0.61-1.17 |
+| **adaptive, MESA-like kappa (adaptkM704)** | 0.91 | **1.5 / 7.5** | **0.39** | **0.42** | **+0.06 %** | **0.97-1.04** |
+
+- With our kappa, adaptive keeps the star quiet for ~3 d (0.9-0.99 R_ph <= 0.8 km/s). After that the
+  photosphere layer restructures: the E deficit at the join from our 2-2.5x low-T kappa.
+- The pressure-frozen scaffold alone does not fix it.
+- **Adaptive + MESA-like kappa removes the failure mode:** no cliff-top heating, no envelope contraction, star items 3/4
+  pass on 704.
+- Gate (a') pair adaptkM704/adaptkM1408: FAIL items 1, 2, 3, 4.
+  - 704 has 2.46 cells/H; the pair has 5.07.
+  - The atmosphere is NOT resolution-converged: band rms 1.5 (704) vs 4.65 km/s (1408), periods 4.5 vs 3.1 d.
+  - The 1408 run has rms 4.65 > c_s,iso 4.0 and L_top/L_in down to 0.91.
+  - 1408 star: 0.5-0.9 R_ph 0.60, 0.9-0.99 R_ph 0.79 km/s, R_ph 0.43 %.
+  - A deck that passes item 1 is 1408-class, with a pair of ~2816 (a restart chain, ~5 h A100).
+- The MESA-like table is a diagnostic only (ours x kappa_M/kappa_ours(T) along MESA's track).
+- Default off (mlt_closure frozen) is bitwise, b16b66db vs mltp-1017:
+  - CPU 3 cycles: E1 9, BSG 13, HG 11 files, 0 differ;
+  - A100 10 cycles: 16 / 20 / 18 files, 0 differ;
+  - the sph1d R_ph lines are identical in all six.
+- **Not production-ready.** Needed:
+  1. a physical He-rich low-T opacity (7.5-11 kK) consistent with MESA's kap set-up;
+  2. adaptive + that table, screened with 1-2 d arms (the failures show by 0.25-1 d);
+  3. a final (a') pair 1408/2816.
