@@ -10,7 +10,9 @@ Items (all must PASS; items 3-5 are evaluated on BOTH runs):
  1 RESOLUTION   >= 4.4 cells per atmospheric (density) scale height over 0.95-1.1 R_ph on the deck grid:
                 min over the band of H_rho/dr, H_rho = -dr/dln<rho> of the t = 0 dump (the code's startup
                 atmosphere), cells at the floor plateau (rho < 1.5 x min rho) excluded.
- 2 CONVERGENCE  deck vs pair, saturated state t >= TSAT (4 d), band 0.99-1.1 R_ph, both runs >= 8 d:
+ 2 CONVERGENCE  same floor rule on both runs (column floor = min rho of he_ic_file, startup floor
+                plateau within 1 %, dfloor, he_sponge_dmax identical; the floor sets the top of the
+                oscillating layer, so the amplitude depends on it); deck vs pair, saturated state t >= TSAT (4 d), band 0.99-1.1 R_ph, both runs >= 8 d:
                 band mean rms <v_r> within 15 %; time-rms <v_r>(r) profile L2 difference <= 10 %
                 (pair profile interpolated to the deck radii, ||p_d - p_p||/||p_p||); dominant period
                 (FFT, median of the 5 top-rms radii) within 10 %.
@@ -208,7 +210,15 @@ def analyse(run, deck, slurm_log, rph_cli, cs_cli, tsat):
         bands['%.2f-%.2f' % (lo, hi)] = float(np.abs(V[:, k]).max()) if k.any() else np.nan
         bands['%.2f-%.2f sat' % (lo, hi)] = float(np.abs(V[sat][:, k]).max()) \
             if k.any() and sat.any() else np.nan
-    return dict(run=run, deck=deck, nx1=len(r), ndump=len(T), t_end=float(T[-1]), rph=rph,
+    # floor rule: deck dfloor / he_sponge_dmax, the IC column's floor (its minimum rho) and the startup plateau
+    icf = deck_key(deck, 'he_ic_file')[0]
+    try:
+        col_floor = float(np.loadtxt(icf, comments='#', usecols=(1,)).min())
+    except Exception:                                    # noqa: BLE001
+        col_floor = np.nan
+    floor = dict(dfloor=deck_key(deck, 'dfloor')[0], dmax=deck_key(deck, 'he_sponge_dmax')[0],
+                 col_floor=col_floor, plateau=float(fl))
+    return dict(run=run, deck=deck, nx1=len(r), ndump=len(T), t_end=float(T[-1]), rph=rph, floor=floor,
                 cs_iso=cs, x=x, prof=prof, sat_vrms_mean=float(vrms[sat].mean()) if sat.any()
                 else np.nan, sat_vmax=float(vmax[sat].max()) if sat.any() else np.nan,
                 vmax=float(vmax.max()), growth=grow, period=per,
@@ -234,7 +244,16 @@ def verdict(d, p):
         d['cells_per_h'] >= LIM['cells_per_h'],
         '%.2f at %.4f R_ph (H_rho %.4f Rsun, dr %.4f); pair %.2f' %
         (d['cells_per_h'], d['cells_per_h_x'], d['h_rho_rsun'], d['dr_rsun'], p['cells_per_h']))
-    # 2 convergence
+    # 2 convergence (needs the same floor rule on both runs: the floor sets the top of the oscillating
+    #   layer, so the band amplitude depends on it; bsgres-1017 floor arms, RESULTS sect. 9)
+    fd, fp = d['floor'], p['floor']
+    same = (fd['dfloor'] == fp['dfloor'] and fd['dmax'] == fp['dmax'] and
+            abs(fd['col_floor']/fp['col_floor'] - 1) < 1e-6 and
+            abs(fd['plateau']/fp['plateau'] - 1) < 0.01)
+    add(2, 'same floor rule on both runs', same,
+        'column floor %.3g/%.3g, startup plateau %.3g/%.3g, dfloor %s/%s, sponge dmax %s/%s' %
+        (fd['col_floor'], fp['col_floor'], fd['plateau'], fp['plateau'], fd['dfloor'], fp['dfloor'],
+         fd['dmax'], fp['dmax']))
     add(2, 'both runs >= %.0f d' % LIM['t_min'], min(d['t_end'], p['t_end']) >= LIM['t_min'] - 1e-3,
         '%.2f / %.2f d' % (d['t_end'], p['t_end']))
     rr = abs(d['sat_vrms_mean']/p['sat_vrms_mean'] - 1)
