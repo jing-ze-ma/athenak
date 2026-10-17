@@ -857,6 +857,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vcol_wf", vcol_wf);
   v.value("vcol_spread", vcol_spread);
   v.value("vlat_on", vlat_on);
+  v.value("vlat_rat_keys", vlat_rat_keys);
   v.value("vlat_odm", vlat_odm);
   v.value("vlat_now", vlat_now);
   v.value("vlat_nfall", vlat_nfall);
