@@ -2285,7 +2285,7 @@ class RadiationM1 {
   // spherical barycentric weights of its 3 cells.  No walls, no direction maps.
   bool vgd_csg = false;               // vet_gd on the cubed sphere
   int vgd_csn = 0;                    // cells per panel edge
-  DvceArray4D<Real> vgd_csr;          // (m, k, j, 3): unit vector of the band cell, 0 none
+  DvceArray4D<Real> vgd_csr;          // (m, k, j, 3): band cell unit vector, 0 none
   std::vector<double> vgd_csr_h;      // the same on the host (double), (m, k, j, 3)
   DvceArray2D<int> vgd_csblk;         // (m, 3): panel, global j0, global k0
   DvceArray3D<int> vgd_cscm;          // (p, q, 7): q (a,t) -> p unfolded (J,K) affine

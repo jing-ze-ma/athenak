@@ -429,7 +429,8 @@ void RadiationM1::VetGdCsInit() {
     }
   }
   {
-    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmy_pack->pcoord->x1v);
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
     vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
@@ -453,7 +454,8 @@ void RadiationM1::VetGdCsInit() {
       vgd_wso[l] = vgd_w;
     }
     if (me == 0) {
-      std::cout << "<rad_m1> vet_gd (cubed sphere): N = " << nc << " per panel, narrowest "
+      std::cout << "<rad_m1> vet_gd (cubed sphere): N = " << nc << " per panel, "
+                << "narrowest "
                 << "cell spacing " << dmin << " rad, dense lateral band " << vgd_w
                 << " cells (needed " << wneed << ")"
                 << (vgd_capped ? ": capped at N, near-tangent reads beyond are clamped "
@@ -654,7 +656,8 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
       if (vgd_csnsnd > 0) {
         par_for("m1_vgdcs_pack", DevExeSpace(), 0, vgd_csnsnd - 1, 0, nv - 1, 0, ni - 1,
         KOKKOS_LAMBDA(const int e, const int v, const int ii) {
-          sb_(static_cast<size_t>(e)*nvi + v*ni + ii) = a_(S_(e,0),v,S_(e,1),S_(e,2),c0+ii);
+          sb_(static_cast<size_t>(e)*nvi + v*ni + ii) =
+              a_(S_(e,0),v,S_(e,1),S_(e,2),c0+ii);
         });
       }
       Kokkos::fence();
@@ -680,7 +683,8 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
       if (vgd_csnrcv > 0) {
         par_for("m1_vgdcs_unpack", DevExeSpace(), 0, vgd_csnrcv - 1, 0, nv - 1, 0, ni - 1,
         KOKKOS_LAMBDA(const int e, const int v, const int ii) {
-          a_(R_(e,0),v,R_(e,1),R_(e,2),c0+ii) = rb_(static_cast<size_t>(e)*nvi + v*ni + ii);
+          a_(R_(e,0),v,R_(e,1),R_(e,2),c0+ii) =
+              rb_(static_cast<size_t>(e)*nvi + v*ni + ii);
         });
       }
     }
@@ -1036,8 +1040,8 @@ void RadiationM1::VetGdCsMoments(const int part) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsDump
-//! \brief gate dump (env VGD_CS_DUMP=<prefix>, first build only; VGD_CS_DUMP_TW: the twin's
-//! sweep, from VetGdTwin): per rank
+//! \brief gate dump (env VGD_CS_DUMP=<prefix>, first build only; VGD_CS_DUMP_TW: the
+//! twin's sweep, from VetGdTwin): per rank
 //! <prefix>.<rank>.bin with the directions, radii, ln chi / ln S of the interior, the
 //! main sweep's intensities and LAT0, keyed by the global cell (panel, a, t)
 
