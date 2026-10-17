@@ -318,6 +318,32 @@ Real accx0_[2] = {0.0, 0.0}, accx1_[2] = {0.0, 0.0};
 // branches (bitwise unchanged).  Forces, IC and WB stay those of the band (theta-invariant).
 bool g3d_ = false;
 Real sz_ = 0.0;                // sigma_z of the nozzle (Rsun)
+// accretor-3d-1017 (problem/phys_3d = true, 3-D mode only, envelope + thermo = general; read
+// only when given, so every 2-D deck and the 049c1f39 3-D benchmark deck run the old code):
+// the PHYSICS in 3-D.  (1) every potential is the exact 3-D Roche potential RochePot3(r,
+// theta, phi) (centrifugal about the z axis through the CM, the same function as the 3-D
+// lobe mask): the true Phi (phicc0, phi0 on all three face sets, etotgrav), Phi_wb of the
+// x1 WB pair (PhiWB3, the spin term with the cylindrical radius r sin theta), the explicit
+// remainders g_r = -d(Phi - Phi_wb)/dr, g_theta = -dPhi/(r dtheta), g_phi = -dPhi/(r sin
+// theta dphi) from face differences, all on (m,k,j,i); (2) the full rotating-frame Coriolis
+// -2 Omega x v (a_r += 2 Omega v_phi sin th, a_th += 2 Omega v_phi cos th, a_phi -= 2 Omega
+// (v_r sin th + v_th cos th); no work), the centrifugal term inside Phi (its work is in the
+// etotgrav flux; no explicit centrifugal work: the deep_hot_jupiter_rt rot_potential +
+// etotgrav double-count guard); (3) the envelope IC, the column T(psi), the radiation
+// reference G(psi), the ambient rho_amb and the relaxation targets on the 3-D equipotentials
+// psi = Phi_s - Phi_wb(r, theta, phi) (column by (m,k,j)); (4) problem/theta_bc = reflect
+// (default; mesh ix2/ox2_bc = reflect) | outflow (mesh ix2/ox2_bc = user: ghosts by the
+// isothermal hydrostatic walk in theta in the true Phi at the edge cell's T, v_theta a diode
+// (outflow only), v_r, v_phi copied; M1 ghosts dark, use <rad_m1>/implicit_bc_x2min/max =
+// marshak; the mass, Lz and energy through the theta faces join Mout, Jout and the hydro
+// energy out), and problem/theta_sponge_deg / theta_sponge_tau (a velocity sponge in a
+// layer next to each theta wall, linear ramp, outside the envelope, KE removed from E);
+// (5) the inertial Lz bookkeeping with the cylindrical radius r sin theta.
+bool p3_ = false;
+bool thout_ = false;           // theta_bc = outflow
+Real thsp_w_ = 0.0, thsp_tau_ = 0.0;   // theta sponge width (rad), time (code)
+DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
+DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -415,6 +441,16 @@ Real PhiWB(const RocheParams &p, const Real dlt, const Real rtop, const Real rsp
            const Real phtop, const Real r, const Real phi) {
   const Real x = fmin(r, rtop), xs = fmin(x, rspin);
   return fmin(RochePot(p, x, phi) - dlt*xs*xs, phtop);
+}
+
+//! accretor-3d-1017 (phys_3d): PhiWB in 3-D, sth = sin(theta): the exact 3-D Roche
+//! potential capped at r_top and at the top equipotential, the spin term with the
+//! cylindrical radius min(r, r_spin) sin(theta)
+KOKKOS_INLINE_FUNCTION
+Real PhiWB3(const RocheParams &p, const Real dlt, const Real rtop, const Real rspin,
+            const Real phtop, const Real r, const Real sth, const Real phi) {
+  const Real x = fmin(r, rtop), xs = fmin(x, rspin)*sth;
+  return fmin(RochePot3(p, x, sth, phi) - dlt*xs*xs, phtop);
 }
 
 //! stage 2: envelope P/rho at depth psi = Phi_s - Phi_wb (n-polytrope shifted to the
@@ -785,9 +821,13 @@ void RyPerBCEnv(Mesh *pm) {
     rcl = pmbp->pradm1->c_light;
     refl = pmbp->pradm1->e_floor;
   }
+  // accretor-3d-1017 (phys_3d): the 3-D potentials and the cylindrical spin radius
+  const bool p3 = p3_;
+  auto &x2v = pmbp->pcoord->x2v;
   par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real ph = x3v(m,k);
+    const Real sth = p3 ? sin(x2v(m,j)) : 1.0;
     if (gen) {
       // thermo = general: the same BCs through the EOS.  r_in: the local polytrope of
       // the two edge cells in Phi_wb (WBAdvance polytropic branch); r_out: ghost T = the
@@ -803,7 +843,9 @@ void RyPerBCEnv(Mesh *pm) {
           ta = tfl;
           ea = eosd.EnergyFromTemperature(da, ta);
         }
-        const Real pa = rad ? pwcc(m,k,j,is) : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
+        const Real pa = rad ? pwcc(m,k,j,is) :
+                        (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,is), sth, ph)
+                            : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph));
         // the local polytrope of the two edge cells (wb_option = polytropic): T linear in
         // Phi_wb with their dT/dPhi, density by the WB polytropic walk, so the ghosts lie
         // on the edge cell's own WB background
@@ -815,13 +857,15 @@ void RyPerBCEnv(Mesh *pm) {
                           + SQR(u0(m,IM2,k,j,i1)) + SQR(u0(m,IM3,k,j,i1)))/d1
                           - d1*phicc(m,k,j,i1);
           const Real dp1 = (rad ? pwcc(m,k,j,i1) :
-                            PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph)) - pa;
+                            (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i1), sth, ph)
+                                : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph))) - pa;
           if (e1 > 0.0 && dp1 != 0.0) a = (eosd.Temperature(d1, e1, ta) - ta)/dp1;
         }
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g, im = is + g;
           const Real pg = rad ? pwcc(m,k,j,ig) :
-                          PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
+                          (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,ig), sth, ph)
+                              : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph));
           Real dg = da, eg = ea, tg = ta;
           WBAdvance(eosd, 3, da, ea, pg - pa, dg, eg, tg, ta, a, ta, ta);
           if (!(Kokkos::isfinite(dg) && dg > 0.0 && Kokkos::isfinite(eg) && eg > 0.0 &&
@@ -836,7 +880,7 @@ void RyPerBCEnv(Mesh *pm) {
           const Real dm = u0(m,IDN,k,j,im);
           const Real v1 = -u0(m,IM1,k,j,im)/dm;
           const Real v2 = u0(m,IM2,k,j,im)/dm;
-          const Real v3 = noslip ? vwall*x1v(m,ig) : u0(m,IM3,k,j,im)/dm;
+          const Real v3 = noslip ? vwall*x1v(m,ig)*sth : u0(m,IM3,k,j,im)/dm;
           u0(m,IDN,k,j,ig) = dg;
           u0(m,IM1,k,j,ig) = dg*v1;
           u0(m,IM2,k,j,ig) = dg*v2;
@@ -859,7 +903,7 @@ void RyPerBCEnv(Mesh *pm) {
           ta = tfl;
           ea = eosd.EnergyFromTemperature(da, ta);
         }
-        const Real pa = RochePot(p, x1v(m,ie), ph);
+        const Real pa = p3 ? RochePot3(p, x1v(m,ie), sth, ph) : RochePot(p, x1v(m,ie), ph);
         for (int g=0; g<ng; ++g) {
           const int ig = ie + 1 + g;
           Real dg, v1, v2, v3, tg;
@@ -869,7 +913,7 @@ void RyPerBCEnv(Mesh *pm) {
           } else {
             dg = da;
             if (ohse) {
-              const Real pg = RochePot(p, x1v(m,ig), ph);
+              const Real pg = p3 ? RochePot3(p, x1v(m,ig), sth, ph) : RochePot(p, x1v(m,ig), ph);
               Real eg = ea, tw = ta;
               WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
               if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
@@ -953,6 +997,54 @@ void RyPerBCEnv(Mesh *pm) {
         u0(m,IM3,k,j,ig) = dg*v3;
         u0(m,IEN,k,j,ig) = dg*tg/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
                            + dg*phicc(m,k,j,ig);
+      }
+    }
+  });
+  // accretor-3d-1017: problem/theta_bc = outflow (mesh ix2/ox2_bc = user): the theta ghosts
+  // continue the edge cell isothermally (its T) and hydrostatically in the TRUE 3-D Roche
+  // potential along theta (the outer-x1 hse walk of the general EOS, capped at e^hse_cap),
+  // v_theta a diode (outflow only), v_r and v_phi copied; radiation ghosts dark (vacuum,
+  // with the implicit Marshak face <rad_m1>/implicit_bc_x2min/max = marshak)
+  if (!(p3 && thout_ && gen)) return;
+  const int js = indcs.js, je = indcs.je;
+  const int n1m1 = indcs.nx1 + 2*ng - 1;
+  par_for("ryper_bcth", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n1m1,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    const Real ph = x3v(m,k), r = x1v(m,i);
+    for (int sd=0; sd<2; ++sd) {
+      if (sd == 0 && mbbcs.d_view(m, BoundaryFace::inner_x2) != BoundaryFlag::user) continue;
+      if (sd == 1 && mbbcs.d_view(m, BoundaryFace::outer_x2) != BoundaryFlag::user) continue;
+      const int ja = (sd == 0) ? js : je;
+      const Real da = u0(m,IDN,k,ja,i);
+      const Real v1a = u0(m,IM1,k,ja,i)/da;
+      const Real v2a = u0(m,IM2,k,ja,i)/da;
+      const Real v3a = u0(m,IM3,k,ja,i)/da;
+      Real ea = u0(m,IEN,k,ja,i) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
+                - da*phicc(m,k,ja,i);
+      Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
+      if (!(ta > tfl)) {
+        ta = tfl;
+        ea = eosd.EnergyFromTemperature(da, ta);
+      }
+      const Real pa = RochePot3(p, r, sin(x2v(m,ja)), ph);
+      const Real v2 = (sd == 0) ? fmin(v2a, 0.0) : fmax(v2a, 0.0);
+      for (int g=0; g<ng; ++g) {
+        const int jg = (sd == 0) ? js - 1 - g : je + 1 + g;
+        const Real pg = RochePot3(p, r, sin(x2v(m,jg)), ph);
+        Real dg = da, eg = ea, tw = ta;
+        WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
+        if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+        dg = fmax(fmin(dg, da*exp(cap)), dfl);
+        u0(m,IDN,k,jg,i) = dg;
+        u0(m,IM1,k,jg,i) = dg*v1a;
+        u0(m,IM2,k,jg,i) = dg*v2;
+        u0(m,IM3,k,jg,i) = dg*v3a;
+        u0(m,IEN,k,jg,i) = eosd.EnergyFromTemperature(dg, ta)
+                           + 0.5*dg*(v1a*v1a + v2*v2 + v3a*v3a) + dg*phicc(m,k,jg,i);
+        if (rad) {
+          radm1::M1FillGhost(ur, m, k, jg, i, k, ja, i, 2, 2, (sd == 0) ? -1.0 : 1.0, rcl,
+                             refl);
+        }
       }
     }
   });
@@ -1066,6 +1158,13 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto &x1v = pmbp->pcoord->x1v;
   const Real rmax = ph->wb_rmax, phimax = ph->wb_phimax;
   auto pwcs = ph->phicc_wb;
+  // accretor-3d-1017 (phys_3d): the (m,k,j,i) forces/targets, full Coriolis, theta sponge
+  const bool p3 = p3_;
+  auto gr4 = gr4_, gt4 = gt4_, gp4 = gp4_, gpl4 = gpl4_;
+  auto c2r4 = cref24_, ramb4 = rhoamb4_, tcol4 = tcol4_;
+  auto &x2v = pmbp->pcoord->x2v;
+  const Real thsw = thsp_w_, thtau = thsp_tau_;
+  const Real th0 = pm->mesh_size.x2min, th1 = pm->mesh_size.x2max;
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
   const Real om2 = 2.0*rp_.omega;
   const Real cph2 = env_cph2_, tro = env_tro_, tri = env_tri_, trs = env_trs_;
@@ -1093,7 +1192,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     // plain -rho dPhi_wb/dr above it (unsupported ambient: hydro/wb_rmax)
     Real fg;
     if ((rmax > 0.0 && x1v(m,i) > rmax) || pwcs(m,k,j,i) > phimax) {
-      fg = d*gpl(m,k,i);
+      fg = d*(p3 ? gpl4(m,k,j,i) : gpl(m,k,i));
     } else {
       Real d1, pl, d2, pr, d3;
       WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
@@ -1105,28 +1204,39 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       }
       fg = (area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))/volume(m,k,j,i);
     }
-    u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
-    u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
+    if (p3) {
+      // 3-D: gravity remainders on (m,k,j,i), the full Coriolis -2 Omega x v
+      const Real vt = w0(m,IVY,k,j,i);
+      const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
+      u0(m,IM1,k,j,i) += bdt*(fg + d*(gr4(m,k,j,i) + om2*vp*st));
+      u0(m,IM2,k,j,i) += bdt*d*(gt4(m,k,j,i) + om2*vp*cth);
+      u0(m,IM3,k,j,i) += bdt*d*(gp4(m,k,j,i) - om2*(vr*st + vt*cth));
+    } else {
+      u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
+      u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
+    }
+    const Real rambc = p3 ? ramb4(m,k,j,i) : ramb(m,k,i);
+    const Real tcolc = p3 ? tcol4(m,k,j,i) : tcol(m,k,i);
     // relaxation target: the envelope profile inside; outside, material by density
     // relative to the hydrostatic ambient: denser than env_amb_k x rho_amb(r,phi) is
     // stream/atmosphere gas (c_ph^2), the rest is the hot ambient (c_amb^2).  Choosing
     // by temperature or by an absolute density instead heated the stream's thin
     // leading edge and the atmosphere's top to c_amb (precursor jets at 1700 km/s and
     // an evaporation wind; tests g_half, a2, 10-06/07).
-    Real ct = c2r(m,k,i);
+    Real ct = p3 ? c2r4(m,k,j,i) : c2r(m,k,i);
     // Time constants: env_t_relax_env inside, env_t_relax_stream for the stream/atmosphere
     // gas, env_t_relax for the hot ambient; t <= 0 switches the relaxation off (adiabatic).
     const bool inside = (ct > cph2*(1.0 + 1.0e-9));
     Real tr = tri;
     if (!inside) {
-      const bool dense = (d > kamb*ramb(m,k,i));
+      const bool dense = (d > kamb*rambc);
       ct = dense ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
       tr = dense ? trs : tro;
     }
     // local cooling time: t = e_gas/(c a T^4) (1/(kappa_abs rho) + 3 kappa rho H^2): thin
     // emission by the absorption (Kramers) opacity, diffusion by ES + Kramers; H = (P/rho)/g,
     // g = G M_a / r^2 (cgs inside, converted to code time); not for the hot ambient
-    if (cool && (inside || d > kamb*ramb(m,k,i)) && e > 0.0 && d > 0.0) {
+    if (cool && (inside || d > kamb*rambc) && e > 0.0 && d > 0.0) {
       const Real c2 = gm1*e/d;                                   // (km/s)^2
       const Real tk = tfac*c2;                                   // K
       const Real rc = d*rhou;                                    // g/cc
@@ -1146,9 +1256,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       if (tr > 0.0 && d > 0.0) {
         Real tt;
         if (inside) {
-          tt = tcol(m,k,i);
-        } else if (d > kamb*ramb(m,k,i)) {
-          tt = (x1v(m,i) <= rhot) ? tcol(m,k,i) : tstr;
+          tt = tcolc;
+        } else if (d > kamb*rambc) {
+          tt = (x1v(m,i) <= rhot) ? tcolc : tstr;
         } else {
           tt = tamb;
         }
@@ -1170,6 +1280,22 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IM2,k,j,i) = f*m2;
       u0(m,IM3,k,j,i) = f*m3;
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/du;
+    }
+    // accretor-3d-1017: theta sponge (problem/theta_sponge_deg > 0): outside the envelope,
+    // within the layer next to each theta wall, the rotating-frame velocity decays at a rate
+    // rising linearly from 0 at the layer's inner edge to 1/theta_sponge_tau at the wall;
+    // the kinetic energy removed leaves E (booked in Erel with the floor sponge)
+    if (p3 && thsw > 0.0 && !inside) {
+      const Real dw = fmin(x2v(m,j) - th0, th1 - x2v(m,j));
+      const Real dd = u0(m,IDN,k,j,i);
+      if (dw < thsw && dd > 0.0) {
+        const Real f = exp(-bdt*(1.0 - dw/thsw)/thtau);
+        const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+        u0(m,IM1,k,j,i) = f*m1;
+        u0(m,IM2,k,j,i) = f*m2;
+        u0(m,IM3,k,j,i) = f*m3;
+        u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/dd;
+      }
     }
   });
   // problem/env_amb_mode = radeq: the density floor applied here (the EOS floor then never
@@ -1327,7 +1453,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         dn = fmax(rhos*exp(-0.5*SQR(dph/sg)), dfl);
         v1 = vrs; v3 = vps; tn = StreamT(stp, tcs, tsf, dph/sg);
       } else {
-        dn = rfl; v1 = 0.0; v3 = 0.0; tn = tcol(m,k,i);
+        dn = rfl; v1 = 0.0; v3 = 0.0; tn = p3 ? tcol4(m,k,j,i) : tcol(m,k,i);
       }
       const Real en = eosd.EnergyFromTemperature(dn, tn) + 0.5*dn*(v1*v1 + v3*v3)
                       + dn*phc(m,k,j,i);
@@ -1338,7 +1464,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IEN,k,j,i) = en;
       if (innz) {
         v.the_array[0] = (dn - d0)*dv;
-        v.the_array[1] = ((dn*v3 - m30) + om*r*(dn - d0))*r*dv;
+        // phys_3d: the inertial Lz with the cylindrical radius r sin(theta)
+        const Real rj = p3 ? r*sth : r;
+        v.the_array[1] = ((dn*v3 - m30) + om*rj*(dn - d0))*rj*dv;
         v.the_array[2] = (en - e0)*dv;
         if (srad) {
           const Real er = (stp || l1) ? sar*SQR(SQR(tn)) : sre;
@@ -1414,6 +1542,11 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const bool hbdv = rad && pmbp->pradm1->iebath_hi_col_on;
   DvceArray3D<Real> bdv;
   if (hbdv) bdv = pmbp->pradm1->ibadv_x1max;
+  // phys_3d: Lz with the cylindrical radius; theta_bc = outflow: the theta faces
+  const bool thf = p3 && thout_;
+  auto &flx2 = ph->uflx.x2f;
+  auto &area2 = pmbp->pcoord->area.x2f;
+  auto &x2ff = pmbp->pcoord->xx2f;
   array_sum::GlobalSum fs;
   Kokkos::parallel_reduce("ryper_flxe", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
   KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
@@ -1422,8 +1555,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const int j = idx%nj + js;
     array_sum::GlobalSum v;
     for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+    const Real sj = p3 ? sin(x2vf(m,j)) : 1.0;
     if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      const Real a = area1(m,k,j,is), r = xf(m,is);
+      const Real a = area1(m,k,j,is), r = p3 ? xf(m,is)*sj : xf(m,is);
       const Real fd = flx(m,IDN,k,j,is), f3 = flx(m,IM3,k,j,is);
       v.the_array[2] = -fd*a;
       v.the_array[3] = -(f3 + om*r*fd)*r*a;
@@ -1431,7 +1565,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       if (rad) v.the_array[9] = fin*a;
     }
     if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-      const Real a = area1(m,k,j,ie+1), r = xf(m,ie+1);
+      const Real a = area1(m,k,j,ie+1), r = p3 ? xf(m,ie+1)*sj : xf(m,ie+1);
       const Real fd = flx(m,IDN,k,j,ie+1), f3 = flx(m,IM3,k,j,ie+1);
       const bool win = strm && (fabs(WrapPhi(x3v(m,k) - phis)) < wwin);
       if (win) {
@@ -1447,9 +1581,29 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         v.the_array[11] = flx(m,IEN,k,j,ie+1)*a;
       }
     }
+    // theta_bc = outflow: mass, inertial Lz and hydro energy (incl. rho Phi) out through the
+    // theta walls join Mout (1), Jout (5) and the hydro energy out (11)
+    if (thf) {
+      for (int sd=0; sd<2; ++sd) {
+        if (sd == 0 && !(j == js && mbbcs.d_view(m, BoundaryFace::inner_x2) ==
+                         BoundaryFlag::user)) continue;
+        if (sd == 1 && !(j == je && mbbcs.d_view(m, BoundaryFace::outer_x2) ==
+                         BoundaryFlag::user)) continue;
+        const int jf = (sd == 0) ? js : je + 1;
+        const Real sg = (sd == 0) ? -1.0 : 1.0;
+        const Real sf = sin(x2ff(m,jf));
+        for (int i=is; i<=ie; ++i) {
+          const Real a = area2(m,k,jf,i), rr = x1v(m,i)*sf;
+          const Real fd = flx2(m,IDN,k,jf,i), f3 = flx2(m,IM3,k,jf,i);
+          v.the_array[1] += sg*fd*a;
+          v.the_array[5] += sg*(f3 + om*rr*fd)*rr*a;
+          if (rad) v.the_array[11] += sg*flx2(m,IEN,k,jf,i)*a;
+        }
+      }
+    }
     const int ir = ira(m);
     if (ir >= 0) {
-      const Real a = area1(m,k,j,ir), r = xf(m,ir);
+      const Real a = area1(m,k,j,ir), r = p3 ? xf(m,ir)*sj : xf(m,ir);
       const Real fd = flx(m,IDN,k,j,ir), f3 = flx(m,IM3,k,j,ir);
       v.the_array[6] = -fd*a;
       v.the_array[7] = -(f3 + om*r*fd)*r*a;
@@ -1534,6 +1688,8 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &mbbcs = pmbp->pmb->mb_bcs;
   auto ira = iracc_;
+  const bool p3 = p3_;
+  auto &x2v = pmbp->pcoord->x2v;
   array_sum::GlobalSum s;
   Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
@@ -1545,7 +1701,9 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     array_sum::GlobalSum v;
     for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
     const Real dv = vol(m,k,j,i), r = x1v(m,i), d = u0(m,IDN,k,j,i);
-    const Real jz = dv*r*(u0(m,IM3,k,j,i) + om*r*d);
+    // phys_3d: the cylindrical radius about the accretor's z axis
+    const Real rz = p3 ? r*sin(x2v(m,j)) : r;
+    const Real jz = dv*rz*(u0(m,IM3,k,j,i) + om*rz*d);
     v.the_array[0] = dv*d;
     v.the_array[1] = jz;
     if (r < racc) {
@@ -1570,27 +1728,49 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(s));
 
-  // problem/dt_report (bigdom-1015): which cell sets the hydro dt, at every hst output
-  if (dtrep_ && global_variable::my_rank == 0 && pmbp->phydro->dtnew_m >= 0) {
+  // problem/dt_report (bigdom-1015): which cell sets the hydro dt, at every hst output.
+  // accretor-3d-1017: the GLOBAL minimum over the ranks (MPI MINLOC of each rank's own
+  // minimum dtnew; was rank 0's local minimum); the owning rank broadcasts the cell, rank 0
+  // prints it (the old line, then the rank and theta of the cell)
+  if (dtrep_) {
     auto *phd = pmbp->phydro;
     const int dm = phd->dtnew_m, dk = phd->dtnew_k, dj = phd->dtnew_j, di = phd->dtnew_i;
-    DvceArray1D<Real> dv("ryper_dtrep", 7);
-    auto w0d = phd->w0;
-    auto &x3d = pmbp->pcoord->x3v;
-    par_for("ryper_dtrep_f", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
-      dv(0) = x1v(dm,di);
-      dv(1) = x3d(dm,dk);
-      dv(2) = w0d(dm,IDN,dk,dj,di);
-      dv(3) = w0d(dm,IVX,dk,dj,di);
-      dv(4) = w0d(dm,IVY,dk,dj,di);
-      dv(5) = w0d(dm,IVZ,dk,dj,di);
-      dv(6) = w0d(dm,IEN,dk,dj,di);
-    });
-    auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dv);
-    std::printf("ry_per_accretor dt_report: t %.6e dt %.4e cell (m,k,j,i) (%d,%d,%d,%d) r %.5f "
-                "phi %.4f rad: rho %.4g v_r %.4g v_th %.4g v_phi %.4g km/s e/rho %.4g "
-                "(km/s)^2\n", pm->time, pm->dt, dm, dk, dj, di, hv(0), hv(1), hv(2), hv(3),
-                hv(4), hv(5), hv(6)/hv(2));
+    const bool have = (dm >= 0);
+    double hb[12];
+    for (int n=0; n<12; ++n) hb[n] = 0.0;
+    if (have) {
+      DvceArray1D<Real> dv("ryper_dtrep", 8);
+      auto w0d = phd->w0;
+      auto &x3d = pmbp->pcoord->x3v;
+      auto &x2d = pmbp->pcoord->x2v;
+      par_for("ryper_dtrep_f", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int n) {
+        dv(0) = x1v(dm,di);
+        dv(1) = x3d(dm,dk);
+        dv(2) = w0d(dm,IDN,dk,dj,di);
+        dv(3) = w0d(dm,IVX,dk,dj,di);
+        dv(4) = w0d(dm,IVY,dk,dj,di);
+        dv(5) = w0d(dm,IVZ,dk,dj,di);
+        dv(6) = w0d(dm,IEN,dk,dj,di);
+        dv(7) = x2d(dm,dj);
+      });
+      auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dv);
+      for (int n=0; n<8; ++n) hb[n] = hv(n);
+      hb[8] = dm; hb[9] = dk; hb[10] = dj; hb[11] = di;
+    }
+    struct {double v; int r;} loc{have ? static_cast<double>(phd->dtnew) : 1.0e300,
+                                  global_variable::my_rank};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &loc, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
+    MPI_Bcast(hb, 12, MPI_DOUBLE, loc.r, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0 && loc.v < 1.0e299) {
+      std::printf("ry_per_accretor dt_report: t %.6e dt %.4e cell (m,k,j,i) (%d,%d,%d,%d) r %.5f "
+                  "phi %.4f rad: rho %.4g v_r %.4g v_th %.4g v_phi %.4g km/s e/rho %.4g "
+                  "(km/s)^2 [rank %d, theta %.4f deg]\n", pm->time, pm->dt,
+                  static_cast<int>(hb[8]), static_cast<int>(hb[9]), static_cast<int>(hb[10]),
+                  static_cast<int>(hb[11]), hb[0], hb[1], hb[2], hb[3], hb[4], hb[5],
+                  hb[6]/hb[2], loc.r, hb[7]*180.0/M_PI);
+    }
   }
   const char *lab[22] = {"Mdom", "Jdom", "Menv", "Jenv",
                          "Min", "Mout", "Mwal", "Jwal", "Jstr", "Jout", "MR", "JR", "Jin",
@@ -1670,6 +1850,13 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   gpl_ = DvceArray3D<Real>();
   iracc_ = DvceArray1D<int>();
   rbath_ = DvceArray3D<Real>();
+  gr4_ = DvceArray4D<Real>();
+  gt4_ = DvceArray4D<Real>();
+  gp4_ = DvceArray4D<Real>();
+  gpl4_ = DvceArray4D<Real>();
+  cref24_ = DvceArray4D<Real>();
+  rhoamb4_ = DvceArray4D<Real>();
+  tcol4_ = DvceArray4D<Real>();
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
@@ -1954,7 +2141,39 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
   DvceArray4D<Real> aref_d("ryper_aref", nmb, n3, n2, n1);
   auto ha = Kokkos::create_mirror_view(aref_d);
   Real amax = 0.0;
-  for (int m=0; m<nmb; ++m) {
+  // accretor-3d-1017 (phys_3d): Phi_eff = Phi_wb + G(psi) on the 3-D equipotentials, column
+  // by (m,k,j); the plain-gravity force above the WB region into gpl4_
+  if (p3_) {
+    auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+    auto hgl4 = Kokkos::create_mirror_view(gpl4_);
+    std::vector<Real> pf(n1 + 1), gf(n1 + 1);
+    for (int m=0; m<nmb; ++m) {
+      for (int k=0; k<n3; ++k) {
+        const Real ph = hx3(m,k);
+        for (int j=0; j<n2; ++j) {
+          const Real st = std::sin(hx2(m,j));
+          for (int i=0; i<=n1; ++i) {
+            const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, hx1f(m,i), st, ph);
+            gf[i] = RadColAt(rcol_g_, phis - w);
+            pf[i] = w + gf[i];
+          }
+          for (int i=0; i<n1; ++i) {
+            const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, hx1(m,i), st, ph);
+            const Real dr = hx1f(m,i+1) - hx1f(m,i);
+            const Real a = -(gf[i+1] - gf[i])/dr;
+            hgl4(m,k,j,i) = -(pf[i+1] - pf[i])/dr;
+            amax = std::max(amax, a);
+            hpc(m,k,j,i) = w + RadColAt(rcol_g_, phis - w);
+            hpf(m,k,j,i) = pf[i];
+            if (i == n1 - 1) hpf(m,k,j,i+1) = pf[i+1];
+            ha(m,k,j,i) = a;
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(gpl4_, hgl4);
+  }
+  for (int m=0; m<nmb && !p3_; ++m) {
     for (int k=0; k<n3; ++k) {
       const Real ph = hx3(m,k);
       std::vector<Real> pf(n1 + 1), gf(n1 + 1);
@@ -2022,7 +2241,34 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
   DvceArray3D<Real> fc("ryper_rfc", nmb, n3, n1), ffc("ryper_rff", nmb, n3, n1 + 1);
   auto hfc = Kokkos::create_mirror_view(fc);
   auto hff = Kokkos::create_mirror_view(ffc);
-  for (int m=0; m<nmb; ++m) {
+  // accretor-3d-1017 (phys_3d): F_col(psi) and T_col(psi) on the 3-D equipotentials
+  const bool p3 = p3_;
+  DvceArray4D<Real> fc4, ffc4;
+  if (p3) {
+    fc4 = DvceArray4D<Real>("ryper_rfc4", nmb, n3, n2, n1);
+    ffc4 = DvceArray4D<Real>("ryper_rff4", nmb, n3, n2, n1 + 1);
+    auto hfc4 = Kokkos::create_mirror_view(fc4);
+    auto hff4 = Kokkos::create_mirror_view(ffc4);
+    auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+    for (int m=0; m<nmb; ++m) {
+      for (int k=0; k<n3; ++k) {
+        for (int j=0; j<n2; ++j) {
+          const Real st = std::sin(hx2(m,j));
+          for (int i=0; i<n1; ++i) {
+            hfc4(m,k,j,i) = RadColAt(rcol_f_, phis - PhiWB3(p, dlt, rtop, rspin, phtop,
+                                                             hx1(m,i), st, hx3(m,k)));
+          }
+          for (int i=0; i<=n1; ++i) {
+            hff4(m,k,j,i) = RadColAt(rcol_f_, phis - PhiWB3(p, dlt, rtop, rspin, phtop,
+                                                             hx1f(m,i), st, hx3(m,k)));
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(fc4, hfc4);
+    Kokkos::deep_copy(ffc4, hff4);
+  }
+  for (int m=0; m<nmb && !p3; ++m) {
     for (int k=0; k<n3; ++k) {
       for (int i=0; i<n1; ++i) {
         hfc(m,k,i) = RadColAt(rcol_f_, phis - PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i),
@@ -2038,13 +2284,14 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
   Kokkos::deep_copy(ffc, hff);
   auto ur = pm1->u0;
   auto tc = tcol_;
+  auto tc4 = tcol4_;
   const Real ar = pm1->arad, efl = pm1->e_floor, cl = pm1->c_light;
   par_for("ryper_ric", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real t = tc(m,k,i);
+    const Real t = p3 ? tc4(m,k,j,i) : tc(m,k,i);
     const Real e = fmax(ar*SQR(SQR(t)), efl);
     ur(m,radm1::M1_E,k,j,i) = e;
-    ur(m,radm1::M1_F1,k,j,i) = fmin(fc(m,k,i), 0.9*cl*e);
+    ur(m,radm1::M1_F1,k,j,i) = fmin(p3 ? fc4(m,k,j,i) : fc(m,k,i), 0.9*cl*e);
     ur(m,radm1::M1_F2,k,j,i) = 0.0;
     ur(m,radm1::M1_F3,k,j,i) = 0.0;
   });
@@ -2054,7 +2301,7 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
     const int e1 = std::min(ff0.extent_int(3) - 1, n1);
     par_for("ryper_ricf", DevExeSpace(), 0, nmb - 1, 0, e3, 0, e2, 0, e1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      ff0(m,k,j,i) = ffc(m,k,i);
+      ff0(m,k,j,i) = p3 ? ffc4(m,k,j,i) : ffc(m,k,i);
     });
   }
   // range check of the radiatively active cells (active zones)
@@ -2171,6 +2418,24 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
   auto hd = Kokkos::create_mirror_view(dd);
   auto he = Kokkos::create_mirror_view(de);
   auto hv = Kokkos::create_mirror_view(dv);
+  // accretor-3d-1017 (phys_3d): the same march for every (m,k,j) column on the 3-D
+  // equipotentials (Phi_wb, Phi_eff, T_col and the ambient all depend on theta)
+  const bool p3 = p3_;
+  const int nj3 = p3 ? n2 : 1;
+  DvceArray4D<Real> dd4, de4, dv4;
+  decltype(Kokkos::create_mirror_view(dd4)) hd4, he4, hv4;
+  decltype(Kokkos::create_mirror_view_and_copy(HostMemSpace(), tcol4_)) ht4;
+  decltype(Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v)) hx2;
+  if (p3) {
+    dd4 = DvceArray4D<Real>("ryper_icd4", nmb, n3, n2, n1);
+    de4 = DvceArray4D<Real>("ryper_ice4", nmb, n3, n2, n1);
+    dv4 = DvceArray4D<Real>("ryper_icv4", nmb, n3, n2, n1);
+    hd4 = Kokkos::create_mirror_view(dd4);
+    he4 = Kokkos::create_mirror_view(de4);
+    hv4 = Kokkos::create_mirror_view(dv4);
+    ht4 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tcol4_);
+    hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+  }
   std::vector<Real> d(n1), e(n1), t(n1), pw(n1), pf(n1 + 1);
   std::vector<char> isa(n1, 0);
   const bool radeq = amb_radeq_;
@@ -2178,12 +2443,19 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
   int nfail = 0;
   for (int m=0; m<nmb; ++m) {
     for (int k=0; k<n3; ++k) {
+    for (int jc=0; jc<nj3; ++jc) {
+      const Real st = p3 ? std::sin(hx2(m,jc)) : 1.0;
       for (int i=0; i<n1; ++i) {
-        t[i] = ht(m,k,i);
-        pw[i] = hpc(m,k,0,i);
-        pf[i] = hpf(m,k,0,i);
+        t[i] = p3 ? ht4(m,k,jc,i) : ht(m,k,i);
+        pw[i] = hpc(m,k,jc,i);
+        pf[i] = hpf(m,k,jc,i);
       }
-      pf[n1] = hpf(m,k,0,n1);
+      pf[n1] = hpf(m,k,jc,n1);
+      // the Phi_wb of cell i (psi = Phi_s - Phi_wb; under <rad_m1> pw holds Phi_eff)
+      auto pwbc = [&](const int i) {
+        return p3 ? PhiWB3(p, env_dlt_, rtop, rspin, phtop, hx1(m,i), st, hx3(m,k))
+                  : PhiWB(p, env_dlt_, rtop, rspin, phtop, hx1(m,i), hx3(m,k));
+      };
       // walk of cell i at density di: pressures at its inner and outer face
       auto walk = [&](const int i, const Real di, Real &pl, Real &pr) {
         Real ei, pp, cr, ct, cv;
@@ -2223,18 +2495,14 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
         Real best = 1.0e300;
         for (int i=is; i<=ie; ++i) {
           // <rad_m1>: pw is Phi_eff = Phi_wb + G; psi is defined by Phi_wb alone
-          const Real psi = rad_ ? (phis - PhiWB(p, env_dlt_, rtop, rspin, phtop, hx1(m,i),
-                                                hx3(m,k)))
-                                : (phis - pw[i]);
+          const Real psi = rad_ ? (phis - pwbc(i)) : (phis - pw[i]);
           if (std::fabs(psi) < best) {
             best = std::fabs(psi);
             ia = i;
           }
         }
         Real lt, lr;
-        const Real psia = rad_ ? (phis - PhiWB(p, env_dlt_, rtop, rspin, phtop, hx1(m,ia),
-                                               hx3(m,k)))
-                               : (phis - pw[ia]);
+        const Real psia = rad_ ? (phis - pwbc(ia)) : (phis - pw[ia]);
         ColumnAt(cpsi, clt, clr, psia, lt, lr);
         d[ia] = std::exp(lr)/eos.dens_cgs;
       }
@@ -2251,7 +2519,8 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
       bool amb = false;
       for (int i=0; i<n1; ++i) isa[i] = 0;
       for (int i=ia; i<=n1-1; ++i) {
-        const Real pha = hpt(m,k,0,i) - (eqtop ? aeq : RochePot(p, racc, hx3(m,k)));
+        const Real pha = hpt(m,k,jc,i) - (eqtop ? aeq : (p3 ? RochePot3(p, racc, st, hx3(m,k))
+                                                            : RochePot(p, racc, hx3(m,k))));
         const Real da = ramb0*std::exp(std::max(-pha/camb2, -700.0));
         if (!amb && i > ia) {
           if (i <= n1 - 2) {
@@ -2289,11 +2558,19 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
       }
       for (int i=0; i<n1; ++i) {
         d[i] = std::max(d[i], dfl);
-        hd(m,k,i) = d[i];
-        he(m,k,i) = eos.EnergyFromTemperature(d[i], t[i]);
-        hv(m,k,i) = (hx1(m,i) < rspin && (radeq ? (isa[i] == 0) : (t[i] != tamb))) ?
-                    vsp*hx1(m,i) : 0.0;
+        const Real vi = (hx1(m,i) < rspin && (radeq ? (isa[i] == 0) : (t[i] != tamb))) ?
+                        vsp*hx1(m,i) : 0.0;
+        if (p3) {
+          hd4(m,k,jc,i) = d[i];
+          he4(m,k,jc,i) = eos.EnergyFromTemperature(d[i], t[i]);
+          hv4(m,k,jc,i) = vi*st;
+        } else {
+          hd(m,k,i) = d[i];
+          he(m,k,i) = eos.EnergyFromTemperature(d[i], t[i]);
+          hv(m,k,i) = vi;
+        }
       }
+    }
     }
   }
   if (root) {
@@ -2301,11 +2578,26 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
                 "balance residual max %.3e, %d unconverged cells\n", rhoanc_min, rhoanc_max,
                 rmax, nfail);
   }
+  auto u0 = phd->u0;
+  auto phicc = phd->phicc0;
+  if (p3) {
+    Kokkos::deep_copy(dd4, hd4);
+    Kokkos::deep_copy(de4, he4);
+    Kokkos::deep_copy(dv4, hv4);
+    par_for("ryper_icg3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real dc = dd4(m,k,j,i), v3 = dv4(m,k,j,i);
+      u0(m,IDN,k,j,i) = dc;
+      u0(m,IM1,k,j,i) = 0.0;
+      u0(m,IM2,k,j,i) = 0.0;
+      u0(m,IM3,k,j,i) = dc*v3;
+      u0(m,IEN,k,j,i) = de4(m,k,j,i) + 0.5*dc*v3*v3 + dc*phicc(m,k,j,i);
+    });
+    return;
+  }
   Kokkos::deep_copy(dd, hd);
   Kokkos::deep_copy(de, he);
   Kokkos::deep_copy(dv, hv);
-  auto u0 = phd->u0;
-  auto phicc = phd->phicc0;
   par_for("ryper_icg", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dc = dd(m,k,i), v3 = dv(m,k,i);
@@ -2569,8 +2861,24 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     auto phicc = phd->phicc0;
     auto ph1 = phd->phi0.x1f, ph2 = phd->phi0.x2f, ph3 = phd->phi0.x3f;
     const int n1m1 = n1 - 1, n2m1 = n2 - 1, n3m1 = n3 - 1;
+    const bool p3 = p3_;
+    auto &x2c = pmbp->pcoord->x2v;
+    auto &x2fc = pmbp->pcoord->xx2f;
     par_for("ryper_phi", DevExeSpace(), 0, nmb - 1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (p3) {
+        // accretor-3d-1017: the exact 3-D Roche potential on the centres and all faces
+        const Real st = sin(x2c(m,j)), phk = x3v(m,k);
+        const Real pc3 = RochePot3(p, x1v(m,i), st, phk);
+        phicc(m,k,j,i) = pc3;
+        ph1(m,k,j,i) = RochePot3(p, x1f(m,i), st, phk);
+        if (i == n1m1) ph1(m,k,j,i+1) = RochePot3(p, x1f(m,i+1), st, phk);
+        ph2(m,k,j,i) = RochePot3(p, x1v(m,i), sin(x2fc(m,j)), phk);
+        if (j == n2m1) ph2(m,k,j+1,i) = RochePot3(p, x1v(m,i), sin(x2fc(m,j+1)), phk);
+        ph3(m,k,j,i) = RochePot3(p, x1v(m,i), st, x3f(m,k));
+        if (k == n3m1) ph3(m,k+1,j,i) = RochePot3(p, x1v(m,i), st, x3f(m,k+1));
+        return;
+      }
       const Real pc = RochePot(p, x1v(m,i), x3v(m,k));
       phicc(m,k,j,i) = pc;
       ph1(m,k,j,i) = RochePot(p, x1f(m,i), x3v(m,k));
@@ -2586,9 +2894,20 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     phd->EnableWBEffectivePotential();
     auto pwc = phd->phicc_wb, pwf = phd->phi_wb_x1f;
     const int n1m1 = n1 - 1;
+    const bool p3 = p3_;
+    auto &x2c = pmbp->pcoord->x2v;
     par_for("ryper_phiwb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real ph = x3v(m,k);
+      if (p3) {
+        const Real st = sin(x2c(m,j));
+        pwc(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), st, ph);
+        pwf(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i), st, ph);
+        if (i == n1m1) {
+          pwf(m,k,j,i+1) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i+1), st, ph);
+        }
+        return;
+      }
       pwc(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), ph);
       pwf(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i), ph);
       if (i == n1m1) {
@@ -2625,6 +2944,41 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       c2r(m,k,i) = EnvC2(psi, cph2, np);
     });
   }
+  // accretor-3d-1017 (phys_3d): the same on (m,k,j,i) with the 3-D potentials, plus the
+  // explicit g_theta and g_phi (face differences of the true Phi); the ambient anchored at
+  // R_acc on the same (theta, phi) ray (sphere) or the photospheric equipotential
+  if (p3_) {
+    Kokkos::realloc(gr4_, nmb, n3, n2, n1);
+    Kokkos::realloc(gt4_, nmb, n3, n2, n1);
+    Kokkos::realloc(gp4_, nmb, n3, n2, n1);
+    Kokkos::realloc(gpl4_, nmb, n3, n2, n1);
+    Kokkos::realloc(cref24_, nmb, n3, n2, n1);
+    Kokkos::realloc(rhoamb4_, nmb, n3, n2, n1);
+    auto gr = gr4_, gt = gt4_, gp = gp4_, gpl = gpl4_, c2r = cref24_, ra = rhoamb4_;
+    auto &x2c = pmbp->pcoord->x2v;
+    auto &x2fc = pmbp->pcoord->xx2f;
+    const Real ramb0 = env_ramb_, camb2 = env_camb2_, dmin = rho_amb;
+    const Real aeq = RochePot(p, racc, 0.5*M_PI);
+    par_for("ryper_gre3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real rl = x1f(m,i), rr = x1f(m,i+1), r = x1v(m,i), ph = x3v(m,k);
+      const Real th = x2c(m,j), st = sin(th);
+      const Real tl = x2fc(m,j), tr = x2fc(m,j+1);
+      const Real wr = PhiWB3(p, dlt, rtop, rspin, phtop, rr, st, ph);
+      const Real wl = PhiWB3(p, dlt, rtop, rspin, phtop, rl, st, ph);
+      gr(m,k,j,i) = -((RochePot3(p, rr, st, ph) - wr) - (RochePot3(p, rl, st, ph) - wl))
+                    /(rr - rl);
+      gpl(m,k,j,i) = -(wr - wl)/(rr - rl);
+      gt(m,k,j,i) = -(RochePot3(p, r, sin(tr), ph) - RochePot3(p, r, sin(tl), ph))
+                    /(r*(tr - tl));
+      gp(m,k,j,i) = -(RochePot3(p, r, st, x3f(m,k+1)) - RochePot3(p, r, st, x3f(m,k)))
+                    /(r*st*(x3f(m,k+1) - x3f(m,k)));
+      const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph);
+      c2r(m,k,j,i) = EnvC2(psi, cph2, np);
+      const Real dph = RochePot3(p, r, st, ph) - (eqtop ? aeq : RochePot3(p, racc, st, ph));
+      ra(m,k,j,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
+    });
+  }
   // thermo = general: the envelope column T(psi), rho(psi) from problem/env_ic_file
   // (S0 script; ASCII, '#' comments, columns psi [(km/s)^2, = Phi_s - Phi_wb at phi 90]
   // T [K] rho [g/cc] [...], psi ascending), interpolated linearly in psi on log T and
@@ -2657,6 +3011,17 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), x3v(m,k));
       tc(m,k,i) = tph*EnvC2(psi, cph2, np)/cph2;
     });
+    if (p3_) {
+      Kokkos::realloc(tcol4_, nmb, n3, n2, n1);
+      auto tc4 = tcol4_;
+      auto &x2c = pmbp->pcoord->x2v;
+      par_for("ryper_tcolp3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), sin(x2c(m,j)),
+                                       x3v(m,k));
+        tc4(m,k,j,i) = tph*EnvC2(psi, cph2, np)/cph2;
+      });
+    }
     if (root) {
       const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, pmbp->pmesh->mesh_size.x1min, 0.5*M_PI);
       std::printf("ry_per_accretor: env_ic = polytrope: T(r_in) %.4g K, T_ph %.1f K\n",
@@ -2745,6 +3110,27 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
     }
     Kokkos::deep_copy(tcol_, ht);
+    if (p3_) {
+      // accretor-3d-1017: T(psi) of the column on the 3-D equipotentials
+      Kokkos::realloc(tcol4_, nmb, n3, n2, n1);
+      auto ht4 = Kokkos::create_mirror_view(tcol4_);
+      auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+      for (int m=0; m<nmb; ++m) {
+        for (int k=0; k<n3; ++k) {
+          for (int j=0; j<n2; ++j) {
+            const Real st = std::sin(hx2(m,j));
+            for (int i=0; i<n1; ++i) {
+              const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, hx1(m,i), st,
+                                             hx3(m,k));
+              Real lt, lr;
+              ColumnAt(cpsi, clt, clr, psi, lt, lr);
+              ht4(m,k,j,i) = std::exp(lt)/tk;
+            }
+          }
+        }
+      }
+      Kokkos::deep_copy(tcol4_, ht4);
+    }
     if (rad_) RadSetup(pin, pmbp, cpsi, clt, clr, crq, cfl);
   }
   // the measuring x1 face in each MeshBlock (or -1): r = R_acc exactly (default), or,
@@ -3099,6 +3485,51 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                     "exact 3-D Roche-lobe mask; forces/IC/WB stay theta-invariant (band)\n",
                     ms.x2min*180.0/M_PI, ms.x2max*180.0/M_PI);
       }
+    }
+    // accretor-3d-1017: problem/phys_3d (the 3-D physics; see the namespace header at p3_),
+    // problem/theta_bc, problem/theta_sponge_deg / theta_sponge_tau; all read only when
+    // given, so older decks (2-D and the 049c1f39 3-D benchmark) keep their parameter dump
+    p3_ = false;
+    thout_ = false;
+    thsp_w_ = 0.0;
+    thsp_tau_ = 0.0;
+    if (pin->DoesParameterExist("problem", "phys_3d")) {
+      p3_ = pin->GetBoolean("problem", "phys_3d");
+      if (p3_ && !g3d_) {
+        fatal("problem/phys_3d needs the 3-D mode (theta range beyond 2 deg from the plane)");
+      }
+      if (p3_ && !(env_ && gen_)) {
+        fatal("problem/phys_3d needs problem/inner = envelope and thermo = general");
+      }
+    }
+    if (pin->DoesParameterExist("problem", "theta_bc")) {
+      const std::string tb = pin->GetString("problem", "theta_bc");
+      thout_ = (tb.compare("outflow") == 0);
+      if (!thout_ && tb.compare("reflect") != 0) fatal("theta_bc must be reflect | outflow");
+      if (thout_ && !p3_) fatal("theta_bc = outflow needs problem/phys_3d = true");
+    }
+    {
+      const bool u2 = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) ||
+                      (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
+      const bool u2b = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) &&
+                       (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
+      if (thout_ && !u2b) fatal("theta_bc = outflow needs mesh/ix2_bc = ox2_bc = user");
+      if (!thout_ && u2) fatal("mesh ix2_bc/ox2_bc = user needs problem/theta_bc = outflow");
+    }
+    if (pin->DoesParameterExist("problem", "theta_sponge_deg")) {
+      thsp_w_ = pin->GetReal("problem", "theta_sponge_deg")*M_PI/180.0;
+      if (thsp_w_ > 0.0) {
+        if (!p3_) fatal("theta_sponge_deg > 0 needs problem/phys_3d = true");
+        thsp_tau_ = pin->GetReal("problem", "theta_sponge_tau");
+        if (!(thsp_tau_ > 0.0)) fatal("problem/theta_sponge_tau must be > 0");
+      }
+    }
+    if (root && p3_) {
+      std::printf("ry_per_accretor: phys_3d: 3-D Roche potential (gravity r/theta/phi, Phi_wb, "
+                  "etotgrav), full Coriolis, IC/WB/ambient on 3-D equipotentials; theta walls "
+                  "%s; theta sponge %s (width %.3f deg, tau %.4g)\n",
+                  thout_ ? "OUTFLOW (hydrostatic theta ghosts, v_theta diode)" : "reflecting",
+                  (thsp_w_ > 0.0) ? "on" : "off", thsp_w_*180.0/M_PI, thsp_tau_);
     }
   }
   // the nozzle shell: stream_ncell cells above the x1 face nearest stream_r
