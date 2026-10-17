@@ -322,10 +322,18 @@ class Solution(object):
         c3 = (p.m0 * (0.5 * v * v + T / (p.g - 1.0)) + (4.0 / 3.0) * p.p0 * v * th + F) / p.e0 - 1.0
         return float(np.abs(c2).max()), float(np.abs(c3).max())
 
-    def domain(self, frac=1e-4):
-        """x range where |T - T_eq| >= frac*(T1 - 1) (both sides)."""
+    def domain(self, frac=1e-4, use_tr=True):
+        """x range where |T - T_eq| (and, use_tr, |T_r - T_eq|) >= frac*(T1 - 1).
+        use_tr matters for M0 >= 5: the radiation foot runs AHEAD of the gas precursor
+        (T_r = 1.25 / 1.49 at the gas-T edge for M0 = 27 / 50), and a Marshak bath at
+        a T0^4 there is inconsistent with the solution (idort-rs-1017 v1 decks of M0 =
+        5/27/50 had that cut; v2 use both).  The M0 <= 3 decks (T_r - 1 <= 2e-3 at the
+        gas edge) were made with use_tr=False."""
         d1 = frac * (self.T1 - 1.0)
-        a = np.nonzero(self.Ta - 1.0 >= d1)[0]
+        dev = self.Ta - 1.0
+        if use_tr:
+            dev = np.maximum(dev, self.sample(self.xa)[3] - 1.0)
+        a = np.nonzero(dev >= d1)[0]
         xmin = float(self.xa[a[0]]) if a.size else float(self.xa[0])
         b = np.nonzero(np.abs(self.Tb - self.T1) >= d1)[0]
         xmax = float(self.xb[b[-1]]) if b.size else float(self.xb[-1])
@@ -370,14 +378,14 @@ class Units(object):
         self.p0 = AR * T0 ** 4 / (RHO0 * self.v ** 2)
 
 
-def write_ref(path, sol, nref, frac=1e-4, dpad=0.25):
+def write_ref(path, sol, nref, frac=1e-4, dpad=0.25, use_tr=True):
     """Uniform table over [xmin, xmax]; the downstream side is extended with the
     (constant) far-field state to at least dpad x the precursor length, so that the
     Dirichlet x1max face sits well behind the relaxation region (for M0 >= 5 the
     relaxation region alone is < 1e-3 of the domain, i.e. sub-cell)."""
     p = sol.p
     u = Units(p)
-    xmin, xmax = sol.domain(frac)
+    xmin, xmax = sol.domain(frac, use_tr)
     xmax = max(1.5 * xmax, -dpad * xmin)
     xg = np.linspace(xmin, xmax, nref)
     # put x = 0 (the shock) exactly on a grid point so the jump is not smeared
@@ -469,6 +477,8 @@ def main():
     ap.add_argument("--nref", type=int, default=65537)
     ap.add_argument("--frac", type=float, default=1e-4, help="domain edge |T-Teq|/(T1-1)")
     ap.add_argument("--athinput", action="store_true")
+    ap.add_argument("--domain-t-only", action="store_true",
+                    help="cut the upstream edge on T_gas only (the v1 / M0 <= 3 decks)")
     ap.add_argument("--dpad", type=float, default=0.25,
                     help="downstream extent >= dpad x precursor length")
     ap.add_argument("--json", default=None)
@@ -491,7 +501,7 @@ def main():
     mt["domain"] = list(s.domain(a.frac))
     print(json.dumps(mt, indent=1))
     if a.write_ref:
-        lo, hi = write_ref(a.write_ref, s, a.nref, a.frac, a.dpad)
+        lo, hi = write_ref(a.write_ref, s, a.nref, a.frac, a.dpad, not a.domain_t_only)
         if a.athinput:
             print(athinput(s, lo, hi))
     if a.json:
