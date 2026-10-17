@@ -98,6 +98,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const bool rs_lin = cs_lin_resample;
   const bool nors_ = cs_noresample;
   const bool cperm_ = cs_perm_pairs;
+  const int hrq_ = cs_hrq0;
   auto sbuf = SendBufDv();
   auto rbuf = RecvBufDv();
   auto &is_z4c = is_z4c_;
@@ -192,8 +193,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         int sj = 1, sk = nj;
         int vv = v;
         bool cs_xform = false;
-        // cs-s4-1017: the FACE-NORMAL pair transform of cs_perm_pairs (see below)
+        // cs-s4-1017: the FACE-NORMAL pair transform of cs_perm_pairs (see below) and
+        // the half-range quad of cs_hrq0
         bool cs_fxform = false;
+        bool cs_hrquad = false;
         // THE COMPONENT ROLE of slot v: is it a member of a tangential vector pair, and
         // which slots hold the pair's x2 (va_) and x3 (vb_) members.  Without a table
         // (SetVectorPairs) this is the historical rule, slots (IVY, IVZ) of any array.
@@ -281,6 +284,20 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (cperm_ && vec_) {
             cs_xform = false;
             cs_fxform = true;
+          }
+          // cs-s4-1017: the half-range quad (cs_hrq0, see bvals.hpp)
+          if (hrq_ >= 0 && v >= hrq_ && v < hrq_ + 4) {
+            cs_xform = false;
+            cs_fxform = false;
+            cs_hrquad = true;
+            const int ad = (v - hrq_)/2, pm = (v - hrq_) % 2;
+            const bool sw = (pb.swap_ax == 1);
+            const int as = sw ? (1 - ad) : ad;
+            const int rva = sw ? rev_b_preswap : rev_a_preswap;
+            const int rvb = sw ? rev_a_preswap : rev_b_preswap;
+            const bool rv = ((ad == 0) ? rva : rvb) != 0;
+            vv = hrq_ + 2*as + (rv ? (1 - pm) : pm);
+            signvar = rv ? -1 : 1;
           }
 
           // WHICH BUFFER IS THIS, and therefore which way does the along-seam resample
@@ -371,7 +388,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
           if (no_rs_cc || nors_) { cs_seam = 0; }
-          if (cs_fxform) { cs_seam = 0; }
+          if (cs_fxform || cs_hrquad) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;

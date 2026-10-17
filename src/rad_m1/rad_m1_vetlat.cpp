@@ -291,6 +291,10 @@ void RadiationM1::VetLatInit() {
   pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_vt->InitializeBuffers(nlx);
   pbval_vt->SetVectorPairs(nlx, {});
+  // cs-s4-1017: on the cubed sphere the tau_ten ghosts are the neighbour's own (mirror)
+  // cells, as the implicit operator's E and work-array ghosts (no along-seam resample):
+  // the Cartesian D_r,lat of M1CsLat0 / M1CsLatF pairs with the mirror E
+  if (pm->use_cubed_sphere) {pbval_vt->cs_noresample = true;}
   vlat_geo_icut = -1;
   vlat_ready = true;
   if (vgd_on) {VetGdInit(); return;}
@@ -326,6 +330,8 @@ void RadiationM1::VetLatOdMax() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = tau_ten;
   const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
+  // cs-s4-1017: on the cubed sphere D_r,lat is the Cartesian vector in LAT1..LAT3
+  const bool c3 = cs_geom;
   {
     Real omx = 0.0;
     const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
@@ -344,6 +350,7 @@ void RadiationM1::VetLatOdMax() {
           v = fmax(v, fmax(fabs(tt_(m,M1_TT_LAT0+3,k,j,i)),
                            fabs(tt_(m,M1_TT_LAT0+4,k,j,i))));
         }
+        if (c3) {v = fmax(v, fabs(tt_(m,M1_TT_LAT0+3,k,j,i)));}
         mx = (v > mx) ? v : mx;
       }, Kokkos::Max<Real>(omx));
 #if MPI_PARALLEL_ENABLED
@@ -1007,6 +1014,7 @@ void RadiationM1::VetLatDump() {
 //! physical x2/x3 faces carry no term, a Dirichlet (efix) row gets none.
 
 void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
+  if (cs_geom) {VetLatOpCs(xc, yc, sgn); return;}   // cs-s4-1017
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -1153,6 +1161,7 @@ int VlatStIdx(const int di, const int dj, const int dk) {
 //! are grouped differently: round-off), compared by implicit_op_check.
 
 void RadiationM1::VetLatStencilAdd() {
+  if (cs_geom) {VetLatStencilAddCs(); return;}   // cs-s4-1017
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -1316,6 +1325,289 @@ void RadiationM1::VetLatStencilAdd() {
         if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
         latc(2, i, j, k-1, w);
         latc(2, i, j, k, w);
+      }
+    }
+  });
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatOpCs
+//! \brief cs-s4-1017 (stage S4): VetLatOp on the cubed sphere.  The same faces and
+//! coefficients as the sp form (theta_f of the face opacity, 1 - AL of the blends), with
+//! the cs lateral terms: M1CsLat0 (the FV lateral divergence of the Cartesian D_r,lat
+//! v E) on the x1 faces and M1CsLatF ((1/r^3) d_r (r^3 (nhat_f . v) E) with the face's
+//! planar normal) on the x2/x3 faces, the cs face areas (canonical at a seam: the area
+//! the E row takes, M1CsTransRow) and the open seams (m1bcs).
+
+void RadiationM1::VetLatOpCs(int xc, int yc, Real sgn) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto tt_ = tau_ten;
+  auto mbbcs = m1bcs.d_view;
+  auto pos_ = part_pos.d_view;
+  const int nblkx1 = part_nblk;
+  const bool thrd = trans_x3;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const Real cl = c_light, ch = chat, dt = dt_sub;
+  const bool fwd = sph_geom && impl_face_wdist;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  auto car = cs_area_eff;
+  auto fn2 = cs_fn2;
+  auto fn3 = cs_fn3;
+  // (the seam foot -> midpoint shift of M1CsLat0 stays lagged: corr = false here)
+  auto cse_ = cs_seam.d_view;
+  auto g2_ = csg2;
+  auto g3_ = csg3;
+  const int cx = xc, cy = yc;
+  const Real sg = sgn;
+  const int c0 = M1_TT_LAT0;
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
+  auto ifw_ = ifw;
+  const bool blt = blat_on;
+  auto bw2_ = ifw2;
+  auto bw3_ = ifw3;
+  par_for("m1_vlat_opcs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_(m);
+    const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    if ((i == is && botb && bclo == M1_IBC_EFIX) ||
+        (i == ie && topb && bchi == M1_IBC_EFIX)) {
+      return;
+    }
+    BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
+    BoundaryFlag q2 = mbbcs(m,BoundaryFace::outer_x1);
+    BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
+    const bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+    const bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+    const bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+    const bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+    int il = is, iu = ie;
+    if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {il = is-1;}
+    if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {iu = ie+1;}
+    const Real cr = ch/cl, kk = ch*cl*dt;
+    const Real iv = dt/cvol(m,k,j,i);
+    Real y = 0.0;
+    auto lat0 = [&](const int iq) {
+      return M1CsLat0(iw_, tt_, c0, cvol, car, fn2, fn3, m, k, j, iq, thrd, cx, false,
+                      cse_, g2_, g3_, js, je, ks, ke);
+    };
+    // the two x1 faces
+    if (i < ie || !topb) {
+      const int ip = i + 1;
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
+                                   i, ip, fwd);
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
+      y -= carea.x1f(m,k,j,i+1)*iv*cr*th*kk*0.5*(lat0(i) + lat0(ip));
+    }
+    if (i > is || !botb) {
+      const int im = i - 1;
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
+                                   im, i, fwd);
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
+      y += carea.x1f(m,k,j,i)*iv*cr*th*kk*0.5*(lat0(im) + lat0(i));
+    }
+    // the two x2 faces (the face's own planar normal for both cells)
+    if (!(j == je && p2hi)) {
+      Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
+                                      + iw_(m,M1_IW_KT,k,j+1,i)));
+      if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
+      const Real nf[3] = {fn2(m,j+1,0), fn2(m,j+1,1), fn2(m,j+1,2)};
+      y -= car.x2f(m,k,j+1,i)*iv*cr*th*kk*0.5
+           *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx)
+             + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j+1, i, il, iu, cx));
+    }
+    if (!(j == js && p2lo)) {
+      Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j-1,i)
+                                      + iw_(m,M1_IW_KT,k,j,i)));
+      if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
+      const Real nf[3] = {fn2(m,j,0), fn2(m,j,1), fn2(m,j,2)};
+      y += car.x2f(m,k,j,i)*iv*cr*th*kk*0.5
+           *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j-1, i, il, iu, cx)
+             + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx));
+    }
+    // the two x3 faces
+    if (thrd) {
+      if (!(k == ke && p3hi)) {
+        Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
+                                        + iw_(m,M1_IW_KT,k+1,j,i)));
+        if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
+        const Real nf[3] = {fn3(m,k+1,0), fn3(m,k+1,1), fn3(m,k+1,2)};
+        y -= car.x3f(m,k+1,j,i)*iv*cr*th*kk*0.5
+             *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx)
+               + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k+1, j, i, il, iu, cx));
+      }
+      if (!(k == ks && p3lo)) {
+        Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k-1,j,i)
+                                        + iw_(m,M1_IW_KT,k,j,i)));
+        if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
+        const Real nf[3] = {fn3(m,k,0), fn3(m,k,1), fn3(m,k,2)};
+        y += car.x3f(m,k,j,i)*iv*cr*th*kk*0.5
+             *(M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k-1, j, i, il, iu, cx)
+               + M1CsLatF(iw_, tt_, c0, cx1v, nf, m, k, j, i, il, iu, cx));
+      }
+    }
+    iw_(m,cy,k,j,i) += sg*y;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetLatStencilAddCs
+//! \brief cs-s4-1017: VetLatStencilAdd on the cubed sphere -- the terms of VetLatOpCs
+//! distributed onto the 19-point stencil (M1CsLat0 at an x1-face cell q reaches q's four
+//! lateral neighbours: x1x2 / x1x3 edge slots; M1CsLatF at a lateral-face cell reaches
+//! its radial neighbours: centre, x1 face or edge slots).  Same terms as VetLatOpCs (the
+//! sums are grouped differently: round-off), compared by implicit_op_check.
+
+void RadiationM1::VetLatStencilAddCs() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto tt_ = tau_ten;
+  auto st_ = ost;
+  auto mbbcs = m1bcs.d_view;
+  auto pos_ = part_pos.d_view;
+  const int nblkx1 = part_nblk;
+  const bool thrd = trans_x3;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const Real cl = c_light, ch = chat, dt = dt_sub;
+  const bool fwd = sph_geom && impl_face_wdist;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  auto car = cs_area_eff;
+  auto fn2 = cs_fn2;
+  auto fn3 = cs_fn3;
+  const int c0 = M1_TT_LAT0;
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
+  auto ifw_ = ifw;
+  const bool blt = blat_on;
+  auto bw2_ = ifw2;
+  auto bw3_ = ifw3;
+  par_for("m1_vlat_stencilcs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int ipos = pos_(m);
+    const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    if ((i == is && botb && bclo == M1_IBC_EFIX) ||
+        (i == ie && topb && bchi == M1_IBC_EFIX)) {
+      return;
+    }
+    BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
+    BoundaryFlag q2 = mbbcs(m,BoundaryFace::outer_x1);
+    BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
+    const bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+    const bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+    const bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+    const bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+    int il = is, iu = ie;
+    if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {il = is-1;}
+    if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {iu = ie+1;}
+    const Real cr = ch/cl, kk = ch*cl*dt;
+    const Real iv = dt/cvol(m,k,j,i);
+    auto add = [&](const int pi, const int pj, const int pk, const Real c) {
+      st_(m,VlatStIdx(pi - i, pj - j, pk - k),k,j,i) += c;
+    };
+    auto vdot = [&](const int qk, const int qj, const int qi, const Real *nf) {
+      return tt_(m,c0+1,qk,qj,qi)*nf[0] + tt_(m,c0+2,qk,qj,qi)*nf[1]
+             + tt_(m,c0+3,qk,qj,qi)*nf[2];
+    };
+    // w M1CsLat0(x; cell (qk, j, qi)) distributed (x1-face cells: k, j fixed)
+    auto lat0c = [&](const int qi, const Real w) {
+      const Real wv = w/cvol(m,k,j,qi);
+      {
+        const Real nh[3] = {fn2(m,j+1,0), fn2(m,j+1,1), fn2(m,j+1,2)};
+        const Real nl[3] = {fn2(m,j,0), fn2(m,j,1), fn2(m,j,2)};
+        const Real ah = 0.5*wv*car.x2f(m,k,j+1,qi), al = 0.5*wv*car.x2f(m,k,j,qi);
+        add(qi, j, k, ah*vdot(k, j, qi, nh) - al*vdot(k, j, qi, nl));
+        add(qi, j+1, k, ah*vdot(k, j+1, qi, nh));
+        add(qi, j-1, k, -al*vdot(k, j-1, qi, nl));
+      }
+      if (thrd) {
+        const Real nh[3] = {fn3(m,k+1,0), fn3(m,k+1,1), fn3(m,k+1,2)};
+        const Real nl[3] = {fn3(m,k,0), fn3(m,k,1), fn3(m,k,2)};
+        const Real ah = 0.5*wv*car.x3f(m,k+1,j,qi), al = 0.5*wv*car.x3f(m,k,j,qi);
+        add(qi, j, k, ah*vdot(k, j, qi, nh) - al*vdot(k, j, qi, nl));
+        add(qi, j, k+1, ah*vdot(k+1, j, qi, nh));
+        add(qi, j, k-1, -al*vdot(k-1, j, qi, nl));
+      }
+    };
+    // w M1CsLatF(x; nf, cell (qk, qj, i)) distributed
+    auto latfc = [&](const int qk, const int qj, const Real *nf, const Real w) {
+      const int ia = (i + 1 <= iu) ? i + 1 : i;
+      const int ib = (i - 1 >= il) ? i - 1 : i;
+      if (ia == ib) {return;}
+      const Real r = cx1v(m,i), ra = cx1v(m,ia), rb = cx1v(m,ib);
+      const Real f = w/(r*r*r*(ra - rb));
+      add(ia, qj, qk, f*ra*ra*ra*vdot(qk, qj, ia, nf));
+      add(ib, qj, qk, -f*rb*rb*rb*vdot(qk, qj, ib, nf));
+    };
+    if (i < ie || !topb) {
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,i+1), cx1f,
+                                   m, i, i+1, fwd);
+      Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
+      lat0c(i, w);
+      lat0c(i+1, w);
+    }
+    if (i > is || !botb) {
+      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i-1), iw_(m,M1_IW_KT,k,j,i), cx1f,
+                                   m, i-1, i, fwd);
+      Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
+      lat0c(i-1, w);
+      lat0c(i, w);
+    }
+    if (!(j == je && p2hi)) {
+      const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+      Real w = -0.5*car.x2f(m,k,j+1,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
+      const Real nf[3] = {fn2(m,j+1,0), fn2(m,j+1,1), fn2(m,j+1,2)};
+      latfc(k, j, nf, w);
+      latfc(k, j+1, nf, w);
+    }
+    if (!(j == js && p2lo)) {
+      const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real w = 0.5*car.x2f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+      if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
+      const Real nf[3] = {fn2(m,j,0), fn2(m,j,1), fn2(m,j,2)};
+      latfc(k, j-1, nf, w);
+      latfc(k, j, nf, w);
+    }
+    if (thrd) {
+      if (!(k == ke && p3hi)) {
+        const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+        Real w = -0.5*car.x3f(m,k+1,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
+        const Real nf[3] = {fn3(m,k+1,0), fn3(m,k+1,1), fn3(m,k+1,2)};
+        latfc(k, j, nf, w);
+        latfc(k+1, j, nf, w);
+      }
+      if (!(k == ks && p3lo)) {
+        const Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        Real w = 0.5*car.x3f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
+        if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
+        const Real nf[3] = {fn3(m,k,0), fn3(m,k,1), fn3(m,k,2)};
+        latfc(k-1, j, nf, w);
+        latfc(k, j, nf, w);
       }
     }
   });

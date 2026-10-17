@@ -1128,7 +1128,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_smooth = std::max(0, pin->GetInteger("rad_m1","vet_gd_smooth"));
     }
     if (pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
-        pin->GetBoolean("rad_m1","vet_gd_mms")) {
+        pin->GetBoolean("rad_m1","vet_gd_mms") && !pmy_pack->pmesh->use_cubed_sphere) {
       VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
       std::exit(EXIT_SUCCESS);
     }
@@ -1459,18 +1459,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
-      // cs-vetgd-1017 (stage S3): on the cubed sphere vet_gd hands over D_rr only; the
-      // D_r,lat operator form on the skew cs faces (M1CsLat) is stage S4.  The default
-      // there is none (a cs soft default, as rbgs_fwd / be); lagged / operator named
-      // are refused
-      if (vgd_on && pmy_pack->pmesh->use_cubed_sphere) {
-        if (pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag") && vlat_odm != 0) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<rad_m1>/vet_col_lat_offdiag = lagged | operator "
-                    << "is not available on the cubed sphere (stage S3: D_rr only; "
-                    << "the cs operator form is stage S4): use none" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
+      // cs-vetgd-1017 (stage S3): on the cubed sphere vet_gd hands over D_rr only.
+      // cs-s4-1017 (stage S4): D_r,lat as the Cartesian vector v (VetGdCsMoments) in the
+      // cs forms M1CsLat0 / M1CsLatF, lagged or in the operator (VetLatOpCs /
+      // VetLatStencilAddCs) when named; the cs default stays none (soft default, as
+      // rbgs_fwd / be) until the default change is decided
+      if (vgd_on && pmy_pack->pmesh->use_cubed_sphere &&
+          !pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag")) {
         vlat_odm = 0;
       }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
@@ -1632,6 +1627,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
   pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
   if (cs_geom) {CubedVecCheck(pin);}   // cs-s4-1017: test only, read when named
+  // cs-s4-1017: vet_gd_mms on the cubed sphere (test only): the D_r,lat terms, then exit
+  if (cs_geom && pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
+      pin->GetBoolean("rad_m1","vet_gd_mms")) {
+    VetGdMmsCs();
+    std::exit(EXIT_SUCCESS);
+  }
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c
@@ -1951,6 +1952,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}
+  if (pbval_hr != nullptr) {delete pbval_hr;}   // cs-s4-1017
   if (pbval_gd != nullptr) {delete pbval_gd;}
 }
 

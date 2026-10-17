@@ -74,6 +74,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -1818,7 +1819,10 @@ void RadM1CellDump(const std::string &pre, Mesh *pm) {
   std::string fn = pre + "." + std::to_string(global_variable::my_rank) + ".txt";
   FILE *f = std::fopen(fn.c_str(), "w");
   if (f == nullptr) return;
-  const int i = is + nx1/2;
+  // cs-s4-1017: the radial cell (from the inner face, 0-based) by env M1_CELL_DUMP_I
+  const char *ci = std::getenv("M1_CELL_DUMP_I");
+  const int i = is + ((ci != nullptr) ? std::max(0, std::min(nx1 - 1, std::atoi(ci)))
+                                      : nx1/2);
   for (int m = 0; m < pmbp->nmb_thispack; ++m) {
     for (int k = ks; k < ks + nx3; ++k) {
       for (int j = js; j < js + nx2; ++j) {

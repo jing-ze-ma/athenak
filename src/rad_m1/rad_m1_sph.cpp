@@ -333,6 +333,61 @@ void RadiationM1::CubedS1Init() {
       }
     });
   }
+  // cs-s4-1017: the planar face normals, nhat_xi = (a - tan(xi_f) n)/sqrt(1 + tan^2) and
+  // nhat_eta = (b - tan(eta_f) n)/sqrt(1 + tan^2) (gradient directions of xi, eta; the
+  // face plane xi = xi_f holds the origin, so its normal is the same along the column)
+  {
+    Kokkos::realloc(cs_fn2, nmb, n2 + 1, 3);
+    Kokkos::realloc(cs_fn3, nmb, n3 + 1, 3);
+    auto f2h = Kokkos::create_mirror_view(cs_fn2);
+    auto f3h = Kokkos::create_mirror_view(cs_fn3);
+    auto &pan = pmy_pack->pmb->mb_panel;
+    for (int m = 0; m < nmb; ++m) {
+      Real fa[3], fb[3], fq[3];
+      cubed_sphere::PanelFrame(pan.h_view(m), fa, fb, fq);
+      for (int j = 0; j <= n2; ++j) {
+        const Real x = std::tan(0.25*M_PI*LeftEdgeX(j - indcs.js, indcs.nx2,
+                                                   msz.h_view(m).x2min,
+                                                   msz.h_view(m).x2max));
+        const Real nn = 1.0/std::sqrt(1.0 + x*x);
+        for (int c = 0; c < 3; ++c) {f2h(m,j,c) = (fa[c] - x*fq[c])*nn;}
+      }
+      for (int k = 0; k <= n3; ++k) {
+        const Real y = std::tan(0.25*M_PI*LeftEdgeX(k - indcs.ks, indcs.nx3,
+                                                   msz.h_view(m).x3min,
+                                                   msz.h_view(m).x3max));
+        const Real nn = 1.0/std::sqrt(1.0 + y*y);
+        for (int c = 0; c < 3; ++c) {f3h(m,k,c) = (fb[c] - y*fq[c])*nn;}
+      }
+    }
+    Kokkos::deep_copy(cs_fn2, f2h);
+    Kokkos::deep_copy(cs_fn3, f3h);
+    // the cell-centre normals (the same formula at xi_c, eta_c)
+    Kokkos::realloc(cs_cn2, nmb, n2, 3);
+    Kokkos::realloc(cs_cn3, nmb, n3, 3);
+    auto c2h = Kokkos::create_mirror_view(cs_cn2);
+    auto c3h = Kokkos::create_mirror_view(cs_cn3);
+    for (int m = 0; m < nmb; ++m) {
+      Real fa[3], fb[3], fq[3];
+      cubed_sphere::PanelFrame(pan.h_view(m), fa, fb, fq);
+      for (int j = 0; j < n2; ++j) {
+        const Real x = std::tan(0.25*M_PI*CellCenterX(j - indcs.js, indcs.nx2,
+                                                     msz.h_view(m).x2min,
+                                                     msz.h_view(m).x2max));
+        const Real nn = 1.0/std::sqrt(1.0 + x*x);
+        for (int c = 0; c < 3; ++c) {c2h(m,j,c) = (fa[c] - x*fq[c])*nn;}
+      }
+      for (int k = 0; k < n3; ++k) {
+        const Real y = std::tan(0.25*M_PI*CellCenterX(k - indcs.ks, indcs.nx3,
+                                                     msz.h_view(m).x3min,
+                                                     msz.h_view(m).x3max));
+        const Real nn = 1.0/std::sqrt(1.0 + y*y);
+        for (int c = 0; c < 3; ++c) {c3h(m,k,c) = (fb[c] - y*fq[c])*nn;}
+      }
+    }
+    Kokkos::deep_copy(cs_cn2, c2h);
+    Kokkos::deep_copy(cs_cn3, c3h);
+  }
   // DEBUG <rad_m1>/cs_seam_avg (read only when named, default true): the C5 seam average
   // of the stored face state
   cs_seam_avg_on = true;

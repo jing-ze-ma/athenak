@@ -40,10 +40,11 @@
 //! auto / corner, vet_seg split / jump, the inner face (diffusion or emit), the top
 //! bath and the tangent rule are the sp sweep's, term for term, over this stencil.
 //!
-//! HAND-OVER (stage S3): D_rr - f_K into LAT0 (folded into slot 0 by VetLatBuild),
-//! the vet_gd_replace surface q.  D_r,lat and the tangential anisotropy (LAT1..LAT5)
-//! are zero on cs: the operator form on the skew cs faces (M1CsLat) is stage S4;
-//! vet_col_lat_offdiag defaults to none on cs and lagged/operator are refused.
+//! HAND-OVER: D_rr - f_K into LAT0 (folded into slot 0 by VetLatBuild), the
+//! vet_gd_replace surface q; cs-s4-1017 (stage S4): D_r,lat as the CARTESIAN tangential
+//! vector v = D.rhat - D_rr rhat in LAT1..LAT3 (the operator / lagged form on the skew
+//! cs faces: M1CsLat0, M1CsLatF, VetLatOpCs, VetLatStencilAddCs); the tangential
+//! anisotropy is not handed over on cs (vet_gd_tangential = false).
 
 #include <algorithm>
 #include <cmath>
@@ -58,7 +59,9 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
+#include "bvals/bvals.hpp"
 #include "coordinates/coordinates.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
@@ -1327,14 +1330,26 @@ void RadiationM1::VetGdCsMoments(const int part) {
       if (i < ilo) {return;}
       const Real rx = cr_(m,k+og,j+og,0), ry = cr_(m,k+og,j+og,1);
       const Real rz = cr_(m,k+og,j+og,2);
-      Real jm = 0.0, rr = 0.0;
+      Real jm = 0.0, rr = 0.0, kx = 0.0, ky = 0.0, kz = 0.0;
       for (int d = 0; d < n; ++d) {
         const Real a = dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
         const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
         jm += wi;
         rr += wi*a*a;
+        kx += wi*a*dir_(d,0);
+        ky += wi*a*dir_(d,1);
+        kz += wi*a*dir_(d,2);
       }
-      if (jm > 0.0) {tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - tt_(m,0,k,j,i);}
+      if (jm > 0.0) {
+        tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - tt_(m,0,k,j,i);
+        // cs-s4-1017: v = D.rhat - D_rr rhat (CARTESIAN, tangential) -> LAT1..LAT3, the
+        // D_r,lat of the cs operator (M1CsLat0 / M1CsLatF); read only with
+        // vet_col_lat_offdiag = lagged | operator
+        const Real dr = rr/jm;
+        tt_(m,M1_TT_LAT0+1,k,j,i) = kx/jm - dr*rx;
+        tt_(m,M1_TT_LAT0+2,k,j,i) = ky/jm - dr*ry;
+        tt_(m,M1_TT_LAT0+3,k,j,i) = kz/jm - dr*rz;
+      }
     });
     return;
   }
@@ -1451,6 +1466,337 @@ void RadiationM1::VetGdCsDump(const char *env) {
   std::fwrite(buf.data(), sizeof(double), buf.size(), fp);
   std::fclose(fp);
   (void) ie;
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdMmsCs
+//! \brief cs-s4-1017 (test only, <rad_m1>/vet_gd_mms = true on the cubed sphere; prints
+//! and exits): manufactured-solution check of the cs D_r,lat terms with a smooth E(r,
+//! rhat) and a smooth tangential Cartesian v(r, rhat) (a gradient part, a rotation part
+//! and a modulated gradient part, all three components nonzero):
+//!   R  M1CsLat0 (the x1 rows' lateral divergence of w = v E)  vs the 3-D divergence of
+//!      the extended field w(|X|, X/|X|) at the cell centre (4th-order Cartesian FD);
+//!   T  0.5 [M1CsLatF(L) + M1CsLatF(R)] on every x2 / x3 face vs (1/r^3) d_r (r^3 (nhat_f
+//!      . v) E) at the face centre (4th-order radial FD).
+//! The active cells hold the analytic values; the ghosts come from the run's OWN kind of
+//! exchange (scalars without the along-seam resample: a seam ghost is the mirror cell, as
+//! for tau_ten and the implicit E).  Errors per cell class (interior, next to a seam,
+//! cube-vertex cell), relative to max |term|, over the cells at least 2 radial cells
+//! from the x1 ends.
+
+void RadiationM1::VetGdMmsCs() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int c1 = indcs.nx1 + 2*ng, c2 = nx2 + 2*ng, c3 = nx3 + 2*ng;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int npan = pm->mesh_indcs.nx2;
+  const double r0 = pm->mesh_size.x1min, r1 = pm->mesh_size.x1max;
+  auto &msz = pmy_pack->pmb->mb_size;
+  auto &mpan = pmy_pack->pmb->mb_panel;
+  const double a1[3] = {0.48, 0.6, 0.64}, a2[3] = {-0.6, 0.0, 0.8};
+  const double bb[3] = {0.3, -0.7, 0.648}, om[3] = {0.2, 0.5, -0.843};
+  const double cc[3] = {0.8, 0.36, -0.48}, dd[3] = {0.0, 0.6, 0.8};
+  auto dot = [](const double *a, const double *b) {
+    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+  };
+  auto fE = [&](const double *X) {
+    const double r = std::sqrt(dot(X, X));
+    const double q[3] = {X[0]/r, X[1]/r, X[2]/r};
+    const double u = (r - r0)/(r1 - r0);
+    return (1.0 + 0.5*u*u)*(1.0 + 0.2*std::sin(3.0*dot(q, a1) + 0.3)
+                            *std::cos(2.0*dot(q, a2)));
+  };
+  auto fV = [&](const double *X, double *v) {
+    const double r = std::sqrt(dot(X, X));
+    const double q[3] = {X[0]/r, X[1]/r, X[2]/r};
+    const double u = (r - r0)/(r1 - r0);
+    const double al = 0.06*(1.0 + u), be = 0.05*(1.0 + 0.5*u*u);
+    const double ga = 0.04*std::sin(dot(q, dd));
+    const double qb = dot(q, bb), qc = dot(q, cc);
+    const double rot[3] = {om[1]*q[2] - om[2]*q[1], om[2]*q[0] - om[0]*q[2],
+                           om[0]*q[1] - om[1]*q[0]};
+    for (int c = 0; c < 3; ++c) {
+      v[c] = al*(bb[c] - qb*q[c]) + be*rot[c] + ga*(cc[c] - qc*q[c]);
+    }
+  };
+  // chart point -> Cartesian unit vector
+  auto p2c = [&](int p, double xi, double eta, double *q) {
+    Real qq[3];
+    cubed_sphere::PanelToCart(p, xi, eta, qq);
+    for (int c = 0; c < 3; ++c) {q[c] = qq[c];}
+  };
+  auto x1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+  // (vx, vy, vz, E) on the active cells, poison elsewhere; then the cs scalar exchange
+  DvceArray5D<Real> fld("vgdmms_cs", nmb, 4, c3, c2, c1);
+  DvceArray5D<Real> fldc("vgdmms_csc", nmb, 4, 1, 1, 1);
+  {
+    auto fh = Kokkos::create_mirror_view(fld);
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = 0; k < c3; ++k) {
+        for (int j = 0; j < c2; ++j) {
+          for (int i = 0; i < c1; ++i) {
+            const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks &&
+                              k <= ke);
+            if (!act) {
+              for (int c = 0; c < 4; ++c) {fh(m,c,k,j,i) = 1.0e20;}
+              continue;
+            }
+            const double xi = 0.25*M_PI*CellCenterX(j - js, nx2, msz.h_view(m).x2min,
+                                                    msz.h_view(m).x2max);
+            const double eta = 0.25*M_PI*CellCenterX(k - ks, nx3, msz.h_view(m).x3min,
+                                                     msz.h_view(m).x3max);
+            double q[3], X[3], v[3];
+            p2c(mpan.h_view(m), xi, eta, q);
+            for (int c = 0; c < 3; ++c) {X[c] = x1v(m,i)*q[c];}
+            fV(X, v);
+            for (int c = 0; c < 3; ++c) {fh(m,c,k,j,i) = v[c];}
+            fh(m,3,k,j,i) = fE(X);
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(fld, fh);
+  }
+  {
+    MeshBoundaryValuesCC pb(pmy_pack, nullptr, false);
+    pb.InitializeBuffers(4);
+    pb.SetVectorPairs(4, {});
+    pb.cs_noresample = true;
+    while (pb.InitRecv(4) == TaskStatus::incomplete) {}
+    while (pb.PackAndSendCC(fld, fldc) == TaskStatus::incomplete) {}
+    while (pb.RecvAndUnpackCC(fld, fldc) == TaskStatus::incomplete) {}
+    while (pb.ClearSend() == TaskStatus::incomplete) {}
+    while (pb.ClearRecv() == TaskStatus::incomplete) {}
+  }
+  // the discrete terms on the device, exactly the kernels' helpers
+  DvceArray5D<Real> out("vgdmms_cs_out", nmb, 3, c3 + 1, c2 + 1, c1);
+  {
+    auto f_ = fld;
+    auto o_ = out;
+    auto cvol = pmy_pack->pcoord->volume;
+    auto car = cs_area_eff;
+    auto fn2 = cs_fn2, fn3 = cs_fn3;
+    auto cx1v = pmy_pack->pcoord->x1v;
+    auto bcs = m1bcs.d_view;
+    auto cse = cs_seam.d_view;
+    auto g2 = csg2, g3 = csg3;
+    const bool corr = !(std::getenv("VGD_MMS_NOCORR") != nullptr);
+    par_for("m1_vgdmms_cs", DevExeSpace(), 0, nmb - 1, ks, ke + 1, js, je + 1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool p1 = (bcs(m,BoundaryFace::inner_x1) != BoundaryFlag::block);
+      const bool p2 = (bcs(m,BoundaryFace::outer_x1) != BoundaryFlag::block);
+      const int il = p1 ? is : is - 1, iu = p2 ? ie : ie + 1;
+      if (k <= ke && j <= je) {
+        o_(m,0,k,j,i) = M1CsLat0(f_, f_, -1, cvol, car, fn2, fn3, m, k, j, i, true, 3,
+                                 corr, cse, g2, g3, js, je, ks, ke);
+      }
+      const bool s2lo = (cse(m,0) != 0), s2hi = (cse(m,1) != 0);
+      const bool s3lo = (cse(m,2) != 0), s3hi = (cse(m,3) != 0);
+      if (k <= ke) {
+        const Real nf[3] = {fn2(m,j,0), fn2(m,j,1), fn2(m,j,2)};
+        auto lf = [&](const int kq) {
+          return 0.5*(M1CsLatF(f_, f_, -1, cx1v, nf, m, kq, j-1, i, il, iu, 3)
+                      + M1CsLatF(f_, f_, -1, cx1v, nf, m, kq, j, i, il, iu, 3));
+        };
+        Real off = lf(k);
+        if (corr && ((j == js && s2lo) || (j == je+1 && s2hi))) {
+          const int sd = (j == js) ? 0 : 1;
+          const bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
+          Real dd = 0.0;
+          if (up && dn) {
+            dd = (lf(k+1) - lf(k-1))/(g2(m,2,k+1,sd) - g2(m,2,k-1,sd));
+          } else if (up) {
+            dd = (lf(k+1) - off)/(g2(m,2,k+1,sd) - g2(m,2,k,sd));
+          } else if (dn) {
+            dd = (off - lf(k-1))/(g2(m,2,k,sd) - g2(m,2,k-1,sd));
+          }
+          off += (g2(m,3,k,sd) - g2(m,2,k,sd))*dd;
+        }
+        o_(m,1,k,j,i) = off;
+      }
+      if (j <= je) {
+        const Real nf[3] = {fn3(m,k,0), fn3(m,k,1), fn3(m,k,2)};
+        auto lf = [&](const int jq) {
+          return 0.5*(M1CsLatF(f_, f_, -1, cx1v, nf, m, k-1, jq, i, il, iu, 3)
+                      + M1CsLatF(f_, f_, -1, cx1v, nf, m, k, jq, i, il, iu, 3));
+        };
+        Real off = lf(j);
+        if (corr && ((k == ks && s3lo) || (k == ke+1 && s3hi))) {
+          const int sd = (k == ks) ? 0 : 1;
+          const bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
+          Real dd = 0.0;
+          if (up && dn) {
+            dd = (lf(j+1) - lf(j-1))/(g3(m,2,j+1,sd) - g3(m,2,j-1,sd));
+          } else if (up) {
+            dd = (lf(j+1) - off)/(g3(m,2,j+1,sd) - g3(m,2,j,sd));
+          } else if (dn) {
+            dd = (off - lf(j-1))/(g3(m,2,j,sd) - g3(m,2,j-1,sd));
+          }
+          off += (g3(m,3,j,sd) - g3(m,2,j,sd))*dd;
+        }
+        o_(m,2,k,j,i) = off;
+      }
+    });
+  }
+  auto oh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), out);
+  auto n2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cs_fn2);
+  auto n3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cs_fn3);
+  // analytic: the 3-D divergence of W(X) = v E, and the radial face term
+  auto wdiv = [&](const double *X) {
+    const double r = std::sqrt(dot(X, X));
+    const double h = 1.0e-4*r;
+    double s = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      auto g = [&](double o) {
+        double Y[3] = {X[0], X[1], X[2]};
+        Y[c] += o;
+        double v[3];
+        fV(Y, v);
+        return v[c]*fE(Y);
+      };
+      s += (8.0*(g(h) - g(-h)) - (g(2.0*h) - g(-2.0*h)))/(12.0*h);
+    }
+    return s;
+  };
+  auto latf = [&](const double *q, const double *nf, double r) {
+    const double h = 1.0e-4*r;
+    auto g = [&](double rr) {
+      const double X[3] = {rr*q[0], rr*q[1], rr*q[2]};
+      double v[3];
+      fV(X, v);
+      return rr*rr*rr*dot(nf, v)*fE(X);
+    };
+    return (8.0*(g(r + h) - g(r - h)) - (g(r + 2.0*h) - g(r - 2.0*h)))/(12.0*h)/(r*r*r);
+  };
+  // classes: 0 interior, 1 within one cell of a seam, 2 a cube-vertex cell
+  double emax[3][3] = {{0.0}}, amax[3] = {0.0}, esum[3][3] = {{0.0}}, ncl[3][3] = {{0.0}};
+  for (int m = 0; m < nmb; ++m) {
+    const int p = mpan.h_view(m);
+    const int j0 = static_cast<int>(std::lround(0.5*(msz.h_view(m).x2min + 1.0)*npan));
+    const int k0 = static_cast<int>(std::lround(0.5*(msz.h_view(m).x3min + 1.0)*npan));
+    for (int k = ks; k <= ke + 1; ++k) {
+      for (int j = js; j <= je + 1; ++j) {
+        for (int i = is + 2; i <= ie - 2; ++i) {
+          const double r = x1v(m,i);
+          const double xc = 0.25*M_PI*CellCenterX(j - js, nx2, msz.h_view(m).x2min,
+                                                  msz.h_view(m).x2max);
+          const double ec = 0.25*M_PI*CellCenterX(k - ks, nx3, msz.h_view(m).x3min,
+                                                  msz.h_view(m).x3max);
+          const double xf = 0.25*M_PI*LeftEdgeX(j - js, nx2, msz.h_view(m).x2min,
+                                                msz.h_view(m).x2max);
+          const double ef = 0.25*M_PI*LeftEdgeX(k - ks, nx3, msz.h_view(m).x3min,
+                                                msz.h_view(m).x3max);
+          const int jg = j - js + j0, kg = k - ks + k0;
+          auto cls = [&](int a, int t) {   // a, t: panel cell indices (may be -1 / npan)
+            const bool ea = (a <= 0) || (a >= npan - 1), et = (t <= 0) || (t >= npan - 1);
+            return (ea && et) ? 2 : ((ea || et) ? 1 : 0);
+          };
+          if (k <= ke && j <= je) {   // R at the cell
+            double q[3], X[3];
+            p2c(p, xc, ec, q);
+            for (int c = 0; c < 3; ++c) {X[c] = r*q[c];}
+            const double a = wdiv(X), e = std::fabs(oh(m,0,k,j,i) - a);
+            const int c = cls(jg, kg);
+            emax[0][c] = std::max(emax[0][c], e); esum[0][c] += e; ncl[0][c] += 1.0;
+            amax[0] = std::max(amax[0], std::fabs(a));
+          }
+          if (k <= ke) {   // T on the x2 face (k, j)
+            double q[3];
+            p2c(p, xf, ec, q);
+            const double nf[3] = {n2h(m,j,0), n2h(m,j,1), n2h(m,j,2)};
+            const double a = latf(q, nf, r), e = std::fabs(oh(m,1,k,j,i) - a);
+            const int c = std::max(cls(jg - 1, kg), cls(jg, kg));
+            emax[1][c] = std::max(emax[1][c], e); esum[1][c] += e; ncl[1][c] += 1.0;
+            amax[1] = std::max(amax[1], std::fabs(a));
+          }
+          if (j <= je) {   // T on the x3 face (k, j)
+            double q[3];
+            p2c(p, xc, ef, q);
+            const double nf[3] = {n3h(m,k,0), n3h(m,k,1), n3h(m,k,2)};
+            const double a = latf(q, nf, r), e = std::fabs(oh(m,2,k,j,i) - a);
+            const int c = std::max(cls(jg, kg - 1), cls(jg, kg));
+            emax[2][c] = std::max(emax[2][c], e); esum[2][c] += e; ncl[2][c] += 1.0;
+            amax[2] = std::max(amax[2], std::fabs(a));
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &emax[0][0], 9, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &esum[0][0], 9, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &ncl[0][0], 9, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, amax, 3, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    const char *nm[3] = {"R  M1CsLat0 (x1 rows)", "T2 M1CsLatF (x2 faces)",
+                         "T3 M1CsLatF (x3 faces)"};
+    const char *cn[3] = {"interior", "seam", "vertex"};
+    std::printf("VGD_MMS_CS N = %d per panel, nx1 = %d\n", npan, pm->mesh_indcs.nx1);
+    for (int t = 0; t < 3; ++t) {
+      std::printf("VGD_MMS_CS %-22s max|term| %.3e:", nm[t], amax[t]);
+      for (int c = 0; c < 3; ++c) {
+        if (ncl[t][c] > 0.0) {
+          std::printf("  %s %.0f: max %.3e mean %.3e", cn[c], ncl[t][c],
+                      emax[t][c]/amax[t], esum[t][c]/ncl[t][c]/amax[t]);
+        }
+      }
+      std::printf("\n");
+    }
+  }
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdCsHrPrep
+//! \brief cs-s4-1017 (implicit_flux_beam = halfrange on the cubed sphere), at the start
+//! of every implicit solve: (1) the last vgd_hr component = |H|/J of the cell from the
+//! final (twin-corrected, rotation-averaged) ratios with the cs metric -- the lateral
+//! ratios are about the planar normals nhat_xi, nhat_eta, which are not orthogonal, so
+//! the sp sum of squares (M1HrCell) is not |H|/J here; (2) the lateral ghosts of vgd_hr,
+//! the half-range pairs through the seam quad map of the cell-centred exchange
+//! (cs_hrq0: axis permutation, h+ <-> -h- on a reversed axis, no resample: the mirror
+//! cell), the rest as scalars.  The lateral faces then build the ghost cell's beam data
+//! from these (ImplicitLatFaceCoefCs), in this block's orientation.
+
+void RadiationM1::VetGdCsHrPrep() {
+  if (!vgd_csg || !impl_beam_hr || vgd_hr.extent_int(0) == 0) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nha = vgd_hr.extent_int(1);
+  const int cfb = nha - 1;
+  auto hr_ = vgd_hr;
+  auto cn2 = cs_cn2, cn3 = cs_cn3;
+  par_for("m1_vgdcs_hrfb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (hr_(m,0,k,j,i) < 0.0) {hr_(m,cfb,k,j,i) = 0.0; return;}
+    const Real cc = cn2(m,j,0)*cn3(m,k,0) + cn2(m,j,1)*cn3(m,k,1) + cn2(m,j,2)*cn3(m,k,2);
+    const Real rr = hr_(m,0,k,j,i) + hr_(m,1,k,j,i);
+    const Real rx = hr_(m,2,k,j,i) + hr_(m,3,k,j,i);
+    const Real re = hr_(m,4,k,j,i) + hr_(m,5,k,j,i);
+    const Real lat = fmax((rx*rx + re*re - 2.0*cc*rx*re)/(1.0 - cc*cc), 0.0);
+    hr_(m,cfb,k,j,i) = fmin(sqrt(rr*rr + lat), 1.0);
+  });
+  if (pbval_hr == nullptr) {
+    pbval_hr = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
+    pbval_hr->InitializeBuffers(nha);
+    pbval_hr->SetVectorPairs(nha, {});
+    pbval_hr->cs_noresample = true;
+    pbval_hr->cs_hrq0 = 2;
+    Kokkos::realloc(vgd_hr_c, nmb1 + 1, nha, 1, 1, 1);
+  }
+  while (pbval_hr->InitRecv(nha) == TaskStatus::incomplete) {}
+  while (pbval_hr->PackAndSendCC(vgd_hr, vgd_hr_c) == TaskStatus::incomplete) {}
+  while (pbval_hr->RecvAndUnpackCC(vgd_hr, vgd_hr_c) == TaskStatus::incomplete) {}
+  while (pbval_hr->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_hr->ClearRecv() == TaskStatus::incomplete) {}
 }
 
 } // namespace radm1

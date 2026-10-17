@@ -618,8 +618,10 @@ void RadiationM1::VetGdInit() {
                 << "strip + vertex triangle upwind stencil, exact per-shell band copies "
                 << "(the sp halo lists / ring / IPC / overlap keys do not apply), twin "
                 << (vgd_twin ? "unfused (this build's cut)" : "off") << "; hand-over "
-                << "D_rr only (vet_col_lat_offdiag = none, no tangential part: S4)"
-                << std::endl;
+                << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator (S4)"
+                              : ((vlat_odm == 1) ? " + D_r,lat lagged (S4)"
+                                                 : " only (vet_col_lat_offdiag = none)"))
+                << ", no tangential part" << std::endl;
     }
   }
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
@@ -5555,6 +5557,8 @@ void RadiationM1::VetGdMoments() {
     const Real thi = tlo*pow(10.0, dec);
     const bool smo = vgd_tsmooth;
     const int prt = vgd_tparts;
+    // cs-s4-1017: on the cubed sphere LAT1..LAT3 are the Cartesian D_r,lat (bit 1)
+    const int clat = vgd_csg ? 3 : 2;
     par_for("m1_vgd_taper", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real tau = 0.0;
@@ -5566,7 +5570,7 @@ void RadiationM1::VetGdMoments() {
         if (smo) {w = w*w*(3.0 - 2.0*w);}
         if (w < 1.0) {
           for (int c = 0; c < M1_TT_NLAT; ++c) {
-            const int bit = (c == 0) ? 4 : ((c <= 2) ? 1 : 2);
+            const int bit = (c == 0) ? 4 : ((c <= clat) ? 1 : 2);
             if (prt & bit) {tt_(m,M1_TT_LAT0+c,k,j,i) *= w;}
           }
         }
@@ -7785,9 +7789,11 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   if (vgd_hr.extent_int(0) < nmb1 + 1) {
     const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
     const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-    Kokkos::realloc(vgd_hr, nmb1 + 1, nhc, n3, n2, c1);
+    // cs-s4-1017: on the cubed sphere one more component, |H|/J (VetGdCsHrPrep)
+    const int nha = nhc + (vgd_csg ? 1 : 0);
+    Kokkos::realloc(vgd_hr, nmb1 + 1, nha, n3, n2, c1);
     Kokkos::deep_copy(vgd_hr, 0.0);
-    Kokkos::realloc(vgd_hrt, nmb1 + 1, nhc, n3, n2, c1);
+    Kokkos::realloc(vgd_hrt, nmb1 + 1, nha, n3, n2, c1);
     Kokkos::deep_copy(vgd_hrt, 0.0);
     Kokkos::realloc(vgd_hrm, c1);
   }
@@ -7807,6 +7813,57 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     // correction (1 - eps) where the opacity tables give kappa_P >= kappa_R (eps = 1)
     static const char *epe = std::getenv("VGD_THIN_EPS");
     const Real epmax = (epe != nullptr) ? std::atof(epe) : 1.0;
+    if (vgd_csg) {
+      // cs-s4-1017: the cubed sphere's own axes -- r_hat (vgd_csr) and the planar
+      // normals nhat_xi, nhat_eta at the cell centre (cs_cn2/cs_cn3): the ratios the x1
+      // faces and the skew lateral faces of the cs half-range flux need; everything else
+      // as below
+      auto cr_ = vgd_csr;
+      auto cn2 = cs_cn2, cn3 = cs_cn3;
+      par_for("m1_vgd_hrcs", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+        if (i < ilo) {
+          for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
+          if (thx) {
+            hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
+            hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
+            hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
+          }
+          return;
+        }
+        const Real ax[3][3] = {{cr_(m,k+og,j+og,0), cr_(m,k+og,j+og,1),
+                                cr_(m,k+og,j+og,2)},
+                               {cn2(m,j,0), cn2(m,j,1), cn2(m,j,2)},
+                               {cn3(m,k,0), cn3(m,k,1), cn3(m,k,2)}};
+        Real jm = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        for (int d = 0; d < n; ++d) {
+          const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+          const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          jm += wi;
+          for (int a = 0; a < 3; ++a) {
+            const Real mu = nx*ax[a][0] + ny*ax[a][1] + nz*ax[a][2];
+            h[2*a] += wi*fmax(mu, 0.0);
+            h[2*a+1] += wi*fmin(mu, 0.0);
+          }
+        }
+        for (int c = 0; c < 6; ++c) {
+          hr_(m,c,k,j,i) = (jm > 0.0) ? h[c]/jm : ((c % 2 == 0) ? -1.0 : 0.0);
+        }
+        if (thx) {
+          const Real s0 = exp(cs_(m,1,k+og,j+og,i));
+          Real nl = 0.0;
+          for (int d = 0; d < n; ++d) {nl += dir_(d,3)*fabs(vi_(m,d,k+og,j+og,i) - s0);}
+          hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
+          const Real kt = opac_(m,M1_OP_T,k,j,i);
+          hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
+                                     : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
+                                                       fmax(kt, 1.0e-300), 1.0) : 0.0);
+          hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
+          hr_(m,M1_VGD_HRJ,k,j,i) = jm;
+        }
+      });
+      return;
+    }
     par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
       if (i < ilo) {
@@ -7865,8 +7922,9 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   const Real twwq = vgd_twwq;
   auto sr_ = vgd_srm;
   const int c1x = c1;
+  // (cs-s4-1017: nx2 x nx3 per panel x npanels, as the twin's means; 1 off the cs)
   const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
-                    pmy_pack->pmesh->mesh_indcs.nx3;
+                    pmy_pack->pmesh->mesh_indcs.nx3*pmy_pack->pmesh->npanels;
 #if MPI_PARALLEL_ENABLED
   // vgdrot-1011: vet_gd_twin_det with ranks > 1: the nhc shell means in one launch, one
   // copy and ONE rank-ordered gather (was one round per component; each mean is the

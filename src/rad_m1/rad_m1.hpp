@@ -810,6 +810,7 @@ class RadiationM1 {
   void VetGdHalfRange(const int stage);
   DvceArray5D<Real> ifw2, ifw3;
   void ImplicitLatFaceCoef(bool first);
+  void ImplicitLatFaceCoefCs(bool first);   // cs-s4-1017
   void CbDebugDump();
   void ImplicitHrSfBuild();   // cbfix-1011: the M1_NIW_HSF block (implicit_hr_face=sf)   // cbfix-1011: env M1_CBDBG=<prefix> per-step face/budget dump
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
@@ -1618,6 +1619,12 @@ class RadiationM1 {
   // and area with the canonical seam areas; x1 parts are copies
   DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
   DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
+  // cs-s4-1017: the planar unit normals (Cartesian) of the x2 faces (m, j = 0..n2, c)
+  // and x3 faces (m, k = 0..n3, c) of each block, oriented along +x2 / +x3 (M1CsLat0)
+  DvceArray3D<Real> cs_fn2, cs_fn3;
+  // cs-s4-1017: the same normals at the CELL CENTRES (m, j or k incl. ghosts, c): the
+  // lateral axes of the cs half-range ratios (VetGdHalfRange on cs)
+  DvceArray3D<Real> cs_cn2, cs_cn3;
   void CubedS1Init();
   //! cs-s4-1017 test only (cs_vec_check): the seam halo of the tangential vector pairs
   void CubedVecCheck(ParameterInput *pin);
@@ -1949,6 +1956,9 @@ class RadiationM1 {
   // 19-point stencil of the pass (ImplicitStencilBuild)
   void VetLatOp(int xc, int yc, Real sgn);
   void VetLatStencilAdd();
+  // cs-s4-1017: the cubed-sphere forms (M1CsLat0 / M1CsLatF, Cartesian D_r,lat)
+  void VetLatOpCs(int xc, int yc, Real sgn);
+  void VetLatStencilAddCs();
 
   // ---- <rad_m1>/vet_gd (m1-vet-gd, rad_m1_vetgd.cpp; design
   // rt_design_1003/SC_PROPER_SP.md, candidate b): the Eddington tensor from an SC sweep
@@ -2277,6 +2287,11 @@ class RadiationM1 {
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   void VetGdIterRebuild();
   void VetGdMms();
+  void VetGdMmsCs();   // cs-s4-1017 (rad_m1_vetgd_cs.cpp)
+  // cs-s4-1017: the cs half-range data at the start of a solve (|H|/J, seam ghosts)
+  void VetGdCsHrPrep();
+  MeshBoundaryValuesCC *pbval_hr = nullptr;
+  DvceArray5D<Real> vgd_hr_c;
   void VetGdRealDiag();
   int vgd_rdiag = -1, vgd_rdcnt = 0;   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();

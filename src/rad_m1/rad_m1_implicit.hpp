@@ -1063,6 +1063,115 @@ Real M1SphTan(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
   return s;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1CsLat0
+//! \brief cs-s4-1017 (CS_VETGD.md sect. 4C): the cubed-sphere counterpart of M1SphLat
+//! (d = 0) -- the lateral divergence of P_r,lat = v E at one cell, with v = D.rhat -
+//! D_rr rhat the tangential part of the r row of the vet_gd tensor held as a CARTESIAN
+//! vector in tau_ten slots c0+1..c0+3 (VetGdCsMoments; ghosts exchanged as scalars,
+//! no resample: a seam ghost is the mirror cell).  Finite-volume face sum over the four
+//! lateral faces, (1/V) sum_f +- A_f nhat_f . (w_c + w_nb)/2, w = v E (E = component ec
+//! of iw), with the planar face normals nhat_f (fn2/fn3: Cartesian, constant along the
+//! radial line) and the cs face areas (the canonical areas at a seam).  The x1 faces
+//! carry nothing (w is tangential).  Every lateral face of a cs block has a neighbour (block or
+//! seam), so there is no one-sided case.
+//! corr (the lagged assembly; false in the operator/stencil, whose 19 points cannot hold
+//! it): at a PANEL-SEAM face the mirror pair's mean is the value at the FOOT of the pair
+//! chord, not at the face midpoint; it is moved along the seam by (smid - sfoot) d/ds
+//! over the neighbouring seam faces (one-sided at a cube vertex), exactly as the seam
+//! face gradient of ImplicitTransverseTerms (csg2/csg3 of M1CsSeamGeom).  Without it the
+//! seam cells carry an O(1) error (the O(h) foot offset over the O(h) cell: the cs MMS).
+
+template <class V, class VV, class VF, class VN, class VB, class VG>
+KOKKOS_INLINE_FUNCTION
+Real M1CsLat0(const V &iw, const V &tt, const int c0, const VV &cvol, const VF &car,
+              const VN &fn2, const VN &fn3, const int m, const int k, const int j,
+              const int i, const bool thrd, const int ec, const bool corr,
+              const VB &cse, const VG &g2, const VG &g3, const int js, const int je,
+              const int ks, const int ke) {
+  auto wn = [&](const int kq, const int jq, const Real *nf) {
+    return (tt(m,c0+1,kq,jq,i)*nf[0] + tt(m,c0+2,kq,jq,i)*nf[1]
+            + tt(m,c0+3,kq,jq,i)*nf[2])*iw(m,ec,kq,jq,i);
+  };
+  const bool s2lo = corr && (cse(m,0) != 0) && (j == js);
+  const bool s2hi = corr && (cse(m,1) != 0) && (j == je);
+  const bool s3lo = corr && thrd && (cse(m,2) != 0) && (k == ks);
+  const bool s3hi = corr && thrd && (cse(m,3) != 0) && (k == ke);
+  const bool b3lo = (cse(m,2) != 0), b3hi = (cse(m,3) != 0);
+  const bool b2lo = (cse(m,0) != 0), b2hi = (cse(m,1) != 0);
+  // the seam face value of the x2 face jf (pair jf-1, jf) moved to the face midpoint
+  auto seam2 = [&](const int jf, const int sd, const Real *nf) {
+    auto fv = [&](const int kq) {return 0.5*(wn(kq,jf-1,nf) + wn(kq,jf,nf));};
+    const Real d0 = fv(k);
+    const bool up = !(k == ke && b3hi), dn = !(k == ks && b3lo);
+    Real dd = 0.0;
+    if (up && dn) {
+      dd = (fv(k+1) - fv(k-1))/(g2(m,2,k+1,sd) - g2(m,2,k-1,sd));
+    } else if (up) {
+      dd = (fv(k+1) - d0)/(g2(m,2,k+1,sd) - g2(m,2,k,sd));
+    } else if (dn) {
+      dd = (d0 - fv(k-1))/(g2(m,2,k,sd) - g2(m,2,k-1,sd));
+    }
+    return d0 + (g2(m,3,k,sd) - g2(m,2,k,sd))*dd;
+  };
+  auto seam3 = [&](const int kf, const int sd, const Real *nf) {
+    auto fv = [&](const int jq) {return 0.5*(wn(kf-1,jq,nf) + wn(kf,jq,nf));};
+    const Real d0 = fv(j);
+    const bool up = !(j == je && b2hi), dn = !(j == js && b2lo);
+    Real dd = 0.0;
+    if (up && dn) {
+      dd = (fv(j+1) - fv(j-1))/(g3(m,2,j+1,sd) - g3(m,2,j-1,sd));
+    } else if (up) {
+      dd = (fv(j+1) - d0)/(g3(m,2,j+1,sd) - g3(m,2,j,sd));
+    } else if (dn) {
+      dd = (d0 - fv(j-1))/(g3(m,2,j,sd) - g3(m,2,j-1,sd));
+    }
+    return d0 + (g3(m,3,j,sd) - g3(m,2,j,sd))*dd;
+  };
+  Real s = 0.0;
+  {
+    const Real nh[3] = {fn2(m,j+1,0), fn2(m,j+1,1), fn2(m,j+1,2)};
+    const Real nl[3] = {fn2(m,j,0), fn2(m,j,1), fn2(m,j,2)};
+    s += car.x2f(m,k,j+1,i)*(s2hi ? seam2(j+1, 1, nh)
+                                   : 0.5*(wn(k,j,nh) + wn(k,j+1,nh)));
+    s -= car.x2f(m,k,j,i)*(s2lo ? seam2(j, 0, nl) : 0.5*(wn(k,j-1,nl) + wn(k,j,nl)));
+  }
+  if (thrd) {
+    const Real nh[3] = {fn3(m,k+1,0), fn3(m,k+1,1), fn3(m,k+1,2)};
+    const Real nl[3] = {fn3(m,k,0), fn3(m,k,1), fn3(m,k,2)};
+    s += car.x3f(m,k+1,j,i)*(s3hi ? seam3(k+1, 1, nh)
+                                   : 0.5*(wn(k,j,nh) + wn(k+1,j,nh)));
+    s -= car.x3f(m,k,j,i)*(s3lo ? seam3(k, 0, nl) : 0.5*(wn(k-1,j,nl) + wn(k,j,nl)));
+  }
+  return s/cvol(m,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1CsLatF
+//! \brief cs-s4-1017: the counterpart of M1SphLat (d = 1, 2) for the lateral face with
+//! the planar unit normal nf: (1/r^3) d_r (r^3 (nf . v) E) at cell (k,j) of the column,
+//! centred over i -+ 1 and one-sided at a physical x1 boundary exactly as M1SphLat.
+//! nhat_f is a fixed Cartesian vector along the radial line (the face plane holds the
+//! origin), so (div P).nhat_f = div(P nhat_f), and the r rhat-row part of it is this
+//! term (the derivation in CS_VETGD.md sect. 4C: d_r(r^2 w_n)/r^2 + w_n/r).
+
+template <class V, class A>
+KOKKOS_INLINE_FUNCTION
+Real M1CsLatF(const V &iw, const V &tt, const int c0, const A &x1v, const Real *nf,
+              const int m, const int k, const int j, const int i, const int il,
+              const int iu, const int ec) {
+  const int ia = (i+1 <= iu) ? (i+1) : i;
+  const int ib = (i-1 >= il) ? (i-1) : i;
+  if (ia == ib) {return 0.0;}
+  auto q = [&](const int iq) {
+    const Real r = x1v(m,iq);
+    return r*r*r*(tt(m,c0+1,k,j,iq)*nf[0] + tt(m,c0+2,k,j,iq)*nf[1]
+                  + tt(m,c0+3,k,j,iq)*nf[2])*iw(m,ec,k,j,iq);
+  };
+  const Real r = x1v(m,i);
+  return (q(ia) - q(ib))/(r*r*r*(x1v(m,ia) - x1v(m,ib)));
+}
+
 // the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
 // Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange
 // (halo "B") carries M1_IW_EP alone, after the line solve has accepted the new iterate.
