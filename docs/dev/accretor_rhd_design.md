@@ -1009,3 +1009,35 @@ velocity-sponge form (linear ramp, 1/tau) for the theta sponge.
 - problem/theta_sponge_deg, theta_sponge_tau: velocity sponge in a layer next to each wall, rate ramping linearly to
   1/tau at the wall, outside the envelope; KE removed from E (in Erel).
 - problem/dt_report: the global minimum over ranks (MPI MINLOC + broadcast), line + [rank, theta].
+
+### 16.2 Gates (Raven A100, /raven/ptmp/jinma/acc3d_1017/gate): BITWISE
+New binaries vs the v4 binary 5b0d4bc1 (= accretor-bigdom-1015 code), keys absent, hst (hydro + user), hydro_w and m1
+bins, cycle/dt lines and the dt_report lines (rank-0 cell; the global minimum happened to be on rank 0) identical:
+A = v4 gate A (2-D base deck, donor_irr = false, 20 cycles, 4 ranks) for v1 7915b069, v2 df74640e and v3 ed4a9110;
+C = the 2-D cal deck (20 cycles); P = the 049c1f39 3-D benchmark deck b3d_half (phys_3d absent, stream on, 10 cycles).
+
+### 16.3 Static 3-D tests (stream off, donor_irr off; 420 x 58 x 512, theta +-20.39 deg at dtheta = dphi = 2 pi/512,
+### 2 A100 per arm; 2-D reference s2d = the same r/phi grid as a 4-cell band; decks acc3d_1017/run)
+- All arms: 0 FATAL, 0 NON-CONVERGED, 0 dt retries, Picard mean 2.0; dt 1.41e-5 -> 1.36-1.40e-5 (envelope cell at rest
+  r 8.786, as 2-D) until t ~0.03, then 1.29e-5 (thin atmosphere gas near a wall, ~100 km/s). Mass conserved to 1e-13 with
+  reflecting walls; energy budget closes (dEtot - Ebnd - Erel + Emsk = constant 2.17e4 after the first output, 2-D 382, the
+  same per solid angle).
+- Equator vs 2-D (t 0.0075 and 0.030): density median |3D/2D - 1| 6e-4 / 1.4e-3, photosphere radius over phi identical
+  (8.9988 .. 9.449 / 9.434 vs 9.439), velocities the same within 2 / ~30 km/s (both the thin-atmosphere flows: atm max|v|
+  40 -> 123 km/s in 3-D, 40 -> 118 in 2-D; thin 114 both). Away from the walls (|lat| < 17 deg) the 3-D star = the band.
+- WALLS (open): within 4-6 rows (3-4 deg) of each theta wall the photospheric/atmospheric gas (rho0 1e-6..1e-2) piles up:
+  x5-18 by t 0.0125, worst at phi ~0 (largest tidal tilt of the equipotentials), and x10-80 by t 0.035; the deep envelope
+  there moves at up to 7-8 km/s (reflect) / 43 km/s max by t 0.03 (hse). The same for reflect, hse and outflow
+  (+- the sponge): the thin atmosphere drifts poleward (~1.5 km/s mass-weighted, rho0 1e-5..1e-3) and converges at the
+  wall rows. Not caused by the hydro wall type; suspect the reflecting RADIATION wall (common to all arms; the Marshak
+  alternative drains the interior) or the lateral radiation force near the walls (F_theta = 0 at the face).
+- Theta ghost walk: v2 (isothermal in the true Phi) leaked deep-envelope mass through outflow walls (Mout 193 by t 0.012,
+  2.6e-4 of Mdom by 0.015; r 6.3-7); v3 (Phi + G(psi), local polytrope) reverses and cuts it to -34 (in) by 0.008, -99 by 0.037
+  (outflow) and -20 (hse): |dMdom/M| 1e-4 / 2e-5 over t 0.037.
+- Cost: 0.71-0.84 s/cycle on 2 A100 for 12.5 M cells (0.12 GPU-s per M cell-cycle; the 049c1f39 benchmark 0.13): no
+  measurable cost of phys_3d.
+
+### 16.4 Stream-on plumbing smoke (v2, outflow walls, stream + donor_irr s = 1, 2 A100, 901 cycles to t 0.012)
+0 NC, 0 retries; Mnzf 254.88 (+0.015 % of 254.843) from t 0.0024; Min - Mnzf 0.420 constant; Mmsk 4e-8; Eirr linear;
+Ltop 2.4e5 -> 2.6e5; dt 1.41e-5 -> 1.15-1.30e-5 at t > 0.008 (thin floor gas near the photosphere, 200-300 km/s). The stream
+is now confined vertically: rho-weighted sigma_z 1.005 at the nozzle -> 0.965 (r 14) -> 0.81 (r 13), centred at z = 0.
