@@ -99,6 +99,7 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
     dt_min = pin->GetOrAddReal("time", "dt_min", 0.0);
     // fin4-dtretry: <time>/dt_retry (fresh default true; restart without the key false)
     pdtr_ = std::make_shared<dtretry::DtRetry>(pin, pmesh);
+    pctr_ = std::make_shared<dtretry::CounterKeep>(pin, pmesh);
 
     if (integrator == "rk1") {
       // RK1: first-order Runge-Kutta / the forward Euler (FE) method
@@ -477,6 +478,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
            (elapsed_time < wall_time)) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
       if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
+      if (pctr_ != nullptr && pdtr_->on && !dtr_retrying) {pctr_->Save(pmesh, 0);}
       dtr_retrying = false;
 
       // Execute TaskLists
@@ -502,9 +504,16 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // vgdrot2-1012: the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
       if (pm1 != nullptr && !m1mr) {pm1->VetGdRotStep();}
-      if (pm1 != nullptr && !m1mr) {(void) pm1->Time2StartProbe(this, pmesh->dt);}
+      // m1ctr-rollback-1017: slot 1 = the counters at the stage start; the helper solves
+      // below put U^n back, so their counters are dropped (back to slot 1) too
+      if (pctr_ != nullptr && pm1 != nullptr) {pctr_->Save(pmesh, 1);}
+      bool m1help = false;
+      if (pm1 != nullptr && !m1mr) {m1help = pm1->Time2StartProbe(this, pmesh->dt);}
       // rotslope-1012: vet_gd_rotate_slope = correct, the slope's closure jump
-      if (pm1 != nullptr && !m1mr) {(void) pm1->Time2RotCorrect(this, pmesh->dt);}
+      if (pm1 != nullptr && !m1mr) {
+        m1help = pm1->Time2RotCorrect(this, pmesh->dt) || m1help;
+      }
+      if (m1help && pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 2);}
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
       const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
@@ -539,6 +548,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // puts the whole cycle back); the check below the radiation update takes it
       const bool dtr_now = (pm1 != nullptr) && pm1->dtr_on && pm1->dtr_fail;
       if (m1t2fail && !dtr_now) {
+        if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
@@ -615,6 +625,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           std::_Exit(EXIT_FAILURE);
 #endif
         }
+        if (pctr_ != nullptr) {pctr_->Restore(pmesh, 0, 0);}
         dtr_retrying = true;
         continue;
       }
@@ -883,6 +894,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 
 void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
+  if (pctr_ != nullptr) {pctr_->Report(pmesh);}
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.
   // rotavg-rst-1012 (bitwise chained runs): the final outputs of a run that ends before
