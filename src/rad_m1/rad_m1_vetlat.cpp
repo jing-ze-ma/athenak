@@ -140,9 +140,11 @@ void VlatLabel(const std::vector<double> &nd, const double mu, double &a0, doubl
 
 void RadiationM1::VetLatInit() {
   Mesh *pm = pmy_pack->pmesh;
-  if (pm->use_cubed_sphere) {
-    VlatFatal("the cubed sphere waits for stage CS2 (m1-cs-implicit); the tau_ten slots "
-              "M1_TT_LAT0.. are the shared interface");
+  // cs-vetgd-1017 (CS_VETGD.md stage S3): vet_gd runs on the cubed sphere (its own
+  // sweep, rad_m1_vetgd_cs.cpp); the vet_col_lat SC correction itself does not
+  if (pm->use_cubed_sphere && !vgd_on) {
+    VlatFatal("the cubed sphere: only through vet_gd (stage S3); the vet_col_lat SC "
+              "correction is wedge-only");
   }
   if (!sph_geom) {
     VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
@@ -154,6 +156,10 @@ void RadiationM1::VetLatInit() {
   // for every M1 run today; refused here again so lifting that guard cannot silently
   // re-enable it); the Athena++ keys x2rat / x3rat are not read by AthenaK; and the
   // built face arrays xx2f / xx3f are checked so that any future lateral map is caught.
+  // cs-vetgd-1017: on the cubed sphere xx2f / xx3f are the panel coordinates on [-1, 1]
+  // (equiangular: xi = pi/4 x2, coordinates.cpp), uniform by construction, and the cs
+  // sweep's reads are bilinear in each panel's equiangular INDEX space: the same
+  // requirement, so the same check applies unchanged (it cannot fire on a cs mesh).
   {
     const std::string who = vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)";
     if (pm->use_grid_stretch_theta) {
