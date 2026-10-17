@@ -921,7 +921,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_rot_t0", vgd_rot_t0);
   v.value("vgd_rot_stretch", vgd_rot_stretch);
   v.value("vgd_rot_auto", vgd_rot_auto);
-  v.value("vgd_rot3", vgd_rot3);
   v.value("vgd_rot_auto_fac", vgd_rot_auto_fac);
   v.value("vgd_rot_align", vgd_rot_align);
   v.value("vgd_rot_nalign", vgd_rot_nalign);
@@ -937,6 +936,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_rot_ncfail", vgd_rot_ncfail);
   v.value("vgd_rot_ncpass", vgd_rot_ncpass);
   v.value("vgd_alpha", vgd_alpha);
+  v.value("vgd_rot3", vgd_rot3);
   v.value("vra_k", vra_k);
   v.value("vra_eq", vra_eq);
   v.value("vra_on", vra_on);
@@ -1098,6 +1098,16 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_csnsnd", vgd_csnsnd);
   v.value("vgd_csnrcv", vgd_csnrcv);
   v.view("vgd_csown", vgd_csown);
+  v.value("vgd_cscomp", vgd_cscomp);
+  v.value("vgd_cscl", vgd_cscl);
+  v.value("vgd_cscur", vgd_cscur);
+  v.value("vgd_csuse", vgd_csuse);
+  v.view("vgd_csrix", vgd_csrix);
+  v.view("vgd_csmiss", vgd_csmiss);
+  v.value("vgd_csnbuild", vgd_csnbuild);
+  v.value("vgd_cstbuild", vgd_cstbuild);
+  v.value("vgd_csvsent", vgd_csvsent);
+  v.value("vgd_csvdense", vgd_csvdense);
   v.value("vgd_hcomp", vgd_hcomp);
   v.value("vgd_capped", vgd_capped);
   v.value("vgd_allow_clamp", vgd_allow_clamp);
