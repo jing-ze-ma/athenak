@@ -147,6 +147,56 @@ void RadiationM1::VetLatInit() {
   if (!sph_geom) {
     VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
   }
+  // vgd-latuni-1017 (USER 10-17): the SC upwind interpolation of vet_col_lat / vet_gd is
+  // bilinear in (theta, phi) INDEX space, which is exact only for UNIFORM lateral
+  // spacing (a radial stretch is fine: the sweep uses the physical radii).  The only
+  // lateral stretch of this code is mesh/use_grid_stretch_theta (rad_m1.cpp refuses it
+  // for every M1 run today; refused here again so lifting that guard cannot silently
+  // re-enable it); the Athena++ keys x2rat / x3rat are not read by AthenaK; and the
+  // built face arrays xx2f / xx3f are checked so that any future lateral map is caught.
+  {
+    const std::string who = vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)";
+    if (pm->use_grid_stretch_theta) {
+      VlatFatal(who + " needs a theta-UNIFORM mesh: mesh/use_grid_stretch_theta = true "
+                "(the SC upwind interpolation is bilinear in (theta, phi) index space; "
+                "only radial stretches are supported)");
+    }
+    if (!vlat_rat_keys.empty()) {
+      VlatFatal(who + " needs a laterally UNIFORM mesh; this input sets" + vlat_rat_keys +
+                " (Athena++ ratio keys: AthenaK does not read them, its theta/phi grid "
+                "stays uniform -- remove them, or set 1)");
+    }
+    auto &ix = pm->mb_indcs;
+    auto f2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx2f);
+    auto f3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx3f);
+    // per direction: min and max face spacing over every active face of every block
+    double dmin[2] = {1.0e300, 1.0e300}, dmax[2] = {-1.0e300, -1.0e300};
+    for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
+      for (int j = ix.js; j <= ix.je; ++j) {
+        const double d = f2(m,j+1) - f2(m,j);
+        dmin[0] = std::min(dmin[0], d); dmax[0] = std::max(dmax[0], d);
+      }
+      for (int k = ix.ks; k <= ix.ke; ++k) {
+        const double d = f3(m,k+1) - f3(m,k);
+        dmin[1] = std::min(dmin[1], d); dmax[1] = std::max(dmax[1], d);
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, dmin, 2, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, dmax, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    for (int a = 0; a < 2; ++a) {
+      const double rtol = (sizeof(Real) == 4) ? 1.0e-3 : 1.0e-9;  // LeftEdgeX round-off
+      if (!(dmin[a] > 0.0) || dmax[a] - dmin[a] > rtol*dmax[a]) {
+        char buf[256];
+        std::snprintf(buf, sizeof(buf), "%s cell widths range %.17g .. %.17g",
+                      (a == 0) ? "x2 (theta)" : "x3 (phi)", dmin[a], dmax[a]);
+        VlatFatal(who + " needs a laterally UNIFORM mesh; the built grid has " + buf +
+                  " (the SC upwind interpolation is bilinear in (theta, phi) index "
+                  "space; only radial stretches are supported)");
+      }
+    }
+  }
   if (vcol_axis_flux) {VlatFatal("needs vet_col_axis = radial");}
   if (vlat_odm == 2 && !(bicg_on && impl_stencil)) {
     VlatFatal("vet_col_lat_offdiag = operator needs implicit_solver = bicgstab and "
