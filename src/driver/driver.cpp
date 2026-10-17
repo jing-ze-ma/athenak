@@ -473,6 +473,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     }
     // fin4-dtretry: a retried cycle starts from the checkpoint already in place
     bool dtr_retrying = false;
+    // unkkey-1017: WARNING for input keys never read, once, after the first cycle
+    // (some modules read their keys lazily inside the first step)
+    bool unread_reported = false;
     while ((pmesh->time < tlim) && (pmesh->ncycle < nlim || nlim < 0) &&
            (elapsed_time < wall_time)) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
@@ -680,6 +683,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (pmesh->pgen->user_cycle_func != nullptr) {
         (pmesh->pgen->user_cycle_func)(pmesh);
       }
+      if (!unread_reported) {pin->ReportUnreadParameters(); unread_reported = true;}
 
       // Timestep-collapse guard (time/dt_min, default 0 = off): a run whose dt has
       // collapsed makes no further progress but keeps consuming the allocation.
@@ -872,6 +876,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         elapsed_time = UpdateWallClock();
       }
     }  // end while
+    // no cycle completed (nlim = 0, tlim reached, wall time): report now
+    if (!unread_reported) {pin->ReportUnreadParameters();}
   }    // end of (time_evolution != tstatic) clause
   return;
 }
