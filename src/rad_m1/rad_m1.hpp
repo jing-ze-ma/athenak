@@ -1887,6 +1887,10 @@ class RadiationM1 {
   // equations as a LAGGED Picard term (M1SphLat).  Read only when named; sp wedge only
   // (cs after CS2).
   bool vlat_on = false;        // vet_col_lat
+  // vgd-latuni-1017: the Athena++ lateral ratio keys <mesh>/x2rat, x3rat named != 1 in
+  // the input (AthenaK ignores them: its theta/phi grid is uniform); VetLatInit refuses
+  // them under vet_col_lat / vet_gd, so a ported deck cannot think it stretched theta
+  std::string vlat_rat_keys;
   // vet_col_lat_offdiag: what D_r,lat does in the solve.  0 none, 1 lagged (a Picard
   // term, C1), 2 operator (default, C2: in the Krylov operator, M1SphLat of the
   // Krylov vector, through the stored stencil and VetLatOp)
