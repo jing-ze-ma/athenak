@@ -613,11 +613,305 @@ void RadiationM1::VetGdCsInit() {
   Kokkos::deep_copy(vgd_hloc, -1);
   vgd_hrank.assign(8*nmb, me);
   vgd_hlid.assign(8*nmb, -1);
+  // cs-s3b-1017: the compact lists (vet_gd_halo_compact > 0 with an MPI band): the
+  // receive entry of every band position (-1: own interior, on-rank owner or no cell)
+  vgd_cscomp = (vgd_hcomp > 0) && vgd_hmpi;
+  Kokkos::realloc(vgd_csrix, nmb, c3w, c2w);
+  {
+    auto x_h = Kokkos::create_mirror_view(vgd_csrix);
+    for (size_t q = 0; q < x_h.size(); ++q) {x_h.data()[q] = -1;}
+    for (int e = 0; e < vgd_csnrcv; ++e) {x_h(rl[3*e], rl[3*e+1], rl[3*e+2]) = e;}
+    Kokkos::deep_copy(vgd_csrix, x_h);
+  }
+  Kokkos::realloc(vgd_csmiss, 1);
+  for (int c = 0; c < 2; ++c) {
+    vgd_cscl[c].alpha = -9.0;
+    vgd_cscl[c].use = 0;
+    Kokkos::realloc(vgd_cscl[c].msk, vgd_cscomp ? std::max(vgd_csnrcv, 1) : 1,
+                    vgd_cscomp ? vgd_n : 1, vgd_cscomp ? indcs.nx1 : 1);
+  }
   if (me == 0) {
     std::cout << "<rad_m1> vet_gd (cubed sphere): rank 0 band copies on-rank "
               << vgd_csnloc << ", sent " << vgd_csnsnd << ", received " << vgd_csnrcv
-              << " (cells per shell), partners " << np << std::endl;
+              << " (cells per shell), partners " << np << "; MPI band "
+              << (vgd_cscomp ? "COMPACT (vet_gd_halo_compact > 0: per shell and pass "
+                               "only the read (cell, direction) values)"
+                             : (vgd_hmpi ? "dense (every remote band cell, every "
+                                           "direction, per shell and pass)"
+                                         : "none")) << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdCsCompact
+//! \brief cs-s3b-1017: the compact lists of the current direction set (vgd_alpha), from
+//! a 2-entry cache (the current and the next set of vet_rotate_avg).  (1) the read mask:
+//! a kernel replays the sweep's upwind geometry (VetGdCsSweep, term for term) for every
+//! interior (cell, direction) and shell, and marks every REMOTE band value (receive
+//! entry, direction, upwind shell) that the sweep reads -- for every first shell at once
+//! (the reads of shell l depend on the cut only when l is the cut: both variants are
+//! marked), so the lists depend on the set alone; value 1 = an inward value (sent after
+//! pass 0 of that shell), 2 = outward (after pass 1); (2) every receiver sends its marks
+//! to the owners (one message per partner, once per set); (3) both sides build their
+//! lists in the same (pass, shell, partner, entry, direction) order.
+
+void RadiationM1::VetGdCsCompact() {
+  for (int c = 0; c < 2; ++c) {
+    if (vgd_cscl[c].alpha == vgd_alpha) {
+      vgd_cscur = c;
+      vgd_cscl[c].use = ++vgd_csuse;
+      return;
+    }
+  }
+  Kokkos::Timer tb;
+  const int c = (vgd_cscl[0].use <= vgd_cscl[1].use) ? 0 : 1;
+  VgdCsCl &E = vgd_cscl[c];
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is;
+  const int wb = vgd_w;
+  const int js = wb, je = wb + indcs.nx2 - 1;
+  const int ks = wb, ke = wb + indcs.nx3 - 1;
+  const int c2b = indcs.nx2 + 2*wb, c3b = indcs.nx3 + 2*wb;
+  const int n1 = indcs.nx1;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int n = vgd_n;
+  auto msk_ = E.msk;
+  Kokkos::deep_copy(msk_, static_cast<uint8_t>(0));
+  auto dir_ = vgd_dir;
+  auto mr_ = vgd_mr;
+  auto cr_ = vgd_csr;
+  auto bl_ = vgd_csblk;
+  auto cm_ = vgd_cscm;
+  auto nb_ = vgd_csnb;
+  auto rx_ = vgd_csrix;
+  const int nc = vgd_csn;
+  const Real h = 0.5*M_PI/nc;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
+  // (1) the read mask (VetGdCsSweep's geometry; the values never matter)
+  par_for("m1_vgdcs_rmask", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+    const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+    const Real mr = mr_(m,k,j,d);
+    const bool inw = !(mr >= 0.0);
+    const Real rx = cr_(m,k,j,0), ry = cr_(m,k,j,1), rz = cr_(m,k,j,2);
+    // mark the reads of one upwind segment (ds, upwind shell iu, branch want_in)
+    auto mark = [&](const Real r, const Real ds, const int iu, const bool want_in) {
+      Real xu[3] = {r*rx - ds*nx, r*ry - ds*ny, r*rz - ds*nz};
+      const Real ru = sqrt(xu[0]*xu[0] + xu[1]*xu[1] + xu[2]*xu[2]);
+      xu[0] /= ru;
+      xu[1] /= ru;
+      xu[2] /= ru;
+      VgdCsSt st;
+      VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b, nc, h, cm_, nb_, st);
+      if (st.n == 0) {return;}   // the own column (interior)
+      bool ok[4];
+      bool all = true;
+      for (int e = 0; e < st.n; ++e) {
+        const Real mq = mr_(m,st.k[e],st.j[e],d);
+        ok[e] = want_in ? (mq < 0.0) : (mq >= 0.0);
+        all = all && ok[e];
+      }
+      for (int e = 0; e < st.n; ++e) {
+        if (!all && !(ok[e] && st.w[e] > 0.0)) {continue;}
+        const int x = rx_(m,st.k[e],st.j[e]);
+        if (x >= 0) {msk_(x,d,iu-is) = want_in ? 1 : 2;}
+      }
+    };
+    for (int l = 0; l < n1; ++l) {
+      const int i = is + l;
+      const Real r = cx1v(m,i);
+      const Real zr = r*fabs(mr);
+      const Real p2 = fmax(r*r - zr*zr, 0.0);
+      if (inw) {
+        if (l == n1 - 1) {continue;}
+        const Real ru = cx1v(m,i+1);
+        mark(r, sqrt(ru*ru - p2) - zr, i + 1, true);
+        continue;
+      }
+      if (zr < 1.0e-12*r) {continue;}
+      // as the shell above the cut (l > lcut)
+      if (l > 0) {
+        const Real rd = cx1v(m,i-1);
+        if (p2 <= rd*rd*(1.0 + 1.0e-13)) {
+          mark(r, zr - sqrt(fmax(rd*rd - p2, 0.0)), i - 1, false);
+        } else {
+          mark(r, 2.0*zr, i, true);
+        }
+      }
+      // as the cut shell (l == lcut): the inner face (no intensity read) or turned
+      const Real rf = cx1f(m,i);
+      if (!(p2 <= rf*rf)) {mark(r, 2.0*zr, i, true);}
+    }
+  });
+  Kokkos::fence();
+  auto mh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
+  const int np = static_cast<int>(vgd_csprk.size());
+  const size_t per = static_cast<size_t>(n)*n1;
+  // (2) the receivers' marks -> the owners
+  std::vector<uint8_t> sm(static_cast<size_t>(std::max(vgd_csnsnd, 1))*per, 0);
+#if MPI_PARALLEL_ENABLED
+  {
+    std::vector<MPI_Request> req;
+    for (int p = 0; p < np; ++p) {
+      const int rk = vgd_csprk[p];
+      if (vgd_cspn[p] > 0) {
+        req.emplace_back();
+        MPI_Irecv(sm.data() + static_cast<size_t>(vgd_csps[p])*per,
+                  static_cast<int>(vgd_cspn[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
+                  MPI_COMM_WORLD, &req.back());
+      }
+      if (vgd_cspm[p] > 0) {
+        req.emplace_back();
+        MPI_Isend(mh.data() + static_cast<size_t>(vgd_cspr[p])*per,
+                  static_cast<int>(vgd_cspm[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
+                  MPI_COMM_WORLD, &req.back());
+      }
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  }
+#endif
+  // (3) the lists: counts per (pass, shell, partner), offsets, fill in (entry, d) order
+  const size_t nsl = static_cast<size_t>(2)*n1;
+  auto build = [&](const uint8_t *mk, const std::vector<int> &st0,
+                   const std::vector<int> &cnt, std::vector<int64_t> &off,
+                   std::vector<int> &lst) {
+    std::vector<int64_t> nn(nsl*np, 0);
+    for (int p = 0; p < np; ++p) {
+      for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
+        const uint8_t *q = mk + static_cast<size_t>(e)*per;
+        for (int d = 0; d < n; ++d) {
+          for (int sh = 0; sh < n1; ++sh) {
+            const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
+            if (v) {nn[(static_cast<size_t>(v - 1)*n1 + sh)*np + p] += 1;}
+          }
+        }
+      }
+    }
+    off.assign(nsl*(np + 1), 0);
+    int64_t t = 0;
+    for (size_t sl = 0; sl < nsl; ++sl) {
+      for (int p = 0; p < np; ++p) {
+        off[sl*(np + 1) + p] = t;
+        t += nn[sl*np + p];
+      }
+      off[sl*(np + 1) + np] = t;
+    }
+    lst.assign(std::max<int64_t>(t, 1), 0);
+    std::vector<int64_t> cur(nsl*np);
+    for (size_t sl = 0; sl < nsl; ++sl) {
+      for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
+    }
+    for (int p = 0; p < np; ++p) {
+      for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
+        const uint8_t *q = mk + static_cast<size_t>(e)*per;
+        for (int d = 0; d < n; ++d) {
+          for (int sh = 0; sh < n1; ++sh) {
+            const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
+            if (v) {lst[cur[(static_cast<size_t>(v - 1)*n1 + sh)*np + p]++] = e*n + d;}
+          }
+        }
+      }
+    }
+    return t;
+  };
+  std::vector<int> sl_h, rl_h;
+  const int64_t ts = build(sm.data(), vgd_csps, vgd_cspn, E.so, sl_h);
+  const int64_t tr = build(mh.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+  // the order of (entry, direction) within a list is the same on both sides; the
+  // counts must agree per (pass, shell, partner): checked by the message sizes below
+  Kokkos::realloc(E.si, sl_h.size());
+  Kokkos::realloc(E.ri, rl_h.size());
+  {
+    auto a = Kokkos::create_mirror_view(E.si);
+    for (size_t q = 0; q < sl_h.size(); ++q) {a(q) = sl_h[q];}
+    Kokkos::deep_copy(E.si, a);
+    auto b = Kokkos::create_mirror_view(E.ri);
+    for (size_t q = 0; q < rl_h.size(); ++q) {b(q) = rl_h[q];}
+    Kokkos::deep_copy(E.ri, b);
+  }
+  E.alpha = vgd_alpha;
+  E.use = ++vgd_csuse;
+  vgd_cscur = c;
+  vgd_csnbuild += 1.0;
+  vgd_cstbuild += tb.seconds();
+  if (global_variable::my_rank == 0 && vgd_csnbuild <= 1.0) {
+    const double dn = static_cast<double>(vgd_csnsnd)*n*n1*2.0;
+    std::cout << "<rad_m1> vet_gd (cubed sphere) compact lists: rank 0 sends " << ts
+              << " values per sweep (dense " << dn << ": "
+              << ((dn > 0.0) ? ts/dn : 0.0) << "), receives " << tr << "; built in "
+              << tb.seconds() << " s (once per direction set)" << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdCsHaloC
+//! \brief cs-s3b-1017: the compact exchange of shell i after pass `pass` of the sweep:
+//! the listed (entry, direction) values of every partner (VetGdCsCompact)
+
+void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
+#if MPI_PARALLEL_ENABLED
+  const VgdCsCl &E = vgd_cscl[vgd_cscur];
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1;
+  const int n = vgd_n;
+  const int np = static_cast<int>(vgd_csprk.size());
+  const size_t sl = static_cast<size_t>(pass)*n1 + (i - indcs.is);
+  const int64_t *so = &E.so[sl*(np + 1)];
+  const int64_t *ro = &E.ro[sl*(np + 1)];
+  const int64_t s0 = so[0], ns = so[np] - so[0];
+  const int64_t r0 = ro[0], nr = ro[np] - ro[0];
+  auto a_ = vgd_i;
+  auto sb_ = vgd_cssb;
+  auto rb_ = vgd_csrb;
+  auto S_ = vgd_cssl;
+  auto R_ = vgd_csrl;
+  auto si_ = E.si;
+  auto ri_ = E.ri;
+  if (ns > 0) {
+    par_for("m1_vgdcs_cpack", DevExeSpace(), 0, static_cast<int>(ns) - 1,
+    KOKKOS_LAMBDA(const int o) {
+      const int x = si_(s0 + o);
+      const int e = x/n, d = x - e*n;
+      sb_(o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+    });
+  }
+  Kokkos::fence();
+  Kokkos::Timer tq;
+  std::vector<MPI_Request> req;
+  for (int p = 0; p < np; ++p) {
+    const int rk = vgd_csprk[p];
+    const int64_t cr = ro[p+1] - ro[p], cs = so[p+1] - so[p];
+    if (cr > 0) {
+      req.emplace_back();
+      MPI_Irecv(rb_.data() + (ro[p] - r0), static_cast<int>(cr), MPI_ATHENA_REAL, rk,
+                7103, MPI_COMM_WORLD, &req.back());
+    }
+    if (cs > 0) {
+      req.emplace_back();
+      MPI_Isend(sb_.data() + (so[p] - s0), static_cast<int>(cs), MPI_ATHENA_REAL, rk,
+                7103, MPI_COMM_WORLD, &req.back());
+      vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
+    }
+  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  vgd_tmpi += tq.seconds();
+  vgd_nexch += 1.0;
+  vgd_csvsent += static_cast<double>(ns);
+  vgd_csvdense += static_cast<double>(vgd_csnsnd)*n;
+  if (nr > 0) {
+    par_for("m1_vgdcs_cunpack", DevExeSpace(), 0, static_cast<int>(nr) - 1,
+    KOKKOS_LAMBDA(const int o) {
+      const int x = ri_(r0 + o);
+      const int e = x/n, d = x - e*n;
+      a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(o);
+    });
+  }
+#else
+  (void) pass;
+  (void) i;
+#endif
 }
 
 //----------------------------------------------------------------------------------------
@@ -680,6 +974,10 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
       MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
       vgd_tmpi += tq.seconds();
       vgd_nexch += 1.0;
+      if (!loc) {
+        vgd_csvsent += static_cast<double>(vgd_csnsnd)*nvi;
+        vgd_csvdense += static_cast<double>(vgd_csnsnd)*nvi;
+      }
       if (vgd_csnrcv > 0) {
         par_for("m1_vgdcs_unpack", DevExeSpace(), 0, vgd_csnrcv - 1, 0, nv - 1, 0, ni - 1,
         KOKKOS_LAMBDA(const int e, const int v, const int ii) {
@@ -780,6 +1078,17 @@ void RadiationM1::VetGdCsSweep() {
   auto cx1f = pmy_pack->pcoord->xx1f;
   const Real lcr = log(kVetCornerRatio);
   vgd_hsweep += 1;
+  // cs-s3b-1017: the compact lists of this set (built on its first sweep); every remote
+  // read is checked against the read mask (a miss would be a value the lists did not
+  // send: FATAL below, never silent)
+  const bool ccl = vgd_cscomp;
+  if (ccl) {
+    VetGdCsCompact();
+    Kokkos::deep_copy(vgd_csmiss, 0);
+  }
+  auto msk_ = vgd_cscl[vgd_cscur].msk;
+  auto rx_ = vgd_csrix;
+  auto miss_ = vgd_csmiss;
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     for (int q = 0; q < n1 - lcut; ++q) {
@@ -882,6 +1191,10 @@ void RadiationM1::VetGdCsSweep() {
             // this launch writes, is masked), else the band copy of the remote value
             auto rdi = [&](const int e) -> Real {
               const int kk = st.k[e], jj = st.j[e];
+              if (ccl) {
+                const int x = rx_(m,kk,jj);
+                if (x >= 0 && msk_(x,d,iu-is) == 0) {Kokkos::atomic_add(&miss_(0), 1);}
+              }
               return vi_(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
             bool ok[4];
@@ -970,11 +1283,23 @@ void RadiationM1::VetGdCsSweep() {
         vi_(m,d,k,j,i) = iv;
       });
       Kokkos::Timer th;
-      VetGdCsHalo(vgd_i, n, i, i, false);   // remote band only (on-rank: read direct)
+      if (ccl) {
+        VetGdCsHaloC(pass, i);               // cs-s3b-1017: the read values only
+      } else {
+        VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
+      }
       vgd_thalo += th.seconds();
     }
   }
   Kokkos::fence();
+  if (ccl) {
+    auto mh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_csmiss);
+    if (mh(0) != 0) {
+      VgdCsFatal("compact lists: " + std::to_string(mh(0)) + " remote band reads not "
+                 "in the read mask (rank " + std::to_string(global_variable::my_rank) +
+                 "); run with vet_gd_halo_compact = 0 (the dense band) and report");
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1047,7 +1372,10 @@ void RadiationM1::VetGdCsMoments(const int part) {
 
 void RadiationM1::VetGdCsDump(const char *env) {
   const char *pf = std::getenv(env);
-  if (pf == nullptr || vlat_nbuild != 0) {return;}
+  // cs-s3b-1017: VGD_CS_DUMP_BUILD=<n> dumps build n instead of the first (gate only)
+  const char *pb = std::getenv("VGD_CS_DUMP_BUILD");
+  const int nb = (pb != nullptr) ? std::atoi(pb) : 0;
+  if (pf == nullptr || vlat_nbuild != nb) {return;}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int og = vgd_w - indcs.ng;

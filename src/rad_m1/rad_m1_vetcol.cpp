@@ -1561,6 +1561,14 @@ void RadiationM1::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
+      if (vgd_csg) {   // cs-s3b-1017: the cs band exchange (dense or compact lists)
+        std::cout << "<rad_m1> vet_gd cs band (rank 0): "
+                  << (vgd_cscomp ? "compact" : "dense") << ", intensity values sent "
+                  << vgd_csvsent << " of dense " << vgd_csvdense << " ("
+                  << ((vgd_csvdense > 0.0) ? vgd_csvsent/vgd_csvdense : 0.0)
+                  << "); list builds " << vgd_csnbuild << " (" << vgd_cstbuild << " s)"
+                  << std::endl;
+      }
       std::cout << "<rad_m1> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
                 << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath << std::endl;
       {

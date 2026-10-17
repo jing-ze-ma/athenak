@@ -2010,6 +2010,13 @@ class RadiationM1 {
   double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;
   bool Time2RotCorrect(Driver *pdrive, Real dt);
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
+  // cs-s3b-1017 (USER decision 1): <rad_m1>/vet_gd_rotate_axis = z | 3d (default z on
+  // the sp wedge: bitwise; 3d on the cubed sphere).  3d: the set of rotation block b is
+  // R_b n with R_b a 3-D rotation about a quasi-random axis (VgdRot3); vgd_alpha is then
+  // the block KEY (zig-zag code of b, or of b mod K with vet_rotate_avg = K), not an
+  // angle
+  bool vgd_rot3 = false;
+  void VgdRot3(const Real key, double r[9]) const;
   // rotavg-1012: <rad_m1>/vet_rotate_avg = K >= 2 (read only when named; default 0 = off,
   // bitwise): the closure handed to the moment step is the mean over the LAST K rotated
   // direction sets, not the current set's alone (rad_m1_rotavg.cpp).  Closure-agnostic:
@@ -2305,6 +2312,30 @@ class RadiationM1 {
   template <class V>
   void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc);
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_csown;   // (m, k, j, 3) owner
+  // cs-s3b-1017 (USER decision 2): vet_gd_halo_compact > 0 on cs -- the chart-aware
+  // exact lists: per shell and pass only the (remote band cell, direction) values the
+  // sweep reads (VetGdCsCompact: a read-mask kernel that replays the sweep's upwind
+  // stencils for the direction set, the receivers' masks sent to the owners once per set,
+  // both sides' lists in the same order).  Bitwise the dense band copies (the same values
+  // are read; every remote read is checked against the mask in the sweep: FATAL on a
+  // miss)
+  struct VgdCsCl {
+    Real alpha = -9.0;
+    int64_t use = 0;
+    std::vector<int64_t> so, ro;     // ((pass*n1 + s)*(np + 1) + p): list offsets
+    Kokkos::View<int *, LayoutWrapper, DevMemSpace> si, ri;   // e*n + d per value
+    Kokkos::View<uint8_t ***, LayoutWrapper, DevMemSpace> msk;   // (e_rcv, d, s): 1 in,
+                                                                  // 2 out, 0 not read
+  };
+  bool vgd_cscomp = false;
+  VgdCsCl vgd_cscl[2];
+  int vgd_cscur = 0;
+  int64_t vgd_csuse = 0;
+  Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_csrix;   // (m, k, j): e_rcv / -1
+  Kokkos::View<int *, LayoutWrapper, DevMemSpace> vgd_csmiss;   // reads not in the mask
+  double vgd_csnbuild = 0.0, vgd_cstbuild = 0.0, vgd_csvsent = 0.0, vgd_csvdense = 0.0;
+  void VetGdCsCompact();
+  void VetGdCsHaloC(const int pass, const int i);
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
