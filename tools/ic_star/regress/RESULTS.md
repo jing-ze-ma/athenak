@@ -422,3 +422,45 @@ Band 0.99-1.1 R_ph, max |<v_r>| [km/s] / max |rho/rho0 - 1|:
 - This is worse than the uncapped run of sect. 6, whose startup collapsed and then refilled
   without growth.
 - **The cap neither converges the startup nor passes the gate. No 14p5M production IC.**
+
+## 9. Gate (a') ADOPTED (USER 2026-10-17) and its follow-ups (bsgres-1017; README sect. 8a, `regress/gate_aprime.py`)
+
+Runs: /raven/ptmp/jinma/bsgres_1017/runs (A100 b16b66db, 1 A100, seed 0, 16x16, 12 d, 0.05-d dumps); gate outputs
+ana/aprime_*.txt/json, comparisons ana/cmp_*.txt.
+
+**BSG g480 (deck) vs a776 (2x atmosphere): gate (a') FAIL on item 1 only.**
+- Item 1: 4.24 cells per H_rho (min over 0.95-1.1 R_ph, H_rho 0.1424 Rsun of the startup atmosphere at
+  1.02-1.03 R_ph, dr 0.0336) < 4.4. The 4.47 of the bsgres proposal used H_rho 0.15 Rsun of the older
+  IC; the seam-fixed IC's isothermal layer has H_rho = c_s,iso^2/g = 0.141-0.142 Rsun. A plateau dr
+  <= 0.0324 Rsun (~+9 cells) would pass. a776: 8.46.
+- Item 2: band rms 6.04/6.03 km/s (0.2 %), profile L2 3.1 %, period 0.938/0.948 d (1.0 %): PASS.
+- Items 3-5 (both runs): PASS (no growth; rms 6.0 <= c_s,iso 14.2; 0.5-0.9 R_ph 0.33 km/s; 0.9-0.99 R_ph
+  sat 1.53 (whole run 3.89, growth phase); R_ph +-0.6 %; L_top/L_in 1.003-1.023; dM/M 2e-14; Mdot_top
+  5e-13 Msun/yr; NC 0; dt_min/median 0.36).
+- n256 (P grid) vs a776: FAIL items 1 (0.97) and 2 (period +28.6 %; profile L2 9.7 %).
+
+**(b) Exact low-density TOPS table opac_5b8e2fdfefea** (g480 deck, only he_opac/planck_table changed;
+Planck differs up to 0.14 dex in the floor regime log T 3.9-4.25, log rho < -14): identical to g480 to
+plotting accuracy (band rms 6.037/6.037, profile L2 0.0 %, period 0.938/0.938 d; hst L_top max rel
+diff 1.3e-5, KE 1.1e-4). The opacity table choice does not matter for the BSG atmosphere.
+
+**(a) Column floor 1e-16 / 1e-15 / 1e-14** (IC tool rule rho_floor_rel 4e-7 / 4e-6 / 4e-5, applied after
+the build; the 1e-15 control rebuild reproduces ic_bsg.txt bit for bit; seam fixed points R_ph
+3.58769 / 3.58770 / 3.58780e12; dfloor, pfloor, he_sponge_dmax follow the rules; floor plateau from
+1.0399 / 1.0334 / 1.0275 R_ph; backgrounds clean: sponge active, 0 dfloor cells, top infall -0.07 km/s):
+- period floor-INDEPENDENT: 0.956 / 0.938 / 0.911 d (<= 3 %);
+- star unaffected and identical (interior 0.33 km/s, R_ph, L_top/L_in, NC 0);
+- amplitude NOT floor-independent: band 0.99-1.1 mean rms 9.22 / 6.04 / 3.29 km/s, max 58.9 / 55.7 /
+  47.4 km/s; profile L2 vs g480 60 % (1e-16) / 54 % (1e-14).
+- time-rms profile: identical below 1.005 R_ph; 1e-16 and 1e-15 agree to 1.02 R_ph (17.0/17.5 km/s);
+  above that the oscillation fills whatever hydrostatic atmosphere lies below the floor plateau and dies
+  ~0.02-0.03 R_ph into it (1e-16: 21 km/s at 1.025-1.035, 9.7 at 1.06; 1e-15: 15.3 at 1.03, 2.5 at
+  1.06; 1e-14: peak 11.5 at 1.015, 0.5 at 1.05). Band 0.99-1.02 rms 7.2 / 7.5 / 6.5 km/s.
+- So the floor sets the upper boundary of the oscillating layer: the (a') band statistics are only
+  meaningful at a fixed floor (both runs of the pair use the same floor rule, as now). The earlier floor
+  independence (NBS a6/a7/a8, older IC) does not hold for the seam-fixed IC.
+
+**He giant 14p5M** (option A cap 0.3, 843ce3e4): pair 704/1408 CANCELLED by the USER (superseded by a
+MESA-anchored IC). The completed hg704 12-d run fails (a') items 1 (2.50 cells/H), 3 (sat rms 7.6 >
+c_s,iso 4.05 km/s) and 4 (0.5-0.9 R_ph 2.5 km/s, 0.9-0.99 R_ph 12.4, L_top/L_in 0.81-1.37); the band
+grows to ~4 d and then saturates (bounded, ~8-d period): /raven/ptmp/jinma/hegiant145_1015/NOTE.md sect. 8.
