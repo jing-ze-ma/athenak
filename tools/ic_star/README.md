@@ -209,7 +209,8 @@ The standard now removes it:
    - **He giant 14p5M:** the code's own startup does not converge (a super-Eddington RE
      photosphere at the He/H opacity cliff), so `seam: {enable: false}` and
      `mesa_profile.top: surface` with the taper at tau 1 -> 0.1 (`extend: true`). This is a
-     code-side limit, not an IC defect.
+     code-side limit, not an IC defect. **Superseded 10-17 by sect. 2d** (taper off, startup
+     re_zone hopf, seam on).
 5. Options:
    - `taper.extend` continues the scaffold outward at its tau_hi value before tapering;
    - `mesa_profile.top: surface` follows MESA's T(P) to MESA's surface zone (R_ph there, no
@@ -218,7 +219,12 @@ The standard now removes it:
    deep70 regression). `specs/agcar_A_deep70_seam.yaml` shows how the E1 IC would change if
    regenerated with the defaults.
 
-### 2c. SCOPED, not implemented: the code's startup solve for a super-Eddington photosphere (14p5M)
+### 2c. The code's startup solve for a super-Eddington photosphere (14p5M): diagnosis
+
+**Status 10-17: solved without a code change by `startup.re_zone: hopf` (sect. 2d,
+RESULTS sect. 9).** Options A-C below are kept for the record; A was tried (RESULTS 8b/8c,
+branch ic-gammacap-1016) and does not converge.
+
 
 **What fails.** he_star_m1.cpp ~813-1125 runs an outer Picard loop of two steps:
 - (i) the E solve at fixed rho (HsSph1dPass VET passes, T = (E/a)^1/4 in the RE zone tau <
@@ -267,6 +273,48 @@ For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.
 3. Gate (a) 14p5M on 704 and 1408, band 0.99-1.1 R_ph: |<v_r>| < 1 km/s, drho < 10 %, no growth.
 4. AG Car B startup with the option on vs off (documented change).
 
+### 2d. MESA-anchored startup: `startup.re_zone: hopf` (10-17; RESULTS sect. 9)
+
+**Why the startup failed (10-17 diagnosis).**
+- The startup re-solves radiative equilibrium (RE) with the column's FROZEN F_r(r) for tau_R < 30
+  and blends it to the column's T up to tau_R 3000. For 14p5M that zone is the He/H opacity cliff
+  (kappa 0.01 -> 5 at 10-20 kK, dln kappa/dln T up to ~13).
+- There the RE T at fixed rho follows from tau(r) = int kappa(T) rho dr. The Picard loop
+  (VET passes with kappa lagged, then HSE at fixed T) has two attracting branches:
+  - a cool, collapsed one: lower T, kappa 10x lower, tau lower;
+  - a hot, inflated one.
+  The column, i.e. MESA's structure, sits between them and is unstable under this iteration.
+- This holds with OUR kappa and also with MESA's kappa (diagnostic table, RESULTS 9):
+  - with the column's own scaffold and no taper: 400 outer iterations, inflated, +25 cells;
+  - with MESA's kappa: converged, but on the collapsed branch (-14 cells, rho x 0.01 at R_ph).
+  The taper of 2b (F_MLT -> 0 by tau 3, where MESA still has F_MLT/F 0.2-0.9) made it worse.
+- MESA itself carries 76-99 % of F by convection at tau 30-3000. The static structure exists only
+  with that convective flux. The column's scaffold F_MLT/F = 1 - nabla_MESA/nabla_rad(ours)
+  re-expresses it in our kappa, so its Gamma_rad = kappa F_r/(c g) equals MESA's (max 1.01).
+  MESA's own F_MLT/F with OUR kappa would give Gamma_rad 1.49 (no static solution with that
+  split; our kappa is 1.4-1.5x MESA's at 24-33 kK).
+
+**The option** (tool only; the code keys he_ic_rad_taua/taub already exist; default 'deck' =
+unchanged, bitwise):
+- `startup: {re_zone: hopf}`: he_ic_rad_taua = max(2/3, tauj/3) = 1 and he_ic_rad_taub = tauj = 3
+  (tau_R of the run kappa from the mesh top). They go into the seam passes and the deck block.
+- The startup then re-solves RE only in the column's photosphere layer. Below tau 3 it keeps the
+  column's T (MESA's T(P)) and the scaffold, and its HSE march starts at r_b(tau 3). The
+  Gamma > 0.9 layer (tau ~3500-4000) is not marched.
+- `taper: {enable: false}` is allowed with the seam: the scaffold stays the column's own, and each
+  pass sets F_r = F (1 - F_MLT/F) exactly on the dump rows.
+- The seam passes use he_nfine 262144 (= the deck block; the hg145 seam deck had 2^20).
+- The diagnostics print Gamma_rad of the scaffold vs that of MESA's own split with our kappa.
+
+**When to use it:** mode mesa, when MESA's convective flux reaches tau ~ tauj and the default
+startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
+
+**14p5M** (`specs/hegiant_14p5M.yaml`; the old cap spec is `hegiant_14p5M_cap.yaml`):
+- seam fixed point in 2 passes: R_ph 7.96114e12 -> 7.95671e12 (-0.58 cell) -> 7.95704e12
+  (+0.043 cell) = 114.38 Rsun;
+- HSE 5.8e-7, no Gamma clamp;
+- gates: RESULTS sect. 9.
+
 ## 3. Step by step for a new star
 
 1. Write `specs/<name>.yaml` (copy `bsg.yaml` with a MESA profile or `agcar_A_deep70.yaml`
@@ -304,6 +352,7 @@ For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.
 | eos | dump (explicit) or logd_min/max, logt_min/max, dlog | -21..-1 (mesa: >= MESA base + 0.5 dex), tfloor rule..6.8 (mesa: >= MESA base T + 0.1 dex), 0.02 |
 | background | rho_floor_rel, dmax_rel, dfloor_rel, sponge_rate_rel, sponge_r0_rel, tfloor_rel, wb_rmax_rel, pfloor_rel, vceil_rel, balance_rmax_rel (+ explicit rho_floor/tfloor/sponge_rate) | sect. 6 |
 | ramp | start_turnovers, time_turnovers | 2, 10 |
+| startup | re_zone | 'deck' (the deck's he_ic_rad_taua/taub, E1 30/3000); 'hopf': RE only at tau_R < tauj (sect. 2d) |
 | | allow_outside_tables, report_radii_rsun | reproduction/validation only; extra MESA comparison radii |
 | config | cache, eos_binary | /raven/ptmp/jinma/ic_star_cache, bubbles_1012 athena_cpu_m4 |
 
@@ -417,7 +466,8 @@ super-Eddington layers, x1max > 5 R_ph). These are flags only.
 - `specs/`:
   - `agcar_A_deep70`: the regression;
   - `bsg`;
-  - `hegiant_14p5M`;
+  - `hegiant_14p5M`: MESA-anchored startup (sect. 2d);
+  - `hegiant_14p5M_cap`: the option-A gamma-cap attempt (superseded);
   - `hegiant_14p5M_global`: validation;
   - `hegiant_14p5M_hg145compat`;
   - `hegiant_15M`;

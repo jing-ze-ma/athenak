@@ -22,13 +22,16 @@ opacity:
 r_in: {rule: explicit, r_rsun: 8.0, bottom_rsun: 6.0}   # bottom: the code needs x1min - ~5 dr(wall) (hg145 31206125: 6.68)
 grid: {rho_lo: 1.0e-13, rho_hi: 3.0e-7}
 r_top: {x1max_cm: 2.473909e13}   # = hg145e1_raven.athinput (355.6 Rsun)
+# 10-17 (RESULTS sect. 9, MESA-anchored startup): the scaffold is the column's own (MESA's T(P)
+# gradient re-expressed in OUR kappa: F_MLT/F = 1 - nabla_MESA/nabla_rad(ours), NO taper: MESA
+# carries the flux by convection down to tau ~3); the code's startup re-solves radiative
+# equilibrium only in the column's photosphere layer (tau_R < tauj = 3, blend from 1) and keeps
+# the column's T below, so the RE + HSE Picard never runs over the He/H opacity cliff
+# (kappa 0.01 -> 5 at 10-20 kK; RE with a frozen F_r there has a cool collapsed and a hot
+# inflated branch).  Seam fixed point on the hg145 deck with the CPU build of b16b66db.
+taper: {enable: false}
+startup: {re_zone: hopf}
 seam:
   deck: /raven/ptmp/jinma/hegiant145_1015/decks/hg145e1_raven.athinput
-  binary: /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_843ce3e4   # ic-gammacap-1016
-  overrides: ['problem/he_ic_rad_gamma_cap=0.3']
-# 10-16: without a cap the code's own sph1d + re_atm + HSE startup does not converge for this star
-# (super-Eddington RE photosphere on the He/H opacity cliff; RESULTS sect. 6).  With the opt-in
-# startup cap he_ic_rad_gamma_cap = 0.3 (branch ic-gammacap-1016, he_star_m1) the radiative flux
-# is capped at 0.3 c g/kappa per cell and the excess goes into the frozen scaffold (as MESA's
-# convection there); the standard top (Hopf) and taper (tau 30 -> 3) are used.
-deck_extra: ['problem/he_ic_rad_gamma_cap=0.3']
+  binary: /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db
+  omp: 8

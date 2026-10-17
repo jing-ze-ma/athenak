@@ -345,6 +345,7 @@ def main():
               wb_rmax_rel=bg['wb_rmax_rel'], dfloor_rel=bg['dfloor_rel'],
               dmax_rel=bg['dmax_rel'], sponge_r0_rel=bg['sponge_r0_rel'],
               balance_rmax_rel=bg['balance_rmax_rel'], deck_extra=s.get('deck_extra', []),
+              startup=col.get('startup'),
               **{k: v for k, v in bgv.items()
                                                           if k != 'eos_logt_min'})
     dfn = os.path.join(out, 'deck_%s.athinput' % name)
@@ -566,7 +567,8 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
 
 
 def diag_mesa(log, s, st, col, ms, mesa, x1min, czf):
-    """mode 'mesa' checks: m_env, R_ph, T_ph vs MESA, CZs coincide, F_rad > F layers"""
+    """mode 'mesa' checks: m_env, R_ph, T_ph vs MESA, CZs coincide, F_rad > F layers,
+    Gamma_rad of the scaffold vs MESA's own split"""
     from icstd.micro import G_CODE
     log('---- mode mesa checks')
     R, L = col['rph'], col['L']
@@ -596,6 +598,31 @@ def diag_mesa(log, s, st, col, ms, mesa, x1min, czf):
     if col.get('ext'):
         log('  OUTWARD MLT++ extension above the MESA profile top: %.4f-%.4f Rsun'
             % (col['ext']['r_e']/RSUN, col['ext']['rj']/RSUN))
+    # 10-17 Eddington factors of the static column (hg145_mscaf): Gamma_rad = kappa F_r/(c g)
+    # of the column's own scaffold (F_r = F nabla_MESA/nabla_rad(ours)) vs the one MESA's own
+    # flux split F_MLT,M/F (at the same P_tot) would give with OUR kappa
+    from icstd.micro import A_RAD_, CL
+    nI = ii['r'].size
+    rI, TI, dI = col['r'][:nI], col['T'][:nI], col['rho'][:nI]
+    kI = st.kap(TI, dI)
+    gI = G_CODE*ii['m']/rI**2
+    FI = L/(4*np.pi*rI**2)
+    GrI = kI*np.minimum(ii['frad'], 1.0)*FI/(CL*gI)
+    PI = st.thermo(TI, dI)[0]
+    o_ = np.argsort(ms['P'])
+    fmM = np.interp(np.log(PI), np.log(ms['P'][o_]), np.clip(ms['fmlt'][o_], 0, 1))
+    GrM = kI*(1.0 - fmM)*FI/(CL*gI)
+    sel = rI >= x1min
+    i1, i2 = int(np.argmax(np.where(sel, GrI, 0))), int(np.argmax(np.where(sel, GrM, 0)))
+    log('  Gamma_rad = kappa F_r/(c g), x1min..r_j: column scaffold max %.4f at %.3f Rsun '
+        '(%d rows > 0.9); MESA\'s own F_MLT/F at the same P with OUR kappa would give max %.4f at '
+        '%.3f Rsun (%d rows > 1: %s)' % (GrI[i1], rI[i1]/RSUN, int((GrI[sel] > 0.9).sum()),
+                                         GrM[i2], rI[i2]/RSUN, int((GrM[sel] > 1).sum()),
+                                         'super-Eddington, no static solution with that '
+                                         'split' if (GrM[sel] > 1).any() else 'sub-Eddington'))
+    if col.get('startup'):
+        log('  startup re_zone hopf: he_ic_rad_taua %g, he_ic_rad_taub %g (deck block)'
+            % (col['startup']['taua'], col['startup']['taub']))
     zo = []
     fm = np.clip(1 - ii['frad'], 0, 1)
     i = 0
@@ -739,21 +766,43 @@ def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
     """the F_MLT taper (tau_hi -> tau_lo) and the code-consistent atmosphere (seam fixed
     point through the code's own sph1d + re_atm + hse startup solve; icstd/seam.py)"""
     tp, sm = s['taper'], s['seam']
-    if not tp['enable']:
-        log('taper: off')
-        return
+    rz = s['startup'].get('re_zone', 'deck')
+    if rz not in ('deck', 'hopf'):
+        raise SystemExit("startup.re_zone must be 'deck' or 'hopf'")
     L = col['L']
     fm0 = col['fmlt'].copy()
     r0 = col['r'].copy()
-    fm, Fr, tau = SM.taper(col['r'], col['rho'], col['T'], fm0, L, st.kap, x1max,
-                           tp['tau_lo'], tp['tau_hi'], tp.get('extend', False))
-    col['fmlt'], col['Fr'] = fm, Fr
-    k = (tau < tp['tau_hi']) & (tau > tp['tau_lo'])
-    log('taper%s: F_MLT/F x smoothstep(ln tau) from tau %g (1) to %g (0): rows %.5f-%.5f R_ph; '
-        'max F_MLT/F removed %.3f; F_r + F_MLT = L kept' % (
-            ' (scaffold extended outward from tau_hi)' if tp.get('extend') else '',
-            tp['tau_hi'], tp['tau_lo'], col['r'][k].min()/col['rph'] if k.any() else np.nan,
-            col['r'][k].max()/col['rph'] if k.any() else np.nan, float(np.max(fm0 - fm))))
+    sov = []
+    if rz == 'hopf':
+        # 10-17 (hg145_mscaf): the startup's RE zone = the column's Hopf layer: full RE at
+        # tau_R < tauj/3 (from the mesh top, run kappa), blend to the column's T at tauj (the
+        # join of the column's photosphere to its interior, MESA T(P) in mode mesa); below the
+        # startup keeps the column's T and scaffold (no RE re-solve on an opacity cliff)
+        tb = float(s['grid']['tauj'])
+        ta = max(2.0/3.0, tb/3.0)
+        col['startup'] = dict(taua=ta, taub=tb)
+        sov = ['problem/he_ic_rad_taua=%.6g' % ta, 'problem/he_ic_rad_taub=%.6g' % tb]
+        tau0 = SM.tau_from_top(col['r'], col['rho'], st.kap(col['T'], col['rho']), x1max)
+        log('startup re_zone hopf: he_ic_rad_taua %.6g, he_ic_rad_taub %.6g (tauj): the code\'s '
+            'startup re-solves RE only at tau_R < %.6g (from the mesh top) and keeps the '
+            'column\'s T, scaffold and (below r_b) rho; this column: tau_R(R_ph %.6e) %.4g, '
+            'tau_R(r_j %.6e) %.4g' % (ta, tb, tb, col['rph'],
+                                      np.interp(col['rph'], col['r'], tau0), col['rj'],
+                                      np.interp(col['rj'], col['r'], tau0)))
+    if not tp['enable']:
+        log('taper: off')
+        if rz == 'deck':
+            return
+    else:
+        fm, Fr, tau = SM.taper(col['r'], col['rho'], col['T'], fm0, L, st.kap, x1max,
+                               tp['tau_lo'], tp['tau_hi'], tp.get('extend', False))
+        col['fmlt'], col['Fr'] = fm, Fr
+        k = (tau < tp['tau_hi']) & (tau > tp['tau_lo'])
+        log('taper%s: F_MLT/F x smoothstep(ln tau) from tau %g (1) to %g (0): rows %.5f-%.5f '
+            'R_ph; max F_MLT/F removed %.3f; F_r + F_MLT = L kept' % (
+                ' (scaffold extended outward from tau_hi)' if tp.get('extend') else '',
+                tp['tau_hi'], tp['tau_lo'], col['r'][k].min()/col['rph'] if k.any() else np.nan,
+                col['r'][k].max()/col['rph'] if k.any() else np.nan, float(np.max(fm0 - fm))))
     if not sm.get('enable') or not sm.get('deck'):
         log('seam: off (no seam.deck)')
         return
@@ -770,7 +819,9 @@ def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
     ov = ['mesh/nx2=4', 'mesh/nx3=4', 'meshblock/nx2=4', 'meshblock/nx3=4',
           'meshblock/nx1=%s' % dk['nx1'], 'problem/he_opac_table=%s' % ot['ross'],
           'problem/he_planck_table=%s' % ot['planck'],
-          'problem/he_gm=%.10e' % st.GM] + list(sm.get('overrides', []))
+          'problem/he_gm=%.10e' % st.GM] + sov + list(sm.get('overrides', []))
+    if rz == 'hopf':                # the deck block's fine grid (the hg145 seam deck had 2^20)
+        ov.append('problem/he_nfine=262144')
     ov.append('problem/he_gm_column=%s' % ('true' if mode == 'mesa' else 'false'))
     cfg = dict(sm, workdir=wd, overrides=ov)
     hdr = ['# tools/ic_star %s column, seam fixed point' % name]
@@ -780,7 +831,8 @@ def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
     cur = c0
     cfg['overrides'] = ov + ['rad_m1/implicit_flux_x1min=%.12e' % AN.flux_at(col, x1min)]
     fin, hist = SM.fixed_point(cfg, None, fm0_of, L, st.kap, x1max, hdr, cur, log,
-                               tp['tau_lo'], tp['tau_hi'], tp.get('extend', False))
+                               tp['tau_lo'] if tp['enable'] else None, tp['tau_hi'],
+                               tp.get('extend', False))
     r, rho, eint, Fr, E, T, fm = SM.read_col(fin)
     if mode == 'mesa':            # the interior diagnostics on the new rows
         ii = col['interior']
