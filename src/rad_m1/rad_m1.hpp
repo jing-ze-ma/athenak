@@ -2301,7 +2301,7 @@ class RadiationM1 {
   void VetGdCsSweep();
   void VetGdCsMoments(const int part);   // 0: D_rr -> LAT0, 1: surface q
   void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
-  void VetGdCsDump();
+  void VetGdCsDump(const char *env);
   template <class V>
   void VetGdCsHalo(V &a, const int nv, const int i0, const int i1);
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages

@@ -605,7 +605,11 @@ void RadiationM1::VetGdInit() {
     vgd_hx_mode = 0;
     vgd_ring_par = false;
     vgd_ring_named = false;
-    if (vgd_twfuse) {
+    // the twin always with THIS build's cut (the vet_gd_twin_lowmem order: the fused
+    // twin's numbers); the plain unfused twin would take the previous build's cut (its
+    // sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
+    // decomposition-dependent
+    if (vgd_twin) {
       vgd_twfuse = false;
       vgd_twseq = true;
     }
@@ -5856,7 +5860,7 @@ void RadiationM1::VetGdPost() {
     }
     vgd_nclamp_seen = vgd_nclamp_all;
   }
-  if (vgd_csg) {VetGdCsDump();}   // cs-vetgd-1017 gate dump (env VGD_CS_DUMP)
+  if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP");}   // cs-vetgd-1017 gate dump
   // debug (gate): VGD_DUMP_I=<file>: rank 0's intensities incl. ghosts, first build
   const char *fi = std::getenv("VGD_DUMP_I");
   if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
@@ -6966,6 +6970,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     vgd_noq = true;
     VetGdMoments();
     vgd_noq = false;
+    if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP_TW");}   // cs-vetgd-1017 gate dump
     if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
     par_for("m1_vgd_tw_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

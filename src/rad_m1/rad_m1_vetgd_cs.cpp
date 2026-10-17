@@ -1005,12 +1005,13 @@ void RadiationM1::VetGdCsMoments(const int part) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsDump
-//! \brief gate dump (env VGD_CS_DUMP=<prefix>, first build only): per rank
+//! \brief gate dump (env VGD_CS_DUMP=<prefix>, first build only; VGD_CS_DUMP_TW: the twin's
+//! sweep, from VetGdTwin): per rank
 //! <prefix>.<rank>.bin with the directions, radii, ln chi / ln S of the interior, the
 //! main sweep's intensities and LAT0, keyed by the global cell (panel, a, t)
 
-void RadiationM1::VetGdCsDump() {
-  const char *pf = std::getenv("VGD_CS_DUMP");
+void RadiationM1::VetGdCsDump(const char *env) {
+  const char *pf = std::getenv(env);
   if (pf == nullptr || vlat_nbuild != 0) {return;}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
