@@ -978,3 +978,45 @@ static check and the bitwise gate ran; Raven owns the tests (TASK-2026-10-16-rav
   absent: every new path is behind donor_irr or the live back sink, and sink_zero_v is read without being added to
   the parameter dump (5b0d4bc1). The hook is called (empty) in every M1 run of this pgen.
 
+
+## 16. Back-sink sector light switch: problem/stream_sector_light (2026-10-17, Raven, accretor-sector-light-1017)
+
+Why: the v4 stream test on Raven (NOTE-2026-10-17-raven-accretor-v4.md) collapsed dt to 2-7e-7 through the impact.
+The suspected driver is the light held in the back-sink sector (section 15). It is the stream's own light, UNSCALED:
+core 72966 K, sector-mean T^4 = (56.2 kK)^4. That is ~132x the scaled donor surface value 0.22 (24.2 kK)^4.
+Before this change the sector light could only be switched together with stream_rad.
+
+Key `problem/stream_sector_light`. It is read only when named, so the PAR_DUMP of older decks is unchanged:
+- `full` (default): the v4 rule, bitwise unchanged.
+- `scaled`: E x donor_irr_scale (needs donor_irr). The band's 2-D -> 3-D factor of the held donor light
+  (s_geo x s_m1) is applied to the stream's held light too: the same transport, and the same cylindrical-vs-
+  spherical dilution. For the stream this is an UPPER bound. Its vertical extent is smaller than the donor's:
+  int T^4 dz / (2 D T_c^4) = 2.12 sigma_z / (2 x 5.1) ~ 0.21 for sigma_z 1.0054, against s_geo 0.636. With
+  s_m1 that gives ~0.07 instead of 0.22.
+- `surface`: the sector follows the donor-lobe rule (donor_irr light: scaled, gravity-darkened, booked in Eirr).
+  This is the v3 rule (v3: lobe light at T_d on the whole sink, sector included). It needs donor_irr.
+- `dark`: no light is held in the sector, which is left to the transport like the ambient. The stream's light then
+  enters only through the 2-cell nozzle.
+
+**Gate (Raven A100, gpudev 31249502): BITWISE.** The binary (62119e93, md5 0ba9d066) was compared with v4 5b0d4bc1,
+with the key absent, over 20 cycles:
+- S, the v4 stream switch-on (cal deck from the v4 static rst, stream on; exercises the sector): hst, hydro_w and m1
+  bins, and the cycle/dt lines are identical. With `stream_sector_light = full` named, hst and cycle/dt are
+  identical; the bins differ only by PAR_DUMP.
+- v4 gates A (base deck, donor_irr off) and G2 (s5 + stream + ROL2U): identical.
+
+**Confirming tests.** All runs are on Raven A100, from v4/cal/static/rst/ryper.00001.rst (s = 0.22, t 0.00946); see
+/raven/ptmp/jinma/accbig_1016/NOTE.md, RESULTS 10-17b. dt is min/median over each window.
+
+| arm | dt 0.0095-0.015 | dt 0.02-0.0265 | contact 0.027 | dt after contact | thin-atm max\|v\| t 0.013 / 0.020 / ~0.031 | Ltop t 0.0107 / 0.0285 | E r 9.4-10 median t 0.0142 / 0.0284 |
+|---|---|---|---|---|---|---|---|
+| v3 | 5.6e-6 / 6.7e-6 | 1.5e-6 / 2.9e-6 | smooth | 1.2-1.6e-6 | 376 / 717 / 1117 | 3.7e5 / 7.8e5 | - / 61 |
+| v4 full | 2.9e-6 / 4.4e-6 | 3.1e-7 / 7.6e-7 | 49 retries over the run | 4.5-5.5e-7 | 660 / 1429 / 2394 | 1.2e6 / 4.1e6 | 151 / 308 |
+| scaled | 6.7e-6 / 7.0e-6 | 2.9e-6 / 5.0e-6 | 1 retry (t 0.0251) | 1.5-1.6e-6 | 193 / 468 / 1068 | 3.0e5 / 7.5e5 | 23 / 58 |
+| surface | 7.03e-6 flat | 7.02e-6 flat | eint<=0 burst: FATAL at dt_min 1e-7; 61 retries, recovered at dt_min 1e-8 | 1.56-1.65e-6 | 80 / 139 / 469 | 6.9e4 / 1.0e5 | 5.0 / 7.4 |
+| dark | 7.03e-6 flat | 7.02e-6 flat | same as surface: FATAL at 1e-7; 34 retries, recovered at 1e-8 | 1.57-1.63e-6 | 77 / 128 / 474 | 6.3e4 / 8.9e4 | 4.5 / 6.5 |
+
+- The impact matches v3 in every arm. Dense infall reaches r 9.4-9.65 at t 0.0272-0.0284, and dense-gas heating
+  starts at t ~0.031 at phi 13.6-13.8 deg (v3: 14.0).
+- Floor-gas e/rho stays at 2.0-2.3e3 in every arm (v4 full: up to 1.8e6).
+- **Conclusion: the unscaled sector light caused the v4 dt collapse.**
