@@ -978,3 +978,34 @@ static check and the bitwise gate ran; Raven owns the tests (TASK-2026-10-16-rav
   absent: every new path is behind donor_irr or the live back sink, and sink_zero_v is read without being added to
   the parameter dump (5b0d4bc1). The hook is called (empty) in every M1 run of this pgen.
 
+
+## 16. 3-D physics: problem/phys_3d (2026-10-17, Raven, branch accretor-3d-1017 off accretor-bigdom-1015)
+
+USER 10-17: start the 3-D physics groundwork, opt-in, 2-D bitwise, static 3-D tests; mesh stays spherical-polar
+(theta wedge about the orbital plane; NOT the cubed sphere). Ideas taken from the WASP-121b hot-Jupiter pgens
+(deep_hot_jupiter_rt.cpp): full rotating-frame Coriolis in the spherical basis, the centrifugal term INSIDE the
+potential with etotgrav and no explicit centrifugal work (the rot_potential + etotgrav double-count guard), and
+the hydrostatic IC sampled on the TOTAL equipotential (ZEffFromPot: barotropic, balanced in r and theta); the
+velocity-sponge form (linear ramp, 1/tau) for the theta sponge.
+
+### 16.1 Keys (all read only when given; 2-D decks and the 049c1f39 3-D benchmark deck unchanged)
+- problem/phys_3d = true (needs the 3-D mode, inner = envelope, thermo = general):
+  - Phi = RochePot3(r, theta, phi) everywhere (the same function as the 3-D lobe mask): phicc0 and phi0 on the
+    x1/x2/x3 faces (etotgrav), Phi_wb = PhiWB3 (spin term with R = min(r, r_spin) sin theta), the explicit
+    remainders on (m,k,j,i): g_r = -d(Phi - Phi_wb)/dr, g_theta = -dPhi/(r dtheta), g_phi = -dPhi/(r sin theta
+    dphi) (face differences), the plain g above wb_rmax.
+  - Coriolis -2 Omega x v: a_r += 2 Omega v_phi sin th, a_th += 2 Omega v_phi cos th, a_phi -= 2 Omega (v_r sin th
+    + v_th cos th). (2-D band before: a_r += 2 Omega v_phi, a_phi -= 2 Omega v_r, and the centrifugal term of
+    RochePot at sin theta = 1 for every theta row.) No work; centrifugal work through the etotgrav flux.
+  - IC: the discrete x1 WB march for EVERY (m,k,j) column, T_col(psi), rho_amb, the relaxation targets, Phi_eff =
+    Phi_wb + G(psi), a_ref, F_col on the 3-D equipotentials psi = Phi_s - Phi_wb(r, theta, phi).
+  - Lz bookkeeping (Jdom, Jenv, Jacc, Jstr, Jout, MR/JR, nozzle Jin) with R = r sin theta.
+- problem/theta_bc = reflect (default, mesh reflect) | outflow | hse (mesh ix2_bc = ox2_bc = user): theta ghosts by the
+  isothermal hydrostatic walk in the true Phi along theta at the edge cell's T. outflow: v_theta diode, v_r, v_phi
+  copied; hse: closed, v from the mirror cell, v_theta flipped. Radiation ghosts reflecting (dark only with
+  <rad_m1>/implicit_bc_x2min/max = marshak: that drains the deep envelope where the star reaches the walls; the first
+  smoke with marshak theta faces broke at the walls in 50 cycles). Theta-face mass, Lz, hydro energy -> Mout, Jout,
+  Ebnd. Radiation through theta faces: zero (reflecting).
+- problem/theta_sponge_deg, theta_sponge_tau: velocity sponge in a layer next to each wall, rate ramping linearly to
+  1/tau at the wall, outside the envelope; KE removed from E (in Erel).
+- problem/dt_report: the global minimum over ranks (MPI MINLOC + broadcast), line + [rank, theta].

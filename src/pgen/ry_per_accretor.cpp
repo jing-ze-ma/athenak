@@ -1040,14 +1040,41 @@ void RyPerBCEnv(Mesh *pm) {
         ta = tfl;
         ea = eosd.EnergyFromTemperature(da, ta);
       }
-      const Real pa = RochePot3(p, r, sin(x2v(m,ja)), ph);
+      // v3: the walk follows the NET potential of the column's balance, Phi + G(psi) (the
+      // true Phi plus the radiation-force reference G = Phi_eff - Phi_wb; G = 0 without
+      // <rad_m1>, constant above the envelope top), with the local polytrope of the edge
+      // cell and its inner neighbour along theta (T linear in that potential, the inner-x1
+      // WB ghost rule; isothermal fallback), so the ghosts lie on the column's own P(psi),
+      // T(psi) and the wall face carries its hydrostatic gas pressure
+      auto pnet = [&](const int jj) {
+        const Real sj = sin(x2v(m,jj));
+        const Real gref = rad ? (pwcc(m,k,jj,i) - PhiWB3(p, dlt, rtop, rspin, phtop, r, sj, ph))
+                              : 0.0;
+        return RochePot3(p, r, sj, ph) + gref;
+      };
+      const Real pa = pnet(ja);
+      Real aT = 0.0;
+      {
+        const int j1 = (sd == 0) ? js + 1 : je - 1;
+        const Real d1 = u0(m,IDN,k,j1,i);
+        const Real e1 = u0(m,IEN,k,j1,i) - 0.5*(SQR(u0(m,IM1,k,j1,i)) + SQR(u0(m,IM2,k,j1,i))
+                        + SQR(u0(m,IM3,k,j1,i)))/d1 - d1*phicc(m,k,j1,i);
+        const Real dp1 = pnet(j1) - pa;
+        if (e1 > 0.0 && d1 > 0.0 && dp1 != 0.0) aT = (eosd.Temperature(d1, e1, ta) - ta)/dp1;
+      }
       for (int g=0; g<ng; ++g) {
         const int jg = (sd == 0) ? js - 1 - g : je + 1 + g;
         const int jm = (sd == 0) ? js + g : je - g;     // the mirror cell
-        const Real pg = RochePot3(p, r, sin(x2v(m,jg)), ph);
+        const Real pg = pnet(jg);
         Real dg = da, eg = ea, tw = ta;
-        WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
-        if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+        WBAdvance(eosd, 3, da, ea, pg - pa, dg, eg, tw, ta, aT, ta, ta);
+        if (!(Kokkos::isfinite(dg) && dg > 0.0 && Kokkos::isfinite(eg) && eg > 0.0 &&
+              tw >= tfl)) {
+          dg = da; eg = ea; tw = ta;
+          WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
+          if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+          tw = ta;
+        }
         dg = fmax(fmin(dg, da*exp(cap)), dfl);
         Real v1 = v1a, v2 = (sd == 0) ? fmin(v2a, 0.0) : fmax(v2a, 0.0), v3 = v3a;
         if (thh) {
@@ -1060,7 +1087,7 @@ void RyPerBCEnv(Mesh *pm) {
         u0(m,IM1,k,jg,i) = dg*v1;
         u0(m,IM2,k,jg,i) = dg*v2;
         u0(m,IM3,k,jg,i) = dg*v3;
-        u0(m,IEN,k,jg,i) = eosd.EnergyFromTemperature(dg, ta)
+        u0(m,IEN,k,jg,i) = eosd.EnergyFromTemperature(dg, tw)
                            + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,jg,i);
         if (rad) {
           const int md = (sd == 0) ? rm2lo : rm2hi;
