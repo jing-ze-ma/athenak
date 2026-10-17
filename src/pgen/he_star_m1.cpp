@@ -4409,6 +4409,7 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_fm_ = DvceArray1D<Real>();
   hs_fsub_ = DvceArray1D<Real>();
   hs_shs_ = DvceArray2D<Real>();
+  hs_shp_ = DvceArray2D<Real>();
   hs_be_ = DvceArray1D<Real>();
   hs_phig_ = DvceArray1D<Real>();
   hs_gmr_ = DvceArray1D<Real>();
