@@ -1,0 +1,6 @@
+run /resnick/groups/carnegie_poc/jingze/rol2u_1015/e1/chain
+  user.hst /resnick/groups/carnegie_poc/jingze/rol2u_1015/e1/chain/agcar3d.user.hst: 12204 rows, t 2.6010e+07 -> 1.4804e+08
+  stdout files 6, step lines 3359, NOT-ADMISSIBLE cycles 82619, DT_RETRY lines 19, NC lines 17, FATAL lines 0
+  event log /resnick/groups/carnegie_poc/jingze/rol2u_1015/e1/chain/agcar3d.log: 1226 rows (cycle 38966 -> 206764)
+  whole run: L_top/L_in first/last 2e6 s: 0.443 / 0.516; Bres total -3.008e+43 erg (rate -2.46e+35 erg/s); Mdot_top last 2e6 s 2.44e+13
+  logged m1_pos_un total 7.588e+40 erg -> Bres / logged = -396.397
