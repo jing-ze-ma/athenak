@@ -541,6 +541,9 @@ class RadiationM1 {
   //    next Picard pass (its linear solve follows) and the loop goes on, up to
   //    implicit_maxit (a check that fails with no pass left: NON-CONVERGED, the usual
   //    dt_retry / stage-redo handling).  Needs implicit_solver = bicgstab.
+  //  Experiment 2 (picstop_1017, picres_1017/NOTE.md): nofloor brings the AG Car tail to
+  //  the level of a tol 1e-10 reference; the residual stop is NOT recommended (in ~2-4 %
+  //  of solves the change stalls at 1e-14 with rc > 1e-4: maxit, NC, dt retries).
   Real impl_ce_guard = 0.0;
   bool impl_ce_nofl = false;
   bool impl_frs_on = false;
