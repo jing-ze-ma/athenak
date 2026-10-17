@@ -183,6 +183,10 @@
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "pgen.hpp"
 
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+
 namespace {
 
 // physical constants (cgs) and the code units
@@ -456,6 +460,9 @@ Real StreamT(const bool on, const Real tc, const Real teq, const Real x) {
   const Real c = cos(0.5*M_PI*erf(fabs(x)/sqrt(2.0)));
   return fmax(tc*sqrt(sqrt(fmax(c, 0.0))), teq);
 }
+
+// accretor-raydonor-1017: problem/donor_irr_mode = ray (ray-traced external donor light)
+#include "pgen/ry_per_accretor_raydonor.hpp"
 
 //----------------------------------------------------------------------------------------
 // Ballistic L1 stream, restricted three-body problem in units a = 1, Omega = 1,
@@ -1252,6 +1259,16 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     }
   }
 
+  // accretor-raydonor-1017 (donor_irr_mode = ray): the donor's ray-traced beam, updated at
+  // the first stage of every donor_ray_every-th cycle, applied every stage BEFORE the
+  // nozzle/mask resets; erd = the energy it gives the domain (booked in Eirr and Ebnd)
+  Real erd = 0.0;
+  if (rd_on_) {
+    const int sst = (nstages_ > 0) ? (stage_ctr_ % nstages_) : 0;
+    if (sst == 0 && (!rd_have_ || pm->ncycle % rd_every_ == 0)) RayDonorUpdate(pmbp, pm);
+    erd = RayDonorApply(pmbp, pm, bdt, (nstages_ <= 0) || (sst == nstages_ - 1));
+  }
+
   // accretor-bigdom-1015: the stream nozzle (stream_inject = volume) and the donor sink
   // (donor_mask = roche), reset after every other source of the stage; sums: 0 nozzle
   // mass added, 1 its inertial Lz, 2 its gas energy (incl. KE, rho Phi), 3 its radiation
@@ -1266,7 +1283,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const Real tcs = gen_tstr_, tsf = gen_tsurf_, sar = strad_ar_, sre = strad_e_;
     const bool stp = stprof_, srad = rad && strad_;
     const Real phl1 = msk_phl1_, xl1 = msk_xl1_, dfl = eosd.dfloor;
-    const bool mirr = rad && mirr_;
+    // donor_irr_mode = ray (raydonor-1017): the lobe holds no light (the beam is external)
+    const bool mirr = rad && mirr_ && !rd_on_;
     const Real med = mirr_e_;
     const Real gdb = 4.0*mirr_beta_, gdc = mirr_ec_, gdf = mirr_ef_;
     const bool gdk = mirr_beta_ > 0.0;
@@ -1502,7 +1520,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       accx1_[1] = accx0_[1];
     }
     accx0_[0] = rk_g0_[s]*accx0_[0] + rk_g1_[s]*accx1_[0] + bdt*fs.the_array[13];
-    accx0_[1] = rk_g0_[s]*accx0_[1] + rk_g1_[s]*accx1_[1] + zs.the_array[6];
+    accx0_[1] = rk_g0_[s]*accx0_[1] + rk_g1_[s]*accx1_[1] + zs.the_array[6] + erd;
   }
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
@@ -1511,7 +1529,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
     // the nozzle's energy (and the donor_irr radiation) enters Ebnd = in - rad out (10)
     // - hydro out (11)
-    acc0_[10] -= zs.the_array[3] + zs.the_array[6];
+    acc0_[10] -= zs.the_array[3] + zs.the_array[6] + erd;
     acc0_[11] -= zs.the_array[2];
   }
   stage_ctr_++;
@@ -1681,6 +1699,7 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   gpl_ = DvceArray3D<Real>();
   iracc_ = DvceArray1D<int>();
   rbath_ = DvceArray3D<Real>();
+  RayDonorFinal();
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
@@ -3350,6 +3369,60 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       mirr_sc_ = g3d_ ? 1.0 : sgeo*sm1;
     }
     const Real arc = pmbp->pradm1->arad/SQR(SQR(tunit));
+    // accretor-raydonor-1017 (USER 10-17, fix (A)): problem/donor_irr_mode = m1 (default:
+    // the lobe holds the light for the M1 transport) | ray (the donor's light is an external
+    // beam, ray-traced with exp(-tau) and the exact shadow; ry_per_accretor_raydonor.hpp).
+    // The ray intensity is the 3-D surface intensity (c/4 pi) a T_loc^4 x donor_ray_scale
+    // (default 1): donor_irr_scale (the band M1 dilution) is NOT applied.  Keys read only
+    // when donor_irr_mode is given.
+    if (pin->DoesParameterExist("problem", "donor_irr_mode")) {
+      const std::string im = pin->GetString("problem", "donor_irr_mode");
+      if (im.compare("ray") == 0) {
+        rd_on_ = true;
+      } else if (im.compare("m1") != 0) {
+        fatal("donor_irr_mode must be m1 | ray");
+      }
+    }
+    if (rd_on_) {
+      if (g3d_) fatal("donor_irr_mode = ray: the 2-D band only (3-D wedge: not implemented, "
+                      "see accretor_rhd_design.md 17)");
+      rd_scale_ = pin->GetOrAddReal("problem", "donor_ray_scale", 1.0);
+      rd_npsi_ = pin->GetOrAddInteger("problem", "donor_ray_npsi", 24);
+      const int nel = pin->GetOrAddInteger("problem", "donor_ray_nel", 4);
+      rd_every_ = pin->GetOrAddInteger("problem", "donor_ray_every", 1);
+      rd_fh_ = pin->GetOrAddReal("problem", "donor_ray_step", 0.5);
+      rd_taumax_ = pin->GetOrAddReal("problem", "donor_ray_taumax", 40.0);
+      rd_force_ = pin->GetOrAddBoolean("problem", "donor_ray_force", true);
+      rd_dump_dt_ = pin->GetOrAddReal("problem", "donor_ray_dump_dt", 0.0);
+      if (rd_npsi_ < 1 || nel < 1 || nel > kRdNelMax || rd_every_ < 1 || !(rd_fh_ > 0.0)) {
+        fatal("donor_ray_npsi >= 1, 1 <= donor_ray_nel <= 8, donor_ray_every >= 1, "
+              "donor_ray_step > 0");
+      }
+      RdPar &rq = rd_par_;
+      rq.p = rp_;
+      rq.phl1 = msk_phl1_;
+      rq.xl1 = msk_xl1_;
+      rq.rb = 1.02*(asep - msk_xl1_);
+      rq.ec = rd_scale_*arc*cc;
+      rq.ef = rd_scale_*arc*fl4;
+      rq.eun = rd_scale_*arc*SQR(SQR(tdk));
+      rq.gdb = b4;
+      rq.gdk = (mirr_beta_ > 0.0) ? 1 : 0;
+      rq.cfac = pmbp->pradm1->c_light/(4.0*M_PI);
+      rq.nel = nel;
+      for (int b=0; b<kRdNelMax; ++b) {rq.glx[b] = 0.0; rq.glw[b] = 0.0;}
+      RdGaussLegendre01(nel, rq.glx, rq.glw);
+      rd_have_ = false;
+      rd_dump_n_ = 0;
+      rd_dump_next_ = 0.0;
+      if (root) {
+        std::printf("ry_per_accretor: donor_irr_mode = ray: the lobe holds no light; donor "
+                    "surface intensity (c/4 pi) a T_loc^4 x donor_ray_scale %.4g (donor_irr_"
+                    "scale NOT applied); 3-D sphere estimate L_d/(4 pi D^2) at D = %.4f: "
+                    "%.6g code\n", rd_scale_, asep - 9.6,
+                    0.25*pmbp->pradm1->c_light*arc*lw3/(4.0*M_PI*SQR(asep - 9.6)));
+      }
+    }
     mirr_ec_ = mirr_sc_*arc*cc;
     mirr_ef_ = mirr_sc_*arc*fl4;
     mirr_e_ *= mirr_sc_;
@@ -3521,6 +3594,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
     if (msk_) user_m1post_func = RyPerM1Post;
+    if (rd_on_) RayDonorSetup(pmbp, pmy_mesh_);
     return;
   }
   if (restart) return;
