@@ -1521,6 +1521,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // their state.  Read only when named; prints only; no number of the solve changes.
   g_dbg_eint_n = pin->DoesParameterExist("rad_m1","dbg_eint_cells") ?
                pin->GetInteger("rad_m1","dbg_eint_cells") : 0;
+  // ...and with time_scheme = be, where Time2Init returns before reading it, the
+  // existing dbg_t2_admiss = N listing (the cells and their E rows by term) of the
+  // first N solves that end with E <= e_floor or eint_wb <= 0 (read only when named)
+  if (g_dbg_eint_n > 0 && pin->DoesParameterExist("rad_m1","dbg_t2_admiss")) {
+    t2_dbg_adm = pin->GetInteger("rad_m1","dbg_t2_admiss");
+  }
   // DEBUG (he_estall_1003): implicit_stall_trace = N > 0: in a solve still unconverged at
   // pass implicit_stall_trace_p0 (default 40), fix each rank's worst cell of that pass
   // and print its NCD line (tag 3) before step (c) and (tag 2) after the residual of
@@ -14713,6 +14719,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     const int i = r - (j - js)*ni + is;
     // the cell's state and the rank-local shell mean of rho at its i
     DvceArray1D<Real> cv("m1_t2dbg_cv", 16);
+    // dbg_eint_cells (accretor-sector-light-1017): under time_scheme = be the stage
+    // increments t2inc are not allocated
+    const bool t2ok = (t2i_.extent_int(0) > 0);
     par_for("m1_t2dbg_cell", DevExeSpace(), 0, 0,
     KOKKOS_LAMBDA(const int n) {
       cv(0) = x1v(m,i);
@@ -14720,11 +14729,11 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       cv(2) = iw_(m,M1_IW_S2,k,j,i);
       cv(3) = iw_(m,M1_IW_EN,k,j,i);
       cv(4) = u0_(m,M1_E,k,j,i);
-      cv(5) = t2i_(m,M1_T2_E,k,j,i);
+      cv(5) = t2ok ? t2i_(m,M1_T2_E,k,j,i) : 0.0;
       cv(6) = iw_(m,M1_IW_EGN,k,j,i);
       cv(7) = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
               iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
-      cv(8) = hh ? t2i_(m,M1_T2_EN,k,j,i) : 0.0;
+      cv(8) = (hh && t2ok) ? t2i_(m,M1_T2_EN,k,j,i) : 0.0;
       cv(9) = iw_(m,M1_IW_TP,k,j,i);
       cv(10) = iw_(m,M1_IW_V1,k,j,i);
       cv(11) = iw_(m,M1_IW_V2,k,j,i);
