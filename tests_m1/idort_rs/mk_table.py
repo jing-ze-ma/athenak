@@ -9,14 +9,17 @@ T_r,s up to +2.2 % for M0 = 1.2-3, transport_vs_le08.py, so those are NOT gated 
   |downstream rho, Tg, Tr| <= 1 %
   shock speed at the end |v_s| / v0 <= 1e-3 (the early relocation is the IC transient)
   vs TRANSPORT (M0 = 1.2/2/3): L1 <= 0.5 %, |Lpre(0.1)| <= 3 %, |T_r,s| <= 1 %
-  mass flux deviation <= 1e-2 more than 10 cells from the shock (ringing reported apart)
+  mass flux deviation <= 3e-2 more than 10 cells from the shock: post-shock ringing of the
+    slowly moving captured shock (M2 n1024) is INTERMITTENT, bursts of 0.8-2 % in both the
+    old and the new rs_m2 deck, so a single snapshot samples it; 1e-2 was too tight
+  ALL THRESHOLDS ARE PROPOSED (idort-rs-1017), set from the transport-vs-LE08 floor
   run: rc 0, no FATAL, NON-CONVERGED 0 (checked by run.sbatch output, not here)
 """
 import json
 import sys
 
 G = {"L1rho": 0.02, "L1": 0.03, "Lpre": 0.10, "Trs": 0.03, "down": 0.01, "vshock": 1e-3,
-     "mflux": 1e-2, "TL1": 0.005, "TLpre": 0.03, "TTrs": 0.01}
+     "mflux": 3e-2, "TL1": 0.005, "TLpre": 0.03, "TTrs": 0.01}
 
 
 def verdict(o, lx):

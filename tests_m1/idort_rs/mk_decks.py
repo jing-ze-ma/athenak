@@ -47,7 +47,8 @@ vet_gd_twin_state=trans""".split()
 # false the Marshak end faces cannot pass the lab-frame enthalpy flux A E and LE08
 # shocks drift / carry an N-independent T error -- rad_m1_implicit.cpp:2744-2752) and
 # the explicit-transport keys thick_flux = ap_hll / advect_split = true; the production
-# implicit guards/opacity keys below are unset there.  arm L (legacy) = template as is.
+# implicit guards/opacity keys below are unset there.  arm L (legacy) = template + the old
+# implicit_bc_advect=false (the suite rs decks dropped that line on 10-17 night, USER).
 PROD_EXTRA = ("rad_m1/implicit_bc_advect=true rad_m1/thick_flux=none rad_m1/advect_split=false "
               "rad_m1/implicit_opac_update=true rad_m1/implicit_opac_newton=true "
               "rad_m1/implicit_lin_cnorm=1.0e-10 rad_m1/implicit_resid_fatal=1.0e-2").split()
@@ -180,6 +181,8 @@ def main():
                     a += ROL2U.split()
                     if arm == "P":
                         a += PROD_EXTRA
+                    else:   # legacy: the template's old explicit value (removed 10-17 night)
+                        a += ["rad_m1/implicit_bc_advect=false"]
                     if sp:
                         txt = txt.replace("vet_tensor               = full\n", "")
                     txt = setkeys(txt, a)

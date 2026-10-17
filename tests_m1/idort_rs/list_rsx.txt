@@ -1,0 +1,33 @@
+# IDORT radiative-shock ACCURACY family rsx (idort-rs-1017), arm P = production keys; '<dir> <threads> <est s on Raven CPU, 31-way shared node>'
+# decks: DECKS2=/raven/ptmp/jinma/idortrs_1017/runs (mk_decks.py); eval: rs_eval.py + mk_table.py (gates PROPOSED, see mk_table.py docstring)
+cart/rsx_m27/P_n2048_c0.4 6 9711
+cart/rsx_m27/P_n2048_c0.2 6 9379
+sp/rsx_m5/P_n1024_c0.4 6 5458
+cart/rsx_m5/P_n2048_c0.2 6 5425
+cart/rsx_m5/P_n2048_c0.4 6 5380
+cart/rsx_m27/P_n1024_c0.2 4 5357
+cart/rsx_m27/P_n1024_c0.4 4 4836
+sp/rsx_m27/P_n1024_c0.4 6 4663
+cart/rsx_m1.05/P_n1024_c0.2 4 4304
+cart/rsx_m50/P_n2048_c0.2 6 4160
+cart/rsx_m1.05/P_n1024_c0.4 2 3870
+sp/rsx_m2/P_n512_c0.4 2 3518
+cart/rsx_m50/P_n2048_c0.4 6 3375
+cart/rsx_m1.2/P_n1024_c0.2 4 3323
+cart/rsx_m2/P_n1024_c0.2 2 3310
+cart/rsx_m1.2/P_n1024_c0.4 2 3032
+cart/rsx_m3/P_n1024_c0.2 2 2843
+cart/rsx_m5/P_n1024_c0.2 4 2574
+cart/rsx_m5/P_n1024_c0.4 4 2440
+cart/rsx_m2/P_n1024_c0.4 2 2375
+cart/rsx_m50/P_n1024_c0.4 4 2194
+cart/rsx_m1.05/P_n512_c0.2 2 2092
+cart/rsx_m50/P_n1024_c0.2 4 2009
+cart/rsx_m3/P_n1024_c0.4 2 1784
+cart/rsx_m1.2/P_n512_c0.2 2 1342
+cart/rsx_m1.05/P_n512_c0.4 2 1265
+cart/rsx_m1.2/P_n512_c0.4 2 1227
+cart/rsx_m2/P_n512_c0.4 2 1162
+cart/rsx_m2/P_n512_c0.2 2 1107
+cart/rsx_m3/P_n512_c0.2 2 935
+cart/rsx_m3/P_n512_c0.4 2 802
