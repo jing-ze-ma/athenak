@@ -995,6 +995,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","vet_col_lat")) {
       vlat_on = pin->GetBoolean("rad_m1","vet_col_lat");
     }
+    // vgd-latuni-1017: Athena++ x2rat / x3rat (not AthenaK keys) noted for VetLatInit
+    for (const char *rk : {"x2rat", "x3rat"}) {
+      if (pin->DoesParameterExist("mesh", rk) && pin->GetReal("mesh", rk) != 1.0) {
+        vlat_rat_keys += std::string(" mesh/") + rk + " = " + pin->GetString("mesh", rk);
+      }
+    }
     // vet_gd (m1-vet-gd, rad_m1_vetgd.cpp): rides on the vet_col_lat interface
     if (pin->DoesParameterExist("rad_m1","vet_gd")) {
       vgd_on = pin->GetBoolean("rad_m1","vet_gd");
