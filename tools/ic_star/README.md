@@ -287,6 +287,8 @@ For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.
    /raven/ptmp/jinma/overlap_1015/decks/e1_prod_rol2u.athinput). Add the grid fit, tlim (long-tlim
    rule), vet_gd_rotate_dt (~20 dt) and the seed amplitude/k band.
 5. Run the background checklist on the full-size deck before any production submit.
+6. Run the atmosphere gate (a') (sect. 8a): the gate run on the deck grid and on its
+   2x-atmosphere grid, then `regress/gate_aprime.py DECK_RUN PAIR_RUN`.
 
 ## 4. Spec reference (`icstd/spec.py` DEFAULTS)
 
@@ -402,9 +404,30 @@ super-Eddington layers, x1max > 5 R_ph). These are flags only.
 - mode mesa on 14p5M and the BSG: self-consistency against MESA (m_env, R_ph, T_ph, CZs);
 - global-mode validation on 14p5M (gated MLT++) against its MESA model.
 
+## 8a. Atmosphere gate (a') (ADOPTED by the USER 2026-10-17; `regress/gate_aprime.py`)
+
+Gate (a') replaces the absolute atmosphere thresholds of gate (a) (`regress/gate_atm.py`:
+0.99-1.1 R_ph |<v_r>| < 1 km/s, |drho| < 10 %), which no resolution of the BSG new setup can pass
+(its photosphere carries a converged, bounded, self-excited acoustic resonance; bsgres-1017,
+/raven/ptmp/jinma/bsgres_1017/NOTE.md). Runs: seed 0, 16x16 lateral, >= 8 d, 0.05-d hydro_w +
+m1 dumps, on the deck grid AND on its 2x-atmosphere grid. All items must pass:
+
+| item | criterion |
+|---|---|
+| 1 resolution | >= 4.4 cells per atmospheric (density) scale height over 0.95-1.1 R_ph on the deck grid (min of H_rho/dr in the t = 0 startup atmosphere, floor plateau excluded) |
+| 2 convergence | deck vs 2x-atmosphere grid, saturated t >= 4 d, band 0.99-1.1 R_ph: band mean rms <v_r> within 15 %, time-rms profile L2 diff <= 10 %, dominant period (median of the 5 top-rms radii) within 10 % |
+| 3 bounded | no growth (last-third max <= 1.5 x middle-third max) and saturated band rms <= c_s,iso(R_ph) |
+| 4 star unaffected | 0.5-0.9 R_ph < 1 km/s (whole run), 0.9-0.99 R_ph < 3 km/s (saturated state), R_ph(tau_R 2/3) within +-2 %, L_top/L_in within +-5 % after 2 d, \|dM/M\| < 1e-6, Mdot_top < 1e-8 Msun/yr |
+| 5 robustness | summary NON-CONVERGED = 0, no FATAL/DIVERGED/NaN, rc 0, dt_min >= 0.25 dt_median (dt_retry retries reported) |
+
+Items 3-5 are checked on both runs. BSG production must use a g480-class grid (the P grid,
+~1 cell per H_rho, fails items 1 and 2). Results: regress/RESULTS.md sect. 9.
+
 ## Files
 
 - `make_star_ic.py`: the driver.
+- `regress/gate_aprime.py`: the adopted atmosphere gate (a') (sect. 8a); `regress/gate_atm.py`:
+  the old gate (a) table (diagnostic).
 - `icstd/`:
   - `micro.py`: EOS, opacity, MLT (KW and Cox), the MESA gate rule;
   - `column.py`: mode global, the gate solve;

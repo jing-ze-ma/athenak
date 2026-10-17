@@ -3,7 +3,9 @@
 Per hydro_w dump: per band (r/R_ph) the max over the band's radii of |<v_r>| (mass-weighted shell
 mean, km/s) and of |<rho>/<rho>_0 - 1| (shell means vs the first dump).  PASS for the band
 0.99-1.1 R_ph: |<v_r>| < vmax and |drho| < dmax at every dump, and no growth (the max over the
-last third of the run not above 1.5x the max over the middle third)."""
+last third of the run not above 1.5x the max over the middle third).
+Since 2026-10-17 (USER) the ADOPTED atmosphere gate is gate (a'), gate_aprime.py (README sect. 8a);
+this table stays as a diagnostic."""
 import argparse
 import glob
 import os
