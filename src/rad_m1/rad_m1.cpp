@@ -1631,6 +1631,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (F2, F3) is the tangential pair (what the default (IVY, IVZ) rule gives by luck);
   // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
   pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
+  if (cs_geom) {CubedVecCheck(pin);}   // cs-s4-1017: test only, read when named
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c

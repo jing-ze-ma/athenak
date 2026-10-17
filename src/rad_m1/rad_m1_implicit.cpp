@@ -3634,8 +3634,9 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
   ImplicitHaloCopy(*pa, nq, c0, false);
   // STAGE CS2 (C3): (N2, N3) of the work array are FACE-NORMAL components (as A and V)
-  // and cross a seam by the signed axis permutation (cs_perm_pairs, CubedS1Init), which
-  // keeps |n|; it is renormalised in the ghost cells all the same (to round-off a no-op),
+  // and cross a seam re-expressed on the destination's face normals (cs_perm_pairs,
+  // CubedS1Init; cs-s4-1017, was the signed axis permutation); it is renormalised in the
+  // ghost cells all the same (a no-op for the cs closures: n = 0 or rhat),
   // so that a later change of the seam map cannot hand the closure a non-unit n.  A zero
   // n (eddington; vet_col about r_hat has n = r_hat) is left alone.
   if (cs_geom && nq == M1_NHALO_T) {

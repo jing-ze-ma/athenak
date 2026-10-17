@@ -243,6 +243,28 @@ void M1ShellGas(const M1ShellGasP &p, const Real r, const Real th, const Real ph
     }
   }
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ShellAngles
+//! \brief cs-s4-1017: (theta, phi) of cell (m,k,j) for M1ShellGas: x2v/x3v on the
+//! spherical-polar wedge; on the cubed sphere the polar angles of the cell centre's
+//! direction (PanelToCart of the equiangular chart point; ghosts: the extended chart)
+
+KOKKOS_INLINE_FUNCTION
+void M1ShellAngles(const bool csm, const int panel, const Real x2c, const Real x3c,
+                   const int k, const int j, const int ks, const int js, const int nx2,
+                   const int nx3, const Real x2a, const Real x2b, const Real x3a,
+                   const Real x3b, Real &th, Real &ph) {
+  th = x2c;
+  ph = x3c;
+  if (!csm) return;
+  const Real xi = 0.25*M_PI*CellCenterX(j - js, nx2, x2a, x2b);
+  const Real eta = 0.25*M_PI*CellCenterX(k - ks, nx3, x3a, x3b);
+  Real q[3];
+  cubed_sphere::PanelToCart(panel, xi, eta, q);
+  th = acos(fmin(fmax(q[2], -1.0), 1.0));
+  ph = atan2(q[1], q[0]);
+}
 } // namespace
 
 // prototypes for the hooks enrolled below
@@ -1045,9 +1067,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = dgas*tgas/gm1;
-      if (shg && sp) {
-        Real dd, t1;
-        M1ShellGas(shp, r, x2v(m,j), x3v(m,k), dd, t1);
+      if (shg && spr) {   // cs-s4-1017: the cubed sphere too (M1ShellAngles)
+        Real dd, t1, th, ph;
+        M1ShellAngles(csm, csm ? mbpan.d_view(m) : 0, x2v(m,j), x3v(m,k), k, j, ks, js,
+                      nx2, nx3, size.d_view(m).x2min, size.d_view(m).x2max,
+                      size.d_view(m).x3min, size.d_view(m).x3max, th, ph);
+        M1ShellGas(shp, r, th, ph, dd, t1);
         uh(m,IDN,k,j,i) = dd;
         uh(m,IEN,k,j,i) = dd*t1/gm1;
       }
@@ -1580,10 +1605,18 @@ void RadM1ShellHold(Mesh *pm, const Real bdt) {
   auto x3v = pmbp->pcoord->x3v;
   const M1ShellGasP shp = m1_shg;
   const Real gm1 = m1_shg_gm1;
+  // cs-s4-1017: the cubed sphere's (theta, phi) from the panel chart (M1ShellAngles)
+  const bool csm = pm->use_cubed_sphere;
+  auto mbpan = pmbp->pmb->mb_panel;
+  auto &size = pmbp->pmb->mb_size;
+  const int ks = indcs.ks, js = indcs.js, nx2 = indcs.nx2, nx3 = indcs.nx3;
   par_for("m1_shg_hold", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    Real dd, tt;
-    M1ShellGas(shp, x1v(m,i), x2v(m,j), x3v(m,k), dd, tt);
+    Real dd, tt, th, ph;
+    M1ShellAngles(csm, csm ? mbpan.d_view(m) : 0, x2v(m,j), x3v(m,k), k, j, ks, js, nx2,
+                  nx3, size.d_view(m).x2min, size.d_view(m).x2max, size.d_view(m).x3min,
+                  size.d_view(m).x3max, th, ph);
+    M1ShellGas(shp, x1v(m,i), th, ph, dd, tt);
     uh(m,IDN,k,j,i) = dd;
     uh(m,IM1,k,j,i) = 0.0;
     uh(m,IM2,k,j,i) = 0.0;

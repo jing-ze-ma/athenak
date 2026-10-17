@@ -192,6 +192,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         int sj = 1, sk = nj;
         int vv = v;
         bool cs_xform = false;
+        // cs-s4-1017: the FACE-NORMAL pair transform of cs_perm_pairs (see below)
+        bool cs_fxform = false;
         // THE COMPONENT ROLE of slot v: is it a member of a tangential vector pair, and
         // which slots hold the pair's x2 (va_) and x3 (vb_) members.  Without a table
         // (SetVectorPairs) this is the historical rule, slots (IVY, IVZ) of any array.
@@ -261,20 +263,24 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             bk = kl + ku;
           }
           // cs_perm_pairs (default false): the tangential pairs of this object are
-          // FACE-NORMAL components (the implicit M1 work array, stage CS2), not covariant
-          // ones: across a seam they take the signed AXIS permutation of the index map
-          // (the component along the source axis that becomes the destination's x2 or
-          // x3, negated where that axis runs reversed), with no metric transform.
+          // FACE-NORMAL components (v.nhat_xi, v.nhat_eta: the implicit M1 work array,
+          // stage CS2), not covariant ones.  cs-s4-1017: they are re-expressed on the
+          // DESTINATION panel's face normals at the source cell's own point
+          // (cubed_sphere::TransformFieldToDstNormals: normals -> contravariant ->
+          // Cartesian -> destination normals), the face-centred field's transform.
+          // Until cs-s4-1017 they took the signed AXIS permutation of the index map
+          // instead: exact for the SEAM-NORMAL component (the seam plane is common to
+          // both charts), but the ALONG-SEAM one came out in the source panel's mirrored
+          // basis, O(1) wrong where the vector has a seam-normal part (rad_m1
+          // cs_vec_check: 0.95-1.07 of |v| at N = 8..64, not converging).  No cs
+          // operator reads the along-seam component of a seam ghost today, so the change
+          // is round-off in what runs (the seam-normal component, now through the
+          // arithmetic).  These
+          // objects run without the along-seam resample (cs_noresample), so the
+          // transform is taken at the single source cell (cs_seam = 0 below).
           if (cperm_ && vec_) {
             cs_xform = false;
-            const bool sw = (pb.swap_ax == 1);
-            if (v == va_) {
-              vv = sw ? vb_ : va_;
-              signvar = (sw ? rev_b_preswap : rev_a_preswap) ? -1 : 1;
-            } else {
-              vv = sw ? va_ : vb_;
-              signvar = (sw ? rev_a_preswap : rev_b_preswap) ? -1 : 1;
-            }
+            cs_fxform = true;
           }
 
           // WHICH BUFFER IS THIS, and therefore which way does the along-seam resample
@@ -365,6 +371,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
           if (no_rs_cc || nors_) { cs_seam = 0; }
+          if (cs_fxform) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;
@@ -498,6 +505,13 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xis, etas, xf[s]);
             }
           }
+          // cs-s4-1017: the face-normal pair (cs_perm_pairs), one source cell (nst = 1)
+          cubed_sphere::SeamFieldXform fxf;
+          if (cs_fxform) {
+            const Real xis = 0.25*M_PI*CellCenterX(jst[0]-js_, nx2_, x2mn, x2mx);
+            const Real etas = 0.25*M_PI*CellCenterX(kst[0]-ks_, nx3_, x3mn, x3mx);
+            cubed_sphere::SeamFieldXformAt(cs_srcpanel, cs_dstpanel, xis, etas, fxf);
+          }
 
           // Value of variable v at stencil cell s, radial index i. Both tangential
           // momenta of the source cell are needed to make either one, so this reads two
@@ -505,6 +519,13 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // `a(...)*signvar`. Only loads and the O(1) half of the transform remain here.
           auto sval = [&](const int s, const int i) {
             const int kq = kst[s], jq = jst[s];
+            if (cs_fxform) {
+              Real f2o, f3o;
+              const Real fy_ = cs_coar ? ca(m,va_,kq,jq,i) : a(m,va_,kq,jq,i);
+              const Real fz_ = cs_coar ? ca(m,vb_,kq,jq,i) : a(m,vb_,kq,jq,i);
+              cubed_sphere::ApplyFieldXform(fxf, fy_, fz_, f2o, f3o);
+              return (v == va_) ? f2o : f3o;
+            }
             if (!cs_xform) {
               return (cs_coar ? ca(m,vv,kq,jq,i) : a(m,vv,kq,jq,i))*signvar;
             }

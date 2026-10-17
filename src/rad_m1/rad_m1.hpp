@@ -1619,6 +1619,8 @@ class RadiationM1 {
   DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
   DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
   void CubedS1Init();
+  //! cs-s4-1017 test only (cs_vec_check): the seam halo of the tangential vector pairs
+  void CubedVecCheck(ParameterInput *pin);
   //! the seam average of the stored face state f0x2/f0x3 (stage CS1, C5)
   void CubedSeamFaceAverage();
   int cs_seam_avg_n = 0;   // seam-face-average calls (diagnostic)
