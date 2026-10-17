@@ -1012,6 +1012,28 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_final_resid_log")) {
     impl_frlog = pin->GetBoolean("rad_m1","implicit_final_resid_log");
   }
+  // picstop-1017 (rad_m1.hpp): the guarded contraction estimate and the residual stop,
+  // read only when named (a run without them has the parameter dump of picres-1017)
+  if (pin->DoesParameterExist("rad_m1","implicit_conv_est_guard")) {
+    impl_ce_guard = pin->GetReal("rad_m1","implicit_conv_est_guard");
+    if (impl_ce_guard < 0.0) {
+      ImplFatal("<rad_m1>/implicit_conv_est_guard must be >= 0");
+    }
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_conv_est_nofloor")) {
+    impl_ce_nofl = pin->GetBoolean("rad_m1","implicit_conv_est_nofloor");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_final_resid_stop")) {
+    impl_frs = pin->GetReal("rad_m1","implicit_final_resid_stop");
+    if (impl_frs < 0.0) {ImplFatal("<rad_m1>/implicit_final_resid_stop must be >= 0");}
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_final_resid_stop_rel")) {
+    impl_frs_rel = pin->GetReal("rad_m1","implicit_final_resid_stop_rel");
+    if (impl_frs_rel < 0.0) {
+      ImplFatal("<rad_m1>/implicit_final_resid_stop_rel must be >= 0");
+    }
+  }
+  impl_frs_on = (impl_frs > 0.0) || (impl_frs_rel > 0.0);
   // a lagged transverse coupling needs more outer passes than a pure column solve, so
   // the ceiling is raised (not the count: the loop still stops at convergence).
   impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit", full ? 200 : 30);
@@ -8833,6 +8855,19 @@ void RadiationM1::ImplicitReport() {
               << " | time loop " << S[11] << " s, shadow eval " << S[9]
               << " s, snapshot " << S[10] << " s" << std::endl;
   }
+  if (impl_frs_on || impl_ce_guard > 0.0 || impl_ce_nofl) {
+    // picstop-1017: the guarded contraction estimate and the residual stop
+    const Real *P = impl_frs_sum;
+    std::cout << "<rad_m1> picstop: implicit_final_resid_stop=" << impl_frs << " (rel "
+              << impl_frs_rel << " x tol_eff) checks=" << P[0] << " failed+continued="
+              << P[1] << " failed-no-pass-left(NC)=" << P[2]
+              << " solves accepted after a failed check=" << P[3]
+              << " passes after a failed check=" << P[4]
+              << " | implicit_conv_est_guard=" << impl_ce_guard << " refused=" << P[5]
+              << " | implicit_conv_est_nofloor=" << (impl_ce_nofl ? 1 : 0)
+              << " refused=" << P[6] << " extra stops=" << P[7]
+              << " | log worst-cell time " << P[8] << " s" << std::endl;
+  }
   if (impl_gn_sw > 0) {
     std::cout << "<rad_m1> implicit_gas_newton_switch=" << impl_gn_sw << " (min pass "
               << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
@@ -11911,16 +11946,22 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
   }
   // picres-1017: the shadow pass of implicit_final_resid_log may run at it = maxit
-  if (impl_frlog && !bicg) {
+  if ((impl_frlog || impl_frs_on) && !bicg) {
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_final_resid_log needs implicit_solver = bicgstab: "
-                << "off" << std::endl;
+      std::cout << "<rad_m1> implicit_final_resid_log / implicit_final_resid_stop need "
+                << "implicit_solver = bicgstab: off" << std::endl;
     }
     impl_frlog = false;
+    impl_frs_on = false;
   }
   impl_fr_sh = false;
-  if (impl_frlog) {DevExeSpace().fence(); impl_fr_t0 = M1FrNow();}
+  impl_fr_nchk = 0;
+  const bool frsh = impl_frlog || impl_frs_on;   // a converged pass takes a shadow pass
+  if (frsh) {DevExeSpace().fence(); impl_fr_t0 = M1FrNow();}
   int frh = 0;   // picres-1017: which test stopped the pass (host bookkeeping only)
+  // picstop-1017 implicit_conv_est_nofloor: the change over the cells above e_floor of
+  // this pass and of the pass before
+  Real rnf = 0.0, rnfprev = -1.0;
   for (it = 0; (it < impl_maxit || impl_fr_sh) && !converged; ++it) {
     // vet_gd_rebuild_every = k: the gd tensor from the Picard iterate at passes k, 2k
     // (not in the shadow pass of implicit_final_resid_log: its state is not put back)
@@ -11934,7 +11975,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     TmrMark((it == 0) ? 4 : 7);
     ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
-    if (accel && !impl_fr_sh) {ImplicitAccelSave();}
+    // (picstop-1017: under implicit_final_resid_stop the shadow pass may become a
+    // Picard pass, so it saves x_k too)
+    if (accel && (!impl_fr_sh || impl_frs_on)) {ImplicitAccelSave();}
     // the off-diagonal mode of THIS pass (the positivity fallback can change it)
     const int odm = od_now;
     // the closure moves only after the first pass, and not at all under
@@ -13343,11 +13386,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         });
       }
       // picres-1017 implicit_final_resid_log: the shadow pass stops here (the system
-      // of the accepted iterate is assembled), logs b - A x and puts the state back
+      // of the accepted iterate is assembled), logs b - A x and puts the state back.
+      // picstop-1017 implicit_final_resid_stop: if the residual is above the threshold
+      // and a pass is left, the state is NOT put back and this assembly goes on to its
+      // linear solve: the shadow pass is the next Picard pass (it = its index)
       if (impl_fr_sh) {
-        ImplicitFinalResid(gnw, igb, igr, igy);
-        converged = true;
-        break;
+        const int frr = ImplicitFinalResid(gnw, igb, igr, igy, it);
+        if (frr != 0) {
+          converged = (frr == 1);
+          break;
+        }
       }
       kdev_slot = std::min(it, 2);
       TmrMark(5);
@@ -13799,6 +13847,38 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 #endif
     rexcl_last = rexcl;
+    // picstop-1017 implicit_conv_est_nofloor: the same maximum over the cells whose new
+    // E is above e_floor (and not masked); only computed when the key is on
+    if (impl_ce_nofl && impl_conv_est) {
+      const int fni = ie - is + 1, fnj = je - js + 1, fnk = ke - ks + 1;
+      const Real rdmin = rmask ? impl_res_dmin : 0.0;
+      const Real rrmax = rmask ? impl_res_rmax : 0.0;
+      auto rx1v = pmy_pack->pcoord->x1v;
+      const Real efc = efl;
+      rnf = 0.0;
+      Kokkos::parallel_reduce("m1_impl_res_nofl",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*fnk*fnj*fni),
+      KOKKOS_LAMBDA(const int n, Real &lmax) {
+        int t = n/fni;
+        const int i = is + (n - t*fni);
+        const int j = js + (t % fnj);
+        t /= fnj;
+        const int k = ks + (t % fnk);
+        const int m = t/fnk;
+        const bool ex = (rdmin > 0.0 && uh(m,IDN,k,j,i) < rdmin) ||
+                        (rrmax > 0.0 && rx1v(m,i) > rrmax) ||
+                        !(iw_(m,M1_IW_EP,k,j,i) > efc);
+        const Real r = iw_(m,M1_IW_RES,k,j,i);
+        if (!ex) {lmax = (r > lmax) ? r : lmax;}
+      }, Kokkos::Max<Real>(rnf));
+#if MPI_PARALLEL_ENABLED
+      {
+      Real g;
+      MPI_Allreduce(&rnf, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      rnf = g;
+      }
+#endif
+    }
     if (trans) {
       lresid /= rhsmax;
     } else {
@@ -13822,6 +13902,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (impl_conv_est && !pc && rprev > 0.0 && !rinrc) {
         Real q = resid/rprev;
         pc = (q < 0.5) && (resid*q/(1.0 - q) < tol_eff);
+        // picstop-1017 implicit_conv_est_nofloor: q from the changes of the cells above
+        // e_floor (none of them moved in either pass: q = 0; no previous value: q = 1)
+        if (impl_ce_nofl) {
+          const Real qn = (rnfprev > 0.0) ? rnf/rnfprev : ((rnf > 0.0) ? 1.0 : 0.0);
+          const bool pn = (qn < 0.5) && (resid*qn/(1.0 - qn) < tol_eff);
+          if (pc && !pn) {impl_frs_sum[6] += 1.0;}
+          if (!pc && pn) {impl_frs_sum[7] += 1.0;}
+          pc = pn;
+        }
+        // picstop-1017 implicit_conv_est_guard = K: not on a change >= K tol_eff
+        if (pc && impl_ce_guard > 0.0 && !(resid < impl_ce_guard*tol_eff)) {
+          pc = false;
+          impl_frs_sum[5] += 1.0;
+        }
         if (pc) {frh = 2;}
       }
       if (onep && it == 0 && !pc && !ocheck && !rinrc) {
@@ -13881,6 +13975,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
     const Real frpo = rprev;   // picres-1017: the change of the pass before
     rprev = resid;
+    rnfprev = rnf;
     if (it == 0) {ores0 = resid;}
     if (it == 1) {ores1 = resid;}
     if (plog) {ImplicitPicardLog(it, nin, resid, lresid, src_on);}
@@ -13913,7 +14008,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
     // picres-1017 implicit_final_resid_log: a converged solve takes one shadow pass
     // (assembly only, ImplicitFinalResid at step (e)); the state is saved here
-    if (impl_frlog && converged) {
+    // picstop-1017: the same shadow pass carries the implicit_final_resid_stop check
+    if (frsh && converged) {
       impl_fr_how = frh;
       impl_fr_it = it + 1;
       impl_fr_tol = tol_eff;
@@ -15421,8 +15517,9 @@ void RadiationM1::ImplicitFinalResidSave(bool restore) {
 //! the cells at e_floor (counted apart: their rows are not satisfied by design),
 //! the times.  Then the saved state is put back (ImplicitFinalResidSave(true)).
 
-void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
+int RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy, int it) {
   (void) igy;
+  impl_fr_nchk += 1;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -15496,6 +15593,35 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
   auto x1f = pmy_pack->pcoord->xx1f;
   M1FrVal fv;
+  for (int q = 0; q < M1_FR_NS; ++q) {fv.s[q] = 0.0;}
+  for (int q = 0; q < 5; ++q) {fv.mx[q] = 0.0;}
+  // picstop-1017: without implicit_final_resid_log only the two maxima the stop needs
+  if (!impl_frlog) {
+    Real m0 = 0.0, m1 = 0.0;
+    Kokkos::parallel_reduce("m1_fr_stopmax",
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &a0, Real &a1) {
+      const int m = idx/nkji;
+      int q = idx - m*nkji;
+      const int k = q/nji + ks;
+      q -= (k - ks)*nji;
+      const int j = q/ni + js;
+      const int i = q - (j - js)*ni + is;
+      const Real x0 = iw_(m,M1_IW_KR,k,j,i), x1 = iw_(m,M1_IW_KP,k,j,i);
+      a0 = (x0 > a0) ? x0 : a0;
+      a1 = (x1 > a1) ? x1 : a1;
+    }, Kokkos::Max<Real>(m0), Kokkos::Max<Real>(m1));
+#if MPI_PARALLEL_ENABLED
+    {
+      Real l2[2] = {m0, m1}, g2[2];
+      MPI_Allreduce(l2, g2, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      m0 = g2[0];
+      m1 = g2[1];
+    }
+#endif
+    fv.mx[0] = m0;
+    fv.mx[1] = m1;
+  } else {
   Kokkos::parallel_reduce("m1_fr_red",
   Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int idx, M1FrVal &v) {
@@ -15539,10 +15665,23 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
     for (int q = 0; q < 5; ++q) {fv.mx[q] = gm[q];}
   }
 #endif
+  }   // (impl_frlog)
+  // picstop-1017 implicit_final_resid_stop: accept (1), go on with this pass (0), or
+  // failed with no pass left (2: non-converged)
+  const Real frthr = std::max(impl_frs, impl_frs_rel*tol);
+  int dec = 1;
+  if (impl_frs_on && !(std::max(fv.mx[0], fv.mx[1]) <= frthr)) {
+    dec = (it < impl_maxit) ? 0 : 2;
+  }
   // the worst cell of rc and of rT: r, theta, rho, T, E/e_floor, tau_x1, rc, rT, rt, rg,
   // i - is (on its block), its block's gid
   constexpr int NW = 12;
   Real wc[2][NW];
+  for (int w = 0; w < 2; ++w) {
+    for (int q = 0; q < NW; ++q) {wc[w][q] = 0.0;}
+  }
+  const double tl0 = M1FrNow();
+  if (impl_frlog) {
   auto x1v = pmy_pack->pcoord->x1v;
   auto x2v = pmy_pack->pcoord->x2v;
   auto gids = pmy_pack->pmb->mb_gid;
@@ -15608,14 +15747,31 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
     }
 #endif
   }
+  }   // (impl_frlog)
   DevExeSpace().fence();
-  const double teval = M1FrNow() - impl_fr_t0;
-  ImplicitFinalResidSave(true);
+  const double tl1 = M1FrNow();
+  impl_frs_sum[8] += tl1 - tl0;   // the worst-cell part of the log (diagnostic only)
+  const double teval = tl1 - impl_fr_t0;
+  if (dec != 0) {ImplicitFinalResidSave(true);}
   impl_fr_sh = false;
-  // per-run sums (ImplicitReport)
+  // picstop-1017 counters (ImplicitReport)
+  if (impl_frs_on) {
+    impl_frs_sum[0] += 1.0;
+    if (dec == 0) {impl_frs_sum[1] += 1.0;}
+    if (dec == 2) {impl_frs_sum[2] += 1.0;}
+    if (impl_fr_nchk == 1) {impl_fr_it1 = impl_fr_it;}
+    if (dec == 1 && impl_fr_nchk > 1) {
+      impl_frs_sum[3] += 1.0;
+      impl_frs_sum[4] += static_cast<Real>(impl_fr_it - impl_fr_it1);
+    }
+  }
+  // per-run sums (ImplicitReport): the final check of each solve
   Real *S = impl_fr_sum;
   const Real mrc = fv.mx[0], mrT = fv.mx[1];
   const Real mw = std::max(mrc, mrT);
+  S[9] += teval;
+  S[10] += impl_fr_tsnap;
+  if (dec != 0) {
   S[0] += 1.0;
   if (mrc > tol) {S[1] += 1.0;}
   if (mrc > 10.0*tol) {S[2] += 1.0;}
@@ -15625,8 +15781,6 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
   if (mrT > tol) {S[6] += 1.0;}
   if (mrT > 10.0*tol) {S[7] += 1.0;}
   if (mw > 10.0*tol) {S[8] += 1.0;}
-  S[9] += teval;
-  S[10] += impl_fr_tsnap;
   S[12] += fv.s[33];
   S[13] += fv.s[32];
   S[14] = std::max(S[14], mrc);
@@ -15637,7 +15791,8 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
   }
   if (!gq) {S[18] += 1.0;}
   if (mw > tol) {S[19] += 1.0;}
-  if (global_variable::my_rank == 0) {
+  }   // (dec != 0: the final check of the solve)
+  if (impl_frlog && global_variable::my_rank == 0) {
     const int ts = t2_solve;
     const char *kind = (ts == M1_T2S_STAGE1) ? "s1" : ((ts == M1_T2S_STAGE2) ? "s2" : "be");
     const char *how[4] = {"none", "plain", "est", "onep"};
@@ -15664,9 +15819,16 @@ void RadiationM1::ImplicitFinalResid(bool gnw, int igb, int igr, int igy) {
       o << " " << wn[w] << "=";
       for (int q = 0; q < NW; ++q) {o << (q ? "," : "") << wc[w][q];}
     }
-    o << " teval=" << teval << " tsnap=" << impl_fr_tsnap << std::endl;
+    o << " teval=" << teval << " tsnap=" << impl_fr_tsnap;
+    if (impl_frs_on) {
+      // picstop-1017: the check number of this solve, its threshold and its outcome
+      const char *dn[3] = {"cont", "acc", "exh"};
+      o << " chk=" << impl_fr_nchk << " thr=" << frthr << " stop=" << dn[dec];
+    }
+    o << std::endl;
     std::cout << o.str();
   }
+  return dec;
 }
 
 } // namespace radm1
