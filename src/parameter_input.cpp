@@ -227,6 +227,7 @@ void ParameterInput::LoadFromStream(std::istream &is) {
     // parse line and add name/value/comment strings (if found) to current block name
     ParseLine(line, param_name, param_value, param_comment);
     AddParameter(pib, param_name, param_value, param_comment);
+    pib->GetPtrToLine(param_name)->origin = kOriginFile;  // MarkAllAsRestart re-tags
   }
   return;
 }
@@ -421,6 +422,7 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
     pl = pb->GetPtrToLine(name);
     if (pl == nullptr && add_absent) {
       AddParameter(pb, name, value, "# added on the command line of a restart");
+      pb->GetPtrToLine(name)->origin = kOriginCmdline;
       if (global_variable::my_rank == 0) {
         std::cout << "### NOTE: parameter '" << name << "' in block '" << block
                   << "' is absent from the restart's input: added from the command "
@@ -435,6 +437,7 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
       std::exit(EXIT_FAILURE);
     }
     pl->param_value.assign(value);   // replace existing value
+    pl->origin = kOriginCmdline;
 
     if (value.length() > pb->max_len_parvalue) pb->max_len_parvalue = value.length();
   }
@@ -461,6 +464,7 @@ bool ParameterInput::DoesParameterExist(std::string block, std::string name) {
   pb = GetPtrToBlock(block);
   if (pb == nullptr) return 0;
   pl = pb->GetPtrToLine(name);
+  if (pl != nullptr) pl->accessed = true;   // a probe counts as a read (unkkey-1017)
   return (pl == nullptr ? false : true);
 }
 
@@ -479,6 +483,7 @@ bool ParameterInput::IsParameterDefaulted(std::string block, std::string name) {
   if (pb == nullptr) return false;
   InputLine *pl = pb->GetPtrToLine(name);
   if (pl == nullptr) return false;
+  pl->accessed = true;
   return (pl->param_comment.compare(default_comment) == 0);
 }
 
@@ -510,6 +515,7 @@ int ParameterInput::GetInteger(std::string block, std::string name) {
     std::exit(EXIT_FAILURE);
   }
 
+  pl->accessed = true;
   std::string val=pl->param_value;
   Unlock();
 
@@ -545,6 +551,7 @@ Real ParameterInput::GetReal(std::string block, std::string name) {
     std::exit(EXIT_FAILURE);
   }
 
+  pl->accessed = true;
   std::string val=pl->param_value;
   Unlock();
 
@@ -580,6 +587,7 @@ bool ParameterInput::GetBoolean(std::string block, std::string name) {
     std::exit(EXIT_FAILURE);
   }
 
+  pl->accessed = true;
   std::string val=pl->param_value;
   Unlock();
 
@@ -626,6 +634,7 @@ std::string ParameterInput::GetString(std::string block, std::string name) {
     std::exit(EXIT_FAILURE);
   }
 
+  pl->accessed = true;
   std::string val=pl->param_value;
   Unlock();
 
@@ -655,6 +664,7 @@ int ParameterInput::GetOrAddInteger(std::string block, std::string name, int def
     pb = FindOrAddBlock(block);
     ss_value << def_value;
     AddParameter(pb, name, ss_value.str(), default_comment);
+    pb->GetPtrToLine(name)->accessed = true;
     ret = def_value;
   }
   Unlock();
@@ -682,6 +692,7 @@ Real ParameterInput::GetOrAddReal(std::string block, std::string name, Real def_
     pb = FindOrAddBlock(block);
     // record with round-trip precision: this text is re-parsed after a restart
     AddParameter(pb, name, RealToString(def_value), default_comment);
+    pb->GetPtrToLine(name)->accessed = true;
     ret = def_value;
   }
   Unlock();
@@ -716,6 +727,7 @@ bool ParameterInput::GetOrAddBoolean(std::string block,std::string name, bool de
     pb = FindOrAddBlock(block);
     ss_value << def_value;
     AddParameter(pb, name, ss_value.str(), default_comment);
+    pb->GetPtrToLine(name)->accessed = true;
     ret = def_value;
   }
   Unlock();
@@ -743,6 +755,7 @@ std::string ParameterInput::GetOrAddString(std::string block, std::string name,
   } else {
     pb = FindOrAddBlock(block);
     AddParameter(pb, name, def_value, "# Default value added at run time");
+    pb->GetPtrToLine(name)->accessed = true;
     ret = def_value;
   }
   Unlock();
@@ -761,6 +774,7 @@ int ParameterInput::SetInteger(std::string block, std::string name, int value) {
   pb = FindOrAddBlock(block);
   ss_value << value;
   AddParameter(pb, name, ss_value.str(), "# Updated during run time");
+  pb->GetPtrToLine(name)->accessed = true;
   Unlock();
   return value;
 }
@@ -776,6 +790,7 @@ Real ParameterInput::SetReal(std::string block, std::string name, Real value) {
   pb = FindOrAddBlock(block);
   // record with round-trip precision: this text is re-parsed after a restart
   AddParameter(pb, name, RealToString(value), "# Updated during run time");
+  pb->GetPtrToLine(name)->accessed = true;
   Unlock();
   return value;
 }
@@ -792,6 +807,7 @@ bool ParameterInput::SetBoolean(std::string block, std::string name, bool value)
   pb = FindOrAddBlock(block);
   ss_value << value;
   AddParameter(pb, name, ss_value.str(), "# Updated during run time");
+  pb->GetPtrToLine(name)->accessed = true;
   Unlock();
   return value;
 }
@@ -808,6 +824,7 @@ std::string ParameterInput::SetString(std::string block, std::string name,
   Lock();
   pb = FindOrAddBlock(block);
   AddParameter(pb, name, value, "# Updated during run time");
+  pb->GetPtrToLine(name)->accessed = true;
   Unlock();
   return value;
 }
@@ -841,4 +858,68 @@ void ParameterInput::ParameterDump(std::ostream& os) {
 
   os<< "#------------------------- PAR_DUMP -------------------------" << std::endl;
   os<< "<par_end>" << std::endl;    // finish with par-end (needed for restart files)
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void ParameterInput::MarkAllAsRestart()
+//  \brief tag every line loaded so far as coming from a restart file's parameter header
+//  (main.cpp, right after the restart load).  An -i input file and command-line keys
+//  loaded afterwards re-tag the lines they set.
+
+void ParameterInput::MarkAllAsRestart() {
+  for (auto &b : block) {
+    for (auto &l : b.line) {l.origin = kOriginRestart;}
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void ParameterInput::ReportUnreadParameters()
+//  \brief unkkey-1017: WARNING (rank 0, once) listing every parameter given in the input
+//  file or on the command line that the code never read or probed (Get*, GetOrAdd*,
+//  DoesParameterExist, IsParameterDefaulted, Set*): typos and keys AthenaK does not have
+//  (e.g. the Athena++ mesh/x2rat) are otherwise silently ignored.  Called by the Driver
+//  after the FIRST cycle completes, because some modules read their keys lazily inside
+//  the first step.  Lines that came only from a restart file's parameter header are not
+//  reported (they include keys read only when setting initial conditions); keys of the
+//  free-form <comment> block are never reported.  Collective with MPI: a key counts as
+//  read if ANY rank read it.  The line order of file/command-line keys is the same on
+//  every rank (keys added by the code are appended after them, and skipped here).
+//  Diagnostic only: no value, dump, or restart content is changed.
+
+void ParameterInput::ReportUnreadParameters() {
+  std::vector<int> unread;
+  std::vector<std::string> names;
+  for (auto &b : block) {
+    if (b.block_name.compare("comment") == 0) continue;
+    for (auto &l : b.line) {
+      if (l.origin != kOriginFile && l.origin != kOriginCmdline) continue;
+      unread.push_back(l.accessed ? 0 : 1);
+      names.push_back(b.block_name + "/" + l.param_name + " = " + l.param_value
+                      + (l.origin == kOriginCmdline ? "  (command line)" : ""));
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  int n = static_cast<int>(unread.size()), nmin = n, nmax = n;
+  MPI_Allreduce(&n, &nmin, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+  MPI_Allreduce(&n, &nmax, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+  if (nmin != nmax) {   // should not happen; report this rank's view only
+    if (global_variable::my_rank == 0) {
+      std::cout << "### WARNING: unread-parameter check skipped (input key lists differ "
+                << "between ranks)" << std::endl;
+    }
+    return;
+  }
+  if (n > 0) {
+    MPI_Allreduce(MPI_IN_PLACE, unread.data(), n, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+  int nun = 0;
+  for (int u : unread) nun += u;
+  if (nun == 0) return;
+  std::cout << "### WARNING: " << nun << " input parameter(s) were never read by the "
+            << "code (typo, or a key AthenaK does not have?):" << std::endl;
+  for (std::size_t i = 0; i < unread.size(); ++i) {
+    if (unread[i]) std::cout << "###   " << names[i] << std::endl;
+  }
 }
