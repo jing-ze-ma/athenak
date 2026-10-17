@@ -1,0 +1,15 @@
+M0= 1.05 rho1=1.074959 T1=1.049455 | LE08 closed form rho1=1.074959 T1=1.049455 (rel 7.8e-15 4.2e-15) | continuous    Mp=1.0000 Tp=1.0270 Ts=1.0270 Tmax=1.0495 Trs=1.0270 Lpre0.1=6.2198e-03 spike_fwhm=0.000e+00 int=0.000e+00 cons=4.4e-16/0.0e+00 Mscheck=0.0e+00
+M0= 1.20 rho1=1.297321 T1=1.194752 | LE08 closed form rho1=1.297321 T1=1.194752 (rel 6.7e-16 3.3e-16) | subcritical   Mp=1.0772 Tp=1.0821 Ts=1.1644 Tmax=1.1948 Trs=1.1206 Lpre0.1=3.1689e-03 spike_fwhm=0.000e+00 int=0.000e+00 cons=2.2e-16/0.0e+00 Mscheck=5.1e-07
+M0= 2.00 rho1=2.286075 T1=2.077570 | LE08 closed form rho1=2.286075 T1=2.077570 (rel 2.2e-16 0.0e+00) | subcritical   Mp=1.3805 Tp=1.6054 Ts=2.2028 Tmax=2.2028 Trs=1.8720 Lpre0.1=2.7544e-03 spike_fwhm=7.054e-04 int=1.132e-04 cons=3.3e-16/0.0e+00 Mscheck=4.1e-07
+M0= 3.00 rho1=3.002168 T1=3.661913 | LE08 closed form rho1=3.002168 T1=3.661913 (rel 1.1e-16 2.2e-16) | subcritical   Mp=1.1940 Tp=3.5538 Ts=4.2254 Tmax=4.2618 Trs=3.5789 Lpre0.1=4.6696e-03 spike_fwhm=2.985e-04 int=2.268e-04 cons=4.4e-16/0.0e+00 Mscheck=2.2e-06
+   digitised M3 figure: max T_gas 4.2086 (le08 4.2618), max T_rad 3.6267 (le08 T_rad at the shock 3.5789, T1 3.6619)
+M0= 5.00 rho1=3.597911 T1=8.557199 | LE08 closed form rho1=3.597911 T1=8.557199 (rel 2.2e-16 2.2e-16) | supercritical Mp=1.2639 Tp=8.5520 Ts=10.7481 Tmax=10.7710 Trs=8.5533 Lpre0.1=2.3736e-02 spike_fwhm=3.095e-05 int=9.330e-05 cons=4.4e-16/0.0e+00 Mscheck=3.1e-05
+M0=27.00 rho1=5.941948 T1=58.761430 | LE08 closed form rho1=5.941948 T1=58.761430 (rel 2.2e-16 2.2e-16) | supercritical Mp=1.0122 Tp=58.7616 Ts=59.4764 Tmax=63.0686 Trs=58.7614 Lpre0.1=2.0873e-01 spike_fwhm=1.227e-06 int=6.121e-06 cons=4.4e-16/0.0e+00 Mscheck=4.5e-11
+M0=30.00 rho1=6.067640 T1=62.940885 | LE08 closed form rho1=6.067640 T1=62.940885 (rel 1.1e-16 0.0e+00) | continuous    Mp=1.0000 Tp=62.8489 Ts=62.8489 Tmax=65.9644 Trs=62.8486 Lpre0.1=2.0109e-01 spike_fwhm=1.350e-06 int=4.861e-06 cons=3.3e-16/2.2e-16 Mscheck=0.0e+00
+   QUOKKA M30 level  1.5: x(T_r) -0.208077 vs -0.208066  x(T) -0.204569 vs -0.204563
+   QUOKKA M30 level   10: x(T_r) -0.198001 vs -0.198002  x(T) -0.197933 vs -0.197934
+   QUOKKA M30 level   30: x(T_r) -0.138128 vs -0.138129  x(T) -0.138126 vs -0.138127
+   QUOKKA M30 level   50: x(T_r) -0.069209 vs -0.069211  x(T) -0.069209 vs -0.069211
+   QUOKKA M30 level   60: x(T_r) -0.024901 vs -0.024902  x(T) -0.024902 vs -0.024903
+   QUOKKA M30 max T 65.96472 vs 65.96435
+M0=50.00 rho1=6.518922 T1=85.515528 | LE08 closed form rho1=6.518922 T1=85.515528 (rel 4.4e-16 2.2e-16) | continuous    Mp=1.0000 Tp=85.2660 Ts=85.2660 Tmax=85.5155 Trs=85.2657 Lpre0.1=1.6116e-01 spike_fwhm=0.000e+00 int=0.000e+00 cons=4.4e-16/2.2e-16 Mscheck=0.0e+00

@@ -1,0 +1,3 @@
+TRANSPORT(IDORT) vs LE08 M1.2  L1 rho 0.0002 Tg 0.0001 Tr 0.0003 pre 0.1310 | Lpre0.1  +6.40% Lpre0.01 +16.46% | Trs -0.033% | Tmax 1.1948 vs 1.1948 (+0.00%)
+TRANSPORT(IDORT) vs LE08 M2    L1 rho 0.0006 Tg 0.0008 Tr 0.0015 pre 0.1548 | Lpre0.1  +7.08% Lpre0.01 +20.91% | Trs +0.627% | Tmax 2.1958 vs 2.2028 (-0.32%)
+TRANSPORT(IDORT) vs LE08 M3    L1 rho 0.0012 Tg 0.0032 Tr 0.0037 pre 0.0882 | Lpre0.1  +2.50% Lpre0.01 +14.62% | Trs +2.215% | Tmax 4.2613 vs 4.2618 (-0.01%)
