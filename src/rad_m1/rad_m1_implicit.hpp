@@ -1073,8 +1073,8 @@ Real M1SphTan(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
 //! lateral faces, (1/V) sum_f +- A_f nhat_f . (w_c + w_nb)/2, w = v E (E = component ec
 //! of iw), with the planar face normals nhat_f (fn2/fn3: Cartesian, constant along the
 //! radial line) and the cs face areas (the canonical areas at a seam).  The x1 faces
-//! carry nothing (w is tangential).  Every lateral face of a cs block has a neighbour (block or
-//! seam), so there is no one-sided case.
+//! carry nothing (w is tangential).  Every lateral face of a cs block has a neighbour
+//! (block or seam), so there is no one-sided case.
 //! corr (the lagged assembly; false in the operator/stencil, whose 19 points cannot hold
 //! it): at a PANEL-SEAM face the mirror pair's mean is the value at the FOOT of the pair
 //! chord, not at the face midpoint; it is moved along the seam by (smid - sfoot) d/ds
