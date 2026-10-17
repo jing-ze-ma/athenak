@@ -239,6 +239,10 @@ constexpr int M1_IBLEND_F    = 1;    // w = smoothstep((f_face - f_lo)/(f_hi - f
                                      // beam or a front (f -> 1) goes upwind.
 constexpr int M1_IBLEND_IDF = 5;     // hrup-1009: idort x smoothstep(|H|/J)
 constexpr int M1_IBLEND_IDA = 6;     // hrup-1009: idort x smoothstep(h asymmetry)
+constexpr int M1_IBLEND_IDFB = 7;   // idortfb-1017 (half-range, opt-in): BEAM-ONLY
+                                     // w = smoothstep_{flo..fhi}(|H|/J), idort_f WITHOUT
+                                     // the face-tau factor 1/(1 + x + x^2/tau0); read
+                                     // only with implicit_thin_switch = none (M1HrFace)
 constexpr int M1_IBLEND_KN = 4;      // hrup-1009 (half-range only): Knudsen x tau
 constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + x + x^2/
                                      // tau0), x = implicit_blend_alpha tau_face

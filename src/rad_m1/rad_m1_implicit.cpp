@@ -291,7 +291,12 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
   }
   Real w = 1.0;
   if (blend) {
-    if (bkind == M1_IBLEND_IDORT || bkind == M1_IBLEND_IDF || bkind == M1_IBLEND_IDA) {
+    if (bkind == M1_IBLEND_IDFB) {
+      // idortfb-1017: the beam factor of idort_f alone (no face optical depth): w =
+      // smoothstep(flo..fhi) of the FS flux factor |H|/J, max or mean over the two cells
+      w = M1BlendWeight(M1_IBLEND_F, bfm, 0.0, 1.0, fbl, fbr, bflo, bfhi);
+    } else if (bkind == M1_IBLEND_IDORT || bkind == M1_IBLEND_IDF ||
+               bkind == M1_IBLEND_IDA) {
       const Real x = balpha*tauf;
       w = 1.0/(1.0 + x + x*x/btau0);
       if (bkind != M1_IBLEND_IDORT) {
@@ -2071,16 +2076,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_blend = M1_IBLEND_IDF;     // hrup-1009, half-range only
   } else if (sbl.compare("idort_a") == 0) {
     impl_blend = M1_IBLEND_IDA;     // hrup-1009, half-range only
+  } else if (sbl.compare("idort_fb") == 0) {
+    impl_blend = M1_IBLEND_IDFB;    // idortfb-1017, half-range only, opt-in
   } else {
     ImplFatal("<rad_m1>/implicit_blend = '" + sbl
               + "' is not a choice (tau | f | tau_f | idort | knudsen | idort_f | "
-              "idort_a)");
+              "idort_a | idort_fb)");
   }
   if (impl_blend >= M1_IBLEND_IDORT &&
       pin->GetOrAddString("rad_m1","implicit_flux_beam",
                           "closure").compare("halfrange") != 0) {
-    ImplFatal("<rad_m1>/implicit_blend = idort | knudsen | idort_f | idort_a needs "
-              "implicit_flux_beam = halfrange");
+    ImplFatal("<rad_m1>/implicit_blend = idort | knudsen | idort_f | idort_a | idort_fb "
+              "needs implicit_flux_beam = halfrange");
   }
   impl_blend_alpha = pin->GetOrAddReal("rad_m1","implicit_blend_alpha",1.0);
   impl_blend_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_r0",1.5);
@@ -2132,6 +2139,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
                 + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi | "
                 + "fse)");
+    }
+    // idortfb-1017: every half-range face takes the thin-switch weight (M1ThinFace) when
+    // the switch is on, so implicit_blend is never read there; idort_fb would be inert
+    if (impl_blend == M1_IBLEND_IDFB && impl_flux == M1_IFLUX_BLEND &&
+        impl_thsw != M1_THSW_NONE) {
+      ImplFatal("<rad_m1>/implicit_blend = idort_fb is read only with "
+                "implicit_thin_switch = none (the switch '" + sts + "' sets every "
+                "half-range face weight itself)");
     }
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
@@ -12498,6 +12513,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         ifw_(m,M1_IFW_DG,k,j,i) = dg;
       });
     }
+    // idortfb-1017 DEBUG: face-weight statistics (M1_WDBG; host check only when unset)
+    {
+      static const bool wdbg_on = (std::getenv("M1_WDBG") != nullptr);
+      if (aphll && it == 0 && wdbg_on) {ImplicitWeightDiag();}
+    }
     // rad-beam-1008 implicit_recon_dgpass: the plm deferred correction of the berthon
     // part re-made on EVERY Picard pass from the iterate's E with the step-frozen face
     // coefficients: G = HCL E_L^plm + HCR E_R^plm (the frozen reduced flux, plm in E
@@ -15228,6 +15248,101 @@ void RadiationM1::ImplicitMusclBound() {
     for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
     if (led) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitWeightDiag
+//! \brief idortfb-1017 DEBUG (environment M1_WDBG=N > 0, every N-th solve; unset: never
+//! called, no effect on any result): the half-range face weights AL of the x1, x2, x3
+//! faces as built for the first Picard pass, binned by the face optical depth tau_f =
+//! (kt_L + kt_R)/2 dx_f (the plain mean; the sp x1 row uses M1FaceAvgX1): per direction
+//! and bin [0,0.1) [0.1,1) [1,10) [10,100) [100,inf) the face count, the counts with
+//! w > 0 and w > 0.5, the sum and the max of w.  A THICK face (tau_f >= 1) with w > 0
+//! is an upwind (excess-diffusion) face set by a noisy formal-solution flux factor.
+//! Summed over ranks; printed by rank 0.
+
+void RadiationM1::ImplicitWeightDiag() {
+  static int ncall = 0;
+  static int nevery = -1;
+  if (nevery < 0) {
+    const char *e = std::getenv("M1_WDBG");
+    nevery = (e != nullptr) ? std::atoi(e) : 0;
+  }
+  if (nevery <= 0) {return;}
+  if ((ncall++) % nevery != 0) {return;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool sph = sph_geom;
+  const bool multi = pmy_pack->pmesh->multi_d;
+  const bool three = pmy_pack->pmesh->three_d;
+  const bool lat = multi && (ifw2.extent_int(0) > 0);
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto cdxf = pmy_pack->pcoord->dxface;
+  auto iw_ = iw;
+  auto f1 = ifw, f2 = ifw2, f3 = ifw3;
+  constexpr int NB = 5, NS = 5;
+  DvceArray1D<Real> st("m1_wdbg", 3*NB*NS);
+  Kokkos::deep_copy(st, 0.0);
+  for (int d = 0; d < 3; ++d) {
+    if (d > 0 && !lat) {break;}
+    if (d == 2 && !(three && ifw3.extent_int(0) > 0)) {break;}
+    const int iu = (d == 0) ? ie + 1 : ie, ju = (d == 1) ? je + 1 : je;
+    const int ku = (d == 2) ? ke + 1 : ke;
+    par_for("m1_wdbg", DevExeSpace(), 0, nmb1, ks, ku, js, ju, is, iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int im = (d == 0) ? i - 1 : i, jm = (d == 1) ? j - 1 : j;
+      const int km = (d == 2) ? k - 1 : k;
+      Real dx, w;
+      if (d == 0) {
+        dx = sph ? cdxf.x1f(m,k,j,i) : mbsize.d_view(m).dx1;
+        w = f1(m,M1_IFW_AL,k,j,i);
+      } else if (d == 1) {
+        dx = sph ? cdxf.x2f(m,k,j,i) : mbsize.d_view(m).dx2;
+        w = f2(m,M1_IFW_AL,k,j,i);
+      } else {
+        dx = sph ? cdxf.x3f(m,k,j,i) : mbsize.d_view(m).dx3;
+        w = f3(m,M1_IFW_AL,k,j,i);
+      }
+      const Real tauf = 0.5*(iw_(m,M1_IW_KT,km,jm,im) + iw_(m,M1_IW_KT,k,j,i))*dx;
+      const int b = (tauf < 0.1) ? 0 : ((tauf < 1.0) ? 1 : ((tauf < 10.0) ? 2
+                                        : ((tauf < 100.0) ? 3 : 4)));
+      const int o = (d*NB + b)*NS;
+      Kokkos::atomic_add(&st(o), 1.0);
+      if (w > 0.0) {Kokkos::atomic_add(&st(o + 1), 1.0);}
+      if (w > 0.5) {Kokkos::atomic_add(&st(o + 2), 1.0);}
+      Kokkos::atomic_add(&st(o + 3), w);
+      Kokkos::atomic_max(&st(o + 4), w);
+    });
+  }
+  auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), st);
+  std::vector<Real> v(3*NB*NS), g(3*NB*NS);
+  for (int q = 0; q < 3*NB*NS; ++q) {v[q] = hs(q);}
+  g = v;
+#if MPI_PARALLEL_ENABLED
+  for (int q = 0; q < 3*NB*NS; ++q) {
+    const int s = q % NS;
+    if (s == 4) {
+      MPI_Allreduce(&v[q], &g[q], 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    } else {
+      MPI_Allreduce(&v[q], &g[q], 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    }
+  }
+#endif
+  if (global_variable::my_rank != 0) {return;}
+  const char *bn[NB] = {"<0.1", "0.1-1", "1-10", "10-100", ">=100"};
+  std::ostringstream os;
+  os << "WDBG call=" << (ncall - 1);
+  for (int d = 0; d < 3; ++d) {
+    for (int b = 0; b < NB; ++b) {
+      const int o = (d*NB + b)*NS;
+      if (g[o] <= 0.0) {continue;}
+      os << " | x" << d + 1 << " tau" << bn[b] << " n=" << g[o] << " w>0=" << g[o+1]
+         << " w>.5=" << g[o+2] << " <w>=" << g[o+3]/g[o] << " wmax=" << g[o+4];
+    }
+  }
+  std::cout << os.str() << std::endl;
 }
 
 } // namespace radm1

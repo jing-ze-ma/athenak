@@ -810,6 +810,7 @@ class RadiationM1 {
   void VetGdHalfRange(const int stage);
   DvceArray5D<Real> ifw2, ifw3;
   void ImplicitLatFaceCoef(bool first);
+  void ImplicitWeightDiag();     // idortfb-1017 DEBUG (env M1_WDBG)
   void CbDebugDump();
   void ImplicitHrSfBuild();   // cbfix-1011: the M1_NIW_HSF block (implicit_hr_face=sf)   // cbfix-1011: env M1_CBDBG=<prefix> per-step face/budget dump
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
