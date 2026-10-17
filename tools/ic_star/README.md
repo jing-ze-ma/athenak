@@ -414,14 +414,27 @@ m1 dumps, on the deck grid AND on its 2x-atmosphere grid. All items must pass:
 
 | item | criterion |
 |---|---|
-| 1 resolution | >= 4.4 cells per atmospheric (density) scale height over 0.95-1.1 R_ph on the deck grid (min of H_rho/dr in the t = 0 startup atmosphere, floor plateau excluded) |
-| 2 convergence | deck vs 2x-atmosphere grid, saturated t >= 4 d, band 0.99-1.1 R_ph: band mean rms <v_r> within 15 %, time-rms profile L2 diff <= 10 %, dominant period (median of the 5 top-rms radii) within 10 % |
+| 1 resolution | >= 4.4 cells per atmospheric (density) scale height over 0.95-1.1 R_ph on the deck grid: min of H_rho/dr, H_rho = -dr/dln<rho> of the t = 0 startup atmosphere, floor-plateau cells (rho < 1.5 x min) excluded |
+| 2 convergence | the SAME floor rule on both runs (column floor = min rho of he_ic_file, startup plateau within 1 %, dfloor and he_sponge_dmax identical), and deck vs 2x-atmosphere grid, saturated t >= 4 d, band 0.99-1.1 R_ph: band mean rms <v_r> within 15 %, time-rms profile L2 diff <= 10 % (L2 over 0.99-1.1 R_ph, pair profile interpolated to the deck radii, \|\|p_d - p_p\|\|/\|\|p_p\|\|), dominant period (FFT, median of the 5 top-rms radii) within 10 % |
 | 3 bounded | no growth (last-third max <= 1.5 x middle-third max) and saturated band rms <= c_s,iso(R_ph) |
-| 4 star unaffected | 0.5-0.9 R_ph < 1 km/s (whole run), 0.9-0.99 R_ph < 3 km/s (saturated state), R_ph(tau_R 2/3) within +-2 %, L_top/L_in within +-5 % after 2 d, \|dM/M\| < 1e-6, Mdot_top < 1e-8 Msun/yr |
-| 5 robustness | summary NON-CONVERGED = 0, no FATAL/DIVERGED/NaN, rc 0, dt_min >= 0.25 dt_median (dt_retry retries reported) |
+| 4 star unaffected | 0.5-0.9 R_ph max \|<v_r>\| < 1 km/s over the whole run; 0.9-0.99 R_ph < 3 km/s on the SATURATED state t >= 4 d (the growth-phase max is printed for information); R_ph(tau_R 2/3) within +-2 % of t = 0 at every dump; L_top/L_in within +-5 % for t >= 2 d; \|dM/M\| < 1e-6; Mdot_top < 1e-8 Msun/yr |
+| 5 robustness | summary NON-CONVERGED = 0, no FATAL/DIVERGED/NaN, rc 0, dt_min >= 0.25 dt_median (hst dt WITHOUT the startup row and the final step truncated to tlim; dt_retry retries reported) |
+
+The three readings in items 2 and 4-5 (0.9-0.99 R_ph on the saturated state, the dt rows, the L2
+band) were confirmed by the USER on 2026-10-17.
+
+**Floor.** The standard floor rule is kept: column floor decade(4e-6 rho_ph) (1e-15 for the BSG),
+dfloor 1e-4 x, he_sponge_dmax 2 x the column floor. The oscillation AMPLITUDE depends on the floor
+level, because the floor plateau sets the top of the oscillating layer (the oscillation fills the
+hydrostatic atmosphere below the plateau and dies 0.02-0.03 R_ph into it): BSG g480 band rms
+9.2 / 6.0 / 3.3 km/s for floors 1e-16 / 1e-15 / 1e-14, while the period changes by <= 3 % and the
+star below the photosphere is unchanged (RESULTS sect. 9). (a') comparisons are therefore valid only
+with the same floor rule on both runs; gate_aprime.py FAILs item 2 otherwise.
 
 Items 3-5 are checked on both runs. BSG production must use a g480-class grid (the P grid,
-~1 cell per H_rho, fails items 1 and 2). Results: regress/RESULTS.md sect. 9.
+~1 cell per H_rho, fails items 1 and 2); g480 itself has 4.24 cells per H_rho with the seam-fixed IC,
+so the candidate BSG production grid is the refined r496 (plateau dr 0.0319 Rsun, 4.46 cells;
+/raven/ptmp/jinma/bsgres_1017/decks/bsgres_r496.athinput, pair r808). Results: regress/RESULTS.md sect. 9.
 
 ## Files
 
