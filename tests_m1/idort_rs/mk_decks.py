@@ -16,7 +16,7 @@ Every deck starts FROM the semi-analytic profile and holds the shock in its own 
 a T^4); tlim = 3 upstream flow-through times of the domain.  Nothing here is a method
 key specific to this test: the method keys are the production sets verbatim.
 
-usage: python mk_decks.py <template_dir> <refs_dir> <out_runs_dir> [--sp-keys FILE]
+usage: python mk_decks.py <template_dir> <refs_dir> <out_runs_dir> [P|L]
   case table (Mach, resolutions, cfl) is CASES below.
 """
 import os
@@ -41,6 +41,16 @@ implicit_hr_damp=0.0 implicit_hr_pos=kill vet_gd_rotate_align=true vet_gd_rotate
 vet_gd_rotate_stretch=0.02 vet_gd_rotate_slope=correct vet_gd_rotate_dt=auto
 vet_gd_twin_state=trans""".split()
 
+# arm P (production): the IDORT rs template names three keys that differ from the
+# production decks (AG Car E1 / He giant, b16b66db effective parameters): it sets
+# implicit_bc_advect = false (production: true, the code default since m1-bcadv; with
+# false the Marshak end faces cannot pass the lab-frame enthalpy flux A E and LE08
+# shocks drift / carry an N-independent T error -- rad_m1_implicit.cpp:2744-2752) and
+# the explicit-transport keys thick_flux = ap_hll / advect_split = true; the production
+# implicit guards/opacity keys below are unset there.  arm L (legacy) = template as is.
+PROD_EXTRA = ("rad_m1/implicit_bc_advect=true rad_m1/thick_flux=none rad_m1/advect_split=false "
+              "rad_m1/implicit_opac_update=true rad_m1/implicit_opac_newton=true "
+              "rad_m1/implicit_lin_cnorm=1.0e-10 rad_m1/implicit_resid_fatal=1.0e-2").split()
 # (Mach, (n_lo, n_hi), cfl list)
 CASES = [(1.05, (512, 1024)), (1.2, (512, 1024)), (2, (512, 1024)), (3, (512, 1024)),
          (5, (1024, 2048)), (27, (1024, 2048)), (50, (1024, 2048))]
@@ -144,6 +154,7 @@ def deck(tpl, kv, m, n, cfl, refpath, sp=False):
 
 def main():
     tdir, refs, out = sys.argv[1:4]
+    arm = sys.argv[4] if len(sys.argv) > 4 else "P"
     tpl = open(os.path.join(tdir, "in.athinput")).read()
     cargs = open(os.path.join(tdir, "args.txt")).read().split()
     lst = []
@@ -158,7 +169,7 @@ def main():
                     if sp and (n != ns[0] or cfl != CFLS[0]):
                         continue
                     geo = "sp" if sp else "cart"
-                    d = os.path.join(out, geo, "rsx_m%s" % mstr(m), "P_n%d_c%g" % (n, cfl))
+                    d = os.path.join(out, geo, "rsx_m%s" % mstr(m), "%s_n%d_c%g" % (arm, n, cfl))
                     os.makedirs(d, exist_ok=True)
                     txt, tlim = deck(tpl, kv, m, n, cfl, refpath, sp)
                     a = list(cargs)
@@ -167,6 +178,8 @@ def main():
                              and not x.startswith("rad_m1/vet_tensor=")]
                         a += ["rad_m1/" + k for k in SP_KEYS]
                     a += ROL2U.split()
+                    if arm == "P":
+                        a += PROD_EXTRA
                     if sp:
                         txt = txt.replace("vet_tensor               = full\n", "")
                     txt = setkeys(txt, a)
@@ -182,7 +195,7 @@ def main():
                     steps = tlim / (cfl * lx / n / (v0 + a0))
                     nz = n * 4 * (4 if sp else 1)
                     lst.append("%s %d %.3e" % (os.path.relpath(d, out), steps, steps * nz))
-    open(os.path.join(out, "list_rsx.txt"), "w").write("\n".join(lst) + "\n")
+    open(os.path.join(out, "list_rsx_%s.txt" % arm), "w").write("\n".join(lst) + "\n")
     print("\n".join(lst))
 
 
