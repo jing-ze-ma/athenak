@@ -580,13 +580,56 @@ void RadiationM1::VetGdInit() {
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
+  // cs-vetgd-1017 (stage S3, rad_m1_vetgd_cs.cpp): the cubed sphere.  The options that
+  // are wedge-specific or not ported are refused; the sp halo layouts (exact / compact
+  // lists, band ring, IPC, NCCL, overlap) do not apply (the cs band is filled by its own
+  // exact copies); the fused twin is swept unfused with this build's cut (the
+  // vet_gd_twin_lowmem path: the same numbers as the fused twin on sp); no walls
+  vgd_csg = pm->use_cubed_sphere;
+  if (vgd_csg) {
+    std::string bad;
+    if (vgd_beam) {bad += " vet_gd_beam (a wedge (theta, phi) patch);";}
+    if (vgd_bandx) {bad += " vet_gd_band_exit;";}
+    if (vgd_async) {bad += " vet_gd_async;";}
+    if (vet_path != 0) {bad += " vet_path = cells;";}
+    if (vgd_seam > 0) {bad += " vet_gd_seam_mask (the sp theta seam);";}
+    if (vgd_smooth > 0) {bad += " vet_gd_smooth;";}
+    if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
+    if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
+    if (vgd_iter > 1) {bad += " vet_gd_iter > 1;";}
+    if (!bad.empty()) {VgdFatal("not available on the cubed sphere (stage S3):" + bad);}
+    vgd_wint = false;
+    vgd_ipc_on = false;
+    vgd_hx_on = false;
+    vgd_hx_named = false;
+    vgd_hx_mode = 0;
+    vgd_ring_par = false;
+    vgd_ring_named = false;
+    // the twin always with THIS build's cut (the vet_gd_twin_lowmem order: the fused
+    // twin's numbers); the plain unfused twin would take the previous build's cut (its
+    // sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
+    // decomposition-dependent
+    if (vgd_twin) {
+      vgd_twfuse = false;
+      vgd_twseq = true;
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam "
+                << "strip + vertex triangle upwind stencil, exact per-shell band copies "
+                << "(the sp halo lists / ring / IPC / overlap keys do not apply), twin "
+                << (vgd_twin ? "unfused (this build's cut)" : "off") << "; hand-over "
+                << "D_rr only (vet_col_lat_offdiag = none, no tangential part: S4)"
+                << std::endl;
+    }
+  }
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
     // the product set: its azimuth step must divide the wedge's phi period (exact walls)
+    // (cs-vetgd-1017: no walls on the cubed sphere, nphi >= 4 only)
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const double m = per*vgd_gl_nphi/(2.0*M_PI);
-    if (vgd_gl_nphi < 4 || std::fabs(m - std::round(m)) > 1.0e-9) {
+    if (vgd_gl_nphi < 4 || (!vgd_csg && std::fabs(m - std::round(m)) > 1.0e-9)) {
       VgdFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
                "the wedge (exact wall maps)");
     }
@@ -603,7 +646,10 @@ void RadiationM1::VetGdInit() {
   // the lateral band: the deepest reach of an upwind point in cells, over every shell:
   // a NORM segment reaches sqrt(r_{l+1}^2 - r_l^2), a TURN segment 2 sqrt(r_l^2 -
   // r_{l-1}^2) sideways at most; cell sizes r dtheta and r sin(theta) dphi
-  {
+  // (cs-vetgd-1017: on the cubed sphere VetGdCsInit, with the cs tables and lists)
+  if (vgd_csg) {
+    VetGdCsInit();
+  } else {
     auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->x1v);
     auto &mbs = pmy_pack->pmb->mb_size;
@@ -659,7 +705,7 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_m3, nmb, c3w, c2w, n, 3);
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
-  VetGdHaloInit();
+  if (!vgd_csg) {VetGdHaloInit();}   // cs-vetgd-1017: cs lists made by VetGdCsInit
   {
     // mem2-1014 vet_gd_band_ring: where every band value the sweep reads comes from an
     // exact-list exchange of this sweep (the halo_exact gate below, no overlap / fused
@@ -1062,6 +1108,11 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
   for (int q = 0; q < n; ++q) {
     for (int c = 0; c < 4; ++c) {d_h(q,c) = d[4*q+c];}
   }
+  if (vgd_csg) {   // cs-vetgd-1017: no walls; the branch of every band cell
+    VetGdCsTab(d);
+    H.alpha = alpha;
+    return;
+  }
   // wall maps: lateral ghost cells outside the mesh in theta or phi hold the other
   // side's intensities; new(d) = old(map(d)), map = nearest set direction to M n_d
   auto &w_h = H.w;
@@ -1364,7 +1415,8 @@ void RadiationM1::VetGdTables(const Real alpha) {
     VetGdBeamInit(d);
   }
   if (first && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> vet_gd: global-direction SC closure on the sp wedge, "
+    std::cout << "<rad_m1> vet_gd: global-direction SC closure on the "
+              << (vgd_csg ? "cubed sphere" : "sp wedge") << ", "
               << ((vgd_gl_nmu > 0) ? ("product GL" + std::to_string(vgd_gl_nmu) + "x"
                                       + std::to_string(vgd_gl_nphi)
                                       + (vgd_gl_stag ? " staggered" : ""))
@@ -4277,6 +4329,10 @@ void RadiationM1::VetGdWall(const int i0, const int i1) {
 //! \brief one sweep (inward then outward) of every direction
 
 void RadiationM1::VetGdSweep() {
+  if (vgd_csg) {   // cs-vetgd-1017: the cubed-sphere sweep (rad_m1_vetgd_cs.cpp)
+    VetGdCsSweep();
+    return;
+  }
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -5346,6 +5402,10 @@ void RadiationM1::VetGdMoments() {
   auto vq_ = vcol_q;
   const Real qlo = vcol_qmin, qhi = vcol_qmax;
   // accel-1009: shell-major thread order (j fastest), matching the LayoutLeft vgd_i
+  // (cs-vetgd-1017: the cubed sphere's own kernel, D_rr about the cell's r_hat)
+  if (vgd_csg) {
+    VetGdCsMoments(0);
+  } else {
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
@@ -5378,6 +5438,7 @@ void RadiationM1::VetGdMoments() {
       tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
     }
   });
+  }  // !vgd_csg
   // vet_gd_thin_taumin > 0: taper the LATERAL parts (LAT1..LAT5: D_r,lat and the
   // tangential anisotropy, both lagged terms of the face equations) to 0 in the far thin
   // top, log-linearly from 1 at tau_top = 10 taumin to 0 at tau_top = taumin (tau_top of
@@ -5445,6 +5506,10 @@ void RadiationM1::VetGdMoments() {
   const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap, q0 = marshak_q;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
+  if (vgd_csg) {   // cs-vetgd-1017: the same q about the cs cell's r_hat
+    VetGdCsMoments(1);
+    return;
+  }
   par_for("m1_vgd_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -5527,6 +5592,10 @@ void RadiationM1::VetGdSource() {
     cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
   });
   vgd_cur = DevExeSpace();
+  if (vgd_csg) {   // cs-vetgd-1017: the cs band copies
+    VetGdCsSource();
+    return;
+  }
   VetGdHaloCs(vgd_cs, ilo, ie);
 }
 
@@ -5776,7 +5845,9 @@ void RadiationM1::VetGdPost() {
 #endif
   // the band is capped at the block size: a read beyond it would be clamped (inexact
   // sweep).  Checked at every build: FATAL unless vet_gd_allow_clamp = true (warning)
-  if (vgd_capped && vgd_nclamp_all > vgd_nclamp_seen) {
+  // (cs-vetgd-1017: on the cubed sphere every clamped read counts: the band depth
+  // there is a bound with a margin, not an exact reach)
+  if ((vgd_capped || vgd_csg) && vgd_nclamp_all > vgd_nclamp_seen) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd: " << (vgd_nclamp_all - vgd_nclamp_seen)
                 << " lateral reads were CLAMPED to the band (all ranks) at cycle "
@@ -5789,6 +5860,7 @@ void RadiationM1::VetGdPost() {
     }
     vgd_nclamp_seen = vgd_nclamp_all;
   }
+  if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP");}   // cs-vetgd-1017 gate dump
   // debug (gate): VGD_DUMP_I=<file>: rank 0's intensities incl. ghosts, first build
   const char *fi = std::getenv("VGD_DUMP_I");
   if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
@@ -6696,7 +6768,8 @@ void RadiationM1::VetGdTwin(const int stage) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int ilo = is + vlat_icut;
-  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3;
+  // (cs-vetgd-1017: mesh nx2 x nx3 per panel; npanels = 1 off the cubed sphere, exact)
+  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
   auto tt_ = tau_ten;
   // shell means over the active lateral cells (all ranks) of a(m, c, k+og, j+og, i)
   // (exp of it when ex): no generic lambda around the device kernel (nvcc)
@@ -6897,6 +6970,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     vgd_noq = true;
     VetGdMoments();
     vgd_noq = false;
+    if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP_TW");}   // cs-vetgd-1017 gate dump
     if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
     par_for("m1_vgd_tw_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -7466,7 +7540,8 @@ void RadiationM1::VetGdTwinTrans() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int ilo = indcs.is + vlat_icut;
   const int og = vgd_w - indcs.ng;
-  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3;
+  // (cs-vetgd-1017: mesh nx2 x nx3 per panel; npanels = 1 off the cubed sphere, exact)
+  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
   if (vgd_twtb.extent_int(0) != 5*c1) {Kokkos::realloc(vgd_twtb, 5*c1);}
   Kokkos::deep_copy(vgd_twtb, 0.0);
   auto tb_ = vgd_twtb;

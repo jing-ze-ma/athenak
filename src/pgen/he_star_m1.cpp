@@ -455,6 +455,15 @@ void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
 }  // namespace
 
 namespace {
+//! cs-port-1016: the kinetic energy of a cell from the CONSERVED momenta.  On the cubed
+//! sphere the transverse momenta are COVARIANT on the panel basis (angle cos c between
+//! e_xi and e_eta), so KE = (m1^2 + (m2^2 + m3^2 - 2 c m2 m3)/(1 - c^2))/(2 d); the plain
+//! sum of squares (the sp/Cartesian form, kept textually below) is wrong by the cross
+//! term at every off-midline cell with transverse motion
+KOKKOS_INLINE_FUNCTION
+Real HsKeCs(const Real m1, const Real m2, const Real m3, const Real d, const Real c) {
+  return 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))/d;
+}
 void HeStarGravity(Mesh *pm, const Real bdt);
 void HeStarBC(Mesh *pm);
 void HeStarHist(HistoryData *pdata, Mesh *pm);
@@ -2505,6 +2514,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem","he_clump")) {
     hs_cl_on_ = pin->GetBoolean("problem","he_clump");
   }
+  if (hs_cl_on_ && pmy_mesh_->use_cubed_sphere) {
+    // cs-port-1016: the test clump reads x2v, x3v as (theta, phi) (panel coordinates on
+    // the cubed sphere): refused instead of a silently misplaced clump
+    HsFatal("problem/he_clump (test) is spherical-polar only (x2v, x3v read as theta, "
+            "phi)", __LINE__);
+  }
   if (hs_cl_on_) {
     hs_cl_r_ = pin->GetReal("problem","he_clump_r");
     hs_cl_th_ = pin->GetReal("problem","he_clump_th");
@@ -3048,6 +3063,8 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     }
     return;
   }
+  const bool hcsg = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
+  auto hccl = pmbp->pcoord->cos_cell;
   par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
@@ -3056,7 +3073,9 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
     const Real f = exp(-bdt*rate*w);
     const Real d = u0(m,IDN,k,j,i);
-    const Real ke0 = 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+    const Real ke0 = hcsg ? HsKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i), u0(m,IM3,k,j,i), d,
+                                   hccl(m,k,j))
+                          : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                           + SQR(u0(m,IM3,k,j,i)))/d;
     u0(m,IM1,k,j,i) *= f;
     u0(m,IM2,k,j,i) *= f;
@@ -3153,6 +3172,8 @@ void HeStarBC(Mesh *pm) {
   // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
   auto &x1fb = pmbp->pcoord->xx1f;
+  const bool hcsb = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
+  auto hcclb = pmbp->pcoord->cos_cell;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -3161,7 +3182,9 @@ void HeStarBC(Mesh *pm) {
           != BoundaryFlag::user) continue;
       const int ia = lo ? is : ie;
       const Real da = uh(m,IDN,k,j,ia);
-      const Real kea = 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
+      const Real kea = hcsb ? HsKeCs(uh(m,IM1,k,j,ia), uh(m,IM2,k,j,ia), uh(m,IM3,k,j,ia),
+                                     da, hcclb(m,k,j))
+                            : 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - da*phicc(m,k,j,ia);
       const bool inflo = lo && binf, outfl = !lo && bout;
@@ -3319,8 +3342,10 @@ void HeStarBC(Mesh *pm) {
         Real dltdphi = 0.0;
         if (bhtg) {
           const Real d1 = uh(m,IDN,k,j,ia1);
-          const Real e1 = uh(m,IEN,k,j,ia1) - 0.5*(SQR(uh(m,IM1,k,j,ia1))
-                          + SQR(uh(m,IM2,k,j,ia1)) + SQR(uh(m,IM3,k,j,ia1)))/d1
+          const Real e1 = uh(m,IEN,k,j,ia1) - (hcsb ? HsKeCs(uh(m,IM1,k,j,ia1),
+                          uh(m,IM2,k,j,ia1), uh(m,IM3,k,j,ia1), d1, hcclb(m,k,j))
+                          : 0.5*(SQR(uh(m,IM1,k,j,ia1))
+                          + SQR(uh(m,IM2,k,j,ia1)) + SQR(uh(m,IM3,k,j,ia1)))/d1)
                           - d1*phicc(m,k,j,ia1);
           const Real dph1 = pwc(m,k,j,ia) - pwc(m,k,j,ia1);
           if (dph1 != 0.0) dltdphi = (ta - eos.Temperature(d1, e1, ta))/dph1;
@@ -3435,6 +3460,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const Real chc = pm1->chat/pm1->c_light;
   const Real sprate = hs_sp_rate_, spr0 = hs_sp_r0_, sprt = hs_rtop_, spd = hs_sp_dmax_;
   const bool sprad = hs_sp_rad_;
+  const bool hcsh = pm->use_cubed_sphere;   // cs-port-1016: metric KE
+  auto hccl_ = pmbp->pcoord->cos_cell;
   array_sum::GlobalSum sum_this;
   Kokkos::parallel_reduce("hs_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
@@ -3477,8 +3504,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       if (r > spr0 || low) {
         const Real wsp = low ? 1.0 : SQR((r - spr0)/(sprt - spr0));
         const Real kes = sprad ? 0.5*SQR(u0(m,IM1,k,j,i))/d
+                               : (hcsh ? HsKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
+                                                u0(m,IM3,k,j,i), d, hccl_(m,k,j))
                                : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
-                                      + SQR(u0(m,IM3,k,j,i)))/d;
+                                      + SQR(u0(m,IM3,k,j,i)))/d);
         h.the_array[23] = 2.0*sprate*wsp*kes*vol;
       }
     }
@@ -3486,7 +3515,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       const Real d = w0(m,IDN,k,j,i);
       const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
       h.the_array[7] = d*vol;
-      h.the_array[8] = 0.5*d*(v1*v1 + v2*v2 + v3*v3)*vol;
+      // cs-port-1016: w0 holds the CONTRAVARIANT v^a on the cubed sphere
+      h.the_array[8] = hcsh ? 0.5*d*(v1*v1 + v2*v2 + v3*v3
+                                     + 2.0*hccl_(m,k,j)*v2*v3)*vol
+                            : 0.5*d*(v1*v1 + v2*v2 + v3*v3)*vol;
       h.the_array[9] = 0.5*d*v1*v1*vol;
       h.the_array[10] = d*v1*vol;
       h.the_array[11] = eos.Pressure(d, w0(m,IEN,k,j,i))*vol;

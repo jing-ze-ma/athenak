@@ -143,7 +143,16 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // seam face state is averaged at the start of each solve (CubedSeamFaceAverage).
     // implicit_vimp too (its cs form: ImplicitVimpBuild, the face-normal work row)
     if (impl_solver != M1_ISOLV_BICGSTAB) {wcs += " implicit_solver != bicgstab;";}
-    if (impl_prec != 2) {wcs += " implicit_precond != rbgs_fwd;";}
+    // cs-port-1016 (CS_VETGD.md S2): implicit_precond = mg as well.  mg is algebraic and
+    // block-local (x1 line solves, one red-black transverse sweep, Galerkin 2x2
+    // aggregates inside a MeshBlock, rad_m1_precond.cpp): it reads no geometry, and its
+    // only communication, the z0 halo of the fine residual, is ImplicitKrylovHalo, i.e.
+    // the cs seam (no-resample, mirror-pair) exchange of the Krylov vector itself.
+    // mg_gc / mg_gf stay refused (band / Fourier coarse spaces of a periodic x2/x3 mesh;
+    // the cs analogue is mg_ylm, stage 3 list).  The cs DEFAULT stays rbgs_fwd.
+    if (impl_prec != 2 && impl_prec != 3) {
+      wcs += " implicit_precond != rbgs_fwd | mg;";
+    }
     if (impl_halo_mpi) {wcs += " implicit_halo_mpi = true;";}
     // CS1: the canonical seam geometry needs the equiangular panel of -1..1 with the same
     // cell count along both tangential axes, and the one-sided tangential derivatives
@@ -161,7 +170,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
         << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS3) supports only "
         << "transport = implicit, closure = eddington | vet_col (radial axis), "
         << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
-        << "= bicgstab, implicit_precond = rbgs_fwd, no "
+        << "= bicgstab, implicit_precond = rbgs_fwd | mg, no "
         << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
         << wcs << why << std::endl
         << "See /viper/ptmp2/jinma/rt_design_1003/CS_IMPLICIT_VET.md sect. 4."

@@ -2294,6 +2294,40 @@ class RadiationM1 {
   void VetGdRealDiag();
   int vgd_rdiag = -1, vgd_rdcnt = 0;   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
+  // cs-vetgd-1017 (CS_VETGD.md sect. 4A, stage S3; rad_m1_vetgd_cs.cpp): vet_gd on the
+  // cubed sphere.  The band of a block is its OWN panel's index space (as on sp), and
+  // the strips of the four neighbour panels are stored UNFOLDED next to the panel edges
+  // (a neighbour cell at depth d from the seam sits where the mirror image of the own
+  // cell at depth d would continue the index line; equal N, so the pairing is one to
+  // one).  Every band position holds one global cell (or none: the corner quadrants
+  // beyond two edges, depths >= N), filled per shell by exact keyed copies (on-rank +
+  // MPI).  The upwind point is found in Cartesian, its panel by the largest normal
+  // component and its (xi, eta) by the gnomonic chart; reads are bilinear in that
+  // panel's native indices, the seam strip (half a cell on either side) linear across
+  // the seam with each side's own tangential coordinate, the cube vertex triangle by
+  // spherical barycentric weights of its 3 cells.  No walls, no direction maps.
+  bool vgd_csg = false;               // vet_gd on the cubed sphere
+  int vgd_csn = 0;                    // cells per panel edge
+  DvceArray4D<Real> vgd_csr;          // (m, k, j, 3): band cell unit vector, 0 none
+  std::vector<double> vgd_csr_h;      // the same on the host (double), (m, k, j, 3)
+  DvceArray2D<int> vgd_csblk;         // (m, 3): panel, global j0, global k0
+  DvceArray3D<int> vgd_cscm;          // (p, q, 7): q (a,t) -> p unfolded (J,K) affine
+  DvceArray2D<int> vgd_csnb;          // (p, 4): panel across side -x2, +x2, -x3, +x3
+  DvceArray2D<int> vgd_csloc;         // (e, 6): on-rank copy dst (m,k,j) <- src (m,k,j)
+  DvceArray2D<int> vgd_cssl, vgd_csrl;   // (e, 3): MPI send src / recv dst (m,k,j)
+  std::vector<int> vgd_csprk;         // partner ranks
+  std::vector<int> vgd_csps, vgd_cspn, vgd_cspr, vgd_cspm;   // send/recv displ, count
+  DvceArray1D<Real> vgd_cssb, vgd_csrb;   // message buffers
+  int vgd_csnloc = 0, vgd_csnsnd = 0, vgd_csnrcv = 0;
+  void VetGdCsInit();
+  void VetGdCsSource();
+  void VetGdCsSweep();
+  void VetGdCsMoments(const int part);   // 0: D_rr -> LAT0, 1: surface q
+  void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
+  void VetGdCsDump(const char *env);
+  template <class V>
+  void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc);
+  Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_csown;   // (m, k, j, 3) owner
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;

@@ -1405,7 +1405,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tangential")) {
       vgd_tan = pin->GetBoolean("rad_m1","vet_gd_tangential");
+      // cs-vetgd-1017: the tangential anisotropy on the skew cs faces is stage S4
+      if (vgd_tan && pmy_pack->pmesh->use_cubed_sphere) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_tangential = true is not available "
+                  << "on the cubed sphere (stage S4)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
+    // cs-vetgd-1017 (stage S3): on the cubed sphere the default is false (D_rr only)
+    if (vgd_on && pmy_pack->pmesh->use_cubed_sphere) {vgd_tan = false;}
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_nside")) {
       vgd_nside = pin->GetInteger("rad_m1","vet_gd_nside");
     }
@@ -1449,6 +1458,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                     << "' (none | lagged | operator)" << std::endl;
           std::exit(EXIT_FAILURE);
         }
+      }
+      // cs-vetgd-1017 (stage S3): on the cubed sphere vet_gd hands over D_rr only; the
+      // D_r,lat operator form on the skew cs faces (M1CsLat) is stage S4.  The default
+      // there is none (a cs soft default, as rbgs_fwd / be); lagged / operator named
+      // are refused
+      if (vgd_on && pmy_pack->pmesh->use_cubed_sphere) {
+        if (pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag") && vlat_odm != 0) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_m1>/vet_col_lat_offdiag = lagged | operator "
+                    << "is not available on the cubed sphere (stage S3: D_rr only; "
+                    << "the cs operator form is stage S4): use none" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        vlat_odm = 0;
       }
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
         vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");
