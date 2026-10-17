@@ -1,0 +1,25 @@
+# New BSG (Ma, Bildsten & Jiang 2026 model; L. Ma MESA_profile_combined_cgs.txt md5 f2a08bad):
+# L = MESA median 4 pi r^2 F_r, R_ph = Ma's 53.0298 Rsun (T_eff 15488 K = deck P), M 20 Msun
+# point mass; X 0.7 Z 0.008 GS98 (SK67 / Ma+2026 mixture).
+name: bsg_H07
+# 10-16 DIAGNOSTIC variant (not a production star): MESA m(r) x 1.4286, so g x 1.4286 and the atmosphere
+# scale height H_P = P/(rho g) at R_ph about x0.7 (the cut-off period test, RESULTS sect. 7)
+star:
+  L: 5.581461e38
+  R_ph_rsun: 53.0298
+  M: 20.0
+composition: {X: 0.7, Y: 0.292, Z: 0.008, mixture: GS98, a_metal: 16.0}
+mesa_profile:
+  path: /raven/ptmp/jinma/ic_star_cache/raw/mesa/bsg_ma2026_MESA_profile_combined_cgs.txt
+  format: cgs6
+  r_max_rsun: 48.32
+  gm_scale: 1.4286     # the file's last row (52.49 Rsun, T 63 kK, after a 4.2 Rsun gap) is not
+                        # an envelope row; both earlier builders cut at 48.318 Rsun
+opacity:
+  # TOPS X 0.7 Z 0.008 rho 1e-14..1 (Viper bsg_1001/opac); the low-rho file could not be fetched
+  # (LANL down 10-15): extension from log rho -14 (= bsg_newsetup_1015 ext2nolo)
+  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/bsg_x0.7_z0.008_hi.dat
+r_in: {rule: explicit, r_rsun: 20.0, bottom_rsun: 18.0}   # = the gate decks (g480 ghost margin needs < 18.3)
+r_top: {x1max_cm: 5.5656009644e12}   # = bsg_s0p_std_g480.athinput (80 Rsun)
+seam:
+  deck: /raven/ptmp/jinma/bsg_newsetup_1015/decks/bsg_s0p_std_g480.athinput
