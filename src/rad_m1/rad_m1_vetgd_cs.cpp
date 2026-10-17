@@ -533,6 +533,28 @@ void RadiationM1::VetGdCsInit() {
     }
   }
   vgd_csnloc = static_cast<int>(loc.size()/6);
+  // the owner of every band position for the sweep's direct on-rank reads: the own
+  // interior and on-rank owners' interiors, else (remote, none) the position itself
+  Kokkos::realloc(vgd_csown, nmb, c3w, c2w, 3);
+  {
+    auto o_h = Kokkos::create_mirror_view(vgd_csown);
+    for (int m = 0; m < nmb; ++m) {
+      for (int kk = 0; kk < c3w; ++kk) {
+        for (int jj = 0; jj < c2w; ++jj) {
+          o_h(m,kk,jj,0) = m;
+          o_h(m,kk,jj,1) = kk;
+          o_h(m,kk,jj,2) = jj;
+        }
+      }
+    }
+    for (int e = 0; e < vgd_csnloc; ++e) {
+      const int *x = &loc[6*e];
+      o_h(x[0],x[1],x[2],0) = x[3];
+      o_h(x[0],x[1],x[2],1) = x[4];
+      o_h(x[0],x[1],x[2],2) = x[5];
+    }
+    Kokkos::deep_copy(vgd_csown, o_h);
+  }
   Kokkos::realloc(vgd_csloc, std::max(vgd_csnloc, 1), 6);
   {
     auto l_h = Kokkos::create_mirror_view(vgd_csloc);
@@ -602,9 +624,10 @@ void RadiationM1::VetGdCsInit() {
 //! with its owner's interior value (exact copies; the shell range chunked to the buffer)
 
 template <class V>
-void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1) {
+void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
+                              const bool loc) {
   auto a_ = a;
-  const int nl = vgd_csnloc;
+  const int nl = loc ? vgd_csnloc : 0;
   {
     const int ni = i1 - i0 + 1;
     if (nl > 0 && ni > 0) {
@@ -667,10 +690,10 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1) {
 
 template void RadiationM1::VetGdCsHalo<DvceArray5D<Real>>(DvceArray5D<Real> &a,
                                                          const int nv, const int i0,
-                                                         const int i1);
+                                                         const int i1, const bool loc);
 template void RadiationM1::VetGdCsHalo<RadiationM1::VgdRag>(RadiationM1::VgdRag &a,
                                                             const int nv, const int i0,
-                                                            const int i1);
+                                                            const int i1, const bool loc);
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsSource
@@ -679,7 +702,7 @@ template void RadiationM1::VetGdCsHalo<RadiationM1::VgdRag>(RadiationM1::VgdRag 
 void RadiationM1::VetGdCsSource() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int ilo = indcs.is + vlat_icut, ie = indcs.ie;
-  VetGdCsHalo(vgd_cs, 2, ilo, ie);
+  VetGdCsHalo(vgd_cs, 2, ilo, ie, true);
   Kokkos::fence();
 }
 
@@ -737,6 +760,7 @@ void RadiationM1::VetGdCsSweep() {
   auto bl_ = vgd_csblk;
   auto cm_ = vgd_cscm;
   auto nb_ = vgd_csnb;
+  auto ow_ = vgd_csown;
   const int nc = vgd_csn;
   const Real h = 0.5*M_PI/nc;
   const bool bfc = vet_bc_face;
@@ -849,6 +873,13 @@ void RadiationM1::VetGdCsSweep() {
             }
           } else {
             const bool want_in = inw || (typ == 3);
+            // the intensity of a stencil cell: its owner's interior when on this rank
+            // (stream order: shell iu is complete; the other branch of shell i, which
+            // this launch writes, is masked), else the band copy of the remote value
+            auto rdi = [&](const int e) -> Real {
+              const int kk = st.k[e], jj = st.j[e];
+              return vi_(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
+            };
             bool ok[4];
             bool all = true;
             for (int e = 0; e < st.n; ++e) {
@@ -860,14 +891,14 @@ void RadiationM1::VetGdCsSweep() {
             if (all) {
               ivu = 0.0;
               for (int e = 0; e < st.n; ++e) {
-                ivu += st.w[e]*vi_(m,d,st.k[e],st.j[e],iu);
+                ivu += st.w[e]*rdi(e);
               }
             } else {
               Real ws = 0.0, vs = 0.0;
               for (int e = 0; e < st.n; ++e) {
                 if (ok[e] && st.w[e] > 0.0) {
                   ws += st.w[e];
-                  vs += st.w[e]*vi_(m,d,st.k[e],st.j[e],iu);
+                  vs += st.w[e]*rdi(e);
                 }
               }
               ivu = (ws > 0.0) ? vs/ws : -1.0;
@@ -909,7 +940,7 @@ void RadiationM1::VetGdCsSweep() {
                 if (!(st.w[e] > 0.0) || !(ok[e] || ivu < 0.0)) {continue;}
                 const int kk = st.k[e], jj = st.j[e];
                 const Real cq = exp(cs_(m,0,kk,jj,iu)), sq = exp(cs_(m,1,kk,jj,iu));
-                const Real iq = (ivu < 0.0) ? sq : vi_(m,d,kk,jj,iu);
+                const Real iq = (ivu < 0.0) ? sq : rdi(e);
                 Real vq;
                 if (spl) {
                   vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
@@ -935,7 +966,7 @@ void RadiationM1::VetGdCsSweep() {
         vi_(m,d,k,j,i) = iv;
       });
       Kokkos::Timer th;
-      VetGdCsHalo(vgd_i, n, i, i);
+      VetGdCsHalo(vgd_i, n, i, i, false);   // remote band only (on-rank: read direct)
       vgd_thalo += th.seconds();
     }
   }

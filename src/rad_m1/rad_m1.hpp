@@ -2303,7 +2303,8 @@ class RadiationM1 {
   void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
   void VetGdCsDump(const char *env);
   template <class V>
-  void VetGdCsHalo(V &a, const int nv, const int i0, const int i1);
+  void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc);
+  Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_csown;   // (m, k, j, 3) owner
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
