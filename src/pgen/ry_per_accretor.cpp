@@ -2260,6 +2260,11 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
                          RochePot3(p, r, std::sin(th), ph - e))/(2.0*e*r*std::sin(th));
         const Real g = std::sqrt(gt*gt + gr*gr + gp*gp);
         const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, r, std::sin(th), ph);
+        // only inside the photosphere (psi > 0, the diffusion regime the von Zeipel flux
+        // describes); above it the wall face carries no imposed flux (reflecting): the
+        // column's F capped at the top over the whole outer wall drained the star (the first
+        // try imposed 1.4x L_r out sideways; eint <= 0 retries at the walls)
+        if (!(phis - w > 0.0)) return 0.0;
         return RadColAt(rcol_f_, phis - w)*gt/std::fmax(g, 1.0e-30);
       };
       Real lk = 0.0;
