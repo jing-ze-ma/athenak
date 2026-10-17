@@ -332,15 +332,17 @@ Real sz_ = 0.0;                // sigma_z of the nozzle (Rsun)
 // etotgrav double-count guard); (3) the envelope IC, the column T(psi), the radiation
 // reference G(psi), the ambient rho_amb and the relaxation targets on the 3-D equipotentials
 // psi = Phi_s - Phi_wb(r, theta, phi) (column by (m,k,j)); (4) problem/theta_bc = reflect
-// (default; mesh ix2/ox2_bc = reflect) | outflow (mesh ix2/ox2_bc = user: ghosts by the
-// isothermal hydrostatic walk in theta in the true Phi at the edge cell's T, v_theta a diode
-// (outflow only), v_r, v_phi copied; M1 ghosts dark, use <rad_m1>/implicit_bc_x2min/max =
-// marshak; the mass, Lz and energy through the theta faces join Mout, Jout and the hydro
-// energy out), and problem/theta_sponge_deg / theta_sponge_tau (a velocity sponge in a
+// (default; mesh ix2/ox2_bc = reflect) | outflow | hse (mesh ix2/ox2_bc = user: ghosts by
+// the isothermal hydrostatic walk in theta in the true Phi at the edge cell's T; outflow:
+// v_theta a diode (outflow only), v_r, v_phi copied; hse: a closed wall, v from the mirror
+// cell with v_theta flipped; M1 ghosts reflecting, dark only with <rad_m1>/implicit_bc_x2min
+// /max = marshak; the mass, Lz and energy through the theta faces join Mout, Jout and the
+// hydro energy out), and problem/theta_sponge_deg / theta_sponge_tau (a velocity sponge in a
 // layer next to each theta wall, linear ramp, outside the envelope, KE removed from E);
 // (5) the inertial Lz bookkeeping with the cylindrical radius r sin theta.
 bool p3_ = false;
-bool thout_ = false;           // theta_bc = outflow
+bool thout_ = false;           // theta_bc = outflow | hse (user theta faces of this pgen)
+bool thhse_ = false;           // theta_bc = hse: closed hydrostatic wall (v_theta mirrored)
 Real thsp_w_ = 0.0, thsp_tau_ = 0.0;   // theta sponge width (rad), time (code)
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
 DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
@@ -1000,14 +1002,26 @@ void RyPerBCEnv(Mesh *pm) {
       }
     }
   });
-  // accretor-3d-1017: problem/theta_bc = outflow (mesh ix2/ox2_bc = user): the theta ghosts
-  // continue the edge cell isothermally (its T) and hydrostatically in the TRUE 3-D Roche
-  // potential along theta (the outer-x1 hse walk of the general EOS, capped at e^hse_cap),
-  // v_theta a diode (outflow only), v_r and v_phi copied; radiation ghosts dark (vacuum,
-  // with the implicit Marshak face <rad_m1>/implicit_bc_x2min/max = marshak)
+  // accretor-3d-1017: problem/theta_bc = outflow | hse (mesh ix2/ox2_bc = user): the theta
+  // ghosts continue the edge cell isothermally (its T) and hydrostatically in the TRUE 3-D
+  // Roche potential along theta (the outer-x1 hse walk of the general EOS, capped at
+  // e^hse_cap), so the wall face carries the hydrostatic pressure (a plain reflecting wall
+  // gives the face the edge cell's own pressure and leaves the theta component of the tidal
+  // and centrifugal force unbalanced there: v_theta ~ 7 km/s in the deep envelope at the
+  // walls, Raven s3dA 10-17).  outflow: v_theta a diode (outflow only), v_r, v_phi copied
+  // from the edge cell; hse: a closed wall, v (all three, v_theta sign-flipped) from the
+  // mirror cell.  Radiation ghosts: reflecting (as the implicit default for these faces;
+  // the star's interior reaches the walls, a dark face there drains it), dark only with
+  // <rad_m1>/implicit_bc_x2min/max = marshak.
   if (!(p3 && thout_ && gen)) return;
   const int js = indcs.js, je = indcs.je;
   const int n1m1 = indcs.nx1 + 2*ng - 1;
+  const bool thh = thhse_;
+  int rm2lo = 1, rm2hi = 1;
+  if (rad) {
+    rm2lo = (pmbp->pradm1->ibc_x2min == radm1::M1_IBC_MARSHAK) ? 2 : 1;
+    rm2hi = (pmbp->pradm1->ibc_x2max == radm1::M1_IBC_MARSHAK) ? 2 : 1;
+  }
   par_for("ryper_bcth", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int i) {
     const Real ph = x3v(m,k), r = x1v(m,i);
@@ -1027,23 +1041,31 @@ void RyPerBCEnv(Mesh *pm) {
         ea = eosd.EnergyFromTemperature(da, ta);
       }
       const Real pa = RochePot3(p, r, sin(x2v(m,ja)), ph);
-      const Real v2 = (sd == 0) ? fmin(v2a, 0.0) : fmax(v2a, 0.0);
       for (int g=0; g<ng; ++g) {
         const int jg = (sd == 0) ? js - 1 - g : je + 1 + g;
+        const int jm = (sd == 0) ? js + g : je - g;     // the mirror cell
         const Real pg = RochePot3(p, r, sin(x2v(m,jg)), ph);
         Real dg = da, eg = ea, tw = ta;
         WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
         if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
         dg = fmax(fmin(dg, da*exp(cap)), dfl);
+        Real v1 = v1a, v2 = (sd == 0) ? fmin(v2a, 0.0) : fmax(v2a, 0.0), v3 = v3a;
+        if (thh) {
+          const Real dm = u0(m,IDN,k,jm,i);
+          v1 = u0(m,IM1,k,jm,i)/dm;
+          v2 = -u0(m,IM2,k,jm,i)/dm;
+          v3 = u0(m,IM3,k,jm,i)/dm;
+        }
         u0(m,IDN,k,jg,i) = dg;
-        u0(m,IM1,k,jg,i) = dg*v1a;
+        u0(m,IM1,k,jg,i) = dg*v1;
         u0(m,IM2,k,jg,i) = dg*v2;
-        u0(m,IM3,k,jg,i) = dg*v3a;
+        u0(m,IM3,k,jg,i) = dg*v3;
         u0(m,IEN,k,jg,i) = eosd.EnergyFromTemperature(dg, ta)
-                           + 0.5*dg*(v1a*v1a + v2*v2 + v3a*v3a) + dg*phicc(m,k,jg,i);
+                           + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,jg,i);
         if (rad) {
-          radm1::M1FillGhost(ur, m, k, jg, i, k, ja, i, 2, 2, (sd == 0) ? -1.0 : 1.0, rcl,
-                             refl);
+          const int md = (sd == 0) ? rm2lo : rm2hi;
+          radm1::M1FillGhost(ur, m, k, jg, i, k, (md == 1) ? jm : ja, i, 2, md,
+                             (sd == 0) ? -1.0 : 1.0, rcl, refl);
         }
       }
     }
@@ -3491,6 +3513,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // given, so older decks (2-D and the 049c1f39 3-D benchmark) keep their parameter dump
     p3_ = false;
     thout_ = false;
+    thhse_ = false;
     thsp_w_ = 0.0;
     thsp_tau_ = 0.0;
     if (pin->DoesParameterExist("problem", "phys_3d")) {
@@ -3504,17 +3527,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     if (pin->DoesParameterExist("problem", "theta_bc")) {
       const std::string tb = pin->GetString("problem", "theta_bc");
-      thout_ = (tb.compare("outflow") == 0);
-      if (!thout_ && tb.compare("reflect") != 0) fatal("theta_bc must be reflect | outflow");
-      if (thout_ && !p3_) fatal("theta_bc = outflow needs problem/phys_3d = true");
+      thhse_ = (tb.compare("hse") == 0);
+      thout_ = (tb.compare("outflow") == 0) || thhse_;
+      if (!thout_ && tb.compare("reflect") != 0) {
+        fatal("theta_bc must be reflect | outflow | hse");
+      }
+      if (thout_ && !p3_) fatal("theta_bc = outflow | hse needs problem/phys_3d = true");
     }
     {
       const bool u2 = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) ||
                       (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
       const bool u2b = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) &&
                        (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
-      if (thout_ && !u2b) fatal("theta_bc = outflow needs mesh/ix2_bc = ox2_bc = user");
-      if (!thout_ && u2) fatal("mesh ix2_bc/ox2_bc = user needs problem/theta_bc = outflow");
+      if (thout_ && !u2b) fatal("theta_bc = outflow | hse needs mesh/ix2_bc = ox2_bc = user");
+      if (!thout_ && u2) fatal("mesh ix2_bc/ox2_bc = user needs problem/theta_bc = outflow | hse");
     }
     if (pin->DoesParameterExist("problem", "theta_sponge_deg")) {
       thsp_w_ = pin->GetReal("problem", "theta_sponge_deg")*M_PI/180.0;
@@ -3528,7 +3554,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::printf("ry_per_accretor: phys_3d: 3-D Roche potential (gravity r/theta/phi, Phi_wb, "
                   "etotgrav), full Coriolis, IC/WB/ambient on 3-D equipotentials; theta walls "
                   "%s; theta sponge %s (width %.3f deg, tau %.4g)\n",
-                  thout_ ? "OUTFLOW (hydrostatic theta ghosts, v_theta diode)" : "reflecting",
+                  thhse_ ? "HSE (closed, hydrostatic theta ghosts, v_theta mirrored)" :
+                  (thout_ ? "OUTFLOW (hydrostatic theta ghosts, v_theta diode)" : "reflecting"),
                   (thsp_w_ > 0.0) ? "on" : "off", thsp_w_*180.0/M_PI, thsp_tau_);
     }
   }
