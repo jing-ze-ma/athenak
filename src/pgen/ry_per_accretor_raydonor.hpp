@@ -56,8 +56,11 @@
 //! its now tiny kappa_P; dt 7e-6 -> 6e-7).  With rad the beam's local energy density
 //! (|F_inc|/c ~ 0.1-0.3) is < 1 % of the gainer's own E near the photosphere, so the thin gas
 //! T barely depends on where the deposit goes; in thick cells the deposit is absorbed in place.
-//! Momentum: the whole removed beam momentum q/c along the propagation direction goes to the
-//! gas (problem/donor_ray_force, default true), with its work v.f in u(IEN).
+//! Momentum: the removed beam momentum q/c along the propagation direction x rho kappa_T/chi
+//! goes to the gas (problem/donor_ray_force, default true), with its work v.f in u(IEN): the
+//! flux-mean (transport) opacity, as the M1 module couples the gainer's own flux.  With the
+//! Planck mean (smoke 10-17, total q/c) the 1e-7 thin atmosphere got 28x gravity inward
+//! (v_r -290 km/s in 60 cycles).
 //! EXTINCTION: problem/donor_ray_opac = total (default; max(rho kappa_T, rho kappa_E), the
 //! M1 module's own absorption + Rosseland) | rosseland (rho kappa_T: Rosseland incl. electron
 //! scattering, a continuum beam).  NOTE: with total, the 1e-8 floor gas (20-30 kK, Planck mean
@@ -636,7 +639,10 @@ Real RayDonorApply(MeshBlockPack *pmbp, Mesh *pm, const Real bdt, const bool las
     const Real ka = opac(m,radm1::M1_OP_E,k,j,i);
     const Real ch = fmax(opac(m,radm1::M1_OP_T,k,j,i), ka);
     const Real eps = (ch > 0.0) ? fmin(ka/ch, 1.0) : 1.0;
-    const Real fr = qq(c, 1), fp = qq(c, 2);
+    // momentum through the TRANSPORT opacity only (rho kappa_T, as the M1 flux coupling):
+    // the removed beam momentum x kappa_T/chi_ext (= 1 for donor_ray_opac = rosseland)
+    const Real ft = (ch > 0.0) ? fmin(opac(m,radm1::M1_OP_T,k,j,i)/ch, 1.0) : 1.0;
+    const Real fr = ft*qq(c, 1), fp = ft*qq(c, 2);
     const Real wk = fr*w0(m,IVX,k,j,i) + fp*w0(m,IVZ,k,j,i);
     const Real epg = dgas ? eps : 0.0;
     const Real de = bdt*(epg*qt + wk);
