@@ -1,0 +1,6 @@
+run /raven/ptmp/jinma/rol2u_safety_1015/bgdiag/data/LB
+  user.hst /raven/ptmp/jinma/rol2u_safety_1015/bgdiag/data/LB/agcar3d.user.hst: 43821 rows, t 3.0011e+07 -> 4.6821e+08
+  stdout files 1, step lines 403508, NOT-ADMISSIBLE cycles 330654, DT_RETRY lines 15699, NC lines 3320, FATAL lines 1
+  event log /raven/ptmp/jinma/rol2u_safety_1015/bgdiag/data/LB/agcar3d.log: 4382 rows (cycle 16933 -> 420370)
+  whole run: L_top/L_in first/last 2e6 s: 0.508 / 0.723; Bres total 2.506e+45 erg (rate 5.72e+36 erg/s); Mdot_top last 2e6 s 2.11e+19
+  logged m1_pos_un total 1.222e+46 erg -> Bres / logged = 0.205
