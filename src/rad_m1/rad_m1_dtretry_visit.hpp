@@ -921,6 +921,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_rot_t0", vgd_rot_t0);
   v.value("vgd_rot_stretch", vgd_rot_stretch);
   v.value("vgd_rot_auto", vgd_rot_auto);
+  v.value("vgd_rot3", vgd_rot3);
   v.value("vgd_rot_auto_fac", vgd_rot_auto_fac);
   v.value("vgd_rot_align", vgd_rot_align);
   v.value("vgd_rot_nalign", vgd_rot_nalign);

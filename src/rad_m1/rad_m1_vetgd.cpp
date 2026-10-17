@@ -924,6 +924,27 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
       }
     }
   }
+  // cs-s3b-1017 (USER decision 1): the rotation axis of the vet_gd set.  z (the sp
+  // default, bitwise): the set turns about the polar axis (the wedge's symmetry: the
+  // periodic-wall maps stay exact permutations for HEALPix).  3d (the cubed-sphere
+  // default): about a quasi-random 3-D axis per rotation block, so that no direction of
+  // the set stays aligned with the panel seams / cube vertices from block to block.  On
+  // the sp wedge 3d is opt-in (the wall maps then take the nearest set direction)
+  if (vgd_on) {
+    const bool csm = pmy_pack->pmesh->use_cubed_sphere;
+    const std::string ax = pin->GetOrAddString("rad_m1","vet_gd_rotate_axis",
+                                               csm ? "3d" : "z");
+    if (ax.compare("z") == 0) {
+      vgd_rot3 = false;
+    } else if (ax.compare("3d") == 0) {
+      vgd_rot3 = true;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/vet_gd_rotate_axis = '" << ax
+                << "' is not a choice (z | 3d)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -939,6 +960,15 @@ Real RadiationM1::VetGdAngle(const int cyc) const {
 }
 
 Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
+  // cs-s3b-1017 vet_gd_rotate_axis = 3d: the KEY of block b (VgdRot3 decodes it): the
+  // zig-zag code of b (>= 0, exact in Real), or of b mod K with vet_rotate_avg = K (any K
+  // consecutive blocks hold the same K sets, as the stratified z phases)
+  if (vgd_rot3) {
+    int64_t r = blk;
+    if (vra_on && vra_k >= 2) {r = ((blk % vra_k) + vra_k) % vra_k;}
+    const int64_t z = (r >= 0) ? 2*r : (-2*r - 1);
+    return static_cast<Real>(z);
+  }
   // rotavg-1012: with vet_rotate_avg = K the angle is the set's own period times
   // RotPhase = (b mod K)/K, so that ANY K consecutive blocks hold K equispaced rotations
   // (the averaged closure is then that of the K-fold refined azimuth set); the golden
@@ -951,6 +981,57 @@ Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
   const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
   return 0.5*M_PI*(b*g - std::floor(b*g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdRot3
+//! \brief cs-s3b-1017 vet_gd_rotate_axis = 3d: the rotation matrix (row major) of block
+//! key `key` (VetGdAngleBlk).  Block b: the uniform random rotation of Shoemake (1992)
+//! from the 3-D Kronecker point u_b = frac(b (1/g, 1/g^2, 1/g^3)), g the plastic-type
+//! constant of the R_3 sequence (Roberts 2018; low discrepancy in u, so the rotations
+//! cover SO(3) evenly without clustering), right-multiplied by the inverse of that of
+//! b = 0, so that block 0 is the unrotated set (as alpha = 0 on the z clock).  A pure
+//! function of the key: reruns, restarts and every rank give the same bits.
+
+void RadiationM1::VgdRot3(const Real key, double r[9]) const {
+  const int64_t z = static_cast<int64_t>(std::llround(static_cast<double>(key)));
+  const int64_t b = (z % 2 == 0) ? (z/2) : (-(z + 1)/2);
+  auto quat = [](const int64_t bb, double q[4]) {
+    const double g = 1.2207440846057594754;   // the real root of x^4 = x + 1
+    const double a[3] = {1.0/g, 1.0/(g*g), 1.0/(g*g*g)};
+    double u[3];
+    for (int c = 0; c < 3; ++c) {
+      const double x = static_cast<double>(bb)*a[c];
+      u[c] = x - std::floor(x);
+    }
+    const double s1 = std::sqrt(1.0 - u[0]), s2 = std::sqrt(u[0]);
+    q[0] = s1*std::sin(2.0*M_PI*u[1]);
+    q[1] = s1*std::cos(2.0*M_PI*u[1]);
+    q[2] = s2*std::sin(2.0*M_PI*u[2]);
+    q[3] = s2*std::cos(2.0*M_PI*u[2]);
+  };
+  auto mat = [](const double q[4], double m[9]) {   // q = (x, y, z, w), unit
+    const double x = q[0], y = q[1], zz = q[2], w = q[3];
+    m[0] = 1.0 - 2.0*(y*y + zz*zz); m[1] = 2.0*(x*y - zz*w);  m[2] = 2.0*(x*zz + y*w);
+    m[3] = 2.0*(x*y + zz*w);  m[4] = 1.0 - 2.0*(x*x + zz*zz); m[5] = 2.0*(y*zz - x*w);
+    m[6] = 2.0*(x*zz - y*w);  m[7] = 2.0*(y*zz + x*w);  m[8] = 1.0 - 2.0*(x*x + y*y);
+  };
+  if (b == 0) {
+    for (int c = 0; c < 9; ++c) {r[c] = (c % 4 == 0) ? 1.0 : 0.0;}
+    return;
+  }
+  double qb[4], q0[4], mb[9], m0[9];
+  quat(b, qb);
+  quat(0, q0);
+  mat(qb, mb);
+  mat(q0, m0);
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      double v = 0.0;
+      for (int k = 0; k < 3; ++k) {v += mb[3*i + k]*m0[3*j + k];}   // mb m0^T
+      r[3*i + j] = v;
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1098,11 +1179,24 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
   const int n = vgd_n;
   VgdTabHost &H = vgd_tabh;
   std::vector<double> d(vgd_base);
-  const double ca = std::cos(alpha), sa = std::sin(alpha);
-  for (int q = 0; q < n; ++q) {
-    const double x = vgd_base[4*q], y = vgd_base[4*q+1];
-    d[4*q] = ca*x - sa*y;
-    d[4*q+1] = sa*x + ca*y;
+  if (vgd_rot3) {
+    // cs-s3b-1017 vet_gd_rotate_axis = 3d: d = R_b n (alpha is the block key)
+    double rm[9];
+    VgdRot3(alpha, rm);
+    for (int q = 0; q < n; ++q) {
+      const double x = vgd_base[4*q], y = vgd_base[4*q+1], z = vgd_base[4*q+2];
+      double v[3];
+      for (int c = 0; c < 3; ++c) {v[c] = rm[3*c]*x + rm[3*c+1]*y + rm[3*c+2]*z;}
+      const double nv = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+      for (int c = 0; c < 3; ++c) {d[4*q+c] = v[c]/nv;}
+    }
+  } else {
+    const double ca = std::cos(alpha), sa = std::sin(alpha);
+    for (int q = 0; q < n; ++q) {
+      const double x = vgd_base[4*q], y = vgd_base[4*q+1];
+      d[4*q] = ca*x - sa*y;
+      d[4*q+1] = sa*x + ca*y;
+    }
   }
   auto &d_h = H.dir;
   for (int q = 0; q < n; ++q) {
@@ -1422,7 +1516,9 @@ void RadiationM1::VetGdTables(const Real alpha) {
                                       + (vgd_gl_stag ? " staggered" : ""))
                   : ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
                                   : ("HEALPix nside " + std::to_string(vgd_nside))))
-              << " (" << n << " directions); z-rotation every "
+              << " (" << n << " directions); "
+              << (vgd_rot3 ? "3-D rotation (quasi-random axis; angle = block key)"
+                           : "z-rotation") << " every "
               << ((vgd_rot_dt > 0.0) ? (std::to_string(vgd_rot_dt) + " in time (t0 "
                                         + std::to_string(vgd_rot_t0) + ", align "
                                         + (vgd_rot_align ? "on" : "off") + ")")
@@ -5701,12 +5797,14 @@ void RadiationM1::VetGdSweepPost() {
   Kokkos::Timer tm;
   // vet_gd_twin: the RAY-NOISE pattern of the set on the laterally uniform field (the
   // shell means of chi and S), same angle, subtracted below
-  // (diagnostic env VGD_TWIN_CUTFIX, accel-1009: the unfused twin sweeps with THIS
-  // build's cut; without it the twin reuses the previous build's vgd_scut, which after a
-  // restart is 0 -- the restart != continuous of the unfused twin)
-  // (vet_gd_twin_lowmem: always, as the fused twin it replaces)
-  if (vgd_twin && !vgd_twfuse &&
-      (vgd_twseq || std::getenv("VGD_TWIN_CUTFIX") != nullptr)) {
+  // cs-s3b-1017 (USER decision 4): the unfused twin ALWAYS sweeps with THIS build's cut,
+  // as the fused twin (vet_gd_twin_fuse) and vet_gd_twin_lowmem do.  Before, the plain
+  // unfused twin reused the previous build's vgd_scut (0 at the first build of a run and
+  // after a restart): with MPI and no vet_gd_halo_compact (the fuse cannot apply there,
+  // while one rank fuses) the result depended on the decomposition, and a restart was
+  // not continuous.  The fused production path does not come here (bitwise); the old
+  // diagnostic env VGD_TWIN_CUTFIX is now the only behaviour
+  if (vgd_twin && !vgd_twfuse) {
     vgd_scut = vlat_icut;
   }
   if (vgd_twin) {VetGdTwin(0);}
