@@ -25,3 +25,20 @@ follows in the next NOTE update.
   same deck md5 9748aeaa) in /resnick/groups/carnegie_poc/jingze/acc3d_prod_1018/g2: pre-check 4972809 (40 min),
   link 1 4972811, link 2 4972812 (7 d, afterok + kill-on-invalid-dep). Whichever variant's link 1 STARTS first runs;
   the other set is cancelled at once. Start time + layout follow in the next update.
+
+## Update 3 (2026-10-18): pre-check results; links cancelled per HOLD b592b459, waiting for the new TASK
+All 4 links (4970357, 4970358, 4972811, 4972812) were cancelled per HOLD b592b459 (no production on 186306cb); none had started.
+The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it was cancelled. Only the 2-H200 result exists.
+
+**2-H200 pre-check 4972809** (hpc-sm-01-05, 2 ranks, 4 MBs/GPU, binary md5 9283c619, deck 9748aeaa), run dir
+/resnick/groups/carnegie_poc/jingze/acc3d_prod_1018/g2/pre:
+- rc 0 for A/B/C; FATAL 0, summary NON-CONVERGED=[1-9] 0, Picard DIVERGED 0, DT_RETRY 0, NaN 0.
+- dt 1.419254e-05 (t = 2.838468e-04 at cycle 20). Init ~44 s. Loop time A 13.6 s / 10 cycles, C 18.5 s / 20 cycles
+  -> ~0.49 s/cycle after warm-up (0.93 s/cycle averaged over 20 cycles incl. the first ones), static phase, stream off.
+- GPU peak memory 14661 MiB on each of the 2 GPUs (of 141 GB), so 4 MBs per H200 fits easily.
+- B vs C: final ryper.hydro_w.00001.bin and ryper.m1.00001.bin match byte for byte (0 bytes differ). hydro.hst B rows (20)
+  match C rows 2-21; user.hst cols 1-6,16-20,23 match too.
+- **Caveat, the restart test is WEAKER than intended:** A wrote 2 rst files here, ryper.00000.rst at t=0 and ryper.00001.rst
+  at its end (cycle 10). B used ryper.00000.rst as the TASK says, so it restarted at cycle 0, not at cycle 10. The job
+  script reported fail=1 only because B does not rewrite the t=0 bins (my "MISSING" check, a script artifact). A proper
+  cycle-10 restart (B from ryper.00001.rst) is a ~3-min 2-H200 job; I can run it when a new TASK asks for it.
