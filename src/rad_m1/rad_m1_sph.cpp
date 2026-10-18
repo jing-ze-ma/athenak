@@ -104,7 +104,11 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     if (impl_recon != M1_IRECON_DC && impl_flux == M1_IFLUX_CENTRAL) {
       why += " implicit_recon != dc;";
     }
-    if (impl_tlim != M1_TLIM_NONE) {why += " implicit_trans_limit != none;";}
+    // m1lpr-1019: lpr (the realizability bound) is allowed on the wedge, lp is not; the
+    // cubed sphere refuses both (its skewed rows do not read thx2/thx3)
+    if (impl_tlim == M1_TLIM_LP || (impl_tlim != M1_TLIM_NONE && cs_geom)) {
+      why += " implicit_trans_limit != none (lpr only, wedge only);";
+    }
     // m1-sph2 (tests_m1/runs_5h_sph2): time_scheme = hesdirk2 and implicit_vimp are
     // allowed on the wedge (the stage solves' old vector carries no geometry; the vimp
     // rows take the sp areas, volumes and face distances in ImplicitVimpBuild)
