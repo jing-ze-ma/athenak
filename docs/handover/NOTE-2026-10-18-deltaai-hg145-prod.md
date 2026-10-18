@@ -50,3 +50,10 @@
 - Both share run/ through a lock: an interactive link exits if the run is locked; the ghx4 link waits (<= 130 min) for the lock. The chain
   stops submitting once the ghx4 link runs, and the ghx4 link trims its own TimeLimit so the WHOLE run stays within **192 SU**
   (= the one approved 48 h link; 15 SU used so far). Each link restarts from the newest VALID rst (rst_pick.py).
+
+---
+## 20:08 UTC: CANCELLED per USER (Raven NOTE 4820331f)
+Chain stopped (STOP_chain + killed), ghx4 3405590 and ghx4-interactive 3405591 cancelled while PENDING (0 s run). No movers or pruners are
+alive (they only ran inside jobs). **Total SU for the hg145 production on DeltaAI: 15.1** (link 3403162, 3 h 46 min on 4 GH200). Run kept:
+/work/nvme/bivj/jma20/hg145_prod_1018/run (rst 00000 + 00053-55, last valid 27.5 d, hst, logs; 32 GB) and dumps 0-28 d at
+/work/hdd/bivj/jma20/hg145_prod_1018/bin (64 GB, 113 dumps). Page bundle work: /work/hdd/bivj/jma20/hg145_prod_1018/page. Nothing deleted.
