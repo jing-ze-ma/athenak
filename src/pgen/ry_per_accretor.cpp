@@ -1543,7 +1543,11 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       } else {
         v.the_array[4] = (d0 - dn)*dv;
         v.the_array[5] = (e0 - en)*dv;
-        if (inbk && ssl != 2) {
+        // acc3d-held-1018: stream_sector_light = neck -- the lobe rule (as surface) only in the
+        // sector's physical part, between the nozzle and L1 (r < d_L1) inside the nozzle
+        // window; the rest of the 3-D sector (ambient beside and beyond L1) is a dark sink
+        const bool neck = (ssl == 4) && (r < xl1) && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
+        if (inbk && ssl != 2 && !neck) {
           // v4 (user 10-16): the back-sink sector between the nozzle and L1 holds the
           // STREAM's own light, the nozzle's radiation state continued backward (core T
           // env_t_stream, the same diffusion profile in phi (and z), floor stream_t_surf),
@@ -1554,7 +1558,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           // 2-D -> 3-D factor of the held donor light); dark = no light held (all of the
           // sector left to the transport); surface = the lobe rule below (donor light)
           const bool inw = fabs(dph) < ww && (!g3 || fabs(zc) < wz);
-          if (srad && inw && ssl != 3) {
+          if (srad && inw && ssl != 3 && ssl != 4) {
             const Real tb = g3 ? StreamT(stp, tcs, tsf, sqrt(SQR(dph/sg) + SQR(zc/szz)))
                                : StreamT(stp, tcs, tsf, dph/sg);
             Real er = stp ? sar*SQR(SQR(tb)) : sre;
@@ -3865,8 +3869,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       ssl_ = 2;
     } else if (sl.compare("dark") == 0) {
       ssl_ = 3;
+    } else if (sl.compare("neck") == 0) {
+      ssl_ = 4;
     } else {
-      fatal("stream_sector_light must be full | scaled | surface | dark");
+      fatal("stream_sector_light must be full | scaled | surface | dark | neck");
     }
     if (root) {
       std::printf("ry_per_accretor: stream_sector_light %s (back-sink sector radiation)\n",
@@ -3889,7 +3895,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the donor T_eff of the Wade+2026 MESA track used by the S5 deck)
   mirr_ = pin->DoesParameterExist("problem", "donor_irr") &&
           pin->GetBoolean("problem", "donor_irr");
-  if ((ssl_ == 1 || ssl_ == 2) && !mirr_) {
+  if ((ssl_ == 1 || ssl_ == 2 || ssl_ == 4) && !mirr_) {
     fatal("stream_sector_light = scaled | surface needs donor_irr = true");
   }
   if (mirr_) {
