@@ -1973,10 +1973,10 @@ void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
 //! e_xi.e_eta; sp: orthonormal.
 
 void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = 11;
-  const char *lab[11] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
-                         "Sz"};
-  for (int n = 0; n < 11; ++n) {pdata->label[n] = lab[n];}
+  pdata->nhist = 14;
+  const char *lab[14] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
+                         "Sz", "Lfx", "Lfy", "Lfz"};
+  for (int n = 0; n < 14; ++n) {pdata->label[n] = lab[n];}
   MeshBlockPack *pmbp = pm->pmb_pack;
   if (pmbp->pradm1 == nullptr || pmbp->phydro == nullptr) return;
   auto u0 = pmbp->pradm1->u0;
@@ -1996,6 +1996,9 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   // cs-open-1018 <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)
   const bool spn = pmbp->phydro->am_vector;
   auto asp = pmbp->phydro->am_spin;
+  // <hydro>/frame_omega: the frame part of the absolute L, sum V rho rc x (Omega x rc)
+  const Real fo0 = pmbp->phydro->frame_om[0], fo1 = pmbp->phydro->frame_om[1];
+  const Real fo2 = pmbp->phydro->frame_om[2];
   const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji = nx2*nx1;
@@ -2044,6 +2047,14 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
       hv.the_array[2+q] = v*lg[q];
       hv.the_array[5+q] = v*lr[q]*ic2;
       hv.the_array[8+q] = spn ? asp(m,k,j,i)*rh[q] : 0.0;
+    }
+    {
+      const Real x[3] = {r*rh[0], r*rh[1], r*rh[2]};
+      const Real ox[3] = {fo1*x[2] - fo2*x[1], fo2*x[0] - fo0*x[2], fo0*x[1] - fo1*x[0]};
+      const Real d = v*uh(m,IDN,k,j,i);
+      hv.the_array[11] = d*(x[1]*ox[2] - x[2]*ox[1]);
+      hv.the_array[12] = d*(x[2]*ox[0] - x[0]*ox[2]);
+      hv.the_array[13] = d*(x[0]*ox[1] - x[1]*ox[0]);
     }
     mb_sum += hv;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
