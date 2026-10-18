@@ -1,0 +1,100 @@
+k=10 t=5.093e+05
+  rho   | 1.0e+11-1.8e+12 v1/old med 1.000 max|dev| 0.005 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.002 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 0.999 max|dev| 0.002 m8/old med 0.999 | 5.8e+13-6.5e+13 v1/old med 1.013 max|dev| 0.094 m8/old med 1.018 | 6.5e+13-3.0e+15 v1/old med 1.000 max|dev| 0.039 m8/old med 1.000
+  T     | 1.0e+11-1.8e+12 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.000 max|dev| 0.002 m8/old med 1.000 | 5.8e+13-6.5e+13 v1/old med 1.003 max|dev| 0.031 m8/old med 1.003 | 6.5e+13-3.0e+15 v1/old med 0.903 max|dev| 0.556 m8/old med 0.908
+  Trad  | 1.0e+11-1.8e+12 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 5.8e+13-6.5e+13 v1/old med 0.994 max|dev| 0.052 m8/old med 0.994 | 6.5e+13-3.0e+15 v1/old med 0.946 max|dev| 0.545 m8/old med 0.946
+   R 3.000e+11  L lab v1 -5.304e+39 m8 -5.316e+39 old 6.923e+38 | L comoving v1 6.801e+38 m8 6.923e+38 old 6.923e+38 | f v1 1.000 m8 1.000
+   R 1.000e+12  L lab v1 2.062e+39 m8 1.981e+39 old 6.719e+38 | L comoving v1 6.525e+38 m8 6.900e+38 old 6.719e+38 | f v1 1.000 m8 1.000
+   R 1.761e+12  L lab v1 2.469e+39 m8 1.411e+39 old 6.848e+38 | L comoving v1 2.873e+38 m8 3.033e+38 old 6.848e+38 | f v1 1.000 m8 1.000
+   R 3.000e+12  L lab v1 6.203e+38 m8 9.149e+37 old 6.275e+38 | L comoving v1 3.693e+38 m8 3.305e+38 old 6.275e+38 | f v1 1.000 m8 1.000
+   R 1.000e+13  L lab v1 5.826e+38 m8 5.745e+38 old 1.279e+38 | L comoving v1 7.924e+37 m8 7.839e+37 old 1.279e+38 | f v1 1.000 m8 1.000
+   R 2.000e+13  L lab v1 1.792e+38 m8 1.797e+38 old 1.199e+38 | L comoving v1 1.190e+38 m8 1.192e+38 old 1.199e+38 | f v1 1.000 m8 1.000
+   R 3.000e+13  L lab v1 1.615e+38 m8 1.617e+38 old 1.596e+38 | L comoving v1 1.598e+38 m8 1.597e+38 old 1.596e+38 | f v1 1.000 m8 1.000
+   R 5.000e+13  L lab v1 5.283e+37 m8 5.282e+37 old 5.247e+37 | L comoving v1 5.255e+37 m8 5.255e+37 old 5.253e+37 | f v1 1.000 m8 1.000
+   R 5.600e+13  L lab v1 1.040e+38 m8 1.038e+38 old 1.172e+38 | L comoving v1 1.041e+38 m8 1.039e+38 old 1.170e+38 | f v1 0.613 m8 0.613
+   R 6.500e+13  L lab v1 2.833e+38 m8 2.827e+38 old 2.970e+38 | L comoving v1 2.833e+38 m8 2.827e+38 old 2.970e+38 | f v1 0.000 m8 0.000
+   R 1.000e+14  L lab v1 2.897e+38 m8 2.890e+38 old 3.032e+38 | L comoving v1 2.897e+38 m8 2.890e+38 old 3.033e+38 | f v1 0.000 m8 0.000
+   R 3.000e+14  L lab v1 2.794e+38 m8 2.819e+38 old 2.953e+38 | L comoving v1 2.794e+38 m8 2.819e+38 old 2.953e+38 | f v1 0.000 m8 0.000
+   R 3.000e+15  L lab v1 3.170e+38 m8 3.106e+38 old 3.382e+38 | L comoving v1 3.170e+38 m8 3.106e+38 old 3.382e+38 | f v1 0.000 m8 0.000
+   R 8.000e+15  L lab v1 4.179e+38 m8 4.214e+38 old 6.407e+38 | L comoving v1 4.179e+38 m8 4.214e+38 old 6.407e+38 | f v1 0.000 m8 0.000
+   v1 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+   m8 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+k=20 t=1.019e+06
+  rho   | 1.0e+11-1.8e+12 v1/old med 1.000 max|dev| 0.004 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.002 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.001 max|dev| 0.002 m8/old med 1.001 | 5.8e+13-6.5e+13 v1/old med 1.010 max|dev| 0.121 m8/old med 1.013 | 6.5e+13-3.0e+15 v1/old med 1.000 max|dev| 0.107 m8/old med 1.000
+  T     | 1.0e+11-1.8e+12 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.001 max|dev| 0.002 m8/old med 1.001 | 5.8e+13-6.5e+13 v1/old med 0.998 max|dev| 0.015 m8/old med 0.999 | 6.5e+13-3.0e+15 v1/old med 0.899 max|dev| 0.583 m8/old med 0.901
+  Trad  | 1.0e+11-1.8e+12 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.002 max|dev| 0.004 m8/old med 1.002 | 5.8e+13-6.5e+13 v1/old med 0.998 max|dev| 0.036 m8/old med 0.998 | 6.5e+13-3.0e+15 v1/old med 0.946 max|dev| 0.573 m8/old med 0.944
+   R 3.000e+11  L lab v1 -7.626e+39 m8 -7.870e+39 old 6.857e+38 | L comoving v1 -1.760e+38 m8 -1.367e+38 old 6.857e+38 | f v1 1.000 m8 1.000
+   R 1.000e+12  L lab v1 -4.307e+39 m8 -4.452e+39 old 6.741e+38 | L comoving v1 6.582e+38 m8 6.564e+38 old 6.741e+38 | f v1 1.000 m8 1.000
+   R 1.761e+12  L lab v1 1.891e+39 m8 1.814e+39 old 6.869e+38 | L comoving v1 3.006e+38 m8 2.814e+38 old 6.869e+38 | f v1 1.000 m8 1.000
+   R 3.000e+12  L lab v1 9.448e+38 m8 9.091e+38 old 6.274e+38 | L comoving v1 3.834e+38 m8 3.857e+38 old 6.274e+38 | f v1 1.000 m8 1.000
+   R 1.000e+13  L lab v1 7.752e+38 m8 7.803e+38 old 1.276e+38 | L comoving v1 1.045e+38 m8 1.039e+38 old 1.276e+38 | f v1 1.000 m8 1.000
+   R 2.000e+13  L lab v1 1.609e+38 m8 1.620e+38 old 1.198e+38 | L comoving v1 1.197e+38 m8 1.197e+38 old 1.198e+38 | f v1 1.000 m8 1.000
+   R 3.000e+13  L lab v1 1.448e+38 m8 1.447e+38 old 1.596e+38 | L comoving v1 1.596e+38 m8 1.596e+38 old 1.596e+38 | f v1 1.000 m8 1.000
+   R 5.000e+13  L lab v1 5.293e+37 m8 5.293e+37 old 5.186e+37 | L comoving v1 5.223e+37 m8 5.223e+37 old 5.228e+37 | f v1 1.000 m8 1.000
+   R 5.600e+13  L lab v1 9.814e+37 m8 9.802e+37 old 1.059e+38 | L comoving v1 9.816e+37 m8 9.804e+37 old 1.054e+38 | f v1 0.583 m8 0.582
+   R 6.500e+13  L lab v1 2.363e+38 m8 2.362e+38 old 2.402e+38 | L comoving v1 2.363e+38 m8 2.362e+38 old 2.402e+38 | f v1 0.000 m8 0.000
+   R 1.000e+14  L lab v1 2.394e+38 m8 2.392e+38 old 2.431e+38 | L comoving v1 2.394e+38 m8 2.392e+38 old 2.432e+38 | f v1 0.000 m8 0.000
+   R 3.000e+14  L lab v1 2.271e+38 m8 2.313e+38 old 2.330e+38 | L comoving v1 2.271e+38 m8 2.313e+38 old 2.330e+38 | f v1 0.000 m8 0.000
+   R 3.000e+15  L lab v1 2.380e+38 m8 2.335e+38 old 2.353e+38 | L comoving v1 2.380e+38 m8 2.335e+38 old 2.353e+38 | f v1 0.000 m8 0.000
+   R 8.000e+15  L lab v1 2.518e+38 m8 2.517e+38 old 2.330e+38 | L comoving v1 2.518e+38 m8 2.517e+38 old 2.330e+38 | f v1 0.000 m8 0.000
+   v1 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+   m8 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+k=40 t=2.037e+06
+  rho   | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.016 m8/old med 0.999 | 1.8e+12-1.0e+13 v1/old med 0.999 max|dev| 0.006 m8/old med 0.998 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.003 max|dev| 0.008 m8/old med 1.003 | 5.8e+13-6.5e+13 v1/old med 1.051 max|dev| 0.174 m8/old med 1.051 | 6.5e+13-3.0e+15 v1/old med 1.000 max|dev| 0.205 m8/old med 1.000
+  T     | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.006 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.003 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.002 max|dev| 0.002 m8/old med 1.002 | 5.8e+13-6.5e+13 v1/old med 0.996 max|dev| 0.008 m8/old med 0.996 | 6.5e+13-3.0e+15 v1/old med 0.903 max|dev| 0.573 m8/old med 0.904
+  Trad  | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.006 m8/old med 1.000 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.003 m8/old med 1.000 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.001 max|dev| 0.011 m8/old med 1.001 | 5.8e+13-6.5e+13 v1/old med 0.995 max|dev| 0.006 m8/old med 0.995 | 6.5e+13-3.0e+15 v1/old med 0.947 max|dev| 0.563 m8/old med 0.946
+   R 3.000e+11  L lab v1 -6.552e+39 m8 -6.668e+39 old 6.765e+38 | L comoving v1 6.191e+38 m8 6.309e+38 old 6.765e+38 | f v1 1.000 m8 1.000
+   R 1.000e+12  L lab v1 -1.595e+39 m8 -2.606e+39 old 6.849e+38 | L comoving v1 6.329e+38 m8 6.404e+38 old 6.849e+38 | f v1 1.000 m8 1.000
+   R 1.761e+12  L lab v1 1.580e+39 m8 1.634e+39 old 6.854e+38 | L comoving v1 2.603e+38 m8 2.541e+38 old 6.854e+38 | f v1 1.000 m8 1.000
+   R 3.000e+12  L lab v1 1.459e+39 m8 1.486e+39 old 6.252e+38 | L comoving v1 4.623e+38 m8 4.652e+38 old 6.252e+38 | f v1 1.000 m8 1.000
+   R 1.000e+13  L lab v1 7.552e+38 m8 7.423e+38 old 1.277e+38 | L comoving v1 1.031e+38 m8 1.027e+38 old 1.277e+38 | f v1 1.000 m8 1.000
+   R 2.000e+13  L lab v1 6.001e+37 m8 6.665e+37 old 1.192e+38 | L comoving v1 1.198e+38 m8 1.198e+38 old 1.192e+38 | f v1 1.000 m8 1.000
+   R 3.000e+13  L lab v1 1.546e+38 m8 1.548e+38 old 1.596e+38 | L comoving v1 1.595e+38 m8 1.595e+38 old 1.596e+38 | f v1 1.000 m8 1.000
+   R 5.000e+13  L lab v1 5.145e+37 m8 5.145e+37 old 5.093e+37 | L comoving v1 5.165e+37 m8 5.165e+37 old 5.169e+37 | f v1 1.000 m8 1.000
+   R 5.600e+13  L lab v1 1.263e+38 m8 1.263e+38 old 1.332e+38 | L comoving v1 1.247e+38 m8 1.247e+38 old 1.313e+38 | f v1 0.497 m8 0.497
+   R 6.500e+13  L lab v1 2.724e+38 m8 2.724e+38 old 2.788e+38 | L comoving v1 2.725e+38 m8 2.724e+38 old 2.788e+38 | f v1 0.000 m8 0.000
+   R 1.000e+14  L lab v1 2.730e+38 m8 2.730e+38 old 2.798e+38 | L comoving v1 2.730e+38 m8 2.730e+38 old 2.798e+38 | f v1 0.000 m8 0.000
+   R 3.000e+14  L lab v1 2.588e+38 m8 2.637e+38 old 2.679e+38 | L comoving v1 2.588e+38 m8 2.637e+38 old 2.679e+38 | f v1 0.000 m8 0.000
+   R 3.000e+15  L lab v1 2.653e+38 m8 2.605e+38 old 2.634e+38 | L comoving v1 2.653e+38 m8 2.605e+38 old 2.634e+38 | f v1 0.000 m8 0.000
+   R 8.000e+15  L lab v1 2.630e+38 m8 2.632e+38 old 5.756e+38 | L comoving v1 2.630e+38 m8 2.632e+38 old 5.756e+38 | f v1 0.000 m8 0.000
+   v1 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+   m8 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+k=60 t=3.056e+06
+  rho   | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.017 m8/old med 0.999 | 1.8e+12-1.0e+13 v1/old med 0.998 max|dev| 0.007 m8/old med 0.998 | 1.0e+13-3.0e+13 v1/old med 1.001 max|dev| 0.003 m8/old med 1.001 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.002 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.000 max|dev| 0.003 m8/old med 1.000 | 5.8e+13-6.5e+13 v1/old med 1.099 max|dev| 0.217 m8/old med 1.099 | 6.5e+13-3.0e+15 v1/old med 1.000 max|dev| 0.257 m8/old med 1.000
+  T     | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.003 m8/old med 0.999 | 1.8e+12-1.0e+13 v1/old med 0.999 max|dev| 0.001 m8/old med 0.999 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.005 max|dev| 0.009 m8/old med 1.005 | 5.8e+13-6.5e+13 v1/old med 1.006 max|dev| 0.009 m8/old med 1.006 | 6.5e+13-3.0e+15 v1/old med 0.920 max|dev| 0.557 m8/old med 0.917
+  Trad  | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.003 m8/old med 0.999 | 1.8e+12-1.0e+13 v1/old med 0.999 max|dev| 0.001 m8/old med 0.999 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.000 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.004 max|dev| 0.014 m8/old med 1.004 | 5.8e+13-6.5e+13 v1/old med 1.001 max|dev| 0.002 m8/old med 1.001 | 6.5e+13-3.0e+15 v1/old med 0.961 max|dev| 0.547 m8/old med 0.959
+   R 3.000e+11  L lab v1 -3.908e+39 m8 -4.931e+39 old 6.886e+38 | L comoving v1 6.559e+38 m8 6.667e+38 old 6.886e+38 | f v1 1.000 m8 1.000
+   R 1.000e+12  L lab v1 -1.957e+39 m8 -2.008e+39 old 6.839e+38 | L comoving v1 6.623e+38 m8 6.419e+38 old 6.839e+38 | f v1 1.000 m8 1.000
+   R 1.761e+12  L lab v1 1.242e+39 m8 1.474e+39 old 6.879e+38 | L comoving v1 2.355e+38 m8 2.369e+38 old 6.879e+38 | f v1 1.000 m8 1.000
+   R 3.000e+12  L lab v1 1.475e+39 m8 1.533e+39 old 6.203e+38 | L comoving v1 4.735e+38 m8 4.675e+38 old 6.203e+38 | f v1 1.000 m8 1.000
+   R 1.000e+13  L lab v1 5.534e+38 m8 5.429e+38 old 1.276e+38 | L comoving v1 1.086e+38 m8 1.071e+38 old 1.276e+38 | f v1 1.000 m8 1.000
+   R 2.000e+13  L lab v1 3.297e+38 m8 3.265e+38 old 1.194e+38 | L comoving v1 1.203e+38 m8 1.203e+38 old 1.194e+38 | f v1 1.000 m8 1.000
+   R 3.000e+13  L lab v1 1.832e+38 m8 1.833e+38 old 1.595e+38 | L comoving v1 1.596e+38 m8 1.596e+38 old 1.595e+38 | f v1 1.000 m8 1.000
+   R 5.000e+13  L lab v1 5.252e+37 m8 5.255e+37 old 5.422e+37 | L comoving v1 5.353e+37 m8 5.354e+37 old 5.354e+37 | f v1 1.000 m8 1.000
+   R 5.600e+13  L lab v1 1.391e+38 m8 1.391e+38 old 1.435e+38 | L comoving v1 1.361e+38 m8 1.361e+38 old 1.400e+38 | f v1 0.458 m8 0.458
+   R 6.500e+13  L lab v1 2.587e+38 m8 2.587e+38 old 2.587e+38 | L comoving v1 2.587e+38 m8 2.587e+38 old 2.587e+38 | f v1 0.000 m8 0.000
+   R 1.000e+14  L lab v1 2.595e+38 m8 2.595e+38 old 2.592e+38 | L comoving v1 2.595e+38 m8 2.595e+38 old 2.593e+38 | f v1 0.000 m8 0.000
+   R 3.000e+14  L lab v1 2.464e+38 m8 2.510e+38 old 2.485e+38 | L comoving v1 2.464e+38 m8 2.510e+38 old 2.485e+38 | f v1 0.000 m8 0.000
+   R 3.000e+15  L lab v1 2.648e+38 m8 2.598e+38 old 2.579e+38 | L comoving v1 2.648e+38 m8 2.598e+38 old 2.579e+38 | f v1 0.000 m8 0.000
+   R 8.000e+15  L lab v1 2.795e+38 m8 2.795e+38 old 2.961e+38 | L comoving v1 2.795e+38 m8 2.795e+38 old 2.961e+38 | f v1 0.000 m8 0.000
+   v1 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+   m8 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+k=72 t=3.667e+06
+  rho   | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.011 m8/old med 0.999 | 1.8e+12-1.0e+13 v1/old med 0.998 max|dev| 0.008 m8/old med 0.998 | 1.0e+13-3.0e+13 v1/old med 1.001 max|dev| 0.004 m8/old med 1.001 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.002 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 0.999 max|dev| 0.002 m8/old med 0.999 | 5.8e+13-6.5e+13 v1/old med 1.128 max|dev| 0.242 m8/old med 1.126 | 6.5e+13-3.0e+15 v1/old med 1.000 max|dev| 0.177 m8/old med 1.000
+  T     | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.003 m8/old med 0.999 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 0.999 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.002 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.007 max|dev| 0.014 m8/old med 1.007 | 5.8e+13-6.5e+13 v1/old med 0.985 max|dev| 0.015 m8/old med 0.985 | 6.5e+13-3.0e+15 v1/old med 0.888 max|dev| 0.584 m8/old med 0.883
+  Trad  | 1.0e+11-1.8e+12 v1/old med 0.999 max|dev| 0.003 m8/old med 0.999 | 1.8e+12-1.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 0.999 | 1.0e+13-3.0e+13 v1/old med 1.000 max|dev| 0.002 m8/old med 1.000 | 3.0e+13-5.0e+13 v1/old med 1.000 max|dev| 0.001 m8/old med 1.000 | 5.0e+13-5.8e+13 v1/old med 1.008 max|dev| 0.016 m8/old med 1.008 | 5.8e+13-6.5e+13 v1/old med 0.981 max|dev| 0.021 m8/old med 0.981 | 6.5e+13-3.0e+15 v1/old med 0.928 max|dev| 0.574 m8/old med 0.925
+   R 3.000e+11  L lab v1 -6.412e+39 m8 -4.901e+39 old 6.782e+38 | L comoving v1 6.621e+38 m8 6.699e+38 old 6.782e+38 | f v1 1.000 m8 1.000
+   R 1.000e+12  L lab v1 -1.356e+39 m8 -5.468e+38 old 6.870e+38 | L comoving v1 6.289e+38 m8 6.570e+38 old 6.870e+38 | f v1 1.000 m8 1.000
+   R 1.761e+12  L lab v1 1.214e+39 m8 1.738e+39 old 6.877e+38 | L comoving v1 2.284e+38 m8 2.163e+38 old 6.877e+38 | f v1 1.000 m8 1.000
+   R 3.000e+12  L lab v1 1.426e+39 m8 1.435e+39 old 6.187e+38 | L comoving v1 4.490e+38 m8 4.516e+38 old 6.187e+38 | f v1 1.000 m8 1.000
+   R 1.000e+13  L lab v1 5.114e+38 m8 5.036e+38 old 1.276e+38 | L comoving v1 1.036e+38 m8 1.030e+38 old 1.276e+38 | f v1 1.000 m8 1.000
+   R 2.000e+13  L lab v1 2.906e+38 m8 2.905e+38 old 1.195e+38 | L comoving v1 1.198e+38 m8 1.198e+38 old 1.195e+38 | f v1 1.000 m8 1.000
+   R 3.000e+13  L lab v1 1.762e+38 m8 1.789e+38 old 1.597e+38 | L comoving v1 1.590e+38 m8 1.590e+38 old 1.597e+38 | f v1 1.000 m8 1.000
+   R 5.000e+13  L lab v1 6.422e+37 m8 6.423e+37 old 5.794e+37 | L comoving v1 5.336e+37 m8 5.335e+37 old 5.424e+37 | f v1 1.000 m8 1.000
+   R 5.600e+13  L lab v1 1.070e+38 m8 1.071e+38 old 1.219e+38 | L comoving v1 1.221e+38 m8 1.223e+38 old 1.354e+38 | f v1 0.442 m8 0.442
+   R 6.500e+13  L lab v1 2.096e+38 m8 2.098e+38 old 2.295e+38 | L comoving v1 2.096e+38 m8 2.099e+38 old 2.295e+38 | f v1 0.000 m8 0.000
+   R 1.000e+14  L lab v1 2.103e+38 m8 2.105e+38 old 2.326e+38 | L comoving v1 2.103e+38 m8 2.105e+38 old 2.326e+38 | f v1 0.000 m8 0.000
+   R 3.000e+14  L lab v1 1.991e+38 m8 2.032e+38 old 2.234e+38 | L comoving v1 1.991e+38 m8 2.032e+38 old 2.234e+38 | f v1 0.000 m8 0.000
+   R 3.000e+15  L lab v1 2.140e+38 m8 2.103e+38 old 2.443e+38 | L comoving v1 2.140e+38 m8 2.103e+38 old 2.443e+38 | f v1 0.000 m8 0.000
+   R 8.000e+15  L lab v1 2.318e+38 m8 2.321e+38 old 4.083e+38 | L comoving v1 2.318e+38 m8 2.321e+38 old 4.083e+38 | f v1 0.000 m8 0.000
+   v1 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
+   m8 f>0.99 out to 5.370e+13, f>0.01 out to 5.623e+13
