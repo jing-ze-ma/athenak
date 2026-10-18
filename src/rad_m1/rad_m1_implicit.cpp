@@ -5266,17 +5266,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                   - M1DDiag(iw_,vd_,dfull,m,1,kq,jm,i)*iw_(m,M1_IW_EP,kq,jm,i))
                  /(cx1v(m,i)*csg2_(m,1,kq,sd));
         };
-        const Real d0 = dpr(k);
         const bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
-        Real dd = 0.0;
-        if (up && dn) {
-          dd = (dpr(k+1) - dpr(k-1))/(csg2_(m,2,k+1,sd) - csg2_(m,2,k-1,sd));
-        } else if (up) {
-          dd = (dpr(k+1) - d0)/(csg2_(m,2,k+1,sd) - csg2_(m,2,k,sd));
-        } else if (dn) {
-          dd = (d0 - dpr(k-1))/(csg2_(m,2,k,sd) - csg2_(m,2,k-1,sd));
-        }
-        gr = d0 + (csg2_(m,3,k,sd) - csg2_(m,2,k,sd))*dd;
+        // cs-open-1018: the quadratic through the foot values, at the face midpoint
+        gr = M1CsSeamMid(dpr, csg2_, m, k, sd, up, dn);
       } else {
         const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
                              + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
@@ -5338,15 +5330,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         if ((j == js && t2lo) || (j == je+1 && t2hi)) {
           const int sd = (j == js) ? 0 : 1;
           const bool up = !(k == ke && t3hi), dn = !(k == ks && t3lo);
-          Real dd = 0.0;
-          if (up && dn) {
-            dd = (lf(k+1) - lf(k-1))/(csg2_(m,2,k+1,sd) - csg2_(m,2,k-1,sd));
-          } else if (up) {
-            dd = (lf(k+1) - off)/(csg2_(m,2,k+1,sd) - csg2_(m,2,k,sd));
-          } else if (dn) {
-            dd = (off - lf(k-1))/(csg2_(m,2,k,sd) - csg2_(m,2,k-1,sd));
-          }
-          off += (csg2_(m,3,k,sd) - csg2_(m,2,k,sd))*dd;
+          // cs-open-1018: the quadratic through the foot values, at the face midpoint
+          off = M1CsSeamMid(lf, csg2_, m, k, sd, up, dn);
         }
       }
     }
@@ -5445,17 +5430,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     - M1DDiag(iw_,vd_,dfull,m,2,km,jq,i)*iw_(m,M1_IW_EP,km,jq,i))
                    /(cx1v(m,i)*csg3_(m,1,jq,sd));
           };
-          const Real d0 = dpr(j);
           const bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
-          Real dd = 0.0;
-          if (up && dn) {
-            dd = (dpr(j+1) - dpr(j-1))/(csg3_(m,2,j+1,sd) - csg3_(m,2,j-1,sd));
-          } else if (up) {
-            dd = (dpr(j+1) - d0)/(csg3_(m,2,j+1,sd) - csg3_(m,2,j,sd));
-          } else if (dn) {
-            dd = (d0 - dpr(j-1))/(csg3_(m,2,j,sd) - csg3_(m,2,j-1,sd));
-          }
-          gr = d0 + (csg3_(m,3,j,sd) - csg3_(m,2,j,sd))*dd;
+          // cs-open-1018: the quadratic through the foot values, at the face midpoint
+          gr = M1CsSeamMid(dpr, csg3_, m, j, sd, up, dn);
         } else {
           const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
                                + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,
@@ -5504,15 +5481,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         if ((k == ks && t3lo) || (k == ke+1 && t3hi)) {
           const int sd = (k == ks) ? 0 : 1;
           const bool up = !(j == je && t2hi), dn = !(j == js && t2lo);
-          Real dd = 0.0;
-          if (up && dn) {
-            dd = (lf(j+1) - lf(j-1))/(csg3_(m,2,j+1,sd) - csg3_(m,2,j-1,sd));
-          } else if (up) {
-            dd = (lf(j+1) - off)/(csg3_(m,2,j+1,sd) - csg3_(m,2,j,sd));
-          } else if (dn) {
-            dd = (off - lf(j-1))/(csg3_(m,2,j,sd) - csg3_(m,2,j-1,sd));
-          }
-          off += (csg3_(m,3,j,sd) - csg3_(m,2,j,sd))*dd;
+          // cs-open-1018: the quadratic through the foot values, at the face midpoint
+          off = M1CsSeamMid(lf, csg3_, m, j, sd, up, dn);
         }
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)

@@ -710,6 +710,38 @@ void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1CsSeamMid
+//! \brief cs-open-1018: the value at the face MIDPOINT (smid, slot 3 of the seam geometry
+//! g = csg2 / csg3) of a seam quantity known at the FEET of the mirror-pair chords
+//! (sfoot, slot 2) of the seam faces c-1, c, c+1 along the seam: the quadratic through
+//! the three foot values (one-sided c, c+1, c+2 / c-2, c-1, c at a cube vertex, where
+//! up / dn is false).  cs-s4-1017 moved the foot value by (smid - sfoot) d/ds, which
+//! drops the (smid - sfoot)^2/2 d2/ds2 term: an O(h^2) face error that the O(h) seam
+//! cell turns into a first-order seam truncation (the cs MMS); the quadratic is exact
+//! to O(h^3) (second-order seam and vertex cells).  fv(c') is the foot value of face c'.
+
+template <class F, class G>
+KOKKOS_INLINE_FUNCTION
+Real M1CsSeamMid(const F &fv, const G &g, const int m, const int c, const int sd,
+                 const bool up, const bool dn) {
+  int a, b, e;
+  if (up && dn) {
+    a = c - 1; b = c; e = c + 1;
+  } else if (up) {
+    a = c; b = c + 1; e = c + 2;
+  } else if (dn) {
+    a = c - 2; b = c - 1; e = c;
+  } else {
+    return fv(c);
+  }
+  const Real sa = g(m,2,a,sd), sb = g(m,2,b,sd), se = g(m,2,e,sd), s = g(m,3,c,sd);
+  return fv(a)*((s - sb)*(s - se))/((sa - sb)*(sa - se))
+         + fv(b)*((s - sa)*(s - se))/((sb - sa)*(sb - se))
+         + fv(e)*((s - sa)*(s - sb))/((se - sa)*(se - sb));
+}
+
+
+//----------------------------------------------------------------------------------------
 //! \fn M1CsTanDer
 //! \brief STAGE CS1: the derivative along the OTHER tangential axis (e = 1: x2, e = 2:
 //! x3) of D_ee E at cell (k,j,i), per unit arc length, for the lagged cross term of the
@@ -1102,31 +1134,15 @@ Real M1CsLat0(const V &iw, const V &tt, const int c0, const VV &cvol, const VF &
   // the seam face value of the x2 face jf (pair jf-1, jf) moved to the face midpoint
   auto seam2 = [&](const int jf, const int sd, const Real *nf) {
     auto fv = [&](const int kq) {return 0.5*(wn(kq,jf-1,nf) + wn(kq,jf,nf));};
-    const Real d0 = fv(k);
     const bool up = !(k == ke && b3hi), dn = !(k == ks && b3lo);
-    Real dd = 0.0;
-    if (up && dn) {
-      dd = (fv(k+1) - fv(k-1))/(g2(m,2,k+1,sd) - g2(m,2,k-1,sd));
-    } else if (up) {
-      dd = (fv(k+1) - d0)/(g2(m,2,k+1,sd) - g2(m,2,k,sd));
-    } else if (dn) {
-      dd = (d0 - fv(k-1))/(g2(m,2,k,sd) - g2(m,2,k-1,sd));
-    }
-    return d0 + (g2(m,3,k,sd) - g2(m,2,k,sd))*dd;
+    // cs-open-1018: the quadratic through the foot values, at the face midpoint
+    return M1CsSeamMid(fv, g2, m, k, sd, up, dn);
   };
   auto seam3 = [&](const int kf, const int sd, const Real *nf) {
     auto fv = [&](const int jq) {return 0.5*(wn(kf-1,jq,nf) + wn(kf,jq,nf));};
-    const Real d0 = fv(j);
     const bool up = !(j == je && b2hi), dn = !(j == js && b2lo);
-    Real dd = 0.0;
-    if (up && dn) {
-      dd = (fv(j+1) - fv(j-1))/(g3(m,2,j+1,sd) - g3(m,2,j-1,sd));
-    } else if (up) {
-      dd = (fv(j+1) - d0)/(g3(m,2,j+1,sd) - g3(m,2,j,sd));
-    } else if (dn) {
-      dd = (d0 - fv(j-1))/(g3(m,2,j,sd) - g3(m,2,j-1,sd));
-    }
-    return d0 + (g3(m,3,j,sd) - g3(m,2,j,sd))*dd;
+    // cs-open-1018: the quadratic through the foot values, at the face midpoint
+    return M1CsSeamMid(fv, g3, m, j, sd, up, dn);
   };
   Real s = 0.0;
   {

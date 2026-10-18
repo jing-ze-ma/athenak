@@ -1607,15 +1607,8 @@ void RadiationM1::VetGdMmsCs() {
         if (corr && ((j == js && s2lo) || (j == je+1 && s2hi))) {
           const int sd = (j == js) ? 0 : 1;
           const bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
-          Real dd = 0.0;
-          if (up && dn) {
-            dd = (lf(k+1) - lf(k-1))/(g2(m,2,k+1,sd) - g2(m,2,k-1,sd));
-          } else if (up) {
-            dd = (lf(k+1) - off)/(g2(m,2,k+1,sd) - g2(m,2,k,sd));
-          } else if (dn) {
-            dd = (off - lf(k-1))/(g2(m,2,k,sd) - g2(m,2,k-1,sd));
-          }
-          off += (g2(m,3,k,sd) - g2(m,2,k,sd))*dd;
+          // cs-open-1018: the quadratic through the foot values, at the face midpoint
+          off = M1CsSeamMid(lf, g2, m, k, sd, up, dn);
         }
         o_(m,1,k,j,i) = off;
       }
@@ -1629,15 +1622,8 @@ void RadiationM1::VetGdMmsCs() {
         if (corr && ((k == ks && s3lo) || (k == ke+1 && s3hi))) {
           const int sd = (k == ks) ? 0 : 1;
           const bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
-          Real dd = 0.0;
-          if (up && dn) {
-            dd = (lf(j+1) - lf(j-1))/(g3(m,2,j+1,sd) - g3(m,2,j-1,sd));
-          } else if (up) {
-            dd = (lf(j+1) - off)/(g3(m,2,j+1,sd) - g3(m,2,j,sd));
-          } else if (dn) {
-            dd = (off - lf(j-1))/(g3(m,2,j,sd) - g3(m,2,j-1,sd));
-          }
-          off += (g3(m,3,j,sd) - g3(m,2,j,sd))*dd;
+          // cs-open-1018: the quadratic through the foot values, at the face midpoint
+          off = M1CsSeamMid(lf, g3, m, j, sd, up, dn);
         }
         o_(m,2,k,j,i) = off;
       }
