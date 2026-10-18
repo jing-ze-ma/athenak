@@ -1041,3 +1041,30 @@ C = the 2-D cal deck (20 cycles); P = the 049c1f39 3-D benchmark deck b3d_half (
 0 NC, 0 retries; Mnzf 254.88 (+0.015 % of 254.843) from t 0.0024; Min - Mnzf 0.420 constant; Mmsk 4e-8; Eirr linear;
 Ltop 2.4e5 -> 2.6e5; dt 1.41e-5 -> 1.15-1.30e-5 at t > 0.008 (thin floor gas near the photosphere, 200-300 km/s). The stream
 is now confined vertically: rho-weighted sigma_z 1.005 at the nozzle -> 0.965 (r 14) -> 0.81 (r 13), centred at z = 0.
+
+### 16.5 The theta-wall pile-up: cause and fix (USER 10-17 night; Raven A100 + Viper MI300A)
+- Diagnostics (hse walls, reflecting radiation): theta resolution x2 -> the same growth (x6.0 vs x5.8 at t 0.0075) in the same
+  ANGULAR layer (~2 deg): not truncation. Wedge +-30 deg -> x7.9 at the 30-deg wall, nothing at 23 deg: a wall effect that grows
+  with the equipotential tilt at the wall. At the wall rows the dense gas is HEATED (T/T0 1.027 vs 1.0095 inside, t 0.01) and
+  RISES (v_r 3.0 vs 0.9 km/s), lifting gas into the atmosphere.
+- Cause: the REFLECTING radiation wall. On the tilted equipotentials the equilibrium (von Zeipel) flux has a poleward component
+  F_theta = F dPhi/(r dtheta)/|grad Phi|; F_theta = 0 at the face makes it converge in the wall rows.
+- Non-reflecting test, <rad_m1>/implicit_bc_x2 = outflow (opt-in, zero-gradient outgoing F, lagged): growth halved (x2.9) but
+  Picard mean 15.9 (reflect 2.0) and Lmeas -13 % by t 0.0085 (the free face drains the star; unbooked leak). Not the fix.
+- FIX: <rad_m1>/implicit_bc_x2 = flux (opt-in, rad_m1 SetX2FaceFlux): the wall face carries the IMPOSED equilibrium lateral flux
+  F_col(psi) dPhi/(r dtheta)/|grad Phi| (true 3-D Roche Phi; only inside the photosphere, psi > 0; first try without that cut
+  imposed 1.4 L sideways and broke at the walls), booked in Ebnd (leak 0.9 % of L). s3dHfx / s3dOfx (t 0.012 / 0.014): wall-row
+  thin-class growth 0.85 / 0.79 (reflect 5.8, t 0.0075) and 0.6-0.98 at t 0.01 (interior 0.56-1.17): GONE; wall rows T and v_r as
+  inside; Picard 2.0; 0 NC/retries; dt unchanged; energy residual constant (leak booked); Lmeas as with reflect.
+- Interior poleward drift (-1.75 km/s mass-weighted, rho0 1e-5..1e-3, rows 6-20) is unchanged by every wall option: it is the
+  thin-atmosphere evolution of the IC (the 2-D band's lateral flows in phi), not a wall effect.
+- Hydro wall: hse vs outflow behave the same for the atmosphere; mass exchange through the walls (deep envelope, inflow):
+  hse |dM/M| 6e-6 by t 0.012 (2e-5 by 0.037), outflow 5e-5 by 0.014 (1e-4 by 0.037). Recommended: theta_bc = hse +
+  implicit_bc_x2min/max = flux for static/pre-impact; outflow (books Mout) once the splash reaches the walls.
+- Gates: v4 (outflow radiation face code) BITWISE on A100 (A, C) and on MI300A (A, vs 3c2a625b_r71); v5/v6 BITWISE on A100 (A, C / A).
+- s3dHfx continued (rst t 0.0122 -> 0.0396, 4 A100; 0 NC, 0 retries, Picard 2.0, dt 1.39e-5 -> 1.23e-5 set by thin atmosphere gas
+  ~100 km/s): all-phi median rho/rho0 of the thin class at t 0.035 is FLAT in latitude (rows 0/1/2/4/10/equator 15.2/15.0/15.3/15.7/
+  16.0/15.1; reflecting radiation: 43.8/32.1/22.5/19.4/17.1/15.4). The remaining facing-side (phi +-30) latitude gradient (row 0 19 vs
+  row 4 12) has no wall layer.
+- OPEN (not a wall effect, every 3-D arm): after t ~0.02 the thin atmosphere (rho0 < 1e-3, ~1e-7 of the star's mass) densifies
+  ~x15 by t 0.035 in 3-D while the 2-D band's drains (x0.19 at t 0.03); the envelope (rho0 > 1e-2) agrees with the band.
