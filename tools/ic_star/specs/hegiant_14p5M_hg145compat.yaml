@@ -1,0 +1,21 @@
+# EXACT inputs of hg145 ic2/gen.sh (make_ic_agcar_mltpp.py --mode inward): reproduces
+# /raven/ptmp/jinma/hegiant145_1015/ic2/ic_hg145_mltpp.txt with the compatibility scheme
+# (grid anchored at r_j, rtol 1e-9, MLT++ 'f2' form).  Not the standard sampling: use
+# hegiant_14p5M.yaml for production.
+name: hegiant_14p5M_hg145compat
+allow_outside_tables: true   # ONLY to reproduce ic2 (its column leaves the EOS/opacity grids)
+star: {L: 1.421236e38, GM: 3.6562325478560006e+26, R_ph_cm: 7.642290e12}
+composition: {X: 9.496e-4, Y: 0.97752, Z: 0.0215304, a_metal: 1.8047, mixture: custom,
+              tops_mixture: "see hegiant_14p5M.yaml"}
+opacity:
+  rosseland: /raven/ptmp/jinma/hegiant145_1015/tables/rosseland_tops_hegiant_surf.txt
+  planck: /raven/ptmp/jinma/hegiant145_1015/tables/planck_tops_hegiant_surf.txt
+eos: {dump: /raven/ptmp/jinma/hegiant145_1015/eos/eos_dump_hg145.txt, logd_max: -1.0, logt_max: 6.8}
+mlt: {alpha: 1.5, mlt_option: KW, alt_scale_height: false, mltpp: agcar_legacy, f1: 1.0e-4,
+      f2: 1.0e-3, pp_alpha: 1.0, pp_form: f2}
+grid: {scheme: mltpp_inward, dlnr: 2.0e-4, tauj: 3.0, rho_lo: 1.0e-13, rho_hi: 3.0e-7, fl_step: 50.0}
+r_in: {rule: explicit, r_cm: 5.5656e11, bottom_cm: 4.8699e11}
+r_top: {col_top_cm: 2.7828e13, x1max_cm: 2.473909e13}
+background: {rho_floor: 1.0e-16}
+taper: {enable: false}
+seam: {enable: false}

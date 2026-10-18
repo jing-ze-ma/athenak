@@ -1,0 +1,34 @@
+# He giant 14p5M_widebinary_profile14 (Wu; MESA approx21), the STANDARD scheme.
+# L, M, R_ph from the MESA header; GM = G_code x M_MESA (as hg145 ic2); wall 8 Rsun (radiative in
+# MESA, CZ base 19.4 Rsun), column bottom 6 Rsun.  Composition = hg145 TOPS mixture (X 9.496e-4,
+# Z 0.02153, a_metal 1.8047 fully ionized metals); TOPS of this exact mixture (LANL answered 10-16:
+# hg145 tops_hg145.dat, rho 1e-18..1).
+name: hegiant_14p5M
+# mode mesa (default with a MESA profile): MESA T(P) + our EOS/kappa/gravity.
+star: {L: mesa, R_ph: mesa, M: mesa}
+composition:
+  X: 9.496e-4
+  Y: 0.97752
+  Z: 0.0215304
+  a_metal: 1.8047
+  mixture: custom
+  saha_mixture: "3.82309e-03 h 9.91068e-01 he 8.73340e-05 c 3.76382e-03 n 1.01567e-04 o 3.05414e-04 ne 7.46004e-06 na 4.95870e-04 mg 1.02977e-05 al 1.23806e-04 si 9.83425e-07 p 7.46004e-05 s 1.10342e-06 cl 8.76476e-06 ar 4.59982e-07 k 7.99358e-06 ca 3.65377e-07 ti 1.63208e-06 cr 8.56529e-07 mn 1.10342e-04 fe 2.90229e-07 co 6.20498e-06 ni"   # the star's mixture (hg145 mixture_hg145.txt) for the Saha-es extension
+  tops_mixture: "3.82309e-03 h 9.91068e-01 he 8.73340e-05 c 3.76382e-03 n 1.01567e-04 o 3.05414e-04 ne 7.46004e-06 na 4.95870e-04 mg 1.02977e-05 al 1.23806e-04 si 9.83425e-07 p 7.46004e-05 s 1.10342e-06 cl 8.76476e-06 ar 4.59982e-07 k 7.99358e-06 ca 3.65377e-07 ti 1.63208e-06 cr 8.56529e-07 mn 1.10342e-04 fe 2.90229e-07 co 6.20498e-06 ni 1.38913e-07 zn"   # EXACT 14p5M mixture (LANL TOPS answered 10-16 10:25)
+mesa_profile:
+  path: /raven/ptmp/jinma/ic_star_cache/raw/mesa/14p5M_widebinary_profile14.data
+  format: mesa
+opacity:
+  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/hg145_exact_hi.dat   # TOPS of the exact mixture, rho 1e-18..1
+r_in: {rule: explicit, r_rsun: 8.0, bottom_rsun: 6.0}   # bottom: the code needs x1min - ~5 dr(wall) (hg145 31206125: 6.68)
+grid: {rho_lo: 1.0e-13, rho_hi: 3.0e-7}
+r_top: {x1max_cm: 2.473909e13}   # = hg145e1_raven.athinput (355.6 Rsun)
+seam:
+  deck: /raven/ptmp/jinma/hegiant145_1015/decks/hg145e1_raven.athinput
+  binary: /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_843ce3e4   # ic-gammacap-1016
+  overrides: ['problem/he_ic_rad_gamma_cap=0.3']
+# 10-16: without a cap the code's own sph1d + re_atm + HSE startup does not converge for this star
+# (super-Eddington RE photosphere on the He/H opacity cliff; RESULTS sect. 6).  With the opt-in
+# startup cap he_ic_rad_gamma_cap = 0.3 (branch ic-gammacap-1016, he_star_m1) the radiative flux
+# is capped at 0.3 c g/kappa per cell and the excess goes into the frozen scaffold (as MESA's
+# convection there); the standard top (Hopf) and taper (tau 30 -> 3) are used.
+deck_extra: ['problem/he_ic_rad_gamma_cap=0.3']

@@ -1,0 +1,13 @@
+# 10-16 DIAGNOSTIC (cut-off period test, RESULTS sect. 7c), NOT a production star: mode global
+# BSG-like column with R_ph fixed at the BSG seam fixed point (3.5877e12 cm), L of the BSG, and
+# M = 20.0 Msun, so g at R_ph and the atmosphere scale height H_P = P/(rho g) scale x1.0 (base).
+name: bsgG_base
+mode: global
+star: {L: 5.581461e38, R_ph_cm: 3.5877e12, M: 20.0}
+composition: {X: 0.7, Y: 0.292, Z: 0.008, mixture: GS98, a_metal: 16.0}
+opacity:
+  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/bsg_x0.7_z0.008_hi.dat
+r_in: {rule: explicit, r_rsun: 20.0, bottom_rsun: 18.0}
+r_top: {x1max_cm: 5.5656009644e12}
+seam:
+  deck: /raven/ptmp/jinma/bsg_newsetup_1015/decks/bsg_s0p_std_g480.athinput

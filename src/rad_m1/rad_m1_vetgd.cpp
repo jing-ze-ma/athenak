@@ -934,8 +934,10 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
   // the sp wedge 3d is opt-in (the wall maps then take the nearest set direction)
   if (vgd_on) {
     const bool csm = pmy_pack->pmesh->use_cubed_sphere;
-    const std::string ax = pin->GetOrAddString("rad_m1","vet_gd_rotate_axis",
-                                               csm ? "3d" : "z");
+    // read only when named: the default is not added to the parameter dump
+    const std::string ax = pin->DoesParameterExist("rad_m1","vet_gd_rotate_axis") ?
+                           pin->GetString("rad_m1","vet_gd_rotate_axis") :
+                           std::string(csm ? "3d" : "z");
     if (ax.compare("z") == 0) {
       vgd_rot3 = false;
     } else if (ax.compare("3d") == 0) {
