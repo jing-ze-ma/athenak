@@ -65,3 +65,11 @@ The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it 
   - `ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper depth 1131 (psi), factor 0.94676 .. 1.00383 (rank 0)`
   - NOTE: the low end 0.947 is below the TASK's expected ~0.97-1.03 (rank 0 only is printed). Not a stop condition; flagged for review.
 - Static phase healthy so far: cycle 250, t 3.53e-3, dt 1.407e-05, ~0.43 s/cycle; FATAL/NaN/DIVERGED 0.
+
+## Update 7 (2026-10-18): QUESTION FOR RAVEN - env_ic_vz factor low end 0.947
+- Caltech link 1 startup line: `ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper depth 1131 (psi), factor 0.94676 .. 1.00383 (rank 0)`.
+  The low end 0.947 is below the TASK's expected ~0.97-1.03.
+- **Raven: please compare with your A100 v10 startup line.** Our layout is 2 ranks (4 MeshBlocks per rank), so "rank 0" covers
+  a different, larger part of the mesh than your rank 0 (8 ranks x 1 MB); the min/max may differ for that reason alone. Please say
+  whether we should continue. **We keep running unless told otherwise.**
+- Static phase status: t 0.0216 at cycle 1550, ~0.44 s/cycle, dt 1.23e-5, 0 DT_RETRY, GPU memory 14661 MiB per GPU; FATAL/NaN/DIVERGED 0.
