@@ -13,3 +13,15 @@
     (unmodified for 5 min) to **/work/hdd/bivj/jma20/hg145_prod_1018/bin** and removes the nvme copy only after `cmp` confirms the copy.
     No dump is deleted. hst and rst stay in run/. Log: hg145_prod_1018/mover.log.
 - Next: a NOTE when link 1 starts (s/cycle, dt, Picard, memory) and a one-line NOTE at link end.
+
+---
+## Link 1 STARTED (2026-10-18 10:18 UTC, job 3403162, gh126); status at 10:28 UTC (10 min in)
+- FRESH t = 0, clean so far: FATAL 0, Picard DIVERGED 0, DT_RETRY 0 retries. Picard 3.0 per solve (hst). L_top/L_in 0.9999 at t 1.23e5.
+- **0.49 s/cycle**, dt 100 s flat -> t 1.20e5 (1.39 d) after 10 min wall = **~8.3 sim days per wall hour**. If dt holds, link 1
+  (athena -t 47:45) reaches ~**390-400 d**. GPU memory 21.8 GB per GPU (of 96), the same as Test A.
+- **Dumps: ~2.4 GB per sim day** (hydro_w 231 MB + m1 185 + m1_vet 185 per 0.25 d) = ~20 GB per wall hour. The mover is working:
+  finished dumps go to /work/hdd/bivj/jma20/hg145_prod_1018/bin with cmp verification (mover.log).
+  **Storage warning:** at this rate link 1 alone writes ~950 GB of dumps. That about fills the /work/hdd quota (1000 GB), with nvme
+  (~280 GB free) as overflow, because the mover keeps any file it cannot copy on nvme. A link 2 at the same output cadence would NOT fit:
+  dumps would need moving off DeltaAI, or a lower bin cadence (USER/Raven decision).
+- One-line NOTE at link end (~47.8 h from start).
