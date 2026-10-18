@@ -242,6 +242,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     std::istringstream iso(so);
     iso >> frame_om[0] >> frame_om[1] >> frame_om[2];
     frame_on = true;
+    if (pin->DoesParameterExist("hydro","frame_exact")) {
+      frame_exact = pin->GetBoolean("hydro","frame_exact");
+    }
   }
   if (pin->DoesParameterExist("hydro","am_vector")) {
     am_vector = pin->GetBoolean("hydro","am_vector");
@@ -254,6 +257,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                       ic.nx1 + 2*ic.ng);
       Kokkos::deep_copy(am_spin, 0.0);
       Kokkos::deep_copy(am_spin1, 0.0);
+      Kokkos::realloc(am_spins, nmbs, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng,
+                      ic.nx1 + 2*ic.ng);
+      Kokkos::deep_copy(am_spins, 0.0);
       if (pin->DoesParameterExist("hydro","am_spin_return")) {
         am_eta = pin->GetReal("hydro","am_spin_return");
       }

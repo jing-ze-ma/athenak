@@ -193,6 +193,7 @@ class Hydro {
   bool am_vector = false;
   DvceArray3D<Real> am_rhat;          // unused placeholder (kept for layout clarity)
   DvceArray4D<Real> am_spin, am_spin1;
+  DvceArray4D<Real> am_spins;   // the spin of the stage's state, before the RK combination
   // <hydro>/am_spin_return = eta (read only when named, default 0 = off; needs am_vector):
   // once per step (last stage), every LATERAL face moves L between its two cells along
   // (rhat_c - rhat_n): each cell carries the change exactly (perpendicular part in its
@@ -208,7 +209,16 @@ class Hydro {
   // torque is the L-conserving T* (coriolis_am generalised to a vector Omega)
   bool frame_on = false;
   Real frame_om[3] = {0.0, 0.0, 0.0};
-  void FrameRotation(Real bdt);
+  void FrameRotation(Real bdt, Driver *pdrive, int stage);
+  // <hydro>/frame_exact (read only when named, default false; needs frame_omega and
+  // am_vector, integrator rk1 | rk2): the frame rotation of the absolute L of every cell
+  // (gas, spin, radiation) over the step is the EXACT rotation R(-Omega dt) of its
+  // step-start value: the last stage adds (R - I - dt A - dt^2 A^2/2) L^n (A = -Omega x),
+  // the part of the exact map the RK stages do not carry, so sum_c L_abs maps to
+  // R(-Omega dt) sum_c L_abs + boundary terms to round-off (|L_abs| and the inertial
+  // components exact)
+  bool frame_exact = false;
+  DvceArray5D<Real> frame_ln;   // (m, 3, k, j, i): L_abs of the cell at the step start
   void AmFillV(hydro::HydroAmV &v);
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
