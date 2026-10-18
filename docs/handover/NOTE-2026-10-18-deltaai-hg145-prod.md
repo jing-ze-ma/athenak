@@ -25,3 +25,19 @@
   (~280 GB free) as overflow, because the mover keeps any file it cannot copy on nvme. A link 2 at the same output cadence would NOT fit:
   dumps would need moving off DeltaAI, or a lower bin cadence (USER/Raven decision).
 - One-line NOTE at link end (~47.8 h from start).
+
+---
+## Link 1 (3403162) ENDED 14:04 UTC: FATAL on rst write, nvme QUOTA FULL (DeltaAI's fault, not the physics); resubmitted 3405272
+- At cycle 24150 (t 2.415e6, 28.0 d) writing hegiant.00056.rst: `Disk quota exceeded` -> restart.cpp:1254 FATAL
+  ("vet_rotate_avg history cache not written correctly"); job hung after the FATAL and was cancelled (3 h 46 min, ~15 SU).
+- Cause: the deck writes a **~7.5 GB rst every 0.5 d (~15 GB per sim day)** and my link script pruned rst only at link end.
+  I had budgeted the bin dumps only. 56 rst files (~420 GB) filled /work/nvme/bivj.
+- Physics up to the crash was clean: FATAL 0 before the I/O error, DIVERGED 0, NC 0. dt 100 s flat. Pace dropped from 0.49 to ~0.68 s/cycle
+  after ~20 d as Picard rose 3 -> 5 per solve. **L_top/L_in drifted 1.00 -> 0.95 by ~27 d** (worth a look on Raven).
+- Recovery: rst_pick.py chose hegiant.00055.rst (t 2.376e6 = 27.5 d, cycle 23760, valid); the truncated 00056 is quarantined in rst/invalid/.
+  Pruned rst 00001-00052 (TASK rule keep newest 3; kept 00000 = IC + 00053-55). All bin dumps kept (0-2.4e6, 61 GB on /work/hdd).
+  hst has rows for 2.376e6-2.415e6 that the restart will write again (duplicate times; drop the earlier rows when analysing).
+- Fix: an in-job rst pruner (keeps IC + 4 newest, the newest possibly still being written) runs every 5 min; the restart uses
+  rst_pick.py (validity check). Storage now stays bounded: rst <= ~40 GB on nvme, bins ~2.4 GB/sim day to hdd.
+- **Resubmitted as job 3405272** (ghx4, 4 GH200, `-r hegiant.00055.rst time/tlim=1e9`, **44 h** wall so the total stays ~192 SU = the one
+  approved link). Slurm start estimate ~17:42 UTC 10-19 (~27.5 h).
