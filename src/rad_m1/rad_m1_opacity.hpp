@@ -100,6 +100,22 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
     os = M1ScatterGuard(kt, tab.kes, tab.kfl);
     of = kt - os;
   }
+  // <rad_m1>/opac_lowrho_rho (raydonor-1017): the low-density absorption ramp (default
+  // lr_rho = 0: never true, bitwise inert).  Below lr_rho, kappa_P, kappa_E and the
+  // absorption part of the transport opacity scale as (d/lr_rho)^lr_s; electron
+  // scattering is kept (scat != 0: os untouched; scat = 0: min(kappa_R, lr_kes) of the
+  // total is taken as scattering)
+  if (d < tab.lr_rho) {
+    const Real f = pow(fmax(d, 0.0)/tab.lr_rho, tab.lr_s);
+    op *= f;
+    oe *= f;
+    if (tab.scat != 0) {
+      of *= f;
+    } else {
+      const Real ke = fmin(of, tab.lr_kes);
+      of = ke + (of - ke)*f;
+    }
+  }
   // <rad_m1>/opac_abs_rho_max: the absorption mask of tenuous (ambient) gas, scattering
   // only (default amask_rho = 0: never true, bitwise inert)
   if (d < tab.amask_rho) {

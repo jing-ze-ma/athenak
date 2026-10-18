@@ -378,6 +378,37 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
+  // <rad_m1>/opac_lowrho_rho (raydonor-1017, USER 10-18; read only when named, default 0 =
+  // off, bitwise inert): a LOW-DENSITY ABSORPTION RAMP of the table opacity.  The tables'
+  // low-rho extension (build_ext.py: kappa_P = kappa_P,e (rho/rho_e)^s, s the local slope
+  // clamped [0, 1]) holds the LTE line-dominated Planck mean nearly flat below the data
+  // floor: 300-1600 cm^2/g at 20-30 kK and 5e-16 g/cc, the accretor's 1e-8 density floor,
+  // which then absorbed ~2/3 of the donor beam (tau ~0.25 between the stars).  A thin
+  // plasma at that density is not in LTE: its emission is collisional (~n^2 Lambda), so
+  // kappa_abs per unit mass falls ~ rho (non-LTE estimate ~1e-4 cm^2/g at 20 kK).  Cells
+  // with a CODE density below opac_lowrho_rho get kappa_P, kappa_E and the absorption
+  // part of the transport opacity x (d/opac_lowrho_rho)^opac_lowrho_slope (default 1);
+  // electron scattering (opac_lowrho_kappa_s [cm^2/g], default 0.34, of the TOTAL kappa_R
+  // when vet_scatter is off) is kept.  Applied inside M1TableOpacities (every lookup), as
+  // opac_abs_rho_max, so the M1 solve, the closures and a pgen reading opac see one law.
+  if (pin->DoesParameterExist("rad_m1","opac_lowrho_rho")) {
+    otab.lr_rho = pin->GetReal("rad_m1","opac_lowrho_rho");
+    otab.lr_s = pin->GetOrAddReal("rad_m1","opac_lowrho_slope",1.0);
+    const Real kes = pin->GetOrAddReal("rad_m1","opac_lowrho_kappa_s",0.34);
+    otab.lr_kes = kes*otab.kunit;
+    if (otab.lr_rho < 0.0 || otab.lr_s < 0.0 || kes < 0.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/opac_lowrho_rho, opac_lowrho_slope and "
+        << "opac_lowrho_kappa_s must be >= 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> opac_lowrho_rho " << otab.lr_rho << " (code; "
+                << otab.lr_rho*otab.dunit << " g/cc), slope " << otab.lr_s
+                << ", kappa_s kept " << kes << " cm^2/g: absorption x (rho/rho_lr)^s below"
+                << std::endl;
+    }
+  }
   kappa_p = pin->GetOrAddReal("rad_m1","kappa_p",0.0);
   kappa_e = pin->GetOrAddReal("rad_m1","kappa_e",kappa_p);
   kappa_f = pin->GetOrAddReal("rad_m1","kappa_f",kappa_p);

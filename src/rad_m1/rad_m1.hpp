@@ -168,6 +168,13 @@ struct M1OpacTab {
   // per mass, = opac_abs_kappa_s [cm^2/g] x kunit); see rad_m1.cpp
   Real amask_rho = 0.0;
   Real amask_kes = 0.0;
+  // <rad_m1>/opac_lowrho_rho (raydonor-1017; default 0 = off): below this CODE density the
+  // ABSORPTION opacities (kappa_P, kappa_E and the absorption part of the transport
+  // opacity) are multiplied by (d/lr_rho)^lr_s; electron scattering (lr_kes, code units per
+  // mass) is kept; see rad_m1.cpp
+  Real lr_rho = 0.0;
+  Real lr_s = 1.0;
+  Real lr_kes = 0.0;
   // vet_scatter (vet-scatter-1006): the split of the tabulated TOTAL kappa_R into true
   // absorption kappa_a = kappa_R - kappa_e and electron scattering kappa_e (Ma+2026
   // sect. 2.2.4).  scat 0 = no split (os = 0, bitwise the old lookup), 1 = constant

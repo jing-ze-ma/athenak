@@ -108,6 +108,8 @@ bool rd_dgas_ = false;             // donor_ray_deposit = gas (eps q into u(IEN)
 bool rd_oros_ = false;             // donor_ray_opac = rosseland (rho kappa_T only); default total
 int rd_grow_ = 4;                  // donor_ray_grow: max step growth in thin gas
 int rd_nupd_ = 0;
+double rd_tupd_ = 0.0, rd_tapp_ = 0.0;   // cumulative wall time (rank 0) of updates / applies
+int rd_napp_ = 0;
 bool rd_have_ = false;
 Real rd_dump_dt_ = 0.0, rd_dump_next_ = 0.0;
 int rd_dump_n_ = 0;
@@ -555,9 +557,15 @@ void RayDonorUpdate(MeshBlockPack *pmbp, Mesh *pm) {
   rd_qtot_ = qsum;
   rd_have_ = true;
   rd_nupd_++;
+  const double tw = std::chrono::duration<double>(std::chrono::steady_clock::now()
+                                                  - tw0).count();
+  rd_tupd_ += tw;
+  if (global_variable::my_rank == 0 && rd_nupd_ % 200 == 0) {
+    std::printf("ry_per_accretor: raydonor timing: %d updates %.3f s (%.4f s each), %d "
+                "applies %.3f s (%.5f s each), rank 0 wall\n", rd_nupd_, rd_tupd_,
+                rd_tupd_/rd_nupd_, rd_napp_, rd_tapp_, rd_tapp_/fmax(rd_napp_, 1));
+  }
   if (rd_nupd_ <= 3 && global_variable::my_rank == 0) {
-    const double tw = std::chrono::duration<double>(std::chrono::steady_clock::now()
-                                                    - tw0).count();
     std::printf("ry_per_accretor: raydonor update %d (cycle %d): %.3f s wall (rank 0), "
                 "removed power %.6g code\n", rd_nupd_, pm->ncycle, tw, qsum);
   }
@@ -624,6 +632,7 @@ Real RayDonorApply(MeshBlockPack *pmbp, Mesh *pm, const Real bdt, const bool las
   auto &vol = pmbp->pcoord->volume;
   const Real dtl = pm->dt;
   const bool dgas = rd_dgas_;
+  const auto ta0 = std::chrono::steady_clock::now();
   Real esum = 0.0;
   const int ntot = (nmb1 + 1)*(ke - ks + 1)*(je - js + 1)*ni;
   const int nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
@@ -657,6 +666,8 @@ Real RayDonorApply(MeshBlockPack *pmbp, Mesh *pm, const Real bdt, const bool las
     sum += (de + dr)*vol(m,k,j,i);
   }, Kokkos::Sum<Real>(esum));
   (void) ie;
+  rd_tapp_ += std::chrono::duration<double>(std::chrono::steady_clock::now() - ta0).count();
+  rd_napp_++;
   return esum;
 }
 
