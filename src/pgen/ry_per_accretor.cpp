@@ -3247,6 +3247,63 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v);
     auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x3v);
     const Real tk = eos.temp_cgs;
+    // acc3d-stream-1018 (USER 10-18 "go with a"): problem/env_ic_vz (read only when named,
+    // default off = the barotropic column T(psi) on every equipotential, bitwise): the von
+    // Zeipel temperature in the atmosphere, T = T_col(psi) (g_eff/g_col(psi))^(w/4), g_eff =
+    // |grad Phi| of the true Roche potential at the cell (3-D: r, theta, phi; band: the
+    // plane), g_col(psi) = the same at the column's own position r_eq(psi) (phi 90 cut, the
+    // v7 wall-flux factor), w = 1 above the photosphere (psi <= 0), tapering linearly to 0
+    // at psi = env_ic_vz_depth c_ph^2 below it (default 3: deeper the barotropic T(psi) of a
+    // radiative interior is kept).  Density follows from the IC's own hydrostatic march
+    // along each ray (anchored at the photospheric cell at the column's rho), the radeq
+    // floor/ambient and RadIC E = a T^4 use the same T, so the IC stays in HSE per ray.
+    const bool icvz = pin->DoesParameterExist("problem", "env_ic_vz") &&
+                      pin->GetBoolean("problem", "env_ic_vz");
+    std::vector<Real> gcolv;
+    Real vzdep = 0.0;
+    if (icvz) {
+      if (!rad_) {
+        std::cout << "### FATAL ERROR in ry_per_accretor: problem/env_ic_vz needs <rad_m1>" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      vzdep = pin->GetOrAddReal("problem", "env_ic_vz_depth", 3.0)*env_cph2_;
+      gcolv.resize(cpsi.size());
+      for (size_t n=0; n<cpsi.size(); ++n) {
+        const Real ee = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
+        const Real a = (RochePot3(p, rq*(1.0 + ee), 1.0, h) -
+                        RochePot3(p, rq*(1.0 - ee), 1.0, h))/(2.0*ee*rq);
+        gcolv[n] = std::fabs(a);   // the plane at phi 90: dPhi/dtheta = dPhi/dphi = 0
+      }
+    }
+    Real vzmin = 1.0e300, vzmax = -1.0e300;
+    auto vzfac = [&](const Real r, const Real th, const Real ph, const Real psi) {
+      if (!icvz) return static_cast<Real>(1.0);
+      const Real w = (psi <= 0.0) ? 1.0 : std::max(0.0, 1.0 - psi/vzdep);
+      if (!(w > 0.0)) return static_cast<Real>(1.0);
+      const Real ee = 1.0e-6, sth = std::sin(th);
+      const Real gt = (RochePot3(p, r, std::sin(th + ee), ph) -
+                       RochePot3(p, r, std::sin(th - ee), ph))/(2.0*ee*r);
+      const Real gr = (RochePot3(p, r*(1.0 + ee), sth, ph) -
+                       RochePot3(p, r*(1.0 - ee), sth, ph))/(2.0*ee*r);
+      const Real gp = (RochePot3(p, r, sth, ph + ee) - RochePot3(p, r, sth, ph - ee))
+                      /(2.0*ee*r*sth);
+      const Real g = std::sqrt(gt*gt + gr*gr + gp*gp);
+      // g_col(psi), linear in psi, clamped at the column's ends
+      Real gc;
+      if (psi <= cpsi.front()) {
+        gc = gcolv.front();
+      } else if (psi >= cpsi.back()) {
+        gc = gcolv.back();
+      } else {
+        const size_t n = std::upper_bound(cpsi.begin(), cpsi.end(), psi) - cpsi.begin();
+        const Real x = (psi - cpsi[n-1])/(cpsi[n] - cpsi[n-1]);
+        gc = (1.0 - x)*gcolv[n-1] + x*gcolv[n];
+      }
+      const Real f = std::pow(g/gc, 0.25*w);
+      vzmin = std::min(vzmin, f);
+      vzmax = std::max(vzmax, f);
+      return f;
+    };
     for (int m=0; m<nmb; ++m) {
       for (int k=0; k<n3; ++k) {
         for (int i=0; i<n1; ++i) {
@@ -3254,6 +3311,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
           Real lt, lr;
           ColumnAt(cpsi, clt, clr, psi, lt, lr);
           ht(m,k,i) = std::exp(lt)/tk;
+          if (icvz) ht(m,k,i) *= vzfac(hx1(m,i), 0.5*M_PI, hx3(m,k), psi);
         }
       }
     }
@@ -3273,11 +3331,16 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
               Real lt, lr;
               ColumnAt(cpsi, clt, clr, psi, lt, lr);
               ht4(m,k,j,i) = std::exp(lt)/tk;
+              if (icvz) ht4(m,k,j,i) *= vzfac(hx1(m,i), hx2(m,j), hx3(m,k), psi);
             }
           }
         }
       }
       Kokkos::deep_copy(tcol4_, ht4);
+    }
+    if (icvz && root) {
+      std::printf("ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper depth "
+                  "%.4g (psi), factor %.5f .. %.5f (rank 0)\n", vzdep, vzmin, vzmax);
     }
     if (rad_) RadSetup(pin, pmbp, cpsi, clt, clr, crq, cfl);
   }
