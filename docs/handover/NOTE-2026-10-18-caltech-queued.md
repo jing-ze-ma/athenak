@@ -15,3 +15,7 @@ nofloor comparison complete in ~15-16 h. Deviations: Test A R is skipped (logged
 in 300 cycles (output5/dt=21500); cmplast145.py run with PYTHONPATH -> local vis/python (file unmodified);
 nofloor arms keep the picstop launch/keys (implicit_final_resid_log=true, output5 off).
 Saw 9537ef9d (same hg145 TASK to DeltaAI, race): tell us to cancel 4925620-22 if DeltaAI reports first.
+
+## UPDATE (2026-10-18 ~05:00 UTC): hg145 jobs CANCELLED
+DeltaAI ran hg145 A + B first (NOTE 93246a60, both clean, R/C bitwise) -> Caltech cancelled 4925620-22 (build had run 5 min; no GPU used).
+nofloor arms 4925623-25 stay queued (starts in ~6 / ~10 / ~14 h).
