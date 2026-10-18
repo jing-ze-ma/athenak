@@ -2250,6 +2250,15 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
       auto hbc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmb->mb_bcs.d_view);
       const int js = indcs.js, je = indcs.je, is = indcs.is, ie = indcs.ie, ks = indcs.ks;
       const int ke = indcs.ke;
+      // |grad Phi| of the true 3-D Roche potential at the column's r_eq (phi = 90, plane)
+      std::vector<Real> gcol(cpsi.size());
+      for (size_t n=0; n<cpsi.size(); ++n) {
+        const Real e = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
+        const Real a = (RochePot3(p, rq*(1.0 + e), 1.0, h) - RochePot3(p, rq*(1.0 - e), 1.0, h))
+                       /(2.0*e*rq);
+        const Real b = (RochePot3(p, rq, 1.0, h + e) - RochePot3(p, rq, 1.0, h - e))/(2.0*e*rq);
+        gcol[n] = std::sqrt(a*a + b*b);
+      }
       auto fth = [&](const Real r, const Real th, const Real ph) {
         const Real e = 1.0e-6;
         const Real gt = (RochePot3(p, r, std::sin(th + e), ph) -
@@ -2265,7 +2274,10 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
         // column's F capped at the top over the whole outer wall drained the star (the first
         // try imposed 1.4x L_r out sideways; eint <= 0 retries at the walls)
         if (!(phis - w > 0.0)) return 0.0;
-        return RadColAt(rcol_f_, phis - w)*gt/std::fmax(g, 1.0e-30);
+        // von Zeipel (10-18): on an equipotential F ~ g_eff, so the column's F (taken at
+        // its own position r_eq(psi), theta = pi/2, phi = pi/2) scales by g/g_col(psi); the
+        // lateral component is then F_col (g/g_col) gt/g = F_col gt/g_col
+        return RadColAt(rcol_f_, phis - w)*gt/std::fmax(RadColAt(gcol, phis - w), 1.0e-30);
       };
       Real lk = 0.0;
       for (int m=0; m<nmb; ++m) {
@@ -2293,7 +2305,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
       pm1->SetX2FaceFlux(fx2lo_, fx2hi_);
       if (root) {
         std::printf("ry_per_accretor: <rad_m1> x2 walls: IMPOSED equilibrium lateral flux "
-                    "F_col(psi) dPhi/(r dth)/|grad Phi|; outward total (rank 0) %.6g code "
+                    "F_col(psi) (g/g_col) dPhi/(r dth)/|grad Phi| (von Zeipel); outward total (rank 0) %.6g code "
                     "(= %.4g Lsun of the full sphere scale)\n", lk, lk*rad_lfac_);
       }
     }
