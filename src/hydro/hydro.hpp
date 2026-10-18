@@ -192,6 +192,16 @@ class Hydro {
   bool am_vector = false;
   DvceArray3D<Real> am_rhat;          // unused placeholder (kept for layout clarity)
   DvceArray4D<Real> am_spin, am_spin1;
+  // <hydro>/am_spin_return = eta (read only when named, default 0 = off; needs am_vector):
+  // once per step (last stage), every LATERAL face moves L between its two cells along
+  // (rhat_c - rhat_n): each cell carries the change exactly (perpendicular part in its
+  // tangential momentum, radial part in its spin), the total L is unchanged, and the
+  // spins relax toward zero (a fraction ~eta per step).  Seam neighbours are the mirror
+  // cells (no-resample spin exchange), their direction the reflection across the seam
+  Real am_eta = 0.0;
+  MeshBoundaryValuesCC *pbval_spin = nullptr;
+  DvceArray5D<Real> spw, spw_c;
+  void AmSpinReturn();
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation

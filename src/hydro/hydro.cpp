@@ -246,6 +246,18 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                       ic.nx1 + 2*ic.ng);
       Kokkos::deep_copy(am_spin, 0.0);
       Kokkos::deep_copy(am_spin1, 0.0);
+      if (pin->DoesParameterExist("hydro","am_spin_return")) {
+        am_eta = pin->GetReal("hydro","am_spin_return");
+      }
+      if (am_eta > 0.0) {
+        Kokkos::realloc(spw, nmbs, 1, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng, ic.nx1 + 2*ic.ng);
+        Kokkos::deep_copy(spw, 0.0);
+        Kokkos::realloc(spw_c, nmbs, 1, 1, 1, 1);
+        pbval_spin = new MeshBoundaryValuesCC(ppack, pin, false);
+        pbval_spin->InitializeBuffers(1);
+        pbval_spin->SetVectorPairs(1, {});
+        pbval_spin->cs_noresample = true;
+      }
     }
   }
   // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an

@@ -553,6 +553,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   // cs-open-1018 <hydro>/am_transport: the axial angular-momentum-conservative transport
   // correction (hydro_am.hpp), from this stage's fluxes and w0
   if (am_transport) {AmTransport(beta_dt, pdrive, stage);}
+  if (am_vector && am_eta > 0.0 && stage == pdrive->nexp_stages) {AmSpinReturn();}
 
   // Add user source terms
   if (pmy_pack->pmesh->pgen->user_srcs) {
@@ -1134,6 +1135,132 @@ TaskStatus Hydro::ClearRecv(Driver *pdrive, int stage) {
   }
 
   return tstat;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::AmSpinReturn
+//! \brief cs-open-1018 <hydro>/am_spin_return (see hydro.hpp).  Face f between cell c
+//! and its lateral neighbour n (directions rhat_c, rhat_n, d = |rhat_c - rhat_n|,
+//! s = (rhat_c - rhat_n)/d): c takes dL = lam s, n takes -lam s, lam = -eta (S_c + S_n)
+//! d / (16 (1 - rhat_c.rhat_n)) (S the spin), so that each face lowers both spins by
+//! ~eta (S_c + S_n)/16.  A cell carries dL exactly: rhat.dL to its spin, the rest as the
+//! tangential momentum (dL x rc)/(|rc|^2 V).  Faces at a physical or periodic lateral
+//! boundary (where the two sides do not share a geometry) take nothing.
+
+void Hydro::AmSpinReturn() {
+  Mesh *pm = pmy_pack->pmesh;
+  Coordinates *pco = pmy_pack->pcoord;
+  auto &ic = pm->mb_indcs;
+  const int is = ic.is, ie = ic.ie, js = ic.js, je = ic.je, ks = ic.ks, ke = ic.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  // the spins in the ghosts (mirror cells at a seam)
+  auto sp_ = am_spin;
+  auto sw_ = spw;
+  par_for("hydro_am_spin_cp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    sw_(m,0,k,j,i) = sp_(m,k,j,i);
+  });
+  while (pbval_spin->InitRecv(1) == TaskStatus::incomplete) {}
+  while (pbval_spin->PackAndSendCC(spw, spw_c) == TaskStatus::incomplete) {}
+  while (pbval_spin->RecvAndUnpackCC(spw, spw_c) == TaskStatus::incomplete) {}
+  while (pbval_spin->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_spin->ClearRecv() == TaskStatus::incomplete) {}
+  const bool cs = pm->use_cubed_sphere;
+  const Real eta = am_eta;
+  auto u0_ = u0;
+  auto vol = pco->volume;
+  auto x1v = pco->x1v;
+  auto x2v = pco->x2v;
+  auto x3v = pco->x3v;
+  auto &size = pmy_pack->pmb->mb_size;
+  auto &pan = pmy_pack->pmb->mb_panel;
+  auto &bcs = pmy_pack->pmb->mb_bcs;
+  const int nx2 = ic.nx2, nx3 = ic.nx3;
+  par_for("hydro_am_spin_ret", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // the direction of cell (k', j') of this block (extended panel / sp coordinates)
+    auto dirn = [&](const int kq, const int jq, Real *q, Real *b1, Real *b2) {
+      if (cs) {
+        const Real xi = 0.25*M_PI*CellCenterX(jq-js, nx2, size.d_view(m).x2min,
+                                              size.d_view(m).x2max);
+        const Real et = 0.25*M_PI*CellCenterX(kq-ks, nx3, size.d_view(m).x3min,
+                                              size.d_view(m).x3max);
+        cubed_sphere::PanelToCart(pan.d_view(m), xi, et, q);
+        cubed_sphere::PanelTangents(pan.d_view(m), xi, et, b1, b2);
+      } else {
+        const Real th = x2v(m,jq), ph = x3v(m,kq);
+        q[0] = sin(th)*cos(ph); q[1] = sin(th)*sin(ph); q[2] = cos(th);
+        b1[0] = cos(th)*cos(ph); b1[1] = cos(th)*sin(ph); b1[2] = -sin(th);
+        b2[0] = -sin(ph); b2[1] = cos(ph); b2[2] = 0.0;
+      }
+    };
+    Real rh[3], b1[3], b2[3];
+    dirn(k, j, rh, b1, b2);
+    const Real r = x1v(m,i);
+    Real dL[3] = {0.0, 0.0, 0.0};
+    const Real sc = sw_(m,0,k,j,i);
+    for (int f = 0; f < 4; ++f) {
+      const int dj = (f == 0) ? -1 : ((f == 1) ? 1 : 0);
+      const int dk = (f == 2) ? -1 : ((f == 3) ? 1 : 0);
+      const bool edge = (f == 0 && j == js) || (f == 1 && j == je) ||
+                        (f == 2 && k == ks) || (f == 3 && k == ke);
+      bool seam = false;
+      if (edge) {
+        const BoundaryFace bf = (f == 0) ? BoundaryFace::inner_x2
+                              : (f == 1) ? BoundaryFace::outer_x2
+                              : (f == 2) ? BoundaryFace::inner_x3 : BoundaryFace::outer_x3;
+        const BoundaryFlag fl = bcs.d_view(m,bf);
+        if (fl == BoundaryFlag::panel) {
+          seam = true;
+        } else if (fl != BoundaryFlag::block) {
+          continue;   // physical / periodic: nothing crosses
+        }
+      }
+      Real rn[3], t1[3], t2[3];
+      if (seam) {
+        // the mirror cell: rhat_c reflected across the seam plane (normal = gradient of
+        // the panel coordinate at the face, which holds the origin)
+        const int jf = (f == 1) ? (j + 1) : j, kf = (f == 3) ? (k + 1) : k;
+        Real a[3], b[3], n0[3];
+        cubed_sphere::PanelFrame(pan.d_view(m), a, b, n0);
+        Real nf[3];
+        if (f < 2) {
+          const Real x = tan(0.25*M_PI*LeftEdgeX(jf-js, nx2, size.d_view(m).x2min,
+                                                 size.d_view(m).x2max));
+          for (int q = 0; q < 3; ++q) {nf[q] = a[q] - x*n0[q];}
+        } else {
+          const Real y = tan(0.25*M_PI*LeftEdgeX(kf-ks, nx3, size.d_view(m).x3min,
+                                                 size.d_view(m).x3max));
+          for (int q = 0; q < 3; ++q) {nf[q] = b[q] - y*n0[q];}
+        }
+        const Real nn = 1.0/sqrt(nf[0]*nf[0] + nf[1]*nf[1] + nf[2]*nf[2]);
+        for (int q = 0; q < 3; ++q) {nf[q] *= nn;}
+        const Real pr = rh[0]*nf[0] + rh[1]*nf[1] + rh[2]*nf[2];
+        for (int q = 0; q < 3; ++q) {rn[q] = rh[q] - 2.0*pr*nf[q];}
+      } else {
+        dirn(k + dk, j + dj, rn, t1, t2);
+      }
+      Real sv[3];
+      for (int q = 0; q < 3; ++q) {sv[q] = rh[q] - rn[q];}
+      const Real d = sqrt(sv[0]*sv[0] + sv[1]*sv[1] + sv[2]*sv[2]);
+      const Real omc = 1.0 - (rh[0]*rn[0] + rh[1]*rn[1] + rh[2]*rn[2]);
+      if (!(d > 0.0) || !(omc > 0.0)) continue;
+      const Real sn = sw_(m,0,k+dk,j+dj,i);
+      const Real lam = -eta*(sc + sn)*d/(16.0*omc);
+      for (int q = 0; q < 3; ++q) {dL[q] += lam*sv[q]/d;}
+    }
+    // this cell's share: radial part to the spin, the rest to the tangential momentum
+    const Real srad = dL[0]*rh[0] + dL[1]*rh[1] + dL[2]*rh[2];
+    Real rc[3] = {r*rh[0], r*rh[1], r*rh[2]};
+    Real dp[3];
+    hydro::HydroAmCross(dL, rc, dp);
+    const Real iv = 1.0/(vol(m,k,j,i)*r*r);
+    Real p1 = 0.0, p2 = 0.0;
+    for (int q = 0; q < 3; ++q) {p1 += dp[q]*iv*b1[q]; p2 += dp[q]*iv*b2[q];}
+    u0_(m,IM2,k,j,i) += p1;
+    u0_(m,IM3,k,j,i) += p2;
+    sp_(m,k,j,i) += srad;
+  });
 }
 
 } // namespace hydro
