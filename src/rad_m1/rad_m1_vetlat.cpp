@@ -983,6 +983,13 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
   const bool blt = blat_on;
   auto bw2_ = ifw2;
   auto bw3_ = ifw3;
+  // m1poslim-1018: implicit_trans_limit = lp -- the face theta of the row (thx2/thx3,
+  // limiter and (1 - AL) included; x1: 1/(1 + chat dt (kt_f + klx1)))
+  const bool tlp = (impl_tlim != M1_TLIM_NONE);
+  const bool tl1 = impl_tlim_x1;
+  auto th2_ = thx2;
+  auto th3_ = thx3;
+  auto kl1_ = klx1;
   par_for("m1_vlat_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -1027,6 +1034,10 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
                                    i, ip, fwd);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
+      if (tl1) {
+        th = (aphll ? (1.0 - ifw_(m,M1_IFW_AL,k,j,i+1)) : 1.0)
+             /(1.0 + ch*dt*(ktf + kl1_(m,k,j,i+1)));
+      }
       y -= carea.x1f(m,k,j,i+1)*iv*cr*th*kk*0.5*(lat(0,k,j,i) + lat(0,k,j,ip));
     }
     if (i > is || !botb) {
@@ -1035,6 +1046,10 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
                                    im, i, fwd);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
+      if (tl1) {
+        th = (aphll ? (1.0 - ifw_(m,M1_IFW_AL,k,j,i)) : 1.0)
+             /(1.0 + ch*dt*(ktf + kl1_(m,k,j,i)));
+      }
       y += carea.x1f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(0,k,j,im) + lat(0,k,j,i));
     }
     // the two x2 faces
@@ -1042,12 +1057,14 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
       Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
                                       + iw_(m,M1_IW_KT,k,j+1,i)));
       if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
+      if (tlp) {th = th2_(m,k,j+1,i);}
       y -= carea.x2f(m,k,j+1,i)*iv*cr*th*kk*0.5*(lat(1,k,j,i) + lat(1,k,j+1,i));
     }
     if (!(j == js && p2lo)) {
       Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j-1,i)
                                       + iw_(m,M1_IW_KT,k,j,i)));
       if (blt) {th *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
+      if (tlp) {th = th2_(m,k,j,i);}
       y += carea.x2f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(1,k,j-1,i) + lat(1,k,j,i));
     }
     // the two x3 faces
@@ -1056,12 +1073,14 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
         Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k,j,i)
                                         + iw_(m,M1_IW_KT,k+1,j,i)));
         if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
+        if (tlp) {th = th3_(m,k+1,j,i);}
         y -= carea.x3f(m,k+1,j,i)*iv*cr*th*kk*0.5*(lat(2,k,j,i) + lat(2,k+1,j,i));
       }
       if (!(k == ks && p3lo)) {
         Real th = 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,k-1,j,i)
                                         + iw_(m,M1_IW_KT,k,j,i)));
         if (blt) {th *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
+        if (tlp) {th = th3_(m,k,j,i);}
         y += carea.x3f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(2,k-1,j,i) + lat(2,k,j,i));
       }
     }
@@ -1125,6 +1144,11 @@ void RadiationM1::VetLatStencilAdd() {
   const bool blt = blat_on;   // blendall-1009, as VetLatOp
   auto bw2_ = ifw2;
   auto bw3_ = ifw3;
+  const bool tlp = (impl_tlim != M1_TLIM_NONE);   // m1poslim-1018, as VetLatOp
+  const bool tl1 = impl_tlim_x1;
+  auto th2_ = thx2;
+  auto th3_ = thx3;
+  auto kl1_ = klx1;
   par_for("m1_vlat_stencil", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
@@ -1221,6 +1245,10 @@ void RadiationM1::VetLatStencilAdd() {
                                    m, i, i+1, fwd);
       Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
+      if (tl1) {
+        w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*(ktf + kl1_(m,k,j,i+1)));
+        if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
+      }
       latc(0, i, j, k, w);
       latc(0, i+1, j, k, w);
     }
@@ -1229,6 +1257,10 @@ void RadiationM1::VetLatStencilAdd() {
                                    m, i-1, i, fwd);
       Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
+      if (tl1) {
+        w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*(ktf + kl1_(m,k,j,i)));
+        if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
+      }
       latc(0, i-1, j, k, w);
       latc(0, i, j, k, w);
     }
@@ -1236,6 +1268,7 @@ void RadiationM1::VetLatStencilAdd() {
       const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
       Real w = -0.5*carea.x2f(m,k,j+1,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j+1,i);}
+      if (tlp) {w = -0.5*carea.x2f(m,k,j+1,i)*iv*cr*kk*th2_(m,k,j+1,i);}
       latc(1, i, j, k, w);
       latc(1, i, j+1, k, w);
     }
@@ -1243,6 +1276,7 @@ void RadiationM1::VetLatStencilAdd() {
       const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
       Real w = 0.5*carea.x2f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (blt) {w *= 1.0 - bw2_(m,M1_IFW_AL,k,j,i);}
+      if (tlp) {w = 0.5*carea.x2f(m,k,j,i)*iv*cr*kk*th2_(m,k,j,i);}
       latc(1, i, j-1, k, w);
       latc(1, i, j, k, w);
     }
@@ -1251,6 +1285,7 @@ void RadiationM1::VetLatStencilAdd() {
         const Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
         Real w = -0.5*carea.x3f(m,k+1,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
         if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k+1,j,i);}
+        if (tlp) {w = -0.5*carea.x3f(m,k+1,j,i)*iv*cr*kk*th3_(m,k+1,j,i);}
         latc(2, i, j, k, w);
         latc(2, i, j, k+1, w);
       }
@@ -1258,6 +1293,7 @@ void RadiationM1::VetLatStencilAdd() {
         const Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
         Real w = 0.5*carea.x3f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
         if (blt) {w *= 1.0 - bw3_(m,M1_IFW_AL,k,j,i);}
+        if (tlp) {w = 0.5*carea.x3f(m,k,j,i)*iv*cr*kk*th3_(m,k,j,i);}
         latc(2, i, j, k-1, w);
         latc(2, i, j, k, w);
       }

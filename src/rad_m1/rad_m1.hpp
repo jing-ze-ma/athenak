@@ -1425,6 +1425,14 @@ class RadiationM1 {
                                 // theta reads
   DvceArray4D<Real> klx2, klx3;  // the lagged limiter opacity klim_f itself, which
                                 // follows implicit_closure_lag
+  // m1poslim-1018: the same limiter on the RADIAL (x1) faces of the spherical-polar
+  // wedge, <rad_m1>/implicit_trans_limit_x1 (read only when named; default true under
+  // implicit_trans_limit = lp on sp, false everywhere else).  klx1 = klim_f on the x1
+  // faces (nmb, ncells3, ncells2, ncells1+1); every x1 face theta of the sp operator,
+  // the face flux, the Jacobians and the gas-source weights then reads
+  // 1/(1 + chat dt (kt_f + klx1)).  Off: not allocated and never referenced.
+  bool impl_tlim_x1;
+  DvceArray4D<Real> klx1;
 
   // ---- MILESTONE 3g: the GAS-RADIATION energy coupling of the implicit solve.
   // Both options default to false; nothing below is then allocated or referenced, so
@@ -1714,6 +1722,9 @@ class RadiationM1 {
   //! limiter opacity klx2/klx3) for the current pass.  Inert under
   //! implicit_trans_limit = none, where thx2/thx3 are not even allocated.
   void ImplicitTransTheta(bool newk);
+  //! m1poslim-1018: the same limiter on the x1 faces of the sp wedge (klx1, newk as
+  //! above); inert unless implicit_trans_limit_x1
+  void ImplicitX1Theta(bool newk);
   //! milestone 3e: snapshot the SCALED state entering a Picard pass (x_k) into aa_xc.
   //! Called at the top of every pass when implicit_accel = anderson.
   void ImplicitAccelSave();
