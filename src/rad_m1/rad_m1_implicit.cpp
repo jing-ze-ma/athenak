@@ -2998,8 +2998,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // that makes the radiation-gas exchange conserve L_z = sum V r x (m + F/(c chat)) to
   // round-off (ImplicitSolve, after the write-back)
   if (cs_geom) {
-    impl_am_cs = pin->DoesParameterExist("hydro","am_transport") &&
-                 pin->GetBoolean("hydro","am_transport");
+    impl_am_cs = (pin->DoesParameterExist("hydro","am_transport") &&
+                  pin->GetBoolean("hydro","am_transport")) ||
+                 (pin->DoesParameterExist("hydro","am_vector") &&
+                  pin->GetBoolean("hydro","am_vector"));
     if (pin->DoesParameterExist("rad_m1","implicit_am_cs")) {
       impl_am_cs = pin->GetBoolean("rad_m1","implicit_am_cs");
     }
