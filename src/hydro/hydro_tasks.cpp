@@ -27,6 +27,7 @@
 #include "shearing_box/shearing_box.hpp"
 #include "shearing_box/orbital_advection.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "utils/c2p_track.hpp"
 
@@ -549,12 +550,75 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
                                                  beta_dt, u0);
   }
 
+  // cs-open-1018 <hydro>/am_transport: the axial angular-momentum-conservative transport
+  // correction (hydro_am.hpp), from this stage's fluxes and w0
+  if (am_transport) {AmTransport(beta_dt);}
+
   // Add user source terms
   if (pmy_pack->pmesh->pgen->user_srcs) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
 
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::AmTransport
+//! \brief cs-open-1018 <hydro>/am_transport: add T_cons - T_code (hydro_am.hpp) of every
+//! active cell to its zonal momentum.  The source variants it does not replicate are a
+//! FATAL (as the deep_hot_jupiter_rt problem/am_transport).
+
+void Hydro::AmTransport(Real bdt) {
+  Mesh *pm = pmy_pack->pmesh;
+  Coordinates *pco = pmy_pack->pcoord;
+  if (!am_checked) {
+    std::string bad = "";
+    if (!(pm->use_cubed_sphere || pm->use_spherical_polar)) {
+      bad = "a mesh that is neither cubed sphere nor spherical polar";
+    }
+    if (use_wellbalance_static) bad = "<hydro>/wellbalance_static";
+    if (pm->use_cubed_sphere && pco->cs_wellbalanced_src) bad = "cs_wellbalanced_src";
+    if (pm->use_spherical_polar && pco->sp_wellbalanced_src) bad = "sp_wellbalanced_src";
+    if (pm->use_spherical_polar && pco->sp_cart_polar_momentum) {
+      bad = "sp_cart_polar_momentum";
+    }
+    if (pm->use_spherical_polar && pco->sp_face_avg) bad = "sp_face_avg";
+    if (!bad.empty()) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/am_transport does not replicate the angular "
+                << "source with " << bad << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    am_checked = true;
+  }
+  hydro::HydroAmV v;
+  v.w0 = w0;
+  v.eos = peos->eos_data;
+  v.gen = v.eos.IsGeneral();
+  v.wder = wder;
+  v.f1 = uflx.x1f;  v.f2 = uflx.x2f;  v.f3 = uflx.x3f;
+  v.a1 = pco->area.x1f;  v.a2 = pco->area.x2f;  v.a3 = pco->area.x3f;
+  v.vol = pco->volume;
+  v.xovr = pco->x_ov_rD;
+  v.yovr = pco->y_ov_rC;
+  v.ccell = pco->cos_cell;
+  v.scell = pco->sin_cell;
+  v.x1v = pco->x1v;  v.x1f = pco->xx1f;
+  v.x2v = pco->x2v;  v.x2f = pco->xx2f;
+  v.size = pmy_pack->pmb->mb_size;
+  v.panel = pmy_pack->pmb->mb_panel;
+  auto &ic = pm->mb_indcs;
+  v.is = ic.is;  v.js = ic.js;  v.ks = ic.ks;  v.nx2 = ic.nx2;  v.nx3 = ic.nx3;
+  v.cs = pm->use_cubed_sphere;
+  auto u0_ = u0;
+  par_for("hydro_am_transport", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+          ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real dtq, c2, c3;
+    if (!hydro::HydroAmTorque(v, m, k, j, i, dtq, c2, c3)) return;
+    u0_(m,IM2,k,j,i) += dtq*c2*bdt;
+    u0_(m,IM3,k,j,i) += dtq*c3*bdt;
+  });
 }
 
 //----------------------------------------------------------------------------------------

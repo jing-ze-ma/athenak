@@ -178,6 +178,12 @@ class Hydro {
   // after each stage-level operator and report the first offender.  Default false, in
   // which case not one extra kernel runs.  See the NanScan* helpers in hydro_tasks.cpp.
   bool nan_report = false;
+  // cs-open-1018 <hydro>/am_transport (read only when named, default false): the axial
+  // angular-momentum-conservative transport correction on the cubed sphere / spherical
+  // polar (hydro_am.hpp), applied after the coordinate source terms
+  bool am_transport = false;
+  bool am_checked = false;
+  void AmTransport(Real bdt);
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation

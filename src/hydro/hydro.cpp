@@ -232,6 +232,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // ...and off BELOW this radius (0 = never), same path, same caveat.
   wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
+  if (pin->DoesParameterExist("hydro","am_transport")) {
+    am_transport = pin->GetBoolean("hydro","am_transport");
+  }
   // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
   // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
   // whose time step has no light-speed limit; off without <rad_m1> and with the explicit
