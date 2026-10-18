@@ -235,6 +235,19 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (pin->DoesParameterExist("hydro","am_transport")) {
     am_transport = pin->GetBoolean("hydro","am_transport");
   }
+  if (pin->DoesParameterExist("hydro","am_vector")) {
+    am_vector = pin->GetBoolean("hydro","am_vector");
+    if (am_vector) {
+      am_transport = true;
+      auto &ic = ppack->pmesh->mb_indcs;
+      const int nmbs = std::max(ppack->nmb_thispack, ppack->pmesh->nmb_maxperrank);
+      Kokkos::realloc(am_spin, nmbs, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng, ic.nx1 + 2*ic.ng);
+      Kokkos::realloc(am_spin1, nmbs, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng,
+                      ic.nx1 + 2*ic.ng);
+      Kokkos::deep_copy(am_spin, 0.0);
+      Kokkos::deep_copy(am_spin1, 0.0);
+    }
+  }
   // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
   // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
   // whose time step has no light-speed limit; off without <rad_m1> and with the explicit

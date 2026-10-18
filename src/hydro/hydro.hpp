@@ -183,7 +183,15 @@ class Hydro {
   // polar (hydro_am.hpp), applied after the coordinate source terms
   bool am_transport = false;
   bool am_checked = false;
-  void AmTransport(Real bdt);
+  void AmTransport(Real bdt, Driver *pdrive, int stage);
+  // cs-open-1018 <hydro>/am_vector (read only when named, default false; implies the
+  // checks of am_transport): all three components of L = sum V rc x m (hydro_am.hpp
+  // HydroAmVecTorque); the radial component of the correction torque, which no
+  // tangential momentum of the cell can carry, goes to the per-cell spin reservoir am_spin
+  // (L along rhat_c, total L = sum V rc x m + sum am_spin rhat_c), RK-combined as u0
+  bool am_vector = false;
+  DvceArray3D<Real> am_rhat;          // unused placeholder (kept for layout clarity)
+  DvceArray4D<Real> am_spin, am_spin1;
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation

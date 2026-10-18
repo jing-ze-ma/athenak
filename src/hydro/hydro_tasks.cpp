@@ -552,7 +552,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
 
   // cs-open-1018 <hydro>/am_transport: the axial angular-momentum-conservative transport
   // correction (hydro_am.hpp), from this stage's fluxes and w0
-  if (am_transport) {AmTransport(beta_dt);}
+  if (am_transport) {AmTransport(beta_dt, pdrive, stage);}
 
   // Add user source terms
   if (pmy_pack->pmesh->pgen->user_srcs) {
@@ -568,7 +568,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
 //! active cell to its zonal momentum.  The source variants it does not replicate are a
 //! FATAL (as the deep_hot_jupiter_rt problem/am_transport).
 
-void Hydro::AmTransport(Real bdt) {
+void Hydro::AmTransport(Real bdt, Driver *pdrive, int stage) {
   Mesh *pm = pmy_pack->pmesh;
   Coordinates *pco = pmy_pack->pcoord;
   if (!am_checked) {
@@ -605,12 +605,49 @@ void Hydro::AmTransport(Real bdt) {
   v.scell = pco->sin_cell;
   v.x1v = pco->x1v;  v.x1f = pco->xx1f;
   v.x2v = pco->x2v;  v.x2f = pco->xx2f;
+  v.x3v = pco->x3v;  v.x3f = pco->xx3f;
   v.size = pmy_pack->pmb->mb_size;
   v.panel = pmy_pack->pmb->mb_panel;
   auto &ic = pm->mb_indcs;
   v.is = ic.is;  v.js = ic.js;  v.ks = ic.ks;  v.nx2 = ic.nx2;  v.nx3 = ic.nx3;
   v.cs = pm->use_cubed_sphere;
   auto u0_ = u0;
+  if (am_vector) {
+    // the spin reservoir follows the RK register logic of u0 (u1 = u0 at stage 1)
+    if (pdrive->integrator == "rk4") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/am_vector: integrator rk4 not supported"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (stage == 1) {Kokkos::deep_copy(DevExeSpace(), am_spin1, am_spin);}
+    const Real g0 = pdrive->gam0[stage-1], g1 = pdrive->gam1[stage-1];
+    auto sp_ = am_spin;
+    auto sp1_ = am_spin1;
+    par_for("hydro_am_vector", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+            ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real dT[3], rc[3], b1[3], b2[3], cc;
+      hydro::HydroAmVecTorque(v, m, k, j, i, dT, rc, b1, b2, cc);
+      const Real r2 = rc[0]*rc[0] + rc[1]*rc[1] + rc[2]*rc[2];
+      const Real ir = 1.0/sqrt(r2);
+      const Real sr = (dT[0]*rc[0] + dT[1]*rc[1] + dT[2]*rc[2])*ir;   // rhat . dT
+      // the tangential momentum whose torque is the perpendicular part of dT:
+      // dp = (dT x rc)/(|rc|^2 V)
+      Real dp[3];
+      hydro::HydroAmCross(dT, rc, dp);
+      const Real iv = 1.0/v.vol(m,k,j,i);
+      for (int q = 0; q < 3; ++q) {dp[q] *= iv/r2;}
+      const Real p1 = dp[0]*b1[0] + dp[1]*b1[1] + dp[2]*b1[2];
+      const Real p2 = dp[0]*b2[0] + dp[1]*b2[1] + dp[2]*b2[2];
+      // covariant on the cell basis (cs: m_a = p.e_a; sp: orthonormal)
+      u0_(m,IM2,k,j,i) += p1*bdt;
+      u0_(m,IM3,k,j,i) += p2*bdt;
+      sp_(m,k,j,i) = g0*sp_(m,k,j,i) + g1*sp1_(m,k,j,i) + sr*bdt;
+      (void) cc;
+    });
+    return;
+  }
   par_for("hydro_am_transport", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
           ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

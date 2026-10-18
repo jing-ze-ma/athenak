@@ -961,6 +961,19 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // sphere (covariant v.e_xi, v.e_eta); the moving-gas O(v/c) terms of the order gate
     const Real grot = pin->DoesParameterExist("problem","gas_rot") ?
                       pin->GetReal("problem","gas_rot") : 0.0;
+    // cs-open-1018 (read only when named): gas_rot_axis = "ax,ay,az", the rotation axis of
+    // gas_rot (normalised; default z)
+    bool gax = false;
+    Real gax_x = 0.0, gay = 0.0, gaz = 1.0;
+    if (pin->DoesParameterExist("problem","gas_rot_axis")) {
+      gax = true;
+      std::string sa = pin->GetString("problem","gas_rot_axis");
+      for (auto &ch : sa) {if (ch == ',') ch = ' ';}
+      std::istringstream iss(sa);
+      iss >> gax_x >> gay >> gaz;
+      const Real an = std::sqrt(gax_x*gax_x + gay*gay + gaz*gaz);
+      gax_x /= an; gay /= an; gaz /= an;
+    }
     const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
                       pin->GetBoolean("problem","gas_teq") : false;
     const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
@@ -1134,10 +1147,24 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         uh(m,IM2,k,j,i) = dgas*vt;
         uh(m,IEN,k,j,i) += 0.5*dgas*vt*vt;
       }
-      if (grot != 0.0 && sp) {
+      if (grot != 0.0 && sp && !gax) {
         const Real vp = grot*r*sin(x2v(m,j));
         uh(m,IM3,k,j,i) = dgas*vp;
         uh(m,IEN,k,j,i) += 0.5*dgas*vp*vp;
+      }
+      if (grot != 0.0 && sp && gax) {
+        // cs-open-1018 gas_rot_axis: v = Omega a x r on the orthonormal (theta, phi) basis
+        const Real th = x2v(m,j), ph = x3v(m,k);
+        const Real q[3] = {sin(th)*cos(ph), sin(th)*sin(ph), cos(th)};
+        const Real et[3] = {cos(th)*cos(ph), cos(th)*sin(ph), -sin(th)};
+        const Real ep[3] = {-sin(ph), cos(ph), 0.0};
+        const Real w[3] = {grot*r*(gay*q[2] - gaz*q[1]), grot*r*(gaz*q[0] - gax_x*q[2]),
+                           grot*r*(gax_x*q[1] - gay*q[0])};
+        const Real vt = w[0]*et[0] + w[1]*et[1] + w[2]*et[2];
+        const Real vp = w[0]*ep[0] + w[1]*ep[1] + w[2]*ep[2];
+        uh(m,IM2,k,j,i) = dgas*vt;
+        uh(m,IM3,k,j,i) = dgas*vp;
+        uh(m,IEN,k,j,i) += 0.5*dgas*(vt*vt + vp*vp);
       }
       if (grot != 0.0 && csm) {
         const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
@@ -1147,10 +1174,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         Real q[3], ta[3], tb[3];
         cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
         cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
-        const Real v0 = -grot*r*q[1], v1 = grot*r*q[0];
-        uh(m,IM2,k,j,i) = dgas*(v0*ta[0] + v1*ta[1]);
-        uh(m,IM3,k,j,i) = dgas*(v0*tb[0] + v1*tb[1]);
-        uh(m,IEN,k,j,i) += 0.5*dgas*(v0*v0 + v1*v1);
+        Real w[3] = {-grot*r*q[1], grot*r*q[0], 0.0};
+        if (gax) {   // cs-open-1018 gas_rot_axis: v = Omega a x r
+          w[0] = grot*r*(gay*q[2] - gaz*q[1]);
+          w[1] = grot*r*(gaz*q[0] - gax_x*q[2]);
+          w[2] = grot*r*(gax_x*q[1] - gay*q[0]);
+        }
+        uh(m,IM2,k,j,i) = dgas*(w[0]*ta[0] + w[1]*ta[1] + w[2]*ta[2]);
+        uh(m,IM3,k,j,i) = dgas*(w[0]*tb[0] + w[1]*tb[1] + w[2]*tb[2]);
+        uh(m,IEN,k,j,i) += 0.5*dgas*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
       }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {
@@ -1941,9 +1973,10 @@ void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
 //! e_xi.e_eta; sp: orthonormal.
 
 void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = 8;
-  const char *lab[8] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz"};
-  for (int n = 0; n < 8; ++n) {pdata->label[n] = lab[n];}
+  pdata->nhist = 11;
+  const char *lab[11] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
+                         "Sz"};
+  for (int n = 0; n < 11; ++n) {pdata->label[n] = lab[n];}
   MeshBlockPack *pmbp = pm->pmb_pack;
   if (pmbp->pradm1 == nullptr || pmbp->phydro == nullptr) return;
   auto u0 = pmbp->pradm1->u0;
@@ -1960,6 +1993,9 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const bool csm = pm->use_cubed_sphere;
   const Real ic2 = 1.0/(pmbp->pradm1->c_light*pmbp->pradm1->c_light);
+  // cs-open-1018 <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)
+  const bool spn = pmbp->phydro->am_vector;
+  auto asp = pmbp->phydro->am_spin;
   const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji = nx2*nx1;
@@ -2007,6 +2043,7 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
     for (int q = 0; q < 3; ++q) {
       hv.the_array[2+q] = v*lg[q];
       hv.the_array[5+q] = v*lr[q]*ic2;
+      hv.the_array[8+q] = spn ? asp(m,k,j,i)*rh[q] : 0.0;
     }
     mb_sum += hv;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
