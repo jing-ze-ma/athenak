@@ -280,6 +280,7 @@ void RadM1ShellHold(Mesh *pm, const Real bdt);
 void RadM1ShellHoldV(Mesh *pm, const Real bdt);
 void RadM1ShellReport(ParameterInput *pin, Mesh *pm);
 void RadM1CsHistory(HistoryData *pdata, Mesh *pm);
+void RadM1AmHistory(HistoryData *pdata, Mesh *pm);
 void RadM1RwHistory(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
@@ -1053,6 +1054,13 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
     }
     if (csm) {user_hist_func = RadM1CsHistory;}
+    // cs-open-1018 (read only when named): problem/am_hist = true takes the user history
+    // instead to the double-precision energy / angular-momentum budget RadM1AmHistory
+    // (cubed sphere and spherical polar)
+    if (spr && pin->DoesParameterExist("problem","am_hist") &&
+        pin->GetBoolean("problem","am_hist")) {
+      user_hist_func = RadM1AmHistory;
+    }
     const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
     // cs-open-1018 (cubed sphere, read only when named): rho_lat_amp = a multiplies the gas
     // density by 1 + a P_{rho_lat_l}(rhat . axis) with rho_lat_axis = z | edge | vertex
@@ -1919,6 +1927,87 @@ void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
     hv.the_array[3] = v*p;
     hv.the_array[4] = v;
     hv.the_array[5] = (e <= 0.0) ? 1.0 : 0.0;
+    mb_sum += hv;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1AmHistory
+//! \brief cs-open-1018 (sph_shell, problem/am_hist): double-precision budget sums over the
+//! active cells, V = Coordinates volume, arm r_c rhat (cell-centre radius, as the
+//! <hydro>/am_transport correction): Eg = sum V u(IEN), Er = sum V E, Lg = sum V r x m
+//! (x, y, z), Lr = sum V r x F/c^2 (x, y, z).  cs: covariant m, F raised with the cell's
+//! e_xi.e_eta; sp: orthonormal.
+
+void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 8;
+  const char *lab[8] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz"};
+  for (int n = 0; n < 8; ++n) {pdata->label[n] = lab[n];}
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pradm1 == nullptr || pmbp->phydro == nullptr) return;
+  auto u0 = pmbp->pradm1->u0;
+  auto uh = pmbp->phydro->u0;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto x2v = pmbp->pcoord->x2v;
+  auto x3v = pmbp->pcoord->x3v;
+  auto ccell = pmbp->pcoord->cos_cell;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpan = pmbp->pmb->mb_panel;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const bool csm = pm->use_cubed_sphere;
+  const Real ic2 = 1.0/(pmbp->pradm1->c_light*pmbp->pradm1->c_light);
+  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+  const int nji = nx2*nx1;
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("M1AmHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    k += ks; j += js; i += is;
+    array_sum::GlobalSum hv;
+    for (int n = 0; n < NHISTORY_VARIABLES; ++n) {hv.the_array[n] = 0.0;}
+    Real rh[3], ta[3], tb[3];
+    Real c = 0.0;
+    if (csm) {
+      const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
+                                             size.d_view(m).x2max);
+      const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
+                                              size.d_view(m).x3max);
+      cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, rh);
+      cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
+      c = ccell(m,k,j);
+    } else {
+      const Real th = x2v(m,j), ph = x3v(m,k);
+      rh[0] = sin(th)*cos(ph); rh[1] = sin(th)*sin(ph); rh[2] = cos(th);
+      ta[0] = cos(th)*cos(ph); ta[1] = cos(th)*sin(ph); ta[2] = -sin(th);
+      tb[0] = -sin(ph); tb[1] = cos(ph); tb[2] = 0.0;
+    }
+    const Real r = x1v(m,i), v = vol(m,k,j,i), s2 = 1.0 - c*c;
+    auto lv = [&](const Real a1, const Real a2c, const Real a3c, Real *l) {
+      const Real a2 = (a2c - c*a3c)/s2, a3 = (a3c - c*a2c)/s2;   // contravariant
+      Real p[3];
+      for (int q = 0; q < 3; ++q) {p[q] = a1*rh[q] + a2*ta[q] + a3*tb[q];}
+      l[0] = r*(rh[1]*p[2] - rh[2]*p[1]);
+      l[1] = r*(rh[2]*p[0] - rh[0]*p[2]);
+      l[2] = r*(rh[0]*p[1] - rh[1]*p[0]);
+    };
+    Real lg[3], lr[3];
+    lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lg);
+    lv(u0(m,radm1::M1_F1,k,j,i), u0(m,radm1::M1_F2,k,j,i), u0(m,radm1::M1_F3,k,j,i),
+       lr);
+    hv.the_array[0] = v*uh(m,IEN,k,j,i);
+    hv.the_array[1] = v*u0(m,radm1::M1_E,k,j,i);
+    for (int q = 0; q < 3; ++q) {
+      hv.the_array[2+q] = v*lg[q];
+      hv.the_array[5+q] = v*lr[q]*ic2;
+    }
     mb_sum += hv;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
