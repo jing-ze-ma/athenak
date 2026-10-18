@@ -1088,3 +1088,117 @@ is now confined vertically: rho-weighted sigma_z 1.005 at the nozzle -> 0.965 (r
   3-D Roche potential at the column's r_eq (phi 90, plane). Leak 2.09e6 vs 2.19e6 code (-5 %).
 - s3dHvz (t 0.0128): wall rows 1-3 now match the interior (1e-3..1e-2 class 1.15-1.17 vs equator 1.17; without the factor 1.0-1.12),
   0 NC, budget closed. 2-D gates: see 16.5 (code change inside the phys_3d + flux path only).
+
+## 16S. Back-sink sector light switch: problem/stream_sector_light (2026-10-17, Raven, accretor-sector-light-1017)
+
+Why: the v4 stream test on Raven (NOTE-2026-10-17-raven-accretor-v4.md) collapsed dt to 2-7e-7 through the impact.
+The suspected driver is the light held in the back-sink sector (section 15). It is the stream's own light, UNSCALED:
+core 72966 K, sector-mean T^4 = (56.2 kK)^4. That is ~132x the scaled donor surface value 0.22 (24.2 kK)^4.
+Before this change the sector light could only be switched together with stream_rad.
+
+Key `problem/stream_sector_light`. It is read only when named, so the PAR_DUMP of older decks is unchanged:
+- `full` (default): the v4 rule, bitwise unchanged.
+- `scaled`: E x donor_irr_scale (needs donor_irr). The band's 2-D -> 3-D factor of the held donor light
+  (s_geo x s_m1) is applied to the stream's held light too: the same transport, and the same cylindrical-vs-
+  spherical dilution. For the stream this is an UPPER bound. Its vertical extent is smaller than the donor's:
+  int T^4 dz / (2 D T_c^4) = 2.12 sigma_z / (2 x 5.1) ~ 0.21 for sigma_z 1.0054, against s_geo 0.636. With
+  s_m1 that gives ~0.07 instead of 0.22.
+- `surface`: the sector follows the donor-lobe rule (donor_irr light: scaled, gravity-darkened, booked in Eirr).
+  This is the v3 rule (v3: lobe light at T_d on the whole sink, sector included). It needs donor_irr.
+- `dark`: no light is held in the sector, which is left to the transport like the ambient. The stream's light then
+  enters only through the 2-cell nozzle.
+
+**Gate (Raven A100, gpudev 31249502): BITWISE.** The binary (62119e93, md5 0ba9d066) was compared with v4 5b0d4bc1,
+with the key absent, over 20 cycles:
+- S, the v4 stream switch-on (cal deck from the v4 static rst, stream on; exercises the sector): hst, hydro_w and m1
+  bins, and the cycle/dt lines are identical. With `stream_sector_light = full` named, hst and cycle/dt are
+  identical; the bins differ only by PAR_DUMP.
+- v4 gates A (base deck, donor_irr off) and G2 (s5 + stream + ROL2U): identical.
+
+**Confirming tests.** All runs are on Raven A100, from v4/cal/static/rst/ryper.00001.rst (s = 0.22, t 0.00946); see
+/raven/ptmp/jinma/accbig_1016/NOTE.md, RESULTS 10-17b. dt is min/median over each window.
+
+| arm | dt 0.0095-0.015 | dt 0.02-0.0265 | contact 0.027 | dt after contact | thin-atm max\|v\| t 0.013 / 0.020 / ~0.031 | Ltop t 0.0107 / 0.0285 | E r 9.4-10 median t 0.0142 / 0.0284 |
+|---|---|---|---|---|---|---|---|
+| v3 | 5.6e-6 / 6.7e-6 | 1.5e-6 / 2.9e-6 | smooth | 1.2-1.6e-6 | 376 / 717 / 1117 | 3.7e5 / 7.8e5 | - / 61 |
+| v4 full | 2.9e-6 / 4.4e-6 | 3.1e-7 / 7.6e-7 | 49 retries over the run | 4.5-5.5e-7 | 660 / 1429 / 2394 | 1.2e6 / 4.1e6 | 151 / 308 |
+| scaled | 6.7e-6 / 7.0e-6 | 2.9e-6 / 5.0e-6 | 1 retry (t 0.0251) | 1.5-1.6e-6 | 193 / 468 / 1068 | 3.0e5 / 7.5e5 | 23 / 58 |
+| surface | 7.03e-6 flat | 7.02e-6 flat | eint<=0 burst: FATAL at dt_min 1e-7; 61 retries, recovered at dt_min 1e-8 | 1.56-1.65e-6 | 80 / 139 / 469 | 6.9e4 / 1.0e5 | 5.0 / 7.4 |
+| dark | 7.03e-6 flat | 7.02e-6 flat | same as surface: FATAL at 1e-7; 34 retries, recovered at 1e-8 | 1.57-1.63e-6 | 77 / 128 / 474 | 6.3e4 / 8.9e4 | 4.5 / 6.5 |
+
+- The impact matches v3 in every arm. Dense infall reaches r 9.4-9.65 at t 0.0272-0.0284, and dense-gas heating
+  starts at t ~0.031 at phi 13.6-13.8 deg (v3: 14.0).
+- Floor-gas e/rho stays at 2.0-2.3e3 in every arm (v4 full: up to 1.8e6).
+- **Conclusion: the unscaled sector light caused the v4 dt collapse.**
+
+## 17S. Contact eint<=0 burst with the dim sector (2026-10-18, Raven, accretor-sector-light-1017)
+
+**Symptom.** With `stream_sector_light = surface` or `dark`, the stream's arrival at the star (t 0.0270-0.0274)
+fires 30-60 dt retries with reason eint<=0. Each retry halves dt, and the burst crosses the default
+dt_min = 1e-7 (FATAL). With dt_min 1e-8 it recovers, after which dt is 1.6e-6 (= v3).
+
+**Diagnostics** (DEBUG, read only when named, prints only; bitwise off):
+- `rad_m1/dbg_eint_cells = N` (ca6f0500): lists up to N cells per rank whose implicit gas write-back
+  EGN - (c/chat) q is <= 0.
+- With it, the existing `dbg_t2_admiss` cell/E-row-by-term listing now also runs under time_scheme = be
+  (dfd60ff3).
+- Runs: v4/ssl/ctc30 and ctc30d (cal30s from t 0.0268).
+
+**Failing cells.** 1863 cells were listed. Every one lies at phi 6-10 deg, r 9.40-9.85, i.e. the stream's
+contact front:
+- 80 % are stream gas (v_r ~ -430, v_phi ~ +175 km/s, rho 1e-5..3e-4); the rest are the thin floor gap below it
+  (rho 5e-8).
+- T_solved is 30-50 code (3.6-6 kK).
+- In 90 % of them the SOLVED E is negative (-0.002 .. -0.28; equilibrium a T^4 ~ 6e-3).
+
+**Chain:**
+1. E solves negative.
+2. The iterate is floored (1e-6 e_floor).
+3. The exchange q = SRCR - SRCB E_iter loses its absorption part, so the cell radiates its whole emission SRCR
+   (about eint) into a field that holds nothing.
+4. The write-back gives eint < 0.
+5. pos_gas cannot repair it (no E above the floor to take from), and dt_retry fires.
+Cells that pass leave the region at the gas floor: a column of e/rho ~ 49 at phi 8.5 deg (neighbours ~1130).
+
+**Why E goes negative.** The E-row listing shows, in every listed cell, a balance of two large terms whose
+small residual is negative. The lagged transverse term TRHS (theta/phi faces: theta_f F_f^n - ...) is
+-660 .. +330. The radial face term (theta_f (F0_f^n - c dt v_f g0_f)) is +650 .. -320. Both are ~10^3 x the
+cell's E (0.16-0.24). In the thin floor gap, g0 is negligible (|G0| 1e-4), so this is the OLD FACE-FLUX part
+F_f^n: the face-eliminated flux F' = theta (F^n - c^2 dt grad P - c dt v g0) carries F^n with theta ~ 1 in thin
+cells, at a radiation Courant number c dt/dx ~ 190 (r) / 16 (phi). The transverse faces are, in addition, not
+bounded by c E (rad_m1_implicit.cpp ImplicitTransTheta: "no free-streaming bound"). When the cold, opaque stream
+front moves into the gap between the photosphere and the stream in one step, the stored face fluxes no longer
+balance, and E falls below 0.
+
+The dim sector settings are where this bites because the stream arrives COLD: at t 0.026, e/rho at r 10-11 is
+1.55e3 (surface/dark/cal30s) against 2.2-2.3e3 (v3/scaled). The stream gas at contact sits at 3.6-6 kK, in the
+recombination range of the opacity table, and E around it is 5-20x smaller than in v3/scaled, so the same flux
+imbalance is a larger fraction of E.
+
+**Existing keys tested** (cal30s from t 0.0268, dt_min 1e-7; v4/ctcarm):
+- `implicit_g0_exchange = false`: FATAL at t 0.02702, 7 retries.
+- `implicit_gas_newton_u4 = true`: FATAL at t 0.02703, 11 retries.
+- => The burst is neither the g0 term nor the gas T-Newton.
+
+**Proposed fix (M1 solver, method-level, for the USER).** Make the old-face-flux term positivity-preserving in
+thin cells. Two routes:
+- (a) Extend `implicit_trans_limit = lp`, the transverse Levermore-Pomraning face limiter that bounds
+  |F_f| <= c phi_f E_f and keeps the M-matrix, to the sp wedge. It is refused on sp today; the row (M1SphTransRow),
+  the sp face-flux kernels and the post-solve reconstruction would all have to read thx2/thx3. Radial faces
+  would get the same bound.
+- (b) An FCT-type scaling of the outgoing theta_f F_f^n per cell, so that its total outflow <= E^n + inflow
+  (conservative, per face the min of the two cells' factors).
+Either is a change to the shared M1 solver, so opt-in, gated bitwise-off, and validated on the IDORT suite before
+any adoption. The interim fallback is dt_min 1e-8: the burst then costs ~40 retries over t 0.0270-0.0273.
+
+**Adopted TEST setting through impact** (deck v4/run/cal30s.athinput: surface + donor_irr_scale 0.30).
+Static from t 0 (rst v4/cal30s/static), then the stream to t 0.0268; the rest to 0.036 ran with the
+FALLBACK dt_min 1e-8 (cal30s_fb.athinput).
+- dt: 7.02-7.03e-6 flat to t 0.0265. Over the contact (t 0.0270-0.0273) there were 49 eint<=0 retries (min
+  trial dt ~1e-7) and 1 Picard NON-CONVERGED pass, which a retry absorbed. After that dt is 1.5-1.65e-6
+  (v3: 0.84-1.6e-6). All link summaries report NON-CONVERGED 0, and there is no FATAL.
+- Mnzf rate 19.7958 (target 19.795).
+- Thin-atmosphere max|v| 93-224 km/s before contact and 465-527 after (v3: 376-1117).
+- Floor e/rho <= 2.2e3. Ltop 7.9e4 -> 1.4e5 (v3 3.7e5 -> 9.5e5).
+- Impact = v3: contact t 0.027-0.028; dense heating from t 0.032 at phi 13.8 deg -> 15.0 deg (e/rho 4039) at
+  t 0.036 (v3: 4044 at 15.2).

@@ -75,6 +75,9 @@
 #endif
 
 namespace radm1 {
+// DEBUG <rad_m1>/dbg_eint_cells (accretor-sector-light-1017; file scope so the class
+// layout is unchanged): 0 = off
+static int g_dbg_eint_n = 0;
 
 //----------------------------------------------------------------------------------------
 //! \fn M1FLev
@@ -1513,6 +1516,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // flags).  Read only when named; prints only; no number of the solve changes.
   impl_ncdump = pin->DoesParameterExist("rad_m1","implicit_nc_dump") ?
                 pin->GetInteger("rad_m1","implicit_nc_dump") : 0;
+  // DEBUG (accretor-sector-light-1017): dbg_eint_cells = N > 0 prints, in every solve
+  // whose gas write-back gives eint <= 0 somewhere, up to N of those cells per rank with
+  // their state.  Read only when named; prints only; no number of the solve changes.
+  g_dbg_eint_n = pin->DoesParameterExist("rad_m1","dbg_eint_cells") ?
+               pin->GetInteger("rad_m1","dbg_eint_cells") : 0;
+  // ...and with time_scheme = be, where Time2Init returns before reading it, the
+  // existing dbg_t2_admiss = N listing (the cells and their E rows by term) of the
+  // first N solves that end with E <= e_floor or eint_wb <= 0 (read only when named)
+  if (g_dbg_eint_n > 0 && pin->DoesParameterExist("rad_m1","dbg_t2_admiss")) {
+    t2_dbg_adm = pin->GetInteger("rad_m1","dbg_t2_admiss");
+  }
   // DEBUG (he_estall_1003): implicit_stall_trace = N > 0: in a solve still unconverged at
   // pass implicit_stall_trace_p0 (default 40), fix each rank's worst cell of that pass
   // and print its NCD line (tag 3) before step (c) and (tag 2) after the residual of
@@ -14047,6 +14061,36 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ImplicitNCDump(it, 1, gasx, igb, igr, igf, igy);
     }
     flr_ng += nfg;
+    // DEBUG dbg_eint_cells (accretor-sector-light-1017): the cells behind nfg, read-only
+    if (g_dbg_eint_n > 0 && nfg > 0.0 && hh && gq) {
+      auto x1d = pmy_pack->pcoord->x1v;
+      auto x3d = pmy_pack->pcoord->x3v;
+      const int nmx = g_dbg_eint_n, rk = global_variable::my_rank;
+      const int ncy = pmy_pack->pmesh->ncycle;
+      DvceArray1D<int> cnt("m1_dbg_eint_cnt", 1);
+      Kokkos::deep_copy(cnt, 0);
+      par_for("m1_dbg_eint", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real qq = iw_(m,M1_IW_SRCR,k,j,i)
+                        - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+        const Real wb = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq;
+        if (!(wb > 0.0)) {
+          const int n = Kokkos::atomic_fetch_add(&cnt(0), 1);
+          if (n < nmx) {
+            const Real dd = uh(m,IDN,k,j,i);
+            printf("DBG_EINT rank %d cycle %d m %d k %d j %d i %d r %.5f phi %.5f rho %.4e "
+                   "eint_old %.6e wb %.6e q_cl/ch %.6e SRCR %.6e SRCB %.6e Esolved %.6e "
+                   "Eiter %.6e Tsolved %.6e v %.4e %.4e %.4e mom/rho %.4e %.4e %.4e\n",
+                   rk, ncy, m, k, j, i, x1d(m,i), x3d(m,k), dd, iw_(m,M1_IW_EGN,k,j,i), wb,
+                   (cl/ch)*qq, iw_(m,M1_IW_SRCR,k,j,i), iw_(m,M1_IW_SRCB,k,j,i),
+                   iw_(m,M1_IW_S2,k,j,i), iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_TP,k,j,i),
+                   iw_(m,M1_IW_V1,k,j,i), iw_(m,M1_IW_V2,k,j,i), iw_(m,M1_IW_V3,k,j,i),
+                   uh(m,IM1,k,j,i)/dd, uh(m,IM2,k,j,i)/dd, uh(m,IM3,k,j,i)/dd);
+          }
+        }
+      });
+      Kokkos::fence();
+    }
     // fin4-dtretry: a solve outside a hesdirk2 stage (a stage that writes eint <= 0 is not
     // admissible and is redone with backward Euler) that writes back eint <= 0 anywhere
     if (dtr_on && nfg > 0.0 && !t2st) {
@@ -14699,6 +14743,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     const int i = r - (j - js)*ni + is;
     // the cell's state and the rank-local shell mean of rho at its i
     DvceArray1D<Real> cv("m1_t2dbg_cv", 16);
+    // dbg_eint_cells (accretor-sector-light-1017): under time_scheme = be the stage
+    // increments t2inc are not allocated
+    const bool t2ok = (t2i_.extent_int(0) > 0);
     par_for("m1_t2dbg_cell", DevExeSpace(), 0, 0,
     KOKKOS_LAMBDA(const int n) {
       cv(0) = x1v(m,i);
@@ -14706,11 +14753,11 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       cv(2) = iw_(m,M1_IW_S2,k,j,i);
       cv(3) = iw_(m,M1_IW_EN,k,j,i);
       cv(4) = u0_(m,M1_E,k,j,i);
-      cv(5) = t2i_(m,M1_T2_E,k,j,i);
+      cv(5) = t2ok ? t2i_(m,M1_T2_E,k,j,i) : 0.0;
       cv(6) = iw_(m,M1_IW_EGN,k,j,i);
       cv(7) = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
               iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
-      cv(8) = hh ? t2i_(m,M1_T2_EN,k,j,i) : 0.0;
+      cv(8) = (hh && t2ok) ? t2i_(m,M1_T2_EN,k,j,i) : 0.0;
       cv(9) = iw_(m,M1_IW_TP,k,j,i);
       cv(10) = iw_(m,M1_IW_V1,k,j,i);
       cv(11) = iw_(m,M1_IW_V2,k,j,i);
