@@ -60,6 +60,7 @@
 #include "mesh/mesh.hpp"
 #include "mesh/nghbr_index.hpp"
 #include "coordinates/coordinates.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/m1_fluid.hpp"
