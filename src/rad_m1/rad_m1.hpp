@@ -1425,6 +1425,8 @@ class RadiationM1 {
   // Default `none` = not allocated and not referenced, so every earlier configuration
   // is bitwise unchanged.  See ImplicitTransTheta.
   int impl_tlim;                // M1_TLIM_*: none | lp
+  bool impl_fct_mem = false;    // m1fct-1019 <rad_m1>/implicit_fct_mem (read only when named)
+  DvceArray4D<Real> fct_s;      // m1fct-1019: per-cell donor factor
   Real impl_tfmax;              // <rad_m1>/implicit_trans_fmax, the reduced-flux cap
   DvceArray4D<Real> thx2, thx3;  // theta_f = 1/(1 + c dt (kt_f + klim_f)) on the x2/x3
                                 // faces, the ONE number every use of the transverse
@@ -1721,6 +1723,7 @@ class RadiationM1 {
   //! limiter opacity klx2/klx3) for the current pass.  Inert under
   //! implicit_trans_limit = none, where thx2/thx3 are not even allocated.
   void ImplicitTransTheta(bool newk);
+  void ImplicitFctMem();          // m1fct-1019: FCT donor scaling of the old face-flux memory
   //! milestone 3e: snapshot the SCALED state entering a Picard pass (x_k) into aa_xc.
   //! Called at the top of every pass when implicit_accel = anderson.
   void ImplicitAccelSave();

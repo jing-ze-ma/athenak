@@ -1098,6 +1098,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (none | lp | lpr)");
   }
   }
+  // m1fct-1019: <rad_m1>/implicit_fct_mem (opt-in, read only when named): FCT-type donor-cell
+  // scaling of the OLD face-flux memory F0^n in the backward-Euler right-hand side, so that
+  // no cell's explicit outflow exceeds its E^n (sp wedge only)
+  if (pin->DoesParameterExist("rad_m1","implicit_fct_mem")) {
+    impl_fct_mem = pin->GetBoolean("rad_m1","implicit_fct_mem");
+  }
   impl_tfmax = pin->GetOrAddReal("rad_m1","implicit_trans_fmax",1.0);
   if (!(impl_tfmax > 0.0)) {
     ImplFatal("<rad_m1>/implicit_trans_fmax must be positive");
@@ -4198,6 +4204,76 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     fw3(m,M1_IFW_HCL,k,j,i) = hl;
     fw3(m,M1_IFW_HCR,k,j,i) = hr;
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitFctMem
+//! \brief m1fct-1019 (opt-in <rad_m1>/implicit_fct_mem): the backward-Euler right-hand side
+//! carries the OLD face-flux memory F0^n of every face explicitly (E row: - (chat/c) dt/V
+//! sum_f A_f theta_f F0_f^n), and theta_f ~ 1 in thin cells, so a cell whose stored
+//! outgoing face fluxes exceed its content solves to E' < 0 (accretor contact/onset).  FCT
+//! donor scaling: P_i = (chat/c) dt/V_i sum_out A_f |F0_f^n| (theta <= 1: an upper bound),
+//! s_i = min(1, E_i^n/P_i), and each face's F0^n (the RHS copies f0x1n/f0x2n/f0x3n only;
+//! the stored f0x* state is untouched) is multiplied by s of its upwind (donor) cell.  A
+//! face whose donor is a ghost cell (MeshBlock/physical boundary) is left unscaled.
+void RadiationM1::ImplicitFctMem() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nc1 = indcs.nx1 + 2*indcs.ng;
+  const int nc2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int nc3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  if (fct_s.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(fct_s, nmb1 + 1, nc3, nc2, nc1);
+  }
+  auto s_ = fct_s;
+  auto u_ = u0;
+  auto f1_ = f0x1n;
+  auto f2_ = f0x2n;
+  auto f3_ = f0x3n;
+  const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  const Real fac = (chat/c_light)*dt_sub;
+  par_for("m1_fct_s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real p = fmax(carea.x1f(m,k,j,i+1)*f1_(m,k,j,i+1), 0.0)
+           + fmax(-carea.x1f(m,k,j,i)*f1_(m,k,j,i), 0.0);
+    if (tr2) {
+      p += fmax(carea.x2f(m,k,j+1,i)*f2_(m,k,j+1,i), 0.0)
+         + fmax(-carea.x2f(m,k,j,i)*f2_(m,k,j,i), 0.0);
+    }
+    if (tr3) {
+      p += fmax(carea.x3f(m,k+1,j,i)*f3_(m,k+1,j,i), 0.0)
+         + fmax(-carea.x3f(m,k,j,i)*f3_(m,k,j,i), 0.0);
+    }
+    p *= fac/cvol(m,k,j,i);
+    const Real e = fmax(u_(m,M1_E,k,j,i), 0.0);
+    s_(m,k,j,i) = (p > e) ? e/p : 1.0;
+  });
+  par_for("m1_fct_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real f = f1_(m,k,j,i);
+    const int id = (f > 0.0) ? i-1 : i;
+    if (id >= is && id <= ie) {f1_(m,k,j,i) = f*s_(m,k,j,id);}
+  });
+  if (tr2) {
+    par_for("m1_fct_x2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real f = f2_(m,k,j,i);
+      const int jd = (f > 0.0) ? j-1 : j;
+      if (jd >= js && jd <= je) {f2_(m,k,j,i) = f*s_(m,k,jd,i);}
+    });
+  }
+  if (tr3) {
+    par_for("m1_fct_x3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real f = f3_(m,k,j,i);
+      const int kd = (f > 0.0) ? k-1 : k;
+      if (kd >= ks && kd <= ke) {f3_(m,k,j,i) = f*s_(m,kd,j,i);}
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -11440,6 +11516,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     Kokkos::deep_copy(DevExeSpace(), f0x2n, f0x2);
     if (thrd) {Kokkos::deep_copy(DevExeSpace(), f0x3n, f0x3);}
   }
+  if (impl_fct_mem) {ImplicitFctMem();}   // m1fct-1019
   // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp).  A STAGE solve takes the stage
   // start state (u0, f0x*, the hydro u0) as its first iterate and as the only state the
   // EOS and the opacities see; its OLD vector is that state plus t2inc, which can be
