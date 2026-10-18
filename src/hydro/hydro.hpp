@@ -182,7 +182,6 @@ class Hydro {
   // cs-open-1018: the angular-momentum module (hydro_am.hpp; nullptr unless one of
   // <hydro>/am_transport | am_vector | frame_omega is named)
   hydro::AmModule *pam = nullptr;
-  void AmFillV(hydro::HydroAmV &v);
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation
