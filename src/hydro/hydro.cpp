@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <algorithm>
 
@@ -234,6 +235,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
   if (pin->DoesParameterExist("hydro","am_transport")) {
     am_transport = pin->GetBoolean("hydro","am_transport");
+  }
+  if (pin->DoesParameterExist("hydro","frame_omega")) {
+    std::string so = pin->GetString("hydro","frame_omega");
+    for (auto &ch : so) {if (ch == ',') ch = ' ';}
+    std::istringstream iso(so);
+    iso >> frame_om[0] >> frame_om[1] >> frame_om[2];
+    frame_on = true;
   }
   if (pin->DoesParameterExist("hydro","am_vector")) {
     am_vector = pin->GetBoolean("hydro","am_vector");

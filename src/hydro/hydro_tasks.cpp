@@ -553,6 +553,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   // cs-open-1018 <hydro>/am_transport: the axial angular-momentum-conservative transport
   // correction (hydro_am.hpp), from this stage's fluxes and w0
   if (am_transport) {AmTransport(beta_dt, pdrive, stage);}
+  if (frame_on) {FrameRotation(beta_dt);}
   if (am_vector && am_eta > 0.0 && stage == pdrive->nexp_stages) {AmSpinReturn();}
 
   // Add user source terms
@@ -593,25 +594,8 @@ void Hydro::AmTransport(Real bdt, Driver *pdrive, int stage) {
     am_checked = true;
   }
   hydro::HydroAmV v;
-  v.w0 = w0;
-  v.eos = peos->eos_data;
-  v.gen = v.eos.IsGeneral();
-  v.wder = wder;
-  v.f1 = uflx.x1f;  v.f2 = uflx.x2f;  v.f3 = uflx.x3f;
-  v.a1 = pco->area.x1f;  v.a2 = pco->area.x2f;  v.a3 = pco->area.x3f;
-  v.vol = pco->volume;
-  v.xovr = pco->x_ov_rD;
-  v.yovr = pco->y_ov_rC;
-  v.ccell = pco->cos_cell;
-  v.scell = pco->sin_cell;
-  v.x1v = pco->x1v;  v.x1f = pco->xx1f;
-  v.x2v = pco->x2v;  v.x2f = pco->xx2f;
-  v.x3v = pco->x3v;  v.x3f = pco->xx3f;
-  v.size = pmy_pack->pmb->mb_size;
-  v.panel = pmy_pack->pmb->mb_panel;
+  AmFillV(v);
   auto &ic = pm->mb_indcs;
-  v.is = ic.is;  v.js = ic.js;  v.ks = ic.ks;  v.nx2 = ic.nx2;  v.nx3 = ic.nx3;
-  v.cs = pm->use_cubed_sphere;
   auto u0_ = u0;
   if (am_vector) {
     // the spin reservoir follows the RK register logic of u0 (u1 = u0 at stage 1)
@@ -1261,6 +1245,83 @@ void Hydro::AmSpinReturn() {
     u0_(m,IM3,k,j,i) += p2;
     sp_(m,k,j,i) += srad;
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::FrameRotation
+//! \brief cs-open-1018 <hydro>/frame_omega: the rotating-frame force (HydroAmFrame) on the
+//! cell momentum and its work (the centrifugal part) on the total energy; under
+//! <hydro>/am_vector also the L-conserving torque correction (perpendicular part in the
+//! tangential momentum, radial part in the spin; the energy is not touched by it).
+
+void Hydro::FrameRotation(Real bdt) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (!(pm->use_cubed_sphere || pm->use_spherical_polar)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<hydro>/frame_omega needs the cubed sphere or spherical "
+              << "polar" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  hydro::HydroAmV v;
+  AmFillV(v);
+  auto &ic = pm->mb_indcs;
+  auto u0_ = u0;
+  const Real o0 = frame_om[0], o1 = frame_om[1], o2 = frame_om[2];
+  const bool amc = am_vector;
+  auto sp_ = am_spin;
+  par_for("hydro_frame_rot", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+          ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real om[3] = {o0, o1, o2};
+    Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
+    hydro::HydroAmFrame(v, om, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc);
+    const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
+    Real pw = 0.0;
+    for (int q = 0; q < 3; ++q) {pw += f[q]*(v1*rh[q] + v2*b1[q] + v3*b2[q]);}
+    Real fr = 0.0, f1 = 0.0, f2 = 0.0;
+    for (int q = 0; q < 3; ++q) {fr += f[q]*rh[q]; f1 += f[q]*b1[q]; f2 += f[q]*b2[q];}
+    u0_(m,IM1,k,j,i) += fr*bdt;
+    u0_(m,IM2,k,j,i) += f1*bdt;
+    u0_(m,IM3,k,j,i) += f2*bdt;
+    u0_(m,IEN,k,j,i) += pw*bdt;
+    if (amc) {
+      const Real r2 = rc[0]*rc[0] + rc[1]*rc[1] + rc[2]*rc[2];
+      Real dp[3];
+      hydro::HydroAmCross(dT, rc, dp);
+      const Real iv = 1.0/(v.vol(m,k,j,i)*r2);
+      Real p1 = 0.0, p2 = 0.0;
+      for (int q = 0; q < 3; ++q) {p1 += dp[q]*iv*b1[q]; p2 += dp[q]*iv*b2[q];}
+      u0_(m,IM2,k,j,i) += p1*bdt;
+      u0_(m,IM3,k,j,i) += p2*bdt;
+      sp_(m,k,j,i) += (dT[0]*rh[0] + dT[1]*rh[1] + dT[2]*rh[2])*bdt;
+    }
+    (void) cc;
+  });
+}
+
+//! \brief cs-open-1018: the views of the hydro angular-momentum kernels (hydro_am.hpp)
+void Hydro::AmFillV(hydro::HydroAmV &v) {
+  Mesh *pm = pmy_pack->pmesh;
+  Coordinates *pco = pmy_pack->pcoord;
+  auto &ic = pm->mb_indcs;
+  v.w0 = w0;
+  v.eos = peos->eos_data;
+  v.gen = v.eos.IsGeneral();
+  v.wder = wder;
+  v.f1 = uflx.x1f;  v.f2 = uflx.x2f;  v.f3 = uflx.x3f;
+  v.a1 = pco->area.x1f;  v.a2 = pco->area.x2f;  v.a3 = pco->area.x3f;
+  v.vol = pco->volume;
+  v.xovr = pco->x_ov_rD;
+  v.yovr = pco->y_ov_rC;
+  v.ccell = pco->cos_cell;
+  v.scell = pco->sin_cell;
+  v.x1v = pco->x1v;  v.x1f = pco->xx1f;
+  v.x2v = pco->x2v;  v.x2f = pco->xx2f;
+  v.x3v = pco->x3v;  v.x3f = pco->xx3f;
+  v.size = pmy_pack->pmb->mb_size;
+  v.panel = pmy_pack->pmb->mb_panel;
+  v.is = ic.is;  v.js = ic.js;  v.ks = ic.ks;  v.nx2 = ic.nx2;  v.nx3 = ic.nx3;
+  v.cs = pm->use_cubed_sphere;
 }
 
 } // namespace hydro

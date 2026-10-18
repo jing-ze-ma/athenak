@@ -71,6 +71,7 @@ struct HydroTaskIDs {
 };
 
 namespace hydro {
+struct HydroAmV;   // cs-open-1018: hydro_am.hpp
 
 // <problem>/nan_report: the HLLC in-kernel capture record (see hllc_hyd.hpp and the
 // readback in Hydro::Fluxes).  Pointers, not Views: a file-scope View outlives
@@ -202,6 +203,13 @@ class Hydro {
   MeshBoundaryValuesCC *pbval_spin = nullptr;
   DvceArray5D<Real> spw, spw_c;
   void AmSpinReturn();
+  // <hydro>/frame_omega = "ox,oy,oz" (read only when named): a rotating frame, Coriolis +
+  // centrifugal force on cs / sp (hydro_am.hpp HydroAmFrame); with am_vector the frame
+  // torque is the L-conserving T* (coriolis_am generalised to a vector Omega)
+  bool frame_on = false;
+  Real frame_om[3] = {0.0, 0.0, 0.0};
+  void FrameRotation(Real bdt);
+  void AmFillV(hydro::HydroAmV &v);
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation

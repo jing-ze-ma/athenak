@@ -372,5 +372,106 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
   return true;
 }
 
+
+//! \brief cs-open-1018 <hydro>/frame_omega: the rotating-frame force density of cell
+//! (m,k,j,i), f = -2 rho Omega x v - rho Omega x (Omega x rc) (Cartesian, cell centre), and
+//! (amc) the L-conserving torque correction dT = T* - V rc x f, with
+//!   T* = -Q_c - Omega x L_abs,c,  L_abs,c = V rc x rho (v + Omega x rc),
+//!   Q_c = sum_f Phi_f^out (w_f - w_c),  w(x) = x x (Omega x x),
+//! Phi^out the outward mass flux (x area) of the update and w_f at the face centre (the
+//! generalisation of the dhj problem/coriolis_am from z to a vector Omega): the frame terms
+//! then change sum_c L_abs by -Omega x L_abs plus the boundary flux of w exactly (the
+//! component along Omega is conserved to round-off; |L_abs| to the time integration).
+//! rc, the cell basis (b1, b2) and cc as HydroAmVecTorque; v from w0 (cs: contravariant).
+
+KOKKOS_INLINE_FUNCTION
+void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m,
+                  const int k, const int j, const int i, Real *f, Real *dT, Real *rc,
+                  Real *rh, Real *b1, Real *b2, Real &cc) {
+  const Real dv = v.vol(m,k,j,i);
+  const Real r = v.x1v(m,i);
+  const Real rho = v.w0(m,IDN,k,j,i);
+  const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
+  auto wv = [&](const Real *x, Real *w) {   // x x (Omega x x)
+    Real ox[3];
+    HydroAmCross(om, x, ox);
+    HydroAmCross(x, ox, w);
+  };
+  Real xf[6][3];       // the six face centres
+  Real phi[6];         // outward mass flux x area
+  if (v.cs) {
+    const Real x2l = v.size.d_view(m).x2min, x2u = v.size.d_view(m).x2max;
+    const Real x3l = v.size.d_view(m).x3min, x3u = v.size.d_view(m).x3max;
+    const Real xc = 0.25*M_PI*CellCenterX(j-v.js, v.nx2, x2l, x2u);
+    const Real ec = 0.25*M_PI*CellCenterX(k-v.ks, v.nx3, x3l, x3u);
+    const Real xl = 0.25*M_PI*LeftEdgeX(j-v.js, v.nx2, x2l, x2u);
+    const Real xr = 0.25*M_PI*LeftEdgeX(j+1-v.js, v.nx2, x2l, x2u);
+    const Real el = 0.25*M_PI*LeftEdgeX(k-v.ks, v.nx3, x3l, x3u);
+    const Real er = 0.25*M_PI*LeftEdgeX(k+1-v.ks, v.nx3, x3l, x3u);
+    const int pnl = v.panel.d_view(m);
+    Real q[3];
+    cubed_sphere::PanelToCart(pnl, xc, ec, q);
+    cubed_sphere::PanelTangents(pnl, xc, ec, b1, b2);
+    const Real qn = 1.0/sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2]);
+    for (int c = 0; c < 3; ++c) {rh[c] = q[c]*qn;}
+    cc = v.ccell(m,k,j);
+    const Real xs[4] = {xl, xr, xc, xc}, es[4] = {ec, ec, el, er};
+    for (int n = 0; n < 4; ++n) {
+      cubed_sphere::PanelToCart(pnl, xs[n], es[n], q);
+      const Real nq = r/sqrt(q[0]*q[0] + q[1]*q[1] + q[2]*q[2]);
+      for (int c = 0; c < 3; ++c) {xf[2+n][c] = q[c]*nq;}
+    }
+  } else {
+    const Real th = v.x2v(m,j), ph = v.x3v(m,k);
+    const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+    rh[0] = st*cp; rh[1] = st*sp; rh[2] = ct;
+    b1[0] = ct*cp; b1[1] = ct*sp; b1[2] = -st;
+    b2[0] = -sp;   b2[1] = cp;    b2[2] = 0.0;
+    cc = 0.0;
+    const Real ts[4] = {v.x2f(m,j), v.x2f(m,j+1), th, th};
+    const Real ps[4] = {ph, ph, v.x3f(m,k), v.x3f(m,k+1)};
+    for (int n = 0; n < 4; ++n) {
+      xf[2+n][0] = r*sin(ts[n])*cos(ps[n]);
+      xf[2+n][1] = r*sin(ts[n])*sin(ps[n]);
+      xf[2+n][2] = r*cos(ts[n]);
+    }
+  }
+  for (int c = 0; c < 3; ++c) {
+    rc[c] = r*rh[c];
+    xf[0][c] = v.x1f(m,i)*rh[c];
+    xf[1][c] = v.x1f(m,i+1)*rh[c];
+  }
+  Real vel[3];
+  for (int c = 0; c < 3; ++c) {vel[c] = v1*rh[c] + v2*b1[c] + v3*b2[c];}
+  Real ov[3], orc[3], oorc[3];
+  HydroAmCross(om, vel, ov);
+  HydroAmCross(om, rc, orc);
+  HydroAmCross(om, orc, oorc);
+  for (int c = 0; c < 3; ++c) {f[c] = -2.0*rho*ov[c] - rho*oorc[c];}
+  for (int c = 0; c < 3; ++c) {dT[c] = 0.0;}
+  if (!amc) return;
+  phi[0] = -v.f1(m,IDN,k,j,i)*v.a1(m,k,j,i);
+  phi[1] = v.f1(m,IDN,k,j,i+1)*v.a1(m,k,j,i+1);
+  phi[2] = -v.f2(m,IDN,k,j,i)*v.a2(m,k,j,i);
+  phi[3] = v.f2(m,IDN,k,j+1,i)*v.a2(m,k,j+1,i);
+  phi[4] = -v.f3(m,IDN,k,j,i)*v.a3(m,k,j,i);
+  phi[5] = v.f3(m,IDN,k+1,j,i)*v.a3(m,k+1,j,i);
+  Real wc[3], qv[3] = {0.0, 0.0, 0.0};
+  wv(rc, wc);
+  for (int n = 0; n < 6; ++n) {
+    Real wf[3];
+    wv(xf[n], wf);
+    for (int c = 0; c < 3; ++c) {qv[c] += phi[n]*(wf[c] - wc[c]);}
+  }
+  Real pa[3], la[3], ol[3], tcd[3];
+  for (int c = 0; c < 3; ++c) {pa[c] = rho*(vel[c] + orc[c])*dv;}
+  HydroAmCross(rc, pa, la);
+  HydroAmCross(om, la, ol);
+  Real fv[3];
+  for (int c = 0; c < 3; ++c) {fv[c] = f[c]*dv;}
+  HydroAmCross(rc, fv, tcd);
+  for (int c = 0; c < 3; ++c) {dT[c] = (-qv[c] - ol[c]) - tcd[c];}
+}
+
 }  // namespace hydro
 #endif  // HYDRO_HYDRO_AM_HPP_
