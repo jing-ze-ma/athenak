@@ -2650,7 +2650,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // 10.3 -> 0.47 v_MLT).  The key is kept so that `false` reproduces runs_3a/RESULTS.txt.
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
   // moveq-1011: the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
-  impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",true);
+  // cs-s4-1017 (USER 10-18): on the cubed sphere the unnamed default is false (the
+  // transverse deposit / fixed point are not ported; named true stays refused where it
+  // acts, the check kernel before the write-back)
+  impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",
+                                          !pmy_pack->pmesh->use_cubed_sphere);
   // h2order2-1011: implicit_rad_inertia_solve (read only when named; rad_m1.hpp)
   if (pin->DoesParameterExist("rad_m1","implicit_rad_inertia_solve")) {
     impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
@@ -2662,7 +2666,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // (hydro, coupling, gas_feedback); matched without it and on a restart whose file
   // lacks the key (files since consrc-1011 echo it).  Explicit input overrides.
   {
-    const bool gsdef = !global_variable::restart_run && fl_on && coupling && gas_feedback;
+    // cs-s4-1017 (USER 10-18): matched on the cubed sphere unless named (the conservative
+    // sources are not ported to cs; named, they stay refused below)
+    const bool gsdef = !global_variable::restart_run && fl_on && coupling && gas_feedback &&
+                       !pmy_pack->pmesh->use_cubed_sphere;
     const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src",
                                                gsdef ? "conservative2" : "matched");
     if (gs.compare("matched") == 0) {

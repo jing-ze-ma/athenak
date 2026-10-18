@@ -157,7 +157,20 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     if (impl_prec != 2 && impl_prec != 3) {
       wcs += " implicit_precond != rbgs_fwd | mg;";
     }
-    if (impl_halo_mpi) {wcs += " implicit_halo_mpi = true;";}
+    // cs-s4-1017 (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
+    // (and its overlap) is a communication layout, not a method; on cs it falls back to
+    // the ordinary seam-aware exchange (the same numbers), as implicit_halo_direct does
+    if (impl_halo_mpi) {
+      impl_halo_mpi = false;
+      impl_halo_ovl = false;
+      impl_ovl_faces = false;
+      impl_halo_ipc = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> cubed sphere: implicit_halo_mpi (+ overlap) falls back to "
+                  << "the ordinary seam-aware exchange (the seam halo_mpi port is open)"
+                  << std::endl;
+      }
+    }
     // CS1: the canonical seam geometry needs the equiangular panel of -1..1 with the same
     // cell count along both tangential axes, and the one-sided tangential derivatives
     // next to a seam three cells of the block
@@ -174,8 +187,8 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
         << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS3) supports only "
         << "transport = implicit, closure = eddington | vet_col (radial axis), "
         << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
-        << "= bicgstab, implicit_precond = rbgs_fwd | mg, no "
-        << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
+        << "= bicgstab, implicit_precond = rbgs_fwd | mg (and the spherical-polar "
+        << "list below); this input has:"
         << wcs << why << std::endl
         << "See /viper/ptmp2/jinma/rt_design_1003/CS_IMPLICIT_VET.md sect. 4."
         << std::endl;

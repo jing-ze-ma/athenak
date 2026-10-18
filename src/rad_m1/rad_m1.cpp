@@ -1459,15 +1459,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
-      // cs-vetgd-1017 (stage S3): on the cubed sphere vet_gd hands over D_rr only.
-      // cs-s4-1017 (stage S4): D_r,lat as the Cartesian vector v (VetGdCsMoments) in the
-      // cs forms M1CsLat0 / M1CsLatF, lagged or in the operator (VetLatOpCs /
-      // VetLatStencilAddCs) when named; the cs default stays none (soft default, as
-      // rbgs_fwd / be) until the default change is decided
-      if (vgd_on && pmy_pack->pmesh->use_cubed_sphere &&
-          !pin->DoesParameterExist("rad_m1","vet_col_lat_offdiag")) {
-        vlat_odm = 0;
-      }
+      // cs-s4-1017 (stage S4, USER 10-18): on the cubed sphere D_r,lat is the Cartesian
+      // vector v (VetGdCsMoments) in the cs forms M1CsLat0 / M1CsLatF (VetLatOpCs /
+      // VetLatStencilAddCs): the default is the sp one (operator)
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
         vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");
         if (vlat_dump.compare("none") == 0) {vlat_dump = "";}
