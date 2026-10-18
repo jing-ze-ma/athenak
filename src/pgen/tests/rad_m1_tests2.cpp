@@ -1069,7 +1069,6 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
           << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      m1_emag = 0.0;
       auto b0 = pmbp->pmhd->b0;
       auto a2 = pmbp->pcoord->area.x2f;
       auto a3 = pmbp->pcoord->area.x3f;
