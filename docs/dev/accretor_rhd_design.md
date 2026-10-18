@@ -1080,3 +1080,15 @@ thin cells. Two routes:
   (conservative, per face the min of the two cells' factors).
 Either is a change to the shared M1 solver, so opt-in, gated bitwise-off, and validated on the IDORT suite before
 any adoption. The interim fallback is dt_min 1e-8: the burst then costs ~40 retries over t 0.0270-0.0273.
+
+**Adopted TEST setting through impact** (deck v4/run/cal30s.athinput: surface + donor_irr_scale 0.30).
+Static from t 0 (rst v4/cal30s/static), then the stream to t 0.0268; the rest to 0.036 ran with the
+FALLBACK dt_min 1e-8 (cal30s_fb.athinput).
+- dt: 7.02-7.03e-6 flat to t 0.0265. Over the contact (t 0.0270-0.0273) there were 49 eint<=0 retries (min
+  trial dt ~1e-7) and 1 Picard NON-CONVERGED pass, which a retry absorbed. After that dt is 1.5-1.65e-6
+  (v3: 0.84-1.6e-6). All link summaries report NON-CONVERGED 0, and there is no FATAL.
+- Mnzf rate 19.7958 (target 19.795).
+- Thin-atmosphere max|v| 93-224 km/s before contact and 465-527 after (v3: 376-1117).
+- Floor e/rho <= 2.2e3. Ltop 7.9e4 -> 1.4e5 (v3 3.7e5 -> 9.5e5).
+- Impact = v3: contact t 0.027-0.028; dense heating from t 0.032 at phi 13.8 deg -> 15.0 deg (e/rho 4039) at
+  t 0.036 (v3: 4044 at 15.2).
