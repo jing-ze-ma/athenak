@@ -1285,7 +1285,9 @@ void Hydro::FrameRotation(Real bdt, Driver *pdrive, int stage) {
   // the radiation's L (F / (c chat)) of the cell is part of L_abs: the frame terms book
   // its rotation on the gas (the M1 equations carry no frame terms); u0 F covariant on
   // the cs panel basis (raised with cos_cell), orthonormal on sp
-  const bool hrad = amc && (pmy_pack->pradm1 != nullptr);
+  // (only when the radiation exchanges momentum with this gas: coupling + gas_feedback)
+  const bool hrad = amc && (pmy_pack->pradm1 != nullptr) &&
+                    pmy_pack->pradm1->coupling && pmy_pack->pradm1->gas_feedback;
   auto ur_ = hrad ? pmy_pack->pradm1->u0 : DvceArray5D<Real>();
   const Real icc = hrad ? 1.0/(pmy_pack->pradm1->c_light*pmy_pack->pradm1->chat) : 0.0;
   if (fex && frame_ln.extent_int(0) == 0) {
