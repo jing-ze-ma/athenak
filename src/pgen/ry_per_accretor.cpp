@@ -3249,10 +3249,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     const Real tk = eos.temp_cgs;
     // acc3d-stream-1018 (USER 10-18 "go with a"): problem/env_ic_vz (read only when named,
     // default off = the barotropic column T(psi) on every equipotential, bitwise): the von
-    // Zeipel temperature in the atmosphere, T = T_col(psi) (g_eff/g_col(psi))^(w/4), g_eff =
-    // |grad Phi| of the true Roche potential at the cell (3-D: r, theta, phi; band: the
-    // plane), g_col(psi) = the same at the column's own position r_eq(psi) (phi 90 cut, the
-    // v7 wall-flux factor), w = 1 above the photosphere (psi <= 0), tapering linearly to 0
+    // Zeipel temperature in the atmosphere, T = T_col(psi) (g_ph/g_col(0))^(w/4), g_ph =
+    // |grad Phi| of the true Roche potential at the ray's photosphere (3-D: theta, phi;
+    // band: the plane), g_col(0) = the same at the column's photosphere (phi 90 cut), w = 1 above the photosphere (psi <= 0), tapering linearly to 0
     // at psi = env_ic_vz_depth c_ph^2 below it (default 3: deeper the barotropic T(psi) of a
     // radiative interior is kept).  Density follows from the IC's own hydrostatic march
     // along each ray (anchored at the photospheric cell at the column's rho), the radeq
@@ -3276,30 +3275,50 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
     }
     Real vzmin = 1.0e300, vzmax = -1.0e300;
-    auto vzfac = [&](const Real r, const Real th, const Real ph, const Real psi) {
-      if (!icvz) return static_cast<Real>(1.0);
-      const Real w = (psi <= 0.0) ? 1.0 : std::max(0.0, 1.0 - psi/vzdep);
-      if (!(w > 0.0)) return static_cast<Real>(1.0);
-      const Real ee = 1.0e-6, sth = std::sin(th);
+    // g_eff is taken at the ray's own PHOTOSPHERE (psi = 0 on this theta, phi ray; v10: the
+    // local g of v9 fell to 0.24 g_col in the far ambient, cooling the whole radeq floor by
+    // 20-50 %, which is not von Zeipel), so every cell of the ray carries the factor of its
+    // surface patch, (g_ph/g_col(0))^(w/4); cached per ray
+    Real vzth = -1.0, vzph = -1.0, vzrat = 1.0;
+    auto vzray = [&](const Real th, const Real ph) {
+      if (th == vzth && ph == vzph) return vzrat;
+      vzth = th; vzph = ph; vzrat = 1.0;
+      const Real sth = std::sin(th);
+      auto psir = [&](const Real r) {
+        return phis - (p3_ ? PhiWB3(p, dlt, rtop, rspin, phtop, r, sth, ph)
+                           : PhiWB(p, dlt, rtop, rspin, phtop, r, ph));
+      };
+      Real a = 0.7*racc, b = std::min(1.5*racc, rtop);
+      if (!(psir(a) > 0.0 && psir(b) < 0.0)) return vzrat;
+      for (int it=0; it<60; ++it) {
+        const Real c = 0.5*(a + b);
+        if (psir(c) > 0.0) a = c; else b = c;
+      }
+      const Real r = 0.5*(a + b), ee = 1.0e-6;
       const Real gt = (RochePot3(p, r, std::sin(th + ee), ph) -
                        RochePot3(p, r, std::sin(th - ee), ph))/(2.0*ee*r);
       const Real gr = (RochePot3(p, r*(1.0 + ee), sth, ph) -
                        RochePot3(p, r*(1.0 - ee), sth, ph))/(2.0*ee*r);
       const Real gp = (RochePot3(p, r, sth, ph + ee) - RochePot3(p, r, sth, ph - ee))
                       /(2.0*ee*r*sth);
-      const Real g = std::sqrt(gt*gt + gr*gr + gp*gp);
-      // g_col(psi), linear in psi, clamped at the column's ends
-      Real gc;
-      if (psi <= cpsi.front()) {
+      // g_col at psi = 0 (linear in the column's psi)
+      const size_t n = std::upper_bound(cpsi.begin(), cpsi.end(), 0.0) - cpsi.begin();
+      Real gc = gcolv.back();
+      if (n == 0) {
         gc = gcolv.front();
-      } else if (psi >= cpsi.back()) {
-        gc = gcolv.back();
-      } else {
-        const size_t n = std::upper_bound(cpsi.begin(), cpsi.end(), psi) - cpsi.begin();
-        const Real x = (psi - cpsi[n-1])/(cpsi[n] - cpsi[n-1]);
+      } else if (n < cpsi.size()) {
+        const Real x = (0.0 - cpsi[n-1])/(cpsi[n] - cpsi[n-1]);
         gc = (1.0 - x)*gcolv[n-1] + x*gcolv[n];
       }
-      const Real f = std::pow(g/gc, 0.25*w);
+      vzrat = std::sqrt(gt*gt + gr*gr + gp*gp)/gc;
+      return vzrat;
+    };
+    auto vzfac = [&](const Real r, const Real th, const Real ph, const Real psi) {
+      (void) r;
+      if (!icvz) return static_cast<Real>(1.0);
+      const Real w = (psi <= 0.0) ? 1.0 : std::max(0.0, 1.0 - psi/vzdep);
+      if (!(w > 0.0)) return static_cast<Real>(1.0);
+      const Real f = std::pow(vzray(th, ph), 0.25*w);
       vzmin = std::min(vzmin, f);
       vzmax = std::max(vzmax, f);
       return f;
