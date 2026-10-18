@@ -987,7 +987,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {auto *pmh = pmy_pack->pmesh;
   const std::string integ = pin->DoesParameterExist("time","integrator") ?
                             pin->GetString("time","integrator") : "rk2";
-  const bool h2def = full && !pmh->use_cubed_sphere && !pmh->use_polar_boundary &&
+  // cs-open-1018 (USER: second order in time on cs too): the cubed sphere takes the same
+  // hesdirk2 default as sp (was excluded; W1 measured hesdirk2 on cs at 1.95-1.99)
+  const bool h2def = full && !pmh->use_polar_boundary &&
                      (!tau_closure || vet_col) && (integ.compare("rk2") == 0) &&
                      !global_variable::restart_run;
   (void) pin->GetOrAddString("rad_m1","time_scheme", h2def ? "hesdirk2" : "be");}
