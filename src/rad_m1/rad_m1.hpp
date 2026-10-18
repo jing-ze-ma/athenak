@@ -1491,6 +1491,11 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_d3 = nullptr;
   void ImplicitCsPairHalo(int c0);
   void ImplicitCsPairHaloD3();
+  // cs-open-1018 <rad_m1>/implicit_am_cs (cubed sphere; default = <hydro>/am_transport):
+  // the axial angular-momentum-conservative radiation-gas exchange (rad_m1_implicit.cpp,
+  // after the write-back); amw = the pre-write-back gas momentum and cell F (6)
+  bool impl_am_cs = false;
+  DvceArray5D<Real> amw;
   void ImplicitVimpBuild();     // the Jacobian of a(v') E' for this Picard pass
   // <rad_m1>/implicit_hr_recon = dc | plm (xthinfix-1009 Fix B, rad_m1_implicit.hpp)
   bool impl_muscl = false;      // plm half-range face values (default dc: untouched)

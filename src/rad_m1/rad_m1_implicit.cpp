@@ -2990,6 +2990,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // the theta split reads m1bcs (a seam is an interior face) and the transverse dA
   // pair crosses a seam on the destination's face normals (ImplicitCsPairHalo).  Only
   // the opt-in implicit_cs2_shift (stage-start velocity shift) is not ported.
+  // cs-open-1018 <rad_m1>/implicit_am_cs (read only when named; default true on the cubed
+  // sphere when <hydro>/am_transport is on): the gas's zonal momentum takes the torque
+  // that makes the radiation-gas exchange conserve L_z = sum V r x (m + F/(c chat)) to
+  // round-off (ImplicitSolve, after the write-back)
+  if (cs_geom) {
+    impl_am_cs = pin->DoesParameterExist("hydro","am_transport") &&
+                 pin->GetBoolean("hydro","am_transport");
+    if (pin->DoesParameterExist("rad_m1","implicit_am_cs")) {
+      impl_am_cs = pin->GetBoolean("rad_m1","implicit_am_cs");
+    }
+  }
   if (cs_geom && impl_gas_src_cs2 && cs2_shift) {
     ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere "
               "(cs-open-1018); use the default false");
@@ -15149,6 +15160,26 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // cs-open-1018: implicit_rad_inertia on the cubed sphere (was a FATAL check kernel
   // here, cs-port-1016): the transverse v_f g0_f deposit and the enthalpy-flux momentum
   // fixed point are the `#if M1_CSW` blocks of the cs write-back launches below
+  // cs-open-1018 implicit_am_cs: the state before the write-back (gas m, cell F)
+  const bool amcs = csw && impl_am_cs && have_hydro && feedback && coupling_ && dbgf &&
+                    trans && thrd;
+  if (amcs) {
+    if (amw.extent_int(0) == 0) {
+      auto &icx = pmy_pack->pmesh->mb_indcs;
+      Kokkos::realloc(amw, pmy_pack->nmb_thispack, 6, icx.nx3 + 2*icx.ng,
+                      icx.nx2 + 2*icx.ng, icx.nx1 + 2*icx.ng);
+    }
+    auto am_ = amw;
+    par_for("m1_am_cs_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      am_(m,0,k,j,i) = uh(m,IM1,k,j,i);
+      am_(m,1,k,j,i) = uh(m,IM2,k,j,i);
+      am_(m,2,k,j,i) = uh(m,IM3,k,j,i);
+      am_(m,3,k,j,i) = u0_(m,M1_F1,k,j,i);
+      am_(m,4,k,j,i) = u0_(m,M1_F2,k,j,i);
+      am_(m,5,k,j,i) = u0_(m,M1_F3,k,j,i);
+    });
+  }
   if (csw) {
     // cs-open-1018: the cubed-sphere launches of the same fragment with its cs blocks
     // (M1_CSW 1); the sp / Cartesian launches below are unchanged
@@ -15258,6 +15289,132 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       u0_(m,M1_F1,k,j,i) = fp1;
       u0_(m,M1_F2,k,j,i) = fp2;
       u0_(m,M1_F3,k,j,i) = fp3;
+    });
+  }
+
+  // cs-open-1018 implicit_am_cs (cubed sphere): the radiation-gas exchange made
+  // conservative in the axial angular momentum L_z = sum V r_c x (m + F/(c chat)).  The
+  // radiation stress P (uniaxial about r_hat: p_t on the planar xi / eta faces, whose
+  // normal is perpendicular to r_hat everywhere on the face) acts on the cells as face
+  // fluxes, and the torque of a face is taken with its exact first moment (as
+  // <hydro>/am_transport): T_c = -sum_f s_f (int_f x dA x n_f) p_f, p_f the mean of the two
+  // cells' D_nn E' (mirror ghost at a seam: both panels form the same number), plus the
+  // radial faces' D_r,lat part under vet_gd.  sum_c T_c is the boundary torque only.  The
+  // gas then takes, along the zonal direction (-y, x, 0), the L_z that makes its change
+  // -dL_rad + dt T_c: the residual of the write-back's deposit is truncation-small, the
+  // total energy is untouched (its kinetic part moves to e_int, as am_transport).
+  if (amcs) {
+    ImplicitHaloExchange(1, M1_IW_EP);   // E' of the last pass in the ghosts
+    auto am_ = amw;
+    auto vola = pmy_pack->pcoord->volume;
+    auto a1a = pmy_pack->pcoord->area.x1f;
+    auto x1va = pmy_pack->pcoord->x1v;
+    auto x1fa = pmy_pack->pcoord->xx1f;
+    auto &msz = pmy_pack->pmb->mb_size;
+    auto &mpn = pmy_pack->pmb->mb_panel;
+    auto fn2_ = cs_fn2;
+    auto fn3_ = cs_fn3;
+    auto tt_ = tau_ten;
+    const int c0t = M1_TT_LAT0;
+    const bool vlc = vlat_now && vlat_ready;
+    const int nx2a = pmy_pack->pmesh->mb_indcs.nx2, nx3a = pmy_pack->pmesh->mb_indcs.nx3;
+    const Real icc = 1.0/(cl*ch);
+    const bool t2ka = t2k;
+    auto kka_ = kk_;
+    auto &mbbc = m1bcs;
+    par_for("m1_am_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real x2l = msz.d_view(m).x2min, x2u = msz.d_view(m).x2max;
+      const Real x3l = msz.d_view(m).x3min, x3u = msz.d_view(m).x3max;
+      const Real xc = 0.25*M_PI*CellCenterX(j-js, nx2a, x2l, x2u);
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, nx3a, x3l, x3u);
+      const Real xl = 0.25*M_PI*LeftEdgeX(j-js, nx2a, x2l, x2u);
+      const Real xr = 0.25*M_PI*LeftEdgeX(j+1-js, nx2a, x2l, x2u);
+      const Real el = 0.25*M_PI*LeftEdgeX(k-ks, nx3a, x3l, x3u);
+      const Real er = 0.25*M_PI*LeftEdgeX(k+1-ks, nx3a, x3l, x3u);
+      const int pnl = mpn.d_view(m);
+      Real rh[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(pnl, xc, ec, rh);
+      cubed_sphere::PanelTangents(pnl, xc, ec, e1, e2);
+      const Real r = x1va(m,i), rl = x1fa(m,i), rr = x1fa(m,i+1);
+      const Real xx = r*rh[0], yy = r*rh[1], wc = xx*xx + yy*yy;
+      if (!(wc > 0.0)) return;
+      const Real dv = vola(m,k,j,i);
+      const Real c = cclw(m,k,j), s2 = 1.0 - c*c;
+      // the L_z change of a covariant cell vector (radial, covariant x2, x3)
+      auto lz = [&](const Real a1, const Real b2, const Real b3) {
+        const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
+        const Real vx = a1*rh[0] + a2*e1[0] + a3*e2[0];
+        const Real vy = a1*rh[1] + a2*e1[1] + a3*e2[1];
+        return dv*(xx*vy - yy*vx);
+      };
+      const Real dlg = lz(uh(m,IM1,k,j,i) - am_(m,0,k,j,i),
+                          uh(m,IM2,k,j,i) - am_(m,1,k,j,i),
+                          uh(m,IM3,k,j,i) - am_(m,2,k,j,i));
+      const Real dlr = icc*lz(u0_(m,M1_F1,k,j,i) - am_(m,3,k,j,i),
+                              u0_(m,M1_F2,k,j,i) - am_(m,4,k,j,i),
+                              u0_(m,M1_F3,k,j,i) - am_(m,5,k,j,i));
+      // the stress torque of the cell's faces
+      const Real mom = (rr*rr*rr - rl*rl*rl)/3.0;
+      Real tz = 0.0;
+      for (int dir = 0; dir < 2; ++dir) {
+        for (int n = 0; n < 2; ++n) {
+          Real xa, ea, xb, eb, nf[3], pf;
+          if (dir == 0) {
+            const int jf = j + n;
+            xa = n ? xr : xl;  ea = el;  xb = xa;  eb = er;
+            for (int q = 0; q < 3; ++q) {nf[q] = fn2_(m,jf,q);}
+            pf = 0.5*(M1DDiag(iw_,vd_,dfull,m,1,k,jf-1,i)*iw_(m,M1_IW_EP,k,jf-1,i)
+                      + M1DDiag(iw_,vd_,dfull,m,1,k,jf,i)*iw_(m,M1_IW_EP,k,jf,i));
+          } else {
+            const int kf = k + n;
+            xa = xl;  ea = n ? er : el;  xb = xr;  eb = ea;
+            for (int q = 0; q < 3; ++q) {nf[q] = fn3_(m,kf,q);}
+            pf = 0.5*(M1DDiag(iw_,vd_,dfull,m,2,kf-1,j,i)*iw_(m,M1_IW_EP,kf-1,j,i)
+                      + M1DDiag(iw_,vd_,dfull,m,2,kf,j,i)*iw_(m,M1_IW_EP,kf,j,i));
+          }
+          Real qa[3], qb[3];
+          cubed_sphere::PanelToCart(pnl, xa, ea, qa);
+          cubed_sphere::PanelToCart(pnl, xb, eb, qb);
+          const Real cx = qa[1]*qb[2] - qa[2]*qb[1];
+          const Real cy = qa[2]*qb[0] - qa[0]*qb[2];
+          const Real cz = qa[0]*qb[1] - qa[1]*qb[0];
+          const Real dot = qa[0]*qb[0] + qa[1]*qb[1] + qa[2]*qb[2];
+          const Real th = sqrt(cx*cx + cy*cy + cz*cz)/(1.0 + dot);   // tan(psi/2)
+          const Real mx = mom*th*(qa[0] + qb[0]), my = mom*th*(qa[1] + qb[1]);
+          // (M x n)_z, outward normal +n on the high face, -n on the low face
+          const Real t = (mx*nf[1] - my*nf[0])*pf;
+          tz += n ? -t : t;
+        }
+      }
+      if (vlc) {
+        // vet_gd D_r,lat: the radial faces carry the tangential stress v E, arm r_f rhat
+        // (rhat x v)_z of the column's direction; interior faces the mean of the two cells
+        for (int n = 0; n < 2; ++n) {
+          const int ifc = i + n;
+          const bool bnd = (n == 0) ? (i == is && mbbc.d_view(m,BoundaryFace::inner_x1) !=
+                                       BoundaryFlag::block)
+                                    : (i == ie && mbbc.d_view(m,BoundaryFace::outer_x1) !=
+                                       BoundaryFlag::block);
+          if (bnd) continue;   // a physical end: the boundary's own (external) torque
+          Real w[3];
+          for (int q = 0; q < 3; ++q) {
+            w[q] = 0.5*(tt_(m,c0t+1+q,k,j,ifc-1)*iw_(m,M1_IW_EP,k,j,ifc-1)
+                        + tt_(m,c0t+1+q,k,j,ifc)*iw_(m,M1_IW_EP,k,j,ifc));
+          }
+          const Real t = a1a(m,k,j,ifc)*x1fa(m,ifc)*(rh[0]*w[1] - rh[1]*w[0]);
+          tz += n ? -t : t;
+        }
+      }
+      const Real del = (-dlr + dt*tz) - dlg;
+      const Real c2v = (-yy*e1[0] + xx*e1[1])/(wc*dv);
+      const Real c3v = (-yy*e2[0] + xx*e2[1])/(wc*dv);
+      uh(m,IM2,k,j,i) += del*c2v;
+      uh(m,IM3,k,j,i) += del*c3v;
+      if (t2ka) {
+        kka_(m,M1_T2_M1+1,k,j,i) += del*c2v/dt;
+        kka_(m,M1_T2_M1+2,k,j,i) += del*c3v/dt;
+      }
     });
   }
 
