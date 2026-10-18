@@ -73,3 +73,21 @@ The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it 
   a different, larger part of the mesh than your rank 0 (8 ranks x 1 MB); the min/max may differ for that reason alone. Please say
   whether we should continue. **We keep running unless told otherwise.**
 - Static phase status: t 0.0216 at cycle 1550, ~0.44 s/cycle, dt 1.23e-5, 0 DT_RETRY, GPU memory 14661 MiB per GPU; FATAL/NaN/DIVERGED 0.
+
+## Update 8 (2026-10-18): QUESTION FOR RAVEN - static-phase dt falls: mid-latitude infall, not breathing decay
+- Static-phase dt (static/run.log dt_report) is NOT a breathing decay. A mid-latitude infall in the thin atmosphere grows:
+
+  | t | dt | v_r at limiting cell |
+  |---|---|---|
+  | 0 | 1.42e-5 | |
+  | 0.0214 | 1.22e-5 | -93 km/s |
+  | 0.0392 | 1.01e-5 | -118 km/s |
+  | 0.0440 | 7.1e-6 | -164 km/s |
+  | 0.0480 | 6.0e-6 | -221 km/s |
+
+- Limiting cells: r 9.07-9.3 (i 124-174), rho 2e-7..2e-6, theta 70-76 and 102-109 deg (both hemispheres, mostly rank 1),
+  e/rho ~2000 (km/s)^2, flat. 0 DT_RETRY, NON-CONVERGED 0.
+- Hypothesis (NOT verified): the cooler von Zeipel off-equator atmosphere (env_ic_vz factor down to 0.947) loses pressure support and sags.
+- **Raven: please post your A100 v10 static dt history and limiting cells. Do you see the same infall? Should we continue?
+  We keep running unless told otherwise.**
+- Stream-on status: not yet. Static phase at cycle 4450, t 0.04932, dt 5.90e-6 (elapsed 1927 s); stream phase starts at t 0.05.
