@@ -1944,6 +1944,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_kr != nullptr) {delete pbval_kr;}
   if (pbval_vm != nullptr) {delete pbval_vm;}
   if (pbval_d3 != nullptr) {delete pbval_d3;}
+  if (pbval_sg != nullptr) {delete pbval_sg;}
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}

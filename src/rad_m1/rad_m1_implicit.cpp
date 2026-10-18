@@ -2375,9 +2375,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                           "central").compare("central") == 0) {
       ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux = berthon | blend");
     }
-    if (impl_muscl && cs_geom) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = plm is not implemented on the cubed "
-                "sphere");
+    // cs-open-1018: plm on the cubed sphere too (m1bcs, canonical seam areas, the
+    // limiter ghosts across a seam on the receiving block's axes: ImplicitMusclSigHalo);
+    // led keeps its refusal (its a/b pair would need the side swap of a reversed axis)
+    if (impl_muscl_led && cs_geom) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = led is not implemented on the cubed "
+                "sphere (plm is)");
     }
   }
   std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
@@ -15991,12 +15994,6 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
 //!      w = 0 faces, so a central face is untouched.
 
 void RadiationM1::ImplicitMusclBuild() {
-  // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {
-    ImplFatal(
-              "<rad_m1> cubed sphere: internal guard, implicit_hr_recon = plm (raw "
-              "mb_bcs) is not ported");
-  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -16007,7 +16004,13 @@ void RadiationM1::ImplicitMusclBuild() {
   auto bw2_ = ifw2;
   auto bw3_ = ifw3;
   auto mbsize = pmy_pack->pmb->mb_size.d_view;
-  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  // cs-open-1018: m1bcs on the cubed sphere (a panel seam is an interior face)
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;
+  const bool csg = cs_geom;
+  auto cseam = cs_seam.d_view;
+  auto g2s = csg2;
+  auto g3s = csg3;
+  auto x1fs = pmy_pack->pcoord->xx1f;
   auto pos_ = part_pos;
   const int nblkx1 = part_nblk;
   const bool thrd = trans_x3;
@@ -16116,7 +16119,7 @@ void RadiationM1::ImplicitMusclBuild() {
       if (led) {iw_(m,b+M1_IM_B+d,k,j,i) = sb;}
     }
   });
-  for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
+  ImplicitMusclSigHalo();
   if (led) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
   if (qstep) {   // remember E^n for the next step's switch
     par_for("m1_muscl_eprev", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -16160,6 +16163,12 @@ void RadiationM1::ImplicitMusclBuild() {
           const Real iv = dt/cvol(m,k,j,i);
           fp = carea.x2f(m,k,j+1,i)*iv; fm = carea.x2f(m,k,j,i)*iv;
         }
+        if (csg) {   // cs-open-1018: the canonical seam areas (as M1CsTransRow)
+          const Real iv = dt/cvol(m,k,j,i);
+          const Real dsh = 0.5*(x1fs(m,i+1)*x1fs(m,i+1) - x1fs(m,i)*x1fs(m,i));
+          if (j == je && cseam(m,1) != 0) {fp = dsh*g2s(m,0,k,1)*iv;}
+          if (j == js && cseam(m,0) != 0) {fm = dsh*g2s(m,0,k,0)*iv;}
+        }
       } else {
         hlp = bw3_(m,M1_IFW_HCL,k+1,j,i); hrp = bw3_(m,M1_IFW_HCR,k+1,j,i);
         hlm = bw3_(m,M1_IFW_HCL,k,j,i);   hrm = bw3_(m,M1_IFW_HCR,k,j,i);
@@ -16167,6 +16176,12 @@ void RadiationM1::ImplicitMusclBuild() {
         if (sph) {
           const Real iv = dt/cvol(m,k,j,i);
           fp = carea.x3f(m,k+1,j,i)*iv; fm = carea.x3f(m,k,j,i)*iv;
+        }
+        if (csg) {
+          const Real iv = dt/cvol(m,k,j,i);
+          const Real dsh = 0.5*(x1fs(m,i+1)*x1fs(m,i+1) - x1fs(m,i)*x1fs(m,i));
+          if (k == ke && cseam(m,3) != 0) {fp = dsh*g3s(m,0,j,1)*iv;}
+          if (k == ks && cseam(m,2) != 0) {fm = dsh*g3s(m,0,j,0)*iv;}
         }
       }
       const Real sc = iw_(m,b+M1_IM_SIG+d,k,j,i);
@@ -16213,6 +16228,55 @@ void RadiationM1::ImplicitMusclBuild() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitMusclSigHalo
+//! \brief the ghosts of the implicit_hr_recon limiter sig_1..3.  sp / Cartesian: three
+//! scalar exchanges (as before).  cs-open-1018, cubed sphere: sig_2, sig_3 belong to the
+//! panel axes, which a seam may swap: they cross on the hr quad map (cs_hrq0: the axis
+//! permutation of the index map; a reversed axis negates, so |.| is taken, sig >= 0), the
+//! mirror cell's own value along the receiving block's axis.
+
+void RadiationM1::ImplicitMusclSigHalo() {
+  const int b = iw_muscl;
+  if (!cs_geom) {
+    for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
+    return;
+  }
+  ImplicitHaloExchange(1, b + M1_IM_SIG);
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1 + 2*indcs.ng, n2 = indcs.nx2 + 2*indcs.ng;
+  const int n3 = indcs.nx3 + 2*indcs.ng;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (pbval_sg == nullptr) {
+    Kokkos::realloc(sgw, pmy_pack->nmb_thispack, 4, n3, n2, n1);
+    Kokkos::realloc(sgw_c, pmy_pack->nmb_thispack, 4, 1, 1, 1);
+    pbval_sg = new MeshBoundaryValuesCC(pmy_pack, pin_cs_, false);
+    pbval_sg->InitializeBuffers(4);
+    pbval_sg->SetVectorPairs(4, {});
+    pbval_sg->cs_noresample = true;
+    pbval_sg->cs_hrq0 = 0;
+  }
+  auto iw_ = iw;
+  auto sg_ = sgw;
+  par_for("m1_muscl_sgp", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    sg_(m,0,k,j,i) = iw_(m,b+M1_IM_SIG+1,k,j,i);
+    sg_(m,1,k,j,i) = iw_(m,b+M1_IM_SIG+1,k,j,i);
+    sg_(m,2,k,j,i) = iw_(m,b+M1_IM_SIG+2,k,j,i);
+    sg_(m,3,k,j,i) = iw_(m,b+M1_IM_SIG+2,k,j,i);
+  });
+  while (pbval_sg->InitRecv(4) == TaskStatus::incomplete) {}
+  while (pbval_sg->PackAndSendCC(sgw, sgw_c) == TaskStatus::incomplete) {}
+  while (pbval_sg->RecvAndUnpackCC(sgw, sgw_c) == TaskStatus::incomplete) {}
+  while (pbval_sg->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_sg->ClearRecv() == TaskStatus::incomplete) {}
+  par_for("m1_muscl_sgu", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,b+M1_IM_SIG+1,k,j,i) = fabs(sg_(m,0,k,j,i));
+    iw_(m,b+M1_IM_SIG+2,k,j,i) = fabs(sg_(m,2,k,j,i));
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitMusclKill
 //! \brief implicit_hr_recon = plm POSITIVITY (xthinfix-1009 Fix B): the plm row is not an
 //! M-matrix (the E_c-2 / E_c+2 coefficients of the inflow faces are positive), so a
@@ -16231,7 +16295,7 @@ void RadiationM1::ImplicitMusclKill() {
   const bool thrd = trans_x3;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   const int b = iw_muscl;
-  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;   // cs-open-1018
   ImplicitHaloExchange(1, M1_IW_S2);
   par_for("m1_muscl_kill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -16273,7 +16337,7 @@ void RadiationM1::ImplicitMusclKill() {
       iw_(m,b+M1_IM_KILL,k,j,i) = 1.0;
     }
   });
-  for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
+  ImplicitMusclSigHalo();
   for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}
 }
 
@@ -16338,7 +16402,7 @@ void RadiationM1::ImplicitMusclBound() {
 #endif
   muscl_nbound += nb;
   if (nb > 0.0) {
-    for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_SIG + q);}
+    ImplicitMusclSigHalo();
     if (led) {for (int q = 0; q < 3; ++q) {ImplicitHaloExchange(1, b + M1_IM_B + q);}}
   }
 }
