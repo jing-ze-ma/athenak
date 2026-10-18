@@ -15170,15 +15170,39 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Kokkos::realloc(amw, pmy_pack->nmb_thispack, 6, icx.nx3 + 2*icx.ng,
                       icx.nx2 + 2*icx.ng, icx.nx1 + 2*icx.ng);
     }
+    // the OLD vector of this solve: the gas already carries the hesdirk2 stage increment
+    // (uh += t2inc at the solve start), the stored cell F not: it takes the same
+    // increment here (csinc, else the face-normal face means of the F0 increments + A tie
+    // on the covariant basis), so that both changes are the solve's own slope x dt
     auto am_ = amw;
+    const bool t2sa = t2st, csoka = csok;
     par_for("m1_am_cs_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       am_(m,0,k,j,i) = uh(m,IM1,k,j,i);
       am_(m,1,k,j,i) = uh(m,IM2,k,j,i);
       am_(m,2,k,j,i) = uh(m,IM3,k,j,i);
-      am_(m,3,k,j,i) = u0_(m,M1_F1,k,j,i);
-      am_(m,4,k,j,i) = u0_(m,M1_F2,k,j,i);
-      am_(m,5,k,j,i) = u0_(m,M1_F3,k,j,i);
+      Real g1 = u0_(m,M1_F1,k,j,i), g2 = u0_(m,M1_F2,k,j,i), g3 = u0_(m,M1_F3,k,j,i);
+      if (t2sa) {
+        if (csoka) {
+          g1 += ciw_(m,0,k,j,i);
+          g2 += ciw_(m,1,k,j,i);
+          g3 += ciw_(m,2,k,j,i);
+        } else {
+          const Real tie = t2i_(m,M1_T2_E,k,j,i);
+          g1 += 0.5*(t2i_(m,M1_T2_F1,k,j,i) + t2i_(m,M1_T2_F1,k,j,i+1))
+                + iw_(m,M1_IW_ADV,k,j,i)*tie;
+          const Real a = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+                         + iw_(m,M1_IW_A2,k,j,i)*tie;
+          const Real b = 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+                         + iw_(m,M1_IW_A3,k,j,i)*tie;
+          const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+          g2 += (a + c*b)*si;
+          g3 += (b + c*a)*si;
+        }
+      }
+      am_(m,3,k,j,i) = g1;
+      am_(m,4,k,j,i) = g2;
+      am_(m,5,k,j,i) = g3;
     });
   }
   if (csw) {
