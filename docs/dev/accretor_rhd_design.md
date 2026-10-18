@@ -1098,3 +1098,59 @@ normalisation. Unattenuated F_r on the line of centres:
 
 **The gravity-darkened L1 face gives 0.47x the uniform-sphere value.** The old calibration target 1.52e5 was the
 uniform sphere.
+
+### 17.4 Gates and tests (Raven A100 + Viper MI300A, accray_1017; TEST ONLY)
+**Gate: BITWISE.** 20f66126 (and the earlier 4ddf572f and 59655931) were compared with 62119e93 (= 5eeb137e code), with
+the new keys absent, on the ssl gate set (S = stream switch-on from the static cal rst, A = base deck, G2 = s5 + stream
++ ROL2U). hst, bins and cycle/dt lines are identical. Ray mode is run-to-run reproducible (two 60-cycle runs: hst
+identical).
+
+**Static run.** Deck accray_1017/run/ray.athinput is the v4 cal deck + donor_irr_mode = ray, run from t 0 to 0.00946.
+- dt 7.04e-6 flat, 0 NC, 0 retries, both arms.
+- Unattenuated self-check at r 9.6: 7.149e4. The 16x finer quadrature gives 7.145e4 and the reference 7.092e4
+  (+0.8 %).
+- Arm ros (donor_ray_opac = rosseland), incident F_r on the line of centres (dump):
+  | r | 9.6 | 10.0 | 10.4 |
+  |---|---|---|---|
+  | F_r | 7.148e4 | 7.234e4 | 7.312e4 |
+  | vs reference | +0.8 % | +0.8 % | +0.9 % |
+  - **The facing flux matches the analytic gdark irradiation with no calibration factor.**
+  - 99.8 % of the removed power is deposited at r < 9.6 (the facing photosphere, r 9.40-9.50).
+- Arm tot (donor_ray_opac = total): F_r(r 10) = 5.85e4 = 0.81 x free.
+  - The 1e-8 floor gas (20-30 kK) has a Planck mean of 300-1600 cm^2/g (the table's low-rho extension), so
+    chi = 0.06-0.07/Rsun and tau ~0.25 between the stars.
+  - 65 % of the removed power goes into floor gas at r > 10.4 (at t 0: 94 %). **This is an ARTEFACT of the floor
+    opacity**, and the M1 donor light saw the same absorption.
+- Shadow: night side q = 0 exactly (phi >= 120 deg; phi 105: < 1e-5 of the day value).
+- Removed power (tot) 2.93e5 code (band) = the hst Eirr rate 3.0e5: the ledger closes.
+
+**Lateral beam vs vet_col (fix-3 data, t 0.00237, dE against vc_noirr).**
+| run | dE facing (r 9.6-10) | dE night | lateral flux |
+|---|---|---|---|
+| vet_col donor part (s1, M1 lobe light) | 3.2-4.5 | = facing (ratio 0.98-1.03) | \|dF_phi\|/(c dE) 1.0-1.9 |
+| ray, rosseland | +0.04-0.06 | +0.14-0.17 | beam itself has none (q = 0 on the night side) |
+| ray, total | 0.17-0.23 | 0.17-0.23 (floor re-emission) | - |
+| control (donor_ray_scale 0) | dE 5e-7 | 5e-7 | - |
+- The direct-beam lateral artefact is gone.
+- **The residual night dE in the rosseland arm is reprocessed light**: the beam deposited at the facing photosphere
+  becomes M1 E, and the M1/vet_col transport carries it round the star. It is 5 % of E, 25x below the old donor part.
+  It is a property of the gainer's own closure (sect. 4 / fix 3), not of the donor path.
+
+**Stream test (tot arm, Raven).** From static/tot rst t 0.00946, stream_sector_light = surface (= no held light in
+ray mode), dt_min 1e-8, to t 0.0319. Compared with the 10-17 arm surface (v4/ssl/surface + surface_imp8):
+- dt 7.02-7.03e-6 flat to contact (same as surface/dark).
+- Contact: an eint<=0 retry burst at t 0.0271-0.0275, 58 retries, recovered (surface: 61); then 1.62e-6.
+- Thin-atmosphere max|v| at t 0.013 / 0.020 / 0.026: 71 / 117 / 152 km/s (surface 80 / 139 / -).
+- Floor e/rho stays at 1.9-2.2e3.
+- Ltop 5.4e4 (surface 6.9-7.3e4: the lobe no longer emits).
+- Impact = surface: infall at r 9.4-9.65 from t 0.0284 (phi 4-20). Dense-gas heating at t 0.0319 reaches e/rho 3306
+  at phi 13.8 (surface 3174 at 13.6, t 0.0313).
+- 0 NC.
+- The ros arm stream run continued on Viper (MI300A, rocm 7.1); see accray_1017/NOTE.md.
+
+**Cost (4 A100, band 840 x 4 x 2048).**
+- Update (map gather + 430 k columns x 24 marches per rank): 0.26-0.29 s wall; on 2 MI300A 0.14 s.
+- Static ray runs: 0.72-0.82 s/cycle at donor_ray_every = 1, against 0.38-0.43 for M1 mode (cal30, surface).
+- 60-cycle smoke: every 10 gives 0.73 against 0.96 s/cycle at every 1. The remaining ~0.3 s/cycle over M1 mode is NOT
+  yet profiled.
+- Geometry table: 354 MB per rank; setup ~1 s.
