@@ -1068,3 +1068,23 @@ is now confined vertically: rho-weighted sigma_z 1.005 at the nozzle -> 0.965 (r
   row 4 12) has no wall layer.
 - OPEN (not a wall effect, every 3-D arm): after t ~0.02 the thin atmosphere (rho0 < 1e-3, ~1e-7 of the star's mass) densifies
   ~x15 by t 0.035 in 3-D while the 2-D band's drains (x0.19 at t 0.03); the envelope (rho0 > 1e-2) agrees with the band.
+
+### 16.6 The thin-atmosphere "x15 growth" (10-18): an outer-layer oscillation, the same in 2-D and 3-D
+- The x15 (3-D, t 0.035) vs x0.19 (2-D, t 0.03) comparison was made at DIFFERENT times inside an oscillation. At equal t the
+  phi-averaged 3-D equator column and the 2-D band agree: thin-class median at t 0.03 0.167 (3-D) vs 0.185 (2-D); rho/rho0, T/T0 and
+  <v_r> profiles r 8.6-10.5 within a few % at t 0.02 and 0.03 (tool/eqprof.py).
+- s2d continued to t 0.06: mass above the photosphere (9.45 < r < 10.5, per sr) 3.0e-4 (t 0.03) -> 5.7e-5 (0.035) -> 3.0e-3 (0.0375)
+  -> 6.2e-3 (0.040) -> 1.3e-3 (0.045) -> 1.8e-5 (0.050) -> 2.6e-3 (0.060): a quasi-periodic breathing of the outer layers, period
+  ~0.02 code (~3.9 h), driven by the layer 9.3-9.45 (mass 0.058 -> 0.126 -> 0.051 -> 0.115). The 3-D equator follows in phase
+  (2.3e-4, 6.1e-5, 2.1e-3, 3.8e-3, 1.4e-3 at t 0.03 .. 0.045, ~0.6x the band's amplitude; the all-row mean is lower because the
+  photosphere sits deeper at latitude).
+- Neither is the "unphysical" one: it is the static start's relaxation pulsation of the outer envelope/atmosphere (IC not in
+  radiative-hydrostatic equilibrium in the thin layer), the same in both geometries; no 3-D-specific term (Coriolis/centrifugal,
+  3-D WB reference, ambient, theta transport, walls) is needed to explain it. A longer static phase (or damping) is needed before
+  the stream starts in either geometry.
+
+### 16.7 von Zeipel factor in the imposed wall flux (10-18, 5bc6c3b4; the definition of implicit_bc_x2 = flux)
+- F_theta = F_col(psi) (g/g_col(psi)) dPhi/(r dtheta)/|grad Phi| = F_col dPhi/(r dtheta)/g_col, g_col = |grad Phi| of the true
+  3-D Roche potential at the column's r_eq (phi 90, plane). Leak 2.09e6 vs 2.19e6 code (-5 %).
+- s3dHvz (t 0.0128): wall rows 1-3 now match the interior (1e-3..1e-2 class 1.15-1.17 vs equator 1.17; without the factor 1.0-1.12),
+  0 NC, budget closed. 2-D gates: see 16.5 (code change inside the phys_3d + flux path only).
