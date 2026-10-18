@@ -65,6 +65,7 @@
 #include "eos/eos.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "reconstruct/plm.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
@@ -3001,15 +3002,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // that makes the radiation-gas exchange conserve L_z = sum V r x (m + F/(c chat)) to
   // round-off (ImplicitSolve, after the write-back)
   if (cs_geom) {
-    impl_am_cs = (pin->DoesParameterExist("hydro","am_transport") &&
-                  pin->GetBoolean("hydro","am_transport")) ||
-                 (pin->DoesParameterExist("hydro","am_vector") &&
-                  pin->GetBoolean("hydro","am_vector"));
+    // (<hydro> or <mhd>: the fluid that owns the angular-momentum module)
+    auto named = [&](const char *b, const char *k) {
+      return pin->DoesParameterExist(b, k) && pin->GetBoolean(b, k);
+    };
+    impl_am_cs = named("hydro","am_transport") || named("hydro","am_vector") ||
+                 named("mhd","am_transport") || named("mhd","am_vector");
     if (pin->DoesParameterExist("rad_m1","implicit_am_cs")) {
       impl_am_cs = pin->GetBoolean("rad_m1","implicit_am_cs");
     }
-    am_vec = impl_am_cs && pin->DoesParameterExist("hydro","am_vector") &&
-             pin->GetBoolean("hydro","am_vector");
+    am_vec = impl_am_cs && (named("hydro","am_vector") || named("mhd","am_vector"));
   }
   if (cs_geom && impl_gas_src_cs2 && cs2_shift) {
     ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere "
@@ -12239,7 +12241,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // increment of its own slopes (as the gas momentum above), so that each stage's
     // radiation-gas exchange is an L-balanced slope
     if (am_vec && t2st && aminc.extent_int(0) > 0) {
-      auto spi_ = pmy_pack->phydro->am_spin;
+      auto spi_ = hydro::AmModuleOf(pmy_pack)->am_spin;
       auto ai_ = aminc;
       par_for("m1_am_spin_inc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -15370,7 +15372,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool gfsp = gfst && gcs;
     // <hydro>/am_vector: the vector form, the spin reservoir and its hesdirk2 slope
     const bool amv = am_vec;
-    auto spn_ = am_vec ? pmy_pack->phydro->am_spin : DvceArray4D<Real>();
+    auto spn_ = am_vec ? hydro::AmModuleOf(pmy_pack)->am_spin : DvceArray4D<Real>();
     if (am_vec && t2k && amk1.extent_int(0) == 0) {
       Kokkos::realloc(amk1, spn_.extent_int(0), spn_.extent_int(1), spn_.extent_int(2),
                       spn_.extent_int(3));

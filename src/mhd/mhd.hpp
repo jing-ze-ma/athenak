@@ -93,6 +93,8 @@ struct MHDTaskIDs {
   TaskID crecv;
 };
 
+namespace hydro {class AmModule;}   // cs-open-1018: hydro/hydro_am.hpp
+
 namespace mhd {
 
 //----------------------------------------------------------------------------------------
@@ -281,6 +283,9 @@ class MHD {
 
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
+  // cs-open-1018: the angular-momentum module (hydro/hydro_am.hpp; nullptr unless one of
+  // <mhd>/am_transport | am_vector | frame_omega is named)
+  hydro::AmModule *pam = nullptr;
   bool use_wellbalance_static_reconst_perturb = false;    // flag to enable reconstructing perturbed primitive variables (less robust against large deviations)
   bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
   bool use_wb_x1 = false;    // flag for directions

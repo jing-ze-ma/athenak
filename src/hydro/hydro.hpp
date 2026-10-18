@@ -71,7 +71,7 @@ struct HydroTaskIDs {
 };
 
 namespace hydro {
-struct HydroAmV;   // cs-open-1018: hydro_am.hpp
+class AmModule;   // cs-open-1018: hydro_am.hpp
 
 // <problem>/nan_report: the HLLC in-kernel capture record (see hllc_hyd.hpp and the
 // readback in Hydro::Fluxes).  Pointers, not Views: a file-scope View outlives
@@ -179,46 +179,9 @@ class Hydro {
   // after each stage-level operator and report the first offender.  Default false, in
   // which case not one extra kernel runs.  See the NanScan* helpers in hydro_tasks.cpp.
   bool nan_report = false;
-  // cs-open-1018 <hydro>/am_transport (read only when named, default false): the axial
-  // angular-momentum-conservative transport correction on the cubed sphere / spherical
-  // polar (hydro_am.hpp), applied after the coordinate source terms
-  bool am_transport = false;
-  bool am_checked = false;
-  void AmTransport(Real bdt, Driver *pdrive, int stage);
-  // cs-open-1018 <hydro>/am_vector (read only when named, default false; implies the
-  // checks of am_transport): all three components of L = sum V rc x m (hydro_am.hpp
-  // HydroAmVecTorque); the radial component of the correction torque, which no
-  // tangential momentum of the cell can carry, goes to the per-cell spin reservoir am_spin
-  // (L along rhat_c, total L = sum V rc x m + sum am_spin rhat_c), RK-combined as u0
-  bool am_vector = false;
-  DvceArray3D<Real> am_rhat;          // unused placeholder (kept for layout clarity)
-  DvceArray4D<Real> am_spin, am_spin1;
-  DvceArray4D<Real> am_spins;   // the spin of the stage's state, before the RK combination
-  // <hydro>/am_spin_return = eta (read only when named, default 0 = off; needs am_vector):
-  // once per step (last stage), every LATERAL face moves L between its two cells along
-  // (rhat_c - rhat_n): each cell carries the change exactly (perpendicular part in its
-  // tangential momentum, radial part in its spin), the total L is unchanged, and the
-  // spins relax toward zero (a fraction ~eta per step).  Seam neighbours are the mirror
-  // cells (no-resample spin exchange), their direction the reflection across the seam
-  Real am_eta = 0.0;
-  MeshBoundaryValuesCC *pbval_spin = nullptr;
-  DvceArray5D<Real> spw, spw_c;
-  void AmSpinReturn();
-  // <hydro>/frame_omega = "ox,oy,oz" (read only when named): a rotating frame, Coriolis +
-  // centrifugal force on cs / sp (hydro_am.hpp HydroAmFrame); with am_vector the frame
-  // torque is the L-conserving T* (coriolis_am generalised to a vector Omega)
-  bool frame_on = false;
-  Real frame_om[3] = {0.0, 0.0, 0.0};
-  void FrameRotation(Real bdt, Driver *pdrive, int stage);
-  // <hydro>/frame_exact (read only when named, default false; needs frame_omega and
-  // am_vector, integrator rk1 | rk2): the frame rotation of the absolute L of every cell
-  // (gas, spin, radiation) over the step is the EXACT rotation R(-Omega dt) of its
-  // step-start value: the last stage adds (R - I - dt A - dt^2 A^2/2) L^n (A = -Omega x),
-  // the part of the exact map the RK stages do not carry, so sum_c L_abs maps to
-  // R(-Omega dt) sum_c L_abs + boundary terms to round-off (|L_abs| and the inertial
-  // components exact)
-  bool frame_exact = false;
-  DvceArray5D<Real> frame_ln;   // (m, 3, k, j, i): L_abs of the cell at the step start
+  // cs-open-1018: the angular-momentum module (hydro_am.hpp; nullptr unless one of
+  // <hydro>/am_transport | am_vector | frame_omega is named)
+  hydro::AmModule *pam = nullptr;
   void AmFillV(hydro::HydroAmV &v);
   DvceArray5D<Real> utest;  // scratch array for FOFC
     

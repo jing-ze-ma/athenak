@@ -24,6 +24,7 @@
 #include "shearing_box/orbital_advection.hpp"
 #include "bvals/bvals.hpp"
 #include "mhd/mhd.hpp"
+#include "hydro/hydro_am.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -68,6 +69,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     bcctest("bcctest",1,1,1,1,1),
     fofc("fofc",1,1,1,1),
     fofc_cnt("fofc_cnt",1,1,1,1) {
+  // cs-open-1018: the angular-momentum module (read only when named)
+  if (hydro::AmModule::Named(pin, "mhd")) {pam = new hydro::AmModule(ppack, pin, "mhd");}
   // Total number of MeshBlocks on this rank to be used in array dimensioning
   int nmb = std::max((ppack->nmb_thispack), (ppack->pmesh->nmb_maxperrank));
 
@@ -695,6 +698,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 // destructor
 
 MHD::~MHD() {
+  if (pam != nullptr) {delete pam;}
   delete peos;
   delete pbval_u;
   delete pbval_b;

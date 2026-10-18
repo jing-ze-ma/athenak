@@ -86,9 +86,11 @@
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cubed_sphere.hpp"
+#include "hydro/hydro_am.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 #include "globals.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -1978,9 +1980,9 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
                          "Sz", "Lfx", "Lfy", "Lfz"};
   for (int n = 0; n < 14; ++n) {pdata->label[n] = lab[n];}
   MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->pradm1 == nullptr || pmbp->phydro == nullptr) return;
+  if (pmbp->pradm1 == nullptr || (pmbp->phydro == nullptr && pmbp->pmhd == nullptr)) return;
   auto u0 = pmbp->pradm1->u0;
-  auto uh = pmbp->phydro->u0;
+  auto uh = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
   auto vol = pmbp->pcoord->volume;
   auto x1v = pmbp->pcoord->x1v;
   auto x2v = pmbp->pcoord->x2v;
@@ -1994,11 +1996,13 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   const bool csm = pm->use_cubed_sphere;
   const Real ic2 = 1.0/(pmbp->pradm1->c_light*pmbp->pradm1->c_light);
   // cs-open-1018 <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)
-  const bool spn = pmbp->phydro->am_vector;
-  auto asp = pmbp->phydro->am_spin;
-  // <hydro>/frame_omega: the frame part of the absolute L, sum V rho rc x (Omega x rc)
-  const Real fo0 = pmbp->phydro->frame_om[0], fo1 = pmbp->phydro->frame_om[1];
-  const Real fo2 = pmbp->phydro->frame_om[2];
+  hydro::AmModule *pam = hydro::AmModuleOf(pmbp);
+  const bool spn = (pam != nullptr) && pam->am_vector;
+  auto asp = spn ? pam->am_spin : DvceArray4D<Real>();
+  // frame_omega: the frame part of the absolute L, sum V rho rc x (Omega x rc)
+  const Real fo0 = (pam != nullptr) ? pam->frame_om[0] : 0.0;
+  const Real fo1 = (pam != nullptr) ? pam->frame_om[1] : 0.0;
+  const Real fo2 = (pam != nullptr) ? pam->frame_om[2] : 0.0;
   const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji = nx2*nx1;
