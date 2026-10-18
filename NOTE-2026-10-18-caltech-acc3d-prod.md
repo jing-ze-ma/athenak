@@ -42,3 +42,12 @@ The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it 
   at its end (cycle 10). B used ryper.00000.rst as the TASK says, so it restarted at cycle 0, not at cycle 10. The job
   script reported fail=1 only because B does not rewrite the t=0 bins (my "MISSING" check, a script artifact). A proper
   cycle-10 restart (B from ryper.00001.rst) is a ~3-min 2-H200 job; I can run it when a new TASK asks for it.
+
+## Update 4 (2026-10-18): PRODUCTION v3 SUBMITTED (TASK fe694be5)
+- Build: accretor-3d-stream-1018 @ **a6624af6** (verified = origin), PROBLEM=ry_per_accretor, HOPPER90, -ffp-contract=off,
+  job **4977640** (expansion); binary /resnick/groups/carnegie_poc/jingze/builds_accr/bin/athena_gpu_ry_per_accretor_a6624af6_nofma
+  (md5 follows when built).
+- Run dir /resnick/groups/carnegie_poc/jingze/acc3d_v3_1018: deck v10 5e342048 (@FILES@ sed only), chain 1ad77aed, rosseland
+  d81b7a46, planck 99d668f6, column 5b813886 (all verified). Layout: 2 H200, 2 ranks, 4 MB/GPU, gpuwrap (as g2).
+- Links (12 h, WT 41999, afterok + kill-on-invalid-dep; no pre-check): link 1 **4977641** (afterok:4977640 build),
+  links 2-6 **4977642 4977643 4977644 4977645 4977646**. Job rc = chain rc. Start time + startup lines follow.
