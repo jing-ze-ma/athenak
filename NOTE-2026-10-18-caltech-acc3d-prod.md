@@ -51,3 +51,9 @@ The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it 
   d81b7a46, planck 99d668f6, column 5b813886 (all verified). Layout: 2 H200, 2 ranks, 4 MB/GPU, gpuwrap (as g2).
 - Links (12 h, WT 41999, afterok + kill-on-invalid-dep; no pre-check): link 1 **4977641** (afterok:4977640 build),
   links 2-6 **4977642 4977643 4977644 4977645 4977646**. Job rc = chain rc. Start time + startup lines follow.
+
+## Update 5 (2026-10-18): binary built
+- Expansion queue estimate was ~10 h, so a backup build **4977664** (gpu partition, P100 node, compile only, HOPPER90 target)
+  ran instead: COMPLETED, 2 files recompiled, binary md5 **76f5201569a523d7071d0525ee24c34f**
+  (/resnick/groups/carnegie_poc/jingze/builds_accr/bin/athena_gpu_ry_per_accretor_a6624af6_nofma). Expansion build 4977640 cancelled.
+- Link 1 4977641 dependency satisfied, pending on resources (Slurm estimate in ~6 h; backfill may be earlier).
