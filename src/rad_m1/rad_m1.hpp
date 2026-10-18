@@ -1485,6 +1485,11 @@ class RadiationM1 {
   Real vimp_emin;               // the smallest E the linear solve produced with it on
   DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
   MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
+  // cs-open-1018 (cubed sphere only): a 3-component exchange (scalar, face-normal pair)
+  // of iw slots c0..c0+2, for the dA / s vectors of the conservative sources
+  DvceArray5D<Real> d3w, d3w_c;
+  MeshBoundaryValuesCC *pbval_d3 = nullptr;
+  void ImplicitCsPairHalo(int c0);
   void ImplicitVimpBuild();     // the Jacobian of a(v') E' for this Picard pass
   // <rad_m1>/implicit_hr_recon = dc | plm (xthinfix-1009 Fix B, rad_m1_implicit.hpp)
   bool impl_muscl = false;      // plm half-range face values (default dc: untouched)

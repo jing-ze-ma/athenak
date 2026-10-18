@@ -2650,11 +2650,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // 10.3 -> 0.47 v_MLT).  The key is kept so that `false` reproduces runs_3a/RESULTS.txt.
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
   // moveq-1011: the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
-  // cs-s4-1017 (USER 10-18): on the cubed sphere the unnamed default is false (the
-  // transverse deposit / fixed point are not ported; named true stays refused where it
-  // acts, the check kernel before the write-back)
-  impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",
-                                          !pmy_pack->pmesh->use_cubed_sphere);
+  // cs-open-1018: the same default on the cubed sphere (the transverse deposit and the
+  // fixed point are the cs blocks of the write-back; cs-s4-1017 had false there)
+  impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",true);
   // h2order2-1011: implicit_rad_inertia_solve (read only when named; rad_m1.hpp)
   if (pin->DoesParameterExist("rad_m1","implicit_rad_inertia_solve")) {
     impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
@@ -2666,10 +2664,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // (hydro, coupling, gas_feedback); matched without it and on a restart whose file
   // lacks the key (files since consrc-1011 echo it).  Explicit input overrides.
   {
-    // cs-s4-1017 (USER 10-18): matched on the cubed sphere unless named (the conservative
-    // sources are not ported to cs; named, they stay refused below)
+    // cs-open-1018: the same default on the cubed sphere (the conservative sources are
+    // ported: cs blocks of the write-back, face-normal A^old / dA, m1bcs, the paired dA
+    // exchange; cs-s4-1017 had matched there)
     const bool gsdef = !global_variable::restart_run && fl_on && coupling &&
-                       gas_feedback && !pmy_pack->pmesh->use_cubed_sphere;
+                       gas_feedback;
     const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src",
                                                gsdef ? "conservative2" : "matched");
     if (gs.compare("matched") == 0) {
@@ -2985,22 +2984,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     niw += M1_NIW_HSF;
   }
   iw_cs2 = -1;
-  // cs-port-1016 (stage 1 audit): on the cubed sphere every conservative gas source is
-  // refused, not only conservative2.  conservative / conservative_full reach the
-  // write-back's conservative loop, whose vimp re-forming of the cell F is skipped on
-  // cs (rad_m1_impl_wb_kernel.hpp `vfx && !csw`; the cs re-forming kernel runs only
-  // after the loop), so dm would not match the stored F'; conservative2 / the
-  // rad_inertia_solve also take the per-face theta split (ImplicitCs2DeltaA/Pass/Shift/
-  // Vimp), which reads the raw mb_bcs (a panel seam taken as a wall) and mixes the
-  // covariant cell F with the face-normal A^old in the implicit_cs2_hll = drag term.
-  // The fresh default (conservative2 with gas coupling) therefore needs
-  // implicit_gas_src = matched named on cs until the port.
-  if (cs_geom && (impl_gas_src_cons || impl_rinr_solve)) {
-    ImplFatal("<rad_m1>/implicit_gas_src = conservative | conservative_full | "
-              "conservative2 (the fresh default with gas coupling) and "
-              "implicit_rad_inertia_solve are not ported to the cubed sphere (seam "
-              "faces, covariant/face-normal pairs): name implicit_gas_src = matched "
-              "(cs-port-1016, CS_VETGD.md stage 1-2 section)");
+  // cs-open-1018: the conservative gas sources run on the cubed sphere (were refused
+  // since cs-port-1016): the write-back's conservative loop re-forms the cell F inside
+  // the loop (cs block), A^old / dA are face-normal (ImplicitCs2DeltaA cs correction),
+  // the theta split reads m1bcs (a seam is an interior face) and the transverse dA
+  // pair crosses a seam on the destination's face normals (ImplicitCsPairHalo).  Only
+  // the opt-in implicit_cs2_shift (stage-start velocity shift) is not ported.
+  if (cs_geom && impl_gas_src_cs2 && cs2_shift) {
+    ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere "
+              "(cs-open-1018); use the default false");
   }
   if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: A^old (3), dA (3)
     iw_cs2 = niw;
@@ -3175,6 +3167,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         // (DV2, DV3) is the tangential pair; the nine per-direction Jacobian rows P are
         // treated as scalars (their proper curvilinear treatment is a later stage)
         pbval_vm->SetVectorPairs(M1_NVIMP_X, {{M1_IV_DV + 1, M1_IV_DV + 2}});
+      }
+      // cs-open-1018: the (scalar, face-normal pair) exchange of the conservative
+      // sources' dA on the cubed sphere (ImplicitCsPairHalo)
+      if (cs_geom) {
+        Kokkos::realloc(d3w, nmb, 3, ncells3, ncells2, ncells1);
+        Kokkos::deep_copy(d3w, 0.0);
+        Kokkos::realloc(d3w_c, nmb, 3, 1, 1, 1);
+        pbval_d3 = new MeshBoundaryValuesCC(pmy_pack, pin, false);
+        pbval_d3->InitializeBuffers(3);
+        pbval_d3->SetVectorPairs(3, {{1, 2}});
+        pbval_d3->cs_noresample = true;
+        pbval_d3->cs_perm_pairs = true;
       }
     }
     if (impl_halo_direct) {ImplicitHaloDirectInit();}
@@ -3711,6 +3715,23 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
       iw_(m,M1_IW_N3,k,j,i) = d*f;
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitCsPairHalo
+//! \brief cs-open-1018 (cubed sphere): the ghosts of iw slots c0 (scalar, the radial
+//! component) and c0+1, c0+2 (a FACE-NORMAL tangential pair, re-expressed on the
+//! destination's face normals at a seam, as (A2, A3) of the work array), through the
+//! ordinary seam-aware exchange (implicit_halo_direct / _mpi are off on cs)
+
+void RadiationM1::ImplicitCsPairHalo(int c0) {
+  ImplicitHaloCopy(d3w, 3, c0, true);
+  while (pbval_d3->InitRecv(3) == TaskStatus::incomplete) {}
+  while (pbval_d3->PackAndSendCC(d3w, d3w_c) == TaskStatus::incomplete) {}
+  while (pbval_d3->RecvAndUnpackCC(d3w, d3w_c) == TaskStatus::incomplete) {}
+  while (pbval_d3->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_d3->ClearRecv() == TaskStatus::incomplete) {}
+  ImplicitHaloCopy(d3w, 3, c0, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -10297,13 +10318,6 @@ bool RadiationM1::Cs2Active() {
 //! ghosts.
 
 void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
-  // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {
-    ImplFatal(
-              "<rad_m1> cubed sphere: internal guard, implicit_gas_src = "
-              "conservative2 (theta split: raw mb_bcs, face-normal vs covariant "
-              "pairs) is not ported");
-  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10341,7 +10355,8 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
   auto pos_ = part_pos;
   const int nblkx1 = part_nblk;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
-  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  // cs-open-1018: m1bcs on the cubed sphere (a panel seam is an interior face)
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
   par_for("m1_cs2_da", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     {
@@ -10467,6 +10482,36 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
     iw_(m,cd+1,k,j,i) = tq ? (a2 - o2) : 0.0;
     iw_(m,cd+2,k,j,i) = (tq && thrd) ? (a3 - o3) : 0.0;
   });
+  if (cs_geom) {
+    // cs-open-1018: the transverse F^old above mixed the COVARIANT stored cell F (u0,
+    // csinc) with the face-normal face means; A^old and dA are face-normal (as A2, A3,
+    // the face equation's F0 and the dA face means).  Here the covariant part of g goes
+    // to the face-normal basis, a, b -> (a - c b)/s, (b - c a)/s, and o, dA take the
+    // difference (the first solve's face form and the face increments are face-normal
+    // already).  A cs-only kernel: the sp / Cartesian kernel above is untouched.
+    auto cclw = pmy_pack->pcoord->cos_cell;
+    auto csnw = pmy_pack->pcoord->sin_cell;
+    par_for("m1_cs2_da_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (gfst) return;
+      Real a = u0_(m,M1_F2,k,j,i), b = u0_(m,M1_F3,k,j,i);
+      if (csok) {
+        a += ci_(m,1,k,j,i);
+        b += ci_(m,2,k,j,i);
+      }
+      const Real c = cclw(m,k,j), sn = csnw(m,k,j);
+      const Real d2 = (a - c*b)/sn - a, d3 = (b - c*a)/sn - b;
+      iw_(m,ca+1,k,j,i) += d2;
+      iw_(m,ca+2,k,j,i) += d3;
+      if (tq) {
+        iw_(m,cd+1,k,j,i) -= d2;
+        iw_(m,cd+2,k,j,i) -= d3;
+      }
+    });
+    // (c) the ghosts: dA_1 scalar, (dA_2, dA_3) the face-normal pair
+    ImplicitCsPairHalo(cd);
+    return;
+  }
   // (c) the ghosts (the face means of ImplicitRadInertia / ImplicitCs2Vimp)
   const int nc = tq ? (thrd ? 3 : 2) : 1;
   for (int c = 0; c < nc; ++c) {
@@ -10509,6 +10554,10 @@ void RadiationM1::ImplicitRinrDeltaA() {
     iw_(m,cd+1,k,j,i) = trans ? iw_(m,M1_IW_A2,k,j,i)*de : 0.0;
     iw_(m,cd+2,k,j,i) = thrd ? iw_(m,M1_IW_A3,k,j,i)*de : 0.0;
   });
+  if (cs_geom) {   // cs-open-1018: (dA_2, dA_3) face-normal: the paired seam exchange
+    ImplicitCsPairHalo(cd);
+    return;
+  }
   const int nc = trans ? (thrd ? 3 : 2) : 1;
   for (int c = 0; c < nc; ++c) {
     if (trans) {
@@ -10531,12 +10580,6 @@ void RadiationM1::ImplicitRinrDeltaA() {
 //! it), cs2f* = 0.
 
 void RadiationM1::ImplicitCs2Pass(bool restore) {
-  // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {
-    ImplFatal(
-              "<rad_m1> cubed sphere: internal guard, implicit_gas_src = "
-              "conservative2 (theta split: raw mb_bcs) is not ported");
-  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10590,7 +10633,8 @@ void RadiationM1::ImplicitCs2Pass(bool restore) {
     });
   }
   if (!tq) return;
-  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  // cs-open-1018: m1bcs on the cubed sphere (a panel seam is an interior face)
+  auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
   for (int d = 1; d < 3; ++d) {
     if (d == 2 && !thrd) break;
     auto fd_ = (d == 1) ? f2_ : f3_;
@@ -10757,12 +10801,9 @@ void RadiationM1::ImplicitCs2Shift() {
 //! P are scaled by 1/(1 + eta_d) (they only set the Newton direction).
 
 void RadiationM1::ImplicitCs2Vimp() {
-  // cs-port-1016 safety net: refused at ImplicitInit on the cubed sphere; never reached
-  if (cs_geom) {
-    ImplFatal(
-              "<rad_m1> cubed sphere: internal guard, implicit_cs2_vimp (raw mb_bcs, "
-              "Cartesian/sp momentum algebra) is not ported");
-  }
+  // cs-open-1018: on the cubed sphere dv, V, A^old, dA and the face weights are all
+  // face-normal (DV pair exchange, ImplicitCs2DeltaA), so the rule below holds in that
+  // basis as written; the tensor algebra is the one of the vimp build (m1_impl_wb_csvfx)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10776,7 +10817,7 @@ void RadiationM1::ImplicitCs2Vimp() {
   auto th2_ = thx2;
   auto th3_ = thx3;
   const bool lm = (impl_tlim != M1_TLIM_NONE) || blat_on;
-  auto mbbcs = (pmy_pack->pmb->mb_bcs).d_view;
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;
   auto pos_ = part_pos.d_view;
   const int nblkx1 = part_nblk;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
@@ -15083,72 +15124,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // is not charged to the gas (A^old in iw_cs2 + 0.., om_bar in iw_cs2 + 6..)
   const bool c2h = gcs && Cs2Active() && cs2_hll_drag && !(cs2_dbg & 1);
   const int c2a = c2h ? iw_cs2 : 0;
-  // cs-port-1016 (stage 1): implicit_rad_inertia (default true) has two parts that the
-  // write-back SKIPS on the cubed sphere (rad_m1_impl_wb_kernel.hpp `!csw`): the
-  // transverse v_f g0_f/c deposit of the matched path (face-normal deposit, not mapped
-  // to the covariant momentum) and the fixed point of the enthalpy flux's momentum
-  // a W/c^2 when the row did not carry the work (no implicit_vimp stage work).  Both
-  // were SILENT; they are a FATAL wherever the sp/Cartesian kernel would have acted
-  // (a separate cs-only check kernel: the shared write-back is untouched).
-  if (csw && rinr && coupling_ && dbgf && !gcs) {
-    const bool chk1 = trans && dbgft;
-    const bool chk2 = feedback && !rwk;
-    // significance as in ImplicitF0Init: |a|/c, |v|/c > 1e-10 (round-off motion of a
-    // static test does not count)
-    const Real atol = 1.0e-10*c_light;
-    if (chk1 || chk2) {
-      auto iwc_ = iw;
-      auto mbc = mbbcs;
-      int nbad = 0;
-      Kokkos::parallel_reduce("m1_impl_wb_cschk",
-        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0, ks, js, is},
-                                               {nmb1+1, ke+1, je+1, ie+1}),
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &n) {
-          bool act = false;
-          if (chk2) {
-            act = (fabs(iwc_(m,M1_IW_ADV,k,j,i)) > atol) ||
-                  (trans && dbgft && fabs(iwc_(m,M1_IW_A2,k,j,i)) > atol) ||
-                  (trans && dbgft && thrd && fabs(iwc_(m,M1_IW_A3,k,j,i)) > atol);
-          }
-          if (chk1 && !act) {
-            for (int d = 1; d < (thrd ? 3 : 2); ++d) {
-              const int cv = (d == 1) ? M1_IW_V2 : M1_IW_V3;
-              const BoundaryFlag ql = mbc.d_view(m,(d == 1) ? BoundaryFace::inner_x2
-                                                            : BoundaryFace::inner_x3);
-              const BoundaryFlag qh = mbc.d_view(m,(d == 1) ? BoundaryFace::outer_x2
-                                                            : BoundaryFace::outer_x3);
-              const bool plo = (ql != BoundaryFlag::block) &&
-                               (ql != BoundaryFlag::periodic);
-              const bool phi = (qh != BoundaryFlag::block) &&
-                               (qh != BoundaryFlag::periodic);
-              const int c = (d == 1) ? j : k;
-              const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je : ke;
-              for (int s = 0; s < 2; ++s) {
-                if ((s == 0 && c == cs && plo) || (s == 1 && c == ce && phi)) continue;
-                const int k1 = (d == 2) ? (k + (s ? 1 : -1)) : k;
-                const int j1 = (d == 1) ? (j + (s ? 1 : -1)) : j;
-                const Real vv = iwc_(m,cv,k,j,i) + iwc_(m,cv,k1,j1,i);
-                const Real gg = iwc_(m,M1_IW_G0,k,j,i) + iwc_(m,M1_IW_G0,k1,j1,i);
-                if (fabs(vv) > atol && gg != 0.0) {act = true;}
-              }
-            }
-          }
-          if (act) {n += 1;}
-        }, Kokkos::Sum<int>(nbad));
-#if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, &nbad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-#endif
-      if (nbad > 0) {
-        ImplFatal("<rad_m1>/implicit_rad_inertia on the cubed sphere: " +
-                  std::to_string(nbad) + " cells need the transverse v_f g0_f deposit "
-                  "or the enthalpy-flux momentum fixed point (no implicit_vimp stage "
-                  "work), which are not ported (face-normal vs covariant momentum); name "
-                  "implicit_rad_inertia = false, or run implicit_vimp with hesdirk2 "
-                  "and a gas without transverse motion (cs-port-1016)");
-      }
+  // cs-open-1018: implicit_rad_inertia on the cubed sphere (was a FATAL check kernel
+  // here, cs-port-1016): the transverse v_f g0_f deposit and the enthalpy-flux momentum
+  // fixed point are the `#if M1_CSW` blocks of the cs write-back launches below
+  if (csw) {
+    // cs-open-1018: the cubed-sphere launches of the same fragment with its cs blocks
+    // (M1_CSW 1); the sp / Cartesian launches below are unchanged
+    if (!rcpw) {
+      par_for("m1_impl_wb_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 0
+#define M1_CSW 1
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#undef M1_CSW
+#undef M1_RCP
+      });
+    } else {
+      par_for("m1_impl_wb_rc_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 1
+#define M1_CSW 1
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#undef M1_CSW
+#undef M1_RCP
+      });
     }
-  }
-  if (!rcpw) {
+  } else if (!rcpw) {
     par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 #define M1_RCP 0
@@ -15193,7 +15194,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (gcs && t2k && coupling && dbg_gas_force && t2s != M1_T2S_STAGE1) {csk1_ok = true;}
   if (gcs) {gcs_first = false;}
   csinc_ok = false;
-  if (vfx && have_hydro && feedback && csw && trans && thrd) {
+  if (vfx && have_hydro && feedback && csw && trans && thrd && !gcs) {
     // STAGE CS3: the vimp re-forming of the cell F on the cubed sphere, as a kernel of
     // its own (an overwrite inside the write-back above changed the GPU code of the
     // sp/Cartesian path).  The work array is face-normal, so the transverse velocities
