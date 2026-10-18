@@ -543,6 +543,7 @@ class AmModule {
   void AmSpinReturn(const AmFluid &fl);
   void FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   void AmFillV(HydroAmV &v, const AmFluid &fl);
+  void BasisCheck();
 };
 
 //! \brief the module of the pack's fluid (Hydro first, else MHD), nullptr if none

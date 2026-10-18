@@ -15,6 +15,7 @@
 //! from the CARTESIAN vector; a Cartesian change goes back to the covariant momentum by
 //! p . e_a.  Spherical polar: orthonormal (e_r, e_theta, e_phi) throughout.
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <sstream>
@@ -39,7 +40,8 @@ namespace hydro {
 bool AmModule::Named(ParameterInput *pin, const std::string &b) {
   return pin->DoesParameterExist(b, "am_transport") ||
          pin->DoesParameterExist(b, "am_vector") ||
-         pin->DoesParameterExist(b, "frame_omega");
+         pin->DoesParameterExist(b, "frame_omega") ||
+         pin->DoesParameterExist(b, "am_basis_check");
 }
 
 AmModule *AmModuleOf(MeshBlockPack *pp) {
@@ -89,6 +91,10 @@ AmModule::AmModule(MeshBlockPack *ppack, ParameterInput *pin, const std::string 
         pbval_spin->cs_noresample = true;
       }
     }
+  }
+  if (pin->DoesParameterExist(blk,"am_basis_check") &&
+      pin->GetBoolean(blk,"am_basis_check") && ppack->pmesh->use_cubed_sphere) {
+    BasisCheck();
   }
 }
 
@@ -473,6 +479,108 @@ void AmModule::AmFillV(HydroAmV &v, const AmFluid &fl) {
   v.panel = pmy_pack->pmb->mb_panel;
   v.is = ic.is;  v.js = ic.js;  v.ks = ic.ks;  v.nx2 = ic.nx2;  v.nx3 = ic.nx3;
   v.cs = pm->use_cubed_sphere;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void AmModule::BasisCheck
+//! \brief cs-open-1018 <hydro|mhd>/am_basis_check = true (test only, read only when named;
+//! rank 0 prints at start-up): the vector bases the angular-momentum code uses, checked
+//! pointwise on every panel over a grid that covers the interior, the seams, the cube
+//! vertices and two ghost cells beyond each edge (N = 32), with deterministic pseudo-random
+//! Cartesian vectors V (a velocity / momentum) and B (a field):
+//!  (1) covariant on the unit tangents m_a = V.e_a -> contravariant g^ab m_b (g = [[1,c],
+//!      [c,1]]) -> Cartesian V_r rhat + v^a e_a;
+//!  (2) face-normal f_a = V.nhat_a (nhat_xi = (e_xi - c e_eta)/s) -> contravariant f_a/s;
+//!  (3) the MHD cell triple (B.rhat, B.e_xi, B.(e_eta - c e_xi)/s) -> Cartesian, |B|^2 = the
+//!      sum of its squares;
+//!  (4) invariants |V|^2 = V_r^2 + m_a v^a, V.B = V_r B_r + m_a B^a, |B|^2 = B_r^2 + g_ab
+//!      B^a B^b;
+//!  (5) across a seam (a point of panel p that lies on panel q, q = FindPanel): the code's
+//!      cubed_sphere::TransformMomentum (covariant) and TransformFieldToDstNormals
+//!      (face-normal) against the direct projection on panel q's basis at that point.
+//! Every error is relative to |V| (|B|); round-off (~1e-15) is the pass.
+
+void AmModule::BasisCheck() {
+  const int nn = 32;
+  const Real h = 0.5*M_PI/nn;
+  Real e[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  int nseam = 0;
+  unsigned int seed = 12345u;
+  auto rnd = [&]() {
+    seed = 1103515245u*seed + 12345u;
+    return static_cast<Real>((seed >> 8) & 0xffff)/32768.0 - 1.0;
+  };
+  for (int p = 0; p < 6; ++p) {
+    for (int jj = -2; jj < nn + 2; ++jj) {
+      for (int kk = -2; kk < nn + 2; ++kk) {
+        const Real xi = -0.25*M_PI + (jj + 0.5)*h, et = -0.25*M_PI + (kk + 0.5)*h;
+        Real rh[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(p, xi, et, rh);
+        cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+        const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+        const Real s2 = 1.0 - c*c, s = std::sqrt(s2);
+        Real V[3], B[3];
+        for (int q = 0; q < 3; ++q) {V[q] = rnd(); B[q] = rnd();}
+        auto dot = [](const Real *a, const Real *b) {return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];};
+        const Real nv = std::sqrt(dot(V, V)), nb = std::sqrt(dot(B, B));
+        const Real vr = dot(V, rh), br = dot(B, rh);
+        // (1)
+        const Real m2 = dot(V, e1), m3 = dot(V, e2);
+        const Real v2 = (m2 - c*m3)/s2, v3 = (m3 - c*m2)/s2;
+        Real err = 0.0;
+        for (int q = 0; q < 3; ++q) {
+          err = std::max(err, std::fabs(vr*rh[q] + v2*e1[q] + v3*e2[q] - V[q]));
+        }
+        e[0] = std::max(e[0], err/nv);
+        // (2)
+        Real n1[3], n2[3];
+        for (int q = 0; q < 3; ++q) {n1[q] = (e1[q] - c*e2[q])/s; n2[q] = (e2[q] - c*e1[q])/s;}
+        const Real f2 = dot(V, n1), f3 = dot(V, n2);
+        err = 0.0;
+        for (int q = 0; q < 3; ++q) {
+          err = std::max(err, std::fabs(vr*rh[q] + (f2/s)*e1[q] + (f3/s)*e2[q] - V[q]));
+        }
+        e[1] = std::max(e[1], err/nv);
+        // (3)
+        Real o3[3];
+        for (int q = 0; q < 3; ++q) {o3[q] = (e2[q] - c*e1[q])/s;}
+        const Real t1 = dot(B, e1), t2 = dot(B, o3);
+        err = 0.0;
+        for (int q = 0; q < 3; ++q) {err = std::max(err, std::fabs(br*rh[q] + t1*e1[q] + t2*o3[q] - B[q]));}
+        e[2] = std::max(e[2], err/nb);
+        e[3] = std::max(e[3], std::fabs(br*br + t1*t1 + t2*t2 - dot(B, B))/(nb*nb));
+        // (4)
+        const Real b2c = (dot(B, e1) - c*dot(B, e2))/s2, b3c = (dot(B, e2) - c*dot(B, e1))/s2;
+        e[4] = std::max(e[4], std::fabs(vr*vr + m2*v2 + m3*v3 - dot(V, V))/(nv*nv));
+        e[5] = std::max(e[5], std::fabs(vr*br + m2*b2c + m3*b3c - dot(V, B))/(nv*nb));
+        const Real bm2 = dot(B, e1), bm3 = dot(B, e2);
+        e[6] = std::max(e[6], std::fabs(br*br + bm2*b2c + bm3*b3c - dot(B, B))/(nb*nb));
+        // (5) a point that belongs to another panel (the ghost region beyond a seam)
+        const int q = cubed_sphere::FindPanel(rh);
+        if (q != p) {
+          nseam += 1;
+          Real d1[3], d2[3], xq, eq;
+          cubed_sphere::CartToPanel(q, rh, xq, eq);
+          cubed_sphere::PanelTangents(q, xq, eq, d1, d2);
+          const Real cq = d1[0]*d2[0] + d1[1]*d2[1] + d1[2]*d2[2], sq = std::sqrt(1.0 - cq*cq);
+          Real mo2, mo3, fo2, fo3;
+          cubed_sphere::TransformMomentum(p, q, xi, et, m2, m3, mo2, mo3);
+          cubed_sphere::TransformFieldToDstNormals(p, q, xi, et, f2, f3, fo2, fo3);
+          Real nq1[3], nq2[3];
+          for (int r = 0; r < 3; ++r) {nq1[r] = (d1[r] - cq*d2[r])/sq; nq2[r] = (d2[r] - cq*d1[r])/sq;}
+          e[7] = std::max(e[7], std::max(std::fabs(mo2 - dot(V, d1)), std::fabs(mo3 - dot(V, d2)))/nv);
+          e[7] = std::max(e[7], std::max(std::fabs(fo2 - dot(V, nq1)), std::fabs(fo3 - dot(V, nq2)))/nv);
+        }
+      }
+    }
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "<" << blk << ">/am_basis_check (6 panels, N = " << nn << " + 2 ghosts, "
+              << nseam << " cross-seam points): covariant round trip " << e[0]
+              << ", face-normal round trip " << e[1] << ", MHD triple " << e[2]
+              << ", |B|^2 triple " << e[3] << ", |V|^2 " << e[4] << ", V.B " << e[5]
+              << ", |B|^2 metric " << e[6] << ", seam transforms " << e[7] << std::endl;
+  }
 }
 
 }  // namespace hydro
