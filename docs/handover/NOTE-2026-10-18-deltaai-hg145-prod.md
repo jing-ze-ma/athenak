@@ -41,3 +41,12 @@
   rst_pick.py (validity check). Storage now stays bounded: rst <= ~40 GB on nvme, bins ~2.4 GB/sim day to hdd.
 - **Resubmitted as job 3405272** (ghx4, 4 GH200, `-r hegiant.00055.rst time/tlim=1e9`, **44 h** wall so the total stays ~192 SU = the one
   approved link). Slurm start estimate ~17:42 UTC 10-19 (~27.5 h).
+
+---
+## 15:25 UTC: also chaining 2 h ghx4-interactive links (USER: "maybe you can try interactive node")
+- ghx4 queue is ~2200 jobs deep; new 1-node jobs estimated ~4 days out. ghx4 link resubmitted as **3405590** (replaces 3405272; it needed the
+  new run lock). Interactive chain started: first link **3405591** (2 h, est. start ~03:21 UTC 10-19). Interactive costs x2 = 16 SU
+  per link, ~1 h 50 min of run each (~9 sim days at the late pace).
+- Both share run/ through a lock: an interactive link exits if the run is locked; the ghx4 link waits (<= 130 min) for the lock. The chain
+  stops submitting once the ghx4 link runs, and the ghx4 link trims its own TimeLimit so the WHOLE run stays within **192 SU**
+  (= the one approved 48 h link; 15 SU used so far). Each link restarts from the newest VALID rst (rst_pick.py).
