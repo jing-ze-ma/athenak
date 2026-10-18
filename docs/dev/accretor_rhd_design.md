@@ -1020,3 +1020,63 @@ with the key absent, over 20 cycles:
   starts at t ~0.031 at phi 13.6-13.8 deg (v3: 14.0).
 - Floor-gas e/rho stays at 2.0-2.3e3 in every arm (v4 full: up to 1.8e6).
 - **Conclusion: the unscaled sector light caused the v4 dt collapse.**
+
+## 17. Contact eint<=0 burst with the dim sector (2026-10-18, Raven, accretor-sector-light-1017)
+
+**Symptom.** With `stream_sector_light = surface` or `dark`, the stream's arrival at the star (t 0.0270-0.0274)
+fires 30-60 dt retries with reason eint<=0. Each retry halves dt, and the burst crosses the default
+dt_min = 1e-7 (FATAL). With dt_min 1e-8 it recovers, after which dt is 1.6e-6 (= v3).
+
+**Diagnostics** (DEBUG, read only when named, prints only; bitwise off):
+- `rad_m1/dbg_eint_cells = N` (ca6f0500): lists up to N cells per rank whose implicit gas write-back
+  EGN - (c/chat) q is <= 0.
+- With it, the existing `dbg_t2_admiss` cell/E-row-by-term listing now also runs under time_scheme = be
+  (dfd60ff3).
+- Runs: v4/ssl/ctc30 and ctc30d (cal30s from t 0.0268).
+
+**Failing cells.** 1863 cells were listed. Every one lies at phi 6-10 deg, r 9.40-9.85, i.e. the stream's
+contact front:
+- 80 % are stream gas (v_r ~ -430, v_phi ~ +175 km/s, rho 1e-5..3e-4); the rest are the thin floor gap below it
+  (rho 5e-8).
+- T_solved is 30-50 code (3.6-6 kK).
+- In 90 % of them the SOLVED E is negative (-0.002 .. -0.28; equilibrium a T^4 ~ 6e-3).
+
+**Chain:**
+1. E solves negative.
+2. The iterate is floored (1e-6 e_floor).
+3. The exchange q = SRCR - SRCB E_iter loses its absorption part, so the cell radiates its whole emission SRCR
+   (about eint) into a field that holds nothing.
+4. The write-back gives eint < 0.
+5. pos_gas cannot repair it (no E above the floor to take from), and dt_retry fires.
+Cells that pass leave the region at the gas floor: a column of e/rho ~ 49 at phi 8.5 deg (neighbours ~1130).
+
+**Why E goes negative.** The E-row listing shows, in every listed cell, a balance of two large terms whose
+small residual is negative. The lagged transverse term TRHS (theta/phi faces: theta_f F_f^n - ...) is
+-660 .. +330. The radial face term (theta_f (F0_f^n - c dt v_f g0_f)) is +650 .. -320. Both are ~10^3 x the
+cell's E (0.16-0.24). In the thin floor gap, g0 is negligible (|G0| 1e-4), so this is the OLD FACE-FLUX part
+F_f^n: the face-eliminated flux F' = theta (F^n - c^2 dt grad P - c dt v g0) carries F^n with theta ~ 1 in thin
+cells, at a radiation Courant number c dt/dx ~ 190 (r) / 16 (phi). The transverse faces are, in addition, not
+bounded by c E (rad_m1_implicit.cpp ImplicitTransTheta: "no free-streaming bound"). When the cold, opaque stream
+front moves into the gap between the photosphere and the stream in one step, the stored face fluxes no longer
+balance, and E falls below 0.
+
+The dim sector settings are where this bites because the stream arrives COLD: at t 0.026, e/rho at r 10-11 is
+1.55e3 (surface/dark/cal30s) against 2.2-2.3e3 (v3/scaled). The stream gas at contact sits at 3.6-6 kK, in the
+recombination range of the opacity table, and E around it is 5-20x smaller than in v3/scaled, so the same flux
+imbalance is a larger fraction of E.
+
+**Existing keys tested** (cal30s from t 0.0268, dt_min 1e-7; v4/ctcarm):
+- `implicit_g0_exchange = false`: FATAL at t 0.02702, 7 retries.
+- `implicit_gas_newton_u4 = true`: FATAL at t 0.02703, 11 retries.
+- => The burst is neither the g0 term nor the gas T-Newton.
+
+**Proposed fix (M1 solver, method-level, for the USER).** Make the old-face-flux term positivity-preserving in
+thin cells. Two routes:
+- (a) Extend `implicit_trans_limit = lp`, the transverse Levermore-Pomraning face limiter that bounds
+  |F_f| <= c phi_f E_f and keeps the M-matrix, to the sp wedge. It is refused on sp today; the row (M1SphTransRow),
+  the sp face-flux kernels and the post-solve reconstruction would all have to read thx2/thx3. Radial faces
+  would get the same bound.
+- (b) An FCT-type scaling of the outgoing theta_f F_f^n per cell, so that its total outflow <= E^n + inflow
+  (conservative, per face the min of the two cells' factors).
+Either is a change to the shared M1 solver, so opt-in, gated bitwise-off, and validated on the IDORT suite before
+any adoption. The interim fallback is dt_min 1e-8: the burst then costs ~40 retries over t 0.0270-0.0273.
