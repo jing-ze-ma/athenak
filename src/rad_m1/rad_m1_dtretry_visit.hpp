@@ -676,6 +676,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("thx3", thx3);
   v.view("klx2", klx2);
   v.view("klx3", klx3);
+  v.value("impl_tlim_x1", impl_tlim_x1);
+  v.view("klx1", klx1);
   v.value("impl_gas_newton", impl_gas_newton);
   v.value("impl_eos_cache", impl_eos_cache);
   v.value("impl_ecnt", impl_ecnt);
