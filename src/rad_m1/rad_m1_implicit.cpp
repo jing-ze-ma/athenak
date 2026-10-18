@@ -5335,6 +5335,29 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         }
       }
     }
+    if (csg) {
+      // cs-open-1018: the rest of a SEAM face's flux to the face midpoint as well.  The
+      // mirror pair's face theta (1 + chat dt kt_f)^-1 and v_f g0_f sit at the chord's
+      // foot like the gradient: moved by the quadratic through the foot values of the
+      // neighbouring seam faces (M1CsSeamMid; theta as the ratio of the base theta,
+      // which also carries the stored (1 - AL) and limiter factors of a blended face)
+      const bool w2lo = (cseam(m,0) != 0), w2hi = (cseam(m,1) != 0);
+      const bool w3lo = (cseam(m,2) != 0), w3hi = (cseam(m,3) != 0);
+      if ((j == js && w2lo) || (j == je+1 && w2hi)) {
+        const int sd = (j == js) ? 0 : 1;
+        const bool up = !(k == ke && w3hi), dn = !(k == ks && w3lo);
+        auto vgq = [&](const int q) {
+          return 0.25*(iw_(m,M1_IW_V2,q,jm,i) + iw_(m,M1_IW_V2,q,j,i))
+                 *(iw_(m,M1_IW_G0,q,jm,i) + iw_(m,M1_IW_G0,q,j,i));
+        };
+        auto tbq = [&](const int q) {
+          return 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,q,jm,i)
+                                       + iw_(m,M1_IW_KT,q,j,i)));
+        };
+        off += (M1CsSeamMid(vgq, csg2_, m, k, sd, up, dn) - vf*g0f)/cl;
+        th *= M1CsSeamMid(tbq, csg2_, m, k, sd, up, dn)/tbq(k);
+      }
+    }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
     if (blt) {
       f2_(m,k,j,i) += (cl/ch)*(bw2_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,jm,i)
@@ -5483,6 +5506,29 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           const bool up = !(j == je && t2hi), dn = !(j == js && t2lo);
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           off = M1CsSeamMid(lf, csg3_, m, j, sd, up, dn);
+        }
+      }
+      if (csg) {
+        // cs-open-1018: the rest of a SEAM face's flux to the face midpoint as well.  The
+        // mirror pair's face theta (1 + chat dt kt_f)^-1 and v_f g0_f sit at the chord's
+        // foot like the gradient: moved by the quadratic through the foot values of the
+        // neighbouring seam faces (M1CsSeamMid; theta as the ratio of the base theta,
+        // which also carries the stored (1 - AL) and limiter factors of a blended face)
+        const bool w3lo = (cseam(m,2) != 0), w3hi = (cseam(m,3) != 0);
+        const bool w2lo = (cseam(m,0) != 0), w2hi = (cseam(m,1) != 0);
+        if ((k == ks && w3lo) || (k == ke+1 && w3hi)) {
+          const int sd = (k == ks) ? 0 : 1;
+          const bool up = !(j == je && w2hi), dn = !(j == js && w2lo);
+          auto vgq = [&](const int q) {
+            return 0.25*(iw_(m,M1_IW_V3,km,q,i) + iw_(m,M1_IW_V3,k,q,i))
+                   *(iw_(m,M1_IW_G0,km,q,i) + iw_(m,M1_IW_G0,k,q,i));
+          };
+          auto tbq = [&](const int q) {
+            return 1.0/(1.0 + ch*dt*0.5*(iw_(m,M1_IW_KT,km,q,i)
+                                         + iw_(m,M1_IW_KT,k,q,i)));
+          };
+          off += (M1CsSeamMid(vgq, csg3_, m, j, sd, up, dn) - vf*g0f)/cl;
+          th *= M1CsSeamMid(tbq, csg3_, m, j, sd, up, dn)/tbq(j);
         }
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
