@@ -1035,37 +1035,56 @@ in ry_per_accretor.cpp); the hooks in ry_per_accretor.cpp touch only the donor-i
 - donor_ray_scale (1): factor on the surface intensity (test knob). donor_irr_scale is NOT applied in ray mode.
 - donor_ray_npsi (24), donor_ray_nel (4, <= 8): azimuths and Gauss-Legendre elevations per column.
 - donor_ray_every (1): the beam is recomputed every N cycles (first hydro stage).
-- donor_ray_step (0.5): march step / min(dr, r dphi). donor_ray_taumax (40). donor_ray_force (true).
+- donor_ray_step (0.5): march step / min(dr, r dphi). donor_ray_grow (4). donor_ray_taumax (40). donor_ray_force (true).
+- donor_ray_deposit = rad (default) | gas; donor_ray_opac = total (default) | rosseland.
 - donor_ray_dump_dt (0 = off): rank 0 writes ryper.raydonor.NNNNN.bin (q, f_r, f_phi, F_r, F_phi, chi on the global
   r-phi grid; reader tool accray_1017/tool/rdump.py).
 
 ### 17.2 Method
 - Source: the exact 3-D Roche L1 lobe, each surface point a grey isotropic emitter I = (c/4 pi) a T_loc^4 with the
   donor_gdark law of sect. 15 (same C, same floor, L_d over the full lobe). The 3-D solid angle is integrated
-  directly, so there is no band dilution factor.
+  directly, so there is no band dilution factor. A point or extended source in the M1 sense is NOT justified here:
+  from the facing photosphere (D 23.7 to the donor centre) the lobe spans up to ~46 deg, and the gainer (R ~9) is not
+  small against d_L1 = 16.2.
 - Directions, per (r, phi) column P: npsi azimuth midpoints over the lobe's in-plane angular span seen from P (from a
   720-vertex polygon of the in-plane cut), x nel GL nodes in elevation on [0, e_max(psi)], doubled for -e. e_max is
   where the 3-D ray grazes the lobe, from the lobe height z_s(x, y) sampled at 32 points along the in-plane chord; the
   hit point of each ray (first s with z_s >= s tan e) gives g and hence I. This geometry is static and tabulated at
-  setup (float W = I cos e w dpsi, cos e; ~330 MB per A100 for the 840 x 2048 band on 4 ranks).
+  setup (float W = I cos e w dpsi, cos e; 354 MB per A100 for the 840 x 2048 band on 4 ranks).
 - Band = z-uniform (reflecting theta walls), so an elevated ray crosses the gas of its in-plane projection over a path
   longer by 1/cos e: tau_3D = tau_proj / cos e. At the photosphere this is the plane-parallel slab of the sphere (the
   band cylinder's tangent plane is the sphere's at the equator), so horizon and limb are those of the 3-D star.
   Beyond the in-plane lobe entry the ray is in the masked lobe (floor, tau ~ 0); beyond r_out it is vacuum; below r_in
   it is opaque.
-- Attenuation (long characteristics): one march per (column, psi) from the cell's donor-side face through a GLOBAL
-  extinction map chi(k, i) = theta mean of max(rho kappa_T, rho kappa_E) from <rad_m1>/opac (the last M1 solve; the
-  first update calls Opacity() on the current state), gathered over ranks by MPI_Allreduce every update.
+- Attenuation (long characteristics): one march per (column, psi), starting at the cell's donor-side face, through a
+  GLOBAL extinction map chi(k, i), the theta mean of <rad_m1>/opac from the last M1 solve. The first update of a run
+  calls Opacity() on the current state. The map is gathered over ranks by MPI_Allreduce every update; every entry has
+  one owner, so the gather is exact and deterministic.
+  - donor_ray_opac = total (default): chi = max(rho kappa_T, rho kappa_E).
+  - donor_ray_opac = rosseland: rho kappa_T.
+  - Step: donor_ray_step x min(dr, r dphi). It doubles per step up to donor_ray_grow (4) cells while chi h < 1e-3.
+  - The march stops at tau > 40.
 - Deposition (photon conserving): per ray I dOmega exp(-tau_up/cos e)(1 - exp(-chi L/cos e))/(L/cos e), with L the
-  in-plane chord of the cell. eps = rho kappa_E/chi of it heats the gas (u(IEN), every stage, RK weighted); the rest
-  (scattering) is added to M1 E at the last stage. The removed momentum q/c along the beam goes to the gas, with work
-  v.f.
-- Booking: the energy given (heat + work + scattered E) is radiation IN, in Eirr (hst 24) and Ebnd.
+  in-plane chord of the cell.
+  - donor_ray_deposit = rad (DEFAULT): the whole removed power goes into the M1 E at the last hydro stage, with F
+    unchanged. The implicit gas-radiation coupling gives the absorbed part to the gas at the iterate's kappa(T).
+  - donor_ray_deposit = gas: eps = kappa_E/chi of it heats u(IEN) explicitly, every stage, RK weighted. This is
+    UNSTABLE: in the 10-17 smoke, the rho ~5e-6 thin atmosphere (kappa_P ~2000 cm^2/g) went from e/rho 2e3 to 8e5 in
+    one step and cannot cool through its now tiny kappa_P(T); dt fell from 7e-6 to 6e-7.
+  - With rad, the beam's local energy density (|F_inc|/c <~ 0.25 code) is < 1 % of the gainer's own E at the
+    photosphere (~3-10), so the thin-gas T barely depends on where the deposit goes.
+- Momentum: q/c x rho kappa_T/chi along the beam, i.e. the flux-mean (transport) opacity, as the M1 module couples the
+  gainer's own flux. The work v.f goes to u(IEN). With the Planck mean (smoke) the facing thin atmosphere got ~28x
+  gravity inward (v_r -290 km/s in 60 cycles).
+- Booking: the energy given (deposit + work) is radiation IN, in Eirr (hst 26) and Ebnd.
 - The lobe and the stream_sector_light = surface sector hold no light (as donor_irr = false): the lobe becomes a
   transparent sink for the gainer's light (no reflection effect).
+- Update every donor_ray_every (1) cycles at the first hydro stage. The beam is held per volume between updates.
 - 3-D wedge: FATAL. The z-uniform projection no longer holds, so each (cell, direction) needs its own 3-D march
-  (12.5 M cells x ~200 directions). Options: a coarse ray grid with interpolation, or a short-characteristics sweep
-  per direction.
+  (12.5 M cells x ~200 directions, ~100x the band cost per update). Options: a coarse ray grid with interpolation,
+  update every ~100 cycles, or short characteristics per direction.
+- Diagnostics: setup self-check (unattenuated F_inc on the line of centres, table vs 16x finer quadrature); ray dumps
+  (donor_ray_dump_dt).
 
 ### 17.3 Reference: the gravity-darkened donor's facing flux (accray_1017/tool/ref_flux.py)
 This is an independent surface integral over the 3-D lobe, sum I cos dA u/d^2, with the same gdark law and the same

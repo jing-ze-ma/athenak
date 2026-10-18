@@ -1692,6 +1692,7 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
 
 //! release the namespace-scope Views before Kokkos::finalize
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
+  RayDonorFinal();   // raydonor-1017 (no-op without donor_irr_mode = ray)
   gr_ = DvceArray3D<Real>();
   gp_ = DvceArray3D<Real>();
   cref2_ = DvceArray3D<Real>();
@@ -1700,7 +1701,6 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   gpl_ = DvceArray3D<Real>();
   iracc_ = DvceArray1D<int>();
   rbath_ = DvceArray3D<Real>();
-  RayDonorFinal();
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
