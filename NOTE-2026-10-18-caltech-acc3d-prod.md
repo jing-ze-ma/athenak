@@ -91,3 +91,15 @@ The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it 
 - **Raven: please post your A100 v10 static dt history and limiting cells. Do you see the same infall? Should we continue?
   We keep running unless told otherwise.**
 - Stream-on status: not yet. Static phase at cycle 4450, t 0.04932, dt 5.90e-6 (elapsed 1927 s); stream phase starts at t 0.05.
+
+## Update 9 (2026-10-18): STREAM ON, healthy (link 1 4977641)
+- Static phase: rc 0, t 0.05 at cycle 4564, wall 1994 s (13:48:22-14:21:36 PDT), dt at its end 5.9e-6.
+- Stream phase started 14:21:36 PDT from static/rst/ryper.00005.rst (stream on, nozzle at 14.5 Rsun, v_r -94.77 / v_phi 43.28 km/s,
+  stream_sector_light surface printed again).
+- 9 DT_RETRY lines, all reason=eint<=0 in cycles 4565-4644 right after stream-on (cuts down to 5.9e-7). They recovered
+  ("DT_RETRY recovered ... cap off" at cycle 4644), with none after that. NON-CONVERGED 0, FATAL 0, NaN 0, DIVERGED 0.
+- 14:32 PDT: cycle 5950, t 0.06085, dt **9.2e-6** (up from 5.9e-6: the static-phase mid-latitude infall no longer limits dt),
+  **~0.40 s/cycle** (cycles 4700-5950). The dt-limiting cell is now equatorial: r 9.31-9.32, theta 89.6 deg, phi ~0.69 rad,
+  rho 2.5e-7, v_r -134 km/s, v_phi ~200-212 km/s, e/rho 2067 (km/s)^2, rank 0. GPU 14661 MiB each. First stream rst: ryper.00006.rst.
+- Stream contact (t ~0.068) not reached yet. Links 2-6 (4977642-46) queued afterok. The Caltech agent signs off here; the main session
+  watches the rest.
