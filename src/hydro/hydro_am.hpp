@@ -24,7 +24,7 @@
 
 #include "athena.hpp"
 #include "coordinates/cubed_sphere.hpp"
-#include "mesh/mesh.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
 #include <string>
 
