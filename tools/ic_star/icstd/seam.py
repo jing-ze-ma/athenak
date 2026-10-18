@@ -172,11 +172,18 @@ def fixed_point(cfg, col_r, col_fm0, L, kap_fn, rtop, hdr, base, log, lo, hi, ex
         lo_, hi_ = b[:, b[0] < r[0]*(1 - 1e-9)], b[:, b[0] > r[-1]*(1 + 1e-9)]
         r, rho, eint, Fr, E, T, fm = [np.concatenate([lo_[j], v, hi_[j]]) for j, v in
                                       enumerate((r, rho, eint, Fr, E, T, fm))]
-        fmt, Frt, tau = taper(r, rho, T, col_fm0(r), L, kap_fn, rtop, lo, hi, extend)
+        if lo is None:      # taper off (startup re_zone hopf): the dump's own scaffold rows,
+            # F_r = F (1 - F_MLT/F) so that F_r + F_MLT = L holds exactly on the union rows
+            # (the dump interpolates F_r log-linearly and F_MLT/F linearly: 0.9 % at a jump)
+            fmt = fm
+            Frt = L/(4*np.pi*r**2)*(1.0 - fm)
+            how = 'scaffold of the dump (taper off), F_r = F (1 - F_MLT/F)'
+        else:
+            fmt, Frt, tau = taper(r, rho, T, col_fm0(r), L, kap_fn, rtop, lo, hi, extend)
+            how = 'taper tau %g..%g re-applied' % (lo, hi)
         nxt = os.path.join(wd, 'col_%d.txt' % (it + 1))
-        write_col(nxt, hdr + ['# seam pass %d: rows = the code dump %s (sph1d re_atm hse), '
-                              'taper tau %g..%g re-applied' % (it, dump, lo, hi)],
-                  r, rho, eint, Frt, E, T, fmt)
+        write_col(nxt, hdr + ['# seam pass %d: rows = the code dump %s (sph1d re_atm hse), %s'
+                              % (it, dump, how)], r, rho, eint, Frt, E, T, fmt)
         cur = nxt
     log('  seam: NOT converged in %d passes' % len(hist))
     return cur, hist

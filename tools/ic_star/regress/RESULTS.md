@@ -485,3 +485,206 @@ active, 0 dfloor cells, top infall -0.07 km/s).
 - 5: NC 0, FATAL/DIVERGED/NaN 0, rc 0, dt_min/median 0.36 / 0.29, 0 retries.
 r496 vs g480: same oscillation (rms 6.18 vs 6.04, period 0.953 vs 0.938 d). **r496 is the candidate BSG
 production radial grid** (the full wedge needs 496 x 256 x 256; no production submitted).
+
+<!-- prodmerge-1018-hg: both branches added a sect. 9; the sections below (9-12) are those of
+     ic-mesascaf-1017, numbered as on that branch (cited by number in the hg145 NOTEs) -->
+
+## 9. MESA-anchored 14p5M startup (10-17, branch ic-mesascaf-1017; README sect. 2d)
+
+Work dir: /raven/ptmp/jinma/hg145_mscaf_1017. Scripts are in scripts/: d1/d2/d3 diagnostics,
+mkcol, runpass/seamloop, mkkapm, cmpdump, diffchk, discflux, prof, mkgate. CPU passes use
+/raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db; gates use the A100 b16b66db build
+(/raven/ptmp/jinma/overlap_1015/bin, md5 042157c1).
+
+### 9a. MESA's own outer envelope (opacity-free; scripts/d1.py)
+- kappa_Edd = 4 pi c G M/L = 0.969 cm^2/g. MESA's kappa: 0.003 at the photosphere, 0.12 at
+  tau 10, 0.77 at tau 27, a peak of 4.9 at 18.7 kK (tau 1600), 3.4 at 42 kK (tau 8000).
+- So Gamma_L = 1-5 for tau 30-1.5e4, and MESA's F_MLT/F there is 0.88-0.99.
+- Gamma_rad of MESA's actual gradient, 4 (P_rad/P) nabla, is at most **1.009** (108.4 Rsun, tau
+  2900): a density inversion, 1.3e-8 -> 2.4e-8 g/cc outward over 108.6-109.3 Rsun.
+- MESA is radiative (F_MLT/F < 0.05) only at tau < 3.4. Gamma_L < 0.12 at tau < 10.
+- Our kappa over MESA's along MESA's track: 1.0-1.1 at 35-60 kK; 1.4-1.5 at 24-33 kK; 1.1-1.3
+  at the 18 kK peak; **2.0-2.5 at 7.6-11 kK** (Ferguson low-T table, GS98-scaled He-rich).
+
+### 9b. Does a static solution exist?
+- **Fully radiative: no.** In a plane-parallel grey RE + HSE march (scripts/d2.py, Teff 7504 K),
+  Gamma = 1.2-3.4 at tau 20-1300 with our kappa. The gas pressure must then fall inward
+  (rho 1.4e-8 -> 1.2e-9). Deeper, where Gamma_L is 1.5-3.5 down to 25 Rsun, P_gas -> 0.
+  The photosphere itself, tau < 10 with Gamma < 0.1, is a normal static radiative layer.
+- **With MESA's convective flux: yes**, and this is MESA's model. In our microphysics the
+  scaffold must be MESA's gradient re-expressed in OUR kappa:
+  - F_MLT/F = 1 - nabla_M/nabla_rad(ours), i.e. the mode-mesa column;
+  - its F_r is the diffusion flux of the column's own T (checked to 1e-3, scripts/diffchk.py);
+  - its Gamma_rad is max 1.0098 (12 rows > 0.9, all at tau > 3500).
+- MESA's OWN F_MLT/F at the same P_tot with our kappa gives **Gamma_rad 1.49**: 29 rows > 1 at
+  26-32 kK, because our kappa is 1.4-1.5x there. That split has no static solution (the tool's
+  diag now prints both).
+- So the right IC is static (not a wind), with the convective scaffold carrying the flux down to
+  tau ~3.
+
+### 9c. Why the code's startup failed: the RE re-solve on the cliff, for either opacity
+CPU 0-cycle passes on the hg145 deck (passes/):
+
+| column / keys | result |
+|---|---|
+| raw column (no taper), default taua/taub 30/3000 (p1L_raw) | 400 outer, NOT converged, Gamma clamp in 9486 cells, R_ph +25 cells (inflated) |
+| raw, taua/taub 3/30 (p2L_t3_30) | 400 outer, NOT converged (max dln rho 0.79) |
+| MESA-like kappa (diag table: ours x kappa_M/kappa_ours(T) on MESA's track), default 30/3000 (p3L_kapM) | converged (7e-7), but to the COLLAPSED branch: tau(r_b) 3000 -> 0.2, rho x0.01 at R_ph, R_ph -14 cells |
+| raw, taua/taub 1/3 (p4L_t1_3) | converged, 9 outer, 6.4e-7, no clamp, R_ph -0.58 cell |
+
+- After ONE outer iteration (hse_maxit 1, p3L_kapM_o1) the VET solution at the column's own
+  rho is already 25 % cooler than T_col at tau_col 300-700. The inner VET loop converged in 25
+  passes.
+- Cause: with a frozen F_r(r), T^4 ~ int kappa(T) rho F_r dr. With dln kappa/dln T ~13 in the
+  cliff, the Picard iteration has a cool (collapsed) and a hot (inflated) attracting branch, and
+  the column is the unstable one between them.
+- The column IS a solution (diffusion-consistent F_r), but the RE problem marched from the top
+  is so ill-conditioned through the cliff that a 7 % T offset at tau 3 picks a branch.
+- This is independent of the opacity table: MESA-like kappa collapses as well.
+- The 2b taper (F_MLT -> 0 by tau 3) adds an inconsistent F_r on top (RESULTS 6). The 8b cap
+  addresses Gamma, not this feedback.
+
+### 9d. The method and its fixed point (tool, no code change)
+Spec `specs/hegiant_14p5M.yaml`:
+- `taper: {enable: false}`, `startup: {re_zone: hopf}`;
+- he_ic_rad_taua 1, he_ic_rad_taub 3;
+- seam on the hg145 deck with he_nfine 262144. The old seam passes ran the deck's 2^20 while
+  the gate decks had 262144.
+
+Run (sbatch small, 381 s): /raven/ptmp/jinma/ic_star_runs/hegiant_14p5M_anchor, IC
+`ic_hegiant_14p5M.txt` md5 2863f18b.
+- seam pass 0: R_ph 7.96114e12 -> 7.95671e12 (-0.579 cell), HSE 7.6e-7;
+- seam pass 1: 7.95671e12 -> 7.95704e12 (**+0.043 cell**), **HSE 5.84e-7**, 0 Gamma-clamped
+  cells. **FIXED POINT** R_ph = 7.95704e12 = 114.38 Rsun (1.041 R_MESA).
+- L consistency 4 pi r^2 (F_r + F_MLT)/L - 1 = 4.3e-11. Before the fix, the dump interpolation
+  gave 0.9 % at the F_MLT jump at the join; each pass now sets F_r = F (1 - F_MLT/F).
+- implicit_flux_x1min 3.606021e13; F_MLT/F(x1min) 0.012; m_env 1.042 x MESA;
+  T/T_MESA <= 1.04 up to 87 Rsun.
+- **Reproducible:**
+  - a second build on another node gives the same R_ph lines (7.95671 / 7.95704);
+  - the A100 b16b66db run of the final pass deck (runs/a100pass1g) gives R_ph 7.95671e12 ->
+    7.95704e12, identical, with the dump within 3.3e-10 (print precision) of the CPU dump in
+    every column;
+  - the gate startups (A100, atm_force module, 704/1408 meshes) give 7.95721e12 / 7.95717e12
+    (+0.02 cell), with HSE 5.84e-7 / 5.87e-7.
+- MESA-like-kappa diagnostic build (hegiant_14p5M_kapMdiag, same method): fixed point in 2
+  passes (-0.012 cell). With MESA's kappa the column's photosphere is self-consistent:
+  tau_R(r_j) 2.67 from the mesh top, vs **5.45 with our kappa**. Our 2.4x photospheric kappa puts
+  2.4 extra tau into the column's isothermal cap.
+- Default off is bitwise for the tool:
+  - AG Car A deep70 IC data byte-identical to the 10-16 file;
+  - BSG (mode mesa, taper + seam on) built with 3c3c3107 and with this branch: IC data and deck
+    identical (the seam passes included);
+  - only the new diag Gamma_rad line is added.
+  No he_star_m1 change, so E1/BSG/HG decks run the same binary.
+
+### 9e. Gate (a'): FAIL (regress/gate_aprime.py; runs/hg704, hg1408; 9 d, seed 0, 16x16)
+Deck /raven/ptmp/jinma/hg145_mscaf_1017/decks/hg145_anchor.athinput (md5 915c1d80 = hg145e1 + tool block):
+- [1] resolution 2.25 cells/H_rho at 1.027 R_ph on 704 (pair 4.74): FAIL;
+- [2] rms 8.47 vs 8.51 km/s, PASS; period 4.45 vs 4.47 d, PASS; profile L2 17 %, FAIL;
+- [3] no growth, PASS; but rms 8.5 km/s > c_s,iso 4.0, FAIL;
+- [4] FAIL on both runs:
+  - 0.5-0.9 R_ph 4.0/4.3 km/s;
+  - 0.9-0.99 R_ph 8.1/7.7 km/s;
+  - R_ph +5.7/+4.6 %;
+  - L_top/L_in 0.46-1.08;
+  - dM/M 1e-8 and Mdot 1.6e-9 Msun/yr pass;
+- [5] PASS: NC 0, 0 retries, rc 0.
+
+What happens (scripts/prof.py):
+- the <rad_m1> ic_rad relaxation already drops L_top to **0.595 L_IC (704)**, 0.769 (1408);
+- 4x4 lateral resolution runs (2 d): 0.595 (704), 0.774 (2816), 0.895 (5632);
+- MESA-like kappa: 0.906 (704).
+- The deficit sits at the join (113.7-114.1 Rsun, the tau 3-5 layer). There the frozen
+  scaffold falls from F_MLT/F 0.98 to 0 within 0.3 Rsun (3 cells at 704), and the column's E at
+  the join is about 0.6 of what RE would put under 5.4 tau of our kappa.
+- Within 0.25 d the cliff top (113.2-113.7 Rsun, T 16-19 kK, F_r 1-5 % F) heats to 28-31 kK by
+  1-2 d. Then the 0.9-0.99 R_ph band contracts at 2-5 km/s and the atmosphere above swells
+  (rho x1e4-1e5 at 1.01-1.1 R_ph). Bounded, with a ~4.5 d period.
+- The same happens with MESA-like kappa (kapM704: 0.9-0.99 R_ph 1.2 km/s at 1 d, 5 km/s at
+  2 d; atmosphere x1e4) and at 2816 (0.9-0.99 R_ph 2.2-2.9 km/s by 0.45-0.75 d, vs 2.3-4.4 on
+  704).
+- So neither the startup nor the photospheric opacity nor the radial resolution (up to 4x) is
+  the remaining blocker.
+- What remains is the run itself: the frozen, r-fixed scaffold hands 0.5-0.98 L to radiation
+  across the thin cliff top, which has a tiny heat capacity, kappa ~T^13, and MESA's nabla up to
+  2.9 (superadiabatic) with a Gamma_rad ~ 1 density inversion. The static MESA envelope is not
+  held by frozen-scaffold radiation hydro.
+- **No 14p5M production IC.**
+
+## 10. 14p5M convective-flux hand-over (10-18, USER option 1; code branch mltp-1017 @ d2239c5e off fin51-r-fix bc5d24c1)
+
+Arms (704, 9 d, seed 0, 16x16, the sect. 9 IC/deck). he_base_heat is removed from the deck for the closures that
+need mlt_closure != frozen (it acts only once the ramp starts, at 14.8 d, i.e. after the run).
+- **(a) scaffold frozen in pressure**: new opt-in `problem/mlt_closure = pressure` (he_star_m1, mltp-1017).
+  - F_sub = fm_IC(ln P_face) F_tot,IC(face), with P_face the shell-mean P_gas + E/3;
+  - relaxed over mlt_relax_time (1500 s), every cycle;
+  - the adaptive closure's restart state is reused.
+- **(b) live/relaxing closure**: the existing `mlt_closure = adaptive`, the shell-mean deficit
+  max(0, L - L_rad - L_conv)/A relaxed over 1500 s, masked by fm_IC/0.01.
+- **(c) the hand-over at the join** is what (b) adjusts itself. No separate taper was built: a taper over a few H_p
+  would leave MESA's T(P) inconsistent with F_r, i.e. the ill-conditioned cliff of sect. 9c.
+
+Single-run (a') items. Columns: startup L_top/L_IC; band 0.99-1.1 saturated rms / max |v| [km/s];
+0.5-0.9 R_ph max; 0.9-0.99 R_ph saturated max; R_ph drift; L_top/L_in after 2 d:
+
+| arm | L_top(0) | band rms / max | 0.5-0.9 | 0.9-0.99 | R_ph | L_top/L_in |
+|---|---|---|---|---|---|---|
+| frozen-r, our kappa (hg704) | 0.60 | 8.5 / 24 | 4.0 | 8.1 | +5.7 % | 0.46-1.08 |
+| adaptive, our kappa (adaptg704) | 0.60 (1.00 by 0.35 d) | 6.8 / 21 | 3.0 | 5.0 | +2.3 % | 0.36-1.42 |
+| pressure, our kappa (pres704) | 0.60 | 8.0 / 20 | 1.7 | 5.4 | +3.2 % | 0.76-1.14 |
+| frozen-r, MESA-like kappa (kapM704) | 0.91 | 7.2 / 24 | 3.5 | 5.1 | +2.8 % | 0.57-1.28 |
+| pressure, MESA-like kappa (presKM704) | 0.91 | 4.3 / 19 (grows) | 0.6 | 4.0 | +1.1 % | 0.61-1.17 |
+| **adaptive, MESA-like kappa (adaptkM704)** | 0.91 | **1.5 / 7.5** | **0.39** | **0.42** | **+0.06 %** | **0.97-1.04** |
+
+- With our kappa, adaptive keeps the star quiet for ~3 d (0.9-0.99 R_ph <= 0.8 km/s). After that the
+  photosphere layer restructures: the E deficit at the join from our 2-2.5x low-T kappa.
+- The pressure-frozen scaffold alone does not fix it.
+- **Adaptive + MESA-like kappa removes the failure mode:** no cliff-top heating, no envelope contraction, star items 3/4
+  pass on 704.
+- Gate (a') pair adaptkM704/adaptkM1408: FAIL items 1, 2, 3, 4.
+  - 704 has 2.46 cells/H; the pair has 5.07.
+  - The atmosphere is NOT resolution-converged: band rms 1.5 (704) vs 4.65 km/s (1408), periods 4.5 vs 3.1 d.
+  - The 1408 run has rms 4.65 > c_s,iso 4.0 and L_top/L_in down to 0.91.
+  - 1408 star: 0.5-0.9 R_ph 0.60, 0.9-0.99 R_ph 0.79 km/s, R_ph 0.43 %.
+  - A deck that passes item 1 is 1408-class, with a pair of ~2816 (a restart chain, ~5 h A100).
+- The MESA-like table is a diagnostic only (ours x kappa_M/kappa_ours(T) along MESA's track).
+- Default off (mlt_closure frozen) is bitwise, b16b66db vs mltp-1017:
+  - CPU 3 cycles: E1 9, BSG 13, HG 11 files, 0 differ;
+  - A100 10 cycles: 16 / 20 / 18 files, 0 differ;
+  - the sph1d R_ph lines are identical in all six.
+- **Not production-ready.** Needed:
+  1. a physical He-rich low-T opacity (7.5-11 kK) consistent with MESA's kap set-up;
+  2. adaptive + that table, screened with 1-2 d arms (the failures show by 0.25-1 d);
+  3. a final (a') pair 1408/2816.
+
+## 11. MESA-consistent opacity (opacity.mesa_kap) and the 14p5M screen (10-18)
+
+- MESA set-up: no inlist was found on Raven or Viper, so the r15140 kap defaults are used (kap.defaults md5 e0f6eacc):
+  - gs98 (OPAL) above log T 3.88 and lowT_fa05_gs98 below 3.80, cosine blend between;
+  - linear in X and Z, at X 9.496e-4 and Z 0.02 (the profile's z_mass_fraction_metals);
+  - Type2 ~off (X at the full-off limit 1e-3, dZ ~0).
+  - Tables: MESA kap/kap_data.tar.xz (git-LFS sha256 95ca3578, verified).
+- Emulator vs the MESA profile's opacity column along MESA's own track (log T 3.88-6.2):
+  - 0.90 (3.88-3.97), 0.94 (3.97-4.04), 0.96 (4.04-4.7), 1.03-1.04 (4.7-6.2) with join 4.6-4.8;
+  - the diagnostic table was 1.00 by construction;
+  - the old recipe was 2.47/2.25/2.07 (Ferguson where MESA uses OPAL), 1.32/1.20/1.44 at 4.04-4.5 (TOPS vs OPAL), 1.04 deep.
+- Tool (icstd/mesakap.py, opacity.mesa_kap):
+  - MESA's kappa below join_lo, linear in log T to the recipe table at join_hi;
+  - log R < -8 (MESA's edge) blended over 0.5 dex to the recipe;
+  - cache opac_mk_<sha1(base md5, kap_data md5, X, Z, join, blend, prefixes)>; default off;
+  - specs hegiant_14p5M_mk (join 4.6-4.8, table opac_mk_afe2dd8da2bd) and _mk42 (join 4.0-4.2, opac_mk_a82283522efb).
+- Columns: seam fixed point in 2 passes (-0.168, -0.0225 cell), R_ph 7.94653e12 (both).
+  - tau_R(R_ph of the column) 0.20: the photosphere is now consistent (was 3.1).
+  - MESA's own split with this kappa: Gamma_rad 0.955 (was 1.49).
+  - F_r(x1min) unchanged.
+- Screen (704, 2 d, A100 mltp-1017 d2239c5e, deck without he_base_heat):
+
+| arm | L_top(0) | 0.9-0.99 R_ph max | 0.99-1.1 band max | L_top/L_in after 0.35 d |
+|---|---|---|---|---|
+| mk + adaptive | 0.88 | 0.67 km/s | 0.81 km/s (drho 0.36) | 0.998-1.002 |
+| mk42 + adaptive | 0.88 | 0.71 | 0.81 | 0.998-1.002 |
+| mk + frozen | 0.88 | 5.9 | 10.9 | 0.39-0.89 |
+
+  No cliff-top heating with adaptive (T at 113.2-113.7 Rsun 14-18 kK at 2 d). Candidate: mk + adaptive -> (a') pair
+  1408/2816 (sect. 12).

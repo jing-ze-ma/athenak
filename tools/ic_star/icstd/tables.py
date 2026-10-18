@@ -374,7 +374,17 @@ def write(fn, S, comments):
 
 
 def opacity_tables(spec, cache, log=print):
-    """-> dict(ross, planck, hash, mixture, notes); builds into cache/tables/<hash>/ once."""
+    """-> dict(ross, planck, hash, mixture, notes); builds into cache/tables/<hash>/ once.
+    10-18: opacity.mesa_kap (default off) splices MESA's own low-T Rosseland kappa into the
+    recipe table (icstd/mesakap.py); the Planck table stays the recipe's."""
+    out = _opacity_tables(spec, cache, log)
+    if spec.get('opacity', {}).get('mesa_kap'):
+        from . import mesakap as MK
+        out = MK.derive(out, spec, cache, log)
+    return out
+
+
+def _opacity_tables(spec, cache, log=print):
     comp, op = spec['composition'], spec.get('opacity', {})
     if op.get('rosseland'):                 # explicit table (e.g. a regression)
         return dict(ross=op['rosseland'], planck=op.get('planck'), hash=None,
