@@ -16,3 +16,12 @@ follows in the next NOTE update.
 - Chain: link 1 4970357 afterok:4970356, link 2 4970358 afterok:4970357, both --kill-on-invalid-dep=yes,
   walltime 7-00:00:00 (normal QOS max; WT = 603600 s), acc3d_chain.sh unchanged; job rc = chain rc.
 - Run path (rsync-able): /resnick/groups/carnegie_poc/jingze/acc3d_prod_1018 (static/, stream/, chain.txt, starts.txt).
+
+## Update 2 (2026-10-18)
+- Build 4970290 COMPLETED (5 min): binary md5 **9283c619823898f3d0196a3abca6129f**
+  (/resnick/groups/carnegie_poc/jingze/builds_accr/bin/athena_gpu_ry_per_accretor_186306cb_nofma); 4970319 cancelled (redundant).
+- Pre-check 4970356 TimeLimit cut to 40 min (backfill). Not started yet.
+- USER GO: parallel **2-H200 variant** (DEVIATES from the TASK 4-GPU layout: 2 ranks, 4 MeshBlocks per GPU, same binary,
+  same deck md5 9748aeaa) in /resnick/groups/carnegie_poc/jingze/acc3d_prod_1018/g2: pre-check 4972809 (40 min),
+  link 1 4972811, link 2 4972812 (7 d, afterok + kill-on-invalid-dep). Whichever variant's link 1 STARTS first runs;
+  the other set is cancelled at once. Start time + layout follow in the next update.
