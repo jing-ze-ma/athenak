@@ -1123,9 +1123,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_tlim = M1_TLIM_NONE;
   } else if (st.compare("lp") == 0) {
     impl_tlim = M1_TLIM_LP;
+  } else if (st.compare("lpr") == 0) {
+    impl_tlim = M1_TLIM_LPR;   // m1lpr-1019
   } else {
     ImplFatal("<rad_m1>/implicit_trans_limit = '" + st
-              + "' is not a choice (none | lp)");
+              + "' is not a choice (none | lp | lpr)");
   }
   }
   impl_tfmax = pin->GetOrAddReal("rad_m1","implicit_trans_fmax",1.0);
@@ -3104,6 +3106,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(ifw3, 0.0);
       }
     }
+    if (impl_tlim == M1_TLIM_LPR && !blat_on) {
+      // m1lpr-1019: the sp rows (M1SphTransRow, the face/cell kernels' blend terms) read
+      // the limited face theta thx2/thx3 through their blend flag; with no blend its
+      // weights stay identically zero (AL = HCL = HCR = 0), so only theta changes
+      Kokkos::realloc(ifw2, nmb, 3, ncells3, ncells2+1, ncells1);
+      Kokkos::deep_copy(ifw2, 0.0);
+      if (trans_x3) {
+        Kokkos::realloc(ifw3, nmb, 3, ncells3+1, ncells2, ncells1);
+        Kokkos::deep_copy(ifw3, 0.0);
+      }
+    }
     if (impl_tlim != M1_TLIM_NONE) {
       Kokkos::realloc(thx2, nmb, ncells3, ncells2+1, ncells1);
       Kokkos::deep_copy(thx2, 0.0);
@@ -3276,7 +3289,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 << (impl_crelax_thin ? " (thin faces only)" : "")
                 << " closure_lag=" << (impl_clag_step ? "step" : "pass")
                 << " trans_limit="
-                << ((impl_tlim == M1_TLIM_LP) ? "lp" : "none")
+                << ((impl_tlim == M1_TLIM_LP) ? "lp" : ((impl_tlim == M1_TLIM_LPR) ? "lpr" : "none"))
                 << ((impl_tlim == M1_TLIM_LP)
                     ? (" fmax=" + std::to_string(impl_tfmax)) : std::string(""))
                 << std::endl;
@@ -4733,6 +4746,22 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   const bool thrd = trans_x3;
   const bool nk = newk;
   const int odm = od_now;
+  // m1poslim-1018: on the spherical-polar wedge G_f is the sp face equation's own
+  // (ImplicitTransverseTerms, m1_impl_f2face/f3face): the two-point gradient over the
+  // centre arc dxface (vet_gd: + the tangential anisotropy of D_tt / D_pp), plus the
+  // lagged curvature (S2), vet_col_lat and vet_gd tangential terms.  Overwrites only.
+  const bool sph = sph_geom;
+  const bool lpr = (impl_tlim == M1_TLIM_LPR);   // m1lpr-1019
+  const bool sphq = sph_q;
+  const bool odl = (odm != M1_OD_NONE);
+  const bool vlat = vlat_now && vlat_ready && sph;
+  const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
+  auto vlt_ = tau_ten;
+  const int c0l = M1_TT_LAT0;
+  auto cdxf = pmy_pack->pcoord->dxface;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx3v = pmy_pack->pcoord->x3v;
 
   par_for("m1_impl_tlim2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -4776,6 +4805,34 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
                    + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
                               vd_,dfull));
       }
+      if (sph) {
+        Real dls = dl, drs = dr;
+        if (vtan) {
+          dls += vlt_(m,c0l+3,k,jm,i);
+          drs += vlt_(m,c0l+3,k,j,i);
+        }
+        Real gs = (drs*iw_(m,M1_IW_EP,k,j,i) - dls*iw_(m,M1_IW_EP,k,jm,i))
+                  /cdxf.x2f(m,k,j,i);
+        if (sphq) {
+          gs += 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,jm,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                               M1_IW_EP)
+                     + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                                 M1_IW_EP));
+        }
+        if (vlat) {
+          gs += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,il,iu,jl,ju,
+                              kl,ku,M1_IW_EP)
+                     + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,il,iu,jl,ju,
+                                kl,ku,M1_IW_EP));
+        }
+        if (vtan) {
+          gs += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,jm,i,thrd,jl,ju,kl,ku,
+                              M1_IW_EP)
+                     + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,1,k,j,i,thrd,jl,ju,kl,ku,
+                                M1_IW_EP));
+        }
+        gf = gs;
+      }
       Real rl = iw_(m,M1_IW_F1,k,jm,i)/(cl*el);
       Real rr = iw_(m,M1_IW_F1,k,j,i)/(cl*er);
       rl = fmin(fmax(rl, -1.0), 1.0);
@@ -4783,7 +4840,16 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
       Real f1f = fmin(fmax(0.5*(rl + rr), -1.0), 1.0);
       Real phif = fmx*sqrt(fmax(1.0 - f1f*f1f, 0.01));
       Real ef = fmax(0.5*(el + er), 1.0e-300);
-      kl2_(m,k,j,i) = fabs(gf)/(phif*ef);
+      if (lpr) {
+        // m1lpr-1019 lpr: a pure realizability bound, kt_f + klim_f = max(kt_f, |G_f|/(fmax E_f))
+        // (the steady face flux c |G_f|/(kt_f + klim_f) <= c fmax E_f, unchanged where it is
+        // already sub-luminal), tapered by the face optical depth min(1, kt_f dx_f)
+        const Real kt0 = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+        const Real dxs = sph ? cdxf.x2f(m,k,j,i) : dx2;
+        kl2_(m,k,j,i) = fmax(fabs(gf)/(fmx*ef) - kt0, 0.0)*fmin(1.0, kt0*dxs);
+      } else {
+        kl2_(m,k,j,i) = fabs(gf)/(phif*ef);
+      }
     }
     Real ktf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
     th2_(m,k,j,i) = 1.0/(1.0 + ch*dt*(ktf + kl2_(m,k,j,i)));
@@ -4832,6 +4898,34 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
                    + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
                               vd_,dfull));
       }
+      if (sph) {   // m1poslim-1018: the sp x3 face equation's G (see the x2 kernel)
+        Real dls = dl, drs = dr;
+        if (vtan) {
+          dls += vlt_(m,c0l+5,km,j,i);
+          drs += vlt_(m,c0l+5,k,j,i);
+        }
+        Real gs = (drs*iw_(m,M1_IW_EP,k,j,i) - dls*iw_(m,M1_IW_EP,km,j,i))
+                  /cdxf.x3f(m,k,j,i);
+        if (sphq) {
+          gs += 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,km,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                               M1_IW_EP)
+                     + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                                 M1_IW_EP));
+        }
+        if (vlat) {
+          gs += 0.5*(M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,il,iu,jl,ju,
+                              kl,ku,M1_IW_EP)
+                     + M1SphLat(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,il,iu,jl,ju,
+                                kl,ku,M1_IW_EP));
+        }
+        if (vtan) {
+          gs += 0.5*(M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,km,j,i,thrd,jl,ju,kl,ku,
+                              M1_IW_EP)
+                     + M1SphTan(iw_,vlt_,c0l,cx1v,cx2v,cx3v,m,2,k,j,i,thrd,jl,ju,kl,ku,
+                                M1_IW_EP));
+        }
+        gf = gs;
+      }
       Real rl = iw_(m,M1_IW_F1,km,j,i)/(cl*el);
       Real rr = iw_(m,M1_IW_F1,k,j,i)/(cl*er);
       rl = fmin(fmax(rl, -1.0), 1.0);
@@ -4839,7 +4933,16 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
       Real f1f = fmin(fmax(0.5*(rl + rr), -1.0), 1.0);
       Real phif = fmx*sqrt(fmax(1.0 - f1f*f1f, 0.01));
       Real ef = fmax(0.5*(el + er), 1.0e-300);
-      kl3_(m,k,j,i) = fabs(gf)/(phif*ef);
+      if (lpr) {
+        // m1lpr-1019 lpr: a pure realizability bound, kt_f + klim_f = max(kt_f, |G_f|/(fmax E_f))
+        // (the steady face flux c |G_f|/(kt_f + klim_f) <= c fmax E_f, unchanged where it is
+        // already sub-luminal), tapered by the face optical depth min(1, kt_f dx_f)
+        const Real kt0 = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        const Real dxs = sph ? cdxf.x3f(m,k,j,i) : dx3;
+        kl3_(m,k,j,i) = fmax(fabs(gf)/(fmx*ef) - kt0, 0.0)*fmin(1.0, kt0*dxs);
+      } else {
+        kl3_(m,k,j,i) = fabs(gf)/(phif*ef);
+      }
     }
     Real ktf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
     th3_(m,k,j,i) = 1.0/(1.0 + ch*dt*(ktf + kl3_(m,k,j,i)));
@@ -5155,7 +5258,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;   // CS1: seams open
   Real cl = c_light, ch = chat, dt = dt_sub;
   // blendall-1009: the berthon part HCL E_L + HCR E_R of the x2/x3 faces (ifw2/ifw3)
-  const bool blt = blat_on;
+  // m1lpr-1019: lpr on the sp wedge rides this flag (zero blend weights) so the sp row
+  // reads the limited thx2/thx3; a host-side value only, the kernels are untouched
+  const bool blt = blat_on || (impl_tlim == M1_TLIM_LPR && sph_geom);
   auto bw2_ = ifw2;
   auto bw3_ = ifw3;
   // thinsw-1010 implicit_thin_corr: the fixed formal-solution flux DG of the face

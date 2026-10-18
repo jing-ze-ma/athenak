@@ -147,6 +147,7 @@ constexpr int M1_OD_NONE     = 2;  // drop them: P is taken DIAGONAL in the grid
 // which is super-luminal wherever rho kappa is tiny (the optically thin top of the 2-D
 // He slab, where |F_2|/(c E) saturates at the post-solve clip of 1).
 constexpr int M1_TLIM_NONE = 0;  // no limiter; the arithmetic of phase D, bit for bit.
+constexpr int M1_TLIM_LPR  = 2;  // m1lpr-1019: realizability bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
 constexpr int M1_TLIM_LP   = 1;  // add a lagged "limiter opacity" klim_f = |G_f|/(phi_f
                                  // E_f) to the face transport opacity, with G_f the face
                                  // pressure divergence the flux kernel already forms and
