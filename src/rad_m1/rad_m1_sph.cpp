@@ -484,8 +484,8 @@ void RadiationM1::CubedSeamFaceAverage() {
 //! \brief cs-s4-1017 (TEST ONLY, cubed sphere, <rad_m1>/cs_vec_check = true read only
 //! when named): the seam/vertex halo of the TANGENTIAL VECTOR PAIRS against an analytic
 //! field.  v = Omega x rhat (a solid-body rotation about a generic axis, cs_vec_axis
-//! "ax ay az", default (0.3,-0.5,0.8)) and the scalar s = 1 + 0.2 rhat.(0.6,0.0,0.8) are written into
-//! the ACTIVE cells, the ghosts are poisoned, and the run's own exchanges fill them:
+//! "ax ay az", default (0.3,-0.5,0.8)) and the scalar s = 1 + 0.2 rhat.(0.6,0.0,0.8) are
+//! written into the ACTIVE cells, the ghosts are poisoned, and the run's own exchanges fill them:
 //!  (1) u0 through pbval_u (F2, F3 = covariant components on the unit panel tangents
 //!      e_xi, e_eta, TransformMomentum + the along-seam quadratic resample): every ghost
 //!      is compared with the exact s and v . e_a at the GHOST's own position in this

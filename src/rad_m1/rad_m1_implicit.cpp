@@ -2668,8 +2668,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {
     // cs-s4-1017 (USER 10-18): matched on the cubed sphere unless named (the conservative
     // sources are not ported to cs; named, they stay refused below)
-    const bool gsdef = !global_variable::restart_run && fl_on && coupling && gas_feedback &&
-                       !pmy_pack->pmesh->use_cubed_sphere;
+    const bool gsdef = !global_variable::restart_run && fl_on && coupling &&
+                       gas_feedback && !pmy_pack->pmesh->use_cubed_sphere;
     const std::string gs = pin->GetOrAddString("rad_m1","implicit_gas_src",
                                                gsdef ? "conservative2" : "matched");
     if (gs.compare("matched") == 0) {
