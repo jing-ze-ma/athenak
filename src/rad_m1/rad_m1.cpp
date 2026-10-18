@@ -246,6 +246,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_clag_step = false;
   impl_tlim = M1_TLIM_NONE;
   impl_tfmax = 1.0;
+  impl_tlim_x1 = false;
   // ---- milestone 3e: Anderson acceleration of the Picard map
   impl_accel = M1_IACC_NONE;
   impl_and_m = 5;

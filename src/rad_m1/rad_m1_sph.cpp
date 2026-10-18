@@ -104,7 +104,10 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     if (impl_recon != M1_IRECON_DC && impl_flux == M1_IFLUX_CENTRAL) {
       why += " implicit_recon != dc;";
     }
-    if (impl_tlim != M1_TLIM_NONE) {why += " implicit_trans_limit != none;";}
+    // m1poslim-1018: implicit_trans_limit = lp on the wedge (lateral faces with the sp
+    // face distances and curvature, radial faces by implicit_trans_limit_x1); the cubed
+    // sphere keeps refusing it (its skewed transverse rows do not read thx2/thx3)
+    if (impl_tlim != M1_TLIM_NONE && cs_geom) {why += " implicit_trans_limit != none;";}
     // m1-sph2 (tests_m1/runs_5h_sph2): time_scheme = hesdirk2 and implicit_vimp are
     // allowed on the wedge (the stage solves' old vector carries no geometry; the vimp
     // rows take the sp areas, volumes and face distances in ImplicitVimpBuild)
@@ -186,7 +189,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
       << "time_scheme = be | hesdirk2, one MeshBlock "
       << "along x1, no SMR, implicit_flux = central | berthon | blend, "
-      << "implicit_recon = dc, implicit_trans_limit = none, no "
+      << "implicit_recon = dc, implicit_trans_limit = none | lp (not on cs), no "
       << "dbg_tensor; this input has:" << why << std::endl
       << "See tests_m1/runs_5a_sp_s1/README.md and tests_m1/runs_5b_sp_s2/README.md."
       << std::endl;
