@@ -103,3 +103,8 @@ The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it 
   rho 2.5e-7, v_r -134 km/s, v_phi ~200-212 km/s, e/rho 2067 (km/s)^2, rank 0. GPU 14661 MiB each. First stream rst: ryper.00006.rst.
 - Stream contact (t ~0.068) not reached yet. Links 2-6 (4977642-46) queued afterok. The Caltech agent signs off here; the main session
   watches the rest.
+
+## Update 10 (2026-10-18 15:11 PDT): STOPPED per raven c671ac40 (USER)
+Links 4977641 (running) + 4977642-46 cancelled at 15:11 PDT. Reached t = 0.0828 (cycle 11800, stream phase; dt 2.65e-6 after contact),
+1 h 23 min wall on 2 H200 = 2.8 H200-h (+ 6 min P100 build). 9 DT_RETRY (stream-on, eint), NON-CONVERGED/FATAL/NaN 0.
+Run dir KEPT: /resnick/groups/carnegie_poc/jingze/acc3d_v3_1018 (static/, stream/ with rst 00006-00008, bin dumps). Queue empty.
