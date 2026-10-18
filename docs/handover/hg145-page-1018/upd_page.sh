@@ -12,7 +12,7 @@
 # Steps (incremental): reduce.py (new dumps -> OUT/data/red_NNNNN.npz) -> render3d.py (new frames -> OUT/movie/frames) ->
 # ffmpeg (OUT/publish/movie3d/hg145.mp4, H.264 crf 22, 22 fps) + poster (last frame) -> mk_figs.py (OUT/img) -> build_page.py
 # (OUT/publish/index.html, figures inline). Publish index.html with files movie3d/hg145.mp4 + movie3d/hg145_poster.png.
-SRC=$(cd "$(dirname "$0")" && pwd)
+export SRC=${SRC:-$(cd "$(dirname "$0")" && pwd)}   # slurm runs a spool copy: SRC is passed via env
 OUT=${OUT:-/raven/ptmp/jinma/hg145_prod_1018/page}
 if [ -z "$SLURM_JOB_ID" ] && [ -z "$INLINE" ] && [ -z "$NO_SBATCH" ] && [[ $(hostname) == raven* ]]; then
   mkdir -p $OUT/logs
