@@ -591,3 +591,34 @@ Single-run (a') items. Columns: startup L_top/L_IC; band 0.99-1.1 saturated rms 
   1. a physical He-rich low-T opacity (7.5-11 kK) consistent with MESA's kap set-up;
   2. adaptive + that table, screened with 1-2 d arms (the failures show by 0.25-1 d);
   3. a final (a') pair 1408/2816.
+
+## 11. MESA-consistent opacity (opacity.mesa_kap) and the 14p5M screen (10-18)
+
+- MESA set-up: no inlist was found on Raven or Viper, so the r15140 kap defaults are used (kap.defaults md5 e0f6eacc):
+  - gs98 (OPAL) above log T 3.88 and lowT_fa05_gs98 below 3.80, cosine blend between;
+  - linear in X and Z, at X 9.496e-4 and Z 0.02 (the profile's z_mass_fraction_metals);
+  - Type2 ~off (X at the full-off limit 1e-3, dZ ~0).
+  - Tables: MESA kap/kap_data.tar.xz (git-LFS sha256 95ca3578, verified).
+- Emulator vs the MESA profile's opacity column along MESA's own track (log T 3.88-6.2):
+  - 0.90 (3.88-3.97), 0.94 (3.97-4.04), 0.96 (4.04-4.7), 1.03-1.04 (4.7-6.2) with join 4.6-4.8;
+  - the diagnostic table was 1.00 by construction;
+  - the old recipe was 2.47/2.25/2.07 (Ferguson where MESA uses OPAL), 1.32/1.20/1.44 at 4.04-4.5 (TOPS vs OPAL), 1.04 deep.
+- Tool (icstd/mesakap.py, opacity.mesa_kap):
+  - MESA's kappa below join_lo, linear in log T to the recipe table at join_hi;
+  - log R < -8 (MESA's edge) blended over 0.5 dex to the recipe;
+  - cache opac_mk_<sha1(base md5, kap_data md5, X, Z, join, blend, prefixes)>; default off;
+  - specs hegiant_14p5M_mk (join 4.6-4.8, table opac_mk_afe2dd8da2bd) and _mk42 (join 4.0-4.2, opac_mk_a82283522efb).
+- Columns: seam fixed point in 2 passes (-0.168, -0.0225 cell), R_ph 7.94653e12 (both).
+  - tau_R(R_ph of the column) 0.20: the photosphere is now consistent (was 3.1).
+  - MESA's own split with this kappa: Gamma_rad 0.955 (was 1.49).
+  - F_r(x1min) unchanged.
+- Screen (704, 2 d, A100 mltp-1017 d2239c5e, deck without he_base_heat):
+
+| arm | L_top(0) | 0.9-0.99 R_ph max | 0.99-1.1 band max | L_top/L_in after 0.35 d |
+|---|---|---|---|---|
+| mk + adaptive | 0.88 | 0.67 km/s | 0.81 km/s (drho 0.36) | 0.998-1.002 |
+| mk42 + adaptive | 0.88 | 0.71 | 0.81 | 0.998-1.002 |
+| mk + frozen | 0.88 | 5.9 | 10.9 | 0.39-0.89 |
+
+  No cliff-top heating with adaptive (T at 113.2-113.7 Rsun 14-18 kK at 2 d). Candidate: mk + adaptive -> (a') pair
+  1408/2816 (sect. 12).
