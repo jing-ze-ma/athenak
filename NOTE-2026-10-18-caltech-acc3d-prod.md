@@ -57,3 +57,11 @@ The 4-GPU pre-check 4970356 had not started when the 2-H200 one finished, so it 
   ran instead: COMPLETED, 2 files recompiled, binary md5 **76f5201569a523d7071d0525ee24c34f**
   (/resnick/groups/carnegie_poc/jingze/builds_accr/bin/athena_gpu_ry_per_accretor_a6624af6_nofma). Expansion build 4977640 cancelled.
 - Link 1 4977641 dependency satisfied, pending on resources (Slurm estimate in ~6 h; backfill may be earlier).
+
+## Update 6 (2026-10-18): LINK 1 STARTED
+- Link 1 **4977641 START Sun Oct 18 13:48:19 PDT 2026 (= 20:48:19 UTC = 22:48:19 CEST)** on hpc-sm-02-10, 2 H200; static phase began 13:48:22 PDT.
+- Startup lines (static/run.log):
+  - `ry_per_accretor: stream_sector_light surface (back-sink sector radiation)`
+  - `ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper depth 1131 (psi), factor 0.94676 .. 1.00383 (rank 0)`
+  - NOTE: the low end 0.947 is below the TASK's expected ~0.97-1.03 (rank 0 only is printed). Not a stop condition; flagged for review.
+- Static phase healthy so far: cycle 250, t 3.53e-3, dt 1.407e-05, ~0.43 s/cycle; FATAL/NaN/DIVERGED 0.
