@@ -187,6 +187,15 @@ Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // (F_MLT > 0) with its edges tapered.  F_sub(t=0) = F_MLT of the IC.  hs_fsub_ and the
 // update clock hs_ad_tl_ are RESTART STATE (the pgen block of pgen.hpp).
 bool hs_ad_ = false;
+// mltp-1017 problem/mlt_closure = pressure (opt-in): the same F_sub machinery (restart
+// state, relaxation over mlt_relax_time, every mlt_closure_every cycles), but the target
+// is the IC's F_MLT/F as a function of the SHELL-MEAN total pressure, F_sub = fm_IC(P_face)
+// x F_tot,IC(face) with F_tot,IC = L/(4 pi r^2) of the IC: the scaffold is frozen in P
+// instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm of the IC
+// (ascending in ln P), hs_ftot_: F_r + F_MLT of the IC on the faces.
+bool hs_adp_ = false;
+std::vector<Real> hs_plnp_, hs_pfm_, hs_ftot_;
+DvceArray2D<Real> hs_shp_;
 Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
 Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
 int hs_ad_every_ = 1, hs_ad_cyc_ = -1;
@@ -2339,10 +2348,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // hs_ad_ above; w(t) caps it as an overall factor)
   {
     const std::string mc = pin->GetOrAddString("problem","mlt_closure","frozen");
-    if (mc != "frozen" && mc != "adaptive") {
-      HsFatal("problem/mlt_closure must be frozen or adaptive", __LINE__);
+    if (mc != "frozen" && mc != "adaptive" && mc != "pressure") {
+      HsFatal("problem/mlt_closure must be frozen, adaptive or pressure", __LINE__);
     }
-    hs_ad_ = (mc == "adaptive");
+    hs_ad_ = (mc == "adaptive" || mc == "pressure");
+    hs_adp_ = (mc == "pressure");
   }
   if (hs_ad_ && hs_rmp) {
     HsFatal("problem/he_ic_remap_file does not support mlt_closure = adaptive", __LINE__);
@@ -2366,6 +2376,46 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::realloc(hs_fsub_, nfc);
     Kokkos::deep_copy(hs_fsub_, hs_fm_);
     Kokkos::realloc(hs_shs_, nfc, 8);
+    if (hs_adp_) {
+      // the IC's F_MLT/F against ln P_tot (P_gas(rho, T) + E/3 of the start-up column, the
+      // fine grid between x1min and x1max), and F_tot = F_r/(1 - fm) on the faces
+      if (!tcol_read) {
+        HsFatal("problem/mlt_closure = pressure needs the 7-column file", __LINE__);
+      }
+      std::vector<std::pair<Real, Real>> pf;
+      for (int n=0; n<nf; ++n) {
+        if (hr[n] < hs_rin_ || hr[n] > rtop) continue;
+        Real ee, pp, cr, ct, cv;
+        eos.ThermoAt(hd[n], hTcol[n]/hs_tk, ee, pp, cr, ct, cv);
+        const Real er = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(hTcol[n]/hs_tk));
+        pf.emplace_back(log(pp + er/3.0), hM[n]);
+      }
+      std::sort(pf.begin(), pf.end());
+      hs_plnp_.clear();
+      hs_pfm_.clear();
+      for (const auto &q : pf) {
+        if (!hs_plnp_.empty() && !(q.first > hs_plnp_.back())) continue;
+        hs_plnp_.push_back(q.first);
+        hs_pfm_.push_back(q.second);
+      }
+      auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+      hs_ftot_.assign(nfc, 0.0);
+      for (int i=0; i<nfc; ++i) {
+        const Real r = hx1f(0,i);
+        Real x = (r - hs_rlo_)/hs_dr_;
+        int n = static_cast<int>(floor(x));
+        n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
+        Real w = x - n;
+        w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+        const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
+        const Real fr = exp((1.0 - w)*log(hF[n]) + w*log(hF[n+1]));
+        hs_ftot_[i] = (fm < 1.0) ? fr/(1.0 - fm) : fr;
+      }
+      Kokkos::realloc(hs_shp_, nfc, 3);
+      if (hs_plnp_.size() < 2) {
+        HsFatal("problem/mlt_closure = pressure: no IC pressure table", __LINE__);
+      }
+    }
     hs_ad_tl_ = pmy_mesh_->time;
     hs_ad_cyc_ = -1;
     if (restart) {
@@ -2405,7 +2455,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
     HsApplyMltW(pmy_mesh_, HsMltW(pmy_mesh_->time));
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_m1: mlt_closure = adaptive, relax time " << hs_ad_tau_
+      std::cout << "he_star_m1: mlt_closure = " << (hs_adp_ ? "pressure" : "adaptive")
+                << ", relax time " << hs_ad_tau_
                 << " s, every " << hs_ad_every_ << " cycle(s), taper "
                 << pin->GetReal("problem","mlt_closure_taper") << ", update clock "
                 << hs_ad_tl_ << ", max L_sub = " << hs_lsub_ << std::endl;
@@ -3649,6 +3700,52 @@ void HsAdaptiveUpdate(Mesh *pm) {
     const Real def = lin - lrad[i] - lcf[i];
     tgt[i] = hs_tap_[i]*((def > 0.0) ? def : 0.0)/hsh(i,1);
   }
+  if (hs_adp_) {
+    // mltp-1017 mlt_closure = pressure: target fm_IC(ln P_face) F_tot,IC(face); P_face =
+    // the log-mean of the adjacent shell-mean P_gas + E/3 (the edge cell's at is, ie+1)
+    auto sp = hs_shp_;
+    auto ww = w0;
+    auto eo = eos;
+    auto uu = ur;
+    auto vv = volume;
+    par_for("hs_adp_shell", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
+      Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
+      for (int m=0; m<nmb; ++m) {
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je; ++j) {
+            const Real vol = vv(m,k,j,i);
+            s0 += vol;
+            s1 += vol*eo.Pressure(ww(m,IDN,k,j,i), ww(m,IEN,k,j,i));
+            s2 += vol*uu(m,radm1::M1_E,k,j,i);
+          }
+        }
+      }
+      sp(i,0) = s0; sp(i,1) = s1; sp(i,2) = s2;
+    });
+    auto hsp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sp);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &hsp(is,0), 3*(ie + 1 - is), MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+#endif
+    std::vector<Real> lp(nfc, 0.0);
+    for (int i=is; i<=ie; ++i) lp[i] = log((hsp(i,1) + hsp(i,2)/3.0)/hsp(i,0));
+    const int np = static_cast<int>(hs_plnp_.size());
+    for (int i=is; i<=ie+1; ++i) {
+      const Real x = (i == is) ? lp[is] : ((i == ie + 1) ? lp[ie] : 0.5*(lp[i-1] + lp[i]));
+      Real fm;
+      if (x <= hs_plnp_[0]) {
+        fm = hs_pfm_[0];
+      } else if (x >= hs_plnp_[np-1]) {
+        fm = hs_pfm_[np-1];
+      } else {
+        const int k = static_cast<int>(std::upper_bound(hs_plnp_.begin(), hs_plnp_.end(), x)
+                                       - hs_plnp_.begin()) - 1;
+        const Real a = (x - hs_plnp_[k])/(hs_plnp_[k+1] - hs_plnp_[k]);
+        fm = (1.0 - a)*hs_pfm_[k] + a*hs_pfm_[k+1];
+      }
+      tgt[i] = fm*hs_ftot_[i];
+    }
+  }
   const Real t = pm->time;
   const Real a = 1.0 - exp(-(t - hs_ad_tl_)/hs_ad_tau_);
   hs_ad_tl_ = t;
@@ -4490,6 +4587,7 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_fm_ = DvceArray1D<Real>();
   hs_fsub_ = DvceArray1D<Real>();
   hs_shs_ = DvceArray2D<Real>();
+  hs_shp_ = DvceArray2D<Real>();
   hs_be_ = DvceArray1D<Real>();
   hs_phig_ = DvceArray1D<Real>();
   hs_gmr_ = DvceArray1D<Real>();

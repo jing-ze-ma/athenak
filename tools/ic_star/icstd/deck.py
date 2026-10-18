@@ -66,6 +66,11 @@ def block(v):
     k(p, 'he_ic_rad_gas', 're_atm', '')
     k(p, 'he_ic_rad_hse', 'true', '')
     k(p, 'he_ic_rad_atm_force', 'module', '')
+    if c.get('startup'):        # spec startup.re_zone hopf (10-17): RE only above the Hopf join
+        k(p, 'he_ic_rad_taua', '%.6g' % c['startup']['taua'],
+          'startup re_zone hopf: full RE above tau_R = tauj/3')
+        k(p, 'he_ic_rad_taub', '%.6g' % c['startup']['taub'],
+          '= tauj: the column T (MESA T(P)) below, no RE re-solve there')
     k(p, 'he_ic_rad_atm_post', 'false', 'exclusive with he_ic_equil')
     k(p, 'he_ic_eint_from_t', 'true', 'eint = e_code(rho, T col 6)')
     k(p, 'he_ic_balance', 'true', '')

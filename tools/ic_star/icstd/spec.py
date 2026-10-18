@@ -57,6 +57,14 @@ DEFAULTS = {
              'tol_cells': 0.1, 'maxit': 8, 'omp': 36, 'timeout': 7200,
              'launcher': ['bash', '-lc', 'module purge >/dev/null 2>&1; '
                           'module load gcc/13 openmpi/5.0; exec "$0" "$@"']},
+    # 10-17 (hg145_mscaf) the code's startup RE zone (he_ic_rad_taua/taub of sph1d):
+    # 'deck' = the run deck's (E1: RE above tau 30, blend to 3000; no key written: bitwise);
+    # 'hopf' = RE only in the column's photosphere layer: taua = max(2/3, tauj/3), taub = tauj
+    # (tau_R of the run kappa from the mesh top); below the startup keeps the column's T (MESA's
+    # T(P) in mode mesa) and the scaffold, and its HSE march starts at r_b(taub).  Written to the
+    # seam passes (+ he_nfine 262144 = the deck block) and the deck block; it also allows the
+    # seam with taper off (the scaffold is then the column's own, F_r + F_MLT = L).
+    'startup': {'re_zone': 'deck'},
     'eos': {'logd_min': -21.0, 'logd_max': -1.0, 'logt_max': 6.8, 'dlog': 0.02},
     'opacity': {'ld_ext': -21.0},
 }
