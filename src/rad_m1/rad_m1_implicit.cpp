@@ -3003,6 +3003,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (pin->DoesParameterExist("rad_m1","implicit_am_cs")) {
       impl_am_cs = pin->GetBoolean("rad_m1","implicit_am_cs");
     }
+    am_vec = impl_am_cs && pin->DoesParameterExist("hydro","am_vector") &&
+             pin->GetBoolean("hydro","am_vector");
   }
   if (cs_geom && impl_gas_src_cs2 && cs2_shift) {
     ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere "
@@ -12228,6 +12230,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_V3,k,j,i) = sn*(m3 - c*m2)*idd/s2;
       }
     });
+    // cs-open-1018 <hydro>/am_vector: the spin reservoir takes the hesdirk2 stage
+    // increment of its own slopes (as the gas momentum above), so that each stage's
+    // radiation-gas exchange is an L-balanced slope
+    if (am_vec && t2st && aminc.extent_int(0) > 0) {
+      auto spi_ = pmy_pack->phydro->am_spin;
+      auto ai_ = aminc;
+      par_for("m1_am_spin_inc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        spi_(m,k,j,i) += ai_(m,k,j,i);
+      });
+    }
     // MILESTONE 3g: the FROZEN-DENSITY e(T) cache.  rho does not move over the step, so
     // the density direction of the tabulated energy surface is collapsed ONCE here and
     // every pass of the Picard loop reads a 1-D cubic in ln T instead of the 2-D table.
@@ -15350,6 +15363,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto kka_ = kk_;
     auto &mbbc = m1bcs;
     const bool gfsp = gfst && gcs;
+    // <hydro>/am_vector: the vector form, the spin reservoir and its hesdirk2 slope
+    const bool amv = am_vec;
+    auto spn_ = am_vec ? pmy_pack->phydro->am_spin : DvceArray4D<Real>();
+    if (am_vec && t2k && amk1.extent_int(0) == 0) {
+      Kokkos::realloc(amk1, spn_.extent_int(0), spn_.extent_int(1), spn_.extent_int(2),
+                      spn_.extent_int(3));
+      Kokkos::realloc(amk2, spn_.extent_int(0), spn_.extent_int(1), spn_.extent_int(2),
+                      spn_.extent_int(3));
+      Kokkos::realloc(aminc, spn_.extent_int(0), spn_.extent_int(1), spn_.extent_int(2),
+                      spn_.extent_int(3));
+      Kokkos::deep_copy(amk1, 0.0);
+      Kokkos::deep_copy(amk2, 0.0);
+      Kokkos::deep_copy(aminc, 0.0);
+    }
+    auto ksp_ = (t2s == M1_T2S_STAGE1) ? amk2 : amk1;
     auto f0np_ = f0x1n;
     auto f2np_ = f0x2n;
     auto f3np_ = f0x3n;
@@ -15372,22 +15400,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (!(wc > 0.0)) return;
       const Real dv = vola(m,k,j,i);
       const Real c = cclw(m,k,j), s2 = 1.0 - c*c;
-      // the L_z change of a covariant cell vector (radial, covariant x2, x3)
-      auto lz = [&](const Real a1, const Real b2, const Real b3) {
+      // the L change (vector) of a covariant cell vector (radial, covariant x2, x3)
+      const Real rcv[3] = {r*rh[0], r*rh[1], r*rh[2]};
+      auto lv = [&](const Real a1, const Real b2, const Real b3, Real *o) {
         const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
-        const Real vx = a1*rh[0] + a2*e1[0] + a3*e2[0];
-        const Real vy = a1*rh[1] + a2*e1[1] + a3*e2[1];
-        return dv*(xx*vy - yy*vx);
+        Real p[3];
+        for (int q = 0; q < 3; ++q) {p[q] = a1*rh[q] + a2*e1[q] + a3*e2[q];}
+        o[0] = dv*(rcv[1]*p[2] - rcv[2]*p[1]);
+        o[1] = dv*(rcv[2]*p[0] - rcv[0]*p[2]);
+        o[2] = dv*(rcv[0]*p[1] - rcv[1]*p[0]);
       };
-      const Real dlg = lz(uh(m,IM1,k,j,i) - am_(m,0,k,j,i),
-                          uh(m,IM2,k,j,i) - am_(m,1,k,j,i),
-                          uh(m,IM3,k,j,i) - am_(m,2,k,j,i));
-      const Real dlr = icc*lz(u0_(m,M1_F1,k,j,i) - am_(m,3,k,j,i),
-                              u0_(m,M1_F2,k,j,i) - am_(m,4,k,j,i),
-                              u0_(m,M1_F3,k,j,i) - am_(m,5,k,j,i));
+      Real dlg[3], dlr[3];
+      lv(uh(m,IM1,k,j,i) - am_(m,0,k,j,i), uh(m,IM2,k,j,i) - am_(m,1,k,j,i),
+         uh(m,IM3,k,j,i) - am_(m,2,k,j,i), dlg);
+      lv(u0_(m,M1_F1,k,j,i) - am_(m,3,k,j,i), u0_(m,M1_F2,k,j,i) - am_(m,4,k,j,i),
+         u0_(m,M1_F3,k,j,i) - am_(m,5,k,j,i), dlr);
+      for (int q = 0; q < 3; ++q) {dlr[q] *= icc;}
       // the stress torque of the cell's faces
       const Real mom = (rr*rr*rr - rl*rl*rl)/3.0;
-      Real tz = 0.0;
+      Real tv[3] = {0.0, 0.0, 0.0};
       for (int dir = 0; dir < 2; ++dir) {
         for (int n = 0; n < 2; ++n) {
           Real xa, ea, xb, eb, nf[3], pf;
@@ -15412,15 +15443,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real cz = qa[0]*qb[1] - qa[1]*qb[0];
           const Real dot = qa[0]*qb[0] + qa[1]*qb[1] + qa[2]*qb[2];
           const Real th = sqrt(cx*cx + cy*cy + cz*cz)/(1.0 + dot);   // tan(psi/2)
-          const Real mx = mom*th*(qa[0] + qb[0]), my = mom*th*(qa[1] + qb[1]);
-          // (M x n)_z, outward normal +n on the high face, -n on the low face
-          const Real t = (mx*nf[1] - my*nf[0])*pf;
-          tz += n ? -t : t;
+          Real mv[3];
+          for (int q = 0; q < 3; ++q) {mv[q] = mom*th*(qa[q] + qb[q]);}
+          // (M x n) p_f, outward normal +n on the high face, -n on the low face
+          const Real t[3] = {(mv[1]*nf[2] - mv[2]*nf[1])*pf, (mv[2]*nf[0] - mv[0]*nf[2])*pf,
+                             (mv[0]*nf[1] - mv[1]*nf[0])*pf};
+          for (int q = 0; q < 3; ++q) {tv[q] += n ? -t[q] : t[q];}
         }
       }
       if (vlc) {
         // vet_gd D_r,lat: the radial faces carry the tangential stress v E, arm r_f rhat
-        // (rhat x v)_z of the column's direction; interior faces the mean of the two cells
+        // (rhat x v) of the column's direction; interior faces the mean of the two cells
         for (int n = 0; n < 2; ++n) {
           const int ifc = i + n;
           const bool bnd = (n == 0) ? (i == is && mbbc.d_view(m,BoundaryFace::inner_x1) !=
@@ -15433,33 +15466,66 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             w[q] = 0.5*(tt_(m,c0t+1+q,k,j,ifc-1)*iw_(m,M1_IW_EP,k,j,ifc-1)
                         + tt_(m,c0t+1+q,k,j,ifc)*iw_(m,M1_IW_EP,k,j,ifc));
           }
-          const Real t = a1a(m,k,j,ifc)*x1fa(m,ifc)*(rh[0]*w[1] - rh[1]*w[0]);
-          tz += n ? -t : t;
+          const Real ar = a1a(m,k,j,ifc)*x1fa(m,ifc);
+          const Real t[3] = {ar*(rh[1]*w[2] - rh[2]*w[1]), ar*(rh[2]*w[0] - rh[0]*w[2]),
+                             ar*(rh[0]*w[1] - rh[1]*w[0])};
+          for (int q = 0; q < 3; ++q) {tv[q] += n ? -t[q] : t[q];}
         }
       }
-      const Real del = (-dlr + dt*tz) - dlg;
+      Real del[3];
+      for (int q = 0; q < 3; ++q) {del[q] = (-dlr[q] + dt*tv[q]) - dlg[q];}
       // the first conservative solve of the run starts from the FACE form of F (the
       // write-back's go), not the generator's F: a cold-start redefinition of the
       // radiation state.  The gas absorbs its L here (as a backward-Euler run does), but
       // the stored slope K (paired with the cell-F slope (F' - go)/dt in the next stage's
-      // increment) must not: dlc = L_z(go - F_pre)/(c chat)
-      Real dlc = 0.0;
+      // increment) must not: dlc = L(go - F_pre)/(c chat)
+      Real dlc[3] = {0.0, 0.0, 0.0};
       if (gfsp) {
         const Real eo = iw_(m,M1_IW_EN,k,j,i);
         const Real h1 = 0.5*(f0np_(m,k,j,i) + f0np_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
         const Real ha = 0.5*(f2np_(m,k,j,i) + f2np_(m,k,j+1,i)) + iw_(m,M1_IW_A2,k,j,i)*eo;
         const Real hb = 0.5*(f3np_(m,k,j,i) + f3np_(m,k+1,j,i)) + iw_(m,M1_IW_A3,k,j,i)*eo;
         const Real si = 1.0/csnw(m,k,j);
-        dlc = icc*lz(h1 - am_(m,3,k,j,i), (ha + c*hb)*si - am_(m,4,k,j,i),
-                     (hb + c*ha)*si - am_(m,5,k,j,i));
+        lv(h1 - am_(m,3,k,j,i), (ha + c*hb)*si - am_(m,4,k,j,i),
+           (hb + c*ha)*si - am_(m,5,k,j,i), dlc);
+        for (int q = 0; q < 3; ++q) {dlc[q] *= icc;}
       }
-      const Real c2v = (-yy*e1[0] + xx*e1[1])/(wc*dv);
-      const Real c3v = (-yy*e2[0] + xx*e2[1])/(wc*dv);
-      uh(m,IM2,k,j,i) += del*c2v;
-      uh(m,IM3,k,j,i) += del*c3v;
-      if (t2ka) {
-        kka_(m,M1_T2_M1+1,k,j,i) += (del + dlc)*c2v/dt;
-        kka_(m,M1_T2_M1+2,k,j,i) += (del + dlc)*c3v/dt;
+      if (!amv) {
+        // L_z only (<hydro>/am_transport): along the zonal direction (-y, x, 0)
+        const Real c2v = (-yy*e1[0] + xx*e1[1])/(wc*dv);
+        const Real c3v = (-yy*e2[0] + xx*e2[1])/(wc*dv);
+        uh(m,IM2,k,j,i) += del[2]*c2v;
+        uh(m,IM3,k,j,i) += del[2]*c3v;
+        if (t2ka) {
+          kka_(m,M1_T2_M1+1,k,j,i) += (del[2] + dlc[2])*c2v/dt;
+          kka_(m,M1_T2_M1+2,k,j,i) += (del[2] + dlc[2])*c3v/dt;
+        }
+      } else {
+        // the L vector (<hydro>/am_vector): the perpendicular part as tangential momentum
+        // (dL x rc)/(|rc|^2 V) on the covariant basis, the radial part to the spin; the
+        // stored slopes (momentum and spin) without the cold-start part
+        auto apply = [&](const Real *dl, Real &m2, Real &m3, Real &sr) {
+          Real dp[3];
+          dp[0] = dl[1]*rcv[2] - dl[2]*rcv[1];
+          dp[1] = dl[2]*rcv[0] - dl[0]*rcv[2];
+          dp[2] = dl[0]*rcv[1] - dl[1]*rcv[0];
+          const Real iv = 1.0/(r*r*dv);
+          m2 = (dp[0]*e1[0] + dp[1]*e1[1] + dp[2]*e1[2])*iv;
+          m3 = (dp[0]*e2[0] + dp[1]*e2[1] + dp[2]*e2[2])*iv;
+          sr = dl[0]*rh[0] + dl[1]*rh[1] + dl[2]*rh[2];
+        };
+        Real m2, m3, sr;
+        apply(del, m2, m3, sr);
+        uh(m,IM2,k,j,i) += m2;
+        uh(m,IM3,k,j,i) += m3;
+        spn_(m,k,j,i) += sr;
+        if (t2ka) {
+          Real dk[3] = {del[0] + dlc[0], del[1] + dlc[1], del[2] + dlc[2]};
+          apply(dk, m2, m3, sr);
+          kka_(m,M1_T2_M1+1,k,j,i) += m2/dt;
+          kka_(m,M1_T2_M1+2,k,j,i) += m3/dt;
+          ksp_(m,k,j,i) = sr/dt;
+        }
       }
     });
   }

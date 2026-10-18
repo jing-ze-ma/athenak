@@ -1496,6 +1496,8 @@ class RadiationM1 {
   // after the write-back); amw = the pre-write-back gas momentum and cell F (6)
   bool impl_am_cs = false;
   DvceArray5D<Real> amw;
+  bool am_vec = false;             // + <hydro>/am_vector: the vector form
+  DvceArray4D<Real> amk1, amk2, aminc;   // spin slopes (FSAL / stage 1) and increment
   void ImplicitVimpBuild();     // the Jacobian of a(v') E' for this Picard pass
   // <rad_m1>/implicit_hr_recon = dc | plm (xthinfix-1009 Fix B, rad_m1_implicit.hpp)
   bool impl_muscl = false;      // plm half-range face values (default dc: untouched)
