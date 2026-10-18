@@ -3726,12 +3726,16 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
 
 void RadiationM1::ImplicitCsPairHalo(int c0) {
   ImplicitHaloCopy(d3w, 3, c0, true);
+  ImplicitCsPairHaloD3();
+  ImplicitHaloCopy(d3w, 3, c0, false);
+}
+
+void RadiationM1::ImplicitCsPairHaloD3() {   // the exchange of d3w itself
   while (pbval_d3->InitRecv(3) == TaskStatus::incomplete) {}
   while (pbval_d3->PackAndSendCC(d3w, d3w_c) == TaskStatus::incomplete) {}
   while (pbval_d3->RecvAndUnpackCC(d3w, d3w_c) == TaskStatus::incomplete) {}
   while (pbval_d3->ClearSend() == TaskStatus::incomplete) {}
   while (pbval_d3->ClearRecv() == TaskStatus::incomplete) {}
-  ImplicitHaloCopy(d3w, 3, c0, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -10113,49 +10117,51 @@ void RadiationM1::ImplicitF0Init() {
     });
   }
   if (!trans) return;
-  // the cubed sphere's transverse F0 are face-normal: not ported (zero start, as before).
-  // cs-port-1016 (stage 1): that start was SILENT; it is now a FATAL wherever the sp/
-  // Cartesian path would have changed a transverse face, i.e. a != 0 in one of the two
-  // cells (auto) or any face at all under lab with a non-zero cell F2/F3 or a.  A static
-  // or purely radially moving gas (a_2 = a_3 = 0 with the uniaxial-about-r closures of
-  // cs) passes, bitwise as before.
-  if (cs_geom) {
-    // significance: the skipped F0 change is ~ a E (F2/F3 for lab) against c E; a round-
-    // off gas velocity (a cold static test drifts to |v| ~ 1e-29) is not a transverse
-    // flow, so only |a|/c > 1e-10 counts
-    const Real atol = 1.0e-10*c_light;
-    int nbad = 0;
+  // cs-open-1018: the cubed sphere's transverse F0 are FACE-NORMAL (cs-port-1016 had a
+  // FATAL here): the cell's comoving flux F - a E goes to the face-normal basis (u0 F
+  // is covariant: a, b -> (a - c b)/s, (b - c a)/s; A2, A3 are face-normal), through the
+  // paired seam exchange (the mirror ghost on this block's face normals, as A2, A3),
+  // and each transverse face takes the mean of its two cells, as the sp rule
+  if (cs_geom && thrd) {
+    auto d3_ = d3w;
+    auto cclw = pmy_pack->pcoord->cos_cell;
+    auto csnw = pmy_pack->pcoord->sin_cell;
+    par_for("m1_f0init_csg", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cclw(m,k,j), sn = csnw(m,k,j);
+      const Real a = u0_(m,M1_F2,k,j,i), b = u0_(m,M1_F3,k,j,i);
+      const Real e = fmax(u0_(m,M1_E,k,j,i), efl);
+      d3_(m,0,k,j,i) = 0.0;
+      d3_(m,1,k,j,i) = (a - c*b)/sn - iw_(m,M1_IW_A2,k,j,i)*e;
+      d3_(m,2,k,j,i) = (b - c*a)/sn - iw_(m,M1_IW_A3,k,j,i)*e;
+    });
+    ImplicitCsPairHaloD3();
     for (int d = 1; d < 3; ++d) {
-      if (d == 2 && !thrd) break;
+      auto fd_ = (d == 1) ? f0x2 : f0x3;
+      auto fdn_ = (d == 1) ? f0x2n : f0x3n;
+      auto td_ = (d == 1) ? t2f2 : t2f3;
       const int ca = (d == 1) ? M1_IW_A2 : M1_IW_A3;
-      const int cf = (d == 1) ? M1_F2 : M1_F3;
       const int jhi = (d == 1) ? je+1 : je, khi = (d == 2) ? ke+1 : ke;
-      int nd = 0;
-      Kokkos::parallel_reduce("m1_f0init_cschk",
-        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0, ks, js, is},
-                                               {nmb1+1, khi+1, jhi+1, ie+1}),
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &n) {
-          const int jm = (d == 1) ? (j-1) : j, km = (d == 2) ? (k-1) : k;
-          const Real al = iw_(m,ca,km,jm,i), ar = iw_(m,ca,k,j,i);
-          const Real el = fmax(u0_(m,M1_E,km,jm,i), efl);
-          const Real er = fmax(u0_(m,M1_E,k,j,i), efl);
-          const bool act = (fabs(al) > atol || fabs(ar) > atol) ||
-                           (lab && (fabs(u0_(m,cf,km,jm,i)) > atol*el ||
-                                    fabs(u0_(m,cf,k,j,i)) > atol*er));
-          if (act) {n += 1;}
-        }, Kokkos::Sum<int>(nd));
-      nbad += nd;
-    }
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &nbad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-#endif
-    if (nbad > 0) {
-      ImplFatal("<rad_m1>/implicit_f0_init = " + std::string(lab ? "lab" : "auto")
-                + " on the cubed sphere: " + std::to_string(nbad) + " transverse faces "
-                "would take the cold-start F0 (a transverse enthalpy flux or a lab F2/F3 "
-                "in the start state), which is not ported (face-normal F0); name "
-                "implicit_f0_init = zero or start without transverse gas motion "
-                "(cs-port-1016)");
+      par_for("m1_f0init_cstr", DevExeSpace(), 0, nmb1, ks, khi, js, jhi, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        BoundaryFlag blo = mbbcs.d_view(m,(d == 1) ? BoundaryFace::inner_x2
+                                                   : BoundaryFace::inner_x3);
+        BoundaryFlag bhi = mbbcs.d_view(m,(d == 1) ? BoundaryFace::outer_x2
+                                                   : BoundaryFace::outer_x3);
+        const bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+        const bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+        const int c = (d == 1) ? j : k;
+        const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je+1 : ke+1;
+        if ((c == cs && plo) || (c == ce && phi)) return;
+        const int jm = (d == 1) ? (j-1) : j, km = (d == 2) ? (k-1) : k;
+        const Real al = iw_(m,ca,km,jm,i), ar = iw_(m,ca,k,j,i);
+        if (!lab && al == 0.0 && ar == 0.0) return;
+        const Real fv = 0.5*(d3_(m,d,km,jm,i) + d3_(m,d,k,j,i));
+        const Real dd = fv - fd_(m,k,j,i);
+        fd_(m,k,j,i) = fv;
+        fdn_(m,k,j,i) += dd;
+        if (st1) {td_(m,k,j,i) += dd;}
+      });
     }
     return;
   }
