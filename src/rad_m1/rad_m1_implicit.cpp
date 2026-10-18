@@ -15347,6 +15347,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool t2ka = t2k;
     auto kka_ = kk_;
     auto &mbbc = m1bcs;
+    const bool gfsp = gfst && gcs;
+    auto f0np_ = f0x1n;
+    auto f2np_ = f0x2n;
+    auto f3np_ = f0x3n;
     par_for("m1_am_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real x2l = msz.d_view(m).x2min, x2u = msz.d_view(m).x2max;
@@ -15432,13 +15436,28 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
       const Real del = (-dlr + dt*tz) - dlg;
+      // the first conservative solve of the run starts from the FACE form of F (the
+      // write-back's go), not the generator's F: a cold-start redefinition of the
+      // radiation state.  The gas absorbs its L here (as a backward-Euler run does), but
+      // the stored slope K (paired with the cell-F slope (F' - go)/dt in the next stage's
+      // increment) must not: dlc = L_z(go - F_pre)/(c chat)
+      Real dlc = 0.0;
+      if (gfsp) {
+        const Real eo = iw_(m,M1_IW_EN,k,j,i);
+        const Real h1 = 0.5*(f0np_(m,k,j,i) + f0np_(m,k,j,i+1)) + iw_(m,M1_IW_ADV,k,j,i)*eo;
+        const Real ha = 0.5*(f2np_(m,k,j,i) + f2np_(m,k,j+1,i)) + iw_(m,M1_IW_A2,k,j,i)*eo;
+        const Real hb = 0.5*(f3np_(m,k,j,i) + f3np_(m,k+1,j,i)) + iw_(m,M1_IW_A3,k,j,i)*eo;
+        const Real si = 1.0/csnw(m,k,j);
+        dlc = icc*lz(h1 - am_(m,3,k,j,i), (ha + c*hb)*si - am_(m,4,k,j,i),
+                     (hb + c*ha)*si - am_(m,5,k,j,i));
+      }
       const Real c2v = (-yy*e1[0] + xx*e1[1])/(wc*dv);
       const Real c3v = (-yy*e2[0] + xx*e2[1])/(wc*dv);
       uh(m,IM2,k,j,i) += del*c2v;
       uh(m,IM3,k,j,i) += del*c3v;
       if (t2ka) {
-        kka_(m,M1_T2_M1+1,k,j,i) += del*c2v/dt;
-        kka_(m,M1_T2_M1+2,k,j,i) += del*c3v/dt;
+        kka_(m,M1_T2_M1+1,k,j,i) += (del + dlc)*c2v/dt;
+        kka_(m,M1_T2_M1+2,k,j,i) += (del + dlc)*c3v/dt;
       }
     });
   }
