@@ -437,7 +437,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   int nvar = flx.x1f.extent_int(1);
   const int sfmode = pmy_pack->pmesh->cs_seam_flux;
   if (sfmode != 0) {
-    // <mesh>/cs_seam_flux = upwind (1) or positive (2); see mesh.cpp.  One team per
+    // <mesh>/cs_seam_flux = upwind (1) or positive_donor (2, the 09-26 default; since
+    // csedge-1019 the default is average, see mesh.cpp).  One team per
     // (MeshBlock, buffer): the choice is made ONCE per face from the MASS flux of both
     // sides and applied to every variable (deciding per variable would mix fluxes from
     // two different Riemann solves in one face, and would race on IDN).  a = this side's

@@ -3,7 +3,7 @@
 #
 # The hole is a top hat of depth cav_d (angle cav_w about (cav_x,cav_y,cav_z), |r-cav_r| <
 # cav_wr). Defaults below put a HOT hole (cav_p = 0: pressure balance) ON the mid-seam
-# (1,1,0). Since 09-26 the seam keys default to cs_seam_flux = positive, cs_seam_resample =
+# (1,1,0). Since csedge-1019 the seam keys default to cs_seam_flux = average (09-26: positive), cs_seam_resample =
 # linear, cs_seam_rho_guard = 4 (the fix). Measured (CPU, 1 rank):
 #   old scheme, mesh/cs_seam_flux=average mesh/cs_seam_resample=quadratic
 #     mesh/cs_seam_rho_guard=0 -> FATAL, non-finite state at cycle 100 (t = 1.1e-3)
@@ -36,7 +36,7 @@ x3max    = 1.0
 ix3_bc   = panel
 ox3_bc   = panel
 use_cubed_sphere = true
-cs_seam_flux = positive      # the defaults, listed so they can be overridden
+cs_seam_flux = average       # the defaults (csedge-1019: average; positive_donor = the 09-26 rule), listed so they can be overridden
 cs_seam_resample = linear
 cs_seam_rho_guard = 4.0
 cs_vertex_fill_cc = false
