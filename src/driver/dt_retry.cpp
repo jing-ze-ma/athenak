@@ -26,6 +26,8 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "hydro/hydro_dtretry_visit.hpp"
+#include "hydro/hydro_am.hpp"
+#include "hydro/hydro_am_dtretry_visit.hpp"
 #include "rad_m1/rad_m1_dtretry_visit.hpp"
 #include "driver/dt_retry.hpp"
 
@@ -45,6 +47,9 @@ const char *kDtrMinimal[] = {
   // Hydro
   "hyd.u0", "hyd.w0", "hyd.wtemp", "hyd.wder", "hyd.eint_rst", "hyd.c2p_acc",
   "hyd.c2p_ref_e", "hyd.c2p_ref_d",
+  // amdtr-1019: <hydro>/am_vector's spin reservoir (hydro::AmModule, persistent across
+  // cycles) and the radiation's hesdirk2 FSAL spin slope; empty/absent unless am_vector
+  "am.am_spin", "m1.amk1",
   // RadiationM1
   "m1.u0", "m1.f0x1", "m1.f0x2", "m1.f0x3", "m1.ipred", "m1.ipred2", "m1.t2k1",
   "m1.vet_prev", "m1.vsc_d0", "m1.vsc_d1", "m1.ctr_mem", "m1.csk1", "m1.csk2",
@@ -288,6 +293,12 @@ void DtRetry::Build(Mesh *pm) {
   {
     Binder b{&ent_, "m1.", &sel, all_views_};
     pk->pradm1->DtRetryVisit(b);
+  }
+  // amdtr-1019: the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
+  // frame_omega; exists only when one of its keys is named)
+  if (hydro::AmModule *pam = hydro::AmModuleOf(pk)) {
+    Binder b{&ent_, "am.", &sel, all_views_};
+    pam->DtRetryVisit(b);
   }
   // fin51-r-fix: the problem generator's registered state (PgenEntries)
   for (auto &e : PgenEntries()) {ent_.push_back(std::move(e));}

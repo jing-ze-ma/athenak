@@ -545,6 +545,8 @@ class AmModule {
   void FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   void AmFillV(HydroAmV &v, const AmFluid &fl);
   void BasisCheck();
+  // amdtr-1019: the dt_retry checkpoint visitor (generated: hydro/hydro_am_dtretry_visit.hpp)
+  template <class V> void DtRetryVisit(V &v);
 };
 
 //! \brief the module of the pack's fluid (Hydro first, else MHD), nullptr if none
