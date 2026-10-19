@@ -1,0 +1,1 @@
+time/nlim=300 problem/stream=false output2/dt=2.0e-3 problem/spin=1.0

@@ -1,0 +1,1 @@
+-r /viper/ptmp2/jinma/accretor_1006/gpu2/qd1/rst/ryper.00002.rst time/tlim=0.0358 time/ndiag=1 output2/dt=2.0e-5 output1/dt=2.0e-5 output3/dt=100 -t 00:05:00

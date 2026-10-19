@@ -1,0 +1,1 @@
+mesh/nx1=282 mesh/nx3=1024 mesh/x2min=1.5585244804918964 mesh/x2max=1.5830681731030002 meshblock/nx1=282 meshblock/nx3=128 hydro/wb_rmax=4.06 problem/spin=1.0 time/nlim=10 output3/dt=100

@@ -124,6 +124,11 @@ class ProblemGenerator {
   std::vector<char> pgen_rststate;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
+  // accretor-bigdom-v4 (10-16): called once per stage by RadiationM1::HydroConToPrim
+  // right AFTER the M1 implicit coupling wrote the gas u0 and BEFORE the fluid refresh
+  // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
+  // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).
+  UserCycleFnPtr user_m1post_func=nullptr;
   // reatm-1011: called ONCE on a fresh start, in Driver::Initialize right after the
   // <rad_m1>/ic_rad passes (IcRadRun) and before the boundaries/primitives are rebuilt,
   // so a pgen can adjust its initial state to the relaxed radiation (he_star_m1:

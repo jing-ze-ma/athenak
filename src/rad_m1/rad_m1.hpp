@@ -163,6 +163,11 @@ struct M1OpacTab {
   Real tunit = 1.0;
   Real dunit = 1.0;
   Real kunit = 1.0;
+  // <rad_m1>/opac_abs_rho_max (default 0 = off): code densities below amask_rho get no
+  // absorption (kappa_P = kappa_E = 0) and the transport opacity amask_kes (code units
+  // per mass, = opac_abs_kappa_s [cm^2/g] x kunit); see rad_m1.cpp
+  Real amask_rho = 0.0;
+  Real amask_kes = 0.0;
   // vet_scatter (vet-scatter-1006): the split of the tabulated TOTAL kappa_R into true
   // absorption kappa_a = kappa_R - kappa_e and electron scattering kappa_e (Ma+2026
   // sect. 2.2.4).  scat 0 = no split (os = 0, bitwise the old lookup), 1 = constant
@@ -614,6 +619,26 @@ class RadiationM1 {
   int ibc_x2min = 2, ibc_x2max = 2, ibc_x3min = 2, ibc_x3max = 2;
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
+  // PER-COLUMN INFLOW columns of the outer x1 Marshak face (accretor-rhd-1008 S5, the
+  // stream window's own radiation): a problem generator hands E_in(m,k,j) (nmb, n3, n2)
+  // through SetX1maxBathColumns.  Columns with E_in > 0 are an optically thick INFLOW
+  // face: comoving face flux 0 (no Marshak term) and the lab-frame enthalpy inflow
+  // a E_in = v1 (1 + chi) E_in of implicit_bc_advect, i.e. F = (4/3) v E_in in the thick
+  // limit; columns with E_in = 0 keep the Marshak face with the scalar bath (must be 0).
+  // The face kernel stores the lab-frame advective energy flux through the outer face in
+  // ibadv_x1max(m,k,j) (the end face's f0x1 is the comoving flux only).
+  // Default: not set, bitwise.  (A first version used E_in as a Marshak bath, c q (E -
+  // E_in): that shines an isotropic 65 kK wall into the thin ambient, c/(4 (4/3) v) ~450x
+  // the advected radiation, and diverged in the first step, rhd/s5/smoke.)
+  bool iebath_hi_col_on = false;
+  DvceArray3D<Real> iebath_hi_col;
+  // acc3d-1017: <rad_m1>/implicit_bc_x2min|max = flux: the x2 physical face carries an
+  // IMPOSED radiative flux F_theta(m,k,i) (lab frame, + = toward larger theta), set by the
+  // problem generator through SetX2FaceFlux (an equilibrium lateral flux, e.g. the von
+  // Zeipel flux of a tilted stellar photosphere at a wedge wall); explicit in the solve
+  bool ifx2_on = false;
+  DvceArray3D<Real> ifx2_lo, ifx2_hi;
+  DvceArray3D<Real> ibadv_x1max;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,
@@ -1611,6 +1636,8 @@ class RadiationM1 {
   //! the per-cell reference acceleration of force_reference = wb_arad; the caller owns
   //! the array and must keep it alive for the run
   void SetForceReference(const DvceArray4D<Real> &a);
+  void SetX1maxBathColumns(const DvceArray3D<Real> &eb);
+  void SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<Real> &fhi);
   //! design sect. 2: evaluate and print v_max*tau_max/chat.  Runs once, from the first
   //! Opacity task that has a filled array (tau needs rho*kappa, which the ctor has not).
   void RSLACheck();

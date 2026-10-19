@@ -57,6 +57,10 @@ const char *kDtrMinimal[] = {
   // fin51-r-fix (linhao-bc branches): the wall flux of the last solve, read by the next
   // stage-1 solve for the L_in history (lbath_l1); absent elsewhere (no entry matches)
   "m1.lbath_f",
+  // accretor-rhd-1015 (ry_per_accretor S5 per-column outer bath): the advective radiation
+  // flux through the outer face of the last solve, read by the pgen's hydro-stage budget
+  // accumulator like f0x1; absent (empty) elsewhere
+  "m1.ibadv_x1max",
 };
 
 // copy-assign anything, arrays element by element

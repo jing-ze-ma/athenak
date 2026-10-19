@@ -77,6 +77,9 @@
 #endif
 
 namespace radm1 {
+// DEBUG <rad_m1>/dbg_eint_cells (accretor-sector-light-1017; file scope so the class
+// layout is unchanged): 0 = off
+static int g_dbg_eint_n = 0;
 
 namespace {
 double M1FrNow();   // picres-1017 (defined with ImplicitFinalResid)
@@ -1548,6 +1551,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // flags).  Read only when named; prints only; no number of the solve changes.
   impl_ncdump = pin->DoesParameterExist("rad_m1","implicit_nc_dump") ?
                 pin->GetInteger("rad_m1","implicit_nc_dump") : 0;
+  // DEBUG (accretor-sector-light-1017): dbg_eint_cells = N > 0 prints, in every solve
+  // whose gas write-back gives eint <= 0 somewhere, up to N of those cells per rank with
+  // their state.  Read only when named; prints only; no number of the solve changes.
+  g_dbg_eint_n = pin->DoesParameterExist("rad_m1","dbg_eint_cells") ?
+               pin->GetInteger("rad_m1","dbg_eint_cells") : 0;
+  // ...and with time_scheme = be, where Time2Init returns before reading it, the
+  // existing dbg_t2_admiss = N listing (the cells and their E rows by term) of the
+  // first N solves that end with E <= e_floor or eint_wb <= 0 (read only when named)
+  if (g_dbg_eint_n > 0 && pin->DoesParameterExist("rad_m1","dbg_t2_admiss")) {
+    t2_dbg_adm = pin->GetInteger("rad_m1","dbg_t2_admiss");
+  }
   // DEBUG (he_estall_1003): implicit_stall_trace = N > 0: in a solve still unconverged at
   // pass implicit_stall_trace_p0 (default 40), fix each rank's worst cell of that pass
   // and print its NCD line (tag 3) before step (c) and (tag 2) after the residual of
@@ -2773,10 +2787,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       int r = -1;
       if (v.compare("reflect") == 0) {r = M1_IBC_REFLECT;}
       if (v.compare("marshak") == 0) {r = M1_IBC_MARSHAK;}
+      // acc3d-1017: zero-gradient outgoing flux, x2 faces only
+      if (v.compare("outflow") == 0 && (f == BoundaryFace::inner_x2 ||
+                                        f == BoundaryFace::outer_x2)) {r = M1_IBC_OUTFLOW;}
+      if (v.compare("flux") == 0 && (f == BoundaryFace::inner_x2 ||
+                                     f == BoundaryFace::outer_x2)) {r = M1_IBC_X2FLUX;}
       if (r < 0 || per) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
           << std::endl << "<rad_m1>/" << key << " = '" << v << "': auto | reflect | "
-          << "marshak, the last two on a NON-periodic mesh face" << std::endl;
+          << "marshak (| outflow | flux on x2), the last ones on a NON-periodic mesh face"
+          << std::endl;
         std::exit(EXIT_FAILURE);
       }
       return r;
@@ -5609,6 +5629,16 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const Real tmq = marshak_q;
   const bool vm2lo = (ibc_x2min == M1_IBC_MARSHAK), vm2hi = (ibc_x2max == M1_IBC_MARSHAK);
   const bool vm3lo = (ibc_x3min == M1_IBC_MARSHAK), vm3hi = (ibc_x3max == M1_IBC_MARSHAK);
+  const bool vo2lo = (ibc_x2min == M1_IBC_OUTFLOW), vo2hi = (ibc_x2max == M1_IBC_OUTFLOW);
+  const bool vf2lo = (ibc_x2min == M1_IBC_X2FLUX), vf2hi = (ibc_x2max == M1_IBC_X2FLUX);
+  if ((vf2lo || vf2hi) && !ifx2_on) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/implicit_bc_x2min|max = flux needs the problem generator to set "
+              << "the face fluxes (RadiationM1::SetX2FaceFlux)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto fx2l_ = ifx2_lo;
+  auto fx2h_ = ifx2_hi;
   par_for_lb("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dx2 = mbsize.d_view(m).dx2;
@@ -5667,6 +5697,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       fp = cl*tmq*ec;
       dia += nu2*ch*tmq;
     }
+    if (j == je && p2hi && vo2hi) {   // acc3d-1017: outflow face, the cell's own F2 > 0
+      fp = fmax(iw_(m,M1_IW_F2,k,j,i), 0.0);
+    }
+    if (j == je && p2hi && vf2hi) {fp = fx2h_(m,k,i);}   // acc3d-1017: imposed flux face
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
       Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
@@ -5709,6 +5743,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       fm = -cl*tmq*ec;
       dia += nu2*ch*tmq;
     }
+    if (j == js && p2lo && vo2lo) {   // acc3d-1017: outflow face, the cell's own F2 < 0
+      fm = fmin(iw_(m,M1_IW_F2,k,j,i), 0.0);
+    }
+    if (j == js && p2lo && vf2lo) {fm = fx2l_(m,k,i);}   // acc3d-1017: imposed flux face
     tt += nu2*cr*(fp - fm);
     Real gps = 0.0, gms = 0.0;   // (sp) the x3 face fluxes, copied out below
     if (bcg) {
@@ -12084,6 +12122,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool bfxm = (vgd_bfx.extent_int(0) > 0);
   auto bfx_ = vgd_bfx;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
+  // per-column outer bath (SetX1maxBathColumns; off: the scalar ebhi, bitwise)
+  const bool ebc = iebath_hi_col_on;
+  auto ebc_ = iebath_hi_col;
+  auto bdv_ = ibadv_x1max;
   const int bmn_ = ibm_n;   // littests-1011: boundary beams (imposed x1min flux)
   auto bmf_ = ibm_f;
   const bool badv = impl_bc_advect;
@@ -13513,15 +13555,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       } else if (bchi == M1_IBC_MARSHAK) {
         const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
-        bb += nu*ch*mq;
-        rr += nu*ch*mq*ebhi;
+        const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
+        // per-column INFLOW face (E_bath > 0): no comoving flux, only the inflow enthalpy
+        const Real mqw = (ebc && ebh > 0.0) ? 0.0 : mq;
+        bb += nu*ch*mqw;
+        rr += nu*ch*mqw*ebh;
         // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
         // the end cell's velocity (outflow: this cell's E; inflow: the bath)
         if (badv) {
           if (vi > 0.0) {
             bb += nu*cr*ai;
           } else {
-            rr -= nu*cr*ai*ebhi;
+            rr -= nu*cr*ai*ebh;
           }
         }
       } else if (bchi == M1_IBC_FLUX) {
@@ -13753,8 +13798,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           d_[13] += rr - re0_;
         } else if (bchi == M1_IBC_MARSHAK) {
           const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
-          bb += nup*ch*mq;
-          rr += nup*ch*mq*ebhi;
+          const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
+          // per-column INFLOW face (E_bath > 0): no comoving flux, only the inflow enthalpy
+          const Real mqw = (ebc && ebh > 0.0) ? 0.0 : mq;
+          bb += nup*ch*mqw;
+          rr += nup*ch*mqw*ebh;
           if (mfl && (!vqs || sqf) && ie > is) {
             // implicit_marshak_face = linear: c q (E_f - E_bath) with E_f the face E.
             // Not with vet_col_surface_q: its q = H(face)/J(top cell) already makes the
@@ -13769,7 +13817,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                               cx1f(m,ie+1)) - (ca*e0 - cb*e1);
             // the face flux c q E_f, and the outflowing enthalpy flux of
             // implicit_bc_advect at the same face E
-            Real wq = nup*ch*mq;
+            Real wq = nup*ch*mqw;
             if (badv && vi > 0.0) {wq += nup*cr*ai;}
             bb += wq*(ca - 1.0);
             aa -= wq*cb;
@@ -13779,7 +13827,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             if (vi > 0.0) {
               bb += nup*cr*ai;
             } else {
-              rr -= nup*cr*ai*ebhi;
+              rr -= nup*cr*ai*ebh;
             }
           }
         } else if (bchi == M1_IBC_FLUX) {
@@ -14255,14 +14303,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           fb = bmf_(m,k-ks,j-js);   // littests-1011: the beam's own face flux
         } else if (bc == M1_IBC_MARSHAK) {
           const Real mq = (hi && vqs) ? vq_(m,k,j) : mqo;   // vet_col_surface_q
-          fb = sgn*cl*mq*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebhi));
+          const Real ebh = ebc ? ebc_(m,k,j) : ebhi;
+          const Real mqw = (hi && ebc && ebh > 0.0) ? 0.0 : mq;   // inflow face: F0 = 0
+          fb = sgn*cl*mqw*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebh));
+          Real eout = iw_(m,M1_IW_EP,k,j,ic);   // the E an outflow carries out
           if (mfl && !(hi && vqs && !sqf) && ie > is) {
             // implicit_marshak_face = linear: the face E of the solved iterate
             const int in = lo ? (is+1) : (ie-1);
             const Real ef = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,ic),
                                               iw_(m,M1_IW_EP,k,j,in), cx1v(m,ic),
                                               cx1v(m,in), cx1f(m,i));
-            fb = sgn*cl*mq*(ef - (lo ? eblo : ebhi));
+            fb = sgn*cl*mqw*(ef - (lo ? eblo : ebh));
+            eout = ef;
+          }
+          // per-column bath: the lab-frame advective energy flux a E_up of
+          // implicit_bc_advect through the outer face (outflow: the E of the face flux
+          // above; inflow: the bath), for the problem's energy budget
+          if (hi && ebc) {
+            const Real ae = iw_(m,M1_IW_ADV,k,j,ic);
+            bdv_(m,k,j) = badv ? ((iw_(m,M1_IW_V1,k,j,ic) > 0.0) ? ae*eout : ae*ebh) : 0.0;
           }
         } else if (bc == M1_IBC_FLUX) {
           fb = lo ? (bfxm ? bfx_(m,k,j) : fxlo) : fxhi;
@@ -14842,6 +14901,36 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ImplicitNCDump(it, 1, gasx, igb, igr, igf, igy);
     }
     flr_ng += nfg;
+    // DEBUG dbg_eint_cells (accretor-sector-light-1017): the cells behind nfg, read-only
+    if (g_dbg_eint_n > 0 && nfg > 0.0 && hh && gq) {
+      auto x1d = pmy_pack->pcoord->x1v;
+      auto x3d = pmy_pack->pcoord->x3v;
+      const int nmx = g_dbg_eint_n, rk = global_variable::my_rank;
+      const int ncy = pmy_pack->pmesh->ncycle;
+      DvceArray1D<int> cnt("m1_dbg_eint_cnt", 1);
+      Kokkos::deep_copy(cnt, 0);
+      par_for("m1_dbg_eint", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real qq = iw_(m,M1_IW_SRCR,k,j,i)
+                        - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+        const Real wb = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq;
+        if (!(wb > 0.0)) {
+          const int n = Kokkos::atomic_fetch_add(&cnt(0), 1);
+          if (n < nmx) {
+            const Real dd = uh(m,IDN,k,j,i);
+            printf("DBG_EINT rank %d cycle %d m %d k %d j %d i %d r %.5f phi %.5f rho %.4e "
+                   "eint_old %.6e wb %.6e q_cl/ch %.6e SRCR %.6e SRCB %.6e Esolved %.6e "
+                   "Eiter %.6e Tsolved %.6e v %.4e %.4e %.4e mom/rho %.4e %.4e %.4e\n",
+                   rk, ncy, m, k, j, i, x1d(m,i), x3d(m,k), dd, iw_(m,M1_IW_EGN,k,j,i), wb,
+                   (cl/ch)*qq, iw_(m,M1_IW_SRCR,k,j,i), iw_(m,M1_IW_SRCB,k,j,i),
+                   iw_(m,M1_IW_S2,k,j,i), iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_TP,k,j,i),
+                   iw_(m,M1_IW_V1,k,j,i), iw_(m,M1_IW_V2,k,j,i), iw_(m,M1_IW_V3,k,j,i),
+                   uh(m,IM1,k,j,i)/dd, uh(m,IM2,k,j,i)/dd, uh(m,IM3,k,j,i)/dd);
+          }
+        }
+      });
+      Kokkos::fence();
+    }
     // fin4-dtretry: a solve outside a hesdirk2 stage (a stage that writes eint <= 0 is not
     // admissible and is redone with backward Euler) that writes back eint <= 0 anywhere
     if (dtr_on && nfg > 0.0 && !t2st) {
@@ -15761,6 +15850,9 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
     const int i = r - (j - js)*ni + is;
     // the cell's state and the rank-local shell mean of rho at its i
     DvceArray1D<Real> cv("m1_t2dbg_cv", 16);
+    // dbg_eint_cells (accretor-sector-light-1017): under time_scheme = be the stage
+    // increments t2inc are not allocated
+    const bool t2ok = (t2i_.extent_int(0) > 0);
     par_for("m1_t2dbg_cell", DevExeSpace(), 0, 0,
     KOKKOS_LAMBDA(const int n) {
       cv(0) = x1v(m,i);
@@ -15768,11 +15860,11 @@ void RadiationM1::T2AdmissDebug(DvceArray5D<Real> uh, DvceArray5D<Real> u0_,
       cv(2) = iw_(m,M1_IW_S2,k,j,i);
       cv(3) = iw_(m,M1_IW_EN,k,j,i);
       cv(4) = u0_(m,M1_E,k,j,i);
-      cv(5) = t2i_(m,M1_T2_E,k,j,i);
+      cv(5) = t2ok ? t2i_(m,M1_T2_E,k,j,i) : 0.0;
       cv(6) = iw_(m,M1_IW_EGN,k,j,i);
       cv(7) = iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*(iw_(m,M1_IW_SRCR,k,j,i) -
               iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i));
-      cv(8) = hh ? t2i_(m,M1_T2_EN,k,j,i) : 0.0;
+      cv(8) = (hh && t2ok) ? t2i_(m,M1_T2_EN,k,j,i) : 0.0;
       cv(9) = iw_(m,M1_IW_TP,k,j,i);
       cv(10) = iw_(m,M1_IW_V1,k,j,i);
       cv(11) = iw_(m,M1_IW_V2,k,j,i);

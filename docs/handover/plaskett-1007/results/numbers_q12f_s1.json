@@ -1,0 +1,22 @@
+{
+ "arm": "q12f_s1",
+ "t_final_orbits": 0.49992815554276177,
+ "t_final_code": 0.2291,
+ "P_orb_code": 0.45826584772220086,
+ "M_stream_in_cum": 17.8519,
+ "M_through_Racc_cum": 8.64728,
+ "M_out_cum": -5.95035e-05,
+ "j_through_Racc_cum_over_jK": 0.6485663456879414,
+ "j_through_Racc_last0p1orb_over_jK": 0.47119902304772887,
+ "j_stream_over_jK": 0.6212130379601044,
+ "j_ballistic_over_jK": 0.5711680030335335,
+ "j_Kep_Racc_code": 5242.179916538249,
+ "j_star_rotation_Racc_over_jK": 0.21191427515331193,
+ "fatal_count": 0,
+ "logs_scanned": [
+  "run.log"
+ ],
+ "dt_min_code": 1.211073e-06,
+ "mass_unit": "rho_stream Rsun^3",
+ "j_unit": "Rsun km/s (inertial)"
+}

@@ -1,0 +1,89 @@
+# =====================================================================================
+# RY Per mass gainer: the L1 stream on a rigid, absorbing, rotating stellar surface, in the
+# orbital plane (r-phi), co-rotating frame, isothermal, scale-free in density.
+# Problem generator src/pgen/ry_per_accretor.cpp:  cmake -D PROBLEM=ry_per_accretor.
+# Design: /viper/ptmp2/jinma/accretor_1006/DESIGN.md.
+# UNITS: length Rsun, velocity km/s (time unit 6.957e5 s; P_orb = 0.8525), density in
+# units of the stream's peak density (problem/rho_stream).
+# Grid: r = R_acc = 4.06 .. 0.85 d_L1 = 16.241 Rsun, log spacing (f_stretch_r =
+# -ln(16.241/4.06)), dr/r = 3.10e-3; phi 2048 cells (dphi 3.07e-3); theta: 4 cells of
+# dphi about pi/2, reflecting.  448 x 4 x 2048 = 3.7e6 cells.
+# Arms: problem/spin = 1.0 (synchronous) and 7.2 (Barai+04).
+# =====================================================================================
+<comment>
+problem = RY Per accretor (ry_per_accretor)
+
+<job>
+basename = ryper
+
+<mesh>
+nghost    = 2
+nx1       = 448
+x1min     = 4.06
+x1max     = 16.241
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 4
+x2min     = 1.5646604                # pi/2 - 2 dphi
+x2max     = 1.5769322                # pi/2 + 2 dphi
+ix2_bc    = reflect
+ox2_bc    = reflect
+nx3       = 2048
+x3min     = 0.0
+x3max     = 6.283185307179586
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r  = true
+f_stretch_r         = -1.3862944         # -ln(x1max/x1min): exact log grid
+
+<meshblock>
+nx1       = 448
+nx2       = 4
+nx3       = 256
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 8.525                   # 10 orbits
+ndiag      = 100
+
+<hydro>
+eos             = isothermal
+iso_sound_speed = 15.5               # km/s, accretor Teff 18 kK, mu 0.62
+reconstruct     = plm
+rsolver         = hlle
+dfloor          = 1.0e-6
+
+<problem>
+user_srcs   = true
+user_hist   = true
+thermo      = isothermal             # adiabatic (gamma 5/3) reserved, FATAL today
+m_acc       = 6.24                   # Msun   Barai+04 Table 4
+m_don       = 1.69                   # Msun
+a_sep       = 30.3                   # Rsun
+period      = 6.863569               # d (reported; Omega is set by Kepler from m, a)
+r_acc       = 4.06                   # Rsun (= mesh/x1min)
+t_don       = 6250.0                 # K, stream launch speed and width c_s/Omega
+mu_don      = 1.27
+spin        = 1.0                    # Omega_* / Omega_orb  (arms 1.0 and 7.2)
+inner_slip  = noslip                 # noslip | free
+inner_rho   = copy                   # copy (absorbing) | hse
+inner_vr    = diode                  # diode (absorbing) | wall (closed, test only)
+outer_rho   = hse                    # hse | copy  (outside the stream window)
+stream      = true
+rho_stream  = 1.0
+rho_amb     = 1.0e-5
+stream_nsig = 3.0
+init        = ambient                # ambient | hse
+
+<output1>
+file_type  = hst
+dt         = 0.002
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 0.04263                 # P_orb/20

@@ -45,6 +45,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("otab.tunit", otab.tunit);
   v.value("otab.dunit", otab.dunit);
   v.value("otab.kunit", otab.kunit);
+  v.value("otab.amask_rho", otab.amask_rho);
+  v.value("otab.amask_kes", otab.amask_kes);
   v.value("otab.scat", otab.scat);
   v.value("otab.kes", otab.kes);
   v.value("otab.kfl", otab.kfl);
@@ -200,6 +202,12 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("iflux_x1max", iflux_x1max);
   v.value("iebath_x1min", iebath_x1min);
   v.value("iebath_x1max", iebath_x1max);
+  v.value("iebath_hi_col_on", iebath_hi_col_on);
+  v.view("iebath_hi_col", iebath_hi_col);
+  v.value("ifx2_on", ifx2_on);
+  v.view("ifx2_lo", ifx2_lo);
+  v.view("ifx2_hi", ifx2_hi);
+  v.view("ibadv_x1max", ibadv_x1max);
   v.value("ibm_n", ibm_n);
   v.value("ibm_nr", ibm_nr);
   v.value("ibm_ray", ibm_ray);
@@ -691,6 +699,14 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vimp_emin", vimp_emin);
   v.view("vmw", vmw);
   v.view("vmw_c", vmw_c);
+  v.view("d3w", d3w);
+  v.view("d3w_c", d3w_c);
+  v.value("impl_am_cs", impl_am_cs);
+  v.view("amw", amw);
+  v.value("am_vec", am_vec);
+  v.view("amk1", amk1);
+  v.view("amk2", amk2);
+  v.view("aminc", aminc);
   v.value("impl_muscl", impl_muscl);
   v.value("impl_muscl_led", impl_muscl_led);
   v.value("muscl_now", muscl_now);
@@ -792,6 +808,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cs_area_eff.x1f", cs_area_eff.x1f);
   v.view("cs_area_eff.x2f", cs_area_eff.x2f);
   v.view("cs_area_eff.x3f", cs_area_eff.x3f);
+  v.view("cs_fn2", cs_fn2);
+  v.view("cs_fn3", cs_fn3);
+  v.view("cs_cn2", cs_cn2);
+  v.view("cs_cn3", cs_cn3);
   v.value("cs_seam_avg_n", cs_seam_avg_n);
   v.value("cs_seam_avg_on", cs_seam_avg_on);
   v.value("cs_seam_dmax", cs_seam_dmax);
@@ -1075,6 +1095,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_fk0", vgd_fk0);
   v.value("vgd_nrb", vgd_nrb);
   v.value("vgd_trb", vgd_trb);
+  v.view("vgd_hr_c", vgd_hr_c);
   v.value("vgd_rdiag", vgd_rdiag);
   v.value("vgd_rdcnt", vgd_rdcnt);
   v.value("vgd_csg", vgd_csg);
@@ -1281,6 +1302,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   hi_sig : long long *
 //   hi_err : int *
 //   pbval_vm : MeshBoundaryValuesCC *
+//   pbval_d3 : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *
 //   id : RadiationM1TaskIDs
 //   pin_cs_ : ParameterInput *
@@ -1290,6 +1312,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   pin_rot_ : ParameterInput *
 //   vgd_sr_fut : std::future<std::vector<double>>
 //   pbval_gd : MeshBoundaryValuesCC *
+//   pbval_hr : MeshBoundaryValuesCC *
 //   vgd_ipc_rbuf : Real *
 //   vgd_ipc_sig : long long *
 //   vgd_ipc_err : int *

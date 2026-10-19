@@ -1,0 +1,16 @@
+ry_per_accretor: Algol accretor pgen (RY Per), L1 stream on an absorbing rotating star
+
+New user pgen (-D PROBLEM=ry_per_accretor) per accretor_1006/DESIGN.md: spherical polar,
+origin at the accretor, thin reflecting theta band about the orbital plane, phi periodic.
+Co-rotating frame about the binary CM: Roche potential (two point masses + centrifugal
+about the CM, which carries the indirect term) as discrete face-difference gravity, and
+explicit in-plane Coriolis. Isothermal, scale-free in density (problem/thermo =
+adiabatic reserved, FATAL). User x1 BCs: absorbing no-slip (or free) stellar surface
+with problem/spin in units of synchronous (inner_vr = wall: closed test wall); stream
+inflow window on the outer face from a ballistic L1 orbit integrated at start-up
+(roche_stream.py launch), outflow without inflow elsewhere. History: domain mass and
+inertial Lz, RK-weighted boundary integrals of mass and Lz (stream in, outflow,
+accretion, accretion torque, wall-stress part).
+Input inputs/hydro/ry_per_accretor.athinput (448 x 4 x 2048, r_out = 0.85 d_L1).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

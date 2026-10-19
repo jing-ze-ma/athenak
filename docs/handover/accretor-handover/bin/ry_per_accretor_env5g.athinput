@@ -1,0 +1,116 @@
+# =====================================================================================
+# RY Per mass gainer, STAGE 2: the L1 stream on a RESOLVED stellar ENVELOPE (problem/inner
+# = envelope) instead of the absorbing surface.  Ideal gas gamma 5/3; the envelope is an
+# n = 3 polytrope in the effective potential (Roche + the star's own spin), anchored at the
+# photospheric P/rho = c_ph^2 (15.5 km/s) at r = R_acc; temperature relaxed toward that
+# profile (and c_ph^2 outside) with time problem/env_t_relax.  Closed wall at r_in.
+# Problem generator src/pgen/ry_per_accretor.cpp:  cmake -D PROBLEM=ry_per_accretor.
+# Design / trade-off: /viper/ptmp2/jinma/accretor_1006/IMPL2.md.
+# UNITS: length Rsun, velocity km/s (time unit 6.957e5 s; P_orb = 0.8519), density in
+# units of the stream's peak density (problem/rho_stream).
+# Grid: r = 2.835492977 (0.698 R_acc) .. 16.241 Rsun, the stage-1 log spacing (dln r =
+# 3.0945e-3) extended by 116 cells, so r = R_acc = 4.06 is the face 116 of 564.
+# 564 x 4 x 2048 = 4.6e6 cells.  Arms: problem/spin = 1.0 and 7.2.
+# =====================================================================================
+<comment>
+problem = RY Per accretor, resolved envelope (ry_per_accretor, inner: envelope)
+
+<job>
+basename = ryper
+
+<mesh>
+nghost    = 3                        # FOFC with PLM needs 3
+nx1       = 564
+x1min     = 2.835492977186198
+x1max     = 16.241
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 4
+x2min     = 1.5646604                # pi/2 - 2 dphi
+x2max     = 1.5769322                # pi/2 + 2 dphi
+ix2_bc    = reflect
+ox2_bc    = reflect
+nx3       = 2048
+x3min     = 0.0
+x3max     = 6.283185307179586
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r  = true
+f_stretch_r         = -1.7453230974697702  # -ln(x1max/x1min): exact log grid
+
+<meshblock>
+nx1       = 564
+nx2       = 4
+nx3       = 256
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 8.525                   # 10 orbits
+dt_min     = 1.0e-7                  # dt-collapse guard (abort)
+ndiag      = 100
+
+<hydro>
+eos             = ideal
+gamma           = 1.6666666666666667
+reconstruct     = plm
+rsolver         = hllc
+dfloor          = 1.0e-7
+pfloor          = 1.0e-10
+etotgrav        = true
+wellbalance_dynamic = true
+wb_x1           = true
+wb_option       = isothermal
+wb_rmax         = 4.06               # WB on the envelope only (r <= R_acc)
+fofc            = true               # first-order flux correction (as BSG)
+fofc_report     = 282                # fofc firing counts per global x1 cell
+fofc_report_dt  = 0.002
+wb_rho          = true
+
+<problem>
+user_srcs   = true
+user_hist   = true
+thermo      = adiabatic              # ideal gas (needs the envelope mode)
+inner       = envelope               # surface (stage 1, absorbing) | envelope
+m_acc       = 6.24                   # Msun   Barai+04 Table 4
+m_don       = 1.69                   # Msun
+a_sep       = 30.3                   # Rsun
+period      = 6.863569               # d (reported; Omega is set by Kepler from m, a)
+r_acc       = 4.06                   # Rsun (a log-grid x1 face)
+t_don       = 6250.0                 # K, stream launch speed and width c_s/Omega
+mu_don      = 1.27
+spin        = 1.0                    # Omega_* / Omega_orb  (arms 1.0 and 7.2)
+env_npoly   = 3.0                    # envelope polytropic index
+env_rho_ph  = 20.0                   # photospheric density / stream peak (~Mdot 1e-6)
+env_cs_ph   = 15.5                   # km/s, photospheric sqrt(P/rho) (Teff 18 kK)
+env_t_relax = 1.0e-4                 # code time; outside the envelope
+env_t_relax_env = 1.0e-4             # code time; inside (psi > 0)
+# env_r_top: default = first face above R_acc beyond env_top_hp (15) c_ph scale heights
+env_cs_amb  = 300.0                  # km/s, hot ambient, isothermal, hydrostatic in the Roche potential
+env_amb_rho = 1.0e-6                 # ambient density at R_acc (stream peak 1, rho_ph 20)
+env_amb_k   = 3.0                    # rho > k rho_amb,hse(r,phi): stream/star gas, relaxed to c_ph^2
+env_t_sponge = 1.0e-4                # code time, safety-net sponge on floor gas (rho < 10 rho_amb)
+env_sponge_rho = 10.0
+env_v_floor_max = 100.0              # km/s, |v| cap of sponge cells
+env_wall_slip = free                 # free | noslip (v_phi held at the spin)
+outer_rho   = hse                    # hse | copy  (outside the stream window)
+stream      = true
+rho_stream  = 1.0
+rho_amb     = 1.0e-7                 # FLOOR density (safety net; = hydro dfloor)
+stream_nsig = 3.0
+
+<output1>
+file_type  = hst
+dt         = 0.002
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 0.04263                 # P_orb/20
+
+<output3>
+file_type  = rst
+dt         = 0.0485

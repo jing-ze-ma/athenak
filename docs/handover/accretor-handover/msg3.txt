@@ -1,0 +1,11 @@
+driver: periodic NaN scan reads no energy slot for an isothermal EOS
+
+The nan_check / nan_irange / nan_check_active reductions in Driver::Execute tested
+u(m,IEN,...) unconditionally. An isothermal hydro has nhydro = 4, so IEN is out of range:
+Kokkos bounds check "cons [0,4,...] extents [1,4,...]" on the CPU debug build, and
+hipErrorIllegalAddress on the GPU at the first scan (cycle ~90-100) of every isothermal
+run (ry_per_accretor smoke 12105143, diag 12105223). Test the density twice when the
+array has no energy slot; the report line prints p/e = 0 there. Ideal/general paths
+unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

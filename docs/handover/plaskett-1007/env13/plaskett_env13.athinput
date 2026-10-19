@@ -1,0 +1,130 @@
+# =====================================================================================
+# Plaskett's-star progenitor at the start of Case-A accretion (Wade et al. 2026,
+# arXiv:2609.25526): the L1 stream on a RESOLVED envelope of the gainer
+# (ry_per_accretor, problem/inner = envelope).  DeltaAI setup 2026-10-07 (env13).
+# Ideal gas gamma 5/3; the envelope is an n = 3 polytrope in the Roche potential
+# (spin 1), anchored at the photospheric P/rho = c_ph^2 on the equipotential through
+# R_acc (phi 90); temperatures relaxed with env_t_relax (stream effectively isothermal).
+# Code: branch accretor-1007 (env_top_mode, env_wb_depth, r_meas).
+# Derivations: plaskett_setup_1007.py / RESULTS.md (DeltaAI scratch setup/), audit 10-07.
+# UNITS: length Rsun, velocity km/s, time 6.957e5 s (P_orb = 0.458266), density in units
+# of the stream's peak density at r_out (problem/rho_stream).
+# Temperatures from Wade+2026's MESA track at the onset of Case A (HR figure):
+#   gainer Teff 28.3 kK (log L 4.73), donor Teff 26.2 kK (log L 4.84, R = R_L 12.8).
+# Stream: Ryu et al. 2025 (arXiv:2505.18255) isothermal L_in solution at L1, carried to
+#   r_out with its local transverse pressure-supported width; Mdot 1e-4 Msun/yr.
+# =====================================================================================
+<comment>
+problem = Plaskett progenitor, start of Case-A accretion, resolved envelope (env13: equipotential top, Ryu+2025 stream, Wade+2026 temperatures)
+
+<job>
+basename = ryper
+
+<mesh>
+nghost    = 2
+nx1       = 640
+x1min     = 6.3
+x1max     = 13.5015                  # 0.85 d_L1 (d_L1 15.884)
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 4
+x2min     = 1.5646604                # pi/2 - 2 dphi
+x2max     = 1.5769322                # pi/2 + 2 dphi
+ix2_bc    = reflect
+ox2_bc    = reflect
+nx3       = 2048
+x3min     = 0.0
+x3max     = 6.283185307179586
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+# plateau radial stretch (plaskett_setup_1007.py, NX1=640): fine zone 8.80..9.63 at
+# dr <= H_p/4 (H_p,min 0.0102 at c_ph 19.41), covering the tidally bulged photosphere
+# (r_ph 9.00 at phi 90 .. 9.485 at phi 0); face 215 = r_acc; neighbour ratio <= 1.095
+use_grid_stretch_r_poly = true
+f_stretch_r_c1 = 0.0
+f_stretch_r_c2 = 0.0
+f_stretch_r_c3 = 0.0
+f_stretch_r_c4 = 0.0
+f_stretch_r_p_amp = -2.3075712439456293
+f_stretch_r_p_xa = 0.13050612424870098
+f_stretch_r_p_xb = 0.79254378452084151
+f_stretch_r_p_w = 0.018749999999999999
+
+<meshblock>
+nx1       = 640
+nx2       = 4
+nx3       = 256
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 4.58266                 # 10 orbits
+dt_min     = 1.0e-7                  # dt-collapse guard (abort)
+ndiag      = 100
+
+<hydro>
+eos             = ideal
+gamma           = 1.6666666666666667
+reconstruct     = plm
+rsolver         = hllc
+dfloor          = 1.0e-8             # = problem/rho_amb
+pfloor          = 1.0e-10
+etotgrav        = true
+wellbalance_dynamic = true
+wb_x1           = true
+wb_option       = isothermal
+wb_rho          = true
+# no wb_rmax: the WB cut is the equipotential problem/env_wb_depth below the photosphere
+
+<problem>
+user_srcs   = true
+user_hist   = true
+thermo      = adiabatic              # ideal gas (needs the envelope mode)
+inner       = envelope
+m_acc       = 16.0                   # Msun, Wade+2026 (gainer at the start of accretion)
+m_don       = 18.0                   # Msun (M1,i = 18.2 less winds)
+a_sep       = 32.5575                # Rsun, Kepler for 34 Msun at 3.69 d
+period      = 3.69                   # d, Wade+2026 P_i
+r_acc       = 9.00129260997162       # Rsun, face 215 (quoted R ~ 9)
+t_don       = 26200.0                # K, donor Teff at onset (Wade+2026 track)
+mu_don      = 0.62
+spin        = 1.0                    # Omega_* / Omega_orb (critical 4.72)
+env_npoly   = 3.0
+env_rho_ph  = 0.055                  # rho_ph 2.82e-9 / stream peak at r_out 5.11e-8 g/cc (Mdot 1e-4)
+env_cs_ph   = 19.4132                # km/s, gainer Teff 28.3 kK, mu 0.62
+env_cs_stream = 18.6791              # km/s, donor Teff 26.2 kK
+env_t_relax = 1.0e-4                 # code time; outside the envelope
+env_t_relax_env = 1.0e-4             # code time; inside (psi > 0)
+env_top_mode = equipotential         # envelope ends on psi = -15 c_ph^2 at every phi
+env_wb_depth = 0.41                  # WB off above the equipotential 1.5 d_pen (0.27) below the photosphere
+r_meas      = 9.615675               # MR/JR, Menv/Jenv: face 463, above max r_ph + 10 H_p
+env_cs_amb  = 300.0                  # km/s, hot ambient, isothermal, hydrostatic in the Roche potential
+env_amb_rho = 1.0e-7                 # ambient density on the photospheric equipotential (P_amb/P_ph 4.3e-4)
+env_amb_k   = 3.0                    # rho > k rho_amb,hse(r,phi): stream/star gas, relaxed to c_ph^2
+env_t_sponge = 1.0e-4                # code time, safety-net sponge on floor gas (rho < 10 rho_amb)
+env_sponge_rho = 10.0
+env_v_floor_max = 100.0              # km/s, |v| cap of sponge cells
+env_r_spin  = 9.00129260997162       # rotation only below R_acc
+env_wall_slip = free                 # free | noslip
+outer_rho   = hse                    # hse | copy  (outside the stream window)
+stream      = true
+rho_stream  = 1.0
+rho_amb     = 1.0e-8                 # FLOOR density (= hydro dfloor)
+stream_nsig = 3.0
+stream_width = 0.735                 # Rsun at r_out (sigma_phi 3.12 deg): transverse width 0.670 / cos 24.3 deg
+
+<output1>
+file_type  = hst
+dt         = 0.0005
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 0.022913                # P_orb/20
+
+<output3>
+file_type  = rst
+dt         = 0.045827                # P_orb/10
