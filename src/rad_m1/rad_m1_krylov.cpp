@@ -361,6 +361,10 @@ void RadiationM1::ImplicitHaloMPIInit() {
   hm_segs = mk("m1_hm_segs", segs);
   hm_sbuf = DvceArray1D<Real>("m1_hm_sbuf", std::max(hm_nsend, 1)*hm_nq);
   hm_rbuf = DvceArray1D<Real>("m1_hm_rbuf", std::max(hm_nrecv, 1)*hm_nq);
+#if defined(KOKKOS_ENABLE_HIP)
+  hm_shost = Kokkos::View<Real*, Kokkos::HostSpace>("m1_hm_shost", hm_sbuf.extent(0));
+  hm_rhost = Kokkos::View<Real*, Kokkos::HostSpace>("m1_hm_rhost", hm_rbuf.extent(0));
+#endif
   MPI_Comm *c = new MPI_Comm;
   MPI_Comm_dup(MPI_COMM_WORLD, c);
   hm_comm = static_cast<void *>(c);
@@ -416,9 +420,15 @@ void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
     M1EvtU().wait();
     M1HmUnpackPending() = false;
   }
+  // hmstage-1019: on HIP the messages go through host copies (ImplicitHaloMPIFinish)
+#if defined(KOKKOS_ENABLE_HIP)
+  Real *rdst = hm_rhost.data();
+#else
+  Real *rdst = rbuf.data();
+#endif
   for (int s = 0; s < nseg; ++s) {
     if (hm_rlen[s] > 0) {
-      MPI_Irecv(rbuf.data() + static_cast<size_t>(hm_roff[s])*nq, hm_rlen[s]*nq,
+      MPI_Irecv(rdst + static_cast<size_t>(hm_roff[s])*nq, hm_rlen[s]*nq,
                 MPI_ATHENA_REAL, hm_rank[s], tag, comm, &rq[s]);
     }
   }
@@ -475,13 +485,26 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   auto iw_ = iw;
   auto segs = hm_segs.d_view;
   M1EvtB().wait();   // the pack kernel is done: the send buffer may go out
+  // hmstage-1019: on HIP (MI300A) the GPU-aware MPI path delivered these device buffers
+  // corrupted (942 of 2140 messages of a 2-rank accretor run had a receive checksum !=
+  // the sender's, with the send buffer fenced and complete; wrong and run-to-run random
+  // ghosts), so MPI is handed host copies there.  CUDA builds keep the device buffers.
+#if defined(KOKKOS_ENABLE_HIP)
+  Kokkos::deep_copy(hm_shost, sbuf);
+  Real *ssrc = hm_shost.data();
+#else
+  Real *ssrc = sbuf.data();
+#endif
   for (int s = 0; s < nseg; ++s) {
     if (hm_slen[s] > 0) {
-      MPI_Isend(sbuf.data() + static_cast<size_t>(hm_soff[s])*nq, hm_slen[s]*nq,
+      MPI_Isend(ssrc + static_cast<size_t>(hm_soff[s])*nq, hm_slen[s]*nq,
                 MPI_ATHENA_REAL, hm_rank[s], tag, comm, &sq[s]);
     }
   }
   MPI_Waitall(nseg, rq.data(), MPI_STATUSES_IGNORE);
+#if defined(KOKKOS_ENABLE_HIP)
+  Kokkos::deep_copy(rbuf, hm_rhost);
+#endif
   if (hm_nrecv > 0) {
     auto em = hm_rm.d_view;
     auto ek = hm_rkji.d_view;
