@@ -1527,6 +1527,7 @@ class RadiationM1 {
   // the axial angular-momentum-conservative radiation-gas exchange (rad_m1_implicit.cpp,
   // after the write-back); amw = the pre-write-back gas momentum and cell F (6)
   bool impl_am_cs = false;
+  int impl_am_cs_diag = 0;   // amdef-1019 diagnostic (read only when named): solves to print
   DvceArray5D<Real> amw;
   bool am_vec = false;             // + <hydro>/am_vector: the vector form
   DvceArray4D<Real> amk1, amk2, aminc;   // spin slopes (FSAL / stage 1) and increment

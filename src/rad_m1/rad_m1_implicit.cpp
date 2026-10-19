@@ -3049,6 +3049,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                   + " (cubed sphere: follows <hydro|mhd>/am_transport)");
     }
     am_vec = impl_am_cs && (named("hydro","am_vector") || named("mhd","am_vector"));
+    if (pin->DoesParameterExist("rad_m1","implicit_am_cs_diag")) {
+      impl_am_cs_diag = pin->GetInteger("rad_m1","implicit_am_cs_diag");
+    }
   }
   if (cs_geom && impl_gas_src_cs2 && cs2_shift) {
     ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere "
@@ -15594,6 +15597,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Kokkos::deep_copy(aminc, 0.0);
     }
     auto ksp_ = (t2s == M1_T2S_STAGE1) ? amk2 : amk1;
+    // amdef-1019 diagnostic <rad_m1>/implicit_am_cs_diag = N: per radial index, sums of
+    // |dL_rad,z|, |dL_gas,z|, |dt T_planar,z|, |dt T_radial,z|, |del_z|, |del_z|/(rho V R)
+    const bool amdg = (impl_am_cs_diag > 0);
+    const int n1g = pmy_pack->pmesh->mb_indcs.nx1 + 2*pmy_pack->pmesh->mb_indcs.ng;
+    DvceArray2D<Real> amdg_("amdg", amdg ? 6 : 1, amdg ? n1g : 1);
+    auto uden_ = uh;
     auto f0np_ = f0x1n;
     auto f2np_ = f0x2n;
     auto f3np_ = f0x3n;
@@ -15673,6 +15682,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           for (int q = 0; q < 3; ++q) {tv[q] += n ? -t[q] : t[q];}
         }
       }
+      const Real tvp_z = tv[2];
       if (vlc) {
         // vet_gd D_r,lat: the radial faces carry the tangential stress v E, arm r_f rhat
         // (rhat x v) of the column's direction; interior faces the mean of the two cells
@@ -15696,6 +15706,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       Real del[3];
       for (int q = 0; q < 3; ++q) {del[q] = (-dlr[q] + dt*tv[q]) - dlg[q];}
+      if (amdg) {
+        Kokkos::atomic_add(&amdg_(0,i), fabs(dlr[2]));
+        Kokkos::atomic_add(&amdg_(1,i), fabs(dlg[2]));
+        Kokkos::atomic_add(&amdg_(2,i), fabs(dt*tvp_z));
+        Kokkos::atomic_add(&amdg_(3,i), fabs(dt*(tv[2] - tvp_z)));
+        Kokkos::atomic_add(&amdg_(4,i), fabs(del[2]));
+        Kokkos::atomic_add(&amdg_(5,i), fabs(del[2])/(uden_(m,IDN,k,j,i)*dv*sqrt(wc)));
+      }
       // the first conservative solve of the run starts from the FACE form of F (the
       // write-back's go), not the generator's F: a cold-start redefinition of the
       // radiation state.  The gas absorbs its L here (as a backward-Euler run does), but
@@ -15750,6 +15768,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
     });
+    if (amdg) {
+      static int nprint = 0;
+      if (nprint < impl_am_cs_diag) {
+        auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amdg_);
+        std::vector<Real> buf(6*n1g), tot(6*n1g);
+        for (int q = 0; q < 6; ++q) {for (int ii = 0; ii < n1g; ++ii) {buf[q*n1g+ii] = h(q,ii);}}
+        tot = buf;
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(buf.data(), tot.data(), 6*n1g, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        if (global_variable::my_rank == 0) {
+          auto x1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+          std::cout << "AMCS_DIAG solve " << nprint << " (i r |dLr_z| |dLg_z| |dtTpl_z| "
+                    << "|dtTrad_z| |del_z| |del_z|/(rho V R)):" << std::endl;
+          const int is_ = pmy_pack->pmesh->mb_indcs.is, ie_ = pmy_pack->pmesh->mb_indcs.ie;
+          const int stp = std::max(1, (ie_ - is_ + 1)/40);
+          for (int ii = is_; ii <= ie_; ii += stp) {
+            std::cout << "AMCS_DIAG " << ii << " " << x1h(0,ii);
+            for (int q = 0; q < 6; ++q) {std::cout << " " << tot[q*n1g+ii];}
+            std::cout << std::endl;
+          }
+        }
+        nprint += 1;
+      }
+    }
   }
 
   // force_reference_work = split (ke-dt-0926): the write-back above handed the gas the
