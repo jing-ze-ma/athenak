@@ -15616,12 +15616,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (!(wc > 0.0)) return;
       const Real dv = vola(m,k,j,i);
       const Real c = cclw(m,k,j), s2 = 1.0 - c*c;
-      // the L change (vector) of a covariant cell vector (radial, covariant x2, x3)
+      // the L change (vector) of a covariant cell vector (radial, covariant x2, x3).
+      // amdef-1019 (static-star fix): the RADIAL part has no torque about the origin
+      // (rc || rhat) and is left out EXACTLY.  Formed with it, the round-off of the large
+      // radial momentum / flux change of a hydrostatic, radiating cell (|a1| >> |a2|,|a3|)
+      // leaked eps |a1| r V into the torque, and the zonal correction (/ R^2) turned that
+      // into a lateral kick, largest near the z axis.
       const Real rcv[3] = {r*rh[0], r*rh[1], r*rh[2]};
       auto lv = [&](const Real a1, const Real b2, const Real b3, Real *o) {
+        (void) a1;
         const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
         Real p[3];
-        for (int q = 0; q < 3; ++q) {p[q] = a1*rh[q] + a2*e1[q] + a3*e2[q];}
+        for (int q = 0; q < 3; ++q) {p[q] = a2*e1[q] + a3*e2[q];}
         o[0] = dv*(rcv[1]*p[2] - rcv[2]*p[1]);
         o[1] = dv*(rcv[2]*p[0] - rcv[0]*p[2]);
         o[2] = dv*(rcv[0]*p[1] - rcv[1]*p[0]);
