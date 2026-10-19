@@ -147,6 +147,31 @@ bool m1_shg_hold = false;
 Real m1_shg_gm1 = 2.0/3.0;
 // h2order-1011 (gas_hold_v): the radial flow v_r = vr sin(pi (x1 - x1a)/x1l) re-imposed
 Real m1_shv_vr = 0.0, m1_shv_x1a = 0.0, m1_shv_x1l = 1.0;
+// CSMHD sph_shell problem/b_azi_taper: B = b f(r) a x r, f = 16 ((r-r0)(r1-r)/(r1-r0)^2)^2
+bool m1_bazi_tap = false;
+Real m1_bazi_r0 = 1.0, m1_bazi_r1 = 2.0;
+
+KOKKOS_INLINE_FUNCTION
+Real M1BaziTaper(const Real r, const Real r0, const Real r1) {
+  const Real q = (r - r0)*(r1 - r)/((r1 - r0)*(r1 - r0));
+  return 16.0*q*q;
+}
+
+// int_rl^rr f(r) r^2 dr (degree 6: 4-point Gauss-Legendre is exact)
+KOKKOS_INLINE_FUNCTION
+Real M1BaziTaperMom(const Real rl, const Real rr, const Real r0, const Real r1) {
+  const Real xg[4] = {-0.8611363115940526, -0.3399810435848563, 0.3399810435848563,
+                      0.8611363115940526};
+  const Real wg[4] = {0.3478548451374538, 0.6521451548625461, 0.6521451548625461,
+                      0.3478548451374538};
+  const Real h = 0.5*(rr - rl), c = 0.5*(rr + rl);
+  Real s = 0.0;
+  for (int q = 0; q < 4; ++q) {
+    const Real r = c + h*xg[q];
+    s += wg[q]*M1BaziTaper(r, r0, r1)*r*r;
+  }
+  return h*s;
+}
 // h2order2-1011 (gas_hold_rho, with gas_hold_v): the density re-imposed too (<= 0: off)
 Real m1_shv_rho = 0.0;
 
@@ -1096,6 +1121,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       }
       const Real an = std::sqrt(bax*bax + bay*bay + baz*baz);
       bax /= an; bay /= an; baz /= an;
+      // CSMHD (read only when named): b_azi_taper = true multiplies B by the radial
+      // profile f(r) = 16 ((r - r0)(r1 - r)/(r1 - r0)^2)^2 (B = 0 on the reflecting
+      // walls; div(f(r) a x r) = 0 still); the face fluxes take int f r^2 dr exactly
+      if (pin->DoesParameterExist("problem","b_azi_taper") &&
+          pin->GetBoolean("problem","b_azi_taper")) {
+        m1_bazi_tap = true;
+        m1_bazi_r0 = pmy_mesh_->mesh_size.x1min;
+        m1_bazi_r1 = pmy_mesh_->mesh_size.x1max;
+      }
       // spherical polar (the sp reference of the cs MHD tests): the axis must be z there,
       // B = b r sin(theta) phihat; the phi faces carry the exact flux
       // b (r_r^3 - r_l^3)/3 (cos theta_l - cos theta_r) / area, the others 0
@@ -1114,6 +1148,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         auto xf2 = pmbp->pcoord->xx2f;
         const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
         const Real bb = bazi;
+        const bool tap = m1_bazi_tap;
+        const Real tr0 = m1_bazi_r0, tr1 = m1_bazi_r1;
         par_for("m1_sh_bazi_sp", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
           if (j <= je && k <= ke) {b0.x1f(m,k,j,i) = 0.0;}
@@ -1121,7 +1157,9 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
           if (k <= ke) {b0.x2f(m,k,j,i) = 0.0;}
           if (j <= je) {
             const Real rl = xf1(m,i), rr = xf1(m,i+1);
-            const Real fl = bb*(rr*rr*rr - rl*rl*rl)/3.0*(cos(xf2(m,j)) - cos(xf2(m,j+1)));
+            const Real mo = tap ? M1BaziTaperMom(rl, rr, tr0, tr1)
+                                : (rr*rr*rr - rl*rl*rl)/3.0;
+            const Real fl = bb*mo*(cos(xf2(m,j)) - cos(xf2(m,j+1)));
             b0.x3f(m,k,j,i) = fl/a3(m,k,j,i);
           }
         });
@@ -1136,6 +1174,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
       const int nx2 = indcs.nx2, nx3 = indcs.nx3;
       const Real bb = bazi, ax0 = bax, ax1 = bay, ax2 = baz;
+      const bool tap = m1_bazi_tap;
+      const Real tr0 = m1_bazi_r0, tr1 = m1_bazi_r1;
       par_for("m1_sh_bazi", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
         const Real x2l = size.d_view(m).x2min, x2u = size.d_view(m).x2max;
@@ -1144,7 +1184,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         if (j <= je && k <= ke) {b0.x1f(m,k,j,i) = 0.0;}
         if (i > ie) return;
         const Real rl = xf1(m,i), rr = xf1(m,i+1);
-        const Real mom = (rr*rr*rr - rl*rl*rl)/3.0;
+        const Real mom = tap ? M1BaziTaperMom(rl, rr, tr0, tr1)
+                             : (rr*rr*rr - rl*rl*rl)/3.0;
         Real fa[3], fb[3], fn[3];
         cubed_sphere::PanelFrame(p, fa, fb, fn);
         auto flux = [&](const Real xa, const Real ea, const Real xb, const Real eb,
@@ -1214,6 +1255,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
     const Real x2a = msz.x2min, x2l = msz.x2max - msz.x2min;
     const Real x3a = msz.x3min, x3l = msz.x3max - msz.x3min;
+    const bool tapb = m1_bazi_tap;
+    const Real tbr0 = m1_bazi_r0, tbr1 = m1_bazi_r1;
     par_for("m1_sph_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real r = spr ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
@@ -1227,6 +1270,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       if (bazi != 0.0 && sp) {   // sp: B = b r sin(theta) phihat at the cell centre
         const Real st = sin(x2v(m,j));
         ebz = 0.5*bazi*bazi*r*r*st*st;
+        if (tapb) {const Real f = M1BaziTaper(r, tbr0, tbr1); ebz *= f*f;}
         uh(m,IEN,k,j,i) += ebz;
       }
       if (bazi != 0.0 && !sp) {   // cs-open-1018: |B(rc)|^2/2, B = b a x rc
@@ -1238,6 +1282,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
         const Real w[3] = {bay*q[2] - baz*q[1], baz*q[0] - bax*q[2], bax*q[1] - bay*q[0]};
         ebz = 0.5*bazi*bazi*r*r*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
+        if (tapb) {const Real f = M1BaziTaper(r, tbr0, tbr1); ebz *= f*f;}
         uh(m,IEN,k,j,i) += ebz;
       }
       if (shg && spr) {   // cs-s4-1017: the cubed sphere too (M1ShellAngles)
