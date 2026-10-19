@@ -30,7 +30,11 @@
 //!  (2) the x2 / x3 face states of the merged cells come from a GROUP-level limited
 //!      linear reconstruction (group values of the two neighbouring groups, van Leer
 //!      slope on the coarse spacing, evaluated at the fine faces), so the core is second
-//!      order on the coarse lateral grid; x1 is untouched (fine, incl. wb_x1).
+//!      order on the coarse lateral grid; x1 is untouched (fine, incl. wb_x1).  The face
+//!      between two blocks is computed by both, from interior + ghost rows; a group whose
+//!      neighbour-group stencil the other block cannot form (f ceil(2/f) > nghost - 1, e.g.
+//!      f = 4 with nghost 3) takes a ZERO slope when it touches a block edge, so both blocks
+//!      form the same face states (found: f = 4 lost 5e-8 of the mass per cycle without it).
 //!  (3) Hydro::NewTimeStep uses the GROUP widths f dx2, f dx3 in the merged region.
 //!  (4) <hydro>/merge_lat_rad = true also replaces the radiation E (volume average) and F
 //!      (Cartesian volume average, same basis transforms) of each group after the implicit
