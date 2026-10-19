@@ -74,7 +74,7 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
     rc[n] = std::stod(vr[n]);
     fs[n] = std::stoi(vf[n]);
     if (n > 0 && !(rc[n] > rc[n-1])) MlatFatal("merge_lat_rc must increase");
-    if (fs[n] < 1 || fs[n] > 8) MlatFatal("merge_lat_f must be in 1..8");
+    if (fs[n] < 1 || fs[n] > 32) MlatFatal("merge_lat_f must be in 1..32");
     if ((ic.nx2 % fs[n]) != 0 || (ic.nx3 % fs[n]) != 0) {
       MlatFatal("MeshBlock nx2 = " + std::to_string(ic.nx2) + ", nx3 = " +
                 std::to_string(ic.nx3) + " not divisible by merge_lat_f = " +
