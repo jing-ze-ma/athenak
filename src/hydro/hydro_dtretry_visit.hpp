@@ -63,6 +63,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("use_wb_x1", use_wb_x1);
   v.value("wall_closed_ix1", wall_closed_ix1);
   v.value("cs_seam_hlle", cs_seam_hlle);
+  v.value("cs_seam_shared", cs_seam_shared);
   v.value("use_wb_x2", use_wb_x2);
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);
@@ -91,6 +92,8 @@ void hydro::Hydro::DtRetryVisit(V &v) {
 //   fofc_rep : FofcReport
 //   pam : hydro::AmModule *
 //   pmlat : hydro::MergeLat *
+//   pbval_fs : MeshBoundaryValuesCC *
+//   pseamfs : DvceFaceFld5D<Real> *
 //   id : HydroTaskIDs
 //   pmy_pack : MeshBlockPack *
 
