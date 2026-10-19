@@ -162,7 +162,8 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
                        test.compare("pulse1d") == 0 || test.compare("equil") == 0 ||
                        test.compare("marshak") == 0 || test.compare("thick_pulse") == 0 ||
                        test.compare("tophat") == 0 || test.compare("radwave") == 0 ||
-                       test.compare("advect_uniform") == 0);
+                       test.compare("advect_uniform") == 0 ||
+                       test.compare("sph_shell") == 0);   // cs-open-1018
   if (pmbp->pmhd != nullptr && !mhd_ok) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' is hydro only; with <mhd> "

@@ -525,12 +525,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       << "supported: the module couples to ONE fluid" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (have_mhd && ppack->pmesh->use_cubed_sphere) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_m1> with <mhd> on the cubed sphere is not validated "
-      << "(m1-mhd covers Cartesian and spherical polar)" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
+  // cs-open-1018: <mhd> on the cubed sphere too (EmagBuild takes the C2P's orthonormal
+  // |B|^2 there; the momentum layout is the hydro one: covariant on the panel basis)
   const std::string fblk = have_mhd ? "mhd" : "hydro";
   fl_on = have_hydro;
   fl_mhd = have_mhd;
@@ -1989,6 +1985,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_kr != nullptr) {delete pbval_kr;}
   if (pbval_vm != nullptr) {delete pbval_vm;}
   if (pbval_d3 != nullptr) {delete pbval_d3;}
+  if (pbval_sg != nullptr) {delete pbval_sg;}
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}

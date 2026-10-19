@@ -1519,6 +1519,10 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_d3 = nullptr;
   void ImplicitCsPairHalo(int c0);
   void ImplicitCsPairHaloD3();
+  // cs-open-1018: the implicit_hr_recon limiter ghosts (hr quad map across a seam)
+  void ImplicitMusclSigHalo();
+  MeshBoundaryValuesCC *pbval_sg = nullptr;
+  DvceArray5D<Real> sgw, sgw_c;
   // cs-open-1018 <rad_m1>/implicit_am_cs (cubed sphere; default = <hydro>/am_transport):
   // the axial angular-momentum-conservative radiation-gas exchange (rad_m1_implicit.cpp,
   // after the write-back); amw = the pre-write-back gas momentum and cell F (6)

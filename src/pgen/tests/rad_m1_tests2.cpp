@@ -86,9 +86,11 @@
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cubed_sphere.hpp"
+#include "hydro/hydro_am.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 #include "globals.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -920,9 +922,10 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // symmetric transient of T-sym.  The gas does not move (run it with
     // <rad_m1>/gas_feedback = false and a scattering opacity).
     // (On a Cartesian mesh r is x1: the planar twin used to compare solver behaviour.)
-    if (pmbp->phydro == nullptr) {
+    // cs-open-1018: <hydro> or <mhd> (the MHD mode: an optional azimuthal field, below)
+    if (pmbp->phydro == nullptr && pmbp->pmhd == nullptr) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<problem>/m1_test = sph_shell needs a <hydro> block"
+        << std::endl << "<problem>/m1_test = sph_shell needs a <hydro> or <mhd> block"
         << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -977,7 +980,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
                       pin->GetBoolean("problem","gas_teq") : false;
     const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
-    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    Real gm1 = ((pmbp->phydro != nullptr) ? pmbp->phydro->peos : pmbp->pmhd->peos)
+               ->eos_data.gamma - 1.0;
     // sptests-1011 (read only when named): core_r/core_rho/core_temp (the IDORT
     // homogeneous sphere), clump_r/clump_th/clump_ph/clump_a/clump_rho/clump_temp (an
     // opaque sphere), gas_hold = true (the whole gas state re-imposed every stage:
@@ -1036,14 +1040,9 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       }
     }
     const M1ShellGasP shp = m1_shg;
-    if (restart) return;
-    auto uh = pmbp->phydro->u0;
-    auto x1v = pmbp->pcoord->x1v;
-    auto x2v = pmbp->pcoord->x2v;
-    auto x3v = pmbp->pcoord->x3v;
-    const bool sp = pmy_mesh_->use_spherical_polar;
+    // (cs-open-1018: the history / final functions are enrolled before the restart return)
     // STAGE CS0 (m1-cs-implicit): on the cubed sphere x1 is r as well
-    const bool spr = sp || pmy_mesh_->use_cubed_sphere;
+    const bool spr = pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere;
     // <problem>/shell_report = true (read only when named): at the end of the run print
     // per radial index the min / mean / max over every column (all panels, ranks) of E
     // and F1, and max|F2|, max|F3| (RadM1ShellReport, double precision)
@@ -1074,6 +1073,118 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         pin->GetBoolean("problem","am_hist")) {
       user_hist_func = RadM1AmHistory;
     }
+    if (restart) return;
+    auto uh = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+    auto x1v = pmbp->pcoord->x1v;
+    auto x2v = pmbp->pcoord->x2v;
+    auto x3v = pmbp->pcoord->x3v;
+    const bool sp = pmy_mesh_->use_spherical_polar;
+    // cs-open-1018 (MHD, cubed sphere, read only when named): b_azi = b, b_azi_axis =
+    // "ax,ay,az": the field B = b a x r (azimuthal about the inclined axis a: B.rhat = 0 on
+    // every face, so the reflecting shell is a CLOSED MHD system).  Faces: the radial ones
+    // carry 0, a planar xi / eta face the exact flux b (a x int_f x dA).nhat_f divided by
+    // the code's face area (b0.x2f/x3f are face-normal PROJECTIONS B.nhat), so the CT
+    // divergence is round-off; the cell energy takes |B(rc)|^2/2.
+    Real bazi = 0.0, bax = 0.0, bay = 0.0, baz = 1.0;
+    if (pmbp->pmhd != nullptr && pin->DoesParameterExist("problem","b_azi")) {
+      bazi = pin->GetReal("problem","b_azi");
+      if (pin->DoesParameterExist("problem","b_azi_axis")) {
+        std::string sa = pin->GetString("problem","b_azi_axis");
+        for (auto &ch : sa) {if (ch == ',') ch = ' ';}
+        std::istringstream iss(sa);
+        iss >> bax >> bay >> baz;
+      }
+      const Real an = std::sqrt(bax*bax + bay*bay + baz*baz);
+      bax /= an; bay /= an; baz /= an;
+      // spherical polar (the sp reference of the cs MHD tests): the axis must be z there,
+      // B = b r sin(theta) phihat; the phi faces carry the exact flux
+      // b (r_r^3 - r_l^3)/3 (cos theta_l - cos theta_r) / area, the others 0
+      const bool spz = pmy_mesh_->use_spherical_polar && std::fabs(bax) < 1.0e-14 &&
+                       std::fabs(bay) < 1.0e-14 && baz > 0.0;
+      if (!pmy_mesh_->use_cubed_sphere && !spz) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "problem/b_azi is implemented on the cubed sphere and (axis z) "
+          << "on spherical polar only" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (spz) {
+        auto b0 = pmbp->pmhd->b0;
+        auto a3 = pmbp->pcoord->area.x3f;
+        auto xf1 = pmbp->pcoord->xx1f;
+        auto xf2 = pmbp->pcoord->xx2f;
+        const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
+        const Real bb = bazi;
+        par_for("m1_sh_bazi_sp", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
+        KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          if (j <= je && k <= ke) {b0.x1f(m,k,j,i) = 0.0;}
+          if (i > ie) return;
+          if (k <= ke) {b0.x2f(m,k,j,i) = 0.0;}
+          if (j <= je) {
+            const Real rl = xf1(m,i), rr = xf1(m,i+1);
+            const Real fl = bb*(rr*rr*rr - rl*rl*rl)/3.0*(cos(xf2(m,j)) - cos(xf2(m,j+1)));
+            b0.x3f(m,k,j,i) = fl/a3(m,k,j,i);
+          }
+        });
+      }
+    }
+    if (pmbp->pmhd != nullptr && bazi != 0.0 && pmy_mesh_->use_cubed_sphere) {
+      auto b0 = pmbp->pmhd->b0;
+      auto a2 = pmbp->pcoord->area.x2f;
+      auto a3 = pmbp->pcoord->area.x3f;
+      auto xf1 = pmbp->pcoord->xx1f;
+      auto pnl = pmbp->pmb->mb_panel;
+      const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
+      const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+      const Real bb = bazi, ax0 = bax, ax1 = bay, ax2 = baz;
+      par_for("m1_sh_bazi", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        const Real x2l = size.d_view(m).x2min, x2u = size.d_view(m).x2max;
+        const Real x3l = size.d_view(m).x3min, x3u = size.d_view(m).x3max;
+        const int p = pnl.d_view(m);
+        if (j <= je && k <= ke) {b0.x1f(m,k,j,i) = 0.0;}
+        if (i > ie) return;
+        const Real rl = xf1(m,i), rr = xf1(m,i+1);
+        const Real mom = (rr*rr*rr - rl*rl*rl)/3.0;
+        Real fa[3], fb[3], fn[3];
+        cubed_sphere::PanelFrame(p, fa, fb, fn);
+        auto flux = [&](const Real xa, const Real ea, const Real xb, const Real eb,
+                        const Real *nf) {
+          Real qa[3], qb[3];
+          cubed_sphere::PanelToCart(p, xa, ea, qa);
+          cubed_sphere::PanelToCart(p, xb, eb, qb);
+          const Real cx = qa[1]*qb[2] - qa[2]*qb[1], cy = qa[2]*qb[0] - qa[0]*qb[2];
+          const Real cz = qa[0]*qb[1] - qa[1]*qb[0];
+          const Real dt = qa[0]*qb[0] + qa[1]*qb[1] + qa[2]*qb[2];
+          const Real th = std::sqrt(cx*cx + cy*cy + cz*cz)/(1.0 + dt);
+          const Real mv[3] = {mom*th*(qa[0] + qb[0]), mom*th*(qa[1] + qb[1]),
+                              mom*th*(qa[2] + qb[2])};
+          // b (a x M).n
+          const Real w[3] = {ax1*mv[2] - ax2*mv[1], ax2*mv[0] - ax0*mv[2],
+                             ax0*mv[1] - ax1*mv[0]};
+          return bb*(w[0]*nf[0] + w[1]*nf[1] + w[2]*nf[2]);
+        };
+        if (k <= ke) {   // x2 face j: xi = xf
+          const Real xf = 0.25*M_PI*LeftEdgeX(j-js, nx2, x2l, x2u);
+          const Real el = 0.25*M_PI*LeftEdgeX(k-ks, nx3, x3l, x3u);
+          const Real er = 0.25*M_PI*LeftEdgeX(k+1-ks, nx3, x3l, x3u);
+          const Real t = std::tan(xf);
+          Real nf[3] = {fa[0] - t*fn[0], fa[1] - t*fn[1], fa[2] - t*fn[2]};
+          const Real nn = 1.0/std::sqrt(nf[0]*nf[0] + nf[1]*nf[1] + nf[2]*nf[2]);
+          for (int q = 0; q < 3; ++q) {nf[q] *= nn;}
+          b0.x2f(m,k,j,i) = flux(xf, el, xf, er, nf)/a2(m,k,j,i);
+        }
+        if (j <= je) {   // x3 face k: eta = ef
+          const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, nx3, x3l, x3u);
+          const Real xl = 0.25*M_PI*LeftEdgeX(j-js, nx2, x2l, x2u);
+          const Real xr = 0.25*M_PI*LeftEdgeX(j+1-js, nx2, x2l, x2u);
+          const Real t = std::tan(ef);
+          Real nf[3] = {fb[0] - t*fn[0], fb[1] - t*fn[1], fb[2] - t*fn[2]};
+          const Real nn = 1.0/std::sqrt(nf[0]*nf[0] + nf[1]*nf[1] + nf[2]*nf[2]);
+          for (int q = 0; q < 3; ++q) {nf[q] *= nn;}
+          b0.x3f(m,k,j,i) = flux(xl, ef, xr, ef, nf)/a3(m,k,j,i);
+        }
+      });
+    }
     const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
     // cs-open-1018 (cubed sphere, read only when named): rho_lat_amp = a multiplies the gas
     // density by 1 + a P_{rho_lat_l}(rhat . axis) with rho_lat_axis = z | edge | vertex
@@ -1091,6 +1202,13 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       const Real an = std::sqrt(rlx*rlx + rly*rly + rlz*rlz);
       rlx /= an; rly /= an; rlz /= an;
     }
+    // cs-open-1018 (spherical polar, read only when named): rho_lat_sp = a multiplies the
+    // gas density by 1 + a cos(2 pi (theta - x2min)/L2) cos(2 pi (phi - x3min)/L3): the
+    // periodic-wedge counterpart of rho_lat_amp (S7 steady thin test, cs vs sp)
+    Real rls = 0.0;
+    if (sp && pin->DoesParameterExist("problem","rho_lat_sp")) {
+      rls = pin->GetReal("problem","rho_lat_sp");
+    }
     auto mbpan = pmbp->pmb->mb_panel;
     auto &msz = pmy_mesh_->mesh_size;
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
@@ -1105,6 +1223,23 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = dgas*tgas/gm1;
+      Real ebz = 0.0;   // |B(rc)|^2/2 of b_azi, re-added after gas_teq below
+      if (bazi != 0.0 && sp) {   // sp: B = b r sin(theta) phihat at the cell centre
+        const Real st = sin(x2v(m,j));
+        ebz = 0.5*bazi*bazi*r*r*st*st;
+        uh(m,IEN,k,j,i) += ebz;
+      }
+      if (bazi != 0.0 && !sp) {   // cs-open-1018: |B(rc)|^2/2, B = b a x rc
+        const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
+                                               size.d_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
+                                                size.d_view(m).x3max);
+        Real q[3];
+        cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
+        const Real w[3] = {bay*q[2] - baz*q[1], baz*q[0] - bax*q[2], bax*q[1] - bay*q[0]};
+        ebz = 0.5*bazi*bazi*r*r*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
+        uh(m,IEN,k,j,i) += ebz;
+      }
       if (shg && spr) {   // cs-s4-1017: the cubed sphere too (M1ShellAngles)
         Real dd, t1, th, ph;
         M1ShellAngles(csm, csm ? mbpan.d_view(m) : 0, x2v(m,j), x3v(m,k), k, j, ks, js,
@@ -1134,8 +1269,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         uh(m,IDN,k,j,i) *= fr;
         uh(m,IEN,k,j,i) *= fr;
       }
+      if (rls != 0.0) {
+        const Real fr = 1.0 + rls*cos(2.0*M_PI*(x2v(m,j) - x2a)/x2l)
+                        *cos(2.0*M_PI*(x3v(m,k) - x3a)/x3l);
+        uh(m,IDN,k,j,i) *= fr;
+        uh(m,IEN,k,j,i) *= fr;
+      }
       if (gteq) {
-        uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1;
+        // CSMHD: the gas in equilibrium with E keeps the field's |B|^2/2 (b_azi) in IEN
+        uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1 + ebz;
       }
       if (gvr != 0.0) {
         Real vr = gvr*sin(M_PI*(r - x1a)/x1l);
@@ -1978,9 +2120,9 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
                          "Sz", "Lfx", "Lfy", "Lfz"};
   for (int n = 0; n < 14; ++n) {pdata->label[n] = lab[n];}
   MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->pradm1 == nullptr || pmbp->phydro == nullptr) return;
+  if (pmbp->pradm1 == nullptr || (pmbp->phydro == nullptr && pmbp->pmhd == nullptr)) return;
   auto u0 = pmbp->pradm1->u0;
-  auto uh = pmbp->phydro->u0;
+  auto uh = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
   auto vol = pmbp->pcoord->volume;
   auto x1v = pmbp->pcoord->x1v;
   auto x2v = pmbp->pcoord->x2v;
@@ -1994,11 +2136,13 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   const bool csm = pm->use_cubed_sphere;
   const Real ic2 = 1.0/(pmbp->pradm1->c_light*pmbp->pradm1->c_light);
   // cs-open-1018 <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)
-  const bool spn = pmbp->phydro->am_vector;
-  auto asp = pmbp->phydro->am_spin;
-  // <hydro>/frame_omega: the frame part of the absolute L, sum V rho rc x (Omega x rc)
-  const Real fo0 = pmbp->phydro->frame_om[0], fo1 = pmbp->phydro->frame_om[1];
-  const Real fo2 = pmbp->phydro->frame_om[2];
+  hydro::AmModule *pam = hydro::AmModuleOf(pmbp);
+  const bool spn = (pam != nullptr) && pam->am_vector;
+  auto asp = spn ? pam->am_spin : DvceArray4D<Real>();
+  // frame_omega: the frame part of the absolute L, sum V rho rc x (Omega x rc)
+  const Real fo0 = (pam != nullptr) ? pam->frame_om[0] : 0.0;
+  const Real fo1 = (pam != nullptr) ? pam->frame_om[1] : 0.0;
+  const Real fo2 = (pam != nullptr) ? pam->frame_om[2] : 0.0;
   const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji = nx2*nx1;

@@ -24,6 +24,7 @@
 #include "shearing_box/orbital_advection.hpp"
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -233,40 +234,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // ...and off BELOW this radius (0 = never), same path, same caveat.
   wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
-  if (pin->DoesParameterExist("hydro","am_transport")) {
-    am_transport = pin->GetBoolean("hydro","am_transport");
-  }
-  if (pin->DoesParameterExist("hydro","frame_omega")) {
-    std::string so = pin->GetString("hydro","frame_omega");
-    for (auto &ch : so) {if (ch == ',') ch = ' ';}
-    std::istringstream iso(so);
-    iso >> frame_om[0] >> frame_om[1] >> frame_om[2];
-    frame_on = true;
-  }
-  if (pin->DoesParameterExist("hydro","am_vector")) {
-    am_vector = pin->GetBoolean("hydro","am_vector");
-    if (am_vector) {
-      am_transport = true;
-      auto &ic = ppack->pmesh->mb_indcs;
-      const int nmbs = std::max(ppack->nmb_thispack, ppack->pmesh->nmb_maxperrank);
-      Kokkos::realloc(am_spin, nmbs, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng, ic.nx1 + 2*ic.ng);
-      Kokkos::realloc(am_spin1, nmbs, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng,
-                      ic.nx1 + 2*ic.ng);
-      Kokkos::deep_copy(am_spin, 0.0);
-      Kokkos::deep_copy(am_spin1, 0.0);
-      if (pin->DoesParameterExist("hydro","am_spin_return")) {
-        am_eta = pin->GetReal("hydro","am_spin_return");
-      }
-      if (am_eta > 0.0) {
-        Kokkos::realloc(spw, nmbs, 1, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng, ic.nx1 + 2*ic.ng);
-        Kokkos::deep_copy(spw, 0.0);
-        Kokkos::realloc(spw_c, nmbs, 1, 1, 1, 1);
-        pbval_spin = new MeshBoundaryValuesCC(ppack, pin, false);
-        pbval_spin->InitializeBuffers(1);
-        pbval_spin->SetVectorPairs(1, {});
-        pbval_spin->cs_noresample = true;
-      }
-    }
+  if (hydro::AmModule::Named(pin, "hydro")) {
+    pam = new hydro::AmModule(ppack, pin, "hydro");
   }
   // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
   // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
@@ -672,6 +641,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 // destructor
 
 Hydro::~Hydro() {
+  if (pam != nullptr) {delete pam;}
   delete peos;
   delete pbval_u;
   if (pvisc != nullptr) {delete pvisc;}

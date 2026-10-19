@@ -61,6 +61,7 @@
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -460,6 +461,26 @@ void RadiationM1::EmagBuild(bool un) {
   auto &x2f = pmy_pack->pcoord->xx2f;
   auto &x3v = pmy_pack->pcoord->x3v;
   auto &x3f = pmy_pack->pcoord->xx3f;
+  if (csr) {
+    // cs-open-1018: the cubed sphere's |B|^2 is that of the ORTHONORMAL triple the MHD
+    // C2P builds (Coordinates::GnomonicEquiangleRaiseVelMHD): the faces hold the
+    // projections B.nhat (nhat_xi.nhat_eta = -c), bx = B.rhat (CellCenteredRadialFld),
+    // by = B.e_xi = (b_xi + c b_eta)/s, bz = B.(e_eta - c e_xi)/s = b_eta; the plain
+    // sum of the face-normal means (M1EmagCell's generic branch) is wrong by O(c)
+    auto ccl = pmy_pack->pcoord->cos_cell;
+    auto csn = pmy_pack->pcoord->sin_cell;
+    par_for("m1_emag_cs", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = ccl(m,k,j), sn = csn(m,k,j);
+      const Real bx = CellCenteredRadialFld(b1f(m,k,j,i), b1f(m,k,j,i+1), x1f(m,i),
+                                            x1f(m,i+1), x1v(m,i));
+      const Real byn = 0.5*(b2f(m,k,j,i) + b2f(m,k,j+1,i));
+      const Real bz = 0.5*(b3f(m,k,j,i) + b3f(m,k+1,j,i));
+      const Real by = (byn + c*bz)/sn;
+      em(m,k,j,i) = 0.5*(bx*bx + by*by + bz*bz);
+    });
+    return;
+  }
   par_for("m1_emag", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     em(m,k,j,i) = M1EmagCell(b1f, b2f, b3f, sph, csr, x1v, x1f, x2v, x2f, x3v, x3f,

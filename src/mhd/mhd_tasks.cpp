@@ -19,6 +19,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "eos/eos.hpp"
+#include "hydro/hydro_am.hpp"
 #include "diffusion/viscosity.hpp"
 #include "diffusion/resistivity.hpp"
 #include "diffusion/conduction.hpp"
@@ -350,6 +351,13 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->use_spherical_polar) {
     pmy_pack->pcoord->SrcTermsSphericalPolarMHD(w0, bcc0, pwb, uflx,
                                                 peos->eos_data, beta_dt, u0);
+  }
+  // cs-open-1018 <mhd>/am_transport | am_vector | frame_omega (hydro/hydro_am.cpp): the
+  // MHD momentum flux carries the Maxwell stress; the CT field update is not touched
+  if (pam != nullptr) {
+    hydro::AmFluid fl{u0, u1, w0, wder, bcc0, uflx, peos->eos_data, true,
+                      use_wellbalance_static};
+    pam->Apply(pdrive, stage, beta_dt, fl);
   }
 
   // Add user source terms

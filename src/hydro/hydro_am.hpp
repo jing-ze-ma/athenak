@@ -24,12 +24,21 @@
 
 #include "athena.hpp"
 #include "coordinates/cubed_sphere.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
+#include <string>
+
+class MeshBlockPack;
+class ParameterInput;
+class Driver;
+class MeshBoundaryValuesCC;
 
 namespace hydro {
 
 struct HydroAmV {
   DvceArray5D<Real> w0, wder, f1, f2, f3;
+  DvceArray5D<Real> bcc;   // MHD: the cell field (cs: orthonormal triple, see hydro_am.cpp)
+  bool mhd = false;
   DvceArray4D<Real> a1, a2, a3, vol, xovr, yovr;
   DvceArray3D<Real> ccell, scell;
   DvceArray2D<Real> x1v, x1f, x2v, x2f, x3v, x3f;
@@ -88,8 +97,18 @@ bool HydroAmTorque(const HydroAmV &v, const int m, const int k, const int j,
     const Real pr = v.gen ? v.wder(m,IDPR,k,j,i) : v.eos.Pressure(rho, v.w0(m,IEN,k,j,i));
     const Real sine = v.scell(m,k,j);
     const Real sine2 = sine*sine;
-    const Real src2 = v.xovr(m,k,j,i)*(pr + rho*v3*v3*sine2);
-    const Real src3 = v.yovr(m,k,j,i)*(pr + rho*v2*v2*sine2);
+    // the angular source of SrcTermsGnomonicEquiangleImpl, incl. its Maxwell part (MHD:
+    // bcc the orthonormal triple, |B|^2 = b1^2 + b2^2 + b3^2, (s B^xi)^2 = (s b2 - c b3)^2,
+    // (s B^eta)^2 = b3^2)
+    Real ptot = pr, bb2 = 0.0, bb3 = 0.0;
+    if (v.mhd) {
+      const Real b1 = v.bcc(m,IBX,k,j,i), b2 = v.bcc(m,IBY,k,j,i), b3 = v.bcc(m,IBZ,k,j,i);
+      bb2 = (sine*b2 - c*b3)*(sine*b2 - c*b3);
+      bb3 = b3*b3;
+      ptot += 0.5*(b1*b1 + b2*b2 + b3*b3);
+    }
+    const Real src2 = v.xovr(m,k,j,i)*(ptot + rho*v3*v3*sine2 - bb3);
+    const Real src3 = v.yovr(m,k,j,i)*(ptot + rho*v2*v2*sine2 - bb2);
     const Real d2[4] = {dx1[0], dx2[0], dx3[0], src2};
     const Real d3[4] = {dx1[1], dx2[1], dx3[1], src3};
     Real tcode = 0.0;
@@ -234,8 +253,18 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
       if (n == 0) {d2 = dd;} else {d3 = dd;}
     }
     const Real sine = v.scell(m,k,j), sine2 = sine*sine;
-    d2 += v.xovr(m,k,j,i)*(pr + rho*v3*v3*sine2);
-    d3 += v.yovr(m,k,j,i)*(pr + rho*v2*v2*sine2);
+    {   // the angular source incl. the Maxwell part (as HydroAmTorque)
+      Real ptot = pr, bb2 = 0.0, bb3 = 0.0;
+      if (v.mhd) {
+        const Real b1 = v.bcc(m,IBX,k,j,i), b2 = v.bcc(m,IBY,k,j,i);
+        const Real b3 = v.bcc(m,IBZ,k,j,i);
+        bb2 = (sine*b2 - c*b3)*(sine*b2 - c*b3);
+        bb3 = b3*b3;
+        ptot += 0.5*(b1*b1 + b2*b2 + b3*b3);
+      }
+      d2 += v.xovr(m,k,j,i)*(ptot + rho*v3*v3*sine2 - bb3);
+      d3 += v.yovr(m,k,j,i)*(ptot + rho*v2*v2*sine2 - bb2);
+    }
     {
       const Real u2 = (d2 - c*d3)/s2, u3 = (d3 - c*d2)/s2;
       Real dp[3];
@@ -311,7 +340,13 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
     Real d3 = -(fr1p - fl1p)*ia
               - (v.f2(m,IM3,k,j+1,i)*v.a2(m,k,j+1,i) - v.f2(m,IM3,k,j,i)*v.a2(m,k,j,i))*ia
               - (v.f3(m,IM3,k+1,j,i)*v.a3(m,k+1,j,i) - v.f3(m,IM3,k,j,i)*v.a3(m,k,j,i))*ia;
-    d2 += v.xovr(m,k,j,i)*(pr + rho*v3*v3) - fac*(fl1t + fr1t)*ia;
+    // SrcTermsSphericalPolar{Hydro,MHD}: m_pp = p + rho v3^2 (+ (b1^2 + b2^2 - b3^2)/2)
+    Real mpp = pr + rho*v3*v3;
+    if (v.mhd) {
+      const Real b1 = v.bcc(m,IBX,k,j,i), b2 = v.bcc(m,IBY,k,j,i), b3 = v.bcc(m,IBZ,k,j,i);
+      mpp += 0.5*(b1*b1 + b2*b2 - b3*b3);
+    }
+    d2 += v.xovr(m,k,j,i)*mpp - fac*(fl1t + fr1t)*ia;
     d3 += -v.yovr(m,k,j,i)*(v.f2(m,IM3,k,j,i)*v.a2(m,k,j,i)
                             + v.f2(m,IM3,k,j+1,i)*v.a2(m,k,j+1,i))*ia
           - fac*(fl1p + fr1p)*ia;
@@ -472,6 +507,52 @@ void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m
   HydroAmCross(rc, fv, tcd);
   for (int c = 0; c < 3; ++c) {dT[c] = (-qv[c] - ol[c]) - tcd[c];}
 }
+
+
+//! \brief cs-open-1018: the fluid arrays the angular-momentum module works on (Hydro or MHD)
+struct AmFluid {
+  DvceArray5D<Real> u0, u1, w0, wder, bcc;
+  DvceFaceFld5D<Real> uflx;
+  EOS_Data eos;
+  bool mhd;
+  bool wbs;   // the fluid's wellbalance_static (refused)
+};
+
+//! \class AmModule
+//! \brief cs-open-1018: <hydro|mhd>/am_transport, am_vector, am_spin_return, frame_omega,
+//! frame_exact (all read only when named), owned by Hydro or MHD (hydro_am.cpp)
+class AmModule {
+ public:
+  AmModule(MeshBlockPack *ppack, ParameterInput *pin, const std::string &blk);
+  ~AmModule();
+  static bool Named(ParameterInput *pin, const std::string &blk);
+  void Apply(Driver *pdrive, int stage, Real bdt, const AmFluid &fl);
+  MeshBlockPack *pmy_pack;
+  std::string blk;
+  bool am_transport = false;
+  bool am_checked = false;
+  bool am_vector = false;
+  DvceArray4D<Real> am_spin, am_spin1, am_spins;
+  Real am_eta = 0.0;
+  MeshBoundaryValuesCC *pbval_spin = nullptr;
+  DvceArray5D<Real> spw, spw_c;
+  bool frame_on = false;
+  Real frame_om[3] = {0.0, 0.0, 0.0};
+  bool frame_exact = false;
+  DvceArray5D<Real> frame_ln;
+  void AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
+  void AmSpinReturn(const AmFluid &fl);
+  void FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
+  void AmFillV(HydroAmV &v, const AmFluid &fl);
+  void BasisCheck();
+};
+
+//! \brief the module of the pack's fluid (Hydro first, else MHD), nullptr if none
+AmModule *AmModuleOf(MeshBlockPack *pp);
+// cs-open-1018: the restart block of <hydro|mhd>/am_vector (outputs/restart.cpp, read in
+// pgen.cpp): header {1, nslab, 0, 0}; slab 0 = am_spin, slab 1 (if present) = the
+// radiation's hesdirk2 FSAL spin slope amk1 (RadiationM1)
+constexpr char kAmSpinRstMagic[8] = {'A', 'M', 'S', 'P', 'I', 'N', '0', '1'};
 
 }  // namespace hydro
 #endif  // HYDRO_HYDRO_AM_HPP_
