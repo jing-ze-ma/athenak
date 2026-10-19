@@ -1507,6 +1507,7 @@ class RadiationM1 {
   bool impl_muscl = false;      // plm half-range face values (default dc: untouched)
   bool impl_muscl_led = false;  // implicit_hr_recon = led: sign-preserving linearisation
   bool impl_muscl_hq = false;   // cs-s7-1019 implicit_hr_recon_q = h: plm of H+- = h+- E
+  bool impl_muscl_seam1 = false;  // cs-s7-1019 implicit_hr_recon_seam = onesided (cs)
   bool muscl_now = false;       // on for this step
   int muscl_nbuild = 0;         // limiter builds this step (then frozen)
   int impl_muscl_nfresh = 2;    // implicit_hr_recon_fresh: passes with a fresh limiter

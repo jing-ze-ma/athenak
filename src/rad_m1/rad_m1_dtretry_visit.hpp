@@ -694,6 +694,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("impl_muscl", impl_muscl);
   v.value("impl_muscl_led", impl_muscl_led);
   v.value("impl_muscl_hq", impl_muscl_hq);
+  v.value("impl_muscl_seam1", impl_muscl_seam1);
   v.value("muscl_now", muscl_now);
   v.value("muscl_nbuild", muscl_nbuild);
   v.value("impl_muscl_nfresh", impl_muscl_nfresh);

@@ -931,39 +931,74 @@ Real M1MusclRow(const DvceArray5D<Real> &iw, const int b, const int cx, const in
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1HqW
+//! \brief cs-s7-1019: the two slope weights of cell c along a lateral axis of the plm
+//! half-range faces, s_c = wl (Q_c - Q_c-1) + wr (Q_c+1 - Q_c), from its limiter sg:
+//! wl = wr = sg/2 (the centred van Leer slope); implicit_hr_recon_seam = onesided (os,
+//! cubed sphere): a cell next to a panel seam takes the ONE-SIDED slope of its own panel
+//! (the cross-seam mirror stencil bends at the seam, more and more towards a cube vertex,
+//! and its centred difference is then off by O(1) x the lateral gradient): this block's
+//! seam cell (c = cs, lo seam; c = ce, hi seam) and the ghost beyond the seam (the
+//! neighbour's seam cell, c = cs-1 / ce+1, whose sg is the neighbour's own, exchanged).
+
+KOKKOS_INLINE_FUNCTION
+void M1HqW(const bool os, const int c, const int cs, const int ce, const bool slo,
+           const bool shi, const Real sg, Real &wl, Real &wr) {
+  wl = 0.5*sg;
+  wr = 0.5*sg;
+  if (!os) {return;}
+  if ((slo && c == cs) || (shi && c == ce + 1)) {
+    wl = 0.0;
+    wr = sg;
+  } else if ((shi && c == ce) || (slo && c == cs - 1)) {
+    wl = sg;
+    wr = 0.0;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1HqFace
 //! \brief cs-s7-1019 (implicit_hr_recon_q = h): the plm part of ONE half-range face flux
-//! (the units of HCL E: flux / c_h... as the gm/gh terms of the face-flux kernels) with
-//! the half-range FLUXES H+- = h+- E reconstructed instead of E:
-//!   w c [sL/4 (h+_R E_R - h+_LL E_LL) - sR/4 (h-_RR E_RR - h-_L E_L)],
-//! w = AL of the face, sL / sR the limiters of the two cells, LL L | R RR the cells along
-//! the axis d (ratios from M1HrCell, the source of the face kernels).  A term is formed
-//! only where its face coefficient (hcl, hcr) and limiter are non-zero, so no physical
-//! ghost is read.  Matches the row of ImplicitMusclBuild (hq branch) term by term.
+//! (the units of HCL E, as the gm/gh terms of the face-flux kernels) with the half-range
+//! FLUXES H+- = h+- E reconstructed instead of E:
+//!   w c [s+_L/2 - s-_R/2],  s+_L = wll (H+_L - H+_LL) + wrl (H+_R - H+_L),
+//!                           s-_R = wlr (H-_R - H-_L) + wrr (H-_RR - H-_R),
+//! w = AL of the face, (wl, wr) the slope weights of the two cells (M1HqW: sig/2, sig/2
+//! = the centred van Leer slope), LL L | R RR the cells along the axis d (ratios from
+//! M1HrCell, the source of the face kernels).  A term is formed only where its face
+//! coefficient (hcl, hcr) and weight are non-zero, so no physical ghost is read.  Matches
+//! the row of ImplicitMusclBuild (hq branch) term by term.
 
 template <class V, class VC, class VH>
 KOKKOS_INLINE_FUNCTION
 Real M1HqFace(const int hsrc, const V &iw, const VC &vc, const VH &gh, const int m,
               const int d, const Real al, const Real ch, const Real hcl, const Real hcr,
-              const Real sl, const Real sr, const int kll, const int jll, const int ill,
+              const Real wll, const Real wrl, const Real wlr, const Real wrr,
+              const int kll, const int jll, const int ill,
               const int kl, const int jl, const int il, const int kr, const int jr,
               const int ir, const int krr, const int jrr, const int irr) {
   Real g = 0.0, hp, hm, fb;
-  if (hcl != 0.0 && sl != 0.0) {
-    M1HrCell(hsrc, iw, vc, gh, m, kr, jr, ir, d, iw(m,M1_IW_RF0,kr,jr,ir), hp, hm, fb);
-    Real t = fmax(hp, 0.0)*iw(m,M1_IW_EP,kr,jr,ir);
-    M1HrCell(hsrc, iw, vc, gh, m, kll, jll, ill, d, iw(m,M1_IW_RF0,kll,jll,ill), hp, hm,
-             fb);
-    t -= fmax(hp, 0.0)*iw(m,M1_IW_EP,kll,jll,ill);
-    g += 0.25*al*ch*sl*t;
+  auto hpe = [&](const int k, const int j, const int i) {
+    M1HrCell(hsrc, iw, vc, gh, m, k, j, i, d, iw(m,M1_IW_RF0,k,j,i), hp, hm, fb);
+    return fmax(hp, 0.0)*iw(m,M1_IW_EP,k,j,i);
+  };
+  auto hme = [&](const int k, const int j, const int i) {
+    M1HrCell(hsrc, iw, vc, gh, m, k, j, i, d, iw(m,M1_IW_RF0,k,j,i), hp, hm, fb);
+    return fmin(hm, 0.0)*iw(m,M1_IW_EP,k,j,i);
+  };
+  if (hcl != 0.0 && (wll != 0.0 || wrl != 0.0)) {
+    const Real ql = hpe(kl, jl, il);
+    Real t = 0.0;
+    if (wll != 0.0) {t += wll*(ql - hpe(kll, jll, ill));}
+    if (wrl != 0.0) {t += wrl*(hpe(kr, jr, ir) - ql);}
+    g += 0.5*al*ch*t;
   }
-  if (hcr != 0.0 && sr != 0.0) {
-    M1HrCell(hsrc, iw, vc, gh, m, krr, jrr, irr, d, iw(m,M1_IW_RF0,krr,jrr,irr), hp, hm,
-             fb);
-    Real t = fmin(hm, 0.0)*iw(m,M1_IW_EP,krr,jrr,irr);
-    M1HrCell(hsrc, iw, vc, gh, m, kl, jl, il, d, iw(m,M1_IW_RF0,kl,jl,il), hp, hm, fb);
-    t -= fmin(hm, 0.0)*iw(m,M1_IW_EP,kl,jl,il);
-    g -= 0.25*al*ch*sr*t;
+  if (hcr != 0.0 && (wlr != 0.0 || wrr != 0.0)) {
+    const Real qr = hme(kr, jr, ir);
+    Real t = 0.0;
+    if (wlr != 0.0) {t += wlr*(qr - hme(kl, jl, il));}
+    if (wrr != 0.0) {t += wrr*(hme(krr, jrr, irr) - qr);}
+    g -= 0.5*al*ch*t;
   }
   return g;
 }
@@ -2424,6 +2459,24 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                               impl_hr_xs)) {
           ImplFatal("<rad_m1>/implicit_hr_recon_q = h needs implicit_hr_recon = plm with "
                     "implicit_flux_beam = halfrange (no sf face ratios, no hr_excess)");
+        }
+      }
+      // cs-s7-1019 (read only when named): implicit_hr_recon_seam = centred (default) |
+      // onesided: on the cubed sphere the seam cells (and the ghosts beyond a seam) take
+      // the one-sided slope of their own panel (M1HqW); the centred slope across a seam
+      // runs along the bent mirror stencil, an O(1) slope error near the cube vertices
+      // (the thin-regime lateral flux there, S7 test).  Needs implicit_hr_recon_q = h.
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_seam")) {
+        std::string ss = pin->GetString("rad_m1","implicit_hr_recon_seam");
+        if (ss.compare("onesided") == 0) {
+          impl_muscl_seam1 = true;
+        } else if (ss.compare("centred") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_seam = '" + ss
+                    + "' is not a choice (centred | onesided)");
+        }
+        if (impl_muscl_seam1 && !impl_muscl_hq) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_seam = onesided needs "
+                    "implicit_hr_recon_q = h");
         }
       }
     }
@@ -5299,6 +5352,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool ledt = impl_muscl_led;
   // cs-s7-1019 implicit_hr_recon_q = h: the face fluxes as the row (M1HqFace)
   const bool hqt = impl_muscl_hq;
+  const bool hqos = impl_muscl_hq && impl_muscl_seam1 && cs_geom;   // ..._seam = onesided
   const int hqsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
                                   : (impl_hr_model ? 0 : -1));
   auto hqvc_ = vet_cell;
@@ -5454,8 +5508,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const Real hcl = bw2_(m,M1_IFW_HCL,k,j,i), hcr = bw2_(m,M1_IFW_HCR,k,j,i);
         Real gm = 0.0;
         if (hqt) {
+          Real wll, wrl, wlr, wrr;
+          const bool slo = hqos && (cseam(m,0) != 0), shi = hqos && (cseam(m,1) != 0);
+          M1HqW(hqos, jm, js, je, slo, shi, iw_(m,imbt+M1_IM_SIG+1,k,jm,i), wll, wrl);
+          M1HqW(hqos, j, js, je, slo, shi, iw_(m,imbt+M1_IM_SIG+1,k,j,i), wlr, wrr);
           gm = M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 1, bw2_(m,M1_IFW_AL,k,j,i), ch, hcl,
-                        hcr, iw_(m,imbt+M1_IM_SIG+1,k,jm,i), iw_(m,imbt+M1_IM_SIG+1,k,j,i),
+                        hcr, wll, wrl, wlr, wrr,
                         k, jm-1, i, k, jm, i, k, j, i, k, j+1, i);
         } else if (ledt) {
           if (hcl != 0.0) {
@@ -5632,9 +5690,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           const Real hcl = bw3_(m,M1_IFW_HCL,k,j,i), hcr = bw3_(m,M1_IFW_HCR,k,j,i);
           Real gm = 0.0;
           if (hqt) {
+            Real wll, wrl, wlr, wrr;
+            const bool slo = hqos && (cseam(m,2) != 0), shi = hqos && (cseam(m,3) != 0);
+            M1HqW(hqos, km, ks, ke, slo, shi, iw_(m,imbt+M1_IM_SIG+2,km,j,i), wll, wrl);
+            M1HqW(hqos, k, ks, ke, slo, shi, iw_(m,imbt+M1_IM_SIG+2,k,j,i), wlr, wrr);
             gm = M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 2, bw3_(m,M1_IFW_AL,k,j,i), ch, hcl,
-                          hcr, iw_(m,imbt+M1_IM_SIG+2,km,j,i),
-                          iw_(m,imbt+M1_IM_SIG+2,k,j,i),
+                          hcr, wll, wrl, wlr, wrr,
                           km-1, j, i, km, j, i, k, j, i, k+1, j, i);
           } else if (ledt) {
             if (hcl != 0.0) {
@@ -14465,9 +14526,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (musf && hqf) {
             const int imm = (cyclic && im == is) ? ie : (im-1);
             const int ipp = (cyclic && ip == ie) ? is : (ip+1);
+            const Real sgl = 0.5*iw_(m,imbf+M1_IM_SIG,k,j,im);
+            const Real sgr = 0.5*iw_(m,imbf+M1_IM_SIG,k,j,ip);
             gh += M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 0, al, ch,
                            ifw_(m,M1_IFW_HCL,k,j,i), ifw_(m,M1_IFW_HCR,k,j,i),
-                           iw_(m,imbf+M1_IM_SIG,k,j,im), iw_(m,imbf+M1_IM_SIG,k,j,ip),
+                           sgl, sgl, sgr, sgr,
                            k, j, imm, k, j, im, k, j, ip, k, j, ipp);
           } else if (musf && ledf) {
             // led: the plm face values s = a dL (the fixed point's single value)
@@ -16129,6 +16192,7 @@ void RadiationM1::ImplicitMusclBuild() {
   const bool qstep = impl_muscl_qsstep;
   const int qref = qstep ? (b + M1_IM_EPREV) : M1_IW_EP;
   const int nfr = qstep ? 1 : impl_muscl_nfresh;
+  const bool osm = impl_muscl_hq && impl_muscl_seam1 && cs_geom;   // cs-s7-1019
   if (led || muscl_nbuild < nfr) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
@@ -16195,6 +16259,19 @@ void RadiationM1::ImplicitMusclBuild() {
           } else {
             sg = 4.0*ea*eb/SQR(ea + eb);
           }
+          // cs-s7-1019 implicit_hr_recon_seam = onesided: a seam cell's slope is the
+          // one-sided difference of its own panel, s = sg dI (M1HqW), limited so that
+          // the face value at the seam stays between E_c and the ghost: sg = min(1,
+          // 2 dX/dI) (dI the interior, dX the cross-seam difference)
+          if (osm && d > 0) {
+            const int c = (d == 1) ? j : k;
+            const int cs = (d == 1) ? js : ks, ce = (d == 1) ? je : ke;
+            if (c == cs && cseam(m,2*d-2) != 0) {
+              sg = fmin(1.0, 2.0*ea/eb);
+            } else if (c == ce && cseam(m,2*d-1) != 0) {
+              sg = fmin(1.0, 2.0*eb/ea);
+            }
+          }
         }
       }
       if (first) {
@@ -16220,6 +16297,7 @@ void RadiationM1::ImplicitMusclBuild() {
   // cs-s7-1019 implicit_hr_recon_q = h: the half-range ratios h+-_d of the cells along
   // the row (M1HrCell, the source of the face kernels: vet_sc 1, vet_gd 2, model 0)
   const bool hq = impl_muscl_hq;
+  const bool hqos = impl_muscl_hq && impl_muscl_seam1 && cs_geom;   // ..._seam = onesided
   const bool hqgd = vgd_on && sph && (vgd_hr.extent_int(0) > 0);
   const int hsrc = vet_sc ? 1 : (hqgd ? 2 : (impl_hr_model ? (twod ? 0 : 3) : -1));
   auto hvc_ = vet_cell;
@@ -16321,33 +16399,46 @@ void RadiationM1::ImplicitMusclBuild() {
         } else {
           alp = bw3_(m,M1_IFW_AL,k+1,j,i); alm = bw3_(m,M1_IFW_AL,k,j,i);
         }
-        const Real ap = 0.25*alp*ch, am = 0.25*alm*ch;
-        Real ca1 = 0.0, ca0 = 0.0, cb2 = 0.0, cb0 = 0.0;
-        Real cc0 = 0.0, cc2 = 0.0, cd1 = 0.0, cd0 = 0.0;
-        Real hpa, hma, hpb, hmb;
-        if (hlp != 0.0 && sc != 0.0) {
-          hcell(1, hpa, hma); hcell(-1, hpb, hmb);
-          ca1 = fp*sc*ap*hpa; ca0 = fp*sc*ap*hpb;
+        // the slope weights of the cells c-1, c, c+1 (M1HqW; one-sided next to a seam
+        // under implicit_hr_recon_seam = onesided)
+        const int cc = (d == 0) ? i : ((d == 1) ? j : k);
+        const int cs0 = (d == 0) ? is : ((d == 1) ? js : ks);
+        const int ce0 = (d == 0) ? ie : ((d == 1) ? je : ke);
+        const bool slo = hqos && (d > 0) && (cseam(m,2*d-2) != 0);
+        const bool shi = hqos && (d > 0) && (cseam(m,2*d-1) != 0);
+        Real wlm, wrm, wlc, wrc, wlp, wrp;
+        M1HqW(hqos, cc-1, cs0, ce0, slo, shi, sm, wlm, wrm);
+        M1HqW(hqos, cc, cs0, ce0, slo, shi, sc, wlc, wrc);
+        M1HqW(hqos, cc+1, cs0, ce0, slo, shi, sp, wlp, wrp);
+        const Real ap = 0.5*alp*ch*fp, am = 0.5*alm*ch*fm;
+        // coefficients on E_c-2 .. E_c+2 (index o + 2)
+        Real co[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+        Real hpo, hmo;
+        auto add = [&](const int o, const Real wq, const bool plus) {
+          hcell(o, hpo, hmo);
+          co[o + 2] += wq*(plus ? hpo : hmo);
+        };
+        if (hlp != 0.0) {   // face +, left state (cell c): + ap s+_c
+          if (wlc != 0.0) {add(0, ap*wlc, true); add(-1, -ap*wlc, true);}
+          if (wrc != 0.0) {add(1, ap*wrc, true); add(0, -ap*wrc, true);}
         }
-        if (hrp != 0.0 && sp != 0.0) {
-          hcell(2, hpa, hma); hcell(0, hpb, hmb);
-          cb2 = fp*sp*ap*hma; cb0 = fp*sp*ap*hmb;
+        if (hrp != 0.0) {   // face +, right state (cell c+1): - ap s-_c+1
+          if (wlp != 0.0) {add(1, -ap*wlp, false); add(0, ap*wlp, false);}
+          if (wrp != 0.0) {add(2, -ap*wrp, false); add(1, ap*wrp, false);}
         }
-        if (hlm != 0.0 && sm != 0.0) {
-          hcell(0, hpa, hma); hcell(-2, hpb, hmb);
-          cc0 = fm*sm*am*hpa; cc2 = fm*sm*am*hpb;
+        if (hlm != 0.0) {   // face -, left state (cell c-1): - am s+_c-1
+          if (wlm != 0.0) {add(-1, -am*wlm, true); add(-2, am*wlm, true);}
+          if (wrm != 0.0) {add(0, -am*wrm, true); add(-1, am*wrm, true);}
         }
-        if (hrm != 0.0 && sc != 0.0) {
-          hcell(1, hpa, hma); hcell(-1, hpb, hmb);
-          cd1 = fm*sc*am*hma; cd0 = fm*sc*am*hmb;
+        if (hrm != 0.0) {   // face -, right state (cell c): + am s-_c
+          if (wlc != 0.0) {add(0, am*wlc, false); add(-1, -am*wlc, false);}
+          if (wrc != 0.0) {add(1, am*wrc, false); add(0, -am*wrc, false);}
         }
-        // row = fp dG+ - fm dG-: x-2 cc2; x-1 -(ca0 + cd0); x+1 ca1 + cd1; x+2 -cb2;
-        // x0 cb0 - cc0
-        cf[d][0] = cc2;
-        cf[d][1] = -(ca0 + cd0);
-        cf[d][2] = ca1 + cd1;
-        cf[d][3] = -cb2;
-        dg += cb0 - cc0;
+        cf[d][0] = co[0];
+        cf[d][1] = co[1];
+        cf[d][2] = co[3];
+        cf[d][3] = co[4];
+        dg += co[2];
         continue;
       }
       if (led) {
