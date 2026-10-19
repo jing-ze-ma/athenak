@@ -703,6 +703,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vmw_c", vmw_c);
   v.view("d3w", d3w);
   v.view("d3w_c", d3w_c);
+  v.view("sgw", sgw);
+  v.view("sgw_c", sgw_c);
   v.value("impl_am_cs", impl_am_cs);
   v.view("amw", amw);
   v.value("am_vec", am_vec);
@@ -1305,6 +1307,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   hi_err : int *
 //   pbval_vm : MeshBoundaryValuesCC *
 //   pbval_d3 : MeshBoundaryValuesCC *
+//   pbval_sg : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *
 //   id : RadiationM1TaskIDs
 //   pin_cs_ : ParameterInput *

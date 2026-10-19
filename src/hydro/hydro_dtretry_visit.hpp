@@ -34,17 +34,6 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("use_fofc", use_fofc);
   v.view("fofc_cnt", fofc_cnt);
   v.value("nan_report", nan_report);
-  v.value("am_transport", am_transport);
-  v.value("am_checked", am_checked);
-  v.value("am_vector", am_vector);
-  v.view("am_rhat", am_rhat);
-  v.view("am_spin", am_spin);
-  v.view("am_spin1", am_spin1);
-  v.value("am_eta", am_eta);
-  v.view("spw", spw);
-  v.view("spw_c", spw_c);
-  v.value("frame_on", frame_on);
-  v.value("frame_om", frame_om);
   v.view("utest", utest);
   v.value("use_etotgrav", use_etotgrav);
   v.view("phi0.x1f", phi0.x1f);
@@ -99,7 +88,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
 //   pcond : Conduction *
 //   psrc : SourceTerms *
 //   fofc_rep : FofcReport
-//   pbval_spin : MeshBoundaryValuesCC *
+//   pam : hydro::AmModule *
 //   id : HydroTaskIDs
 //   pmy_pack : MeshBlockPack *
 
