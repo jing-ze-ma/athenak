@@ -158,6 +158,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  const bool sraw = seam_raw;   // csedge-1019 (bvals.hpp)
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto rbuf = RecvBufDv();
 
@@ -244,7 +245,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
           val = (v == IM2) ? f2o : f3o;
         }
         const int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
-        rbuf[dn].flux(dm, index) = sgn*val;
+        rbuf[dn].flux(dm, index) = sraw ? val : sgn*val;
       });
     });
   });
@@ -340,7 +341,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
           val = (v == IM2) ? f2o : f3o;
         }
         const int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
-        sbuf[n].flux(m, index) = sgn*val;
+        sbuf[n].flux(m, index) = sraw ? val : sgn*val;
       });
     });
   });
@@ -435,9 +436,55 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
 #endif
 
   int nvar = flx.x1f.extent_int(1);
-  const int sfmode = pmy_pack->pmesh->cs_seam_flux;
-  if (sfmode != 0) {
-    // <mesh>/cs_seam_flux = upwind (1) or positive (2); see mesh.cpp.  One team per
+  const int sfmode = seam_raw ? -1 : pmy_pack->pmesh->cs_seam_flux;
+  if (sfmode == -1) {
+    // csedge-1019 seam_raw: every variable of the face takes the NEIGHBOUR's value (the
+    // pack already re-expressed the tangential pair IM2/IM3 on this panel's basis)
+    Kokkos::TeamPolicy<> pol_r(DevExeSpace(), (nmb*nnghbr), Kokkos::AUTO);
+    BvalsTeamFor("SeamStateRecvRaw", pol_r, KOKKOS_LAMBDA(TeamMember_t tmember) {
+      const int m = (tmember.league_rank())/nnghbr;
+      const int n = (tmember.league_rank() - m*nnghbr);
+      if (nghbr.d_view(m,n).gid < 0) {return;}
+      bool x2face; Real sgn;
+      if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
+                        cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
+        return;
+      }
+      if (nghbr.d_view(m,n).panel == mbpanel.d_view(m)) {return;}
+      const int il = rbuf[n].iflux_same[0].bis;
+      const int iu = rbuf[n].iflux_same[0].bie;
+      const int jl = rbuf[n].iflux_same[0].bjs;
+      const int ju = rbuf[n].iflux_same[0].bje;
+      const int kl = rbuf[n].iflux_same[0].bks;
+      const int ku = rbuf[n].iflux_same[0].bke;
+      const int ni = iu - il + 1;
+      const int nj = ju - jl + 1;
+      const int nk = ku - kl + 1;
+      const int nkj = nk*nj;
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+        int k = idx / nj;
+        int j = (idx - k * nj) + jl;
+        k += kl;
+        Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+                             [&](const int i) {
+          const int i0 = i-il + ni*((j-jl) + nj*(k-kl));
+          const int nvs = ni*nj*nk;
+          for (int v=0; v<nvar; ++v) {
+            const Real recv = rbuf[n].flux(m, i0 + nvs*v);
+            if (x2face) {
+              flx.x2f(m,v,k,j,i) = recv;
+            } else {
+              flx.x3f(m,v,k,j,i) = recv;
+            }
+          }
+        });
+      });
+    });
+    return TaskStatus::complete;
+  }
+  if (sfmode == 1 || sfmode == 2) {
+    // <mesh>/cs_seam_flux = upwind (1) or positive_donor (2, the 09-26 default; since
+    // csedge-1019 the default is average, see mesh.cpp).  One team per
     // (MeshBlock, buffer): the choice is made ONCE per face from the MASS flux of both
     // sides and applied to every variable (deciding per variable would mix fluxes from
     // two different Riemann solves in one face, and would race on IDN).  a = this side's

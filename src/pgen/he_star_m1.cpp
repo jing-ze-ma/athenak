@@ -2783,6 +2783,58 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   smd.modify_host();
   smd.sync_device();
   auto smd_d = smd.d_view;
+  // ylmseed-1019 (USER 10-19: "we should use sph harmonics"): he_seed_ylm = true (read
+  // only when named) replaces the lateral modes by a random combination of REAL spherical
+  // harmonics Y_lm(theta, phi) in the GLOBAL polar angles of the cell centre (cubed sphere
+  // and spherical polar alike), l in [he_seed_lmin, he_seed_lmax], every m = -l..l, each
+  // coefficient Gaussian (own mt19937 stream seeded by he_seed_rng), normalised so the
+  // lateral field has rms 1/sqrt 2 over the full sphere (the multi-mode convention), under
+  // the same radial envelope.  Smooth at the poles (no taper) and with no preferred
+  // azimuthal period: the 90-degree wedge periods of the modes above are exactly 4-fold
+  // symmetric in phi, which is the cubed sphere's own panel symmetry.
+  const bool sylm = pin->DoesParameterExist("problem","he_seed_ylm") &&
+                    pin->GetBoolean("problem","he_seed_ylm");
+  const int slmin = sylm ? pin->GetOrAddInteger("problem","he_seed_lmin",1) : 0;
+  const int slmax = sylm ? pin->GetOrAddInteger("problem","he_seed_lmax",8) : 0;
+  if (sylm && (slmin < 1 || slmax < slmin || slmax > 32 || !(srhi > srlo))) {
+    HsFatal("he_seed_ylm needs 1 <= he_seed_lmin <= he_seed_lmax <= 32 and "
+            "he_seed_rhi > he_seed_rlo", __LINE__);
+  }
+  const int nylm = sylm ? (slmax + 1)*(slmax + 1) : 1;
+  DualArray1D<Real> sylc("hs_seed_ylm", nylm);   // index l*l + l + m: c_lm N_lm
+  for (int q = 0; q < nylm; ++q) {sylc.h_view(q) = 0.0;}
+  if (sylm) {
+    std::mt19937 rngy(static_cast<unsigned>(srng) + 0x9e37u);
+    std::normal_distribution<double> g01(0.0, 1.0);
+    double ss = 0.0;
+    for (int l = slmin; l <= slmax; ++l) {
+      for (int mm = -l; mm <= l; ++mm) {
+        const double a = g01(rngy);
+        sylc.h_view(l*l + l + mm) = a;
+        ss += a*a;
+      }
+    }
+    // orthonormal real Y (int Y^2 dOmega = 1): <field^2> = sum c^2/(4 pi) = 1/2
+    const double cn = std::sqrt(2.0*M_PI/ss);
+    for (int l = slmin; l <= slmax; ++l) {
+      for (int mm = -l; mm <= l; ++mm) {
+        const int am = std::abs(mm);
+        const double lnf = std::lgamma(l - am + 1.0) - std::lgamma(l + am + 1.0);
+        double nlm = std::sqrt((2.0*l + 1.0)/(4.0*M_PI)*std::exp(lnf));
+        if (mm != 0) {nlm *= std::sqrt(2.0);}
+        sylc.h_view(l*l + l + mm) *= cn*nlm;
+      }
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: seed = real spherical harmonics l " << slmin << ".." << slmax
+                << " (" << (slmax + 1)*(slmax + 1) - slmin*slmin << " terms, all m), "
+                << "amplitude " << seed << (srad ? " (temperature: eint and E)" : " (eint)")
+                << ", r " << srlo << " .. " << srhi << ", rng " << srng << std::endl;
+    }
+  }
+  sylc.modify_host();
+  sylc.sync_device();
+  auto sylc_d = sylc.d_view;
   // STAGE CS3: on the cubed sphere the modes are laid down in the GLOBAL polar angles of
   // the cell centre, with the 90 x 90 degree wedge's periods (theta_a = pi/4, L_theta =
   // L_phi = pi/2: the same k2, k3 give the same wavelengths as on the production wedge;
@@ -2840,7 +2892,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         ph3 = atan2(q[1], q[0]);
         tap = sin(th2);
       }
-      if (snk > 0) {
+      if (sylm) {
+        // sum over m of P_l^m(cos theta) [c_lm cos(m phi) + c_l,-m sin(m phi)], the
+        // associated Legendre functions by the stable upward recurrence in l (no
+        // Condon-Shortley phase: the coefficients are random)
+        const Real x = cos(th2), sth = sin(th2);
+        Real amp = 0.0, pmm = 1.0;
+        for (int mm = 0; mm <= slmax; ++mm) {
+          if (mm > 0) {pmm *= (2.0*mm - 1.0)*sth;}
+          const Real cm = cos(mm*ph3), sm = sin(mm*ph3);
+          Real pl2 = 0.0, pl1 = pmm;   // P_{l-2}, P_{l-1}; start at l = mm
+          for (int l = mm; l <= slmax; ++l) {
+            Real pl;
+            if (l == mm) {
+              pl = pmm;
+            } else if (l == mm + 1) {
+              pl = x*(2.0*mm + 1.0)*pmm;
+            } else {
+              pl = (x*(2.0*l - 1.0)*pl1 - (l + mm - 1.0)*pl2)/(l - mm);
+            }
+            if (l > mm) {pl2 = pl1; pl1 = pl;}
+            if (l >= slmin) {
+              const Real cp = sylc_d(l*l + l + mm);
+              amp += (mm == 0) ? cp*pl : pl*(cp*cm + sylc_d(l*l + l - mm)*sm);
+            }
+          }
+        }
+        fac = 1.0 + seed*sin(M_PI*(r - srlo)/(srhi - srlo))*amp;
+      } else if (snk > 0) {
         Real amp = 0.0;
         for (int n=0; n<snk; ++n) {
           amp += smd_d(n,2)*sin(2.0*M_PI*(smd_d(n,0)*(th2 - x2a)/lth

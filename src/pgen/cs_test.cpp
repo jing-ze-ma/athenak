@@ -107,6 +107,8 @@ Real cs_svol = 0.0;       // total active volume, filled by CSTestConsSums
 Real cs_hscl = 0.0;       // pressure scale height H = (p0/d0)/g
 Real cs_gacc = 0.0;       // inward gravitational acceleration g (constant)
 int  cs_exact_panel_ghosts = 0;
+// csedge-1019 (TEST): iprob=13 initial velocity noise, amplitude in units of c_s (0 = off)
+Real cs_vnoise = 0.0;
 
 //----------------------------------------------------------------------------------------
 //! \brief iprob = 5: density a function of the SPHERICAL RADIUS alone, uniform pressure,
@@ -541,6 +543,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (iprob == 13) {
     cs_gacc = pin->GetOrAddReal("problem", "grav", 1.0);
     cs_hscl = (p0/d0)/cs_gacc;
+    cs_vnoise = pin->GetOrAddReal("problem", "vnoise", 0.0);
     // the exact state is hydrostatic and AT REST; a nonzero omega would leave the
     // checker comparing against a rigid rotation this problem does not carry.
     cs_omega = 0.0;
@@ -617,6 +620,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real blx_ = cs_blx, bly_ = cs_bly, blz_ = cs_blz;
   const Real blang_ = cs_blang, blp_ = cs_blp;
   const Real hs_ = cs_hscl;
+  const Real vn_ = cs_vnoise*sqrt((gm1 + 1.0)*p0/d0);
   const Real cavd_ = cs_cavd, cavx_ = cs_cavx, cavy_ = cs_cavy, cavz_ = cs_cavz;
   const Real cavw_ = cs_cavw, cavr_ = cs_cavr, cavwr_ = cs_cavwr;
   const int cavp_ = cs_cavp;
@@ -744,6 +748,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w0(m,IVX,k,j,i) = 0.0;
       w0(m,IVY,k,j,i) = 0.0;
       w0(m,IVZ,k,j,i) = 0.0;
+      if (vn_ > 0.0) {
+        // csedge-1019 (TEST): deterministic cell noise from the Cartesian position
+        Real qx, qy, qz;
+        PanelToCart(mbpanel.d_view(m), xi, eta, qx, qy, qz);
+        const Real rr = 0.5*(rad + rad_rr);
+        auto hsh = [&](const Real a, const Real b, const Real c) {
+          const Real t = sin(qx*a + qy*b + qz*c + rr*17.31)*43758.5453;
+          return 2.0*(t - floor(t)) - 1.0;
+        };
+        w0(m,IVX,k,j,i) = vn_*hsh(12.9898, 78.233, 37.719);
+        w0(m,IVY,k,j,i) = vn_*hsh(39.346, 11.135, 83.155);
+        w0(m,IVZ,k,j,i) = vn_*hsh(73.156, 52.235, 9.151);
+      }
       if (nscal > 0) w0(m,nhyd,k,j,i) = 1.0;
       return;
     }

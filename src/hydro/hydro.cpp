@@ -171,6 +171,18 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u->cs_rho_guard = ppack->pmesh->cs_seam_rho_guard;
   pbval_u->cs_lin_resample = ppack->pmesh->cs_seam_resample_linear;
   pbval_u->InitializeBuffers((nhydro+nscalars));
+  // csedge-1019 <mesh>/cs_seam_flux = shared: the seam face-state exchange (hydro.hpp)
+  if (ppack->pmesh->use_cubed_sphere && ppack->pmesh->cs_seam_flux == 3) {
+    cs_seam_shared = true;
+    const int nfs = nhydro + nscalars + NDERIVED;
+    pbval_fs = new MeshBoundaryValuesCC(ppack, pin, false);
+    pbval_fs->seam_raw = true;
+    pbval_fs->InitializeBuffers(nfs);
+    auto &ind = ppack->pmesh->mb_indcs;
+    const int n1 = ind.nx1 + 2*ind.ng, n2 = ind.nx2 + 2*ind.ng, n3 = ind.nx3 + 2*ind.ng;
+    pseamfs = new DvceFaceFld5D<Real>("cs_seamfs", nmb, nfs, n3, n2, n1);
+    Kokkos::realloc(pseamfs->x1f, nmb, nfs, 1, 1, 1);   // x1 faces never cross a seam
+  }
 
   // Orbital advection and shearing box BCs (if requested in input file)
   if (pin->DoesBlockExist("shearing_box")) {
@@ -210,6 +222,20 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   use_wellbalance_dynamic = pin->GetOrAddBoolean("hydro","wellbalance_dynamic",false);
   use_wb_x1 = pin->GetOrAddBoolean("hydro","wb_x1",false);
+  // csedge-1019 <hydro>/cs_seam_rsolver (cubed sphere only): "same" = the seam faces use
+  // <hydro>/rsolver like every other face; "hlle" = they take the HLLE flux.  HLLC (and
+  // its variants) resolve the contact, so a shear ACROSS a seam face is not damped at all
+  // at S_M ~ 0; with the resampled seam ghosts that left a growing one-cell along-edge jet
+  // in the edge row, seeded at the cube vertices (RSG g25 cs, csedge_1019/NOTE.md).
+  {
+    const std::string csr = pin->GetOrAddString("hydro","cs_seam_rsolver","same");
+    if (csr != "same" && csr != "hlle") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/cs_seam_rsolver must be same or hlle" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cs_seam_hlle = (csr == "hlle") && ppack->pmesh->use_cubed_sphere;
+  }
   // rebuild the well-balanced background cache at stage 1 of every N-th cycle instead
   // of every stage (0 = every stage).  A balanced state is unaffected; an evolving one
   // reconstructs against a background up to N cycles old, which is nothing against the
@@ -665,6 +691,8 @@ Hydro::~Hydro() {
   if (pam != nullptr) {delete pam;}
   delete peos;
   delete pbval_u;
+  if (pbval_fs != nullptr) {delete pbval_fs;}
+  if (pseamfs != nullptr) {delete pseamfs;}
   if (pvisc != nullptr) {delete pvisc;}
   if (pcond != nullptr) {delete pcond;}
   if (psrc != nullptr) {delete psrc;}
