@@ -930,6 +930,44 @@ Real M1MusclRow(const DvceArray5D<Real> &iw, const int b, const int cx, const in
   return y;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1HqFace
+//! \brief cs-s7-1019 (implicit_hr_recon_q = h): the plm part of ONE half-range face flux
+//! (the units of HCL E: flux / c_h... as the gm/gh terms of the face-flux kernels) with
+//! the half-range FLUXES H+- = h+- E reconstructed instead of E:
+//!   w c [sL/4 (h+_R E_R - h+_LL E_LL) - sR/4 (h-_RR E_RR - h-_L E_L)],
+//! w = AL of the face, sL / sR the limiters of the two cells, LL L | R RR the cells along
+//! the axis d (ratios from M1HrCell, the source of the face kernels).  A term is formed
+//! only where its face coefficient (hcl, hcr) and limiter are non-zero, so no physical
+//! ghost is read.  Matches the row of ImplicitMusclBuild (hq branch) term by term.
+
+template <class V, class VC, class VH>
+KOKKOS_INLINE_FUNCTION
+Real M1HqFace(const int hsrc, const V &iw, const VC &vc, const VH &gh, const int m,
+              const int d, const Real al, const Real ch, const Real hcl, const Real hcr,
+              const Real sl, const Real sr, const int kll, const int jll, const int ill,
+              const int kl, const int jl, const int il, const int kr, const int jr,
+              const int ir, const int krr, const int jrr, const int irr) {
+  Real g = 0.0, hp, hm, fb;
+  if (hcl != 0.0 && sl != 0.0) {
+    M1HrCell(hsrc, iw, vc, gh, m, kr, jr, ir, d, iw(m,M1_IW_RF0,kr,jr,ir), hp, hm, fb);
+    Real t = fmax(hp, 0.0)*iw(m,M1_IW_EP,kr,jr,ir);
+    M1HrCell(hsrc, iw, vc, gh, m, kll, jll, ill, d, iw(m,M1_IW_RF0,kll,jll,ill), hp, hm,
+             fb);
+    t -= fmax(hp, 0.0)*iw(m,M1_IW_EP,kll,jll,ill);
+    g += 0.25*al*ch*sl*t;
+  }
+  if (hcr != 0.0 && sr != 0.0) {
+    M1HrCell(hsrc, iw, vc, gh, m, krr, jrr, irr, d, iw(m,M1_IW_RF0,krr,jrr,irr), hp, hm,
+             fb);
+    Real t = fmin(hm, 0.0)*iw(m,M1_IW_EP,krr,jrr,irr);
+    M1HrCell(hsrc, iw, vc, gh, m, kl, jl, il, d, iw(m,M1_IW_RF0,kl,jl,il), hp, hm, fb);
+    t -= fmin(hm, 0.0)*iw(m,M1_IW_EP,kl,jl,il);
+    g -= 0.25*al*ch*sr*t;
+  }
+  return g;
+}
+
 namespace {
 //----------------------------------------------------------------------------------------
 //! \fn ImplBCFromString
@@ -5259,6 +5297,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool must = muscl_now;   // xthinfix-1009 Fix B (sig of the latest build)
   const int imbt = iw_muscl;
   const bool ledt = impl_muscl_led;
+  // cs-s7-1019 implicit_hr_recon_q = h: the face fluxes as the row (M1HqFace)
+  const bool hqt = impl_muscl_hq;
+  const int hqsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
+                                  : (impl_hr_model ? 0 : -1));
+  auto hqvc_ = vet_cell;
+  auto hqgh_ = vgd_hr;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
@@ -5409,7 +5453,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       if (must) {
         const Real hcl = bw2_(m,M1_IFW_HCL,k,j,i), hcr = bw2_(m,M1_IFW_HCR,k,j,i);
         Real gm = 0.0;
-        if (ledt) {
+        if (hqt) {
+          gm = M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 1, bw2_(m,M1_IFW_AL,k,j,i), ch, hcl,
+                        hcr, iw_(m,imbt+M1_IM_SIG+1,k,jm,i), iw_(m,imbt+M1_IM_SIG+1,k,j,i),
+                        k, jm-1, i, k, jm, i, k, j, i, k, j+1, i);
+        } else if (ledt) {
           if (hcl != 0.0) {
             gm += 0.5*hcl*iw_(m,imbt+M1_IM_SIG+1,k,jm,i)
                   *(iw_(m,M1_IW_EP,k,jm,i) - iw_(m,M1_IW_EP,k,jm-1,i));
@@ -5583,7 +5631,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         if (must) {
           const Real hcl = bw3_(m,M1_IFW_HCL,k,j,i), hcr = bw3_(m,M1_IFW_HCR,k,j,i);
           Real gm = 0.0;
-          if (ledt) {
+          if (hqt) {
+            gm = M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 2, bw3_(m,M1_IFW_AL,k,j,i), ch, hcl,
+                          hcr, iw_(m,imbt+M1_IM_SIG+2,km,j,i),
+                          iw_(m,imbt+M1_IM_SIG+2,k,j,i),
+                          km-1, j, i, km, j, i, k, j, i, k+1, j, i);
+          } else if (ledt) {
             if (hcl != 0.0) {
               gm += 0.5*hcl*iw_(m,imbt+M1_IM_SIG+2,km,j,i)
                     *(iw_(m,M1_IW_EP,km,j,i) - iw_(m,M1_IW_EP,km-1,j,i));
@@ -14259,6 +14312,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool musf = muscl_now;   // xthinfix-1009 Fix B: the plm half-range face values
     const int imbf = iw_muscl;
     const bool ledf = impl_muscl_led;
+    // cs-s7-1019 implicit_hr_recon_q = h: the face flux as the row (M1HqFace)
+    const bool hqf = impl_muscl_hq;
+    const int hqsrc = vet_sc ? 1 : ((vgd_on && sph_geom && (vgd_hr.extent_int(0) > 0)) ? 2
+                                    : (impl_hr_model ? (trans_on ? 0 : 3) : -1));
+    auto hqvc_ = vet_cell;
+    auto hqgh_ = vgd_hr;
     // consrc-1011 (implicit_gas_src = conservative): Z_f of the face, see rad_m1.hpp
     const bool gcsf = impl_gas_src_cons;
     const bool gcff = impl_gas_src_full;
@@ -14403,7 +14462,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
                     + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
                     + ifw_(m,M1_IFW_DG,k,j,i);
-          if (musf && ledf) {
+          if (musf && hqf) {
+            const int imm = (cyclic && im == is) ? ie : (im-1);
+            const int ipp = (cyclic && ip == ie) ? is : (ip+1);
+            gh += M1HqFace(hqsrc, iw_, hqvc_, hqgh_, m, 0, al, ch,
+                           ifw_(m,M1_IFW_HCL,k,j,i), ifw_(m,M1_IFW_HCR,k,j,i),
+                           iw_(m,imbf+M1_IM_SIG,k,j,im), iw_(m,imbf+M1_IM_SIG,k,j,ip),
+                           k, j, imm, k, j, im, k, j, ip, k, j, ipp);
+          } else if (musf && ledf) {
             // led: the plm face values s = a dL (the fixed point's single value)
             const Real hcl = ifw_(m,M1_IFW_HCL,k,j,i), hcr = ifw_(m,M1_IFW_HCR,k,j,i);
             const int imm = (cyclic && im == is) ? ie : (im-1);
