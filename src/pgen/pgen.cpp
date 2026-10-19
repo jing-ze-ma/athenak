@@ -258,6 +258,36 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   } else if (padm != nullptr) {
     nadm = padm->nadm;
   }
+  // acctrc-1019: hydro variables PER RECORD OF THE FILE.  Equal to nhydro (nothing changes)
+  // unless the run's <hydro>/nscalars differs from the one the file was written with (its
+  // own embedded input, global_variable::rst_hydro_nscalars, main.cpp).  Opt-in switch-on
+  // of tracers at a restart: <hydro>/scalars_rst_missing = zero lets a run with
+  // nscalars > 0 read a file written with nscalars = 0 -- the hydro variables are read,
+  // the scalars stay zero (u0 is zero-initialised).  Any other mismatch is fatal (the
+  // record would be read at the wrong offsets; for a general EOS a 2-scalar difference is
+  // exactly the size of the derived (p, Gamma_1) tail and would pass the size check).
+  int nhydro_file = nhydro;
+  if (phydro != nullptr && global_variable::rst_hydro_nscalars >= 0 &&
+      global_variable::rst_hydro_nscalars != phydro->nscalars) {
+    const std::string smode = pin->DoesParameterExist("hydro", "scalars_rst_missing") ?
+                              pin->GetString("hydro", "scalars_rst_missing") : "";
+    if (global_variable::rst_hydro_nscalars == 0 && smode.compare("zero") == 0) {
+      nhydro_file = phydro->nhydro;
+      if (global_variable::my_rank == 0) {
+        std::cout << "hydro: restart file has no passive scalars; <hydro>/nscalars = "
+                  << phydro->nscalars << " start at zero (<hydro>/scalars_rst_missing = "
+                  << "zero)" << std::endl;
+      }
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/nscalars = " << phydro->nscalars << " but the "
+                << "restart file was written with nscalars = "
+                << global_variable::rst_hydro_nscalars << "; set <hydro>/"
+                << "scalars_rst_missing = zero to start new scalars from a file without "
+                << "any" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
 
   // root process reads z4c last_output_time and tracker data
   if (pz4c != nullptr) {
@@ -896,7 +926,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 
   IOWrapperSizeT data_size_ = 0;
   if (phydro != nullptr) {
-    data_size_ += nout1*nout2*nout3*nhydro*sizeof(Real); // hydro u0
+    data_size_ += nout1*nout2*nout3*nhydro_file*sizeof(Real); // hydro u0
   }
   if (pmhd != nullptr) {
     data_size_ += nout1*nout2*nout3*nmhd*sizeof(Real);   // mhd u0
@@ -1047,7 +1077,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   if (phydro != nullptr) {
-    Kokkos::realloc(ccin, nmb, nhydro, nout3, nout2, nout1);
+    Kokkos::realloc(ccin, nmb, nhydro_file, nout3, nout2, nout1);
     for (int m=0;  m<noutmbs_max; ++m) {
       // every rank has a MB to read, so read collectively
       if (m < noutmbs_min) {
@@ -1080,9 +1110,20 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         myoffset += data_size;
       }
     }
-    Kokkos::deep_copy(Kokkos::subview(phydro->u0, std::make_pair(0,nmb), Kokkos::ALL,
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
-    offset_myrank += nout1*nout2*nout3*nhydro*sizeof(Real); // hydro u0
+    if (nhydro_file == nhydro) {
+      Kokkos::deep_copy(Kokkos::subview(phydro->u0, std::make_pair(0,nmb), Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
+    } else {
+      // acctrc-1019 (scalars_rst_missing = zero): the file's variables into the first
+      // nhydro_file slots; the scalar slots are zeroed explicitly
+      Kokkos::deep_copy(Kokkos::subview(phydro->u0, std::make_pair(0,nmb),
+                        std::make_pair(nhydro_file, nhydro), Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL), 0.0);
+      DeepCopyAcross(Kokkos::subview(phydro->u0, std::make_pair(0,nmb),
+                     std::make_pair(0, nhydro_file), Kokkos::ALL, Kokkos::ALL,
+                     Kokkos::ALL), ccin);
+    }
+    offset_myrank += nout1*nout2*nout3*nhydro_file*sizeof(Real); // hydro u0
     myoffset = offset_myrank;
   }
 
