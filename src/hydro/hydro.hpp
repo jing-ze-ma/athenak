@@ -258,6 +258,9 @@ class Hydro {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
+  // csedge-1019 <hydro>/cs_seam_rsolver = hlle: the cubed-sphere PANEL-SEAM faces take the
+  // HLLE flux (contact/shear dissipation) whatever <hydro>/rsolver is (hydro.cpp)
+  bool cs_seam_hlle = false;
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic

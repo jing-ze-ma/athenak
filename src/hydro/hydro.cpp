@@ -195,6 +195,20 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   use_wellbalance_dynamic = pin->GetOrAddBoolean("hydro","wellbalance_dynamic",false);
   use_wb_x1 = pin->GetOrAddBoolean("hydro","wb_x1",false);
+  // csedge-1019 <hydro>/cs_seam_rsolver (cubed sphere only): "same" = the seam faces use
+  // <hydro>/rsolver like every other face; "hlle" = they take the HLLE flux.  HLLC (and
+  // its variants) resolve the contact, so a shear ACROSS a seam face is not damped at all
+  // at S_M ~ 0; with the resampled seam ghosts that left a growing one-cell along-edge jet
+  // in the edge row, seeded at the cube vertices (RSG g25 cs, csedge_1019/NOTE.md).
+  {
+    const std::string csr = pin->GetOrAddString("hydro","cs_seam_rsolver","same");
+    if (csr != "same" && csr != "hlle") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/cs_seam_rsolver must be same or hlle" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cs_seam_hlle = (csr == "hlle") && ppack->pmesh->use_cubed_sphere;
+  }
   // rebuild the well-balanced background cache at stage 1 of every N-th cycle instead
   // of every stage (0 = every stage).  A balanced state is unaffected; an evolving one
   // reconstructs against a background up to N cycles old, which is nothing against the
