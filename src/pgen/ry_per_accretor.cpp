@@ -266,6 +266,11 @@ constexpr int kNaccR = 13;
 Real acc0_[kNaccR] = {0.0}, acc1_[kNaccR] = {0.0};
 Real hist_prev_[kNaccR] = {0.0};
 Real hist_tprev_ = -1.0;
+// accwall-1019 booking fix: the radiation the stage resets put into the M1 state (nozzle
+// stream light zs[3], donor_irr / sector light zs[6]) as a PLAIN sum.  The M1 u0 is not
+// RK-combined, so the RK-weighted booking in register 10 kept only half of the stage-1
+// increment (EBUD-1019: the whole 'unbooked energy gain').  History only.
+Real erinj_ = 0.0;
 // <rad_m1> on the envelope (stage S3, accretor-rhd-1008; see the header RADIATION)
 bool rad_ = false;
 Real rad_fin_ = 0.0;           // imposed x1min radiative flux (code), = f_band F_col(r_in)
@@ -348,6 +353,17 @@ Real sz_ = 0.0;                // sigma_z of the nozzle (Rsun)
 bool p3_ = false;
 bool thout_ = false;           // theta_bc = outflow | hse (user theta faces of this pgen)
 bool thhse_ = false;           // theta_bc = hse: closed hydrostatic wall (v_theta mirrored)
+// accwall-1019: problem/theta_wall_closed = true (theta_bc = hse only; read only when named,
+// default false = bitwise unchanged): the hse theta walls are EXACTLY closed.  After the
+// whole hydro flux task (RyPerWallFlux, the Hydro::Fluxes hook) the x2 face fluxes at the
+// domain's theta walls carry no mass, energy (incl. the etotgrav rho Phi v term), x1 or x3
+// momentum or scalars; only the x2 momentum flux is kept = the Riemann solver's interface
+// pressure between the edge cell and its hydrostatic ghost (the hse ghosts exist to make
+// exactly this the column's hydrostatic wall pressure; it also holds the solver's
+// rho v_n^2 part of the old leak, O(v_n^2) with v_n ~ 1e-3 km/s).  Without it the hse
+// ghost (hydrostatic density, mirrored velocity) and the edge cell form a non-mirror
+// Riemann problem whose mass flux leaked ~2x the stream rate INTO the star (EBUD-1019).
+bool thwc_ = false;
 Real thsp_w_ = 0.0, thsp_tau_ = 0.0;   // theta sponge width (rad), time (code)
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
 DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
@@ -1150,6 +1166,34 @@ Real RyPerEsum(MeshBlockPack *pmbp) {
 //! removes in Emsk.  The hydro dt is unchanged (computed before the M1 stage, and these
 //! cells never set it).  Active only while a sink can hold light or follow the stream
 //! (donor_irr on, or the back sink with the stream on); problem/sink_zero_v = false: off.
+//! accwall-1019 (problem/theta_wall_closed): the hse theta walls exactly closed.  Called
+//! by Hydro::Fluxes after every flux contribution (Riemann + FOFC, etotgrav, WB removal),
+//! so the RK update, the spherical-polar L_z source (it reads x2 IM3 fluxes), the
+//! <hydro>/am_transport module and the boundary registers of RyPerSrcEnv all see zeros:
+//! every x2 flux component except IM2 is set to 0 on the domain-wall faces (j = js of a
+//! block with a user inner_x2 face, j = je + 1 with a user outer_x2 face), over the whole
+//! k, i extent of the flux array.
+void RyPerWallFlux(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int js = indcs.js, je = indcs.je;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto flx2 = pmbp->phydro->uflx.x2f;
+  const int nv = flx2.extent_int(1), n3 = flx2.extent_int(2), n1 = flx2.extent_int(4);
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  par_for("ryper_wallflx", DevExeSpace(), 0, nmb1, 0, n3 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    for (int sd=0; sd<2; ++sd) {
+      if (sd == 0 && mbbcs.d_view(m, BoundaryFace::inner_x2) != BoundaryFlag::user) continue;
+      if (sd == 1 && mbbcs.d_view(m, BoundaryFace::outer_x2) != BoundaryFlag::user) continue;
+      const int jf = (sd == 0) ? js : je + 1;
+      for (int n=0; n<nv; ++n) {
+        if (n != IM2) flx2(m,n,k,jf,i) = 0.0;
+      }
+    }
+  });
+}
+
 void RyPerM1Post(Mesh *pm) {
   if (!szv_ || !msk_) return;
   if (!(mirr_ || (nzback_ && stvol_ && stream_on_))) return;
@@ -1719,7 +1763,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       accx1_[1] = accx0_[1];
     }
     accx0_[0] = rk_g0_[s]*accx0_[0] + rk_g1_[s]*accx1_[0] + bdt*fs.the_array[13];
-    accx0_[1] = rk_g0_[s]*accx0_[1] + rk_g1_[s]*accx1_[1] + zs.the_array[6];
+    accx0_[1] += zs.the_array[6];   // accwall-1019: plain sum (see erinj_)
   }
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
@@ -1728,7 +1772,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
     // the nozzle's energy (and the donor_irr radiation) enters Ebnd = in - rad out (10)
     // - hydro out (11)
-    acc0_[10] -= zs.the_array[3] + zs.the_array[6];
+    erinj_ += zs.the_array[3] + zs.the_array[6];
     acc0_[11] -= zs.the_array[2];
   }
   stage_ctr_++;
@@ -1889,7 +1933,7 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[15] = s.the_array[4];
     pdata->hdata[16] = s.the_array[5];
     pdata->hdata[17] = s.the_array[6];
-    pdata->hdata[18] = acc0_[9] - acc0_[10] - acc0_[11];
+    pdata->hdata[18] = acc0_[9] - acc0_[10] - acc0_[11] + erinj_;
     pdata->hdata[19] = acc0_[12];
     pdata->hdata[20] = 0.0;
     pdata->hdata[21] = 0.0;
@@ -3746,6 +3790,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       if (thout_ && !p3_) fatal("theta_bc = outflow | hse needs problem/phys_3d = true");
     }
+    thwc_ = false;
+    if (pin->DoesParameterExist("problem", "theta_wall_closed")) {
+      thwc_ = pin->GetBoolean("problem", "theta_wall_closed");
+      if (thwc_ && !thhse_) fatal("problem/theta_wall_closed needs theta_bc = hse");
+      if (thwc_ && root) {
+        std::printf("ry_per_accretor: theta_wall_closed: the hse theta-wall faces carry "
+                    "only the x2 momentum flux (interface pressure); mass, energy, x1/x3 "
+                    "momentum and scalar fluxes are zero there\n");
+      }
+    }
     {
       const bool u2 = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::user) ||
                       (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::user);
@@ -4075,6 +4129,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // which a failed attempt never reaches; rbath_, tcol_, rhoamb_, cref2_, gpl_ are set
   // at setup only.
   dtretry::RegisterValue("ry_stage_ctr", &stage_ctr_);
+  erinj_ = 0.0;
+  dtretry::RegisterValue("ry_erinj", &erinj_);
   for (int n=0; n<kNaccR; ++n) {
     dtretry::RegisterValue(("ry_acc0_" + std::to_string(n)).c_str(), &acc0_[n]);
     dtretry::RegisterValue(("ry_acc1_" + std::to_string(n)).c_str(), &acc1_[n]);
@@ -4182,6 +4238,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
     if (msk_) user_m1post_func = RyPerM1Post;
+    if (thwc_) user_hydro_flux_func = RyPerWallFlux;
     return;
   }
   if (restart) return;

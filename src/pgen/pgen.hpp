@@ -129,6 +129,12 @@ class ProblemGenerator {
   // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
   // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).
   UserCycleFnPtr user_m1post_func=nullptr;
+  // accwall-1019: called by Hydro::Fluxes as the LAST step of the hydro flux task (after
+  // FOFC, the diffusive/viscous fluxes, the etotgrav flux and the WB flux removal), so the
+  // RK update, the source terms (incl. the spherical-polar L_z source from the x2 fluxes),
+  // the <hydro>/am_transport module and the pgen's boundary registers all read the fluxes
+  // it leaves.  Null (default): nothing is called, every run unchanged.
+  UserCycleFnPtr user_hydro_flux_func=nullptr;
   // reatm-1011: called ONCE on a fresh start, in Driver::Initialize right after the
   // <rad_m1>/ic_rad passes (IcRadRun) and before the boundaries/primitives are rebuilt,
   // so a pgen can adjust its initial state to the relaxed radiation (he_star_m1:

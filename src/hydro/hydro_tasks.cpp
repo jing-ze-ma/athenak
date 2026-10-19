@@ -27,6 +27,7 @@
 #include "shearing_box/shearing_box.hpp"
 #include "shearing_box/orbital_advection.hpp"
 #include "hydro/hydro.hpp"
+#include "pgen/pgen.hpp"
 #include "hydro/hydro_am.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "utils/c2p_track.hpp"
@@ -468,6 +469,11 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   }
   if (use_wellbalance_static) {
     RemoveWbFlux(pfacewb,uflx);
+  }
+  // accwall-1019: the problem generator's flux hook (e.g. ry_per_accretor
+  // problem/theta_wall_closed); null unless a pgen enrolls it
+  if (pmy_pack->pmesh->pgen->user_hydro_flux_func != nullptr) {
+    (pmy_pack->pmesh->pgen->user_hydro_flux_func)(pmy_pack->pmesh);
   }
 
   return TaskStatus::complete;
