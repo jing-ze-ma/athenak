@@ -155,6 +155,7 @@ class ProblemGenerator {
   void ShockTube(ParameterInput *pin, const bool restart);
   void Shwave(ParameterInput *pin, const bool restart);
   void WbAtmosphere(ParameterInput *pin, const bool restart);
+  void AmWb(ParameterInput *pin, const bool restart);   // amdef-1019 test
   void SphericalCollapse(ParameterInput *pin, const bool restart);
   void RadiationLinearWave(ParameterInput *pin, const bool restart);
   void RadiationBeam(ParameterInput *pin, const bool restart);

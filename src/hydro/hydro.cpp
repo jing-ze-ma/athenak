@@ -234,8 +234,14 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // ...and off BELOW this radius (0 = never), same path, same caveat.
   wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
-  if (hydro::AmModule::Named(pin, "hydro")) {
-    pam = new hydro::AmModule(ppack, pin, "hydro");
+  // amdef-1019: am_transport defaults on (cs, multi-D sp, fresh dynamic runs): AmModule
+  {
+    // (DefaultOn first: it is false at once when am_transport itself is named)
+    const bool amd = hydro::AmModule::DefaultOn(ppack, pin, "hydro");
+    if (amd || hydro::AmModule::Named(pin, "hydro")) {
+      pam = new hydro::AmModule(ppack, pin, "hydro");
+      pam->am_default = amd;
+    }
   }
   // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
   // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),

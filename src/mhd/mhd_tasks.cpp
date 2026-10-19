@@ -356,7 +356,7 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
   // MHD momentum flux carries the Maxwell stress; the CT field update is not touched
   if (pam != nullptr) {
     hydro::AmFluid fl{u0, u1, w0, wder, bcc0, uflx, peos->eos_data, true,
-                      use_wellbalance_static};
+                      use_wellbalance_static, pwb};
     pam->Apply(pdrive, stage, beta_dt, fl);
   }
 

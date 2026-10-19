@@ -156,6 +156,7 @@ add_executable(
         pgen/tests/shock_tube.cpp
         pgen/tests/shwave.cpp
         pgen/tests/wb_atm.cpp
+        pgen/tests/am_wb.cpp
         pgen/tests/rad_beam.cpp
         pgen/tests/rad_diff2d.cpp
         pgen/tests/rad_m1_tests.cpp

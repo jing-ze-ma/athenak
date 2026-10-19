@@ -70,7 +70,15 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     fofc("fofc",1,1,1,1),
     fofc_cnt("fofc_cnt",1,1,1,1) {
   // cs-open-1018: the angular-momentum module (read only when named)
-  if (hydro::AmModule::Named(pin, "mhd")) {pam = new hydro::AmModule(ppack, pin, "mhd");}
+  // amdef-1019: am_transport defaults on (cs, multi-D sp, fresh dynamic runs)
+  {
+    // (DefaultOn first: it is false at once when am_transport itself is named)
+    const bool amd = hydro::AmModule::DefaultOn(ppack, pin, "mhd");
+    if (amd || hydro::AmModule::Named(pin, "mhd")) {
+      pam = new hydro::AmModule(ppack, pin, "mhd");
+      pam->am_default = amd;
+    }
+  }
   // Total number of MeshBlocks on this rank to be used in array dimensioning
   int nmb = std::max((ppack->nmb_thispack), (ppack->pmesh->nmb_maxperrank));
 

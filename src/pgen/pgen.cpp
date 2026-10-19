@@ -2229,6 +2229,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     Shwave(pin, is_restart);
   } else if (pgen_fun_name.compare("wb_atm") == 0) {
     WbAtmosphere(pin, is_restart);
+  } else if (pgen_fun_name.compare("am_wb") == 0) {   // amdef-1019
+    AmWb(pin, is_restart);
   } else if (pgen_fun_name.compare("z4c_boosted_puncture") == 0) {
     Z4cBoostedPuncture(pin, is_restart);
   } else if (pgen_fun_name.compare("z4c_linear_wave") == 0) {
