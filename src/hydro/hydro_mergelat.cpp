@@ -80,7 +80,7 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
                 std::to_string(ic.nx3) + " not divisible by merge_lat_f = " +
                 std::to_string(fs[n]) + " (groups may not straddle a MeshBlock)");
     }
-    fmax = std::max(fmax, fs[n]);
+    fbig = std::max(fbig, fs[n]);
   }
   if (!(pm->use_spherical_polar || pm->use_cubed_sphere)) {
     MlatFatal("needs use_spherical_polar or use_cubed_sphere");

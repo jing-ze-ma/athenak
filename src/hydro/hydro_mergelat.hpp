@@ -148,7 +148,7 @@ class MergeLat {
   int nsh = 0;
   Real rc[kMlatMaxShell];
   int fs[kMlatMaxShell];
-  int fmax = 1;
+  int fbig = 1;
   bool rigid = true;
   bool rad = false;
   int diag_every = 0;
