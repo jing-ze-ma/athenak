@@ -31,8 +31,11 @@ namespace {
 std::vector<std::string> MlatSplit(const std::string &s) {
   std::vector<std::string> out;
   std::string tok;
-  std::stringstream ss(s);
-  while (std::getline(ss, tok, ',')) {
+  // ',' or ':' (sbatch --export splits on commas)
+  std::string s2 = s;
+  for (auto &c : s2) {if (c == ':') c = ',';}
+  std::stringstream ss2(s2);
+  while (std::getline(ss2, tok, ',')) {
     const size_t a = tok.find_first_not_of(" \t");
     const size_t b = tok.find_last_not_of(" \t");
     if (a != std::string::npos) out.push_back(tok.substr(a, b - a + 1));
@@ -93,6 +96,9 @@ MergeLat::MergeLat(MeshBlockPack *ppack, ParameterInput *pin) : pmy_pack(ppack) 
     MlatFatal("merge_lat_mom = rigid | cart");
   }
   rad = pin->GetOrAddBoolean("hydro", "merge_lat_rad", false);
+  if (pin->DoesParameterExist("hydro", "merge_lat_check")) {
+    check = pin->GetBoolean("hydro", "merge_lat_check");
+  }
   if (global_variable::my_rank == 0) {
     std::cout << "MLAT merged lateral cells: " << nsh << " shell(s):";
     for (int n = 0; n < nsh; ++n) {
@@ -176,6 +182,8 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
   auto phi_ = phi;
   const bool grav_ = grav;
   DvceArray1D<int> nfb("mlat_nfb", 1);
+  const bool chk_ = check && (kind == 0);
+  DvceArray1D<Real> cerr("mlat_cerr", 4);
   par_for("mlat_avg", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, imax_loc,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int f = fi_(m,i);
@@ -211,7 +219,7 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
     // ---- hydro
     const Real r = g.x1v(m,i);
     Real vs = 0.0, ms = 0.0, es = 0.0, ss[4] = {0.0, 0.0, 0.0, 0.0}, vp = 0.0;
-    Real P[3] = {0.0, 0.0, 0.0}, X[3] = {0.0, 0.0, 0.0};
+    Real P[3] = {0.0, 0.0, 0.0}, X[3] = {0.0, 0.0, 0.0}, Lo[3] = {0.0, 0.0, 0.0};
     const int nsc = nvar_ - nhyd_;
     for (int kk = k; kk < k + f; ++kk) {
       for (int jj = j; jj < j + f; ++jj) {
@@ -226,6 +234,11 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
         if (grav_) vp += dv*phi_(m,kk,jj,i);
         for (int n = 0; n < nsc && n < 4; ++n) {ss[n] += dv*u_(m,nhyd_+n,kk,jj,i);}
         for (int q = 0; q < 3; ++q) {P[q] += dv*v[q]; X[q] += dv*r*rh[q];}
+        if (chk_) {
+          Lo[0] += dv*r*(rh[1]*v[2] - rh[2]*v[1]);
+          Lo[1] += dv*r*(rh[2]*v[0] - rh[0]*v[2]);
+          Lo[2] += dv*r*(rh[0]*v[1] - rh[1]*v[0]);
+        }
       }
     }
     const Real iv = 1.0/vs;
@@ -307,7 +320,42 @@ void MergeLat::Average(DvceArray5D<Real> &u, const int nhyd, const int nvar,
         for (int n = 0; n < nsc && n < 4; ++n) {u_(m,nhyd_+n,kk,jj,i) = sb[n];}
       }
     }
+    if (chk_) {
+      // <hydro>/merge_lat_check: the group sums after the replacement vs before
+      Real m2 = 0.0, e2 = 0.0, p2[3] = {0.0, 0.0, 0.0}, l2[3] = {0.0, 0.0, 0.0};
+      for (int kk = k; kk < k + f; ++kk) {
+        for (int jj = j; jj < j + f; ++jj) {
+          Real rh[3], b1[3], b2[3], cc, v[3];
+          MlatBasis(g, m, kk, jj, rh, b1, b2, cc);
+          const Real dv = g.vol(m,kk,jj,i);
+          MlatToCart(rh, b1, b2, cc, u_(m,IM1,kk,jj,i), u_(m,IM2,kk,jj,i),
+                     u_(m,IM3,kk,jj,i), v);
+          m2 += dv*u_(m,IDN,kk,jj,i);
+          e2 += dv*u_(m,IEN,kk,jj,i);
+          for (int q = 0; q < 3; ++q) {p2[q] += dv*v[q];}
+          l2[0] += dv*r*(rh[1]*v[2] - rh[2]*v[1]);
+          l2[1] += dv*r*(rh[2]*v[0] - rh[0]*v[2]);
+          l2[2] += dv*r*(rh[0]*v[1] - rh[1]*v[0]);
+        }
+      }
+      // momentum and L errors scaled by the group's |P| + M c-free scale: |m| sum
+      Real pn = 0.0, ln = 0.0, dp = 0.0, dl = 0.0;
+      for (int q = 0; q < 3; ++q) {
+        pn += P[q]*P[q];  ln += Lo[q]*Lo[q];
+        dp += (p2[q] - P[q])*(p2[q] - P[q]);  dl += (l2[q] - Lo[q])*(l2[q] - Lo[q]);
+      }
+      const Real pr = sqrt(dp/fmax(pn, 1.0e-300));
+      const Real lr = sqrt(dl)/fmax(sqrt(ln) + r*sqrt(pn), 1.0e-300);
+      Kokkos::atomic_max(&cerr(0), fabs(m2 - ms)/fmax(fabs(ms), 1.0e-300));
+      Kokkos::atomic_max(&cerr(1), fabs(e2 - es)/fmax(fabs(es), 1.0e-300));
+      Kokkos::atomic_max(&cerr(2), pr);
+      Kokkos::atomic_max(&cerr(3), lr);
+    }
   });
+  if (chk_) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cerr);
+    for (int n = 0; n < 4; ++n) {chkerr[n] = std::max(chkerr[n], static_cast<double>(h(n)));}
+  }
   if (rigid && kind == 0) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), nfb);
     nfallback += h(0);
@@ -392,13 +440,17 @@ void MergeLat::Diag(const DvceArray5D<Real> &u, const char *tag) {
   MPI_Allreduce(MPI_IN_PLACE, h, 8, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   long nf = nfallback;
   MPI_Allreduce(MPI_IN_PLACE, &nf, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+  double ce[4] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3]};
+  MPI_Allreduce(MPI_IN_PLACE, ce, 4, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #else
   long nf = nfallback;
+  double ce[4] = {chkerr[0], chkerr[1], chkerr[2], chkerr[3]};
 #endif
   if (global_variable::my_rank == 0) {
     std::printf("MLATDIAG %s cyc %d t %.10e dt %.6e M %.16e E %.16e P %.10e %.10e %.10e "
-                "L %.16e %.16e %.16e nfb %ld\n", tag, pm->ncycle, pm->time, pm->dt,
-                h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], nf);
+                "L %.16e %.16e %.16e nfb %ld chk %.2e %.2e %.2e %.2e\n", tag, pm->ncycle,
+                pm->time, pm->dt, h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], nf,
+                ce[0], ce[1], ce[2], ce[3]);
     std::fflush(stdout);
   }
 }

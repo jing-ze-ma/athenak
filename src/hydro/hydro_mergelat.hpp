@@ -47,6 +47,8 @@
 //!                                            f_1, r_1 <= x1v < r_2: f_2, ...)
 //!   <hydro>/merge_lat_mom  = rigid | cart
 //!   <hydro>/merge_lat_rad  = false | true
+//!   <hydro>/merge_lat_check = true  (test) every average re-sums its groups: max relative
+//!                                change of M, E, |P|, |L| printed as MLATDIAG chk
 //!   <hydro>/merge_lat_diag = N   every N cycles rank 0 prints MLATDIAG: the global gas
 //!                                M, Etot(IEN), P (Cartesian), L (Cartesian) sums (may be
 //!                                named without merge_lat_rc: diagnostic of a fine run)
@@ -150,6 +152,8 @@ class MergeLat {
   bool rigid = true;
   bool rad = false;
   int diag_every = 0;
+  bool check = false;       // <hydro>/merge_lat_check: group-sum errors of every average
+  double chkerr[4] = {0.0, 0.0, 0.0, 0.0};   // max rel. errors M, E, P, L (MLATDIAG chk)
   // per (m, i) merge factor (1 = not merged), incl. the x1 ghosts
   DvceArray2D<int> fi;
   int imax_loc = -1;        // largest merged interior i on this rank (-1 none)
