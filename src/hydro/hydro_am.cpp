@@ -226,7 +226,20 @@ void AmModule::AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &f
     });
     return;
   }
-  par_for("hydro_am_transport", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+  // amdef-1019: the plain source keeps the ab758e94 kernel verbatim (HydroAmTorqueBase)
+  const bool plain = !v.wbs && !v.wbsrc && !v.spcart && v.three_d && v.eos.is_ideal;
+  if (plain) {
+    par_for("hydro_am_transport", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+            ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real dtq, c2, c3;
+      if (!HydroAmTorqueBase(v, m, k, j, i, dtq, c2, c3)) return;
+      u0_(m,IM2,k,j,i) += dtq*c2*bdt;
+      u0_(m,IM3,k,j,i) += dtq*c3*bdt;
+    });
+    return;
+  }
+  par_for("hydro_am_transport_v", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
           ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dtq, c2, c3;
