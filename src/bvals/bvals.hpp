@@ -363,6 +363,12 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // face-normal components; a seam permutes them with the axis signs instead of the
   // covariant metric transform (bvals_cc.cpp).  Set by the implicit M1 on pbval_th.
   bool cs_perm_pairs = false;
+  // cs-s4-1017 cs_hrq0 >= 0 (default -1): slots cs_hrq0..+3 hold the HALF-RANGE ratios
+  // (h+_2, h-_2, h+_3, h-_3) about this block's x2 / x3 axes (rad_m1 vgd_hr on the cubed
+  // sphere).  Across a seam they take the axis permutation of the index map and,
+  // where the destination axis runs reversed, h+ <-> -h- (no resample: the mirror
+  // cell).  Exact for the seam-normal axis (the plane family is common to both charts).
+  int cs_hrq0 = -1;
 
   //functions
   void InitSendIndices(MeshBoundaryBuffer &b,int o1,int o2,int o3,int f1,int f2) override;

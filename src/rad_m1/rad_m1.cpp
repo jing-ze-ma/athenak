@@ -1017,6 +1017,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","vet_col_lat")) {
       vlat_on = pin->GetBoolean("rad_m1","vet_col_lat");
     }
+    // vgd-latuni-1017: Athena++ x2rat / x3rat (not AthenaK keys) noted for VetLatInit
+    for (const char *rk : {"x2rat", "x3rat"}) {
+      if (pin->DoesParameterExist("mesh", rk) && pin->GetReal("mesh", rk) != 1.0) {
+        vlat_rat_keys += std::string(" mesh/") + rk + " = " + pin->GetString("mesh", rk);
+      }
+    }
     // vet_gd (m1-vet-gd, rad_m1_vetgd.cpp): rides on the vet_col_lat interface
     if (pin->DoesParameterExist("rad_m1","vet_gd")) {
       vgd_on = pin->GetBoolean("rad_m1","vet_gd");
@@ -1144,7 +1150,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_smooth = std::max(0, pin->GetInteger("rad_m1","vet_gd_smooth"));
     }
     if (pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
-        pin->GetBoolean("rad_m1","vet_gd_mms")) {
+        pin->GetBoolean("rad_m1","vet_gd_mms") && !pmy_pack->pmesh->use_cubed_sphere) {
       VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
       std::exit(EXIT_SUCCESS);
     }
@@ -1421,7 +1427,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tangential")) {
       vgd_tan = pin->GetBoolean("rad_m1","vet_gd_tangential");
+      // cs-vetgd-1017: the tangential anisotropy on the skew cs faces is stage S4
+      if (vgd_tan && pmy_pack->pmesh->use_cubed_sphere) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_tangential = true is not available "
+                  << "on the cubed sphere (stage S4)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
+    // cs-vetgd-1017 (stage S3): on the cubed sphere the default is false (D_rr only)
+    if (vgd_on && pmy_pack->pmesh->use_cubed_sphere) {vgd_tan = false;}
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_nside")) {
       vgd_nside = pin->GetInteger("rad_m1","vet_gd_nside");
     }
@@ -1466,6 +1481,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
+      // cs-s4-1017 (stage S4, USER 10-18): on the cubed sphere D_r,lat is the Cartesian
+      // vector v (VetGdCsMoments) in the cs forms M1CsLat0 / M1CsLatF (VetLatOpCs /
+      // VetLatStencilAddCs): the default is the sp one (operator)
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
         vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");
         if (vlat_dump.compare("none") == 0) {vlat_dump = "";}
@@ -1624,6 +1642,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (F2, F3) is the tangential pair (what the default (IVY, IVZ) rule gives by luck);
   // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
   pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
+  if (cs_geom) {CubedVecCheck(pin);}   // cs-s4-1017: test only, read when named
+  // cs-s4-1017: vet_gd_mms on the cubed sphere (test only): the D_r,lat terms, then exit
+  if (cs_geom && pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
+      pin->GetBoolean("rad_m1","vet_gd_mms")) {
+    VetGdMmsCs();
+    std::exit(EXIT_SUCCESS);
+  }
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c
@@ -1963,9 +1988,11 @@ RadiationM1::~RadiationM1() {
   if (pbval_tq != nullptr) {delete pbval_tq;}
   if (pbval_kr != nullptr) {delete pbval_kr;}
   if (pbval_vm != nullptr) {delete pbval_vm;}
+  if (pbval_d3 != nullptr) {delete pbval_d3;}
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_vt != nullptr) {delete pbval_vt;}
+  if (pbval_hr != nullptr) {delete pbval_hr;}   // cs-s4-1017
   if (pbval_gd != nullptr) {delete pbval_gd;}
 }
 

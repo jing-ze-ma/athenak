@@ -580,13 +580,58 @@ void RadiationM1::VetGdInit() {
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
+  // cs-vetgd-1017 (stage S3, rad_m1_vetgd_cs.cpp): the cubed sphere.  The options that
+  // are wedge-specific or not ported are refused; the sp halo layouts (exact / compact
+  // lists, band ring, IPC, NCCL, overlap) do not apply (the cs band is filled by its own
+  // exact copies); the fused twin is swept unfused with this build's cut (the
+  // vet_gd_twin_lowmem path: the same numbers as the fused twin on sp); no walls
+  vgd_csg = pm->use_cubed_sphere;
+  if (vgd_csg) {
+    std::string bad;
+    if (vgd_beam) {bad += " vet_gd_beam (a wedge (theta, phi) patch);";}
+    if (vgd_bandx) {bad += " vet_gd_band_exit;";}
+    if (vgd_async) {bad += " vet_gd_async;";}
+    if (vet_path != 0) {bad += " vet_path = cells;";}
+    if (vgd_seam > 0) {bad += " vet_gd_seam_mask (the sp theta seam);";}
+    if (vgd_smooth > 0) {bad += " vet_gd_smooth;";}
+    if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
+    if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
+    if (vgd_iter > 1) {bad += " vet_gd_iter > 1;";}
+    if (!bad.empty()) {VgdFatal("not available on the cubed sphere (stage S3):" + bad);}
+    vgd_wint = false;
+    vgd_ipc_on = false;
+    vgd_hx_on = false;
+    vgd_hx_named = false;
+    vgd_hx_mode = 0;
+    vgd_ring_par = false;
+    vgd_ring_named = false;
+    // the twin always with THIS build's cut (the vet_gd_twin_lowmem order: the fused
+    // twin's numbers); the plain unfused twin would take the previous build's cut (its
+    // sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
+    // decomposition-dependent
+    if (vgd_twin) {
+      vgd_twfuse = false;
+      vgd_twseq = true;
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam "
+                << "strip + vertex triangle upwind stencil, exact per-shell band copies "
+                << "(the sp halo lists / ring / IPC / overlap keys do not apply), twin "
+                << (vgd_twin ? "unfused (this build's cut)" : "off") << "; hand-over "
+                << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator (S4)"
+                              : ((vlat_odm == 1) ? " + D_r,lat lagged (S4)"
+                                                 : " only (vet_col_lat_offdiag = none)"))
+                << ", no tangential part" << std::endl;
+    }
+  }
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
     // the product set: its azimuth step must divide the wedge's phi period (exact walls)
+    // (cs-vetgd-1017: no walls on the cubed sphere, nphi >= 4 only)
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const double m = per*vgd_gl_nphi/(2.0*M_PI);
-    if (vgd_gl_nphi < 4 || std::fabs(m - std::round(m)) > 1.0e-9) {
+    if (vgd_gl_nphi < 4 || (!vgd_csg && std::fabs(m - std::round(m)) > 1.0e-9)) {
       VgdFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
                "the wedge (exact wall maps)");
     }
@@ -603,7 +648,10 @@ void RadiationM1::VetGdInit() {
   // the lateral band: the deepest reach of an upwind point in cells, over every shell:
   // a NORM segment reaches sqrt(r_{l+1}^2 - r_l^2), a TURN segment 2 sqrt(r_l^2 -
   // r_{l-1}^2) sideways at most; cell sizes r dtheta and r sin(theta) dphi
-  {
+  // (cs-vetgd-1017: on the cubed sphere VetGdCsInit, with the cs tables and lists)
+  if (vgd_csg) {
+    VetGdCsInit();
+  } else {
     auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->x1v);
     auto &mbs = pmy_pack->pmb->mb_size;
@@ -659,7 +707,7 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_m3, nmb, c3w, c2w, n, 3);
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
-  VetGdHaloInit();
+  if (!vgd_csg) {VetGdHaloInit();}   // cs-vetgd-1017: cs lists made by VetGdCsInit
   {
     // mem2-1014 vet_gd_band_ring: where every band value the sweep reads comes from an
     // exact-list exchange of this sweep (the halo_exact gate below, no overlap / fused
@@ -878,6 +926,29 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
       }
     }
   }
+  // cs-s3b-1017 (USER decision 1): the rotation axis of the vet_gd set.  z (the sp
+  // default, bitwise): the set turns about the polar axis (the wedge's symmetry: the
+  // periodic-wall maps stay exact permutations for HEALPix).  3d (the cubed-sphere
+  // default): about a quasi-random 3-D axis per rotation block, so that no direction of
+  // the set stays aligned with the panel seams / cube vertices from block to block.  On
+  // the sp wedge 3d is opt-in (the wall maps then take the nearest set direction)
+  if (vgd_on) {
+    const bool csm = pmy_pack->pmesh->use_cubed_sphere;
+    // read only when named: the default is not added to the parameter dump
+    const std::string ax = pin->DoesParameterExist("rad_m1","vet_gd_rotate_axis") ?
+                           pin->GetString("rad_m1","vet_gd_rotate_axis") :
+                           std::string(csm ? "3d" : "z");
+    if (ax.compare("z") == 0) {
+      vgd_rot3 = false;
+    } else if (ax.compare("3d") == 0) {
+      vgd_rot3 = true;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/vet_gd_rotate_axis = '" << ax
+                << "' is not a choice (z | 3d)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -893,6 +964,15 @@ Real RadiationM1::VetGdAngle(const int cyc) const {
 }
 
 Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
+  // cs-s3b-1017 vet_gd_rotate_axis = 3d: the KEY of block b (VgdRot3 decodes it): the
+  // zig-zag code of b (>= 0, exact in Real), or of b mod K with vet_rotate_avg = K (any K
+  // consecutive blocks hold the same K sets, as the stratified z phases)
+  if (vgd_rot3) {
+    int64_t r = blk;
+    if (vra_on && vra_k >= 2) {r = ((blk % vra_k) + vra_k) % vra_k;}
+    const int64_t z = (r >= 0) ? 2*r : (-2*r - 1);
+    return static_cast<Real>(z);
+  }
   // rotavg-1012: with vet_rotate_avg = K the angle is the set's own period times
   // RotPhase = (b mod K)/K, so that ANY K consecutive blocks hold K equispaced rotations
   // (the averaged closure is then that of the K-fold refined azimuth set); the golden
@@ -905,6 +985,57 @@ Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
   const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
   return 0.5*M_PI*(b*g - std::floor(b*g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdRot3
+//! \brief cs-s3b-1017 vet_gd_rotate_axis = 3d: the rotation matrix (row major) of block
+//! key `key` (VetGdAngleBlk).  Block b: the uniform random rotation of Shoemake (1992)
+//! from the 3-D Kronecker point u_b = frac(b (1/g, 1/g^2, 1/g^3)), g the plastic-type
+//! constant of the R_3 sequence (Roberts 2018; low discrepancy in u, so the rotations
+//! cover SO(3) evenly without clustering), right-multiplied by the inverse of that of
+//! b = 0, so that block 0 is the unrotated set (as alpha = 0 on the z clock).  A pure
+//! function of the key: reruns, restarts and every rank give the same bits.
+
+void RadiationM1::VgdRot3(const Real key, double r[9]) const {
+  const int64_t z = static_cast<int64_t>(std::llround(static_cast<double>(key)));
+  const int64_t b = (z % 2 == 0) ? (z/2) : (-(z + 1)/2);
+  auto quat = [](const int64_t bb, double q[4]) {
+    const double g = 1.2207440846057594754;   // the real root of x^4 = x + 1
+    const double a[3] = {1.0/g, 1.0/(g*g), 1.0/(g*g*g)};
+    double u[3];
+    for (int c = 0; c < 3; ++c) {
+      const double x = static_cast<double>(bb)*a[c];
+      u[c] = x - std::floor(x);
+    }
+    const double s1 = std::sqrt(1.0 - u[0]), s2 = std::sqrt(u[0]);
+    q[0] = s1*std::sin(2.0*M_PI*u[1]);
+    q[1] = s1*std::cos(2.0*M_PI*u[1]);
+    q[2] = s2*std::sin(2.0*M_PI*u[2]);
+    q[3] = s2*std::cos(2.0*M_PI*u[2]);
+  };
+  auto mat = [](const double q[4], double m[9]) {   // q = (x, y, z, w), unit
+    const double x = q[0], y = q[1], zz = q[2], w = q[3];
+    m[0] = 1.0 - 2.0*(y*y + zz*zz); m[1] = 2.0*(x*y - zz*w);  m[2] = 2.0*(x*zz + y*w);
+    m[3] = 2.0*(x*y + zz*w);  m[4] = 1.0 - 2.0*(x*x + zz*zz); m[5] = 2.0*(y*zz - x*w);
+    m[6] = 2.0*(x*zz - y*w);  m[7] = 2.0*(y*zz + x*w);  m[8] = 1.0 - 2.0*(x*x + y*y);
+  };
+  if (b == 0) {
+    for (int c = 0; c < 9; ++c) {r[c] = (c % 4 == 0) ? 1.0 : 0.0;}
+    return;
+  }
+  double qb[4], q0[4], mb[9], m0[9];
+  quat(b, qb);
+  quat(0, q0);
+  mat(qb, mb);
+  mat(q0, m0);
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      double v = 0.0;
+      for (int k = 0; k < 3; ++k) {v += mb[3*i + k]*m0[3*j + k];}   // mb m0^T
+      r[3*i + j] = v;
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1052,15 +1183,33 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
   const int n = vgd_n;
   VgdTabHost &H = vgd_tabh;
   std::vector<double> d(vgd_base);
-  const double ca = std::cos(alpha), sa = std::sin(alpha);
-  for (int q = 0; q < n; ++q) {
-    const double x = vgd_base[4*q], y = vgd_base[4*q+1];
-    d[4*q] = ca*x - sa*y;
-    d[4*q+1] = sa*x + ca*y;
+  if (vgd_rot3) {
+    // cs-s3b-1017 vet_gd_rotate_axis = 3d: d = R_b n (alpha is the block key)
+    double rm[9];
+    VgdRot3(alpha, rm);
+    for (int q = 0; q < n; ++q) {
+      const double x = vgd_base[4*q], y = vgd_base[4*q+1], z = vgd_base[4*q+2];
+      double v[3];
+      for (int c = 0; c < 3; ++c) {v[c] = rm[3*c]*x + rm[3*c+1]*y + rm[3*c+2]*z;}
+      const double nv = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+      for (int c = 0; c < 3; ++c) {d[4*q+c] = v[c]/nv;}
+    }
+  } else {
+    const double ca = std::cos(alpha), sa = std::sin(alpha);
+    for (int q = 0; q < n; ++q) {
+      const double x = vgd_base[4*q], y = vgd_base[4*q+1];
+      d[4*q] = ca*x - sa*y;
+      d[4*q+1] = sa*x + ca*y;
+    }
   }
   auto &d_h = H.dir;
   for (int q = 0; q < n; ++q) {
     for (int c = 0; c < 4; ++c) {d_h(q,c) = d[4*q+c];}
+  }
+  if (vgd_csg) {   // cs-vetgd-1017: no walls; the branch of every band cell
+    VetGdCsTab(d);
+    H.alpha = alpha;
+    return;
   }
   // wall maps: lateral ghost cells outside the mesh in theta or phi hold the other
   // side's intensities; new(d) = old(map(d)), map = nearest set direction to M n_d
@@ -1364,13 +1513,16 @@ void RadiationM1::VetGdTables(const Real alpha) {
     VetGdBeamInit(d);
   }
   if (first && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> vet_gd: global-direction SC closure on the sp wedge, "
+    std::cout << "<rad_m1> vet_gd: global-direction SC closure on the "
+              << (vgd_csg ? "cubed sphere" : "sp wedge") << ", "
               << ((vgd_gl_nmu > 0) ? ("product GL" + std::to_string(vgd_gl_nmu) + "x"
                                       + std::to_string(vgd_gl_nphi)
                                       + (vgd_gl_stag ? " staggered" : ""))
                   : ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
                                   : ("HEALPix nside " + std::to_string(vgd_nside))))
-              << " (" << n << " directions); z-rotation every "
+              << " (" << n << " directions); "
+              << (vgd_rot3 ? "3-D rotation (quasi-random axis; angle = block key)"
+                           : "z-rotation") << " every "
               << ((vgd_rot_dt > 0.0) ? (std::to_string(vgd_rot_dt) + " in time (t0 "
                                         + std::to_string(vgd_rot_t0) + ", align "
                                         + (vgd_rot_align ? "on" : "off") + ")")
@@ -4277,6 +4429,10 @@ void RadiationM1::VetGdWall(const int i0, const int i1) {
 //! \brief one sweep (inward then outward) of every direction
 
 void RadiationM1::VetGdSweep() {
+  if (vgd_csg) {   // cs-vetgd-1017: the cubed-sphere sweep (rad_m1_vetgd_cs.cpp)
+    VetGdCsSweep();
+    return;
+  }
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -5346,6 +5502,10 @@ void RadiationM1::VetGdMoments() {
   auto vq_ = vcol_q;
   const Real qlo = vcol_qmin, qhi = vcol_qmax;
   // accel-1009: shell-major thread order (j fastest), matching the LayoutLeft vgd_i
+  // (cs-vetgd-1017: the cubed sphere's own kernel, D_rr about the cell's r_hat)
+  if (vgd_csg) {
+    VetGdCsMoments(0);
+  } else {
   par_for("m1_vgd_mom", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
     for (int c = 0; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) = 0.0;}
@@ -5378,6 +5538,7 @@ void RadiationM1::VetGdMoments() {
       tt_(m,M1_TT_LAT0+5,k,j,i) = -0.5*(tq - pq)/jm;   // D_pp - (1 - D_rr)/2
     }
   });
+  }  // !vgd_csg
   // vet_gd_thin_taumin > 0: taper the LATERAL parts (LAT1..LAT5: D_r,lat and the
   // tangential anisotropy, both lagged terms of the face equations) to 0 in the far thin
   // top, log-linearly from 1 at tau_top = 10 taumin to 0 at tau_top = taumin (tau_top of
@@ -5398,6 +5559,8 @@ void RadiationM1::VetGdMoments() {
     const Real thi = tlo*pow(10.0, dec);
     const bool smo = vgd_tsmooth;
     const int prt = vgd_tparts;
+    // cs-s4-1017: on the cubed sphere LAT1..LAT3 are the Cartesian D_r,lat (bit 1)
+    const int clat = vgd_csg ? 3 : 2;
     par_for("m1_vgd_taper", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       Real tau = 0.0;
@@ -5409,7 +5572,7 @@ void RadiationM1::VetGdMoments() {
         if (smo) {w = w*w*(3.0 - 2.0*w);}
         if (w < 1.0) {
           for (int c = 0; c < M1_TT_NLAT; ++c) {
-            const int bit = (c == 0) ? 4 : ((c <= 2) ? 1 : 2);
+            const int bit = (c == 0) ? 4 : ((c <= clat) ? 1 : 2);
             if (prt & bit) {tt_(m,M1_TT_LAT0+c,k,j,i) *= w;}
           }
         }
@@ -5445,6 +5608,10 @@ void RadiationM1::VetGdMoments() {
   const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap, q0 = marshak_q;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
+  if (vgd_csg) {   // cs-vetgd-1017: the same q about the cs cell's r_hat
+    VetGdCsMoments(1);
+    return;
+  }
   par_for("m1_vgd_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
@@ -5527,6 +5694,10 @@ void RadiationM1::VetGdSource() {
     cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
   });
   vgd_cur = DevExeSpace();
+  if (vgd_csg) {   // cs-vetgd-1017: the cs band copies
+    VetGdCsSource();
+    return;
+  }
   VetGdHaloCs(vgd_cs, ilo, ie);
 }
 
@@ -5632,12 +5803,14 @@ void RadiationM1::VetGdSweepPost() {
   Kokkos::Timer tm;
   // vet_gd_twin: the RAY-NOISE pattern of the set on the laterally uniform field (the
   // shell means of chi and S), same angle, subtracted below
-  // (diagnostic env VGD_TWIN_CUTFIX, accel-1009: the unfused twin sweeps with THIS
-  // build's cut; without it the twin reuses the previous build's vgd_scut, which after a
-  // restart is 0 -- the restart != continuous of the unfused twin)
-  // (vet_gd_twin_lowmem: always, as the fused twin it replaces)
-  if (vgd_twin && !vgd_twfuse &&
-      (vgd_twseq || std::getenv("VGD_TWIN_CUTFIX") != nullptr)) {
+  // cs-s3b-1017 (USER decision 4): the unfused twin ALWAYS sweeps with THIS build's cut,
+  // as the fused twin (vet_gd_twin_fuse) and vet_gd_twin_lowmem do.  Before, the plain
+  // unfused twin reused the previous build's vgd_scut (0 at the first build of a run and
+  // after a restart): with MPI and no vet_gd_halo_compact (the fuse cannot apply there,
+  // while one rank fuses) the result depended on the decomposition, and a restart was
+  // not continuous.  The fused production path does not come here (bitwise); the old
+  // diagnostic env VGD_TWIN_CUTFIX is now the only behaviour
+  if (vgd_twin && !vgd_twfuse) {
     vgd_scut = vlat_icut;
   }
   if (vgd_twin) {VetGdTwin(0);}
@@ -5776,7 +5949,9 @@ void RadiationM1::VetGdPost() {
 #endif
   // the band is capped at the block size: a read beyond it would be clamped (inexact
   // sweep).  Checked at every build: FATAL unless vet_gd_allow_clamp = true (warning)
-  if (vgd_capped && vgd_nclamp_all > vgd_nclamp_seen) {
+  // (cs-vetgd-1017: on the cubed sphere every clamped read counts: the band depth
+  // there is a bound with a margin, not an exact reach)
+  if ((vgd_capped || vgd_csg) && vgd_nclamp_all > vgd_nclamp_seen) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd: " << (vgd_nclamp_all - vgd_nclamp_seen)
                 << " lateral reads were CLAMPED to the band (all ranks) at cycle "
@@ -5789,6 +5964,7 @@ void RadiationM1::VetGdPost() {
     }
     vgd_nclamp_seen = vgd_nclamp_all;
   }
+  if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP");}   // cs-vetgd-1017 gate dump
   // debug (gate): VGD_DUMP_I=<file>: rank 0's intensities incl. ghosts, first build
   const char *fi = std::getenv("VGD_DUMP_I");
   if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
@@ -6696,7 +6872,8 @@ void RadiationM1::VetGdTwin(const int stage) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int ilo = is + vlat_icut;
-  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3;
+  // (cs-vetgd-1017: mesh nx2 x nx3 per panel; npanels = 1 off the cubed sphere, exact)
+  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
   auto tt_ = tau_ten;
   // shell means over the active lateral cells (all ranks) of a(m, c, k+og, j+og, i)
   // (exp of it when ex): no generic lambda around the device kernel (nvcc)
@@ -6897,6 +7074,7 @@ void RadiationM1::VetGdTwin(const int stage) {
     vgd_noq = true;
     VetGdMoments();
     vgd_noq = false;
+    if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP_TW");}   // cs-vetgd-1017 gate dump
     if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
     par_for("m1_vgd_tw_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -7466,7 +7644,8 @@ void RadiationM1::VetGdTwinTrans() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int ilo = indcs.is + vlat_icut;
   const int og = vgd_w - indcs.ng;
-  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3;
+  // (cs-vetgd-1017: mesh nx2 x nx3 per panel; npanels = 1 off the cubed sphere, exact)
+  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
   if (vgd_twtb.extent_int(0) != 5*c1) {Kokkos::realloc(vgd_twtb, 5*c1);}
   Kokkos::deep_copy(vgd_twtb, 0.0);
   auto tb_ = vgd_twtb;
@@ -7612,9 +7791,11 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   if (vgd_hr.extent_int(0) < nmb1 + 1) {
     const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
     const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-    Kokkos::realloc(vgd_hr, nmb1 + 1, nhc, n3, n2, c1);
+    // cs-s4-1017: on the cubed sphere one more component, |H|/J (VetGdCsHrPrep)
+    const int nha = nhc + (vgd_csg ? 1 : 0);
+    Kokkos::realloc(vgd_hr, nmb1 + 1, nha, n3, n2, c1);
     Kokkos::deep_copy(vgd_hr, 0.0);
-    Kokkos::realloc(vgd_hrt, nmb1 + 1, nhc, n3, n2, c1);
+    Kokkos::realloc(vgd_hrt, nmb1 + 1, nha, n3, n2, c1);
     Kokkos::deep_copy(vgd_hrt, 0.0);
     Kokkos::realloc(vgd_hrm, c1);
   }
@@ -7634,6 +7815,57 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     // correction (1 - eps) where the opacity tables give kappa_P >= kappa_R (eps = 1)
     static const char *epe = std::getenv("VGD_THIN_EPS");
     const Real epmax = (epe != nullptr) ? std::atof(epe) : 1.0;
+    if (vgd_csg) {
+      // cs-s4-1017: the cubed sphere's own axes -- r_hat (vgd_csr) and the planar
+      // normals nhat_xi, nhat_eta at the cell centre (cs_cn2/cs_cn3): the ratios the x1
+      // faces and the skew lateral faces of the cs half-range flux need; everything else
+      // as below
+      auto cr_ = vgd_csr;
+      auto cn2 = cs_cn2, cn3 = cs_cn3;
+      par_for("m1_vgd_hrcs", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+        if (i < ilo) {
+          for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
+          if (thx) {
+            hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
+            hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
+            hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
+          }
+          return;
+        }
+        const Real ax[3][3] = {{cr_(m,k+og,j+og,0), cr_(m,k+og,j+og,1),
+                                cr_(m,k+og,j+og,2)},
+                               {cn2(m,j,0), cn2(m,j,1), cn2(m,j,2)},
+                               {cn3(m,k,0), cn3(m,k,1), cn3(m,k,2)}};
+        Real jm = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        for (int d = 0; d < n; ++d) {
+          const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
+          const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
+          jm += wi;
+          for (int a = 0; a < 3; ++a) {
+            const Real mu = nx*ax[a][0] + ny*ax[a][1] + nz*ax[a][2];
+            h[2*a] += wi*fmax(mu, 0.0);
+            h[2*a+1] += wi*fmin(mu, 0.0);
+          }
+        }
+        for (int c = 0; c < 6; ++c) {
+          hr_(m,c,k,j,i) = (jm > 0.0) ? h[c]/jm : ((c % 2 == 0) ? -1.0 : 0.0);
+        }
+        if (thx) {
+          const Real s0 = exp(cs_(m,1,k+og,j+og,i));
+          Real nl = 0.0;
+          for (int d = 0; d < n; ++d) {nl += dir_(d,3)*fabs(vi_(m,d,k+og,j+og,i) - s0);}
+          hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
+          const Real kt = opac_(m,M1_OP_T,k,j,i);
+          hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
+                                     : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
+                                                       fmax(kt, 1.0e-300), 1.0) : 0.0);
+          hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
+          hr_(m,M1_VGD_HRJ,k,j,i) = jm;
+        }
+      });
+      return;
+    }
     par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
       if (i < ilo) {
@@ -7692,8 +7924,9 @@ void RadiationM1::VetGdHalfRange(const int stage) {
   const Real twwq = vgd_twwq;
   auto sr_ = vgd_srm;
   const int c1x = c1;
+  // (cs-s4-1017: nx2 x nx3 per panel x npanels, as the twin's means; 1 off the cs)
   const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
-                    pmy_pack->pmesh->mesh_indcs.nx3;
+                    pmy_pack->pmesh->mesh_indcs.nx3*pmy_pack->pmesh->npanels;
 #if MPI_PARALLEL_ENABLED
   // vgdrot-1011: vet_gd_twin_det with ranks > 1: the nhc shell means in one launch, one
   // copy and ONE rank-ordered gather (was one round per component; each mean is the
@@ -7737,6 +7970,20 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       Real a = 0.0;
       for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*nt + i];}
       mh(i) = a;
+    }
+    // cs-s4-1017: on the cubed sphere the two LATERAL axes share one shell mean (r+ and
+    // r- each the mean of the xi and eta ratios): a seam joins one panel's xi axis to
+    // its neighbour's eta axis, and with a set that is not cube-symmetric (GL about z)
+    // the per-axis means differ; the symmetric-state reference of the twin correction
+    // is the same for every tangential axis
+    if (vgd_csg) {
+      for (int i = 0; i < c1; ++i) {
+        for (int c = 2; c <= 3; ++c) {
+          const Real a = 0.5*(mh(c*c1 + i) + mh((c + 2)*c1 + i));
+          mh(c*c1 + i) = a;
+          mh((c + 2)*c1 + i) = a;
+        }
+      }
     }
     Kokkos::deep_copy(vgd_hrm6, mh);
     for (int c = 0; c < nhc; ++c) {
@@ -7787,6 +8034,21 @@ void RadiationM1::VetGdHalfRange(const int stage) {
     auto mo_ = vgd_hrm;
     // one thread per shell, a fixed (m, k, j) order: reproducible (as vet_gd_twin_det)
     const int nm = nmb1 + 1;
+    if (vgd_csg && c >= 2 && c <= 5) {
+      // cs-s4-1017: the lateral pair (xi, eta) shares one shell mean (see the MPI path)
+      const int pc = (c <= 3) ? (c + 2) : (c - 2);
+      par_for("m1_vgd_hr_smcs", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
+        Real sm = 0.0;
+        for (int m = 0; m < nm; ++m) {
+          for (int k = ks; k <= ke; ++k) {
+            for (int j = js; j <= je; ++j) {
+              sm += 0.5*(ht_(m,(c <= 3) ? c : pc,k,j,i) + ht_(m,(c <= 3) ? pc : c,k,j,i));
+            }
+          }
+        }
+        mo_(i) = sm/ncol;
+      });
+    } else {
     par_for("m1_vgd_hr_sm", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
       Real sm = 0.0;
       for (int m = 0; m < nm; ++m) {
@@ -7802,6 +8064,7 @@ void RadiationM1::VetGdHalfRange(const int stage) {
       }
       mo_(i) = sm/ncol;
     });
+    }  // !(vgd_csg lateral)
 #if MPI_PARALLEL_ENABLED
     {
       auto mh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_hrm);

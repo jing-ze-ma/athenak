@@ -490,6 +490,7 @@ int main(int argc, char *argv[]) {
     // read parameters from restart file
     restartfile.Open(restart_file.c_str(),IOWrapper::FileMode::read,single_file_per_rank);
     pinput->LoadFromFile(restartfile, single_file_per_rank);
+    pinput->MarkAllAsRestart();   // unkkey-1017: not reported as unread input keys
     rst_potential_keys = SnapshotPotentialKeys(pinput, PotentialKeys());
     for (const auto &kv : SnapshotPotentialKeys(pinput, GridKeys())) {
       rst_potential_keys.insert(kv);

@@ -74,6 +74,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -243,6 +244,28 @@ void M1ShellGas(const M1ShellGasP &p, const Real r, const Real th, const Real ph
     }
   }
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ShellAngles
+//! \brief cs-s4-1017: (theta, phi) of cell (m,k,j) for M1ShellGas: x2v/x3v on the
+//! spherical-polar wedge; on the cubed sphere the polar angles of the cell centre's
+//! direction (PanelToCart of the equiangular chart point; ghosts: the extended chart)
+
+KOKKOS_INLINE_FUNCTION
+void M1ShellAngles(const bool csm, const int panel, const Real x2c, const Real x3c,
+                   const int k, const int j, const int ks, const int js, const int nx2,
+                   const int nx3, const Real x2a, const Real x2b, const Real x3a,
+                   const Real x3b, Real &th, Real &ph) {
+  th = x2c;
+  ph = x3c;
+  if (!csm) return;
+  const Real xi = 0.25*M_PI*CellCenterX(j - js, nx2, x2a, x2b);
+  const Real eta = 0.25*M_PI*CellCenterX(k - ks, nx3, x3a, x3b);
+  Real q[3];
+  cubed_sphere::PanelToCart(panel, xi, eta, q);
+  th = acos(fmin(fmax(q[2], -1.0), 1.0));
+  ph = atan2(q[1], q[0]);
+}
 } // namespace
 
 // prototypes for the hooks enrolled below
@@ -257,6 +280,7 @@ void RadM1ShellHold(Mesh *pm, const Real bdt);
 void RadM1ShellHoldV(Mesh *pm, const Real bdt);
 void RadM1ShellReport(ParameterInput *pin, Mesh *pm);
 void RadM1CsHistory(HistoryData *pdata, Mesh *pm);
+void RadM1AmHistory(HistoryData *pdata, Mesh *pm);
 void RadM1RwHistory(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
@@ -937,6 +961,19 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     // sphere (covariant v.e_xi, v.e_eta); the moving-gas O(v/c) terms of the order gate
     const Real grot = pin->DoesParameterExist("problem","gas_rot") ?
                       pin->GetReal("problem","gas_rot") : 0.0;
+    // cs-open-1018 (read only when named): gas_rot_axis = "ax,ay,az", the rotation axis of
+    // gas_rot (normalised; default z)
+    bool gax = false;
+    Real gax_x = 0.0, gay = 0.0, gaz = 1.0;
+    if (pin->DoesParameterExist("problem","gas_rot_axis")) {
+      gax = true;
+      std::string sa = pin->GetString("problem","gas_rot_axis");
+      for (auto &ch : sa) {if (ch == ',') ch = ' ';}
+      std::istringstream iss(sa);
+      iss >> gax_x >> gay >> gaz;
+      const Real an = std::sqrt(gax_x*gax_x + gay*gay + gaz*gaz);
+      gax_x /= an; gay /= an; gaz /= an;
+    }
     const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
                       pin->GetBoolean("problem","gas_teq") : false;
     const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
@@ -1030,7 +1067,30 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
     }
     if (csm) {user_hist_func = RadM1CsHistory;}
+    // cs-open-1018 (read only when named): problem/am_hist = true takes the user history
+    // instead to the double-precision energy / angular-momentum budget RadM1AmHistory
+    // (cubed sphere and spherical polar)
+    if (spr && pin->DoesParameterExist("problem","am_hist") &&
+        pin->GetBoolean("problem","am_hist")) {
+      user_hist_func = RadM1AmHistory;
+    }
     const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
+    // cs-open-1018 (cubed sphere, read only when named): rho_lat_amp = a multiplies the gas
+    // density by 1 + a P_{rho_lat_l}(rhat . axis) with rho_lat_axis = z | edge | vertex
+    // (default edge, l = 1): a smooth LATERAL opacity structure for the seam / vertex
+    // order gate (a static cold gas: the pressure stays negligible)
+    Real rla = 0.0, rlx = 1.0, rly = 1.0, rlz = 0.0;
+    int rll = 1;
+    if (csm && pin->DoesParameterExist("problem","rho_lat_amp")) {
+      rla = pin->GetReal("problem","rho_lat_amp");
+      rll = pin->GetOrAddInteger("problem","rho_lat_l",1);
+      std::string ax = pin->GetOrAddString("problem","rho_lat_axis","edge");
+      rlx = 1.0; rly = 1.0; rlz = 0.0;
+      if (ax == "z") {rlx = 0.0; rly = 0.0; rlz = 1.0;}
+      if (ax == "vertex") {rlx = 1.0; rly = 1.0; rlz = 1.0;}
+      const Real an = std::sqrt(rlx*rlx + rly*rly + rlz*rlz);
+      rlx /= an; rly /= an; rlz /= an;
+    }
     auto mbpan = pmbp->pmb->mb_panel;
     auto &msz = pmy_mesh_->mesh_size;
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
@@ -1045,9 +1105,12 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = dgas*tgas/gm1;
-      if (shg && sp) {
-        Real dd, t1;
-        M1ShellGas(shp, r, x2v(m,j), x3v(m,k), dd, t1);
+      if (shg && spr) {   // cs-s4-1017: the cubed sphere too (M1ShellAngles)
+        Real dd, t1, th, ph;
+        M1ShellAngles(csm, csm ? mbpan.d_view(m) : 0, x2v(m,j), x3v(m,k), k, j, ks, js,
+                      nx2, nx3, size.d_view(m).x2min, size.d_view(m).x2max,
+                      size.d_view(m).x3min, size.d_view(m).x3max, th, ph);
+        M1ShellGas(shp, r, th, ph, dd, t1);
         uh(m,IDN,k,j,i) = dd;
         uh(m,IEN,k,j,i) = dd*t1/gm1;
       }
@@ -1063,6 +1126,14 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                                size.d_view(m).x3min, size.d_view(m).x3max, cax, cay, caz);
         u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*M1Legendre(csl, mu);
       }
+      if (rla != 0.0) {
+        const Real mr = M1CsMu(mbpan.d_view(m), k, j, ks, js, nx2, nx3,
+                               size.d_view(m).x2min, size.d_view(m).x2max,
+                               size.d_view(m).x3min, size.d_view(m).x3max, rlx, rly, rlz);
+        const Real fr = 1.0 + rla*M1Legendre(rll, mr);
+        uh(m,IDN,k,j,i) *= fr;
+        uh(m,IEN,k,j,i) *= fr;
+      }
       if (gteq) {
         uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1;
       }
@@ -1076,10 +1147,24 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         uh(m,IM2,k,j,i) = dgas*vt;
         uh(m,IEN,k,j,i) += 0.5*dgas*vt*vt;
       }
-      if (grot != 0.0 && sp) {
+      if (grot != 0.0 && sp && !gax) {
         const Real vp = grot*r*sin(x2v(m,j));
         uh(m,IM3,k,j,i) = dgas*vp;
         uh(m,IEN,k,j,i) += 0.5*dgas*vp*vp;
+      }
+      if (grot != 0.0 && sp && gax) {
+        // cs-open-1018 gas_rot_axis: v = Omega a x r on the orthonormal (theta, phi) basis
+        const Real th = x2v(m,j), ph = x3v(m,k);
+        const Real q[3] = {sin(th)*cos(ph), sin(th)*sin(ph), cos(th)};
+        const Real et[3] = {cos(th)*cos(ph), cos(th)*sin(ph), -sin(th)};
+        const Real ep[3] = {-sin(ph), cos(ph), 0.0};
+        const Real w[3] = {grot*r*(gay*q[2] - gaz*q[1]), grot*r*(gaz*q[0] - gax_x*q[2]),
+                           grot*r*(gax_x*q[1] - gay*q[0])};
+        const Real vt = w[0]*et[0] + w[1]*et[1] + w[2]*et[2];
+        const Real vp = w[0]*ep[0] + w[1]*ep[1] + w[2]*ep[2];
+        uh(m,IM2,k,j,i) = dgas*vt;
+        uh(m,IM3,k,j,i) = dgas*vp;
+        uh(m,IEN,k,j,i) += 0.5*dgas*(vt*vt + vp*vp);
       }
       if (grot != 0.0 && csm) {
         const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
@@ -1089,10 +1174,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         Real q[3], ta[3], tb[3];
         cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
         cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
-        const Real v0 = -grot*r*q[1], v1 = grot*r*q[0];
-        uh(m,IM2,k,j,i) = dgas*(v0*ta[0] + v1*ta[1]);
-        uh(m,IM3,k,j,i) = dgas*(v0*tb[0] + v1*tb[1]);
-        uh(m,IEN,k,j,i) += 0.5*dgas*(v0*v0 + v1*v1);
+        Real w[3] = {-grot*r*q[1], grot*r*q[0], 0.0};
+        if (gax) {   // cs-open-1018 gas_rot_axis: v = Omega a x r
+          w[0] = grot*r*(gay*q[2] - gaz*q[1]);
+          w[1] = grot*r*(gaz*q[0] - gax_x*q[2]);
+          w[2] = grot*r*(gax_x*q[1] - gay*q[0]);
+        }
+        uh(m,IM2,k,j,i) = dgas*(w[0]*ta[0] + w[1]*ta[1] + w[2]*ta[2]);
+        uh(m,IM3,k,j,i) = dgas*(w[0]*tb[0] + w[1]*tb[1] + w[2]*tb[2]);
+        uh(m,IEN,k,j,i) += 0.5*dgas*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
       }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {
@@ -1580,10 +1670,18 @@ void RadM1ShellHold(Mesh *pm, const Real bdt) {
   auto x3v = pmbp->pcoord->x3v;
   const M1ShellGasP shp = m1_shg;
   const Real gm1 = m1_shg_gm1;
+  // cs-s4-1017: the cubed sphere's (theta, phi) from the panel chart (M1ShellAngles)
+  const bool csm = pm->use_cubed_sphere;
+  auto mbpan = pmbp->pmb->mb_panel;
+  auto &size = pmbp->pmb->mb_size;
+  const int ks = indcs.ks, js = indcs.js, nx2 = indcs.nx2, nx3 = indcs.nx3;
   par_for("m1_shg_hold", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    Real dd, tt;
-    M1ShellGas(shp, x1v(m,i), x2v(m,j), x3v(m,k), dd, tt);
+    Real dd, tt, th, ph;
+    M1ShellAngles(csm, csm ? mbpan.d_view(m) : 0, x2v(m,j), x3v(m,k), k, j, ks, js, nx2,
+                  nx3, size.d_view(m).x2min, size.d_view(m).x2max, size.d_view(m).x3min,
+                  size.d_view(m).x3max, th, ph);
+    M1ShellGas(shp, x1v(m,i), th, ph, dd, tt);
     uh(m,IDN,k,j,i) = dd;
     uh(m,IM1,k,j,i) = 0.0;
     uh(m,IM2,k,j,i) = 0.0;
@@ -1785,7 +1883,10 @@ void RadM1CellDump(const std::string &pre, Mesh *pm) {
   std::string fn = pre + "." + std::to_string(global_variable::my_rank) + ".txt";
   FILE *f = std::fopen(fn.c_str(), "w");
   if (f == nullptr) return;
-  const int i = is + nx1/2;
+  // cs-s4-1017: the radial cell (from the inner face, 0-based) by env M1_CELL_DUMP_I
+  const char *ci = std::getenv("M1_CELL_DUMP_I");
+  const int i = is + ((ci != nullptr) ? std::max(0, std::min(nx1 - 1, std::atoi(ci)))
+                                      : nx1/2);
   for (int m = 0; m < pmbp->nmb_thispack; ++m) {
     for (int k = ks; k < ks + nx3; ++k) {
       for (int j = js; j < js + nx2; ++j) {
@@ -1858,6 +1959,103 @@ void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
     hv.the_array[3] = v*p;
     hv.the_array[4] = v;
     hv.the_array[5] = (e <= 0.0) ? 1.0 : 0.0;
+    mb_sum += hv;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1AmHistory
+//! \brief cs-open-1018 (sph_shell, problem/am_hist): double-precision budget sums over the
+//! active cells, V = Coordinates volume, arm r_c rhat (cell-centre radius, as the
+//! <hydro>/am_transport correction): Eg = sum V u(IEN), Er = sum V E, Lg = sum V r x m
+//! (x, y, z), Lr = sum V r x F/c^2 (x, y, z).  cs: covariant m, F raised with the cell's
+//! e_xi.e_eta; sp: orthonormal.
+
+void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 14;
+  const char *lab[14] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
+                         "Sz", "Lfx", "Lfy", "Lfz"};
+  for (int n = 0; n < 14; ++n) {pdata->label[n] = lab[n];}
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pradm1 == nullptr || pmbp->phydro == nullptr) return;
+  auto u0 = pmbp->pradm1->u0;
+  auto uh = pmbp->phydro->u0;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto x2v = pmbp->pcoord->x2v;
+  auto x3v = pmbp->pcoord->x3v;
+  auto ccell = pmbp->pcoord->cos_cell;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpan = pmbp->pmb->mb_panel;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const bool csm = pm->use_cubed_sphere;
+  const Real ic2 = 1.0/(pmbp->pradm1->c_light*pmbp->pradm1->c_light);
+  // cs-open-1018 <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)
+  const bool spn = pmbp->phydro->am_vector;
+  auto asp = pmbp->phydro->am_spin;
+  // <hydro>/frame_omega: the frame part of the absolute L, sum V rho rc x (Omega x rc)
+  const Real fo0 = pmbp->phydro->frame_om[0], fo1 = pmbp->phydro->frame_om[1];
+  const Real fo2 = pmbp->phydro->frame_om[2];
+  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+  const int nji = nx2*nx1;
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("M1AmHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    k += ks; j += js; i += is;
+    array_sum::GlobalSum hv;
+    for (int n = 0; n < NHISTORY_VARIABLES; ++n) {hv.the_array[n] = 0.0;}
+    Real rh[3], ta[3], tb[3];
+    Real c = 0.0;
+    if (csm) {
+      const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
+                                             size.d_view(m).x2max);
+      const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
+                                              size.d_view(m).x3max);
+      cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, rh);
+      cubed_sphere::PanelTangents(mbpan.d_view(m), xi, eta, ta, tb);
+      c = ccell(m,k,j);
+    } else {
+      const Real th = x2v(m,j), ph = x3v(m,k);
+      rh[0] = sin(th)*cos(ph); rh[1] = sin(th)*sin(ph); rh[2] = cos(th);
+      ta[0] = cos(th)*cos(ph); ta[1] = cos(th)*sin(ph); ta[2] = -sin(th);
+      tb[0] = -sin(ph); tb[1] = cos(ph); tb[2] = 0.0;
+    }
+    const Real r = x1v(m,i), v = vol(m,k,j,i), s2 = 1.0 - c*c;
+    auto lv = [&](const Real a1, const Real a2c, const Real a3c, Real *l) {
+      const Real a2 = (a2c - c*a3c)/s2, a3 = (a3c - c*a2c)/s2;   // contravariant
+      Real p[3];
+      for (int q = 0; q < 3; ++q) {p[q] = a1*rh[q] + a2*ta[q] + a3*tb[q];}
+      l[0] = r*(rh[1]*p[2] - rh[2]*p[1]);
+      l[1] = r*(rh[2]*p[0] - rh[0]*p[2]);
+      l[2] = r*(rh[0]*p[1] - rh[1]*p[0]);
+    };
+    Real lg[3], lr[3];
+    lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lg);
+    lv(u0(m,radm1::M1_F1,k,j,i), u0(m,radm1::M1_F2,k,j,i), u0(m,radm1::M1_F3,k,j,i),
+       lr);
+    hv.the_array[0] = v*uh(m,IEN,k,j,i);
+    hv.the_array[1] = v*u0(m,radm1::M1_E,k,j,i);
+    for (int q = 0; q < 3; ++q) {
+      hv.the_array[2+q] = v*lg[q];
+      hv.the_array[5+q] = v*lr[q]*ic2;
+      hv.the_array[8+q] = spn ? asp(m,k,j,i)*rh[q] : 0.0;
+    }
+    {
+      const Real x[3] = {r*rh[0], r*rh[1], r*rh[2]};
+      const Real ox[3] = {fo1*x[2] - fo2*x[1], fo2*x[0] - fo0*x[2], fo0*x[1] - fo1*x[0]};
+      const Real d = v*uh(m,IDN,k,j,i);
+      hv.the_array[11] = d*(x[1]*ox[2] - x[2]*ox[1]);
+      hv.the_array[12] = d*(x[2]*ox[0] - x[0]*ox[2]);
+      hv.the_array[13] = d*(x[0]*ox[1] - x[1]*ox[0]);
+    }
     mb_sum += hv;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   for (int n = 0; n < pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}

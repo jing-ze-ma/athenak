@@ -6,6 +6,9 @@
 // fragment included twice by rad_m1_implicit.cpp, inside the m1_impl_wb lambda:
 // M1_RCP 0 = the default kernel (byte-identical to the code before
 // implicit_realisable_coupling), M1_RCP 1 = the kernel with the key on.
+// cs-open-1018: M1_CSW 1 (the cubed-sphere launches only) adds the cs blocks of the
+// rad_inertia and conservative paths (`#if M1_CSW`); with M1_CSW undefined (the sp and
+// Cartesian launches) the preprocessed kernel is exactly the one before.
 // NOLINT(build/header_guard)
     Real ep = iw_(m,M1_IW_EP,k,j,i);
     // F3 (implicit_pos_floor_solve): the iterate is floored only at 1e-6 e_floor in the
@@ -198,6 +201,41 @@
               if (g != 0.0) {dm3 += g;}
             }
           }
+#if M1_CSW
+          // cs-open-1018: the same transverse deposit on the cubed sphere.  The face
+          // means are those of the sp rule (face-normal V of the cell and its neighbour,
+          // a seam ghost re-expressed on this block's face normals; m1bcs: a seam is an
+          // interior face), i.e. the face-normal momentum of the face equation's own
+          // v_f g0_f term, mapped to the covariant dm2, dm3 as the k F0 deposit above
+          if (trans && dbgft && thrd) {
+            auto vgc = [&](const int c, const int k0, const int j0, const int k1,
+                           const int j1) {
+              return 0.125*(dt/cl)*(iw_(m,c,k0,j0,i) + iw_(m,c,k1,j1,i))
+                     *(iw_(m,M1_IW_G0,k0,j0,i) + iw_(m,M1_IW_G0,k1,j1,i));
+            };
+            const BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+            const BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+            const BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+            const BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+            const bool p2lo = (q3 != BoundaryFlag::block) &&
+                              (q3 != BoundaryFlag::periodic);
+            const bool p2hi = (q4 != BoundaryFlag::block) &&
+                              (q4 != BoundaryFlag::periodic);
+            const bool p3lo = (q5 != BoundaryFlag::block) &&
+                              (q5 != BoundaryFlag::periodic);
+            const bool p3hi = (q6 != BoundaryFlag::block) &&
+                              (q6 != BoundaryFlag::periodic);
+            Real ga = (j == js && p2lo) ? 0.0 : vgc(M1_IW_V2, k, j-1, k, j);
+            if (!(j == je && p2hi)) {ga += vgc(M1_IW_V2, k, j, k, j+1);}
+            Real gb = (k == ks && p3lo) ? 0.0 : vgc(M1_IW_V3, k-1, j, k, j);
+            if (!(k == ke && p3hi)) {gb += vgc(M1_IW_V3, k, j, k+1, j);}
+            if (ga != 0.0 || gb != 0.0) {
+              const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+              dm2 += (ga + c*gb)*si;
+              dm3 += (gb + c*ga)*si;
+            }
+          }
+#endif
         }
 #if M1_RCP
         // implicit_realisable_coupling: the deposit of the realisable cell flux, scaled
@@ -267,6 +305,36 @@
             fp2 -= ay*(ch/cl)*work;
             fp3 -= az*(ch/cl)*work;
           }
+#if M1_CSW
+          // cs-open-1018: the same fixed point on the cubed sphere.  (ay, az) are the
+          // face-normal components of the enthalpy-flux coefficient a (A = a E), so its
+          // momentum a W/c^2 enters the covariant dm and the covariant cell F through
+          // the face-normal -> covariant map; the kinetic energy takes the contravariant
+          // velocity (as kew of the conservative path)
+          if (rinr && !rwk && !efc && thrd && (ax != 0.0 || ay != 0.0 || az != 0.0)) {
+            const Real ic2 = 1.0/(cl*cl);
+            const Real c = cclw(m,k,j), sn = csnw(m,k,j), id2 = 1.0/(1.0 - c*c);
+            const Real by = (ay + c*az)/sn, bz = (az + c*ay)/sn;
+            Real wq = work;
+            Real x1 = dm1, x2 = dm2, x3 = dm3;
+            for (int q = 0; q < 3; ++q) {
+              x1 = dm1 + ax*wq*ic2;
+              x2 = dm2 + by*wq*ic2;
+              x3 = dm3 + bz*wq*ic2;
+              wq = 0.5*(v1 + (uh(m,IM1,k,j,i) + x1)*idg)*x1;
+              const Real n2 = uh(m,IM2,k,j,i) + x2, n3 = uh(m,IM3,k,j,i) + x3;
+              const Real u2 = (n2 - c*n3)*idg*id2, u3 = (n3 - c*n2)*idg*id2;
+              wq += 0.5*(v2 + u2)*x2 + 0.5*(v3 + u3)*x3;
+            }
+            dm1 = x1;
+            dm2 = x2;
+            dm3 = x3;
+            work = wq;
+            fp1 -= ax*(ch/cl)*work;
+            fp2 -= by*(ch/cl)*work;
+            fp3 -= bz*(ch/cl)*work;
+          }
+#endif
           if (!efc) {
             ep -= (ch/cl)*work;
           }
@@ -382,6 +450,20 @@
             }
           }
         }
+#if M1_CSW
+        // cs-open-1018: the stage increment without a cell-F increment is the face-normal
+        // face mean + A tie: its transverse part to the covariant basis of u0 F
+        if (t2st && !csok && trans && thrd) {
+          const Real tie = t2i_(m,M1_T2_E,k,j,i);
+          const Real a = 0.5*(t2i_(m,M1_T2_F1+1,k,j,i) + t2i_(m,M1_T2_F1+1,k,j+1,i))
+                         + iw_(m,M1_IW_A2,k,j,i)*tie;
+          const Real b = 0.5*(t2i_(m,M1_T2_F1+2,k,j,i) + t2i_(m,M1_T2_F1+2,k+1,j,i))
+                         + iw_(m,M1_IW_A3,k,j,i)*tie;
+          const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+          go2 += (a + c*b)*si - a;
+          go3 += (b + c*a)*si - b;
+        }
+#endif
         const Real idg = 1.0/fmax(dd, 1.0e-300);
         // the exact kinetic-energy change of the kick (the matched path's work)
         auto kew = [&](const Real a1, const Real a2, const Real a3) {
@@ -406,6 +488,26 @@
           dm1 = x1 - (q1 - go1)*icc;
           dm2 = tq ? (x2 - (q2 - go2)*icc) : 0.0;
           dm3 = (tq && thrd) ? (x3 - (q3 - go3)*icc) : 0.0;
+#if M1_CSW
+          // cs-open-1018: the same drag rule on the cubed sphere.  A^old (iw_cs2 + 1..2,
+          // ImplicitCs2DeltaA) and the face means are face-normal, q the covariant cell
+          // F: the transverse dA is formed face-normal, weighted per axis, and mapped
+          // to the covariant dm
+          if (c2h) {
+            dm1 += (1.0 - iw_(m,c2a+6,k,j,i))
+                   *(q1 - 0.5*(fl + fr) - iw_(m,c2a,k,j,i))*icc;
+            if (tq && thrd) {
+              const Real c = cclw(m,k,j), sn = csnw(m,k,j);
+              const Real qa = (q2 - c*q3)/sn, qb = (q3 - c*q2)/sn;
+              const Real ta = (1.0 - iw_(m,c2a+7,k,j,i))
+                              *(qa - 0.5*(g2l + g2r) - iw_(m,c2a+1,k,j,i))*icc;
+              const Real tb = (1.0 - iw_(m,c2a+8,k,j,i))
+                              *(qb - 0.5*(g3l + g3r) - iw_(m,c2a+2,k,j,i))*icc;
+              dm2 += (ta + c*tb)/sn;
+              dm3 += (tb + c*ta)/sn;
+            }
+          }
+#else
           if (c2h) {
             // consfix3 (implicit_cs2_hll = drag): the AP-HLL part of dA stays with the
             // radiation (no face equation there): the gas pays om_bar dA, not dA
@@ -420,6 +522,7 @@
               }
             }
           }
+#endif
           if (q == 3) break;
           const Real wq = kew(dm1, dm2, dm3);
           Real eq = efc ? ep : (ep - (ch/cl)*wq);
@@ -456,6 +559,39 @@
               }
             }
           }
+#if M1_CSW
+          // cs-open-1018: the same re-forming on the cubed sphere (as the m1_impl_wb_csvfx
+          // kernel of the matched path): face-normal velocities s v^a of the kicked
+          // covariant momentum, the face-normal A, then the covariant cell F
+          if (vfx && trans && thrd) {
+            const Real c = cclw(m,k,j), sn = csnw(m,k,j), s2 = 1.0 - c*c;
+            const Real w1 = (uh(m,IM1,k,j,i) + dm1 - dmref)*idg;
+            const Real p2 = uh(m,IM2,k,j,i) + (tq ? dm2 : 0.0);
+            const Real p3 = uh(m,IM3,k,j,i) + (tq ? dm3 : 0.0);
+            const Real u2 = sn*(p2 - c*p3)*idg/s2, u3 = sn*(p3 - c*p2)*idg/s2;
+            const Real chi = iw_(m,M1_IW_WCHI,k,j,i);
+            const Real n1 = iw_(m,M1_IW_N1,k,j,i), n2 = iw_(m,M1_IW_N2,k,j,i);
+            const Real n3 = iw_(m,M1_IW_N3,k,j,i);
+            Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2);
+            Real d33 = M1EddDiag(chi,n3);
+            Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
+            Real d23 = M1EddOff(chi,n2,n3);
+            if (dfull) {
+              d11 = vd_(m,M1_VET_D11,k,j,i);
+              d22 = vd_(m,M1_VET_D11+1,k,j,i);
+              d33 = vd_(m,M1_VET_D11+2,k,j,i);
+              d12 = vd_(m,M1_VET_D11+3,k,j,i);
+              d13 = vd_(m,M1_VET_D11+4,k,j,i);
+              d23 = vd_(m,M1_VET_D11+5,k,j,i);
+            }
+            const Real es = iw_(m,M1_IW_EP,k,j,i);
+            q1 = 0.5*(fl + fr) + (w1 + (w1*d11 + u2*d12 + u3*d13))*es;
+            const Real a2 = 0.5*(g2l + g2r) + (u2 + (w1*d12 + u2*d22 + u3*d23))*es;
+            const Real a3 = 0.5*(g3l + g3r) + (u3 + (w1*d13 + u2*d23 + u3*d33))*es;
+            q2 = (a2 + c*a3)/sn;
+            q3 = (a3 + c*a2)/sn;
+          }
+#endif
           if (csw) {
             M1ApplyLimitsCs(cl, efl, cclw(m,k,j), eq, q1, q2, q3);
           } else {

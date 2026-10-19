@@ -66,8 +66,10 @@
 //! keeps its old value (the resolved values are echoed); Cartesian meshes are unchanged.
 
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -75,6 +77,8 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
+#include "coordinates/cubed_sphere.hpp"
+#include "bvals/bvals.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
@@ -143,8 +147,30 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // seam face state is averaged at the start of each solve (CubedSeamFaceAverage).
     // implicit_vimp too (its cs form: ImplicitVimpBuild, the face-normal work row)
     if (impl_solver != M1_ISOLV_BICGSTAB) {wcs += " implicit_solver != bicgstab;";}
-    if (impl_prec != 2) {wcs += " implicit_precond != rbgs_fwd;";}
-    if (impl_halo_mpi) {wcs += " implicit_halo_mpi = true;";}
+    // cs-port-1016 (CS_VETGD.md S2): implicit_precond = mg as well.  mg is algebraic and
+    // block-local (x1 line solves, one red-black transverse sweep, Galerkin 2x2
+    // aggregates inside a MeshBlock, rad_m1_precond.cpp): it reads no geometry, and its
+    // only communication, the z0 halo of the fine residual, is ImplicitKrylovHalo, i.e.
+    // the cs seam (no-resample, mirror-pair) exchange of the Krylov vector itself.
+    // mg_gc / mg_gf stay refused (band / Fourier coarse spaces of a periodic x2/x3 mesh;
+    // the cs analogue is mg_ylm, stage 3 list).  The cs DEFAULT stays rbgs_fwd.
+    if (impl_prec != 2 && impl_prec != 3) {
+      wcs += " implicit_precond != rbgs_fwd | mg;";
+    }
+    // cs-s4-1017 (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
+    // (and its overlap) is a communication layout, not a method; on cs it falls back to
+    // the ordinary seam-aware exchange (the same numbers), as implicit_halo_direct does
+    if (impl_halo_mpi) {
+      impl_halo_mpi = false;
+      impl_halo_ovl = false;
+      impl_ovl_faces = false;
+      impl_halo_ipc = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> cubed sphere: implicit_halo_mpi (+ overlap) falls back to "
+                  << "the ordinary seam-aware exchange (the seam halo_mpi port is open)"
+                  << std::endl;
+      }
+    }
     // CS1: the canonical seam geometry needs the equiangular panel of -1..1 with the same
     // cell count along both tangential axes, and the one-sided tangential derivatives
     // next to a seam three cells of the block
@@ -161,8 +187,8 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
         << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS3) supports only "
         << "transport = implicit, closure = eddington | vet_col (radial axis), "
         << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
-        << "= bicgstab, implicit_precond = rbgs_fwd, no "
-        << "implicit_halo_mpi (and the spherical-polar list below); this input has:"
+        << "= bicgstab, implicit_precond = rbgs_fwd | mg (and the spherical-polar "
+        << "list below); this input has:"
         << wcs << why << std::endl
         << "See /viper/ptmp2/jinma/rt_design_1003/CS_IMPLICIT_VET.md sect. 4."
         << std::endl;
@@ -320,6 +346,61 @@ void RadiationM1::CubedS1Init() {
       }
     });
   }
+  // cs-s4-1017: the planar face normals, nhat_xi = (a - tan(xi_f) n)/sqrt(1 + tan^2) and
+  // nhat_eta = (b - tan(eta_f) n)/sqrt(1 + tan^2) (gradient directions of xi, eta; the
+  // face plane xi = xi_f holds the origin, so its normal is the same along the column)
+  {
+    Kokkos::realloc(cs_fn2, nmb, n2 + 1, 3);
+    Kokkos::realloc(cs_fn3, nmb, n3 + 1, 3);
+    auto f2h = Kokkos::create_mirror_view(cs_fn2);
+    auto f3h = Kokkos::create_mirror_view(cs_fn3);
+    auto &pan = pmy_pack->pmb->mb_panel;
+    for (int m = 0; m < nmb; ++m) {
+      Real fa[3], fb[3], fq[3];
+      cubed_sphere::PanelFrame(pan.h_view(m), fa, fb, fq);
+      for (int j = 0; j <= n2; ++j) {
+        const Real x = std::tan(0.25*M_PI*LeftEdgeX(j - indcs.js, indcs.nx2,
+                                                   msz.h_view(m).x2min,
+                                                   msz.h_view(m).x2max));
+        const Real nn = 1.0/std::sqrt(1.0 + x*x);
+        for (int c = 0; c < 3; ++c) {f2h(m,j,c) = (fa[c] - x*fq[c])*nn;}
+      }
+      for (int k = 0; k <= n3; ++k) {
+        const Real y = std::tan(0.25*M_PI*LeftEdgeX(k - indcs.ks, indcs.nx3,
+                                                   msz.h_view(m).x3min,
+                                                   msz.h_view(m).x3max));
+        const Real nn = 1.0/std::sqrt(1.0 + y*y);
+        for (int c = 0; c < 3; ++c) {f3h(m,k,c) = (fb[c] - y*fq[c])*nn;}
+      }
+    }
+    Kokkos::deep_copy(cs_fn2, f2h);
+    Kokkos::deep_copy(cs_fn3, f3h);
+    // the cell-centre normals (the same formula at xi_c, eta_c)
+    Kokkos::realloc(cs_cn2, nmb, n2, 3);
+    Kokkos::realloc(cs_cn3, nmb, n3, 3);
+    auto c2h = Kokkos::create_mirror_view(cs_cn2);
+    auto c3h = Kokkos::create_mirror_view(cs_cn3);
+    for (int m = 0; m < nmb; ++m) {
+      Real fa[3], fb[3], fq[3];
+      cubed_sphere::PanelFrame(pan.h_view(m), fa, fb, fq);
+      for (int j = 0; j < n2; ++j) {
+        const Real x = std::tan(0.25*M_PI*CellCenterX(j - indcs.js, indcs.nx2,
+                                                     msz.h_view(m).x2min,
+                                                     msz.h_view(m).x2max));
+        const Real nn = 1.0/std::sqrt(1.0 + x*x);
+        for (int c = 0; c < 3; ++c) {c2h(m,j,c) = (fa[c] - x*fq[c])*nn;}
+      }
+      for (int k = 0; k < n3; ++k) {
+        const Real y = std::tan(0.25*M_PI*CellCenterX(k - indcs.ks, indcs.nx3,
+                                                     msz.h_view(m).x3min,
+                                                     msz.h_view(m).x3max));
+        const Real nn = 1.0/std::sqrt(1.0 + y*y);
+        for (int c = 0; c < 3; ++c) {c3h(m,k,c) = (fb[c] - y*fq[c])*nn;}
+      }
+    }
+    Kokkos::deep_copy(cs_cn2, c2h);
+    Kokkos::deep_copy(cs_cn3, c3h);
+  }
   // DEBUG <rad_m1>/cs_seam_avg (read only when named, default true): the C5 seam average
   // of the stored face state
   cs_seam_avg_on = true;
@@ -329,6 +410,8 @@ void RadiationM1::CubedS1Init() {
   if (pbval_th != nullptr) {
     pbval_th->cs_noresample = true;
     // STAGE CS2: (N2,N3), (A2,A3), (V2,V3) of the work array are face-normal components
+    // (cs-s4-1017: re-expressed on the destination's face normals at a seam,
+    // bvals_cc.cpp)
     pbval_th->cs_perm_pairs = true;
   }
   if (pbval_tq != nullptr) {pbval_tq->cs_noresample = true;}
@@ -393,6 +476,262 @@ void RadiationM1::CubedSeamFaceAverage() {
     std::cout << "<rad_m1>: CS1 seam average of f0x2/f0x3 active" << std::endl;
   }
   ++cs_seam_avg_n;
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CubedVecCheck
+//! \brief cs-s4-1017 (TEST ONLY, cubed sphere, <rad_m1>/cs_vec_check = true read only
+//! when named): the seam/vertex halo of the TANGENTIAL VECTOR PAIRS against an analytic
+//! field.  v = Omega x rhat (a solid-body rotation about a generic axis, cs_vec_axis
+//! "ax ay az", default (0.3,-0.5,0.8)) and the scalar s = 1 + 0.2 rhat.(0.6,0.0,0.8) are
+//! written into the ACTIVE cells, the ghosts are poisoned, and the run's own exchanges fill them:
+//!  (1) u0 through pbval_u (F2, F3 = covariant components on the unit panel tangents
+//!      e_xi, e_eta, TransformMomentum + the along-seam quadratic resample): every ghost
+//!      is compared with the exact s and v . e_a at the GHOST's own position in this
+//!      block's chart;
+//!  (2) the implicit work array through pbval_th (V2, V3 = FACE-NORMAL components v .
+//!      nhat_xi, v . nhat_eta, no resample; cs-s4-1017: re-expressed on the destination's
+//!      face normals, before it the signed axis permutation of CS2): a seam ghost is
+//!      compared with (A) the exact face-normal components at the ghost position
+//!      and (B) at the no-resample donor's position (the mirror image of this block's own
+//!      cell at the same depth across the seam plane), separately for the SEAM-NORMAL
+//!      component (the only one the cs operator reads across a seam) and the ALONG-SEAM
+//!      one.
+//! Per class (same panel, seam depth 1..ng, cube vertex) the largest error over the
+//! mesh is printed (CSVEC lines).  Everything is restored afterwards (u0, iw): no effect
+//! on the run.  Called once after pbval_u is built (rad_m1.cpp).
+
+void RadiationM1::CubedVecCheck(ParameterInput *pin) {
+  if (!cs_geom || !pin->DoesParameterExist("rad_m1","cs_vec_check") ||
+      !pin->GetBoolean("rad_m1","cs_vec_check")) {return;}
+  auto *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ng = indcs.ng;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int n1 = indcs.nx1 + 2*ng, n2 = nx2 + 2*ng, n3 = nx3 + 2*ng;
+  const int npan = pm->mesh_indcs.nx2;
+  Real om[3] = {0.3, -0.5, 0.8};
+  if (pin->DoesParameterExist("rad_m1","cs_vec_axis")) {
+    std::string s = pin->GetString("rad_m1","cs_vec_axis");
+    std::sscanf(s.c_str(), "%lf %lf %lf", &om[0], &om[1], &om[2]);
+  }
+  {
+    const Real on = std::sqrt(om[0]*om[0] + om[1]*om[1] + om[2]*om[2]);
+    for (int c = 0; c < 3; ++c) {om[c] /= on;}
+  }
+  const Real o0 = om[0], o1 = om[1], o2 = om[2];
+  auto &msz = pmy_pack->pmb->mb_size;
+  auto &mpan = pmy_pack->pmb->mb_panel;
+  // panel-global index of the first active cell of each block
+  DualArray2D<int> g0("m1_csvec_g0", nmb, 2);
+  for (int m = 0; m < nmb; ++m) {
+    g0.h_view(m,0) = static_cast<int>(std::lround(0.5*(msz.h_view(m).x2min + 1.0)*npan));
+    g0.h_view(m,1) = static_cast<int>(std::lround(0.5*(msz.h_view(m).x3min + 1.0)*npan));
+  }
+  g0.modify_host();
+  g0.sync_device();
+  auto g0d = g0.d_view;
+  auto mszd = msz.d_view;
+  auto mpd = mpan.d_view;
+  // the analytic field at chart point (p, xi, eta): s, (v.e1, v.e2), (v.n1, v.n2)
+  auto field = KOKKOS_LAMBDA(const int p, const Real xi, const Real eta, Real &s,
+                             Real &c1, Real &c2, Real &f1, Real &f2) {
+    Real q[3], e1[3], e2[3];
+    cubed_sphere::PanelToCart(p, xi, eta, q);
+    cubed_sphere::PanelTangents(p, xi, eta, e1, e2);
+    const Real v0 = o1*q[2] - o2*q[1], v1 = o2*q[0] - o0*q[2], v2 = o0*q[1] - o1*q[0];
+    s = 1.0 + 0.2*(0.6*q[0] + 0.8*q[2]);
+    c1 = v0*e1[0] + v1*e1[1] + v2*e1[2];
+    c2 = v0*e2[0] + v1*e2[1] + v2*e2[2];
+    const Real cs = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+    const Real sn = sqrt(1.0 - cs*cs);
+    // nhat_xi = (e1 - cs e2)/sn, nhat_eta = (e2 - cs e1)/sn
+    f1 = (c1 - cs*c2)/sn;
+    f2 = (c2 - cs*c1)/sn;
+  };
+  // chart coordinates of cell (m,k,j) of this block (ghosts: its own extended chart)
+  auto chart = KOKKOS_LAMBDA(const int m, const int k, const int j, Real &xi, Real &eta) {
+    xi = 0.25*M_PI*CellCenterX(j - js, nx2, mszd(m).x2min, mszd(m).x2max);
+    eta = 0.25*M_PI*CellCenterX(k - ks, nx3, mszd(m).x3min, mszd(m).x3max);
+  };
+  // class of a ghost (k,j) with i active: -1 active, 0 same panel, d = 1..ng seam depth,
+  // ng+1 vertex (out of the panel along both tangential axes); sd: 2 / 3 the seam axis
+  auto gclass = KOKKOS_LAMBDA(const int m, const int k, const int j, int &sd) -> int {
+    sd = 0;
+    if (j >= js && j <= je && k >= ks && k <= ke) {return -1;}
+    const int jg = j - js + g0d(m,0), kg = k - ks + g0d(m,1);
+    const int dj = (jg < 0) ? -jg : ((jg >= npan) ? (jg - npan + 1) : 0);
+    const int dk = (kg < 0) ? -kg : ((kg >= npan) ? (kg - npan + 1) : 0);
+    if (dj > 0 && dk > 0) {return ng + 1;}
+    if (dj > 0) {sd = 2; return dj;}
+    if (dk > 0) {sd = 3; return dk;}
+    return 0;
+  };
+  const int ncl = ng + 2;
+  std::vector<Real> res(8*ncl, 0.0);
+  // ---------------- (1) u0 through pbval_u
+  {
+    DvceArray5D<Real> ubak("m1_csvec_u", u0.extent(0), u0.extent(1), u0.extent(2),
+                           u0.extent(3), u0.extent(4));
+    Kokkos::deep_copy(ubak, u0);
+    auto u = u0;
+    par_for("m1_csvec_f", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+      if (!act) {
+        for (int v = 0; v < M1_NVAR; ++v) {u(m,v,k,j,i) = 1.0e20;}
+        return;
+      }
+      Real xi, eta, s, c1, c2, f1, f2;
+      chart(m, k, j, xi, eta);
+      field(mpd(m), xi, eta, s, c1, c2, f1, f2);
+      u(m,M1_E,k,j,i) = s;
+      u(m,M1_F1,k,j,i) = 0.5*s;
+      u(m,M1_F2,k,j,i) = c1;
+      u(m,M1_F3,k,j,i) = c2;
+    });
+    while (pbval_u->InitRecv(M1_NVAR) == TaskStatus::incomplete) {}
+    while (pbval_u->PackAndSendCC(u0, coarse_u0) == TaskStatus::incomplete) {}
+    while (pbval_u->RecvAndUnpackCC(u0, coarse_u0) == TaskStatus::incomplete) {}
+    while (pbval_u->ClearSend() == TaskStatus::incomplete) {}
+    while (pbval_u->ClearRecv() == TaskStatus::incomplete) {}
+    for (int c = 0; c < ncl; ++c) {
+      Real es = 0.0, ev = 0.0, ecnt = 0.0, ep = 0.0;
+      const int cc = c;
+      Kokkos::parallel_reduce("m1_csvec_r1", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+          DevExeSpace(), {0, 0, 0, is}, {nmb, n3, n2, ie+1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a1,
+                    Real &a2, Real &a3, Real &a4) {
+        int sd;
+        if (gclass(m, k, j, sd) != cc) return;
+        Real xi, eta, s, c1, c2, f1, f2;
+        chart(m, k, j, xi, eta);
+        field(mpd(m), xi, eta, s, c1, c2, f1, f2);
+        a1 = fmax(a1, fabs(u(m,M1_E,k,j,i) - s));
+        a2 = fmax(a2, sqrt((u(m,M1_F2,k,j,i) - c1)*(u(m,M1_F2,k,j,i) - c1)
+                           + (u(m,M1_F3,k,j,i) - c2)*(u(m,M1_F3,k,j,i) - c2)));
+        a3 += 1.0;
+        // the plain signed-permutation of the donor (no basis transform): the error a
+        // copy of the source components would make, for scale
+        a4 = fmax(a4, fabs(u(m,M1_F1,k,j,i) - 0.5*s));
+      }, Kokkos::Max<Real>(es), Kokkos::Max<Real>(ev), Kokkos::Sum<Real>(ecnt),
+         Kokkos::Max<Real>(ep));
+      res[0*ncl + c] = es; res[1*ncl + c] = ev; res[2*ncl + c] = ecnt;
+      res[3*ncl + c] = ep;
+    }
+    Kokkos::deep_copy(u0, ubak);
+  }
+  // ---------------- (2) the work-array face-normal pairs through pbval_th
+  const bool wk = (pbval_th != nullptr) && (iw.extent_int(1) > M1_IW_V3);
+  if (wk) {
+    DvceArray5D<Real> wbak("m1_csvec_w", iw.extent(0), iw.extent(1), iw.extent(2),
+                           iw.extent(3), iw.extent(4));
+    Kokkos::deep_copy(wbak, iw);
+    auto w = iw;
+    par_for("m1_csvec_fw", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+      Real xi, eta, s, c1, c2, f1, f2;
+      chart(m, k, j, xi, eta);
+      field(mpd(m), xi, eta, s, c1, c2, f1, f2);
+      for (int n = 0; n < M1_NHALO_T; ++n) {
+        w(m,M1HaloCompT(n),k,j,i) = act ? s : 1.0e20;
+      }
+      w(m,M1_IW_N1,k,j,i) = act ? 1.0 : 1.0e20;   // a unit n = rhat (the renorm no-op)
+      w(m,M1_IW_N2,k,j,i) = act ? 0.0 : 1.0e20;
+      w(m,M1_IW_N3,k,j,i) = act ? 0.0 : 1.0e20;
+      w(m,M1_IW_V2,k,j,i) = act ? f1 : 1.0e20;
+      w(m,M1_IW_V3,k,j,i) = act ? f2 : 1.0e20;
+    });
+    ImplicitHaloExchange(M1_NHALO_T, -1);
+    for (int c = 0; c < ncl; ++c) {
+      Real an = 0.0, at = 0.0, bn = 0.0, bt = 0.0;
+      const int cc = c;
+      Kokkos::parallel_reduce("m1_csvec_r2", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+          DevExeSpace(), {0, 0, 0, is}, {nmb, n3, n2, ie+1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a1,
+                    Real &a2, Real &a3, Real &a4) {
+        int sd;
+        if (gclass(m, k, j, sd) != cc) return;
+        const int p = mpd(m);
+        Real xi, eta, s, c1, c2, f1, f2;
+        chart(m, k, j, xi, eta);
+        field(p, xi, eta, s, c1, c2, f1, f2);
+        const Real g2 = w(m,M1_IW_V2,k,j,i), g3 = w(m,M1_IW_V3,k,j,i);
+        // (A) at the ghost position; the seam-normal component is that of the seam axis
+        const Real gn = (sd == 3) ? g3 : g2, gt = (sd == 3) ? g2 : g3;
+        const Real fn = (sd == 3) ? f2 : f1, ft = (sd == 3) ? f1 : f2;
+        a1 = fmax(a1, fabs(gn - fn));
+        a2 = fmax(a2, fabs(gt - ft));
+        // (B) at the donor = the mirror of this block's own cell at the same depth
+        if (sd == 2 || sd == 3) {
+          const int jg = j - js + g0d(m,0), kg = k - ks + g0d(m,1);
+          int jm = j, km = k;
+          if (sd == 2) {jm = (jg < 0) ? (j + 2*(-jg) - 1) : (j - 2*(jg - npan + 1) + 1);}
+          if (sd == 3) {km = (kg < 0) ? (k + 2*(-kg) - 1) : (k - 2*(kg - npan + 1) + 1);}
+          Real xm, em;
+          chart(m, km, jm, xm, em);
+          Real q[3], fa[3], fb[3], fq[3];
+          cubed_sphere::PanelToCart(p, xm, em, q);
+          cubed_sphere::PanelFrame(p, fa, fb, fq);
+          // the seam plane's normal u = (n -+ a) or (n -+ b) (unnormalised, |u|^2 = 2)
+          Real uu[3];
+          const bool hi = (sd == 2) ? (jg >= npan) : (kg >= npan);
+          for (int d = 0; d < 3; ++d) {
+            const Real ax = (sd == 2) ? fa[d] : fb[d];
+            uu[d] = fq[d] - (hi ? ax : -ax);
+          }
+          const Real qu = q[0]*uu[0] + q[1]*uu[1] + q[2]*uu[2];
+          for (int d = 0; d < 3; ++d) {q[d] -= qu*uu[d];}
+          Real xd, ed;
+          cubed_sphere::CartToPanel(p, q, xd, ed);
+          Real sb, b1, b2, h1, h2;
+          field(p, xd, ed, sb, b1, b2, h1, h2);
+          const Real hn = (sd == 3) ? h2 : h1, ht = (sd == 3) ? h1 : h2;
+          a3 = fmax(a3, fabs(gn - hn));
+          a4 = fmax(a4, fabs(gt - ht));
+        }
+      }, Kokkos::Max<Real>(an), Kokkos::Max<Real>(at), Kokkos::Max<Real>(bn),
+         Kokkos::Max<Real>(bt));
+      res[4*ncl + c] = an; res[5*ncl + c] = at; res[6*ncl + c] = bn; res[7*ncl + c] = bt;
+    }
+    Kokkos::deep_copy(iw, wbak);
+  }
+#if MPI_PARALLEL_ENABLED
+  {
+    std::vector<Real> g(res.size());
+    MPI_Allreduce(res.data(), g.data(), static_cast<int>(res.size()), MPI_ATHENA_REAL,
+                  MPI_MAX, MPI_COMM_WORLD);
+    std::vector<Real> cn(ncl), cg(ncl);
+    for (int c = 0; c < ncl; ++c) {cn[c] = res[2*ncl + c];}
+    MPI_Allreduce(cn.data(), cg.data(), ncl, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    res = g;
+    for (int c = 0; c < ncl; ++c) {res[2*ncl + c] = cg[c];}
+  }
+#endif
+  if (global_variable::my_rank == 0) {
+    std::printf("CSVEC N=%d ng=%d axis (%.3f %.3f %.3f): |v| <= 1, s in [0.8,1.2]\n",
+                npan, ng, o0, o1, o2);
+    for (int c = 0; c < ncl; ++c) {
+      char nm[32];
+      if (c == 0) {std::snprintf(nm, sizeof(nm), "same-panel");
+      } else if (c <= ng) {std::snprintf(nm, sizeof(nm), "seam depth %d", c);
+      } else {std::snprintf(nm, sizeof(nm), "cube vertex");}
+      std::printf("CSVEC %-13s ghosts %8.0f | u0 (covariant, resample): |ds| %.3e |dv| "
+                  "%.3e |dF1| %.3e", nm, res[2*ncl + c], res[0*ncl + c],
+                  res[1*ncl + c], res[3*ncl + c]);
+      if (wk) {
+        std::printf(" | iw (face-normal pairs): ghost-pos n %.3e t %.3e; donor-pos n %.3e"
+                    " t %.3e", res[4*ncl + c], res[5*ncl + c], res[6*ncl + c],
+                    res[7*ncl + c]);
+      }
+      std::printf("\n");
+    }
+  }
 }
 
 } // namespace radm1

@@ -24,9 +24,14 @@
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 #include "hydro/hydro_dtretry_visit.hpp"
 #include "rad_m1/rad_m1_dtretry_visit.hpp"
 #include "driver/dt_retry.hpp"
+
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 namespace dtretry {
 
@@ -459,4 +464,102 @@ void DtRetry::Report(Mesh *pm) {
             << " retries, cap " << pm->dt_cap << std::endl;
 }
 
+//----------------------------------------------------------------------------------------
+// m1ctr-rollback-1017: CounterKeep (dt_retry.hpp)
+
+namespace {
+// the integer and the energy-type fields of Mesh::ecounter, in a fixed order
+std::int64_t *EcInt(EventCounters &e, int q) {
+  std::int64_t *p[9] = {&e.nfofc, &e.neos_dfloor, &e.neos_efloor, &e.neos_tfloor,
+                        &e.neos_vceil, &e.neos_fail, &e.maxit_c2p, &e.neos_tclamp,
+                        &e.neos_tset};
+  return p[q];
+}
+Real *EcReal(EventCounters &e, int q) {
+  Real *p[3] = {&e.efloor_de, &e.vceil_de, &e.dfloor_ke};
+  return p[q];
+}
+// a device counter View into its slot clone (false = not allocated yet)
+bool SnapView(const DvceArray1D<Real> &v, DvceArray1D<Real> &c) {
+  if (v.data() == nullptr || v.extent(0) == 0) return false;
+  if (c.extent(0) != v.extent(0)) {
+    c = DvceArray1D<Real>(Kokkos::view_alloc(std::string("ctrkeep"),
+                                             Kokkos::WithoutInitializing), v.extent(0));
+  }
+  Kokkos::deep_copy(c, v);
+  return true;
+}
+void BackView(DvceArray1D<Real> &v, const DvceArray1D<Real> &c, const bool had) {
+  if (v.data() == nullptr || v.extent(0) == 0) return;
+  if (had && c.extent(0) == v.extent(0)) {
+    Kokkos::deep_copy(v, c);
+  } else {
+    Kokkos::deep_copy(v, 0.0);   // allocated (and zeroed) during the discarded attempt
+  }
+}
+Real HostAt(const DvceArray1D<Real> &v, const int q) {
+  if (v.data() == nullptr || static_cast<int>(v.extent(0)) <= q) return 0.0;
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), v);
+  return h(q);
+}
+}  // namespace
+
+CounterKeep::CounterKeep(ParameterInput *pin, Mesh *pm) {
+  (void) pm;
+  if (pin->DoesParameterExist("time", "counters_rollback")) {
+    on = pin->GetBoolean("time", "counters_rollback");
+  }
+}
+
+void CounterKeep::Save(Mesh *pm, int slot) {
+  if (!on) return;
+  Snap &s = s_[slot];
+  for (int q = 0; q < 9; ++q) {s.ni[q] = *EcInt(pm->ecounter, q);}
+  for (int q = 0; q < 3; ++q) {s.ec[q] = *EcReal(pm->ecounter, q);}
+  auto *pm1 = pm->pmb_pack->pradm1;
+  if (pm1 != nullptr) {
+    s.hpos = SnapView(pm1->pos_cnt_d, s.pos);
+    s.hacl = SnapView(pm1->acl_cnt_d, s.acl);
+    s.hopn = SnapView(pm1->opn_nskip_d, s.opn);
+  }
+  s.have = true;
+}
+
+void CounterKeep::Restore(Mesh *pm, int slot, int why) {
+  if (!on || !s_[slot].have) return;
+  Snap &s = s_[slot];
+  dvc_[why] += static_cast<double>(pm->ecounter.vceil_de - s.ec[1]);
+  for (int q = 0; q < 9; ++q) {*EcInt(pm->ecounter, q) = s.ni[q];}
+  for (int q = 0; q < 3; ++q) {*EcReal(pm->ecounter, q) = s.ec[q];}
+  auto *pm1 = pm->pmb_pack->pradm1;
+  if (pm1 != nullptr) {
+    const Real un1 = HostAt(pm1->pos_cnt_d, radm1::M1_POS_FLR_UN);
+    const Real un0 = s.hpos ? HostAt(s.pos, radm1::M1_POS_FLR_UN) : 0.0;
+    dun_[why] += static_cast<double>(un1 - un0);
+    BackView(pm1->pos_cnt_d, s.pos, s.hpos);
+    BackView(pm1->acl_cnt_d, s.acl, s.hacl);
+    BackView(pm1->opn_nskip_d, s.opn, s.hopn);
+  }
+  nrb_[why] += 1;
+}
+
+void CounterKeep::Report(Mesh *pm) {
+  (void) pm;
+  if (!on) return;
+  double a[6] = {dun_[0], dun_[1], dun_[2], dvc_[0], dvc_[1], dvc_[2]};
+#if MPI_PARALLEL_ENABLED
+  double g[6];
+  MPI_Allreduce(a, g, 6, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  for (int q = 0; q < 6; ++q) {a[q] = g[q];}
+#endif
+  if (global_variable::my_rank != 0) return;
+  std::cout << "<time> counters_rollback: event counters of discarded attempts dropped: "
+            << "dt_retry " << nrb_[0] << ", backward-Euler redo " << nrb_[1]
+            << ", hesdirk2 helper solves " << nrb_[2] << "; E-floor created energy "
+            << "dropped (m1_pos_un, x volume) " << a[0] << " / " << a[1] << " / " << a[2]
+            << ", vceil_de dropped " << a[3] << " / " << a[4] << " / " << a[5]
+            << std::endl;
+}
+
 }  // namespace dtretry
+

@@ -520,6 +520,20 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     if (two) {v += c2*k2_(m,n,k,j,i);}
     in_(m,n,k,j,i) = v;
   });
+  // cs-open-1018 <hydro>/am_vector: the spin reservoir's increment from its slopes
+  if (am_vec && aminc.extent_int(0) > 0) {
+    auto a1_ = amk1;
+    auto a2_ = amk2;
+    auto ai_ = aminc;
+    par_for("m1_t2_aminc", DevExeSpace(), 0, static_cast<int>(aminc.extent(0)) - 1, 0,
+            static_cast<int>(aminc.extent(1)) - 1, 0, static_cast<int>(aminc.extent(2)) - 1,
+            0, static_cast<int>(aminc.extent(3)) - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real v = c1*a1_(m,k,j,i);
+      if (two) {v += c2*a2_(m,k,j,i);}
+      ai_(m,k,j,i) = v;
+    });
+  }
   // consrc-1011 (implicit_gas_src = conservative): the same increment of the stored
   // cell F, from its slopes (the old vector of the write-back's F^old)
   csinc_ok = false;

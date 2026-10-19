@@ -28,6 +28,7 @@
 //! (default: the evolving arrays, kDtrMinimal in dt_retry.cpp) | all (every View: memory
 //! x ~2, a debug and audit mode).
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <string>
@@ -155,6 +156,38 @@ class DtRetry {
   std::size_t bytes_dev_ = 0;
   double tsave_ = 0.0;
   long nsave_ = 0, nretry_ = 0;
+};
+
+// m1ctr-rollback-1017: the EVENT COUNTERS of an attempt the code throws away are thrown
+// away with it, so the event log (and the m1 positivity totals) report what the state
+// kept.  Discarded attempts: a dt_retry cycle (DtRetry::Retry puts the state back, but
+// not Mesh::ecounter nor the <rad_m1> device counters pos_cnt_d / acl_cnt_d /
+// opn_nskip_d), a hesdirk2 step redone with backward Euler (Time2Restore: U^n back, the
+// hydro stages run again), and the hesdirk2 helper solves whose result is put back
+// (Time2StartProbe, Time2RotCorrect).  Counters only: nothing a kernel reads is touched,
+// so the evolution is bitwise the same with it on or off.  <time>/counters_rollback
+// (default true; read only when named, the parameter dump is unchanged).  Slot 0 = the
+// cycle checkpoint (dt_retry), slot 1 = the stage start (backward-Euler redo).
+class CounterKeep {
+ public:
+  CounterKeep(ParameterInput *pin, Mesh *pm);
+  bool on = true;
+  void Save(Mesh *pm, int slot);
+  void Restore(Mesh *pm, int slot, int why);   // why: 0 dt_retry, 1 BE redo, 2 helper
+  void Report(Mesh *pm);
+
+ private:
+  struct Snap {
+    bool have = false;
+    Real ec[3] = {0, 0, 0};               // Mesh::ecounter efloor_de, vceil_de, dfloor_ke
+    std::int64_t ni[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};   // its integer counters
+    DvceArray1D<Real> pos, acl, opn;
+    bool hpos = false, hacl = false, hopn = false;
+  };
+  Snap s_[2];
+  long nrb_[3] = {0, 0, 0};
+  double dun_[3] = {0.0, 0.0, 0.0};    // E-floor created energy discarded (m1 pos UN)
+  double dvc_[3] = {0.0, 0.0, 0.0};    // vceil_de discarded
 };
 
 }  // namespace dtretry

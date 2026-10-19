@@ -510,6 +510,56 @@ class RadiationM1 {
   Real impl_tol_rel = 0.0;
   Real impl_tol_rel_max = 1.0e-4;   // implicit_tol_rel_max: cap on tol_eff
   Real impl_tolr_sum = 0.0, impl_tolr_n = 0.0;
+  // picres-1017 implicit_final_resid_log (read only when named; default false = off).
+  // DIAGNOSTIC: after every converged Picard solve ONE more pass is assembled at the
+  // accepted iterate (the "shadow" pass: the next pass up to its linear solve) and the
+  // nonlinear residual r = b(x) - A(x) x of that pass is evaluated per row and logged
+  // (PICRES lines, rank 0) and summed (ImplicitReport); the state the shadow pass
+  // touched is then put back, so the step continues exactly as without it.  The stop
+  // test is NOT changed.  Needs implicit_solver = bicgstab.
+  bool impl_frlog = false;
+  bool impl_fr_sh = false;      // the current Picard pass is the shadow pass
+  int impl_fr_how = 0;          // stop of the converged pass: 1 plain, 2 conv_est, 3 onep
+  int impl_fr_it = 0;           // its number of passes
+  Real impl_fr_tol = 0.0;       // its tol_eff
+  Real impl_fr_chg = 0.0;       // its last change (the Picard resid)
+  Real impl_fr_chp = 0.0;       // the change of the pass before (-1: none)
+  double impl_fr_t0 = 0.0;      // wall time at the start of the snapshot
+  double impl_fr_tsnap = 0.0;   // wall time of the snapshot copy
+  Real impl_fr_sum[32] = {};    // summary accumulators (ImplicitFinalResid)
+  DvceArray5D<Real> fr_iw, fr_opac, fr_ifw, fr_ifw2, fr_ifw3;
+  DvceArray4D<Real> fr_ktd, fr_f0x1n, fr_f0x2n, fr_f0x3n, fr_cs2f1, fr_cs2f2, fr_cs2f3;
+  DvceArray4D<Real> fr_f0x2, fr_f0x3, fr_thx2, fr_thx3;
+  DvceArray1D<Real> fr_nsk;
+  // picstop-1017 (Picard stop, OPT-IN; every key read only when named, default off =
+  // the stop of picres-1017 bit for bit):
+  //  implicit_conv_est_guard = K > 0: the contraction-estimate stop (implicit_conv_est)
+  //    accepts only a pass whose own change is below K tol_eff;
+  //  implicit_conv_est_nofloor = true: q of that stop is the ratio of the last two
+  //    changes over the cells whose new E is above e_floor (a cell dropped to the floor
+  //    makes a change ~1e10 that fakes q ~ 1e-10, picres_1017/NOTE.md);
+  //  implicit_final_resid_stop = thr > 0 (and implicit_final_resid_stop_rel = s: the
+  //    threshold is max(thr, s tol_eff)): a solve the change test accepts is accepted
+  //    only if the scaled nonlinear residual max(rc, rT) of the accepted iterate over
+  //    the cells above e_floor (ImplicitFinalResid, the shadow pass of
+  //    implicit_final_resid_log) is <= the threshold; otherwise that assembly IS the
+  //    next Picard pass (its linear solve follows) and the loop goes on, up to
+  //    implicit_maxit (a check that fails with no pass left: NON-CONVERGED, the usual
+  //    dt_retry / stage-redo handling).  Needs implicit_solver = bicgstab.
+  //  Experiment 2 (picstop_1017, picres_1017/NOTE.md): nofloor brings the AG Car tail to
+  //  the level of a tol 1e-10 reference; the residual stop is NOT recommended (in ~2-4 %
+  //  of solves the change stalls at 1e-14 with rc > 1e-4: maxit, NC, dt retries).
+  Real impl_ce_guard = 0.0;
+  bool impl_ce_nofl = false;
+  bool impl_frs_on = false;
+  Real impl_frs = 0.0, impl_frs_rel = 0.0;
+  int impl_fr_nchk = 0;           // residual checks of the current solve
+  int impl_fr_it1 = 0;            // its passes at the first check
+  // [0] checks [1] failed + continued [2] failed, no pass left (NC) [3] solves accepted
+  // after >= 1 failed check [4] passes taken after a failed check [5] conv_est stops
+  // refused by the guard [6] by nofloor (the plain q would have stopped) [7] nofloor
+  // stops the plain q would have refused [8] logging time (fenced, s)
+  Real impl_frs_sum[12] = {};
   int impl_maxit;               // maximum Picard iterations per solve
   bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
   int dbg_opac_part;            // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
@@ -835,6 +885,7 @@ class RadiationM1 {
   void VetGdHalfRange(const int stage);
   DvceArray5D<Real> ifw2, ifw3;
   void ImplicitLatFaceCoef(bool first);
+  void ImplicitLatFaceCoefCs(bool first);   // cs-s4-1017
   void CbDebugDump();
   void ImplicitHrSfBuild();   // cbfix-1011: the M1_NIW_HSF block (implicit_hr_face=sf)   // cbfix-1011: env M1_CBDBG=<prefix> per-step face/budget dump
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
@@ -1459,6 +1510,19 @@ class RadiationM1 {
   Real vimp_emin;               // the smallest E the linear solve produced with it on
   DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
   MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
+  // cs-open-1018 (cubed sphere only): a 3-component exchange (scalar, face-normal pair)
+  // of iw slots c0..c0+2, for the dA / s vectors of the conservative sources
+  DvceArray5D<Real> d3w, d3w_c;
+  MeshBoundaryValuesCC *pbval_d3 = nullptr;
+  void ImplicitCsPairHalo(int c0);
+  void ImplicitCsPairHaloD3();
+  // cs-open-1018 <rad_m1>/implicit_am_cs (cubed sphere; default = <hydro>/am_transport):
+  // the axial angular-momentum-conservative radiation-gas exchange (rad_m1_implicit.cpp,
+  // after the write-back); amw = the pre-write-back gas momentum and cell F (6)
+  bool impl_am_cs = false;
+  DvceArray5D<Real> amw;
+  bool am_vec = false;             // + <hydro>/am_vector: the vector form
+  DvceArray4D<Real> amk1, amk2, aminc;   // spin slopes (FSAL / stage 1) and increment
   void ImplicitVimpBuild();     // the Jacobian of a(v') E' for this Picard pass
   // <rad_m1>/implicit_hr_recon = dc | plm (xthinfix-1009 Fix B, rad_m1_implicit.hpp)
   bool impl_muscl = false;      // plm half-range face values (default dc: untouched)
@@ -1645,7 +1709,15 @@ class RadiationM1 {
   // and area with the canonical seam areas; x1 parts are copies
   DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
   DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
+  // cs-s4-1017: the planar unit normals (Cartesian) of the x2 faces (m, j = 0..n2, c)
+  // and x3 faces (m, k = 0..n3, c) of each block, oriented along +x2 / +x3 (M1CsLat0)
+  DvceArray3D<Real> cs_fn2, cs_fn3;
+  // cs-s4-1017: the same normals at the CELL CENTRES (m, j or k incl. ghosts, c): the
+  // lateral axes of the cs half-range ratios (VetGdHalfRange on cs)
+  DvceArray3D<Real> cs_cn2, cs_cn3;
   void CubedS1Init();
+  //! cs-s4-1017 test only (cs_vec_check): the seam halo of the tangential vector pairs
+  void CubedVecCheck(ParameterInput *pin);
   //! the seam average of the stored face state f0x2/f0x3 (stage CS1, C5)
   void CubedSeamFaceAverage();
   int cs_seam_avg_n = 0;   // seam-face-average calls (diagnostic)
@@ -1780,6 +1852,10 @@ class RadiationM1 {
   //! left in M1_IW_S2, exactly where the line-Jacobi pass leaves it.  Returns the number
   //! of inner iterations taken.
   int ImplicitBiCGStab(Real rhsmax);
+  void ImplicitFinalResidSave(bool restore);   // picres-1017 (implicit_final_resid_log)
+  // returns 0: go on (implicit_final_resid_stop failed, this pass continues), 1: accept,
+  // 2: failed with no pass left (non-converged); 1 and 2 put the saved state back
+  int ImplicitFinalResid(bool gnw, int igb, int igr, int igy, int it);
   //! the same BiCGStab with fused reductions and vector updates (implicit_bcg_sync > 0)
   int ImplicitBiCGStabFused(Real rhsmax);
   void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics
@@ -1914,6 +1990,10 @@ class RadiationM1 {
   // equations as a LAGGED Picard term (M1SphLat).  Read only when named; sp wedge only
   // (cs after CS2).
   bool vlat_on = false;        // vet_col_lat
+  // vgd-latuni-1017: the Athena++ lateral ratio keys <mesh>/x2rat, x3rat named != 1 in
+  // the input (AthenaK ignores them: its theta/phi grid is uniform); VetLatInit refuses
+  // them under vet_col_lat / vet_gd, so a ported deck cannot think it stretched theta
+  std::string vlat_rat_keys;
   // vet_col_lat_offdiag: what D_r,lat does in the solve.  0 none, 1 lagged (a Picard
   // term, C1), 2 operator (default, C2: in the Krylov operator, M1SphLat of the
   // Krylov vector, through the stored stencil and VetLatOp)
@@ -1970,6 +2050,9 @@ class RadiationM1 {
   // 19-point stencil of the pass (ImplicitStencilBuild)
   void VetLatOp(int xc, int yc, Real sgn);
   void VetLatStencilAdd();
+  // cs-s4-1017: the cubed-sphere forms (M1CsLat0 / M1CsLatF, Cartesian D_r,lat)
+  void VetLatOpCs(int xc, int yc, Real sgn);
+  void VetLatStencilAddCs();
 
   // ---- <rad_m1>/vet_gd (m1-vet-gd, rad_m1_vetgd.cpp; design
   // rt_design_1003/SC_PROPER_SP.md, candidate b): the Eddington tensor from an SC sweep
@@ -2033,6 +2116,13 @@ class RadiationM1 {
   double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;
   bool Time2RotCorrect(Driver *pdrive, Real dt);
   Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
+  // cs-s3b-1017 (USER decision 1): <rad_m1>/vet_gd_rotate_axis = z | 3d (default z on
+  // the sp wedge: bitwise; 3d on the cubed sphere).  3d: the set of rotation block b is
+  // R_b n with R_b a 3-D rotation about a quasi-random axis (VgdRot3); vgd_alpha is then
+  // the block KEY (zig-zag code of b, or of b mod K with vet_rotate_avg = K), not an
+  // angle
+  bool vgd_rot3 = false;
+  void VgdRot3(const Real key, double r[9]) const;
   // rotavg-1012: <rad_m1>/vet_rotate_avg = K >= 2 (read only when named; default 0 = off,
   // bitwise): the closure handed to the moment step is the mean over the LAST K rotated
   // direction sets, not the current set's alone (rad_m1_rotavg.cpp).  Closure-agnostic:
@@ -2291,9 +2381,72 @@ class RadiationM1 {
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   void VetGdIterRebuild();
   void VetGdMms();
+  void VetGdMmsCs();   // cs-s4-1017 (rad_m1_vetgd_cs.cpp)
+  // cs-s4-1017: the cs half-range data at the start of a solve (|H|/J, seam ghosts)
+  void VetGdCsHrPrep();
+  MeshBoundaryValuesCC *pbval_hr = nullptr;
+  DvceArray5D<Real> vgd_hr_c;
   void VetGdRealDiag();
   int vgd_rdiag = -1, vgd_rdcnt = 0;   // env VGD_TIME_HALO=1: fence before the halo timer
   void VetGdHaloInit();
+  // cs-vetgd-1017 (CS_VETGD.md sect. 4A, stage S3; rad_m1_vetgd_cs.cpp): vet_gd on the
+  // cubed sphere.  The band of a block is its OWN panel's index space (as on sp), and
+  // the strips of the four neighbour panels are stored UNFOLDED next to the panel edges
+  // (a neighbour cell at depth d from the seam sits where the mirror image of the own
+  // cell at depth d would continue the index line; equal N, so the pairing is one to
+  // one).  Every band position holds one global cell (or none: the corner quadrants
+  // beyond two edges, depths >= N), filled per shell by exact keyed copies (on-rank +
+  // MPI).  The upwind point is found in Cartesian, its panel by the largest normal
+  // component and its (xi, eta) by the gnomonic chart; reads are bilinear in that
+  // panel's native indices, the seam strip (half a cell on either side) linear across
+  // the seam with each side's own tangential coordinate, the cube vertex triangle by
+  // spherical barycentric weights of its 3 cells.  No walls, no direction maps.
+  bool vgd_csg = false;               // vet_gd on the cubed sphere
+  int vgd_csn = 0;                    // cells per panel edge
+  DvceArray4D<Real> vgd_csr;          // (m, k, j, 3): band cell unit vector, 0 none
+  std::vector<double> vgd_csr_h;      // the same on the host (double), (m, k, j, 3)
+  DvceArray2D<int> vgd_csblk;         // (m, 3): panel, global j0, global k0
+  DvceArray3D<int> vgd_cscm;          // (p, q, 7): q (a,t) -> p unfolded (J,K) affine
+  DvceArray2D<int> vgd_csnb;          // (p, 4): panel across side -x2, +x2, -x3, +x3
+  DvceArray2D<int> vgd_csloc;         // (e, 6): on-rank copy dst (m,k,j) <- src (m,k,j)
+  DvceArray2D<int> vgd_cssl, vgd_csrl;   // (e, 3): MPI send src / recv dst (m,k,j)
+  std::vector<int> vgd_csprk;         // partner ranks
+  std::vector<int> vgd_csps, vgd_cspn, vgd_cspr, vgd_cspm;   // send/recv displ, count
+  DvceArray1D<Real> vgd_cssb, vgd_csrb;   // message buffers
+  int vgd_csnloc = 0, vgd_csnsnd = 0, vgd_csnrcv = 0;
+  void VetGdCsInit();
+  void VetGdCsSource();
+  void VetGdCsSweep();
+  void VetGdCsMoments(const int part);   // 0: D_rr -> LAT0, 1: surface q
+  void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
+  void VetGdCsDump(const char *env);
+  template <class V>
+  void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc);
+  Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_csown;   // (m, k, j, 3) owner
+  // cs-s3b-1017 (USER decision 2): vet_gd_halo_compact > 0 on cs -- the chart-aware
+  // exact lists: per shell and pass only the (remote band cell, direction) values the
+  // sweep reads (VetGdCsCompact: a read-mask kernel that replays the sweep's upwind
+  // stencils for the direction set, the receivers' masks sent to the owners once per set,
+  // both sides' lists in the same order).  Bitwise the dense band copies (the same values
+  // are read; every remote read is checked against the mask in the sweep: FATAL on a
+  // miss)
+  struct VgdCsCl {
+    Real alpha = -9.0;
+    int64_t use = 0;
+    std::vector<int64_t> so, ro;     // ((pass*n1 + s)*(np + 1) + p): list offsets
+    Kokkos::View<int *, LayoutWrapper, DevMemSpace> si, ri;   // e*n + d per value
+    Kokkos::View<uint8_t ***, LayoutWrapper, DevMemSpace> msk;   // (e_rcv, d, s): 1 in,
+                                                                  // 2 out, 0 not read
+  };
+  bool vgd_cscomp = false;
+  VgdCsCl vgd_cscl[2];
+  int vgd_cscur = 0;
+  int64_t vgd_csuse = 0;
+  Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_csrix;   // (m, k, j): e_rcv / -1
+  Kokkos::View<int *, LayoutWrapper, DevMemSpace> vgd_csmiss;   // reads not in the mask
+  double vgd_csnbuild = 0.0, vgd_cstbuild = 0.0, vgd_csvsent = 0.0, vgd_csvdense = 0.0;
+  void VetGdCsCompact();
+  void VetGdCsHaloC(const int pass, const int i);
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;

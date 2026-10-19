@@ -132,6 +132,41 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("impl_tol_rel_max", impl_tol_rel_max);
   v.value("impl_tolr_sum", impl_tolr_sum);
   v.value("impl_tolr_n", impl_tolr_n);
+  v.value("impl_frlog", impl_frlog);
+  v.value("impl_fr_sh", impl_fr_sh);
+  v.value("impl_fr_how", impl_fr_how);
+  v.value("impl_fr_it", impl_fr_it);
+  v.value("impl_fr_tol", impl_fr_tol);
+  v.value("impl_fr_chg", impl_fr_chg);
+  v.value("impl_fr_chp", impl_fr_chp);
+  v.value("impl_fr_t0", impl_fr_t0);
+  v.value("impl_fr_tsnap", impl_fr_tsnap);
+  v.value("impl_fr_sum", impl_fr_sum);
+  v.view("fr_iw", fr_iw);
+  v.view("fr_opac", fr_opac);
+  v.view("fr_ifw", fr_ifw);
+  v.view("fr_ifw2", fr_ifw2);
+  v.view("fr_ifw3", fr_ifw3);
+  v.view("fr_ktd", fr_ktd);
+  v.view("fr_f0x1n", fr_f0x1n);
+  v.view("fr_f0x2n", fr_f0x2n);
+  v.view("fr_f0x3n", fr_f0x3n);
+  v.view("fr_cs2f1", fr_cs2f1);
+  v.view("fr_cs2f2", fr_cs2f2);
+  v.view("fr_cs2f3", fr_cs2f3);
+  v.view("fr_f0x2", fr_f0x2);
+  v.view("fr_f0x3", fr_f0x3);
+  v.view("fr_thx2", fr_thx2);
+  v.view("fr_thx3", fr_thx3);
+  v.view("fr_nsk", fr_nsk);
+  v.value("impl_ce_guard", impl_ce_guard);
+  v.value("impl_ce_nofl", impl_ce_nofl);
+  v.value("impl_frs_on", impl_frs_on);
+  v.value("impl_frs", impl_frs);
+  v.value("impl_frs_rel", impl_frs_rel);
+  v.value("impl_fr_nchk", impl_fr_nchk);
+  v.value("impl_fr_it1", impl_fr_it1);
+  v.value("impl_frs_sum", impl_frs_sum);
   v.value("impl_maxit", impl_maxit);
   v.value("impl_opac_update", impl_opac_update);
   v.value("dbg_opac_part", dbg_opac_part);
@@ -169,6 +204,9 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("iebath_x1max", iebath_x1max);
   v.value("iebath_hi_col_on", iebath_hi_col_on);
   v.view("iebath_hi_col", iebath_hi_col);
+  v.value("ifx2_on", ifx2_on);
+  v.view("ifx2_lo", ifx2_lo);
+  v.view("ifx2_hi", ifx2_hi);
   v.view("ibadv_x1max", ibadv_x1max);
   v.value("ibm_n", ibm_n);
   v.value("ibm_nr", ibm_nr);
@@ -661,6 +699,14 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vimp_emin", vimp_emin);
   v.view("vmw", vmw);
   v.view("vmw_c", vmw_c);
+  v.view("d3w", d3w);
+  v.view("d3w_c", d3w_c);
+  v.value("impl_am_cs", impl_am_cs);
+  v.view("amw", amw);
+  v.value("am_vec", am_vec);
+  v.view("amk1", amk1);
+  v.view("amk2", amk2);
+  v.view("aminc", aminc);
   v.value("impl_muscl", impl_muscl);
   v.value("impl_muscl_led", impl_muscl_led);
   v.value("muscl_now", muscl_now);
@@ -762,6 +808,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cs_area_eff.x1f", cs_area_eff.x1f);
   v.view("cs_area_eff.x2f", cs_area_eff.x2f);
   v.view("cs_area_eff.x3f", cs_area_eff.x3f);
+  v.view("cs_fn2", cs_fn2);
+  v.view("cs_fn3", cs_fn3);
+  v.view("cs_cn2", cs_cn2);
+  v.view("cs_cn3", cs_cn3);
   v.value("cs_seam_avg_n", cs_seam_avg_n);
   v.value("cs_seam_avg_on", cs_seam_avg_on);
   v.value("cs_seam_dmax", cs_seam_dmax);
@@ -835,6 +885,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vcol_wf", vcol_wf);
   v.value("vcol_spread", vcol_spread);
   v.value("vlat_on", vlat_on);
+  v.value("vlat_rat_keys", vlat_rat_keys);
   v.value("vlat_odm", vlat_odm);
   v.value("vlat_now", vlat_now);
   v.value("vlat_nfall", vlat_nfall);
@@ -905,6 +956,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_rot_ncfail", vgd_rot_ncfail);
   v.value("vgd_rot_ncpass", vgd_rot_ncpass);
   v.value("vgd_alpha", vgd_alpha);
+  v.value("vgd_rot3", vgd_rot3);
   v.value("vra_k", vra_k);
   v.value("vra_eq", vra_eq);
   v.value("vra_on", vra_on);
@@ -1043,8 +1095,40 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_fk0", vgd_fk0);
   v.value("vgd_nrb", vgd_nrb);
   v.value("vgd_trb", vgd_trb);
+  v.view("vgd_hr_c", vgd_hr_c);
   v.value("vgd_rdiag", vgd_rdiag);
   v.value("vgd_rdcnt", vgd_rdcnt);
+  v.value("vgd_csg", vgd_csg);
+  v.value("vgd_csn", vgd_csn);
+  v.view("vgd_csr", vgd_csr);
+  v.value("vgd_csr_h", vgd_csr_h);
+  v.view("vgd_csblk", vgd_csblk);
+  v.view("vgd_cscm", vgd_cscm);
+  v.view("vgd_csnb", vgd_csnb);
+  v.view("vgd_csloc", vgd_csloc);
+  v.view("vgd_cssl", vgd_cssl);
+  v.view("vgd_csrl", vgd_csrl);
+  v.value("vgd_csprk", vgd_csprk);
+  v.value("vgd_csps", vgd_csps);
+  v.value("vgd_cspn", vgd_cspn);
+  v.value("vgd_cspr", vgd_cspr);
+  v.value("vgd_cspm", vgd_cspm);
+  v.view("vgd_cssb", vgd_cssb);
+  v.view("vgd_csrb", vgd_csrb);
+  v.value("vgd_csnloc", vgd_csnloc);
+  v.value("vgd_csnsnd", vgd_csnsnd);
+  v.value("vgd_csnrcv", vgd_csnrcv);
+  v.view("vgd_csown", vgd_csown);
+  v.value("vgd_cscomp", vgd_cscomp);
+  v.value("vgd_cscl", vgd_cscl);
+  v.value("vgd_cscur", vgd_cscur);
+  v.value("vgd_csuse", vgd_csuse);
+  v.view("vgd_csrix", vgd_csrix);
+  v.view("vgd_csmiss", vgd_csmiss);
+  v.value("vgd_csnbuild", vgd_csnbuild);
+  v.value("vgd_cstbuild", vgd_cstbuild);
+  v.value("vgd_csvsent", vgd_csvsent);
+  v.value("vgd_csvdense", vgd_csvdense);
   v.value("vgd_hcomp", vgd_hcomp);
   v.value("vgd_capped", vgd_capped);
   v.value("vgd_allow_clamp", vgd_allow_clamp);
@@ -1218,6 +1302,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   hi_sig : long long *
 //   hi_err : int *
 //   pbval_vm : MeshBoundaryValuesCC *
+//   pbval_d3 : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *
 //   id : RadiationM1TaskIDs
 //   pin_cs_ : ParameterInput *
@@ -1227,6 +1312,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   pin_rot_ : ParameterInput *
 //   vgd_sr_fut : std::future<std::vector<double>>
 //   pbval_gd : MeshBoundaryValuesCC *
+//   pbval_hr : MeshBoundaryValuesCC *
 //   vgd_ipc_rbuf : Real *
 //   vgd_ipc_sig : long long *
 //   vgd_ipc_err : int *

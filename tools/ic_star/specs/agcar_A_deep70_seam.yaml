@@ -1,0 +1,54 @@
+# AG Car A (cool/violent state), the E1 production IC ic_agcar_A_ge_deep70.txt (md5 of the
+# reference: see README regression).  Regression spec: reproduces the column from these inputs.
+name: agcar_A_deep70_seam
+# = agcar_A_deep70 with the 10-16 defaults (taper + seam pass on the E1 deck): how the AG Car
+# production IC would change if regenerated (NOT the regression)
+star:
+  logL: 5.95            # Gaia DR2 4.65 kpc (Groh+2009 / Grassitelli+2021)
+  Teff: 9000.0          # R_ph = sqrt(L/(4 pi sigma Teff^4)) = 388.30 Rsun
+  M: 55.0               # Msun, point mass, GM = 55 x 1.3271244e26
+composition:
+  X: 0.36
+  Y: 0.62
+  Z: 0.02
+  mixture: GS98
+  a_metal: 16.0
+opacity:
+  # the column (10-08 icA build) was integrated with the PLAIN TOPS table; the deck names the
+  # standard ext2 pair built by the recipe (E1 runs rc_1009 rosseland_ext2 b28e97c5 +
+  # planck_ext2orion 493f9d01: the ext2 data with a bitwise TOPS patch / Orion stitch)
+  ic_rosseland: /raven/ptmp/jinma/agcar_1008/files/rosseland_tops_gs98_x0.36_z0.02.txt
+  tops_hi: /raven/ptmp/jinma/ic_star_cache/raw/tops/agcar_x0.36_z0.02_hi.dat
+  tops_lo: /raven/ptmp/jinma/ic_star_cache/raw/tops/agcar_x0.36_z0.02_lo.dat
+eos:
+  # the dump the column was built with (agcar/geos/eos, b5e87701; range -21..-2, 3.6..6.6);
+  # make_star_ic.py --eos-check regenerates it by the recipe
+  dump: /raven/ptmp/jinma/agcar_1008/shakeB_ana/eos_dump.txt
+  logd_max: -2.0
+  logt_max: 6.6
+mlt:                    # the 10-08 builder (make_ic_agcar_ge.py): NOT the MESA defaults
+  alpha: 1.5
+  mlt_option: KW          # = Cox to 1e-10 (README sect. 1b)
+  alt_scale_height: false
+  mltpp: agcar_legacy     # fixed pp_alpha applied wherever nabla - nabla_ad > f1
+  pp_alpha: 0.970755      # the fixed point of the (beta, lambda) rule found on 10-08 (without
+  pp_form: mesa           #   MESA's (1 + xa(1,centre)) factor)
+  f1: 1.0e-4
+  f2: 1.0e-3
+grid:
+  dlnr: 2.0e-4
+r_in:
+  rule: explicit
+  r_rsun: 83.0          # E1 x1min (3.4 H_p below the CZ base 145.0 Rsun)
+  bottom_rsun: 70.0     # deep70
+  legacy_deep:          # the column was made in two stages (A to 0.95 x 130.739, then deep)
+    r_wall1_rsun: 130.739
+    rlo_fac1: 0.95
+r_top:
+  rtop_fac: 3.0
+background:
+  rho_floor: 1.0e-16    # = the rule's value (decade of 4e-6 rho_ph)
+taper: {enable: true}
+seam:
+  enable: true
+  deck: /raven/ptmp/jinma/overlap_1015/decks/e1_prod_rol2u.athinput

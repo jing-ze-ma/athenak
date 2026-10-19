@@ -187,6 +187,15 @@ Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // (F_MLT > 0) with its edges tapered.  F_sub(t=0) = F_MLT of the IC.  hs_fsub_ and the
 // update clock hs_ad_tl_ are RESTART STATE (the pgen block of pgen.hpp).
 bool hs_ad_ = false;
+// mltp-1017 problem/mlt_closure = pressure (opt-in): the same F_sub machinery (restart
+// state, relaxation over mlt_relax_time, every mlt_closure_every cycles), but the target
+// is the IC's F_MLT/F as a function of the SHELL-MEAN total pressure, F_sub = fm_IC(P_face)
+// x F_tot,IC(face) with F_tot,IC = L/(4 pi r^2) of the IC: the scaffold is frozen in P
+// instead of r and moves with the envelope.  hs_plnp_/hs_pfm_: ln P_tot, fm of the IC
+// (ascending in ln P), hs_ftot_: F_r + F_MLT of the IC on the faces.
+bool hs_adp_ = false;
+std::vector<Real> hs_plnp_, hs_pfm_, hs_ftot_;
+DvceArray2D<Real> hs_shp_;
 Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
 Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
 int hs_ad_every_ = 1, hs_ad_cyc_ = -1;
@@ -455,6 +464,15 @@ void HsSph1dPass(const std::vector<Real> &rg, const std::vector<Real> &chi,
 }  // namespace
 
 namespace {
+//! cs-port-1016: the kinetic energy of a cell from the CONSERVED momenta.  On the cubed
+//! sphere the transverse momenta are COVARIANT on the panel basis (angle cos c between
+//! e_xi and e_eta), so KE = (m1^2 + (m2^2 + m3^2 - 2 c m2 m3)/(1 - c^2))/(2 d); the plain
+//! sum of squares (the sp/Cartesian form, kept textually below) is wrong by the cross
+//! term at every off-midline cell with transverse motion
+KOKKOS_INLINE_FUNCTION
+Real HsKeCs(const Real m1, const Real m2, const Real m3, const Real d, const Real c) {
+  return 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))/d;
+}
 void HeStarGravity(Mesh *pm, const Real bdt);
 void HeStarBC(Mesh *pm);
 void HeStarHist(HistoryData *pdata, Mesh *pm);
@@ -464,6 +482,8 @@ std::vector<char> HsAdaptiveRstWrite();
 void HeStarFinal(ParameterInput *pin, Mesh *pm);
 void HeStarIcPost(Mesh *pm);
 void HeStarIcEquil(Mesh *pm);
+void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
+                 const int *n);
 void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
                  const std::vector<Real> &pc0, const std::vector<Real> &pf0,
                  const std::vector<Real> &p0c, const std::vector<Real> &p0f,
@@ -2208,11 +2228,74 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // so the adaptive state below reads the block as before); the rad_m1 counters restart
   // at 0, so the window base is minus the open window's sums
   hs_mesh_ = pmy_mesh_;
+  // e1remap-1014 problem/he_ic_remap_file (read only when named; absent = nothing,
+  // bitwise the old code): a FRESH start whose state is a remapped restart of another
+  // run (tools: remap_e1w.py).  The file carries the parent's time, its pgen restart
+  // block (Picard window + the he_ic_equil a_ref trailer, applied below exactly as a
+  // restart applies them) and u0, the M1 u0 and f0x1 of this mesh including ghosts.
+  // <time>/start_time must equal the parent's time (bitwise; the generated deck sets it)
+  // so that w_mlt(t), the vet_gd rotation clock (physical) and the outputs continue.  No
+  // ic_rad, no he_ic_equil, no seed; everything else is a fresh start (hesdirk2 starts
+  // with time2_start, the implicit F0 faces from implicit_f0_init, empty rotavg history).
+  const bool hs_rmp = !restart &&
+                      pin->DoesParameterExist("problem","he_ic_remap_file");
+  std::string hs_rmp_fn;
+  std::int64_t hs_rmp_data = 0;   // byte offset of the arrays
+  int hs_rmp_n[4] = {0, 0, 0, 0};  // ng, nx1, nx2, nx3
+  if (hs_rmp) {
+    hs_rmp_fn = pin->GetString("problem","he_ic_remap_file");
+    std::ifstream rf(hs_rmp_fn, std::ios::binary);
+    if (!rf) HsFatal("cannot open problem/he_ic_remap_file " + hs_rmp_fn, __LINE__);
+    char mg[8];
+    std::int32_t hi[8];
+    double hd[7];
+    std::uint64_t npg = 0;
+    rf.read(mg, 8);
+    rf.read(reinterpret_cast<char*>(hi), sizeof(hi));
+    rf.read(reinterpret_cast<char*>(hd), sizeof(hd));
+    rf.read(reinterpret_cast<char*>(&npg), sizeof(npg));
+    if (!rf || std::memcmp(mg, "HSREMAP1", 8) != 0 || hi[0] != 1 || hi[5] != 5 ||
+        hi[6] != 4 || npg > (1u << 30)) {
+      HsFatal("problem/he_ic_remap_file: not a version-1 HSREMAP1 file", __LINE__);
+    }
+    auto &ms = pmy_mesh_->mesh_size;
+    auto &mi = pmy_mesh_->mesh_indcs;
+    auto rel = [](Real a, Real b) {return std::abs(a - b) <= 1.0e-12*std::abs(b) +
+                                          1.0e-14;};
+    if (hi[1] != mi.ng || hi[2] != mi.nx1 || hi[3] != mi.nx2 || hi[4] != mi.nx3 ||
+        !rel(hd[1], ms.x1min) || !rel(hd[2], ms.x1max) || !rel(hd[3], ms.x2min) ||
+        !rel(hd[4], ms.x2max) || !rel(hd[5], ms.x3min) || !rel(hd[6], ms.x3max)) {
+      HsFatal("problem/he_ic_remap_file: its mesh (ng, nx1..3, extents) differs from "
+              "<mesh>", __LINE__);
+    }
+    if (hd[0] != pmy_mesh_->time) {
+      char buf[128];
+      snprintf(buf, sizeof(buf), "%.17g", hd[0]);
+      HsFatal(std::string("problem/he_ic_remap_file: set <time>/start_time = ") + buf +
+              " (the parent's time; the remap deck from remap_e1w.py does)", __LINE__);
+    }
+    pgen_rststate.resize(npg);
+    if (npg > 0) rf.read(pgen_rststate.data(), npg);
+    if (!rf) HsFatal("problem/he_ic_remap_file: truncated pgen block", __LINE__);
+    hs_rmp_data = 8 + sizeof(hi) + sizeof(hd) + sizeof(npg) + npg;
+    for (int n=0; n<4; ++n) hs_rmp_n[n] = hi[n+1];
+    const std::int64_t c1 = hi[2] + 2*hi[1], c2 = hi[3] + 2*hi[1], c3 = hi[4] + 2*hi[1];
+    const std::int64_t want = hs_rmp_data + 8*(9*c1*c2*c3 + (c1 + 1)*c2*c3);
+    rf.seekg(0, std::ios::end);
+    if (static_cast<std::int64_t>(rf.tellg()) != want) {
+      HsFatal("problem/he_ic_remap_file: file size does not match its header", __LINE__);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "he_star_m1: he_ic_remap_file " << hs_rmp_fn << ": t = " << hd[0]
+                << ", pgen block " << npg << " bytes (remapped fresh start)" << std::endl;
+    }
+  }
   // dic-1013 (he_ic_equil): the equilibrium's a_ref of the active cells travels in the
   // pgen restart block as the LAST tagged trailer (a_ref..., Real n, tag); a restart
   // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
   // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
-  if (restart) {
+  // (e1remap-1014: also from a he_ic_remap_file's copy of the parent's block)
+  if (restart || hs_rmp) {
     auto &blk = pgen_rststate;
     const std::size_t nt = sizeof(kHsDicTag) + sizeof(Real);
     if (blk.size() >= nt &&
@@ -2242,26 +2325,37 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               "trailer", __LINE__);
     }
   }
-  if (restart) {
+  if (restart || hs_rmp) {
     auto &blk = pgen_rststate;
     const std::size_t nt = sizeof(kHsPicTag) + 2*sizeof(Real);
     if (blk.size() >= nt &&
         std::memcmp(blk.data() + blk.size() - nt, &(kHsPicTag[0]), sizeof(kHsPicTag)) == 0) {
       Real w[2];
       std::memcpy(&(w[0]), blk.data() + blk.size() - 2*sizeof(Real), 2*sizeof(Real));
-      hs_pic_n0_ = -w[0];
-      hs_pic_s0_ = -w[1];
+      // e1remap-1014: a remapped start opens a new window (the trailer is only stripped)
+      if (restart) {
+        hs_pic_n0_ = -w[0];
+        hs_pic_s0_ = -w[1];
+      }
       blk.resize(blk.size() - nt);
+    }
+    if (hs_rmp && !blk.empty()) {
+      HsFatal("problem/he_ic_remap_file: the parent's pgen block carries state this "
+              "start cannot take (adaptive MLT?)", __LINE__);
     }
   }
   // problem/mlt_closure: frozen (default: the IC's F_MLT, times w(t)) or adaptive (see
   // hs_ad_ above; w(t) caps it as an overall factor)
   {
     const std::string mc = pin->GetOrAddString("problem","mlt_closure","frozen");
-    if (mc != "frozen" && mc != "adaptive") {
-      HsFatal("problem/mlt_closure must be frozen or adaptive", __LINE__);
+    if (mc != "frozen" && mc != "adaptive" && mc != "pressure") {
+      HsFatal("problem/mlt_closure must be frozen, adaptive or pressure", __LINE__);
     }
-    hs_ad_ = (mc == "adaptive");
+    hs_ad_ = (mc == "adaptive" || mc == "pressure");
+    hs_adp_ = (mc == "pressure");
+  }
+  if (hs_ad_ && hs_rmp) {
+    HsFatal("problem/he_ic_remap_file does not support mlt_closure = adaptive", __LINE__);
   }
   if (hs_ad_) {
     if (!hs_mlt_) {
@@ -2282,6 +2376,46 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::realloc(hs_fsub_, nfc);
     Kokkos::deep_copy(hs_fsub_, hs_fm_);
     Kokkos::realloc(hs_shs_, nfc, 8);
+    if (hs_adp_) {
+      // the IC's F_MLT/F against ln P_tot (P_gas(rho, T) + E/3 of the start-up column, the
+      // fine grid between x1min and x1max), and F_tot = F_r/(1 - fm) on the faces
+      if (!tcol_read) {
+        HsFatal("problem/mlt_closure = pressure needs the 7-column file", __LINE__);
+      }
+      std::vector<std::pair<Real, Real>> pf;
+      for (int n=0; n<nf; ++n) {
+        if (hr[n] < hs_rin_ || hr[n] > rtop) continue;
+        Real ee, pp, cr, ct, cv;
+        eos.ThermoAt(hd[n], hTcol[n]/hs_tk, ee, pp, cr, ct, cv);
+        const Real er = (hE[n] > 0.0) ? hE[n] : ar*SQR(SQR(hTcol[n]/hs_tk));
+        pf.emplace_back(log(pp + er/3.0), hM[n]);
+      }
+      std::sort(pf.begin(), pf.end());
+      hs_plnp_.clear();
+      hs_pfm_.clear();
+      for (const auto &q : pf) {
+        if (!hs_plnp_.empty() && !(q.first > hs_plnp_.back())) continue;
+        hs_plnp_.push_back(q.first);
+        hs_pfm_.push_back(q.second);
+      }
+      auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+      hs_ftot_.assign(nfc, 0.0);
+      for (int i=0; i<nfc; ++i) {
+        const Real r = hx1f(0,i);
+        Real x = (r - hs_rlo_)/hs_dr_;
+        int n = static_cast<int>(floor(x));
+        n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
+        Real w = x - n;
+        w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+        const Real fm = (1.0 - w)*hM[n] + w*hM[n+1];
+        const Real fr = exp((1.0 - w)*log(hF[n]) + w*log(hF[n+1]));
+        hs_ftot_[i] = (fm < 1.0) ? fr/(1.0 - fm) : fr;
+      }
+      Kokkos::realloc(hs_shp_, nfc, 3);
+      if (hs_plnp_.size() < 2) {
+        HsFatal("problem/mlt_closure = pressure: no IC pressure table", __LINE__);
+      }
+    }
     hs_ad_tl_ = pmy_mesh_->time;
     hs_ad_cyc_ = -1;
     if (restart) {
@@ -2321,7 +2455,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
     HsApplyMltW(pmy_mesh_, HsMltW(pmy_mesh_->time));
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_m1: mlt_closure = adaptive, relax time " << hs_ad_tau_
+      std::cout << "he_star_m1: mlt_closure = " << (hs_adp_ ? "pressure" : "adaptive")
+                << ", relax time " << hs_ad_tau_
                 << " s, every " << hs_ad_every_ << " cycle(s), taper "
                 << pin->GetReal("problem","mlt_closure_taper") << ", update clock "
                 << hs_ad_tl_ << ", max L_sub = " << hs_lsub_ << std::endl;
@@ -2430,6 +2565,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem","he_clump")) {
     hs_cl_on_ = pin->GetBoolean("problem","he_clump");
   }
+  if (hs_cl_on_ && pmy_mesh_->use_cubed_sphere) {
+    // cs-port-1016: the test clump reads x2v, x3v as (theta, phi) (panel coordinates on
+    // the cubed sphere): refused instead of a silently misplaced clump
+    HsFatal("problem/he_clump (test) is spherical-polar only (x2v, x3v read as theta, "
+            "phi)", __LINE__);
+  }
   if (hs_cl_on_) {
     hs_cl_r_ = pin->GetReal("problem","he_clump_r");
     hs_cl_th_ = pin->GetReal("problem","he_clump_th");
@@ -2477,7 +2618,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       HsFatal("problem/he_ic_rad_atm_post = true needs he_ic_rad_atm_force = module",
               __LINE__);
     }
-    hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_;
+    hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_ && !hs_rmp;
     if (hs_atp_) user_icpost_func = HeStarIcPost;
   }
   // dic-1013 problem/he_ic_equil (read only when named; default false = nothing, bitwise
@@ -2500,7 +2641,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // he_ic_equil_maxit rounds.  The he_seed factor is applied after it (deferred).  a_ref
   // travels in the restart files (kHsDicTag).  Needs he_ic_balance, ic_rad, the WB pair,
   // a fresh start; replaces he_ic_rad_atm_post.
-  if (hs_eq_ && !restart) {
+  if (hs_eq_ && !restart && !hs_rmp) {
     if (!hs_bal_ || hs_pm_ || pm1->icr_mode == 0 || hs_atp_) {
       HsFatal("problem/he_ic_equil = true needs he_ic_balance = true, he_gravity = wb, "
               "<rad_m1>/ic_rad != none and he_ic_rad_atm_post = false", __LINE__);
@@ -2540,6 +2681,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << std::endl;
   }
   if (restart) return;
+  if (hs_rmp) {
+    // e1remap-1014: no <rad_m1>/ic_rad (the state is an evolved one), then the arrays
+    pm1->icr_mode = 0;
+    HsRemapLoad(pmy_mesh_, hs_rmp_fn, hs_rmp_data, hs_rmp_n);
+    return;
+  }
 
   // ---- the initial state (active + ghost cells)
   const Real seed = pin->GetOrAddReal("problem","he_seed",0.0);
@@ -2967,6 +3114,8 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     }
     return;
   }
+  const bool hcsg = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
+  auto hccl = pmbp->pcoord->cos_cell;
   par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
@@ -2975,7 +3124,9 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
     const Real f = exp(-bdt*rate*w);
     const Real d = u0(m,IDN,k,j,i);
-    const Real ke0 = 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+    const Real ke0 = hcsg ? HsKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i), u0(m,IM3,k,j,i), d,
+                                   hccl(m,k,j))
+                          : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                           + SQR(u0(m,IM3,k,j,i)))/d;
     u0(m,IM1,k,j,i) *= f;
     u0(m,IM2,k,j,i) *= f;
@@ -3072,6 +3223,8 @@ void HeStarBC(Mesh *pm) {
   // bsg-truerepro-1008: he_bc_inner = zerocontact, he_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
   auto &x1fb = pmbp->pcoord->xx1f;
+  const bool hcsb = pm->use_cubed_sphere;   // cs-port-1016: metric KE (HsKeCs)
+  auto hcclb = pmbp->pcoord->cos_cell;
   par_for("hs_bc", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     for (int side=0; side<2; ++side) {
@@ -3080,7 +3233,9 @@ void HeStarBC(Mesh *pm) {
           != BoundaryFlag::user) continue;
       const int ia = lo ? is : ie;
       const Real da = uh(m,IDN,k,j,ia);
-      const Real kea = 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
+      const Real kea = hcsb ? HsKeCs(uh(m,IM1,k,j,ia), uh(m,IM2,k,j,ia), uh(m,IM3,k,j,ia),
+                                     da, hcclb(m,k,j))
+                            : 0.5*(SQR(uh(m,IM1,k,j,ia)) + SQR(uh(m,IM2,k,j,ia))
                             + SQR(uh(m,IM3,k,j,ia)))/da;
       const Real ea = uh(m,IEN,k,j,ia) - kea - da*phicc(m,k,j,ia);
       const bool inflo = lo && binf, outfl = !lo && bout;
@@ -3238,8 +3393,10 @@ void HeStarBC(Mesh *pm) {
         Real dltdphi = 0.0;
         if (bhtg) {
           const Real d1 = uh(m,IDN,k,j,ia1);
-          const Real e1 = uh(m,IEN,k,j,ia1) - 0.5*(SQR(uh(m,IM1,k,j,ia1))
-                          + SQR(uh(m,IM2,k,j,ia1)) + SQR(uh(m,IM3,k,j,ia1)))/d1
+          const Real e1 = uh(m,IEN,k,j,ia1) - (hcsb ? HsKeCs(uh(m,IM1,k,j,ia1),
+                          uh(m,IM2,k,j,ia1), uh(m,IM3,k,j,ia1), d1, hcclb(m,k,j))
+                          : 0.5*(SQR(uh(m,IM1,k,j,ia1))
+                          + SQR(uh(m,IM2,k,j,ia1)) + SQR(uh(m,IM3,k,j,ia1)))/d1)
                           - d1*phicc(m,k,j,ia1);
           const Real dph1 = pwc(m,k,j,ia) - pwc(m,k,j,ia1);
           if (dph1 != 0.0) dltdphi = (ta - eos.Temperature(d1, e1, ta))/dph1;
@@ -3354,6 +3511,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const Real chc = pm1->chat/pm1->c_light;
   const Real sprate = hs_sp_rate_, spr0 = hs_sp_r0_, sprt = hs_rtop_, spd = hs_sp_dmax_;
   const bool sprad = hs_sp_rad_;
+  const bool hcsh = pm->use_cubed_sphere;   // cs-port-1016: metric KE
+  auto hccl_ = pmbp->pcoord->cos_cell;
   array_sum::GlobalSum sum_this;
   Kokkos::parallel_reduce("hs_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
@@ -3396,8 +3555,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       if (r > spr0 || low) {
         const Real wsp = low ? 1.0 : SQR((r - spr0)/(sprt - spr0));
         const Real kes = sprad ? 0.5*SQR(u0(m,IM1,k,j,i))/d
+                               : (hcsh ? HsKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
+                                                u0(m,IM3,k,j,i), d, hccl_(m,k,j))
                                : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
-                                      + SQR(u0(m,IM3,k,j,i)))/d;
+                                      + SQR(u0(m,IM3,k,j,i)))/d);
         h.the_array[23] = 2.0*sprate*wsp*kes*vol;
       }
     }
@@ -3405,7 +3566,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       const Real d = w0(m,IDN,k,j,i);
       const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
       h.the_array[7] = d*vol;
-      h.the_array[8] = 0.5*d*(v1*v1 + v2*v2 + v3*v3)*vol;
+      // cs-port-1016: w0 holds the CONTRAVARIANT v^a on the cubed sphere
+      h.the_array[8] = hcsh ? 0.5*d*(v1*v1 + v2*v2 + v3*v3
+                                     + 2.0*hccl_(m,k,j)*v2*v3)*vol
+                            : 0.5*d*(v1*v1 + v2*v2 + v3*v3)*vol;
       h.the_array[9] = 0.5*d*v1*v1*vol;
       h.the_array[10] = d*v1*vol;
       h.the_array[11] = eos.Pressure(d, w0(m,IEN,k,j,i))*vol;
@@ -3535,6 +3699,52 @@ void HsAdaptiveUpdate(Mesh *pm) {
     lcf[i] = (i > is && i <= ie) ? 0.5*(lc[i-1] + lc[i]) : 0.0;
     const Real def = lin - lrad[i] - lcf[i];
     tgt[i] = hs_tap_[i]*((def > 0.0) ? def : 0.0)/hsh(i,1);
+  }
+  if (hs_adp_) {
+    // mltp-1017 mlt_closure = pressure: target fm_IC(ln P_face) F_tot,IC(face); P_face =
+    // the log-mean of the adjacent shell-mean P_gas + E/3 (the edge cell's at is, ie+1)
+    auto sp = hs_shp_;
+    auto ww = w0;
+    auto eo = eos;
+    auto uu = ur;
+    auto vv = volume;
+    par_for("hs_adp_shell", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
+      Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
+      for (int m=0; m<nmb; ++m) {
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je; ++j) {
+            const Real vol = vv(m,k,j,i);
+            s0 += vol;
+            s1 += vol*eo.Pressure(ww(m,IDN,k,j,i), ww(m,IEN,k,j,i));
+            s2 += vol*uu(m,radm1::M1_E,k,j,i);
+          }
+        }
+      }
+      sp(i,0) = s0; sp(i,1) = s1; sp(i,2) = s2;
+    });
+    auto hsp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sp);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &hsp(is,0), 3*(ie + 1 - is), MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+#endif
+    std::vector<Real> lp(nfc, 0.0);
+    for (int i=is; i<=ie; ++i) lp[i] = log((hsp(i,1) + hsp(i,2)/3.0)/hsp(i,0));
+    const int np = static_cast<int>(hs_plnp_.size());
+    for (int i=is; i<=ie+1; ++i) {
+      const Real x = (i == is) ? lp[is] : ((i == ie + 1) ? lp[ie] : 0.5*(lp[i-1] + lp[i]));
+      Real fm;
+      if (x <= hs_plnp_[0]) {
+        fm = hs_pfm_[0];
+      } else if (x >= hs_plnp_[np-1]) {
+        fm = hs_pfm_[np-1];
+      } else {
+        const int k = static_cast<int>(std::upper_bound(hs_plnp_.begin(), hs_plnp_.end(), x)
+                                       - hs_plnp_.begin()) - 1;
+        const Real a = (x - hs_plnp_[k])/(hs_plnp_[k+1] - hs_plnp_[k]);
+        fm = (1.0 - a)*hs_pfm_[k] + a*hs_pfm_[k+1];
+      }
+      tgt[i] = fm*hs_ftot_[i];
+    }
   }
   const Real t = pm->time;
   const Real a = 1.0 - exp(-(t - hs_ad_tl_)/hs_ad_tau_);
@@ -4304,6 +4514,71 @@ void HeStarIcEquil(Mesh *pm) {
 //! \fn void HeStarFinal()
 //! \brief release the namespace-scope Views before Kokkos::finalize.
 
+//----------------------------------------------------------------------------------------
+//! \fn void HsRemapLoad()
+//! \brief e1remap-1014 problem/he_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
+//! every MeshBlock of this rank, ghosts included, from the file's global arrays
+//! [nx3+2ng][nx2+2ng][nx1+2ng(+1)] (header checked by the caller; uniform mesh only)
+
+void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const int *n) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto *pm1 = pmbp->pradm1;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  if (pm->multilevel) HsFatal("he_ic_remap_file needs a uniform mesh", __LINE__);
+  const int nout1 = indcs.nx1 + 2*ng, nout2 = indcs.nx2 + 2*ng, nout3 = indcs.nx3 + 2*ng;
+  const std::int64_t c1 = n[1] + 2*n[0], c2 = n[2] + 2*n[0], c3 = n[3] + 2*n[0];
+  const std::int64_t cc = c1*c2*c3;
+  std::ifstream rf(fn, std::ios::binary);
+  if (!rf) HsFatal("cannot open problem/he_ic_remap_file " + fn, __LINE__);
+  auto uh = Kokkos::create_mirror_view(pmbp->phydro->u0);
+  auto ur = Kokkos::create_mirror_view(pm1->u0);
+  const bool hf0 = (pm1->f0x1.extent_int(0) >= pmbp->nmb_thispack);
+  auto uf = Kokkos::create_mirror_view(pm1->f0x1);
+  std::vector<double> row(nout1 + 1);
+  auto rd = [&](const std::int64_t pos, const int len) {
+    rf.seekg(pos);
+    rf.read(reinterpret_cast<char*>(row.data()), len*sizeof(double));
+    if (!rf) HsFatal("problem/he_ic_remap_file: read failed", __LINE__);
+  };
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const LogicalLocation &ll = pm->lloc_eachmb[pmbp->gids + m];
+    const std::int64_t o1 = static_cast<std::int64_t>(ll.lx1)*indcs.nx1;
+    const std::int64_t o2 = static_cast<std::int64_t>(ll.lx2)*indcs.nx2;
+    const std::int64_t o3 = static_cast<std::int64_t>(ll.lx3)*indcs.nx3;
+    for (int v=0; v<9; ++v) {
+      for (int k=0; k<nout3; ++k) {
+        for (int j=0; j<nout2; ++j) {
+          rd(off + 8*(v*cc + ((o3 + k)*c2 + (o2 + j))*c1 + o1), nout1);
+          for (int i=0; i<nout1; ++i) {
+            if (v < 5) {
+              uh(m,v,k,j,i) = row[i];
+            } else {
+              ur(m,v-5,k,j,i) = row[i];
+            }
+          }
+        }
+      }
+    }
+    if (hf0) {
+      for (int k=0; k<nout3; ++k) {
+        for (int j=0; j<nout2; ++j) {
+          rd(off + 8*(9*cc + ((o3 + k)*c2 + (o2 + j))*(c1 + 1) + o1), nout1 + 1);
+          for (int i=0; i<=nout1; ++i) uf(m,k,j,i) = row[i];
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(pmbp->phydro->u0, uh);
+  Kokkos::deep_copy(pm1->u0, ur);
+  if (hf0) Kokkos::deep_copy(pm1->f0x1, uf);
+  if (global_variable::my_rank == 0) {
+    std::cout << "he_star_m1: he_ic_remap_file: u0, M1 u0" << (hf0 ? ", f0x1" : "")
+              << " loaded (" << pmbp->nmb_thispack << " MeshBlock(s) on rank 0); "
+              << "no ic_rad, no he_ic_equil, no seed" << std::endl;
+  }
+}
+
 void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   (void) pin; (void) pm;
   hs_rho_ = DvceArray1D<Real>();
@@ -4312,6 +4587,7 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_fm_ = DvceArray1D<Real>();
   hs_fsub_ = DvceArray1D<Real>();
   hs_shs_ = DvceArray2D<Real>();
+  hs_shp_ = DvceArray2D<Real>();
   hs_be_ = DvceArray1D<Real>();
   hs_phig_ = DvceArray1D<Real>();
   hs_gmr_ = DvceArray1D<Real>();

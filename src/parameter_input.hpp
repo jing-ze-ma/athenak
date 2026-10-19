@@ -37,6 +37,9 @@ struct InputLine {
   std::string param_name;
   std::string param_value;   // value of the parameter is stored as a string!
   std::string param_comment;
+  // unkkey-1017 (ReportUnreadParameters): never written to a dump or restart file
+  bool accessed = false;  // read or probed by the code (Get*, GetOrAdd*, Does*, Set*)
+  int origin = 0;         // ParameterInput::kOrigin*: where the current value came from
 };
 
 //----------------------------------------------------------------------------------------
@@ -79,6 +82,13 @@ class ParameterInput {
   void LoadFromFile(IOWrapper &input, bool single_file_per_rank=false);
   void ModifyFromCmdline(int argc, char *argv[], bool add_absent = false);
   void ParameterDump(std::ostream& os);
+  // unkkey-1017: origin of a line's value, for ReportUnreadParameters()
+  static constexpr int kOriginCode = 0;     // added by GetOrAdd*/Set* (always accessed)
+  static constexpr int kOriginFile = 1;     // input file (-i)
+  static constexpr int kOriginCmdline = 2;  // command line block/name=value
+  static constexpr int kOriginRestart = 3;  // parameter header of a restart file (-r)
+  void MarkAllAsRestart();
+  void ReportUnreadParameters();
   bool DoesBlockExist(std::string name);
   bool DoesParameterExist(std::string block, std::string name);
   bool IsParameterDefaulted(std::string block, std::string name);
