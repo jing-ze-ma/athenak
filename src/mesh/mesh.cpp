@@ -222,6 +222,12 @@ Mesh::Mesh(ParameterInput *pin) :
       cs_seam_flux = 1;
     } else if (sf == "positive_donor") {
       cs_seam_flux = 2;
+    } else if (sf == "shared") {
+      // csedge-1019: ONE Riemann problem per seam face from the two panels' OWN interior
+      // reconstructions (Hydro::CsSeamFaceStates), so a seam face is solved like an
+      // interior face; the two (round-off different) results are then averaged (exact
+      // conservation), as `average`
+      cs_seam_flux = 3;
     } else if (sf == "positive") {
       // csedge-1019: the legacy (09-26 default) spelling -> the new default
       cs_seam_flux = 0;
@@ -230,11 +236,11 @@ Mesh::Mesh(ParameterInput *pin) :
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mesh>/cs_seam_flux = '" << sf
-                << "' must be average, upwind or positive_donor" << std::endl;
+                << "' must be average, upwind, positive_donor or shared" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     if (global_variable::my_rank == 0) {
-      const char *nm[3] = {"average", "upwind", "positive_donor"};
+      const char *nm[4] = {"average", "upwind", "positive_donor", "shared"};
       std::cout << "Mesh: cubed-sphere seam flux = " << nm[cs_seam_flux]
                 << (legacy ? " (csedge-1019: legacy 'positive' read as the new default "
                              "'average'; 'positive_donor' selects the 09-26 rule)" : "")

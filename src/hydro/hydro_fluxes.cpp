@@ -13,6 +13,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro.hpp"
+#include "bvals/bvals.hpp"
 #include "eos/eos.hpp"
 #include "reconstruct/dc.hpp"
 #include "reconstruct/plm.hpp"
@@ -55,6 +56,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   int nvars = nhydro + nscalars;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const auto recon_method_ = recon_method;
+  // csedge-1019 <mesh>/cs_seam_flux = shared: the neighbour's own seam face states
+  if (cs_seam_shared) {CsSeamFaceStates();}
+  const bool cs_shr_ = cs_seam_shared;
+  DvceArray5D<Real> sfs2_, sfs3_;
+  if (cs_shr_) {sfs2_ = pseamfs->x2f; sfs3_ = pseamfs->x3f;}
   bool extrema = false;
   if (recon_method == ReconstructionMethod::ppmx) {
     extrema = true;
@@ -675,6 +681,30 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           auto size = size_;
           auto coord = coord_;
           auto flx2 = flx2_;
+          // csedge-1019 shared seam: the ghost-side state of a panel-seam face is replaced
+          // by the neighbour panel's OWN reconstruction of its edge cell (CsSeamFaceStates),
+          // written in this face's frame (after GnomonicEquianglePrimFaceX2: IVY = v.n,
+          // IVZ = the covariant along-seam component)
+          if (cs_shr_ && k >= ks && k <= ke &&
+              ((j == js && size.d_view(m).x2min <= -1.0 + 1.0e-12) ||
+               (j == je+1 && size.d_view(m).x2max >= 1.0 - 1.0e-12))) {
+            member.team_barrier();
+            const bool lo = (j == js);
+            const Real sf = gtrig_xi.sn(m,k,j), cf = gtrig_xi.cs(m,k,j);
+            auto sfs = sfs2_;
+            const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
+            par_for_inner(member, ia, ib, [&](const int i) {
+              for (int n=0; n<nvars; ++n) {
+                Real q = sfs(m,n,k,j,i);
+                if (n == IVY) q = (sfs(m,IVY,k,j,i) - cf*sfs(m,IVZ,k,j,i))/sf;
+                if (lo) {wl(n,i) = q;} else {wr(n,i) = q;}
+              }
+              for (int n=0; n<nder; ++n) {
+                if (lo) {dl(n,i) = sfs(m,nvars+n,k,j,i);} else {dr(n,i) = sfs(m,nvars+n,k,j,i);}
+              }
+            });
+            member.team_barrier();
+          }
           if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
             Advect(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf) {
@@ -904,6 +934,28 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           auto size = size_;
           auto coord = coord_;
           auto flx3 = flx3_;
+          // csedge-1019 shared seam (see the x2 sweep): after GnomonicEquianglePrimFaceX3
+          // IVZ = v.n and IVY = the covariant along-seam component
+          if (cs_shr_ && j >= js && j <= je &&
+              ((k == ks && size.d_view(m).x3min <= -1.0 + 1.0e-12) ||
+               (k == ke+1 && size.d_view(m).x3max >= 1.0 - 1.0e-12))) {
+            member.team_barrier();
+            const bool lo = (k == ks);
+            const Real sf = gtrig_eta.sn(m,k,j), cf = gtrig_eta.cs(m,k,j);
+            auto sfs = sfs3_;
+            const int ia = (il > is) ? il : is, ib = (iu < ie) ? iu : ie;
+            par_for_inner(member, ia, ib, [&](const int i) {
+              for (int n=0; n<nvars; ++n) {
+                Real q = sfs(m,n,k,j,i);
+                if (n == IVZ) q = (sfs(m,IVZ,k,j,i) - cf*sfs(m,IVY,k,j,i))/sf;
+                if (lo) {wl(n,i) = q;} else {wr(n,i) = q;}
+              }
+              for (int n=0; n<nder; ++n) {
+                if (lo) {dl(n,i) = sfs(m,nvars+n,k,j,i);} else {dr(n,i) = sfs(m,nvars+n,k,j,i);}
+              }
+            });
+            member.team_barrier();
+          }
           if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
             Advect(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf) {
@@ -969,6 +1021,101 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   }
 
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::CsSeamFaceStates()
+//! \brief csedge-1019 <mesh>/cs_seam_flux = shared.  Each panel's OWN interior-side face
+//! state at its panel-seam faces -- the PLM of its edge cell over (ghost, edge, inner),
+//! exactly the reconstruction the sweep makes there (primitives + the general-EOS derived
+//! pressure / Gamma_1, pressure floored as in the sweep), the tangential velocity written
+//! as covariant components on the face's own basis -- is exchanged across the seam
+//! (pbval_fs, seam_raw: the pack re-expresses IVY/IVZ on the neighbour's basis at the face
+//! centre, cubed_sphere::TransformMomentum).  Afterwards *pseamfs holds, at every seam
+//! face of this rank, the NEIGHBOUR's own state.  The sweep then solves the seam face
+//! with (neighbour's own, this panel's own) states -- one Riemann problem, as an interior
+//! face -- and the two panels' results (mirror images up to round-off) are averaged in
+//! RecvAndUnpackFluxSeamCC, which keeps the update exactly conservative.
+
+void Hydro::CsSeamFaceStates() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int nvars = nhydro + nscalars;
+  auto eos_ = peos->eos_data;
+  const int nder = eos_.IsGeneral() ? NDERIVED : 0;
+  const int nfs = nhydro + nscalars + NDERIVED;
+  if (recon_method != ReconstructionMethod::plm ||
+      (use_wellbalance_dynamic && use_wb_x2) || use_wellbalance_static_reconst_perturb ||
+      pmy_pack->pmesh->multilevel) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<mesh>/cs_seam_flux = shared needs <hydro>/reconstruct = plm, no x2/x3 "
+              << "well-balanced or static-perturbation reconstruction and a uniform mesh"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto w0_ = w0;
+  auto wder_ = wder;
+  auto &size = pmy_pack->pmb->mb_size;
+  auto gtx = pmy_pack->pcoord->GnomonicTrigFaceXi();
+  auto gte = pmy_pack->pcoord->GnomonicTrigFaceEta();
+  auto f2 = pseamfs->x2f;
+  auto f3 = pseamfs->x3f;
+  const Real pfl = eos_.pfloor;
+  // x2 (xi) seams: side 0 = the face js (x2min = -1), side 1 = the face je+1 (x2max = 1)
+  par_for("cs_seamfs_x2", DevExeSpace(), 0, nmb1, ks, ke, 0, 1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int sd, const int i) {
+    const bool lo = (sd == 0);
+    if (lo && !(size.d_view(m).x2min <= -1.0 + 1.0e-12)) return;
+    if (!lo && !(size.d_view(m).x2max >= 1.0 - 1.0e-12)) return;
+    const int jc = lo ? js : je, jf = lo ? js : je+1;
+    for (int n=0; n<nvars; ++n) {
+      Real ql, qr;
+      PLM(w0_(m,n,k,jc-1,i), w0_(m,n,k,jc,i), w0_(m,n,k,jc+1,i), ql, qr);
+      f2(m,n,k,jf,i) = lo ? qr : ql;
+    }
+    for (int n=0; n<nder; ++n) {
+      Real ql, qr;
+      PLM(wder_(m,n,k,jc-1,i), wder_(m,n,k,jc,i), wder_(m,n,k,jc+1,i), ql, qr);
+      Real q = lo ? qr : ql;
+      if (n == IDPR) q = fmax(q, pfl);
+      f2(m,nvars+n,k,jf,i) = q;
+    }
+    const Real c = gtx.cs(m,k,jf);
+    const Real v2 = f2(m,IVY,k,jf,i), v3 = f2(m,IVZ,k,jf,i);
+    f2(m,IVY,k,jf,i) = v2 + c*v3;     // covariant on the face's (unit) basis
+    f2(m,IVZ,k,jf,i) = v3 + c*v2;
+  });
+  par_for("cs_seamfs_x3", DevExeSpace(), 0, nmb1, 0, 1, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int sd, const int j, const int i) {
+    const bool lo = (sd == 0);
+    if (lo && !(size.d_view(m).x3min <= -1.0 + 1.0e-12)) return;
+    if (!lo && !(size.d_view(m).x3max >= 1.0 - 1.0e-12)) return;
+    const int kc = lo ? ks : ke, kf = lo ? ks : ke+1;
+    for (int n=0; n<nvars; ++n) {
+      Real ql, qr;
+      PLM(w0_(m,n,kc-1,j,i), w0_(m,n,kc,j,i), w0_(m,n,kc+1,j,i), ql, qr);
+      f3(m,n,kf,j,i) = lo ? qr : ql;
+    }
+    for (int n=0; n<nder; ++n) {
+      Real ql, qr;
+      PLM(wder_(m,n,kc-1,j,i), wder_(m,n,kc,j,i), wder_(m,n,kc+1,j,i), ql, qr);
+      Real q = lo ? qr : ql;
+      if (n == IDPR) q = fmax(q, pfl);
+      f3(m,nvars+n,kf,j,i) = q;
+    }
+    const Real c = gte.cs(m,kf,j);
+    const Real v2 = f3(m,IVY,kf,j,i), v3 = f3(m,IVZ,kf,j,i);
+    f3(m,IVY,kf,j,i) = v2 + c*v3;
+    f3(m,IVZ,kf,j,i) = v3 + c*v2;
+  });
+  (void) nfs;
+  pbval_fs->InitFluxSeamRecv(nfs);
+  pbval_fs->PackAndSendFluxSeamCC(*pseamfs);
+  while (pbval_fs->RecvAndUnpackFluxSeamCC(*pseamfs) != TaskStatus::complete) {}
+  pbval_fs->ClearFluxSend();
+  pbval_fs->ClearFluxRecv();
 }
 
 // function definitions for each template parameter

@@ -170,6 +170,18 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u->cs_rho_guard = ppack->pmesh->cs_seam_rho_guard;
   pbval_u->cs_lin_resample = ppack->pmesh->cs_seam_resample_linear;
   pbval_u->InitializeBuffers((nhydro+nscalars));
+  // csedge-1019 <mesh>/cs_seam_flux = shared: the seam face-state exchange (hydro.hpp)
+  if (ppack->pmesh->use_cubed_sphere && ppack->pmesh->cs_seam_flux == 3) {
+    cs_seam_shared = true;
+    const int nfs = nhydro + nscalars + NDERIVED;
+    pbval_fs = new MeshBoundaryValuesCC(ppack, pin, false);
+    pbval_fs->seam_raw = true;
+    pbval_fs->InitializeBuffers(nfs);
+    auto &ind = ppack->pmesh->mb_indcs;
+    const int n1 = ind.nx1 + 2*ind.ng, n2 = ind.nx2 + 2*ind.ng, n3 = ind.nx3 + 2*ind.ng;
+    pseamfs = new DvceFaceFld5D<Real>("cs_seamfs", nmb, nfs, n3, n2, n1);
+    Kokkos::realloc(pseamfs->x1f, nmb, nfs, 1, 1, 1);   // x1 faces never cross a seam
+  }
 
   // Orbital advection and shearing box BCs (if requested in input file)
   if (pin->DoesBlockExist("shearing_box")) {
@@ -658,6 +670,8 @@ Hydro::~Hydro() {
   if (pam != nullptr) {delete pam;}
   delete peos;
   delete pbval_u;
+  if (pbval_fs != nullptr) {delete pbval_fs;}
+  if (pseamfs != nullptr) {delete pseamfs;}
   if (pvisc != nullptr) {delete pvisc;}
   if (pcond != nullptr) {delete pcond;}
   if (psrc != nullptr) {delete psrc;}

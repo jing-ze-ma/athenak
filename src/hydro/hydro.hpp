@@ -261,6 +261,15 @@ class Hydro {
   // csedge-1019 <hydro>/cs_seam_rsolver = hlle: the cubed-sphere PANEL-SEAM faces take the
   // HLLE flux (contact/shear dissipation) whatever <hydro>/rsolver is (hydro.cpp)
   bool cs_seam_hlle = false;
+  // csedge-1019 <mesh>/cs_seam_flux = shared: each panel-seam face is ONE Riemann problem
+  // whose two states are the two panels' OWN interior-side reconstructions (exchanged as
+  // face states, tangential velocity re-expressed on the receiver's basis), instead of
+  // each panel's own solve against its resampled ghosts.  CsSeamFaceStates (hydro_fluxes
+  // .cpp) fills *pseamfs with the NEIGHBOUR's face state at every seam face.
+  bool cs_seam_shared = false;
+  MeshBoundaryValuesCC *pbval_fs = nullptr;
+  DvceFaceFld5D<Real> *pseamfs = nullptr;
+  void CsSeamFaceStates();
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic

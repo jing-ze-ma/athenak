@@ -359,6 +359,10 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell; the
   // global diagnostic env CS_NORESAMP_CC does the same for every object.
   bool cs_noresample = false;
+  // csedge-1019: the *FluxSeamCC exchange moves RAW face values (no outward sign, the
+  // receiver's array is overwritten by the neighbour's) -- the hydro's shared seam face
+  // states (<mesh>/cs_seam_flux = shared, Hydro::CsSeamFaceStates)
+  bool seam_raw = false;
   // cs_perm_pairs (default false): the tangential vector pairs of this object are
   // face-normal components; a seam permutes them with the axis signs instead of the
   // covariant metric transform (bvals_cc.cpp).  Set by the implicit M1 on pbval_th.
