@@ -371,6 +371,33 @@ DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient,
 // theta walls (RadSetup) and its total outward rate on this rank (booked as radiation out)
 DvceArray3D<Real> fx2lo_, fx2hi_;
 Real fx2leak_ = 0.0;
+// acctrc-1019 (USER 10-19): two passive advective tracers, <hydro>/nscalars = 2 (0 = off: no
+// branch below runs, every kernel and register of the default is unchanged).  Conserved
+// u(nhydro + n) = rho s_n, advected by the core with the upwind mass flux (hydro_fluxes.cpp).
+//   s0 STREAM:          1 in the gas the nozzle writes (stream_inject = volume; the r_out
+//                       window ghosts with boundary injection), 0 elsewhere at the start.
+//   s1 BOUNDARY INFLOW: 1 in all gas that enters through any physical boundary of the mesh
+//                       other than the nozzle (r_in, r_out, the theta walls).
+// IC envelope / ambient 0.  Mass added by any floor (EOS dfloor, radeq floor) carries s = 0:
+// the conserved rho s is left as it is, so the concentration is diluted by the added mass.
+// The labelling of boundary inflow is EXACT: after the hydro update of every stage the
+// scalar flux through each user boundary face is replaced by F_rho (0, 1) where F_rho points
+// INTO the domain (TrcFluxFix; the ghosts themselves carry the zero-gradient / mirror
+// concentration, so the interior slopes and the outflow are not biased).  Diagnostics: the
+// separate file <basename>.trc.hst (ryper.user.hst is unchanged); registers per rank, RK
+// weighted like acc0_, cumulative per run (restart from 0), in the dt_retry checkpoint.
+bool trc_ = false;
+int trc_n0_ = 5;               // index of s0 in u0 (= Hydro::nhydro); s1 = trc_n0_ + 1
+constexpr int kNtr = 9;
+// 0 Nz0  s0 mass written by the nozzle reset (dn - (rho s0)_old) dV
+// 1 Nz1  s1 mass removed by the nozzle reset ((rho s1)_old dV)
+// 2 Sk0  s0 mass removed by the sinks (donor mask, back sink: reset to s = 0)
+// 3 Sk1  s1 mass removed by the sinks
+// 4 Fi0, 5 Fi1  s0, s1 mass OUT through r_in (outward positive)
+// 6 Fo0, 7 Fo1  s0, s1 mass OUT through r_out and the user theta walls (outward positive)
+// 8 Bin  mass that ENTERED through the non-nozzle user boundaries (= the s1 source)
+Real trc0_[kNtr] = {0.0}, trc1_[kNtr] = {0.0};
+std::string trc_file_;
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -1027,6 +1054,42 @@ void RyPerBCEnv(Mesh *pm) {
       }
     }
   });
+  // acctrc-1019: the tracer ghosts of the x1 faces, from the ghost densities just written.
+  // r_in (closed wall, the face states are mirrored by hydro wall_closed_ix1): the mirror
+  // cell's concentrations; r_out: the edge cell's (zero gradient: an unbiased outflow);
+  // the r_out stream window (boundary injection, stream_inject != volume): s0 = 1, s1 = 0.
+  // Inflow through these faces is labelled s1 = 1 exactly by TrcFluxFix, not here.
+  if (trc_) {
+    const int n0 = trc_n0_;
+    par_for("ryper_bctr1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        for (int g=0; g<ng; ++g) {
+          const int ig = is - 1 - g, im = is + g;
+          const Real dm = u0(m,IDN,k,j,im), dg = u0(m,IDN,k,j,ig);
+          for (int n=n0; n<n0+2; ++n) {
+            u0(m,n,k,j,ig) = (dm > 0.0) ? dg*u0(m,n,k,j,im)/dm : 0.0;
+          }
+        }
+      }
+      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+        const bool win = strm && !stvol && (fabs(WrapPhi(x3v(m,k) - phis)) < wwin);
+        const Real da = u0(m,IDN,k,j,ie);
+        for (int g=0; g<ng; ++g) {
+          const int ig = ie + 1 + g;
+          const Real dg = u0(m,IDN,k,j,ig);
+          if (win) {
+            u0(m,n0,k,j,ig) = dg;
+            u0(m,n0+1,k,j,ig) = 0.0;
+          } else {
+            for (int n=n0; n<n0+2; ++n) {
+              u0(m,n,k,j,ig) = (da > 0.0) ? dg*u0(m,n,k,j,ie)/da : 0.0;
+            }
+          }
+        }
+      }
+    });
+  }
   // accretor-3d-1017: problem/theta_bc = outflow | hse (mesh ix2/ox2_bc = user): the theta
   // ghosts continue the edge cell isothermally (its T) and hydrostatically in the TRUE 3-D
   // Roche potential along theta (the outer-x1 hse walk of the general EOS, capped at
@@ -1126,6 +1189,27 @@ void RyPerBCEnv(Mesh *pm) {
       }
     }
   });
+  // acctrc-1019: the tracer ghosts of the user theta walls: hse (closed wall) the mirror
+  // cell's concentrations, outflow the edge cell's; inflow is labelled by TrcFluxFix
+  if (trc_) {
+    const int n0 = trc_n0_;
+    par_for("ryper_bctr2", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int i) {
+      for (int sd=0; sd<2; ++sd) {
+        if (sd == 0 && mbbcs.d_view(m, BoundaryFace::inner_x2) != BoundaryFlag::user) continue;
+        if (sd == 1 && mbbcs.d_view(m, BoundaryFace::outer_x2) != BoundaryFlag::user) continue;
+        const int ja = (sd == 0) ? js : je;
+        for (int g=0; g<ng; ++g) {
+          const int jg = (sd == 0) ? js - 1 - g : je + 1 + g;
+          const int jr = thh ? ((sd == 0) ? js + g : je - g) : ja;
+          const Real dr = u0(m,IDN,k,jr,i), dg = u0(m,IDN,k,jg,i);
+          for (int n=n0; n<n0+2; ++n) {
+            u0(m,n,k,jg,i) = (dr > 0.0) ? dg*u0(m,n,k,jr,i)/dr : 0.0;
+          }
+        }
+      }
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1479,6 +1563,95 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     }
   }
 
+  // acctrc-1019: TrcFluxFix -- the exact boundary-inflow label.  The core advected the
+  // scalars with the upwind flux F_s = F_rho s_upwind; at every user boundary face where
+  // F_rho points INTO the domain the scalar flux is replaced by F_rho (s0, s1) = F_rho (0, 1)
+  // (the r_out stream window of boundary injection: (1, 0)), and the edge cell gets the
+  // difference with this stage's weight, -bdt (F_new - F_old) A / V on the divergence of
+  // the face (hydro_update.cpp form), i.e. exactly the update the new flux would have made.
+  // Outflow faces keep the core's upwind flux.  The corrected fluxes are summed (per rank)
+  // into the registers Fi*, Fo*, Bin below.
+  array_sum::GlobalSum tfs;
+  for (int n=0; n<NREDUCTION_VARIABLES; ++n) tfs.the_array[n] = 0.0;
+  if (trc_) {
+    const int n0 = trc_n0_;
+    auto &tf1 = ph->uflx.x1f;
+    auto &tf2 = ph->uflx.x2f;
+    auto &ta2 = pmbp->pcoord->area.x2f;
+    auto &tx3 = pmbp->pcoord->x3v;
+    auto &tbcs = pmbp->pmb->mb_bcs;
+    const bool twin = stream_on_ && !stvol_;
+    const Real tphs = phi_s_, tww = nsig_*sig_;
+    const int tnj = je - js + 1, tnk = ke - ks + 1, tni = ie - is + 1;
+    array_sum::GlobalSum t1, t2;
+    Kokkos::parallel_reduce("ryper_trfx1", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*tnk*tnj),
+    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+      const int m = idx/(tnk*tnj);
+      const int k = (idx - m*tnk*tnj)/tnj + ks;
+      const int j = idx%tnj + js;
+      array_sum::GlobalSum v;
+      for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+      if (tbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        const Real a = area1(m,k,j,is), fd = tf1(m,IDN,k,j,is);
+        const Real fn[2] = {0.0, (fd > 0.0) ? fd : 0.0};
+        for (int q=0; q<2; ++q) {
+          if (fd > 0.0) {
+            u0(m,n0+q,k,j,is) += bdt*(fn[q] - tf1(m,n0+q,k,j,is))*a/volume(m,k,j,is);
+            tf1(m,n0+q,k,j,is) = fn[q];
+          }
+          v.the_array[q] = -tf1(m,n0+q,k,j,is)*a;
+        }
+        if (fd > 0.0) v.the_array[4] = fd*a;
+      }
+      if (tbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+        const Real a = area1(m,k,j,ie+1), fd = tf1(m,IDN,k,j,ie+1);
+        const bool win = twin && (fabs(WrapPhi(tx3(m,k) - tphs)) < tww);
+        const Real fn[2] = {win ? fd : 0.0, win ? 0.0 : fd};
+        for (int q=0; q<2; ++q) {
+          if (fd < 0.0) {
+            u0(m,n0+q,k,j,ie) -= bdt*(fn[q] - tf1(m,n0+q,k,j,ie+1))*a/volume(m,k,j,ie);
+            tf1(m,n0+q,k,j,ie+1) = fn[q];
+          }
+          v.the_array[2+q] = tf1(m,n0+q,k,j,ie+1)*a;
+        }
+        if (fd < 0.0 && !win) v.the_array[4] -= fd*a;
+      }
+      sum += v;
+    }, Kokkos::Sum<array_sum::GlobalSum>(t1));
+    for (int n=0; n<5; ++n) tfs.the_array[n] = t1.the_array[n];
+    if (p3 && thout_) {
+      Kokkos::parallel_reduce("ryper_trfx2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              (nmb1 + 1)*tnk*tni),
+      KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+        const int m = idx/(tnk*tni);
+        const int k = (idx - m*tnk*tni)/tni + ks;
+        const int i = idx%tni + is;
+        array_sum::GlobalSum v;
+        for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+        for (int sd=0; sd<2; ++sd) {
+          if (sd == 0 && tbcs.d_view(m, BoundaryFace::inner_x2) != BoundaryFlag::user) continue;
+          if (sd == 1 && tbcs.d_view(m, BoundaryFace::outer_x2) != BoundaryFlag::user) continue;
+          const int jf = (sd == 0) ? js : je + 1, jc = (sd == 0) ? js : je;
+          const Real sg = (sd == 0) ? -1.0 : 1.0;     // outward sign of the face flux
+          const Real a = ta2(m,k,jf,i), fd = tf2(m,IDN,k,jf,i);
+          const bool inflow = (sg*fd < 0.0);
+          const Real fn[2] = {0.0, fd};
+          for (int q=0; q<2; ++q) {
+            if (inflow) {
+              u0(m,n0+q,k,jc,i) -= sg*bdt*(fn[q] - tf2(m,n0+q,k,jf,i))*a/volume(m,k,jc,i);
+              tf2(m,n0+q,k,jf,i) = fn[q];
+            }
+            v.the_array[2+q] += sg*tf2(m,n0+q,k,jf,i)*a;
+          }
+          if (inflow) v.the_array[4] -= sg*fd*a;
+        }
+        sum += v;
+      }, Kokkos::Sum<array_sum::GlobalSum>(t2));
+      for (int n=2; n<5; ++n) tfs.the_array[n] += t2.the_array[n];
+    }
+  }
+
   // accretor-bigdom-1015: the stream nozzle (stream_inject = volume) and the donor sink
   // (donor_mask = roche), reset after every other source of the stage; sums: 0 nozzle
   // mass added, 1 its inertial Lz, 2 its gas energy (incl. KE, rho Phi), 3 its radiation
@@ -1504,6 +1677,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const RocheParams pr = rp_;
     const bool g3 = g3d_;
     const Real szz = sz_, wz = nsig_*sz_;
+    const bool trc = trc_;
+    const int n0 = trc_n0_;
     auto phc = ph->phicc0;
     auto &x3c = pmbp->pcoord->x3v;
     auto &x2c = pmbp->pcoord->x2v;
@@ -1570,6 +1745,21 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IM2,k,j,i) = 0.0;
       u0(m,IM3,k,j,i) = dn*v3;
       u0(m,IEN,k,j,i) = en;
+      // acctrc-1019: the nozzle writes stream gas (s0 = 1, s1 = 0); a sink cell is reset to
+      // s = 0 (the floor gas at rest it holds is not tracked); the tracer mass each writes
+      // or removes goes to registers 14-17 (-> Nz0, Nz1, Sk0, Sk1)
+      if (trc) {
+        const Real s0o = u0(m,n0,k,j,i), s1o = u0(m,n0+1,k,j,i);
+        u0(m,n0,k,j,i) = innz ? dn : 0.0;
+        u0(m,n0+1,k,j,i) = 0.0;
+        if (innz) {
+          v.the_array[14] = (dn - s0o)*dv;
+          v.the_array[15] = s1o*dv;
+        } else {
+          v.the_array[16] = s0o*dv;
+          v.the_array[17] = s1o*dv;
+        }
+      }
       if (innz) {
         v.the_array[0] = (dn - d0)*dv;
         // phys_3d: the inertial Lz with the cylindrical radius r sin(theta)
@@ -1775,13 +1965,97 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     erinj_ += zs.the_array[3] + zs.the_array[6];
     acc0_[11] -= zs.the_array[2];
   }
+  // acctrc-1019: the tracer registers (fluxes RK weighted as acc0_, resets as increments)
+  if (trc_) {
+    if (s == 0) {
+      for (int n=0; n<kNtr; ++n) trc1_[n] = trc0_[n];
+    }
+    for (int n=0; n<kNtr; ++n) {
+      trc0_[n] = rk_g0_[s]*trc0_[n] + rk_g1_[s]*trc1_[n] + ((n >= 4) ? bdt*tfs.the_array[n-4] : 0.0);
+    }
+    for (int n=0; n<4; ++n) trc0_[n] += zs.the_array[14+n];
+  }
   stage_ctr_++;
 }
 
 //----------------------------------------------------------------------------------------
 //! stage 2 history: Mdom Jdom, Menv Jenv (cells with r < R_acc), then the nine cumulative
 //! boundary integrals and their rates over the last history interval
+//----------------------------------------------------------------------------------------
+//! acctrc-1019: the tracer diagnostics, one row per history output in <basename>.trc.hst
+//! (appended; ryper.user.hst is not touched).  Columns: time, Ms0, Ms1 (domain integrals of
+//! rho s0, rho s1), the nine cumulative registers Nz0 Nz1 Sk0 Sk1 Fi0 Fi1 Fo0 Fo1 Bin (see
+//! kNtr), min/max of s0 and s1 and max(s0 + s1) over the active cells.  Budgets (to the
+//! round-off of the c2p clip of negative rho s): Ms0 - Ms0(start) = Nz0 - Sk0 - Fi0 - Fo0,
+//! Ms1 - Ms1(start) = - Nz1 - Sk1 - Fi1 - Fo1; the registers restart from 0 on a restart.
+void RyPerTrcHist(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  auto u0 = pmbp->phydro->u0;
+  auto &vol = pmbp->pcoord->volume;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  const int n0 = trc_n0_;
+  Real ms[2] = {0.0, 0.0};
+  Real mn0 = 0.0, mx0 = 0.0, mn1 = 0.0, mx1 = 0.0, mxs = 0.0;
+  Kokkos::parallel_reduce("ryper_trh", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &a0, Real &a1, Real &l0, Real &h0, Real &l1, Real &h1,
+                Real &hs) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    const int i = idx%nx1 + is;
+    const Real dv = vol(m,k,j,i), d = u0(m,IDN,k,j,i);
+    const Real q0 = u0(m,n0,k,j,i), q1 = u0(m,n0+1,k,j,i);
+    a0 += q0*dv;
+    a1 += q1*dv;
+    const Real s0 = q0/d, s1 = q1/d;
+    l0 = fmin(l0, s0); h0 = fmax(h0, s0);
+    l1 = fmin(l1, s1); h1 = fmax(h1, s1);
+    hs = fmax(hs, s0 + s1);
+  }, Kokkos::Sum<Real>(ms[0]), Kokkos::Sum<Real>(ms[1]), Kokkos::Min<Real>(mn0),
+     Kokkos::Max<Real>(mx0), Kokkos::Min<Real>(mn1), Kokkos::Max<Real>(mx1),
+     Kokkos::Max<Real>(mxs));
+  Real sb[2 + kNtr];
+  sb[0] = ms[0]; sb[1] = ms[1];
+  for (int n=0; n<kNtr; ++n) sb[2+n] = trc0_[n];
+  Real lo[2] = {mn0, mn1}, hi[3] = {mx0, mx1, mxs};
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::my_rank == 0) {
+    MPI_Reduce(MPI_IN_PLACE, sb, 2 + kNtr, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(MPI_IN_PLACE, lo, 2, MPI_ATHENA_REAL, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(MPI_IN_PLACE, hi, 3, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Reduce(sb, sb, 2 + kNtr, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(lo, lo, 2, MPI_ATHENA_REAL, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(hi, hi, 3, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+  bool hdr = false;
+  {
+    std::ifstream f(trc_file_);
+    hdr = !f.good() || f.peek() == std::ifstream::traits_type::eof();
+  }
+  FILE *fp = std::fopen(trc_file_.c_str(), "a");
+  if (fp == nullptr) return;
+  if (hdr) {
+    std::fprintf(fp, "# ry_per_accretor tracers (acctrc-1019): s0 stream, s1 boundary inflow; "
+                 "cumulative columns restart from 0 on a restart\n#  [1]=time  [2]=Ms0  "
+                 "[3]=Ms1  [4]=Nz0  [5]=Nz1  [6]=Sk0  [7]=Sk1  [8]=Fi0  [9]=Fi1  [10]=Fo0  "
+                 "[11]=Fo1  [12]=Bin  [13]=s0min  [14]=s0max  [15]=s1min  [16]=s1max  "
+                 "[17]=smax\n");
+  }
+  std::fprintf(fp, " %.15e", pm->time);
+  for (int n=0; n<2 + kNtr; ++n) std::fprintf(fp, " %.15e", sb[n]);
+  std::fprintf(fp, " %.15e %.15e %.15e %.15e %.15e\n", lo[0], hi[0], lo[1], hi[1], hi[2]);
+  std::fclose(fp);
+}
+
 void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
+  if (trc_) RyPerTrcHist(pm);
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
@@ -4142,6 +4416,32 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int n=0; n<2; ++n) {
       dtretry::RegisterValue(("ry_accx0_" + std::to_string(n)).c_str(), &accx0_[n]);
       dtretry::RegisterValue(("ry_accx1_" + std::to_string(n)).c_str(), &accx1_[n]);
+    }
+  }
+  // acctrc-1019: the passive tracers (<hydro>/nscalars = 2; 0 = off, nothing registered)
+  trc_ = false;
+  for (int n=0; n<kNtr; ++n) trc0_[n] = trc1_[n] = 0.0;
+  if (pmbp->phydro->nscalars != 0) {
+    if (pmbp->phydro->nscalars != 2) {
+      fatal("<hydro>/nscalars must be 0 or 2 (acctrc: s0 stream, s1 boundary inflow)");
+    }
+    if (!env_ || !gen_) fatal("the tracers (<hydro>/nscalars = 2) need inner = envelope and "
+                              "thermo = general");
+    if (pin->DoesParameterExist("hydro", "scalars_rst_missing") &&
+        pin->GetString("hydro", "scalars_rst_missing").compare("zero") != 0) {
+      fatal("<hydro>/scalars_rst_missing must be zero (or absent)");
+    }
+    trc_ = true;
+    trc_n0_ = pmbp->phydro->nhydro;
+    trc_file_ = pin->GetString("job", "basename") + ".trc.hst";
+    for (int n=0; n<kNtr; ++n) {
+      dtretry::RegisterValue(("ry_trc0_" + std::to_string(n)).c_str(), &trc0_[n]);
+      dtretry::RegisterValue(("ry_trc1_" + std::to_string(n)).c_str(), &trc1_[n]);
+    }
+    if (root) {
+      std::printf("ry_per_accretor: tracers on (<hydro>/nscalars = 2): s0 stream (nozzle), "
+                  "s1 boundary inflow (r_in, r_out, theta walls); diagnostics in %s\n",
+                  trc_file_.c_str());
     }
   }
 

@@ -12,6 +12,8 @@ namespace global_variable {
 extern int my_rank, nranks;
 extern bool restart_run;   // true when started with -r <restart_file>
 extern bool final_outputs; // Driver::Finalize is writing its (unscheduled) outputs
+extern int rst_hydro_nscalars; // acctrc-1019: <hydro>/nscalars of the restart file's OWN
+                               // input (-1: no restart or no <hydro>); see pgen.cpp
 }
 
 #endif // GLOBALS_HPP_

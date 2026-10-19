@@ -491,6 +491,14 @@ int main(int argc, char *argv[]) {
     restartfile.Open(restart_file.c_str(),IOWrapper::FileMode::read,single_file_per_rank);
     pinput->LoadFromFile(restartfile, single_file_per_rank);
     pinput->MarkAllAsRestart();   // unkkey-1017: not reported as unread input keys
+    // acctrc-1019: the number of passive scalars the file's hydro u0 records carry (its own
+    // embedded input, BEFORE a -i file can override <hydro>/nscalars): the restart reader
+    // (pgen.cpp) compares it with the run's.  Read only (no key is added to the dump).
+    if (pinput->DoesParameterExist("hydro", "nscalars")) {
+      global_variable::rst_hydro_nscalars = pinput->GetInteger("hydro", "nscalars");
+    } else if (pinput->DoesBlockExist("hydro")) {
+      global_variable::rst_hydro_nscalars = 0;
+    }
     rst_potential_keys = SnapshotPotentialKeys(pinput, PotentialKeys());
     for (const auto &kv : SnapshotPotentialKeys(pinput, GridKeys())) {
       rst_potential_keys.insert(kv);
