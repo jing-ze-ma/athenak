@@ -1040,6 +1040,39 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       }
     }
     const M1ShellGasP shp = m1_shg;
+    // (cs-open-1018: the history / final functions are enrolled before the restart return)
+    // STAGE CS0 (m1-cs-implicit): on the cubed sphere x1 is r as well
+    const bool spr = pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere;
+    // <problem>/shell_report = true (read only when named): at the end of the run print
+    // per radial index the min / mean / max over every column (all panels, ranks) of E
+    // and F1, and max|F2|, max|F3| (RadM1ShellReport, double precision)
+    if (pin->DoesParameterExist("problem","shell_report") &&
+        pin->GetBoolean("problem","shell_report")) {
+      pgen_final_func = RadM1ShellReport;
+    }
+    // STAGE CS1 (cubed sphere), read only when named: lat_l = l multiplies E by
+    // 1 + lat_amp P_l(rhat . axis), lat_axis = z | edge (1,1,0) | vertex (1,1,1); the
+    // user history (problem/user_hist = true) is RadM1CsHistory
+    const bool csm = pmy_mesh_->use_cubed_sphere;
+    int csl = 0;
+    if (csm && pin->DoesParameterExist("problem","lat_l")) {
+      csl = pin->GetInteger("problem","lat_l");
+      m1_cs_l = csl;
+      std::string ax = pin->GetOrAddString("problem","lat_axis","z");
+      Real a0 = 0.0, a1 = 0.0, a2 = 1.0;
+      if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
+      if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
+      const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
+      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
+    }
+    if (csm) {user_hist_func = RadM1CsHistory;}
+    // cs-open-1018 (read only when named): problem/am_hist = true takes the user history
+    // instead to the double-precision energy / angular-momentum budget RadM1AmHistory
+    // (cubed sphere and spherical polar)
+    if (spr && pin->DoesParameterExist("problem","am_hist") &&
+        pin->GetBoolean("problem","am_hist")) {
+      user_hist_func = RadM1AmHistory;
+    }
     if (restart) return;
     auto uh = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
     auto x1v = pmbp->pcoord->x1v;
@@ -1125,38 +1158,6 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
           b0.x3f(m,k,j,i) = flux(xl, ef, xr, ef, nf)/a3(m,k,j,i);
         }
       });
-    }
-    // STAGE CS0 (m1-cs-implicit): on the cubed sphere x1 is r as well
-    const bool spr = sp || pmy_mesh_->use_cubed_sphere;
-    // <problem>/shell_report = true (read only when named): at the end of the run print
-    // per radial index the min / mean / max over every column (all panels, ranks) of E
-    // and F1, and max|F2|, max|F3| (RadM1ShellReport, double precision)
-    if (pin->DoesParameterExist("problem","shell_report") &&
-        pin->GetBoolean("problem","shell_report")) {
-      pgen_final_func = RadM1ShellReport;
-    }
-    // STAGE CS1 (cubed sphere), read only when named: lat_l = l multiplies E by
-    // 1 + lat_amp P_l(rhat . axis), lat_axis = z | edge (1,1,0) | vertex (1,1,1); the
-    // user history (problem/user_hist = true) is RadM1CsHistory
-    const bool csm = pmy_mesh_->use_cubed_sphere;
-    int csl = 0;
-    if (csm && pin->DoesParameterExist("problem","lat_l")) {
-      csl = pin->GetInteger("problem","lat_l");
-      m1_cs_l = csl;
-      std::string ax = pin->GetOrAddString("problem","lat_axis","z");
-      Real a0 = 0.0, a1 = 0.0, a2 = 1.0;
-      if (ax == "edge") {a0 = 1.0; a1 = 1.0; a2 = 0.0;}
-      if (ax == "vertex") {a0 = 1.0; a1 = 1.0; a2 = 1.0;}
-      const Real an = std::sqrt(a0*a0 + a1*a1 + a2*a2);
-      m1_cs_ax[0] = a0/an; m1_cs_ax[1] = a1/an; m1_cs_ax[2] = a2/an;
-    }
-    if (csm) {user_hist_func = RadM1CsHistory;}
-    // cs-open-1018 (read only when named): problem/am_hist = true takes the user history
-    // instead to the double-precision energy / angular-momentum budget RadM1AmHistory
-    // (cubed sphere and spherical polar)
-    if (spr && pin->DoesParameterExist("problem","am_hist") &&
-        pin->GetBoolean("problem","am_hist")) {
-      user_hist_func = RadM1AmHistory;
     }
     const Real cax = m1_cs_ax[0], cay = m1_cs_ax[1], caz = m1_cs_ax[2];
     // cs-open-1018 (cubed sphere, read only when named): rho_lat_amp = a multiplies the gas
