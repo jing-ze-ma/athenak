@@ -706,6 +706,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("sgw", sgw);
   v.view("sgw_c", sgw_c);
   v.value("impl_am_cs", impl_am_cs);
+  v.value("impl_am_cs_diag", impl_am_cs_diag);
   v.view("amw", amw);
   v.value("am_vec", am_vec);
   v.view("amk1", amk1);

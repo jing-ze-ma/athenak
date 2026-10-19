@@ -15615,7 +15615,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto f3c_ = f0x3;
     auto snw_ = csnw;
     const int n1g = pmy_pack->pmesh->mb_indcs.nx1 + 2*pmy_pack->pmesh->mb_indcs.ng;
-    DvceArray2D<Real> amdg_("amdg", amdg ? 7 : 1, amdg ? n1g : 1);
+    DvceArray2D<Real> amdg_("amdg", amdg ? 8 : 1, amdg ? n1g : 1);
     auto uden_ = uh;
     auto f0np_ = f0x1n;
     auto f2np_ = f0x2n;
@@ -15752,6 +15752,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::atomic_add(&amdg_(4,i), fabs(del[2]));
         Kokkos::atomic_add(&amdg_(5,i), fabs(del[2])/(uden_(m,IDN,k,j,i)*dv*sqrt(wc)));
         Kokkos::atomic_add(&amdg_(6,i), (apl || apr) ? (dt*ta[2] - da[2]) : 0.0);
+        Real lgc[3];
+        lv(uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i), lgc);
+        Kokkos::atomic_add(&amdg_(7,i), fabs(lgc[2]));
       }
       // the first conservative solve of the run starts from the FACE form of F (the
       // write-back's go), not the generator's F: a cold-start redefinition of the
@@ -15811,21 +15814,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       static int nprint = 0;
       if (nprint < impl_am_cs_diag) {
         auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amdg_);
-        std::vector<Real> buf(7*n1g), tot(7*n1g);
-        for (int q = 0; q < 7; ++q) {for (int ii = 0; ii < n1g; ++ii) {buf[q*n1g+ii] = h(q,ii);}}
+        std::vector<Real> buf(8*n1g), tot(8*n1g);
+        for (int q = 0; q < 8; ++q) {for (int ii = 0; ii < n1g; ++ii) {buf[q*n1g+ii] = h(q,ii);}}
         tot = buf;
 #if MPI_PARALLEL_ENABLED
-        MPI_Allreduce(buf.data(), tot.data(), 7*n1g, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(buf.data(), tot.data(), 8*n1g, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
         if (global_variable::my_rank == 0) {
           auto x1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
           std::cout << "AMCS_DIAG solve " << nprint << " (i r |dLr_z| |dLg_z| |dtTpl_z| "
-                    << "|dtTrad_z| |del_z| |del_z|/(rho V R) sum(D_a,z) = the a-part L_z left unconserved):" << std::endl;
+                    << "|dtTrad_z| |del_z| |del_z|/(rho V R) sum(D_a,z) = the a-part L_z left unconserved, sum |L_z,gas|):" << std::endl;
           const int is_ = pmy_pack->pmesh->mb_indcs.is, ie_ = pmy_pack->pmesh->mb_indcs.ie;
           const int stp = std::max(1, (ie_ - is_ + 1)/40);
           for (int ii = is_; ii <= ie_; ii += stp) {
             std::cout << "AMCS_DIAG " << ii << " " << x1h(0,ii);
-            for (int q = 0; q < 7; ++q) {std::cout << " " << tot[q*n1g+ii];}
+            for (int q = 0; q < 8; ++q) {std::cout << " " << tot[q*n1g+ii];}
             std::cout << std::endl;
           }
         }
