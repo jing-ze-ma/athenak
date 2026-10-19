@@ -15600,8 +15600,22 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // amdef-1019 diagnostic <rad_m1>/implicit_am_cs_diag = N: per radial index, sums of
     // |dL_rad,z|, |dL_gas,z|, |dt T_planar,z|, |dt T_radial,z|, |del_z|, |del_z|/(rho V R)
     const bool amdg = (impl_am_cs_diag > 0);
+    // amdef-1019 consistent T_c: with the AP-HLL faces (implicit_flux != central), a face
+    // flux is (1 - a_f) F_mom + a_f F_HLL(E'): only F_mom is a momentum update (driven by
+    // the stress jump of D_nn E', whose telescoping face form is T_c); F_HLL is the flux
+    // of E, kinematic, with no radiation momentum flux.  The a_f part of every face (its
+    // stress torque in T_c and the radiation + gas momentum change it carries) is taken
+    // out of the correction: the gas is charged only for the momentum-form part
+    const bool apl = aphll && blat_on && trans && thrd;   // lateral faces carry a_f
+    const bool apr = aphll;                                // radial faces carry a_f
+    auto ifr_ = ifw;
+    auto ifl2_ = apl ? ifw2 : ifw;
+    auto ifl3_ = apl ? ifw3 : ifw;
+    auto f2c_ = f0x2;
+    auto f3c_ = f0x3;
+    auto snw_ = csnw;
     const int n1g = pmy_pack->pmesh->mb_indcs.nx1 + 2*pmy_pack->pmesh->mb_indcs.ng;
-    DvceArray2D<Real> amdg_("amdg", amdg ? 6 : 1, amdg ? n1g : 1);
+    DvceArray2D<Real> amdg_("amdg", amdg ? 7 : 1, amdg ? n1g : 1);
     auto uden_ = uh;
     auto f0np_ = f0x1n;
     auto f2np_ = f0x2n;
@@ -15650,6 +15664,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // the stress torque of the cell's faces
       const Real mom = (rr*rr*rr - rl*rl*rl)/3.0;
       Real tv[3] = {0.0, 0.0, 0.0};
+      Real ta[3] = {0.0, 0.0, 0.0}, da[3] = {0.0, 0.0, 0.0};   // the a_f parts
       for (int dir = 0; dir < 2; ++dir) {
         for (int n = 0; n < 2; ++n) {
           Real xa, ea, xb, eb, nf[3], pf;
@@ -15680,6 +15695,28 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real t[3] = {(mv[1]*nf[2] - mv[2]*nf[1])*pf, (mv[2]*nf[0] - mv[0]*nf[2])*pf,
                              (mv[0]*nf[1] - mv[1]*nf[0])*pf};
           for (int q = 0; q < 3; ++q) {tv[q] += n ? -t[q] : t[q];}
+          if (apl) {
+            // the a_f part of this face: its T_c term and the cell's share (1/2) of the
+            // face's radiation + gas momentum change, dF0 icc + (dt/c) k_f F0', on the
+            // face-normal slot of the cell vector p = (a e_xi + b e_eta)/s
+            const int kq = (dir == 0) ? k : (k + n), jq = (dir == 0) ? (j + n) : j;
+            const int kp = (dir == 0) ? k : (kq - 1), jp = (dir == 0) ? (jq - 1) : j;
+            const Real al = (dir == 0) ? ifl2_(m,M1_IFW_AL,kq,jq,i)
+                                       : ifl3_(m,M1_IFW_AL,kq,jq,i);
+            const Real fnew = (dir == 0) ? f2c_(m,kq,jq,i) : f3c_(m,kq,jq,i);
+            const Real fold = (dir == 0) ? f2np_(m,kq,jq,i) : f3np_(m,kq,jq,i);
+            const Real kft = 0.5*(iw_(m,M1_IW_KT,kp,jp,i) + iw_(m,M1_IW_KT,kq,jq,i));
+            const Real dlt = 0.5*((fnew - fold)*icc + (dt/cl)*kft*fnew)/snw_(m,k,j);
+            Real pq[3], tq[3];
+            for (int q = 0; q < 3; ++q) {pq[q] = dlt*((dir == 0) ? e1[q] : e2[q]);}
+            tq[0] = dv*(rcv[1]*pq[2] - rcv[2]*pq[1]);
+            tq[1] = dv*(rcv[2]*pq[0] - rcv[0]*pq[2]);
+            tq[2] = dv*(rcv[0]*pq[1] - rcv[1]*pq[0]);
+            for (int q = 0; q < 3; ++q) {
+              ta[q] += al*(n ? -t[q] : t[q]);
+              da[q] += al*tq[q];
+            }
+          }
         }
       }
       const Real tvp_z = tv[2];
@@ -15702,37 +15739,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real t[3] = {ar*(rh[1]*w[2] - rh[2]*w[1]), ar*(rh[2]*w[0] - rh[0]*w[2]),
                              ar*(rh[0]*w[1] - rh[1]*w[0])};
           for (int q = 0; q < 3; ++q) {tv[q] += n ? -t[q] : t[q];}
+          if (apr) {
+            const Real al = ifr_(m,M1_IFW_AL,k,j,ifc);
+            for (int q = 0; q < 3; ++q) {ta[q] += al*(n ? -t[q] : t[q]);}
+          }
         }
       }
       Real del[3];
       for (int q = 0; q < 3; ++q) {del[q] = (-dlr[q] + dt*tv[q]) - dlg[q];}
-      // amdef-1019 (static-star fix, USER 10-19 "fix it"): the correction repairs the
-      // torque mismatch of the radiation-gas EXCHANGE (face deposits split between cells
-      // with different arms), which is bounded by the lateral cell size h times the
-      // momentum the gas exchanged in this solve, |dm_gas| V.  Where the radiation's own
-      // transport torque is not the face-stress model T_c (optically thin layers: the
-      // face equation streams, D_nn E' varies laterally with the closure's ray pattern),
-      // del exceeded that bound by orders of magnitude and handed the radiation's
-      // transport L error to tenuous gas as a lateral kick.  Capped at the bound: the
-      // thick / exchange-dominated regime (L_z round-off tests) is unchanged.
-      {
-        const Real a1 = uh(m,IM1,k,j,i) - am_(m,0,k,j,i);
-        const Real b2 = uh(m,IM2,k,j,i) - am_(m,1,k,j,i);
-        const Real b3 = uh(m,IM3,k,j,i) - am_(m,2,k,j,i);
-        const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
-        Real pm2 = 0.0;
-        for (int q = 0; q < 3; ++q) {
-          const Real pq = a1*rh[q] + a2*e1[q] + a3*e2[q];
-          pm2 += pq*pq;
-        }
-        const Real hlat = r*fmax(xr - xl, er - el);
-        const Real cap = hlat*sqrt(pm2)*dv;
-        const Real dn = amv ? sqrt(del[0]*del[0] + del[1]*del[1] + del[2]*del[2])
-                            : fabs(del[2]);
-        if (dn > cap) {
-          const Real sc = cap/dn;
-          for (int q = 0; q < 3; ++q) {del[q] *= sc;}
-        }
+      if (apl || apr) {
+        for (int q = 0; q < 3; ++q) {del[q] -= dt*ta[q] - da[q];}
       }
       if (amdg) {
         Kokkos::atomic_add(&amdg_(0,i), fabs(dlr[2]));
@@ -15741,6 +15757,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Kokkos::atomic_add(&amdg_(3,i), fabs(dt*(tv[2] - tvp_z)));
         Kokkos::atomic_add(&amdg_(4,i), fabs(del[2]));
         Kokkos::atomic_add(&amdg_(5,i), fabs(del[2])/(uden_(m,IDN,k,j,i)*dv*sqrt(wc)));
+        Kokkos::atomic_add(&amdg_(6,i), (apl || apr) ? (dt*ta[2] - da[2]) : 0.0);
       }
       // the first conservative solve of the run starts from the FACE form of F (the
       // write-back's go), not the generator's F: a cold-start redefinition of the
@@ -15800,21 +15817,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       static int nprint = 0;
       if (nprint < impl_am_cs_diag) {
         auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amdg_);
-        std::vector<Real> buf(6*n1g), tot(6*n1g);
-        for (int q = 0; q < 6; ++q) {for (int ii = 0; ii < n1g; ++ii) {buf[q*n1g+ii] = h(q,ii);}}
+        std::vector<Real> buf(7*n1g), tot(7*n1g);
+        for (int q = 0; q < 7; ++q) {for (int ii = 0; ii < n1g; ++ii) {buf[q*n1g+ii] = h(q,ii);}}
         tot = buf;
 #if MPI_PARALLEL_ENABLED
-        MPI_Allreduce(buf.data(), tot.data(), 6*n1g, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(buf.data(), tot.data(), 7*n1g, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
         if (global_variable::my_rank == 0) {
           auto x1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
           std::cout << "AMCS_DIAG solve " << nprint << " (i r |dLr_z| |dLg_z| |dtTpl_z| "
-                    << "|dtTrad_z| |del_z| |del_z|/(rho V R)):" << std::endl;
+                    << "|dtTrad_z| |del_z| |del_z|/(rho V R) sum(D_a,z) = the a-part L_z left unconserved):" << std::endl;
           const int is_ = pmy_pack->pmesh->mb_indcs.is, ie_ = pmy_pack->pmesh->mb_indcs.ie;
           const int stp = std::max(1, (ie_ - is_ + 1)/40);
           for (int ii = is_; ii <= ie_; ii += stp) {
             std::cout << "AMCS_DIAG " << ii << " " << x1h(0,ii);
-            for (int q = 0; q < 6; ++q) {std::cout << " " << tot[q*n1g+ii];}
+            for (int q = 0; q < 7; ++q) {std::cout << " " << tot[q*n1g+ii];}
             std::cout << std::endl;
           }
         }
