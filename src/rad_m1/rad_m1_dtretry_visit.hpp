@@ -492,6 +492,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.dual("hm_segs", hm_segs);
   v.view("hm_sbuf", hm_sbuf);
   v.view("hm_rbuf", hm_rbuf);
+  v.view("hm_shost", hm_shost);
+  v.view("hm_rhost", hm_rhost);
   v.value("impl_halo_ipc", impl_halo_ipc);
   v.value("hi_state", hi_state);
   v.value("hi_nchk", hi_nchk);
