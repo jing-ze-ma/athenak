@@ -12101,6 +12101,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   vimp_now = impl_vimp;
   muscl_now = impl_muscl && !impl_muscl_pred;   // xthinfix-1009 Fix B (pred: dc first)
   muscl_nbuild = 0;
+  if (impl_muscl && iw_muscl >= 0) {
+    // cs-s7-1019 (restart equivalence): the plm limiter and row of the PREVIOUS solve
+    // (sig, the row coefficients, KILL, led's b) were read by the operators and face
+    // fluxes of this solve's first pass before its ImplicitMusclBuild -- stale state
+    // that a restart (fresh iw = 0) does not have: restarted runs split at the Picard
+    // tolerance (CPU and A100).  Every solve now starts from zero (dc until the first
+    // build), continuous or restarted alike.  EPREV (qs_mode = step) is kept.
+    Kokkos::deep_copy(Kokkos::subview(iw, Kokkos::ALL,
+                                      std::make_pair(iw_muscl, iw_muscl + M1_IM_EPREV),
+                                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), 0.0);
+  }
   int muscl_it0 = -1;   // the pass at which the plm phase starts
   // vet_col_lat: the D_r,lat term is on at the start of every step (the operator
   // form may drop it for the rest of the step, positivity below)
