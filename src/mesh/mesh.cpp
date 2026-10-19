@@ -142,8 +142,18 @@ Mesh::Mesh(ParameterInput *pin) :
   // the two spellings: `extrapolate` is false here, `sample` is true.
   cs_vertex_fill_cc = use_cubed_sphere &&
                       pin->GetOrAddBoolean("mesh", "cs_vertex_fill_cc", false);
-  // csedge-1019 (USER 10-19 "go ahead with the seam fix", default for every cs run, fresh
-  // AND restart): DEFAULT `average`.  The 09-26 default `positive` (and `upwind`) takes the
+  // csedge-1019 (USER 10-19 "go ahead with the seam fix" / "the seam should behave the
+  // same as the interior", default for every cs run, fresh AND restart): DEFAULT `shared`
+  // = ONE Riemann problem per seam face from the two panels' OWN reconstructions (the
+  // neighbour's edge-cell face state is exchanged, Hydro::CsSeamFaceStates), the same HLLC
+  // as an interior face; the two panels' (round-off equal) fluxes are then averaged, which
+  // keeps the seam exactly conservative.  The previous seam was TWO different Riemann
+  // problems (each panel against ghosts resampled from the other) reconciled afterwards;
+  // that difference, not the radiation, forced the RSG g25 cube-edge mode (N=128 restart
+  // from 5 d: corner along-edge v x10/d under positive, x2 slower seeding under average,
+  // flat under shared; csedge_1019/NOTE.md).  shared needs hydro PLM, no x2/x3
+  // well-balanced reconstruction and a uniform mesh; otherwise (and for MHD) the seam
+  // falls back to `average` (logged).  First csedge-1019 step (superseded) was `average`.  The 09-26 default `positive` (and `upwind`) takes the
   // DONOR panel's whole flux whenever the two panels agree on the sign of the mass flux.
   // On a near-static seam (a deep radiative layer, |v| ~ cm/s) that sign is set by
   // round-off-level mass fluxes, the face flips between the two panels' Riemann solves,
@@ -214,7 +224,8 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   cs_seam_flux = 0;
   if (use_cubed_sphere) {
-    std::string sf = pin->GetOrAddString("mesh", "cs_seam_flux", "average");
+    cs_seam_flux_named = pin->DoesParameterExist("mesh", "cs_seam_flux");
+    std::string sf = pin->GetOrAddString("mesh", "cs_seam_flux", "shared");
     bool legacy = false;
     if (sf == "average") {
       cs_seam_flux = 0;
@@ -229,10 +240,12 @@ Mesh::Mesh(ParameterInput *pin) :
       // conservation), as `average`
       cs_seam_flux = 3;
     } else if (sf == "positive") {
-      // csedge-1019: the legacy (09-26 default) spelling -> the new default
-      cs_seam_flux = 0;
+      // csedge-1019: the legacy (09-26 default) spelling, carried by every older restart
+      // file and the 0926-era decks -> the new default
+      cs_seam_flux = 3;
       legacy = true;
-      pin->SetString("mesh", "cs_seam_flux", "average");
+      cs_seam_flux_named = false;
+      pin->SetString("mesh", "cs_seam_flux", "shared");
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mesh>/cs_seam_flux = '" << sf
@@ -243,7 +256,7 @@ Mesh::Mesh(ParameterInput *pin) :
       const char *nm[4] = {"average", "upwind", "positive_donor", "shared"};
       std::cout << "Mesh: cubed-sphere seam flux = " << nm[cs_seam_flux]
                 << (legacy ? " (csedge-1019: legacy 'positive' read as the new default "
-                             "'average'; 'positive_donor' selects the 09-26 rule)" : "")
+                             "'shared'; 'positive_donor' selects the 09-26 rule)" : "")
                 << ", resample = " << (cs_seam_resample_linear ? "linear" : "quadratic")
                 << ", rho_guard = " << cs_seam_rho_guard << std::endl;
     }

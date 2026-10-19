@@ -10,6 +10,7 @@
 #include <iostream>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro.hpp"
@@ -1049,6 +1050,16 @@ void Hydro::CsSeamFaceStates() {
   if (recon_method != ReconstructionMethod::plm ||
       (use_wellbalance_dynamic && use_wb_x2) || use_wellbalance_static_reconst_perturb ||
       pmy_pack->pmesh->multilevel) {
+    if (!pmy_pack->pmesh->cs_seam_flux_named) {
+      // the DEFAULT shared seam on a setup it does not cover: the mean of the two solves
+      if (global_variable::my_rank == 0) {
+        std::cout << "Hydro: cubed-sphere seam flux shared (default) not available for this"
+                  << " setup (needs PLM, no x2/x3 well-balanced reconstruction, uniform "
+                  << "mesh): seam flux = average" << std::endl;
+      }
+      cs_seam_shared = false;
+      return;
+    }
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<mesh>/cs_seam_flux = shared needs <hydro>/reconstruct = plm, no x2/x3 "
               << "well-balanced or static-perturbation reconstruction and a uniform mesh"
