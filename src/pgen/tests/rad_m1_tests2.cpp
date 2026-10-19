@@ -1223,9 +1223,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = dgas*tgas/gm1;
+      Real ebz = 0.0;   // |B(rc)|^2/2 of b_azi, re-added after gas_teq below
       if (bazi != 0.0 && sp) {   // sp: B = b r sin(theta) phihat at the cell centre
         const Real st = sin(x2v(m,j));
-        uh(m,IEN,k,j,i) += 0.5*bazi*bazi*r*r*st*st;
+        ebz = 0.5*bazi*bazi*r*r*st*st;
+        uh(m,IEN,k,j,i) += ebz;
       }
       if (bazi != 0.0 && !sp) {   // cs-open-1018: |B(rc)|^2/2, B = b a x rc
         const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
@@ -1235,7 +1237,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         Real q[3];
         cubed_sphere::PanelToCart(mbpan.d_view(m), xi, eta, q);
         const Real w[3] = {bay*q[2] - baz*q[1], baz*q[0] - bax*q[2], bax*q[1] - bay*q[0]};
-        uh(m,IEN,k,j,i) += 0.5*bazi*bazi*r*r*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
+        ebz = 0.5*bazi*bazi*r*r*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
+        uh(m,IEN,k,j,i) += ebz;
       }
       if (shg && spr) {   // cs-s4-1017: the cubed sphere too (M1ShellAngles)
         Real dd, t1, th, ph;
@@ -1273,7 +1276,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         uh(m,IEN,k,j,i) *= fr;
       }
       if (gteq) {
-        uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1;
+        // CSMHD: the gas in equilibrium with E keeps the field's |B|^2/2 (b_azi) in IEN
+        uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1 + ebz;
       }
       if (gvr != 0.0) {
         Real vr = gvr*sin(M_PI*(r - x1a)/x1l);
