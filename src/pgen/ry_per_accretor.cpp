@@ -155,11 +155,14 @@
 //!                        the ghost's wall velocity); approximate (cell-centred v_phi).
 //!   Jout                 cumulative net inertial Lz out through r_out
 //!   dMin ... dJout       the same six as RATES averaged over the last history interval
-//! The cumulative integrals restart from zero on a restart.
+//! The cumulative integrals continue across a restart (acctrc-1019c: stored in the rst's
+//! pgen block, RyPerRstWrite; a pre-1019c rst restarts them from zero).
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -282,6 +285,7 @@ bool rad_ = false;
 Real rad_fin_ = 0.0;           // imposed x1min radiative flux (code), = f_band F_col(r_in)
 Real rad_lfac_ = 1.0;          // code band luminosity -> Lsun of the full sphere
 Real rad_pn0_ = 0.0, rad_ps0_ = 0.0;   // Picard counters at the previous history output
+Real picmax_rst_ = 0.0;        // Picmax carried by the restart file (acctrc-1019c)
 // S5 (user 10-09): problem/env_amb_mode = radeq (floor ambient at radiative equilibrium,
 // floor booked) and problem/stream_rad (the window's radiation injected); see the header
 bool amb_radeq_ = false;
@@ -391,7 +395,7 @@ Real fx2leak_ = 0.0;
 // INTO the domain (TrcFluxFix; the ghosts themselves carry the zero-gradient / mirror
 // concentration, so the interior slopes and the outflow are not biased).  Diagnostics: the
 // separate file <basename>.trc.hst (ryper.user.hst is unchanged); registers per rank, RK
-// weighted like acc0_, cumulative per run (restart from 0), in the dt_retry checkpoint.
+// weighted like acc0_, cumulative, carried across restarts (1019c), in the dt_retry checkpoint.
 bool trc_ = false;
 int trc_n0_ = 5;               // index of s0 in u0 (= Hydro::nhydro); s1 = trc_n0_ + 1
 constexpr int kNtr = 9;
@@ -1993,7 +1997,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
 //! rho s0, rho s1), the nine cumulative registers Nz0 Nz1 Sk0 Sk1 Fi0 Fi1 Fo0 Fo1 Bin (see
 //! kNtr), min/max of s0 and s1 and max(s0 + s1) over the active cells.  Budgets (to the
 //! round-off of the c2p clip of negative rho s): Ms0 - Ms0(start) = Nz0 - Sk0 - Fi0 - Fo0,
-//! Ms1 - Ms1(start) = - Nz1 - Sk1 - Fi1 - Fo1; the registers restart from 0 on a restart.
+//! Ms1 - Ms1(start) = - Nz1 - Sk1 - Fi1 - Fo1; the registers continue across a restart
+//! (acctrc-1019c rst block; from 0 only after a restart from a pre-1019c file).
 void RyPerTrcHist(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -2049,7 +2054,7 @@ void RyPerTrcHist(Mesh *pm) {
   if (fp == nullptr) return;
   if (hdr) {
     std::fprintf(fp, "# ry_per_accretor tracers (acctrc-1019): s0 stream, s1 boundary inflow; "
-                 "cumulative columns restart from 0 on a restart\n#  [1]=time  [2]=Ms0  "
+                 "cumulative columns continue across restarts (rst block, acctrc-1019c)\n#  [1]=time  [2]=Ms0  "
                  "[3]=Ms1  [4]=Nz0  [5]=Nz1  [6]=Sk0  [7]=Sk1  [8]=Fi0  [9]=Fi1  [10]=Fo0  "
                  "[11]=Fo1  [12]=Bin  [13]=s0min  [14]=s0max  [15]=s1min  [16]=s1max  "
                  "[17]=smax\n");
@@ -2203,7 +2208,8 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     //                sponge; energy conservation: Etot - Etot(0) = Ebnd + Erel (+ floors)
     //   Pic, Picmax  mean Picard passes per implicit solve since the previous output, and
     //                the largest pass count of any solve so far
-    // (all energies code units of the band; cumulative columns restart from 0)
+    // (all energies code units of the band; cumulative columns and Picmax continue across
+    // restarts, acctrc-1019c)
     const char *lr[9] = {"Lmeas", "Ltop", "Erad", "Etot", "KE", "Ebnd", "Erel", "Pic",
                          "Picmax"};
     for (int n=0; n<9; ++n) pdata->label[13+n] = lr[n];
@@ -2221,7 +2227,7 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     if (global_variable::my_rank == 0) {
       const Real dn = pm1->impl_nstep - rad_pn0_, ds = pm1->impl_itsum - rad_ps0_;
       pdata->hdata[20] = (dn > 0.0) ? ds/dn : 0.0;
-      pdata->hdata[21] = pm1->impl_itmax;
+      pdata->hdata[21] = fmax(picmax_rst_, pm1->impl_itmax);   // global (1019c)
       rad_pn0_ = pm1->impl_nstep;
       rad_ps0_ = pm1->impl_itsum;
     }
@@ -3846,6 +3852,194 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! acctrc-1019c (USER 10-19, Caltech NOTE eb0b2c7a): the CUMULATIVE HISTORY REGISTERS in
+//! the restart file, so that Min..Jin, Mfl/Mmsk/Emsk, Ebnd/Erel, Mnzf/Eirr (user.hst) and
+//! the tracer sums Nz0..Bin (trc.hst) continue across a restart and a restarted run is
+//! bitwise the continuous one.  Carried in the generic marked pgen state block
+//! (kPgenRstMagic, pgen.hpp; ProblemGenerator::pgen_rst_write_func), so the hydro records
+//! and every other pgen's file are untouched.  Layout (all ranks write the same bytes):
+//!   char[8] "RYPACC01", int32 nranks, int32 kRstPer, int32 kRstGlob, int32 pad,
+//!   nranks x kRstPer Reals (rank-ordered: acc0_[13], hist_prev_[13], accx0_[2], erinj_,
+//!   trc0_[9]; the registers are PER RANK partial sums, MPI-summed at each output, so they
+//!   are stored per rank to keep the sums bitwise), then kRstGlob Reals (rank 0's
+//!   hist_tprev_, the Picard passes/solves since the last output, Picmax).
+//! The stage registers acc1_/accx1_/trc1_ are copied from acc0_ at stage 1 and need no
+//! storing; stage_ctr_ is a multiple of nstages_ at a cycle end.  With the per-column outer
+//! bath (<rad_m1> iebath_hi_col_on: env_amb_mode = radeq or stream_rad) the block also holds
+//! the module's ibadv_x1max (the previous solve's advective radiation flux through r_out,
+//! read by the first hydro stages of the next cycle into Ebnd, register 10; not M1 state and
+//! not in the rst otherwise): int32 hdr[3] = nk*nj per MeshBlock, then nmb_total x nk*nj
+//! Reals in global MeshBlock order (restored by gid, so also onto other rank counts).
+//! Without it the restarted Ebnd is offset by the first cycle's advective term.  Restart:
+//!   * same nranks: every register restored exactly (bitwise continuation);
+//!   * other nranks: the per-rank values are summed onto rank 0 (continuous, not bitwise);
+//!   * a file without the block (any pre-1019c rst): registers from 0, as before (logged).
+//! Picmax is GLOBAL (the largest pass count since t = 0, max(stored, <rad_m1> impl_itmax)).
+//! problem/rst_registers = false (read only when named) writes no block (the 4960ac49 file).
+constexpr char kRyRstMagic[8] = {'R', 'Y', 'P', 'A', 'C', 'C', '0', '1'};
+constexpr int kRstPer = 2*kNaccR + 2 + 1 + kNtr;   // 38
+constexpr int kRstGlob = 4;
+MeshBlockPack *rst_pmbp_ = nullptr;
+std::vector<Real> rst_badv_;   // ibadv_x1max read from the restart file (gid order), applied
+int rst_badv_n_ = -1;          // after EnvSetup (RyPerRstBadv); nk*nj per MB (-1: no block)
+
+std::vector<char> RyPerRstWrite() {
+  Real loc[kRstPer];
+  int o = 0;
+  for (int n=0; n<kNaccR; ++n) loc[o++] = acc0_[n];
+  for (int n=0; n<kNaccR; ++n) loc[o++] = hist_prev_[n];
+  for (int n=0; n<2; ++n) loc[o++] = accx0_[n];
+  loc[o++] = erinj_;
+  for (int n=0; n<kNtr; ++n) loc[o++] = trc0_[n];
+  const int nr = global_variable::nranks;
+  radm1::RadiationM1 *pm1 = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradm1 : nullptr;
+  // the outer bath's advective flux (see above), gathered in gid order
+  int nbv = 0;
+  std::vector<Real> bv;
+  if (pm1 != nullptr && pm1->iebath_hi_col_on && pm1->ibadv_x1max.extent_int(0) > 0) {
+    auto &bd = pm1->ibadv_x1max;
+    nbv = bd.extent_int(1)*bd.extent_int(2);
+    Mesh *pmsh = rst_pmbp_->pmesh;
+    const int nmbt = pmsh->nmb_total, nml = bd.extent_int(0);
+    auto hb = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), bd);
+    std::vector<Real> lb(static_cast<size_t>(nml)*nbv);
+    const int n1 = bd.extent_int(1), n2 = bd.extent_int(2);
+    for (int m=0; m<nml; ++m) for (int k=0; k<n1; ++k) for (int j=0; j<n2; ++j)
+      lb[(static_cast<size_t>(m)*n1 + k)*n2 + j] = hb(m,k,j);
+    bv.assign(static_cast<size_t>(nmbt)*nbv, 0.0);
+#if MPI_PARALLEL_ENABLED
+    std::vector<int> cnt(nr), dsp(nr);
+    for (int r=0; r<nr; ++r) {
+      cnt[r] = pmsh->nmb_eachrank[r]*nbv;
+      dsp[r] = pmsh->gids_eachrank[r]*nbv;
+    }
+    MPI_Allgatherv(lb.data(), nml*nbv, MPI_ATHENA_REAL, bv.data(), cnt.data(), dsp.data(),
+                   MPI_ATHENA_REAL, MPI_COMM_WORLD);
+#else
+    for (size_t n=0; n<lb.size(); ++n) bv[n] = lb[n];
+#endif
+  }
+  std::vector<Real> all(static_cast<size_t>(nr)*kRstPer + kRstGlob + bv.size(), 0.0);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allgather(loc, kRstPer, MPI_ATHENA_REAL, all.data(), kRstPer, MPI_ATHENA_REAL,
+                MPI_COMM_WORLD);
+#else
+  for (int n=0; n<kRstPer; ++n) all[n] = loc[n];
+#endif
+  Real glb[kRstGlob] = {hist_tprev_, 0.0, 0.0, picmax_rst_};
+  if (pm1 != nullptr) {
+    glb[1] = pm1->impl_nstep - rad_pn0_;
+    glb[2] = pm1->impl_itsum - rad_ps0_;
+    glb[3] = fmax(picmax_rst_, pm1->impl_itmax);
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Bcast(glb, kRstGlob, MPI_ATHENA_REAL, 0, MPI_COMM_WORLD);
+#endif
+  for (int n=0; n<kRstGlob; ++n) all[static_cast<size_t>(nr)*kRstPer + n] = glb[n];
+  for (size_t n=0; n<bv.size(); ++n) all[static_cast<size_t>(nr)*kRstPer + kRstGlob + n] = bv[n];
+  const std::int32_t hdr[4] = {static_cast<std::int32_t>(nr), kRstPer, kRstGlob,
+                               static_cast<std::int32_t>(nbv)};
+  std::vector<char> out(sizeof(kRyRstMagic) + sizeof(hdr) + all.size()*sizeof(Real));
+  std::memcpy(out.data(), &(kRyRstMagic[0]), sizeof(kRyRstMagic));
+  std::memcpy(out.data() + sizeof(kRyRstMagic), &(hdr[0]), sizeof(hdr));
+  std::memcpy(out.data() + sizeof(kRyRstMagic) + sizeof(hdr), all.data(),
+              all.size()*sizeof(Real));
+  return out;
+}
+
+void RyPerRstRestore(const std::vector<char> &blk) {
+  const bool root = (global_variable::my_rank == 0);
+  const size_t h = sizeof(kRyRstMagic) + 4*sizeof(std::int32_t);
+  if (blk.size() < h || std::memcmp(blk.data(), &(kRyRstMagic[0]), sizeof(kRyRstMagic))) {
+    if (root) {
+      std::printf("ry_per_accretor: this restart file carries no history registers (pre-"
+                  "acctrc-1019c): the cumulative user.hst/trc.hst columns restart from 0\n");
+    }
+    return;
+  }
+  std::int32_t hdr[4];
+  std::memcpy(&(hdr[0]), blk.data() + sizeof(kRyRstMagic), sizeof(hdr));
+  const int nrf = hdr[0], nbv = hdr[3];
+  const size_t nreg = static_cast<size_t>(nrf)*kRstPer + kRstGlob;
+  const size_t nrest = blk.size() - h;
+  const size_t nbvt = (nbv > 0 && nrest > nreg*sizeof(Real)) ?
+                      (nrest/sizeof(Real) - nreg) : 0;
+  if (nrf < 1 || hdr[1] != kRstPer || hdr[2] != kRstGlob || nbv < 0 ||
+      (nbv > 0 && nbvt % nbv != 0) || blk.size() != h + (nreg + nbvt)*sizeof(Real)) {
+    if (root) {
+      std::printf("ry_per_accretor: WARNING the restart file's history-register block has "
+                  "an unknown layout (%d ranks x %d + %d, %zu bytes): ignored, the "
+                  "cumulative columns restart from 0\n", nrf, hdr[1], hdr[2], blk.size());
+    }
+    return;
+  }
+  std::vector<Real> all(nreg + nbvt);
+  std::memcpy(all.data(), blk.data() + h, all.size()*sizeof(Real));
+  rst_badv_n_ = nbv;
+  rst_badv_.assign(all.begin() + nreg, all.end());
+  const int nr = global_variable::nranks, me = global_variable::my_rank;
+  Real loc[kRstPer];
+  if (nrf == nr) {
+    for (int n=0; n<kRstPer; ++n) loc[n] = all[static_cast<size_t>(me)*kRstPer + n];
+  } else {
+    for (int n=0; n<kRstPer; ++n) {
+      Real sum = 0.0;
+      for (int r=0; r<nrf; ++r) sum += all[static_cast<size_t>(r)*kRstPer + n];
+      loc[n] = root ? sum : 0.0;
+    }
+  }
+  int o = 0;
+  for (int n=0; n<kNaccR; ++n) acc0_[n] = acc1_[n] = loc[o++];
+  for (int n=0; n<kNaccR; ++n) hist_prev_[n] = loc[o++];
+  for (int n=0; n<2; ++n) accx0_[n] = accx1_[n] = loc[o++];
+  erinj_ = loc[o++];
+  for (int n=0; n<kNtr; ++n) trc0_[n] = trc1_[n] = loc[o++];
+  const Real *glb = all.data() + static_cast<size_t>(nrf)*kRstPer;
+  hist_tprev_ = glb[0];
+  picmax_rst_ = glb[3];
+  if (root) {
+    radm1::RadiationM1 *pm1 = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradm1 : nullptr;
+    const Real pn = (pm1 != nullptr) ? pm1->impl_nstep : 0.0;
+    const Real ps = (pm1 != nullptr) ? pm1->impl_itsum : 0.0;
+    rad_pn0_ = pn - glb[1];
+    rad_ps0_ = ps - glb[2];
+    std::printf("ry_per_accretor: history registers restored from the restart file (%d "
+                "ranks%s)\n", nrf, (nrf == nr) ? ", bitwise continuation" :
+                ": summed onto rank 0, continuous but not bitwise");
+  }
+}
+
+//! the stored ibadv_x1max into <rad_m1> (after EnvSetup: SetX1maxBathColumns zeroes it)
+void RyPerRstBadv() {
+  radm1::RadiationM1 *pm1 = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradm1 : nullptr;
+  const bool on = (pm1 != nullptr) && pm1->iebath_hi_col_on &&
+                  (pm1->ibadv_x1max.extent_int(0) > 0);
+  if (rst_badv_n_ < 0) return;                  // no block (pre-1019c file): logged already
+  if (!on && rst_badv_.empty()) return;
+  const bool root = (global_variable::my_rank == 0);
+  Mesh *pmsh = rst_pmbp_->pmesh;
+  if (!on || rst_badv_.empty() ||
+      rst_badv_n_ != pm1->ibadv_x1max.extent_int(1)*pm1->ibadv_x1max.extent_int(2) ||
+      rst_badv_.size() != static_cast<size_t>(pmsh->nmb_total)*rst_badv_n_) {
+    if (root) {
+      std::printf("ry_per_accretor: WARNING the restart file's outer-bath advective flux "
+                  "(%zu values) does not match this run: not restored (Ebnd offset by the "
+                  "first cycle's advective term)\n", rst_badv_.size());
+    }
+    rst_badv_.clear();
+    return;
+  }
+  auto &bd = pm1->ibadv_x1max;
+  auto hb = Kokkos::create_mirror_view(bd);
+  const int g0 = pmsh->gids_eachrank[global_variable::my_rank];
+  const int n1 = bd.extent_int(1), n2 = bd.extent_int(2);
+  for (int m=0; m<bd.extent_int(0); ++m) for (int k=0; k<n1; ++k) for (int j=0; j<n2; ++j)
+    hb(m,k,j) = rst_badv_[(static_cast<size_t>(g0 + m)*n1 + k)*n2 + j];
+  Kokkos::deep_copy(bd, hb);
+  rst_badv_.clear();
+}
+
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -4547,12 +4741,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
   }
 
+  // acctrc-1019c: the cumulative history registers in the restart file (RyPerRstWrite)
+  rst_pmbp_ = pmbp;
+  picmax_rst_ = 0.0;
+  if (!pin->DoesParameterExist("problem", "rst_registers") ||
+      pin->GetBoolean("problem", "rst_registers")) {
+    pgen_rst_write_func = RyPerRstWrite;
+    if (restart) RyPerRstRestore(pgen_rststate);
+  }
   user_bcs_func = RyPerBC;
   user_srcs_func = RyPerSrc;
   if (user_hist) user_hist_func = RyPerHist;
   pgen_final_func = RyPerFinal;
   if (env_) {
     EnvSetup(pin, pmbp, racc, rho_amb, restart);
+    if (restart && pgen_rst_write_func != nullptr) RyPerRstBadv();
     user_bcs_func = RyPerBCEnv;
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
