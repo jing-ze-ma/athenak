@@ -206,7 +206,6 @@ class MHD {
   // CUBED SPHERE: use the GS07 upwind corner EMF instead of the plain four-face average.
   // Needs the gnomonic cell-centred EMF, e_cc_3d_cs in mhd_corner_e.cpp.
   bool use_bs_emf = false;
-  bool wall_emf_zero = false;   // cs-open-1018 <mhd>/wall_emf_zero (read only when named)
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
@@ -387,7 +386,6 @@ class MHD {
   DvceArray5D<Real> utest, bcctest;  // scratch arrays for FOFC
     
     void PolarAzimuthalAverageEr(void);
-    void WallEmfZero(void);
     DvceArray1D<Real> inner_local;
     DvceArray1D<Real> outer_local;
     // per-MeshBlock partial sums for the polar average, so the reduction can be spread over

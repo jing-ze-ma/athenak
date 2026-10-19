@@ -420,18 +420,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // (-1)^(i+k) CT null mode that the cell-centred field cannot; in a radial outflow
     // that biases the corner EMF downwind and grows the mode at ~v_r/dr in a polar row.
     use_bs_emf = pin->GetOrAddBoolean("mhd","bs_emf",false);
-    // cs-open-1018 (read only when named): <mhd>/wall_emf_zero = true makes every
-    // REFLECTING mesh boundary a perfectly conducting wall for the CT update: the edge
-    // EMFs tangential to that face are set to exactly 0 after the corner integration
-    // (MHD::WallEmfZero), so the face-normal field there keeps its initial value.  The
-    // GS07 corner EMF at a reflecting face picks ONE side when the face mass flux is
-    // exactly 0 (">= 0"), and the ghost's cell-centred radial field is not the mirror of
-    // the interior's (centroid weights), so B.n at the wall grew from truncation, the
-    // wall then carried a Maxwell torque -B_n B_t and an energy flux -B_n v.B: measured
-    // E 1e-12 / L 1e-10 leaks on the closed cs shell (hydro: round-off).
-    if (pin->DoesParameterExist("mhd","wall_emf_zero")) {
-      wall_emf_zero = pin->GetBoolean("mhd","wall_emf_zero");
-    }
     // Fix for the above at the source: in the two POLAR cell rows (the only place the
     // (-1)^(i+k) mode closes on itself, because the polar ghost row is the k+N/2 image of
     // the row) add the UCT/Rusanov face-field dissipation to the corner e2, with the local
