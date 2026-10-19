@@ -1202,13 +1202,6 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       const Real an = std::sqrt(rlx*rlx + rly*rly + rlz*rlz);
       rlx /= an; rly /= an; rlz /= an;
     }
-    // cs-open-1018 (spherical polar, read only when named): rho_lat_sp = a multiplies the
-    // gas density by 1 + a cos(2 pi (theta - x2min)/L2) cos(2 pi (phi - x3min)/L3): the
-    // periodic-wedge counterpart of rho_lat_amp (S7 steady thin test, cs vs sp)
-    Real rls = 0.0;
-    if (sp && pin->DoesParameterExist("problem","rho_lat_sp")) {
-      rls = pin->GetReal("problem","rho_lat_sp");
-    }
     auto mbpan = pmbp->pmb->mb_panel;
     auto &msz = pmy_mesh_->mesh_size;
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
@@ -1263,12 +1256,6 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                                size.d_view(m).x2min, size.d_view(m).x2max,
                                size.d_view(m).x3min, size.d_view(m).x3max, rlx, rly, rlz);
         const Real fr = 1.0 + rla*M1Legendre(rll, mr);
-        uh(m,IDN,k,j,i) *= fr;
-        uh(m,IEN,k,j,i) *= fr;
-      }
-      if (rls != 0.0) {
-        const Real fr = 1.0 + rls*cos(2.0*M_PI*(x2v(m,j) - x2a)/x2l)
-                        *cos(2.0*M_PI*(x3v(m,k) - x3a)/x3l);
         uh(m,IDN,k,j,i) *= fr;
         uh(m,IEN,k,j,i) *= fr;
       }
