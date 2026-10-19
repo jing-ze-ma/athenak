@@ -26,6 +26,7 @@
 #include "units/units.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "mhd/mhd.hpp"
 #include "coordinates/adm.hpp"
 #include "z4c/compact_object_tracker.hpp"
@@ -843,6 +844,40 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nra_file = static_cast<int>(ra_hdr[1]);
   }
 
+  // --- cs-open-1018: THE <hydro|mhd>/am_vector SPIN HEADER (hydro::kAmSpinRstMagic),
+  // behind the vet_rotate_avg one: nams_file slabs (am_spin, + the radiation's hesdirk2
+  // spin slope amk1), the last of each record
+  int nams_file = 0;
+  if (std::memcmp(variabledata, &(hydro::kAmSpinRstMagic[0]),
+                  sizeof(hydro::kAmSpinRstMagic)) == 0) {
+    char ams_hdr[4*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(ams_hdr));
+      ok = ok && (resfile.Read_bytes(&(ams_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(ams_hdr[0]), sizeof(ams_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    if (ok) {std::memcpy(&(hdr[0]), &(ams_hdr[0]), sizeof(hdr));}
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 2) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the am_vector spin header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nams_file = static_cast<int>(hdr[1]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -930,7 +965,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
                             + neint_file + nck_file + nctr_file + nrss_file + nvgd_file
-                            + ncsk_file + nra_file)
+                            + ncsk_file + nra_file + nams_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1578,6 +1613,15 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // implicit_gas_src = conservative(2): csk1 and the flags, when this run is one too
   // (with hesdirk2 for the slabs: csk1 is sized as its slope t2k1)
   const bool csk_read = csk_have && (pradm1 != nullptr) && pradm1->impl_gas_src_cons;
+  // cs-open-1018 am_vector: the spin (+ amk1) when this run carries one too
+  hydro::AmModule *pam_rst = hydro::AmModuleOf(pmy_mesh_->pmb_pack);
+  const bool ams_read = (nams_file > 0) && (pam_rst != nullptr) && pam_rst->am_vector;
+  if (pam_rst != nullptr && pam_rst->am_vector && nams_file == 0 &&
+      global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file has no am_vector spin; it restarts from 0 "
+              << "(the total L budget then jumps by the spin, and with am_spin_return the "
+              << "restart is not bitwise)." << std::endl;
+  }
   if (pradm1 != nullptr && pradm1->vra_on && nra_file == 0 &&
       global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_rotate_avg: the restart file has no averaging history; it "
@@ -1585,7 +1629,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "history is then not bitwise)." << std::endl;
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
-      ctr_read || rss_read || vgd_read || ra_read || csk_read) {
+      ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -1837,6 +1881,36 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        Kokkos::ALL), wtin);
       }
       pradm1->RotAvgRstLoad(&(ra_hdr[0]), rin, nmb);
+    }
+    // the am_vector spin (+ amk1), hydro::kAmSpinRstMagic, the last slabs of the record
+    if (ams_read) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file;
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      read_slab("am_vector spin");
+      DeepCopyAcross(Kokkos::subview(pam_rst->am_spin, std::make_pair(0,nmb), Kokkos::ALL,
+                     Kokkos::ALL, Kokkos::ALL), wtin);
+      if (nams_file > 1) {
+        read_slab("am_vector spin slope");
+        if (pradm1 != nullptr) {
+          auto &sp = pam_rst->am_spin;
+          if (pradm1->amk1.extent_int(0) == 0) {
+            Kokkos::realloc(pradm1->amk1, sp.extent_int(0), sp.extent_int(1),
+                            sp.extent_int(2), sp.extent_int(3));
+            Kokkos::realloc(pradm1->amk2, sp.extent_int(0), sp.extent_int(1),
+                            sp.extent_int(2), sp.extent_int(3));
+            Kokkos::realloc(pradm1->aminc, sp.extent_int(0), sp.extent_int(1),
+                            sp.extent_int(2), sp.extent_int(3));
+            Kokkos::deep_copy(pradm1->amk1, 0.0);
+            Kokkos::deep_copy(pradm1->amk2, 0.0);
+            Kokkos::deep_copy(pradm1->aminc, 0.0);
+          }
+          DeepCopyAcross(Kokkos::subview(pradm1->amk1, std::make_pair(0,nmb), Kokkos::ALL,
+                         Kokkos::ALL, Kokkos::ALL), wtin);
+        }
+      }
     }
   }
 

@@ -549,6 +549,10 @@ class AmModule {
 
 //! \brief the module of the pack's fluid (Hydro first, else MHD), nullptr if none
 AmModule *AmModuleOf(MeshBlockPack *pp);
+// cs-open-1018: the restart block of <hydro|mhd>/am_vector (outputs/restart.cpp, read in
+// pgen.cpp): header {1, nslab, 0, 0}; slab 0 = am_spin, slab 1 (if present) = the
+// radiation's hesdirk2 FSAL spin slope amk1 (RadiationM1)
+constexpr char kAmSpinRstMagic[8] = {'A', 'M', 'S', 'P', 'I', 'N', '0', '1'};
 
 }  // namespace hydro
 #endif  // HYDRO_HYDRO_AM_HPP_

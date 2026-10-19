@@ -26,6 +26,7 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "mhd/mhd.hpp"
 #include "coordinates/adm.hpp"
 #include "z4c/compact_object_tracker.hpp"
@@ -277,6 +278,27 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       pradm1->RotAvgRstPackHost(outarray_m1r, nmb, 4);
     }
   }
+  // cs-open-1018 <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's hesdirk2
+  // spin slope amk1), kAmSpinRstMagic, the last slabs of each record
+  {
+    hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
+    const bool k1 = (pam != nullptr) && pam->am_vector && (pradm1 != nullptr) &&
+                    (pradm1->amk1.extent_int(0) > 0);
+    const int nams = ((pam != nullptr) && pam->am_vector) ? (k1 ? 2 : 1) : 0;
+    if (nams > 0) {
+      Kokkos::realloc(outarray_ams, nmb, nams, nout3, nout2, nout1);
+      auto mb = std::make_pair(0, nmb);
+      auto AL = Kokkos::ALL;
+      DvceArray5D<Real> tmp("rst-ams", nmb, nams, nout3, nout2, nout1);
+      Kokkos::deep_copy(Kokkos::subview(tmp, AL, 0, AL, AL, AL),
+                        Kokkos::subview(pam->am_spin, mb, AL, AL, AL));
+      if (k1) {
+        Kokkos::deep_copy(Kokkos::subview(tmp, AL, 1, AL, AL, AL),
+                          Kokkos::subview(pradm1->amk1, mb, AL, AL, AL));
+      }
+      Kokkos::deep_copy(outarray_ams, tmp);
+    }
+  }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_force, Kokkos::subview(pturb->force, std::make_pair(0,nmb),
@@ -450,6 +472,19 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   std::int64_t ra_hdr[radm1::RadiationM1::M1_RA_RST_NH] = {0};
   if (pradm1 != nullptr) {pradm1->RotAvgRstHdr(&(ra_hdr[0]));}
   const int nra = static_cast<int>(ra_hdr[1]);
+  // cs-open-1018 am_vector spin slabs (hydro::kAmSpinRstMagic), behind even the nra ones
+  int nams = 0;
+  {
+    hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
+    if ((pam != nullptr) && pam->am_vector) {
+      nams = ((pradm1 != nullptr) && (pradm1->amk1.extent_int(0) > 0)) ? 2 : 1;
+    }
+  }
+  char ams_hdr[4*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nams), 0, 0};
+    std::memcpy(&(ams_hdr[0]), &(hdr[0]), sizeof(hdr));
+  }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[2] = {static_cast<std::int32_t>(neint), 0};
@@ -684,6 +719,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(ra_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the am_vector spin header, same marked form, behind the vet_rotate_avg one
+    if (nams > 0) {
+      IOWrapperSizeT nb = sizeof(ams_hdr);
+      resfile.Write_any_type(&(hydro::kAmSpinRstMagic[0]), sizeof(hydro::kAmSpinRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(ams_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -758,6 +801,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += static_cast<IOWrapperSizeT>(nvgd)*nout1*nout2*nout3*sizeof(Real);     // vet_gd_async source
   data_size += static_cast<IOWrapperSizeT>(ncsk)*nout1*nout2*nout3*sizeof(Real);     // conservative csk1
   data_size += static_cast<IOWrapperSizeT>(nra)*nout1*nout2*nout3*sizeof(Real);      // vet_rotate_avg history
+  data_size += static_cast<IOWrapperSizeT>(nams)*nout1*nout2*nout3*sizeof(Real);     // am_vector spin (+ amk1)
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -814,6 +858,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nra > 0) {
     step3size += sizeof(radm1::kM1RaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
+  }
+  if (nams > 0) {
+    step3size += sizeof(hydro::kAmSpinRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ams_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1329,6 +1376,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<nra; ++n) {
     write_wtemp(Kokkos::subview(outarray_m1r, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "vet_rotate_avg history");
+  }
+  // and the am_vector spin (+ amk1) behind it (hydro::kAmSpinRstMagic)
+  for (int n=0; n<nams; ++n) {
+    write_wtemp(Kokkos::subview(outarray_ams, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "am_vector spin");
   }
 
   // close file, clean up
