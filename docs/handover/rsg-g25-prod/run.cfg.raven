@@ -1,0 +1,7 @@
+READY=1
+BIN=/raven/ptmp/jinma/rsg_g25_1019/bin/athena_he_a100_a2713be0
+BIN_MD5=4d23e8c9e709ee60e67a035dcb362ceb
+IN=/raven/ptmp/jinma/rsg_g25_1019/prod/R/rsg_g25_prod.athinput
+TLIM=1.0e9   # USER long-tlim rule 10-14
+XKEYS=""
+STOP_NC=1

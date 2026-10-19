@@ -1,0 +1,213 @@
+{
+ "spec": {
+  "composition": {
+   "mixture": "GS98",
+   "a_metal": 16.0,
+   "X": 0.653848,
+   "Y": 0.326395,
+   "Z": 0.019757
+  },
+  "mlt": {
+   "alpha": 3.0,
+   "mlt_option": "Cox",
+   "alt_scale_height": true,
+   "mltpp": "mesa_gated",
+   "use_mltpp": false,
+   "f1": 0.0001,
+   "f2": 0.001,
+   "lambda1": 1.0,
+   "beta1": 0.35,
+   "lambda2": 0.5,
+   "beta2": 0.25,
+   "dlambda": 0.1,
+   "dbeta": 0.1,
+   "xa1_center": 0.0,
+   "max_logT": 8.0,
+   "pp_alpha": 1.0,
+   "pp_form": "mesa",
+   "pp_tol": 0.002
+  },
+  "grid": {
+   "dlnr": 0.0002,
+   "drn_atm_rph": 0.0002,
+   "fl_step": 50.0,
+   "tauj": 3.0,
+   "rtol": 1e-12,
+   "rho_lo": 1e-16,
+   "rho_hi": 0.001,
+   "atm_rad": 0,
+   "scheme": "agcar_ge"
+  },
+  "r_in": {
+   "rule": "explicit",
+   "n_hp": 4.5,
+   "rlo_fac": 0.95,
+   "cz_fmlt": 0.01,
+   "explore_tmax": 3000000.0,
+   "l_flat_tol": 0.01,
+   "r_cm": "1.761e12",
+   "bottom_rsun": 22.0
+  },
+  "r_top": {
+   "rtop_fac": 3.0,
+   "col_top_fac": 1.15
+  },
+  "background": {
+   "rho_floor_rule": "rel_rhoph",
+   "rho_floor_rel": 4e-06,
+   "dmax_rel": 2.0,
+   "dfloor_rel": 0.001,
+   "sponge_rate_rel": 80.0,
+   "sponge_r0_rel": 0.9,
+   "tfloor_rel": 0.76,
+   "wb_rmax_rel": 1.1,
+   "pfloor_rel": 6e-08,
+   "vceil_rel": 4.3,
+   "balance_rmax_rel": 0.8808,
+   "rho_floor": 1e-17,
+   "tfloor": 2000.0
+  },
+  "ramp": {
+   "start_turnovers": 2.0,
+   "time_turnovers": 10.0
+  },
+  "taper": {
+   "enable": false,
+   "tau_lo": 3.0,
+   "tau_hi": 30.0
+  },
+  "seam": {
+   "enable": true,
+   "deck": "/raven/ptmp/jinma/rsg_g25_1019/decks/rsg_g25_seam_sp.athinput",
+   "binary": "/raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db",
+   "tol_cells": 0.1,
+   "maxit": 8,
+   "omp": 8,
+   "timeout": 7200,
+   "launcher": [
+    "bash",
+    "-lc",
+    "module purge >/dev/null 2>&1; module load gcc/13 openmpi/5.0; exec \"$0\" \"$@\""
+   ]
+  },
+  "startup": {
+   "re_zone": "hopf"
+  },
+  "eos": {
+   "logd_min": -21.0,
+   "logd_max": -1.0,
+   "logt_max": 6.8,
+   "dlog": 0.02,
+   "logt_min": 3.3
+  },
+  "opacity": {
+   "ld_ext": -21.0,
+   "tops_hi": "/raven/ptmp/jinma/ic_star_cache/raw/tops/bsg_x0.7_z0.008_hi.dat",
+   "tops_lo": "/raven/ptmp/jinma/ic_star_cache/raw/tops/bsg_x0.7_z0.008_lo.dat",
+   "mesa_kap": {
+    "kap_data": "/raven/ptmp/jinma/ic_star_cache/raw/mesa_kap/kap_data.tar.xz",
+    "X": 0.653848,
+    "Z": 0.02,
+    "join": [
+     6.3,
+     6.5
+    ]
+   }
+  },
+  "name": "rsg_g25",
+  "star": {
+   "L": "mesa",
+   "R_ph": "mesa",
+   "M": "mesa"
+  },
+  "mesa_profile": {
+   "path": "/raven/ptmp/jinma/rsg_g25_1019/mesa/m22_p438_sel.data",
+   "format": "mesa",
+   "anchor_eps": 0.021516,
+   "anchor": "mass",
+   "anchor_bracket": [
+    -0.03,
+    0.08
+   ]
+  },
+  "_cfg": {
+   "cache": "/raven/ptmp/jinma/ic_star_cache",
+   "eos_binary": "/raven/ptmp/jinma/bubbles_1012/bin/athena_cpu_m4"
+  },
+  "_file": "/raven/ptmp/jinma/rsg_g25_1019/specs/rsg_g25_v3.yaml"
+ },
+ "star": {
+  "L": 6.854917043005743e+38,
+  "GM": 2.726929003183973e+27,
+  "R": 58702978920998.87,
+  "Teff": 4087.568846499717
+ },
+ "star_src": {
+  "L": "MESA photosphere_L",
+  "GM": "G m(x1min) of the column (he_gm_column = true)",
+  "R": "MESA photosphere_r"
+ },
+ "x1min": 1761000000000.0,
+ "x1max": 176108936762996.6,
+ "r_bot": 1530540000000.0,
+ "F_rin": 17538229490999.992,
+ "ic": "/raven/ptmp/jinma/rsg_g25_1019/ic/pass3b/ic_rsg_g25.txt",
+ "ic_md5": "87918742791146d42167cd43eaa66e04",
+ "tables": {
+  "opacity": {
+   "ross": "/raven/ptmp/jinma/ic_star_cache/tables/opac_mk_4c0e8b64d26a/rosseland_mesakap_4c0e8b64d26a.txt",
+   "planck": "/raven/ptmp/jinma/ic_star_cache/tables/opac_d38e5526afef/planck_ext2_x0.653848_z0.019757_d38e5526afef.txt",
+   "hash": "d38e5526afef",
+   "mixture": "8.86932e-01 h 1.11500e-01 he 3.84577e-04 c 9.66015e-05 n 7.85207e-04 o 1.39632e-04 ne 2.48304e-06 na 4.41553e-05 mg 3.42755e-06 al 4.12083e-05 si 3.27329e-07 p 2.48304e-05 s 3.67269e-07 cl 2.91731e-06 ar 1.53103e-07 k 2.66063e-06 ca 1.21614e-07 ti 5.43230e-07 cr 2.85092e-07 mn 3.67269e-05 fe 2.06530e-06 ni",
+   "built": true,
+   "fields": "/raven/ptmp/jinma/ic_star_cache/tables/opac_d38e5526afef/build_fields.npz",
+   "note": "ext2 recipe, cache /raven/ptmp/jinma/ic_star_cache/tables/opac_d38e5526afef; mesa_kap splice /raven/ptmp/jinma/ic_star_cache/tables/opac_mk_4c0e8b64d26a",
+   "mesa_kap": {
+    "base": "597e32cac7e11dd7ce394d60b6c8a711",
+    "kap_data": "76857b1d386f411100d07746028ae4be",
+    "X": 0.653848,
+    "Z": 0.02,
+    "join": [
+     6.3,
+     6.5
+    ],
+    "blend": [
+     3.8,
+     3.88
+    ],
+    "hi": "gs98",
+    "lo": "lowT_fa05_gs98",
+    "version": "mesakap-v1 (r15140 defaults: gs98 + lowT_fa05_gs98, blend 3.80-3.88 cos, lin X Z)",
+    "hash": "4c0e8b64d26a"
+   }
+  },
+  "eos": {
+   "dump": "/raven/ptmp/jinma/ic_star_cache/tables/eos_85908b8dfca6/eos_dump.txt",
+   "hash": "85908b8dfca6",
+   "note": "cache",
+   "deck": "/raven/ptmp/jinma/ic_star_cache/tables/eos_85908b8dfca6/dump.athinput"
+  }
+ },
+ "background": {
+  "rho_floor": 1e-17,
+  "he_sponge_dmax": 2e-17,
+  "dfloor": 1.0000000000000001e-20,
+  "he_sponge_rate": 0.0001,
+  "he_sponge_r0": 158498043086696.94,
+  "T_rad_x1max": 1794.4901017400873,
+  "tfloor_kelvin": 2000.0,
+  "eos_logt_min": 3.3,
+  "pfloor": 1e-13,
+  "vceil": 10000000.0,
+  "wb_rmax": 63985105372921.12,
+  "he_ic_balance_rmax": 51234618920426.29,
+  "nu_ph": 8.748308053321628e-07,
+  "g_ph": 0.4384098276259066,
+  "cs_ph": 501136.7054678048,
+  "v_esc": 7141644.707077166,
+  "rho_ph": 1.5589145229240872e-09
+ },
+ "t_turn": 9434128.879336368,
+ "git": "",
+ "scripts_md5": "3be5bf0fbffd5beb89bec5c8e60b7d89"
+}
