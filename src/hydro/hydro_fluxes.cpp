@@ -13,6 +13,7 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "hydro.hpp"
+#include "hydro_mergelat.hpp"
 #include "eos/eos.hpp"
 #include "reconstruct/dc.hpp"
 #include "reconstruct/plm.hpp"
@@ -150,6 +151,16 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
   const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
   const int px3_ = pmy_pack->pmesh->polar_x3_shift;
+  // mrglat-1019: group-level lateral reconstruction of the merged cells (see
+  // hydro_mergelat.hpp); off unless <hydro>/merge_lat_rc is named
+  const bool mlat_ = (pmlat != nullptr && pmlat->on);
+  DvceArray2D<int> mlfi_;
+  if (mlat_) {
+    pmlat->Build();
+    mlfi_ = pmlat->fi;
+  }
+  const int mln2_ = indcs_.nx2 + 2*indcs_.ng;
+  const int mln3_ = indcs_.nx3 + 2*indcs_.ng;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -653,6 +664,34 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           });
         }
 
+        // mrglat-1019: the merged cells' x2 face states from the group-level PLM (a
+        // group whose neighbour cells lie outside the array keeps the fine states)
+        if (mlat_) {
+          member.team_barrier();
+          par_for_inner(member, il, iu, [&](const int i) {
+            const int f = mlfi_(m,i);
+            if (f <= 1) return;
+            const int g = (j >= js) ? (j - js)/f : -((js - j + f - 1)/f);
+            const int jlo = js + g*f;
+            const int jm = jlo - 1, jp = jlo + f;
+            if (jm < 0 || jp > mln2_ - 1) return;
+            const int sc = j - jlo;
+            for (int n=0; n<nvars; ++n) {
+              MlatCoarsePLM(w0_(m,n,k,jm,i), w0_(m,n,k,j,i), w0_(m,n,k,jp,i), sc, f,
+                            wr(n,i), wl_jp1(n,i));
+            }
+            for (int n=0; n<nder; ++n) {
+              MlatCoarsePLM(wder_(m,n,k,jm,i), wder_(m,n,k,j,i), wder_(m,n,k,jp,i), sc, f,
+                            dr(n,i), dl_jp1(n,i));
+            }
+            if (nder > 0) {
+              dl_jp1(IDPR,i) = fmax(dl_jp1(IDPR,i), eos_.pfloor);
+              dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+            }
+          });
+          member.team_barrier();
+        }
+
           if (use_wellbalance_static_reconst_perturb_) {
             AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
           }
@@ -839,6 +878,33 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             dl_kp1(IDPR,i) = fmax(dl_kp1(IDPR,i), eos_.pfloor);
             dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
           });
+        }
+
+        // mrglat-1019: the merged cells' x3 face states from the group-level PLM
+        if (mlat_) {
+          member.team_barrier();
+          par_for_inner(member, il, iu, [&](const int i) {
+            const int f = mlfi_(m,i);
+            if (f <= 1) return;
+            const int g = (k >= ks) ? (k - ks)/f : -((ks - k + f - 1)/f);
+            const int klo = ks + g*f;
+            const int km = klo - 1, kp = klo + f;
+            if (km < 0 || kp > mln3_ - 1) return;
+            const int sc = k - klo;
+            for (int n=0; n<nvars; ++n) {
+              MlatCoarsePLM(w0_(m,n,km,j,i), w0_(m,n,k,j,i), w0_(m,n,kp,j,i), sc, f,
+                            wr(n,i), wl_kp1(n,i));
+            }
+            for (int n=0; n<nder; ++n) {
+              MlatCoarsePLM(wder_(m,n,km,j,i), wder_(m,n,k,j,i), wder_(m,n,kp,j,i), sc, f,
+                            dr(n,i), dl_kp1(n,i));
+            }
+            if (nder > 0) {
+              dl_kp1(IDPR,i) = fmax(dl_kp1(IDPR,i), eos_.pfloor);
+              dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+            }
+          });
+          member.team_barrier();
         }
 
           if (use_wellbalance_static_reconst_perturb_) {

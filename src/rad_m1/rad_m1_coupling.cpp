@@ -65,6 +65,7 @@
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_mergelat.hpp"
 #include "mhd/mhd.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -388,6 +389,15 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
 //! the inversion.
 
 TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
+  // mrglat-1019 <hydro>/merge_lat_rad = true: the radiation E, F of the merged lateral
+  // groups replaced by their group values after the solve (hydro_mergelat.hpp)
+  {
+    hydro::Hydro *phm = pmy_pack->phydro;
+    if (phm != nullptr && phm->pmlat != nullptr && phm->pmlat->on && phm->pmlat->rad) {
+      DvceArray4D<Real> nophi;
+      phm->pmlat->Average(u0, M1_NVAR, M1_NVAR, 1, nophi, false);
+    }
+  }
   if (!coupling || !gas_feedback) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
   if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {
@@ -424,6 +434,11 @@ void RadiationM1::FluidRefresh(Driver *pdrive) {
   }
   hydro::Hydro *ph = pmy_pack->phydro;
   if (ph == nullptr) return;
+  // mrglat-1019: the gas the solve wrote, back to group values (hydro_mergelat.hpp)
+  if (ph->pmlat != nullptr && ph->pmlat->on) {
+    ph->pmlat->Average(ph->u0, ph->nhydro, ph->nhydro + ph->nscalars, 0, ph->phicc0,
+                       ph->use_etotgrav);
+  }
   (void) ph->RestrictU(pdrive, 0);
   (void) ph->InitRecv(pdrive, -1);    // stage < 0 suppresses InitFluxRecv
   (void) ph->SendU(pdrive, 0);

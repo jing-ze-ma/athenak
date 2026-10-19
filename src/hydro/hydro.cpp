@@ -25,6 +25,7 @@
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
+#include "hydro/hydro_mergelat.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -236,6 +237,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
   if (hydro::AmModule::Named(pin, "hydro")) {
     pam = new hydro::AmModule(ppack, pin, "hydro");
+  }
+  if (hydro::MergeLat::Named(pin)) {
+    pmlat = new hydro::MergeLat(ppack, pin);
   }
   // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
   // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
@@ -642,6 +646,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
 Hydro::~Hydro() {
   if (pam != nullptr) {delete pam;}
+  if (pmlat != nullptr) {delete pmlat;}
   delete peos;
   delete pbval_u;
   if (pvisc != nullptr) {delete pvisc;}

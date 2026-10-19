@@ -21,6 +21,7 @@
 #include "mesh/mesh.hpp"
 #include "outputs/outputs.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_mergelat.hpp"
 #include "mhd/mhd.hpp"
 #include "z4c/z4c.hpp"
 #include "dyn_grmhd/dyn_grmhd.hpp"
@@ -349,6 +350,36 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   // restart a bitwise continuation; the primitives are still rebuilt below.
   // <time>/restart_refill_ghosts=true restores the old behaviour.
   bool refill = pin->GetOrAddBoolean("time", "restart_refill_ghosts", false);
+  // mrglat-1019: a state that is not yet group-uniform in the merged lateral cells (a
+  // fresh start, or a restart from a run without merging) is averaged here, and its
+  // ghosts are then refilled.  A restart of a merged run finds every group bitwise
+  // uniform in rho and is left untouched (bitwise continuation).
+  {
+    hydro::Hydro *phm = pmesh->pmb_pack->phydro;
+    if (phm != nullptr && phm->pmlat != nullptr && phm->pmlat->on) {
+      const int nnu = phm->pmlat->CountNonUniform(phm->u0, IDN);
+      auto *prm = pmesh->pmb_pack->pradm1;
+      const int nnr = (prm != nullptr && phm->pmlat->rad) ?
+                      phm->pmlat->CountNonUniform(prm->u0, 0) : 0;
+      if (global_variable::my_rank == 0) {
+        std::cout << "MLAT init: " << nnu << " non-uniform gas groups, " << nnr
+                  << " non-uniform radiation groups" << (nnu + nnr > 0 ?
+                  " -> averaged, ghosts refilled" : " -> state kept") << std::endl;
+      }
+      if (nnu > 0) {
+        phm->pmlat->Average(phm->u0, phm->nhydro, phm->nhydro + phm->nscalars, 0,
+                            phm->phicc0, phm->use_etotgrav);
+        // the restart's frozen derived state belongs to the un-averaged u0
+        phm->c2p_freeze_derived = false;
+        phm->c2p_eint_rst = false;
+      }
+      if (nnr > 0) {
+        DvceArray4D<Real> nophi;
+        phm->pmlat->Average(prm->u0, radm1::M1_NVAR, radm1::M1_NVAR, 1, nophi, false);
+      }
+      if (nnu + nnr > 0) refill = true;
+    }
+  }
   InitBoundaryValuesAndPrimitives(pmesh, (res_flag && !refill));
 
   //---- Step 2.  Compute time step (if problem involves time evolution)
