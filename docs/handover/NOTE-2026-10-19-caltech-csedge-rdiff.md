@@ -38,3 +38,8 @@ Earlier result (det1): C == C2 bitwise; R vs C hst first diff t=4.633e4 (user.hs
 `/resnick/groups/carnegie_poc/jingze/rsg_g25_prod/csedge_1019/collect.sh <bsg-files-1009 checkout>` runs csedge_diag.py on the dumps
 so far and copies hst / run.log tail30 / cmdline / s_per_cycle / diag.txt to docs/handover/csedge-1019/caltech/<arm>/ and the
 restart-diff compare to caltech/rdiff/compare.txt; then commit + push. Results follow in a later commit.
+
+## UPDATE 10-19 (USER): CSEDGE arms CANCELLED
+- USER cancelled all 6 CSEDGE arms (5059457-62) before any produced results (B ran 6 min). No CSEDGE results will come from Caltech.
+- RSG restart-diff job 5059481 (R2 / CV / RV) still queued; results follow.
+- acc3d fresh tracers: build 5059464 done, binary md5 66c41301ad3c9d7e4734a010fedfe9f0 (4960ac49 nofma); check 5059465 queued -> links 5059466-71.
