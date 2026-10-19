@@ -1096,12 +1096,38 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       }
       const Real an = std::sqrt(bax*bax + bay*bay + baz*baz);
       bax /= an; bay /= an; baz /= an;
-      if (!pmy_mesh_->use_cubed_sphere) {
+      // spherical polar (the sp reference of the cs MHD tests): the axis must be z there,
+      // B = b r sin(theta) phihat; the phi faces carry the exact flux
+      // b (r_r^3 - r_l^3)/3 (cos theta_l - cos theta_r) / area, the others 0
+      const bool spz = pmy_mesh_->use_spherical_polar && std::fabs(bax) < 1.0e-14 &&
+                       std::fabs(bay) < 1.0e-14 && baz > 0.0;
+      if (!pmy_mesh_->use_cubed_sphere && !spz) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "problem/b_azi is implemented on the cubed sphere only"
-          << std::endl;
+          << std::endl << "problem/b_azi is implemented on the cubed sphere and (axis z) "
+          << "on spherical polar only" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      if (spz) {
+        auto b0 = pmbp->pmhd->b0;
+        auto a3 = pmbp->pcoord->area.x3f;
+        auto xf1 = pmbp->pcoord->xx1f;
+        auto xf2 = pmbp->pcoord->xx2f;
+        const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
+        const Real bb = bazi;
+        par_for("m1_sh_bazi_sp", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
+        KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          if (j <= je && k <= ke) {b0.x1f(m,k,j,i) = 0.0;}
+          if (i > ie) return;
+          if (k <= ke) {b0.x2f(m,k,j,i) = 0.0;}
+          if (j <= je) {
+            const Real rl = xf1(m,i), rr = xf1(m,i+1);
+            const Real fl = bb*(rr*rr*rr - rl*rl*rl)/3.0*(cos(xf2(m,j)) - cos(xf2(m,j+1)));
+            b0.x3f(m,k,j,i) = fl/a3(m,k,j,i);
+          }
+        });
+      }
+    }
+    if (pmbp->pmhd != nullptr && bazi != 0.0 && pmy_mesh_->use_cubed_sphere) {
       auto b0 = pmbp->pmhd->b0;
       auto a2 = pmbp->pcoord->area.x2f;
       auto a3 = pmbp->pcoord->area.x3f;
@@ -1197,7 +1223,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = dgas*tgas/gm1;
-      if (bazi != 0.0) {   // cs-open-1018: |B(rc)|^2/2, B = b a x rc
+      if (bazi != 0.0 && sp) {   // sp: B = b r sin(theta) phihat at the cell centre
+        const Real st = sin(x2v(m,j));
+        uh(m,IEN,k,j,i) += 0.5*bazi*bazi*r*r*st*st;
+      }
+      if (bazi != 0.0 && !sp) {   // cs-open-1018: |B(rc)|^2/2, B = b a x rc
         const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
                                                size.d_view(m).x2max);
         const Real eta = 0.25*M_PI*CellCenterX(k-ks, nx3, size.d_view(m).x3min,
