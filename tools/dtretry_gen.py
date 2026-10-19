@@ -95,3 +95,4 @@ def gen(header, cls, outfile, guard, ns):
 SUB = {n: ast('rad_m1/rad_m1.hpp', n) for n in NESTED}
 gen('rad_m1/rad_m1.hpp', 'RadiationM1', 'rad_m1/rad_m1_dtretry_visit.hpp', 'RAD_M1_RAD_M1_DTRETRY_VISIT_HPP_', 'radm1')
 gen('hydro/hydro.hpp', 'Hydro', 'hydro/hydro_dtretry_visit.hpp', 'HYDRO_HYDRO_DTRETRY_VISIT_HPP_', 'hydro')
+gen('hydro/hydro_am.hpp', 'AmModule', 'hydro/hydro_am_dtretry_visit.hpp', 'HYDRO_HYDRO_AM_DTRETRY_VISIT_HPP_', 'hydro')
