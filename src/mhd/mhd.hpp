@@ -43,6 +43,8 @@ using MHDBoundaryFnPtr = void (*)(int m, Mesh* pm, MHD* pmhd, DvceArray5D<Real> 
 // An input that names the key is unchanged; a RESTART whose embedded input lacks the key
 // keeps the old default (off).
 inline bool fofc_pgen_default = false;
+// amdef-1019: <mhd>/etotgrav pgen-level support flag (hydro::etotgrav_pgen_default)
+inline bool etotgrav_pgen_default = false;
 }
 
 // constants that enumerate MHD Riemann Solver options

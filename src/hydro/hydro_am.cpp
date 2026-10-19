@@ -34,6 +34,7 @@
 #include "mhd/mhd.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "hydro/hydro_am.hpp"
+#include "utils/recipe.hpp"
 
 namespace hydro {
 
@@ -42,6 +43,52 @@ bool AmModule::Named(ParameterInput *pin, const std::string &b) {
          pin->DoesParameterExist(b, "am_vector") ||
          pin->DoesParameterExist(b, "frame_omega") ||
          pin->DoesParameterExist(b, "am_basis_check");
+}
+
+bool AmModule::DefaultOn(MeshBlockPack *ppack, ParameterInput *pin, const std::string &b) {
+  if (pin->DoesParameterExist(b, "am_transport")) return false;
+  Mesh *pm = ppack->pmesh;
+  if (!(pm->use_cubed_sphere || pm->use_spherical_polar)) return false;   // silent
+  const std::string key = "<" + b + ">/am_transport";
+  const std::string ev = pin->DoesParameterExist("time","evolution")
+                         ? pin->GetString("time","evolution") : "";
+  std::string why = "";
+  if (ev != "dynamic") why = "<time>/evolution is not dynamic";
+  if (pm->use_spherical_polar && pm->mb_indcs.nx2 < 2) why = "1-D spherical polar";
+  if (pm->use_spherical_polar && pm->mb_indcs.nx2 >= 2 && !pm->three_d &&
+      ppack->pcoord->sp_cart_polar_momentum) {
+    why = "2-D spherical polar with sp_cart_polar_momentum";
+  }
+  if (!why.empty()) {
+    recipe::Log(key + " = false (not supported: " + why + ")");
+    return false;
+  }
+  if (!recipe::NewDefaults(pin)) {
+    recipe::Log(key + " = false (" + (recipe::GetMode(pin) == recipe::Mode::none
+                ? std::string("recipe none: the old default")
+                : std::string("restart input has no key: the old default kept; set it "
+                              "true or <job>/recipe = prod1019 to switch")) + ")");
+    return false;
+  }
+  pin->GetOrAddBoolean(b, "am_transport", true);
+  recipe::Log(key + " = true (default on the " +
+              std::string(pm->use_cubed_sphere ? "cubed sphere" : "spherical-polar mesh") +
+              "; set it false to switch the angular-momentum transport correction off)");
+  return true;
+}
+
+void AmModule::YieldToPgen(ParameterInput *pin, const std::string &who) {
+  if (!am_transport) return;
+  if (!am_default || am_vector) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<" << blk << ">/am_transport (or am_vector) = true together "
+              << "with " << who << ": the transport correction would be applied twice; "
+              << "set one of them false" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  am_transport = false;
+  pin->SetBoolean(blk, "am_transport", false);
+  recipe::Log("<" + blk + ">/am_transport = false (default yields: " + who + " is on)");
 }
 
 AmModule *AmModuleOf(MeshBlockPack *pp) {
@@ -118,21 +165,21 @@ void AmModule::AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &f
   Mesh *pm = pmy_pack->pmesh;
   Coordinates *pco = pmy_pack->pcoord;
   if (!am_checked) {
+    // amdef-1019: T_code re-evaluates every source variant (wellbalance_static[_reconst],
+    // cs/sp_wellbalanced_src, sp_cart_polar/all_momentum; sp_face_avg only rewrites the
+    // fluxes the update and T_cons both read); what is left is the mesh
     std::string bad = "";
     if (!(pm->use_cubed_sphere || pm->use_spherical_polar)) {
       bad = "a mesh that is neither cubed sphere nor spherical polar";
     }
-    if (fl.wbs) bad = "<" + blk + ">/wellbalance_static";
-    if (pm->use_cubed_sphere && pco->cs_wellbalanced_src) bad = "cs_wellbalanced_src";
-    if (pm->use_spherical_polar && pco->sp_wellbalanced_src) bad = "sp_wellbalanced_src";
-    if (pm->use_spherical_polar && pco->sp_cart_polar_momentum) {
-      bad = "sp_cart_polar_momentum";
+    if (pm->use_spherical_polar && pm->mb_indcs.nx2 < 2) bad = "a 1-D spherical-polar mesh";
+    if (pm->use_spherical_polar && !pm->three_d && pco->sp_cart_polar_momentum) {
+      bad = "sp_cart_polar_momentum in 2-D";
     }
-    if (pm->use_spherical_polar && pco->sp_face_avg) bad = "sp_face_avg";
     if (!bad.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<" << blk << ">/am_transport does not replicate the angular "
-                << "source with " << bad << std::endl;
+                << std::endl << "<" << blk << ">/am_transport does not support " << bad
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
     am_checked = true;
@@ -479,6 +526,22 @@ void AmModule::AmFillV(HydroAmV &v, const AmFluid &fl) {
   v.panel = pmy_pack->pmb->mb_panel;
   v.is = ic.is;  v.js = ic.js;  v.ks = ic.ks;  v.nx2 = ic.nx2;  v.nx3 = ic.nx3;
   v.cs = pm->use_cubed_sphere;
+  // amdef-1019: the source variants
+  v.je = ic.je;
+  v.three_d = pm->three_d;
+  v.wbs = fl.wbs;
+  v.pwb = fl.pwb;
+  v.wbsrc = v.cs ? pco->cs_wellbalanced_src : pco->sp_wellbalanced_src;
+  v.spcart = (!v.cs) && pco->sp_cart_polar_momentum;
+  v.spall = v.spcart && pco->sp_cart_all_momentum;
+  if (v.wbsrc || v.spcart) {
+    // (the coordinate source of this stage built it; AMR rebuilds it there every call)
+    if (static_cast<int>(pco->wb_geom.extent(0)) != pmy_pack->nmb_thispack) {
+      pco->BuildWBGeometry();
+    }
+    v.geom = pco->wb_geom;
+  }
+  v.bcs = pmy_pack->pmb->mb_bcs;
 }
 
 //----------------------------------------------------------------------------------------

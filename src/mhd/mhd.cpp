@@ -25,6 +25,7 @@
 #include "bvals/bvals.hpp"
 #include "mhd/mhd.hpp"
 #include "hydro/hydro_am.hpp"
+#include "utils/recipe.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -70,7 +71,15 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     fofc("fofc",1,1,1,1),
     fofc_cnt("fofc_cnt",1,1,1,1) {
   // cs-open-1018: the angular-momentum module (read only when named)
-  if (hydro::AmModule::Named(pin, "mhd")) {pam = new hydro::AmModule(ppack, pin, "mhd");}
+  // amdef-1019: am_transport defaults on (cs, multi-D sp, fresh dynamic runs)
+  {
+    // (DefaultOn first: it is false at once when am_transport itself is named)
+    const bool amd = hydro::AmModule::DefaultOn(ppack, pin, "mhd");
+    if (amd || hydro::AmModule::Named(pin, "mhd")) {
+      pam = new hydro::AmModule(ppack, pin, "mhd");
+      pam->am_default = amd;
+    }
+  }
   // Total number of MeshBlocks on this rank to be used in array dimensioning
   int nmb = std::max((ppack->nmb_thispack), (ppack->pmesh->nmb_maxperrank));
 
@@ -217,6 +226,19 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   }
         
     // determine if etotgrav and local well-balanced scheme is enabled
+    // amdef-1019: default true where supported (mhd::etotgrav_pgen_default)
+    if (!pin->DoesParameterExist("mhd","etotgrav") && etotgrav_pgen_default &&
+        pin->GetString("mhd","eos") != "isothermal" &&
+        !pmy_pack->pmesh->multilevel) {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddBoolean("mhd","etotgrav",true);
+        recipe::Log("<mhd>/etotgrav = true (default where supported)");
+      } else {
+        recipe::Log("<mhd>/etotgrav = false (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      }
+    }
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
     // SMR/AMR is not supported with etotgrav: the coarse-buffer inversion used for
     // primitive prolongation (bvals/prolong_prims.cpp) reads e + rho*Phi as the internal

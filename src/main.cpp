@@ -38,6 +38,7 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
+#include "utils/recipe.hpp"
 #include "mesh/mesh.hpp"
 #include "outputs/outputs.hpp"
 #include "driver/driver.hpp"
@@ -602,6 +603,9 @@ int main(int argc, char *argv[]) {
   ChangeRunDir(run_dir);
   Driver* pdriver = new Driver(pinput, pmesh, wtlim, &timer);
   Outputs* pout = new Outputs(pinput, pmesh);
+  // amdef-1019: every key a default decided (utils/recipe.hpp), one block (rank 0)
+  recipe::GetMode(pinput);   // validates <job>/recipe also when nothing was defaulted
+  recipe::PrintLog();
 
 
 

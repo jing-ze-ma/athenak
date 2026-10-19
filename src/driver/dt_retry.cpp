@@ -30,6 +30,7 @@
 #include "hydro/hydro_am_dtretry_visit.hpp"
 #include "rad_m1/rad_m1_dtretry_visit.hpp"
 #include "driver/dt_retry.hpp"
+#include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -212,7 +213,12 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry")) {
     on = pin->GetBoolean("time", "dt_retry");
   } else {
-    on = pin->GetOrAddBoolean("time", "dt_retry", fresh);
+    // amdef-1019: the old default (fresh on, restart off) unless <job>/recipe = prod1019,
+    // which also turns it on for a restart whose input lacks the key
+    const bool nd = recipe::NewDefaults(pin);
+    on = pin->GetOrAddBoolean("time", "dt_retry", fresh || nd);
+    recipe::Log(std::string("<time>/dt_retry = ") + (on ? "true" : "false") +
+                (on ? " (default)" : " (restart input has no key: the old default)"));
   }
   if (!on) return;
   // the wiring covers Hydro + RadiationM1 (the implicit scheme); anything else: off

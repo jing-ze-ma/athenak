@@ -96,6 +96,10 @@
 namespace {
 [[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
 [[maybe_unused]] const bool kMhdFofcPgenDefault = (mhd::fofc_pgen_default = true);
+// amdef-1019: this pgen fills the potential and carries rho*Phi (both gravity modes need
+// <hydro>/etotgrav = true): the new etotgrav default applies (hydro::etotgrav_pgen_default)
+[[maybe_unused]] const bool kEtgPgenDefault = (hydro::etotgrav_pgen_default = true);
+[[maybe_unused]] const bool kMhdEtgPgenDefault = (mhd::etotgrav_pgen_default = true);
 }  // namespace
 
 namespace {

@@ -5,6 +5,7 @@
 
 template <class V>
 void hydro::AmModule::DtRetryVisit(V &v) {
+  v.value("am_default", am_default);
   v.value("blk", blk);
   v.value("am_transport", am_transport);
   v.value("am_checked", am_checked);

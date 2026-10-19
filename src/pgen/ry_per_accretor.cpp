@@ -182,6 +182,12 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "pgen.hpp"
+#include "utils/recipe.hpp"
+
+// amdef-1019: the envelope stage fills the potential and carries rho*Phi (it needs
+// <hydro>/etotgrav = true); the isothermal stage has no energy equation and is excluded by
+// the EOS test of the default (hydro::etotgrav_pgen_default)
+[[maybe_unused]] const bool kAccEtgPgenDefault = (hydro::etotgrav_pgen_default = true);
 
 namespace {
 
@@ -4065,6 +4071,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (thout_ && !p3_) fatal("theta_bc = outflow | hse needs problem/phys_3d = true");
     }
     thwc_ = false;
+    // amdef-1019 (USER 10-19): default true with theta_bc = hse under the new default set
+    // (utils/recipe.hpp; recorded so the restart keeps it); a restart whose input lacks
+    // the key and recipe = none keep the old default (off)
+    if (thhse_ && !pin->DoesParameterExist("problem", "theta_wall_closed")) {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddBoolean("problem", "theta_wall_closed", true);
+        recipe::Log("problem/theta_wall_closed = true (default with theta_bc = hse)");
+      } else {
+        recipe::Log(std::string("problem/theta_wall_closed = false (") +
+                    (recipe::GetMode(pin) == recipe::Mode::none ? "recipe none"
+                     : "restart input has no key") + ": the old default)");
+      }
+    }
     if (pin->DoesParameterExist("problem", "theta_wall_closed")) {
       thwc_ = pin->GetBoolean("problem", "theta_wall_closed");
       if (thwc_ && !thhse_) fatal("problem/theta_wall_closed needs theta_bc = hse");

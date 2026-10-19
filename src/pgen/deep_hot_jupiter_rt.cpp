@@ -53,6 +53,7 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "mhd/mhd.hpp"
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
@@ -930,6 +931,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                ? pin->GetBoolean("problem","coriolis_am") : rotating;
     amh::trans = pin->DoesParameterExist("problem","am_transport")
                  ? pin->GetBoolean("problem","am_transport") : rotating;
+    // amdef-1019: the generic <hydro|mhd>/am_transport (default on cs / sp) is the same
+    // transport correction: a DEFAULT one yields to problem/am_transport, a named one
+    // together with it is a FATAL (applied twice)
+    if (amh::trans) {
+      if (hydro::AmModule *pg = hydro::AmModuleOf(pam)) {
+        pg->YieldToPgen(pin, "problem/am_transport");
+      }
+    }
     if (rotating && amh::trans && !trq_ok) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "rotating frame with " << bad << ": problem/am_transport "
