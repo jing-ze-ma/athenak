@@ -5,8 +5,8 @@ No production runs. Do not push to the Arepo repo (Bitbucket); local build branc
 
 ## Why
 Arepo2 IDORT (the IDORT radiation module in Arepo2) is validated on CPU for the RSG g25 star (Orion, 560 ranks). Per g25 top step
-(late in the run) ~42.6 s: radiation ~30 s (IDORT, CPU only, pure MPI, **no OpenMP, no GPU code**), mesh + gravity + hydro
-~12.7 s. On this branch only the mesh (VORONOI_CELL_GPU) and gravity (FORCETREE_NODELOCAL_GPU) have GPU code.
+(late in the run, bd36de23f3) ~44 s: radiation ~26.5 s (IDORT, CPU only, pure MPI, **no OpenMP, no GPU code**), mesh + gravity +
+hydro ~17.5 s. Full g25 run (to t = 3.73e6 s, 5 Orion nodes): 5.07 h = 0.95x the old Arepo-IDORT, physics validated (2026-10-19). On this branch only the mesh (VORONOI_CELL_GPU) and gravity (FORCETREE_NODELOCAL_GPU) have GPU code.
 Questions this task answers:
 1. Does Arepo2-IDORT-dev build and run with the developer's GPU recipe plus IDORT?
 2. **How many MPI ranks per node do CPU work (IDORT) in GPU mode?** IDORT is one rank per core. If GPU mode leaves only a
@@ -15,8 +15,8 @@ Questions this task answers:
 4. The time split (mesh / gravity / hydro / IDORT) GPU vs CPU on the same node count.
 
 ## Code
-- Repo: bitbucket `volkerspringel/arepo` (ssh host `ssh.bitbucket.org`), branch **Arepo2-IDORT-dev**, head **b0ed6a23db**
-  (2026-10-19). IDORT: `src/modules/idort`; tests `examples/idort/` (README.md there: `./test.py idort/<dir>` from
+- Repo: bitbucket `volkerspringel/arepo` (ssh host `ssh.bitbucket.org`), branch **Arepo2-IDORT-dev**, head **bd36de23f3**
+  (2026-10-19, use this or newer). IDORT: `src/modules/idort`; tests `examples/idort/` (README.md there: `./test.py idort/<dir>` from
   `examples/`, each dir has Config.sh, param.txt, create.py, check.py).
 - Base Arepo2_WD is under heavy development by its developer, only tested on NVIDIA A100; feedback welcome.
 - IDORT_DSA needs HYPRE (Orion: own static build of HYPRE 2.32.0, MPI, 32-bit ints). Pass
