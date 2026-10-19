@@ -15706,6 +15706,34 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       Real del[3];
       for (int q = 0; q < 3; ++q) {del[q] = (-dlr[q] + dt*tv[q]) - dlg[q];}
+      // amdef-1019 (static-star fix, USER 10-19 "fix it"): the correction repairs the
+      // torque mismatch of the radiation-gas EXCHANGE (face deposits split between cells
+      // with different arms), which is bounded by the lateral cell size h times the
+      // momentum the gas exchanged in this solve, |dm_gas| V.  Where the radiation's own
+      // transport torque is not the face-stress model T_c (optically thin layers: the
+      // face equation streams, D_nn E' varies laterally with the closure's ray pattern),
+      // del exceeded that bound by orders of magnitude and handed the radiation's
+      // transport L error to tenuous gas as a lateral kick.  Capped at the bound: the
+      // thick / exchange-dominated regime (L_z round-off tests) is unchanged.
+      {
+        const Real a1 = uh(m,IM1,k,j,i) - am_(m,0,k,j,i);
+        const Real b2 = uh(m,IM2,k,j,i) - am_(m,1,k,j,i);
+        const Real b3 = uh(m,IM3,k,j,i) - am_(m,2,k,j,i);
+        const Real a2 = (b2 - c*b3)/s2, a3 = (b3 - c*b2)/s2;
+        Real pm2 = 0.0;
+        for (int q = 0; q < 3; ++q) {
+          const Real pq = a1*rh[q] + a2*e1[q] + a3*e2[q];
+          pm2 += pq*pq;
+        }
+        const Real hlat = r*fmax(xr - xl, er - el);
+        const Real cap = hlat*sqrt(pm2)*dv;
+        const Real dn = amv ? sqrt(del[0]*del[0] + del[1]*del[1] + del[2]*del[2])
+                            : fabs(del[2]);
+        if (dn > cap) {
+          const Real sc = cap/dn;
+          for (int q = 0; q < 3; ++q) {del[q] *= sc;}
+        }
+      }
       if (amdg) {
         Kokkos::atomic_add(&amdg_(0,i), fabs(dlr[2]));
         Kokkos::atomic_add(&amdg_(1,i), fabs(dlg[2]));
