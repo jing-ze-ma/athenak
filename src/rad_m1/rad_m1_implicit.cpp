@@ -2368,6 +2368,26 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                                "pass").compare("step") == 0);
       impl_muscl_pred = pin->GetOrAddBoolean("rad_m1","implicit_hr_recon_pred",false);
       if (impl_muscl_pred) {impl_muscl_nfresh = 1;}   // the row is fixed after E^dc
+      // cs-s7-1019 (read only when named): implicit_hr_recon_q = e (default) | h, the
+      // reconstructed quantity of the plm half-range faces: E (the face state h+-_c
+      // (E_c +- s_c/2), the donor cell's ratio h+-_c kept: an O(dx) face-flux error
+      // dx (h-' - h+') E/2 wherever the ratios vary, i.e. first order in a thin
+      // atmosphere) or the half-range FLUXES H+- = h+- E themselves (h+-_c E_c +- sig_c
+      // (h+-_c+1 E_c+1 - h+-_c-1 E_c-1)/4: second order).  Plain half-range faces only
+      // (implicit_flux_beam = halfrange; not with led, the sf ratios or hr_excess).
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_q")) {
+        std::string sq = pin->GetString("rad_m1","implicit_hr_recon_q");
+        if (sq.compare("h") == 0) {
+          impl_muscl_hq = true;
+        } else if (sq.compare("e") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_q = '" + sq + "' is not a choice (e | h)");
+        }
+        if (impl_muscl_hq && (!impl_beam_hr || impl_muscl_led || impl_hr_sf ||
+                              impl_hr_xs)) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_q = h needs implicit_hr_recon = plm with "
+                    "implicit_flux_beam = halfrange (no sf face ratios, no hr_excess)");
+        }
+      }
     }
     // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
     // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
@@ -16131,6 +16151,15 @@ void RadiationM1::ImplicitMusclBuild() {
   }
   }
   // (2) the row
+  // cs-s7-1019 implicit_hr_recon_q = h: the half-range ratios h+-_d of the cells along
+  // the row (M1HrCell, the source of the face kernels: vet_sc 1, vet_gd 2, model 0)
+  const bool hq = impl_muscl_hq;
+  const bool hqgd = vgd_on && sph && (vgd_hr.extent_int(0) > 0);
+  const int hsrc = vet_sc ? 1 : (hqgd ? 2 : (impl_hr_model ? (twod ? 0 : 3) : -1));
+  auto hvc_ = vet_cell;
+  auto hgh_ = vgd_hr;
+  const Real ch = chat;
+  const int nx1c = ie - is + 1;
   par_for("m1_muscl_row", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dg = 0.0;
@@ -16189,6 +16218,72 @@ void RadiationM1::ImplicitMusclBuild() {
       const Real sc = iw_(m,b+M1_IM_SIG+d,k,j,i);
       const Real sp = iw_(m,b+M1_IM_SIG+d,kp,jp,ip);
       const Real sm = iw_(m,b+M1_IM_SIG+d,km,jm,im);
+      if (hq) {
+        // cs-s7-1019 (implicit_hr_recon_q = h): plm of H+- = h+- E, h frozen for the pass:
+        //  face +: h+_c E_c + sc/4 (h+_c+1 E_c+1 - h+_c-1 E_c-1)
+        //          + h-_c+1 E_c+1 - sp/4 (h-_c+2 E_c+2 - h-_c E_c)
+        //  face -: h+_c-1 E_c-1 + sm/4 (h+_c E_c - h+_c-2 E_c-2)
+        //          + h-_c E_c - sc/4 (h-_c+1 E_c+1 - h-_c-1 E_c-1)
+        // each times the face's w c (AL ch; HCL = w c h+_L, HCR = w c h-_R there).  The
+        // ratios of a cell o (-2..+2) along d are read only where its face term is on
+        // (a physical ghost is never read: sig = 0 in a boundary cell, HCL = HCR = 0 on
+        // a physical face).
+        auto hcell = [&](const int o, Real &hpo, Real &hmo) {
+          int kk = k, jj = j, ii = i;
+          if (d == 0) {
+            ii = i + o;
+            if (cyclic) {
+              while (ii < is) {ii += nx1c;}
+              while (ii > ie) {ii -= nx1c;}
+            }
+          } else if (d == 1) {
+            jj = j + o;
+          } else {
+            kk = k + o;
+          }
+          Real fbo;
+          M1HrCell(hsrc, iw_, hvc_, hgh_, m, kk, jj, ii, d, iw_(m,M1_IW_RF0,kk,jj,ii),
+                   hpo, hmo, fbo);
+          hpo = fmax(hpo, 0.0);
+          hmo = fmin(hmo, 0.0);
+        };
+        Real alp, alm;
+        if (d == 0) {
+          alp = ifw_(m,M1_IFW_AL,k,j,i+1); alm = ifw_(m,M1_IFW_AL,k,j,i);
+        } else if (d == 1) {
+          alp = bw2_(m,M1_IFW_AL,k,j+1,i); alm = bw2_(m,M1_IFW_AL,k,j,i);
+        } else {
+          alp = bw3_(m,M1_IFW_AL,k+1,j,i); alm = bw3_(m,M1_IFW_AL,k,j,i);
+        }
+        const Real ap = 0.25*alp*ch, am = 0.25*alm*ch;
+        Real ca1 = 0.0, ca0 = 0.0, cb2 = 0.0, cb0 = 0.0;
+        Real cc0 = 0.0, cc2 = 0.0, cd1 = 0.0, cd0 = 0.0;
+        Real hpa, hma, hpb, hmb;
+        if (hlp != 0.0 && sc != 0.0) {
+          hcell(1, hpa, hma); hcell(-1, hpb, hmb);
+          ca1 = fp*sc*ap*hpa; ca0 = fp*sc*ap*hpb;
+        }
+        if (hrp != 0.0 && sp != 0.0) {
+          hcell(2, hpa, hma); hcell(0, hpb, hmb);
+          cb2 = fp*sp*ap*hma; cb0 = fp*sp*ap*hmb;
+        }
+        if (hlm != 0.0 && sm != 0.0) {
+          hcell(0, hpa, hma); hcell(-2, hpb, hmb);
+          cc0 = fm*sm*am*hpa; cc2 = fm*sm*am*hpb;
+        }
+        if (hrm != 0.0 && sc != 0.0) {
+          hcell(1, hpa, hma); hcell(-1, hpb, hmb);
+          cd1 = fm*sc*am*hma; cd0 = fm*sc*am*hmb;
+        }
+        // row = fp dG+ - fm dG-: x-2 cc2; x-1 -(ca0 + cd0); x+1 ca1 + cd1; x+2 -cb2;
+        // x0 cb0 - cc0
+        cf[d][0] = cc2;
+        cf[d][1] = -(ca0 + cd0);
+        cf[d][2] = ca1 + cd1;
+        cf[d][3] = -cb2;
+        dg += cb0 - cc0;
+        continue;
+      }
       if (led) {
         // per-row sign-preserving linearisation (XTHINFIX.md B2): a = s/dL, b = s/dR
         const Real bc = iw_(m,b+M1_IM_B+d,k,j,i);

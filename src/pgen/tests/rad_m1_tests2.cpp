@@ -1183,6 +1183,13 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     if (sp && pin->DoesParameterExist("problem","rho_lat_sp")) {
       rls = pin->GetReal("problem","rho_lat_sp");
     }
+    // cs-s7-1019 (cs and sp, read only when named): rho_rad_h = H > 0 multiplies the gas
+    // density by exp(-(r - x1min)/H): a smooth radial atmosphere (thick at the base,
+    // thin at the top, the photosphere resolved) for the steady S7 thin-regime order test
+    Real rrh = 0.0;
+    if (pin->DoesParameterExist("problem","rho_rad_h")) {
+      rrh = pin->GetReal("problem","rho_rad_h");
+    }
     auto mbpan = pmbp->pmb->mb_panel;
     auto &msz = pmy_mesh_->mesh_size;
     const Real x1a = msz.x1min, x1l = msz.x1max - msz.x1min;
@@ -1239,6 +1246,11 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       if (rls != 0.0) {
         const Real fr = 1.0 + rls*cos(2.0*M_PI*(x2v(m,j) - x2a)/x2l)
                         *cos(2.0*M_PI*(x3v(m,k) - x3a)/x3l);
+        uh(m,IDN,k,j,i) *= fr;
+        uh(m,IEN,k,j,i) *= fr;
+      }
+      if (rrh > 0.0) {
+        const Real fr = exp(-(r - x1a)/rrh);
         uh(m,IDN,k,j,i) *= fr;
         uh(m,IEN,k,j,i) *= fr;
       }
