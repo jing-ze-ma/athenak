@@ -24,6 +24,7 @@
 #include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
 #include "hydro.hpp"
+#include "hydro_mergelat.hpp"
 #include "diffusion/conduction.hpp"
 #include "diffusion/viscosity.hpp"
 #include "srcterms/srcterms.hpp"
@@ -87,6 +88,13 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   auto &sncell_ = pmy_pack->pcoord->sin_cell;
   const bool multi_d_ = pmy_pack->pmesh->multi_d;
   const bool three_d_ = pmy_pack->pmesh->three_d;
+  // mrglat-1019: the merged cells' lateral CFL width is the GROUP width f dx2, f dx3
+  const bool mlat_ = (pmlat != nullptr && pmlat->on);
+  DvceArray2D<int> mlfi_;
+  if (mlat_) {
+    pmlat->Build();
+    mlfi_ = pmlat->fi;
+  }
 
   // RADIATION SIGNAL SPEED (<hydro>/rad_signal_speed; default on with an implicit M1
   // transport, see hydro.cpp).  The gas sound speed alone understates the acoustic speed
@@ -151,9 +159,15 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       j += js;
 
       if (use_cubed_sphere || use_spherical_polar) {
+        const Real mf = mlat_ ? static_cast<Real>(mlfi_(m,i)) : 1.0;
         min_dt1 = fmin((dx1_(m,k,j,i)/fabs(w0_(m,IVX,k,j,i))), min_dt1);
+        if (mlat_) {
+          min_dt2 = fmin((mf*dx2_(m,k,j,i)/fabs(w0_(m,IVY,k,j,i))), min_dt2);
+          min_dt3 = fmin((mf*dx3_(m,k,j,i)/fabs(w0_(m,IVZ,k,j,i))), min_dt3);
+        } else {
         min_dt2 = fmin((dx2_(m,k,j,i)/fabs(w0_(m,IVY,k,j,i))), min_dt2);
         min_dt3 = fmin((dx3_(m,k,j,i)/fabs(w0_(m,IVZ,k,j,i))), min_dt3);
+        }
       } else {
       min_dt1 = fmin((mbsize.d_view(m).dx1/fabs(w0_(m,IVX,k,j,i))), min_dt1);
       min_dt2 = fmin((mbsize.d_view(m).dx2/fabs(w0_(m,IVY,k,j,i))), min_dt2);
@@ -247,6 +261,10 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           Real h[3];
           if (use_cubed_sphere || use_spherical_polar) {
             h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
+            if (mlat_) {
+              h[1] *= static_cast<Real>(mlfi_(m,i));
+              h[2] *= static_cast<Real>(mlfi_(m,i));
+            }
           } else {
             h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
             h[2] = mbsize.d_view(m).dx3;
@@ -293,12 +311,23 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       }
       Real cell_dt;
       if (use_cubed_sphere || use_spherical_polar) {
+        if (mlat_) {
+          const Real mf = static_cast<Real>(mlfi_(m,i));
+          const Real h2 = mf*dx2_(m,k,j,i), h3 = mf*dx3_(m,k,j,i);
+          min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
+          min_dt2 = fmin((h2/max_dv2), min_dt2);
+          min_dt3 = fmin((h3/max_dv3), min_dt3);
+          cell_dt = dx1_(m,k,j,i)/max_dv1;
+          if (multi_d_) cell_dt = fmin(cell_dt, h2/max_dv2);
+          if (three_d_) cell_dt = fmin(cell_dt, h3/max_dv3);
+        } else {
         min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
         min_dt2 = fmin((dx2_(m,k,j,i)/max_dv2), min_dt2);
         min_dt3 = fmin((dx3_(m,k,j,i)/max_dv3), min_dt3);
         cell_dt = dx1_(m,k,j,i)/max_dv1;
         if (multi_d_) cell_dt = fmin(cell_dt, dx2_(m,k,j,i)/max_dv2);
         if (three_d_) cell_dt = fmin(cell_dt, dx3_(m,k,j,i)/max_dv3);
+        }
       } else {
       min_dt1 = fmin((mbsize.d_view(m).dx1/max_dv1), min_dt1);
       min_dt2 = fmin((mbsize.d_view(m).dx2/max_dv2), min_dt2);
@@ -366,6 +395,11 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;
+  // mrglat-1019 <hydro>/merge_lat_diag: the global gas M, E, P, L sums
+  if (pmlat != nullptr && pmlat->diag_every > 0 &&
+      (pmy_pack->pmesh->ncycle % pmlat->diag_every) == 0) {
+    pmlat->Diag(u0, "h");
+  }
 
   // DEBUG dt report (r2b_shift_1003; env ATHENA_DT_REPORT = N > 0, every N cycles,
   // no key, no state change): the rank holding the global minimum hydro dt prints the

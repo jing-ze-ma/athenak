@@ -90,6 +90,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
 //   psrc : SourceTerms *
 //   fofc_rep : FofcReport
 //   pam : hydro::AmModule *
+//   pmlat : hydro::MergeLat *
 //   id : HydroTaskIDs
 //   pmy_pack : MeshBlockPack *
 

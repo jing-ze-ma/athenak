@@ -29,6 +29,7 @@
 #include "hydro/hydro.hpp"
 #include "pgen/pgen.hpp"
 #include "hydro/hydro_am.hpp"
+#include "hydro/hydro_mergelat.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "utils/c2p_track.hpp"
 
@@ -212,7 +213,10 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   // after it: the two are operator-split from each other and from the hydro
   id.imptrc    = tl["stagen"]->AddTask(&Hydro::ImplicitTransverseConduction, this,
                                        id.impcnd);
-  id.sendu_oa  = tl["stagen"]->AddTask(&Hydro::SendU_OA, this, id.imptrc);
+  // mrglat-1019: the group average of the merged lateral cells (no-op unless
+  // <hydro>/merge_lat_rc), after every operator of the stage and before any send
+  id.mrglat    = tl["stagen"]->AddTask(&Hydro::MergeLatTask, this, id.imptrc);
+  id.sendu_oa  = tl["stagen"]->AddTask(&Hydro::SendU_OA, this, id.mrglat);
   id.recvu_oa  = tl["stagen"]->AddTask(&Hydro::RecvU_OA, this, id.sendu_oa);
   id.restu     = tl["stagen"]->AddTask(&Hydro::RestrictU, this, id.recvu_oa);
   id.sendu     = tl["stagen"]->AddTask(&Hydro::SendU, this, id.restu);
@@ -624,6 +628,16 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
     pcond->ImplicitTransverseUpdate(u0, peos->eos_data, beta_dt);
   }
   runaway_scan::Scan(pmy_pack->pmesh, "implicit_transverse_conduction");
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskList Hydro::MergeLatTask
+//! \brief mrglat-1019: the group average of the merged lateral cells (hydro_mergelat.hpp)
+
+TaskStatus Hydro::MergeLatTask(Driver *pdrive, int stage) {
+  if (pmlat == nullptr || !pmlat->on) return TaskStatus::complete;
+  pmlat->Average(u0, nhydro, nhydro + nscalars, 0, phicc0, use_etotgrav);
   return TaskStatus::complete;
 }
 
