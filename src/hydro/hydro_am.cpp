@@ -34,6 +34,7 @@
 #include "mhd/mhd.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "hydro/hydro_am.hpp"
+#include "utils/recipe.hpp"
 
 namespace hydro {
 
@@ -48,7 +49,7 @@ bool AmModule::DefaultOn(MeshBlockPack *ppack, ParameterInput *pin, const std::s
   if (pin->DoesParameterExist(b, "am_transport")) return false;
   Mesh *pm = ppack->pmesh;
   if (!(pm->use_cubed_sphere || pm->use_spherical_polar)) return false;   // silent
-  const bool root = (global_variable::my_rank == 0);
+  const std::string key = "<" + b + ">/am_transport";
   const std::string ev = pin->DoesParameterExist("time","evolution")
                          ? pin->GetString("time","evolution") : "";
   std::string why = "";
@@ -59,27 +60,20 @@ bool AmModule::DefaultOn(MeshBlockPack *ppack, ParameterInput *pin, const std::s
     why = "2-D spherical polar with sp_cart_polar_momentum";
   }
   if (!why.empty()) {
-    if (root) {
-      std::cout << "<" << b << ">/am_transport not named: default off (" << why << ")"
-                << std::endl;
-    }
+    recipe::Log(key + " = false (not supported: " + why + ")");
     return false;
   }
-  if (global_variable::restart_run) {
-    if (root) {
-      std::cout << "<" << b << ">/am_transport: restart input has no <" << b
-                << ">/am_transport: keeping the old default (off); set it true to switch"
-                << std::endl;
-    }
+  if (!recipe::NewDefaults(pin)) {
+    recipe::Log(key + " = false (" + (recipe::GetMode(pin) == recipe::Mode::none
+                ? std::string("recipe none: the old default")
+                : std::string("restart input has no key: the old default kept; set it "
+                              "true or <job>/recipe = prod1019 to switch")) + ")");
     return false;
   }
   pin->GetOrAddBoolean(b, "am_transport", true);
-  if (root) {
-    std::cout << "<" << b << ">/am_transport = true (default on the "
-              << (pm->use_cubed_sphere ? "cubed sphere" : "spherical-polar mesh")
-              << "; set it false to switch the angular-momentum transport correction off)"
-              << std::endl;
-  }
+  recipe::Log(key + " = true (default on the " +
+              std::string(pm->use_cubed_sphere ? "cubed sphere" : "spherical-polar mesh") +
+              "; set it false to switch the angular-momentum transport correction off)");
   return true;
 }
 
@@ -94,10 +88,7 @@ void AmModule::YieldToPgen(ParameterInput *pin, const std::string &who) {
   }
   am_transport = false;
   pin->SetBoolean(blk, "am_transport", false);
-  if (global_variable::my_rank == 0) {
-    std::cout << "<" << blk << ">/am_transport: default off (" << who << " is on)"
-              << std::endl;
-  }
+  recipe::Log("<" + blk + ">/am_transport = false (default yields: " + who + " is on)");
 }
 
 AmModule *AmModuleOf(MeshBlockPack *pp) {

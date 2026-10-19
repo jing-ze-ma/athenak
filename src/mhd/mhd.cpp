@@ -25,6 +25,7 @@
 #include "bvals/bvals.hpp"
 #include "mhd/mhd.hpp"
 #include "hydro/hydro_am.hpp"
+#include "utils/recipe.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -225,6 +226,19 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   }
         
     // determine if etotgrav and local well-balanced scheme is enabled
+    // amdef-1019: default true where supported (mhd::etotgrav_pgen_default)
+    if (!pin->DoesParameterExist("mhd","etotgrav") && etotgrav_pgen_default &&
+        pin->GetString("mhd","eos") != "isothermal" &&
+        !pmy_pack->pmesh->multilevel) {
+      if (recipe::NewDefaults(pin)) {
+        pin->GetOrAddBoolean("mhd","etotgrav",true);
+        recipe::Log("<mhd>/etotgrav = true (default where supported)");
+      } else {
+        recipe::Log("<mhd>/etotgrav = false (" + std::string(
+            recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+            "restart input has no key") + ": the old default)");
+      }
+    }
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
     // SMR/AMR is not supported with etotgrav: the coarse-buffer inversion used for
     // primitive prolongation (bvals/prolong_prims.cpp) reads e + rho*Phi as the internal

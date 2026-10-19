@@ -63,6 +63,7 @@
 #include "coordinates/cubed_sphere.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
+#include "utils/recipe.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
@@ -1046,6 +1047,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit", full ? 200 : 30);
   impl_lin_tol = pin->GetOrAddReal("rad_m1","implicit_lin_tol",1.0e-10);
   impl_lin_maxit = pin->GetOrAddInteger("rad_m1","implicit_lin_maxit",200);
+  // amdef-1019 (USER 10-19): default bicgstab under the new default set
+  // (utils/recipe.hpp); a restart whose input lacks the key / recipe none: line_jacobi
+  if (!pin->DoesParameterExist("rad_m1","implicit_solver")) {
+    const bool nd = recipe::NewDefaults(pin);
+    recipe::Log(std::string("<rad_m1>/implicit_solver = ") +
+                (nd ? "bicgstab (default)" : "line_jacobi (the old default)"));
+    pin->GetOrAddString("rad_m1","implicit_solver", nd ? "bicgstab" : "line_jacobi");
+  }
   {std::string sv = pin->GetOrAddString("rad_m1","implicit_solver","line_jacobi");
   if (sv.compare("line_jacobi") == 0) {
     impl_solver = M1_ISOLV_LINE_JACOBI;
@@ -1664,13 +1673,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (!(impl_res_fatal >= 0.0)) {
       ImplFatal("<rad_m1>/implicit_resid_fatal must be >= 0");
     }
+  } else if (recipe::NewDefaults(pin)) {
+    // amdef-1019 (USER 10-19): 1e-2 under the new default set (utils/recipe.hpp)
+    impl_res_fatal = pin->GetOrAddReal("rad_m1","implicit_resid_fatal",1.0e-2);
+    recipe::Log("<rad_m1>/implicit_resid_fatal = 1e-2 (default)");
   } else if (global_variable::restart_run) {
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> restart input has no implicit_resid_fatal: keeping the old "
-                << "default (off); set it to switch" << std::endl;
-    }
+    recipe::Log("<rad_m1>/implicit_resid_fatal = 0 (off: restart input has no key, the "
+                "old default kept; set it to switch)");
   } else {
     impl_res_fatal = pin->GetOrAddReal("rad_m1","implicit_resid_fatal",1.0e2);
+    recipe::Log("<rad_m1>/implicit_resid_fatal = 1e2 (recipe none: the old default)");
   }
   if (impl_res_dmin < 0.0 || impl_res_rmax < 0.0) {
     ImplFatal("<rad_m1>/implicit_res_dmin and implicit_res_rmax must be >= 0");
@@ -3032,6 +3044,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                  named("mhd","am_transport") || named("mhd","am_vector");
     if (pin->DoesParameterExist("rad_m1","implicit_am_cs")) {
       impl_am_cs = pin->GetBoolean("rad_m1","implicit_am_cs");
+    } else {
+      recipe::Log(std::string("<rad_m1>/implicit_am_cs = ") + (impl_am_cs ? "true" : "false")
+                  + " (cubed sphere: follows <hydro|mhd>/am_transport)");
     }
     am_vec = impl_am_cs && (named("hydro","am_vector") || named("mhd","am_vector"));
   }

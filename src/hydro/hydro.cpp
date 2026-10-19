@@ -25,6 +25,7 @@
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
+#include "utils/recipe.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -181,6 +182,20 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
         
   // determine if etotgrav and local well-balanced scheme is enabled
+  // amdef-1019: default true where supported (hydro::etotgrav_pgen_default, an energy
+  // equation, no refinement) under the new default set (utils/recipe.hpp)
+  if (!pin->DoesParameterExist("hydro","etotgrav") && etotgrav_pgen_default &&
+      pin->GetString("hydro","eos") != "isothermal" &&
+      !pmy_pack->pmesh->multilevel) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("hydro","etotgrav",true);
+      recipe::Log("<hydro>/etotgrav = true (default where supported)");
+    } else {
+      recipe::Log("<hydro>/etotgrav = false (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old default)");
+    }
+  }
   use_etotgrav = pin->GetOrAddBoolean("hydro","etotgrav",false);
   // SMR/AMR is not supported with etotgrav: the coarse-buffer inversion used for
   // primitive prolongation (bvals/prolong_prims.cpp) reads e + rho*Phi as the internal

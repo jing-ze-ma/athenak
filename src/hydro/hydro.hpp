@@ -93,6 +93,12 @@ inline int rsolv_nanrep_lines = 0;
 // runs; read once by the Hydro constructor.  An input that names the key is unchanged; a
 // RESTART whose embedded input lacks the key keeps the old default (off).
 inline bool fofc_pgen_default = false;
+// amdef-1019 (USER 10-19): <hydro>/etotgrav pgen-level support flag.  The new default
+// etotgrav = true (utils/recipe.hpp) applies only where SUPPORTED: a problem generator that
+// fills the potential (phicc0/phi0) and writes its energy with rho*Phi sets this true at
+// static initialisation (he_star_m1, ry_per_accretor); plus an energy equation (not the
+// isothermal EOS) and no mesh refinement.  Elsewhere the default stays off silently.
+inline bool etotgrav_pgen_default = false;
 
 //----------------------------------------------------------------------------------------
 //! \class Hydro
