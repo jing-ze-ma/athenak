@@ -397,6 +397,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
                             e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
       });
       if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();
+      if (wall_emf_zero) WallEmfZero();
       return TaskStatus::complete;
     }
 
@@ -528,7 +529,60 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     });
   }
   if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();
+  if (wall_emf_zero) WallEmfZero();
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::WallEmfZero
+//! \brief cs-open-1018 <mhd>/wall_emf_zero: on every REFLECTING mesh face of a
+//! MeshBlock the two edge-EMF components tangential to that face are set to exactly 0
+//! (perfectly conducting wall at rest): the CT update then leaves the face-normal field
+//! of the wall faces unchanged (0 for a closed shell), so the wall carries no Maxwell
+//! stress -B_n B_t and no Poynting flux.  Generic: Cartesian, spherical polar, cubed
+//! sphere (x1 = r there; the panel faces are never reflecting).
+
+void MHD::WallEmfZero() {
+  auto e1 = efld.x1e;
+  auto e2 = efld.x2e;
+  auto e3 = efld.x3e;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const int kp = td ? 1 : 0, jp = md ? 1 : 0;
+  par_for("wall_emf0", DevExeSpace(), 0, nmb1, ks, ke+kp, js, je+jp, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const bool r1 = (i == is && mb_bcs.d_view(m,BoundaryFace::inner_x1) ==
+                     BoundaryFlag::reflect) ||
+                    (i == ie+1 && mb_bcs.d_view(m,BoundaryFace::outer_x1) ==
+                     BoundaryFlag::reflect);
+    const bool r2 = md && ((j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) ==
+                            BoundaryFlag::reflect) ||
+                           (j == je+1 && mb_bcs.d_view(m,BoundaryFace::outer_x2) ==
+                            BoundaryFlag::reflect));
+    const bool r3 = td && ((k == ks && mb_bcs.d_view(m,BoundaryFace::inner_x3) ==
+                            BoundaryFlag::reflect) ||
+                           (k == ke+1 && mb_bcs.d_view(m,BoundaryFace::outer_x3) ==
+                            BoundaryFlag::reflect));
+    // e1(k: ks..ke+1, j: js..je+1, i: is..ie), e2(k: ks..ke+1, j: js..je, i: is..ie+1),
+    // e3(k: ks..ke, j: js..je+1, i: is..ie+1)
+    if (r1) {
+      if (j <= je || !md) {e2(m,k,j,i) = 0.0;}
+      if (k <= ke || !td) {e3(m,k,j,i) = 0.0;}
+    }
+    if (r2 && i <= ie) {
+      e1(m,k,j,i) = 0.0;
+      if (k <= ke || !td) {e3(m,k,j,i) = 0.0;}
+    }
+    if (r3) {
+      if (i <= ie) {e1(m,k,j,i) = 0.0;}
+      if (j <= je || !md) {e2(m,k,j,i) = 0.0;}
+    }
+  });
 }
 
 void MHD::PolarAzimuthalAverageEr() {
