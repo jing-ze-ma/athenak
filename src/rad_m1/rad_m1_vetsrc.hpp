@@ -60,7 +60,7 @@ namespace radm1 {
 
 template <class EosT>
 KOKKOS_INLINE_FUNCTION
-Real VetRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
+Real VetRelaxedSourceQ(const EosT &eos, const Real d, const Real tb, const Real eb,
                        const Real rkp, const Real rke, const Real eth, const Real ar,
                        const Real cl, const Real ch, const Real dt,
                        const int sf, const Real chi, const Real rkes,
@@ -99,13 +99,71 @@ Real VetRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real e
 // stiff (x >> x0, w -> 1: no current-J vet_scatter source, which state amplifies).
 template <class EosT>
 KOKKOS_INLINE_FUNCTION
-Real VetRelaxedSourceB(const EosT &eos, const Real d, const Real tb, const Real eb,
+Real VetRelaxedSourceBQ(const EosT &eos, const Real d, const Real tb, const Real eb,
                        const Real rkp, const Real rke, const Real eth, const Real ar,
                        const Real cl, const Real ch, const Real dt,
                        const int sf, const Real chi, const Real rkes, const Real x0,
                        const Real qe = 0.0) {
-  const Real s1 = VetRelaxedSource(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, dt, sf,
+  const Real s1 = VetRelaxedSourceQ(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, dt, sf,
                                     chi, rkes, qe);
+  const Real s0 = VetRelaxedSourceQ(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, 0.0, sf,
+                                    chi, rkes);
+  M1EosDirect<EosT> th{eos};
+  Real ee, cv;
+  th(d, tb, ee, cv);
+  const Real xe = ch*dt*rke;
+  const Real xg = cl*dt*rkp*ar*4.0*tb*tb*tb/((1.0 + xe)*fmax(d*cv, 1.0e-300));
+  const Real x = xe + xg;
+  const Real w = (x*x)/(x0*x0 + x*x);
+  return s0 + w*(s1 - s0);
+}
+
+//! amdef-1019: the 5864f189 relaxed source VERBATIM (VetRelaxedSource / VetRelaxedSourceB
+//! without qe), called whenever relaxed_esc is not named, so the relaxed default keeps its
+//! exact device code generation (A100 FMA contraction: the qe-generalised kernel changed
+//! vet_source = relaxed runs at round-off, hg145 gbit); relaxed_esc calls the ...Q forms
+template <class EosT>
+KOKKOS_INLINE_FUNCTION
+Real VetRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
+                       const Real rkp, const Real rke, const Real eth, const Real ar,
+                       const Real cl, const Real ch, const Real dt,
+                       const int sf, const Real chi, const Real rkes) {
+  const Real ix = 1.0/(1.0 + ch*dt*rke);
+  M1EosDirect<EosT> th{eos};
+  Real ee, cv;
+  th(d, tb, ee, cv);
+  Real ts = tb;
+  bool ok = true;
+  (void) M1ImplTemperatureT(th, d, tb, ee, cl*dt*rkp*ar*ix, cl*dt*rke*eb*ix, ts, ok);
+  if (!(ok && ts > 0.0)) {ts = tb;}
+  const Real t2 = ts*ts;
+  const Real t4 = t2*t2;
+  const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
+  // vet_scatter: B* of the relaxed gas with (sf = 1, 2; vet_scatter_j = current) the
+  // CURRENT J = eb (E^n or the Picard iterate) or (sf = 3, 4; vet_scatter_j = relaxed)
+  // the relaxed E*, the consistent end-of-step pair (S - E* = (E* - eb)/(c dt chi))
+  if (sf != 0) {
+    return VetScatterMix((sf > 2) ? (sf - 2) : sf, rkp, chi, rkes, ar*t4,
+                         (sf > 2) ? es : eb);
+  }
+  return eth*ar*t4 + (1.0 - eth)*es;
+}
+
+// sporder-1012, time2_vet_col_source = blend: S = S*(0) + w (S*(dt) - S*(0)),
+// w = x^2/(x0^2 + x^2), x = x_E + x_g the cell's exchange stiffness over the step,
+// x_E = chat dt rho kappa_E, x_g = c dt rho kappa_P 4 a T^3/((1 + x_E) rho c_v).  The
+// relaxed source of the PREDICTED state (~ t^{n+1}) relaxes it by a further dt: O(dt)
+// error where the exchange is resolved (first order in time, vcpred-1010).  blend is the
+// state's own source there (O(x^3) from it) and the relaxed source where the exchange is
+// stiff (x >> x0, w -> 1: no current-J vet_scatter source, which state amplifies).
+template <class EosT>
+KOKKOS_INLINE_FUNCTION
+Real VetRelaxedSourceB(const EosT &eos, const Real d, const Real tb, const Real eb,
+                       const Real rkp, const Real rke, const Real eth, const Real ar,
+                       const Real cl, const Real ch, const Real dt,
+                       const int sf, const Real chi, const Real rkes, const Real x0) {
+  const Real s1 = VetRelaxedSource(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, dt, sf,
+                                    chi, rkes);
   const Real s0 = VetRelaxedSource(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, 0.0, sf,
                                     chi, rkes);
   M1EosDirect<EosT> th{eos};

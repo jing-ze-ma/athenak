@@ -623,12 +623,18 @@ void RadiationM1::VetLatSweep(const int stage) {
         // vetsrc-1020 relaxed_esc: the escape rate of the cell (0 = relaxed)
         const Real qe = VetEscapeRate(sesc, chi, hsp ? (cx1f(m,i+1) - cx1f(m,i))
                                                      : mbsize.d_view(m).dx1);
-        s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+        s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
                                      opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i), eth,
                                      ar, cl, chs, dts, vsr, chi, rks, sx0, qe)
+                : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
+                                    opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                    chi, rks, qe))
+               : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+                                     opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i), eth,
+                                     ar, cl, chs, dts, vsr, chi, rks, sx0)
                 : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
                                     opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
-                                    chi, rks, qe);
+                                    chi, rks));
       } else if (vsf != 0) {
         s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
       } else {
