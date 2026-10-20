@@ -15144,7 +15144,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
     // t2retry-1020: time2_reject = retry (with dt_retry): the cycle is taken again at a
     // smaller dt (the Driver skips the backward-Euler redo when dtr_fail is raised)
-    const bool t2rt = t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe;
+    // t2befb-1020: after dt_retry_t2_be such cuts in this cycle (dtr_t2be) the stage takes
+    // the backward-Euler redo instead (a rejection that a smaller dt does not cure)
+    const bool t2rt = t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe && !dtr_t2be;
     if (t2rt) {
       if (!dtr_fail) {dtr_why = 5; dtr_resid = vmin;}
       dtr_fail = true;
@@ -15154,7 +15156,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 << " NOT ADMISSIBLE at cycle " << pmy_pack->pmesh->ncycle
                 << " (converged=" << converged << " min(E,T)=" << vmin
                 << (t2rt ? "): the cycle is retried at a smaller dt (time2_reject = retry)"
-                         : "): the step is redone with backward Euler") << std::endl;
+                         : ((t2_reject == 1 && dtr_on && dtr_t2be)
+                            ? "): the step is redone with backward Euler (time2_reject = "
+                              "retry: dt_retry_t2_be cuts did not cure it)"
+                            : "): the step is redone with backward Euler")) << std::endl;
     }
     // DEBUG <rad_m1>/dbg_t2_admiss = N (default 0 = off): for the first N non-admissible
     // stages, which quantity went <= 0 and where.  Read-only diagnostics after the

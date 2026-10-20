@@ -243,6 +243,13 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_fac_t2")) {
     t2_fac_ = pin->GetReal("time", "dt_retry_fac_t2");
   }
+  // t2befb-1020: <time>/dt_retry_t2_be (read only when named; default 2): a cycle that
+  // has taken this many time2_reject cuts redoes a further non-admissible hesdirk2 stage
+  // with backward Euler (as time2_reject = be) instead of cutting again; < 0 = never
+  if (pin->DoesParameterExist("time", "dt_retry_t2_be")) {
+    t2_be_ = pin->GetInteger("time", "dt_retry_t2_be");
+  }
+  pk->pradm1->dtr_t2be = (t2_be_ == 0);
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
   all_views_ = (vm == "all");
   if (!all_views_ && vm != "minimal") {
@@ -401,6 +408,10 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   m1->dtr_fail = false;
   m1->dtr_why = 0;
   m1->dtr_resid = 0.0;
+  // t2befb-1020: count this cycle's time2_reject cuts (after the restore, which puts the
+  // checkpointed members back); at dt_retry_t2_be of them the next rejection takes BE
+  if (why == 5) {nt2cut_ += 1;}
+  m1->dtr_t2be = (t2_be_ >= 0 && nt2cut_ >= t2_be_);
   if (poison_ > 0 && why == 9) {
     // dt_retry_views = all: every View the failed attempt changed that the minimal list
     // does NOT checkpoint goes to NaN after the restore; the retried cycle is bitwise the
@@ -457,6 +468,10 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
 void DtRetry::Accept(Mesh *pm) {
   if (!on) return;
   ncut_ = 0;
+  // t2befb-1020: a cycle accepted after the backward-Euler redo of time2_reject = retry
+  if (pm->pmb_pack->pradm1->dtr_t2be) {nt2be_ += 1;}
+  nt2cut_ = 0;
+  pm->pmb_pack->pradm1->dtr_t2be = (t2_be_ == 0);
   if (pm->dt_cap > 0.0) {
     ngood_ += 1;
     if (ngood_ > ngood_req_) {pm->dt_cap *= grow_;}
@@ -488,6 +503,10 @@ void DtRetry::Report(Mesh *pm) {
   std::cout << "<time> dt_retry: " << nsave_ << " checkpoints (" << tsave_ << " s, "
             << static_cast<double>(bytes_dev_)/1.0e6 << " MB on rank 0), " << nretry_
             << " retries, cap " << pm->dt_cap << std::endl;
+  if (nt2be_ > 0) {
+    std::cout << "<time> dt_retry: " << nt2be_ << " cycles took the backward-Euler redo "
+              << "after " << t2_be_ << " time2_reject cuts (dt_retry_t2_be)" << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------
