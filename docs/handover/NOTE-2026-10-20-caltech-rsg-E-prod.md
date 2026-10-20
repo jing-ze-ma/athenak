@@ -23,3 +23,4 @@
   runs), not 563ab474. Its log prints the md5. Say if you need 563ab474 specifically.
 - Accretor: USER decided to START FRESH on 3896d529 + <problem>/coriolis_lz = true (new dir acc3d_trc_1020; link 1 = in-job H200
   check then chain). Old chain 5088058 keeps running until the new link 1 starts, then cancelled (dir kept). Accretor build in progress.
+- 10-20 12:25 PDT: accretor 3896d529 H200 nofma md5 8742a14494bdcdb3f8b96a1d09e439da. FRESH chain (deck v11amwtr + coriolis_lz = true, dir acc3d_trc_1020): links 5153470 (in-job C/C2/R check, then chain) 5153471 5153473 5153474 5153475 5153477, 7 d, afterok. Old 13206541 chain cancelled once 5153470 starts.
