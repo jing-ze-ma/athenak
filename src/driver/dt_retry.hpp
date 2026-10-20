@@ -148,6 +148,7 @@ class DtRetry {
   int ncut_ = 0;         // cuts of the current cycle
   int force_cycle_ = -1; // debug: raise a failure at this cycle (once)
   Real force_fac_ = 0.5;
+  Real t2_fac_ = -1.0;     // t2retry-1020: <time>/dt_retry_fac_t2 (reason time2_reject; < 0 = fac_)
   bool forced_done_ = false;
   std::vector<std::string> extra_views_;
   std::set<std::string> sel_;

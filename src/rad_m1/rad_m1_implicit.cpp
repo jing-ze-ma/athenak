@@ -15142,11 +15142,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     t2_fail = !converged || !(vmin > 0.0) || (od_now != impl_offdiag) ||
               (vimp_now != impl_vimp) ||
               ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
+    // t2retry-1020: time2_reject = retry (with dt_retry): the cycle is taken again at a
+    // smaller dt (the Driver skips the backward-Euler redo when dtr_fail is raised)
+    const bool t2rt = t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe;
+    if (t2rt) {
+      if (!dtr_fail) {dtr_why = 5; dtr_resid = vmin;}
+      dtr_fail = true;
+    }
     if (t2_fail && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> hesdirk2 stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2)
                 << " NOT ADMISSIBLE at cycle " << pmy_pack->pmesh->ncycle
                 << " (converged=" << converged << " min(E,T)=" << vmin
-                << "): the step is redone with backward Euler" << std::endl;
+                << (t2rt ? "): the cycle is retried at a smaller dt (time2_reject = retry)"
+                         : "): the step is redone with backward Euler") << std::endl;
     }
     // DEBUG <rad_m1>/dbg_t2_admiss = N (default 0 = off): for the first N non-admissible
     // stages, which quantity went <= 0 and where.  Read-only diagnostics after the
