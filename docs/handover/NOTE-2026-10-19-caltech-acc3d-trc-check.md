@@ -22,3 +22,4 @@ fixed binary (or release them if you say the current binary is acceptable as is)
 - 10-19 18:40 PDT: P100 build queue was ~13 h -> built 5f29b077 incrementally on the login node instead (same inc tree + recipe:
   -ffp-contract=off, HOPPER90; only ry_per_accretor.cpp recompiled). md5 413894fc6e9c96bb3be23af593b46514.
   Jobs replaced: check 5087543 -> links 5087544-49 (afterok). 5086441-49 cancelled.
+- 10-19 18:50 PDT: links switched to 7 d each (QOS max; same start estimate as 12 h): check 5087543 -> links 5088058-63 (afterok). 5087544-49 cancelled.
