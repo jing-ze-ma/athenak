@@ -105,6 +105,7 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vetsrc.hpp"
+#include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -1813,7 +1814,25 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // Picard 2.8 -> 5.0.  The key and the source function are shared; the defaults stay
   // per closure until the relaxation is weighted by the escape stiffness.
   {
-    const std::string vs = pin->GetOrAddString("rad_m1", "vet_source", "gas");
+    // vetsrc-1020 (USER 10-20): DEFAULT relaxed_esc under the new default set
+    // (utils/recipe.hpp: a fresh run, or <job>/recipe = prod1019; it equals gas on the
+    // non-LTE tests and keeps relaxed where the exchange is stiff); a restart whose input
+    // lacks the key, or recipe = none, keeps the old vet_sc default gas
+    // vet_col_source (the vet_col spelling) has always been inert on vet_sc: a deck that
+    // names only it was written for the old vet_sc default and keeps gas (noted), so an
+    // old spelling never changes the vet_sc method
+    if (!pin->DoesParameterExist("rad_m1", "vet_source")) {
+      const bool alias = pin->DoesParameterExist("rad_m1", "vet_col_source");
+      const bool nd = recipe::NewDefaults(pin) && !alias;
+      pin->GetOrAddString("rad_m1", "vet_source", nd ? "relaxed_esc" : "gas");
+      recipe::Log(std::string("<rad_m1>/vet_source = ") + (nd ? "relaxed_esc (default)"
+          : (alias ? "gas (the input names only vet_col_source, inert on vet_sc: the old "
+                     "vet_sc default; name vet_source to choose)"
+          : (recipe::GetMode(pin) == recipe::Mode::none
+             ? "gas (recipe none: the old vet_sc default)"
+             : "gas (restart input has no key: the old vet_sc default)"))));
+    }
+    const std::string vs = pin->GetString("rad_m1", "vet_source");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("relaxed_esc") == 0) {
