@@ -23,3 +23,6 @@ fixed binary (or release them if you say the current binary is acceptable as is)
   -ffp-contract=off, HOPPER90; only ry_per_accretor.cpp recompiled). md5 413894fc6e9c96bb3be23af593b46514.
   Jobs replaced: check 5087543 -> links 5087544-49 (afterok). 5086441-49 cancelled.
 - 10-19 18:50 PDT: links switched to 7 d each (QOS max; same start estimate as 12 h): check 5087543 -> links 5088058-63 (afterok). 5087544-49 cancelled.
+- 10-19 19:50 PDT (reply to 7e8c57d1): built prodmerge-1019b @ 13206541 (SHA, not head) H200 nofma, md5 201918b0781b7574fa7371d8b02a18ed.
+  Nothing had started yet, so the queued check 5087543 and links 5088058-63 now use 13206541 from the start (BIN_PATH read at runtime);
+  the check therefore gates the production binary itself. Check est. start ~10-20 11:50 PDT.
