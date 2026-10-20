@@ -15290,7 +15290,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   impl_itsum += static_cast<Real>(it);
   impl_itmax = std::max(impl_itmax, static_cast<Real>(it));
   if (!converged) {
-    impl_nfail += 1.0;
+    // t2befb-ncfix-1020: the stage of an armed dt_retry_t2_be attempt is discarded (its
+    // backward-Euler redo follows), as a dt_retry attempt is: not a NON-CONVERGED solve
+    if (!(t2st && t2_fail && (t2_reject == 1) && dtr_t2be && !t2_inprobe)) {
+      impl_nfail += 1.0;
+    }
     // MILESTONE 3e: WHERE the outer iteration stalled.  One line per non-converged step
     // with the cell that owns the largest Picard residual -- the depth index i is what
     // says whether the stall is in the optically thin top or at the base.  Nothing here
@@ -15367,7 +15371,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // Driver puts the checkpoint back) instead of going on NON-CONVERGED or stopping --
     // a NON-CONVERGED hesdirk2 stage too (its backward-Euler redo is skipped: the retry
     // restores more than Time2Restore does)
-    if (dtr_on) {
+    // t2befb-ncfix-1020: not for a stage on a dt_retry_t2_be attempt: the backward-Euler
+    // redo it was armed for follows (its own NON-CONVERGED test still applies).  Raising
+    // the retry here skipped that redo and sent the cycle back to the time2_reject cut
+    // chain, which resets to the cycle dt every dt_retry_t2_be cuts (IDORT cart/cbg
+    // g8x32, cart/cbh r4: dt_retry_max reached at cycle 12 / 1)
+    const bool t2bearm = t2redo && (t2_reject == 1) && dtr_t2be && !t2_inprobe;
+    if (dtr_on && !t2bearm) {
       const bool div = impl_res_fatal > 0.0 &&
                        (!(resid <= impl_res_fatal) || !std::isfinite(lresid));
       if (!dtr_fail) {dtr_why = div ? 2 : 1; dtr_resid = resid;}
