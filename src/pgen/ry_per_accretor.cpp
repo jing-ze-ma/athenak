@@ -434,6 +434,19 @@ std::string trc_file_;
 // Closure: Jdom - Jdom0 = (Jin - Jin0) - (Jout - Jout0) + sum Jgrv..Jm1 (round-off).
 // problem/lz_budget = false (read only when named): off.
 bool lz_ = false;
+// acclzc-1020 problem/coriolis_lz = true (read only when named; envelope): the phi
+// component of the Coriolis force in the conservative face-flux form (the z component of
+// hydro_am.hpp HydroAmFrame's T* = -Q_c, the dhj problem/coriolis_am form):
+//   d(m3)/dt = -Omega Q_c/(R_c V),  Q_c = sum_faces Phi_out (R_f^2 - R_c^2),
+// Phi_out the outward mass flux x area of the update, R_f the cylindrical radius at the
+// face centre (x1 faces r_f sin(theta_c), x2 faces r_c sin(theta_f); phi faces R_f = R_c),
+// R_c = r_c sin(theta_c) (2-D band: R = r).  Continuum -2 Omega rho v_R, and the frame
+// part Omega R_c^2 of the mass transport telescopes against it: sum_c R_c V (m3 + Omega
+// R_c rho) (the inertial L_z about the accretor's polar axis, Jdom) changes only by the
+// boundary fluxes (Jin, Jout, Jrin, Jthw) and the real torques (Jgrv) -- with
+// <hydro>/am_transport, which makes the R m3 transport exact.  The r and theta Coriolis
+// components are unchanged; the energy is not touched (Coriolis does no work).
+bool corlz_ = false;
 constexpr int kNlz = 7;
 Real lz0_[kNlz] = {0.0}, lz1_[kNlz] = {0.0};
 Real jlast_ = 0.0;             // this rank's J at the last measurement
@@ -1276,6 +1289,27 @@ Real RyPerEsum(MeshBlockPack *pmbp) {
   return es;
 }
 
+//! acclzc-1020: Q_c of cell (m,k,j,i) (see corlz_), from this stage's mass fluxes
+KOKKOS_INLINE_FUNCTION
+Real RyCorLzQ(const DvceArray5D<Real> &f1, const DvceArray5D<Real> &f2,
+              const DvceArray4D<Real> &a1, const DvceArray4D<Real> &a2,
+              const DvceArray2D<Real> &x1f, const DvceArray2D<Real> &x2f,
+              const DvceArray2D<Real> &x1v, const DvceArray2D<Real> &x2v,
+              const bool p3, const int m, const int k, const int j, const int i) {
+  const Real r = x1v(m,i);
+  const Real st = p3 ? sin(x2v(m,j)) : 1.0;
+  const Real rc = r*st, rc2 = rc*rc;
+  const Real rl = x1f(m,i)*st, rr = x1f(m,i+1)*st;
+  Real q = -f1(m,IDN,k,j,i)*a1(m,k,j,i)*(rl*rl - rc2)
+           + f1(m,IDN,k,j,i+1)*a1(m,k,j,i+1)*(rr*rr - rc2);
+  if (p3) {
+    const Real tl = r*sin(x2f(m,j)), tr = r*sin(x2f(m,j+1));
+    q += -f2(m,IDN,k,j,i)*a2(m,k,j,i)*(tl*tl - rc2)
+         + f2(m,IDN,k,j+1,i)*a2(m,k,j+1,i)*(tr*tr - rc2);
+  }
+  return q;
+}
+
 //! acclz-1020: this rank's J = sum dV R (m3 + Omega R rho) of u (the Jdom formula)
 Real RyPerJsum(MeshBlockPack *pmbp, const DvceArray5D<Real> &u) {
   auto &indcs = pmbp->pmesh->mb_indcs;
@@ -1318,6 +1352,13 @@ void RyPerLzTorque(MeshBlockPack *pmbp, Real &tg, Real &tc, Real &frin, Real &ft
   const bool p3 = p3_;
   const Real om2 = 2.0*rp_.omega, om = rp_.omega;
   tg = 0.0; tc = 0.0;
+  const bool corlz = corlz_;
+  auto &cf1 = pmbp->phydro->uflx.x1f;
+  auto &cf2 = pmbp->phydro->uflx.x2f;
+  auto &ca1 = pmbp->pcoord->area.x1f;
+  auto &ca2 = pmbp->pcoord->area.x2f;
+  auto &cx1f = pmbp->pcoord->xx1f;
+  auto &cx2f = pmbp->pcoord->xx2f;
   Kokkos::parallel_reduce("ryper_lztq", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
     const int m = idx/nkji;
@@ -1326,7 +1367,12 @@ void RyPerLzTorque(MeshBlockPack *pmbp, Real &tg, Real &tc, Real &frin, Real &ft
     const int i = idx%ni + is;
     const Real d = w0(m,IDN,k,j,i), vr = w0(m,IVX,k,j,i);
     const Real r = x1v(m,i);
-    if (p3) {
+    if (corlz) {
+      // acclzc-1020: the conservative form, R V dm3/dt = -Omega Q_c
+      const Real st = p3 ? sin(x2v(m,j)) : 1.0;
+      a += volume(m,k,j,i)*r*st*d*(p3 ? gp4(m,k,j,i) : gp(m,k,i));
+      b -= om*RyCorLzQ(cf1, cf2, ca1, ca2, cx1f, cx2f, x1v, x2v, p3, m, k, j, i);
+    } else if (p3) {
       const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
       const Real dv = volume(m,k,j,i)*r*st;
       a += dv*d*gp4(m,k,j,i);
@@ -1561,6 +1607,13 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     lztr_ -= bdt*(fr + ft);
     lzfr_ = fr; lzft_ = ft;
   }
+  const bool corlz = corlz_;
+  const Real omc = rp_.omega;
+  auto &cf1 = ph->uflx.x1f;
+  auto &cf2 = ph->uflx.x2f;
+  auto &ca2 = pmbp->pcoord->area.x2f;
+  auto &cx1f = pmbp->pcoord->xx1f;
+  auto &cx2f = pmbp->pcoord->xx2f;
   par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
@@ -1587,10 +1640,20 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
       u0(m,IM1,k,j,i) += bdt*(fg + d*(gr4(m,k,j,i) + om2*vp*st));
       u0(m,IM2,k,j,i) += bdt*d*(gt4(m,k,j,i) + om2*vp*cth);
-      u0(m,IM3,k,j,i) += bdt*d*(gp4(m,k,j,i) - om2*(vr*st + vt*cth));
+      if (corlz) {
+        const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, true, m, k, j, i);
+        u0(m,IM3,k,j,i) += bdt*(d*gp4(m,k,j,i) - omc*q/(x1v(m,i)*st*volume(m,k,j,i)));
+      } else {
+        u0(m,IM3,k,j,i) += bdt*d*(gp4(m,k,j,i) - om2*(vr*st + vt*cth));
+      }
     } else {
       u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
-      u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
+      if (corlz) {
+        const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, false, m, k, j, i);
+        u0(m,IM3,k,j,i) += bdt*(d*gp(m,k,i) - omc*q/(x1v(m,i)*volume(m,k,j,i)));
+      } else {
+        u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
+      }
     }
     const Real rambc = p3 ? ramb4(m,k,j,i) : ramb(m,k,i);
     const Real tcolc = p3 ? tcol4(m,k,j,i) : tcol(m,k,i);
@@ -5010,6 +5073,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
   }
 
+  // acclzc-1020: the conservative phi Coriolis (see corlz_), read only when named
+  corlz_ = env_ && pin->DoesParameterExist("problem", "coriolis_lz") &&
+           pin->GetBoolean("problem", "coriolis_lz");
+  if (corlz_ && global_variable::my_rank == 0) {
+    std::printf("ry_per_accretor: coriolis_lz = true: phi Coriolis in the conservative "
+                "face-flux form (inertial L_z about the accretor axis exact)\n");
+  }
   // acclz-1020: the inertial L_z budget (envelope, rk integrators; see lz0_)
   lz_ = env_ && (nstages_ > 0) &&
         (!pin->DoesParameterExist("problem", "lz_budget") ||
