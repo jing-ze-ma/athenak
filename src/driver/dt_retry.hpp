@@ -62,6 +62,17 @@ struct Entry {
 // frozen-MLT ramp weight hs_mw_ was already at w(t) on the retry, so esrc kept w(t)
 // where the straight run's start-of-cycle solves still saw w(t - dt)).
 std::vector<std::unique_ptr<Entry>> &PgenEntries();
+// pgrst-1021: a second, independent copy of every registered pgen member (the dt_retry
+// checkpoint above takes the PgenEntries list over at its Build).  The driver saves it
+// at the start of the hesdirk2 stage loop and puts it back with the backward-Euler redo
+// (Time2Restore): the redo reruns the hydro stages from U^n, so the pgen registers that
+// advance in every stage (ry_per_accretor acc0_/acc1_/stage_ctr_, tracer + L_z
+// registers) must restart from their stage-loop values too, else the failed attempt is
+// booked twice and the stage counter goes out of phase.  Nothing a kernel reads in a
+// straight (no-redo) cycle is touched: the default path is unchanged.
+std::vector<std::unique_ptr<Entry>> &PgenStageEntries();
+void PgenStageSave();
+void PgenStageRestore();
 
 template <class T>
 struct PgenValEntry : public Entry {
@@ -110,12 +121,18 @@ void RegisterValue(const char *name, T *p) {
   auto e = std::make_unique<PgenValEntry<T>>(p);
   e->name = std::string("pgen.") + name;
   PgenEntries().push_back(std::move(e));
+  auto f = std::make_unique<PgenValEntry<T>>(p);   // pgrst-1021: stage-loop copy
+  f->name = std::string("pgen.") + name;
+  PgenStageEntries().push_back(std::move(f));
 }
 template <class V>
 void RegisterView(const char *name, V *p) {
   auto e = std::make_unique<PgenViewEntry<V>>(p);
   e->name = std::string("pgen.") + name;
   PgenEntries().push_back(std::move(e));
+  auto f = std::make_unique<PgenViewEntry<V>>(p);  // pgrst-1021: stage-loop copy
+  f->name = std::string("pgen.") + name;
+  PgenStageEntries().push_back(std::move(f));
 }
 
 class DtRetry {
