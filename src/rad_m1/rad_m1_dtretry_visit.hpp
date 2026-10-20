@@ -398,6 +398,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cs2_dav", cs2_dav);
   v.value("cs2_shift", cs2_shift);
   v.value("cs2_hll_drag", cs2_hll_drag);
+  v.value("cs2_clip_rad", cs2_clip_rad);
   v.value("cs2_vimp", cs2_vimp);
   v.value("cs2_dbg_n", cs2_dbg_n);
   v.value("cs2_vnp", cs2_vnp);

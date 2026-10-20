@@ -484,10 +484,21 @@
         dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;
         const Real r1 = fp1, r2 = fp2, r3 = fp3;   // the cell flux before the kick
         Real q1 = fp1, q2 = fp2, q3 = fp3;
+        // cs2clip-1020 (implicit_cs2_clip = rad): the gas is charged with the cell flux
+        // BEFORE the realisability limit (u*); the limit's change stays with the radiation
+        // (as on the matched path, which limits after the deposit).  gas: the limited q.
+#if defined(M1_C2CR) && M1_C2CR
+        Real u1 = fp1, u2 = fp2, u3 = fp3;
+#endif
         for (int q = 0; q < 4; ++q) {
-          dm1 = x1 - (q1 - go1)*icc;
-          dm2 = tq ? (x2 - (q2 - go2)*icc) : 0.0;
-          dm3 = (tq && thrd) ? (x3 - (q3 - go3)*icc) : 0.0;
+#if defined(M1_C2CR) && M1_C2CR
+          const Real e1 = u1, e2 = u2, e3 = u3;
+#else
+          const Real e1 = q1, e2 = q2, e3 = q3;
+#endif
+          dm1 = x1 - (e1 - go1)*icc;
+          dm2 = tq ? (x2 - (e2 - go2)*icc) : 0.0;
+          dm3 = (tq && thrd) ? (x3 - (e3 - go3)*icc) : 0.0;
 #if M1_CSW
           // cs-open-1018: the same drag rule on the cubed sphere.  A^old (iw_cs2 + 1..2,
           // ImplicitCs2DeltaA) and the face means are face-normal, q the covariant cell
@@ -495,10 +506,10 @@
           // to the covariant dm
           if (c2h) {
             dm1 += (1.0 - iw_(m,c2a+6,k,j,i))
-                   *(q1 - 0.5*(fl + fr) - iw_(m,c2a,k,j,i))*icc;
+                   *(e1 - 0.5*(fl + fr) - iw_(m,c2a,k,j,i))*icc;
             if (tq && thrd) {
               const Real c = cclw(m,k,j), sn = csnw(m,k,j);
-              const Real qa = (q2 - c*q3)/sn, qb = (q3 - c*q2)/sn;
+              const Real qa = (e2 - c*e3)/sn, qb = (e3 - c*e2)/sn;
               const Real ta = (1.0 - iw_(m,c2a+7,k,j,i))
                               *(qa - 0.5*(g2l + g2r) - iw_(m,c2a+1,k,j,i))*icc;
               const Real tb = (1.0 - iw_(m,c2a+8,k,j,i))
@@ -512,13 +523,13 @@
             // consfix3 (implicit_cs2_hll = drag): the AP-HLL part of dA stays with the
             // radiation (no face equation there): the gas pays om_bar dA, not dA
             dm1 += (1.0 - iw_(m,c2a+6,k,j,i))
-                   *(q1 - 0.5*(fl + fr) - iw_(m,c2a,k,j,i))*icc;
+                   *(e1 - 0.5*(fl + fr) - iw_(m,c2a,k,j,i))*icc;
             if (tq) {
               dm2 += (1.0 - iw_(m,c2a+7,k,j,i))
-                     *(q2 - 0.5*(g2l + g2r) - iw_(m,c2a+1,k,j,i))*icc;
+                     *(e2 - 0.5*(g2l + g2r) - iw_(m,c2a+1,k,j,i))*icc;
               if (thrd) {
                 dm3 += (1.0 - iw_(m,c2a+8,k,j,i))
-                       *(q3 - 0.5*(g3l + g3r) - iw_(m,c2a+2,k,j,i))*icc;
+                       *(e3 - 0.5*(g3l + g3r) - iw_(m,c2a+2,k,j,i))*icc;
               }
             }
           }
@@ -591,6 +602,9 @@
             q2 = (a2 + c*a3)/sn;
             q3 = (a3 + c*a2)/sn;
           }
+#endif
+#if defined(M1_C2CR) && M1_C2CR
+          u1 = q1;  u2 = q2;  u3 = q3;   // cs2clip-1020: the pre-limit cell flux
 #endif
           if (csw) {
             M1ApplyLimitsCs(cl, efl, cclw(m,k,j), eq, q1, q2, q3);

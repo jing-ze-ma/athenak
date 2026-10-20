@@ -2855,6 +2855,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
+      // cs2clip-1020 implicit_cs2_clip (read only when named): gas (default: the gas is
+      // charged with the realisability-limited cell flux, so the limiter's change of F --
+      // up to |F| - cE in free-streaming cells -- is a momentum kick to the gas: ~100 km/s
+      // in 1e-8 floor gas, v12lz accretor) | rad (the limit's change stays with the
+      // radiation, as on the matched path)
+      if (pin->DoesParameterExist("rad_m1","implicit_cs2_clip")) {
+        const std::string cm = pin->GetString("rad_m1","implicit_cs2_clip");
+        if (cm.compare("rad") == 0) {
+          cs2_clip_rad = true;
+        } else if (cm.compare("gas") != 0) {
+          ImplFatal("<rad_m1>/implicit_cs2_clip = '" + cm + "' is not a choice (gas | rad)");
+        }
+      }
       // consfix3: the AP-HLL (thin) part of a face has no face equation, so the theta
       // split cannot act there; `drag` (default): that part charges the gas only its
       // drag, as matched (the radiation keeps its lab flux), `inertia`: all of dA (the
@@ -15630,7 +15643,53 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       am_(m,5,k,j,i) = g3;
     });
   }
-  if (csw) {
+  // cs2clip-1020 <rad_m1>/implicit_cs2_clip = rad (read only when named; conservative
+  // gas sources): the same fragment with M1_C2CR 1 (the gas is charged with the pre-limit
+  // cell flux); every other launch below is the unchanged fragment
+  const bool c2cr = gcs && cs2_clip_rad;
+  if (c2cr) {
+    if (csw && !rcpw) {
+      par_for("m1_impl_wb_cs_c2cr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 0
+#define M1_CSW 1
+#define M1_C2CR 1
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#undef M1_C2CR
+#undef M1_CSW
+#undef M1_RCP
+      });
+    } else if (csw) {
+      par_for("m1_impl_wb_rc_cs_c2cr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 1
+#define M1_CSW 1
+#define M1_C2CR 1
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#undef M1_C2CR
+#undef M1_CSW
+#undef M1_RCP
+      });
+    } else if (!rcpw) {
+      par_for("m1_impl_wb_c2cr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 0
+#define M1_C2CR 1
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#undef M1_C2CR
+#undef M1_RCP
+      });
+    } else {
+      par_for("m1_impl_wb_rc_c2cr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+#define M1_RCP 1
+#define M1_C2CR 1
+#include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#undef M1_C2CR
+#undef M1_RCP
+      });
+    }
+  } else if (csw) {
     // cs-open-1018: the cubed-sphere launches of the same fragment with its cs blocks
     // (M1_CSW 1); the sp / Cartesian launches below are unchanged
     if (!rcpw) {

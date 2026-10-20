@@ -991,6 +991,7 @@ class RadiationM1 {
   bool cs2_dav = false;                 // the dA components hold a pass's prediction
   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
+  bool cs2_clip_rad = false;            // cs2clip-1020 implicit_cs2_clip = rad (named)
   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)
