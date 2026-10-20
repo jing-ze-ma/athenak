@@ -851,6 +851,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vcol_o2", vcol_o2);
   v.value("vcol_fkmin", vcol_fkmin);
   v.value("vcol_srelax", vcol_srelax);
+  v.value("vcol_sesc", vcol_sesc);
   v.value("vcol_sbl", vcol_sbl);
   v.value("vcol_sx0", vcol_sx0);
   v.value("vscat", vscat);

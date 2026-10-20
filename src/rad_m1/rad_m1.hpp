@@ -1924,6 +1924,9 @@ class RadiationM1 {
   // backward-Euler exchange over the step (VcolRelaxedSource, rad_m1_vetcol.cpp); `gas`:
   // the start-of-step gas temperature as before (bitwise the old build)
   bool vcol_srelax = true;
+  // vetsrc-1020: vet_source = relaxed_esc (vcol_srelax true as well): the relaxed source
+  // with the cell's photon escape (VetRelaxedSource qe, VetEscapeRate; rad_m1_vetsrc.hpp)
+  bool vcol_sesc = false;
   bool vcol_sbl = false;       // sporder-1012: this build blends the relaxed source
   Real vcol_sx0 = 1.0;         // sporder-1012: time2_vet_col_source_x0 (blend)
   // vet_scatter (vet-scatter-1006, read only when named; default off = bitwise): ONE

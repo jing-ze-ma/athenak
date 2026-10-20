@@ -715,6 +715,11 @@ void RadiationM1::VetColBuild() {
   const bool srx = thermal && vcol_srelax;
   const bool sbl = vcol_sbl;   // sporder-1012: time2_vet_col_source = blend
   const Real sx0 = vcol_sx0;
+  // vetsrc-1020 (vet_source = relaxed_esc): the column-axis cell width for the escape
+  const bool sesc = srx && vcol_sesc;
+  const bool hsp = sph_geom;
+  auto cx1f_ = pmy_pack->pcoord->xx1f;
+  auto &mbs_ = pmy_pack->pmb->mb_size;
   // vet_source_noesrc (fixbundle-1009 F1): read the PHYSICAL E^n = u0 (the stage start
   // under be) instead of the solve's old vector E^n + dt (chat/c) esrc; no dt involved
   const bool noes = VsrcNoes();   // rad_m1.hpp
@@ -799,12 +804,15 @@ void RadiationM1::VetColBuild() {
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
         const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
         if (srx) {
+          // vetsrc-1020 relaxed_esc: the escape rate of the cell (0 = relaxed)
+          const Real qe = VetEscapeRate(sesc, chi, hsp ? (cx1f_(m,i+1) - cx1f_(m,i))
+                                                       : mbs_.d_view(m).dx1);
           s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
                                        opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),
-                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0)
+                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0, qe)
                   : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
                                       opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
-                                      chi, rks);
+                                      chi, rks, qe);
         } else if (vsf != 0) {
           s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
         } else {
@@ -1054,6 +1062,11 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const bool srx = thermal && vcol_srelax;
   const bool sbl = vcol_sbl;   // sporder-1012: time2_vet_col_source = blend
   const Real sx0 = vcol_sx0;
+  // vetsrc-1020 (vet_source = relaxed_esc): the column-axis cell width for the escape
+  const bool sesc = srx && vcol_sesc;
+  const bool hsp = sph_geom;
+  auto cx1f_ = pmy_pack->pcoord->xx1f;
+  auto &mbs_ = pmy_pack->pmb->mb_size;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
   FluidRef flv = FluidRef::Get(pmy_pack);
@@ -1133,12 +1146,15 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
         const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
         if (srx) {
+          // vetsrc-1020 relaxed_esc: the escape rate of the cell (0 = relaxed)
+          const Real qe = VetEscapeRate(sesc, chi, hsp ? (cx1f_(m,i+1) - cx1f_(m,i))
+                                                       : mbs_.d_view(m).dx1);
           s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
                                        opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),
-                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0)
+                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0, qe)
                   : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
                                       opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
-                                      chi, rks);
+                                      chi, rks, qe);
         } else if (vsf != 0) {
           s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
         } else {
