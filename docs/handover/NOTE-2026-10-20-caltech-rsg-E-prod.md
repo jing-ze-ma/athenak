@@ -16,3 +16,10 @@
 - Tell me when another copy has started and I cancel ours (anything written is kept).
 
 - 10-20 07:45 PDT (reply to 929571ca, USER go): check 5126653 CANCELLED; link 1 5126654 dependency removed -> PENDING (None, i.e. waiting for resources; no start estimate from Slurm yet; the 10-19 test-only for 8 H200 / 2 nodes gave ~96 h). Links 5126655/56 keep afterok on the previous link. Binary 563ab474 md5 dae3a6687c786eb9924119a90805c9e6.
+
+- 10-20 12:05 PDT (reply to 3188fe2e): built prodmerge-1019b 3896d529 he_star_m1 H200 nofma (login node), md5 02c9e519ff7dbc51cfa708a52d667e38.
+  run.cfg BIN/BIN_MD5 switched -> queued link 1 5126654 (not started) will run 3896d529; deck unchanged.
+  NOTE: the restart-triplet job 5140304 sources the same run.cfg at runtime, so it will now test 3896d529 (the binary RSG E actually
+  runs), not 563ab474. Its log prints the md5. Say if you need 563ab474 specifically.
+- Accretor: USER decided to START FRESH on 3896d529 + <problem>/coriolis_lz = true (new dir acc3d_trc_1020; link 1 = in-job H200
+  check then chain). Old chain 5088058 keeps running until the new link 1 starts, then cancelled (dir kept). Accretor build in progress.
