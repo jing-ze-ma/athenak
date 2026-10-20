@@ -19,3 +19,6 @@ fixed binary (or release them if you say the current binary is acceptable as is)
   -> links 5086443 5086444 5086445 5086447 5086448 5086449 (afterok, 12 h, 2 H200, FRESH t=0, same deck + acc3d_chain.sh).
 - Old held links 5059466-71 cancelled; v11 links 5007430-35 were already cancelled 10-19.
 - md5 + check result + link start estimate follow when the build/check have run (build pending Priority).
+- 10-19 18:40 PDT: P100 build queue was ~13 h -> built 5f29b077 incrementally on the login node instead (same inc tree + recipe:
+  -ffp-contract=off, HOPPER90; only ry_per_accretor.cpp recompiled). md5 413894fc6e9c96bb3be23af593b46514.
+  Jobs replaced: check 5087543 -> links 5087544-49 (afterok). 5086441-49 cancelled.
