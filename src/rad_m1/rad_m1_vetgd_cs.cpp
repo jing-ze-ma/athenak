@@ -630,8 +630,9 @@ void RadiationM1::VetGdCsInit() {
   for (int c = 0; c < 2; ++c) {
     vgd_cscl[c].alpha = -9.0;
     vgd_cscl[c].use = 0;
-    Kokkos::realloc(vgd_cscl[c].msk, vgd_cscomp ? std::max(vgd_csnrcv, 1) : 1,
-                    vgd_cscomp ? vgd_n : 1, vgd_cscomp ? indcs.nx1 : 1);
+    const int64_t nmv = vgd_cscomp ? static_cast<int64_t>(std::max(vgd_csnrcv, 1))*
+                                     vgd_n*indcs.nx1 : 1;
+    Kokkos::realloc(vgd_cscl[c].msk, (nmv + 15)/16);   // memcut-1020: packed 2 bits
   }
   if (me == 0) {
     std::cout << "<rad_m1> vet_gd (cubed sphere): rank 0 band copies on-rank "
@@ -680,7 +681,7 @@ void RadiationM1::VetGdCsCompact() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int n = vgd_n;
   auto msk_ = E.msk;
-  Kokkos::deep_copy(msk_, static_cast<uint8_t>(0));
+  Kokkos::deep_copy(msk_, static_cast<uint32_t>(0));
   auto dir_ = vgd_dir;
   auto mr_ = vgd_mr;
   auto cr_ = vgd_csr;
@@ -719,7 +720,10 @@ void RadiationM1::VetGdCsCompact() {
       for (int e = 0; e < st.n; ++e) {
         if (!all && !(ok[e] && st.w[e] > 0.0)) {continue;}
         const int x = rx_(m,st.k[e],st.j[e]);
-        if (x >= 0) {msk_(x,d,iu-is) = want_in ? 1 : 2;}
+        if (x >= 0) {
+          const int64_t t = (static_cast<int64_t>(x)*n + d)*n1 + (iu - is);
+          Kokkos::atomic_or(&msk_(t >> 4), (want_in ? 1u : 2u) << (2*(t & 15)));
+        }
       }
     };
     for (int l = 0; l < n1; ++l) {
@@ -749,9 +753,20 @@ void RadiationM1::VetGdCsCompact() {
     }
   });
   Kokkos::fence();
-  auto mh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
   const int np = static_cast<int>(vgd_csprk.size());
   const size_t per = static_cast<size_t>(n)*n1;
+  // memcut-1020: the packed mask expanded on the host (1 byte per value, as before)
+  std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
+  {
+    auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
+    bool both = false;
+    for (size_t t = 0; t < mh.size(); ++t) {
+      const uint8_t v = static_cast<uint8_t>((mp(t >> 4) >> (2*(t & 15))) & 3u);
+      both = both || (v == 3);
+      mh[t] = v;
+    }
+    if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
+  }
   // (2) the receivers' marks -> the owners
   std::vector<uint8_t> sm(static_cast<size_t>(std::max(vgd_csnsnd, 1))*per, 0);
 #if MPI_PARALLEL_ENABLED
@@ -1267,7 +1282,12 @@ void RadiationM1::VetGdCsSweep() {
               const int kk = st.k[e], jj = st.j[e];
               if (ccl) {
                 const int x = rx_(m,kk,jj);
-                if (x >= 0 && msk_(x,d,iu-is) == 0) {Kokkos::atomic_add(&miss_(0), 1);}
+                if (x >= 0) {
+                  const int64_t t = (static_cast<int64_t>(x)*n + d)*n1 + (iu - is);
+                  if (((msk_(t >> 4) >> (2*(t & 15))) & 3u) == 0) {
+                    Kokkos::atomic_add(&miss_(0), 1);
+                  }
+                }
               }
               return vi_(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
