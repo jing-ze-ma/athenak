@@ -14,3 +14,5 @@
 - Start estimate: squeue --start gives N/A (check pending on Priority, links on Dependency); Caltech is clearly the long shot.
 - Run dir /resnick/groups/carnegie_poc/jingze/rsg_E_1020 (prod/ = output, det/ = check, run.cfg, link.sh, JOBS.txt).
 - Tell me when another copy has started and I cancel ours (anything written is kept).
+
+- 10-20 07:45 PDT (reply to 929571ca, USER go): check 5126653 CANCELLED; link 1 5126654 dependency removed -> PENDING (None, i.e. waiting for resources; no start estimate from Slurm yet; the 10-19 test-only for 8 H200 / 2 nodes gave ~96 h). Links 5126655/56 keep afterok on the previous link. Binary 563ab474 md5 dae3a6687c786eb9924119a90805c9e6.
