@@ -1351,6 +1351,20 @@ class RadiationM1 {
   // non-admissible hesdirk2 stage raises the dt_retry flag (reason time2_reject) instead
   // of the backward-Euler redo, so the cycle is taken again at a smaller dt with hesdirk2
   int t2_reject = 0;            // 0 be, 1 retry
+  // pgrst-1021: <rad_m1>/time2_k1_reset = true (read only when named; default false,
+  // bitwise): the FSAL slope K1 is the slope at the previous step's end state Y3.  A cell
+  // whose radiation E is overwritten between that solve and the next stage-1 start by
+  // anything but the scheme (a problem generator holding light: ry_per_accretor donor
+  // lobe, nozzle, back sink) has no valid K1 there; the stage-1 increment (1-g) dt K1
+  // then extrapolates the relaxation of the held value (ratio (1-g)/g = 2.41) and drives
+  // E / eint of the old vector <= 0 every cycle.  With the key, Time2Stash keeps E at the
+  // stage-loop start and Time2FormStage(1) zeroes the cell channels of K1 (E, gas
+  // momentum, gas energy; not the face fluxes) in interior cells whose E differs from it.
+  bool t2_k1reset = false;
+  bool t2_ys_ok = false;        // t2ys was taken at this cycle's stage-loop start
+  Real t2_k1reset_n = 0.0;      // cells reset (this rank, whole run)
+  DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
+  void Time2Stash();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
   DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)

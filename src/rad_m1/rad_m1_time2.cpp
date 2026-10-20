@@ -402,11 +402,22 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     }
   }
 
+  // pgrst-1021: <rad_m1>/time2_k1_reset (see rad_m1.hpp)
+  t2_k1reset = false;
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_reset")) {
+    t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
+  }
+  t2_ys_ok = false;
+
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
   int n1 = indcs.nx1 + 2*(indcs.ng);
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+  if (t2_k1reset) {
+    Kokkos::realloc(t2ys, nmb, n3, n2, n1);
+    Kokkos::deep_copy(t2ys, 0.0);
+  }
   Kokkos::realloc(t2k1, nmb, M1_T2_NK, n3, n2, n1);
   Kokkos::realloc(t2k2, nmb, M1_T2_NK, n3, n2, n1);
   Kokkos::realloc(t2inc, nmb, M1_T2_NK, n3, n2, n1);
@@ -492,6 +503,26 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
     c1 = t2_a21*dt;
     c2 = 0.0;
+    // pgrst-1021 time2_k1_reset: no K1 where E was overwritten since the stage-loop start
+    if (t2_k1reset && t2_ys_ok && t2ys.extent_int(0) >= pmy_pack->nmb_thispack) {
+      auto &id = pmy_pack->pmesh->mb_indcs;
+      const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+      const int nmbr = pmy_pack->nmb_thispack - 1;
+      auto ys_ = t2ys;
+      auto k1r_ = t2k1;
+      const int ncell = M1_T2_F1;   // E, gas momentum (3), gas energy
+      Real nr = 0.0;
+      Kokkos::parallel_reduce("m1_t2_k1reset", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+          DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+        if (u0_(m,M1_E,k,j,i) != ys_(m,k,j,i)) {
+          for (int n=0; n<ncell; ++n) {k1r_(m,n,k,j,i) = 0.0;}
+          sum += 1.0;
+        }
+      }, Kokkos::Sum<Real>(nr));
+      t2_k1reset_n += nr;
+    }
+    t2_ys_ok = false;
   } else {
     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
     int n3 = static_cast<int>(u0.extent(2)), n2 = static_cast<int>(u0.extent(3));
@@ -568,6 +599,25 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   t2_fail = false;
   nsub = 1;
   dt_sub = g*dt;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2Stash
+//! \brief pgrst-1021 time2_k1_reset: the radiation E at the hesdirk2 stage-loop start (the
+//! state the FSAL slope K1 belongs to; the Driver calls it before the Heun stage 1)
+
+void RadiationM1::Time2Stash() {
+  t2_ys_ok = false;
+  if (!t2_k1reset || t2ys.extent_int(0) < pmy_pack->nmb_thispack) return;
+  auto ys_ = t2ys;
+  auto u_ = u0;
+  par_for("m1_t2_stash", DevExeSpace(), 0, static_cast<int>(t2ys.extent(0)) - 1, 0,
+          static_cast<int>(t2ys.extent(1)) - 1, 0, static_cast<int>(t2ys.extent(2)) - 1,
+          0, static_cast<int>(t2ys.extent(3)) - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    ys_(m,k,j,i) = u_(m,M1_E,k,j,i);
+  });
+  t2_ys_ok = true;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1597,6 +1647,7 @@ void RadiationM1::Time2Report() {
   std::cout << "<rad_m1> time_scheme=hesdirk2: stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
+  if (t2_k1reset) {std::cout << " k1_reset cells(rank 0)=" << t2_k1reset_n;}
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
                                        ((t2_vcmode == 2) ? "rebuild" : "extrap"))

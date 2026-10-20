@@ -620,6 +620,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("t2_dbg_adm", t2_dbg_adm);
   v.value("t2_dbg_adm_n", t2_dbg_adm_n);
   v.value("t2_reject", t2_reject);
+  v.value("t2_k1reset", t2_k1reset);
+  v.value("t2_ys_ok", t2_ys_ok);
+  v.value("t2_k1reset_n", t2_k1reset_n);
+  v.view("t2ys", t2ys);
   v.value("t2_nstep", t2_nstep);
   v.value("t2_nbe", t2_nbe);
   v.value("t2_nfall", t2_nfall);
