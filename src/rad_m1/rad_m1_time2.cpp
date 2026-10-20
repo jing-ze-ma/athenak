@@ -817,7 +817,7 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::Time2PosFix
-//! \brief t2pos-1020 <rad_m1>/time2_posfix: the stage-1 solve converged but left E, T or
+//! \brief t2pos-1020 <rad_m1>/time2_posfix: the stage-1 solve (converged or not) left E, T or
 //! the written-back gas eint <= 0 in the cells it marked in t2pm (ImplicitSolve).  In
 //! the thin, free-streaming floor shell (c dt/dr >> 1) the explicit part (1-g) dt K1 of
 //! the old vector of H-ESDIRK2 stage 1 is a stiff extrapolation that the L-stable stage

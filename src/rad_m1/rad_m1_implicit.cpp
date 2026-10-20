@@ -15405,12 +15405,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     t2_fail = !converged || !(vmin > 0.0) || (od_now != impl_offdiag) ||
               (vimp_now != impl_vimp) ||
               ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
-    // t2pos-1020 time2_posfix: a converged stage-1 solve whose only fault is E, T or the
+    // t2pos-1020 time2_posfix: a stage-1 solve whose fault is E, T or the
     // written-back eint <= 0 marks those cells and asks the Driver for a local re-solve
     // (Time2PosFix) instead of the rejection below
     t2_pfix_want = false;
-    if (t2_fail && (t2_pfix > 0) && (t2s == M1_T2S_STAGE1) && converged &&
-        !(vmin > 0.0) && (od_now == impl_offdiag) && (vimp_now == impl_vimp) &&
+    // (a non-converged stage too, when it has such cells: a Picard loop that diverged
+    // from a non-positive old vector is the same fault)
+    if (t2_fail && (t2_pfix > 0) && (t2s == M1_T2S_STAGE1) && !(vmin > 0.0) && (od_now == impl_offdiag) && (vimp_now == impl_vimp) &&
         (pmy_pack->pmesh->ncycle != t2_dbg_fail) && !t2_inprobe &&
         (t2_pfix_n < t2_pfix)) {
       auto pm_ = t2pm;
@@ -15552,8 +15553,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   impl_itmax = std::max(impl_itmax, static_cast<Real>(it));
   if (!converged) {
     // t2befb-ncfix-1020: the stage of an armed dt_retry_t2_be attempt is discarded (its
-    // backward-Euler redo follows), as a dt_retry attempt is: not a NON-CONVERGED solve
-    if (!(t2st && t2_fail && (t2_reject == 1) && dtr_t2be && !t2_inprobe)) {
+    // backward-Euler redo follows), as a dt_retry attempt is: not a NON-CONVERGED solve;
+    // t2pos-1020: nor a stage 1 that time2_posfix solves again
+    if (!(t2st && t2_fail && (t2_reject == 1) && dtr_t2be && !t2_inprobe) &&
+        !(t2st && t2_fail && t2_pfix_want)) {
       impl_nfail += 1.0;
     }
     // MILESTONE 3e: WHERE the outer iteration stalled.  One line per non-converged step
@@ -15636,9 +15639,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // redo it was armed for follows (its own NON-CONVERGED test still applies).  Raising
     // the retry here skipped that redo and sent the cycle back to the time2_reject cut
     // chain, which resets to the cycle dt every dt_retry_t2_be cuts (IDORT cart/cbg
-    // g8x32, cart/cbh r4: dt_retry_max reached at cycle 12 / 1)
+    // g8x32, cart/cbh r4: dt_retry_max reached at cycle 12 / 1); t2pos-1020: nor for a
+    // stage 1 that time2_posfix solves again
     const bool t2bearm = t2redo && (t2_reject == 1) && dtr_t2be && !t2_inprobe;
-    if (dtr_on && !t2bearm) {
+    if (dtr_on && !t2bearm && !(t2redo && t2_pfix_want)) {
       const bool div = impl_res_fatal > 0.0 &&
                        (!(resid <= impl_res_fatal) || !std::isfinite(lresid));
       if (!dtr_fail) {dtr_why = div ? 2 : 1; dtr_resid = resid;}

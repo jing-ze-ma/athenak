@@ -1393,7 +1393,7 @@ class RadiationM1 {
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; 0/absent = off,
-  // bitwise): a stage-1 solve that converged but left E, T or the written-back eint <= 0
+  // bitwise): a stage-1 solve that left E, T or the written-back eint <= 0
   // in some cells is solved again (up to N times) from the same start with the stage-1
   // increment t2inc dropped in those cells (+ time2_posfix_grow face-neighbour layers;
   // faces with a marked side), i.e. a local backward-Euler g dt stage there.  The dropped
