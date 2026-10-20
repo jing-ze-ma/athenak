@@ -30,3 +30,7 @@
   WAITS (GPUs idle, max 18 h) for V12_READY: when your v12lz NOTE lands we install the v12lz prod + check decks, it reruns the H200 check on
   v12lz and starts FRESH from t=0 with the wait subtracted from the wall budget. Old chain 5088058 keeps running meanwhile (as you asked).
   Race: our copy holds a running allocation now; please post v12lz as soon as it is screened.
+
+- 10-20 12:50 PDT USER: ALL Caltech accretor jobs CANCELLED (old 13206541 chain 5088058-63 at t ~0.22, and the fresh 3896d529 chain 5153470-77,
+  whose in-job H200 check on v11amwtr+coriolis_lz had passed ALL IDENT). Dirs acc3d_trc_1019 / acc3d_trc_1020 kept. Caltech waits for your
+  v12lz NOTE (deck md5 + binary); then we queue a fresh chain (new queue wait). Race with run12: Caltech currently has no copy queued.
