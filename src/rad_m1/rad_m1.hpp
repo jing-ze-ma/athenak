@@ -282,7 +282,7 @@ class RadiationM1 {
   // is the backward-Euler step) raises dtr_fail with the reason instead.
   bool dtr_on = false;
   bool dtr_fail = false;
-  int dtr_why = 0;           // 1 NON-CONVERGED, 2 DIVERGED, 3 DIVERGED (masked), 4 eint<=0
+  int dtr_why = 0;           // 1 NON-CONVERGED, 2 DIVERGED, 3 DIVERGED (masked), 4 eint<=0, 5 time2_reject
   Real dtr_resid = 0.0;
   template <class V> void DtRetryVisit(V &v);   // rad_m1_dtretry_visit.hpp (generated)
   void DtRetryQuiesce(bool restoring);          // no host thread writes while restoring
@@ -1340,6 +1340,10 @@ class RadiationM1 {
   int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
   int t2_dbg_adm;               // DEBUG dbg_t2_admiss: report the first N non-admissible
   int t2_dbg_adm_n;             // stages (which quantity <= 0, where); 0 = off
+  // t2retry-1020: <rad_m1>/time2_reject = be (default) | retry (read only when named): a
+  // non-admissible hesdirk2 stage raises the dt_retry flag (reason time2_reject) instead
+  // of the backward-Euler redo, so the cycle is taken again at a smaller dt with hesdirk2
+  int t2_reject = 0;            // 0 be, 1 retry
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
   DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)

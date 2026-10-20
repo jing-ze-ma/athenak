@@ -386,6 +386,21 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "dbg_t2_admiss")) {
     t2_dbg_adm = pin->GetInteger("rad_m1", "dbg_t2_admiss");
   }
+  // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
+  // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
+  // the first rejection: without it the step falls back to backward Euler as before)
+  t2_reject = 0;
+  if (pin->DoesParameterExist("rad_m1", "time2_reject")) {
+    const std::string tr = pin->GetString("rad_m1", "time2_reject");
+    if (tr == "retry") {
+      t2_reject = 1;
+    } else if (tr != "be") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_reject = '" << tr << "' is not a choice "
+                << "(be | retry)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));

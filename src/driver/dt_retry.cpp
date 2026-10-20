@@ -432,7 +432,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   // used here: a retried cycle is not a failed run
   static const char *whys[] = {"?", "NON-CONVERGED", "resid>implicit_resid_fatal",
                                "masked_resid>implicit_resid_fatal_masked", "eint<=0",
-                               "?", "?", "?", "?", "forced"};
+                               "time2_reject", "?", "?", "?", "forced"};
   if (global_variable::my_rank == 0) {
     std::cout << "DT_RETRY cycle=" << pm->ncycle << " t=" << pm->time << " dt " << dto
               << " -> " << dtn << " reason=" << whys[std::min(std::max(why, 0), 9)]
