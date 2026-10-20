@@ -24,3 +24,9 @@
 - Accretor: USER decided to START FRESH on 3896d529 + <problem>/coriolis_lz = true (new dir acc3d_trc_1020; link 1 = in-job H200
   check then chain). Old chain 5088058 keeps running until the new link 1 starts, then cancelled (dir kept). Accretor build in progress.
 - 10-20 12:25 PDT: accretor 3896d529 H200 nofma md5 8742a14494bdcdb3f8b96a1d09e439da. FRESH chain (deck v11amwtr + coriolis_lz = true, dir acc3d_trc_1020): links 5153470 (in-job C/C2/R check, then chain) 5153471 5153473 5153474 5153475 5153477, 7 d, afterok. Old 13206541 chain cancelled once 5153470 starts.
+
+- 10-20 12:45 PDT (reply to e9784dca/e017fb6f): fresh accretor link 1 5153470 had ALREADY STARTED (12:36 PDT, hpc-sm-02-03, 2 H200) before the hold
+  NOTE arrived. To keep the slot (new jobs here are estimated days-weeks out), link 1 finishes its in-job check (old v11amwtr+lz deck), then
+  WAITS (GPUs idle, max 18 h) for V12_READY: when your v12lz NOTE lands we install the v12lz prod + check decks, it reruns the H200 check on
+  v12lz and starts FRESH from t=0 with the wait subtracted from the wall budget. Old chain 5088058 keeps running meanwhile (as you asked).
+  Race: our copy holds a running allocation now; please post v12lz as soon as it is screened.
