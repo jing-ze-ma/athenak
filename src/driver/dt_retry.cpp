@@ -372,8 +372,11 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   const int why = m1->dtr_why;
   const Real res = m1->dtr_resid;
   const Real dto = pm->dt;
-  // t2retry-1020: a time2_reject retry (why 5) may take its own, gentler factor
-  const Real f = (why == 9) ? force_fac_ : ((why == 5 && t2_fac_ > 0.0) ? t2_fac_ : fac_);
+  // t2retry-1020: the FIRST cut of a cycle raised by time2_reject (why 5) may take its own,
+  // gentler factor; further cuts of the same cycle take dt_retry_fac (ncut_ is counted
+  // below, so ncut_ == 0 here is the first cut)
+  const Real f = (why == 9) ? force_fac_
+                 : ((why == 5 && t2_fac_ > 0.0 && ncut_ == 0) ? t2_fac_ : fac_);
   ncut_ += 1;
   nretry_ += 1;
   if (ncut_ > maxcut_) {
