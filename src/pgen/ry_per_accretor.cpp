@@ -408,6 +408,39 @@ constexpr int kNtr = 9;
 // 8 Bin  mass that ENTERED through the non-nozzle user boundaries (= the s1 source)
 Real trc0_[kNtr] = {0.0}, trc1_[kNtr] = {0.0};
 std::string trc_file_;
+// acclz-1020 (USER via Caltech NOTE 8103f958): the inertial L_z budget of the envelope,
+// closed by booked registers (per rank, RK weighted like acc0_, cumulative, in the dt_retry
+// checkpoint and the rst block), written to <basename>.lz.hst (user.hst is unchanged: it is
+// full at NHISTORY_VARIABLES = 24).  J = sum_cells dV R (m3 + Omega R rho), R = r sin(theta)
+// (r in the 2-D band), the Jdom of user.hst.  Every stage is cut into the segments between
+// the measurements of J (local sums, no MPI): [stage start -> RyPerSrcEnv entry] the hydro
+// TRANSPORT (RK update incl. the coordinate source and <hydro>/am_transport), [entry ->
+// exit] the pgen SOURCES, [exit -> the M1 post hook] the radiation coupling and what runs
+// with it.  The transport is the RK combination g0 J(u0) + g1 J(u1) moved by the update.
+//   0 Jgrv  torque of the explicit phi gravity, bdt sum dV R rho g_phi (the tidal/Roche
+//           torque of the companion + the CM-centred centrifugal term about the accretor)
+//   1 Jcor  torque of the explicit Coriolis force on m3, -bdt sum dV R rho 2 Omega v_R
+//   2 Jtr   transport minus the booked boundary L_z (Jin - Jout + Jrin + Jthw): the frame
+//           part Omega R^2 of the mass fluxes (continuum: +2 Omega rho R v_R, = -Jcor), the
+//           face arms of the boundary fluxes, any non-conservation of the transport
+//   3 Jrin  inertial L_z IN through r_in (the wall stress of the absorbing/closed surface;
+//           the Jwal register is relabelled Emsk under donor_mask)
+//   4 Jthw  inertial L_z IN through the user theta walls when not already in Jout
+//           (theta_bc = hse; exactly 0 with theta_wall_closed)
+//   5 Jspf  the rest of the pgen sources: sponges, radeq floor, donor mask / back sink
+//           (the nozzle's own L_z is Jin)
+//   6 Jm1   the radiation coupling (radiation force), sink_zero_v, the c2p floors after
+//           the sources (measured at the M1 post hook and at the next step start)
+// Closure: Jdom - Jdom0 = (Jin - Jin0) - (Jout - Jout0) + sum Jgrv..Jm1 (round-off).
+// problem/lz_budget = false (read only when named): off.
+bool lz_ = false;
+constexpr int kNlz = 7;
+Real lz0_[kNlz] = {0.0}, lz1_[kNlz] = {0.0};
+Real jlast_ = 0.0;             // this rank's J at the last measurement
+Real jlok_ = 0.0;              // 1: jlast_ valid (0: take J(u1) at the next step start)
+Real lztr_ = 0.0, lzg_ = 0.0, lzc_ = 0.0, lzent_ = 0.0, lzfr_ = 0.0, lzft_ = 0.0;
+Real lzb_[3] = {0.0, 0.0, 0.0};   // this rank's J, Jin, Jout at the budget's start
+std::string lz_file_;
 
 KOKKOS_INLINE_FUNCTION
 Real RochePot(const RocheParams &p, const Real r, const Real phi) {
@@ -1243,6 +1276,113 @@ Real RyPerEsum(MeshBlockPack *pmbp) {
   return es;
 }
 
+//! acclz-1020: this rank's J = sum dV R (m3 + Omega R rho) of u (the Jdom formula)
+Real RyPerJsum(MeshBlockPack *pmbp, const DvceArray5D<Real> &u) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int ni = indcs.nx1, nji = indcs.nx2*indcs.nx1, nkji = indcs.nx3*nji;
+  const int nmb = pmbp->nmb_thispack;
+  auto &volume = pmbp->pcoord->volume;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x2v = pmbp->pcoord->x2v;
+  const bool p3 = p3_;
+  const Real om = rp_.omega;
+  Real js0 = 0.0;
+  Kokkos::parallel_reduce("ryper_jsum", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &sum) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+    const int i = idx%ni + is;
+    const Real r = x1v(m,i);
+    const Real rz = p3 ? r*sin(x2v(m,j)) : r;
+    sum += volume(m,k,j,i)*rz*(u(m,IM3,k,j,i) + om*rz*u(m,IDN,k,j,i));
+  }, Kokkos::Sum<Real>(js0));
+  return js0;
+}
+
+//! acclz-1020: the torques of the explicit phi gravity and Coriolis terms of the source
+//! kernel (per unit bdt, from the same w0), and the boundary L_z IN through r_in and the
+//! user theta walls (not in Jout) of this stage's fluxes (per unit bdt)
+void RyPerLzTorque(MeshBlockPack *pmbp, Real &tg, Real &tc, Real &frin, Real &fthw) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je, ks = indcs.ks;
+  const int ni = indcs.nx1, nji = indcs.nx2*indcs.nx1, nkji = indcs.nx3*nji;
+  const int nmb = pmbp->nmb_thispack;
+  auto w0 = pmbp->phydro->w0;
+  auto &volume = pmbp->pcoord->volume;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x2v = pmbp->pcoord->x2v;
+  auto gp = gp_;
+  auto gp4 = gp4_;
+  const bool p3 = p3_;
+  const Real om2 = 2.0*rp_.omega, om = rp_.omega;
+  tg = 0.0; tc = 0.0;
+  Kokkos::parallel_reduce("ryper_lztq", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+    const int i = idx%ni + is;
+    const Real d = w0(m,IDN,k,j,i), vr = w0(m,IVX,k,j,i);
+    const Real r = x1v(m,i);
+    if (p3) {
+      const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
+      const Real dv = volume(m,k,j,i)*r*st;
+      a += dv*d*gp4(m,k,j,i);
+      b -= dv*d*om2*(vr*st + w0(m,IVY,k,j,i)*cth);
+    } else {
+      const Real dv = volume(m,k,j,i)*r;
+      a += dv*d*gp(m,k,i);
+      b -= dv*d*om2*vr;
+    }
+  }, Kokkos::Sum<Real>(tg), Kokkos::Sum<Real>(tc));
+  auto &flx = pmbp->phydro->uflx.x1f;
+  auto &flx2 = pmbp->phydro->uflx.x2f;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &area2 = pmbp->pcoord->area.x2f;
+  auto &xf = pmbp->pcoord->xx1f;
+  auto &x2ff = pmbp->pcoord->xx2f;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  const bool thw = !(p3 && thout_);   // theta_bc = outflow | hse: theta faces are in Jout
+  const int nj = je - js + 1, nk = indcs.ke - ks + 1;
+  frin = 0.0; fthw = 0.0;
+  Kokkos::parallel_reduce("ryper_lzbf", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nk*nj),
+  KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+    const int m = idx/(nk*nj);
+    const int k = (idx - m*nk*nj)/nj + ks;
+    const int j = idx%nj + js;
+    const Real sj = p3 ? sin(x2v(m,j)) : 1.0;
+    if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      const Real ar = area1(m,k,j,is), r = p3 ? xf(m,is)*sj : xf(m,is);
+      a -= (flx(m,IM3,k,j,is) + om*r*flx(m,IDN,k,j,is))*r*ar;
+    }
+    if (thw && p3) {
+      for (int sd=0; sd<2; ++sd) {
+        if (sd == 0 && !(j == js && mbbcs.d_view(m, BoundaryFace::inner_x2) ==
+                         BoundaryFlag::user)) continue;
+        if (sd == 1 && !(j == je && mbbcs.d_view(m, BoundaryFace::outer_x2) ==
+                         BoundaryFlag::user)) continue;
+        const int jf = (sd == 0) ? js : je + 1;
+        const Real sg = (sd == 0) ? -1.0 : 1.0;
+        const Real sf = sin(x2ff(m,jf));
+        for (int i=is; i<=ie; ++i) {
+          const Real rr = x1v(m,i)*sf;
+          b -= sg*(flx2(m,IM3,k,jf,i) + om*rr*flx2(m,IDN,k,jf,i))*rr*area2(m,k,jf,i);
+        }
+      }
+    }
+  }, Kokkos::Sum<Real>(frin), Kokkos::Sum<Real>(fthw));
+}
+
+//! acclz-1020: the L_z segment ending at the M1 post hook (radiation coupling etc.)
+void RyPerLzMark(MeshBlockPack *pmbp) {
+  if (!lz_ || !(jlok_ > 0.0)) return;
+  const Real jn = RyPerJsum(pmbp, pmbp->phydro->u0);
+  lz0_[6] += jn - jlast_;
+  jlast_ = jn;
+}
+
 //----------------------------------------------------------------------------------------
 //! stage 2 sources: x1 gravity in the well-balanced pressure form (the background of the
 //! x1 WB pair, built with Phi_wb) plus -dDelta/dr, phi gravity and Coriolis explicit,
@@ -1342,6 +1482,12 @@ void RyPerM1Post(Mesh *pm) {
   acc0_[3] += eke;
 }
 
+//! acclz-1020: the M1 post hook of the envelope (RyPerM1Post, then the L_z mark)
+void RyPerM1PostLz(Mesh *pm) {
+  RyPerM1Post(pm);
+  RyPerLzMark(pm->pmb_pack);
+}
+
 void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -1384,6 +1530,31 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   // the energy)
   const bool rad = rad_;
   const Real erel0 = rad ? RyPerEsum(pmbp) : 0.0;
+  // acclz-1020: the transport segment (stage start -> here) and the analytic torques
+  if (lz_) {
+    const int sl = stage_ctr_ % nstages_;
+    const Real ju1 = RyPerJsum(pmbp, ph->u1);
+    if (sl == 0) {
+      // the step start: u1 = the state the previous step left (the gap since the last mark
+      // is that step's end: c2p floors, or the whole run start)
+      if (jlok_ > 0.0) {
+        lz0_[6] += ju1 - jlast_;
+      } else {
+        // the budget's start (fresh run, or a restart from a file without the L_z block)
+        lzb_[0] = ju1; lzb_[1] = acc0_[8]; lzb_[2] = acc0_[5];
+      }
+      jlast_ = ju1;
+      jlok_ = 1.0;
+    }
+    lzent_ = RyPerJsum(pmbp, u0);
+    lztr_ = lzent_ - (rk_g0_[sl]*jlast_ + rk_g1_[sl]*ju1);
+    Real fr, ft;
+    RyPerLzTorque(pmbp, lzg_, lzc_, fr, ft);
+    lzg_ *= bdt; lzc_ *= bdt;
+    // the booked boundary L_z of this stage, as the registers will have it (Jrin, Jthw here)
+    lztr_ -= bdt*(fr + ft);
+    lzfr_ = fr; lzft_ = ft;
+  }
   par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
@@ -1985,6 +2156,25 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     }
     for (int n=0; n<4; ++n) trc0_[n] += zs.the_array[14+n];
   }
+  // acclz-1020: the L_z registers (Jrin, Jthw RK weighted as fluxes; the measured
+  // segments and the analytic torques as increments on the RK-combined state)
+  if (lz_) {
+    const Real fr = lzfr_, ft = lzft_;
+    if (s == 0) {
+      for (int n=0; n<kNlz; ++n) lz1_[n] = lz0_[n];
+    }
+    for (int n=0; n<kNlz; ++n) lz0_[n] = rk_g0_[s]*lz0_[n] + rk_g1_[s]*lz1_[n];
+    lz0_[3] += bdt*fr;
+    lz0_[4] += bdt*ft;
+    // the booked Jin - Jout of this stage: the RK-weighted face parts (fs 8, 5); the
+    // nozzle's own L_z (zs 1) belongs to the source segment
+    lz0_[2] += lztr_ - bdt*(fs.the_array[8] - fs.the_array[5]);
+    lz0_[0] += lzg_;
+    lz0_[1] += lzc_;
+    const Real jx = RyPerJsum(pmbp, u0);
+    lz0_[5] += (jx - lzent_) - lzg_ - lzc_ - zs.the_array[1];
+    jlast_ = jx;
+  }
   stage_ctr_++;
 }
 
@@ -2065,8 +2255,53 @@ void RyPerTrcHist(Mesh *pm) {
   std::fclose(fp);
 }
 
+//! acclz-1020: <basename>.lz.hst, one row per history output: time, Jdom, dJ = Jdom - Jdom0,
+//! dJin, dJout (Jin, Jout since the budget's start), Jgrv Jcor Jtr Jrin Jthw Jspf Jm1 and
+//! Jres = dJ - (dJin - dJout + Jgrv + Jcor + Jtr + Jrin + Jthw + Jspf + Jm1)
+void RyPerLzHist(Mesh *pm) {
+  Real sb[6 + kNlz];
+  sb[0] = RyPerJsum(pm->pmb_pack, pm->pmb_pack->phydro->u0);
+  sb[1] = lzb_[0]; sb[2] = acc0_[8] - lzb_[1]; sb[3] = acc0_[5] - lzb_[2];
+  sb[4] = 0.0; sb[5] = 0.0;
+  for (int n=0; n<kNlz; ++n) sb[6+n] = lz0_[n];
+  // the segment since the last mark (the step end's c2p floors) is reported in Jm1 here
+  // without being booked (the registers stay output-independent; it is booked at the next
+  // step start)
+  if (jlok_ > 0.0) sb[6+6] += sb[0] - jlast_;
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::my_rank == 0) {
+    MPI_Reduce(MPI_IN_PLACE, sb, 6 + kNlz, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  } else {
+    MPI_Reduce(sb, sb, 6 + kNlz, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+  // before the first step the budget has not started: dJ = 0 by definition
+  const Real dj = (jlok_ > 0.0) ? sb[0] - sb[1] : 0.0;
+  Real sum = sb[2] - sb[3];
+  for (int n=0; n<kNlz; ++n) sum += sb[6+n];
+  bool hdr = false;
+  {
+    std::ifstream f(lz_file_);
+    hdr = !f.good() || f.peek() == std::ifstream::traits_type::eof();
+  }
+  FILE *fp = std::fopen(lz_file_.c_str(), "a");
+  if (fp == nullptr) return;
+  if (hdr) {
+    std::fprintf(fp, "# ry_per_accretor inertial L_z budget (acclz-1020): dJ = dJin - dJout + "
+                 "Jgrv + Jcor + Jtr + Jrin + Jthw + Jspf + Jm1 + Jres\n#  [1]=time  [2]=Jdom  "
+                 "[3]=dJ  [4]=dJin  [5]=dJout  [6]=Jgrv  [7]=Jcor  [8]=Jtr  [9]=Jrin  "
+                 "[10]=Jthw  [11]=Jspf  [12]=Jm1  [13]=Jres\n");
+  }
+  std::fprintf(fp, " %.15e %.15e %.15e %.15e %.15e", pm->time, sb[0], dj, sb[2], sb[3]);
+  for (int n=0; n<kNlz; ++n) std::fprintf(fp, " %.15e", sb[6+n]);
+  std::fprintf(fp, " %.15e\n", (jlok_ > 0.0) ? dj - sum : 0.0);
+  std::fclose(fp);
+}
+
 void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   if (trc_) RyPerTrcHist(pm);
+  if (lz_) RyPerLzHist(pm);
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
@@ -3859,9 +4094,10 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
 //! bitwise the continuous one.  Carried in the generic marked pgen state block
 //! (kPgenRstMagic, pgen.hpp; ProblemGenerator::pgen_rst_write_func), so the hydro records
 //! and every other pgen's file are untouched.  Layout (all ranks write the same bytes):
-//!   char[8] "RYPACC01", int32 nranks, int32 kRstPer, int32 kRstGlob, int32 pad,
-//!   nranks x kRstPer Reals (rank-ordered: acc0_[13], hist_prev_[13], accx0_[2], erinj_,
-//!   trc0_[9]; the registers are PER RANK partial sums, MPI-summed at each output, so they
+//!   char[8] "RYPACC01", int32 nranks, int32 nper, int32 kRstGlob, int32 pad,
+//!   nranks x nper Reals (rank-ordered: acc0_[13], hist_prev_[13], accx0_[2], erinj_,
+//!   trc0_[9] (nper = 38), acclz-1020 with the L_z budget on: + lz0_[7], jlast_, jlok_,
+//!   lzb_[3] (nper = 50; both layouts are read); the registers are PER RANK partial sums, MPI-summed at each output, so they
 //!   are stored per rank to keep the sums bitwise), then kRstGlob Reals (rank 0's
 //!   hist_tprev_, the Picard passes/solves since the last output, Picmax).
 //! The stage registers acc1_/accx1_/trc1_ are copied from acc0_ at stage 1 and need no
@@ -3878,20 +4114,30 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
 //! Picmax is GLOBAL (the largest pass count since t = 0, max(stored, <rad_m1> impl_itmax)).
 //! problem/rst_registers = false (read only when named) writes no block (the 4960ac49 file).
 constexpr char kRyRstMagic[8] = {'R', 'Y', 'P', 'A', 'C', 'C', '0', '1'};
-constexpr int kRstPer = 2*kNaccR + 2 + 1 + kNtr;   // 38
+constexpr int kRstPer0 = 2*kNaccR + 2 + 1 + kNtr;   // 38: the 1019c layout
+constexpr int kRstLz = kNlz + 2 + 3;                 // acclz-1020: lz0_, jlast_, jlok_, lzb_
 constexpr int kRstGlob = 4;
 MeshBlockPack *rst_pmbp_ = nullptr;
 std::vector<Real> rst_badv_;   // ibadv_x1max read from the restart file (gid order), applied
 int rst_badv_n_ = -1;          // after EnvSetup (RyPerRstBadv); nk*nj per MB (-1: no block)
 
 std::vector<char> RyPerRstWrite() {
-  Real loc[kRstPer];
+  // acclz-1020: the L_z registers extend the per-rank record only when on (else the 1019c
+  // layout, byte for byte)
+  const int kRstPerX = lz_ ? kRstPer0 + kRstLz : kRstPer0;
+  Real loc[kRstPer0 + kRstLz];
   int o = 0;
   for (int n=0; n<kNaccR; ++n) loc[o++] = acc0_[n];
   for (int n=0; n<kNaccR; ++n) loc[o++] = hist_prev_[n];
   for (int n=0; n<2; ++n) loc[o++] = accx0_[n];
   loc[o++] = erinj_;
   for (int n=0; n<kNtr; ++n) loc[o++] = trc0_[n];
+  if (lz_) {
+    for (int n=0; n<kNlz; ++n) loc[o++] = lz0_[n];
+    loc[o++] = jlast_;
+    loc[o++] = jlok_;
+    for (int n=0; n<3; ++n) loc[o++] = lzb_[n];
+  }
   const int nr = global_variable::nranks;
   radm1::RadiationM1 *pm1 = (rst_pmbp_ != nullptr) ? rst_pmbp_->pradm1 : nullptr;
   // the outer bath's advective flux (see above), gathered in gid order
@@ -3920,12 +4166,12 @@ std::vector<char> RyPerRstWrite() {
     for (size_t n=0; n<lb.size(); ++n) bv[n] = lb[n];
 #endif
   }
-  std::vector<Real> all(static_cast<size_t>(nr)*kRstPer + kRstGlob + bv.size(), 0.0);
+  std::vector<Real> all(static_cast<size_t>(nr)*kRstPerX + kRstGlob + bv.size(), 0.0);
 #if MPI_PARALLEL_ENABLED
-  MPI_Allgather(loc, kRstPer, MPI_ATHENA_REAL, all.data(), kRstPer, MPI_ATHENA_REAL,
+  MPI_Allgather(loc, kRstPerX, MPI_ATHENA_REAL, all.data(), kRstPerX, MPI_ATHENA_REAL,
                 MPI_COMM_WORLD);
 #else
-  for (int n=0; n<kRstPer; ++n) all[n] = loc[n];
+  for (int n=0; n<kRstPerX; ++n) all[n] = loc[n];
 #endif
   Real glb[kRstGlob] = {hist_tprev_, 0.0, 0.0, picmax_rst_};
   if (pm1 != nullptr) {
@@ -3936,9 +4182,9 @@ std::vector<char> RyPerRstWrite() {
 #if MPI_PARALLEL_ENABLED
   MPI_Bcast(glb, kRstGlob, MPI_ATHENA_REAL, 0, MPI_COMM_WORLD);
 #endif
-  for (int n=0; n<kRstGlob; ++n) all[static_cast<size_t>(nr)*kRstPer + n] = glb[n];
-  for (size_t n=0; n<bv.size(); ++n) all[static_cast<size_t>(nr)*kRstPer + kRstGlob + n] = bv[n];
-  const std::int32_t hdr[4] = {static_cast<std::int32_t>(nr), kRstPer, kRstGlob,
+  for (int n=0; n<kRstGlob; ++n) all[static_cast<size_t>(nr)*kRstPerX + n] = glb[n];
+  for (size_t n=0; n<bv.size(); ++n) all[static_cast<size_t>(nr)*kRstPerX + kRstGlob + n] = bv[n];
+  const std::int32_t hdr[4] = {static_cast<std::int32_t>(nr), kRstPerX, kRstGlob,
                                static_cast<std::int32_t>(nbv)};
   std::vector<char> out(sizeof(kRyRstMagic) + sizeof(hdr) + all.size()*sizeof(Real));
   std::memcpy(out.data(), &(kRyRstMagic[0]), sizeof(kRyRstMagic));
@@ -3961,11 +4207,14 @@ void RyPerRstRestore(const std::vector<char> &blk) {
   std::int32_t hdr[4];
   std::memcpy(&(hdr[0]), blk.data() + sizeof(kRyRstMagic), sizeof(hdr));
   const int nrf = hdr[0], nbv = hdr[3];
-  const size_t nreg = static_cast<size_t>(nrf)*kRstPer + kRstGlob;
+  // the 1019c record (38) or the acclz-1020 one (38 + kRstLz)
+  const int kRstPerX = hdr[1];
+  const bool flz = (kRstPerX == kRstPer0 + kRstLz);
+  const size_t nreg = static_cast<size_t>(nrf)*kRstPerX + kRstGlob;
   const size_t nrest = blk.size() - h;
   const size_t nbvt = (nbv > 0 && nrest > nreg*sizeof(Real)) ?
                       (nrest/sizeof(Real) - nreg) : 0;
-  if (nrf < 1 || hdr[1] != kRstPer || hdr[2] != kRstGlob || nbv < 0 ||
+  if (nrf < 1 || !(flz || kRstPerX == kRstPer0) || hdr[2] != kRstGlob || nbv < 0 ||
       (nbv > 0 && nbvt % nbv != 0) || blk.size() != h + (nreg + nbvt)*sizeof(Real)) {
     if (root) {
       std::printf("ry_per_accretor: WARNING the restart file's history-register block has "
@@ -3979,13 +4228,13 @@ void RyPerRstRestore(const std::vector<char> &blk) {
   rst_badv_n_ = nbv;
   rst_badv_.assign(all.begin() + nreg, all.end());
   const int nr = global_variable::nranks, me = global_variable::my_rank;
-  Real loc[kRstPer];
+  Real loc[kRstPer0 + kRstLz];
   if (nrf == nr) {
-    for (int n=0; n<kRstPer; ++n) loc[n] = all[static_cast<size_t>(me)*kRstPer + n];
+    for (int n=0; n<kRstPerX; ++n) loc[n] = all[static_cast<size_t>(me)*kRstPerX + n];
   } else {
-    for (int n=0; n<kRstPer; ++n) {
+    for (int n=0; n<kRstPerX; ++n) {
       Real sum = 0.0;
-      for (int r=0; r<nrf; ++r) sum += all[static_cast<size_t>(r)*kRstPer + n];
+      for (int r=0; r<nrf; ++r) sum += all[static_cast<size_t>(r)*kRstPerX + n];
       loc[n] = root ? sum : 0.0;
     }
   }
@@ -3995,7 +4244,21 @@ void RyPerRstRestore(const std::vector<char> &blk) {
   for (int n=0; n<2; ++n) accx0_[n] = accx1_[n] = loc[o++];
   erinj_ = loc[o++];
   for (int n=0; n<kNtr; ++n) trc0_[n] = trc1_[n] = loc[o++];
-  const Real *glb = all.data() + static_cast<size_t>(nrf)*kRstPer;
+  if (flz && lz_) {
+    for (int n=0; n<kNlz; ++n) lz0_[n] = lz1_[n] = loc[o++];
+    jlast_ = loc[o++];
+    jlok_ = (loc[o++] > 0.0) ? 1.0 : 0.0;
+    for (int n=0; n<3; ++n) lzb_[n] = loc[o++];
+    if (nrf != nr) {   // summed onto rank 0: the budget continues on every rank
+      Real ok = 0.0;
+      for (int r=0; r<nrf; ++r) ok += all[static_cast<size_t>(r)*kRstPerX + kRstPer0 + kNlz + 1];
+      jlok_ = (ok > 0.0) ? 1.0 : 0.0;
+    }
+  } else if (lz_ && root) {
+    std::printf("ry_per_accretor: the restart file has no L_z budget registers: the lz.hst "
+                "budget starts at this restart\n");
+  }
+  const Real *glb = all.data() + static_cast<size_t>(nrf)*kRstPerX;
   hist_tprev_ = glb[0];
   picmax_rst_ = glb[3];
   if (root) {
@@ -4741,6 +5004,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
   }
 
+  // acclz-1020: the inertial L_z budget (envelope, rk integrators; see lz0_)
+  lz_ = env_ && (nstages_ > 0) &&
+        (!pin->DoesParameterExist("problem", "lz_budget") ||
+         pin->GetBoolean("problem", "lz_budget"));
+  for (int n=0; n<kNlz; ++n) lz0_[n] = lz1_[n] = 0.0;
+  jlast_ = 0.0; jlok_ = 0.0;
+  for (int n=0; n<3; ++n) lzb_[n] = 0.0;
+  if (lz_) {
+    lz_file_ = pin->GetString("job", "basename") + ".lz.hst";
+    for (int n=0; n<kNlz; ++n) {
+      dtretry::RegisterValue(("ry_lz0_" + std::to_string(n)).c_str(), &lz0_[n]);
+      dtretry::RegisterValue(("ry_lz1_" + std::to_string(n)).c_str(), &lz1_[n]);
+    }
+    dtretry::RegisterValue("ry_jlast", &jlast_);
+    dtretry::RegisterValue("ry_jlok", &jlok_);
+    for (int n=0; n<3; ++n) {
+      dtretry::RegisterValue(("ry_lzb_" + std::to_string(n)).c_str(), &lzb_[n]);
+    }
+  }
   // acctrc-1019c: the cumulative history registers in the restart file (RyPerRstWrite)
   rst_pmbp_ = pmbp;
   picmax_rst_ = 0.0;
@@ -4760,6 +5042,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
     if (msk_) user_m1post_func = RyPerM1Post;
+    if (lz_) user_m1post_func = RyPerM1PostLz;   // acclz-1020 (RyPerM1Post + the L_z mark)
     if (thwc_) user_hydro_flux_func = RyPerWallFlux;
     return;
   }
