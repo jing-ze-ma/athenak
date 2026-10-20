@@ -928,12 +928,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                            M1KeyName(pin, "vet_source", {"vet_col_source"}), "relaxed");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
+    } else if (vs.compare("relaxed_esc") == 0) {
+      // vetsrc-1020 (opt-in): relaxed with the cell's photon escape (rad_m1_vetsrc.hpp)
+      vcol_srelax = true;
+      vcol_sesc = true;
     } else if (vs.compare("gas") == 0) {
       vcol_srelax = false;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/vet_col_source = '" << vs << "' not implemented "
-        << "(relaxed | gas)" << std::endl;
+        << "(relaxed | relaxed_esc | gas)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     }

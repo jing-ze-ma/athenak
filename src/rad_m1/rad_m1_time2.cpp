@@ -1594,7 +1594,10 @@ void RadiationM1::Time2Report() {
               << " fallbacks=" << t2_vcnfb;
     if (t2_vcsrc) {std::cout << " source=state";}
     if (t2_vcsbl) {std::cout << " source=blend x0=" << vcol_sx0;}
-    if (!t2_vcsrc && !t2_vcsbl) {std::cout << (vcol_srelax ? " source=relaxed" : " source=gas");}
+    if (!t2_vcsrc && !t2_vcsbl) {
+      std::cout << (vcol_srelax ? (vcol_sesc ? " source=relaxed_esc" : " source=relaxed")
+                                : " source=gas");
+    }
   }
   if (t2_pcap > 0.0) {
     std::cout << " time2_pred_cap=" << t2_pcap << " limited cell-builds=" << t2_pnlim

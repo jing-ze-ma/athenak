@@ -1816,10 +1816,15 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     const std::string vs = pin->GetOrAddString("rad_m1", "vet_source", "gas");
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
+    } else if (vs.compare("relaxed_esc") == 0) {
+      // vetsrc-1020 (opt-in): relaxed with the cell's photon escape (rad_m1_vetsrc.hpp)
+      vcol_srelax = true;
+      vcol_sesc = true;
     } else if (vs.compare("gas") == 0) {
       vcol_srelax = false;
     } else {
-      VetFatal("<rad_m1>/vet_source = '" + vs + "' is not a choice (relaxed | gas)");
+      VetFatal("<rad_m1>/vet_source = '" + vs +
+               "' is not a choice (relaxed | relaxed_esc | gas)");
     }
   }
   // unify-sc-gd-1012 (#2): vet_bc_inner / vet_bc_reflect (VetBcInit, rad_m1.cpp; read
@@ -3766,6 +3771,9 @@ void RadiationM1::VetShortCharSweep() {
     const bool srx = thermal && vcol_srelax;
     const bool sbl = vcol_sbl;
     const Real sx0 = vcol_sx0;
+    // vetsrc-1020 (vet_source = relaxed_esc): the x1 cell width for the escape
+    const bool sesc = srx && vcol_sesc;
+    auto &mbs_ = pmy_pack->pmb->mb_size;
     const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
     FluidRef flv = FluidRef::Get(pmy_pack);
     auto eos = flv.eos;
@@ -3787,12 +3795,14 @@ void RadiationM1::VetShortCharSweep() {
         if (srx) {
           const Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
           const Real rks = (vsf != 0) ? opd_(m,M1_OP_S,k,j,i) : 0.0;
+          // vetsrc-1020 relaxed_esc: the escape rate of the cell (0 = relaxed)
+          const Real qe = VetEscapeRate(sesc, chx, mbs_.d_view(m).dx1);
           s = sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
                                       opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
-                                      chx, rks, sx0)
+                                      chx, rks, sx0, qe)
                   : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
                                      opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
-                                     chx, rks);
+                                     chx, rks, qe);
         } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
           s = VetScatterMix(vsf, opd_(m,M1_OP_P,k,j,i), chx, opd_(m,M1_OP_S,k,j,i),
                             ar*t2*t2, e);

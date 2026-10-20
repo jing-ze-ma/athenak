@@ -38,14 +38,37 @@ namespace radm1 {
 //! ~ 0.1-1), and a transverse checkerboard of it drives grid-scale radial flows through
 //! -(c/chi) E d(f)/dr (the he_presn wedge instability, 0929).  Where the exchange is weak
 //! (x, c dt rho kappa_P small) T* -> T_b and E* -> E_b: the old source.
+//!
+//! vetsrc-1020, vet_source = relaxed_esc (qe > 0; qe = 0 is relaxed, bitwise): the same
+//! exchange with the cell's photon ESCAPE to its neighbours, which hold the radiation at
+//! the current J ~ E_b over the step:
+//!   E* - E_b = chat dt (rho kappa_P a T*^4 - rho kappa_E E*) - y (E* - E_b)
+//!   rho e(T*) + c dt rho kappa_P a T*^4 (1+y)/(1+x+y) = rho e(T_b) + c dt rho kappa_E
+//!               E_b (1+y)/(1+x+y),      E* = [(1+y) E_b + chat dt rho kappa_P a T*^4]/(1+x+y)
+//! y = chat dt qe, qe = 1/(h (2 + chi h/3)) (VetEscapeRate) the escape rate of a cell of
+//! width h along the column axis, per unit chat: c/(2h) free streaming out of a thin
+//! slab, c/(3 chi h^2) ~ the diffusion rate pi^2 c/(3 chi h^2) of the cell-scale mode in a
+//! thick one.  x/y = tau_a (2 + tau/3), tau = chi h, tau_a = rho kappa_E h: the cell's
+//! thermalization depth, ~ (h/L_th)^2 with L_th = 1/sqrt(3 chi rho kappa_a) when thick.
+//! Thin or effectively thin (scattering-dominated, h < L_th): E* -> E_b, the formal
+//! solution keeps the NON-LOCAL J (the NLTE atmosphere, nlte2/nltek: relaxed drove E*
+//! -> B(T) there, +10-13 % in tau < 1); thick (h >> L_th): y << x, relaxed.  T* keeps
+//! relaxing wherever the gas exchange is stiff (its rate c dt rho kappa_P 4 a T^3
+//! (1+y)/((1+x+y) rho c_v) is >= that of relaxed), so the T_b transient of the 0929
+//! wedge instability is still removed; held gas (huge rho c_v) gives T* = T_b and the
+//! gas source exactly in the thin limit.
 
 template <class EosT>
 KOKKOS_INLINE_FUNCTION
 Real VetRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real eb,
                        const Real rkp, const Real rke, const Real eth, const Real ar,
                        const Real cl, const Real ch, const Real dt,
-                       const int sf, const Real chi, const Real rkes) {
-  const Real ix = 1.0/(1.0 + ch*dt*rke);
+                       const int sf, const Real chi, const Real rkes,
+                       const Real qe = 0.0) {
+  // vetsrc-1020 relaxed_esc: y = chat dt qe (the escape over the step, see above)
+  const bool esc = (qe > 0.0);
+  const Real y = ch*dt*qe;
+  const Real ix = esc ? (1.0 + y)/(1.0 + ch*dt*rke + y) : 1.0/(1.0 + ch*dt*rke);
   M1EosDirect<EosT> th{eos};
   Real ee, cv;
   th(d, tb, ee, cv);
@@ -55,7 +78,8 @@ Real VetRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real e
   if (!(ok && ts > 0.0)) {ts = tb;}
   const Real t2 = ts*ts;
   const Real t4 = t2*t2;
-  const Real es = (eb + ch*dt*rkp*ar*t4)*ix;
+  const Real es = esc ? ((1.0 + y)*eb + ch*dt*rkp*ar*t4)/(1.0 + ch*dt*rke + y)
+                      : (eb + ch*dt*rkp*ar*t4)*ix;
   // vet_scatter: B* of the relaxed gas with (sf = 1, 2; vet_scatter_j = current) the
   // CURRENT J = eb (E^n or the Picard iterate) or (sf = 3, 4; vet_scatter_j = relaxed)
   // the relaxed E*, the consistent end-of-step pair (S - E* = (E* - eb)/(c dt chi))
@@ -78,9 +102,10 @@ KOKKOS_INLINE_FUNCTION
 Real VetRelaxedSourceB(const EosT &eos, const Real d, const Real tb, const Real eb,
                        const Real rkp, const Real rke, const Real eth, const Real ar,
                        const Real cl, const Real ch, const Real dt,
-                       const int sf, const Real chi, const Real rkes, const Real x0) {
+                       const int sf, const Real chi, const Real rkes, const Real x0,
+                       const Real qe = 0.0) {
   const Real s1 = VetRelaxedSource(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, dt, sf,
-                                    chi, rkes);
+                                    chi, rkes, qe);
   const Real s0 = VetRelaxedSource(eos, d, tb, eb, rkp, rke, eth, ar, cl, ch, 0.0, sf,
                                     chi, rkes);
   M1EosDirect<EosT> th{eos};
@@ -91,6 +116,16 @@ Real VetRelaxedSourceB(const EosT &eos, const Real d, const Real tb, const Real 
   const Real x = xe + xg;
   const Real w = (x*x)/(x0*x0 + x*x);
   return s0 + w*(s1 - s0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VetEscapeRate
+//! \brief vetsrc-1020 (vet_source = relaxed_esc): the photon escape rate per unit chat of
+//! a cell of width h (the column axis: dr on sp / cs, dx1 on Cartesian) and extinction
+//! chi, qe = 1/(h (2 + chi h/3)); 0 when off (the relaxed source, bitwise)
+KOKKOS_INLINE_FUNCTION
+Real VetEscapeRate(const bool on, const Real chi, const Real h) {
+  return on ? 1.0/(h*(2.0 + chi*h*(1.0/3.0))) : 0.0;
 }
 
 } // namespace radm1
