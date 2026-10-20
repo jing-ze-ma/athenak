@@ -1,0 +1,60 @@
+Loading gcc/13.2.0-gcc-13.2.0-w55nxkl
+  Loading requirement: gmp/6.2.1-gcc-13.2.0-lcnhyse
+    mpfr/4.2.0-gcc-13.2.0-yy2fkq5 mpc/1.3.1-gcc-13.2.0-5kgoftq
+    zlib-ng/2.1.3-gcc-13.2.0-jetnfwa zstd/1.5.5-gcc-13.2.0-t2lua3l
+
+Loading cuda/12.9.0-none-none-pfmzfdv
+  Loading requirement: libiconv/1.17-gcc-11.3.1-h3jdn2x
+    xz/5.4.1-gcc-11.3.1-y32p7p3 zlib/1.2.13-gcc-11.3.1-dwcx77k
+    libxml2/2.10.3-gcc-11.3.1-m4mk5ab
+job 5059481 hpc-sm-02-03 Tue Oct 20 02:23:00 AM PDT 2026
+e31ea39ea5e05148e2dbea0b95328b27  /resnick/groups/carnegie_poc/jingze/builds_fin51/bin/athena_gpu_he_star_m1_a2713be0_nofma
+e1718ceba97fb86115563e0ab66d1f94  /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rsg_det.athinput
+fe6ebeb765c5536060c191ccbe6c9383  /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rdiff_1019/rst_C/rsg.00001.rst
+== R2 Tue Oct 20 02:23:10 AM PDT 2026
+srun --mpi=pmix -N 1 -n 4 --ntasks-per-node=4 -c 8 --cpu-bind=cores /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/gpuwrap.sh /resnick/groups/carnegie_poc/jingze/builds_fin51/bin/athena_gpu_he_star_m1_a2713be0_nofma -r /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rdiff_1019/rst_C/rsg.00001.rst mesh/nx2=48 mesh/nx3=48 meshblock/nx2=24 meshblock/nx3=24 time/nlim=200 output6/dt=1e30 -d /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rdiff_1019/R2
+R2 rc=0 wall 127 s
+elapsed=1.153058e+02 cycle=200 time=6.571429e+04 dt=3.285714e+02
+== CV Tue Oct 20 02:25:17 AM PDT 2026
+srun --mpi=pmix -N 1 -n 4 --ntasks-per-node=4 -c 8 --cpu-bind=cores /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/gpuwrap.sh /resnick/groups/carnegie_poc/jingze/builds_fin51/bin/athena_gpu_he_star_m1_a2713be0_nofma -i /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rsg_det.athinput mesh/nx2=48 mesh/nx3=48 meshblock/nx2=24 meshblock/nx3=24 time/nlim=200 output6/dt=1e30 rad_m1/vet_rotate_avg=1 -d /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rdiff_1019/CV
+CV rc=0 wall 197 s
+elapsed=1.854753e+02 cycle=200 time=6.571429e+04 dt=3.285714e+02
+== RV Tue Oct 20 02:28:34 AM PDT 2026
+srun --mpi=pmix -N 1 -n 4 --ntasks-per-node=4 -c 8 --cpu-bind=cores /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/gpuwrap.sh /resnick/groups/carnegie_poc/jingze/builds_fin51/bin/athena_gpu_he_star_m1_a2713be0_nofma -r /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rdiff_1019/rst_C/rsg.00001.rst mesh/nx2=48 mesh/nx3=48 meshblock/nx2=24 meshblock/nx3=24 time/nlim=200 output6/dt=1e30 rad_m1/vet_rotate_avg=1 -d /resnick/groups/carnegie_poc/jingze/rsg_g25_prod/det/rdiff_1019/RV
+RV rc=0 wall 118 s
+elapsed=1.070437e+02 cycle=200 time=6.571429e+04 dt=3.285714e+02
+== compare
+R2-R rsg.hydro.hst IDENT 100 rows 
+R2-R rsg.user.hst IDENT 100 rows 
+R2-R SAME 163647744 rsg.hydro_w.00002.bin rsg.hydro_w.00002.bin
+R2-R SAME 163647744 rsg.hydro_w.00003.bin rsg.hydro_w.00003.bin
+R2-R SAME 130967808 rsg.m1.00002.bin rsg.m1.00002.bin
+R2-R SAME 130967808 rsg.m1.00003.bin rsg.m1.00003.bin
+R2-R SAME 130967808 rsg.m1_vet.00001.bin rsg.m1_vet.00001.bin
+RV-CV rsg.hydro.hst DIFF 100 rows first diff t=3.3185714285714283e+04 (cycle 101)
+RV-CV rsg.user.hst DIFF 100 rows first diff t=3.3185714285714283e+04 (cycle 101)
+RV-CV DIFF 163647744 rsg.hydro_w.00002.bin rsg.hydro_w.00002.bin
+RV-CV DIFF 163647744 rsg.hydro_w.00003.bin rsg.hydro_w.00003.bin
+RV-CV DIFF 130967808 rsg.m1.00002.bin rsg.m1.00002.bin
+RV-CV DIFF 130967808 rsg.m1.00003.bin rsg.m1.00003.bin
+RV-CV DIFF 130967808 rsg.m1_vet.00001.bin rsg.m1_vet.00001.bin
+R2-C rsg.hydro.hst DIFF 100 rows first diff t=4.7642857142857138e+04 (cycle 145)
+R2-C rsg.user.hst DIFF 100 rows first diff t=4.6328571428571428e+04 (cycle 141)
+R2-C DIFF 163647744 rsg.hydro_w.00002.bin rsg.hydro_w.00002.bin
+R2-C DIFF 163647744 rsg.hydro_w.00003.bin rsg.hydro_w.00003.bin
+R2-C DIFF 130967808 rsg.m1.00002.bin rsg.m1.00002.bin
+R2-C DIFF 130967808 rsg.m1.00003.bin rsg.m1.00003.bin
+R2-C DIFF 130967808 rsg.m1_vet.00001.bin rsg.m1_vet.00001.bin
+CV-C rsg.hydro.hst DIFF 201 rows first diff t=3.2857142857142856e+02 (cycle 1)
+CV-C rsg.user.hst DIFF 201 rows first diff t=0.0000000000000000e+00 (cycle 0)
+CV-C DIFF 163647744 rsg.hydro_w.00000.bin rsg.hydro_w.00000.bin
+CV-C DIFF 163647744 rsg.hydro_w.00001.bin rsg.hydro_w.00001.bin
+CV-C DIFF 163647744 rsg.hydro_w.00002.bin rsg.hydro_w.00002.bin
+CV-C DIFF 163647744 rsg.hydro_w.00003.bin rsg.hydro_w.00003.bin
+CV-C DIFF 130967808 rsg.m1.00000.bin rsg.m1.00000.bin
+CV-C DIFF 130967808 rsg.m1.00001.bin rsg.m1.00001.bin
+CV-C DIFF 130967808 rsg.m1.00002.bin rsg.m1.00002.bin
+CV-C DIFF 130967808 rsg.m1.00003.bin rsg.m1.00003.bin
+CV-C DIFF 130967808 rsg.m1_vet.00000.bin rsg.m1_vet.00000.bin
+CV-C DIFF 130967808 rsg.m1_vet.00001.bin rsg.m1_vet.00001.bin
+done Tue Oct 20 02:30:38 AM PDT 2026
