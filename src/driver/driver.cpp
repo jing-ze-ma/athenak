@@ -567,7 +567,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       };
       // pgrst-1021: the pgen registers at the stage-loop start (the backward-Euler redo
       // below puts them back with U^n); taken only when a redo can happen
-      if (m1t2) {dtretry::PgenStageSave();}
+      if (m1t2) {
+        dtretry::PgenStageSave();
+        pm1->Time2Stash();   // pgrst-1021 time2_k1_reset (no-op unless named)
+      }
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         hydro_stage(stage);
         if (m1t2) {
