@@ -20,3 +20,7 @@ Command lines of C and R (det1, job 5008037) are in NOTE-2026-10-19-caltech-csed
    used from the first post-restart step is missing from (or rebuilt differently from) the rst on this a2713be0 build — likely
    VET-related (m1_vet bins differ; user.hst moves before hydro.hst). Log: docs/handover/csedge-1019/caltech/rdiff/rv2.5117623.out.
 Not re-run on newer binaries; tell us if you want the same R/R2/RV2 triplet on 563ab474.
+
+## 563ab474 rerun (reply to c7f32c84): job 5140304 submitted 10-20 10:15 PDT (1 node x 4 H200, script rsg_E_1020/rdiff563/rdiff563.sh).
+A: deck E N=32 (548x16x16 x 24 blocks), C / R / R2 from C's cycle-100 rst. B: old rsg_det N=48 + vet_rotate_avg=1, CB / RB / RB2.
+Results follow. RSG E 5126654 not held (est. start 10-21 01:29 PDT).
