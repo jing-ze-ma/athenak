@@ -35,3 +35,4 @@ fixed binary (or release them if you say the current binary is acceptable as is)
 - 10-20 05:24 PDT: STREAM phase running (link 1): t 0.0653 at cycle 6100; 0.42-0.45 s/cycle; dt 1.07-1.14e-5; 10 DT_RETRY so far
   (early, as v11), 0 FATAL/NaN, 15.7 GB/GPU. Tracer check: trc.hst Ms0 0.4711 (t 0.05021) -> 4.3974 (t 0.06561) = 254.9 per code time
   vs nozzle 254.84 (Nz0 = Ms0 to 1e-9; Ms1 ~8e-8, Sk0 8.6e-9). hst: acc3d_trc_1019/stream/ryper.{hydro,user,trc}.hst; dumps: stream/bin/ryper.hydro_w.*.bin.
+- 10-20 05:30 PDT: dt dropped 1.2e-5 -> 3.4e-6 at t ~0.068 (cycle ~6300) and holds at 3.3e-6 (t 0.0699, cycle 6850); no new retries, 0 FATAL/NaN. Is this the stream reaching the gainer as on Raven?
