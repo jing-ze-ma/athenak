@@ -25,6 +25,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -924,8 +925,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     {
       // unify-sc-gd-1012 (#3): the canonical key vet_source (vet_col_source its alias),
       // read by vet_sc too (VetInit)
-      std::string vs = pin->GetOrAddString("rad_m1",
-                           M1KeyName(pin, "vet_source", {"vet_col_source"}), "relaxed");
+      // vetsrc-1020 (USER 10-20): DEFAULT relaxed_esc under the new default set
+      // (utils/recipe.hpp: a fresh run, or <job>/recipe = prod1019); a restart whose input
+      // names neither key, or recipe = none, keeps the old default relaxed
+      const std::string vk = M1KeyName(pin, "vet_source", {"vet_col_source"});
+      if (!pin->DoesParameterExist("rad_m1", vk)) {
+        const bool nd = recipe::NewDefaults(pin);
+        pin->GetOrAddString("rad_m1", vk, nd ? "relaxed_esc" : "relaxed");
+        recipe::Log(std::string("<rad_m1>/vet_source = ") + (nd ? "relaxed_esc (default)"
+            : (recipe::GetMode(pin) == recipe::Mode::none
+               ? "relaxed (recipe none: the old default)"
+               : "relaxed (restart input has no key: the old default)")));
+      }
+      std::string vs = pin->GetString("rad_m1", vk);
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("relaxed_esc") == 0) {
