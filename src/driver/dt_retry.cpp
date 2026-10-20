@@ -207,6 +207,18 @@ std::vector<std::unique_ptr<Entry>> &PgenEntries() {
   return v;
 }
 
+// pgrst-1021: the stage-loop copy of the pgen registers (see dt_retry.hpp)
+std::vector<std::unique_ptr<Entry>> &PgenStageEntries() {
+  static std::vector<std::unique_ptr<Entry>> v;
+  return v;
+}
+void PgenStageSave() {
+  for (auto &e : PgenStageEntries()) {e->Save();}
+}
+void PgenStageRestore() {
+  for (auto &e : PgenStageEntries()) {e->Restore();}
+}
+
 //----------------------------------------------------------------------------------------
 DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   const bool fresh = !global_variable::restart_run;

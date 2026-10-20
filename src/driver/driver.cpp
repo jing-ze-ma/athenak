@@ -565,6 +565,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         ExecuteTaskList(pmesh, "after_stagen", stage);
         if (pm1 != nullptr) {pm1->DetTrace("hyd_out");}
       };
+      // pgrst-1021: the pgen registers at the stage-loop start (the backward-Euler redo
+      // below puts them back with U^n); taken only when a redo can happen
+      if (m1t2) {dtretry::PgenStageSave();}
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         hydro_stage(stage);
         if (m1t2) {
@@ -584,6 +587,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (m1t2fail && !dtr_now) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
+        dtretry::PgenStageRestore();
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
         
