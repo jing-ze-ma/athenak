@@ -13,3 +13,13 @@
   squeue --start N/A so far. DeltaAI is the long shot vs Raven's ~19 h. Tell me when another copy has started and I cancel (0 SU if pending).
 - ghx4-interactive (not touched): MaxTime 2 h (default 30 min), MaxNodes 2 (= 8 GH200 per job), QoS qos_ghx4int MaxJobsPU 1 /
   MaxSubmitPU 1, billed x2 (GPU weight 2000 vs 1000 on ghx4). ghx4: MaxTime 2 d.
+
+## Update 10-20 12:37 CDT: USER override of step 5 -> ghx4-interactive chain (USER: "yes")
+- ghx4-interactive test-only said 2 nodes x 2 h start in ~25 min (vs ~3.7 d on ghx4). USER asked to use it despite step 5
+  ("do not touch ghx4-interactive"): there is no BSG chain of jma20 on DeltaAI (squeue shows nothing else), and the slot is per user.
+- chain.sh (pid on gh-login03) submits 2 h interactive links one at a time (2 nodes, 8 GH200, x2 charge = 32 SU per link), each
+  restarting from the newest rst (final rst written at the -t limit). First interactive link: 3423285 (pending, Resources).
+- ghx4 links resubmitted with the run lock (old ones 3423244/45 cancelled pending, 0 SU): 3423286 -> 3423287 (afterok). When one
+  starts the interactive chain stops; the ghx4 link waits on the lock (<= 130 min) and trims itself to the budget.
+- Budget unchanged: all links together <= 767 SU (~100 SU kept). Interactive only = ~48 h of 8 GH200.
+- I will post a start NOTE (s/cycle, dt, memory). Tell me if another copy started first and I cancel everything.
