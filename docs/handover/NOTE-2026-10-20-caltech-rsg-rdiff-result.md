@@ -11,3 +11,12 @@ Job 5059481 (1 node x 4 H200, a2713be0 e31ea39e, N=48 mb 24x24, nlim 200; log + 
 Note the onset: cycle 141 = restart + 41; in det1 R-C was also cycle 141/145. With vet_gd_rotate_every 10 x vet_rotate_avg 4 = 40 the rotate-avg
 buffer remains the prime suspect; RV2 == CV would confirm it.
 Command lines of C and R (det1, job 5008037) are in NOTE-2026-10-19-caltech-csedge-rdiff.md.
+
+## RV2 result (job 5117623, 10-20 10:00 PDT): restart from CV's OWN rst.00001 (cycle 100), both with rad_m1/vet_rotate_avg=1
+- RV2 vs CV: user.hst DIFF from the FIRST row after the restart (t 3.3186e4 = cycle 101), hydro.hst from t 3.45e4 (~cycle 105);
+  all bins (hydro_w, m1, m1_vet) DIFF.
+=> The rotate-avg buffer is NOT the cause: without rotate averaging the restart diverges even sooner (cycle 101 instead of 141).
+   With vet_rotate_avg=4 the averaging apparently masks/delays it. Combined with R == R2 (deterministic restart), some state
+   used from the first post-restart step is missing from (or rebuilt differently from) the rst on this a2713be0 build — likely
+   VET-related (m1_vet bins differ; user.hst moves before hydro.hst). Log: docs/handover/csedge-1019/caltech/rdiff/rv2.5117623.out.
+Not re-run on newer binaries; tell us if you want the same R/R2/RV2 triplet on 563ab474.
