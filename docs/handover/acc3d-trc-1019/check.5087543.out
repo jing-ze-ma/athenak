@@ -1,0 +1,28 @@
+Loading gcc/13.2.0-gcc-13.2.0-w55nxkl
+  Loading requirement: gmp/6.2.1-gcc-13.2.0-lcnhyse
+    mpfr/4.2.0-gcc-13.2.0-yy2fkq5 mpc/1.3.1-gcc-13.2.0-5kgoftq
+    zlib-ng/2.1.3-gcc-13.2.0-jetnfwa zstd/1.5.5-gcc-13.2.0-t2lua3l
+
+Loading cuda/12.9.0-none-none-pfmzfdv
+  Loading requirement: libiconv/1.17-gcc-11.3.1-h3jdn2x
+    xz/5.4.1-gcc-11.3.1-y32p7p3 zlib/1.2.13-gcc-11.3.1-dwcx77k
+    libxml2/2.10.3-gcc-11.3.1-m4mk5ab
+job 5087543 hpc-sm-02-03.cm.cluster Tue Oct 20 02:36:51 AM PDT 2026
+201918b0781b7574fa7371d8b02a18ed  /resnick/groups/carnegie_poc/jingze/builds_accr/bin/athena_gpu_ry_per_accretor_13206541_nofma
+5e3df2391d6fc0d439dc9c0fa9d3e784  /resnick/groups/carnegie_poc/jingze/acc3d_trc_1019/acc3d_check.athinput
+C rc=0 wall 131 s peak MiB  669 NC>0 0 FATAL 0 time=2.000000e-03 cycle=142
+C2 rc=0 wall 132 s peak MiB  1715 NC>0 0 FATAL 0 time=2.000000e-03 cycle=142
+R from /resnick/groups/carnegie_poc/jingze/acc3d_trc_1019/check/C/rst/ryper.00001.rst
+R rc=0 wall 69 s peak MiB  1715 NC>0 0 FATAL 0 time=2.000000e-03 cycle=142
+hst files: ['ryper.hydro.hst', 'ryper.trc.hst', 'ryper.user.hst']
+C2 vs C ryper.hydro.hst IDENT 143 rows 
+R vs C ryper.hydro.hst IDENT 71 rows 
+C2 vs C ryper.trc.hst IDENT 143 rows 
+R vs C ryper.trc.hst IDENT 71 rows 
+C2 vs C ryper.user.hst IDENT 143 rows 
+R vs C ryper.user.hst IDENT 71 rows 
+C2 vs C ryper.hydro_w.00001.bin IDENT
+R vs C ryper.hydro_w.00001.bin IDENT
+C2 vs C ryper.m1.00001.bin IDENT
+R vs C ryper.m1.00001.bin IDENT
+RESULT ALL IDENT

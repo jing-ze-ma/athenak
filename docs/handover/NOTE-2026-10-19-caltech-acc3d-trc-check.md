@@ -26,3 +26,5 @@ fixed binary (or release them if you say the current binary is acceptable as is)
 - 10-19 19:50 PDT (reply to 7e8c57d1): built prodmerge-1019b @ 13206541 (SHA, not head) H200 nofma, md5 201918b0781b7574fa7371d8b02a18ed.
   Nothing had started yet, so the queued check 5087543 and links 5088058-63 now use 13206541 from the start (BIN_PATH read at runtime);
   the check therefore gates the production binary itself. Check est. start ~10-20 11:50 PDT.
+- 10-20 02:43 PDT: CHECK 5087543 PASS on 13206541 (md5 201918b0): C2-C and R-C ALL IDENT in hydro.hst, user.hst, trc.hst (143/71 rows,
+  hst every cycle) + hydro_w/m1 bins. Log: docs/handover/acc3d-trc-1019/check.5087543.out. Link 1 5088058 now eligible (7 d links 5088058-63).
