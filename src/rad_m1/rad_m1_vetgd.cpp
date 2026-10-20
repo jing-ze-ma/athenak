@@ -582,8 +582,9 @@ void RadiationM1::VetGdInit() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   // cs-vetgd-1017 (stage S3, rad_m1_vetgd_cs.cpp): the cubed sphere.  The options that
   // are wedge-specific or not ported are refused; the sp halo layouts (exact / compact
-  // lists, band ring, IPC, NCCL, overlap) do not apply (the cs band is filled by its own
-  // exact copies); the fused twin is swept unfused with this build's cut (the
+  // lists, IPC, NCCL, overlap) do not apply (the cs band is filled by its own exact
+  // copies; memcut-1020: the band ring applies with the cs compact lists, see VetGdCsSweep);
+  // the fused twin is swept unfused with this build's cut (the
   // vet_gd_twin_lowmem path: the same numbers as the fused twin on sp); no walls
   vgd_csg = pm->use_cubed_sphere;
   if (vgd_csg) {
@@ -603,8 +604,6 @@ void RadiationM1::VetGdInit() {
     vgd_hx_on = false;
     vgd_hx_named = false;
     vgd_hx_mode = 0;
-    vgd_ring_par = false;
-    vgd_ring_named = false;
     // the twin always with THIS build's cut (the vet_gd_twin_lowmem order: the fused
     // twin's numbers); the plain unfused twin would take the previous build's cut (its
     // sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
@@ -616,7 +615,7 @@ void RadiationM1::VetGdInit() {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam "
                 << "strip + vertex triangle upwind stencil, exact per-shell band copies "
-                << "(the sp halo lists / ring / IPC / overlap keys do not apply), twin "
+                << "(the sp halo lists / IPC / overlap keys do not apply), twin "
                 << (vgd_twin ? "unfused (this build's cut)" : "off") << "; hand-over "
                 << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator (S4)"
                               : ((vlat_odm == 1) ? " + D_r,lat lagged (S4)"
@@ -712,16 +711,19 @@ void RadiationM1::VetGdInit() {
     // mem2-1014 vet_gd_band_ring: where every band value the sweep reads comes from an
     // exact-list exchange of this sweep (the halo_exact gate below, no overlap / fused
     // shells / async / band_exit) and some block has a remote side (else no band)
-    const bool hxok = vgd_hx_on && vgd_shl_on && !vgd_bandx && !vgd_async && vgd_hmpi &&
-                      (vgd_hcomp > 0) && (vgd_hl_mb > 0);
+    // (memcut-1020: on the cubed sphere, where the cs compact lists apply: every band
+    // value the cs sweep reads comes from the compact exchange of this sweep)
+    const bool hxok = vgd_csg ? (vgd_cscomp && vgd_hmpi)
+                              : (vgd_hx_on && vgd_shl_on && !vgd_bandx && !vgd_async &&
+                                 vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0));
     bool anyside = false;
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
     vgd_ring = vgd_ring_par && hxok && (vgd_ovl_g == 0) && (vgd_fuse_h <= 1) && anyside;
     if (vgd_ring_named && vgd_ring_par && !vgd_ring && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_band_ring: does not apply here (needs the exact halo "
-                << "lists, no vet_gd_overlap / fuse_shells / async / band_exit, MPI band)"
-                << std::endl;
+                << "lists, no vet_gd_overlap / fuse_shells / async / band_exit, MPI band; "
+                << "cubed sphere: vet_gd_halo_compact > 0 with an MPI band)" << std::endl;
     }
   }
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc

@@ -2276,7 +2276,8 @@ class RadiationM1 {
   VgdIView vgd_i;
   void VgdRagAlloc(VgdRag &a);
   // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact
-  // halo lists, no overlap / async / fused shells; read when named; env VGD_RING=0 off):
+  // halo lists, no overlap / async / fused shells; memcut-1020: on the cubed sphere with
+  // the cs compact lists, vet_gd_halo_compact > 0; read when named; env VGD_RING=0 off):
   // the ragged array keeps every shell's INTERIOR only (compact slab, depth 0) and lends
   // a shell one of VGD_RING_K wide slabs (its full band depth wi, the same rectangle as
   // before) only while the sweep needs its band: inward pass from just before the shell
