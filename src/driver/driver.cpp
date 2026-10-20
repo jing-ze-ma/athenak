@@ -575,9 +575,19 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         hydro_stage(stage);
         if (m1t2) {
           pm1->Time2FormStage(stage, pmesh->dt);
+          if (stage == 1 && pm1->t2_pfix > 0 && pctr_ != nullptr) {pctr_->Save(pmesh, 2);}
           ExecuteTaskList(pmesh, "m1_before_stagen", 1);
           ExecuteTaskList(pmesh, "m1_stagen", 1);
           ExecuteTaskList(pmesh, "m1_after_stagen", 1);
+          // t2pos-1020 <rad_m1>/time2_posfix (off unless named): a stage 1 that is only
+          // not positive is solved again with its increment dropped where it failed
+          // (counters of the dropped attempt: slot 2)
+          if (pm1->t2_fail && pm1->t2_pfix_want) {
+            while (pm1->t2_fail && pm1->t2_pfix_want) {
+              if (pctr_ != nullptr) {pctr_->Restore(pmesh, 2, 2);}
+              (void) pm1->Time2PosFix(this);
+            }
+          }
           if (pm1->t2_fail) {
             m1t2fail = true;
             break;

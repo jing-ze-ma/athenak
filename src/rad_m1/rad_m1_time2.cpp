@@ -428,6 +428,37 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     }
   }
   t2_ys_ok = false;
+  // t2pos-1020: <rad_m1>/time2_posfix = N, time2_posfix_grow (read only when named;
+  // absent = off, every result bitwise): the local stage-1 positivity re-solve
+  // (Time2PosFix).  Not wired for MHD (the field put-back) nor <hydro>/am_vector (the
+  // spin reservoir put-back).
+  t2_pfix = 0;
+  if (pin->DoesParameterExist("rad_m1", "time2_posfix")) {
+    t2_pfix = pin->GetInteger("rad_m1", "time2_posfix");
+    if (t2_pfix < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_posfix must be >= 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (pin->DoesParameterExist("rad_m1", "time2_posfix_grow")) {
+    t2_pfix_grow = pin->GetInteger("rad_m1", "time2_posfix_grow");
+    if (t2_pfix_grow < 0 || t2_pfix_grow > 2) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_posfix_grow must be 0, 1 or 2 (the ghost "
+                << "depth)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (t2_pfix > 0) {
+    FluidRef flp = FluidRef::Get(pmy_pack);
+    if ((flp.on && flp.mhd) || am_vec) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_posfix is not wired for MHD or "
+                << "<hydro>/am_vector" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
@@ -480,8 +511,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(vet_dbgclip, 1);
     Kokkos::deep_copy(vet_dbgclip, 0.0);
   }
+  if (t2_pfix > 0) {
+    Kokkos::realloc(t2pm, nmb, n3, n2, n1);
+    Kokkos::deep_copy(t2pm, 0.0);
+  }
   t2_ok = false;
   if (global_variable::my_rank == 0) {
+    if (t2_pfix > 0) {
+      std::cout << "<rad_m1> time2_posfix=" << t2_pfix << " time2_posfix_grow="
+                << t2_pfix_grow << ": local stage-1 positivity re-solve" << std::endl;
+    }
     std::cout << "<rad_m1> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
     std::cout << "         time2_enth_be=" << (t2_enth_be ? "true" : "false")
@@ -592,6 +631,32 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_ys_face = false;
     }
     t2_ys_ok = false;
+    // t2pos-1020 time2_posfix: the stage-1 start of the gas (and of the closure memory)
+    // for a re-solve, and a clean mask
+    if (t2_pfix > 0) {
+      FluidRef flp = FluidRef::Get(pmy_pack);
+      if (flp.on) {
+        if (t2gsv.extent(0) != flp.u0.extent(0) || t2gsv.extent(1) != flp.u0.extent(1) ||
+            t2gsv.extent(2) != flp.u0.extent(2) || t2gsv.extent(3) != flp.u0.extent(3) ||
+            t2gsv.extent(4) != flp.u0.extent(4)) {
+          Kokkos::realloc(t2gsv, flp.u0.extent(0), flp.u0.extent(1), flp.u0.extent(2),
+                          flp.u0.extent(3), flp.u0.extent(4));
+        }
+        Kokkos::deep_copy(DevExeSpace(), t2gsv, flp.u0);
+      }
+      if (ctr_mem.extent(0) > 0) {
+        if (t2csv.extent(0) != ctr_mem.extent(0)) {
+          Kokkos::realloc(t2csv, ctr_mem.extent(0), ctr_mem.extent(1), ctr_mem.extent(2),
+                          ctr_mem.extent(3), ctr_mem.extent(4));
+        }
+        Kokkos::deep_copy(DevExeSpace(), t2csv, ctr_mem);
+      }
+      Kokkos::deep_copy(DevExeSpace(), t2pm, 0.0);
+      t2_pfix_n = 0;
+      t2_pfix_any = false;
+      t2_pfix_want = false;
+      t2_pfix_redo = false;
+    }
   } else {
     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
     int n3 = static_cast<int>(u0.extent(2)), n2 = static_cast<int>(u0.extent(3));
@@ -635,6 +700,24 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     if (two) {v += c2*k2_(m,n,k,j,i);}
     in_(m,n,k,j,i) = v;
   });
+  // t2pos-1020 time2_posfix: where stage 1 dropped its increment t2_a21 dt K1, stage 2
+  // takes it back with the weight of Y1 in its start state (heun: 1/2), so that the step
+  // is U^n + dt (b1 K1 + b2 K2 + g K3) with the tableau's b everywhere
+  const bool pcomp = two && (t2_pfix > 0) && t2_pfix_any;
+  const Real ccomp = t2_a21*dt*(heun ? 0.5 : w0);
+  if (pcomp) {
+    auto pm_ = t2pm;
+    const bool d2 = (n2 > 1), d3 = (n3 > 1);
+    par_for("m1_t2_pcomp", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, n3-1, 0, n2-1,
+            0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      Real w = pm_(m,k,j,i);
+      if (n == M1_T2_F1 && i > 0) {w = fmax(w, pm_(m,k,j,i-1));}
+      if (n == M1_T2_F1+1) {w = d2 ? ((j > 0) ? fmax(w, pm_(m,k,j-1,i)) : w) : 0.0;}
+      if (n == M1_T2_F1+2) {w = d3 ? ((k > 0) ? fmax(w, pm_(m,k-1,j,i)) : w) : 0.0;}
+      if (w > 0.0) {in_(m,n,k,j,i) += ccomp*k1_(m,n,k,j,i);}
+    });
+  }
   // cs-open-1018 <hydro>/am_vector: the spin reservoir's increment from its slopes
   if (am_vec && aminc.extent_int(0) > 0) {
     auto a1_ = amk1;
@@ -656,10 +739,12 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     auto ck1_ = csk1;
     auto ck2_ = csk2;
     auto ci_ = csinc;
+    auto pm_ = t2pm;
     par_for("m1_t2_csinc", DevExeSpace(), 0, nmb1, 0, 2, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       Real v = c1*ck1_(m,n,k,j,i);
       if (two) {v += c2*ck2_(m,n,k,j,i);}
+      if (pcomp && pm_(m,k,j,i) > 0.0) {v += ccomp*ck1_(m,n,k,j,i);}
       ci_(m,n,k,j,i) = v;
     });
     csinc_ok = true;
@@ -728,6 +813,134 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   pred_ok = false;
   pred2_ok = false;
   t2_solve = M1_T2S_NONE;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::Time2PosFix
+//! \brief t2pos-1020 <rad_m1>/time2_posfix: the stage-1 solve converged but left E, T or
+//! the written-back gas eint <= 0 in the cells it marked in t2pm (ImplicitSolve).  In
+//! the thin, free-streaming floor shell (c dt/dr >> 1) the explicit part (1-g) dt K1 of
+//! the old vector of H-ESDIRK2 stage 1 is a stiff extrapolation that the L-stable stage
+//! solve cannot undo there.  The stage-1 start (radiation, faces, gas, closure memory) is
+//! put back, the marked set is grown by time2_posfix_grow face-neighbour layers, t2inc is
+//! dropped in it (cells; faces with a marked side), and stage 1 is solved again (at most
+//! time2_posfix times per step): in the set the stage is backward Euler of g dt from U^n,
+//! which is positive wherever the operator is an M-matrix.  Time2FormStage(2) puts the
+//! dropped increment back into the stage-2 old vector (weight of Y1 in its start), so the
+//! step keeps the weights b of the tableau (consistent, conservative; stage 1 is first
+//! order in the set only).  A step whose stage 1 is admissible is untouched.  Returns
+//! false when no re-solve is wanted (the caller then takes the usual rejection path).
+
+bool RadiationM1::Time2PosFix(Driver *pdrive) {
+  if (!t2_pfix_want) return false;
+  t2_pfix_want = false;
+  t2_pfix_n += 1;
+  Mesh *pmesh = pmy_pack->pmesh;
+  // the stage-1 start back: radiation U^n (u1, face copies), the gas after Heun stage 1
+  Kokkos::deep_copy(DevExeSpace(), u0, u1);
+  Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
+  if (trans_on) {
+    Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
+    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
+  }
+  if (ctr_mem.extent(0) > 0 && t2csv.extent(0) == ctr_mem.extent(0)) {
+    Kokkos::deep_copy(DevExeSpace(), ctr_mem, t2csv);
+  }
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  if (fl.on) {
+    Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
+    FluidRefresh(pdrive);
+  }
+  // grow the marked set (face neighbours) and fill its ghosts: iw slot KZ (Krylov
+  // scratch, free between solves) carries it through the width-1 exchange; the ghosts of
+  // a physical boundary stay 0
+  auto &indcs = pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+  const bool d2 = (indcs.nx2 > 1), d3 = (indcs.nx3 > 1);
+  auto iw_ = iw;
+  auto pm_ = t2pm;
+  const int sl = M1_IW_KZ;
+  auto to_slot = [&]() {
+    par_for("m1_t2p_ts", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool in = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+      iw_(m,sl,k,j,i) = in ? pm_(m,k,j,i) : 0.0;
+    });
+    ImplicitHaloExchange(1, sl);
+  };
+  for (int r = 0; r < t2_pfix_grow; ++r) {
+    to_slot();
+    par_for("m1_t2p_grow", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real w = fmax(iw_(m,sl,k,j,i), fmax(iw_(m,sl,k,j,i-1), iw_(m,sl,k,j,i+1)));
+      if (d2) {w = fmax(w, fmax(iw_(m,sl,k,j-1,i), iw_(m,sl,k,j+1,i)));}
+      if (d3) {w = fmax(w, fmax(iw_(m,sl,k-1,j,i), iw_(m,sl,k+1,j,i)));}
+      pm_(m,k,j,i) = w;
+    });
+  }
+  to_slot();
+  par_for("m1_t2p_back", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    pm_(m,k,j,i) = iw_(m,sl,k,j,i);
+  });
+  Real nc = 0.0;
+  par_reduce_flat("m1_t2p_cnt", 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    if (pm_(m,k,j,i) > 0.0) a += 1.0;
+  }, Kokkos::Sum<Real>(nc));
+#if MPI_PARALLEL_ENABLED
+  {Real g;
+  MPI_Allreduce(&nc, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  nc = g;}
+#endif
+  // drop the stage-1 increment in the set (cells; faces with a marked side)
+  auto in_ = t2inc;
+  {
+    const int q3 = static_cast<int>(t2inc.extent(2)), q2 = static_cast<int>(t2inc.extent(3));
+    const int q1 = static_cast<int>(t2inc.extent(4));
+    par_for("m1_t2p_drop", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, q3-1, 0, q2-1, 0, q1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      Real w = pm_(m,k,j,i);
+      if (n == M1_T2_F1 && i > 0) {w = fmax(w, pm_(m,k,j,i-1));}
+      if (n == M1_T2_F1+1) {w = d2 ? ((j > 0) ? fmax(w, pm_(m,k,j-1,i)) : w) : 0.0;}
+      if (n == M1_T2_F1+2) {w = d3 ? ((k > 0) ? fmax(w, pm_(m,k-1,j,i)) : w) : 0.0;}
+      if (w > 0.0) {in_(m,n,k,j,i) = 0.0;}
+    });
+    if (csinc_ok) {
+      auto ci_ = csinc;
+      par_for("m1_t2p_dropc", DevExeSpace(), 0, nmb1, 0, 2, 0, q3-1, 0, q2-1, 0, q1-1,
+      KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+        if (pm_(m,k,j,i) > 0.0) {ci_(m,n,k,j,i) = 0.0;}
+      });
+    }
+  }
+  t2_pfix_any = true;
+  t2_pfix_nsolve += 1.0;
+  t2_pfix_ncell += nc;
+  if (t2_pfix_n == 1) {t2_pfix_nstep += 1.0;}
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> time2_posfix: stage 1 re-solved at cycle " << pmesh->ncycle
+              << " (round " << t2_pfix_n << ", " << nc << " cells without the stage-1 "
+              << "increment)" << std::endl;
+  }
+  // the re-solve: a cold Picard start (the failed solve stored its increment), the
+  // stage-1 closure build of the first attempt is kept (same U^n; history-free)
+  pred_ok = false;
+  t2_solve = M1_T2S_STAGE1;
+  t2_fail = false;
+  nsub = 1;
+  dt_sub = kT2G*pmesh->dt;
+  t2_pfix_redo = true;
+  pdrive->ExecuteTaskList(pmesh, "m1_before_stagen", 1);
+  pdrive->ExecuteTaskList(pmesh, "m1_stagen", 1);
+  pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
+  t2_pfix_redo = false;
+  return true;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1750,6 +1963,10 @@ void RadiationM1::Time2Report() {
               << vgd_rot_ncfail << " Picard passes=" << vgd_rot_ncpass << " (frac "
               << vgd_rot_cfrac << ", reuse "
               << (vgd_rot_creuse ? "on" : "off") << ")";
+  }
+  if (t2_pfix > 0) {
+    std::cout << " time2_posfix: steps=" << t2_pfix_nstep << " re-solves="
+              << t2_pfix_nsolve << " cells=" << t2_pfix_ncell;
   }
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}

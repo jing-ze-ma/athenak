@@ -210,7 +210,7 @@ class CounterKeep {
     DvceArray1D<Real> pos, acl, opn;
     bool hpos = false, hacl = false, hopn = false;
   };
-  Snap s_[2];
+  Snap s_[3];   // slot 2: t2pos-1020 the stage-1 start of a time2_posfix re-solve
   long nrb_[3] = {0, 0, 0};
   double dun_[3] = {0.0, 0.0, 0.0};    // E-floor created energy discarded (m1 pos UN)
   double dvc_[3] = {0.0, 0.0, 0.0};    // vceil_de discarded

@@ -1392,6 +1392,25 @@ class RadiationM1 {
   Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
+  // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; 0/absent = off,
+  // bitwise): a stage-1 solve that converged but left E, T or the written-back eint <= 0
+  // in some cells is solved again (up to N times) from the same start with the stage-1
+  // increment t2inc dropped in those cells (+ time2_posfix_grow face-neighbour layers;
+  // faces with a marked side), i.e. a local backward-Euler g dt stage there.  The dropped
+  // part re-enters the stage-2 increment (weight of Y1 in the stage-2 start), so the step
+  // keeps the K1 weight b1 = 1/2: consistent and conservative.  Nothing changes in a step
+  // whose stage 1 is admissible.  See Time2PosFix (rad_m1_time2.cpp).
+  int t2_pfix = 0;              // max re-solves per step (0 off)
+  int t2_pfix_grow = 1;         // dilation (face-neighbour layers) of the marked set
+  int t2_pfix_n = 0;            // re-solves taken in this step
+  bool t2_pfix_want = false;    // the stage-1 solve just marked cells and asks a re-solve
+  bool t2_pfix_redo = false;    // the coming stage-1 solve is a re-solve (keeps the build)
+  bool t2_pfix_any = false;     // this step's stage 1 was limited (stage-2 compensation)
+  Real t2_pfix_nstep = 0.0, t2_pfix_nsolve = 0.0, t2_pfix_ncell = 0.0;  // counters
+  DvceArray4D<Real> t2pm;       // (m,k,j,i) 1 = stage-1 increment dropped (incl. ghosts)
+  DvceArray5D<Real> t2gsv;      // the gas u0 at the stage-1 start (re-solve put-back)
+  DvceArray5D<Real> t2csv;      // ctr_mem at the stage-1 start (closure_thin_relax)
+  bool Time2PosFix(Driver *pdrive);
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
   DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)

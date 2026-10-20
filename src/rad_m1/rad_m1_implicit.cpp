@@ -12880,7 +12880,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // closure = vet_sc: the formal solution of the start-of-step state.  (chi, n) are
   // then read by step (b) on every Picard pass: the tensor is lagged by one hydro step.
   TmrMark(2);
-  if (vetsc) {
+  // t2pos-1020 time2_posfix: a stage-1 RE-solve keeps the build of the first attempt
+  // (same U^n; the vet_sc / time2_vet_col extrapolation histories move once per step)
+  const bool pfre = (t2s == M1_T2S_STAGE1) && t2_pfix_redo;
+  if (vetsc && !pfre) {
     if (t2s == M1_T2S_STAGE1) {
       // time2_vet_sc = predict | rebuild (torder-1010): at U^n + dt K1 (t^{n+1});
       // lag: at U^n, then D* extrapolated to the stage time when time2_vet_extrap
@@ -12903,7 +12906,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // solve keeps it; a backward-Euler step builds it here as before
   // m1-sp-order2b: time2_vet_col (rad_m1_time2.cpp) moves the stage builds to t^{n+1}
   if (vet_col) {
-    if (t2s == M1_T2S_STAGE1) {
+    if (pfre) {
+      // t2pos-1020: the re-solve keeps the stage-1 build
+    } else if (t2s == M1_T2S_STAGE1) {
       if (t2_vcreuse) {
         // rotslope-1012: Time2RotCorrect's build of this step (vet_gd_rotate_slope_reuse)
         t2_vcreuse = false;
@@ -15400,17 +15405,45 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     t2_fail = !converged || !(vmin > 0.0) || (od_now != impl_offdiag) ||
               (vimp_now != impl_vimp) ||
               ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
+    // t2pos-1020 time2_posfix: a converged stage-1 solve whose only fault is E, T or the
+    // written-back eint <= 0 marks those cells and asks the Driver for a local re-solve
+    // (Time2PosFix) instead of the rejection below
+    t2_pfix_want = false;
+    if (t2_fail && (t2_pfix > 0) && (t2s == M1_T2S_STAGE1) && converged &&
+        !(vmin > 0.0) && (od_now == impl_offdiag) && (vimp_now == impl_vimp) &&
+        (pmy_pack->pmesh->ncycle != t2_dbg_fail) && !t2_inprobe &&
+        (t2_pfix_n < t2_pfix)) {
+      auto pm_ = t2pm;
+      par_for("m1_t2p_mark", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real r = iw_(m,M1_IW_S2,k,j,i);
+        if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
+        if (gq) {
+          Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+          r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
+        }
+        if (!(r > 0.0)) {pm_(m,k,j,i) = 1.0;}
+      });
+      t2_pfix_want = true;
+    }
     // t2retry-1020: time2_reject = retry (with dt_retry): the cycle is taken again at a
     // smaller dt (the Driver skips the backward-Euler redo when dtr_fail is raised)
     // t2befb-1020: after dt_retry_t2_be such cuts in this cycle (dtr_t2be) the stage takes
     // the backward-Euler redo instead (a rejection that a smaller dt does not cure)
-    const bool t2rt = t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe && !dtr_t2be;
+    const bool t2rt = t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe && !dtr_t2be &&
+                      !t2_pfix_want;
     if (t2rt) {
       if (!dtr_fail) {dtr_why = 5; dtr_resid = vmin;}
       dtr_fail = true;
     }
-    if (t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe && dtr_t2be) {dtr_t2hit = true;}
-    if (t2_fail && global_variable::my_rank == 0) {
+    if (t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe && dtr_t2be &&
+        !t2_pfix_want) {dtr_t2hit = true;}
+    if (t2_fail && t2_pfix_want && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle "
+                << pmy_pack->pmesh->ncycle << " (min(E,T)=" << vmin << "): local re-solve "
+                << "(time2_posfix)" << std::endl;
+    }
+    if (t2_fail && !t2_pfix_want && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> hesdirk2 stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2)
                 << " NOT ADMISSIBLE at cycle " << pmy_pack->pmesh->ncycle
                 << " (converged=" << converged << " min(E,T)=" << vmin

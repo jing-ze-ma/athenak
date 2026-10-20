@@ -638,6 +638,18 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vkill_", vkill_);
   v.value("t2_k1reset_nf", t2_k1reset_nf);
   v.view("t2ys", t2ys);
+  v.value("t2_pfix", t2_pfix);
+  v.value("t2_pfix_grow", t2_pfix_grow);
+  v.value("t2_pfix_n", t2_pfix_n);
+  v.value("t2_pfix_want", t2_pfix_want);
+  v.value("t2_pfix_redo", t2_pfix_redo);
+  v.value("t2_pfix_any", t2_pfix_any);
+  v.value("t2_pfix_nstep", t2_pfix_nstep);
+  v.value("t2_pfix_nsolve", t2_pfix_nsolve);
+  v.value("t2_pfix_ncell", t2_pfix_ncell);
+  v.view("t2pm", t2pm);
+  v.view("t2gsv", t2gsv);
+  v.view("t2csv", t2csv);
   v.value("t2_nstep", t2_nstep);
   v.value("t2_nbe", t2_nbe);
   v.value("t2_nfall", t2_nfall);
