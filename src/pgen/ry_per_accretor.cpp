@@ -2264,6 +2264,10 @@ void RyPerLzHist(Mesh *pm) {
   sb[1] = lzb_[0]; sb[2] = acc0_[8] - lzb_[1]; sb[3] = acc0_[5] - lzb_[2];
   sb[4] = 0.0; sb[5] = 0.0;
   for (int n=0; n<kNlz; ++n) sb[6+n] = lz0_[n];
+  // the segment since the last mark (the step end's c2p floors) is reported in Jm1 here
+  // without being booked (the registers stay output-independent; it is booked at the next
+  // step start)
+  if (jlok_ > 0.0) sb[6+6] += sb[0] - jlast_;
 #if MPI_PARALLEL_ENABLED
   if (global_variable::my_rank == 0) {
     MPI_Reduce(MPI_IN_PLACE, sb, 6 + kNlz, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
