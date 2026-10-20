@@ -3244,8 +3244,25 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
     // hrup-1009: the outer Marshak q of a half-range solve with ray data = h+_1 of the
     // top cell (the vacuum sends nothing back), per column, in vcol_q
+    // hrq-1020 (read only when named; default cell = bitwise): implicit_hr_q = col
+    // keeps the outer Marshak q of the closure's own surface estimate (vet_col_surface_q /
+    // vet_gd_replace: H at the FACE over J of the top cell) instead of the top cell's
+    // CENTRE ratio h+_1 = H+_N/J_N.  At tau_cell ~ 1 the centre value lies an optical
+    // depth tau_cell/2 below the vacuum face, where the outgoing intensity is far less
+    // one-sided (gda s1: h+ = 0.38 at tau 0.63), so c q E_N under-estimates the escaping
+    // flux by O(tau_cell): the plateau of ord1020 (PROD retains +1.2 % energy at s1/s2).
+    // Only with closure vet_col (+ vet_gd), whose surface q exists; vet_sc keeps h+_1
+    bool hrq_col = false;
+    if (pin->DoesParameterExist("rad_m1","implicit_hr_q")) {
+      const std::string sq = pin->GetString("rad_m1","implicit_hr_q");
+      if (sq.compare("col") == 0) {
+        hrq_col = true;
+      } else if (sq.compare("cell") != 0) {
+        ImplFatal("<rad_m1>/implicit_hr_q = '" + sq + "' is not a choice (cell | col)");
+      }
+    }
     hr_q = impl_beam_hr && (vet_sc || (vgd_on && sph_geom)) &&
-           (ibc_x1max == M1_IBC_MARSHAK);
+           (ibc_x1max == M1_IBC_MARSHAK) && !(hrq_col && vet_col);
     if (hr_q && vcol_q.extent_int(0) < nmb) {
       Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
       Kokkos::deep_copy(vcol_q, marshak_q);
