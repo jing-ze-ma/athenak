@@ -1359,6 +1359,16 @@ void MeshBoundaryValuesFC::AverageBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
 
 TaskStatus MeshBoundaryValuesFC::InitFluxRecv(const int nvars) {
 #if MPI_PARALLEL_ENABLED
+  // detfence-1020: the receive buffers are still READ by the previous exchange's unpack
+  // kernel (queued on the device stream, not yet run when the host gets here), and a
+  // receive posted now lets an early neighbour's NEXT message (GPU-aware MPI writes the
+  // device buffer directly) overwrite them first: the ghosts then take some of the next
+  // exchange's values.  Back-to-back exchanges of one boundary object with no host sync
+  // in between (the implicit Krylov / transverse halos) hit this at >= 12 ranks on
+  // several nodes (global He giant, Viper 24 ranks: run-to-run differences from the
+  // first ic_rad relax pass).  Wait for the queued kernels before the first receive is
+  // posted; no arithmetic changes (bitwise the old binary whenever it was not raced).
+  if (global_variable::nranks > 1) {Kokkos::fence();}
   int &nmb = pmy_pack->nmb_thispack;
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
