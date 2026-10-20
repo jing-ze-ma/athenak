@@ -238,6 +238,11 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   grow_ = pin->GetOrAddReal("time", "dt_retry_grow", 1.25);
   maxcut_ = pin->GetOrAddInteger("time", "dt_retry_max", 8);
   ngood_req_ = pin->GetOrAddInteger("time", "dt_retry_ngood", 10);
+  // t2retry-1020: <time>/dt_retry_fac_t2 (read only when named): the dt factor of a
+  // retry raised by <rad_m1>/time2_reject = retry (default: dt_retry_fac)
+  if (pin->DoesParameterExist("time", "dt_retry_fac_t2")) {
+    t2_fac_ = pin->GetReal("time", "dt_retry_fac_t2");
+  }
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
   all_views_ = (vm == "all");
   if (!all_views_ && vm != "minimal") {
@@ -367,7 +372,8 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   const int why = m1->dtr_why;
   const Real res = m1->dtr_resid;
   const Real dto = pm->dt;
-  const Real f = (why == 9) ? force_fac_ : fac_;
+  // t2retry-1020: a time2_reject retry (why 5) may take its own, gentler factor
+  const Real f = (why == 9) ? force_fac_ : ((why == 5 && t2_fac_ > 0.0) ? t2_fac_ : fac_);
   ncut_ += 1;
   nretry_ += 1;
   if (ncut_ > maxcut_) {
