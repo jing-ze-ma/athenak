@@ -1396,8 +1396,8 @@ void RyPerLzMark(MeshBlockPack *pmbp) {
 //! coupling that follows gives that 1e-8 floor gas the radiation momentum of the light it
 //! holds (Raven 10-16: v_r 2e5-1e6 km/s in the first back-sink row behind the nozzle, in
 //! every output and in Emsk).  This hook (RadiationM1::HydroConToPrim, after the coupling,
-//! before the fluid refresh) zeroes their momentum again and books the kinetic energy it
-//! removes in Emsk.  The hydro dt is unchanged (computed before the M1 stage, and these
+//! before the fluid refresh) zeroes their momentum again (ebud-1020: the kinetic energy it
+//! removes is the coupling's unpaid work and is not booked, see the end of the function).  The hydro dt is unchanged (computed before the M1 stage, and these
 //! cells never set it).  Active only while a sink can hold light or follow the stream
 //! (donor_irr on, or the back sink with the stream on); problem/sink_zero_v = false: off.
 //! accwall-1019 (problem/theta_wall_closed): the hse theta walls exactly closed.  Called
@@ -1479,7 +1479,13 @@ void RyPerM1Post(Mesh *pm) {
     u0(m,IEN,k,j,i) -= ke;
     sum += ke*volume(m,k,j,i);
   }, Kokkos::Sum<Real>(eke));
-  acc0_[3] += eke;
+  // ebud-1020 (HSTRST): NOT booked in Emsk any more.  The kinetic energy removed here is
+  // the work the M1 coupling just did on the sink's floor gas, which the radiation field
+  // never paid (an energy-budget diagnostic run, acctrc/runs/ebudd: per cycle the
+  // unbooked gain dEtot - (Ebnd + Erel) + Emsk equalled this eke to 2%, with and without
+  // donor_irr), so creation and removal cancel and neither belongs in the budget; Emsk
+  // keeps the stage resets alone and rE = dEtot - Ebnd - Erel + Emsk closes.
+  (void) eke;
 }
 
 //! acclz-1020: the M1 post hook of the envelope (RyPerM1Post, then the L_z mark)
