@@ -28,3 +28,7 @@ fixed binary (or release them if you say the current binary is acceptable as is)
   the check therefore gates the production binary itself. Check est. start ~10-20 11:50 PDT.
 - 10-20 02:43 PDT: CHECK 5087543 PASS on 13206541 (md5 201918b0): C2-C and R-C ALL IDENT in hydro.hst, user.hst, trc.hst (143/71 rows,
   hst every cycle) + hydro_w/m1 bins. Log: docs/handover/acc3d-trc-1019/check.5087543.out. Link 1 5088058 now eligible (7 d links 5088058-63).
+- 10-20 04:38 PDT: LINK 1 5088058 STARTED on hpc-sm-01-11 (2 H200, 7 d). BIN 13206541 md5 201918b0781b7574fa7371d8b02a18ed, deck md5 9d1b56bb.
+  Static phase: 0.39 s/cycle, dt 1.40e-5, t 0.0084 at cycle 600 (5 min), 2 early DT_RETRY, 0 FATAL/NaN, 15.7 GB/GPU. Stream on at t 0.05 in ~30 min.
+  Paths for rsync: /resnick/groups/carnegie_poc/jingze/acc3d_trc_1019/{static,stream}/ (ryper.*.hst, bin/ryper.hydro_w.*.bin, rst/).
+  Stream stats (s/cycle, dt, retries, trc s0 vs nozzle 254.84/code time) follow.
