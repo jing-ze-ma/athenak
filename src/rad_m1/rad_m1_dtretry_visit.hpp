@@ -10,6 +10,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("dtr_why", dtr_why);
   v.value("dtr_resid", dtr_resid);
   v.value("dtr_t2be", dtr_t2be);
+  v.value("dtr_t2hit", dtr_t2hit);
   v.value("c_light", c_light);
   v.value("chat_over_c", chat_over_c);
   v.value("chat", chat);

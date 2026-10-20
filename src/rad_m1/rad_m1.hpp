@@ -284,11 +284,12 @@ class RadiationM1 {
   bool dtr_fail = false;
   int dtr_why = 0;           // 1 NON-CONVERGED, 2 DIVERGED, 3 DIVERGED (masked), 4 eint<=0, 5 time2_reject
   Real dtr_resid = 0.0;
-  // t2befb-1020: set by DtRetry::Retry once a cycle has taken <time>/dt_retry_t2_be cuts
-  // for time2_reject (default 2): a further non-admissible hesdirk2 stage of that cycle is
-  // redone with backward Euler (as time2_reject = be) instead of another cut; cleared when
-  // the cycle is accepted
+  // t2befb-1020: armed by DtRetry (driver/dt_retry.cpp) once <time>/dt_retry_t2_be cuts
+  // (default 2) did not cure a time2_reject (the cycle is then retaken at its own dt), or
+  // when the previous cycle took that redo: a non-admissible hesdirk2 stage is then redone
+  // with backward Euler (as time2_reject = be) instead of raising another retry
   bool dtr_t2be = false;
+  bool dtr_t2hit = false;    // t2befb-1020: this attempt took that backward-Euler redo
   template <class V> void DtRetryVisit(V &v);   // rad_m1_dtretry_visit.hpp (generated)
   void DtRetryQuiesce(bool restoring);          // no host thread writes while restoring
   void DtRetryAfterRestore();                   // async table prefetch state made safe

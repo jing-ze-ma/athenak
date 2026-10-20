@@ -15151,6 +15151,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (!dtr_fail) {dtr_why = 5; dtr_resid = vmin;}
       dtr_fail = true;
     }
+    if (t2_fail && (t2_reject == 1) && dtr_on && !t2_inprobe && dtr_t2be) {dtr_t2hit = true;}
     if (t2_fail && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> hesdirk2 stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2)
                 << " NOT ADMISSIBLE at cycle " << pmy_pack->pmesh->ncycle
@@ -15158,7 +15159,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 << (t2rt ? "): the cycle is retried at a smaller dt (time2_reject = retry)"
                          : ((t2_reject == 1 && dtr_on && dtr_t2be)
                             ? "): the step is redone with backward Euler (time2_reject = "
-                              "retry: dt_retry_t2_be cuts did not cure it)"
+                              "retry, dt_retry_t2_be)"
                             : "): the step is redone with backward Euler")) << std::endl;
     }
     // DEBUG <rad_m1>/dbg_t2_admiss = N (default 0 = off): for the first N non-admissible
