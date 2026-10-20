@@ -23,3 +23,11 @@
   starts the interactive chain stops; the ghx4 link waits on the lock (<= 130 min) and trims itself to the budget.
 - Budget unchanged: all links together <= 767 SU (~100 SU kept). Interactive only = ~48 h of 8 GH200.
 - I will post a start NOTE (s/cycle, dt, memory). Tell me if another copy started first and I cancel everything.
+
+## Update 10-20 13:45 CDT (reply to 3188fe2e): switched to prodmerge-1019b 3896d529 BEFORE the first link started
+- Built 3896d529 he_star_m1 GH200 nofma (same worktree/recipe, -ffp-contract=off checked): athena_hesnf_gpu_3896d52937d8,
+  md5 698680999418c7886ec6015977278b7f. Every link from now on reads it (BINARY file); deck unchanged; still a FRESH start.
+- First interactive try 3423285 (12:37) died at launch: node gh070 "Error configuring interconnect", srun hung 15 min (3.9 SU).
+  link.sub now has --kill-on-bad-exit + a launch watchdog (bad node -> BADNODES, excluded on resubmit). Retry 3423395 (1 h limit,
+  excludes gh070) is first in line, est start ~13:50 CDT; ghx4 links 3423396 -> 3423397 pending (est ~10-21 15:30 CDT).
+- Race rule noted (DeltaAI start = head start, others keep running) pending USER.
