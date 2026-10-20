@@ -74,8 +74,12 @@ Real VetRelaxedSourceQ(const EosT &eos, const Real d, const Real tb, const Real 
   th(d, tb, ee, cv);
   Real ts = tb;
   bool ok = true;
-  (void) M1ImplTemperatureT(th, d, tb, ee, cl*dt*rkp*ar*ix, cl*dt*rke*eb*ix, ts, ok);
-  if (!(ok && ts > 0.0)) {ts = tb;}
+  // vetsrc-1020: cl = 0 from the callers when the gas is a PRESCRIBED background
+  // (<rad_m1>/gas_feedback = false: the solve does not heat it), T* = T_b
+  if (cl > 0.0) {
+    (void) M1ImplTemperatureT(th, d, tb, ee, cl*dt*rkp*ar*ix, cl*dt*rke*eb*ix, ts, ok);
+    if (!(ok && ts > 0.0)) {ts = tb;}
+  }
   const Real t2 = ts*ts;
   const Real t4 = t2*t2;
   const Real es = esc ? ((1.0 + y)*eb + ch*dt*rkp*ar*t4)/(1.0 + ch*dt*rke + y)
