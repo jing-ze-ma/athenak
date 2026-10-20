@@ -31,9 +31,13 @@
 // the optional LOG TAIL (mesh/f_stretch_r_tail_*, see StretchRPoly): 3 slots after the
 // plateaus, (s, xi_j, r1_old); s = 0 = off
 #define NSTRETCH_R_TAIL 3
+// mrglat-rsg-1019: the optional GEOMETRIC HEAD (mesh/f_stretch_r_head_*, see StretchRPoly):
+// 5 slots after the tail, (xi_h, s, xi_j, q, nh); xi_h = 0 = off
+#define NSTRETCH_R_HEAD 5
 #define NSTRETCH_R_POLY (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT + \
-                         NSTRETCH_R_TAIL)
+                         NSTRETCH_R_TAIL + NSTRETCH_R_HEAD)
 #define NSTRETCH_R_TAIL_OFF (NSTRETCH_R_PCOEF + 3*NSTRETCH_R_BUMP + NSTRETCH_R_PLAT)
+#define NSTRETCH_R_HEAD_OFF (NSTRETCH_R_TAIL_OFF + NSTRETCH_R_TAIL)
 
 //! ln cosh(x) without overflow: |x| + ln(1 + exp(-2|x|)) - ln 2
 KOKKOS_INLINE_FUNCTION
@@ -126,9 +130,31 @@ Real StretchRPolyU(const Real *c, const Real xi) {
 //! Slots c[NSTRETCH_R_TAIL_OFF + 0..2] = (s = nx1/nin, xi_j, r1_old), set by Mesh; s = 0
 //! (default) is the plain map, bit for bit.  Choose nx1 so that the tail's ratio matches
 //! the old grid's at r_j (no jump in dr).
+//! mrglat-rsg-1019: GEOMETRIC HEAD (mesh/f_stretch_r_head_nin, _ij): the grid of an OLDER
+//! run (the same polynomial/plateau map on [r0, r1] with nin cells) is kept face for face
+//! from its face ij (r_j) UP, and the domain below r_j is covered by nh = nx1 - (nin - ij)
+//! cells of constant width ratio q (dr_{k+1} = q dr_k outward; q < 1: coarser inward),
+//!     r = r0 + (r_j - r0) (1 - q^k)/(1 - q^nh),   k = xi nx1 = (xi/xi_h) nh,
+//! with q set by Mesh so that the head's top cell has the old cell ij-1's width (no jump).
+//! Slots c[NSTRETCH_R_HEAD_OFF + 0..4] = (xi_h = nh/nx1, s = nx1/nin, xi_j = ij/nin, q, nh);
+//! xi_h = 0 (default) is the plain map, bit for bit.  Not combinable with the tail.
 KOKKOS_INLINE_FUNCTION
 void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
   const Real xi = (r-r0)/(r1-r0);
+  const Real *chd = c + NSTRETCH_R_HEAD_OFF;
+  if (chd[0] > 0.0) {
+    const Real xh = chd[0], s = chd[1], xj = chd[2], q = chd[3], nh = chd[4];
+    if (xi <= xh) {
+      const Real rj = r0 + (r1 - r0)*StretchRPolyU(c, xj);
+      const Real k = (xi/xh)*nh;
+      const Real lq = log(q);
+      const Real fr = (lq == 0.0) ? k/nh : expm1(k*lq)/expm1(nh*lq);
+      r = r0 + (rj - r0)*fr;
+    } else {
+      r = r0 + (r1 - r0)*StretchRPolyU(c, xj + (xi - xh)*s);
+    }
+    return;
+  }
   const Real *ct = c + NSTRETCH_R_TAIL_OFF;
   if (ct[0] > 0.0) {
     const Real s = ct[0], xj = ct[1], r1o = ct[2];

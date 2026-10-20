@@ -352,6 +352,52 @@ Mesh::Mesh(ParameterInput *pin) :
       ct[1] = static_cast<Real>(ij)/static_cast<Real>(nx1);
       ct[2] = r1o;
     }
+    // mrglat-rsg-1019: optional GEOMETRIC HEAD (StretchRPoly): mesh/f_stretch_r_head_nin
+    // (the older grid's nx1) and _ij (its junction face, kept with every face above);
+    // read only when given.  nh = nx1 - (nin - ij) head cells of constant ratio q below
+    // r_j, q such that the top head cell = the old cell ij-1 (bisection, host)
+    if (pin->DoesParameterExist("mesh", "f_stretch_r_head_nin")) {
+      const int nin = pin->GetInteger("mesh", "f_stretch_r_head_nin");
+      const int ij = pin->GetInteger("mesh", "f_stretch_r_head_ij");
+      const int nx1 = pin->GetInteger("mesh", "nx1");
+      const int nh = nx1 - (nin - ij);
+      if (!(nin > 0 && ij > 1 && ij < nin && nh >= 2) ||
+          pin->DoesParameterExist("mesh", "f_stretch_r_tail_nin")) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mesh/f_stretch_r_head_*: need 1 < ij < nin, nx1 - (nin - "
+                  << "ij) >= 2, and no f_stretch_r_tail_*" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      const Real x1a = pin->GetReal("mesh", "x1min"), x1b = pin->GetReal("mesh", "x1max");
+      const Real uj = StretchRPolyU(fStretchRPoly, static_cast<Real>(ij)/nin);
+      const Real ujm = StretchRPolyU(fStretchRPoly, static_cast<Real>(ij-1)/nin);
+      const Real tgt = (uj - ujm)/uj;    // top head cell / head span
+      // top fraction (1-q) q^(nh-1)/(1-q^nh) increases with q (-> 1/nh at q = 1)
+      auto topf = [nh](Real q) {
+        const Real lq = std::log(q);
+        return (lq == 0.0) ? 1.0/nh : -std::expm1(lq)*std::exp((nh-1)*lq)/(-std::expm1(nh*lq));
+      };
+      Real lo = 1.0e-3, hi = 1.0e3;
+      for (int it = 0; it < 200; ++it) {
+        const Real mq = std::sqrt(lo*hi);
+        if (topf(mq) > tgt) {hi = mq;} else {lo = mq;}
+      }
+      const Real q = std::sqrt(lo*hi);
+      Real *chd = fStretchRPoly + NSTRETCH_R_HEAD_OFF;
+      chd[0] = static_cast<Real>(nh)/static_cast<Real>(nx1);
+      chd[1] = static_cast<Real>(nx1)/static_cast<Real>(nin);
+      chd[2] = static_cast<Real>(ij)/static_cast<Real>(nin);
+      chd[3] = q;
+      chd[4] = static_cast<Real>(nh);
+      if (global_variable::my_rank == 0) {
+        const Real lq = std::log(q);
+        const Real fw = (lq == 0.0) ? 1.0/nh : std::expm1(lq)/std::expm1(nh*lq);
+        std::cout << "Mesh: radial geometric head below old face " << ij << " of " << nin
+                  << " (r_j = " << x1a + (x1b - x1a)*uj << "): " << nh << " cells, q = "
+                  << q << ", wall dr = " << (x1b - x1a)*uj*fw << ", top dr = "
+                  << (x1b - x1a)*(uj - ujm) << std::endl;
+      }
+    }
     // The mapping must be strictly increasing, or the grid folds over and cell widths go
     // negative. A bad coefficient set has to fatal here rather than corrupt the run, so
     // sample du/dxi densely across [0,1] and require it to stay positive.

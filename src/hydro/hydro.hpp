@@ -51,6 +51,7 @@ struct HydroTaskIDs {
   TaskID srctrms;
   TaskID impcnd;
   TaskID imptrc;
+  TaskID mrglat;
   TaskID sendu_oa;
   TaskID recvu_oa;
   TaskID restu;
@@ -72,6 +73,7 @@ struct HydroTaskIDs {
 
 namespace hydro {
 class AmModule;   // cs-open-1018: hydro_am.hpp
+class MergeLat;   // mrglat-1019: hydro_mergelat.hpp
 
 // <problem>/nan_report: the HLLC in-kernel capture record (see hllc_hyd.hpp and the
 // readback in Hydro::Fluxes).  Pointers, not Views: a file-scope View outlives
@@ -188,6 +190,9 @@ class Hydro {
   // cs-open-1018: the angular-momentum module (hydro_am.hpp; nullptr unless one of
   // <hydro>/am_transport | am_vector | frame_omega is named)
   hydro::AmModule *pam = nullptr;
+  // mrglat-1019: merged lateral cells near r_in (hydro_mergelat.hpp; nullptr unless
+  // <hydro>/merge_lat_rc or merge_lat_diag is named)
+  hydro::MergeLat *pmlat = nullptr;
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation
@@ -329,6 +334,7 @@ class Hydro {
   TaskStatus HydroSrcTerms(Driver *d, int stage);
   TaskStatus ImplicitConduction(Driver *d, int stage);
   TaskStatus ImplicitTransverseConduction(Driver *d, int stage);
+  TaskStatus MergeLatTask(Driver *d, int stage);
   TaskStatus SendU_OA(Driver *d, int stage);
   TaskStatus RecvU_OA(Driver *d, int stage);
   TaskStatus RestrictU(Driver *d, int stage);

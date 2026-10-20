@@ -173,6 +173,7 @@ const std::vector<std::pair<std::string, std::string>> &GridKeys() {
     {"mesh", "f_stretch_r_p2_xb"}, {"mesh", "f_stretch_r_p2_w"},
     {"mesh", "f_stretch_r_tail_nin"}, {"mesh", "f_stretch_r_tail_x1max"},
     {"mesh", "f_stretch_r_tail_ij"},
+    {"mesh", "f_stretch_r_head_nin"}, {"mesh", "f_stretch_r_head_ij"},
     {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
   };
   return keys;
