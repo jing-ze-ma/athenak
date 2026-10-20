@@ -1,0 +1,496 @@
+<comment>
+rsgg25-1019 (worker RSGG25, USER 2026-10-19 "rsg g25 ... our own ic with our eos and our mesa opacity table ... resolution higher
+          than arepo"; USER N=128 go): RSG g25 = MESA r15140 golden25 profile438 (Orion m22_p438.data; M 20.54 Msun, L 1.79e5 Lsun,
+          R_ph 843.8 Rsun, Teff 4088 K, X 0.6538 Z 0.0198) on the He giant 14p5M PRODUCTION method (/raven/ptmp/jinma/hg145_prod_1018/decks/hg145_prod.athinput), cs full sphere N=128,
+          r 0.03-3 R_ph (x1min in the radiative zone below the CZ base 0.0494 R_ph), 591 radial cells. IC tools/ic_star mode mesa +
+          mesa_kap (gs98/lowT_fa05_gs98 X 0.654 Zbase 0.02 everywhere in the domain) + anchor mass. See /raven/ptmp/jinma/rsg_g25_1019/NOTE.md.
+          The He giant <comment> text below is HISTORY of the template.
+hegiant-1013 FIN3 PRODUCTION (HG, user 2026-10-13): this He giant (MESA r15140 M2pt754_Porb100 profile29 from S. Wu,
+          IC column ic_giant_own.txt md5 ddc72692) on the FIN3 production method = the AG Car E1 FINAL <rad_m1> block
+          (dic-prod-1013 dad00933) and the E1 IC/BC/floor recipe; every changed line is tagged hegiant-1013.
+          Old method text below is HISTORY (10-09 deck).
+problem = He GIANT envelope before core collapse (MESA r15140 M2pt754_Porb100 profile29, Wu grid: M 2.556 Msun,
+          L_ph 1.62e4 Lsun, R_ph 61.78 Rsun, Teff 8.28 kK), FOLLOW THE EXPANSION. he_star_m1 on branch hegiant-1006:
+          he_gm_column (enclosed-mass gravity of the IC column, static), he_base_heat (wall in the CZ: the
+          scaffold's wall luminosity L_MLT(3 Rsun) 6.72e6 Lsun stays as a 0.5 Rsun base heating layer). IC : MESA T(r) + HSE with our EOS and
+          our m(r) (ic/make_ic_giant_mesa.py --hse own), frozen MLT scaffold F - F_diff, RE atmosphere, floor 1e-20.
+          General EOS X 0 Y 0.9265 (Z 0.0735 inert, a_metal 1.77 : fully ionized metals); TOPS tables of the
+          envelope/surface mixtures blended in log T (tables/blend_tables.py). r 3-200 Rsun N445 (grid/fit_445:
+          dr : max(0.015 r, 0.15 Rsun) deep, plateau ~0.039 Rsun : H_atm/3 over 60.3-64.2 Rsun, dr/r <: 0.01 to
+          130 Rsun). pi/3 x pi/3 wedge, 128 x 128 SCOUT layout (16 blocks 445 x 32 x 32). See SETUP.md.
+          FRESH N897 (10-09, user: start the He giant from fresh before the remap): t = 0 from the same IC
+          column (rebuilt bitwise, md5 ddc72692) directly on the N897 grid (fine band 60-95 Rsun,
+          grid/fit2_897.out), 4 blocks 897 x 64 x 64, with the 10-09 production radiation (half-range VET,
+          BLENDALL.md idort_f36 x30; vet_gd_twin + noesrc + fuse/det; vet_scatter ma, kappa_e eos; F2/F3)
+          and the N897 keys (implicit_opac_newton false: He cliff, HEGIANT_PICARD.md; sp_x2_periodic_image).
+          See fresh_1009/FRESH_1009.md.
+hg145-1015 (worker HG145, USER 10-15 "14p5M first with a production setting"): MESA r15140 14p5M_widebinary_profile14
+          (S. Wu; f4cb70aa; He star 2.754 Msun, R_ph 109.85 Rsun, L 3.71e4 Lsun, Teff 7.64 kK, thermal equilibrium above ~3 Rsun)
+          on the hgF4w production recipe (FIN4 deck 1b4d0592 + tlim 1e9 + dt_retry + ROL2U, binary fin51-r-fix b16b66db).
+          r 8-355.6 Rsun, nx1 704; IC make_ic_hg145.py (--hse own, F_MLT = max(0, F - F_r)); every change tagged hg145-1015.
+          The text below about profile29 / 3-200 Rsun is HISTORY of the template.
+hg145-1015-e1 (v2, USER 10-15): IC = MESA T(P) re-integrated in HSE with our EOS + code gravity (ic3), ext2 tables,
+          E1 in-code IC chain (sph1d, re_atm, atm_force module, he_ic_equil) + E1 ramp rule; see NOTE.md sec. 6.
+hgprod-1018 (worker HGPROD, USER 2026-10-18 "I want the he giant prod soon"; USER: 704 grid, old He giant production layout,
+          production check = the 1-2 d screen + background smoke): 14p5M PRODUCTION deck = decks/hg145_mk_nobh.athinput
+          (hg145_mscaf_1017, md5 see NOTE) + problem/mlt_closure = adaptive (the screened candidate, mltp-1017 machinery,
+          binary prodmerge-1018-hg) + <rad_m1>/vet_gd_twin_lowmem = true (layout/memory key of hegiant_fin4_raven).
+          MESA-kap opacity (ic-mesascaf-1017 opacity.mesa_kap, table opac_mk_afe2dd8da2bd), MESA-anchored IC (re_zone hopf).
+          No he_base_heat (adaptive refuses it; wall F_MLT 4.5e11 = 1.2 % of F at r_in, see NOTE). Every change tagged hgprod-1018.
+<job>
+basename                 = rsg              # rsgg25-1019
+<mesh>
+cs_seam_flux             = shared           # csedge-1019 (USER 10-19 seam fix): ONE Riemann problem per seam face (= the new cs default; 09-26 positive drove the cube-edge instability)
+nghost    = 3
+nx1                      = 548              # mrglat-rsg-1019: 591 -> 548 (geometric head below old face 110)
+x1min                    = 1.7610000000e+12 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+x1max                    = 1.7610893676e+14 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+ix1_bc                   = user             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+ox1_bc                   = user             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+nx2                      = 128              # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+x2min                    = -1.0             # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+x2max                    = 1.0              # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+ix2_bc                   = panel            # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+ox2_bc                   = panel            # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+nx3                      = 128              # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+x3min                    = -1.0             # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+x3max                    = 1.0              # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+ix3_bc                   = panel            # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+ox3_bc                   = panel            # rsgg25-1019: cubed sphere N=128 per face (0.70 deg), full sphere
+use_grid_stretch_r_poly = true
+use_cubed_sphere         = true             # rsgg25-1019: cs full sphere (USER 10-19 N=128)
+f_stretch_r_c1           = -2.379490646660e+00 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_c2           = -2.403770168268e+00 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_c3           = 1.415809802100e+01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_c4           = -1.665097461225e+02 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_c5           = 7.761436787675e+02 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_c6           = -1.408755411672e+03 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_c7           = 1.104383252310e+03 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_c8           = -3.198432990306e+02 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_b1_amp       = -8.280819766661e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_b1_x         = 3.341904986084e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_b1_w         = 8.434333965941e-02 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_b2_amp       = -2.863911494909e+00 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_b2_x         = 5.304082849728e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_b2_w         = 1.571731948484e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p_amp        = -9.989999521912e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p_xa         = 4.731830055582e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p_xb         = 8.875035394912e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p_w          = 9.865863707866e-03 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p2_amp       = -9.197856064985e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p2_xa        = 9.762679326491e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p2_xb        = 9.999727563837e-01 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_p2_w         = 1.970196534328e-02 # rsgg25-1019: grid/fit_rsg.py
+f_stretch_r_head_nin     = 591              # mrglat-rsg-1019: geometric radial HEAD: the 591-cell grid above its face J kept face for face
+f_stretch_r_head_ij      = 110              # mrglat-rsg-1019: junction face J (r_J = see run log)
+<meshblock>
+nx1                      = 548              # mrglat-rsg-1019: 591 -> 548 (geometric head below old face 110)
+nx2                      = 64               # rsgg25-1019: 24 blocks 591x64x64 = 24 A100 (6 Raven nodes)
+nx3                      = 64               # rsgg25-1019
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3           # radiation-dominated (user rule)
+nlim       = -1
+tlim                     = 1.0e9          # hg145-1015: long-tlim rule (USER 10-14); = hgF4w run.cfg XKEYS
+ndiag      = 50
+dt_retry                 = true           # hg145-1015: hgF4w run.cfg XKEYS (production decks name it, NOTE-2026-10-15-raven-hegiant-large-fin51)
+dt_retry_fac_t2          = 0.9            # USER 10-20 option (c): first cut of a time2_reject retry (t2retry-1020)
+dt_retry_grow            = 1.1            # USER 10-20 option (c): cap regrowth per good step (default 1.25)
+dt_retry_ngood           = 20             # USER 10-20 option (c): good steps before the cap regrows (default 10)
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0     # general EOS: T_unit : m_u/k_B
+<hydro>
+am_transport             = true             # USER 10-19: fresh RSG with am_transport on
+merge_lat_rc             = 2.0629e12:3.4307e12:5.7211e12 # mrglat-rsg-1019: merged lateral shells (outer radii, cm)
+merge_lat_f              = 8:4:2            # mrglat-rsg-1019: lateral merge factor per shell
+merge_lat_mom            = rigid            # mrglat-rsg-1019: group P and L kept exactly
+merge_lat_rad            = false            # mrglat-rsg-1019: radiation fine
+merge_lat_diag           = 1000             # mrglat-rsg-1019: MLATDIAG every 1000 cycles
+eos                      = general          # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+general_eos              = table            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+gamma                = 1.6666666667
+eos_h2                   = false            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_ionization           = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_metal_ionization     = false            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_radiation            = false            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_xh                   = 0.653848         # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_yhe                  = 0.326395         # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_a_metal              = 16.0             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_logd_min             = -21.0            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_logd_max             = -1.0             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_logt_min             = 3.3              # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_logt_max             = 6.8              # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+eos_dlog                 = 0.02             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+rad_signal_speed = true
+reconstruct = plm
+rsolver     = hllc                # near-sonic convection (He presn rule)
+fofc        = true
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+dfloor                   = 1.0e-20          # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+tfloor_kelvin            = 2000.0           # rsgg25-1019: RSG: above grain condensation (grains not modelled; Arepo kappa floor 3200 K)
+pfloor                   = 1.0e-13          # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+dfloor_keep_velocity     = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+vceil                    = 1.0e+08          # rsgg25-1019: safety cap only (rule 1e7 = 1.4 v_esc would bind floor-gas infall)
+fofc_report              = 512            # hegiant-1013: diagnostic only (as E1; bg check counts)
+fofc_report_dt           = 3.6e3          # hegiant-1013: diagnostic only (as E1)
+wb_rmax                  = 6.3933004762e+13 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+<rad_m1>
+implicit_cs2_clip = rad   # cs2clip-1020 (USER 10-20): limiter clip not booked as gas momentum (floor-gas kick fix)
+implicit_am_cs = true   # amdef-1019 coordinator 10-19: cs gas+radiation L_z (named explicitly)
+vet_gd_twin_state        = trans          # FIN3 (prodswitch-1013, fin3-1012)
+vet_rotate_avg           = 4              # FIN3 (prodswitch-1013, fin3-1012)
+vet_gd_twin_weight       = none           # FIN3 (prodswitch-1013, fin3-1012)
+vet_interp               = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_col_lat_cut_thin     = 1.0            # FIN3 (prodswitch-1013, fin3-1012)
+implicit_predictor_frozen = false          # FIN3: UN #10 dropped (frozen predictor costs Cartesian T-ladder order; inert on sp). coordinator 2026-10-13, reported to user
+vet_bc_inner             = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_bc_reflect           = auto           # FIN3 (prodswitch-1013, fin3-1012)
+implicit_hr_face_gd      = none           # FIN3 (prodswitch-1013, fin3-1012)
+implicit_thin_js_face    = hcface         # jsfix 8bfeae8c, d3bf42d7 final method (user 2026-10-12)
+vet_gd_rotate_slope      = correct        # d3bf42d7 final method (user 2026-10-12)
+vet_gd_rotate_stretch    = 0.02           # one method: = BSG and fresh default (user 2026-10-12)
+vet_gd_rotate_t0         = 0.0            # final_1012
+vet_gd_rotate_align      = true           # final_1012
+vet_gd_rotate_dt         = 2.2e4            # mrglat-rsg-1019: ~20 dt at the design dt (dt = rotate_dt/N)
+time2_start              = be             # final_1012
+time2_vet_sc             = predict        # final_1012
+implicit_vimp_bc         = true           # final_1012
+implicit_cs2_shift       = false          # final_1012
+implicit_cs2_hll         = drag           # final_1012
+time2_vet_col_source     = blend          # final_1012
+vet_gd_symref            = col            # final_1012
+implicit_thin_hcface_gd  = x1             # final_1012
+implicit_thin_hcface     = tau            # final_1012
+implicit_thin_bq_gd      = cell           # final_1012
+implicit_thin_js_gd      = x1             # final_1012
+implicit_thin_hcsf       = j              # final_1012
+implicit_hr_excess       = none           # prodfinal-1011
+time2_pred_cap           = 0.5            # final_1012
+implicit_gas_src         = conservative2  # final_1012
+vet_seg                  = jump           # final_1012
+ic_rad                   = fs_relax       # prodfinal-1011
+vet_bc_diff              = face           # final_1012
+implicit_thin_corr       = hc             # final_1012
+implicit_thin_switch     = fse            # final_1012
+time2_vstage             = true           # final_1012
+vet_gd_twin_fuse         = true   # accel-1009: twin in the main sweep (restart-exact cut, -15 %/cycle)
+vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)
+# rc-1009 keys (fixbundle-1009 beded6c6 + rad-beam-1008 twin): on
+vet_source_noesrc        = true   # F1: never without vet_gd_twin
+vet_gd_twin              = true   # with F1 (beam worker A3d twin, 10-09)
+vet_scatter              = true   # Ma+2026 split, kappa_es from the EOS (user 10-09)
+vet_scatter_form         = ma
+vet_scatter_j            = relaxed
+vet_scatter_kappa_e      = eos
+implicit_face_opac_n     = true   # F2
+implicit_pos_floor_solve = true   # F3 (needs implicit_pos_floor = true)
+implicit_tsolve_opac = true
+implicit_tsolve_opac_mode = 1
+implicit_gas_newton_switch = 10
+implicit_thin_freeze = 1.0e-2
+implicit_realisable_coupling = true
+report_newton_fb = false   # rc-1009: no per-step iw host copy (accel worker, -19 %/cycle; F4 counters keep the count)
+c_light          = 2.99792458e10
+arad             = 1.583122e-46   # a_cgs*T_unit^4, T_unit = m_u/k_B = 1.202724e-8 K
+chat_over_c      = 1.0
+closure          = vet_col
+vet_gd           = true
+vet_gd_replace   = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu    = 10
+vet_gd_gl_nphi   = 12               # 2 pi/12 divides the phi period pi/3
+vet_gd_gl_stagger = true
+vet_gd_rotate_every = 10
+vet_col_lat_offdiag = operator       # T5wihc
+vet_gd_tangential   = false
+vet_gd_wall_interp  = true
+vet_gd_halo_compact = 2
+implicit_halo_direct = true
+implicit_od_cache = true
+implicit_krylov_fuse = 1
+implicit_op_stencil = true
+implicit_precond = mg                 # accel-1009: mg (A -17 %, B -21 %; within the Picard-tolerance noise, 218-cycle B)
+implicit_halo_mpi = true
+implicit_halo_overlap = true
+opacity          = table
+temp_unit_kelvin = 1.202724e-8
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+force_reference_work = split
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_opac_newton_slope_max = 3          # opacity-cliff damping (H/He recombination; He giant fix 90a1d462), user 10-08
+implicit_gas_newton = true
+implicit_flux    = blend          # hrup-1009 a5de361a half-range VET (BLENDALL.md idort_f36 x30)
+implicit_flux_faces = all
+implicit_flux_beam  = halfrange
+implicit_blend   = idort_f
+implicit_blend_tau0  = 1
+implicit_blend_alpha = 1
+implicit_blend_flo   = 0.3
+implicit_blend_fhi   = 0.6
+implicit_blend_xthin     = 0              # final_1012
+implicit_enthalpy = plm
+implicit_vimp            = true           # final_1012
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme              = hesdirk2       # final_1012
+vet_col_every    = 1
+time2_vet_col            = predict        # final_1012
+time2_reject             = retry          # USER 10-20 option (c): non-admissible hesdirk2 stage -> dt_retry at a smaller dt (2nd order kept) instead of backward Euler (t2retry-1020)
+marshak_q        = 0.5
+implicit_bc_x1min        = flux             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+implicit_flux_x1min      = 1.754459175000e+13 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+implicit_bc_x1max        = marshak          # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+implicit_flux_x1max      = 0.0              # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+# ---- prodfinal-1011: every remaining key named at the binary default (PAR_DUMP of a fresh run)
+cfl_rad                          = 0.4
+subcycle                         = 1
+thick_flux                       = none
+ap_form                          = alpha2
+scaled_prefactor                 = 20
+kappa_p                          = 0
+kappa_e                          = 0
+kappa_f                          = 0
+kappa_s                          = 0
+rho_ref                          = 1
+t_ref                            = 1
+opac_a                           = 0
+opac_b                           = 0
+vet_kappa_es                     = 0.34
+vet_kappa_floor                  = 1e-05
+advect_split                     = 0
+split_vel                        = recon
+source_form                      = full
+f_source                         = cell
+opac_freeze                      = 0
+dbg_gas_force                    = 1
+dbg_gas_heat                     = 1
+dbg_gas_force_trans              = 1
+dbg_trans_memory                 = 1
+dbg_tensor                       = none
+dbg_tensor_tilt                  = 0.3
+rsla_warn                        = 0.1
+rsla_vmax                        = -1
+rsla_force                       = 0
+vet_col_ncore                    = 8
+vet_col_nsub                     = 1
+vet_col_nmu                      = 4
+vet_col_order2                   = 1
+vet_col_fk_min                   = 0
+vet_col_reflect_top              = 1
+vet_col_surface_face             = 1
+vet_col_surface_q                = 1
+vet_col_surface_qmin             = 0.001
+vet_col_surface_qmax             = 1
+vet_source               = relaxed_esc    # USER 10-20 (vetsrc-1020, needs prodmerge-1019b >= f9fb3406): canonical key, replaces the alias vet_col_source = relaxed
+vet_col_team                     = 1
+vet_col_team_size                = 0
+vet_col_chunk                    = 0
+vet_col_axis                     = radial
+reconstruct                      = plm
+implicit_cfl                     = -1
+implicit_closure_relax           = 1
+implicit_closure_relax_thin      = 0
+implicit_trans_limit             = none
+implicit_trans_fmax              = 1
+implicit_accel                   = none
+implicit_eos_cache               = 0
+dbg_energy_tally                 = 0
+implicit_eos_cache_nt            = 2
+implicit_eos_cache_check         = 1
+implicit_line_solver             = pcr
+implicit_pcr_team                = 0
+implicit_pcr_check               = 0
+implicit_bcg_sync                = 1
+implicit_precond_float           = 0
+implicit_op_team_red             = 0
+implicit_mg_levels               = 3
+implicit_mg_halo                 = 1
+implicit_krylov_pipe             = 0
+implicit_halo_ipc                = 0
+implicit_halo_ovl_faces          = 0
+implicit_picard_log              = 0
+implicit_tsolve_opac_start       = 20
+implicit_lres_test               = 0
+implicit_conv_est                = 1
+implicit_src_stable              = 1
+implicit_lin_ew_gamma            = 0.9
+implicit_bcg_max_restarts        = 2
+implicit_bcg_fallback            = line
+implicit_anderson_m              = 5
+implicit_anderson_beta           = 1
+implicit_anderson_start          = 1
+dbg_opac_part                    = 0
+implicit_opac_newton_guard       = 0.5
+implicit_allow_multid            = 0
+implicit_marshak_face            = linear
+implicit_face_weight             = distance
+implicit_hr_model                = 0
+implicit_hr_face                 = sf
+implicit_blend_r0                = 1.5
+implicit_blend_xthin_mode        = all
+implicit_blend_xthin_wmin        = 0
+implicit_thin_h0                 = 0.3
+implicit_thin_h1                 = 0.6
+implicit_thin_kn0                = 1
+implicit_thin_knp                = 4
+implicit_thin_fsa                = 0
+implicit_thin_fsj                = 0
+implicit_thin_recon      = jse            # final_1012
+implicit_thin_bq         = lin            # final_1012
+implicit_blend_fmode             = max
+implicit_blend_mode              = flux
+implicit_recon                   = dc
+implicit_fast_kernels            = 1
+implicit_vimp_fold               = 0
+implicit_predictor_order         = 2
+implicit_partition               = none
+implicit_recon_w                 = -1
+implicit_res_floor               = 0
+implicit_gas_newton_switch_min   = 20
+implicit_stall_fac               = 0.5
+implicit_recon_lag               = step
+implicit_recon_npass             = -1
+implicit_bmom_half               = 1
+implicit_rad_inertia             = 1
+implicit_nofb_work               = 1
+implicit_f0_init                 = auto
+implicit_ebath_x1min             = 0
+implicit_ebath_x1max             = 0
+implicit_bc_advect               = 1
+time2_lin_tol_fac                = 1
+time2_one_pass_safety            = 30
+ic_rad_fs_iter                   = 3
+ic_rad_relax_n                   = 40
+ic_rad_relax_tol                 = 0.0001
+ic_rad_relax_dtfac               = 1
+time2_enth_be            = true           # hegiant-1013: override
+implicit_cs2_vimp        = true           # hegiant-1013: override
+implicit_cs2_vimp_npass  = 3              # hegiant-1013: override
+implicit_tol_rel         = 0.1            # hg145-1015: ROL2U bundle (hgF4w run.cfg XKEYS; rol2u_safety_1015 conditions: full bundle, cap 1e-4)
+implicit_tol_rel_max     = 1.0e-4         # hg145-1015: ROL2U
+implicit_opac_lag        = pred           # hg145-1015: ROL2U
+implicit_opac_lag_passes = 2              # hg145-1015: ROL2U
+implicit_gas_newton_u4   = true           # hg145-1015: ROL2U
+vet_gd_twin_lowmem       = true           # hgprod-1018: LAYOUT/memory key as hegiant_fin4_raven (bitwise; 897x64x64 OOM on A100 40 GB without it)
+<problem>
+he_ic_eint_from_t        = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_seed                  = 1.0e-3         # hg145-1015-e1: E1 / new-BSG seed amplitude (USER-confirmed 1e-3 for the new setup); hgF4w 1e-2
+he_seed_nk   = 16
+he_seed_kmin             = 1              # hg145-1015-e1: k by CZ depth in the pi/3 wedge (hgF4w 1-2; E1 2-4 by its H_p)
+he_seed_kmax = 2
+he_seed_signs = random
+he_seed_rad  = true
+he_seed_rlo              = 2.9513097282e+12 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_seed_rhi              = 5.7446735172e+13 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm                    = 1.4842265008e+27 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_gm_column             = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_file               = @FILES@/rsg-E-1020/ic_rsg_g25_deep.txt # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_opac_table            = @FILES@/rsg-g25-prod/rosseland_mesakap_4c0e8b64d26a.txt # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_planck_table          = @FILES@/rsg-g25-prod/planck_ext2_x0.653848_z0.019757_d38e5526afef.txt # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_opac_logd_min         = -21.0            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_nfine                 = 262144           # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_tau_int               = 1.0              # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_cols               = 5                # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_wall_zero_flux        = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_wall_closed           = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_balance            = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_balance_rmax       = 5.1192900541e+13 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+mlt_flux_frozen          = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_bc_outer              = outflow          # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_sponge_rate           = 1.0e-04          # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_sponge_r0             = 1.5849804309e+14 # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_sponge_mode           = radial           # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_sponge_dmax           = 2.0e-17          # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_grid_dump             = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_rad                = sph1d            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_rad_atm_post       = false            # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_equil              = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_equil_dtfac        = 1.0              # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_equil_relax_n      = 40               # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_equil_relax_tol    = 1.0e-4           # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_equil_maxit        = 1                # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_equil_tol          = 1.0e-9           # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_equil_last_march   = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+mlt_closure              = adaptive         # rsgg25-1019: He giant production closure (USER 10-19: adaptive, no ramp)
+he_gravity               = wb             # hegiant-1013: named (default; he_ic_equil needs it)
+he_bc_inner              = wall             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+nan_report               = 0              # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+hot_jupiter              = 0              # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+he_wind_ic               = 0              # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+mlt_closure_taper        = 0.01           # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+he_esrc_const            = 0              # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+he_seed_k                = 4              # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+he_seed_rng              = 1234           # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+he_seed_kdist            = box            # hegiant-1013: named at the binary default (E1 PAR_DUMP list)
+he_seed_ylm              = true           # ylmseed-1019 (USER 10-19 'we should use sph harmonics'): real Y_lm seed in the global angles, replaces the 90-deg-period modes (4-fold phi-symmetric on cs)
+he_seed_lmin             = 1              # ylmseed-1019
+he_seed_lmax             = 8              # ylmseed-1019: l 1..8, all m (80 terms)
+he_ic_rad_hse            = true             # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_rad_gas            = re_atm           # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_rad_atm_force      = module           # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_rad_taua           = 1                # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_rad_taub           = 3                # mrglat-rsg-1019: tools/ic_star block (ic/deep: column bottom 11 Rsun)
+he_ic_rad_dtau           = 0.05           # hg145-1015-e1: E1 deck value (binary default, named)
+he_ic_rad_dlnr           = 0.002          # hg145-1015-e1: E1 deck value (binary default, named)
+he_ic_rad_ncore          = 64             # hg145-1015-e1: E1 deck value (binary default, named)
+he_ic_rad_maxit          = 60             # hg145-1015-e1: E1 deck value (binary default, named)
+he_ic_rad_tol            = 1e-08          # hg145-1015-e1: E1 deck value (binary default, named)
+he_ic_rad_hse_tol        = 1e-06          # hg145-1015-e1: E1 deck value (binary default, named)
+he_ic_rad_thin           = 0              # hg145-1015-e1: E1 deck value (binary default, named)
+mlt_relax_time           = 1.5e4            # rsgg25-1019: ~65 dt (He giant default 1500 s = 75 dt at its dt 20 s)
+<output1>
+file_type   = hst
+dt                       = 250.0            # rsgg25-1019: ~1 per cycle
+data_format = %24.16e
+<output2>
+file_type = bin
+variable  = hydro_w
+dt                       = 86400.0          # rsgg25-1019: 1 d (2.3 GB per hydro_w dump at N=128)
+<output3>
+file_type = bin
+variable  = m1
+dt                       = 86400.0          # rsgg25-1019: 1 d (2.3 GB per hydro_w dump at N=128)
+<output4>
+file_type = log
+dt                       = 1.0e5            # rsgg25-1019
+<output5>
+file_type = rst
+dt                       = 43200.0          # rsgg25-1019: 0.5 d
+<output6>
+file_type = bin
+variable  = m1_vet
+dt                       = 432000.0         # rsgg25-1019: 5 d
