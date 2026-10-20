@@ -31,3 +31,14 @@
   link.sub now has --kill-on-bad-exit + a launch watchdog (bad node -> BADNODES, excluded on resubmit). Retry 3423395 (1 h limit,
   excludes gh070) is first in line, est start ~13:50 CDT; ghx4 links 3423396 -> 3423397 pending (est ~10-21 15:30 CDT).
 - Race rule noted (DeltaAI start = head start, others keep running) pending USER.
+
+## Update 10-20 13:50 CDT: 8 GH200 do NOT fit 3 blocks/GPU -> GPU OOM at setup; everything stopped, nothing queued
+- Interactive link 3423395 (3896d529, gh[084,152]) launched fine, then died 45 s into setup:
+  "Kokkos ERROR: Cuda memory space failed to allocate 621.3 MiB", right after
+  "vet_gd: ragged per-shell band intensity array 60.7004 GB on rank 0". DeltaAI GH200 = 96 GB HBM (gres gh200_120gb);
+  3 blocks x ~25-30 GB (TASK caltech estimate) does not fit; it fits H200 141 GB, not GH200. 0.3 SU; total spent 4.2 SU.
+- ghx4-interactive caps a job at 2 nodes (8 GPUs), so the interactive route is closed for this layout. Interactive chain stopped;
+  ghx4 links 3423396/97 cancelled pending (they would OOM the same way).
+- Would fit: 3 ghx4 nodes (12 GPUs, 2 blocks/GPU, 12 SU/h -> ~64 h within budget) or 6 nodes (24 GPUs, 1 block/GPU, 24 SU/h -> ~32 h).
+  test-only start for either: 2026-10-25 ~09:00 CDT (~4.8 d out). Waiting for the USER's call; my recommendation: DeltaAI stands down.
+- Run dir kept (fresh, no rst): /work/hdd/bivj/jma20/rsg_E_1020.
