@@ -2459,8 +2459,9 @@ class RadiationM1 {
     int64_t use = 0;
     std::vector<int64_t> so, ro;     // ((pass*n1 + s)*(np + 1) + p): list offsets
     Kokkos::View<int *, LayoutWrapper, DevMemSpace> si, ri;   // e*n + d per value
-    Kokkos::View<uint8_t ***, LayoutWrapper, DevMemSpace> msk;   // (e_rcv, d, s): 1 in,
-                                                                  // 2 out, 0 not read
+    // (e_rcv, d, s): 1 in, 2 out, 0 not read; memcut-1020: 2 bits per value, 16 values
+    // per word (value t = (e_rcv*n + d)*n1 + s in word t/16, bits 2 (t%16))
+    Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> msk;
   };
   bool vgd_cscomp = false;
   VgdCsCl vgd_cscl[2];
