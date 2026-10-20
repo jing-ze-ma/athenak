@@ -3773,6 +3773,7 @@ void RadiationM1::VetShortCharSweep() {
     const Real sx0 = vcol_sx0;
     // vetsrc-1020 (vet_source = relaxed_esc): the x1 cell width for the escape
     const bool sesc = srx && vcol_sesc;
+    const Real clq = gas_feedback ? c_light : 0.0;   // held gas: T* = T_b
     auto &mbs_ = pmy_pack->pmb->mb_size;
     const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
     FluidRef flv = FluidRef::Get(pmy_pack);
@@ -3798,10 +3799,10 @@ void RadiationM1::VetShortCharSweep() {
           // vetsrc-1020 relaxed_esc: the escape rate of the cell (0 = relaxed)
           const Real qe = VetEscapeRate(sesc, chx, mbs_.d_view(m).dx1);
           s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
-                                      opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                      opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
                                       chx, rks, sx0, qe)
                   : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
-                                     opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                     opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
                                      chx, rks, qe))
                : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
                                       opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,

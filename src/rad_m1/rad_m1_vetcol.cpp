@@ -717,6 +717,7 @@ void RadiationM1::VetColBuild() {
   const Real sx0 = vcol_sx0;
   // vetsrc-1020 (vet_source = relaxed_esc): the column-axis cell width for the escape
   const bool sesc = srx && vcol_sesc;
+  const Real clq = gas_feedback ? c_light : 0.0;   // held gas: T* = T_b
   const bool hsp = sph_geom;
   auto cx1f_ = pmy_pack->pcoord->xx1f;
   auto &mbs_ = pmy_pack->pmb->mb_size;
@@ -809,9 +810,9 @@ void RadiationM1::VetColBuild() {
                                                        : mbs_.d_view(m).dx1);
           s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
                                        opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),
-                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0, qe)
+                                       eth, ar, clq, chs, dts, vsr, chi, rks, sx0, qe)
                   : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                                      opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                      opac_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
                                       chi, rks, qe))
                : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
                                        opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),
@@ -1070,6 +1071,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const Real sx0 = vcol_sx0;
   // vetsrc-1020 (vet_source = relaxed_esc): the column-axis cell width for the escape
   const bool sesc = srx && vcol_sesc;
+  const Real clq = gas_feedback ? c_light : 0.0;   // held gas: T* = T_b
   const bool hsp = sph_geom;
   auto cx1f_ = pmy_pack->pcoord->xx1f;
   auto &mbs_ = pmy_pack->pmb->mb_size;
@@ -1157,9 +1159,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
                                                        : mbs_.d_view(m).dx1);
           s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
                                        opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),
-                                       eth, ar, cl, chs, dts, vsr, chi, rks, sx0, qe)
+                                       eth, ar, clq, chs, dts, vsr, chi, rks, sx0, qe)
                   : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                                      opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                      opac_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
                                       chi, rks, qe))
                : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
                                        opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i),

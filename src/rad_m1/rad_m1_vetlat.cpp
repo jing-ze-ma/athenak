@@ -595,6 +595,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const Real sx0 = vcol_sx0;
   // vetsrc-1020 (vet_source = relaxed_esc): the column-axis cell width for the escape
   const bool sesc = srx && vcol_sesc;
+  const Real clq = gas_feedback ? c_light : 0.0;   // held gas: T* = T_b
   const bool hsp = sph_geom;
   // vet_source_noesrc (fixbundle-1009 F1): the physical E^n = u0 (see VetColBuild)
   const bool noes = VsrcNoes();   // rad_m1.hpp
@@ -625,9 +626,9 @@ void RadiationM1::VetLatSweep(const int stage) {
                                                      : mbsize.d_view(m).dx1);
         s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
                                      opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i), eth,
-                                     ar, cl, chs, dts, vsr, chi, rks, sx0, qe)
+                                     ar, clq, chs, dts, vsr, chi, rks, sx0, qe)
                 : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opac_(m,M1_OP_P,k,j,i),
-                                    opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                    opac_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
                                     chi, rks, qe))
                : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
                                      opac_(m,M1_OP_P,k,j,i), opac_(m,M1_OP_E,k,j,i), eth,
