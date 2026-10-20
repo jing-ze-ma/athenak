@@ -1092,11 +1092,82 @@ void RadiationM1::VetGdCsSweep() {
   auto msk_ = vgd_cscl[vgd_cscur].msk;
   auto rx_ = vgd_csrix;
   auto miss_ = vgd_csmiss;
+  // memcut-1020 vet_gd_band_ring on the cubed sphere (VgdRagAlloc / VetGdInit: with the
+  // compact lists and an MPI band): the sp ring of rad_m1_vetgd.cpp (VetGdRingFlush, the
+  // same slab operations in the same places of the shell loop), its saved inward band
+  // values = the receive list of each shell's inward compact exchange.  The record of
+  // shell i (vgd_hxe[i], pass 0) holds the packed band address of every value received
+  // by that exchange; the addresses of all shells live in one array kept in the unused
+  // entry vgd_hxe[n1c] (pass 1 of the ghost shell 0).  Pure copies: the sweep reads the
+  // values of the dense-band layout (bitwise)
+  const bool rga = vgd_ring && ccl;
+  if (vgd_ring && !ccl) {VgdCsFatal("vet_gd_band_ring without the compact lists");}
+  if (rga) {
+    const int n1c = indcs.nx1 + 2*indcs.ng;
+    if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
+    const VgdCsCl &E = vgd_cscl[vgd_cscur];
+    const int np = static_cast<int>(vgd_csprk.size());
+    const int64_t a0 = E.ro[0];
+    const int64_t a1 = E.ro[static_cast<size_t>(n1 - 1)*(np + 1) + np];
+    const int64_t na = a1 - a0;
+    if (static_cast<int64_t>(pmy_pack->nmb_thispack)*n*c3b*c2b >= INT32_MAX ||
+        na >= INT32_MAX) {
+      VgdCsFatal("vet_gd_band_ring: band addresses >= 2^31 (32-bit records)");
+    }
+    VgdHlEntry &B = vgd_hxe[n1c];
+    B.gen = -1;
+    B.exact = false;
+    if (B.dl.extent_int(0) < na + 1) {
+      B.dl = DvceArray1D<int>();
+      Kokkos::realloc(B.dl, na + na/8 + 1024);
+    }
+    auto bd_ = B.dl;
+    auto R_ = vgd_csrl;
+    auto ri_ = E.ri;
+    if (na > 0) {
+      par_for("m1_vgdcs_ringrec", DevExeSpace(), 0, static_cast<int>(na) - 1,
+      KOKKOS_LAMBDA(const int o) {
+        const int x = ri_(a0 + o);
+        const int e = x/n, d = x - e*n;
+        bd_(o) = ((R_(e,0)*n + d)*c3b + R_(e,1))*c2b + R_(e,2);
+      });
+    }
+    for (int l = 0; l < n1; ++l) {
+      VgdHlEntry &X = vgd_hxe[is + l];
+      const int64_t r0 = E.ro[static_cast<size_t>(l)*(np + 1)];
+      const int64_t r1 = E.ro[static_cast<size_t>(l)*(np + 1) + np];
+      X.dl = DvceArray1D<int>(bd_.data() + (r0 - a0), r1 - r0);
+      X.dw = DvceArray1D<int>();
+      X.nr = static_cast<int>(r1 - r0);
+      X.nw = 0;
+      X.exact = true;
+      X.gen = 1;
+      X.alpha = vgd_alpha;
+      X.scut = vgd_scut;
+    }
+  }
+  if (rga) {vgd_cur = DevExeSpace();}   // the ring's copy kernel: this sweep's stream
+  VetGdRingSweepBegin(false);
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
-    for (int q = 0; q < n1 - lcut; ++q) {
+    const int nsh = n1 - lcut;
+    for (int q = 0; q < nsh; ++q) {
       const int l = inw ? (n1 - 1 - q) : (lcut + q);
       const int i = is + l;
+      if (rga) {
+        // this shell's wide slab: inward from scratch, outward with its interior and
+        // the band values of its inward exchange
+        VetGdRingFlush();
+        if (vgd_rg_state[i] < 0) {
+          VgdRingOp o;
+          o.kind = 3;
+          o.i = i;
+          o.copyin = !inw;
+          o.restore = !inw;
+          vgd_rg_pend.push_back(o);
+        }
+        VetGdRingFlush();
+      }
       par_for("m1_vgdcs_shell", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -1285,15 +1356,64 @@ void RadiationM1::VetGdCsSweep() {
         }
         vi_(m,d,k,j,i) = iv;
       });
+      if (rga) {
+        // the previous shell of the pass has been read (stream order): its inward band
+        // values saved (inward pass), its interior back to the compact slab; the next
+        // shell lent a slab (run after this shell's exchange, below)
+        if (q > 0) {
+          const int ip = inw ? (i + 1) : (i - 1);
+          VgdRingOp o;
+          if (inw) {
+            o.kind = 1;
+            o.i = ip;
+            vgd_rg_pend.push_back(o);
+          }
+          o.kind = 2;
+          o.i = ip;
+          vgd_rg_pend.push_back(o);
+        }
+        if (q + 1 < nsh) {
+          VgdRingOp o;
+          o.kind = 3;
+          o.i = inw ? (i - 1) : (i + 1);
+          o.copyin = !inw;
+          o.restore = !inw;
+          vgd_rg_pend.push_back(o);
+        }
+      }
       Kokkos::Timer th;
       if (ccl) {
         VetGdCsHaloC(pass, i);               // cs-s3b-1017: the read values only
       } else {
         VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
       }
+      if (rga && inw) {
+        // the record of the values to save from this shell's inward band: the receive
+        // list of its compact exchange (vgd_hxe[i], above)
+        vgd_rg_sk[i] = 1;
+        vgd_rg_se[i] = i;
+      }
+      if (rga) {VetGdRingFlush();}
       vgd_thalo += th.seconds();
     }
+    if (rga) {
+      // the last shell of the pass: saved (inward) and back to its compact slab
+      const int il = is + (inw ? lcut : (n1 - 1));
+      if (vgd_rg_state[il] >= 0) {
+        VgdRingOp o;
+        if (inw) {
+          o.kind = 1;
+          o.i = il;
+          vgd_rg_pend.push_back(o);
+        }
+        o.kind = 2;
+        o.i = il;
+        vgd_rg_pend.push_back(o);
+      }
+      VetGdRingFlush();
+    }
   }
+  VetGdRingSweepEnd();
   Kokkos::fence();
   if (ccl) {
     auto mh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_csmiss);
