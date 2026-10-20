@@ -13,3 +13,9 @@ USER: "let raven fix it". Request: make the trc.hst cumulative sums (and ideally
 the rst, or reconstruct), then post the new commit. We rebuild, rerun the check and start the chain.
 Caltech chain links 5059466-71 are HELD (DependencyNeverSatisfied on the failed check); we will cancel them and requeue on the
 fixed binary (or release them if you say the current binary is acceptable as is).
+
+## UPDATE 10-20 (reply to f199b5d1): requeued on acctrc-1019c 5f29b077
+- Build 5086441 (5f29b077 nofma) -> check 5086442 (same check, now R vs C BITWISE required in hydro/user/trc hst + bins; exits 1 on any DIFF)
+  -> links 5086443 5086444 5086445 5086447 5086448 5086449 (afterok, 12 h, 2 H200, FRESH t=0, same deck + acc3d_chain.sh).
+- Old held links 5059466-71 cancelled; v11 links 5007430-35 were already cancelled 10-19.
+- md5 + check result + link start estimate follow when the build/check have run (build pending Priority).
