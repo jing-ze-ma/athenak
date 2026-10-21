@@ -992,6 +992,14 @@ class RadiationM1 {
   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
   bool cs2_clip_rad = false;            // cs2clip-1020 implicit_cs2_clip = rad (named)
+  // gsdrag-1021 <rad_m1>/implicit_cs2_dacap = K (read only when named; 0 = off, bitwise):
+  // the gas is charged at most the enthalpy-flux change an enthalpy flux at the cell's
+  // speed can make, |dA| <= K 2 |v| max(E^old, E'); a cell beyond it enters the dA split
+  // with s = K 2 |v| E / |dA| (its dA in the face shift, the neighbour share and its own
+  // gas share om_bar all x s, s in iw_cs2 + 9): the rest stays with the radiation (the
+  // drag rule).  Catches an A^old = F_stored - F0 mean that is not an enthalpy flux
+  // (limiter clip, pgen-held E/F), NOTE /raven/ptmp/jinma/gsdrag_1021
+  Real cs2_cap = 0.0;
   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)
