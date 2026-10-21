@@ -3721,6 +3721,31 @@ void HsApplyMltW(Mesh *pm, const Real w) {
 //! one thread per radial index, serial over the columns; MPI sum), the target, the
 //! relaxation F_sub += (1 - exp(-(t - t_last)/tau)) (target - F_sub), clip >= 0, esrc.
 
+// rsgrst-1021: the rank-ordered sum of a host array over all ranks (MPI_Allgather, then
+// the ranks summed 0, 1, ... in that order on every rank).  An MPI_Allreduce(MPI_SUM)
+// does not fix the order in which the ranks' doubles are added: with HCOLL (Caltech
+// hpcx) the order changed with the communication history, so a restart -- same state,
+// fewer earlier collectives -- got F_sub a round-off different from the straight run's
+// some 40 cycles after the restart (RSG E, deck A, 1 x 4 H200), and the run drifted.
+// Same pattern as IcrDetSum / vet_gd_twin_det.
+void HsDetSum(Real *v, const int n) {
+#if MPI_PARALLEL_ENABLED
+  const int nr = global_variable::nranks;
+  if (nr <= 1 || n <= 0) return;
+  std::vector<Real> mine(v, v + n);
+  std::vector<Real> all(static_cast<size_t>(n)*nr);
+  MPI_Allgather(mine.data(), n, MPI_ATHENA_REAL, all.data(), n, MPI_ATHENA_REAL,
+                MPI_COMM_WORLD);
+  for (int i = 0; i < n; ++i) {
+    Real a = 0.0;
+    for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*n + i];}
+    v[i] = a;
+  }
+#else
+  (void) v; (void) n;
+#endif
+}
+
 void HsAdaptiveUpdate(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -3763,10 +3788,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
   });
   auto hsh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sh);
   const int nfc = hsh.extent_int(0);
-#if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, &hsh(is,0), 8*(ie + 2 - is), MPI_ATHENA_REAL, MPI_SUM,
-                MPI_COMM_WORLD);
-#endif
+  HsDetSum(&hsh(is,0), 8*(ie + 2 - is));   // rsgrst-1021: rank-ordered (restart-exact)
   // luminosities of the wedge (the units of the history's L_in = F_in A(r_in))
   std::vector<Real> lc(nfc, 0.0), lrad(nfc, 0.0), lcf(nfc, 0.0), tgt(nfc, 0.0);
   for (int i=is; i<=ie; ++i) {
@@ -3806,10 +3828,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
       sp(i,0) = s0; sp(i,1) = s1; sp(i,2) = s2;
     });
     auto hsp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sp);
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &hsp(is,0), 3*(ie + 1 - is), MPI_ATHENA_REAL, MPI_SUM,
-                  MPI_COMM_WORLD);
-#endif
+HsDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rsgrst-1021: rank-ordered
     std::vector<Real> lp(nfc, 0.0);
     for (int i=is; i<=ie; ++i) lp[i] = log((hsp(i,1) + hsp(i,2)/3.0)/hsp(i,0));
     const int np = static_cast<int>(hs_plnp_.size());
