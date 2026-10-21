@@ -1245,6 +1245,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
   pin_report_newton_fb = pin->GetOrAddBoolean("rad_m1","report_newton_fb",false);
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
+  // accbook-1021: read only when named (an input without it is unchanged, also in the
+  // parameters a restart file records)
+  dbg_eaudit = pin->DoesParameterExist("rad_m1", "dbg_energy_audit") &&
+               pin->GetBoolean("rad_m1", "dbg_energy_audit");
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
   // the check is a MEASUREMENT only (nothing reads igm or ec_emax/ec_tmax but the final
@@ -12219,8 +12223,217 @@ void RadiationM1::DbgEnergyTally(Real *o) {
 }
 
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::EAuditMark
+//! \brief accbook-1021 <rad_m1>/dbg_energy_audit (output only): U = (gas total energy +
+//! (c/chat) E) x volume over the active cells.  At mark pt the change of U since the
+//! previous mark is summed per cell class into segment pt (0: outside the M1 chain --
+//! hydro stages, pgen sources and resets, the hesdirk2 stage-2 average; 1: closure
+//! limits; 2: closure exit -> solve entry; 3: the implicit solve; 4: the pgen m1post
+//! hook; 5: the fluid refresh, i.e. the hydro ConToPrim floors).  Mark 2 sets the class
+//! of every cell for this solve (a stage-2 solve keeps its stage-1 classes).  Mark 3 adds
+//! the boundary energy rates of the solve's stored faces (outward +, x area): x1 inner,
+//! x1 outer, the x1max bath's advective part, x2 walls, x3 walls, then the hesdirk2
+//! old-vector increment sum((c/chat) t2inc_E + t2inc_EN) x vol and dt_sub.  Mark 5:
+//! rank 0 prints
+//!   EAUDIT cycle t2s dt  seg[0..5] (rest floor reset each)  B(5)  T2
+//!   W = the force_reference_work = split reference work the be write-back makes E pay
+//!   (fref_wacc x dt_solve/dt_mesh; the gas got it in the hydro stages, segment 0)
+//!   P = the positivity counters' change over the solve: M1_POS_FLR_UN (E floor energy
+//!   the gas could not cover = created), FLR_DE, GAS_DE, FLRS
+//!   RSOLVE = seg3 - T2 + dt (c/chat) sum B + W   (the solve's non-conservation)
+//! and the segment sums restart.  All sums are rank-reduced (collective: every rank calls
+//! it at the same points).
+
+void RadiationM1::EAuditMark(int pt) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ni = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int n3 = u0.extent_int(2), n2 = u0.extent_int(3), n1 = u0.extent_int(4);
+  if (eaud_u.extent_int(0) != nmb) {
+    Kokkos::realloc(eaud_u, nmb, n3, n2, n1);
+    Kokkos::realloc(eaud_e, nmb, n3, n2, n1);
+    Kokkos::realloc(eaud_c, nmb, n3, n2, n1);
+    Kokkos::deep_copy(eaud_c, 0.0);
+    eaud_init = false;
+  }
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool hy = fl.on;
+  auto uh = fl.u0;
+  auto ur = u0;
+  auto au = eaud_u;
+  auto ae = eaud_e;
+  auto ac = eaud_c;
+  auto vol = pmy_pack->pcoord->volume;
+  const bool sph = sph_geom;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const Real ccr = c_light/chat;
+  const Real dfl = hy ? 10.0*fl.eos.dfloor : -1.0;
+  const bool init = eaud_init;
+  const bool cls = (pt == 2) && (t2_solve != M1_T2S_STAGE2);
+  const bool sete = (pt == 5) || !init;
+  array_sum::GlobalSum s3;
+  Kokkos::parallel_reduce("m1_eaudit", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nk*nj*ni),
+  KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+    const int m = n/(nk*nj*ni);
+    const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+    const Real v = sph ? vol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                         mbsize.d_view(m).dx3);
+    const Real e = ur(m,M1_E,k,j,i);
+    const Real u = ((hy ? uh(m,IEN,k,j,i) : 0.0) + ccr*e)*v;
+    if (cls) {
+      Real c = 0.0;
+      if (init && e != ae(m,k,j,i)) {
+        c = 2.0;
+      } else if (hy && uh(m,IDN,k,j,i) < dfl) {
+        c = 1.0;
+      }
+      ac(m,k,j,i) = c;
+    }
+    array_sum::GlobalSum q;
+    for (int r=0; r<NREDUCTION_VARIABLES; ++r) q.the_array[r] = 0.0;
+    if (init) {
+      const int c = static_cast<int>(ac(m,k,j,i));
+      q.the_array[c] = u - au(m,k,j,i);
+    }
+    au(m,k,j,i) = u;
+    if (sete) {ae(m,k,j,i) = e;}
+    sum += q;
+  }, Kokkos::Sum<array_sum::GlobalSum>(s3));
+  Real loc[16];
+  for (int r=0; r<3; ++r) {loc[r] = s3.the_array[r];}
+  for (int r=3; r<16; ++r) {loc[r] = 0.0;}
+  // the positivity counters (per rank; reduced below) at the solve entry and exit
+  const bool hpc = (pt == 2 || pt == 3) && (pos_cnt_d.extent_int(0) >= M1_POS_N);
+  if (hpc) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
+    loc[10] = h(M1_POS_FLR_UN);
+    loc[11] = h(M1_POS_FLR_DE);
+    loc[12] = h(M1_POS_GAS_DE);
+    loc[13] = h(M1_POS_FLRS);
+  }
+  // force_reference_work = split under be: the reference work the gas got in the hydro
+  // stages and the write-back makes E pay (x dt_solve/dt_mesh)
+  if (pt == 2 && fref_wsplit && FrefWaccOn()) {
+    auto wc = FrefWacc();
+    Real sw = 0.0;
+    Kokkos::parallel_reduce("m1_eaudit_w", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            nmb*nk*nj*ni),
+    KOKKOS_LAMBDA(const int n, Real &acc) {
+      const int m = n/(nk*nj*ni);
+      const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+      const Real v = sph ? vol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                           mbsize.d_view(m).dx3);
+      acc += wc(m,k,j,i)*v;
+    }, Kokkos::Sum<Real>(sw));
+    loc[14] = sw*dt_sub/pmy_pack->pmesh->dt;
+  }
+  if (pt == 3) {
+    // the boundary rates of the stored faces and the stage old-vector increment
+    auto &mbbcs = pmy_pack->pmb->mb_bcs;
+    auto &area = pmy_pack->pcoord->area;
+    auto f1 = f0x1;
+    auto f2 = f0x2;
+    auto f3 = f0x3;
+    const bool tr2 = trans_on && (f2.extent_int(0) > 0);
+    const bool tr3 = trans_on && trans_x3 && (f3.extent_int(0) > 0);
+    const bool hbd = iebath_hi_col_on && (ibadv_x1max.extent_int(0) > 0);
+    DvceArray3D<Real> bdv;
+    if (hbd) {bdv = ibadv_x1max;}
+    const bool t2st = (t2_solve == M1_T2S_STAGE1) || (t2_solve == M1_T2S_STAGE2);
+    const bool ht2 = t2st && (t2inc.extent_int(0) == nmb);
+    auto t2i_ = t2inc;
+    array_sum::GlobalSum b;
+    Kokkos::parallel_reduce("m1_eaudit_b", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            nmb*nk*nj*ni),
+    KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+      const int m = n/(nk*nj*ni);
+      const int k = (n/(nj*ni))%nk + ks, j = (n/ni)%nj + js, i = n%ni + is;
+      auto phys = [&](BoundaryFace f) {
+        const BoundaryFlag bf = mbbcs.d_view(m, f);
+        return (bf != BoundaryFlag::block) && (bf != BoundaryFlag::periodic);
+      };
+      array_sum::GlobalSum q;
+      for (int r=0; r<NREDUCTION_VARIABLES; ++r) q.the_array[r] = 0.0;
+      if (i == is && phys(BoundaryFace::inner_x1)) {
+        q.the_array[0] = -f1(m,k,j,is)*area.x1f(m,k,j,is);
+      }
+      if (i == ie && phys(BoundaryFace::outer_x1)) {
+        q.the_array[1] = f1(m,k,j,ie+1)*area.x1f(m,k,j,ie+1);
+        if (hbd) {q.the_array[2] = bdv(m,k,j)*area.x1f(m,k,j,ie+1);}
+      }
+      if (tr2 && j == js && phys(BoundaryFace::inner_x2)) {
+        q.the_array[3] -= f2(m,k,js,i)*area.x2f(m,k,js,i);
+      }
+      if (tr2 && j == je && phys(BoundaryFace::outer_x2)) {
+        q.the_array[3] += f2(m,k,je+1,i)*area.x2f(m,k,je+1,i);
+      }
+      if (tr3 && k == ks && phys(BoundaryFace::inner_x3)) {
+        q.the_array[4] -= f3(m,ks,j,i)*area.x3f(m,ks,j,i);
+      }
+      if (tr3 && k == ke && phys(BoundaryFace::outer_x3)) {
+        q.the_array[4] += f3(m,ke+1,j,i)*area.x3f(m,ke+1,j,i);
+      }
+      if (ht2) {
+        const Real v = sph ? vol(m,k,j,i) : (mbsize.d_view(m).dx1*mbsize.d_view(m).dx2*
+                                             mbsize.d_view(m).dx3);
+        q.the_array[5] = (ccr*t2i_(m,M1_T2_E,k,j,i) + t2i_(m,M1_T2_EN,k,j,i))*v;
+      }
+      sum += q;
+    }, Kokkos::Sum<array_sum::GlobalSum>(b));
+    for (int r=0; r<6; ++r) {loc[3 + r] = b.the_array[r];}
+  }
+#if MPI_PARALLEL_ENABLED
+  Real glb[16];
+  MPI_Allreduce(loc, glb, 16, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  for (int r=0; r<16; ++r) {loc[r] = glb[r];}
+#endif
+  eaud_init = true;
+  if (pt == 2) {
+    for (int r=0; r<4; ++r) {eaud_pc[r] = loc[10 + r];}
+    eaud_w += loc[14];
+  }
+  if (pt == 3 && hpc) {
+    for (int r=0; r<4; ++r) {eaud_pd[r] += loc[10 + r] - eaud_pc[r];}
+  }
+  if (!init) return;
+  for (int r=0; r<3; ++r) {eaud_seg[pt][r] += loc[r];}
+  if (pt == 3) {
+    for (int r=0; r<6; ++r) {eaud_bnd[r] = loc[3 + r];}
+    eaud_bnd[6] = dt_sub;
+  }
+  if (pt != 5) return;
+  if (global_variable::my_rank == 0) {
+    Real bs = 0.0;
+    for (int r=0; r<5; ++r) {bs += eaud_bnd[r];}
+    const Real d3 = eaud_seg[3][0] + eaud_seg[3][1] + eaud_seg[3][2];
+    const Real rsol = d3 - eaud_bnd[5] + eaud_bnd[6]*ccr*bs + eaud_w;
+    std::printf("EAUDIT cycle=%d t2s=%d dt=%.10e", pmy_pack->pmesh->ncycle, t2_solve,
+                eaud_bnd[6]);
+    for (int q=0; q<6; ++q) {
+      std::printf(" s%d=%.10e,%.10e,%.10e", q, eaud_seg[q][0], eaud_seg[q][1],
+                  eaud_seg[q][2]);
+    }
+    std::printf(" B=%.10e,%.10e,%.10e,%.10e,%.10e T2=%.10e W=%.10e"
+                " P=%.10e,%.10e,%.10e,%.10e RSOLVE=%.10e\n",
+                eaud_bnd[0], eaud_bnd[1], eaud_bnd[2], eaud_bnd[3], eaud_bnd[4],
+                eaud_bnd[5], eaud_w, eaud_pd[0], eaud_pd[1], eaud_pd[2], eaud_pd[3],
+                rsol);
+  }
+  eaud_w = 0.0;
+  for (int r=0; r<4; ++r) {eaud_pd[r] = 0.0;}
+  for (int q=0; q<6; ++q) {
+    for (int r=0; r<3; ++r) {eaud_seg[q][r] = 0.0;}
+  }
+  for (int r=0; r<7; ++r) {eaud_bnd[r] = 0.0;}
+}
+
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
+  if (dbg_eaudit) {EAuditMark(2);}
   if (dbg_etally) {
     Real o[4];
     DbgEnergyTally(o);
@@ -16211,8 +16424,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         const Real wf = 0.5*(v1 + (m0 + dm1)*idg)*dm1;
         const Real wr = 0.5*(v1 + (m0 + dmr)*idg)*dmr;
         uh(m,IEN,k,j,i) -= (wf - wr);
+        // accbook-1021 time2_fref_wacc: a hesdirk2 BE step stores its slope K1 as
+        // without the key (the stage solves' v' dt rho a_ref payment, which the stage
+        // increments of the next step re-apply; a K1 with the wacc payment was measured
+        // to leave -39 at the first stage step); only the state pays the exact wacc
+        if (t2kw) {kkw_(m,M1_T2_EN,k,j,i) -= (wf - wr)*fkw;}
         if (!efw) {
-          u0_(m,M1_E,k,j,i) += (chw/clw)*(wf - wr - fra*wacc_(m,k,j,i));
+          const Real de = (chw/clw)*(wf - wr - fra*wacc_(m,k,j,i));
+          u0_(m,M1_E,k,j,i) += de;
+          if (t2kw) {
+            kkw_(m,M1_T2_E,k,j,i) += (chw/clw)*(wf - wr - (m0 + dmr)*idg*dmref)*fkw;
+          }
         }
       });
     } else {
@@ -16309,6 +16531,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   impl_lin_tol = t2_lin_save;
   TmrMark(8);
+  if (dbg_eaudit) {EAuditMark(3);}
   if (dbg_etally) {
     Real o[4];
     DbgEnergyTally(o);

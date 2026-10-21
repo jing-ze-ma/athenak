@@ -390,6 +390,34 @@ Real fx2leak_ = 0.0;
 // stages (one cycle late: the 2e4 start-up gap of the static runs).  (The held-cell resets
 // under hesdirk2 are still booked per stage in full: an open booking gap of the hold with
 // hesdirk2, not of backward Euler.)  Off (old booking) without the M1 coupling hook, with implicit_mr_every > 1 or csplit.
+// accbook-1021: they are now booked with their weight in the step.  The radiation is not
+// RK-combined by the hydro, but under hesdirk2 Time2FormStage(2) makes the stage-2 start
+// w1 u1 + w0 u0, where u1 (copied after the Heun stage 1) carries the stage-1 reset and
+// u0 = Y2 + the stage-2 reset: Y3 - U^n = D1 + w0 D2 + (slope parts), so the stage-2
+// resets (zs[3], zs[6]) count w0 (1/2 for hesdirk2), the stage-1 ones in full.  A failed
+// stage loop redone by backward Euler (Time2Restore: u0 = u1, the stage-1 reset kept;
+// PgenStageRestore drops its booking) books the stage-1 reset again at the redo's first
+// stage (t2s1_; t2nf_ = Time2Restore's counter when it was taken).  With rbk_ only.
+Real t2s1_[2] = {0.0, 0.0};
+Real t2nf_ = -1.0;
+// accbook-1021 problem/sink_kick_book (default false; history only): the energy audit
+// (<rad_m1>/dbg_energy_audit, runs budget_acc_1021) found that the kinetic energy
+// RyPerM1Post removes from the sink cells is NOT all unpaid work: the M1 write-back pays
+// the kick's work from E, and only where that drives E below e_floor does the
+// implicit_pos_floor raise create the energy (M1_POS_FLR_UN).  With the key, every
+// backward-Euler solve books Emsk += eke - (the solve's FLR_UN increment, all cells): the
+// paid part of the removal is booked as removed and the floor creation as added.
+// skb_un_ = the FLR_UN counter (rank-local, cumulative) at the last booking.
+bool skb_ = false;
+Real skb_un_ = 0.0;
+// accbook-1021 (rbk_): a helper solve whose slope becomes K1 (Time2StartProbe,
+// Time2RotCorrect = vet_gd_rotate_slope correct) puts U^n and its faces back, so the
+// stage-start faces t2f1 are NOT the faces of that K1: RyPerRadBook keeps the probe's
+// r_out faces (comoving + bath, per column) in rbk1_ and books the next stage-1 K1 part
+// from them when the probe's slope was kept (rbk1n_: t2_nprobe / vgd_rot_ncorr then)
+DvceArray3D<Real> rbk1_;
+bool rbk1_on_ = false;
+double rbk1n_[2] = {0.0, 0.0};
 bool rbk_ = false;
 DvceArray3D<Real> bdvs_;   // ibadv_x1max at the step's first hydro stage (the K1 faces)
 // acctrc-1019 (USER 10-19): two passive advective tracers, <hydro>/nscalars = 2 (0 = off: no
@@ -1536,6 +1564,21 @@ void RyPerM1Post(Mesh *pm) {
     u0(m,IEN,k,j,i) -= ke;
     sum += ke*volume(m,k,j,i);
   }, Kokkos::Sum<Real>(eke));
+  // accbook-1021 problem/sink_kick_book (see skb_): backward-Euler solves only (the
+  // hesdirk2 stage weights of a kick and of its slope are not booked); helper solves
+  // skipped
+  if (skb_) {
+    auto *pm1 = pmbp->pradm1;
+    if (!pm1->t2_inprobe && pm1->pos_cnt_d.extent_int(0) >= radm1::M1_POS_N) {
+      auto pcs = Kokkos::subview(pm1->pos_cnt_d, radm1::M1_POS_FLR_UN);
+      Real un = 0.0;
+      Kokkos::deep_copy(un, pcs);
+      const bool be = (pm1->t2_solve == radm1::M1_T2S_NONE) ||
+                      (pm1->t2_solve == radm1::M1_T2S_BESTORE);
+      if (be) acc0_[3] += eke - (un - skb_un_);
+      skb_un_ = un;
+    }
+  }
   // ebud-1020 (HSTRST): NOT booked in Emsk any more.  The kinetic energy removed here is
   // the work the M1 coupling just did on the sink's floor gas, which the radiation field
   // never paid (an energy-budget diagnostic run, acctrc/runs/ebudd: per cycle the
@@ -1550,7 +1593,29 @@ void RyPerM1Post(Mesh *pm) {
 void RyPerRadBook(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto *pm1 = pmbp->pradm1;
-  if (pm1->t2_inprobe) return;   // helper solves whose result is put back
+  if (pm1->t2_inprobe) {
+    // helper solves whose result is put back; a probe's slope may become K1 (rbk1_)
+    auto &idp = pm->mb_indcs;
+    const int iep = idp.ie;
+    auto ffp = pm1->f0x1;
+    const bool hbp = pm1->iebath_hi_col_on && (pm1->ibadv_x1max.extent_int(0) > 0);
+    DvceArray3D<Real> bdp;
+    if (hbp) {bdp = pm1->ibadv_x1max;}
+    const int n0 = ffp.extent_int(0), n1 = ffp.extent_int(1), n2 = ffp.extent_int(2);
+    if (rbk1_.extent_int(0) != n0 || rbk1_.extent_int(1) != n1 ||
+        rbk1_.extent_int(2) != n2) {
+      rbk1_ = DvceArray3D<Real>("ryper_rbk1", n0, n1, n2);
+    }
+    auto r1 = rbk1_;
+    par_for("ryper_rbk1", DevExeSpace(), 0, n0 - 1, 0, n1 - 1, 0, n2 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      r1(m,k,j) = ffp(m,k,j,iep+1) + (hbp ? bdp(m,k,j) : 0.0);
+    });
+    rbk1_on_ = true;
+    rbk1n_[0] = pm1->t2_nprobe;
+    rbk1n_[1] = pm1->vgd_rot_ncorr;
+    return;
+  }
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
   const Real dt = pm->dt;
   Real wy = pm1->dt_sub, wk = 0.0;
@@ -1575,6 +1640,12 @@ void RyPerRadBook(Mesh *pm) {
   if (hbdv) {bdv = pm1->ibadv_x1max; bds = bdvs_;}
   const bool hbs = hbdv && hk && (bds.extent_int(0) > 0);
   const bool kres = pm1->t2_k1reset;
+  // accbook-1021: K1 from a probe solve (see rbk1_): its own r_out faces
+  const bool kp = hk && rbk1_on_ && (pm1->t2_nprobe == rbk1n_[0] + 1.0 ||
+                                     pm1->vgd_rot_ncorr == rbk1n_[1] + 1.0);
+  if (hk) {rbk1_on_ = false;}
+  DvceArray3D<Real> kpf;
+  if (kp) {kpf = rbk1_;}
   array_sum::GlobalSum rs2;
   Kokkos::parallel_reduce("ryper_radbook", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           (nmb1 + 1)*nk*nj),
@@ -1595,7 +1666,9 @@ void RyPerRadBook(Mesh *pm) {
         rs = true;
         for (int n=0; n<radm1::M1_T2_F1; ++n) {if (k1(m,n,k,j,ie) != 0.0) rs = false;}
       }
-      if (!rs) ak += (fk(m,k,j,ie+1) + (hbs ? bds(m,k,j) : 0.0))*a;
+      if (!rs) {
+        ak += (kp ? kpf(m,k,j) : (fk(m,k,j,ie+1) + (hbs ? bds(m,k,j) : 0.0)))*a;
+      }
     }
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(rs2));
@@ -2281,13 +2354,34 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     acc0_[2] += zs.the_array[4];
     acc0_[3] += zs.the_array[5];
   }
+  // accbook-1021 (rbk_, see t2s1_): the weight of this stage's radiation resets, and the
+  // booking of the stage-1 reset of a failed hesdirk2 stage loop at its redo
+  Real rw = 1.0;
+  bool t2rd = false;
+  if (rad && rbk_ && pmbp->pradm1->time_scheme == radm1::M1_TIME_HESDIRK2) {
+    auto *pm1 = pmbp->pradm1;
+    if (pm1->t2_ok) {
+      if (s == 0) {
+        t2s1_[0] = zs.the_array[3] + zs.the_array[6];
+        t2s1_[1] = zs.the_array[6];
+        t2nf_ = pm1->t2_nfall;
+      } else {
+        rw = pm1->t2_w0;
+      }
+    } else if (s == 0) {
+      t2rd = (t2nf_ >= 0.0) && (pm1->t2_nfall == t2nf_ + 1.0);
+      if (!t2rd) {t2s1_[0] = t2s1_[1] = 0.0;}
+      t2nf_ = -1.0;
+    }
+  }
   if (accx_on_) {
     if (s == 0) {
       accx1_[0] = accx0_[0];
       accx1_[1] = accx0_[1];
     }
     accx0_[0] = rk_g0_[s]*accx0_[0] + rk_g1_[s]*accx1_[0] + bdt*fs.the_array[13];
-    accx0_[1] += zs.the_array[6];   // accwall-1019: plain sum (see erinj_)
+    accx0_[1] += rw*zs.the_array[6];   // accwall-1019: plain sum (see erinj_; rw rbk_)
+    if (t2rd) accx0_[1] += t2s1_[1];
   }
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
@@ -2297,9 +2391,11 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
     // the nozzle's energy (and the donor_irr radiation) enters Ebnd = in - rad out (10)
     // - hydro out (11)
-    erinj_ += zs.the_array[3] + zs.the_array[6];
+    erinj_ += rw*(zs.the_array[3] + zs.the_array[6]);
+    if (t2rd) erinj_ += t2s1_[0];
     acc0_[11] -= zs.the_array[2];
   }
+  if (t2rd) {t2s1_[0] = t2s1_[1] = 0.0;}
   // acctrc-1019: the tracer registers (fluxes RK weighted as acc0_, resets as increments)
   if (trc_) {
     if (s == 0) {
@@ -2653,6 +2749,7 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   rhoamb4_ = DvceArray4D<Real>();
   tcol4_ = DvceArray4D<Real>();
   bdvs_ = DvceArray3D<Real>();   // pgrst-1021
+  rbk1_ = DvceArray3D<Real>();   // accbook-1021
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)
@@ -5002,6 +5099,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (read, not added: the key stays out of the PAR_DUMP of runs that do not set it)
   szv_ = !pin->DoesParameterExist("problem", "sink_zero_v") ||
          pin->GetBoolean("problem", "sink_zero_v");
+  skb_ = pin->DoesParameterExist("problem", "sink_kick_book") &&
+         pin->GetBoolean("problem", "sink_kick_book");   // accbook-1021
 
   // ---- integrator weights for the boundary flux integrals
   std::string integ = pin->GetString("time", "integrator");
@@ -5036,6 +5135,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   dtretry::RegisterValue("ry_stage_ctr", &stage_ctr_);
   erinj_ = 0.0;
   dtretry::RegisterValue("ry_erinj", &erinj_);
+  skb_un_ = 0.0;   // accbook-1021: the counter starts at 0 in every run segment
+  if (skb_) dtretry::RegisterValue("ry_skb_un", &skb_un_);
   for (int n=0; n<kNaccR; ++n) {
     dtretry::RegisterValue(("ry_acc0_" + std::to_string(n)).c_str(), &acc0_[n]);
     dtretry::RegisterValue(("ry_acc1_" + std::to_string(n)).c_str(), &acc1_[n]);

@@ -133,6 +133,7 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
   tmr_on = (tmr_c0 > 0) && (pmy_pack->pmesh->ncycle >= tmr_c0);
   if (tmr_on) {tmr_cnt[7] += 1.0;}
   TmrMark(-1);
+  if (dbg_eaudit) {EAuditMark(0);}   // accbook-1021 (output only)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int n1 = indcs.nx1 + 2*(indcs.ng);
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
@@ -175,6 +176,7 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
     }
   });
   TmrMark(0);
+  if (dbg_eaudit) {EAuditMark(1);}
   return TaskStatus::complete;
 }
 
