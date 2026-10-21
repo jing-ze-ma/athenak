@@ -12427,6 +12427,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // M-matrix, so E' > 0 is no longer guaranteed by construction).
   od_now = impl_offdiag;
   vimp_now = impl_vimp;
+  t2_pfix_fbm = false;
   // implicit_vimp_kill: a clean mask at the start of every solve
   if (vimp_kill && impl_vimp) {
     auto &idk = pmy_pack->pmesh->mb_indcs;
@@ -14699,6 +14700,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (vimp_kill) {
             ImplicitVimpKill();   // local: the cells within 2 lose the kick
           } else {
+            Time2PosFixMarkFb();
             vimp_now = false;
             vimp_nfall += 1.0;
           }
@@ -14738,6 +14740,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         od_emin = std::min(od_emin, emin);
         if (vimp_now) {vimp_emin = std::min(vimp_emin, emin);}
         if (!(emin > 0.0)) {
+          Time2PosFixMarkFb();
           if (odm == M1_OD_OPERATOR) {
             od_now = M1_OD_NONE;
             od_nfall += 1.0;
@@ -15411,7 +15414,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     t2_pfix_want = false;
     // (a non-converged stage too, when it has such cells: a Picard loop that diverged
     // from a non-positive old vector is the same fault)
-    if (t2_fail && (t2_pfix > 0) && (t2s == M1_T2S_STAGE1) && !(vmin > 0.0) && (od_now == impl_offdiag) && (vimp_now == impl_vimp) &&
+    // pgrst-posfix-1021: or an operator positivity fallback that marked its cells
+    const bool fbk = ((od_now != impl_offdiag) || (vimp_now != impl_vimp)) && t2_pfix_fbm;
+    if (t2_fail && (t2_pfix > 0) && (t2s == M1_T2S_STAGE1) &&
+        (fbk || (!(vmin > 0.0) && (od_now == impl_offdiag) && (vimp_now == impl_vimp))) &&
         (pmy_pack->pmesh->ncycle != t2_dbg_fail) && !t2_inprobe &&
         (t2_pfix_n < t2_pfix)) {
       auto pm_ = t2pm;
@@ -17213,6 +17219,27 @@ void RadiationM1::ImplicitMusclSigHalo() {
     iw_(m,b+M1_IM_SIG+1,k,j,i) = fabs(sg_(m,0,k,j,i));
     iw_(m,b+M1_IM_SIG+2,k,j,i) = fabs(sg_(m,2,k,j,i));
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2PosFixMarkFb
+//! \brief pgrst-posfix-1021: time2_posfix on a stage-1 solve whose operator positivity
+//! fallback is about to fire: the cells this pass solved to E <= 0 join t2pm
+
+void RadiationM1::Time2PosFixMarkFb() {
+  if (!(t2_pfix > 0) || t2_solve != M1_T2S_STAGE1 || t2_inprobe) return;
+  if (t2pm.extent_int(0) < pmy_pack->nmb_thispack) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto pm_ = t2pm;
+  par_for("m1_t2p_markfb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (!(iw_(m,M1_IW_S2,k,j,i) > 0.0)) {pm_(m,k,j,i) = 1.0;}
+  });
+  t2_pfix_fbm = true;
 }
 
 //----------------------------------------------------------------------------------------

@@ -1411,6 +1411,11 @@ class RadiationM1 {
   DvceArray5D<Real> t2gsv;      // the gas u0 at the stage-1 start (re-solve put-back)
   DvceArray5D<Real> t2csv;      // ctr_mem at the stage-1 start (closure_thin_relax)
   bool Time2PosFix(Driver *pdrive);
+  // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
+  // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
+  // asks for the local re-solve (the re-solve starts with the full operator again)
+  bool t2_pfix_fbm = false;
+  void Time2PosFixMarkFb();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
   DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
