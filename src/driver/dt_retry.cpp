@@ -218,8 +218,19 @@ void PgenStageSave() {
 void PgenStageRestore() {
   for (auto &e : PgenStageEntries()) {e->Restore();}
 }
+std::vector<std::unique_ptr<Entry>> &PgenSolveEntries() {
+  static std::vector<std::unique_ptr<Entry>> v;
+  return v;
+}
+void PgenSolveSave() {
+  for (auto &e : PgenSolveEntries()) {e->Save();}
+}
+void PgenSolveRestore() {
+  for (auto &e : PgenSolveEntries()) {e->Restore();}
+}
 void PgenStageClear() {
   PgenStageEntries().clear();
+  PgenSolveEntries().clear();
   PgenEntries().clear();   // (left here only when dt_retry is off: no copies, no Views)
 }
 

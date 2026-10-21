@@ -576,6 +576,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         if (m1t2) {
           pm1->Time2FormStage(stage, pmesh->dt);
           if (stage == 1 && pm1->t2_pfix > 0 && pctr_ != nullptr) {pctr_->Save(pmesh, 2);}
+          if (stage == 1 && pm1->t2_pfix > 0) {dtretry::PgenSolveSave();}
           ExecuteTaskList(pmesh, "m1_before_stagen", 1);
           ExecuteTaskList(pmesh, "m1_stagen", 1);
           ExecuteTaskList(pmesh, "m1_after_stagen", 1);
@@ -585,6 +586,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           if (pm1->t2_fail && pm1->t2_pfix_want) {
             while (pm1->t2_fail && pm1->t2_pfix_want) {
               if (pctr_ != nullptr) {pctr_->Restore(pmesh, 2, 2);}
+              dtretry::PgenSolveRestore();   // pgrst-posfix-1021
               (void) pm1->Time2PosFix(this);
             }
           }
