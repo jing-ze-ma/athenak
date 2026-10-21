@@ -403,7 +403,9 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {
     (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);
   }
+  if (dbg_eaudit) {EAuditMark(4);}   // accbook-1021 (output only)
   FluidRefresh(pdrive);
+  if (dbg_eaudit) {EAuditMark(5);}
   TmrMark(9);
   return TaskStatus::complete;
 }

@@ -755,6 +755,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
+  // accbook-1021 time2_fref_wacc (read only when named; default false): the exact
+  // payment above also for the backward-Euler steps of a hesdirk2 run, which otherwise
+  // pay v' dt rho a_ref (B deck, first step: +76 energy units created, rE jump)
+  fref_wacc_t2 = pin->DoesParameterExist("rad_m1", "time2_fref_wacc") &&
+                 pin->GetBoolean("rad_m1", "time2_fref_wacc");
   // the hydro integrator's stage weights (driver.cpp), for fref_wacc
   {
     const std::string hi = pin->DoesParameterExist("time", "integrator") ?
@@ -1755,7 +1760,12 @@ void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<
 //! reference work the gas receives in the hydro stages (rad_m1.hpp, fref_wacc)
 
 bool RadiationM1::FrefWaccOn() const {
-  return fref_wsplit && !fref_pay_post && (time_scheme == M1_TIME_BE) && (mr_every <= 1);
+  // accbook-1021 time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (no
+  // valid slope: the first step, a redo; not a helper solve, not multi-rate / csplit)
+  const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) && !t2_ok &&
+                    !t2_inprobe && (csplit == 0);
+  return fref_wsplit && !fref_pay_post && ((time_scheme == M1_TIME_BE) || t2be) &&
+         (mr_every <= 1);
 }
 
 Real RadiationM1::FrefWaccGam0(Real bdt, Real dt_mesh) const {

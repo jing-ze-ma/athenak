@@ -782,6 +782,7 @@ class RadiationM1 {
   // named) restores the old post-kick payment.  hesdirk2 and multi-rate keep theirs.
   DvceArray4D<Real> fref_wacc;
   bool fref_pay_post = false;
+  bool fref_wacc_t2 = false;   // accbook-1021 <rad_m1>/time2_fref_wacc (see FrefWaccOn)
   int fref_hnst = 0;
   Real fref_hgam0[4] = {0.0, 0.0, 0.0, 0.0}, fref_hbeta[4] = {0.0, 0.0, 0.0, 0.0};
   bool FrefWaccOn() const;
@@ -1848,6 +1849,23 @@ class RadiationM1 {
   // the reference-work accumulator and esrc (x volume): line ETALLY
   bool dbg_etally = false;
   void DbgEnergyTally(Real *o);
+  // accbook-1021 <rad_m1>/dbg_energy_audit (default false, output only): per implicit
+  // solve, the change of U = gas total energy + (c/chat) E (x volume, active cells) in
+  // the segments between the marks EAuditMark(0 closure-limit entry, 1 exit, 2 solve
+  // entry, 3 solve exit, 4 after the pgen m1post hook, 5 after the fluid refresh), per
+  // cell class (0 rest, 1 floor gas rho < 10 dfloor, 2 reset: E overwritten outside the
+  // M1 chain since its last end, i.e. pgen hold/reset cells and closure-limit raises),
+  // the boundary energy fluxes of the solve and its hesdirk2 old-vector increment; rank
+  // 0 prints line EAUDIT at mark 5 (see EAuditMark)
+  bool dbg_eaudit = false;
+  bool eaud_init = false;
+  DvceArray4D<Real> eaud_u, eaud_e, eaud_c;
+  Real eaud_seg[6][3] = {};
+  Real eaud_bnd[7] = {0.0};
+  Real eaud_w = 0.0;               // force_reference_work = split (be): fref_wacc
+  Real eaud_pc[4] = {0.0};         // M1_POS_FLR_UN, FLR_DE, GAS_DE, FLRS at the entry
+  Real eaud_pd[4] = {0.0};         // their change over the solve (summed per print)
+  void EAuditMark(int pt);
   // fixbundle-1009 F4: ApplyClosureLimits clips over ACTIVE cells (0 = E raised to
   // e_floor, 1 = |F| scaled to c E), every stage, and the event-log totals (collective)
   DvceArray1D<Real> acl_cnt_d;
