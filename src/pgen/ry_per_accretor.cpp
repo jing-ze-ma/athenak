@@ -1602,6 +1602,11 @@ void RyPerRadBook(Mesh *pm) {
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(rs2));
   acc0_[10] += wy*rs2.the_array[0] + wk*rs2.the_array[1] + (wy + wk)*fx2leak_;
+  // time2_k1_reset: the K1 energy (E + gas) the stage dropped in reset cells is not
+  // put in by the solve's conservative fluxes: booked with the held cells' injection
+  if (pm1->t2_solve == radm1::M1_T2S_STAGE1 && pm1->t2_k1reset) {
+    erinj_ -= wk*pm1->t2_k1reset_de;
+  }
 }
 
 //! pgrst-1021: the M1 post hook of the envelope with rbk_ (booking, then as before)
@@ -2662,6 +2667,7 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   cref24_ = DvceArray4D<Real>();
   rhoamb4_ = DvceArray4D<Real>();
   tcol4_ = DvceArray4D<Real>();
+  bdvs_ = DvceArray3D<Real>();   // pgrst-1021
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)

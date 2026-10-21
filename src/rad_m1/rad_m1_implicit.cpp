@@ -12359,6 +12359,55 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     csk1_ok = false;
     csinc_ok = false;
   }
+  // pgrst-1021 time2_k1_reset: the face slopes (K1 and this stage's increment) of every
+  // face of a cell whose E was overwritten since the stage-loop start.  The mask is put
+  // in iw(M1_IW_EN) (saved and put back around it), exchanged through the implicit halo
+  // (physical ghosts stay 0), so the two blocks of a shared face drop the same face:
+  // conservative and independent of the decomposition.
+  if (t2s == M1_T2S_STAGE1 && t2_k1reset && t2_ys_face && t2ys.extent_int(0) > 0) {
+    t2_ys_face = false;
+    auto ys_ = t2ys;
+    auto k1f_ = t2k1;
+    auto inf_ = t2inc;
+    const int n3a = iw.extent_int(2), n2a = iw.extent_int(3), n1a = iw.extent_int(4);
+    DvceArray4D<Real> sv("m1_t2_fmsv", iw.extent_int(0), n3a, n2a, n1a);
+    auto msk = Kokkos::subview(iw, Kokkos::ALL, M1_IW_EN, Kokkos::ALL, Kokkos::ALL,
+                               Kokkos::ALL);
+    Kokkos::deep_copy(DevExeSpace(), sv, msk);
+    Kokkos::deep_copy(DevExeSpace(), msk, 0.0);
+    par_for("m1_t2_fmask", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,M1_IW_EN,k,j,i) = (u0_(m,M1_E,k,j,i) != ys_(m,k,j,i)) ? 1.0 : 0.0;
+    });
+    ImplicitHaloExchange(1, M1_IW_EN);
+    const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
+    Real nf = 0.0;
+    Kokkos::parallel_reduce("m1_t2_fzero", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 2, je + 2, ie + 2}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+      // x1 face i (cells i-1, i), x2 face j, x3 face k, each at its own lower index
+      if (k <= ke && j <= je &&
+          (iw_(m,M1_IW_EN,k,j,i-1) > 0.0 || iw_(m,M1_IW_EN,k,j,i) > 0.0)) {
+        k1f_(m,M1_T2_F1,k,j,i) = 0.0;
+        inf_(m,M1_T2_F1,k,j,i) = 0.0;
+        sum += 1.0;
+      }
+      if (tr2 && k <= ke && i <= ie &&
+          (iw_(m,M1_IW_EN,k,j-1,i) > 0.0 || iw_(m,M1_IW_EN,k,j,i) > 0.0)) {
+        k1f_(m,M1_T2_F1+1,k,j,i) = 0.0;
+        inf_(m,M1_T2_F1+1,k,j,i) = 0.0;
+        sum += 1.0;
+      }
+      if (tr3 && j <= je && i <= ie &&
+          (iw_(m,M1_IW_EN,k-1,j,i) > 0.0 || iw_(m,M1_IW_EN,k,j,i) > 0.0)) {
+        k1f_(m,M1_T2_F1+2,k,j,i) = 0.0;
+        inf_(m,M1_T2_F1+2,k,j,i) = 0.0;
+        sum += 1.0;
+      }
+    }, Kokkos::Sum<Real>(nf));
+    t2_k1reset_nf += nf;
+    Kokkos::deep_copy(DevExeSpace(), msk, sv);
+  }
   if (t2st) {
     par_for("m1_t2_f1n", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
