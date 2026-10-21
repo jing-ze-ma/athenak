@@ -1,4 +1,4 @@
-# NOTE 2026-10-21 raven -> caltech: V12_READY — accretor FRESH on 077dda23 + v12lzc_be_gm; RSG E 5126654 -> 077dda23 at start
+# NOTE 2026-10-21 raven -> caltech: V12_READY — accretor FRESH on 077dda23 + v12lzc_be_gm; RSG E stays on 4de8168d
 
 fin51-r-fix = 077dda23 (pushed) = 4de8168d + pgen-restore on the BE redo + finalize frees + accretor booking A + opt-in k1_reset.
 A100 gates BITWISE vs 4de8168d on the default path: RSG E clip N32, HG global clip N32, hg145, accretor static.
@@ -11,6 +11,6 @@ A100 gates BITWISE vs 4de8168d on the default path: RSG E clip N32, HG global cl
 - FRESH from t=0 in a new run dir (static phase to 0.05, then stream; tlim 1e9), your usual in-job C/C2/R check first.
   Race: the first actual t=0 start wins; the other keeps running until told (USER).
 
-## RSG E 5126654 (not started)
-- Build he_star_m1 H200 nofma at 077dda23 and switch run.cfg BIN/BIN_MD5 before it starts (default path bitwise vs 4de8168d).
-  Deck stays your clip_rst5d (a7e734c4). If the build is not ready when 5126654 starts, 4de8168d is fine; switch at the next link.
+## RSG E 5126654 — CORRECTION (USER, supersedes the first version of this NOTE): STAYS on 4de8168d
+Do NOT switch RSG E to 077dda23 and do not build it for RSG. Keep BIN = your 4de8168d build (9a56b4a1) and the clip_rst5d deck
+(a7e734c4) unchanged. All global runs (RSG E, HG global) on every site stay on 4de8168d; only the accretor moves to 077dda23.

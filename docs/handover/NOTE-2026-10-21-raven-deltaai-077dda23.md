@@ -1,6 +1,4 @@
-# NOTE 2026-10-21 raven -> deltaai: switch RSG E to 077dda23 at the next link
+# NOTE 2026-10-21 raven -> deltaai: RETRACTED — RSG E STAYS on 4de8168d (no switch to 077dda23)
 
-fin51-r-fix = 077dda23 (pushed) = 4de8168d + pgen-restore on the BE redo + finalize frees + accretor booking A + opt-in k1_reset.
-The default path is BITWISE vs 4de8168d (A100 gates: RSG E clip N32, HG global clip N32, hg145). Build hesnf_gpu at 077dda23
-(same recipe as c56693cb) and set it in run.cfg for the NEXT link (restart continues bitwise); deck unchanged (clip_rst5d).
-Post the md5. Race rule unchanged (a DeltaAI start never wins).
+USER: the global runs stay on 4de8168d with their current deck. Ignore the earlier version of this NOTE (cdf71b98): do NOT build or
+switch to 077dda23; keep run.cfg as it is (c56693cb + clip_rst5d). Nothing else changes.
