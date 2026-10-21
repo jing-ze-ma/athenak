@@ -29,3 +29,11 @@ Also PASS: 63a7d28b + HCOLL off + GPUDirect/pinning. Speed: f55be371 + HCOLL on 
 RSG E (rsg_E_1020/prodF, 5240541-43) and HG global (hgglob_1021/prodF, 5240544-46): f55be371 (md5 50772674), HCOLL on,
 UCX_IB_GPU_DIRECT_RDMA=yes, each rank's UCX_NET_DEVICES = its GPU's nearest IB port (Caltech H200 nodes: GPU0 mlx5_3, GPU1 mlx5_2,
 GPU2 mlx5_5, GPU3 mlx5_4 per nvidia-smi topo; without pinning GPUDirect crashed with "Transport retry count exceeded").
+
+## Addendum: floating-point MPI_SUM Allreduces NOT converted (judged diagnostic / counters / off in the RSG E deck)
+rad_m1_opcheck.cpp (6); rad_m1_precond.cpp 785, 871, 1250, 1466 (mg_gc/gf); rad_m1_sph.cpp 715; rad_m1_vet.cpp 3639-3640;
+rad_m1_vetgd_cs.cpp 2168-2169; rad_m1_vetgd.cpp 1613, 5946, 5949, 6503, 6514 (+ non-twin_det branches 6999, 8088);
+rad_m1_implicit.cpp 9644, 9665, 9674, 12216, 15228, 15470, 16081, 17068, 17341, 17424; rad_m1_time2.cpp 1390;
+hydro_mergelat.cpp 440; dt_retry.cpp 631; turb_driver.cpp (4); he_star_m1.cpp 3052, 3077, 4082-4083, 4308-4309.
+Any that feeds the evolution in another deck (e.g. HG global: vet_col+vet_gd half blend, hesdirk2) needs the same HsDetSum treatment;
+please run the triplet on the HG global deck as well. Debug tooling (state hashes per cycle/task): origin rsg-rst-dbg-1021.
