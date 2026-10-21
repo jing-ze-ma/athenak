@@ -212,12 +212,13 @@ DvceArray3D<Real> gr_, gp_;    // discrete -dPhi/dr, -dPhi/(r dphi) at (m,k,i)
 Real spin_ = 1.0;
 bool noslip_ = true, inner_hse_ = false, outer_hse_ = true, stream_on_ = true;
 bool inner_wall_ = false;
-Real rho_s_ = 1.0, phi_s_ = 0.0, sig_ = 0.05, nsig_ = 3.0, vr_s_ = 0.0, vp_s_ = 0.0;
-// vphi-1021 problem/stream_rad_nsig (read only when named; default = stream_nsig, bitwise):
-// the nozzle writes (and holds) the stream's radiation, and stream_sector_light = neck holds
-// the lobe-rule light, only within this many sigma (phi and z); the gas window stream_nsig
-// (and the back sink) may be wider, so that the held Gaussian gas reaches the floor at the
-// window edge instead of a held pressure step against near-vacuum
+Real rho_s_ = 1.0, phi_s_ = 0.0, sig_ = 0.05, nsig_ = 6.0, vr_s_ = 0.0, vp_s_ = 0.0;
+// vphi-1021 problem/stream_rad_nsig (DEFAULT min(3, stream_nsig); stream_nsig DEFAULT 6
+// since USER defaults group 1, was 3): the nozzle writes (and holds) the stream's
+// radiation, and stream_sector_light = neck holds the lobe-rule light, only within this
+// many sigma (phi and z); the gas window stream_nsig (and the back sink) may be wider,
+// so that the held Gaussian gas reaches the floor at the window edge instead of a held
+// pressure step against near-vacuum
 Real nsig_rad_ = 3.0;
 // vphi-1021 problem/stream_rad_ellipse (read only when named; default false = the rectangle
 // |dphi| < n sigma, |z| < n sigma_z, bitwise): true holds the stream radiation only inside
@@ -4707,9 +4708,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   stream_on_ = pin->GetOrAddBoolean("problem", "stream", true);
   rho_s_ = pin->GetOrAddReal("problem", "rho_stream", 1.0);
   const Real rho_amb = pin->GetOrAddReal("problem", "rho_amb", 1.0e-5);
-  nsig_ = pin->GetOrAddReal("problem", "stream_nsig", 3.0);
-  nsig_rad_ = pin->DoesParameterExist("problem", "stream_rad_nsig") ?
-              pin->GetReal("problem", "stream_rad_nsig") : nsig_;
+  // vphi-1021 (USER defaults group 1): gas window 6 sigma (the held Gaussian reaches the
+  // floor), radiation window 3 sigma (the optically thick part); were 3 / = stream_nsig
+  nsig_ = pin->GetOrAddReal("problem", "stream_nsig", 6.0);
+  nsig_rad_ = pin->GetOrAddReal("problem", "stream_rad_nsig", std::fmin(3.0, nsig_));
   if (nsig_rad_ > nsig_) fatal("stream_rad_nsig must not exceed stream_nsig");
   rad_ell_ = pin->DoesParameterExist("problem", "stream_rad_ellipse") &&
              pin->GetBoolean("problem", "stream_rad_ellipse");
@@ -5192,8 +5194,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   erinj_ = 0.0;
   dtretry::RegisterValue("ry_erinj", &erinj_);
   hold_bk_ = 0.0;
-  if (pin->DoesParameterExist("rad_m1", "implicit_hold") &&
-      pin->GetBoolean("rad_m1", "implicit_hold")) {
+  if (pmbp->pradm1 != nullptr && pmbp->pradm1->impl_hold) {
     dtretry::RegisterValue("ry_hold_bk", &hold_bk_);   // hold-viper-1021 (diagnostic)
   }
   for (int n=0; n<kNaccR; ++n) {

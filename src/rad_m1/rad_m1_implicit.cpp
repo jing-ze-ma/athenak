@@ -2621,8 +2621,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
-  if (pin->DoesParameterExist("rad_m1","implicit_hold")) {
-    impl_hold = pin->GetBoolean("rad_m1","implicit_hold");
+  {  // vphi-1021 (USER defaults group 1): DEFAULT true; inert unless a pgen marks hold_m
+    impl_hold = pin->GetOrAddBoolean("rad_m1","implicit_hold",true);
     if (impl_hold) {
       auto &idh = pmy_pack->pmesh->mb_indcs;
       const int nh1 = idh.nx1 + 2*idh.ng;
