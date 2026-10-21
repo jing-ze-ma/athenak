@@ -381,6 +381,19 @@ DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient,
 // theta walls (RadSetup) and its total outward rate on this rank (booked as radiation out)
 DvceArray3D<Real> fx2lo_, fx2hi_;
 Real fx2leak_ = 0.0;
+// pgrst-1021 (history only): rbk_ = the radiation leaving through r_out (comoving face flux
+// f0x1 + the bath's advective part ibadv_x1max + the theta-wall leak) is booked in Ebnd
+// (register 10, a plain sum) by the M1 post hook from the face flux of the solve just
+// taken, with the weight that solve's slope has in the step (backward Euler: dt; hesdirk2
+// stage 1: the K1 part (w0 a21 + c31) dt from the stage-start faces and the K2 part
+// (w0 g + c32) dt; stage 2: g dt), instead of the previous cycle's f0x1 read in the hydro
+// stages (one cycle late: the 2e4 start-up gap of the static runs).  The radiation the
+// held cells (donor_irr lobe, nozzle, back sink) get from a reset in the SECOND Heun stage
+// of a hesdirk2 step is booked with the weight w0 the radiation Heun average
+// (Time2FormStage(2)) gives it (it was booked in full: +340/cycle on the static v12 run).
+// Off (old booking) without the M1 coupling hook, with implicit_mr_every > 1 or csplit.
+bool rbk_ = false;
+DvceArray3D<Real> bdvs_;   // ibadv_x1max at the step's first hydro stage (the K1 faces)
 // acctrc-1019 (USER 10-19): two passive advective tracers, <hydro>/nscalars = 2 (0 = off: no
 // branch below runs, every kernel and register of the default is unchanged).  Conserved
 // u(nhydro + n) = rho s_n, advected by the core with the upwind mass flux (hydro_fluxes.cpp).
@@ -1534,6 +1547,70 @@ void RyPerM1Post(Mesh *pm) {
   (void) eke;
 }
 
+//! pgrst-1021 rbk_: book the radiation leaving through r_out for the solve just taken
+//! (see rbk_).  Read-only on the state.
+void RyPerRadBook(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto *pm1 = pmbp->pradm1;
+  if (pm1->t2_inprobe) return;   // helper solves whose result is put back
+  const Real g = 1.0 - 1.0/std::sqrt(2.0);
+  const Real dt = pm->dt;
+  Real wy = pm1->dt_sub, wk = 0.0;
+  if (pm1->t2_solve == radm1::M1_T2S_STAGE1) {
+    wy = (pm1->t2_w0*g + pm1->t2_c32)*dt;
+    wk = (pm1->t2_w0*pm1->t2_a21 + pm1->t2_c31)*dt;
+  } else if (pm1->t2_solve == radm1::M1_T2S_STAGE2) {
+    wy = g*dt;
+  }
+  auto &indcs = pm->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke, ie = indcs.ie;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  const int nj = je - js + 1, nk = ke - ks + 1;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  auto ff = pm1->f0x1;
+  auto fk = pm1->t2f1;
+  auto k1 = pm1->t2k1;
+  const bool hk = (wk != 0.0);
+  const bool hbdv = pm1->iebath_hi_col_on;
+  DvceArray3D<Real> bdv, bds;
+  if (hbdv) {bdv = pm1->ibadv_x1max; bds = bdvs_;}
+  const bool hbs = hbdv && hk && (bds.extent_int(0) > 0);
+  const bool kres = pm1->t2_k1reset;
+  array_sum::GlobalSum rs2;
+  Kokkos::parallel_reduce("ryper_radbook", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          (nmb1 + 1)*nk*nj),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+    array_sum::GlobalSum v;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+    Real &ay = v.the_array[0], &ak = v.the_array[1];
+    const int m = idx/(nk*nj);
+    const int k = (idx - m*nk*nj)/nj + ks;
+    const int j = idx%nj + js;
+    if (mbbcs.d_view(m, BoundaryFace::outer_x1) != BoundaryFlag::user) return;
+    const Real a = area1(m,k,j,ie+1);
+    ay += (ff(m,k,j,ie+1) + (hbdv ? bdv(m,k,j) : 0.0))*a;
+    if (hk) {
+      // a column whose last cell had its K1 dropped (time2_k1_reset) has no K1 face part
+      bool rs = false;
+      if (kres) {
+        rs = true;
+        for (int n=0; n<radm1::M1_T2_F1; ++n) {if (k1(m,n,k,j,ie) != 0.0) rs = false;}
+      }
+      if (!rs) ak += (fk(m,k,j,ie+1) + (hbs ? bds(m,k,j) : 0.0))*a;
+    }
+    sum += v;
+  }, Kokkos::Sum<array_sum::GlobalSum>(rs2));
+  acc0_[10] += wy*rs2.the_array[0] + wk*rs2.the_array[1] + (wy + wk)*fx2leak_;
+}
+
+//! pgrst-1021: the M1 post hook of the envelope with rbk_ (booking, then as before)
+void RyPerM1PostRb(Mesh *pm) {
+  RyPerRadBook(pm);
+  RyPerM1Post(pm);
+  if (lz_) RyPerLzMark(pm->pmb_pack);
+}
+
 //! acclz-1020: the M1 post hook of the envelope (RyPerM1Post, then the L_z mark)
 void RyPerM1PostLz(Mesh *pm) {
   RyPerM1Post(pm);
@@ -2098,6 +2175,15 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const bool hbdv = rad && pmbp->pradm1->iebath_hi_col_on;
   DvceArray3D<Real> bdv;
   if (hbdv) bdv = pmbp->pradm1->ibadv_x1max;
+  const bool rbkv = rbk_;
+  // pgrst-1021 rbk_: the bath's advective faces at the step's first stage (K1 part)
+  if (rbkv && hbdv && (stage_ctr_ % nstages_) == 0) {
+    if (bdvs_.extent(0) != bdv.extent(0) || bdvs_.extent(1) != bdv.extent(1) ||
+        bdvs_.extent(2) != bdv.extent(2)) {
+      bdvs_ = DvceArray3D<Real>("ryper_bdvs", bdv.extent(0), bdv.extent(1), bdv.extent(2));
+    }
+    Kokkos::deep_copy(DevExeSpace(), bdvs_, bdv);
+  }
   // phys_3d: Lz with the cylindrical radius; theta_bc = outflow: the theta faces
   const bool thf = p3 && thout_;
   auto &flx2 = ph->uflx.x2f;
@@ -2132,8 +2218,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       }
       v.the_array[5] = (f3 + om*r*fd)*r*a;
       if (rad) {
-        if (haveff) v.the_array[10] = ff0(m,k,j,ie+1)*a;
-        if (hbdv) v.the_array[10] += bdv(m,k,j)*a;
+        if (haveff && !rbkv) v.the_array[10] = ff0(m,k,j,ie+1)*a;
+        if (hbdv && !rbkv) v.the_array[10] += bdv(m,k,j)*a;
         v.the_array[11] = flx(m,IEN,k,j,ie+1)*a;
       }
     }
@@ -2178,7 +2264,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   // the envelope) holds the cumulative floor mass Mfl instead
   if (amb_radeq_) fs.the_array[4] = 0.0;
   // acc3d-1017: the imposed x2-wall radiative flux (implicit_bc_x2 = flux) leaves as radiation
-  if (rad) fs.the_array[10] += fx2leak_;
+  if (rad && !rbk_) fs.the_array[10] += fx2leak_;
   // donor_mask: registers 2, 3 (Mwal, Jwal: zero with the closed free-slip wall) hold the
   // cumulative mass and gas energy removed by the mask
   if (msk_) fs.the_array[2] = fs.the_array[3] = 0.0;
@@ -2203,16 +2289,25 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       accx1_[1] = accx0_[1];
     }
     accx0_[0] = rk_g0_[s]*accx0_[0] + rk_g1_[s]*accx1_[0] + bdt*fs.the_array[13];
-    accx0_[1] += zs.the_array[6];   // accwall-1019: plain sum (see erinj_)
+    // accwall-1019: plain sum (see erinj_); pgrst-1021: the same stage weight
+    accx0_[1] += (rbk_ && s == 1 && rad && pmbp->pradm1->t2_solve == radm1::M1_T2S_STAGE1)
+                 ? pmbp->pradm1->t2_w0*zs.the_array[6] : zs.the_array[6];
   }
   if (rad) {
     for (int n=kNacc; n<kNaccR - 1; ++n) {
+      if (rbk_ && n == 10) continue;   // pgrst-1021: a plain sum (the M1 post hook)
       acc0_[n] = rk_g0_[s]*acc0_[n] + rk_g1_[s]*acc1_[n] + bdt*fs.the_array[n];
     }
     acc0_[kNaccR-1] = rk_g0_[s]*acc0_[kNaccR-1] + rk_g1_[s]*acc1_[kNaccR-1] + derel;
     // the nozzle's energy (and the donor_irr radiation) enters Ebnd = in - rad out (10)
     // - hydro out (11)
-    erinj_ += zs.the_array[3] + zs.the_array[6];
+    // pgrst-1021 rbk_: a reset of the second Heun stage of a hesdirk2 step enters the
+    // radiation state with the weight w0 of the Heun average that follows
+    Real wrs = 1.0;
+    if (rbk_ && s == 1 && pmbp->pradm1->t2_solve == radm1::M1_T2S_STAGE1) {
+      wrs = pmbp->pradm1->t2_w0;
+    }
+    erinj_ += wrs*(zs.the_array[3] + zs.the_array[6]);
     acc0_[11] -= zs.the_array[2];
   }
   // acctrc-1019: the tracer registers (fluxes RK weighted as acc0_, resets as increments)
@@ -5119,6 +5214,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (user_hist) user_hist_func = RyPerHistEnv;
     if (msk_) user_m1post_func = RyPerM1Post;
     if (lz_) user_m1post_func = RyPerM1PostLz;   // acclz-1020 (RyPerM1Post + the L_z mark)
+    // pgrst-1021 rbk_ (see there): wherever the M1 post hook runs after every solve
+    {
+      auto *pm1 = pmbp->pradm1;
+      rbk_ = rad_ && pm1 != nullptr && pm1->coupling && pm1->gas_feedback && pm1->fl_on &&
+             !pm1->MRActive() && pm1->csplit == 0 &&
+             (!pin->DoesParameterExist("problem", "rad_book_lag") ||
+              !pin->GetBoolean("problem", "rad_book_lag"));
+      if (rbk_) user_m1post_func = RyPerM1PostRb;
+      if (rbk_ && global_variable::my_rank == 0) {
+        std::printf("ry_per_accretor: Ebnd radiation out booked per M1 solve (pgrst-1021; "
+                    "problem/rad_book_lag = true: the old one-cycle-late booking)\n");
+      }
+    }
     if (thwc_) user_hydro_flux_func = RyPerWallFlux;
     return;
   }
