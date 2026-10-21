@@ -1,0 +1,295 @@
+# ACC3D PRODUCTION deck v11amwtr (= v11amw + <hydro>/nscalars = 2 + scalars_rst_missing = zero; acctrc-1019 4960ac49 on accwall 4d2d5628, 10-19)
+# ACC3D PRODUCTION deck v11am (= acc3d_prod_v11 + <hydro>/am_transport = true; ACCV11 10-19)
+# ACC3D PRODUCTION deck, MESA-KAP (USER 10-18: 3-D massive-star setups use MESA kap) (acc3d-1017, 10-18): branch accretor-3d-1017 code 5bc6c3b4 (bin v7; v10 deck: + stream_sector_light = surface + env_ic_vz, branch accretor-3d-stream-1018). 3-D (+-20.4 deg) sp wedge 420 x 58 x 512 with
+# phys_3d (3-D Roche gravity, Coriolis, 3-D equipotential IC), hse theta walls + imposed equilibrium (von Zeipel) lateral
+# radiative flux; run by jobs/prod_chain.sbatch (static phase to t 0.05, then stream on, tlim 1e9). The older header below
+# (the half-resolution benchmark / band text) is historical.
+# =====================================================================================
+# Plaskett's-star progenitor at the start of Case-A accretion (Wade et al. 2026,
+# arXiv:2609.25526): the L1 stream on a RESOLVED envelope of the gainer
+# (ry_per_accretor, problem/inner = envelope).  DeltaAI setup 2026-10-07 (env13).
+# Ideal gas gamma 5/3; the envelope is an n = 3 polytrope in the Roche potential
+# (spin 1), anchored at the photospheric P/rho = c_ph^2 on the equipotential through
+# R_acc (phi 90); temperatures relaxed with env_t_relax (stream effectively isothermal).
+# Code: branch accretor-1007 (env_top_mode, env_wb_depth, r_meas).
+# Derivations: plaskett_setup_1007.py / RESULTS.md (DeltaAI scratch setup/), audit 10-07.
+# S3a (accretor-rhd-1008): <rad_m1> on the static envelope (stream off), env_ic = column.
+# S5 (accretor-rhd-1008, user 10-09): P = 3.81 d (Wade+2026 Sect. 5) -> a 33.2596, d_L1 16.2266,
+#   r_out 13.7926, new grid (plaskett_setup_1009.py, rhd/s5/setup/setup_1009.out), S0 column
+#   rebuilt (column_z0.02_p381.txt), band factor 0.963286; PHYSICAL AMBIENT (env_amb_mode =
+#   radeq: floor gas at radiative equilibrium, absorption on, no T relaxation, floor booked);
+#   HOT OPTICALLY THICK STREAM (one-zone state at r_out from stream_physics_1009.py, Ryu+2025
+#   adiabatic Q 0.649, launch at c_T(L1) 45.45 km/s) with its radiation injected (stream_rad).
+#   Derivation: docs/dev/accretor_rhd/plaskett_s5_1009.md.
+# UNITS: length Rsun, velocity km/s, time 6.957e5 s (P_orb = 0.458266), density in units
+# of the stream's peak density at r_out (problem/rho_stream).
+# Temperatures from Wade+2026's MESA track at the onset of Case A (HR figure):
+#   gainer Teff 28.3 kK (log L 4.73), donor Teff 26.2 kK (log L 4.84, R = R_L 12.8).
+# Stream: Ryu et al. 2025 (arXiv:2505.18255) isothermal L_in solution at L1, carried to
+#   r_out with its local transverse pressure-supported width; Mdot 1e-4 Msun/yr.
+# =====================================================================================
+# accretor-3d-1016: 3-D (+-20 deg) HALF-RESOLUTION BENCHMARK deck derived from the bigdom
+# handover deck (b145): 420 x 114 x 1024 = 49,029,120 cells on 4 H200 (4 MeshBlocks 420x114x256).
+# Forces/IC/WB are the band's (theta-invariant): a cost and plumbing benchmark, not physics.
+<comment>
+problem = Plaskett progenitor, start of Case-A accretion, resolved envelope (env13: equipotential top, Ryu+2025 stream, Wade+2026 temperatures)
+
+<job>
+basename = ryper
+
+<mesh>
+nghost    = 2
+nx1       = 420   # 3-D benchmark: half resolution of the 840-cell bigdom grid (old 640 -> 320 + tail)
+x1min     = 6.3
+x1max     = 24.33996                 # bigdom-1015: 1.5 d_L1 (d_L1 16.22664, P 3.81 d); was 13.7926
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 58   # acc3d-1017 static test: +-29 cells of dtheta = dphi = 2 pi/512 (+-20.39 deg)
+x2min     = 1.2149127840
+x2max     = 1.9266798696
+ix2_bc    = user   # acc3d-1017 arm H: closed hydrostatic theta walls (pgen theta_bc = hse)
+ox2_bc    = user
+nx3       = 512   # acc3d-1017: quarter of the full-res phi count (dt is set radially)
+x3min     = 0.0
+x3max     = 6.283185307179586
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+# plateau radial stretch (plaskett_setup_1009.py, NX1=640, P 3.81 d): fine zone 8.756..9.598 at
+# dr <= H_p/4 (H_p,min 0.0102 at c_ph 19.41), covering the tidally bulged photosphere
+# (r_ph 9.00 at phi 90 .. 9.445 at phi 0); face 218 = r_acc; neighbour ratio <= 1.095
+use_grid_stretch_r_poly = true
+f_stretch_r_c1 = 0.0
+f_stretch_r_c2 = 0.0
+f_stretch_r_c3 = 0.0
+f_stretch_r_c4 = 0.0
+f_stretch_r_p_amp = -2.1938589633103867
+f_stretch_r_p_xa = 0.13152342165045811
+f_stretch_r_p_xb = 0.77203350400482496
+f_stretch_r_p_w = 0.018749999999999999
+# bigdom-1015 (design sect. 13): the 640-cell grid above is kept face for face up to its face
+# 520 (r 10.4157), then a log tail (face ratio 1.002656, old grid 1.002675 there) to x1max
+f_stretch_r_tail_nin= 320   # the half-resolution old grid: every other face of the 640-cell map
+f_stretch_r_tail_x1max = 13.7926
+f_stretch_r_tail_ij= 260   # junction face 260 = old 520 (r 10.4157)
+
+<meshblock>
+nx1       = 420
+nx2       = 58
+nx3       = 64    # PROD: 8 MeshBlocks = 8 A100 (2 Raven nodes x 4)
+
+<time>
+dt_retry = true
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim      = -1
+tlim      = 1.0e9   # PROD (long-tlim rule): run until walltime, restart chain; static phase = override in jobs/prod_chain.sbatch
+dt_min     = 1.0e-8                  # PROD: USER 10-18 fallback for the stream-contact eint<=0 retries (1e-7 = FATAL in 2-D)
+ndiag     = 50
+
+<units>
+length_cgs = 6.957e10                # Rsun
+time_cgs   = 6.957e5                 # Rsun/(km/s)
+mass_cgs   = 1.7205983e25            # rho_u Rsun^3, rho_u = 5.11e-8 g/cc (env13 stream peak, unit choice a)
+mu         = 1.0                     # general EOS: T_unit = m_u (km/s)^2/k_B = 120.27 K
+
+<hydro>
+eos             = general            # tabulated general EOS (Saha H/He), gas only
+general_eos     = table
+gamma           = 1.6666666666666667
+eos_h2          = false
+eos_ionization  = true
+eos_metal_ionization = false
+eos_radiation   = false              # S3: <rad_m1> evolves E
+eos_xh          = 0.70
+eos_yhe         = 0.28               # Z = 0.02
+eos_logd_min    = -18.0              # dfloor 1e-8 code = 5.1e-16 g/cc
+eos_logd_max    = 0.0
+eos_logt_min    = 3.5
+eos_logt_max    = 7.6                # impact shocks; the hot ambient is gone (S5)
+eos_dlog        = 0.02
+reconstruct     = plm
+rsolver         = hllc
+dfloor          = 1.0e-8             # = problem/rho_amb
+pfloor          = 1.0e-10
+tfloor_kelvin   = 5.0e3
+etotgrav        = true
+wellbalance_dynamic = true
+wb_x1           = true
+wb_option       = polytropic
+wb_rho          = true
+am_transport    = true   # ACCV11 10-19 (USER: AM conservation at a link boundary): exact L_z (orbital axis = sp polar axis) transport
+                         # correction of the hydro (hydro_am.hpp, T_cons - T_code); needs prodmerge-1019 + amdtr-1019 (ab758e94). No frame_omega
+                         # (the pgen's phys_3d Coriolis + Roche-centrifugal about the CM stays), no am_vector (wedge walls: Lx, Ly not conserved),
+                         # implicit_am_cs is cubed-sphere only.
+nscalars        = 2      # ACCTRC 10-19 (USER): passive tracers, s0 = STREAM (nozzle gas), s1 = BOUNDARY INFLOW (gas entering through
+                         # r_in / r_out / the theta walls); floor mass carries s = 0. Needs acctrc-1019 (4960ac49+). hydro_w bins
+                         # gain s_00, s_01; diagnostics in ryper.trc.hst (ryper.user.hst unchanged).
+scalars_rst_missing = zero   # ACCTRC: a restart from a file written WITHOUT scalars (link 1 rst) reads the hydro variables and starts
+                         # s0 = s1 = 0; ignored when the file has nscalars = 2 (link 3 on), any other mismatch is FATAL
+
+
+<rad_m1>
+implicit_gas_src = matched   # pgrst-1021: v11 value (fast floor gas: conservative2 kicks the 1e-8 floor in the held light, 9x v11 fast cells)
+time_scheme = be   # USER 10-21: BE screen arm (only change vs v12lzc 01b5cd9d)
+implicit_cs2_clip = rad   # cs2clip-1020 (USER 10-20): limiter clip not booked as gas momentum (floor-gas kick fix)
+# v12lz (USER 10-20, DEFAUDIT): the old 2-D accbig_1016 pinned block REMOVED -> code defaults (fresh run): time_scheme hesdirk2,
+# implicit_gas_src conservative2, implicit_rad_inertia/nofb_work true, implicit_face_opac_n true, vet_source_noesrc true,
+# vet_bc_diff face, vet_seg jump, implicit_f0_init auto, implicit_precond mg (sp wedge), implicit_vimp true (with hesdirk2)
+implicit_bc_x2max= flux
+implicit_bc_x2min= flux   # acc3d-1017: imposed equilibrium lateral flux at the theta walls
+implicit_tol_rel = 0.1
+implicit_tol_rel_max = 1e-4
+implicit_opac_lag = pred
+implicit_opac_lag_passes = 2
+implicit_gas_newton_u4 = true
+# S3a (accretor-rhd-1008): implicit grey M1 on the static envelope, closure vet_col (vet_gd
+# cannot run on the 4-cell theta band, design sect. 4); settings of the He giant / AG Car
+# production inputs (hegiant_N445_fresh_caltech) without vet_gd and the MLT scaffold
+c_light          = 299792.458         # km/s
+arad             = 3.0981247e-09      # a T_u^4/(rho_u v_u^2), T_u = m_u (km/s)^2/k_B = 120.27 K
+chat_over_c      = 1.0
+closure          = vet_col
+opacity          = table
+temp_unit_kelvin = 120.272355
+rho_unit_cgs     = 5.1099127e-08
+kappa_unit       = 3554.96626         # rho_u Rsun
+# S5: NO absorption mask (opac_abs_rho_max unset): the floor ambient absorbs and emits (radeq)
+e_floor          = 1.0e-10
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad
+force_reference_work = split
+transport        = implicit
+implicit_solver  = bicgstab
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_lin_maxit = 200
+implicit_lin_tol = 1.0e-10
+implicit_lin_cnorm = 1.0e-10
+implicit_tol     = 1.0e-8
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_one_pass = 0
+implicit_opac_update = true
+implicit_opac_newton = true
+implicit_opac_newton_guard_mode = 6
+implicit_gas_newton = true
+implicit_gas_newton_switch = 10
+implicit_tsolve_opac = true
+implicit_tsolve_opac_mode = 1
+implicit_thin_freeze = 1.0e-2
+implicit_realisable_coupling = true
+implicit_flux    = central
+implicit_enthalpy = plm
+implicit_predictor = step
+implicit_lin_ew_max = 1.0e-2
+implicit_closure_thin_relax = 1.5
+implicit_g0_exchange = true
+implicit_g0_limit = 1.0
+implicit_pos_gas = true
+implicit_pos_floor = true
+implicit_pos_floor_solve = true      # mem-1009 fixbundle F3 (viper 10-09 production): energy-consistent e_floor handling
+vet_col_every    = 1
+marshak_q        = 0.5
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 1399683.58        # code = problem/env_lin_band_factor (0.963286) x the column's F at r_in = 6.3
+                                         # (1453030.13 code = 7.4249e13 erg/cm^2/s, L 4.6822e4 Lsun at phi 90);
+                                         # IN 3-D (full theta): 1453030.13 with env_lin_band_factor = 1
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+
+<problem>
+coriolis_lz = true   # acclzc-1020 (USER 10-20): conservative phi-Coriolis, inertial L_z (accretor axis) closes with am_transport
+theta_bc  = hse   # USER 10-18: hse theta walls + <rad_m1>/implicit_bc_x2 = flux (bin v7: von Zeipel wall flux)
+theta_wall_closed = true   # accwall-1019 (USER 10-19): hse theta walls exactly closed (no mass/energy/x1,x3-momentum flux; only the interface pressure); EBUD-1019 leak ~2x stream into the star
+phys_3d   = true   # acc3d-1017: the 3-D physics
+user_srcs   = true
+user_hist   = true
+thermo      = general                # accretor-rhd-1008 S2: general EOS, column IC
+env_ic      = column                 # S3: the S0 radiative column (P_gas + P_rad), balanced with the radiation-force reference
+env_ic_file = @FILES@/column_mesakap_z0.02_p381.txt   # USER 10-18: MESA-kap column (make_ic_accretor_column.py, same EOS dump, a_sep 33.2596; the old ext2 column is reproduced to print precision)
+env_lin_band_factor = 0.963286       # (3.81 d; 3.69 d: 0.960504) L_in = band equivalent of the 2-D equatorial slab (user 10-08): the von
+                                     # Zeipel band of the Roche-distorted gainer radiates 0.963286 (3.81 d) of the phi = 90
+                                     # column's L at the photosphere (band_luminosity.py; geometric, table-independent);
+                                     # the bottom flux must equal this factor x F_col(r_in) (checked to 1e-3).
+                                     # MUST BE 1 IN 3-D (full theta): the band factor applies to the theta-thin slab only
+env_opac_table   = @FILES@/rosseland_mesakap_gs98_x0.70_z0.02.txt   # USER 10-18: MESA r15140 kap defaults spliced into ext2 (mk/build_mk.py, md5 d81b7a46)
+env_planck_table = @FILES@/planck_ext2_gs98_x0.70_z0.02.txt           # final: planck_ext2_gs98_x0.70_z0.02.txt (md5 99d668f6)
+env_t_ph    = 28300.0                # K
+env_t_amb   = 6.758e6                # K; unused with env_amb_mode = radeq (only the EOS range check)
+env_t_stream = 72966.0              # K, one-zone core at r 14.5 along the true path (stream_path_1015.py; 13.79: 65743)
+inner       = envelope
+m_acc       = 16.0                   # Msun, Wade+2026 (gainer at the start of accretion)
+m_don       = 18.0                   # Msun (M1,i = 18.2 less winds)
+a_sep       = 33.2596                # Rsun, Kepler for 34 Msun at 3.81 d
+period      = 3.81                   # d, Wade+2026 Sect. 5 (initial period)
+r_acc       = 9.00129260997162       # Rsun, face 218 (quoted R ~ 9)
+t_don       = 155115.0               # K: ONLY the ballistic launch speed, c_s,don = 45.45 km/s = c_T of the hot L1 state
+                                     # (stream_physics_1009.py sect. 2, Ryu adiabatic Q; donor Teff 26.2 kK kept for the atmosphere)
+mu_don      = 0.62
+spin        = 1.0                    # Omega_* / Omega_orb (critical 4.72)
+env_npoly   = 3.0
+env_rho_ph  = 0.013224             # documentation only with env_ic = column (MESA-kap column rho_ph 6.7576e-10 g/cc / 5.11e-8)
+env_cs_ph   = 19.4132                # km/s, gainer Teff 28.3 kK, mu 0.62
+env_cs_stream = 18.6791              # km/s; unused with thermo = general (env_t_stream sets the stream T)
+env_t_relax = 0.0                    # S5 radeq: no T relaxation anywhere (the M1 coupling sets T_gas = T_rad)
+env_t_relax_env = 0.0                # inside: off (radiation)
+env_t_relax_stream = 0.0             # dense atmosphere/stream gas outside the envelope: off (radiation)
+env_top_mode = equipotential         # envelope ends on psi = -15 c_ph^2 at every phi
+env_wb_depth = 0.396                 # WB off above the equipotential 1.5 d_pen (0.264, 3.81 d) below the photosphere
+r_meas      = 9.572888               # MR/JR, Menv/Jenv: face 449, above max r_ph + 10 H_p (3.81 d)
+env_amb_mode = radeq                 # S5: floor ambient at radiative equilibrium (absorption on, floor booked: hst Mfl)
+env_cs_amb  = 300.0                  # km/s; radeq: only the stream/atmosphere-vs-ambient density class (unused: no relaxation)
+env_amb_rho = 1.0e-7                 # radeq: only the density class (see env_cs_amb)
+env_amb_k   = 3.0                    # rho > k rho_amb,hse(r,phi): stream/star gas, relaxed to c_ph^2
+env_t_sponge = 1.0e-4                # code time, safety-net sponge on floor gas (rho < 10 rho_amb)
+env_sponge_rho = 10.0
+env_v_floor_max = 100.0              # km/s, |v| cap of sponge cells
+env_r_spin  = 9.00129260997162       # rotation only below R_acc
+env_wall_slip = free                 # free | noslip
+stream    = true    # PROD: stream on (the chain runs a static phase to t 0.05 with problem/stream=false first)
+stream_inject = volume               # bigdom-1015 (user 10-15): 2-cell nozzle inside L1 where the stream is supersonic
+stream_r    = 14.5                   # inner face of the nozzle: Mach |v|/c_tot 2.20 (|v_r|/c_tot 2.00, |v_r|/c_gas 2.36), stream_path_1015
+stream_mdot= 254.843   # 3-D: the FULL stream, 1e-4 Msun/yr = 6.3028e21 g/s (code mass 1.7206e25 g, time 6.957e5 s)
+outer_rho   = copy                   # bigdom-1015: plain outflow at the new r_out
+env_r_top_max = 13.7926              # WB top capped at the old r_out (no fake envelope in the donor lobe)
+donor_mask  = roche                  # bigdom-1015: donor Roche lobe = sink (Mmsk, Emsk)
+donor_irr = true    # PROD: donor light on (3-D: physical dilution, donor_irr_scale default; = the 10-17 stream smoke)
+stream_sector_light = neck   # acc3d-held-1018 23e06019 (PL2 10-18): lobe-rule light only between the nozzle and L1 in the nozzle window; rest of the 3-D sector dark (surface: 3x the lobe's held surface, Ltop excess 8.7x the analytic budget)
+donor_irr_scale = 0.35   # acc3d-held-1018: a held isotropic lobe cell emits ~cE/2 = 2 sigma T^4 (+ r_out vent); 0.32-0.35 matches the analytic in-domain donor light 1.78e4 Lsun (static 3-D, t 0.045)
+env_ic_vz   = true   # USER 10-18 ("keep it on"): von Zeipel IC T in the atmosphere, T_col(psi) (g_ph/g_col(0))^(w/4), g at the ray photosphere, taper 3 c_ph^2 below it (code a6624af6)
+donor_lum   = 69183.1                # Lsun, 10^4.84 (Wade+2026 track, this deck's header); T_d over 4 pi R_L^2 -> 26.0 kK
+dt_report   = true
+floor_keep_momentum = true
+stream_back_sink = true
+stream_rad  = true                   # S5: the window injects the stream's radiation, E = a T_s^4, F = (4/3) E v (inert while stream = false)
+rho_stream  = 0.240807               # code (1.2305e-8 g/cc): one-zone core at r_out, Mdot 1e-4 Msun/yr, Ryu adiabatic Q 0.649
+rho_amb     = 1.0e-8                 # FLOOR density (= hydro dfloor) = the ambient (5.1e-16 g/cc)
+stream_nsig = 3.0
+stream_t_profile = diffusion        # user 10-09: T falls from the core (env_t_stream) to the surface as the lowest diffusion mode,
+                                     # T^4 = T_c^4 cos(pi/2 erf(|x|/sqrt2)), x = dphi/sigma, clamped at stream_t_surf (stream_physics_1009.py sect. 6)
+stream_t_surf = 19239.0              # K, thin radiative-equilibrium T at r_out with both stars (stream_physics_1009.py)
+stream_width = 1.7200                # Rsun arc width at r 14.5 (stream_path_1015.py); was 1.5362 at r_out (sigma_phi 6.38 deg): sigma_perp 1.3850 / cos 25.6 deg (one-zone c_iso 34.96 km/s)
+stream_sigma_z= 1.0054   # Rsun, one-zone core at r 14.5 (stream_path_1015: c_iso 39.19 km/s / (Omega sqrt Phi_zz 8.622)); L1 1.21
+
+<output1>
+file_type  = hst
+dt        = 0.0002
+data_format = %.15e 
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt        = 0.005   # PROD: 250 MB per dump
+
+<output4>
+file_type  = bin
+variable   = m1
+dt        = 0.01
+
+<output3>
+file_type  = rst
+dt        = 0.01
+
