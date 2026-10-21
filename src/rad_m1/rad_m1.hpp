@@ -1613,6 +1613,16 @@ class RadiationM1 {
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on
   void ImplicitMusclBuild();    // the limiter and the row of this Picard pass
   void ImplicitMusclKill();     // positivity: sig = 0 around the cells with E <= 0
+  // pgrst-comb-1021 <rad_m1>/implicit_vimp_kill (read only when named; default false =
+  // bitwise): a pass that solves E <= 0 under implicit_vimp drops the vimp kick (its P
+  // rows and dv) only in the cells within 2 of those cells, for the rest of the solve,
+  // instead of dropping implicit_vimp for the whole solve (which makes a hesdirk2 stage
+  // non-admissible); counted
+  bool vimp_kill = false;
+  bool vkill_any = false;
+  Real vkill_ev = 0.0, vkill_nc = 0.0;
+  DvceArray4D<Real> vkill_;
+  void ImplicitVimpKill();
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`

@@ -2621,6 +2621,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
+  if (pin->DoesParameterExist("rad_m1","implicit_vimp_kill")) {
+    vimp_kill = pin->GetBoolean("rad_m1","implicit_vimp_kill");
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_ewf")) {
     impl_vimp_ewf = pin->GetBoolean("rad_m1","implicit_vimp_ewf");
   }
@@ -9898,7 +9901,11 @@ void RadiationM1::ImplicitReport() {
   }
   if (impl_vimp) {
     std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
-              << " min E from the solve=" << vimp_emin << std::endl;
+              << " min E from the solve=" << vimp_emin;
+    if (vimp_kill) {
+      std::cout << " local kills=" << vkill_ev << " cells(rank 0)=" << vkill_nc;
+    }
+    std::cout << std::endl;
   }
   if (impl_muscl && impl_muscl_pred) {
     std::cout << "<rad_m1> implicit_hr_recon_pred: dc-phase passes=" << muscl_pred_dc
@@ -11629,6 +11636,16 @@ void RadiationM1::ImplicitVimpBuild() {
     }
     if (cs2_vimp && !(cs2_dbg & 2)) {ImplicitCs2Vimp();}
   }
+  // implicit_vimp_kill: no kick (P rows, dv) in the killed cells
+  if (vimp_kill && vkill_any) {
+    auto vk_ = vkill_;
+    par_for("m1_vimp_killz", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (vk_(m,k,j,i) > 0.0) {
+        for (int n = 0; n < M1_NVIMP_X; ++n) {iw_(m,b+n,k,j,i) = 0.0;}
+      }
+    });
+  }
   ImplicitHaloExchange(M1_NVIMP_X, b);
   if (cs_geom) {
     // STAGE CS3: the Jacobian rows of a SEAM ghost (first layer) for the seam-normal
@@ -12410,6 +12427,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // M-matrix, so E' > 0 is no longer guaranteed by construction).
   od_now = impl_offdiag;
   vimp_now = impl_vimp;
+  // implicit_vimp_kill: a clean mask at the start of every solve
+  if (vimp_kill && impl_vimp) {
+    auto &idk = pmy_pack->pmesh->mb_indcs;
+    const int nk1 = idk.nx1 + 2*idk.ng;
+    const int nk2 = (idk.nx2 > 1) ? (idk.nx2 + 2*idk.ng) : 1;
+    const int nk3 = (idk.nx3 > 1) ? (idk.nx3 + 2*idk.ng) : 1;
+    if (vkill_.extent_int(0) < pmy_pack->nmb_thispack) {
+      Kokkos::realloc(vkill_, pmy_pack->nmb_thispack, nk3, nk2, nk1);
+    }
+    if (vkill_any) {Kokkos::deep_copy(vkill_, 0.0);}
+    vkill_any = false;
+  }
   muscl_now = impl_muscl && !impl_muscl_pred;   // xthinfix-1009 Fix B (pred: dc first)
   muscl_nbuild = 0;
   if (impl_muscl && iw_muscl >= 0) {
@@ -14662,8 +14691,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             T2AdmissDebug(uh, u0_, t2i_, cl, ch, have_hydro,
                           have_hydro && coupling && dbgh, t2s, it);
           }
-          vimp_now = false;
-          vimp_nfall += 1.0;
+          if (vimp_kill) {
+            ImplicitVimpKill();   // local: the cells within 2 lose the kick
+          } else {
+            vimp_now = false;
+            vimp_nfall += 1.0;
+          }
         }
       }
       const bool vlop = VlatOp();
@@ -17143,6 +17176,63 @@ void RadiationM1::ImplicitMusclSigHalo() {
     iw_(m,b+M1_IM_SIG+1,k,j,i) = fabs(sg_(m,0,k,j,i));
     iw_(m,b+M1_IM_SIG+2,k,j,i) = fabs(sg_(m,2,k,j,i));
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitVimpKill
+//! \brief implicit_vimp_kill: the cells within 2 cells (along each axis) of a cell this
+//! pass solved to E <= 0 lose the implicit_vimp kick for the rest of the solve (the
+//! next pass rebuilds the rows without it there)
+
+void RadiationM1::ImplicitVimpKill() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto vk_ = vkill_;
+  const bool twod = pmy_pack->pmesh->multi_d;
+  const bool thrd = trans_x3;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  auto mbbcs = (cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs).d_view;
+  ImplicitHaloExchange(1, M1_IW_S2);
+  Real nc = 0.0;
+  par_reduce_flat("m1_vimp_kill", 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    auto open = [&](const BoundaryFace f) {
+      const BoundaryFlag q = mbbcs(m,f);
+      return (q == BoundaryFlag::block) || (q == BoundaryFlag::periodic);
+    };
+    const bool o2l = open(BoundaryFace::inner_x2), o2h = open(BoundaryFace::outer_x2);
+    const bool o3l = open(BoundaryFace::inner_x3), o3h = open(BoundaryFace::outer_x3);
+    bool neg = false;
+    for (int o = -2; o <= 2; ++o) {
+      int ii = i + o;
+      if (cyclic) {
+        const int n = ie - is + 1;
+        while (ii < is) {ii += n;}
+        while (ii > ie) {ii -= n;}
+      } else {
+        ii = (ii < is) ? is : ((ii > ie) ? ie : ii);
+      }
+      neg = neg || !(iw_(m,M1_IW_S2,k,j,ii) > 0.0);
+      const int jj = j + o, kk = k + o;
+      if (twod && (jj >= js || o2l) && (jj <= je || o2h)) {
+        neg = neg || !(iw_(m,M1_IW_S2,k,jj,i) > 0.0);
+      }
+      if (thrd && (kk >= ks || o3l) && (kk <= ke || o3h)) {
+        neg = neg || !(iw_(m,M1_IW_S2,kk,j,i) > 0.0);
+      }
+    }
+    if (neg && !(vk_(m,k,j,i) > 0.0)) {
+      vk_(m,k,j,i) = 1.0;
+      a += 1.0;
+    }
+  }, Kokkos::Sum<Real>(nc));
+  vkill_any = true;
+  vkill_ev += 1.0;
+  vkill_nc += nc;
 }
 
 //----------------------------------------------------------------------------------------

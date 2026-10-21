@@ -631,6 +631,11 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("t2_k1pos_n", t2_k1pos_n);
   v.value("impl_vimp_ewf", impl_vimp_ewf);
   v.value("cs2_wbs", cs2_wbs);
+  v.value("vimp_kill", vimp_kill);
+  v.value("vkill_any", vkill_any);
+  v.value("vkill_ev", vkill_ev);
+  v.value("vkill_nc", vkill_nc);
+  v.view("vkill_", vkill_);
   v.value("t2_k1reset_nf", t2_k1reset_nf);
   v.view("t2ys", t2ys);
   v.value("t2_nstep", t2_nstep);
