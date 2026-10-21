@@ -2437,7 +2437,10 @@ class RadiationM1 {
   DvceArray2D<int> vgd_cssl, vgd_csrl;   // (e, 3): MPI send src / recv dst (m,k,j)
   std::vector<int> vgd_csprk;         // partner ranks
   std::vector<int> vgd_csps, vgd_cspn, vgd_cspr, vgd_cspm;   // send/recv displ, count
-  DvceArray1D<Real> vgd_cssb, vgd_csrb;   // message buffers
+  // message buffers.  xchg-1021: in PINNED HOST memory (the pack/unpack kernels write/
+  // read them directly), so MPI never sees a GPU pointer here: no GPUDirect RDMA and
+  // no UCX cuda staging for the vet_gd band (pure copies: bitwise the device buffers)
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_cssb, vgd_csrb;
   int vgd_csnloc = 0, vgd_csnsnd = 0, vgd_csnrcv = 0;
   void VetGdCsInit();
   void VetGdCsSource();
