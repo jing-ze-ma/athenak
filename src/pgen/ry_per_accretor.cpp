@@ -280,6 +280,8 @@ Real hist_tprev_ = -1.0;
 // RK-combined, so the RK-weighted booking in register 10 kept only half of the stage-1
 // increment (EBUD-1019: the whole 'unbooked energy gain').  History only.
 Real erinj_ = 0.0;
+// hold-viper-1021: the part of erinj_ booked by RyPerHoldBook (diagnostic, printed)
+Real hold_bk_ = 0.0;
 // <rad_m1> on the envelope (stage S3, accretor-rhd-1008; see the header RADIATION)
 bool rad_ = false;
 Real rad_fin_ = 0.0;           // imposed x1min radiative flux (code), = f_band F_col(r_in)
@@ -1602,8 +1604,115 @@ void RyPerRadBook(Mesh *pm) {
   acc0_[10] += wy*rs2.the_array[0] + wk*rs2.the_array[1] + (wy + wk)*fx2leak_;
 }
 
+//! hold-viper-1021 (<rad_m1>/implicit_hold only; history only): a held cell is a
+//! Dirichlet row of the solve, so it supplies whatever its faces carry.  Book, for the
+//! solve just taken and with the weights of RyPerRadBook, the outward energy flux of the
+//! held set: per face of a held cell the comoving face flux the solve applied (f0x1..3;
+//! the K1 part from the stage-start faces t2f1..3) plus the first-order upwind enthalpy
+//! flux a E' of the face (iw ADV/A2/A3, EP; the plm enthalpy correction is left out),
+//! x (c_hat/c) x face area.  Faces between two held cells cancel; a held cell's physical
+//! boundary face counts too (the boundary booking of RyPerRadBook books it as out).
+//! Added to erinj_ (a plain sum, like the held cells' stage resets, which now vanish).
+void RyPerHoldBook(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto *pm1 = pmbp->pradm1;
+  if (!pm1->impl_hold || pm1->t2_inprobe) return;
+  const Real g = 1.0 - 1.0/std::sqrt(2.0);
+  const Real dt = pm->dt;
+  Real wy = pm1->dt_sub, wk = 0.0;
+  if (pm1->t2_solve == radm1::M1_T2S_STAGE1) {
+    wy = (pm1->t2_w0*g + pm1->t2_c32)*dt;
+    wk = (pm1->t2_w0*pm1->t2_a21 + pm1->t2_c31)*dt;
+  } else if (pm1->t2_solve == radm1::M1_T2S_STAGE2) {
+    wy = g*dt;
+  }
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &area = pmbp->pcoord->area;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  auto hm = pm1->hold_m;
+  auto iw = pm1->iw;
+  auto f1 = pm1->f0x1, f2 = pm1->f0x2, f3 = pm1->f0x3;
+  auto k1 = pm1->t2f1, k2 = pm1->t2f2, k3 = pm1->t2f3;
+  const bool tr2 = pm1->trans_on, tr3 = pm1->trans_on && pm1->trans_x3;
+  const bool hk = (wk != 0.0) && (k1.extent_int(0) > 0);
+  const bool hk2 = hk && tr2 && (k2.extent_int(0) > 0);
+  const bool hk3 = hk && tr3 && (k3.extent_int(0) > 0);
+  const bool hbdv = pm1->iebath_hi_col_on;
+  DvceArray3D<Real> bdv;
+  if (hbdv) {bdv = pm1->ibadv_x1max;}
+  const Real cr = pm1->chat/pm1->c_light;
+  Real s = 0.0;
+  Kokkos::parallel_reduce("ryper_holdbook", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          (nmb1 + 1)*(ke - ks + 1)*(je - js + 1)*(ie - is + 1)),
+  KOKKOS_LAMBDA(const int idx, Real &acc) {
+    const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+    const int m = idx/(nk*nj*ni);
+    const int k = (idx/(nj*ni))%nk + ks, j = (idx/ni)%nj + js, i = idx%ni + is;
+    if (hm(m,k,j,i) <= 0.0) return;
+    auto phys = [&](BoundaryFace f) {
+      const BoundaryFlag b = mbbcs.d_view(m, f);
+      return (b != BoundaryFlag::block) && (b != BoundaryFlag::periodic);
+    };
+    // the upwind enthalpy flux a E' of the face between cells l (lower) and u (upper)
+    auto adv = [&](int ca, int cv, int kl, int jl, int il, int ku, int ju, int iu) {
+      const Real vf = 0.5*(iw(m,cv,kl,jl,il) + iw(m,cv,ku,ju,iu));
+      return (vf > 0.0) ? iw(m,ca,kl,jl,il)*iw(m,radm1::M1_IW_EP,kl,jl,il)
+                        : iw(m,ca,ku,ju,iu)*iw(m,radm1::M1_IW_EP,ku,ju,iu);
+    };
+    Real o = 0.0;
+    // x1: face i+1 outward +, face i outward -
+    {
+      const bool ph = (i == ie) && phys(BoundaryFace::outer_x1);
+      Real f = wy*f1(m,k,j,i+1) + (hk ? wk*k1(m,k,j,i+1) : 0.0);
+      if (ph) {
+        if (hbdv) f += (wy + wk)*bdv(m,k,j);
+      } else {
+        f += (wy + wk)*adv(radm1::M1_IW_ADV, radm1::M1_IW_V1, k, j, i, k, j, i+1);
+      }
+      o += f*area.x1f(m,k,j,i+1);
+      const bool pl = (i == is) && phys(BoundaryFace::inner_x1);
+      Real g1 = wy*f1(m,k,j,i) + (hk ? wk*k1(m,k,j,i) : 0.0);
+      if (!pl) {
+        g1 += (wy + wk)*adv(radm1::M1_IW_ADV, radm1::M1_IW_V1, k, j, i-1, k, j, i);
+      }
+      o -= g1*area.x1f(m,k,j,i);
+    }
+    if (tr2) {
+      Real f = wy*f2(m,k,j+1,i) + (hk2 ? wk*k2(m,k,j+1,i) : 0.0);
+      if (!((j == je) && phys(BoundaryFace::outer_x2))) {
+        f += (wy + wk)*adv(radm1::M1_IW_A2, radm1::M1_IW_V2, k, j, i, k, j+1, i);
+      }
+      o += f*area.x2f(m,k,j+1,i);
+      Real g2 = wy*f2(m,k,j,i) + (hk2 ? wk*k2(m,k,j,i) : 0.0);
+      if (!((j == js) && phys(BoundaryFace::inner_x2))) {
+        g2 += (wy + wk)*adv(radm1::M1_IW_A2, radm1::M1_IW_V2, k, j-1, i, k, j, i);
+      }
+      o -= g2*area.x2f(m,k,j,i);
+    }
+    if (tr3) {
+      Real f = wy*f3(m,k+1,j,i) + (hk3 ? wk*k3(m,k+1,j,i) : 0.0);
+      if (!((k == ke) && phys(BoundaryFace::outer_x3))) {
+        f += (wy + wk)*adv(radm1::M1_IW_A3, radm1::M1_IW_V3, k, j, i, k+1, j, i);
+      }
+      o += f*area.x3f(m,k+1,j,i);
+      Real g3 = wy*f3(m,k,j,i) + (hk3 ? wk*k3(m,k,j,i) : 0.0);
+      if (!((k == ks) && phys(BoundaryFace::inner_x3))) {
+        g3 += (wy + wk)*adv(radm1::M1_IW_A3, radm1::M1_IW_V3, k-1, j, i, k, j, i);
+      }
+      o -= g3*area.x3f(m,k,j,i);
+    }
+    acc += cr*o;
+  }, Kokkos::Sum<Real>(s));
+  erinj_ += s;
+  hold_bk_ += s;
+}
+
 //! pgrst-1021: the M1 post hook of the envelope with rbk_ (booking, then as before)
 void RyPerM1PostRb(Mesh *pm) {
+  RyPerHoldBook(pm);
   RyPerRadBook(pm);
   RyPerM1Post(pm);
   if (lz_) RyPerLzMark(pm->pmb_pack);
@@ -2646,6 +2755,17 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
 
 //! release the namespace-scope Views before Kokkos::finalize
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
+  // hold-viper-1021: the held-set face supply booked by RyPerHoldBook (into erinj_/Ebnd)
+  if (pm->pmb_pack->pradm1 != nullptr && pm->pmb_pack->pradm1->impl_hold) {
+    Real hb = hold_bk_;
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &hb, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("ry_per_accretor: implicit_hold face supply booked in Ebnd = %.10e "
+                  "(this run segment)\n", hb);
+    }
+  }
   gr_ = DvceArray3D<Real>();
   gp_ = DvceArray3D<Real>();
   cref2_ = DvceArray3D<Real>();
@@ -5047,6 +5167,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   dtretry::RegisterValue("ry_stage_ctr", &stage_ctr_);
   erinj_ = 0.0;
   dtretry::RegisterValue("ry_erinj", &erinj_);
+  hold_bk_ = 0.0;
+  if (pin->DoesParameterExist("rad_m1", "implicit_hold") &&
+      pin->GetBoolean("rad_m1", "implicit_hold")) {
+    dtretry::RegisterValue("ry_hold_bk", &hold_bk_);   // hold-viper-1021 (diagnostic)
+  }
   for (int n=0; n<kNaccR; ++n) {
     dtretry::RegisterValue(("ry_acc0_" + std::to_string(n)).c_str(), &acc0_[n]);
     dtretry::RegisterValue(("ry_acc1_" + std::to_string(n)).c_str(), &acc1_[n]);
