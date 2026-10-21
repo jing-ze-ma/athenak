@@ -218,6 +218,9 @@ void PgenStageSave() {
 void PgenStageRestore() {
   for (auto &e : PgenStageEntries()) {e->Restore();}
 }
+void PgenStageClear() {
+  PgenStageEntries().clear();
+}
 
 //----------------------------------------------------------------------------------------
 DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {

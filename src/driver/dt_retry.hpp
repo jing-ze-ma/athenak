@@ -73,6 +73,7 @@ std::vector<std::unique_ptr<Entry>> &PgenEntries();
 std::vector<std::unique_ptr<Entry>> &PgenStageEntries();
 void PgenStageSave();
 void PgenStageRestore();
+void PgenStageClear();   // the Driver drops the copies before Kokkos::finalize
 
 template <class T>
 struct PgenValEntry : public Entry {
