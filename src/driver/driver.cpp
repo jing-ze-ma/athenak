@@ -939,6 +939,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   if (pctr_ != nullptr) {pctr_->Report(pmesh);}
+  // pgrst-1021: the stage-loop copies of the pgen registers hold device Views (a
+  // registered View, e.g. he_star_m1 hs_fsub): freed here, before Kokkos::finalize
+  dtretry::PgenStageClear();
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.
   // rotavg-rst-1012 (bitwise chained runs): the final outputs of a run that ends before
