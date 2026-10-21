@@ -441,6 +441,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
+    t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_posfix_grow")) {
     t2_pfix_grow = pin->GetInteger("rad_m1", "time2_posfix_grow");
     if (t2_pfix_grow < 0 || t2_pfix_grow > 2) {
@@ -1968,6 +1971,7 @@ void RadiationM1::Time2Report() {
     std::cout << " time2_posfix: steps=" << t2_pfix_nstep << " re-solves="
               << t2_pfix_nsolve << " cells=" << t2_pfix_ncell;
   }
+  if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;

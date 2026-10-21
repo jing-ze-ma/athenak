@@ -1415,6 +1415,13 @@ class RadiationM1 {
   // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
   // asks for the local re-solve (the re-solve starts with the full operator again)
   bool t2_pfix_fbm = false;
+  // pgrst-posfix-1021 <rad_m1>/time2_accept_fallback (read only when named; default false
+  // = bitwise): a stage whose solve took an operator positivity fallback (implicit_vimp,
+  // offdiag operator) for the rest of the step is admissible when it converged and is
+  // positive -- the backward-Euler redo it would otherwise take uses the same fallback
+  // operator (backward Euler accepts the fallback), so rejecting it only loses order
+  bool t2_accfb = false;
+  Real t2_accfb_n = 0.0;        // stages accepted with a fallback (counter)
   void Time2PosFixMarkFb();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
   DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term

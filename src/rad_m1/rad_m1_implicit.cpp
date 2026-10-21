@@ -15408,6 +15408,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     t2_fail = !converged || !(vmin > 0.0) || (od_now != impl_offdiag) ||
               (vimp_now != impl_vimp) ||
               ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
+    // pgrst-posfix-1021 time2_accept_fallback: the operator fallback alone is no fault
+    if (t2_accfb && t2_fail && converged && (vmin > 0.0) &&
+        !((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail))) {
+      t2_fail = false;
+      t2_accfb_n += 1.0;
+    }
     // t2pos-1020 time2_posfix: a stage-1 solve whose fault is E, T or the
     // written-back eint <= 0 marks those cells and asks the Driver for a local re-solve
     // (Time2PosFix) instead of the rejection below
