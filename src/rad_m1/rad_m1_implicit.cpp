@@ -11928,7 +11928,11 @@ void RadiationM1::ImplicitVimpBuild() {
       const Real pl = 0.5*phf[0], ph = 0.5*phf[1];
       // implicit_vimp_bc: the end face (one cell, signed weight phb) adds its P row
       const Real pbs = phb[0] + phb[1];
-      Real cm2, cm1, c00, cp1, cp2;
+      Real cm2 = -pl*P[0][0];
+      Real cm1 = ph*P[1][0] - pl*(P[0][1] + P[1][0]) + pbs*P[1][0];
+      Real c00 = ph*(P[1][1] + P[2][0]) - pl*(P[0][2] + P[1][1]) + pbs*P[1][1];
+      Real cp1 = ph*(P[1][2] + P[2][1]) - pl*P[1][2] + pbs*P[1][2];
+      Real cp2 = ph*P[2][2];
       if (ewf) {
         // per-cell weights: face 0 rows 0, 1 (a0, a1), face 1 rows 1, 2 (b1, b2); a
         // physical face has phe 0 (its rows enter only through pbs)
@@ -11939,12 +11943,6 @@ void RadiationM1::ImplicitVimpBuild() {
         c00 = b1*P[1][1] + b2*P[2][0] - a0*P[0][2] - a1*P[1][1] + pbs*P[1][1];
         cp1 = b1*P[1][2] + b2*P[2][1] - a1*P[1][2] + pbs*P[1][2];
         cp2 = b2*P[2][2];
-      } else {
-        cm2 = -pl*P[0][0];
-        cm1 = ph*P[1][0] - pl*(P[0][1] + P[1][0]) + pbs*P[1][0];
-        c00 = ph*(P[1][1] + P[2][0]) - pl*(P[0][2] + P[1][1]) + pbs*P[1][1];
-        cp1 = ph*(P[1][2] + P[2][1]) - pl*P[1][2] + pbs*P[1][2];
-        cp2 = ph*P[2][2];
       }
       jd += c00;
       if (d == 0) {
