@@ -531,6 +531,21 @@
               gd3 = (b + c*a)*si;
             }
           }
+#if M1_RCP
+          {
+            // implicit_realisable_coupling: the matched drag of the realisable cell flux
+            // (the factor min(1, c E/|F_iter|) of the matched deposit above)
+            const Real fq = csw ? M1FluxNormCs(cclw(m,k,j), fp1, fp2, fp3)
+                                : sqrt(fp1*fp1 + fp2*fp2 + fp3*fp3);
+            const Real fc = cl*fmax(ep, efl);
+            if (fq > fc) {
+              const Real sc = fc/fq;
+              gd1 *= sc;
+              gd2 *= sc;
+              gd3 *= sc;
+            }
+          }
+#endif
           const Real vq = fmax(sqrt(v1*v1 + v2*v2 + v3*v3), gvmw);
           gbd = gkw*vq*fmax(fmax(iw_(m,M1_IW_EN,k,j,i), ep), 0.0)*icc;
         }
