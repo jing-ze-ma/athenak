@@ -1,0 +1,24 @@
+<section>
+<h2>What the run shows so far (read at t ≈ 16 d, 10-20 evening)</h2>
+<p class="note">This box is written by hand (<code>src/notes.html</code>) and is not regenerated. The figures, movies and header numbers update automatically.</p>
+<ul>
+<li><b>Healthy:</b> no FATAL / DIVERGED / non-converged summaries and no NaN in the log, and no non-finite cells in any dump. dt holds at 1000 s and Picard at 4 per cycle. Energy bookkeeping closes to a few 10<sup>−8</sup> of |E<sub>0</sub>|, and the mass drift is 10<sup>−12</sup>.</li>
+<li><b>Gas temperature checks:</b> T<sub>gas</sub> is inverted per cell from (ρ, e<sub>int</sub>) with the run’s own EOS. The port reproduces the code’s reported μ = 0.648009 and n<sub>e</sub>/n<sub>tot</sub> = 0.526021 at the table centre exactly. On the IC column it recovers T to 1.2×10<sup>−4</sup> (median 10<sup>−6</sup>), except at the one row where the column joins the floor gas. In dump 0, T<sub>gas</sub> matches the IC column to 1.1×10<sup>−4</sup> below 0.99 R<sub>ph</sub>; above that the in-code IC chain re-builds the atmosphere. T<sub>gas</sub> equals T<sub>rad</sub> to &lt; 7×10<sup>−5</sup> everywhere the gas is not floored. The 2000 K floor holds about 5–6 % of the mesh, all of it at r ≳ 2.0–2.2 R<sub>ph</sub> (floor gas near the outer boundary).</li>
+<li><b>Surface steady:</b> L<sub>top</sub>/L<sub>in</sub> = 1.000; the median R<sub>ph</sub> is within 0.01 % of the IC and T<sub>eff</sub> is 4110 K.</li>
+<li class="bad-li"><b>Infall above the photosphere is an IC artefact.</b> Dump 0 (after the in-code IC relaxation) has a density inversion: ρ drops to 1.1×10<sup>−17</sup> at 1.086 R<sub>ph</sub>, then jumps to 7.5×10<sup>−17</sup> in the next cell (1.0885 R<sub>ph</sub>) and decays to the 10<sup>−17</sup> floor by 1.108 R<sub>ph</sub>. T is the same on both sides, so pressure rises outward by ×7 and this layer falls inward. Its shell-mean v<sub>r</sub> grows to −6.7 km/s by ~10 d and stays there, with the layer now at 1.079 R<sub>ph</sub> and the inversion smoothed out (photosphere movie and band figure). The IC column itself has no inversion: it goes smoothly to 1.0×10<sup>−17</sup> at 1.0856 R<sub>ph</sub>. So the jump comes from the in-code IC chain where the atmosphere meets the floor gas. There is an outflow band of ≈ +0.09 km/s at 0.98–1.04 R<sub>ph</sub>. The mass involved is negligible.</li>
+<li><b>Photosphere noise at the cell scale:</b> in a thin layer at 0.99–1.01 R<sub>ph</sub>, T<sub>gas</sub> fluctuates from cell to cell with an rms of 0.3 % (single cells up to 7.5 %), against 0.03 % just below and above. This is what makes the T<sub>eff</sub>, R<sub>ph</sub> and 0.98 / 1.085 R<sub>ph</sub> maps speckled. Watch whether it grows.</li>
+<li><b>Deep flows:</b> the fastest gas sits at 0.05–0.25 R<sub>ph</sub> (rms v<sub>r</sub> ≈ 0.1 km/s, single cells about 0.2 km/s at 16 d, growing about linearly), as broad radial lobes. In the plane their peak is near φ ≈ −5°, not on the cube edges. Near 0.2–0.25 R<sub>ph</sub>, though, the δlog ρ and δT contours show kinks along the ±45° / ±135° diagonals (inner-zoom movie), so the cube edges are starting to imprint. The rings at 0.036, 0.059 and 0.099 R<sub>ph</sub> are where the lateral cell merging changes factor.</li>
+<li><b>Seed still linear in the bulk:</b> at 0.3–0.98 R<sub>ph</sub> the v<sub>r</sub> and δT<sub>gas</sub> maps show the smooth l ≤ 8 Y<sub>lm</sub> seed pattern, with |v<sub>r</sub>| of 0.01–0.15 km/s and δT/T ≲ 0.1 %, far below MLT speeds. The sub-grid closure still carries all the convective flux (L<sub>MLT</sub>/L<sub>in</sub> ≈ 1.00).</li>
+<li><b>Floors and limiters:</b> the 2000 K floor fires on ~1.4×10<sup>9</sup> cell-stages per 100 cycles; the density floor and v-ceiling never fire. First-order flux correction fires on every cell of the last two radial cells (the outer boundary).</li>
+</ul>
+</section>
+
+<section>
+<h2>Caveats</h2>
+<ul>
+<li>T<sub>gas</sub> uses a numpy port of the code’s EOS, inverted bilinearly on the code’s own table grid (the code interpolates with bicubic Hermite plus Newton); the difference is ≲ 10<sup>−4</sup>. T<sub>eff</sub> and R<sub>ph</sub> still use T<sub>rad</sub> and the flux (grey Eddington per column, not a τ integral).</li>
+<li>Slices and maps show native cells. The planar rings average the two cell rows next to the plane, and the Mollweide maps use one cell per pixel.</li>
+<li>The energy-budget line is approximate (see the History caption).</li>
+<li>If a link restarts from a restart file and rewrites a dump index, the page keeps the first reduction of that index (delete <code>out/data/red_NNNNN.npz</code> and the frames to redo it).</li>
+</ul>
+</section>
