@@ -2863,6 +2863,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // up to |F| - cE in free-streaming cells -- is a momentum kick to the gas: ~100 km/s
       // in 1e-8 floor gas, v12lz accretor) | rad (the limit's change stays with the
       // radiation, as on the matched path)
+      if (pin->DoesParameterExist("rad_m1","implicit_cs2_wbsolve")) {
+        cs2_wbs = pin->GetBoolean("rad_m1","implicit_cs2_wbsolve");
+      }
       if (pin->DoesParameterExist("rad_m1","implicit_cs2_clip")) {
         const std::string cm = pin->GetString("rad_m1","implicit_cs2_clip");
         if (cm.compare("rad") == 0) {
@@ -15653,6 +15656,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
   // time2_vstage, default true on sp, false = the old stage-start form)
   const bool vfx = t2st && impl_vimp && t2_fvnew;
+  const bool wbs = cs2_wbs;         // pgrst-vimp-1021 implicit_cs2_wbsolve
   const bool coupling_ = coupling;  // local: a member read in a kernel captures this
   // m1-positivity (rad_m1.hpp): the energy-conserving gas eint limiter and E floor
   const bool pgas = impl_pos_gas && have_hydro && coupling && dbgh;

@@ -992,6 +992,12 @@ class RadiationM1 {
   bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
   bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
   bool cs2_clip_rad = false;            // cs2clip-1020 implicit_cs2_clip = rad (named)
+  // pgrst-vimp-1021 <rad_m1>/implicit_cs2_wbsolve (read only when named; default false =
+  // bitwise): the conservative2 write-back under time2_vstage solves the linear cell
+  // relation dm = C - om (F0 mean + (I + D) w(dm) E)/(c chat) for the kick in closed form
+  // (effective inertia rho + om (I + D) E/(c chat)) instead of the 3 fixed-point passes,
+  // whose gain om (1 + d11) E/(rho c chat) > 1 amplifies every step (1-D radwave P33)
+  bool cs2_wbs = false;
   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)

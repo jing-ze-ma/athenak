@@ -490,7 +490,93 @@
 #if defined(M1_C2CR) && M1_C2CR
         Real u1 = fp1, u2 = fp2, u3 = fp3;
 #endif
-        for (int q = 0; q < 4; ++q) {
+        // pgrst-vimp-1021 implicit_cs2_wbsolve: the fixed point of the passes below in
+        // closed form (vstage, not on the cubed sphere): per active component a,
+        // dm_a = C_a - om_a icc e_a with e = F0 mean + E (I + D) w, w = (p + dm)/rho
+        // -> (I + G) dm = R, G_ab = om_a icc E M_ab / rho, M = I + D
+        const bool wcf = wbs && vfx && !csw;
+        if (wcf) {
+          const int na = tq ? (thrd ? 3 : 2) : 1;
+          const Real es = iw_(m,M1_IW_EP,k,j,i);
+          const Real chi = iw_(m,M1_IW_WCHI,k,j,i);
+          const Real nn1 = iw_(m,M1_IW_N1,k,j,i), nn2 = iw_(m,M1_IW_N2,k,j,i);
+          const Real nn3 = iw_(m,M1_IW_N3,k,j,i);
+          Real dg[3] = {M1EddDiag(chi,nn1), M1EddDiag(chi,nn2), M1EddDiag(chi,nn3)};
+          Real dof[3] = {M1EddOff(chi,nn1,nn2), M1EddOff(chi,nn1,nn3),
+                         M1EddOff(chi,nn2,nn3)};
+          if (dfull) {
+            for (int a = 0; a < 3; ++a) {dg[a] = vd_(m,M1_VET_D11+a,k,j,i);}
+            for (int a = 0; a < 3; ++a) {dof[a] = vd_(m,M1_VET_D11+3+a,k,j,i);}
+          }
+          Real M[3][3];
+          M[0][0] = 1.0 + dg[0]; M[1][1] = 1.0 + dg[1]; M[2][2] = 1.0 + dg[2];
+          M[0][1] = M[1][0] = dof[0]; M[0][2] = M[2][0] = dof[1];
+          M[1][2] = M[2][1] = dof[2];
+          const Real fm[3] = {0.5*(fl + fr), 0.5*(g2l + g2r), 0.5*(g3l + g3r)};
+          const Real xa[3] = {x1, x2, x3}, goa[3] = {go1, go2, go3};
+          Real om[3], cc[3], w0[3];
+          w0[0] = (uh(m,IM1,k,j,i) - dmref)*idg;
+          w0[1] = tq ? uh(m,IM2,k,j,i)*idg : v2;
+          w0[2] = (tq && thrd) ? uh(m,IM3,k,j,i)*idg : v3;
+          for (int a = 0; a < 3; ++a) {
+            om[a] = c2h ? iw_(m,c2a+6+a,k,j,i) : 1.0;
+            cc[a] = xa[a] + goa[a]*icc;
+            if (c2h) {cc[a] -= (1.0 - om[a])*(fm[a] + iw_(m,c2a+a,k,j,i))*icc;}
+          }
+          Real A[3][3], R[3];
+          for (int a = 0; a < na; ++a) {
+            Real mw = 0.0;
+            for (int b = 0; b < 3; ++b) {mw += M[a][b]*w0[b];}
+            R[a] = cc[a] - om[a]*icc*(fm[a] + es*mw);
+            for (int b = 0; b < na; ++b) {
+              A[a][b] = ((a == b) ? 1.0 : 0.0) + om[a]*icc*es*M[a][b]*idg;
+            }
+          }
+          Real dm[3] = {0.0, 0.0, 0.0};
+          if (na == 1) {
+            dm[0] = R[0]/A[0][0];
+          } else if (na == 2) {
+            const Real det = A[0][0]*A[1][1] - A[0][1]*A[1][0];
+            dm[0] = (R[0]*A[1][1] - A[0][1]*R[1])/det;
+            dm[1] = (A[0][0]*R[1] - A[1][0]*R[0])/det;
+          } else {
+            const Real det = A[0][0]*(A[1][1]*A[2][2] - A[1][2]*A[2][1])
+                           - A[0][1]*(A[1][0]*A[2][2] - A[1][2]*A[2][0])
+                           + A[0][2]*(A[1][0]*A[2][1] - A[1][1]*A[2][0]);
+            for (int c = 0; c < 3; ++c) {
+              Real B[3][3];
+              for (int a = 0; a < 3; ++a) {
+                for (int b = 0; b < 3; ++b) {B[a][b] = (b == c) ? R[a] : A[a][b];}
+              }
+              dm[c] = (B[0][0]*(B[1][1]*B[2][2] - B[1][2]*B[2][1])
+                     - B[0][1]*(B[1][0]*B[2][2] - B[1][2]*B[2][0])
+                     + B[0][2]*(B[1][0]*B[2][1] - B[1][1]*B[2][0]))/det;
+            }
+          }
+          Real wv[3] = {w0[0], w0[1], w0[2]};
+          for (int a = 0; a < na; ++a) {wv[a] += dm[a]*idg;}
+          Real ev[3];
+          for (int a = 0; a < 3; ++a) {
+            ev[a] = fm[a] + es*(M[a][0]*wv[0] + M[a][1]*wv[1] + M[a][2]*wv[2]);
+          }
+          dm1 = dm[0]; dm2 = dm[1]; dm3 = dm[2];
+          q1 = ev[0];
+          q2 = trans ? ev[1] : r2;
+          q3 = (trans && thrd) ? ev[2] : r3;
+          const Real wq = kew(dm1, dm2, dm3);
+          Real eq = efc ? ep : (ep - (ch/cl)*wq);
+          M1ApplyLimits(cl, efl, eq, q1, q2, q3);
+#if !(defined(M1_C2CR) && M1_C2CR)
+          // the gas charged with the limited flux (implicit_cs2_clip = gas): one pass
+          {
+            const Real qa[3] = {q1, q2, q3};
+            Real dmn[3] = {0.0, 0.0, 0.0};
+            for (int a = 0; a < na; ++a) {dmn[a] = cc[a] - om[a]*icc*qa[a];}
+            dm1 = dmn[0]; dm2 = dmn[1]; dm3 = dmn[2];
+          }
+#endif
+        }
+        for (int q = 0; q < 4 && !wcf; ++q) {
 #if defined(M1_C2CR) && M1_C2CR
           const Real e1 = u1, e2 = u2, e3 = u3;
 #else
