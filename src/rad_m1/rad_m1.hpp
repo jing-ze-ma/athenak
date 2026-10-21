@@ -1366,6 +1366,7 @@ class RadiationM1 {
   Real t2_k1reset_de = 0.0;     // this step: sum over reset cells of (K1_E + K1_EN) vol
                                 // dropped (the problem generator's budget books it)
   bool t2_ys_face = false;      // the stage-1 solve still has to drop the face slopes
+  int t2_k1grow = 0;            // time2_k1_reset_grow: face-neighbour layers added (0, 1)
   Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
