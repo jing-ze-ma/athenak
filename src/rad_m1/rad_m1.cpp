@@ -755,11 +755,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
-  // accbook-1021 time2_fref_wacc (read only when named; default false): the exact
-  // payment above also for the backward-Euler steps of a hesdirk2 run, which otherwise
-  // pay v' dt rho a_ref (B deck, first step: +76 energy units created, rE jump)
-  fref_wacc_t2 = pin->DoesParameterExist("rad_m1", "time2_fref_wacc") &&
-                 pin->GetBoolean("rad_m1", "time2_fref_wacc");
+  // accbook-1021 time2_fref_wacc (default true, USER 10-22; false = the old payment):
+  // the exact payment above also for the backward-Euler steps of a hesdirk2 run, which
+  // otherwise pay v' dt rho a_ref (B deck, first step: +76 energy units created, rE jump)
+  fref_wacc_t2 = pin->GetOrAddBoolean("rad_m1", "time2_fref_wacc", true);
   // the hydro integrator's stage weights (driver.cpp), for fref_wacc
   {
     const std::string hi = pin->DoesParameterExist("time", "integrator") ?

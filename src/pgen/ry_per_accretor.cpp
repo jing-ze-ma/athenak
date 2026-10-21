@@ -415,7 +415,7 @@ Real fx2leak_ = 0.0;
 // stage (t2s1_; t2nf_ = Time2Restore's counter when it was taken).  With rbk_ only.
 Real t2s1_[2] = {0.0, 0.0};
 Real t2nf_ = -1.0;
-// accbook-1021 problem/sink_kick_book (default false; history only): the energy audit
+// accbook-1021 problem/sink_kick_book (default true, USER 10-22; history only): the audit
 // (<rad_m1>/dbg_energy_audit, runs budget_acc_1021) found that the kinetic energy
 // RyPerM1Post removes from the sink cells is NOT all unpaid work: the M1 write-back pays
 // the kick's work from E, and only where that drives E below e_floor does the
@@ -5256,8 +5256,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (read, not added: the key stays out of the PAR_DUMP of runs that do not set it)
   szv_ = !pin->DoesParameterExist("problem", "sink_zero_v") ||
          pin->GetBoolean("problem", "sink_zero_v");
-  skb_ = pin->DoesParameterExist("problem", "sink_kick_book") &&
-         pin->GetBoolean("problem", "sink_kick_book");   // accbook-1021
+  // accbook-1021 (default true, USER 10-22; history only)
+  skb_ = pin->GetOrAddBoolean("problem", "sink_kick_book", true);
 
   // ---- integrator weights for the boundary flux integrals
   std::string integ = pin->GetString("time", "integrator");
