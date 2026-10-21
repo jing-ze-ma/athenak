@@ -11726,6 +11726,7 @@ void RadiationM1::ImplicitVimpBuild() {
         }
       }
       Real phf[2] = {0.0, 0.0};
+      Real phe[2][2] = {{0.0, 0.0}, {0.0, 0.0}};   // implicit_vimp_ewf: per-cell weights
       Real phb[2] = {0.0, 0.0};   // implicit_vimp_bc: the end face's own weight
       const Real jr0 = jr;
       // implicit_vimp_bc: the end face of side s takes A E with this cell's dv
@@ -11783,7 +11784,16 @@ void RadiationM1::ImplicitVimpBuild() {
           pe += 0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
         }
         if (ewf) {
-          jr -= sg*(wdv + ps - ph*pe);
+          // the work of each cell's kick at its own E: weight nu cr (1+D_f) E_cell
+          const Real wf = nu*cr*(1.0 + 0.5*(D[xl] + D[xl+1]));
+          Real pw = 0.0;
+          for (int h = 0; h < 2; ++h) {
+            const int x = xl + h;
+            const int r = ol + 1 + h;
+            phe[s][h] = wf*E[x];
+            pw += phe[s][h]*0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
+          }
+          jr -= sg*(wdv + ps - pw);
         } else {
           jr -= sg*(ph*dvk + ps - ph*pe);
         }
@@ -11795,6 +11805,8 @@ void RadiationM1::ImplicitVimpBuild() {
         const Real iv = dt/cvol(m,k,j,i);
         for (int s = 0; s < 2; ++s) {
           phf[s] = 0.0;
+          phe[s][0] = 0.0;
+          phe[s][1] = 0.0;
           phb[s] = 0.0;
           if ((s == 0) ? flo : fhi) {
             if ((s == 0) ? vbl : vbh) {vbface(s, carea.x1f(m,k,j,i+s)*iv);}
@@ -11840,20 +11852,41 @@ void RadiationM1::ImplicitVimpBuild() {
             pe += 0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
           }
           if (ewf) {
-          jr -= sg*(wdv + ps - ph*pe);
-        } else {
-          jr -= sg*(ph*dvk + ps - ph*pe);
-        }
+            const Real wf = nus*cr*(1.0 + 0.5*(D[xl] + D[xl+1]));
+            Real pw = 0.0;
+            for (int h = 0; h < 2; ++h) {
+              const int x = xl + h;
+              const int r = ol + 1 + h;
+              phe[s][h] = wf*E[x];
+              pw += phe[s][h]*0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
+            }
+            jr -= sg*(wdv + ps - pw);
+          } else {
+            jr -= sg*(ph*dvk + ps - ph*pe);
+          }
         }
       }
       const Real pl = 0.5*phf[0], ph = 0.5*phf[1];
-      const Real cm2 = -pl*P[0][0];
       // implicit_vimp_bc: the end face (one cell, signed weight phb) adds its P row
       const Real pbs = phb[0] + phb[1];
-      const Real cm1 = ph*P[1][0] - pl*(P[0][1] + P[1][0]) + pbs*P[1][0];
-      const Real c00 = ph*(P[1][1] + P[2][0]) - pl*(P[0][2] + P[1][1]) + pbs*P[1][1];
-      const Real cp1 = ph*(P[1][2] + P[2][1]) - pl*P[1][2] + pbs*P[1][2];
-      const Real cp2 = ph*P[2][2];
+      Real cm2, cm1, c00, cp1, cp2;
+      if (ewf) {
+        // per-cell weights: face 0 rows 0, 1 (a0, a1), face 1 rows 1, 2 (b1, b2); a
+        // physical face has phe 0 (its rows enter only through pbs)
+        const Real a0 = 0.5*phe[0][0], a1 = 0.5*phe[0][1];
+        const Real b1 = 0.5*phe[1][0], b2 = 0.5*phe[1][1];
+        cm2 = -a0*P[0][0];
+        cm1 = b1*P[1][0] - a0*P[0][1] - a1*P[1][0] + pbs*P[1][0];
+        c00 = b1*P[1][1] + b2*P[2][0] - a0*P[0][2] - a1*P[1][1] + pbs*P[1][1];
+        cp1 = b1*P[1][2] + b2*P[2][1] - a1*P[1][2] + pbs*P[1][2];
+        cp2 = b2*P[2][2];
+      } else {
+        cm2 = -pl*P[0][0];
+        cm1 = ph*P[1][0] - pl*(P[0][1] + P[1][0]) + pbs*P[1][0];
+        c00 = ph*(P[1][1] + P[2][0]) - pl*(P[0][2] + P[1][1]) + pbs*P[1][1];
+        cp1 = ph*(P[1][2] + P[2][1]) - pl*P[1][2] + pbs*P[1][2];
+        cp2 = ph*P[2][2];
+      }
       jd += c00;
       if (d == 0) {
         iw_(m,b+M1_IV_X1M2,k,j,i) = cm2;
