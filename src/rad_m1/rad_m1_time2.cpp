@@ -407,6 +407,17 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_reset")) {
     t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
   }
+  // time2_k1_reset_grow = 0 | 1 (read only when named): the face-neighbour layer of the
+  // reset cells also drops its K1 (cell and face channels) in the stage-1 solve
+  t2_k1grow = 0;
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_reset_grow")) {
+    t2_k1grow = pin->GetInteger("rad_m1", "time2_k1_reset_grow");
+    if (t2_k1grow < 0 || t2_k1grow > 1) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_k1_reset_grow must be 0 or 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   t2_ys_ok = false;
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;

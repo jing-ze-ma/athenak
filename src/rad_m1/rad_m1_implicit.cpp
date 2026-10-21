@@ -12381,6 +12381,32 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     });
     ImplicitHaloExchange(1, M1_IW_EN);
     const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
+    // time2_k1_reset_grow = 1: the mask dilated by one face-neighbour layer (interior and
+    // the first ghost layer, from the exchanged ghosts); the grown interior cells drop
+    // their cell channels here (K1 and this stage's increment)
+    if (t2_k1grow > 0) {
+      DvceArray4D<Real> dm("m1_t2_fdil", iw.extent_int(0), n3a, n2a, n1a);
+      const int k0 = tr3 ? ks - 1 : ks, k1 = tr3 ? ke + 1 : ke;
+      const int j0 = tr2 ? js - 1 : js, j1 = tr2 ? je + 1 : je;
+      par_for("m1_t2_fdil", DevExeSpace(), 0, nmb1, k0, k1, j0, j1, is - 1, ie + 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real d = iw_(m,M1_IW_EN,k,j,i);
+        d = fmax(d, fmax(iw_(m,M1_IW_EN,k,j,i-1), iw_(m,M1_IW_EN,k,j,i+1)));
+        if (tr2) {d = fmax(d, fmax(iw_(m,M1_IW_EN,k,j-1,i), iw_(m,M1_IW_EN,k,j+1,i)));}
+        if (tr3) {d = fmax(d, fmax(iw_(m,M1_IW_EN,k-1,j,i), iw_(m,M1_IW_EN,k+1,j,i)));}
+        dm(m,k,j,i) = d;
+      });
+      par_for("m1_t2_fdilc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (dm(m,k,j,i) > 0.0 && !(iw_(m,M1_IW_EN,k,j,i) > 0.0)) {
+          for (int n=0; n<M1_T2_F1; ++n) {k1f_(m,n,k,j,i) = 0.0; inf_(m,n,k,j,i) = 0.0;}
+        }
+      });
+      par_for("m1_t2_fdilw", DevExeSpace(), 0, nmb1, k0, k1, j0, j1, is - 1, ie + 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        iw_(m,M1_IW_EN,k,j,i) = dm(m,k,j,i);
+      });
+    }
     Real nf = 0.0;
     Kokkos::parallel_reduce("m1_t2_fzero", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
         DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 2, je + 2, ie + 2}),
