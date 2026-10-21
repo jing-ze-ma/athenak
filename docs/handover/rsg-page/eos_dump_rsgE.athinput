@@ -1,0 +1,69 @@
+<comment>
+problem = tools/ic_star general-EOS table dump (X 0.653848 Y 0.326395 a_metal 16.0)
+<job>
+basename = dump
+<mesh>
+nghost = 2
+nx1 = 16
+x1min = -0.5
+x1max = 0.5
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 1
+x2min = -0.5
+x2max = 0.5
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = -0.5
+x3max = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+<meshblock>
+nx1 = 16
+nx2 = 1
+nx3 = 1
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 0
+tlim = 1.0
+<units>
+length_cgs = 1.0
+mass_cgs = 1.0
+time_cgs = 1.0
+mu = 1.0
+<hydro>
+eos = general
+general_eos = table
+gamma = 1.6666666667
+eos_h2 = false
+eos_ionization = true
+eos_metal_ionization = false
+eos_radiation = false
+eos_xh = 0.653848
+eos_yhe = 0.326395
+eos_a_metal = 16.0
+eos_logd_min = -21.0
+eos_logd_max = -1.0
+eos_logt_min = 3.3
+eos_logt_max = 6.8
+eos_dlog = 0.02
+eos_table_dump = eos_dump_rsgE.txt
+reconstruct = plm
+rsolver = hllc
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock = 0.0
+dl = 1.0e-6
+pl = 1.0e6
+ul = 0.0
+vl = 0.0
+wl = 0.0
+dr = 1.0e-6
+pr = 1.0e6
+ur = 0.0
+vr = 0.0
+wr = 0.0
