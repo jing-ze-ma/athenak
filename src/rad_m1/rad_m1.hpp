@@ -998,6 +998,14 @@ class RadiationM1 {
   // (effective inertia rho + om (I + D) E/(c chat)) instead of the 3 fixed-point passes,
   // whose gain om (1 + d11) E/(rho c chat) > 1 amplifies every step (1-D radwave P33)
   bool cs2_wbs = false;
+  // gsdrag-1021 <rad_m1>/implicit_cs2_dacap = K (read only when named; 0 = off, bitwise):
+  // the gas is charged at most the enthalpy-flux change an enthalpy flux at the cell's
+  // speed can make, |dA| <= K 2 |v| max(E^old, E'); a cell beyond it enters the dA split
+  // with s = K 2 |v| E / |dA| (its dA in the face shift, the neighbour share and its own
+  // gas share om_bar all x s, s in iw_cs2 + 9): the rest stays with the radiation (the
+  // drag rule).  Catches an A^old = F_stored - F0 mean that is not an enthalpy flux
+  // (limiter clip, pgen-held E/F), NOTE /raven/ptmp/jinma/gsdrag_1021
+  Real cs2_cap = 0.0;
   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)

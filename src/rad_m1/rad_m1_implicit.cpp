@@ -2874,6 +2874,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           ImplFatal("<rad_m1>/implicit_cs2_clip = '" + cm + "' is not a choice (gas | rad)");
         }
       }
+      // gsdrag-1021 implicit_cs2_dacap (read only when named; rad_m1.hpp)
+      if (pin->DoesParameterExist("rad_m1","implicit_cs2_dacap")) {
+        cs2_cap = pin->GetReal("rad_m1","implicit_cs2_dacap");
+        if (!(cs2_cap >= 0.0)) {
+          ImplFatal("<rad_m1>/implicit_cs2_dacap must be >= 0 (0 = off)");
+        }
+      }
       // consfix3: the AP-HLL (thin) part of a face has no face equation, so the theta
       // split cannot act there; `drag` (default): that part charges the gas only its
       // drag, as matched (the radiation keeps its lab flux), `inertia`: all of dA (the
@@ -3190,6 +3197,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: A^old (3), dA (3)
     iw_cs2 = niw;
     niw += 9;   // + the per-axis mean face-equation weight om (implicit_cs2_hll = drag)
+    if (impl_gas_src_cs2 && cs2_cap > 0.0) {niw += 1;}   // gsdrag-1021: s (iw_cs2 + 9)
   }
   if (impl_eos_cache) {
     impl_nec = M1EosCacheNComp(impl_ecnt);
@@ -10733,6 +10741,13 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   // cs-open-1018: m1bcs on the cubed sphere (a panel seam is an interior face)
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
+  // gsdrag-1021 implicit_cs2_dacap: s = min(1, K 2 |w| max(E^old, E') / |dA|), w the
+  // velocity of A' (v, + the vimp dv where the write-back re-forms F); the cell's dA (cd)
+  // and its own gas share (cw) are taken x s, s in iw_cs2 + 9
+  const bool gmo = (cs2_cap > 0.0) && Cs2Active();
+  const bool hdg = cs2_hll_drag;
+  const Real gk = 2.0*cs2_cap;
+  const int cs9 = iw_cs2 + 9;
   par_for("m1_cs2_da", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     {
@@ -10857,6 +10872,34 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
     iw_(m,cd,k,j,i) = a1 - o1;
     iw_(m,cd+1,k,j,i) = tq ? (a2 - o2) : 0.0;
     iw_(m,cd+2,k,j,i) = (tq && thrd) ? (a3 - o3) : 0.0;
+    if (gmo) {
+      // gsdrag-1021: |dA| against what an enthalpy flux at the cell's speed can change
+      Real u1 = iw_(m,M1_IW_V1,k,j,i), u2 = iw_(m,M1_IW_V2,k,j,i);
+      Real u3 = iw_(m,M1_IW_V3,k,j,i);
+      if (vfx && udv) {
+        u1 += iw_(m,ivd,k,j,i);
+        if (tq) {
+          u2 += iw_(m,ivd+1,k,j,i);
+          if (thrd) {u3 += iw_(m,ivd+2,k,j,i);}
+        }
+      }
+      const Real vm = fmax(sqrt(u1*u1 + u2*u2 + u3*u3),
+                           sqrt(SQR(iw_(m,M1_IW_V1,k,j,i)) + SQR(iw_(m,M1_IW_V2,k,j,i))
+                                + SQR(iw_(m,M1_IW_V3,k,j,i))));
+      const Real d1 = iw_(m,cd,k,j,i), d2 = iw_(m,cd+1,k,j,i), d3 = iw_(m,cd+2,k,j,i);
+      const Real dn = sqrt(d1*d1 + d2*d2 + d3*d3);
+      const Real am = gk*vm*fmax(fmax(iw_(m,M1_IW_EN,k,j,i), es), 0.0);
+      Real sg = 1.0;
+      if (dn > am) {sg = am/dn;}
+      iw_(m,cs9,k,j,i) = sg;
+      iw_(m,cd,k,j,i) = sg*d1;
+      iw_(m,cd+1,k,j,i) = sg*d2;
+      iw_(m,cd+2,k,j,i) = sg*d3;
+      // the own gas share s om_bar (implicit_cs2_hll = inertia: s)
+      for (int d = 0; d < 3; ++d) {
+        iw_(m,cw+d,k,j,i) = sg*(hdg ? iw_(m,cw+d,k,j,i) : 1.0);
+      }
+    }
   });
   if (cs_geom) {
     // cs-open-1018: the transverse F^old above mixed the COVARIANT stored cell F (u0,
@@ -10880,8 +10923,11 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
       iw_(m,ca+1,k,j,i) += d2;
       iw_(m,ca+2,k,j,i) += d3;
       if (tq) {
-        iw_(m,cd+1,k,j,i) -= d2;
-        iw_(m,cd+2,k,j,i) -= d3;
+        // gsdrag-1021: the basis change of a capped dA takes the same s (the cap is
+        // judged on the sp-form dA, an approximation on the cubed sphere)
+        const Real sg = gmo ? iw_(m,cs9,k,j,i) : 1.0;
+        iw_(m,cd+1,k,j,i) -= sg*d2;
+        iw_(m,cd+2,k,j,i) -= sg*d3;
       }
     });
     // (c) the ghosts: dA_1 scalar, (dA_2, dA_3) the face-normal pair
@@ -11207,7 +11253,9 @@ void RadiationM1::ImplicitCs2Vimp() {
   const bool vfx = t2st && impl_vimp && t2_fvnew;
   const int b = iw_vimp;
   const int ca = iw_cs2, cd = iw_cs2 + 3, cw = iw_cs2 + 6;
-  const bool hdrag = cs2_hll_drag;
+  const bool gmo = (cs2_cap > 0.0);   // gsdrag-1021 (ImplicitCs2DeltaA): s in iw_cs2 + 9
+  const bool hdrag = cs2_hll_drag || gmo;
+  const int cs9 = iw_cs2 + 9;
   const bool nos = (cs2_dbg & 1);   // diagnostic: no face split (the gas pays all of dA)
   const bool nx1s = (cs2_dbg & 8), ntrs = (cs2_dbg & 16);
   par_for("m1_cs2_vimp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -11289,6 +11337,7 @@ void RadiationM1::ImplicitCs2Vimp() {
           nb += 0.25*th*((s == 0) ? iw_(m,cd+d,kl,jl,i) : iw_(m,cd+d,kq,jq,i));
         }
       }
+      if (gmo) {cown *= iw_(m,cs9,k,j,i);}   // gsdrag-1021: own dA on its faces x s
       // A'_d at v (+ the lagged cross terms), less A^old.  The gas pays ob dA of its
       // own (ob = om_bar_d under implicit_cs2_hll = drag, else 1)
       const Real ob = hdrag ? iw_(m,cw+d,k,j,i) : 1.0;
@@ -15703,7 +15752,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto f3nw_ = f0x3n;
   // consfix3: implicit_cs2_hll = drag, the AP-HLL part (1 - om_bar) of the cell's own dA
   // is not charged to the gas (A^old in iw_cs2 + 0.., om_bar in iw_cs2 + 6..)
-  const bool c2h = gcs && Cs2Active() && cs2_hll_drag && !(cs2_dbg & 1);
+  const bool c2h = gcs && Cs2Active() && (cs2_hll_drag || (cs2_cap > 0.0)) &&
+                   !(cs2_dbg & 1);
   const int c2a = c2h ? iw_cs2 : 0;
   // cs-open-1018: implicit_rad_inertia on the cubed sphere (was a FATAL check kernel
   // here, cs-port-1016): the transverse v_f g0_f deposit and the enthalpy-flux momentum
