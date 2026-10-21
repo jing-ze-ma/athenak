@@ -1172,6 +1172,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_cs_xgroups")) {
+      // xchg-1021: speed only (bitwise any value); 1 = the plain per-shell exchange
+      vgd_csxg = std::max(1, pin->GetInteger("rad_m1","vet_gd_cs_xgroups"));
+    }
     // defaults-1009 (user 10-09): vet_gd_twin, vet_gd_twin_fuse (where its needs below
     // hold), vet_gd_twin_det and vet_source_noesrc (with the twin) default ON on a FRESH
     // vet_gd run; a restart whose file lacks a key keeps the old default (off).  The

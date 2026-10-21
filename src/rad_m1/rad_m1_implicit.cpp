@@ -8205,7 +8205,11 @@ namespace {
 
 void M1GlobalSum2(Real &a, Real &b, const bool det = false) {
 #if MPI_PARALLEL_ENABLED
-  if (det && global_variable::nranks > 1) {
+  // rsgrst-1021: ALWAYS rank-ordered (an MPI_Allreduce SUM is not run-to-run / restart
+  // reproducible under HCOLL); det kept for the call sites (implicit_det_reduce paths
+  // are unchanged, bitwise)
+  (void) det;
+  if (global_variable::nranks > 1) {
     // implicit_det_reduce: gather the per-rank values, sum them in rank order
     std::vector<Real> all(2*global_variable::nranks);
     Real loc[2] = {a, b};
@@ -8236,9 +8240,16 @@ void M1GlobalSum2(Real &a, Real &b, const bool det = false) {
 
 void M1GlobalSumArr(Real *a, const int n) {
 #if MPI_PARALLEL_ENABLED
-  Real glb[NREDUCTION_VARIABLES];
-  MPI_Allreduce(a, glb, n, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-  for (int q = 0; q < n; ++q) {a[q] = glb[q];}
+  // rsgrst-1021: rank-ordered (see M1GlobalSum2)
+  const int nr = global_variable::nranks;
+  if (nr <= 1) {return;}
+  std::vector<Real> all(static_cast<size_t>(n)*nr);
+  MPI_Allgather(a, n, MPI_ATHENA_REAL, all.data(), n, MPI_ATHENA_REAL, MPI_COMM_WORLD);
+  for (int q = 0; q < n; ++q) {
+    Real t = 0.0;
+    for (int r = 0; r < nr; ++r) {t += all[static_cast<size_t>(r)*n + q];}
+    a[q] = t;
+  }
 #else
   (void)a;
   (void)n;
@@ -8382,7 +8393,8 @@ void M1BcgOpFn(void *in, void *inout, int *len, MPI_Datatype *) {
 void M1GlobalBcg(M1BcgVal &v, const bool det = false) {
 #if MPI_PARALLEL_ENABLED
   if (global_variable::nranks == 1) {return;}
-  if (det) {
+  (void) det;   // rsgrst-1021: always rank-ordered (see M1GlobalSum2)
+  {
     // implicit_det_reduce: gather the per-rank values, combine them in rank order
     std::vector<Real> all(4*global_variable::nranks);
     Real loc[4] = {v.s0, v.s1, v.s2, v.mx};

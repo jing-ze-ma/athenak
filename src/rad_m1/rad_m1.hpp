@@ -2533,7 +2533,10 @@ class RadiationM1 {
   DvceArray2D<int> vgd_cssl, vgd_csrl;   // (e, 3): MPI send src / recv dst (m,k,j)
   std::vector<int> vgd_csprk;         // partner ranks
   std::vector<int> vgd_csps, vgd_cspn, vgd_cspr, vgd_cspm;   // send/recv displ, count
-  DvceArray1D<Real> vgd_cssb, vgd_csrb;   // message buffers
+  // message buffers.  xchg-1021: in PINNED HOST memory (the pack/unpack kernels write/
+  // read them directly), so MPI never sees a GPU pointer here: no GPUDirect RDMA and
+  // no UCX cuda staging for the vet_gd band (pure copies: bitwise the device buffers)
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_cssb, vgd_csrb;
   int vgd_csnloc = 0, vgd_csnsnd = 0, vgd_csnrcv = 0;
   void VetGdCsInit();
   void VetGdCsSource();
@@ -2553,6 +2556,7 @@ class RadiationM1 {
   // miss)
   struct VgdCsCl {
     Real alpha = -9.0;
+    int ng = 1;                      // xchg-1021: direction groups of the lists
     int64_t use = 0;
     std::vector<int64_t> so, ro;     // ((pass*n1 + s)*(np + 1) + p): list offsets
     Kokkos::View<int *, LayoutWrapper, DevMemSpace> si, ri;   // e*n + d per value
@@ -2569,6 +2573,14 @@ class RadiationM1 {
   double vgd_csnbuild = 0.0, vgd_cstbuild = 0.0, vgd_csvsent = 0.0, vgd_csvdense = 0.0;
   void VetGdCsCompact();
   void VetGdCsHaloC(const int pass, const int i);
+  // xchg-1021 vet_gd_cs_xgroups = G > 1: the sweep's directions in G contiguous groups,
+  // each (shell, group) its own kernel and compact exchange, software-pipelined (the
+  // exchange of one group runs while the next groups compute; every value computed by
+  // the same code from the same inputs: bitwise G = 1).  Lists ordered (pass, shell,
+  // group, partner, entry, d); pinned-host slot buffers
+  int vgd_csxg = 1;
+  int64_t vgd_csxmax = 0;              // largest (pass, shell, group) list, values
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_csxsb, vgd_csxrb;
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
