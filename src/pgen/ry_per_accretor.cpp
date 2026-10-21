@@ -1998,6 +1998,14 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const bool l1 = stl1_, nzbk = nzback_ && nzon;
     const int ssl = ssl_;
     const Real ssc = mirr_sc_;
+    // pgrst implicit_hold: the cells whose radiation this kernel writes are the held
+    // (Dirichlet) cells of the next implicit solve (marked afresh every stage)
+    const bool hon = rad && pmbp->pradm1->impl_hold;
+    DvceArray4D<Real> hmk;
+    if (hon) {
+      hmk = pmbp->pradm1->hold_m;
+      Kokkos::deep_copy(hmk, 0.0);
+    }
     const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
     const bool g3 = g3d_;
@@ -2095,6 +2103,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           const Real er = (stp || l1) ? sar*SQR(SQR(tn)) : sre;
           v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
           urd(m,radm1::M1_E,k,j,i) = er;
+          if (hon) {hmk(m,k,j,i) = 1.0;}
           urd(m,radm1::M1_F1,k,j,i) = (4.0/3.0)*er*v1;
           urd(m,radm1::M1_F2,k,j,i) = 0.0;
           urd(m,radm1::M1_F3,k,j,i) = (4.0/3.0)*er*v3;
@@ -2124,6 +2133,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
             if (ssl == 1) er *= ssc;
             v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
             urd(m,radm1::M1_E,k,j,i) = er;
+            if (hon) {hmk(m,k,j,i) = 1.0;}
             urd(m,radm1::M1_F1,k,j,i) = 0.0;
             urd(m,radm1::M1_F2,k,j,i) = 0.0;
             urd(m,radm1::M1_F3,k,j,i) = 0.0;
@@ -2141,6 +2151,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           }
           v.the_array[6] = (eh - urd(m,radm1::M1_E,k,j,i))*dv;
           urd(m,radm1::M1_E,k,j,i) = eh;
+          if (hon) {hmk(m,k,j,i) = 1.0;}
           urd(m,radm1::M1_F1,k,j,i) = 0.0;
           urd(m,radm1::M1_F2,k,j,i) = 0.0;
           urd(m,radm1::M1_F3,k,j,i) = 0.0;

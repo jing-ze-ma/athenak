@@ -2621,6 +2621,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
+  if (pin->DoesParameterExist("rad_m1","implicit_hold")) {
+    impl_hold = pin->GetBoolean("rad_m1","implicit_hold");
+    if (impl_hold) {
+      auto &idh = pmy_pack->pmesh->mb_indcs;
+      const int nh1 = idh.nx1 + 2*idh.ng;
+      const int nh2 = (idh.nx2 > 1) ? (idh.nx2 + 2*idh.ng) : 1;
+      const int nh3 = (idh.nx3 > 1) ? (idh.nx3 + 2*idh.ng) : 1;
+      const int nmh = std::max(pmy_pack->nmb_thispack, pmy_pack->pmesh->nmb_maxperrank);
+      Kokkos::realloc(hold_m, nmh, nh3, nh2, nh1);
+      Kokkos::deep_copy(hold_m, 0.0);
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_kill")) {
     vimp_kill = pin->GetBoolean("rad_m1","implicit_vimp_kill");
   }
@@ -7107,6 +7119,7 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
   const int nji = (je - js + 1)*ni;
   const int nkji = (ke - ks + 1)*nji;
   // one cell's result; returns y (the value stored)
+  const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   auto row = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
     Real y7 = 0.0;
     if (w7) {
@@ -7132,8 +7145,8 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
     }
     int ipos = pos_(m);
     bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
-    if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
-                    (i == ie && topb && bchi == M1_IBC_EFIX))) {
+    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                    (i == ie && topb && bchi == M1_IBC_EFIX)))) {
       iw_(m,cy,k,j,i) = y7;
       return y7;
     }
@@ -7276,6 +7289,7 @@ void RadiationM1::ImplicitStencilBuild() {
   const int nji = (je - js + 1)*ni;
   const int nkji = (ke - ks + 1)*nji;
   Real emax = 0.0;
+  const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   Kokkos::parallel_reduce("m1_impl_stb",
   Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>(DevExeSpace(), 0,
                                                                 (nmb1 + 1)*nkji),
@@ -7301,7 +7315,7 @@ void RadiationM1::ImplicitStencilBuild() {
     int ipos = pos_(m);
     bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
     bool efix = (i == is && botb && bclo == M1_IBC_EFIX) ||
-                (i == ie && topb && bchi == M1_IBC_EFIX);
+                (i == ie && topb && bchi == M1_IBC_EFIX) || (hon_ && hm_(m,k,j,i) > 0.0);
     if (odon && !efix) {
       Real dxv[3] = {mbsize(m).dx1, mbsize(m).dx2, mbsize(m).dx3};
       BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
@@ -7991,12 +8005,13 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   const Real sg = sgn;
   const bool bx1 = bvec_x1 && trans_on;   // blendall-1009: x1 faces keep 1 - AL
   auto fw_ = ifw;
+  const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   par_for("m1_impl_odop", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     int ipos = pos_(m);
     bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
-    if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
-                    (i == ie && topb && bchi == M1_IBC_EFIX))) {
+    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                    (i == ie && topb && bchi == M1_IBC_EFIX)))) {
       return;
     }
     Real dx1 = mbsize(m).dx1;
@@ -10271,11 +10286,12 @@ void RadiationM1::ImplicitWorkRow(bool row) {
     // the kinetic energy is 0.5 rho (n_2^2 + n_3^2 + 2 c n_2 n_3)/s^2 (+ the radial
     // part); a kernel of its own, the one below is the pre-CS3 one
     auto cclw = pmy_pack->pcoord->cos_cell;
+    const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
     par_for("m1_impl_wk_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = pos_.d_view(m);
-      if (!cyclic && ((i == is && ipw == 0 && elo) ||
-                      (i == ie && ipw == nblkx1-1 && ehi))) {
+      if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipw == 0 && elo) ||
+                      (i == ie && ipw == nblkx1-1 && ehi)))) {
         return;
       }
       const Real d1 = iw_(m,ivb,k,j,i);
@@ -10298,11 +10314,12 @@ void RadiationM1::ImplicitWorkRow(bool row) {
       }
     });
   } else {
+  const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipw = pos_.d_view(m);
-    if (!cyclic && ((i == is && ipw == 0 && elo) ||
-                    (i == ie && ipw == nblkx1-1 && ehi))) {
+    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipw == 0 && elo) ||
+                    (i == ie && ipw == nblkx1-1 && ehi)))) {
       return;
     }
     Real dv = iw_(m,ivb,k,j,i);
@@ -10329,11 +10346,12 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   if (fws) {
     // force_reference_work = split: the reference work (v dt rho arad_ref), which the
     // radiation pays, rides the row too (a separate kernel: the default one is untouched)
+    const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
     par_for("m1_impl_wkref", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = pos_.d_view(m);
-      if (!cyclic && ((i == is && ipw == 0 && elo) ||
-                      (i == ie && ipw == nblkx1-1 && ehi))) {
+      if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipw == 0 && elo) ||
+                      (i == ie && ipw == nblkx1-1 && ehi)))) {
         return;
       }
       // at the iterate's velocity (v_old + the residual kick dv^k): the stage value's
@@ -10382,11 +10400,12 @@ void RadiationM1::ImplicitNofbWorkRow() {
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool fwd = sph_geom && impl_face_wdist;
   auto &mbbcs = cs_geom ? m1bcs : pmy_pack->pmb->mb_bcs;
+  const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   par_for("m1_impl_nfwk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
-    if (!cyclic && ((i == is && ipos == 0 && bclo == M1_IBC_EFIX) ||
-                    (i == ie && ipos == nblkx1-1 && bchi == M1_IBC_EFIX))) {
+    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipos == 0 && bclo == M1_IBC_EFIX) ||
+                    (i == ie && ipos == nblkx1-1 && bchi == M1_IBC_EFIX)))) {
       return;
     }
     const Real idd = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
@@ -11636,6 +11655,16 @@ void RadiationM1::ImplicitVimpBuild() {
     }
     if (cs2_vimp && !(cs2_dbg & 2)) {ImplicitCs2Vimp();}
   }
+  // implicit_hold: no kick (P rows, dv) of a held cell
+  if (impl_hold) {
+    auto hmv_ = hold_m;
+    par_for("m1_vimp_holdz", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (hmv_(m,k,j,i) > 0.0) {
+        for (int n = 0; n < M1_NVIMP_X; ++n) {iw_(m,b+n,k,j,i) = 0.0;}
+      }
+    });
+  }
   // implicit_vimp_kill: no kick (P rows, dv) in the killed cells
   if (vimp_kill && vkill_any) {
     auto vk_ = vkill_;
@@ -11680,13 +11709,14 @@ void RadiationM1::ImplicitVimpBuild() {
   const bool ewf = impl_vimp_ewf;
   const Real ebl = iebath_x1min, ebh = iebath_x1max;
   // (2) the operator coefficients and the right-hand side
+  const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   par_for_lb("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
     const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
     for (int n = M1_IV_X1M2; n <= M1_IV_JRHS; ++n) {iw_(m,b+n,k,j,i) = 0.0;}
-    if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
-                    (i == ie && topb && bchi == M1_IBC_EFIX))) {
+    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                    (i == ie && topb && bchi == M1_IBC_EFIX)))) {
       return;   // the Dirichlet row is replaced whole
     }
     const Real cr = ch/cl;
@@ -12700,10 +12730,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // per-pass rebuild from the face fluxes gives); u0 holds them covariant on cs
   const bool csf0 = cs_geom;
   auto cclf0 = pmy_pack->pcoord->cos_cell;
+  const bool hoi_ = impl_hold; auto hmi_ = hold_m;   // pgrst implicit_hold
   par_for("m1_impl_i0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = fmax(u0_(m,M1_E,k,j,i), efl);
     iw_(m,M1_IW_EN,k,j,i) = t2st ? (u0_(m,M1_E,k,j,i) + t2i_(m,M1_T2_E,k,j,i)) : e;
+    if (hoi_ && hmi_(m,k,j,i) > 0.0) {iw_(m,M1_IW_EN,k,j,i) = e;}   // held: Dirichlet
     if (eso) {iw_(m,M1_IW_EN,k,j,i) += dtes*es_(m,k,j,i);}
     iw_(m,M1_IW_EP,k,j,i) = e;
     iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
@@ -12766,7 +12798,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (mhd) egrv += emag_(m,k,j,i);
       Real eg = uh(m,IEN,k,j,i) - ekin - egrv;
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
-      if (t2st) {
+      if (t2st && !(hoi_ && hmi_(m,k,j,i) > 0.0)) {
         // the start T is set; now the gas becomes the OLD vector of the stage solve
         uh(m,IM1,k,j,i) += t2i_(m,M1_T2_M1,k,j,i);
         uh(m,IM2,k,j,i) += t2i_(m,M1_T2_M1+1,k,j,i);
@@ -13966,6 +13998,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int ogm = impl_opn_guard_mode;
     const bool opgd = (opg > 0.0) && (opnr || opns);
     auto nsk_ = opn_nskip_d;
+    const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -14558,8 +14591,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       // a Dirichlet end cell: the whole row is replaced, which keeps the matrix an
       // M-matrix and anchors the level of E (see M1_IBC_EFIX)
-      if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
-                      (i == ie && topb && bchi == M1_IBC_EFIX))) {
+      if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                      (i == ie && topb && bchi == M1_IBC_EFIX)))) {
         aa = 0.0;
         bb = 1.0;
         cc = 0.0;
@@ -15835,6 +15868,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
   // time2_vstage, default true on sp, false = the old stage-start form)
   const bool vfx = t2st && impl_vimp && t2_fvnew;
+  const bool hwo_ = impl_hold; auto hwm_ = hold_m;   // pgrst implicit_hold (write-back)
   const bool wbs = cs2_wbs;         // pgrst-vimp-1021 implicit_cs2_wbsolve
   const bool coupling_ = coupling;  // local: a member read in a kernel captures this
   // m1-positivity (rad_m1.hpp): the energy-conserving gas eint limiter and E floor
@@ -16404,11 +16438,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (FrefWaccOn()) {
       auto wacc_ = FrefWacc();
       const Real fra = dt/pmy_pack->pmesh->dt;
+      const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
       par_for("m1_impl_fws_x", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const int ipw = posw_.d_view(m);
         const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
-                                   (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX));
+                                   (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX)) || (hon_ && hm_(m,k,j,i) > 0.0);
         const Real dd = uh(m,IDN,k,j,i);
         const Real idg = 1.0/fmax(dd, 1.0e-300);
         const Real v1 = iw_(m,M1_IW_V1,k,j,i);
@@ -16424,11 +16459,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       });
     } else {
+    const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
     par_for("m1_impl_fws", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = posw_.d_view(m);
       const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
-                                 (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX));
+                                 (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX)) || (hon_ && hm_(m,k,j,i) > 0.0);
       const Real dd = uh(m,IDN,k,j,i);
       const Real idg = 1.0/fmax(dd, 1.0e-300);
       const Real v1 = iw_(m,M1_IW_V1,k,j,i);
@@ -16893,12 +16929,13 @@ void RadiationM1::ImplicitMusclBuild() {
   if (led || muscl_nbuild < nfr) {
   const bool first = (muscl_nbuild == 0);
   muscl_nbuild += 1;
+  const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
   par_for("m1_muscl_sig", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
     const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
     const bool efx = !cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
-                                 (i == ie && topb && bchi == M1_IBC_EFIX));
+                                 (i == ie && topb && bchi == M1_IBC_EFIX)) || (hon_ && hm_(m,k,j,i) > 0.0);
     for (int d = 0; d < 3; ++d) {
       Real sg = 0.0, sb = 0.0;
       bool ok = !efx && ((d == 0) || (d == 1 && l2) || (d == 2 && l3));

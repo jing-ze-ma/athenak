@@ -1421,6 +1421,13 @@ class RadiationM1 {
   // positive -- the backward-Euler redo it would otherwise take uses the same fallback
   // operator (backward Euler accepts the fallback), so rejecting it only loses order
   bool t2_accfb = false;
+  // pgrst-posfix-1021 <rad_m1>/implicit_hold (read only when named; default false =
+  // bitwise): cells a problem generator holds (hold_m = 1, set by the pgen where it
+  // writes the radiation) are Dirichlet rows of every implicit solve, as an
+  // M1_IBC_EFIX end cell: E' = the held E, no stage increment, no vimp kick, no work row;
+  // the write-back leaves their E, F and gas to the pgen (NOTE pgrst_1021 implicit_hold)
+  bool impl_hold = false;
+  DvceArray4D<Real> hold_m;
   Real t2_accfb_n = 0.0;        // stages accepted with a fallback (counter)
   void Time2PosFixMarkFb();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)

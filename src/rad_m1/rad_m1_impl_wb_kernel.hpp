@@ -10,6 +10,20 @@
 // rad_inertia and conservative paths (`#if M1_CSW`); with M1_CSW undefined (the sp and
 // Cartesian launches) the preprocessed kernel is exactly the one before.
 // NOLINT(build/header_guard)
+    // pgrst implicit_hold: a held cell keeps the Dirichlet E (= its old vector); its F and
+    // gas belong to the problem generator; no stage slope
+    if (hwo_ && hwm_(m,k,j,i) > 0.0) {
+      u0_(m,M1_E,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+      if (t2k) {
+        for (int n = 0; n < M1_T2_F1; ++n) {kk_(m,n,k,j,i) = 0.0;}
+        if (gcs && coupling_ && dbgf) {
+          ckw_(m,0,k,j,i) = 0.0;
+          ckw_(m,1,k,j,i) = 0.0;
+          ckw_(m,2,k,j,i) = 0.0;
+        }
+      }
+      return;
+    }
     Real ep = iw_(m,M1_IW_EP,k,j,i);
     // F3 (implicit_pos_floor_solve): the iterate is floored only at 1e-6 e_floor in the
     // T-solve / accept; the energy that residual raise created over a solved S2 below it
