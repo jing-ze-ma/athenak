@@ -1,5 +1,7 @@
 # HANDOVER 2026-10-21 ~20:00 CEST: Raven coordinator -> viper
 
+**OWNERSHIP (USER 10-21 ~20:00): viper takes over ALL work: coordination, production on every site (incl. the Raven chains), workers, TASKs, USER questions, pages. The Raven session stands down and starts nothing.**
+
 The Raven coordinator session crashed some time after ~16:00. This note covers everything since then.
 Full state: `raven_resume_1021.md` (the last Raven RESUME block, 05:00 to 16:00 entries) + worker NOTEs in this dir.
 /raven/ptmp is not mounted on Viper, so every branch below is now PUSHED to the fork.
