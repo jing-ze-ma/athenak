@@ -219,6 +219,12 @@ Real rho_s_ = 1.0, phi_s_ = 0.0, sig_ = 0.05, nsig_ = 3.0, vr_s_ = 0.0, vp_s_ = 
 // (and the back sink) may be wider, so that the held Gaussian gas reaches the floor at the
 // window edge instead of a held pressure step against near-vacuum
 Real nsig_rad_ = 3.0;
+// vphi-1021 problem/stream_rad_ellipse (read only when named; default false = the rectangle
+// |dphi| < n sigma, |z| < n sigma_z, bitwise): true holds the stream radiation only inside
+// the ELLIPSE (dphi/sigma)^2 + (z/sigma_z)^2 < stream_rad_nsig^2, the optically thick part of
+// the Gaussian (3-D formal solution: E = a T^4 to 1e-3 and comoving F = 0 inside x < 2.7;
+// the rectangle's corners, x 3-4.2, have tau_cell ~0.2 and E 5 % below a T^4, F_r ~0.25 cE)
+bool rad_ell_ = false;
 Real hse_cap_ = 40.0;
 // stage 2 (problem/inner = envelope): the resolved stellar envelope, see the header
 bool env_ = false, env_noslip_ = false;
@@ -2126,6 +2132,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const bool g3 = g3d_;
     const Real szz = sz_, wz = nsig_*sz_;
     const Real rww = nsig_rad_*sig_, rwz = nsig_rad_*sz_;
+    const bool rell = rad_ell_;
+    const Real rn2 = SQR(nsig_rad_);
     const bool trc = trc_;
     const int n0 = trc_n0_;
     auto phc = ph->phicc0;
@@ -2215,7 +2223,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         const Real rj = p3 ? r*sth : r;
         v.the_array[1] = ((dn*v3 - m30) + om*rj*(dn - d0))*rj*dv;
         v.the_array[2] = (en - e0)*dv;
-        if (srad && fabs(dph) < rww && (!g3 || fabs(zc) < rwz)) {
+        const bool inrw = rell ? (SQR(dph/sg) + (g3 ? SQR(zc/szz) : 0.0) < rn2)
+                               : (fabs(dph) < rww && (!g3 || fabs(zc) < rwz));
+        if (srad && inrw) {
           const Real er = (stp || l1) ? sar*SQR(SQR(tn)) : sre;
           v.the_array[3] = (er - urd(m,radm1::M1_E,k,j,i))*dv;
           urd(m,radm1::M1_E,k,j,i) = er;
@@ -4701,6 +4711,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   nsig_rad_ = pin->DoesParameterExist("problem", "stream_rad_nsig") ?
               pin->GetReal("problem", "stream_rad_nsig") : nsig_;
   if (nsig_rad_ > nsig_) fatal("stream_rad_nsig must not exceed stream_nsig");
+  rad_ell_ = pin->DoesParameterExist("problem", "stream_rad_ellipse") &&
+             pin->GetBoolean("problem", "stream_rad_ellipse");
 
   const Real gu = kG*kMsun/(kRsun*kVel*kVel);   // G Msun in (km/s)^2 Rsun
   rp_.gma = gu*ma;
