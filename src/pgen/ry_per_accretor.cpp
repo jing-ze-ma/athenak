@@ -214,9 +214,10 @@ bool noslip_ = true, inner_hse_ = false, outer_hse_ = true, stream_on_ = true;
 bool inner_wall_ = false;
 Real rho_s_ = 1.0, phi_s_ = 0.0, sig_ = 0.05, nsig_ = 3.0, vr_s_ = 0.0, vp_s_ = 0.0;
 // vphi-1021 problem/stream_rad_nsig (read only when named; default = stream_nsig, bitwise):
-// the nozzle writes (and holds) the stream's radiation only within this many sigma (phi
-// and z); the gas window stream_nsig may be wider, so that the held Gaussian gas reaches
-// the floor at the window edge instead of a held pressure step against near-vacuum
+// the nozzle writes (and holds) the stream's radiation, and stream_sector_light = neck holds
+// the lobe-rule light, only within this many sigma (phi and z); the gas window stream_nsig
+// (and the back sink) may be wider, so that the held Gaussian gas reaches the floor at the
+// window edge instead of a held pressure step against near-vacuum
 Real nsig_rad_ = 3.0;
 Real hse_cap_ = 40.0;
 // stage 2 (problem/inner = envelope): the resolved stellar envelope, see the header
@@ -2229,7 +2230,9 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         // acc3d-held-1018: stream_sector_light = neck -- the lobe rule (as surface) only in the
         // sector's physical part, between the nozzle and L1 (r < d_L1) inside the nozzle
         // window; the rest of the 3-D sector (ambient beside and beyond L1) is a dark sink
-        const bool neck = (ssl == 4) && (r < xl1) && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
+        // vphi-1021: the held neck light shares the nozzle's RADIATION window (rww = ww
+        // unless problem/stream_rad_nsig is named)
+        const bool neck = (ssl == 4) && (r < xl1) && fabs(dph) < rww && (!g3 || fabs(zc) < rwz);
         if (inbk && ssl != 2 && !neck) {
           // v4 (user 10-16): the back-sink sector between the nozzle and L1 holds the
           // STREAM's own light, the nozzle's radiation state continued backward (core T
