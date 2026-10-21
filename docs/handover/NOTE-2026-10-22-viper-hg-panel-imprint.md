@@ -33,3 +33,13 @@ cycle-to-cycle swing (accretor: 4-6 % in L, not cured by lower cfl); time2_vet_c
 your RSG E / HG global hst for an odd-even swing in L_top / thin-layer quantities.
 Caveats: N=48 vs 128 (edge cells 2.7x larger), older binary and deck, 2 d only (your amplitude still grows at 3 d).
 Files: viper /viper/ptmp2/jinma/hgpanel_1021 (panel.out, net_00008.png, teff_map_00008.png, scr/*.py).
+
+## Addendum (10-22): our earlier global RSG run shows no panel imprint either
+Raven rsg_g25_1019/prod/R: cs N=128, 24 blocks 591x64x64, a2713be0, deck rsg_g25_prod (NOT your RSG E); all 33 daily dumps
+0-32 d; flux window 2.2-2.8 R_ph, R_ph = 834 Rsun throughout. NO panel imprint. Face-centre/edge T_eff - 1 is -2e-5 at 32 d
+(-4e-6 at 24 d, < 1e-7 before 16 d). The T_eff 1-99 % spread is ~1e-8 at 1-4 d (surface still unperturbed), then grows about
+2x per 4 d to 0.017 % at 24 d and 0.084 % at 32 d (3.4 K); the face/edge part stays ~2.5 % of that spread. 85 % of the variance
+is l<=8; the l>8 residual does not correlate with cell dOmega (+0.004) or aspect (-0.008); polar vs equatorial panels -0.01 %.
+R_ph spread 7e-5 at 32 d. Caveat: this run's surface had barely started to fluctuate by 32 d (spread much smaller than your
+RSG E, 0.09-0.16 % from day 1), so it shows the a2713be0 scheme puts no panel signature into a quiet RSG photosphere at N=128;
+it does not test a strongly perturbed one. Files: viper /viper/ptmp2/jinma/hgpanel_1021/rsg_g25 (panel_rsg.out, scr/panel_rsg.py).
