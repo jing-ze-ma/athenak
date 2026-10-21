@@ -786,94 +786,191 @@ void RadiationM1::VetGdCsCompact() {
   Kokkos::fence();
   const int np = static_cast<int>(vgd_csprk.size());
   const size_t per = static_cast<size_t>(n)*n1;
-  // memcut-1020: the packed mask expanded on the host (1 byte per value, as before)
-  std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
-  {
-    auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
-    bool both = false;
-    for (size_t t = 0; t < mh.size(); ++t) {
-      const uint8_t v = static_cast<uint8_t>((mp(t >> 4) >> (2*(t & 15))) & 3u);
-      both = both || (v == 3);
-      mh[t] = v;
-    }
-    if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
-  }
-  // (2) the receivers' marks -> the owners
-  std::vector<uint8_t> sm(static_cast<size_t>(std::max(vgd_csnsnd, 1))*per, 0);
-#if MPI_PARALLEL_ENABLED
-  {
-    std::vector<MPI_Request> req;
-    for (int p = 0; p < np; ++p) {
-      const int rk = vgd_csprk[p];
-      if (vgd_cspn[p] > 0) {
-        req.emplace_back();
-        MPI_Irecv(sm.data() + static_cast<size_t>(vgd_csps[p])*per,
-                  static_cast<int>(vgd_cspn[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
-                  MPI_COMM_WORLD, &req.back());
-      }
-      if (vgd_cspm[p] > 0) {
-        req.emplace_back();
-        MPI_Isend(mh.data() + static_cast<size_t>(vgd_cspr[p])*per,
-                  static_cast<int>(vgd_cspm[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
-                  MPI_COMM_WORLD, &req.back());
-      }
-    }
-    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
-  }
-#endif
   // (3) the lists: counts per (pass, shell, group, partner), offsets, fill in (entry, d)
   // order (xchg-1021: G = vgd_csxg contiguous direction groups; G = 1 as before)
   const int ng = vgd_csxg;
   std::vector<int> dg(n);
   for (int d = 0; d < n; ++d) {dg[d] = (d*ng)/n;}   // group of d: d in [g n/G, (g+1) n/G)
   const size_t nsl = static_cast<size_t>(2)*n1*ng;
-  auto build = [&](const uint8_t *mk, const std::vector<int> &st0,
-                   const std::vector<int> &cnt, std::vector<int64_t> &off,
-                   std::vector<int> &lst) {
-    std::vector<int64_t> nn(nsl*np, 0);
-    for (int p = 0; p < np; ++p) {
-      for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
-        const uint8_t *q = mk + static_cast<size_t>(e)*per;
-        for (int d = 0; d < n; ++d) {
-          for (int sh = 0; sh < n1; ++sh) {
-            const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
-            if (v) {nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;}
+  std::vector<int> sl_h, rl_h;
+  int64_t ts = 0, tr = 0;
+  if (per % 16 == 0) {
+    // xchg-1021: the lists straight from the packed 2-bit words (partner blocks of
+    // entries are word aligned when n*n1 % 16 == 0): zero words skipped, the marks sent
+    // as packed words (8x fewer bytes); the same lists in the same (t-increasing) order
+    // as the byte path below
+    const size_t wpe = per/16;   // words per entry
+    auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
+    const size_t nwr = static_cast<size_t>(vgd_csnrcv)*wpe;
+    bool both = false;
+    for (size_t w = 0; w < nwr; ++w) {
+      const uint32_t x = mp(w);
+      if (x != 0u && ((x & (x >> 1) & 0x55555555u) != 0u)) {both = true;}
+    }
+    if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
+    std::vector<uint32_t> smw(std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1), 0u);
+#if MPI_PARALLEL_ENABLED
+    {
+      std::vector<MPI_Request> req;
+      for (int p = 0; p < np; ++p) {
+        const int rk = vgd_csprk[p];
+        if (vgd_cspn[p] > 0) {
+          req.emplace_back();
+          MPI_Irecv(smw.data() + static_cast<size_t>(vgd_csps[p])*wpe,
+                    static_cast<int>(vgd_cspn[p]*wpe), MPI_UINT32_T, rk, 7105,
+                    MPI_COMM_WORLD, &req.back());
+        }
+        if (vgd_cspm[p] > 0) {
+          req.emplace_back();
+          MPI_Isend(mp.data() + static_cast<size_t>(vgd_cspr[p])*wpe,
+                    static_cast<int>(vgd_cspm[p]*wpe), MPI_UINT32_T, rk, 7105,
+                    MPI_COMM_WORLD, &req.back());
+        }
+      }
+      MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    }
+#endif
+    auto buildw = [&](const uint32_t *mk, const std::vector<int> &st0,
+                      const std::vector<int> &cnt, std::vector<int64_t> &off,
+                      std::vector<int> &lst) {
+      std::vector<int64_t> nn(nsl*np, 0);
+      std::vector<std::vector<size_t>> nzw(np);   // the nonzero words of each partner
+      for (int p = 0; p < np; ++p) {
+        const size_t w0 = static_cast<size_t>(st0[p])*wpe;
+        const size_t w1 = w0 + static_cast<size_t>(cnt[p])*wpe;
+        for (size_t w = w0; w < w1; ++w) {
+          uint32_t x = mk[w];
+          if (x == 0u) {continue;}
+          nzw[p].push_back(w);
+          const size_t r0 = (w - static_cast<size_t>(st0[p])*wpe)*16;   // in-block t
+          while (x != 0u) {
+            const int b = __builtin_ctz(x) >> 1;
+            const uint32_t v = (x >> (2*b)) & 3u;
+            x &= ~(3u << (2*b));
+            const size_t r = (r0 + b) % per;
+            const int d = static_cast<int>(r/n1), sh = static_cast<int>(r % n1);
+            nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;
           }
         }
       }
-    }
-    off.assign(nsl*(np + 1), 0);
-    int64_t t = 0;
-    for (size_t sl = 0; sl < nsl; ++sl) {
-      for (int p = 0; p < np; ++p) {
-        off[sl*(np + 1) + p] = t;
-        t += nn[sl*np + p];
+      off.assign(nsl*(np + 1), 0);
+      int64_t t = 0;
+      for (size_t sl = 0; sl < nsl; ++sl) {
+        for (int p = 0; p < np; ++p) {
+          off[sl*(np + 1) + p] = t;
+          t += nn[sl*np + p];
+        }
+        off[sl*(np + 1) + np] = t;
       }
-      off[sl*(np + 1) + np] = t;
+      lst.assign(std::max<int64_t>(t, 1), 0);
+      std::vector<int64_t> cur(nsl*np);
+      for (size_t sl = 0; sl < nsl; ++sl) {
+        for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
+      }
+      for (int p = 0; p < np; ++p) {
+        const size_t wb0 = static_cast<size_t>(st0[p])*wpe;
+        for (const size_t w : nzw[p]) {
+          uint32_t x = mk[w];
+          const size_t r0 = (w - wb0)*16;
+          while (x != 0u) {   // bits low to high = t increasing (as the byte path)
+            const int b = __builtin_ctz(x) >> 1;
+            const uint32_t v = (x >> (2*b)) & 3u;
+            x &= ~(3u << (2*b));
+            const size_t rr = r0 + b;
+            const int e = st0[p] + static_cast<int>(rr/per);
+            const size_t r = rr % per;
+            const int d = static_cast<int>(r/n1), sh = static_cast<int>(r % n1);
+            lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] = e*n + d;
+          }
+        }
+      }
+      return t;
+    };
+    ts = buildw(smw.data(), vgd_csps, vgd_cspn, E.so, sl_h);
+    tr = buildw(mp.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+  } else {
+    // memcut-1020: the packed mask expanded on the host (1 byte per value, as before)
+    std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
+    {
+      auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
+      bool both = false;
+      for (size_t t = 0; t < mh.size(); ++t) {
+        const uint8_t v = static_cast<uint8_t>((mp(t >> 4) >> (2*(t & 15))) & 3u);
+        both = both || (v == 3);
+        mh[t] = v;
+      }
+      if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
     }
-    lst.assign(std::max<int64_t>(t, 1), 0);
-    std::vector<int64_t> cur(nsl*np);
-    for (size_t sl = 0; sl < nsl; ++sl) {
-      for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
+    // (2) the receivers' marks -> the owners
+    std::vector<uint8_t> sm(static_cast<size_t>(std::max(vgd_csnsnd, 1))*per, 0);
+  #if MPI_PARALLEL_ENABLED
+    {
+      std::vector<MPI_Request> req;
+      for (int p = 0; p < np; ++p) {
+        const int rk = vgd_csprk[p];
+        if (vgd_cspn[p] > 0) {
+          req.emplace_back();
+          MPI_Irecv(sm.data() + static_cast<size_t>(vgd_csps[p])*per,
+                    static_cast<int>(vgd_cspn[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
+                    MPI_COMM_WORLD, &req.back());
+        }
+        if (vgd_cspm[p] > 0) {
+          req.emplace_back();
+          MPI_Isend(mh.data() + static_cast<size_t>(vgd_cspr[p])*per,
+                    static_cast<int>(vgd_cspm[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
+                    MPI_COMM_WORLD, &req.back());
+        }
+      }
+      MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
     }
-    for (int p = 0; p < np; ++p) {
-      for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
-        const uint8_t *q = mk + static_cast<size_t>(e)*per;
-        for (int d = 0; d < n; ++d) {
-          for (int sh = 0; sh < n1; ++sh) {
-            const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
-            if (v) {
-              lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] = e*n + d;
+  #endif
+    auto build = [&](const uint8_t *mk, const std::vector<int> &st0,
+                     const std::vector<int> &cnt, std::vector<int64_t> &off,
+                     std::vector<int> &lst) {
+      std::vector<int64_t> nn(nsl*np, 0);
+      for (int p = 0; p < np; ++p) {
+        for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
+          const uint8_t *q = mk + static_cast<size_t>(e)*per;
+          for (int d = 0; d < n; ++d) {
+            for (int sh = 0; sh < n1; ++sh) {
+              const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
+              if (v) {nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;}
             }
           }
         }
       }
-    }
-    return t;
-  };
-  std::vector<int> sl_h, rl_h;
-  const int64_t ts = build(sm.data(), vgd_csps, vgd_cspn, E.so, sl_h);
-  const int64_t tr = build(mh.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+      off.assign(nsl*(np + 1), 0);
+      int64_t t = 0;
+      for (size_t sl = 0; sl < nsl; ++sl) {
+        for (int p = 0; p < np; ++p) {
+          off[sl*(np + 1) + p] = t;
+          t += nn[sl*np + p];
+        }
+        off[sl*(np + 1) + np] = t;
+      }
+      lst.assign(std::max<int64_t>(t, 1), 0);
+      std::vector<int64_t> cur(nsl*np);
+      for (size_t sl = 0; sl < nsl; ++sl) {
+        for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
+      }
+      for (int p = 0; p < np; ++p) {
+        for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
+          const uint8_t *q = mk + static_cast<size_t>(e)*per;
+          for (int d = 0; d < n; ++d) {
+            for (int sh = 0; sh < n1; ++sh) {
+              const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
+              if (v) {
+                lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] = e*n + d;
+              }
+            }
+          }
+        }
+      }
+      return t;
+    };
+    ts = build(sm.data(), vgd_csps, vgd_cspn, E.so, sl_h);
+    tr = build(mh.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+  }
   // xchg-1021: the largest (pass, shell, group) slice (the pipelined slot size)
   for (size_t q = 0; q < nsl; ++q) {
     vgd_csxmax = std::max(vgd_csxmax, E.so[q*(np + 1) + np] - E.so[q*(np + 1)]);
