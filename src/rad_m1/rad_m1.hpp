@@ -1373,6 +1373,13 @@ class RadiationM1 {
                                 // dropped (the problem generator's budget books it)
   bool t2_ys_face = false;      // the stage-1 solve still has to drop the face slopes
   int t2_k1grow = 0;            // time2_k1_reset_grow: face-neighbour layers added (0, 1)
+  // time2_k1_reset = pos (pgrst-vimp-1021): also drop K1 (cell + faces) where the stage-1
+  // old vector start + a21 dt K1 would leave E or the gas eint <= theta x its start value
+  // (time2_k1_pos_theta, default 0.1): an FSAL slope that no longer fits the cell (an
+  // advancing front, near-vacuum); those cells take a local first-order stage
+  bool t2_k1pos = false;
+  Real t2_k1pos_th = 0.1;
+  Real t2_k1pos_n = 0.0;        // cells dropped by the pos rule (this rank, whole run)
   Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();

@@ -405,7 +405,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // pgrst-1021: <rad_m1>/time2_k1_reset (see rad_m1.hpp)
   t2_k1reset = false;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_reset")) {
-    t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
+    const std::string kr = pin->GetString("rad_m1", "time2_k1_reset");
+    if (kr == "pos") {
+      t2_k1reset = true;
+      t2_k1pos = true;
+    } else {
+      t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
+    }
+  }
+  if (t2_k1pos && pin->DoesParameterExist("rad_m1", "time2_k1_pos_theta")) {
+    t2_k1pos_th = pin->GetReal("rad_m1", "time2_k1_pos_theta");
   }
   // time2_k1_reset_grow = 0 | 1 (read only when named): the face-neighbour layer of the
   // reset cells also drops its K1 (cell and face channels) in the stage-1 solve
@@ -524,6 +533,45 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       const int ncell = M1_T2_F1;   // E, gas momentum (3), gas energy
       auto &vol = pmy_pack->pcoord->volume;
       Real nr = 0.0, de = 0.0;
+      // time2_k1_reset = pos: the stage-1 old vector of E and of the gas eint
+      if (t2_k1pos) {
+        FluidRef flp = FluidRef::Get(pmy_pack);
+        const bool hg = flp.on;
+        auto ug = hg ? flp.u0 : u0;
+        const bool etg = hg && flp.use_etotgrav;
+        auto phc = hg ? flp.phicc0 : DvceArray4D<Real>();
+        const bool emh = hg && flp.mhd;
+        auto emg = emag0;
+        const Real th = t2_k1pos_th, ca = c1;
+        Real np = 0.0;
+        Kokkos::parallel_reduce("m1_t2_k1pos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+            DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+          if (u0_(m,M1_E,k,j,i) != ys_(m,k,j,i)) return;   // reset by the E rule anyway
+          const Real e0 = u0_(m,M1_E,k,j,i);
+          bool bad = !(e0 + ca*k1r_(m,M1_T2_E,k,j,i) > th*e0);
+          if (hg && !bad) {
+            const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
+            Real eg0 = ug(m,IEN,k,j,i) - 0.5*(SQR(ug(m,IM1,k,j,i)) + SQR(ug(m,IM2,k,j,i)) +
+                                              SQR(ug(m,IM3,k,j,i)))*idd;
+            const Real m1 = ug(m,IM1,k,j,i) + ca*k1r_(m,M1_T2_M1,k,j,i);
+            const Real m2 = ug(m,IM2,k,j,i) + ca*k1r_(m,M1_T2_M1+1,k,j,i);
+            const Real m3 = ug(m,IM3,k,j,i) + ca*k1r_(m,M1_T2_M1+2,k,j,i);
+            Real eg1 = ug(m,IEN,k,j,i) + ca*k1r_(m,M1_T2_EN,k,j,i)
+                       - 0.5*(m1*m1 + m2*m2 + m3*m3)*idd;
+            Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
+            if (emh) egr += emg(m,k,j,i);
+            eg0 -= egr;
+            eg1 -= egr;
+            bad = (eg0 > 0.0) && !(eg1 > th*eg0);
+          }
+          if (bad) {
+            ys_(m,k,j,i) = -1.0;   // marks the cell for the E rule below and the faces
+            sum += 1.0;
+          }
+        }, Kokkos::Sum<Real>(np));
+        t2_k1pos_n += np;
+      }
       Kokkos::parallel_reduce("m1_t2_k1reset", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
           DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum,
@@ -1670,6 +1718,7 @@ void RadiationM1::Time2Report() {
             << " vet clips=" << t2_nclip;
   if (t2_k1reset) {
     std::cout << " k1_reset cells(rank 0)=" << t2_k1reset_n << " faces=" << t2_k1reset_nf;
+    if (t2_k1pos) {std::cout << " (pos rule cells " << t2_k1pos_n << ")";}
   }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
