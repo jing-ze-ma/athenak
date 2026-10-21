@@ -220,6 +220,7 @@ void PgenStageRestore() {
 }
 void PgenStageClear() {
   PgenStageEntries().clear();
+  PgenEntries().clear();   // (left here only when dt_retry is off: no copies, no Views)
 }
 
 //----------------------------------------------------------------------------------------
