@@ -74,6 +74,37 @@
 namespace radm1 {
 
 namespace {
+
+// xchg-1021: a stream event of the default device instance (the sweep's stream): record
+// after a kernel, query from the host without a full fence.  No device backend: fence
+struct VgdCsEv {
+  VgdCsEv() = default;
+  VgdCsEv(const VgdCsEv &) = delete;
+  VgdCsEv &operator=(const VgdCsEv &) = delete;
+#if defined(KOKKOS_ENABLE_CUDA)
+  cudaEvent_t e = nullptr;
+  void Record() {
+    if (e == nullptr) {cudaEventCreateWithFlags(&e, cudaEventDisableTiming);}
+    cudaEventRecord(e, DevExeSpace().cuda_stream());
+  }
+  bool Done() const {return e == nullptr || cudaEventQuery(e) != cudaErrorNotReady;}
+  void Wait() const {if (e != nullptr) {cudaEventSynchronize(e);}}
+  ~VgdCsEv() {if (e != nullptr) {cudaEventDestroy(e);}}
+#elif defined(KOKKOS_ENABLE_HIP)
+  hipEvent_t e = nullptr;
+  void Record() {
+    if (e == nullptr) {(void) hipEventCreateWithFlags(&e, hipEventDisableTiming);}
+    (void) hipEventRecord(e, DevExeSpace().hip_stream());
+  }
+  bool Done() const {return e == nullptr || hipEventQuery(e) != hipErrorNotReady;}
+  void Wait() const {if (e != nullptr) {(void) hipEventSynchronize(e);}}
+  ~VgdCsEv() {if (e != nullptr) {(void) hipEventDestroy(e);}}
+#else
+  void Record() {Kokkos::fence();}
+  bool Done() const {return true;}
+  void Wait() const {}
+#endif
+};
 void VgdCsFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
             << "<rad_m1>/vet_gd (cubed sphere): " << msg << std::endl;
@@ -661,7 +692,7 @@ void RadiationM1::VetGdCsInit() {
 
 void RadiationM1::VetGdCsCompact() {
   for (int c = 0; c < 2; ++c) {
-    if (vgd_cscl[c].alpha == vgd_alpha) {
+    if (vgd_cscl[c].alpha == vgd_alpha && vgd_cscl[c].ng == vgd_csxg) {
       vgd_cscur = c;
       vgd_cscl[c].use = ++vgd_csuse;
       return;
@@ -790,8 +821,12 @@ void RadiationM1::VetGdCsCompact() {
     MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
   }
 #endif
-  // (3) the lists: counts per (pass, shell, partner), offsets, fill in (entry, d) order
-  const size_t nsl = static_cast<size_t>(2)*n1;
+  // (3) the lists: counts per (pass, shell, group, partner), offsets, fill in (entry, d)
+  // order (xchg-1021: G = vgd_csxg contiguous direction groups; G = 1 as before)
+  const int ng = vgd_csxg;
+  std::vector<int> dg(n);
+  for (int d = 0; d < n; ++d) {dg[d] = (d*ng)/n;}   // group of d: d in [g n/G, (g+1) n/G)
+  const size_t nsl = static_cast<size_t>(2)*n1*ng;
   auto build = [&](const uint8_t *mk, const std::vector<int> &st0,
                    const std::vector<int> &cnt, std::vector<int64_t> &off,
                    std::vector<int> &lst) {
@@ -802,7 +837,7 @@ void RadiationM1::VetGdCsCompact() {
         for (int d = 0; d < n; ++d) {
           for (int sh = 0; sh < n1; ++sh) {
             const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
-            if (v) {nn[(static_cast<size_t>(v - 1)*n1 + sh)*np + p] += 1;}
+            if (v) {nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;}
           }
         }
       }
@@ -827,7 +862,9 @@ void RadiationM1::VetGdCsCompact() {
         for (int d = 0; d < n; ++d) {
           for (int sh = 0; sh < n1; ++sh) {
             const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
-            if (v) {lst[cur[(static_cast<size_t>(v - 1)*n1 + sh)*np + p]++] = e*n + d;}
+            if (v) {
+              lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] = e*n + d;
+            }
           }
         }
       }
@@ -837,6 +874,11 @@ void RadiationM1::VetGdCsCompact() {
   std::vector<int> sl_h, rl_h;
   const int64_t ts = build(sm.data(), vgd_csps, vgd_cspn, E.so, sl_h);
   const int64_t tr = build(mh.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+  // xchg-1021: the largest (pass, shell, group) slice (the pipelined slot size)
+  for (size_t q = 0; q < nsl; ++q) {
+    vgd_csxmax = std::max(vgd_csxmax, E.so[q*(np + 1) + np] - E.so[q*(np + 1)]);
+    vgd_csxmax = std::max(vgd_csxmax, E.ro[q*(np + 1) + np] - E.ro[q*(np + 1)]);
+  }
   // the order of (entry, direction) within a list is the same on both sides; the
   // counts must agree per (pass, shell, partner): checked by the message sizes below
   Kokkos::realloc(E.si, sl_h.size());
@@ -850,6 +892,7 @@ void RadiationM1::VetGdCsCompact() {
     Kokkos::deep_copy(E.ri, b);
   }
   E.alpha = vgd_alpha;
+  E.ng = ng;
   E.use = ++vgd_csuse;
   vgd_cscur = c;
   vgd_csnbuild += 1.0;
@@ -875,6 +918,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
   const int n1 = indcs.nx1;
   const int n = vgd_n;
   const int np = static_cast<int>(vgd_csprk.size());
+  if (E.ng != 1) {VgdCsFatal("VetGdCsHaloC with direction-grouped lists");}
   const size_t sl = static_cast<size_t>(pass)*n1 + (i - indcs.is);
   const int64_t *so = &E.so[sl*(np + 1)];
   const int64_t *ro = &E.ro[sl*(np + 1)];
@@ -1123,7 +1167,8 @@ void RadiationM1::VetGdCsSweep() {
     const VgdCsCl &E = vgd_cscl[vgd_cscur];
     const int np = static_cast<int>(vgd_csprk.size());
     const int64_t a0 = E.ro[0];
-    const int64_t a1 = E.ro[static_cast<size_t>(n1 - 1)*(np + 1) + np];
+    const int G = E.ng;   // xchg-1021: the shell's groups are contiguous in the list
+    const int64_t a1 = E.ro[(static_cast<size_t>(n1 - 1)*G + G - 1)*(np + 1) + np];
     const int64_t na = a1 - a0;
     if (static_cast<int64_t>(pmy_pack->nmb_thispack)*n*c3b*c2b >= INT32_MAX ||
         na >= INT32_MAX) {
@@ -1149,8 +1194,8 @@ void RadiationM1::VetGdCsSweep() {
     }
     for (int l = 0; l < n1; ++l) {
       VgdHlEntry &X = vgd_hxe[is + l];
-      const int64_t r0 = E.ro[static_cast<size_t>(l)*(np + 1)];
-      const int64_t r1 = E.ro[static_cast<size_t>(l)*(np + 1) + np];
+      const int64_t r0 = E.ro[static_cast<size_t>(l)*G*(np + 1)];
+      const int64_t r1 = E.ro[(static_cast<size_t>(l)*G + G - 1)*(np + 1) + np];
       X.dl = DvceArray1D<int>(bd_.data() + (r0 - a0), r1 - r0);
       X.dw = DvceArray1D<int>();
       X.nr = static_cast<int>(r1 - r0);
@@ -1162,6 +1207,147 @@ void RadiationM1::VetGdCsSweep() {
     }
   }
   if (rga) {vgd_cur = DevExeSpace();}   // the ring's copy kernel: this sweep's stream
+  // xchg-1021 vet_gd_cs_xgroups = G > 1 (compact lists, MPI band): per (shell, group)
+  // one kernel and one exchange, pipelined; the shell kernel itself is the same code
+  // over a direction range (every (cell, d) value from the same inputs: bitwise G = 1)
+#if MPI_PARALLEL_ENABLED
+  const bool pipe = ccl && (vgd_csxg > 1);
+#else
+  const bool pipe = false;
+#endif
+  const int G = pipe ? vgd_csxg : 1;
+#if MPI_PARALLEL_ENABLED
+  struct Xi {
+    int pass, l, i, g, slot;
+    bool sent;
+    std::vector<MPI_Request> rq;
+  };
+  std::vector<Xi> xfl;          // in flight, oldest first
+  size_t xh = 0;                // first not finished
+  int64_t xcnt = 0;
+  const int xS = 2*G + 2;       // slots: a slot is reused only after its unpack ran
+  std::vector<VgdCsEv> xevp(pipe ? xS : 0), xevu(pipe ? xS : 0);
+  const int64_t xmx = std::max<int64_t>(vgd_csxmax, 1);
+  if (pipe && static_cast<int64_t>(vgd_csxsb.extent(0)) < xS*xmx) {
+    Kokkos::fence();
+    vgd_csxsb = decltype(vgd_csxsb)();
+    vgd_csxrb = decltype(vgd_csxrb)();
+    Kokkos::realloc(vgd_csxsb, xS*xmx);
+    Kokkos::realloc(vgd_csxrb, xS*xmx);
+  }
+  const int xnp = static_cast<int>(vgd_csprk.size());
+  auto xsl = [&](const Xi &x) {
+    return (static_cast<size_t>(x.pass)*n1 + x.l)*G + x.g;
+  };
+  // post the sends of every item whose pack has run (in item order)
+  auto xprog = [&]() {
+    const VgdCsCl &E = vgd_cscl[vgd_cscur];
+    for (size_t t = xh; t < xfl.size(); ++t) {
+      Xi &x = xfl[t];
+      if (x.sent) {continue;}
+      if (!xevp[x.slot].Done()) {break;}
+      const int64_t *so = &E.so[xsl(x)*(xnp + 1)];
+      const int64_t s0 = so[0];
+      Real *b = vgd_csxsb.data() + x.slot*xmx;
+      for (int p = 0; p < xnp; ++p) {
+        const int64_t cs = so[p+1] - so[p];
+        if (cs > 0) {
+          x.rq.emplace_back();
+          MPI_Isend(b + (so[p] - s0), static_cast<int>(cs), MPI_ATHENA_REAL, vgd_csprk[p],
+                    7104, MPI_COMM_WORLD, &x.rq.back());
+          vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
+        }
+      }
+      vgd_csvsent += static_cast<double>(so[xnp] - s0);
+      x.sent = true;
+    }
+  };
+  // launch the pack of (pass, l, g) and post its receives
+  auto xstart = [&](const int pass, const int l, const int g) {
+    const VgdCsCl &E = vgd_cscl[vgd_cscur];
+    Xi x;
+    x.pass = pass;
+    x.l = l;
+    x.i = is + l;
+    x.g = g;
+    x.slot = static_cast<int>(xcnt++ % xS);
+    x.sent = false;
+    const size_t sl = xsl(x);
+    const int64_t *so = &E.so[sl*(xnp + 1)];
+    const int64_t *ro = &E.ro[sl*(xnp + 1)];
+    const int64_t s0 = so[0], ns = so[xnp] - so[0];
+    const int64_t r0 = ro[0];
+    xevu[x.slot].Wait();   // the slot's previous unpack has read its receive buffer
+    Real *rb = vgd_csxrb.data() + x.slot*xmx;
+    for (int p = 0; p < xnp; ++p) {
+      const int64_t cr = ro[p+1] - ro[p];
+      if (cr > 0) {
+        x.rq.emplace_back();
+        MPI_Irecv(rb + (ro[p] - r0), static_cast<int>(cr), MPI_ATHENA_REAL, vgd_csprk[p],
+                  7104, MPI_COMM_WORLD, &x.rq.back());
+      }
+    }
+    if (ns > 0) {
+      auto a_ = vgd_i;
+      auto sb_ = vgd_csxsb;
+      auto S_ = vgd_cssl;
+      auto si_ = E.si;
+      const int64_t bo = x.slot*xmx;
+      const int i = x.i;
+      par_for("m1_vgdcs_xpack", DevExeSpace(), 0, static_cast<int>(ns) - 1,
+      KOKKOS_LAMBDA(const int o) {
+        const int xx = si_(s0 + o);
+        const int e = xx/n, d = xx - e*n;
+        sb_(bo + o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+      });
+    }
+    xevp[x.slot].Record();
+    if (g == 0) {vgd_csvdense += static_cast<double>(vgd_csnsnd)*n;}
+    xfl.push_back(std::move(x));
+    xprog();
+  };
+  // complete the oldest item: its messages, then its unpack (stream order)
+  auto xfinish = [&]() {
+    const VgdCsCl &E = vgd_cscl[vgd_cscur];
+    Xi &x = xfl[xh];
+    Kokkos::Timer tq;
+    while (true) {
+      xprog();
+      if (x.sent) {
+        int flag = 0;
+        MPI_Testall(static_cast<int>(x.rq.size()), x.rq.data(), &flag,
+                    MPI_STATUSES_IGNORE);
+        if (flag) {break;}
+      }
+    }
+    vgd_tmpi += tq.seconds();
+    vgd_nexch += 1.0;
+    const size_t sl = xsl(x);
+    const int64_t *ro = &E.ro[sl*(xnp + 1)];
+    const int64_t r0 = ro[0], nr = ro[xnp] - ro[0];
+    if (nr > 0) {
+      auto a_ = vgd_i;
+      auto rb_ = vgd_csxrb;
+      auto R_ = vgd_csrl;
+      auto ri_ = E.ri;
+      const int64_t bo = x.slot*xmx;
+      const int i = x.i;
+      par_for("m1_vgdcs_xunpack", DevExeSpace(), 0, static_cast<int>(nr) - 1,
+      KOKKOS_LAMBDA(const int o) {
+        const int xx = ri_(r0 + o);
+        const int e = xx/n, d = xx - e*n;
+        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(bo + o);
+      });
+    }
+    xevu[x.slot].Record();
+    x.rq.clear();
+    ++xh;
+    if (xh == xfl.size()) {
+      xfl.clear();
+      xh = 0;
+    }
+  };
+#endif
   VetGdRingSweepBegin(false);
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
@@ -1183,7 +1369,16 @@ void RadiationM1::VetGdCsSweep() {
         }
         VetGdRingFlush();
       }
-      par_for("m1_vgdcs_shell", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
+      for (int g = 0; g < G; ++g) {
+      const int d0 = (g*n + G - 1)/G, d1 = ((g + 1)*n + G - 1)/G;   // d*G/n == g
+#if MPI_PARALLEL_ENABLED
+      if (pipe && q > 0) {   // the band of the previous shell, this group
+        Kokkos::Timer tf;
+        xfinish();
+        vgd_thalo += tf.seconds();
+      }
+#endif
+      par_for("m1_vgdcs_shell", DevExeSpace(), 0, nmb1, ks, ke, js, je, d0, d1 - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         const Real mr = mr_(m,k,j,d);
@@ -1376,6 +1571,14 @@ void RadiationM1::VetGdCsSweep() {
         }
         vi_(m,d,k,j,i) = iv;
       });
+#if MPI_PARALLEL_ENABLED
+      if (pipe) {
+        Kokkos::Timer tf;
+        xstart(pass, l, g);
+        vgd_thalo += tf.seconds();
+      }
+#endif
+      }   // g
       if (rga) {
         // the previous shell of the pass has been read (stream order): its inward band
         // values saved (inward pass), its interior back to the compact slab; the next
@@ -1402,7 +1605,10 @@ void RadiationM1::VetGdCsSweep() {
         }
       }
       Kokkos::Timer th;
-      if (ccl) {
+      if (pipe) {
+        // xchg-1021: this shell's exchanges are in flight (finished before the next
+        // shell's kernels of the same group, or at the end of the pass)
+      } else if (ccl) {
         VetGdCsHaloC(pass, i);               // cs-s3b-1017: the read values only
       } else {
         VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
@@ -1416,6 +1622,13 @@ void RadiationM1::VetGdCsSweep() {
       if (rga) {VetGdRingFlush();}
       vgd_thalo += th.seconds();
     }
+#if MPI_PARALLEL_ENABLED
+    if (pipe) {   // the last shell's exchanges (its band: read by the outward pass)
+      Kokkos::Timer tf;
+      while (!xfl.empty()) {xfinish();}
+      vgd_thalo += tf.seconds();
+    }
+#endif
     if (rga) {
       // the last shell of the pass: saved (inward) and back to its compact slab
       const int il = is + (inw ? lcut : (n1 - 1));
