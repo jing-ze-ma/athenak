@@ -2874,6 +2874,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         if (!(cs2_cap >= 0.0)) {
           ImplFatal("<rad_m1>/implicit_cs2_dacap must be >= 0 (0 = off)");
         }
+        // the speed of the cap is at least vmin c (default 1e-4): a (near-)static cell
+        // keeps the truncation-level dA of its enthalpy flux (read only with the cap on)
+        if (cs2_cap > 0.0) {
+          cs2_cap_vmin = pin->GetOrAddReal("rad_m1","implicit_cs2_dacap_vmin",1.0e-4);
+          if (!(cs2_cap_vmin >= 0.0)) {
+            ImplFatal("<rad_m1>/implicit_cs2_dacap_vmin must be >= 0");
+          }
+        }
       }
       // consfix3: the AP-HLL (thin) part of a face has no face equation, so the theta
       // split cannot act there; `drag` (default): that part charges the gas only its
@@ -10741,6 +10749,7 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
   const bool gmo = (cs2_cap > 0.0) && Cs2Active();
   const bool hdg = cs2_hll_drag;
   const Real gk = 2.0*cs2_cap;
+  const Real gvm = cs2_cap_vmin*c_light;
   const int cs9 = iw_cs2 + 9;
   par_for("m1_cs2_da", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -10866,34 +10875,6 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
     iw_(m,cd,k,j,i) = a1 - o1;
     iw_(m,cd+1,k,j,i) = tq ? (a2 - o2) : 0.0;
     iw_(m,cd+2,k,j,i) = (tq && thrd) ? (a3 - o3) : 0.0;
-    if (gmo) {
-      // gsdrag-1021: |dA| against what an enthalpy flux at the cell's speed can change
-      Real u1 = iw_(m,M1_IW_V1,k,j,i), u2 = iw_(m,M1_IW_V2,k,j,i);
-      Real u3 = iw_(m,M1_IW_V3,k,j,i);
-      if (vfx && udv) {
-        u1 += iw_(m,ivd,k,j,i);
-        if (tq) {
-          u2 += iw_(m,ivd+1,k,j,i);
-          if (thrd) {u3 += iw_(m,ivd+2,k,j,i);}
-        }
-      }
-      const Real vm = fmax(sqrt(u1*u1 + u2*u2 + u3*u3),
-                           sqrt(SQR(iw_(m,M1_IW_V1,k,j,i)) + SQR(iw_(m,M1_IW_V2,k,j,i))
-                                + SQR(iw_(m,M1_IW_V3,k,j,i))));
-      const Real d1 = iw_(m,cd,k,j,i), d2 = iw_(m,cd+1,k,j,i), d3 = iw_(m,cd+2,k,j,i);
-      const Real dn = sqrt(d1*d1 + d2*d2 + d3*d3);
-      const Real am = gk*vm*fmax(fmax(iw_(m,M1_IW_EN,k,j,i), es), 0.0);
-      Real sg = 1.0;
-      if (dn > am) {sg = am/dn;}
-      iw_(m,cs9,k,j,i) = sg;
-      iw_(m,cd,k,j,i) = sg*d1;
-      iw_(m,cd+1,k,j,i) = sg*d2;
-      iw_(m,cd+2,k,j,i) = sg*d3;
-      // the own gas share s om_bar (implicit_cs2_hll = inertia: s)
-      for (int d = 0; d < 3; ++d) {
-        iw_(m,cw+d,k,j,i) = sg*(hdg ? iw_(m,cw+d,k,j,i) : 1.0);
-      }
-    }
   });
   if (cs_geom) {
     // cs-open-1018: the transverse F^old above mixed the COVARIANT stored cell F (u0,
@@ -10917,13 +10898,47 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
       iw_(m,ca+1,k,j,i) += d2;
       iw_(m,ca+2,k,j,i) += d3;
       if (tq) {
-        // gsdrag-1021: the basis change of a capped dA takes the same s (the cap is
-        // judged on the sp-form dA, an approximation on the cubed sphere)
-        const Real sg = gmo ? iw_(m,cs9,k,j,i) : 1.0;
-        iw_(m,cd+1,k,j,i) -= sg*d2;
-        iw_(m,cd+2,k,j,i) -= sg*d3;
+        iw_(m,cd+1,k,j,i) -= d2;
+        iw_(m,cd+2,k,j,i) -= d3;
       }
     });
+  }
+  if (gmo) {
+    // gsdrag-1021 implicit_cs2_dacap (after the cubed-sphere basis change: dA final)
+    par_for("m1_cs2_dacap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real es = iw_(m,M1_IW_EP,k,j,i);
+      {
+        // gsdrag-1021: |dA| against what an enthalpy flux at the cell's speed can change
+        Real u1 = iw_(m,M1_IW_V1,k,j,i), u2 = iw_(m,M1_IW_V2,k,j,i);
+        Real u3 = iw_(m,M1_IW_V3,k,j,i);
+        if (vfx && udv) {
+          u1 += iw_(m,ivd,k,j,i);
+          if (tq) {
+            u2 += iw_(m,ivd+1,k,j,i);
+            if (thrd) {u3 += iw_(m,ivd+2,k,j,i);}
+          }
+        }
+        const Real vm = fmax(fmax(sqrt(u1*u1 + u2*u2 + u3*u3),
+                                  sqrt(SQR(iw_(m,M1_IW_V1,k,j,i)) + SQR(iw_(m,M1_IW_V2,k,j,i))
+                                       + SQR(iw_(m,M1_IW_V3,k,j,i)))), gvm);
+        const Real d1 = iw_(m,cd,k,j,i), d2 = iw_(m,cd+1,k,j,i), d3 = iw_(m,cd+2,k,j,i);
+        const Real dn = sqrt(d1*d1 + d2*d2 + d3*d3);
+        const Real am = gk*vm*fmax(fmax(iw_(m,M1_IW_EN,k,j,i), es), 0.0);
+        Real sg = 1.0;
+        if (dn > am) {sg = am/dn;}
+        iw_(m,cs9,k,j,i) = sg;
+        iw_(m,cd,k,j,i) = sg*d1;
+        iw_(m,cd+1,k,j,i) = sg*d2;
+        iw_(m,cd+2,k,j,i) = sg*d3;
+        // the own gas share s om_bar (implicit_cs2_hll = inertia: s)
+        for (int d = 0; d < 3; ++d) {
+          iw_(m,cw+d,k,j,i) = sg*(hdg ? iw_(m,cw+d,k,j,i) : 1.0);
+        }
+      }
+    });
+  }
+  if (cs_geom) {
     // (c) the ghosts: dA_1 scalar, (dA_2, dA_3) the face-normal pair
     ImplicitCsPairHalo(cd);
     return;
@@ -15731,6 +15746,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool c2h = gcs && Cs2Active() && (cs2_hll_drag || (cs2_cap > 0.0)) &&
                    !(cs2_dbg & 1);
   const int c2a = c2h ? iw_cs2 : 0;
+  // gsdrag-1021 implicit_cs2_dacap: the write-back caps the conservative excess over the
+  // matched drag at 2 K |v| max(E^old, E')/(c chat) (rad_m1_impl_wb_kernel.hpp)
+  const bool gcap = gcs && Cs2Active() && (cs2_cap > 0.0);
+  const Real gkw = 2.0*cs2_cap, gvmw = cs2_cap_vmin*c_light;
   // cs-open-1018: implicit_rad_inertia on the cubed sphere (was a FATAL check kernel
   // here, cs-port-1016): the transverse v_f g0_f deposit and the enthalpy-flux momentum
   // fixed point are the `#if M1_CSW` blocks of the cs write-back launches below

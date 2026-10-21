@@ -1000,6 +1000,7 @@ class RadiationM1 {
   // drag rule).  Catches an A^old = F_stored - F0 mean that is not an enthalpy flux
   // (limiter clip, pgen-held E/F), NOTE /raven/ptmp/jinma/gsdrag_1021
   Real cs2_cap = 0.0;
+  Real cs2_cap_vmin = 1.0e-4;            // implicit_cs2_dacap_vmin: |w| >= vmin c in the cap
   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)

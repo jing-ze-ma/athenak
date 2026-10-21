@@ -482,6 +482,58 @@
           return w;
         };
         dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;
+        // gsdrag-1021 implicit_cs2_dacap: the drag of the matched rule (dt k_f F0'_f/c,
+        // half per face, as above) and the bound of the conservative excess over it,
+        // |dm - dm_drag| <= 2 K |v| max(E^old, E')/(c chat), |v| >= vmin c: the
+        // radiation-inertia share a real enthalpy flux can hand over
+        Real gd1 = 0.0, gd2 = 0.0, gd3 = 0.0, gbd = 0.0;
+        if (gcap) {
+          const Real ktc = iw_(m,M1_IW_KT,k,j,i);
+          Real ktl = ktc, ktr = ktc, wl = 0.5, wr = 0.5;
+          if (i == is && ipq == 0 && !cyclic) {
+            wl = bmhalf ? 0.5 : 1.0;
+          } else {
+            const int im = (cyclic && i == is) ? ie : (i-1);
+            ktl = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), ktc, cx1f, m, im, i, fwd);
+          }
+          if (i == ie && ipq == nblkx1-1 && !cyclic) {
+            wr = bmhalf ? 0.5 : 1.0;
+          } else {
+            const int ip = (cyclic && i == ie) ? is : (i+1);
+            ktr = M1FaceAvgX1(ktc, iw_(m,M1_IW_KT,k,j,ip), cx1f, m, i, ip, fwd);
+          }
+          gd1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
+          if (tq) {
+            BoundaryFlag b3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+            BoundaryFlag b4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+            const bool l2 = (b3 != BoundaryFlag::block) && (b3 != BoundaryFlag::periodic);
+            const bool h2 = (b4 != BoundaryFlag::block) && (b4 != BoundaryFlag::periodic);
+            const Real kl2 = (j == js && l2) ? ktc : 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + ktc);
+            const Real kr2 = (j == je && h2) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k,j+1,i));
+            const Real u2 = ((j == js && l2) && !bmhalf) ? 1.0 : 0.5;
+            const Real w2 = ((j == je && h2) && !bmhalf) ? 1.0 : 0.5;
+            gd2 = (dt/cl)*(u2*kl2*g2l + w2*kr2*g2r);
+            if (thrd) {
+              BoundaryFlag b5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+              BoundaryFlag b6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+              const bool l3 = (b5 != BoundaryFlag::block) && (b5 != BoundaryFlag::periodic);
+              const bool h3 = (b6 != BoundaryFlag::block) && (b6 != BoundaryFlag::periodic);
+              const Real kl3 = (k == ks && l3) ? ktc : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
+              const Real kr3 = (k == ke && h3) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
+              const Real u3 = ((k == ks && l3) && !bmhalf) ? 1.0 : 0.5;
+              const Real w3 = ((k == ke && h3) && !bmhalf) ? 1.0 : 0.5;
+              gd3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);
+            }
+            if (csw && thrd) {
+              const Real c = cclw(m,k,j), si = 1.0/csnw(m,k,j);
+              const Real a = gd2, b = gd3;
+              gd2 = (a + c*b)*si;
+              gd3 = (b + c*a)*si;
+            }
+          }
+          const Real vq = fmax(sqrt(v1*v1 + v2*v2 + v3*v3), gvmw);
+          gbd = gkw*vq*fmax(fmax(iw_(m,M1_IW_EN,k,j,i), ep), 0.0)*icc;
+        }
         const Real r1 = fp1, r2 = fp2, r3 = fp3;   // the cell flux before the kick
         Real q1 = fp1, q2 = fp2, q3 = fp3;
         // cs2clip-1020 (implicit_cs2_clip = rad): the gas is charged with the cell flux
@@ -534,6 +586,18 @@
             }
           }
 #endif
+          if (gcap) {
+            // gsdrag-1021: the conservative excess over the drag, capped (the rest of
+            // it stays with the radiation)
+            const Real x1q = dm1 - gd1, x2q = dm2 - gd2, x3q = dm3 - gd3;
+            const Real xn = sqrt(x1q*x1q + x2q*x2q + x3q*x3q);
+            if (xn > gbd) {
+              const Real sc = gbd/xn;
+              dm1 = gd1 + sc*x1q;
+              dm2 = gd2 + sc*x2q;
+              dm3 = gd3 + sc*x3q;
+            }
+          }
           if (q == 3) break;
           const Real wq = kew(dm1, dm2, dm3);
           Real eq = efc ? ep : (ep - (ch/cl)*wq);
