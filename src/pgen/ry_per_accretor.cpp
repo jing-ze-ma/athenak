@@ -2652,6 +2652,7 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   cref24_ = DvceArray4D<Real>();
   rhoamb4_ = DvceArray4D<Real>();
   tcol4_ = DvceArray4D<Real>();
+  bdvs_ = DvceArray3D<Real>();   // pgrst-1021
 }
 
 //! thermo = general: log T, log rho of the column at psi (linear in psi, clamped)

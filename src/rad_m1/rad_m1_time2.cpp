@@ -511,16 +511,26 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       auto ys_ = t2ys;
       auto k1r_ = t2k1;
       const int ncell = M1_T2_F1;   // E, gas momentum (3), gas energy
-      Real nr = 0.0;
+      auto &vol = pmy_pack->pcoord->volume;
+      Real nr = 0.0, de = 0.0;
       Kokkos::parallel_reduce("m1_t2_k1reset", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
           DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum,
+                    Real &sde) {
         if (u0_(m,M1_E,k,j,i) != ys_(m,k,j,i)) {
+          sde += (k1r_(m,M1_T2_E,k,j,i) + k1r_(m,M1_T2_EN,k,j,i))*vol(m,k,j,i);
           for (int n=0; n<ncell; ++n) {k1r_(m,n,k,j,i) = 0.0;}
           sum += 1.0;
         }
-      }, Kokkos::Sum<Real>(nr));
+      }, Kokkos::Sum<Real>(nr), Kokkos::Sum<Real>(de));
       t2_k1reset_n += nr;
+      t2_k1reset_de = de;
+      // the face slopes of the faces of a reset cell are dropped by the stage-1 solve,
+      // after a halo exchange of the reset mask (both blocks of a shared face agree)
+      t2_ys_face = true;
+    } else {
+      t2_k1reset_de = 0.0;
+      t2_ys_face = false;
     }
     t2_ys_ok = false;
   } else {
@@ -1647,7 +1657,9 @@ void RadiationM1::Time2Report() {
   std::cout << "<rad_m1> time_scheme=hesdirk2: stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
-  if (t2_k1reset) {std::cout << " k1_reset cells(rank 0)=" << t2_k1reset_n;}
+  if (t2_k1reset) {
+    std::cout << " k1_reset cells(rank 0)=" << t2_k1reset_n << " faces=" << t2_k1reset_nf;
+  }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
                                        ((t2_vcmode == 2) ? "rebuild" : "extrap"))

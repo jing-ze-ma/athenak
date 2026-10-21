@@ -1363,6 +1363,10 @@ class RadiationM1 {
   bool t2_k1reset = false;
   bool t2_ys_ok = false;        // t2ys was taken at this cycle's stage-loop start
   Real t2_k1reset_n = 0.0;      // cells reset (this rank, whole run)
+  Real t2_k1reset_de = 0.0;     // this step: sum over reset cells of (K1_E + K1_EN) vol
+                                // dropped (the problem generator's budget books it)
+  bool t2_ys_face = false;      // the stage-1 solve still has to drop the face slopes
+  Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
