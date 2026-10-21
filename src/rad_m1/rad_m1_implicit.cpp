@@ -2621,6 +2621,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
+  if (pin->DoesParameterExist("rad_m1","implicit_vimp_ewf")) {
+    impl_vimp_ewf = pin->GetBoolean("rad_m1","implicit_vimp_ewf");
+  }
   // DIAGNOSTIC: a scale of the Jacobian P (1 = Newton).  The converged state does not
   // depend on it; only the Picard contraction does.
   impl_vimp_jscale = 1.0;
@@ -11590,6 +11593,7 @@ void RadiationM1::ImplicitVimpBuild() {
   // the face takes the same lagged-dv + Jacobian terms as an interior face, with the end
   // cell's own dv, D and P row (the face has one cell).
   const bool vbc = impl_vimp_bc && impl_bc_advect;
+  const bool ewf = impl_vimp_ewf;
   const Real ebl = iebath_x1min, ebh = iebath_x1max;
   // (2) the operator coefficients and the right-hand side
   par_for_lb("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -11694,6 +11698,10 @@ void RadiationM1::ImplicitVimpBuild() {
         const Real ph = nu*cr*ef*(1.0 + 0.5*(D[xl] + D[xl+1]));
         phf[s] = ph;
         const Real dvk = 0.5*(DV[ol+1][d] + DV[ol+2][d]);
+        // implicit_vimp_ewf: each cell's kick with its own E (ph/ef = the face weight)
+        const Real wdv = ewf
+            ? nu*cr*(1.0 + 0.5*(D[xl] + D[xl+1]))*0.5*(E[xl]*DV[ol+1][d] + E[xl+1]*DV[ol+2][d])
+            : 0.0;
         Real ps = 0.0;
         for (int e = 0; e < 3; ++e) {
           if (e == d) continue;
@@ -11707,7 +11715,11 @@ void RadiationM1::ImplicitVimpBuild() {
           const int r = ol + 1 + h;  // its index into P
           pe += 0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
         }
-        jr -= sg*(ph*dvk + ps - ph*pe);
+        if (ewf) {
+          jr -= sg*(wdv + ps - ph*pe);
+        } else {
+          jr -= sg*(ph*dvk + ps - ph*pe);
+        }
       }
       if (sph) {
         // sp: the same two faces with dt A_f/V_i each instead of dt/dx_d (the Cartesian
@@ -11744,6 +11756,10 @@ void RadiationM1::ImplicitVimpBuild() {
           const Real ph = nus*cr*ef*(1.0 + 0.5*(D[xl] + D[xl+1]));
           phf[s] = ph;
           const Real dvk = 0.5*(DV[ol+1][d] + DV[ol+2][d]);
+          const Real wdv = ewf
+              ? nus*cr*(1.0 + 0.5*(D[xl] + D[xl+1]))*0.5*(E[xl]*DV[ol+1][d] +
+                                                          E[xl+1]*DV[ol+2][d])
+              : 0.0;
           Real ps = 0.0;
           for (int e = 0; e < 3; ++e) {
             if (e == d) continue;
@@ -11756,7 +11772,11 @@ void RadiationM1::ImplicitVimpBuild() {
             const int r = ol + 1 + h;
             pe += 0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
           }
+          if (ewf) {
+          jr -= sg*(wdv + ps - ph*pe);
+        } else {
           jr -= sg*(ph*dvk + ps - ph*pe);
+        }
         }
       }
       const Real pl = 0.5*phf[0], ph = 0.5*phf[1];

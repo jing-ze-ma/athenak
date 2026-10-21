@@ -1534,6 +1534,12 @@ class RadiationM1 {
   // <rad_m1>/implicit_vimp (tests_m1/runs_3v_vimplicit): the gas velocity of the
   // enthalpy flux implicit through the radiative force of the solve (Newton form)
   bool impl_vimp;               // the switch (default false: nothing below is touched)
+  // pgrst-vimp-1021 <rad_m1>/implicit_vimp_ewf (read only when named; default false =
+  // bitwise): the lagged enthalpy-work term of a face, E_f (1 + D_f) dv_f with dv_f the
+  // face mean of the two cells' predicted kicks, is taken as (1 + D_f) (E_L dv_L + E_R dv_R)/2:
+  // each cell's kick carries its OWN E (same order; a strong kick of 1e-8 floor gas beside a
+  // pgen-held 73 kK nozzle cell no longer charges it E_nozzle dv_floor: S2 -16.7 there)
+  bool impl_vimp_ewf = false;
   Real impl_vimp_jscale;        // DIAGNOSTIC implicit_vimp_jscale: scale of P (1)
   bool vimp_now;                // on for this step (the positivity fallback drops it)
   int iw_vimp;                  // first iw component of the M1_NIW_VIMP block, or -1
