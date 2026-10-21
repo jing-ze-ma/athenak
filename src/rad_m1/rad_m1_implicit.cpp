@@ -7149,7 +7149,8 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
     }
     int ipos = pos_(m);
     bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
-    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+    if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+        (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
                     (i == ie && topb && bchi == M1_IBC_EFIX)))) {
       iw_(m,cy,k,j,i) = y7;
       return y7;
@@ -8014,7 +8015,8 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     int ipos = pos_(m);
     bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
-    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+    if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+        (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
                     (i == ie && topb && bchi == M1_IBC_EFIX)))) {
       return;
     }
@@ -10306,7 +10308,8 @@ void RadiationM1::ImplicitWorkRow(bool row) {
     par_for("m1_impl_wk_cs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = pos_.d_view(m);
-      if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipw == 0 && elo) ||
+      if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+          (!cyclic && ((i == is && ipw == 0 && elo) ||
                       (i == ie && ipw == nblkx1-1 && ehi)))) {
         return;
       }
@@ -10334,7 +10337,8 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   par_for("m1_impl_wk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipw = pos_.d_view(m);
-    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipw == 0 && elo) ||
+    if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+        (!cyclic && ((i == is && ipw == 0 && elo) ||
                     (i == ie && ipw == nblkx1-1 && ehi)))) {
       return;
     }
@@ -10366,7 +10370,8 @@ void RadiationM1::ImplicitWorkRow(bool row) {
     par_for("m1_impl_wkref", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = pos_.d_view(m);
-      if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipw == 0 && elo) ||
+      if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+          (!cyclic && ((i == is && ipw == 0 && elo) ||
                       (i == ie && ipw == nblkx1-1 && ehi)))) {
         return;
       }
@@ -10420,7 +10425,8 @@ void RadiationM1::ImplicitNofbWorkRow() {
   par_for("m1_impl_nfwk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_.d_view(m);
-    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && ipos == 0 && bclo == M1_IBC_EFIX) ||
+    if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+        (!cyclic && ((i == is && ipos == 0 && bclo == M1_IBC_EFIX) ||
                     (i == ie && ipos == nblkx1-1 && bchi == M1_IBC_EFIX)))) {
       return;
     }
@@ -10968,7 +10974,8 @@ void RadiationM1::ImplicitCs2DeltaA(bool usedv) {
           }
         }
         const Real vm = fmax(fmax(sqrt(u1*u1 + u2*u2 + u3*u3),
-                                  sqrt(SQR(iw_(m,M1_IW_V1,k,j,i)) + SQR(iw_(m,M1_IW_V2,k,j,i))
+                                  sqrt(SQR(iw_(m,M1_IW_V1,k,j,i))
+                                       + SQR(iw_(m,M1_IW_V2,k,j,i))
                                        + SQR(iw_(m,M1_IW_V3,k,j,i)))), gvm);
         const Real d1 = iw_(m,cd,k,j,i), d2 = iw_(m,cd+1,k,j,i), d3 = iw_(m,cd+2,k,j,i);
         const Real dn = sqrt(d1*d1 + d2*d2 + d3*d3);
@@ -11731,7 +11738,8 @@ void RadiationM1::ImplicitVimpBuild() {
     const int ipos = pos_(m);
     const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
     for (int n = M1_IV_X1M2; n <= M1_IV_JRHS; ++n) {iw_(m,b+n,k,j,i) = 0.0;}
-    if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+    if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+        (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
                     (i == ie && topb && bchi == M1_IBC_EFIX)))) {
       return;   // the Dirichlet row is replaced whole
     }
@@ -11831,7 +11839,8 @@ void RadiationM1::ImplicitVimpBuild() {
         const Real dvk = 0.5*(DV[ol+1][d] + DV[ol+2][d]);
         // implicit_vimp_ewf: each cell's kick with its own E (ph/ef = the face weight)
         const Real wdv = ewf
-            ? nu*cr*(1.0 + 0.5*(D[xl] + D[xl+1]))*0.5*(E[xl]*DV[ol+1][d] + E[xl+1]*DV[ol+2][d])
+            ? nu*cr*(1.0 + 0.5*(D[xl] + D[xl+1]))*0.5*
+              (E[xl]*DV[ol+1][d] + E[xl+1]*DV[ol+2][d])
             : 0.0;
         Real ps = 0.0;
         for (int e = 0; e < 3; ++e) {
@@ -14814,7 +14823,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       // a Dirichlet end cell: the whole row is replaced, which keeps the matrix an
       // M-matrix and anchors the level of E (see M1_IBC_EFIX)
-      if ((hon_ && hm_(m,k,j,i) > 0.0) || (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+      if ((hon_ && hm_(m,k,j,i) > 0.0) ||
+          (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
                       (i == ie && topb && bchi == M1_IBC_EFIX)))) {
         aa = 0.0;
         bb = 1.0;
@@ -15688,7 +15698,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real r = iw_(m,M1_IW_S2,k,j,i);
         if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
         if (gq) {
-          Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+          Real qq = iw_(m,M1_IW_SRCR,k,j,i)
+                    - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
           r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
         }
         if (!(r > 0.0)) {pm_(m,k,j,i) = 1.0;}
@@ -15709,7 +15720,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         !t2_pfix_want) {dtr_t2hit = true;}
     if (t2_fail && t2_pfix_want && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> hesdirk2 stage 1 NOT POSITIVE at cycle "
-                << pmy_pack->pmesh->ncycle << " (min(E,T)=" << vmin << "): local re-solve "
+                << pmy_pack->pmesh->ncycle << " (min(E,T)=" << vmin
+                << "): local re-solve "
                 << "(time2_posfix)" << std::endl;
     }
     if (t2_fail && !t2_pfix_want && global_variable::my_rank == 0) {
@@ -16666,7 +16678,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const int ipw = posw_.d_view(m);
         const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
-                                   (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX)) || (hon_ && hm_(m,k,j,i) > 0.0);
+                                   (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX)) ||
+                         (hon_ && hm_(m,k,j,i) > 0.0);
         const Real dd = uh(m,IDN,k,j,i);
         const Real idg = 1.0/fmax(dd, 1.0e-300);
         const Real v1 = iw_(m,M1_IW_V1,k,j,i);
@@ -16696,7 +16709,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int ipw = posw_.d_view(m);
       const bool efw = !cycw && ((i == is && ipw == 0 && bclw == M1_IBC_EFIX) ||
-                                 (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX)) || (hon_ && hm_(m,k,j,i) > 0.0);
+                                 (i == ie && ipw == nbw-1 && bchw == M1_IBC_EFIX)) ||
+                       (hon_ && hm_(m,k,j,i) > 0.0);
       const Real dd = uh(m,IDN,k,j,i);
       const Real idg = 1.0/fmax(dd, 1.0e-300);
       const Real v1 = iw_(m,M1_IW_V1,k,j,i);
@@ -17168,7 +17182,8 @@ void RadiationM1::ImplicitMusclBuild() {
     const int ipos = pos_.d_view(m);
     const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
     const bool efx = !cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
-                                 (i == ie && topb && bchi == M1_IBC_EFIX)) || (hon_ && hm_(m,k,j,i) > 0.0);
+                                 (i == ie && topb && bchi == M1_IBC_EFIX)) ||
+                     (hon_ && hm_(m,k,j,i) > 0.0);
     for (int d = 0; d < 3; ++d) {
       Real sg = 0.0, sb = 0.0;
       bool ok = !efx && ((d == 0) || (d == 1 && l2) || (d == 2 && l3));

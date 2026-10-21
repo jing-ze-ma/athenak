@@ -54,6 +54,7 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -88,8 +89,12 @@ struct VgdCsEv {
     cudaEventRecord(e, DevExeSpace().cuda_stream());
   }
   bool Done() const {return e == nullptr || cudaEventQuery(e) != cudaErrorNotReady;}
-  void Wait() const {if (e != nullptr) {cudaEventSynchronize(e);}}
-  ~VgdCsEv() {if (e != nullptr) {cudaEventDestroy(e);}}
+  void Wait() const {
+    if (e != nullptr) {cudaEventSynchronize(e);}
+  }
+  ~VgdCsEv() {
+    if (e != nullptr) {cudaEventDestroy(e);}
+  }
 #elif defined(KOKKOS_ENABLE_HIP)
   hipEvent_t e = nullptr;
   void Record() {
@@ -97,8 +102,12 @@ struct VgdCsEv {
     (void) hipEventRecord(e, DevExeSpace().hip_stream());
   }
   bool Done() const {return e == nullptr || hipEventQuery(e) != hipErrorNotReady;}
-  void Wait() const {if (e != nullptr) {(void) hipEventSynchronize(e);}}
-  ~VgdCsEv() {if (e != nullptr) {(void) hipEventDestroy(e);}}
+  void Wait() const {
+    if (e != nullptr) {(void) hipEventSynchronize(e);}
+  }
+  ~VgdCsEv() {
+    if (e != nullptr) {(void) hipEventDestroy(e);}
+  }
 #else
   void Record() {Kokkos::fence();}
   bool Done() const {return true;}
@@ -808,7 +817,8 @@ void RadiationM1::VetGdCsCompact() {
       if (x != 0u && ((x & (x >> 1) & 0x55555555u) != 0u)) {both = true;}
     }
     if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
-    std::vector<uint32_t> smw(std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1), 0u);
+    std::vector<uint32_t> smw(std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1),
+                              0u);
 #if MPI_PARALLEL_ENABLED
     {
       std::vector<MPI_Request> req;
@@ -880,7 +890,8 @@ void RadiationM1::VetGdCsCompact() {
             const int e = st0[p] + static_cast<int>(rr/per);
             const size_t r = rr % per;
             const int d = static_cast<int>(r/n1), sh = static_cast<int>(r % n1);
-            lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] = e*n + d;
+            lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] =
+                e*n + d;
           }
         }
       }
@@ -960,7 +971,8 @@ void RadiationM1::VetGdCsCompact() {
             for (int sh = 0; sh < n1; ++sh) {
               const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
               if (v) {
-                lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] = e*n + d;
+                lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] =
+                    e*n + d;
               }
             }
           }

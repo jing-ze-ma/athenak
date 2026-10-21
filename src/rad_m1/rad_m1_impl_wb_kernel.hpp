@@ -10,8 +10,8 @@
 // rad_inertia and conservative paths (`#if M1_CSW`); with M1_CSW undefined (the sp and
 // Cartesian launches) the preprocessed kernel is exactly the one before.
 // NOLINT(build/header_guard)
-    // pgrst implicit_hold: a held cell keeps the Dirichlet E (= its old vector); its F and
-    // gas belong to the problem generator; no stage slope
+    // pgrst implicit_hold: a held cell keeps the Dirichlet E (= its old vector); its F
+    // and gas belong to the problem generator; no stage slope
     if (hwo_ && hwm_(m,k,j,i) > 0.0) {
       u0_(m,M1_E,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
       if (t2k) {
@@ -530,10 +530,14 @@
             if (thrd) {
               BoundaryFlag b5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
               BoundaryFlag b6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
-              const bool l3 = (b5 != BoundaryFlag::block) && (b5 != BoundaryFlag::periodic);
-              const bool h3 = (b6 != BoundaryFlag::block) && (b6 != BoundaryFlag::periodic);
-              const Real kl3 = (k == ks && l3) ? ktc : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
-              const Real kr3 = (k == ke && h3) ? ktc : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
+              const bool l3 = (b5 != BoundaryFlag::block) &&
+                              (b5 != BoundaryFlag::periodic);
+              const bool h3 = (b6 != BoundaryFlag::block) &&
+                              (b6 != BoundaryFlag::periodic);
+              const Real kl3 = (k == ks && l3) ? ktc
+                                               : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
+              const Real kr3 = (k == ke && h3) ? ktc
+                                               : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
               const Real u3 = ((k == ks && l3) && !bmhalf) ? 1.0 : 0.5;
               const Real w3 = ((k == ke && h3) && !bmhalf) ? 1.0 : 0.5;
               gd3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);

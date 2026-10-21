@@ -1007,7 +1007,7 @@ class RadiationM1 {
   // drag rule).  Catches an A^old = F_stored - F0 mean that is not an enthalpy flux
   // (limiter clip, pgen-held E/F), NOTE /raven/ptmp/jinma/gsdrag_1021
   Real cs2_cap = 0.0;
-  Real cs2_cap_vmin = 1.0e-4;            // implicit_cs2_dacap_vmin: |w| >= vmin c in the cap
+  Real cs2_cap_vmin = 1.0e-4;           // implicit_cs2_dacap_vmin: |w| >= vmin c in cap
   bool cs2_vimp = true;                 // implicit_cs2_vimp (open-ot-1013): (b) on
   int cs2_dbg_n = 0;                    // implicit_cs2_dbg bit 32: lines printed
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)
@@ -1405,7 +1405,7 @@ class RadiationM1 {
   int t2_pfix_grow = 1;         // dilation (face-neighbour layers) of the marked set
   int t2_pfix_n = 0;            // re-solves taken in this step
   bool t2_pfix_want = false;    // the stage-1 solve just marked cells and asks a re-solve
-  bool t2_pfix_redo = false;    // the coming stage-1 solve is a re-solve (keeps the build)
+  bool t2_pfix_redo = false;    // the coming stage-1 solve is a re-solve (keeps build)
   bool t2_pfix_any = false;     // this step's stage 1 was limited (stage-2 compensation)
   Real t2_pfix_nstep = 0.0, t2_pfix_nsolve = 0.0, t2_pfix_ncell = 0.0;  // counters
   DvceArray4D<Real> t2pm;       // (m,k,j,i) 1 = stage-1 increment dropped (incl. ghosts)
@@ -1598,8 +1598,9 @@ class RadiationM1 {
   bool impl_vimp;               // the switch (default false: nothing below is touched)
   // pgrst-vimp-1021 <rad_m1>/implicit_vimp_ewf (read only when named; default false =
   // bitwise): the lagged enthalpy-work term of a face, E_f (1 + D_f) dv_f with dv_f the
-  // face mean of the two cells' predicted kicks, is taken as (1 + D_f) (E_L dv_L + E_R dv_R)/2:
-  // each cell's kick carries its OWN E (same order; a strong kick of 1e-8 floor gas beside a
+  // face mean of the two cells' predicted kicks, is taken as
+  // (1 + D_f) (E_L dv_L + E_R dv_R)/2: each cell's kick carries its OWN E (same order; a
+  // strong kick of 1e-8 floor gas beside a
   // pgen-held 73 kK nozzle cell no longer charges it E_nozzle dv_floor: S2 -16.7 there)
   bool impl_vimp_ewf = false;
   Real impl_vimp_jscale;        // DIAGNOSTIC implicit_vimp_jscale: scale of P (1)

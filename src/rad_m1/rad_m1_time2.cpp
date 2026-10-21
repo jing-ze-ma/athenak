@@ -594,7 +594,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
           bool bad = !(e0 + ca*k1r_(m,M1_T2_E,k,j,i) > th*e0);
           if (hg && !bad) {
             const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
-            Real eg0 = ug(m,IEN,k,j,i) - 0.5*(SQR(ug(m,IM1,k,j,i)) + SQR(ug(m,IM2,k,j,i)) +
+            Real eg0 = ug(m,IEN,k,j,i) - 0.5*(SQR(ug(m,IM1,k,j,i)) +
+                                              SQR(ug(m,IM2,k,j,i)) +
                                               SQR(ug(m,IM3,k,j,i)))*idd;
             const Real m1 = ug(m,IM1,k,j,i) + ca*k1r_(m,M1_T2_M1,k,j,i);
             const Real m2 = ug(m,IM2,k,j,i) + ca*k1r_(m,M1_T2_M1+1,k,j,i);
@@ -820,11 +821,12 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::Time2PosFix
-//! \brief t2pos-1020 <rad_m1>/time2_posfix: the stage-1 solve (converged or not) left E, T or
-//! the written-back gas eint <= 0 in the cells it marked in t2pm (ImplicitSolve).  In
-//! the thin, free-streaming floor shell (c dt/dr >> 1) the explicit part (1-g) dt K1 of
-//! the old vector of H-ESDIRK2 stage 1 is a stiff extrapolation that the L-stable stage
-//! solve cannot undo there.  The stage-1 start (radiation, faces, gas, closure memory) is
+//! \brief t2pos-1020 <rad_m1>/time2_posfix: the stage-1 solve (converged or not) left E,
+//! T or the written-back gas eint <= 0 in the cells it marked in t2pm (ImplicitSolve).
+//! In the thin, free-streaming floor shell (c dt/dr >> 1) the explicit part (1-g) dt K1
+//! of the old vector of H-ESDIRK2 stage 1 is a stiff extrapolation that the L-stable
+//! stage solve cannot undo there.
+//! The stage-1 start (radiation, faces, gas, closure memory) is
 //! put back, the marked set is grown by time2_posfix_grow face-neighbour layers, t2inc is
 //! dropped in it (cells; faces with a marked side), and stage 1 is solved again (at most
 //! time2_posfix times per step): in the set the stage is backward Euler of g dt from U^n,
@@ -904,9 +906,11 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
   // drop the stage-1 increment in the set (cells; faces with a marked side)
   auto in_ = t2inc;
   {
-    const int q3 = static_cast<int>(t2inc.extent(2)), q2 = static_cast<int>(t2inc.extent(3));
+    const int q3 = static_cast<int>(t2inc.extent(2));
+    const int q2 = static_cast<int>(t2inc.extent(3));
     const int q1 = static_cast<int>(t2inc.extent(4));
-    par_for("m1_t2p_drop", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, q3-1, 0, q2-1, 0, q1-1,
+    par_for("m1_t2p_drop", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, q3-1, 0, q2-1,
+            0, q1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       Real w = pm_(m,k,j,i);
       if (n == M1_T2_F1 && i > 0) {w = fmax(w, pm_(m,k,j,i-1));}
