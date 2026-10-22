@@ -1665,7 +1665,8 @@ class RadiationM1 {
   DvceArray4D<Real> vkill_;
   void ImplicitVimpKill();
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
-  // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1 off
+  // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
+  // off
   int iw_kir = -1;
   int impl_kir_ng = 8;          // implicit_face_opac_ng: Gauss points in T
   bool impl_kir_harm = false;   // implicit_face_opac = harmonic (no table lookups)

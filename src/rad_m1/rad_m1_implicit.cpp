@@ -3198,7 +3198,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   iw_kir = -1;
   if (sfo.compare("kirchhoff") == 0) {
     if (opacity_type != M1_OPAC_TABLE) {
-      ImplFatal("<rad_m1>/implicit_face_opac = kirchhoff needs opacity = table (or harmonic)");
+      ImplFatal("<rad_m1>/implicit_face_opac = kirchhoff needs opacity = table (or "
+                "harmonic)");
     }
     iw_kir = niw;
     niw += 1;
@@ -3215,7 +3216,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else if (sfo.compare("arith") != 0) {
     ImplFatal("<rad_m1>/implicit_face_opac = '" + sfo
               + "' is not a choice (arith | kirchhoff | harmonic)");
-  }}
+  }
+  }
   iw_cs2 = -1;
   // cs-open-1018: the conservative gas sources run on the cubed sphere (were refused
   // since cs-port-1016): the write-back's conservative loop re-forms the cell F inside
@@ -13620,7 +13622,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 
     // kirch-1022: the x1 face Kirchhoff rho kappa_T of this pass (implicit_face_opac);
-    // rebuilt whenever the cell opacities were (and at pass 0), kept while they are frozen
+    // rebuilt whenever the cell opacities were (and at pass 0), kept while they are
+    // frozen
     if (kir_ >= 0 && have_hydro && (it == 0 ||
         (impl_opac_update && (it > 0 || opn) && !opac_zero &&
          !(impl_opac_lagp && (it >= impl_opac_lagn))))) {
@@ -13636,19 +13639,24 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (hrm) {   // harm-1022: half-cell distance weights to the face x1f(i)
           const Real kl = iw_(m,M1_IW_KT,k,j,i-1), kr = iw_(m,M1_IW_KT,k,j,i);
           if (!(kl > 0.0 && kr > 0.0)) {iw_(m,kir_,k,j,i) = -1.0; return;}
-          const Real hl = 0.5*(cx1h(m,i) - cx1h(m,i-1)), hr = 0.5*(cx1h(m,i+1) - cx1h(m,i));
+          const Real hl = 0.5*(cx1h(m,i) - cx1h(m,i-1));
+          const Real hr = 0.5*(cx1h(m,i+1) - cx1h(m,i));
           iw_(m,kir_,k,j,i) = (hl + hr)/(hl/kl + hr/kr);
           return;
         }
         const Real tl = iw_(m,M1_IW_TP,k,j,i-1), tr = iw_(m,M1_IW_TP,k,j,i);
         const Real dl = uh(m,IDN,k,j,i-1), dr = uh(m,IDN,k,j,i);
-        if (!(tl > 0.0 && tr > 0.0 && dl > 0.0 && dr > 0.0)) {iw_(m,kir_,k,j,i) = -1.0; return;}
+        if (!(tl > 0.0 && tr > 0.0 && dl > 0.0 && dr > 0.0)) {
+          iw_(m,kir_,k,j,i) = -1.0;
+          return;
+        }
         const Real df = sqrt(dl*dr);
         // Gauss-Legendre nodes/weights on [-1,1] for ng = 2..8 (packed)
         const Real gx[8][8] = {
           {-0.5773502691896258, 0.5773502691896258},
           {-0.7745966692414834, 0.0, 0.7745966692414834},
-          {-0.8611363115940526, -0.3399810435848563, 0.3399810435848563, 0.8611363115940526},
+          {-0.8611363115940526, -0.3399810435848563, 0.3399810435848563,
+           0.8611363115940526},
           {-0.9061798459386640, -0.5384693101056831, 0.0, 0.5384693101056831,
            0.9061798459386640},
           {-0.9324695142031521, -0.6612093864662645, -0.2386191860831969,
@@ -13657,11 +13665,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
            0.4058451513773972, 0.7415311855993945, 0.9491079123427585},
           {-0.9602898564975363, -0.7966664774136267, -0.5255324099163290,
            -0.1834346424956498, 0.1834346424956498, 0.5255324099163290,
-           0.7966664774136267, 0.9602898564975363}, {0.0}};
+           0.7966664774136267, 0.9602898564975363},
+          {0.0}
+        };
         const Real gw[8][8] = {
           {1.0, 1.0},
           {0.5555555555555556, 0.8888888888888888, 0.5555555555555556},
-          {0.3478548451374538, 0.6521451548625461, 0.6521451548625461, 0.3478548451374538},
+          {0.3478548451374538, 0.6521451548625461, 0.6521451548625461,
+           0.3478548451374538},
           {0.2369268850561891, 0.4786286704993665, 0.5688888888888889, 0.4786286704993665,
            0.2369268850561891},
           {0.1713244923791704, 0.3607615730481386, 0.4679139345726910,
@@ -13670,7 +13681,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
            0.3818300505051189, 0.2797053914892766, 0.1294849661688697},
           {0.1012285362903763, 0.2223810344533745, 0.3137066458778873,
            0.3626837833783620, 0.3626837833783620, 0.3137066458778873,
-           0.2223810344533745, 0.1012285362903763}, {0.0}};
+           0.2223810344533745, 0.1012285362903763},
+          {0.0}
+        };
         const int q = ng - 2;
         const Real tm = 0.5*(tl + tr), th = 0.5*(tr - tl);
         Real num = 0.0, den = 0.0;
