@@ -847,6 +847,13 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     FluidRefresh(pdrive);
     if (fl.mhd) EmagBuild(false);
   }
+  // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir back to U^n too (am_spin1,
+  // taken by the hydro's stage 1 and untouched since); the redo's hydro stage 1 copies
+  // am_spin into am_spin1 again
+  if (am_vec) {
+    hydro::AmModule *pam = hydro::AmModuleOf(pmy_pack);
+    Kokkos::deep_copy(DevExeSpace(), pam->am_spin, pam->am_spin1);
+  }
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;
