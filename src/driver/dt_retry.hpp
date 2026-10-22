@@ -173,7 +173,7 @@ class DtRetry {
   bool built_ = false;
   bool all_views_ = false;
   bool audit_ = false;
-  bool host_ = false;      // gpumem-1022 <time>/dt_retry_host: clones in pinned host memory
+  bool host_ = false;      // gpumem-1022 <time>/dt_retry_host: clones in pinned host mem
   int poison_ = 0;
   Real fac_ = 0.5, grow_ = 1.25;
   int maxcut_ = 8, ngood_req_ = 10;

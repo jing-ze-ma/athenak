@@ -670,8 +670,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
             || t2gsv_h.extent(4) != flp.u0.extent(4)) {
           t2gsv_h = decltype(t2gsv_h)(Kokkos::view_alloc(std::string("t2gsv_h"),
                                       Kokkos::WithoutInitializing), flp.u0.extent(0),
-                                      flp.u0.extent(1), flp.u0.extent(2), flp.u0.extent(3),
-                                      flp.u0.extent(4));
+                                      flp.u0.extent(1), flp.u0.extent(2),
+                                      flp.u0.extent(3), flp.u0.extent(4));
         }
         Kokkos::deep_copy(DevExeSpace(), t2gsv_h, flp.u0);
       } else if (flp.on) {

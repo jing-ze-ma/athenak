@@ -331,9 +331,9 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   // gpumem-1022 <time>/dt_retry_host (read only when named; default false = bitwise the
   // old layout): the checkpoint clones of device Views live in pinned host memory
   // (SharedHostPinnedSpace) instead of device memory; the same bytes are copied back, so
-  // a retried cycle is bitwise the device-clone one. Saves device memory = one copy of the
-  // minimal list per cycle; costs a device -> host copy of it per cycle (PCIe on discrete
-  // GPUs). No effect on a host-only build.
+  // a retried cycle is bitwise the device-clone one. Saves device memory = one copy of
+  // the minimal list; costs a device -> host copy of it per cycle (PCIe on discrete
+  // GPUs). No memory effect on a host-only build.
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
     host_ = pin->GetBoolean("time", "dt_retry_host");
   }
