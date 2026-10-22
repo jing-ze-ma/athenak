@@ -2320,8 +2320,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // start (mlt_flux_frozen only, else no ramp), rule v2 (USER 10-22, Caltech TASK
   // ramp-rule-v2, supersedes v1 7/sigma_max + median): start = 0, time = the convective
   // saturation time t_sat = mlt_ramp_nefold/(mlt_ramp_sigma_frac sigma_max) (defaults
-  // 10.5 = ln(v_MLT/v_seed) and 0.74 = sigma_eff/sigma_max, both measured on the Caltech
-  // RSG E run; read only when a ramp key is auto), sigma_max from the IC column
+  // 10.5 = ln(v_MLT/v_seed), measured on the Caltech RSG E run, and 0.61 = sigma_eff/
+  // sigma_max: Caltech's measured RSG E e-fold ~10 d at 0.995 R_ph against THIS code's
+  // sigma_max (G m(r) gravity, code cells; 1/6.11 d); their 0.74 was against a fixed-GM
+  // sigma_max (1/7.35 d); read only when a ramp key is auto), sigma_max from the IC column
   // (HsN2Compute).  TODO: code the he_seed amplitude -> v_seed mapping for n_efold.  The
   // mass-weighted median 1/sigma (HsN2Median) is printed for reference.  Computed once
   // and kept in the restart file (kHsRmpTag), which a
@@ -2367,7 +2369,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         HsN2Compute(pmbp, eos, ar);
         if (hs_n2_.smax > 0.0) {
           const Real nef = pin->GetOrAddReal("problem","mlt_ramp_nefold",10.5);
-          const Real sfr = pin->GetOrAddReal("problem","mlt_ramp_sigma_frac",0.74);
+          const Real sfr = pin->GetOrAddReal("problem","mlt_ramp_sigma_frac",0.61);
           if (!(nef > 0.0) || !(sfr > 0.0)) {
             HsFatal("problem/mlt_ramp_nefold and mlt_ramp_sigma_frac must be > 0",
                     __LINE__);
