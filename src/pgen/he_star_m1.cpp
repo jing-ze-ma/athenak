@@ -201,6 +201,12 @@ bool hs_adp_ = false;
 std::vector<Real> hs_plnp_, hs_pfm_, hs_ftot_;
 DvceArray2D<Real> hs_shp_;
 Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
+// imprint-1021 problem/mlt_fsub_smooth = n (opt-in, default 0 = bitwise): radial boxcar of
+// the adaptive target over the faces i-n..i+n (clipped at the ends) before the relaxation,
+// so the subgrid deposit -div(A F_sub)/V where the scaffold ends is spread over ~2n+1 cells
+// instead of the one cell at the photospheric kappa cliff (HG: F_MLT/F 0.95 -> 0.19 in one
+// cell at 0.995 R_ph; a fixed per-shell heat in an unresolved cliff cell runs away per column)
+int hs_ad_sm_ = 0;
 Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
 int hs_ad_every_ = 1, hs_ad_cyc_ = -1;
 DvceArray1D<Real> hs_fsub_;
@@ -2373,6 +2379,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_ad_tau_ = pin->GetOrAddReal("problem","mlt_relax_time",1500.0);
     hs_ad_every_ = pin->GetOrAddInteger("problem","mlt_closure_every",1);
     hs_ad_dout_ = pin->GetOrAddReal("problem","mlt_closure_dout",0.0);
+    hs_ad_sm_ = pin->GetOrAddInteger("problem","mlt_fsub_smooth",0);
+    if (hs_ad_sm_ < 0) HsFatal("problem/mlt_fsub_smooth must be >= 0", __LINE__);
     if (!(hs_ad_tau_ > 0.0) || hs_ad_every_ < 1) {
       HsFatal("problem/mlt_relax_time must be > 0 and mlt_closure_every >= 1", __LINE__);
     }
@@ -2463,7 +2471,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << ", relax time " << hs_ad_tau_
                 << " s, every " << hs_ad_every_ << " cycle(s), taper "
                 << pin->GetReal("problem","mlt_closure_taper") << ", update clock "
-                << hs_ad_tl_ << ", max L_sub = " << hs_lsub_ << std::endl;
+                << hs_ad_tl_ << ", max L_sub = " << hs_lsub_
+                << (hs_ad_sm_ > 0 ? ", mlt_fsub_smooth " + std::to_string(hs_ad_sm_) : std::string())
+                << std::endl;
     }
   }
   if (hs_mlt_) {
@@ -3847,6 +3857,16 @@ HsDetSum(&hsp(is,0), 3*(ie + 1 - is));   // rsgrst-1021: rank-ordered
       }
       tgt[i] = fm*hs_ftot_[i];
     }
+  }
+  if (hs_ad_sm_ > 0) {   // imprint-1021: mlt_fsub_smooth (opt-in)
+    std::vector<Real> ts(tgt);
+    for (int i=is; i<=ie+1; ++i) {
+      const int i0 = std::max(is, i - hs_ad_sm_), i1 = std::min(ie + 1, i + hs_ad_sm_);
+      Real sum = 0.0;
+      for (int q=i0; q<=i1; ++q) sum += tgt[q];
+      ts[i] = sum/static_cast<Real>(i1 - i0 + 1);
+    }
+    tgt.swap(ts);
   }
   const Real t = pm->time;
   const Real a = 1.0 - exp(-(t - hs_ad_tl_)/hs_ad_tau_);
