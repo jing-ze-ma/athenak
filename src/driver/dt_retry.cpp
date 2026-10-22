@@ -440,6 +440,11 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   for (auto &e : ent_) {e->Restore();}
   Kokkos::fence();
   m1->DtRetryAfterRestore();
+  // prod-retry-1022: once this cycle took the backward-Euler redo, it keeps it: a failed
+  // redo (NON-CONVERGED) is then cut with the redo still armed, instead of the hesdirk2
+  // stage being retried at the cut dt, rejected again and sent back to the cycle dt (the
+  // loop run12's stream-on smoke died in: BE at dt0 / stage at dt0/2, dt_retry_max)
+  if (t2be_cyc_) {m1->dtr_t2be = true;}
   m1->dtr_fail = false;
   m1->dtr_why = 0;
   m1->dtr_resid = 0.0;
@@ -450,6 +455,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   if (why == 5) {nt2cut_ += 1;}
   if (t2fb) {
     m1->dtr_t2be = true;
+    t2be_cyc_ = true;
     pm->dt_cap = cap0_;
     ngood_ = ngood0_;
     pm->dt = dt0_;
@@ -528,6 +534,7 @@ void DtRetry::Accept(Mesh *pm) {
   t2streak_ = m1->dtr_t2hit;
   m1->dtr_t2hit = false;
   nt2cut_ = 0;
+  t2be_cyc_ = false;
   m1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
   if (pm->dt_cap > 0.0) {
     ngood_ += 1;

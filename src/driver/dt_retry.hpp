@@ -184,6 +184,9 @@ class DtRetry {
   int nt2cut_ = 0;         // t2befb-1020: time2_reject cuts of the current cycle
   long nt2be_ = 0;         // t2befb-1020: cycles that took the backward-Euler redo
   bool t2streak_ = false;  // t2befb-1020: the last cycle took it (the next one is armed)
+  // prod-retry-1022: this cycle already went to the backward-Euler redo (t2fb): the
+  // restore of a later failed attempt must not disarm it (it resets dtr_t2be)
+  bool t2be_cyc_ = false;
   Real dt0_ = 0.0, cap0_ = -1.0;  // t2befb-1020: the cycle's dt and cap at Save
   int ngood0_ = 0;
   Real t2_fac_ = -1.0;     // t2retry-1020: <time>/dt_retry_fac_t2 (reason time2_reject; < 0 = fac_)
