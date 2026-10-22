@@ -247,6 +247,9 @@ constexpr int M1_IBLEND_F    = 1;    // w = smoothstep((f_face - f_lo)/(f_hi - f
                                      // beam or a front (f -> 1) goes upwind.
 constexpr int M1_IBLEND_IDF = 5;     // hrup-1009: idort x smoothstep(|H|/J)
 constexpr int M1_IBLEND_IDA = 6;     // hrup-1009: idort x smoothstep(h asymmetry)
+constexpr int M1_IBLEND_AK = 7;      // blend-taufree-1022 (half-range only): tau-free
+                                     // smoothstep of g = max(|H|/J, a an), an the
+                                     // Eddington-tensor anisotropy (M1AnisoCell)
 constexpr int M1_IBLEND_KN = 4;      // hrup-1009 (half-range only): Knudsen x tau
 constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + x + x^2/
                                      // tau0), x = implicit_blend_alpha tau_face
@@ -265,6 +268,8 @@ constexpr int M1_THSW_FSI  = 7;   // fs weight; h+- -> isotropic +-1/4 where the
                                   // do not describe E^n (M1ThinHr)
 constexpr int M1_THSW_FSE  = 8;   // max(|H|/J, eps C1/1.5), eps the thermal fraction
 constexpr int M1_THSW_FSQ  = 6;   // max(|H|/J, q_c C1/1.5), q_c = min(E^n/J, J/E^n)^qp
+constexpr int M1_THSW_HK   = 9;   // blend-taufree-1022: max(|H|/J, a an) (M1AnisoCell)
+constexpr int M1_THSW_FSEK = 10;  // blend-taufree-1022: max(fse g, a an)
 // <rad_m1>/implicit_thin_corr: the lagged formal-solution face flux (C4)
 constexpr int M1_THCR_NONE = 0;
 constexpr int M1_THCR_LAG  = 1;   // + w (F_sc^n - F_hr(E^n)), a fixed source

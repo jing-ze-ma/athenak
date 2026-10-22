@@ -847,6 +847,7 @@ class RadiationM1 {
   bool thsw_hcjh = false;
   bool thsw_bqgd = false;   // unify-1012: thin_bq lin also on vet_gd (opt-in)
   int thsw_jsgd = 1;   // unify-1012: js/jse on vet_gd, bit 1 x1, bit 2 lateral
+  Real impl_blend_aniso = 1.0;   // blend-taufree-1022: a of g = max(|H|/J, a an)
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
   Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
   Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
