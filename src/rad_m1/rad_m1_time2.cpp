@@ -451,6 +451,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_posfix_host")) {
+    t2_pfix_host = pin->GetBoolean("rad_m1", "time2_posfix_host");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_posfix_grow")) {
     t2_pfix_grow = pin->GetInteger("rad_m1", "time2_posfix_grow");
     if (t2_pfix_grow < 0 || t2_pfix_grow > 2) {
@@ -540,7 +543,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (global_variable::my_rank == 0) {
     if (t2_pfix > 0) {
       std::cout << "<rad_m1> time2_posfix=" << t2_pfix << " time2_posfix_grow="
-                << t2_pfix_grow << ": local stage-1 positivity re-solve" << std::endl;
+                << t2_pfix_grow << ": local stage-1 positivity re-solve"
+                << (t2_pfix_host ? " (start copies in pinned host memory)" : "")
+                << std::endl;
     }
     std::cout << "<rad_m1> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
@@ -657,7 +662,19 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     // for a re-solve, and a clean mask
     if (t2_pfix > 0) {
       FluidRef flp = FluidRef::Get(pmy_pack);
-      if (flp.on) {
+      if (flp.on && t2_pfix_host) {
+        // gpumem-1022 time2_posfix_host: the copy in pinned host memory (stream-ordered)
+        if (t2gsv_h.extent(0) != flp.u0.extent(0) || t2gsv_h.extent(1) != flp.u0.extent(1)
+            || t2gsv_h.extent(2) != flp.u0.extent(2)
+            || t2gsv_h.extent(3) != flp.u0.extent(3)
+            || t2gsv_h.extent(4) != flp.u0.extent(4)) {
+          t2gsv_h = decltype(t2gsv_h)(Kokkos::view_alloc(std::string("t2gsv_h"),
+                                      Kokkos::WithoutInitializing), flp.u0.extent(0),
+                                      flp.u0.extent(1), flp.u0.extent(2), flp.u0.extent(3),
+                                      flp.u0.extent(4));
+        }
+        Kokkos::deep_copy(DevExeSpace(), t2gsv_h, flp.u0);
+      } else if (flp.on) {
         if (t2gsv.extent(0) != flp.u0.extent(0) || t2gsv.extent(1) != flp.u0.extent(1) ||
             t2gsv.extent(2) != flp.u0.extent(2) || t2gsv.extent(3) != flp.u0.extent(3) ||
             t2gsv.extent(4) != flp.u0.extent(4)) {
@@ -666,7 +683,15 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         }
         Kokkos::deep_copy(DevExeSpace(), t2gsv, flp.u0);
       }
-      if (ctr_mem.extent(0) > 0) {
+      if (ctr_mem.extent(0) > 0 && t2_pfix_host) {
+        if (t2csv_h.extent(0) != ctr_mem.extent(0)) {
+          t2csv_h = decltype(t2csv_h)(Kokkos::view_alloc(std::string("t2csv_h"),
+                                      Kokkos::WithoutInitializing), ctr_mem.extent(0),
+                                      ctr_mem.extent(1), ctr_mem.extent(2),
+                                      ctr_mem.extent(3), ctr_mem.extent(4));
+        }
+        Kokkos::deep_copy(DevExeSpace(), t2csv_h, ctr_mem);
+      } else if (ctr_mem.extent(0) > 0) {
         if (t2csv.extent(0) != ctr_mem.extent(0)) {
           Kokkos::realloc(t2csv, ctr_mem.extent(0), ctr_mem.extent(1), ctr_mem.extent(2),
                           ctr_mem.extent(3), ctr_mem.extent(4));
@@ -866,12 +891,21 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
   }
-  if (ctr_mem.extent(0) > 0 && t2csv.extent(0) == ctr_mem.extent(0)) {
+  if (t2_pfix_host) {
+    // gpumem-1022 time2_posfix_host: the host copies (same bytes)
+    if (ctr_mem.extent(0) > 0 && t2csv_h.extent(0) == ctr_mem.extent(0)) {
+      Kokkos::deep_copy(DevExeSpace(), ctr_mem, t2csv_h);
+    }
+  } else if (ctr_mem.extent(0) > 0 && t2csv.extent(0) == ctr_mem.extent(0)) {
     Kokkos::deep_copy(DevExeSpace(), ctr_mem, t2csv);
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (fl.on) {
-    Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
+    if (t2_pfix_host) {
+      Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv_h);
+    } else {
+      Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
+    }
     FluidRefresh(pdrive);
   }
   // grow the marked set (face neighbours) and fill its ghosts: iw slot KZ (Krylov

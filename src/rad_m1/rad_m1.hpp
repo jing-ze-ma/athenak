@@ -1411,6 +1411,12 @@ class RadiationM1 {
   DvceArray4D<Real> t2pm;       // (m,k,j,i) 1 = stage-1 increment dropped (incl. ghosts)
   DvceArray5D<Real> t2gsv;      // the gas u0 at the stage-1 start (re-solve put-back)
   DvceArray5D<Real> t2csv;      // ctr_mem at the stage-1 start (closure_thin_relax)
+  // gpumem-1022 <rad_m1>/time2_posfix_host (read only when named; default false): the two
+  // start copies above live in pinned host memory instead (read only by a re-solve; the
+  // same bytes come back, bitwise); t2gsv/t2csv then stay empty
+  bool t2_pfix_host = false;
+  Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2gsv_h;
+  Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2csv_h;
   bool Time2PosFix(Driver *pdrive);
   // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
   // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
