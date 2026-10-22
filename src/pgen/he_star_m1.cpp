@@ -499,6 +499,8 @@ void HsAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> 
 void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
                 const std::vector<Real> &pc, const std::vector<Real> &pf);
 }  // namespace
+// posfix-amvec-1022: the L budget history of pgen/tests/rad_m1_tests2.cpp (am_hist)
+void RadM1AmHistory(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::UserProblem()
@@ -2603,6 +2605,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   dtretry::RegisterView("hs_fsub", &hs_fsub_);
   user_bcs_func = HeStarBC;
   user_hist_func = HeStarHist;
+  // posfix-amvec-1022 (read only when named): problem/am_hist = true takes the history to
+  // the energy / angular-momentum budget RadM1AmHistory (pgen/tests/rad_m1_tests2.cpp:
+  // Eg, Er, gas L, radiation L, am_vector spin, frame L) instead
+  if (pin->DoesParameterExist("problem", "am_hist") &&
+      pin->GetBoolean("problem", "am_hist")) {
+    user_hist_func = RadM1AmHistory;
+  }
   pgen_rst_write_func = HsAdaptiveRstWrite;   // adaptive state + the Picard window
   pgen_final_func = HeStarFinal;
   // reatm-1011 problem/he_ic_rad_atm_post (default true with he_ic_rad_atm_force =

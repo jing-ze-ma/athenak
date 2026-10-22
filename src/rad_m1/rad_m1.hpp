@@ -1411,6 +1411,7 @@ class RadiationM1 {
   DvceArray4D<Real> t2pm;       // (m,k,j,i) 1 = stage-1 increment dropped (incl. ghosts)
   DvceArray5D<Real> t2gsv;      // the gas u0 at the stage-1 start (re-solve put-back)
   DvceArray5D<Real> t2csv;      // ctr_mem at the stage-1 start (closure_thin_relax)
+  DvceArray4D<Real> t2ssv;      // posfix-amvec-1022: am_vector spin at the stage-1 start
   bool Time2PosFix(Driver *pdrive);
   // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
   // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
