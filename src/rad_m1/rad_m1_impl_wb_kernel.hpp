@@ -99,16 +99,14 @@
           wl = bmhalf ? 0.5 : 1.0;
         } else {
           int im = (cyclic && i == is) ? ie : (i-1);
-          ktl = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m, im, i,
-                            fwd);
+          ktl = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);
         }
         if (i == ie && ipos == nblkx1-1 && !cyclic) {
           ktr = iw_(m,M1_IW_KT,k,j,i);
           wr = bmhalf ? 0.5 : 1.0;
         } else {
           int ip = (cyclic && i == ie) ? is : (i+1);
-          ktr = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, i, ip,
-                            fwd);
+          ktr = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);
         }
         dm1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
         dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;

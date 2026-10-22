@@ -1571,6 +1571,10 @@ class RadiationM1 {
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on
   void ImplicitMusclBuild();    // the limiter and the row of this Picard pass
   void ImplicitMusclKill();     // positivity: sig = 0 around the cells with E <= 0
+  // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
+  // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1 off
+  int iw_kir = -1;
+  int impl_kir_ng = 8;          // implicit_face_opac_ng: Gauss points in T
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`
