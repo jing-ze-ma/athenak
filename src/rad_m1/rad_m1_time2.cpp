@@ -38,6 +38,7 @@
 #include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "utils/deep_copy_across.hpp"
@@ -434,8 +435,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   t2_ys_ok = false;
   // t2pos-1020: <rad_m1>/time2_posfix = N, time2_posfix_grow (read only when named;
   // absent = off, every result bitwise): the local stage-1 positivity re-solve
-  // (Time2PosFix).  Not wired for MHD (the field put-back) nor <hydro>/am_vector (the
-  // spin reservoir put-back).
+  // (Time2PosFix).  Not wired for MHD (the field put-back); <hydro>/am_vector puts the
+  // spin reservoir back with the gas (posfix-amvec-1022).
   t2_pfix = 0;
   if (pin->DoesParameterExist("rad_m1", "time2_posfix")) {
     t2_pfix = pin->GetInteger("rad_m1", "time2_posfix");
@@ -462,10 +463,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   }
   if (t2_pfix > 0) {
     FluidRef flp = FluidRef::Get(pmy_pack);
-    if ((flp.on && flp.mhd) || am_vec) {
+    if (flp.on && flp.mhd) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_posfix is not wired for MHD or "
-                << "<hydro>/am_vector" << std::endl;
+                << std::endl << "<rad_m1>/time2_posfix is not wired for MHD" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -666,6 +666,17 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         }
         Kokkos::deep_copy(DevExeSpace(), t2gsv, flp.u0);
       }
+      // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir at the stage-1 start (the
+      // solve adds its increment aminc and the write-back's radial L to it)
+      if (am_vec) {
+        auto &spn = hydro::AmModuleOf(pmy_pack)->am_spin;
+        if (t2ssv.extent(0) != spn.extent(0) || t2ssv.extent(1) != spn.extent(1) ||
+            t2ssv.extent(2) != spn.extent(2) || t2ssv.extent(3) != spn.extent(3)) {
+          Kokkos::realloc(t2ssv, spn.extent(0), spn.extent(1), spn.extent(2),
+                          spn.extent(3));
+        }
+        Kokkos::deep_copy(DevExeSpace(), t2ssv, spn);
+      }
       if (ctr_mem.extent(0) > 0) {
         if (t2csv.extent(0) != ctr_mem.extent(0)) {
           Kokkos::realloc(t2csv, ctr_mem.extent(0), ctr_mem.extent(1), ctr_mem.extent(2),
@@ -745,12 +756,26 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     auto a1_ = amk1;
     auto a2_ = amk2;
     auto ai_ = aminc;
+    // posfix-amvec-1022: the spin's share of the stage-2 compensation (cell slot, as the
+    // gas momentum of t2inc above)
+    auto pma_ = t2pm;
+    const bool apc = pcomp && (t2pm.extent(0) >= aminc.extent(0)) &&
+                     (t2pm.extent(1) == aminc.extent(1)) &&
+                     (t2pm.extent(2) == aminc.extent(2)) &&
+                     (t2pm.extent(3) == aminc.extent(3));
+    if (pcomp && !apc) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "time2_posfix: t2pm and the am_vector spin differ"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     par_for("m1_t2_aminc", DevExeSpace(), 0, static_cast<int>(aminc.extent(0)) - 1, 0,
             static_cast<int>(aminc.extent(1)) - 1, 0, static_cast<int>(aminc.extent(2)) - 1,
             0, static_cast<int>(aminc.extent(3)) - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real v = c1*a1_(m,k,j,i);
       if (two) {v += c2*a2_(m,k,j,i);}
+      if (apc && pma_(m,k,j,i) > 0.0) {v += ccomp*a1_(m,k,j,i);}
       ai_(m,k,j,i) = v;
     });
   }
@@ -874,6 +899,11 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
     FluidRefresh(pdrive);
   }
+  // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir back to the stage-1 start
+  const bool amp = am_vec && (t2ssv.extent_int(0) > 0);
+  if (amp) {
+    Kokkos::deep_copy(DevExeSpace(), hydro::AmModuleOf(pmy_pack)->am_spin, t2ssv);
+  }
   // grow the marked set (face neighbours) and fill its ghosts: iw slot KZ (Krylov
   // scratch, free between solves) carries it through the width-1 exchange; the ghosts of
   // a physical boundary stay 0
@@ -941,6 +971,17 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
       par_for("m1_t2p_dropc", DevExeSpace(), 0, nmb1, 0, 2, 0, q3-1, 0, q2-1, 0, q1-1,
       KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
         if (pm_(m,k,j,i) > 0.0) {ci_(m,n,k,j,i) = 0.0;}
+      });
+    }
+    // posfix-amvec-1022: and the spin reservoir's increment (cells)
+    if (am_vec && aminc.extent_int(0) > 0) {
+      auto ai_ = aminc;
+      par_for("m1_t2p_dropa", DevExeSpace(), 0, static_cast<int>(aminc.extent(0)) - 1,
+              0, static_cast<int>(aminc.extent(1)) - 1,
+              0, static_cast<int>(aminc.extent(2)) - 1,
+              0, static_cast<int>(aminc.extent(3)) - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (pm_(m,k,j,i) > 0.0) {ai_(m,k,j,i) = 0.0;}
       });
     }
   }

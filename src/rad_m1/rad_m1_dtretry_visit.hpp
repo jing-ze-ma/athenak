@@ -655,6 +655,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("t2pm", t2pm);
   v.view("t2gsv", t2gsv);
   v.view("t2csv", t2csv);
+  v.view("t2ssv", t2ssv);
   v.value("t2_nstep", t2_nstep);
   v.value("t2_nbe", t2_nbe);
   v.value("t2_nfall", t2_nfall);
