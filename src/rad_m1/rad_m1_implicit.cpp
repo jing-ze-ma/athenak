@@ -13224,6 +13224,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Time2VetStart();
         if (t2_vcmode == 3) {
           Time2VetColExtrap();
+        } else if (t2_vcmode == 4) {
+          Time2VetColExtrap2();   // rbfast-1021
         }
       }
     } else if (t2s == M1_T2S_STAGE2) {

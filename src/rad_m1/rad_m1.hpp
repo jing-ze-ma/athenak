@@ -1520,6 +1520,27 @@ class RadiationM1 {
   void Time2PredTheta(const Real dt, const Real gdt, const bool dbg);  // predfix-1011
   void Time2PredDebugSc();
   void Time2VetColExtrap();
+  // rbfast-1021 time2_vet_col = extrap2 (t2_vcmode 4): ONE build per step at U^n (as lag
+  // / extrap), hand-over fields of the build extrapolated to t^{n+1} with the build of
+  // the previous step, g = g^n + r (g^n - g^{n-1}), r = dt/(t^n - t^{n-1}): D(t^{n+1}) +
+  // O(dt^2) from SOLVED states (no stiff K1 in it), the cost of predict.  Fields: tau_ten
+  // f_K (slot 0, clamped [f_K min, 1]) and the lateral slots, vet_gd vgd_hr (half-range
+  // ratios clamped to their ranges, C1, eps, J; a cell whose r+_r < 0 now or before keeps
+  // its build), the outer q (vcol_q, its range).  The vet_gd fields are not extrapolated
+  // across a new rotated direction set (vgd_alpha changed): that step keeps their build.
+  // History (raw builds, time, alpha) is restart and dt_retry state.
+  void Time2VetColExtrap2();
+  DvceArray5D<Real> x2_tt, x2_hr;   // the previous build: tau_ten (10), vgd_hr (10) slots
+  DvceArray3D<Real> x2_q;           // ... and vcol_q
+  Real x2_t = 0.0, x2_alpha = -2.0;
+  bool x2_ok = false;
+  // time2_vet_x2_fields (bits: 1 f_K, 2 the lateral slots, 4 vgd_hr, 8 q; default 9):
+  // extrapolating the vet_gd lateral / half-range fields (rotated-set ray noise) put a
+  // 5e-2 error vs the converged reference into the accretor stream phase; f_K + q alone
+  // (the gd fields as built at U^n) = the rebuild accuracy (rbfast-1021)
+  int x2_fields = 9;
+  static constexpr int M1_X2_NTT = 10, M1_X2_NHR = 10;
+  static constexpr int M1_X2_NCH = M1_X2_NTT + M1_X2_NHR + 3;   // + q, time, alpha
   void Time2Report();
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
