@@ -4475,6 +4475,35 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
         fw(m,M1_IFW_HCR,k,j,i) = hr;
       });
     }
+    if (std::getenv("M1_AKDBG") != nullptr) {
+      // DEBUG (blend-taufree-1022): the half-range face weights of this build (x2 faces)
+      // and of the last x1 build, with the cell tau and E^n, one row per active cell,
+      // to <M1_AKDBG>_r<rank>.txt (overwritten at every build; analysis only)
+      auto h1 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ifw);
+      auto h2 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ifw2);
+      auto hw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), iw);
+      const std::string fn = std::string(std::getenv("M1_AKDBG")) + "_r"
+                             + std::to_string(global_variable::my_rank) + ".txt";
+      FILE *fp = std::fopen(fn.c_str(), "w");
+      if (fp != nullptr && h1.extent_int(0) > nmb1 && h2.extent_int(0) > nmb1) {
+        auto &hsz = pmy_pack->pmb->mb_size;
+        for (int m = 0; m <= nmb1; ++m) {
+          const Real x1m = hsz.h_view(m).x1min, x2m = hsz.h_view(m).x2min;
+          const Real d1 = hsz.h_view(m).dx1, d2 = hsz.h_view(m).dx2;
+          for (int k = ks; k <= ke; ++k) {
+            for (int j = js; j <= je; ++j) {
+              for (int i = is; i <= ie; ++i) {
+                std::fprintf(fp, "%.6e %.6e %.6e %.6e %.6e %.6e\n",
+                             x1m + (i - is + 0.5)*d1, x2m + (j - js + 0.5)*d2,
+                             h1(m,M1_IFW_AL,k,j,i), h2(m,M1_IFW_AL,k,j,i),
+                             hw(m,M1_IW_KT,k,j,i)*d1, hw(m,M1_IW_EN,k,j,i));
+              }
+            }
+          }
+        }
+      }
+      if (fp != nullptr) {std::fclose(fp);}
+    }
     return;
   }
   // implicit_flux_beam = fs: |f| = |H|/J of the vet_sc formal solution, into the Thomas
@@ -4840,6 +4869,35 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
         fw(m,M1_IFW_HCL,k,j,i) = hl;
         fw(m,M1_IFW_HCR,k,j,i) = hr;
       });
+    }
+    if (std::getenv("M1_AKDBG") != nullptr) {
+      // DEBUG (blend-taufree-1022): the half-range face weights of this build (x2 faces)
+      // and of the last x1 build, with the cell tau and E^n, one row per active cell,
+      // to <M1_AKDBG>_r<rank>.txt (overwritten at every build; analysis only)
+      auto h1 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ifw);
+      auto h2 = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ifw2);
+      auto hw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), iw);
+      const std::string fn = std::string(std::getenv("M1_AKDBG")) + "_r"
+                             + std::to_string(global_variable::my_rank) + ".txt";
+      FILE *fp = std::fopen(fn.c_str(), "w");
+      if (fp != nullptr && h1.extent_int(0) > nmb1 && h2.extent_int(0) > nmb1) {
+        auto &hsz = pmy_pack->pmb->mb_size;
+        for (int m = 0; m <= nmb1; ++m) {
+          const Real x1m = hsz.h_view(m).x1min, x2m = hsz.h_view(m).x2min;
+          const Real d1 = hsz.h_view(m).dx1, d2 = hsz.h_view(m).dx2;
+          for (int k = ks; k <= ke; ++k) {
+            for (int j = js; j <= je; ++j) {
+              for (int i = is; i <= ie; ++i) {
+                std::fprintf(fp, "%.6e %.6e %.6e %.6e %.6e %.6e\n",
+                             x1m + (i - is + 0.5)*d1, x2m + (j - js + 0.5)*d2,
+                             h1(m,M1_IFW_AL,k,j,i), h2(m,M1_IFW_AL,k,j,i),
+                             hw(m,M1_IW_KT,k,j,i)*d1, hw(m,M1_IW_EN,k,j,i));
+              }
+            }
+          }
+        }
+      }
+      if (fp != nullptr) {std::fclose(fp);}
     }
     return;
   }
