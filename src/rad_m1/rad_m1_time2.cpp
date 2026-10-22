@@ -445,6 +445,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // accfb-default-1022: time2_accept_fallback is DEFAULT true under hesdirk2 (this
+  // reader returns above for be, where the key is unused); false only when named so
+  t2_accfb = true;
   if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
   }
