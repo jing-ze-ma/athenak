@@ -506,13 +506,13 @@
             wl = bmhalf ? 0.5 : 1.0;
           } else {
             const int im = (cyclic && i == is) ? ie : (i-1);
-            ktl = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), ktc, cx1f, m, im, i, fwd);
+            ktl = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);   // kirch-1022
           }
           if (i == ie && ipq == nblkx1-1 && !cyclic) {
             wr = bmhalf ? 0.5 : 1.0;
           } else {
             const int ip = (cyclic && i == ie) ? is : (i+1);
-            ktr = M1FaceAvgX1(ktc, iw_(m,M1_IW_KT,k,j,ip), cx1f, m, i, ip, fwd);
+            ktr = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);   // kirch-1022
           }
           gd1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
           if (tq) {
