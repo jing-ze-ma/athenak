@@ -1557,7 +1557,11 @@ class RadiationM1 {
   void Time2Report();
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
-  void Time2RstPack(DvceArray5D<Real> &a, int nmb);
+  void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
+  // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default false): the
+  // restart writer stages the hesdirk2 channels one MeshBlock at a time (device buffer
+  // of 1 MB instead of all; the same bytes are written)
+  bool rst_pack_mb = false;
   void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
   // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
