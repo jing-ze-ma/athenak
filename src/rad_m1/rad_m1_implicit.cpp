@@ -225,6 +225,39 @@ void M1HrCell(const int src, const V &iw, const V &vc, const VH &gh, const int m
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1AnisoCell
+//! \brief blend-taufree-1022: the anisotropy of the closure solver's Eddington tensor in
+//! cell (m,k,j,i), an = sqrt(3/2) |K/J - I/3|_F: 0 isotropic (and O(1/tau^2) in a
+//! diffusion regime), 1 for a single beam or counter-propagating beams (H = 0), 1/2 for
+//! two beams crossing at 90 degrees in a plane.  Rotation invariant (any orthonormal
+//! basis: Cartesian, sp).  No optical depth, dt or dx enters.
+//!  src 1 (vet_sc): the full K/J of the ray sums (vet_cell K11..K23 over J); 0 if J = 0;
+//!  else, ttc (the tau-closure path: vet_col / vet_gd): the uniaxial Eddington factor
+//!    chi of tau_ten slot 0, an = |3 chi - 1|/2 (ghosts filled by its own exchange);
+//!  else: the lagged closure's chi of the work array (M1_IW_WCHI).
+
+template <class V, class VT>
+KOKKOS_INLINE_FUNCTION
+Real M1AnisoCell(const int src, const V &iw, const V &vc, const VT &tt, const bool ttc,
+                 const int m, const int k, const int j, const int i) {
+  if (src == 1) {
+    const Real jj = vc(m,M1_VET_J,k,j,i);
+    if (!(jj > 0.0)) {return 0.0;}
+    const Real ij = 1.0/jj;
+    const Real a11 = vc(m,M1_VET_K11,k,j,i)*ij - 1.0/3.0;
+    const Real a22 = vc(m,M1_VET_K11+1,k,j,i)*ij - 1.0/3.0;
+    const Real a33 = vc(m,M1_VET_K11+2,k,j,i)*ij - 1.0/3.0;
+    const Real a12 = vc(m,M1_VET_K11+3,k,j,i)*ij;
+    const Real a13 = vc(m,M1_VET_K11+4,k,j,i)*ij;
+    const Real a23 = vc(m,M1_VET_K11+5,k,j,i)*ij;
+    return fmin(sqrt(1.5*(a11*a11 + a22*a22 + a33*a33
+                          + 2.0*(a12*a12 + a13*a13 + a23*a23))), 1.0);
+  }
+  const Real chi = ttc ? tt(m,0,k,j,i) : iw(m,M1_IW_WCHI,k,j,i);
+  return fmin(0.5*fabs(3.0*chi - 1.0), 1.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1HrExcess
 //! \brief sptests-1011 P2 (implicit_hr_excess = iso, vet_gd src 2): where the lagged
 //! E^n of the cell exceeds the formal-solution J (vgd_hr M1_VGD_HRJ, E units), only the
@@ -318,6 +351,9 @@ void M1HrFace(const Real hpl, const Real hmr, const Real fbl, const Real fbr,
         }
         w *= M1BlendWeight(M1_IBLEND_F, bfm, 0.0, 1.0, gl, gr, bflo, bfhi);
       }
+    } else if (bkind == M1_IBLEND_AK) {
+      // blend-taufree-1022: fbl/fbr already carry g = max(|H|/J, a an) (no tau)
+      w = M1BlendWeight(M1_IBLEND_F, bfm, 0.0, 1.0, fbl, fbr, bflo, bfhi);
     } else if (bkind == M1_IBLEND_KN) {
       const Real em = fmax(fmax(el, er), 1.0e-300);
       const Real r = fabs(er - el)/fmax(tauf*em, 1.0e-300*em);
@@ -2220,16 +2256,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_blend = M1_IBLEND_IDF;     // hrup-1009, half-range only
   } else if (sbl.compare("idort_a") == 0) {
     impl_blend = M1_IBLEND_IDA;     // hrup-1009, half-range only
+  } else if (sbl.compare("aniso") == 0) {
+    impl_blend = M1_IBLEND_AK;      // blend-taufree-1022, half-range only
   } else {
     ImplFatal("<rad_m1>/implicit_blend = '" + sbl
               + "' is not a choice (tau | f | tau_f | idort | knudsen | idort_f | "
-              "idort_a)");
+              "idort_a | aniso)");
   }
   if (impl_blend >= M1_IBLEND_IDORT &&
       pin->GetOrAddString("rad_m1","implicit_flux_beam",
                           "closure").compare("halfrange") != 0) {
-    ImplFatal("<rad_m1>/implicit_blend = idort | knudsen | idort_f | idort_a needs "
-              "implicit_flux_beam = halfrange");
+    ImplFatal("<rad_m1>/implicit_blend = idort | knudsen | idort_f | idort_a | aniso "
+              "needs implicit_flux_beam = halfrange");
   }
   impl_blend_alpha = pin->GetOrAddReal("rad_m1","implicit_blend_alpha",1.0);
   impl_blend_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_r0",1.5);
@@ -2272,15 +2310,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
          pin->GetString("rad_m1","implicit_hr_recon").compare("dc") == 0);
     std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch",
                                           thdef ? "fse" : "none");
-    const char *tnm[9] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi", "fse"};
+    const char *tnm[11] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi", "fse",
+                           "hk", "fsek"};
     impl_thsw = -1;
-    for (int q = 0; q < 9; ++q) {
+    for (int q = 0; q < 11; ++q) {
       if (sts.compare(tnm[q]) == 0) {impl_thsw = q;}
     }
     if (impl_thsw < 0) {
       ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
                 + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi | "
-                + "fse)");
+                + "fse | hk | fsek)");
     }
     if (impl_thsw != M1_THSW_NONE) {
       thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
@@ -2294,7 +2333,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
       // prodfinal-1011: DEFAULT hc on a fresh run with the switch fse (the production
       // pair fse + hc); none otherwise and on a restart whose file lacks the key
-      const bool tcdef = !global_variable::restart_run && (impl_thsw == M1_THSW_FSE);
+      const bool tcdef = !global_variable::restart_run && (impl_thsw == M1_THSW_FSE ||
+                         impl_thsw == M1_THSW_HK || impl_thsw == M1_THSW_FSEK);
       std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr",
                                             tcdef ? "hc" : "none");
       if (scr.compare("lag") == 0) {
@@ -2430,7 +2470,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       thsw_c1 = (impl_thsw_corr == M1_THCR_HCS) || thsw_jse ||
                 (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                  impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
-                 impl_thsw == M1_THSW_FSE);
+                 impl_thsw == M1_THSW_FSE || impl_thsw == M1_THSW_FSEK);
       // gdthin-1011: vet_gd carries C1, eps and J in vgd_hr (VetGdHalfRange)
       vgd_thx = thsw_c1 || (impl_thsw_corr != M1_THCR_NONE);
       if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
@@ -2568,8 +2608,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               "implicit_blend = f | tau_f and implicit_blend_mode = flux only");
   }
   impl_blend_tau0 = pin->GetOrAddReal("rad_m1","implicit_blend_tau0",1.0);
-  impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",0.6);
-  impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",0.9);
+  // blend-taufree-1022: aniso takes the thin switch's 0.3 / 0.6 as its defaults
+  const bool bak = (impl_blend == M1_IBLEND_AK);
+  impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",bak ? 0.3 : 0.6);
+  impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",bak ? 0.6 : 0.9);
+  if (bak || impl_thsw == M1_THSW_HK || impl_thsw == M1_THSW_FSEK) {
+    impl_blend_aniso = pin->GetOrAddReal("rad_m1","implicit_blend_aniso",1.0);
+    if (!(impl_blend_aniso >= 0.0)) {
+      ImplFatal("<rad_m1>/implicit_blend_aniso must be >= 0");
+    }
+  }
   if (!(impl_blend_tau0 > 0.0) || !(impl_blend_fhi > impl_blend_flo)) {
     ImplFatal("<rad_m1>: implicit_blend_tau0 must be positive and implicit_blend_fhi "
               "must exceed implicit_blend_flo");
@@ -4256,11 +4304,12 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
     const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
-                    impl_thsw == M1_THSW_FSE);
+                    impl_thsw == M1_THSW_FSE || impl_thsw == M1_THSW_FSEK);
     const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
     const Real tkn0 = thsw_kn0, tknp = thsw_knp;
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
-                     : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
+                     : ((impl_thsw == M1_THSW_FSE || impl_thsw == M1_THSW_FSEK) ? -1.0
+                                                                   : 0.0);
     const Real tqi = thsw_qp;
     // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
     const bool tjs = thsw && thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 2)));
@@ -4273,6 +4322,13 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     const bool hcjh = thsw_hcjh;   // unify-1012
     const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
     const Real xcfl = impl_hr_xs_cfl;
+    // blend-taufree-1022 (implicit_blend = aniso, implicit_thin_switch = hk | fsek): the
+    // cell measure g = max(|H|/J, a an) (M1AnisoCell), no optical depth
+    const bool akn = thsw ? (tmode == M1_THSW_HK || tmode == M1_THSW_FSEK)
+                          : (blend && bkind == M1_IBLEND_AK);
+    const Real aka = impl_blend_aniso;
+    const bool attc = tau_closure && (tau_ten.extent_int(0) > 0);
+    auto att_ = tau_ten;
     for (int d = 1; d <= (trans_x3 ? 2 : 1); ++d) {
       par_for("m1_impl_lfchr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -4305,6 +4361,10 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
             iw_(m,M1_IW_TR,k,j,i) = 1.0 - ((hsrc == 2) ? hgh_(m,M1_VGD_HREP,k,j,i)
                                                        : hvc_(m,M1_VET_EPS,k,j,i));
           }
+        }
+        if (akn) {
+          fb = fmax(fb, fmin(aka*M1AnisoCell(hsrc, iw_, hvc_, att_, attc, m, k, j, i),
+                             1.0));
         }
         // beam_kn: the light-front flag (M1HrJFlag) rides in RES as fb + 2 (fb <= 1)
         if (bxmode == 2) {fb += 2.0*M1HrJFlag(hsrc, iw_, hvc_, m, k, j, i);}
@@ -4606,11 +4666,12 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
     const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
     const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
-                    impl_thsw == M1_THSW_FSE);
+                    impl_thsw == M1_THSW_FSE || impl_thsw == M1_THSW_FSEK);
     const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
     const Real tkn0 = thsw_kn0, tknp = thsw_knp;
     const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
-                     : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
+                     : ((impl_thsw == M1_THSW_FSE || impl_thsw == M1_THSW_FSEK) ? -1.0
+                                                                   : 0.0);
     const Real tqi = thsw_qp;
     // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
     const bool tjs = thsw && thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 2)));
@@ -4623,6 +4684,13 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
     const bool hcjh = thsw_hcjh;   // unify-1012
     const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
     const Real xcfl = impl_hr_xs_cfl;
+    // blend-taufree-1022 (implicit_blend = aniso, implicit_thin_switch = hk | fsek): the
+    // cell measure g = max(|H|/J, a an) (M1AnisoCell), no optical depth
+    const bool akn = thsw ? (tmode == M1_THSW_HK || tmode == M1_THSW_FSEK)
+                          : (blend && bkind == M1_IBLEND_AK);
+    const Real aka = impl_blend_aniso;
+    const bool attc = tau_closure && (tau_ten.extent_int(0) > 0);
+    auto att_ = tau_ten;
     // cs-s4-1017: the per-cell beam data of the LATERAL GHOST RING too, from the ghosts
     // of vgd_hr (VetGdCsHrPrep: the seam quad map, this block's orientation) and of E^n,
     // instead of exchanging the per-direction S1/S3/RES/TA.. (a scalar exchange cannot
@@ -4665,6 +4733,10 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
             iw_(m,M1_IW_TR,k,j,i) = 1.0 - ((hsrc == 2) ? hgh_(m,M1_VGD_HREP,k,j,i)
                                                        : hvc_(m,M1_VET_EPS,k,j,i));
           }
+        }
+        if (akn) {
+          fb = fmax(fb, fmin(aka*M1AnisoCell(hsrc, iw_, hvc_, att_, attc, m, k, j, i),
+                             1.0));
         }
         // beam_kn: the light-front flag (M1HrJFlag) rides in RES as fb + 2 (fb <= 1)
         if (bxmode == 2) {fb += 2.0*M1HrJFlag(hsrc, iw_, hvc_, m, k, j, i);}
@@ -13870,11 +13942,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
       const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
-                    impl_thsw == M1_THSW_FSE);
+                    impl_thsw == M1_THSW_FSE || impl_thsw == M1_THSW_FSEK);
       const Real tfsa = thsw_fsa, tfsj = thsw_fsj, th0 = thsw_h0, th1 = thsw_h1;
       const Real tkn0 = thsw_kn0, tknp = thsw_knp;
       const Real tqp = (impl_thsw == M1_THSW_FSQ) ? thsw_qp
-                       : ((impl_thsw == M1_THSW_FSE) ? -1.0 : 0.0);
+                       : ((impl_thsw == M1_THSW_FSE || impl_thsw == M1_THSW_FSEK)
+                          ? -1.0 : 0.0);
       const Real tqi = thsw_qp;
       // thinfix-1011; unify-1012: also vet_gd (src 2) with J, eps in vgd_hr (tgx)
       const bool tjs = thsw_js && (hsrc == 1 || (tgx && (thsw_jsgd & 1)));
@@ -13887,6 +13960,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool hcjh = thsw_hcjh;   // unify-1012
       const bool hxs = impl_hr_xs && (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
       const Real xcfl = impl_hr_xs_cfl;
+      // blend-taufree-1022 (implicit_blend = aniso, implicit_thin_switch = hk | fsek)
+      const bool akn = (tmode != M1_THSW_NONE)
+                       ? (tmode == M1_THSW_HK || tmode == M1_THSW_FSEK)
+                       : (blend && bkind == M1_IBLEND_AK);
+      const Real aka = impl_blend_aniso;
+      const bool attc = tauc && (tau_ten.extent_int(0) > 0);
       const bool thct = thsw_hctau;   // coreL-1012
       auto cx1vv = pmy_pack->pcoord->x1v;
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -13969,6 +14048,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (hcfb >= 0) {   // cs-s4-1017: |H|/J with the cs metric (VetGdCsHrPrep)
             fbl = hgh_(m,hcfb,k,j,im);
             fbr = hgh_(m,hcfb,k,j,ip);
+          }
+          if (akn) {   // blend-taufree-1022: g = max(|H|/J, a an)
+            fbl = fmax(fbl, fmin(aka*M1AnisoCell(hsrc, iw_, hvc_, tt_, attc, m, k, j, im),
+                                 1.0));
+            fbr = fmax(fbr, fmin(aka*M1AnisoCell(hsrc, iw_, hvc_, tt_, attc, m, k, j, ip),
+                                 1.0));
           }
           if (hxs) {   // sptests-1011 P2
             M1HrExcess(iw_, hgh_, m, k, j, im, ch*dt/dx, xcfl, hpl, hml);
