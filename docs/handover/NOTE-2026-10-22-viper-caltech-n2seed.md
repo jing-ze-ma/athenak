@@ -27,3 +27,12 @@ Startup values vs yours:
   l window: cs N=16 3-10, N=32 6-22, N=128 (prod) 16-64 (pi r/H_p 341 / 453 > cap, clipped).
 CPU gates (cs N=16, 6 ranks, old 1976bac68 vs new, same platform): band=old (+ ramp -1 / explicit) IDENT for RSG E and HG; restart of a
 1976bac6 rst IDENT (deck keys, and ramp auto -> no ramp); n2 + auto fresh C2==C IDENT, R==C IDENT (ramp read back from the rst).
+
+## Addendum (GPU gates + onset test) -- all gates pass
+GPU (viper apu, cf26bc2f7): old seed bitwise vs 1976bac6 for RSG E and HG; rst restart identical with deck keys and with ramp auto;
+n2 + auto C2==C and R==C identical; smokes clean; GPU startup band/ramp = CPU. At N=32 the l window is 6-22 (RSG E and HG).
+RSG E N=32, 10 d (seed off / old / n2): surface convection starts by 1.2 d at 0.99-0.999 R_ph in ALL arms, identical for off and n2
+(IC/grid-driven at N=32); n2 adds ~1e2 cm/s at 0.98 R_ph (inside its band). The old seed's deep large-scale flow (3.3e3 cm/s at
+0.5 R_ph by 10 d, corr(v_r, dOmega) +0.04 constant = the fixed seed pattern, reaching down to 0.05 R_ph) is ABSENT with n2:
+0.24 cm/s at 0.5 R_ph, same as seed off. From day 7 both n2 and off show corr +0.04..0.06 at 0.99 R_ph = geometric surface part,
+not the seed.
