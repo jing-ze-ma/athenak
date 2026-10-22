@@ -1664,6 +1664,10 @@ class RadiationM1 {
   Real vkill_ev = 0.0, vkill_nc = 0.0;
   DvceArray4D<Real> vkill_;
   void ImplicitVimpKill();
+  // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
+  // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1 off
+  int iw_kir = -1;
+  int impl_kir_ng = 8;          // implicit_face_opac_ng: Gauss points in T
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`

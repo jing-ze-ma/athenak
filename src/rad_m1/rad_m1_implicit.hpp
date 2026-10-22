@@ -880,6 +880,22 @@ Real M1FaceAvgX1(const Real ql, const Real qr, const X1F &x1f, const int m, cons
   return 0.5*(ql + qr);
 }
 
+//! kirch-1022 M1KtX1: the x1 FACE transport opacity rho kappa_T between cells il, ir.
+//! With <rad_m1>/implicit_face_opac = kirchhoff (kir >= 0) an interior face (ir = il+1)
+//! takes the precomputed Kirchhoff (T-integral) mean stored in iw(kir, ir) when it is set
+//! (> 0); otherwise (default kir = -1, a block-edge face, or unset) the M1FaceAvgX1 mean of
+//! the two cells, exactly as before (bitwise).
+template <typename IW, typename X1F>
+KOKKOS_INLINE_FUNCTION
+Real M1KtX1(const IW &iw, const int kir, const int m, const int k, const int j,
+            const int il, const int ir, const X1F &x1f, const bool dist) {
+  if (kir >= 0 && ir == il + 1) {
+    const Real v = iw(m,kir,k,j,ir);
+    if (v > 0.0) return v;
+  }
+  return M1FaceAvgX1(iw(m,M1_IW_KT,k,j,il), iw(m,M1_IW_KT,k,j,ir), x1f, m, il, ir, dist);
+}
+
 //! \fn M1SphMarshakFaceE
 //! \brief <rad_m1>/implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge,
 //! tests_m1/runs_5o_sporder2): the E of a Marshak boundary FACE at r_f, from the end cell

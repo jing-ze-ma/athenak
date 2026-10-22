@@ -1027,6 +1027,8 @@ void RadiationM1::VetLatDump() {
 //! physical x2/x3 faces carry no term, a Dirichlet (efix) row gets none.
 
 void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (cs_geom) {VetLatOpCs(xc, yc, sgn); return;}   // cs-s4-1017
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1100,16 +1102,14 @@ void RadiationM1::VetLatOp(int xc, int yc, Real sgn) {
     // the two x1 faces
     if (i < ie || !topb) {
       const int ip = i + 1;
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
-                                   i, ip, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       y -= carea.x1f(m,k,j,i+1)*iv*cr*th*kk*0.5*(lat(0,k,j,i) + lat(0,k,j,ip));
     }
     if (i > is || !botb) {
       const int im = i - 1;
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
-                                   im, i, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       y += carea.x1f(m,k,j,i)*iv*cr*th*kk*0.5*(lat(0,k,j,im) + lat(0,k,j,i));
@@ -1174,6 +1174,8 @@ int VlatStIdx(const int di, const int dj, const int dk) {
 //! are grouped differently: round-off), compared by implicit_op_check.
 
 void RadiationM1::VetLatStencilAdd() {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (cs_geom) {VetLatStencilAddCs(); return;}   // cs-s4-1017
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1295,16 +1297,14 @@ void RadiationM1::VetLatStencilAdd() {
     };
     // the faces: upper y -= a od, lower y += a od, od = 0.5 [lat(c) + lat(nb)]
     if (i < ie || !topb) {
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,i+1), cx1f,
-                                   m, i, i+1, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, i, i+1, cx1f, fwd);
       Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       latc(0, i, j, k, w);
       latc(0, i+1, j, k, w);
     }
     if (i > is || !botb) {
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i-1), iw_(m,M1_IW_KT,k,j,i), cx1f,
-                                   m, i-1, i, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, i-1, i, cx1f, fwd);
       Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       latc(0, i-1, j, k, w);
@@ -1354,6 +1354,8 @@ void RadiationM1::VetLatStencilAdd() {
 //! the E row takes, M1CsTransRow) and the open seams (m1bcs).
 
 void RadiationM1::VetLatOpCs(int xc, int yc, Real sgn) {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -1418,16 +1420,14 @@ void RadiationM1::VetLatOpCs(int xc, int yc, Real sgn) {
     // the two x1 faces
     if (i < ie || !topb) {
       const int ip = i + 1;
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
-                                   i, ip, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       y -= carea.x1f(m,k,j,i+1)*iv*cr*th*kk*0.5*(lat0(i) + lat0(ip));
     }
     if (i > is || !botb) {
       const int im = i - 1;
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
-                                   im, i, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (aphll) {th *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       y += carea.x1f(m,k,j,i)*iv*cr*th*kk*0.5*(lat0(im) + lat0(i));
@@ -1485,6 +1485,8 @@ void RadiationM1::VetLatOpCs(int xc, int yc, Real sgn) {
 //! sums are grouped differently: round-off), compared by implicit_op_check.
 
 void RadiationM1::VetLatStencilAddCs() {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -1574,16 +1576,14 @@ void RadiationM1::VetLatStencilAddCs() {
       add(ib, qj, qk, -f*rb*rb*rb*vdot(qk, qj, ib, nf));
     };
     if (i < ie || !topb) {
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,i+1), cx1f,
-                                   m, i, i+1, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, i, i+1, cx1f, fwd);
       Real w = -0.5*carea.x1f(m,k,j,i+1)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);}
       lat0c(i, w);
       lat0c(i+1, w);
     }
     if (i > is || !botb) {
-      const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i-1), iw_(m,M1_IW_KT,k,j,i), cx1f,
-                                   m, i-1, i, fwd);
+      const Real ktf = M1KtX1(iw_, kir_, m, k, j, i-1, i, cx1f, fwd);
       Real w = 0.5*carea.x1f(m,k,j,i)*iv*cr*kk/(1.0 + ch*dt*ktf);
       if (aphll) {w *= 1.0 - ifw_(m,M1_IFW_AL,k,j,i);}
       lat0c(i-1, w);

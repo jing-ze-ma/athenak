@@ -3188,6 +3188,27 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     iw_hsf = niw;
     niw += M1_NIW_HSF;
   }
+  // kirch-1022 <rad_m1>/implicit_face_opac = arith (default: the cell mean of
+  // M1FaceAvgX1, bitwise) | kirchhoff: every interior x1 face takes the Kirchhoff mean
+  //   1/(rho kappa_T)_f = int_{T_L}^{T_R} T^3/(rho_f kappa_T(rho_f,T)) dT / int T^3 dT,
+  // rho_f = sqrt(rho_L rho_R) (implicit_face_opac_ng Gauss points, default 8), so the
+  // diffusive face flux ~ (Phi(T_R) - Phi(T_L))/dr, Phi = int T^3/(rho kappa) dT, is
+  // monotone in each cell's own T across an unresolved opacity cliff (table opacity only)
+  {const std::string sfo = pin->GetOrAddString("rad_m1","implicit_face_opac","arith");
+  iw_kir = -1;
+  if (sfo.compare("kirchhoff") == 0) {
+    if (opacity_type != M1_OPAC_TABLE) {
+      ImplFatal("<rad_m1>/implicit_face_opac = kirchhoff needs opacity = table");
+    }
+    iw_kir = niw;
+    niw += 1;
+    impl_kir_ng = pin->GetOrAddInteger("rad_m1","implicit_face_opac_ng",8);
+    if (impl_kir_ng < 2 || impl_kir_ng > 8) {
+      ImplFatal("<rad_m1>/implicit_face_opac_ng must be in [2, 8]");
+    }
+  } else if (sfo.compare("arith") != 0) {
+    ImplFatal("<rad_m1>/implicit_face_opac = '" + sfo + "' is not a choice (arith | kirchhoff)");
+  }}
   iw_cs2 = -1;
   // cs-open-1018: the conservative gas sources run on the cubed sphere (were refused
   // since cs-port-1016): the write-back's conservative loop re-forms the cell F inside
@@ -7005,6 +7026,8 @@ void RadiationM1::ImplicitHaloDirect(int nq, int c0) {
 //! ghost value is multiplied by zero and never read in anger.
 
 void RadiationM1::ImplicitKrylovHalo(int comp) {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   ImplicitHaloExchange(1, comp);
 }
 
@@ -7025,13 +7048,14 @@ Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
                const bool p2lo, const bool p2hi, const bool p3lo, const bool p3hi,
                const bool thrd, const Real dx1, const Real dx2, const Real dx3,
                const Real ch, const Real cl, const Real dt, const bool bx1,
-               const DvceArray5D<Real> &fw_) {
+               const DvceArray5D<Real> &fw_, const int kir_ = -1) {
   Real cr = ch/cl;
   Real kk = ch*cl*dt;
   Real y = 0.0;
   if (i < ie || cyclic || !topb) {
     int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
+    Real ktf = (kir_ >= 0 && ip == i + 1 && iw_(m,kir_,k,j,ip) > 0.0) ? iw_(m,kir_,k,j,ip)
+               : 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
     Real th = 1.0/(1.0 + ch*dt*ktf);
     if (bx1) {th *= 1.0 - fw_(m,M1_IFW_AL,k,j,i+1);}   // blendall-1009
     Real od = 0.5*(od_(m,0,k,j,i) + od_(m,0,k,j,ip));
@@ -7039,7 +7063,8 @@ Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
   }
   if (i > is || cyclic || !botb) {
     int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
-    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
+    Real ktf = (kir_ >= 0 && i == im + 1 && iw_(m,kir_,k,j,i) > 0.0) ? iw_(m,kir_,k,j,i)
+               : 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
     Real th = 1.0/(1.0 + ch*dt*ktf);
     if (bx1) {th *= 1.0 - fw_(m,M1_IFW_AL,k,j,i);}
     Real od = 0.5*(od_(m,0,k,j,im) + od_(m,0,k,j,i));
@@ -7088,6 +7113,7 @@ Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
 
 void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int red,
                                      Real *out) {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   ImplicitODCache(xc);
   const bool bx1 = bvec_x1 && trans_on;   // blendall-1009: x1 faces keep 1 - AL
   auto fw_ = ifw;
@@ -7166,7 +7192,7 @@ void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int r
     Real y = M1OdFaces(iw_, od_, th2_, th3_, lm, m, k, j, i, is, ie, js, je, ks, ke,
                        cyclic, botb, topb, p2lo, p2hi, p3lo, p3hi, thrd,
                        mbsize(m).dx1, mbsize(m).dx2, mbsize(m).dx3, ch, cl, dt,
-                       bx1, fw_);
+                       bx1, fw_, kir_);
     Real out = y7 + sg*y;
     iw_(m,cy,k,j,i) = out;
     return out;
@@ -7977,6 +8003,8 @@ void RadiationM1::ImplicitOpX(int xc, int yc, int red, Real *out) {
 //! and an M1_IBC_EFIX Dirichlet row is replaced whole and gets nothing at all.
 
 void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (impl_odc) {   // the same numbers from the per-cell cache
     ImplicitOffDiagOpC(xc, yc, sgn, false, 0, nullptr);
     return;
@@ -8046,7 +8074,7 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
     // ---- the two x1 faces
     if (i < ie || cyclic || !topb) {
       int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
+      Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f_k, false);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (bx1) {th *= 1.0 - fw_(m,M1_IFW_AL,k,j,i+1);}
       Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
@@ -8057,7 +8085,7 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
     }
     if (i > is || cyclic || !botb) {
       int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
-      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
+      Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f_k, false);
       Real th = 1.0/(1.0 + ch*dt*ktf);
       if (bx1) {th *= 1.0 - fw_(m,M1_IFW_AL,k,j,i);}
       Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
@@ -10401,6 +10429,8 @@ void RadiationM1::ImplicitWorkRow(bool row) {
 //! against the (4/3) v E enthalpy flux of the row (dynamic diffusion: BE D_eff +26 %).
 
 void RadiationM1::ImplicitNofbWorkRow() {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10438,16 +10468,14 @@ void RadiationM1::ImplicitNofbWorkRow() {
       wl = bmhalf ? 0.5 : 1.0;
     } else {
       const int im = (cyclic && i == is) ? ie : (i-1);
-      ktl = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m, im, i,
-                        fwd);
+      ktl = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);
     }
     if (i == ie && ipos == nblkx1-1 && !cyclic) {
       ktr = iw_(m,M1_IW_KT,k,j,i);
       wr = bmhalf ? 0.5 : 1.0;
     } else {
       const int ip = (cyclic && i == ie) ? is : (i+1);
-      ktr = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, i, ip,
-                        fwd);
+      ktr = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);
     }
     Real w = v1*(dt/cl)*(wl*ktl*f0_(m,k,j,i) + wr*ktr*f0_(m,k,j,i+1));
     if (trans && dbgft) {
@@ -10658,6 +10686,8 @@ void RadiationM1::ImplicitF0Init() {
 //! where a = 0 (static gas: bitwise).  Needs E^n in the ghosts: one scalar exchange.
 
 void RadiationM1::ImplicitRadInertia() {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10693,8 +10723,7 @@ void RadiationM1::ImplicitRadInertia() {
     if (al == 0.0 && ar == 0.0) return;
     const Real dl = al*(iw_(m,M1_IW_EP,k,j,im) - iw_(m,M1_IW_EN,k,j,im));
     const Real dr = ar*(iw_(m,M1_IW_EP,k,j,ip) - iw_(m,M1_IW_EN,k,j,ip));
-    const Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
-                                 im, ip, fwd);
+    const Real ktf = M1KtX1(iw_, kir_, m, k, j, im, ip, cx1f, fwd);
     Real th = 1.0/(1.0 + ch*dt*ktf);
     if (aphll) {th *= (1.0 - ifw_(m,M1_IFW_AL,k,j,i));}
     f0_(m,k,j,i) -= th*M1FaceAvgX1(dl, dr, cx1f, m, im, ip, fwd);
@@ -11449,6 +11478,8 @@ void RadiationM1::ImplicitCs2Vimp() {
 //!     correction; the velocity increment is the face MEAN of the two cells.
 
 void RadiationM1::ImplicitVimpBuild() {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   if (!fl_on || !coupling || !gas_feedback || !dbg_gas_force) {
     ImplFatal("<rad_m1>/implicit_vimp needs hydro with coupling, gas_feedback and "
               "dbg_gas_force on (the implicit velocity IS the solve's radiative force)");
@@ -11563,8 +11594,7 @@ void RadiationM1::ImplicitVimpBuild() {
       } else {
         const int im = (cyclic && fi == is) ? ie : (fi-1);
         const int ip = (cyclic && fi == ie+1) ? is : fi;
-        kf[s] = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1f, m, im,
-                             ip, fwd);
+        kf[s] = M1KtX1(iw_, kir_, m, k, j, im, ip, cx1f, fwd);
         wf[s] = 0.5;
         const Real th = 1.0/(1.0 + ch*dt*kf[s]);
         const Real bs = th*ch*cl*dt/mbsize(m).dx1;
@@ -12618,6 +12648,8 @@ void RadiationM1::EAuditMark(int pt) {
 }
 
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
   if (dbg_eaudit) {EAuditMark(2);}
   if (dbg_etally) {
@@ -13580,6 +13612,65 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
 
+    // kirch-1022: the x1 face Kirchhoff rho kappa_T of this pass (implicit_face_opac);
+    // rebuilt whenever the cell opacities were (and at pass 0), kept while they are frozen
+    if (kir_ >= 0 && have_hydro && (it == 0 ||
+        (impl_opac_update && (it > 0 || opn) && !opac_zero &&
+         !(impl_opac_lagp && (it >= impl_opac_lagn))))) {
+      M1OpacTab ot = otab;
+      const bool osc = vscat;
+      auto eosv = flr.eos;
+      const int ng = impl_kir_ng;
+      par_for("m1_impl_kirch", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (i == is) {iw_(m,kir_,k,j,i) = -1.0; return;}
+        const Real tl = iw_(m,M1_IW_TP,k,j,i-1), tr = iw_(m,M1_IW_TP,k,j,i);
+        const Real dl = uh(m,IDN,k,j,i-1), dr = uh(m,IDN,k,j,i);
+        if (!(tl > 0.0 && tr > 0.0 && dl > 0.0 && dr > 0.0)) {iw_(m,kir_,k,j,i) = -1.0; return;}
+        const Real df = sqrt(dl*dr);
+        // Gauss-Legendre nodes/weights on [-1,1] for ng = 2..8 (packed)
+        const Real gx[8][8] = {
+          {-0.5773502691896258, 0.5773502691896258},
+          {-0.7745966692414834, 0.0, 0.7745966692414834},
+          {-0.8611363115940526, -0.3399810435848563, 0.3399810435848563, 0.8611363115940526},
+          {-0.9061798459386640, -0.5384693101056831, 0.0, 0.5384693101056831,
+           0.9061798459386640},
+          {-0.9324695142031521, -0.6612093864662645, -0.2386191860831969,
+           0.2386191860831969, 0.6612093864662645, 0.9324695142031521},
+          {-0.9491079123427585, -0.7415311855993945, -0.4058451513773972, 0.0,
+           0.4058451513773972, 0.7415311855993945, 0.9491079123427585},
+          {-0.9602898564975363, -0.7966664774136267, -0.5255324099163290,
+           -0.1834346424956498, 0.1834346424956498, 0.5255324099163290,
+           0.7966664774136267, 0.9602898564975363}, {0.0}};
+        const Real gw[8][8] = {
+          {1.0, 1.0},
+          {0.5555555555555556, 0.8888888888888888, 0.5555555555555556},
+          {0.3478548451374538, 0.6521451548625461, 0.6521451548625461, 0.3478548451374538},
+          {0.2369268850561891, 0.4786286704993665, 0.5688888888888889, 0.4786286704993665,
+           0.2369268850561891},
+          {0.1713244923791704, 0.3607615730481386, 0.4679139345726910,
+           0.4679139345726910, 0.3607615730481386, 0.1713244923791704},
+          {0.1294849661688697, 0.2797053914892766, 0.3818300505051189, 0.4179591836734694,
+           0.3818300505051189, 0.2797053914892766, 0.1294849661688697},
+          {0.1012285362903763, 0.2223810344533745, 0.3137066458778873,
+           0.3626837833783620, 0.3626837833783620, 0.3137066458778873,
+           0.2223810344533745, 0.1012285362903763}, {0.0}};
+        const int q = ng - 2;
+        const Real tm = 0.5*(tl + tr), th = 0.5*(tr - tl);
+        Real num = 0.0, den = 0.0;
+        for (int g=0; g<ng; ++g) {
+          const Real t = tm + th*gx[q][g];
+          Real op, oe, of, os;
+          M1TableOpacities(ot, df, t, op, oe, of, os);
+          if (osc) {M1ScatterEos(ot, eosv, df, t, of, os);}
+          const Real kt = df*(of + os);
+          const Real t3 = t*t*t;
+          num += gw[q][g]*t3/fmax(kt, 1.0e-300);
+          den += gw[q][g]*t3;
+        }
+        iw_(m,kir_,k,j,i) = (num > 0.0) ? den/num : -1.0;
+      });
+    }
     if (tauc && it == 0) {TauClosureBuild();}
     // (b) the lagged closure, the enthalpy-flux coefficient, de0 and g0
     const bool vdv = t2st && impl_vimp && t2_fvnew && (it > 0);
@@ -13826,6 +13917,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real tauf = 0.5*(ktl + ktr)*dx;
         if (sphf) {
           tauf = M1FaceAvgX1(ktl, ktr, cx1ff, m, im, ip, fwdf)*dx;
+        }
+        if (kir_ >= 0 && !fktn && ip == im + 1 && iw_(m,kir_,k,j,ip) > 0.0) {
+          tauf = iw_(m,kir_,k,j,ip)*dx;   // kirch-1022
         }
         if (hrx) {
           // hrup-1009: c (h+_L E_L + h-_R E_R), AP-weighted (M1HrCell, M1HrFace)
@@ -14288,7 +14382,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (i < ie || cyclic || !topb) {
         int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
         Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);
-        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
+        Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f_k, false);
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
@@ -14375,7 +14469,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (i > is || cyclic || !botb) {
         int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
         Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i);
-        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
+        Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f_k, false);
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
@@ -14484,8 +14578,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real pb_ = bb, pr_ = rr;
         if (i < ie || !topb) {
           int ip = (i < ie) ? (i+1) : (ie+1);
-          Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,i), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
-                                 i, ip, fwd);
+          Real ktf = M1KtX1(iw_, kir_, m, k, j, i, ip, cx1f, fwd);
           Real th = 1.0/(1.0 + ch*dt*ktf);
           // sp-blend-1008: the central (face-eliminated) part of the face flux keeps the
           // weight 1 - AL of the blend (exactly th when implicit_flux = central)
@@ -14633,8 +14726,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         if (i > is || !botb) {
           int im = (i > is) ? (i-1) : (is-1);
-          Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,i), cx1f, m,
-                                 im, i, fwd);
+          Real ktf = M1KtX1(iw_, kir_, m, k, j, im, i, cx1f, fwd);
           Real th = 1.0/(1.0 + ch*dt*ktf);
           Real tw = th;   // sp-blend-1008, as at face i+1/2
           if (aphll) {tw = (1.0 - ifw_(m,M1_IFW_AL,k,j,i))*th;}
@@ -15146,8 +15238,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else {
         int im = (cyclic && i == is) ? ie : (i-1);
         int ip = (cyclic && i == ie+1) ? is : i;
-        Real ktf = M1FaceAvgX1(iw_(m,M1_IW_KT,k,j,im), iw_(m,M1_IW_KT,k,j,ip), cx1f, m,
-                               im, ip, fwd);
+        Real ktf = M1KtX1(iw_, kir_, m, k, j, im, ip, cx1f, fwd);
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real vf = M1FaceAvgX1(iw_(m,M1_IW_V1,k,j,im), iw_(m,M1_IW_V1,k,j,ip), cx1f, m,
                               im, ip, fwd);
