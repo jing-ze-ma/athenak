@@ -606,7 +606,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   auto eos = flv.eos;
   auto uh = flv.u0;
   const Real chs = chat;
-  const Real dts = mr_on ? mr_dt : pm->dt;
+  const Real dts = (vsrc_dt > 0.0) ? vsrc_dt : (mr_on ? mr_dt : pm->dt);
   const Real cl = c_light, ar = arad, efl = e_floor;
   const bool srcep = vlat_src_ep;   // vet_gd_rebuild_every: the Picard iterate's E
   par_for("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

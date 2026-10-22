@@ -681,6 +681,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("x2_t", x2_t);
   v.value("x2_alpha", x2_alpha);
   v.value("x2_ok", x2_ok);
+  v.value("x2_dts", x2_dts);
   v.view("t2k2", t2k2);
   v.view("t2inc", t2inc);
   v.view("t2f1", t2f1);

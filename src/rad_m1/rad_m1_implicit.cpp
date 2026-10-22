@@ -13221,7 +13221,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else if (t2_vcmode == 1 || t2_vcmode == 2) {
         Time2VetColAt(1);
       } else {
+        // prod-extrap2-1022: extrap2 builds with the smoothed source dt (rad_m1.hpp)
+        if (t2_vcmode == 4) {
+          const Real dtn = pmy_pack->pmesh->dt;
+          x2_dts = (x2_ok && x2_dts > 0.0) ? fmax(dtn, 0.5*x2_dts) : dtn;
+          vsrc_dt = x2_dts;
+        }
         Time2VetStart();
+        vsrc_dt = 0.0;
         if (t2_vcmode == 3) {
           Time2VetColExtrap();
         } else if (t2_vcmode == 4) {

@@ -731,7 +731,7 @@ void RadiationM1::VetColBuild() {
   auto eos = flv.eos;
   auto uh = flv.u0;
   const Real chs = chat;
-  const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
+  const Real dts = (vsrc_dt > 0.0) ? vsrc_dt : (mr_on ? mr_dt : pmy_pack->pmesh->dt);
   const bool axf = vcol_axis_flux;
   const bool dmp = !vcol_dump.empty() && (vcol_dump_every > 0) &&
                    ((static_cast<int>(vcol_ncall) % vcol_dump_every) == 0);
@@ -1081,7 +1081,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   auto eos = flv.eos;
   auto uh = flv.u0;
   const Real chs = chat;
-  const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
+  const Real dts = (vsrc_dt > 0.0) ? vsrc_dt : (mr_on ? mr_dt : pmy_pack->pmesh->dt);
   const bool axf = vcol_axis_flux;
   const Real cl = c_light, ar = arad, efl = e_floor;
   auto iw_ = iw;

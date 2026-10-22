@@ -2006,7 +2006,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb) {
     c += M1_X2_NHR;
     auto a_ = a;
     auto q_ = x2_q;
-    const Real t = x2_ok ? x2_t : -1.0e300, al = x2_alpha;
+    const Real t = x2_ok ? x2_t : -1.0e300, al = x2_alpha, ds = x2_dts;
     const int cq = c;
     const int na3 = static_cast<int>(a.extent(2)), na2 = static_cast<int>(a.extent(3));
     const int na1 = static_cast<int>(a.extent(4));
@@ -2015,6 +2015,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb) {
       a_(m,cq,k,j,i) = (i == 0) ? q_(m,k,j) : 0.0;
       a_(m,cq+1,k,j,i) = t;
       a_(m,cq+2,k,j,i) = al;
+      a_(m,cq+3,k,j,i) = ds;
     });
   }
 }
@@ -2070,8 +2071,10 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     } else if (ch == M1_X2_NTT + M1_X2_NHR + 1) {
       x2_t = w(0,0,0,0);
       x2_ok = (x2_t > -1.0e299);
-    } else {
+    } else if (ch == M1_X2_NTT + M1_X2_NHR + 2) {
       x2_alpha = w(0,0,0,0);
+    } else {
+      x2_dts = w(0,0,0,0);
     }
   }
 }

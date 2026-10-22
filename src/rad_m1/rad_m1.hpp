@@ -1534,13 +1534,19 @@ class RadiationM1 {
   DvceArray3D<Real> x2_q;           // ... and vcol_q
   Real x2_t = 0.0, x2_alpha = -2.0;
   bool x2_ok = false;
+  // prod-extrap2-1022: the dt of the relaxed VET source of the extrap2 build, a smoothed
+  // step x2_dts = max(dt, x2_dts/2) (a tlim-clamped or retried short step does not
+  // switch stiff cells to the unrelaxed source; that dipped L_top 0.6 % for ~4 steps);
+  // vsrc_dt > 0 overrides the step dt of the vet_col / vet_col_lat relaxed source
+  Real x2_dts = 0.0;
+  Real vsrc_dt = 0.0;
   // time2_vet_x2_fields (bits: 1 f_K, 2 the lateral slots, 4 vgd_hr, 8 q; default 9):
   // extrapolating the vet_gd lateral / half-range fields (rotated-set ray noise) put a
   // 5e-2 error vs the converged reference into the accretor stream phase; f_K + q alone
   // (the gd fields as built at U^n) = the rebuild accuracy (rbfast-1021)
   int x2_fields = 9;
   static constexpr int M1_X2_NTT = 10, M1_X2_NHR = 10;
-  static constexpr int M1_X2_NCH = M1_X2_NTT + M1_X2_NHR + 3;   // + q, time, alpha
+  static constexpr int M1_X2_NCH = M1_X2_NTT + M1_X2_NHR + 4;   // + q, time, alpha, dts
   void Time2Report();
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
