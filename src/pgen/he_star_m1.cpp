@@ -2319,10 +2319,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // n2ramp-1022 (USER 10-22 via Caltech TASK fbe76481): both keys default to auto.  A
   // number (as before) is used as given, mlt_ramp_start = -1 = no ramp.  auto on a FRESH
-  // start (mlt_flux_frozen only, else no ramp): start = 7/sigma_max (ln 10^3: a 1e-3
-  // seed saturates in the fastest-growing layer), time = the mass-weighted median of
-  // 1/sigma over the convectively unstable cells below r_int (HsN2Median), from the IC
-  // column (HsN2Compute); computed once and kept in the restart file (kHsRmpTag), which a
+  // start (mlt_flux_frozen only, else no ramp), rule v2 (USER 10-22, Caltech TASK
+  // ramp-rule-v2, supersedes v1 7/sigma_max + median): start = 0, time = the convective
+  // saturation time t_sat = mlt_ramp_nefold/(mlt_ramp_sigma_frac sigma_max) (defaults
+  // 10.5 = ln(v_MLT/v_seed), measured on the Caltech RSG E run, and 0.61 = sigma_eff/
+  // sigma_max: Caltech's measured RSG E e-fold ~10 d at 0.995 R_ph against THIS code's
+  // sigma_max (G m(r) gravity, code cells; 1/6.11 d); their 0.74 was against a fixed-GM
+  // sigma_max (1/7.35 d); read only when a ramp key is auto), sigma_max from the IC
+  // column (HsN2Compute).  TODO: code the he_seed amplitude -> v_seed mapping for
+  // n_efold.  The
+  // mass-weighted median 1/sigma (HsN2Median) is printed for reference.  Computed once
+  // and kept in the restart file (kHsRmpTag), which a
   // restart reuses (never recomputed).  A restart (or he_ic_remap_file start) with auto
   // and no stored numbers keeps NO ramp (an old restart file carries the old binary's
   // explicit default -1 anyway).
@@ -2364,8 +2371,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       } else {
         HsN2Compute(pmbp, eos, ar);
         if (hs_n2_.smax > 0.0) {
-          if (sa) hs_mrs_ = 7.0/hs_n2_.smax;
-          if (ta) hs_mrt_ = HsN2Median(pmbp, eos, ar);
+          const Real nef = pin->GetOrAddReal("problem","mlt_ramp_nefold",10.5);
+          const Real sfr = pin->GetOrAddReal("problem","mlt_ramp_sigma_frac",0.61);
+          if (!(nef > 0.0) || !(sfr > 0.0)) {
+            HsFatal("problem/mlt_ramp_nefold and mlt_ramp_sigma_frac must be > 0",
+                    __LINE__);
+          }
+          HsN2Median(pmbp, eos, ar);
+          if (sa) hs_mrs_ = 0.0;
+          if (ta) hs_mrt_ = nef/(sfr*hs_n2_.smax);
+          if (global_variable::my_rank == 0) {
+            std::cout << "he_star_m1: mlt_ramp auto rule v2: t_sat = n_efold " << nef
+                      << " / (sigma_frac " << sfr << " sigma_max) = "
+                      << nef/(sfr*hs_n2_.smax) << " s" << std::endl;
+          }
           hs_mr_store_ = true;
           how = "IC column N^2";
         } else {
