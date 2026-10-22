@@ -105,6 +105,12 @@ struct ViewEntry : public Entry {
   bool deep, have = false;
   bool host = false;     // gpumem-1022: dt_retry_host
   bool onhost = false;   // this Save's copy is in hclone
+  // gpumem-1022: a View with a write generation counter (every writer bumps it) skips
+  // the host copy when nothing wrote it since the copy it holds (same bytes either way)
+  const std::int64_t *gen = nullptr;
+  std::int64_t gsaved = -1;
+  const void *dsaved = nullptr;
+  std::int64_t nskip = 0;
   ViewEntry(T *pp, bool d, bool h = false) : p(pp), deep(d), host(h) {
     is_view = true;
   }
@@ -121,7 +127,14 @@ struct ViewEntry : public Entry {
     have = false;
     if (!deep || p->data() == nullptr || p->span() == 0) return;
     // a non-contiguous View (none today) keeps its clone on the device
+    const bool wasonhost = onhost;
     onhost = host && p->span_is_contiguous();
+    if (onhost && wasonhost && gen != nullptr && *gen == gsaved && p->data() == dsaved &&
+        Same(*p, hclone)) {
+      nskip += 1;    // clean since the last copy: hclone already holds these bytes
+      have = true;
+      return;
+    }
     if (onhost) {
       if (clone.data() != nullptr) {clone = Clone();}
       if (!Same(*p, hclone)) {
@@ -129,6 +142,7 @@ struct ViewEntry : public Entry {
                                            Kokkos::WithoutInitializing), p->layout());
       }
       Kokkos::deep_copy(hclone, *p);
+      if (gen != nullptr) {gsaved = *gen; dsaved = p->data();}
     } else {
       if (!Same(*p, clone)) {
         clone = Clone(Kokkos::view_alloc(std::string("dtr:") + name,
@@ -158,6 +172,8 @@ struct ViewEntry : public Entry {
            sizeof(typename T::non_const_value_type);
   }
   bool OnHost() const override {return have && onhost;}
+  void SetGen(const std::int64_t *g) override {gen = g;}
+  std::int64_t NSkip() const override {return nskip;}
   bool Differs() override {
     if (!have) return false;
     if (p->data() != orig.data()) return true;
@@ -337,6 +353,12 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
     host_ = pin->GetBoolean("time", "dt_retry_host");
   }
+  // gpumem-1022 <time>/dt_retry_host_skip_clean (read only when named; default true):
+  // with dt_retry_host, a View that has a write counter (vra_d) is not copied again
+  // while clean
+  if (pin->DoesParameterExist("time", "dt_retry_host_skip_clean")) {
+    skip_clean_ = pin->GetBoolean("time", "dt_retry_host_skip_clean");
+  }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
     force_cycle_ = pin->GetInteger("time", "dt_retry_force_cycle");
@@ -393,6 +415,13 @@ void DtRetry::Build(Mesh *pm) {
   if (hydro::AmModule *pam = hydro::AmModuleOf(pk)) {
     Binder b{&ent_, "am.", &sel, all_views_, host_};
     pam->DtRetryVisit(b);
+  }
+  // gpumem-1022: dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
+  // while it is clean (written only at rotation-block boundaries; RadiationM1::vra_gen)
+  if (host_ && skip_clean_) {
+    for (auto &e : ent_) {
+      if (e->name == "m1.vra_d") {e->SetGen(&(pk->pradm1->vra_gen));}
+    }
   }
   // fin51-r-fix: the problem generator's registered state (PgenEntries)
   for (auto &e : PgenEntries()) {ent_.push_back(std::move(e));}
@@ -623,6 +652,12 @@ void DtRetry::Report(Mesh *pm) {
   std::cout << "<time> dt_retry: " << nsave_ << " checkpoints (" << tsave_ << " s, "
             << static_cast<double>(bytes_dev_)/1.0e6 << " MB on rank 0), " << nretry_
             << " retries, cap " << pm->dt_cap << std::endl;
+  if (host_) {
+    std::int64_t ns = 0;
+    for (auto &e : ent_) {ns += e->NSkip();}
+    std::cout << "<time> dt_retry_host: " << ns << " clean host copies skipped"
+              << std::endl;
+  }
   if (nt2be_ > 0) {
     std::cout << "<time> dt_retry: " << nt2be_ << " cycles took the backward-Euler redo "
               << "(time2_reject = retry, dt_retry_t2_be " << t2_be_ << ")" << std::endl;

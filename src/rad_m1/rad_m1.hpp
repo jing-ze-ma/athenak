@@ -2333,6 +2333,7 @@ class RadiationM1 {
   DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)
   DvceArray3D<Real> vra_c;     // a column field (m, k, j) at the top cell (arr 2)
   DvceArray5D<Real> vra_d;     // (m, (K-1)(nf+1), k, j, i) interior: offsets + valid
+  int64_t vra_gen = 0;        // gpumem-1022: bumped by every writer of vra_d
   int vra_head = 0;            // the ring slot of d_1 (the previous set)
   int vra_state = 0;           // 0: no history yet (init at the next build), 1: ready
   int vra_pend = 0;            // 1: init slots raw, 3: Delta of the coming boundary held

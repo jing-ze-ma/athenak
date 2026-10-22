@@ -52,6 +52,8 @@ struct Entry {
   virtual void Restore() = 0;
   virtual std::size_t Bytes() const {return 0;}
   virtual bool OnHost() const {return false;}   // gpumem-1022: copy in pinned host memory
+  virtual void SetGen(const std::int64_t *g) {(void) g;}   // gpumem-1022: write counter
+  virtual std::int64_t NSkip() const {return 0;}
   virtual bool Differs() {return false;}   // audit: changed since Save (Views only)
   virtual void Poison() {}                 // audit: fill a View with NaN
 };
@@ -174,6 +176,7 @@ class DtRetry {
   bool all_views_ = false;
   bool audit_ = false;
   bool host_ = false;      // gpumem-1022 <time>/dt_retry_host: clones in pinned host mem
+  bool skip_clean_ = true;  // gpumem-1022 <time>/dt_retry_host_skip_clean
   int poison_ = 0;
   Real fac_ = 0.5, grow_ = 1.25;
   int maxcut_ = 8, ngood_req_ = 10;
