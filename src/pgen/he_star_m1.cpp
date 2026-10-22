@@ -40,6 +40,11 @@
 //!     the previous history output;
 //!   * an optional multi-mode entropy/temperature seed (he_seed_nk, he_seed_rad,
 //!     he_seed_signs, he_seed_kdist).
+//!   * (n2seed-1022, USER "make that seed default") problem/he_seed_band = n2 (DEFAULT)
+//!     | old: n2 places the fresh-start seed where the initial column is most unstable
+//!     (Brunt-Vaisala N^2 < 0, gas + radiation, general EOS), real Y_lm with l from
+//!     pi r/H_p clipped to the grid, amplitude he_seed default 1e-3; old = the seed of
+//!     the keys as named (he_seed default 0), bitwise as before.  See HsN2Band().
 //!   * (hegiant-1006, problem/he_gm_column, default off) the gravity of the enclosed
 //!     mass of the initial column instead of the point mass: G m(r) = he_gm + G int 4 pi
 //!     r^2 rho_IC dr from r_in (he_gm = G m(r_in)), a static monopole frozen at t = 0.
@@ -179,6 +184,19 @@ DvceArray1D<Real> hs_fm_;
 // ramp, w = 1 always); hs_mw_ = the w now in <rad_m1>/esrc; hs_lmx_ = max over the x1
 // faces of the UNSCALED L_MLT = F_MLT r^2 Omega (the wedge's solid angle)
 Real hs_mrs_ = -1.0, hs_mrt_ = 0.0, hs_mw_ = 1.0, hs_lmx_ = 0.0;
+// n2ramp-1022: mlt_ramp_start/_time = auto (default) resolved from the IC column's
+// convective growth rates at the fresh start; hs_mr_store_ = the two numbers travel in
+// the restart file (trailer kHsRmpTag, the LAST one: start, time, tag)
+bool hs_mr_store_ = false;
+constexpr char kHsRmpTag[8] = {'H', 'S', 'R', 'A', 'M', 'P', '0', '1'};
+// n2seed-1022: the IC column's per-cell N^2 profile (HsN2Compute), computed once
+struct HsN2Col {
+  bool done = false;
+  int is = 0, iex = -1, ipk = 0, iu0 = 0, iu1 = 0, nu = 0;
+  Real smax = 0.0, med = 0.0;
+  std::vector<Real> r, sg, dm, pt, dd, gg, tt, g1;
+};
+HsN2Col hs_n2_;
 // problem/he_esrc_const, he_esrc_rmax (the esrc test, kept when w is re-applied)
 Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // problem/mlt_closure = adaptive (default frozen): the ADAPTIVE SHELL-MEAN DEFICIT
@@ -498,6 +516,11 @@ void HsAtmRadial(MeshBlockPack *pmbp, std::vector<Real> &pc0, std::vector<Real> 
                  std::vector<Real> &x1f, std::vector<Real> &ar0);
 void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
                 const std::vector<Real> &pc, const std::vector<Real> &pf);
+void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar);
+bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Real tk,
+              const bool hcs, const Real frac, const int nmin, const int ngap,
+              const Real ppw, const int lcap, Real &rlo, Real &rhi, int &lmin, int &lmax);
+Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar);
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -2222,8 +2245,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // w(t) on the frozen MLT deposit, w = 1 for t < start, 0.5 (1 + cos(pi (t - start)/
   // time)) during the ramp, 0 after.  A function of t only, re-applied on a restart (both
   // keys may be overridden on the restart's command line).  Unused: esrc bitwise.
-  hs_mrs_ = pin->GetOrAddReal("problem","mlt_ramp_start",-1.0);
-  hs_mrt_ = pin->GetOrAddReal("problem","mlt_ramp_time",0.0);
   hs_mw_ = 1.0;
   if (hs_mrs_ >= 0.0 && !hs_mlt_) {
     HsFatal("problem/mlt_ramp_start >= 0 needs problem/mlt_flux_frozen = true", __LINE__);
@@ -2292,6 +2313,80 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (global_variable::my_rank == 0) {
       std::cout << "he_star_m1: he_ic_remap_file " << hs_rmp_fn << ": t = " << hd[0]
                 << ", pgen block " << npg << " bytes (remapped fresh start)" << std::endl;
+    }
+  }
+  // n2ramp-1022 (USER 10-22 via Caltech TASK fbe76481): both keys default to auto.  A
+  // number (as before) is used as given, mlt_ramp_start = -1 = no ramp.  auto on a FRESH
+  // start (mlt_flux_frozen only, else no ramp): start = 7/sigma_max (ln 10^3: a 1e-3
+  // seed saturates in the fastest-growing layer), time = the mass-weighted median of
+  // 1/sigma over the convectively unstable cells below r_int (HsN2Median), from the IC
+  // column (HsN2Compute); computed once and kept in the restart file (kHsRmpTag), which a
+  // restart reuses (never recomputed).  A restart (or he_ic_remap_file start) with auto
+  // and no stored numbers keeps NO ramp (an old restart file carries the old binary's
+  // explicit default -1 anyway).
+  {
+    const std::string ms = pin->GetOrAddString("problem","mlt_ramp_start","auto");
+    const std::string mt = pin->GetOrAddString("problem","mlt_ramp_time","auto");
+    const bool sa = (ms == "auto"), ta = (mt == "auto");
+    hs_mrs_ = sa ? -1.0 : static_cast<Real>(atof(ms.c_str()));
+    hs_mrt_ = ta ? 0.0 : static_cast<Real>(atof(mt.c_str()));
+    Real st[2] = {-1.0, 0.0};
+    bool have = false;
+    if (restart || hs_rmp) {   // strip the trailer (the last one) whatever the keys say
+      auto &blk = pgen_rststate;
+      const std::size_t nt = sizeof(kHsRmpTag) + 2*sizeof(Real);
+      if (blk.size() >= nt &&
+          std::memcmp(blk.data() + blk.size() - sizeof(kHsRmpTag), &(kHsRmpTag[0]),
+                      sizeof(kHsRmpTag)) == 0) {
+        std::memcpy(&(st[0]), blk.data() + blk.size() - nt, 2*sizeof(Real));
+        blk.resize(blk.size() - nt);
+        have = true;
+      }
+    }
+    const bool on = !(!sa && hs_mrs_ < 0.0);   // an explicit negative start: no ramp
+    if ((sa || ta) && on) {
+      std::string how;
+      if (restart || hs_rmp) {
+        if (have) {
+          if (sa) hs_mrs_ = st[0];
+          if (ta) hs_mrt_ = st[1];
+          hs_mr_store_ = true;
+          how = "restart file (computed at the fresh start)";
+        } else {
+          hs_mrs_ = -1.0;
+          how = "no stored numbers in the restart file: NO ramp";
+        }
+      } else if (!hs_mlt_) {
+        hs_mrs_ = -1.0;
+        how = "mlt_flux_frozen = false: NO ramp";
+      } else {
+        HsN2Compute(pmbp, eos, ar);
+        if (hs_n2_.smax > 0.0) {
+          if (sa) hs_mrs_ = 7.0/hs_n2_.smax;
+          if (ta) hs_mrt_ = HsN2Median(pmbp, eos, ar);
+          hs_mr_store_ = true;
+          how = "IC column N^2";
+        } else {
+          hs_mrs_ = -1.0;
+          how = "no unstable cell below r_int: NO ramp";
+        }
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "he_star_m1: mlt_ramp auto (start " << ms << ", time " << mt
+                  << ") from " << how << ": start = " << hs_mrs_ << " s ("
+                  << hs_mrs_/86400.0 << " d), time = " << hs_mrt_ << " s ("
+                  << hs_mrt_/86400.0 << " d)";
+        if (hs_n2_.done && hs_n2_.smax > 0.0) {
+          std::cout << "; sigma_max " << hs_n2_.smax << " /s (1/sigma "
+                    << 1.0/hs_n2_.smax/86400.0 << " d) at r/r_int "
+                    << hs_n2_.r[hs_n2_.ipk]/hs_rint_ << ", unstable cells r/r_int "
+                    << hs_n2_.r[hs_n2_.iu0]/hs_rint_ << " - "
+                    << hs_n2_.r[hs_n2_.iu1]/hs_rint_ << " (" << hs_n2_.nu
+                    << " cells), mass-weighted median 1/sigma " << hs_n2_.med/86400.0
+                    << " d";
+        }
+        std::cout << std::endl;
+      }
     }
   }
   // dic-1013 (he_ic_equil): the equilibrium's a_ref of the active cells travels in the
@@ -2693,10 +2788,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   // ---- the initial state (active + ghost cells)
-  const Real seed = pin->GetOrAddReal("problem","he_seed",0.0);
+  // n2seed-1022 (USER 10-22 "make that seed default"): he_seed_band = n2 (default) | old.
+  // old = the seed exactly as the keys below name it (he_seed default 0 = no seed).  n2 =
+  // the radial band, the Y_lm l range and (he_seed default 1e-3) the amplitude come from
+  // the convective growth rate of the initial column (HsN2Band); he_seed_rlo/rhi,
+  // _ylm/_lmin/_lmax are then ignored, he_seed_rad/_rng are used as named.  Fresh starts
+  // only (restarts and remaps returned above).
+  const std::string sband = pin->GetOrAddString("problem","he_seed_band","n2");
+  if (sband != "n2" && sband != "old") {
+    HsFatal("he_seed_band must be n2 or old", __LINE__);
+  }
+  const bool sn2 = (sband == "n2");
+  Real seed = pin->GetOrAddReal("problem","he_seed",sn2 ? 1.0e-3 : 0.0);
   const Real seedk = pin->GetOrAddReal("problem","he_seed_k",4.0);
-  const Real srlo = pin->GetOrAddReal("problem","he_seed_rlo",hs_rin_);
-  const Real srhi = pin->GetOrAddReal("problem","he_seed_rhi",hs_rint_);
+  Real srlo = pin->GetOrAddReal("problem","he_seed_rlo",hs_rin_);
+  Real srhi = pin->GetOrAddReal("problem","he_seed_rhi",hs_rint_);
+  int n2lmin = 1, n2lmax = 1;
+  if (sn2 && seed != 0.0) {
+    const Real n2fr = pin->GetOrAddReal("problem","he_seed_n2_frac",0.3);
+    const int n2nm = pin->GetOrAddInteger("problem","he_seed_n2_nmin",4);
+    const int n2gp = pin->GetOrAddInteger("problem","he_seed_n2_gap",2);
+    const Real n2pw = pin->GetOrAddReal("problem","he_seed_n2_ppw",8.0);
+    if (!(n2fr > 0.0 && n2fr < 1.0) || n2nm < 1 || n2gp < 0 || !(n2pw >= 2.0)) {
+      HsFatal("he_seed_n2_frac in (0,1), _nmin >= 1, _gap >= 0, _ppw >= 2", __LINE__);
+    }
+    if (!HsN2Band(pmbp, eos, ar, hs_tk, hcs, n2fr, n2nm, n2gp, n2pw, 64, srlo, srhi,
+                  n2lmin, n2lmax)) {
+      seed = 0.0;   // no unstable band: no seed (said in the log)
+    }
+  }
   // multi-mode seed (he_seed_nk > 0, default 0 = the single mode above): nk random
   // lateral modes sin(2 pi (k2 (theta - theta_a)/L_theta + k3 (phi - phi_a)/L_phi) + ph),
   // integer k2, k3 drawn uniformly in [he_seed_kmin, he_seed_kmax] (periodic in the
@@ -2792,12 +2912,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the same radial envelope.  Smooth at the poles (no taper) and with no preferred
   // azimuthal period: the 90-degree wedge periods of the modes above are exactly 4-fold
   // symmetric in phi, which is the cubed sphere's own panel symmetry.
-  const bool sylm = pin->DoesParameterExist("problem","he_seed_ylm") &&
-                    pin->GetBoolean("problem","he_seed_ylm");
-  const int slmin = sylm ? pin->GetOrAddInteger("problem","he_seed_lmin",1) : 0;
-  const int slmax = sylm ? pin->GetOrAddInteger("problem","he_seed_lmax",8) : 0;
-  if (sylm && (slmin < 1 || slmax < slmin || slmax > 32 || !(srhi > srlo))) {
-    HsFatal("he_seed_ylm needs 1 <= he_seed_lmin <= he_seed_lmax <= 32 and "
+  // (n2seed-1022: he_seed_band = n2 forces Y_lm with its own l range; cap 32 -> 64)
+  const bool sylm = sn2 || (pin->DoesParameterExist("problem","he_seed_ylm") &&
+                            pin->GetBoolean("problem","he_seed_ylm"));
+  // (n2: an explicit he_seed_lmin / he_seed_lmax in the deck overrides the l window)
+  const int slmin = sylm ? pin->GetOrAddInteger("problem","he_seed_lmin",
+                                                sn2 ? n2lmin : 1) : 0;
+  const int slmax = sylm ? pin->GetOrAddInteger("problem","he_seed_lmax",
+                                                sn2 ? n2lmax : 8) : 0;
+  if (sylm && (slmin < 1 || slmax < slmin || slmax > 64 || !(srhi > srlo))) {
+    HsFatal("he_seed_ylm needs 1 <= he_seed_lmin <= he_seed_lmax <= 64 and "
             "he_seed_rhi > he_seed_rlo", __LINE__);
   }
   const int nylm = sylm ? (slmax + 1)*(slmax + 1) : 1;
@@ -3928,7 +4052,16 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o + (na + 1)*sizeof(Real), &(kHsDicTag[0]),
                 sizeof(kHsDicTag));
   };
-  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); return out;}
+  // n2ramp-1022: the auto ramp's two numbers as the very last trailer
+  auto rmp = [&out]() {
+    if (!hs_mr_store_) return;
+    const Real w[2] = {hs_mrs_, hs_mrt_};
+    const std::size_t o = out.size();
+    out.resize(o + sizeof(w) + sizeof(kHsRmpTag));
+    std::memcpy(out.data() + o, &(w[0]), sizeof(w));
+    std::memcpy(out.data() + o + sizeof(w), &(kHsRmpTag[0]), sizeof(kHsRmpTag));
+  };
+  if (!hs_ad_ || hs_fsub_.extent_int(0) <= 0) {pic(); dic(); rmp(); return out;}
   const int nfc = hs_fsub_.extent_int(0);
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
   const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
@@ -3940,6 +4073,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   std::memcpy(out.data() + sizeof(hdr), tmp.data(), (nfc + 1)*sizeof(Real));
   pic();
   dic();
+  rmp();
   return out;
 }
 
@@ -4695,5 +4829,272 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_gmr_ = DvceArray1D<Real>();
   hs_fb_ = DvceArray1D<Real>();
   hs_sfac_ = DvceArray4D<Real>();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void HsN2Compute
+//! \brief n2seed-1022: the IC column's convective growth rate on the radial cells of the
+//! (single, full-length) x1 MeshBlock column, from the initial column as the IC kernel
+//! lays it down (he_ic_balance cells, else the fine column), once (hs_n2_):
+//!   T from the code EOS; P = p_gas + a T^4/3; Gamma_1 of gas + radiation from the first
+//!   law, chi_rho = p_g chi_rho,g/P, chi_T = (p_g chi_T,g + 4 p_r)/P, rho T c_v = rho T
+//!   c_v,g + 4 a T^4, Gamma_1 = chi_rho + P chi_T^2/(rho T c_v);  g = G m(r)/r^2 (the
+//!   he_gm_column mass, else he_gm);  N^2 = g (dlnP/dr/Gamma_1 - dln rho/dr) by centred
+//!   differences;  growth rate sigma = sqrt(max(-N^2, 0)), H_p = P/(rho g).
+//! Domain: active cells with r <= r_int (tau = he_tau_int, the code's photosphere).
+void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
+  HsN2Col &c2 = hs_n2_;
+  if (c2.done) return;
+  Mesh *pm = pmbp->pmesh;
+  auto &indcs = pm->mb_indcs;
+  if (indcs.nx1 != pm->mesh_indcs.nx1) {
+    HsFatal("he_seed_band = n2 / mlt_ramp auto need one MeshBlock across x1 (or "
+            "he_seed_band = old and explicit mlt_ramp_start/_time)", __LINE__);
+  }
+  const int is = indcs.is, ie = indcs.ie;
+  auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  auto hrho = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_rho_);
+  auto hein = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_eint_);
+  const int nf = hs_nf_;
+  auto lint = [&](const decltype(hrho) &a, const Real r, const bool lg) {
+    Real x = (r - hs_rlo_)/hs_dr_;
+    int i = static_cast<int>(floor(x));
+    i = (i < 0) ? 0 : ((i > nf - 2) ? (nf - 2) : i);
+    Real w = x - i;
+    w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
+    return lg ? exp((1.0 - w)*log(a(i)) + w*log(a(i+1))) : (1.0 - w)*a(i) + w*a(i+1);
+  };
+  decltype(hrho) hbd, hbe, hgm;
+  if (hs_bal_) {
+    hbd = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_bd_);
+    hbe = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_be_);
+  }
+  if (hs_gmc_) hgm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_gmr_);
+  const int n1 = ie + 2;
+  std::vector<Real> &r = c2.r, &g1 = c2.g1, &gg = c2.gg, &pt = c2.pt, &dd = c2.dd,
+                    &tt = c2.tt, &sg = c2.sg, &dm = c2.dm;
+  r.assign(n1, 0.0); g1.assign(n1, 0.0); gg.assign(n1, 0.0); pt.assign(n1, 0.0);
+  dd.assign(n1, 0.0); tt.assign(n1, 0.0); sg.assign(n1, 0.0); dm.assign(n1, 0.0);
+  std::vector<Real> lp(n1), ld(n1);
+  for (int i = is - 1; i <= ie + 1; ++i) {
+    r[i] = hx1v(0,i);
+    const Real d = hs_bal_ ? hbd(i) : lint(hrho, r[i], true);
+    const Real e = hs_bal_ ? hbe(i) : lint(hein, r[i], true);
+    const Real t = eos.Temperature(d, e);
+    Real eg, pg, crg, ctg, cvg;
+    eos.ThermoAt(d, t, eg, pg, crg, ctg, cvg);
+    const Real pr = ar*SQR(SQR(t))/3.0, p = pg + pr;
+    const Real chr = pg*crg/p, cht = (pg*ctg + 4.0*pr)/p;
+    g1[i] = chr + p*cht*cht/(d*t*cvg + 12.0*pr);
+    gg[i] = (hs_gmc_ ? lint(hgm, r[i], false) : hs_gm_)/SQR(r[i]);
+    lp[i] = log(p);
+    ld[i] = log(d);
+    pt[i] = p;
+    dd[i] = d;
+    tt[i] = t;
+    dm[i] = d*SQR(r[i])*(hx1f(0,i+1) - hx1f(0,i));
+  }
+  c2.is = is;
+  c2.iex = is - 1;   // last active cell inside r_int
+  c2.smax = 0.0;
+  c2.nu = 0;
+  for (int i = is; i <= ie; ++i) {
+    if (r[i] > hs_rint_) break;
+    c2.iex = i;
+    const Real h = r[i+1] - r[i-1];
+    const Real n2 = gg[i]*((lp[i+1] - lp[i-1])/h/g1[i] - (ld[i+1] - ld[i-1])/h);
+    sg[i] = (n2 < 0.0) ? sqrt(-n2) : 0.0;
+    if (sg[i] > c2.smax) {
+      c2.smax = sg[i];
+      c2.ipk = i;
+    }
+    if (sg[i] > 0.0) {
+      if (c2.nu == 0) c2.iu0 = i;
+      c2.iu1 = i;
+      ++c2.nu;
+    }
+  }
+  c2.done = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real HsN2Median
+//! \brief n2ramp-1022: the mass-weighted (rho r^2 dr) median of 1/sigma over the cells
+//! below r_int with N^2 < 0 (hs_n2_), for mlt_ramp_time = auto.
+Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
+  HsN2Compute(pmbp, eos, ar);
+  HsN2Col &c2 = hs_n2_;
+  std::vector<std::pair<Real, Real>> q;
+  Real mt = 0.0;
+  for (int i = c2.is; i <= c2.iex; ++i) {
+    if (c2.sg[i] > 0.0) {
+      q.emplace_back(1.0/c2.sg[i], c2.dm[i]);
+      mt += c2.dm[i];
+    }
+  }
+  if (q.empty()) return 0.0;
+  std::sort(q.begin(), q.end());
+  Real acc = 0.0;
+  c2.med = q.back().first;
+  for (auto &p : q) {
+    acc += p.second;
+    if (acc >= 0.5*mt) {
+      c2.med = p.first;
+      break;
+    }
+  }
+  return c2.med;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool HsN2Band
+//! \brief n2seed-1022: the radial band and Y_lm l range of the he_seed_band = n2 seed,
+//! from the growth rates of HsN2Compute.
+//! Band rule: cells with sigma >= frac sigma_max; gaps of <= ngap cells between such
+//! cells are closed; connected runs shorter than nmin cells (isolated IC-column ripples)
+//! are discarded; the band is the surviving run with the largest sigma (ties: the outer
+//! one).  rlo/rhi = the centres of the cells just outside the run (the sin envelope then
+//! vanishes there).  l: l_Hp = pi r/H_p at the run's peak cell; the grid limit
+//! l_grid = (cells around a great circle)/ppw (cubed sphere 4 nx2; spherical polar 2 pi
+//! over the smaller of the theta, phi spacings); lmax = min(l_Hp, l_grid, lcap) (>= 2),
+//! lmin = max(1, lmax/2).  Every rank computes the same band (no communication).
+//! Returns false (no seed) when no cell is unstable.
+bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Real tk,
+              const bool hcs, const Real frac, const int nmin, const int ngap,
+              const Real ppw, const int lcap, Real &rlo, Real &rhi, int &lmin,
+              int &lmax) {
+  HsN2Compute(pmbp, eos, ar);
+  Mesh *pm = pmbp->pmesh;
+  const int is = pm->mb_indcs.is, ie = pm->mb_indcs.ie;
+  auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  const HsN2Col &c2 = hs_n2_;
+  const std::vector<Real> &r = c2.r, &g1 = c2.g1, &gg = c2.gg, &pt = c2.pt, &dd = c2.dd,
+                          &tt = c2.tt, &sg = c2.sg;
+  const int n1 = ie + 2, iex = c2.iex;
+  const Real smax = c2.smax;
+  const bool root = (global_variable::my_rank == 0);
+  if (!(smax > 0.0)) {
+    if (root) {
+      std::cout << "he_star_m1: he_seed_band = n2: N^2 >= 0 in every cell below r_int "
+                << "= " << hs_rint_ << ": NO SEED" << std::endl;
+    }
+    return false;
+  }
+  std::vector<int> c(n1, 0);
+  for (int i = is; i <= iex; ++i) c[i] = (sg[i] >= frac*smax) ? 1 : 0;
+  // close gaps of <= ngap cells between candidate cells
+  for (int i = is; i <= iex; ++i) {
+    if (c[i] != 1) continue;
+    int j = i + 1;
+    while (j <= iex && c[j] == 0) ++j;
+    if (j <= iex && j - i - 1 <= ngap) {
+      for (int q = i + 1; q < j; ++q) c[q] = 2;
+    }
+  }
+  // connected runs: keep those of >= nmin cells; the band = the one with the largest peak
+  int bs = -1, be = -1, bp = -1;
+  Real bpk = -1.0;
+  if (root) {
+    std::cout << "he_star_m1: he_seed_band = n2: sigma_max (all cells below r_int) = "
+              << smax << " /s (1/sigma " << 1.0/smax/86400.0 << " d); runs with sigma >= "
+              << frac << " sigma_max (gaps <= " << ngap << " closed):" << std::endl;
+  }
+  for (int i = is; i <= iex; ++i) {
+    if (c[i] == 0 || (i > is && c[i-1] != 0)) continue;
+    int j = i;
+    while (j + 1 <= iex && c[j+1] != 0) ++j;
+    int ip = i;
+    for (int q = i; q <= j; ++q) {
+      if (sg[q] > sg[ip]) ip = q;
+    }
+    const bool keep = (j - i + 1 >= nmin);
+    if (root) {
+      std::cout << "  run r/r_int " << r[i]/hs_rint_ << " - " << r[j]/hs_rint_ << " ("
+                << j - i + 1 << " cells), peak 1/sigma " << 1.0/sg[ip]/86400.0
+                << " d at r/r_int " << r[ip]/hs_rint_
+                << (keep ? "" : "  [< he_seed_n2_nmin cells: discarded]") << std::endl;
+    }
+    if (keep && sg[ip] >= bpk) {
+      bs = i;
+      be = j;
+      bp = ip;
+      bpk = sg[ip];
+    }
+  }
+  if (bs < 0) {
+    if (root) {
+      std::cout << "he_star_m1: he_seed_band = n2: no run of >= " << nmin
+                << " cells: NO SEED" << std::endl;
+    }
+    return false;
+  }
+  rlo = hx1v(0,bs-1);   // envelope zero in the cells just outside the band
+  rhi = hx1v(0,be+1);
+  const Real hp = pt[bp]/(dd[bp]*gg[bp]);
+  const Real lhp = M_PI*r[bp]/hp;
+  // USER 10-22 l window: l_hi = min(pi r/H_p, l_8), l_8 = 2 pi r/(ppw dx_lat) (ppw = 8:
+  // pi r/(4 dx_lat)), dx_lat = r dangle with dangle the SMALLEST angular distance between
+  // neighbouring cell centres (cubed sphere: over a whole equiangular panel; spherical
+  // polar: min(dtheta, sin(theta) dphi) over the theta centres); l_lo = max(1, round(l_hi
+  // /4)) (two octaves); l_hi above lcap is clipped to lcap with a warning.
+  Real dang = 1.0e30;
+  if (hcs) {
+    const int nn = pm->mesh_indcs.nx2;
+    const Real dxi = 0.5*M_PI/nn;
+    auto uv = [&](const int a, const int b, Real *u) {
+      const Real x = tan(-0.25*M_PI + (a + 0.5)*dxi), y = tan(-0.25*M_PI + (b + 0.5)*dxi);
+      const Real n = sqrt(1.0 + x*x + y*y);
+      u[0] = 1.0/n; u[1] = x/n; u[2] = y/n;
+    };
+    for (int a = 0; a < nn; ++a) {
+      for (int b = 0; b + 1 < nn; ++b) {
+        Real u[3], v[3], w[3];
+        uv(a, b, u);
+        uv(a, b + 1, v);
+        uv(b, a, w);
+        const Real c1 = u[0]*v[0] + u[1]*v[1] + u[2]*v[2];
+        dang = std::min(dang, acos(fmin(c1, 1.0)));
+        uv(b + 1, a, v);
+        const Real c2 = w[0]*v[0] + w[1]*v[1] + w[2]*v[2];
+        dang = std::min(dang, acos(fmin(c2, 1.0)));
+      }
+    }
+  } else {
+    const int n2 = pm->mesh_indcs.nx2;
+    const Real dth = (pm->mesh_size.x2max - pm->mesh_size.x2min)/n2;
+    const Real dph = (pm->mesh_size.x3max - pm->mesh_size.x3min)/pm->mesh_indcs.nx3;
+    dang = dth;
+    for (int j = 0; j < n2; ++j) {
+      const Real th = pm->mesh_size.x2min + (j + 0.5)*dth;
+      dang = std::min(dang, sin(th)*dph);
+    }
+  }
+  const Real l8 = 2.0*M_PI/(ppw*dang);
+  Real lhi = std::floor(std::min(lhp, l8));
+  bool clip = false;
+  if (lhi > lcap) {
+    lhi = lcap;
+    clip = true;
+  }
+  lmax = std::max(static_cast<int>(lhi), 1);
+  lmin = std::max(1, static_cast<int>(std::lround(lmax/4.0)));
+  if (root) {
+    std::cout << "he_star_m1: he_seed_band = n2 BAND r " << rlo << " .. " << rhi
+              << " (r/r_int " << rlo/hs_rint_ << " - " << rhi/hs_rint_ << ", r_int "
+              << hs_rint_ << "), " << be - bs + 1 << " cells " << bs - is << ".."
+              << be - is
+              << "; peak at r/r_int " << r[bp]/hs_rint_ << ": sigma " << bpk
+              << " /s, 1/sigma " << 1.0/bpk/86400.0 << " d, T " << tt[bp]*tk
+              << " K, Gamma1 " << g1[bp] << ", H_p/r " << hp/r[bp]
+              << "; pi r/H_p " << lhp << ", l_8 " << l8 << " (" << ppw
+              << " cells per wavelength, min dx_lat/r " << dang << ") -> l_lo " << lmin
+              << ", l_hi " << lmax << std::endl;
+    if (clip) {
+      std::cout << "### WARNING he_star_m1: he_seed_band = n2: l_hi clipped to the cap "
+                << lcap << std::endl;
+    }
+  }
+  return true;
 }
 }  // namespace
