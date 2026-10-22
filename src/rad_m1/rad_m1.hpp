@@ -1575,6 +1575,7 @@ class RadiationM1 {
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1 off
   int iw_kir = -1;
   int impl_kir_ng = 8;          // implicit_face_opac_ng: Gauss points in T
+  bool impl_kir_harm = false;   // implicit_face_opac = harmonic (no table lookups)
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`

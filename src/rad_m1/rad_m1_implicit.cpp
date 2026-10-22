@@ -3171,7 +3171,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   iw_kir = -1;
   if (sfo.compare("kirchhoff") == 0) {
     if (opacity_type != M1_OPAC_TABLE) {
-      ImplFatal("<rad_m1>/implicit_face_opac = kirchhoff needs opacity = table");
+      ImplFatal("<rad_m1>/implicit_face_opac = kirchhoff needs opacity = table (or harmonic)");
     }
     iw_kir = niw;
     niw += 1;
@@ -3179,8 +3179,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (impl_kir_ng < 2 || impl_kir_ng > 8) {
       ImplFatal("<rad_m1>/implicit_face_opac_ng must be in [2, 8]");
     }
+  } else if (sfo.compare("harmonic") == 0) {
+    // harm-1022: distance-weighted harmonic mean of the cell rho kappa_T (= the
+    // distance-weighted arithmetic mean of the diffusivity 1/(rho kappa_T)); no lookups
+    iw_kir = niw;
+    niw += 1;
+    impl_kir_harm = true;
   } else if (sfo.compare("arith") != 0) {
-    ImplFatal("<rad_m1>/implicit_face_opac = '" + sfo + "' is not a choice (arith | kirchhoff)");
+    ImplFatal("<rad_m1>/implicit_face_opac = '" + sfo
+              + "' is not a choice (arith | kirchhoff | harmonic)");
   }}
   iw_cs2 = -1;
   // cs-open-1018: the conservative gas sources run on the cubed sphere (were refused
@@ -13166,9 +13173,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool osc = vscat;
       auto eosv = flr.eos;
       const int ng = impl_kir_ng;
+      const bool hrm = impl_kir_harm;
+      auto cx1h = pmy_pack->pcoord->xx1f;
       par_for("m1_impl_kirch", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (i == is) {iw_(m,kir_,k,j,i) = -1.0; return;}
+        if (hrm) {   // harm-1022: half-cell distance weights to the face x1f(i)
+          const Real kl = iw_(m,M1_IW_KT,k,j,i-1), kr = iw_(m,M1_IW_KT,k,j,i);
+          if (!(kl > 0.0 && kr > 0.0)) {iw_(m,kir_,k,j,i) = -1.0; return;}
+          const Real hl = 0.5*(cx1h(m,i) - cx1h(m,i-1)), hr = 0.5*(cx1h(m,i+1) - cx1h(m,i));
+          iw_(m,kir_,k,j,i) = (hl + hr)/(hl/kl + hr/kr);
+          return;
+        }
         const Real tl = iw_(m,M1_IW_TP,k,j,i-1), tr = iw_(m,M1_IW_TP,k,j,i);
         const Real dl = uh(m,IDN,k,j,i-1), dr = uh(m,IDN,k,j,i);
         if (!(tl > 0.0 && tr > 0.0 && dl > 0.0 && dr > 0.0)) {iw_(m,kir_,k,j,i) = -1.0; return;}
