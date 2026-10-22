@@ -1969,6 +1969,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_opac_lagn = pin->GetInteger("rad_m1","implicit_opac_lag_passes");
   }}
   if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1 or all");}
+  impl_opac_rlx = pin->GetOrAddReal("rad_m1","implicit_opac_relax",1.0);
+  if (!(impl_opac_rlx > 0.0 && impl_opac_rlx <= 1.0)) {
+    ImplFatal("<rad_m1>/implicit_opac_relax must be in (0, 1]");
+  }
   }
   // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
   // implicit_g0_limit = 1, implicit_pos_gas = true, implicit_pos_floor = true and
@@ -13056,6 +13060,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const Real soff = impl_opn_soff, smax = impl_opn_smax;
       const bool oscl = (soff > 0.0 || smax > 0.0);
       auto eosv = flr.eos;
+      // oprlx-1022 implicit_opac_relax (opt-in): log under-relaxation from pass 1 on
+      const bool orl = (impl_opac_rlx < 1.0) && (it > 0);
+      const Real orw = impl_opac_rlx;
       par_for("m1_impl_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (tfz && tf_(m,k,j,i) > 0.5) {
@@ -13071,15 +13078,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           M1Opacities(otype, d, t, kp, kev, kf, kscat, rref, tref, aa, bb, op, oe,
                       of, os);
         }
-        if (opart != 1) {
-          opac_(m,M1_OP_P,k,j,i) = d*op;
-          opac_(m,M1_OP_E,k,j,i) = d*oe;
-        }
         if (osc && otype == M1_OPAC_TABLE) {M1ScatterEos(ot, eosv, d, t, of, os);}
+        Real vp = d*op, ve = d*oe, vt = d*(of + os), vs = d*os;
+        if (orl) {
+          auto mix = [=](const Real o, const Real n) {
+            return (o > 0.0 && n > 0.0) ? o*pow(n/o, orw) : n;
+          };
+          vp = mix(opac_(m,M1_OP_P,k,j,i), vp);
+          ve = mix(opac_(m,M1_OP_E,k,j,i), ve);
+          vt = mix(iw_(m,M1_IW_KT,k,j,i), vt);
+          if (osc) {vs = mix(opac_(m,M1_OP_S,k,j,i), vs);}
+        }
+        if (opart != 1) {
+          opac_(m,M1_OP_P,k,j,i) = vp;
+          opac_(m,M1_OP_E,k,j,i) = ve;
+        }
         if (opart != 2) {
-          opac_(m,M1_OP_T,k,j,i) = d*(of + os);
-          iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
-          if (osc) {opac_(m,M1_OP_S,k,j,i) = d*os;}
+          opac_(m,M1_OP_T,k,j,i) = vt;
+          iw_(m,M1_IW_KT,k,j,i) = vt;
+          if (osc) {opac_(m,M1_OP_S,k,j,i) = vs;}
         }
         if (opn) {
           // one-sided difference; the table is bilinear in (log T, log rho), so this is
@@ -13093,6 +13110,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                         oe2, of2, os2);
           }
           ktd_(m,k,j,i) = d*((of2 + os2) - (of + os))/th;
+          if (orl) {ktd_(m,k,j,i) *= orw;}
           if (oscl) {
             // logarithmic slope of kappa_T over the same difference
             const Real kt0 = of + os;

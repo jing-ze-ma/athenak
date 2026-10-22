@@ -613,6 +613,11 @@ class RadiationM1 {
   bool impl_gn_u4 = false;
   bool impl_opac_lagp = false;
   int impl_opac_lagn = 1;       // implicit_opac_lag_passes: updates in passes < N
+  // oprlx-1022 implicit_opac_relax = w in (0,1] (opt-in, default 1 = bitwise): from pass 1
+  // on, the re-evaluated opacities are under-relaxed in log, k = k_old^(1-w) k(T)^w (and
+  // the opac_newton slope ktd scaled by w), damping the pass-to-pass kappa(T) swing at an
+  // unresolved opacity cliff; the fixed point is unchanged (k = k(T) there)
+  Real impl_opac_rlx = 1.0;
   Real impl_ol_nlag = 0.0;      // solves run with the opacity lag (report)
   bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
