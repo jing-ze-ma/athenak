@@ -88,13 +88,10 @@ struct ValEntry : public Entry {
   void Restore() override {Assign(*p, c.x);}
 };
 
-// gpumem-1022 <time>/dt_retry_host: a device View's clone may live in pinned HOST memory
+// gpumem-1022 <time>/dt_retry_host: a View's clone may live in pinned HOST memory
 // (Kokkos::SharedHostPinnedSpace): written once per cycle (device -> host), read only by
 // a rejected cycle (host -> device). The same bytes are copied back: bitwise either way.
-template <class T>
-constexpr bool kDevView = !Kokkos::SpaceAccessibility<Kokkos::HostSpace,
-                                                      typename T::memory_space>::accessible;
-
+// (A host build has SharedHostPinnedSpace = HostSpace: the same path, no memory change.)
 template <class T>
 struct ViewEntry : public Entry {
   using Clone = Kokkos::View<typename T::non_const_data_type, typename T::array_layout,
@@ -106,9 +103,9 @@ struct ViewEntry : public Entry {
   Clone clone;
   HClone hclone;
   bool deep, have = false;
-  bool host = false;     // gpumem-1022: dt_retry_host (device Views only)
+  bool host = false;     // gpumem-1022: dt_retry_host
   bool onhost = false;   // this Save's copy is in hclone
-  ViewEntry(T *pp, bool d, bool h = false) : p(pp), deep(d), host(h && kDevView<T>) {
+  ViewEntry(T *pp, bool d, bool h = false) : p(pp), deep(d), host(h) {
     is_view = true;
   }
   template <class C>
