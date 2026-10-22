@@ -47,6 +47,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -1958,8 +1959,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_opac_lag = '" + ol + "' is not a choice (none | pred)");
   }
-  impl_opac_lagn = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_passes",1);
-  if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1");}
+  // olall-1022: implicit_opac_lag_passes = all -> never freeze (re-evaluate in every pass,
+  // pass 0 still at the predicted T); USER 10-22: the kappa-cliff photosphere runaway in the
+  // HG / RSG globals grows with N = 2 (frozen kappa + no dkappa/dT in the last passes)
+  {const std::string sn = pin->GetOrAddString("rad_m1","implicit_opac_lag_passes","1");
+  if (sn.compare("all") == 0) {
+    impl_opac_lagn = std::numeric_limits<int>::max();
+  } else {
+    impl_opac_lagn = pin->GetInteger("rad_m1","implicit_opac_lag_passes");
+  }}
+  if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1 or all");}
   }
   // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
   // implicit_g0_limit = 1, implicit_pos_gas = true, implicit_pos_floor = true and
