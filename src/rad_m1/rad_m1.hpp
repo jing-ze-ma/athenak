@@ -1412,6 +1412,12 @@ class RadiationM1 {
   DvceArray5D<Real> t2gsv;      // the gas u0 at the stage-1 start (re-solve put-back)
   DvceArray5D<Real> t2csv;      // ctr_mem at the stage-1 start (closure_thin_relax)
   DvceArray4D<Real> t2ssv;      // posfix-amvec-1022: am_vector spin at the stage-1 start
+  // gpumem-1022 <rad_m1>/time2_posfix_host (read only when named; default false): the two
+  // start copies above live in pinned host memory instead (read only by a re-solve; the
+  // same bytes come back, bitwise); t2gsv/t2csv then stay empty
+  bool t2_pfix_host = false;
+  Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2gsv_h;
+  Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2csv_h;
   bool Time2PosFix(Driver *pdrive);
   // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
   // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
@@ -1552,7 +1558,11 @@ class RadiationM1 {
   void Time2Report();
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
-  void Time2RstPack(DvceArray5D<Real> &a, int nmb);
+  void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
+  // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default false): the
+  // restart writer stages the hesdirk2 channels one MeshBlock at a time (device buffer
+  // of 1 MB instead of all; the same bytes are written)
+  bool rst_pack_mb = false;
   void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
   // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
@@ -2324,6 +2334,7 @@ class RadiationM1 {
   DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)
   DvceArray3D<Real> vra_c;     // a column field (m, k, j) at the top cell (arr 2)
   DvceArray5D<Real> vra_d;     // (m, (K-1)(nf+1), k, j, i) interior: offsets + valid
+  int64_t vra_gen = 0;        // gpumem-1022: bumped by every writer of vra_d
   int vra_head = 0;            // the ring slot of d_1 (the previous set)
   int vra_state = 0;           // 0: no history yet (init at the next build), 1: ready
   int vra_pend = 0;            // 1: init slots raw, 3: Delta of the coming boundary held

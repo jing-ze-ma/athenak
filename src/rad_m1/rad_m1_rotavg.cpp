@@ -97,6 +97,7 @@ bool RaGet(const RaArr &a, const Tab &t, const int f, const int ie, const int m,
 //! `slot`, with the validity of each cell
 
 void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
+  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -131,6 +132,7 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
 
 void RadiationM1::RotAvgUpdate(const int ilo) {
   if (vra_pend != 1) return;
+  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -173,6 +175,7 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
 //! of the next block would sample U(t_k + dt): an O(dt) offset on a dt ladder)
 
 void RadiationM1::RotAvgDelta(const int slot, const int ilo) {
+  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -204,6 +207,7 @@ void RadiationM1::RotAvgDelta(const int slot, const int ilo) {
 //! other d_j -= Delta (/= R)
 
 void RadiationM1::RotAvgShift(const int ds) {
+  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -512,6 +516,7 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
     return false;
   }
   const int nf = static_cast<int>(h[3]);
+  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
   Kokkos::realloc(vra_d, nmb, vra_k*(nf + 1), indcs.nx3, indcs.nx2, indcs.nx1);
   Kokkos::deep_copy(vra_d, 0.0);
   RaRstCopy(vra_d, src, nmb, static_cast<int>(h[7])*(nf + 1), 1, static_cast<int>(h[10]));

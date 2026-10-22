@@ -452,6 +452,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
   }
+  if (pin->DoesParameterExist("rad_m1", "restart_pack_per_mb")) {
+    rst_pack_mb = pin->GetBoolean("rad_m1", "restart_pack_per_mb");
+  }
+  if (pin->DoesParameterExist("rad_m1", "time2_posfix_host")) {
+    t2_pfix_host = pin->GetBoolean("rad_m1", "time2_posfix_host");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_posfix_grow")) {
     t2_pfix_grow = pin->GetInteger("rad_m1", "time2_posfix_grow");
     if (t2_pfix_grow < 0 || t2_pfix_grow > 2) {
@@ -540,7 +546,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (global_variable::my_rank == 0) {
     if (t2_pfix > 0) {
       std::cout << "<rad_m1> time2_posfix=" << t2_pfix << " time2_posfix_grow="
-                << t2_pfix_grow << ": local stage-1 positivity re-solve" << std::endl;
+                << t2_pfix_grow << ": local stage-1 positivity re-solve"
+                << (t2_pfix_host ? " (start copies in pinned host memory)" : "")
+                << std::endl;
     }
     std::cout << "<rad_m1> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
@@ -657,7 +665,19 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     // for a re-solve, and a clean mask
     if (t2_pfix > 0) {
       FluidRef flp = FluidRef::Get(pmy_pack);
-      if (flp.on) {
+      if (flp.on && t2_pfix_host) {
+        // gpumem-1022 time2_posfix_host: the copy in pinned host memory (stream-ordered)
+        if (t2gsv_h.extent(0) != flp.u0.extent(0) || t2gsv_h.extent(1) != flp.u0.extent(1)
+            || t2gsv_h.extent(2) != flp.u0.extent(2)
+            || t2gsv_h.extent(3) != flp.u0.extent(3)
+            || t2gsv_h.extent(4) != flp.u0.extent(4)) {
+          t2gsv_h = decltype(t2gsv_h)(Kokkos::view_alloc(std::string("t2gsv_h"),
+                                      Kokkos::WithoutInitializing), flp.u0.extent(0),
+                                      flp.u0.extent(1), flp.u0.extent(2),
+                                      flp.u0.extent(3), flp.u0.extent(4));
+        }
+        Kokkos::deep_copy(DevExeSpace(), t2gsv_h, flp.u0);
+      } else if (flp.on) {
         if (t2gsv.extent(0) != flp.u0.extent(0) || t2gsv.extent(1) != flp.u0.extent(1) ||
             t2gsv.extent(2) != flp.u0.extent(2) || t2gsv.extent(3) != flp.u0.extent(3) ||
             t2gsv.extent(4) != flp.u0.extent(4)) {
@@ -677,7 +697,15 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         }
         Kokkos::deep_copy(DevExeSpace(), t2ssv, spn);
       }
-      if (ctr_mem.extent(0) > 0) {
+      if (ctr_mem.extent(0) > 0 && t2_pfix_host) {
+        if (t2csv_h.extent(0) != ctr_mem.extent(0)) {
+          t2csv_h = decltype(t2csv_h)(Kokkos::view_alloc(std::string("t2csv_h"),
+                                      Kokkos::WithoutInitializing), ctr_mem.extent(0),
+                                      ctr_mem.extent(1), ctr_mem.extent(2),
+                                      ctr_mem.extent(3), ctr_mem.extent(4));
+        }
+        Kokkos::deep_copy(DevExeSpace(), t2csv_h, ctr_mem);
+      } else if (ctr_mem.extent(0) > 0) {
         if (t2csv.extent(0) != ctr_mem.extent(0)) {
           Kokkos::realloc(t2csv, ctr_mem.extent(0), ctr_mem.extent(1), ctr_mem.extent(2),
                           ctr_mem.extent(3), ctr_mem.extent(4));
@@ -898,12 +926,21 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
   }
-  if (ctr_mem.extent(0) > 0 && t2csv.extent(0) == ctr_mem.extent(0)) {
+  if (t2_pfix_host) {
+    // gpumem-1022 time2_posfix_host: the host copies (same bytes)
+    if (ctr_mem.extent(0) > 0 && t2csv_h.extent(0) == ctr_mem.extent(0)) {
+      Kokkos::deep_copy(DevExeSpace(), ctr_mem, t2csv_h);
+    }
+  } else if (ctr_mem.extent(0) > 0 && t2csv.extent(0) == ctr_mem.extent(0)) {
     Kokkos::deep_copy(DevExeSpace(), ctr_mem, t2csv);
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (fl.on) {
-    Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
+    if (t2_pfix_host) {
+      Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv_h);
+    } else {
+      Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
+    }
     FluidRefresh(pdrive);
   }
   // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir back to the stage-1 start
@@ -2021,49 +2058,52 @@ int RadiationM1::Time2RstNch() {
   return t2_ok ? Time2RstNchWant() : 0;
 }
 
-void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb) {
+// gpumem-1022: m0 > 0 packs MeshBlocks m0 .. m0+nmb-1 into a(0 .. nmb-1) (per-MB staging)
+void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   auto mb = std::make_pair(0, nmb);
+  auto ms = std::make_pair(m0, m0 + nmb);
   auto AL = Kokkos::ALL;
   int c = 0;
   Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NK), AL, AL, AL),
-                    Kokkos::subview(t2k1, mb, AL, AL, AL, AL));
+                    Kokkos::subview(t2k1, ms, AL, AL, AL, AL));
   c += M1_T2_NK;
   if (impl_pred) {
     const int np = (impl_pord == 2) ? 5 : 3;
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+np), AL, AL, AL),
-                      Kokkos::subview(ipred2, mb, AL, AL, AL, AL));
+                      Kokkos::subview(ipred2, ms, AL, AL, AL, AL));
     c += np;
   }
   if (vet_sc) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NVET), AL, AL, AL),
-                      Kokkos::subview(vet_prev, mb, AL, AL, AL, AL));
+                      Kokkos::subview(vet_prev, ms, AL, AL, AL, AL));
     c += M1_T2_NVET;
     if (vsc_every > 1) {
       const int nv = M1_T2_NVET;
       Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+nv), AL, AL, AL),
-                        Kokkos::subview(vsc_d0, mb, AL, AL, AL, AL));
+                        Kokkos::subview(vsc_d0, ms, AL, AL, AL, AL));
       Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+nv, c+2*nv), AL, AL, AL),
-                        Kokkos::subview(vsc_d1, mb, AL, AL, AL, AL));
+                        Kokkos::subview(vsc_d1, ms, AL, AL, AL, AL));
       c += 2*nv;
     }
   }
   // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
   if (vet_col && t2_vcmode == 4) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_X2_NTT), AL, AL, AL),
-                      Kokkos::subview(x2_tt, mb, AL, AL, AL, AL));
+                      Kokkos::subview(x2_tt, ms, AL, AL, AL, AL));
     c += M1_X2_NTT;
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_X2_NHR), AL, AL, AL),
-                      Kokkos::subview(x2_hr, mb, AL, AL, AL, AL));
+                      Kokkos::subview(x2_hr, ms, AL, AL, AL, AL));
     c += M1_X2_NHR;
     auto a_ = a;
     auto q_ = x2_q;
     const Real t = x2_ok ? x2_t : -1.0e300, al = x2_alpha, ds = x2_dts;
     const int cq = c;
+    const int mq = m0;
     const int na3 = static_cast<int>(a.extent(2)), na2 = static_cast<int>(a.extent(3));
     const int na1 = static_cast<int>(a.extent(4));
     par_for("m1_t2_x2rst", DevExeSpace(), 0, nmb - 1, 0, na3-1, 0, na2-1, 0, na1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      a_(m,cq,k,j,i) = (i == 0) ? q_(m,k,j) : 0.0;
+      a_(m,cq,k,j,i) = (i == 0) ? q_(m+mq,k,j) : 0.0;
       a_(m,cq+1,k,j,i) = t;
       a_(m,cq+2,k,j,i) = al;
       a_(m,cq+3,k,j,i) = ds;

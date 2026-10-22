@@ -233,10 +233,23 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     // time_scheme = hesdirk2: the FSAL slope and what goes with it
     if (pradm1->Time2RstNch() > 0) {
       const int nct = pradm1->Time2RstNch();
-      DvceArray5D<Real> tmp("rst-m1t", nmb, nct, nout3, nout2, nout1);
-      pradm1->Time2RstPack(tmp, nmb);
-      Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1t, tmp);
+      if (pradm1->rst_pack_mb) {
+        // gpumem-1022 restart_pack_per_mb: one MeshBlock at a time (same bytes)
+        Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
+        DvceArray5D<Real> tmp("rst-m1t-mb", 1, nct, nout3, nout2, nout1);
+        for (int m = 0; m < nmb; ++m) {
+          pradm1->Time2RstPack(tmp, 1, m);
+          Kokkos::deep_copy(Kokkos::subview(outarray_m1t, m, Kokkos::ALL, Kokkos::ALL,
+                                            Kokkos::ALL, Kokkos::ALL),
+                            Kokkos::subview(tmp, 0, Kokkos::ALL, Kokkos::ALL,
+                                            Kokkos::ALL, Kokkos::ALL));
+        }
+      } else {
+        DvceArray5D<Real> tmp("rst-m1t", nmb, nct, nout3, nout2, nout1);
+        pradm1->Time2RstPack(tmp, nmb);
+        Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
+        Kokkos::deep_copy(outarray_m1t, tmp);
+      }
     }
     // implicit_closure_thin_relax: the relaxed closure of the last step (ctr_mem)
     if (pradm1->impl_ctrelax > 0.0 && pradm1->ctr_init) {

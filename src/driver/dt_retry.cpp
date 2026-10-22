@@ -88,16 +88,34 @@ struct ValEntry : public Entry {
   void Restore() override {Assign(*p, c.x);}
 };
 
+// gpumem-1022 <time>/dt_retry_host: a View's clone may live in pinned HOST memory
+// (Kokkos::SharedHostPinnedSpace): written once per cycle (device -> host), read only by
+// a rejected cycle (host -> device). The same bytes are copied back: bitwise either way.
+// (A host build has SharedHostPinnedSpace = HostSpace: the same path, no memory change.)
 template <class T>
 struct ViewEntry : public Entry {
   using Clone = Kokkos::View<typename T::non_const_data_type, typename T::array_layout,
                              typename T::memory_space>;
+  using HClone = Kokkos::View<typename T::non_const_data_type, typename T::array_layout,
+                              Kokkos::SharedHostPinnedSpace>;
   T *p;
   T orig;
   Clone clone;
+  HClone hclone;
   bool deep, have = false;
-  ViewEntry(T *pp, bool d) : p(pp), deep(d) {is_view = true;}
-  bool Same(const T &a, const Clone &b) const {
+  bool host = false;     // gpumem-1022: dt_retry_host
+  bool onhost = false;   // this Save's copy is in hclone
+  // gpumem-1022: a View with a write generation counter (every writer bumps it) skips
+  // the host copy when nothing wrote it since the copy it holds (same bytes either way)
+  const std::int64_t *gen = nullptr;
+  std::int64_t gsaved = -1;
+  const void *dsaved = nullptr;
+  std::int64_t nskip = 0;
+  ViewEntry(T *pp, bool d, bool h = false) : p(pp), deep(d), host(h) {
+    is_view = true;
+  }
+  template <class C>
+  bool Same(const T &a, const C &b) const {
     if (a.data() == nullptr || b.data() == nullptr) return false;
     for (int r = 0; r < static_cast<int>(T::rank); ++r) {
       if (a.extent(r) != b.extent(r)) return false;
@@ -108,11 +126,30 @@ struct ViewEntry : public Entry {
     orig = *p;
     have = false;
     if (!deep || p->data() == nullptr || p->span() == 0) return;
-    if (!Same(*p, clone)) {
-      clone = Clone(Kokkos::view_alloc(std::string("dtr:") + name,
-                                       Kokkos::WithoutInitializing), p->layout());
+    // a non-contiguous View (none today) keeps its clone on the device
+    const bool wasonhost = onhost;
+    onhost = host && p->span_is_contiguous();
+    if (onhost && wasonhost && gen != nullptr && *gen == gsaved && p->data() == dsaved &&
+        Same(*p, hclone)) {
+      nskip += 1;    // clean since the last copy: hclone already holds these bytes
+      have = true;
+      return;
     }
-    Kokkos::deep_copy(clone, *p);
+    if (onhost) {
+      if (clone.data() != nullptr) {clone = Clone();}
+      if (!Same(*p, hclone)) {
+        hclone = HClone(Kokkos::view_alloc(std::string("dtrh:") + name,
+                                           Kokkos::WithoutInitializing), p->layout());
+      }
+      Kokkos::deep_copy(hclone, *p);
+      if (gen != nullptr) {gsaved = *gen; dsaved = p->data();}
+    } else {
+      if (!Same(*p, clone)) {
+        clone = Clone(Kokkos::view_alloc(std::string("dtr:") + name,
+                                         Kokkos::WithoutInitializing), p->layout());
+      }
+      Kokkos::deep_copy(clone, *p);
+    }
     have = true;
   }
   void Restore() override {
@@ -121,16 +158,28 @@ struct ViewEntry : public Entry {
       moved = (p->extent(r) != orig.extent(r));
     }
     if (moved) {*p = orig;}
-    if (have) {Kokkos::deep_copy(*p, clone);}
+    if (have) {
+      if (onhost) {
+        Kokkos::deep_copy(*p, hclone);
+      } else {
+        Kokkos::deep_copy(*p, clone);
+      }
+    }
   }
   std::size_t Bytes() const override {
-    return have ? clone.span()*sizeof(typename T::non_const_value_type) : 0;
+    if (!have) return 0;
+    return (onhost ? hclone.span() : clone.span())*
+           sizeof(typename T::non_const_value_type);
   }
+  bool OnHost() const override {return have && onhost;}
+  void SetGen(const std::int64_t *g) override {gen = g;}
+  std::int64_t NSkip() const override {return nskip;}
   bool Differs() override {
     if (!have) return false;
     if (p->data() != orig.data()) return true;
     auto a = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *p);
-    auto b = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), clone);
+    auto b = onhost ? Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), hclone)
+                    : Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), clone);
     return std::memcmp(a.data(), b.data(),
                        a.span()*sizeof(typename T::non_const_value_type)) != 0;
   }
@@ -151,7 +200,8 @@ struct DualEntry : public Entry {
   ViewEntry<typename T::t_dev> d;
   ViewEntry<typename T::t_host> h;
   bool nsh = false, nsd = false;
-  DualEntry(T *pp, bool deep) : p(pp), d(&pp->d_view, deep), h(&pp->h_view, deep) {
+  DualEntry(T *pp, bool deep, bool host = false)
+      : p(pp), d(&pp->d_view, deep, host), h(&pp->h_view, deep) {
     is_view = true;
   }
   void Save() override {
@@ -172,6 +222,7 @@ struct DualEntry : public Entry {
     if (nsh) {p->modify_device();}
   }
   std::size_t Bytes() const override {return d.Bytes() + h.Bytes();}
+  bool OnHost() const override {return d.OnHost();}
 };
 
 // the visitor that registers every member of one module (prefix "hyd." / "m1.")
@@ -180,6 +231,7 @@ struct Binder {
   std::string pre;
   const std::set<std::string> *sel;
   bool all;
+  bool host;   // gpumem-1022 dt_retry_host
   bool Deep(const std::string &n) const {
     return all || sel->count(pre + n) > 0;
   }
@@ -189,12 +241,12 @@ struct Binder {
     ent->push_back(std::move(e));
   }
   template <class T> void view(const char *n, T &x) {
-    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n));
+    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host);
     e->name = pre + n;
     ent->push_back(std::move(e));
   }
   template <class T> void dual(const char *n, T &x) {
-    auto e = std::make_unique<DualEntry<T>>(&x, Deep(n));
+    auto e = std::make_unique<DualEntry<T>>(&x, Deep(n), host);
     e->name = pre + n;
     ent->push_back(std::move(e));
   }
@@ -292,6 +344,21 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     std::string w;
     while (std::getline(ss, w, ',')) {if (!w.empty()) extra_views_.push_back(w);}
   }
+  // gpumem-1022 <time>/dt_retry_host (read only when named; default false = bitwise the
+  // old layout): the checkpoint clones of device Views live in pinned host memory
+  // (SharedHostPinnedSpace) instead of device memory; the same bytes are copied back, so
+  // a retried cycle is bitwise the device-clone one. Saves device memory = one copy of
+  // the minimal list; costs a device -> host copy of it per cycle (PCIe on discrete
+  // GPUs). No memory effect on a host-only build.
+  if (pin->DoesParameterExist("time", "dt_retry_host")) {
+    host_ = pin->GetBoolean("time", "dt_retry_host");
+  }
+  // gpumem-1022 <time>/dt_retry_host_skip_clean (read only when named; default true):
+  // with dt_retry_host, a View that has a write counter (vra_d) is not copied again
+  // while clean
+  if (pin->DoesParameterExist("time", "dt_retry_host_skip_clean")) {
+    skip_clean_ = pin->GetBoolean("time", "dt_retry_host_skip_clean");
+  }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
     force_cycle_ = pin->GetInteger("time", "dt_retry_force_cycle");
@@ -336,18 +403,25 @@ void DtRetry::Build(Mesh *pm) {
   for (auto &s : extra_views_) {sel.insert(s);}
   auto *pk = pm->pmb_pack;
   if (pk->phydro != nullptr) {
-    Binder b{&ent_, "hyd.", &sel, all_views_};
+    Binder b{&ent_, "hyd.", &sel, all_views_, host_};
     pk->phydro->DtRetryVisit(b);
   }
   {
-    Binder b{&ent_, "m1.", &sel, all_views_};
+    Binder b{&ent_, "m1.", &sel, all_views_, host_};
     pk->pradm1->DtRetryVisit(b);
   }
   // amdtr-1019: the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
   // frame_omega; exists only when one of its keys is named)
   if (hydro::AmModule *pam = hydro::AmModuleOf(pk)) {
-    Binder b{&ent_, "am.", &sel, all_views_};
+    Binder b{&ent_, "am.", &sel, all_views_, host_};
     pam->DtRetryVisit(b);
+  }
+  // gpumem-1022: dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
+  // while it is clean (written only at rotation-block boundaries; RadiationM1::vra_gen)
+  if (host_ && skip_clean_) {
+    for (auto &e : ent_) {
+      if (e->name == "m1.vra_d") {e->SetGen(&(pk->pradm1->vra_gen));}
+    }
   }
   // fin51-r-fix: the problem generator's registered state (PgenEntries)
   for (auto &e : PgenEntries()) {ent_.push_back(std::move(e));}
@@ -374,17 +448,24 @@ void DtRetry::Save(Mesh *pm) {
   Kokkos::fence();
   tsave_ += t.seconds();
   if (nsave_ == 0) {
-    std::size_t b = 0;
+    std::size_t b = 0, bh = 0;
     int nv = 0, nd = 0;
     for (auto &e : ent_) {
       b += e->Bytes();
+      if (e->OnHost()) {bh += e->Bytes();}
       if (e->is_view) {nv += 1; if (e->Bytes() > 0) nd += 1;}
     }
     bytes_dev_ = b;
+    bytes_host_ = bh;
     if (global_variable::my_rank == 0) {
       std::cout << "<time> dt_retry checkpoint: " << ent_.size() << " members, " << nv
                 << " Views (" << nd << " copied, " << static_cast<double>(b)/1.0e6
-                << " MB on rank 0):";
+                << " MB on rank 0";
+      if (host_) {
+        std::cout << ", dt_retry_host: " << static_cast<double>(bh)/1.0e6
+                  << " MB of it in pinned host memory";
+      }
+      std::cout << "):";
       for (auto &e : ent_) {
         if (e->Bytes() > 0) {
           std::cout << " " << e->name << " " << static_cast<double>(e->Bytes())/1.0e6;
@@ -571,6 +652,12 @@ void DtRetry::Report(Mesh *pm) {
   std::cout << "<time> dt_retry: " << nsave_ << " checkpoints (" << tsave_ << " s, "
             << static_cast<double>(bytes_dev_)/1.0e6 << " MB on rank 0), " << nretry_
             << " retries, cap " << pm->dt_cap << std::endl;
+  if (host_) {
+    std::int64_t ns = 0;
+    for (auto &e : ent_) {ns += e->NSkip();}
+    std::cout << "<time> dt_retry_host: " << ns << " clean host copies skipped"
+              << std::endl;
+  }
   if (nt2be_ > 0) {
     std::cout << "<time> dt_retry: " << nt2be_ << " cycles took the backward-Euler redo "
               << "(time2_reject = retry, dt_retry_t2_be " << t2_be_ << ")" << std::endl;
