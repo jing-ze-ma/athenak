@@ -636,6 +636,7 @@ int RadiationM1::ImplicitBiCGStabDev(Real rhsmax) {
     }
   }
   kdev_last[kdev_slot] = nit;
+  bcg_capped = !done && !fell_back && (nit >= impl_lin_maxit);
   ImplicitBiCGStabEnd(nit, fell_back);
   return nit;
 }

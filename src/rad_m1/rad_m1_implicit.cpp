@@ -1831,6 +1831,32 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_bcg_maxrst < 0) {
     ImplFatal("<rad_m1>/implicit_bcg_max_restarts must be >= 0");
   }
+  // implicit_precond_fallback (precond-fb-1023; default none = bitwise the old path).
+  // A linear solve whose BiCGStab stops at implicit_lin_maxit without meeting its test
+  // (not a breakdown: that is implicit_bcg_fallback) is redone ONCE with this
+  // preconditioner, from the same initial guess (the Picard iterate) and with the same
+  // stopping test (the Eisenstat-Walker state is put back first).  The redo's iterate
+  // replaces the first one whatever its outcome.  Motivation: cbh vacuum beams
+  // (blend_1022/CBH_RESULTS.md), where mg's coarse corrections spread the error left at
+  // the cap into near-vacuum cells and the Picard test never passes; rbgs / line keep it
+  // local.  A fallback equal to implicit_precond is a no-op.
+  {std::string pf = pin->GetOrAddString("rad_m1","implicit_precond_fallback","none");
+  if (pf.compare("none") == 0) {
+    impl_prec_fb = -1;
+  } else if (pf.compare("line") == 0) {
+    impl_prec_fb = 0;
+  } else if (pf.compare("rbgs") == 0) {
+    impl_prec_fb = 1;
+  } else {
+    ImplFatal("<rad_m1>/implicit_precond_fallback = '" + pf
+              + "' is not a choice (none | rbgs | line)");
+  }
+  }
+  if (impl_prec_fb == impl_prec) {impl_prec_fb = -1;}
+  if (impl_prec_fb > 0 && impl_kfuse == 0) {
+    ImplFatal("<rad_m1>/implicit_precond_fallback = rbgs needs "
+              "implicit_krylov_fuse >= 1");
+  }
   // implicit_face_opac_n (fixbundle-1009 F2): rad_m1.hpp.  defaults-1009 (user 10-09):
   // default true on a fresh run; a restart whose file lacks the key keeps false
   impl_face_ktn = pin->GetOrAddBoolean("rad_m1","implicit_face_opac_n",
@@ -8812,6 +8838,33 @@ void RadiationM1::ImplicitAccelApply(int it) {
 
 int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
   if (impl_opchk != 0) {ImplicitOpCheck();}   // implicit_op_check (debug, default off)
+  if (impl_prec_fb < 0) {return ImplicitBiCGStabRun(rhsmax);}
+  // implicit_precond_fallback: a solve capped at lin_maxit is redone once with the
+  // fallback preconditioner, from the Picard iterate again (every loop starts from
+  // x0 = M1_IW_EP and b = M1_IW_KB, which no solve writes) and with the Eisenstat-Walker
+  // state of the first attempt, so the redo has the same stopping test.  Statistics:
+  // the redo adds its iterations but is not a second linear solve of the pass.
+  const Real ewf = ew_fprev, ewe = ew_etaprev;
+  int nit = ImplicitBiCGStabRun(rhsmax);
+  if (!bcg_capped) {return nit;}
+  ew_fprev = ewf;
+  ew_etaprev = ewe;
+  const int pc0 = impl_prec;
+  impl_prec = impl_prec_fb;
+  const int nfb = ImplicitBiCGStabRun(rhsmax);
+  impl_prec = pc0;
+  bcg_nsolve -= 1.0;
+  bcg_npfb += 1.0;
+  bcg_pfbit += static_cast<Real>(nfb);
+  return nit + nfb;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::ImplicitBiCGStabRun
+//! \brief one linear solve with the preconditioner implicit_precond names (or, for the
+//! redo of implicit_precond_fallback, the one ImplicitBiCGStab has put in impl_prec).
+
+int RadiationM1::ImplicitBiCGStabRun(Real rhsmax) {
   if (impl_bcg_sync > 0) {return ImplicitBiCGStabFused(rhsmax);}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -8970,6 +9023,7 @@ int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
     }
   }
 
+  bcg_capped = !done && !fell_back && (nit >= impl_lin_maxit);
   ImplicitBiCGStabEnd(nit, fell_back);
   return nit;
 }
@@ -9358,6 +9412,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
       omega = 1.0;
     }
   }
+  bcg_capped = !done && !fell_back && (nit >= impl_lin_maxit);
   ImplicitBiCGStabEnd(nit, fell_back);
   return nit;
 }
@@ -9617,6 +9672,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
   if (!done && !fell_back && pend) {
     if (true_ok()) {done = true;}
   }
+  bcg_capped = !done && !fell_back && (nit >= impl_lin_maxit);
   ImplicitBiCGStabEnd(nit, fell_back);
   return nit;
 }
@@ -9930,6 +9986,12 @@ void RadiationM1::ImplicitReport() {
                 << " fallback=" << (impl_bcg_keep ? "best" : "line")
                 << ": Krylov iterate kept instead of line-Jacobi=" << bcg_nkeep
                 << std::endl;
+    }
+    if (impl_prec_fb >= 0) {
+      std::cout << "<rad_m1> bicgstab: implicit_precond_fallback="
+                << ((impl_prec_fb == 1) ? "rbgs" : "line")
+                << ": solves capped at lin_maxit and redone=" << bcg_npfb
+                << " their inner iterations=" << bcg_pfbit << std::endl;
     }
     if (impl_kdev > 0) {
       std::cout << "<rad_m1> implicit_krylov_dev: period=" << impl_kdev

@@ -191,6 +191,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_nkeep = 0.0;
   impl_bcg_maxrst = 2;
   impl_bcg_keep = false;
+  impl_prec_fb = -1;
+  bcg_capped = false;
+  bcg_npfb = 0.0;
+  bcg_pfbit = 0.0;
   bcg_nred = 0.0;
   impl_bcg_sync = 0;
   impl_dtrace = 0;

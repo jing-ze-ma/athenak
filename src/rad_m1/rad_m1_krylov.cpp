@@ -850,6 +850,7 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
       need_start = true;
     }
   }
+  bcg_capped = !done && !fell_back && (nit >= impl_lin_maxit);
   ImplicitBiCGStabEnd(nit, fell_back);
   return nit;
 }

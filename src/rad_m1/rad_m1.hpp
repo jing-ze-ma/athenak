@@ -1077,6 +1077,11 @@ class RadiationM1 {
   Real bcg_nkeep;               // fallbacks that kept the Krylov iterate (fallback best)
   int impl_bcg_maxrst;          // <rad_m1>/implicit_bcg_max_restarts (default 2)
   bool impl_bcg_keep;           // <rad_m1>/implicit_bcg_fallback = best
+  int impl_prec_fb;             // <rad_m1>/implicit_precond_fallback: -1 = none (the
+                                // default), else the impl_prec code (0 line, 1 rbgs)
+                                // a linear solve that stopped at lin_maxit is redone with
+  bool bcg_capped;              // the last BiCGStab stopped at lin_maxit, test unmet
+  Real bcg_npfb, bcg_pfbit;     // solves redone with the fallback, their iterations
   int impl_bcg_sync;            // <rad_m1>/implicit_bcg_sync: 0 = the original loop
                                 // (5 blocking reductions per its), 1 = fused reductions
                                 // (3, the DEFAULT), 2 = 1 plus alpha kept on the device
@@ -2033,6 +2038,7 @@ class RadiationM1 {
   //! left in M1_IW_S2, exactly where the line-Jacobi pass leaves it.  Returns the number
   //! of inner iterations taken.
   int ImplicitBiCGStab(Real rhsmax);
+  int ImplicitBiCGStabRun(Real rhsmax);
   void ImplicitFinalResidSave(bool restore);   // picres-1017 (implicit_final_resid_log)
   // returns 0: go on (implicit_final_resid_stop failed, this pass continues), 1: accept,
   // 2: failed with no pass left (non-converged); 1 and 2 put the saved state back

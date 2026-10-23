@@ -435,6 +435,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("bcg_nkeep", bcg_nkeep);
   v.value("impl_bcg_maxrst", impl_bcg_maxrst);
   v.value("impl_bcg_keep", impl_bcg_keep);
+  v.value("impl_prec_fb", impl_prec_fb);
+  v.value("bcg_capped", bcg_capped);
+  v.value("bcg_npfb", bcg_npfb);
+  v.value("bcg_pfbit", bcg_pfbit);
   v.value("impl_bcg_sync", impl_bcg_sync);
   v.view("bcg_rvd", bcg_rvd);
   v.value("impl_halo_direct", impl_halo_direct);

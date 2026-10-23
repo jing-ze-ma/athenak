@@ -161,6 +161,9 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     if (impl_prec != 2 && impl_prec != 3) {
       wcs += " implicit_precond != rbgs_fwd | mg;";
     }
+    if (impl_prec_fb >= 0) {   // precond-fb-1023: rbgs / line are refused on cs
+      wcs += " implicit_precond_fallback != none;";
+    }
     // cs-s4-1017 (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
     // (and its overlap) is a communication layout, not a method; on cs it falls back to
     // the ordinary seam-aware exchange (the same numbers), as implicit_halo_direct does
