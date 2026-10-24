@@ -15,3 +15,9 @@ equivalent = Caltech _nofma builds). RSG E and HG global keep running on Caltech
 4. Keep run12 running on viper until Caltech posts a NOTE that its continuation STARTED from your bundle; then stop viper's chain
    (USER decides if it differs).
 5. Post a NOTE viper->caltech with the bundle path, md5s, rsync command and the answers above.
+
+## UPDATE 10-24 06:45 (USER): 1 node, not 2
+Caltech runs the accretor on **1 node = 4 H200 (4 ranks)** in a 7-day 1-node holder, "if it fits". Caltech ran the 420 x 58 x 512
+(8 MeshBlocks) accretor deck on 2 H200 before (acc3d_v12_1021 / acc3d_trc_1019), so 4 H200 (2 MeshBlocks each, 141 GB per GPU) should
+fit. In item 2 please confirm run12's mesh / MeshBlock count and that 4 ranks is fine; if run12 is larger than that grid, give its
+GPU memory per MeshBlock on viper.
