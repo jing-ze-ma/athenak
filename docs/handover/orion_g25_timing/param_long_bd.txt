@@ -1,0 +1,182 @@
+% ----- examples/idort/G25_setup/param.txt
+% g25 RSG validation run with the IDORT module against the old IDORT-dev production cons12 (Fritz job 4325157,
+% Orion stand-in RSGg_handoff/orion/param_g25_orion_cons.txt). cgs code units. Every cons12 parameter and its
+% translation: PARAMS_cons12.md. Option (b) through the core (discrete ordinates everywhere, old core kappa_eff
+% through the opacity modifiers, SPHERICAL_SOURCE heating); no f-hybrid (rewrite: branch idort-fhyb, in progress).
+
+%----- Relevant files (IC: convert_ic.py; full 6.09M cells or --reduce 1.19M cells)
+OutputDir                                ./output/
+SnapshotFileBase                         snap
+OutputListFilename                       ol
+
+%----- File formats
+ICFormat                                 3
+SnapFormat                               3
+NumFilesPerSnapshot                      1
+MaxFilesWithConcurrentIO                 64
+
+%----- CPU-time limits and memory
+ResubmitOn                               0
+ResubmitCommand                          my-scriptfile
+MaxMemSize                               3000
+
+%----- Time: same integer timeline as cons12 (top step TimeMax/2^k = 7275.58 s <= MaxSizeTimestep, as the
+%      cons12 TimeMax 1.5258e10 / 2^21); TimeMax = 1.5258e10 / 2^16 = 32 top steps (smoke test)
+TimeBegin                                0.0
+TimeOfFirstSnapshot                      0.0
+TimeBetStatistics                        7275.581359863281
+OutputListOn                             0
+MaxSizeTimestep                          10000.0
+MinSizeTimestep                          1e-3
+TypeOfTimestepCriterion                  0
+ErrTolIntAccuracy                        0.05
+CourantFac                               0.3
+
+%----- Simulation type, cosmology, units
+ComovingIntegrationOn                    0
+PeriodicBoundariesOn                     0                 % GRAVITY_NOT_PERIODIC (the mesh stays periodic; vacuum layer)
+CoolingOn                                0
+StarformationOn                          0
+Omega0                                   0
+OmegaLambda                              0
+OmegaBaryon                              0
+HubbleParam                              1.0
+BoxSize                                  1.75154570218571e+16
+UnitLength_in_cm                         1.0
+UnitMass_in_g                            1.0
+UnitVelocity_in_cm_per_s                 1.0
+GravityConstantInternal                  0.0
+
+%----- Tree, domain decomposition (cons12)
+TypeOfOpeningCriterion                   1
+ErrTolTheta                              0.5
+ErrTolForceAcc                           0.001
+MultipleDomains                          6
+TopNodeFactor                            8
+ActivePartFracForNewDomainDecomp         0.2
+DesNumNgb                                32
+MaxNumNgbDeviation                       1
+
+%----- Softening (cons12)
+SofteningComovingType0                   8261004796.278035
+SofteningMaxPhysType0                    8261004796.278035
+SofteningComovingType1                   628779674725.4695
+SofteningMaxPhysType1                    628779674725.4695
+SofteningComovingType2                   8261004796.278035
+SofteningMaxPhysType2                    8261004796.278035
+SofteningComovingType3                   0
+SofteningMaxPhysType3                    0
+SofteningTypeOfPartType0                 0
+SofteningTypeOfPartType1                 1
+SofteningTypeOfPartType2                 2
+SofteningTypeOfPartType3                 3
+SofteningTypeOfPartType4                 3
+SofteningTypeOfPartType5                 3
+GasSoftFactor                            2.0
+MinimumComovingHydroSoftening            8261004796.278035
+AdaptiveHydroSofteningSpacing            1.2
+
+%----- Gas limits (cons12)
+InitGasTemp                              0
+MinGasTemp                               0
+MinEgySpec                               1e10
+MinimumDensityOnStartUp                  1.0e-20
+LimitUBelowThisDensity                   0
+LimitUBelowCertainDensityToThisValue     0
+
+%----- Mesh regularisation (cons12)
+CellShapingSpeed                         0.5
+CellMaxAngleFactor                       2.25
+
+%----- IDORT: time dependent, conservative coupling, steady start (cons12 IDORT_RELAX_INI)
+IdortSolveMode                           1
+IdortCoupleGas                           1
+IdortInitMode                            2
+IdortClight                              -1                % physical c, a (cgs code units)
+IdortRadConst                            -1
+IdortAlpha                               5.0               % cons12 IdortAlpha 5
+IdortTau0                                0.0               % module default: linear weight, tau_f with min(chi) (D1)
+%IdortTau0                               30.0              % cons12 closure (D1): quadratic weight ...
+%IdortTauFace                            1                 % ... with tau_f = alpha (mean kappa)(mean rho) d
+%----- solver: g25 production settings (long_m8 + STATUS_speed l_t3: -19 % per top step, L(r) within the run-to-run noise)
+IdortTol                                 1e-3              % per-cell content-norm tolerance ...
+IdortTolGlobal                           1e-4              % ... energy-weighted global residual kept at 1e-4
+IdortPosNoise                            0.1               % positivity threshold kept at 1e-4 s_i (IdortPosNoise x IdortTol)
+IdortKrylovRtol                          0.1
+IdortKrylovMaxIter                       100
+IdortDsa                                 0
+IdortPrecSweepMode                       4
+IdortGmresOrth                           1
+IdortKrylovBasisF                        1
+IdortPosRounds                           2
+IdortPosLag                              1000              % user choice: -14 % per top step; L(1e14-2e14) +6e-5 mean / 2e-4 max over 40 top steps (< IdortTol 1e-3)
+IdortPosEarly                            2
+IdortPosEarlyN                           4
+IdortFhybMode                            1                 % f-hybrid on
+IdortRadSignalSpeed                      1                 % cons12 IDORT_RAD_SOUND_SPEED
+IdortRiemannMix                          0
+
+%----- Matter: OPAL EOS table (cons12 EOS_OPAL + BLEND_IDEAL + STITCH_FIX + EOS_NO_RAD), X of the IC
+IdortEosMode                             2
+IdortEosOpalTable                        /orion/u/jinma/AREPO/Arepo-snap-util/eostable/EOS5_data
+IdortEosX                                0.6538476353670762 % = NuclearComposition[0] of every IC cell (spread 9e-14; one X node, lookups need |X - X0| <= 1e-9)
+
+%----- Opacities: gs98 MESA tables, bilinear (= cons12) + the cons12 old-physics modifiers (modules_idort.md)
+IdortOpacityMode                         2
+IdortOpacityRossTable                    /orion/u/jinma/AREPO/Arepo-IDORT/RSGg_handoff/gs98_z0.02_x0.7_ma_ross.data
+IdortOpacityPlanckTable                  /orion/u/jinma/AREPO/Arepo-IDORT/RSGg_handoff/gs98_z0.02_x0.7_ma_planck.data
+IdortOpacityInterp                       1                 % bilinear, as cons12 (module default 3: bicubic)
+IdortOpacityEdge                         1
+IdortKappaScat0                          0
+IdortOpacityModifiers                    1
+IdortOpacityModKappaFloor                1e-5
+IdortOpacityModEdgeInset                 1e-6
+IdortOpacityModFloorTmin                 3200              % cons12 OpacityFloorTmin
+IdortOpacityModDustRadius                117405957841997.73 % cons12 IrtStarDustMinRadius
+IdortOpacityModDustTlow                  1200
+IdortOpacityModDustThigh                 1500
+IdortOpacityModPhot                      1                 % cons12 IRT_STAR_PH_OPACITY_SWITCH_TO_ROSS
+IdortOpacityModPhotRho                   1e-10             % cons12 IrtStarPhKapDensity
+IdortOpacityModCoreTable                 /orion/u/jinma/AREPO/RSGg_g25_IDORT/ics/coreB_side_g25_c1s.hdf5
+IdortOpacityModCoreRadius                1761089367629.966 % cons12 IrtStarCoreRadius
+
+%----- SPHERICAL_SOURCE: cons12 IRT_STAR_CORE_OPTB core heating (no external gravity: self-gravity + point mass)
+SphericalSourceLuminosity                6.854917043005743e+38 % cons12 IrtStarCoreLuminosity
+SphericalSourceRadius                    352217873525.9932 % cons12 r_h = 0.2 R_c (attribute r_h of the core table; IrtStarCoreHeatRadius 0)
+SphericalSourceGravityTable              none
+
+%----- Refinement (cons12 values; needs the refinement block of Config.sh; star bands: idort-g25ref, IdortRefine*)
+ReferenceGasPartMass                     1.3434241265253452e+28
+TargetGasMassFactor                      1
+RefinementCriterion                      1
+DerefinementCriterion                    1
+MaxVolumeDiff                            5.
+MinVolume                                0.0
+MaxVolume                                1.9884098706980504e+42
+RefinementCellsPerSoftening              10
+IdortRefineCsmRmin                       11740595784199.773   % old IrtStarMinRadiusCsm
+IdortRefineCsmRmax                       176108936762996.6    % old IrtStarMaxRadiusCsm
+IdortRefineCsmVmax                       6.778896721988941e+36 % old IrtStarVolumeThreshCsm
+IdortRefinePhRmin                        5.870298e+12         % old IrtStarMinRadiusPh
+IdortRefinePhRmax                        6.457328e+13         % old IrtStarMaxRadiusPh
+IdortRefinePhVmax                        1.7630500135674952e+35 % old IrtStarVolumeThreshPh
+IdortRefineRhoMin                        1e-13                % old IrtStarMinDensityPh
+IdortRefineRhoMax                        2e-9                 % old IrtStarMaxDensityPh
+IdortRefineRhoVmax                       2.203812516959369e+34 % old IrtStarVolumeThreshPhDensity
+IdortRefineTMin                          4000.0               % old IrtStarMinTempPh
+IdortRefineTMax                          20000.0              % old IrtStarMaxTempPh
+IdortRefineTVmax                         2.203812516959369e+34 % old IrtStarVolumeThreshPhTemp
+IdortRefineTRhoMin                       1e-13                % old IrtStarMinDensityPhTemp
+
+%----- L(r) shell-flux log (old IDORT_SHELL_FLUX_LOG radii; idort-g25ref)
+IdortShellFluxEvery                      1
+IdortShellFluxN                          48
+IdortShellFluxRmin                       8.805e10             % 0.05 R_c
+IdortShellFluxRmax                       2.330e14             % 5 x 4.66031773e13 (old RSTAR)
+IdortShellFluxRextra                     1.761e12             % R_c
+InitCondFile g25_full
+TimeMax 3725097.65625
+TimeLimitCPU 98000
+CpuTimeBetRestartFile 3600
+MaxMemSizeNode 16000
+TimeBetSnapshot 101858.13903808594
