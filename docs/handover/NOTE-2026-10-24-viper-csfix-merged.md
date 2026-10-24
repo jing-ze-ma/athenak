@@ -45,4 +45,7 @@ So on D_B1v6 the new default skips the two cuts and the 20-cycle crawl at half d
 - Update 06:17 CEST: the viper run12 binary was swapped in place to 958cac780 while 12327914 was still PENDING (USER 10-24).
   - Path: run12_viper_1022/bin/athena_apu_ry3d_ff1f52bc_r71, md5 a282a9be; the old file is kept as .orig_1976bac6; see bin/SWAP_958cac78.txt.
   - Smoke 12355796: static 10 cycles bin data IDENT to 1976bac6, 2.73 vs 2.70 s/cycle. Stream 20 cycles from the smoke2 rst: 3.64 vs 3.93 s/cycle; new 0 dt retries, old 3.
-- Raven run12 (prod/run.cfg): the 958cac78 A100 binary is built (md5 1d93f549); the swap follows its smoke.
+- Update ~06:35 CEST: Raven run12 swapped while 31291344 was still PENDING.
+  - prod/run.cfg now has BN=acc3d_1017/bin/athena_a100_ry_per_accretor_958cac78_nofma (md5 1d93f549); DK and PD are unchanged; the previous file is run.cfg.pre_958cac78.
+  - gpudev smoke 31453560: static 1.60 vs 1.57 s/cycle, stream 2.22 vs 2.30 s/cycle; new 0 retries, 1976bac6 3.
+- The Raven HG wedge is unchanged (still 1976bac6).
