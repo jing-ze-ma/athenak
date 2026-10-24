@@ -1472,6 +1472,10 @@ void RadiationM1::VetGdTabPoll() {
 //! (vgdrot-1011: from the prefetched second device set when it holds alpha, else
 //! computed now into the pinned host buffers and copied)
 
+// csfix-1023: the angle of the direction tables now in vgd_dir/wall/map/mr/m3/w3 (NOT a
+// class member: the dt-retry checkpoint restores vgd_alpha but not these Views)
+static Real g_vgd_tab_alpha = -9.0;
+
 void RadiationM1::VetGdTables(const Real alpha) {
   VetGdTabPoll();
   VgdTabHost &H = vgd_tabh;
@@ -1505,6 +1509,7 @@ void RadiationM1::VetGdTables(const Real alpha) {
   const int nwall = H.nwall, nexact = H.nexact, nmap = H.nmap;
   const bool first = (vgd_alpha < 0.0);
   vgd_alpha = alpha;
+  g_vgd_tab_alpha = alpha;   // csfix-1023
   if (first && vgd_beam) {
     // prodcand-1011 (sptests x vgdrot merge): the set directions of this angle from the
     // host tables (H.alpha == alpha on both branches above), packed as VgdTabCompute's d
@@ -8137,9 +8142,16 @@ void RadiationM1::VetGdHalfRange(const int stage) {
 //! prefetch is waited for.  Waiting changes no number.  (vet_gd_async's build thread is
 //! refused with dt_retry at startup.)
 
+extern int64_t g_vgd_csgen[2];        // csfix-1023 (rad_m1_vetgd_cs.cpp)
+extern int64_t g_vgd_csgen_save[2];
+
 void RadiationM1::DtRetryQuiesce(bool restoring) {
   if (vgd_sr_pend) {VetGdSymRefJoin();}
-  if (!restoring) return;
+  if (!restoring) {
+    // csfix-1023: the compact-list build generations at the checkpoint
+    for (int c = 0; c < 2; ++c) {g_vgd_csgen_save[c] = g_vgd_csgen[c];}
+    return;
+  }
   if (vgd_tab_state == 1 && vgd_tabf.valid()) {vgd_tabf.wait();}
   if (vgd_on) {vgd_tex.fence();}
 }
@@ -8172,6 +8184,32 @@ void RadiationM1::DtRetryAfterRestore() {
     for (int s = 0; s < 2; ++s) {vgd_htag[s][0] = -1;}
     for (int p = 0; p < 2; ++p) {
       for (auto &a : vgd_ovl_alpha[p]) {a = -5.0;}
+    }
+    // csfix-1023: the cubed-sphere compact lists (vgd_cscl, VetGdCsCompact) are the same
+    // kind of record: key (alpha, ng, use) and host offsets checkpointed, masks / lists
+    // (si, ri, msk) remade in place.  An entry the failed attempt rebuilt (LRU eviction
+    // for a new direction set) is dropped; the next sweep remakes it from the same set
+    // (same numbers).  Without it the restored key named the evicted set's arrays:
+    // "compact lists: N remote band reads not in the read mask" (RSG E 10-23, A1 cycle
+    // 32893, eint<=0 retry after a backward-Euler redo)
+    for (int c = 0; c < 2; ++c) {
+      if (g_vgd_csgen[c] != g_vgd_csgen_save[c]) {
+        vgd_cscl[c].alpha = -9.0;
+        vgd_cscl[c].use = 0;
+      }
+    }
+    // csfix-1023: a failed attempt on the LAST step of a rotation block (vet_rotate_avg)
+    // left the tables on the NEXT set (VetGdTables(blk + 1)); the restored vgd_alpha
+    // names the current one, and the retried (shorter, not last) step skipped
+    // VetGdTables (al == vgd_alpha) and swept the next set's directions with the current
+    // set's lists.
+    // The tables of the restored angle are made again (VgdTabCompute: same numbers).
+    if (vgd_alpha >= 0.0 && g_vgd_tab_alpha != vgd_alpha) {
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle "
+                  << g_vgd_tab_alpha << " to the restored " << vgd_alpha << std::endl;
+      }
+      VetGdTables(vgd_alpha);
     }
   }
 }

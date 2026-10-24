@@ -74,6 +74,12 @@
 
 namespace radm1 {
 
+// csfix-1023: build generation of each compact-list cache entry (NOT a class member, so
+// the dt-retry checkpoint does not restore it): DtRetryAfterRestore drops an entry that
+// the failed attempt rebuilt in place (its restored key would name the old set)
+int64_t g_vgd_csgen[2] = {0, 0};
+int64_t g_vgd_csgen_save[2] = {0, 0};
+
 namespace {
 
 // xchg-1021: a stream event of the default device instance (the sweep's stream): record
@@ -1004,6 +1010,7 @@ void RadiationM1::VetGdCsCompact() {
   E.ng = ng;
   E.use = ++vgd_csuse;
   vgd_cscur = c;
+  g_vgd_csgen[c] += 1;   // csfix-1023
   vgd_csnbuild += 1.0;
   vgd_cstbuild += tb.seconds();
   if (global_variable::my_rank == 0 && vgd_csnbuild <= 1.0) {

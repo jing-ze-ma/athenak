@@ -322,9 +322,11 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_fac_t2")) {
     t2_fac_ = pin->GetReal("time", "dt_retry_fac_t2");
   }
-  // t2befb-1020: <time>/dt_retry_t2_be (read only when named; default 2): a cycle that
-  // has taken this many time2_reject cuts redoes a further non-admissible hesdirk2 stage
-  // with backward Euler (as time2_reject = be) instead of cutting again; < 0 = never
+  // t2befb-1020: <time>/dt_retry_t2_be (read only when named; default 0, csfix-1023 USER
+  // 10-23, was 2): a cycle that has taken this many time2_reject cuts redoes a further
+  // non-admissible hesdirk2 stage with backward Euler (as time2_reject = be) instead of
+  // cutting again; < 0 = never.  0 = BE redo at the cycle dt, no cut (RSG E 230 d: 2 cut
+  // dt to the ~2 s stage-2 limit and the cap kept it there)
   if (pin->DoesParameterExist("time", "dt_retry_t2_be")) {
     t2_be_ = pin->GetInteger("time", "dt_retry_t2_be");
   }
