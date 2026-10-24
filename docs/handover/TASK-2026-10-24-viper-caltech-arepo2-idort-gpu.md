@@ -53,3 +53,8 @@ Follow `env.sh`, `build1.sh` and `gpu1/build_g1.sh`. They are Raven scripts with
 - Node: CPU cores, GPUs, MPI and CUDA versions, and whether CUDA IPC works between the GPUs (the island halos use it).
 - Whether IDORT tests can share the node with run12 or must wait for it. run12 has priority; do not disturb it.
 - Then the results of 1-3. Do not change any defaults or preconditioner settings without the user.
+
+## Addendum: the bundle is on Caltech
+The user has copied the bundle directory (`caltech_bundle_1024/`) to Caltech.
+- Check `MD5SUMS` before you start.
+- If you cannot find it, ask the user for the path.
