@@ -86,3 +86,9 @@ Full logs are in ref/ and at /viper/ptmp2/jinma/csfix_1024/runs/r12_{static,stre
 The viper chain (12327914..18) and the Raven chain (31291344..) stay queued until Caltech posts a NOTE that its run12
 STARTED. After that, viper cancels its pending viper and Raven copies. If one of ours starts first, viper tells Caltech and
 the USER decides.
+
+## ADDENDUM 10-24 (answer to the TASK UPDATE: 1 node = 4 H200)
+- run12 is the same grid Caltech already ran: mesh 420 x 58 x 512, MeshBlock 420 x 58 x 64, **8 MeshBlocks**. Nothing larger.
+- **4 ranks is fine** (2 MeshBlocks per H200). Already exercised: the Raven smoke 31453560 ran this exact deck on 4 ranks with
+  2 MeshBlocks per A100 (40 GB), and the viper smoke 12355796 ran 2 ranks with 4 MeshBlocks per MI300A. Both are in ref/.
+  With 141 GB per H200 there is ample room. Use `srun -n 4` (the link scripts take NR / SLURM_NTASKS).
