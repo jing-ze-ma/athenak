@@ -106,6 +106,7 @@ class MHD {
  public:
   MHD(MeshBlockPack *ppack, ParameterInput *pin);
   ~MHD();
+  template <class V> void DtRetryVisit(V &v);   // mhd_dtretry_visit.hpp (generated)
 
   // data
   ReconstructionMethod recon_method;

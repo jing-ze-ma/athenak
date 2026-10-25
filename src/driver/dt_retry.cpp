@@ -23,12 +23,16 @@
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
+#include "diffusion/resistivity.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "hydro/hydro_dtretry_visit.hpp"
 #include "hydro/hydro_am.hpp"
 #include "hydro/hydro_am_dtretry_visit.hpp"
 #include "rad_m1/rad_m1_dtretry_visit.hpp"
+#include "mhd/mhd_dtretry_visit.hpp"
+#include "diffusion/resistivity_dtretry_visit.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/recipe.hpp"
 
@@ -48,6 +52,14 @@ const char *kDtrMinimal[] = {
   // Hydro
   "hyd.u0", "hyd.w0", "hyd.wtemp", "hyd.wder", "hyd.eint_rst", "hyd.c2p_acc",
   "hyd.c2p_ref_e", "hyd.c2p_ref_d",
+  // mhdfix-1025: MHD, the hydro set plus the face fields b0 and their cell average bcc0
+  // (both read by stage 1 before written); every clone is the whole View, ghosts
+  // included, so the put-back is the cycle-start state with its halos (no exchange)
+  "mhd.u0", "mhd.w0", "mhd.b0.x1f", "mhd.b0.x2f", "mhd.b0.x3f", "mhd.bcc0", "mhd.wtemp",
+  "mhd.wder", "mhd.eint_rst", "mhd.c2p_acc", "mhd.c2p_ref_e", "mhd.c2p_ref_d",
+  // mhdfix-1025: <mhd> resistivity: eta_b (non-constant eta) is set from w0 by the C2P
+  // (or after the RKG sub-steps) and read by the next cycle's stage 1
+  "res.eta_b",
   // amdtr-1019: <hydro>/am_vector's spin reservoir (hydro::AmModule, persistent across
   // cycles) and the radiation's hesdirk2 FSAL spin slope; empty/absent unless am_vector
   "am.am_spin", "m1.amk1",
@@ -300,14 +312,17 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
                 (on ? " (default)" : " (restart input has no key: the old default)"));
   }
   if (!on) return;
-  // the wiring covers Hydro + RadiationM1 (the implicit scheme); anything else: off
+  // the wiring covers Hydro or MHD (mhdfix-1025) + RadiationM1 (the implicit scheme);
+  // anything else: off
   auto *pk = pm->pmb_pack;
-  if (pk->pmhd != nullptr || pk->prad != nullptr || pk->pz4c != nullptr ||
+  if ((pk->phydro != nullptr && pk->pmhd != nullptr) || pk->prad != nullptr ||
+      pk->pz4c != nullptr ||
       pk->padm != nullptr || pk->ppart != nullptr || pk->pturb != nullptr ||
       pk->pradm1 == nullptr || pm->adaptive || pm->multilevel || pk->pradm1->vgd_async) {
     if (global_variable::my_rank == 0) {
       std::cout << "<time> dt_retry: not wired for this module set (wired: <hydro> + "
-                << "<rad_m1>, no mesh refinement, no vet_gd_async) -> off" << std::endl;
+                << "<rad_m1> or <mhd> + <rad_m1>, no mesh refinement, no vet_gd_async) -> "
+                << "off" << std::endl;
     }
     on = false;
     pin->SetBoolean("time", "dt_retry", false);
@@ -407,6 +422,15 @@ void DtRetry::Build(Mesh *pm) {
   if (pk->phydro != nullptr) {
     Binder b{&ent_, "hyd.", &sel, all_views_, host_};
     pk->phydro->DtRetryVisit(b);
+  }
+  // mhdfix-1025: MHD (and its resistivity, when <mhd>/ohmic_resistivity is set)
+  if (pk->pmhd != nullptr) {
+    Binder b{&ent_, "mhd.", &sel, all_views_, host_};
+    pk->pmhd->DtRetryVisit(b);
+    if (pk->pmhd->presist != nullptr) {
+      Binder br{&ent_, "res.", &sel, all_views_, host_};
+      pk->pmhd->presist->DtRetryVisit(br);
+    }
   }
   {
     Binder b{&ent_, "m1.", &sel, all_views_, host_};
