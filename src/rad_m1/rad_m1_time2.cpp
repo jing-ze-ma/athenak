@@ -1079,12 +1079,6 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
   t2_rotprobe = false;
   if (Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
-  if (fl.on && fl.mhd) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_m1>/time2_start = slope is not wired for MHD"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
   Kokkos::deep_copy(DevExeSpace(), u1, u0);
   Kokkos::deep_copy(DevExeSpace(), t2f1, f0x1);
@@ -1093,6 +1087,13 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
+  // mhdfix-1025 <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
+  // holds the last step's start here (the MHD stage 1 copies b0 into it again)
+  if (fl.on && fl.mhd) {
+    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x1f, fl.pm->b0.x1f);
+    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x2f, fl.pm->b0.x2f);
+    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x3f, fl.pm->b0.x3f);
+  }
   // the cold-start face init (implicit_f0_init) of the probe moves the copy too
   // (ImplicitF0Init, t2_inprobe), so it survives the put-back
   Mesh *pmesh = pmy_pack->pmesh;
@@ -1115,6 +1116,7 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);
+    if (fl.mhd) EmagBuild(false);   // mhdfix-1025: b0 untouched; same faces
   }
   t2_solve = M1_T2S_NONE;
   t2_fail = false;
@@ -1152,12 +1154,6 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   t2_rotcorr = false;
   if (time_scheme != M1_TIME_HESDIRK2 || !Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
-  if (fl.on && fl.mhd) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_m1>/vet_gd_rotate_slope = correct is not wired for "
-              << "MHD" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   const Real dtc = vgd_rot_cfrac*dt;
   // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
   Kokkos::deep_copy(DevExeSpace(), u1, u0);
@@ -1167,6 +1163,13 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
+  // mhdfix-1025 <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
+  // holds the last step's start here (the MHD stage 1 copies b0 into it again)
+  if (fl.on && fl.mhd) {
+    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x1f, fl.pm->b0.x1f);
+    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x2f, fl.pm->b0.x2f);
+    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x3f, fl.pm->b0.x3f);
+  }
   // the old vector U^n - dt_c K1 (every channel; the cell F of conservative2 too)
   {
     auto k1_ = t2k1;
@@ -1229,6 +1232,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);
+    if (fl.mhd) EmagBuild(false);   // mhdfix-1025: b0 untouched; same faces
   }
   t2_solve = M1_T2S_NONE;
   t2_fail = false;
