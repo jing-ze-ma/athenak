@@ -55,3 +55,6 @@ A NOTE deltaai->viper on bsg-files-1009 with:
 - the build adaptations;
 - the gate list with ALL SAME / differences;
 - the smoke timings.
+
+## WITHDRAWN (USER 10-25): DeltaAI is too crowded; do not run this TASK
+The g25_full scaling test runs on Raven only (8 nodes, 576 ranks). If anything was started, stop it. No reply is needed.
