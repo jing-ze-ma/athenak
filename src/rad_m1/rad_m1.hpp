@@ -1523,7 +1523,7 @@ class RadiationM1 {
   // (2) the backward-Euler (non-stage) solves of a hesdirk2 run carry the work in the row
   // too (their write-back used to subtract the full work after the solve: E - work <<
   // 0 there, floored).
-  bool impl_wk_fix = false;
+  bool impl_wk_fix = true;      // defaults-1025: DEFAULT true (USER 10-25)
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
   // time2_vet_col_source (vcpred-1010; read only when named, default relaxed = bitwise):

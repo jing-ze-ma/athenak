@@ -248,10 +248,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                                   !global_variable::restart_run);
   t2_vcmode = 0;
   if (vet_col) {
+    // defaults-1025 (USER 10-25): the sph fresh-start default is extrap2 (was predict;
+    // RSG E / HG production value); a restart whose file lacks the key keeps lag
     const bool vdef = sph_geom && !global_variable::restart_run;
     const std::string kvc = M1KeyName(pin, "time2_vet", {"time2_vet_col"});
     std::string vm = (sph_geom || pin->DoesParameterExist("rad_m1", kvc)) ?
-        pin->GetOrAddString("rad_m1", kvc, vdef ? "predict" : "lag") :
+        pin->GetOrAddString("rad_m1", kvc, vdef ? "extrap2" : "lag") :
         std::string("lag");
     if (vm.compare("lag") == 0) {
       t2_vcmode = 0;
@@ -434,10 +436,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   }
   t2_ys_ok = false;
   // t2pos-1020: <rad_m1>/time2_posfix = N, time2_posfix_grow (read only when named;
-  // absent = off, every result bitwise): the local stage-1 positivity re-solve
+  // absent = the default below): the local stage-1 positivity re-solve
   // (Time2PosFix).  Not wired for MHD (the field put-back); <hydro>/am_vector puts the
   // spin reservoir back with the gas (posfix-amvec-1022).
-  t2_pfix = 0;
+  // defaults-1025 (USER 10-25): DEFAULT 4 for hydro (RSG E / HG production value), 0 for
+  // MHD (not wired); a named key wins (0 = off, the old default)
+  t2_pfix = 4;
+  {
+    FluidRef flp0 = FluidRef::Get(pmy_pack);
+    if (flp0.on && flp0.mhd) t2_pfix = 0;
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_posfix")) {
     t2_pfix = pin->GetInteger("rad_m1", "time2_posfix");
     if (t2_pfix < 0) {

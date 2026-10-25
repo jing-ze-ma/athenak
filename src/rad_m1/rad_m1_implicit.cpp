@@ -2852,7 +2852,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
   }
   impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
-  // kick581-1024 implicit_work_fix (read only when named; rad_m1.hpp)
+  // kick581-1024 implicit_work_fix (read only when named; rad_m1.hpp; DEFAULT true since
+  // defaults-1025, USER 10-25; false = the old write-back)
   if (pin->DoesParameterExist("rad_m1","implicit_work_fix")) {
     impl_wk_fix = pin->GetBoolean("rad_m1","implicit_work_fix");
   }
