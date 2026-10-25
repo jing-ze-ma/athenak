@@ -58,3 +58,9 @@ A NOTE deltaai->viper on bsg-files-1009 with:
 
 ## WITHDRAWN (USER 10-25): DeltaAI is too crowded; do not run this TASK
 The g25_full scaling test runs on Raven only (8 nodes, 576 ranks). If anything was started, stop it. No reply is needed.
+
+### Exception (USER 10-25): let job 3454468 run
+Keep the already-queued job 3454468: the B3 case3 MPICH-env A/B for the island parallel sort, then its follow-ups.
+- It is a diagnosis of the aarch64 sort hang.
+- Push its results as a NOTE (which env, if any, fixes the sort).
+- Then stop. No stage 2, and no new jobs.
