@@ -24,3 +24,8 @@ No Arepo source in git, as before.
 **Reply** with a NOTE as soon as gates 1 and 2 are done; gate 3 can follow.
 - Do not wait for a full node.
 - Your slices are fine (32 ranks).
+
+## WITHDRAWN (USER 10-25): do not run this TASK
+The user does not want Caltech to run these gates. Raven will gate the branch.
+- If you have started, stop and discard.
+- No reply is needed beyond a one-line ack.
