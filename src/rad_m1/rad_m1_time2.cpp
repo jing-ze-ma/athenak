@@ -437,15 +437,13 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   t2_ys_ok = false;
   // t2pos-1020: <rad_m1>/time2_posfix = N, time2_posfix_grow (read only when named;
   // absent = the default below): the local stage-1 positivity re-solve
-  // (Time2PosFix).  Not wired for MHD (the field put-back); <hydro>/am_vector puts the
-  // spin reservoir back with the gas (posfix-amvec-1022).
-  // defaults-1025 (USER 10-25): DEFAULT 4 for hydro (RSG E / HG production value), 0 for
-  // MHD (not wired); a named key wins (0 = off, the old default)
+  // (Time2PosFix).  <hydro>/am_vector puts the spin reservoir back with the gas
+  // (posfix-amvec-1022).  mhdfix-1025 <mhd>: the stage-1 start is saved after the MHD
+  // stage 1 and M1 never writes b0, so the conserved u0 (whose IEN carries the fixed
+  // |B|^2/2) is the whole put-back; the field and emag0 stay.
+  // defaults-1025 (USER 10-25): DEFAULT 4 (RSG E / HG production value), hydro and MHD
+  // (mhdfix-1025); a named key wins (0 = off, the old default)
   t2_pfix = 4;
-  {
-    FluidRef flp0 = FluidRef::Get(pmy_pack);
-    if (flp0.on && flp0.mhd) t2_pfix = 0;
-  }
   if (pin->DoesParameterExist("rad_m1", "time2_posfix")) {
     t2_pfix = pin->GetInteger("rad_m1", "time2_posfix");
     if (t2_pfix < 0) {
@@ -472,14 +470,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/time2_posfix_grow must be 0, 1 or 2 (the ghost "
                 << "depth)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
-  if (t2_pfix > 0) {
-    FluidRef flp = FluidRef::Get(pmy_pack);
-    if (flp.on && flp.mhd) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_posfix is not wired for MHD" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -950,6 +940,9 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
       Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
     }
     FluidRefresh(pdrive);
+    // mhdfix-1025 <mhd>: b0 is the field of the saved start (M1 never writes it), so
+    // emag0 is rebuilt from the same faces (bitwise the value the first attempt used)
+    if (fl.mhd) EmagBuild(false);
   }
   // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir back to the stage-1 start
   const bool amp = am_vec && (t2ssv.extent_int(0) > 0);

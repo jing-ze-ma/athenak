@@ -1398,14 +1398,15 @@ class RadiationM1 {
   Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
-  // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; 0/absent = off,
-  // bitwise): a stage-1 solve that left E, T or the written-back eint <= 0
-  // in some cells is solved again (up to N times) from the same start with the stage-1
-  // increment t2inc dropped in those cells (+ time2_posfix_grow face-neighbour layers;
-  // faces with a marked side), i.e. a local backward-Euler g dt stage there.  The dropped
-  // part re-enters the stage-2 increment (weight of Y1 in the stage-2 start), so the step
-  // keeps the K1 weight b1 = 1/2: consistent and conservative.  Nothing changes in a step
-  // whose stage 1 is admissible.  See Time2PosFix (rad_m1_time2.cpp).
+  // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; absent = 4 since
+  // defaults-1025, <hydro> and <mhd>; 0 = off): a stage-1 solve that left E, T or the
+  // written-back eint <= 0 in some cells is solved again (up to N times) from the same
+  // start with the stage-1 increment t2inc dropped in those cells (+ time2_posfix_grow
+  // face-neighbour layers; faces with a marked side), i.e. a local backward-Euler g dt
+  // stage there.  The dropped part re-enters the stage-2 increment (weight of Y1 in the
+  // stage-2 start), so the step keeps the K1 weight b1 = 1/2: consistent and
+  // conservative.  Nothing changes in a step whose stage 1 is admissible.  See
+  // Time2PosFix (rad_m1_time2.cpp).
   int t2_pfix = 0;              // max re-solves per step (0 off)
   int t2_pfix_grow = 1;         // dilation (face-neighbour layers) of the marked set
   int t2_pfix_n = 0;            // re-solves taken in this step
