@@ -25,3 +25,13 @@ slices, and the 1-node full job could not start before 10-27, so the USER cancel
 
 ## Reply
 A NOTE on bsg-files-1009 with the numbers, the commit of the code used, and the job scripts' paths on Raven.
+
+## Addendum (USER 10-25): DeltaAI as a second target
+Run Raven first (no port needed). Then also DeltaAI, if the account allows:
+- Hardware (to be confirmed there): 4 GH200 superchips per node, each 72 Grace Arm cores + 1 H100 (96 GB), so 288 cores
+  + 4 GPUs per node; 2 nodes = 576 ranks, the Orion/Raven-8-node rank count, with 8 GPUs and NVLink-C2C CPU-GPU links.
+- It is aarch64: Arepo, hypre and the CUDA IDORT code need an aarch64 build (GCC or NVHPC + CUDA). Re-run the IDORT gate
+  suite there first (Caltech had 45/48, none GPU-specific).
+- Steps: (1) 1-node g25_red smoke: build check + the 3 arms at 288 ranks; (2) g25_full on 2 nodes (576 ranks), the same 3
+  arms and the same per-phase report as for Raven; (3) if memory allows, g25_full on 1 node (288 ranks) for scaling.
+- Note in the reply that Grace cores differ per core from Orion's x86, so quote the per-core rates as well.
