@@ -1509,7 +1509,21 @@ class RadiationM1 {
   int t2_vcmode = 0;
   bool t2_fvnew = false;        // time2_vstage (rad_m1_time2.cpp)
   bool t2_wk = false;           // the last assembled E rows carried the gas work
-  void ImplicitWorkRow(bool row);   // time2_vstage: the gas work in the E row
+  // time2_vstage: the gas work in the E row (slot: into iw KZ, implicit_work_fix)
+  void ImplicitWorkRow(bool row, bool slot = false);
+  // kick581-1024 <rad_m1>/implicit_work_fix (default false: bitwise the old code).  true:
+  // (1) when the E rows carried the gas work w^k of the last pass (t2_wk), the write-back
+  // subtracts only work - w^k (w^k from iw slot KZ, ImplicitWorkRow(.., slot = true)), so
+  // its flux limit and the implicit_pos_floor / pos_gas moves act on the stage's real E,
+  // not on E - work (which the later add-back used to complete); the add-back is then
+  // skipped.  The old order floored E - work < 0 in cells where the work of one stage
+  // exceeds E (optically thick, kappa rho c dt >> 1, moving gas), took the deficit from
+  // the gas (or CREATED it) and then added w^k on top: an E pump at those cells (RSG E
+  // cube vertex: E x 25-50, E-floor neighbours, the 581 d runaway: 1.2e45 erg created).
+  // (2) the backward-Euler (non-stage) solves of a hesdirk2 run carry the work in the row
+  // too (their write-back used to subtract the full work after the solve: E - work <<
+  // 0 there, floored).
+  bool impl_wk_fix = false;
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
   // time2_vet_col_source (vcpred-1010; read only when named, default relaxed = bitwise):

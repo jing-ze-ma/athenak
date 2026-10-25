@@ -2852,6 +2852,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
   }
   impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
+  // kick581-1024 implicit_work_fix (read only when named; rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","implicit_work_fix")) {
+    impl_wk_fix = pin->GetBoolean("rad_m1","implicit_work_fix");
+  }
   // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md).
   // defaults-1012 (user sign-off of method-1012): DEFAULT conservative2 (with its
   // implicit_cs2_hll = drag, implicit_cs2_shift = false) on a FRESH run with gas coupling
@@ -10374,7 +10378,7 @@ void RadiationM1::DetTraceScalars(const char *tag, int n, const Real *v) {
 //! and the stored slope with it, so E loses work - w^k there (0 at convergence).
 //! Dirichlet (efix) end cells are skipped, as in the write-back.
 
-void RadiationM1::ImplicitWorkRow(bool row) {
+void RadiationM1::ImplicitWorkRow(bool row, bool slot) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -10398,6 +10402,15 @@ void RadiationM1::ImplicitWorkRow(bool row) {
   const bool fws = (force_ref == M1_FREF_WB_ARAD) && fref_wsplit;
   auto aref_ = arad_ref;
   const Real dtw = dt_sub;
+  // kick581-1024 slot = true (implicit_work_fix): w^k into iw slot KZ (Krylov scratch,
+  // free after the solve) for the write-back, nothing else written
+  if (slot) {
+    auto iwz = iw;
+    par_for("m1_impl_wk_z", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iwz(m,M1_IW_KZ,k,j,i) = 0.0;
+    });
+  }
   if (cs_geom) {
     // STAGE CS3: V and dv are FACE-NORMAL components n_a = s v^a on the cubed sphere, so
     // the kinetic energy is 0.5 rho (n_2^2 + n_3^2 + 2 c n_2 n_3)/s^2 (+ the radial
@@ -10422,7 +10435,9 @@ void RadiationM1::ImplicitWorkRow(bool row) {
                    + c*(a2*(v3 + 0.5*a3) + a3*(v2 + 0.5*a2)));
       }
       const Real w = cr*uh(m,IDN,k,j,i)*wk;
-      if (row) {
+      if (slot) {
+        iw_(m,M1_IW_KZ,k,j,i) += w;
+      } else if (row) {
         iw_(m,M1_IW_TR,k,j,i) -= w;
       } else {
         u0_(m,M1_E,k,j,i) += w;
@@ -10452,7 +10467,9 @@ void RadiationM1::ImplicitWorkRow(bool row) {
       }
     }
     const Real w = cr*uh(m,IDN,k,j,i)*wk;
-    if (row) {
+    if (slot) {
+      iw_(m,M1_IW_KZ,k,j,i) += w;
+    } else if (row) {
       iw_(m,M1_IW_TR,k,j,i) -= w;
     } else {
       u0_(m,M1_E,k,j,i) += w;
@@ -10478,7 +10495,9 @@ void RadiationM1::ImplicitWorkRow(bool row) {
       // own velocity, which the implicit stage needs (the old one lags by O(dt))
       const Real vk = iw_(m,M1_IW_V1,k,j,i) + iw_(m,ivb,k,j,i);
       const Real w = cr*uh(m,IDN,k,j,i)*vk*dtw*aref_(m,k,j,i);
-      if (row) {
+      if (slot) {
+        iw_(m,M1_IW_KZ,k,j,i) += w;
+      } else if (row) {
         iw_(m,M1_IW_TR,k,j,i) -= w;
       } else {
         u0_(m,M1_E,k,j,i) += w;
@@ -14385,7 +14404,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // moving scattering gas: E order 1.1 in time); in the row the stage value satisfies
     // its own equation.  The write-back removes only work - work^k (0 at convergence).
     // force_reference_work = split: the work goes into the row as well (fws)
-    const bool wimp = t2st && vim && have_hydro && feedback &&
+    // kick581-1024 implicit_work_fix: the backward-Euler solves of a hesdirk2 run too
+    const bool wbe = impl_wk_fix && !t2st && (time_scheme == M1_TIME_HESDIRK2);
+    const bool wimp = (t2st || wbe) && vim && have_hydro && feedback &&
                       ((t2_fvnew && !fref) || fws);
     t2_wk = wimp;
     const bool nfwr = impl_nofb_work && !feedback && have_hydro && coupling && dbgf;
@@ -16331,6 +16352,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // consrc-1011: implicit_gas_src = conservative (gas_feedback = true only; with the
   // gas fixed the matched path and its nofb work stay)
   const bool gcs = impl_gas_src_cons && have_hydro && feedback;
+  // kick581-1024 implicit_work_fix: the (conservative) write-back subtracts work - w^k
+  // (w^k in KZ); the add-back below is then not made
+  const bool wkb_ = impl_wk_fix && t2_wk && gcs;
+  if (wkb_) {ImplicitWorkRow(false, true);}
   auto gz1w_ = gcz1;
   auto gz2w_ = gcz2;
   auto gz3w_ = gcz3;
@@ -16924,7 +16949,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // time2_vstage: the rows took the work of the last pass's kick, which the write-back
   // subtracted again: give it back (E and the slope; the gas keeps the full work)
-  if (t2_wk) {
+  if (t2_wk && !wkb_) {
     ImplicitWorkRow(false);
   }
   // hesdirk2: the face part of the slope, over the active faces

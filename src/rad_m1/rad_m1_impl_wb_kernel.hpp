@@ -648,6 +648,7 @@
           q3 = (trans && thrd) ? ev[2] : r3;
           const Real wq = kew(dm1, dm2, dm3);
           Real eq = efc ? ep : (ep - (ch/cl)*wq);
+          if (wkb_ && !efc) {eq += iw_(m,M1_IW_KZ,k,j,i);}   // kick581-1024
           M1ApplyLimits(cl, efl, eq, q1, q2, q3);
 #if !(defined(M1_C2CR) && M1_C2CR)
           // the gas charged with the limited flux (implicit_cs2_clip = gas): one pass
@@ -718,6 +719,7 @@
           if (q == 3) break;
           const Real wq = kew(dm1, dm2, dm3);
           Real eq = efc ? ep : (ep - (ch/cl)*wq);
+          if (wkb_ && !efc) {eq += iw_(m,M1_IW_KZ,k,j,i);}   // kick581-1024
           q1 = r1;  q2 = r2;  q3 = r3;
           if (vfx && !csw) {
             // m1-sp-order2b: the cell F at the velocity the kick gives the gas
@@ -799,6 +801,8 @@
         work = kew(dm1, dm2, dm3);
         if (!efc) {
           ep -= (ch/cl)*work;
+          // kick581-1024 implicit_work_fix: the row already paid w^k
+          if (wkb_) {ep += iw_(m,M1_IW_KZ,k,j,i);}
         }
       }
     }
