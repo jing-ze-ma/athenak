@@ -14362,6 +14362,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     // implicit_vimp: the Jacobian of the implicit enthalpy velocity for this pass
     if (vimp_now) {ImplicitVimpBuild();}
+    // kick581-1025 implicit_work_fix: after the implicit_vimp positivity fallback the
+    // iterate's kick dv^k is still built (ImplicitVimpBuild; its Jacobian rows stay
+    // unused, vim = false below), so the E row keeps carrying the gas work w^k (wimp)
+    // and the write-back subtracts only work - w^k, as with vimp on
+    const bool wvfb = impl_wk_fix && impl_vimp && !vimp_now && (iw_vimp >= 0) &&
+                      (t2st || (time_scheme == M1_TIME_HESDIRK2)) && have_hydro &&
+                      feedback && ((t2_fvnew && !fref) || fws);
+    if (wvfb) {ImplicitVimpBuild();}
     // consfix-1011 (conservative2): this pass's dA into the face equation's F0^n
     if ((Cs2Active() && !(cs2_dbg & 1)) || RinrActive()) {ImplicitCs2Pass(false);}
     if (muscl_now) {ImplicitMusclBuild();}   // xthinfix-1009 Fix B
@@ -14406,7 +14414,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // force_reference_work = split: the work goes into the row as well (fws)
     // kick581-1024 implicit_work_fix: the backward-Euler solves of a hesdirk2 run too
     const bool wbe = impl_wk_fix && !t2st && (time_scheme == M1_TIME_HESDIRK2);
-    const bool wimp = (t2st || wbe) && vim && have_hydro && feedback &&
+    const bool wimp = (t2st || wbe) && (vim || wvfb) && have_hydro && feedback &&
                       ((t2_fvnew && !fref) || fws);
     t2_wk = wimp;
     const bool nfwr = impl_nofb_work && !feedback && have_hydro && coupling && dbgf;
