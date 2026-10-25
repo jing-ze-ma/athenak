@@ -52,7 +52,7 @@ class Resistivity {
  public:
   Resistivity(MeshBlockPack *pp, ParameterInput *pin);
   ~Resistivity();
-  template <class V> void DtRetryVisit(V &v);   // resistivity_dtretry_visit.hpp (generated)
+  template <class V> void DtRetryVisit(V &v);   // resistivity_dtretry_visit.hpp (gen.)
 
   // data
   Real dtnew;

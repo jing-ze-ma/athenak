@@ -4,7 +4,8 @@
 usage: dtretry_gen.py <clang++> <flags file> <src dir>
 Writes src/rad_m1/rad_m1_dtretry_visit.hpp, src/hydro/hydro_dtretry_visit.hpp and
 src/mhd/mhd_dtretry_visit.hpp, src/diffusion/resistivity_dtretry_visit.hpp (mhdfix-1025): for
-every data member of RadiationM1 / Hydro / MHD / Resistivity (and of the nested plain structs listed in NESTED), one
+every data member of RadiationM1 / Hydro / MHD / Resistivity (and of the nested plain
+structs listed in NESTED), one
 call of the visitor in declaration order --
   v.view(name, x)    any Kokkos::View (DvceArray*, HostArray*, raw Kokkos::View)
   v.dual(name, x)    any Kokkos::DualView (DualArray*)

@@ -68,7 +68,7 @@ const char *kDtrMinimal[] = {
   "m1.vet_prev", "m1.vsc_d0", "m1.vsc_d1", "m1.ctr_mem", "m1.csk1", "m1.csk2",
   "m1.csinc", "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell", "m1.vgd_rst",
   "m1.vlat_cs",
-  // mhdfix-1025: time2_vet_col = extrap2 (the sph fresh-start default since defaults-1025)
+  // mhdfix-1025: time2_vet_col = extrap2 (sph fresh-start default since defaults-1025)
   // keeps the previous closure build (x2_tt, x2_hr, x2_q; x2_t/x2_ok are values) for the
   // next step's extrapolation: a failed attempt that rebuilt it left the retry reading
   // the discarded build (a forced retry at cycle 5 of the hot-spot wedge was not bitwise)
@@ -326,8 +326,8 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
       pk->pradm1 == nullptr || pm->adaptive || pm->multilevel || pk->pradm1->vgd_async) {
     if (global_variable::my_rank == 0) {
       std::cout << "<time> dt_retry: not wired for this module set (wired: <hydro> + "
-                << "<rad_m1> or <mhd> + <rad_m1>, no mesh refinement, no vet_gd_async) -> "
-                << "off" << std::endl;
+                << "<rad_m1> or <mhd> + <rad_m1>, no mesh refinement, no vet_gd_async) "
+                << "-> off" << std::endl;
     }
     on = false;
     pin->SetBoolean("time", "dt_retry", false);
