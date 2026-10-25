@@ -35,6 +35,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "bvals/bvals.hpp"
 #include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
@@ -1052,6 +1053,73 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
   pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
   t2_pfix_redo = false;
   return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::EbndFluxX1
+//! \brief mhdfix-1025 Ebnd: L = sum A F1 over the physical inner x1 faces minus the outer
+//! ones (the radiation energy flux into the domain through x1, all ranks).
+
+Real RadiationM1::EbndFluxX1() {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto ff = f0x1;
+  auto &a1 = pmy_pack->pcoord->area.x1f;
+  auto &bcs = pmy_pack->pmb->mb_bcs;
+  Real l = 0.0;
+  Kokkos::parallel_reduce("m1_ebnd", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
+      DevExeSpace(), {0, ks, js}, {nmb1 + 1, ke + 1, je + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, Real &sum) {
+    auto phys = [](const BoundaryFlag f) {
+      return !(f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
+               f == BoundaryFlag::shear_periodic || f == BoundaryFlag::panel ||
+               f == BoundaryFlag::polar || f == BoundaryFlag::undef);
+    };
+    if (phys(bcs.d_view(m, BoundaryFace::inner_x1))) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
+    if (phys(bcs.d_view(m, BoundaryFace::outer_x1))) {
+      sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);
+    }
+  }, Kokkos::Sum<Real>(l));
+#if MPI_PARALLEL_ENABLED
+  Real g;
+  MPI_Allreduce(&l, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  l = g;
+#endif
+  return l;
+}
+
+//! \fn void RadiationM1::EbndStart / EbndStage1 / EbndAccept
+//! \brief mhdfix-1025 Ebnd (rad_m1.hpp): L at the step start (the face flux of the slope
+//! K1), of the accepted stage-1 solve (K2), and the step's applied energy at acceptance
+//! (a retried cycle accumulates nothing: the Driver accepts after the dt_retry check)
+
+void RadiationM1::EbndStart() {
+  if (!ebnd_on) return;
+  if (transport != M1_TRANSPORT_IMPLICIT || MRActive() || csplit != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1> Ebnd (energy-budget diagnostic) needs the "
+              << "implicit transport without multi-rate / coupling_split" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  ebnd_l1 = EbndFluxX1();
+}
+
+void RadiationM1::EbndStage1() {
+  if (!ebnd_on) return;
+  ebnd_l2 = EbndFluxX1();
+}
+
+void RadiationM1::EbndAccept(Real dt, bool t2step) {
+  if (!ebnd_on) return;
+  const Real l3 = EbndFluxX1();
+  if (t2step) {
+    const Real g = kT2G;
+    const Real wy = (t2_tab == 0) ? 0.5 : t2_w0;   // weight of Y1 in the stage-2 start
+    ebnd_acc += dt*((wy*t2_a21 + t2_c31)*ebnd_l1 + (wy*g + t2_c32)*ebnd_l2 + g*l3);
+  } else {
+    ebnd_acc += dt*l3;
+  }
 }
 
 //----------------------------------------------------------------------------------------

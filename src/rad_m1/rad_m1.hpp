@@ -1425,6 +1425,21 @@ class RadiationM1 {
   Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2gsv_h;
   Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2csv_h;
   bool Time2PosFix(Driver *pdrive);
+  // mhdfix-1025 Ebnd (an energy-budget diagnostic, off unless a problem generator sets
+  // ebnd_on; sph_wedge: <problem>/wg_hist_ebnd): the radiation energy the scheme put in
+  // through the physical x1 faces (inner minus outer), summed over the accepted steps
+  // since the run start or restart.  A hesdirk2 step applies the face flux
+  // L = sum A F1 of its three slopes with the tableau weights of U^{n+1} (K1 = the step
+  // start, K2 = the accepted stage-1 solve, K3 = the stage-2 solve; a time2_posfix step
+  // keeps these weights, its dropped K1 part re-enters stage 2); a backward-Euler step
+  // applies L of its solve.  Read-only: no number of the run changes.
+  bool ebnd_on = false;
+  Real ebnd_acc = 0.0;            // accumulated energy (code units)
+  Real ebnd_l1 = 0.0, ebnd_l2 = 0.0;   // L at the step start / of the stage-1 solve
+  Real EbndFluxX1();
+  void EbndStart();
+  void EbndStage1();
+  void EbndAccept(Real dt, bool t2step);
   // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
   // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
   // asks for the local re-solve (the re-solve starts with the full operator again)

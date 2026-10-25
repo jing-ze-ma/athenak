@@ -567,6 +567,15 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   user_bcs_func = RadM1WedgeBC;
   user_hist_func = RadM1WedgeHist;
   pgen_final_func = RadM1WedgeFinal;
+  // mhdfix-1025 <problem>/wg_hist_ebnd (read only when named; default false): user hst
+  // column 17 Ebnd_rad = the radiation energy the scheme put in through the x1 faces,
+  // accumulated over the accepted steps (RadiationM1 Ebnd), for an exact energy budget:
+  // Etot(t) - Etot(0) - Ebnd_rad(t) is then only the non-conservative sources (sponge,
+  // the split reference work, floors) -- a trapezoid on the hst L columns is not exact
+  if (pin->DoesParameterExist("problem", "wg_hist_ebnd") &&
+      pin->GetBoolean("problem", "wg_hist_ebnd") && pmbp->pradm1 != nullptr) {
+    pmbp->pradm1->ebnd_on = true;
+  }
   if (global_variable::my_rank == 0) {
     Real a0 = aref[0], g0 = wg_gm_/(hr[0]*hr[0]);
     std::cout << "sph_wedge: wg_ic = " << icm << ", GM = " << wg_gm_ << ", F_in = "
@@ -959,6 +968,12 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   pdata->label[13] = "M_tot";
   pdata->label[14] = "Mdot_top";
   pdata->label[15] = "Mdot_bot";
+  // mhdfix-1025 <problem>/wg_hist_ebnd: the accumulated x1 boundary radiation energy
+  const bool ebnd = (pmbp->pradm1 != nullptr) && pmbp->pradm1->ebnd_on;
+  if (ebnd) {
+    pdata->nhist = 17;
+    pdata->label[16] = "Ebnd_rad";
+  }
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -1018,7 +1033,10 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
     }
     msum += h;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this));
-  for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = sum_this.the_array[n];
+  for (int n=0; n<16; ++n) pdata->hdata[n] = sum_this.the_array[n];
+  // ebnd_acc is the global value on every rank; the history output sums over ranks
+  if (ebnd) {pdata->hdata[16] = (global_variable::my_rank == 0) ? pmbp->pradm1->ebnd_acc
+                                                                : 0.0;}
 }
 
 //----------------------------------------------------------------------------------------

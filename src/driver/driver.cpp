@@ -550,6 +550,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (m1help && pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 2);}
       const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
       bool m1t2fail = false;
+      // mhdfix-1025 Ebnd (energy-budget diagnostic; no-op unless a pgen turned it on)
+      if (pm1 != nullptr) {pm1->EbndStart();}
       const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
       auto hydro_stage = [&](int stage) {
         if (nohyd) return;   // DIAGNOSTIC <rad_m1>/dbg_hydro_off: R alone
@@ -594,6 +596,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             m1t2fail = true;
             break;
           }
+          if (stage == 1) {pm1->EbndStage1();}
         }
       }
       // fin4-dtretry: a stage that raised the retry flag is not redone here (the retry
@@ -682,6 +685,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         dtr_retrying = true;
         continue;
       }
+      if (pm1 != nullptr) {pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);}
 
       // Work after time integrator indicated by "1" in stage
       ExecuteTaskList(pmesh, "after_timeintegrator", 1);
