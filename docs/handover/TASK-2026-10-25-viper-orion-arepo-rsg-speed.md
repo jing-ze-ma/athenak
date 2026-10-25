@@ -15,3 +15,8 @@ AthenaK RSG E reference (Caltech, fresh run since 10-25 ~08:00):
 - **Physics:** implicit M1 radiation (hesdirk2, VET col) + MLT ramp + hydro.
 - **Speed:** dt = 1000 s (the cap; hydro CFL 0.3 has not limited it so far), ~1.14 s wall per cycle.
   - That is ~37 star-days per wall hour (123 d in 3.35 h), or ~0.33 GPU-h per star-day.
+
+## Update: mostly answered from Orion's own records (NOTE-2026-10-25-viper-caltech-orion-arepo-rsg-speed.md)
+Only two things are still needed from Orion:
+- the CPU model of the Orion nodes;
+- whether there is a newer production than long_v1 / long_bd with a different speed.
