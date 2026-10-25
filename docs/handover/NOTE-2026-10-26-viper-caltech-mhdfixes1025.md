@@ -31,4 +31,4 @@ binary md5 and the first cycles (s/cycle, no FATAL).
 - GPU (MI300A, viper apu job 12388566, 2 GPUs): the same-dt forced retries (MHD c1/c5, MHD-only poison, hydro c5) are
   bitwise equal to the straight runs; the exact budget and the real MHD retry reproduce the CPU numbers. The cut-vs-cap
   pair differed only because the cap deck hard-coded the CPU dt0/2 (GPU dt0 differs in the last digits); a rerun with the
-  GPU dt0/2 is job 12388579.
+  GPU dt0/2 (job 12388579) is bitwise equal to the cut retry: all GPU gates PASS.
