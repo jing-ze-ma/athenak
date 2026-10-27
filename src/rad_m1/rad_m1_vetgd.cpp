@@ -707,6 +707,20 @@ void RadiationM1::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   if (!vgd_csg) {VetGdHaloInit();}   // cs-vetgd-1017: cs lists made by VetGdCsInit
+  if (vgd_thmir) {
+    // wallbug-1027 vet_gd_theta_wall = mirror: the theta neighbour across a wall is the
+    // block itself (one MeshBlock in theta), so the corner slots of the halo are the
+    // phi-edge slots and every mirrored read is an interior or phi-band value
+    if (vgd_csg) {
+      VgdFatal("vet_gd_theta_wall = mirror: no theta walls on the cubed sphere");
+    }
+    if (vgd_nb2 != 1) {
+      VgdFatal("vet_gd_theta_wall = mirror needs ONE MeshBlock along x2 (theta)");
+    }
+    if (vgd_ipc_on) {VgdFatal("vet_gd_theta_wall = mirror: vet_gd_halo_ipc not ported");}
+    Kokkos::realloc(vgd_mi3, nmb, c3w, 2*vgd_w, n, 3);
+    Kokkos::realloc(vgd_mw3, nmb, c3w, 2*vgd_w, n, 3);
+  }
   {
     // mem2-1014 vet_gd_band_ring: where every band value the sweep reads comes from an
     // exact-list exchange of this sweep (the halo_exact gate below, no overlap / fused
@@ -1169,6 +1183,101 @@ Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn static void VgdMirPick
+//! \brief wallbug-1027 vet_gd_theta_wall = mirror: the set directions that stand in for
+//! the direction m (unit) at a cell whose radial unit vector is (rx, ry, rz): an exact
+//! match (n . m > 1 - 1e-12) or, without wint, the nearest set direction of m's branch
+//! (sign of m . r_hat) with weight 1; with wint the 3 nearest of that branch, spherical
+//! barycentric weights when all >= 0, else inverse-angle (vet_gd_wall_interp's rule)
+
+static void VgdMirPick(const std::vector<double> &d, const int n, const double mx,
+                       const double my, const double mz, const double rx,
+                       const double ry, const double rz, const bool wint, int r3[3],
+                       double w3[3]) {
+  const bool up = (mx*rx + my*ry + mz*rz) >= 0.0;
+  double b3[3] = {-2.0, -2.0, -2.0};
+  int best = 0;
+  double bd = -2.0;
+  r3[0] = r3[1] = r3[2] = 0;
+  for (int r = 0; r < n; ++r) {
+    const double dd = mx*d[4*r] + my*d[4*r+1] + mz*d[4*r+2];
+    if (dd > bd) {bd = dd; best = r;}
+    const double br = d[4*r]*rx + d[4*r+1]*ry + d[4*r+2]*rz;
+    if ((br >= 0.0) != up) {continue;}
+    if (dd > b3[0]) {
+      b3[2] = b3[1]; r3[2] = r3[1]; b3[1] = b3[0]; r3[1] = r3[0];
+      b3[0] = dd; r3[0] = r;
+    } else if (dd > b3[1]) {
+      b3[2] = b3[1]; r3[2] = r3[1]; b3[1] = dd; r3[1] = r;
+    } else if (dd > b3[2]) {
+      b3[2] = dd; r3[2] = r;
+    }
+  }
+  w3[0] = 1.0;
+  w3[1] = w3[2] = 0.0;
+  if (bd > 1.0 - 1.0e-12) {r3[0] = r3[1] = r3[2] = best; return;}
+  if (b3[0] <= -2.0) {r3[0] = r3[1] = r3[2] = best; return;}
+  if (!wint || b3[2] <= -2.0) {r3[1] = r3[2] = r3[0]; return;}
+  // m on a ring of the set (the same n_z: a product or HEALPix set mirrored about the
+  // equator): linear in azimuth between the two ring directions that bracket it (n_z
+  // kept exactly; the 3-point rule below would mix in another ring or fall back to
+  // inverse-angle weights, since m is not inside the spherical triangle)
+  {
+    int ra = -1, rb = -1;
+    double da = -2.0, db = -2.0;
+    for (int r = 0; r < n; ++r) {
+      if (std::fabs(d[4*r+2] - mz) > 1.0e-10) {continue;}
+      const double br = d[4*r]*rx + d[4*r+1]*ry + d[4*r+2]*rz;
+      if ((br >= 0.0) != up) {continue;}
+      const double dd = mx*d[4*r] + my*d[4*r+1] + mz*d[4*r+2];
+      if (dd > da) {
+        rb = ra; db = da; ra = r; da = dd;
+      } else if (dd > db) {
+        rb = r; db = dd;
+      }
+    }
+    if (ra >= 0 && rb >= 0) {
+      const double pt = std::atan2(my, mx);
+      auto dang = [pt](const double x, const double y) {
+        double a = std::atan2(y, x) - pt;
+        a -= 2.0*M_PI*std::floor((a + M_PI)/(2.0*M_PI));
+        return a;
+      };
+      const double aa = dang(d[4*ra], d[4*ra+1]), ab = dang(d[4*rb], d[4*rb+1]);
+      if (aa*ab <= 0.0 && std::fabs(aa - ab) > 1.0e-12) {   // bracketing pair
+        r3[0] = ra; r3[1] = rb; r3[2] = ra;
+        w3[0] = std::fabs(ab)/std::fabs(aa - ab);
+        w3[1] = 1.0 - w3[0];
+        w3[2] = 0.0;
+        return;
+      }
+    }
+  }
+  const double *u = &d[4*r3[0]], *v = &d[4*r3[1]], *x = &d[4*r3[2]];
+  auto det3 = [](const double *a, const double *b, const double *c) {
+    return a[0]*(b[1]*c[2] - b[2]*c[1]) - a[1]*(b[0]*c[2] - b[2]*c[0])
+           + a[2]*(b[0]*c[1] - b[1]*c[0]);
+  };
+  const double mv[3] = {mx, my, mz};
+  const double dt0 = det3(u, v, x);
+  bool ok = std::fabs(dt0) > 1.0e-12;
+  double ww[3] = {0.0, 0.0, 0.0};
+  if (ok) {
+    ww[0] = det3(mv, v, x)/dt0;
+    ww[1] = det3(u, mv, x)/dt0;
+    ww[2] = det3(u, v, mv)/dt0;
+    ok = (ww[0] >= -1.0e-12) && (ww[1] >= -1.0e-12) && (ww[2] >= -1.0e-12);
+  }
+  if (!ok) {
+    for (int t = 0; t < 3; ++t) {
+      ww[t] = 1.0/std::max(std::acos(std::min(b3[t], 1.0)), 1.0e-9);
+    }
+  }
+  const double ws = std::max(ww[0], 0.0) + std::max(ww[1], 0.0) + std::max(ww[2], 0.0);
+  for (int t = 0; t < 3; ++t) {w3[t] = std::max(ww[t], 0.0)/ws;}
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VgdTabCompute
 //! \brief vgdrot-1011: the host part of VetGdTables for angle alpha (the set rotated by
 //! alpha about z, the wall maps and branch tables) into the persistent pinned host
@@ -1380,6 +1489,47 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
       }
     }
   }
+  if (vgd_thmir) {
+    // wallbug-1027 vet_gd_theta_wall = mirror: the theta ghost rows (every column k,
+    // phi unwrapped: the mirrored read is then re-indexed at a phi wall as any read)
+    // read the mirror row; their direction tables and branch (the target's: the local
+    // reflection keeps n . r_hat)
+    const int wb = vgd_w, nx2 = indcs.nx2;
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = 0; k < c3; ++k) {
+        const double ph = x3_h(m,k);
+        const double sp = std::sin(ph), cp = std::cos(ph);
+        for (int sd = 0; sd < 2; ++sd) {
+          for (int g = 0; g < wb; ++g) {
+            const int j = (sd == 1) ? (wb + nx2 + g) : (wb - 1 - g);
+            const int jm = (sd == 1) ? (wb + nx2 - 1 - g) : (wb + g);
+            const double th = x2_h(m,j), thm = x2_h(m,jm);
+            const double st = std::sin(th), ct = std::cos(th);
+            const double sw = std::sin(thm), cw = std::cos(thm);
+            const double rx = sw*cp, ry = sw*sp, rz = cw;
+            for (int q = 0; q < n; ++q) {
+              const double nx = d[4*q], ny = d[4*q+1], nz = d[4*q+2];
+              const double a = nx*st*cp + ny*st*sp + nz*ct;
+              const double b = nx*ct*cp + ny*ct*sp - nz*st;
+              const double c = -nx*sp + ny*cp;
+              // (a, -b, c) in the mirror cell's frame
+              const double mx = a*sw*cp - b*cw*cp - c*sp;
+              const double my = a*sw*sp - b*cw*sp + c*cp;
+              const double mz = a*cw + b*sw;
+              int r3[3];
+              double w3[3];
+              VgdMirPick(d, n, mx, my, mz, rx, ry, rz, wint, r3, w3);
+              for (int t = 0; t < 3; ++t) {
+                H.mi3(m,k,sd*wb+g,q,t) = r3[t];
+                H.mw3(m,k,sd*wb+g,q,t) = w3[t];
+              }
+              mr_h(m,k,j,q) = a;
+            }
+          }
+        }
+      }
+    }
+  }
   H.alpha = alpha;
   H.nwall = nwall;
   H.nexact = nexact;
@@ -1413,6 +1563,14 @@ void RadiationM1::VgdTabAlloc(const bool dev) {
                vgd_w3.extent(0), vgd_w3.extent(1), vgd_w3.extent(2), vgd_w3.extent(3),
                vgd_w3.extent(4));
     }
+    if (vgd_thmir) {   // wallbug-1027
+      H.mi3 = Kokkos::View<int *****, LayoutWrapper, PS>("m1_vgd_tab_mi3",
+                vgd_mi3.extent(0), vgd_mi3.extent(1), vgd_mi3.extent(2),
+                vgd_mi3.extent(3), vgd_mi3.extent(4));
+      H.mw3 = Kokkos::View<Real *****, LayoutWrapper, PS>("m1_vgd_tab_mw3",
+                vgd_mw3.extent(0), vgd_mw3.extent(1), vgd_mw3.extent(2),
+                vgd_mw3.extent(3), vgd_mw3.extent(4));
+    }
   }
   if (dev && vgd_tabd.dir.extent(0) != vgd_dir.extent(0)) {
     Kokkos::realloc(vgd_tabd.dir, vgd_dir.extent(0), vgd_dir.extent(1));
@@ -1427,6 +1585,12 @@ void RadiationM1::VgdTabAlloc(const bool dev) {
                       vgd_m3.extent(3), vgd_m3.extent(4));
       Kokkos::realloc(vgd_tabd.w3, vgd_w3.extent(0), vgd_w3.extent(1), vgd_w3.extent(2),
                       vgd_w3.extent(3), vgd_w3.extent(4));
+    }
+    if (vgd_thmir) {   // wallbug-1027
+      Kokkos::realloc(vgd_tabd.mi3, vgd_mi3.extent(0), vgd_mi3.extent(1),
+                      vgd_mi3.extent(2), vgd_mi3.extent(3), vgd_mi3.extent(4));
+      Kokkos::realloc(vgd_tabd.mw3, vgd_mw3.extent(0), vgd_mw3.extent(1),
+                      vgd_mw3.extent(2), vgd_mw3.extent(3), vgd_mw3.extent(4));
     }
   }
 }
@@ -1463,6 +1627,10 @@ void RadiationM1::VetGdTabPoll() {
     Kokkos::deep_copy(vgd_tex, vgd_tabd.m3, H.m3);
     Kokkos::deep_copy(vgd_tex, vgd_tabd.w3, H.w3);
   }
+  if (vgd_thmir) {   // wallbug-1027
+    Kokkos::deep_copy(vgd_tex, vgd_tabd.mi3, H.mi3);
+    Kokkos::deep_copy(vgd_tex, vgd_tabd.mw3, H.mw3);
+  }
   vgd_tab_state = 3;
 }
 
@@ -1489,6 +1657,10 @@ void RadiationM1::VetGdTables(const Real alpha) {
       std::swap(vgd_m3, vgd_tabd.m3);
       std::swap(vgd_w3, vgd_tabd.w3);
     }
+    if (vgd_thmir) {   // wallbug-1027
+      std::swap(vgd_mi3, vgd_tabd.mi3);
+      std::swap(vgd_mw3, vgd_tabd.mw3);
+    }
     vgd_tab_nswap += 1.0;
   } else {
     if (vgd_tab_state == 1) {vgd_tabf.get();}     // (another angle: not used)
@@ -1503,6 +1675,10 @@ void RadiationM1::VetGdTables(const Real alpha) {
     }
     Kokkos::deep_copy(vgd_wall, H.w);
     Kokkos::deep_copy(vgd_map, H.mp);
+    if (vgd_thmir) {   // wallbug-1027
+      Kokkos::deep_copy(vgd_mi3, H.mi3);
+      Kokkos::deep_copy(vgd_mw3, H.mw3);
+    }
   }
   vgd_tab_state = 0;
   const int n = vgd_n;
@@ -1948,6 +2124,27 @@ void RadiationM1::VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1) 
   for (int c0 = i0; c0 <= i1; c0 += nch) {
     VetGdHalo(a, 2, c0, std::min(c0 + nch - 1, i1), vgd_w, false);
   }
+  if (vgd_thmir) {VetGdThMirCs(a, i0, i1);}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdThMirCs
+//! \brief wallbug-1027 vet_gd_theta_wall = mirror: ln chi, ln S of the theta ghost rows
+//! (every band column, after the exchange filled the phi band) = their mirror rows
+
+void RadiationM1::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int wb = vgd_w, nx2 = indcs.nx2;
+  const int c3 = indcs.nx3 + 2*vgd_w;
+  auto a_ = a;
+  par_for("m1_vgd_thmir_cs", vgd_cur, 0, nmb1, 0, 1, 0, c3 - 1, 0, 2*wb - 1, i0, i1,
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int s, const int i) {
+    const int g = (s < wb) ? s : (s - wb);
+    const int j = (s < wb) ? (wb - 1 - g) : (wb + nx2 + g);
+    const int jm = (s < wb) ? (wb + g) : (wb + nx2 - 1 - g);
+    a_(m,c,k,j,i) = a_(m,c,k,jm,i);
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -2011,6 +2208,7 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
   const bool inw = inw0;
   const int mode = vgd_hcomp;
   const int nb2 = vgd_nb2, nb3 = vgd_nb3;
+  const bool thm = vgd_thmir;    // wallbug-1027 (one MeshBlock in theta: gj local)
   const Real t0 = pm->mesh_size.x2min, p0 = pm->mesh_size.x3min;
   const Real dth = (pm->mesh_size.x2max - t0)/pm->mesh_indcs.nx2;
   const Real dph = (pm->mesh_size.x3max - p0)/pm->mesh_indcs.nx3;
@@ -2059,8 +2257,10 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
       const int dpj = (rdj < 0) ? (ws - jj) : ((rdj > 0) ? (jj + 1) : 0);
       const int dpk = (rdk < 0) ? (ws - kk) : ((rdk > 0) ? (kk + 1) : 0);
       const int lr2 = (lx2 + dj + nb2) % nb2, lr3 = (lx3 + dk + nb3) % nb3;
+      // wallbug-1027 (mirror theta walls): the rows within ws of a wall are read by
+      // mirrored rays too; keep their whole branch (both sides decide from gj alone)
       const bool wall = (lr2 + rdj < 0) || (lr2 + rdj >= nb2) || (lr3 + rdk < 0)
-                        || (lr3 + rdk >= nb3);
+                        || (lr3 + rdk >= nb3) || (thm && (gj < ws || gj >= nx2 - ws));
       fs_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) =
         VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
                     (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
@@ -2074,7 +2274,7 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
       const int dpj = (dj < 0) ? (ws - jj) : ((dj > 0) ? (jj + 1) : 0);
       const int dpk = (dk < 0) ? (ws - kk) : ((dk > 0) ? (kk + 1) : 0);
       const bool wall = (lx2 + dj < 0) || (lx2 + dj >= nb2) || (lx3 + dk < 0)
-                        || (lx3 + dk >= nb3);
+                        || (lx3 + dk >= nb3) || (thm && (gj < ws || gj >= nx2 - ws));
       fr_(static_cast<size_t>(ro_(ws,8*m + o))*nvi + t) =
         VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
                     (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
@@ -3604,6 +3804,9 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool wint = vgd_wint;
+  const bool thm = vgd_thmir;    // wallbug-1027
+  auto mi3_ = vgd_mi3;
+  auto mw3_ = vgd_mw3;
   const DevExeSpace ex_ = vgd_cur;
   if (static_cast<int>(vgd_hxe.size()) != 2*n1c) {vgd_hxe.resize(2*n1c);}
   Kokkos::Timer tb;
@@ -3755,6 +3958,23 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                 const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
                 const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
                 if (ek == 0 && ej == 0) {continue;}
+                if (thm && ej != 0) {
+                  // wallbug-1027: the sweep reads the mirror row (phi-edge slot)
+                  const int o2 = 3*(ek + 1) + 1;
+                  if (ek == 0 || hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) >= 0) {continue;}
+                  const bool hi = (ej > 0);
+                  const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
+                  const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
+                  const int sg = (hi ? wb : 0) + g;
+                  for (int t = 0; t < 3; ++t) {
+                    if (t > 0 && mw3_(m,kk,sg,d,t) == 0.0) {continue;}
+                    mk_(((m*n + mi3_(m,kk,sg,d,t))*c3 + kk)*c2 + jm) = stamp;
+                  }
+                  if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
+                    Kokkos::atomic_add(&ocv_(so), 1);
+                  }
+                  continue;
+                }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
                 mk_(((m*n + d)*c3 + kk)*c2 + jj) = stamp;
@@ -4466,6 +4686,9 @@ void RadiationM1::VetGdSweep() {
   const bool wint = vgd_wint;
   auto m3_ = vgd_m3;
   auto w3_ = vgd_w3;
+  const bool thm = vgd_thmir;    // wallbug-1027 vet_gd_theta_wall = mirror
+  auto mi3_ = vgd_mi3;
+  auto mw3_ = vgd_mw3;
   const bool bandx = vgd_bandx;
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
@@ -4620,23 +4843,39 @@ void RadiationM1::VetGdSweep() {
         // thread; one launch and one halo per shell for both sweeps
         auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix,
                          const bool twn) -> Real {
-          auto rd = [&](const int kk, const int jj, const int ii) -> Real {
+          auto rd0 = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
-            if (ek == 0 && ej == 0) {return vix(m,d,kk,jj,ii);}
+            if (ek == 0 && ej == 0) {return vix(m,dq,kk,jj,ii);}
             const int oo = 3*(ek + 1) + (ej + 1);
             const int nl = hl_(8*m + ((oo < 4) ? oo : (oo - 1)));
-            if (nl < 0) {return vix(m,d,kk,jj,ii);}
+            if (nl < 0) {return vix(m,dq,kk,jj,ii);}
             if (wint && wl_(m,kk,jj) != 0) {
               Real v = 0.0;
               for (int t = 0; t < 3; ++t) {
-                v += w3_(m,kk,jj,d,t)*vix(nl,m3_(m,kk,jj,d,t),kk - ek*nx3b,
-                                          jj - ej*nx2b,ii);
+                v += w3_(m,kk,jj,dq,t)*vix(nl,m3_(m,kk,jj,dq,t),kk - ek*nx3b,
+                                           jj - ej*nx2b,ii);
               }
               return v;
             }
-            const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,d) : d;
+            const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
             return vix(nl,dd,kk - ek*nx3b,jj - ej*nx2b,ii);
+          };
+          auto rd = [&](const int kk, const int jj, const int ii) -> Real {
+            if (thm && (jj < wb || jj >= wb + nx2b)) {
+              // wallbug-1027: a theta ghost reads its mirror row (then as any read)
+              const bool hi = (jj >= wb + nx2b);
+              const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
+              const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
+              const int sg = (hi ? wb : 0) + g;
+              Real v = 0.0;
+              for (int t = 0; t < 3; ++t) {
+                const Real wt = mw3_(m,kk,sg,d,t);
+                if (t == 0 || wt != 0.0) {v += wt*rd0(kk,jm,ii,mi3_(m,kk,sg,d,t));}
+              }
+              return v;
+            }
+            return rd0(kk,jj,ii,d);
           };
           const Real r = cx1v(m,i);
           const Real zr = r*fabs(mr);
@@ -5296,6 +5535,23 @@ void RadiationM1::VetGdSweep() {
                 const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
                 const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
                 if (ek == 0 && ej == 0) {continue;}
+                if (thm && ej != 0) {
+                  // wallbug-1027: the sweep reads the mirror row (phi-edge slot)
+                  const int o2 = 3*(ek + 1) + 1;
+                  if (ek == 0 || hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) >= 0) {continue;}
+                  const bool hi = (ej > 0);
+                  const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
+                  const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
+                  const int sg = (hi ? wb : 0) + g;
+                  for (int t = 0; t < 3; ++t) {
+                    if (t > 0 && mw3_(m,kk,sg,d,t) == 0.0) {continue;}
+                    mk_(((m*n + mi3_(m,kk,sg,d,t))*c3b + kk)*c2b + jm) = stamp;
+                  }
+                  if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
+                    Kokkos::atomic_add(&oc_(), 1);
+                  }
+                  continue;
+                }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
                 mk_(((m*n + d)*c3b + kk)*c2b + jj) = stamp;
