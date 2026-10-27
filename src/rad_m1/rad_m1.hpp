@@ -2565,6 +2565,26 @@ class RadiationM1 {
   void VetGdTwin(const int stage);
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
+  // wallbug-1027 vet_gd_theta_wall (read only when named; periodic | mirror, default
+  // periodic = the old local-frame theta periodicity): mirror makes the theta walls
+  // specular mirrors of the formal solution.  A theta ghost (band row beyond a wall at
+  // depth g) reads the interior row at depth g on the other side of the wall, direction
+  // (n.r, n.theta, n.phi) -> (n.r, -n.theta, n.phi) in the local frames (the exact
+  // equatorial plane: z -> -z), from up to 3 same-branch set directions (the ghost's
+  // own wall tables, vgd_wall = 2, vgd_map / vgd_m3 / vgd_w3; nearest only without
+  // vet_gd_wall_interp); ln chi, ln S of the ghost rows are the mirror rows'
+  // (VetGdThMirCs, from VetGdHaloCs)
+  bool vgd_thmir = false;
+  void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
+  // wallbug-1027 vet_gd_theta_wall = vacuum (1) | extrap (2), 0 otherwise: the theta
+  // ghosts beyond a PHYSICAL theta wall (wall flag 3 / 4) are not the far wall's.
+  // vacuum: zero incoming intensity at the wall (a ray whose upwind point lies beyond
+  // the wall starts at its wall crossing with I = 0, as the vacuum top face; ghost reads
+  // of the bilinear stencil are 0); extrap: a ghost reads the edge row's intensity of
+  // the same direction (zero gradient).  ln chi, ln S of the ghost rows = the edge row
+  // (VetGdThVacCs).  Swept by the wall kernel (bodym) with the mirror
+  int vgd_thvac = 0;
+  void VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1);
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
   // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled
