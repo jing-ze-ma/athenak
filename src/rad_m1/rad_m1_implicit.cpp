@@ -643,7 +643,8 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
                 const Real enr, const Real hdl, const Real hdr, const Real jl,
                 const Real jr, const Real esc, const Real h0, const Real h1,
                 const Real kn0, const Real knp, const Real ch, Real &alw, Real &ccl,
-                Real &ccr, Real &dg, const Real hwl = -1.0, const Real hwr = 0.0) {
+                Real &ccr, Real &dg, const Real hwl = -1.0, const Real hwr = 0.0,
+                const bool dnr = false) {
   dg = 0.0;
   // coreL-1012 implicit_thin_hcface = tau: the face value of the formal-solution flux
   // Hf = hwl H_L + hwr H_R (optical-depth weights x (r/r_f)^2, see the x1 kernel);
@@ -699,7 +700,22 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
     // solution's J then carries the central SC flux, clamped to |F| <= c J (donor)
     const Real hup = hpl*jl + hmr*jr;
     const Real hf = fmin(fmax(hmean, -jr), jl);
-    dg = q*w*ch*(hf - hup);
+    if (dnr) {
+      // thinscat-1027 (implicit_thin_corr_form = donor): the same correction as an
+      // IMPLICIT donor flux.  del = q (Hf - H+_L - H-_R) goes onto the half-range ratio
+      // of the cell it flows FROM (del/J_L onto h+_L if del > 0, del/J_R onto h-_R if
+      // del < 0), so HCL >= 0 and HCR <= 0 still hold (column M-matrix) and the face
+      // flux equals the source form wherever E = J.  A donor with J = 0 has
+      // nothing to carry (the source form would drain it): del is dropped there.
+      const Real del = q*(hf - hup);
+      if (del > 0.0 && jl > 0.0) {
+        ccl += w*ch*del/jl;
+      } else if (del < 0.0 && jr > 0.0) {
+        ccr += w*ch*del/jr;
+      }
+    } else {
+      dg = q*w*ch*(hf - hup);
+    }
   } else if (corr != M1_THCR_NONE && w > 0.0) {
     Real hf = hmean;
     hf = fmin(fmax(hf, -fmax(enr, 0.0)), fmax(enl, 0.0));
@@ -2334,6 +2350,25 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       } else if (scr.compare("none") != 0) {
         ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
                   + "' is not a choice (none | lag | sc | hc | hcs)");
+      }
+      // thinscat-1027: implicit_thin_corr_form = source (default) | donor, read only when
+      // named.  donor applies the hc / hcs correction as an implicit donor flux on the
+      // half-range ratios (M1ThinFace) instead of the lagged additive flux DG, whose
+      // divergence times c dt/dx made the right-hand side negative in thin scattering
+      // gas (thinscat_1027/RESULTS.md).
+      if (pin->DoesParameterExist("rad_m1","implicit_thin_corr_form")) {
+        std::string sfm = pin->GetString("rad_m1","implicit_thin_corr_form");
+        if (sfm.compare("donor") == 0) {
+          thsw_hcdnr = true;
+        } else if (sfm.compare("source") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_corr_form = '" + sfm
+                    + "' is not a choice (source | donor)");
+        }
+        if (thsw_hcdnr && impl_thsw_corr != M1_THCR_HC &&
+            impl_thsw_corr != M1_THCR_HCS) {
+          ImplFatal("<rad_m1>/implicit_thin_corr_form = donor needs implicit_thin_corr = "
+                    "hc | hcs");
+        }
       }
       // thinfix-1011: the formal-solution shape of the half-range face ratios (js) and
       // the outer Marshak q at the face (lin); read only with the switch on
@@ -4285,6 +4320,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
     // gdthin-1011: vet_gd (src 2) with C1, eps, J in vgd_hr takes the correction too
     const bool tgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
     const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
+    const bool tdn = thsw_hcdnr;   // thinscat-1027
     const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                     impl_thsw == M1_THSW_FSE);
@@ -4420,7 +4456,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
                      jcl, jcr,
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
-                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr);
+                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr, tdn);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -4635,6 +4671,7 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
     // gdthin-1011: vet_gd (src 2) with C1, eps, J in vgd_hr takes the correction too
     const bool tgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
     const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
+    const bool tdn = thsw_hcdnr;   // thinscat-1027
     const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                     impl_thsw == M1_THSW_FSE);
@@ -4774,7 +4811,7 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
                      jcl, jcr,
                      (tcorr == M1_THCR_HCS) ? fmin(iw_(m,M1_IW_TR,km,jm,i),
                                                    iw_(m,M1_IW_TR,k,j,i)) : 1.0,
-                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr);
+                     th0, th1, tkn0, tknp, ch, al, hl, hr, dgt, hwl, hwr, tdn);
           fw(m,M1_IFW_AL,k,j,i) = al;
           fw(m,M1_IFW_HCL,k,j,i) = hl;
           fw(m,M1_IFW_HCR,k,j,i) = hr;
@@ -9034,6 +9071,42 @@ int RadiationM1::ImplicitBiCGStabRun(Real rhsmax) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::StDebugDump
+//! \brief thinscat-1027 diagnostic: with the environment variable M1_STDUMP=<prefix>
+//! set, the first M1_STDUMP_N (default 8) linear solves (rank 0 only, serial runs) write
+//! <prefix>.<n>.bin after the solve: a header of 16 int32 (n, cycle, t2_solve, nst,
+//! nmb, n3, n2, n1, M1_NIW, ng, 0...), then the whole stored stencil ost and the whole
+//! work array iw as doubles.  Read-only: no number of the solve changes.
+
+void RadiationM1::StDebugDump() {
+  static int ncall = 0;
+  const char *pre = std::getenv("M1_STDUMP");
+  if (pre == nullptr || global_variable::my_rank != 0) {return;}
+  int nmax = 8;
+  if (const char *q = std::getenv("M1_STDUMP_N")) {nmax = std::atoi(q);}
+  if (ncall >= nmax || ost.extent_int(0) == 0) {return;}
+  if (const char *q = std::getenv("M1_STDUMP_C0")) {
+    if (pmy_pack->pmesh->ncycle < std::atoi(q)) {return;}
+  }
+  auto hst = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), ost);
+  auto hiw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), iw);
+  char fn[512];
+  std::snprintf(fn, sizeof(fn), "%s.%d.bin", pre, ncall);
+  FILE *fp = std::fopen(fn, "wb");
+  if (fp != nullptr) {
+    int32_t hd[16] = {ncall, pmy_pack->pmesh->ncycle, t2_solve, hst.extent_int(1),
+                      hst.extent_int(0), hst.extent_int(2), hst.extent_int(3),
+                      hst.extent_int(4), hiw.extent_int(1),
+                      pmy_pack->pmesh->mb_indcs.ng, 0, 0, 0, 0, 0, 0};
+    std::fwrite(hd, sizeof(int32_t), 16, fp);
+    std::fwrite(hst.data(), sizeof(double), hst.size(), fp);
+    std::fwrite(hiw.data(), sizeof(double), hiw.size(), fp);
+    std::fclose(fp);
+  }
+  ++ncall;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitBiCGStabEnd
 //! \brief the common end of both BiCGStab loops: the line-Jacobi fallback or the copy of
 //! the iterate into M1_IW_S2, and the inner-iteration statistics.
@@ -9084,6 +9157,7 @@ void RadiationM1::ImplicitBiCGStabEnd(int nit, bool fell_back) {
       iw_(m,M1_IW_S2,k,j,i) = iw_(m,M1_IW_KX,k,j,i);
     });
   }
+  StDebugDump();   // thinscat-1027 diagnostic (env M1_STDUMP), no-op otherwise
   bcg_nsolve += 1.0;
   bcg_itsum += static_cast<Real>(nit);
   bcg_itmax = std::max(bcg_itmax, static_cast<Real>(nit));
@@ -13950,6 +14024,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // gdthin-1011: vet_gd (src 2) with C1, eps, J in vgd_hr takes the correction too
       const bool tgx = (hsrc == 2) && (vgd_hr.extent_int(1) >= M1_VGD_HRNX);
       const int tcorr = (hsrc == 1 || tgx) ? impl_thsw_corr : M1_THCR_NONE;
+      const bool tdn = thsw_hcdnr;   // thinscat-1027
       const bool tfs = (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
                     impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
                     impl_thsw == M1_THSW_FSE);
@@ -14120,7 +14195,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                      1.0 - hgh_(m,M1_VGD_HREP,k,j,ip))
                               : fmin(1.0 - hvc_(m,M1_VET_EPS,k,j,im),
                                      1.0 - hvc_(m,M1_VET_EPS,k,j,ip))),
-                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr);
+                       th0, th1, tkn0, tknp, ch, alb, hlb, hrb, dgt, hwl, hwr, tdn);
             ifw_(m,M1_IFW_AL,k,j,i) = alb;
             ifw_(m,M1_IFW_HCL,k,j,i) = hlb;
             ifw_(m,M1_IFW_HCR,k,j,i) = hrb;

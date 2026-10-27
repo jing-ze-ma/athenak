@@ -845,6 +845,7 @@ class RadiationM1 {
   // formal-solution scale on faces with sf ratios (vet_sc); default j = the old J
   // (jh opt-in: +16 % in vacuum crossing beams, NOTE-unify)
   bool thsw_hcjh = false;
+  bool thsw_hcdnr = false;   // thinscat-1027: implicit_thin_corr_form = donor
   bool thsw_bqgd = false;   // unify-1012: thin_bq lin also on vet_gd (opt-in)
   int thsw_jsgd = 1;   // unify-1012: js/jse on vet_gd, bit 1 x1, bit 2 lateral
   Real impl_blend_alpha = 1.0;   // hrup-1009: implicit_blend = idort, x = alpha tau_f
@@ -894,6 +895,7 @@ class RadiationM1 {
   void ImplicitLatFaceCoef(bool first);
   void ImplicitLatFaceCoefCs(bool first);   // cs-s4-1017
   void CbDebugDump();
+  void StDebugDump();   // thinscat-1027 diagnostic (env M1_STDUMP)
   void ImplicitHrSfBuild();   // cbfix-1011: the M1_NIW_HSF block (implicit_hr_face=sf)   // cbfix-1011: env M1_CBDBG=<prefix> per-step face/budget dump
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
