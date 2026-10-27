@@ -390,6 +390,15 @@ bool thhse_ = false;           // theta_bc = hse: closed hydrostatic wall (v_the
 // ghost (hydrostatic density, mirrored velocity) and the edge cell form a non-mirror
 // Riemann problem whose mass flux leaked ~2x the stream rate INTO the star (EBUD-1019).
 bool thwc_ = false;
+// accspin-1027: problem/theta_wall_flow = true (theta_bc = outflow | hse; read only when named,
+// default false = bitwise unchanged): the theta-ghost hydrostatic walk adds the edge cell's own
+// rotation relative to the frame, w = v_phi/(r sin th): Phi_walk = Phi + G - (w^2 + 2 Omega w)
+// (r sin th)^2/2 (its centrifugal + Coriolis theta force, = the spin term of Phi_wb for a
+// uniform spin).  Without it the walk is in the corotating Roche potential only, right for a
+// synchronous star; a non-synchronous star's ghosts then sit ~1 e-fold per ghost cell too dense
+// in the atmosphere (spin 2.74: ~400 (km/s)^2 per 0.7 deg at r 9.4, c_ph^2 377) and the closed
+// wall pushes the gas off it (accspin static, t 0.085: |v_phi| ~1000 km/s jets at the walls).
+bool thwf_ = false;
 Real thsp_w_ = 0.0, thsp_tau_ = 0.0;   // theta sponge width (rad), time (code)
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
 DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
@@ -1225,7 +1234,8 @@ void RyPerBCEnv(Mesh *pm) {
   if (!(p3 && thout_ && gen)) return;
   const int js = indcs.js, je = indcs.je;
   const int n1m1 = indcs.nx1 + 2*ng - 1;
-  const bool thh = thhse_;
+  const bool thh = thhse_, twf = thwf_;
+  const Real om = p.omega;
   int rm2lo = 1, rm2hi = 1;
   if (rad) {
     // acc3d-1017: implicit_bc_x2 = outflow (zero-gradient outgoing flux) -> copied ghosts
@@ -1259,11 +1269,14 @@ void RyPerBCEnv(Mesh *pm) {
       // cell and its inner neighbour along theta (T linear in that potential, the inner-x1
       // WB ghost rule; isothermal fallback), so the ghosts lie on the column's own P(psi),
       // T(psi) and the wall face carries its hydrostatic gas pressure
+      // accspin-1027 (theta_wall_flow): the edge cell's rotation relative to the frame
+      const Real wrel = twf ? v3a/(r*sin(x2v(m,ja))) : 0.0;
+      const Real dlw = 0.5*(wrel*wrel + 2.0*om*wrel);
       auto pnet = [&](const int jj) {
         const Real sj = sin(x2v(m,jj));
         const Real gref = rad ? (pwcc(m,k,jj,i) - PhiWB3(p, dlt, rtop, rspin, phtop, r, sj, ph))
                               : 0.0;
-        return RochePot3(p, r, sj, ph) + gref;
+        return RochePot3(p, r, sj, ph) + gref - (twf ? dlw*SQR(r*sj) : 0.0);
       };
       const Real pa = pnet(ja);
       Real aT = 0.0;
@@ -4971,6 +4984,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::printf("ry_per_accretor: theta_wall_closed: the hse theta-wall faces carry "
                     "only the x2 momentum flux (interface pressure); mass, energy, x1/x3 "
                     "momentum and scalar fluxes are zero there\n");
+      }
+    }
+    thwf_ = false;
+    if (pin->DoesParameterExist("problem", "theta_wall_flow")) {
+      thwf_ = pin->GetBoolean("problem", "theta_wall_flow");
+      if (thwf_ && !thout_) fatal("problem/theta_wall_flow needs theta_bc = outflow | hse");
+      if (thwf_ && root) {
+        std::printf("ry_per_accretor: theta_wall_flow: the theta-ghost hydrostatic walk adds "
+                    "the edge cell's own rotation (centrifugal + Coriolis, w = v_phi/(r sin th))"
+                    "\n");
       }
     }
     {
