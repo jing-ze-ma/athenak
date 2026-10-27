@@ -2570,13 +2570,11 @@ class RadiationM1 {
   // specular mirrors of the formal solution.  A theta ghost (band row beyond a wall at
   // depth g) reads the interior row at depth g on the other side of the wall, direction
   // (n.r, n.theta, n.phi) -> (n.r, -n.theta, n.phi) in the local frames (the exact
-  // equatorial plane: z -> -z), from up to 3 same-branch set directions (vgd_mi3 /
-  // vgd_mw3, (m, k, s, d, 3), s = wall side * vgd_w + g; nearest only without
+  // equatorial plane: z -> -z), from up to 3 same-branch set directions (the ghost's
+  // own wall tables, vgd_wall = 2, vgd_map / vgd_m3 / vgd_w3; nearest only without
   // vet_gd_wall_interp); ln chi, ln S of the ghost rows are the mirror rows'
   // (VetGdThMirCs, from VetGdHaloCs)
   bool vgd_thmir = false;
-  Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_mi3;
-  DvceArray5D<Real> vgd_mw3;
   void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
@@ -2911,8 +2909,6 @@ class RadiationM1 {
     Kokkos::View<Real ****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> mr;
     Kokkos::View<int *****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> m3;
     Kokkos::View<Real *****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> w3;
-    Kokkos::View<int *****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> mi3;  // 1027
-    Kokkos::View<Real *****, LayoutWrapper, Kokkos::SharedHostPinnedSpace> mw3;
     std::vector<double> mt;
     Real alpha = -9.0;
     int nwall = 0, nexact = 0, nmap = 0;
@@ -2924,8 +2920,6 @@ class RadiationM1 {
     DvceArray4D<Real> mr;
     Kokkos::View<int *****, LayoutWrapper, DevMemSpace> m3;
     DvceArray5D<Real> w3;
-    Kokkos::View<int *****, LayoutWrapper, DevMemSpace> mi3;   // wallbug-1027
-    DvceArray5D<Real> mw3;
   };
   VgdTabHost vgd_tabh;
   VgdTabDev vgd_tabd;
