@@ -51,8 +51,18 @@
             // reads its mirror row (then as any read, e.g. a phi wall) through its own
             // wall tables; no extra capture (the closure stays below the launch limit)
 #if M1_VGD_BODY_MIR
-            if ((jj < wb || jj >= wb + nx2b) && wl_(m,kk,jj) == 2) {
+            if ((jj < wb || jj >= wb + nx2b) && wl_(m,kk,jj) >= 2) {
               const bool hi = (jj >= wb + nx2b);
+              // vet_gd_theta_wall = vacuum (flag 3): no intensity beyond the wall;
+              // extrap (4): the edge row's, same direction (zero gradient)
+              // (main field only: the twin keeps the periodic read, rd0 below)
+              if (wl_(m,kk,jj) == 3) {
+                if (!twn) {return 0.0;}
+                return rd0(kk,jj,ii,d);
+              }
+              if (wl_(m,kk,jj) == 4) {
+                return twn ? rd0(kk,jj,ii,d) : rd0(kk,hi ? (wb + nx2b - 1) : wb,ii,d);
+              }
               const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
               const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
               if (!wint) {return rd0(kk,jm,ii,mp_(m,kk,jj,d));}
@@ -139,7 +149,82 @@
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
             const int j1 = j0 + 1, k1 = k0 + 1;
             bool bdone = false;
+#if M1_VGD_BODY_MIR
+            // wallbug-1027 vet_gd_theta_wall = vacuum: the upwind point lies beyond a
+            // physical vacuum theta wall (the mesh's theta limits; flag 3 on the band row
+            // nearest the point).  The ray starts at its wall crossing (the cone theta =
+            // theta_wall, exact) with I = 0, as from the vacuum top face; chi, S there
+            // from the row next to the wall (linear in phi index, linear in r between
+            // the shells i and iu as vet_gd_band_exit)
+            const bool vlo = (thu < mt0), vhi = (thu > mt0 + mtl);
+            const int jrw = static_cast<int>(fmin(fmax(floor(fj + 0.5), Real(jlo)),
+                                                  Real(jhi + 1)));
+            if (!twn && typ != 2 && (vlo || vhi) && wl_(m,k,jrw) == 3) {
+              const bool hi = vhi;
+              const Real thw = hi ? (mt0 + mtl) : mt0;
+              // the row next to the wall (the block's own edge row with one MeshBlock in
+              // theta), band index
+              const int jw = static_cast<int>(fmin(fmax(
+                js + floor((thw - mbsize.d_view(m).x2min)/mbsize.d_view(m).dx2 + 0.5)
+                - (hi ? 1 : 0), Real(jlo)), Real(jhi + 1)));
+              const Real cw = cos(thw), c2w = cw*cw;
+              const Real x0 = r*st*cp, y0 = r*st*sp, z0 = r*ct;
+              // |x0 - t n| on the cone: (z0 - t nz)^2 = c2w |x0 - t n|^2, nappe sign(cw)
+              const Real xn = x0*nx + y0*ny + z0*nz;
+              const Real qa = nz*nz - c2w, qb = 2.0*(c2w*xn - z0*nz);
+              const Real qc = z0*z0 - c2w*r*r;
+              Real tc = -1.0;
+              auto tryt = [&](const Real t) {
+                if (!(t > 0.0) || t > ds*(1.0 + 1.0e-9)) {return;}
+                if (fabs(cw) > 1.0e-12 && (z0 - t*nz)*cw < 0.0) {return;}
+                if (tc < 0.0 || t < tc) {tc = t;}
+              };
+              if (fabs(qa) > 1.0e-14) {
+                const Real dsc = qb*qb - 4.0*qa*qc;
+                if (dsc >= 0.0) {
+                  const Real sq = sqrt(dsc);
+                  const Real qq = -0.5*(qb + ((qb < 0.0) ? -sq : sq));
+                  tryt(qq/qa);
+                  if (qq != 0.0) {tryt(qc/qq);}
+                }
+              } else if (qb != 0.0) {
+                tryt(-qc/qb);
+              }
+              if (tc < 0.0) {   // (round-off) the index-linear estimate
+                const Real fw = jw + (hi ? 0.5 : -0.5);
+                tc = ds*fmin(fmax((fw - j)/(fj - j), 0.0), 1.0);
+              }
+              const Real dsx = fmin(tc, ds);
+              const Real xx = x0 - dsx*nx, yx = y0 - dsx*ny, zx = z0 - dsx*nz;
+              const Real rx = sqrt(xx*xx + yx*yx + zx*zx);
+              Real dpx = atan2(yx, xx) - ph;
+              dpx -= twopi*floor((dpx + M_PI)/twopi);
+              const Real fkx = fmin(fmax(k + dpx/mbsize.d_view(m).dx3, Real(klo)),
+                                    Real(khi + 1));
+              int kx0 = static_cast<int>(floor(fkx));
+              kx0 = (kx0 > khi) ? khi : kx0;
+              const Real ukx = fkx - kx0;
+              const Real wr = (iu != i) ?
+                              fmin(fmax((rx - r)/(cx1v(m,iu) - r), 0.0), 1.0) : 0.0;
+              auto linw = [&](const int c, const int ii) {
+                return VgdLerp(csx(m,c,kx0,jw,ii), csx(m,c,kx0+1,jw,ii), ukx);
+              };
+              const Real chx = exp((1.0 - wr)*linw(0,i) + wr*linw(0,iu));
+              const Real sx = exp((1.0 - wr)*linw(1,i) + wr*linw(1,iu));
+              if (spl) {
+                const Real dxo = fmin(dso, dsx);
+                iv = fmax(VetSegSplit(0.0, sx, s0, chx*(dsx - dxo), ch0*dxo, spe), 0.0);
+              } else {
+                Real ex, w0, wu;
+                VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
+                iv = fmax(wu*sx + w0*s0, 0.0);
+              }
+              bdone = true;
+            }
+            if (!bdone && clp && bandx && typ == 1) {
+#else
             if (clp && bandx && typ == 1) {
+#endif
               // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead
               // of reading the clamped (wrong) column, stop the segment where the ray
               // leaves the band (index linear in the path fraction s) and take I, chi, S

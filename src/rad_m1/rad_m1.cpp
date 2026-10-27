@@ -1365,15 +1365,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }
     // wallbug-1027 vet_gd_theta_wall (read only when named): periodic (default, the old
-    // theta periodicity of the sweep) | mirror (specular theta walls; rad_m1_vetgd.cpp)
+    // theta periodicity of the sweep) | mirror (specular theta walls) | vacuum (no
+    // incoming intensity at a physical theta wall) | extrap (zero gradient); vetgd.cpp
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_theta_wall")) {
       const std::string tw = pin->GetString("rad_m1","vet_gd_theta_wall");
       if (tw.compare("mirror") == 0) {
         vgd_thmir = true;
+      } else if (tw.compare("vacuum") == 0) {
+        vgd_thvac = 1;
+      } else if (tw.compare("extrap") == 0) {
+        vgd_thvac = 2;
       } else if (tw.compare("periodic") != 0) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_theta_wall must be periodic or mirror"
-                  << std::endl;
+                  << std::endl << "<rad_m1>/vet_gd_theta_wall must be periodic, mirror,"
+                  << " vacuum or extrap" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }

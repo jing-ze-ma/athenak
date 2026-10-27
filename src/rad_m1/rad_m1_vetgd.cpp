@@ -719,6 +719,18 @@ void RadiationM1::VetGdInit() {
     }
     if (vgd_ipc_on) {VgdFatal("vet_gd_theta_wall = mirror: vet_gd_halo_ipc not ported");}
   }
+  if (vgd_thvac > 0) {
+    // wallbug-1027 vet_gd_theta_wall = vacuum / extrap: only the theta ghosts beyond a
+    // physical wall (VgdTabCompute flags 3 / 4) change; vacuum: any MeshBlock count in
+    // theta (the wall crossing from the mesh's theta limits)
+    if (vgd_csg) {VgdFatal("vet_gd_theta_wall = vacuum/extrap: not on the cubed sphere");}
+    if (vgd_ipc_on) {
+      VgdFatal("vet_gd_theta_wall = vacuum/extrap: vet_gd_halo_ipc not ported");
+    }
+    if (vgd_thvac == 2 && vgd_nb2 != 1) {
+      VgdFatal("vet_gd_theta_wall = extrap needs ONE MeshBlock along x2 (theta)");
+    }
+  }
   {
     // mem2-1014 vet_gd_band_ring: where every band value the sweep reads comes from an
     // exact-list exchange of this sweep (the halo_exact gate below, no overlap / fused
@@ -1534,6 +1546,27 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
       }
     }
   }
+  if (vgd_thvac > 0) {
+    // wallbug-1027 vet_gd_theta_wall = vacuum (flag 3) / extrap (flag 4): the theta
+    // ghost rows beyond a physical wall (every column k).  Only the flag changes: the
+    // periodic direction maps and branches stay, for the twin (the laterally uniform
+    // shell state is continued beyond the wall, as the 1-D column the closure adds back;
+    // with vacuum in the twin too the wall would cancel in main - twin) and for the
+    // periodic halo reads the twin makes
+    const int wb = vgd_w, nx2 = indcs.nx2;
+    const int fl = (vgd_thvac == 1) ? 3 : 4;
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = 0; k < c3; ++k) {
+        for (int sd = 0; sd < 2; ++sd) {
+          for (int g = 0; g < wb; ++g) {
+            const int j = (sd == 1) ? (wb + nx2 + g) : (wb - 1 - g);
+            const double th = x2_h(m,j);
+            if (th < t0 || th > t1) {w_h(m,k,j) = fl;}   // not an interior boundary
+          }
+        }
+      }
+    }
+  }
   H.alpha = alpha;
   H.nwall = nwall;
   H.nexact = nexact;
@@ -2103,6 +2136,38 @@ void RadiationM1::VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1) 
     VetGdHalo(a, 2, c0, std::min(c0 + nch - 1, i1), vgd_w, false);
   }
   if (vgd_thmir) {VetGdThMirCs(a, i0, i1);}
+  if (vgd_thvac > 0) {VetGdThVacCs(a, i0, i1);}
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdThVacCs
+//! \brief wallbug-1027 vet_gd_theta_wall = vacuum / extrap: ln chi, ln S of the theta
+//! ghost rows beyond a physical wall (flags 3, 4; every band column, after the exchange
+//! filled the phi band) = the edge row's (zero gradient)
+
+void RadiationM1::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int wb = vgd_w, nx2 = indcs.nx2;
+  const int c3 = indcs.nx3 + 2*vgd_w;
+  const int c2 = nx2 + 2*wb;
+  const Real t0 = pmy_pack->pmesh->mesh_size.x2min;
+  const Real t1 = pmy_pack->pmesh->mesh_size.x2max;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto a_ = a;
+  auto wl_ = vgd_wall;
+  par_for("m1_vgd_thvac_cs", vgd_cur, 0, nmb1, 0, 1, 0, c3 - 1, 0, 2*wb - 1, i0, i1,
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int s, const int i) {
+    const int g = (s < wb) ? s : (s - wb);
+    const int j = (s < wb) ? (wb - 1 - g) : (wb + nx2 + g);
+    if (wl_(m,k,j) < 3) {return;}
+    // the band row next to the wall (the block's own edge row with one theta MeshBlock)
+    const Real x0 = mbsize.d_view(m).x2min, dx = mbsize.d_view(m).dx2;
+    int je = (s < wb) ? (wb + static_cast<int>(floor((t0 - x0)/dx + 0.5)))
+                      : (wb + static_cast<int>(floor((t1 - x0)/dx + 0.5)) - 1);
+    je = (je < 0) ? 0 : ((je > c2 - 1) ? (c2 - 1) : je);
+    a_(m,c,k,j,i) = a_(m,c,k,je,i);
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -2186,7 +2251,10 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
   const bool inw = inw0;
   const int mode = vgd_hcomp;
   const int nb2 = vgd_nb2, nb3 = vgd_nb3;
-  const bool thm = vgd_thmir;    // wallbug-1027 (one MeshBlock in theta: gj local)
+  // wallbug-1027 (mirror, extrap theta walls: rows within ws of a wall keep their branch;
+  // gj global, the mesh's nx2)
+  const bool thm = vgd_thmir || (vgd_thvac == 2);
+  const int nx2m = pm->mesh_indcs.nx2;
   const Real t0 = pm->mesh_size.x2min, p0 = pm->mesh_size.x3min;
   const Real dth = (pm->mesh_size.x2max - t0)/pm->mesh_indcs.nx2;
   const Real dph = (pm->mesh_size.x3max - p0)/pm->mesh_indcs.nx3;
@@ -2238,7 +2306,7 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
       // wallbug-1027 (mirror theta walls): the rows within ws of a wall are read by
       // mirrored rays too; keep their whole branch (both sides decide from gj alone)
       const bool wall = (lr2 + rdj < 0) || (lr2 + rdj >= nb2) || (lr3 + rdk < 0)
-                        || (lr3 + rdk >= nb3) || (thm && (gj < ws || gj >= nx2 - ws));
+                        || (lr3 + rdk >= nb3) || (thm && (gj < ws || gj >= nx2m - ws));
       fs_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) =
         VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
                     (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
@@ -2252,7 +2320,7 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
       const int dpj = (dj < 0) ? (ws - jj) : ((dj > 0) ? (jj + 1) : 0);
       const int dpk = (dk < 0) ? (ws - kk) : ((dk > 0) ? (kk + 1) : 0);
       const bool wall = (lx2 + dj < 0) || (lx2 + dj >= nb2) || (lx3 + dk < 0)
-                        || (lx3 + dk >= nb3) || (thm && (gj < ws || gj >= nx2 - ws));
+                        || (lx3 + dk >= nb3) || (thm && (gj < ws || gj >= nx2m - ws));
       fr_(static_cast<size_t>(ro_(ws,8*m + o))*nvi + t) =
         VgdHaloKeep(nx, ny, nz, gj, gk, t0, dth, p0, dph, inw, mode, wall,
                     (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
@@ -3934,22 +4002,28 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                 const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
                 const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
                 if (ek == 0 && ej == 0) {continue;}
-                if (ej != 0 && wl_(m,kk,jj) == 2) {
-                  // wallbug-1027: the sweep reads the mirror row (phi-edge slot)
+                if (ej != 0 && wl_(m,kk,jj) >= 2) {
+                  // wallbug-1027: the main sweep reads the mirror row (flag 2) or, extrap
+                  // (4), the edge row, same direction, through the phi-edge slot; vacuum
+                  // (3) reads nothing.  Flags 3, 4: the twin's periodic reads below too
+                  const int wf = wl_(m,kk,jj);
                   const int o2 = 3*(ek + 1) + 1;
-                  if (ek == 0 || hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) >= 0) {continue;}
-                  const bool hi = (ej > 0);
-                  const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
-                  const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
-                  for (int t = 0; t < (wint ? 3 : 1); ++t) {
-                    if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
-                    const int dq = wint ? m3_(m,kk,jj,d,t) : mp_(m,kk,jj,d);
-                    mk_(((m*n + dq)*c3 + kk)*c2 + jm) = stamp;
+                  if (wf != 3 && ek != 0 && hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) < 0) {
+                    const bool hi = (ej > 0);
+                    const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
+                    const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
+                                             : (hi ? (wb + nx2b - 1 - g) : (wb + g));
+                    for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
+                      if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
+                      const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
+                                                           : mp_(m,kk,jj,d));
+                      mk_(((m*n + dq)*c3 + kk)*c2 + jm) = stamp;
+                    }
+                    if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
+                      Kokkos::atomic_add(&ocv_(so), 1);
+                    }
                   }
-                  if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
-                    Kokkos::atomic_add(&ocv_(so), 1);
-                  }
-                  continue;
+                  if (wf == 2) {continue;}
                 }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
@@ -4663,7 +4737,8 @@ void RadiationM1::VetGdSweep() {
   auto m3_ = vgd_m3;
   auto w3_ = vgd_w3;
   const bool bandx = vgd_bandx;
-  const bool thm = vgd_thmir;    // wallbug-1027: the mirror kernel (bodym)
+  // wallbug-1027: the wall kernel (bodym) for mirror, vacuum and extrap theta walls
+  const bool thm = vgd_thmir || (vgd_thvac > 0);
   const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
   const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
   const int spe = VetSegMode();
@@ -5005,22 +5080,28 @@ void RadiationM1::VetGdSweep() {
                 const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
                 const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
                 if (ek == 0 && ej == 0) {continue;}
-                if (ej != 0 && wl_(m,kk,jj) == 2) {
-                  // wallbug-1027: the sweep reads the mirror row (phi-edge slot)
+                if (ej != 0 && wl_(m,kk,jj) >= 2) {
+                  // wallbug-1027: the main sweep reads the mirror row (flag 2) or, extrap
+                  // (4), the edge row, same direction, through the phi-edge slot; vacuum
+                  // (3) reads nothing.  Flags 3, 4: the twin's periodic reads below too
+                  const int wf = wl_(m,kk,jj);
                   const int o2 = 3*(ek + 1) + 1;
-                  if (ek == 0 || hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) >= 0) {continue;}
-                  const bool hi = (ej > 0);
-                  const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
-                  const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
-                  for (int t = 0; t < (wint ? 3 : 1); ++t) {
-                    if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
-                    const int dq = wint ? m3_(m,kk,jj,d,t) : mp_(m,kk,jj,d);
-                    mk_(((m*n + dq)*c3b + kk)*c2b + jm) = stamp;
+                  if (wf != 3 && ek != 0 && hl_(8*m + ((o2 < 4) ? o2 : (o2 - 1))) < 0) {
+                    const bool hi = (ej > 0);
+                    const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
+                    const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
+                                             : (hi ? (wb + nx2b - 1 - g) : (wb + g));
+                    for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
+                      if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
+                      const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
+                                                           : mp_(m,kk,jj,d));
+                      mk_(((m*n + dq)*c3b + kk)*c2b + jm) = stamp;
+                    }
+                    if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
+                      Kokkos::atomic_add(&oc_(), 1);
+                    }
                   }
-                  if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
-                    Kokkos::atomic_add(&oc_(), 1);
-                  }
-                  continue;
+                  if (wf == 2) {continue;}
                 }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}

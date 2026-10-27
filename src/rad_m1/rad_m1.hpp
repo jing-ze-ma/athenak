@@ -2576,6 +2576,15 @@ class RadiationM1 {
   // (VetGdThMirCs, from VetGdHaloCs)
   bool vgd_thmir = false;
   void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
+  // wallbug-1027 vet_gd_theta_wall = vacuum (1) | extrap (2), 0 otherwise: the theta
+  // ghosts beyond a PHYSICAL theta wall (wall flag 3 / 4) are not the far wall's.
+  // vacuum: zero incoming intensity at the wall (a ray whose upwind point lies beyond
+  // the wall starts at its wall crossing with I = 0, as the vacuum top face; ghost reads
+  // of the bilinear stencil are 0); extrap: a ghost reads the edge row's intensity of
+  // the same direction (zero gradient).  ln chi, ln S of the ghost rows = the edge row
+  // (VetGdThVacCs).  Swept by the wall kernel (bodym) with the mirror
+  int vgd_thvac = 0;
+  void VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1);
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
   // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled
