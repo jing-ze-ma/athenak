@@ -271,6 +271,8 @@ constexpr int M1_THCR_LAG  = 1;   // + w (F_sc^n - F_hr(E^n)), a fixed source
 constexpr int M1_THCR_SC   = 2;   // w F_sc^n replaces the half-range part
 constexpr int M1_THCR_HCS  = 4;   // hc weighted by the scattering fraction 1 - eps
 constexpr int M1_THCR_HC   = 3;   // + w (F_sc,central - F_sc,upwind)^n (no E^n term)
+constexpr int M1_THCR_HOLO = 5;   // thinfix-1027: the same face flux as D_hat on the
+                                  // upwind coefficients (pCMFD), no gate
 
 // <rad_m1>/implicit_blend_fmode: which of the two cells' lagged reduced fluxes sets
 // f_face.

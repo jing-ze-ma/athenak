@@ -700,6 +700,21 @@ void M1ThinFace(const int mode, const int corr, const Real hpl, const Real hmr,
     const Real hup = hpl*jl + hmr*jr;
     const Real hf = fmin(fmax(hmean, -jr), jl);
     dg = q*w*ch*(hf - hup);
+  } else if (corr == M1_THCR_HOLO && w > 0.0) {
+    // thinfix-1027 (implicit_thin_corr = holo): the CMFD / NDA consistency term as a
+    // drift coefficient D_hat on the UPWIND side (pCMFD): D = (Hf - H+_L - H-_R)/J of
+    // the donor, added to h+_L where D > 0 and to h-_R where D < 0, so that at E = J
+    // the face carries the formal solution's central flux Hf exactly.  Multiplicative
+    // in E (no E^n, no quasi-steadiness gate): ahead of a light front E << J the term
+    // is small with E.  h+ >= 0, h- <= 0 and |h| <= 1 are kept (M-matrix, |F| <= cE).
+    const Real hup = hpl*jl + hmr*jr;
+    const Real hf = fmin(fmax(hmean, -jr), jl);
+    const Real del = hf - hup;
+    if (del > 0.0 && jl > 0.0) {
+      ccl += w*ch*fmin(del/jl, fmax(1.0 - hpl, 0.0));
+    } else if (del < 0.0 && jr > 0.0) {
+      ccr -= w*ch*fmin(-del/jr, fmax(1.0 + hmr, 0.0));
+    }
   } else if (corr != M1_THCR_NONE && w > 0.0) {
     Real hf = hmean;
     hf = fmin(fmax(hf, -fmax(enr, 0.0)), fmax(enl, 0.0));
@@ -2331,9 +2346,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         impl_thsw_corr = M1_THCR_HC;
       } else if (scr.compare("hcs") == 0) {
         impl_thsw_corr = M1_THCR_HCS;
+      } else if (scr.compare("holo") == 0) {
+        impl_thsw_corr = M1_THCR_HOLO;   // thinfix-1027 (opt-in)
       } else if (scr.compare("none") != 0) {
         ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
-                  + "' is not a choice (none | lag | sc | hc | hcs)");
+                  + "' is not a choice (none | lag | sc | hc | hcs | holo)");
       }
       // thinfix-1011: the formal-solution shape of the half-range face ratios (js) and
       // the outer Marshak q at the face (lin); read only with the switch on
@@ -2358,7 +2375,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         // tau on a fresh run with implicit_thin_corr = hc | hcs (where it acts); a restart
         // whose file lacks the key keeps mean (bitwise older runs), echoed; otherwise read
         // only when named.  Explicit input overrides.
-        const bool hfdef = (impl_thsw_corr == M1_THCR_HC || impl_thsw_corr == M1_THCR_HCS);
+        const bool hfdef = (impl_thsw_corr == M1_THCR_HC ||
+                            impl_thsw_corr == M1_THCR_HCS ||
+                            impl_thsw_corr == M1_THCR_HOLO);
         if (hfdef || pin->DoesParameterExist("rad_m1","implicit_thin_hcface")) {
           std::string shf = hfdef ?
               pin->GetOrAddString("rad_m1","implicit_thin_hcface",
