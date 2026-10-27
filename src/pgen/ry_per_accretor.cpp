@@ -618,6 +618,16 @@ Real PhiWB3(const RocheParams &p, const Real dlt, const Real rtop, const Real rs
   return fmin(RochePot3(p, x, sth, phi) - dlt*xs*xs, phtop);
 }
 
+//! accspin-1027: the Roche potential plus the star's own spin term (PhiWB3 without the r_top /
+//! top-equipotential caps): the effective potential whose gradient is the effective gravity of a
+//! star spinning at spin x Omega_orb (static tide).  dlt = 0 (spin 1) returns RochePot3 exactly.
+KOKKOS_INLINE_FUNCTION
+Real RochePotS3(const RocheParams &p, const Real dlt, const Real rspin, const Real r,
+                const Real sth, const Real phi) {
+  const Real xs = fmin(r, rspin)*sth;
+  return RochePot3(p, r, sth, phi) - dlt*xs*xs;
+}
+
 //! stage 2: envelope P/rho at depth psi = Phi_s - Phi_wb (n-polytrope shifted to the
 //! photospheric P/rho c_ph^2 at psi = 0; isothermal c_ph^2 above)
 KOKKOS_INLINE_FUNCTION
@@ -3239,19 +3249,20 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
       std::vector<Real> gcol(cpsi.size());
       for (size_t n=0; n<cpsi.size(); ++n) {
         const Real e = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
-        const Real a = (RochePot3(p, rq*(1.0 + e), 1.0, h) - RochePot3(p, rq*(1.0 - e), 1.0, h))
-                       /(2.0*e*rq);
-        const Real b = (RochePot3(p, rq, 1.0, h + e) - RochePot3(p, rq, 1.0, h - e))/(2.0*e*rq);
+        const Real a = (RochePotS3(p, dlt, rspin, rq*(1.0 + e), 1.0, h) -
+                        RochePotS3(p, dlt, rspin, rq*(1.0 - e), 1.0, h))/(2.0*e*rq);
+        const Real b = (RochePotS3(p, dlt, rspin, rq, 1.0, h + e) -
+                        RochePotS3(p, dlt, rspin, rq, 1.0, h - e))/(2.0*e*rq);
         gcol[n] = std::sqrt(a*a + b*b);
       }
       auto fth = [&](const Real r, const Real th, const Real ph) {
         const Real e = 1.0e-6;
-        const Real gt = (RochePot3(p, r, std::sin(th + e), ph) -
-                         RochePot3(p, r, std::sin(th - e), ph))/(2.0*e*r);
-        const Real gr = (RochePot3(p, r*(1.0 + e), std::sin(th), ph) -
-                         RochePot3(p, r*(1.0 - e), std::sin(th), ph))/(2.0*e*r);
-        const Real gp = (RochePot3(p, r, std::sin(th), ph + e) -
-                         RochePot3(p, r, std::sin(th), ph - e))/(2.0*e*r*std::sin(th));
+        const Real gt = (RochePotS3(p, dlt, rspin, r, std::sin(th + e), ph) -
+                         RochePotS3(p, dlt, rspin, r, std::sin(th - e), ph))/(2.0*e*r);
+        const Real gr = (RochePotS3(p, dlt, rspin, r*(1.0 + e), std::sin(th), ph) -
+                         RochePotS3(p, dlt, rspin, r*(1.0 - e), std::sin(th), ph))/(2.0*e*r);
+        const Real gp = (RochePotS3(p, dlt, rspin, r, std::sin(th), ph + e) -
+                         RochePotS3(p, dlt, rspin, r, std::sin(th), ph - e))/(2.0*e*r*std::sin(th));
         const Real g = std::sqrt(gt*gt + gr*gr + gp*gp);
         const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, r, std::sin(th), ph);
         // only inside the photosphere (psi > 0, the diffusion regime the von Zeipel flux
@@ -4243,8 +4254,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       gcolv.resize(cpsi.size());
       for (size_t n=0; n<cpsi.size(); ++n) {
         const Real ee = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
-        const Real a = (RochePot3(p, rq*(1.0 + ee), 1.0, h) -
-                        RochePot3(p, rq*(1.0 - ee), 1.0, h))/(2.0*ee*rq);
+        const Real a = (RochePotS3(p, dlt, rspin, rq*(1.0 + ee), 1.0, h) -
+                        RochePotS3(p, dlt, rspin, rq*(1.0 - ee), 1.0, h))/(2.0*ee*rq);
         gcolv[n] = std::fabs(a);   // the plane at phi 90: dPhi/dtheta = dPhi/dphi = 0
       }
     }
@@ -4269,11 +4280,12 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
         if (psir(c) > 0.0) a = c; else b = c;
       }
       const Real r = 0.5*(a + b), ee = 1.0e-6;
-      const Real gt = (RochePot3(p, r, std::sin(th + ee), ph) -
-                       RochePot3(p, r, std::sin(th - ee), ph))/(2.0*ee*r);
-      const Real gr = (RochePot3(p, r*(1.0 + ee), sth, ph) -
-                       RochePot3(p, r*(1.0 - ee), sth, ph))/(2.0*ee*r);
-      const Real gp = (RochePot3(p, r, sth, ph + ee) - RochePot3(p, r, sth, ph - ee))
+      const Real gt = (RochePotS3(p, dlt, rspin, r, std::sin(th + ee), ph) -
+                       RochePotS3(p, dlt, rspin, r, std::sin(th - ee), ph))/(2.0*ee*r);
+      const Real gr = (RochePotS3(p, dlt, rspin, r*(1.0 + ee), sth, ph) -
+                       RochePotS3(p, dlt, rspin, r*(1.0 - ee), sth, ph))/(2.0*ee*r);
+      const Real gp = (RochePotS3(p, dlt, rspin, r, sth, ph + ee) -
+                       RochePotS3(p, dlt, rspin, r, sth, ph - ee))
                       /(2.0*ee*r*sth);
       // g_col at psi = 0 (linear in the column's psi)
       const size_t n = std::upper_bound(cpsi.begin(), cpsi.end(), 0.0) - cpsi.begin();

@@ -7,8 +7,9 @@ built with the run's OWN general-EOS table (the <hydro>/eos_table_dump of the ru
 problem/env_ic_file): columns 1-3 (psi, T, rho) are used; the rest are diagnostics.
 
 Physics (grey, LTE, plane-parallel atmosphere joined to diffusion, one pass):
-  * geometry along the phi = 90 deg cut of the Roche potential of the pgen (spin 1,
-    Phi_wb = Phi below the envelope top): r_eq(psi), g = dPhi/dr;
+  * geometry along the phi = 90 deg cut of the Roche potential of the pgen plus the star's
+    own spin term, Phi_wb = Phi - (spin^2 - 1) Omega^2 r^2/2 below the envelope top
+    (problem/spin; accspin-1027, default 1 = the old column): r_eq(psi), g = dPhi_wb/dr;
   * constant luminosity L = 4 pi R_acc^2 sigma T_eff^4 (R_acc = the phi = 90 radius of the
     photospheric equipotential), F = L/(4 pi r_eq^2);
   * hydrostatic balance with gas + radiation pressure, dP_tot/dpsi = rho;
@@ -21,7 +22,7 @@ Convection is NOT included: the Schwarzschild check (nabla_rad vs nabla_ad with 
 radiation) is only reported.
 
 Usage: make_ic_accretor_column.py EOS_DUMP ROSS_TABLE OUT [key=value ...]
-  keys: m_acc m_don a_sep r_acc t_eff tau0 r_deep psi_top_cph2 cs_ph
+  keys: m_acc m_don a_sep r_acc t_eff tau0 r_deep psi_top_cph2 cs_ph spin
 Output: OUT (ascii): psi T rho P_gas P_rad kappa_R r_eq F Gamma_edd nabla nabla_ad
 """
 import sys
@@ -75,17 +76,19 @@ def main():
     rdeep = float(kv.get('r_deep', 5.9))
     cph = float(kv.get('cs_ph', 19.4132))
     psitop = -float(kv.get('psi_top_cph2', 20.0))*cph*cph
+    spin = float(kv.get('spin', 1.0))
 
     gu = kG*kMsun/(kRsun*kVel*kVel)
     gma, gmd = gu*ma, gu*md
     om = np.sqrt(gu*(ma + md)/asep**3)
     xcm = asep*md/(ma + md)
+    dlt = 0.5*(spin*spin - 1.0)*om*om          # the pgen's env_dlt_
 
     def phi90(r):
-        return -gma/r - gmd/np.sqrt(r*r + asep*asep) - 0.5*om*om*(r*r + xcm*xcm)
+        return -gma/r - gmd/np.sqrt(r*r + asep*asep) - 0.5*om*om*(r*r + xcm*xcm) - dlt*r*r
 
     def dphi90(r):           # (km/s)^2 / Rsun
-        return gma/r**2 + gmd*r/(r*r + asep*asep)**1.5 - om*om*r
+        return gma/r**2 + gmd*r/(r*r + asep*asep)**1.5 - om*om*r - 2.0*dlt*r
 
     phis = phi90(racc)
 
@@ -251,6 +254,8 @@ def main():
            'psi[(km/s)^2] T[K] rho[g/cc] P_gas P_rad[dyn/cm^2] kappa_R[cm^2/g] r_eq[Rsun] '
            'F[erg/cm^2/s] Gamma_edd nabla nabla_ad' % (eosf, rossf, ma, md, asep, racc, teff,
                                                     lum, tau0))
+    if spin != 1.0:          # spin-1 columns keep the old header byte for byte
+        hdr = hdr.replace(' erg/s tau0', ' erg/s spin %.6g tau0' % spin)
     np.savetxt(out, np.column_stack([psi, T, rho, pg, pr, kR, r, F, gam, nab, nad]),
                header=hdr, fmt='%.12e')
 
