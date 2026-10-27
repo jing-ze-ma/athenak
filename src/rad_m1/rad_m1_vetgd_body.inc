@@ -61,7 +61,14 @@
                 return rd0(kk,jj,ii,d);
               }
               if (wl_(m,kk,jj) == 4) {
-                return twn ? rd0(kk,jj,ii,d) : rd0(kk,hi ? (wb + nx2b - 1) : wb,ii,d);
+                // the edge value only when it is of the ghost's branch (the one the
+                // stencil selected it for): a turned ray reads its own shell, whose
+                // other branch is being written by this launch; else the periodic read
+                const int je = hi ? (wb + nx2b - 1) : wb;
+                if (!twn && ((mr_(m,kk,je,d) < 0.0) == (mr_(m,kk,jj,d) < 0.0))) {
+                  return rd0(kk,je,ii,d);
+                }
+                return rd0(kk,jj,ii,d);
               }
               const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
               const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
