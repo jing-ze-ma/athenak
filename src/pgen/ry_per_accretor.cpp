@@ -408,6 +408,11 @@ bool thwc_ = false;
 // wall pushes the gas off it (accspin static, t 0.085: |v_phi| ~1000 km/s jets at the walls).
 bool thwf_ = false;
 Real thsp_w_ = 0.0, thsp_tau_ = 0.0;   // theta sponge width (rad), time (code)
+// accspin-1027: problem/theta_sponge_env = true (read only when named, default false = bitwise
+// unchanged): the theta sponge also acts INSIDE the envelope, relaxing the velocity there to the
+// star's uniform spin (v_phi = (spin - 1) Omega r sin th below r_spin, v_r = v_th = 0) instead of
+// 0; a buffer against the closed-wall jets of a non-synchronous star (accspin static tests)
+bool thsp_env_ = false;
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
 DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
 // <rad_m1>/implicit_bc_x2min|max = flux (phys_3d): the imposed equilibrium lateral flux at the
@@ -1864,6 +1869,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto c2r4 = cref24_, ramb4 = rhoamb4_, tcol4 = tcol4_;
   auto &x2v = pmbp->pcoord->x2v;
   const Real thsw = thsp_w_, thtau = thsp_tau_;
+  const bool thse = thsp_env_;
+  const Real vspn = (spin_ - 1.0)*rp_.omega, rspn = env_rspin_;
   const Real th0 = pm->mesh_size.x2min, th1 = pm->mesh_size.x2max;
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
   const Real om2 = 2.0*rp_.omega;
@@ -2027,16 +2034,20 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     // within the layer next to each theta wall, the rotating-frame velocity decays at a rate
     // rising linearly from 0 at the layer's inner edge to 1/theta_sponge_tau at the wall;
     // the kinetic energy removed leaves E (booked in Erel with the floor sponge)
-    if (p3 && thsw > 0.0 && !inside) {
+    if (p3 && thsw > 0.0 && (!inside || thse)) {
       const Real dw = fmin(x2v(m,j) - th0, th1 - x2v(m,j));
       const Real dd = u0(m,IDN,k,j,i);
       if (dw < thsw && dd > 0.0) {
         const Real f = exp(-bdt*(1.0 - dw/thsw)/thtau);
         const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+        // target: at rest (default; outside the envelope) or the uniform spin (theta_sponge_env)
+        const Real m3t = (thse && inside && x1v(m,i) < rspn) ? dd*vspn*x1v(m,i)*sin(x2v(m,j))
+                                                             : 0.0;
+        const Real n3 = m3t + f*(m3 - m3t);
         u0(m,IM1,k,j,i) = f*m1;
         u0(m,IM2,k,j,i) = f*m2;
-        u0(m,IM3,k,j,i) = f*m3;
-        u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/dd;
+        u0(m,IM3,k,j,i) = n3;
+        u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/dd;
       }
     }
   });
@@ -5023,6 +5034,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (thout_ && !u2b) fatal("theta_bc = outflow | hse needs mesh/ix2_bc = ox2_bc = user");
       if (!thout_ && u2) fatal("mesh ix2_bc/ox2_bc = user needs problem/theta_bc = outflow | hse");
     }
+    thsp_env_ = pin->DoesParameterExist("problem", "theta_sponge_env") &&
+                pin->GetBoolean("problem", "theta_sponge_env");
     if (pin->DoesParameterExist("problem", "theta_sponge_deg")) {
       thsp_w_ = pin->GetReal("problem", "theta_sponge_deg")*M_PI/180.0;
       if (thsp_w_ > 0.0) {
