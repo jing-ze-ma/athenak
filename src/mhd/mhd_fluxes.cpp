@@ -852,8 +852,21 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (use_spherical_polar) {
           if (px3_ == 1 || px3_ == 3) {
             const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
-            const Real cd = cos(dang), sd = sin(dang);
+            const Real cd = cos(dang), sd0 = sin(dang);
+            // A REFLECTING radial wall: the ghost row holds the MIRROR image (v_r, B_r
+            // flipped) of the interior row, and its phi-face EMFs enter the wall-edge EMF
+            // (CornerE), which vanishes only if they are minus the interior ones.
+            // Rotating the mirrored (r,theta) pair by +dang is not the mirror of the
+            // rotated interior pair; rotating it by -dang is.  With +dang the wall-edge
+            // E_theta was off by O(sin(dang) v_theta B_phi): B.rhat grew at the closed
+            // wall wherever the flow is not axisymmetric, and the Poynting flux through
+            // it drained energy (equator MHD blast, -5e-8 at nx2 = 32; now round-off).
+            const bool gin_ = mb_bcs.d_view(m,BoundaryFace::inner_x1) ==
+                              BoundaryFlag::reflect;
+            const bool gout_ = mb_bcs.d_view(m,BoundaryFace::outer_x1) ==
+                               BoundaryFlag::reflect;
             par_for_inner(member, is-1, ie+1, [&](const int i) {
+              const Real sd = ((gin_ && i < is) || (gout_ && i > ie)) ? -sd0 : sd0;
               Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
               wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
               a = wr(IVX,i); b = wr(IVY,i);
