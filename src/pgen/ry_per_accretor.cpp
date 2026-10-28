@@ -427,6 +427,26 @@ DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient,
 // theta walls (RadSetup) and its total outward rate on this rank (booked as radiation out)
 DvceArray3D<Real> fx2lo_, fx2hi_;
 Real fx2leak_ = 0.0;
+// accspin-1028 (USER 10-28 "try the spin ramp"): problem/spin_ramp_t = tau > 0 (read only
+// when named; absent = the fixed spin, bitwise): the star's spin s(t) = 1 + (s_tgt - 1) R(x),
+// x = clamp((t - t0)/tau, 0, 1), R = (1 - cos(pi x))/2, t0 = problem/spin_ramp_t0 (default 0).
+// The GEOMETRY (r_top, r_spin, r_hot: the caps that must hold the final star) is set with
+// the TARGET spin; spin_, env_dlt_, env_phis_, env_phtop_ follow s(t) (pure function of the
+// mesh time: nothing in the restart file), the spin-dependent arrays (RySpinRefresh) are
+// recomputed whenever s moved by problem/spin_ramp_ds (default 0.002) since the last refresh,
+// and once more at s_tgt.  Each step's last stage adds the rigid increment
+// (s(t+dt) - s(t)) Omega varpi to v_phi of the star's gas (RyPerSrcEnv).
+bool spr_on_ = false;
+Real spr_tau_ = 0.0, spr_t0_ = 0.0, spr_ds_ = 0.002, spr_stgt_ = 1.0;
+Real spr_slast_ = 1.0;         // s of the last refresh (dt_retry registered: a restore re-refreshes)
+Real spr_pr_ = -1.0;           // last reported 0.1 step of s
+Real spr_rspk_ = 1.0e30, spr_ntop_ = 15.0, spr_wdep_ = 0.0, spr_racc_ = 0.0;
+bool spr_eqtop_ = false, spr_icvz_ = false;
+Real spr_vzdep_ = 0.0, spr_rhoamb_ = 0.0;
+// the TARGET-spin values (RadSetup's bottom-flux check; = the current ones without a ramp)
+Real spr_dlt_t_ = 0.0, spr_phis_t_ = 0.0, spr_phtop_t_ = 1.0e300;
+std::vector<Real> spr_cpsi_, spr_clt_, spr_clr_, spr_crq_;   // the env_ic_file column
+DvceArray4D<Real> spr_aref_;   // the module's a_ref (= pm1->arad_ref, refreshed in place)
 // pgrst-1021 (history only): rbk_ = the radiation leaving through r_out (comoving face flux
 // f0x1 + the bath's advective part ibadv_x1max + the theta-wall leak) is booked in Ebnd
 // (register 10, a plain sum) by the M1 post hook from the face flux of the solve just
@@ -657,6 +677,23 @@ Real RochePotS3(const RocheParams &p, const Real dlt, const Real rspin, const Re
   const Real xs = fmin(r, rspin)*sth;
   return RochePot3(p, r, sth, phi) - dlt*xs*xs;
 }
+
+//! accspin-1028: the ramped spin s(t) (see spr_on_)
+Real SpinRampS(const Real t) {
+  const Real x = std::min(std::max((t - spr_t0_)/spr_tau_, 0.0), 1.0);
+  if (x >= 1.0) return spr_stgt_;
+  return 1.0 + (spr_stgt_ - 1.0)*0.5*(1.0 - std::cos(M_PI*x));
+}
+
+//! accspin-1028: the scalars that follow the spin s (same formulas as EnvSetup):
+//! spin_, env_dlt_, env_phis_ (psi zero point: R_acc at phi 90), env_phtop_ (top cap)
+void RySpinScalars(const Real s) {
+  spin_ = s;
+  env_dlt_ = 0.5*(spin_*spin_ - 1.0)*SQR(rp_.omega);
+  env_phis_ = RochePot(rp_, spr_racc_, 0.5*M_PI) - env_dlt_*SQR(fmin(spr_racc_, spr_rspk_));
+  if (spr_eqtop_) env_phtop_ = env_phis_ + spr_ntop_*env_cph2_;
+}
+void RySpinSet(MeshBlockPack *pmbp, const Real s);   // (after EnvSetup)
 
 //! stage 2: envelope P/rho at depth psi = Phi_s - Phi_wb (n-polytrope shifted to the
 //! photospheric P/rho c_ph^2 at psi = 0; isothermal c_ph^2 above)
@@ -1857,6 +1894,12 @@ void RyPerM1PostLz(Mesh *pm) {
 
 void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  // accspin-1028: the spin ramp's scalars (and arrays, every spin_ramp_ds) to s(t) at the
+  // step's first stage (a retried / redone step starts here again: spr_slast_ is dt_retry
+  // registered, so a restore of the arrays is followed by a refresh)
+  if (spr_on_ && nstages_ > 0 && (stage_ctr_ % nstages_) == 0) {
+    RySpinSet(pmbp, SpinRampS(pm->time));
+  }
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -2119,6 +2162,30 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
                         + 0.5*rfl*(v1*v1 + v2*v2 + v3*v3) + rfl*phc(m,k,j,i);
       sum += (rfl - du)*volume(m,k,j,i);
     }, Kokkos::Sum<Real>(dmfl));
+  }
+  // accspin-1028: the spin ramp's torque, once per step (the last stage, after the RK
+  // combination: the full increment stays in the step's result): the rigid increment
+  // dv_phi = (s(t+dt) - s(t)) Omega varpi, varpi = min(r, r_spin) sin(theta), on the star's
+  // gas as in the IC (r < r_spin, denser than env_amb_k x the hydrostatic ambient: not
+  // floor; the floor follows with env_sponge_spin).  IEN holds e + rho v^2/2 + rho Phi: it
+  // gains m_phi dv + rho dv^2/2.  Inside the Erel / L_z source segment, so the budgets book it.
+  if (spr_on_ && nstages_ > 0 && (stage_ctr_ % nstages_) == nstages_ - 1) {
+    const Real dsp = SpinRampS(pm->time + pm->dt) - SpinRampS(pm->time);
+    if (dsp != 0.0) {
+      const Real dom = dsp*rp_.omega;
+      par_for("ryper_spinramp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real r = x1v(m,i);
+        if (!(r < rspn)) return;
+        const Real d = u0(m,IDN,k,j,i);
+        const Real rambc = p3 ? ramb4(m,k,j,i) : ramb(m,k,i);
+        if (!(d > kamb*rambc)) return;
+        const Real dv = dom*fmin(r, rspn)*sin(x2v(m,j));
+        const Real m3 = u0(m,IM3,k,j,i);
+        u0(m,IM3,k,j,i) = m3 + d*dv;
+        u0(m,IEN,k,j,i) += m3*dv + 0.5*d*dv*dv;
+      });
+    }
   }
   Real derel = 0.0;
   if (rad) {
@@ -2963,6 +3030,7 @@ void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   cref24_ = DvceArray4D<Real>();
   rhoamb4_ = DvceArray4D<Real>();
   tcol4_ = DvceArray4D<Real>();
+  spr_aref_ = DvceArray4D<Real>();   // accspin-1028
   bdvs_ = DvceArray3D<Real>();   // pgrst-1021
   rbk1_ = DvceArray3D<Real>();   // accbook-1021
 }
@@ -3068,6 +3136,187 @@ void RyReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 //! uses Phi_eff too.  gr_ (the -d(Phi - Phi_wb)/dr remainder) is unchanged.  The column
 //! must come from the SAME opacity table: the run recomputes kappa_t, and the imposed
 //! bottom flux must equal the column's F(r_in) (checked to 1e-3).
+//----------------------------------------------------------------------------------------
+//! <rad_m1>: the spin-dependent arrays of RadSetup for the CURRENT env_dlt_, env_phis_,
+//! env_phtop_ (accspin-1028: split out so that RySpinRefresh can redo them during the spin
+//! ramp): Phi_eff = Phi_wb + G(psi) into the hydro x1 WB pair (phicc_wb, phi_wb_x1f), the
+//! plain-gravity force above the WB region (gpl_, gpl4_), the module's a_ref (spr_aref_ =
+//! pm1->arad_ref, refreshed in place) and the theta-wall flux fx2lo_/fx2hi_ (+ fx2leak_).
+//! first = the RadSetup call (allocates, hands the arrays to the module, reports).
+//! Returns max a_ref.
+Real RadSpinArrays(MeshBlockPack *pmbp, const std::vector<Real> &crq, const bool first) {
+  // ---- Phi_eff into the x1 WB pair (centres, x1 faces), the plain-gravity force above
+  // the WB region (gpl_), the module's x1 reference a_ref = -dG/dr
+  const bool root = (global_variable::my_rank == 0);
+  auto *pm1 = pmbp->pradm1;
+  auto *phd = pmbp->phydro;
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
+  const Real phis = env_phis_;
+  const std::vector<Real> &cpsi = rcol_psi_;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+  auto hpc = Kokkos::create_mirror_view(phd->phicc_wb);
+  auto hpf = Kokkos::create_mirror_view(phd->phi_wb_x1f);
+  auto hgl = Kokkos::create_mirror_view(gpl_);
+  if (first) spr_aref_ = DvceArray4D<Real>("ryper_aref", nmb, n3, n2, n1);
+  DvceArray4D<Real> aref_d = spr_aref_;
+  auto ha = Kokkos::create_mirror_view(aref_d);
+  Real amax = 0.0;
+  // accretor-3d-1017 (phys_3d): Phi_eff = Phi_wb + G(psi) on the 3-D equipotentials, column
+  // by (m,k,j); the plain-gravity force above the WB region into gpl4_
+  if (p3_) {
+    auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+    auto hgl4 = Kokkos::create_mirror_view(gpl4_);
+    std::vector<Real> pf(n1 + 1), gf(n1 + 1);
+    for (int m=0; m<nmb; ++m) {
+      for (int k=0; k<n3; ++k) {
+        const Real ph = hx3(m,k);
+        for (int j=0; j<n2; ++j) {
+          const Real st = std::sin(hx2(m,j));
+          for (int i=0; i<=n1; ++i) {
+            const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, hx1f(m,i), st, ph);
+            gf[i] = RadColAt(rcol_g_, phis - w);
+            pf[i] = w + gf[i];
+          }
+          for (int i=0; i<n1; ++i) {
+            const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, hx1(m,i), st, ph);
+            const Real dr = hx1f(m,i+1) - hx1f(m,i);
+            const Real a = -(gf[i+1] - gf[i])/dr;
+            hgl4(m,k,j,i) = -(pf[i+1] - pf[i])/dr;
+            amax = std::max(amax, a);
+            hpc(m,k,j,i) = w + RadColAt(rcol_g_, phis - w);
+            hpf(m,k,j,i) = pf[i];
+            if (i == n1 - 1) hpf(m,k,j,i+1) = pf[i+1];
+            ha(m,k,j,i) = a;
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(gpl4_, hgl4);
+    // acc3d-1017: <rad_m1>/implicit_bc_x2min|max = flux: the wall faces carry the column's
+    // EQUILIBRIUM lateral flux, F_theta = F_col(psi) (dPhi/(r dtheta))/|grad Phi| at the face
+    // (F along grad Phi of the true 3-D Roche potential, i.e. normal to the tilted
+    // equipotentials; F_col at the face's psi, no von Zeipel g factor), so the wall neither
+    // blocks the poleward flux of the tilted photosphere (reflect) nor drains the star
+    // (outflow/Marshak).  Explicit (imposed); its outward total is booked in Ebnd.
+    fx2leak_ = 0.0;
+    if (pm1->ibc_x2min == radm1::M1_IBC_X2FLUX || pm1->ibc_x2max == radm1::M1_IBC_X2FLUX) {
+      if (first) {
+        Kokkos::realloc(fx2lo_, nmb, n3, n1);
+        Kokkos::realloc(fx2hi_, nmb, n3, n1);
+      }
+      auto hlo = Kokkos::create_mirror_view(fx2lo_);
+      auto hhi = Kokkos::create_mirror_view(fx2hi_);
+      auto hx2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx2f);
+      auto ha2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
+      auto hbc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmb->mb_bcs.d_view);
+      const int js = indcs.js, je = indcs.je, is = indcs.is, ie = indcs.ie, ks = indcs.ks;
+      const int ke = indcs.ke;
+      // |grad Phi| of the true 3-D Roche potential at the column's r_eq (phi = 90, plane)
+      std::vector<Real> gcol(cpsi.size());
+      for (size_t n=0; n<cpsi.size(); ++n) {
+        const Real e = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
+        const Real a = (RochePotS3(p, dlt, rspin, rq*(1.0 + e), 1.0, h) -
+                        RochePotS3(p, dlt, rspin, rq*(1.0 - e), 1.0, h))/(2.0*e*rq);
+        const Real b = (RochePotS3(p, dlt, rspin, rq, 1.0, h + e) -
+                        RochePotS3(p, dlt, rspin, rq, 1.0, h - e))/(2.0*e*rq);
+        gcol[n] = std::sqrt(a*a + b*b);
+      }
+      auto fth = [&](const Real r, const Real th, const Real ph) {
+        const Real e = 1.0e-6;
+        const Real gt = (RochePotS3(p, dlt, rspin, r, std::sin(th + e), ph) -
+                         RochePotS3(p, dlt, rspin, r, std::sin(th - e), ph))/(2.0*e*r);
+        const Real gr = (RochePotS3(p, dlt, rspin, r*(1.0 + e), std::sin(th), ph) -
+                         RochePotS3(p, dlt, rspin, r*(1.0 - e), std::sin(th), ph))/(2.0*e*r);
+        const Real gp = (RochePotS3(p, dlt, rspin, r, std::sin(th), ph + e) -
+                         RochePotS3(p, dlt, rspin, r, std::sin(th), ph - e))/(2.0*e*r*std::sin(th));
+        const Real g = std::sqrt(gt*gt + gr*gr + gp*gp);
+        const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, r, std::sin(th), ph);
+        // only inside the photosphere (psi > 0, the diffusion regime the von Zeipel flux
+        // describes); above it the wall face carries no imposed flux (reflecting): the
+        // column's F capped at the top over the whole outer wall drained the star (the first
+        // try imposed 1.4x L_r out sideways; eint <= 0 retries at the walls)
+        if (!(phis - w > 0.0)) return 0.0;
+        // von Zeipel (10-18): on an equipotential F ~ g_eff, so the column's F (taken at
+        // its own position r_eq(psi), theta = pi/2, phi = pi/2) scales by g/g_col(psi); the
+        // lateral component is then F_col (g/g_col) gt/g = F_col gt/g_col
+        return RadColAt(rcol_f_, phis - w)*gt/std::fmax(RadColAt(gcol, phis - w), 1.0e-30);
+      };
+      Real lk = 0.0;
+      for (int m=0; m<nmb; ++m) {
+        const Real tlo = hx2f(m,js), thi = hx2f(m,je+1);
+        const bool plo = (hbc(m, BoundaryFace::inner_x2) != BoundaryFlag::block &&
+                          hbc(m, BoundaryFace::inner_x2) != BoundaryFlag::periodic);
+        const bool phi2 = (hbc(m, BoundaryFace::outer_x2) != BoundaryFlag::block &&
+                           hbc(m, BoundaryFace::outer_x2) != BoundaryFlag::periodic);
+        for (int k=0; k<n3; ++k) {
+          for (int i=0; i<n1; ++i) {
+            hlo(m,k,i) = fth(hx1(m,i), tlo, hx3(m,k));
+            hhi(m,k,i) = fth(hx1(m,i), thi, hx3(m,k));
+            if (k >= ks && k <= ke && i >= is && i <= ie) {
+              if (plo && pm1->ibc_x2min == radm1::M1_IBC_X2FLUX) lk -= hlo(m,k,i)*ha2(m,k,js,i);
+              if (phi2 && pm1->ibc_x2max == radm1::M1_IBC_X2FLUX) {
+                lk += hhi(m,k,i)*ha2(m,k,je+1,i);
+              }
+            }
+          }
+        }
+      }
+      fx2leak_ = lk;
+      Kokkos::deep_copy(fx2lo_, hlo);
+      Kokkos::deep_copy(fx2hi_, hhi);
+      if (first) pm1->SetX2FaceFlux(fx2lo_, fx2hi_);
+      if (root && first) {
+        std::printf("ry_per_accretor: <rad_m1> x2 walls: IMPOSED equilibrium lateral flux "
+                    "F_col(psi) (g/g_col) dPhi/(r dth)/|grad Phi| (von Zeipel); outward total (rank 0) %.6g code "
+                    "(= %.4g Lsun of the full sphere scale)\n", lk, lk*rad_lfac_);
+      }
+    }
+  }
+  for (int m=0; m<nmb && !p3_; ++m) {
+    for (int k=0; k<n3; ++k) {
+      const Real ph = hx3(m,k);
+      std::vector<Real> pf(n1 + 1), gf(n1 + 1);
+      for (int i=0; i<=n1; ++i) {
+        const Real w = PhiWB(p, dlt, rtop, rspin, phtop, hx1f(m,i), ph);
+        gf[i] = RadColAt(rcol_g_, phis - w);
+        pf[i] = w + gf[i];
+      }
+      for (int i=0; i<n1; ++i) {
+        const Real w = PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i), ph);
+        const Real pc = w + RadColAt(rcol_g_, phis - w);
+        const Real dr = hx1f(m,i+1) - hx1f(m,i);
+        const Real a = -(gf[i+1] - gf[i])/dr;
+        hgl(m,k,i) = -(pf[i+1] - pf[i])/dr;
+        amax = std::max(amax, a);
+        for (int j=0; j<n2; ++j) {
+          hpc(m,k,j,i) = pc;
+          hpf(m,k,j,i) = pf[i];
+          if (i == n1 - 1) hpf(m,k,j,i+1) = pf[i+1];
+          ha(m,k,j,i) = a;
+        }
+      }
+    }
+  }
+  Kokkos::deep_copy(phd->phicc_wb, hpc);
+  Kokkos::deep_copy(phd->phi_wb_x1f, hpf);
+  Kokkos::deep_copy(gpl_, hgl);
+  Kokkos::deep_copy(aref_d, ha);
+  if (first) {
+    pm1->fref_wsplit_ok = true;       // RyPerSrcEnv gives the reference work (split)
+    pm1->SetForceReference(aref_d);
+  }
+  return amax;
+}
+
 void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> &cpsi,
               const std::vector<Real> &clt, const std::vector<Real> &clr,
               const std::vector<Real> &crq, const std::vector<Real> &cfl) {
@@ -3203,11 +3452,13 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     rcol_g_[n] = rcol_g_[n-1] + 0.5*(aref[n-1] + aref[n])*(crq[n-1] - crq[n]);
   }
   const RocheParams p = rp_;
-  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
-  const Real phis = env_phis_;
+  const Real rtop = env_rtop_, rspin = env_rspin_;
   // ---- the imposed bottom flux must be the column's F at psi(r_in, phi 90)
+  // accspin-1028: checked with the TARGET spin (the deck's flux belongs to the target
+  // column; = the current spin without problem/spin_ramp_t)
   const Real r_in = pmbp->pmesh->mesh_size.x1min;
-  const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, r_in, 0.5*M_PI);
+  const Real psi_in = spr_phis_t_ - PhiWB(p, spr_dlt_t_, rtop, rspin, spr_phtop_t_, r_in,
+                                          0.5*M_PI);
   // problem/env_lin_band_factor (default 1): L_in = band equivalent of the theta-thin
   // equatorial slab.  With T = T(psi) and F ~ g (von Zeipel) the band of the Roche-
   // distorted star radiates <(g/g90)(r/r90)^2/cos alpha>_phi of the phi = 90 column's L at
@@ -3232,163 +3483,7 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     const Real omg = (std::cos(ms.x2min) - std::cos(ms.x2max))*(ms.x3max - ms.x3min);
     rad_lfac_ = (4.0*M_PI/omg)*fu*lu*lu/3.828e33;
   }
-  // ---- Phi_eff into the x1 WB pair (centres, x1 faces), the plain-gravity force above
-  // the WB region (gpl_), the module's x1 reference a_ref = -dG/dr
-  auto &indcs = pmbp->pmesh->mb_indcs;
-  const int ng = indcs.ng;
-  const int n1 = indcs.nx1 + 2*ng;
-  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
-  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
-  const int nmb = pmbp->nmb_thispack;
-  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
-  auto hx1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
-  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
-  auto hpc = Kokkos::create_mirror_view(phd->phicc_wb);
-  auto hpf = Kokkos::create_mirror_view(phd->phi_wb_x1f);
-  auto hgl = Kokkos::create_mirror_view(gpl_);
-  DvceArray4D<Real> aref_d("ryper_aref", nmb, n3, n2, n1);
-  auto ha = Kokkos::create_mirror_view(aref_d);
-  Real amax = 0.0;
-  // accretor-3d-1017 (phys_3d): Phi_eff = Phi_wb + G(psi) on the 3-D equipotentials, column
-  // by (m,k,j); the plain-gravity force above the WB region into gpl4_
-  if (p3_) {
-    auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
-    auto hgl4 = Kokkos::create_mirror_view(gpl4_);
-    std::vector<Real> pf(n1 + 1), gf(n1 + 1);
-    for (int m=0; m<nmb; ++m) {
-      for (int k=0; k<n3; ++k) {
-        const Real ph = hx3(m,k);
-        for (int j=0; j<n2; ++j) {
-          const Real st = std::sin(hx2(m,j));
-          for (int i=0; i<=n1; ++i) {
-            const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, hx1f(m,i), st, ph);
-            gf[i] = RadColAt(rcol_g_, phis - w);
-            pf[i] = w + gf[i];
-          }
-          for (int i=0; i<n1; ++i) {
-            const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, hx1(m,i), st, ph);
-            const Real dr = hx1f(m,i+1) - hx1f(m,i);
-            const Real a = -(gf[i+1] - gf[i])/dr;
-            hgl4(m,k,j,i) = -(pf[i+1] - pf[i])/dr;
-            amax = std::max(amax, a);
-            hpc(m,k,j,i) = w + RadColAt(rcol_g_, phis - w);
-            hpf(m,k,j,i) = pf[i];
-            if (i == n1 - 1) hpf(m,k,j,i+1) = pf[i+1];
-            ha(m,k,j,i) = a;
-          }
-        }
-      }
-    }
-    Kokkos::deep_copy(gpl4_, hgl4);
-    // acc3d-1017: <rad_m1>/implicit_bc_x2min|max = flux: the wall faces carry the column's
-    // EQUILIBRIUM lateral flux, F_theta = F_col(psi) (dPhi/(r dtheta))/|grad Phi| at the face
-    // (F along grad Phi of the true 3-D Roche potential, i.e. normal to the tilted
-    // equipotentials; F_col at the face's psi, no von Zeipel g factor), so the wall neither
-    // blocks the poleward flux of the tilted photosphere (reflect) nor drains the star
-    // (outflow/Marshak).  Explicit (imposed); its outward total is booked in Ebnd.
-    fx2leak_ = 0.0;
-    if (pm1->ibc_x2min == radm1::M1_IBC_X2FLUX || pm1->ibc_x2max == radm1::M1_IBC_X2FLUX) {
-      Kokkos::realloc(fx2lo_, nmb, n3, n1);
-      Kokkos::realloc(fx2hi_, nmb, n3, n1);
-      auto hlo = Kokkos::create_mirror_view(fx2lo_);
-      auto hhi = Kokkos::create_mirror_view(fx2hi_);
-      auto hx2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx2f);
-      auto ha2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
-      auto hbc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmb->mb_bcs.d_view);
-      const int js = indcs.js, je = indcs.je, is = indcs.is, ie = indcs.ie, ks = indcs.ks;
-      const int ke = indcs.ke;
-      // |grad Phi| of the true 3-D Roche potential at the column's r_eq (phi = 90, plane)
-      std::vector<Real> gcol(cpsi.size());
-      for (size_t n=0; n<cpsi.size(); ++n) {
-        const Real e = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
-        const Real a = (RochePotS3(p, dlt, rspin, rq*(1.0 + e), 1.0, h) -
-                        RochePotS3(p, dlt, rspin, rq*(1.0 - e), 1.0, h))/(2.0*e*rq);
-        const Real b = (RochePotS3(p, dlt, rspin, rq, 1.0, h + e) -
-                        RochePotS3(p, dlt, rspin, rq, 1.0, h - e))/(2.0*e*rq);
-        gcol[n] = std::sqrt(a*a + b*b);
-      }
-      auto fth = [&](const Real r, const Real th, const Real ph) {
-        const Real e = 1.0e-6;
-        const Real gt = (RochePotS3(p, dlt, rspin, r, std::sin(th + e), ph) -
-                         RochePotS3(p, dlt, rspin, r, std::sin(th - e), ph))/(2.0*e*r);
-        const Real gr = (RochePotS3(p, dlt, rspin, r*(1.0 + e), std::sin(th), ph) -
-                         RochePotS3(p, dlt, rspin, r*(1.0 - e), std::sin(th), ph))/(2.0*e*r);
-        const Real gp = (RochePotS3(p, dlt, rspin, r, std::sin(th), ph + e) -
-                         RochePotS3(p, dlt, rspin, r, std::sin(th), ph - e))/(2.0*e*r*std::sin(th));
-        const Real g = std::sqrt(gt*gt + gr*gr + gp*gp);
-        const Real w = PhiWB3(p, dlt, rtop, rspin, phtop, r, std::sin(th), ph);
-        // only inside the photosphere (psi > 0, the diffusion regime the von Zeipel flux
-        // describes); above it the wall face carries no imposed flux (reflecting): the
-        // column's F capped at the top over the whole outer wall drained the star (the first
-        // try imposed 1.4x L_r out sideways; eint <= 0 retries at the walls)
-        if (!(phis - w > 0.0)) return 0.0;
-        // von Zeipel (10-18): on an equipotential F ~ g_eff, so the column's F (taken at
-        // its own position r_eq(psi), theta = pi/2, phi = pi/2) scales by g/g_col(psi); the
-        // lateral component is then F_col (g/g_col) gt/g = F_col gt/g_col
-        return RadColAt(rcol_f_, phis - w)*gt/std::fmax(RadColAt(gcol, phis - w), 1.0e-30);
-      };
-      Real lk = 0.0;
-      for (int m=0; m<nmb; ++m) {
-        const Real tlo = hx2f(m,js), thi = hx2f(m,je+1);
-        const bool plo = (hbc(m, BoundaryFace::inner_x2) != BoundaryFlag::block &&
-                          hbc(m, BoundaryFace::inner_x2) != BoundaryFlag::periodic);
-        const bool phi2 = (hbc(m, BoundaryFace::outer_x2) != BoundaryFlag::block &&
-                           hbc(m, BoundaryFace::outer_x2) != BoundaryFlag::periodic);
-        for (int k=0; k<n3; ++k) {
-          for (int i=0; i<n1; ++i) {
-            hlo(m,k,i) = fth(hx1(m,i), tlo, hx3(m,k));
-            hhi(m,k,i) = fth(hx1(m,i), thi, hx3(m,k));
-            if (k >= ks && k <= ke && i >= is && i <= ie) {
-              if (plo && pm1->ibc_x2min == radm1::M1_IBC_X2FLUX) lk -= hlo(m,k,i)*ha2(m,k,js,i);
-              if (phi2 && pm1->ibc_x2max == radm1::M1_IBC_X2FLUX) {
-                lk += hhi(m,k,i)*ha2(m,k,je+1,i);
-              }
-            }
-          }
-        }
-      }
-      fx2leak_ = lk;
-      Kokkos::deep_copy(fx2lo_, hlo);
-      Kokkos::deep_copy(fx2hi_, hhi);
-      pm1->SetX2FaceFlux(fx2lo_, fx2hi_);
-      if (root) {
-        std::printf("ry_per_accretor: <rad_m1> x2 walls: IMPOSED equilibrium lateral flux "
-                    "F_col(psi) (g/g_col) dPhi/(r dth)/|grad Phi| (von Zeipel); outward total (rank 0) %.6g code "
-                    "(= %.4g Lsun of the full sphere scale)\n", lk, lk*rad_lfac_);
-      }
-    }
-  }
-  for (int m=0; m<nmb && !p3_; ++m) {
-    for (int k=0; k<n3; ++k) {
-      const Real ph = hx3(m,k);
-      std::vector<Real> pf(n1 + 1), gf(n1 + 1);
-      for (int i=0; i<=n1; ++i) {
-        const Real w = PhiWB(p, dlt, rtop, rspin, phtop, hx1f(m,i), ph);
-        gf[i] = RadColAt(rcol_g_, phis - w);
-        pf[i] = w + gf[i];
-      }
-      for (int i=0; i<n1; ++i) {
-        const Real w = PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i), ph);
-        const Real pc = w + RadColAt(rcol_g_, phis - w);
-        const Real dr = hx1f(m,i+1) - hx1f(m,i);
-        const Real a = -(gf[i+1] - gf[i])/dr;
-        hgl(m,k,i) = -(pf[i+1] - pf[i])/dr;
-        amax = std::max(amax, a);
-        for (int j=0; j<n2; ++j) {
-          hpc(m,k,j,i) = pc;
-          hpf(m,k,j,i) = pf[i];
-          if (i == n1 - 1) hpf(m,k,j,i+1) = pf[i+1];
-          ha(m,k,j,i) = a;
-        }
-      }
-    }
-  }
-  Kokkos::deep_copy(phd->phicc_wb, hpc);
-  Kokkos::deep_copy(phd->phi_wb_x1f, hpf);
-  Kokkos::deep_copy(gpl_, hgl);
-  Kokkos::deep_copy(aref_d, ha);
-  pm1->fref_wsplit_ok = true;       // RyPerSrcEnv gives the reference work (split)
-  pm1->SetForceReference(aref_d);
+  const Real amax = RadSpinArrays(pmbp, crq, true);
   if (root) {
     const Real g_in = RadColAt(rcol_g_, psi_in);
     std::printf("ry_per_accretor: <rad_m1> force reference: G(psi) over the column (psi "
@@ -3795,6 +3890,203 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
 }
 
 //----------------------------------------------------------------------------------------
+//! the spin-dependent x1 gravity arrays of EnvSetup for the CURRENT env_dlt_, env_phis_,
+//! env_phtop_ (accspin-1028: split out for RySpinRefresh): gr_ (-d(Phi - Phi_wb)/dr), gpl_,
+//! cref2_ on (m,k,i); with phys_3d gr4_, gpl4_, cref24_ (and the spin-independent gt4_,
+//! gp4_, rhoamb4_) on (m,k,j,i).  (With <rad_m1> RadSpinArrays overwrites gpl_/gpl4_.)
+void EnvSpinGrav(MeshBlockPack *pmbp, const Real racc, const Real rho_amb, const bool eqtop) {
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
+  const Real phis = env_phis_, cph2 = env_cph2_, np = env_np_;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x1f = pmbp->pcoord->xx1f;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto &x3f = pmbp->pcoord->xx3f;
+  {
+    auto gr = gr_, c2r = cref2_, gpl = gpl_;
+    par_for("ryper_gre", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int i) {
+      const Real rl = x1f(m,i), rr = x1f(m,i+1), ph = x3v(m,k);
+      const Real wr = PhiWB(p, dlt, rtop, rspin, phtop, rr, ph);
+      const Real wl = PhiWB(p, dlt, rtop, rspin, phtop, rl, ph);
+      gr(m,k,i) = -((RochePot(p, rr, ph) - wr) - (RochePot(p, rl, ph) - wl))/(rr - rl);
+      gpl(m,k,i) = -(wr - wl)/(rr - rl);
+      const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), x3v(m,k));
+      c2r(m,k,i) = EnvC2(psi, cph2, np);
+    });
+  }
+  // accretor-3d-1017 (phys_3d): the same on (m,k,j,i) with the 3-D potentials, plus the
+  // explicit g_theta and g_phi (face differences of the true Phi); the ambient anchored at
+  // R_acc on the same (theta, phi) ray (sphere) or the photospheric equipotential
+  if (p3_) {
+    auto gr = gr4_, gt = gt4_, gp = gp4_, gpl = gpl4_, c2r = cref24_, ra = rhoamb4_;
+    auto &x2c = pmbp->pcoord->x2v;
+    auto &x2fc = pmbp->pcoord->xx2f;
+    const Real ramb0 = env_ramb_, camb2 = env_camb2_, dmin = rho_amb;
+    const Real aeq = RochePot(p, racc, 0.5*M_PI);
+    par_for("ryper_gre3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real rl = x1f(m,i), rr = x1f(m,i+1), r = x1v(m,i), ph = x3v(m,k);
+      const Real th = x2c(m,j), st = sin(th);
+      const Real tl = x2fc(m,j), tr = x2fc(m,j+1);
+      const Real wr = PhiWB3(p, dlt, rtop, rspin, phtop, rr, st, ph);
+      const Real wl = PhiWB3(p, dlt, rtop, rspin, phtop, rl, st, ph);
+      gr(m,k,j,i) = -((RochePot3(p, rr, st, ph) - wr) - (RochePot3(p, rl, st, ph) - wl))
+                    /(rr - rl);
+      gpl(m,k,j,i) = -(wr - wl)/(rr - rl);
+      gt(m,k,j,i) = -(RochePot3(p, r, sin(tr), ph) - RochePot3(p, r, sin(tl), ph))
+                    /(r*(tr - tl));
+      gp(m,k,j,i) = -(RochePot3(p, r, st, x3f(m,k+1)) - RochePot3(p, r, st, x3f(m,k)))
+                    /(r*st*(x3f(m,k+1) - x3f(m,k)));
+      const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph);
+      c2r(m,k,j,i) = EnvC2(psi, cph2, np);
+      const Real dph = RochePot3(p, r, st, ph) - (eqtop ? aeq : RochePot3(p, racc, st, ph));
+      ra(m,k,j,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! thermo = general, env_ic = column: the column's T(psi) at the cell centres (tcol_ on
+//! (m,k,i), with phys_3d tcol4_ on (m,k,j,i)) for the CURRENT env_dlt_, env_phis_,
+//! env_phtop_ (accspin-1028: split out of EnvSetup for RySpinRefresh; the arrays are
+//! allocated by EnvSetup)
+void EnvTcolColumn(MeshBlockPack *pmbp, const Real racc, const std::vector<Real> &cpsi,
+                   const std::vector<Real> &clt, const std::vector<Real> &clr,
+                   const std::vector<Real> &crq, const bool icvz, const Real vzdep,
+                   const bool print) {
+  const bool root = (global_variable::my_rank == 0);
+  auto &eos = pmbp->phydro->peos->eos_data;
+  const RocheParams p = rp_;
+  const Real dlt = env_dlt_, rtop = env_rtop_, rspin = env_rspin_, phtop = env_phtop_;
+  const Real phis = env_phis_;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmbp->nmb_thispack;
+  auto &x1v = pmbp->pcoord->x1v;
+  auto &x3v = pmbp->pcoord->x3v;
+  auto ht = Kokkos::create_mirror_view(tcol_);
+  auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v);
+  auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x3v);
+  const Real tk = eos.temp_cgs;
+  // acc3d-stream-1018 (USER 10-18 "go with a"): problem/env_ic_vz (read only when named,
+  // default off = the barotropic column T(psi) on every equipotential, bitwise): the von
+  // Zeipel temperature in the atmosphere, T = T_col(psi) (g_ph/g_col(0))^(w/4), g_ph =
+  // |grad Phi| of the true Roche potential at the ray's photosphere (3-D: theta, phi;
+  // band: the plane), g_col(0) = the same at the column's photosphere (phi 90 cut), w = 1 above the photosphere (psi <= 0), tapering linearly to 0
+  // at psi = env_ic_vz_depth c_ph^2 below it (default 3: deeper the barotropic T(psi) of a
+  // radiative interior is kept).  Density follows from the IC's own hydrostatic march
+  // along each ray (anchored at the photospheric cell at the column's rho), the radeq
+  // floor/ambient and RadIC E = a T^4 use the same T, so the IC stays in HSE per ray.
+  std::vector<Real> gcolv;
+  if (icvz) {
+    gcolv.resize(cpsi.size());
+    for (size_t n=0; n<cpsi.size(); ++n) {
+      const Real ee = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
+      const Real a = (RochePotS3(p, dlt, rspin, rq*(1.0 + ee), 1.0, h) -
+                      RochePotS3(p, dlt, rspin, rq*(1.0 - ee), 1.0, h))/(2.0*ee*rq);
+      gcolv[n] = std::fabs(a);   // the plane at phi 90: dPhi/dtheta = dPhi/dphi = 0
+    }
+  }
+  Real vzmin = 1.0e300, vzmax = -1.0e300;
+  // g_eff is taken at the ray's own PHOTOSPHERE (psi = 0 on this theta, phi ray; v10: the
+  // local g of v9 fell to 0.24 g_col in the far ambient, cooling the whole radeq floor by
+  // 20-50 %, which is not von Zeipel), so every cell of the ray carries the factor of its
+  // surface patch, (g_ph/g_col(0))^(w/4); cached per ray
+  Real vzth = -1.0, vzph = -1.0, vzrat = 1.0;
+  auto vzray = [&](const Real th, const Real ph) {
+    if (th == vzth && ph == vzph) return vzrat;
+    vzth = th; vzph = ph; vzrat = 1.0;
+    const Real sth = std::sin(th);
+    auto psir = [&](const Real r) {
+      return phis - (p3_ ? PhiWB3(p, dlt, rtop, rspin, phtop, r, sth, ph)
+                         : PhiWB(p, dlt, rtop, rspin, phtop, r, ph));
+    };
+    Real a = 0.7*racc, b = std::min(1.5*racc, rtop);
+    if (!(psir(a) > 0.0 && psir(b) < 0.0)) return vzrat;
+    for (int it=0; it<60; ++it) {
+      const Real c = 0.5*(a + b);
+      if (psir(c) > 0.0) a = c; else b = c;
+    }
+    const Real r = 0.5*(a + b), ee = 1.0e-6;
+    const Real gt = (RochePotS3(p, dlt, rspin, r, std::sin(th + ee), ph) -
+                     RochePotS3(p, dlt, rspin, r, std::sin(th - ee), ph))/(2.0*ee*r);
+    const Real gr = (RochePotS3(p, dlt, rspin, r*(1.0 + ee), sth, ph) -
+                     RochePotS3(p, dlt, rspin, r*(1.0 - ee), sth, ph))/(2.0*ee*r);
+    const Real gp = (RochePotS3(p, dlt, rspin, r, sth, ph + ee) -
+                     RochePotS3(p, dlt, rspin, r, sth, ph - ee))
+                    /(2.0*ee*r*sth);
+    // g_col at psi = 0 (linear in the column's psi)
+    const size_t n = std::upper_bound(cpsi.begin(), cpsi.end(), 0.0) - cpsi.begin();
+    Real gc = gcolv.back();
+    if (n == 0) {
+      gc = gcolv.front();
+    } else if (n < cpsi.size()) {
+      const Real x = (0.0 - cpsi[n-1])/(cpsi[n] - cpsi[n-1]);
+      gc = (1.0 - x)*gcolv[n-1] + x*gcolv[n];
+    }
+    vzrat = std::sqrt(gt*gt + gr*gr + gp*gp)/gc;
+    return vzrat;
+  };
+  auto vzfac = [&](const Real r, const Real th, const Real ph, const Real psi) {
+    (void) r;
+    if (!icvz) return static_cast<Real>(1.0);
+    const Real w = (psi <= 0.0) ? 1.0 : std::max(0.0, 1.0 - psi/vzdep);
+    if (!(w > 0.0)) return static_cast<Real>(1.0);
+    const Real f = std::pow(vzray(th, ph), 0.25*w);
+    vzmin = std::min(vzmin, f);
+    vzmax = std::max(vzmax, f);
+    return f;
+  };
+  for (int m=0; m<nmb; ++m) {
+    for (int k=0; k<n3; ++k) {
+      for (int i=0; i<n1; ++i) {
+        const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i), hx3(m,k));
+        Real lt, lr;
+        ColumnAt(cpsi, clt, clr, psi, lt, lr);
+        ht(m,k,i) = std::exp(lt)/tk;
+        if (icvz) ht(m,k,i) *= vzfac(hx1(m,i), 0.5*M_PI, hx3(m,k), psi);
+      }
+    }
+  }
+  Kokkos::deep_copy(tcol_, ht);
+  if (p3_) {
+    // accretor-3d-1017: T(psi) of the column on the 3-D equipotentials
+    auto ht4 = Kokkos::create_mirror_view(tcol4_);
+    auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+    for (int m=0; m<nmb; ++m) {
+      for (int k=0; k<n3; ++k) {
+        for (int j=0; j<n2; ++j) {
+          const Real st = std::sin(hx2(m,j));
+          for (int i=0; i<n1; ++i) {
+            const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, hx1(m,i), st,
+                                           hx3(m,k));
+            Real lt, lr;
+            ColumnAt(cpsi, clt, clr, psi, lt, lr);
+            ht4(m,k,j,i) = std::exp(lt)/tk;
+            if (icvz) ht4(m,k,j,i) *= vzfac(hx1(m,i), hx2(m,j), hx3(m,k), psi);
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(tcol4_, ht4);
+  }
+  if (icvz && root && print) {
+    std::printf("ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper depth "
+                "%.4g (psi), factor %.5f .. %.5f (rank 0)\n", vzdep, vzmin, vzmax);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! stage 2 set-up, on every start (restart included): keys, potentials (true Phi into
 //! phicc0/phi0 for etotgrav, Phi_wb into the x1 WB pair), the -dDelta/dr force (into
 //! gr_), the relaxation target, the R_acc face index, and on a fresh start the envelope
@@ -3958,7 +4250,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   phd->wall_closed_ix1 = !env_noslip_;
   env_dlt_ = 0.5*(spin_*spin_ - 1.0)*SQR(rp_.omega);
   const RocheParams p = rp_;
-  const Real dlt = env_dlt_;
+  Real dlt = env_dlt_;           // accspin-1028: target spin here; s(t_now) after the caps
   // r_spin: the star's rotation (and the spin term of Phi_wb) ends here; default =
   // r_top (read again below), huge while r_top is searched
   const Real rspk = pin->GetOrAddReal("problem", "env_r_spin", 1.0e30);
@@ -4025,6 +4317,30 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // lobe, which the uncapped Phi_wb would take for envelope (psi > 0)
   if (pin->DoesParameterExist("problem", "env_r_top_max")) {
     env_rtop_ = fmin(env_rtop_, pin->GetReal("problem", "env_r_top_max"));
+  }
+  // accspin-1028: the caps above (r_top, r_top max over phi) and r_spin, r_hot below are
+  // the TARGET star's; the target values are kept for RadSetup's bottom-flux check, then
+  // with problem/spin_ramp_t the current spin s(t) (t = the mesh time: fresh start or
+  // restart) sets spin_, env_dlt_, env_phis_, env_phtop_ for everything that follows
+  spr_dlt_t_ = env_dlt_; spr_phis_t_ = env_phis_; spr_phtop_t_ = env_phtop_;
+  spr_rspk_ = rspk; spr_ntop_ = ntop; spr_eqtop_ = eqtop; spr_racc_ = racc;
+  spr_rhoamb_ = rho_amb;
+  if (spr_on_) {
+    if (!(p3_ && rad_ && gen_)) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: problem/spin_ramp_t needs phys_3d, "
+                << "<rad_m1> and thermo = general with env_ic = column" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    RySpinScalars(SpinRampS(pmbp->pmesh->time));
+    spr_slast_ = spin_;
+    spr_pr_ = std::floor((spin_ - 1.0)/0.1 + 1.0e-9);
+    dlt = env_dlt_;
+    if (root) {
+      std::printf("ry_per_accretor: spin ramp (accspin-1028): s = 1 -> %.6f over t %.6g .. "
+                  "%.6g (1 - cos), refresh every ds %.4g; at t = %.6g s = %.6f (geometry: "
+                  "target spin)\n", spr_stgt_, spr_t0_, spr_t0_ + spr_tau_, spr_ds_,
+                  pmbp->pmesh->time, spin_);
+    }
   }
   const Real rtop = env_rtop_, phtop = env_phtop_;
   env_rspin_ = env_spin_top_ ? fmin(rspk, rtopmax) : fmin(rspk, rtop90);
@@ -4127,22 +4443,6 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     });
   }
   Kokkos::realloc(gpl_, nmb, n3, n1);
-  {
-    auto gr = gr_, c2r = cref2_, gpl = gpl_;
-    par_for("ryper_gre", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n1 - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int i) {
-      const Real rl = x1f(m,i), rr = x1f(m,i+1), ph = x3v(m,k);
-      const Real wr = PhiWB(p, dlt, rtop, rspin, phtop, rr, ph);
-      const Real wl = PhiWB(p, dlt, rtop, rspin, phtop, rl, ph);
-      gr(m,k,i) = -((RochePot(p, rr, ph) - wr) - (RochePot(p, rl, ph) - wl))/(rr - rl);
-      gpl(m,k,i) = -(wr - wl)/(rr - rl);
-      const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), x3v(m,k));
-      c2r(m,k,i) = EnvC2(psi, cph2, np);
-    });
-  }
-  // accretor-3d-1017 (phys_3d): the same on (m,k,j,i) with the 3-D potentials, plus the
-  // explicit g_theta and g_phi (face differences of the true Phi); the ambient anchored at
-  // R_acc on the same (theta, phi) ray (sphere) or the photospheric equipotential
   if (p3_) {
     Kokkos::realloc(gr4_, nmb, n3, n2, n1);
     Kokkos::realloc(gt4_, nmb, n3, n2, n1);
@@ -4150,31 +4450,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     Kokkos::realloc(gpl4_, nmb, n3, n2, n1);
     Kokkos::realloc(cref24_, nmb, n3, n2, n1);
     Kokkos::realloc(rhoamb4_, nmb, n3, n2, n1);
-    auto gr = gr4_, gt = gt4_, gp = gp4_, gpl = gpl4_, c2r = cref24_, ra = rhoamb4_;
-    auto &x2c = pmbp->pcoord->x2v;
-    auto &x2fc = pmbp->pcoord->xx2f;
-    const Real ramb0 = env_ramb_, camb2 = env_camb2_, dmin = rho_amb;
-    const Real aeq = RochePot(p, racc, 0.5*M_PI);
-    par_for("ryper_gre3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real rl = x1f(m,i), rr = x1f(m,i+1), r = x1v(m,i), ph = x3v(m,k);
-      const Real th = x2c(m,j), st = sin(th);
-      const Real tl = x2fc(m,j), tr = x2fc(m,j+1);
-      const Real wr = PhiWB3(p, dlt, rtop, rspin, phtop, rr, st, ph);
-      const Real wl = PhiWB3(p, dlt, rtop, rspin, phtop, rl, st, ph);
-      gr(m,k,j,i) = -((RochePot3(p, rr, st, ph) - wr) - (RochePot3(p, rl, st, ph) - wl))
-                    /(rr - rl);
-      gpl(m,k,j,i) = -(wr - wl)/(rr - rl);
-      gt(m,k,j,i) = -(RochePot3(p, r, sin(tr), ph) - RochePot3(p, r, sin(tl), ph))
-                    /(r*(tr - tl));
-      gp(m,k,j,i) = -(RochePot3(p, r, st, x3f(m,k+1)) - RochePot3(p, r, st, x3f(m,k)))
-                    /(r*st*(x3f(m,k+1) - x3f(m,k)));
-      const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph);
-      c2r(m,k,j,i) = EnvC2(psi, cph2, np);
-      const Real dph = RochePot3(p, r, st, ph) - (eqtop ? aeq : RochePot3(p, racc, st, ph));
-      ra(m,k,j,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
-    });
   }
+  EnvSpinGrav(pmbp, racc, rho_amb, eqtop);
   // thermo = general: the envelope column T(psi), rho(psi) from problem/env_ic_file
   // (S0 script; ASCII, '#' comments, columns psi [(km/s)^2, = Phi_s - Phi_wb at phi 90]
   // T [K] rho [g/cc] [...], psi ascending), interpolated linearly in psi on log T and
@@ -4192,6 +4469,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   if (gen_) {
     const std::string icm = pin->GetOrAddString("problem", "env_ic", "polytrope");
     icpoly = (icm.compare("polytrope") == 0);
+    if (spr_on_ && icpoly) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: problem/spin_ramp_t needs env_ic = "
+                << "column" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (!icpoly && icm.compare("column") != 0) {
       std::cout << "### FATAL ERROR in ry_per_accretor: env_ic must be polytrope | column"
                 << std::endl;
@@ -4291,22 +4573,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
     }
     Kokkos::realloc(tcol_, nmb, n3, n1);
-    auto ht = Kokkos::create_mirror_view(tcol_);
-    auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v);
-    auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x3v);
-    const Real tk = eos.temp_cgs;
-    // acc3d-stream-1018 (USER 10-18 "go with a"): problem/env_ic_vz (read only when named,
-    // default off = the barotropic column T(psi) on every equipotential, bitwise): the von
-    // Zeipel temperature in the atmosphere, T = T_col(psi) (g_ph/g_col(0))^(w/4), g_ph =
-    // |grad Phi| of the true Roche potential at the ray's photosphere (3-D: theta, phi;
-    // band: the plane), g_col(0) = the same at the column's photosphere (phi 90 cut), w = 1 above the photosphere (psi <= 0), tapering linearly to 0
-    // at psi = env_ic_vz_depth c_ph^2 below it (default 3: deeper the barotropic T(psi) of a
-    // radiative interior is kept).  Density follows from the IC's own hydrostatic march
-    // along each ray (anchored at the photospheric cell at the column's rho), the radeq
-    // floor/ambient and RadIC E = a T^4 use the same T, so the IC stays in HSE per ray.
+    // acc3d-stream-1018: problem/env_ic_vz (von Zeipel IC T, see EnvTcolColumn)
     const bool icvz = pin->DoesParameterExist("problem", "env_ic_vz") &&
                       pin->GetBoolean("problem", "env_ic_vz");
-    std::vector<Real> gcolv;
     Real vzdep = 0.0;
     if (icvz) {
       if (!rad_) {
@@ -4314,102 +4583,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
         std::exit(EXIT_FAILURE);
       }
       vzdep = pin->GetOrAddReal("problem", "env_ic_vz_depth", 3.0)*env_cph2_;
-      gcolv.resize(cpsi.size());
-      for (size_t n=0; n<cpsi.size(); ++n) {
-        const Real ee = 1.0e-6, rq = crq[n], h = 0.5*M_PI;
-        const Real a = (RochePotS3(p, dlt, rspin, rq*(1.0 + ee), 1.0, h) -
-                        RochePotS3(p, dlt, rspin, rq*(1.0 - ee), 1.0, h))/(2.0*ee*rq);
-        gcolv[n] = std::fabs(a);   // the plane at phi 90: dPhi/dtheta = dPhi/dphi = 0
-      }
     }
-    Real vzmin = 1.0e300, vzmax = -1.0e300;
-    // g_eff is taken at the ray's own PHOTOSPHERE (psi = 0 on this theta, phi ray; v10: the
-    // local g of v9 fell to 0.24 g_col in the far ambient, cooling the whole radeq floor by
-    // 20-50 %, which is not von Zeipel), so every cell of the ray carries the factor of its
-    // surface patch, (g_ph/g_col(0))^(w/4); cached per ray
-    Real vzth = -1.0, vzph = -1.0, vzrat = 1.0;
-    auto vzray = [&](const Real th, const Real ph) {
-      if (th == vzth && ph == vzph) return vzrat;
-      vzth = th; vzph = ph; vzrat = 1.0;
-      const Real sth = std::sin(th);
-      auto psir = [&](const Real r) {
-        return phis - (p3_ ? PhiWB3(p, dlt, rtop, rspin, phtop, r, sth, ph)
-                           : PhiWB(p, dlt, rtop, rspin, phtop, r, ph));
-      };
-      Real a = 0.7*racc, b = std::min(1.5*racc, rtop);
-      if (!(psir(a) > 0.0 && psir(b) < 0.0)) return vzrat;
-      for (int it=0; it<60; ++it) {
-        const Real c = 0.5*(a + b);
-        if (psir(c) > 0.0) a = c; else b = c;
-      }
-      const Real r = 0.5*(a + b), ee = 1.0e-6;
-      const Real gt = (RochePotS3(p, dlt, rspin, r, std::sin(th + ee), ph) -
-                       RochePotS3(p, dlt, rspin, r, std::sin(th - ee), ph))/(2.0*ee*r);
-      const Real gr = (RochePotS3(p, dlt, rspin, r*(1.0 + ee), sth, ph) -
-                       RochePotS3(p, dlt, rspin, r*(1.0 - ee), sth, ph))/(2.0*ee*r);
-      const Real gp = (RochePotS3(p, dlt, rspin, r, sth, ph + ee) -
-                       RochePotS3(p, dlt, rspin, r, sth, ph - ee))
-                      /(2.0*ee*r*sth);
-      // g_col at psi = 0 (linear in the column's psi)
-      const size_t n = std::upper_bound(cpsi.begin(), cpsi.end(), 0.0) - cpsi.begin();
-      Real gc = gcolv.back();
-      if (n == 0) {
-        gc = gcolv.front();
-      } else if (n < cpsi.size()) {
-        const Real x = (0.0 - cpsi[n-1])/(cpsi[n] - cpsi[n-1]);
-        gc = (1.0 - x)*gcolv[n-1] + x*gcolv[n];
-      }
-      vzrat = std::sqrt(gt*gt + gr*gr + gp*gp)/gc;
-      return vzrat;
-    };
-    auto vzfac = [&](const Real r, const Real th, const Real ph, const Real psi) {
-      (void) r;
-      if (!icvz) return static_cast<Real>(1.0);
-      const Real w = (psi <= 0.0) ? 1.0 : std::max(0.0, 1.0 - psi/vzdep);
-      if (!(w > 0.0)) return static_cast<Real>(1.0);
-      const Real f = std::pow(vzray(th, ph), 0.25*w);
-      vzmin = std::min(vzmin, f);
-      vzmax = std::max(vzmax, f);
-      return f;
-    };
-    for (int m=0; m<nmb; ++m) {
-      for (int k=0; k<n3; ++k) {
-        for (int i=0; i<n1; ++i) {
-          const Real psi = phis - PhiWB(p, dlt, rtop, rspin, phtop, hx1(m,i), hx3(m,k));
-          Real lt, lr;
-          ColumnAt(cpsi, clt, clr, psi, lt, lr);
-          ht(m,k,i) = std::exp(lt)/tk;
-          if (icvz) ht(m,k,i) *= vzfac(hx1(m,i), 0.5*M_PI, hx3(m,k), psi);
-        }
-      }
-    }
-    Kokkos::deep_copy(tcol_, ht);
-    if (p3_) {
-      // accretor-3d-1017: T(psi) of the column on the 3-D equipotentials
-      Kokkos::realloc(tcol4_, nmb, n3, n2, n1);
-      auto ht4 = Kokkos::create_mirror_view(tcol4_);
-      auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
-      for (int m=0; m<nmb; ++m) {
-        for (int k=0; k<n3; ++k) {
-          for (int j=0; j<n2; ++j) {
-            const Real st = std::sin(hx2(m,j));
-            for (int i=0; i<n1; ++i) {
-              const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, hx1(m,i), st,
-                                             hx3(m,k));
-              Real lt, lr;
-              ColumnAt(cpsi, clt, clr, psi, lt, lr);
-              ht4(m,k,j,i) = std::exp(lt)/tk;
-              if (icvz) ht4(m,k,j,i) *= vzfac(hx1(m,i), hx2(m,j), hx3(m,k), psi);
-            }
-          }
-        }
-      }
-      Kokkos::deep_copy(tcol4_, ht4);
-    }
-    if (icvz && root) {
-      std::printf("ry_per_accretor: env_ic_vz: von Zeipel IC T x (g/g_col)^(w/4), taper depth "
-                  "%.4g (psi), factor %.5f .. %.5f (rank 0)\n", vzdep, vzmin, vzmax);
-    }
+    if (p3_) Kokkos::realloc(tcol4_, nmb, n3, n2, n1);
+    EnvTcolColumn(pmbp, racc, cpsi, clt, clr, crq, icvz, vzdep, true);
+    spr_icvz_ = icvz; spr_vzdep_ = vzdep;
+    if (spr_on_) {spr_cpsi_ = cpsi; spr_clt_ = clt; spr_clr_ = clr; spr_crq_ = crq;}
     if (rad_) RadSetup(pin, pmbp, cpsi, clt, clr, crq, cfl);
   }
   // the measuring x1 face in each MeshBlock (or -1): r = R_acc exactly (default), or,
@@ -4444,6 +4622,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // phi = 90 deg, i.e. at the same depth below the photosphere at every phi
   {
     const Real wdep = pin->GetOrAddReal("problem", "env_wb_depth", 0.0);
+    spr_wdep_ = wdep;              // accspin-1028 (RySpinRefresh redoes wb_phimax)
     if (wdep > 0.0) {
       const Real rw = racc - wdep;
       phd->wb_phimax = RochePot(p, rw, 0.5*M_PI) - dlt*SQR(fmin(rw, rspin));
@@ -4565,6 +4744,49 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! accspin-1028: every array that depends on the spin (env_dlt_, env_phis_, env_phtop_),
+//! recomputed for the current values (the same functions EnvSetup/RadSetup use):
+//!   EnvSpinGrav: gr_/gr4_ (-d(Phi - Phi_wb)/dr, the x1 force the WB pair does not carry),
+//!     cref2_/cref24_ (relaxation target / inside-envelope test), gpl_/gpl4_;
+//!   EnvTcolColumn: tcol_/tcol4_ (column T(psi), von Zeipel factor with env_ic_vz);
+//!   RadSpinArrays: phicc_wb + phi_wb_x1f (Phi_eff of the hydro x1 WB pair; these replace
+//!     the plain Phi_wb pair EnvSetup writes, so that pair is not redone), gpl_/gpl4_
+//!     (Phi_eff plain gravity above the WB region), a_ref (pm1->arad_ref) and the theta-wall
+//!     flux fx2lo_/fx2hi_ (+ fx2leak_);
+//!   hydro wb_phimax (env_wb_depth).
+//! Scalars read at call time (RyPerBCEnv ghosts, the floor sponge's spin, the Coriolis /
+//! potential arrays phicc0/phi0, gt4_, gp4_, rhoamb4_) need nothing: the true potential does
+//! not depend on the spin.
+void RySpinRefresh(MeshBlockPack *pmbp) {
+  EnvSpinGrav(pmbp, spr_racc_, spr_rhoamb_, spr_eqtop_);
+  EnvTcolColumn(pmbp, spr_racc_, spr_cpsi_, spr_clt_, spr_clr_, spr_crq_, spr_icvz_,
+                spr_vzdep_, false);
+  (void) RadSpinArrays(pmbp, spr_crq_, false);
+  if (spr_wdep_ > 0.0) {
+    auto *phd = pmbp->phydro;
+    const Real rw = spr_racc_ - spr_wdep_;
+    phd->wb_phimax = RochePot(rp_, rw, 0.5*M_PI) - env_dlt_*SQR(fmin(rw, env_rspin_));
+    phd->wb_phimax += RadColAt(rcol_g_, env_phis_ - phd->wb_phimax);
+  }
+  spr_slast_ = spin_;
+}
+
+//! accspin-1028: the spin scalars to s; the arrays when s moved by >= spin_ramp_ds since the
+//! last refresh, or reached the target.  Reports every 0.1 in s and the end of the ramp.
+void RySpinSet(MeshBlockPack *pmbp, const Real s) {
+  RySpinScalars(s);
+  const bool fin = (s == spr_stgt_ && spr_slast_ != spr_stgt_);
+  if (std::fabs(s - spr_slast_) >= spr_ds_ || fin) RySpinRefresh(pmbp);
+  const Real b = std::floor((s - 1.0)/0.1 + 1.0e-9);
+  if (global_variable::my_rank == 0 && (b > spr_pr_ || fin)) {
+    std::printf("ry_per_accretor: spin ramp: s = %.6f t = %.8g%s\n", s, pmbp->pmesh->time,
+                fin ? " (target reached)" : "");
+    std::fflush(stdout);
+  }
+  if (b > spr_pr_) spr_pr_ = b;
 }
 
 //----------------------------------------------------------------------------------------
@@ -4868,6 +5090,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real tdon = pin->GetOrAddReal("problem", "t_don", 6250.0);    // K
   const Real mudon = pin->GetOrAddReal("problem", "mu_don", 1.27);
   spin_ = pin->GetOrAddReal("problem", "spin", 1.0);   // Omega_* / Omega_orb
+  // accspin-1028: the spin ramp (see spr_on_; keys read only when problem/spin_ramp_t is named)
+  spr_on_ = pin->DoesParameterExist("problem", "spin_ramp_t") &&
+            pin->GetReal("problem", "spin_ramp_t") > 0.0;
+  if (spr_on_) {
+    if (!env_) fatal("problem/spin_ramp_t needs inner = envelope");
+    spr_tau_ = pin->GetReal("problem", "spin_ramp_t");
+    spr_t0_ = pin->GetOrAddReal("problem", "spin_ramp_t0", 0.0);
+    spr_ds_ = pin->GetOrAddReal("problem", "spin_ramp_ds", 0.002);
+    spr_stgt_ = spin_;
+    if (!(spr_ds_ > 0.0)) fatal("problem/spin_ramp_ds must be > 0");
+  }
   std::string slip = pin->GetOrAddString("problem", "inner_slip", "noslip");
   noslip_ = (slip.compare("noslip") == 0);
   if (!noslip_ && slip.compare("free") != 0) fatal("inner_slip must be noslip | free");
@@ -5381,6 +5614,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // which a failed attempt never reaches; rbath_, tcol_, rhoamb_, cref2_, gpl_ are set
   // at setup only.
   dtretry::RegisterValue("ry_stage_ctr", &stage_ctr_);
+  if (spr_on_) dtretry::RegisterValue("ry_spr_slast", &spr_slast_);   // accspin-1028
   erinj_ = 0.0;
   dtretry::RegisterValue("ry_erinj", &erinj_);
   hold_bk_ = 0.0;
