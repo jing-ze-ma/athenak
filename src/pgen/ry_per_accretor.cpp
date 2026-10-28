@@ -413,6 +413,14 @@ Real thsp_w_ = 0.0, thsp_tau_ = 0.0;   // theta sponge width (rad), time (code)
 // star's uniform spin (v_phi = (spin - 1) Omega r sin th below r_spin, v_r = v_th = 0) instead of
 // 0; a buffer against the closed-wall jets of a non-synchronous star (accspin static tests)
 bool thsp_env_ = false;
+// accspin-1027: problem/env_sponge_spin = true (read only when named, default false = bitwise
+// unchanged): the FLOOR sponge (rho < env_sponge_rho rho_amb outside the envelope) relaxes the
+// velocity to the star's uniform spin below r_spin (v_phi = (spin - 1) Omega r sin th; 0 above)
+// instead of to rest, and env_v_floor_max caps the deviation from it.  The default (to rest, cap
+// on |v|) drags the thin edge of a non-synchronous star's ~200 km/s atmosphere to rest within
+// t_sponge: a momentum sink in a shear layer that set off odd-even |v_phi| -> 1000 km/s cells at
+// the tidal-bulge top (accspin wall tests A/B, t ~0.09).
+bool env_sp_spin_ = false;
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
 DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
 // <rad_m1>/implicit_bc_x2min|max = flux (phys_3d): the imposed equilibrium lateral flux at the
@@ -1869,7 +1877,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   auto c2r4 = cref24_, ramb4 = rhoamb4_, tcol4 = tcol4_;
   auto &x2v = pmbp->pcoord->x2v;
   const Real thsw = thsp_w_, thtau = thsp_tau_;
-  const bool thse = thsp_env_;
+  const bool thse = thsp_env_, fspin = env_sp_spin_;
   const Real vspn = (spin_ - 1.0)*rp_.omega, rspn = env_rspin_;
   const Real th0 = pm->mesh_size.x2min, th1 = pm->mesh_size.x2max;
   const Real gm1 = ph->peos->eos_data.gamma - 1.0;
@@ -2020,7 +2028,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     // frame velocity decays at 1/t_sponge and is capped at env_v_floor_max; the kinetic
     // energy removed leaves the total energy (no heating of the floor gas)
     const Real du = u0(m,IDN,k,j,i);
-    if (!inside && d < fsp*rfl && du > 0.0) {
+    if (!inside && d < fsp*rfl && du > 0.0 && !fspin) {
       const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
       const Real v = sqrt(m1*m1 + m2*m2 + m3*m3)/du;
       Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
@@ -2029,6 +2037,18 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IM2,k,j,i) = f*m2;
       u0(m,IM3,k,j,i) = f*m3;
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/du;
+    } else if (!inside && d < fsp*rfl && du > 0.0) {   // env_sponge_spin: relax to the spin
+      const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+      const Real m3t = (x1v(m,i) < rspn) ? du*vspn*x1v(m,i)*sin(x2v(m,j)) : 0.0;
+      const Real e3 = m3 - m3t;
+      const Real v = sqrt(m1*m1 + m2*m2 + e3*e3)/du;
+      Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
+      if (v*f > vcap) f = vcap/v;
+      const Real n3 = m3t + f*e3;
+      u0(m,IM1,k,j,i) = f*m1;
+      u0(m,IM2,k,j,i) = f*m2;
+      u0(m,IM3,k,j,i) = n3;
+      u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/du;
     }
     // accretor-3d-1017: theta sponge (problem/theta_sponge_deg > 0): outside the envelope,
     // within the layer next to each theta wall, the rotating-frame velocity decays at a rate
@@ -5034,6 +5054,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (thout_ && !u2b) fatal("theta_bc = outflow | hse needs mesh/ix2_bc = ox2_bc = user");
       if (!thout_ && u2) fatal("mesh ix2_bc/ox2_bc = user needs problem/theta_bc = outflow | hse");
     }
+    env_sp_spin_ = pin->DoesParameterExist("problem", "env_sponge_spin") &&
+                   pin->GetBoolean("problem", "env_sponge_spin");
     thsp_env_ = pin->DoesParameterExist("problem", "theta_sponge_env") &&
                 pin->GetBoolean("problem", "theta_sponge_env");
     if (pin->DoesParameterExist("problem", "theta_sponge_deg")) {
