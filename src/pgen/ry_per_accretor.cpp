@@ -446,6 +446,18 @@ Real spr_vzdep_ = 0.0, spr_rhoamb_ = 0.0;
 // the TARGET-spin values (RadSetup's bottom-flux check; = the current ones without a ramp)
 Real spr_dlt_t_ = 0.0, spr_phis_t_ = 0.0, spr_phtop_t_ = 1.0e300;
 Real spr_xin_ = 0.0;           // min(r_in, r_top, r_spin): the spin term's radius at r_in, phi 90
+// ramp v2 (coordinator 10-28): the column is BLENDED with the ramp weight w = (s - 1)/(s_tgt - 1)
+// = R(x): Q(psi) = (1 - w) Q0(psi) + w Q1(psi) for ln T, ln rho, r_eq, F and G (each column's
+// own G, from its own kappa_t), Q0 = problem/spin_ramp_col0 (the spin-1 star's column), Q1 =
+// env_ic_file (the target's); both on the union of their psi grids (each clamped at its ends
+// as ColumnAt).  psi(r_in, phi 90) = (1 - w) psi_in0 + w psi_in1 (each column's own psi_in at
+// its own spin) through env_phis_; the imposed bottom flux (1 - w) spin_ramp_flux0 + w
+// implicit_flux_x1min (module member iflux_x1min, read at every solve).
+Real spr_w_ = 0.0, spr_phis0_ = 0.0, spr_flux0_ = 0.0, spr_flux1_ = 0.0, spr_fu_ = 1.0;
+std::vector<Real> spr_u_;                       // the union psi grid
+std::vector<Real> spr_a0_[5], spr_a1_[5];       // ln T, ln rho, r_eq, F [cgs], G [code] on spr_u_
+bool spr_gok_ = false;                          // G (index 4) filled (RadSetup)
+std::vector<Real> spr_c0psi_, spr_c0lt_, spr_c0lr_, spr_c0rq_, spr_c0fl_;   // col0 as read
 std::vector<Real> spr_cpsi_, spr_clt_, spr_clr_, spr_crq_;   // the env_ic_file column
 DvceArray4D<Real> spr_aref_;   // the module's a_ref (= pm1->arad_ref, refreshed in place)
 // pgrst-1021 (history only): rbk_ = the radiation leaving through r_out (comoving face flux
@@ -686,16 +698,55 @@ Real SpinRampS(const Real t) {
   return 1.0 + (spr_stgt_ - 1.0)*0.5*(1.0 - std::cos(M_PI*x));
 }
 
-//! accspin-1028: the scalars that follow the spin s: spin_, env_dlt_, env_phis_ (psi zero
-//! point, anchored at r_in: psi(r_in, phi 90) = the target's), env_phtop_ (top cap)
+//! ramp v2: y(psi) of a column (ps ascending) at x, linear, clamped at the ends (ColumnAt)
+Real ColInterp(const std::vector<Real> &ps, const std::vector<Real> &y, const Real x) {
+  const int n = static_cast<int>(ps.size());
+  if (x <= ps[0]) return y[0];
+  if (x >= ps[n-1]) return y[n-1];
+  const int hi = static_cast<int>(std::upper_bound(ps.begin(), ps.end(), x) - ps.begin());
+  const int lo = hi - 1;
+  const Real a = (x - ps[lo])/(ps[hi] - ps[lo]);
+  return (1.0 - a)*y[lo] + a*y[hi];
+}
+std::vector<Real> ColResample(const std::vector<Real> &ps, const std::vector<Real> &y,
+                              const std::vector<Real> &u) {
+  std::vector<Real> r(u.size());
+  for (size_t q=0; q<u.size(); ++q) r[q] = ColInterp(ps, y, u[q]);
+  return r;
+}
+//! ramp v2: the blended column at weight w into spr_cpsi_/clt_/clr_/crq_ and (once G is
+//! known) rcol_psi_, rcol_f_ [code], rcol_g_
+void SpinColBlend(const Real w) {
+  const size_t n = spr_u_.size();
+  spr_cpsi_ = spr_u_;
+  spr_clt_.resize(n); spr_clr_.resize(n); spr_crq_.resize(n);
+  for (size_t q=0; q<n; ++q) {
+    spr_clt_[q] = (1.0 - w)*spr_a0_[0][q] + w*spr_a1_[0][q];
+    spr_clr_[q] = (1.0 - w)*spr_a0_[1][q] + w*spr_a1_[1][q];
+    spr_crq_[q] = (1.0 - w)*spr_a0_[2][q] + w*spr_a1_[2][q];
+  }
+  if (!spr_gok_) return;
+  rcol_psi_ = spr_u_;
+  rcol_f_.resize(n); rcol_g_.resize(n);
+  for (size_t q=0; q<n; ++q) {
+    rcol_f_[q] = ((1.0 - w)*spr_a0_[3][q] + w*spr_a1_[3][q])/spr_fu_;
+    rcol_g_[q] = (1.0 - w)*spr_a0_[4][q] + w*spr_a1_[4][q];
+  }
+}
+
+//! accspin-1028: the scalars that follow the spin s: spin_, env_dlt_, the column weight
+//! spr_w_, env_phis_ (psi zero point), env_phtop_ (top cap)
 void RySpinScalars(const Real s) {
   spin_ = s;
   env_dlt_ = 0.5*(spin_*spin_ - 1.0)*SQR(rp_.omega);
-  // (USER/coordinator 10-28) psi zero point anchored at the INNER boundary: psi(r_in, theta
-  // 90, phi 90) = the target's at every s (Phi_wb there moves by -(dlt - dlt_tgt) x_in^2), so
-  // the deep envelope keeps the target column's state and implicit_flux_x1min = F_col(psi_in)
-  // holds at every s; the photosphere sits on a lower equipotential at s < s_tgt
-  env_phis_ = spr_phis_t_ - (env_dlt_ - spr_dlt_t_)*SQR(spr_xin_);
+  spr_w_ = (s - 1.0)/(spr_stgt_ - 1.0);
+  const Real w = spr_w_;
+  // (coordinator 10-28, ramp v2) the psi zero point is set so that psi(r_in, theta 90, phi 90)
+  // = (1 - w) psi_in0 + w psi_in1, psi_in0 = Phi(R_acc) - Phi(r_in) (the spin-1 star, R_acc
+  // anchor, dlt 0), psi_in1 = the target's; Phi_wb(r_in) = Phi(x_in) - dlt x_in^2 (the Roche
+  // part cancels): w = 0 is the spin-1 star exactly (phis = Phi(R_acc, phi 90)), w = 1 the target
+  const Real x2 = SQR(spr_xin_);
+  env_phis_ = (1.0 - w)*spr_phis0_ + w*(spr_phis_t_ + spr_dlt_t_*x2) - env_dlt_*x2;
   if (spr_eqtop_) env_phtop_ = env_phis_ + spr_ntop_*env_cph2_;
 }
 void RySpinSet(MeshBlockPack *pmbp, const Real s);   // (after EnvSetup)
@@ -3141,6 +3192,46 @@ void RyReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 //! uses Phi_eff too.  gr_ (the -d(Phi - Phi_wb)/dr remainder) is unchanged.  The column
 //! must come from the SAME opacity table: the run recomputes kappa_t, and the imposed
 //! bottom flux must equal the column's F(r_in) (checked to 1e-3).
+//! <rad_m1>: kappa_t along a column (this run's table lookup, device), F [code] and
+//! G(psi) = int a_ref dr_eq (a_ref = kappa_t F/c); split out of RadSetup (ramp v2: also for
+//! the spin-1 column)
+void RadColG(radm1::RadiationM1 *pm1, const Real du, const Real tk, const Real fu,
+             const Real cl, const std::vector<Real> &cps, const std::vector<Real> &clt,
+             const std::vector<Real> &clr, const std::vector<Real> &crq,
+             const std::vector<Real> &cfl, std::vector<Real> &gq, std::vector<Real> &fq) {
+  const int nc = static_cast<int>(cps.size());
+  std::vector<Real> kt(nc);
+  {
+    DvceArray1D<Real> dd("ryper_cd", nc), dt("ryper_ct", nc), dk("ryper_ck", nc);
+    auto hd = Kokkos::create_mirror_view(dd);
+    auto ht = Kokkos::create_mirror_view(dt);
+    for (int n=0; n<nc; ++n) {
+      hd(n) = std::exp(clr[n])/du;
+      ht(n) = std::exp(clt[n])/tk;
+    }
+    Kokkos::deep_copy(dd, hd);
+    Kokkos::deep_copy(dt, ht);
+    radm1::M1OpacTab ot = pm1->otab;
+    par_for("ryper_ckt", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int n) {
+      Real op, oe, of, os;
+      radm1::M1TableOpacities(ot, dd(n), dt(n), op, oe, of, os);
+      dk(n) = of + os;
+    });
+    auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dk);
+    for (int n=0; n<nc; ++n) kt[n] = hk(n);
+  }
+  gq.assign(nc, 0.0);
+  fq.assign(nc, 0.0);
+  std::vector<Real> aref(nc);
+  for (int n=0; n<nc; ++n) {
+    fq[n] = cfl[n]/fu;
+    aref[n] = kt[n]*fq[n]/cl;
+  }
+  for (int n=1; n<nc; ++n) {      // psi ascending = r_eq descending
+    gq[n] = gq[n-1] + 0.5*(aref[n-1] + aref[n])*(crq[n-1] - crq[n]);
+  }
+}
+
 //----------------------------------------------------------------------------------------
 //! <rad_m1>: the spin-dependent arrays of RadSetup for the CURRENT env_dlt_, env_phis_,
 //! env_phtop_ (accspin-1028: split out so that RySpinRefresh can redo them during the spin
@@ -3424,38 +3515,8 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     }
   }
   // ---- kappa_t along the column with this run's lookup (device), a_ref, G(psi)
-  const int nc = static_cast<int>(cpsi.size());
-  std::vector<Real> kt(nc);
-  {
-    DvceArray1D<Real> dd("ryper_cd", nc), dt("ryper_ct", nc), dk("ryper_ck", nc);
-    auto hd = Kokkos::create_mirror_view(dd);
-    auto ht = Kokkos::create_mirror_view(dt);
-    for (int n=0; n<nc; ++n) {
-      hd(n) = std::exp(clr[n])/du;
-      ht(n) = std::exp(clt[n])/tk;
-    }
-    Kokkos::deep_copy(dd, hd);
-    Kokkos::deep_copy(dt, ht);
-    radm1::M1OpacTab ot = pm1->otab;
-    par_for("ryper_ckt", DevExeSpace(), 0, nc - 1, KOKKOS_LAMBDA(const int n) {
-      Real op, oe, of, os;
-      radm1::M1TableOpacities(ot, dd(n), dt(n), op, oe, of, os);
-      dk(n) = of + os;
-    });
-    auto hk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dk);
-    for (int n=0; n<nc; ++n) kt[n] = hk(n);
-  }
   rcol_psi_ = cpsi;
-  rcol_g_.assign(nc, 0.0);
-  rcol_f_.assign(nc, 0.0);
-  std::vector<Real> aref(nc);
-  for (int n=0; n<nc; ++n) {
-    rcol_f_[n] = cfl[n]/fu;
-    aref[n] = kt[n]*rcol_f_[n]/cl;
-  }
-  for (int n=1; n<nc; ++n) {      // psi ascending = r_eq descending
-    rcol_g_[n] = rcol_g_[n-1] + 0.5*(aref[n-1] + aref[n])*(crq[n-1] - crq[n]);
-  }
+  RadColG(pm1, du, tk, fu, cl, cpsi, clt, clr, crq, cfl, rcol_g_, rcol_f_);
   const RocheParams p = rp_;
   const Real rtop = env_rtop_, rspin = env_rspin_;
   // ---- the imposed bottom flux must be the column's F at psi(r_in, phi 90)
@@ -3488,7 +3549,37 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     const Real omg = (std::cos(ms.x2min) - std::cos(ms.x2max))*(ms.x3max - ms.x3min);
     rad_lfac_ = (4.0*M_PI/omg)*fu*lu*lu/3.828e33;
   }
-  const Real amax = RadSpinArrays(pmbp, crq, true);
+  if (spr_on_) {
+    // ramp v2: the spin-1 column's G and F (its own kappa_t), its bottom-flux check at its own
+    // spin (dlt 0, R_acc anchor: psi_in0 = Phi(R_acc) - Phi(r_in), phi 90) against
+    // problem/spin_ramp_flux0, then the blend at the current w
+    std::vector<Real> g0, f0;
+    RadColG(pm1, du, tk, fu, cl, spr_c0psi_, spr_c0lt_, spr_c0lr_, spr_c0rq_, spr_c0fl_, g0,
+            f0);
+    const Real psi_in0 = spr_phis0_ - RochePot(p, std::fmin(r_in, rtop), 0.5*M_PI);
+    spr_flux0_ = pin->GetReal("problem", "spin_ramp_flux0");
+    spr_flux1_ = rad_fin_;
+    const Real fc0 = lbf*ColInterp(spr_c0psi_, f0, psi_in0);
+    if (!(std::fabs(spr_flux0_/fc0 - 1.0) <= 1.0e-3)) {
+      std::ostringstream os;
+      os << "problem/spin_ramp_flux0 = " << spr_flux0_ << " but env_lin_band_factor ("
+         << lbf << ") x the spin-1 column's F(psi_in0 = " << psi_in0 << ") = " << fc0;
+      fatal(os.str());
+    }
+    spr_a0_[4] = ColResample(spr_c0psi_, g0, spr_u_);
+    spr_a1_[4] = ColResample(cpsi, rcol_g_, spr_u_);
+    spr_fu_ = fu;
+    spr_gok_ = true;
+    SpinColBlend(spr_w_);
+    rad_fin_ = (1.0 - spr_w_)*spr_flux0_ + spr_w_*spr_flux1_;
+    pm1->iflux_x1min = rad_fin_;
+    if (root) {
+      std::printf("ry_per_accretor: spin ramp v2: bottom flux (1 - w) %.9g + w %.9g = %.9g "
+                  "(w %.6f); psi_in0 %.6g (spin-1 column F x band %.9g), psi_in1 %.6g\n",
+                  spr_flux0_, spr_flux1_, rad_fin_, spr_w_, psi_in0, fc0, psi_in);
+    }
+  }
+  const Real amax = RadSpinArrays(pmbp, spr_on_ ? spr_crq_ : crq, true);
   if (root) {
     const Real g_in = RadColAt(rcol_g_, psi_in);
     std::printf("ry_per_accretor: <rad_m1> force reference: G(psi) over the column (psi "
@@ -4330,6 +4421,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   spr_dlt_t_ = env_dlt_; spr_phis_t_ = env_phis_; spr_phtop_t_ = env_phtop_;
   spr_rspk_ = rspk; spr_ntop_ = ntop; spr_eqtop_ = eqtop; spr_racc_ = racc;
   spr_rhoamb_ = rho_amb;
+  spr_phis0_ = RochePot(p, racc, 0.5*M_PI);   // ramp v2: the spin-1 star's psi zero point
   env_rspin_ = env_spin_top_ ? fmin(rspk, rtopmax) : fmin(rspk, rtop90);
   // the spin term's cylindrical radius at (r_in, theta 90, phi 90) (Phi_wb's r_top/r_spin caps)
   spr_xin_ = fmin(fmin(pmbp->pmesh->mesh_size.x1min, env_rtop_), env_rspin_);
@@ -4514,69 +4606,96 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     }
   }
   if (gen_ && !icpoly) {
-    const std::string fn = pin->GetString("problem", "env_ic_file");
-    std::ifstream f(fn);
-    if (!f.good()) {
-      std::cout << "### FATAL ERROR in ry_per_accretor: cannot open env_ic_file '" << fn
-                << "'" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    std::string ln;
-    while (std::getline(f, ln)) {
-      if (ln.empty() || ln[0] == '#') continue;
-      std::istringstream is(ln);
-      Real a, b, c;
-      if (!(is >> a >> b >> c)) continue;
-      // <rad_m1>: also r_eq [Rsun] (column 7) and F [erg/cm^2/s] (column 8)
-      Real c4, c5, c6, c7, c8;
-      if (rad_ && !(is >> c4 >> c5 >> c6 >> c7 >> c8)) {
-        std::cout << "### FATAL ERROR in ry_per_accretor: <rad_m1> needs the 8+ column S0 "
-                  << "file (psi T rho P_gas P_rad kappa_R r_eq F ...)" << std::endl;
+    // ramp v2: the reader as a lambda (env_ic_file; spin_ramp_col0)
+    auto readcol = [&](const std::string &fn, std::vector<Real> &cpsi, std::vector<Real> &clt,
+                       std::vector<Real> &clr, std::vector<Real> &crq,
+                       std::vector<Real> &cfl) {
+      std::ifstream f(fn);
+      if (!f.good()) {
+        std::cout << "### FATAL ERROR in ry_per_accretor: cannot open env_ic_file '" << fn
+                  << "'" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      if (!cpsi.empty() && !(a > cpsi.back())) {
-        std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file psi not strictly "
-                  << "ascending at psi = " << a << std::endl;
+      std::string ln;
+      while (std::getline(f, ln)) {
+        if (ln.empty() || ln[0] == '#') continue;
+        std::istringstream is(ln);
+        Real a, b, c;
+        if (!(is >> a >> b >> c)) continue;
+        // <rad_m1>: also r_eq [Rsun] (column 7) and F [erg/cm^2/s] (column 8)
+        Real c4, c5, c6, c7, c8;
+        if (rad_ && !(is >> c4 >> c5 >> c6 >> c7 >> c8)) {
+          std::cout << "### FATAL ERROR in ry_per_accretor: <rad_m1> needs the 8+ column S0 "
+                    << "file (psi T rho P_gas P_rad kappa_R r_eq F ...)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (!cpsi.empty() && !(a > cpsi.back())) {
+          std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file psi not strictly "
+                    << "ascending at psi = " << a << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        cpsi.push_back(a);
+        clt.push_back(std::log(b));
+        clr.push_back(std::log(c));
+        if (rad_) {
+          crq.push_back(c7);
+          cfl.push_back(c8);
+        }
+      }
+      if (cpsi.size() < 2) {
+        std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file has < 2 rows"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      cpsi.push_back(a);
-      clt.push_back(std::log(b));
-      clr.push_back(std::log(c));
-      if (rad_) {
-        crq.push_back(c7);
-        cfl.push_back(c8);
+      // range check: the column inside the EOS table (T and rho, cgs)
+      {
+        const auto &tb = eos.tbl;
+        Real tlo = 1e300, thi = -1e300, rlo = 1e300, rhi = -1e300;
+        for (size_t n=0; n<cpsi.size(); ++n) {
+          tlo = std::min(tlo, clt[n]); thi = std::max(thi, clt[n]);
+          rlo = std::min(rlo, clr[n]); rhi = std::max(rhi, clr[n]);
+        }
+        const Real l10 = std::log(10.0);
+        const bool okt = (tlo/l10 >= tb.ymin) && (thi/l10 <= tb.ymax);
+        const bool okr = (rlo/l10 >= tb.xmin) && (rhi/l10 <= tb.xmax);
+        const Real tak = gen_tamb_*eos.temp_cgs;
+        const bool oka = (std::log10(tak) <= tb.ymax);
+        if (root) {
+          std::printf("ry_per_accretor: env_ic_file %s: %d rows, psi %.5g .. %.5g, log T "
+                      "%.4f .. %.4f, log rho %.4f .. %.4f; EOS table log T %.3f .. %.3f, "
+                      "log rho %.3f .. %.3f: %s\n", fn.c_str(), static_cast<int>(cpsi.size()),
+                      cpsi.front(), cpsi.back(), tlo/l10, thi/l10, rlo/l10, rhi/l10,
+                      tb.ymin, tb.ymax, tb.xmin, tb.xmax,
+                      (okt && okr && oka) ? "inside" : "OUTSIDE");
+        }
+        if (!(okt && okr && oka)) {
+          std::cout << "### FATAL ERROR in ry_per_accretor: the env_ic_file column or T_amb "
+                    << "is outside the EOS table" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       }
-    }
-    if (cpsi.size() < 2) {
-      std::cout << "### FATAL ERROR in ry_per_accretor: env_ic_file has < 2 rows"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // range check: the column inside the EOS table (T and rho, cgs)
-    {
-      const auto &tb = eos.tbl;
-      Real tlo = 1e300, thi = -1e300, rlo = 1e300, rhi = -1e300;
-      for (size_t n=0; n<cpsi.size(); ++n) {
-        tlo = std::min(tlo, clt[n]); thi = std::max(thi, clt[n]);
-        rlo = std::min(rlo, clr[n]); rhi = std::max(rhi, clr[n]);
+    };
+    readcol(pin->GetString("problem", "env_ic_file"), cpsi, clt, clr, crq, cfl);
+    if (spr_on_) {
+      // ramp v2: the spin-1 column and the union grid; ln T, ln rho, r_eq, F of both on it
+      readcol(pin->GetString("problem", "spin_ramp_col0"), spr_c0psi_, spr_c0lt_, spr_c0lr_,
+              spr_c0rq_, spr_c0fl_);
+      spr_u_ = cpsi;
+      spr_u_.insert(spr_u_.end(), spr_c0psi_.begin(), spr_c0psi_.end());
+      std::sort(spr_u_.begin(), spr_u_.end());
+      spr_u_.erase(std::unique(spr_u_.begin(), spr_u_.end()), spr_u_.end());
+      const std::vector<Real> *q0[4] = {&spr_c0lt_, &spr_c0lr_, &spr_c0rq_, &spr_c0fl_};
+      const std::vector<Real> *q1[4] = {&clt, &clr, &crq, &cfl};
+      for (int c=0; c<4; ++c) {
+        spr_a0_[c] = ColResample(spr_c0psi_, *q0[c], spr_u_);
+        spr_a1_[c] = ColResample(cpsi, *q1[c], spr_u_);
       }
-      const Real l10 = std::log(10.0);
-      const bool okt = (tlo/l10 >= tb.ymin) && (thi/l10 <= tb.ymax);
-      const bool okr = (rlo/l10 >= tb.xmin) && (rhi/l10 <= tb.xmax);
-      const Real tak = gen_tamb_*eos.temp_cgs;
-      const bool oka = (std::log10(tak) <= tb.ymax);
+      SpinColBlend(spr_w_);
       if (root) {
-        std::printf("ry_per_accretor: env_ic_file %s: %d rows, psi %.5g .. %.5g, log T "
-                    "%.4f .. %.4f, log rho %.4f .. %.4f; EOS table log T %.3f .. %.3f, "
-                    "log rho %.3f .. %.3f: %s\n", fn.c_str(), static_cast<int>(cpsi.size()),
-                    cpsi.front(), cpsi.back(), tlo/l10, thi/l10, rlo/l10, rhi/l10,
-                    tb.ymin, tb.ymax, tb.xmin, tb.xmax,
-                    (okt && okr && oka) ? "inside" : "OUTSIDE");
-      }
-      if (!(okt && okr && oka)) {
-        std::cout << "### FATAL ERROR in ry_per_accretor: the env_ic_file column or T_amb "
-                  << "is outside the EOS table" << std::endl;
-        std::exit(EXIT_FAILURE);
+        std::printf("ry_per_accretor: spin ramp v2: column blend w = %.6f of %s (spin 1) and the "
+                    "target column on %d union psi points\n", spr_w_,
+                    pin->GetString("problem", "spin_ramp_col0").c_str(),
+                    static_cast<int>(spr_u_.size()));
       }
     }
     Kokkos::realloc(tcol_, nmb, n3, n1);
@@ -4592,9 +4711,12 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       vzdep = pin->GetOrAddReal("problem", "env_ic_vz_depth", 3.0)*env_cph2_;
     }
     if (p3_) Kokkos::realloc(tcol4_, nmb, n3, n2, n1);
-    EnvTcolColumn(pmbp, racc, cpsi, clt, clr, crq, icvz, vzdep, true);
+    if (spr_on_) {
+      EnvTcolColumn(pmbp, racc, spr_cpsi_, spr_clt_, spr_clr_, spr_crq_, icvz, vzdep, true);
+    } else {
+      EnvTcolColumn(pmbp, racc, cpsi, clt, clr, crq, icvz, vzdep, true);
+    }
     spr_icvz_ = icvz; spr_vzdep_ = vzdep;
-    if (spr_on_) {spr_cpsi_ = cpsi; spr_clt_ = clt; spr_clr_ = clr; spr_crq_ = crq;}
     if (rad_) RadSetup(pin, pmbp, cpsi, clt, clr, crq, cfl);
   }
   // the measuring x1 face in each MeshBlock (or -1): r = R_acc exactly (default), or,
@@ -4682,7 +4804,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   // Rotation (spin - 1) Omega r
   // (rotating frame) in the supported part (r < r_top).
   if (gen_) {
-    EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
+    if (spr_on_) {   // ramp v2: the blended column
+      EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, spr_cpsi_, spr_clt_, spr_clr_);
+    } else {
+      EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
+    }
     if (rad_) RadIC(pin, pmbp);
     return;
   }
@@ -4768,6 +4894,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
 //! potential arrays phicc0/phi0, gt4_, gp4_, rhoamb4_) need nothing: the true potential does
 //! not depend on the spin.
 void RySpinRefresh(MeshBlockPack *pmbp) {
+  SpinColBlend(spr_w_);          // ramp v2: the column at this s (before everything below)
   EnvSpinGrav(pmbp, spr_racc_, spr_rhoamb_, spr_eqtop_);
   EnvTcolColumn(pmbp, spr_racc_, spr_cpsi_, spr_clt_, spr_clr_, spr_crq_, spr_icvz_,
                 spr_vzdep_, false);
@@ -4785,6 +4912,9 @@ void RySpinRefresh(MeshBlockPack *pmbp) {
 //! last refresh, or reached the target.  Reports every 0.1 in s and the end of the ramp.
 void RySpinSet(MeshBlockPack *pmbp, const Real s) {
   RySpinScalars(s);
+  // ramp v2: the imposed bottom flux, every step (a module member read at every solve)
+  rad_fin_ = (1.0 - spr_w_)*spr_flux0_ + spr_w_*spr_flux1_;
+  pmbp->pradm1->iflux_x1min = rad_fin_;
   const bool fin = (s == spr_stgt_ && spr_slast_ != spr_stgt_);
   if (std::fabs(s - spr_slast_) >= spr_ds_ || fin) RySpinRefresh(pmbp);
   const Real b = std::floor((s - 1.0)/0.1 + 1.0e-9);
@@ -5107,6 +5237,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     spr_ds_ = pin->GetOrAddReal("problem", "spin_ramp_ds", 0.002);
     spr_stgt_ = spin_;
     if (!(spr_ds_ > 0.0)) fatal("problem/spin_ramp_ds must be > 0");
+    // ramp v2: the spin-1 column and its bottom flux (required)
+    if (!pin->DoesParameterExist("problem", "spin_ramp_col0") ||
+        !pin->DoesParameterExist("problem", "spin_ramp_flux0")) {
+      fatal("problem/spin_ramp_t needs problem/spin_ramp_col0 (the spin-1 column file) and "
+            "problem/spin_ramp_flux0 (its <rad_m1> bottom flux, code)");
+    }
+    if (spr_stgt_ == 1.0) fatal("problem/spin_ramp_t needs problem/spin != 1");
   }
   std::string slip = pin->GetOrAddString("problem", "inner_slip", "noslip");
   noslip_ = (slip.compare("noslip") == 0);
