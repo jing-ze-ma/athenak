@@ -10175,13 +10175,16 @@ int RadiationM1::ImplicitNCDump(int it, int tag, bool gasx, int igb, int igr, in
   auto x1f = pmy_pack->pcoord->xx1f;
   auto x1v = pmy_pack->pcoord->x1v;
   auto mbsize = pmy_pack->pmb->mb_size;
+  // fullsph-1027 S1: a stretched theta grid takes the cell's own theta width
+  auto x2f_ = pmy_pack->pcoord->xx2f;
+  const bool th_str = pmy_pack->pmesh->use_grid_stretch_theta;
   const Real cl = c_light, dt = dt_sub;
   Kokkos::parallel_for("m1_impl_ncd", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
   KOKKOS_LAMBDA(const int) {
     const int m = lm, k = lk, j = lj, i = li;
     const Real r = x1v(m,i);
     const Real dr = x1f(m,i+1) - x1f(m,i);
-    const Real rdth = r*mbsize.d_view(m).dx2;
+    const Real rdth = th_str ? r*(x2f_(m,j+1) - x2f_(m,j)) : r*mbsize.d_view(m).dx2;
     const Real e = iw_(m,M1_IW_EP,k,j,i);
     const Real f1 = iw_(m,M1_IW_F1,k,j,i), f2 = iw_(m,M1_IW_F2,k,j,i);
     const Real f3 = iw_(m,M1_IW_F3,k,j,i);

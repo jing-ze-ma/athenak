@@ -149,6 +149,14 @@ void RadiationM1::VetLatInit() {
   if (!sph_geom) {
     VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
   }
+  // fullsph-1027 S1: rad_m1 runs on the full sphere (polar x2 faces) with vet_col only.
+  // The SC reads of vet_col_lat / vet_gd wrap theta periodically at block level, their
+  // band formula has 1/sin(theta_min) and no pole partner map: stage S2 (latitude cap).
+  if (pm->use_polar_boundary) {
+    VlatFatal(std::string(vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)") +
+              " on the FULL sphere (mesh/use_polar_boundary) is stage S2 (not "
+              "implemented): use closure = vet_col without vet_gd / vet_col_lat");
+  }
   // vgd-latuni-1017 (USER 10-17): the SC upwind interpolation of vet_col_lat / vet_gd is
   // bilinear in (theta, phi) INDEX space, which is exact only for UNIFORM lateral
   // spacing (a radial stretch is fine: the sweep uses the physical radii).  The only

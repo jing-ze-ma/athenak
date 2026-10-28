@@ -104,19 +104,33 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cs_ && transport != M1_TRANSPORT_IMPLICIT) {
       why += " mesh/use_cubed_sphere with transport != implicit";
     }
+    // fullsph-1027 S1: the FULL sphere (mesh/use_polar_boundary, ix2_bc = ox2_bc = polar)
+    // and the theta stretch (mesh/use_grid_stretch_theta, e.g. mesh/theta_plateau) are
+    // allowed for transport = implicit on sp.  Every implicit kernel takes a polar face as
+    // a PHYSICAL face (flag != block, periodic) and the pole face has area 0
+    // (coordinates.cpp), so "pole = reflect at a zero-area face" is exact for the E/F rows;
+    // the transverse geometry reads Coordinates (areas, volumes, dxface).  The remaining
+    // restrictions (implicit_bc_x2 = auto | reflect at a polar face, no vet_sc / tau /
+    // vet_col_lat / vet_gd) are checked in SphericalS1Check and VetLatInit.
+    const bool full_ok = sp_ && (transport == M1_TRANSPORT_IMPLICIT);
     if (pm_->use_polar_boundary) {
-      why += " mesh/use_polar_boundary (the poles are not supported yet: run a wedge "
-             "whose theta range stays clear of theta = 0 and pi)";
+      if (!full_ok) {
+        why += " mesh/use_polar_boundary (the full sphere needs transport = implicit on "
+               "spherical polar)";
+      }
     } else if (sp_ && (pm_->mesh_size.x2min <= 1.0e-10 ||
                        pm_->mesh_size.x2max >= M_PI - 1.0e-10)) {
-      why += " a theta range that reaches a pole (the poles are not supported yet: run "
-             "a wedge whose theta range stays clear of theta = 0 and pi)";
+      why += " a theta range that reaches a pole without mesh/use_polar_boundary (use "
+             "ix2_bc = ox2_bc = polar with use_polar_boundary, or a wedge clear of the "
+             "poles)";
     }
     if (pm_->use_grid_stretch_r && !sp_ && !cs_) {why += " mesh/use_grid_stretch_r";}
     if (pm_->use_grid_stretch_r_poly && !sp_ && !cs_) {
       why += " mesh/use_grid_stretch_r_poly";
     }
-    if (pm_->use_grid_stretch_theta) {why += " mesh/use_grid_stretch_theta";}
+    if (pm_->use_grid_stretch_theta && !full_ok) {
+      why += " mesh/use_grid_stretch_theta (needs transport = implicit on spherical polar)";
+    }
     if (ppack->pcoord != nullptr &&
         (ppack->pcoord->is_special_relativistic ||
          ppack->pcoord->is_general_relativistic ||
@@ -128,7 +142,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl << "<rad_m1> (explicit and implicit transport) supports a "
         << "uniform Cartesian mesh and, for the implicit solve only (stages S1, S2: "
         << "closure eddington | m1 | minerbo | kershaw), "
-        << "a spherical-polar wedge clear of the poles and (stage CS0: closure "
+        << "a spherical-polar wedge or (fullsph-1027 S1) the full sphere and (stage CS0: closure "
         << "eddington only) the cubed sphere; this input sets:" << why << "."
         << std::endl
         << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "
