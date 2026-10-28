@@ -3439,6 +3439,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
     }
 
     if (pmbp->pmhd != nullptr) {
+      // stress-free wall on a Cartesian mesh (wallsf-1028): inner ghost B_t odd with the
+      // face-area ratio (the r^2 weights below are spherical; legacy stays bitwise)
+      const bool cart_sf_ = pmbp->pmhd->wall_stress_free && !pm->use_spherical_polar &&
+                            !pm->use_cubed_sphere;
       par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
       KOKKOS_LAMBDA(int m, int k, int j) {
           if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
@@ -3451,6 +3455,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
               Real fac2p = fac2;
               Real fac3 = -area3(m,k,j,iin)/area3(m,k,j,iex);
               Real fac3p = -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
+              if (cart_sf_) {  // r^2 weights mean nothing on a Cartesian x1: B_t odd
+                fac2 = -area2(m,k,j,iin)/area2(m,k,j,iex);
+                fac2p = -area2(m,k,j+1,iin)/area2(m,k,j+1,iex);
+              }
               b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,iin)*fac2;
               if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,iin)*fac2p;}
               b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,iin)*fac3;

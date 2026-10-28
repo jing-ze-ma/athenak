@@ -344,12 +344,16 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall.  Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
-    if (use_spherical_polar || str_r1_) {
+    // A Cartesian mesh takes the user-wall mirror only under the stress-free wall (the
+    // legacy closed wall was never applied there; reflect is untouched on Cartesian).
+    if (use_spherical_polar || str_r1_ || wall_sf_) {
+      const bool curv_ = use_spherical_polar || str_r1_;
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         // (user inner boundary under wall_closed_ix1 too -- see hydro_fluxes.cpp)
         const BoundaryFlag bix1 = mb_bcs.d_view(m,BoundaryFace::inner_x1);
-        if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
+        if ((curv_ && bix1 == BoundaryFlag::reflect) ||
+            (wall_ix1_ && bix1 == BoundaryFlag::user)) {
           for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
           wl(IVX,is) = -wr(IVX,is);
           bl(1,is) = br(1,is);  bl(2,is) = br(2,is);
@@ -362,7 +366,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             }
           }
         }
-        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
+        if (curv_ && mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
           for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           br(1,ie+1) = bl(1,ie+1);  br(2,ie+1) = bl(2,ie+1);
