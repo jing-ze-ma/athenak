@@ -247,6 +247,14 @@ Real env_camb2_ = 9.0e4;       // hot hydrostatic ambient P/rho (problem/env_cs_
 Real env_ramb_ = 1.0e-6;       // ambient density at r = R_acc (problem/env_amb_rho)
 Real env_cstr2_ = 240.25;      // stream (far dense gas) P/rho, problem/env_cs_stream^2
 Real env_rspin_ = 1.0e30;      // spin term / rotation ends at this radius (env_r_spin)
+// accspin-1027: problem/env_spin_to_top = true (env_top_mode = equipotential only; read only when
+// named, default false = bitwise unchanged): the spin term and the IC rotation reach the envelope
+// top at EVERY phi (r_spin = min(env_r_spin, max_phi r_top), the top equipotential found with the
+// uncapped spin term).  Default: r_spin <= the phi = 90 r_top, fine for spin 1, but a fast,
+// non-synchronous star's tidal bulge (spin 2.74: top 9.24 at phi 90, ~9.75 toward the donor) then
+// holds dense gas AT REST without the spin term under a 200 km/s surface: a shear layer in the
+// bulge (accspin static tests: jets from t 0.085).
+bool env_spin_top_ = false;
 Real env_rhot_ = 1.0e30;       // dense gas outside the star relaxes to c_ph^2 below this
                                // radius, to env_cs_stream^2 above (problem/env_r_hot)
 Real env_kamb_ = 3.0;          // gas denser than env_amb_k x the hydrostatic ambient is
@@ -3958,12 +3966,19 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
               << "equipotential" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  env_spin_top_ = pin->DoesParameterExist("problem", "env_spin_to_top") &&
+                  pin->GetBoolean("problem", "env_spin_to_top");
+  if (env_spin_top_ && !eqtop) {
+    std::cout << "### FATAL ERROR in ry_per_accretor: problem/env_spin_to_top needs "
+              << "env_top_mode = equipotential" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const Real rtop90 = env_rtop_;
   Real rtopmax = rtop90;           // largest radius of the envelope top over phi
   if (eqtop) {
     env_phtop_ = env_phis_ + ntop*env_cph2_;
     env_rtop_ = pmbp->pmesh->mesh_size.x1max;
-    const Real rsp = fmin(rspk, rtop90);
+    const Real rsp = env_spin_top_ ? rspk : fmin(rspk, rtop90);
     for (int q=0; q<=360; ++q) {           // phi = 0 .. 2 pi, 1 deg steps
       const Real ph = q*M_PI/180.0;
       for (Real r=racc; r<env_rtop_; r+=1.0e-4*racc) {
@@ -3981,7 +3996,11 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     env_rtop_ = fmin(env_rtop_, pin->GetReal("problem", "env_r_top_max"));
   }
   const Real rtop = env_rtop_, phtop = env_phtop_;
-  env_rspin_ = fmin(rspk, rtop90);
+  env_rspin_ = env_spin_top_ ? fmin(rspk, rtopmax) : fmin(rspk, rtop90);
+  if (env_spin_top_ && root) {
+    std::printf("ry_per_accretor: env_spin_to_top: spin term + IC rotation up to r_spin %.6f "
+                "(max over phi of the top equipotential; phi-90 r_top %.6f)\n", env_rspin_, rtop90);
+  }
   const Real rspin = env_rspin_;
   // the stream's own temperature (default c_ph: unchanged runs) and the radius below
   // which dense gas outside the star belongs to the (hot) stellar atmosphere
