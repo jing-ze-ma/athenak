@@ -445,6 +445,7 @@ bool spr_eqtop_ = false, spr_icvz_ = false;
 Real spr_vzdep_ = 0.0, spr_rhoamb_ = 0.0;
 // the TARGET-spin values (RadSetup's bottom-flux check; = the current ones without a ramp)
 Real spr_dlt_t_ = 0.0, spr_phis_t_ = 0.0, spr_phtop_t_ = 1.0e300;
+Real spr_xin_ = 0.0;           // min(r_in, r_top, r_spin): the spin term's radius at r_in, phi 90
 std::vector<Real> spr_cpsi_, spr_clt_, spr_clr_, spr_crq_;   // the env_ic_file column
 DvceArray4D<Real> spr_aref_;   // the module's a_ref (= pm1->arad_ref, refreshed in place)
 // pgrst-1021 (history only): rbk_ = the radiation leaving through r_out (comoving face flux
@@ -685,12 +686,16 @@ Real SpinRampS(const Real t) {
   return 1.0 + (spr_stgt_ - 1.0)*0.5*(1.0 - std::cos(M_PI*x));
 }
 
-//! accspin-1028: the scalars that follow the spin s (same formulas as EnvSetup):
-//! spin_, env_dlt_, env_phis_ (psi zero point: R_acc at phi 90), env_phtop_ (top cap)
+//! accspin-1028: the scalars that follow the spin s: spin_, env_dlt_, env_phis_ (psi zero
+//! point, anchored at r_in: psi(r_in, phi 90) = the target's), env_phtop_ (top cap)
 void RySpinScalars(const Real s) {
   spin_ = s;
   env_dlt_ = 0.5*(spin_*spin_ - 1.0)*SQR(rp_.omega);
-  env_phis_ = RochePot(rp_, spr_racc_, 0.5*M_PI) - env_dlt_*SQR(fmin(spr_racc_, spr_rspk_));
+  // (USER/coordinator 10-28) psi zero point anchored at the INNER boundary: psi(r_in, theta
+  // 90, phi 90) = the target's at every s (Phi_wb there moves by -(dlt - dlt_tgt) x_in^2), so
+  // the deep envelope keeps the target column's state and implicit_flux_x1min = F_col(psi_in)
+  // holds at every s; the photosphere sits on a lower equipotential at s < s_tgt
+  env_phis_ = spr_phis_t_ - (env_dlt_ - spr_dlt_t_)*SQR(spr_xin_);
   if (spr_eqtop_) env_phtop_ = env_phis_ + spr_ntop_*env_cph2_;
 }
 void RySpinSet(MeshBlockPack *pmbp, const Real s);   // (after EnvSetup)
@@ -4325,6 +4330,9 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
   spr_dlt_t_ = env_dlt_; spr_phis_t_ = env_phis_; spr_phtop_t_ = env_phtop_;
   spr_rspk_ = rspk; spr_ntop_ = ntop; spr_eqtop_ = eqtop; spr_racc_ = racc;
   spr_rhoamb_ = rho_amb;
+  env_rspin_ = env_spin_top_ ? fmin(rspk, rtopmax) : fmin(rspk, rtop90);
+  // the spin term's cylindrical radius at (r_in, theta 90, phi 90) (Phi_wb's r_top/r_spin caps)
+  spr_xin_ = fmin(fmin(pmbp->pmesh->mesh_size.x1min, env_rtop_), env_rspin_);
   if (spr_on_) {
     if (!(p3_ && rad_ && gen_)) {
       std::cout << "### FATAL ERROR in ry_per_accretor: problem/spin_ramp_t needs phys_3d, "
@@ -4343,7 +4351,6 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     }
   }
   const Real rtop = env_rtop_, phtop = env_phtop_;
-  env_rspin_ = env_spin_top_ ? fmin(rspk, rtopmax) : fmin(rspk, rtop90);
   if (env_spin_top_ && root) {
     std::printf("ry_per_accretor: env_spin_to_top: spin term + IC rotation up to r_spin %.6f "
                 "(max over phi of the top equipotential; phi-90 r_top %.6f)\n", env_rspin_, rtop90);
