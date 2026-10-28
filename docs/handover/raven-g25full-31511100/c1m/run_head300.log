@@ -1,0 +1,300 @@
+
+   __    ____  ____  ____  _____
+  /__\  (  _ \( ___)(  _ \(  _  )
+ /(__)\  )   / )__)  )___/ )(_)(
+(__)(__)(_)\_)(____)(__)  (_____)
+
+
+PINNING: We are not using OpenMP.
+
+
+-------------------------------------------------------------------------------------------------------------------------
+AvailMem:	 Largest =  486248.13 Mb (on task= 144), Smallest =  484590.93 Mb (on task= 248), Average =  485573.60 Mb
+Total Mem:	 Largest =  514998.45 Mb (on task= 144), Smallest =  514998.40 Mb (on task= 216), Average =  514998.42 Mb
+Committed_AS:	 Largest =   30407.47 Mb (on task= 248), Smallest =   28750.31 Mb (on task= 144), Average =   29424.83 Mb
+SwapTotal:	 Largest =       0.00 Mb (on task=   0), Smallest =       0.00 Mb (on task=   0), Average =       0.00 Mb
+SwapFree:	 Largest =       0.00 Mb (on task=   0), Smallest =       0.00 Mb (on task=   0), Average =       0.00 Mb
+AllocMem:	 Largest =   30407.47 Mb (on task= 248), Smallest =   28750.31 Mb (on task= 144), Average =   29424.83 Mb
+-------------------------------------------------------------------------------------------------------------------------
+Task=248 has the maximum commited memory and is host: ravg1200
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This is Arepo, version Arepo 0.1 (git: e93504ccef7b19abcc9af285a4fb20423665d4f2).
+
+Running with 288 MPI tasks.
+
+Apparently we're using 4 compute nodes (we have a minimum of 72 MPI tasks per node, and a maximum of 72)
+
+Code was compiled with the following compiler and flags:
+mpicxx -std=c++11 -g -march=native -O3 -flto -Wall -Wextra -Wno-unused-parameter -Wno-unknown-pragmas -DH5_USE_16_API=1 -I/mpcdf/soft/SLE_15/packages/skylake/hdf5/gcc_13-13.1.0/1.14.1/include/ -I/mpcdf/soft/SLE_15/packages/skylake/gsl/gcc_13-13.1.0/2.7.1/include/  -I/mpcdf/soft/SLE_15/packages/skylake/fftw/gcc_13-13.1.0/3.3.10/include/         -I/raven/ptmp/jinma/arepo2_gpu/hypre/install/include     -I./src -I/raven/ptmp/jinma/arepo2_gpu/comb/builds/c1m/build 
+
+
+Code was compiled with settings:
+
+        NTYPES=6
+        NSOFTTYPES=4
+        VORONOI
+        VORONOI_CELL
+        SHAREDNODEMEMORY
+        VORONOI_DYNAMIC_UPDATE
+        REGULARIZE_MESH_CM_DRIFT
+        REGULARIZE_MESH_CM_DRIFT_USE_SOUNDSPEED
+        REGULARIZE_MESH_FACE_ANGLE
+        BOUNDARY_CELLS
+        MESHRELAX_DENSITY_IN_INPUT
+        TIMESTEPS_WAKEUP
+        MHD
+        RIEMANN_HLLD
+        TREE_BASED_TIMESTEPS
+        SELFGRAVITY
+        HIERARCHICAL_GRAVITY
+        CELL_CENTER_GRAVITY
+        GRAVITY_NOT_PERIODIC
+        ALLOW_DIRECT_SUMMATION
+        DIRECT_SUMMATION_THRESHOLD=1000
+        EXACT_GRAVITY_FOR_PARTICLE_TYPE=1
+        NO_SELFGRAVITY_TYPE=1
+        NO_GRAVITY_TYPE=1
+        EXACT_GRAVITY_REACTION
+        GRAVITY_PM_ENERGY_CONSERVING
+        DMFIXED
+        DMLOWESTTIMEBIN
+        EVALPOTENTIAL
+        MULTIPLE_NODE_SOFTENING
+        ADAPTIVE_HYDRO_SOFTENING
+        CHUNKING
+        EOS_PASSIVE
+        EOS_NSPECIES=6
+        VARIABLE_GAMMA
+        SPHERICAL_SOURCE
+        IDORT
+        IDORT_NUM_ANGLES=24
+        IDORT_DSA
+        DOUBLEPRECISION=1
+        OUTPUT_IN_DOUBLEPRECISION
+        OUTPUT_VOLUME
+        OUTPUTPOTENTIAL
+        HAVE_HDF5
+        DEBUG
+        OUTPUT_ACCELERATION
+        FORCETREE_NODELOCAL
+
+Command line arguments:
+  <./Arepo> <param.txt> 
+ParameterFile='param.txt', RestartFlag=0
+
+MODULEMANAGER: Initialised.
+MODULEMANAGER: Registered module ModuleSphericalSource.
+MODULEMANAGER: Registered module Idort.
+MODULEMANAGER: Loaded 2 modules.
+MODULEMANAGER: Checking module dependencies...
+PARAMETERS: Obtaining parameters from file 'param.txt':
+
+        InitCondFile                                      /raven/ptmp/jinma/arepo2_gpu/g25/ics/g25_full
+        OutputDir                                         ./output/
+        SnapshotFileBase                                  snap
+        OutputListFilename                                ol
+        ICFormat                                          3
+        SnapFormat                                        3
+        NumFilesPerSnapshot                               1
+        MaxFilesWithConcurrentIO                          64
+        TimeLimitCPU                                      86000
+        CpuTimeBetRestartFile                             3600
+        ResubmitOn                                        0
+        ResubmitCommand                                   my-scriptfile
+        MaxMemSize                                        3000
+        TimeBegin                                         0
+        TimeMax                                           29102.3
+        TimeOfFirstSnapshot                               0
+        TimeBetSnapshot                                   58204.7
+        TimeBetStatistics                                 7275.58
+        OutputListOn                                      0
+        MaxSizeTimestep                                   10000
+        MinSizeTimestep                                   0.001
+        TypeOfTimestepCriterion                           0
+        ErrTolIntAccuracy                                 0.05
+        CourantFac                                        0.3
+        ComovingIntegrationOn                             0
+        PeriodicBoundariesOn                              0
+        CoolingOn                                         0
+        StarformationOn                                   0
+        Omega0                                            0
+        OmegaLambda                                       0
+        OmegaBaryon                                       0
+        HubbleParam                                       1
+        BoxSize                                           1.75155e+16
+        UnitLength_in_cm                                  1
+        UnitMass_in_g                                     1
+        UnitVelocity_in_cm_per_s                          1
+        GravityConstantInternal                           0
+        TypeOfOpeningCriterion                            1
+        ErrTolTheta                                       0.5
+        ErrTolForceAcc                                    0.001
+        MultipleDomains                                   6
+        TopNodeFactor                                     8
+        ActivePartFracForNewDomainDecomp                  0.2
+        DesNumNgb                                         32
+        MaxNumNgbDeviation                                1
+        SofteningComovingType0                            8.261e+09
+        SofteningMaxPhysType0                             8.261e+09
+        SofteningComovingType1                            6.2878e+11
+        SofteningMaxPhysType1                             6.2878e+11
+        SofteningComovingType2                            8.261e+09
+        SofteningMaxPhysType2                             8.261e+09
+        SofteningComovingType3                            0
+        SofteningMaxPhysType3                             0
+        SofteningTypeOfPartType0                          0
+        SofteningTypeOfPartType1                          1
+        SofteningTypeOfPartType2                          2
+        SofteningTypeOfPartType3                          3
+        SofteningTypeOfPartType4                          3
+        SofteningTypeOfPartType5                          3
+        GasSoftFactor                                     2
+        MinimumComovingHydroSoftening                     8.261e+09
+        AdaptiveHydroSofteningSpacing                     1.2
+        InitGasTemp                                       0
+        MinGasTemp                                        0
+        MinEgySpec                                        1e+10
+        MinimumDensityOnStartUp                           1e-20
+        LimitUBelowThisDensity                            0
+        LimitUBelowCertainDensityToThisValue              0
+        CellShapingSpeed                                  0.5
+        CellMaxAngleFactor                                2.25
+        IdortSolveMode                                    1
+        IdortCoupleGas                                    1
+        IdortInitMode                                     2
+        IdortClight                                       -1
+        IdortRadConst                                     -1
+        IdortAlpha                                        5
+        IdortTau0                                         0
+        IdortTol                                          0.001
+        IdortTolGlobal                                    0.0001
+        IdortPosNoise                                     0.1
+        IdortKrylovRtol                                   0.1
+        IdortKrylovMaxIter                                100
+        IdortDsa                                          0
+        IdortPrecSweepMode                                4
+        IdortGmresOrth                                    1
+        IdortKrylovBasisF                                 1
+        IdortPosRounds                                    2
+        IdortPosLag                                       1000
+        IdortPosEarly                                     2
+        IdortPosEarlyN                                    4
+        IdortFhybMode                                     1
+        IdortRadSignalSpeed                               1
+        IdortRiemannMix                                   0
+        IdortEosMode                                      2
+        IdortEosOpalTable                                 /raven/ptmp/jinma/arepo2_gpu/g25/tables/EOS5_data
+        IdortEosX                                         0.653848
+        IdortOpacityMode                                  2
+        IdortOpacityRossTable                             /raven/ptmp/jinma/arepo2_gpu/g25/tables/gs98_z0.02_x0.7_ma_ross.data
+        IdortOpacityPlanckTable                           /raven/ptmp/jinma/arepo2_gpu/g25/tables/gs98_z0.02_x0.7_ma_planck.data
+        IdortOpacityInterp                                1
+        IdortOpacityEdge                                  1
+        IdortKappaScat0                                   0
+        IdortOpacityModifiers                             1
+        IdortOpacityModKappaFloor                         1e-05
+        IdortOpacityModEdgeInset                          1e-06
+        IdortOpacityModFloorTmin                          3200
+        IdortOpacityModDustRadius                         1.17406e+14
+        IdortOpacityModDustTlow                           1200
+        IdortOpacityModDustThigh                          1500
+        IdortOpacityModPhot                               1
+        IdortOpacityModPhotRho                            1e-10
+        IdortOpacityModCoreTable                          /raven/ptmp/jinma/arepo2_gpu/g25/tables/coreB_side_g25_c1s.hdf5
+        IdortOpacityModCoreRadius                         1.76109e+12
+        SphericalSourceLuminosity                         6.85492e+38
+        SphericalSourceRadius                             3.52218e+11
+        SphericalSourceGravityTable                       none
+        IdortShellFluxEvery                               1
+        IdortShellFluxN                                   48
+        IdortShellFluxRmin                                8.805e+10
+        IdortShellFluxRmax                                2.33e+14
+        IdortShellFluxRextra                              1.761e+12
+        MaxMemSizeNode                                    16000
+
+PARAMETERS: Missing value for tag 'NumberOfGlobalTimestepsToStopAfter', using default value '0'.
+PARAMETERS: Missing value for tag 'TimestepSnapshotAlignment', using default value '0'.
+PARAMETERS: Missing value for tag 'NumIslandsPerNode', using default value '0'.
+PARAMETERS: Missing value for tag 'MeshCellCandidateLimit', using default value '4096'.
+PARAMETERS: Missing value for tag 'MeshCellRetirement', using default value '1'.
+PARAMETERS: Missing value for tag 'MeshCandidateSource', using default value '1'.
+PARAMETERS: Missing value for tag 'MeshCandidateWalkCap', using default value '1024'.
+PARAMETERS: Missing value for tag 'MeshHaloShell', using default value '0'.
+PARAMETERS: Missing value for tag 'OmegaCurvature', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortSteadyEveryStep', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortAngleSet', using default value '-1'.
+PARAMETERS: Missing value for tag 'IdortVerbose', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortGasConst', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortEosU0', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortEosTExp', using default value '4'.
+PARAMETERS: Missing value for tag 'IdortUseVelocity', using default value '3'.
+PARAMETERS: Missing value for tag 'IdortFhybTauLo', using default value '20'.
+PARAMETERS: Missing value for tag 'IdortFhybTauHi', using default value '600'.
+PARAMETERS: Missing value for tag 'IdortFhybFmax', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortFhybMaxStep', using default value '0.5'.
+PARAMETERS: Missing value for tag 'IdortFhybFaceF', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortSourceTimeMax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortTestTimeLevels', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortTestTimeLevelWidth', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortDomainCostBoundary', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortDomainCostFine', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortBinBoundaryK', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortBinDepositMax', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortBinContrastMax', using default value '8'.
+PARAMETERS: Missing value for tag 'IdortBinVariationMax', using default value '0.25'.
+PARAMETERS: Missing value for tag 'IdortRefineCsmRmin', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineCsmRmax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineCsmVmax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefinePhRmin', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefinePhRmax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefinePhVmax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineRhoMin', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineRhoMax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineRhoVmax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineTMin', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineTMax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineTVmax', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortRefineTRhoMin', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortKappaRoss0', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortKappaPlanck0', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortKappaRhoExp', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortKappaTExp', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortEosTableXmin', using default value '-1'.
+PARAMETERS: Missing value for tag 'IdortEosTableXmax', using default value '-1'.
+PARAMETERS: Missing value for tag 'IdortEosTableNX', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortEosTableTmin', using default value '20'.
+PARAMETERS: Missing value for tag 'IdortEosTableTmax', using default value '1e+08'.
+PARAMETERS: Missing value for tag 'IdortEosTableRhoMin', using default value '1e-26'.
+PARAMETERS: Missing value for tag 'IdortEosTableRhoMax', using default value '10000'.
+PARAMETERS: Missing value for tag 'IdortEosTableDlnT', using default value '0.005'.
+PARAMETERS: Missing value for tag 'IdortEosTableDlnRho', using default value '0.05'.
+PARAMETERS: Missing value for tag 'IdortEosTableCheck', using default value '2000'.
+PARAMETERS: Missing value for tag 'IdortClosure', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortPosClearEvery', using default value '-1'.
+PARAMETERS: Missing value for tag 'IdortPosClearSteps', using default value '32'.
+PARAMETERS: Missing value for tag 'IdortPosMode', using default value '2'.
+PARAMETERS: Missing value for tag 'IdortPosReleaseTheta', using default value '0.9'.
+PARAMETERS: Missing value for tag 'IdortPosReleaseAccept', using default value '0.5'.
+PARAMETERS: Missing value for tag 'IdortDsaVcycles', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortDsaAmgCpu', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortTauFace', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortTolFrac', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortMaxIter', using default value '20'.
+PARAMETERS: Missing value for tag 'IdortKrylovRestart', using default value '100'.
+PARAMETERS: Missing value for tag 'IdortPrecSweeps', using default value '1'.
+PARAMETERS: Missing value for tag 'IdortKrylovEW', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortKrylovRtolMin', using default value '0.03'.
+PARAMETERS: Missing value for tag 'IdortLevelDiag', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortGpu', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortGpuMinCells', using default value '100000'.
+PARAMETERS: Missing value for tag 'IdortBcTempXlo', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortBcTempXhi', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortBcTempYlo', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortBcTempYhi', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortBcTempZlo', using default value '0'.
+PARAMETERS: Missing value for tag 'IdortBcTempZhi', using default value '0'.
+
+MYMALLOC: sysconf(_SC_LEVEL1_DCACHE_LINESIZE)=64, CACHELINESIZE=128
+SMM: Shared memory islands host a minimum of 72 and a maximum of 72 MPI ranks.
+SMM: LAYOUT: NumIslandsPerNode 0 (automatic) -> 1 islands per node, 4 in total; MaxMemSizeNode 16000 MB -> 16000 MB per island.

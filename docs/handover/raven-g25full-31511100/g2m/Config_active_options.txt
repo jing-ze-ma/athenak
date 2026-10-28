@@ -1,0 +1,55 @@
+c1m
+g2m
+NTYPES=6
+NSOFTTYPES=4                             # as cons12 (types 0, 1, 2 used; 3 for 3-5)
+VORONOI
+VORONOI_CELL
+SHAREDNODEMEMORY                         # required by VORONOI_CELL
+VORONOI_DYNAMIC_UPDATE
+REGULARIZE_MESH_CM_DRIFT
+REGULARIZE_MESH_CM_DRIFT_USE_SOUNDSPEED
+REGULARIZE_MESH_FACE_ANGLE
+BOUNDARY_CELLS                           # box faces: WALL_SOLID (radiation: vacuum) + WALL_FLUID layer (slip wall), as I4
+MESHRELAX_DENSITY_IN_INPUT               # cons12 IC: 'Masses' holds the density (mass = rho V after the first mesh)
+TIMESTEPS_WAKEUP
+MHD
+RIEMANN_HLLD
+TREE_BASED_TIMESTEPS                     # as cons12 (radiation signal speed via the IDORT hook)
+SELFGRAVITY
+HIERARCHICAL_GRAVITY
+CELL_CENTER_GRAVITY
+GRAVITY_NOT_PERIODIC
+ALLOW_DIRECT_SUMMATION
+DIRECT_SUMMATION_THRESHOLD=1000
+EXACT_GRAVITY_FOR_PARTICLE_TYPE=1        # point mass: N^2 gravity
+NO_SELFGRAVITY_TYPE=1
+NO_GRAVITY_TYPE=1                        # the point mass feels no force ...
+EXACT_GRAVITY_REACTION                   # ... but acts on the gas
+GRAVITY_PM_ENERGY_CONSERVING             # conservative point-mass gravity energy (as run long_m8)
+DMFIXED                                  # ... and is held at rest (velocity zeroed)
+DMLOWESTTIMEBIN
+EVALPOTENTIAL
+MULTIPLE_NODE_SOFTENING
+ADAPTIVE_HYDRO_SOFTENING
+CHUNKING
+EOS_PASSIVE                              # NuclearComposition carried; IDORT table EOS uses Composition[0] = X
+EOS_NSPECIES=6                           # H, He4, C12, N14, O16, Ne20 (cons12 IC)
+VARIABLE_GAMMA                           # IDORT EOS hook sets GammaE, GammaC
+SPHERICAL_SOURCE
+IDORT
+IDORT_NUM_ANGLES=24                      # BRULS order 2 (cons12: IdortBrulsNum 2)
+IDORT_DSA                                # recommended for star runs
+DOUBLEPRECISION=1
+OUTPUT_IN_DOUBLEPRECISION
+OUTPUT_VOLUME
+OUTPUTPOTENTIAL
+HAVE_HDF5
+DEBUG
+OUTPUT_ACCELERATION
+FORCETREE_NODELOCAL
+FORCETREE_NODELOCAL_GPU
+GPU
+GPU_CUDA
+HIERARCHICAL_DOMAIN_DECOMPOSITION
+VORONOI_CELL_GPU
+IDORT_GPU
