@@ -198,6 +198,51 @@ void StretchTheta(const Real a, Real &t) {
   Real xi = t/M_PI;
   t = M_PI/2.0*(1.0+sinh(a*(2.0*xi-1.0))/sinh(a));
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn StretchThetaPlateau()
+//! \brief theta map with a UNIFORM equatorial core and geometric caps (fullsph-1027,
+//! mesh/theta_plateau).  p[] (Mesh::fStretchThetaPlat, filled in mesh.cpp):
+//!   p[0] x2min, p[1] x2max of the MESH, p[2] = nx2/2 (mesh cells per half),
+//!   p[3] ec = core cells per half, p[4] d = core cell width, p[5] q = growth per cap
+//!   cell, p[6] Np = cap cells per side (= p[2] - p[3]).
+//! The logical (uniform) position t is turned into a signed cell count e from the mesh
+//! centre; |e| <= ec maps to d*e (cells exactly d), beyond it the cap cell k (1..Np) has
+//! width w1 q^(k-1), normalised so the face count nx2/2 lands EXACTLY on the mesh edge.
+//! Beyond the edge (ghosts) the map is MIRRORED about the edge, so polar ghost cells are
+//! exact images of the first active cells.  Symmetric about the mesh centre.
+KOKKOS_INLINE_FUNCTION
+Real ThetaPlateauHalf(const Real *p, Real e) {   // e >= 0, e <= 2*nh
+  const Real nh = p[2], ec = p[3], d = p[4], q = p[5], np = p[6];
+  const Real half = 0.5*(p[1] - p[0]);
+  const Real hc = d*ec;
+  const bool mirror = (e > nh);           // ghost beyond the mesh edge: mirror image
+  if (mirror) e = 2.0*nh - e;
+  Real h;
+  if (e <= ec) {
+    h = d*e;
+  } else {
+    const Real lq = log(q);
+    h = hc + (half - hc)*expm1((e - ec)*lq)/expm1(np*lq);
+  }
+  return mirror ? 2.0*half - h : h;
+}
+KOKKOS_INLINE_FUNCTION
+void StretchThetaPlateau(const Real *p, Real &t) {
+  const Real mid = 0.5*(p[0] + p[1]);
+  const Real e = (t - p[0])/(p[1] - p[0])*(2.0*p[2]) - p[2];
+  const Real h = ThetaPlateauHalf(p, fabs(e));
+  t = (e < 0.0) ? mid - h : mid + h;
+}
+// dispatcher used by Coordinates and the outputs: p == nullptr or p[2] <= 0 -> sinh map
+KOKKOS_INLINE_FUNCTION
+void ApplyThetaStretch(const Real a, const Real *p, Real &t) {
+  if (p != nullptr && p[2] > 0.0) {
+    StretchThetaPlateau(p, t);
+  } else {
+    StretchTheta(a, t);
+  }
+}
   
 
 

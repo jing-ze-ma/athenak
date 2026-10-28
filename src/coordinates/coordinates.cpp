@@ -1731,6 +1731,8 @@ void Coordinates::CoordSphericalPolar() {
   auto z_ov_rE_ = z_ov_rE;
   const bool use_stretch_theta = pmy_pack->pmesh->use_grid_stretch_theta;
   const Real f_stretch_theta = pmy_pack->pmesh->fStretchTheta;
+  Real tplat[8];   // fullsph-1027 theta_plateau parameters (tplat[2] = 0: sinh map)
+  for (int n=0; n<8; ++n) tplat[n] = pmy_pack->pmesh->fStretchThetaPlat[n];
   par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 
@@ -1757,9 +1759,9 @@ void Coordinates::CoordSphericalPolar() {
     // stretch the radial grid
     if (use_stretch_theta) {
       Real factor_stretch = f_stretch_theta;
-      StretchTheta(factor_stretch,theta);
-      StretchTheta(factor_stretch,thetal);
-      StretchTheta(factor_stretch,thetar);
+      ApplyThetaStretch(factor_stretch,tplat,theta);
+      ApplyThetaStretch(factor_stretch,tplat,thetal);
+      ApplyThetaStretch(factor_stretch,tplat,thetar);
     }
     Real phi    = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     Real phil   = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);

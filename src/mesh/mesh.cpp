@@ -84,6 +84,7 @@ Mesh::Mesh(ParameterInput *pin) :
   use_grid_stretch_r(false),
   use_grid_stretch_r_poly(false),
   use_grid_stretch_theta(false),
+  use_theta_plateau(false),
   npanels(1),
   nmb_packs_thisrank(1),
   nprtcl_thisrank(0),
@@ -501,6 +502,71 @@ Mesh::Mesh(ParameterInput *pin) :
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
                 << "polar boundary with MHD currently only supports one single meshblock in r direction" << std::endl;
       exit(EXIT_FAILURE);
+    }
+  }
+
+  // fullsph-1027: mesh/theta_plateau = true -> theta map with a UNIFORM equatorial core
+  // of theta_plateau_ncore cells of exactly theta_plateau_dth (default 2 pi/512, i.e.
+  // the 0.703125 deg wedge cells) and geometric caps to the mesh edges (the poles with
+  // use_polar_boundary); the growth q is solved so that the cap faces land exactly on
+  // the edges, and must not exceed theta_plateau_qmax.  Ghosts mirror the first cells
+  // (StretchThetaPlateau).  It is a theta stretch: everything that treats
+  // use_grid_stretch_theta (outputs, rad_m1 refusals, BuildX2vRecon) sees it as one.
+  // Absent key: nothing changes (fStretchThetaPlat[2] = 0 selects the sinh map).
+  for (int n=0; n<8; ++n) fStretchThetaPlat[n] = 0.0;
+  use_theta_plateau = pin->GetOrAddBoolean("mesh", "theta_plateau", false);
+  if (use_theta_plateau) {
+    if (!use_spherical_polar || use_grid_stretch_theta) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "mesh/theta_plateau needs mesh/use_spherical_polar and "
+                << "excludes mesh/use_grid_stretch_theta (it IS the theta stretch)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    const int nx2 = mesh_indcs.nx2;
+    const int ncore = pin->GetOrAddInteger("mesh", "theta_plateau_ncore", 58);
+    const Real dth = pin->GetOrAddReal("mesh", "theta_plateau_dth", 2.0*M_PI/512.0);
+    const Real qmax = pin->GetOrAddReal("mesh", "theta_plateau_qmax", 1.08);
+    const Real half = 0.5*(mesh_size.x2max - mesh_size.x2min);
+    const int np = (nx2 - ncore)/2;
+    if (ncore < 2 || nx2 % 2 != 0 || ncore % 2 != 0 || np < 1 ||
+        0.5*ncore*dth + np*dth >= half) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "mesh/theta_plateau: need even nx2 > even theta_plateau_"
+                << "ncore and caps wider than the core cells (nx2=" << nx2 << " ncore="
+                << ncore << " dth=" << dth << " half span=" << half << ")" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // first cap cell = dth*q: solve (half - hc) (q-1)/(q^np - 1) = dth q for q > 1
+    const Real hc = 0.5*ncore*dth, span = half - hc;
+    auto f = [&](Real q) {return span*(q - 1.0)/(std::pow(q, np) - 1.0) - dth*q;};
+    Real qlo = 1.0 + 1.0e-12, qhi = 3.0;
+    for (int it=0; it<200; ++it) {
+      const Real qm = 0.5*(qlo + qhi);
+      if (f(qm) > 0.0) {qlo = qm;} else {qhi = qm;}
+    }
+    const Real q = 0.5*(qlo + qhi);
+    if (q > qmax) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "mesh/theta_plateau: growth q = " << q << " > "
+                << "theta_plateau_qmax = " << qmax << "; raise nx2" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    fStretchThetaPlat[0] = mesh_size.x2min;
+    fStretchThetaPlat[1] = mesh_size.x2max;
+    fStretchThetaPlat[2] = 0.5*nx2;
+    fStretchThetaPlat[3] = 0.5*ncore;
+    fStretchThetaPlat[4] = dth;
+    fStretchThetaPlat[5] = q;
+    fStretchThetaPlat[6] = np;
+    use_grid_stretch_theta = true;
+    fStretchTheta = 0.0;
+    if (global_variable::my_rank == 0) {
+      const Real wlast = span*(q - 1.0)*std::pow(q, np - 1)/(std::pow(q, np) - 1.0);
+      std::cout << "theta_plateau: nx2=" << nx2 << " core " << ncore << " x "
+                << dth*180.0/M_PI << " deg (|lat| <= " << hc*180.0/M_PI
+                << " deg), caps " << np << " cells/side, q = " << q
+                << ", edge cell " << wlast*180.0/M_PI << " deg" << std::endl;
     }
   }
 

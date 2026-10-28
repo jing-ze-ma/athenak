@@ -174,7 +174,9 @@ const std::vector<std::pair<std::string, std::string>> &GridKeys() {
     {"mesh", "f_stretch_r_tail_nin"}, {"mesh", "f_stretch_r_tail_x1max"},
     {"mesh", "f_stretch_r_tail_ij"},
     {"mesh", "f_stretch_r_head_nin"}, {"mesh", "f_stretch_r_head_ij"},
-    {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"}
+    {"mesh", "use_grid_stretch_theta"}, {"mesh", "f_stretch_theta"},
+    {"mesh", "theta_plateau"}, {"mesh", "theta_plateau_ncore"},
+    {"mesh", "theta_plateau_dth"}, {"mesh", "theta_plateau_qmax"}
   };
   return keys;
 }
@@ -190,6 +192,7 @@ std::string GridKeyDefault(const std::map<std::string, std::string> &snap,
   if (key == "mesh/f_stretch_r_p_amp" || key == "mesh/f_stretch_r_p2_amp") return "0";
   if (key == "mesh/f_stretch_r_tail_nin") return "0";
   if (key == "mesh/nghost") return "2";
+  if (key == "mesh/theta_plateau") return "false";
   if (key.rfind("meshblock/nx", 0) == 0) {   // meshblock/nxN defaults to mesh/nxN
     auto it = snap.find("mesh/" + key.substr(10));
     if (it != snap.end()) return it->second;

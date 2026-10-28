@@ -173,6 +173,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "coordinates/coordinates.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -5031,6 +5032,49 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (!(thsp_tau_ > 0.0)) fatal("problem/theta_sponge_tau must be > 0");
       }
     }
+    // fullsph-1027: FULL sphere (mesh ix2_bc = ox2_bc = polar, use_polar_boundary): the
+    // theta-wall machinery (keyed on user x2 faces) is inert; its keys are refused so that
+    // a wedge deck converted to the sphere cannot silently carry them.  The bottom flux is
+    // the unscaled column flux (env_lin_band_factor = 1: the band factor is the theta-thin
+    // slab's), and <rad_m1> (refused by the module on a polar mesh) stays off in stage S0.
+    {
+      const bool pol0 = (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::polar);
+      const bool pol1 = (pmy_mesh_->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::polar);
+      if (pol0 || pol1) {
+        if (!(pol0 && pol1)) fatal("full sphere: needs mesh/ix2_bc = ox2_bc = polar");
+        if (!p3_) fatal("full sphere (polar x2 BCs) needs problem/phys_3d = true");
+        const char *bad[] = {"theta_bc", "theta_wall_closed", "theta_wall_flow",
+                             "theta_sponge_deg", "theta_sponge_tau"};
+        for (const char *b : bad) {
+          if (pin->DoesParameterExist("problem", b)) {
+            fatal(std::string("full sphere (polar x2 BCs): remove problem/") + b +
+                  " (theta-wall key; there are no theta walls)");
+          }
+        }
+        if (pin->DoesParameterExist("problem", "env_lin_band_factor") &&
+            pin->GetReal("problem", "env_lin_band_factor") != 1.0) {
+          fatal("full sphere (polar x2 BCs): problem/env_lin_band_factor must be 1 (the band "
+                "factor applies to the theta-thin slab only)");
+        }
+        if (pin->DoesBlockExist("rad_m1")) {
+          const char *rb[] = {"implicit_bc_x2min", "implicit_bc_x2max"};
+          for (const char *b : rb) {
+            if (pin->DoesParameterExist("rad_m1", b) &&
+                pin->GetString("rad_m1", b).compare("flux") == 0) {
+              fatal(std::string("full sphere (polar x2 BCs): <rad_m1>/") + b + " = flux is "
+                    "the imposed theta-WALL flux; not meaningful at a pole");
+            }
+          }
+          if (pin->DoesParameterExist("rad_m1", "vet_gd_theta_wall")) {
+            fatal("full sphere (polar x2 BCs): remove <rad_m1>/vet_gd_theta_wall");
+          }
+        }
+        if (root) {
+          std::printf("ry_per_accretor: FULL SPHERE: polar x2 boundaries (theta 0..pi), no "
+                      "theta walls\n");
+        }
+      }
+    }
     if (root && p3_) {
       std::printf("ry_per_accretor: phys_3d: 3-D Roche potential (gravity r/theta/phi, Phi_wb, "
                   "etotgrav), full Coriolis, IC/WB/ambient on 3-D equipotentials; theta walls "
@@ -5085,6 +5129,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (stl1_) fatal("stream_inject = l1 is 2-D only (use volume in 3-D)");
         const int nj = pmy_mesh_->mesh_indcs.nx2;
         const Real dth = (ms.x2max - ms.x2min)/nj;
+        // fullsph-1027: on a theta-stretched mesh the faces are the mapped ones (as
+        // Coordinates builds them); the uniform mesh keeps its arithmetic bit for bit
+        const bool sth = pmy_mesh_->use_grid_stretch_theta;
+        auto thf = [&](const int j) {
+          Real t = LeftEdgeX(j, nj, ms.x2min, ms.x2max);
+          ApplyThetaStretch(pmy_mesh_->fStretchTheta, pmy_mesh_->fStretchThetaPlat, t);
+          if (j == 0) t = ms.x2min;
+          if (j == nj) t = ms.x2max;
+          return t;
+        };
         Real sum0 = 0.0;          // per unit height at z = 0 (central slice), for the report
         for (int k=0; k<nk; ++k) {
           const Real phk = ms.x3min + (k + 0.5)*dphk;
@@ -5092,7 +5146,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           if (std::fabs(dph) >= nsig_*sig_) continue;
           sum0 += std::exp(-0.5*SQR(dph/sig_))*std::fabs(vr_s_)*rf*dphk;
           for (int j=0; j<nj; ++j) {
-            const Real t0 = ms.x2min + j*dth, t1 = t0 + dth;
+            Real t0 = ms.x2min + j*dth, t1 = t0 + dth;
+            if (sth) {t0 = thf(j); t1 = thf(j + 1);}
             const Real zj = rf*std::cos(0.5*(t0 + t1));
             if (std::fabs(zj) >= nsig_*sz_) continue;
             sum += std::exp(-0.5*(SQR(dph/sig_) + SQR(zj/sz_)))*std::fabs(vr_s_)*
