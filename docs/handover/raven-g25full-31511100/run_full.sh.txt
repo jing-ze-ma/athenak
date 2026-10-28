@@ -1,0 +1,59 @@
+#!/bin/bash -l
+#SBATCH -J cfull
+#SBATCH -p gpu
+#SBATCH --ntasks-per-node=72
+#SBATCH --cpus-per-task=1
+#SBATCH --constraint=gpu
+#SBATCH --gres=gpu:a100:4
+#SBATCH --mem=480000
+#SBATCH -o /raven/ptmp/jinma/arepo2_gpu/comb/logs/full_%j.out
+# g25_full (6.09 M cells) on N Raven GPU nodes (sbatch --nodes=N --time=...), arms = comb/builds/<name> one after the other in
+# the SAME allocation. param = G25_setup/param.txt minus the refinement block (as run_c.sh), TimeMax = 4 top steps (report
+# top steps 2-4), AREPO_IDORT_PHASES=1 (per-step max/mean unknowns), node + GPU memory sampled every 5 s (mon.sh).
+# env: ARMS (default "g2 c0 c1"), TMAX (default 29102.325439453125 = 4 top steps), IC (default g25_full), TAG (default full),
+#      MMN (CPU builds: MaxMemSizeNode, default 16000), TLCPU (TimeLimitCPU override), GPUMEM (GpuMaxMemSize, default 16000), MINC (IdortGpuMinCells, default: code default)
+C=/raven/ptmp/jinma/arepo2_gpu/comb
+G=/raven/ptmp/jinma/arepo2_gpu/g25
+S=$C/src/examples/idort/G25_setup
+source /raven/ptmp/jinma/arepo2_gpu/gpu1/env_g1.sh
+export AREPO_NGBNL_GRAPH_POOL=160
+export AREPO_IDORT_PHASES=1
+ARMS=${ARMS:-g2 c0 c1}; TAG=${TAG:-full}; IC=${IC:-g25_full}
+[ -s $G/ics/$IC.hdf5 ] || { echo "GUARD: IC $IC missing"; exit 3; }
+for a in $ARMS; do [ -x $C/builds/$a/Arepo ] || { echo "GUARD: $C/builds/$a/Arepo missing"; exit 5; }; done
+nvidia-smi --query-gpu=name,clocks.sm --format=csv,noheader | head -1
+echo "nodes $SLURM_JOB_NUM_NODES ranks $SLURM_NTASKS arms: $ARMS IC $IC $(date)"
+i=0
+for a in $ARMS; do
+  i=$((i+1)); d=$C/runs/${TAG}_${a}_${SLURM_JOB_NUM_NODES}n_${i}_$SLURM_JOB_ID
+  mkdir -p $d/output
+  cp $C/builds/$a/Arepo $C/mon.sh $d/
+  md5sum $d/Arepo
+  sed -e "s|^InitCondFile .*|InitCondFile                             $G/ics/$IC|" \
+      -e "s|^IdortEosOpalTable .*|IdortEosOpalTable                        $G/tables/EOS5_data|" \
+      -e "s|^IdortOpacityRossTable .*|IdortOpacityRossTable                    $G/tables/gs98_z0.02_x0.7_ma_ross.data|" \
+      -e "s|^IdortOpacityPlanckTable .*|IdortOpacityPlanckTable                  $G/tables/gs98_z0.02_x0.7_ma_planck.data|" \
+      -e "s|^IdortOpacityModCoreTable .*|IdortOpacityModCoreTable                 $G/tables/coreB_side_g25_c1s.hdf5|" \
+      -e "s|^TimeMax .*|TimeMax                                  ${TMAX:-29102.325439453125}|" \
+      $S/param.txt > $d/param.txt
+  [ -n "$TLCPU" ] && sed -i "s|^TimeLimitCPU .*|TimeLimitCPU                             $TLCPU|" $d/param.txt
+  sed -i -E '/^(ReferenceGasPartMass|TargetGasMassFactor|RefinementCriterion|DerefinementCriterion|MaxVolumeDiff|MinVolume|MaxVolume|RefinementCellsPerSoftening|IdortRefine[A-Za-z]*) /d' $d/param.txt
+  if grep -q '^GPU$' $C/builds/$a/Config.sh; then
+    printf "NumIslandsPerNode 4\nCPUsUsedPerGPU 1\nMeshCandidateSource 1\nMeshCellRetirement 1\nGpuMaxMemSize ${GPUMEM:-16000}\nMaxMemSizeNode 30000\n" >> $d/param.txt
+    grep -q '^IDORT_GPU$' $C/builds/$a/Config.sh && echo "IdortGpu 1" >> $d/param.txt
+    [ -n "$MINC" ] && echo "IdortGpuMinCells $MINC" >> $d/param.txt
+  else
+    echo "MaxMemSizeNode ${MMN:-16000}" >> $d/param.txt   # CPU builds: as nltree/run.sh FULL (run_fritz.md)
+  fi
+  cd $d || exit 1
+  t0=$(date +%s)
+  srun --cpu-bind=cores bash ./mon.sh > run.log 2>&1
+  rc=$?
+  echo "arm $a ($d) exit $rc wall $(( $(date +%s) - t0 )) s; $(grep -m1 -o 'Code run for [0-9.]* seconds' run.log)"
+  grep -m3 -E "TERMINATE|FATAL|ERROR|failed to reserve" run.log
+  find $d/output -name 'snap_*.hdf5' -delete
+  [ -d $d/output/restartfiles ] && find $d/output/restartfiles -type f -delete
+  rm -f -- $d/Arepo
+done
+python3 $C/tools/fsum.py $C/runs/${TAG}_*_${SLURM_JOB_NUM_NODES}n_*_$SLURM_JOB_ID
+echo "done $(date)"
