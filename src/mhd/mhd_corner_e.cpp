@@ -36,6 +36,22 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const bool use_bs = use_bs_emf;
+  // A REFLECTING radial wall (spherical polar or cubed sphere): the x1 mass flux there
+  // is zero (the two wall states are mirror images, mhd_fluxes.cpp), so GS07 has no
+  // upwind side.  ">= 0" then always took the GHOST cell's EMF gradient, which behind a
+  // mirror wall is minus the interior one: the wall-edge EMF picked up an O(v_r B_t)
+  // term, and CT turned it into a growing B.rhat at a closed wall (closed MHD vertex
+  // blast, cs_test iprob=12: ~3e-3 of |B|, rising with resolution).  At such a wall the
+  // x1 choices take the average of the two sides -- the GS07 rule for a zero contact
+  // speed -- which cancels exactly for mirrored states.  The transverse (x2/x3) choices
+  // at a wall edge read the mass flux of the INTERIOR row on both sides: the ghost-row
+  // flux is the mirror of it everywhere except on a cubed-sphere seam face, where the
+  // shared seam flux is applied to the active rows only, and there the two sides picked
+  // different upwind cells.  Each piece is needed: with the x1 average, the interior
+  // row, or the mirrored ghost bcc1 (CellCenteredRadialFldWall) left out, the blast wall
+  // B.rhat/|B| at nx2 = 32 is 1.6e-3, 2.9e-3, 4.1e-4 (6.7e-5 with all three).
+  const bool sph_wall_ = use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar;
+  const BoundaryFlag rflag_ = BoundaryFlag::reflect;
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -173,28 +189,45 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     //       e3[is:ie+1,js:je+1,ks:ke  ]
     par_for("emf2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
+      // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
+      const bool wall_in = sph_wall_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
+      const bool wall_out = sph_wall_ && i == ie+1 &&
+                            mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
+      const bool wall1 = wall_in || wall_out;
+      // the row whose transverse mass flux picks the upwind side: the interior one on
+      // BOTH sides of a wall (the ghost row is its mirror image except where a seam
+      // flux was shared over the active rows only)
+      const int il_ = wall_in ? i : i-1;
+      const int ir_ = wall_out ? i-1 : i;
       e2(m,ks  ,j,i) = e2x1_(m,ks,j,i);
       e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
       e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
       e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
 
       Real e3_l2, e3_r2, e3_l1, e3_r1;
-      if (flx1(m,IDN,ks,j-1,i) >= 0.0) {
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_l2 = 0.5*((e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1)) +
+              (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  )));
+      } else if (flx1(m,IDN,ks,j-1,i) >= 0.0) {
         e3_l2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1);
       } else {
         e3_l2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  );
       }
-      if (flx1(m,IDN,ks,j,i) >= 0.0) {
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_r2 = 0.5*((e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1)) +
+              (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  )));
+      } else if (flx1(m,IDN,ks,j,i) >= 0.0) {
         e3_r2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1);
       } else {
         e3_r2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  );
       }
-      if (flx2(m,IDN,ks,j,i-1) >= 0.0) {
+      if (flx2(m,IDN,ks,j,il_) >= 0.0) {
         e3_l1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i-1);
       } else {
         e3_l1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i-1);
       }
-      if (flx2(m,IDN,ks,j,i) >= 0.0) {
+      if (flx2(m,IDN,ks,j,ir_) >= 0.0) {
         e3_r1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i  );
       } else {
         e3_r1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i  );
@@ -402,6 +435,17 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
     par_for("emf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
+      const bool wall_in = sph_wall_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
+      const bool wall_out = sph_wall_ && i == ie+1 &&
+                            mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
+      const bool wall1 = wall_in || wall_out;
+      // the row whose transverse mass flux picks the upwind side: the interior one on
+      // BOTH sides of a wall (the ghost row is its mirror image except where a seam
+      // flux was shared over the active rows only)
+      const int il_ = wall_in ? i : i-1;
+      const int ir_ = wall_out ? i-1 : i;
       // integrate E1 to corner using SG07
       Real e1_l3, e1_r3, e1_l2, e1_r2;
       if (flx2(m,IDN,k-1,j,i) >= 0.0) {
@@ -429,22 +473,28 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
       // integrate E2 to corner using SG07
       Real e2_l3, e2_r3, e2_l1, e2_r1;
-      if (flx1(m,IDN,k-1,j,i) >= 0.0) {
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e2_l3 = 0.5*((e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1)) +
+              (e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  )));
+      } else if (flx1(m,IDN,k-1,j,i) >= 0.0) {
         e2_l3 = e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1);
       } else {
         e2_l3 = e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  );
       }
-      if (flx1(m,IDN,k,j,i) >= 0.0) {
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e2_r3 = 0.5*((e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1)) +
+              (e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  )));
+      } else if (flx1(m,IDN,k,j,i) >= 0.0) {
         e2_r3 = e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1);
       } else {
         e2_r3 = e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  );
       }
-      if (flx3(m,IDN,k,j,i-1) >= 0.0) {
+      if (flx3(m,IDN,k,j,il_) >= 0.0) {
         e2_l1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i-1);
       } else {
         e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i-1);
       }
-      if (flx3(m,IDN,k,j,i) >= 0.0) {
+      if (flx3(m,IDN,k,j,ir_) >= 0.0) {
         e2_r1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i  );
       } else {
         e2_r1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i  );
@@ -503,22 +553,28 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
       // integrate E3 to corner using SG07
       Real e3_l2, e3_r2, e3_l1, e3_r1;
-      if (flx1(m,IDN,k,j-1,i) >= 0.0) {
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_l2 = 0.5*((e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1)) +
+              (e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  )));
+      } else if (flx1(m,IDN,k,j-1,i) >= 0.0) {
         e3_l2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1);
       } else {
         e3_l2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  );
       }
-      if (flx1(m,IDN,k,j,i) >= 0.0) {
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_r2 = 0.5*((e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1)) +
+              (e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  )));
+      } else if (flx1(m,IDN,k,j,i) >= 0.0) {
         e3_r2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1);
       } else {
         e3_r2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  );
       }
-      if (flx2(m,IDN,k,j,i-1) >= 0.0) {
+      if (flx2(m,IDN,k,j,il_) >= 0.0) {
         e3_l1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i-1);
       } else {
         e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i-1);
       }
-      if (flx2(m,IDN,k,j,i) >= 0.0) {
+      if (flx2(m,IDN,k,j,ir_) >= 0.0) {
         e3_r1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i  );
       } else {
         e3_r1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i  );

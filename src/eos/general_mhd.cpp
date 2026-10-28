@@ -75,6 +75,10 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
   // cubed sphere AND a stretched radial grid: the one case where the plain face
   // average is not the field at the cell centre.  See CellCenteredRadialFld.
   const bool cs_str_x1_ = pmy_pack->pmesh->use_cubed_sphere;   // x1v is the centroid
+  // ghosts behind a REFLECTING radial wall take mirror-consistent radial weights; see
+  // CellCenteredRadialFldWall
+  auto &wbc_ = pmy_pack->pmb->mb_bcs;
+  const int wis_ = pmy_pack->pmesh->mb_indcs.is, wie_ = pmy_pack->pmesh->mb_indcs.ie;
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
   auto &x2v_ = pmy_pack->pcoord->x2v;
@@ -116,9 +120,16 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
     } else {
       if (use_spherical_polar) {
         Real lw, rw;
-        lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-        rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-        u.bx = lw*b.x1f(m,k,j,i) + rw*b.x1f(m,k,j,i+1);
+        const bool rin_ = wbc_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect;
+        const bool rout_ = wbc_.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect;
+        if ((rin_ && i < wis_) || (rout_ && i > wie_)) {
+          u.bx = CellCenteredRadialFldWall(b.x1f, x1f_, x1v_, m, k, j, i, wis_, wie_,
+                                           rin_, rout_);
+        } else {
+          lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          u.bx = lw*b.x1f(m,k,j,i) + rw*b.x1f(m,k,j,i+1);
+        }
         lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
         rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
         u.by = lw*b.x2f(m,k,j,i) + rw*b.x2f(m,k,j+1,i);
@@ -132,9 +143,11 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
         // Coordinates::GnomonicEquiangleRaiseVelMHD rebuilds bcc with a moment later --
         // a mismatch between the two is an energy difference the C2P floors then bake
         // into u.e.  Every other grid keeps the plain average, bit for bit.
+        const bool rin_ = wbc_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect;
+        const bool rout_ = wbc_.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect;
         u.bx = cs_str_x1_ ?
-            CellCenteredRadialFld(b.x1f(m,k,j,i), b.x1f(m,k,j,i+1),
-                                  x1f_(m,i), x1f_(m,i+1), x1v_(m,i)) :
+            CellCenteredRadialFldWall(b.x1f, x1f_, x1v_, m, k, j, i, wis_, wie_,
+                                      rin_, rout_) :
             0.5*(b.x1f(m,k,j,i) + b.x1f(m,k,j,i+1));
         u.by = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k,j+1,i));
         u.bz = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k+1,j,i));

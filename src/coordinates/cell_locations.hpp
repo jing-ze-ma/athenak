@@ -79,4 +79,42 @@ static Real CellCenteredRadialFld(const Real bl, const Real br, const Real x1f_l
   return ((x1f_r - x1v)*idx)*bl + ((x1v - x1f_l)*idx)*br;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn Real CellCenteredRadialFldWall()
+//! \brief CellCenteredRadialFld, made MIRROR-CONSISTENT in the ghost cells behind a
+//! REFLECTING radial wall.
+//!
+//! The reflect BC fills a ghost x1 face with minus its mirror image, b1f(is-1-n) =
+//! -b1f(is+1+n).  The centroid weights of the ghost shell, however, are not the mirror of
+//! the interior ones (both centroids sit OUTWARD of their face midpoints), so the plain
+//! CellCenteredRadialFld returns a ghost bcc1 that is not minus the interior bcc1: on the
+//! closed MHD vertex blast (cs_test iprob=12, cubed_sphere_mhd_blast.athinput) the error
+//! is 4 % of the interior B_r one cell in from the wall.  It enters the ghost-row x2/x3
+//! EMFs, and through them the wall-edge EMFs that CT uses to update the wall x1 face, so
+//! B.rhat at a "closed" wall grew from the O(h^2) initial residual to ~3e-3 of |B| and
+//! did not converge (it rose with resolution).  Here the ghost cell takes the weights of
+//! its interior image cell, exchanged: the ghost value is then exactly minus the image
+//! value (up to the shared wall face), whatever the radial stretch.  Active cells and
+//! ghosts that are not behind a reflecting wall are unchanged.
+template <typename FaceView, typename PosView>
+KOKKOS_INLINE_FUNCTION
+Real CellCenteredRadialFldWall(const FaceView &b1f, const PosView &x1f,
+                               const PosView &x1v, const int m, const int k,
+                               const int j, const int i, const int is, const int ie,
+                               const bool refl_in, const bool refl_out) {
+  int ii = i;                 // the cell whose weights are used
+  bool mirror = false;
+  if (refl_in && i < is) {
+    ii = 2*is - 1 - i;  mirror = true;
+  } else if (refl_out && i > ie) {
+    ii = 2*ie + 1 - i;  mirror = true;
+  }
+  const Real idx = 1.0/(x1f(m,ii+1) - x1f(m,ii));
+  const Real wl = (x1f(m,ii+1) - x1v(m,ii))*idx;    // weight of the image's inner face
+  const Real wr = (x1v(m,ii) - x1f(m,ii))*idx;      // weight of the image's outer face
+  if (!mirror) return wl*b1f(m,k,j,i) + wr*b1f(m,k,j,i+1);
+  // the ghost's inner face is the mirror of the image's OUTER face, and vice versa
+  return wr*b1f(m,k,j,i) + wl*b1f(m,k,j,i+1);
+}
+
 #endif // COORDINATES_CELL_LOCATIONS_HPP_
