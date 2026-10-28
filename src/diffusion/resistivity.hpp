@@ -62,6 +62,9 @@ class Resistivity {
 //  Real min_xe;
   Real max_eta;
   bool use_rkg_sts; // RKG super-stepping (Mattia+2026)
+  // stress-free closed inner wall (dhj problem/wall_mhd_mirror = stress_free): B_t = 0
+  // on the is face of a USER inner x1 boundary, so the resistive Poynting flux there is 0
+  bool wall_bt_zero = false;
   // <mhd>/rkg_lean (default false): the intermediate RKG super-stages (stage < s) skip
   // what only the LAST stage needs -- the conserved-variable halo exchange, the EOS
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only

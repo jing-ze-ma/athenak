@@ -826,6 +826,9 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
 
   //------------------------------
   // energy fluxes in x1-direction
+  // stress-free inner wall: the face B_t is zero there (odd ghost B_t), so is the flux
+  const bool wbt0_ = wall_bt_zero;
+  auto &mbbcs_ = pmy_pack->pmb->mb_bcs;
   auto &flx1 = flx.x1f;
   par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -865,6 +868,10 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
       
     // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
     if (cs_) { e3a = (e3a - ccell(m,k,j)*e2a)/scell(m,k,j); }
+    if (wbt0_ && i == is &&
+        mbbcs_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      fl1 = 0.0;  fr1 = 0.0;
+    }
     if (use_sts) {
       flx1(m,IEN,k,j,i) = -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
         + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;

@@ -1079,7 +1079,32 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pmy_mesh_->pmb_pack->phydro->wall_closed_ix1 = true;
     }
     if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
-      pmy_mesh_->pmb_pack->pmhd->wall_closed_ix1 = true;
+      auto *pmhd_w = pmy_mesh_->pmb_pack->pmhd;
+      pmhd_w->wall_closed_ix1 = true;
+      // problem/wall_mhd_mirror (MHD only; wallsf-1028, user 10-28): stress_free (default)
+      // or legacy.  The ghosts of this boundary hold B_t ODD and B_r even (the field is
+      // normal to the wall, HydrostaticEquilibrium below), while the legacy mirror kept
+      // B_t EVEN at the is face: the wall then exerted the anchored Maxwell stress
+      // -B_r B_t on a free-slip flow and did the work -B_r (v_t.B_t), +1.04 % of
+      // Lsw_abs into WASP-121b b100 (wallpoynt_1028/RESULTS.md), which a wall at rest
+      // cannot do.  stress_free flips B_t in the mirror (zero stress, zero Poynting
+      // flux; v_t stays even, free slip as in hydro), takes the wall-edge corner EMFs
+      // from the interior row and zeroes the resistive Poynting flux at the wall.
+      const std::string wmm =
+          pin->GetOrAddString("problem", "wall_mhd_mirror", "stress_free");
+      if (wmm == "stress_free") {
+        pmhd_w->wall_stress_free = true;
+        pmhd_w->wall_sf_corner = pin->GetOrAddBoolean("problem", "wall_mhd_corner", true);
+        if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_bt_zero = true;
+      } else if (wmm != "legacy") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "problem/wall_mhd_mirror = '" << wmm
+                  << "'; expected stress_free or legacy" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "  inner radial wall (MHD): wall_mhd_mirror = " << wmm << std::endl;
+      }
     }
     if (global_variable::my_rank == 0) {
       std::cout << "  inner radial wall: CLOSED (problem/wall_closed = true)"

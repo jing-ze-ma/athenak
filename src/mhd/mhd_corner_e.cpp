@@ -52,6 +52,14 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // B.rhat/|B| at nx2 = 32 is 1.6e-3, 2.9e-3, 4.1e-4 (6.7e-5 with all three).
   const bool sph_wall_ = use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar;
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
+  // STRESS-FREE closed USER inner wall (dhj wall_mhd_mirror = stress_free, mhd_fluxes.cpp):
+  // its mirror state has v_t and B_n even, v_n and B_t odd, so every tangential EMF of
+  // the mirror row equals the interior one.  The ghost row itself holds the problem's
+  // own state (the dhj ghosts are the initial column at rest), so at a wall edge the
+  // GS07 terms read the INTERIOR row in place of the ghost row (im_ = i), and the x1
+  // choices are those of a zero-mass-flux wall (wall_in, as for reflect).
+  const bool wsf_ = wall_closed_ix1 && wall_stress_free && wall_sf_corner;
+  const BoundaryFlag uflag_ = BoundaryFlag::user;
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -190,8 +198,11 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     par_for("emf2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
       // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
-      const bool wall_in = sph_wall_ && i == is &&
-                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
+      const bool wall_sf = wsf_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_;
+      const bool wall_in = (sph_wall_ && i == is &&
+                            mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) || wall_sf;
+      const int im_ = wall_sf ? i : i-1;   // the row standing in for the ghost row
       const bool wall_out = sph_wall_ && i == ie+1 &&
                             mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
       const bool wall1 = wall_in || wall_out;
@@ -207,25 +218,25 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
       Real e3_l2, e3_r2, e3_l1, e3_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_l2 = 0.5*((e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1)) +
+        e3_l2 = 0.5*((e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_)) +
               (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  )));
       } else if (flx1(m,IDN,ks,j-1,i) >= 0.0) {
-        e3_l2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1);
+        e3_l2 = e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_);
       } else {
         e3_l2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  );
       }
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_r2 = 0.5*((e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1)) +
+        e3_r2 = 0.5*((e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_)) +
               (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  )));
       } else if (flx1(m,IDN,ks,j,i) >= 0.0) {
-        e3_r2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1);
+        e3_r2 = e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_);
       } else {
         e3_r2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  );
       }
       if (flx2(m,IDN,ks,j,il_) >= 0.0) {
-        e3_l1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i-1);
+        e3_l1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,im_);
       } else {
-        e3_l1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i-1);
+        e3_l1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,im_);
       }
       if (flx2(m,IDN,ks,j,ir_) >= 0.0) {
         e3_r1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i  );
@@ -233,7 +244,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e3_r1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i  );
       }
       e3(m,ks,j,i) = 0.25*(e3_l1 + e3_r1 + e3_l2 + e3_r2 +
-             e3x2_(m,ks,j,i-1) + e3x2_(m,ks,j,i) + e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i));
+             e3x2_(m,ks,j,im_) + e3x2_(m,ks,j,i) + e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i));
     });
   }
 
@@ -436,8 +447,11 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     par_for("emf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
-      const bool wall_in = sph_wall_ && i == is &&
-                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_;
+      const bool wall_sf = wsf_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_;
+      const bool wall_in = (sph_wall_ && i == is &&
+                            mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) || wall_sf;
+      const int im_ = wall_sf ? i : i-1;   // the row standing in for the ghost row
       const bool wall_out = sph_wall_ && i == ie+1 &&
                             mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
       const bool wall1 = wall_in || wall_out;
@@ -474,25 +488,25 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       // integrate E2 to corner using SG07
       Real e2_l3, e2_r3, e2_l1, e2_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e2_l3 = 0.5*((e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1)) +
+        e2_l3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  )));
       } else if (flx1(m,IDN,k-1,j,i) >= 0.0) {
-        e2_l3 = e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1);
+        e2_l3 = e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_);
       } else {
         e2_l3 = e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  );
       }
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e2_r3 = 0.5*((e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1)) +
+        e2_r3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_)) +
               (e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  )));
       } else if (flx1(m,IDN,k,j,i) >= 0.0) {
-        e2_r3 = e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1);
+        e2_r3 = e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_);
       } else {
         e2_r3 = e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  );
       }
       if (flx3(m,IDN,k,j,il_) >= 0.0) {
-        e2_l1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i-1);
+        e2_l1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,im_);
       } else {
-        e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i-1);
+        e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_);
       }
       if (flx3(m,IDN,k,j,ir_) >= 0.0) {
         e2_r1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i  );
@@ -500,7 +514,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e2_r1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i  );
       }
       e2(m,k,j,i) = 0.25*(e2_l3 + e2_r3 + e2_l1 + e2_r1 +
-                e2x3_(m,k,j,i-1) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
+                e2x3_(m,k,j,im_) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
 
       // In a polar cell row, add Rusanov dissipation built from the FACE fields on either
       // side of this edge: -a_r/2 * [B3(i) - B3(i-1)] and +a_phi/2 * [B1(k) - B1(k-1)],
@@ -554,25 +568,25 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       // integrate E3 to corner using SG07
       Real e3_l2, e3_r2, e3_l1, e3_r1;
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_l2 = 0.5*((e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1)) +
+        e3_l2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  )));
       } else if (flx1(m,IDN,k,j-1,i) >= 0.0) {
-        e3_l2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1);
+        e3_l2 = e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_);
       } else {
         e3_l2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  );
       }
       if (wall1) {  // reflecting radial wall: no upwind side, see above
-        e3_r2 = 0.5*((e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1)) +
+        e3_r2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_)) +
               (e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  )));
       } else if (flx1(m,IDN,k,j,i) >= 0.0) {
-        e3_r2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1);
+        e3_r2 = e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_);
       } else {
         e3_r2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  );
       }
       if (flx2(m,IDN,k,j,il_) >= 0.0) {
-        e3_l1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i-1);
+        e3_l1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,im_);
       } else {
-        e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i-1);
+        e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_);
       }
       if (flx2(m,IDN,k,j,ir_) >= 0.0) {
         e3_r1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i  );
@@ -580,7 +594,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e3_r1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i  );
       }
       e3(m,k,j,i) = 0.25*(e3_l1 + e3_r1 + e3_l2 + e3_r2 +
-                e3x2_(m,k,j,i-1) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
+                e3x2_(m,k,j,im_) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
     });
   }
   if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();

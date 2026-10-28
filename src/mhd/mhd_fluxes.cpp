@@ -119,6 +119,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
+  const bool wall_sf_ = wall_closed_ix1 && wall_stress_free;
   // <mhd>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see mhd.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
@@ -355,6 +356,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (bix1 == BoundaryFlag::user) {  // reflect stays bitwise
             for (int n=0; n<nder; ++n) {
               dl(n,is) = dr(n,is);
+            }
+            if (wall_sf_) {  // stress-free: B_t odd, as the ghost field
+              bl(1,is) = -br(1,is);  bl(2,is) = -br(2,is);
             }
           }
         }
