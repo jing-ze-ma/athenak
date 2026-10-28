@@ -132,3 +132,5 @@ bhx      = 0.37      # its direction.  Deliberately TILTED.
 bhy      = 0.61
 bhz      = 0.70
 user_bcs = true
+# the header numbers (and the analytic-field finalizer) need this; default true since fefe6a179
+faces_from_potential = false
