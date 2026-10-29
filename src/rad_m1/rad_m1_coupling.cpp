@@ -398,6 +398,11 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
       phm->pmlat->Average(u0, M1_NVAR, M1_NVAR, 1, nophi, false);
     }
   }
+  // ringavg-1029 <rad_m1>/polar_ring_avg: E, F and the gas the coupling wrote to their
+  // phi-group averages (rad_m1_ringavg.cpp), before the fluid refresh below
+  if (rav_on) {
+    RavState(coupling && gas_feedback && fl_on && pmy_pack->phydro != nullptr);
+  }
   if (!coupling || !gas_feedback) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
   if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {

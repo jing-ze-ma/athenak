@@ -42,6 +42,7 @@
 
 // forward declarations
 class Driver;
+namespace hydro {class RingAvg;}   // ringavg-1029: hydro_ringavg.hpp
 
 namespace radm1 {
 
@@ -1908,6 +1909,21 @@ class RadiationM1 {
   // and area with the canonical seam areas; x1 parts are copies
   DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
   DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
+  // ringavg-1029 <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp): the implicit transport of
+  // the polar rows on the coarse phi groups of <mesh>/polar_ring_avg (hydro's table)
+  bool rav_on = false;
+  bool rav_lump = false, rav_dist = true;   // polar_ring_avg_lump / _dist (study keys)
+  hydro::RingAvg *prav = nullptr;
+  DvceFaceFld4D<Real> rav_dxf{"m1ravdxf", 1, 1, 1, 1};   // dxface, x3f x N_j between groups
+  //! the centre distances every implicit kernel takes (Coordinates dxface, or the
+  //! coarse-group one under polar_ring_avg)
+  DvceFaceFld4D<Real> M1Dxf() const;
+  void RavInit(ParameterInput *pin);
+  void RavAvg(const DvceArray5D<Real> &a, const int v0, const int nv);
+  void RavLump();
+  void RavKrylovStart();
+  void RavFaces();
+  void RavState(const bool gas);
   // cs-s4-1017: the planar unit normals (Cartesian) of the x2 faces (m, j = 0..n2, c)
   // and x3 faces (m, k = 0..n3, c) of each block, oriented along +x2 / +x3 (M1CsLat0)
   DvceArray3D<Real> cs_fn2, cs_fn3;

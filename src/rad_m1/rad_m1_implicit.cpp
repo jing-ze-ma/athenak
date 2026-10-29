@@ -4257,7 +4257,7 @@ void RadiationM1::ImplicitLatFaceCoef(bool first) {
   auto fw3 = ifw3;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
-  auto cdxf = pmy_pack->pcoord->dxface;
+  auto cdxf = M1Dxf();
   const bool sph = sph_geom;
   const bool edd = eddington;
   const bool blend = (impl_flux == M1_IFLUX_BLEND);
@@ -4604,7 +4604,7 @@ void RadiationM1::ImplicitLatFaceCoefCs(bool first) {
   auto fw3 = ifw3;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &mbbcs = m1bcs;   // cs-s4-1017: the seams are open
-  auto cdxf = pmy_pack->pcoord->dxface;
+  auto cdxf = M1Dxf();
   // cs-s4-1017: a seam face takes the mirror-pair distance r angm (cs_dxf_eff)
   auto cdxe = cs_dxf_eff;
   auto cse_ = cs_seam.d_view;
@@ -5044,7 +5044,7 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   const bool vtan = vgd_on && vgd_tan && vlat_ready && sph;
   auto vlt_ = tau_ten;
   const int c0l = M1_TT_LAT0;
-  auto cdxf = pmy_pack->pcoord->dxface;
+  auto cdxf = M1Dxf();
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx2v = pmy_pack->pcoord->x2v;
   auto cx3v = pmy_pack->pcoord->x3v;
@@ -5581,7 +5581,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const bool sph = sph_geom;
   auto cvol = pmy_pack->pcoord->volume;
   auto carea = pmy_pack->pcoord->area;
-  auto cdxf = pmy_pack->pcoord->dxface;
+  auto cdxf = M1Dxf();
   // STAGE S2 (sph_q: a chi(f) closure on the wedge): the lagged part of the face
   // equation is M1SphCurv (curvature always, off-diagonal terms under `lagged`), which
   // OVERWRITES the Cartesian `off` below
@@ -6901,10 +6901,12 @@ void RadiationM1::ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, i
 void RadiationM1::ImplicitPrecondX(int rc, int zc, int upd, Real c1, Real c2) {
   if (impl_prec >= 3) {
     ImplicitMGApply(rc, zc, upd, c1, c2);
+    if (rav_on) {RavAvg(iw, zc, 1);}   // ringavg-1029: P R/N M^{-1}
     return;
   }
   if (impl_prec == 0) {
     ImplicitPCRSolveX(rc, zc, upd, c1, c2, -1, -1);
+    if (rav_on) {RavAvg(iw, zc, 1);}
     return;
   }
   // the right-hand side the third half-sweep re-reads: the update the first one wrote
@@ -6914,6 +6916,7 @@ void RadiationM1::ImplicitPrecondX(int rc, int zc, int upd, Real c1, Real c2) {
   if (impl_prec == 1) {
     ImplicitPCRSolveX(rr, zc, 0, 0.0, 0.0, 0, zc);
   }
+  if (rav_on) {RavAvg(iw, zc, 1);}
 }
 
 //----------------------------------------------------------------------------------------
@@ -8195,6 +8198,9 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
 void RadiationM1::ImplicitApplyOp(int xc, int yc) {
   if (impl_stencil) {   // the 19-point stencil of this pass
     ImplicitHaloOp(xc, yc, 0, nullptr);
+    // ringavg-1029 polar_ring_avg: R A P, the rows summed over each phi group
+    // (rad_m1_ringavg.cpp; RavInit requires implicit_op_stencil)
+    if (rav_on) {RavAvg(iw, yc, 1);}
     return;
   }
   ImplicitKrylovHalo(xc);
@@ -8268,6 +8274,7 @@ void RadiationM1::ImplicitPrecond(int rc, int zc) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,cz,k,j,i) = iw_(m,M1_IW_S2,k,j,i);
   });
+  if (rav_on) {RavAvg(iw, cz, 1);}   // ringavg-1029
 }
 
 namespace {
@@ -8843,6 +8850,10 @@ void RadiationM1::ImplicitAccelApply(int it) {
 
 int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
   if (impl_opchk != 0) {ImplicitOpCheck();}   // implicit_op_check (debug, default off)
+  // ringavg-1029 polar_ring_avg_lump (study key, default off): the intra-group phi
+  // couplings of the 7-point rows onto the diagonal, before the stencil / preconditioner
+  // builds (rad_m1_ringavg.cpp; a no-op unless the key is on)
+  if (rav_on) {RavLump();}
   if (impl_prec_fb < 0) {return ImplicitBiCGStabRun(rhsmax);}
   // implicit_precond_fallback: a solve capped at lin_maxit is redone once with the
   // fallback preconditioner, from the Picard iterate again (every loop starts from
@@ -8887,6 +8898,7 @@ int RadiationM1::ImplicitBiCGStabRun(Real rhsmax) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,M1_IW_KX,k,j,i) = iw_(m,M1_IW_EP,k,j,i);
   });
+  if (rav_on) {RavKrylovStart();}   // ringavg-1029: b, x0 group-uniform
   ImplicitApplyOp(M1_IW_KX, M1_IW_KV);
   par_for("m1_impl_bcg_r0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -9084,6 +9096,9 @@ void RadiationM1::ImplicitBiCGStabEnd(int nit, bool fell_back) {
       iw_(m,M1_IW_S2,k,j,i) = iw_(m,M1_IW_KX,k,j,i);
     });
   }
+  // ringavg-1029: the line-Jacobi fallback works on the fine lines (uniform input,
+  // round-off apart); the Krylov iterate is uniform already
+  if (rav_on) {RavAvg(iw, M1_IW_S2, 1);}
   bcg_nsolve += 1.0;
   bcg_itsum += static_cast<Real>(nit);
   bcg_itmax = std::max(bcg_itmax, static_cast<Real>(nit));
@@ -9164,6 +9179,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,M1_IW_KX,k,j,i) = iw_(m,M1_IW_EP,k,j,i);
   });
+  if (rav_on) {RavKrylovStart();}   // ringavg-1029: b, x0 group-uniform
   ImplicitApplyOp(M1_IW_KX, M1_IW_KV);
   bred("m1_impl_bcgf_r0",
   KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
@@ -11635,7 +11651,7 @@ void RadiationM1::ImplicitVimpBuild() {
   const bool sphq = sph_q;
   auto cvol = pmy_pack->pcoord->volume;
   auto carea = pmy_pack->pcoord->area;
-  auto cdxf = pmy_pack->pcoord->dxface;
+  auto cdxf = M1Dxf();
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   const bool fwd = sph && impl_face_wdist;   // implicit_face_weight = distance
@@ -13921,7 +13937,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // dt A_f/V_i.  The Cartesian expressions are untouched (sphf false).
       const bool sphf = sph_geom;
       const bool fwdf = sph_geom && impl_face_wdist;
-      auto cdxff = pmy_pack->pcoord->dxface;
+      auto cdxff = M1Dxf();
       auto cx1ff = pmy_pack->pcoord->xx1f;
       // sp-blend-1008: with a FIXED-TENSOR closure (vet_col, vet_sc, tau) on the multi-D
       // wedge the reduced flux the HLL part and the weight use is the one the LAGGED
@@ -14293,7 +14309,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (aphll && plmdc && rfreeze && impl_recon_dgpass) {
       const Real rwin2 = impl_recon_w;
       const bool sphf2 = sph_geom;
-      auto cdxf2 = pmy_pack->pcoord->dxface;
+      auto cdxf2 = M1Dxf();
       const int nlay2 = nlay_;
       par_for("m1_impl_dgpass", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -14384,7 +14400,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool sph = sph_geom;
     auto cvol = pmy_pack->pcoord->volume;
     auto carea = pmy_pack->pcoord->area;
-    auto cdxf = pmy_pack->pcoord->dxface;
+    auto cdxf = M1Dxf();
     // STAGE S2: a chi(f) closure on the wedge -- the radial integrating factor
     // (M1SphDrr) and the lagged curvature (M1SphCurv), inside the sp overwrites only
     const bool sphq = sph_q;
@@ -16323,6 +16339,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // h2order2-1011: implicit_rad_inertia_solve carried it inside the passes
   if (impl_rad_inertia && have_hydro && !RinrActive()) {ImplicitRadInertia();}
   cs2_dav = false;
+  // ringavg-1029 polar_ring_avg: the stored faces of the coarse groups (RavFaces)
+  if (rav_on) {RavFaces();}
   //------------------------------------------------------------------------- write back
   // m1-sp-order2b: the cell flux at the stage's own velocity (hesdirk2 + implicit_vimp;
   // time2_vstage, default true on sp, false = the old stage-start form)

@@ -21,7 +21,8 @@
 //! <Phi>), which keeps sum E).  Hydro::NewTimeStep then uses N_j dphi as the phi width
 //! in those rows.  Groups never straddle a MeshBlock (N_j divides the block nx3) and the
 //! group boundaries are aligned across the pole (polar ghosts land on whole groups).
-//! The radiation (rad_m1) is NOT averaged: the implicit transport has no phi CFL.
+//! The radiation (rad_m1) is averaged only with <rad_m1>/polar_ring_avg = true
+//! (rad_m1_ringavg.cpp: the implicit transport of each group as ONE coarse cell).
 //!
 //! Keys (nothing is constructed unless polar_ring_avg = true: default bitwise):
 //!   <mesh>/polar_ring_avg     = true    needs use_spherical_polar + use_polar_boundary
@@ -50,10 +51,12 @@ class RingAvg {
   void Average(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
                const bool grav);
 
- private:
-  MeshBlockPack *pmy_pack;
+  // the group table, read by the radiation (<rad_m1>/polar_ring_avg, rad_m1_ringavg.cpp)
   int nent = 0;                 // number of averaged (block, row) entries on this rank
   DvceArray1D<int> em, ej, en;  // block, row j, group size of each entry
+
+ private:
+  MeshBlockPack *pmy_pack;
 };
 
 }  // namespace hydro
