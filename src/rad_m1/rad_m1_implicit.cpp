@@ -2857,6 +2857,34 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_work_fix")) {
     impl_wk_fix = pin->GetBoolean("rad_m1","implicit_work_fix");
   }
+  // vtxfix-1029 cs_vertex_mono / cs_vertex_mono_n (read only when named; rad_m1.hpp;
+  // DEFAULT true on the cubed sphere since defaults-1029, USER 10-29)
+  cs_vtx_mono = cs_geom;
+  if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
+    cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
+  }
+  if (pin->DoesParameterExist("rad_m1","cs_vertex_mono_n")) {
+    cs_vtx_n = pin->GetInteger("rad_m1","cs_vertex_mono_n");
+    if (cs_vtx_n < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/cs_vertex_mono_n must be >= 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // vtxfix-1029 implicit_pos_floor_cons (read only when named; rad_m1.hpp; DEFAULT true
+  // since defaults-1029, USER 10-29; false = the old floor that creates energy)
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_floor_cons")) {
+    impl_pos_flr_cons = pin->GetBoolean("rad_m1","implicit_pos_floor_cons");
+  }
+  if (impl_pos_flr_cons && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
+              << "from the radiation of the same column (no energy created)" << std::endl;
+  }
+  if (cs_vtx_mono && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> cs_vertex_mono: two-point lateral faces within " << cs_vtx_n
+              << " cell(s) of the 8 cube vertices (no skew cross term, seam foot values, "
+              << "D_r,lat = 0 within " << cs_vtx_n + 1 << ")" << std::endl;
+  }
   // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md).
   // defaults-1012 (user sign-off of method-1012): DEFAULT conservative2 (with its
   // implicit_cs2_hll = drag, implicit_cs2_shift = false) on a FRESH run with gas coupling
@@ -5632,6 +5660,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                                   : (impl_hr_model ? 0 : -1));
   auto hqvc_ = vet_cell;
   auto hqgh_ = vgd_hr;
+  // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): two-point faces near the cube vertices
+  const bool vmo = cs_vtx_mono && cs_geom;
+  const int vmn = cs_vtx_n;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
@@ -5682,12 +5713,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                   - M1DDiag(iw_,vd_,dfull,m,1,kq,jm,i)*iw_(m,M1_IW_EP,kq,jm,i))
                  /(cx1v(m,i)*csg2_(m,1,kq,sd));
         };
-        const bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
+        bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
+        // vtxfix-1029: a seam face within vmn of a cube vertex takes its foot value
+        if (vmo && M1CsSeamDepth(k, ks, ke, s3lo, s3hi) <= vmn) {up = false; dn = false;}
         // cs-open-1018: the quadratic through the foot values, at the face midpoint
         gr = M1CsSeamMid(dpr, csg2_, m, k, sd, up, dn);
       } else {
-        const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
-                             + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
+        Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
+                       + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
+        // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
+        if (vmo && (M1CsVtxDist(k,jm,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
+                    M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
+          ge = 0.0;
+        }
         gr = ((dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/cdxf.x2f(m,k,j,i)
               - ccs2(m,k,j)*ge)/csn2(m,k,j);
       }
@@ -5745,7 +5783,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const bool t3lo = (cseam(m,2) != 0), t3hi = (cseam(m,3) != 0);
         if ((j == js && t2lo) || (j == je+1 && t2hi)) {
           const int sd = (j == js) ? 0 : 1;
-          const bool up = !(k == ke && t3hi), dn = !(k == ks && t3lo);
+          bool up = !(k == ke && t3hi), dn = !(k == ks && t3lo);
+          if (vmo && M1CsSeamDepth(k, ks, ke, t3lo, t3hi) <= vmn) {up = false; dn = false;}
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           off = M1CsSeamMid(lf, csg2_, m, k, sd, up, dn);
         }
@@ -5761,7 +5800,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       const bool w3lo = (cseam(m,2) != 0), w3hi = (cseam(m,3) != 0);
       if ((j == js && w2lo) || (j == je+1 && w2hi)) {
         const int sd = (j == js) ? 0 : 1;
-        const bool up = !(k == ke && w3hi), dn = !(k == ks && w3lo);
+        bool up = !(k == ke && w3hi), dn = !(k == ks && w3lo);
+        if (vmo && M1CsSeamDepth(k, ks, ke, w3lo, w3hi) <= vmn) {up = false; dn = false;}
         auto vgq = [&](const int q) {
           return 0.25*(iw_(m,M1_IW_V2,q,jm,i) + iw_(m,M1_IW_V2,q,j,i))
                  *(iw_(m,M1_IW_G0,q,jm,i) + iw_(m,M1_IW_G0,q,j,i));
@@ -5877,13 +5917,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     - M1DDiag(iw_,vd_,dfull,m,2,km,jq,i)*iw_(m,M1_IW_EP,km,jq,i))
                    /(cx1v(m,i)*csg3_(m,1,jq,sd));
           };
-          const bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
+          bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
+          // vtxfix-1029: a seam face within vmn of a cube vertex takes its foot value
+          if (vmo && M1CsSeamDepth(j, js, je, s2lo, s2hi) <= vmn) {up = false; dn = false;}
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           gr = M1CsSeamMid(dpr, csg3_, m, j, sd, up, dn);
         } else {
-          const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
-                               + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,
-                                            s2hi));
+          Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
+                         + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,s2hi));
+          // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
+          if (vmo && (M1CsVtxDist(km,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
+                      M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
+            ge = 0.0;
+          }
           gr = ((dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/cdxf.x3f(m,k,j,i)
                 - ccs3(m,k,j)*ge)/csn3(m,k,j);
         }
@@ -5927,7 +5973,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const bool t3lo = (cseam(m,2) != 0), t3hi = (cseam(m,3) != 0);
         if ((k == ks && t3lo) || (k == ke+1 && t3hi)) {
           const int sd = (k == ks) ? 0 : 1;
-          const bool up = !(j == je && t2hi), dn = !(j == js && t2lo);
+          bool up = !(j == je && t2hi), dn = !(j == js && t2lo);
+          if (vmo && M1CsSeamDepth(j, js, je, t2lo, t2hi) <= vmn) {up = false; dn = false;}
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           off = M1CsSeamMid(lf, csg3_, m, j, sd, up, dn);
         }
@@ -5942,7 +5989,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const bool w2lo = (cseam(m,0) != 0), w2hi = (cseam(m,1) != 0);
         if ((k == ks && w3lo) || (k == ke+1 && w3hi)) {
           const int sd = (k == ks) ? 0 : 1;
-          const bool up = !(j == je && w2hi), dn = !(j == js && w2lo);
+          bool up = !(j == je && w2hi), dn = !(j == js && w2lo);
+          if (vmo && M1CsSeamDepth(j, js, je, w2lo, w2hi) <= vmn) {up = false; dn = false;}
           auto vgq = [&](const int q) {
             return 0.25*(iw_(m,M1_IW_V3,km,q,i) + iw_(m,M1_IW_V3,k,q,i))
                    *(iw_(m,M1_IW_G0,km,q,i) + iw_(m,M1_IW_G0,k,q,i));
@@ -9934,6 +9982,8 @@ void RadiationM1::ImplicitReport() {
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
               << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
               << " of which solve undershoot (pos_floor_solve)=" << pos_cnt[M1_POS_FLRS]
+              << " taken from the column's radiation (implicit_pos_floor_cons)="
+              << pos_cnt[M1_POS_FLR_MV]
               << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
               << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM] << std::endl;
   }
@@ -16451,6 +16501,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       am_(m,5,k,j,i) = g3;
     });
   }
+  // vtxfix-1029 implicit_pos_floor_cons: the write-back stores each cell's uncovered
+  // floor raise (erg) instead of counting it as created; a column pass then moves it
+  const bool pfcw_ = impl_pos_flr_cons && pflr;
+  if (pfcw_) {
+    auto &icp = pmy_pack->pmesh->mb_indcs;
+    if (pfc_def.extent_int(0) != pmy_pack->nmb_thispack) {
+      Kokkos::realloc(pfc_def, pmy_pack->nmb_thispack, icp.nx3 + 2*icp.ng,
+                      icp.nx2 + 2*icp.ng, icp.nx1 + 2*icp.ng);
+    }
+    Kokkos::deep_copy(pfc_def, 0.0);
+  }
+  auto pfd_ = pfc_def;
   // cs2clip-1020 <rad_m1>/implicit_cs2_clip = rad (read only when named; conservative
   // gas sources): the same fragment with M1_C2CR 1 (the gas is charged with the pre-limit
   // cell flux); every other launch below is the unchanged fragment
@@ -16533,6 +16595,66 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #define M1_RCP 1
 #include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
 #undef M1_RCP
+    });
+  }
+  if (pfcw_) {
+    // vtxfix-1029 implicit_pos_floor_cons: one thread per radial column; the uncovered
+    // raise of a cell is taken from the radiation above e_floor of the nearest cells of
+    // its column (i -+ d, d = 1, 2, ...; the pair split by their energy above floor)
+    const int isc = is, iec = ie;
+    const bool pspc = sph_geom;
+    auto pvc = pmy_pack->pcoord->volume;
+    auto mbsc = pmy_pack->pmb->mb_size;
+    const bool cswc = cs_geom;
+    auto ccc = pmy_pack->pcoord->cos_cell;
+    par_for("m1_pos_flr_cons", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real mv = 0.0, un = 0.0;
+      for (int i = isc; i <= iec; ++i) {
+        Real def = pfd_(m,k,j,i);
+        if (!(def > 0.0)) continue;
+        for (int d = 1; d <= iec - isc && def > 0.0; ++d) {
+          const int qa = i - d, qb = i + d;
+          Real va = 0.0, vb = 0.0, aa = 0.0, ab = 0.0;
+          if (qa >= isc) {
+            va = pspc ? pvc(m,k,j,qa) : (mbsc.d_view(m).dx1*mbsc.d_view(m).dx2*
+                                          mbsc.d_view(m).dx3);
+            aa = fmax(u0_(m,M1_E,k,j,qa) - efl, 0.0)*(cl/ch)*va;
+          }
+          if (qb <= iec) {
+            vb = pspc ? pvc(m,k,j,qb) : (mbsc.d_view(m).dx1*mbsc.d_view(m).dx2*
+                                          mbsc.d_view(m).dx3);
+            ab = fmax(u0_(m,M1_E,k,j,qb) - efl, 0.0)*(cl/ch)*vb;
+          }
+          const Real at = aa + ab;
+          if (!(at > 0.0)) continue;
+          const Real tk = fmin(def, at);
+          for (int s = 0; s < 2; ++s) {
+            const int q = (s == 0) ? qa : qb;
+            const Real a = (s == 0) ? aa : ab, vq = (s == 0) ? va : vb;
+            if (!(a > 0.0)) continue;
+            const Real de = (ch/cl)*(tk*a/at)/vq;   // radiation energy density taken
+            Real eq = fmax(u0_(m,M1_E,k,j,q) - de, efl);
+            u0_(m,M1_E,k,j,q) = eq;
+            if (t2k) {kk_(m,M1_T2_E,k,j,q) -= de/dt;}
+            Real g1 = u0_(m,M1_F1,k,j,q), g2 = u0_(m,M1_F2,k,j,q);
+            Real g3 = u0_(m,M1_F3,k,j,q);
+            if (cswc) {
+              M1ApplyLimitsCs(cl, efl, ccc(m,k,j), eq, g1, g2, g3);
+            } else {
+              M1ApplyLimits(cl, efl, eq, g1, g2, g3);
+            }
+            u0_(m,M1_F1,k,j,q) = g1;
+            u0_(m,M1_F2,k,j,q) = g2;
+            u0_(m,M1_F3,k,j,q) = g3;
+          }
+          def -= tk;
+          mv += tk;
+        }
+        un += fmax(def, 0.0);
+      }
+      if (mv > 0.0) {Kokkos::atomic_add(&pc_(M1_POS_FLR_MV), mv);}
+      if (un > 0.0) {Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), un);}
     });
   }
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise

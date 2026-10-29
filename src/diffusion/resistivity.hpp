@@ -62,6 +62,24 @@ class Resistivity {
 //  Real min_xe;
   Real max_eta;
   bool use_rkg_sts; // RKG super-stepping (Mattia+2026)
+  // stress-free closed inner wall (dhj problem/wall_mhd_mirror = stress_free): B_t = 0
+  // on the is face of a USER inner x1 boundary, so the resistive Poynting flux there is 0
+  bool wall_bt_zero = false;
+  // conducting walls (condwall-1028): the resistive edge EMF tangential to the reflect
+  // faces (<mhd>/wall_conducting = resistive|full) and/or to the is face of a user inner
+  // x1 wall (dhj wall_mhd_mirror = conducting) is 0; the resistive Poynting flux through
+  // those faces, built from the same edge EMFs, is then 0 too
+  bool wall_cond_reflect = false;
+  bool wall_cond_ix1 = false;
+  // stswall-1029: the RKG super-step does not pass through the RK stages, so a ledger
+  // that books the x1 face fluxes of the RK stages (dhj Etot_bot/Etot_top) misses the
+  // resistive energy it moves through the is and ie+1 faces.  With track_x1_bflx (set by
+  // the problem generator) RKUpdate follows the energy flux of those faces through the
+  // RKG recurrence: rkg_bflx(m, 0|1, k, j) = F_0 (is | ie+1), (2|3) = E_{j-2},
+  // (4|5) = E_{j-1}.  After the last super-stage (4|5) is the flux the whole super-step
+  // applied, per unit dt and area: the energy through the face is dt E A.
+  bool track_x1_bflx = false;
+  DvceArray4D<Real> rkg_bflx;
   // <mhd>/rkg_lean (default false): the intermediate RKG super-stages (stage < s) skip
   // what only the LAST stage needs -- the conserved-variable halo exchange, the EOS
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only

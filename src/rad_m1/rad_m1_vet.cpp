@@ -1934,11 +1934,36 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // each ray per box crossing.  Single MeshBlock only.  Read only when named.
   vet_x1per = false;
   vet_x1npass = 1;
+  // NOT a slip (unify-sc-gd-1012, rad_m1.hpp vet_mirror_npass): vet_x1_npass is the one
+  // pass-count key of both multi-pass x1 sweeps, the periodic one (read again below) and
+  // the cavity mirrored at both x1 ends (vet_bc_reflect = mirror, default 4, >= 2)
   if (pin->DoesParameterExist("rad_m1", "vet_x1_npass")) {
     vet_mirror_npass = std::max(2, pin->GetInteger("rad_m1", "vet_x1_npass"));
   }
+  //   m1cyc-1029: on a periodic x1 mesh the open sweep (upward rays enter layer is with
+  // the boundary intensity, downward rays enter ie with 0) is NOT periodic: an x1-uniform
+  // state gets an x1-dependent tensor, i.e. a ramp along x1 with a jump at the wrap
+  // (hot_blob slab facing x2: 22 % in E, 5 % in rho in 60 cycles).  So a fresh run on a
+  // periodic x1 mesh defaults to the periodic sweep (single MeshBlock), and a multi-block
+  // periodic x1 mesh, which has no periodic sweep, FATALs unless vet_x1_periodic = false
+  // is named (the open sweep, as before).  A restart whose file lacks the key keeps the
+  // open sweep (bitwise continuation).
+  const bool x1meshper =
+      (pm->mesh_bcs[BoundaryFace::inner_x1] == BoundaryFlag::periodic);
   if (pin->DoesParameterExist("rad_m1", "vet_x1_periodic")) {
     vet_x1per = pin->GetBoolean("rad_m1", "vet_x1_periodic");
+  } else if (x1meshper && !global_variable::restart_run) {
+    if (mbpath) {
+      VetFatal("<rad_m1>/closure = vet_sc on a periodic x1 mesh: the x1 sweep is not "
+               "periodic on several MeshBlocks / ranks (vet_x1_periodic needs a single "
+               "MeshBlock); name vet_x1_periodic = false to accept the open x1 sweep");
+    }
+    vet_x1per = !vet_milne;
+    pin->SetBoolean("rad_m1", "vet_x1_periodic", vet_x1per);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_sc: periodic x1 mesh, vet_x1_periodic defaulted to "
+                << (vet_x1per ? "true" : "false (vet_milne)") << std::endl;
+    }
   }
   if (vet_x1per) {
     if (mbpath) {VetFatal("<rad_m1>/vet_x1_periodic needs a single MeshBlock");}
@@ -1946,8 +1971,27 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     if (pm->mesh_bcs[BoundaryFace::inner_x1] != BoundaryFlag::periodic) {
       VetFatal("<rad_m1>/vet_x1_periodic needs periodic x1 boundaries");
     }
+    const bool np_named = pin->DoesParameterExist("rad_m1", "vet_x1_npass");
     vet_x1npass = pin->GetOrAddInteger("rad_m1", "vet_x1_npass", 64);
     if (vet_x1npass < 1) {VetFatal("<rad_m1>/vet_x1_npass must be >= 1");}
+    // vet_x1_ptol (m1cyc-1029): ADAPTIVE passes.  After pass p >= 1 the change of the
+    // exit plane (= the next pass's entry), d_p = max|I_p - I_{p-1}| / max I_p over all
+    // rays and (k,j), with the contraction q = d_p/d_{p-1}, bounds the error of the entry
+    // pass p used by d_p/(1 - q); the sweep stops when that is < vet_x1_ptol, at most
+    // vet_x1_npass passes.  Default 1e-6 (the tensor moves by <~ 1e-6 relative, far
+    // below the SC closure's own angular/spatial error, 1e-3..1e-2).  0 = exactly
+    // vet_x1_npass passes, the default when vet_x1_npass is named without vet_x1_ptol
+    // (an existing deck keeps its fixed count) and on a restart whose file lacks the key.
+    const bool fixed = np_named || global_variable::restart_run;
+    vet_x1ptol = pin->GetOrAddReal("rad_m1", "vet_x1_ptol", fixed ? 0.0 : 1.0e-6);
+    if (vet_x1ptol < 0.0) {VetFatal("<rad_m1>/vet_x1_ptol must be >= 0");}
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_sc periodic x1 sweep: "
+                << ((vet_x1ptol > 0.0) ? "adaptive, vet_x1_ptol=" : "fixed passes")
+                << ((vet_x1ptol > 0.0) ? std::to_string(vet_x1ptol) : std::string())
+                << ", vet_x1_npass=" << vet_x1npass
+                << ((vet_x1ptol > 0.0) ? " (cap)" : "") << std::endl;
+    }
     // vet_x1_periodic_inflow (predfix-1011): the first pass's entry intensity.
     //   source   : BOTH directions enter with the face source S (the intensity of an
     //              infinite uniform medium): a uniform state gives I = S on every ray and
@@ -2001,6 +2045,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   } else {
     Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
     Kokkos::deep_copy(vet_ipl, 0.0);
+    if (vet_x1per && vet_x1ptol > 0.0) {
+      Kokkos::realloc(vet_x1ent, nmb, vet_nray, ncells3, ncells2);
+    }
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> closure = vet_sc: short characteristics, " << vet_nray
@@ -3918,10 +3965,27 @@ void RadiationM1::VetShortCharSweep() {
   const int nhray = nray/2;
   const int npass = vet_x1per ? vet_x1npass : ((mlo && mhi) ? vet_mirror_npass
                                                : ((mlo || mhi) ? 2 : 1));
+  // m1cyc-1029 vet_x1_ptol > 0: adaptive periodic passes.  Every pass accumulates into
+  // moments zeroed at its start, so the moments kept are those of the last pass run (the
+  // same values as accumulating the last pass only); after each pass the exit plane is
+  // compared with the previous one (one device reduction, one host read per pass)
+  const bool adapt = vet_x1per && (vet_x1ptol > 0.0) && (nlaunch > 0);
+  Real dprev = -1.0;
+  int npdone = 0;
+  bool conv = false;
   for (int p = 0; p < npass; ++p) {
   const bool wrap = vet_x1per && (p > 0);   // layer is (ie) reads the periodic image
   const bool mrlo = mlo && (p > 0), mrhi = mhi && (p > 0);   // ... or the mirror image
-  const bool accum = (p == npass - 1);  // only the last pass adds to the moments
+  // only the last pass adds to the moments (adaptive: each pass, on zeroed moments)
+  const bool accum = adapt || (p == npass - 1);
+  if (adapt && p > 0) {
+    par_for("m1_vet_x1zero", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
+      if (hrs_) {for (int n = 0; n < 3; ++n) {vc_(m,M1_VET_HP1+n,k,j,i) = 0.0;}}
+      if (nls_) {vc_(m,M1_VET_NL,k,j,i) = 0.0;}
+    });
+  }
   for (int l = 0; l < nlaunch; ++l) {
     const int gl = p*nlaunch + l;
     const int pw = gl & 1, pr = pw ^ 1;
@@ -4157,6 +4221,51 @@ void RadiationM1::VetShortCharSweep() {
       }
     });
   }
+  ++npdone;
+  if (adapt) {
+    // the exit plane of this pass (launch nlaunch-1 wrote plane (gl & 1)): up rays at ie,
+    // down rays at is, i.e. the entry of the next pass; d = max|I_p - I_{p-1}|, a = max I
+    const int pl = (p*nlaunch + nlaunch - 1) & 1;
+    auto ent_ = vet_x1ent;
+    const int nj = je - js + 1, nk = ke - ks + 1;
+    const int ntot = (nmb1 + 1)*nray*nk*nj;
+    const bool cmp = (p > 0);
+    Real dmax = 0.0, amax = 0.0;
+    Kokkos::parallel_reduce("m1_vet_x1conv",
+      Kokkos::RangePolicy<DevExeSpace>(0, ntot),
+      KOKKOS_LAMBDA(const int t, Real &dl, Real &al) {
+        int q = t;
+        const int j = js + q % nj; q /= nj;
+        const int k = ks + q % nk; q /= nk;
+        const int r = q % nray;
+        const int m = q / nray;
+        const Real v = ip_(m,pl,r,k,j);
+        if (cmp) {dl = fmax(dl, fabs(v - ent_(m,r,k,j)));}
+        al = fmax(al, v);
+        ent_(m,r,k,j) = v;
+      }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(amax));
+    if (p > 0) {
+      const Real d = (amax > 0.0) ? (dmax/amax) : 0.0;
+      // error of the entry this pass used: d + d q + d q^2 ... = d/(1 - q)
+      const Real q = (dprev > 0.0) ? fmin(d/dprev, 0.999) : 0.999;
+      conv = (d == 0.0) || (d/(1.0 - q) < vet_x1ptol);
+      dprev = d;
+      if (conv) {break;}
+    }
+  }
+  }
+  if (adapt) {
+    vet_x1_nbuild += 1.0;
+    vet_x1_npsum += static_cast<Real>(npdone);
+    vet_x1_npmax = std::max(vet_x1_npmax, npdone);
+    if (!conv) {
+      if (vet_x1_ncap == 0.0 && global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> WARNING vet_sc periodic x1 sweep: vet_x1_npass="
+                  << vet_x1npass << " reached before vet_x1_ptol=" << vet_x1ptol
+                  << " (first time; counted in the final report)" << std::endl;
+      }
+      vet_x1_ncap += 1.0;
+    }
   }
 
   // rotavg-1012 (vet_rotate_avg): the pending offsets from this (current-set) sweep, then
@@ -4505,6 +4614,12 @@ void RadiationM1::VetReport() {
             << " implicit-solve seconds incl. SC=" << vet_itime
             << " SC/(implicit solve without SC)="
             << vet_time/std::fmax(vet_itime - vet_time, 1.0e-300) << std::endl;
+  if (vet_x1_nbuild > 0.0) {   // m1cyc-1029 adaptive periodic x1 sweep
+    std::cout << "<rad_m1> vet_sc periodic x1 sweep (vet_x1_ptol=" << vet_x1ptol
+              << ", cap vet_x1_npass=" << vet_x1npass << "): builds=" << vet_x1_nbuild
+              << " passes mean=" << vet_x1_npsum/vet_x1_nbuild << " max=" << vet_x1_npmax
+              << " builds that hit the cap=" << vet_x1_ncap << std::endl;
+  }
   if (vra_on && vsc_rot) {
     std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
               << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit

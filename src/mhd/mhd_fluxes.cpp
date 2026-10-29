@@ -119,6 +119,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
+  const bool wall_sf_ = wall_closed_ix1 && wall_stress_free;
+  // the dhj conducting wall is a closed wall on every geometry too (legacy mirror)
+  const bool wall_cd_ = wall_closed_ix1 && wall_conducting_ix1;
   // <mhd>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see mhd.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
@@ -343,12 +346,17 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall.  Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
-    if (use_spherical_polar || str_r1_) {
+    // A Cartesian mesh takes the user-wall mirror only under the stress-free or the
+    // conducting wall (the legacy closed wall was never applied there; reflect is
+    // untouched on Cartesian).
+    if (use_spherical_polar || str_r1_ || wall_sf_ || wall_cd_) {
+      const bool curv_ = use_spherical_polar || str_r1_;
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {
         // (user inner boundary under wall_closed_ix1 too -- see hydro_fluxes.cpp)
         const BoundaryFlag bix1 = mb_bcs.d_view(m,BoundaryFace::inner_x1);
-        if (bix1 == BoundaryFlag::reflect || (wall_ix1_ && bix1 == BoundaryFlag::user)) {
+        if ((curv_ && bix1 == BoundaryFlag::reflect) ||
+            (wall_ix1_ && bix1 == BoundaryFlag::user)) {
           for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
           wl(IVX,is) = -wr(IVX,is);
           bl(1,is) = br(1,is);  bl(2,is) = br(2,is);
@@ -356,9 +364,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             for (int n=0; n<nder; ++n) {
               dl(n,is) = dr(n,is);
             }
+            if (wall_sf_) {  // stress-free: B_t odd, as the ghost field
+              bl(1,is) = -br(1,is);  bl(2,is) = -br(2,is);
+            }
           }
         }
-        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
+        if (curv_ && mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
           for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           br(1,ie+1) = bl(1,ie+1);  br(2,ie+1) = bl(2,ie+1);
@@ -615,6 +626,31 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
         member.team_barrier();
 
+        // condwall-1028: a REFLECTING theta wall on spherical polar.  The position-aware
+        // x2 reconstruction is not mirror-symmetric about the wall (as the x1 one about a
+        // radial wall, see the x1 sweep), so the ghost-side state is not the mirror of
+        // the interior one and the wall passed mass (6e-6 of M in t = 1, cw_test sp).
+        // Make it the exact mirror (v_theta flipped, B_t as the reflect ghosts: even).
+        if (use_spherical_polar &&
+            ((j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::reflect)
+             || (j == je+1 &&
+                 mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::reflect))) {
+          const bool in2 = (j == js);
+          par_for_inner(member, is-1, ie+1, [&](const int i) {
+            for (int n=0; n<nvars; ++n) {
+              if (in2) {wl(n,i) = wr(n,i);} else {wr(n,i) = wl(n,i);}
+            }
+            if (in2) {wl(IVY,i) = -wr(IVY,i);} else {wr(IVY,i) = -wl(IVY,i);}
+            for (int n=0; n<3; ++n) {   // bcc in x1,x2,x3 order (slot 1 unused: by)
+              if (in2) {bl(n,i) = br(n,i);} else {br(n,i) = bl(n,i);}
+            }
+            for (int n=0; n<nder; ++n) {
+              if (in2) {dl(n,i) = dr(n,i);} else {dr(n,i) = dl(n,i);}
+            }
+          });
+          member.team_barrier();
+        }
+
         // compute fluxes over [js,je+1].  MHD RS also computes electric fields, where
         // (IBY) component of flx = E_{x} = -(v x B)_{x} = -(v2*b3 - v3*b2)
         // (IBZ) component of flx = E_{z} = -(v x B)_{z} =  (v2*b1 - v1*b2)
@@ -852,8 +888,21 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (use_spherical_polar) {
           if (px3_ == 1 || px3_ == 3) {
             const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
-            const Real cd = cos(dang), sd = sin(dang);
+            const Real cd = cos(dang), sd0 = sin(dang);
+            // A REFLECTING radial wall: the ghost row holds the MIRROR image (v_r, B_r
+            // flipped) of the interior row, and its phi-face EMFs enter the wall-edge EMF
+            // (CornerE), which vanishes only if they are minus the interior ones.
+            // Rotating the mirrored (r,theta) pair by +dang is not the mirror of the
+            // rotated interior pair; rotating it by -dang is.  With +dang the wall-edge
+            // E_theta was off by O(sin(dang) v_theta B_phi): B.rhat grew at the closed
+            // wall wherever the flow is not axisymmetric, and the Poynting flux through
+            // it drained energy (equator MHD blast, -5e-8 at nx2 = 32; now round-off).
+            const bool gin_ = mb_bcs.d_view(m,BoundaryFace::inner_x1) ==
+                              BoundaryFlag::reflect;
+            const bool gout_ = mb_bcs.d_view(m,BoundaryFace::outer_x1) ==
+                               BoundaryFlag::reflect;
             par_for_inner(member, is-1, ie+1, [&](const int i) {
+              const Real sd = ((gin_ && i < is) || (gout_ && i > ie)) ? -sd0 : sd0;
               Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
               wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
               a = wr(IVX,i); b = wr(IVY,i);

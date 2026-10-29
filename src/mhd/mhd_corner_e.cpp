@@ -36,6 +36,30 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const bool use_bs = use_bs_emf;
+  // A REFLECTING radial wall (spherical polar or cubed sphere): the x1 mass flux there
+  // is zero (the two wall states are mirror images, mhd_fluxes.cpp), so GS07 has no
+  // upwind side.  ">= 0" then always took the GHOST cell's EMF gradient, which behind a
+  // mirror wall is minus the interior one: the wall-edge EMF picked up an O(v_r B_t)
+  // term, and CT turned it into a growing B.rhat at a closed wall (closed MHD vertex
+  // blast, cs_test iprob=12: ~3e-3 of |B|, rising with resolution).  At such a wall the
+  // x1 choices take the average of the two sides -- the GS07 rule for a zero contact
+  // speed -- which cancels exactly for mirrored states.  The transverse (x2/x3) choices
+  // at a wall edge read the mass flux of the INTERIOR row on both sides: the ghost-row
+  // flux is the mirror of it everywhere except on a cubed-sphere seam face, where the
+  // shared seam flux is applied to the active rows only, and there the two sides picked
+  // different upwind cells.  Each piece is needed: with the x1 average, the interior
+  // row, or the mirrored ghost bcc1 (CellCenteredRadialFldWall) left out, the blast wall
+  // B.rhat/|B| at nx2 = 32 is 1.6e-3, 2.9e-3, 4.1e-4 (6.7e-5 with all three).
+  const bool sph_wall_ = use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar;
+  const BoundaryFlag rflag_ = BoundaryFlag::reflect;
+  // STRESS-FREE closed USER inner wall (dhj wall_mhd_mirror = stress_free; mhd_fluxes):
+  // its mirror state has v_t and B_n even, v_n and B_t odd, so every tangential EMF of
+  // the mirror row equals the interior one.  The ghost row itself holds the problem's
+  // own state (the dhj ghosts are the initial column at rest), so at a wall edge the
+  // GS07 terms read the INTERIOR row in place of the ghost row (im_ = i), and the x1
+  // choices are those of a zero-mass-flux wall (wall_in, as for reflect).
+  const bool wsf_ = wall_closed_ix1 && wall_stress_free;
+  const BoundaryFlag uflag_ = BoundaryFlag::user;
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -173,34 +197,54 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     //       e3[is:ie+1,js:je+1,ks:ke  ]
     par_for("emf2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
+      // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
+      const bool wall_sf = wsf_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_;
+      const bool wall_in = (sph_wall_ && i == is &&
+                            mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) || wall_sf;
+      const int im_ = wall_sf ? i : i-1;   // the row standing in for the ghost row
+      const bool wall_out = sph_wall_ && i == ie+1 &&
+                            mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
+      const bool wall1 = wall_in || wall_out;
+      // the row whose transverse mass flux picks the upwind side: the interior one on
+      // BOTH sides of a wall (the ghost row is its mirror image except where a seam
+      // flux was shared over the active rows only)
+      const int il_ = wall_in ? i : i-1;
+      const int ir_ = wall_out ? i-1 : i;
       e2(m,ks  ,j,i) = e2x1_(m,ks,j,i);
       e2(m,ke+1,j,i) = e2x1_(m,ks,j,i);
       e1(m,ks  ,j,i) = e1x2_(m,ks,j,i);
       e1(m,ke+1,j,i) = e1x2_(m,ks,j,i);
 
       Real e3_l2, e3_r2, e3_l1, e3_r1;
-      if (flx1(m,IDN,ks,j-1,i) >= 0.0) {
-        e3_l2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j-1,i-1);
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_l2 = 0.5*((e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_)) +
+              (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  )));
+      } else if (flx1(m,IDN,ks,j-1,i) >= 0.0) {
+        e3_l2 = e3x2_(m,ks,j,im_) - e3cc_(m,ks,j-1,im_);
       } else {
         e3_l2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j-1,i  );
       }
-      if (flx1(m,IDN,ks,j,i) >= 0.0) {
-        e3_r2 = e3x2_(m,ks,j,i-1) - e3cc_(m,ks,j  ,i-1);
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_r2 = 0.5*((e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_)) +
+              (e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  )));
+      } else if (flx1(m,IDN,ks,j,i) >= 0.0) {
+        e3_r2 = e3x2_(m,ks,j,im_) - e3cc_(m,ks,j  ,im_);
       } else {
         e3_r2 = e3x2_(m,ks,j,i  ) - e3cc_(m,ks,j  ,i  );
       }
-      if (flx2(m,IDN,ks,j,i-1) >= 0.0) {
-        e3_l1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i-1);
+      if (flx2(m,IDN,ks,j,il_) >= 0.0) {
+        e3_l1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,im_);
       } else {
-        e3_l1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i-1);
+        e3_l1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,im_);
       }
-      if (flx2(m,IDN,ks,j,i) >= 0.0) {
+      if (flx2(m,IDN,ks,j,ir_) >= 0.0) {
         e3_r1 = e3x1_(m,ks,j-1,i) - e3cc_(m,ks,j-1,i  );
       } else {
         e3_r1 = e3x1_(m,ks,j  ,i) - e3cc_(m,ks,j  ,i  );
       }
       e3(m,ks,j,i) = 0.25*(e3_l1 + e3_r1 + e3_l2 + e3_r2 +
-             e3x2_(m,ks,j,i-1) + e3x2_(m,ks,j,i) + e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i));
+             e3x2_(m,ks,j,im_) + e3x2_(m,ks,j,i) + e3x1_(m,ks,j-1,i) + e3x1_(m,ks,j,i));
     });
   }
 
@@ -402,6 +446,20 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
     par_for("emf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // reflecting radial wall: GS07 x1 upwind choices averaged (see sph_wall_)
+      const bool wall_sf = wsf_ && i == is &&
+                           mb_bcs.d_view(m,BoundaryFace::inner_x1) == uflag_;
+      const bool wall_in = (sph_wall_ && i == is &&
+                            mb_bcs.d_view(m,BoundaryFace::inner_x1) == rflag_) || wall_sf;
+      const int im_ = wall_sf ? i : i-1;   // the row standing in for the ghost row
+      const bool wall_out = sph_wall_ && i == ie+1 &&
+                            mb_bcs.d_view(m,BoundaryFace::outer_x1) == rflag_;
+      const bool wall1 = wall_in || wall_out;
+      // the row whose transverse mass flux picks the upwind side: the interior one on
+      // BOTH sides of a wall (the ghost row is its mirror image except where a seam
+      // flux was shared over the active rows only)
+      const int il_ = wall_in ? i : i-1;
+      const int ir_ = wall_out ? i-1 : i;
       // integrate E1 to corner using SG07
       Real e1_l3, e1_r3, e1_l2, e1_r2;
       if (flx2(m,IDN,k-1,j,i) >= 0.0) {
@@ -429,28 +487,34 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
       // integrate E2 to corner using SG07
       Real e2_l3, e2_r3, e2_l1, e2_r1;
-      if (flx1(m,IDN,k-1,j,i) >= 0.0) {
-        e2_l3 = e2x3_(m,k,j,i-1) - e2cc_(m,k-1,j,i-1);
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e2_l3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_)) +
+              (e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  )));
+      } else if (flx1(m,IDN,k-1,j,i) >= 0.0) {
+        e2_l3 = e2x3_(m,k,j,im_) - e2cc_(m,k-1,j,im_);
       } else {
         e2_l3 = e2x3_(m,k,j,i  ) - e2cc_(m,k-1,j,i  );
       }
-      if (flx1(m,IDN,k,j,i) >= 0.0) {
-        e2_r3 = e2x3_(m,k,j,i-1) - e2cc_(m,k  ,j,i-1);
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e2_r3 = 0.5*((e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_)) +
+              (e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  )));
+      } else if (flx1(m,IDN,k,j,i) >= 0.0) {
+        e2_r3 = e2x3_(m,k,j,im_) - e2cc_(m,k  ,j,im_);
       } else {
         e2_r3 = e2x3_(m,k,j,i  ) - e2cc_(m,k  ,j,i  );
       }
-      if (flx3(m,IDN,k,j,i-1) >= 0.0) {
-        e2_l1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i-1);
+      if (flx3(m,IDN,k,j,il_) >= 0.0) {
+        e2_l1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,im_);
       } else {
-        e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i-1);
+        e2_l1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,im_);
       }
-      if (flx3(m,IDN,k,j,i) >= 0.0) {
+      if (flx3(m,IDN,k,j,ir_) >= 0.0) {
         e2_r1 = e2x1_(m,k-1,j,i) - e2cc_(m,k-1,j,i  );
       } else {
         e2_r1 = e2x1_(m,k  ,j,i) - e2cc_(m,k  ,j,i  );
       }
       e2(m,k,j,i) = 0.25*(e2_l3 + e2_r3 + e2_l1 + e2_r1 +
-                e2x3_(m,k,j,i-1) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
+                e2x3_(m,k,j,im_) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
 
       // In a polar cell row, add Rusanov dissipation built from the FACE fields on either
       // side of this edge: -a_r/2 * [B3(i) - B3(i-1)] and +a_phi/2 * [B1(k) - B1(k-1)],
@@ -503,32 +567,169 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 
       // integrate E3 to corner using SG07
       Real e3_l2, e3_r2, e3_l1, e3_r1;
-      if (flx1(m,IDN,k,j-1,i) >= 0.0) {
-        e3_l2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j-1,i-1);
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_l2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_)) +
+              (e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  )));
+      } else if (flx1(m,IDN,k,j-1,i) >= 0.0) {
+        e3_l2 = e3x2_(m,k,j,im_) - e3cc_(m,k,j-1,im_);
       } else {
         e3_l2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j-1,i  );
       }
-      if (flx1(m,IDN,k,j,i) >= 0.0) {
-        e3_r2 = e3x2_(m,k,j,i-1) - e3cc_(m,k,j  ,i-1);
+      if (wall1) {  // reflecting radial wall: no upwind side, see above
+        e3_r2 = 0.5*((e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_)) +
+              (e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  )));
+      } else if (flx1(m,IDN,k,j,i) >= 0.0) {
+        e3_r2 = e3x2_(m,k,j,im_) - e3cc_(m,k,j  ,im_);
       } else {
         e3_r2 = e3x2_(m,k,j,i  ) - e3cc_(m,k,j  ,i  );
       }
-      if (flx2(m,IDN,k,j,i-1) >= 0.0) {
-        e3_l1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i-1);
+      if (flx2(m,IDN,k,j,il_) >= 0.0) {
+        e3_l1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,im_);
       } else {
-        e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i-1);
+        e3_l1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,im_);
       }
-      if (flx2(m,IDN,k,j,i) >= 0.0) {
+      if (flx2(m,IDN,k,j,ir_) >= 0.0) {
         e3_r1 = e3x1_(m,k,j-1,i) - e3cc_(m,k,j-1,i  );
       } else {
         e3_r1 = e3x1_(m,k,j  ,i) - e3cc_(m,k,j  ,i  );
       }
       e3(m,k,j,i) = 0.25*(e3_l1 + e3_r1 + e3_l2 + e3_r2 +
-                e3x2_(m,k,j,i-1) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
+                e3x2_(m,k,j,im_) + e3x2_(m,k,j,i) + e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
     });
   }
   if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::WallEmfZero
+//! \brief condwall-1028: perfectly conducting wall at rest.  On every REFLECT mesh face
+//! of a MeshBlock (refl) and/or on the is face of a USER inner x1 boundary (usr_ix1, the
+//! dhj closed wall under wall_mhd_mirror = conducting) the edge EMFs of `e` tangential to
+//! that face are set to exactly 0, so CT leaves the face-normal field of the wall faces
+//! unchanged.  Generic: Cartesian, spherical polar, cubed sphere (x1 = r there; the panel
+//! faces are never reflect).  Edge extents: e1(k: ks..ke+1, j: js..je+1, i: is..ie),
+//! e2(k: ks..ke+1, j: js..je, i: is..ie+1), e3(k: ks..ke, j: js..je+1, i: is..ie+1); in
+//! 1-D/2-D the degenerate ke+1 / je+1 copies are zeroed as well.  Called on the ideal
+//! corner EMF (wall_conducting = full, or the dhj conducting wall) and on the resistive
+//! EMF (Resistivity::AddFluxGeneralResist): the explicit and the RKG paths both see it.
+
+void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix1) {
+  auto e1 = e.x1e;
+  auto e2 = e.x2e;
+  auto e3 = e.x3e;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const BoundaryFlag rf = BoundaryFlag::reflect, uf = BoundaryFlag::user;
+  // x1 faces: e2 and e3 at i = is / ie+1
+  par_for("wall_emf0_x1", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const BoundaryFlag bi = mb_bcs.d_view(m,BoundaryFace::inner_x1);
+    const BoundaryFlag bo = mb_bcs.d_view(m,BoundaryFace::outer_x1);
+    if ((refl && bi == rf) || (usr_ix1 && bi == uf)) {
+      if (j <= je) {e2(m,k,j,is) = 0.0;}
+      if (k <= ke) {e3(m,k,j,is) = 0.0;}
+    }
+    if (refl && bo == rf) {
+      if (j <= je) {e2(m,k,j,ie+1) = 0.0;}
+      if (k <= ke) {e3(m,k,j,ie+1) = 0.0;}
+    }
+  });
+  if (!refl || !md) return;
+  // x2 faces: e1 and e3 at j = js / je+1
+  par_for("wall_emf0_x2", DevExeSpace(), 0, nmb1, ks, ke+1, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == rf) {
+      if (i <= ie) {e1(m,k,js,i) = 0.0;}
+      if (k <= ke) {e3(m,k,js,i) = 0.0;}
+    }
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf) {
+      if (i <= ie) {e1(m,k,je+1,i) = 0.0;}
+      if (k <= ke) {e3(m,k,je+1,i) = 0.0;}
+    }
+  });
+  if (!td) return;
+  // x3 faces: e1 and e2 at k = ks / ke+1
+  par_for("wall_emf0_x3", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == rf) {
+      if (i <= ie) {e1(m,ks,j,i) = 0.0;}
+      if (j <= je) {e2(m,ks,j,i) = 0.0;}
+    }
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf) {
+      if (i <= ie) {e1(m,ke+1,j,i) = 0.0;}
+      if (j <= je) {e2(m,ke+1,j,i) = 0.0;}
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::WallFluxZero
+//! \brief condwall-1028: the Riemann MASS, ENERGY and passive-scalar fluxes through a
+//! conducting wall are set to 0: every REFLECT mesh face (refl, <mhd>/wall_conducting =
+//! full) and/or the is face of a USER inner x1 boundary (usr_ix1, the dhj conducting
+//! wall).  At a closed wall at rest v_n = 0, and E_t = 0 (WallEmfZero) removes the
+//! Poynting flux E x B . n, so the exact mass and energy fluxes are 0.  The Riemann flux
+//! is not: the mirror state (v_n odd, B_t even) is a symmetry of MHD only when B_n = 0.
+//! With B_n != 0 the exact mirror would need B_t ODD (a stress-free wall), so the solver
+//! returned S_M != 0, a mass flux O(B_n B_t) (cw_test threaded box: 2.6e-2 of M through
+//! the walls in t = 1 on Cartesian, 2e-3 on sp) and the work -B_n (v_t . B_t).  Called on
+//! the Riemann (+FOFC) fluxes only, before any diffusive flux (conduction / viscosity
+//! through the wall are kept).  The momentum fluxes (pressure and Maxwell stress) stay.
+
+void MHD::WallFluxZero(const bool refl, const bool usr_ix1) {
+  auto f1 = uflx.x1f;
+  auto f2 = uflx.x2f;
+  auto f3 = uflx.x3f;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  // the zeroed slots: IDN, IEN (ideal EOS only) and the passive scalars
+  const int ien = (nmhd > IEN) ? IEN : -1;
+  const int ns0 = nmhd, ns1 = nmhd + nscalars;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const BoundaryFlag rf = BoundaryFlag::reflect, uf = BoundaryFlag::user;
+  par_for("wall_flux0_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const BoundaryFlag bi = mb_bcs.d_view(m,BoundaryFace::inner_x1);
+    const bool zi = (refl && bi == rf) || (usr_ix1 && bi == uf);
+    const bool zo = refl && mb_bcs.d_view(m,BoundaryFace::outer_x1) == rf;
+    for (int n=0; n<ns1; ++n) {
+      if (n != IDN && n != ien && n < ns0) continue;
+      if (zi) {f1(m,n,k,j,is) = 0.0;}
+      if (zo) {f1(m,n,k,j,ie+1) = 0.0;}
+    }
+  });
+  if (!refl || !md) return;
+  par_for("wall_flux0_x2", DevExeSpace(), 0, nmb1, ks, ke, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    const bool zi = mb_bcs.d_view(m,BoundaryFace::inner_x2) == rf;
+    const bool zo = mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf;
+    for (int n=0; n<ns1; ++n) {
+      if (n != IDN && n != ien && n < ns0) continue;
+      if (zi) {f2(m,n,k,js,i) = 0.0;}
+      if (zo) {f2(m,n,k,je+1,i) = 0.0;}
+    }
+  });
+  if (!td) return;
+  par_for("wall_flux0_x3", DevExeSpace(), 0, nmb1, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+    const bool zi = mb_bcs.d_view(m,BoundaryFace::inner_x3) == rf;
+    const bool zo = mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf;
+    for (int n=0; n<ns1; ++n) {
+      if (n != IDN && n != ien && n < ns0) continue;
+      if (zi) {f3(m,n,ks,j,i) = 0.0;}
+      if (zo) {f3(m,n,ke+1,j,i) = 0.0;}
+    }
+  });
 }
 
 void MHD::PolarAzimuthalAverageEr() {

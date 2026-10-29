@@ -794,6 +794,13 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
 //  } else {
     AddEMFGeneralResist(b, efld_resist);
 //  }
+  // conducting walls (condwall-1028): the resistive tangential edge EMF is 0 on the wall
+  // faces.  Every edge around a wall face is then 0, so the resistive Poynting flux
+  // through it (built below from these edges) is 0 as well; the explicit path adds
+  // efld_resist to the corner EMF and the RKG path copies it, so both see the zero.
+  if (wall_cond_reflect || wall_cond_ix1) {
+    pmy_pack->pmhd->WallEmfZero(efld_resist, wall_cond_reflect, wall_cond_ix1);
+  }
   auto &e1 = efld_resist.x1e;
   auto &e2 = efld_resist.x2e;
   auto &e3 = efld_resist.x3e;
@@ -826,6 +833,9 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
 
   //------------------------------
   // energy fluxes in x1-direction
+  // stress-free inner wall: the face B_t is zero there (odd ghost B_t), so is the flux
+  const bool wbt0_ = wall_bt_zero;
+  auto &mbbcs_ = pmy_pack->pmb->mb_bcs;
   auto &flx1 = flx.x1f;
   par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -865,6 +875,10 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
       
     // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
     if (cs_) { e3a = (e3a - ccell(m,k,j)*e2a)/scell(m,k,j); }
+    if (wbt0_ && i == is &&
+        mbbcs_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      fl1 = 0.0;  fr1 = 0.0;
+    }
     if (use_sts) {
       flx1(m,IEN,k,j,i) = -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
         + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;

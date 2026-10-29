@@ -1089,6 +1089,10 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
   // x1v is the volume CENTROID, never the midpoint of the two faces, on every radial
   // grid -- so the weighted form is the right one unconditionally, as on spherical polar
   const bool str_x1_ = true;
+  // ghosts behind a REFLECTING radial wall take mirror-consistent radial weights; see
+  // CellCenteredRadialFldWall
+  auto &wbc_ = pmy_pack->pmb->mb_bcs;
+  const int wis_ = pmy_pack->pmesh->mb_indcs.is, wie_ = pmy_pack->pmesh->mb_indcs.ie;
   auto &x1v_ = x1v;
   auto &x1f_ = xx1f;
 
@@ -1124,9 +1128,11 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     // moves: B.e_xi = B^xi + c B^eta = (b_xi + c b_eta)/s.
     // x2/x3 stay plain averages: the panel coordinates are uniform (mesh.cpp refuses
     // use_grid_stretch_theta), so a weighted form there would return the same number.
+    const bool rin_ = wbc_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect;
+    const bool rout_ = wbc_.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect;
     const Real bx = str_x1_ ?
-        CellCenteredRadialFld(b0.x1f(m,k,j,i), b0.x1f(m,k,j,i+1),
-                              x1f_(m,i), x1f_(m,i+1), x1v_(m,i)) :
+        CellCenteredRadialFldWall(b0.x1f, x1f_, x1v_, m, k, j, i, wis_, wie_,
+                                  rin_, rout_) :
         0.5*(b0.x1f(m,k,j,i) + b0.x1f(m,k,j,i+1));
     const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
     const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
@@ -1187,14 +1193,20 @@ void Coordinates::GnomonicCellCenteredB(const DvceFaceFld4D<Real> &b0,
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
   auto &sin_cell_ = sin_cell;
+  // ghosts behind a REFLECTING radial wall take mirror-consistent radial weights; see
+  // CellCenteredRadialFldWall
+  auto &wbc_ = pmy_pack->pmb->mb_bcs;
+  const int wis_ = pmy_pack->pmesh->mb_indcs.is, wie_ = pmy_pack->pmesh->mb_indcs.ie;
   auto &x1v_ = x1v;
   auto &x1f_ = xx1f;
   par_for("cs_bcc_only", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real c = cos_cell_(m,k,j);
     const Real sn = sin_cell_(m,k,j);
-    const Real bx = CellCenteredRadialFld(b0.x1f(m,k,j,i), b0.x1f(m,k,j,i+1),
-                                          x1f_(m,i), x1f_(m,i+1), x1v_(m,i));
+    const bool rin_ = wbc_.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect;
+    const bool rout_ = wbc_.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect;
+    const Real bx = CellCenteredRadialFldWall(b0.x1f, x1f_, x1v_, m, k, j, i, wis_, wie_,
+                                              rin_, rout_);
     const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
     const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
     bcc0(m,IBX,k,j,i) = bx;

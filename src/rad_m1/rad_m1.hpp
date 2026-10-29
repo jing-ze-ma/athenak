@@ -446,6 +446,12 @@ class RadiationM1 {
   int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
+  // m1cyc-1029 adaptive periodic sweep: stop when the estimated error of the entry plane
+  // d_p/(1 - q) < vet_x1_ptol (0 = exactly vet_x1npass passes); counters for VetReport
+  Real vet_x1ptol = 0.0;
+  DvceArray4D<Real> vet_x1ent;   // (nmb, nray, k, j): the previous pass's exit plane
+  Real vet_x1_nbuild = 0.0, vet_x1_npsum = 0.0, vet_x1_ncap = 0.0;
+  int vet_x1_npmax = 0;
   int vet_path = 0;          // open-od-1013: 1 = the x1 step subdivided at the row nodes
   int vet_interp = 0;        // unify-sc-gd-1012 (#6): upwind stencil 0 lin, 1 log, 2 corner
   int vet_mirror_npass = 4;  // unify-sc-gd-1012: passes of a cavity mirrored at both x1
@@ -599,7 +605,7 @@ class RadiationM1 {
   bool impl_pos_floor = false;
   Real impl_pos_gas_frac = 1.0e-3;
   DvceArray1D<Real> pos_cnt_d;
-  Real pos_cnt[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  Real pos_cnt[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   // fixbundle-1009 F3 <rad_m1>/implicit_pos_floor_solve (default false = bitwise): the
   // T-solve / accept no longer raise the iterate to e_floor (EP = max(S2, e_floor) made
   // energy that implicit_pos_floor never saw, and the face fluxes rebuilt from the raised
@@ -1397,6 +1403,10 @@ class RadiationM1 {
   Real t2_k1pos_th = 0.1;
   Real t2_k1pos_n = 0.0;        // cells dropped by the pos rule (this rank, whole run)
   Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
+  // stiffk1-1029 time2_k1_stiff = s: move the exchange part of K1 (gas -> E) in cells
+  // with relaxation k dt > s (Time2FormStage); 0 = off
+  Real t2_k1stiff = 0.0;
+  Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; absent = 4 since
@@ -1463,6 +1473,27 @@ class RadiationM1 {
   Real t2_accfb_n = 0.0;        // stages accepted with a fallback (counter)
   void Time2PosFixMarkFb();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
+  // autobe-1029 <rad_m1>/time2_auto_be = N (default 16 since defaults-1029 USER 10-29; 0 = off,
+  // bitwise): after a step whose stages fell back to the backward-Euler redo, the next
+  // steps skip the doomed stage attempt and take that same redo path at once (Heun hydro
+  // from U^n + the BESTORE backward-Euler solve, t2_ok = false, cold predictor, as after
+  // Time2Restore); the stages are tried again after 1, 2, 4, ... N skipped steps (the run
+  // doubles while the retries keep failing; a stage step that succeeds resets it).  The
+  // state is per run (not in restart files: a restarted run starts in stage mode).
+  int t2_abe = 16;              // N (0 = off; DEFAULT 16 since defaults-1029, USER 10-29)
+  int t2_abe_len = 0;           // current skip-run length (0 = stage mode)
+  int t2_abe_left = 0;          // skipped steps left in the current run
+  bool t2_abe_now = false;      // this cycle skips the stages
+  Real t2_abe_n = 0.0;          // steps taken by time2_auto_be (counter)
+  Real t2_abe_ntry = 0.0;       // stage retries after a skip run
+  Real t2_abe_nok = 0.0;        // of which succeeded
+  // autobe-1029: hesdirk2 wall-time split (rank 0, fenced, s; diagnostic only), accepted
+  // cycles by kind: clean stage steps (of which posfix re-solves), failed stage attempts,
+  // their backward-Euler redo, auto_be steps, other BE steps; discarded dt_retry attempts
+  Real t2w_clean = 0.0, t2w_cpfix = 0.0, t2w_fail = 0.0, t2w_fpfix = 0.0, t2w_redo = 0.0;
+  Real t2w_abe = 0.0, t2w_be = 0.0, t2w_retry = 0.0;
+  bool Time2AutoBeBegin();
+  void Time2AutoBeEnd(int kind, Real tw_a, Real tw_b, Real tw_pfix);
   DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
@@ -1541,6 +1572,36 @@ class RadiationM1 {
   // too (their write-back used to subtract the full work after the solve: E - work <<
   // 0 there, floored).
   bool impl_wk_fix = true;      // defaults-1025: DEFAULT true (USER 10-25)
+  // vtxfix-1029 <rad_m1>/cs_vertex_mono (read only when named; default false = bitwise):
+  // on the cubed sphere, a MONOTONE (two-point) lateral transport at the 8 cube vertices.
+  // The lateral face flux of the implicit M1 there carries three non-monotone pieces that
+  // only the three-panel corner combines: the lagged skew cross term (|cos| -> 1/2 at the
+  // vertex, one-sided M1CsTanDer along both axes), the seam-midpoint quadratic of
+  // cs-open-1018 (M1CsSeamMid, one-sided at the vertex: weights 0.657 / 0.437 / -0.095,
+  // applied to the gradient, to v g0 and MULTIPLICATIVELY to theta = 1/(1 + chat dt
+  // kt), whose along-seam contrast at the photosphere is orders of magnitude, so the
+  // extrapolant can change sign) and D_r,lat (central radial difference inside a lateral
+  // flux).  RSG E prodG 1681-1691 d: vertex cells driven to the E floor (T_rad 339 K)
+  // next to hot vertex cells across the vertex seam faces, then 5.4e42 erg created by the
+  // E floor in two days -> 48 kK bubble at the vertex -> the 1704 d plume.  With the key
+  // on, every lateral face with a cell within cs_vertex_mono_n cells of a cube vertex
+  // takes the two-point gradient (no cross term), its seam faces the foot values (no
+  // midpoint quadratic), and D_r,lat is zero in the cells within cs_vertex_mono_n + 1
+  // (so every face of those cells sees none).  Conservative (per face), local.
+  bool cs_vtx_mono = false;    // DEFAULT = cs geometry since defaults-1029 (USER 10-29)
+  int cs_vtx_n = 1;
+  // vtxfix-1029 <rad_m1>/implicit_pos_floor_cons (read only when named; default false =
+  // bitwise; needs implicit_pos_floor): the E floor of the write-back creates no energy.
+  // The raise to e_floor is paid first by the cell's gas above its floor (as before); the
+  // part the gas cannot cover (M1_POS_FLR_UN, which used to be CREATED: RSG E 1691-1693 d
+  // 5.4e42 erg at a cube vertex) is taken from the radiation energy above e_floor of the
+  // same radial column, nearest cells first (i -+ 1, -+ 2, ..., the pair split by their
+  // E above floor), with the donors' stage slopes and |F| <= c E kept consistent.  The
+  // column lies in one MeshBlock (nx1 of the block), so the move is local, exact and
+  // decomposition-invariant; M1_POS_FLR_MV counts it, M1_POS_FLR_UN only a column with
+  // no radiation left above the floor.
+  bool impl_pos_flr_cons = true;   // DEFAULT true since defaults-1029 (USER 10-29)
+  DvceArray4D<Real> pfc_def;      // (m,k,j,i) the uncovered floor energy of the cell
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
   // time2_vet_col_source (vcpred-1010; read only when named, default relaxed = bitwise):

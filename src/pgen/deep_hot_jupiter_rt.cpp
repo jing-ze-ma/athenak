@@ -245,7 +245,11 @@ void DhjCycleDiag(Mesh *pm);
 //   problem/am_hst_split (DIAGNOSTIC, default false, needs am_hst and what am_transport
 //     needs): the last two columns become five: the torques of the x1 (with its r-factor
 //     source), x2 and x3 flux divergences and of the angular metric source (T_code is
-//     their sum), and T_cons.
+//     their sum), and T_cons; then (condwall-1028) Twall, the inner-wall part of T_cons:
+//     the angular-momentum flux IN through the inner wall (the wall torque, Maxwell
+//     stress included).  The rest, Ttop = Tcons - Twall, comes in through the top, and
+//     the L_z ledger reads dLrel/dt = Tcor + Twall + Ttop.  (Ttop has no column of its
+//     own: 9 + 3 floor + 12 = 24 = NHISTORY_VARIABLES.)
 namespace amh {
 bool on = false;            // problem/am_hst
 bool fix = false;           // problem/coriolis_am
@@ -256,8 +260,9 @@ int nst = 0;                // stages per cycle and their weights (as dhj_fhst_w
 Real w[3] = {0.0, 0.0, 0.0};
 int stage = 0;
 int64_t cyc = -1;
-constexpr int NACC = 10;    // Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons
-Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};   // since last row
+// Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons Twall
+constexpr int NACC = 11;
+Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  // since last
 Real t0 = 0.0;
 }  // namespace amh
 void AmHstStage(Mesh *pm);
@@ -329,6 +334,7 @@ struct AmOut {
   Real tbnd;      // -Omega Phi^out W_f over the domain's x1 faces (is, ie+1)
   Real tc[4];     // T_code: x1 (+ r-factor source), x2, x3, angular metric source
   Real tcons;     // T_cons
+  Real twall;     // the inner-wall (is face) part of T_cons: torque IN through the wall
 };
 
 //----------------------------------------------------------------------------------------
@@ -352,6 +358,7 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
   o.tbnd = 0.0;
   for (int n=0; n<4; ++n) o.tc[n] = 0.0;
   o.tcons = 0.0;
+  o.twall = 0.0;
   if (v.cs) {
     const Real x2l = v.size.d_view(m).x2min, x2u = v.size.d_view(m).x2max;
     const Real x3l = v.size.d_view(m).x3min, x3u = v.size.d_view(m).x3max;
@@ -434,6 +441,7 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
       const Real tr = v.a1(m,k,j,ii)*v.x1f(m,ii)*(rh0*(fa*e1[1] + fb*e2[1])
                                                   - rh1*(fa*e1[0] + fb*e2[0]));
       t += n ? -tr : tr;
+      if (n == 0 && i == v.is) o.twall = tr;
     }
     // planar xi / eta faces: (int_f x dA) x F, int_f x dA = (rr^3 - rl^3)/3 tan(psi/2)
     // (q_a + q_b), q_a/q_b the directions of the face's two ends, psi the angle between
@@ -506,6 +514,7 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
     const Real rb2 = r3/r2h;                                      // x sin(theta_f)
     const Real rb3 = (thr > thl) ? r3*dcos/(r2h*(thr - thl)) : 0.0;
     o.tcons = -(fr1*rr*rb1 - fl1*rl*rb1) - (fr2*rb2*sr - fl2*rb2*sl) - (fr3 - fl3)*rb3;
+    if (i == v.is) o.twall = fl1*rl*rb1;
   }
 }
 // problem/budget_dt (DIAGNOSTIC, branch dhj-budget-0929; off unless the key exists and
@@ -829,6 +838,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
+    // stswall-1029: the RKG resistive energy flux through the top and the wall (see
+    // Resistivity::track_x1_bflx); folded into Etot_top / Etot_bot by DhjFluxHistory
+    {
+      MeshBlockPack *prk = pmy_mesh_->pmb_pack;
+      if (prk->pmhd != nullptr && prk->pmhd->presist != nullptr &&
+          prk->pmhd->presist->use_rkg_sts) {
+        prk->pmhd->presist->track_x1_bflx = true;
+      }
+    }
     // problem/flux_hst_rkavg (see its note); read without recording it in the input
     const bool rkavg = pin->DoesParameterExist("problem","flux_hst_rkavg")
                        ? pin->GetBoolean("problem","flux_hst_rkavg") : true;
@@ -990,7 +1008,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         amh::nst = 3;  amh::w[0] = 1.0/6.0;  amh::w[1] = 1.0/6.0;  amh::w[2] = 2.0/3.0;
       }
       const int nfh = 9 + (dhj_flux_hst_wall ? 4 : 0) + (dhj_flux_hst_floor ? 3 : 0)
-                      + (amh::split ? 11 : 8);
+                      + (amh::split ? 12 : 8);
       if (amh::nst == 0 || nfh > NHISTORY_VARIABLES) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/am_hst needs rk1/rk2/rk3 and at most "
@@ -1079,7 +1097,42 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pmy_mesh_->pmb_pack->phydro->wall_closed_ix1 = true;
     }
     if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
-      pmy_mesh_->pmb_pack->pmhd->wall_closed_ix1 = true;
+      auto *pmhd_w = pmy_mesh_->pmb_pack->pmhd;
+      pmhd_w->wall_closed_ix1 = true;
+      // problem/wall_mhd_mirror (MHD only): conducting (DEFAULT, condwall-1028, user
+      // 10-29), stress_free (wallsf-1028) or legacy (bitwise 03b468843).  The ghosts of
+      // this boundary hold B_t ODD and B_r even (the field is normal to the wall,
+      // HydrostaticEquilibrium below), while the legacy mirror kept
+      // B_t EVEN at the is face: the wall then exerted the anchored Maxwell stress
+      // -B_r B_t on a free-slip flow and did the work -B_r (v_t.B_t), +1.04 % of
+      // Lsw_abs into WASP-121b b100 (wallpoynt_1028/RESULTS.md), which a wall at rest
+      // cannot do.  stress_free flips B_t in the mirror (zero stress, zero Poynting
+      // flux; v_t stays even, free slip as in hydro), takes the wall-edge corner EMFs
+      // from the interior row and zeroes the resistive Poynting flux at the wall.
+      const std::string wmm =
+          pin->GetOrAddString("problem", "wall_mhd_mirror", "conducting");
+      // conducting (condwall-1028): a perfectly conducting wall at rest.  The edge EMFs
+      // tangential to the wall (ideal and resistive) are 0, so B_r on the wall is held;
+      // the Riemann mass+energy fluxes through the wall are 0 (no Poynting flux); the
+      // mirror is the legacy one (B_t even, v_t even: free slip), so the anchored field
+      // keeps its Maxwell stress -B_r B_t on the wall (booked as Twall in the
+      // am_hst_split ledger).
+      // A restart whose input records wall_mhd_mirror keeps that value.
+      if (wmm == "stress_free") {
+        pmhd_w->wall_stress_free = true;
+        if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_bt_zero = true;
+      } else if (wmm == "conducting") {
+        pmhd_w->wall_conducting_ix1 = true;
+        if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_cond_ix1 = true;
+      } else if (wmm != "legacy") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "problem/wall_mhd_mirror = '" << wmm
+                  << "'; expected stress_free, conducting or legacy" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "  inner radial wall (MHD): wall_mhd_mirror = " << wmm << std::endl;
+      }
     }
     if (global_variable::my_rank == 0) {
       std::cout << "  inner radial wall: CLOSED (problem/wall_closed = true)"
@@ -3414,6 +3467,12 @@ void HydrostaticEquilibrium(Mesh *pm) {
     }
 
     if (pmbp->pmhd != nullptr) {
+      // stress-free wall on a Cartesian mesh (wallsf-1028): inner ghost B_t odd with unit
+      // ratios (the r^2 / area weights below are spherical, and a Cartesian mesh has no
+      // area arrays; legacy stays bitwise)
+      const bool cart_sf_ = (pmbp->pmhd->wall_stress_free ||
+                             pmbp->pmhd->wall_conducting_ix1) &&
+                            !pm->use_spherical_polar && !pm->use_cubed_sphere;
       par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
       KOKKOS_LAMBDA(int m, int k, int j) {
           if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
@@ -3424,13 +3483,18 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //              Real fac2p = -area2(m,k,j+1,iin)/area2(m,k,j+1,iex);
               Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))/(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
               Real fac2p = fac2;
-              Real fac3 = -area3(m,k,j,iin)/area3(m,k,j,iex);
-              Real fac3p = -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
+              // (a Cartesian mesh allocates no area arrays: unit ratios there)
+              Real fac3 = cart_sf_ ? -1.0 : -area3(m,k,j,iin)/area3(m,k,j,iex);
+              Real fac3p = cart_sf_ ? -1.0 : -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
+              if (cart_sf_) {  // r^2 weights mean nothing on a Cartesian x1: B_t odd
+                fac2 = -1.0;
+                fac2p = -1.0;
+              }
               b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,iin)*fac2;
               if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,iin)*fac2p;}
               b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,iin)*fac3;
               if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,iin)*fac3p;}
-              Real fac1 = area1(m,k,j,iin+1)/area1(m,k,j,iex);
+              Real fac1 = cart_sf_ ? 1.0 : area1(m,k,j,iin+1)/area1(m,k,j,iex);
               b0_x1f(m,k,j,iex) = b0_x1f(m,k,j,iin+1)*fac1;
             }
 //            for (int i=0; i<ng; ++i) {
@@ -4313,6 +4377,7 @@ void AmHstStage(Mesh *pm) {
     h.the_array[4] = o.tccr + omega*o.qr;
     for (int n=0; n<4; ++n) h.the_array[5+n] = o.tc[n];
     h.the_array[9] = o.tcons;
+    h.the_array[10] = o.twall;
     mb_sum += h;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum));
   Kokkos::fence();
@@ -6679,7 +6744,7 @@ void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
   pdata->hdata[n0+2] = amh::fix ? rate[1] : rate[0];
   for (int n=0; n<3; ++n) pdata->hdata[n0+3+n] = rate[n];
   if (amh::split) {
-    for (int n=0; n<5; ++n) pdata->hdata[n0+6+n] = rate[5+n];
+    for (int n=0; n<6; ++n) pdata->hdata[n0+6+n] = rate[5+n];
   } else {
     for (int n=0; n<2; ++n) pdata->hdata[n0+6+n] = rate[3+n];
   }
@@ -6692,7 +6757,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   const bool ffloor = dhj_flux_hst_floor;
   // problem/am_hst: eight columns after all the others
   const int NFL = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
-  const int NFH = NFL + (amh::on ? (amh::split ? 11 : 8) : 0);
+  const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
   pdata->nhist = NFH;
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
@@ -6727,6 +6792,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
       pdata->label[NFL+8] = "Tx3";
       pdata->label[NFL+9] = "Tsrc";
       pdata->label[NFL+10] = "Tcons";
+      pdata->label[NFL+11] = "Twall";
     } else {
       pdata->label[NFL+6] = "Tdif_deep";
       pdata->label[NFL+7] = "Tdif_rad";
@@ -6761,6 +6827,16 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // the accumulator (else, e.g. the first row after a restart, the last stage's)
   const bool fav = dhj_fhst_avg && (dhj_fhst_stage == dhj_fhst_nst);
   auto fav_ = fav ? *dhj_fhst_ptr : DvceArray4D<Real>();
+  // stswall-1029: under RKG super-stepping the resistive (Poynting) energy flux is not in
+  // uflx during the RK stages, so neither column above contains it.  The flux the last
+  // super-step applied through ie+1 and is (Resistivity::rkg_bflx, slots 5 and 4) is
+  // FOLDED INTO Etot_top and Etot_bot rather than given its own column: the history is
+  // at its NREDUCTION_VARIABLES cap.  Explicit resistivity adds it to uflx in the RK
+  // stages, so the columns already hold it there.  0 at the conducting wall (E_t = 0).
+  const bool rkb = (pmbp->pmhd != nullptr) && (pmbp->pmhd->presist != nullptr) &&
+                   pmbp->pmhd->presist->track_x1_bflx &&
+                   (pmbp->pmhd->presist->rkg_bflx.extent_int(0) == pmbp->nmb_thispack);
+  auto rkb_ = rkb ? pmbp->pmhd->presist->rkg_bflx : DvceArray4D<Real>();
   const Real fstar = ts::rt_hist_fstar;
   const Real alb = ts::rt_hist_albedo;
   const Real arat = (alb < 1.0) ? alb/(1.0 - alb) : 0.0;
@@ -6800,9 +6876,11 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     hvars.the_array[1] = lrf;
     hvars.the_array[2] = lsw;
     hvars.the_array[3] = lbot;
-    const Real fet = fav ? fav_(m,0,k,j) : fx1(m,IEN,k,j,ie+1);
+    const Real fet = (fav ? fav_(m,0,k,j) : fx1(m,IEN,k,j,ie+1))
+                     + (rkb ? rkb_(m,5,k,j) : 0.0);
     const Real fmt = fav ? fav_(m,1,k,j) : fx1(m,IDN,k,j,ie+1);
-    const Real feb = fav ? fav_(m,2,k,j) : fx1(m,IEN,k,j,is);
+    const Real feb = (fav ? fav_(m,2,k,j) : fx1(m,IEN,k,j,is))
+                     + (rkb ? rkb_(m,4,k,j) : 0.0);
     const Real fmb = fav ? fav_(m,3,k,j) : fx1(m,IDN,k,j,is);
     hvars.the_array[4] = fet*at + lir - lsw;
     hvars.the_array[5] = feb*ab + lbot;

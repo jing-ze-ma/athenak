@@ -227,7 +227,41 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
                                             0, n1m1, 0, n2m1, 0, n3m1);
     return TaskStatus::complete;
   }
-  return pmy_pack->pmhd->ConToPrim(pdrive, stage);
+  // stswall-1029: the ConToPrim of an intermediate super-stage (floors, fallbacks)
+  // changes u0(IEN) only, after CopyCons saved u_j to u1.  The recurrence
+  // u_{j+1} = mu u_j + nu u_{j-1} + (1-mu-nu) u_ideal - ... then carried that change with
+  // the weight X_s of a perturbation of the u0 slot alone (14..22 for 34 super-stages:
+  // 5.8e-6 Lsw of floor energy became 8.9e-5 Lsw on the WASP-121b s10 state,
+  // stswall_1029/RESULTS.md).  The change d is now added to every register the
+  // recurrence reads (u1 = u_j, u2 = u_{j-1}, u_ideal = u_0): mu + nu + (1-mu-nu) = 1,
+  // so it survives in the final state with weight exactly 1, as if the floor had been
+  // applied at the start of the super-step, and it is booked with weight 1.  Where no
+  // floor fires d = 0 and nothing changes.  rkg_lean converts only at the last stage.
+  auto *pmhd = pmy_pack->pmhd;
+  pmhd->c2p_wt_rkg = 1.0;
+  const TaskStatus st = pmhd->ConToPrim(pdrive, stage);
+  pmhd->c2p_wt_rkg = -1.0;
+  if (!rkg_lean && stage < s) {
+    auto u0_ = pmhd->u0;
+    auto u1_ = pmhd->u1;
+    auto u2_ = u2;
+    auto ui_ = u_ideal;
+    const int n = IEN;
+    const int nmb1 = pmy_pack->nmb_thispack - 1;
+    const int n3 = static_cast<int>(u0_.extent_int(2)) - 1;
+    const int n2 = static_cast<int>(u0_.extent_int(3)) - 1;
+    const int n1 = static_cast<int>(u0_.extent_int(4)) - 1;
+    par_for("rkg_c2p_shift", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = u0_(m,n,k,j,i) - u1_(m,n,k,j,i);
+      if (d != 0.0) {
+        u1_(m,n,k,j,i) = u0_(m,n,k,j,i);
+        u2_(m,n,k,j,i) += d;
+        ui_(m,n,k,j,i) += d;
+      }
+    });
+  }
+  return st;
 }
 
 TaskStatus Resistivity::NewTimeStepRKG(Driver *pdrive, int stage) {

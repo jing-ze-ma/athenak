@@ -340,6 +340,24 @@ void RadiationM1::VetLatOdMax() {
   const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
   // cs-s4-1017: on the cubed sphere D_r,lat is the Cartesian vector in LAT1..LAT3
   const bool c3 = cs_geom;
+  // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): D_r,lat (LAT1..3) = 0 in the cells within
+  // cs_vertex_mono_n + 1 of a cube vertex, set after every build and before the ghost
+  // exchange (the callers), so the operator, its stencil, the lagged assembly and the
+  // time2 slot extrapolation all see the same zero, and every face of a cell within
+  // cs_vertex_mono_n (incl. the seam faces' foot values) carries no D_r,lat
+  if (c3 && cs_vtx_mono) {
+    auto cse = cs_seam.d_view;
+    const int vr = cs_vtx_n + 1;
+    par_for("m1_vlat_csvtx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (M1CsVtxDist(k, j, ks, ke, js, je, cse(m,0) != 0, cse(m,1) != 0, cse(m,2) != 0,
+                      cse(m,3) != 0) <= vr) {
+        tt_(m,M1_TT_LAT0+1,k,j,i) = 0.0;
+        tt_(m,M1_TT_LAT0+2,k,j,i) = 0.0;
+        tt_(m,M1_TT_LAT0+3,k,j,i) = 0.0;
+      }
+    });
+  }
   {
     Real omx = 0.0;
     const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;

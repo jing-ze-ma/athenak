@@ -245,6 +245,10 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
       FOFC(pdrive, stage);
     }
   }
+  // conducting walls: no Riemann mass / energy flux through the wall (see the function)
+  if ((wall_conducting == 2 && any_reflect_face) || wall_conducting_ix1) {
+    WallFluxZero(wall_conducting == 2 && any_reflect_face, wall_conducting_ix1);
+  }
 
   // Restore the FULL primitives before any operator that reads them as a physical
   // state -- see the same note in Hydro::Fluxes.  The deviation form is for the Riemann
@@ -521,6 +525,11 @@ TaskStatus MHD::RecvU_Shr(Driver *pdrive, int stage) {
 TaskStatus MHD::EField(Driver *pdrive, int stage) {
   // Use CT to compute corner E
   CornerE(pdrive, stage);
+  // conducting walls (condwall-1028): the IDEAL tangential edge EMF on reflect faces
+  // (<mhd>/wall_conducting = full) and on the dhj conducting user wall
+  if ((wall_conducting == 2 && any_reflect_face) || wall_conducting_ix1) {
+    WallEmfZero(efld, wall_conducting == 2 && any_reflect_face, wall_conducting_ix1);
+  }
 
   // Add resistive electric field (if needed)
   if (presist != nullptr) {
@@ -734,8 +743,13 @@ void MHD::C2PTrack(Driver *pdrive, int stage, bool before) {
   } else {
     // the split radiation's own conversion runs from RTOpSplitBvals (no driver)
     const bool split = c2p_split || (pdrive == nullptr);
-    c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc,
-                     c2p_track::Weight(pdrive, stage, split), split);
+    if (c2p_wt_rkg >= 0.0) {
+      c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc, c2p_wt_rkg, split,
+                       1.0);
+    } else {
+      c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc,
+                       c2p_track::Weight(pdrive, stage, split), split);
+    }
   }
 }
 

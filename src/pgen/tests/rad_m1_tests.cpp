@@ -609,6 +609,51 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
+  } else if (test.compare("hot_blob") == 0) {
+    // precdir-1029 (TEST ONLY, preconditioner orientation study): an optically thick hot
+    // region in a thinner, cooler medium, gas at rest, E = arad T^4, F = 0, evolved as
+    // rad-hydro.  The region is an ellipsoid with semi-axes blob_a1..a3 about
+    // (blob_x1, blob_x2, blob_x3); a semi-axis <= 0 drops that direction, so (a, 0, 0) is
+    // a slab normal to x1 and (a, a, a) a sphere.  Smooth edge: s = (1 - tanh((r-1)/w))/2.
+    m1_test_id = 10;
+    Real rc = pin->GetReal("problem","blob_rho");
+    Real tc = pin->GetReal("problem","blob_temp");
+    Real rb = pin->GetReal("problem","bg_rho");
+    Real tb = pin->GetReal("problem","bg_temp");
+    Real ew = pin->GetOrAddReal("problem","blob_edge",0.1);
+    Real ca[3], aa[3];
+    for (int d = 0; d < 3; ++d) {
+      ca[d] = pin->GetOrAddReal("problem","blob_x" + std::to_string(d+1),0.0);
+      aa[d] = pin->GetOrAddReal("problem","blob_a" + std::to_string(d+1),0.0);
+    }
+    const Real c1 = ca[0], c2 = ca[1], c3 = ca[2];
+    const Real ia1 = (aa[0] > 0.0) ? 1.0/aa[0] : 0.0;
+    const Real ia2 = (aa[1] > 0.0) ? 1.0/aa[1] : 0.0;
+    const Real ia3 = (aa[2] > 0.0) ? 1.0/aa[2] : 0.0;
+    Real ar = pmbp->pradm1->arad;
+    Real gm1 = radm1::FluidRef::Get(pmbp).eos.gamma - 1.0;
+    if (restart) return;
+    auto uh = pmbp->phydro->u0;
+    int nx2 = indcs.nx2, nx3 = indcs.nx3;
+    par_for("m1_hotblob_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real x1v = CellCenterX(i-is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real x2v = CellCenterX(j-js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+      Real x3v = CellCenterX(k-ks, nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+      Real r = sqrt(SQR((x1v - c1)*ia1) + SQR((x2v - c2)*ia2) + SQR((x3v - c3)*ia3));
+      Real s = 0.5*(1.0 - tanh((r - 1.0)/ew));
+      Real d = rb + (rc - rb)*s;
+      Real t = tb + (tc - tb)*s;
+      uh(m,IDN,k,j,i) = d;
+      uh(m,IM1,k,j,i) = 0.0;
+      uh(m,IM2,k,j,i) = 0.0;
+      uh(m,IM3,k,j,i) = 0.0;
+      uh(m,IEN,k,j,i) = d*t/gm1;
+      u0(m,radm1::M1_E,k,j,i) = fmax(ar*t*t*t*t, efl);
+      u0(m,radm1::M1_F1,k,j,i) = 0.0;
+      u0(m,radm1::M1_F2,k,j,i) = 0.0;
+      u0(m,radm1::M1_F3,k,j,i) = 0.0;
+    });
   } else if (test.compare("equil") == 0) {
     // T5.  Uniform single zone: nothing has a gradient, so the transport is exactly
     // zero and what is exercised is the implicit solve alone.

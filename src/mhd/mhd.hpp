@@ -279,6 +279,10 @@ class MHD {
   // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
   bool rkg_skip_u = false;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
+  // stswall-1029: >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
+  // stage's IEN change in the state the RKG super-step ends with (1: ConToPrimRKG adds
+  // the change to every register of the recurrence); the IDN change is carried in full
+  Real c2p_wt_rkg = -1.0;
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();
@@ -297,6 +301,26 @@ class MHD {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
+  // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
+  // the dhj default is conducting since condwall-1028): the mirror flips B_t as well,
+  // matching the odd ghost B_t of the user boundary, so the wall carries neither Maxwell
+  // stress nor Poynting flux, and the wall-edge corner EMFs read the interior row as the
+  // ghost row (mhd_corner_e.cpp)
+  bool wall_stress_free = false;
+  // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting, the default):
+  // the edge EMFs tangential to the is face of the user inner x1 boundary are 0 (ideal
+  // and resistive), so B_r on the wall is held, and the Riemann mass+energy fluxes are 0
+  // (no Poynting flux; v_n = 0 already removes the advected part).  Mirror as legacy.
+  bool wall_conducting_ix1 = false;
+  // <mhd>/wall_conducting (condwall-1028): what a REFLECTING face is for the field.
+  //   0 off       legacy (wall edge EMFs as the corner / resistive EMF give them)
+  //   1 resistive the RESISTIVE tangential edge EMF and the resistive Poynting
+  //               flux are 0 on reflect faces (ideal MHD is bitwise unchanged)
+  //   2 full      DEFAULT (user 10-29): also the IDEAL tangential edge EMF and the
+  //               Riemann mass+energy fluxes (perfectly conducting wall at rest:
+  //               no Poynting flux at all)
+  int wall_conducting = 2;
+  bool any_reflect_face = false;   // some mesh face is reflect (host, set in the ctor)
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
@@ -389,6 +413,12 @@ class MHD {
   DvceArray5D<Real> utest, bcctest;  // scratch arrays for FOFC
     
     void PolarAzimuthalAverageEr(void);
+    // zero the edge EMFs of `e` tangential to the reflect faces (refl) and/or to the is
+    // face of a user inner x1 boundary (usr_ix1); mhd_corner_e.cpp
+    void WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix1);
+    // Riemann mass, energy, scalar fluxes 0 on the same faces (wall_conducting = full;
+    // dhj conducting)
+    void WallFluxZero(const bool refl, const bool usr_ix1);
     DvceArray1D<Real> inner_local;
     DvceArray1D<Real> outer_local;
     // per-MeshBlock partial sums for the polar average, so the reduction can be spread over

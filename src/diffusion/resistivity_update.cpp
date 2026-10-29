@@ -67,6 +67,34 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
   const Real mu_ = mu;
   const Real nu_ = nu;
 
+  // stswall-1029: the RKG energy flux through the x1 faces is and ie+1 of every column,
+  // followed through the same recurrence as u: E_1 = f0 F_0, E_j = mu E_{j-1} +
+  // nu E_{j-2} + fjm1 F_j + f0 F_0 (E_0 = 0, so the (1-mu-nu) u_ideal term adds nothing)
+  if (track_x1_bflx) {
+    const int nmb = nmb1 + 1;
+    if (static_cast<int>(rkg_bflx.extent(0)) != nmb) {
+      Kokkos::realloc(rkg_bflx, nmb, 6, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng);
+    }
+    auto bf = rkg_bflx;
+    const bool first = (stage == 1);
+    const Real fj_ = fjm1, f0_ = f0;
+    par_for("rkg_bflx", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      for (int s2=0; s2<2; ++s2) {
+        const Real f = flx1(m,n,k,j,(s2 == 0) ? is : ie+1);
+        if (first) {
+          bf(m,s2,k,j) = f;
+          bf(m,2+s2,k,j) = 0.0;
+          bf(m,4+s2,k,j) = f0_*f;
+        } else {
+          const Real e2 = bf(m,2+s2,k,j), e1 = bf(m,4+s2,k,j);
+          bf(m,2+s2,k,j) = e1;
+          bf(m,4+s2,k,j) = mu_*e1 + nu_*e2 + fj_*f + f0_*bf(m,s2,k,j);
+        }
+      }
+    });
+  }
+
   scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("resmhd_update",DevExeSpace(),scr_size,scr_level,0,nmb1,ks,ke,js,je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {

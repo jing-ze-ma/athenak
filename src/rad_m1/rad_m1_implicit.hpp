@@ -377,7 +377,9 @@ constexpr int M1_POS_FLR_UN = 5;   // floor energy NOT covered by the gas (creat
 constexpr int M1_POS_FCLIP  = 6;   // cell-solves whose |F| > c E was scaled back
 constexpr int M1_POS_FCLIPM = 7;   // sum of (|F|/(c E) - 1) over those cell-solves
 constexpr int M1_POS_FLRS   = 8;   // F3: residual raise below 1e-6 e_floor (x volume)
-constexpr int M1_POS_N      = 9;
+constexpr int M1_POS_FLR_MV = 9;   // vtxfix-1029 implicit_pos_floor_cons: floor energy taken
+                                   // from the column's radiation (erg, gas units x volume)
+constexpr int M1_POS_N      = 10;
 constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
 constexpr int M1_IFW_HCL = 1;   // alpha * (coefficient of E'_L in F_HLL), >= 0
 constexpr int M1_IFW_HCR = 2;   // alpha * (coefficient of E'_R in F_HLL), <= 0
@@ -727,6 +729,37 @@ void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 //! drops the (smid - sfoot)^2/2 d2/ds2 term: an O(h^2) face error that the O(h) seam
 //! cell turns into a first-order seam truncation (the cs MMS); the quadratic is exact
 //! to O(h^3) (second-order seam and vertex cells).  fv(c') is the foot value of face c'.
+
+//----------------------------------------------------------------------------------------
+//! \fn M1CsSeamDepth
+//! \brief vtxfix-1029: depth of index c (active lo..hi, ghosts allowed) below the nearest
+//! block face along that axis that is a PANEL SEAM (slo / shi): 0 for the cell next to the
+//! seam and for the first ghost beyond it (the neighbour panel's seam cell), 1 one cell
+//! further, ...; a large number when neither face is a seam.
+
+KOKKOS_INLINE_FUNCTION
+int M1CsSeamDepth(const int c, const int lo, const int hi, const bool slo,
+                  const bool shi) {
+  int d = 1 << 20;
+  if (slo) {d = (c < lo) ? (lo - 1 - c) : (c - lo);}
+  if (shi) {
+    const int e = (c > hi) ? (c - hi - 1) : (hi - c);
+    d = (e < d) ? e : d;
+  }
+  return d;
+}
+
+//! \brief vtxfix-1029: Chebyshev distance of cell (k,j) to the cube vertex of its block
+//! (both tangential depths finite only in a block holding a panel corner)
+
+KOKKOS_INLINE_FUNCTION
+int M1CsVtxDist(const int k, const int j, const int ks, const int ke, const int js,
+                const int je, const bool s2lo, const bool s2hi, const bool s3lo,
+                const bool s3hi) {
+  const int dj = M1CsSeamDepth(j, js, je, s2lo, s2hi);
+  const int dk = M1CsSeamDepth(k, ks, ke, s3lo, s3hi);
+  return (dj > dk) ? dj : dk;
+}
 
 template <class F, class G>
 KOKKOS_INLINE_FUNCTION

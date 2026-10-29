@@ -112,4 +112,5 @@ user_bcs = true
 # their defaults because a command line cannot ADD a parameter.
 seam_halo_scan_fc     = 0
 seam_halo_scan_fc_i   = 0
-faces_from_potential  = true
+# the header numbers (and the analytic-field finalizer) need this; default true since fefe6a179
+faces_from_potential  = false
