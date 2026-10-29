@@ -1472,6 +1472,27 @@ class RadiationM1 {
   Real t2_accfb_n = 0.0;        // stages accepted with a fallback (counter)
   void Time2PosFixMarkFb();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
+  // autobe-1029 <rad_m1>/time2_auto_be = N (read only when named; default 0 = off,
+  // bitwise): after a step whose stages fell back to the backward-Euler redo, the next
+  // steps skip the doomed stage attempt and take that same redo path at once (Heun hydro
+  // from U^n + the BESTORE backward-Euler solve, t2_ok = false, cold predictor, as after
+  // Time2Restore); the stages are tried again after 1, 2, 4, ... N skipped steps (the run
+  // doubles while the retries keep failing; a stage step that succeeds resets it).  The
+  // state is per run (not in restart files: a restarted run starts in stage mode).
+  int t2_abe = 0;               // N (0 = off)
+  int t2_abe_len = 0;           // current skip-run length (0 = stage mode)
+  int t2_abe_left = 0;          // skipped steps left in the current run
+  bool t2_abe_now = false;      // this cycle skips the stages
+  Real t2_abe_n = 0.0;          // steps taken by time2_auto_be (counter)
+  Real t2_abe_ntry = 0.0;       // stage retries after a skip run
+  Real t2_abe_nok = 0.0;        // of which succeeded
+  // autobe-1029: hesdirk2 wall-time split (rank 0, fenced, s; diagnostic only), accepted
+  // cycles by kind: clean stage steps (of which posfix re-solves), failed stage attempts,
+  // their backward-Euler redo, auto_be steps, other BE steps; discarded dt_retry attempts
+  Real t2w_clean = 0.0, t2w_cpfix = 0.0, t2w_fail = 0.0, t2w_fpfix = 0.0, t2w_redo = 0.0;
+  Real t2w_abe = 0.0, t2w_be = 0.0, t2w_retry = 0.0;
+  bool Time2AutoBeBegin();
+  void Time2AutoBeEnd(int kind, Real tw_a, Real tw_b, Real tw_pfix);
   DvceArray5D<Real> dbrow;      // DEBUG dbg_t2_admiss: the sp E row by term
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step

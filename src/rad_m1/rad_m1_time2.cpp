@@ -464,6 +464,20 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
   }
+  // autobe-1029: <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_auto_be")) {
+    t2_abe = pin->GetInteger("rad_m1", "time2_auto_be");
+    if (t2_abe < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_auto_be must be >= 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 && t2_abe > 0) {
+      std::cout << "<rad_m1> time2_auto_be=" << t2_abe << ": after a stage fallback the "
+                << "next 1, 2, 4, ... " << t2_abe << " steps take the backward-Euler redo "
+                << "path at once" << std::endl;
+    }
+  }
   if (pin->DoesParameterExist("rad_m1", "restart_pack_per_mb")) {
     rst_pack_mb = pin->GetBoolean("rad_m1", "restart_pack_per_mb");
   }
@@ -1206,6 +1220,12 @@ bool RadiationM1::T2EnthBe() const {
 bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
   // vgdrot2-1012: VetGdRotStep asks for the probe at a rotation (any time2_start)
   if (time_scheme != M1_TIME_HESDIRK2 || (t2_start != 1 && !t2_rotprobe)) return false;
+  // autobe-1029 time2_auto_be: a skipped step takes the backward-Euler path, which stores
+  // a fresh slope (of the new rotation set too); no probe
+  if (t2_abe_now) {
+    t2_rotprobe = false;
+    return false;
+  }
   t2_rotprobe = false;
   if (Time2Active()) return false;
   FluidRef fl = FluidRef::Get(pmy_pack);
@@ -2306,6 +2326,60 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::Time2AutoBeBegin
+//! \brief autobe-1029 <rad_m1>/time2_auto_be (rad_m1.hpp): called by the Driver at the
+//! cycle start (after VetGdRotStep).  In a skip run the step is put in exactly the state
+//! the stage fallback leaves for its redo (Time2Restore): no valid slope (t2_ok = false,
+//! so the Driver runs the Heun hydro alone and then the BESTORE backward-Euler solve, and
+//! FrefWaccOn sees a BE step), cold predictor, and the dt_retry arm of a time2_reject
+//! redo.  A retried cycle calls it again with the same (unchanged) run state.
+
+bool RadiationM1::Time2AutoBeBegin() {
+  t2_abe_now = false;
+  if (t2_abe <= 0 || time_scheme != M1_TIME_HESDIRK2 || t2_abe_left <= 0) return false;
+  if (!Time2Active()) return false;   // no slope anyway (the BE path follows)
+  t2_abe_now = true;
+  t2_ok = false;
+  t2_fail = false;
+  t2_solve = M1_T2S_NONE;
+  pred_ok = false;
+  pred2_ok = false;
+  // as the redo of a rejected stage under time2_reject = retry (arms dt_retry_t2_be)
+  if (t2_reject == 1 && dtr_on) {dtr_t2hit = true;}
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2AutoBeEnd
+//! \brief autobe-1029: an ACCEPTED cycle of a hesdirk2 run.  kind 0 = stage step, 1 =
+//! stage fallback + BE redo, 2 = time2_auto_be step, 3 = other BE step (no slope),
+//! 4 = a discarded dt_retry attempt (timing only).  tw_a / tw_b: fenced wall seconds of
+//! (the attempt | the step) and (the redo); tw_pfix: posfix re-solves.
+
+void RadiationM1::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b, Real tw_pfix) {
+  if (kind == 0) {t2w_clean += tw_a; t2w_cpfix += tw_pfix;}
+  if (kind == 1) {t2w_fail += tw_a; t2w_fpfix += tw_pfix; t2w_redo += tw_b;}
+  if (kind == 2) {t2w_abe += tw_a;}
+  if (kind == 3) {t2w_be += tw_a;}
+  if (kind == 4) {t2w_retry += tw_a; return;}
+  const bool was_skip = t2_abe_now;
+  t2_abe_now = false;
+  if (t2_abe <= 0) return;
+  if (kind == 0) {
+    if (t2_abe_len > 0) {t2_abe_ntry += 1.0; t2_abe_nok += 1.0;}
+    t2_abe_len = 0;
+    t2_abe_left = 0;
+  } else if (kind == 1) {
+    if (t2_abe_len > 0) {t2_abe_ntry += 1.0;}
+    t2_abe_len = (t2_abe_len == 0) ? 1 : std::min(2*t2_abe_len, t2_abe);
+    t2_abe_left = t2_abe_len;
+  } else if (kind == 2 && was_skip) {
+    t2_abe_n += 1.0;
+    t2_abe_left -= 1;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2Report
 
 void RadiationM1::Time2Report() {
@@ -2361,6 +2435,17 @@ void RadiationM1::Time2Report() {
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   std::cout << std::endl;
+  if (t2_abe > 0) {
+    std::cout << "<rad_m1> time2_auto_be=" << t2_abe << ": skipped-stage BE steps="
+              << t2_abe_n << " stage retries=" << t2_abe_ntry << " (succeeded "
+              << t2_abe_nok << ")" << std::endl;
+  }
+  // autobe-1029: the wall-time split (rank 0, fenced; accepted cycles by kind)
+  std::cout << "<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps " << t2w_clean
+            << " (posfix " << t2w_cpfix << ") | failed stage attempts " << t2w_fail
+            << " (posfix " << t2w_fpfix << ") | their BE redo " << t2w_redo
+            << " | auto_be steps " << t2w_abe << " | other BE steps " << t2w_be
+            << " | discarded dt_retry attempts " << t2w_retry << std::endl;
 }
 
 }  // namespace radm1
