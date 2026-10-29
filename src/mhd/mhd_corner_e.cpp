@@ -52,13 +52,13 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   // B.rhat/|B| at nx2 = 32 is 1.6e-3, 2.9e-3, 4.1e-4 (6.7e-5 with all three).
   const bool sph_wall_ = use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar;
   const BoundaryFlag rflag_ = BoundaryFlag::reflect;
-  // STRESS-FREE closed USER inner wall (dhj wall_mhd_mirror = stress_free, mhd_fluxes.cpp):
+  // STRESS-FREE closed USER inner wall (dhj wall_mhd_mirror = stress_free; mhd_fluxes):
   // its mirror state has v_t and B_n even, v_n and B_t odd, so every tangential EMF of
   // the mirror row equals the interior one.  The ghost row itself holds the problem's
   // own state (the dhj ghosts are the initial column at rest), so at a wall edge the
   // GS07 terms read the INTERIOR row in place of the ghost row (im_ = i), and the x1
   // choices are those of a zero-mass-flux wall (wall_in, as for reflect).
-  const bool wsf_ = wall_closed_ix1 && wall_stress_free && wall_sf_corner;
+  const bool wsf_ = wall_closed_ix1 && wall_stress_free;
   const BoundaryFlag uflag_ = BoundaryFlag::user;
 
   //---- 1-D problem:

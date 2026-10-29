@@ -1081,7 +1081,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
       auto *pmhd_w = pmy_mesh_->pmb_pack->pmhd;
       pmhd_w->wall_closed_ix1 = true;
-      // problem/wall_mhd_mirror (MHD only; wallsf-1028, user 10-28): stress_free (default)
+      // problem/wall_mhd_mirror (MHD only; wallsf-1028, user 10-28): stress_free (dflt)
       // or legacy.  The ghosts of this boundary hold B_t ODD and B_r even (the field is
       // normal to the wall, HydrostaticEquilibrium below), while the legacy mirror kept
       // B_t EVEN at the is face: the wall then exerted the anchored Maxwell stress
@@ -1094,7 +1094,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           pin->GetOrAddString("problem", "wall_mhd_mirror", "stress_free");
       if (wmm == "stress_free") {
         pmhd_w->wall_stress_free = true;
-        pmhd_w->wall_sf_corner = pin->GetOrAddBoolean("problem", "wall_mhd_corner", true);
         if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_bt_zero = true;
       } else if (wmm != "legacy") {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

@@ -302,7 +302,6 @@ class MHD {
   // user boundary, so the wall carries neither Maxwell stress nor Poynting flux, and the
   // wall-edge corner EMFs read the interior row as the ghost row (mhd_corner_e.cpp)
   bool wall_stress_free = false;
-  bool wall_sf_corner = true;   // TEMPORARY gate key (problem/wall_mhd_corner)
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
