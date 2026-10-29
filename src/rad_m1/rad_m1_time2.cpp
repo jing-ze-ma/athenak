@@ -472,11 +472,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << std::endl << "<rad_m1>/time2_auto_be must be >= 0" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (global_variable::my_rank == 0 && t2_abe > 0) {
-      std::cout << "<rad_m1> time2_auto_be=" << t2_abe << ": after a stage fallback the "
-                << "next 1, 2, 4, ... " << t2_abe << " steps take the backward-Euler redo "
-                << "path at once" << std::endl;
-    }
+  }
+  if (global_variable::my_rank == 0 && t2_abe > 0) {
+    std::cout << "<rad_m1> time2_auto_be=" << t2_abe << ": after a stage fallback the "
+              << "next 1, 2, 4, ... " << t2_abe << " steps take the backward-Euler redo "
+              << "path at once" << std::endl;
   }
   if (pin->DoesParameterExist("rad_m1", "restart_pack_per_mb")) {
     rst_pack_mb = pin->GetBoolean("rad_m1", "restart_pack_per_mb");

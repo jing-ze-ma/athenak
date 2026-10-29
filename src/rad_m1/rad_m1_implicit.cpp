@@ -2857,7 +2857,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_work_fix")) {
     impl_wk_fix = pin->GetBoolean("rad_m1","implicit_work_fix");
   }
-  // vtxfix-1029 cs_vertex_mono / cs_vertex_mono_n (read only when named; rad_m1.hpp)
+  // vtxfix-1029 cs_vertex_mono / cs_vertex_mono_n (read only when named; rad_m1.hpp;
+  // DEFAULT true on the cubed sphere since defaults-1029, USER 10-29)
+  cs_vtx_mono = cs_geom;
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
   }
@@ -2869,12 +2871,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // vtxfix-1029 implicit_pos_floor_cons (read only when named; rad_m1.hpp; DEFAULT true
+  // since defaults-1029, USER 10-29; false = the old floor that creates energy)
   if (pin->DoesParameterExist("rad_m1","implicit_pos_floor_cons")) {
     impl_pos_flr_cons = pin->GetBoolean("rad_m1","implicit_pos_floor_cons");
-    if (impl_pos_flr_cons && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
-                << "from the radiation of the same column (no energy created)" << std::endl;
-    }
+  }
+  if (impl_pos_flr_cons && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
+              << "from the radiation of the same column (no energy created)" << std::endl;
   }
   if (cs_vtx_mono && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> cs_vertex_mono: two-point lateral faces within " << cs_vtx_n

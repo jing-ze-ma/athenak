@@ -1472,14 +1472,14 @@ class RadiationM1 {
   Real t2_accfb_n = 0.0;        // stages accepted with a fallback (counter)
   void Time2PosFixMarkFb();
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
-  // autobe-1029 <rad_m1>/time2_auto_be = N (read only when named; default 0 = off,
+  // autobe-1029 <rad_m1>/time2_auto_be = N (default 16 since defaults-1029 USER 10-29; 0 = off,
   // bitwise): after a step whose stages fell back to the backward-Euler redo, the next
   // steps skip the doomed stage attempt and take that same redo path at once (Heun hydro
   // from U^n + the BESTORE backward-Euler solve, t2_ok = false, cold predictor, as after
   // Time2Restore); the stages are tried again after 1, 2, 4, ... N skipped steps (the run
   // doubles while the retries keep failing; a stage step that succeeds resets it).  The
   // state is per run (not in restart files: a restarted run starts in stage mode).
-  int t2_abe = 0;               // N (0 = off)
+  int t2_abe = 16;              // N (0 = off; DEFAULT 16 since defaults-1029, USER 10-29)
   int t2_abe_len = 0;           // current skip-run length (0 = stage mode)
   int t2_abe_left = 0;          // skipped steps left in the current run
   bool t2_abe_now = false;      // this cycle skips the stages
@@ -1587,7 +1587,7 @@ class RadiationM1 {
   // takes the two-point gradient (no cross term), its seam faces the foot values (no
   // midpoint quadratic), and D_r,lat is zero in the cells within cs_vertex_mono_n + 1
   // (so every face of those cells sees none).  Conservative (per face), local.
-  bool cs_vtx_mono = false;
+  bool cs_vtx_mono = false;    // DEFAULT = cs geometry since defaults-1029 (USER 10-29)
   int cs_vtx_n = 1;
   // vtxfix-1029 <rad_m1>/implicit_pos_floor_cons (read only when named; default false =
   // bitwise; needs implicit_pos_floor): the E floor of the write-back creates no energy.
@@ -1599,7 +1599,7 @@ class RadiationM1 {
   // column lies in one MeshBlock (nx1 of the block), so the move is local, exact and
   // decomposition-invariant; M1_POS_FLR_MV counts it, M1_POS_FLR_UN only a column with
   // no radiation left above the floor.
-  bool impl_pos_flr_cons = false;
+  bool impl_pos_flr_cons = true;   // DEFAULT true since defaults-1029 (USER 10-29)
   DvceArray4D<Real> pfc_def;      // (m,k,j,i) the uncovered floor energy of the cell
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
