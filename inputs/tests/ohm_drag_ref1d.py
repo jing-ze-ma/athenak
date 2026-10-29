@@ -9,7 +9,8 @@ field is exactly B_phi = b(r,t) sin(th) cos(th) (a single l = 2 mode) with u = r
     walls at rest: E_theta = eta J_theta = 0),  u(r,0) = 0.
 
 Solved EXACTLY in time on an N-cell 2nd-order finite-volume grid by eigendecomposition
-of the symmetric tridiagonal operator (u(t) = V diag((e^{lam t}-1)/lam) V^T s); time
+of the symmetric tridiagonal operator, numpy only
+(u(t) = V diag((e^{lam t}-1)/lam) V^T s); time
 integrals of u^2 and u'^2 (Joule heating) in closed form.  Grid convergence is checked by
 running two N.
 
@@ -18,7 +19,6 @@ usage: ref1d.py --eta_bot 0.1 --ndec 4 --rt 1.6 --w 0.06 --om0 0.05 --m 1 --T 2 
 """
 import argparse
 import numpy as np
-from scipy.linalg import eigh_tridiagonal
 
 
 def eta_of_r(r, a):
@@ -55,7 +55,8 @@ def E(x, T):
 
 def solve(a, N, T, series_t=None):
     rc, h, diag, off, s = build(a, N)
-    lam, V = eigh_tridiagonal(diag, off)
+    A = np.diag(diag) + np.diag(off, 1) + np.diag(off, -1)
+    lam, V = np.linalg.eigh(A)
     c = V.T @ s
     g = np.expm1(lam*T)/lam
     u = V @ (g*c)
