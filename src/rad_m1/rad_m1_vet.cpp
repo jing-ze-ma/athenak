@@ -1934,6 +1934,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // each ray per box crossing.  Single MeshBlock only.  Read only when named.
   vet_x1per = false;
   vet_x1npass = 1;
+  // NOT a slip (unify-sc-gd-1012, rad_m1.hpp vet_mirror_npass): vet_x1_npass is the one
+  // pass-count key of both multi-pass x1 sweeps, the periodic one (read again below) and
+  // the cavity mirrored at both x1 ends (vet_bc_reflect = mirror, default 4, >= 2)
   if (pin->DoesParameterExist("rad_m1", "vet_x1_npass")) {
     vet_mirror_npass = std::max(2, pin->GetInteger("rad_m1", "vet_x1_npass"));
   }
