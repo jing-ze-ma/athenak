@@ -10,7 +10,6 @@
 #include <memory>
 #include <string>
 #include <iostream>
-#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -88,28 +87,6 @@ TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
   bjm2 = 1.0/3.0;
   bjm1 = 1.0/3.0;
   w1 = (3.0+2.0*alpha)/((s+2.0*alpha+1.0)*(s-1.0));
-  // stswall-1029: mu_j, nu_j exactly as RKGCoeff forms them, then the survival weight of
-  // a ConToPrim change after each super-stage (see c2p_w in resistivity.hpp)
-  {
-    std::vector<Real> mu_s(s + 2, 0.0), nu_s(s + 2, 0.0);
-    Real b2 = 1.0/3.0, b1 = 1.0/3.0, b0 = 0.0;
-    for (int st = 2; st <= s; ++st) {
-      if (st > 2) {b2 = b1; b1 = b0;}
-      b0 = (2.0*alpha+1.0)/(3.0+2.0*alpha)*(st+2.0*alpha+1.0)*(st-1.0)/
-           (st*(st+2.0*alpha));
-      mu_s[st] = 2.0*(alpha+st-1.0)/(st+2.0*alpha-1.0)*b0/b1;
-      nu_s[st] = -(st-1.0)/(st+2.0*alpha-1.0)*b0/b2;
-    }
-    c2p_w.assign(s + 1, 1.0);
-    for (int j = 1; j < s; ++j) {
-      Real xp = 0.0, x = mu_s[j+1];
-      for (int k = j + 1; k < s; ++k) {
-        const Real xn = mu_s[k+1]*x + nu_s[k+1]*xp;
-        xp = x;  x = xn;
-      }
-      c2p_w[j] = x;
-    }
-  }
 //  tau = 1.0/w1;
 //    std::cout << "RKG: dt=" << dth
 //                << " dt_diff=" << dtp
@@ -250,12 +227,40 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
                                             0, n1m1, 0, n2m1, 0, n3m1);
     return TaskStatus::complete;
   }
-  // stswall-1029: book this super-stage's floor energy with its survival weight
+  // stswall-1029: the ConToPrim of an intermediate super-stage (floors, fallbacks)
+  // changes u0(IEN) only, after CopyCons saved u_j to u1.  The recurrence
+  // u_{j+1} = mu u_j + nu u_{j-1} + (1-mu-nu) u_ideal - ... then carried that change with
+  // the weight X_s of a perturbation of the u0 slot alone (14..22 for 34 super-stages:
+  // 5.8e-6 Lsw of floor energy became 8.9e-5 Lsw on the WASP-121b s10 state,
+  // stswall_1029/RESULTS.md).  The change d is now added to every register the
+  // recurrence reads (u1 = u_j, u2 = u_{j-1}, u_ideal = u_0): mu + nu + (1-mu-nu) = 1,
+  // so it survives in the final state with weight exactly 1, as if the floor had been
+  // applied at the start of the super-step, and it is booked with weight 1.  Where no
+  // floor fires d = 0 and nothing changes.  rkg_lean converts only at the last stage.
   auto *pmhd = pmy_pack->pmhd;
-  pmhd->c2p_wt_rkg = (stage >= 1 && stage < static_cast<int>(c2p_w.size()))
-                     ? c2p_w[stage] : 1.0;
+  pmhd->c2p_wt_rkg = 1.0;
   const TaskStatus st = pmhd->ConToPrim(pdrive, stage);
   pmhd->c2p_wt_rkg = -1.0;
+  if (!rkg_lean && stage < s) {
+    auto u0_ = pmhd->u0;
+    auto u1_ = pmhd->u1;
+    auto u2_ = u2;
+    auto ui_ = u_ideal;
+    const int n = IEN;
+    const int nmb1 = pmy_pack->nmb_thispack - 1;
+    const int n3 = static_cast<int>(u0_.extent_int(2)) - 1;
+    const int n2 = static_cast<int>(u0_.extent_int(3)) - 1;
+    const int n1 = static_cast<int>(u0_.extent_int(4)) - 1;
+    par_for("rkg_c2p_shift", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = u0_(m,n,k,j,i) - u1_(m,n,k,j,i);
+      if (d != 0.0) {
+        u1_(m,n,k,j,i) = u0_(m,n,k,j,i);
+        u2_(m,n,k,j,i) += d;
+        ui_(m,n,k,j,i) += d;
+      }
+    });
+  }
   return st;
 }
 

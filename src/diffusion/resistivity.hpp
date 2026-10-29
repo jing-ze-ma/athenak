@@ -9,8 +9,6 @@
 //  \brief Contains data and functions that implement various non-ideal MHD (resistive)
 //  processes, such as Ohmic diffusion. TODO(@user): add ambipolar diffusion, Hall effect
 
-#include <vector>
-
 #include "athena.hpp"
 #include "parameter_input.hpp"
 #include "mesh/meshblock.hpp"
@@ -82,16 +80,6 @@ class Resistivity {
   // applied, per unit dt and area: the energy through the face is dt E A.
   bool track_x1_bflx = false;
   DvceArray4D<Real> rkg_bflx;
-  // stswall-1029: c2p_w[j] (j = 1..s, set by TotStage) is the weight with which an IEN
-  // change made by the ConToPrim of super-stage j (floors, fallbacks) survives in the
-  // state the RKG super-step ends with.  The stage's update copies u0 to the u1/u2
-  // registers BEFORE that ConToPrim, so the change enters only the u0 slot of the next
-  // recurrence step: X_{j+1} = mu_{j+1}, X_{k+1} = mu_{k+1} X_k + nu_{k+1} X_{k-1},
-  // c2p_w[j] = X_s (c2p_w[s] = 1).  It is NOT 1: on the WASP-121b s10 state (34
-  // super-stages) the raw intermediate ConToPrim energy change is 5.8e-6 Lsw and its
-  // effect on the final state 8.86e-5 Lsw (stswall_1029 RESULTS).  Used only by the
-  // floor bookkeeping (MHD::C2PTrack); the state is not touched.
-  std::vector<Real> c2p_w;
   // <mhd>/rkg_lean (default false): the intermediate RKG super-stages (stage < s) skip
   // what only the LAST stage needs -- the conserved-variable halo exchange, the EOS
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
