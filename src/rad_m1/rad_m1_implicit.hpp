@@ -377,7 +377,9 @@ constexpr int M1_POS_FLR_UN = 5;   // floor energy NOT covered by the gas (creat
 constexpr int M1_POS_FCLIP  = 6;   // cell-solves whose |F| > c E was scaled back
 constexpr int M1_POS_FCLIPM = 7;   // sum of (|F|/(c E) - 1) over those cell-solves
 constexpr int M1_POS_FLRS   = 8;   // F3: residual raise below 1e-6 e_floor (x volume)
-constexpr int M1_POS_N      = 9;
+constexpr int M1_POS_FLR_MV = 9;   // vtxfix-1029 implicit_pos_floor_cons: floor energy taken
+                                   // from the column's radiation (erg, gas units x volume)
+constexpr int M1_POS_N      = 10;
 constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
 constexpr int M1_IFW_HCL = 1;   // alpha * (coefficient of E'_L in F_HLL), >= 0
 constexpr int M1_IFW_HCR = 2;   // alpha * (coefficient of E'_R in F_HLL), <= 0

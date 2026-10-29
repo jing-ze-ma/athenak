@@ -598,7 +598,7 @@ class RadiationM1 {
   bool impl_pos_floor = false;
   Real impl_pos_gas_frac = 1.0e-3;
   DvceArray1D<Real> pos_cnt_d;
-  Real pos_cnt[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  Real pos_cnt[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   // fixbundle-1009 F3 <rad_m1>/implicit_pos_floor_solve (default false = bitwise): the
   // T-solve / accept no longer raise the iterate to e_floor (EP = max(S2, e_floor) made
   // energy that implicit_pos_floor never saw, and the face fluxes rebuilt from the raised
@@ -1558,6 +1558,18 @@ class RadiationM1 {
   // (so every face of those cells sees none).  Conservative (per face), local.
   bool cs_vtx_mono = false;
   int cs_vtx_n = 1;
+  // vtxfix-1029 <rad_m1>/implicit_pos_floor_cons (read only when named; default false =
+  // bitwise; needs implicit_pos_floor): the E floor of the write-back creates no energy.
+  // The raise to e_floor is paid first by the cell's gas above its floor (as before); the
+  // part the gas cannot cover (M1_POS_FLR_UN, which used to be CREATED: RSG E 1691-1693 d
+  // 5.4e42 erg at a cube vertex) is taken from the radiation energy above e_floor of the
+  // same radial column, nearest cells first (i -+ 1, -+ 2, ..., the pair split by their
+  // E above floor), with the donors' stage slopes and |F| <= c E kept consistent.  The
+  // column lies in one MeshBlock (nx1 of the block), so the move is local, exact and
+  // decomposition-invariant; M1_POS_FLR_MV counts it, M1_POS_FLR_UN only a column with
+  // no radiation left above the floor.
+  bool impl_pos_flr_cons = false;
+  DvceArray4D<Real> pfc_def;      // (m,k,j,i) the uncovered floor energy of the cell
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
   // time2_vet_col_source (vcpred-1010; read only when named, default relaxed = bitwise):
