@@ -245,8 +245,10 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
       FOFC(pdrive, stage);
     }
   }
-  // dhj conducting wall: no Riemann energy flux through the wall (see the function)
-  if (wall_conducting_ix1) WallEnergyFluxZeroIx1();
+  // conducting walls: no Riemann energy flux through the wall (see the function)
+  if ((wall_conducting == 2 && any_reflect_face) || wall_conducting_ix1) {
+    WallEnergyFluxZero(wall_conducting == 2 && any_reflect_face, wall_conducting_ix1);
+  }
 
   // Restore the FULL primitives before any operator that reads them as a physical
   // state -- see the same note in Hydro::Fluxes.  The deviation form is for the Riemann

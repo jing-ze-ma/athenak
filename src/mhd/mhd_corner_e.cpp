@@ -669,26 +669,44 @@ void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void MHD::WallEnergyFluxZeroIx1
-//! \brief condwall-1028, dhj conducting wall: the Riemann energy flux through the is face
-//! of a USER inner x1 boundary is set to 0.  At a closed wall at rest v_n = 0 removes the
-//! advected part, and E_t = 0 (WallEmfZero) removes the Poynting flux E x B . n, so the
-//! exact total energy flux is 0; the Riemann flux carried the work -B_n (v_t . B_t) of
-//! the mirror.  Called on the Riemann (+FOFC) fluxes only, before any diffusive flux.
+//! \fn void MHD::WallEnergyFluxZero
+//! \brief condwall-1028: the Riemann energy flux through a conducting wall is set to 0:
+//! every REFLECT mesh face (refl, <mhd>/wall_conducting = full) and/or the is face of a
+//! USER inner x1 boundary (usr_ix1, the dhj conducting wall).  At a closed wall at rest
+//! v_n = 0 removes the advected part, and E_t = 0 (WallEmfZero) removes the Poynting flux
+//! E x B . n, so the exact total energy flux is 0; the Riemann flux still carried the
+//! work -B_n (v_t . B_t) of the mirror.  Called on the Riemann (+FOFC) fluxes only, then
+//! any diffusive flux (conduction / viscosity through the wall are kept).
 
-void MHD::WallEnergyFluxZeroIx1() {
+void MHD::WallEnergyFluxZero(const bool refl, const bool usr_ix1) {
   auto f1 = uflx.x1f;
+  auto f2 = uflx.x2f;
+  auto f3 = uflx.x3f;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is;
+  const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
-  par_for("wall_eflux0_ix1", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const BoundaryFlag rf = BoundaryFlag::reflect, uf = BoundaryFlag::user;
+  par_for("wall_eflux0_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      f1(m,IEN,k,j,is) = 0.0;
-    }
+    const BoundaryFlag bi = mb_bcs.d_view(m,BoundaryFace::inner_x1);
+    if ((refl && bi == rf) || (usr_ix1 && bi == uf)) {f1(m,IEN,k,j,is) = 0.0;}
+    if (refl && mb_bcs.d_view(m,BoundaryFace::outer_x1) == rf) {f1(m,IEN,k,j,ie+1) = 0.0;}
+  });
+  if (!refl || !md) return;
+  par_for("wall_eflux0_x2", DevExeSpace(), 0, nmb1, ks, ke, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == rf) {f2(m,IEN,k,js,i) = 0.0;}
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf) {f2(m,IEN,k,je+1,i) = 0.0;}
+  });
+  if (!td) return;
+  par_for("wall_eflux0_x3", DevExeSpace(), 0, nmb1, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == rf) {f3(m,IEN,ks,j,i) = 0.0;}
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf) {f3(m,IEN,ke+1,j,i) = 0.0;}
   });
 }
 

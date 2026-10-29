@@ -149,7 +149,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // (dLz 3e-5..7e-5, not converging) and, with the resistive Poynting flux, an energy
   // loss (dE/E -1.4 %) on the closed cs shell (csam_1028/RESULTS.md).  `resistive` zeroes
   // only the resistive part (ideal MHD bitwise unchanged); `full` also the ideal edge EMF
-  // (= the former cs-open-1018 <mhd>/wall_emf_zero, which this key replaces).
+  // (the former cs-open-1018 <mhd>/wall_emf_zero, which this key replaces) and the
+  // Riemann energy flux through the wall.
   if (pin->DoesParameterExist("mhd","wall_emf_zero")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<mhd>/wall_emf_zero is replaced by <mhd>/wall_conducting "
