@@ -88,6 +88,7 @@ add_executable(
         hydro/hydro_tasks.cpp
         hydro/hydro_am.cpp
         hydro/hydro_mergelat.cpp
+        hydro/hydro_ringavg.cpp
         hydro/hydro_update.cpp
         hydro/hydro_etotgrav.cpp
 

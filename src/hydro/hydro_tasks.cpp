@@ -30,6 +30,7 @@
 #include "pgen/pgen.hpp"
 #include "hydro/hydro_am.hpp"
 #include "hydro/hydro_mergelat.hpp"
+#include "hydro/hydro_ringavg.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "utils/c2p_track.hpp"
 
@@ -567,6 +568,11 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
                       use_wellbalance_static, pwb};
     pam->Apply(pdrive, stage, beta_dt, fl);
   }
+
+  // ringavg-1029 <mesh>/polar_ring_avg: the polar rows' phi groups to their averages,
+  // after the transport (fluxes, coordinate sources, am_transport) and before the user
+  // sources/floors, ConToPrim and SendU (hydro_ringavg.hpp)
+  if (pravg != nullptr) {pravg->Average(u0, nhydro + nscalars, phicc0, use_etotgrav);}
 
   // Add user source terms
   if (pmy_pack->pmesh->pgen->user_srcs) {
