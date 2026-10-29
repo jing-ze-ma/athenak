@@ -1090,9 +1090,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
       auto *pmhd_w = pmy_mesh_->pmb_pack->pmhd;
       pmhd_w->wall_closed_ix1 = true;
-      // problem/wall_mhd_mirror (MHD only; wallsf-1028, user 10-28): stress_free (dflt)
-      // or legacy.  The ghosts of this boundary hold B_t ODD and B_r even (the field is
-      // normal to the wall, HydrostaticEquilibrium below), while the legacy mirror kept
+      // problem/wall_mhd_mirror (MHD only): conducting (DEFAULT, condwall-1028, user
+      // 10-29), stress_free (wallsf-1028) or legacy (bitwise 03b468843).  The ghosts of
+      // this boundary hold B_t ODD and B_r even (the field is normal to the wall,
+      // HydrostaticEquilibrium below), while the legacy mirror kept
       // B_t EVEN at the is face: the wall then exerted the anchored Maxwell stress
       // -B_r B_t on a free-slip flow and did the work -B_r (v_t.B_t), +1.04 % of
       // Lsw_abs into WASP-121b b100 (wallpoynt_1028/RESULTS.md), which a wall at rest
@@ -1100,12 +1101,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // flux; v_t stays even, free slip as in hydro), takes the wall-edge corner EMFs
       // from the interior row and zeroes the resistive Poynting flux at the wall.
       const std::string wmm =
-          pin->GetOrAddString("problem", "wall_mhd_mirror", "stress_free");
+          pin->GetOrAddString("problem", "wall_mhd_mirror", "conducting");
       // conducting (condwall-1028): a perfectly conducting wall at rest.  The edge EMFs
       // tangential to the wall (ideal and resistive) are 0, so B_r on the wall is held;
       // the Riemann energy flux through the wall is 0 (no Poynting flux); the mirror is
       // the legacy one (B_t even, v_t even: free slip), so the anchored field keeps its
-      // Maxwell stress -B_r B_t on the wall.
+      // Maxwell stress -B_r B_t on the wall (booked as Twall in the am_hst_split ledger).
+      // A restart whose input records wall_mhd_mirror keeps that value.
       if (wmm == "stress_free") {
         pmhd_w->wall_stress_free = true;
         if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_bt_zero = true;

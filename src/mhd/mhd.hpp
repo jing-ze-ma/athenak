@@ -297,15 +297,16 @@ class MHD {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
-  // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free,
-  // the default there): the mirror flips B_t as well, matching the odd ghost B_t of the
-  // user boundary, so the wall carries neither Maxwell stress nor Poynting flux, and the
-  // wall-edge corner EMFs read the interior row as the ghost row (mhd_corner_e.cpp)
+  // ... and under MHD, the STRESS-FREE wall (dhj problem/wall_mhd_mirror = stress_free;
+  // the dhj default is conducting since condwall-1028): the mirror flips B_t as well,
+  // matching the odd ghost B_t of the user boundary, so the wall carries neither Maxwell
+  // stress nor Poynting flux, and the wall-edge corner EMFs read the interior row as the
+  // ghost row (mhd_corner_e.cpp)
   bool wall_stress_free = false;
-  // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting): the edge EMFs
-  // tangential to the is face of the user inner x1 boundary are 0 (ideal and resistive),
-  // so B_r on the wall is held, and the Riemann energy flux there is 0 (no Poynting
-  // flux; v_n = 0 already removes the advected part).  Mirror as legacy (B_t even).
+  // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting, the default):
+  // the edge EMFs tangential to the is face of the user inner x1 boundary are 0 (ideal
+  // and resistive), so B_r on the wall is held, and the Riemann energy flux there is 0
+  // (no Poynting flux; v_n = 0 already removes the advected part).  Mirror as legacy.
   bool wall_conducting_ix1 = false;
   // <mhd>/wall_conducting (condwall-1028): what a REFLECTING face is for the field.
   //   0 off       legacy (wall edge EMFs as the corner / resistive EMF give them)
