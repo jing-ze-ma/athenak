@@ -1937,8 +1937,30 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "vet_x1_npass")) {
     vet_mirror_npass = std::max(2, pin->GetInteger("rad_m1", "vet_x1_npass"));
   }
+  //   m1cyc-1029: on a periodic x1 mesh the open sweep (upward rays enter layer is with
+  // the boundary intensity, downward rays enter ie with 0) is NOT periodic: an x1-uniform
+  // state gets an x1-dependent tensor, i.e. a ramp along x1 with a jump at the wrap
+  // (hot_blob slab facing x2: 22 % in E, 5 % in rho in 60 cycles).  So a fresh run on a
+  // periodic x1 mesh defaults to the periodic sweep (single MeshBlock), and a multi-block
+  // periodic x1 mesh, which has no periodic sweep, FATALs unless vet_x1_periodic = false
+  // is named (the open sweep, as before).  A restart whose file lacks the key keeps the
+  // open sweep (bitwise continuation).
+  const bool x1meshper =
+      (pm->mesh_bcs[BoundaryFace::inner_x1] == BoundaryFlag::periodic);
   if (pin->DoesParameterExist("rad_m1", "vet_x1_periodic")) {
     vet_x1per = pin->GetBoolean("rad_m1", "vet_x1_periodic");
+  } else if (x1meshper && !global_variable::restart_run) {
+    if (mbpath) {
+      VetFatal("<rad_m1>/closure = vet_sc on a periodic x1 mesh: the x1 sweep is not "
+               "periodic on several MeshBlocks / ranks (vet_x1_periodic needs a single "
+               "MeshBlock); name vet_x1_periodic = false to accept the open x1 sweep");
+    }
+    vet_x1per = !vet_milne;
+    pin->SetBoolean("rad_m1", "vet_x1_periodic", vet_x1per);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_sc: periodic x1 mesh, vet_x1_periodic defaulted to "
+                << (vet_x1per ? "true" : "false (vet_milne)") << std::endl;
+    }
   }
   if (vet_x1per) {
     if (mbpath) {VetFatal("<rad_m1>/vet_x1_periodic needs a single MeshBlock");}
