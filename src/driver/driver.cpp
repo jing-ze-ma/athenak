@@ -14,6 +14,7 @@
 #include <cmath>  // std::isfinite
 #include <cstdlib>  // std::_Exit
 #include <utility>  // std::pair
+#include <chrono>   // autobe-1029 hesdirk2 wall split
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -514,6 +515,20 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
       if (pctr_ != nullptr && pdtr_->on && !dtr_retrying) {pctr_->Save(pmesh, 0);}
       dtr_retrying = false;
+      // autobe-1029: the hesdirk2 wall split (rank 0, fenced; RadiationM1::Time2AutoBeEnd)
+      radm1::RadiationM1 *pm1w = pmesh->pmb_pack->pradm1;
+      const bool t2wall = (pm1w != nullptr) && (pm1w->time_scheme == radm1::M1_TIME_HESDIRK2);
+      auto t2clk = [&]() {
+        if (t2wall) {Kokkos::fence();}
+        return std::chrono::steady_clock::now();
+      };
+      auto t2sec = [](std::chrono::steady_clock::time_point a,
+                      std::chrono::steady_clock::time_point b) {
+        return static_cast<Real>(std::chrono::duration<double>(b - a).count());
+      };
+      const auto t2w0 = t2clk();
+      auto t2wf = t2w0;
+      Real t2wp = 0.0;
 
       // Execute TaskLists
       // Work before time integrator indicated by "0" in stage
@@ -538,6 +553,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // vgdrot2-1012: the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
       if (pm1 != nullptr && !m1mr) {pm1->VetGdRotStep();}
+      // autobe-1029 <rad_m1>/time2_auto_be (off unless named): a step of a skip run takes
+      // the backward-Euler redo path at once (t2_ok = false: no stages, no probe)
+      if (pm1 != nullptr && !m1mr) {(void) pm1->Time2AutoBeBegin();}
       // m1ctr-rollback-1017: slot 1 = the counters at the stage start; the helper solves
       // below put U^n back, so their counters are dropped (back to slot 1) too
       if (pctr_ != nullptr && pm1 != nullptr) {pctr_->Save(pmesh, 1);}
@@ -586,11 +604,13 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           // not positive is solved again with its increment dropped where it failed
           // (counters of the dropped attempt: slot 2)
           if (pm1->t2_fail && pm1->t2_pfix_want) {
+            const auto t2wp0 = t2clk();
             while (pm1->t2_fail && pm1->t2_pfix_want) {
               if (pctr_ != nullptr) {pctr_->Restore(pmesh, 2, 2);}
               dtretry::PgenSolveRestore();   // pgrst-posfix-1021
               (void) pm1->Time2PosFix(this);
             }
+            t2wp += t2sec(t2wp0, t2clk());
           }
           if (pm1->t2_fail) {
             m1t2fail = true;
@@ -602,6 +622,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // fin4-dtretry: a stage that raised the retry flag is not redone here (the retry
       // puts the whole cycle back); the check below the radiation update takes it
       const bool dtr_now = (pm1 != nullptr) && pm1->dtr_on && pm1->dtr_fail;
+      if (m1t2fail) {t2wf = t2clk();}
       if (m1t2fail && !dtr_now) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
@@ -671,9 +692,14 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
+      // autobe-1029: the cycle's kind for the wall split / time2_auto_be run state
+      const auto t2we = t2clk();
+      const int t2kind = (!t2wall || m1mr) ? -1 :
+                         (m1t2 ? (m1t2fail ? 1 : 0) : (pm1->t2_abe_now ? 2 : 3));
       // fin4-dtretry: a module raised a failure in this cycle -> the checkpoint back, a
       // smaller dt, and the cycle again (nothing of the failed attempt is output)
       if (pdtr_ != nullptr && pdtr_->on && pdtr_->Failed(pmesh)) {
+        if (t2kind >= 0) {pm1->Time2AutoBeEnd(4, t2sec(t2w0, t2we), 0.0, 0.0);}
         if (!pdtr_->Retry(pmesh, this)) {
 #if MPI_PARALLEL_ENABLED
           MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
@@ -686,6 +712,11 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         continue;
       }
       if (pm1 != nullptr) {pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);}
+      if (t2kind == 1) {
+        pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we), t2wp);
+      } else if (t2kind >= 0) {
+        pm1->Time2AutoBeEnd(t2kind, t2sec(t2w0, t2we), 0.0, t2wp);
+      }
 
       // Work after time integrator indicated by "1" in stage
       ExecuteTaskList(pmesh, "after_timeintegrator", 1);
