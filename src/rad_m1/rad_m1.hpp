@@ -445,6 +445,12 @@ class RadiationM1 {
   int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
+  // m1cyc-1029 adaptive periodic sweep: stop when the estimated error of the entry plane
+  // d_p/(1 - q) < vet_x1_ptol (0 = exactly vet_x1npass passes); counters for VetReport
+  Real vet_x1ptol = 0.0;
+  DvceArray4D<Real> vet_x1ent;   // (nmb, nray, k, j): the previous pass's exit plane
+  Real vet_x1_nbuild = 0.0, vet_x1_npsum = 0.0, vet_x1_ncap = 0.0;
+  int vet_x1_npmax = 0;
   int vet_path = 0;          // open-od-1013: 1 = the x1 step subdivided at the row nodes
   int vet_interp = 0;        // unify-sc-gd-1012 (#6): upwind stencil 0 lin, 1 log, 2 corner
   int vet_mirror_npass = 4;  // unify-sc-gd-1012: passes of a cavity mirrored at both x1
