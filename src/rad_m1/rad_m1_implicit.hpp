@@ -728,6 +728,37 @@ void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 //! cell turns into a first-order seam truncation (the cs MMS); the quadratic is exact
 //! to O(h^3) (second-order seam and vertex cells).  fv(c') is the foot value of face c'.
 
+//----------------------------------------------------------------------------------------
+//! \fn M1CsSeamDepth
+//! \brief vtxfix-1029: depth of index c (active lo..hi, ghosts allowed) below the nearest
+//! block face along that axis that is a PANEL SEAM (slo / shi): 0 for the cell next to the
+//! seam and for the first ghost beyond it (the neighbour panel's seam cell), 1 one cell
+//! further, ...; a large number when neither face is a seam.
+
+KOKKOS_INLINE_FUNCTION
+int M1CsSeamDepth(const int c, const int lo, const int hi, const bool slo,
+                  const bool shi) {
+  int d = 1 << 20;
+  if (slo) {d = (c < lo) ? (lo - 1 - c) : (c - lo);}
+  if (shi) {
+    const int e = (c > hi) ? (c - hi - 1) : (hi - c);
+    d = (e < d) ? e : d;
+  }
+  return d;
+}
+
+//! \brief vtxfix-1029: Chebyshev distance of cell (k,j) to the cube vertex of its block
+//! (both tangential depths finite only in a block holding a panel corner)
+
+KOKKOS_INLINE_FUNCTION
+int M1CsVtxDist(const int k, const int j, const int ks, const int ke, const int js,
+                const int je, const bool s2lo, const bool s2hi, const bool s3lo,
+                const bool s3hi) {
+  const int dj = M1CsSeamDepth(j, js, je, s2lo, s2hi);
+  const int dk = M1CsSeamDepth(k, ks, ke, s3lo, s3hi);
+  return (dj > dk) ? dj : dk;
+}
+
 template <class F, class G>
 KOKKOS_INLINE_FUNCTION
 Real M1CsSeamMid(const F &fv, const G &g, const int m, const int c, const int sd,

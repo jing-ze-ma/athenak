@@ -1546,6 +1546,24 @@ class RadiationM1 {
   // too (their write-back used to subtract the full work after the solve: E - work <<
   // 0 there, floored).
   bool impl_wk_fix = true;      // defaults-1025: DEFAULT true (USER 10-25)
+  // vtxfix-1029 <rad_m1>/cs_vertex_mono (read only when named; default false = bitwise):
+  // on the cubed sphere, a MONOTONE (two-point) lateral transport at the 8 cube vertices.
+  // The lateral face flux of the implicit M1 there carries three non-monotone pieces that
+  // only the three-panel corner combines: the lagged skew cross term (|cos| -> 1/2 at the
+  // vertex, one-sided M1CsTanDer along both axes), the seam-midpoint quadratic of
+  // cs-open-1018 (M1CsSeamMid, one-sided at the vertex: weights 0.657 / 0.437 / -0.095,
+  // applied to the gradient, to v g0 and MULTIPLICATIVELY to theta = 1/(1 + chat dt
+  // kt), whose along-seam contrast at the photosphere is orders of magnitude, so the
+  // extrapolant can change sign) and D_r,lat (central radial difference inside a lateral
+  // flux).  RSG E prodG 1681-1691 d: vertex cells driven to the E floor (T_rad 339 K)
+  // next to hot vertex cells across the vertex seam faces, then 5.4e42 erg created by the
+  // E floor in two days -> 48 kK bubble at the vertex -> the 1704 d plume.  With the key
+  // on, every lateral face with a cell within cs_vertex_mono_n cells of a cube vertex
+  // takes the two-point gradient (no cross term), its seam faces the foot values (no
+  // midpoint quadratic), and D_r,lat is zero in the cells within cs_vertex_mono_n + 1
+  // (so every face of those cells sees none).  Conservative (per face), local.
+  bool cs_vtx_mono = false;
+  int cs_vtx_n = 1;
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
   // time2_vet_col_source (vcpred-1010; read only when named, default relaxed = bitwise):

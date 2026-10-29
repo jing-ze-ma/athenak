@@ -2857,6 +2857,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_work_fix")) {
     impl_wk_fix = pin->GetBoolean("rad_m1","implicit_work_fix");
   }
+  // vtxfix-1029 cs_vertex_mono / cs_vertex_mono_n (read only when named; rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
+    cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
+  }
+  if (pin->DoesParameterExist("rad_m1","cs_vertex_mono_n")) {
+    cs_vtx_n = pin->GetInteger("rad_m1","cs_vertex_mono_n");
+    if (cs_vtx_n < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/cs_vertex_mono_n must be >= 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  if (cs_vtx_mono && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> cs_vertex_mono: two-point lateral faces within " << cs_vtx_n
+              << " cell(s) of the 8 cube vertices (no skew cross term, seam foot values, "
+              << "D_r,lat = 0 within " << cs_vtx_n + 1 << ")" << std::endl;
+  }
   // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md).
   // defaults-1012 (user sign-off of method-1012): DEFAULT conservative2 (with its
   // implicit_cs2_hll = drag, implicit_cs2_shift = false) on a FRESH run with gas coupling
@@ -5632,6 +5649,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                                   : (impl_hr_model ? 0 : -1));
   auto hqvc_ = vet_cell;
   auto hqgh_ = vgd_hr;
+  // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): two-point faces near the cube vertices
+  const bool vmo = cs_vtx_mono && cs_geom;
+  const int vmn = cs_vtx_n;
   par_for_lb("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
@@ -5682,12 +5702,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                   - M1DDiag(iw_,vd_,dfull,m,1,kq,jm,i)*iw_(m,M1_IW_EP,kq,jm,i))
                  /(cx1v(m,i)*csg2_(m,1,kq,sd));
         };
-        const bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
+        bool up = !(k == ke && s3hi), dn = !(k == ks && s3lo);
+        // vtxfix-1029: a seam face within vmn of a cube vertex takes its foot value
+        if (vmo && M1CsSeamDepth(k, ks, ke, s3lo, s3hi) <= vmn) {up = false; dn = false;}
         // cs-open-1018: the quadratic through the foot values, at the face midpoint
         gr = M1CsSeamMid(dpr, csg2_, m, k, sd, up, dn);
       } else {
-        const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
-                             + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
+        Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,jm,i,ks,ke,s3lo,s3hi)
+                       + M1CsTanDer(iw_,vd_,dfull,cdxf,m,2,k,j,i,ks,ke,s3lo,s3hi));
+        // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
+        if (vmo && (M1CsVtxDist(k,jm,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
+                    M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
+          ge = 0.0;
+        }
         gr = ((dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/cdxf.x2f(m,k,j,i)
               - ccs2(m,k,j)*ge)/csn2(m,k,j);
       }
@@ -5745,7 +5772,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const bool t3lo = (cseam(m,2) != 0), t3hi = (cseam(m,3) != 0);
         if ((j == js && t2lo) || (j == je+1 && t2hi)) {
           const int sd = (j == js) ? 0 : 1;
-          const bool up = !(k == ke && t3hi), dn = !(k == ks && t3lo);
+          bool up = !(k == ke && t3hi), dn = !(k == ks && t3lo);
+          if (vmo && M1CsSeamDepth(k, ks, ke, t3lo, t3hi) <= vmn) {up = false; dn = false;}
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           off = M1CsSeamMid(lf, csg2_, m, k, sd, up, dn);
         }
@@ -5761,7 +5789,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       const bool w3lo = (cseam(m,2) != 0), w3hi = (cseam(m,3) != 0);
       if ((j == js && w2lo) || (j == je+1 && w2hi)) {
         const int sd = (j == js) ? 0 : 1;
-        const bool up = !(k == ke && w3hi), dn = !(k == ks && w3lo);
+        bool up = !(k == ke && w3hi), dn = !(k == ks && w3lo);
+        if (vmo && M1CsSeamDepth(k, ks, ke, w3lo, w3hi) <= vmn) {up = false; dn = false;}
         auto vgq = [&](const int q) {
           return 0.25*(iw_(m,M1_IW_V2,q,jm,i) + iw_(m,M1_IW_V2,q,j,i))
                  *(iw_(m,M1_IW_G0,q,jm,i) + iw_(m,M1_IW_G0,q,j,i));
@@ -5877,13 +5906,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                     - M1DDiag(iw_,vd_,dfull,m,2,km,jq,i)*iw_(m,M1_IW_EP,km,jq,i))
                    /(cx1v(m,i)*csg3_(m,1,jq,sd));
           };
-          const bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
+          bool up = !(j == je && s2hi), dn = !(j == js && s2lo);
+          // vtxfix-1029: a seam face within vmn of a cube vertex takes its foot value
+          if (vmo && M1CsSeamDepth(j, js, je, s2lo, s2hi) <= vmn) {up = false; dn = false;}
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           gr = M1CsSeamMid(dpr, csg3_, m, j, sd, up, dn);
         } else {
-          const Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
-                               + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,
-                                            s2hi));
+          Real ge = 0.5*(M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,km,j,i,js,je,s2lo,s2hi)
+                         + M1CsTanDer(iw_,vd_,dfull,cdxf,m,1,k,j,i,js,je,s2lo,s2hi));
+          // vtxfix-1029: no skew cross term on a face with a cell within vmn of a vertex
+          if (vmo && (M1CsVtxDist(km,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn ||
+                      M1CsVtxDist(k,j,ks,ke,js,je,s2lo,s2hi,s3lo,s3hi) <= vmn)) {
+            ge = 0.0;
+          }
           gr = ((dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/cdxf.x3f(m,k,j,i)
                 - ccs3(m,k,j)*ge)/csn3(m,k,j);
         }
@@ -5927,7 +5962,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const bool t3lo = (cseam(m,2) != 0), t3hi = (cseam(m,3) != 0);
         if ((k == ks && t3lo) || (k == ke+1 && t3hi)) {
           const int sd = (k == ks) ? 0 : 1;
-          const bool up = !(j == je && t2hi), dn = !(j == js && t2lo);
+          bool up = !(j == je && t2hi), dn = !(j == js && t2lo);
+          if (vmo && M1CsSeamDepth(j, js, je, t2lo, t2hi) <= vmn) {up = false; dn = false;}
           // cs-open-1018: the quadratic through the foot values, at the face midpoint
           off = M1CsSeamMid(lf, csg3_, m, j, sd, up, dn);
         }
@@ -5942,7 +5978,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         const bool w2lo = (cseam(m,0) != 0), w2hi = (cseam(m,1) != 0);
         if ((k == ks && w3lo) || (k == ke+1 && w3hi)) {
           const int sd = (k == ks) ? 0 : 1;
-          const bool up = !(j == je && w2hi), dn = !(j == js && w2lo);
+          bool up = !(j == je && w2hi), dn = !(j == js && w2lo);
+          if (vmo && M1CsSeamDepth(j, js, je, w2lo, w2hi) <= vmn) {up = false; dn = false;}
           auto vgq = [&](const int q) {
             return 0.25*(iw_(m,M1_IW_V3,km,q,i) + iw_(m,M1_IW_V3,k,q,i))
                    *(iw_(m,M1_IW_G0,km,q,i) + iw_(m,M1_IW_G0,k,q,i));
