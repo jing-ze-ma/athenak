@@ -305,7 +305,7 @@ class MHD {
   bool wall_stress_free = false;
   // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting, the default):
   // the edge EMFs tangential to the is face of the user inner x1 boundary are 0 (ideal
-  // and resistive), so B_r on the wall is held, and the Riemann energy flux there is 0
+  // and resistive), so B_r on the wall is held, and the Riemann mass+energy fluxes are 0
   // (no Poynting flux; v_n = 0 already removes the advected part).  Mirror as legacy.
   bool wall_conducting_ix1 = false;
   // <mhd>/wall_conducting (condwall-1028): what a REFLECTING face is for the field.
@@ -313,8 +313,8 @@ class MHD {
   //   1 resistive the RESISTIVE tangential edge EMF and the resistive Poynting
   //               flux are 0 on reflect faces (ideal MHD is bitwise unchanged)
   //   2 full      DEFAULT (user 10-29): also the IDEAL tangential edge EMF and the
-  //               Riemann energy flux (perfectly conducting wall at rest: no Poynting
-  //               flux at all)
+  //               Riemann mass+energy fluxes (perfectly conducting wall at rest:
+  //               no Poynting flux at all)
   int wall_conducting = 2;
   bool any_reflect_face = false;   // some mesh face is reflect (host, set in the ctor)
   bool use_wb_x2 = false;    // flag for directions
@@ -412,8 +412,9 @@ class MHD {
     // zero the edge EMFs of `e` tangential to the reflect faces (refl) and/or to the is
     // face of a user inner x1 boundary (usr_ix1); mhd_corner_e.cpp
     void WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix1);
-    // Riemann IEN flux 0 on the same faces (wall_conducting = full; dhj conducting)
-    void WallEnergyFluxZero(const bool refl, const bool usr_ix1);
+    // Riemann mass, energy, scalar fluxes 0 on the same faces (wall_conducting = full;
+    // dhj conducting)
+    void WallFluxZero(const bool refl, const bool usr_ix1);
     DvceArray1D<Real> inner_local;
     DvceArray1D<Real> outer_local;
     // per-MeshBlock partial sums for the polar average, so the reduction can be spread over

@@ -245,9 +245,9 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
       FOFC(pdrive, stage);
     }
   }
-  // conducting walls: no Riemann energy flux through the wall (see the function)
+  // conducting walls: no Riemann mass / energy flux through the wall (see the function)
   if ((wall_conducting == 2 && any_reflect_face) || wall_conducting_ix1) {
-    WallEnergyFluxZero(wall_conducting == 2 && any_reflect_face, wall_conducting_ix1);
+    WallFluxZero(wall_conducting == 2 && any_reflect_face, wall_conducting_ix1);
   }
 
   // Restore the FULL primitives before any operator that reads them as a physical

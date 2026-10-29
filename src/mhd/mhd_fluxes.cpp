@@ -626,6 +626,31 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
         member.team_barrier();
 
+        // condwall-1028: a REFLECTING theta wall on spherical polar.  The position-aware
+        // x2 reconstruction is not mirror-symmetric about the wall (as the x1 one about a
+        // radial wall, see the x1 sweep), so the ghost-side state is not the mirror of
+        // the interior one and the wall passed mass (6e-6 of M in t = 1, cw_test sp).
+        // Make it the exact mirror (v_theta flipped, B_t as the reflect ghosts: even).
+        if (use_spherical_polar &&
+            ((j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::reflect)
+             || (j == je+1 &&
+                 mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::reflect))) {
+          const bool in2 = (j == js);
+          par_for_inner(member, is-1, ie+1, [&](const int i) {
+            for (int n=0; n<nvars; ++n) {
+              if (in2) {wl(n,i) = wr(n,i);} else {wr(n,i) = wl(n,i);}
+            }
+            if (in2) {wl(IVY,i) = -wr(IVY,i);} else {wr(IVY,i) = -wl(IVY,i);}
+            for (int n=0; n<3; ++n) {   // bcc in x1,x2,x3 order (slot 1 unused: by)
+              if (in2) {bl(n,i) = br(n,i);} else {br(n,i) = bl(n,i);}
+            }
+            for (int n=0; n<nder; ++n) {
+              if (in2) {dl(n,i) = dr(n,i);} else {dr(n,i) = dl(n,i);}
+            }
+          });
+          member.team_barrier();
+        }
+
         // compute fluxes over [js,je+1].  MHD RS also computes electric fields, where
         // (IBY) component of flx = E_{x} = -(v x B)_{x} = -(v2*b3 - v3*b2)
         // (IBZ) component of flx = E_{z} = -(v x B)_{z} =  (v2*b1 - v1*b2)

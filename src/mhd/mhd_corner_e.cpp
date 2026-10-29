@@ -669,16 +669,20 @@ void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void MHD::WallEnergyFluxZero
-//! \brief condwall-1028: the Riemann energy flux through a conducting wall is set to 0:
-//! every REFLECT mesh face (refl, <mhd>/wall_conducting = full) and/or the is face of a
-//! USER inner x1 boundary (usr_ix1, the dhj conducting wall).  At a closed wall at rest
-//! v_n = 0 removes the advected part, and E_t = 0 (WallEmfZero) removes the Poynting flux
-//! E x B . n, so the exact total energy flux is 0; the Riemann flux still carried the
-//! work -B_n (v_t . B_t) of the mirror.  Called on the Riemann (+FOFC) fluxes only, then
-//! any diffusive flux (conduction / viscosity through the wall are kept).
+//! \fn void MHD::WallFluxZero
+//! \brief condwall-1028: the Riemann MASS, ENERGY and passive-scalar fluxes through a
+//! conducting wall are set to 0: every REFLECT mesh face (refl, <mhd>/wall_conducting =
+//! full) and/or the is face of a USER inner x1 boundary (usr_ix1, the dhj conducting
+//! wall).  At a closed wall at rest v_n = 0, and E_t = 0 (WallEmfZero) removes the
+//! Poynting flux E x B . n, so the exact mass and energy fluxes are 0.  The Riemann flux
+//! is not: the mirror state (v_n odd, B_t even) is a symmetry of MHD only when B_n = 0.
+//! With B_n != 0 the exact mirror would need B_t ODD (a stress-free wall), so the solver
+//! returned S_M != 0, a mass flux O(B_n B_t) (cw_test threaded box: 2.6e-2 of M through
+//! the walls in t = 1 on Cartesian, 2e-3 on sp) and the work -B_n (v_t . B_t).  Called on
+//! the Riemann (+FOFC) fluxes only, before any diffusive flux (conduction / viscosity
+//! through the wall are kept).  The momentum fluxes (pressure and Maxwell stress) stay.
 
-void MHD::WallEnergyFluxZero(const bool refl, const bool usr_ix1) {
+void MHD::WallFluxZero(const bool refl, const bool usr_ix1) {
   auto f1 = uflx.x1f;
   auto f2 = uflx.x2f;
   auto f3 = uflx.x3f;
@@ -687,26 +691,44 @@ void MHD::WallEnergyFluxZero(const bool refl, const bool usr_ix1) {
   const int js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
+  // the zeroed slots: IDN, IEN (ideal EOS only) and the passive scalars
+  const int ien = (nmhd > IEN) ? IEN : -1;
+  const int ns0 = nmhd, ns1 = nmhd + nscalars;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
   const BoundaryFlag rf = BoundaryFlag::reflect, uf = BoundaryFlag::user;
-  par_for("wall_eflux0_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  par_for("wall_flux0_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const BoundaryFlag bi = mb_bcs.d_view(m,BoundaryFace::inner_x1);
-    if ((refl && bi == rf) || (usr_ix1 && bi == uf)) {f1(m,IEN,k,j,is) = 0.0;}
-    if (refl && mb_bcs.d_view(m,BoundaryFace::outer_x1) == rf) {f1(m,IEN,k,j,ie+1) = 0.0;}
+    const bool zi = (refl && bi == rf) || (usr_ix1 && bi == uf);
+    const bool zo = refl && mb_bcs.d_view(m,BoundaryFace::outer_x1) == rf;
+    for (int n=0; n<ns1; ++n) {
+      if (n != IDN && n != ien && n < ns0) continue;
+      if (zi) {f1(m,n,k,j,is) = 0.0;}
+      if (zo) {f1(m,n,k,j,ie+1) = 0.0;}
+    }
   });
   if (!refl || !md) return;
-  par_for("wall_eflux0_x2", DevExeSpace(), 0, nmb1, ks, ke, is, ie,
+  par_for("wall_flux0_x2", DevExeSpace(), 0, nmb1, ks, ke, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int i) {
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == rf) {f2(m,IEN,k,js,i) = 0.0;}
-    if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf) {f2(m,IEN,k,je+1,i) = 0.0;}
+    const bool zi = mb_bcs.d_view(m,BoundaryFace::inner_x2) == rf;
+    const bool zo = mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf;
+    for (int n=0; n<ns1; ++n) {
+      if (n != IDN && n != ien && n < ns0) continue;
+      if (zi) {f2(m,n,k,js,i) = 0.0;}
+      if (zo) {f2(m,n,k,je+1,i) = 0.0;}
+    }
   });
   if (!td) return;
-  par_for("wall_eflux0_x3", DevExeSpace(), 0, nmb1, js, je, is, ie,
+  par_for("wall_flux0_x3", DevExeSpace(), 0, nmb1, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int j, const int i) {
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == rf) {f3(m,IEN,ks,j,i) = 0.0;}
-    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf) {f3(m,IEN,ke+1,j,i) = 0.0;}
+    const bool zi = mb_bcs.d_view(m,BoundaryFace::inner_x3) == rf;
+    const bool zo = mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf;
+    for (int n=0; n<ns1; ++n) {
+      if (n != IDN && n != ien && n < ns0) continue;
+      if (zi) {f3(m,n,ks,j,i) = 0.0;}
+      if (zo) {f3(m,n,ke+1,j,i) = 0.0;}
+    }
   });
 }
 

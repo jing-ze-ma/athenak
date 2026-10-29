@@ -1104,9 +1104,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           pin->GetOrAddString("problem", "wall_mhd_mirror", "conducting");
       // conducting (condwall-1028): a perfectly conducting wall at rest.  The edge EMFs
       // tangential to the wall (ideal and resistive) are 0, so B_r on the wall is held;
-      // the Riemann energy flux through the wall is 0 (no Poynting flux); the mirror is
-      // the legacy one (B_t even, v_t even: free slip), so the anchored field keeps its
-      // Maxwell stress -B_r B_t on the wall (booked as Twall in the am_hst_split ledger).
+      // the Riemann mass+energy fluxes through the wall are 0 (no Poynting flux); the
+      // mirror is the legacy one (B_t even, v_t even: free slip), so the anchored field
+      // keeps its Maxwell stress -B_r B_t on the wall (booked as Twall in the
+      // am_hst_split ledger).
       // A restart whose input records wall_mhd_mirror keeps that value.
       if (wmm == "stress_free") {
         pmhd_w->wall_stress_free = true;

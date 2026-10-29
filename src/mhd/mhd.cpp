@@ -150,8 +150,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // loss (dE/E -1.4 %) on the closed cs shell (csam_1028/RESULTS.md).  `resistive` zeroes
   // only the resistive part (ideal MHD bitwise unchanged); `full` also the ideal edge EMF
   // (the former cs-open-1018 <mhd>/wall_emf_zero, which this key replaces) and the
-  // Riemann energy flux through the wall.  Default `full` (user 10-29): it changes ideal
-  // MHD with reflect walls (the wall B.n is frozen, E closes to round-off).
+  // Riemann mass+energy fluxes through the wall.  Default `full` (user 10-29): it
+  // changes ideal MHD with reflect walls (the wall B.n is frozen, E closes to round-off).
   if (pin->DoesParameterExist("mhd","wall_emf_zero")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<mhd>/wall_emf_zero is replaced by <mhd>/wall_conducting "
