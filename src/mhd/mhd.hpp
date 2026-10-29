@@ -308,7 +308,7 @@ class MHD {
   // flux; v_n = 0 already removes the advected part).  Mirror as legacy (B_t even).
   bool wall_conducting_ix1 = false;
   // <mhd>/wall_conducting (condwall-1028): what a REFLECTING face is for the field.
-  //   0 off       legacy (the wall edge EMFs are whatever the corner / resistive EMF give)
+  //   0 off       legacy (wall edge EMFs as the corner / resistive EMF give them)
   //   1 resistive DEFAULT: the RESISTIVE tangential edge EMF and the resistive Poynting
   //               flux are 0 on reflect faces (ideal MHD is bitwise unchanged)
   //   2 full      also the IDEAL tangential edge EMF (perfectly conducting wall at rest)

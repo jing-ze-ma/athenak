@@ -262,7 +262,7 @@ int stage = 0;
 int64_t cyc = -1;
 // Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons Twall
 constexpr int NACC = 11;
-Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};   // since last row
+Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  // since last
 Real t0 = 0.0;
 }  // namespace amh
 void AmHstStage(Mesh *pm);

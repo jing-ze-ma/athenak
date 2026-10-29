@@ -612,7 +612,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
 //! e2(k: ks..ke+1, j: js..je, i: is..ie+1), e3(k: ks..ke, j: js..je+1, i: is..ie+1); in
 //! 1-D/2-D the degenerate ke+1 / je+1 copies are zeroed as well.  Called on the ideal
 //! corner EMF (wall_conducting = full, or the dhj conducting wall) and on the resistive
-//! EMF (Resistivity::AddFluxGeneralResist), so the explicit and the RKG paths both see it.
+//! EMF (Resistivity::AddFluxGeneralResist): the explicit and the RKG paths both see it.
 
 void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix1) {
   auto e1 = e.x1e;
