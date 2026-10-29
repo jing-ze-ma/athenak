@@ -421,6 +421,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
     }
   }
+  // stiffk1-1029: <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
+  t2_k1stiff = 0.0;
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
+    t2_k1stiff = pin->GetReal("rad_m1", "time2_k1_stiff");
+  }
   if (t2_k1pos && pin->DoesParameterExist("rad_m1", "time2_k1_pos_theta")) {
     t2_k1pos_th = pin->GetReal("rad_m1", "time2_k1_pos_theta");
   }
@@ -658,6 +663,63 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     } else {
       t2_k1reset_de = 0.0;
       t2_ys_face = false;
+    }
+    // stiffk1-1029 time2_k1_stiff = s (> 0): in cells whose gas-radiation relaxation
+    // rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v) (rho c_v ~ eint/T) has
+    // k dt > s, the EXCHANGE part of the FSAL slope K1 is moved from the gas energy to
+    // the radiation E (ch/cl weighted, so the solve's total energy is unchanged): the
+    // gas K1_EN keeps only the kinetic-energy change of its momentum slope (eint of the
+    // old vector = eint of the stage start), K1_E keeps transport + the moved exchange.
+    // The stiff exchange is then taken by the implicit stages only (L-stable there);
+    // the E/gas partition of the old vector is forgotten at O(1/(k dt)).  Transport,
+    // momentum and face slopes are untouched.  The stored K1 is changed (stage 2 too).
+    if (t2_k1stiff > 0.0) {
+      FluidRef fls = FluidRef::Get(pmy_pack);
+      if (fls.on) {
+        auto &id = pmy_pack->pmesh->mb_indcs;
+        const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+        const int nmbr = pmy_pack->nmb_thispack - 1;
+        auto ug = fls.u0;
+        auto eos = fls.eos;
+        const bool etg = fls.use_etotgrav;
+        auto phc = etg ? fls.phicc0 : DvceArray4D<Real>();
+        const bool emh = fls.mhd;
+        auto emg = emag0;
+        auto op_ = opac;
+        auto k1s_ = t2k1;
+        const bool csk = cs_geom;
+        auto ccl = pmy_pack->pcoord->cos_cell;
+        const Real cl = c_light, ch = chat, ar = arad, sth = t2_k1stiff, dtl = dt;
+        const Real ca = c1;
+        Real ns = 0.0;
+        Kokkos::parallel_reduce("m1_t2_k1stiff", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+            DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+          const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
+          const Real m1 = ug(m,IM1,k,j,i), m2 = ug(m,IM2,k,j,i), m3 = ug(m,IM3,k,j,i);
+          const Real cc = csk ? ccl(m,k,j) : 0.0;
+          const Real ek0 = 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*cc*m2*m3)/(1.0 - cc*cc))*idd;
+          Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
+          if (emh) egr += emg(m,k,j,i);
+          const Real eg = ug(m,IEN,k,j,i) - ek0 - egr;
+          if (!(eg > 0.0)) return;
+          const Real tk = eos.Temperature(dd, eg);
+          if (!(tk > 0.0)) return;
+          const Real rkp = op_(m,M1_OP_P,k,j,i), rke = op_(m,M1_OP_E,k,j,i);
+          const Real rate = ch*rke + 4.0*cl*rkp*ar*tk*tk*tk*tk/eg;
+          if (!(rate*dtl > sth)) return;
+          const Real n1 = m1 + ca*k1s_(m,M1_T2_M1,k,j,i);
+          const Real n2 = m2 + ca*k1s_(m,M1_T2_M1+1,k,j,i);
+          const Real n3 = m3 + ca*k1s_(m,M1_T2_M1+2,k,j,i);
+          const Real ek1 = 0.5*(n1*n1 + (n2*n2 + n3*n3 - 2.0*cc*n2*n3)/(1.0 - cc*cc))*idd;
+          const Real kw = (ca != 0.0) ? (ek1 - ek0)/ca : 0.0;
+          const Real dex = k1s_(m,M1_T2_EN,k,j,i) - kw;
+          k1s_(m,M1_T2_EN,k,j,i) = kw;
+          k1s_(m,M1_T2_E,k,j,i) += (ch/cl)*dex;
+          sum += 1.0;
+        }, Kokkos::Sum<Real>(ns));
+        t2_k1stiff_n += ns;
+      }
     }
     t2_ys_ok = false;
     // t2pos-1020 time2_posfix: the stage-1 start of the gas (and of the closure memory)
@@ -2255,6 +2317,9 @@ void RadiationM1::Time2Report() {
   if (t2_k1reset) {
     std::cout << " k1_reset cells(rank 0)=" << t2_k1reset_n << " faces=" << t2_k1reset_nf;
     if (t2_k1pos) {std::cout << " (pos rule cells " << t2_k1pos_n << ")";}
+  }
+  if (t2_k1stiff > 0.0) {
+    std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
   }
   if (vet_col && t2_vcmode != 0) {
     std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :

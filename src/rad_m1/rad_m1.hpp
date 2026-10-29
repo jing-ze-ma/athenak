@@ -1396,6 +1396,10 @@ class RadiationM1 {
   Real t2_k1pos_th = 0.1;
   Real t2_k1pos_n = 0.0;        // cells dropped by the pos rule (this rank, whole run)
   Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
+  // stiffk1-1029 time2_k1_stiff = s: move the exchange part of K1 (gas -> E) in cells
+  // with relaxation k dt > s (Time2FormStage); 0 = off
+  Real t2_k1stiff = 0.0;
+  Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; absent = 4 since
