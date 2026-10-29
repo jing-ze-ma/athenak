@@ -71,6 +71,15 @@ class Resistivity {
   // those faces, built from the same edge EMFs, is then 0 too
   bool wall_cond_reflect = false;
   bool wall_cond_ix1 = false;
+  // stswall-1029: the RKG super-step does not pass through the RK stages, so a ledger
+  // that books the x1 face fluxes of the RK stages (dhj Etot_bot/Etot_top) misses the
+  // resistive energy it moves through the is and ie+1 faces.  With track_x1_bflx (set by
+  // the problem generator) RKUpdate follows the energy flux of those faces through the
+  // RKG recurrence: rkg_bflx(m, 0|1, k, j) = F_0 (is | ie+1), (2|3) = E_{j-2},
+  // (4|5) = E_{j-1}.  After the last super-stage (4|5) is the flux the whole super-step
+  // applied, per unit dt and area: the energy through the face is dt E A.
+  bool track_x1_bflx = false;
+  DvceArray4D<Real> rkg_bflx;
   // <mhd>/rkg_lean (default false): the intermediate RKG super-stages (stage < s) skip
   // what only the LAST stage needs -- the conserved-variable halo exchange, the EOS
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only

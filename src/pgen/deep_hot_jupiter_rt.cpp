@@ -838,6 +838,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (flux_hst) {
     user_hist = true;
     user_hist_func = DhjFluxHistory;
+    // stswall-1029: the RKG resistive energy flux through the top and the wall (see
+    // Resistivity::track_x1_bflx); folded into Etot_top / Etot_bot by DhjFluxHistory
+    {
+      MeshBlockPack *prk = pmy_mesh_->pmb_pack;
+      if (prk->pmhd != nullptr && prk->pmhd->presist != nullptr &&
+          prk->pmhd->presist->use_rkg_sts) {
+        prk->pmhd->presist->track_x1_bflx = true;
+      }
+    }
     // problem/flux_hst_rkavg (see its note); read without recording it in the input
     const bool rkavg = pin->DoesParameterExist("problem","flux_hst_rkavg")
                        ? pin->GetBoolean("problem","flux_hst_rkavg") : true;
@@ -6818,6 +6827,16 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // the accumulator (else, e.g. the first row after a restart, the last stage's)
   const bool fav = dhj_fhst_avg && (dhj_fhst_stage == dhj_fhst_nst);
   auto fav_ = fav ? *dhj_fhst_ptr : DvceArray4D<Real>();
+  // stswall-1029: under RKG super-stepping the resistive (Poynting) energy flux is not in
+  // uflx during the RK stages, so neither column above contains it.  The flux the last
+  // super-step applied through ie+1 and is (Resistivity::rkg_bflx, slots 5 and 4) is
+  // FOLDED INTO Etot_top and Etot_bot rather than given its own column: the history is
+  // at its NREDUCTION_VARIABLES cap.  Explicit resistivity adds it to uflx in the RK
+  // stages, so the columns already hold it there.  0 at the conducting wall (E_t = 0).
+  const bool rkb = (pmbp->pmhd != nullptr) && (pmbp->pmhd->presist != nullptr) &&
+                   pmbp->pmhd->presist->track_x1_bflx &&
+                   (pmbp->pmhd->presist->rkg_bflx.extent_int(0) == pmbp->nmb_thispack);
+  auto rkb_ = rkb ? pmbp->pmhd->presist->rkg_bflx : DvceArray4D<Real>();
   const Real fstar = ts::rt_hist_fstar;
   const Real alb = ts::rt_hist_albedo;
   const Real arat = (alb < 1.0) ? alb/(1.0 - alb) : 0.0;
@@ -6857,9 +6876,11 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     hvars.the_array[1] = lrf;
     hvars.the_array[2] = lsw;
     hvars.the_array[3] = lbot;
-    const Real fet = fav ? fav_(m,0,k,j) : fx1(m,IEN,k,j,ie+1);
+    const Real fet = (fav ? fav_(m,0,k,j) : fx1(m,IEN,k,j,ie+1))
+                     + (rkb ? rkb_(m,5,k,j) : 0.0);
     const Real fmt = fav ? fav_(m,1,k,j) : fx1(m,IDN,k,j,ie+1);
-    const Real feb = fav ? fav_(m,2,k,j) : fx1(m,IEN,k,j,is);
+    const Real feb = (fav ? fav_(m,2,k,j) : fx1(m,IEN,k,j,is))
+                     + (rkb ? rkb_(m,4,k,j) : 0.0);
     const Real fmb = fav ? fav_(m,3,k,j) : fx1(m,IDN,k,j,is);
     hvars.the_array[4] = fet*at + lir - lsw;
     hvars.the_array[5] = feb*ab + lbot;
