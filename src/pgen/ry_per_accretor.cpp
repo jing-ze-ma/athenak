@@ -422,6 +422,13 @@ bool thsp_env_ = false;
 // t_sponge: a momentum sink in a shear layer that set off odd-even |v_phi| -> 1000 km/s cells at
 // the tidal-bulge top (accspin wall tests A/B, t ~0.09).
 bool env_sp_spin_ = false;
+// thinsp-1029: problem/env_sponge_thin_rho (code density; default 0 = off, bitwise unchanged):
+// the spin-relaxing floor sponge above (target: the star's spin below r_spin, deviation capped
+// at env_v_floor_max, KE removed from E; booked in Erel / Jspf) also acts on EVERY cell with
+// rho < env_sponge_thin_rho, whatever the inside-envelope flag.  For the thin atmosphere far
+// above the photosphere (rho_ph ~ 0.013 code), which otherwise falls back at 100-170 km/s
+// after the spin ramp's surface overshoot and sets the hydro dt (S1, 10-29).
+Real env_thin_rho_ = 0.0;
 DvceArray4D<Real> gr4_, gt4_, gp4_, gpl4_;   // 3-D: g_r remainder, g_theta, g_phi, plain g_r
 DvceArray4D<Real> cref24_, rhoamb4_, tcol4_; // 3-D: relaxation target, ambient, column T
 // <rad_m1>/implicit_bc_x2min|max = flux (phys_3d): the imposed equilibrium lateral flux at the
@@ -1987,7 +1994,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const Real rhou = cool_rhou_, kes = cool_kes_, kk0 = cool_kk0_, tfac = cool_tfac_;
   const Real tcmin = cool_tmin_, gma = rp_.gma, lu = kRsun, vu = kVel, tu = kTime;
   const Real rfl = env_rhoamb_, tsp = env_tsp_, fsp = env_fsp_;
-  const Real vcap = env_vcap_;
+  const Real vcap = env_vcap_, thrho = env_thin_rho_;
   const Real kamb = env_kamb_, camb2 = env_camb2_, cstr2 = env_cstr2_, rhot = env_rhot_;
   auto ramb = rhoamb_;
   const bool gen = gen_;
@@ -2137,7 +2144,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IM2,k,j,i) = f*m2;
       u0(m,IM3,k,j,i) = f*m3;
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/du;
-    } else if (!inside && d < fsp*rfl && du > 0.0) {   // env_sponge_spin: relax to the spin
+    } else if (((!inside && d < fsp*rfl) || (thrho > 0.0 && d < thrho)) && du > 0.0) {
+      // env_sponge_spin: relax to the spin; thinsp-1029: also every cell below env_sponge_thin_rho
       const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
       const Real m3t = (x1v(m,i) < rspn) ? du*vspn*x1v(m,i)*sin(x2v(m,j)) : 0.0;
       const Real e3 = m3 - m3t;
@@ -5434,6 +5442,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     env_sp_spin_ = pin->DoesParameterExist("problem", "env_sponge_spin") &&
                    pin->GetBoolean("problem", "env_sponge_spin");
+    if (pin->DoesParameterExist("problem", "env_sponge_thin_rho")) {
+      env_thin_rho_ = pin->GetReal("problem", "env_sponge_thin_rho");
+      if (env_thin_rho_ < 0.0) fatal("problem/env_sponge_thin_rho must be >= 0");
+    }
     thsp_env_ = pin->DoesParameterExist("problem", "theta_sponge_env") &&
                 pin->GetBoolean("problem", "theta_sponge_env");
     if (pin->DoesParameterExist("problem", "theta_sponge_deg")) {
