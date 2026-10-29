@@ -302,6 +302,18 @@ class MHD {
   // user boundary, so the wall carries neither Maxwell stress nor Poynting flux, and the
   // wall-edge corner EMFs read the interior row as the ghost row (mhd_corner_e.cpp)
   bool wall_stress_free = false;
+  // ... and the CONDUCTING wall (dhj problem/wall_mhd_mirror = conducting): the edge EMFs
+  // tangential to the is face of the user inner x1 boundary are 0 (ideal and resistive),
+  // so B_r on the wall is held, and the Riemann energy flux there is 0 (no Poynting
+  // flux; v_n = 0 already removes the advected part).  Mirror as legacy (B_t even).
+  bool wall_conducting_ix1 = false;
+  // <mhd>/wall_conducting (condwall-1028): what a REFLECTING face is for the field.
+  //   0 off       legacy (the wall edge EMFs are whatever the corner / resistive EMF give)
+  //   1 resistive DEFAULT: the RESISTIVE tangential edge EMF and the resistive Poynting
+  //               flux are 0 on reflect faces (ideal MHD is bitwise unchanged)
+  //   2 full      also the IDEAL tangential edge EMF (perfectly conducting wall at rest)
+  int wall_conducting = 1;
+  bool any_reflect_face = false;   // some mesh face is reflect (host, set in the ctor)
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
@@ -394,6 +406,10 @@ class MHD {
   DvceArray5D<Real> utest, bcctest;  // scratch arrays for FOFC
     
     void PolarAzimuthalAverageEr(void);
+    // zero the edge EMFs of `e` tangential to the reflect faces (refl) and/or to the is
+    // face of a user inner x1 boundary (usr_ix1); mhd_corner_e.cpp
+    void WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix1);
+    void WallEnergyFluxZeroIx1(void);   // IEN x1 flux 0 at the user is face
     DvceArray1D<Real> inner_local;
     DvceArray1D<Real> outer_local;
     // per-MeshBlock partial sums for the polar average, so the reduction can be spread over

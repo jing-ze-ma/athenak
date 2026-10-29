@@ -120,6 +120,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
   const bool wall_sf_ = wall_closed_ix1 && wall_stress_free;
+  // the dhj conducting wall is a closed wall on every geometry too (legacy mirror)
+  const bool wall_cd_ = wall_closed_ix1 && wall_conducting_ix1;
   // <mhd>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see mhd.hpp).
   const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
@@ -344,9 +346,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall.  Make
     // the ghost-side state the exact mirror of the interior-side one: any solver then
     // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
-    // A Cartesian mesh takes the user-wall mirror only under the stress-free wall (the
-    // legacy closed wall was never applied there; reflect is untouched on Cartesian).
-    if (use_spherical_polar || str_r1_ || wall_sf_) {
+    // A Cartesian mesh takes the user-wall mirror only under the stress-free or the
+    // conducting wall (the legacy closed wall was never applied there; reflect is
+    // untouched on Cartesian).
+    if (use_spherical_polar || str_r1_ || wall_sf_ || wall_cd_) {
       const bool curv_ = use_spherical_polar || str_r1_;
       member.team_barrier();
       Kokkos::single(Kokkos::PerTeam(member), [&]() {

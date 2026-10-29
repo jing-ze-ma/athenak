@@ -1092,13 +1092,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // from the interior row and zeroes the resistive Poynting flux at the wall.
       const std::string wmm =
           pin->GetOrAddString("problem", "wall_mhd_mirror", "stress_free");
+      // conducting (condwall-1028): a perfectly conducting wall at rest.  The edge EMFs
+      // tangential to the wall (ideal and resistive) are 0, so B_r on the wall is held;
+      // the Riemann energy flux through the wall is 0 (no Poynting flux); the mirror is
+      // the legacy one (B_t even, v_t even: free slip), so the anchored field keeps its
+      // Maxwell stress -B_r B_t on the wall.
       if (wmm == "stress_free") {
         pmhd_w->wall_stress_free = true;
         if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_bt_zero = true;
+      } else if (wmm == "conducting") {
+        pmhd_w->wall_conducting_ix1 = true;
+        if (pmhd_w->presist != nullptr) pmhd_w->presist->wall_cond_ix1 = true;
       } else if (wmm != "legacy") {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/wall_mhd_mirror = '" << wmm
-                  << "'; expected stress_free or legacy" << std::endl;
+                  << "'; expected stress_free, conducting or legacy" << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (global_variable::my_rank == 0) {
@@ -3441,8 +3449,9 @@ void HydrostaticEquilibrium(Mesh *pm) {
       // stress-free wall on a Cartesian mesh (wallsf-1028): inner ghost B_t odd with unit
       // ratios (the r^2 / area weights below are spherical, and a Cartesian mesh has no
       // area arrays; legacy stays bitwise)
-      const bool cart_sf_ = pmbp->pmhd->wall_stress_free && !pm->use_spherical_polar &&
-                            !pm->use_cubed_sphere;
+      const bool cart_sf_ = (pmbp->pmhd->wall_stress_free ||
+                             pmbp->pmhd->wall_conducting_ix1) &&
+                            !pm->use_spherical_polar && !pm->use_cubed_sphere;
       par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
       KOKKOS_LAMBDA(int m, int k, int j) {
           if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {

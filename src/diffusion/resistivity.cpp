@@ -794,6 +794,13 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
 //  } else {
     AddEMFGeneralResist(b, efld_resist);
 //  }
+  // conducting walls (condwall-1028): the resistive tangential edge EMF is 0 on the wall
+  // faces.  Every edge around a wall face is then 0, so the resistive Poynting flux
+  // through it (built below from these edges) is 0 as well; the explicit path adds
+  // efld_resist to the corner EMF and the RKG path copies it, so both see the zero.
+  if (wall_cond_reflect || wall_cond_ix1) {
+    pmy_pack->pmhd->WallEmfZero(efld_resist, wall_cond_reflect, wall_cond_ix1);
+  }
   auto &e1 = efld_resist.x1e;
   auto &e2 = efld_resist.x2e;
   auto &e3 = efld_resist.x3e;

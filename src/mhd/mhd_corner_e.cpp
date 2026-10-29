@@ -601,6 +601,97 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   return TaskStatus::complete;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::WallEmfZero
+//! \brief condwall-1028: perfectly conducting wall at rest.  On every REFLECT mesh face
+//! of a MeshBlock (refl) and/or on the is face of a USER inner x1 boundary (usr_ix1, the
+//! dhj closed wall under wall_mhd_mirror = conducting) the edge EMFs of `e` tangential to
+//! that face are set to exactly 0, so CT leaves the face-normal field of the wall faces
+//! unchanged.  Generic: Cartesian, spherical polar, cubed sphere (x1 = r there; the panel
+//! faces are never reflect).  Edge extents: e1(k: ks..ke+1, j: js..je+1, i: is..ie),
+//! e2(k: ks..ke+1, j: js..je, i: is..ie+1), e3(k: ks..ke, j: js..je+1, i: is..ie+1); in
+//! 1-D/2-D the degenerate ke+1 / je+1 copies are zeroed as well.  Called on the ideal
+//! corner EMF (wall_conducting = full, or the dhj conducting wall) and on the resistive
+//! EMF (Resistivity::AddFluxGeneralResist), so the explicit and the RKG paths both see it.
+
+void MHD::WallEmfZero(DvceEdgeFld4D<Real> &e, const bool refl, const bool usr_ix1) {
+  auto e1 = e.x1e;
+  auto e2 = e.x2e;
+  auto e3 = e.x3e;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const BoundaryFlag rf = BoundaryFlag::reflect, uf = BoundaryFlag::user;
+  // x1 faces: e2 and e3 at i = is / ie+1
+  par_for("wall_emf0_x1", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const BoundaryFlag bi = mb_bcs.d_view(m,BoundaryFace::inner_x1);
+    const BoundaryFlag bo = mb_bcs.d_view(m,BoundaryFace::outer_x1);
+    if ((refl && bi == rf) || (usr_ix1 && bi == uf)) {
+      if (j <= je) {e2(m,k,j,is) = 0.0;}
+      if (k <= ke) {e3(m,k,j,is) = 0.0;}
+    }
+    if (refl && bo == rf) {
+      if (j <= je) {e2(m,k,j,ie+1) = 0.0;}
+      if (k <= ke) {e3(m,k,j,ie+1) = 0.0;}
+    }
+  });
+  if (!refl || !md) return;
+  // x2 faces: e1 and e3 at j = js / je+1
+  par_for("wall_emf0_x2", DevExeSpace(), 0, nmb1, ks, ke+1, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == rf) {
+      if (i <= ie) {e1(m,k,js,i) = 0.0;}
+      if (k <= ke) {e3(m,k,js,i) = 0.0;}
+    }
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == rf) {
+      if (i <= ie) {e1(m,k,je+1,i) = 0.0;}
+      if (k <= ke) {e3(m,k,je+1,i) = 0.0;}
+    }
+  });
+  if (!td) return;
+  // x3 faces: e1 and e2 at k = ks / ke+1
+  par_for("wall_emf0_x3", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == rf) {
+      if (i <= ie) {e1(m,ks,j,i) = 0.0;}
+      if (j <= je) {e2(m,ks,j,i) = 0.0;}
+    }
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == rf) {
+      if (i <= ie) {e1(m,ke+1,j,i) = 0.0;}
+      if (j <= je) {e2(m,ke+1,j,i) = 0.0;}
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::WallEnergyFluxZeroIx1
+//! \brief condwall-1028, dhj conducting wall: the Riemann energy flux through the is face
+//! of a USER inner x1 boundary is set to 0.  At a closed wall at rest v_n = 0 removes the
+//! advected part, and E_t = 0 (WallEmfZero) removes the Poynting flux E x B . n, so the
+//! exact total energy flux is 0; the Riemann flux carried the work -B_n (v_t . B_t) of
+//! the mirror.  Called on the Riemann (+FOFC) fluxes only, before any diffusive flux.
+
+void MHD::WallEnergyFluxZeroIx1() {
+  auto f1 = uflx.x1f;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  par_for("wall_eflux0_ix1", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      f1(m,IEN,k,j,is) = 0.0;
+    }
+  });
+}
+
 void MHD::PolarAzimuthalAverageEr() {
   auto e1 = efld.x1e;
 

@@ -65,6 +65,12 @@ class Resistivity {
   // stress-free closed inner wall (dhj problem/wall_mhd_mirror = stress_free): B_t = 0
   // on the is face of a USER inner x1 boundary, so the resistive Poynting flux there is 0
   bool wall_bt_zero = false;
+  // conducting walls (condwall-1028): the resistive edge EMF tangential to the reflect
+  // faces (<mhd>/wall_conducting = resistive|full) and/or to the is face of a user inner
+  // x1 wall (dhj wall_mhd_mirror = conducting) is 0; the resistive Poynting flux through
+  // those faces, built from the same edge EMFs, is then 0 too
+  bool wall_cond_reflect = false;
+  bool wall_cond_ix1 = false;
   // <mhd>/rkg_lean (default false): the intermediate RKG super-stages (stage < s) skip
   // what only the LAST stage needs -- the conserved-variable halo exchange, the EOS
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only

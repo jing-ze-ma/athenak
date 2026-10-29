@@ -245,6 +245,8 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
       FOFC(pdrive, stage);
     }
   }
+  // dhj conducting wall: no Riemann energy flux through the wall (see the function)
+  if (wall_conducting_ix1) WallEnergyFluxZeroIx1();
 
   // Restore the FULL primitives before any operator that reads them as a physical
   // state -- see the same note in Hydro::Fluxes.  The deviation form is for the Riemann
@@ -521,6 +523,11 @@ TaskStatus MHD::RecvU_Shr(Driver *pdrive, int stage) {
 TaskStatus MHD::EField(Driver *pdrive, int stage) {
   // Use CT to compute corner E
   CornerE(pdrive, stage);
+  // conducting walls (condwall-1028): the IDEAL tangential edge EMF on reflect faces
+  // (<mhd>/wall_conducting = full) and on the dhj conducting user wall
+  if ((wall_conducting == 2 && any_reflect_face) || wall_conducting_ix1) {
+    WallEmfZero(efld, wall_conducting == 2 && any_reflect_face, wall_conducting_ix1);
+  }
 
   // Add resistive electric field (if needed)
   if (presist != nullptr) {
