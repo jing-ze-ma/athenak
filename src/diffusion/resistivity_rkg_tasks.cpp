@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <iostream>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -87,6 +88,28 @@ TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
   bjm2 = 1.0/3.0;
   bjm1 = 1.0/3.0;
   w1 = (3.0+2.0*alpha)/((s+2.0*alpha+1.0)*(s-1.0));
+  // stswall-1029: mu_j, nu_j exactly as RKGCoeff forms them, then the survival weight of
+  // a ConToPrim change after each super-stage (see c2p_w in resistivity.hpp)
+  {
+    std::vector<Real> mu_s(s + 2, 0.0), nu_s(s + 2, 0.0);
+    Real b2 = 1.0/3.0, b1 = 1.0/3.0, b0 = 0.0;
+    for (int st = 2; st <= s; ++st) {
+      if (st > 2) {b2 = b1; b1 = b0;}
+      b0 = (2.0*alpha+1.0)/(3.0+2.0*alpha)*(st+2.0*alpha+1.0)*(st-1.0)/
+           (st*(st+2.0*alpha));
+      mu_s[st] = 2.0*(alpha+st-1.0)/(st+2.0*alpha-1.0)*b0/b1;
+      nu_s[st] = -(st-1.0)/(st+2.0*alpha-1.0)*b0/b2;
+    }
+    c2p_w.assign(s + 1, 1.0);
+    for (int j = 1; j < s; ++j) {
+      Real xp = 0.0, x = mu_s[j+1];
+      for (int k = j + 1; k < s; ++k) {
+        const Real xn = mu_s[k+1]*x + nu_s[k+1]*xp;
+        xp = x;  x = xn;
+      }
+      c2p_w[j] = x;
+    }
+  }
 //  tau = 1.0/w1;
 //    std::cout << "RKG: dt=" << dth
 //                << " dt_diff=" << dtp
@@ -227,7 +250,13 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
                                             0, n1m1, 0, n2m1, 0, n3m1);
     return TaskStatus::complete;
   }
-  return pmy_pack->pmhd->ConToPrim(pdrive, stage);
+  // stswall-1029: book this super-stage's floor energy with its survival weight
+  auto *pmhd = pmy_pack->pmhd;
+  pmhd->c2p_wt_rkg = (stage >= 1 && stage < static_cast<int>(c2p_w.size()))
+                     ? c2p_w[stage] : 1.0;
+  const TaskStatus st = pmhd->ConToPrim(pdrive, stage);
+  pmhd->c2p_wt_rkg = -1.0;
+  return st;
 }
 
 TaskStatus Resistivity::NewTimeStepRKG(Driver *pdrive, int stage) {

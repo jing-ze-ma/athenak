@@ -61,7 +61,7 @@ void Before(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
             DvceArray4D<Real> re, DvceArray4D<Real> rd);
 void After(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
            DvceArray4D<Real> re, DvceArray4D<Real> rd, DvceArray2D<Real> acc,
-           const Real w, const bool split);
+           const Real w, const bool split, const Real wmass = -1.0);
 
 }  // namespace c2p_track
 

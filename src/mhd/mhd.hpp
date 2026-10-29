@@ -279,6 +279,10 @@ class MHD {
   // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
   bool rkg_skip_u = false;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
+  // stswall-1029: >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
+  // stage's IEN change in the state the RKG super-step ends with (Resistivity::c2p_w);
+  // the IDN change is carried in full (the super-step updates IEN only)
+  Real c2p_wt_rkg = -1.0;
   DvceArray2D<Real> c2p_acc;
   DvceArray4D<Real> c2p_ref_e, c2p_ref_d;
   void EnableC2PTrack();

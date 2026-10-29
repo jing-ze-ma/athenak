@@ -743,8 +743,13 @@ void MHD::C2PTrack(Driver *pdrive, int stage, bool before) {
   } else {
     // the split radiation's own conversion runs from RTOpSplitBvals (no driver)
     const bool split = c2p_split || (pdrive == nullptr);
-    c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc,
-                     c2p_track::Weight(pdrive, stage, split), split);
+    if (c2p_wt_rkg >= 0.0) {
+      c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc, c2p_wt_rkg, split,
+                       1.0);
+    } else {
+      c2p_track::After(pmy_pack, u0, c2p_ref_e, c2p_ref_d, c2p_acc,
+                       c2p_track::Weight(pdrive, stage, split), split);
+    }
   }
 }
 

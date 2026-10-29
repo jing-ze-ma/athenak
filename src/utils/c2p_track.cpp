@@ -25,8 +25,9 @@ void Before(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
 
 void After(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
            DvceArray4D<Real> re, DvceArray4D<Real> rd, DvceArray2D<Real> acc,
-           const Real w, const bool split) {
+           const Real w, const bool split, const Real wmass) {
   const int r0 = split ? 2 : 0;
+  const Real wm = (wmass < 0.0) ? w : wmass;
   auto &indcs = pmbp->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
@@ -37,7 +38,7 @@ void After(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0,
     const Real de = u0(m,IEN,k,j,i) - re(m,k-ks,j-js,i-is);
     const Real dm = u0(m,IDN,k,j,i) - rd(m,k-ks,j-js,i-is);
     if (de != 0.0) Kokkos::atomic_add(&acc(r0,i-is), w*de*vol(m,k,j,i));
-    if (dm != 0.0) Kokkos::atomic_add(&acc(r0+1,i-is), w*dm*vol(m,k,j,i));
+    if (dm != 0.0) Kokkos::atomic_add(&acc(r0+1,i-is), wm*dm*vol(m,k,j,i));
   });
 }
 
