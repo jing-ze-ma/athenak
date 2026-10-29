@@ -310,11 +310,12 @@ class MHD {
   bool wall_conducting_ix1 = false;
   // <mhd>/wall_conducting (condwall-1028): what a REFLECTING face is for the field.
   //   0 off       legacy (wall edge EMFs as the corner / resistive EMF give them)
-  //   1 resistive DEFAULT: the RESISTIVE tangential edge EMF and the resistive Poynting
+  //   1 resistive the RESISTIVE tangential edge EMF and the resistive Poynting
   //               flux are 0 on reflect faces (ideal MHD is bitwise unchanged)
-  //   2 full      also the IDEAL tangential edge EMF and the Riemann energy flux
-  //               (perfectly conducting wall at rest: no Poynting flux at all)
-  int wall_conducting = 1;
+  //   2 full      DEFAULT (user 10-29): also the IDEAL tangential edge EMF and the
+  //               Riemann energy flux (perfectly conducting wall at rest: no Poynting
+  //               flux at all)
+  int wall_conducting = 2;
   bool any_reflect_face = false;   // some mesh face is reflect (host, set in the ctor)
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho

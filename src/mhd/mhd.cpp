@@ -143,14 +143,15 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     presist = nullptr;
   }
 
-  // <mhd>/wall_conducting = off | resistive (default) | full (condwall-1028): a REFLECT
+  // <mhd>/wall_conducting = off | resistive | full (default) (condwall-1028): a REFLECT
   // face is a conducting wall for the field.  The resistive tangential edge EMF eta J_t
   // at a reflect wall grew the wall B.n by 1e3-3e4x, which then carried a Maxwell torque
   // (dLz 3e-5..7e-5, not converging) and, with the resistive Poynting flux, an energy
   // loss (dE/E -1.4 %) on the closed cs shell (csam_1028/RESULTS.md).  `resistive` zeroes
   // only the resistive part (ideal MHD bitwise unchanged); `full` also the ideal edge EMF
   // (the former cs-open-1018 <mhd>/wall_emf_zero, which this key replaces) and the
-  // Riemann energy flux through the wall.
+  // Riemann energy flux through the wall.  Default `full` (user 10-29): it changes ideal
+  // MHD with reflect walls (the wall B.n is frozen, E closes to round-off).
   if (pin->DoesParameterExist("mhd","wall_emf_zero")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<mhd>/wall_emf_zero is replaced by <mhd>/wall_conducting "
@@ -159,7 +160,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   {
-    const std::string wc = pin->GetOrAddString("mhd","wall_conducting","resistive");
+    const std::string wc = pin->GetOrAddString("mhd","wall_conducting","full");
     if (wc == "off") {
       wall_conducting = 0;
     } else if (wc == "resistive") {
