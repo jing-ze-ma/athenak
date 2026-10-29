@@ -2869,6 +2869,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_floor_cons")) {
+    impl_pos_flr_cons = pin->GetBoolean("rad_m1","implicit_pos_floor_cons");
+    if (impl_pos_flr_cons && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
+                << "from the radiation of the same column (no energy created)" << std::endl;
+    }
+  }
   if (cs_vtx_mono && global_variable::my_rank == 0) {
     std::cout << "<rad_m1> cs_vertex_mono: two-point lateral faces within " << cs_vtx_n
               << " cell(s) of the 8 cube vertices (no skew cross term, seam foot values, "
@@ -9955,6 +9962,8 @@ void RadiationM1::ImplicitReport() {
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
               << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
               << " of which solve undershoot (pos_floor_solve)=" << pos_cnt[M1_POS_FLRS]
+              << " taken from the column's radiation (implicit_pos_floor_cons)="
+              << pos_cnt[M1_POS_FLR_MV]
               << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
               << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM] << std::endl;
   }
@@ -16467,6 +16476,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       am_(m,5,k,j,i) = g3;
     });
   }
+  // vtxfix-1029 implicit_pos_floor_cons: the write-back stores each cell's uncovered
+  // floor raise (erg) instead of counting it as created; a column pass then moves it
+  const bool pfcw_ = impl_pos_flr_cons && pflr;
+  if (pfcw_) {
+    auto &icp = pmy_pack->pmesh->mb_indcs;
+    if (pfc_def.extent_int(0) != pmy_pack->nmb_thispack) {
+      Kokkos::realloc(pfc_def, pmy_pack->nmb_thispack, icp.nx3 + 2*icp.ng,
+                      icp.nx2 + 2*icp.ng, icp.nx1 + 2*icp.ng);
+    }
+    Kokkos::deep_copy(pfc_def, 0.0);
+  }
+  auto pfd_ = pfc_def;
   // cs2clip-1020 <rad_m1>/implicit_cs2_clip = rad (read only when named; conservative
   // gas sources): the same fragment with M1_C2CR 1 (the gas is charged with the pre-limit
   // cell flux); every other launch below is the unchanged fragment
@@ -16549,6 +16570,66 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 #define M1_RCP 1
 #include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
 #undef M1_RCP
+    });
+  }
+  if (pfcw_) {
+    // vtxfix-1029 implicit_pos_floor_cons: one thread per radial column; the uncovered
+    // raise of a cell is taken from the radiation above e_floor of the nearest cells of
+    // its column (i -+ d, d = 1, 2, ...; the pair split by their energy above floor)
+    const int isc = is, iec = ie;
+    const bool pspc = sph_geom;
+    auto pvc = pmy_pack->pcoord->volume;
+    auto mbsc = pmy_pack->pmb->mb_size;
+    const bool cswc = cs_geom;
+    auto ccc = pmy_pack->pcoord->cos_cell;
+    par_for("m1_pos_flr_cons", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      Real mv = 0.0, un = 0.0;
+      for (int i = isc; i <= iec; ++i) {
+        Real def = pfd_(m,k,j,i);
+        if (!(def > 0.0)) continue;
+        for (int d = 1; d <= iec - isc && def > 0.0; ++d) {
+          const int qa = i - d, qb = i + d;
+          Real va = 0.0, vb = 0.0, aa = 0.0, ab = 0.0;
+          if (qa >= isc) {
+            va = pspc ? pvc(m,k,j,qa) : (mbsc.d_view(m).dx1*mbsc.d_view(m).dx2*
+                                          mbsc.d_view(m).dx3);
+            aa = fmax(u0_(m,M1_E,k,j,qa) - efl, 0.0)*(cl/ch)*va;
+          }
+          if (qb <= iec) {
+            vb = pspc ? pvc(m,k,j,qb) : (mbsc.d_view(m).dx1*mbsc.d_view(m).dx2*
+                                          mbsc.d_view(m).dx3);
+            ab = fmax(u0_(m,M1_E,k,j,qb) - efl, 0.0)*(cl/ch)*vb;
+          }
+          const Real at = aa + ab;
+          if (!(at > 0.0)) continue;
+          const Real tk = fmin(def, at);
+          for (int s = 0; s < 2; ++s) {
+            const int q = (s == 0) ? qa : qb;
+            const Real a = (s == 0) ? aa : ab, vq = (s == 0) ? va : vb;
+            if (!(a > 0.0)) continue;
+            const Real de = (ch/cl)*(tk*a/at)/vq;   // radiation energy density taken
+            Real eq = fmax(u0_(m,M1_E,k,j,q) - de, efl);
+            u0_(m,M1_E,k,j,q) = eq;
+            if (t2k) {kk_(m,M1_T2_E,k,j,q) -= de/dt;}
+            Real g1 = u0_(m,M1_F1,k,j,q), g2 = u0_(m,M1_F2,k,j,q);
+            Real g3 = u0_(m,M1_F3,k,j,q);
+            if (cswc) {
+              M1ApplyLimitsCs(cl, efl, ccc(m,k,j), eq, g1, g2, g3);
+            } else {
+              M1ApplyLimits(cl, efl, eq, g1, g2, g3);
+            }
+            u0_(m,M1_F1,k,j,q) = g1;
+            u0_(m,M1_F2,k,j,q) = g2;
+            u0_(m,M1_F3,k,j,q) = g3;
+          }
+          def -= tk;
+          mv += tk;
+        }
+        un += fmax(def, 0.0);
+      }
+      if (mv > 0.0) {Kokkos::atomic_add(&pc_(M1_POS_FLR_MV), mv);}
+      if (un > 0.0) {Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), un);}
     });
   }
   CbDebugDump();   // cbfix-1011 diagnostic (env M1_CBDBG), no-op otherwise

@@ -874,7 +874,11 @@
         ep = fmax(ep, efl);
         Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
         Kokkos::atomic_add(&pc_(M1_POS_FLR_DE), take*vol);
-        Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), (need - take)*vol);
+        if (pfcw_) {   // vtxfix-1029 implicit_pos_floor_cons: moved by the column pass
+          pfd_(m,k,j,i) = (need - take)*vol;
+        } else {
+          Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), (need - take)*vol);
+        }
         if (pfs) {Kokkos::atomic_add(&pc_(M1_POS_FLRS), s2def*vol);}
       }
       if (pgas && feedback && eg < emin) {
