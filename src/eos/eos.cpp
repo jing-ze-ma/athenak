@@ -133,10 +133,10 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       eos_data.x1_phi_min = pin->GetReal(bk, key);
     }
   }
-  // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven: see EOS_Data::phi_min_all and
-  // EOS_Data::lhlld_oddeven.  Read only when set (no GetOrAdd), so an unset key leaves
+  // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven, <mhd>/lhlld_emf_eta_pos: see
+  // EOS_Data::phi_min_all, ::lhlld_oddeven and ::lhlld_emf_eta_pos.  Read only when set (no GetOrAdd), so an unset key leaves
   // the restart header unchanged.  MHD only: refuse them in any other block.
-  for (const char *kc : {"lhlld_phi_min", "lhlld_oddeven"}) {
+  for (const char *kc : {"lhlld_phi_min", "lhlld_oddeven", "lhlld_emf_eta_pos"}) {
     const std::string key(kc);
     if (!pin->DoesParameterExist(bk, key)) continue;
     if (bk.compare("mhd") != 0) {
@@ -147,6 +147,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     }
     if (key.compare("lhlld_phi_min") == 0) {
       eos_data.phi_min_all = pin->GetReal(bk, key);
+    } else if (key.compare("lhlld_emf_eta_pos") == 0) {
+      eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, key);
     } else {
       eos_data.lhlld_oddeven = pin->GetReal(bk, key);
     }

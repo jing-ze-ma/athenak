@@ -123,6 +123,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   const int oe_n1 = static_cast<int>(w0.extent(4)) - 1;
   const int oe_n2 = static_cast<int>(w0.extent(3)) - 1;
   const int oe_n3 = static_cast<int>(w0.extent(2)) - 1;
+  // <mhd>/lhlld_emf_eta_pos (EOS_Data::lhlld_emf_eta_pos): see eos.hpp and Step 8.
+  const bool eta_pos = eos.lhlld_emf_eta_pos;
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -520,6 +522,21 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
         Real wpt = (spd[2] >= 0.0) ? spd[0]*sdml_inv : spd[4]*sdmr_inv;
         flxi.mx += dpt;
         flxi.e  += wpt*dpt*spd[2];
+      }
+
+      //--- Step 8.  Non-negative numerical resistivity of the transverse-field flux
+      // (opt-in, see EOS_Data::lhlld_emf_eta_pos).  eta_face ~ (|S_M| + du/2) dx/2 for
+      // the HLLD B_t flux; on a converging face with -du > 2|S_M| it is negative, and
+      // the minimal extra flux -(1/2) max(0, -(|S_M| + du/2)) dB_t brings it to 0.
+      if (eta_pos && (spd[0] < 0.0) && (spd[4] > 0.0)) {
+        Real ceta = fmax(0.0, -(fabs(spd[2]) + 0.5*(wr_ivx - wl_ivx)));
+        if (ceta > 0.0) {
+          Real dfby = -0.5*ceta*(ur.by - ul.by);
+          Real dfbz = -0.5*ceta*(ur.bz - ul.bz);
+          flxi.by += dfby;
+          flxi.bz += dfbz;
+          flxi.e  += 0.5*((ul.by + ur.by)*dfby + (ul.bz + ur.bz)*dfbz);
+        }
       }
 
       flx(m,IDN,k,j,i) = flxi.d;

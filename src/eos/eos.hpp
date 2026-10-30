@@ -163,6 +163,24 @@ struct EOS_Data {
   // low-Mach fix is kept where the flow is resolved.  <= 0 (default) = off, bitwise
   // unchanged.  MHD only.
   Real lhlld_oddeven = 0.0;
+  // <mhd>/lhlld_emf_eta_pos -- NON-NEGATIVE NUMERICAL RESISTIVITY of the LHLLD
+  // transverse-field (EMF) flux, all faces.  For weak B_n the HLLD star-region flux of
+  // a transverse field component B_t is F = B_K S_M (S_K - u_K)/(S_K - S_M) (K the
+  // upwind side of the contact).  To leading order in |u|/c_f its part beyond the
+  // centred flux (B_L u_L + B_R u_R)/2 is
+  //   F_up = Bbar (S_M - ubar) - (|S_M|/2 + du/4) dB,   du = u_R - u_L, dB = B_R - B_L,
+  // and the face changes the magnetic energy by F_up dB: the dB term is a numerical
+  // resistivity eta_face = (|S_M| + du/2) dx/2, NEGATIVE on a converging face whose
+  // normal-velocity jump exceeds twice the contact speed (-du > 2|S_M|).  This holds
+  // for HLLD and LHLLD alike (the B fluxes of LHLLD are HLLD's; p_T* does not enter
+  // them); the low-Mach fix makes it bite because it no longer damps the face jump du
+  // (the O(1/M) acoustic term).  With the key on, the transverse-field flux on such a
+  // face gets the minimal extra term that makes eta_face = 0 there,
+  //   dF_Bt = -(1/2) max(0, -(|S_M| + du/2)) dB_t,
+  // and the energy flux the matching Poynting term Bbar_t . dF_Bt (so the magnetic
+  // energy removed stays in the total energy as heat).  Mass, momentum and the low-Mach
+  // pressure fix are untouched.  false (default) = off, bitwise unchanged.  MHD only.
+  bool lhlld_emf_eta_pos = false;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).
