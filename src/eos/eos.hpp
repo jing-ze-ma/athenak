@@ -179,7 +179,8 @@ struct EOS_Data {
   //   dF_Bt = -(1/2) max(0, -(|S_M| + du/2)) dB_t,
   // and the energy flux the matching Poynting term Bbar_t . dF_Bt (so the magnetic
   // energy removed stays in the total energy as heat).  Mass, momentum and the low-Mach
-  // pressure fix are untouched.  false (default) = off, bitwise unchanged.  MHD only.
+  // pressure fix are untouched.  Default true in <mhd> (user decision 10-30, set in
+  // eos.cpp); false = legacy LHLLD, bitwise.  MHD only.
   bool lhlld_emf_eta_pos = false;
   // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor -- ODD-EVEN (2-cell, checkerboard)
   // SENSOR for LHLLC/LHLLD, on every face.  The velocity-jump term rho c (u_L - u_R) of
@@ -194,7 +195,8 @@ struct EOS_Data {
   // Then phi -> phi + (1 - phi) s (applied as the equivalent floor on chi), so the face
   // dissipation always lies between LHLLC/LHLLD (s = 0) and HLLC/HLLD (s = 1).  q is
   // the mass flux, not u_n, so a resolved anelastic (div(rho u) ~ 0) stratified flow
-  // reads as smooth.  <= 0 (default, key unset) = off, bitwise unchanged.
+  // reads as smooth.  Default 1 (user decision 10-30, set in eos.cpp); <= 0 = off,
+  // legacy LHLLC/LHLLD, bitwise.
   Real cb_sensor = 0.0;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic

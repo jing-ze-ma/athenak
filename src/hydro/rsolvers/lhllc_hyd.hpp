@@ -129,7 +129,7 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
     qe = fmax(fabs(wl_ivx),fabs(wr_ivx)); // maximum speed
     qf = fmax(qa,qb); // maximum sound speed
     Real chi = fmin(1.0,qe/qf);
-    // odd-even sensor, key set only (utils/cb_sensor.hpp); 0 when not flagged
+    // odd-even sensor, default 1 (utils/cb_sensor.hpp); 0 when not flagged
     if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
                                                           cb_sensor));
     Real phi = chi * (2.0 - chi);

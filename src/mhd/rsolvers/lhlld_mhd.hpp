@@ -243,7 +243,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
           chi = fmax(chi, soe);
         }
       }
-      // <mhd>/lhlld_cb_sensor: odd-even sensor, key set only (utils/cb_sensor.hpp)
+      // <mhd>/lhlld_cb_sensor: odd-even sensor, default 1 (utils/cb_sensor.hpp)
       if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
                                                             cb_sensor));
       Real phi = chi*(2.0 - chi);
@@ -533,7 +533,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       }
 
       //--- Step 8.  Non-negative numerical resistivity of the transverse-field flux
-      // (opt-in, see EOS_Data::lhlld_emf_eta_pos).  eta_face ~ (|S_M| + du/2) dx/2 for
+      // (default on, EOS_Data::lhlld_emf_eta_pos).  eta_face ~ (|S_M| + du/2) dx/2 for
       // the HLLD B_t flux; on a converging face with -du > 2|S_M| it is negative, and
       // the minimal extra flux -(1/2) max(0, -(|S_M| + du/2)) dB_t brings it to 0.
       if (eta_pos && (spd[0] < 0.0) && (spd[4] > 0.0)) {

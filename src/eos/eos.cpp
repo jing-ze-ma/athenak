@@ -136,7 +136,9 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven, <mhd>/lhlld_emf_eta_pos: see
   // EOS_Data::phi_min_all, ::lhlld_oddeven and ::lhlld_emf_eta_pos.  Read only when
   // set (no GetOrAdd), so an unset key leaves the restart header unchanged.  MHD
-  // only: refuse them in any other block.
+  // only: refuse them in any other block.  lhlld_emf_eta_pos defaults to true in <mhd>
+  // (user decision 10-30); only LHLLD reads it, so other solvers are unaffected.
+  if (bk.compare("mhd") == 0) eos_data.lhlld_emf_eta_pos = true;
   for (const char *kc :
        {"lhlld_phi_min", "lhlld_oddeven", "lhlld_emf_eta_pos"}) {
     const std::string key(kc);
@@ -156,8 +158,11 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     }
   }
   // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: see EOS_Data::cb_sensor.  Read only
-  // when set, as above.  WASP-121b cs MHD production uses rsolver = lhlld with
-  // lhlld_cb_sensor = 1 + lhlld_emf_eta_pos = true (lhlld-cb-1030 gates).
+  // when set, as above; default 1 (user decision 10-30), only LHLLC/LHLLD read it.
+  // WASP-121b cs MHD production uses rsolver = lhlld with lhlld_cb_sensor = 1 +
+  // lhlld_emf_eta_pos = true, i.e. the defaults (lhlld-cb-1030 gates).  Set the key to
+  // 0 (and lhlld_emf_eta_pos = false) for the legacy LHLLC/LHLLD.
+  eos_data.cb_sensor = 1.0;
   {
     const bool is_hyd = (bk.compare("hydro") == 0);
     const std::string key = is_hyd ? "lhllc_cb_sensor" : "lhlld_cb_sensor";
