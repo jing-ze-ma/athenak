@@ -44,6 +44,26 @@
 //! bandwidth 3 nbands - 1) is assembled with one MPI_Allreduce and factorised once per
 //! Picard pass.  Couplings across a non-periodic x2/x3 mesh face and across the x1 mesh
 //! faces are left out.  Needs a single-level mesh and implicit_op_stencil.
+//!
+//! mgsm-1030: three smoother keys of mg / mg_gc / mg_gf, each read only when named,
+//! default false (then the map is the old one, bitwise), combinable:
+//!  implicit_mg_x3line = true: after the x1-line sweep of EVERY level (fine and coarse;
+//!    x3 is coarsened by mg, so the coarse x3 lines are shorter), a red-black sweep in
+//!    the parity of (i+j) of exact x3 (phi) line solves (Thomas), the x1 / x2 couplings
+//!    to the current z on the right-hand side.  Block-local lines; on the fine level the
+//!    couplings across the block faces read the halo of the x1-sweep z (implicit_mg_halo),
+//!    on the coarse levels they are left out (ImplicitMGSmoothFine).  For the stiff phi
+//!    rows next to the poles; skipped on a coarse level with one x3 cell.
+//!  implicit_mg_sym = true: every red-black half-sweep pair becomes red, black, red (the
+//!    rbgs map on the fine level, x1 and x3 sweeps alike, and on every coarse level).
+//!  implicit_mg_full_rows = true: the rows of the preconditioner from the Krylov stencil
+//!    (ImplicitStencilBuild) instead of the 7-point assembly rows TA..CKP: centre and face
+//!    slots (with the off-diagonal Eddington and folded vimp parts), the folded vimp +-2
+//!    slots lumped onto the face slot of their direction (mgr); the black half-sweep also
+//!    subtracts the (i,j) / (i,k) edge couplings to the other colour; the Galerkin rows of
+//!    level 1 take the 12 edge slots (MGLumpEdge); the fine residual for level 1 is
+//!    r - A z0 with the full Krylov operator (one stencil apply).  Not in the x3 sweep's
+//!    right-hand side (the 7 slots only there).  Needs implicit_op_stencil.
 
 #include <algorithm>
 #include <cmath>
@@ -200,6 +220,68 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
     });
   });
 }
+
+//! mgsm-1030 implicit_mg_x3line: one colour of the x3 (phi) line sweep on a coarse level:
+//! the lines (j,i) with parity (i+j) = col solve their x3 tridiagonal (CKM, TB, CKP)
+//! exactly (Thomas, one thread per line, c' in s_), with the x1 / x2 couplings to the
+//! current z of the other colour on the right-hand side (block-local: the couplings
+//! across a block face are left out, as everywhere on the coarse levels)
+void M1X3MG(const DvceArray5D<Real> &a_, const DvceArray1D<Real> &s_, const int nmb,
+            const int nx, const int nj, const int nk, const int col) {
+  const size_t pl = static_cast<size_t>(nmb)*nj*nx;
+  par_for("m1_mg_x3c", DevExeSpace(), 0, nmb-1, 0, nj-1, 0, nx-1,
+  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+    if (((i + j) & 1) != col) return;
+    const size_t b = (static_cast<size_t>(m)*nj + j)*nx + i;
+    Real cpv = 0.0, dpv = 0.0;
+    for (int k = 0; k < nk; ++k) {
+      Real d = a_(m,MG_R,k,j,i);
+      if (i > 0) d -= a_(m,MG_TA,k,j,i)*a_(m,MG_Z,k,j,i-1);
+      if (i < nx-1) d -= a_(m,MG_TC,k,j,i)*a_(m,MG_Z,k,j,i+1);
+      if (j > 0) d -= a_(m,MG_CJM,k,j,i)*a_(m,MG_Z,k,j-1,i);
+      if (j < nj-1) d -= a_(m,MG_CJP,k,j,i)*a_(m,MG_Z,k,j+1,i);
+      const Real am = (k > 0) ? a_(m,MG_CKM,k,j,i) : 0.0;
+      const Real cp = (k < nk-1) ? a_(m,MG_CKP,k,j,i) : 0.0;
+      const Real den = a_(m,MG_TB,k,j,i) - am*cpv;
+      cpv = cp/den;
+      dpv = (d - am*dpv)/den;
+      s_(k*pl + b) = cpv;
+      a_(m,MG_Z,k,j,i) = dpv;
+    }
+    for (int k = nk-2; k >= 0; --k) {
+      a_(m,MG_Z,k,j,i) -= s_(k*pl + b)*a_(m,MG_Z,k+1,j,i);
+    }
+  });
+}
+
+//! mgsm-1030 implicit_mg_full_rows: an edge coupling w of fine row (k,j) (aggregate
+//! (kc,jc)) to (k + dk, j + dj, i + di) in the Galerkin coarse row: inside the block
+//! face only (dropped across it, as the face couplings); to another aggregate in x2 onto
+//! the coarse x2 face slot (the x1 / x3 offsets lumped: exact on vectors smooth in i and
+//! k), else to another aggregate in x3 onto the x3 face slot, else (same aggregate) onto
+//! the x1 slot di (exact)
+KOKKOS_INLINE_FUNCTION
+void MGLumpEdge(const Real w, const int di, const int j2, const int k2, const int jc,
+                const int kc, const int fj, const int fk, Real &ta, Real &tb, Real &tc,
+                Real &jm, Real &jp, Real &km, Real &kp) {
+  if (j2 < 0 || j2 >= fj || k2 < 0 || k2 >= fk) return;
+  const int ej = (j2 >> 1) - jc, ek = (k2 >> 1) - kc;
+  if (ej < 0) {
+    jm += w;
+  } else if (ej > 0) {
+    jp += w;
+  } else if (ek < 0) {
+    km += w;
+  } else if (ek > 0) {
+    kp += w;
+  } else if (di < 0) {
+    ta += w;
+  } else if (di > 0) {
+    tc += w;
+  } else {
+    tb += w;
+  }
+}
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -228,6 +310,55 @@ void RadiationM1::ImplicitMGBuild() {
     if (gc_on) {ImplicitGCInit();}
     if (gf_on) {ImplicitGFInit();}
   }
+  // mgsm-1030: the mesh-dependent checks, the x3 Thomas scratch, the rows of this pass
+  if (mg_x3line || mg_frows) {
+    auto mgfatal = [](const std::string &msg) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
+      std::exit(EXIT_FAILURE);
+    };
+    if (mg_x3line && !thrd) {mgfatal("<rad_m1>/implicit_mg_x3line needs a 3-D mesh");}
+    if (mg_frows && rav_on && rav_lump) {
+      mgfatal("<rad_m1>/implicit_mg_full_rows does not take polar_ring_avg_lump = true "
+              "(the lumped rows live in iw, the full rows are read from the stencil)");
+    }
+    if (mg_frows && ost.extent_int(1) < 19) {
+      mgfatal("<rad_m1>/implicit_mg_full_rows: the stencil is not built");
+    }
+  }
+  if (mg_x3line) {
+    const int nsc = nmb*mg_nk[0]*mg_nj[0]*nx;
+    if (mgx3s.extent_int(0) != nsc) {mgx3s = DvceArray1D<Real>("m1_mgx3s", nsc);}
+  }
+  const bool fr = mg_frows;
+  const bool edg = fr && st_edges;
+  auto st_ = ost;
+  if (fr) {
+    if (mgr.extent_int(0) != nmb) {
+      mgr = DvceArray5D<Real>("m1_mgr", nmb, 7, iw.extent_int(2), iw.extent_int(3),
+                              iw.extent_int(4));
+    }
+    // TA,TB,TC,CJM,CJP,CKM,CKP = the centre and face slots of the Krylov stencil (the
+    // 7-point row plus the off-diagonal Eddington and folded vimp parts there), the
+    // folded vimp +-2 slots lumped onto the face slot of their direction
+    const bool vf = impl_vfold && vimp_now && (ost.extent_int(1) >= 25);
+    auto mr_ = mgr;
+    par_for("m1_mg_rows", DevExeSpace(), 0, nmb-1, ks, ks + mg_nk[0] - 1, js,
+            js + mg_nj[0] - 1, is, is + nx - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real ta = st_(m,1,k,j,i), tc = st_(m,2,k,j,i);
+      Real jm = st_(m,3,k,j,i), jp = st_(m,4,k,j,i);
+      Real km = thrd ? st_(m,5,k,j,i) : 0.0, kp = thrd ? st_(m,6,k,j,i) : 0.0;
+      if (vf) {
+        ta += st_(m,19,k,j,i); tc += st_(m,20,k,j,i);
+        jm += st_(m,21,k,j,i); jp += st_(m,22,k,j,i);
+        if (thrd) {km += st_(m,23,k,j,i); kp += st_(m,24,k,j,i);}
+      }
+      mr_(m,0,k,j,i) = ta; mr_(m,1,k,j,i) = st_(m,0,k,j,i); mr_(m,2,k,j,i) = tc;
+      mr_(m,3,k,j,i) = jm; mr_(m,4,k,j,i) = jp; mr_(m,5,k,j,i) = km;
+      mr_(m,6,k,j,i) = kp;
+    });
+  }
+  auto mr_ = mgr;
   const int nl = static_cast<int>(mgc.size());
   auto iw_ = iw;
   for (int l = 1; l < nl; ++l) {
@@ -246,7 +377,9 @@ void RadiationM1::ImplicitMGBuild() {
           const int j = 2*jc + b;
           if (j >= fj) continue;
           Real v[7];
-          if (fine) {
+          if (fine && fr) {   // mgsm-1030
+            for (int q = 0; q < 7; ++q) {v[q] = mr_(m,q,k+ks,j+js,i+is);}
+          } else if (fine) {
             v[0] = iw_(m,M1_IW_TA,k+ks,j+js,i+is);
             v[1] = iw_(m,M1_IW_TB,k+ks,j+js,i+is);
             v[2] = iw_(m,M1_IW_TC,k+ks,j+js,i+is);
@@ -272,6 +405,35 @@ void RadiationM1::ImplicitMGBuild() {
               tb += v[6];
             } else if (k + 1 < fk) {
               kp += v[6];
+            }
+          }
+          if (fine && edg) {   // mgsm-1030: the 12 edge slots of the stencil
+            const int kk = k + ks, jj = j + js, ii = i + is;
+            MGLumpEdge(st_(m,7,kk,jj,ii), -1, j-1, k, jc, kc, fj, fk, ta, tb, tc, jm, jp,
+                       km, kp);
+            MGLumpEdge(st_(m,8,kk,jj,ii), 1, j-1, k, jc, kc, fj, fk, ta, tb, tc, jm, jp,
+                       km, kp);
+            MGLumpEdge(st_(m,9,kk,jj,ii), -1, j+1, k, jc, kc, fj, fk, ta, tb, tc, jm, jp,
+                       km, kp);
+            MGLumpEdge(st_(m,10,kk,jj,ii), 1, j+1, k, jc, kc, fj, fk, ta, tb, tc, jm, jp,
+                       km, kp);
+            if (thrd) {
+              MGLumpEdge(st_(m,11,kk,jj,ii), -1, j, k-1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
+              MGLumpEdge(st_(m,12,kk,jj,ii), 1, j, k-1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
+              MGLumpEdge(st_(m,13,kk,jj,ii), -1, j, k+1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
+              MGLumpEdge(st_(m,14,kk,jj,ii), 1, j, k+1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
+              MGLumpEdge(st_(m,15,kk,jj,ii), 0, j-1, k-1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
+              MGLumpEdge(st_(m,16,kk,jj,ii), 0, j+1, k-1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
+              MGLumpEdge(st_(m,17,kk,jj,ii), 0, j-1, k+1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
+              MGLumpEdge(st_(m,18,kk,jj,ii), 0, j+1, k+1, jc, kc, fj, fk, ta, tb, tc, jm,
+                         jp, km, kp);
             }
           }
         }
@@ -302,9 +464,14 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
     rc = M1_IW_S1;
     upd = 0;
   }
-  // the fine smoother: rbgs_fwd, exactly the implicit_precond = rbgs_fwd map
-  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 0, -1);
-  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 1, zc);
+  // the fine smoother: rbgs_fwd, exactly the implicit_precond = rbgs_fwd map (mgsm-1030:
+  // plus the options of ImplicitMGSmoothFine)
+  if (mg_x3line || mg_sym || mg_frows) {
+    ImplicitMGSmoothFine(rc, zc, upd, c1, c2);
+  } else {
+    ImplicitPCRSolveX(rc, zc, upd, c1, c2, 0, -1);
+    ImplicitPCRSolveX(rc, zc, upd, c1, c2, 1, zc);
+  }
   if (mgc.size() < 2) {
     if (gc_on) {ImplicitGCAdd(zc);}
     if (gfa) {ImplicitGFAdd(zc);}
@@ -325,7 +492,10 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
     ts = 1;
     while (ts < nx && ts < 256) ts *= 2;
   }
-  // the fine residual r - A7 z0, restricted
+  // the fine residual r - A7 z0, restricted (mgsm-1030 implicit_mg_full_rows: r - A z0
+  // with A the Krylov operator itself, A z0 into M1_IW_S2, free during the Krylov solve)
+  const bool fr = mg_frows;
+  if (fr) {ImplicitStencilOp(zc, M1_IW_S2, 0, nullptr);}
   {
     auto c_ = mgc[1];
     const int fj = mg_nj[0], fk = mg_nk[0];
@@ -342,6 +512,10 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
           const int j = 2*jc + b;
           if (j >= fj) continue;
           const int jj = j + js;
+          if (fr) {
+            sum += iw_(m,rr,kk,jj,ii) - iw_(m,M1_IW_S2,kk,jj,ii);
+            continue;
+          }
           Real y = iw_(m,M1_IW_TB,kk,jj,ii)*iw_(m,zc,kk,jj,ii);
           if (hal || i > 0) y += iw_(m,M1_IW_TA,kk,jj,ii)*iw_(m,zc,kk,jj,ii-1);
           if (hal || i < nx-1) y += iw_(m,M1_IW_TC,kk,jj,ii)*iw_(m,zc,kk,jj,ii+1);
@@ -366,9 +540,16 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
     if (impl_prec_float) {
       M1PCRMG<float>(c_, nmb, nx, cj, ck, 0, false, th, ts);
       M1PCRMG<float>(c_, nmb, nx, cj, ck, 1, true, th, ts);
+      if (mg_sym) {M1PCRMG<float>(c_, nmb, nx, cj, ck, 0, true, th, ts);}
     } else {
       M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, false, th, ts);
       M1PCRMG<Real>(c_, nmb, nx, cj, ck, 1, true, th, ts);
+      if (mg_sym) {M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, true, th, ts);}   // mgsm-1030
+    }
+    if (mg_x3line && ck > 1) {   // mgsm-1030: the x3 line sweep of this level
+      M1X3MG(c_, mgx3s, nmb, nx, cj, ck, 0);
+      M1X3MG(c_, mgx3s, nmb, nx, cj, ck, 1);
+      if (mg_sym) {M1X3MG(c_, mgx3s, nmb, nx, cj, ck, 0);}
     }
     if (l + 1 < nl) {
       auto n_ = mgc[l+1];
@@ -461,6 +642,87 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
     if (nlc > 2) s += c3_(m,MG_Z,k >> 3,j >> 3,i);
     if (nlc > 3) s += c4_(m,MG_Z,k >> 4,j >> 4,i);
     iw_(m,zc,k+ks,j+js,i+is) += s;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitMGSmoothFine
+//! \brief mgsm-1030: the fine smoother of mg / mg_gc / mg_gf under its options (only
+//! called when one is on; off, ImplicitMGApply runs the two rbgs_fwd half-sweeps as
+//! before):
+//!   x1 lines: red, black (+ red again under implicit_mg_sym), rows from mgr and the
+//!     other-colour (i,j)/(i,k) edges subtracted under implicit_mg_full_rows;
+//!   implicit_mg_x3line: then x3 lines, red-black in (i+j) (+ red again under sym), each
+//!     line solved exactly (Thomas) against the x1 / x2 couplings to the current z.
+//! The x3 lines are block-local (a MeshBlock holds 64 of the 512 phi cells): under
+//! implicit_mg_halo (default true) z gets its halo after the x1 sweep and the couplings
+//! across the block faces (x3 ones included) go to the right-hand side from the
+//! neighbour's x1-sweep z; mg_halo = false leaves them out (block Jacobi in the
+//! strict sense).  The alternative, a cyclic or cross-block (pcr over all ranks) phi line,
+//! is not done.  M stays a fixed linear map; under polar_ring_avg it is applied to the
+//! fine rows and its output averaged by the caller (P R/N M^{-1}), as before.
+
+void RadiationM1::ImplicitMGSmoothFine(int rc, int zc, int upd, Real c1, Real c2) {
+  const bool fr = mg_frows;
+  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 0, -1, fr);
+  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 1, zc, fr);
+  // the right-hand side the later half-sweeps re-read: the update the first one wrote
+  const int rr = (upd == 1) ? M1_IW_KP : ((upd == 2) ? M1_IW_KS : rc);
+  if (mg_sym) {ImplicitPCRSolveX(rr, zc, 0, 0.0, 0.0, 0, zc, fr);}
+  if (mg_x3line) {
+    const bool hx = mg_halo;
+    if (hx) {ImplicitKrylovHalo(zc);}
+    ImplicitMGX3Fine(rr, zc, 0, hx);
+    ImplicitMGX3Fine(rr, zc, 1, hx);
+    if (mg_sym) {ImplicitMGX3Fine(rr, zc, 0, hx);}
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitMGX3Fine
+//! \brief mgsm-1030 implicit_mg_x3line: one colour (parity of i+j) of the fine x3 line
+//! sweep: z(.,j,i) = T3^{-1} (r - x1 / x2 couplings to z; + the x3 couplings across the
+//! block faces to the ghost z when hal), T3 = (CKM, TB, CKP) of the line, one thread per
+//! line (coalesced in i), c' in mgx3s, d' in z itself
+
+void RadiationM1::ImplicitMGX3Fine(int rr, int zc, int col, bool hal) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  const bool mr = mg_frows;
+  auto rw_ = mr ? mgr : iw;
+  const int r0 = mr ? 0 : M1_IW_TA, r1 = mr ? 3 : M1_IW_CJM;
+  auto iw_ = iw;
+  auto s_ = mgx3s;
+  const size_t pl = static_cast<size_t>(nmb)*nj*nx;
+  par_for("m1_mg_x3f", DevExeSpace(), 0, nmb-1, 0, nj-1, 0, nx-1,
+  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+    if (((i + j) & 1) != col) return;
+    const int ii = i + is, jj = j + js;
+    const size_t b = (static_cast<size_t>(m)*nj + j)*nx + i;
+    Real cpv = 0.0, dpv = 0.0;
+    for (int k = 0; k < nk; ++k) {
+      const int kk = k + ks;
+      Real d = iw_(m,rr,kk,jj,ii);
+      if (hal || i > 0) d -= rw_(m,r0,kk,jj,ii)*iw_(m,zc,kk,jj,ii-1);
+      if (hal || i < nx-1) d -= rw_(m,r0+2,kk,jj,ii)*iw_(m,zc,kk,jj,ii+1);
+      if (hal || j > 0) d -= rw_(m,r1,kk,jj,ii)*iw_(m,zc,kk,jj-1,ii);
+      if (hal || j < nj-1) d -= rw_(m,r1+1,kk,jj,ii)*iw_(m,zc,kk,jj+1,ii);
+      const Real a = rw_(m,r1+2,kk,jj,ii), c = rw_(m,r1+3,kk,jj,ii);
+      if (hal && k == 0) d -= a*iw_(m,zc,kk-1,jj,ii);
+      if (hal && k == nk-1) d -= c*iw_(m,zc,kk+1,jj,ii);
+      const Real am = (k > 0) ? a : 0.0;
+      const Real cp = (k < nk-1) ? c : 0.0;
+      const Real den = rw_(m,r0+1,kk,jj,ii) - am*cpv;
+      cpv = cp/den;
+      dpv = (d - am*dpv)/den;
+      s_(k*pl + b) = cpv;
+      iw_(m,zc,kk,jj,ii) = dpv;
+    }
+    for (int k = nk-2; k >= 0; --k) {
+      iw_(m,zc,k+ks,jj,ii) -= s_(k*pl + b)*iw_(m,zc,k+ks+1,jj,ii);
+    }
   });
 }
 
