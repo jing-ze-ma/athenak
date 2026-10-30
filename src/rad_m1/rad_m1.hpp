@@ -1499,6 +1499,12 @@ class RadiationM1 {
   int t2_abe_len = 0;           // current skip-run length (0 = stage mode)
   int t2_abe_left = 0;          // skipped steps left in the current run
   bool t2_abe_now = false;      // this cycle skips the stages
+  // bematch-1030: plain <rad_m1>/time_scheme = be runs as hesdirk2 with EVERY step a
+  // time2_auto_be skip step (Time2AutoBeBegin), i.e. the hesdirk2 backward-Euler path
+  // (BESTORE solve, cold predictor, time2_* keys, work fix, enth_be, ...); also selectable
+  // under hesdirk2 by <rad_m1>/time2_be_only = true (the reference); <rad_m1>/be_legacy =
+  // true keeps the old Lie-split be step
+  bool t2_beonly = false;
   Real t2_abe_n = 0.0;          // steps taken by time2_auto_be (counter)
   Real t2_abe_ntry = 0.0;       // stage retries after a skip run
   Real t2_abe_nok = 0.0;        // of which succeeded
