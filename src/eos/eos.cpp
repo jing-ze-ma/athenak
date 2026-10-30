@@ -156,7 +156,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     }
   }
   // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: see EOS_Data::cb_sensor.  Read only
-  // when set, as above.
+  // when set, as above.  WASP-121b cs MHD production uses rsolver = lhlld with
+  // lhlld_cb_sensor = 1 + lhlld_emf_eta_pos = true (lhlld-cb-1030 gates).
   {
     const bool is_hyd = (bk.compare("hydro") == 0);
     const std::string key = is_hyd ? "lhllc_cb_sensor" : "lhlld_cb_sensor";
@@ -169,10 +170,6 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     }
     if (pin->DoesParameterExist(bk, key)) {
       eos_data.cb_sensor = pin->GetReal(bk, key);
-    }
-    const std::string fkey = is_hyd ? "lhllc_cb_form" : "lhlld_cb_form";
-    if (pin->DoesParameterExist(bk, fkey)) {
-      eos_data.cb_form = pin->GetInteger(bk, fkey);
     }
   }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,

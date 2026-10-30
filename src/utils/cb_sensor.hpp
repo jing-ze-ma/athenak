@@ -43,16 +43,9 @@
 
 #include "athena.hpp"
 
-//!
-//! COMPARISON FORM (TEST ONLY, <block>/l*_cb_form = 1): the odd-even floor of the
-//! lhlldfix-1030 branch (<mhd>/lhlld_oddeven = p), reproduced here so that both sensors
-//! run from one binary on the same tests: on u_n (not rho u_n),
-//!   s = min(1, |d2 - (d1+d3)/2| / (|d2| + (|d1|+|d3|)/2)),   chi >= s^p, p = gain.
-
 KOKKOS_INLINE_FUNCTION
 Real CBSensorChiFloor(const DvceArray5D<Real> &w0, const int m, const int k, const int j,
-                      const int i, const int ivx, const Real chi, const Real gain,
-                      const int form = 0) {
+                      const int i, const int ivx, const Real chi, const Real gain) {
   const int cdi = (ivx == IVX) ? 1 : 0;
   const int cdj = (ivx == IVY) ? 1 : 0;
   const int cdk = (ivx == IVZ) ? 1 : 0;
@@ -66,15 +59,7 @@ Real CBSensorChiFloor(const DvceArray5D<Real> &w0, const int m, const int k, con
     int c = c0 - 2 + o;
     c = (c < 0) ? 0 : ((c > nn) ? nn : c);
     const int kk = cdk ? c : k, jj = cdj ? c : j, ii = cdi ? c : i;
-    qs[o] = (form == 1) ? w0(m,ivx,kk,jj,ii) : w0(m,IDN,kk,jj,ii)*w0(m,ivx,kk,jj,ii);
-  }
-  if (form == 1) {
-    const Real dl = qs[1] - qs[0], df = qs[2] - qs[1], dr = qs[3] - qs[2];
-    const Real den = fabs(df) + 0.5*(fabs(dl) + fabs(dr));
-    if (!(den > 0.0)) return 0.0;
-    Real soe = fmin(1.0, fabs(df - 0.5*(dl + dr))/den);
-    if (gain != 1.0) soe = pow(soe, gain);
-    return soe;
+    qs[o] = w0(m,IDN,kk,jj,ii)*w0(m,ivx,kk,jj,ii);
   }
   const Real d2 = qs[2] - qs[1];
   const Real jodd = 0.25*(2.0*d2 - (qs[1] - qs[0]) - (qs[3] - qs[2]));

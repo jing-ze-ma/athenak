@@ -196,9 +196,6 @@ struct EOS_Data {
   // the mass flux, not u_n, so a resolved anelastic (div(rho u) ~ 0) stratified flow
   // reads as smooth.  <= 0 (default, key unset) = off, bitwise unchanged.
   Real cb_sensor = 0.0;
-  // <hydro>/lhllc_cb_form, <mhd>/lhlld_cb_form (TEST ONLY): 1 = the lhlldfix-1030
-  // odd-even floor on u_n instead (utils/cb_sensor.hpp), for head-to-head tests
-  int cb_form = 0;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).
