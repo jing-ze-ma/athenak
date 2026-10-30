@@ -1252,6 +1252,21 @@ class RadiationM1 {
   std::vector<int> mg_nj, mg_nk;        // per level (level 0 = the MeshBlock)
   void ImplicitMGBuild();
   void ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2);
+  // mgsm-1030 (rad_m1_precond.cpp): smoother options of mg / mg_gc / mg_gf, each read
+  // only when named, default false = the old map bitwise (nothing below allocated)
+  bool mg_x3line = false;       // <rad_m1>/implicit_mg_x3line: after the x1-line sweep of
+                                // every level, a red-black (in i+j) sweep of exact x3
+                                // (phi) line solves, block-local lines
+  bool mg_sym = false;          // <rad_m1>/implicit_mg_sym: every red-black sweep is
+                                // symmetric (red, black, red), x1 and x3 sweeps alike
+  bool mg_frows = false;        // <rad_m1>/implicit_mg_full_rows: smoother / coarse rows
+                                // from the Krylov stencil (off-diagonal Eddington and
+                                // folded vimp parts), other-colour edges in the sweeps,
+                                // the fine residual from the full operator
+  DvceArray5D<Real> mgr;        // mg_frows: (m,7,k,j,i) the rows TA,TB,TC,CJM..CKP
+  DvceArray1D<Real> mgx3s;      // mg_x3line: the Thomas c' scratch, fine-level size
+  void ImplicitMGX3Fine(int rr, int zc, int col, bool hal);
+  void ImplicitMGSmoothFine(int rc, int zc, int upd, Real c1, Real c2);
   // implicit_precond = mg_gc (rad_m1_precond.cpp, tests_m1/runs_5p_coarse2): a GLOBAL
   // coarse space of per-x1-layer (x2,x3)-band means in front of mg; used only under it
   bool gc_on = false;
@@ -2110,7 +2125,10 @@ class RadiationM1 {
   //! and the answer written to `zc`.  `col` >= 0 solves only the columns of that
   //! red-black colour (implicit_precond = rbgs); `sub` >= 0 then subtracts the
   //! transverse 5-point coupling to component `sub` from the right-hand side.
-  void ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, int col, int sub);
+  //! mgsm-1030: mgrows = true reads the rows from mgr (implicit_mg_full_rows) and
+  //! subtracts the other-colour edge couplings of the stencil with `sub`
+  void ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, int col, int sub,
+                         bool mgrows = false);
   //! implicit_od_cache: fill odc with sum_{e!=d} d_e P_de(x) of component xc
   void ImplicitODCache(int xc);
   //! the preconditioner of the fast path: z = M^{-1} r (see implicit_precond)

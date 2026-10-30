@@ -1468,6 +1468,34 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (gf_k < 0 || gf_k > 3) {ImplFatal("<rad_m1>/implicit_gf_modes must be 0..3");}
     gf_on = true;
   }
+  // mgsm-1030 (rad_m1_precond.cpp): the smoother keys of mg / mg_gc / mg_gf, each read
+  // only when named (default false = the old map, bitwise); mesh-dependent checks in
+  // ImplicitMGBuild
+  mg_x3line = false; mg_sym = false; mg_frows = false;
+  if (pin->DoesParameterExist("rad_m1","implicit_mg_x3line")) {
+    mg_x3line = pin->GetBoolean("rad_m1","implicit_mg_x3line");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_mg_sym")) {
+    mg_sym = pin->GetBoolean("rad_m1","implicit_mg_sym");
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_mg_full_rows")) {
+    mg_frows = pin->GetBoolean("rad_m1","implicit_mg_full_rows");
+  }
+  if ((mg_x3line || mg_sym || mg_frows) && impl_prec < 3) {
+    ImplFatal("<rad_m1>/implicit_mg_x3line | implicit_mg_sym | implicit_mg_full_rows "
+              "need implicit_precond = mg | mg_gc | mg_gf");
+  }
+  if (mg_frows && !impl_stencil) {
+    ImplFatal("<rad_m1>/implicit_mg_full_rows needs implicit_op_stencil = true");
+  }
+  if (mg_frows && mg_nlev >= 2 && !mg_halo) {
+    ImplFatal("<rad_m1>/implicit_mg_full_rows needs implicit_mg_halo = true (the fine "
+              "residual from the full operator reads the halo)");
+  }
+  if ((mg_x3line || mg_sym || mg_frows) && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> mgsm-1030 smoother: x3line " << mg_x3line << ", sym " << mg_sym
+              << ", full_rows " << mg_frows << std::endl;
+  }
   // implicit_bcg_rho_direct (runs_5p_coarse2; read only when named, default false =
   // the recurrence, bitwise): implicit_krylov_fuse = 3 sums (rhat, r) directly
   impl_rho_direct = false;
@@ -6788,7 +6816,12 @@ void M1PCRX(const DvceArray5D<Real> &iw_, Kokkos::TeamPolicy<DevExeSpace> policy
             const int is, const int ie, const int js, const int je, const int ks,
             const int ke, const int nkj, const int njl, const bool colr, const int cl_,
             const int cs_, const bool thrd, const bool cyclic, const int cr,
-            const int cz, const int up, const Real a1, const Real a2) {
+            const int cz, const int up, const Real a1, const Real a2,
+            const DvceArray5D<Real> &rw_, const int r0, const int r1,
+            const DvceArray5D<Real> &st_, const bool edg) {
+  // mgsm-1030: the rows TA,TB,TC are rw_(r0 + 0..2), CJM..CKP rw_(r1 + 0..3) (iw itself
+  // with M1_IW_TA / M1_IW_CJM: the old reads; mgr with 0 / 3 under implicit_mg_full_rows,
+  // which also subtracts the other-colour edge slots of the stencil st_ when edg)
   const int nx = ie - is + 1;
   const int nv = cyclic ? 5 : 4;   // a, b, c, r (+ u) per buffer
   size_t scr_size = ScrArray1D<T>::shmem_size(2*nv*nx);
@@ -6807,21 +6840,21 @@ void M1PCRX(const DvceArray5D<Real> &iw_, Kokkos::TeamPolicy<DevExeSpace> policy
     ScrArray1D<T> sw(tm.team_scratch(lv), 2*nv*nx);
     Real alpha = 0.0, beta = 0.0, gam = 1.0;
     if (cyclic) {
-      alpha = iw_(m,M1_IW_TC,k,j,ie);
-      beta = iw_(m,M1_IW_TA,k,j,is);
-      gam = -iw_(m,M1_IW_TB,k,j,is);
+      alpha = rw_(m,r0+2,k,j,ie);
+      beta = rw_(m,r0,k,j,is);
+      gam = -rw_(m,r0+1,k,j,is);
     }
     Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
       const int ii = i + is;
-      Real bd = iw_(m,M1_IW_TB,k,j,ii);
+      Real bd = rw_(m,r0+1,k,j,ii);
       if (cyclic) {
         if (i == 0) bd -= gam;
         if (i == nx-1) bd -= alpha*beta/gam;
         sw(4*nx + i) = static_cast<T>((i == 0) ? gam : ((i == nx-1) ? alpha : 0.0));
       }
-      sw(i) = static_cast<T>((i == 0) ? 0.0 : iw_(m,M1_IW_TA,k,j,ii));
+      sw(i) = static_cast<T>((i == 0) ? 0.0 : rw_(m,r0,k,j,ii));
       sw(nx + i) = static_cast<T>(bd);
-      sw(2*nx + i) = static_cast<T>((i == nx-1) ? 0.0 : iw_(m,M1_IW_TC,k,j,ii));
+      sw(2*nx + i) = static_cast<T>((i == nx-1) ? 0.0 : rw_(m,r0+2,k,j,ii));
       Real rr;
       if (up == 1) {
         rr = iw_(m,M1_IW_KR,k,j,ii)
@@ -6834,11 +6867,29 @@ void M1PCRX(const DvceArray5D<Real> &iw_, Kokkos::TeamPolicy<DevExeSpace> policy
         rr = iw_(m,cr,k,j,ii);
       }
       if (cs_ >= 0) {
-        if (j > js) rr -= iw_(m,M1_IW_CJM,k,j,ii)*iw_(m,cs_,k,j-1,ii);
-        if (j < je) rr -= iw_(m,M1_IW_CJP,k,j,ii)*iw_(m,cs_,k,j+1,ii);
+        if (j > js) rr -= rw_(m,r1,k,j,ii)*iw_(m,cs_,k,j-1,ii);
+        if (j < je) rr -= rw_(m,r1+1,k,j,ii)*iw_(m,cs_,k,j+1,ii);
         if (thrd) {
-          if (k > ks) rr -= iw_(m,M1_IW_CKM,k,j,ii)*iw_(m,cs_,k-1,j,ii);
-          if (k < ke) rr -= iw_(m,M1_IW_CKP,k,j,ii)*iw_(m,cs_,k+1,j,ii);
+          if (k > ks) rr -= rw_(m,r1+2,k,j,ii)*iw_(m,cs_,k-1,j,ii);
+          if (k < ke) rr -= rw_(m,r1+3,k,j,ii)*iw_(m,cs_,k+1,j,ii);
+        }
+        if (edg) {   // mgsm-1030: the (i,j) and (i,k) edges (other colour, in the block)
+          if (j > js) {
+            if (ii > is) rr -= st_(m,7,k,j,ii)*iw_(m,cs_,k,j-1,ii-1);
+            if (ii < ie) rr -= st_(m,8,k,j,ii)*iw_(m,cs_,k,j-1,ii+1);
+          }
+          if (j < je) {
+            if (ii > is) rr -= st_(m,9,k,j,ii)*iw_(m,cs_,k,j+1,ii-1);
+            if (ii < ie) rr -= st_(m,10,k,j,ii)*iw_(m,cs_,k,j+1,ii+1);
+          }
+          if (thrd && k > ks) {
+            if (ii > is) rr -= st_(m,11,k,j,ii)*iw_(m,cs_,k-1,j,ii-1);
+            if (ii < ie) rr -= st_(m,12,k,j,ii)*iw_(m,cs_,k-1,j,ii+1);
+          }
+          if (thrd && k < ke) {
+            if (ii > is) rr -= st_(m,13,k,j,ii)*iw_(m,cs_,k+1,j,ii-1);
+            if (ii < ie) rr -= st_(m,14,k,j,ii)*iw_(m,cs_,k+1,j,ii+1);
+          }
         }
       }
       sw(3*nx + i) = static_cast<T>(rr);
@@ -6899,7 +6950,7 @@ void M1PCRX(const DvceArray5D<Real> &iw_, Kokkos::TeamPolicy<DevExeSpace> policy
 } // namespace
 
 void RadiationM1::ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, int col,
-                                    int sub) {
+                                    int sub, bool mgrows) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -6924,12 +6975,17 @@ void RadiationM1::ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, i
   } else {
     policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, Kokkos::AUTO);
   }
+  // mgsm-1030: implicit_mg_full_rows: the rows from mgr, the edges with `sub`
+  const bool mr = mgrows && mg_frows;
+  const auto &rw = mr ? mgr : iw;
+  const int r0 = mr ? 0 : M1_IW_TA, r1 = mr ? 3 : M1_IW_CJM;
+  const bool edg = mr && st_edges && (cs_ >= 0);
   if (impl_prec_float) {
     M1PCRX<float>(iw, policy, is, ie, js, je, ks, ke, nkj, njl, colr, cl_, cs_,
-                  trans_x3, cyclic, rc, zc, upd, c1, c2);
+                  trans_x3, cyclic, rc, zc, upd, c1, c2, rw, r0, r1, ost, edg);
   } else {
     M1PCRX<Real>(iw, policy, is, ie, js, je, ks, ke, nkj, njl, colr, cl_, cs_,
-                 trans_x3, cyclic, rc, zc, upd, c1, c2);
+                 trans_x3, cyclic, rc, zc, upd, c1, c2, rw, r0, r1, ost, edg);
   }
 }
 
