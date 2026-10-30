@@ -1264,7 +1264,15 @@ class RadiationM1 {
                                 // folded vimp parts), other-colour edges in the sweeps,
                                 // the fine residual from the full operator
   DvceArray5D<Real> mgr;        // mg_frows: (m,7,k,j,i) the rows TA,TB,TC,CJM..CKP
-  DvceArray1D<Real> mgx3s;      // mg_x3line: the Thomas c' scratch, fine-level size
+  // mgx3fast-1030: the x3 line factorisation of this pass (rows frozen over the Krylov
+  // solve), per level l at offset mgx3o[l]: (q,k,m,j,i), q = 0: g = 1/den, 1: h = a g,
+  // 2: c' = c g (Thomas forward d' = g d - h d'_(k-1), back z = d' - c' z_(k+1))
+  DvceArray1D<Real> mgx3f;
+  std::vector<size_t> mgx3o;
+  int mg_x3halo = 1;            // <rad_m1>/implicit_mg_x3line_halo: 1 (default) = the
+                                // fine x3 sweep and the fine residual share ONE halo of
+                                // z (after the x1 sweep); 2 = a second halo before the
+                                // residual (the cf243ae9 map)
   void ImplicitMGX3Fine(int rr, int zc, int col, bool hal);
   void ImplicitMGSmoothFine(int rc, int zc, int upd, Real c1, Real c2);
   // implicit_precond = mg_gc (rad_m1_precond.cpp, tests_m1/runs_5p_coarse2): a GLOBAL

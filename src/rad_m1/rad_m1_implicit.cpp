@@ -1481,6 +1481,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_mg_full_rows")) {
     mg_frows = pin->GetBoolean("rad_m1","implicit_mg_full_rows");
   }
+  mg_x3halo = 1;   // mgx3fast-1030
+  if (pin->DoesParameterExist("rad_m1","implicit_mg_x3line_halo")) {
+    mg_x3halo = pin->GetInteger("rad_m1","implicit_mg_x3line_halo");
+    if (mg_x3halo != 1 && mg_x3halo != 2) {
+      ImplFatal("<rad_m1>/implicit_mg_x3line_halo must be 1 or 2");
+    }
+  }
   if ((mg_x3line || mg_sym || mg_frows) && impl_prec < 3) {
     ImplFatal("<rad_m1>/implicit_mg_x3line | implicit_mg_sym | implicit_mg_full_rows "
               "need implicit_precond = mg | mg_gc | mg_gf");
@@ -9964,9 +9971,11 @@ void RadiationM1::ImplicitReport() {
               << " it_s2=" << tmr_cnt[6] << std::endl;
     const char *nm[12] = {"closure", "opacity", "solve_pre", "tensor", "pred",
                           "pass_setup", "krylov", "pass_post", "solve_end", "hyd_c2p",
-                          "m1_bvals", "unused"};
+                          "m1_bvals", "mg_x3"};
     std::cout << "<rad_m1> timers(s):";
-    for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
+    // mgx3fast-1030: mg_x3 = the x3 line sweeps (taken out of krylov) under x3line
+    const int ntm = mg_x3line ? 12 : 11;
+    for (int q = 0; q < ntm; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
     std::cout << std::endl;
   }
   MRReport();
