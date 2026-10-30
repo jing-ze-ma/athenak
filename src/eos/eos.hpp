@@ -148,6 +148,22 @@ struct EOS_Data {
   // gives full HLLC/HLLD radially.  <= 0 (default, key unset) = off, bitwise unchanged.
   Real x1_phi_min = 0.0;
 
+  // <mhd>/lhlld_phi_min -- FLOOR on phi of LHLLD on ALL faces (x1, x2, x3); same
+  // chi-floor mechanism as x1_phi_min.  >= 1 gives plain HLLD everywhere.  <= 0
+  // (default, key unset) = off, bitwise unchanged.  MHD only.
+  Real phi_min_all = 0.0;
+  // <mhd>/lhlld_oddeven -- ODD-EVEN (2-cell) SENSOR floor on chi of LHLLD, all faces.
+  // phi damps the face jump of the NORMAL velocity; at low Mach it leaves the 2-cell
+  // normal-velocity checkerboard undamped (the reason x1_phi_min exists).  With this
+  // key > 0 the face takes chi >= s^p (p = the key value), where
+  //   s = min(1, |d_f - (d_l + d_r)/2| / (|d_f| + (|d_l| + |d_r|)/2))
+  // is built from the cell-centred normal velocity w0(ivx) of the 4 cells around the
+  // face (d_l, d_f, d_r = the 3 consecutive cell differences).  s = 1 for a pure
+  // checkerboard or a step, s = O((k dx)^2) in smooth flow and 0 in linear flow, so the
+  // low-Mach fix is kept where the flow is resolved.  <= 0 (default) = off, bitwise
+  // unchanged.  MHD only.
+  Real lhlld_oddeven = 0.0;
+
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).
   //

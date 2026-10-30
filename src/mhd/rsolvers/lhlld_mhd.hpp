@@ -92,7 +92,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
      const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
      const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr,
      const DvceArray4D<Real> &bx,
-     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez) {
+     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez,
+     const DvceArray5D<Real> &w0) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
   int iby = ((ivx-IVX) + 1)%3;
@@ -104,8 +105,24 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   // applied as the equivalent floor on chi (phi >= phi_min <=> chi >= 1-sqrt(1-phi_min))
   // so that phi = chi*(2-chi) keeps its expression tree: a select on phi changed the
   // compiler's FMA contraction of (1-phi) and broke bitwise identity with the key off.
-  const Real chi_min = (ivx == IVX && eos.x1_phi_min > 0.0) ?
-                       1.0 - sqrt(1.0 - fmin(1.0, eos.x1_phi_min)) : 0.0;
+  // <mhd>/lhlld_phi_min (EOS_Data::phi_min_all): the same floor on every face.
+  const Real phi_min_f = fmax((ivx == IVX) ? eos.x1_phi_min : 0.0, eos.phi_min_all);
+  const Real chi_min = (phi_min_f > 0.0) ?
+                       1.0 - sqrt(1.0 - fmin(1.0, phi_min_f)) : 0.0;
+  // <mhd>/lhlld_oddeven (EOS_Data::lhlld_oddeven): odd-even sensor floor, see eos.hpp.
+  // w0(ivx) is the sweep-normal velocity on Cartesian and sp grids and, on the cubed
+  // sphere, the CONTRAVARIANT angular component, = (face-normal velocity)/sin(theta)
+  // with a smoothly varying sin(theta), so it detects the same 2-cell pattern.
+  // The 4 cells around face index (k,j,i) along the sweep direction, clamped to the
+  // allocated range (only the outermost fofc faces can reach past it).
+  const Real oe_pow = eos.lhlld_oddeven;
+  const bool oe_on = (oe_pow > 0.0);
+  const int oe_di = (ivx == IVX) ? 1 : 0;
+  const int oe_dj = (ivx == IVY) ? 1 : 0;
+  const int oe_dk = (ivx == IVZ) ? 1 : 0;
+  const int oe_n1 = static_cast<int>(w0.extent(4)) - 1;
+  const int oe_n2 = static_cast<int>(w0.extent(3)) - 1;
+  const int oe_n3 = static_cast<int>(w0.extent(2)) - 1;
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -197,7 +214,28 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real cur = sqrt(0.5*(qb + sqrt(fmax(0.0, SQR(qb) - 4.0*usqr*caxsqr))));
       // eqns. (14)-(15) of Minoshima & Miyoshi
       Real chi = fmin(1.0, fmax(cul, cur)/fmax(cfl, cfr));
-      chi = fmax(chi, chi_min);  // x1 faces; chi_min = 0 (no-op) when the key is off
+      chi = fmax(chi, chi_min);  // chi_min = 0 (no-op) when the keys are off
+      if (oe_on) {
+        Real uc[4];
+        for (int q=0; q<4; ++q) {
+          int ii = i + (q-2)*oe_di;
+          ii = (ii < 0) ? 0 : ((ii > oe_n1) ? oe_n1 : ii);
+          int jj = j + (q-2)*oe_dj;
+          jj = (jj < 0) ? 0 : ((jj > oe_n2) ? oe_n2 : jj);
+          int kk = k + (q-2)*oe_dk;
+          kk = (kk < 0) ? 0 : ((kk > oe_n3) ? oe_n3 : kk);
+          uc[q] = w0(m,ivx,kk,jj,ii);
+        }
+        const Real d_l = uc[1] - uc[0];
+        const Real d_f = uc[2] - uc[1];
+        const Real d_r = uc[3] - uc[2];
+        const Real den = fabs(d_f) + 0.5*(fabs(d_l) + fabs(d_r));
+        if (den > 0.0) {
+          Real soe = fmin(1.0, fabs(d_f - 0.5*(d_l + d_r))/den);
+          if (oe_pow != 1.0) soe = pow(soe, oe_pow);
+          chi = fmax(chi, soe);
+        }
+      }
       Real phi = chi*(2.0 - chi);
 
       // Real cfmax = std::max(cfl,cfr);

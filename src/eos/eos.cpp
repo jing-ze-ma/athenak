@@ -133,6 +133,24 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       eos_data.x1_phi_min = pin->GetReal(bk, key);
     }
   }
+  // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven: see EOS_Data::phi_min_all and
+  // EOS_Data::lhlld_oddeven.  Read only when set (no GetOrAdd), so an unset key leaves
+  // the restart header unchanged.  MHD only: refuse them in any other block.
+  for (const char *kc : {"lhlld_phi_min", "lhlld_oddeven"}) {
+    const std::string key(kc);
+    if (!pin->DoesParameterExist(bk, key)) continue;
+    if (bk.compare("mhd") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/" << key << " is implemented only "
+                << "for MHD (LHLLD)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (key.compare("lhlld_phi_min") == 0) {
+      eos_data.phi_min_all = pin->GetReal(bk, key);
+    } else {
+      eos_data.lhlld_oddeven = pin->GetReal(bk, key);
+    }
+  }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
   // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
   // a silently ignored switch is worse than a refusal, so refuse that combination.
