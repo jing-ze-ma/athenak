@@ -77,7 +77,20 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  if (time_scheme == M1_TIME_BE) return;
+  // bematch-1030: plain be with t2_beonly (ImplicitInit) runs as hesdirk2, every step on
+  // the backward-Euler path (Time2AutoBeBegin)
+  if (time_scheme == M1_TIME_BE && t2_beonly) {
+    time_scheme = M1_TIME_HESDIRK2;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> time_scheme = be: the hesdirk2 backward-Euler path on every "
+                << "step (bematch-1030; be_legacy = true for the old step)" << std::endl;
+    }
+  } else if (time_scheme == M1_TIME_HESDIRK2 && t2_beonly &&
+             global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> time2_be_only = true: every step takes the backward-Euler path"
+              << std::endl;
+  }
+  if (time_scheme == M1_TIME_BE) {t2_beonly = false; return;}
 
   std::string integ = pin->GetString("time", "integrator");
   if (integ.compare("rk2") != 0) {
@@ -2336,8 +2349,12 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
 
 bool RadiationM1::Time2AutoBeBegin() {
   t2_abe_now = false;
-  if (t2_abe <= 0 || time_scheme != M1_TIME_HESDIRK2 || t2_abe_left <= 0) return false;
-  if (!Time2Active()) return false;   // no slope anyway (the BE path follows)
+  // bematch-1030 t2_beonly: every step (the first too) is a skip step
+  const bool bo = t2_beonly && (time_scheme == M1_TIME_HESDIRK2);
+  if (!bo && (t2_abe <= 0 || time_scheme != M1_TIME_HESDIRK2 || t2_abe_left <= 0)) {
+    return false;
+  }
+  if (!bo && !Time2Active()) return false;   // no slope anyway (the BE path follows)
   t2_abe_now = true;
   t2_ok = false;
   t2_fail = false;
@@ -2385,7 +2402,8 @@ void RadiationM1::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b, Real tw_pfix) {
 void RadiationM1::Time2Report() {
   if (time_scheme != M1_TIME_HESDIRK2) return;
   if (global_variable::my_rank != 0) return;
-  std::cout << "<rad_m1> time_scheme=hesdirk2: stage steps=" << t2_nstep
+  std::cout << "<rad_m1> time_scheme=" << (t2_beonly ? "hesdirk2(be_only)" : "hesdirk2")
+            << ": stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
   if (t2_k1reset) {

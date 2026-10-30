@@ -1070,7 +1070,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   const bool h2def = full && !pmh->use_polar_boundary &&
                      (!tau_closure || vet_col) && (integ.compare("rk2") == 0) &&
                      !global_variable::restart_run;
-  (void) pin->GetOrAddString("rad_m1","time_scheme", h2def ? "hesdirk2" : "be");}
+  (void) pin->GetOrAddString("rad_m1","time_scheme", h2def ? "hesdirk2" : "be");
+  // bematch-1030: plain be = the hesdirk2 backward-Euler path (t2_beonly, rad_m1.hpp)
+  // wherever hesdirk2 is accepted (the h2def conditions without the restart rule);
+  // <rad_m1>/be_legacy = true keeps the old step.  time2_be_only = true: the same path
+  // under time_scheme = hesdirk2.
+  {const std::string tsn = pin->GetString("rad_m1","time_scheme");
+  const bool h2ok = full && !pmh->use_polar_boundary && (!tau_closure || vet_col) &&
+                    (integ.compare("rk2") == 0);
+  if (tsn.compare("be") == 0) {
+    const bool leg = pin->GetOrAddBoolean("rad_m1","be_legacy",false);
+    t2_beonly = h2ok && !leg;
+  } else if (tsn.compare("hesdirk2") == 0 &&
+             pin->DoesParameterExist("rad_m1","time2_be_only")) {
+    t2_beonly = pin->GetBoolean("rad_m1","time2_be_only");
+  }}}
   trans_on = false;
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_m1","implicit_cfl",-1.0);
@@ -2645,7 +2659,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {auto *pmh = pmy_pack->pmesh;
   const bool gas_live = !pin->DoesParameterExist("time","evolution") ||
                         (pin->GetString("time","evolution").compare("dynamic") == 0);
-  const bool vdef = (pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) &&
+  const bool vdef = ((pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) ||
+                     t2_beonly) &&
                     full && pmh->multi_d && (impl_solver == M1_ISOLV_BICGSTAB) &&
                     (pmh->mb_indcs.ng >= 2) && fl_on && gas_live &&
                     coupling && gas_feedback && dbg_gas_force &&
@@ -3227,8 +3242,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     iw_vimp = niw;
     niw += M1_NIW_VIMP;
     // time_scheme = hesdirk2 (read in Time2Init, later): the DA components
-    if (pin->DoesParameterExist("rad_m1","time_scheme") &&
-        pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) {
+    if (t2_beonly || (pin->DoesParameterExist("rad_m1","time_scheme") &&
+        pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0)) {
       niw += M1_NIW_VIMP_T2;
     }
   }

@@ -1586,8 +1586,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   // time_scheme = hesdirk2: the stored slope, when this run wants one of that size.  A
   // file without it leaves t2_ok = false: the first step is backward Euler.
+  // bematch-1030: a be_only run never uses the slope (each step is backward Euler)
   const bool t2_want = (pradm1 != nullptr) &&
-                       (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2);
+                       (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2) &&
+                       !pradm1->t2_beonly;
   const bool t2_read = t2_want && (nt2_file > 0) &&
                        (pradm1->Time2RstNchWant() == nt2_file) &&
                        (static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
