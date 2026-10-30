@@ -181,6 +181,24 @@ struct EOS_Data {
   // energy removed stays in the total energy as heat).  Mass, momentum and the low-Mach
   // pressure fix are untouched.  false (default) = off, bitwise unchanged.  MHD only.
   bool lhlld_emf_eta_pos = false;
+  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor -- ODD-EVEN (2-cell, checkerboard)
+  // SENSOR for LHLLC/LHLLD, on every face.  The velocity-jump term rho c (u_L - u_R) of
+  // the contact pressure is the only part of the flux that damps a 2-cell compressive
+  // mode of the normal velocity (the Rhie-Chow role); phi = O(M) slows that damping
+  // from ~c/dx to ~|u|/dx.  With the sensor on, the face's normal mass flux
+  // q = rho*u_n is taken at the four cell centres i-2..i+1 along the normal; its
+  // consecutive differences d1, d2, d3 give the ODD (2dx) part of the face difference
+  // J = (2 d2 - d1 - d3)/4 (= d2 for a pure checkerboard, O(dx^3) for a smooth q), and
+  // s = clamp(J/d2, 0, 1)^p, p = cb_sensor, is the fraction of the face jump that is
+  // 2dx.
+  // Then phi -> phi + (1 - phi) s (applied as the equivalent floor on chi), so the face
+  // dissipation always lies between LHLLC/LHLLD (s = 0) and HLLC/HLLD (s = 1).  q is
+  // the mass flux, not u_n, so a resolved anelastic (div(rho u) ~ 0) stratified flow
+  // reads as smooth.  <= 0 (default, key unset) = off, bitwise unchanged.
+  Real cb_sensor = 0.0;
+  // <hydro>/lhllc_cb_form, <mhd>/lhlld_cb_form (TEST ONLY): 1 = the lhlldfix-1030
+  // odd-even floor on u_n instead (utils/cb_sensor.hpp), for head-to-head tests
+  int cb_form = 0;
 
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).

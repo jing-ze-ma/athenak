@@ -32,6 +32,7 @@
 
 // C++ headers
 #include <math.h>
+#include <cstdint>
 #include <iostream>   // endl
 
 // Athena++ headers
@@ -40,6 +41,7 @@
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
+#include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 #include "pgen/pgen.hpp"
 
@@ -80,14 +82,15 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   if (restart) return;
 
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->pmhd == nullptr) {
+  // lowmach-noise-1030: also runs in hydro (<hydro> block, no field)
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  if (!is_mhd && pmbp->phydro == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "Gresho vortex test can only be run in MHD, but no <mhd> block "
-              << "in input file" << std::endl;
+              << "Gresho vortex test needs an <mhd> or a <hydro> block" << std::endl;
     exit(EXIT_FAILURE);
   }
 
-  EOS_Data &eos = pmbp->pmhd->peos->eos_data;
+  EOS_Data &eos = is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
   Real gm1 = eos.gamma - 1.0;
 
   Real d0 = pin->GetOrAddReal("problem", "d0", 1.0);
@@ -95,7 +98,31 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   Real beta = pin->GetOrAddReal("problem", "beta", 100.0);
   // peak rotation speed is 1, so M = 1/c_s fixes the background pressure
   Real p0 = d0/(eos.gamma*mach*mach);
-  Real b0mag = std::sqrt(2.0*p0/beta);
+  Real b0mag = is_mhd ? std::sqrt(2.0*p0/beta) : 0.0;
+  // lowmach-noise-1030 (TEST keys, read only when set): uniform field at angle b_angle
+  // (degrees) from x1 in the x1-x2 plane (default 0 = along x1, as before), and a
+  // grid-scale velocity seed vpert_grid*(-1)^(i+j) (in units of the peak speed 1) on
+  // both velocity components, or with vpert_rand > 0 a white-noise seed of that rms
+  // (cell-hashed, reproducible)
+  Real bang = 0.0, vgrid = 0.0, vrand = 0.0;
+  if (pin->DoesParameterExist("problem", "b_angle")) {
+    bang = pin->GetReal("problem", "b_angle")*M_PI/180.0;
+  }
+  if (pin->DoesParameterExist("problem", "vpert_grid")) {
+    vgrid = pin->GetReal("problem", "vpert_grid");
+  }
+  if (pin->DoesParameterExist("problem", "vpert_rand")) {
+    vrand = pin->GetReal("problem", "vpert_rand");
+  }
+  Real b1 = b0mag*std::cos(bang), b2 = b0mag*std::sin(bang), b3 = 0.0;
+  // ... and with b_incl (degrees from x3) set, a field out of the x1-x2 plane, e.g.
+  // b_incl = 0: B along x3, perpendicular to every face normal of the 2-D mesh
+  if (pin->DoesParameterExist("problem", "b_incl")) {
+    const Real binc = pin->GetReal("problem", "b_incl")*M_PI/180.0;
+    b1 = b0mag*std::sin(binc)*std::cos(bang);
+    b2 = b0mag*std::sin(binc)*std::sin(bang);
+    b3 = b0mag*std::cos(binc);
+  }
 
   // capture variables for kernel
   auto &indcs = pmy_mesh_->mb_indcs;
@@ -103,8 +130,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
 
-  auto &u0 = pmbp->pmhd->u0;
-  auto &b0 = pmbp->pmhd->b0;
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
   auto &size = pmbp->pmb->mb_size;
 
   par_for("pgen_gresho", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
@@ -126,6 +152,27 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
       vx = -vphi*x2v/rad;
       vy =  vphi*x1v/rad;
     }
+    if (vgrid != 0.0) {
+      // global parity from the cell centre (same on every MeshBlock layout)
+      const int gi = static_cast<int>(std::floor((x1v + 1000.0)*nx1/(x1max - x1min)));
+      const int gj = static_cast<int>(std::floor((x2v + 1000.0)*nx2/(x2max - x2min)));
+      const Real sgn = ((gi + gj) % 2 == 0) ? 1.0 : -1.0;
+      vx += vgrid*sgn;
+      vy += vgrid*sgn;
+    }
+    if (vrand != 0.0) {
+      // cell-hashed uniform deviates in [-1,1), rms 1/sqrt(3)
+      const uint64_t gi = static_cast<uint64_t>((x1v + 1000.0)*nx1/(x1max - x1min));
+      const uint64_t gj = static_cast<uint64_t>((x2v + 1000.0)*nx2/(x2max - x2min));
+      uint64_t h = (gi*0x9E3779B97F4A7C15ULL)
+                   ^ ((gj + 0x632BE59BD9B4E019ULL)*0xBF58476D1CE4E5B9ULL);
+      h ^= h >> 31; h *= 0x94D049BB133111EBULL; h ^= h >> 29;
+      const Real r1 = static_cast<Real>(h >> 11)*(1.0/9007199254740992.0);
+      h *= 0xD6E8FEB86659FD93ULL; h ^= h >> 32;
+      const Real r2 = static_cast<Real>(h >> 11)*(1.0/9007199254740992.0);
+      vx += vrand*std::sqrt(3.0)*(2.0*r1 - 1.0);
+      vy += vrand*std::sqrt(3.0)*(2.0*r2 - 1.0);
+    }
 
     u0(m,IDN,k,j,i) = d0;
     u0(m,IM1,k,j,i) = d0*vx;
@@ -134,19 +181,24 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     // total energy, with the uniform field contributing 0.5*B0^2 everywhere
     u0(m,IEN,k,j,i) = GreshoPres(rad,p0)/gm1 + 0.5*d0*(vx*vx + vy*vy)
                       + 0.5*b0mag*b0mag;
+  });
+  if (!is_mhd) return;
 
-    // uniform field along x1: curl of A3 = b0mag*x2
-    b0.x1f(m,k,j,i) = b0mag;
-    b0.x2f(m,k,j,i) = 0.0;
-    b0.x3f(m,k,j,i) = 0.0;
+  // uniform field at angle b_angle from x1 in the x1-x2 plane (divergence-free)
+  auto &b0 = pmbp->pmhd->b0;
+  par_for("pgen_gresho_b", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    b0.x1f(m,k,j,i) = b1;
+    b0.x2f(m,k,j,i) = b2;
+    b0.x3f(m,k,j,i) = b3;
     if (i==ie) {
-      b0.x1f(m,k,j,i+1) = b0mag;
+      b0.x1f(m,k,j,i+1) = b1;
     }
     if (j==je) {
-      b0.x2f(m,k,j+1,i) = 0.0;
+      b0.x2f(m,k,j+1,i) = b2;
     }
     if (k==ke) {
-      b0.x3f(m,k+1,j,i) = 0.0;
+      b0.x3f(m,k+1,j,i) = b3;
     }
   });
 

@@ -134,8 +134,9 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     }
   }
   // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven, <mhd>/lhlld_emf_eta_pos: see
-  // EOS_Data::phi_min_all, ::lhlld_oddeven and ::lhlld_emf_eta_pos.  Read only when set (no GetOrAdd), so an unset key leaves
-  // the restart header unchanged.  MHD only: refuse them in any other block.
+  // EOS_Data::phi_min_all, ::lhlld_oddeven and ::lhlld_emf_eta_pos.  Read only when
+  // set (no GetOrAdd), so an unset key leaves the restart header unchanged.  MHD
+  // only: refuse them in any other block.
   for (const char *kc :
        {"lhlld_phi_min", "lhlld_oddeven", "lhlld_emf_eta_pos"}) {
     const std::string key(kc);
@@ -152,6 +153,26 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, key);
     } else {
       eos_data.lhlld_oddeven = pin->GetReal(bk, key);
+    }
+  }
+  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: see EOS_Data::cb_sensor.  Read only
+  // when set, as above.
+  {
+    const bool is_hyd = (bk.compare("hydro") == 0);
+    const std::string key = is_hyd ? "lhllc_cb_sensor" : "lhlld_cb_sensor";
+    const std::string bad = is_hyd ? "lhlld_cb_sensor" : "lhllc_cb_sensor";
+    if (pin->DoesParameterExist(bk, bad)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/" << bad << " is not valid in this "
+                << "block; use <" << bk << ">/" << key << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist(bk, key)) {
+      eos_data.cb_sensor = pin->GetReal(bk, key);
+    }
+    const std::string fkey = is_hyd ? "lhllc_cb_form" : "lhlld_cb_form";
+    if (pin->DoesParameterExist(bk, fkey)) {
+      eos_data.cb_form = pin->GetInteger(bk, fkey);
     }
   }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,

@@ -60,6 +60,8 @@
 
 #include <cmath>  // fabs(), fmax(), fmin()
 
+#include "utils/cb_sensor.hpp"
+
 namespace mhd {
 
 #ifndef HLLD_SMALL_NUMBER
@@ -125,6 +127,10 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   const int oe_n3 = static_cast<int>(w0.extent(2)) - 1;
   // <mhd>/lhlld_emf_eta_pos (EOS_Data::lhlld_emf_eta_pos): see eos.hpp and Step 8.
   const bool eta_pos = eos.lhlld_emf_eta_pos;
+  // <mhd>/lhlld_cb_sensor (EOS_Data::cb_sensor, cb_form): see eos.hpp and
+  // utils/cb_sensor.hpp.
+  const Real cb_sensor = eos.cb_sensor;
+  const int cb_form = eos.cb_form;
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -238,6 +244,9 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
           chi = fmax(chi, soe);
         }
       }
+      // <mhd>/lhlld_cb_sensor: odd-even sensor, key set only (utils/cb_sensor.hpp)
+      if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
+                                                            cb_sensor, cb_form));
       Real phi = chi*(2.0 - chi);
 
       // Real cfmax = std::max(cfl,cfr);
