@@ -5648,6 +5648,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     rd("eint_ledger_theta", thd);
     eint_ledger::theta_cut = thd*M_PI/180.0;
     rd("eint_ledger_rmin", eint_ledger::rmin);
+    rd("eint_ledger_reg_rmin", eint_ledger::reg_rmin);
+    rd("eint_ledger_reg_rmax", eint_ledger::reg_rmax);
+    Real rgt = 0.0;
+    rd("eint_ledger_reg_theta", rgt);
+    eint_ledger::reg_th = rgt*M_PI/180.0;
     if (pin->DoesParameterExist("problem", "eint_ledger_dump")) {
       eint_ledger::dump_every = pin->GetInteger("problem", "eint_ledger_dump");
     }

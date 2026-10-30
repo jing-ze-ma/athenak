@@ -47,7 +47,7 @@
 
 namespace eint_ledger {
 
-constexpr int kNcls = 4;
+constexpr int kNcls = 5;   // + class 4: the region (polarpert-1029)
 constexpr int kNq = 5;
 constexpr int kNs = kNcls*kNq;
 constexpr int kNopMax = 24;
@@ -78,6 +78,9 @@ inline Real hot_cut = 1.0e4;
 inline Real theta_cut = 0.2618;   // rad (15 deg)
 inline Real rmin = 0.0;
 inline int dump_every = 0;
+// polarpert-1029: region class 4 = r in [reg_rmin, reg_rmax], theta within reg_th of a pole
+// (any density); q = d(rho v_r^2/2) vol, d(rho v_th^2/2) vol, d(e) vol, d(rho v_ph^2/2) vol, n
+inline Real reg_rmin = 0.0, reg_rmax = -1.0, reg_th = 0.0;
 inline std::string dump_dir = ".";
 
 inline bool have_base = false;
@@ -143,6 +146,8 @@ inline void Take(Mesh *pm, const int op, const bool book) {
   auto cv = cyv;
   auto a1 = v1_prv, a2 = v2_prv, a3 = v3_prv;
   const Real rc = rho_cut, hc = hot_cut, tc = theta_cut;
+  const Real rr0 = reg_rmin, rr1 = reg_rmax, rth = reg_th;
+  auto &rx1 = pmbp->pcoord->x1v;
   const bool bk = book && have_base;
   const int nji = nj*ni, nkji = nk*nji;
   Sums s;
@@ -171,6 +176,18 @@ inline void Take(Mesh *pm, const int op, const bool book) {
         for (int n = 0; n < kNq; ++n) sum.v[c0*kNq + n] += q[n];
         if (eps0 > hc) {
           for (int n = 0; n < kNq; ++n) sum.v[(c0 + 2)*kNq + n] += q[n];
+        }
+      }
+      {
+        const Real r = rx1(m,i), th = x2v(m,j);
+        if (r >= rr0 && r <= rr1 && (th < rth || th > M_PI - rth) && d > 0.0 && d0 > 0.0) {
+          const Real v = vol(m,k,j,i);
+          const Real b1 = a1(m,kk,jj,ii), b2 = a2(m,kk,jj,ii), b3 = a3(m,kk,jj,ii);
+          sum.v[4*kNq + 0] += 0.5*(m1*m1/d - d0*b1*b1)*v;
+          sum.v[4*kNq + 1] += 0.5*(m2*m2/d - d0*b2*b2)*v;
+          sum.v[4*kNq + 2] += (ei - e0)*v;
+          sum.v[4*kNq + 3] += 0.5*(m3*m3/d - d0*b3*b3)*v;
+          sum.v[4*kNq + 4] += 1.0;
         }
       }
       if (d > 0.0 && d0 > 0.0) {
@@ -284,8 +301,47 @@ inline void Commit(Mesh *pm) {
       std::printf("\n");
     }
   }
-  // the hottest floor cell of this rank (state at the last mark), then the global max
   auto *pmbp = pm->pmb_pack;
+  if (reg_rmax > reg_rmin) {
+    // polarpert-1029: the region's state at the last mark: sum rho v_r^2/2 vol,
+    // rho v_th^2/2 vol, rho vol (mass), rho v_r vol (mean flow), and the count
+    auto &icr = pm->mb_indcs;
+    const int ni = icr.nx1, nj = icr.nx2, nk = icr.nx3, nmb = pmbp->nmb_thispack;
+    const int nji = nj*ni, nkji = nk*nji;
+    auto dp = d_prv; auto b1 = v1_prv, b2 = v2_prv;
+    auto &x1 = pmbp->pcoord->x1v; auto &x2 = pmbp->pcoord->x2v;
+    auto vol = pmbp->pcoord->volume;
+    const int is = icr.is, js = icr.js, ks = icr.ks;
+    const Real rr0 = reg_rmin, rr1 = reg_rmax, rth = reg_th;
+    Sums st;
+    Kokkos::parallel_reduce("eint_ledger_reg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Sums &sm) {
+      const int m = idx/nkji;
+      const int kk = (idx - m*nkji)/nji;
+      const int jj = (idx - m*nkji - kk*nji)/ni;
+      const int ii = idx%ni;
+      const Real r = x1(m, ii + is), th = x2(m, jj + js);
+      if (!(r >= rr0 && r <= rr1 && (th < rth || th > M_PI - rth))) return;
+      const Real d = dp(m,kk,jj,ii), v = vol(m, kk + ks, jj + js, ii + is);
+      const Real u1 = b1(m,kk,jj,ii), u2 = b2(m,kk,jj,ii);
+      sm.v[0] += 0.5*d*u1*u1*v; sm.v[1] += 0.5*d*u2*u2*v; sm.v[2] += d*v;
+      sm.v[3] += d*u1*v; sm.v[4] += 1.0;
+    }, Kokkos::Sum<Sums>(st));
+    double g[5];
+    double l5[5] = {st.v[0], st.v[1], st.v[2], st.v[3], st.v[4]};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(l5, g, 5, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#else
+    for (int q = 0; q < 5; ++q) g[q] = l5[q];
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("ELREG c=%d t=%.7e KEr %.6e KEth %.6e M %.6e <v_r> %+.4e vrms_r %.4e "
+                  "vrms_th %.4e n %.0f\n", pm->ncycle, pm->time, g[0], g[1], g[2],
+                  g[3]/g[2], sqrt(2.0*g[0]/g[2]), sqrt(2.0*g[1]/g[2]), g[4]);
+    }
+  }
+  // the hottest floor cell of this rank (state at the last mark), then the global max
   auto &ic = pm->mb_indcs;
   const int ni = ic.nx1, nj = ic.nx2, nk = ic.nx3, nmb = pmbp->nmb_thispack;
   const int nji = nj*ni, nkji = nk*nji;
