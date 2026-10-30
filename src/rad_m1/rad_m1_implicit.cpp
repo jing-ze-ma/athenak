@@ -1481,6 +1481,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_mg_full_rows")) {
     mg_frows = pin->GetBoolean("rad_m1","implicit_mg_full_rows");
   }
+  tmr_x3 = pin->DoesParameterExist("rad_m1","implicit_timers_mg_x3") &&
+           pin->GetBoolean("rad_m1","implicit_timers_mg_x3");   // mgx3fast-1030
   mg_x3halo = 1;   // mgx3fast-1030
   if (pin->DoesParameterExist("rad_m1","implicit_mg_x3line_halo")) {
     mg_x3halo = pin->GetInteger("rad_m1","implicit_mg_x3line_halo");
@@ -9973,8 +9975,8 @@ void RadiationM1::ImplicitReport() {
                           "pass_setup", "krylov", "pass_post", "solve_end", "hyd_c2p",
                           "m1_bvals", "mg_x3"};
     std::cout << "<rad_m1> timers(s):";
-    // mgx3fast-1030: mg_x3 = the x3 line sweeps (taken out of krylov) under x3line
-    const int ntm = mg_x3line ? 12 : 11;
+    // mgx3fast-1030: mg_x3 = the x3 line sweeps (out of krylov) under implicit_timers_mg_x3
+    const int ntm = (mg_x3line && tmr_x3) ? 12 : 11;
     for (int q = 0; q < ntm; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
     std::cout << std::endl;
   }

@@ -1273,6 +1273,8 @@ class RadiationM1 {
                                 // fine x3 sweep and the fine residual share ONE halo of
                                 // z (after the x1 sweep); 2 = a second halo before the
                                 // residual (the cf243ae9 map)
+  bool tmr_x3 = false;          // <rad_m1>/implicit_timers_mg_x3 (with implicit_timers):
+                                // fence around the x3 sweeps, category mg_x3
   void ImplicitMGX3Fine(int rr, int zc, int col, bool hal);
   void ImplicitMGSmoothFine(int rc, int zc, int upd, Real c1, Real c2);
   // implicit_precond = mg_gc (rad_m1_precond.cpp, tests_m1/runs_5p_coarse2): a GLOBAL

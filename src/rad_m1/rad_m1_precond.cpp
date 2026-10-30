@@ -58,7 +58,8 @@
 //!    per line of the colour, and by default (implicit_mg_x3line_halo = 1) the fine
 //!    residual reuses the halo taken for the x3 sweep (ghosts = the x1-sweep z) instead
 //!    of a second exchange; = 2 keeps the second halo (the cf243ae9 map).  Under
-//!    implicit_timers the sweeps are the category mg_x3 (taken out of krylov).
+//!    implicit_timers + implicit_timers_mg_x3 = true the sweeps are the category mg_x3
+//!    (taken out of krylov); its fences inside the Krylov loop cost time themselves.
 //!  implicit_mg_sym = true: every red-black half-sweep pair becomes red, black, red (the
 //!    rbgs map on the fine level, x1 and x3 sweeps alike, and on every coarse level).
 //!  implicit_mg_full_rows = true: the rows of the preconditioner from the Krylov stencil
@@ -594,11 +595,11 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
       if (mg_sym) {M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, true, th, ts);}   // mgsm-1030
     }
     if (mg_x3line && ck > 1) {   // mgsm-1030: the x3 line sweep of this level
-      TmrMark(6);   // mgx3fast-1030: implicit_timers mg_x3 (out of krylov)
+      if (tmr_x3) {TmrMark(6);}   // mgx3fast-1030: implicit_timers_mg_x3 (fences)
       M1X3MG(c_, mgx3f, mgx3o[l], nmb, nx, cj, ck, 0);
       M1X3MG(c_, mgx3f, mgx3o[l], nmb, nx, cj, ck, 1);
       if (mg_sym) {M1X3MG(c_, mgx3f, mgx3o[l], nmb, nx, cj, ck, 0);}
-      TmrMark(11);
+      if (tmr_x3) {TmrMark(11);}
     }
     if (l + 1 < nl) {
       auto n_ = mgc[l+1];
@@ -721,11 +722,11 @@ void RadiationM1::ImplicitMGSmoothFine(int rc, int zc, int upd, Real c1, Real c2
   if (mg_x3line) {
     const bool hx = mg_halo;
     if (hx) {ImplicitKrylovHalo(zc);}
-    TmrMark(6);   // mgx3fast-1030: implicit_timers mg_x3 (out of krylov)
+    if (tmr_x3) {TmrMark(6);}   // mgx3fast-1030: implicit_timers_mg_x3 (fences)
     ImplicitMGX3Fine(rr, zc, 0, hx);
     ImplicitMGX3Fine(rr, zc, 1, hx);
     if (mg_sym) {ImplicitMGX3Fine(rr, zc, 0, hx);}
-    TmrMark(11);
+    if (tmr_x3) {TmrMark(11);}
   }
 }
 
