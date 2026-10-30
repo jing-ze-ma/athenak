@@ -133,6 +133,26 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       eos_data.x1_phi_min = pin->GetReal(bk, key);
     }
   }
+  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: see EOS_Data::cb_sensor.  Read only
+  // when set, as above.
+  {
+    const bool is_hyd = (bk.compare("hydro") == 0);
+    const std::string key = is_hyd ? "lhllc_cb_sensor" : "lhlld_cb_sensor";
+    const std::string bad = is_hyd ? "lhlld_cb_sensor" : "lhllc_cb_sensor";
+    if (pin->DoesParameterExist(bk, bad)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/" << bad << " is not valid in this "
+                << "block; use <" << bk << ">/" << key << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist(bk, key)) {
+      eos_data.cb_sensor = pin->GetReal(bk, key);
+    }
+    const std::string fkey = is_hyd ? "lhllc_cb_form" : "lhlld_cb_form";
+    if (pin->DoesParameterExist(bk, fkey)) {
+      eos_data.cb_form = pin->GetInteger(bk, fkey);
+    }
+  }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
   // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
   // a silently ignored switch is worse than a refusal, so refuse that combination.
