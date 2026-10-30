@@ -105,6 +105,19 @@ void RadiationM1::RavInit(ParameterInput *pin) {
   // study keys: (3) the lumped preconditioner rows, (2) the coarse phi distance
   rav_lump = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_lump", false);
   rav_dist = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_dist", true);
+  // floorheat-1029: polar_ring_avg_ke = gas (default, bitwise) | rad
+  {
+    const std::string ke = pin->GetOrAddString("rad_m1", "polar_ring_avg_ke", "gas");
+    if (ke == "rad") {
+      rav_ke_rad = true;
+    } else if (ke != "gas") {
+      RavM1Fatal("polar_ring_avg_ke must be gas or rad");
+    }
+    if (rav_ke_rad && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> polar_ring_avg_ke = rad: the gas kinetic-energy spread of the "
+                << "after-solve group average goes to E (floorheat-1029)" << std::endl;
+    }
+  }
 
   auto *pc = pmy_pack->pcoord;
   rav_dxf = pc->dxface;   // shallow: x1f, x2f are Coordinates' own
@@ -263,7 +276,58 @@ void RadiationM1::RavState(const bool gas) {
   RavAvg(u0, 0, M1_NVAR);
   if (!gas) return;
   hydro::Hydro *ph = pmy_pack->phydro;
+  if (rav_ke_rad) RavKeToRad();
   prav->Average(ph->u0, ph->nhydro + ph->nscalars, ph->phicc0, ph->use_etotgrav);
+}
+
+//----------------------------------------------------------------------------------------
+//! n void RadiationM1::RavKeToRad
+//! rief floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad.  The solve's write-back forms
+//! the gas kick from each FINE cell's F inside a phi group (the intra-group phi faces are
+//! the linear interpolation of the group's boundary faces), so the kicks vary linearly
+//! across the group (+-550 km/s per step measured in floor gas at rho 1e-8, where
+//! F/c^2 >> rho v) while their sum is the coarse cell's kick.  Each fine kick's work was
+//! paid by E.  The group average that follows (prav->Average, total energy averaged) then
+//! turns the kinetic energy of that spread, K_s = sum_k |m_k|^2/(2 rho_k) - |sum m|^2 /
+//! (2 sum rho), into gas heat: the floor gas above the poles reached 1e6-1e7 K and set dt.
+//! Here K_s is taken out of the gas total energy and given to E before the average, so
+//! the gas ends with the internal energy of the average of its internal energies and the
+//! kinetic energy of the average momentum; with a group-uniform state before the kick
+//! this is EXACTLY the write-back of the coarse kick (radiation pays the coarse work).
+//! Mass, momentum and gas + (c/chat) E are conserved.  Called after RavAvg (E is already
+//! group-uniform: a uniform increment keeps it so).
+
+void RadiationM1::RavKeToRad() {
+  hydro::Hydro *ph = pmy_pack->phydro;
+  if (prav->nent == 0) return;
+  auto &ic = pmy_pack->pmesh->mb_indcs;
+  const int is = ic.is, ie = ic.ie, ks = ic.ks, ke = ic.ke;
+  auto uh = ph->u0;
+  auto ur = u0;
+  auto em_ = prav->em, ej_ = prav->ej, en_ = prav->en;
+  const Real hc = chat/c_light;
+  par_for("m1_rav_ke", DevExeSpace(), 0, prav->nent-1, ks, ke, is, ie,
+  KOKKOS_LAMBDA(const int e, const int k, const int i) {
+    const int n = en_(e);
+    if (((k - ks) % n) != 0) return;
+    const int m = em_(e), j = ej_(e);
+    Real sd = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0, sk = 0.0;
+    for (int kk = k; kk < k + n; ++kk) {
+      const Real d = uh(m,IDN,kk,j,i);
+      const Real m1 = uh(m,IM1,kk,j,i), m2 = uh(m,IM2,kk,j,i), m3 = uh(m,IM3,kk,j,i);
+      if (!(d > 0.0)) return;   // leave the group to the plain average
+      sd += d; s1 += m1; s2 += m2; s3 += m3;
+      sk += 0.5*(m1*m1 + m2*m2 + m3*m3)/d;
+    }
+    const Real ks_ = sk - 0.5*(s1*s1 + s2*s2 + s3*s3)/sd;   // >= 0 (Cauchy-Schwarz)
+    if (!(ks_ > 0.0)) return;
+    const Real per = ks_/static_cast<Real>(n);
+    for (int kk = k; kk < k + n; ++kk) {
+      // equal shares (the average that follows mixes IEN anyway; equal volumes per row)
+      uh(m,IEN,kk,j,i) -= per;
+      ur(m,M1_E,kk,j,i) += hc*per;
+    }
+  });
 }
 
 }  // namespace radm1

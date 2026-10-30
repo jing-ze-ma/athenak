@@ -1974,6 +1974,10 @@ class RadiationM1 {
   // the polar rows on the coarse phi groups of <mesh>/polar_ring_avg (hydro's table)
   bool rav_on = false;
   bool rav_lump = false, rav_dist = true;   // polar_ring_avg_lump / _dist (study keys)
+  // floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad: the gas kinetic-energy spread the
+  // after-solve group average removes goes back to E (the coarse cell's kick), not to heat
+  bool rav_ke_rad = false;
+  void RavKeToRad();
   hydro::RingAvg *prav = nullptr;
   DvceFaceFld4D<Real> rav_dxf{"m1ravdxf", 1, 1, 1, 1};   // dxface, x3f x N_j between groups
   //! the centre distances every implicit kernel takes (Coordinates dxface, or the
