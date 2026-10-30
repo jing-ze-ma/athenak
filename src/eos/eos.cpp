@@ -136,7 +136,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven, <mhd>/lhlld_emf_eta_pos: see
   // EOS_Data::phi_min_all, ::lhlld_oddeven and ::lhlld_emf_eta_pos.  Read only when set (no GetOrAdd), so an unset key leaves
   // the restart header unchanged.  MHD only: refuse them in any other block.
-  for (const char *kc : {"lhlld_phi_min", "lhlld_oddeven", "lhlld_emf_eta_pos"}) {
+  for (const char *kc :
+       {"lhlld_phi_min", "lhlld_oddeven", "lhlld_emf_eta_pos"}) {
     const std::string key(kc);
     if (!pin->DoesParameterExist(bk, key)) continue;
     if (bk.compare("mhd") != 0) {
