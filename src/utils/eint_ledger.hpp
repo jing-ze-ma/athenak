@@ -130,7 +130,6 @@ inline void Take(Mesh *pm, const int op, const bool book) {
   const bool grav = ph->use_etotgrav;
   auto phi = ph->phicc0;
   auto vol = pmbp->pcoord->volume;
-  auto &x1v = pmbp->pcoord->x1v;
   auto &x2v = pmbp->pcoord->x2v;
   auto dp = d_prv, ep = e_prv, kp = k_prv;
   auto cy = cyc;
@@ -301,8 +300,10 @@ inline void Commit(Mesh *pm) {
     const int ii = idx%ni;
     const int kk = (idx - m*nkji)/nji;
     const int jj = (idx - m*nkji - kk*nji)/ni;
-    auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                Kokkos::subview(cyc, Kokkos::ALL, m, kk, jj, ii));
+    std::vector<Real> hc(nop, 0.0);
+    for (int n = 0; n < nop; ++n) {
+      Kokkos::deep_copy(hc[n], Kokkos::subview(cyc, n, m, kk, jj, ii));
+    }
     auto hx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
     auto hx2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
     auto hx3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
@@ -313,7 +314,7 @@ inline void Commit(Mesh *pm) {
                 hx2(m, jj + ic.js)*180.0/M_PI, hx3(m, kk + ic.ks), hd,
                 static_cast<double>(ml.val));
     for (int n = 0; n < nop; ++n) {
-      if (hc(n) != 0.0) std::printf(" %s %+.3e", names[n].c_str(), hc(n));
+      if (hc[n] != 0.0) std::printf(" %s %+.3e", names[n].c_str(), hc[n]);
     }
     std::printf("\n");
     std::fflush(stdout);
