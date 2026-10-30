@@ -86,6 +86,8 @@ inline std::vector<std::vector<Real>> cyc_sums;   // [op][kNs] this cycle (rank-
 inline std::vector<std::vector<Real>> tot_sums;   // [op][kNs] accepted cycles
 inline DvceArray4D<Real> d_prv, e_prv, k_prv;
 inline DvceArray5D<Real> cyc, tot;                // (op, m, k, j, i) active cells
+inline Kokkos::View<float*****, DevMemSpace> cyv;  // (3 op + q, m, k, j, i): cycle d(v_q)
+inline DvceArray4D<Real> v1_prv, v2_prv, v3_prv;
 
 inline int OpIndex(const char *name) {
   for (int n = 0; n < static_cast<int>(names.size()); ++n) {
@@ -107,6 +109,11 @@ inline void Alloc(Mesh *pm) {
   Kokkos::realloc(k_prv, nmb, ic.nx3, ic.nx2, ic.nx1);
   Kokkos::realloc(cyc, kNopMax, nmb, ic.nx3, ic.nx2, ic.nx1);
   Kokkos::realloc(tot, kNopMax, nmb, ic.nx3, ic.nx2, ic.nx1);
+  Kokkos::realloc(cyv, 3*kNopMax, nmb, ic.nx3, ic.nx2, ic.nx1);
+  Kokkos::realloc(v1_prv, nmb, ic.nx3, ic.nx2, ic.nx1);
+  Kokkos::realloc(v2_prv, nmb, ic.nx3, ic.nx2, ic.nx1);
+  Kokkos::realloc(v3_prv, nmb, ic.nx3, ic.nx2, ic.nx1);
+  Kokkos::deep_copy(cyv, 0.0f);
   Kokkos::deep_copy(cyc, 0.0);
   Kokkos::deep_copy(tot, 0.0);
   have_base = false;
@@ -133,6 +140,8 @@ inline void Take(Mesh *pm, const int op, const bool book) {
   auto &x2v = pmbp->pcoord->x2v;
   auto dp = d_prv, ep = e_prv, kp = k_prv;
   auto cy = cyc;
+  auto cv = cyv;
+  auto a1 = v1_prv, a2 = v2_prv, a3 = v3_prv;
   const Real rc = rho_cut, hc = hot_cut, tc = theta_cut;
   const bool bk = book && have_base;
   const int nji = nj*ni, nkji = nk*nji;
@@ -164,11 +173,19 @@ inline void Take(Mesh *pm, const int op, const bool book) {
           for (int n = 0; n < kNq; ++n) sum.v[(c0 + 2)*kNq + n] += q[n];
         }
       }
-      if (d > 0.0 && d0 > 0.0) cy(op,m,kk,jj,ii) += ei/d - e0/d0;
+      if (d > 0.0 && d0 > 0.0) {
+        cy(op,m,kk,jj,ii) += ei/d - e0/d0;
+        cv(3*op,m,kk,jj,ii) += static_cast<float>(m1/d - a1(m,kk,jj,ii));
+        cv(3*op+1,m,kk,jj,ii) += static_cast<float>(m2/d - a2(m,kk,jj,ii));
+        cv(3*op+2,m,kk,jj,ii) += static_cast<float>(m3/d - a3(m,kk,jj,ii));
+      }
     }
     dp(m,kk,jj,ii) = d;
     ep(m,kk,jj,ii) = ei;
     kp(m,kk,jj,ii) = ke;
+    a1(m,kk,jj,ii) = (d > 0.0) ? m1/d : 0.0;
+    a2(m,kk,jj,ii) = (d > 0.0) ? m2/d : 0.0;
+    a3(m,kk,jj,ii) = (d > 0.0) ? m3/d : 0.0;
   }, Kokkos::Sum<Sums>(s));
   if (bk) {
     for (int n = 0; n < kNs; ++n) cyc_sums[op][n] += s.v[n];
@@ -186,6 +203,7 @@ inline void Discard(Mesh *pm) {
   if (!on) return;
   Alloc(pm);
   Kokkos::deep_copy(cyc, 0.0);
+  Kokkos::deep_copy(cyv, 0.0f);
   for (auto &v : cyc_sums) for (auto &x : v) x = 0.0;
   Take(pm, 0, false);
 }
@@ -317,6 +335,25 @@ inline void Commit(Mesh *pm) {
       if (hc[n] != 0.0) std::printf(" %s %+.3e", names[n].c_str(), hc[n]);
     }
     std::printf("\n");
+    for (int dk = -4; dk <= 4; ++dk) {
+      const int kq = kk + dk;
+      if (kq < 0 || kq >= nk) continue;
+      Real dq;
+      Kokkos::deep_copy(dq, Kokkos::subview(dp, m, kq, jj, ii));
+      std::printf("ELHOTN c=%d dk %+d rho %.3e :", pm->ncycle, dk, dq);
+      for (int n = 0; n < nop; ++n) {
+        Real de;
+        float w1, w2, w3;
+        Kokkos::deep_copy(de, Kokkos::subview(cyc, n, m, kq, jj, ii));
+        Kokkos::deep_copy(w1, Kokkos::subview(cyv, 3*n, m, kq, jj, ii));
+        Kokkos::deep_copy(w2, Kokkos::subview(cyv, 3*n+1, m, kq, jj, ii));
+        Kokkos::deep_copy(w3, Kokkos::subview(cyv, 3*n+2, m, kq, jj, ii));
+        if (de != 0.0 || w1 != 0.0f || w2 != 0.0f || w3 != 0.0f) {
+          std::printf(" %s [%+.2e %+.1f %+.1f %+.1f]", names[n].c_str(), de, w1, w2, w3);
+        }
+      }
+      std::printf("\n");
+    }
     std::fflush(stdout);
   }
   // accept: cycle -> totals
@@ -333,6 +370,7 @@ inline void Commit(Mesh *pm) {
     tt(n,m,kk,jj,ii) += cy(n,m,kk,jj,ii);
     cy(n,m,kk,jj,ii) = 0.0;
   });
+  Kokkos::deep_copy(cyv, 0.0f);
   for (int n = 0; n < nop; ++n) {
     for (int q = 0; q < kNs; ++q) {tot_sums[n][q] += cyc_sums[n][q]; cyc_sums[n][q] = 0.0;}
   }
