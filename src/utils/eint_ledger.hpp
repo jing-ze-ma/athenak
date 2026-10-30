@@ -381,6 +381,14 @@ inline void Commit(Mesh *pm) {
   std::fflush(stdout);
 }
 
+//! free the device views before Kokkos::finalize (pgen final hook)
+inline void Free() {
+  d_prv = DvceArray4D<Real>(); e_prv = DvceArray4D<Real>(); k_prv = DvceArray4D<Real>();
+  v1_prv = DvceArray4D<Real>(); v2_prv = DvceArray4D<Real>(); v3_prv = DvceArray4D<Real>();
+  cyc = DvceArray5D<Real>(); tot = DvceArray5D<Real>();
+  cyv = Kokkos::View<float*****, DevMemSpace>();
+}
+
 }  // namespace eint_ledger
 
 #endif  // UTILS_EINT_LEDGER_HPP_

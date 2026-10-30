@@ -3072,6 +3072,7 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
 
 //! release the namespace-scope Views before Kokkos::finalize
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
+  eint_ledger::Free();   // floorheat-1029: before Kokkos::finalize
   // hold-viper-1021: the held-set face supply booked by RyPerHoldBook (into erinj_/Ebnd)
   if (pm->pmb_pack->pradm1 != nullptr && pm->pmb_pack->pradm1->impl_hold) {
     Real hb = hold_bk_;
