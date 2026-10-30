@@ -202,6 +202,25 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // fullsph-1027 S1: the FULL sphere (polar x2 faces) and/or a theta stretch.  A polar
+  // face is a physical face of every implicit kernel (flag != block, periodic) with area 0,
+  // so it must be REFLECTING (F_theta = 0 there; auto resolves to reflect on a non-periodic
+  // face): marshak / outflow / flux would put a boundary flux on the axis.  Out of S1
+  // scope on that mesh: implicit_offdiag = lagged (one-sided off-diagonal differences at
+  // the axis untested), implicit_trans_limit = lpr; vet_col_lat / vet_gd (S2) are refused
+  // in VetLatInit, vet_sc / tau above.
+  if (!cs_geom && pm->use_polar_boundary) {
+    const bool p2lo = (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::polar);
+    const bool p2hi = (pm->mesh_bcs[BoundaryFace::outer_x2] == BoundaryFlag::polar);
+    if ((p2lo && ibc_x2min != M1_IBC_REFLECT) || (p2hi && ibc_x2max != M1_IBC_REFLECT)) {
+      why += " implicit_bc_x2min|max != auto | reflect at a polar face;";
+    }
+    if (pin->DoesParameterExist("rad_m1","implicit_offdiag") &&
+        pin->GetString("rad_m1","implicit_offdiag").compare("lagged") == 0) {
+      why += " implicit_offdiag = lagged on the full sphere;";
+    }
+    if (impl_tlim != M1_TLIM_NONE) {why += " implicit_trans_limit != none on the full sphere;";}
+  }
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> on a spherical-polar mesh (stages S1, S2) supports "
@@ -242,7 +261,11 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
               << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?
                   ", stretched radial grid)" : ")") << std::endl;
   } else if (global_variable::my_rank == 0) {
-    std::cout << "<rad_m1>: spherical-polar wedge ("
+    std::cout << "<rad_m1>: spherical-polar "
+              << (pm->use_polar_boundary ? "FULL SPHERE [polar x2 faces reflecting at "
+                                           "zero area] " : "wedge ")
+              << (pm->use_grid_stretch_theta ? "[stretched theta] " : "")
+              << "("
               << (sph_q ? "stage S2: chi(f) closure, radial integrating factor, "
                           "lagged curvature, offdiag " : "stage S1: ")
               << (sph_q ? ((impl_offdiag == M1_OD_NONE) ? "none; " : "lagged; ") : "")

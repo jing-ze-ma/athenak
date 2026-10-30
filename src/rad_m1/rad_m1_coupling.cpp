@@ -59,6 +59,7 @@
 
 #include <math.h>
 
+#include "utils/eint_ledger.hpp"
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
@@ -398,13 +399,21 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
       phm->pmlat->Average(u0, M1_NVAR, M1_NVAR, 1, nophi, false);
     }
   }
+  // ringavg-1029 <rad_m1>/polar_ring_avg: E, F and the gas the coupling wrote to their
+  // phi-group averages (rad_m1_ringavg.cpp), before the fluid refresh below
+  if (rav_on) {
+    RavState(coupling && gas_feedback && fl_on && pmy_pack->phydro != nullptr);
+  }
+  eint_ledger::Mark(pmy_pack->pmesh, "m1_ravg");   // floorheat-1029
   if (!coupling || !gas_feedback) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
   if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {
     (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);
   }
+  eint_ledger::Mark(pmy_pack->pmesh, "m1_post");
   if (dbg_eaudit) {EAuditMark(4);}   // accbook-1021 (output only)
   FluidRefresh(pdrive);
+  eint_ledger::Mark(pmy_pack->pmesh, "m1_c2p");
   if (dbg_eaudit) {EAuditMark(5);}
   TmrMark(9);
   return TaskStatus::complete;

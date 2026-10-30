@@ -12,6 +12,7 @@
 #include <utility>
 #include <iostream>
 
+#include "utils/eint_ledger.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
@@ -30,6 +31,7 @@
 #include "pgen/pgen.hpp"
 #include "hydro/hydro_am.hpp"
 #include "hydro/hydro_mergelat.hpp"
+#include "hydro/hydro_ringavg.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "utils/c2p_track.hpp"
 
@@ -536,9 +538,11 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   // <problem>/nan_report: this task runs immediately after RKUpdate, so u0 here is what
   // the flux divergence produced
   if (nan_report) NanScanCons(pmy_pack, u0, "after_RKUpdate");
+  eint_ledger::Mark(pmy_pack->pmesh, "flux");   // floorheat-1029 (no-op unless on)
 
   // Add physics source terms (must be computed from primitives)
   if (psrc != nullptr) psrc->ApplySrcTerms(w0, peos->eos_data,  beta_dt, u0);
+  eint_ledger::Mark(pmy_pack->pmesh, "psrc");
   if (nan_report && psrc != nullptr) NanScanCons(pmy_pack, u0, "after_ApplySrcTerms");
 
   // Add shearing box source terms for cell-centered hydro variables
@@ -559,6 +563,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
     pmy_pack->pcoord->SrcTermsSphericalPolarHydro(w0, pwb, uflx, peos->eos_data,
                                                  beta_dt, u0);
   }
+  eint_ledger::Mark(pmy_pack->pmesh, "coord");
 
   // cs-open-1018 <hydro>/am_transport | am_vector | frame_omega: the angular-momentum
   // module (hydro_am.cpp), from this stage's fluxes and w0
@@ -567,11 +572,19 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
                       use_wellbalance_static, pwb};
     pam->Apply(pdrive, stage, beta_dt, fl);
   }
+  eint_ledger::Mark(pmy_pack->pmesh, "am");
+
+  // ringavg-1029 <mesh>/polar_ring_avg: the polar rows' phi groups to their averages,
+  // after the transport (fluxes, coordinate sources, am_transport) and before the user
+  // sources/floors, ConToPrim and SendU (hydro_ringavg.hpp)
+  if (pravg != nullptr) {pravg->Average(u0, nhydro + nscalars, phicc0, use_etotgrav);}
+  eint_ledger::Mark(pmy_pack->pmesh, "ringavg");
 
   // Add user source terms
   if (pmy_pack->pmesh->pgen->user_srcs) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
+  eint_ledger::Mark(pmy_pack->pmesh, "usrc_rest");
 
   return TaskStatus::complete;
 }
@@ -895,6 +908,7 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
 
 TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (c2p_track) C2PTrack(pdrive, stage, true);
+  eint_ledger::Mark(pmy_pack->pmesh, "gap_c2p");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -960,6 +974,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     c2p_eint_rst = false;
   }
   if (c2p_track) C2PTrack(pdrive, stage, false);
+  eint_ledger::Mark(pmy_pack->pmesh, "c2p");
   runaway_scan::Scan(pmy_pack->pmesh, "ConToPrim_floors");
   return TaskStatus::complete;
 }

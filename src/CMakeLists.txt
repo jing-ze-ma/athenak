@@ -88,6 +88,7 @@ add_executable(
         hydro/hydro_tasks.cpp
         hydro/hydro_am.cpp
         hydro/hydro_mergelat.cpp
+        hydro/hydro_ringavg.cpp
         hydro/hydro_update.cpp
         hydro/hydro_etotgrav.cpp
 
@@ -191,6 +192,7 @@ add_executable(
         rad_m1/rad_m1_vetgd.cpp
         rad_m1/rad_m1_vetgd_cs.cpp
         rad_m1/rad_m1_rotavg.cpp
+        rad_m1/rad_m1_ringavg.cpp
         rad_m1/rad_m1_tasks.cpp
         rad_m1/rad_m1_update.cpp
         rad_m1/rad_m1_vet.cpp

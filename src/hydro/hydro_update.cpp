@@ -9,6 +9,7 @@
 //! average and partial time step update of flux divergence. Source terms are added in
 //! the HydroSrcTerms() function.
 
+#include "utils/eint_ledger.hpp"
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
@@ -22,6 +23,7 @@ namespace hydro {
 //  \brief Explicit RK update including flux divergence terms
 
 TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
+  eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // floorheat-1029 (no-op unless on)
   if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_preupd");}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;

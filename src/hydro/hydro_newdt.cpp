@@ -25,6 +25,7 @@
 #include "eos/eos.hpp"
 #include "hydro.hpp"
 #include "hydro_mergelat.hpp"
+#include "hydro_ringavg.hpp"
 #include "diffusion/conduction.hpp"
 #include "diffusion/viscosity.hpp"
 #include "srcterms/srcterms.hpp"
@@ -95,6 +96,10 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     pmlat->Build();
     mlfi_ = pmlat->fi;
   }
+  // ringavg-1029: the averaged polar rows' phi CFL width is the GROUP width N_j dx3
+  const bool rav_ = (pravg != nullptr);
+  DvceArray2D<Real> rnf_;
+  if (rav_) rnf_ = pravg->nfac;
 
   // RADIATION SIGNAL SPEED (<hydro>/rad_signal_speed; default on with an implicit M1
   // transport, see hydro.cpp).  The gas sound speed alone understates the acoustic speed
@@ -165,8 +170,9 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           min_dt2 = fmin((mf*dx2_(m,k,j,i)/fabs(w0_(m,IVY,k,j,i))), min_dt2);
           min_dt3 = fmin((mf*dx3_(m,k,j,i)/fabs(w0_(m,IVZ,k,j,i))), min_dt3);
         } else {
+        const Real h3 = rav_ ? rnf_(m,j)*dx3_(m,k,j,i) : dx3_(m,k,j,i);
         min_dt2 = fmin((dx2_(m,k,j,i)/fabs(w0_(m,IVY,k,j,i))), min_dt2);
-        min_dt3 = fmin((dx3_(m,k,j,i)/fabs(w0_(m,IVZ,k,j,i))), min_dt3);
+        min_dt3 = fmin((h3/fabs(w0_(m,IVZ,k,j,i))), min_dt3);
         }
       } else {
       min_dt1 = fmin((mbsize.d_view(m).dx1/fabs(w0_(m,IVX,k,j,i))), min_dt1);
@@ -321,12 +327,13 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           if (multi_d_) cell_dt = fmin(cell_dt, h2/max_dv2);
           if (three_d_) cell_dt = fmin(cell_dt, h3/max_dv3);
         } else {
+        const Real h3 = rav_ ? rnf_(m,j)*dx3_(m,k,j,i) : dx3_(m,k,j,i);
         min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
         min_dt2 = fmin((dx2_(m,k,j,i)/max_dv2), min_dt2);
-        min_dt3 = fmin((dx3_(m,k,j,i)/max_dv3), min_dt3);
+        min_dt3 = fmin((h3/max_dv3), min_dt3);
         cell_dt = dx1_(m,k,j,i)/max_dv1;
         if (multi_d_) cell_dt = fmin(cell_dt, dx2_(m,k,j,i)/max_dv2);
-        if (three_d_) cell_dt = fmin(cell_dt, dx3_(m,k,j,i)/max_dv3);
+        if (three_d_) cell_dt = fmin(cell_dt, h3/max_dv3);
         }
       } else {
       min_dt1 = fmin((mbsize.d_view(m).dx1/max_dv1), min_dt1);

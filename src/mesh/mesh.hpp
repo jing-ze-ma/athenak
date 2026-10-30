@@ -326,6 +326,10 @@ class Mesh {
   bool use_grid_stretch_r_poly; // true if using the polynomial radial stretch
   bool use_grid_stretch_theta;  // true if using grid stretching in theta
   Real fStretchR, fStretchTheta;
+  // fullsph-1027 mesh/theta_plateau: uniform core + geometric caps (StretchThetaPlateau);
+  // sets use_grid_stretch_theta too; fStretchThetaPlat[2] = 0 means the sinh map
+  bool use_theta_plateau;
+  Real fStretchThetaPlat[8];
   // Coefficients of the polynomial radial stretch. See StretchRPoly in coordinates.hpp.
   Real fStretchRPoly[NSTRETCH_R_POLY];
   bool use_polar_boundary;      // true if using polar boundaries

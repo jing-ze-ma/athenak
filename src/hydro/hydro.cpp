@@ -27,6 +27,7 @@
 #include "hydro/hydro_am.hpp"
 #include "utils/recipe.hpp"
 #include "hydro/hydro_mergelat.hpp"
+#include "hydro/hydro_ringavg.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -287,6 +288,15 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   if (hydro::MergeLat::Named(pin)) {
     pmlat = new hydro::MergeLat(ppack, pin);
+  }
+  if (pin->GetOrAddBoolean("mesh", "polar_ring_avg", false)) {
+    if (pmlat != nullptr && pmlat->on) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mesh>/polar_ring_avg and <hydro>/merge_lat_rc cannot "
+                << "be combined" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    pravg = new hydro::RingAvg(ppack, pin);
   }
   // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
   // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
@@ -694,6 +704,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 Hydro::~Hydro() {
   if (pam != nullptr) {delete pam;}
   if (pmlat != nullptr) {delete pmlat;}
+  if (pravg != nullptr) {delete pravg;}
   delete peos;
   delete pbval_u;
   if (pbval_fs != nullptr) {delete pbval_fs;}

@@ -42,6 +42,7 @@
 
 // forward declarations
 class Driver;
+namespace hydro {class RingAvg;}   // ringavg-1029: hydro_ringavg.hpp
 
 namespace radm1 {
 
@@ -1969,6 +1970,25 @@ class RadiationM1 {
   // and area with the canonical seam areas; x1 parts are copies
   DvceFaceFld4D<Real> cs_dxf_eff{"m1csdxf", 1, 1, 1, 1};
   DvceFaceFld4D<Real> cs_area_eff{"m1csarea", 1, 1, 1, 1};
+  // ringavg-1029 <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp): the implicit transport of
+  // the polar rows on the coarse phi groups of <mesh>/polar_ring_avg (hydro's table)
+  bool rav_on = false;
+  bool rav_lump = false, rav_dist = true;   // polar_ring_avg_lump / _dist (study keys)
+  // floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad: the gas kinetic-energy spread the
+  // after-solve group average removes goes back to E (the coarse cell's kick), not to heat
+  bool rav_ke_rad = false;
+  void RavKeToRad();
+  hydro::RingAvg *prav = nullptr;
+  DvceFaceFld4D<Real> rav_dxf{"m1ravdxf", 1, 1, 1, 1};   // dxface, x3f x N_j between groups
+  //! the centre distances every implicit kernel takes (Coordinates dxface, or the
+  //! coarse-group one under polar_ring_avg)
+  DvceFaceFld4D<Real> M1Dxf() const;
+  void RavInit(ParameterInput *pin);
+  void RavAvg(const DvceArray5D<Real> &a, const int v0, const int nv);
+  void RavLump();
+  void RavKrylovStart();
+  void RavFaces();
+  void RavState(const bool gas);
   // cs-s4-1017: the planar unit normals (Cartesian) of the x2 faces (m, j = 0..n2, c)
   // and x3 faces (m, k = 0..n3, c) of each block, oriented along +x2 / +x3 (M1CsLat0)
   DvceArray3D<Real> cs_fn2, cs_fn3;
@@ -2626,6 +2646,26 @@ class RadiationM1 {
   void VetGdTwin(const int stage);
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
+  // wallbug-1027 vet_gd_theta_wall (read only when named; periodic | mirror, default
+  // periodic = the old local-frame theta periodicity): mirror makes the theta walls
+  // specular mirrors of the formal solution.  A theta ghost (band row beyond a wall at
+  // depth g) reads the interior row at depth g on the other side of the wall, direction
+  // (n.r, n.theta, n.phi) -> (n.r, -n.theta, n.phi) in the local frames (the exact
+  // equatorial plane: z -> -z), from up to 3 same-branch set directions (the ghost's
+  // own wall tables, vgd_wall = 2, vgd_map / vgd_m3 / vgd_w3; nearest only without
+  // vet_gd_wall_interp); ln chi, ln S of the ghost rows are the mirror rows'
+  // (VetGdThMirCs, from VetGdHaloCs)
+  bool vgd_thmir = false;
+  void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
+  // wallbug-1027 vet_gd_theta_wall = vacuum (1) | extrap (2), 0 otherwise: the theta
+  // ghosts beyond a PHYSICAL theta wall (wall flag 3 / 4) are not the far wall's.
+  // vacuum: zero incoming intensity at the wall (a ray whose upwind point lies beyond
+  // the wall starts at its wall crossing with I = 0, as the vacuum top face; ghost reads
+  // of the bilinear stencil are 0); extrap: a ghost reads the edge row's intensity of
+  // the same direction (zero gradient).  ln chi, ln S of the ghost rows = the edge row
+  // (VetGdThVacCs).  Swept by the wall kernel (bodym) with the mirror
+  int vgd_thvac = 0;
+  void VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1);
   MeshBoundaryValuesCC *pbval_gd = nullptr;
   // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
   // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled

@@ -16,6 +16,7 @@
 #include <utility>  // std::pair
 #include <chrono>   // autobe-1029 hesdirk2 wall split
 
+#include "utils/eint_ledger.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
@@ -514,6 +515,13 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
       if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
       if (pctr_ != nullptr && pdtr_->on && !dtr_retrying) {pctr_->Save(pmesh, 0);}
+      // floorheat-1029 <problem>/eint_ledger (no-op unless on): a retried cycle drops the
+      // failed attempt's entries; otherwise the gap since the last commit is booked
+      if (dtr_retrying) {
+        eint_ledger::Discard(pmesh);
+      } else {
+        eint_ledger::Mark(pmesh, "gap_cycle");
+      }
       dtr_retrying = false;
       // autobe-1029: the hesdirk2 wall split (rank 0, fenced; RadiationM1::Time2AutoBeEnd)
       radm1::RadiationM1 *pm1w = pmesh->pmb_pack->pradm1;
@@ -627,6 +635,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
         dtretry::PgenStageRestore();
+        eint_ledger::Discard(pmesh);   // floorheat-1029: the redo starts a new baseline
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
         
@@ -712,6 +721,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         continue;
       }
       if (pm1 != nullptr) {pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);}
+      eint_ledger::Commit(pmesh);   // floorheat-1029 (no-op unless on)
       if (t2kind == 1) {
         pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we), t2wp);
       } else if (t2kind >= 0) {

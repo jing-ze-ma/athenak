@@ -162,7 +162,7 @@ void MeshVTKOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
           ApplyRStretch(pm->use_grid_stretch_r, fstr_r, pm->use_grid_stretch_r_poly,
                         cpoly, rmin, rmax, x);
         } else if (d == 1 && str_th) {
-          StretchTheta(pm->fStretchTheta, x);
+          ApplyThetaStretch(pm->fStretchTheta, pm->fStretchThetaPlat, x);
         }
         c[i] = static_cast<float>(x);
         if (!big_end) {Swap4Bytes(&c[i]);}

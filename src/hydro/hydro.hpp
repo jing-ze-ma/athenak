@@ -74,6 +74,7 @@ struct HydroTaskIDs {
 namespace hydro {
 class AmModule;   // cs-open-1018: hydro_am.hpp
 class MergeLat;   // mrglat-1019: hydro_mergelat.hpp
+class RingAvg;    // ringavg-1029: hydro_ringavg.hpp
 
 // <problem>/nan_report: the HLLC in-kernel capture record (see hllc_hyd.hpp and the
 // readback in Hydro::Fluxes).  Pointers, not Views: a file-scope View outlives
@@ -193,6 +194,9 @@ class Hydro {
   // mrglat-1019: merged lateral cells near r_in (hydro_mergelat.hpp; nullptr unless
   // <hydro>/merge_lat_rc or merge_lat_diag is named)
   hydro::MergeLat *pmlat = nullptr;
+  // ringavg-1029: polar ring averaging (hydro_ringavg.hpp; nullptr unless
+  // <mesh>/polar_ring_avg = true)
+  hydro::RingAvg *pravg = nullptr;
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation
