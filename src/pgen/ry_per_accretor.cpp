@@ -169,6 +169,7 @@
 #include <string>
 #include <vector>
 
+#include "utils/eint_ledger.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
@@ -2179,6 +2180,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       }
     }
   });
+  eint_ledger::Mark(pm, "srce");   // floorheat-1029 (no-op unless on)
   // problem/env_amb_mode = radeq: the density floor applied here (the EOS floor then never
   // acts), added gas at the cell's velocity and temperature; its mass is booked (Mfl), its
   // energy is inside the Erel difference below
@@ -2228,6 +2230,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       sum += (rfl - du)*volume(m,k,j,i);
     }, Kokkos::Sum<Real>(dmfl));
   }
+  eint_ledger::Mark(pm, "floor");
   // accspin-1028: the spin ramp's torque, once per step (the last stage, after the RK
   // combination: the full increment stays in the step's result): the rigid increment
   // dv_phi = (s(t+dt) - s(t)) Omega varpi, varpi = min(r, r_spin) sin(theta), on the star's
@@ -2252,6 +2255,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       });
     }
   }
+  eint_ledger::Mark(pm, "spinramp");
   Real derel = 0.0;
   if (rad) {
     derel = RyPerEsum(pmbp) - erel0;     // per rank, as the flux registers
@@ -2278,6 +2282,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     }
   }
 
+  eint_ledger::Mark(pm, "fws");
   // acctrc-1019: TrcFluxFix -- the exact boundary-inflow label.  The core advected the
   // scalars with the upwind flux F_s = F_rho s_upwind; at every user boundary face where
   // F_rho points INTO the domain the scalar flux is replaced by F_rho (s0, s1) = F_rho (0, 1)
@@ -5629,6 +5634,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   dtrep_ = pin->DoesParameterExist("problem", "dt_report") &&
            pin->GetBoolean("problem", "dt_report");
+  // floorheat-1029 <problem>/eint_ledger (diagnostic, default off; utils/eint_ledger.hpp)
+  eint_ledger::on = pin->DoesParameterExist("problem", "eint_ledger") &&
+                    pin->GetBoolean("problem", "eint_ledger");
+  if (eint_ledger::on) {
+    auto rd = [&](const char *k, Real &v) {
+      if (pin->DoesParameterExist("problem", k)) v = pin->GetReal("problem", k);
+    };
+    rd("eint_ledger_rho", eint_ledger::rho_cut);
+    rd("eint_ledger_hot", eint_ledger::hot_cut);
+    Real thd = 15.0;
+    rd("eint_ledger_theta", thd);
+    eint_ledger::theta_cut = thd*M_PI/180.0;
+    rd("eint_ledger_rmin", eint_ledger::rmin);
+    if (pin->DoesParameterExist("problem", "eint_ledger_dump")) {
+      eint_ledger::dump_every = pin->GetInteger("problem", "eint_ledger_dump");
+    }
+    if (pin->DoesParameterExist("problem", "eint_ledger_dir")) {
+      eint_ledger::dump_dir = pin->GetString("problem", "eint_ledger_dir");
+    }
+  }
   flmom_ = (stvol_ || pin->DoesParameterExist("problem", "donor_mask")) &&
            pin->GetOrAddBoolean("problem", "floor_keep_momentum", true);
   if (pin->DoesParameterExist("problem", "donor_mask")) {

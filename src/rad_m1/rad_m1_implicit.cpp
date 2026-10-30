@@ -54,6 +54,7 @@
 #include <utility>
 #include <vector>
 
+#include "utils/eint_ledger.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
@@ -12812,6 +12813,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
   if (dbg_eaudit) {EAuditMark(2);}
+  eint_ledger::Mark(pmy_pack->pmesh, "m1_pre");   // floorheat-1029
   if (dbg_etally) {
     Real o[4];
     DbgEnergyTally(o);
@@ -17168,6 +17170,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   impl_lin_tol = t2_lin_save;
   TmrMark(8);
   if (dbg_eaudit) {EAuditMark(3);}
+  eint_ledger::Mark(pmy_pack->pmesh, "m1_solve");   // floorheat-1029
   if (dbg_etally) {
     Real o[4];
     DbgEnergyTally(o);
