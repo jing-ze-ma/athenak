@@ -1075,13 +1075,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // bematch-1030: plain be = the hesdirk2 backward-Euler path (t2_beonly, rad_m1.hpp)
   // wherever hesdirk2 is accepted (the h2def conditions without the restart rule);
   // <rad_m1>/be_legacy = true keeps the old step.  time2_be_only = true: the same path
-  // under time_scheme = hesdirk2.
+  // under time_scheme = hesdirk2.  defaults-1030 (USER 10-30): this is the be default on
+  // a fresh run; a restart whose file lacks be_legacy keeps the old step (be_legacy =
+  // true, bitwise); the resolved value is echoed.
   {const std::string tsn = pin->GetString("rad_m1","time_scheme");
   const bool h2ok = full && !pmh->use_polar_boundary && (!tau_closure || vet_col) &&
                     (integ.compare("rk2") == 0);
   if (tsn.compare("be") == 0) {
-    const bool leg = pin->GetOrAddBoolean("rad_m1","be_legacy",false);
+    const bool leg = pin->GetOrAddBoolean("rad_m1","be_legacy",
+                                          global_variable::restart_run);
     t2_beonly = h2ok && !leg;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> time_scheme = be: be_legacy = " << (leg ? "true" : "false")
+                << (t2_beonly ? " (the hesdirk2 backward-Euler path)" : " (the old step)")
+                << std::endl;
+    }
   } else if (tsn.compare("hesdirk2") == 0 &&
              pin->DoesParameterExist("rad_m1","time2_be_only")) {
     t2_beonly = pin->GetBoolean("rad_m1","time2_be_only");
@@ -1432,8 +1440,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   const bool mgdef = !pmq->use_cubed_sphere && !pmq->use_polar_boundary &&
                      !pmq->multilevel && pmq->multi_d && !kdev_named &&
                      !global_variable::restart_run;
-  const char *pcdef = fdef ? (mgdef ? "mg" : "rbgs_fwd") : "line";
+  // defaults-1030 (USER 10-30): mg_gc on a spherical-polar mesh WITH polar boundaries
+  // (the full-sphere accretor; fullsph_1027/mgsm_check) on a fresh single-level 3-D run;
+  // every other mesh keeps its default above, a named key wins, and a restart whose file
+  // lacks the key keeps rbgs_fwd (bitwise)
+  const bool gcdef = sph_geom && !cs_geom && pmq->use_polar_boundary && pmq->three_d &&
+                     !pmq->multilevel && !kdev_named && !global_variable::restart_run;
+  const char *pcdef = fdef ? (mgdef ? "mg" : (gcdef ? "mg_gc" : "rbgs_fwd")) : "line";
   {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond", pcdef);
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_precond = " << pc << std::endl;
+  }
   if (pc.compare("line") == 0) {
     impl_prec = 0;
   } else if (pc.compare("rbgs") == 0) {
@@ -1486,9 +1503,24 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // only when named (default false = the old map, bitwise); mesh-dependent checks in
   // ImplicitMGBuild
   mg_x3line = false; mg_sym = false; mg_frows = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_mg_x3line")) {
+  // defaults-1030 (USER 10-30): implicit_mg_x3line DEFAULT true under mg / mg_gc / mg_gf
+  // on a spherical-polar 3-D mesh WITH polar boundaries on a fresh run (the full-sphere
+  // accretor: the coarse polar phi rings); elsewhere false; a named key wins; a restart
+  // whose file lacks the key keeps false (bitwise)
+  {const bool x3def = (impl_prec >= 3) && sph_geom && !cs_geom &&
+                      pmq->use_polar_boundary && pmq->three_d &&
+                      !global_variable::restart_run;
+  // (added to the input only where the default is on, so the restart file of such a run
+  // carries it and other meshes' parameter dumps are unchanged)
+  if (x3def) {
+    mg_x3line = pin->GetOrAddBoolean("rad_m1","implicit_mg_x3line", true);
+  } else if (pin->DoesParameterExist("rad_m1","implicit_mg_x3line")) {
     mg_x3line = pin->GetBoolean("rad_m1","implicit_mg_x3line");
   }
+  if (impl_prec >= 3 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_mg_x3line = " << (mg_x3line ? "true" : "false")
+              << std::endl;
+  }}
   if (pin->DoesParameterExist("rad_m1","implicit_mg_sym")) {
     mg_sym = pin->GetBoolean("rad_m1","implicit_mg_sym");
   }

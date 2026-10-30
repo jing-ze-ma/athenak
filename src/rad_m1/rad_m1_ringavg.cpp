@@ -105,17 +105,24 @@ void RadiationM1::RavInit(ParameterInput *pin) {
   // study keys: (3) the lumped preconditioner rows, (2) the coarse phi distance
   rav_lump = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_lump", false);
   rav_dist = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_dist", true);
-  // floorheat-1029: polar_ring_avg_ke = gas (default, bitwise) | rad
+  // floorheat-1029: polar_ring_avg_ke = gas | rad.  defaults-1030 (USER 10-30): DEFAULT
+  // rad on a fresh run (the floor-heating fix every accretor run names); a named key
+  // wins; a restart whose file lacks the key keeps gas (bitwise)
   {
-    const std::string ke = pin->GetOrAddString("rad_m1", "polar_ring_avg_ke", "gas");
+    const std::string ke = pin->GetOrAddString("rad_m1", "polar_ring_avg_ke",
+                                               global_variable::restart_run ? "gas" : "rad");
     if (ke == "rad") {
       rav_ke_rad = true;
     } else if (ke != "gas") {
       RavM1Fatal("polar_ring_avg_ke must be gas or rad");
     }
-    if (rav_ke_rad && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> polar_ring_avg_ke = rad: the gas kinetic-energy spread of the "
-                << "after-solve group average goes to E (floorheat-1029)" << std::endl;
+    if (global_variable::my_rank == 0) {
+      if (rav_ke_rad) {
+        std::cout << "<rad_m1> polar_ring_avg_ke = rad: the gas kinetic-energy spread of "
+                  << "the after-solve group average goes to E (floorheat-1029)" << std::endl;
+      } else {
+        std::cout << "<rad_m1> polar_ring_avg_ke = gas" << std::endl;
+      }
     }
   }
 
