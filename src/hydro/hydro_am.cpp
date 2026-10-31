@@ -111,6 +111,11 @@ AmModule::AmModule(MeshBlockPack *ppack, ParameterInput *pin, const std::string 
     if (pin->DoesParameterExist(blk,"frame_exact")) {
       frame_exact = pin->GetBoolean(blk,"frame_exact");
     }
+    // csacc-1031: <hydro>/frame_centrifugal (read only when named; default true = the full
+    // rotating-frame force): false = the Coriolis force only
+    if (pin->DoesParameterExist(blk,"frame_centrifugal")) {
+      frame_cf = pin->GetBoolean(blk,"frame_centrifugal");
+    }
   }
   if (pin->DoesParameterExist(blk,"am_vector")) {
     am_vector = pin->GetBoolean(blk,"am_vector");
@@ -398,6 +403,13 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
               << "rk1 | rk2" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  if (!frame_cf && am_vector) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<hydro>/frame_centrifugal = false (Coriolis only) is not "
+              << "supported with <hydro>/am_vector" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const bool fcf = frame_cf;
   HydroAmV v;
   AmFillV(v, fl);
   auto &ic = pm->mb_indcs;
@@ -435,7 +447,7 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real omv[3] = {o0, o1, o2};
     Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
-    HydroAmFrame(v, omv, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc);
+    HydroAmFrame(v, omv, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc, fcf);
     const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
     Real pw = 0.0;
     for (int q = 0; q < 3; ++q) {pw += f[q]*(v1*rh[q] + v2*b1[q] + v3*b2[q]);}

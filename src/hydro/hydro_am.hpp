@@ -820,7 +820,7 @@ bool HydroAmVecTorque(const HydroAmV &v, const int m, const int k, const int j,
 KOKKOS_INLINE_FUNCTION
 void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m,
                   const int k, const int j, const int i, Real *f, Real *dT, Real *rc,
-                  Real *rh, Real *b1, Real *b2, Real &cc) {
+                  Real *rh, Real *b1, Real *b2, Real &cc, const bool cf = true) {
   const Real dv = v.vol(m,k,j,i);
   const Real r = v.x1v(m,i);
   const Real rho = v.w0(m,IDN,k,j,i);
@@ -880,7 +880,14 @@ void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m
   HydroAmCross(om, vel, ov);
   HydroAmCross(om, rc, orc);
   HydroAmCross(om, orc, oorc);
-  for (int c = 0; c < 3; ++c) {f[c] = -2.0*rho*ov[c] - rho*oorc[c];}
+  // csacc-1031 <hydro>/frame_centrifugal = false (cf): Coriolis only (a problem whose
+  // potential already carries the centrifugal term, e.g. the Roche potential of
+  // ry_per_accretor, whose rotation axis does not pass through the mesh origin)
+  if (cf) {
+    for (int c = 0; c < 3; ++c) {f[c] = -2.0*rho*ov[c] - rho*oorc[c];}
+  } else {
+    for (int c = 0; c < 3; ++c) {f[c] = -2.0*rho*ov[c];}
+  }
   for (int c = 0; c < 3; ++c) {dT[c] = 0.0;}
   if (!amc) return;
   phi[0] = -v.f1(m,IDN,k,j,i)*v.a1(m,k,j,i);
@@ -949,6 +956,7 @@ class AmModule {
   bool frame_on = false;
   Real frame_om[3] = {0.0, 0.0, 0.0};
   bool frame_exact = false;
+  bool frame_cf = true;      // csacc-1031 <hydro>/frame_centrifugal (false: Coriolis only)
   DvceArray5D<Real> frame_ln;
   void AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   void AmSpinReturn(const AmFluid &fl);
