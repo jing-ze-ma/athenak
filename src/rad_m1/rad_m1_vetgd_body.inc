@@ -94,47 +94,15 @@
             // or with the top bath (vgdbath-1011) its incident intensity attenuated
             const Real rtop = cx1f(m,ie+1);
             const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
-            const Real stp = fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i-1)), 1.0e-300);
-            Real ex, w0, wu;
-            VetSegW(ch0*ds, ex, w0, wu);
-            if (tbh) {
-              iv = itop*ex + wu*stp + w0*s0;
-            } else {
-              iv = wu*stp + w0*s0;
-            }
+            iv = VgdTopInflow(ch0, ds, s0, exp(csx(m,1,k,j,i-1)), tbh, itop);
           } else if (!inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
-            int typ = 1;                 // 1 upwind shell, 2 inner face, 3 own shell
-            int iu = i + 1;
-            Real ds;
-            if (inw) {
-              const Real ru = cx1v(m,i+1);
-              ds = sqrt(ru*ru - p2) - zr;
-            } else {
-              const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
-              if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
-                iu = i - 1;
-                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-              } else if (l == lcut && p2 <= rd*rd) {
-                typ = 2;
-                iu = i;
-                ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-              } else {
-                typ = 3;
-                iu = i;
-                ds = 2.0*zr;
-              }
-            }
-            // segfix-1011 (vet_seg = split): the path length from the cell centre back
-            // to the radial face it shares with the upwind shell (typ 3: half the chord)
-            Real dso = 0.5*ds;
-            if (spl && typ == 1) {
-              const Real rf = inw ? cx1f(m,i+1) : cx1f(m,i);
-              dso = inw ? (sqrt(fmax(rf*rf - p2, 0.0)) - zr)
-                        : (zr - sqrt(fmax(rf*rf - p2, 0.0)));
-              dso = fmin(fmax(dso, 0.0), ds);
-            }
+            // the upwind shell, the chord and its own-cell part (rad_m1_vgdray.hpp);
+            // typ 1 upwind shell, 2 inner face, 3 own shell
+            int typ, iu;
+            Real ds, dso;
+            VgdRayChord(inw, l, lcut, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
             // the upwind point, its lateral cell and bilinear fractions (index space)
             const Real xu = r*st*cp - ds*nx;
             const Real yu = r*st*sp - ds*ny;
@@ -155,6 +123,12 @@
             if (k0 > khi) {k0 = khi; uk = 1.0; clp = true;}
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
             const int j1 = j0 + 1, k1 = k0 + 1;
+            // share3-1031: the stencil and the field reads of the shared upwind core
+            const VgdSt4 st4{k0, k1, j0, j1, uj, uk};
+            auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
+              return csx(m,c,kk,jj,ii);
+            };
+            auto fIu = [&](const int kk, const int jj) -> Real {return rd(kk,jj,iu);};
             bool bdone = false;
 #if M1_VGD_BODY_MIR
             // wallbug-1027 vet_gd_theta_wall = vacuum: the upwind point lies beyond a
@@ -318,40 +292,15 @@
                   }
                 }
               }
-              const int i1 = i + 1;
-              auto sbt = [&](const int kk, const int jj) {
-                return fmax(1.5*exp(csx(m,1,kk,jj,i)) - 0.5*exp(csx(m,1,kk,jj,i1)),
-                            1.0e-300);
-              };
-              Real ex, w0, wu;
-              VetSegW(ch0*ds, ex, w0, wu);
-              const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
-                                      VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
-              iv = ie0*ex + wu*qv + w0*s0;
+              iv = VgdInnerFace(st4, fC, i, true, ie0, bfc, cx1f(m,i), cx1v(m,i),
+                                cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2) {
               // the diffusion intensity at the inner face of the first shell,
               // S + mu (-dS/dtau_r); vet_bc_diff = face (gdface-1011): S of the FACE,
               // 1.5 S_a - 0.5 S_b (the S the half-cell carry below starts from), not of
               // the first shell's cell (O(dtau_cell) low isotropic part otherwise)
-              const Real rf = cx1f(m,i);
-              const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
-              const int i1 = i + 1;
-              auto ib = [&](const int kk, const int jj) {
-                const Real sa = exp(csx(m,1,kk,jj,i)), sb = exp(csx(m,1,kk,jj,i1));
-                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(csx(m,0,kk,jj,i));
-                return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;
-              };
-              auto sbt = [&](const int kk, const int jj) {
-                return fmax(1.5*exp(csx(m,1,kk,jj,i)) - 0.5*exp(csx(m,1,kk,jj,i1)),
-                            1.0e-300);
-              };
-              Real ex, w0, wu;
-              VetSegW(ch0*ds, ex, w0, wu);
-              const Real bv = fmax(VgdLerp(VgdLerp(ib(k0,j0), ib(k0,j1), uj),
-                                           VgdLerp(ib(k1,j0), ib(k1,j1), uj), uk), 0.0);
-              const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
-                                      VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
-              iv = bv*ex + wu*qv + w0*s0;
+              iv = VgdInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
+                                cx1v(m,i+1), p2, ch0, ds, s0);
             } else {
               // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
               // selects; the ray read here is inward at the upwind point for the inward
@@ -368,21 +317,8 @@
                 ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
                 all = all && ok[q];
               }
-              Real ivu;
-              if (all) {
-                ivu = VgdLerp(VgdLerp(rd(k0,j0,iu), rd(k0,j1,iu), uj),
-                              VgdLerp(rd(k1,j0,iu), rd(k1,j1,iu), uj), uk);
-              } else {
-                Real ws = 0.0, vs = 0.0;
-                for (int q = 0; q < 4; ++q) {
-                  const int kk = (q < 2) ? k0 : k1;
-                  const int jj = (q % 2 == 0) ? j0 : j1;
-                  const Real wq = ((q < 2) ? (1.0 - uk) : uk)
-                                  *((q % 2 == 0) ? (1.0 - uj) : uj);
-                  if (ok[q] && wq > 0.0) {ws += wq; vs += wq*rd(kk,jj,iu);}
-                }
-                ivu = (ws > 0.0) ? vs/ws : -1.0;   // none: the upwind source (below)
-              }
+              // none (-1): the upwind source (below)
+              const Real ivu = VgdUpwindI(st4, fIu, ok, all);
               auto lin = [&](const int c) {
                 return VgdLerp(VgdLerp(csx(m,c,k0,j0,iu), csx(m,c,k0,j1,iu), uj),
                                VgdLerp(csx(m,c,k1,j0,iu), csx(m,c,k1,j1,iu), uj), uk);
@@ -575,58 +511,14 @@
                   }
                 }
               }
-              if (pdone) {
-                // done: the subdivided step (vet_path = cells)
-              } else if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
-                // coreL-1012 vet_seg = jump: the turned ray dips below the own inner face;
-                // its chord there takes chi, S of the cell below (log-mean of the own
-                // column and the upwind point), the two own parts their own: piecewise
-                // constant per cell (the limb of an emitting body inside the half cell)
-                auto lind = [&](const int c) {
-                  const Real a = VgdLerp(VgdLerp(csx(m,c,k0,j0,i-1), csx(m,c,k0,j1,i-1), uj),
-                                         VgdLerp(csx(m,c,k1,j0,i-1), csx(m,c,k1,j1,i-1),
-                                                 uj), uk);
-                  return exp(0.5*(a + csx(m,c,k,j,i-1)));
+              if (!pdone) {
+                // the closing segment (vet_seg = jump below the inner face, vet_interp =
+                // corner, vet_seg = split, the plain segment: rad_m1_vgdray.hpp)
+                auto edgef = [&]() {
+                  return VgdCornerEdge(csx, m, k0, k1, j0, j1, iu, uk, uj);
                 };
-                const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
-                const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
-                const Real e3 = exp(-ch0*(zr - zf));
-                const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
-                iv = fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
-              } else if (vim == 2 ||
-                         (vim == 3 && VgdCornerEdge(csx, m, k0, k1, j0, j1, iu, uk, uj))) {
-                // unify-sc-gd-1012 (#6) vet_interp = corner (VetUpCorner of vet_sc): one
-                // segment per stencil corner from its own (I, chi, S), the outcome
-                // interpolated (renormalised over the corners of the right branch, as the
-                // intensity above; none: from the corner's own source)
-                Real ws = 0.0, vs = 0.0;
-                for (int q = 0; q < 4; ++q) {
-                  const int kk = (q < 2) ? k0 : k1;
-                  const int jj = (q % 2 == 0) ? j0 : j1;
-                  const Real wq = ((q < 2) ? (1.0 - uk) : uk)
-                                  *((q % 2 == 0) ? (1.0 - uj) : uj);
-                  if (!(wq > 0.0) || !(ok[q] || ivu < 0.0)) {continue;}
-                  const Real cq = exp(csx(m,0,kk,jj,iu)), sq = exp(csx(m,1,kk,jj,iu));
-                  const Real iq = (ivu < 0.0) ? sq : rd(kk,jj,iu);
-                  Real vq;
-                  if (spl) {
-                    vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
-                  } else {
-                    Real ex, w0, wu;
-                    VetSegW(0.5*(cq + ch0)*ds, ex, w0, wu);
-                    vq = iq*ex + wu*sq + w0*s0;
-                  }
-                  ws += wq;
-                  vs += wq*vq;
-                }
-                iv = fmax(vs/ws, 0.0);
-              } else if (spl) {
-                iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
-                                      ch0*dso, spe), 0.0);
-              } else {
-                Real ex, w0, wu;
-                VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
-                iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
+                iv = VgdSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
+                                  s0, ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
               }
             }
           }

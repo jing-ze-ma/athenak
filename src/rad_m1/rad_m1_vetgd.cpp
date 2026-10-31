@@ -89,6 +89,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vgdray.hpp"
 #if defined(KOKKOS_ENABLE_CUDA)
 #include <cub/cub.cuh>
 #endif
@@ -107,6 +108,24 @@ void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_m1>/vet_gd: ",
 
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
+
+// share3-1031: the sp stencil accessor of the shared upwind core (rad_m1_vgdray.hpp):
+// the four (theta, phi) corners of the bilinear foot (q = 0..3: (k0,j0), (k0,j1),
+// (k1,j0), (k1,j1)), the nested bilinear VgdLerp as before
+struct VgdSt4 {
+  int k0, k1, j0, j1;
+  Real uj, uk;
+  KOKKOS_INLINE_FUNCTION int N() const {return 4;}
+  KOKKOS_INLINE_FUNCTION int K(const int e) const {return (e < 2) ? k0 : k1;}
+  KOKKOS_INLINE_FUNCTION int J(const int e) const {return (e % 2 == 0) ? j0 : j1;}
+  KOKKOS_INLINE_FUNCTION Real W(const int e) const {
+    return ((e < 2) ? (1.0 - uk) : uk)*((e % 2 == 0) ? (1.0 - uj) : uj);
+  }
+  template <typename F>
+  KOKKOS_INLINE_FUNCTION Real Interp(const F &f) const {
+    return VgdLerp(VgdLerp(f(k0,j0), f(k0,j1), uj), VgdLerp(f(k1,j0), f(k1,j1), uj), uk);
+  }
+};
 
 // vgdlat-1012 vet_gd_symref: the weight of the symmetric shift (ref - shell mean) in a
 // cell: the fraction of the cell's formal-solution J that the shell-mean (twin) field

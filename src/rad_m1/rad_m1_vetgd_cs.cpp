@@ -67,6 +67,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vgdray.hpp"
 // csnccl-1031: the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL, env
 // ACC_NCCL=1; as the sp list halo, VgdNcclOn in rad_m1_vetgd.cpp)
 #if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
@@ -143,6 +144,22 @@ struct VgdCsSt {
   int n;
   int k[4], j[4];
   Real w[4];
+};
+
+// share3-1031: the stencil accessor of the shared upwind core (rad_m1_vgdray.hpp): the
+// weighted sum over the stencil cells, in their order
+struct VgdCsA {
+  const VgdCsSt &st;
+  KOKKOS_INLINE_FUNCTION int N() const {return st.n;}
+  KOKKOS_INLINE_FUNCTION int K(const int e) const {return st.k[e];}
+  KOKKOS_INLINE_FUNCTION int J(const int e) const {return st.j[e];}
+  KOKKOS_INLINE_FUNCTION Real W(const int e) const {return st.w[e];}
+  template <typename F>
+  KOKKOS_INLINE_FUNCTION Real Interp(const F &f) const {
+    Real s = 0.0;
+    for (int e = 0; e < st.n; ++e) {s += st.w[e]*f(st.k[e], st.j[e]);}
+    return s;
+  }
 };
 
 // the stencil of the unit vector x for a block on panel p whose first interior cell is
@@ -1682,31 +1699,8 @@ void RadiationM1::VetGdCsSweep() {
           const Real rtop = cx1f(m,ie+1);
           ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
         } else if (br == 2) {
-          if (inw) {
-            const Real ru = cx1v(m,i+1);
-            ds = sqrt(ru*ru - p2) - zr;
-          } else {
-            const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
-            if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
-              iu = i - 1;
-              ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-            } else if (l == lcut && p2 <= rd*rd) {
-              typ = 2;
-              iu = i;
-              ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-            } else {
-              typ = 3;
-              iu = i;
-              ds = 2.0*zr;
-            }
-          }
-          dso = 0.5*ds;
-          if (spl && typ == 1) {
-            const Real rf = inw ? cx1f(m,i+1) : cx1f(m,i);
-            dso = inw ? (sqrt(fmax(rf*rf - p2, 0.0)) - zr)
-                      : (zr - sqrt(fmax(rf*rf - p2, 0.0)));
-            dso = fmin(fmax(dso, 0.0), ds);
-          }
+          // the upwind shell, the chord and its own-cell part (rad_m1_vgdray.hpp)
+          VgdRayChord(inw, l, lcut, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
           // the upwind point (Cartesian), its direction and the cs stencil
           Real xu[3] = {r*rx - ds*nx, r*ry - ds*ny, r*rz - ds*nz};
           const Real ru = sqrt(xu[0]*xu[0] + xu[1]*xu[1] + xu[2]*xu[2]);
@@ -1740,44 +1734,24 @@ void RadiationM1::VetGdCsSweep() {
         const Real ch0 = exp(cv(m,0,k,j,i));
         const Real s0 = exp(cv(m,1,k,j,i));
         Real iv;
+        // share3-1031: the stencil and the field reads of the shared upwind core
+        const VgdCsA acc{st};
+        auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
+          return cv(m,c,kk,jj,ii);
+        };
         if (br == 0) {
-          const Real stp = fmax(1.5*s0 - 0.5*exp(cv(m,1,k,j,i-1)), 1.0e-300);
-          Real ex, w0, wu;
-          VetSegW(ch0*ds, ex, w0, wu);
-          iv = tbh ? (itop*ex + wu*stp + w0*s0) : (wu*stp + w0*s0);
+          iv = VgdTopInflow(ch0, ds, s0, exp(cv(m,1,k,j,i-1)), tbh, itop);
         } else if (br == 1) {
           iv = s0;
         } else {
           if (typ == 2) {
-            const int i1 = i + 1;
-            auto sbt = [&](const int kk, const int jj) {
-              return fmax(1.5*exp(cv(m,1,kk,jj,i)) - 0.5*exp(cv(m,1,kk,jj,i1)),
-                          1.0e-300);
-            };
-            Real ex, w0, wu;
-            VetSegW(ch0*ds, ex, w0, wu);
-            Real qv = 0.0;
-            for (int e = 0; e < st.n; ++e) {qv += st.w[e]*sbt(st.k[e], st.j[e]);}
-            if (emi) {
-              iv = iemit*ex + wu*qv + w0*s0;
-            } else {
-              const Real rf = cx1f(m,i);
-              const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
-              Real bv = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                const int kk = st.k[e], jj = st.j[e];
-                const Real sa = exp(cv(m,1,kk,jj,i)), sb = exp(cv(m,1,kk,jj,i1));
-                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(cv(m,0,kk,jj,i));
-                bv += st.w[e]*((bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf);
-              }
-              iv = fmax(bv, 0.0)*ex + wu*qv + w0*s0;
-            }
+            iv = VgdInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
+                              cx1v(m,i+1), p2, ch0, ds, s0);
           } else {
             // the intensity of a stencil cell: its owner's interior when on this rank
             // (stream order: shell iu is complete; the other branch of shell i, which
             // this launch writes, is masked), else the band copy of the remote value
-            auto rdi = [&](const int e) -> Real {
-              const int kk = st.k[e], jj = st.j[e];
+            auto rdi = [&](const int kk, const int jj) -> Real {
               if (ccl && cnt) {
                 const int x = rx_(m,kk,jj);
                 if (x >= 0) {
@@ -1789,22 +1763,7 @@ void RadiationM1::VetGdCsSweep() {
               }
               return va(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
-            Real ivu;
-            if (all) {
-              ivu = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                ivu += st.w[e]*rdi(e);
-              }
-            } else {
-              Real ws = 0.0, vs = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                if (ok[e] && st.w[e] > 0.0) {
-                  ws += st.w[e];
-                  vs += st.w[e]*rdi(e);
-                }
-              }
-              ivu = (ws > 0.0) ? vs/ws : -1.0;
-            }
+            const Real ivu = VgdUpwindI(acc, rdi, ok, all);
             auto lin = [&](const int c, const int ii) {
               Real s = 0.0;
               for (int e = 0; e < st.n; ++e) {s += st.w[e]*cv(m,c,st.k[e],st.j[e],ii);}
@@ -1824,45 +1783,11 @@ void RadiationM1::VetGdCsSweep() {
               }
               edge = (lmx - lmn) > lcr;
             }
-            if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
-              // vet_seg = jump: the turned ray's chord below the own inner face
-              auto lind = [&](const int c) {
-                return exp(0.5*(lin(c, i - 1) + cv(m,c,k,j,i-1)));
-              };
-              const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
-              const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
-              const Real e3 = exp(-ch0*(zr - zf));
-              const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
-              iv = fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
-            } else if (vim == 2 || (vim == 3 && edge)) {
-              // vet_interp = corner: one segment per stencil cell from its own (I, chi,
-              // S), the outcome interpolated over the cells of the right branch
-              Real ws = 0.0, vs = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                if (!(st.w[e] > 0.0) || !(ok[e] || ivu < 0.0)) {continue;}
-                const int kk = st.k[e], jj = st.j[e];
-                const Real cq = exp(cv(m,0,kk,jj,iu)), sq = exp(cv(m,1,kk,jj,iu));
-                const Real iq = (ivu < 0.0) ? sq : rdi(e);
-                Real vq;
-                if (spl) {
-                  vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
-                } else {
-                  Real ex, w0, wu;
-                  VetSegW(0.5*(cq + ch0)*ds, ex, w0, wu);
-                  vq = iq*ex + wu*sq + w0*s0;
-                }
-                ws += st.w[e];
-                vs += st.w[e]*vq;
-              }
-              iv = fmax(vs/ws, 0.0);
-            } else if (spl) {
-              iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
-                                    ch0*dso, spe), 0.0);
-            } else {
-              Real ex, w0, wu;
-              VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
-              iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
-            }
+            auto edgef = [&]() {return edge;};
+            // the closing segment (vet_seg = jump below the inner face, vet_interp =
+            // corner, vet_seg = split, the plain segment: rad_m1_vgdray.hpp)
+            iv = VgdSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
+                              ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
           }
         }
         va(m,d,k,j,i) = iv;
