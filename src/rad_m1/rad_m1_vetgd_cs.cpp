@@ -1636,6 +1636,11 @@ void RadiationM1::VetGdCsSweep() {
 #endif
   if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
   VgdCsEv eev;
+  static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
+  if (s_lb < 0) {
+    const char *el = std::getenv("VGD_CS_LB");
+    s_lb = (el != nullptr) ? std::atoi(el) : 0;
+  }
   VetGdRingSweepBegin(two);
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
@@ -1831,8 +1836,7 @@ void RadiationM1::VetGdCsSweep() {
         }
         eev.Record();
       }
-      Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper),
-      KOKKOS_LAMBDA(const int c) {
+      auto mainf_ = KOKKOS_LAMBDA(const int c) {
         int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
         const int d = d0 + t % ndd;
         t /= ndd;
@@ -1841,7 +1845,21 @@ void RadiationM1::VetGdCsSweep() {
         const int k = ks + t % nkk;
         const int m = t/nkk;
         shell_(m, k, j, d, true);
-      });
+      };
+      // speed2-1031 cslb: the shell kernel is latency bound at 25 % occupancy (114
+      // registers, 4 blocks of 128 per SM; ncu: DRAM 4 %, issue 43 %); env VGD_CS_LB = 6
+      // or 8 launches it with LaunchBounds<128, LB> (register cap, same code)
+      if (s_lb == 8) {
+        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 8>>(DevExeSpace(), 0, nper),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
+      } else if (s_lb == 6) {
+        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, nper),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
+      } else {
+        Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), mainf_);
+      }
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
         Kokkos::Timer tf;
