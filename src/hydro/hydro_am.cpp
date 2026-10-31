@@ -436,180 +436,93 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
   const Real kz = (om > 0.0) ? o2/om : 0.0;
   const Real cth = cos(-om*dt), sth = sin(-om*dt);
   const bool one = (nst == 1);
-  // csacc-1031: Coriolis only (frame_centrifugal = false) in its own kernel; the full frame
-  // below is the unchanged source
-  if (!fcf) {
-    par_for("hydro_frame_rot", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
-            ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real omv[3] = {o0, o1, o2};
-      Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
-      HydroAmFrameCor(v, omv, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc, fcf);
-      const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
-      Real pw = 0.0;
-      for (int q = 0; q < 3; ++q) {pw += f[q]*(v1*rh[q] + v2*b1[q] + v3*b2[q]);}
-      Real fr = 0.0, f1 = 0.0, f2 = 0.0;
-      for (int q = 0; q < 3; ++q) {fr += f[q]*rh[q]; f1 += f[q]*b1[q]; f2 += f[q]*b2[q];}
-      u0_(m,IM1,k,j,i) += fr*bdt;
-      u0_(m,IM2,k,j,i) += f1*bdt;
-      u0_(m,IM3,k,j,i) += f2*bdt;
-      u0_(m,IEN,k,j,i) += pw*bdt;
-      if (amc) {
-        const Real dv = v.vol(m,k,j,i);
-        const Real s2 = 1.0 - cc*cc;
-        // a covariant cell vector (radial, x2, x3) -> Cartesian
-        auto cart = [&](const Real a1, const Real b2c, const Real b3c, Real *o) {
-          const Real a2 = (b2c - cc*b3c)/s2, a3 = (b3c - cc*b2c)/s2;
-          for (int q = 0; q < 3; ++q) {o[q] = a1*rh[q] + a2*b1[q] + a3*b2[q];}
-        };
-        // the spin and radiation parts of L_abs (current): -Omega x (S rhat + L_rad)
-        Real lx[3];
-        // (the stage's state: the spin before this stage's RK combination)
-        for (int q = 0; q < 3; ++q) {lx[q] = sps_(m,k,j,i)*rh[q];}
-        if (hrad) {
-          Real fc[3], lr[3];
-          cart(ur_(m,radm1::M1_F1,k,j,i), ur_(m,radm1::M1_F2,k,j,i),
-               ur_(m,radm1::M1_F3,k,j,i), fc);
-          for (int q = 0; q < 3; ++q) {fc[q] *= dv*icc;}
-          HydroAmCross(rc, fc, lr);
-          for (int q = 0; q < 3; ++q) {lx[q] += lr[q];}
-        }
-        Real ol[3];
-        HydroAmCross(omv, lx, ol);
-        for (int q = 0; q < 3; ++q) {dT[q] -= ol[q];}
-        Real dl[3];
-        for (int q = 0; q < 3; ++q) {dl[q] = dT[q]*bdt;}
-        if (rec) {
-          // L_abs^n of the cell: gas V rc x (m + rho Omega x rc) from the step-start
-          // conserved state u1 (covariant m), spin^n (am_spin1), radiation (u0 before the
-          // step's solves)
-          Real mc[3], orc[3], pa[3], la[3];
-          cart(u1_(m,IM1,k,j,i), u1_(m,IM2,k,j,i), u1_(m,IM3,k,j,i), mc);
-          HydroAmCross(omv, rc, orc);
-          const Real rho = u1_(m,IDN,k,j,i);
-          if (fcf) {
-            for (int q = 0; q < 3; ++q) {pa[q] = (mc[q] + rho*orc[q])*dv;}
-          } else {
-            // csacc-1031 Coriolis only: L_rel^n (the vector the exact rotation acts on)
-            for (int q = 0; q < 3; ++q) {pa[q] = mc[q]*dv;}
-          }
-          HydroAmCross(rc, pa, la);
-          for (int q = 0; q < 3; ++q) {
-            la[q] += sp1_(m,k,j,i)*rh[q] + (lx[q] - sps_(m,k,j,i)*rh[q]);
-            ln_(m,q,k,j,i) = la[q];
-          }
-        }
-        if (fin) {
-          Real l[3] = {ln_(m,0,k,j,i), ln_(m,1,k,j,i), ln_(m,2,k,j,i)};
-          // R l (Rodrigues about k by -|Omega| dt)
-          const Real kl = kx*l[0] + ky*l[1] + kz*l[2];
-          const Real kxl[3] = {ky*l[2] - kz*l[1], kz*l[0] - kx*l[2], kx*l[1] - ky*l[0]};
-          Real al[3], aal[3];
-          {Real t[3]; HydroAmCross(omv, l, t);
-           for (int q = 0; q < 3; ++q) {al[q] = -t[q];}}
-          {Real t[3]; HydroAmCross(omv, al, t);
-           for (int q = 0; q < 3; ++q) {aal[q] = -t[q];}}
-          for (int q = 0; q < 3; ++q) {
-            const Real kq = (q == 0) ? kx : ((q == 1) ? ky : kz);
-            const Real rl = l[q]*cth + kxl[q]*sth + kq*kl*(1.0 - cth);
-            dl[q] += rl - l[q] - dt*al[q] - (one ? 0.0 : 0.5*dt*dt*aal[q]);
-          }
-        }
-        const Real r2 = rc[0]*rc[0] + rc[1]*rc[1] + rc[2]*rc[2];
-        Real dp[3];
-        HydroAmCross(dl, rc, dp);
-        const Real iv = 1.0/(dv*r2);
-        Real p1 = 0.0, p2 = 0.0;
-        for (int q = 0; q < 3; ++q) {p1 += dp[q]*iv*b1[q]; p2 += dp[q]*iv*b2[q];}
-        u0_(m,IM2,k,j,i) += p1;
-        u0_(m,IM3,k,j,i) += p2;
-        sp_(m,k,j,i) += dl[0]*rh[0] + dl[1]*rh[1] + dl[2]*rh[2];
+  par_for("hydro_frame_rot", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+          ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real omv[3] = {o0, o1, o2};
+    Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
+    HydroAmFrame(v, omv, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc, fcf);
+    const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
+    Real pw = 0.0;
+    for (int q = 0; q < 3; ++q) {pw += f[q]*(v1*rh[q] + v2*b1[q] + v3*b2[q]);}
+    Real fr = 0.0, f1 = 0.0, f2 = 0.0;
+    for (int q = 0; q < 3; ++q) {fr += f[q]*rh[q]; f1 += f[q]*b1[q]; f2 += f[q]*b2[q];}
+    u0_(m,IM1,k,j,i) += fr*bdt;
+    u0_(m,IM2,k,j,i) += f1*bdt;
+    u0_(m,IM3,k,j,i) += f2*bdt;
+    u0_(m,IEN,k,j,i) += pw*bdt;
+    if (amc) {
+      const Real dv = v.vol(m,k,j,i);
+      const Real s2 = 1.0 - cc*cc;
+      // a covariant cell vector (radial, x2, x3) -> Cartesian
+      auto cart = [&](const Real a1, const Real b2c, const Real b3c, Real *o) {
+        const Real a2 = (b2c - cc*b3c)/s2, a3 = (b3c - cc*b2c)/s2;
+        for (int q = 0; q < 3; ++q) {o[q] = a1*rh[q] + a2*b1[q] + a3*b2[q];}
+      };
+      // the spin and radiation parts of L_abs (current): -Omega x (S rhat + L_rad)
+      Real lx[3];
+      // (the stage's state: the spin before this stage's RK combination)
+      for (int q = 0; q < 3; ++q) {lx[q] = sps_(m,k,j,i)*rh[q];}
+      if (hrad) {
+        Real fc[3], lr[3];
+        cart(ur_(m,radm1::M1_F1,k,j,i), ur_(m,radm1::M1_F2,k,j,i),
+             ur_(m,radm1::M1_F3,k,j,i), fc);
+        for (int q = 0; q < 3; ++q) {fc[q] *= dv*icc;}
+        HydroAmCross(rc, fc, lr);
+        for (int q = 0; q < 3; ++q) {lx[q] += lr[q];}
       }
-    });
-  } else {
-    par_for("hydro_frame_rot", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
-            ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real omv[3] = {o0, o1, o2};
-      Real f[3], dT[3], rc[3], rh[3], b1[3], b2[3], cc;
-      HydroAmFrame(v, omv, amc, m, k, j, i, f, dT, rc, rh, b1, b2, cc);
-      const Real v1 = v.w0(m,IVX,k,j,i), v2 = v.w0(m,IVY,k,j,i), v3 = v.w0(m,IVZ,k,j,i);
-      Real pw = 0.0;
-      for (int q = 0; q < 3; ++q) {pw += f[q]*(v1*rh[q] + v2*b1[q] + v3*b2[q]);}
-      Real fr = 0.0, f1 = 0.0, f2 = 0.0;
-      for (int q = 0; q < 3; ++q) {fr += f[q]*rh[q]; f1 += f[q]*b1[q]; f2 += f[q]*b2[q];}
-      u0_(m,IM1,k,j,i) += fr*bdt;
-      u0_(m,IM2,k,j,i) += f1*bdt;
-      u0_(m,IM3,k,j,i) += f2*bdt;
-      u0_(m,IEN,k,j,i) += pw*bdt;
-      if (amc) {
-        const Real dv = v.vol(m,k,j,i);
-        const Real s2 = 1.0 - cc*cc;
-        // a covariant cell vector (radial, x2, x3) -> Cartesian
-        auto cart = [&](const Real a1, const Real b2c, const Real b3c, Real *o) {
-          const Real a2 = (b2c - cc*b3c)/s2, a3 = (b3c - cc*b2c)/s2;
-          for (int q = 0; q < 3; ++q) {o[q] = a1*rh[q] + a2*b1[q] + a3*b2[q];}
-        };
-        // the spin and radiation parts of L_abs (current): -Omega x (S rhat + L_rad)
-        Real lx[3];
-        // (the stage's state: the spin before this stage's RK combination)
-        for (int q = 0; q < 3; ++q) {lx[q] = sps_(m,k,j,i)*rh[q];}
-        if (hrad) {
-          Real fc[3], lr[3];
-          cart(ur_(m,radm1::M1_F1,k,j,i), ur_(m,radm1::M1_F2,k,j,i),
-               ur_(m,radm1::M1_F3,k,j,i), fc);
-          for (int q = 0; q < 3; ++q) {fc[q] *= dv*icc;}
-          HydroAmCross(rc, fc, lr);
-          for (int q = 0; q < 3; ++q) {lx[q] += lr[q];}
-        }
-        Real ol[3];
-        HydroAmCross(omv, lx, ol);
-        for (int q = 0; q < 3; ++q) {dT[q] -= ol[q];}
-        Real dl[3];
-        for (int q = 0; q < 3; ++q) {dl[q] = dT[q]*bdt;}
-        if (rec) {
-          // L_abs^n of the cell: gas V rc x (m + rho Omega x rc) from the step-start
-          // conserved state u1 (covariant m), spin^n (am_spin1), radiation (u0 before the
-          // step's solves)
-          Real mc[3], orc[3], pa[3], la[3];
-          cart(u1_(m,IM1,k,j,i), u1_(m,IM2,k,j,i), u1_(m,IM3,k,j,i), mc);
-          HydroAmCross(omv, rc, orc);
-          const Real rho = u1_(m,IDN,k,j,i);
+      Real ol[3];
+      HydroAmCross(omv, lx, ol);
+      for (int q = 0; q < 3; ++q) {dT[q] -= ol[q];}
+      Real dl[3];
+      for (int q = 0; q < 3; ++q) {dl[q] = dT[q]*bdt;}
+      if (rec) {
+        // L_abs^n of the cell: gas V rc x (m + rho Omega x rc) from the step-start
+        // conserved state u1 (covariant m), spin^n (am_spin1), radiation (u0 before the
+        // step's solves)
+        Real mc[3], orc[3], pa[3], la[3];
+        cart(u1_(m,IM1,k,j,i), u1_(m,IM2,k,j,i), u1_(m,IM3,k,j,i), mc);
+        HydroAmCross(omv, rc, orc);
+        const Real rho = u1_(m,IDN,k,j,i);
+        if (fcf) {
           for (int q = 0; q < 3; ++q) {pa[q] = (mc[q] + rho*orc[q])*dv;}
-          HydroAmCross(rc, pa, la);
-          for (int q = 0; q < 3; ++q) {
-            la[q] += sp1_(m,k,j,i)*rh[q] + (lx[q] - sps_(m,k,j,i)*rh[q]);
-            ln_(m,q,k,j,i) = la[q];
-          }
+        } else {
+          // csacc-1031 Coriolis only: L_rel^n (the vector the exact rotation acts on)
+          for (int q = 0; q < 3; ++q) {pa[q] = mc[q]*dv;}
         }
-        if (fin) {
-          Real l[3] = {ln_(m,0,k,j,i), ln_(m,1,k,j,i), ln_(m,2,k,j,i)};
-          // R l (Rodrigues about k by -|Omega| dt)
-          const Real kl = kx*l[0] + ky*l[1] + kz*l[2];
-          const Real kxl[3] = {ky*l[2] - kz*l[1], kz*l[0] - kx*l[2], kx*l[1] - ky*l[0]};
-          Real al[3], aal[3];
-          {Real t[3]; HydroAmCross(omv, l, t);
-           for (int q = 0; q < 3; ++q) {al[q] = -t[q];}}
-          {Real t[3]; HydroAmCross(omv, al, t);
-           for (int q = 0; q < 3; ++q) {aal[q] = -t[q];}}
-          for (int q = 0; q < 3; ++q) {
-            const Real kq = (q == 0) ? kx : ((q == 1) ? ky : kz);
-            const Real rl = l[q]*cth + kxl[q]*sth + kq*kl*(1.0 - cth);
-            dl[q] += rl - l[q] - dt*al[q] - (one ? 0.0 : 0.5*dt*dt*aal[q]);
-          }
+        HydroAmCross(rc, pa, la);
+        for (int q = 0; q < 3; ++q) {
+          la[q] += sp1_(m,k,j,i)*rh[q] + (lx[q] - sps_(m,k,j,i)*rh[q]);
+          ln_(m,q,k,j,i) = la[q];
         }
-        const Real r2 = rc[0]*rc[0] + rc[1]*rc[1] + rc[2]*rc[2];
-        Real dp[3];
-        HydroAmCross(dl, rc, dp);
-        const Real iv = 1.0/(dv*r2);
-        Real p1 = 0.0, p2 = 0.0;
-        for (int q = 0; q < 3; ++q) {p1 += dp[q]*iv*b1[q]; p2 += dp[q]*iv*b2[q];}
-        u0_(m,IM2,k,j,i) += p1;
-        u0_(m,IM3,k,j,i) += p2;
-        sp_(m,k,j,i) += dl[0]*rh[0] + dl[1]*rh[1] + dl[2]*rh[2];
       }
-    });
-  }
+      if (fin) {
+        Real l[3] = {ln_(m,0,k,j,i), ln_(m,1,k,j,i), ln_(m,2,k,j,i)};
+        // R l (Rodrigues about k by -|Omega| dt)
+        const Real kl = kx*l[0] + ky*l[1] + kz*l[2];
+        const Real kxl[3] = {ky*l[2] - kz*l[1], kz*l[0] - kx*l[2], kx*l[1] - ky*l[0]};
+        Real al[3], aal[3];
+        {Real t[3]; HydroAmCross(omv, l, t);
+         for (int q = 0; q < 3; ++q) {al[q] = -t[q];}}
+        {Real t[3]; HydroAmCross(omv, al, t);
+         for (int q = 0; q < 3; ++q) {aal[q] = -t[q];}}
+        for (int q = 0; q < 3; ++q) {
+          const Real kq = (q == 0) ? kx : ((q == 1) ? ky : kz);
+          const Real rl = l[q]*cth + kxl[q]*sth + kq*kl*(1.0 - cth);
+          dl[q] += rl - l[q] - dt*al[q] - (one ? 0.0 : 0.5*dt*dt*aal[q]);
+        }
+      }
+      const Real r2 = rc[0]*rc[0] + rc[1]*rc[1] + rc[2]*rc[2];
+      Real dp[3];
+      HydroAmCross(dl, rc, dp);
+      const Real iv = 1.0/(dv*r2);
+      Real p1 = 0.0, p2 = 0.0;
+      for (int q = 0; q < 3; ++q) {p1 += dp[q]*iv*b1[q]; p2 += dp[q]*iv*b2[q];}
+      u0_(m,IM2,k,j,i) += p1;
+      u0_(m,IM3,k,j,i) += p2;
+      sp_(m,k,j,i) += dl[0]*rh[0] + dl[1]*rh[1] + dl[2]*rh[2];
+    }
+  });
 }
 
 //! \brief the views of the angular-momentum kernels (hydro_am.hpp)

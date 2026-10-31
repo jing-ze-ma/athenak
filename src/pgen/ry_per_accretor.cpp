@@ -686,6 +686,57 @@ Real CsJz(const int pnl, const Real x2, const Real x3, const Real r, const Real 
   return r*(q[0]*py - q[1]*px) + om*rr2*d;
 }
 
+//----------------------------------------------------------------------------------------
+//! csacc-1031: the GEOMETRY FRONT-END shared by the spherical-polar and the cubed-sphere
+//! paths: every kernel below is one physics kernel for both meshes; these helpers supply
+//! the geometry inputs.  sp: x2 = theta, x3 = phi, orthonormal (e_r, e_theta, e_phi);
+//! cs: panel coordinates, covariant momentum on the unit gnomonic tangents (cos_cell c).
+//! (sin theta, phi) of the point (x2, x3)
+KOKKOS_INLINE_FUNCTION
+void AccAng(const bool cs, const int pnl, const Real x2, const Real x3, Real &sth, Real &ph) {
+  if (cs) {
+    Real ct;
+    CsAng(pnl, x2, x3, sth, ph, ct);
+  } else {
+    sth = sin(x2);
+    ph = x3;
+  }
+}
+
+//! |v|^2 of a stored momentum (or velocity) triple
+KOKKOS_INLINE_FUNCTION
+Real AccQ(const bool cs, const Real c, const Real m1, const Real m2, const Real m3) {
+  return cs ? CsQ(c, m1, m2, m3) : (m1*m1 + m2*m2 + m3*m3);
+}
+
+//! the inertial L_z of a cell, dv R (p_phi + Omega R rho) (sp: R = rz, p_phi = m3)
+KOKKOS_INLINE_FUNCTION
+Real AccJzCell(const bool cs, const int pnl, const Real x2, const Real x3, const Real r,
+               const Real rz, const Real dv, const Real m1, const Real m2, const Real m3,
+               const Real d, const Real om) {
+  return cs ? dv*CsJz(pnl, x2, x3, r, m1, m2, m3, d, om) : dv*rz*(m3 + om*rz*d);
+}
+
+//! the inertial L_z flux of an x1 face per unit area, R (F_phi + Omega R F_rho), at face
+//! radius rf (sp: R = r, the face's cylindrical radius)
+KOKKOS_INLINE_FUNCTION
+Real AccJzFace(const bool cs, const int pnl, const Real x2, const Real x3, const Real rf,
+               const Real r, const Real f1, const Real f2, const Real f3, const Real fd,
+               const Real om) {
+  return cs ? CsJz(pnl, x2, x3, rf, f1, f2, f3, fd, om) : (f3 + om*r*fd)*r;
+}
+
+//! a stored-basis velocity pair from the primitive (contravariant) one: cs lowers it with
+//! cos_cell, sp is orthonormal (identity)
+KOKKOS_INLINE_FUNCTION
+void AccLower(const bool cs, const Real c, Real &v2, Real &v3) {
+  if (cs) {
+    const Real w2 = v2, w3 = v3;
+    v2 = w2 + c*w3;
+    v3 = w3 + c*w2;
+  }
+}
+
 //! host tables of (sin theta, phi, theta) at the cell centres (m,k,j): spherical polar
 //! std::sin(x2v), x3v, x2v (the values the host loops used, bitwise); cs from CsAng
 struct HostAng {
@@ -1233,190 +1284,101 @@ void RyPerBCEnv(Mesh *pm) {
   const bool cs = cs_;
   auto &mbp = pmbp->pmb->mb_panel;
   auto &ccl = pmbp->pcoord->cos_cell;
-  // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-  // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-  if (cs_) {
-    par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      Real ph = x3v(m,k);
-      Real sth = p3 ? sin(x2v(m,j)) : 1.0;
-      Real cc = 0.0;
-      if (cs) {
-        Real ct;
-        CsAng(mbp.d_view(m), x2v(m,j), x3v(m,k), sth, ph, ct);
-        cc = ccl(m,k,j);
-      }
-      if (gen) {
-        // thermo = general: the same BCs through the EOS.  r_in: the local polytrope of
-        // the two edge cells in Phi_wb (WBAdvance polytropic branch); r_out: ghost T = the
-        // edge cell's (floored), density by the isothermal hydrostatic walk of the general
-        // EOS in the TRUE Roche Phi; IEN = e + KE + rho Phi.
-        if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-          const Real da = u0(m,IDN,k,j,is);
-          Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
-                          + SQR(u0(m,IM3,k,j,is)))/da;
-          if (cs) kea = 0.5*CsQ(cc, u0(m,IM1,k,j,is), u0(m,IM2,k,j,is), u0(m,IM3,k,j,is))/da;
-          Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
-          Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
-          if (!(ta > tfl)) {
-            ta = tfl;
-            ea = eosd.EnergyFromTemperature(da, ta);
-          }
-          const Real pa = rad ? pwcc(m,k,j,is) :
-                          (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,is), sth, ph)
-                              : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph));
-          // the local polytrope of the two edge cells (wb_option = polytropic): T linear in
-          // Phi_wb with their dT/dPhi, density by the WB polytropic walk, so the ghosts lie
-          // on the edge cell's own WB background
-          Real a = 0.0;
-          {
-            const int i1 = is + 1;
-            const Real d1 = u0(m,IDN,k,j,i1);
-            Real e1 = u0(m,IEN,k,j,i1) - 0.5*(SQR(u0(m,IM1,k,j,i1))
-                      + SQR(u0(m,IM2,k,j,i1)) + SQR(u0(m,IM3,k,j,i1)))/d1
-                      - d1*phicc(m,k,j,i1);
-            if (cs) {
-              e1 = u0(m,IEN,k,j,i1) - 0.5*CsQ(cc, u0(m,IM1,k,j,i1), u0(m,IM2,k,j,i1),
-                                              u0(m,IM3,k,j,i1))/d1 - d1*phicc(m,k,j,i1);
-            }
-            const Real dp1 = (rad ? pwcc(m,k,j,i1) :
-                              (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i1), sth, ph)
-                                  : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph))) - pa;
-            if (e1 > 0.0 && dp1 != 0.0) a = (eosd.Temperature(d1, e1, ta) - ta)/dp1;
-          }
-          for (int g=0; g<ng; ++g) {
-            const int ig = is - 1 - g, im = is + g;
-            const Real pg = rad ? pwcc(m,k,j,ig) :
-                            (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,ig), sth, ph)
-                                : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph));
-            Real dg = da, eg = ea, tg = ta;
-            WBAdvance(eosd, 3, da, ea, pg - pa, dg, eg, tg, ta, a, ta, ta);
-            if (!(Kokkos::isfinite(dg) && dg > 0.0 && Kokkos::isfinite(eg) && eg > 0.0 &&
-                  tg >= tfl)) {
-              dg = da; eg = ea; tg = ta;
-              WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tg, ta, 0.0, ta, ta);
-              if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
-              tg = ta;
-            }
-            dg = fmax(fmin(dg, da*exp(cap)), dfl);
-            eg = eosd.EnergyFromTemperature(dg, tg);
-            const Real dm = u0(m,IDN,k,j,im);
-            const Real v1 = -u0(m,IM1,k,j,im)/dm;
-            const Real v2 = u0(m,IM2,k,j,im)/dm;
-            const Real v3 = noslip ? vwall*x1v(m,ig)*sth : u0(m,IM3,k,j,im)/dm;
-            u0(m,IDN,k,j,ig) = dg;
-            u0(m,IM1,k,j,ig) = dg*v1;
-            u0(m,IM2,k,j,ig) = dg*v2;
-            u0(m,IM3,k,j,ig) = dg*v3;
-            u0(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-            if (cs) u0(m,IEN,k,j,ig) = eg + 0.5*dg*CsQ(cc, v1, v2, v3) + dg*phicc(m,k,j,ig);
-            if (rad) radm1::M1FillGhost(ur, m, k, j, ig, k, j, is, 1, 0, -1.0, rcl, refl);
-          }
-        }
-        if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-          const Real dph = WrapPhi(ph - phis);
-          const bool win = strm && !stvol && (fabs(dph) < wwin);
-          const Real da = u0(m,IDN,k,j,ie);
-          const Real v1a = u0(m,IM1,k,j,ie)/da;
-          const Real v2a = u0(m,IM2,k,j,ie)/da;
-          const Real v3a = u0(m,IM3,k,j,ie)/da;
-          Real ea = u0(m,IEN,k,j,ie) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
-                    - da*phicc(m,k,j,ie);
-          if (cs) ea = u0(m,IEN,k,j,ie) - 0.5*da*CsQ(cc, v1a, v2a, v3a) - da*phicc(m,k,j,ie);
-          Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
-          if (!(ta > tfl)) {
-            ta = tfl;
-            ea = eosd.EnergyFromTemperature(da, ta);
-          }
-          const Real pa = p3 ? RochePot3(p, x1v(m,ie), sth, ph) : RochePot(p, x1v(m,ie), ph);
-          for (int g=0; g<ng; ++g) {
-            const int ig = ie + 1 + g;
-            Real dg, v1, v2, v3, tg;
-            if (win) {
-              dg = rhos*exp(-0.5*SQR(dph/sig));
-              v1 = vrs; v2 = 0.0; v3 = vps; tg = StreamT(stp, tstr, tsf, dph/sig);
-            } else {
-              dg = da;
-              if (ohse) {
-                const Real pg = p3 ? RochePot3(p, x1v(m,ig), sth, ph) : RochePot(p, x1v(m,ig), ph);
-                Real eg = ea, tw = ta;
-                WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
-                if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
-                dg = fmin(dg, da*exp(cap));
-              }
-              v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
-            }
-            dg = fmax(dg, dfl);
-            u0(m,IDN,k,j,ig) = dg;
-            u0(m,IM1,k,j,ig) = dg*v1;
-            u0(m,IM2,k,j,ig) = dg*v2;
-            u0(m,IM3,k,j,ig) = dg*v3;
-            u0(m,IEN,k,j,ig) = eosd.EnergyFromTemperature(dg, tg)
-                               + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-            if (cs) {
-              u0(m,IEN,k,j,ig) = eosd.EnergyFromTemperature(dg, tg) + 0.5*dg*CsQ(cc, v1, v2, v3)
-                                 + dg*phicc(m,k,j,ig);
-            }
-            if (rad) {
-              if (win && strad) {
-                // problem/stream_rad: the stream's radiation in equilibrium with its gas,
-                // E = a T_s^4, lab-frame flux of optically thick advection (4/3) E v
-                const Real eg = stp ? sar*SQR(SQR(tg)) : sre;
-                ur(m,radm1::M1_E,k,j,ig) = eg;
-                ur(m,radm1::M1_F1,k,j,ig) = (4.0/3.0)*eg*v1;
-                ur(m,radm1::M1_F2,k,j,ig) = 0.0;
-                ur(m,radm1::M1_F3,k,j,ig) = (4.0/3.0)*eg*v3;
-              } else {
-                radm1::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
-              }
-            }
-          }
-        }
-        return;
-      }
+  par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    Real ph = x3v(m,k), sth = 1.0;
+    if (p3) AccAng(cs, cs ? mbp.d_view(m) : 0, x2v(m,j), x3v(m,k), sth, ph);
+    const Real cc = cs ? ccl(m,k,j) : 0.0;
+    if (gen) {
+      // thermo = general: the same BCs through the EOS.  r_in: the local polytrope of
+      // the two edge cells in Phi_wb (WBAdvance polytropic branch); r_out: ghost T = the
+      // edge cell's (floored), density by the isothermal hydrostatic walk of the general
+      // EOS in the TRUE Roche Phi; IEN = e + KE + rho Phi.
       if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
         const Real da = u0(m,IDN,k,j,is);
-        const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
-                              + SQR(u0(m,IM3,k,j,is)))/da;
-        const Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
-        const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
-        const Real pa = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
+        const Real kea = 0.5*AccQ(cs, cc, u0(m,IM1,k,j,is), u0(m,IM2,k,j,is),
+                                  u0(m,IM3,k,j,is))/da;
+        Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
+        Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
+        if (!(ta > tfl)) {
+          ta = tfl;
+          ea = eosd.EnergyFromTemperature(da, ta);
+        }
+        const Real pa = rad ? pwcc(m,k,j,is) :
+                        (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,is), sth, ph)
+                            : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph));
+        // the local polytrope of the two edge cells (wb_option = polytropic): T linear in
+        // Phi_wb with their dT/dPhi, density by the WB polytropic walk, so the ghosts lie
+        // on the edge cell's own WB background
+        Real a = 0.0;
+        {
+          const int i1 = is + 1;
+          const Real d1 = u0(m,IDN,k,j,i1);
+          const Real e1 = u0(m,IEN,k,j,i1) - 0.5*AccQ(cs, cc, u0(m,IM1,k,j,i1),
+                          u0(m,IM2,k,j,i1), u0(m,IM3,k,j,i1))/d1 - d1*phicc(m,k,j,i1);
+          const Real dp1 = (rad ? pwcc(m,k,j,i1) :
+                            (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i1), sth, ph)
+                                : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph))) - pa;
+          if (e1 > 0.0 && dp1 != 0.0) a = (eosd.Temperature(d1, e1, ta) - ta)/dp1;
+        }
         for (int g=0; g<ng; ++g) {
           const int ig = is - 1 - g, im = is + g;
-          const Real pg = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
-          const Real dg = fmax(da*exp(fmin(-(pg - pa)/ta, cap)), dfl);
+          const Real pg = rad ? pwcc(m,k,j,ig) :
+                          (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,ig), sth, ph)
+                              : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph));
+          Real dg = da, eg = ea, tg = ta;
+          WBAdvance(eosd, 3, da, ea, pg - pa, dg, eg, tg, ta, a, ta, ta);
+          if (!(Kokkos::isfinite(dg) && dg > 0.0 && Kokkos::isfinite(eg) && eg > 0.0 &&
+                tg >= tfl)) {
+            dg = da; eg = ea; tg = ta;
+            WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tg, ta, 0.0, ta, ta);
+            if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+            tg = ta;
+          }
+          dg = fmax(fmin(dg, da*exp(cap)), dfl);
+          eg = eosd.EnergyFromTemperature(dg, tg);
           const Real dm = u0(m,IDN,k,j,im);
           const Real v1 = -u0(m,IM1,k,j,im)/dm;
           const Real v2 = u0(m,IM2,k,j,im)/dm;
-          const Real v3 = noslip ? vwall*x1v(m,ig) : u0(m,IM3,k,j,im)/dm;
+          const Real v3 = noslip ? vwall*x1v(m,ig)*sth : u0(m,IM3,k,j,im)/dm;
           u0(m,IDN,k,j,ig) = dg;
           u0(m,IM1,k,j,ig) = dg*v1;
           u0(m,IM2,k,j,ig) = dg*v2;
           u0(m,IM3,k,j,ig) = dg*v3;
-          u0(m,IEN,k,j,ig) = dg*ta/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
-                             + dg*phicc(m,k,j,ig);
+          u0(m,IEN,k,j,ig) = eg + 0.5*dg*AccQ(cs, cc, v1, v2, v3) + dg*phicc(m,k,j,ig);
+          if (rad) radm1::M1FillGhost(ur, m, k, j, ig, k, j, is, 1, 0, -1.0, rcl, refl);
         }
       }
       if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
         const Real dph = WrapPhi(ph - phis);
-        const bool win = strm && (fabs(dph) < wwin);
+        const bool win = strm && !stvol && (fabs(dph) < wwin);
         const Real da = u0(m,IDN,k,j,ie);
         const Real v1a = u0(m,IM1,k,j,ie)/da;
         const Real v2a = u0(m,IM2,k,j,ie)/da;
         const Real v3a = u0(m,IM3,k,j,ie)/da;
-        const Real ea = u0(m,IEN,k,j,ie) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
-                        - da*phicc(m,k,j,ie);
-        const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
-        const Real pa = RochePot(p, x1v(m,ie), ph);
+        Real ea = u0(m,IEN,k,j,ie) - 0.5*da*AccQ(cs, cc, v1a, v2a, v3a)
+                  - da*phicc(m,k,j,ie);
+        Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
+        if (!(ta > tfl)) {
+          ta = tfl;
+          ea = eosd.EnergyFromTemperature(da, ta);
+        }
+        const Real pa = p3 ? RochePot3(p, x1v(m,ie), sth, ph) : RochePot(p, x1v(m,ie), ph);
         for (int g=0; g<ng; ++g) {
           const int ig = ie + 1 + g;
           Real dg, v1, v2, v3, tg;
           if (win) {
             dg = rhos*exp(-0.5*SQR(dph/sig));
-            v1 = vrs; v2 = 0.0; v3 = vps; tg = cstr2;
+            v1 = vrs; v2 = 0.0; v3 = vps; tg = StreamT(stp, tstr, tsf, dph/sig);
           } else {
-            const Real pg = RochePot(p, x1v(m,ig), ph);
-            dg = da*exp(fmin(-(pg - pa)/ta, cap));
+            dg = da;
+            if (ohse) {
+              const Real pg = p3 ? RochePot3(p, x1v(m,ig), sth, ph) : RochePot(p, x1v(m,ig), ph);
+              Real eg = ea, tw = ta;
+              WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
+              if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
+              dg = fmin(dg, da*exp(cap));
+            }
             v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
           }
           dg = fmax(dg, dfl);
@@ -1424,189 +1386,80 @@ void RyPerBCEnv(Mesh *pm) {
           u0(m,IM1,k,j,ig) = dg*v1;
           u0(m,IM2,k,j,ig) = dg*v2;
           u0(m,IM3,k,j,ig) = dg*v3;
-          u0(m,IEN,k,j,ig) = dg*tg/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
-                             + dg*phicc(m,k,j,ig);
-        }
-      }
-    });
-  } else {
-    par_for("ryper_bce", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      const Real ph = x3v(m,k);
-      const Real sth = p3 ? sin(x2v(m,j)) : 1.0;
-      if (gen) {
-        // thermo = general: the same BCs through the EOS.  r_in: the local polytrope of
-        // the two edge cells in Phi_wb (WBAdvance polytropic branch); r_out: ghost T = the
-        // edge cell's (floored), density by the isothermal hydrostatic walk of the general
-        // EOS in the TRUE Roche Phi; IEN = e + KE + rho Phi.
-        if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-          const Real da = u0(m,IDN,k,j,is);
-          const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
-                                + SQR(u0(m,IM3,k,j,is)))/da;
-          Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
-          Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
-          if (!(ta > tfl)) {
-            ta = tfl;
-            ea = eosd.EnergyFromTemperature(da, ta);
-          }
-          const Real pa = rad ? pwcc(m,k,j,is) :
-                          (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,is), sth, ph)
-                              : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph));
-          // the local polytrope of the two edge cells (wb_option = polytropic): T linear in
-          // Phi_wb with their dT/dPhi, density by the WB polytropic walk, so the ghosts lie
-          // on the edge cell's own WB background
-          Real a = 0.0;
-          {
-            const int i1 = is + 1;
-            const Real d1 = u0(m,IDN,k,j,i1);
-            const Real e1 = u0(m,IEN,k,j,i1) - 0.5*(SQR(u0(m,IM1,k,j,i1))
-                            + SQR(u0(m,IM2,k,j,i1)) + SQR(u0(m,IM3,k,j,i1)))/d1
-                            - d1*phicc(m,k,j,i1);
-            const Real dp1 = (rad ? pwcc(m,k,j,i1) :
-                              (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i1), sth, ph)
-                                  : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i1), ph))) - pa;
-            if (e1 > 0.0 && dp1 != 0.0) a = (eosd.Temperature(d1, e1, ta) - ta)/dp1;
-          }
-          for (int g=0; g<ng; ++g) {
-            const int ig = is - 1 - g, im = is + g;
-            const Real pg = rad ? pwcc(m,k,j,ig) :
-                            (p3 ? PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,ig), sth, ph)
-                                : PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph));
-            Real dg = da, eg = ea, tg = ta;
-            WBAdvance(eosd, 3, da, ea, pg - pa, dg, eg, tg, ta, a, ta, ta);
-            if (!(Kokkos::isfinite(dg) && dg > 0.0 && Kokkos::isfinite(eg) && eg > 0.0 &&
-                  tg >= tfl)) {
-              dg = da; eg = ea; tg = ta;
-              WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tg, ta, 0.0, ta, ta);
-              if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
-              tg = ta;
-            }
-            dg = fmax(fmin(dg, da*exp(cap)), dfl);
-            eg = eosd.EnergyFromTemperature(dg, tg);
-            const Real dm = u0(m,IDN,k,j,im);
-            const Real v1 = -u0(m,IM1,k,j,im)/dm;
-            const Real v2 = u0(m,IM2,k,j,im)/dm;
-            const Real v3 = noslip ? vwall*x1v(m,ig)*sth : u0(m,IM3,k,j,im)/dm;
-            u0(m,IDN,k,j,ig) = dg;
-            u0(m,IM1,k,j,ig) = dg*v1;
-            u0(m,IM2,k,j,ig) = dg*v2;
-            u0(m,IM3,k,j,ig) = dg*v3;
-            u0(m,IEN,k,j,ig) = eg + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-            if (rad) radm1::M1FillGhost(ur, m, k, j, ig, k, j, is, 1, 0, -1.0, rcl, refl);
-          }
-        }
-        if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-          const Real dph = WrapPhi(ph - phis);
-          const bool win = strm && !stvol && (fabs(dph) < wwin);
-          const Real da = u0(m,IDN,k,j,ie);
-          const Real v1a = u0(m,IM1,k,j,ie)/da;
-          const Real v2a = u0(m,IM2,k,j,ie)/da;
-          const Real v3a = u0(m,IM3,k,j,ie)/da;
-          Real ea = u0(m,IEN,k,j,ie) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
-                    - da*phicc(m,k,j,ie);
-          Real ta = (ea > 0.0) ? eosd.Temperature(da, ea) : tfl;
-          if (!(ta > tfl)) {
-            ta = tfl;
-            ea = eosd.EnergyFromTemperature(da, ta);
-          }
-          const Real pa = p3 ? RochePot3(p, x1v(m,ie), sth, ph) : RochePot(p, x1v(m,ie), ph);
-          for (int g=0; g<ng; ++g) {
-            const int ig = ie + 1 + g;
-            Real dg, v1, v2, v3, tg;
-            if (win) {
-              dg = rhos*exp(-0.5*SQR(dph/sig));
-              v1 = vrs; v2 = 0.0; v3 = vps; tg = StreamT(stp, tstr, tsf, dph/sig);
+          u0(m,IEN,k,j,ig) = eosd.EnergyFromTemperature(dg, tg)
+                             + 0.5*dg*AccQ(cs, cc, v1, v2, v3) + dg*phicc(m,k,j,ig);
+          if (rad) {
+            if (win && strad) {
+              // problem/stream_rad: the stream's radiation in equilibrium with its gas,
+              // E = a T_s^4, lab-frame flux of optically thick advection (4/3) E v
+              const Real eg = stp ? sar*SQR(SQR(tg)) : sre;
+              ur(m,radm1::M1_E,k,j,ig) = eg;
+              ur(m,radm1::M1_F1,k,j,ig) = (4.0/3.0)*eg*v1;
+              ur(m,radm1::M1_F2,k,j,ig) = 0.0;
+              ur(m,radm1::M1_F3,k,j,ig) = (4.0/3.0)*eg*v3;
             } else {
-              dg = da;
-              if (ohse) {
-                const Real pg = p3 ? RochePot3(p, x1v(m,ig), sth, ph) : RochePot(p, x1v(m,ig), ph);
-                Real eg = ea, tw = ta;
-                WBAdvance(eosd, 1, da, ea, pg - pa, dg, eg, tw, ta, 0.0, ta, ta);
-                if (!(Kokkos::isfinite(dg) && dg > 0.0)) dg = da;
-                dg = fmin(dg, da*exp(cap));
-              }
-              v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
-            }
-            dg = fmax(dg, dfl);
-            u0(m,IDN,k,j,ig) = dg;
-            u0(m,IM1,k,j,ig) = dg*v1;
-            u0(m,IM2,k,j,ig) = dg*v2;
-            u0(m,IM3,k,j,ig) = dg*v3;
-            u0(m,IEN,k,j,ig) = eosd.EnergyFromTemperature(dg, tg)
-                               + 0.5*dg*(v1*v1 + v2*v2 + v3*v3) + dg*phicc(m,k,j,ig);
-            if (rad) {
-              if (win && strad) {
-                // problem/stream_rad: the stream's radiation in equilibrium with its gas,
-                // E = a T_s^4, lab-frame flux of optically thick advection (4/3) E v
-                const Real eg = stp ? sar*SQR(SQR(tg)) : sre;
-                ur(m,radm1::M1_E,k,j,ig) = eg;
-                ur(m,radm1::M1_F1,k,j,ig) = (4.0/3.0)*eg*v1;
-                ur(m,radm1::M1_F2,k,j,ig) = 0.0;
-                ur(m,radm1::M1_F3,k,j,ig) = (4.0/3.0)*eg*v3;
-              } else {
-                radm1::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
-              }
+              radm1::M1FillGhost(ur, m, k, j, ig, k, j, ie, 1, 2, 1.0, rcl, refl);
             }
           }
         }
-        return;
       }
-      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-        const Real da = u0(m,IDN,k,j,is);
-        const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
-                              + SQR(u0(m,IM3,k,j,is)))/da;
-        const Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
-        const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
-        const Real pa = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
-        for (int g=0; g<ng; ++g) {
-          const int ig = is - 1 - g, im = is + g;
-          const Real pg = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
-          const Real dg = fmax(da*exp(fmin(-(pg - pa)/ta, cap)), dfl);
-          const Real dm = u0(m,IDN,k,j,im);
-          const Real v1 = -u0(m,IM1,k,j,im)/dm;
-          const Real v2 = u0(m,IM2,k,j,im)/dm;
-          const Real v3 = noslip ? vwall*x1v(m,ig) : u0(m,IM3,k,j,im)/dm;
-          u0(m,IDN,k,j,ig) = dg;
-          u0(m,IM1,k,j,ig) = dg*v1;
-          u0(m,IM2,k,j,ig) = dg*v2;
-          u0(m,IM3,k,j,ig) = dg*v3;
-          u0(m,IEN,k,j,ig) = dg*ta/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
-                             + dg*phicc(m,k,j,ig);
+      return;
+    }
+    if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      const Real da = u0(m,IDN,k,j,is);
+      const Real kea = 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
+                            + SQR(u0(m,IM3,k,j,is)))/da;
+      const Real ea = u0(m,IEN,k,j,is) - kea - da*phicc(m,k,j,is);
+      const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
+      const Real pa = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,is), ph);
+      for (int g=0; g<ng; ++g) {
+        const int ig = is - 1 - g, im = is + g;
+        const Real pg = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,ig), ph);
+        const Real dg = fmax(da*exp(fmin(-(pg - pa)/ta, cap)), dfl);
+        const Real dm = u0(m,IDN,k,j,im);
+        const Real v1 = -u0(m,IM1,k,j,im)/dm;
+        const Real v2 = u0(m,IM2,k,j,im)/dm;
+        const Real v3 = noslip ? vwall*x1v(m,ig) : u0(m,IM3,k,j,im)/dm;
+        u0(m,IDN,k,j,ig) = dg;
+        u0(m,IM1,k,j,ig) = dg*v1;
+        u0(m,IM2,k,j,ig) = dg*v2;
+        u0(m,IM3,k,j,ig) = dg*v3;
+        u0(m,IEN,k,j,ig) = dg*ta/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
+                           + dg*phicc(m,k,j,ig);
+      }
+    }
+    if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+      const Real dph = WrapPhi(ph - phis);
+      const bool win = strm && (fabs(dph) < wwin);
+      const Real da = u0(m,IDN,k,j,ie);
+      const Real v1a = u0(m,IM1,k,j,ie)/da;
+      const Real v2a = u0(m,IM2,k,j,ie)/da;
+      const Real v3a = u0(m,IM3,k,j,ie)/da;
+      const Real ea = u0(m,IEN,k,j,ie) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
+                      - da*phicc(m,k,j,ie);
+      const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
+      const Real pa = RochePot(p, x1v(m,ie), ph);
+      for (int g=0; g<ng; ++g) {
+        const int ig = ie + 1 + g;
+        Real dg, v1, v2, v3, tg;
+        if (win) {
+          dg = rhos*exp(-0.5*SQR(dph/sig));
+          v1 = vrs; v2 = 0.0; v3 = vps; tg = cstr2;
+        } else {
+          const Real pg = RochePot(p, x1v(m,ig), ph);
+          dg = da*exp(fmin(-(pg - pa)/ta, cap));
+          v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
         }
+        dg = fmax(dg, dfl);
+        u0(m,IDN,k,j,ig) = dg;
+        u0(m,IM1,k,j,ig) = dg*v1;
+        u0(m,IM2,k,j,ig) = dg*v2;
+        u0(m,IM3,k,j,ig) = dg*v3;
+        u0(m,IEN,k,j,ig) = dg*tg/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
+                           + dg*phicc(m,k,j,ig);
       }
-      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-        const Real dph = WrapPhi(ph - phis);
-        const bool win = strm && (fabs(dph) < wwin);
-        const Real da = u0(m,IDN,k,j,ie);
-        const Real v1a = u0(m,IM1,k,j,ie)/da;
-        const Real v2a = u0(m,IM2,k,j,ie)/da;
-        const Real v3a = u0(m,IM3,k,j,ie)/da;
-        const Real ea = u0(m,IEN,k,j,ie) - 0.5*da*(v1a*v1a + v2a*v2a + v3a*v3a)
-                        - da*phicc(m,k,j,ie);
-        const Real ta = fmax(gm1*ea/da, 1.0e-3*cph2);
-        const Real pa = RochePot(p, x1v(m,ie), ph);
-        for (int g=0; g<ng; ++g) {
-          const int ig = ie + 1 + g;
-          Real dg, v1, v2, v3, tg;
-          if (win) {
-            dg = rhos*exp(-0.5*SQR(dph/sig));
-            v1 = vrs; v2 = 0.0; v3 = vps; tg = cstr2;
-          } else {
-            const Real pg = RochePot(p, x1v(m,ig), ph);
-            dg = da*exp(fmin(-(pg - pa)/ta, cap));
-            v1 = fmax(v1a, 0.0); v2 = v2a; v3 = v3a; tg = ta;
-          }
-          dg = fmax(dg, dfl);
-          u0(m,IDN,k,j,ig) = dg;
-          u0(m,IM1,k,j,ig) = dg*v1;
-          u0(m,IM2,k,j,ig) = dg*v2;
-          u0(m,IM3,k,j,ig) = dg*v3;
-          u0(m,IEN,k,j,ig) = dg*tg/gm1 + 0.5*dg*(v1*v1 + v2*v2 + v3*v3)
-                             + dg*phicc(m,k,j,ig);
-        }
-      }
-    });
-  }
+    }
+  });
   // acctrc-1019: the tracer ghosts of the x1 faces, from the ghost densities just written.
   // r_in (closed wall, the face states are mirrored by hydro wall_closed_ix1): the mirror
   // cell's concentrations; r_out: the edge cell's (zero gradient: an unbiased outflow);
@@ -2342,308 +2195,161 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   // csacc-1031: the cubed sphere (Coriolis: core <hydro>/frame_omega; |m|^2 with cos_cell)
   const bool cs = cs_;
   auto &ccl = pmbp->pcoord->cos_cell;
-  // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-  // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-  if (cs_) {
-    par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
-      const Real vr = w0(m,IVX,k,j,i), vp = w0(m,IVZ,k,j,i);
-      // the WB pressure form where the x1 WB reconstruction is on (r <= wb_rmax), the
-      // plain -rho dPhi_wb/dr above it (unsupported ambient: hydro/wb_rmax)
-      Real fg;
-      if ((rmax > 0.0 && x1v(m,i) > rmax) || pwcs(m,k,j,i) > phimax) {
-        fg = d*(p3 ? gpl4(m,k,j,i) : gpl(m,k,i));
+  par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
+    const Real vr = w0(m,IVX,k,j,i), vp = w0(m,IVZ,k,j,i);
+    // the WB pressure form where the x1 WB reconstruction is on (r <= wb_rmax), the
+    // plain -rho dPhi_wb/dr above it (unsupported ambient: hydro/wb_rmax)
+    Real fg;
+    if ((rmax > 0.0 && x1v(m,i) > rmax) || pwcs(m,k,j,i) > phimax) {
+      fg = d*(p3 ? gpl4(m,k,j,i) : gpl(m,k,i));
+    } else {
+      Real d1, pl, d2, pr, d3;
+      WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
+      Real p;
+      if (gen) {
+        p = (e > 0.0) ? eosd.Pressure(d, e) : 0.5*(pl + pr);
       } else {
-        Real d1, pl, d2, pr, d3;
-        WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
-        Real p;
-        if (gen) {
-          p = (e > 0.0) ? eosd.Pressure(d, e) : 0.5*(pl + pr);
-        } else {
-          p = (e > 0.0) ? gm1*e : 0.5*(pl + pr);
-        }
-        fg = (area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))/volume(m,k,j,i);
+        p = (e > 0.0) ? gm1*e : 0.5*(pl + pr);
       }
+      fg = (area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))/volume(m,k,j,i);
+    }
+    if (cs) {
+      // csacc-1031: gravity remainders (gt4/gp4 covariant on e_xi, e_eta); the Coriolis
+      // force is the core frame_omega's (applied before the user sources)
+      u0(m,IM1,k,j,i) += bdt*(fg + d*gr4(m,k,j,i));
+      u0(m,IM2,k,j,i) += bdt*d*gt4(m,k,j,i);
+      u0(m,IM3,k,j,i) += bdt*d*gp4(m,k,j,i);
+    } else if (p3) {
+      // 3-D: gravity remainders on (m,k,j,i), the full Coriolis -2 Omega x v
+      const Real vt = w0(m,IVY,k,j,i);
+      const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
+      u0(m,IM1,k,j,i) += bdt*(fg + d*(gr4(m,k,j,i) + om2*vp*st));
+      u0(m,IM2,k,j,i) += bdt*d*(gt4(m,k,j,i) + om2*vp*cth);
+      if (corlz) {
+        const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, true, m, k, j, i);
+        u0(m,IM3,k,j,i) += bdt*(d*gp4(m,k,j,i) - omc*q/(x1v(m,i)*st*volume(m,k,j,i)));
+      } else {
+        u0(m,IM3,k,j,i) += bdt*d*(gp4(m,k,j,i) - om2*(vr*st + vt*cth));
+      }
+    } else {
+      u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
+      if (corlz) {
+        const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, false, m, k, j, i);
+        u0(m,IM3,k,j,i) += bdt*(d*gp(m,k,i) - omc*q/(x1v(m,i)*volume(m,k,j,i)));
+      } else {
+        u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
+      }
+    }
+    const Real rambc = p3 ? ramb4(m,k,j,i) : ramb(m,k,i);
+    const Real tcolc = p3 ? tcol4(m,k,j,i) : tcol(m,k,i);
+    // relaxation target: the envelope profile inside; outside, material by density
+    // relative to the hydrostatic ambient: denser than env_amb_k x rho_amb(r,phi) is
+    // stream/atmosphere gas (c_ph^2), the rest is the hot ambient (c_amb^2).  Choosing
+    // by temperature or by an absolute density instead heated the stream's thin
+    // leading edge and the atmosphere's top to c_amb (precursor jets at 1700 km/s and
+    // an evaporation wind; tests g_half, a2, 10-06/07).
+    Real ct = p3 ? c2r4(m,k,j,i) : c2r(m,k,i);
+    // Time constants: env_t_relax_env inside, env_t_relax_stream for the stream/atmosphere
+    // gas, env_t_relax for the hot ambient; t <= 0 switches the relaxation off (adiabatic).
+    const bool inside = (ct > cph2*(1.0 + 1.0e-9));
+    Real tr = tri;
+    if (!inside) {
+      const bool dense = (d > kamb*rambc);
+      ct = dense ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
+      tr = dense ? trs : tro;
+    }
+    // local cooling time: t = e_gas/(c a T^4) (1/(kappa_abs rho) + 3 kappa rho H^2): thin
+    // emission by the absorption (Kramers) opacity, diffusion by ES + Kramers; H = (P/rho)/g,
+    // g = G M_a / r^2 (cgs inside, converted to code time); not for the hot ambient
+    if (cool && (inside || d > kamb*rambc) && e > 0.0 && d > 0.0) {
+      const Real c2 = gm1*e/d;                                   // (km/s)^2
+      const Real tk = tfac*c2;                                   // K
+      const Real rc = d*rhou;                                    // g/cc
+      const Real kab = kk0*rc*pow(tk, -3.5);                     // cm^2/g, Kramers
+      const Real hl = fmin(c2*SQR(x1v(m,i))/gma, x1v(m,i))*lu;    // cm
+      const Real eg = e*rhou*vu*vu;                              // erg/cc
+      const Real at4 = 7.5657e-15*SQR(SQR(tk));                  // erg/cc
+      const Real kr = (kes + kab)*rc;
+      tr = eg/(2.99792458e10*at4)*(1.0/(kab*rc) + 3.0*kr*hl*hl)/tu;
+      tr = fmax(tr, tcmin);
+    }
+    if (gen) {
+      // thermo = general: the targets are temperatures.  The envelope and the dense gas
+      // below env_r_hot (the stellar atmosphere) relax to the column T(psi), so the
+      // static IC is not touched; the stream above env_r_hot to env_t_stream; the hot
+      // ambient to env_t_amb.  (env_cool is refused with thermo = general.)
+      if (tr > 0.0 && d > 0.0) {
+        Real tt;
+        if (inside) {
+          tt = tcolc;
+        } else if (d > kamb*rambc) {
+          tt = (x1v(m,i) <= rhot) ? tcolc : tstr;
+        } else {
+          tt = tamb;
+        }
+        u0(m,IEN,k,j,i) += (eosd.EnergyFromTemperature(d, tt) - e)*(1.0 - exp(-bdt/tr));
+      }
+    } else if (tr > 0.0) {
+      u0(m,IEN,k,j,i) += (d*ct/gm1 - e)*(1.0 - exp(-bdt/tr));
+    }
+    // floor sponge (outside the envelope, rho < env_sponge_rho rho_amb): the rotating-
+    // frame velocity decays at 1/t_sponge and is capped at env_v_floor_max; the kinetic
+    // energy removed leaves the total energy (no heating of the floor gas)
+    const Real du = u0(m,IDN,k,j,i);
+    if (!inside && d < fsp*rfl && du > 0.0 && !fspin) {
+      const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+      const Real mq = AccQ(cs, cs ? ccl(m,k,j) : 0.0, m1, m2, m3);   // csacc-1031
+      const Real v = sqrt(mq)/du;
+      Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
+      if (v*f > vcap) f = vcap/v;
+      u0(m,IM1,k,j,i) = f*m1;
+      u0(m,IM2,k,j,i) = f*m2;
+      u0(m,IM3,k,j,i) = f*m3;
+      u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*mq/du;
+    } else if (((!inside && d < fsp*rfl) || (thrho > 0.0 && d < thrho)) && du > 0.0) {
+      // env_sponge_spin: relax to the spin; thinsp-1029: also every cell below env_sponge_thin_rho
+      const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+      const Real m3t = (x1v(m,i) < rspn) ? du*vspn*x1v(m,i)*sin(x2v(m,j)) : 0.0;
+      const Real e3 = m3 - m3t;
+      // csacc-1031: cs runs spin 1 only (m3t = 0, refused otherwise), so the relative triple
+      // is the stored one and its |.|^2 the plain AccQ
+      const Real cq = cs ? ccl(m,k,j) : 0.0;
+      const Real v = sqrt(AccQ(cs, cq, m1, m2, e3))/du;
+      Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
+      if (v*f > vcap) f = vcap/v;
+      const Real n3 = m3t + f*e3;
+      u0(m,IM1,k,j,i) = f*m1;
+      u0(m,IM2,k,j,i) = f*m2;
+      u0(m,IM3,k,j,i) = n3;
       if (cs) {
-        // csacc-1031: gravity remainders (gt4/gp4 covariant on e_xi, e_eta); the Coriolis
-        // force is the core frame_omega's (applied before the user sources)
-        u0(m,IM1,k,j,i) += bdt*(fg + d*gr4(m,k,j,i));
-        u0(m,IM2,k,j,i) += bdt*d*gt4(m,k,j,i);
-        u0(m,IM3,k,j,i) += bdt*d*gp4(m,k,j,i);
-      } else if (p3) {
-        // 3-D: gravity remainders on (m,k,j,i), the full Coriolis -2 Omega x v
-        const Real vt = w0(m,IVY,k,j,i);
-        const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
-        u0(m,IM1,k,j,i) += bdt*(fg + d*(gr4(m,k,j,i) + om2*vp*st));
-        u0(m,IM2,k,j,i) += bdt*d*(gt4(m,k,j,i) + om2*vp*cth);
-        if (corlz) {
-          const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, true, m, k, j, i);
-          u0(m,IM3,k,j,i) += bdt*(d*gp4(m,k,j,i) - omc*q/(x1v(m,i)*st*volume(m,k,j,i)));
-        } else {
-          u0(m,IM3,k,j,i) += bdt*d*(gp4(m,k,j,i) - om2*(vr*st + vt*cth));
-        }
+        u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*AccQ(cs, cq, m1, m2, m3)/du;
       } else {
-        u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
-        if (corlz) {
-          const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, false, m, k, j, i);
-          u0(m,IM3,k,j,i) += bdt*(d*gp(m,k,i) - omc*q/(x1v(m,i)*volume(m,k,j,i)));
-        } else {
-          u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
-        }
-      }
-      const Real rambc = p3 ? ramb4(m,k,j,i) : ramb(m,k,i);
-      const Real tcolc = p3 ? tcol4(m,k,j,i) : tcol(m,k,i);
-      // relaxation target: the envelope profile inside; outside, material by density
-      // relative to the hydrostatic ambient: denser than env_amb_k x rho_amb(r,phi) is
-      // stream/atmosphere gas (c_ph^2), the rest is the hot ambient (c_amb^2).  Choosing
-      // by temperature or by an absolute density instead heated the stream's thin
-      // leading edge and the atmosphere's top to c_amb (precursor jets at 1700 km/s and
-      // an evaporation wind; tests g_half, a2, 10-06/07).
-      Real ct = p3 ? c2r4(m,k,j,i) : c2r(m,k,i);
-      // Time constants: env_t_relax_env inside, env_t_relax_stream for the stream/atmosphere
-      // gas, env_t_relax for the hot ambient; t <= 0 switches the relaxation off (adiabatic).
-      const bool inside = (ct > cph2*(1.0 + 1.0e-9));
-      Real tr = tri;
-      if (!inside) {
-        const bool dense = (d > kamb*rambc);
-        ct = dense ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
-        tr = dense ? trs : tro;
-      }
-      // local cooling time: t = e_gas/(c a T^4) (1/(kappa_abs rho) + 3 kappa rho H^2): thin
-      // emission by the absorption (Kramers) opacity, diffusion by ES + Kramers; H = (P/rho)/g,
-      // g = G M_a / r^2 (cgs inside, converted to code time); not for the hot ambient
-      if (cool && (inside || d > kamb*rambc) && e > 0.0 && d > 0.0) {
-        const Real c2 = gm1*e/d;                                   // (km/s)^2
-        const Real tk = tfac*c2;                                   // K
-        const Real rc = d*rhou;                                    // g/cc
-        const Real kab = kk0*rc*pow(tk, -3.5);                     // cm^2/g, Kramers
-        const Real hl = fmin(c2*SQR(x1v(m,i))/gma, x1v(m,i))*lu;    // cm
-        const Real eg = e*rhou*vu*vu;                              // erg/cc
-        const Real at4 = 7.5657e-15*SQR(SQR(tk));                  // erg/cc
-        const Real kr = (kes + kab)*rc;
-        tr = eg/(2.99792458e10*at4)*(1.0/(kab*rc) + 3.0*kr*hl*hl)/tu;
-        tr = fmax(tr, tcmin);
-      }
-      if (gen) {
-        // thermo = general: the targets are temperatures.  The envelope and the dense gas
-        // below env_r_hot (the stellar atmosphere) relax to the column T(psi), so the
-        // static IC is not touched; the stream above env_r_hot to env_t_stream; the hot
-        // ambient to env_t_amb.  (env_cool is refused with thermo = general.)
-        if (tr > 0.0 && d > 0.0) {
-          Real tt;
-          if (inside) {
-            tt = tcolc;
-          } else if (d > kamb*rambc) {
-            tt = (x1v(m,i) <= rhot) ? tcolc : tstr;
-          } else {
-            tt = tamb;
-          }
-          u0(m,IEN,k,j,i) += (eosd.EnergyFromTemperature(d, tt) - e)*(1.0 - exp(-bdt/tr));
-        }
-      } else if (tr > 0.0) {
-        u0(m,IEN,k,j,i) += (d*ct/gm1 - e)*(1.0 - exp(-bdt/tr));
-      }
-      // floor sponge (outside the envelope, rho < env_sponge_rho rho_amb): the rotating-
-      // frame velocity decays at 1/t_sponge and is capped at env_v_floor_max; the kinetic
-      // energy removed leaves the total energy (no heating of the floor gas)
-      const Real du = u0(m,IDN,k,j,i);
-      if (!inside && d < fsp*rfl && du > 0.0 && !fspin) {
-        const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
-        Real mq = m1*m1 + m2*m2 + m3*m3;
-        if (cs) mq = CsQ(ccl(m,k,j), m1, m2, m3);   // csacc-1031
-        const Real v = sqrt(mq)/du;
-        Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
-        if (v*f > vcap) f = vcap/v;
-        u0(m,IM1,k,j,i) = f*m1;
-        u0(m,IM2,k,j,i) = f*m2;
-        u0(m,IM3,k,j,i) = f*m3;
-        u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*mq/du;
-      } else if (((!inside && d < fsp*rfl) || (thrho > 0.0 && d < thrho)) && du > 0.0) {
-        // env_sponge_spin: relax to the spin; thinsp-1029: also every cell below env_sponge_thin_rho
-        const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
-        const Real m3t = (x1v(m,i) < rspn) ? du*vspn*x1v(m,i)*sin(x2v(m,j)) : 0.0;
-        const Real e3 = m3 - m3t;
-        Real v = sqrt(m1*m1 + m2*m2 + e3*e3)/du;
-        // csacc-1031: spin 1 only (m3t = 0): the plain decay of the covariant triple
-        const Real mqc = cs ? CsQ(ccl(m,k,j), m1, m2, m3) : 0.0;
-        if (cs) v = sqrt(mqc)/du;
-        Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
-        if (v*f > vcap) f = vcap/v;
-        const Real n3 = cs ? f*m3 : m3t + f*e3;
-        u0(m,IM1,k,j,i) = f*m1;
-        u0(m,IM2,k,j,i) = f*m2;
-        u0(m,IM3,k,j,i) = n3;
-        if (cs) {
-          u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*mqc/du;
-        } else {
-          u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/du;
-        }
-      }
-      // accretor-3d-1017: theta sponge (problem/theta_sponge_deg > 0): outside the envelope,
-      // within the layer next to each theta wall, the rotating-frame velocity decays at a rate
-      // rising linearly from 0 at the layer's inner edge to 1/theta_sponge_tau at the wall;
-      // the kinetic energy removed leaves E (booked in Erel with the floor sponge)
-      if (p3 && thsw > 0.0 && (!inside || thse)) {
-        const Real dw = fmin(x2v(m,j) - th0, th1 - x2v(m,j));
-        const Real dd = u0(m,IDN,k,j,i);
-        if (dw < thsw && dd > 0.0) {
-          const Real f = exp(-bdt*(1.0 - dw/thsw)/thtau);
-          const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
-          // target: at rest (default; outside the envelope) or the uniform spin (theta_sponge_env)
-          const Real m3t = (thse && inside && x1v(m,i) < rspn) ? dd*vspn*x1v(m,i)*sin(x2v(m,j))
-                                                               : 0.0;
-          const Real n3 = m3t + f*(m3 - m3t);
-          u0(m,IM1,k,j,i) = f*m1;
-          u0(m,IM2,k,j,i) = f*m2;
-          u0(m,IM3,k,j,i) = n3;
-          u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/dd;
-        }
-      }
-    });
-  } else {
-    par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
-      const Real vr = w0(m,IVX,k,j,i), vp = w0(m,IVZ,k,j,i);
-      // the WB pressure form where the x1 WB reconstruction is on (r <= wb_rmax), the
-      // plain -rho dPhi_wb/dr above it (unsupported ambient: hydro/wb_rmax)
-      Real fg;
-      if ((rmax > 0.0 && x1v(m,i) > rmax) || pwcs(m,k,j,i) > phimax) {
-        fg = d*(p3 ? gpl4(m,k,j,i) : gpl(m,k,i));
-      } else {
-        Real d1, pl, d2, pr, d3;
-        WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
-        Real p;
-        if (gen) {
-          p = (e > 0.0) ? eosd.Pressure(d, e) : 0.5*(pl + pr);
-        } else {
-          p = (e > 0.0) ? gm1*e : 0.5*(pl + pr);
-        }
-        fg = (area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))/volume(m,k,j,i);
-      }
-      if (p3) {
-        // 3-D: gravity remainders on (m,k,j,i), the full Coriolis -2 Omega x v
-        const Real vt = w0(m,IVY,k,j,i);
-        const Real st = sin(x2v(m,j)), cth = cos(x2v(m,j));
-        u0(m,IM1,k,j,i) += bdt*(fg + d*(gr4(m,k,j,i) + om2*vp*st));
-        u0(m,IM2,k,j,i) += bdt*d*(gt4(m,k,j,i) + om2*vp*cth);
-        if (corlz) {
-          const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, true, m, k, j, i);
-          u0(m,IM3,k,j,i) += bdt*(d*gp4(m,k,j,i) - omc*q/(x1v(m,i)*st*volume(m,k,j,i)));
-        } else {
-          u0(m,IM3,k,j,i) += bdt*d*(gp4(m,k,j,i) - om2*(vr*st + vt*cth));
-        }
-      } else {
-        u0(m,IM1,k,j,i) += bdt*(fg + d*(gr(m,k,i) + om2*vp));
-        if (corlz) {
-          const Real q = RyCorLzQ(cf1, cf2, area1, ca2, cx1f, cx2f, x1v, x2v, false, m, k, j, i);
-          u0(m,IM3,k,j,i) += bdt*(d*gp(m,k,i) - omc*q/(x1v(m,i)*volume(m,k,j,i)));
-        } else {
-          u0(m,IM3,k,j,i) += bdt*d*(gp(m,k,i) - om2*vr);
-        }
-      }
-      const Real rambc = p3 ? ramb4(m,k,j,i) : ramb(m,k,i);
-      const Real tcolc = p3 ? tcol4(m,k,j,i) : tcol(m,k,i);
-      // relaxation target: the envelope profile inside; outside, material by density
-      // relative to the hydrostatic ambient: denser than env_amb_k x rho_amb(r,phi) is
-      // stream/atmosphere gas (c_ph^2), the rest is the hot ambient (c_amb^2).  Choosing
-      // by temperature or by an absolute density instead heated the stream's thin
-      // leading edge and the atmosphere's top to c_amb (precursor jets at 1700 km/s and
-      // an evaporation wind; tests g_half, a2, 10-06/07).
-      Real ct = p3 ? c2r4(m,k,j,i) : c2r(m,k,i);
-      // Time constants: env_t_relax_env inside, env_t_relax_stream for the stream/atmosphere
-      // gas, env_t_relax for the hot ambient; t <= 0 switches the relaxation off (adiabatic).
-      const bool inside = (ct > cph2*(1.0 + 1.0e-9));
-      Real tr = tri;
-      if (!inside) {
-        const bool dense = (d > kamb*rambc);
-        ct = dense ? ((x1v(m,i) <= rhot) ? cph2 : cstr2) : camb2;
-        tr = dense ? trs : tro;
-      }
-      // local cooling time: t = e_gas/(c a T^4) (1/(kappa_abs rho) + 3 kappa rho H^2): thin
-      // emission by the absorption (Kramers) opacity, diffusion by ES + Kramers; H = (P/rho)/g,
-      // g = G M_a / r^2 (cgs inside, converted to code time); not for the hot ambient
-      if (cool && (inside || d > kamb*rambc) && e > 0.0 && d > 0.0) {
-        const Real c2 = gm1*e/d;                                   // (km/s)^2
-        const Real tk = tfac*c2;                                   // K
-        const Real rc = d*rhou;                                    // g/cc
-        const Real kab = kk0*rc*pow(tk, -3.5);                     // cm^2/g, Kramers
-        const Real hl = fmin(c2*SQR(x1v(m,i))/gma, x1v(m,i))*lu;    // cm
-        const Real eg = e*rhou*vu*vu;                              // erg/cc
-        const Real at4 = 7.5657e-15*SQR(SQR(tk));                  // erg/cc
-        const Real kr = (kes + kab)*rc;
-        tr = eg/(2.99792458e10*at4)*(1.0/(kab*rc) + 3.0*kr*hl*hl)/tu;
-        tr = fmax(tr, tcmin);
-      }
-      if (gen) {
-        // thermo = general: the targets are temperatures.  The envelope and the dense gas
-        // below env_r_hot (the stellar atmosphere) relax to the column T(psi), so the
-        // static IC is not touched; the stream above env_r_hot to env_t_stream; the hot
-        // ambient to env_t_amb.  (env_cool is refused with thermo = general.)
-        if (tr > 0.0 && d > 0.0) {
-          Real tt;
-          if (inside) {
-            tt = tcolc;
-          } else if (d > kamb*rambc) {
-            tt = (x1v(m,i) <= rhot) ? tcolc : tstr;
-          } else {
-            tt = tamb;
-          }
-          u0(m,IEN,k,j,i) += (eosd.EnergyFromTemperature(d, tt) - e)*(1.0 - exp(-bdt/tr));
-        }
-      } else if (tr > 0.0) {
-        u0(m,IEN,k,j,i) += (d*ct/gm1 - e)*(1.0 - exp(-bdt/tr));
-      }
-      // floor sponge (outside the envelope, rho < env_sponge_rho rho_amb): the rotating-
-      // frame velocity decays at 1/t_sponge and is capped at env_v_floor_max; the kinetic
-      // energy removed leaves the total energy (no heating of the floor gas)
-      const Real du = u0(m,IDN,k,j,i);
-      if (!inside && d < fsp*rfl && du > 0.0 && !fspin) {
-        const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
-        const Real v = sqrt(m1*m1 + m2*m2 + m3*m3)/du;
-        Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
-        if (v*f > vcap) f = vcap/v;
-        u0(m,IM1,k,j,i) = f*m1;
-        u0(m,IM2,k,j,i) = f*m2;
-        u0(m,IM3,k,j,i) = f*m3;
-        u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*(m1*m1 + m2*m2 + m3*m3)/du;
-      } else if (((!inside && d < fsp*rfl) || (thrho > 0.0 && d < thrho)) && du > 0.0) {
-        // env_sponge_spin: relax to the spin; thinsp-1029: also every cell below env_sponge_thin_rho
-        const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
-        const Real m3t = (x1v(m,i) < rspn) ? du*vspn*x1v(m,i)*sin(x2v(m,j)) : 0.0;
-        const Real e3 = m3 - m3t;
-        const Real v = sqrt(m1*m1 + m2*m2 + e3*e3)/du;
-        Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
-        if (v*f > vcap) f = vcap/v;
-        const Real n3 = m3t + f*e3;
-        u0(m,IM1,k,j,i) = f*m1;
-        u0(m,IM2,k,j,i) = f*m2;
-        u0(m,IM3,k,j,i) = n3;
         u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/du;
       }
-      // accretor-3d-1017: theta sponge (problem/theta_sponge_deg > 0): outside the envelope,
-      // within the layer next to each theta wall, the rotating-frame velocity decays at a rate
-      // rising linearly from 0 at the layer's inner edge to 1/theta_sponge_tau at the wall;
-      // the kinetic energy removed leaves E (booked in Erel with the floor sponge)
-      if (p3 && thsw > 0.0 && (!inside || thse)) {
-        const Real dw = fmin(x2v(m,j) - th0, th1 - x2v(m,j));
-        const Real dd = u0(m,IDN,k,j,i);
-        if (dw < thsw && dd > 0.0) {
-          const Real f = exp(-bdt*(1.0 - dw/thsw)/thtau);
-          const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
-          // target: at rest (default; outside the envelope) or the uniform spin (theta_sponge_env)
-          const Real m3t = (thse && inside && x1v(m,i) < rspn) ? dd*vspn*x1v(m,i)*sin(x2v(m,j))
-                                                               : 0.0;
-          const Real n3 = m3t + f*(m3 - m3t);
-          u0(m,IM1,k,j,i) = f*m1;
-          u0(m,IM2,k,j,i) = f*m2;
-          u0(m,IM3,k,j,i) = n3;
-          u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/dd;
-        }
+    }
+    // accretor-3d-1017: theta sponge (problem/theta_sponge_deg > 0): outside the envelope,
+    // within the layer next to each theta wall, the rotating-frame velocity decays at a rate
+    // rising linearly from 0 at the layer's inner edge to 1/theta_sponge_tau at the wall;
+    // the kinetic energy removed leaves E (booked in Erel with the floor sponge)
+    if (p3 && thsw > 0.0 && (!inside || thse)) {
+      const Real dw = fmin(x2v(m,j) - th0, th1 - x2v(m,j));
+      const Real dd = u0(m,IDN,k,j,i);
+      if (dw < thsw && dd > 0.0) {
+        const Real f = exp(-bdt*(1.0 - dw/thsw)/thtau);
+        const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+        // target: at rest (default; outside the envelope) or the uniform spin (theta_sponge_env)
+        const Real m3t = (thse && inside && x1v(m,i) < rspn) ? dd*vspn*x1v(m,i)*sin(x2v(m,j))
+                                                             : 0.0;
+        const Real n3 = m3t + f*(m3 - m3t);
+        u0(m,IM1,k,j,i) = f*m1;
+        u0(m,IM2,k,j,i) = f*m2;
+        u0(m,IM3,k,j,i) = n3;
+        u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/dd;
       }
-    });
-  }
+    }
+  });
   eint_ledger::Mark(pm, "srce");   // floorheat-1029 (no-op unless on)
   // problem/env_amb_mode = radeq: the density floor applied here (the EOS floor then never
   // acts), added gas at the cell's velocity and temperature; its mass is booked (Mfl), its
@@ -2657,100 +2363,48 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     const bool csf = cs_;
     auto &cclf = pmbp->pcoord->cos_cell;
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
-    // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-    // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-    if (cs_) {
-      Kokkos::parallel_reduce("ryper_flr", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                              (nmb1 + 1)*nkji),
-      KOKKOS_LAMBDA(const int idx, Real &sum) {
-        const int m = idx/nkji;
-        const int k = (idx - m*nkji)/nji + ks;
-        const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
-        const int i = idx%ni + is;
-        const Real du = u0(m,IDN,k,j,i);
-        if (!(du < rfl)) return;
-        const Real dw = w0(m,IDN,k,j,i), ew = w0(m,IEN,k,j,i);
-        Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
-        // csacc-1031: on the cubed sphere v1..v3 are COVARIANT velocities (u0 IM/rho) below:
-        // the w0 (contravariant) pair is lowered with cos_cell
-        const Real ccf = csf ? cclf(m,k,j) : 0.0;
-        if (csf) {
-          const Real w2 = v2, w3 = v3;
-          v2 = w2 + ccf*w3; v3 = w3 + ccf*w2;
+    Kokkos::parallel_reduce("ryper_flr", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &sum) {
+      const int m = idx/nkji;
+      const int k = (idx - m*nkji)/nji + ks;
+      const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
+      const int i = idx%ni + is;
+      const Real du = u0(m,IDN,k,j,i);
+      if (!(du < rfl)) return;
+      const Real dw = w0(m,IDN,k,j,i), ew = w0(m,IEN,k,j,i);
+      Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
+      // csacc-1031: on the cubed sphere v1..v3 are COVARIANT velocities (u0 IM/rho) below:
+      // the w0 (contravariant) pair is lowered with cos_cell
+      const Real ccf = csf ? cclf(m,k,j) : 0.0;
+      AccLower(csf, ccf, v2, v3);
+      Real tc = (dw > 0.0 && ew > 0.0) ? eosd.Temperature(dw, ew) : tfl;
+      if (du > 0.0) {
+        v1 = u0(m,IM1,k,j,i)/du; v2 = u0(m,IM2,k,j,i)/du; v3 = u0(m,IM3,k,j,i)/du;
+        const Real ei = u0(m,IEN,k,j,i) - 0.5*du*AccQ(csf, ccf, v1, v2, v3)
+                        - du*phc(m,k,j,i);
+        if (ei > 0.0) tc = eosd.Temperature(du, ei, tc);
+      }
+      if (fmom) {
+        // bigdom-1015 (nozzle/mask runs only): the added gas is at REST, i.e. momentum is
+        // kept (v = m/rho_amb), and |v| is capped at env_v_floor_max.  Next to the dense
+        // L1 nozzle a near-vacuum cell can lose mass to the HLLC flux while the pressure
+        // term gives it momentum: m/du then reached 7e5 km/s (dt collapse, g7 10-15)
+        v1 = u0(m,IM1,k,j,i)/rfl; v2 = u0(m,IM2,k,j,i)/rfl; v3 = u0(m,IM3,k,j,i)/rfl;
+        const Real vv = sqrt(AccQ(csf, ccf, v1, v2, v3));
+        if (vv > vcf) {
+          v1 *= vcf/vv; v2 *= vcf/vv; v3 *= vcf/vv;
         }
-        Real tc = (dw > 0.0 && ew > 0.0) ? eosd.Temperature(dw, ew) : tfl;
-        if (du > 0.0) {
-          v1 = u0(m,IM1,k,j,i)/du; v2 = u0(m,IM2,k,j,i)/du; v3 = u0(m,IM3,k,j,i)/du;
-          Real ei = u0(m,IEN,k,j,i) - 0.5*du*(v1*v1 + v2*v2 + v3*v3)
-                    - du*phc(m,k,j,i);
-          if (csf) ei = u0(m,IEN,k,j,i) - 0.5*du*CsQ(ccf, v1, v2, v3) - du*phc(m,k,j,i);
-          if (ei > 0.0) tc = eosd.Temperature(du, ei, tc);
-        }
-        if (fmom) {
-          // bigdom-1015 (nozzle/mask runs only): the added gas is at REST, i.e. momentum is
-          // kept (v = m/rho_amb), and |v| is capped at env_v_floor_max.  Next to the dense
-          // L1 nozzle a near-vacuum cell can lose mass to the HLLC flux while the pressure
-          // term gives it momentum: m/du then reached 7e5 km/s (dt collapse, g7 10-15)
-          v1 = u0(m,IM1,k,j,i)/rfl; v2 = u0(m,IM2,k,j,i)/rfl; v3 = u0(m,IM3,k,j,i)/rfl;
-          Real vv = sqrt(v1*v1 + v2*v2 + v3*v3);
-          if (csf) vv = sqrt(CsQ(ccf, v1, v2, v3));
-          if (vv > vcf) {
-            v1 *= vcf/vv; v2 *= vcf/vv; v3 *= vcf/vv;
-          }
-        }
-        tc = fmax(tc, tfl);
-        u0(m,IDN,k,j,i) = rfl;
-        u0(m,IM1,k,j,i) = rfl*v1;
-        u0(m,IM2,k,j,i) = rfl*v2;
-        u0(m,IM3,k,j,i) = rfl*v3;
-        u0(m,IEN,k,j,i) = eosd.EnergyFromTemperature(rfl, tc)
-                          + 0.5*rfl*(v1*v1 + v2*v2 + v3*v3) + rfl*phc(m,k,j,i);
-        if (csf) {
-          u0(m,IEN,k,j,i) = eosd.EnergyFromTemperature(rfl, tc) + 0.5*rfl*CsQ(ccf, v1, v2, v3)
-                            + rfl*phc(m,k,j,i);
-        }
-        sum += (rfl - du)*volume(m,k,j,i);
-      }, Kokkos::Sum<Real>(dmfl));
-    } else {
-      Kokkos::parallel_reduce("ryper_flr", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                              (nmb1 + 1)*nkji),
-      KOKKOS_LAMBDA(const int idx, Real &sum) {
-        const int m = idx/nkji;
-        const int k = (idx - m*nkji)/nji + ks;
-        const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
-        const int i = idx%ni + is;
-        const Real du = u0(m,IDN,k,j,i);
-        if (!(du < rfl)) return;
-        const Real dw = w0(m,IDN,k,j,i), ew = w0(m,IEN,k,j,i);
-        Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
-        Real tc = (dw > 0.0 && ew > 0.0) ? eosd.Temperature(dw, ew) : tfl;
-        if (du > 0.0) {
-          v1 = u0(m,IM1,k,j,i)/du; v2 = u0(m,IM2,k,j,i)/du; v3 = u0(m,IM3,k,j,i)/du;
-          const Real ei = u0(m,IEN,k,j,i) - 0.5*du*(v1*v1 + v2*v2 + v3*v3)
-                          - du*phc(m,k,j,i);
-          if (ei > 0.0) tc = eosd.Temperature(du, ei, tc);
-        }
-        if (fmom) {
-          // bigdom-1015 (nozzle/mask runs only): the added gas is at REST, i.e. momentum is
-          // kept (v = m/rho_amb), and |v| is capped at env_v_floor_max.  Next to the dense
-          // L1 nozzle a near-vacuum cell can lose mass to the HLLC flux while the pressure
-          // term gives it momentum: m/du then reached 7e5 km/s (dt collapse, g7 10-15)
-          v1 = u0(m,IM1,k,j,i)/rfl; v2 = u0(m,IM2,k,j,i)/rfl; v3 = u0(m,IM3,k,j,i)/rfl;
-          const Real vv = sqrt(v1*v1 + v2*v2 + v3*v3);
-          if (vv > vcf) {
-            v1 *= vcf/vv; v2 *= vcf/vv; v3 *= vcf/vv;
-          }
-        }
-        tc = fmax(tc, tfl);
-        u0(m,IDN,k,j,i) = rfl;
-        u0(m,IM1,k,j,i) = rfl*v1;
-        u0(m,IM2,k,j,i) = rfl*v2;
-        u0(m,IM3,k,j,i) = rfl*v3;
-        u0(m,IEN,k,j,i) = eosd.EnergyFromTemperature(rfl, tc)
-                          + 0.5*rfl*(v1*v1 + v2*v2 + v3*v3) + rfl*phc(m,k,j,i);
-        sum += (rfl - du)*volume(m,k,j,i);
-      }, Kokkos::Sum<Real>(dmfl));
-    }
+      }
+      tc = fmax(tc, tfl);
+      u0(m,IDN,k,j,i) = rfl;
+      u0(m,IM1,k,j,i) = rfl*v1;
+      u0(m,IM2,k,j,i) = rfl*v2;
+      u0(m,IM3,k,j,i) = rfl*v3;
+      u0(m,IEN,k,j,i) = eosd.EnergyFromTemperature(rfl, tc)
+                        + 0.5*rfl*AccQ(csf, ccf, v1, v2, v3) + rfl*phc(m,k,j,i);
+      sum += (rfl - du)*volume(m,k,j,i);
+    }, Kokkos::Sum<Real>(dmfl));
   }
   eint_ledger::Mark(pm, "floor");
   // accspin-1028: the spin ramp's torque, once per step (the last stage, after the RK
@@ -3126,158 +2780,80 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   const bool csr = cs_;   // csacc-1031: L_z of the x1 faces from the Cartesian r x F
   auto &mbpr = pmbp->pmb->mb_panel;
   array_sum::GlobalSum fs;
-  // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-  // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-  if (cs_) {
-    Kokkos::parallel_reduce("ryper_flxe", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
-    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
-      const int m = idx/(nk*nj);
-      const int k = (idx - m*nk*nj)/nj + ks;
-      const int j = idx%nj + js;
-      array_sum::GlobalSum v;
-      for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
-      const Real sj = p3 ? sin(x2vf(m,j)) : 1.0;
-      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-        const Real a = area1(m,k,j,is), r = p3 ? xf(m,is)*sj : xf(m,is);
-        const Real fd = flx(m,IDN,k,j,is), f3 = flx(m,IM3,k,j,is);
-        v.the_array[2] = -fd*a;
-        v.the_array[3] = -(f3 + om*r*fd)*r*a;
-        v.the_array[4] = -(f3 - fd*w0(m,IVZ,k,j,is))*r*a;
-        if (csr) {
-          v.the_array[3] = -CsJz(mbpr.d_view(m), x2vf(m,j), x3v(m,k), xf(m,is),
-                                 flx(m,IM1,k,j,is), flx(m,IM2,k,j,is), f3, fd, om)*a;
-          v.the_array[4] = 0.0;   // Jstr (wall stress): not on the cubed sphere
-        }
-        if (rad) v.the_array[9] = fin*a;
+  Kokkos::parallel_reduce("ryper_flxe", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+    const int m = idx/(nk*nj);
+    const int k = (idx - m*nk*nj)/nj + ks;
+    const int j = idx%nj + js;
+    array_sum::GlobalSum v;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+    const Real sj = p3 ? sin(x2vf(m,j)) : 1.0;
+    if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      const Real a = area1(m,k,j,is), r = p3 ? xf(m,is)*sj : xf(m,is);
+      const Real fd = flx(m,IDN,k,j,is), f3 = flx(m,IM3,k,j,is);
+      v.the_array[2] = -fd*a;
+      const int pnr = csr ? mbpr.d_view(m) : 0;
+      v.the_array[3] = -AccJzFace(csr, pnr, x2vf(m,j), x3v(m,k), xf(m,is), r,
+                                  flx(m,IM1,k,j,is), flx(m,IM2,k,j,is), f3, fd, om)*a;
+      // Jstr (wall stress): spherical polar only
+      v.the_array[4] = csr ? 0.0 : -(f3 - fd*w0(m,IVZ,k,j,is))*r*a;
+      if (rad) v.the_array[9] = fin*a;
+    }
+    if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+      const Real a = area1(m,k,j,ie+1), r = p3 ? xf(m,ie+1)*sj : xf(m,ie+1);
+      const Real fd = flx(m,IDN,k,j,ie+1), f3 = flx(m,IM3,k,j,ie+1);
+      const bool win = strm && (fabs(WrapPhi(x3v(m,k) - phis)) < wwin);
+      if (win) {
+        v.the_array[0] = -fd*a;
+        v.the_array[8] = -(f3 + om*r*fd)*r*a;
+      } else {
+        v.the_array[1] = fd*a;
       }
-      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-        const Real a = area1(m,k,j,ie+1), r = p3 ? xf(m,ie+1)*sj : xf(m,ie+1);
-        const Real fd = flx(m,IDN,k,j,ie+1), f3 = flx(m,IM3,k,j,ie+1);
-        const bool win = strm && (fabs(WrapPhi(x3v(m,k) - phis)) < wwin);
-        if (win) {
-          v.the_array[0] = -fd*a;
-          v.the_array[8] = -(f3 + om*r*fd)*r*a;
-        } else {
-          v.the_array[1] = fd*a;
-        }
-        v.the_array[5] = (f3 + om*r*fd)*r*a;
-        if (csr) {
-          v.the_array[5] = CsJz(mbpr.d_view(m), x2vf(m,j), x3v(m,k), xf(m,ie+1),
-                                flx(m,IM1,k,j,ie+1), flx(m,IM2,k,j,ie+1), f3, fd, om)*a;
-        }
-        if (rad) {
-          if (haveff && !rbkv) v.the_array[10] = ff0(m,k,j,ie+1)*a;
-          if (hbdv && !rbkv) v.the_array[10] += bdv(m,k,j)*a;
-          v.the_array[11] = flx(m,IEN,k,j,ie+1)*a;
-        }
+      v.the_array[5] = AccJzFace(csr, csr ? mbpr.d_view(m) : 0, x2vf(m,j), x3v(m,k),
+                                 xf(m,ie+1), r, flx(m,IM1,k,j,ie+1), flx(m,IM2,k,j,ie+1),
+                                 f3, fd, om)*a;
+      if (rad) {
+        if (haveff && !rbkv) v.the_array[10] = ff0(m,k,j,ie+1)*a;
+        if (hbdv && !rbkv) v.the_array[10] += bdv(m,k,j)*a;
+        v.the_array[11] = flx(m,IEN,k,j,ie+1)*a;
       }
-      // theta_bc = outflow: mass, inertial Lz and hydro energy (incl. rho Phi) out through the
-      // theta walls join Mout (1), Jout (5) and the hydro energy out (11)
-      if (thf) {
-        for (int sd=0; sd<2; ++sd) {
-          if (sd == 0 && !(j == js && mbbcs.d_view(m, BoundaryFace::inner_x2) ==
-                           BoundaryFlag::user)) continue;
-          if (sd == 1 && !(j == je && mbbcs.d_view(m, BoundaryFace::outer_x2) ==
-                           BoundaryFlag::user)) continue;
-          const int jf = (sd == 0) ? js : je + 1;
-          const Real sg = (sd == 0) ? -1.0 : 1.0;
-          const Real sf = sin(x2ff(m,jf));
-          for (int i=is; i<=ie; ++i) {
-            const Real a = area2(m,k,jf,i), rr = x1v(m,i)*sf;
-            const Real fd = flx2(m,IDN,k,jf,i), f3 = flx2(m,IM3,k,jf,i);
-            v.the_array[1] += sg*fd*a;
-            v.the_array[5] += sg*(f3 + om*rr*fd)*rr*a;
-            if (rad) v.the_array[11] += sg*flx2(m,IEN,k,jf,i)*a;
-          }
+    }
+    // theta_bc = outflow: mass, inertial Lz and hydro energy (incl. rho Phi) out through the
+    // theta walls join Mout (1), Jout (5) and the hydro energy out (11)
+    if (thf) {
+      for (int sd=0; sd<2; ++sd) {
+        if (sd == 0 && !(j == js && mbbcs.d_view(m, BoundaryFace::inner_x2) ==
+                         BoundaryFlag::user)) continue;
+        if (sd == 1 && !(j == je && mbbcs.d_view(m, BoundaryFace::outer_x2) ==
+                         BoundaryFlag::user)) continue;
+        const int jf = (sd == 0) ? js : je + 1;
+        const Real sg = (sd == 0) ? -1.0 : 1.0;
+        const Real sf = sin(x2ff(m,jf));
+        for (int i=is; i<=ie; ++i) {
+          const Real a = area2(m,k,jf,i), rr = x1v(m,i)*sf;
+          const Real fd = flx2(m,IDN,k,jf,i), f3 = flx2(m,IM3,k,jf,i);
+          v.the_array[1] += sg*fd*a;
+          v.the_array[5] += sg*(f3 + om*rr*fd)*rr*a;
+          if (rad) v.the_array[11] += sg*flx2(m,IEN,k,jf,i)*a;
         }
       }
-      const int ir = ira(m);
-      if (ir >= 0) {
-        const Real a = area1(m,k,j,ir), r = p3 ? xf(m,ir)*sj : xf(m,ir);
-        const Real fd = flx(m,IDN,k,j,ir), f3 = flx(m,IM3,k,j,ir);
-        v.the_array[6] = -fd*a;
-        v.the_array[7] = -(f3 + om*r*fd)*r*a;
-        if (csr) {
-          v.the_array[7] = -CsJz(mbpr.d_view(m), x2vf(m,j), x3v(m,k), xf(m,ir),
-                                 flx(m,IM1,k,j,ir), flx(m,IM2,k,j,ir), f3, fd, om)*a;
-        }
-      }
-      // the nozzle's inner face (Mnzf), inside its phi window
-      if (nzif >= 0 && fabs(WrapPhi(x3v(m,k) - phis)) < wwin &&
-          (!g3f || fabs(xf(m,nzif)*cos(x2vf(m,j))) < wzf)) {
-        v.the_array[13] = -flx(m,IDN,k,j,nzif)*area1(m,k,j,nzif);
-      }
-      sum += v;
-    }, Kokkos::Sum<array_sum::GlobalSum>(fs));
-  } else {
-    Kokkos::parallel_reduce("ryper_flxe", Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
-    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
-      const int m = idx/(nk*nj);
-      const int k = (idx - m*nk*nj)/nj + ks;
-      const int j = idx%nj + js;
-      array_sum::GlobalSum v;
-      for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
-      const Real sj = p3 ? sin(x2vf(m,j)) : 1.0;
-      if (mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-        const Real a = area1(m,k,j,is), r = p3 ? xf(m,is)*sj : xf(m,is);
-        const Real fd = flx(m,IDN,k,j,is), f3 = flx(m,IM3,k,j,is);
-        v.the_array[2] = -fd*a;
-        v.the_array[3] = -(f3 + om*r*fd)*r*a;
-        v.the_array[4] = -(f3 - fd*w0(m,IVZ,k,j,is))*r*a;
-        if (rad) v.the_array[9] = fin*a;
-      }
-      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-        const Real a = area1(m,k,j,ie+1), r = p3 ? xf(m,ie+1)*sj : xf(m,ie+1);
-        const Real fd = flx(m,IDN,k,j,ie+1), f3 = flx(m,IM3,k,j,ie+1);
-        const bool win = strm && (fabs(WrapPhi(x3v(m,k) - phis)) < wwin);
-        if (win) {
-          v.the_array[0] = -fd*a;
-          v.the_array[8] = -(f3 + om*r*fd)*r*a;
-        } else {
-          v.the_array[1] = fd*a;
-        }
-        v.the_array[5] = (f3 + om*r*fd)*r*a;
-        if (rad) {
-          if (haveff && !rbkv) v.the_array[10] = ff0(m,k,j,ie+1)*a;
-          if (hbdv && !rbkv) v.the_array[10] += bdv(m,k,j)*a;
-          v.the_array[11] = flx(m,IEN,k,j,ie+1)*a;
-        }
-      }
-      // theta_bc = outflow: mass, inertial Lz and hydro energy (incl. rho Phi) out through the
-      // theta walls join Mout (1), Jout (5) and the hydro energy out (11)
-      if (thf) {
-        for (int sd=0; sd<2; ++sd) {
-          if (sd == 0 && !(j == js && mbbcs.d_view(m, BoundaryFace::inner_x2) ==
-                           BoundaryFlag::user)) continue;
-          if (sd == 1 && !(j == je && mbbcs.d_view(m, BoundaryFace::outer_x2) ==
-                           BoundaryFlag::user)) continue;
-          const int jf = (sd == 0) ? js : je + 1;
-          const Real sg = (sd == 0) ? -1.0 : 1.0;
-          const Real sf = sin(x2ff(m,jf));
-          for (int i=is; i<=ie; ++i) {
-            const Real a = area2(m,k,jf,i), rr = x1v(m,i)*sf;
-            const Real fd = flx2(m,IDN,k,jf,i), f3 = flx2(m,IM3,k,jf,i);
-            v.the_array[1] += sg*fd*a;
-            v.the_array[5] += sg*(f3 + om*rr*fd)*rr*a;
-            if (rad) v.the_array[11] += sg*flx2(m,IEN,k,jf,i)*a;
-          }
-        }
-      }
-      const int ir = ira(m);
-      if (ir >= 0) {
-        const Real a = area1(m,k,j,ir), r = p3 ? xf(m,ir)*sj : xf(m,ir);
-        const Real fd = flx(m,IDN,k,j,ir), f3 = flx(m,IM3,k,j,ir);
-        v.the_array[6] = -fd*a;
-        v.the_array[7] = -(f3 + om*r*fd)*r*a;
-      }
-      // the nozzle's inner face (Mnzf), inside its phi window
-      if (nzif >= 0 && fabs(WrapPhi(x3v(m,k) - phis)) < wwin &&
-          (!g3f || fabs(xf(m,nzif)*cos(x2vf(m,j))) < wzf)) {
-        v.the_array[13] = -flx(m,IDN,k,j,nzif)*area1(m,k,j,nzif);
-      }
-      sum += v;
-    }, Kokkos::Sum<array_sum::GlobalSum>(fs));
-  }
+    }
+    const int ir = ira(m);
+    if (ir >= 0) {
+      const Real a = area1(m,k,j,ir), r = p3 ? xf(m,ir)*sj : xf(m,ir);
+      const Real fd = flx(m,IDN,k,j,ir), f3 = flx(m,IM3,k,j,ir);
+      v.the_array[6] = -fd*a;
+      v.the_array[7] = -AccJzFace(csr, csr ? mbpr.d_view(m) : 0, x2vf(m,j), x3v(m,k),
+                                  xf(m,ir), r, flx(m,IM1,k,j,ir), flx(m,IM2,k,j,ir), f3, fd,
+                                  om)*a;
+    }
+    // the nozzle's inner face (Mnzf), inside its phi window
+    if (nzif >= 0 && fabs(WrapPhi(x3v(m,k) - phis)) < wwin &&
+        (!g3f || fabs(xf(m,nzif)*cos(x2vf(m,j))) < wzf)) {
+      v.the_array[13] = -flx(m,IDN,k,j,nzif)*area1(m,k,j,nzif);
+    }
+    sum += v;
+  }, Kokkos::Sum<array_sum::GlobalSum>(fs));
 
   const int s = stage_ctr_ % nstages_;
   const int nacc = rad ? kNaccR : kNacc;
@@ -3540,96 +3116,51 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   DvceArray4D<Real> amspin;
   if (amsp) amspin = pamh->am_spin;
   array_sum::GlobalSum s;
-  // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-  // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-  if (cs_) {
-    Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                            nmb*nkji),
-    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
-      const int m = idx/nkji;
-      const int k = (idx - m*nkji)/nji + ks;
-      const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
-      const int i = idx%nx1 + is;
-      array_sum::GlobalSum v;
-      for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
-      const Real dv = vol(m,k,j,i), r = x1v(m,i), d = u0(m,IDN,k,j,i);
-      // phys_3d: the cylindrical radius about the accretor's z axis
-      const Real rz = p3 ? r*sin(x2v(m,j)) : r;
-      Real jz = dv*rz*(u0(m,IM3,k,j,i) + om*rz*d);
-      if (cs) {
-        jz = dv*CsJz(mbp.d_view(m), x2v(m,j), x3h(m,k), r, u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
-                     u0(m,IM3,k,j,i), d, om);
-        if (amsp) {
-          Real st, ph, ct;
-          CsAng(mbp.d_view(m), x2v(m,j), x3h(m,k), st, ph, ct);
-          jz += amspin(m,k,j,i)*ct;
-        }
+  Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    const int i = idx%nx1 + is;
+    array_sum::GlobalSum v;
+    for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
+    const Real dv = vol(m,k,j,i), r = x1v(m,i), d = u0(m,IDN,k,j,i);
+    // phys_3d: the cylindrical radius about the accretor's z axis
+    const Real rz = p3 ? r*sin(x2v(m,j)) : r;
+    const int pnh = cs ? mbp.d_view(m) : 0;
+    Real jz = AccJzCell(cs, pnh, x2v(m,j), x3h(m,k), r, rz, dv, u0(m,IM1,k,j,i),
+                        u0(m,IM2,k,j,i), u0(m,IM3,k,j,i), d, om);
+    if (cs) {
+      if (amsp) {
+        Real st, ph, ct;
+        CsAng(mbp.d_view(m), x2v(m,j), x3h(m,k), st, ph, ct);
+        jz += amspin(m,k,j,i)*ct;
       }
-      v.the_array[0] = dv*d;
-      v.the_array[1] = jz;
+    }
+    v.the_array[0] = dv*d;
+    v.the_array[1] = jz;
+    if (r < racc) {
+      v.the_array[2] = dv*d;
+      v.the_array[3] = jz;
+    }
+    if (rad) {
+      const Real er = ur(m,radm1::M1_E,k,j,i);
+      v.the_array[4] = dv*er;
+      v.the_array[5] = dv*(u0(m,IEN,k,j,i) + er);
       if (r < racc) {
-        v.the_array[2] = dv*d;
-        v.the_array[3] = jz;
+        v.the_array[6] = dv*0.5*AccQ(cs, cs ? ccl(m,k,j) : 0.0, u0(m,IM1,k,j,i),
+                                     u0(m,IM2,k,j,i), u0(m,IM3,k,j,i))/d;
       }
-      if (rad) {
-        const Real er = ur(m,radm1::M1_E,k,j,i);
-        v.the_array[4] = dv*er;
-        v.the_array[5] = dv*(u0(m,IEN,k,j,i) + er);
-        if (r < racc) {
-          v.the_array[6] = dv*0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
-                                   + SQR(u0(m,IM3,k,j,i)))/d;
-          if (cs) {
-            v.the_array[6] = dv*0.5*CsQ(ccl(m,k,j), u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
-                                        u0(m,IM3,k,j,i))/d;
-          }
-        }
-        if (haveff) {
-          if (i == ira(m)) v.the_array[7] = ff0(m,k,j,i)*area1(m,k,j,i);
-          if (i == ie && mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-            v.the_array[8] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
-          }
+      if (haveff) {
+        if (i == ira(m)) v.the_array[7] = ff0(m,k,j,i)*area1(m,k,j,i);
+        if (i == ie && mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
+          v.the_array[8] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
         }
       }
-      sum += v;
-    }, Kokkos::Sum<array_sum::GlobalSum>(s));
-  } else {
-    Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                            nmb*nkji),
-    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &sum) {
-      const int m = idx/nkji;
-      const int k = (idx - m*nkji)/nji + ks;
-      const int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
-      const int i = idx%nx1 + is;
-      array_sum::GlobalSum v;
-      for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
-      const Real dv = vol(m,k,j,i), r = x1v(m,i), d = u0(m,IDN,k,j,i);
-      // phys_3d: the cylindrical radius about the accretor's z axis
-      const Real rz = p3 ? r*sin(x2v(m,j)) : r;
-      const Real jz = dv*rz*(u0(m,IM3,k,j,i) + om*rz*d);
-      v.the_array[0] = dv*d;
-      v.the_array[1] = jz;
-      if (r < racc) {
-        v.the_array[2] = dv*d;
-        v.the_array[3] = jz;
-      }
-      if (rad) {
-        const Real er = ur(m,radm1::M1_E,k,j,i);
-        v.the_array[4] = dv*er;
-        v.the_array[5] = dv*(u0(m,IEN,k,j,i) + er);
-        if (r < racc) {
-          v.the_array[6] = dv*0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
-                                   + SQR(u0(m,IM3,k,j,i)))/d;
-        }
-        if (haveff) {
-          if (i == ira(m)) v.the_array[7] = ff0(m,k,j,i)*area1(m,k,j,i);
-          if (i == ie && mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user) {
-            v.the_array[8] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
-          }
-        }
-      }
-      sum += v;
-    }, Kokkos::Sum<array_sum::GlobalSum>(s));
-  }
+    }
+    sum += v;
+  }, Kokkos::Sum<array_sum::GlobalSum>(s));
 
   // problem/dt_report (bigdom-1015): which cell sets the hydro dt, at every hst output.
   // accretor-3d-1017: the GLOBAL minimum over the ranks (MPI MINLOC of each rank's own
@@ -4720,77 +4251,41 @@ void EnvSpinGrav(MeshBlockPack *pmbp, const Real racc, const Real rho_amb, const
     const Real aeq = RochePot(p, racc, 0.5*M_PI);
     const bool cs = cs_;
     auto &mbp = pmbp->pmb->mb_panel;
-    // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-    // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-    if (cs_) {
-      par_for("ryper_gre3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (cs) {
-          // csacc-1031: the cubed sphere.  gt/gp are the COVARIANT tangential forces on the
-          // unit tangents e_xi, e_eta (the stored momentum basis): face differences of the
-          // true Phi along the x2 (x3) line through the centre, a great circle of the
-          // gnomonic chart, over its arc between the two faces
-          const int pnl = mbp.d_view(m);
-          const Real rl = x1f(m,i), rr = x1f(m,i+1), r = x1v(m,i);
-          Real st, ph, ct, sa, pa, sb, pb;
-          CsAng(pnl, x2c(m,j), x3v(m,k), st, ph, ct);
-          const Real wr = PhiWB3(p, dlt, rtop, rspin, phtop, rr, st, ph);
-          const Real wl = PhiWB3(p, dlt, rtop, rspin, phtop, rl, st, ph);
-          gr(m,k,j,i) = -((RochePot3(p, rr, st, ph) - wr) - (RochePot3(p, rl, st, ph) - wl))
-                        /(rr - rl);
-          gpl(m,k,j,i) = -(wr - wl)/(rr - rl);
-          CsAng(pnl, x2fc(m,j), x3v(m,k), sa, pa, ct);
-          CsAng(pnl, x2fc(m,j+1), x3v(m,k), sb, pb, ct);
-          gt(m,k,j,i) = -(RochePot3(p, r, sb, pb) - RochePot3(p, r, sa, pa))
-                        /(r*CsArc(pnl, x2fc(m,j), x3v(m,k), x2fc(m,j+1), x3v(m,k)));
-          CsAng(pnl, x2c(m,j), x3f(m,k), sa, pa, ct);
-          CsAng(pnl, x2c(m,j), x3f(m,k+1), sb, pb, ct);
-          gp(m,k,j,i) = -(RochePot3(p, r, sb, pb) - RochePot3(p, r, sa, pa))
-                        /(r*CsArc(pnl, x2c(m,j), x3f(m,k), x2c(m,j), x3f(m,k+1)));
-          const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph);
-          c2r(m,k,j,i) = EnvC2(psi, cph2, np);
-          const Real dph = RochePot3(p, r, st, ph) - (eqtop ? aeq : RochePot3(p, racc, st, ph));
-          ra(m,k,j,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
-          return;
-        }
-        const Real rl = x1f(m,i), rr = x1f(m,i+1), r = x1v(m,i), ph = x3v(m,k);
-        const Real th = x2c(m,j), st = sin(th);
-        const Real tl = x2fc(m,j), tr = x2fc(m,j+1);
-        const Real wr = PhiWB3(p, dlt, rtop, rspin, phtop, rr, st, ph);
-        const Real wl = PhiWB3(p, dlt, rtop, rspin, phtop, rl, st, ph);
-        gr(m,k,j,i) = -((RochePot3(p, rr, st, ph) - wr) - (RochePot3(p, rl, st, ph) - wl))
-                      /(rr - rl);
-        gpl(m,k,j,i) = -(wr - wl)/(rr - rl);
-        gt(m,k,j,i) = -(RochePot3(p, r, sin(tr), ph) - RochePot3(p, r, sin(tl), ph))
-                      /(r*(tr - tl));
-        gp(m,k,j,i) = -(RochePot3(p, r, st, x3f(m,k+1)) - RochePot3(p, r, st, x3f(m,k)))
-                      /(r*st*(x3f(m,k+1) - x3f(m,k)));
-        const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph);
-        c2r(m,k,j,i) = EnvC2(psi, cph2, np);
-        const Real dph = RochePot3(p, r, st, ph) - (eqtop ? aeq : RochePot3(p, racc, st, ph));
-        ra(m,k,j,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
-      });
-    } else {
-      par_for("ryper_gre3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real rl = x1f(m,i), rr = x1f(m,i+1), r = x1v(m,i), ph = x3v(m,k);
-        const Real th = x2c(m,j), st = sin(th);
-        const Real tl = x2fc(m,j), tr = x2fc(m,j+1);
-        const Real wr = PhiWB3(p, dlt, rtop, rspin, phtop, rr, st, ph);
-        const Real wl = PhiWB3(p, dlt, rtop, rspin, phtop, rl, st, ph);
-        gr(m,k,j,i) = -((RochePot3(p, rr, st, ph) - wr) - (RochePot3(p, rl, st, ph) - wl))
-                      /(rr - rl);
-        gpl(m,k,j,i) = -(wr - wl)/(rr - rl);
-        gt(m,k,j,i) = -(RochePot3(p, r, sin(tr), ph) - RochePot3(p, r, sin(tl), ph))
-                      /(r*(tr - tl));
-        gp(m,k,j,i) = -(RochePot3(p, r, st, x3f(m,k+1)) - RochePot3(p, r, st, x3f(m,k)))
-                      /(r*st*(x3f(m,k+1) - x3f(m,k)));
-        const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph);
-        c2r(m,k,j,i) = EnvC2(psi, cph2, np);
-        const Real dph = RochePot3(p, r, st, ph) - (eqtop ? aeq : RochePot3(p, racc, st, ph));
-        ra(m,k,j,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
-      });
-    }
+    par_for("ryper_gre3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // csacc-1031: the tangential forces gt/gp are the face differences of the true Phi
+      // along the x2 (x3) grid line through the centre over its length between the two
+      // faces (the geometry front-end): sp r dtheta, r sin(theta) dphi (orthonormal
+      // components); cs r x the arc of the gnomonic grid line (a great circle), i.e. the
+      // COVARIANT components on the unit tangents e_xi, e_eta (the stored momentum basis)
+      const int pnl = cs ? mbp.d_view(m) : 0;
+      const Real rl = x1f(m,i), rr = x1f(m,i+1), r = x1v(m,i);
+      Real st, ph, sa, pa, sb, pb, d2, d3;
+      AccAng(cs, pnl, x2c(m,j), x3v(m,k), st, ph);
+      AccAng(cs, pnl, x2fc(m,j), x3v(m,k), sa, pa);
+      AccAng(cs, pnl, x2fc(m,j+1), x3v(m,k), sb, pb);
+      if (cs) {
+        d2 = r*CsArc(pnl, x2fc(m,j), x3v(m,k), x2fc(m,j+1), x3v(m,k));
+        d3 = r*CsArc(pnl, x2c(m,j), x3f(m,k), x2c(m,j), x3f(m,k+1));
+      } else {
+        d2 = r*(x2fc(m,j+1) - x2fc(m,j));
+        d3 = r*st*(x3f(m,k+1) - x3f(m,k));
+      }
+      const Real wr = PhiWB3(p, dlt, rtop, rspin, phtop, rr, st, ph);
+      const Real wl = PhiWB3(p, dlt, rtop, rspin, phtop, rl, st, ph);
+      gr(m,k,j,i) = -((RochePot3(p, rr, st, ph) - wr) - (RochePot3(p, rl, st, ph) - wl))
+                    /(rr - rl);
+      gpl(m,k,j,i) = -(wr - wl)/(rr - rl);
+      gt(m,k,j,i) = -(RochePot3(p, r, sb, pb) - RochePot3(p, r, sa, pa))/d2;
+      Real s3a, p3a, s3b, p3b;
+      AccAng(cs, pnl, x2c(m,j), x3f(m,k), s3a, p3a);
+      AccAng(cs, pnl, x2c(m,j), x3f(m,k+1), s3b, p3b);
+      gp(m,k,j,i) = -(RochePot3(p, r, s3b, p3b) - RochePot3(p, r, s3a, p3a))/d3;
+      const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, r, st, ph);
+      c2r(m,k,j,i) = EnvC2(psi, cph2, np);
+      const Real dph = RochePot3(p, r, st, ph) - (eqtop ? aeq : RochePot3(p, racc, st, ph));
+      ra(m,k,j,i) = fmax(ramb0*exp(fmax(-dph/camb2, -700.0)), dmin);
+    });
   }
 }
 
@@ -5222,82 +4717,41 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     auto &x2fc = pmbp->pcoord->xx2f;
     const bool cs = cs_;
     auto &mbp = pmbp->pmb->mb_panel;
-    // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-    // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-    if (cs_) {
-      par_for("ryper_phi", DevExeSpace(), 0, nmb - 1, 0, n3m1, 0, n2m1, 0, n1m1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (cs) {
-          // csacc-1031: the same on the cubed sphere, the angles of each centre / face point
-          const int pnl = mbp.d_view(m);
-          Real st, phk, ct, sf, pf;
-          CsAng(pnl, x2c(m,j), x3v(m,k), st, phk, ct);
-          const Real pc3 = RochePot3(p, x1v(m,i), st, phk);
-          phicc(m,k,j,i) = pc3;
-          ph1(m,k,j,i) = RochePot3(p, x1f(m,i), st, phk);
-          if (i == n1m1) ph1(m,k,j,i+1) = RochePot3(p, x1f(m,i+1), st, phk);
-          CsAng(pnl, x2fc(m,j), x3v(m,k), sf, pf, ct);
-          ph2(m,k,j,i) = RochePot3(p, x1v(m,i), sf, pf);
-          if (j == n2m1) {
-            CsAng(pnl, x2fc(m,j+1), x3v(m,k), sf, pf, ct);
-            ph2(m,k,j+1,i) = RochePot3(p, x1v(m,i), sf, pf);
-          }
-          CsAng(pnl, x2c(m,j), x3f(m,k), sf, pf, ct);
-          ph3(m,k,j,i) = RochePot3(p, x1v(m,i), sf, pf);
-          if (k == n3m1) {
-            CsAng(pnl, x2c(m,j), x3f(m,k+1), sf, pf, ct);
-            ph3(m,k+1,j,i) = RochePot3(p, x1v(m,i), sf, pf);
-          }
-          return;
+    par_for("ryper_phi", DevExeSpace(), 0, nmb - 1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (p3) {
+        // accretor-3d-1017: the exact 3-D Roche potential on the centres and all faces
+        // (csacc-1031: angles of each centre / face point from the geometry front-end)
+        const int pnl = cs ? mbp.d_view(m) : 0;
+        Real st, phk, sf, pf;
+        AccAng(cs, pnl, x2c(m,j), x3v(m,k), st, phk);
+        const Real pc3 = RochePot3(p, x1v(m,i), st, phk);
+        phicc(m,k,j,i) = pc3;
+        ph1(m,k,j,i) = RochePot3(p, x1f(m,i), st, phk);
+        if (i == n1m1) ph1(m,k,j,i+1) = RochePot3(p, x1f(m,i+1), st, phk);
+        AccAng(cs, pnl, x2fc(m,j), x3v(m,k), sf, pf);
+        ph2(m,k,j,i) = RochePot3(p, x1v(m,i), sf, pf);
+        if (j == n2m1) {
+          AccAng(cs, pnl, x2fc(m,j+1), x3v(m,k), sf, pf);
+          ph2(m,k,j+1,i) = RochePot3(p, x1v(m,i), sf, pf);
         }
-        if (p3) {
-          // accretor-3d-1017: the exact 3-D Roche potential on the centres and all faces
-          const Real st = sin(x2c(m,j)), phk = x3v(m,k);
-          const Real pc3 = RochePot3(p, x1v(m,i), st, phk);
-          phicc(m,k,j,i) = pc3;
-          ph1(m,k,j,i) = RochePot3(p, x1f(m,i), st, phk);
-          if (i == n1m1) ph1(m,k,j,i+1) = RochePot3(p, x1f(m,i+1), st, phk);
-          ph2(m,k,j,i) = RochePot3(p, x1v(m,i), sin(x2fc(m,j)), phk);
-          if (j == n2m1) ph2(m,k,j+1,i) = RochePot3(p, x1v(m,i), sin(x2fc(m,j+1)), phk);
-          ph3(m,k,j,i) = RochePot3(p, x1v(m,i), st, x3f(m,k));
-          if (k == n3m1) ph3(m,k+1,j,i) = RochePot3(p, x1v(m,i), st, x3f(m,k+1));
-          return;
+        AccAng(cs, pnl, x2c(m,j), x3f(m,k), sf, pf);
+        ph3(m,k,j,i) = RochePot3(p, x1v(m,i), sf, pf);
+        if (k == n3m1) {
+          AccAng(cs, pnl, x2c(m,j), x3f(m,k+1), sf, pf);
+          ph3(m,k+1,j,i) = RochePot3(p, x1v(m,i), sf, pf);
         }
-        const Real pc = RochePot(p, x1v(m,i), x3v(m,k));
-        phicc(m,k,j,i) = pc;
-        ph1(m,k,j,i) = RochePot(p, x1f(m,i), x3v(m,k));
-        if (i == n1m1) ph1(m,k,j,i+1) = RochePot(p, x1f(m,i+1), x3v(m,k));
-        ph2(m,k,j,i) = pc;
-        if (j == n2m1) ph2(m,k,j+1,i) = pc;
-        ph3(m,k,j,i) = RochePot(p, x1v(m,i), x3f(m,k));
-        if (k == n3m1) ph3(m,k+1,j,i) = RochePot(p, x1v(m,i), x3f(m,k+1));
-      });
-    } else {
-      par_for("ryper_phi", DevExeSpace(), 0, nmb - 1, 0, n3m1, 0, n2m1, 0, n1m1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (p3) {
-          // accretor-3d-1017: the exact 3-D Roche potential on the centres and all faces
-          const Real st = sin(x2c(m,j)), phk = x3v(m,k);
-          const Real pc3 = RochePot3(p, x1v(m,i), st, phk);
-          phicc(m,k,j,i) = pc3;
-          ph1(m,k,j,i) = RochePot3(p, x1f(m,i), st, phk);
-          if (i == n1m1) ph1(m,k,j,i+1) = RochePot3(p, x1f(m,i+1), st, phk);
-          ph2(m,k,j,i) = RochePot3(p, x1v(m,i), sin(x2fc(m,j)), phk);
-          if (j == n2m1) ph2(m,k,j+1,i) = RochePot3(p, x1v(m,i), sin(x2fc(m,j+1)), phk);
-          ph3(m,k,j,i) = RochePot3(p, x1v(m,i), st, x3f(m,k));
-          if (k == n3m1) ph3(m,k+1,j,i) = RochePot3(p, x1v(m,i), st, x3f(m,k+1));
-          return;
-        }
-        const Real pc = RochePot(p, x1v(m,i), x3v(m,k));
-        phicc(m,k,j,i) = pc;
-        ph1(m,k,j,i) = RochePot(p, x1f(m,i), x3v(m,k));
-        if (i == n1m1) ph1(m,k,j,i+1) = RochePot(p, x1f(m,i+1), x3v(m,k));
-        ph2(m,k,j,i) = pc;
-        if (j == n2m1) ph2(m,k,j+1,i) = pc;
-        ph3(m,k,j,i) = RochePot(p, x1v(m,i), x3f(m,k));
-        if (k == n3m1) ph3(m,k+1,j,i) = RochePot(p, x1v(m,i), x3f(m,k+1));
-      });
-    }
+        return;
+      }
+      const Real pc = RochePot(p, x1v(m,i), x3v(m,k));
+      phicc(m,k,j,i) = pc;
+      ph1(m,k,j,i) = RochePot(p, x1f(m,i), x3v(m,k));
+      if (i == n1m1) ph1(m,k,j,i+1) = RochePot(p, x1f(m,i+1), x3v(m,k));
+      ph2(m,k,j,i) = pc;
+      if (j == n2m1) ph2(m,k,j+1,i) = pc;
+      ph3(m,k,j,i) = RochePot(p, x1v(m,i), x3f(m,k));
+      if (k == n3m1) ph3(m,k+1,j,i) = RochePot(p, x1v(m,i), x3f(m,k+1));
+    });
   }
   // ... and Phi_wb = Phi - Delta for the x1 well-balanced pair
   {
@@ -5308,48 +4762,25 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     auto &x2c = pmbp->pcoord->x2v;
     const bool cs = cs_;
     auto &mbp = pmbp->pmb->mb_panel;
-    // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-    // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-    if (cs_) {
-      par_for("ryper_phiwb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1m1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        Real ph = x3v(m,k);
-        if (p3) {
-          Real st = sin(x2c(m,j));
-          if (cs) {Real ct; CsAng(mbp.d_view(m), x2c(m,j), x3v(m,k), st, ph, ct);}   // csacc-1031
-          pwc(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), st, ph);
-          pwf(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i), st, ph);
-          if (i == n1m1) {
-            pwf(m,k,j,i+1) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i+1), st, ph);
-          }
-          return;
-        }
-        pwc(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), ph);
-        pwf(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i), ph);
+    par_for("ryper_phiwb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real ph = x3v(m,k);
+      if (p3) {
+        Real st;
+        AccAng(cs, cs ? mbp.d_view(m) : 0, x2c(m,j), x3v(m,k), st, ph);   // csacc-1031
+        pwc(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), st, ph);
+        pwf(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i), st, ph);
         if (i == n1m1) {
-          pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i+1), ph);
+          pwf(m,k,j,i+1) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i+1), st, ph);
         }
-      });
-    } else {
-      par_for("ryper_phiwb", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1m1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real ph = x3v(m,k);
-        if (p3) {
-          const Real st = sin(x2c(m,j));
-          pwc(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), st, ph);
-          pwf(m,k,j,i) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i), st, ph);
-          if (i == n1m1) {
-            pwf(m,k,j,i+1) = PhiWB3(p, dlt, rtop, rspin, phtop, x1f(m,i+1), st, ph);
-          }
-          return;
-        }
-        pwc(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), ph);
-        pwf(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i), ph);
-        if (i == n1m1) {
-          pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i+1), ph);
-        }
-      });
-    }
+        return;
+      }
+      pwc(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1v(m,i), ph);
+      pwf(m,k,j,i) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i), ph);
+      if (i == n1m1) {
+        pwf(m,k,j,i+1) = PhiWB(p, dlt, rtop, rspin, phtop, x1f(m,i+1), ph);
+      }
+    });
   }
   // gr_ becomes the x1 force the WB pair does not carry: -dDelta/dr; target P/rho
   Kokkos::realloc(cref2_, nmb, n3, n1);
@@ -5419,24 +4850,13 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       auto &x2c = pmbp->pcoord->x2v;
       const bool cs = cs_;
       auto &mbp = pmbp->pmb->mb_panel;
-      // csacc-1031: the cubed-sphere variant is a separate kernel, so the spherical-polar
-      // kernel below is the unchanged source (identical device code: nvcc contracts FMAs)
-      if (cs_) {
-        par_for("ryper_tcolp3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          Real cst = sin(x2c(m,j)), cph = x3v(m,k);
-          if (cs) {Real ct; CsAng(mbp.d_view(m), x2c(m,j), x3v(m,k), cst, cph, ct);}
-          const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), cst, cph);
-          tc4(m,k,j,i) = tph*EnvC2(psi, cph2, np)/cph2;
-        });
-      } else {
-        par_for("ryper_tcolp3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), sin(x2c(m,j)),
-                                         x3v(m,k));
-          tc4(m,k,j,i) = tph*EnvC2(psi, cph2, np)/cph2;
-        });
-      }
+      par_for("ryper_tcolp3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real cst, cph;
+        AccAng(cs, cs ? mbp.d_view(m) : 0, x2c(m,j), x3v(m,k), cst, cph);
+        const Real psi = phis - PhiWB3(p, dlt, rtop, rspin, phtop, x1v(m,i), cst, cph);
+        tc4(m,k,j,i) = tph*EnvC2(psi, cph2, np)/cph2;
+      });
     }
     if (root) {
       const Real psi_in = phis - PhiWB(p, dlt, rtop, rspin, phtop, pmbp->pmesh->mesh_size.x1min, 0.5*M_PI);
