@@ -4,15 +4,15 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_latface_body.hpp
-//! \brief share-1031: the ONE body of RadiationM1::ImplicitLatFaceCoef (spherical polar /
-//! Cartesian, M1_LFC_CS 0) and ImplicitLatFaceCoefCs (cubed sphere, M1_LFC_CS 1), included
-//! twice from rad_m1_implicit.cpp (the rad_m1_impl_wb_kernel.hpp pattern).  The cs-only
-//! parts (cs-s4-1017: the open seams m1bcs, the seam-face mirror-pair distance
+//! \brief share-1031: the ONE body of RadiationM1::ImplicitLatFaceCoef (spherical
+//! polar / Cartesian, M1_LFC_CS 0) and ImplicitLatFaceCoefCs (cubed sphere, M1_LFC_CS 1),
+//! included twice from rad_m1_implicit.cpp (the rad_m1_impl_wb_kernel.hpp pattern).  The
+//! cs-only parts (cs-s4-1017: the open seams m1bcs, the seam-face mirror-pair distance
 //! cs_dxf_eff, the lateral ghost ring of the half-range cell data from the vgd_hr ghosts
-//! instead of the per-direction halo exchanges, fs refused) sit in `#if M1_LFC_CS` blocks,
-//! so that the sp instantiation is token for token the former ImplicitLatFaceCoef (the
-//! same expression trees under nvcc --fmad=true: bitwise).  M1_LFC_SFX is the kernel-name
-//! suffix ("" or "cs").  No include guard: included once per variant.
+//! instead of the per-direction halo exchanges, fs refused) sit in `#if M1_LFC_CS`
+//! blocks, so that the sp instantiation is token for token the former
+//! ImplicitLatFaceCoef (the same expression trees under nvcc --fmad=true: bitwise).
+//! M1_LFC_SFX is the kernel-name suffix ("" or "cs").  No include guard: included once per variant.
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -151,7 +151,8 @@
       const int kup = (d == 2) ? ke + 1 : ke, jup = (d == 1) ? je + 1 : je;
       const int inx = (d == 1) ? BoundaryFace::inner_x2 : BoundaryFace::inner_x3;
       const int onx = (d == 1) ? BoundaryFace::outer_x2 : BoundaryFace::outer_x3;
-      par_for("m1_impl_lfchf" M1_LFC_SFX, DevExeSpace(), 0, nmb1, ks, kup, js, jup, is, ie,
+      par_for("m1_impl_lfchf" M1_LFC_SFX, DevExeSpace(), 0, nmb1, ks, kup, js, jup, is,
+              ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         BoundaryFlag blo = mbbcs.d_view(m,inx);
         BoundaryFlag bhi = mbbcs.d_view(m,onx);

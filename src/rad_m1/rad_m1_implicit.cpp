@@ -4685,11 +4685,12 @@ namespace {
 //----------------------------------------------------------------------------------------
 //! \fn M1TransRowCore
 //! \brief share-1031: the ONE transverse E-row kernel of M1SphTransRow (sp wedge) and
-//! M1CsTransRow (cubed sphere): the diagonal `dia`, the lagged right-hand side `tt` and
-//! (bicgstab) the neighbour coefficients CJM/CJP/CKM/CKP, with dt A_f/V_i per face and the
-//! gradient over the two-point face distance.  The geometry G gives the face areas
-//! (A2p/A2m/A3p/A3m) and the two-point distances (L2p/L2m/L3p/L3m) of cell (m,k,j,i); the
-//! arithmetic is the former M1SphTransRow term for term (same expression order).
+//! M1CsTransRow (cubed sphere): the diagonal `dia`, the lagged right-hand side `tt`
+//! and (bicgstab) the neighbour coefficients CJM/CJP/CKM/CKP, with dt A_f/V_i per face
+//! and the gradient over the two-point face distance.  The geometry G gives the face
+//! areas (A2p/A2m/A3p/A3m) and the two-point distances (L2p/L2m/L3p/L3m) of cell
+//! (m,k,j,i); the arithmetic is the former M1SphTransRow term for term (same expression
+//! order).
 
 template <typename G, typename V, typename VD, typename VV, typename VT>
 KOKKOS_INLINE_FUNCTION
@@ -4825,9 +4826,9 @@ struct M1SphRowGeo {
   }
 };
 
-// the cubed-sphere geometry (STAGE CS1): an interior face takes the centre arc times sin
-// of the face angle; a panel-seam face the canonical seam area 0.5 (r_r^2 - r_l^2) dth and
-// the mirror-pair distance r angm (M1CsSeamGeom)
+// the cubed-sphere geometry (STAGE CS1): an interior face takes the centre arc times
+// sin of the face angle; a panel-seam face the canonical seam area
+// 0.5 (r_r^2 - r_l^2) dth and the mirror-pair distance r angm (M1CsSeamGeom)
 template <typename VF, typename VS, typename VG, typename VB, typename VX>
 struct M1CsRowGeo {
   const VF &carea, &cdxf;
