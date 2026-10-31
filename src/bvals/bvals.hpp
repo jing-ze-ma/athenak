@@ -373,6 +373,12 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // where the destination axis runs reversed, h+ <-> -h- (no resample: the mirror
   // cell).  Exact for the seam-normal axis (the plane family is common to both charts).
   int cs_hrq0 = -1;
+  // implhalo-1031 exch_depth > 0 (default 0 = ng): this object's SAME-level buffers carry
+  // only the exch_depth ghost layers next to the active range (send and receive strips,
+  // the cube-vertex widening); set before InitializeBuffers.  For exchanges whose readers
+  // never touch the deeper ghost layers (the implicit M1 scratch arrays: poisoned-ghost
+  // gate), the same values in the layers that are read with fewer bytes on the wire.
+  int exch_depth = 0;
 
   //functions
   void InitSendIndices(MeshBoundaryBuffer &b,int o1,int o2,int o3,int f1,int f2) override;
