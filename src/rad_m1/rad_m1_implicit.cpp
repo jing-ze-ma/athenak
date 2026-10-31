@@ -4061,6 +4061,7 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
     s_poison = (f != nullptr) ? std::atoi(f) : 0;
   }
   const bool poi = (s_poison != 0) && !topack;
+  const int pd = s_poison;   // M1_POISON_GHOST=D: the ghost layers beyond depth D
   const int pjs = indcs.js, pje = indcs.je, pks = indcs.ks, pke = indcs.ke;
   const bool p2 = (indcs.nx2 > 1), p3 = (indcs.nx3 > 1);
   if (impl_halo_direct || s_hcell != 0 || poi) {
@@ -4076,8 +4077,8 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
       const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
       if (pack_) {
         sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
-      } else if (poi && ((p2 && (j < pjs - 1 || j > pje + 1)) ||
-                         (p3 && (k < pks - 1 || k > pke + 1)))) {
+      } else if (poi && ((p2 && (j < pjs - pd || j > pje + pd)) ||
+                         (p3 && (k < pks - pd || k > pke + pd)))) {
         iw_(m,nc,k,j,i) = std::numeric_limits<Real>::quiet_NaN();
       } else {
         iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
