@@ -28,6 +28,7 @@
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
+#include "eos/general_c2p_hyd.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn void GnomonicRaiseVelFloors
@@ -135,68 +136,21 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
   // exactly as ConsToPrim updates cons when a floor fires, so the conserved energy
   // cannot keep sinking and re-trip the floor on every cycle.
   if (gen_) {
-    bool stale = false;
-    bool tclamped = false;
-    const bool e_positive = (eint > 0.0);
-    stale = !e_positive;
-    if (e_positive) {
-      // the CLAMP-REPORTING form: on the cubed sphere this routine, not ConsToPrim, is
-      // where the floors are actually applied, so it is also where the table clamp has
-      // to be seen.  The six-argument overload wraps this one, so the arithmetic is
-      // unchanged.
-      eos_.TemperaturePressureGamma1(d, eint, twarm, temp, pnew, g1new, tclamped);
-    }
-    if (!e_positive || pnew < eos_.pfloor) {
-      const Real efl = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
-      // See EOS_Data::efloor_from_ekin: rebuilding the conserved energy as efl + ekin
-      // with ekin untouched donates efl - eint, which is the cell's whole kinetic
-      // energy whenever the update left eint negative.  Paying out of the kinetic
-      // energy instead holds the conserved total fixed.
-      const Real etot0 = etot;
-      if (eos_.efloor_from_ekin && ekin > 0.0 && (etot0 - efl) < ekin) {
-        Real ek_new = etot0 - efl;
-        if (!(ek_new > 0.0)) ek_new = 0.0;
-        const Real fvk = sqrt(ek_new/ekin);
-        m1 *= fvk; m2 *= fvk; m3 *= fvk;
-        v1 *= fvk; v2 *= fvk; v3 *= fvk;
-        de += (efl + ek_new) - etot0;
-        ekin = ek_new;
-        mom_scaled = true;
-      } else {
-        de += efl - eint;
-      }
-      eint = efl;
-      stale = true;
-    }
-    if (temp < eos_.tfloor) {
-      const Real etf = eos_.EnergyFromTemperature(d, eos_.tfloor);
-      de += etf - eint;
-      eint = etf;
-      temp = eos_.tfloor;
-      stale = true;
-    }
-    // <hydro>/efloor_as_tfloor, the deferred half: see the note on
-    // EOS_Data::efloor_as_tfloor and the identical block in SingleC2P_GeneralHyd.  On
-    // the cubed sphere the internal energy this routine holds is the metric-correct one
-    // and the one the conserved energy is rebuilt from, so this is THE place the repair
-    // has to happen for a cubed-sphere run.
-    // whether a FLOOR fired, as opposed to this repair: FOFC flags cells on `floored`
-    // and the table clamp is not a floor -- it fires wherever the trial state leaves the
-    // tabulated range, which in the draining top atmosphere is a fifth of the grid.
-    // Folding it into `floored` put 5.3e7 FOFC firings into the first arm that ran with
-    // this switch on, and FOFC is a flux downgrade, not a diagnostic.
-    const bool floor_fired = stale;
-    if (eos_.efloor_as_tfloor && (stale || tclamped)) {
-      const Real tset = (temp > eos_.tfloor) ? temp : eos_.tfloor;
-      const Real ets = eos_.EnergyFromTemperature(d, tset);
-      de += ets - eint;
-      eint = ets;
-      temp = tset;
-      tset_used = true;
-      stale = true;
+    // share2-1031: the floors of SingleC2P_GeneralHyd (GeneralHydFloorsPost) on the
+    // metric-correct energy; own = true (the accounting, the conserved total and the
+    // kinetic payment are made here); the entropy floor is not applied on this path
+    // (sflr = false, as before)
+    bool tclamped = false, efl_used = false, tfl_used = false, stale = false;
+    bool floor_fired = false;
+    Real fvk = 1.0;
+    GeneralHydFloorsPost(eos_, d, 1.0/d, twarm, true, false, eint, ekin, etot, fvk, temp,
+                         pnew, g1new, efl_used, tfl_used, tclamped, tset_used,
+                         mom_scaled, floor_fired, stale, de);
+    if (mom_scaled) {
+      m1 *= fvk; m2 *= fvk; m3 *= fvk;
+      v1 *= fvk; v2 *= fvk; v3 *= fvk;
     }
     if (stale) {
-      eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
       etot = eint + ekin;
       floored = floor_fired;
     }
