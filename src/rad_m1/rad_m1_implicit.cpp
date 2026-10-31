@@ -74,6 +74,7 @@
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "utils/eint_from_cons.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -16037,7 +16038,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 #define M1_RCP 1
 #include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
-#include "utils/eint_from_cons.hpp"
 #undef M1_RCP
     });
   }
