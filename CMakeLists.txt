@@ -98,6 +98,23 @@ if (Kokkos_ENABLE_CUDA)
   SET (Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "Enable lambda expressions in CUDA")
 endif()
 
+# fmad-1031: "no-FMA" builds (CMAKE_CXX_FLAGS containing -ffp-contract=off) turn FMA
+# contraction off in the CUDA DEVICE code too.  Through nvcc_wrapper -ffp-contract=off
+# reaches only the host compiler; nvcc's device default is --fmad=true, so the kernels
+# kept fusing (a restructured kernel could then change results at round-off, and GPU vs
+# CPU differed by contraction).  Here --fmad=false is appended (nvcc_wrapper passes
+# --fmad=* to nvcc) unless the flags already name --fmad or Athena_DEVICE_FMA=ON.  Cost
+# ~+1.6 % (accretor gate deck); GPU runs stay run-to-run deterministic.  Non-CUDA builds
+# are unchanged; HIP is unchanged (hipcc/clang compiles host and device in one pass, so
+# -ffp-contract=off already applies to the device code).
+option(Athena_DEVICE_FMA "Keep nvcc device FMA contraction in -ffp-contract=off builds" OFF)
+if (Kokkos_ENABLE_CUDA AND NOT Athena_DEVICE_FMA
+    AND CMAKE_CXX_FLAGS MATCHES "-ffp-contract=off" AND NOT CMAKE_CXX_FLAGS MATCHES "--fmad"
+    AND (CMAKE_CXX_COMPILER MATCHES "nvcc_wrapper" OR CMAKE_CXX_COMPILER_ID STREQUAL "NVIDIA"))
+  string(APPEND CMAKE_CXX_FLAGS " --fmad=false")
+  message(STATUS "fmad-1031: -ffp-contract=off build: CUDA device code with --fmad=false")
+endif()
+
 # If this is a debug build, set kokkos debug on
 if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
   message(STATUS "Enabling Kokkos debug mode")
