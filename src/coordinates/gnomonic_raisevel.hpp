@@ -29,6 +29,7 @@
 #include "athena.hpp"
 #include "eos/eos.hpp"
 #include "eos/general_c2p_hyd.hpp"
+#include "eos/c2p_floors_ideal.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn void GnomonicRaiseVelFloors
@@ -156,11 +157,14 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     }
     if (mom_scaled) { floored = true; }
   } else {
+    // share3-1031: the ideal floors of SingleC2P_IdealHyd (IdealFloorsPost); on this path
+    // only the pressure floor (tflr = sflr = false, as before)
     const Real eold = eint;
-    eos_.ApplyEnergyFloor(d, eint);
-    if (eint != eold) {
+    bool efl_used = false, tfl_used = false;
+    IdealFloorsPost<false>(eos_, d, 1.0/d, true, false, false, ekin, 0.0, eint, etot,
+                           efl_used, tfl_used);
+    if (efl_used) {
       de += eint - eold;
-      etot = eint + ekin;
       floored = true;
     }
   }

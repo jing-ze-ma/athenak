@@ -27,6 +27,8 @@
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
+#include "eos/general_c2p_mhd.hpp"
+#include "eos/c2p_floors_ideal.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn void GnomonicRaiseVelMHDFloors
@@ -92,32 +94,23 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
   // gnomonic_raisevel.hpp.  Without this the tabulated inversion below is handed a
   // non-positive energy and returns NaN.
   if (gen_) {
-    const bool e_positive = (eint > 0.0);
-    bool stale = !e_positive;
-    if (e_positive) {
-      eos_.TemperaturePressureGamma1(d, eint, twarm, temp, pnew, g1new);
-    }
-    if (!e_positive || pnew < eos_.pfloor) {
-      eint = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
-      stale = true;
-    }
-    if (temp < eos_.tfloor) {
-      eint = eos_.EnergyFromTemperature(d, eos_.tfloor);
-      temp = eos_.tfloor;
-      stale = true;
-    }
+    // share3-1031: the floors of SingleC2P_GeneralMHD (GeneralMHDFloorsPost) on the
+    // metric-correct energy; own = true; the entropy floor is not applied on this path
+    // (sflr = false, as before); the table clamp is not counted here (as before)
+    bool efl_used = false, tfl_used = false, tclamped = false, stale = false;
+    GeneralMHDFloorsPost(eos_, d, 1.0/d, twarm, true, false, ekin, emag, eint, etot, temp,
+                         pnew, g1new, efl_used, tfl_used, tclamped, stale);
     if (stale) {
-      eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
       etot = eint + ekin + emag;
       floored = true;
     }
   } else {
-    const Real eold = eint;
-    eos_.ApplyEnergyFloor(d, eint);
-    if (eint != eold) {
-      etot = eint + ekin + emag;
-      floored = true;
-    }
+    // share3-1031: the ideal floors of SingleC2P_IdealMHD (IdealFloorsPost); on this path
+    // only the pressure floor (tflr = sflr = false, as before)
+    bool efl_used = false, tfl_used = false;
+    IdealFloorsPost<true>(eos_, d, 1.0/d, true, false, false, ekin, emag, eint, etot,
+                          efl_used, tfl_used);
+    if (efl_used) {floored = true;}
   }
   return;
 }

@@ -1,5 +1,7 @@
 #ifndef EOS_IDEAL_C2P_HYD_HPP_
 #define EOS_IDEAL_C2P_HYD_HPP_
+
+#include "eos/c2p_floors_ideal.hpp"
 //========================================================================================
 // AthenaXXX astrophysical plasma code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
@@ -79,10 +81,6 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
                         bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
                         Real &dfloor_fv, bool &vceil_used, bool &vceil_test) {
   const Real &dfloor_ = eos.dfloor;
-  Real efloor = eos.pfloor/(eos.gamma - 1.0);
-  Real tfloor = eos.tfloor;
-  Real sfloor = eos.sfloor;
-  Real gm1 = eos.gamma - 1.0;
 
   // THE DENSITY FLOOR: see the note in general_c2p_hyd.hpp.  <block>/dfloor_keep_velocity
   // scales the momentum by fv = d_old/dfloor so the kinetic energy falls to fv^3 of its
@@ -145,24 +143,9 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
     }
   }
   w.e = (u.e - e_k);
-  if (w.e < efloor) {
-    w.e = efloor;
-    if (!eos.defer_cons_floors) u.e = efloor + e_k;
-    efloor_used = true;
-  }
-  // apply temperature floor
-  if (gm1*w.e*di < tfloor) {
-    w.e = w.d*tfloor/gm1;
-    if (!eos.defer_cons_floors) u.e = w.e + e_k;
-    tfloor_used = true;
-  }
-  // apply entropy floor
-  Real spe_over_eps = gm1/pow(w.d, gm1);
-  Real spe = spe_over_eps*w.e*di;
-  if (spe <= sfloor) {
-    w.e = w.d*sfloor/spe_over_eps;
-    efloor_used = true;
-  }
+  // the pressure, temperature and entropy floors (shared with the cubed sphere)
+  IdealFloorsPost<false>(eos, w.d, di, !eos.defer_cons_floors, true, true, e_k, 0.0, w.e,
+                         u.e, efloor_used, tfloor_used);
   return;
 }
 

@@ -11,6 +11,57 @@
 //! magnetic energy is also subtracted off before the internal energy is obtained.
 
 //----------------------------------------------------------------------------------------
+//! \fn void GeneralMHDFloorsPost()
+//! \brief share3-1031: THE energy floors of the general-EOS MHD inversion on an internal
+//! energy e = E - KE - ME with final kinetic and magnetic energies: the one temperature
+//! solve, the pressure floor, the temperature floor, the entropy floor (`sflr`) and the
+//! p, Gamma_1 re-evaluation.  Shared by SingleC2P_GeneralMHD (own = !defer_cons_floors,
+//! sflr = true) and, on the cubed sphere, GnomonicRaiseVelMHDFloors (own = true, sflr =
+//! false: the entropy floor that path has never applied).  `own`: the total `etot` is
+//! rebuilt as e + e_k + e_m at each floor.  `stale`: e moved (p, Gamma_1 re-evaluated).
+//! The arithmetic is the former body of SingleC2P_GeneralMHD, in its order.
+
+KOKKOS_INLINE_FUNCTION
+void GeneralMHDFloorsPost(const EOS_Data &eos, const Real d, const Real di,
+                          const Real tguess, const bool own, const bool sflr,
+                          const Real e_k, const Real e_m, Real &eint, Real &etot,
+                          Real &temp, Real &pgas, Real &g1, bool &efloor_used,
+                          bool &tfloor_used, bool &tclamp_used, bool &stale) {
+  bool e_positive = (eint > 0.0);
+  temp = -1.0;
+
+  stale = !e_positive;
+  if (e_positive) {
+    eos.TemperaturePressureGamma1(d, eint, tguess, temp, pgas, g1, tclamp_used);
+  }
+
+  if (!e_positive || pgas < eos.pfloor) {
+    eint = eos.EnergyFromPressure(d, eos.pfloor, temp);
+    if (own) etot = eint + e_k + e_m;
+    efloor_used = true;
+    stale = true;
+  }
+
+  if (temp < eos.tfloor) {
+    eint = eos.EnergyFromTemperature(d, eos.tfloor);
+    if (own) etot = eint + e_k + e_m;
+    temp = eos.tfloor;
+    tfloor_used = true;
+    stale = true;
+  }
+
+  if (sflr && eos.ApplyEntropyFloor(d, di, eint)) {
+    temp = eos.Temperature(d, eint, temp);
+    efloor_used = true;
+    stale = true;
+  }
+
+  if (stale) {
+    eos.PressureAndGamma1(d, eint, temp, pgas, g1);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void SingleC2P_GeneralMHD()
 //! \brief Converts a single state of conserved variables into primitive variables for
 //! non-relativistic MHD with a general EOS, and evaluates the derived thermodynamic
@@ -62,53 +113,11 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   }
   w.e = (u.e - e_k - e_m);
 
-  // Solve for the temperature, once per cell; see general_c2p_hyd.hpp for why this is the
-  // only expensive EOS call here and why everything below reuses its result.
-  bool e_positive = (w.e > 0.0);
-  temp = -1.0;
-
-  // Apply the pressure floor, testing on p so that the inversion e(d,pfloor) is performed
-  // only in the rare cells where the floor trips.
-  // ONE table evaluation now serves three consumers -- the pressure-floor test below, and
-  // the p and Gamma_1 the Riemann solvers need at the bottom -- because all three are at
-  // the same (d,T). `stale` marks the rare paths where a floor moves the state afterwards
-  // and they have to be redone.
-  bool stale = !e_positive;
-  if (e_positive) {
-    // fused: the inversion and the evaluation that follows it share their logarithms
-    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1, tclamp_used);
-  }
-
-  if (!e_positive || pgas < eos.pfloor) {
-    // three-argument form: reuses the temperature the inversion solved for (see
-    // general_c2p_hyd.hpp) instead of re-solving the root find
-    w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
-    if (!eos.defer_cons_floors) u.e = w.e + e_k + e_m;
-    efloor_used = true;
-    stale = true;
-  }
-
-  // Apply the temperature floor, now free to test and free to apply.
-  if (temp < eos.tfloor) {
-    w.e = eos.EnergyFromTemperature(w.d, eos.tfloor);
-    if (!eos.defer_cons_floors) u.e = w.e + e_k + e_m;
-    temp = eos.tfloor;
-    tfloor_used = true;
-    stale = true;
-  }
-
-  // Apply the entropy floor; a no-op under a tabulated EOS, which refuses sfloor at
-  // startup instead. See general_c2p_hyd.hpp and EOS_Data::ApplyEntropyFloor().
-  if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
-    temp = eos.Temperature(w.d, w.e, temp);
-    efloor_used = true;
-    stale = true;
-  }
-
-  // Derived thermodynamic quantities, cheap now that T is known (see general_c2p_hyd.hpp)
-  if (stale) {
-    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
-  }
+  // the floors on the final kinetic and magnetic energies (shared with the cubed
+  // sphere's GnomonicRaiseVelMHDFloors)
+  bool stale;
+  GeneralMHDFloorsPost(eos, w.d, di, tguess, !eos.defer_cons_floors, true, e_k, e_m, w.e,
+                       u.e, temp, pgas, g1, efloor_used, tfloor_used, tclamp_used, stale);
   return;
 }
 
