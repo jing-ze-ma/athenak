@@ -1592,6 +1592,43 @@ void RadiationM1::VetGdCsSweep() {
     }
   };
 #endif
+  // cslist-1031: per pass the codes ((m k) j) d of the (cell, direction) pairs of that
+  // pass's branch (inward: n.r_hat < 0), in the flat range's order; the shell kernel runs
+  // over the list (half the range: the other branch's threads only returned, and a warp
+  // of mixed branches cost the whole warp).  Made each sweep from vgd_mr (one scan per
+  // pass); the same threads compute the same values.  G > 1 keeps the full range
+  const bool usel = (G == 1);
+  const int nkl = ke - ks + 1, njl = je - js + 1;
+  const int nlt = (nmb1 + 1)*nkl*njl*n;
+  int nlist[2] = {0, 0};
+  if (usel) {
+    if (vgd_cslst.extent_int(0) < 2*nlt) {
+      vgd_cslst = DvceArray1D<int>();
+      Kokkos::realloc(vgd_cslst, 2*nlt);
+    }
+    auto L_ = vgd_cslst;
+    for (int p = 0; p < 2; ++p) {
+      const bool inp = (p == 0);
+      const int off = p*nlt;
+      int cnt = 0;
+      Kokkos::parallel_scan("m1_vgdcs_list", Kokkos::RangePolicy<>(DevExeSpace(), 0, nlt),
+      KOKKOS_LAMBDA(const int c, int &u, const bool fin) {
+        int t = c;
+        const int d = t % n;
+        t /= n;
+        const int j = js + t % njl;
+        t /= njl;
+        const int k = ks + t % nkl;
+        const int m = t/nkl;
+        if (inp != (mr_(m,k,j,d) >= 0.0)) {
+          if (fin) {L_(off + u) = c;}
+          u += 1;
+        }
+      }, cnt);
+      nlist[p] = cnt;
+    }
+  }
+  auto lst_ = vgd_cslst;
   VetGdRingSweepBegin(two);
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
@@ -1626,10 +1663,11 @@ void RadiationM1::VetGdCsSweep() {
       // cstwin-geo: with the fused twin one thread computes the geometry once and the
       // values of both fields
       const int nkk = ke - ks + 1, njj = je - js + 1, ndd = d1 - d0;
-      const int nper = (nmb1 + 1)*nkk*njj*ndd;
+      const int nper = usel ? nlist[pass] : (nmb1 + 1)*nkk*njj*ndd;
+      const int lo = pass*nlt;
       Kokkos::parallel_for("m1_vgdcs_shell", VgdCsLight(DevExeSpace(), 0, nper),
       KOKKOS_LAMBDA(const int c) {
-        int t = c;
+        int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
         const int d = d0 + t % ndd;
         t /= ndd;
         const int j = js + t % njj;

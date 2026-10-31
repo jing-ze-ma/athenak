@@ -2822,6 +2822,7 @@ class RadiationM1 {
   int64_t vgd_csxmax = 0;              // largest (pass, shell, group) list, values
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_csxsb, vgd_csxrb;
   DvceArray1D<Real> vgd_csdsb, vgd_csdrb;   // csnccl-1031: NCCL device buffers
+  DvceArray1D<int> vgd_cslst;               // cslist-1031: per-pass branch lists
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
