@@ -235,8 +235,9 @@ void RadiationM1::IcRadJ(DvceArray5D<Real> &jc) {
   // <J_twin> per shell (all ranks, reproducible), then J *= <J_twin>/J_twin
   std::vector<Real> sm;
   IcRadShellSum(jc, 1, 1, sm);
+  // cstwin-1031: npanels (6 on the cubed sphere, whose fused twin now reaches here)
   const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
-                    pmy_pack->pmesh->mesh_indcs.nx3;
+                    pmy_pack->pmesh->mesh_indcs.nx3*pmy_pack->pmesh->npanels;
   DvceArray1D<Real> mt("icr_jtm", c1);
   auto mh = Kokkos::create_mirror_view(mt);
   for (int i = 0; i < c1; ++i) {mh(i) = sm[i]/ncol;}

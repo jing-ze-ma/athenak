@@ -2808,7 +2808,7 @@ class RadiationM1 {
   Kokkos::View<int *, LayoutWrapper, DevMemSpace> vgd_csmiss;   // reads not in the mask
   double vgd_csnbuild = 0.0, vgd_cstbuild = 0.0, vgd_csvsent = 0.0, vgd_csvdense = 0.0;
   void VetGdCsCompact();
-  void VetGdCsHaloC(const int pass, const int i);
+  void VetGdCsHaloC(const int pass, const int i, const bool two);
   // xchg-1021 vet_gd_cs_xgroups = G > 1: the sweep's directions in G contiguous groups,
   // each (shell, group) its own kernel and compact exchange, software-pipelined (the
   // exchange of one group runs while the next groups compute; every value computed by

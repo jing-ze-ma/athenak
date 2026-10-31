@@ -1326,8 +1326,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       const bool bx = pin->DoesParameterExist("rad_m1","vet_gd_band_exit") &&
                       pin->GetBoolean("rad_m1","vet_gd_band_exit");
       const bool hok = (global_variable::nranks == 1) || (vgd_hcomp > 0);
+      // cstwin-1031: not by default on the cubed sphere (the fused twin there doubles
+      // the largest device array; before this build cs always swept it unfused)
+      const bool csd = pmy_pack->pmesh->use_cubed_sphere;
       vgd_twfuse = pin->GetOrAddBoolean("rad_m1","vet_gd_twin_fuse",
-                                        it1 && !bx && !vgd_async_named && hok);
+                                        it1 && !bx && !vgd_async_named && hok && !csd);
     }
     // vet_gd_twin_lowmem (mem-1009; read only when named, default false): with
     // vet_gd_twin_fuse, the twin is swept BEFORE the main sweep in the same intensity

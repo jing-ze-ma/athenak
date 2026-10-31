@@ -584,8 +584,9 @@ void RadiationM1::VetGdInit() {
   // are wedge-specific or not ported are refused; the sp halo layouts (exact / compact
   // lists, IPC, NCCL, overlap) do not apply (the cs band is filled by its own exact
   // copies; memcut-1020: the band ring applies with the cs compact lists, see VetGdCsSweep);
-  // the fused twin is swept unfused with this build's cut (the
-  // vet_gd_twin_lowmem path: the same numbers as the fused twin on sp); no walls
+  // cstwin-1031: vet_gd_twin_fuse rides in the cs sweep as on sp (vgd_itw, one kernel and
+  // one exchange per shell for both fields); vet_gd_twin_lowmem and the plain unfused
+  // twin sweep it first with this build's cut (the same numbers); no walls
   vgd_csg = pm->use_cubed_sphere;
   if (vgd_csg) {
     std::string bad;
@@ -604,19 +605,21 @@ void RadiationM1::VetGdInit() {
     vgd_hx_on = false;
     vgd_hx_named = false;
     vgd_hx_mode = 0;
-    // the twin always with THIS build's cut (the vet_gd_twin_lowmem order: the fused
-    // twin's numbers); the plain unfused twin would take the previous build's cut (its
-    // sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
-    // decomposition-dependent
-    if (vgd_twin) {
-      vgd_twfuse = false;
+    // the unfused twin always with THIS build's cut (the vet_gd_twin_lowmem order: the
+    // fused twin's numbers); the plain unfused twin would take the previous build's cut
+    // (its sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
+    // decomposition-dependent.  cstwin-1031: vet_gd_twin_fuse (lowmem off) is kept
+    if (vgd_twin && !vgd_twfuse) {
       vgd_twseq = true;
     }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam "
                 << "strip + vertex triangle upwind stencil, exact per-shell band copies "
                 << "(the sp halo lists / IPC / overlap keys do not apply), twin "
-                << (vgd_twin ? "unfused (this build's cut)" : "off") << "; hand-over "
+                << (vgd_twin ? (vgd_twfuse ? "FUSED (vet_gd_twin_fuse: in the main "
+                                             "sweep, second band array)"
+                                           : "unfused (this build's cut)")
+                             : "off") << "; hand-over "
                 << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator (S4)"
                               : ((vlat_odm == 1) ? " + D_r,lat lagged (S4)"
                                                  : " only (vet_col_lat_offdiag = none)"))
@@ -772,7 +775,15 @@ void RadiationM1::VetGdInit() {
     }
     VgdRagAlloc(vgd_itw);
     Kokkos::realloc(vgd_cst, nmb, 2, c3w, c2w, c1);
-    if (vgd_hmpi) {
+    if (vgd_csg) {
+      // cstwin-1031: the cs exchange carries both fields (main, twin) interleaved per
+      // value: the message buffers of VetGdCsInit doubled (the sp buffers do not apply)
+      const size_t nb = 2*vgd_cssb.extent(0);
+      vgd_cssb = decltype(vgd_cssb)();
+      vgd_csrb = decltype(vgd_csrb)();
+      Kokkos::realloc(vgd_cssb, nb);
+      Kokkos::realloc(vgd_csrb, nb);
+    } else if (vgd_hmpi) {
       Kokkos::realloc(vgd_csb2, vgd_csb.extent(0));
       Kokkos::realloc(vgd_crb2, vgd_crb.extent(0));
       // mem-1014: the twin's expanded buffer only ever holds one shell of the compact

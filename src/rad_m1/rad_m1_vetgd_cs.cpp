@@ -1027,7 +1027,7 @@ void RadiationM1::VetGdCsCompact() {
 //! \brief cs-s3b-1017: the compact exchange of shell i after pass `pass` of the sweep:
 //! the listed (entry, direction) values of every partner (VetGdCsCompact)
 
-void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
+void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
 #if MPI_PARALLEL_ENABLED
   const VgdCsCl &E = vgd_cscl[vgd_cscur];
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1041,18 +1041,33 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
   const int64_t s0 = so[0], ns = so[np] - so[0];
   const int64_t r0 = ro[0], nr = ro[np] - ro[0];
   auto a_ = vgd_i;
+  auto b_ = vgd_itw;
   auto sb_ = vgd_cssb;
   auto rb_ = vgd_csrb;
   auto S_ = vgd_cssl;
   auto R_ = vgd_csrl;
   auto si_ = E.si;
   auto ri_ = E.ri;
+  // cstwin-1031: with the fused twin the twin's values after the main ones ([0, n) main,
+  // [n, 2 n) twin, each in list order: contiguous host writes; interleaved values made
+  // the pack kernel ~100x slower on pinned host memory), one message per field and
+  // partner in the same round (buffers doubled in VetGdInit)
+  const int xf = two ? 2 : 1;
+  if (static_cast<int64_t>(sb_.extent(0)) < xf*ns ||
+      static_cast<int64_t>(rb_.extent(0)) < xf*nr) {
+    VgdCsFatal("VetGdCsHaloC: message buffer too small");
+  }
   if (ns > 0) {
     par_for("m1_vgdcs_cpack", DevExeSpace(), 0, static_cast<int>(ns) - 1,
     KOKKOS_LAMBDA(const int o) {
       const int x = si_(s0 + o);
       const int e = x/n, d = x - e*n;
-      sb_(o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+      if (two) {
+        sb_(o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+        sb_(ns + o) = b_(S_(e,0),d,S_(e,1),S_(e,2),i);
+      } else {
+        sb_(o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+      }
     });
   }
   Kokkos::fence();
@@ -1061,34 +1076,42 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
   for (int p = 0; p < np; ++p) {
     const int rk = vgd_csprk[p];
     const int64_t cr = ro[p+1] - ro[p], cs = so[p+1] - so[p];
-    if (cr > 0) {
-      req.emplace_back();
-      MPI_Irecv(rb_.data() + (ro[p] - r0), static_cast<int>(cr), MPI_ATHENA_REAL, rk,
-                7103, MPI_COMM_WORLD, &req.back());
-    }
-    if (cs > 0) {
-      req.emplace_back();
-      MPI_Isend(sb_.data() + (so[p] - s0), static_cast<int>(cs), MPI_ATHENA_REAL, rk,
-                7103, MPI_COMM_WORLD, &req.back());
-      vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
+    for (int f = 0; f < xf; ++f) {   // (f = 1: the fused twin, tag 7105)
+      if (cr > 0) {
+        req.emplace_back();
+        MPI_Irecv(rb_.data() + f*nr + (ro[p] - r0), static_cast<int>(cr), MPI_ATHENA_REAL,
+                  rk, 7103 + 2*f, MPI_COMM_WORLD, &req.back());
+      }
+      if (cs > 0) {
+        req.emplace_back();
+        MPI_Isend(sb_.data() + f*ns + (so[p] - s0), static_cast<int>(cs), MPI_ATHENA_REAL,
+                  rk, 7103 + 2*f, MPI_COMM_WORLD, &req.back());
+        vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
+      }
     }
   }
   MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
-  vgd_csvsent += static_cast<double>(ns);
-  vgd_csvdense += static_cast<double>(vgd_csnsnd)*n;
+  vgd_csvsent += static_cast<double>(xf*ns);
+  vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*xf;
   if (nr > 0) {
     par_for("m1_vgdcs_cunpack", DevExeSpace(), 0, static_cast<int>(nr) - 1,
     KOKKOS_LAMBDA(const int o) {
       const int x = ri_(r0 + o);
       const int e = x/n, d = x - e*n;
-      a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(o);
+      if (two) {
+        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(o);
+        b_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(nr + o);
+      } else {
+        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(o);
+      }
     });
   }
 #else
   (void) pass;
   (void) i;
+  (void) two;
 #endif
 }
 
@@ -1233,6 +1256,11 @@ void RadiationM1::VetGdCsSweep() {
   const int lcut = vgd_scut;
   auto cs_ = vgd_cs;
   auto vi_ = vgd_i;
+  // cstwin-1031 vet_gd_twin_fuse (vgd_sw2, VetGdSweepPost): the twin (source vgd_cst,
+  // intensities vgd_itw) swept in the same kernels, ring operations and exchanges
+  const bool two = vgd_sw2;
+  auto ct_ = vgd_cst;
+  auto vt_ = vgd_itw;
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
   auto mr_ = vgd_mr;
@@ -1343,7 +1371,10 @@ void RadiationM1::VetGdCsSweep() {
   int64_t xcnt = 0;
   const int xS = 2*G + 2;       // slots: a slot is reused only after its unpack ran
   std::vector<VgdCsEv> xevp(pipe ? xS : 0), xevu(pipe ? xS : 0);
-  const int64_t xmx = std::max<int64_t>(vgd_csxmax, 1);
+  // values per list entry (cstwin-1031: main, twin; the twin's after the main ones in
+  // the slot, as VetGdCsHaloC)
+  const int xf = two ? 2 : 1;
+  const int64_t xmx = std::max<int64_t>(vgd_csxmax, 1)*xf;
   if (pipe && static_cast<int64_t>(vgd_csxsb.extent(0)) < xS*xmx) {
     Kokkos::fence();
     vgd_csxsb = decltype(vgd_csxsb)();
@@ -1365,16 +1396,17 @@ void RadiationM1::VetGdCsSweep() {
       const int64_t *so = &E.so[xsl(x)*(xnp + 1)];
       const int64_t s0 = so[0];
       Real *b = vgd_csxsb.data() + x.slot*xmx;
+      const int64_t ns = so[xnp] - s0;
       for (int p = 0; p < xnp; ++p) {
         const int64_t cs = so[p+1] - so[p];
-        if (cs > 0) {
+        for (int f = 0; f < xf && cs > 0; ++f) {   // (f = 1: the fused twin, tag 7106)
           x.rq.emplace_back();
-          MPI_Isend(b + (so[p] - s0), static_cast<int>(cs), MPI_ATHENA_REAL, vgd_csprk[p],
-                    7104, MPI_COMM_WORLD, &x.rq.back());
+          MPI_Isend(b + f*ns + (so[p] - s0), static_cast<int>(cs), MPI_ATHENA_REAL,
+                    vgd_csprk[p], 7104 + 2*f, MPI_COMM_WORLD, &x.rq.back());
           vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
         }
       }
-      vgd_csvsent += static_cast<double>(so[xnp] - s0);
+      vgd_csvsent += static_cast<double>(xf*(so[xnp] - s0));
       x.sent = true;
     }
   };
@@ -1395,16 +1427,18 @@ void RadiationM1::VetGdCsSweep() {
     const int64_t r0 = ro[0];
     xevu[x.slot].Wait();   // the slot's previous unpack has read its receive buffer
     Real *rb = vgd_csxrb.data() + x.slot*xmx;
+    const int64_t nr = ro[xnp] - r0;
     for (int p = 0; p < xnp; ++p) {
       const int64_t cr = ro[p+1] - ro[p];
-      if (cr > 0) {
+      for (int f = 0; f < xf && cr > 0; ++f) {
         x.rq.emplace_back();
-        MPI_Irecv(rb + (ro[p] - r0), static_cast<int>(cr), MPI_ATHENA_REAL, vgd_csprk[p],
-                  7104, MPI_COMM_WORLD, &x.rq.back());
+        MPI_Irecv(rb + f*nr + (ro[p] - r0), static_cast<int>(cr), MPI_ATHENA_REAL,
+                  vgd_csprk[p], 7104 + 2*f, MPI_COMM_WORLD, &x.rq.back());
       }
     }
     if (ns > 0) {
       auto a_ = vgd_i;
+      auto b_ = vgd_itw;
       auto sb_ = vgd_csxsb;
       auto S_ = vgd_cssl;
       auto si_ = E.si;
@@ -1414,11 +1448,16 @@ void RadiationM1::VetGdCsSweep() {
       KOKKOS_LAMBDA(const int o) {
         const int xx = si_(s0 + o);
         const int e = xx/n, d = xx - e*n;
-        sb_(bo + o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+        if (two) {
+          sb_(bo + o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+          sb_(bo + ns + o) = b_(S_(e,0),d,S_(e,1),S_(e,2),i);
+        } else {
+          sb_(bo + o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+        }
       });
     }
     xevp[x.slot].Record();
-    if (g == 0) {vgd_csvdense += static_cast<double>(vgd_csnsnd)*n;}
+    if (g == 0) {vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*xf;}
     xfl.push_back(std::move(x));
     xprog();
   };
@@ -1443,6 +1482,7 @@ void RadiationM1::VetGdCsSweep() {
     const int64_t r0 = ro[0], nr = ro[xnp] - ro[0];
     if (nr > 0) {
       auto a_ = vgd_i;
+      auto b_ = vgd_itw;
       auto rb_ = vgd_csxrb;
       auto R_ = vgd_csrl;
       auto ri_ = E.ri;
@@ -1452,7 +1492,12 @@ void RadiationM1::VetGdCsSweep() {
       KOKKOS_LAMBDA(const int o) {
         const int xx = ri_(r0 + o);
         const int e = xx/n, d = xx - e*n;
-        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(bo + o);
+        if (two) {
+          a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(bo + o);
+          b_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(bo + nr + o);
+        } else {
+          a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(bo + o);
+        }
       });
     }
     xevu[x.slot].Record();
@@ -1464,7 +1509,7 @@ void RadiationM1::VetGdCsSweep() {
     }
   };
 #endif
-  VetGdRingSweepBegin(false);
+  VetGdRingSweepBegin(two);
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     const int nsh = n1 - lcut;
@@ -1494,8 +1539,22 @@ void RadiationM1::VetGdCsSweep() {
         vgd_thalo += tf.seconds();
       }
 #endif
-      par_for("m1_vgdcs_shell", DevExeSpace(), 0, nmb1, ks, ke, js, je, d0, d1 - 1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+      // cstwin-1031: a flat (f, m, k, j, d) range, d fastest (as the MDRange before);
+      // with the fused twin the field f (0 main, 1 twin) is the slowest index (two
+      // fields' threads in one launch, each as the unfused sweep's thread)
+      const int nkk = ke - ks + 1, njj = je - js + 1, ndd = d1 - d0;
+      const int nper = (nmb1 + 1)*nkk*njj*ndd;
+      Kokkos::parallel_for("m1_vgdcs_shell",
+                           Kokkos::RangePolicy<>(DevExeSpace(), 0, (two ? 2 : 1)*nper),
+      KOKKOS_LAMBDA(const int c) {
+        const int f = c/nper;
+        int t = c - f*nper;
+        const int d = d0 + t % ndd;
+        t /= ndd;
+        const int j = js + t % njj;
+        t /= njj;
+        const int k = ks + t % nkk;
+        const int m = t/nkk;
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         const Real mr = mr_(m,k,j,d);
         if (inw == (mr >= 0.0)) {return;}
@@ -1503,22 +1562,19 @@ void RadiationM1::VetGdCsSweep() {
         const Real r = cx1v(m,i);
         const Real zr = r*fabs(mr);
         const Real p2 = fmax(r*r - zr*zr, 0.0);
-        const Real ch0 = exp(cs_(m,0,k,j,i));
-        const Real s0 = exp(cs_(m,1,k,j,i));
-        Real iv;
-        if (inw && l == n1 - 1) {
+        // cstwin-1031: the geometry (branch, upwind shell, chord, stencil) of the cell
+        // and direction, then the value of field f (main; the fused twin's from vgd_cst
+        // / vgd_itw) by the same code as the unfused sweep
+        // br: 0 the top shell's inflow, 1 the radial ray at the outward turn, 2 upwind
+        const int br = (inw && l == n1 - 1) ? 0 : ((!inw && zr < 1.0e-12*r) ? 1 : 2);
+        int typ = 1;
+        int iu = i + 1;
+        Real ds = 0.0, dso = 0.0;
+        VgdCsSt st;
+        if (br == 0) {
           const Real rtop = cx1f(m,ie+1);
-          const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
-          const Real stp = fmax(1.5*s0 - 0.5*exp(cs_(m,1,k,j,i-1)), 1.0e-300);
-          Real ex, w0, wu;
-          VgdCsW(ch0*ds, ex, w0, wu);
-          iv = tbh ? (itop*ex + wu*stp + w0*s0) : (wu*stp + w0*s0);
-        } else if (!inw && zr < 1.0e-12*r) {
-          iv = s0;
-        } else {
-          int typ = 1;
-          int iu = i + 1;
-          Real ds;
+          ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
+        } else if (br == 2) {
           if (inw) {
             const Real ru = cx1v(m,i+1);
             ds = sqrt(ru*ru - p2) - zr;
@@ -1537,7 +1593,7 @@ void RadiationM1::VetGdCsSweep() {
               ds = 2.0*zr;
             }
           }
-          Real dso = 0.5*ds;
+          dso = 0.5*ds;
           if (spl && typ == 1) {
             const Real rf = inw ? cx1f(m,i+1) : cx1f(m,i);
             dso = inw ? (sqrt(fmax(rf*rf - p2, 0.0)) - zr)
@@ -1550,9 +1606,9 @@ void RadiationM1::VetGdCsSweep() {
           xu[0] /= ru;
           xu[1] /= ru;
           xu[2] /= ru;
-          VgdCsSt st;
           const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
                                         nc, h, cm_, nb_, st);
+          // (counted per field swept, as the unfused twin's own sweep)
           if (!sok) {Kokkos::atomic_add(&cnt_(0), 1.0);}
           if (st.n == 0) {   // nothing in the band (counted): the own column
             st.n = 1;
@@ -1560,10 +1616,34 @@ void RadiationM1::VetGdCsSweep() {
             st.j[0] = j;
             st.w[0] = 1.0;
           }
+        }
+        bool ok[4];
+        bool all = true;
+        if (br == 2 && typ != 2) {
+          const bool want_in = inw || (typ == 3);
+          for (int e = 0; e < st.n; ++e) {
+            const Real mq = mr_(m,st.k[e],st.j[e],d);
+            ok[e] = want_in ? (mq < 0.0) : (mq >= 0.0);
+            all = all && ok[e];
+          }
+        }
+        const DvceArray5D<Real> &cv = (f == 0) ? cs_ : ct_;   // ln chi, ln S of field f
+        const VgdIView &va = (f == 0) ? vi_ : vt_;            // its intensities
+        const Real ch0 = exp(cv(m,0,k,j,i));
+        const Real s0 = exp(cv(m,1,k,j,i));
+        Real iv;
+        if (br == 0) {
+          const Real stp = fmax(1.5*s0 - 0.5*exp(cv(m,1,k,j,i-1)), 1.0e-300);
+          Real ex, w0, wu;
+          VgdCsW(ch0*ds, ex, w0, wu);
+          iv = tbh ? (itop*ex + wu*stp + w0*s0) : (wu*stp + w0*s0);
+        } else if (br == 1) {
+          iv = s0;
+        } else {
           if (typ == 2) {
             const int i1 = i + 1;
             auto sbt = [&](const int kk, const int jj) {
-              return fmax(1.5*exp(cs_(m,1,kk,jj,i)) - 0.5*exp(cs_(m,1,kk,jj,i1)),
+              return fmax(1.5*exp(cv(m,1,kk,jj,i)) - 0.5*exp(cv(m,1,kk,jj,i1)),
                           1.0e-300);
             };
             Real ex, w0, wu;
@@ -1578,14 +1658,13 @@ void RadiationM1::VetGdCsSweep() {
               Real bv = 0.0;
               for (int e = 0; e < st.n; ++e) {
                 const int kk = st.k[e], jj = st.j[e];
-                const Real sa = exp(cs_(m,1,kk,jj,i)), sb = exp(cs_(m,1,kk,jj,i1));
-                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(cs_(m,0,kk,jj,i));
+                const Real sa = exp(cv(m,1,kk,jj,i)), sb = exp(cv(m,1,kk,jj,i1));
+                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(cv(m,0,kk,jj,i));
                 bv += st.w[e]*((bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf);
               }
               iv = fmax(bv, 0.0)*ex + wu*qv + w0*s0;
             }
           } else {
-            const bool want_in = inw || (typ == 3);
             // the intensity of a stencil cell: its owner's interior when on this rank
             // (stream order: shell iu is complete; the other branch of shell i, which
             // this launch writes, is masked), else the band copy of the remote value
@@ -1600,15 +1679,8 @@ void RadiationM1::VetGdCsSweep() {
                   }
                 }
               }
-              return vi_(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
+              return va(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
-            bool ok[4];
-            bool all = true;
-            for (int e = 0; e < st.n; ++e) {
-              const Real mq = mr_(m,st.k[e],st.j[e],d);
-              ok[e] = want_in ? (mq < 0.0) : (mq >= 0.0);
-              all = all && ok[e];
-            }
             Real ivu;
             if (all) {
               ivu = 0.0;
@@ -1627,7 +1699,7 @@ void RadiationM1::VetGdCsSweep() {
             }
             auto lin = [&](const int c, const int ii) {
               Real s = 0.0;
-              for (int e = 0; e < st.n; ++e) {s += st.w[e]*cs_(m,c,st.k[e],st.j[e],ii);}
+              for (int e = 0; e < st.n; ++e) {s += st.w[e]*cv(m,c,st.k[e],st.j[e],ii);}
               return s;
             };
             const Real chu = exp(lin(0, iu));
@@ -1638,7 +1710,7 @@ void RadiationM1::VetGdCsSweep() {
               Real lmn = 1.0e300, lmx = -1.0e300;
               for (int e = 0; e < st.n; ++e) {
                 if (!(st.w[e] > 0.0)) {continue;}
-                const Real lc = cs_(m,0,st.k[e],st.j[e],iu);
+                const Real lc = cv(m,0,st.k[e],st.j[e],iu);
                 lmn = fmin(lmn, lc);
                 lmx = fmax(lmx, lc);
               }
@@ -1647,7 +1719,7 @@ void RadiationM1::VetGdCsSweep() {
             if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
               // vet_seg = jump: the turned ray's chord below the own inner face
               auto lind = [&](const int c) {
-                return exp(0.5*(lin(c, i - 1) + cs_(m,c,k,j,i-1)));
+                return exp(0.5*(lin(c, i - 1) + cv(m,c,k,j,i-1)));
               };
               const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
               const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
@@ -1661,7 +1733,7 @@ void RadiationM1::VetGdCsSweep() {
               for (int e = 0; e < st.n; ++e) {
                 if (!(st.w[e] > 0.0) || !(ok[e] || ivu < 0.0)) {continue;}
                 const int kk = st.k[e], jj = st.j[e];
-                const Real cq = exp(cs_(m,0,kk,jj,iu)), sq = exp(cs_(m,1,kk,jj,iu));
+                const Real cq = exp(cv(m,0,kk,jj,iu)), sq = exp(cv(m,1,kk,jj,iu));
                 const Real iq = (ivu < 0.0) ? sq : rdi(e);
                 Real vq;
                 if (spl) {
@@ -1685,7 +1757,7 @@ void RadiationM1::VetGdCsSweep() {
             }
           }
         }
-        vi_(m,d,k,j,i) = iv;
+        va(m,d,k,j,i) = iv;
       });
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
@@ -1725,9 +1797,10 @@ void RadiationM1::VetGdCsSweep() {
         // xchg-1021: this shell's exchanges are in flight (finished before the next
         // shell's kernels of the same group, or at the end of the pass)
       } else if (ccl) {
-        VetGdCsHaloC(pass, i);               // cs-s3b-1017: the read values only
+        VetGdCsHaloC(pass, i, two);          // cs-s3b-1017: the read values only
       } else {
         VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
+        if (two) {VetGdCsHalo(vgd_itw, n, i, i, false);}
       }
       if (rga && inw) {
         // the record of the values to save from this shell's inward band: the receive
