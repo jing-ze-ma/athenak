@@ -3091,6 +3091,12 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
   auto &mbp = pmbp->pmb->mb_panel;
   auto &x3h = pmbp->pcoord->x3v;
   auto &ccl = pmbp->pcoord->cos_cell;
+  // csacc-1031: <hydro>/am_vector keeps the radial part of L in the spin reservoir (cell
+  // totals S rhat): its z component belongs to Jdom/Jenv
+  auto *pamh = pmbp->phydro->pam;
+  const bool amsp = cs && pamh != nullptr && pamh->am_vector;
+  DvceArray4D<Real> amspin;
+  if (amsp) amspin = pamh->am_spin;
   array_sum::GlobalSum s;
   Kokkos::parallel_reduce("ryper_histe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
@@ -3108,6 +3114,11 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
     if (cs) {
       jz = dv*CsJz(mbp.d_view(m), x2v(m,j), x3h(m,k), r, u0(m,IM1,k,j,i), u0(m,IM2,k,j,i),
                    u0(m,IM3,k,j,i), d, om);
+      if (amsp) {
+        Real st, ph, ct;
+        CsAng(mbp.d_view(m), x2v(m,j), x3h(m,k), st, ph, ct);
+        jz += amspin(m,k,j,i)*ct;
+      }
     }
     v.the_array[0] = dv*d;
     v.the_array[1] = jz;
@@ -5565,7 +5576,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   BallisticOut bo = IntegrateStream(mu, csd/aom, (stl1_ ? racc : str_r_)/asep);
   BallisticOut bi = IntegrateStream(mu, csd/aom, racc/asep);
   const Real width = pin->GetOrAddReal("problem", "stream_width", csd/rp_.omega);
-  if (!bo.ok_cross) fatal("the ballistic stream never reaches stream_r (default x1max)");
+  // csacc-1031: the cubed sphere runs without the stream (refused below), so the stream
+  // state is unused there and a domain beyond L1 needs no stream_r
+  if (!bo.ok_cross && !(cs_ && !stream_on_)) {
+    fatal("the ballistic stream never reaches stream_r (default x1max)");
+  }
   phi_s_ = bo.phi;
   vr_s_ = bo.vr*aom;
   vp_s_ = bo.vt*aom;
@@ -6327,12 +6342,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pam->frame_om[1] = 0.0;
       pam->frame_om[2] = om;
       pam->frame_cf = false;
+      // (frame_exact is read by the core only with frame_omega named)
+      if (pin->DoesParameterExist("hydro", "frame_exact")) {
+        pam->frame_exact = pin->GetBoolean("hydro", "frame_exact");
+      }
     }
     if (root) {
       std::printf("ry_per_accretor: CUBED SPHERE (csacc-1031): static envelope; Coriolis "
                   "-2 Omega x v from <hydro>/frame_omega = (0, 0, %.10e) with "
-                  "frame_centrifugal = false (centrifugal in the Roche potential); L_z budget "
-                  "file off (Jdom/Jout from the Cartesian r x p)\n", om);
+                  "frame_centrifugal = false (centrifugal in the Roche potential); am_vector "
+                  "%s, frame_exact %s; L_z budget file off (Jdom/Jout from the Cartesian r x p"
+                  "%s)\n", om, pam->am_vector ? "on" : "off", pam->frame_exact ? "on" : "off",
+                  pam->am_vector ? " + the spin reservoir" : "");
     }
   }
   // acctrc-1019c: the cumulative history registers in the restart file (RyPerRstWrite)

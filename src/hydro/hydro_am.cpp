@@ -403,12 +403,6 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
               << "rk1 | rk2" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (!frame_cf && am_vector) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<hydro>/frame_centrifugal = false (Coriolis only) is not "
-              << "supported with <hydro>/am_vector" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   const bool fcf = frame_cf;
   HydroAmV v;
   AmFillV(v, fl);
@@ -490,7 +484,12 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
         cart(u1_(m,IM1,k,j,i), u1_(m,IM2,k,j,i), u1_(m,IM3,k,j,i), mc);
         HydroAmCross(omv, rc, orc);
         const Real rho = u1_(m,IDN,k,j,i);
-        for (int q = 0; q < 3; ++q) {pa[q] = (mc[q] + rho*orc[q])*dv;}
+        if (fcf) {
+          for (int q = 0; q < 3; ++q) {pa[q] = (mc[q] + rho*orc[q])*dv;}
+        } else {
+          // csacc-1031 Coriolis only: L_rel^n (the vector the exact rotation acts on)
+          for (int q = 0; q < 3; ++q) {pa[q] = mc[q]*dv;}
+        }
         HydroAmCross(rc, pa, la);
         for (int q = 0; q < 3; ++q) {
           la[q] += sp1_(m,k,j,i)*rh[q] + (lx[q] - sps_(m,k,j,i)*rh[q]);

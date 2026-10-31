@@ -904,7 +904,14 @@ void HydroAmFrame(const HydroAmV &v, const Real *om, const bool amc, const int m
     for (int c = 0; c < 3; ++c) {qv[c] += phi[n]*(wf[c] - wc[c]);}
   }
   Real pa[3], la[3], ol[3], tcd[3];
-  for (int c = 0; c < 3; ++c) {pa[c] = rho*(vel[c] + orc[c])*dv;}
+  // csacc-1031 (cf = false, Coriolis only): the frame force's exact torque is
+  // -Q_c - Omega x L_rel,c (L_rel = V rc x rho v): Coriolis = -Omega x (r x rho v) - rho v.grad w,
+  // the centrifugal part (-Omega x V rc x rho (Omega x rc)) being the potential's
+  if (cf) {
+    for (int c = 0; c < 3; ++c) {pa[c] = rho*(vel[c] + orc[c])*dv;}
+  } else {
+    for (int c = 0; c < 3; ++c) {pa[c] = rho*vel[c]*dv;}
+  }
   HydroAmCross(rc, pa, la);
   HydroAmCross(om, la, ol);
   Real fv[3];
