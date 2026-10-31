@@ -90,15 +90,6 @@ int64_t g_vgd_csgen_save[16] = {0};
 
 namespace {
 
-// cslight-1031: the sp sweep's VgdLight (rad_m1_vetgd.cpp): a flat range policy whose
-// functor rides as a KERNEL ARGUMENT (HintLightWeight) for the per-shell kernels (shell,
-// pack, unpack), instead of the constant-memory launch with a host wait on the previous
-// such launch (the same kernels, the same numbers: every thread writes its own value)
-inline auto VgdCsLight(const DevExeSpace &ex, const int a, const int b) {
-  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
-                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
-}
-
 // xchg-1021: a stream event of the default device instance (the sweep's stream): record
 // after a kernel, query from the host without a full fence.  No device backend: fence
 struct VgdCsEv {
@@ -138,23 +129,7 @@ struct VgdCsEv {
 #endif
 };
 void VgdCsFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
-            << "<rad_m1>/vet_gd (cubed sphere): " << msg << std::endl;
-  std::exit(EXIT_FAILURE);
-}
-
-// the positive first-order SC weights (VgdW of rad_m1_vetgd.cpp, term for term)
-KOKKOS_INLINE_FUNCTION
-void VgdCsW(const Real dtau, Real &ex, Real &w0, Real &wu) {
-  ex = exp(-dtau);
-  if (dtau < 1.0e-3) {
-    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-  } else {
-    const Real g = (1.0 - ex)/dtau;
-    w0 = 1.0 - g;
-    wu = g - ex;
-  }
+  VgdFatalAt(__FILE__, "<rad_m1>/vet_gd (cubed sphere): ", msg);
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -1109,7 +1084,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
   Real *rbp = ncl ? vgd_csdrb.data() : rb_.data();
   if (ns > 0) {
     Kokkos::parallel_for("m1_vgdcs_cpack",
-                         VgdCsLight(DevExeSpace(), 0, static_cast<int>(ns)),
+                         VgdLight(DevExeSpace(), 0, static_cast<int>(ns)),
     KOKKOS_LAMBDA(const int o) {
       const int x = si_(s0 + o);
       const int e = x/n, d = x - e*n;
@@ -1177,7 +1152,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
   vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*xf;
   if (nr > 0) {
     Kokkos::parallel_for("m1_vgdcs_cunpack",
-                         VgdCsLight(DevExeSpace(), 0, static_cast<int>(nr)),
+                         VgdLight(DevExeSpace(), 0, static_cast<int>(nr)),
     KOKKOS_LAMBDA(const int o) {
       const int x = ri_(r0 + o);
       const int e = x/n, d = x - e*n;
@@ -1525,7 +1500,7 @@ void RadiationM1::VetGdCsSweep() {
       auto si_ = E.si;
       const int64_t bo = x.slot*xmx;
       const int i = x.i;
-      Kokkos::parallel_for("m1_vgdcs_xpack", VgdCsLight(DevExeSpace(), 0,
+      Kokkos::parallel_for("m1_vgdcs_xpack", VgdLight(DevExeSpace(), 0,
                                                      static_cast<int>(ns)),
       KOKKOS_LAMBDA(const int o) {
         const int xx = si_(s0 + o);
@@ -1570,7 +1545,7 @@ void RadiationM1::VetGdCsSweep() {
       auto ri_ = E.ri;
       const int64_t bo = x.slot*xmx;
       const int i = x.i;
-      Kokkos::parallel_for("m1_vgdcs_xunpack", VgdCsLight(DevExeSpace(), 0,
+      Kokkos::parallel_for("m1_vgdcs_xunpack", VgdLight(DevExeSpace(), 0,
                                                      static_cast<int>(nr)),
       KOKKOS_LAMBDA(const int o) {
         const int xx = ri_(r0 + o);
@@ -1768,7 +1743,7 @@ void RadiationM1::VetGdCsSweep() {
         if (br == 0) {
           const Real stp = fmax(1.5*s0 - 0.5*exp(cv(m,1,k,j,i-1)), 1.0e-300);
           Real ex, w0, wu;
-          VgdCsW(ch0*ds, ex, w0, wu);
+          VetSegW(ch0*ds, ex, w0, wu);
           iv = tbh ? (itop*ex + wu*stp + w0*s0) : (wu*stp + w0*s0);
         } else if (br == 1) {
           iv = s0;
@@ -1780,7 +1755,7 @@ void RadiationM1::VetGdCsSweep() {
                           1.0e-300);
             };
             Real ex, w0, wu;
-            VgdCsW(ch0*ds, ex, w0, wu);
+            VetSegW(ch0*ds, ex, w0, wu);
             Real qv = 0.0;
             for (int e = 0; e < st.n; ++e) {qv += st.w[e]*sbt(st.k[e], st.j[e]);}
             if (emi) {
@@ -1873,7 +1848,7 @@ void RadiationM1::VetGdCsSweep() {
                   vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
                 } else {
                   Real ex, w0, wu;
-                  VgdCsW(0.5*(cq + ch0)*ds, ex, w0, wu);
+                  VetSegW(0.5*(cq + ch0)*ds, ex, w0, wu);
                   vq = iq*ex + wu*sq + w0*s0;
                 }
                 ws += st.w[e];
@@ -1885,7 +1860,7 @@ void RadiationM1::VetGdCsSweep() {
                                     ch0*dso, spe), 0.0);
             } else {
               Real ex, w0, wu;
-              VgdCsW(0.5*(chu + ch0)*ds, ex, w0, wu);
+              VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
               iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
             }
           }
@@ -1906,7 +1881,7 @@ void RadiationM1::VetGdCsSweep() {
         if (ens > 0) {
           auto si_ = E.si;
           auto S_ = vgd_cssl;
-          Kokkos::parallel_for("m1_vgdcs_eshell", VgdCsLight(DevExeSpace(), 0,
+          Kokkos::parallel_for("m1_vgdcs_eshell", VgdLight(DevExeSpace(), 0,
                                                             static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
@@ -1917,7 +1892,7 @@ void RadiationM1::VetGdCsSweep() {
           auto b_ = vgd_itw;
           Real *sbp = vgd_cssb.data();
           Kokkos::parallel_for("m1_vgdcs_cpack",
-                               VgdCsLight(DevExeSpace(), 0, static_cast<int>(ens)),
+                               VgdLight(DevExeSpace(), 0, static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
             const int e = x/n, d = x - e*n;
@@ -1931,7 +1906,7 @@ void RadiationM1::VetGdCsSweep() {
         }
         eev.Record();
       }
-      Kokkos::parallel_for("m1_vgdcs_shell", VgdCsLight(DevExeSpace(), 0, nper),
+      Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper),
       KOKKOS_LAMBDA(const int c) {
         int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
         const int d = d0 + t % ndd;
@@ -2028,7 +2003,7 @@ void RadiationM1::VetGdCsSweep() {
           auto ri_ = E.ri;
           const Real *rbp = vgd_csrb.data();
           Kokkos::parallel_for("m1_vgdcs_cunpack",
-                               VgdCsLight(DevExeSpace(), 0, static_cast<int>(nr)),
+                               VgdLight(DevExeSpace(), 0, static_cast<int>(nr)),
           KOKKOS_LAMBDA(const int o) {
             const int x = ri_(r0 + o);
             const int e = x/n, d = x - e*n;

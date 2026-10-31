@@ -96,7 +96,7 @@
             const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
             const Real stp = fmax(1.5*s0 - 0.5*exp(csx(m,1,k,j,i-1)), 1.0e-300);
             Real ex, w0, wu;
-            VgdW(ch0*ds, ex, w0, wu);
+            VetSegW(ch0*ds, ex, w0, wu);
             if (tbh) {
               iv = itop*ex + wu*stp + w0*s0;
             } else {
@@ -223,7 +223,7 @@
                 iv = fmax(VetSegSplit(0.0, sx, s0, chx*(dsx - dxo), ch0*dxo, spe), 0.0);
               } else {
                 Real ex, w0, wu;
-                VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
+                VetSegW(0.5*(chx + ch0)*dsx, ex, w0, wu);
                 iv = fmax(wu*sx + w0*s0, 0.0);
               }
               bdone = true;
@@ -286,7 +286,7 @@
                                         ch0*dxo, spe), 0.0);
                 } else {
                   Real ex, w0, wu;
-                  VgdW(0.5*(chx + ch0)*dsx, ex, w0, wu);
+                  VetSegW(0.5*(chx + ch0)*dsx, ex, w0, wu);
                   iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
                 }
                 bdone = true;
@@ -324,7 +324,7 @@
                             1.0e-300);
               };
               Real ex, w0, wu;
-              VgdW(ch0*ds, ex, w0, wu);
+              VetSegW(ch0*ds, ex, w0, wu);
               const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
                                       VgdLerp(sbt(k1,j0), sbt(k1,j1), uj), uk);
               iv = ie0*ex + wu*qv + w0*s0;
@@ -346,7 +346,7 @@
                             1.0e-300);
               };
               Real ex, w0, wu;
-              VgdW(ch0*ds, ex, w0, wu);
+              VetSegW(ch0*ds, ex, w0, wu);
               const Real bv = fmax(VgdLerp(VgdLerp(ib(k0,j0), ib(k0,j1), uj),
                                            VgdLerp(ib(k1,j0), ib(k1,j1), uj), uk), 0.0);
               const Real qv = VgdLerp(VgdLerp(sbt(k0,j0), sbt(k0,j1), uj),
@@ -533,7 +533,7 @@
                       if (spl) {return VetSegSplit(ia, sa, sb, ca*(qa - f), cb*(f - qb),
                                                    spe);}
                       Real ex, w0, wu;
-                      VgdW(0.5*(ca + cb)*(qa - qb), ex, w0, wu);
+                      VetSegW(0.5*(ca + cb)*(qa - qb), ex, w0, wu);
                       return ia*ex + wu*sa + w0*sb;
                     };
                     int t2 = 0, t3 = 0;
@@ -613,7 +613,7 @@
                     vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
                   } else {
                     Real ex, w0, wu;
-                    VgdW(0.5*(cq + ch0)*ds, ex, w0, wu);
+                    VetSegW(0.5*(cq + ch0)*ds, ex, w0, wu);
                     vq = iq*ex + wu*sq + w0*s0;
                   }
                   ws += wq;
@@ -625,7 +625,7 @@
                                       ch0*dso, spe), 0.0);
               } else {
                 Real ex, w0, wu;
-                VgdW(0.5*(chu + ch0)*ds, ex, w0, wu);
+                VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
                 iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
               }
             }

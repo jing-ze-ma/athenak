@@ -101,20 +101,6 @@ constexpr int VL_TURN = 3;    // outward, turned between the shells: own shell, 
 KOKKOS_INLINE_FUNCTION
 Real VlatLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
-// the positive first-order SC weights (VcolW of rad_m1_vetcol.cpp, term for term)
-KOKKOS_INLINE_FUNCTION
-void VlatW(const Real dtau, Real &ex, Real &w0, Real &wu) {
-  ex = exp(-dtau);
-  if (dtau < 1.0e-3) {
-    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-  } else {
-    const Real g = (1.0 - ex)/dtau;
-    w0 = 1.0 - g;
-    wu = g - ex;
-  }
-}
-
 
 // mu label of a ray at the upwind shell: position between the descending nodes
 void VlatLabel(const std::vector<double> &nd, const double mu, double &a0, double &fa) {
@@ -775,7 +761,7 @@ void RadiationM1::VetLatSweep(const int stage) {
           const Real stp = fmax(1.5*exp(cs_(m,1,k,j,i)) - 0.5*exp(cs_(m,1,k,j,i-1)),
                                 1.0e-300);
           Real ex, w0, wu;
-          VlatW(ch0*ds, ex, w0, wu);
+          VetSegW(ch0*ds, ex, w0, wu);
           iv = wu*stp + w0*s0;
         } else {
           // the upwind point, its lateral cell and bilinear fractions (index space)
@@ -821,7 +807,7 @@ void RadiationM1::VetLatSweep(const int stage) {
                           1.0e-300);
             };
             Real ex, w0, wu;
-            VlatW(ch0*ds, ex, w0, wu);
+            VetSegW(ch0*ds, ex, w0, wu);
             const Real bv = fmax(VlatLerp(VlatLerp(ib(ka,ja), ib(ka,jb), uj),
                                           VlatLerp(ib(kb,ja), ib(kb,jb), uj), uk), 0.0);
             const Real qv = VlatLerp(VlatLerp(sbt(ka,ja), sbt(ka,jb), uj),
@@ -894,7 +880,7 @@ void RadiationM1::VetLatSweep(const int stage) {
                         0.0);
             } else {
               Real ex, w0, wu;
-              VlatW(0.5*(chu + ch0)*ds, ex, w0, wu);
+              VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
               iv = fmax(ivu*ex + wu*su + w0*s0, 0.0);
             }
           }

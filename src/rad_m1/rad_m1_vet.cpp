@@ -892,16 +892,8 @@ struct VetRayK {
         }
       }
       const Real dtau = 0.5*c0*dx1/am1;
-      const Real ex = exp(-dtau);
-      Real w0, wu;
-      if (dtau < 1.0e-3) {
-        w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-        wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-      } else {
-        const Real g = (1.0 - ex)/dtau;
-        w0 = 1.0 - g;
-        wu = g - ex;
-      }
+      Real ex, w0, wu;
+      VetSegW(dtau, ex, w0, wu);
       iv = ib*ex + wu*su + w0*s0;
     } else {
       const int li = up ? (li0 - 1) : (li0 + 1);
@@ -953,16 +945,8 @@ struct VetRayK {
         iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
       } else {
         const Real dtau = 0.5*(cu + c0)*dx1/am1;
-        const Real ex = exp(-dtau);
-        Real w0, wu;
-        if (dtau < 1.0e-3) {
-          w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-          wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-        } else {
-          const Real g = (1.0 - ex)/dtau;
-          w0 = 1.0 - g;
-          wu = g - ex;
-        }
+        Real ex, w0, wu;
+        VetSegW(dtau, ex, w0, wu);
         iv = iup_v*ex + wu*su + w0*s0;
       }
       if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
@@ -1535,16 +1519,8 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
           }
         }
         const Real dtau = 0.5*c0*dx1/am1;
-        const Real ex = exp(-dtau);
-        Real w0, wu;
-        if (dtau < 1.0e-3) {
-          w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-          wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-        } else {
-          const Real gg = (1.0 - ex)/dtau;
-          w0 = 1.0 - gg;
-          wu = gg - ex;
-        }
+        Real ex, w0, wu;
+        VetSegW(dtau, ex, w0, wu);
         iv = ib*ex + wu*su + w0*s0;
       } else {
         const int iup = up ? (i - 1) : (i + 1);
@@ -1586,16 +1562,8 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
           iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
         } else {
           const Real dtau = 0.5*(cu + c0)*dx1/am1;
-          const Real ex = exp(-dtau);
-          Real w0, wu;
-          if (dtau < 1.0e-3) {
-            w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-            wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-          } else {
-            const Real gg = (1.0 - ex)/dtau;
-            w0 = 1.0 - gg;
-            wu = gg - ex;
-          }
+          Real ex, w0, wu;
+          VetSegW(dtau, ex, w0, wu);
           iv = iup_v*ex + wu*su + w0*s0;
         }
         if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
@@ -3430,16 +3398,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
               }
             }
             const Real dtau = 0.5*c0*dx1/am1;
-            const Real ex = exp(-dtau);
-            Real w0, wu;
-            if (dtau < 1.0e-3) {
-              w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-              wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-            } else {
-              const Real g = (1.0 - ex)/dtau;
-              w0 = 1.0 - g;
-              wu = g - ex;
-            }
+            Real ex, w0, wu;
+            VetSegW(dtau, ex, w0, wu);
             iv = ib*ex + wu*su + w0*s0;
           } else {
             // the upwind plane: banded layer i -+ 1 (0 and nx1+1 = the neighbour's face)
@@ -3482,16 +3442,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
               iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
             } else {
               const Real dtau = 0.5*(cu + c0)*dx1/am1;
-              const Real ex = exp(-dtau);
-              Real w0, wu;
-              if (dtau < 1.0e-3) {
-                w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-                wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-              } else {
-                const Real g = (1.0 - ex)/dtau;
-                w0 = 1.0 - g;
-                wu = g - ex;
-              }
+              Real ex, w0, wu;
+              VetSegW(dtau, ex, w0, wu);
               iv = iup_v*ex + wu*su + w0*s0;
             }
             if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
@@ -4043,16 +3995,8 @@ void RadiationM1::VetShortCharSweep() {
             }
           }
           const Real dtau = 0.5*c0*dx1/am1;
-          const Real ex = exp(-dtau);
-          Real w0, wu;
-          if (dtau < 1.0e-3) {
-            w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-            wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-          } else {
-            const Real g = (1.0 - ex)/dtau;
-            w0 = 1.0 - g;
-            wu = g - ex;
-          }
+          Real ex, w0, wu;
+          VetSegW(dtau, ex, w0, wu);
           iv = ib*ex + wu*su + w0*s0;
         } else {
           const int iup = mimg ? i : ((l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1)));
@@ -4128,16 +4072,8 @@ void RadiationM1::VetShortCharSweep() {
             iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
           } else {
             const Real dtau = 0.5*(cu + c0)*dx1/am1;
-            const Real ex = exp(-dtau);
-            Real w0, wu;
-            if (dtau < 1.0e-3) {
-              w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-              wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-            } else {
-              const Real g = (1.0 - ex)/dtau;
-              w0 = 1.0 - g;
-              wu = g - ex;
-            }
+            Real ex, w0, wu;
+            VetSegW(dtau, ex, w0, wu);
             iv = iup_v*ex + wu*su + w0*s0;
           }
           if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)

@@ -90,6 +90,7 @@
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
@@ -403,19 +404,11 @@ inline Real HsLogMean(const Real c0, const Real c1) {
   return 0.5*(c0 + c1);
 }
 
-// one first-order short-characteristic step (the positive weights of VcolW/VlatW,
+// one first-order short-characteristic step (the positive weights VetSegW,
 // source linear in tau): I = I_up e^-dtau + w0 S_0 + wu S_up
 inline Real HsScStep(const Real iup, const Real dtau, const Real su, const Real s0) {
-  const Real ex = std::exp(-dtau);
-  Real w0, wu;
-  if (dtau < 1.0e-3) {
-    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-  } else {
-    const Real g = (1.0 - ex)/dtau;
-    w0 = 1.0 - g;
-    wu = g - ex;
-  }
+  Real ex, w0, wu;
+  VetSegW(dtau, ex, w0, wu);
   return iup*ex + w0*s0 + wu*su;
 }
 

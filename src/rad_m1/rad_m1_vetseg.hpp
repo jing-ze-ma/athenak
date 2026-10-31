@@ -42,6 +42,9 @@
 //! 0.13 with emit).  In a smooth field both contrasts are O(dx): second order kept.
 
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <string>
 
 #include "athena.hpp"
 
@@ -57,6 +60,23 @@ void VetSegW(const Real dtau, Real &ex, Real &w0, Real &wu) {
     w0 = 1.0 - g;
     wu = g - ex;
   }
+}
+
+// vgdrot-1011 / cslight-1031: a range policy whose functor rides as a KERNEL ARGUMENT
+// (HintLightWeight, as VetFor in rad_m1_vet.cpp) for the per-shell vet_gd sweep kernels
+// (sp and cs: shell, pack, scatter/unpack); without it the 0.5-4 kB functors take the
+// constant-memory launch with a host wait on the previous such launch (the same
+// kernels, the same numbers)
+inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
+  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
+                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+}
+
+// the fatal-error exit of the vet_gd setup (sp VgdFatal, cs VgdCsFatal): file, tag, msg
+[[noreturn]] inline void VgdFatalAt(const char *file, const char *tag,
+                                    const std::string &msg) {
+  std::cout << "### FATAL ERROR in " << file << std::endl << tag << msg << std::endl;
+  std::exit(EXIT_FAILURE);
 }
 
 // the face source S_f of the split segment (see above); emit: 0 split, 1 emit, 2 jump

@@ -103,11 +103,7 @@ namespace {
 // env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
 int g_vgd_apoll = 0;
 
-void VgdFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
-            << "<rad_m1>/vet_gd: " << msg << std::endl;
-  std::exit(EXIT_FAILURE);
-}
+void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_m1>/vet_gd: ", msg);}
 
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
@@ -152,15 +148,7 @@ Real VgdSrRef(const DvceArray1D<Real> &sr, const int c, const int i, const int c
   return sr(M1_VGD_SR_J*c1 + i);   // M1_VGD_HRJ
 }
 
-// vgdrot-1011: a range policy whose functor rides as a KERNEL ARGUMENT (HintLightWeight,
-// as VetFor in rad_m1_vet.cpp): the per-shell sweep kernels (shell, pack, scatter) have
-// 0.5-4 kB functors, which by default take the constant-memory launch with a host wait
-// on the previous such launch; without it the host can run ahead of the device (the
-// same kernels, the same numbers)
-inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
-  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
-                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
-}
+// (VgdLight: rad_m1_vetseg.hpp)
 
 // vgdrot-1011 vet_gd_halo_ipc: flags in device memory written over NVLink by the peers
 // (as implicit_halo_ipc): [0, NS) arrivals by partner slot, [NS, 2 NS) acks; a spin gives
@@ -228,7 +216,6 @@ void VgdIpcWaitN(const long long *f, const int np, const long long target, int *
 #endif
 }
 
-// the positive first-order SC weights (VcolW of rad_m1_vetcol.cpp, term for term)
 // unify-sc-gd-1012 (#6) vet_interp = auto: a material edge in the upwind stencil, the
 // extinction contrast max/min over the corners of nonzero weight > kVetCornerRatio
 // (rad_m1_vetseg.hpp; csx holds ln chi)
@@ -245,19 +232,6 @@ bool VgdCornerEdge(const CS &csx, const int m, const int k0, const int k1, const
     lmx = fmax(lmx, l);
   }
   return (lmx - lmn) > log(kVetCornerRatio);
-}
-
-KOKKOS_INLINE_FUNCTION
-void VgdW(const Real dtau, Real &ex, Real &w0, Real &wu) {
-  ex = exp(-dtau);
-  if (dtau < 1.0e-3) {
-    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-  } else {
-    const Real g = (1.0 - ex)/dtau;
-    w0 = 1.0 - g;
-    wu = g - ex;
-  }
 }
 
 // HEALPix ring-scheme centres (12 ns^2) with the moment-fixed weights
