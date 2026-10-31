@@ -1326,11 +1326,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       const bool bx = pin->DoesParameterExist("rad_m1","vet_gd_band_exit") &&
                       pin->GetBoolean("rad_m1","vet_gd_band_exit");
       const bool hok = (global_variable::nranks == 1) || (vgd_hcomp > 0);
-      // cstwin-1031: not by default on the cubed sphere (the fused twin there doubles
-      // the largest device array; before this build cs always swept it unfused)
-      const bool csd = pmy_pack->pmesh->use_cubed_sphere;
+      // csdef-1031: also on the cubed sphere (the cs fused twin, cstwin-1031; bitwise the
+      // unfused / lowmem twin).  MEMORY: the fused twin keeps a second ragged band
+      // intensity array (+ vgd_cst): about +8-10 GB per GPU on the He giant at 8 ranks
+      // (3 blocks 704x64x64 per rank, 120 directions; measured peak +7.8 GB) and ~+6.5 GB
+      // at 12 ranks; where that does not fit, name vet_gd_twin_lowmem = true (the same
+      // numbers, one array)
       vgd_twfuse = pin->GetOrAddBoolean("rad_m1","vet_gd_twin_fuse",
-                                        it1 && !bx && !vgd_async_named && hok && !csd);
+                                        it1 && !bx && !vgd_async_named && hok);
     }
     // vet_gd_twin_lowmem (mem-1009; read only when named, default false): with
     // vet_gd_twin_fuse, the twin is swept BEFORE the main sweep in the same intensity
