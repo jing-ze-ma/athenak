@@ -5420,19 +5420,9 @@ void RadiationM1::VetGdMoments() {
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
     const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
-    const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-    Real jt = 0.0, jb = 0.0, ht = 0.0;
-    for (int d = 0; d < n; ++d) {
-      const Real a = dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
-      const Real w = dir_(d,3);
-      jt += w*vi_(m,d,k+og,j+og,ie);
-      jb += w*vi_(m,d,k+og,j+og,ie-1);
-      ht += w*a*vi_(m,d,k+og,j+og,ie);
-    }
-    const Real rr = cx1v(m,ie)/cx1f(m,ie+1);
-    const Real hf = ht*rr*rr;
-    const Real jq = sqf ? fmin(fmax(jca*jt - jcb*jb, 0.0), jcap*jt) : jt;
-    vq_(m,k,j) = (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
+    const VgdRhatSp rh{sin(th), cos(th), sin(ph), cos(ph)};
+    vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k, j, og, ie, cx1v(m,ie)/cx1f(m,ie+1),
+                             sqf, jca, jcb, jcap, qlo, qhi, q0);
   });
 }
 

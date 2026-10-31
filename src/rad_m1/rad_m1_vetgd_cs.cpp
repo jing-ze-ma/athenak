@@ -2123,20 +2123,9 @@ void RadiationM1::VetGdCsMoments(const int part) {
   auto cx1f = pmy_pack->pcoord->xx1f;
   par_for("m1_vgdcs_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    const Real rx = cr_(m,k+og,j+og,0), ry = cr_(m,k+og,j+og,1);
-    const Real rz = cr_(m,k+og,j+og,2);
-    Real jt = 0.0, jb = 0.0, ht = 0.0;
-    for (int d = 0; d < n; ++d) {
-      const Real a = dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
-      const Real w = dir_(d,3);
-      jt += w*vi_(m,d,k+og,j+og,ie);
-      jb += w*vi_(m,d,k+og,j+og,ie-1);
-      ht += w*a*vi_(m,d,k+og,j+og,ie);
-    }
-    const Real rr = cx1v(m,ie)/cx1f(m,ie+1);
-    const Real hf = ht*rr*rr;
-    const Real jq = sqf ? fmin(fmax(jca*jt - jcb*jb, 0.0), jcap*jt) : jt;
-    vq_(m,k,j) = (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
+    const VgdRhatCs rh{cr_(m,k+og,j+og,0), cr_(m,k+og,j+og,1), cr_(m,k+og,j+og,2)};
+    vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k, j, og, ie, cx1v(m,ie)/cx1f(m,ie+1),
+                             sqf, jca, jcb, jcap, qlo, qhi, q0);
   });
 }
 
