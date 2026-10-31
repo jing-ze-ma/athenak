@@ -54,6 +54,12 @@
 //!    couplings across the block faces read the halo of the x1-sweep z (implicit_mg_halo),
 //!    on the coarse levels they are left out (ImplicitMGSmoothFine).  For the stiff phi
 //!    rows next to the poles; skipped on a coarse level with one x3 cell.
+//!    mgx3fast-1030: the line factorisation is made once per pass (M1X3Fac), one thread
+//!    per line of the colour, and by default (implicit_mg_x3line_halo = 1) the fine
+//!    residual reuses the halo taken for the x3 sweep (ghosts = the x1-sweep z) instead
+//!    of a second exchange; = 2 keeps the second halo (the cf243ae9 map).  Under
+//!    implicit_timers + implicit_timers_mg_x3 = true the sweeps are the category mg_x3
+//!    (taken out of krylov); its fences inside the Krylov loop cost time themselves.
 //!  implicit_mg_sym = true: every red-black half-sweep pair becomes red, black, red (the
 //!    rbgs map on the fine level, x1 and x3 sweeps alike, and on every coarse level).
 //!  implicit_mg_full_rows = true: the rows of the preconditioner from the Krylov stencil
@@ -223,33 +229,57 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
 
 //! mgsm-1030 implicit_mg_x3line: one colour of the x3 (phi) line sweep on a coarse level:
 //! the lines (j,i) with parity (i+j) = col solve their x3 tridiagonal (CKM, TB, CKP)
-//! exactly (Thomas, one thread per line, c' in s_), with the x1 / x2 couplings to the
-//! current z of the other colour on the right-hand side (block-local: the couplings
-//! across a block face are left out, as everywhere on the coarse levels)
-void M1X3MG(const DvceArray5D<Real> &a_, const DvceArray1D<Real> &s_, const int nmb,
-            const int nx, const int nj, const int nk, const int col) {
+//! exactly, with the x1 / x2 couplings to the current z of the other colour on the
+//! right-hand side (block-local: the couplings across a block face are left out, as
+//! everywhere on the coarse levels).  mgx3fast-1030: the factorisation f_ (offset o) is
+//! made once per pass (M1X3Fac); one thread per line of the colour only (i = 2 ii +
+//! parity: no idle lanes), consecutive threads at consecutive lines of that colour
+void M1X3MG(const DvceArray5D<Real> &a_, const DvceArray1D<Real> &f_, const size_t o,
+            const int nmb, const int nx, const int nj, const int nk, const int col) {
   const size_t pl = static_cast<size_t>(nmb)*nj*nx;
-  par_for("m1_mg_x3c", DevExeSpace(), 0, nmb-1, 0, nj-1, 0, nx-1,
-  KOKKOS_LAMBDA(const int m, const int j, const int i) {
-    if (((i + j) & 1) != col) return;
-    const size_t b = (static_cast<size_t>(m)*nj + j)*nx + i;
-    Real cpv = 0.0, dpv = 0.0;
+  const int nxh = (nx + 1)/2;
+  par_for("m1_mg_x3c", DevExeSpace(), 0, nmb-1, 0, nj-1, 0, nxh-1,
+  KOKKOS_LAMBDA(const int m, const int j, const int ih) {
+    const int i = 2*ih + ((col + j) & 1);
+    if (i >= nx) return;
+    const size_t b = o + (static_cast<size_t>(m)*nj + j)*nx + i;
+    Real dpv = 0.0;
     for (int k = 0; k < nk; ++k) {
       Real d = a_(m,MG_R,k,j,i);
       if (i > 0) d -= a_(m,MG_TA,k,j,i)*a_(m,MG_Z,k,j,i-1);
       if (i < nx-1) d -= a_(m,MG_TC,k,j,i)*a_(m,MG_Z,k,j,i+1);
       if (j > 0) d -= a_(m,MG_CJM,k,j,i)*a_(m,MG_Z,k,j-1,i);
       if (j < nj-1) d -= a_(m,MG_CJP,k,j,i)*a_(m,MG_Z,k,j+1,i);
-      const Real am = (k > 0) ? a_(m,MG_CKM,k,j,i) : 0.0;
-      const Real cp = (k < nk-1) ? a_(m,MG_CKP,k,j,i) : 0.0;
-      const Real den = a_(m,MG_TB,k,j,i) - am*cpv;
-      cpv = cp/den;
-      dpv = (d - am*dpv)/den;
-      s_(k*pl + b) = cpv;
+      dpv = f_(b + k*pl)*d - f_(b + (nk + k)*pl)*dpv;
       a_(m,MG_Z,k,j,i) = dpv;
     }
+    Real zn = dpv;
     for (int k = nk-2; k >= 0; --k) {
-      a_(m,MG_Z,k,j,i) -= s_(k*pl + b)*a_(m,MG_Z,k+1,j,i);
+      zn = a_(m,MG_Z,k,j,i) - f_(b + (2*nk + k)*pl)*zn;
+      a_(m,MG_Z,k,j,i) = zn;
+    }
+  });
+}
+
+//! mgx3fast-1030: the x3 line factorisation of one level (every line, both colours):
+//! rows rw_(r0+1 = TB), rw_(r1+2 = CKM), rw_(r1+3 = CKP) at (m, k+ks, j+js, i+is)
+void M1X3Fac(const DvceArray5D<Real> &rw_, const int r0, const int r1,
+             const DvceArray1D<Real> &f_, const size_t o, const int nmb, const int nx,
+             const int nj, const int nk, const int is, const int js, const int ks) {
+  const size_t pl = static_cast<size_t>(nmb)*nj*nx;
+  par_for("m1_mg_x3fac", DevExeSpace(), 0, nmb-1, 0, nj-1, 0, nx-1,
+  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+    const size_t b = o + (static_cast<size_t>(m)*nj + j)*nx + i;
+    Real cpv = 0.0;
+    for (int k = 0; k < nk; ++k) {
+      const int kk = k + ks, jj = j + js, ii = i + is;
+      const Real am = (k > 0) ? rw_(m,r1+2,kk,jj,ii) : 0.0;
+      const Real cp = (k < nk-1) ? rw_(m,r1+3,kk,jj,ii) : 0.0;
+      const Real g = 1.0/(rw_(m,r0+1,kk,jj,ii) - am*cpv);
+      cpv = cp*g;
+      f_(b + k*pl) = g;
+      f_(b + (nk + k)*pl) = am*g;
+      f_(b + (2*nk + k)*pl) = cpv;
     }
   });
 }
@@ -325,9 +355,14 @@ void RadiationM1::ImplicitMGBuild() {
       mgfatal("<rad_m1>/implicit_mg_full_rows: the stencil is not built");
     }
   }
-  if (mg_x3line) {
-    const int nsc = nmb*mg_nk[0]*mg_nj[0]*nx;
-    if (mgx3s.extent_int(0) != nsc) {mgx3s = DvceArray1D<Real>("m1_mgx3s", nsc);}
+  if (mg_x3line) {   // mgx3fast-1030: the factorisation storage of every level
+    mgx3o.assign(mgc.size() + 1, 0);
+    for (size_t l = 0; l < mgc.size(); ++l) {
+      mgx3o[l+1] = mgx3o[l] + 3*static_cast<size_t>(nmb)*mg_nk[l]*mg_nj[l]*nx;
+    }
+    if (static_cast<size_t>(mgx3f.extent(0)) != mgx3o.back()) {
+      mgx3f = DvceArray1D<Real>("m1_mgx3f", mgx3o.back());
+    }
   }
   const bool fr = mg_frows;
   const bool edg = fr && st_edges;
@@ -443,6 +478,17 @@ void RadiationM1::ImplicitMGBuild() {
       c_(m,MG_CKM,kc,jc,i) = km; c_(m,MG_CKP,kc,jc,i) = kp;
     });
   }
+  // mgx3fast-1030: the x3 line factorisation of this pass, level by level
+  if (mg_x3line) {
+    M1X3Fac(fr ? mgr : iw, fr ? 0 : M1_IW_TA, fr ? 3 : M1_IW_CJM, mgx3f, mgx3o[0], nmb, nx,
+            mg_nj[0], mg_nk[0], is, js, ks);
+    for (int l = 1; l < nl; ++l) {
+      if (mg_nk[l] > 1) {
+        M1X3Fac(mgc[l], MG_TA, MG_CJM, mgx3f, mgx3o[l], nmb, nx, mg_nj[l], mg_nk[l], 0, 0,
+                0);
+      }
+    }
+  }
   if (gc_on) {ImplicitGCBuild();}
   if (gf_on) {ImplicitGFBuild();}
 }
@@ -485,7 +531,9 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
   const int nmb = pmy_pack->nmb_thispack;
   const bool thrd = trans_x3;
   const bool hal = mg_halo;
-  if (hal) {ImplicitKrylovHalo(zc);}
+  // mgx3fast-1030: under x3line with halo 1 the halo the x3 sweep took after the x1
+  // sweep serves the residual too (its ghosts hold the x1-sweep z: a fixed linear map)
+  if (hal && !(mg_x3line && mg_x3halo == 1)) {ImplicitKrylovHalo(zc);}
   auto iw_ = iw;
   int ts = impl_pcr_team;
   if (ts == 0) {
@@ -547,9 +595,11 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
       if (mg_sym) {M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, true, th, ts);}   // mgsm-1030
     }
     if (mg_x3line && ck > 1) {   // mgsm-1030: the x3 line sweep of this level
-      M1X3MG(c_, mgx3s, nmb, nx, cj, ck, 0);
-      M1X3MG(c_, mgx3s, nmb, nx, cj, ck, 1);
-      if (mg_sym) {M1X3MG(c_, mgx3s, nmb, nx, cj, ck, 0);}
+      if (tmr_x3) {TmrMark(6);}   // mgx3fast-1030: implicit_timers_mg_x3 (fences)
+      M1X3MG(c_, mgx3f, mgx3o[l], nmb, nx, cj, ck, 0);
+      M1X3MG(c_, mgx3f, mgx3o[l], nmb, nx, cj, ck, 1);
+      if (mg_sym) {M1X3MG(c_, mgx3f, mgx3o[l], nmb, nx, cj, ck, 0);}
+      if (tmr_x3) {TmrMark(11);}
     }
     if (l + 1 < nl) {
       auto n_ = mgc[l+1];
@@ -672,9 +722,11 @@ void RadiationM1::ImplicitMGSmoothFine(int rc, int zc, int upd, Real c1, Real c2
   if (mg_x3line) {
     const bool hx = mg_halo;
     if (hx) {ImplicitKrylovHalo(zc);}
+    if (tmr_x3) {TmrMark(6);}   // mgx3fast-1030: implicit_timers_mg_x3 (fences)
     ImplicitMGX3Fine(rr, zc, 0, hx);
     ImplicitMGX3Fine(rr, zc, 1, hx);
     if (mg_sym) {ImplicitMGX3Fine(rr, zc, 0, hx);}
+    if (tmr_x3) {TmrMark(11);}
   }
 }
 
@@ -683,7 +735,7 @@ void RadiationM1::ImplicitMGSmoothFine(int rc, int zc, int upd, Real c1, Real c2
 //! \brief mgsm-1030 implicit_mg_x3line: one colour (parity of i+j) of the fine x3 line
 //! sweep: z(.,j,i) = T3^{-1} (r - x1 / x2 couplings to z; + the x3 couplings across the
 //! block faces to the ghost z when hal), T3 = (CKM, TB, CKP) of the line, one thread per
-//! line (coalesced in i), c' in mgx3s, d' in z itself
+//! line of the colour (mgx3fast-1030), the factorisation of the pass in mgx3f
 
 void RadiationM1::ImplicitMGX3Fine(int rr, int zc, int col, bool hal) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -694,14 +746,19 @@ void RadiationM1::ImplicitMGX3Fine(int rr, int zc, int col, bool hal) {
   auto rw_ = mr ? mgr : iw;
   const int r0 = mr ? 0 : M1_IW_TA, r1 = mr ? 3 : M1_IW_CJM;
   auto iw_ = iw;
-  auto s_ = mgx3s;
+  auto f_ = mgx3f;
+  const size_t o = mgx3o[0];
   const size_t pl = static_cast<size_t>(nmb)*nj*nx;
-  par_for("m1_mg_x3f", DevExeSpace(), 0, nmb-1, 0, nj-1, 0, nx-1,
-  KOKKOS_LAMBDA(const int m, const int j, const int i) {
-    if (((i + j) & 1) != col) return;
+  const int nxh = (nx + 1)/2;
+  // mgx3fast-1030: one thread per line of the colour (i = 2 ih + parity), the
+  // factorisation of the pass (M1X3Fac), the back substitution carried in a register
+  par_for("m1_mg_x3f", DevExeSpace(), 0, nmb-1, 0, nj-1, 0, nxh-1,
+  KOKKOS_LAMBDA(const int m, const int j, const int ih) {
+    const int i = 2*ih + ((col + j) & 1);
+    if (i >= nx) return;
     const int ii = i + is, jj = j + js;
-    const size_t b = (static_cast<size_t>(m)*nj + j)*nx + i;
-    Real cpv = 0.0, dpv = 0.0;
+    const size_t b = o + (static_cast<size_t>(m)*nj + j)*nx + i;
+    Real dpv = 0.0;
     for (int k = 0; k < nk; ++k) {
       const int kk = k + ks;
       Real d = iw_(m,rr,kk,jj,ii);
@@ -709,19 +766,15 @@ void RadiationM1::ImplicitMGX3Fine(int rr, int zc, int col, bool hal) {
       if (hal || i < nx-1) d -= rw_(m,r0+2,kk,jj,ii)*iw_(m,zc,kk,jj,ii+1);
       if (hal || j > 0) d -= rw_(m,r1,kk,jj,ii)*iw_(m,zc,kk,jj-1,ii);
       if (hal || j < nj-1) d -= rw_(m,r1+1,kk,jj,ii)*iw_(m,zc,kk,jj+1,ii);
-      const Real a = rw_(m,r1+2,kk,jj,ii), c = rw_(m,r1+3,kk,jj,ii);
-      if (hal && k == 0) d -= a*iw_(m,zc,kk-1,jj,ii);
-      if (hal && k == nk-1) d -= c*iw_(m,zc,kk+1,jj,ii);
-      const Real am = (k > 0) ? a : 0.0;
-      const Real cp = (k < nk-1) ? c : 0.0;
-      const Real den = rw_(m,r0+1,kk,jj,ii) - am*cpv;
-      cpv = cp/den;
-      dpv = (d - am*dpv)/den;
-      s_(k*pl + b) = cpv;
+      if (hal && k == 0) d -= rw_(m,r1+2,kk,jj,ii)*iw_(m,zc,kk-1,jj,ii);
+      if (hal && k == nk-1) d -= rw_(m,r1+3,kk,jj,ii)*iw_(m,zc,kk+1,jj,ii);
+      dpv = f_(b + k*pl)*d - f_(b + (nk + k)*pl)*dpv;
       iw_(m,zc,kk,jj,ii) = dpv;
     }
+    Real zn = dpv;
     for (int k = nk-2; k >= 0; --k) {
-      iw_(m,zc,k+ks,jj,ii) -= s_(k*pl + b)*iw_(m,zc,k+ks+1,jj,ii);
+      zn = iw_(m,zc,k+ks,jj,ii) - f_(b + (2*nk + k)*pl)*zn;
+      iw_(m,zc,k+ks,jj,ii) = zn;
     }
   });
 }
