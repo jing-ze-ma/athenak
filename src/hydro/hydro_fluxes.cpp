@@ -477,7 +477,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,
            nanrep_r,rscnt,rsrec);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-      LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
+      LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,w0_);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
       HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -787,7 +787,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
+            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,w0_);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
             HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
@@ -1074,7 +1074,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,
                  nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
+            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,w0_);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
             HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {

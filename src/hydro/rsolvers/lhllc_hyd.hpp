@@ -22,6 +22,8 @@
 #include <algorithm>  // max(), min()
 #include <cmath>      // sqrt()
 
+#include "utils/cb_sensor.hpp"
+
 namespace hydro {
 //----------------------------------------------------------------------------------------
 //! \fn void LHLLC
@@ -32,7 +34,8 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
      const RegionIndcs &indcs,const DualArray1D<RegionSize> &size,const CoordData &coord,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
      const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
-     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, DvceArray5D<Real> flx) {
+     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, DvceArray5D<Real> flx,
+     const DvceArray5D<Real> &w0) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
 
@@ -42,6 +45,8 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
 
   // <hydro>/lhllc_x1_phi_min (EOS_Data::x1_phi_min): floor on phi on x1 faces only
   const Real phi_min = (ivx == IVX) ? eos.x1_phi_min : 0.0;
+  // <hydro>/lhllc_cb_sensor (EOS_Data::cb_sensor): odd-even sensor on every face
+  const Real cb_sensor = eos.cb_sensor;
 
   par_for_inner(member, il, iu, [&](const int i) {
     //--- Step 1.  Create local references for L/R states (helps compiler vectorize)
@@ -124,6 +129,9 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
     qe = fmax(fabs(wl_ivx),fabs(wr_ivx)); // maximum speed
     qf = fmax(qa,qb); // maximum sound speed
     Real chi = fmin(1.0,qe/qf);
+    // odd-even sensor, default 1 (utils/cb_sensor.hpp); 0 when not flagged
+    if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
+                                                          cb_sensor));
     Real phi = chi * (2.0 - chi);
     if (phi_min > 0.0) phi = fmax(phi, phi_min);  // x1 faces, key set only
 

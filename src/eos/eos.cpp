@@ -133,6 +133,50 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       eos_data.x1_phi_min = pin->GetReal(bk, key);
     }
   }
+  // <mhd>/lhlld_phi_min, <mhd>/lhlld_oddeven, <mhd>/lhlld_emf_eta_pos: see
+  // EOS_Data::phi_min_all, ::lhlld_oddeven and ::lhlld_emf_eta_pos.  Read only when
+  // set (no GetOrAdd), so an unset key leaves the restart header unchanged.  MHD
+  // only: refuse them in any other block.  lhlld_emf_eta_pos defaults to true in <mhd>
+  // (user decision 10-30); only LHLLD reads it, so other solvers are unaffected.
+  if (bk.compare("mhd") == 0) eos_data.lhlld_emf_eta_pos = true;
+  for (const char *kc :
+       {"lhlld_phi_min", "lhlld_oddeven", "lhlld_emf_eta_pos"}) {
+    const std::string key(kc);
+    if (!pin->DoesParameterExist(bk, key)) continue;
+    if (bk.compare("mhd") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/" << key << " is implemented only "
+                << "for MHD (LHLLD)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (key.compare("lhlld_phi_min") == 0) {
+      eos_data.phi_min_all = pin->GetReal(bk, key);
+    } else if (key.compare("lhlld_emf_eta_pos") == 0) {
+      eos_data.lhlld_emf_eta_pos = pin->GetBoolean(bk, key);
+    } else {
+      eos_data.lhlld_oddeven = pin->GetReal(bk, key);
+    }
+  }
+  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor: see EOS_Data::cb_sensor.  Read only
+  // when set, as above; default 1 (user decision 10-30), only LHLLC/LHLLD read it.
+  // WASP-121b cs MHD production uses rsolver = lhlld with lhlld_cb_sensor = 1 +
+  // lhlld_emf_eta_pos = true, i.e. the defaults (lhlld-cb-1030 gates).  Set the key to
+  // 0 (and lhlld_emf_eta_pos = false) for the legacy LHLLC/LHLLD.
+  eos_data.cb_sensor = 1.0;
+  {
+    const bool is_hyd = (bk.compare("hydro") == 0);
+    const std::string key = is_hyd ? "lhllc_cb_sensor" : "lhlld_cb_sensor";
+    const std::string bad = is_hyd ? "lhlld_cb_sensor" : "lhllc_cb_sensor";
+    if (pin->DoesParameterExist(bk, bad)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/" << bad << " is not valid in this "
+                << "block; use <" << bk << ">/" << key << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pin->DoesParameterExist(bk, key)) {
+      eos_data.cb_sensor = pin->GetReal(bk, key);
+    }
+  }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
   // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
   // a silently ignored switch is worse than a refusal, so refuse that combination.

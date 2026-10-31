@@ -409,6 +409,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // iprob 3: rotation axis, 2 = zhat (default), 0 = xhat (flow through the poles; HYDRO
   // only: with a field it would need B along xhat, which the MHD branch does not build)
   const int axis = pin->GetOrAddInteger("problem", "rot_axis", 2);
+  // lowmach-noise-1030 (TEST): iprob 3 cell-scale velocity noise, rms ~ vnoise/sqrt(3)
+  // in units of the sound speed sqrt(gamma p0/d0), all three components; read only when
+  // set, so the parameter dump of every other run is unchanged
+  Real vnoise3 = 0.0;
+  if (iprob == 3 && pin->DoesParameterExist("problem", "vnoise")) {
+    vnoise3 = pin->GetReal("problem", "vnoise");
+  }
   if (iprob == 3 && axis != 2 && is_mhd) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "sp_test iprob = 3 with rot_axis != 2 is hydro only" << std::endl;
@@ -591,8 +598,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real cd = (bldir == 2) ? cos(th) : sin(th)*cos(ph);
       if (acos(fmin(1.0, fmax(-1.0, cd))) < blang) pgas = blp;
     }
+    Real vr = 0.0;
+    if (vnoise3 > 0.0) {
+      // deterministic cell noise from the Cartesian position (cs_test iprob 13's hash)
+      const Real vn = vnoise3*sqrt((gm1 + 1.0)*p0/d0);
+      const Real qx = r*sin(th)*cos(ph), qy = r*sin(th)*sin(ph), qz = r*cos(th);
+      auto hsh = [&](const Real a, const Real b, const Real c) {
+        const Real t = sin(qx*a + qy*b + qz*c + r*17.31)*43758.5453;
+        return 2.0*(t - floor(t)) - 1.0;
+      };
+      vr = vn*hsh(12.9898, 78.233, 37.719);
+      vth += vn*hsh(39.346, 11.135, 83.155);
+      vphi += vn*hsh(73.156, 52.235, 9.151);
+    }
     u0(m,IDN,k,j,i) = dn;
-    u0(m,IM1,k,j,i) = 0.0;
+    u0(m,IM1,k,j,i) = dn*vr;
     u0(m,IM2,k,j,i) = dn*vth;
     u0(m,IM3,k,j,i) = dn*vphi;
     Real bsq = 0.0;

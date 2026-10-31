@@ -45,17 +45,22 @@ COLS = {"m1slab.hydro.hst": ["time", "mass", "tot-E", "1-KE", "2-KE"],
 # velocity; change from the 1001 numbers: time 7.8e-9 (edd) / 1.2e-8 (vet), 1-KE 8.0e-7
 # (edd) / 5.0e-6 (vet), Etot -5.2e-9 / -3.0e-8.  Regenerated with gcc 14, CPU serial
 # (cs-iso-1008).
+# lhlld-cb-final (user decision 10-30): <hydro>/lhllc_cb_sensor = 1 is the default; the
+# slab uses lhllc.  Change from the cs-iso-1008 numbers: time +3.3e-5 (edd) / +8.6e-3
+# (vet).  2ff6a8eec already sat 7.9e-6 (edd time) off the old REF on this machine;
+# lhllc_cb_sensor = 0 reproduces 2ff6a8eec bitwise.  Regenerated with gcc 11.5, CPU
+# serial (viper login node, cbfinal_1030).
 REF = {
-    "edd": {"time": 1.3263574838735652e+00, "mass": 1.2738377353803055e+19,
-            "tot-E": 8.0476824148265932e+32, "1-KE": 1.2025848795476678e+24,
-            "2-KE": 2.7622437963853669e+24, "F1top": 2.4752257956003550e+15,
-            "F1mid": 2.4752249647985080e+15, "F1bot": 2.4751827403078455e+15,
-            "V1max": 4.4470173796416129e+03, "Etot": 1.0723532573355033e+33},
-    "vet": {"time": 1.4280339638821982e+00, "mass": 1.2738377353803057e+19,
-            "tot-E": 8.0494317487222714e+32, "1-KE": 8.0414723646010427e+24,
-            "2-KE": 5.7081450409462032e+24, "F1top": 2.4750035162229130e+15,
-            "F1mid": 2.4750229343721900e+15, "F1bot": 2.4751780043850815e+15,
-            "V1max": 1.0426930970576175e+04, "Etot": 1.0738807946663671e+33},
+    "edd": {"time": 1.3264012493918766e+00, "mass": 1.2738377353803098e+19,
+            "tot-E": 8.0476765209862468e+32, "1-KE": 9.5526066405511041e+23,
+            "2-KE": 2.5083717925327885e+24, "F1top": 2.4751777510986085e+15,
+            "F1mid": 2.4751820098265890e+15, "F1bot": 2.4751962833469715e+15,
+            "V1max": 2.8376611777663352e+03, "Etot": 1.0723458736086345e+33},
+    "vet": {"time": 1.4403843026043655e+00, "mass": 1.2738377353803041e+19,
+            "tot-E": 8.0494074270126391e+32, "1-KE": 7.6259258932528006e+24,
+            "2-KE": 4.9738141926700257e+24, "F1top": 2.4749775183656530e+15,
+            "F1mid": 2.4749998516543385e+15, "F1bot": 2.4751940729878380e+15,
+            "V1max": 1.0466908477117866e+04, "Etot": 1.0738539377574439e+33},
 }
 
 
