@@ -82,6 +82,15 @@ int64_t g_vgd_csgen_save[16] = {0};
 
 namespace {
 
+// cslight-1031: the sp sweep's VgdLight (rad_m1_vetgd.cpp): a flat range policy whose
+// functor rides as a KERNEL ARGUMENT (HintLightWeight) for the per-shell kernels (shell,
+// pack, unpack), instead of the constant-memory launch with a host wait on the previous
+// such launch (the same kernels, the same numbers: every thread writes its own value)
+inline auto VgdCsLight(const DevExeSpace &ex, const int a, const int b) {
+  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
+                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+}
+
 // xchg-1021: a stream event of the default device instance (the sweep's stream): record
 // after a kernel, query from the host without a full fence.  No device backend: fence
 struct VgdCsEv {
@@ -1069,7 +1078,8 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
     VgdCsFatal("VetGdCsHaloC: message buffer too small");
   }
   if (ns > 0) {
-    par_for("m1_vgdcs_cpack", DevExeSpace(), 0, static_cast<int>(ns) - 1,
+    Kokkos::parallel_for("m1_vgdcs_cpack",
+                         VgdCsLight(DevExeSpace(), 0, static_cast<int>(ns)),
     KOKKOS_LAMBDA(const int o) {
       const int x = si_(s0 + o);
       const int e = x/n, d = x - e*n;
@@ -1107,7 +1117,8 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
   vgd_csvsent += static_cast<double>(xf*ns);
   vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*xf;
   if (nr > 0) {
-    par_for("m1_vgdcs_cunpack", DevExeSpace(), 0, static_cast<int>(nr) - 1,
+    Kokkos::parallel_for("m1_vgdcs_cunpack",
+                         VgdCsLight(DevExeSpace(), 0, static_cast<int>(nr)),
     KOKKOS_LAMBDA(const int o) {
       const int x = ri_(r0 + o);
       const int e = x/n, d = x - e*n;
@@ -1455,7 +1466,8 @@ void RadiationM1::VetGdCsSweep() {
       auto si_ = E.si;
       const int64_t bo = x.slot*xmx;
       const int i = x.i;
-      par_for("m1_vgdcs_xpack", DevExeSpace(), 0, static_cast<int>(ns) - 1,
+      Kokkos::parallel_for("m1_vgdcs_xpack", VgdCsLight(DevExeSpace(), 0,
+                                                     static_cast<int>(ns)),
       KOKKOS_LAMBDA(const int o) {
         const int xx = si_(s0 + o);
         const int e = xx/n, d = xx - e*n;
@@ -1499,7 +1511,8 @@ void RadiationM1::VetGdCsSweep() {
       auto ri_ = E.ri;
       const int64_t bo = x.slot*xmx;
       const int i = x.i;
-      par_for("m1_vgdcs_xunpack", DevExeSpace(), 0, static_cast<int>(nr) - 1,
+      Kokkos::parallel_for("m1_vgdcs_xunpack", VgdCsLight(DevExeSpace(), 0,
+                                                     static_cast<int>(nr)),
       KOKKOS_LAMBDA(const int o) {
         const int xx = ri_(r0 + o);
         const int e = xx/n, d = xx - e*n;
@@ -1550,13 +1563,13 @@ void RadiationM1::VetGdCsSweep() {
         vgd_thalo += tf.seconds();
       }
 #endif
-      // cstwin-1031: a flat (f, m, k, j, d) range, d fastest (as the MDRange before);
-      // with the fused twin the field f (0 main, 1 twin) is the slowest index (two
-      // fields' threads in one launch, each as the unfused sweep's thread)
+      // cslight-1031: flat (m, k, j, d) range, d fastest (as the MDRange before);
+      // cstwin-1031: with the fused twin the field f (0 main, 1 twin) is the slowest
+      // index (two fields' threads in one launch, each as the unfused sweep's thread)
       const int nkk = ke - ks + 1, njj = je - js + 1, ndd = d1 - d0;
       const int nper = (nmb1 + 1)*nkk*njj*ndd;
       Kokkos::parallel_for("m1_vgdcs_shell",
-                           Kokkos::RangePolicy<>(DevExeSpace(), 0, (two ? 2 : 1)*nper),
+                           VgdCsLight(DevExeSpace(), 0, (two ? 2 : 1)*nper),
       KOKKOS_LAMBDA(const int c) {
         const int f = c/nper;
         int t = c - f*nper;
