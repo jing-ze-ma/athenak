@@ -46,6 +46,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -3571,6 +3572,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // skip it.  SMR/AMR is already a fatal above.
     halo_shell = !(pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere ||
                    pmy_pack->pmesh->use_polar_boundary);
+    // implhalo-1031 (test switch, env M1_CS_HALO_SHELL=1): the shell copy on the cubed
+    // sphere too (the seam resample and the corner fill read the outermost ng active
+    // cells only, which the shell holds; gate bitwise before use)
+    {
+      const char *e = std::getenv("M1_CS_HALO_SHELL");
+      if (e != nullptr && std::atoi(e) != 0 && pmy_pack->pmesh->use_cubed_sphere &&
+          !pmy_pack->pmesh->multilevel && !pmy_pack->pmesh->use_polar_boundary) {
+        halo_shell = true;
+      }
+    }
     {
       // ONE more exchange object, for the single Krylov vector the operator application
       // needs in its ghost zones -- and for the one-component exchange of E alone, which
@@ -4037,7 +4048,22 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
   const bool pack_ = topack;
   auto iw_ = iw;
   auto sc_ = sc;
-  if (impl_halo_direct) {
+  // implhalo-1031 test switches (env): M1_HCOPY_CELL=1 the one-thread-per-cell copy for
+  // every exchange (the same copies); M1_POISON_GHOST=1 (gate only, NOT a run mode): on
+  // the way back, every ghost cell more than ONE cell outside the active range in x2 or
+  // x3 is set to NaN (if the outputs stay identical, no implicit kernel reads those
+  // layers of the exchanged components)
+  static int s_hcell = -1, s_poison = -1;
+  if (s_hcell < 0) {
+    const char *e = std::getenv("M1_HCOPY_CELL");
+    s_hcell = (e != nullptr) ? std::atoi(e) : 0;
+    const char *f = std::getenv("M1_POISON_GHOST");
+    s_poison = (f != nullptr) ? std::atoi(f) : 0;
+  }
+  const bool poi = (s_poison != 0) && !topack;
+  const int pjs = indcs.js, pje = indcs.je, pks = indcs.ks, pke = indcs.ke;
+  const bool p2 = (indcs.nx2 > 1), p3 = (indcs.nx3 > 1);
+  if (impl_halo_direct || s_hcell != 0 || poi) {
     // implicit_halo_direct on a mesh whose neighbours are not all on this rank: the
     // same shell copy with ONE thread per cell (coalesced along i) instead of one per
     // row -- the row loop runs ~13k threads with strided rows on the 3-D box.
@@ -4050,6 +4076,9 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
       const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
       if (pack_) {
         sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
+      } else if (poi && ((p2 && (j < pjs - 1 || j > pje + 1)) ||
+                         (p3 && (k < pks - 1 || k > pke + 1)))) {
+        iw_(m,nc,k,j,i) = std::numeric_limits<Real>::quiet_NaN();
       } else {
         iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
       }
