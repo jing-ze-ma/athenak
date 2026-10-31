@@ -67,6 +67,14 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+// csnccl-1031: the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL, env
+// ACC_NCCL=1; as the sp list halo, VgdNcclOn in rad_m1_vetgd.cpp)
+#if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
+#include <nccl.h>
+#define M1_VGDCS_NCCL 1
+#else
+#define M1_VGDCS_NCCL 0
+#endif
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -706,6 +714,16 @@ void RadiationM1::VetGdCsInit() {
                                          : "none"))
               << "; list cache " << vgd_csncl << " sets" << std::endl;
   }
+#if M1_VGDCS_NCCL
+  // csnccl-1031: the NCCL communicator now (collective: every rank), not at the first
+  // exchange (a rank without partners never exchanges)
+  if (global_variable::nranks > 1) {
+    if (VgdNcclOn() && me == 0) {
+      std::cout << "<rad_m1> csnccl-1031: vet_gd cs compact exchange over NCCL "
+                << "(stream-ordered, no host fence per shell)" << std::endl;
+    }
+  }
+#endif
 }
 
 //----------------------------------------------------------------------------------------
@@ -1077,6 +1095,18 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
       static_cast<int64_t>(rb_.extent(0)) < xf*nr) {
     VgdCsFatal("VetGdCsHaloC: message buffer too small");
   }
+  // csnccl-1031: with NCCL the device buffers (vgd_csdsb / vgd_csdrb) and no host
+  // fence: pack, the NCCL group and the unpack all stream-ordered on the sweep's stream
+  bool ncl = false;
+#if M1_VGDCS_NCCL
+  ncl = VgdNcclOn();
+  if (ncl && static_cast<int64_t>(vgd_csdsb.extent(0)) < static_cast<int64_t>(sb_.extent(0))) {
+    Kokkos::realloc(vgd_csdsb, sb_.extent(0));
+    Kokkos::realloc(vgd_csdrb, rb_.extent(0));
+  }
+#endif
+  Real *sbp = ncl ? vgd_csdsb.data() : sb_.data();
+  Real *rbp = ncl ? vgd_csdrb.data() : rb_.data();
   if (ns > 0) {
     Kokkos::parallel_for("m1_vgdcs_cpack",
                          VgdCsLight(DevExeSpace(), 0, static_cast<int>(ns)),
@@ -1084,13 +1114,39 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
       const int x = si_(s0 + o);
       const int e = x/n, d = x - e*n;
       if (two) {
-        sb_(o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
-        sb_(ns + o) = b_(S_(e,0),d,S_(e,1),S_(e,2),i);
+        sbp[o] = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+        sbp[ns + o] = b_(S_(e,0),d,S_(e,1),S_(e,2),i);
       } else {
-        sb_(o) = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+        sbp[o] = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
       }
     });
   }
+#if M1_VGDCS_NCCL
+  if (ncl) {
+    static_assert(sizeof(Real) == sizeof(double), "csnccl-1031: ncclDouble");
+    ncclComm_t nc = static_cast<ncclComm_t>(acc_ncomm);
+    cudaStream_t st = DevExeSpace().cuda_stream();
+    Kokkos::Timer tq;
+    ncclGroupStart();
+    for (int p = 0; p < np; ++p) {
+      const int rk = vgd_csprk[p];
+      const int64_t cr = ro[p+1] - ro[p], cs = so[p+1] - so[p];
+      for (int f = 0; f < xf; ++f) {
+        if (cr > 0) {
+          ncclRecv(rbp + f*nr + (ro[p] - r0), static_cast<size_t>(cr), ncclDouble, rk, nc,
+                   st);
+        }
+        if (cs > 0) {
+          ncclSend(sbp + f*ns + (so[p] - s0), static_cast<size_t>(cs), ncclDouble, rk, nc,
+                   st);
+          vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
+        }
+      }
+    }
+    if (ncclGroupEnd() != ncclSuccess) {VgdCsFatal("csnccl-1031: ncclGroupEnd failed");}
+    vgd_tmpi += tq.seconds();
+  } else {
+#endif
   Kokkos::fence();
   Kokkos::Timer tq;
   std::vector<MPI_Request> req;
@@ -1113,6 +1169,9 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
   }
   MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
   vgd_tmpi += tq.seconds();
+#if M1_VGDCS_NCCL
+  }   // !ncl
+#endif
   vgd_nexch += 1.0;
   vgd_csvsent += static_cast<double>(xf*ns);
   vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*xf;
@@ -1123,10 +1182,10 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
       const int x = ri_(r0 + o);
       const int e = x/n, d = x - e*n;
       if (two) {
-        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(o);
-        b_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(nr + o);
+        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rbp[o];
+        b_(R_(e,0),d,R_(e,1),R_(e,2),i) = rbp[nr + o];
       } else {
-        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rb_(o);
+        a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rbp[o];
       }
     });
   }

@@ -273,5 +273,16 @@ if (DEFINED Athena_M1_VGD_NMAX AND NOT "${Athena_M1_VGD_NMAX}" STREQUAL "")
   target_compile_definitions(athena PRIVATE M1_VGD_NMAX_BUILD=${Athena_M1_VGD_NMAX})
 endif()
 
+# csnccl-1031: -D Athena_M1_VGD_NCCL_DIR=<nccl root with include/ lib/> builds the vet_gd
+# NCCL halo (sp list halo + cs compact exchange; used with env ACC_NCCL=1 only): only the
+# two vet_gd sources get the define and the include path (the rest of the tree unchanged)
+if (DEFINED Athena_M1_VGD_NCCL_DIR AND NOT "${Athena_M1_VGD_NCCL_DIR}" STREQUAL "")
+  set_source_files_properties(rad_m1/rad_m1_vetgd.cpp rad_m1/rad_m1_vetgd_cs.cpp
+      PROPERTIES COMPILE_DEFINITIONS M1_VGD_NCCL=1
+      INCLUDE_DIRECTORIES ${Athena_M1_VGD_NCCL_DIR}/include)
+  target_link_libraries(athena PRIVATE -L${Athena_M1_VGD_NCCL_DIR}/lib nccl
+      -Wl,-rpath,${Athena_M1_VGD_NCCL_DIR}/lib)
+endif()
+
 # enable include of header files with /src/ as root of path
 target_include_directories(athena PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
