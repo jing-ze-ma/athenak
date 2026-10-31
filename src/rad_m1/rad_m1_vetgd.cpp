@@ -7965,14 +7965,14 @@ void RadiationM1::VetGdHalfRange(const int stage) {
 //! prefetch is waited for.  Waiting changes no number.  (vet_gd_async's build thread is
 //! refused with dt_retry at startup.)
 
-extern int64_t g_vgd_csgen[2];        // csfix-1023 (rad_m1_vetgd_cs.cpp)
-extern int64_t g_vgd_csgen_save[2];
+extern int64_t g_vgd_csgen[16];       // csfix-1023 (rad_m1_vetgd_cs.cpp; M1_VGD_CSCL_MAX)
+extern int64_t g_vgd_csgen_save[16];
 
 void RadiationM1::DtRetryQuiesce(bool restoring) {
   if (vgd_sr_pend) {VetGdSymRefJoin();}
   if (!restoring) {
     // csfix-1023: the compact-list build generations at the checkpoint
-    for (int c = 0; c < 2; ++c) {g_vgd_csgen_save[c] = g_vgd_csgen[c];}
+    for (int c = 0; c < vgd_csncl; ++c) {g_vgd_csgen_save[c] = g_vgd_csgen[c];}
     return;
   }
   if (vgd_tab_state == 1 && vgd_tabf.valid()) {vgd_tabf.wait();}
@@ -8015,7 +8015,7 @@ void RadiationM1::DtRetryAfterRestore() {
     // (same numbers).  Without it the restored key named the evicted set's arrays:
     // "compact lists: N remote band reads not in the read mask" (RSG E 10-23, A1 cycle
     // 32893, eint<=0 retry after a backward-Euler redo)
-    for (int c = 0; c < 2; ++c) {
+    for (int c = 0; c < vgd_csncl; ++c) {
       if (g_vgd_csgen[c] != g_vgd_csgen_save[c]) {
         vgd_cscl[c].alpha = -9.0;
         vgd_cscl[c].use = 0;

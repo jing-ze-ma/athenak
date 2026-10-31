@@ -2801,7 +2801,11 @@ class RadiationM1 {
     Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> msk;
   };
   bool vgd_cscomp = false;
-  VgdCsCl vgd_cscl[2];
+  // cslru-1031: the cache holds max(2, vet_rotate_avg) sets (vgd_csncl): with K-set
+  // rotation (keys b mod K) every set's lists are made once, not at every rotation
+  static constexpr int M1_VGD_CSCL_MAX = 16;
+  VgdCsCl vgd_cscl[M1_VGD_CSCL_MAX];
+  int vgd_csncl = 2;
   int vgd_cscur = 0;
   int64_t vgd_csuse = 0;
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_csrix;   // (m, k, j): e_rcv / -1

@@ -77,8 +77,8 @@ namespace radm1 {
 // csfix-1023: build generation of each compact-list cache entry (NOT a class member, so
 // the dt-retry checkpoint does not restore it): DtRetryAfterRestore drops an entry that
 // the failed attempt rebuilt in place (its restored key would name the old set)
-int64_t g_vgd_csgen[2] = {0, 0};
-int64_t g_vgd_csgen_save[2] = {0, 0};
+int64_t g_vgd_csgen[16] = {0};        // (M1_VGD_CSCL_MAX)
+int64_t g_vgd_csgen_save[16] = {0};
 
 namespace {
 
@@ -673,7 +673,13 @@ void RadiationM1::VetGdCsInit() {
     Kokkos::deep_copy(vgd_csrix, x_h);
   }
   Kokkos::realloc(vgd_csmiss, 1);
-  for (int c = 0; c < 2; ++c) {
+  // cslru-1031: one cache entry per set of vet_rotate_avg (the K sets cycle; 2 before:
+  // every rotation rebuilt its lists); the entries beyond vgd_csncl stay unallocated
+  vgd_csncl = 2;
+  if (vgd_cscomp) {
+    vgd_csncl = std::min(std::max(2, vra_k), static_cast<int>(M1_VGD_CSCL_MAX));
+  }
+  for (int c = 0; c < vgd_csncl; ++c) {
     vgd_cscl[c].alpha = -9.0;
     vgd_cscl[c].use = 0;
     const int64_t nmv = vgd_cscomp ? static_cast<int64_t>(std::max(vgd_csnrcv, 1))*
@@ -688,14 +694,16 @@ void RadiationM1::VetGdCsInit() {
                                "only the read (cell, direction) values)"
                              : (vgd_hmpi ? "dense (every remote band cell, every "
                                            "direction, per shell and pass)"
-                                         : "none")) << std::endl;
+                                         : "none"))
+              << "; list cache " << vgd_csncl << " sets" << std::endl;
   }
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsCompact
 //! \brief cs-s3b-1017: the compact lists of the current direction set (vgd_alpha), from
-//! a 2-entry cache (the current and the next set of vet_rotate_avg).  (1) the read mask:
+//! an LRU cache of max(2, vet_rotate_avg) entries (cslru-1031; was 2: the current and
+//! the next set).  (1) the read mask:
 //! a kernel replays the sweep's upwind geometry (VetGdCsSweep, term for term) for every
 //! interior (cell, direction) and shell, and marks every REMOTE band value (receive
 //! entry, direction, upwind shell) that the sweep reads -- for every first shell at once
@@ -706,7 +714,7 @@ void RadiationM1::VetGdCsInit() {
 //! lists in the same (pass, shell, partner, entry, direction) order.
 
 void RadiationM1::VetGdCsCompact() {
-  for (int c = 0; c < 2; ++c) {
+  for (int c = 0; c < vgd_csncl; ++c) {
     if (vgd_cscl[c].alpha == vgd_alpha && vgd_cscl[c].ng == vgd_csxg) {
       vgd_cscur = c;
       vgd_cscl[c].use = ++vgd_csuse;
@@ -714,7 +722,10 @@ void RadiationM1::VetGdCsCompact() {
     }
   }
   Kokkos::Timer tb;
-  const int c = (vgd_cscl[0].use <= vgd_cscl[1].use) ? 0 : 1;
+  int c = 0;   // the least recently used entry (the first of equal ones)
+  for (int q = 1; q < vgd_csncl; ++q) {
+    if (vgd_cscl[q].use < vgd_cscl[c].use) {c = q;}
+  }
   VgdCsCl &E = vgd_cscl[c];
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
