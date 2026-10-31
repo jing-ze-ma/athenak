@@ -352,7 +352,7 @@ bool wall_noflux_ = true;
 // show the same drain at the 5-8 % level.
 KOKKOS_INLINE_FUNCTION
 Real CsKinetic(const Real d, const Real m1, const Real m2, const Real m3, const Real c) {
-  return 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))/d;
+  return CsKeMom(m1, m2, m3, c)/d;
 }
 // problem/sponge (default true), sponge_zbot (0.96, as a fraction of the radial domain),
 // sponge_c (0.1, in units of cs/dr): an absorbing layer under the outer wall.  Both

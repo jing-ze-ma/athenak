@@ -31,6 +31,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "utils/eint_from_cons.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -107,7 +108,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
       if (csk) {
         const Real c = ccl(m,k,j);
         const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
-        ke_dens = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+        ke_dens = CsKeMom(uh(m,IM1,k,j,i), m2, m3, c)
                   /fmax(d, 1.0e-300);
       }
       Real eint = uh(m,IEN,k,j,i) - ke_dens;

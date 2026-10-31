@@ -12658,7 +12658,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (csk) {
         const Real c = ccl(m,k,j);
         const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
-        ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+        ekin = CsKeMom(uh(m,IM1,k,j,i), m2, m3, c)
                *idd;
       }
       Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
@@ -12680,7 +12680,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // energy at every hesdirk2 stage solve (a per-step leak, not truncation).
           const Real c = ccl(m,k,j);
           const Real m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
-          ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+          ekin = CsKeMom(uh(m,IM1,k,j,i), m2, m3, c)
                  *idd;
         }
         eg = uh(m,IEN,k,j,i) - ekin - egrv;
@@ -16037,6 +16037,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 #define M1_RCP 1
 #include "rad_m1/rad_m1_impl_wb_kernel.hpp"  // NOLINT(build/include)
+#include "utils/eint_from_cons.hpp"
 #undef M1_RCP
     });
   }

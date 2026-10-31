@@ -95,6 +95,7 @@
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
 #include "driver/dt_retry.hpp"
+#include "utils/eint_from_cons.hpp"
 
 // defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
@@ -486,7 +487,7 @@ namespace {
 //! term at every off-midline cell with transverse motion
 KOKKOS_INLINE_FUNCTION
 Real HsKeCs(const Real m1, const Real m2, const Real m3, const Real d, const Real c) {
-  return 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))/d;
+  return CsKeMom(m1, m2, m3, c)/d;
 }
 void HeStarGravity(Mesh *pm, const Real bdt);
 void HeStarBC(Mesh *pm);
