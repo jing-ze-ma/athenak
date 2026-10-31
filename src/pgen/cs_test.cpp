@@ -540,6 +540,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // <srcterms> is refused on the cubed sphere (it has no gnomonic form); this one is
   // purely radial, and rhat is orthogonal to both angular directions on every grid, so
   // it needs no metric factor and is exact on cs.
+  // lowmach-noise-1030 (TEST): the same cell noise on top of the iprob 3 rigid rotation,
+  // read only when set
+  if (iprob == 3 && pin->DoesParameterExist("problem", "vnoise")) {
+    cs_vnoise = pin->GetReal("problem", "vnoise");
+  }
   if (iprob == 13) {
     cs_gacc = pin->GetOrAddReal("problem", "grav", 1.0);
     cs_hscl = (p0/d0)/cs_gacc;
@@ -778,6 +783,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const Real fc = (ang < cavw_ && fabs(rad - cavr_) < cavwr_) ? cavd_ : 1.0;
         dn *= fc;
         if (cavp_ != 0) ie_ *= fc;
+      }
+      if (vn_ > 0.0) {
+        // lowmach-noise-1030 (TEST): iprob 13's cell noise, on the rotation
+        Real qx, qy, qz;
+        PanelToCart(mbpanel.d_view(m), xi, eta, qx, qy, qz);
+        const Real rr = 0.5*(rad + rad_rr);
+        auto hsh = [&](const Real a, const Real b, const Real c) {
+          const Real t = sin(qx*a + qy*b + qz*c + rr*17.31)*43758.5453;
+          return 2.0*(t - floor(t)) - 1.0;
+        };
+        v1 += vn_*hsh(12.9898, 78.233, 37.719);
+        v2 += vn_*hsh(39.346, 11.135, 83.155);
+        v3 += vn_*hsh(73.156, 52.235, 9.151);
       }
       w0(m,IDN,k,j,i) = dn;
       w0(m,IEN,k,j,i) = ie_;

@@ -18,6 +18,7 @@ checkerboard in the PPM Alfven cases.)
 """
 
 # Modules
+import math
 import pytest
 import test_suite.testutils as testutils
 
@@ -175,8 +176,13 @@ def test_run(iv, rv, soe):
             left_wave="0",
             right_wave="4" if soe == "hydro" else "6",
         )
-        # test that errors in L/R-going waves are the same
-        if l1_rms_l != l1_rms_r and rv == "plm":
+        # test that errors in L/R-going waves are the same, to a relative 1e-6 (user
+        # decision 10-30): the errors file (OutputErrors, %e) prints 7 significant
+        # digits, and the L- and R-going waves are mirrors only up to round-off once the
+        # flux depends nonlinearly on the state (hlle, hlld rk3, the default lhlld cb
+        # sensor on rho*u), which flips the last printed digit (rel ~4e-7)
+        if (not math.isclose(l1_rms_l, l1_rms_r, rel_tol=1.0e-6, abs_tol=0.0)
+                and rv == "plm"):
             pytest.fail(
                 f"Errors in L/R-going waves not equal for {soe}+{iv}+{rv}+{fv}, "
                 f"L: {l1_rms_l:g} R: {l1_rms_r:g}"

@@ -148,6 +148,57 @@ struct EOS_Data {
   // gives full HLLC/HLLD radially.  <= 0 (default, key unset) = off, bitwise unchanged.
   Real x1_phi_min = 0.0;
 
+  // <mhd>/lhlld_phi_min -- FLOOR on phi of LHLLD on ALL faces (x1, x2, x3); same
+  // chi-floor mechanism as x1_phi_min.  >= 1 gives plain HLLD everywhere.  <= 0
+  // (default, key unset) = off, bitwise unchanged.  MHD only.
+  Real phi_min_all = 0.0;
+  // <mhd>/lhlld_oddeven -- ODD-EVEN (2-cell) SENSOR floor on chi of LHLLD, all faces.
+  // phi damps the face jump of the NORMAL velocity; at low Mach it leaves the 2-cell
+  // normal-velocity checkerboard undamped (the reason x1_phi_min exists).  With this
+  // key > 0 the face takes chi >= s^p (p = the key value), where
+  //   s = min(1, |d_f - (d_l + d_r)/2| / (|d_f| + (|d_l| + |d_r|)/2))
+  // is built from the cell-centred normal velocity w0(ivx) of the 4 cells around the
+  // face (d_l, d_f, d_r = the 3 consecutive cell differences).  s = 1 for a pure
+  // checkerboard or a step, s = O((k dx)^2) in smooth flow and 0 in linear flow, so the
+  // low-Mach fix is kept where the flow is resolved.  <= 0 (default) = off, bitwise
+  // unchanged.  MHD only.
+  Real lhlld_oddeven = 0.0;
+  // <mhd>/lhlld_emf_eta_pos -- NON-NEGATIVE NUMERICAL RESISTIVITY of the LHLLD
+  // transverse-field (EMF) flux, all faces.  For weak B_n the HLLD star-region flux of
+  // a transverse field component B_t is F = B_K S_M (S_K - u_K)/(S_K - S_M) (K the
+  // upwind side of the contact).  To leading order in |u|/c_f its part beyond the
+  // centred flux (B_L u_L + B_R u_R)/2 is
+  //   F_up = Bbar (S_M - ubar) - (|S_M|/2 + du/4) dB,   du = u_R - u_L, dB = B_R - B_L,
+  // and the face changes the magnetic energy by F_up dB: the dB term is a numerical
+  // resistivity eta_face = (|S_M| + du/2) dx/2, NEGATIVE on a converging face whose
+  // normal-velocity jump exceeds twice the contact speed (-du > 2|S_M|).  This holds
+  // for HLLD and LHLLD alike (the B fluxes of LHLLD are HLLD's; p_T* does not enter
+  // them); the low-Mach fix makes it bite because it no longer damps the face jump du
+  // (the O(1/M) acoustic term).  With the key on, the transverse-field flux on such a
+  // face gets the minimal extra term that makes eta_face = 0 there,
+  //   dF_Bt = -(1/2) max(0, -(|S_M| + du/2)) dB_t,
+  // and the energy flux the matching Poynting term Bbar_t . dF_Bt (so the magnetic
+  // energy removed stays in the total energy as heat).  Mass, momentum and the low-Mach
+  // pressure fix are untouched.  Default true in <mhd> (user decision 10-30, set in
+  // eos.cpp); false = legacy LHLLD, bitwise.  MHD only.
+  bool lhlld_emf_eta_pos = false;
+  // <hydro>/lhllc_cb_sensor, <mhd>/lhlld_cb_sensor -- ODD-EVEN (2-cell, checkerboard)
+  // SENSOR for LHLLC/LHLLD, on every face.  The velocity-jump term rho c (u_L - u_R) of
+  // the contact pressure is the only part of the flux that damps a 2-cell compressive
+  // mode of the normal velocity (the Rhie-Chow role); phi = O(M) slows that damping
+  // from ~c/dx to ~|u|/dx.  With the sensor on, the face's normal mass flux
+  // q = rho*u_n is taken at the four cell centres i-2..i+1 along the normal; its
+  // consecutive differences d1, d2, d3 give the ODD (2dx) part of the face difference
+  // J = (2 d2 - d1 - d3)/4 (= d2 for a pure checkerboard, O(dx^3) for a smooth q), and
+  // s = clamp(J/d2, 0, 1)^p, p = cb_sensor, is the fraction of the face jump that is
+  // 2dx.
+  // Then phi -> phi + (1 - phi) s (applied as the equivalent floor on chi), so the face
+  // dissipation always lies between LHLLC/LHLLD (s = 0) and HLLC/HLLD (s = 1).  q is
+  // the mass flux, not u_n, so a resolved anelastic (div(rho u) ~ 0) stratified flow
+  // reads as smooth.  Default 1 (user decision 10-30, set in eos.cpp); <= 0 = off,
+  // legacy LHLLC/LHLLD, bitwise.
+  Real cb_sensor = 0.0;
+
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).
   //

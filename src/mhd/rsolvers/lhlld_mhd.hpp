@@ -60,6 +60,8 @@
 
 #include <cmath>  // fabs(), fmax(), fmin()
 
+#include "utils/cb_sensor.hpp"
+
 namespace mhd {
 
 #ifndef HLLD_SMALL_NUMBER
@@ -92,7 +94,8 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
      const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
      const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr,
      const DvceArray4D<Real> &bx,
-     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez) {
+     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez,
+     const DvceArray5D<Real> &w0) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
   int iby = ((ivx-IVX) + 1)%3;
@@ -104,8 +107,29 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
   // applied as the equivalent floor on chi (phi >= phi_min <=> chi >= 1-sqrt(1-phi_min))
   // so that phi = chi*(2-chi) keeps its expression tree: a select on phi changed the
   // compiler's FMA contraction of (1-phi) and broke bitwise identity with the key off.
-  const Real chi_min = (ivx == IVX && eos.x1_phi_min > 0.0) ?
-                       1.0 - sqrt(1.0 - fmin(1.0, eos.x1_phi_min)) : 0.0;
+  // <mhd>/lhlld_phi_min (EOS_Data::phi_min_all): the same floor on every face.
+  const Real phi_min_f = fmax((ivx == IVX) ? eos.x1_phi_min : 0.0, eos.phi_min_all);
+  const Real chi_min = (phi_min_f > 0.0) ?
+                       1.0 - sqrt(1.0 - fmin(1.0, phi_min_f)) : 0.0;
+  // <mhd>/lhlld_oddeven (EOS_Data::lhlld_oddeven): odd-even sensor floor, see eos.hpp.
+  // w0(ivx) is the sweep-normal velocity on Cartesian and sp grids and, on the cubed
+  // sphere, the CONTRAVARIANT angular component, = (face-normal velocity)/sin(theta)
+  // with a smoothly varying sin(theta), so it detects the same 2-cell pattern.
+  // The 4 cells around face index (k,j,i) along the sweep direction, clamped to the
+  // allocated range (only the outermost fofc faces can reach past it).
+  const Real oe_pow = eos.lhlld_oddeven;
+  const bool oe_on = (oe_pow > 0.0);
+  const int oe_di = (ivx == IVX) ? 1 : 0;
+  const int oe_dj = (ivx == IVY) ? 1 : 0;
+  const int oe_dk = (ivx == IVZ) ? 1 : 0;
+  const int oe_n1 = static_cast<int>(w0.extent(4)) - 1;
+  const int oe_n2 = static_cast<int>(w0.extent(3)) - 1;
+  const int oe_n3 = static_cast<int>(w0.extent(2)) - 1;
+  // <mhd>/lhlld_emf_eta_pos (EOS_Data::lhlld_emf_eta_pos): see eos.hpp and Step 8.
+  const bool eta_pos = eos.lhlld_emf_eta_pos;
+  // <mhd>/lhlld_cb_sensor (EOS_Data::cb_sensor): see eos.hpp and
+  // utils/cb_sensor.hpp.
+  const Real cb_sensor = eos.cb_sensor;
 
   if (eos.is_ideal) {
     Real gm1 = eos.gamma - 1.0;
@@ -197,7 +221,31 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real cur = sqrt(0.5*(qb + sqrt(fmax(0.0, SQR(qb) - 4.0*usqr*caxsqr))));
       // eqns. (14)-(15) of Minoshima & Miyoshi
       Real chi = fmin(1.0, fmax(cul, cur)/fmax(cfl, cfr));
-      chi = fmax(chi, chi_min);  // x1 faces; chi_min = 0 (no-op) when the key is off
+      chi = fmax(chi, chi_min);  // chi_min = 0 (no-op) when the keys are off
+      if (oe_on) {
+        Real uc[4];
+        for (int q=0; q<4; ++q) {
+          int ii = i + (q-2)*oe_di;
+          ii = (ii < 0) ? 0 : ((ii > oe_n1) ? oe_n1 : ii);
+          int jj = j + (q-2)*oe_dj;
+          jj = (jj < 0) ? 0 : ((jj > oe_n2) ? oe_n2 : jj);
+          int kk = k + (q-2)*oe_dk;
+          kk = (kk < 0) ? 0 : ((kk > oe_n3) ? oe_n3 : kk);
+          uc[q] = w0(m,ivx,kk,jj,ii);
+        }
+        const Real d_l = uc[1] - uc[0];
+        const Real d_f = uc[2] - uc[1];
+        const Real d_r = uc[3] - uc[2];
+        const Real den = fabs(d_f) + 0.5*(fabs(d_l) + fabs(d_r));
+        if (den > 0.0) {
+          Real soe = fmin(1.0, fabs(d_f - 0.5*(d_l + d_r))/den);
+          if (oe_pow != 1.0) soe = pow(soe, oe_pow);
+          chi = fmax(chi, soe);
+        }
+      }
+      // <mhd>/lhlld_cb_sensor: odd-even sensor, default 1 (utils/cb_sensor.hpp)
+      if (cb_sensor > 0.0) chi = fmax(chi, CBSensorChiFloor(w0, m, k, j, i, ivx, chi,
+                                                            cb_sensor));
       Real phi = chi*(2.0 - chi);
 
       // Real cfmax = std::max(cfl,cfr);
@@ -482,6 +530,21 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
         Real wpt = (spd[2] >= 0.0) ? spd[0]*sdml_inv : spd[4]*sdmr_inv;
         flxi.mx += dpt;
         flxi.e  += wpt*dpt*spd[2];
+      }
+
+      //--- Step 8.  Non-negative numerical resistivity of the transverse-field flux
+      // (default on, EOS_Data::lhlld_emf_eta_pos).  eta_face ~ (|S_M| + du/2) dx/2 for
+      // the HLLD B_t flux; on a converging face with -du > 2|S_M| it is negative, and
+      // the minimal extra flux -(1/2) max(0, -(|S_M| + du/2)) dB_t brings it to 0.
+      if (eta_pos && (spd[0] < 0.0) && (spd[4] > 0.0)) {
+        Real ceta = fmax(0.0, -(fabs(spd[2]) + 0.5*(wr_ivx - wl_ivx)));
+        if (ceta > 0.0) {
+          Real dfby = -0.5*ceta*(ur.by - ul.by);
+          Real dfbz = -0.5*ceta*(ur.bz - ul.bz);
+          flxi.by += dfby;
+          flxi.bz += dfbz;
+          flxi.e  += 0.5*((ul.by + ur.by)*dfby + (ul.bz + ur.bz)*dfbz);
+        }
       }
 
       flx(m,IDN,k,j,i) = flxi.d;
