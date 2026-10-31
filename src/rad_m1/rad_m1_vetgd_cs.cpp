@@ -1623,15 +1623,13 @@ void RadiationM1::VetGdCsSweep() {
       }
 #endif
       // cslight-1031: flat (m, k, j, d) range, d fastest (as the MDRange before);
-      // cstwin-1031: with the fused twin the field f (0 main, 1 twin) is the slowest
-      // index (two fields' threads in one launch, each as the unfused sweep's thread)
+      // cstwin-geo: with the fused twin one thread computes the geometry once and the
+      // values of both fields
       const int nkk = ke - ks + 1, njj = je - js + 1, ndd = d1 - d0;
       const int nper = (nmb1 + 1)*nkk*njj*ndd;
-      Kokkos::parallel_for("m1_vgdcs_shell",
-                           VgdCsLight(DevExeSpace(), 0, (two ? 2 : 1)*nper),
+      Kokkos::parallel_for("m1_vgdcs_shell", VgdCsLight(DevExeSpace(), 0, nper),
       KOKKOS_LAMBDA(const int c) {
-        const int f = c/nper;
-        int t = c - f*nper;
+        int t = c;
         const int d = d0 + t % ndd;
         t /= ndd;
         const int j = js + t % njj;
@@ -1692,7 +1690,7 @@ void RadiationM1::VetGdCsSweep() {
           const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
                                         nc, h, cm_, nb_, st);
           // (counted per field swept, as the unfused twin's own sweep)
-          if (!sok) {Kokkos::atomic_add(&cnt_(0), 1.0);}
+          if (!sok) {Kokkos::atomic_add(&cnt_(0), two ? 2.0 : 1.0);}
           if (st.n == 0) {   // nothing in the band (counted): the own column
             st.n = 1;
             st.k[0] = k;
@@ -1710,6 +1708,7 @@ void RadiationM1::VetGdCsSweep() {
             all = all && ok[e];
           }
         }
+        for (int f = 0; f < (two ? 2 : 1); ++f) {
         const DvceArray5D<Real> &cv = (f == 0) ? cs_ : ct_;   // ln chi, ln S of field f
         const VgdIView &va = (f == 0) ? vi_ : vt_;            // its intensities
         const Real ch0 = exp(cv(m,0,k,j,i));
@@ -1841,6 +1840,7 @@ void RadiationM1::VetGdCsSweep() {
           }
         }
         va(m,d,k,j,i) = iv;
+        }   // f
       });
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
