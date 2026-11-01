@@ -644,6 +644,7 @@ bool cs_ = false;
 // static envelope is balanced in theta/phi (xi/eta) to round-off.  W_eq = the IC (EnvSetup;
 // on a restart the IC is rebuilt and u0 restored), the probe at the first RyPerSrcEnv call.
 wbtan::WbTan acc_wbt;
+void WbTanAccProbe(Mesh *pm);
 
 //! (sin theta, phi in [0, 2 pi), cos theta) of the panel point (x2, x3) (code coordinates)
 KOKKOS_INLINE_FUNCTION
