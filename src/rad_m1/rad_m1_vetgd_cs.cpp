@@ -845,35 +845,78 @@ void RadiationM1::VetGdCsCompact() {
     // as packed words (8x fewer bytes); the same lists in the same (t-increasing) order
     // as the byte path below
     const size_t wpe = per/16;   // words per entry
-    auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
+    // mpirace-1101: the host copies of the marks in PERSISTENT buffers (grown, never
+    // freed), not a fresh mirror / vector per build.  RSG E 10-31: under an LD_PRELOAD
+    // profiler (nsys osrt / cpu sampling) UCX's registration cache missed the munmap of
+    // the previous build's buffer, the new buffer reused its addresses and the rendezvous
+    // sent stale pages (sender / receiver hashes differ): inconsistent lists, then
+    // MPI_ERR_TRUNCATE or a hang in the first sweep.  Same values, same lists (bitwise)
+    const size_t nmw = msk_.extent(0);
+    if (vgd_csmw_h.size() < nmw) {vgd_csmw_h.resize(nmw);}
+    {
+      Kokkos::View<uint32_t *, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+          mh(vgd_csmw_h.data(), nmw);
+      Kokkos::deep_copy(mh, msk_);
+    }
+    const uint32_t *mp = vgd_csmw_h.data();
     const size_t nwr = static_cast<size_t>(vgd_csnrcv)*wpe;
     bool both = false;
     for (size_t w = 0; w < nwr; ++w) {
-      const uint32_t x = mp(w);
+      const uint32_t x = mp[w];
       if (x != 0u && ((x & (x >> 1) & 0x55555555u) != 0u)) {both = true;}
     }
     if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
-    std::vector<uint32_t> smw(std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1),
-                              0u);
+    const size_t nsw = std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1);
+    if (vgd_csmw_r.size() < nsw) {vgd_csmw_r.resize(nsw);}
+    std::fill(vgd_csmw_r.begin(), vgd_csmw_r.begin() + nsw, 0u);
+    uint32_t *smw = vgd_csmw_r.data();
 #if MPI_PARALLEL_ENABLED
     {
+      // mpirace-1101: own tags (7107 marks, 7108 their checksums; 7105 is the fused
+      // twin's sweep exchange) and a checksum per message: a block that arrives other
+      // than it was sent is FATAL here, never a silent wrong list
+      auto hsum = [](const uint32_t *a, const size_t nw) {
+        uint64_t h = 1469598103934665603ull;
+        for (size_t w = 0; w < nw; ++w) {h = (h ^ a[w])*1099511628211ull;}
+        return h;
+      };
+      std::vector<uint64_t> hs(np, 0), hr(np, 0);
       std::vector<MPI_Request> req;
       for (int p = 0; p < np; ++p) {
         const int rk = vgd_csprk[p];
         if (vgd_cspn[p] > 0) {
           req.emplace_back();
-          MPI_Irecv(smw.data() + static_cast<size_t>(vgd_csps[p])*wpe,
-                    static_cast<int>(vgd_cspn[p]*wpe), MPI_UINT32_T, rk, 7105,
+          MPI_Irecv(smw + static_cast<size_t>(vgd_csps[p])*wpe,
+                    static_cast<int>(vgd_cspn[p]*wpe), MPI_UINT32_T, rk, 7107,
                     MPI_COMM_WORLD, &req.back());
+          req.emplace_back();
+          MPI_Irecv(&hr[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
         }
         if (vgd_cspm[p] > 0) {
+          const uint32_t *b = mp + static_cast<size_t>(vgd_cspr[p])*wpe;
+          const size_t nw = static_cast<size_t>(vgd_cspm[p])*wpe;
+          hs[p] = hsum(b, nw);
           req.emplace_back();
-          MPI_Isend(mp.data() + static_cast<size_t>(vgd_cspr[p])*wpe,
-                    static_cast<int>(vgd_cspm[p]*wpe), MPI_UINT32_T, rk, 7105,
-                    MPI_COMM_WORLD, &req.back());
+          MPI_Isend(b, static_cast<int>(nw), MPI_UINT32_T, rk, 7107, MPI_COMM_WORLD,
+                    &req.back());
+          req.emplace_back();
+          MPI_Isend(&hs[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
         }
       }
       MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+      for (int p = 0; p < np; ++p) {
+        if (vgd_cspn[p] <= 0) {continue;}
+        const uint64_t h = hsum(smw + static_cast<size_t>(vgd_csps[p])*wpe,
+                                static_cast<size_t>(vgd_cspn[p])*wpe);
+        if (h != hr[p]) {
+          VgdCsFatal("compact lists: the read marks from rank " +
+                     std::to_string(vgd_csprk[p]) + " arrived corrupted (rank " +
+                     std::to_string(global_variable::my_rank) + ", checksum mismatch): "
+                     "the MPI transport delivered other bytes than were sent (seen with "
+                     "UCX's registration cache under an LD_PRELOAD profiler such as nsys "
+                     "-t osrt / -s cpu: export UCX_RCACHE_ENABLE=n for such runs)");
+        }
+      }
     }
 #endif
     auto buildw = [&](const uint32_t *mk, const std::vector<int> &st0,
@@ -933,8 +976,8 @@ void RadiationM1::VetGdCsCompact() {
       }
       return t;
     };
-    ts = buildw(smw.data(), vgd_csps, vgd_cspn, E.so, sl_h);
-    tr = buildw(mp.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+    ts = buildw(smw, vgd_csps, vgd_cspn, E.so, sl_h);
+    tr = buildw(mp, vgd_cspr, vgd_cspm, E.ro, rl_h);
   } else {
     // memcut-1020: the packed mask expanded on the host (1 byte per value, as before)
     std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
