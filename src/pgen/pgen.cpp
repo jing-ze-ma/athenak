@@ -916,6 +916,38 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nams_file = static_cast<int>(hdr[1]);
   }
 
+  // --- wbtan-rstg-1101: THE PER-CELL PGEN SLAB HEADER (kPgenSlabRstMagic), behind the
+  // spin one: npgs_file slabs, the last of each record
+  int npgs_file = 0;
+  if (std::memcmp(variabledata, &(kPgenSlabRstMagic[0]), sizeof(kPgenSlabRstMagic)) == 0) {
+    char pgs_hdr[4*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(pgs_hdr));
+      ok = ok && (resfile.Read_bytes(&(pgs_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(pgs_hdr[0]), sizeof(pgs_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[4] = {0, 0, 0, 0};
+    if (ok) {std::memcpy(&(hdr[0]), &(pgs_hdr[0]), sizeof(hdr));}
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 64) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the per-cell pgen slab header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    npgs_file = static_cast<int>(hdr[1]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -1003,7 +1035,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
                             + neint_file + nck_file + nctr_file + nrss_file + nvgd_file
-                            + ncsk_file + nra_file + nams_file)
+                            + ncsk_file + nra_file + nams_file + npgs_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1680,7 +1712,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "history is then not bitwise)." << std::endl;
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
-      ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read) {
+      ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read ||
+      npgs_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -1961,6 +1994,23 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           DeepCopyAcross(Kokkos::subview(pradm1->amk1, std::make_pair(0,nmb), Kokkos::ALL,
                          Kokkos::ALL, Kokkos::ALL), wtin);
         }
+      }
+    }
+    // wbtan-rstg-1101: the per-cell pgen slabs (kPgenSlabRstMagic), the last of the
+    // record, into pgen_rst_slabs_in for the restart call of the problem generator
+    if (npgs_file > 0) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
+                  + nams_file;
+      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      pgen_rst_slabs_in = DvceArray5D<Real>("rst-pgs-in", nmb, npgs_file, nout3, nout2,
+                                            nout1);
+      for (int n=0; n<npgs_file; ++n) {
+        read_slab("pgen slab");
+        DeepCopyAcross(Kokkos::subview(pgen_rst_slabs_in, Kokkos::ALL, n, Kokkos::ALL,
+                       Kokkos::ALL, Kokkos::ALL), wtin);
       }
     }
   }

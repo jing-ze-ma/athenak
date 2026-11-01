@@ -49,6 +49,7 @@
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
 #include "mhd/mhd.hpp"
+#include "pgen/pgen.hpp"
 #include "diffusion/resistivity.hpp"
 
 namespace wbtan {
@@ -73,6 +74,30 @@ inline void Alloc(WbTan &w, MeshBlockPack *pmbp) {
   const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
   w.weq = new DvceArray5D<Real>("wbtan_weq", pmbp->nmb_thispack, 2, n3, n2, n1);
   w.gt = new DvceArray5D<Real>("wbtan_gt", pmbp->nmb_thispack, 2, n3, n2, n1);
+}
+
+//! wbtan-rstg-1101: on a restart, g_t from the file's per-cell pgen slabs instead of a new
+//! probe (a restart must not depend on rebuilding W_eq bit for bit, nor on the probe being
+//! side-effect free on a developed state).  True (and w.ready) when the file had exactly
+//! the two g_t slabs of this mesh; false (re-probe at the first source call) otherwise.
+inline bool LoadFromRestart(ProblemGenerator *pg, WbTan &w, MeshBlockPack *pmbp,
+                            const char *who) {
+  Alloc(w, pmbp);
+  auto &in = pg->pgen_rst_slabs_in;
+  const bool ok = (in.extent_int(1) == 2) && (in.extent(0) == w.gt->extent(0)) &&
+                  (in.extent(2) == w.gt->extent(2)) && (in.extent(3) == w.gt->extent(3)) &&
+                  (in.extent(4) == w.gt->extent(4));
+  if (ok) {
+    Kokkos::deep_copy(*w.gt, in);
+    w.ready = true;
+    pg->pgen_rst_slabs = w.gt;
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << who << ": roche_wb_tan: " << (ok ? "g_t read from the restart file (no "
+              "re-probe)" : "the restart file has no g_t: re-probe at the first source "
+              "call") << std::endl;
+  }
+  return ok;
 }
 
 //! the force, one code path for every geometry: a2/a3 are the caller's other tangential
@@ -311,6 +336,8 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   ph->wb_cache_built = sv_built;
   ph->use_fofc = sv_fofc;
   w.ready = true;
+  // wbtan-rstg-1101: every restart file from now on carries g_t (kPgenSlabRstMagic)
+  if (pm->pgen != nullptr) pm->pgen->pgen_rst_slabs = w.gt;
 
   // one line: the size of g_t (max |g_c| over the rank's cells, rank 0)
   Real gmax = 0.0;

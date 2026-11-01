@@ -38,6 +38,14 @@ constexpr char kPgenRstMagic[8] = {'P', 'G', 'E', 'N', 'S', 'T', '0', '1'};
 // Header: int32 number of slabs (hydro, then mhd), int32 pad; the slabs are the LAST
 // ones of the tail.
 constexpr char kEintRstMagic[8] = {'E', 'I', 'N', 'T', 'R', 'S', 'T', '1'};
+// wbtan-rstg-1101: PER-CELL problem-generator slabs, same marked form, behind every other
+// marked header (the LAST slabs of each MeshBlock record): header int32 {1, nslab, 0, 0}.
+// A pgen points pgen_rst_slabs at a full-size (nmb, nslab, n3, n2, n1) device array
+// (ghosts included, as every restart slab) once its contents are valid; the restart
+// writer stores it, and the reader fills pgen_rst_slabs_in (same shape; empty when the
+// file has none) before the restart call of the problem generator.  Unset = not one
+// byte written (every old file and every pgen without it unchanged).
+constexpr char kPgenSlabRstMagic[8] = {'P', 'G', 'S', 'L', 'A', 'B', '0', '1'};
 
 using ProblemFinalizeFnPtr = void (*)(ParameterInput *pin, Mesh *pm);
 using UserBoundaryFnPtr = void (*)(Mesh* pm);
@@ -128,6 +136,9 @@ class ProblemGenerator {
   // from its own restart path.
   PgenRestartStateFnPtr pgen_rst_write_func=nullptr;
   std::vector<char> pgen_rststate;
+  // wbtan-rstg-1101: the per-cell pgen slabs (see kPgenSlabRstMagic)
+  DvceArray5D<Real> *pgen_rst_slabs = nullptr;
+  DvceArray5D<Real> pgen_rst_slabs_in;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
   // accretor-bigdom-v4 (10-16): called once per stage by RadiationM1::HydroConToPrim

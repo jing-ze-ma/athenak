@@ -2868,6 +2868,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         weq_(m,1,k,j,i) = EintFromP(eos, igm1, den, p);
       });
       dhj_wbt.ready = false;
+      // wbtan-rstg-1101: a restart takes g_t from the file when it carries it
+      if (restart) wbtan::LoadFromRestart(this, dhj_wbt, pmbp, "deep_hot_jupiter_rt");
       if (global_variable::my_rank == 0) {
         std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan ON: tangential "
                   << (roche_on ? "centrifugal + tidal" : "centrifugal")
