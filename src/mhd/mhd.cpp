@@ -41,6 +41,8 @@ namespace {
 //!   <mhd>/xe_tracer = true            (DefaultXeTracer, after the EOS exists) when
 //!                                     ohmic_resistivity = eos or ambipolar = eos and the
 //!                                     EOS has the electron-fraction table (else false)
+//!   <mhd>/ambipolar = eos             (DefaultAmbipolar, after DefaultXeTracer) when
+//!                                     ohmic_resistivity = eos and xe_tracer is on
 
 void LogDefault(ParameterInput *pin, const std::string &key, const std::string &on) {
   if (recipe::NewDefaults(pin)) {
@@ -80,6 +82,21 @@ void DefaultXeTracer(ParameterInput *pin, const EOS_Data &eos) {
   LogDefault(pin, "<mhd>/xe_tracer", "true (default with ohmic_resistivity or ambipolar "
              "= eos)");
   if (recipe::NewDefaults(pin)) pin->GetOrAddBoolean("mhd","xe_tracer",true);
+}
+
+//! adeos-1101 (user 11-01): <mhd>/ambipolar = eos on a fresh start (same rules as
+//! above) when ohmic_resistivity = eos AND the x_e tracer is on (after DefaultXeTracer).
+//! AD with the local Saha x_e costs +31 % RKG stages: not defaulted without the tracer.
+void DefaultAmbipolar(ParameterInput *pin) {
+  if (pin->DoesParameterExist("mhd","ambipolar")) return;
+  const bool ohm_eos = pin->DoesParameterExist("mhd","ohmic_resistivity") &&
+                       pin->GetString("mhd","ohmic_resistivity").compare("eos") == 0;
+  const bool xe_on = pin->DoesParameterExist("mhd","xe_tracer") &&
+                     pin->GetBoolean("mhd","xe_tracer");
+  if (!ohm_eos || !xe_on) return;
+  LogDefault(pin, "<mhd>/ambipolar", "eos (default with ohmic_resistivity = eos and "
+             "xe_tracer)");
+  if (recipe::NewDefaults(pin)) pin->GetOrAddString("mhd","ambipolar","eos");
 }
 }  // namespace
 
@@ -189,6 +206,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
   // tracer-1101: fresh-start default of <mhd>/xe_tracer (needs the EOS table)
   DefaultXeTracer(pin, peos->eos_data);
+  // adeos-1101: fresh-start default <mhd>/ambipolar = eos (ohmic eos + x_e tracer)
+  DefaultAmbipolar(pin);
   // tracer-1101: the passive-tracer slots after the user's scalars (mhd_tracers.hpp):
   // x_e (<mhd>/xe_tracer) first, the floor mass (<mhd>/floor_tracer) last.  Both keys
   // are read only when named; off, nscalars and every path are unchanged.
