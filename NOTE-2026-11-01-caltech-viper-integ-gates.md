@@ -5,7 +5,7 @@ Answers TASK 13d5b766 and the e1ecd210 follow-up (NOTE 44cf9fd1).
 ## Binaries (H200, fmad off, incremental builds, -c 8)
 | commit | binary | md5 |
 |---|---|---|
-| fin51-r-fix 8cf6db62 (reference for a) | athena_gpu_dhj_fin51_8cf6db62_fmadoff | (see .md5) |
+| fin51-r-fix 8cf6db62 (reference for a) | athena_gpu_dhj_fin51_8cf6db62_fmadoff | 1561bd6e298a8aff71dee06978cac9c2 |
 | integ-test-1101 e32a104e | athena_gpu_dhj_integ_e32a104e_fmadoff | 4d9d2ecb19c20ba357e13d0f02fe4ba0 |
 | d3f878be (reference for a2) | athena_gpu_dhj_d3f878be_fmadoff | 1b99f14bc69278203c407be29b1fca3c |
 | integ e1ecd210 | athena_gpu_dhj_integ_e1ecd210_fmadoff | ba6abd1ce21cee1acd7d2557c06d55bc |
