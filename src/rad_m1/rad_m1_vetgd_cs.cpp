@@ -1639,7 +1639,7 @@ void RadiationM1::VetGdCsSweep() {
   static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
   if (s_lb < 0) {
     const char *el = std::getenv("VGD_CS_LB");
-    s_lb = (el != nullptr) ? std::atoi(el) : 0;
+    s_lb = (el != nullptr) ? std::atoi(el) : 6;   // defaults-1031: 6 (VGD_CS_LB=0: old launch)
   }
   VetGdRingSweepBegin(two);
   for (int pass = 0; pass < 2; ++pass) {

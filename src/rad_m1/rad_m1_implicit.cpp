@@ -82,7 +82,7 @@
 #endif
 
 namespace radm1 {
-static int M1HaloDepthEnv(MeshBlockPack *pp);   // implhalo-1031 (below)
+static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin);   // (below)
 // DEBUG <rad_m1>/dbg_eint_cells (accretor-sector-light-1017; file scope so the class
 // layout is unchanged): 0 = off
 static int g_dbg_eint_n = 0;
@@ -3539,7 +3539,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(thw, 0.0);
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack);   // implhalo-1031
+    pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
     pbval_th->InitializeBuffers(M1_NHALO_T);
     // COMPONENT ROLES of the scratch halos (SetVectorPairs).  Slots 2,3 hold F1 and KT,
     // SCALARS under the polar flip and the seam transform; the real tangential pairs
@@ -3565,7 +3565,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(thq, 0.0);
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_tq->exch_depth = M1HaloDepthEnv(pmy_pack);   // implhalo-1031
+    pbval_tq->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
     pbval_tq->InitializeBuffers(M1_NHALO_Q);
     pbval_tq->SetVectorPairs(M1_NHALO_Q, {});   // E', G0, F1, KT: all scalars
     // the deep interior of the scratch arrays is neither read by a send nor written by a
@@ -3599,7 +3599,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(krw, 0.0);
       Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
       pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-      pbval_kr->exch_depth = M1HaloDepthEnv(pmy_pack);   // implhalo-1031
+      pbval_kr->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
     pbval_kr->InitializeBuffers(1);
       pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
       // implicit_vimp: the per-pass exchange of the Jacobian rows and dv^k (same
@@ -3609,7 +3609,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(vmw, 0.0);
         Kokkos::realloc(vmw_c, nmb, M1_NVIMP_X, 1, 1, 1);
         pbval_vm = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-        pbval_vm->exch_depth = M1HaloDepthEnv(pmy_pack);   // implhalo-1031
+        pbval_vm->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
     pbval_vm->InitializeBuffers(M1_NVIMP_X);
         // (DV2, DV3) is the tangential pair; the nine per-direction Jacobian rows P are
         // treated as scalars (their proper curvilinear treatment is a later stage)
@@ -3622,7 +3622,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(d3w, 0.0);
         Kokkos::realloc(d3w_c, nmb, 3, 1, 1, 1);
         pbval_d3 = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-        pbval_d3->exch_depth = M1HaloDepthEnv(pmy_pack);   // implhalo-1031
+        pbval_d3->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
         pbval_d3->InitializeBuffers(3);
         pbval_d3->SetVectorPairs(3, {{1, 2}});
         pbval_d3->cs_noresample = true;
@@ -4010,14 +4010,22 @@ void RadiationM1::ImplicitTransverseHalo(int nq) {
   ImplicitHaloExchange(nq, -1);
 }
 
-// implhalo-1031 (env M1_HALO_DEPTH = d, cubed sphere only, default 0 = ng): the depth
-// of the implicit scratch exchanges.  The poisoned-ghost gate (M1_POISON_GHOST) shows
-// which depth the implicit kernels read (2 on the HG / RSG decks: the vimp stencil
-// reads +-2; depth 1 is NOT enough)
-static int M1HaloDepthEnv(MeshBlockPack *pp) {
+// defaults-1031: the depth of the implicit scratch exchanges on the cubed sphere,
+// <rad_m1>/implicit_halo_depth (default 2; 0 or >= ng = all ng layers, the old
+// behaviour), env M1_HALO_DEPTH overrides.  The implicit kernels read 2 ghost layers
+// (the vimp enthalpy stencil +-2; poisoned-ghost gate M1_POISON_GHOST: NaN beyond depth
+// 2 leaves the outputs identical, beyond depth 1 does not), so depth 2 sends the same
+// values that are read with 2/3 of the bytes (RSG 2-node loop -2.5 %, bitwise).  Not
+// used off the cubed sphere.
+static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin) {
+  if (!pp->pmesh->use_cubed_sphere) {return 0;}
+  int d = 2;
+  if (pin != nullptr && pin->DoesParameterExist("rad_m1", "implicit_halo_depth")) {
+    d = pin->GetInteger("rad_m1", "implicit_halo_depth");
+  }
   const char *e = std::getenv("M1_HALO_DEPTH");
-  if (e == nullptr || !pp->pmesh->use_cubed_sphere) {return 0;}
-  return std::atoi(e);
+  if (e != nullptr) {d = std::atoi(e);}
+  return d;
 }
 
 //----------------------------------------------------------------------------------------
