@@ -2269,11 +2269,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << r1/rl1 << "), Phi(L1) = " << phil1 << ", max Phi on x1max = "
                   << phtop << std::endl;
       }
-      if (gsc >= 1.0e-3 && !(phtop < phil1)) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "problem/roche: the equipotential through the domain "
-                  << "top is not closed (max Phi(x1max) >= Phi(L1))" << std::endl;
-        exit(EXIT_FAILURE);
+      // A WARNING, not a stop: the outer boundary holds the top hydrostatically, and the
+      // region near L1 is outside the domain, so nothing can overflow in the model; but
+      // the gas above that level is not bound to the planet (WASP-121b production grid:
+      // x1max = 0.66 r_L1 on the axis, yet the lobe's POLAR radius is ~0.64 r_L1, so the
+      // top cells near the poles sit just outside the Roche lobe)
+      if (gsc >= 1.0e-3 && !(phtop < phil1) && global_variable::my_rank == 0) {
+        std::cout << "### WARNING: problem/roche: the equipotential through part of the "
+                  << "domain top is OPEN (max Phi(x1max) >= Phi(L1)): those top cells lie "
+                  << "outside the planet's Roche lobe" << std::endl;
       }
     }
     Real Rgas = pin->GetReal("problem","Rgas");
