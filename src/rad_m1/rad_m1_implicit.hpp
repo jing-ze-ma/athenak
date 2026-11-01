@@ -909,6 +909,25 @@ void M1SphDrrUp(const Real chil, const Real n1l, const Real s2l, const Real chir
   wr = w1r + fmax(-h, 0.0);
 }
 
+//! postr-1031 implicit_pos_transport = upwind, the MEMORY term: the lagged face flux
+//! theta F^n of the face-eliminated flux equation is explicit transport at c dt/dx >> 1
+//! wherever the face is not blended to the HLL form (thin floor gas with a weak formal-
+//! solution flux keeps w = 0): its outflow drains a dim donor below zero (RY Per nozzle
+//! face: 12 E^n out of a cell in one step, b < 0 rows).  Where the memory outflow alone
+//! would take more than gam E^n of the donor (cr |fmem| dt A_f/V_d > gam E^n_d), the face
+//! takes it IMPLICITLY UPWIND, fmem E'_d/E^n_d (the reduced flux of t^n times the donor's
+//! new E): a >= 0 diagonal entry in the donor's row and a <= 0 one in the receiver's (M-
+//! matrix), one number for the face (conservative), = fmem when E' = E^n.  Returns q =
+//! fmem/E^n_d (the sign gives the donor: q > 0 the LEFT cell) or 0 (face unchanged).
+KOKKOS_INLINE_FUNCTION
+Real M1PtMemQ(const Real fmem, const Real cr, const Real nl, const Real nr,
+              const Real enl, const Real enr, const Real efl, const Real gam) {
+  const bool dl = (fmem > 0.0);
+  const Real en = fmax(dl ? enl : enr, efl);
+  const Real nd = dl ? nl : nr;
+  return (cr*fabs(fmem)*nd > gam*en) ? fmem/en : 0.0;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn M1FaceAvg
 //! \brief <rad_m1>/implicit_face_weight: the x1 face value of a cell quantity from the

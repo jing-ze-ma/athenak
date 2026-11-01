@@ -1838,6 +1838,11 @@ class RadiationM1 {
   // a positive x1 off-diagonal left in an sp row (vimp, opac_newton) is lagged to the
   // right-hand side (same fixed point); counted (pt_cnt(1), rank 0)
   int impl_pos_trans = 0;
+  // ... and the memory term (M1PtMemQ): faces whose explicit memory outflow exceeds
+  // implicit_pos_transport_mem (default 1/6) x E^n of the donor take it implicitly
+  // upwind (<= 0: off); ptq2/ptq3 the x2/x3 face q (0 = unchanged face)
+  Real pt_gam = 1.0/6.0;
+  DvceArray4D<Real> ptq2, ptq3;
   DvceArray1D<Real> pt_cnt;
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
