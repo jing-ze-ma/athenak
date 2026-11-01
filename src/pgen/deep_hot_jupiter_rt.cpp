@@ -4871,8 +4871,17 @@ void AmFix(Mesh *pm, const Real bdt) {
 //! \fn WbTanProbe (roche-wbtan-1101, problem/roche_wb_tan): wbtan_common.hpp Probe, with
 //! the pgen's own AmFix (problem/coriolis_am | am_transport) of W_eq as the extra term.
 
+//! the pgen's problem/am_transport part of AmFix (T_cons - T_code: a transport
+//! correction whose sum is the boundary torque) of W_eq.  NOT the problem/coriolis_am
+//! part: -Omega Q_c of W_eq is the Coriolis torque on the equilibrium's NUMERICAL mass
+//! fluxes (the first stage's radial/reconstruction redistribution, sum = Omega dI/dt);
+//! frozen into g_t it was a permanent net z torque (cs C8 WASP deck: Ttide -5.5e36 vs
+//! ~1e28 without it, tidetrq-1101 / wbtan torque check 11-01), so it is left to the live
+//! AmFix, which applies it to the evolving state every stage.
 void WbTanAmFixExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &u0s) {
-  if (!(amh::fix || amh::trans)) return;
+  if (!amh::trans) return;
+  const bool sv_fix = amh::fix;
+  amh::fix = false;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -4880,6 +4889,7 @@ void WbTanAmFixExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &u0s) {
   const int nmb1 = pmbp->nmb_thispack - 1;
   Kokkos::deep_copy(u0s, 0.0);
   AmFix(pm, 1.0);   // adds to the fluid's u0, which IS u0s here
+  amh::fix = sv_fix;
   auto u0a = u0s;
   auto usa = us;
   par_for("wbtan_amfix", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
