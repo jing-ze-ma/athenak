@@ -1,0 +1,8 @@
+== /viper/ptmp2/jinma/w121hfresh_1101/runs/on_a  (per window, units Lsw_abs mean; Lsw_abs = 2.7896e+30 erg/s)
+ rot 0-1: dE/dt -3.2843e-02  Lir_top 1.03658  Lsw_refl 0.3831  Etot_top +3.6583e-02  Etot_bot +3.3530e-03  Efloor +1.677e-06  Mdot_top +1.821e+09 g/s  resid +3.850e-04  mass drift -2.22e-13
+ rot 1-2: dE/dt -3.8493e-02  Lir_top 1.04189  Lsw_refl 0.3831  Etot_top +4.1886e-02  Etot_bot +3.3454e-03  Efloor +1.638e-08  Mdot_top +3.605e+08 g/s  resid +4.780e-05  mass drift -2.48e-13
+ rot 2-2.6: dE/dt -3.3267e-02  Lir_top 1.03665  Lsw_refl 0.3831  Etot_top +3.6655e-02  Etot_bot +3.3460e-03  Efloor +2.422e-08  Mdot_top +4.687e+08 g/s  resid +4.153e-05  mass drift -2.73e-13
+== /viper/ptmp2/jinma/w121hfresh_1101/runs/off_a  (per window, units Lsw_abs mean; Lsw_abs = 2.7896e+30 erg/s)
+ rot 0-1: dE/dt -3.2843e-02  Lir_top 1.03656  Lsw_refl 0.3831  Etot_top +3.6564e-02  Etot_bot +3.3530e-03  Efloor +1.668e-06  Mdot_top +1.827e+09 g/s  resid +3.662e-04  mass drift -2.22e-13
+ rot 1-2: dE/dt -3.8492e-02  Lir_top 1.04188  Lsw_refl 0.3831  Etot_top +4.1884e-02  Etot_bot +3.3454e-03  Efloor +1.280e-08  Mdot_top +3.606e+08 g/s  resid +4.613e-05  mass drift -2.48e-13
+ rot 2-2.6: dE/dt -3.3267e-02  Lir_top 1.03665  Lsw_refl 0.3831  Etot_top +3.6653e-02  Etot_bot +3.3460e-03  Efloor +1.803e-08  Mdot_top +4.686e+08 g/s  resid +4.000e-05  mass drift -2.74e-13

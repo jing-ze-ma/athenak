@@ -1,0 +1,8 @@
+runs/on_a/rst/dhj.00001.rst: slabs/record 33, spin nonzero cells 688128 of 688128 active, sum 4.4660e+29, max|s| 9.1972e+34
+runs/on_a/rst/dhj.00002.rst: slabs/record 33, spin nonzero cells 688128 of 688128 active, sum -6.4084e+29, max|s| 1.8429e+35
+runs/on_a/rst/dhj.00003.rst: slabs/record 26, spin nonzero cells 688128 of 688128 active, sum 4.4140e+30, max|s| 2.4342e+35
+runs/on_b/rst/dhj.00001.rst: slabs/record 33, spin nonzero cells 688128 of 688128 active, sum 4.4660e+29, max|s| 9.1972e+34
+runs/on_b/rst/dhj.00002.rst: slabs/record 33, spin nonzero cells 688128 of 688128 active, sum -6.4084e+29, max|s| 1.8429e+35
+runs/on_b/rst/dhj.00003.rst: slabs/record 33, spin nonzero cells 688128 of 688128 active, sum 4.6291e+30, max|s| 2.4440e+35
+runs/on_c/rst/dhj.00001.rst: slabs/record 33, spin nonzero cells 688128 of 688128 active, sum 4.4660e+29, max|s| 9.1972e+34
+runs/on_c/rst/dhj.00002.rst: slabs/record 33, spin nonzero cells 688128 of 688128 active, sum 1.6374e+29, max|s| 1.1993e+35
