@@ -11,7 +11,7 @@
 //!                      box centre, w = <problem>/z_width (advection test: run one box
 //!                      crossing with <mhd>/xe_alpha_fac = 0)
 //! The finalize hook prints one line per cell of the first MeshBlock row (j=js,k=ks):
-//!   XE i x z x_eq n_tot T dt ncycle time   (z = n_e/n_tot; the tracer is y = n_e/n_H)
+//!   XE i x z x_eq n_tot T dt ncycle time y   (z = n_e/n_tot; the tracer is y = n_e/n_H)
 //! which tst/scripts check against the backward-Euler recursion and the exact solution.
 
 #include <cmath>
@@ -86,8 +86,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   pmbp->pmhd->peos->PrimToCons(w0_, pmbp->pmhd->bcc0, pmbp->pmhd->u0, is, ie, js, je,
                                ks, ke);
   if (global_variable::my_rank == 0) {
-    std::printf("XEINIT rho %.17e T %.17e tcode %.17e x_eq %.17e\n", dens, tkel, tcode,
-                xeq);
+    std::printf("XEINIT rho %.17e T %.17e tcode %.17e x_eq %.17e y0 %.17e\n", dens, tkel,
+                tcode, xeq, z2y*xeq*zfac);
   }
 }
 
@@ -113,10 +113,9 @@ void XeFinal(ParameterInput *pin, Mesh *pm) {
     const Real ntot = rho*eos.pres_cgs/(mu*eos.temp_cgs*kb);
     const Real nh = pmbp->pmhd->xe_par.xh*rho*eos.dens_cgs/(eos_cgs::a_hyd*eos_cgs::m_u);
     // printed as z = n_e/n_tot = y n_H/n_tot
-    std::printf("XE %d %.17e %.17e %.17e %.17e %.17e %.17e %d %.17e\n", i-is, x,
+    std::printf("XE %d %.17e %.17e %.17e %.17e %.17e %.17e %d %.17e %.17e\n", i-is, x,
                 w0h(0,iz,ks,js,i)*nh/ntot, eos.ElectronFractionKelvin(rho, tk), ntot, tk,
-                pm->dt,
-                pm->ncycle, pm->time);
+                pm->dt, pm->ncycle, pm->time, w0h(0,iz,ks,js,i));
   }
 }
 }  // namespace

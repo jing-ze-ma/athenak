@@ -105,3 +105,10 @@ def test_xe_tracer_cpu():
                     restart=os.path.join(dn, "rst", "xebox.00001.rst"))
     assert "starts from local Saha" in out
     assert np.max(np.abs(r[:, 2]/r[:, 3] - 1)) < 1.0e-12, "switch-on z != x_eq"
+    # 4. density floor: a floored cell keeps its y = n_e/n_H (the floor mass inherits it)
+    _, out, r = run(exe, "floor", ["problem/z_fac=1", "mhd/xe_alpha_fac=0.0",
+                                   "mhd/dfloor=2.0e-8", "time/nlim=2"])
+    y0 = float([ln for ln in out.splitlines() if ln.startswith("XEINIT")][0].split()[-1])
+    yerr = np.max(np.abs(r[:, 9]/y0 - 1))
+    print(f"floor: y/y0 - 1 max {yerr:.2e}")
+    assert yerr < 1.0e-12, f"floored cell changed y: {yerr:.3e}"

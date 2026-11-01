@@ -68,8 +68,8 @@ TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
 //! recombination step of n_e = y n_H over dt (code units) toward n_eq = x_eq n_tot,
 //! capped at max(n_eq, gas-phase donors).  Writes w0 and u0 (= rho y) of the tracer in
 //! every cell; the x1 boundary ghosts are the caller's (TracerX1Ghosts).  A density
-//! floor that raises rho in ConsToPrim leaves u0 = rho y unchanged, i.e. the floor mass
-//! arrives with y = 0 (dilution); the next relaxation pulls it back toward Saha.
+//! floor that raises rho in ConsToPrim scales u0 = rho y with rho (EOS_Data::ixe), so the
+//! floor mass inherits the cell's y; the floor-tracer drain also keeps y (it scales s).
 
 void MHD::XeTracerUpdate(Real dt, bool init) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;

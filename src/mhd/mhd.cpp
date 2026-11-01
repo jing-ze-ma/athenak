@@ -253,6 +253,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     presist->xe_idx = ixe;
+    peos->eos_data.ixe = ixe;
     xe_init_pending = true;     // cleared by the restart reader if the file has it
     xe_par.alpha_fac = pin->GetOrAddReal("mhd", "xe_alpha_fac", 1.0);
     xe_par.time_cgs = (ppack->punit != nullptr) ? ppack->punit->time_cgs() : 1.0;

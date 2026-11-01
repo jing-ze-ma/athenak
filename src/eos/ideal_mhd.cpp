@@ -174,6 +174,8 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
         cons(m,IDN,k,j,i) = u.d;
         // <mhd>/floor_tracer: the floor's mass joins the floor-mass scalar
         if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - d_in;
+        // <mhd>/xe_tracer: keep the specific y of the cell (an empty cell keeps s)
+        if (eos.ixe >= 0 && d_in > 0.0) cons(m,eos.ixe,k,j,i) *= u.d/d_in;
         sumd++;
       }
       if (efloor_used) {
