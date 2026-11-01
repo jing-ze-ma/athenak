@@ -7657,6 +7657,92 @@ void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn DhjTideTorque (tidetrq-1101)
+//! \brief the z torque [g cm^2 s^-2] of the APPLIED tangential tide about the spin axis,
+//! sum over this rank's active cells of rho (r x a_t)_z vol = rho R (a_t . phi_hat) vol
+//! (the history output sums the ranks), at the current w0 (instantaneous, like Lrel/Iw):
+//! the explicit problem/roche tangential -grad TidePot, or with problem/roche_wb_tan the
+//! probed g_t (0 before the probe).  The radial part carries no z torque.  History
+//! column Ttide, present only with problem/roche, to close L_z in the planet runs.
+
+Real DhjTideTorque(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool mhd = (pmbp->pmhd != nullptr);
+  auto w0 = mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto x2v_ = pmbp->pcoord->x2v;
+  auto x3v_ = pmbp->pcoord->x3v;
+  auto &size = pmbp->pmb->mb_size;
+  auto &panel = pmbp->pmb->mb_panel;
+  auto &ic = pm->mb_indcs;
+  const int is = ic.is, js = ic.js, ks = ic.ks;
+  const int nx1 = ic.nx1, nx2 = ic.nx2, nx3 = ic.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const bool cs = pm->use_cubed_sphere, sp = pm->use_spherical_polar;
+  const Real rgms = pm->pgen->hot_jupiter_param.roche_gms;
+  const Real rra = pm->pgen->hot_jupiter_param.roche_a;
+  const bool wbt = wbtan::on;
+  if ((wbt && !wbtan::ready) || !(cs || sp)) return 0.0;
+  DvceArray5D<Real> g;
+  if (wbt) g = *wbtan::gt;
+  Real tq = 0.0;
+  Kokkos::parallel_reduce("dhj_tide_torque",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nx3*nx2*nx1),
+  KOKKOS_LAMBDA(const int idx, Real &sum) {
+    const int m = idx/(nx3*nx2*nx1);
+    int rem = idx - m*(nx3*nx2*nx1);
+    const int k = ks + rem/(nx2*nx1);
+    rem -= (k - ks)*(nx2*nx1);
+    const int j = js + rem/nx1;
+    const int i = is + rem - (j - js)*nx1;
+    const Real r = x1v(m,i);
+    const Real rv = w0(m,IDN,k,j,i)*vol(m,k,j,i);
+    if (sp) {
+      const Real theta = x2v_(m,j), phi = x3v_(m,k) - M_PI;
+      const Real sine = sin(theta), cosine = cos(theta);
+      Real aphi;
+      if (wbt) {
+        aphi = g(m,1,k,j,i);
+      } else {
+        const Real cph = cos(phi), sph = sin(phi);
+        Real gs, gy, gz;
+        roche::TideGrad(rgms, rra, r*sine*cph, r*sine*sph, r*cosine, gs, gy, gz);
+        aphi = -(-gs*sph + gy*cph);
+      }
+      sum += rv*r*sine*aphi;
+    } else {
+      const Real x2 = CellCenterX(j-js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+      const Real x3 = CellCenterX(k-ks, nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+      const int pnl = panel.d_view(m);
+      Real qc[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(pnl, 0.25*M_PI*x2, 0.25*M_PI*x3, qc);
+      cubed_sphere::PanelTangents(pnl, 0.25*M_PI*x2, 0.25*M_PI*x3, e1, e2);
+      const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+      const Real rh0 = qc[0]*qn, rh1 = qc[1]*qn, rh2 = qc[2]*qn;
+      Real ax, ay;
+      if (wbt) {
+        // covariant (g2, g3) on the unit pair (e1, e2) -> the tangential vector
+        const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+        const Real id = 1.0/(1.0 - c*c);
+        const Real a1 = (g(m,0,k,j,i) - c*g(m,1,k,j,i))*id;
+        const Real a2 = (g(m,1,k,j,i) - c*g(m,0,k,j,i))*id;
+        ax = a1*e1[0] + a2*e2[0];
+        ay = a1*e1[1] + a2*e2[1];
+      } else {
+        // as the source: Cartesian acceleration (gs, gy, -gz) in the chart frame
+        Real gs, gy, gz;
+        roche::TideGrad(rgms, rra, -r*rh0, -r*rh1, r*rh2, gs, gy, gz);
+        ax = gs;
+        ay = gy;
+      }
+      sum += rv*r*(rh0*ay - rh1*ax);
+    }
+  }, Kokkos::Sum<Real>(tq));
+  return tq;
+}
+
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
   constexpr int NFH0 = 9;
@@ -7665,7 +7751,10 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // problem/am_hst: eight columns after all the others
   const int NFL = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
-  pdata->nhist = NFH;
+  // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
+  const bool ttide = pm->pgen->hot_jupiter_param.roche;
+  pdata->nhist = NFH + (ttide ? 1 : 0);
+  if (ttide) pdata->label[NFH] = "Ttide";
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
   pdata->label[2] = "Lsw_abs";
@@ -7824,6 +7913,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
   }
   if (amh::on) AmHstColumns(pdata, pm, NFL);
+  if (ttide) pdata->hdata[NFH] = DhjTideTorque(pm);
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
   array_sum::GlobalSum wsum;
