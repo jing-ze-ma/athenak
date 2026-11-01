@@ -14369,7 +14369,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (ptm && ip <= ie) {
             ptq_ = M1PtMemQ(tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f), cr, nup,
                             carea.x1f(m,k,j,i+1)*(dt/cvol(m,k,j,ip)),
-                            iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip), pte_, ptg_);
+                            iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip), pte_, ptg_, cl);
           }
           if (ptq_ > 0.0) {
             bb += nup*cr*ptq_;
@@ -14531,7 +14531,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           if (ptm && im >= is) {
             ptq_ = M1PtMemQ(tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f), cr,
                             carea.x1f(m,k,j,i)*(dt/cvol(m,k,j,im)), num,
-                            iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i), pte_, ptg_);
+                            iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i), pte_, ptg_, cl);
           }
           if (ptq_ > 0.0) {
             aa -= num*cr*ptq_;
@@ -15180,7 +15180,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           const Real q = M1PtMemQ(fmem, ch/cl, careaf.x1f(m,k,j,i)*(dt/cvolf(m,k,j,im)),
                                   careaf.x1f(m,k,j,i)*(dt/cvolf(m,k,j,ip)),
                                   iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,ip), ptef,
-                                  ptgf);
+                                  ptgf, cl);
           if (q != 0.0) {
             ptd = q*iw_(m,M1_IW_EP,k,j,(q > 0.0) ? im : ip) - fmem;
             fn += ptd;
