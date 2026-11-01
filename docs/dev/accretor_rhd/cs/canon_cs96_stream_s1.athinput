@@ -416,7 +416,7 @@ implicit_opac_lag_passes = 2              # hg145-1015: ROL2U
 implicit_gas_newton_u4   = true           # hg145-1015: ROL2U
 
 <problem>
-floor_m1_vcap = true   # csacc-1031
+floor_m1_vcap = true   # csacc-1031: PENDING USER APPROVAL (floor |v| cap after the M1 coupling)
 donor_irr_scale = 0.35   # stream_s2.7378 (run12 value)
 stream_sector_light = neck   # s1stream-1031 stream-on: run12 value (needs donor_irr)
 env_sponge_thin_rho = 1e-3   # direct_s2.7378
