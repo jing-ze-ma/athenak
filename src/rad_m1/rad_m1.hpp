@@ -2801,6 +2801,9 @@ class RadiationM1 {
     Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> msk;
   };
   bool vgd_cscomp = false;
+  // mpirace-1101: persistent host buffers of the read-mask exchange (VetGdCsCompact):
+  // own marks (sent) and the receivers' marks (received); grown, never freed
+  std::vector<uint32_t> vgd_csmw_h, vgd_csmw_r;
   // cslru-1031: the cache holds max(2, vet_rotate_avg) sets (vgd_csncl): with K-set
   // rotation (keys b mod K) every set's lists are made once, not at every rotation
   static constexpr int M1_VGD_CSCL_MAX = 16;
