@@ -133,7 +133,7 @@ TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
   // skipped on BOTH sides (no Irecv here, no send in SendU): ClearRecv/ClearSend then
   // wait on the previous stage's already completed requests, which return at once
   if (!rkg_skip_u) {
-    tstat = pbval_u->InitRecv(nmhd+nscalars, rkg_u_v0, rkg_u_nv);
+    tstat = pbval_u->InitRecv(nmhd+nscalars, rkg_u_vmask);
     if (tstat != TaskStatus::complete) return tstat;
   }
   // post receives for B
@@ -473,7 +473,7 @@ TaskStatus MHD::RestrictU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::SendU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, rkg_u_v0, rkg_u_nv);
+  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
   return tstat;
 }
 
@@ -483,8 +483,7 @@ TaskStatus MHD::SendU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::RecvU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, rkg_u_v0,
-                                              rkg_u_nv);
+  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
   return tstat;
 }
 

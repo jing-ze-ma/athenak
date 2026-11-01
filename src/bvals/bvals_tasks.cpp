@@ -28,7 +28,7 @@
 //! \fn  void MeshBoundaryValues::InitRecv
 //! \brief Posts non-blocking receives (with MPI) for boundary communications of vars.
 
-TaskStatus MeshBoundaryValues::InitRecv(const int nvars, const int v0, const int nv) {
+TaskStatus MeshBoundaryValues::InitRecv(const int nvars, const int vmask) {
 #if MPI_PARALLEL_ENABLED
   // detfence-1020: the receive buffers are still READ by the previous exchange's unpack
   // kernel (queued on the device stream, not yet run when the host gets here), and a
@@ -67,8 +67,8 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars, const int v0, const int
           int tag = CreateBvals_MPI_Tag(m, n);
 
           // calculate amount of data to be passed, get pointer to variables; with a
-          // variable subrange (nv > 0) only the chunks [v0, v0+nv) (see bvals.hpp)
-          int data_size = (nv > 0) ? nv : nvars;
+          // variable list (vmask != 0): only its chunks, compact at the start
+          int data_size = (vmask != 0) ? __builtin_popcount(vmask) : nvars;
           int per_var = 0;
           if ( nghbr.h_view(m,n).lev < pmy_pack->pmb->mb_lev.h_view(m) ) {
             per_var = recvbuf[n].icoar_ndat;
@@ -82,11 +82,10 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars, const int v0, const int
             per_var = recvbuf[n].ifine_ndat;
           }
           data_size *= per_var;
-          const int off_ = (nv > 0) ? v0*per_var : 0;
           auto recv_ptr = Kokkos::subview(recvbuf[n].vars, m, Kokkos::ALL);
 
           // Post non-blocking receive for this buffer on this MeshBlock
-          int ierr = MPI_Irecv(recv_ptr.data() + off_, data_size, MPI_ATHENA_REAL, drank,
+          int ierr = MPI_Irecv(recv_ptr.data(), data_size, MPI_ATHENA_REAL, drank,
                                tag, comm_vars, &(recvbuf[n].vars_req[m]));
           if (ierr != MPI_SUCCESS) {no_errors=false;}
         }

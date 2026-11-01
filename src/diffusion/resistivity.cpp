@@ -221,9 +221,12 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
 
 Resistivity::~Resistivity() {
   if (rkg_halo_ien_only && global_variable::my_rank == 0) {
-    std::cout << "rkg_halo_ien_only: " << rkg_halo_nfull << " super-stages >= 2 fell "
-              << "back to the full exchange (a ConToPrim wrote a non-energy slot)"
-              << std::endl;
+    std::cout << "rkg_halo_ien_only: " << rkg_halo_nstage << " super-stages >= 2, "
+              << rkg_halo_nfull << " with every slot exchanged; per slot:";
+    for (int v=0; v<32; ++v) {
+      if (rkg_halo_nslot[v] > 0) {std::cout << " " << v << ":" << rkg_halo_nslot[v];}
+    }
+    std::cout << std::endl;
   }
 }
 

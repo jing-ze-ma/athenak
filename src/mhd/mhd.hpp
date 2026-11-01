@@ -279,9 +279,9 @@ class MHD {
   // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
   bool rkg_skip_u = false;
   // set by Resistivity::RKGCoeff under <mhd>/rkg_halo_ien_only: the conserved-variable
-  // halo exchange of this RKG super-stage moves only the variables [rkg_u_v0,
-  // rkg_u_v0 + rkg_u_nv) of u0 (nv = -1: all, the default)
-  int rkg_u_v0 = 0, rkg_u_nv = -1;
+  // halo exchange of this RKG super-stage moves only the variables of u0 whose bit is
+  // set in rkg_u_vmask (0 = all, the default)
+  int rkg_u_vmask = 0;
   bool c2p_split = false;   // true while the operator-split ConToPrim task runs
   // stswall-1029: >= 0 while Resistivity::ConToPrimRKG runs: the weight of this super-
   // stage's IEN change in the state the RKG super-step ends with (1: ConToPrimRKG adds

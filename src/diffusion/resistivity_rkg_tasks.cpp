@@ -123,12 +123,26 @@ TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
   pmy_pack->pmhd->rkg_skip_u = rkg_lean && (stage < s);
   if (rkg_halo_ien_only) {
     // rkghalo-1101: super-stage 1 exchanges everything (the state left by the RK stages
-    // and the operator-split work before the super-step); stages >= 2 only u0(IEN)
-    // unless the previous super-stage's ConToPrim wrote a non-energy slot on any rank
-    const bool sub = (stage > 1) && !rkg_halo_full_next;
-    if (stage > 1 && !sub) {rkg_halo_nfull++;}
-    pmy_pack->pmhd->rkg_u_v0 = sub ? static_cast<int>(IEN) : 0;
-    pmy_pack->pmhd->rkg_u_nv = sub ? 1 : -1;
+    // and the operator-split work before the super-step); stages >= 2 move u0(IEN) and
+    // the slots the previous super-stage's ConToPrim wrote on any rank
+    auto *pm = pmy_pack->pmhd;
+    const int nvar = pm->nmhd + pm->nscalars;
+    int vm = 0;
+    if (stage > 1 && nvar <= 32 && rkg_halo_changed >= 0) {
+      const int all = (nvar == 32) ? -1 : ((1 << nvar) - 1);
+      const int mom = (1 << IM1) | (1 << IM2) | (1 << IM3);
+      vm = rkg_halo_changed | (1 << IEN);
+      if (vm & mom) {vm |= mom;}
+      if (vm == all) {vm = 0;}
+    }
+    if (stage > 1) {
+      rkg_halo_nstage++;
+      if (vm == 0) {rkg_halo_nfull++;}
+      for (int v=0; v<nvar && v<32; ++v) {
+        if (vm == 0 || ((vm >> v) & 1)) {rkg_halo_nslot[v]++;}
+      }
+    }
+    pm->rkg_u_vmask = vm;
   }
   return TaskStatus::complete;
 }
@@ -314,7 +328,7 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
       const int64_t nc1 = n1 + 1, nc2 = n2 + 1, nc3 = n3 + 1;
       const int64_t ncell = nc1*nc2*nc3;
       const int64_t ntot = static_cast<int64_t>(nmb1 + 1)*nv*ncell;
-      int ndiff = 0;
+      int ndiff = 0;   // bit v: slot v changed somewhere
       Kokkos::parallel_reduce("rkg_halo_check",
         Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0,
                                                                      ntot),
@@ -331,12 +345,14 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
         const bool skip = ((b & 1) && i < is_) || ((b & 2) && i > ie_) ||
                           (md_ && (((b & 4) && j < js_) || ((b & 8) && j > je_))) ||
                           (td_ && (((b & 16) && k < ks_) || ((b & 32) && k > ke_)));
-        if (v != n && !skip && u0_(m,v,k,j,i) != u1_(m,v,k,j,i)) {nd |= 1;}
+        if (v != n && v < 32 && !skip && u0_(m,v,k,j,i) != u1_(m,v,k,j,i)) {
+          nd |= (1 << v);
+        }
       }, Kokkos::BOr<int>(ndiff));
 #if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, &ndiff, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, &ndiff, 1, MPI_INT, MPI_BOR, MPI_COMM_WORLD);
 #endif
-      rkg_halo_full_next = (ndiff != 0);
+      rkg_halo_changed = ndiff;
     }
   }
   return st;
@@ -350,8 +366,8 @@ TaskStatus Resistivity::NewTimeStepRKG(Driver *pdrive, int stage) {
 
 TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
   pmy_pack->pmhd->rkg_skip_u = false;
-  pmy_pack->pmhd->rkg_u_v0 = 0;    // rkghalo-1101: the RK stages exchange everything
-  pmy_pack->pmhd->rkg_u_nv = -1;
+  pmy_pack->pmhd->rkg_u_vmask = 0;   // rkghalo-1101: the RK stages exchange everything
+  rkg_halo_changed = -1;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
