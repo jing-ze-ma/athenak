@@ -1868,7 +1868,41 @@ void RyPerWallFlux(Mesh *pm) {
   });
 }
 
+//! csacc-1031 problem/floor_m1_vcap (read only when named, default false): after the M1
+//! coupling, floor-class gas (rho < env_sponge_rho rho_amb, the floor sponge's density
+//! class) keeps |v| <= env_v_floor_max (rotating frame; the cs metric norm); the kinetic
+//! energy above the cap is removed (not booked, as sink_zero_v).  The floor sponge caps the
+//! same cells in the user sources, but the implicit coupling that follows can give 1e-8
+//! floor gas ~1e3 km/s (the light of the hot nozzle/stream under vet_gd), and the hydro dt
+//! of the next step then follows that floor gas.
+bool flvc_ = false;
+void RyPerFloorVcap(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto u0 = pmbp->phydro->u0;
+  auto &ccl = pmbp->pcoord->cos_cell;
+  const bool cs = cs_;
+  const Real dcut = env_fsp_*env_rhoamb_, vc = env_vcap_;
+  par_for("ryper_flvc", DevExeSpace(), 0, pmbp->nmb_thispack - 1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = u0(m,IDN,k,j,i);
+    if (!(d > 0.0) || !(d < dcut)) return;
+    const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+    const Real q = AccQ(cs, cs ? ccl(m,k,j) : 0.0, m1, m2, m3);
+    const Real v = sqrt(q)/d;
+    if (!(v > vc)) return;
+    const Real f = vc/v;
+    u0(m,IM1,k,j,i) = f*m1;
+    u0(m,IM2,k,j,i) = f*m2;
+    u0(m,IM3,k,j,i) = f*m3;
+    u0(m,IEN,k,j,i) -= 0.5*(1.0 - f*f)*q/d;
+  });
+}
+
 void RyPerM1Post(Mesh *pm) {
+  if (flvc_) RyPerFloorVcap(pm);
   if (!szv_ || !msk_) return;
   if (!(mirr_ || (nzback_ && stvol_ && stream_on_))) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -6204,6 +6238,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (read, not added: the key stays out of the PAR_DUMP of runs that do not set it)
   szv_ = !pin->DoesParameterExist("problem", "sink_zero_v") ||
          pin->GetBoolean("problem", "sink_zero_v");
+  flvc_ = pin->DoesParameterExist("problem", "floor_m1_vcap") &&
+          pin->GetBoolean("problem", "floor_m1_vcap");
+  if (flvc_ && !rad_) fatal("problem/floor_m1_vcap needs <rad_m1>");
   // accbook-1021 (default true, USER 10-22; history only)
   skb_ = pin->GetOrAddBoolean("problem", "sink_kick_book", true);
 
@@ -6491,7 +6528,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_bcs_func = RyPerBCEnv;
     user_srcs_func = RyPerSrcEnv;
     if (user_hist) user_hist_func = RyPerHistEnv;
-    if (msk_) user_m1post_func = RyPerM1Post;
+    if (msk_ || flvc_) user_m1post_func = RyPerM1Post;
     if (lz_) user_m1post_func = RyPerM1PostLz;   // acclz-1020 (RyPerM1Post + the L_z mark)
     // pgrst-1021 rbk_ (see there): wherever the M1 post hook runs after every solve
     {
