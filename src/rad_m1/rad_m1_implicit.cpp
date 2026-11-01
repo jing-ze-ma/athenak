@@ -3463,6 +3463,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(ifw, 0.0);
+  if (impl_pos_trans != 0 && sph_geom && pt_gam > 0.0) {   // postr-1031
+    Kokkos::realloc(ptq1, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::deep_copy(ptq1, 0.0);
+  }
   if (trans_on) {
     Kokkos::realloc(f0x2, nmb, ncells3, ncells2+1, ncells1);
     Kokkos::deep_copy(f0x2, 0.0);
@@ -14058,6 +14062,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // ... and the memory term (M1PtMemQ, interior x1 faces of the block only)
     const bool ptm = (impl_pos_trans == 1) && sph_geom && (pt_gam > 0.0);
     const Real ptg_ = pt_gam, pte_ = e_floor;
+    const bool pt0_ = (it == 0);   // the face q is set on pass 0, frozen after
+    auto ptq_a = ptq1;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -14367,9 +14373,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           // donor implicitly upwind (M1PtMemQ; the face kernel applies the same q)
           Real ptq_ = 0.0;
           if (ptm && ip <= ie) {
-            ptq_ = M1PtMemQ(tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f), cr, nup,
-                            carea.x1f(m,k,j,i+1)*(dt/cvol(m,k,j,ip)),
-                            iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip), pte_, ptg_, cl);
+            if (pt0_) {
+              ptq_ = M1PtMemQ(tw*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f), cr, nup,
+                              carea.x1f(m,k,j,i+1)*(dt/cvol(m,k,j,ip)),
+                              iw_(m,M1_IW_EN,k,j,i), iw_(m,M1_IW_EN,k,j,ip), pte_, ptg_,
+                              cl);
+              ptq_a(m,k,j,i+1) = ptq_;
+            } else {
+              ptq_ = ptq_a(m,k,j,i+1);
+            }
           }
           if (ptq_ > 0.0) {
             bb += nup*cr*ptq_;
@@ -14529,9 +14541,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                  im, i, fwd);
           Real ptq_ = 0.0;   // postr-1031 (as at face i+1/2)
           if (ptm && im >= is) {
-            ptq_ = M1PtMemQ(tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f), cr,
-                            carea.x1f(m,k,j,i)*(dt/cvol(m,k,j,im)), num,
-                            iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i), pte_, ptg_, cl);
+            // pass 0: the same expression the row of im stores for this face
+            ptq_ = pt0_ ? M1PtMemQ(tw*(f0n_(m,k,j,i) - ch*dt*vf*g0f), cr,
+                                   carea.x1f(m,k,j,i)*(dt/cvol(m,k,j,im)), num,
+                                   iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,i), pte_,
+                                   ptg_, cl)
+                        : ptq_a(m,k,j,i);
           }
           if (ptq_ > 0.0) {
             aa -= num*cr*ptq_;
@@ -14962,10 +14977,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (g) the face fluxes of the new iterate, and the derived cell flux
     const bool ptuf = (impl_pos_trans == 1) && sph_geom && sph_q;   // postr-1031
     const bool ptmf = (impl_pos_trans == 1) && sph_geom && (pt_gam > 0.0);
-    const Real ptgf = pt_gam, ptef = e_floor;
     auto ptcf_ = pt_cnt;
-    auto cvolf = pmy_pack->pcoord->volume;
-    auto careaf = pmy_pack->pcoord->area;
+    auto ptqf = ptq1;
     const bool musf = muscl_now;   // xthinfix-1009 Fix B: the plm half-range face values
     const int imbf = iw_muscl;
     const bool ledf = impl_muscl_led;
@@ -15177,10 +15190,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         if (ptmf && i > is && i <= ie) {
           const Real twf = aphll ? (1.0 - al)*th : th;
           const Real fmem = twf*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
-          const Real q = M1PtMemQ(fmem, ch/cl, careaf.x1f(m,k,j,i)*(dt/cvolf(m,k,j,im)),
-                                  careaf.x1f(m,k,j,i)*(dt/cvolf(m,k,j,ip)),
-                                  iw_(m,M1_IW_EN,k,j,im), iw_(m,M1_IW_EN,k,j,ip), ptef,
-                                  ptgf, cl);
+          const Real q = ptqf(m,k,j,i);   // the row's (frozen) q of this face
           if (q != 0.0) {
             ptd = q*iw_(m,M1_IW_EP,k,j,(q > 0.0) ? im : ip) - fmem;
             fn += ptd;
