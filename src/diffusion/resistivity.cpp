@@ -20,6 +20,7 @@
 #include "resistivity.hpp"
 #include "current_density.hpp"
 #include "mhd/mhd.hpp"
+#include "utils/recipe.hpp"
 
 //----------------------------------------------------------------------------------------
 // ctor: also calls Resistivity base class constructor
@@ -69,11 +70,43 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                 << "'; expected constant, perna or eos" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
-    rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
+    // proddef-1101 (USER: the Caltech dhj MHD production keys as FRESH-start defaults,
+    // via recipe::NewDefaults): with a resistive diffusivity on and the key absent,
+    //   use_rkg_sts   = true  (every mesh),
+    //   rkg_lean      = true  (with STS, uniform single-level cubed sphere: its FATAL),
+    //   rkg_dt_safety = 0.5   (with STS, cubed sphere or spherical polar: its FATAL).
+    // An explicit key wins; a restart whose input lacks a key keeps the OLD default and
+    // adds exactly what the old code added (use_rkg_sts, and rkg_lean only with STS).
+    const bool nd = recipe::NewDefaults(pin);
+    const bool curv = pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar;
+    const bool lean_ok = pp->pmesh->use_cubed_sphere && !pp->pmesh->multilevel;
+    if (!pin->DoesParameterExist("mhd", "use_rkg_sts")) {
+      recipe::Log(std::string("<mhd>/use_rkg_sts = ") + (nd ? "true (default with a "
+                  "resistive diffusivity)" : "false (old default: restart input or "
+                  "recipe none)"));
+    }
+    use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", nd);
+    if (use_rkg_sts && !pin->DoesParameterExist("mhd", "rkg_lean")) {
+      // an explicit rkg_halo_ien_only = true (which FATALs with rkg_lean) keeps lean off
+      const bool halo = pin->DoesParameterExist("mhd", "rkg_halo_ien_only") &&
+                        pin->GetBoolean("mhd", "rkg_halo_ien_only");
+      const bool ld = nd && lean_ok && !halo;
+      recipe::Log(std::string("<mhd>/rkg_lean = ") + (ld ? "true (default on a uniform "
+                  "cubed sphere)" : (nd ? (halo ? "false (rkg_halo_ien_only = true)"
+                  : "false (needs a uniform cubed sphere)")
+                  : "false (old default: restart input or recipe none)")));
+      rkg_lean = pin->GetOrAddBoolean("mhd", "rkg_lean", ld);
+    } else {
+      rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
+    }
     // rkgdt-1101: read only when named, so a deck without them keeps its restart header
     if (pin->DoesParameterExist("mhd", "rkg_dt_safety")) {
       rkg_dt_safety = pin->GetReal("mhd", "rkg_dt_safety");
+    } else if (use_rkg_sts) {
+      if (nd && curv) rkg_dt_safety = pin->GetOrAddReal("mhd", "rkg_dt_safety", 0.5);
+      recipe::Log(std::string("<mhd>/rkg_dt_safety = ") + ((nd && curv) ? "0.5 (default "
+                  "with STS on cs/sp)" : (nd ? "0 = off (cs/sp only)"
+                  : "0 = off (old default: restart input or recipe none)")));
     }
     if (pin->DoesParameterExist("mhd", "rkg_lmax_diag")) {
       rkg_lmax_diag = pin->GetInteger("mhd", "rkg_lmax_diag");

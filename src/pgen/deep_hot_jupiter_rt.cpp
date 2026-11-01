@@ -72,6 +72,7 @@
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "outputs/outputs.hpp"
+#include "utils/recipe.hpp"   // proddef-1101: fresh-start defaults
 
 #include <Kokkos_Random.hpp>
 
@@ -1227,7 +1228,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
   {
-    const std::string tb = pin->GetOrAddString("problem","top_bc","hse");
+    // proddef-1101 (USER): fresh-start default outflow1 (Caltech, all five planets); a
+    // restart whose input lacks the key keeps the old hse
+    if (!pin->DoesParameterExist("problem","top_bc")) {
+      recipe::Log(recipe::NewDefaults(pin) ? "problem/top_bc = outflow1 (default)"
+                  : "problem/top_bc = hse (old default: restart input or recipe none)");
+    }
+    const std::string tb = pin->GetOrAddString("problem","top_bc",
+                                               recipe::NewDefaults(pin) ? "outflow1"
+                                                                        : "hse");
     if (tb == "hse") {
       dhj_top_bc = 0;
     } else if (tb == "outflow1") {
@@ -2389,11 +2398,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "outside the planet's Roche lobe" << std::endl;
       }
     }
-    // roche-wbtan-1101 problem/roche_wb_tan (default false; see namespace wbtan): the
-    // tangential centrifugal (+ tidal, with problem/roche) force as the hydro's own
-    // discrete residual of the equipotential equilibrium.  Works with rot_potential
-    // alone (centrifugal only) or with roche.
-    dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
+    // roche-wbtan-1101 problem/roche_wb_tan (fresh default: proddef-1101 below; see
+    // namespace wbtan): the tangential centrifugal (+ tidal, with problem/roche) force as
+    // the hydro's own discrete residual of the equipotential equilibrium.  Works with
+    // rot_potential alone (centrifugal only) or with roche.
+    // proddef-1101 (USER): fresh-start default true with problem/roche on a single-level
+    // mesh (roche itself already requires everything else roche_wb_tan needs); a restart
+    // whose input lacks the key keeps the old false
+    if (!pin->DoesParameterExist("problem","roche_wb_tan")) {
+      const bool sl = !(pmy_mesh_->adaptive || pmy_mesh_->multilevel);
+      const bool wd = roche_on && sl && recipe::NewDefaults(pin);
+      if (roche_on) {
+        recipe::Log(std::string("problem/roche_wb_tan = ") + (wd ? "true (default with "
+                    "problem/roche)" : (!sl ? "false (needs a single-level mesh)"
+                    : "false (old default: restart input or recipe none)")));
+      }
+      dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",wd);
+    } else {
+      dhj_wbt.on = pin->GetBoolean("problem","roche_wb_tan");
+    }
     if (dhj_wbt.on) {
       std::string bad = "";
       if (!rot_potential) bad = "problem/rot_potential = true";
