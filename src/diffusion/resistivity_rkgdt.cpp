@@ -76,6 +76,14 @@ Real Resistivity::LambdaBoundMax(Real *rloc, Real *etaloc) {
   auto x3f_ = pmy_pack->pcoord->xx3f;
   const bool sp = pmy_pack->pmesh->use_spherical_polar;
   auto eta_ = eta_b;
+  // ambipolar-1101 merge: eta_O + eta_A per cell (eta_A = min(ad_coef |B|^2, max_eta_ad),
+  // the coefficient AddEMFAmbipolar uses).  The AD operator eta_A (J - (J.B)B/B^2) is the
+  // Ohmic one with J projected perpendicular to B, so its frozen-coefficient spectrum is
+  // bounded by the isotropic one with eta_A added.
+  const bool ad_on = (ad_type != 0);
+  auto coef_ = ad_coef;
+  auto bcc_ = pmy_pack->pmhd->bcc0;
+  const Real cap_ad = max_eta_ad;
 
   using ML = Kokkos::MaxLoc<Real, int>;
   ML::value_type res;
@@ -98,7 +106,12 @@ Real Resistivity::LambdaBoundMax(Real *rloc, Real *etaloc) {
       for (int jj = j0; jj <= j1; ++jj) {
         const bool diag = (kk != k) && (jj != j);
         for (int ii = i-1; ii <= i+1; ++ii) {
-          const Real e = eta_(m,kk,jj,ii);
+          Real e = eta_(m,kk,jj,ii);
+          if (ad_on) {
+            const Real b2 = SQR(bcc_(m,IBX,kk,jj,ii)) + SQR(bcc_(m,IBY,kk,jj,ii))
+                          + SQR(bcc_(m,IBZ,kk,jj,ii));
+            e += fmin(coef_(m,kk,jj,ii)*b2, cap_ad);
+          }
           eh = fmax(eh, e);
           if (!diag) {er = fmax(er, e);}
         }
@@ -293,6 +306,9 @@ void Resistivity::LmaxDiag() {
     // E = eta J(v), walls, then the edge sync, as in a super-stage
     ClearResistiveEMFs(efld_resist);
     AddEMFGeneralResist(b0, efld_resist);
+    // ambipolar: J(v) with eta_A and the B direction of the saved state (sbc), i.e. the
+    // frozen-coefficient linearisation of the AD EMF
+    if (ad_type != 0) {AddEMFAmbipolar(b0, sbc, efld_resist);}
     if (wall_cond_reflect || wall_cond_ix1) {
       pmhd->WallEmfZero(efld_resist, wall_cond_reflect, wall_cond_ix1);
     }

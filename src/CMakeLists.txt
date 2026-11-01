@@ -44,6 +44,7 @@ add_executable(
         diffusion/resistivity_ct.cpp
         diffusion/resistivity_gnomonic.cpp
         diffusion/resistivity_rkgdt.cpp
+        diffusion/ambipolar.cpp
 
         driver/driver.cpp
         driver/dt_retry.cpp
