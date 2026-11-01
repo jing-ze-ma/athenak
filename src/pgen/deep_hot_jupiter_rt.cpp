@@ -4871,25 +4871,26 @@ void AmFix(Mesh *pm, const Real bdt) {
 //! \fn WbTanProbe (roche-wbtan-1101, problem/roche_wb_tan): wbtan_common.hpp Probe, with
 //! the pgen's own AmFix (problem/coriolis_am | am_transport) of W_eq as the extra term.
 
-void WbTanProbe(Mesh *pm, const Real bdt) {
+void WbTanAmFixExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &u0s) {
+  if (!(amh::fix || amh::trans)) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
-  auto extra = [&](DvceArray5D<Real> &us, DvceArray5D<Real> &u0s) {
-    if (!(amh::fix || amh::trans)) return;
-    Kokkos::deep_copy(u0s, 0.0);
-    AmFix(pm, 1.0);   // adds to the fluid's u0, which IS u0s here
-    auto u0a = u0s;
-    auto usa = us;
-    par_for("wbtan_amfix", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      usa(m,IM2,k,j,i) += u0a(m,IM2,k,j,i);
-      usa(m,IM3,k,j,i) += u0a(m,IM3,k,j,i);
-    });
-  };
-  wbtan::Probe(pm, dhj_wbt, extra, "deep_hot_jupiter_rt");
+  Kokkos::deep_copy(u0s, 0.0);
+  AmFix(pm, 1.0);   // adds to the fluid's u0, which IS u0s here
+  auto u0a = u0s;
+  auto usa = us;
+  par_for("wbtan_amfix", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    usa(m,IM2,k,j,i) += u0a(m,IM2,k,j,i);
+    usa(m,IM3,k,j,i) += u0a(m,IM3,k,j,i);
+  });
+}
+
+void WbTanProbe(Mesh *pm, const Real bdt) {
+  wbtan::Probe(pm, dhj_wbt, WbTanAmFixExtra, "deep_hot_jupiter_rt");
   (void) bdt;
 }
 

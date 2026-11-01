@@ -26,10 +26,9 @@
 //!   Probe(pm, w, extra, who)        once per run segment, at the first user-source call
 //!                                   (w.ready false): runs the fluid's own operators on
 //!                                   W_eq and fills g_t; the live state is saved/restored.
-//!                                   extra(us, scratch): adds the pgen's own stage terms of
-//!                                   W_eq with bdt = 1 to us (IM2/IM3), e.g. a pgen AM fix;
-//!                                   scratch is a free u0-shaped array.  [](auto&, auto&){}
-//!                                   when there is none.
+//!                                   extra (ExtraFn or nullptr): adds the pgen's own stage
+//!                                   terms of W_eq with bdt = 1 to us (IM2/IM3), e.g. a pgen
+//!                                   AM fix; scratch is a free u0-shaped array.
 //!   ApplyTan(u0, gt, m,k,j,i, rho, a2, a3, bdt)
 //!                                   in the user source, ONE call for sp and cs:
 //!                                   u0(IM2|IM3) += rho*(a_c + g_c)*bdt, a_c = the pgen's
@@ -60,6 +59,10 @@ struct WbTan {
   DvceArray5D<Real> *gt = nullptr;    // (nmb, 2, n3, n2, n1): g_2, g_3 (covariant accel.)
   MeshBoundaryValuesCC *pbv = nullptr;   // the probe's private exchange (own comms)
 };
+
+//! the problem generator's own stage terms of W_eq: add them (bdt = 1) to us(IM2/IM3);
+//! scratch is a free u0-shaped array (the fluid's u0 itself, restored after the probe)
+using ExtraFn = void (*)(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &scratch);
 
 inline void Alloc(WbTan &w, MeshBlockPack *pmbp) {
   if (w.weq != nullptr) return;
@@ -101,8 +104,8 @@ void ApplyTan(const DvceArray5D<Real> &u0, const DvceArray5D<Real> &gt, const in
 //! evolves; the cancelled part is the pressure/potential balance only, and the Lorentz
 //! force stays entirely the field's own.
 
-template <class F, class Extra>
-void ProbeT(Mesh *pm, F *ph, WbTan &w, Extra &&extra, const char *who) {
+template <class F>
+void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   constexpr bool kMHD = std::is_same<F, mhd::MHD>::value;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -243,7 +246,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, Extra &&extra, const char *who) {
   }
   // the problem generator's own stage terms of W_eq (bdt = 1) into `us`; u0 is free
   // scratch here (restored below)
-  extra(us, ph->u0);
+  if (extra != nullptr) extra(pm, us, ph->u0);
   auto flx1 = ph->uflx.x1f, flx2 = ph->uflx.x2f, flx3 = ph->uflx.x3f;
   auto area1 = pmbp->pcoord->area.x1f, area2 = pmbp->pcoord->area.x2f;
   auto area3 = pmbp->pcoord->area.x3f;
@@ -303,8 +306,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, Extra &&extra, const char *who) {
 
 
 //! dispatch on the pack's fluid (MHD first, as the problem generators do)
-template <class Extra>
-void Probe(Mesh *pm, WbTan &w, Extra &&extra, const char *who) {
+inline void Probe(Mesh *pm, WbTan &w, ExtraFn extra, const char *who) {
   if (pm->pmb_pack->pmhd != nullptr) {
     ProbeT(pm, pm->pmb_pack->pmhd, w, extra, who);
   } else {
