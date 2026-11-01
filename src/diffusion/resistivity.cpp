@@ -185,12 +185,11 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                     << "<mhd>/eos = " << eqn_of_state << std::endl;
           std::exit(EXIT_FAILURE);
         }
-        int nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
-        // xetracer-1101: <mhd>/xe_tracer adds one scalar (MHD ctor), constructed later
-        if (pin->DoesParameterExist("mhd", "xe_tracer") &&
-            pin->GetBoolean("mhd", "xe_tracer")) {
-          nscalars += 1;
-        }
+        // tracer-1101: the user's scalars plus the x_e / floor tracer slots, the same
+        // layout the MHD constructor builds (mhd/mhd_tracers.hpp)
+        mhd::TracerLayout tl_ = mhd::ReadTracerLayout(pin);
+        tl_.nuser = pin->GetOrAddInteger("mhd","nscalars",0);
+        int nscalars = tl_.Total();
         Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
         Kokkos::realloc(b_ideal.x1f, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(b_ideal.x2f, nmb, ncells3, ncells2+1, ncells1);

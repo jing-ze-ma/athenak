@@ -48,13 +48,14 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   // stage.  Each call is followed by the u0 halo/BC/ConToPrim tail (RTOpSplitBvals).  A
   // null hook returns immediately, so every run that does not enrol one is unchanged.
   id.splitpre = tl["before_timeintegrator"]->AddTask(&MHD::RTStrangSplit, this, none);
-  if (xe_tracer) {
-    // xetracer-1101: x_e recombination source once per cycle (full dt), after the RT
-    // half step, before the state is saved for a dt retry
-    id.xesrc = tl["before_timeintegrator"]->AddTask(&MHD::XeTracerSource, this,
-                                                    id.splitpre);
+  if (tracers.NTracer() > 0) {
+    // tracer-1101: the per-cycle tracer pass (floor drain, x_e recombination over the
+    // full dt, x1 ghosts; mhd_tracers.cpp), after the RT half step, before the state is
+    // saved for a dt retry
+    id.trcsrc = tl["before_timeintegrator"]->AddTask(&MHD::TracerSource, this,
+                                                     id.splitpre);
     id.savest = tl["before_timeintegrator"]->AddTask(&MHD::SaveMHDState, this,
-                                                     id.xesrc);
+                                                     id.trcsrc);
   } else {
     id.savest = tl["before_timeintegrator"]->AddTask(&MHD::SaveMHDState, this,
                                                      id.splitpre);
@@ -687,6 +688,9 @@ TaskStatus MHD::ApplyPhysicalBCs(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_bcs) {
     (pmy_pack->pmesh->pgen->user_bcs_func)(pmy_pack->pmesh);
   }
+  // tracer-1101: x_e / floor tracer radial ghosts at physical x1 boundaries (the BCs
+  // above set the MHD variables only); no-op without tracers
+  TracerX1Ghosts(false);
 
   return TaskStatus::complete;
 }
@@ -863,6 +867,7 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   // restart whose file has no tracer (wtemp is valid here), before eta reads it
   if (xe_init_pending) {
     XeTracerUpdate(0.0, true);
+    TracerX1Ghosts(true);
     xe_init_pending = false;
   }
   if (presist != nullptr) {

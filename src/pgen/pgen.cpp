@@ -297,28 +297,48 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
   }
 
-  // xetracer-1101: the MHD analogue for the advected x_e.  A run with <mhd>/xe_tracer =
-  // true reading a file written without it (one scalar fewer) reads the file's MHD
-  // variables into the first nmhd_file slots; the tracer is set to local Saha by the
-  // first ConToPrim (MHD::xe_init_pending).  A file that has it clears the flag.  Any
-  // other mismatch is fatal.
+  // tracer-1101: the MHD analogue for the passive tracers (x_e, floor mass; slot
+  // layout in mhd/mhd_tracers.hpp).  The file's layout (main.cpp: its user scalars and
+  // its tracers) is mapped slot by slot onto the run's: a tracer the file has and the
+  // run has is read; one the run has and the file lacks starts from zero (the floor
+  // tracer stays zero, x_e is set to local Saha by the first ConToPrim through
+  // xe_init_pending); one the file has and the run lacks is skipped.  Any subset works.
+  // The user scalar count has to match.
   int nmhd_file = nmhd;
+  mhd::TracerLayout mtl_run, mtl_file;
+  if (pmhd != nullptr) {
+    mtl_run = pmhd->tracers;
+    mtl_file = mtl_run;
+  }
   if (pmhd != nullptr && global_variable::rst_mhd_nscalars >= 0) {
-    if (global_variable::rst_mhd_nscalars == pmhd->nscalars) {
-      pmhd->xe_init_pending = false;
-    } else if (pmhd->xe_tracer &&
-               global_variable::rst_mhd_nscalars == pmhd->nscalars - 1) {
-      nmhd_file = nmhd - 1;
-      if (global_variable::my_rank == 0) {
+    mtl_file.nuser = global_variable::rst_mhd_nscalars;
+    mtl_file.xe = (global_variable::rst_mhd_tracers & 1) != 0;
+    mtl_file.fl = (global_variable::rst_mhd_tracers & 2) != 0;
+    if (mtl_file.nuser != mtl_run.nuser) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/nscalars = " << mtl_run.nuser << " but the restart"
+                << " file was written with " << mtl_file.nuser << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nmhd_file = pmhd->nmhd + mtl_file.Total();
+    if (mtl_file.xe) pmhd->xe_init_pending = false;
+    if (global_variable::my_rank == 0) {
+      if (mtl_run.xe && !mtl_file.xe) {
         std::cout << "mhd: restart file has no x_e tracer; <mhd>/xe_tracer starts from "
                   << "local Saha" << std::endl;
       }
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd> carries " << pmhd->nscalars << " passive scalars "
-                << "(incl. the xe_tracer) but the restart file was written with "
-                << global_variable::rst_mhd_nscalars << std::endl;
-      exit(EXIT_FAILURE);
+      if (mtl_run.fl && !mtl_file.fl) {
+        std::cout << "mhd: restart file has no floor tracer; <mhd>/floor_tracer starts "
+                  << "from zero" << std::endl;
+      }
+      if (mtl_file.xe && !mtl_run.xe) {
+        std::cout << "mhd: the restart file's x_e tracer is not read (xe_tracer off)"
+                  << std::endl;
+      }
+      if (mtl_file.fl && !mtl_run.fl) {
+        std::cout << "mhd: the restart file's floor tracer is not read (floor_tracer "
+                  << "off)" << std::endl;
+      }
     }
   }
 
@@ -1193,18 +1213,31 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         myoffset += data_size;
       }
     }
-    if (nmhd_file == nmhd) {
+    if (mtl_file.Mask() == mtl_run.Mask()) {
       Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb), Kokkos::ALL,
                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
     } else {
-      // xetracer-1101: file variables into the first nmhd_file slots, tracer zeroed (it
-      // is set to Saha at the first ConToPrim)
+      // tracer-1101: MHD variables + user scalars (a common prefix), then each tracer
+      // present in both; the run's tracer slots start at zero
+      const int npre = pmhd->nmhd + mtl_run.nuser;
       Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
-                        std::make_pair(nmhd_file, nmhd), Kokkos::ALL, Kokkos::ALL,
+                        std::make_pair(npre, nmhd), Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL), 0.0);
       DeepCopyAcross(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
-                     std::make_pair(0, nmhd_file), Kokkos::ALL, Kokkos::ALL,
-                     Kokkos::ALL), ccin);
+                     std::make_pair(0, npre), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
+                     Kokkos::subview(ccin, Kokkos::ALL, std::make_pair(0, npre),
+                     Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      const int nm = pmhd->nmhd;
+      const int run_off[2] = {mtl_run.XeOff(), mtl_run.FlOff()};
+      const int file_off[2] = {mtl_file.XeOff(), mtl_file.FlOff()};
+      for (int t=0; t<2; ++t) {
+        if (run_off[t] < 0 || file_off[t] < 0) continue;
+        const int nr = nm + run_off[t], nf = nm + file_off[t];
+        DeepCopyAcross(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
+                       std::make_pair(nr, nr+1), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
+                       Kokkos::subview(ccin, Kokkos::ALL, std::make_pair(nf, nf+1),
+                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      }
     }
     offset_myrank += nout1*nout2*nout3*nmhd_file*sizeof(Real);   // mhd u0
     myoffset = offset_myrank;

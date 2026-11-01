@@ -129,6 +129,37 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
+  // tracer-1101: the passive-tracer slots after the user's scalars (mhd_tracers.hpp):
+  // x_e (<mhd>/xe_tracer) first, the floor mass (<mhd>/floor_tracer) last.  Both keys
+  // are read only when named; off, nscalars and every path are unchanged.
+  tracers = ReadTracerLayout(pin);
+  tracers.nuser = nscalars;
+  nscalars = tracers.Total();
+  xe_tracer = tracers.xe;
+  ixe = tracers.xe ? (nmhd + tracers.XeOff()) : -1;
+  floor_tracer = tracers.fl;
+  ifltr = tracers.fl ? (nmhd + tracers.FlOff()) : -1;
+  if (floor_tracer) {
+    peos->eos_data.ifltr = ifltr;
+    if (pin->DoesParameterExist("mhd","floor_tracer_margin")) {
+      fltr_margin = pin->GetReal("mhd","floor_tracer_margin");
+    }
+    if (pin->DoesParameterExist("mhd","floor_tracer_fmax")) {
+      fltr_fmax = pin->GetReal("mhd","floor_tracer_fmax");
+    }
+    if (fltr_margin < 1.0 || fltr_fmax <= 0.0 || fltr_fmax > 1.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/floor_tracer needs floor_tracer_margin >= 1 and "
+                << "0 < floor_tracer_fmax <= 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<mhd>/floor_tracer: floor-added mass in scalar slot " << ifltr
+                << " (nscalars " << nscalars << "); drained once per cycle where rho > "
+                << fltr_margin << " x the floor density, at most " << fltr_fmax
+                << " of the cell mass per cycle" << std::endl;
+    }
+  }
 
   // Viscosity (only constructed if needed)
   if (pin->DoesParameterExist("mhd","isotropic_viscosity")) {
@@ -147,11 +178,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     presist = nullptr;
   }
 
-  // xetracer-1101: advected electron fraction (mhd_xe_tracer.cpp).  Read only when named;
+  // xetracer-1101: advected electron fraction (mhd_tracers.cpp).  Read only when named;
   // off, nscalars and every path are unchanged.
-  if (pin->DoesParameterExist("mhd", "xe_tracer")) {
-    xe_tracer = pin->GetBoolean("mhd", "xe_tracer");
-  }
   if (xe_tracer) {
     const bool eos_xe = (presist != nullptr) &&
         ((pin->DoesParameterExist("mhd", "ohmic_resistivity") &&
@@ -164,8 +192,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    nscalars += 1;
-    ixe = nmhd + nscalars - 1;
     presist->xe_idx = ixe;
     xe_init_pending = true;     // cleared by the restart reader if the file has it
     xe_par.alpha_fac = pin->GetOrAddReal("mhd", "xe_alpha_fac", 1.0);

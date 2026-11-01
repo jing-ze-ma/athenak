@@ -12,7 +12,9 @@ namespace global_variable {
 extern int my_rank, nranks;
 extern bool restart_run;   // true when started with -r <restart_file>
 extern bool final_outputs; // Driver::Finalize is writing its (unscheduled) outputs
-extern int rst_mhd_nscalars;   // xetracer-1101: file <mhd>/nscalars (+1 if xe_tracer)
+extern int rst_mhd_nscalars;   // tracer-1101: the restart file's <mhd>/nscalars (user
+                               // scalars only; -1: no restart or no <mhd>)
+extern int rst_mhd_tracers;    // tracer-1101: its MHD tracers, bit 0 x_e, bit 1 floor
 extern int rst_hydro_nscalars; // acctrc-1019: <hydro>/nscalars of the restart file's OWN
                                // input (-1: no restart or no <hydro>); see pgen.cpp
 }
