@@ -7757,17 +7757,23 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // Edrain [erg/s] after all the others: the floor-tracer drain (MHD::FloorTracerDrain)
   // over the same interval as Mfloor/Efloor, which are then NET (added - drained); the
   // gross floor addition is Mfloor + Mdrain
-  const bool fdrain = ffloor && (pm->pmb_pack->pmhd != nullptr) &&
-                      pm->pmb_pack->pmhd->floor_tracer;
   const int NDR = NFH + (ttide ? 1 : 0);
-  pdata->nhist = NDR + (fdrain ? 2 : 0);
-  if (fdrain && pdata->nhist > NHISTORY_VARIABLES) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "dhj flux history: " << pdata->nhist << " columns with "
-              << "Mdrain/Edrain > NHISTORY_VARIABLES = " << NHISTORY_VARIABLES
-              << " (e.g. problem/am_hst_split = false frees 4)" << std::endl;
-    std::exit(EXIT_FAILURE);
+  // (the floor tracer is a default with the Alfven floor: when the two columns do not
+  // fit, they are left out with a note instead of stopping the run)
+  bool fdrain = ffloor && (pm->pmb_pack->pmhd != nullptr) &&
+                pm->pmb_pack->pmhd->floor_tracer;
+  if (fdrain && NDR + 2 > NHISTORY_VARIABLES) {
+    static bool warned = false;
+    if (!warned && global_variable::my_rank == 0) {
+      std::cout << "### NOTE: dhj flux history: no room for Mdrain/Edrain ("
+                << NDR + 2 << " > NHISTORY_VARIABLES = " << NHISTORY_VARIABLES
+                << "; problem/am_hst_split = false frees 4); Mfloor/Efloor are NET of "
+                << "the floor-tracer drain" << std::endl;
+    }
+    warned = true;
+    fdrain = false;
   }
+  pdata->nhist = NDR + (fdrain ? 2 : 0);
   if (ttide) pdata->label[NFH] = "Ttide";
   if (fdrain) {
     pdata->label[NDR] = "Mdrain";
