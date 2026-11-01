@@ -2235,6 +2235,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       ra_ = pin->GetOrAddReal("problem","roche_a",0.02571*1.495978707e13);
       rgms_ = SQR(omega)*ra_*ra_*ra_ - (-grav_acc)*ap*ap;
+      // problem/roche_gms_scale (TEST ONLY, default 1): G M_* x scale, e.g. 1e-12 for
+      // the no-star gate (must reproduce rot_potential to round-off); the lobe check is
+      // skipped below 1e-3
+      const Real gsc = pin->GetOrAddReal("problem","roche_gms_scale",1.0);
+      rgms_ *= gsc;
       if (!(rgms_ > 0.0)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/roche: Omega^2 a^3 <= G M_p" << std::endl;
@@ -2264,7 +2269,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << r1/rl1 << "), Phi(L1) = " << phil1 << ", max Phi on x1max = "
                   << phtop << std::endl;
       }
-      if (!(phtop < phil1)) {
+      if (gsc >= 1.0e-3 && !(phtop < phil1)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/roche: the equipotential through the domain "
                   << "top is not closed (max Phi(x1max) >= Phi(L1))" << std::endl;
