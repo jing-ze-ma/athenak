@@ -105,6 +105,16 @@ class Resistivity {
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
   // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
+  // <mhd>/rkg_halo_ien_only (default false, read only when named): the conserved-variable
+  // halo exchange of RKG super-stages 2..s moves only u0(IEN), the one slot RKUpdate
+  // writes.  Exact: after the ConToPrim of every super-stage < s, u0 is compared with
+  // u1 (= u0 before that ConToPrim) in every slot but IEN over the whole block; if any
+  // cell anywhere differs (a floor / cap / fallback wrote a non-energy variable), the
+  // next super-stage exchanges every variable, as without the key.  Super-stage 1
+  // always exchanges everything.  Uniform grids, not with rkg_lean.
+  bool rkg_halo_ien_only = false;
+  bool rkg_halo_full_next = true;   // decision for the next super-stage (all ranks)
+  int rkg_halo_nfull = 0;           // diagnostic: full exchanges in super-stages >= 2
   // cubed sphere + STRETCHED radial grid: take the radial derivative of the Stokes loop
   // AT the x1 face instead of at the midpoint of the two cell centres (see
   // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an

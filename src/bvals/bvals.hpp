@@ -300,7 +300,11 @@ class MeshBoundaryValues {
   virtual void InitRecvIndices(MeshBoundaryBuffer &buf,int x,int y,int z,int a,int b)=0;
   void InitializeBuffers(const int nvar);
 
-  TaskStatus InitRecv(const int nvar);
+  // v0/nv (default 0/-1 = every variable): post the receives for the variable subrange
+  // [v0, v0+nv) only (uniform grids: each variable is one contiguous chunk of a
+  // same-level buffer, so only the MPI count and offset change).  Must match
+  // the PackAndSendCC call on the sending side.  Used by <mhd>/rkg_halo_ien_only.
+  TaskStatus InitRecv(const int nvar, const int v0 = 0, const int nv = -1);
   virtual TaskStatus InitFluxRecv(const int nvar)=0;
   TaskStatus ClearRecv();
   TaskStatus ClearSend();
@@ -394,11 +398,16 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // entries outside the window keep whatever they held; the caller must not read the
   // ghosts they feed.  Used by the RKL1 transverse-conduction substages, where the
   // stencil only touches a shrinking radial window of planes.
+  // v0/nv (default 0/-1 = every variable): pack/send/unpack (and corner-fill) only the
+  // variables [v0, v0+nv) of a; the buffer layout is unchanged (variable v keeps its
+  // chunk), the other variables' ghosts and buffer entries are left as they are.
+  // Uniform grids only (multilevel: FATAL).  Used by <mhd>/rkg_halo_ien_only.
   TaskStatus PackAndSendCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
-                           int iwl = -1, int iwu = -1);
+                           int iwl = -1, int iwu = -1, int v0 = 0, int nv = -1);
   TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
-                             int iwl = -1, int iwu = -1);
-  void FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse = false);
+                             int iwl = -1, int iwu = -1, int v0 = 0, int nv = -1);
+  void FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse = false, int v0 = 0,
+                          int nv = -1);
 
   // COMPONENT-ROLE TABLE of this exchange.  The polar sign flip (sp) and the seam
   // basis transform (cs) act on the TANGENTIAL VECTOR PAIRS of the exchanged array and

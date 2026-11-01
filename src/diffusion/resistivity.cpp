@@ -14,6 +14,7 @@
 
 // Athena++ headers
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "resistivity.hpp"
@@ -95,6 +96,16 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_lean needs a uniform (not multilevel) "
                 << "cubed-sphere mesh" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // rkghalo-1101: read only when named (a deck without it keeps its restart header)
+    if (pin->DoesParameterExist("mhd", "rkg_halo_ien_only")) {
+      rkg_halo_ien_only = pin->GetBoolean("mhd", "rkg_halo_ien_only");
+    }
+    if (rkg_halo_ien_only && (!use_rkg_sts || rkg_lean || pp->pmesh->multilevel)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/rkg_halo_ien_only needs use_rkg_sts = true, "
+                << "rkg_lean = false and a uniform (not multilevel) mesh" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cs_resist_x1_centred = pin->GetOrAddBoolean("mhd", "cs_resist_x1_centred", true);
@@ -208,6 +219,11 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
 // Resistivity destructor
 
 Resistivity::~Resistivity() {
+  if (rkg_halo_ien_only && global_variable::my_rank == 0) {
+    std::cout << "rkg_halo_ien_only: " << rkg_halo_nfull << " super-stages >= 2 fell "
+              << "back to the full exchange (a ConToPrim wrote a non-energy slot)"
+              << std::endl;
+  }
 }
 
 void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
