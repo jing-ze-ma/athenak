@@ -250,8 +250,8 @@ void DhjCycleDiag(Mesh *pm);
 //     the angular-momentum flux IN through the inner wall (the wall torque, Maxwell
 //     stress included).  The rest, Ttop = Tcons - Twall, comes in through the top, and
 //     the L_z ledger reads dLrel/dt = Tcor + Twall + Ttop.  (Ttop has no column of its
-//     own: 9 + 3 floor + 12 = 24; + Ttide with problem/roche, hence
-//     NHISTORY_VARIABLES = 32 since wbtan-torquefix-1101.)
+//     own: 9 + 3 floor + 12 = 24 = NHISTORY_VARIABLES; with problem/roche the Ttide
+//     column makes it 25, so am_hst_split + flux_hst_floor + roche is a start-up FATAL.)
 namespace amh {
 bool on = false;            // problem/am_hst
 bool fix = false;           // problem/coriolis_am
@@ -1088,7 +1088,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/am_hst needs rk1/rk2/rk3 and at most "
                   << NHISTORY_VARIABLES << " user history columns (have " << nfh << ")"
-                  << std::endl;
+                  << " (e.g. problem/am_hst_split = false frees 4)" << std::endl;
         exit(EXIT_FAILURE);
       }
       for (int n=0; n<amh::NACC; ++n) amh::acc[n] = 0.0;
