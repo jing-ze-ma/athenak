@@ -200,7 +200,7 @@ void MHD::TracerX1Ghosts(bool set_w) {
 //! of every other scalar: with f = dm/rho, rho, the momenta, e_int and the other
 //! scalars' conserved values scale by (1 - f); the total energy loses
 //! de = f (e_int + KE) (+ dm phi with etotgrav, whose u0(IEN) contains rho phi); the
-//! magnetic energy is untouched.  KE = m_i v^i/2 (covariant u0 momentum, contravariant
+//! magnetic energy is untouched.  the kinetic energy m_i v^i/2 (covariant u0 momentum, contravariant
 //! w0 velocity on the cubed sphere; orthonormal elsewhere).  w0 is updated to the new
 //! state; the general-EOS pressure cache scales by (1 - f) (constant T; exact for an
 //! ideal gas, O(f) otherwise until the next conversion re-solves it); wtemp is kept.
@@ -246,37 +246,39 @@ void MHD::FloorTracerDrain() {
     const int j = r/nc1;
     const int i = r - j*nc1;
     const Real rho = u0_(m,IDN,k,j,i);
-    if (!(rho > 0.0)) return;
     const Real s = fmin(fmax(u0_(m,isl,k,j,i), 0.0), rho);
     const Real b2 = SQR(bcc_(m,IBX,k,j,i)) + SQR(bcc_(m,IBY,k,j,i))
                     + SQR(bcc_(m,IBZ,k,j,i));
     const Real rfl = fmax(dfl, b2*va2i);
     const Real dm = fmin(s, fmin(fmx*rho, rho - marg*rfl));
-    if (!(dm > 0.0)) return;
-    const Real f = dm/rho, g = 1.0 - f;
-    const Real ke = 0.5*(u0_(m,IM1,k,j,i)*w0_(m,IVX,k,j,i)
-                         + u0_(m,IM2,k,j,i)*w0_(m,IVY,k,j,i)
-                         + u0_(m,IM3,k,j,i)*w0_(m,IVZ,k,j,i));
-    Real de = f*(w0_(m,IEN,k,j,i) + ke);
-    if (etg) de += dm*phi_(m,k,j,i);
-    u0_(m,IDN,k,j,i) = rho - dm;
-    u0_(m,IM1,k,j,i) *= g;
-    u0_(m,IM2,k,j,i) *= g;
-    u0_(m,IM3,k,j,i) *= g;
-    u0_(m,IEN,k,j,i) -= de;
-    for (int n=ns0; n<ns1; ++n) {
-      if (n != isl) u0_(m,n,k,j,i) *= g;
-    }
-    const Real snew = s - dm;
-    u0_(m,isl,k,j,i) = snew;
-    w0_(m,IDN,k,j,i) = rho - dm;
-    w0_(m,IEN,k,j,i) *= g;
-    w0_(m,isl,k,j,i) = snew/(rho - dm);
-    if (hasder) wder_(m,IDPR,k,j,i) *= g;
-    if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) {
-      const Real v = vol(m,k,j,i);
-      adm += dm*v;
-      ade += de*v;
+    // (no early return: the reducers must see every index)
+    if (rho > 0.0 && dm > 0.0) {
+      const Real f = dm/rho, g = 1.0 - f;
+      // (not `ke`: that name is the last active x3 index, used below)
+      const Real ekin = 0.5*(u0_(m,IM1,k,j,i)*w0_(m,IVX,k,j,i)
+                             + u0_(m,IM2,k,j,i)*w0_(m,IVY,k,j,i)
+                             + u0_(m,IM3,k,j,i)*w0_(m,IVZ,k,j,i));
+      Real de = f*(w0_(m,IEN,k,j,i) + ekin);
+      if (etg) de += dm*phi_(m,k,j,i);
+      u0_(m,IDN,k,j,i) = rho - dm;
+      u0_(m,IM1,k,j,i) *= g;
+      u0_(m,IM2,k,j,i) *= g;
+      u0_(m,IM3,k,j,i) *= g;
+      u0_(m,IEN,k,j,i) -= de;
+      for (int n=ns0; n<ns1; ++n) {
+        if (n != isl) u0_(m,n,k,j,i) *= g;
+      }
+      const Real snew = s - dm;
+      u0_(m,isl,k,j,i) = snew;
+      w0_(m,IDN,k,j,i) = rho - dm;
+      w0_(m,IEN,k,j,i) *= g;
+      w0_(m,isl,k,j,i) = snew/(rho - dm);
+      if (hasder) wder_(m,IDPR,k,j,i) *= g;
+      if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) {
+        const Real v = vol(m,k,j,i);
+        adm += dm*v;
+        ade += de*v;
+      }
     }
   }, Kokkos::Sum<Real>(sum_dm), Kokkos::Sum<Real>(sum_de));
   fltr_dm += sum_dm;
