@@ -816,7 +816,7 @@ bool bc_outer_maxwell = true;
 //   hse      (DEFAULT, bitwise) hydrostatic isothermal extrapolation of rho, e in the
 //            full potential phicc0 (gravity + centrifugal + tide), momenta scaled with rho,
 //            v_r copied from the last active cell (inflow allowed).
-//   outflow1 ONE-WAY OUTFLOW: pure zero-gradient copy of rho, e and the tangential
+//   outflow1 ONE-WAY OUTFLOW GHOSTS: pure zero-gradient copy of rho, e and the tangential
 //            momenta of the last active cell, v_r_ghost = max(v_r_ie, 0).  No hydrostatic
 //            or equipotential extrapolation anywhere: with the Roche tide the top lies on
 //            OPEN equipotentials (above Phi(L1)) over most of the shell, where no
@@ -824,7 +824,15 @@ bool bc_outer_maxwell = true;
 //            g made the hse ghosts a dense reservoir that fed inflow.  The ghost total
 //            energy carries the ghost's OWN rho*phicc0 under etotgrav (the bookkeeping the
 //            hse ghosts use), and its own magnetic energy.  The face field is untouched.
-int dhj_top_bc = 0;   // 0 = hse, 1 = outflow1
+//            NOT ONE-WAY BY ITSELF (C32 WASP-121b smoke, topbc_1101): the ghost pressure
+//            p_ie at the top face exceeds the hydrostatic face value, pushes the top cell
+//            inward (v_r ~ -900 m/s over the whole shell) and the Riemann solver then
+//            feeds it from the ghost: Mdot_top -7e11 g/s, 12x the hse inflow.
+//   outflow2 outflow1 ghosts PLUS the one-way face (Hydro/MHD diode_ox1): where the
+//            interior-side state at the top face moves inward the Riemann solver sees
+//            its mirror image (a reflecting face: zero mass and advected-energy flux,
+//            pressure only); where it moves outward, the outflow1 ghost state.
+int dhj_top_bc = 0;   // 0 = hse, 1 = outflow1, 2 = outflow2
 
 // ---- problem/rt_test_* : TEST HOOKS for the well-posed checks of the implicit
 // correlated-k solve (tests_ck_implicit/wellposed/README.md).  All default off, and off
@@ -1220,15 +1228,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       dhj_top_bc = 0;
     } else if (tb == "outflow1") {
       dhj_top_bc = 1;
+    } else if (tb == "outflow2") {
+      dhj_top_bc = 2;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "problem/top_bc must be hse or outflow1, not '" << tb
-                << "'" << std::endl;
+                << std::endl << "problem/top_bc must be hse, outflow1 or outflow2, not '"
+                << tb << "'" << std::endl;
       exit(EXIT_FAILURE);
     }
     if (global_variable::my_rank == 0 && dhj_top_bc != 0) {
       std::cout << "deep_hot_jupiter_rt: problem/top_bc = " << tb
-                << " (zero-gradient outer-x1 ghosts, v_r = max(v_r_ie, 0))" << std::endl;
+                << " (zero-gradient outer-x1 ghosts, v_r = max(v_r_ie, 0)"
+                << (dhj_top_bc == 2 ? "; one-way top face" : "") << ")" << std::endl;
+    }
+    if (dhj_top_bc == 2) {
+      if (pmy_mesh_->pmb_pack->phydro != nullptr) {
+        pmy_mesh_->pmb_pack->phydro->diode_ox1 = true;
+      }
+      if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
+        pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
+      }
     }
   }
   if (global_variable::my_rank == 0) {
@@ -3902,7 +3921,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // a reference to a __host__ variable in device code, which hipcc rejects outright --
     // the switch has to be captured by value like any other host state.
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
-    const bool top_out_ = (dhj_top_bc == 1);   // problem/top_bc = outflow1
+    const bool top_out_ = (dhj_top_bc != 0);   // problem/top_bc = outflow1 | outflow2
     // for the metric-correct ghost kinetic energy below (cubed sphere only)
     const bool cs_bc_ = pm->use_cubed_sphere;
     auto &ccell_bc_ = pmbp->pcoord->cos_cell;

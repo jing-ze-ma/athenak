@@ -119,6 +119,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   const bool wall_ix1_ = wall_closed_ix1;
+  const bool diode_ox1_ = diode_ox1;   // topbc-1101 (mhd.hpp)
   const bool wall_sf_ = wall_closed_ix1 && wall_stress_free;
   // the dhj conducting wall is a closed wall on every geometry too (legacy mirror)
   const bool wall_cd_ = wall_closed_ix1 && wall_conducting_ix1;
@@ -373,6 +374,19 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
           wr(IVX,ie+1) = -wl(IVX,ie+1);
           br(1,ie+1) = bl(1,ie+1);  br(2,ie+1) = bl(2,ie+1);
+        }
+      });
+    }
+    // topbc-1101 diode_ox1: a one-way outer radial face (see mhd.hpp)
+    if (diode_ox1_) {
+      member.team_barrier();
+      Kokkos::single(Kokkos::PerTeam(member), [&]() {
+        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
+            wl(IVX,ie+1) < 0.0) {
+          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          wr(IVX,ie+1) = -wl(IVX,ie+1);
+          br(1,ie+1) = bl(1,ie+1);  br(2,ie+1) = bl(2,ie+1);
+          for (int n=0; n<nder; ++n) { dr(n,ie+1) = dl(n,ie+1); }
         }
       });
     }
