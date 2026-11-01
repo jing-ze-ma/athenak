@@ -32,6 +32,7 @@
 #include "shearing_box/orbital_advection.hpp"
 #include "mhd/mhd.hpp"
 #include "dyn_grmhd/dyn_grmhd.hpp"
+#include "mesh/nghbr_index.hpp"
 
 void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) {
   TaskID none(0);
@@ -283,6 +284,32 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
       // u1 = u0 before it (CopyCons); RKUpdate between two super-stages writes only
       // IEN, so if nothing else changed the other slots' ghosts from the last full
       // exchange are still exactly what a full exchange would deliver.
+      // ghosts across a PHYSICAL face (no neighbour) are never written by the exchange
+      // (sends read active cells; the cube-vertex widening is tangential), so what the
+      // ConToPrim does there is the same with or without the key: skip them
+      if (rkg_halo_phys.extent_int(0) != nmb1 + 1) {
+        Kokkos::realloc(rkg_halo_phys, nmb1 + 1);
+        auto ph = Kokkos::create_mirror_view(rkg_halo_phys);
+        auto &ngh = pmy_pack->pmb->nghbr;
+        auto *pmsh = pmy_pack->pmesh;
+        for (int m=0; m<=nmb1; ++m) {
+          int b = 0;
+          for (int f=0; f<6; ++f) {
+            const int ax = f/2, sg = (f%2 == 0) ? -1 : 1;
+            if ((ax == 1 && !pmsh->multi_d) || (ax == 2 && !pmsh->three_d)) continue;
+            const int nb = NeighborIndex((ax == 0) ? sg : 0, (ax == 1) ? sg : 0,
+                                         (ax == 2) ? sg : 0, 0, 0);
+            if (ngh.h_view(m,nb).gid < 0) {b |= (1 << f);}
+          }
+          ph(m) = b;
+        }
+        Kokkos::deep_copy(rkg_halo_phys, ph);
+      }
+      auto phys_ = rkg_halo_phys;
+      auto &mi_ = pmy_pack->pmesh->mb_indcs;
+      const int is_ = mi_.is, ie_ = mi_.ie;
+      const int js_ = mi_.js, je_ = mi_.je, ks_ = mi_.ks, ke_ = mi_.ke;
+      const bool md_ = pmy_pack->pmesh->multi_d, td_ = pmy_pack->pmesh->three_d;
       const int nv = u0_.extent_int(1);
       const int64_t nc1 = n1 + 1, nc2 = n2 + 1, nc3 = n3 + 1;
       const int64_t ncell = nc1*nc2*nc3;
@@ -300,7 +327,11 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
         r -= static_cast<int64_t>(k)*nc2*nc1;
         const int j = static_cast<int>(r/nc1);
         const int i = static_cast<int>(r - static_cast<int64_t>(j)*nc1);
-        if (v != n && u0_(m,v,k,j,i) != u1_(m,v,k,j,i)) {nd |= 1;}
+        const int b = phys_(m);
+        const bool skip = ((b & 1) && i < is_) || ((b & 2) && i > ie_) ||
+                          (md_ && (((b & 4) && j < js_) || ((b & 8) && j > je_))) ||
+                          (td_ && (((b & 16) && k < ks_) || ((b & 32) && k > ke_)));
+        if (v != n && !skip && u0_(m,v,k,j,i) != u1_(m,v,k,j,i)) {nd |= 1;}
       }, Kokkos::BOr<int>(ndiff));
 #if MPI_PARALLEL_ENABLED
       MPI_Allreduce(MPI_IN_PLACE, &ndiff, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);

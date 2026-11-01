@@ -108,14 +108,19 @@ class Resistivity {
   // <mhd>/rkg_halo_ien_only (default false, read only when named): the conserved-variable
   // halo exchange of RKG super-stages 2..s moves only u0(IEN), the one slot RKUpdate
   // writes.  Exact: after the ConToPrim of every super-stage < s, u0 is compared with
-  // u1 (= u0 before that ConToPrim) in every slot but IEN over the whole block; if any
-  // cell anywhere differs (a floor / cap / fallback wrote a non-energy variable), the
-  // next super-stage exchanges every variable, as without the key.  Super-stage 1
+  // u1 (= u0 before that ConToPrim) in every slot but IEN, in every cell the exchange
+  // sends or fills (active cells and the ghosts not across a physical boundary face);
+  // if any such cell differs (a floor / cap / fallback wrote a non-energy variable),
+  // the next super-stage exchanges every variable, as without the key.  Super-stage 1
   // always exchanges everything.  Uniform grids, not with rkg_lean; a no-op without
   // use_rkg_sts.
   bool rkg_halo_ien_only = false;
   bool rkg_halo_full_next = true;   // decision for the next super-stage (all ranks)
   int rkg_halo_nfull = 0;           // diagnostic: full exchanges in super-stages >= 2
+  // per MeshBlock, bit f set when face f (x1-, x1+, x2-, x2+, x3-, x3+) has no
+  // neighbour (physical boundary): the ghosts across it are never written by the
+  // exchange, so the check skips them (built on first use; uniform grids)
+  DvceArray1D<int> rkg_halo_phys;
   // cubed sphere + STRETCHED radial grid: take the radial derivative of the Stokes loop
   // AT the x1 face instead of at the midpoint of the two cell centres (see
   // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an
