@@ -31,6 +31,7 @@
 #include "particles/particles.hpp"
 #include "srcterms/srcterms.hpp"
 #include "outputs/io_wrapper.hpp"
+#include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -128,8 +129,13 @@ Mesh::Mesh(ParameterInput *pin) :
   // a 64-cell one.  Turn it OFF to reproduce the pre-fill answers exactly.
   cs_vertex_fill = use_cubed_sphere &&
                    pin->GetOrAddBoolean("mesh", "cs_vertex_fill", true);
-  // csvertex-1101: `<mesh>/cs_seam_fc_nolimit`, DEFAULT OFF, read ONLY when named (a
-  // GetOrAdd would write it into every restart).  The face-centred along-seam resample
+  // csvertex-1101: `<mesh>/cs_seam_fc_nolimit`.  DEFAULT (USER 11-01): true on a FRESH
+  // cubed-sphere MHD start, written into the input so the run's restarts embed it; a
+  // restart whose input lacks the key keeps the OLD behaviour (clamp on) and is not
+  // given the key, so it stays bitwise.  This is the shared fresh-vs-restart rule of
+  // utils/recipe.hpp (recipe::NewDefaults: <job>/recipe = none -> never, prod1019 ->
+  // fresh and restart).  An explicit key always wins.
+  // The face-centred along-seam resample
   // (bvals_fc.cpp, seamval) clamps its quadratic to the stencil's node range whenever
   // the three nodes are monotone.  On SMOOTH data that is not a no-op: where the
   // along-seam derivative is small next to the curvature (dd1, dd2 same sign but very
@@ -139,6 +145,17 @@ Mesh::Mesh(ParameterInput *pin) :
   // maximum at the cube vertices on cs_test iprob 11 (1.19e-2, 9.0e-3, 3.7e-3 at nx2
   // 16/32/64; with the clamp off 3.06e-3, 8.0e-4, 2.07e-4, i.e. second order).  true
   // drops the clamp for the FIELD halo only; the cell-centred resample is untouched.
+  if (use_cubed_sphere && pin->DoesBlockExist("mhd") &&
+      !pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("mesh", "cs_seam_fc_nolimit", true);
+      recipe::Log("<mesh>/cs_seam_fc_nolimit = true (default on a fresh cs MHD start)");
+    } else {
+      recipe::Log("<mesh>/cs_seam_fc_nolimit = false (" + std::string(
+          recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+          "restart input has no key") + ": the old default, key not added)");
+    }
+  }
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
                        pin->GetBoolean("mesh", "cs_seam_fc_nolimit");
