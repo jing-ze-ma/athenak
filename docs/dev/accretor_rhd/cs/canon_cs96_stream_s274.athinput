@@ -218,6 +218,7 @@ arad = 3.0981247e-09   # ACC: accretor-specific (units / floor / BC) (prod 1.583
 chat_over_c      = 1.0
 closure          = vet_col
 vet_gd = true   # csacc-1031
+vet_gd_halo_compact = 2   # accprof-1101: bitwise, -29 % wall (2 GPUs), -40 % (4 GPUs), -30 GiB per GPU (as HG/RSG)   # csacc-1031
 implicit_halo_direct = true
 implicit_od_cache = true
 implicit_krylov_fuse = 1
