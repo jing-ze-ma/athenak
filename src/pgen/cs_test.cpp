@@ -4023,6 +4023,83 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
     std::printf("###   max |B.rhat| at a RADIAL WALL = %.4e  (/|B|max = %.4e) -- the"
                 " conserved sums are a CLOSED budget only if this is ~0\n",
                 bwall, bwall/fmax(bscale, 1.0e-300));
+    // csvertex-1101: SEAM GHOST-FACE OVERSHOOT.  The first ghost layer of every face
+    // component across a panel seam, against the range of the receiving block's own
+    // adjacent active faces of the same component (2 layers in, 3 along the seam): the
+    // amount the halo value lies OUTSIDE that range, over |B|max.  Split into faces
+    // within 2 cells of a cube vertex and the rest.  This is what the FC seam
+    // resample's monotonicity clamp (<mesh>/cs_seam_fc_nolimit) exists to stop.  Plus
+    // |B| (cell centred) and p extrema in the 2-cell seam ring against the domain.
+    {
+      auto bcch = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->bcc0);
+      const Real gm1o = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+      Real ov[2] = {0.0, 0.0};          // [0] away from a vertex, [1] within 2 cells
+      Real bm[2] = {0.0, 0.0};          // max |B|: domain, seam ring
+      Real pm_[4] = {1.0e30, 1.0e30, -1.0e30, -1.0e30};   // min p dom/ring, max p
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        auto get = [&](int c, int k, int j, int i) {
+          return (c == 1) ? b1(m, k, j, i) : ((c == 2) ? b2(m, k, j, i)
+                                                      : b3(m, k, j, i));
+        };
+        const int sid[4] = {8, 12, 24, 28};
+        for (int sd=0; sd<4; ++sd) {
+          if (!(nghbr.h_view(m,sid[sd]).gid >= 0 &&
+                nghbr.h_view(m,sid[sd]).panel != mbpanel.h_view(m))) continue;
+          const bool alongj = (sd < 2);       // seam normal is x2 (j) for sd 0,1
+          const bool outer = (sd & 1);
+          for (int c=1; c<=3; ++c) {
+            const int jhi = (c == 2) ? je+1 : je, khi = (c == 3) ? ke+1 : ke;
+            const int ihi = (c == 1) ? ie+1 : ie;
+            // normal index: ghost and two interior layers
+            const bool stag = alongj ? (c == 2) : (c == 3);
+            const int lo_n = alongj ? js : ks, hi_n = alongj ? jhi : khi;
+            const int g = outer ? hi_n + 1 : lo_n - 1;
+            const int a1 = outer ? hi_n - (stag ? 1 : 0) : lo_n + (stag ? 1 : 0);
+            const int a2 = outer ? a1 - 1 : a1 + 1;
+            const int tlo = alongj ? ks : js, thi = alongj ? khi : jhi;
+            for (int t=tlo; t<=thi; ++t) {
+              const bool nearv = (t - tlo < 2) || (thi - t < 2);
+              for (int i=is; i<=ihi; ++i) {
+                const Real gv = alongj ? get(c, t, g, i) : get(c, g, t, i);
+                Real lo = 1.0e300, hi = -1.0e300;
+                for (int tt=std::max(tlo, t-1); tt<=std::min(thi, t+1); ++tt) {
+                  for (int aa=0; aa<2; ++aa) {
+                    const int n = (aa == 0) ? a1 : a2;
+                    const Real v = alongj ? get(c, tt, n, i) : get(c, n, tt, i);
+                    lo = fmin(lo, v); hi = fmax(hi, v);
+                  }
+                }
+                const Real o = fmax(0.0, fmax(gv - hi, lo - gv));
+                ov[nearv ? 1 : 0] = fmax(ov[nearv ? 1 : 0], o);
+              }
+            }
+          }
+        }
+        for (int k=ks; k<=ke; ++k) for (int j=js; j<=je; ++j) for (int i=is; i<=ie; ++i) {
+          const bool ring = (j-js < 2) || (je-j < 2) || (k-ks < 2) || (ke-k < 2);
+          const Real bb = std::sqrt(SQR(bcch(m,IBX,k,j,i)) + SQR(bcch(m,IBY,k,j,i))
+                                  + SQR(bcch(m,IBZ,k,j,i)));
+          const Real pp = gm1o*wh(m,IEN,k,j,i);
+          bm[0] = fmax(bm[0], bb); pm_[0] = fmin(pm_[0], pp); pm_[2] = fmax(pm_[2], pp);
+          if (ring) {
+            bm[1] = fmax(bm[1], bb); pm_[1] = fmin(pm_[1], pp);
+            pm_[3] = fmax(pm_[3], pp);
+          }
+        }
+      }
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, ov, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, bm, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, pm_, 2, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, pm_+2, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+      const Real bs_ = fmax(bscale, 1.0e-300);
+      std::printf("###   SEAM GHOST-FACE OVERSHOOT / |B|max:  away from a vertex %.4e"
+                  "   within 2 cells of a vertex %.4e\n", ov[0]/bs_, ov[1]/bs_);
+      std::printf("###   |B|max domain %.6e  seam ring %.6e;  p min domain %.6e"
+                  "  ring %.6e;  p max domain %.6e  ring %.6e\n", bm[0], bm[1],
+                  pm_[0], pm_[1], pm_[2], pm_[3]);
+    }
   }
   std::printf("###   NON-FINITE cells: %lld of %lld   (within 2 cells of a seam:"
               " %lld of %lld)\n",
