@@ -49,6 +49,7 @@
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
 #include "mhd/mhd.hpp"
+#include "diffusion/resistivity.hpp"
 
 namespace wbtan {
 
@@ -141,10 +142,19 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   if (hastmp) stmp = dup4(ph->wtemp);
   if (haswbq) swbq = dup5(ph->wbq0);
   // MHD: the probe is the B = 0 equilibrium (see the note in WbTanProbe)
-  DvceArray4D<Real> sb1, sb2, sb3;
+  DvceArray4D<Real> sb1, sb2, sb3, seta, sadc;
   DvceArray5D<Real> sbcc;
   if constexpr (kMHD) {
     sb1 = dup4(ph->b0.x1f); sb2 = dup4(ph->b0.x2f); sb3 = dup4(ph->b0.x3f);
+    // wbtan-etafix-1101: MHD::ConToPrim at stage 0 (as the probe calls it) recomputes the
+    // resistivity arrays (Ohmic eta_b, ambipolar ad_coef) from the probe's state, whose
+    // passive scalars -- the <mhd>/xe_tracer x_e among them -- are zero: an eta of the
+    // probe state.  Saved here and restored below (E_B x450 in the first cycle with
+    // xe_tracer + ambipolar = eos, integ-test-1101 gate (b)).
+    if (ph->presist != nullptr) {
+      if (ph->presist->eta_b.size() > 0) seta = dup4(ph->presist->eta_b);
+      if (ph->presist->ad_coef.size() > 0) sadc = dup4(ph->presist->ad_coef);
+    }
     sbcc = dup5(ph->bcc0);
   }
   auto zero_b = [&]() {
@@ -283,6 +293,8 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   if (hastmp) Kokkos::deep_copy(ph->wtemp, stmp);
   if (haswbq) Kokkos::deep_copy(ph->wbq0, swbq);
   if constexpr (kMHD) {
+    if (seta.size() > 0) Kokkos::deep_copy(ph->presist->eta_b, seta);
+    if (sadc.size() > 0) Kokkos::deep_copy(ph->presist->ad_coef, sadc);
     Kokkos::deep_copy(ph->b0.x1f, sb1); Kokkos::deep_copy(ph->b0.x2f, sb2);
     Kokkos::deep_copy(ph->b0.x3f, sb3); Kokkos::deep_copy(ph->bcc0, sbcc);
   }
