@@ -122,6 +122,19 @@ struct EOS_Data {
   // Stored as 1/valfven_max^2 in code units.
   Real va2max_inv = 0.0;
 
+  // <mhd>/valfven_noinfall_fac -- companion of valfven_max_cgs (0 = off, the default;
+  // read only when named).  Gas the Alfven-speed floor props up is not in hydrostatic
+  // balance (rho = B^2/v_A,max^2 falls off far more slowly than an atmosphere), so it
+  // rains down through the floor base into the real gas and is replaced every step:
+  // on the WASP-121b 1x resistive MHD deck that rain WAS the floor mass, 2e15 g/s
+  // (mhdfloor-1101).  With fac >= 1, wherever rho (after the floor) <= fac B^2/v_A,max^2
+  // the INWARD radial momentum is removed (m_1 -> max(m_1, 0)) together with its kinetic
+  // energy, so the internal energy is unchanged; outflow and the tangential momenta are
+  // left alone.  x1 must be radial (cubed sphere or spherical polar), where m_1 is the
+  // radial momentum on either grid.  Not counted separately (the cells are those of
+  // eos_dfloor).
+  Real va_noinfall_fac = 0.0;
+
   // <mhd>/hlld_bx_zero_tol -- plasma-beta cut used by the HLLD family (hlld_mhd.hpp,
   // hlld_uct_mhd.hpp, lhlld_mhd.hpp) to decide whether the rotational discontinuities
   // (the ** states) are built at all.  The test is 0.5*Bx^2 < tol*pt*: since pt* is the

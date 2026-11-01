@@ -42,6 +42,9 @@
 //! 0.13 with emit).  In a smooth field both contrasts are O(dx): second order kept.
 
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <string>
 
 #include "athena.hpp"
 
@@ -57,6 +60,61 @@ void VetSegW(const Real dtau, Real &ex, Real &w0, Real &wu) {
     w0 = 1.0 - g;
     wu = g - ex;
   }
+}
+
+// vgdrot-1011 / cslight-1031: a range policy whose functor rides as a KERNEL ARGUMENT
+// (HintLightWeight, as VetFor in rad_m1_vet.cpp) for the per-shell vet_gd sweep kernels
+// (sp and cs: shell, pack, scatter/unpack); without it the 0.5-4 kB functors take the
+// constant-memory launch with a host wait on the previous such launch (the same
+// kernels, the same numbers)
+inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
+  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
+                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+}
+
+// the fatal-error exit of the vet_gd setup (sp VgdFatal, cs VgdCsFatal): file, tag, msg
+[[noreturn]] inline void VgdFatalAt(const char *file, const char *tag,
+                                    const std::string &msg) {
+  std::cout << "### FATAL ERROR in " << file << std::endl << tag << msg << std::endl;
+  std::exit(EXIT_FAILURE);
+}
+
+// share-1031: the vet_gd_replace surface q (vet_col_surface_q) of the top cell ie of
+// column (m,k,j), one kernel body for sp (VetGdMoments) and cs (VetGdCsMoments): the
+// geometry RH gives the projection a = n_d . r_hat of direction d (VgdRhatSp: the sp
+// cell centre angles; VgdRhatCs: the cs cell's tabulated r_hat), term for term as the
+// former two kernels.  rr = r_v(ie)/r_f(ie + 1)
+struct VgdRhatSp {
+  Real st, ct, sp, cp;
+  template <typename VD>
+  KOKKOS_INLINE_FUNCTION Real A(const VD &dir_, const int d) const {
+    return dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
+  }
+};
+struct VgdRhatCs {
+  Real rx, ry, rz;
+  template <typename VD>
+  KOKKOS_INLINE_FUNCTION Real A(const VD &dir_, const int d) const {
+    return dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
+  }
+};
+template <typename RH, typename VD, typename VI>
+KOKKOS_INLINE_FUNCTION
+Real VgdSurfaceQ(const RH &rh, const VD &dir_, const VI &vi_, const int n, const int m,
+                 const int k, const int j, const int og, const int ie, const Real rr,
+                 const bool sqf, const Real jca, const Real jcb, const Real jcap,
+                 const Real qlo, const Real qhi, const Real q0) {
+  Real jt = 0.0, jb = 0.0, ht = 0.0;
+  for (int d = 0; d < n; ++d) {
+    const Real a = rh.A(dir_, d);
+    const Real w = dir_(d,3);
+    jt += w*vi_(m,d,k+og,j+og,ie);
+    jb += w*vi_(m,d,k+og,j+og,ie-1);
+    ht += w*a*vi_(m,d,k+og,j+og,ie);
+  }
+  const Real hf = ht*rr*rr;
+  const Real jq = sqf ? fmin(fmax(jca*jt - jcb*jb, 0.0), jcap*jt) : jt;
+  return (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
 }
 
 // the face source S_f of the split segment (see above); emit: 0 split, 1 emit, 2 jump

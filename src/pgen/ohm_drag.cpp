@@ -55,6 +55,7 @@
 #include "diffusion/resistivity.hpp"
 #include "outputs/outputs.hpp"
 #include "pgen.hpp"
+#include "utils/eint_from_cons.hpp"
 
 namespace {
 
@@ -347,7 +348,7 @@ void OdSource(Mesh *pm, const Real bdt) {
     const Real c = aux(m, ACOS, k, j, i);
     const Real m1 = u0(m, IM1, k, j, i), m2 = u0(m, IM2, k, j, i);
     const Real m3 = u0(m, IM3, k, j, i);
-    const Real ekold = 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))/d;
+    const Real ekold = CsKeMom(m1, m2, m3, c)/d;
     const Real n2 = d*aux(m, AVC2, k, j, i), n3 = d*aux(m, AVC3, k, j, i);
     const Real eknew = 0.5*d*(aux(m, AVC2, k, j, i)*aux(m, AVT2, k, j, i)
                             + aux(m, AVC3, k, j, i)*aux(m, AVT3, k, j, i));

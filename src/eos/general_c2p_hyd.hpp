@@ -113,6 +113,134 @@ void SingleC2P_GeneralHydLegacy(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void GeneralHydFloorsPost()
+//! \brief share2-1031: THE energy floors of the general-EOS hydro inversion, applied to
+//! an internal energy e = E - KE whose kinetic energy is final: the one temperature
+//! solve, the pressure floor (paid from the kinetic energy first under
+//! <block>/efloor_from_ekin), the temperature floor, the entropy floor (`sflr`), the
+//! efloor_as_tfloor rebuild and the p, Gamma_1 re-evaluation.  Shared by
+//! SingleC2P_GeneralHyd (own = !defer_cons_floors, sflr = true) and, on the cubed
+//! sphere, GnomonicRaiseVelFloors (own = true: there the metric KE is the real one;
+//! sflr = false, the entropy floor the cs path has never applied).  `own`: the floors
+//! account the energy they create in `de`, rebuild the total `etot` = e + ekin and may
+//! pay from the kinetic energy; `fvk` is then the factor the caller applies to its
+//! momentum and velocity (`mom_scaled` true).  `floor_fired`: a floor (not the clamp
+//! repair) moved e.  `stale`: e moved, p and Gamma_1 were re-evaluated.  The arithmetic
+//! is the former body of SingleC2P_GeneralHyd, in the same order.
+
+KOKKOS_INLINE_FUNCTION
+void GeneralHydFloorsPost(const EOS_Data &eos, const Real d, const Real di,
+                          const Real tguess, const bool own, const bool sflr,
+                          Real &eint, Real &ekin, Real &etot, Real &fvk,
+                          Real &temp, Real &pgas, Real &g1,
+                          bool &efloor_used, bool &tfloor_used, bool &tclamp_used,
+                          bool &tset_used, bool &mom_scaled, bool &floor_fired,
+                          bool &stale, Real &de) {
+  // Solve for the temperature. For a general EOS this is the one expensive EOS call in
+  // the time step, so it happens here, once, and everything below reuses the result. A
+  // badly under-resolved cell can leave e non-positive, where the root find has nothing
+  // to converge to; that case skips the solve and goes straight to the pressure floor.
+  bool e_positive = (eint > 0.0);
+  temp = -1.0;
+
+  // Apply the pressure floor. The test is on p rather than on e so that the inverse
+  // e(d,pfloor) -- density dependent, and a root find for a general EOS -- is evaluated
+  // only in the rare cells where the floor actually trips, instead of in every cell as a
+  // constant would be. See EOS_Data::BelowPressureFloor().
+  // ONE table evaluation now serves three consumers -- the pressure-floor test below, and
+  // the p and Gamma_1 the Riemann solvers need at the bottom -- because all three are at
+  // the same (d,T). `stale` marks the rare paths where a floor moves the state afterwards
+  // and they have to be redone.
+  stale = !e_positive;
+  if (e_positive) {
+    // fused: the inversion and the evaluation that follows it share their logarithms
+    eos.TemperaturePressureGamma1(d, eint, tguess, temp, pgas, g1, tclamp_used);
+  }
+
+  if (!e_positive || pgas < eos.pfloor) {
+    // the three-argument form hands back the temperature the inversion solved for,
+    // so the floored cell does not pay for a second root find
+    const Real efl = eos.EnergyFromPressure(d, eos.pfloor, temp);
+    // PAY FROM THE KINETIC ENERGY FIRST.  Rebuilding E as efl + KE with KE untouched
+    // donates efl - e, which is the whole kinetic energy whenever the update left
+    // e = E - KE negative.  Holding E fixed and rescaling the momentum instead creates
+    // nothing unless the TOTAL energy is itself below the floor.
+    //
+    // NOT under defer_cons_floors in ConsToPrim (own false: the cubed sphere): there KE
+    // is the ORTHONORMAL kinetic energy, which is not the kinetic energy at all on a
+    // non-orthogonal tangent basis, and this floor is provisional --
+    // GnomonicRaiseVelFloors re-applies it (own true) to the metric-correct energy and
+    // does the payment and the accounting there.
+    if (eos.efloor_from_ekin && own && ekin > 0.0 && (etot - efl) < ekin) {
+      Real ek_new = etot - efl;
+      if (!(ek_new > 0.0)) ek_new = 0.0;
+      fvk = sqrt(ek_new/ekin);
+      de += (efl + ek_new) - etot;
+      ekin = ek_new;
+      mom_scaled = true;
+    } else if (own) {
+      de += efl - eint;
+    }
+    eint = efl;
+    if (own) etot = eint + ekin;
+    efloor_used = true;
+    stale = true;
+  }
+
+  // Apply the temperature floor. Free to test now that T is known, and e(d,tfloor) is a
+  // direct evaluation rather than an inversion, so this costs no root find either.
+  if (temp < eos.tfloor) {
+    const Real etf = eos.EnergyFromTemperature(d, eos.tfloor);
+    if (own) de += etf - eint;
+    eint = etf;
+    if (own) etot = eint + ekin;
+    temp = eos.tfloor;
+    tfloor_used = true;
+    stale = true;
+  }
+
+  // Apply the entropy floor. Only meaningful while the general EOS evaluates a gamma law,
+  // where it is the ideal-gas floor verbatim; under a tabulated EOS this is a no-op and a
+  // run that sets sfloor is refused at startup. See EOS_Data::ApplyEntropyFloor().
+  if (sflr && eos.ApplyEntropyFloor(d, di, eint)) {
+    temp = eos.Temperature(d, eint, temp);
+    efloor_used = true;
+    stale = true;
+  }
+  // whether a FLOOR fired, as opposed to the efloor_as_tfloor repair below (FOFC flags
+  // cells on it; the table clamp is not a floor)
+  floor_fired = stale;
+
+  // <block>/efloor_as_tfloor: REBUILD THE FLOORED STATE FROM ITS TEMPERATURE.  See the
+  // note on EOS_Data::efloor_as_tfloor.  Everything above sets the internal energy and
+  // then reports whatever temperature the table could form from it; when a floor fired,
+  // or when the inversion had to be CLAMPED to the table's lowest/highest tabulated row,
+  // those two no longer describe the same gas.  Invert the relation instead: take the
+  // temperature that was settled on -- at least tfloor, and the clamp row where the
+  // clamp bound -- and set e to e(rho,T) for it, so that re-inverting this cell returns
+  // exactly this T and the p, Gamma_1 and sound speed below belong to the energy the
+  // cell actually carries.  At the LOW edge this raises e (it is the temperature floor
+  // doing what the pressure floor could not reach); at the HIGH edge it lowers e, which
+  // removes energy the table cannot represent rather than leaving a saturated state.
+  if (eos.efloor_as_tfloor && (stale || tclamp_used)) {
+    const Real tset = (temp > eos.tfloor) ? temp : eos.tfloor;
+    const Real ets = eos.EnergyFromTemperature(d, tset);
+    if (own) de += ets - eint;
+    eint = ets;
+    if (own) etot = eint + ekin;
+    temp = tset;
+    tset_used = true;
+    stale = true;
+  }
+
+  // Evaluate the derived thermodynamic quantities that the Riemann solvers will need.
+  // Both are cheap: the temperature they depend on has already been solved for above.
+  if (stale) {
+    eos.PressureAndGamma1(d, eint, temp, pgas, g1);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void SingleC2P_GeneralHyd()
 //! \brief Converts a single state of conserved variables into primitive variables for
 //! non-relativistic hydrodynamics with a general EOS, and evaluates the derived
@@ -208,107 +336,17 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   }
   w.e = (u.e - e_k);
 
-  // Solve for the temperature. For a general EOS this is the one expensive EOS call in
-  // the time step, so it happens here, once, and everything below reuses the result. A
-  // badly under-resolved cell can leave e non-positive, where the root find has nothing
-  // to converge to; that case skips the solve and goes straight to the pressure floor.
-  bool e_positive = (w.e > 0.0);
-  temp = -1.0;
-
-  // Apply the pressure floor. The test is on p rather than on e so that the inverse
-  // e(d,pfloor) -- density dependent, and a root find for a general EOS -- is evaluated
-  // only in the rare cells where the floor actually trips, instead of in every cell as a
-  // constant would be. See EOS_Data::BelowPressureFloor().
-  // ONE table evaluation now serves three consumers -- the pressure-floor test below, and
-  // the p and Gamma_1 the Riemann solvers need at the bottom -- because all three are at
-  // the same (d,T). `stale` marks the rare paths where a floor moves the state afterwards
-  // and they have to be redone.
-  bool stale = !e_positive;
-  if (e_positive) {
-    // fused: the inversion and the evaluation that follows it share their logarithms
-    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1, tclamp_used);
-  }
-
-  if (!e_positive || pgas < eos.pfloor) {
-    // the three-argument form hands back the temperature the inversion solved for,
-    // so the floored cell does not pay for a second root find
-    const Real efl = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
-    // PAY FROM THE KINETIC ENERGY FIRST.  Rebuilding u.e as efl + e_k with e_k untouched
-    // donates efl - w.e, which is the whole kinetic energy whenever the update left
-    // w.e = u.e - e_k negative.  Holding u.e fixed and rescaling the momentum instead
-    // creates nothing unless the TOTAL energy is itself below the floor.
-    //
-    // NOT under defer_cons_floors (the cubed sphere): there e_k above is the ORTHONORMAL
-    // kinetic energy, which is not the kinetic energy at all on a non-orthogonal tangent
-    // basis, and this floor is provisional -- Coordinates::GnomonicEquiangleRaiseVel
-    // re-applies it to the metric-correct energy and does the payment and the accounting
-    // there.  Touching the conserved momentum here would freeze the wrong KE into it.
-    if (eos.efloor_from_ekin && !eos.defer_cons_floors &&
-        e_k > 0.0 && (u.e - efl) < e_k) {
-      Real ek_new = u.e - efl;
-      if (!(ek_new > 0.0)) ek_new = 0.0;
-      const Real fv = sqrt(ek_new/e_k);
-      u.mx *= fv; u.my *= fv; u.mz *= fv;
-      w.vx *= fv; w.vy *= fv; w.vz *= fv;
-      efloor_de += (efl + ek_new) - u.e;
-      e_k = ek_new;
-      mom_scaled = true;
-    } else if (!eos.defer_cons_floors) {
-      efloor_de += efl - w.e;
-    }
-    w.e = efl;
-    if (!eos.defer_cons_floors) u.e = w.e + e_k;
-    efloor_used = true;
-    stale = true;
-  }
-
-  // Apply the temperature floor. Free to test now that T is known, and e(d,tfloor) is a
-  // direct evaluation rather than an inversion, so this costs no root find either.
-  if (temp < eos.tfloor) {
-    const Real etf = eos.EnergyFromTemperature(w.d, eos.tfloor);
-    if (!eos.defer_cons_floors) efloor_de += etf - w.e;
-    w.e = etf;
-    if (!eos.defer_cons_floors) u.e = w.e + e_k;
-    temp = eos.tfloor;
-    tfloor_used = true;
-    stale = true;
-  }
-
-  // Apply the entropy floor. Only meaningful while the general EOS evaluates a gamma law,
-  // where it is the ideal-gas floor verbatim; under a tabulated EOS this is a no-op and a
-  // run that sets sfloor is refused at startup. See EOS_Data::ApplyEntropyFloor().
-  if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
-    temp = eos.Temperature(w.d, w.e, temp);
-    efloor_used = true;
-    stale = true;
-  }
-
-  // <block>/efloor_as_tfloor: REBUILD THE FLOORED STATE FROM ITS TEMPERATURE.  See the
-  // note on EOS_Data::efloor_as_tfloor.  Everything above sets the internal energy and
-  // then reports whatever temperature the table could form from it; when a floor fired,
-  // or when the inversion had to be CLAMPED to the table's lowest/highest tabulated row,
-  // those two no longer describe the same gas.  Invert the relation instead: take the
-  // temperature that was settled on -- at least tfloor, and the clamp row where the
-  // clamp bound -- and set e to e(rho,T) for it, so that re-inverting this cell returns
-  // exactly this T and the p, Gamma_1 and sound speed below belong to the energy the
-  // cell actually carries.  At the LOW edge this raises e (it is the temperature floor
-  // doing what the pressure floor could not reach); at the HIGH edge it lowers e, which
-  // removes energy the table cannot represent rather than leaving a saturated state.
-  if (eos.efloor_as_tfloor && (stale || tclamp_used)) {
-    const Real tset = (temp > eos.tfloor) ? temp : eos.tfloor;
-    const Real ets = eos.EnergyFromTemperature(w.d, tset);
-    if (!eos.defer_cons_floors) efloor_de += ets - w.e;
-    w.e = ets;
-    if (!eos.defer_cons_floors) u.e = w.e + e_k;
-    temp = tset;
-    tset_used = true;
-    stale = true;
-  }
-
-  // Evaluate the derived thermodynamic quantities that the Riemann solvers will need.
-  // Both are cheap: the temperature they depend on has already been solved for above.
-  if (stale) {
-    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+  // the floors on the final kinetic energy (shared with the cubed sphere's
+  // GnomonicRaiseVelFloors)
+  Real fvk = 1.0;
+  bool msc = false, ffired, stale;
+  GeneralHydFloorsPost(eos, w.d, di, tguess, !eos.defer_cons_floors, true, w.e, e_k, u.e,
+                       fvk, temp, pgas, g1, efloor_used, tfloor_used, tclamp_used,
+                       tset_used, msc, ffired, stale, efloor_de);
+  if (msc) {
+    u.mx *= fvk; u.my *= fvk; u.mz *= fvk;
+    w.vx *= fvk; w.vy *= fvk; w.vz *= fvk;
+    mom_scaled = true;
   }
   return;
 }

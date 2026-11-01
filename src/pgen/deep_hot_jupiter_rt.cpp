@@ -58,6 +58,7 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
+#include "roche_common.hpp"   // roche-dhj-1031: problem/roche
 #include "utils/rosseland.hpp"
 #include "utils/correlated_k.hpp"
 #include "utils/atm_column.hpp"
@@ -249,7 +250,8 @@ void DhjCycleDiag(Mesh *pm);
 //     the angular-momentum flux IN through the inner wall (the wall torque, Maxwell
 //     stress included).  The rest, Ttop = Tcons - Twall, comes in through the top, and
 //     the L_z ledger reads dLrel/dt = Tcor + Twall + Ttop.  (Ttop has no column of its
-//     own: 9 + 3 floor + 12 = 24 = NHISTORY_VARIABLES.)
+//     own: 9 + 3 floor + 12 = 24 = NHISTORY_VARIABLES; with problem/roche the Ttide
+//     column makes it 25, so am_hst_split + flux_hst_floor + roche is a start-up FATAL.)
 namespace amh {
 bool on = false;            // problem/am_hst
 bool fix = false;           // problem/coriolis_am
@@ -531,6 +533,26 @@ DvceArray2D<Real> *fhst = nullptr;   // (4, nx1): floors pending for the hst col
 DvceArray5D<Real> *cpre = nullptr;   // (nmb, 2, n3, n2, n1): u0(IEN) and e_int before ck
 int64_t nfull0 = 0;                  // ck_cad_nfull before the call
 }  // namespace ebud
+// roche-wbtan-1101 problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
+// the potential force (centrifugal of rot_potential + the Roche tide) as the hydro's OWN
+// discrete tangential momentum residual of the equipotential equilibrium W_eq, instead of
+// the analytic -rho grad_t Phi_tot at the cell centre:
+//     S_t = -(rho/rho_eq) R_t(W_eq),   R_t = -(flux divergence) + geometric source,
+// evaluated ONCE per run segment (WbTanProbe, first SourceFunc call, fresh start or
+// restart) by running the stage's own operators on W_eq: ghost exchange (panel-seam
+// resample) + x1 BCs + ConToPrim, Hydro::Fluxes, the seam flux reconciliation, the
+// coordinate source and both angular-momentum corrections.  W_eq is the IC formula (the
+// column at z_eff(Phi_tot)), so the IC is balanced in x2/x3 to round-off, seams and sp
+// poles included.  The work is booked by the etotgrav energy flux (required), as for
+// the analytic force before: E_tot stays exactly conservative, the O(h^2) mismatch
+// between rho g_t . v and the flux-form potential work lands in e_int, as before.
+namespace wbtan {
+bool on = false;
+bool ready = false;
+DvceArray5D<Real> *weq = nullptr;   // (nmb, 2, n3, n2, n1): rho_eq, eint_eq (all cells)
+DvceArray5D<Real> *gt = nullptr;    // (nmb, 2, n3, n2, n1): g_2, g_3 (covariant accel.)
+}  // namespace wbtan
+void WbTanProbe(Mesh *pm, const Real bdt);
 void EBudStage(Mesh *pm, const Real bdt);
 void EBudCk(Mesh *pm, const Real dt, const bool before);
 void EBudDrainFloors(Mesh *pm);
@@ -556,9 +578,15 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T);
 KOKKOS_INLINE_FUNCTION
-void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T);
+void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
+                 const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext);
 template <typename View1D>
-void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T);
+void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T,
+                      const int &Ne, const View1D &Text, const View1D &lgpext);
+template <typename View1D>
+int ic_adiabat_extension(const EOS_Data &eos, const Real &gamma, const Real &Rgas,
+                         const int &N, const View1D &Tarr, const View1D &lgparr,
+                         const Real &dex, const int &Ne, View1D Text, View1D lgpext);
 template <typename View1D>
 void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                     const Real &ap, const bool &grav_pmass, const int &N,
@@ -569,9 +597,11 @@ template <typename View1D>
 void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                       const Real &ap, const bool &grav_pmass, const View1D &Tarr,
                       const View1D &lgparr, const int &N, const Real &zmax,
-                      View1D zarr, View1D logparr, const Real zlow = 0.0);
+                      View1D zarr, View1D logparr, const Real zlow,
+                      const int &Ne, const View1D &Text, const View1D &lgpext);
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
+                  const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext);
 
 //----------------------------------------------------------------------------------------
 //! \fn GravAccAt / GravPotAt
@@ -636,6 +666,24 @@ Real ZEffFromPot(const Real grav_acc, const Real ap, const Real phi, const bool 
   const Real g = -grav_acc;
   if (!pmass) return phi/g;
   return ap/(1.0 - phi/(g*ap)) - ap;
+}
+
+//! \fn TotPotAt (Roche overload, roche-dhj-1031)
+//! \brief TotPotAt plus the host star's tidal potential (roche_common.hpp TidePot:
+//! companion + indirect term, 0 at the planet centre), with the substellar direction
+//! cosine mu = sin(theta) cos(phi) -- the convention of the stellar beam (rt_pre_geom
+//! mu0) and of CSCellAngles (phi = longitude from the substellar point).  gms = 0
+//! (problem/roche off) returns the plain TotPotAt value BITWISE (no addition at all).
+//! Together with om2 = Omega^2 this is the full Roche potential in the planet-centred
+//! corotating frame: the centrifugal part lives HERE (om2) and nowhere else -- the
+//! explicit source keeps only Coriolis and the tangential projections of grad Phi.
+KOKKOS_INLINE_FUNCTION
+Real TotPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
+              const bool pmass, const Real om2, const Real theta, const Real phi,
+              const Real gms, const Real ra) {
+  const Real p0 = TotPotAt(grav_acc, ap, r, z, pmass, om2, theta);
+  if (gms == 0.0) return p0;
+  return p0 + roche::TidePot(gms, ra, r, sin(theta)*cos(phi));
 }
 
 
@@ -765,6 +813,32 @@ using correlated_k::ck_build_rosseland_table;
 // clamped, so it is bounded at any field strength -- see the use site. DEFAULT ON, since
 // in that form it is the better physics; set false to drop the magnetic force entirely.
 bool bc_outer_maxwell = true;
+// problem/top_bc (topbc-1101): the outer-x1 boundary.
+//   hse      (DEFAULT, bitwise) hydrostatic isothermal extrapolation of rho, e in the
+//            full potential phicc0 (gravity + centrifugal + tide), momenta scaled with rho,
+//            v_r copied from the last active cell (inflow allowed).  The right top when
+//            the WHOLE top shell is inside the planet's Roche lobe (closed equipotentials).
+//   outflow1 ONE-WAY OUTFLOW, for a top on OPEN equipotentials (above Phi(L1), where no
+//            hydrostatic state exists; the start-up line "top shell on OPEN
+//            equipotentials" gives the fraction).  Two parts:
+//            (a) ghosts: pure zero-gradient copy of rho, e and the tangential momenta of
+//                the last active cell, v_r_ghost = max(v_r_ie, 0); no hydrostatic or
+//                equipotential extrapolation anywhere (in the closed substellar cap of
+//                WASP-121b the hse ghosts, with a tiny effective g, were a dense
+//                reservoir that fed inflow).  The ghost total energy carries the ghost's
+//                OWN rho*phicc0 under etotgrav and its own magnetic energy.  MHD face
+//                field: tangential B zero-gradient (copied from the last active cell),
+//                normal B of the ghost faces from div B = 0 cell by cell outward.
+//            (b) the one-way top face (Hydro/MHD diode_ox1): where the interior-side
+//                state at the ie+1 face moves inward, the Riemann solver sees its mirror
+//                image (a reflecting face: zero mass and advected-energy flux, pressure
+//                only); where it moves outward, the ghost state of (a).
+//   outflow0 (a) alone -- DIAGNOSTIC ONLY, NOT one-way: the ghost pressure p_ie at the
+//            top face exceeds the hydrostatic face value, pushes the top cell inward
+//            (v_r ~ -900 m/s over the whole shell) and the Riemann solver refills it from
+//            the ghost (C32 WASP-121b smoke, topbc_1101: Mdot_top -7e11 g/s, 12x the hse
+//            inflow; -2.4e10 g/s even without the tide).
+int dhj_top_bc = 0;   // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 = outflow0
 
 // ---- problem/rt_test_* : TEST HOOKS for the well-posed checks of the implicit
 // correlated-k solve (tests_ck_implicit/wellposed/README.md).  All default off, and off
@@ -1007,13 +1081,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       } else if (integ == "rk3") {
         amh::nst = 3;  amh::w[0] = 1.0/6.0;  amh::w[1] = 1.0/6.0;  amh::w[2] = 2.0/3.0;
       }
+      // + Ttide (tidetrq-1101) with problem/roche
       const int nfh = 9 + (dhj_flux_hst_wall ? 4 : 0) + (dhj_flux_hst_floor ? 3 : 0)
-                      + (amh::split ? 12 : 8);
+                      + (amh::split ? 12 : 8) + (hot_jupiter_param.roche ? 1 : 0);
       if (amh::nst == 0 || nfh > NHISTORY_VARIABLES) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/am_hst needs rk1/rk2/rk3 and at most "
                   << NHISTORY_VARIABLES << " user history columns (have " << nfh << ")"
-                  << std::endl;
+                  << " (e.g. problem/am_hst_split = false frees 4)" << std::endl;
         exit(EXIT_FAILURE);
       }
       for (int n=0; n<amh::NACC; ++n) amh::acc[n] = 0.0;
@@ -1154,6 +1229,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
+  {
+    const std::string tb = pin->GetOrAddString("problem","top_bc","hse");
+    if (tb == "hse") {
+      dhj_top_bc = 0;
+    } else if (tb == "outflow1") {
+      dhj_top_bc = 1;
+    } else if (tb == "outflow0") {
+      dhj_top_bc = 2;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/top_bc must be hse, outflow1 or outflow0, not '"
+                << tb << "'" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 && dhj_top_bc != 0) {
+      std::cout << "deep_hot_jupiter_rt: problem/top_bc = " << tb
+                << " (zero-gradient outer-x1 ghosts, v_r = max(v_r_ie, 0)"
+                << (dhj_top_bc == 1 ? "; one-way top face" : "; NOT one-way") << ")"
+                << std::endl;
+    }
+    if (dhj_top_bc == 1) {
+      if (pmy_mesh_->pmb_pack->phydro != nullptr) {
+        pmy_mesh_->pmb_pack->phydro->diode_ox1 = true;
+      }
+      if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
+        pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
+      }
+    }
+  }
   if (global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "
               << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
@@ -2178,6 +2282,142 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the column, the ghosts and the well-balanced arrays (see TotPotAt / ZEffFromPot)
     const bool rot_potential = pin->GetOrAddBoolean("problem","rot_potential",false);
     const Real om2_ = rot_potential ? SQR(omega) : 0.0;
+    // roche-dhj-1031 problem/roche (default false: rgms_ = 0 and every TotPotAt below
+    // is the old one, bitwise).  The host star's tide as a POTENTIAL: TidePot (companion
+    // + indirect term) joins TotPotAt wherever this function builds a potential -- the
+    // equipotential IC (z_eff of Phi_tot), the ghosts, phicc0 and the phi0 faces, hence
+    // the well-balanced radial force (each column's own Phi) and the etotgrav energy.
+    // The tangential tidal force is the explicit analytic -grad TidePot in SourceFunc
+    // (or, with problem/roche_wb_tan, the hydro's own equilibrium residual: wbtan),
+    // next to the centrifugal one; Coriolis unchanged.  Keys: roche_a [cm] (default
+    // 0.02571 AU = WASP-121b) and G M_* from Kepler, Omega^2 a^3 = G (M_p + M_*), with
+    // G M_p = grav ap^2 (point mass).  The centrifugal force stays in om2 (rot_potential,
+    // required) -- not counted a second time anywhere.
+    const bool roche_on = hot_jupiter_param.roche;
+    Real rgms_ = 0.0, ra_ = 0.0;
+    if (roche_on) {
+      const bool wbx1 = (pmbp->phydro != nullptr) ? pmbp->phydro->use_wb_x1
+                                                  : pmbp->pmhd->use_wb_x1;
+      std::string bad = "";
+      if (!rot_potential) bad = "problem/rot_potential = true";
+      if (!grav_pmass) bad = "problem/grav_point_mass = true";
+      if (!(use_spherical_polar || use_cubed_sphere_)) bad = "sp or the cubed sphere";
+      if (!use_wellbalance_dynamic || !wbx1) bad = "wellbalance_dynamic + wb_x1";
+      if (use_wellbalance_static) bad = "no wellbalance_static";
+      if (!use_etotgrav) bad = "etotgrav = true";
+      if (!user_srcs) bad = "problem/user_srcs = true";
+      // the column-top closure tau = kappa p/|grad Phi| is wired into the band (ck)
+      // solver only (rt_pre_geom fills rt_cf slot 4); the old grey paths keep g_pm
+      if (!rt_ck) bad = "problem/rt_ck = true";
+      if (tide) bad = "problem/stellar_tide = false (the tide is IN the Roche potential)";
+      if (pin->DoesParameterExist("hydro","frame_omega") ||
+          pin->DoesParameterExist("mhd","frame_omega")) {
+        bad = "no <hydro|mhd>/frame_omega (the pgen applies the frame forces)";
+      }
+      if (!bad.empty()) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "problem/roche needs " << bad << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      ra_ = pin->GetOrAddReal("problem","roche_a",0.02571*1.495978707e13);
+      rgms_ = SQR(omega)*ra_*ra_*ra_ - (-grav_acc)*ap*ap;
+      // problem/roche_gms_scale (TEST ONLY, default 1): G M_* x scale, e.g. 1e-12 for
+      // the no-star gate (must reproduce rot_potential to round-off); the lobe check is
+      // skipped below 1e-3
+      const Real gsc = pin->GetOrAddReal("problem","roche_gms_scale",1.0);
+      rgms_ *= gsc;
+      if (!(rgms_ > 0.0)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "problem/roche: Omega^2 a^3 <= G M_p" << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      hot_jupiter_param.roche_gms = rgms_;
+      hot_jupiter_param.roche_a = ra_;
+      const Real gm1r = (-grav_acc)*ap*ap;
+      const Real rl1 = roche::L1Distance(gm1r, rgms_, ra_, om2_);
+      // the potential at L1 (on the substellar axis: theta = pi/2, phi = 0) and the
+      // highest potential on the top face (poles, theta = 0) -- the top equipotential is
+      // closed (inside the planet's Roche lobe) iff the latter is below the former
+      const Real phil1 = TotPotAt(grav_acc, ap, rl1, rl1 - ap, true, om2_, 0.5*M_PI, 0.0,
+                                  rgms_, ra_);
+      Real phtop = -1.0e300;
+      for (int it=0; it<=180; ++it) {
+        const Real th = M_PI*it/180.0;
+        for (int ip=0; ip<=36; ++ip) {
+          phtop = std::max(phtop, TotPotAt(grav_acc, ap, r1, r1 - ap, true, om2_, th,
+                                           M_PI*ip/36.0, rgms_, ra_));
+        }
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/roche ON: a = " << ra_ << " cm, G M_* = "
+                  << rgms_ << " (M_* = " << rgms_/6.6743e-8/1.98892e33 << " Msun), "
+                  << "G M_p = " << gm1r << ", L1 at " << rl1 << " cm (x1max/r_L1 = "
+                  << r1/rl1 << "), Phi(L1) = " << phil1 << ", max Phi on x1max = "
+                  << phtop << std::endl;
+      }
+      // A WARNING, not a stop: the outer boundary holds the top hydrostatically, and the
+      // region near L1 is outside the domain, so nothing can overflow in the model; but
+      // the gas above that level is not bound to the planet (WASP-121b production grid:
+      // x1max = 0.66 r_L1 on the axis, yet the lobe's POLAR radius is ~0.64 r_L1, so the
+      // top cells near the poles sit just outside the Roche lobe)
+      // topbc-1101: the AREA fraction of the top shell (r = x1max) on open
+      // equipotentials (Phi > Phi(L1)), the guide for problem/top_bc: 0 -> hse, the
+      // top is inside the lobe; > 0 -> outflow1 (no hydrostatic state above Phi(L1))
+      {
+        double aop = 0.0, atot = 0.0;
+        const int nth = 360, nph = 180;   // phi in [0, pi]: the potential is even in phi
+        for (int it=0; it<nth; ++it) {
+          const Real th = M_PI*(it + 0.5)/nth;
+          const double w = std::sin(th);
+          for (int ip=0; ip<nph; ++ip) {
+            const Real ph = M_PI*(ip + 0.5)/nph;
+            atot += w;
+            if (TotPotAt(grav_acc, ap, r1, r1 - ap, true, om2_, th, ph, rgms_, ra_)
+                > phil1) aop += w;
+          }
+        }
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: problem/roche: " << 100.0*aop/atot
+                    << " % of the top shell (r = x1max) on OPEN equipotentials "
+                    << "(Phi > Phi(L1)); problem/top_bc = "
+                    << (dhj_top_bc == 0 ? "hse" : (dhj_top_bc == 1 ? "outflow1"
+                                                                      : "outflow0"))
+                    << (aop > 0.0 ? " (outflow1 recommended)" : " (hse recommended)")
+                    << std::endl;
+        }
+      }
+      if (gsc >= 1.0e-3 && !(phtop < phil1) && global_variable::my_rank == 0) {
+        std::cout << "### WARNING: problem/roche: the equipotential through part of the "
+                  << "domain top is OPEN (max Phi(x1max) >= Phi(L1)): those top cells lie "
+                  << "outside the planet's Roche lobe" << std::endl;
+      }
+    }
+    // roche-wbtan-1101 problem/roche_wb_tan (default false; see namespace wbtan): the
+    // tangential centrifugal (+ tidal, with problem/roche) force as the hydro's own
+    // discrete residual of the equipotential equilibrium.  Works with rot_potential
+    // alone (centrifugal only) or with roche.
+    wbtan::on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
+    if (wbtan::on) {
+      std::string bad = "";
+      if (pmbp->phydro == nullptr) bad = "hydro (not MHD)";
+      if (!rot_potential) bad = "problem/rot_potential = true";
+      if (!(use_spherical_polar || use_cubed_sphere_)) bad = "sp or the cubed sphere";
+      if (pmbp->phydro != nullptr &&
+          (!use_wellbalance_dynamic || !pmbp->phydro->use_wb_x1)) {
+        bad = "wellbalance_dynamic + wb_x1";
+      }
+      if (use_wellbalance_static) bad = "no wellbalance_static";
+      if (!use_etotgrav) bad = "etotgrav = true (the work is booked by the energy flux)";
+      if (!user_srcs) bad = "problem/user_srcs = true";
+      if (tide) bad = "problem/stellar_tide = false";
+      if (pmy_mesh_->adaptive || pmy_mesh_->multilevel) bad = "a single-level mesh";
+      if (!bad.empty()) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "problem/roche_wb_tan needs " << bad << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      wbtan::ready = false;
+    }
     Real Rgas = pin->GetReal("problem","Rgas");
     Real met = pin->GetReal("problem","met");
 
@@ -2228,9 +2468,42 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real mus = 1.0;
     
     const int N = 10000;
+    // roche-dhj-1031: the column must reach the largest z_eff in the domain; the tide
+    // RAISES Phi at the poles (and the terminator), past the 1.1 (r1 - r0) margin
+    Real zcol_ = (r1-r0)*1.1;
+    if (roche_on) {
+      auto x1vh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v_);
+      const int nimax = x1vh.extent_int(1) - 1;
+      Real rt = x1vh(0, nimax);
+      for (int m=0; m<pmbp->nmb_thispack; ++m) rt = std::max(rt, x1vh(m, nimax));
+      // the largest z_eff of the top ghosts with and without the tide; the column grows
+      // by the DIFFERENCE only, so a negligible tide (the no-star gate,
+      // roche_gms_scale -> 0) leaves the rot_potential column (and IC) unchanged to
+      // round-off.  (The rot_potential column itself stops at 1.1 (r1 - r0) and the top
+      // ghosts read its linear extrapolation, as before.)
+      Real ztop = 0.0, ztop0 = 0.0;
+      for (int it=0; it<=90; ++it) {
+        const Real th = 0.5*M_PI*it/90.0;
+        for (int ip=0; ip<=36; ++ip) {
+          ztop = std::max(ztop, ZEffFromPot(grav_acc, ap,
+                              TotPotAt(grav_acc, ap, rt, rt - ap, grav_pmass, om2_, th,
+                                       M_PI*ip/36.0, rgms_, ra_), grav_pmass));
+          ztop0 = std::max(ztop0, ZEffFromPot(grav_acc, ap,
+                               TotPotAt(grav_acc, ap, rt, rt - ap, grav_pmass, om2_, th),
+                               grav_pmass));
+        }
+      }
+      zcol_ += std::max(0.0, ztop - ztop0);
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/roche: column to z = " << zcol_
+                  << " (1.1 (r1 - r0) + the tidal rise of the top ghosts' z_eff, "
+                  << ztop - ztop0 << ")"
+                  << std::endl;
+      }
+    }
     DualArray1D<Real> zarr("zarr", N);
     DualArray1D<Real> logparr("logparr", N);
-    get_wb_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, N, (r1-r0)*1.1,
+    get_wb_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, N, zcol_,
                    zarr.h_view, logparr.h_view);
 //    zarr.template modify<HostMemSpace>();
 //    zarr.template sync<DevExeSpace>();
@@ -2252,6 +2525,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     } else {
       read_ic_profile(ic_prof, N, Tarr_init.h_view, lgparr_init.h_view);
     }
+    // problem/ic_adiabat_ext (default true; ic_profile only; w121hroche-1101): BELOW the
+    // table's bottom row T(p) continues along the ADIABAT through that row,
+    // dln T/dln p = GradAd(p, T) of the deck's own EOS (general table: H2 dissociation,
+    // ionization), integrated (RK4) over ic_adiabat_ext_dex decades (default 2) on
+    // Ne = 801 points uniform in log10 p.  Before, get_init_Tp(_host) continued the LAST
+    // SEGMENT of the table linearly in log10 p, which the inner wall reaches whenever it
+    // cuts equipotentials deeper than the table (rot_potential margins, problem/roche:
+    // ~4400 bar substellar vs 2241 bar for WASP-121b).  Only lookups at log10 p > the
+    // table bottom change; every lookup inside the table is bitwise (and a deck whose
+    // column never leaves the table is bitwise).  false: the old linear extrapolation.
+    // Beyond the extension's end: its last segment, linearly (WARNING printed).
+    int ne_ext = 0;
+    const int ne_alloc = 801;
+    DualArray1D<Real> Tarr_ext("Tarrext", ne_alloc);
+    DualArray1D<Real> lgparr_ext("lgparrext", ne_alloc);
+    const bool ic_ad_ext = !ic_prof.empty() &&
+                           pin->GetOrAddBoolean("problem", "ic_adiabat_ext", true);
+    const Real ic_ad_dex = ic_prof.empty() ? 0.0 :
+                           pin->GetOrAddReal("problem", "ic_adiabat_ext_dex", 2.0);
+    if (ic_ad_ext) {
+      ne_ext = ic_adiabat_extension(eos, gamma, Rgas, N, Tarr_init.h_view,
+                                    lgparr_init.h_view, ic_ad_dex, ne_alloc,
+                                    Tarr_ext.h_view, lgparr_ext.h_view);
+      Tarr_ext.modify_host();
+      Tarr_ext.sync_device();
+      lgparr_ext.modify_host();
+      lgparr_ext.sync_device();
+    }
     
     Tarr_init.modify_host();
     Tarr_init.sync_device();
@@ -2270,17 +2571,47 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v_);
       Real rg = x1v_h(0, 0);
       for (int m=0; m<pmbp->nmb_thispack; ++m) rg = std::min(rg, x1v_h(m, 0));
-      const Real zg = (om2_ > 0.0) ?
+      Real zg = (om2_ > 0.0) ?
           ZEffFromPot(grav_acc, ap, TotPotAt(grav_acc, ap, rg, rg - ap, grav_pmass, om2_,
                                              0.5*M_PI), grav_pmass) : (rg - ap);
+      // roche-dhj-1031: the lowest Phi on the deepest shell is on the substellar or the
+      // antistellar point of the equator
+      if (roche_on) {
+        for (const Real ph : {0.0, M_PI}) {
+          zg = std::min(zg, ZEffFromPot(grav_acc, ap,
+                            TotPotAt(grav_acc, ap, rg, rg - ap, grav_pmass, om2_,
+                                     0.5*M_PI, ph, rgms_, ra_), grav_pmass));
+        }
+      }
       if (zg < 0.0) zlow_ic = 1.1*zg;
       std::cout << "deep_hot_jupiter_rt: ic_profile column extended to z = " << zlow_ic
                 << " cm below the 250 bar anchor (deepest ghost r = " << rg << ")"
                 << std::endl;
     }
     get_init_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, Tarr_init.h_view,
-                     lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view,
-                     logparr_init.h_view, zlow_ic);
+                     lgparr_init.h_view, N, zcol_, zarr_init.h_view,
+                     logparr_init.h_view, zlow_ic, ne_ext, Tarr_ext.h_view,
+                     lgparr_ext.h_view);
+    if (ne_ext > 1 && global_variable::my_rank == 0) {
+      // where the column bottom sits: in the table or on the adiabat (diagnostic)
+      const Real lgbot = logparr_init.h_view(0)/std::log(10.0);
+      const Real lgtab = lgparr_init.h_view(N-1), lgend = lgparr_ext.h_view(ne_ext-1);
+      Real tbot;
+      get_init_Tp_host(N, Tarr_init.h_view, lgparr_init.h_view,
+                       std::exp(logparr_init.h_view(0)), tbot, ne_ext, Tarr_ext.h_view,
+                       lgparr_ext.h_view);
+      std::cout << "deep_hot_jupiter_rt: IC column bottom p = " << std::pow(10.0, lgbot)/1.0e6
+                << " bar, T = " << tbot << " K ("
+                << ((lgbot > lgtab) ? "on the adiabat below the table bottom "
+                                    : "inside the table; table bottom ")
+                << std::pow(10.0, lgtab)/1.0e6 << " bar)" << std::endl;
+      if (lgbot > lgend) {
+        std::cout << "### WARNING: problem/ic_adiabat_ext: the IC column reaches "
+                  << std::pow(10.0, lgbot)/1.0e6 << " bar, beyond the adiabat extension ("
+                  << std::pow(10.0, lgend)/1.0e6 << " bar): raise problem/ic_adiabat_ext_dex"
+                  << std::endl;
+      }
+    }
     
     zarr_init.modify_host();
     zarr_init.sync_device();
@@ -2290,8 +2621,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // problem/remap_file (default empty = off; remap_0929): a FROM-SCRATCH start whose
     // active cells come from a file written by docs/handover/scripts/dhj_remap.py, i.e.
     // a restart radially remapped onto THIS grid (spin up on a coarse radial grid, then
-    // continue on a fine one).  The horizontal grid and the MeshBlock layout must be the
-    // restart's.  File: 8-byte magic, int32 nmb_total, nx1, nx2, nx3; then per gid
+    // continue on a fine one; the tool also refines the cubed sphere C(n) -> C(f n)).
+    // The file is written for THIS grid and MeshBlock layout.  File: 8-byte magic,
+    // int32 nmb_total, nx1, nx2, nx3; then per gid
     // int32 lx1, lx2, lx3, level, panel and double [5][nx3][nx2][nx1] = rho, v1, v2, v3
     // (= u0(IM1..3)/rho as stored, covariant on the cubed sphere), and the thermal
     // variable: p for magic "RADREMAP" (eint =
@@ -2300,8 +2632,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // included), exactly as the analytic IC.  The ghosts keep the analytic column and are
     // refilled by Driver::Initialize; everything that is not u0 (ck caches, warm starts,
     // flux-history accumulators, floor bookkeeping) starts fresh as on any fresh start.
-    // MHD: the file carries the hydro state only; B is the analytic bbot field set below
-    // (a hydro spin-up continued as MHD).  Ignored on a restart.
+    // MHD: the file carries the hydro state only.  B is the analytic bbot field set below
+    // (a hydro spin-up continued as MHD), or, with problem/remap_bfile, the remapped
+    // field of an MHD restart INSTEAD of the seed.  Ignored on a restart.
     const std::string remap_file = pin->GetOrAddString("problem","remap_file","");
     const bool use_remap_ = (!restart && !remap_file.empty());
     const int rnx1 = indcs.nx1, rnx2 = indcs.nx2, rnx3 = indcs.nx3;
@@ -2411,12 +2744,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // potential (barotropic in Phi_tot); otherwise at its geometric height
       const Real zs = (om2_ > 0.0) ?
           ZEffFromPot(grav_acc, ap,
-                      TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta),
+                      TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                               om2_, theta, phi, rgms_, ra_),
                       grav_pmass) : x1v;
       get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
         
       Real p, den;
-      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p);
+      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
+                   ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
 //      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
 //      p = pwb;
@@ -2467,12 +2802,64 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         w0_(m,IEN,k,j,i) = eint0;
       }
         
-        Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+        Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                              om2_, theta, phi, rgms_, ra_);
         if (use_etotgrav) {
             u0_(m,IEN,k,j,i) += den*phicc;
         }
     });
     }  // end of !restart guard on the initial condition
+
+    // roche-wbtan-1101: the equipotential equilibrium W_eq (rho, eint; v = 0) of EVERY
+    // cell incl. the ghosts, by the IC formula above (fresh start AND restart: the probe
+    // in SourceFunc runs once per run segment)
+    if (wbtan::on) {
+      const int nmbw = pmbp->nmb_thispack;
+      if (wbtan::weq == nullptr) {
+        wbtan::weq = new DvceArray5D<Real>("wbtan_weq", nmbw, 2, n3m1+1, n2m1+1, n1m1+1);
+        wbtan::gt = new DvceArray5D<Real>("wbtan_gt", nmbw, 2, n3m1+1, n2m1+1, n1m1+1);
+      }
+      auto weq_ = *wbtan::weq;
+      par_for("wbtan_weq", DevExeSpace(), 0, nmbw-1, 0, n3m1, 0, n2m1, 0, n1m1,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real x1v, x2v, x3v;
+        if (use_spherical_polar) {
+          x1v = x1v_(m,i);
+          x2v = x2v_(m,j);
+          x3v = x3v_(m,k);
+        } else {
+          x1v = x1v_(m,i);   // cubed sphere: stored centroid, as the IC
+          x2v = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+          x3v = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+        }
+        const Real r = x1v;
+        x1v -= ap;
+        Real lam = 0.0, theta, phi;
+        if (use_spherical_polar) {
+          theta = x2v;
+          phi = x3v-M_PI;
+        } else {
+          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
+        }
+        const Real zs = ZEffFromPot(grav_acc, ap,
+                                    TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                                             om2_, theta, phi, rgms_, ra_),
+                                    grav_pmass);
+        Real p, den;
+        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view, lgparr_init.d_view, N,
+                     zarr_init.d_view, logparr_init.d_view, zs, den, p,
+                     ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
+        weq_(m,0,k,j,i) = den;
+        weq_(m,1,k,j,i) = EintFromP(eos, igm1, den, p);
+      });
+      wbtan::ready = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan ON: tangential "
+                  << (roche_on ? "centrifugal + tidal" : "centrifugal")
+                  << " force = the hydro's own residual of the equipotential state"
+                  << std::endl;
+      }
+    }
 
     // problem/seed + problem/seed_amp: a deterministic density perturbation on the
     // from-scratch initial condition.  It exists to build ENSEMBLES: the cubed-sphere
@@ -2574,18 +2961,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real pwb, denwb;
         const Real zs = (om2_ > 0.0) ?
             ZEffFromPot(grav_acc, ap,
-                        TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta),
+                        TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                                 om2_, theta, phi, rgms_, ra_),
                         grav_pmass) : x1v;
         get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
         
         Real p, den;
-        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p);
+        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
+                   ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
 //        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
 //        den = denwb;
         
-        Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+        Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                              om2_, theta, phi, rgms_, ra_);
         
       if (use_etotgrav || use_wellbalance_dynamic) {
           if (use_spherical_polar) {
@@ -2612,7 +3002,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                           om2_, theta, phi, rgms_, ra_);
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
               if (use_spherical_polar) {
@@ -2635,7 +3026,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                               om2_, theta, phi, rgms_, ra_);
               phi0_x1f(m,k,j,i+1) = phicc;
           }
           
@@ -2663,7 +3055,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                           om2_, theta, phi, rgms_, ra_);
           phi0_x2f(m,k,j,i) = phicc;
           if (j == je) {
               if (use_spherical_polar) {
@@ -2682,7 +3075,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                               om2_, theta, phi, rgms_, ra_);
               phi0_x2f(m,k,j+1,i) = phicc;
           }
           
@@ -2710,7 +3104,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                           om2_, theta, phi, rgms_, ra_);
           phi0_x3f(m,k,j,i) = phicc;
           if (k == ke) {
               if (use_spherical_polar) {
@@ -2729,7 +3124,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                               om2_, theta, phi, rgms_, ra_);
               phi0_x3f(m,k+1,j,i) = phicc;
           }
       }
@@ -2828,6 +3224,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+        // roche-dhj-1031 problem/roche_rst_add (default false; read only on a restart
+        // with problem/roche): the restart file was written WITHOUT the tide, so its
+        // E = eint + KE + rho Phi_old; add rho TidePot so eint is unchanged.  ONE-SHOT:
+        // the key is reset to false in the parameters, so restart files written by this
+        // run (which carry Phi_Roche) do not add it a second time.
+        bool rst_add_ = false;
+        if (restart && roche_on && pin->DoesParameterExist("problem","roche_rst_add")) {
+          rst_add_ = pin->GetBoolean("problem","roche_rst_add");
+          pin->SetBoolean("problem","roche_rst_add",false);
+          if (global_variable::my_rank == 0 && rst_add_) {
+            std::cout << "deep_hot_jupiter_rt: problem/roche_rst_add: E += rho TidePot "
+                      << "on the restarted state (one-shot)" << std::endl;
+          }
+        }
         par_for("wbgrav", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
             
@@ -2869,8 +3279,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi = x2v*iap;
             }
             
-            Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
+            Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                                  om2_, theta, phi, rgms_, ra_);
             phicc0(m,k,j,i) = phicc;
+            if (rst_add_ && use_etotgrav) {
+              u0_(m,IEN,k,j,i) += u0_(m,IDN,k,j,i)*
+                  (phicc - TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta));
+            }
             // The FACE potentials on every face, ghost faces included.  The initial
             // condition above fills only the active faces, but the well-balanced
             // background of the outermost ghost cells (which the x1 sweep reconstructs)
@@ -2887,10 +3302,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
             Real zl = x1fl, zr = x1fr;
             if (use_spherical_polar || use_cubed_sphere_) { zl -= ap; zr -= ap; }
-            phi0_x1f(m,k,j,i) = TotPotAt(grav_acc, ap, x1fl, zl, grav_pmass, om2_, theta);
+            phi0_x1f(m,k,j,i) = TotPotAt(grav_acc, ap, x1fl, zl, grav_pmass, om2_, theta,
+                                          phi, rgms_, ra_);
             if (i == n1m1) {
               phi0_x1f(m,k,j,i+1) = TotPotAt(grav_acc, ap, x1fr, zr, grav_pmass, om2_,
-                                              theta);
+                                              theta, phi, rgms_, ra_);
             }
         });
 //        par_for("wbgravbc", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1,
@@ -2978,6 +3394,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // default changed 09-30 (user), was none (fatal if absent)
       Real bbot = hot_jupiter ? hot_jupiter_param.bbot
                               : pin->GetOrAddReal("problem","bbot",0.0);
+      // problem/remap_bfile (see below) REPLACES the seed: with the key set the dipole is
+      // not applied (bbot = 0 here), so the field is the remapped one only and the
+      // energy of the active cells is E_file + e_mag(remap) with no add/subtract of a
+      // dipole.  Read only when named, so a run without it embeds the same input.
+      const std::string remap_bfile =
+          pin->DoesParameterExist("problem","remap_bfile") ?
+          pin->GetString("problem","remap_bfile") : std::string("");
+      if (!remap_bfile.empty() && bbot != 0.0) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: problem/remap_bfile is set, so the dipole "
+                    << "seed (problem/bbot or bbot_gauss, bbot = " << bbot
+                    << " [code]) is NOT applied; B is the remapped field only"
+                    << std::endl;
+        }
+        bbot = 0.0;
+      }
       auto &b0 = pmbp->pmhd->b0;
       auto &bcc0 = pmbp->pmhd->bcc0;
       par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0, n3m1, 0, n2m1, 0, n1m1, //ks,ke,js,je,is,ie,
@@ -3125,6 +3557,113 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                    + SQR(bcc0(m,IBZ,k,j,i)));
           }
       });
+
+      // problem/remap_bfile (dhj-remap-mhd, default empty = off): the ACTIVE face fields
+      // of a remapped MHD restart, given as edge line integrals of a vector potential
+      // in the radial gauge (written by docs/handover/scripts/dhj_remap.py next to
+      // remap_file).  b = curl/area with the code's own areas, exactly as the dipole
+      // above, so div B vanishes to round-off on this grid.  File: 8-byte magic
+      // "RADREMB1", int32 nmb_total, nx1, nx2, nx3; then per gid int32 lx1, lx2, lx3,
+      // level, panel and double L2[nx3+1][nx2][nx1+1] (the x2 edges, along xi at the
+      // eta faces) and L3[nx3][nx2+1][nx1+1] (the x3 edges, along eta at the xi faces).
+      // The dipole seed is skipped when this key is set (bbot = 0 above), so the swap
+      // of magnetic energy below removes zero; ghosts hold B = 0 until the boundary
+      // exchange and the physical boundaries fill them.  Cubed sphere only.
+      if (!remap_bfile.empty()) {
+        if (!use_cubed_sphere_ || !use_remap_) {
+          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_bfile "
+                    << "needs the cubed sphere and problem/remap_file" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        const int bn1 = indcs.nx1, bn2 = indcs.nx2, bn3 = indcs.nx3;
+        DvceArray4D<Real> l2_("remap_l2", pmbp->nmb_thispack, bn3+1, bn2, bn1+1);
+        DvceArray4D<Real> l3_("remap_l3", pmbp->nmb_thispack, bn3, bn2+1, bn1+1);
+        std::ifstream bf(remap_bfile, std::ios::binary);
+        char mg[8];
+        std::int32_t hd[4];
+        bf.read(mg, 8);
+        bf.read(reinterpret_cast<char*>(hd), sizeof(hd));
+        if (!bf || std::string(mg, 8) != "RADREMB1" || hd[0] != pmy_mesh_->nmb_total ||
+            hd[1] != bn1 || hd[2] != bn2 || hd[3] != bn3) {
+          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_bfile "
+                    << remap_bfile << ": unreadable, bad magic or grid mismatch"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        const std::size_t n2r = static_cast<std::size_t>(bn3+1)*bn2*(bn1+1);
+        const std::size_t n3r = static_cast<std::size_t>(bn3)*(bn2+1)*(bn1+1);
+        const std::streamoff recb = 5*sizeof(std::int32_t) + (n2r + n3r)*sizeof(double);
+        auto hl2 = Kokkos::create_mirror_view(l2_);
+        auto hl3 = Kokkos::create_mirror_view(l3_);
+        std::vector<double> buf(n2r + n3r);
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          const int gid = pmbp->gids + m;
+          bf.seekg(8 + sizeof(hd) + gid*recb, std::ios::beg);
+          std::int32_t ll[5];
+          bf.read(reinterpret_cast<char*>(ll), sizeof(ll));
+          bf.read(reinterpret_cast<char*>(buf.data()), (n2r + n3r)*sizeof(double));
+          const LogicalLocation &lc = pmy_mesh_->lloc_eachmb[gid];
+          if (!bf || ll[0] != lc.lx1 || ll[1] != lc.lx2 || ll[2] != lc.lx3 ||
+              ll[3] != lc.level || ll[4] != lc.panel) {
+            std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/remap_bfile "
+                      << "record " << gid << " does not match this MeshBlock's "
+                      << "LogicalLocation" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          std::size_t q = 0;
+          for (int k=0; k<=bn3; ++k) {
+            for (int j=0; j<bn2; ++j) {
+              for (int i=0; i<=bn1; ++i) hl2(m,k,j,i) = buf[q++];
+            }
+          }
+          for (int k=0; k<bn3; ++k) {
+            for (int j=0; j<=bn2; ++j) {
+              for (int i=0; i<=bn1; ++i) hl3(m,k,j,i) = buf[q++];
+            }
+          }
+        }
+        Kokkos::deep_copy(l2_, hl2);
+        Kokkos::deep_copy(l3_, hl3);
+        // 1. the faces of every active cell (the far faces by the last cell)
+        par_for("pgen_b0_remap", DevExeSpace(), 0, (pmbp->nmb_thispack-1), ks, ke, js, je,
+                is, ie, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          const int a = i - is, b = j - js, c = k - ks;
+          u0_(m,IEN,k,j,i) -= 0.5*(SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i))
+                                 + SQR(bcc0(m,IBZ,k,j,i)));
+          b0.x1f(m,k,j,i) = (l3_(m,c,b+1,a) - l3_(m,c,b,a) - l2_(m,c+1,b,a)
+                           + l2_(m,c,b,a))/area1(m,k,j,i);
+          b0.x2f(m,k,j,i) = -(l3_(m,c,b,a+1) - l3_(m,c,b,a))/area2(m,k,j,i);
+          b0.x3f(m,k,j,i) = (l2_(m,c,b,a+1) - l2_(m,c,b,a))/area3(m,k,j,i);
+          if (i == ie) {
+            b0.x1f(m,k,j,i+1) = (l3_(m,c,b+1,a+1) - l3_(m,c,b,a+1) - l2_(m,c+1,b,a+1)
+                               + l2_(m,c,b,a+1))/area1(m,k,j,i+1);
+          }
+          if (j == je) {
+            b0.x2f(m,k,j+1,i) = -(l3_(m,c,b+1,a+1) - l3_(m,c,b+1,a))/area2(m,k,j+1,i);
+          }
+          if (k == ke) {
+            b0.x3f(m,k+1,j,i) = (l2_(m,c+1,b,a+1) - l2_(m,c+1,b,a))/area3(m,k+1,j,i);
+          }
+        });
+        // 2. bcc and the magnetic energy of the active cells, as the dipole branch
+        par_for("pgen_bcc_remap", DevExeSpace(), 0, (pmbp->nmb_thispack-1), ks, ke, js,
+                je, is, ie, KOKKOS_LAMBDA(int m, int k, int j, int i) {
+          const Real lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          const Real rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0.x1f(m,k,j,i+1);
+          const Real cg = ccell_ic_(m,k,j), sg = scell_ic_(m,k,j);
+          const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+          const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+          bcc0(m,IBY,k,j,i) = (by_n + cg*bz_n)/sg;
+          bcc0(m,IBZ,k,j,i) = bz_n;
+          u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i))
+                                 + SQR(bcc0(m,IBZ,k,j,i)));
+        });
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: problem/remap_bfile " << remap_bfile
+                    << " read (active face fields replaced)" << std::endl;
+        }
+      }
 
       // GATE ON THE CONSTRUCTION, printed once.  Two numbers, because div B alone is
       // satisfied by a ZERO field -- which is exactly what the cubed sphere silently had
@@ -3416,6 +3955,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // a reference to a __host__ variable in device code, which hipcc rejects outright --
     // the switch has to be captured by value like any other host state.
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
+    const bool top_out_ = (dhj_top_bc != 0);   // problem/top_bc = outflow1 | outflow0
     // for the metric-correct ghost kinetic energy below (cubed sphere only)
     const bool cs_bc_ = pm->use_cubed_sphere;
     auto &ccell_bc_ = pmbp->pcoord->cos_cell;
@@ -3503,7 +4043,18 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //              b0_x1f(m,k,j,iex) = div_rest/area1(m,k,j,iex);
 //            }
           }
-          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user && top_out_) {
+            // problem/top_bc = outflow1 | outflow0: TANGENTIAL face field zero-gradient
+            // (the last active cell's faces copied into every ghost); the ghost NORMAL
+            // faces follow from div B = 0 in usrboundaryx1_bfield_divb below
+            for (int i=0; i<ng; ++i) {
+              int iex = ie+i+1;
+              b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,ie);
+              if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,ie);}
+              b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,ie);
+              if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,ie);}
+            }
+          } else if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
             for (int i=0; i<ng; ++i) {
               int iin = ie-i;
               int iex = ie+i+1;
@@ -3534,6 +4085,26 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //              }
         }
       });
+      // problem/top_bc = outflow1 | outflow0: the ghost NORMAL faces from div B = 0,
+      // ghost cell by ghost cell outward (each needs the face below it), with the
+      // tangential faces written by the kernel above -- a separate launch, because the
+      // j+1 / k+1 faces of a cell belong to other threads of that kernel
+      if (top_out_) {
+        par_for("usrboundaryx1_bfield_divb", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+        KOKKOS_LAMBDA(int m, int k, int j) {
+          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+            for (int i=0; i<ng; ++i) {
+              const int iex = ie+i+1;
+              const Real flx = b0_x1f(m,k,j,iex)*area1(m,k,j,iex)
+                  - (b0_x2f(m,k,j+1,iex)*area2(m,k,j+1,iex)
+                     - b0_x2f(m,k,j,iex)*area2(m,k,j,iex))
+                  - (b0_x3f(m,k+1,j,iex)*area3(m,k+1,j,iex)
+                     - b0_x3f(m,k,j,iex)*area3(m,k,j,iex));
+              b0_x1f(m,k,j,iex+1) = flx/area1(m,k,j,iex+1);
+            }
+          }
+        });
+      }
     }
     
 //    if (pmbp->phydro != nullptr) {
@@ -3750,7 +4321,36 @@ void HydrostaticEquilibrium(Mesh *pm) {
           Real phi_i = phicc0(m,k,j,ie);
           Real q0_i = log(e_i);
           Real factor_i = rho_i/e_i*igm1;
-          for (int i=0; i<ng; ++i) {
+          if (top_out_) {
+            // problem/top_bc = outflow1: zero-gradient copy, one-way v_r.  rho_i and e_i
+            // are the floored last-cell values above (the same extraction the hse branch
+            // starts from); the tangential momenta are copied (same rho), the radial one
+            // is clipped at zero so the ghost never pushes gas into the domain.
+            const Real m1o = fmax(u0_(m,IM1,k,j,ie), 0.0);
+            const Real m2o = u0_(m,IM2,k,j,ie);
+            const Real m3o = u0_(m,IM3,k,j,ie);
+            Real ke_o;
+            if (cs_bc_) {
+              const Real cg = ccell_bc_(m,k,j);
+              ke_o = 0.5*(m1o*m1o + (m2o*m2o - 2.0*cg*m2o*m3o + m3o*m3o)/(1.0 - cg*cg))
+                     /rho_i;
+            } else {
+              ke_o = 0.5*(SQR(m1o)+SQR(m2o)+SQR(m3o))/rho_i;
+            }
+            for (int i=0; i<ng; ++i) {
+              const int ig = ie+i+1;
+              u0_(m,IDN,k,j,ig) = rho_i;
+              u0_(m,IM1,k,j,ig) = m1o;
+              u0_(m,IM2,k,j,ig) = m2o;
+              u0_(m,IM3,k,j,ig) = m3o;
+              u0_(m,IEN,k,j,ig) = e_i + ke_o;
+              if (use_etotgrav) u0_(m,IEN,k,j,ig) += rho_i*phicc0(m,k,j,ig);
+              if (is_mhd_) u0_(m,IEN,k,j,ig) += 0.5*(SQR(bcc0(m,IBX,k,j,ig))
+                                                     + SQR(bcc0(m,IBY,k,j,ig))
+                                                     + SQR(bcc0(m,IBZ,k,j,ig)));
+            }
+          }
+          for (int i=0; i<ng && !top_out_; ++i) {
             Real dM1mag = 0.0;
             if (is_mhd_) {
               // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
@@ -4416,7 +5016,209 @@ void AmFix(Mesh *pm, const Real bdt) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn WbTanProbe (roche-wbtan-1101, problem/roche_wb_tan)
+//! \brief g_t: the hydro's own tangential momentum RHS of the equipotential equilibrium
+//! W_eq, per unit equilibrium density.  The live state (u0, w0, wder, wtemp, uflx, the
+//! x1 WB cache) is saved, W_eq (wbtan::weq, v = 0) fills the active cells, the ghosts are
+//! made exactly as the stage makes them (a private MeshBoundaryValuesCC with pbval_u's
+//! seam settings, ApplyPhysicalBCs, ConToPrim), Hydro::Fluxes runs on it (stage 0: no
+//! driver needed; FOFC held off -- it only acts on bad cells, none in an equilibrium),
+//! the panel-seam fluxes are reconciled as SendFlux/RecvFlux do, the tangential flux
+//! divergence is formed exactly as RKUpdate forms it and the coordinate source is added
+//! by the very routine HydroSrcTerms calls (bdt = 1, into a zeroed array), with the
+//! angular-momentum corrections of the stage (hydro AmModule::AmTransportProbe, the
+//! pgen's AmFix) from the same fluxes.  Then
+//!     g_c = -R_c/rho_eq,  R_c = -div F_c + S_geo,c  (c = IM2, IM3; covariant on cs),
+//! and SourceFunc adds rho g_c: at the IC the hydro's tangential RHS is cancelled to
+//! round-off.  Everything is restored, so the live stage is untouched.  One call per run
+//! segment (W_eq and the code are the same on a restart, so g is too).
+
+void WbTanProbe(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  hydro::Hydro *ph = pmbp->phydro;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1m1 = indcs.nx1 + 2*ng - 1;
+  const int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng - 1) : 0;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  const bool multi_d = pm->multi_d, three_d = pm->three_d;
+
+  auto dup5 = [](const DvceArray5D<Real> &a) {
+    DvceArray5D<Real> b(Kokkos::view_alloc("wbtan_sv", Kokkos::WithoutInitializing),
+                        a.layout());
+    Kokkos::deep_copy(b, a);
+    return b;
+  };
+  auto dup4 = [](const DvceArray4D<Real> &a) {
+    DvceArray4D<Real> b(Kokkos::view_alloc("wbtan_sv", Kokkos::WithoutInitializing),
+                        a.layout());
+    Kokkos::deep_copy(b, a);
+    return b;
+  };
+  const bool hasder = (ph->wder.size() > 0);
+  const bool hastmp = (ph->wtemp.size() > 0);
+  const bool haswbq = (ph->wbq0.size() > 0);
+  DvceArray5D<Real> su0 = dup5(ph->u0), sw0 = dup5(ph->w0);
+  DvceArray5D<Real> sder, swbq, sf1 = dup5(ph->uflx.x1f), sf2 = dup5(ph->uflx.x2f);
+  DvceArray5D<Real> sf3 = dup5(ph->uflx.x3f);
+  DvceArray4D<Real> stmp;
+  if (hasder) sder = dup5(ph->wder);
+  if (hastmp) stmp = dup4(ph->wtemp);
+  if (haswbq) swbq = dup5(ph->wbq0);
+  const bool sv_built = ph->wb_cache_built;
+  const bool sv_fofc = ph->use_fofc;
+
+  // W_eq -> u0 in the active cells (v = 0; E = eint (+ rho Phi_tot with etotgrav), as
+  // the IC), then the ghosts EXACTLY as the live stage gets them: the MeshBlock/panel
+  // exchange (own MeshBoundaryValuesCC, own communicators, same seam resample and rho
+  // guard as pbval_u), the physical + user x1 BCs, Hydro::ConToPrim
+  auto u0 = ph->u0;
+  auto weq = *wbtan::weq;
+  auto phi0 = ph->phicc0;
+  const bool etg = ph->use_etotgrav;
+  const int nvar = ph->nhydro + ph->nscalars;
+  par_for("wbtan_u", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    const Real d = weq(m,0,k,j,i);
+    u0(m,IDN,k,j,i) = d;
+    u0(m,IM1,k,j,i) = 0.0;
+    u0(m,IM2,k,j,i) = 0.0;
+    u0(m,IM3,k,j,i) = 0.0;
+    u0(m,IEN,k,j,i) = weq(m,1,k,j,i) + (etg ? d*phi0(m,k,j,i) : 0.0);
+    for (int n=IEN+1; n<nvar; ++n) u0(m,n,k,j,i) = 0.0;
+  });
+  static MeshBoundaryValuesCC *pbv = nullptr;
+  if (pbv == nullptr) {
+    pbv = new MeshBoundaryValuesCC(pmbp, nullptr, false);
+    pbv->cs_rho_guard = ph->pbval_u->cs_rho_guard;
+    pbv->cs_lin_resample = ph->pbval_u->cs_lin_resample;
+    pbv->InitializeBuffers(nvar);
+  }
+  while (pbv->InitRecv(nvar) == TaskStatus::incomplete) {}
+  if (pm->use_cubed_sphere) {
+    while (pbv->InitFluxSeamRecv(nvar) == TaskStatus::incomplete) {}
+  }
+  while (pbv->PackAndSendCC(ph->u0, ph->coarse_u0) == TaskStatus::incomplete) {}
+  while (pbv->RecvAndUnpackCC(ph->u0, ph->coarse_u0) == TaskStatus::incomplete) {}
+  while (pbv->ClearSend() == TaskStatus::incomplete) {}
+  while (pbv->ClearRecv() == TaskStatus::incomplete) {}
+  (void) ph->ApplyPhysicalBCs(nullptr, 0);
+  // no temperature guess (tguess <= 0: the table solve starts from its own bracket), so
+  // W_eq's (T, p, Gamma_1) do not depend on the live wtemp: g is the same on a fresh
+  // start and on every restart
+  if (hastmp) Kokkos::deep_copy(ph->wtemp, 0.0);
+  const bool sv_trk = ph->c2p_track;   // C2PTrack needs the driver
+  ph->c2p_track = false;
+  (void) ph->ConToPrim(nullptr, 0);
+  ph->c2p_track = sv_trk;
+  ph->wb_cache_built = false;   // the x1 WB background of W_eq
+  ph->use_fofc = false;
+  ph->Fluxes(nullptr, 0);
+  // the panel-seam flux reconciliation of SendFlux/RecvFlux
+  if (pm->use_cubed_sphere) {
+    while (pbv->PackAndSendFluxSeamCC(ph->uflx) == TaskStatus::incomplete) {}
+    while (pbv->RecvAndUnpackFluxSeamCC(ph->uflx) == TaskStatus::incomplete) {}
+    while (pbv->ClearFluxSend() == TaskStatus::incomplete) {}
+    while (pbv->ClearFluxRecv() == TaskStatus::incomplete) {}
+  }
+  // the coordinate source of W_eq alone, with bdt = 1, into a zeroed array
+  DvceArray5D<Real> us("wbtan_us", ph->u0.extent(0), ph->u0.extent(1),
+                       ph->u0.extent(2), ph->u0.extent(3), ph->u0.extent(4));
+  if (pm->use_cubed_sphere) {
+    pmbp->pcoord->SrcTermsGnomonicEquiangle(ph->w0, ph->wder, ph->pwb, ph->uflx,
+                                            ph->peos->eos_data, 1.0, us);
+  } else {
+    pmbp->pcoord->SrcTermsSphericalPolarHydro(ph->w0, ph->pwb, ph->uflx,
+                                              ph->peos->eos_data, 1.0, us);
+  }
+  // the angular-momentum corrections of the same stage, from W_eq's fluxes: the hydro
+  // module's (<hydro>/am_transport | am_vector, HydroSrcTerms) and the pgen's
+  // problem/am_transport part of AmFix (T_cons - T_code: a transport correction whose
+  // sum is the boundary torque), both with bdt = 1 into `us` (AmFix adds to the fluid's
+  // u0, so u0 is pointed at a zeroed scratch for it).  NOT the problem/coriolis_am part:
+  // -Omega Q_c of W_eq is the Coriolis torque on the equilibrium's NUMERICAL mass fluxes
+  // (the first stage's radial redistribution, sum = Omega dI/dt); frozen into g_t it was
+  // a constant net z torque (Ttide -5.5e36 on the cs C8 WASP deck, -9.8e34 = -1.2e-3
+  // Iw Omega per rotation on the C32 3x deck; wbtan torque check 11-01).  The live AmFix
+  // applies it to the evolving state every stage, as without the key.
+  if (ph->pam != nullptr) {
+    hydro::AmFluid fl{us, ph->u1, ph->w0, ph->wder, DvceArray5D<Real>(), ph->uflx,
+                      ph->peos->eos_data, false, ph->use_wellbalance_static, ph->pwb};
+    ph->pam->AmTransportProbe(fl);
+  }
+  if (amh::trans) {
+    Kokkos::deep_copy(ph->u0, 0.0);
+    const bool sv_fix = amh::fix;
+    amh::fix = false;
+    AmFix(pm, 1.0);
+    amh::fix = sv_fix;
+    auto u0a = ph->u0;
+    auto usa = us;
+    par_for("wbtan_amfix", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      usa(m,IM2,k,j,i) += u0a(m,IM2,k,j,i);
+      usa(m,IM3,k,j,i) += u0a(m,IM3,k,j,i);
+    });
+  }
+  auto flx1 = ph->uflx.x1f, flx2 = ph->uflx.x2f, flx3 = ph->uflx.x3f;
+  auto area1 = pmbp->pcoord->area.x1f, area2 = pmbp->pcoord->area.x2f;
+  auto area3 = pmbp->pcoord->area.x3f;
+  auto volume = pmbp->pcoord->volume;
+  auto w0 = ph->w0;
+  auto gt = *wbtan::gt;
+  Kokkos::deep_copy(gt, 0.0);
+  par_for("wbtan_gt", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    for (int c=0; c<2; ++c) {
+      const int n = IM2 + c;
+      Real divf = (flx1(m,n,k,j,i+1)*area1(m,k,j,i+1)
+                   - flx1(m,n,k,j,i)*area1(m,k,j,i))/volume(m,k,j,i);
+      if (multi_d) {
+        divf += (flx2(m,n,k,j+1,i)*area2(m,k,j+1,i)
+                 - flx2(m,n,k,j,i)*area2(m,k,j,i))/volume(m,k,j,i);
+      }
+      if (three_d) {
+        divf += (flx3(m,n,k+1,j,i)*area3(m,k+1,j,i)
+                 - flx3(m,n,k,j,i)*area3(m,k,j,i))/volume(m,k,j,i);
+      }
+      const Real rhs = -divf + us(m,n,k,j,i);
+      gt(m,c,k,j,i) = -rhs/w0(m,IDN,k,j,i);
+    }
+  });
+
+  // restore the live state
+  Kokkos::deep_copy(ph->u0, su0);
+  Kokkos::deep_copy(ph->w0, sw0);
+  Kokkos::deep_copy(ph->uflx.x1f, sf1);
+  Kokkos::deep_copy(ph->uflx.x2f, sf2);
+  Kokkos::deep_copy(ph->uflx.x3f, sf3);
+  if (hasder) Kokkos::deep_copy(ph->wder, sder);
+  if (hastmp) Kokkos::deep_copy(ph->wtemp, stmp);
+  if (haswbq) Kokkos::deep_copy(ph->wbq0, swbq);
+  ph->wb_cache_built = sv_built;
+  ph->use_fofc = sv_fofc;
+  wbtan::ready = true;
+
+  // one line: the size of g_t (max |g_c| over the rank's cells, rank 0)
+  Real gmax = 0.0;
+  Kokkos::parallel_reduce("wbtan_gmax",
+      Kokkos::RangePolicy<DevExeSpace>(0, static_cast<int>(gt.size())),
+      KOKKOS_LAMBDA(const int q, Real &mx) {
+        mx = fmax(mx, fabs(gt.data()[q]));
+      }, Kokkos::Max<Real>(gmax));
+  if (global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan: equilibrium residual probe "
+              << "done at cycle " << pm->ncycle << ", max |g_t| (rank 0) = " << gmax
+              << " cm/s^2" << std::endl;
+  }
+}
+
 void SourceFunc(Mesh *pm, Real bdt) {
+  if (wbtan::on && !wbtan::ready) WbTanProbe(pm, bdt);
   EBudStage(pm, bdt);
   DhjFluxStage(pm);
   if (amh::on) AmHstStage(pm);
@@ -4510,6 +5312,18 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const Real sp_tau_ = dhj_sp_top_tau;
     const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
     const bool rotpot_src = rotpot && use_wellbalance_dynamic;
+    // roche-dhj-1031 problem/roche: the TANGENTIAL tidal force -grad_t TidePot (the radial
+    // part is in phicc0/phi0 -> the well-balanced source; the work in the etotgrav flux,
+    // both required with roche).  rgms = 0 when off: not applied, bitwise.
+    const Real rgms = pm->pgen->hot_jupiter_param.roche ?
+                      pm->pgen->hot_jupiter_param.roche_gms : 0.0;
+    const Real rra = pm->pgen->hot_jupiter_param.roche_a;
+    // roche-wbtan-1101 problem/roche_wb_tan: the tangential centrifugal + tidal force is
+    // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
+    // radial terms unchanged; no energy term (etotgrav books the potential work)
+    const bool wbt_ = wbtan::on;
+    DvceArray5D<Real> wbtg_;
+    if (wbt_) wbtg_ = *wbtan::gt;
 
     // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
     // plain values. Radii rebuilt here with CellCenterX/LeftEdgeX are UNSTRETCHED, so
@@ -4634,8 +5448,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real cosine = cos(theta);
           Real oor = SQR(omega)*r*sine;
           Real cor = 2.0*omega*vphi;
+          if (wbt_) {
+            u0(m,IM2,k,j,i) += (rho*cor*cosine + rho*wbtg_(m,0,k,j,i))*bdt;
+            u0(m,IM3,k,j,i) += (-rho*2.0*omega*(vr*sine+vtheta*cosine)
+                                + rho*wbtg_(m,1,k,j,i))*bdt;
+          } else {
           u0(m,IM2,k,j,i) += rho*(cor+oor)*cosine*bdt;
           u0(m,IM3,k,j,i) += -rho*2.0*omega*(vr*sine+vtheta*cosine)*bdt;
+          }
           // rot_potential: the RADIAL centrifugal force lives in the potential (the
           // well-balanced source and, with etotgrav, the energy flux carry it); only the
           // theta part and Coriolis stay explicit here
@@ -4668,6 +5488,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
             // potential is deliberately NOT carried in phicc0, so use_etotgrav does not
             // already account for it.
             u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
+          }
+          // roche-dhj-1031: tangential -grad TidePot (stellar_tide is refused with it)
+          if (rgms != 0.0 && !wbt_) {
+            const Real cph = cos(phi), sph = sin(phi);
+            Real gs, gy, gz;
+            roche::TideGrad(rgms, rra, r*sine*cph, r*sine*sph, r*cosine, gs, gy, gz);
+            u0(m,IM2,k,j,i) -= rho*(gs*cosine*cph + gy*cosine*sph - gz*sine)*bdt;
+            u0(m,IM3,k,j,i) -= rho*(-gs*sph + gy*cph)*bdt;
           }
         } else if (use_cubed_sphere_) {
           // CUBED SPHERE: the same corotating-frame forces the spherical-polar branch
@@ -4716,8 +5544,15 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // Omega^2 r sin^2(theta) = Omega^2 (x rh0 + y rh1), which the potential carries
           const Real acr_rot = rotpot_src ? SQR(omega)*(xx*rh0 + yy*rh1) : 0.0;
           u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1 - acr_rot)*bdt;
+          if (wbt_) {
+            // Coriolis only, analytically; the centrifugal (+ tidal) part is rho g_t
+            const Real ccx =  2.0*omega*vcy, ccy = -2.0*omega*vcx;
+            u0(m,IM2,k,j,i) += rho*(ccx*e1[0] + ccy*e1[1] + wbtg_(m,0,k,j,i))*bdt;
+            u0(m,IM3,k,j,i) += rho*(ccx*e2[0] + ccy*e2[1] + wbtg_(m,1,k,j,i))*bdt;
+          } else {
           u0(m,IM2,k,j,i) += rho*(acx*e1[0] + acy*e1[1])*bdt;
           u0(m,IM3,k,j,i) += rho*(acx*e2[0] + acy*e2[1])*bdt;
+          }
           // Only the centrifugal part does work -- Coriolis is perpendicular to v.  With
           // rot_potential AND etotgrav the etotgrav flux rho v Phi_tot (TotPotAt on all
           // three face sets) already does the whole centrifugal work, so no energy
@@ -4727,6 +5562,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
             u0(m,IEN,k,j,i) += rho*(SQR(omega)*(xx*vcx + yy*vcy)
                                     - ((rotpot && use_etotgrav) ?
                                        SQR(omega)*(xx*rh0 + yy*rh1)*v1 : 0.0))*bdt;
+          }
+          // roche-dhj-1031: tangential -grad TidePot.  The substellar point is along -x
+          // (CSCellAngles: phi = atan2(-y, -x)), so the stellar frame is s = -x, y' = -y,
+          // z; the Cartesian acceleration is (gs, gy', -gz), projected like the
+          // centrifugal one above on e1, e2 (covariant momentum components)
+          if (rgms != 0.0 && !wbt_) {
+            Real gs, gy, gz;
+            roche::TideGrad(rgms, rra, -r*rh0, -r*rh1, r*rh2, gs, gy, gz);
+            u0(m,IM2,k,j,i) += rho*(gs*e1[0] + gy*e1[1] - gz*e1[2])*bdt;
+            u0(m,IM3,k,j,i) += rho*(gs*e2[0] + gy*e2[1] - gz*e2[2])*bdt;
           }
         } else {
           // corotating beta-plane approximation e.g. Fromang+2016
@@ -5397,7 +6242,8 @@ void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm) {
           const Real fT0 = xT(m,k,j,ie+1) - static_cast<Real>(iT0);
           const Real fP0 = xP(m,k,j,ie+1) - static_cast<Real>(iP0);
           const Real gtop = EffGravAt(hj.grav, hj.ap, x1v(m,ie+1), hj.grav_point_mass,
-                                      hj.omega, mu0, hj.stellar_tide);
+                                      hj.omega, mu0, hj.stellar_tide)
+                            *cf(m,k,j,4);   // roche-dhj-1031: |grad Phi|/g_pm, else 1
           for (int g=0; g<CK_NG; ++g) {
             const Real kap = ck_kappa(lk, iT0, fT0, iP0, fP0, b, g) + kc(m,b,ie+1,k,j);
             tau[g] = kap*ptop*1.0e6/gtop;
@@ -5588,7 +6434,18 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T) {
+void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
+                 const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext) {
+    // problem/ic_adiabat_ext: below the table bottom, the adiabat (ic_adiabat_extension);
+    // Ne = 0 or inside the table: the original lookup below, unchanged
+    if (Ne > 1 && log10(p) > lgparr(N-1)) {
+      const Real lge = log10(p);
+      const Real dle = (lgpext(Ne-1) - lgpext(0))/(Ne-1);
+      int k = static_cast<int>(std::floor((lge - lgpext(0))/dle));
+      k = (k < 0) ? 0 : ((k > Ne-2) ? Ne-2 : k);
+      T = Text(k) + (Text(k+1) - Text(k))/(lgpext(k+1) - lgpext(k))*(lge - lgpext(k));
+      return;
+    }
     
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
@@ -5641,7 +6498,18 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
 }
 
 template <typename View1D>
-void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T) {
+void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T,
+                 const int &Ne, const View1D &Text, const View1D &lgpext) {
+    // problem/ic_adiabat_ext: below the table bottom, the adiabat (ic_adiabat_extension);
+    // Ne = 0 or inside the table: the original lookup below, unchanged
+    if (Ne > 1 && log10(p) > lgparr(N-1)) {
+      const Real lge = log10(p);
+      const Real dle = (lgpext(Ne-1) - lgpext(0))/(Ne-1);
+      int k = static_cast<int>(std::floor((lge - lgpext(0))/dle));
+      k = (k < 0) ? 0 : ((k > Ne-2) ? Ne-2 : k);
+      T = Text(k) + (Text(k+1) - Text(k))/(lgpext(k+1) - lgpext(k))*(lge - lgpext(k));
+      return;
+    }
     
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
@@ -5783,7 +6651,8 @@ template <typename View1D>
 void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                       const Real &ap, const bool &grav_pmass, const View1D &Tarr,
                       const View1D &lgparr, const int &N, const Real &zmax,
-                      View1D zarr, View1D logparr, const Real zlow) {
+                      View1D zarr, View1D logparr, const Real zlow,
+                      const int &Ne, const View1D &Text, const View1D &lgpext) {
     // zlow < 0 (problem/ic_profile only): the column also covers z in [zlow, 0) -- the
     // cells and inner ghosts below the 250 bar anchor, deepest on the equator under
     // rot_potential -- integrated DOWN from p0 through the same table T(p), so they sit
@@ -5799,14 +6668,14 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
         Real T;
         const Real p = exp(logparr(n));
         const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
-        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        get_init_Tp_host(N, Tarr, lgparr, p, T, Ne, Text, lgpext);
         logparr(n+1) = logparr(n) + gz*dzd*DensFromPT(eos, Rgas, p, T)/p;
       }
       for (int n=n0; n>0; n--) {              // down
         Real T;
         const Real p = exp(logparr(n));
         const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
-        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        get_init_Tp_host(N, Tarr, lgparr, p, T, Ne, Text, lgpext);
         logparr(n-1) = logparr(n) - gz*dzd*DensFromPT(eos, Rgas, p, T)/p;
       }
       return;
@@ -5830,7 +6699,7 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
         const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
         const Real fac = gz/Rgas*dz;
 
-        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        get_init_Tp_host(N, Tarr, lgparr, p, T, Ne, Text, lgpext);
 
         // n+1 is guarded: logparr holds N entries, so the last pass of this loop used to
         // integrate one step PAST THE END of it. A one-element write off the end of a
@@ -5854,7 +6723,8 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
+                  const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext) {
 
 //    Real Rgas = 4.593e7;
     Real bar = 1.0e6;
@@ -5867,11 +6737,11 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
         if (Nt > N-2) Nt = N-2;   // as in get_wb_eos: never read past the column top
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
-        get_init_Tp(N, Tarr, lgparr, p,T);
+        get_init_Tp(N, Tarr, lgparr, p,T, Ne, Text, lgpext);
         rho = DensFromPT(eos, Rgas, p, T);
     } else {
         Real T0;
-        get_init_Tp(N, Tarr, lgparr, p0,T0);
+        get_init_Tp(N, Tarr, lgparr, p0,T0, Ne, Text, lgpext);
         Real rho0 = DensFromPT(eos, Rgas, p0, T0);
 //        Real grav_acc = -942.0;
         Real H0 = -p0/rho0/grav_acc;
@@ -6057,6 +6927,54 @@ void read_ic_profile(const std::string &fname, const int &N, View1D Tarr, View1D
   std::cout << "deep_hot_jupiter_rt: initial T(p) from problem/ic_profile '" << fname
             << "' (" << nt << " rows, log10 p = " << lg0 << " .. " << lg1
             << " barye)" << std::endl;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int ic_adiabat_extension
+//! \brief problem/ic_adiabat_ext: T(log10 p) BELOW the resampled IC table (Tarr, lgparr,
+//! N points), along the adiabat through its bottom row: dlog10 T/dlog10 p = GradAd(p, T)
+//! of the deck's EOS (pgen_eos_utils.hpp; (gamma-1)/gamma for an ideal gas), classical
+//! RK4 on Ne points uniform in log10 p from lgparr(N-1) (exactly; Text(0) = Tarr(N-1))
+//! over `dex` decades.  Host, setup only (GradAd root finds the density).  Returns Ne
+//! (0 if dex <= 0).  T is kept below 10^5.9 K (inside the general EOS table).
+
+template <typename View1D>
+int ic_adiabat_extension(const EOS_Data &eos, const Real &gamma, const Real &Rgas,
+                         const int &N, const View1D &Tarr, const View1D &lgparr,
+                         const Real &dex, const int &Ne, View1D Text, View1D lgpext) {
+  if (!(dex > 0.0) || Ne < 2) return 0;
+  const Real lg0 = lgparr(N-1), h = dex/(Ne - 1);
+  const Real tmax = std::pow(10.0, eos.IsGeneral() ? 5.9 : 30.0);
+  auto slope = [&](const Real lgp, const Real lt) {
+    const Real tk = std::min(std::pow(10.0, lt), tmax);
+    return GradAd(eos, gamma, Rgas, std::pow(10.0, lgp), tk);
+  };
+  lgpext(0) = lg0;
+  Text(0) = Tarr(N-1);
+  Real lt = std::log10(Tarr(N-1));
+  for (int k=0; k<Ne-1; ++k) {
+    const Real lgp = lg0 + k*h;
+    const Real k1 = slope(lgp, lt);
+    const Real k2 = slope(lgp + 0.5*h, lt + 0.5*h*k1);
+    const Real k3 = slope(lgp + 0.5*h, lt + 0.5*h*k2);
+    const Real k4 = slope(lgp + h, lt + h*k3);
+    lt += h*(k1 + 2.0*k2 + 2.0*k3 + k4)/6.0;
+    lgpext(k+1) = lg0 + (k+1)*h;
+    Text(k+1) = std::min(std::pow(10.0, lt), tmax);
+  }
+  if (global_variable::my_rank == 0) {
+    const Real gb = GradAd(eos, gamma, Rgas, std::pow(10.0, lg0), Tarr(N-1));
+    const Real gt = (Tarr(N-1) > Tarr(N-2)) ?
+        std::log10(Tarr(N-1)/Tarr(N-2))/(lgparr(N-1) - lgparr(N-2)) : 0.0;
+    const int k2x = static_cast<int>(std::lround((Ne - 1)*std::log10(2.0)/dex));
+    std::cout << "deep_hot_jupiter_rt: problem/ic_adiabat_ext: below the IC table bottom ("
+              << std::pow(10.0, lg0)/1.0e6 << " bar, " << Tarr(N-1) << " K; table slope "
+              << gt << ", nabla_ad " << gb << ") T follows the adiabat: "
+              << std::pow(10.0, lgpext(k2x))/1.0e6 << " bar " << Text(k2x) << " K .. "
+              << std::pow(10.0, lgpext(Ne-1))/1.0e6 << " bar " << Text(Ne-1) << " K"
+              << std::endl;
+  }
+  return Ne;
 }
 
 template <typename View1D>
@@ -6750,6 +7668,92 @@ void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn DhjTideTorque (tidetrq-1101)
+//! \brief the z torque [g cm^2 s^-2] of the APPLIED tangential tide about the spin axis,
+//! sum over this rank's active cells of rho (r x a_t)_z vol = rho R (a_t . phi_hat) vol
+//! (the history output sums the ranks), at the current w0 (instantaneous, like Lrel/Iw):
+//! the explicit problem/roche tangential -grad TidePot, or with problem/roche_wb_tan the
+//! probed g_t (0 before the probe).  The radial part carries no z torque.  History
+//! column Ttide, present only with problem/roche, to close L_z in the planet runs.
+
+Real DhjTideTorque(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool mhd = (pmbp->pmhd != nullptr);
+  auto w0 = mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto x2v_ = pmbp->pcoord->x2v;
+  auto x3v_ = pmbp->pcoord->x3v;
+  auto &size = pmbp->pmb->mb_size;
+  auto &panel = pmbp->pmb->mb_panel;
+  auto &ic = pm->mb_indcs;
+  const int is = ic.is, js = ic.js, ks = ic.ks;
+  const int nx1 = ic.nx1, nx2 = ic.nx2, nx3 = ic.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const bool cs = pm->use_cubed_sphere, sp = pm->use_spherical_polar;
+  const Real rgms = pm->pgen->hot_jupiter_param.roche_gms;
+  const Real rra = pm->pgen->hot_jupiter_param.roche_a;
+  const bool wbt = wbtan::on;
+  if ((wbt && !wbtan::ready) || !(cs || sp)) return 0.0;
+  DvceArray5D<Real> g;
+  if (wbt) g = *wbtan::gt;
+  Real tq = 0.0;
+  Kokkos::parallel_reduce("dhj_tide_torque",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nx3*nx2*nx1),
+  KOKKOS_LAMBDA(const int idx, Real &sum) {
+    const int m = idx/(nx3*nx2*nx1);
+    int rem = idx - m*(nx3*nx2*nx1);
+    const int k = ks + rem/(nx2*nx1);
+    rem -= (k - ks)*(nx2*nx1);
+    const int j = js + rem/nx1;
+    const int i = is + rem - (j - js)*nx1;
+    const Real r = x1v(m,i);
+    const Real rv = w0(m,IDN,k,j,i)*vol(m,k,j,i);
+    if (sp) {
+      const Real theta = x2v_(m,j), phi = x3v_(m,k) - M_PI;
+      const Real sine = sin(theta), cosine = cos(theta);
+      Real aphi;
+      if (wbt) {
+        aphi = g(m,1,k,j,i);
+      } else {
+        const Real cph = cos(phi), sph = sin(phi);
+        Real gs, gy, gz;
+        roche::TideGrad(rgms, rra, r*sine*cph, r*sine*sph, r*cosine, gs, gy, gz);
+        aphi = -(-gs*sph + gy*cph);
+      }
+      sum += rv*r*sine*aphi;
+    } else {
+      const Real x2 = CellCenterX(j-js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+      const Real x3 = CellCenterX(k-ks, nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+      const int pnl = panel.d_view(m);
+      Real qc[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(pnl, 0.25*M_PI*x2, 0.25*M_PI*x3, qc);
+      cubed_sphere::PanelTangents(pnl, 0.25*M_PI*x2, 0.25*M_PI*x3, e1, e2);
+      const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+      const Real rh0 = qc[0]*qn, rh1 = qc[1]*qn, rh2 = qc[2]*qn;
+      Real ax, ay;
+      if (wbt) {
+        // covariant (g2, g3) on the unit pair (e1, e2) -> the tangential vector
+        const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+        const Real id = 1.0/(1.0 - c*c);
+        const Real a1 = (g(m,0,k,j,i) - c*g(m,1,k,j,i))*id;
+        const Real a2 = (g(m,1,k,j,i) - c*g(m,0,k,j,i))*id;
+        ax = a1*e1[0] + a2*e2[0];
+        ay = a1*e1[1] + a2*e2[1];
+      } else {
+        // as the source: Cartesian acceleration (gs, gy, -gz) in the chart frame
+        Real gs, gy, gz;
+        roche::TideGrad(rgms, rra, -r*rh0, -r*rh1, r*rh2, gs, gy, gz);
+        ax = gs;
+        ay = gy;
+      }
+      sum += rv*r*(rh0*ay - rh1*ax);
+    }
+  }, Kokkos::Sum<Real>(tq));
+  return tq;
+}
+
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
   constexpr int NFH0 = 9;
@@ -6758,7 +7762,10 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // problem/am_hst: eight columns after all the others
   const int NFL = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
-  pdata->nhist = NFH;
+  // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
+  const bool ttide = pm->pgen->hot_jupiter_param.roche;
+  pdata->nhist = NFH + (ttide ? 1 : 0);
+  if (ttide) pdata->label[NFH] = "Ttide";
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
   pdata->label[2] = "Lsw_abs";
@@ -6917,6 +7924,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
   }
   if (amh::on) AmHstColumns(pdata, pm, NFL);
+  if (ttide) pdata->hdata[NFH] = DhjTideTorque(pm);
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
   array_sum::GlobalSum wsum;

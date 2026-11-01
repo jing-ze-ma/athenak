@@ -89,6 +89,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vgdray.hpp"
 #if defined(KOKKOS_ENABLE_CUDA)
 #include <cub/cub.cuh>
 #endif
@@ -103,14 +104,28 @@ namespace {
 // env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
 int g_vgd_apoll = 0;
 
-void VgdFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
-            << "<rad_m1>/vet_gd: " << msg << std::endl;
-  std::exit(EXIT_FAILURE);
-}
+void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_m1>/vet_gd: ", msg);}
 
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
+
+// share3-1031: the sp stencil accessor of the shared upwind core (rad_m1_vgdray.hpp):
+// the four (theta, phi) corners of the bilinear foot (q = 0..3: (k0,j0), (k0,j1),
+// (k1,j0), (k1,j1)), the nested bilinear VgdLerp as before
+struct VgdSt4 {
+  int k0, k1, j0, j1;
+  Real uj, uk;
+  KOKKOS_INLINE_FUNCTION int N() const {return 4;}
+  KOKKOS_INLINE_FUNCTION int K(const int e) const {return (e < 2) ? k0 : k1;}
+  KOKKOS_INLINE_FUNCTION int J(const int e) const {return (e % 2 == 0) ? j0 : j1;}
+  KOKKOS_INLINE_FUNCTION Real W(const int e) const {
+    return ((e < 2) ? (1.0 - uk) : uk)*((e % 2 == 0) ? (1.0 - uj) : uj);
+  }
+  template <typename F>
+  KOKKOS_INLINE_FUNCTION Real Interp(const F &f) const {
+    return VgdLerp(VgdLerp(f(k0,j0), f(k0,j1), uj), VgdLerp(f(k1,j0), f(k1,j1), uj), uk);
+  }
+};
 
 // vgdlat-1012 vet_gd_symref: the weight of the symmetric shift (ref - shell mean) in a
 // cell: the fraction of the cell's formal-solution J that the shell-mean (twin) field
@@ -152,15 +167,7 @@ Real VgdSrRef(const DvceArray1D<Real> &sr, const int c, const int i, const int c
   return sr(M1_VGD_SR_J*c1 + i);   // M1_VGD_HRJ
 }
 
-// vgdrot-1011: a range policy whose functor rides as a KERNEL ARGUMENT (HintLightWeight,
-// as VetFor in rad_m1_vet.cpp): the per-shell sweep kernels (shell, pack, scatter) have
-// 0.5-4 kB functors, which by default take the constant-memory launch with a host wait
-// on the previous such launch; without it the host can run ahead of the device (the
-// same kernels, the same numbers)
-inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
-  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
-                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
-}
+// (VgdLight: rad_m1_vetseg.hpp)
 
 // vgdrot-1011 vet_gd_halo_ipc: flags in device memory written over NVLink by the peers
 // (as implicit_halo_ipc): [0, NS) arrivals by partner slot, [NS, 2 NS) acks; a spin gives
@@ -228,7 +235,6 @@ void VgdIpcWaitN(const long long *f, const int np, const long long target, int *
 #endif
 }
 
-// the positive first-order SC weights (VcolW of rad_m1_vetcol.cpp, term for term)
 // unify-sc-gd-1012 (#6) vet_interp = auto: a material edge in the upwind stencil, the
 // extinction contrast max/min over the corners of nonzero weight > kVetCornerRatio
 // (rad_m1_vetseg.hpp; csx holds ln chi)
@@ -245,19 +251,6 @@ bool VgdCornerEdge(const CS &csx, const int m, const int k0, const int k1, const
     lmx = fmax(lmx, l);
   }
   return (lmx - lmn) > log(kVetCornerRatio);
-}
-
-KOKKOS_INLINE_FUNCTION
-void VgdW(const Real dtau, Real &ex, Real &w0, Real &wu) {
-  ex = exp(-dtau);
-  if (dtau < 1.0e-3) {
-    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-  } else {
-    const Real g = (1.0 - ex)/dtau;
-    w0 = 1.0 - g;
-    wu = g - ex;
-  }
 }
 
 // HEALPix ring-scheme centres (12 ns^2) with the moment-fixed weights
@@ -486,6 +479,143 @@ void VgdScanOne(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t n
 #endif
 }
 
+// geo-1031 (<rad_m1>/vet_gd_geo = n >= 1, stored as vgd_ls = -n): the GEODESIC set, the
+// vertices of the class-I subdivided icosahedron (10 n^2 + 2 directions: n = 1 12, 2 42,
+// 3 92), weights = the solid angle of each vertex's spherical Voronoi cell (the polygon
+// of the circumcentres of its triangles, split into the triangles (vertex, edge midpoint,
+// circumcentre)) / 4 pi.  The subdivision and the weights keep the full icosahedral
+// symmetry (incl. the inversion, +-Omega pairs): sum w = 1, sum w n = 0, sum w nn = I/3
+// and the 4th moments isotropic to round-off (checked by VgdMomentCheck)
+namespace {
+double VgdSphTri(const double *a, const double *b, const double *c) {
+  // the solid angle of the spherical triangle of unit vectors a, b, c (Van Oosterom)
+  const double tp = a[0]*(b[1]*c[2] - b[2]*c[1]) - a[1]*(b[0]*c[2] - b[2]*c[0]) +
+                    a[2]*(b[0]*c[1] - b[1]*c[0]);
+  const double ab = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+  const double bc = b[0]*c[0] + b[1]*c[1] + b[2]*c[2];
+  const double ca = c[0]*a[0] + c[1]*a[1] + c[2]*a[2];
+  return 2.0*std::fabs(std::atan2(tp, 1.0 + ab + bc + ca));
+}
+void VgdUnit(double *v) {
+  const double s = std::sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+  v[0] /= s; v[1] /= s; v[2] /= s;
+}
+}  // namespace
+
+bool VgdGeodesic(const int nl, std::vector<double> &d) {
+  if (nl < 1 || nl > 12) {return false;}
+  const double g = 0.5*(1.0 + std::sqrt(5.0));
+  const double iv[12][3] = {{-1, g, 0}, {1, g, 0}, {-1, -g, 0}, {1, -g, 0},
+                            {0, -1, g}, {0, 1, g}, {0, -1, -g}, {0, 1, -g},
+                            {g, 0, -1}, {g, 0, 1}, {-g, 0, -1}, {-g, 0, 1}};
+  const int fc[20][3] = {{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11},
+                         {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
+                         {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9},
+                         {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
+  // the vertices: barycentric points (i, j, k)/n of every face, merged by position
+  std::vector<std::array<double, 3>> vx;
+  std::vector<std::array<int, 3>> tr;
+  auto find = [&](double *p) {
+    VgdUnit(p);
+    for (size_t q = 0; q < vx.size(); ++q) {
+      const double dx = vx[q][0] - p[0], dy = vx[q][1] - p[1], dz = vx[q][2] - p[2];
+      if (dx*dx + dy*dy + dz*dz < 1.0e-20) {return static_cast<int>(q);}
+    }
+    vx.push_back({p[0], p[1], p[2]});
+    return static_cast<int>(vx.size()) - 1;
+  };
+  for (int f = 0; f < 20; ++f) {
+    const double *A = iv[fc[f][0]], *B = iv[fc[f][1]], *C = iv[fc[f][2]];
+    std::vector<int> id((nl + 1)*(nl + 2)/2);
+    auto at = [&](const int i, const int j) {return i*(nl + 1) - i*(i - 1)/2 + j;};
+    for (int i = 0; i <= nl; ++i) {
+      for (int j = 0; j <= nl - i; ++j) {
+        const int k = nl - i - j;
+        double p[3];
+        for (int c = 0; c < 3; ++c) {p[c] = (i*A[c] + j*B[c] + k*C[c])/nl;}
+        id[at(i, j)] = find(p);
+      }
+    }
+    for (int i = 0; i < nl; ++i) {
+      for (int j = 0; j < nl - i; ++j) {
+        tr.push_back({id[at(i, j)], id[at(i + 1, j)], id[at(i, j + 1)]});
+        if (j + 1 < nl - i) {
+          tr.push_back({id[at(i + 1, j)], id[at(i + 1, j + 1)], id[at(i, j + 1)]});
+        }
+      }
+    }
+  }
+  const int nv = static_cast<int>(vx.size());
+  if (nv != 10*nl*nl + 2) {return false;}
+  std::vector<double> w(nv, 0.0);
+  for (const auto &t : tr) {
+    double cc[3];
+    const double *a = vx[t[0]].data(), *b = vx[t[1]].data(), *c = vx[t[2]].data();
+    const double u[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+    const double v[3] = {c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+    cc[0] = u[1]*v[2] - u[2]*v[1];
+    cc[1] = u[2]*v[0] - u[0]*v[2];
+    cc[2] = u[0]*v[1] - u[1]*v[0];
+    if (cc[0]*a[0] + cc[1]*a[1] + cc[2]*a[2] < 0.0) {
+      cc[0] = -cc[0]; cc[1] = -cc[1]; cc[2] = -cc[2];
+    }
+    VgdUnit(cc);
+    for (int e = 0; e < 3; ++e) {
+      const double *p = vx[t[e]].data();
+      const double *q1 = vx[t[(e + 1) % 3]].data(), *q2 = vx[t[(e + 2) % 3]].data();
+      double m1[3] = {p[0] + q1[0], p[1] + q1[1], p[2] + q1[2]};
+      double m2[3] = {p[0] + q2[0], p[1] + q2[1], p[2] + q2[2]};
+      VgdUnit(m1);
+      VgdUnit(m2);
+      w[t[e]] += VgdSphTri(p, m1, cc) + VgdSphTri(p, cc, m2);
+    }
+  }
+  double ws = 0.0;
+  for (int q = 0; q < nv; ++q) {ws += w[q];}
+  d.clear();
+  for (int q = 0; q < nv; ++q) {
+    d.push_back(vx[q][0]);
+    d.push_back(vx[q][1]);
+    d.push_back(vx[q][2]);
+    d.push_back(w[q]/ws);
+  }
+  return true;
+}
+
+// geo-1031: the moment errors of a direction set (rows x y z w): max |sum w - 1|,
+// |sum w n|, |sum w n_i n_j - delta_ij / 3|, |sum w n_i n_j n_k n_l - (dd + dd + dd)/15|
+void VgdMomentCheck(const std::vector<double> &d, double e[4]) {
+  const int n = static_cast<int>(d.size()/4);
+  double m0 = 0.0, m1[3] = {0, 0, 0}, m2[3][3] = {{0}}, m4[3][3][3][3] = {{{{0}}}};
+  for (int q = 0; q < n; ++q) {
+    const double *x = &d[4*q], w = d[4*q+3];
+    m0 += w;
+    for (int i = 0; i < 3; ++i) {
+      m1[i] += w*x[i];
+      for (int j = 0; j < 3; ++j) {
+        m2[i][j] += w*x[i]*x[j];
+        for (int k = 0; k < 3; ++k) {
+          for (int l = 0; l < 3; ++l) {m4[i][j][k][l] += w*x[i]*x[j]*x[k]*x[l];}
+        }
+      }
+    }
+  }
+  e[0] = std::fabs(m0 - 1.0);
+  e[1] = e[2] = e[3] = 0.0;
+  for (int i = 0; i < 3; ++i) {
+    e[1] = std::max(e[1], std::fabs(m1[i]));
+    for (int j = 0; j < 3; ++j) {
+      e[2] = std::max(e[2], std::fabs(m2[i][j] - ((i == j) ? 1.0/3.0 : 0.0)));
+      for (int k = 0; k < 3; ++k) {
+        for (int l = 0; l < 3; ++l) {
+          const double iso = ((i == j && k == l) + (i == k && j == l) + (i == l && j == k))/15.0;
+          e[3] = std::max(e[3], std::fabs(m4[i][j][k][l] - iso));
+        }
+      }
+    }
+  }
+}
+
 bool VgdLevelSym(const int nl, std::vector<double> &d) {
   double m1;
   switch (nl) {
@@ -640,8 +770,33 @@ void RadiationM1::VetGdInit() {
     VgdProduct(vgd_gl_nmu, vgd_gl_nphi, vgd_gl_stag, vgd_base);
   } else if (vgd_ls > 0) {
     if (!VgdLevelSym(vgd_ls, vgd_base)) {VgdFatal("vet_gd_ls must be 6, 8, 10 or 12");}
+  } else if (vgd_ls < 0) {   // geo-1031 vet_gd_geo
+    if (!VgdGeodesic(-vgd_ls, vgd_base)) {VgdFatal("vet_gd_geo must be 1 .. 12");}
   } else {
     VgdDirections(vgd_nside, vgd_base);
+  }
+  // geo-1031: the moments of the set, as built and after a fixed random 3-D rotation
+  if (global_variable::my_rank == 0) {
+    double e[4], er[4];
+    VgdMomentCheck(vgd_base, e);
+    const double ax[3] = {0.3713906763541037, -0.5570860145311556, 0.7427813527082074};
+    const double an = 0.987654321, ca = std::cos(an), sa = std::sin(an);
+    std::vector<double> rb(vgd_base);
+    for (size_t q = 0; q < rb.size()/4; ++q) {   // Rodrigues
+      const double *x = &vgd_base[4*q];
+      const double kx = ax[1]*x[2] - ax[2]*x[1], ky = ax[2]*x[0] - ax[0]*x[2],
+                   kz = ax[0]*x[1] - ax[1]*x[0];
+      const double kd = ax[0]*x[0] + ax[1]*x[1] + ax[2]*x[2];
+      rb[4*q] = x[0]*ca + kx*sa + ax[0]*kd*(1.0 - ca);
+      rb[4*q+1] = x[1]*ca + ky*sa + ax[1]*kd*(1.0 - ca);
+      rb[4*q+2] = x[2]*ca + kz*sa + ax[2]*kd*(1.0 - ca);
+    }
+    VgdMomentCheck(rb, er);
+    std::cout << "<rad_m1> vet_gd direction set: " << vgd_base.size()/4
+              << " directions; moment errors |sum w - 1| " << e[0] << ", |sum w n| " << e[1]
+              << ", |sum w nn - I/3| " << e[2] << " (rotated " << er[2]
+              << "), 4th-moment anisotropy " << e[3] << " (rotated " << er[3] << ")"
+              << std::endl;
   }
   vgd_n = static_cast<int>(vgd_base.size()/4);
   if (vgd_n > M1_VGD_NMAX) {VgdFatal("too many directions");}
@@ -1724,6 +1879,7 @@ void RadiationM1::VetGdTables(const Real alpha) {
                                       + std::to_string(vgd_gl_nphi)
                                       + (vgd_gl_stag ? " staggered" : ""))
                   : ((vgd_ls > 0) ? ("level-symmetric LQ" + std::to_string(vgd_ls))
+                  : (vgd_ls < 0) ? ("geodesic level " + std::to_string(-vgd_ls))
                                   : ("HEALPix nside " + std::to_string(vgd_nside))))
               << " (" << n << " directions); "
               << (vgd_rot3 ? "3-D rotation (quasi-random axis; angle = block key)"
@@ -5446,19 +5602,9 @@ void RadiationM1::VetGdMoments() {
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real th = mbsize.d_view(m).x2min + (j - js + 0.5)*mbsize.d_view(m).dx2;
     const Real ph = mbsize.d_view(m).x3min + (k - ks + 0.5)*mbsize.d_view(m).dx3;
-    const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-    Real jt = 0.0, jb = 0.0, ht = 0.0;
-    for (int d = 0; d < n; ++d) {
-      const Real a = dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
-      const Real w = dir_(d,3);
-      jt += w*vi_(m,d,k+og,j+og,ie);
-      jb += w*vi_(m,d,k+og,j+og,ie-1);
-      ht += w*a*vi_(m,d,k+og,j+og,ie);
-    }
-    const Real rr = cx1v(m,ie)/cx1f(m,ie+1);
-    const Real hf = ht*rr*rr;
-    const Real jq = sqf ? fmin(fmax(jca*jt - jcb*jb, 0.0), jcap*jt) : jt;
-    vq_(m,k,j) = (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
+    const VgdRhatSp rh{sin(th), cos(th), sin(ph), cos(ph)};
+    vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k, j, og, ie, cx1v(m,ie)/cx1f(m,ie+1),
+                             sqf, jca, jcb, jcap, qlo, qhi, q0);
   });
 }
 

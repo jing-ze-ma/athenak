@@ -67,6 +67,12 @@ struct HotJupiterParam {
   // equilibrium of the TOTAL potential), and its radial part leaves the explicit source.
   // The theta part stays an explicit source. See TotPotAt/ZEffFromPot.
   bool rot_potential = false;
+  // roche-dhj-1031: problem/roche (read only when named; default false = bitwise): the
+  // host star's full Roche potential (companion + indirect term, roche_common.hpp
+  // TidePot) is added to the rot_potential TotPotAt everywhere the pgen builds a potential
+  // (IC, ghosts, phicc0/phi0 faces, WB); roche_gms = G M_*, roche_a = separation [cm].
+  bool roche = false;
+  Real roche_gms = 0.0, roche_a = 0.0;
   // deep_hot_jupiter_rt velocity sponges (problem/sponge_top, problem/sponge_bottom):
   // true = the top Rayleigh sponge (1e-7..1e-6 bar) / the bottom horizontal sponge
   // (50..100 bar) is applied; false switches it off. Defaults: top true, bottom false.

@@ -1074,6 +1074,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_ls")) {
       vgd_ls = pin->GetInteger("rad_m1","vet_gd_ls");
     }
+    // geo-1031: <rad_m1>/vet_gd_geo = n: the geodesic set (vgd_ls = -n; needs
+    // vet_gd_gl_nmu = 0 and no vet_gd_ls)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_geo")) {
+      const int ng_ = pin->GetInteger("rad_m1","vet_gd_geo");
+      if (ng_ > 0) {vgd_ls = -ng_;}
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
       vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
     }

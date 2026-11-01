@@ -318,20 +318,6 @@ constexpr int VC_CORE = 0;   // starts at the inner boundary sphere (face r_in)
 constexpr int VC_TAN = 1;    // tangent exactly at its first shell L
 constexpr int VC_SUB = 2;    // tangent point inside the interval below shell L
 
-// the positive first-order short-characteristics weights (vet_sc)
-KOKKOS_INLINE_FUNCTION
-void VcolW(const Real dtau, Real &ex, Real &w0, Real &wu) {
-  ex = exp(-dtau);
-  if (dtau < 1.0e-3) {
-    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-  } else {
-    const Real g = (1.0 - ex)/dtau;
-    w0 = 1.0 - g;
-    wu = g - ex;
-  }
-}
-
 // vet_col_order2: the short-characteristics weights with S(u) = S_up + (S_dn - S_up)
 // (u + a2 u (u - 1)) along the segment (u = the fraction of the optical path from the
 // upstream end), a2 in [-1, 1]: a2 = 0 is VcolW (S linear in tau).  With
@@ -850,7 +836,7 @@ void RadiationM1::VetColBuild() {
       for (int r = 0; r <= kr; ++r) {
         const Real iu = top ? (rt1 ? ab_(r,c) : 0.0) : buf_(r,c);
         Real ex, w0, wu;
-        VcolW(cseg*seg_(r,l), ex, w0, wu);
+        VetSegW(cseg*seg_(r,l), ex, w0, wu);
         if (g2) {
           // vet_col_order2: chi and S linear in r along the (incoming) segment
           const Real gb = gb_(r,l), chup = top ? ch0 : chu;
@@ -900,7 +886,7 @@ void RadiationM1::VetColBuild() {
         Real iv;
         Real ex, w0, wu;
         if (lr < l) {
-          VcolW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
+          VetSegW(0.5*(chd + ch0)*seg_(r,l-1), ex, w0, wu);
           if (g2) {
             const Real gb = gb_(r,l-1);
             VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
@@ -914,7 +900,7 @@ void RadiationM1::VetColBuild() {
           if (ty == VC_CORE) {
             // the diffusion intensity at the inner face, carried to the first shell
             Real ib = fmax(e0 + 3.0*f0*ray_(r,3)/cl, 0.0);
-            VcolW(ch0*ray_(r,2), ex, w0, wu);
+            VetSegW(ch0*ray_(r,2), ex, w0, wu);
             if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
             if (mir) {ib = fmax(buf_(r,c)*ex + wu*s0 + w0*sbot, 0.0);}
             if (trk) {
@@ -932,7 +918,7 @@ void RadiationM1::VetColBuild() {
             const Real a = ray_(r,3);
             const Real cht = (1.0 - a)*chlo + a*ch0;
             const Real st = (1.0 - a)*slo + a*s0;
-            VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
+            VetSegW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
             if (g2) {
               const Real gb = gb0_(r);
               const Real dt2 = (cht + (ch0 - cht)*gb)*ray_(r,2);
@@ -1002,7 +988,7 @@ void RadiationM1::VetColBuild() {
       const Real ch0 = chx(n1-1), s0 = src(n1-1);
       for (int r = 0; r < nray; ++r) {
         Real ex, w0, wu;
-        VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+        VetSegW(ch0*seg_(r,n1-1), ex, w0, wu);
         if (g2) {
           VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);
         }
@@ -1018,7 +1004,7 @@ void RadiationM1::VetColBuild() {
       Real hf = 0.0;
       for (int r = 0; r < nray; ++r) {
         Real ex, w0, wu;
-        VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+        VetSegW(ch0*seg_(r,n1-1), ex, w0, wu);
         if (g2) {VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);}
         const Real iv = fmax(buf_(r,c)*ex + wu*s0 + w0*stop, 0.0);
         hf += wf_(r)*muf_(r)*iv;
@@ -1214,7 +1200,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
             VcolW2((chup + (ch0 - chup)*(1.0 - gb))*sgc, -VcolC2(gb), ex, w0, wu);
           } else {
             const Real cseg = top ? ch0 : 0.5*(pr_(l+1) + ch0);
-            VcolW(cseg*sgc, ex, w0, wu);
+            VetSegW(cseg*sgc, ex, w0, wu);
           }
           const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
           irr = iv;
@@ -1303,7 +1289,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
               const Real gb = gbc;
               VcolW2((chd + (ch0 - chd)*gb)*sgc, VcolC2(gb), ex, w0, wu);
             } else {
-              VcolW(0.5*(chd + ch0)*sgc, ex, w0, wu);
+              VetSegW(0.5*(chd + ch0)*sgc, ex, w0, wu);
             }
             iv = irr*ex + wu*sd + w0*s0;
             if (trk) {
@@ -1316,7 +1302,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
               if (g2) {
                 VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);
               } else {
-                VcolW(ch0*ray_(r,2), ex, w0, wu);
+                VetSegW(ch0*ray_(r,2), ex, w0, wu);
               }
               if (mir) {ib = fmax(irr*ex + wu*s0 + w0*sbot, 0.0);}
               if (trk) {
@@ -1347,7 +1333,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
                   itr *= ex;
                 }
               } else {
-                VcolW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
+                VetSegW(0.5*(ch0 + cht)*ray_(r,2), ex, w0, wu);
                 const Real it = fmax(irr*ex + wu*s0 + w0*st, 0.0);
                 iv = it*ex + wu*st + w0*s0;
                 if (trk) {
@@ -1370,7 +1356,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         const Real ch0 = pr_(n1-1), s0 = pr_(2*n1-1);
         par_for_inner(tm, 0, nray-1, [&](const int r) {
           Real ex, w0, wu;
-          VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+          VetSegW(ch0*seg_(r,n1-1), ex, w0, wu);
           if (g2) {
             VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);
           }
@@ -1384,7 +1370,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         const Real ch0 = pr_(n1-1), s0 = pr_(2*n1-1);
         par_for_inner(tm, 0, nray-1, [&](const int r) {
           Real ex, w0, wu;
-          VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+          VetSegW(ch0*seg_(r,n1-1), ex, w0, wu);
           if (g2) {VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);}
           ir_(nray + r) = fmax(ir_(r)*ex + wu*s0 + w0*stop, 0.0);
         });

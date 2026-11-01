@@ -47,6 +47,7 @@
 #include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "utils/eint_from_cons.hpp"
 
 namespace radm1 {
 
@@ -725,7 +726,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
           const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
           const Real m1 = ug(m,IM1,k,j,i), m2 = ug(m,IM2,k,j,i), m3 = ug(m,IM3,k,j,i);
           const Real cc = csk ? ccl(m,k,j) : 0.0;
-          const Real ek0 = 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*cc*m2*m3)/(1.0 - cc*cc))*idd;
+          const Real ek0 = CsKeMom(m1, m2, m3, cc)*idd;
           Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
           if (emh) egr += emg(m,k,j,i);
           const Real eg = ug(m,IEN,k,j,i) - ek0 - egr;
@@ -738,7 +739,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
           const Real n1 = m1 + ca*k1s_(m,M1_T2_M1,k,j,i);
           const Real n2 = m2 + ca*k1s_(m,M1_T2_M1+1,k,j,i);
           const Real n3 = m3 + ca*k1s_(m,M1_T2_M1+2,k,j,i);
-          const Real ek1 = 0.5*(n1*n1 + (n2*n2 + n3*n3 - 2.0*cc*n2*n3)/(1.0 - cc*cc))*idd;
+          const Real ek1 = CsKeMom(n1, n2, n3, cc)*idd;
           const Real kw = (ca != 0.0) ? (ek1 - ek0)/ca : 0.0;
           const Real dex = k1s_(m,M1_T2_EN,k,j,i) - kw;
           k1s_(m,M1_T2_EN,k,j,i) = kw;
@@ -1470,7 +1471,7 @@ void RadiationM1::Time2VetStart() {
       if (csk) {
         const Real c = ccl(m,k,j);
         const Real m2 = uh1(m,IM2,k,j,i), m3 = uh1(m,IM3,k,j,i);
-        ke_dens = 0.5*(SQR(uh1(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+        ke_dens = CsKeMom(uh1(m,IM1,k,j,i), m2, m3, c)
                   /fmax(d, 1.0e-300);
       }
       Real eint = uh1(m,IEN,k,j,i) - ke_dens;
@@ -1509,7 +1510,7 @@ void RadiationM1::Time2VetStart() {
       if (csk) {
         const Real c = ccl(m,k,j);
         const Real m2 = uh1(m,IM2,k,j,i), m3 = uh1(m,IM3,k,j,i);
-        ekin = 0.5*(SQR(uh1(m,IM1,k,j,i)) + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c))
+        ekin = CsKeMom(uh1(m,IM1,k,j,i), m2, m3, c)
                *idd;
       }
       Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;

@@ -44,6 +44,7 @@
 #include "eos/eos.hpp"
 #include "units/units.hpp"
 #include "hydro/hydro.hpp"
+#include "utils/eint_from_cons.hpp"
 
 namespace runaway_scan {
 
@@ -140,7 +141,7 @@ inline void Scan(Mesh *pm, const char *opname) {
       const Real q1 = u0(m,IM1,k,j,i);
       const Real q2 = u0(m,IM2,k,j,i);
       const Real q3 = u0(m,IM3,k,j,i);
-      ekin = 0.5*(q1*q1 + (q2*q2 + q3*q3 - 2.0*c*q2*q3)/(1.0 - c*c))/d;
+      ekin = CsKeMom(q1, q2, q3, c)/d;
     } else {
       ekin = 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                   + SQR(u0(m,IM3,k,j,i)))/d;

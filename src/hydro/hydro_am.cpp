@@ -255,6 +255,50 @@ void AmModule::AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &f
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void AmModule::AmTransportProbe
+//! \brief roche-wbtan-1101: AmTransport's tangential momentum source of fl's state and
+//! fluxes with bdt = 1, added to fl.u0 -- the same three kernels' momentum part, without
+//! the am_vector spin-reservoir update (so nothing persistent changes).  No-op unless
+//! am_transport is on.
+
+void AmModule::AmTransportProbe(const AmFluid &fl) {
+  if (!am_transport) return;
+  Mesh *pm = pmy_pack->pmesh;
+  HydroAmV v;
+  AmFillV(v, fl);
+  auto &ic = pm->mb_indcs;
+  auto u0_ = fl.u0;
+  if (am_vector) {
+    par_for("hydro_am_vector_probe", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+            ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real dT[3], rc[3], b1[3], b2[3], cc;
+      HydroAmVecTorque(v, m, k, j, i, dT, rc, b1, b2, cc);
+      const Real r2 = rc[0]*rc[0] + rc[1]*rc[1] + rc[2]*rc[2];
+      Real dp[3];
+      HydroAmCross(dT, rc, dp);
+      const Real iv = 1.0/v.vol(m,k,j,i);
+      for (int q = 0; q < 3; ++q) {dp[q] *= iv/r2;}
+      u0_(m,IM2,k,j,i) += dp[0]*b1[0] + dp[1]*b1[1] + dp[2]*b1[2];
+      u0_(m,IM3,k,j,i) += dp[0]*b2[0] + dp[1]*b2[1] + dp[2]*b2[2];
+      (void) cc;
+    });
+    return;
+  }
+  const bool plain = !v.wbs && !v.wbsrc && !v.spcart && v.three_d && v.eos.is_ideal;
+  par_for("hydro_am_transport_probe", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1,
+          ic.ks, ic.ke, ic.js, ic.je, ic.is, ic.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real dtq, c2, c3;
+    const bool ok = plain ? HydroAmTorqueBase(v, m, k, j, i, dtq, c2, c3)
+                          : HydroAmTorque(v, m, k, j, i, dtq, c2, c3);
+    if (!ok) return;
+    u0_(m,IM2,k,j,i) += dtq*c2;
+    u0_(m,IM3,k,j,i) += dtq*c3;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void AmModule::AmSpinReturn
 //! \brief cs-open-1018 <hydro>/am_spin_return (see hydro.hpp).  Face f between cell c
 //! and its lateral neighbour n (directions rhat_c, rhat_n, d = |rhat_c - rhat_n|,

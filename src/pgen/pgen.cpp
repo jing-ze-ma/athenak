@@ -126,6 +126,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
           pin->GetOrAddBoolean("problem","stellar_tide",false);
       hot_jupiter_param.rot_potential =
           pin->GetOrAddBoolean("problem","rot_potential",false);
+      // roche-dhj-1031: read only when named (deep_hot_jupiter_rt.cpp validates them)
+      if (pin->DoesParameterExist("problem","roche")) {
+        hot_jupiter_param.roche = pin->GetBoolean("problem","roche");
+      }
       hot_jupiter_param.sponge_top =
           pin->GetOrAddBoolean("problem","sponge_top",true);
       hot_jupiter_param.sponge_bottom =
@@ -206,6 +210,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         pin->GetOrAddBoolean("problem","stellar_tide",false);
     hot_jupiter_param.rot_potential =
         pin->GetOrAddBoolean("problem","rot_potential",false);
+    // roche-dhj-1031: read only when named (deep_hot_jupiter_rt.cpp validates them)
+    if (pin->DoesParameterExist("problem","roche")) {
+      hot_jupiter_param.roche = pin->GetBoolean("problem","roche");
+    }
     hot_jupiter_param.sponge_top =
         pin->GetOrAddBoolean("problem","sponge_top",true);
     hot_jupiter_param.sponge_bottom =

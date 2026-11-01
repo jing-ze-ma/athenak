@@ -36,6 +36,19 @@
 #include "athena.hpp"
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CsKeMom
+//! \brief share2-1031: rho times the kinetic energy density on the gnomonic cubed-sphere
+//! metric from the stored (covariant) momenta, 0.5 (m1^2 + (m2^2 + m3^2 - 2 c m2 m3)/(1 -
+//! c^2)), c = cos_cell; the caller divides by rho (or multiplies by 1/rho) as before.
+//! The one copy of the expression formerly inlined in the M1 / pgen / scan kernels (same
+//! operation order: bitwise).  EintFromCons below keeps its own (raised-velocity) form.
+
+KOKKOS_INLINE_FUNCTION
+Real CsKeMom(const Real m1, const Real m2, const Real m3, const Real c) {
+  return 0.5*(m1*m1 + (m2*m2 + m3*m3 - 2.0*c*m2*m3)/(1.0 - c*c));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real EintFromCons
 //! \brief e = u0(IEN) - rho*Phi - KE, with KE on the gnomonic metric when cs is set.
 //! `cosc` is cos_cell(m,k,j) (ignored unless cs); `phi` is phicc0(m,k,j,i) (ignored

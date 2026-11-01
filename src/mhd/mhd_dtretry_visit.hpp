@@ -87,6 +87,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("use_wellbalance_dynamic", use_wellbalance_dynamic);
   v.value("use_wb_x1", use_wb_x1);
   v.value("wall_closed_ix1", wall_closed_ix1);
+  v.value("diode_ox1", diode_ox1);
   v.value("use_wb_x2", use_wb_x2);
   v.value("use_wb_rho", use_wb_rho);
   v.value("wb_rmax", wb_rmax);

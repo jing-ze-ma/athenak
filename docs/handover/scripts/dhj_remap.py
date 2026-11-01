@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Radial remap of a cubed-sphere deep_hot_jupiter_rt HYDRO restart onto a new radial
-grid.
+"""Remap of a cubed-sphere deep_hot_jupiter_rt HYDRO or MHD restart onto a new radial
+grid and/or a refined cubed sphere C(n) -> C(f n).  How-to: dhj_remap_HOWTO.md here.
 
 usage:
   dhj_remap.py RST OUTDIR [--grid "mesh/nx1=256 meshblock/nx1=256 mesh/x1min=... c1..c8"]
@@ -43,6 +43,14 @@ The
 radial remap below then runs on every fine column.  Records are written in the code's
 Z order of the new layout (panel, Morton at the root level); the pgen checks every
 LogicalLocation.  Streaming: one new MeshBlock at a time.  --selftest = gate (c).
+MHD (dhj-remap-mhd): the hydro part as above (remap.dat holds E - e_mag), and
+OUTDIR/remap_b.dat (problem/remap_bfile, set in remap.athinput) holds the edge line
+integrals of A in the radial gauge on the new grid (remap_bfield): coarse face fluxes
+kept exactly, div B at round-off with the code's areas, --bh-interp linear (default) or
+cubic horizontally.  The pgen then skips the dipole seed (problem/bbot, bbot_gauss).
+Magnetic energy is NOT conserved (C32 -> C64 at rot 320: +2.5 % total, +19 % in the
+deep grid-scale field); discard the first 0.5-1.5 rot and compare with an identity
+remap control.  --no-bfield: hydro remap.dat only.  --hfilter-deep: see hodge_filter.py.
 
 Method (per column; every column shares the radial grid), default 'avg':
   the restart holds cell AVERAGES.  ln rho and ln e (e = internal energy density, the
@@ -69,7 +77,7 @@ import struct
 import sys
 
 import numpy as np
-from scipy.interpolate import PchipInterpolator
+from scipy.interpolate import CubicSpline, PchipInterpolator
 
 NSTR = 8
 NBUMP = 2
@@ -143,14 +151,59 @@ def grid_of(par):
     known = (['f_stretch_r_c%d' % k for k in range(1, NSTR+1)] +
              ['f_stretch_r_b%d_%s' % (b, s) for b in range(1, NBUMP+1)
               for s in ('amp', 'x', 'w')] +
-             ['f_stretch_r_p_' + k for k in ('amp', 'xa', 'xb', 'w')])
+             ['f_stretch_r_p_' + k for k in ('amp', 'xa', 'xb', 'w')] +
+             ['f_stretch_r_head_nin', 'f_stretch_r_head_ij'])
     unk = [k for k in m if k.startswith('f_stretch_r_') and k not in known]
     if unk:
         raise SystemExit('unknown radial-stretch keys (grid would be wrong): %s' % unk)
     poly = m.get('use_grid_stretch_r_poly', 'false').lower() in ('true', '1')
     if not poly or m.get('use_grid_stretch_r', 'false').lower() in ('true', '1'):
         raise SystemExit('only the polynomial radial stretch is supported')
+    if 'f_stretch_r_head_nin' in m:     # radref_1031: geometric head (Mesh, mrglat-rsg-1019)
+        if 'f_stretch_r_tail_nin' in m:
+            raise SystemExit('head + tail not supported')
+        c += [float(m['f_stretch_r_head_nin']), float(m['f_stretch_r_head_ij'])]
     return (int(m['nx1']), float(m['x1min']), float(m['x1max']), np.array(c))
+
+
+def _u_plain(c, xi):
+    u = xi.copy() if isinstance(xi, np.ndarray) else float(xi)
+    xik = xi
+    for k in range(NSTR):
+        u = u + c[k]*xik*(1.0 - xi)
+        xik = xik*xi
+    for b in range(NBUMP):
+        a, xb, w = c[NSTR + 3*b:NSTR + 3*b + 3]
+        if a == 0.0:
+            continue
+        u = u + a*w*(np.tanh((xi - xb)/w) - (1.0 - xi)*np.tanh(-xb/w)
+                     - xi*np.tanh((1.0 - xb)/w))
+    pa, pxa, pxb, pw = c[NSTR + 3*NBUMP:NSTR + 3*NBUMP + 4]
+    if pa != 0.0:
+        u = u + pa*(_plat_g(pxa, pxb, pw, xi) - xi*_plat_g(pxa, pxb, pw, 1.0))
+    return u
+
+
+def head_params(nx1, c):
+    """(xh, s, xj, q, nh) exactly as Mesh (mesh.cpp, mrglat-rsg-1019) sets them"""
+    nin, ij = int(c[18]), int(c[19])
+    nh = nx1 - (nin - ij)
+    uj = _u_plain(c, float(ij)/nin)
+    ujm = _u_plain(c, float(ij - 1)/nin)
+    tgt = (uj - ujm)/uj
+
+    def topf(q):
+        lq = np.log(q)
+        return 1.0/nh if lq == 0.0 else -np.expm1(lq)*np.exp((nh-1)*lq)/(-np.expm1(nh*lq))
+    lo, hi = 1.0e-3, 1.0e3
+    for _ in range(200):
+        mq = np.sqrt(lo*hi)
+        if topf(mq) > tgt:
+            hi = mq
+        else:
+            lo = mq
+    q = np.sqrt(lo*hi)
+    return float(nh)/nx1, float(nx1)/nin, float(ij)/nin, q, float(nh)
 
 
 def _logcosh(x):
@@ -170,6 +223,15 @@ def edges(nx1, r0, r1, c, ng=0):
     t = i/float(nx1)                           # LeftEdgeX (cell_locations.hpp), exactly
     x = (t*r1 - t*r0) - (0.5*r1 - 0.5*r0) + (0.5*r0 + 0.5*r1)
     xi = (x - r0)/(r1 - r0)
+    if len(c) > 18:                    # radref_1031: geometric head
+        xh, s, xj, q, nh = head_params(nx1, c)
+        rj = r0 + (r1 - r0)*_u_plain(c, xj)
+        lq = np.log(q)
+        k = (xi/xh)*nh
+        fr = k/nh if lq == 0.0 else np.expm1(k*lq)/np.expm1(nh*lq)
+        r_hd = r0 + (rj - r0)*fr
+        r_up = r0 + (r1 - r0)*_u_plain(c, xj + (xi - xh)*s)
+        return np.where(xi <= xh, r_hd, r_up)
     u = xi.copy()
     xik = xi.copy()
     for k in range(NSTR):
@@ -221,18 +283,34 @@ def read_rst(fn):
     for bad in ('RTWARM01', 'M1PRED01', 'M1TIME2A', 'M1CTRLX1'):
         if bad in sec:
             raise SystemExit('restart carries section %s: slab order not handled' % bad)
-    if 'mhd' in par:
-        raise SystemExit('MHD restart: only hydro restarts are supported')
+    # MHD (dhj-remap-mhd): each MeshBlock record is u0 (5 slabs), then the face fields
+    # b0.x1f (O3, O2, O1+1), x2f (O3, O2+1, O1), x3f (O3+1, O2, O1), then the same cell
+    # slabs as a hydro record (restart.cpp); the faces are cut out so that `a` below has
+    # the hydro layout, and returned as h['bf']
+    mhd = 'mhd' in par
+    if mhd and 'hydro' in par:
+        raise SystemExit('hydro + mhd restart (ion-neutral) not handled')
+    nf = (O3*O2*(O1 + 1), O3*(O2 + 1)*O1, (O3 + 1)*O2*O1) if mhd else (0, 0, 0)
     for nv in range(8, 64):
-        ds = 8*NC*nv
+        ds = 8*(NC*nv + sum(nf))
         st = len(b) - nmb*ds
         if st > i and int(np.frombuffer(b[st-8:st], '<u8')[0]) == ds:
             break
     else:
         raise SystemExit('restart layout not recognised: ' + fn)
-    a = np.frombuffer(b[st:], '<f8').reshape(nmb, nv, O3, O2, O1)
+    bf = None
+    if mhd:
+        r = np.frombuffer(b[st:], '<f8').reshape(nmb, ds//8)
+        o5, o1, o2, o3 = 5*NC, 5*NC + nf[0], 5*NC + nf[0] + nf[1], 5*NC + sum(nf)
+        a = np.concatenate((r[:, :o5], r[:, o3:]), axis=1).reshape(nmb, nv, O3, O2, O1)
+        bf = (r[:, o5:o1].reshape(nmb, O3, O2, O1 + 1),
+              r[:, o1:o2].reshape(nmb, O3, O2 + 1, O1),
+              r[:, o2:o3].reshape(nmb, O3 + 1, O2, O1))
+    else:
+        a = np.frombuffer(b[st:], '<f8').reshape(nmb, nv, O3, O2, O1)
     h = dict(text=txt, par=par, nmb=nmb, t=t, dt=dt, ncycle=ncyc, lloc=lloc, ng=ng,
-             nx1=nx1, nx2=nx2, nx3=nx3, nv=nv, sections=sec)
+             nx1=nx1, nx2=nx2, nx3=nx3, nv=nv, sections=sec, mhd=mhd, bf=bf,
+             fluid='mhd' if mhd else 'hydro')
     h['u'] = a[:, 0:5]
     h['p'] = a[:, 6]
     h['eint'] = a[:, 8] if 'EINTRST1' in sec else None
@@ -480,6 +558,429 @@ def root_level(nb):
     return lev
 
 
+# ------------------------------------------------------------------ MHD (dhj-remap-mhd)
+def bcc_cs(b1, b2, b3, cosc, eo, ro):
+    """cell-centred B in the orthonormal frame as ConsToPrim / the pgen form it on the
+    cubed sphere: radial interpolated to the centroid, tangential pair averaged and
+    rotated, (B.e_xi = (b_xi + c b_eta)/s, eta slot unchanged).  b1 (..., k, j, I+1),
+    b2 (..., k, j+1, I), b3 (..., k+1, j, I), cosc (..., k, j), eo (I+1), ro (I)"""
+    lw = (eo[1:] - ro)/(eo[1:] - eo[:-1])
+    rw = (ro - eo[:-1])/(eo[1:] - eo[:-1])
+    bx = lw*b1[..., :-1] + rw*b1[..., 1:]
+    byn = 0.5*(b2[..., :-1, :] + b2[..., 1:, :])
+    bzn = 0.5*(b3[..., :-1, :, :] + b3[..., 1:, :, :])
+    c = cosc[..., None]
+    by = (byn + c*bzn)/np.sqrt(1.0 - c*c)
+    return bx, by, bzn
+
+
+def mag_energy(h, cosc, eo, ro):
+    """0.5 |bcc|^2 of the restart's cells (nmb, nx3, nx2, O1)"""
+    ng, nx2, nx3 = h['ng'], h['nx2'], h['nx3']
+    s2, s3 = slice(ng, ng + nx2), slice(ng, ng + nx3)
+    b1, b2, b3 = h['bf']
+    bx, by, bz = bcc_cs(b1[:, s3, s2, :], b2[:, s3, ng:ng + nx2 + 1, :],
+                        b3[:, ng:ng + nx3 + 1, s2, :], cosc, eo, ro)
+    return 0.5*(bx*bx + by*by + bz*bz)
+
+
+def cs_shell_geom(n):
+    """per-panel (identical on all six) solid angles om (k, j), arcs along eta at the xi
+    faces ae (k, J) and along xi at the eta faces ax (K, j), as coordinates.cpp forms
+    them (GnomonicSolidAngle; dth_etal / dth_xil)"""
+    t = np.tan(0.25*np.pi*(-1.0 + 2.0*np.arange(n + 1)/n))
+    om = (corner_omega(t[None, 1:], t[1:, None]) - corner_omega(t[None, :-1], t[1:, None])
+          - corner_omega(t[None, 1:], t[:-1, None])
+          + corner_omega(t[None, :-1], t[:-1, None]))
+    xl = t[None, :]                       # xi faces J
+    yl, yr = t[:-1, None], t[1:, None]   # eta cells k
+    ae = np.arccos((1.0 + xl*xl + yl*yr)/np.sqrt(1.0 + xl*xl + yl*yl)
+                   / np.sqrt(1.0 + xl*xl + yr*yr))
+    ax = ae.T.copy()                      # by symmetry: along xi at eta face K, cell j
+    return om, ae, ax
+
+
+def cs_cosc(n):
+    x = np.tan(0.25*np.pi*(-1.0 + 2.0*(np.arange(n) + 0.5)/n))
+    X, Y = x[None, :], x[:, None]
+    return -X*Y/(np.sqrt(1 + X*X)*np.sqrt(1 + Y*Y))
+
+
+def face_fluxes(L2, L3, e):
+    """face fluxes Phi = b area of the curl of the edge line integrals (L2 along xi at
+    eta faces (6, K, j, I+1), L3 along eta at xi faces (6, k, J, I+1)), as the pgen forms
+    them: Phi1 = dL3/dj - dL2/dk, Phi2 = -dL3/di, Phi3 = dL2/di"""
+    P1 = (L3[:, :, 1:, :] - L3[:, :, :-1, :]) - (L2[:, 1:, :, :] - L2[:, :-1, :, :])
+    P2 = -(L3[..., 1:] - L3[..., :-1])
+    P3 = L2[..., 1:] - L2[..., :-1]
+    return P1, P2, P3
+
+
+def face_areas(n, e):
+    om, ae, ax = cs_shell_geom(n)
+    a1 = om[..., None]*(e*e)[None, None, :]
+    dr2 = 0.5*(e[1:]**2 - e[:-1]**2)
+    return a1, ae[..., None]*dr2, ax[..., None]*dr2
+
+
+def spline_matrix(n, f, kind='cubic'):
+    """(f n + 1, n + 1): not-a-knot cubic spline (or piecewise linear) through nodes
+    0..n evaluated at the fine nodes m/f; rows of coincident nodes are exact unit vectors
+    (linear in the data either way)"""
+    if kind == 'linear':
+        x = np.arange(f*n + 1)/f
+        i0 = np.minimum(np.floor(x).astype(int), n - 1)
+        w = x - i0
+        M = np.zeros((f*n + 1, n + 1))
+        M[np.arange(f*n + 1), i0] = 1.0 - w
+        M[np.arange(f*n + 1), i0 + 1] += w
+        M[::f] = np.eye(n + 1)
+        return M
+    M = CubicSpline(np.arange(n + 1.0), np.eye(n + 1), axis=0)(np.arange(f*n + 1)/f)
+    M[::f] = np.eye(n + 1)
+    return M
+
+
+# ------------------------------------------------------------------ deep horizontal filter
+def _pmap(p, xi, eta):
+    a, b, n = (np.array(v, float) for v in PANEL_FRAME[p])
+    x, y = np.tan(xi), np.tan(eta)
+    return (a*x[..., None] + b*y[..., None] + n)/np.sqrt(1 + x*x + y*y)[..., None]
+
+
+def seam_partners(N):
+    """panel-seam edge pairing.  Seam edges: L2 (along xi) at eta faces K = 0, N (all j)
+    and L3 (along eta) at xi faces J = 0, N (all k).  Returns a list of
+    (p, t, i0, i1, pp, tt, ii0, ii1, sgn): edge (p, t, i0, i1) of type t (2: [K, j],
+    3: [k, J]) equals sgn x edge (pp, tt, ii0, ii1); matched geometrically (midpoints on
+    the unit sphere, direction of the line integral)."""
+    from scipy.spatial import cKDTree
+    fq = 0.25*np.pi*(-1.0 + 2.0*np.arange(N + 1)/N)
+    cq = 0.25*np.pi*(-1.0 + 2.0*(np.arange(N) + 0.5)/N)
+    hh = 1e-7
+    rec, X, D = [], [], []
+    for p in range(6):
+        for B in (0, N):
+            for c in range(N):
+                # L2 at [K=B, j=c]: midpoint (xi=cq[c], eta=fq[B]), dir d/dxi
+                xi, et = np.array(cq[c]), np.array(fq[B])
+                rec.append((p, 2, B, c)); X.append(_pmap(p, xi, et))
+                D.append(_pmap(p, xi + hh, et) - _pmap(p, xi - hh, et))
+                # L3 at [k=c, J=B]: midpoint (xi=fq[B], eta=cq[c]), dir d/deta
+                xi, et = np.array(fq[B]), np.array(cq[c])
+                rec.append((p, 3, c, B)); X.append(_pmap(p, xi, et))
+                D.append(_pmap(p, xi, et + hh) - _pmap(p, xi, et - hh))
+    X, D = np.array(X), np.array(D)
+    D /= np.linalg.norm(D, axis=-1)[:, None]
+    dist, nb = cKDTree(X).query(X, k=2)
+    out = []
+    for e in range(len(rec)):
+        o = nb[e, 1] if nb[e, 0] == e else nb[e, 0]
+        dd = dist[e, 1] if nb[e, 0] == e else dist[e, 0]
+        if dd > 1e-9 or rec[o][0] == rec[e][0]:
+            raise SystemExit('seam matching failed at %s (dist %.2e)' % (rec[e], dd))
+        c = float(np.dot(D[e], D[o]))
+        if abs(abs(c) - 1.0) > 1e-6:
+            raise SystemExit('seam direction mismatch at %s: %.6f' % (rec[e], c))
+        out.append(rec[e] + rec[o] + (1.0 if c > 0 else -1.0,))
+    return out
+
+
+HF_FILL = 'self'
+HF_MODE = 'cell'
+HF_NORM = 'none'
+
+
+def _f121(q, axis, nb_lo=None, nb_hi=None):
+    """1-2-1 along axis; missing neighbours = self (HF_FILL 'self') or the linear
+    extrapolation (HF_FILL 'lin': the end value is left unfiltered), unless given"""
+    q = np.moveaxis(q, axis, 0)
+    if HF_FILL == 'lin':
+        e_lo, e_hi = 2*q[0] - q[1], 2*q[-1] - q[-2]
+    else:
+        e_lo, e_hi = q[0], q[-1]
+    lo = np.concatenate(((e_lo if nb_lo is None else nb_lo)[None], q[:-1]), axis=0)
+    hi = np.concatenate((q[1:], (e_hi if nb_hi is None else nb_hi)[None]), axis=0)
+    return np.moveaxis(0.25*lo + 0.5*q + 0.25*hi, 0, axis)
+
+
+def hfilter_S(S2, S3, ax, ae, seams, N):
+    """one tensor 1-2-1 pass on the edge integrals S2 (6, N+1, N, R) [K, j] (along xi) and
+    S3 (6, N, N+1, R) [k, J] (along eta), as b = S/arc: first along the edge (cell
+    index; panel border: missing = self), then across the edges (face index), the panel
+    seam edges taking the inward neighbour of the partner panel, so the two copies of
+    every seam edge get the same value (x orientation sign)"""
+    if HF_NORM == 'none':
+        ax = np.ones_like(ax); ae = np.ones_like(ae)
+    g2 = S2/ax[None, :, :, None]
+    g3 = S3/ae[None, :, :, None]
+    g2 = _f121(g2, 2)
+    g3 = _f121(g3, 1)
+    # perpendicular neighbours across the seams, from the along-filtered arrays
+    lo2 = np.zeros((6, N, g2.shape[-1])); hi2 = np.zeros_like(lo2)
+    lo3 = np.zeros((6, N, g3.shape[-1])); hi3 = np.zeros_like(lo3)
+    for (p, t, i0, i1, pp, tt, ii0, ii1, sg) in seams:
+        if tt == 2:
+            inw = g2[pp, 1 if ii0 == 0 else N - 1, ii1]
+        else:
+            inw = g3[pp, ii0, 1 if ii1 == 0 else N - 1]
+        if t == 2:
+            (lo2 if i0 == 0 else hi2)[p, i1] = sg*inw
+        else:
+            (lo3 if i1 == 0 else hi3)[p, i0] = sg*inw
+    f2 = np.empty_like(g2); f3 = np.empty_like(g3)
+    for p in range(6):
+        f2[p] = _f121(g2[p], 0, lo2[p], hi2[p])
+        f3[p] = _f121(g3[p], 1, lo3[p], hi3[p])
+    return f2*ax[None, :, :, None], f3*ae[None, :, :, None]
+
+
+def hfilter_deep(L2, L3, nfull, nzero, passes, N):
+    """deep horizontal filter of the radial-gauge edge integrals L2 (6, N+1, N, I+1),
+    L3 (6, N, N+1, I+1).  S = L - L(wall) (gauge invariant: the radially integrated
+    horizontal face fluxes, the same on both copies of a seam edge) is filtered by
+    `passes` tensor 1-2-1 passes; L += w(i) (F S - S) with w = 1 on faces i <= nfull,
+    cos^2 taper to 0 at face nzero.  The wall face (S = 0) and every face >= nzero keep
+    their fields; div B = 0 by construction (curl of edge integrals)."""
+    i = np.arange(L2.shape[-1])
+    w = np.where(i <= nfull, 1.0,
+                 np.where(i >= nzero, 0.0,
+                          np.cos(0.5*np.pi*(i - nfull)/max(nzero - nfull, 1))**2))
+    om, ae, ax = cs_shell_geom(N)
+    seams = seam_partners(N)
+    if HF_MODE == 'cell':
+        # filter the per-cell increments dL (= the horizontal face fluxes of cell i),
+        # weight w_c on cells; dL changes accumulate upward (B_r follows, div free)
+        wc = np.where(i[:-1] <= nfull, 1.0,
+                      np.where(i[:-1] >= nzero, 0.0,
+                               np.cos(0.5*np.pi*(i[:-1] - nfull)/max(nzero - nfull, 1))**2))
+        actc = np.where(wc > 0)[0]
+        S2 = L2[..., actc + 1] - L2[..., actc]
+        S3 = L3[..., actc + 1] - L3[..., actc]
+        F2, F3 = S2, S3
+        for _ in range(passes):
+            F2, F3 = hfilter_S(F2, F3, ax, ae, seams, N)
+        c2 = np.cumsum(wc[actc]*(F2 - S2), axis=-1)
+        c3 = np.cumsum(wc[actc]*(F3 - S3), axis=-1)
+        act = np.arange(1, L2.shape[-1])
+        d2 = np.zeros(L2.shape[:-1] + (len(act),)); d3 = np.zeros(L3.shape[:-1] + (len(act),))
+        d2[..., actc] = c2; d3[..., actc] = c3
+        d2[..., actc[-1] + 1:] = c2[..., -1:]
+        d3[..., actc[-1] + 1:] = c3[..., -1:]
+        w = wc
+    else:
+        act = np.where(w > 0)[0]
+        S2 = L2[..., act] - L2[..., :1]
+        S3 = L3[..., act] - L3[..., :1]
+        F2, F3 = S2, S3
+        for _ in range(passes):
+            F2, F3 = hfilter_S(F2, F3, ax, ae, seams, N)
+        d2 = w[act]*(F2 - S2)
+        d3 = w[act]*(F3 - S3)
+    # seam consistency, source S (checks the pairing) and the change: A vs sgn x B
+    mis = mis0 = 0.0
+    for (p, t, i0, i1, pp, tt, ii0, ii1, sg) in seams:
+        a_ = (d2 if t == 2 else d3)[p, i0, i1]
+        b_ = (d2 if tt == 2 else d3)[pp, ii0, ii1]
+        mis = max(mis, np.abs(a_ - sg*b_).max())
+        a_ = (S2 if t == 2 else S3)[p, i0, i1]
+        b_ = (S2 if tt == 2 else S3)[pp, ii0, ii1]
+        mis0 = max(mis0, np.abs(a_ - sg*b_).max())
+    L2 = L2.copy(); L3 = L3.copy()
+    L2[..., act] += d2
+    L3[..., act] += d3
+    scale = max(np.abs(S2).max(), np.abs(S3).max(), 1e-300)
+    return L2, L3, dict(w=w, seam_mis=mis/scale, seam_mis_src=mis0/scale,
+                        nseam=len(seams))
+
+
+def remap_bfield(h, a, eo, en, fac, n2o, nx1n, lloc_new, b2n, b3n, fo_path, radial_id,
+                 hkind='cubic', hfilt=None):
+    """divergence-free remap of the face fields via edge line integrals of a vector
+    potential in the radial gauge (A_r = 0).  Per panel: bottom shell L2 = 0, L3 =
+    cumulative Phi1 along xi; above, L3(i+1) = L3(i) - Phi2, L2(i+1) = L2(i) + Phi3 (exact
+    for a div-free source).  Radial: L - L(bottom) by PCHIP in r at the new faces.
+    Horizontal (factor f): the cumulative line integrals (C2 along xi, C3 along eta) by a
+    tensor not-a-knot cubic spline in the equiangular index, differenced again, so every
+    coarse edge keeps its line integral (coarse face fluxes exact) and the curl is div
+    free on the new grid by construction.  The pgen (problem/remap_bfile) forms
+    b = curl/area with the code's own areas.  Returns diagnostics."""
+    ng, nx1o = h['ng'], h['nx1']
+    nx2, nx3 = h['nx2'], h['nx3']
+    N = n2o
+    b1, b2, b3 = h['bf']
+    eoa = eo[ng:ng + nx1o + 1]
+    a1, a2, a3 = face_areas(N, eoa)
+    P1 = np.full((6, N, N, nx1o + 1), np.nan)
+    P2 = np.full((6, N, N + 1, nx1o), np.nan)
+    P3 = np.full((6, N + 1, N, nx1o), np.nan)
+    mism = 0.0
+    bmax = max(np.abs(b1).max(), np.abs(b2).max(), np.abs(b3).max())
+    ia, ib = slice(ng, ng + nx1o + 1), slice(ng, ng + nx1o)
+    for m in range(h['nmb']):
+        _, lx2, lx3, _, pn = h['lloc'][m]
+        j0, k0 = lx2*nx2, lx3*nx3
+        q1 = b1[m, ng:ng + nx3, ng:ng + nx2, ia]*a1[k0:k0 + nx3, j0:j0 + nx2]
+        q2 = b2[m, ng:ng + nx3, ng:ng + nx2 + 1, ib]*a2[k0:k0 + nx3, j0:j0 + nx2 + 1]
+        q3 = b3[m, ng:ng + nx3 + 1, ng:ng + nx2, ib]*a3[k0:k0 + nx3 + 1, j0:j0 + nx2]
+        for P, q, sl in ((P2, q2, (pn, slice(k0, k0 + nx3), slice(j0, j0 + nx2 + 1))),
+                         (P3, q3, (pn, slice(k0, k0 + nx3 + 1), slice(j0, j0 + nx2)))):
+            old = P[sl]
+            ok = np.isfinite(old)
+            if ok.any():
+                mism = max(mism, np.abs(old[ok] - q[ok]).max())
+            P[sl] = q
+        P1[pn, k0:k0 + nx3, j0:j0 + nx2] = q1
+    # restart div B (per cell, normalised as the pgen gate) and MeshBlock face mismatch
+    dv = (P1[..., 1:] - P1[..., :-1] + P2[:, :, 1:] - P2[:, :, :-1]
+          + P3[:, 1:] - P3[:, :-1])
+    amx = np.maximum(np.maximum(a1[..., 1:], a2[:, 1:]), a3[1:])
+    d = dict(div_src=np.abs(dv).max()/(bmax*amx.max()),
+             div_src_rel=(np.abs(dv)/amx).max()/bmax,
+             mb_face_mismatch=mism/(bmax*amx.max()))
+    # radial gauge, coarse
+    L3 = np.zeros((6, N, N + 1, nx1o + 1))
+    L2 = np.zeros((6, N + 1, N, nx1o + 1))
+    L3[:, :, 1:, 0] = np.cumsum(P1[..., 0], axis=2)
+    L3[..., 1:] = L3[..., :1] - np.cumsum(P2, axis=-1)
+    L2[..., 1:] = np.cumsum(P3, axis=-1)
+    R1, _, _ = face_fluxes(L2, L3, eoa)
+    d['phi1_recon'] = np.abs(R1 - P1).max()/(bmax*a1.max())
+    # radial
+    if radial_id:
+        L2n, L3n = L2, L3
+    else:
+        L2n = L2[..., :1] + PchipInterpolator(eoa, L2 - L2[..., :1], axis=-1)(en)
+        L3n = L3[..., :1] + PchipInterpolator(eoa, L3 - L3[..., :1], axis=-1)(en)
+    del L2, L3
+    # deep horizontal filter (hclean_1031)
+    if hfilt is not None:
+        global HF_MODE, HF_FILL, HF_NORM
+        HF_MODE, HF_FILL, HF_NORM = a.hfilter_mode, a.hfilter_fill, a.hfilter_norm
+        if fac != 1:
+            raise SystemExit('--hfilter-deep needs a horizontal identity grid')
+        if HF_MODE == 'hodge':
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import hodge_filter as hfm
+            L2n, L3n, fd_ = hfm.hodge_filter(L2n, L3n, N, hfilt[0], hfilt[1], hfilt[2],
+                                             filter_br=not a.hfilter_keep_br)
+            fd_['w'] = fd_['wf']
+            print('hfilter (hodge): cells <= %d full, 0 from %d, %d pass(es), B_r %s; '
+                  'checks: seam copies of dL %.1e, d1 d0 %.1e, curl %.1e, hodge split '
+                  '%.1e, P1 target %.1e, shell monopole %.1e; corners (cells, vertices) '
+                  'unfiltered %s'
+                  % (hfilt[0], hfilt[1], hfilt[2],
+                     'kept' if a.hfilter_keep_br else 'filtered (faces <= %d)'
+                     % (hfilt[0] + 1), fd_['mis_g'], fd_['d1d0'], fd_['curl'],
+                     fd_['hodge'], fd_['p1_target'], fd_['monopole'], fd_['ncorner']))
+        else:
+            L2n, L3n, fd_ = hfilter_deep(L2n, L3n, hfilt[0], hfilt[1], hfilt[2], N)
+            print('hfilter: faces <= %d full, 0 from %d, %d pass(es); %d seam edges; seam '
+                  'copy mismatch: source S %.2e, change %.2e (rel)'
+                  % (hfilt[0], hfilt[1], hfilt[2], fd_['nseam'], fd_['seam_mis_src'],
+                     fd_['seam_mis']))
+        d['hfilter'] = fd_
+    # horizontal
+    if fac > 1:
+        M = spline_matrix(N, fac, hkind)
+        C2 = np.concatenate((np.zeros((6, N + 1, 1, nx1n + 1)), np.cumsum(L2n, axis=2)),
+                            axis=2)
+        C3 = np.concatenate((np.zeros((6, 1, N + 1, nx1n + 1)), np.cumsum(L3n, axis=1)),
+                            axis=1)
+        C2f = np.einsum('kK,pKJr,jJ->pkjr', M, C2, M, optimize=True)
+        C3f = np.einsum('kK,pKJr,jJ->pkjr', M, C3, M, optimize=True)
+        L2n = np.diff(C2f, axis=2)
+        L3n = np.diff(C3f, axis=1)
+        del C2, C3, C2f, C3f
+    Nn = N*fac
+    with open(fo_path, 'wb') as fo:
+        fo.write(b'RADREMB1')
+        fo.write(struct.pack('<4i', len(lloc_new), nx1n, b2n, b3n))
+        for ll in lloc_new:
+            _, lx2, lx3, _, pn = ll
+            J0, K0 = lx2*b2n, lx3*b3n
+            fo.write(np.array(ll, '<i4').tobytes())
+            fo.write(np.ascontiguousarray(L2n[pn, K0:K0 + b3n + 1, J0:J0 + b2n], '<f8')
+                     .tobytes())
+            fo.write(np.ascontiguousarray(L3n[pn, K0:K0 + b3n, J0:J0 + b2n + 1], '<f8')
+                     .tobytes())
+    # diagnostics on the new grid (python areas)
+    F1, F2, F3 = face_fluxes(L2n, L3n, en)
+    n1, n2_, n3_ = face_areas(Nn, en)
+    dvn = (F1[..., 1:] - F1[..., :-1] + F2[:, :, 1:] - F2[:, :, :-1]
+           + F3[:, 1:] - F3[:, :-1])
+    B1, B2, B3 = F1/n1, F2/n2_, F3/n3_
+    bmn = max(np.abs(B1).max(), np.abs(B2).max(), np.abs(B3).max())
+    amn = np.maximum(np.maximum(n1[..., 1:], n2_[:, 1:]), n3_[1:])
+    d['div_new_rel'] = (np.abs(dvn)/amn).max()/bmn
+    d['bmax_src'], d['bmax_new'] = bmax, bmn
+    d.update(new_faces=(B1, B2, B3), src_faces=(P1/a1, P2/a2, P3/a3))
+    if hfilt is not None:
+        np.savez(os.path.join(os.path.dirname(fo_path), 'hfilter_faces.npz'),
+                 B1=B1, B2=B2, B3=B3, S1=P1/a1, S2=P2/a2, S3=P3/a3, e=en, w=d['hfilter']['w'])
+    return d
+
+
+def bdiag(h, d, eo, ro, en, rn, n2o, fac, dvo_b, act):
+    """gate (c): magnetic energy below radii of given mean pressure, and B_r at three
+    levels on the new grid vs the source (linear in r between the old faces, bilinear in
+    the equiangular index), relative rms"""
+    ng, nx1o = h['ng'], h['nx1']
+    N, Nn = n2o, n2o*fac
+    S1, S2, S3 = d['src_faces']
+    B1, B2, B3 = d['new_faces']
+    eoa = eo[ng:ng + nx1o + 1]
+    roa = ro[act]
+    om, _, _ = cs_shell_geom(N)
+    omn, _, _ = cs_shell_geom(Nn)
+    bx, by, bz = bcc_cs(S1, S2, S3, cs_cosc(N), eoa, roa)
+    me_o = (0.5*(bx*bx + by*by + bz*bz)*om[..., None]).sum(axis=(0, 1, 2))*dvo_b[act]
+    bx, by, bz = bcc_cs(B1, B2, B3, cs_cosc(Nn), en, rn)
+    dvn = (en[1:]**3 - en[:-1]**3)/3.0
+    me_n = (0.5*(bx*bx + by*by + bz*bz)*omn[..., None]).sum(axis=(0, 1, 2))*dvn
+    del bx, by, bz
+    # mean pressure profile of the source (active cells, solid-angle weighted)
+    ng_ = h['ng']
+    pa = h['p'][:, ng_:ng_ + h['nx3'], ng_:ng_ + h['nx2'], act]
+    pbar = np.exp(np.log(pa).mean(axis=(0, 1, 2)))
+    print('B gate (c): magnetic energy [erg] below the radius of mean pressure p, old -> '
+          'new (old cells below the new top by volume)')
+    co, cn = np.cumsum(me_o[::-1])[::-1], np.cumsum(me_n[::-1])[::-1]
+    for pl in (1e2, 1.0, 1e-2, 1e-4, 1e-6):
+        i0 = int(np.argmin(np.abs(np.log(pbar/(pl*BAR)))))
+        rr = roa[i0]
+        so = me_o[roa >= rr].sum()
+        sn = me_n[rn >= rr].sum()
+        print('  above p %.0e bar (r >= %.4e): %.4e -> %.4e (%+.2e)'
+              % (pl, rr, so, sn, sn/so - 1.0))
+    print('  total: %.6e -> %.6e (%+.2e)' % (co[0], cn[0], cn[0]/co[0] - 1.0))
+    # B_r maps
+    from scipy.interpolate import RegularGridInterpolator
+    xc = (np.arange(N) + 0.5)/N
+    xf = (np.arange(Nn) + 0.5)/Nn
+    Kf, Jf = np.meshgrid(xf, xf, indexing='ij')
+    for pl in (1.0, 1e-2, 1e-4):
+        i0 = int(np.argmin(np.abs(np.log(pbar/(pl*BAR)))))
+        inew = int(np.argmin(np.abs(en - roa[i0])))
+        r = en[inew]
+        io = int(np.searchsorted(eoa, r)) - 1
+        io = min(max(io, 0), nx1o - 1)
+        w = (r - eoa[io])/(eoa[io + 1] - eoa[io])
+        # B_r r^2 interpolated linearly in r (a dipole is constant in that)
+        q = ((1 - w)*S1[..., io]*eoa[io]**2 + w*S1[..., io + 1]*eoa[io + 1]**2)/r**2
+        num = den = 0.0
+        for p in range(6):
+            f = RegularGridInterpolator((xc, xc), q[p], method='linear',
+                                        bounds_error=False, fill_value=None)
+            ref = f(np.stack((Kf, Jf), -1))
+            num += ((B1[p, ..., inew] - ref)**2).sum()
+            den += (ref**2).sum()
+        # flux conservation over each old face (fine faces summed per parent)
+        print('  B_r at r %.4e (mean p %.1e bar): rel rms new - source %.3e; rms B_r '
+              '%.3e G' % (r, pbar[i0]/BAR, np.sqrt(num/den),
+                          np.sqrt(den/(6*Nn*Nn))*np.sqrt(4*np.pi)))
+
+
 def selftest():
     """gate (c): a smooth analytic field on one panel, exact cell averages (Gauss
     quadrature in dOmega) on coarse and fine grids; the prolonged coarse averages against
@@ -555,6 +1056,30 @@ def main():
                      help='raised top: isothermal hydrostatic fill at T = max(T_top, '
                      'this) [K] per column (p continuous at the old top centroid)')
     ap_.add_argument('--check-only', action='store_true')
+    ap_.add_argument('--allow-truncate', action='store_true',
+                     help='allow x1max to drop (gas above the new top is discarded)')
+    ap_.add_argument('--bh-interp', default='linear', choices=('linear', 'cubic'),
+                     help='MHD horizontal: interpolation of the cumulative edge line '
+                     'integrals (linear: each child gets 1/f^2 of the parent radial '
+                     'flux, no overshoot; cubic: not-a-knot spline, adds sub-cell '
+                     'structure and ME)')
+    ap_.add_argument('--no-bfield', action='store_true',
+                     help='MHD restart: write the hydro remap.dat only (B ignored)')
+    ap_.add_argument('--hfilter-deep', default='',
+                     help='NFULL,NZERO: divergence-free deep horizontal 1-2-1 filter of '
+                     'the edge integrals (identity horizontal grid; hclean_1031): full on '
+                     'radial faces <= NFULL, cos^2 taper to 0 at face NZERO')
+    ap_.add_argument('--hfilter-passes', type=int, default=1)
+    ap_.add_argument('--hfilter-keep-br', action='store_true',
+                     help='hodge mode: leave the radial fluxes unfiltered')
+    ap_.add_argument('--hfilter-mode', default='hodge', choices=('hodge', 'cell', 'cum'),
+                     help='cell: filter each cell horizontal face fluxes (B_r follows); '
+                     'cum: filter the radially integrated S = L - L(wall), taper to 0; '
+                     'hodge (default): see hodge_filter.py')
+    ap_.add_argument('--hfilter-fill', default='self', choices=('self', 'lin'))
+    ap_.add_argument('--hfilter-norm', default='none', choices=('none', 'arc'),
+                     help='filter the edge integrals themselves (none: commutes with the '
+                     'discrete curl inside a panel) or b = S/arc')
     ap_.add_argument('--selftest', action='store_true')
     a = ap_.parse_args()
     if a.selftest:
@@ -577,15 +1102,24 @@ def main():
         blk, key = k.split('/')
         parn.setdefault(blk, {})[key] = v
     nx1n, r0n, r1n, cn = grid_of(parn)
-    if abs(r0n/r0 - 1) > 1e-12 or r1n < r1*(1.0 - 1e-12):
-        raise SystemExit('x1min must not change and x1max must not drop (%g %g -> %g %g)'
-                         % (r0, r1, r0n, r1n))
+    if abs(r0n/r0 - 1) > 1e-12:
+        raise SystemExit('x1min must not change (%g -> %g)' % (r0, r0n))
+    # LOWERED TOP (dhj-remap-mhd): x1max may drop; the gas above the new top is dropped
+    # (reported) and every column budget is taken over the old domain below the new top
+    # (the straddling old cell split by volume)
+    trunc = r1n < r1*(1.0 - 1e-12)
+    if trunc and not a.allow_truncate:
+        raise SystemExit('x1max drops (%g -> %g): pass --allow-truncate' % (r1, r1n))
+    if h['mhd'] and a.henergy == 'total':
+        raise SystemExit('--henergy total is not implemented for MHD restarts')
     # RAISED TOP (x1max_new > x1max_old): above the old top-cell centroid every column is
     # filled hydrostatically and isothermally (g_eff of the code's potential,
     # rot_potential incl.) at T = max(T_top, --tfill-min), p continuous at the old top
     # centroid, e/p and u_h of the top cell, u_r = 0.  All budget factors act on the old
     # domain only.
     ext = r1n > r1*(1.0 + 1e-12)
+    if ext and h['mhd'] and not a.no_bfield:
+        raise SystemExit('raised x1max with B: no field extension above the old top yet')
     if ext and not a.eos_table:
         raise SystemExit('raised x1max needs --eos-table (T of the old top cell)')
     # horizontal: per-panel cells and MeshBlock size, old -> new
@@ -604,7 +1138,7 @@ def main():
 
     g = float(par['problem']['grav'])
     apl = float(par['problem']['ap'])
-    etg = par['hydro'].get('etotgrav', 'false').lower() in ('true', '1')
+    etg = par[h['fluid']].get('etotgrav', 'false').lower() in ('true', '1')
     rotp = par['problem'].get('rot_potential', 'false').lower() in ('true', '1')
     om2 = float(par['problem'].get('omega', '0'))**2 if rotp else 0.0
     if par['problem'].get('stellar_tide', 'false').lower() in ('true', '1') and etg:
@@ -622,6 +1156,18 @@ def main():
     actn = slice(ng, ng + nx1n)
     dvo = (eo[1:]**3 - eo[:-1]**3)/3.0
     dvn = (en[1:]**3 - en[:-1]**3)/3.0
+    # old cell volumes the column budgets use: all (default) or, for a lowered top, the
+    # part of each old cell below the new top
+    if trunc:
+        eoc = np.minimum(eo, r1n)
+        dvo_b = (eoc[1:]**3 - eoc[:-1]**3)/3.0
+        print('lowered top: x1max %.6e -> %.6e; old active cells fully above the new top '
+              '%d, straddling old cell %d (%.3f of its volume below)'
+              % (r1, r1n, int((eo[ng:ng + nx1o] >= r1n).sum()),
+                 int(np.nonzero((dvo_b > 0) & (dvo_b < dvo))[0][0]) - ng,
+                 (dvo_b/dvo)[(dvo_b > 0) & (dvo_b < dvo)][0]))
+    else:
+        dvo_b = dvo
     if ext:
         # volume of each new cell below the old top r1 (the straddling cell split by
         # volume); budgets "below the old top" and every rescaling use dvb
@@ -665,6 +1211,10 @@ def main():
     cosc = np.stack([gg[1] for gg in geo])
     Bana = -0.5*om2*np.stack([gg[2] for gg in geo])
     ke = kinetic(rho, m1, m2, m3, cosc[..., None])
+    if h['mhd']:
+        # E carries the magnetic energy 0.5 |bcc|^2 (bcc as ConsToPrim forms it on the
+        # cubed sphere); the hydro remap works on E - ME
+        E = E - mag_energy(h, cosc, eo, ro)
     if etg:
         phi_c = (E - ke - ei)/rho
         w = ro[act]**2
@@ -693,7 +1243,7 @@ def main():
                     egrav=eg, etot=e_ + k_ + eg)
         return {k: ((v*dv).sum(-1)*dom_).sum() for k, v in cols.items()}
     bo = budget(rho[..., act], m1[..., act], m2[..., act], m3[..., act], ei[..., act],
-                cosc, B, dvo[act], ro[act], phig_o[act], dom, A2o, A3o)
+                cosc, B, dvo_b[act], ro[act], phig_o[act], dom, A2o, A3o)
     bh = dict.fromkeys(KEYS, 0.0)
     bn = dict.fromkeys(KEYS, 0.0)          # new grid, below the old top (dvb)
     ba = dict.fromkeys(KEYS, 0.0)          # new grid, above the old top (dvn - dvb)
@@ -719,9 +1269,9 @@ def main():
           % (n2o, n2n, fac, nx1o, h['nx2'], h['nx3'], nx1n, b2n, b3n, nmb, nmbn,
              a.henergy))
 
-    dfl = float(parn['hydro'].get('dfloor', '0'))
-    pfl = float(parn['hydro'].get('pfloor', '0'))
-    ldmin = float(parn['hydro'].get('eos_logd_min', '-14'))
+    dfl = float(parn[h['fluid']].get('dfloor', '0'))
+    pfl = float(parn[h['fluid']].get('pfloor', '0'))
+    ldmin = float(parn[h['fluid']].get('eos_logd_min', '-14'))
     if fac > 1 or not same_layout:
         names = ('rho', 'm1', 'm2', 'm3', 'ei', 'p', 'E')
         full = dict(rho=h['u'][:, 0], m1=h['u'][:, 1], m2=h['u'][:, 2], m3=h['u'][:, 3],
@@ -938,7 +1488,7 @@ def main():
             c_dom = panel_cols(K0, K0 + b3n, J0, J0 + b2n, n2n, n3n, pn)[0]
             c_A2, c_A3 = lz_coef(K0, K0 + b3n, J0, J0 + b2n, n2n, n3n, pn)
         bb = budget(c_rho[..., act], c_m1[..., act], c_m2[..., act], c_m3[..., act],
-                    c_ei[..., act], c_cos, c_B, dvo[act], ro[act], phig_o[act], c_dom,
+                    c_ei[..., act], c_cos, c_B, dvo_b[act], ro[act], phig_o[act], c_dom,
                     c_A2, c_A3)
         for k in KEYS:
             bh[k] += bb[k]
@@ -954,8 +1504,8 @@ def main():
             ee = remap_ln(c_ei, None if syn is None else syn['ei'])
             pp = remap_ln(c_p, None if syn is None else syn['p'])
             inb = dvb > 0.0                       # new cells (partly) below the old top
-            f_m = (c_rho[..., act]*dvo[act]).sum(-1)/(rr*dvb).sum(-1)
-            f_e = (c_ei[..., act]*dvo[act]).sum(-1)/(ee*dvb).sum(-1)
+            f_m = (c_rho[..., act]*dvo_b[act]).sum(-1)/(rr*dvb).sum(-1)
+            f_e = (c_ei[..., act]*dvo_b[act]).sum(-1)/(ee*dvb).sum(-1)
             fmr = [min(fmr[0], f_m.min()), max(fmr[1], f_m.max())]
             fer = [min(fer[0], f_e.min()), max(fer[1], f_e.max())]
             rn_ = np.where(inb, f_m[..., None], 1.0)*rr
@@ -974,7 +1524,7 @@ def main():
                 # both below the old top
                 wo = 1.0 if nq == 0 else ro[act]
                 wn = 1.0 if nq == 0 else rn
-                du = ((q[..., act]*wo*dvo[act]).sum(-1) - (rn_*un*wn*dvb).sum(-1)) / \
+                du = ((q[..., act]*wo*dvo_b[act]).sum(-1) - (rn_*un*wn*dvb).sum(-1)) / \
                     (rn_*wn*dvb).sum(-1)
                 mom.append(rn_*(un + np.where(inb, du[..., None], 0.0)))
             m1n, m2n, m3n = mom
@@ -1001,9 +1551,9 @@ def main():
                 ba[k] += bb[k]
         for k, q_o, q_n in (('mass', c_rho, rn_), ('eint', c_ei, ein),
                             ('mom1', c_m1, m1n)):
-            co_ = (q_o[..., act]*dvo[act]).sum(-1)
+            co_ = (q_o[..., act]*dvo_b[act]).sum(-1)
             cn_ = (q_n*dvb).sum(-1)
-            ref = np.abs(co_) if k != 'mom1' else (c_rho[..., act]*dvo[act]).sum(-1)*1e5
+            ref = np.abs(co_) if k != 'mom1' else (c_rho[..., act]*dvo_b[act]).sum(-1)*1e5
             colmax[k] = max(colmax[k], np.abs((cn_ - co_)/ref).max())
         if mn % a.hse_sample == 0:
             hse_n.append(hse(rn_, pn_, rn, c_B))
@@ -1093,6 +1643,21 @@ def main():
           % (rho[..., act].min(), rmin, ei[..., act].min(), emin, pmin/BAR, pmax/BAR))
     if a.check_only:
         return
+    bfn = None
+    if h['mhd'] and not a.no_bfield:
+        bfn = os.path.join(a.outdir, 'remap_b.dat')
+        d = remap_bfield(h, a, eo, en, fac, n2o, nx1n, lloc_new, b2n, b3n, bfn,
+                         radial_identity, a.bh_interp,
+                         hfilt=(tuple(int(x) for x in a.hfilter_deep.split(','))
+                                + (a.hfilter_passes,)) if a.hfilter_deep else None)
+        print('B: restart div B max |sum Phi| / (|b|max area max) %.2e (per cell, / own '
+              'area: %.2e); MeshBlock shared-face copies differ by %.2e; Phi1 rebuilt '
+              'from the radial-gauge potential vs restart %.2e'
+              % (d['div_src'], d['div_src_rel'], d['mb_face_mismatch'], d['phi1_recon']))
+        print('B: new grid div B max |sum Phi| / (own max area |b|max) %.2e; |b|max '
+              '%.4e -> %.4e (code units)'
+              % (d['div_new_rel'], d['bmax_src'], d['bmax_new']))
+        bdiag(h, d, eo, ro, en, rn, n2o, fac, dvo_b, act)
     txt = h['text']
     txt = txt[:txt.find('<par_end>')]
     for k, v in ov.items():
@@ -1101,6 +1666,8 @@ def main():
     txt = set_key(txt, 'time', 'start_time', repr(h['t']),
                   'remap: t of %s' % os.path.basename(a.rst))
     txt = set_key(txt, 'problem', 'remap_file', os.path.abspath(fn), 'remap')
+    if bfn is not None:
+        txt = set_key(txt, 'problem', 'remap_bfile', os.path.abspath(bfn), 'remap (B)')
     with open(os.path.join(a.outdir, 'remap.athinput'), 'w') as fo:
         fo.write(txt)
     print('wrote', fn, 'and', os.path.join(a.outdir, 'remap.athinput'))

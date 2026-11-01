@@ -59,6 +59,38 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
 }
 
 //----------------------------------------------------------------------------------------
+// speed2-1031 (bvsplit): the team decomposition of the CC pack / unpack.  They ran one
+// team per (block, buffer, variable) with vector length 1: each thread walked the whole
+// radial i range of its (k, j) column serially, and only the few teams of the populated
+// buffers worked (HG cs, 3 blocks/rank: ~600 us per 1-variable pack on 168 teams).  Now
+// each team is split into S teams over chunks of its (k, j) range and the i loop runs on
+// VL vector lanes.  Every buffer / ghost value is the same expression of the same inputs
+// (per-element copies / transforms): bitwise.  Env BVALS_CC_SPLIT (default 16) and
+// BVALS_CC_VL (default 32 on CUDA, 1 elsewhere); both = 1 is the old launch.
+static int BvCcSplit() {
+  static int s = -1;
+  if (s < 0) {
+    const char *e = std::getenv("BVALS_CC_SPLIT");
+    s = (e != nullptr) ? std::atoi(e) : 16;
+    if (s < 1) {s = 1;}
+  }
+  return s;
+}
+static int BvCcVl() {
+  static int v = -1;
+  if (v < 0) {
+#if defined(KOKKOS_ENABLE_CUDA)
+    const char *e = std::getenv("BVALS_CC_VL");
+    v = (e != nullptr) ? std::atoi(e) : 32;
+    if (v < 1) {v = 1;}
+#else
+    v = 1;
+#endif
+  }
+  return v;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValuesCC::PackAndSendCC()
 //! \brief Pack cell-centered variables into boundary buffers and send to neighbors.
 //!
@@ -112,7 +144,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const int mbie_ = pmy_pack->pmesh->mb_indcs.ie;
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
+  const int nsp_ = BvCcSplit();
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv*nsp_, Kokkos::AUTO, BvCcVl());
+  Kokkos::TeamPolicy<> policy1(DevExeSpace(), nmnv, Kokkos::AUTO);   // (z4c kernel)
   // The seam/pole branch below keeps per-thread arrays (stencil indices, three SeamXform)
   // that give the kernel a PRIVATE SEGMENT (scratch).  A dispatch that needs scratch
   // right after ones that do not stalls the GPU queue ~140 us while the runtime
@@ -127,9 +161,11 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 #else
   auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_) {
 #endif
-    const int m = (tmember.league_rank())/(nnghbr*nvar);
-    const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int lr_ = tmember.league_rank()/nsp_;
+    const int sp_ = tmember.league_rank() - lr_*nsp_;
+    const int m = (lr_)/(nnghbr*nvar);
+    const int n = (lr_ - m*(nnghbr*nvar))/nvar;
+    const int v = (lr_ - m*(nnghbr*nvar) - n*nvar);
 
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
@@ -166,6 +202,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
       int nkj  = nk*nj;
+      // speed2-1031 bvsplit: this team's chunk of the (k, j) range
+      const int q0_ = static_cast<int>((static_cast<int64_t>(nkj)*sp_)/nsp_);
+      const int q1_ = static_cast<int>((static_cast<int64_t>(nkj)*(sp_ + 1))/nsp_);
       // the window narrows the LOOP only: ni and the index map stay as they were
       int ilp = il, iup = iu;
       // same-level x2/x3 halos only: coarse/fine ranges differ between the two sides
@@ -426,7 +465,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
 
         // Middle loop over k,j
-        Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+        Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_), [&](const int idx) {
           int k = idx / nj;
           int j = (idx - k * nj) + jl;
           k += kl;
@@ -676,7 +715,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 
       } else {   // normal boundary exchange
       // Middle loop over k,j
-      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_), [&](const int idx) {
         int k = idx / nj;
         int j = (idx - k * nj) + jl;
         k += kl;
@@ -743,7 +782,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // host-side constants, so when they do not hold the launch has nothing to do at all:
   // skip it.  It is otherwise a full-size empty team launch on EVERY halo exchange.
   if (is_z4c_ && ml_) {
-  BvalsTeamFor("SendBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("SendBuffZ4c", policy1, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -936,11 +975,15 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   int nvar = a.extent_int(1);  // TODO(@user): 2nd index from L of in array must be NVAR
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
+  const int nsp_ = BvCcSplit();
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar)*nsp_, Kokkos::AUTO, BvCcVl());
+  Kokkos::TeamPolicy<> policy1(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);   // (z4c)
   BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-    const int m = (tmember.league_rank())/(nnghbr*nvar);
-    const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
-    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+    const int lr_ = tmember.league_rank()/nsp_;
+    const int sp_ = tmember.league_rank() - lr_*nsp_;
+    const int m = (lr_)/(nnghbr*nvar);
+    const int n = (lr_ - m*(nnghbr*nvar))/nvar;
+    const int v = (lr_ - m*(nnghbr*nvar) - n*nvar);
 
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
@@ -976,6 +1019,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
       int nkj  = nk*nj;
+      // speed2-1031 bvsplit: this team's chunk of the (k, j) range
+      const int q0_ = static_cast<int>((static_cast<int64_t>(nkj)*sp_)/nsp_);
+      const int q1_ = static_cast<int>((static_cast<int64_t>(nkj)*(sp_ + 1))/nsp_);
       // the window narrows the LOOP only: ni and the index map stay as they were
       int ilp = il, iup = iu;
       // same-level x2/x3 halos only: coarse/fine ranges differ between the two sides
@@ -987,7 +1033,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
       }
 
       // Middle loop over k,j
-      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_), [&](const int idx) {
         int k = idx / nj;
         int j = (idx - k * nj) + jl;
         k += kl;
@@ -1058,7 +1104,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables).  Whole body is
   // under the host-side (is_z4c && multilevel): skip the launch when it cannot fire.
   if (is_z4c_ && ml_) {
-  BvalsTeamFor("RecvBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuffZ4c", policy1, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);

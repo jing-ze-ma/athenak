@@ -67,6 +67,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
+#include "rad_m1/rad_m1_vgdray.hpp"
 // csnccl-1031: the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL, env
 // ACC_NCCL=1; as the sp list halo, VgdNcclOn in rad_m1_vetgd.cpp)
 #if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
@@ -89,15 +90,6 @@ int64_t g_vgd_csgen[16] = {0};        // (M1_VGD_CSCL_MAX)
 int64_t g_vgd_csgen_save[16] = {0};
 
 namespace {
-
-// cslight-1031: the sp sweep's VgdLight (rad_m1_vetgd.cpp): a flat range policy whose
-// functor rides as a KERNEL ARGUMENT (HintLightWeight) for the per-shell kernels (shell,
-// pack, unpack), instead of the constant-memory launch with a host wait on the previous
-// such launch (the same kernels, the same numbers: every thread writes its own value)
-inline auto VgdCsLight(const DevExeSpace &ex, const int a, const int b) {
-  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
-                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
-}
 
 // xchg-1021: a stream event of the default device instance (the sweep's stream): record
 // after a kernel, query from the host without a full fence.  No device backend: fence
@@ -138,23 +130,7 @@ struct VgdCsEv {
 #endif
 };
 void VgdCsFatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl
-            << "<rad_m1>/vet_gd (cubed sphere): " << msg << std::endl;
-  std::exit(EXIT_FAILURE);
-}
-
-// the positive first-order SC weights (VgdW of rad_m1_vetgd.cpp, term for term)
-KOKKOS_INLINE_FUNCTION
-void VgdCsW(const Real dtau, Real &ex, Real &w0, Real &wu) {
-  ex = exp(-dtau);
-  if (dtau < 1.0e-3) {
-    w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-    wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-  } else {
-    const Real g = (1.0 - ex)/dtau;
-    w0 = 1.0 - g;
-    wu = g - ex;
-  }
+  VgdFatalAt(__FILE__, "<rad_m1>/vet_gd (cubed sphere): ", msg);
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -168,6 +144,22 @@ struct VgdCsSt {
   int n;
   int k[4], j[4];
   Real w[4];
+};
+
+// share3-1031: the stencil accessor of the shared upwind core (rad_m1_vgdray.hpp): the
+// weighted sum over the stencil cells, in their order
+struct VgdCsA {
+  const VgdCsSt &st;
+  KOKKOS_INLINE_FUNCTION int N() const {return st.n;}
+  KOKKOS_INLINE_FUNCTION int K(const int e) const {return st.k[e];}
+  KOKKOS_INLINE_FUNCTION int J(const int e) const {return st.j[e];}
+  KOKKOS_INLINE_FUNCTION Real W(const int e) const {return st.w[e];}
+  template <typename F>
+  KOKKOS_INLINE_FUNCTION Real Interp(const F &f) const {
+    Real s = 0.0;
+    for (int e = 0; e < st.n; ++e) {s += st.w[e]*f(st.k[e], st.j[e]);}
+    return s;
+  }
 };
 
 // the stencil of the unit vector x for a block on panel p whose first interior cell is
@@ -853,35 +845,78 @@ void RadiationM1::VetGdCsCompact() {
     // as packed words (8x fewer bytes); the same lists in the same (t-increasing) order
     // as the byte path below
     const size_t wpe = per/16;   // words per entry
-    auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
+    // mpirace-1101: the host copies of the marks in PERSISTENT buffers (grown, never
+    // freed), not a fresh mirror / vector per build.  RSG E 10-31: under an LD_PRELOAD
+    // profiler (nsys osrt / cpu sampling) UCX's registration cache missed the munmap of
+    // the previous build's buffer, the new buffer reused its addresses and the rendezvous
+    // sent stale pages (sender / receiver hashes differ): inconsistent lists, then
+    // MPI_ERR_TRUNCATE or a hang in the first sweep.  Same values, same lists (bitwise)
+    const size_t nmw = msk_.extent(0);
+    if (vgd_csmw_h.size() < nmw) {vgd_csmw_h.resize(nmw);}
+    {
+      Kokkos::View<uint32_t *, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+          mh(vgd_csmw_h.data(), nmw);
+      Kokkos::deep_copy(mh, msk_);
+    }
+    const uint32_t *mp = vgd_csmw_h.data();
     const size_t nwr = static_cast<size_t>(vgd_csnrcv)*wpe;
     bool both = false;
     for (size_t w = 0; w < nwr; ++w) {
-      const uint32_t x = mp(w);
+      const uint32_t x = mp[w];
       if (x != 0u && ((x & (x >> 1) & 0x55555555u) != 0u)) {both = true;}
     }
     if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
-    std::vector<uint32_t> smw(std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1),
-                              0u);
+    const size_t nsw = std::max<size_t>(static_cast<size_t>(vgd_csnsnd)*wpe, 1);
+    if (vgd_csmw_r.size() < nsw) {vgd_csmw_r.resize(nsw);}
+    std::fill(vgd_csmw_r.begin(), vgd_csmw_r.begin() + nsw, 0u);
+    uint32_t *smw = vgd_csmw_r.data();
 #if MPI_PARALLEL_ENABLED
     {
+      // mpirace-1101: own tags (7107 marks, 7108 their checksums; 7105 is the fused
+      // twin's sweep exchange) and a checksum per message: a block that arrives other
+      // than it was sent is FATAL here, never a silent wrong list
+      auto hsum = [](const uint32_t *a, const size_t nw) {
+        uint64_t h = 1469598103934665603ull;
+        for (size_t w = 0; w < nw; ++w) {h = (h ^ a[w])*1099511628211ull;}
+        return h;
+      };
+      std::vector<uint64_t> hs(np, 0), hr(np, 0);
       std::vector<MPI_Request> req;
       for (int p = 0; p < np; ++p) {
         const int rk = vgd_csprk[p];
         if (vgd_cspn[p] > 0) {
           req.emplace_back();
-          MPI_Irecv(smw.data() + static_cast<size_t>(vgd_csps[p])*wpe,
-                    static_cast<int>(vgd_cspn[p]*wpe), MPI_UINT32_T, rk, 7105,
+          MPI_Irecv(smw + static_cast<size_t>(vgd_csps[p])*wpe,
+                    static_cast<int>(vgd_cspn[p]*wpe), MPI_UINT32_T, rk, 7107,
                     MPI_COMM_WORLD, &req.back());
+          req.emplace_back();
+          MPI_Irecv(&hr[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
         }
         if (vgd_cspm[p] > 0) {
+          const uint32_t *b = mp + static_cast<size_t>(vgd_cspr[p])*wpe;
+          const size_t nw = static_cast<size_t>(vgd_cspm[p])*wpe;
+          hs[p] = hsum(b, nw);
           req.emplace_back();
-          MPI_Isend(mp.data() + static_cast<size_t>(vgd_cspr[p])*wpe,
-                    static_cast<int>(vgd_cspm[p]*wpe), MPI_UINT32_T, rk, 7105,
-                    MPI_COMM_WORLD, &req.back());
+          MPI_Isend(b, static_cast<int>(nw), MPI_UINT32_T, rk, 7107, MPI_COMM_WORLD,
+                    &req.back());
+          req.emplace_back();
+          MPI_Isend(&hs[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
         }
       }
       MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+      for (int p = 0; p < np; ++p) {
+        if (vgd_cspn[p] <= 0) {continue;}
+        const uint64_t h = hsum(smw + static_cast<size_t>(vgd_csps[p])*wpe,
+                                static_cast<size_t>(vgd_cspn[p])*wpe);
+        if (h != hr[p]) {
+          VgdCsFatal("compact lists: the read marks from rank " +
+                     std::to_string(vgd_csprk[p]) + " arrived corrupted (rank " +
+                     std::to_string(global_variable::my_rank) + ", checksum mismatch): "
+                     "the MPI transport delivered other bytes than were sent (seen with "
+                     "UCX's registration cache under an LD_PRELOAD profiler such as nsys "
+                     "-t osrt / -s cpu: export UCX_RCACHE_ENABLE=n for such runs)");
+        }
+      }
     }
 #endif
     auto buildw = [&](const uint32_t *mk, const std::vector<int> &st0,
@@ -941,8 +976,8 @@ void RadiationM1::VetGdCsCompact() {
       }
       return t;
     };
-    ts = buildw(smw.data(), vgd_csps, vgd_cspn, E.so, sl_h);
-    tr = buildw(mp.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+    ts = buildw(smw, vgd_csps, vgd_cspn, E.so, sl_h);
+    tr = buildw(mp, vgd_cspr, vgd_cspm, E.ro, rl_h);
   } else {
     // memcut-1020: the packed mask expanded on the host (1 byte per value, as before)
     std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
@@ -1109,7 +1144,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
   Real *rbp = ncl ? vgd_csdrb.data() : rb_.data();
   if (ns > 0) {
     Kokkos::parallel_for("m1_vgdcs_cpack",
-                         VgdCsLight(DevExeSpace(), 0, static_cast<int>(ns)),
+                         VgdLight(DevExeSpace(), 0, static_cast<int>(ns)),
     KOKKOS_LAMBDA(const int o) {
       const int x = si_(s0 + o);
       const int e = x/n, d = x - e*n;
@@ -1177,7 +1212,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
   vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*xf;
   if (nr > 0) {
     Kokkos::parallel_for("m1_vgdcs_cunpack",
-                         VgdCsLight(DevExeSpace(), 0, static_cast<int>(nr)),
+                         VgdLight(DevExeSpace(), 0, static_cast<int>(nr)),
     KOKKOS_LAMBDA(const int o) {
       const int x = ri_(r0 + o);
       const int e = x/n, d = x - e*n;
@@ -1525,7 +1560,7 @@ void RadiationM1::VetGdCsSweep() {
       auto si_ = E.si;
       const int64_t bo = x.slot*xmx;
       const int i = x.i;
-      Kokkos::parallel_for("m1_vgdcs_xpack", VgdCsLight(DevExeSpace(), 0,
+      Kokkos::parallel_for("m1_vgdcs_xpack", VgdLight(DevExeSpace(), 0,
                                                      static_cast<int>(ns)),
       KOKKOS_LAMBDA(const int o) {
         const int xx = si_(s0 + o);
@@ -1570,7 +1605,7 @@ void RadiationM1::VetGdCsSweep() {
       auto ri_ = E.ri;
       const int64_t bo = x.slot*xmx;
       const int i = x.i;
-      Kokkos::parallel_for("m1_vgdcs_xunpack", VgdCsLight(DevExeSpace(), 0,
+      Kokkos::parallel_for("m1_vgdcs_xunpack", VgdLight(DevExeSpace(), 0,
                                                      static_cast<int>(nr)),
       KOKKOS_LAMBDA(const int o) {
         const int xx = ri_(r0 + o);
@@ -1629,6 +1664,26 @@ void RadiationM1::VetGdCsSweep() {
     }
   }
   auto lst_ = vgd_cslst;
+  // speed2-1031 cs early send (see the shell loop)
+  static int s_early = -1;
+  if (s_early < 0) {
+    const char *ee = std::getenv("VGD_CS_EARLY");
+    s_early = (ee != nullptr) ? std::atoi(ee) : 1;
+  }
+  bool early = (s_early != 0) && ccl && !pipe && (G == 1);
+#if !MPI_PARALLEL_ENABLED
+  early = false;
+#endif
+#if M1_VGDCS_NCCL
+  if (VgdNcclOn()) {early = false;}
+#endif
+  if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
+  VgdCsEv eev;
+  static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
+  if (s_lb < 0) {
+    const char *el = std::getenv("VGD_CS_LB");
+    s_lb = (el != nullptr) ? std::atoi(el) : 6;   // defaults-1031: 6 (VGD_CS_LB=0: old launch)
+  }
   VetGdRingSweepBegin(two);
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
@@ -1665,15 +1720,13 @@ void RadiationM1::VetGdCsSweep() {
       const int nkk = ke - ks + 1, njj = je - js + 1, ndd = d1 - d0;
       const int nper = usel ? nlist[pass] : (nmb1 + 1)*nkk*njj*ndd;
       const int lo = pass*nlt;
-      Kokkos::parallel_for("m1_vgdcs_shell", VgdCsLight(DevExeSpace(), 0, nper),
-      KOKKOS_LAMBDA(const int c) {
-        int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
-        const int d = d0 + t % ndd;
-        t /= ndd;
-        const int j = js + t % njj;
-        t /= njj;
-        const int k = ks + t % nkk;
-        const int m = t/nkk;
+      // speed2-1031 (cs early send): the body of the shell kernel for one (cell, direction)
+      // as a device lambda, run by the shell kernel over the pass's list and (early send)
+      // first over the shell's compact SEND list alone; cnt = false there: the clamped /
+      // miss counters are counted once, by the shell kernel (which recomputes the same
+      // values from the same inputs: bitwise)
+      auto shell_ = KOKKOS_LAMBDA(const int m, const int k, const int j, const int d,
+                                  const bool cnt) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         const Real mr = mr_(m,k,j,d);
         if (inw == (mr >= 0.0)) {return;}
@@ -1694,31 +1747,8 @@ void RadiationM1::VetGdCsSweep() {
           const Real rtop = cx1f(m,ie+1);
           ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
         } else if (br == 2) {
-          if (inw) {
-            const Real ru = cx1v(m,i+1);
-            ds = sqrt(ru*ru - p2) - zr;
-          } else {
-            const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
-            if (l > lcut && p2 <= rd*rd*(1.0 + 1.0e-13)) {
-              iu = i - 1;
-              ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-            } else if (l == lcut && p2 <= rd*rd) {
-              typ = 2;
-              iu = i;
-              ds = zr - sqrt(fmax(rd*rd - p2, 0.0));
-            } else {
-              typ = 3;
-              iu = i;
-              ds = 2.0*zr;
-            }
-          }
-          dso = 0.5*ds;
-          if (spl && typ == 1) {
-            const Real rf = inw ? cx1f(m,i+1) : cx1f(m,i);
-            dso = inw ? (sqrt(fmax(rf*rf - p2, 0.0)) - zr)
-                      : (zr - sqrt(fmax(rf*rf - p2, 0.0)));
-            dso = fmin(fmax(dso, 0.0), ds);
-          }
+          // the upwind shell, the chord and its own-cell part (rad_m1_vgdray.hpp)
+          VgdRayChord(inw, l, lcut, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
           // the upwind point (Cartesian), its direction and the cs stencil
           Real xu[3] = {r*rx - ds*nx, r*ry - ds*ny, r*rz - ds*nz};
           const Real ru = sqrt(xu[0]*xu[0] + xu[1]*xu[1] + xu[2]*xu[2]);
@@ -1728,7 +1758,7 @@ void RadiationM1::VetGdCsSweep() {
           const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
                                         nc, h, cm_, nb_, st);
           // (counted per field swept, as the unfused twin's own sweep)
-          if (!sok) {Kokkos::atomic_add(&cnt_(0), two ? 2.0 : 1.0);}
+          if (!sok && cnt) {Kokkos::atomic_add(&cnt_(0), two ? 2.0 : 1.0);}
           if (st.n == 0) {   // nothing in the band (counted): the own column
             st.n = 1;
             st.k[0] = k;
@@ -1752,45 +1782,25 @@ void RadiationM1::VetGdCsSweep() {
         const Real ch0 = exp(cv(m,0,k,j,i));
         const Real s0 = exp(cv(m,1,k,j,i));
         Real iv;
+        // share3-1031: the stencil and the field reads of the shared upwind core
+        const VgdCsA acc{st};
+        auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
+          return cv(m,c,kk,jj,ii);
+        };
         if (br == 0) {
-          const Real stp = fmax(1.5*s0 - 0.5*exp(cv(m,1,k,j,i-1)), 1.0e-300);
-          Real ex, w0, wu;
-          VgdCsW(ch0*ds, ex, w0, wu);
-          iv = tbh ? (itop*ex + wu*stp + w0*s0) : (wu*stp + w0*s0);
+          iv = VgdTopInflow(ch0, ds, s0, exp(cv(m,1,k,j,i-1)), tbh, itop);
         } else if (br == 1) {
           iv = s0;
         } else {
           if (typ == 2) {
-            const int i1 = i + 1;
-            auto sbt = [&](const int kk, const int jj) {
-              return fmax(1.5*exp(cv(m,1,kk,jj,i)) - 0.5*exp(cv(m,1,kk,jj,i1)),
-                          1.0e-300);
-            };
-            Real ex, w0, wu;
-            VgdCsW(ch0*ds, ex, w0, wu);
-            Real qv = 0.0;
-            for (int e = 0; e < st.n; ++e) {qv += st.w[e]*sbt(st.k[e], st.j[e]);}
-            if (emi) {
-              iv = iemit*ex + wu*qv + w0*s0;
-            } else {
-              const Real rf = cx1f(m,i);
-              const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
-              Real bv = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                const int kk = st.k[e], jj = st.j[e];
-                const Real sa = exp(cv(m,1,kk,jj,i)), sb = exp(cv(m,1,kk,jj,i1));
-                const Real g0 = -(sb - sa)/(cx1v(m,i1) - cx1v(m,i))/exp(cv(m,0,kk,jj,i));
-                bv += st.w[e]*((bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf);
-              }
-              iv = fmax(bv, 0.0)*ex + wu*qv + w0*s0;
-            }
+            iv = VgdInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
+                              cx1v(m,i+1), p2, ch0, ds, s0);
           } else {
             // the intensity of a stencil cell: its owner's interior when on this rank
             // (stream order: shell iu is complete; the other branch of shell i, which
             // this launch writes, is masked), else the band copy of the remote value
-            auto rdi = [&](const int e) -> Real {
-              const int kk = st.k[e], jj = st.j[e];
-              if (ccl) {
+            auto rdi = [&](const int kk, const int jj) -> Real {
+              if (ccl && cnt) {
                 const int x = rx_(m,kk,jj);
                 if (x >= 0) {
                   const int64_t t = (static_cast<int64_t>(x)*n + d)*n1 + (iu - is);
@@ -1801,22 +1811,7 @@ void RadiationM1::VetGdCsSweep() {
               }
               return va(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
-            Real ivu;
-            if (all) {
-              ivu = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                ivu += st.w[e]*rdi(e);
-              }
-            } else {
-              Real ws = 0.0, vs = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                if (ok[e] && st.w[e] > 0.0) {
-                  ws += st.w[e];
-                  vs += st.w[e]*rdi(e);
-                }
-              }
-              ivu = (ws > 0.0) ? vs/ws : -1.0;
-            }
+            const Real ivu = VgdUpwindI(acc, rdi, ok, all);
             auto lin = [&](const int c, const int ii) {
               Real s = 0.0;
               for (int e = 0; e < st.n; ++e) {s += st.w[e]*cv(m,c,st.k[e],st.j[e],ii);}
@@ -1836,50 +1831,78 @@ void RadiationM1::VetGdCsSweep() {
               }
               edge = (lmx - lmn) > lcr;
             }
-            if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
-              // vet_seg = jump: the turned ray's chord below the own inner face
-              auto lind = [&](const int c) {
-                return exp(0.5*(lin(c, i - 1) + cv(m,c,k,j,i-1)));
-              };
-              const Real zf = sqrt(fmax(rfi*rfi - p2, 0.0));
-              const Real e1 = exp(-chu*(zr - zf)), e2 = exp(-lind(0)*2.0*zf);
-              const Real e3 = exp(-ch0*(zr - zf));
-              const Real ia = ((ivu < 0.0) ? su : ivu)*e1 + su*(1.0 - e1);
-              iv = fmax((ia*e2 + lind(1)*(1.0 - e2))*e3 + s0*(1.0 - e3), 0.0);
-            } else if (vim == 2 || (vim == 3 && edge)) {
-              // vet_interp = corner: one segment per stencil cell from its own (I, chi,
-              // S), the outcome interpolated over the cells of the right branch
-              Real ws = 0.0, vs = 0.0;
-              for (int e = 0; e < st.n; ++e) {
-                if (!(st.w[e] > 0.0) || !(ok[e] || ivu < 0.0)) {continue;}
-                const int kk = st.k[e], jj = st.j[e];
-                const Real cq = exp(cv(m,0,kk,jj,iu)), sq = exp(cv(m,1,kk,jj,iu));
-                const Real iq = (ivu < 0.0) ? sq : rdi(e);
-                Real vq;
-                if (spl) {
-                  vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe);
-                } else {
-                  Real ex, w0, wu;
-                  VgdCsW(0.5*(cq + ch0)*ds, ex, w0, wu);
-                  vq = iq*ex + wu*sq + w0*s0;
-                }
-                ws += st.w[e];
-                vs += st.w[e]*vq;
-              }
-              iv = fmax(vs/ws, 0.0);
-            } else if (spl) {
-              iv = fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso),
-                                    ch0*dso, spe), 0.0);
-            } else {
-              Real ex, w0, wu;
-              VgdCsW(0.5*(chu + ch0)*ds, ex, w0, wu);
-              iv = fmax(((ivu < 0.0) ? su : ivu)*ex + wu*su + w0*s0, 0.0);
-            }
+            auto edgef = [&]() {return edge;};
+            // the closing segment (vet_seg = jump below the inner face, vet_interp =
+            // corner, vet_seg = split, the plain segment: rad_m1_vgdray.hpp)
+            iv = VgdSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
+                              ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
           }
         }
         va(m,d,k,j,i) = iv;
         }   // f
-      });
+      };
+      // speed2-1031 cs early send (env VGD_CS_EARLY, default on; compact lists, G = 1, no
+      // NCCL): the values this shell SENDS first, then their pack (pinned host buffer) and
+      // an event; the full shell kernel runs while the host exchanges (finished below at
+      // the halo point: event wait instead of a fence, MPI, unpack)
+      if (early) {
+        const VgdCsCl &E = vgd_cscl[vgd_cscur];
+        const int np = static_cast<int>(vgd_csprk.size());
+        const size_t sl = static_cast<size_t>(pass)*n1 + l;
+        const int64_t *so = &E.so[sl*(np + 1)];
+        const int64_t es0 = so[0], ens = so[np] - so[0];
+        if (ens > 0) {
+          auto si_ = E.si;
+          auto S_ = vgd_cssl;
+          Kokkos::parallel_for("m1_vgdcs_eshell", VgdLight(DevExeSpace(), 0,
+                                                            static_cast<int>(ens)),
+          KOKKOS_LAMBDA(const int o) {
+            const int x = si_(es0 + o);
+            const int e = x/n, d = x - e*n;
+            shell_(S_(e,0), S_(e,1), S_(e,2), d, false);
+          });
+          auto a_ = vgd_i;
+          auto b_ = vgd_itw;
+          Real *sbp = vgd_cssb.data();
+          Kokkos::parallel_for("m1_vgdcs_cpack",
+                               VgdLight(DevExeSpace(), 0, static_cast<int>(ens)),
+          KOKKOS_LAMBDA(const int o) {
+            const int x = si_(es0 + o);
+            const int e = x/n, d = x - e*n;
+            if (two) {
+              sbp[o] = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+              sbp[ens + o] = b_(S_(e,0),d,S_(e,1),S_(e,2),i);
+            } else {
+              sbp[o] = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
+            }
+          });
+        }
+        eev.Record();
+      }
+      auto mainf_ = KOKKOS_LAMBDA(const int c) {
+        int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
+        const int d = d0 + t % ndd;
+        t /= ndd;
+        const int j = js + t % njj;
+        t /= njj;
+        const int k = ks + t % nkk;
+        const int m = t/nkk;
+        shell_(m, k, j, d, true);
+      };
+      // speed2-1031 cslb: the shell kernel is latency bound at 25 % occupancy (114
+      // registers, 4 blocks of 128 per SM; ncu: DRAM 4 %, issue 43 %); env VGD_CS_LB = 6
+      // or 8 launches it with LaunchBounds<128, LB> (register cap, same code)
+      if (s_lb == 8) {
+        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 8>>(DevExeSpace(), 0, nper),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
+      } else if (s_lb == 6) {
+        Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
+            Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, nper),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
+      } else {
+        Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), mainf_);
+      }
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
         Kokkos::Timer tf;
@@ -1917,6 +1940,68 @@ void RadiationM1::VetGdCsSweep() {
       if (pipe) {
         // xchg-1021: this shell's exchanges are in flight (finished before the next
         // shell's kernels of the same group, or at the end of the pass)
+      } else if (early) {
+#if MPI_PARALLEL_ENABLED
+        // speed2-1031 cs early send: the pack has run (event), the shell kernel may still
+        // be running; the messages of VetGdCsHaloC, then its unpack (stream order: after
+        // the shell kernel)
+        const VgdCsCl &E = vgd_cscl[vgd_cscur];
+        const int np = static_cast<int>(vgd_csprk.size());
+        const size_t sl = static_cast<size_t>(pass)*n1 + l;
+        const int64_t *so = &E.so[sl*(np + 1)];
+        const int64_t *ro = &E.ro[sl*(np + 1)];
+        const int64_t s0 = so[0], ns = so[np] - so[0];
+        const int64_t r0 = ro[0], nr = ro[np] - ro[0];
+        const int xf = two ? 2 : 1;
+        if (static_cast<int64_t>(vgd_cssb.extent(0)) < xf*ns ||
+            static_cast<int64_t>(vgd_csrb.extent(0)) < xf*nr) {
+          VgdCsFatal("cs early send: message buffer too small");
+        }
+        eev.Wait();
+        Kokkos::Timer tq;
+        std::vector<MPI_Request> req;
+        for (int p = 0; p < np; ++p) {
+          const int rk = vgd_csprk[p];
+          const int64_t cr = ro[p+1] - ro[p], cs = so[p+1] - so[p];
+          for (int f = 0; f < xf; ++f) {
+            if (cr > 0) {
+              req.emplace_back();
+              MPI_Irecv(vgd_csrb.data() + f*nr + (ro[p] - r0), static_cast<int>(cr),
+                        MPI_ATHENA_REAL, rk, 7103 + 2*f, MPI_COMM_WORLD, &req.back());
+            }
+            if (cs > 0) {
+              req.emplace_back();
+              MPI_Isend(vgd_cssb.data() + f*ns + (so[p] - s0), static_cast<int>(cs),
+                        MPI_ATHENA_REAL, rk, 7103 + 2*f, MPI_COMM_WORLD, &req.back());
+              vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
+            }
+          }
+        }
+        MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+        vgd_tmpi += tq.seconds();
+        vgd_nexch += 1.0;
+        vgd_csvsent += static_cast<double>(xf*ns);
+        vgd_csvdense += static_cast<double>(vgd_csnsnd)*n*xf;
+        if (nr > 0) {
+          auto a_ = vgd_i;
+          auto b_ = vgd_itw;
+          auto R_ = vgd_csrl;
+          auto ri_ = E.ri;
+          const Real *rbp = vgd_csrb.data();
+          Kokkos::parallel_for("m1_vgdcs_cunpack",
+                               VgdLight(DevExeSpace(), 0, static_cast<int>(nr)),
+          KOKKOS_LAMBDA(const int o) {
+            const int x = ri_(r0 + o);
+            const int e = x/n, d = x - e*n;
+            if (two) {
+              a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rbp[o];
+              b_(R_(e,0),d,R_(e,1),R_(e,2),i) = rbp[nr + o];
+            } else {
+              a_(R_(e,0),d,R_(e,1),R_(e,2),i) = rbp[o];
+            }
+          });
+        }
+#endif
       } else if (ccl) {
         VetGdCsHaloC(pass, i, two);          // cs-s3b-1017: the read values only
       } else {
@@ -2024,20 +2109,9 @@ void RadiationM1::VetGdCsMoments(const int part) {
   auto cx1f = pmy_pack->pcoord->xx1f;
   par_for("m1_vgdcs_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    const Real rx = cr_(m,k+og,j+og,0), ry = cr_(m,k+og,j+og,1);
-    const Real rz = cr_(m,k+og,j+og,2);
-    Real jt = 0.0, jb = 0.0, ht = 0.0;
-    for (int d = 0; d < n; ++d) {
-      const Real a = dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
-      const Real w = dir_(d,3);
-      jt += w*vi_(m,d,k+og,j+og,ie);
-      jb += w*vi_(m,d,k+og,j+og,ie-1);
-      ht += w*a*vi_(m,d,k+og,j+og,ie);
-    }
-    const Real rr = cx1v(m,ie)/cx1f(m,ie+1);
-    const Real hf = ht*rr*rr;
-    const Real jq = sqf ? fmin(fmax(jca*jt - jcb*jb, 0.0), jcap*jt) : jt;
-    vq_(m,k,j) = (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
+    const VgdRhatCs rh{cr_(m,k+og,j+og,0), cr_(m,k+og,j+og,1), cr_(m,k+og,j+og,2)};
+    vq_(m,k,j) = VgdSurfaceQ(rh, dir_, vi_, n, m, k, j, og, ie, cx1v(m,ie)/cx1f(m,ie+1),
+                             sqf, jca, jcb, jcap, qlo, qhi, q0);
   });
 }
 

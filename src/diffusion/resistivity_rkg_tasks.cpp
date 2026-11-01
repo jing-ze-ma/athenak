@@ -77,6 +77,11 @@ void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<T
 }
 
 TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
+  // rkgdt-1101 <mhd>/rkg_lmax_diag: once, on the state the first super-step starts from
+  if (rkg_lmax_diag > 0 && !rkg_lmax_done) {
+    rkg_lmax_done = true;
+    LmaxDiag();
+  }
   Real dtp = pmy_pack->pmesh->dt_diff;
   Real dth = pmy_pack->pmesh->dt;
   tau = dth/dtp;
@@ -277,8 +282,13 @@ TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
   int n1m1 = indcs.nx1 + 2*ng - 1;
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
-  if (iso_resist_type.compare("constant") != 0) {
+  if (OhmicNeedsUpdate()) {
     SetResistivity(pmy_pack->pmhd->w0, pmy_pack->pmhd->peos->eos_data, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
+  if (AmbipolarNeedsUpdate()) {
+    SetAmbipolar(pmy_pack->pmhd->w0, pmy_pack->pmhd->peos->eos_data,
+                 pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas,
+                 0, n1m1, 0, n2m1, 0, n3m1);
   }
   return TaskStatus::complete;
 }

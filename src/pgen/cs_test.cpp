@@ -2600,7 +2600,27 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   auto pres = pmbp->pmhd->presist;
   const Real eta = has_res ? pres->eta_ohm_const : 0.0;
   const Real jz = 2.0*cs_bazi;
-  const Real scale = has_res ? fabs(eta*jz) : 1.0;
+  // ambipolar-1101: <mhd>/ambipolar = constant adds eta_ad (B^2 J - (J.B) B) with the
+  // exact B = b0c (-y, x, 0) + (bvx, bvy, bvz) at the edge; J = jz zhat is uniform
+  const Real ead = (has_res && pres->ad_type == 1) ? pres->eta_ad : 0.0;
+  const Real bref2 = SQR(cs_bazi*pm->mesh_size.x1max) + SQR(cs_bvx) + SQR(cs_bvy)
+                   + SQR(cs_bvz);
+  const Real scale = has_res ? fabs(eta*jz) + fabs(ead*bref2*jz) : 1.0;
+  // exact total resistive EMF vector at r*(ux, uy, uz), dotted with the tangent t
+  auto exact_e = [&](Real rr, Real ux, Real uy, Real uz, Real tx, Real ty, Real tz) {
+    Real ee = eta*jz*tz;
+    if (ead != 0.0) {
+      const Real bx = -cs_bazi*rr*uy + cs_bvx, by = cs_bazi*rr*ux + cs_bvy, bz = cs_bvz;
+      const Real b2 = bx*bx + by*by + bz*bz, jb = jz*bz;
+      ee += ead*((b2*jz - jb*bz)*tz - jb*(bx*tx + by*ty));
+    }
+    return ee;
+  };
+  HostArray2D<Real> rcv, rfv;
+  if (ead != 0.0) {
+    rcv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+    rfv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+  }
   if (has_res && scale == 0.0) {
     std::cout << "### CS RESIST CHECK: eta*2*b0c = 0, nothing to compare" << std::endl;
     return;
@@ -2672,10 +2692,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         // x1 edge: (cell centre in r, xi face, eta face); tangent is rhat
         if (k <= ke+1 && j <= je+1) {
           PanelToCart(p, xf, ef, cx, cy, cz);
-          const Real ex = eta*jz*cz;
+          Real ex = eta*jz*cz;
           const bool seam = (j-js < nseam) || (je+1-j < nseam) ||
                             (k-ks < nseam) || (ke+1-k < nseam);
           for (int i=is; i<=ie; ++i) {
+            if (ead != 0.0) ex = exact_e(rcv(m,i), cx, cy, cz, cx, cy, cz);
             const Real d = fabs(e1(m,k,j,i) - ex)/scale;
             if (d > mx[0]) { mxloc[0]=p; mxloc[1]=i; mxloc[2]=j; mxloc[3]=k; }
             mx[0] = fmax(mx[0], d); l1[0] += d; ++nc[0];
@@ -2695,8 +2716,10 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         // x2 edge: (r face, xi centre, eta face); tangent is e_xi there
         if (k <= ke+1 && j <= je) {
           cubed_sphere::PanelTangents(p, xc, ef, t1, t2);
-          const Real ex = eta*jz*t1[2];
+          Real ex = eta*jz*t1[2];
+          if (ead != 0.0) PanelToCart(p, xc, ef, cx, cy, cz);
           for (int i=is; i<=ie+1; ++i) {
+            if (ead != 0.0) ex = exact_e(rfv(m,i), cx, cy, cz, t1[0], t1[1], t1[2]);
             const Real d = fabs(e2(m,k,j,i) - ex)/scale;
             mx[1] = fmax(mx[1], d); l1[1] += d; ++nc[1];
           }
@@ -2704,8 +2727,10 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         // x3 edge: (r face, xi face, eta centre); tangent is e_eta there
         if (k <= ke && j <= je+1) {
           cubed_sphere::PanelTangents(p, xf, ec, t1, t2);
-          const Real ex = eta*jz*t2[2];
+          Real ex = eta*jz*t2[2];
+          if (ead != 0.0) PanelToCart(p, xf, ec, cx, cy, cz);
           for (int i=is; i<=ie+1; ++i) {
+            if (ead != 0.0) ex = exact_e(rfv(m,i), cx, cy, cz, t2[0], t2[1], t2[2]);
             const Real d = fabs(e3(m,k,j,i) - ex)/scale;
             mx[2] = fmax(mx[2], d); l1[2] += d; ++nc[2];
           }
@@ -2738,6 +2763,10 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   }
   std::printf("### CS RESISTIVE EMF CHECK (iprob=11): nx1=%d nx2=%d  eta=%.3e"
               "  |2*eta*b0c|=%.3e\n", indcs.nx1, indcs.nx2, eta, scale);
+  if (ead != 0.0) {
+    std::printf("###   ambipolar eta_ad=%.3e: exact = eta*J + eta_ad (B^2 J - (J.B) B),"
+                " scale |eta J| + eta_ad B_ref^2 |J|\n", ead);
+  }
   std::printf("###   relative error vs the analytic eta*J:"
               "  x1e L1=%.4e max=%.4e | x2e L1=%.4e max=%.4e | x3e L1=%.4e max=%.4e\n",
               l1[0], mx[0], l1[1], mx[1], l1[2], mx[2]);

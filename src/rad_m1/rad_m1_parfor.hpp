@@ -7,7 +7,9 @@
 //========================================================================================
 //! \file rad_m1_parfor.hpp
 //! \brief par_for_lb: the 4-D athena par_for (same flattening, same index arithmetic)
-//! with Kokkos::LaunchBounds<256,1> (m1-fast4, tests_m1/runs_5r_fast4).
+//! with Kokkos::LaunchBounds<256,2> (m1-fast4, tests_m1/runs_5r_fast4; lb2-1031: min 2 blocks
+//! of 256 per SM, i.e. a register cap of 128 on CUDA -- the heavy pass kernels ran at
+//! 12-18 % occupancy with 154-255 registers; same arithmetic, RSG pass_setup -11 %).
 //!
 //! Kokkos' HIP backend compiles a plain RangePolicy kernel for up to 1024 threads per
 //! block, which caps a kernel at 128 VGPRs on gfx942; the heavy per-cell kernels of the
@@ -42,7 +44,7 @@ inline void par_for_lb(const std::string &name, ExeSpace exec_space,
   const int nkji  = nk * nj * ni;
   const int nji   = nj * ni;
   Kokkos::parallel_for(name,
-  Kokkos::RangePolicy<ExeSpace, Kokkos::LaunchBounds<256,1>>(exec_space, 0, nnkji),
+  Kokkos::RangePolicy<ExeSpace, Kokkos::LaunchBounds<256,2>>(exec_space, 0, nnkji),
   KOKKOS_LAMBDA(const int &idx) M1_INL {
     int n = (idx)/nkji;
     int k = (idx - n*nkji)/nji;

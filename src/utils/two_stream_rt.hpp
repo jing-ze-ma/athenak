@@ -53,6 +53,7 @@
 #include "pgen/pgen.hpp"
 #include "utils/correlated_k.hpp"
 #include "utils/atm_column.hpp"
+#include "pgen/roche_common.hpp"
 #include "pgen/pgen_eos_utils.hpp"
 #include "utils/rad_taper.hpp"
 #include "utils/two_stream_warm_rst.hpp"
@@ -2962,7 +2963,8 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                        + kc_g(m,bandc[cc],ie+1,k,j);
         const Real dtau = RTTopDtau(kap, ptop*1.0e6,
                                     EffGravAt(grav, ap, x1v_(m,ie+1),
-                                              grav_pmass, omega, mu0, tide));
+                                              grav_pmass, omega, mu0, tide)
+                                    *cf_g(m,k,j,4));
         RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
         if (tpm == 2) {
           const Real xTa = xT_g(m,k,j,ie);
@@ -2974,7 +2976,8 @@ inline void TsrtCkChain(Ctx &ctx_, NnTag nn_tag, SphTag sph_tag, BspTag bsp_tag,
                          + kc_g(m,bandc[cc],ie,k,j);
           const Real dta = RTTopDtau(kpa, ptop*1.0e6,
                                      EffGravAt(grav, ap, x1v_(m,ie+1),
-                                               grav_pmass, omega, mu0, tide));
+                                               grav_pmass, omega, mu0, tide)
+                                     *cf_g(m,k,j,4));
           trans = RT_EXP(-static_cast<RtF>(dta/muc[cc]));
         }
         if (ckfst) {
@@ -5736,7 +5739,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         rt_tau_ptr = new DvceArray4D<Real>("rt_tau", nmb, n3, n2, n1);
         rt_B_ptr   = new DvceArray4D<Real>("rt_B",   nmb, n3, n2, n1);
         rt_Qv_ptr  = new DvceArray4D<Real>("rt_Qv",  nmb, n3, n2, n1);
-        rt_cf_ptr  = new DvceArray4D<Real>("rt_cf",  nmb, n3, n2, 4);
+        // slot 4 (roche-dhj-1031): the Roche factor |grad Phi|/g_pm of the column top for
+        // the tau = kappa p/g closure (EffGravAt x cf(4)); 1 unless problem/roche
+        rt_cf_ptr  = new DvceArray4D<Real>("rt_cf",  nmb, n3, n2, 5);
+        Kokkos::deep_copy(Kokkos::subview(*rt_cf_ptr, Kokkos::ALL, Kokkos::ALL,
+                                          Kokkos::ALL, 4), 1.0);
         // (m, slot, i, k, j). Threads in a wave vary in j -- see the flattening in
         // par_for -- so j has to be the FASTEST array index. With j second-slowest, as
         // (m,slot,k,j,i) had it, adjacent lanes were 544 bytes apart and each one pulled
@@ -5998,6 +6005,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // the three-band Q_v that the old rt_pre computed are all dead: nothing reads them.
       if (band_on) {
         const Real tmu_ = rt_test_mu0;
+        // roche-dhj-1031 (problem/roche): cf(4) = |grad Phi_Roche|/g_pm at the column
+        // top, for the unresolved-column closure; untouched (1) otherwise
+        const bool rch_ = pm->pgen->hot_jupiter_param.roche;
+        const Real rgm1_ = grav*ap*ap, rom2_ = SQR(omega);
+        const Real rgms_ = pm->pgen->hot_jupiter_param.roche_gms;
+        const Real ra_ = pm->pgen->hot_jupiter_param.roche_a;
         // problem/ck_impl_nosync: mu0 is geometry; the later passes of a call keep it
         if (!(ck_impl_nosync && ck_impl_pass > 0)) {
         par_for("rt_pre_geom", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -6024,6 +6037,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             phi = x2v*iap;
           }
           Real mu0 = sin(theta)*cos(phi);
+          if (rch_) {
+            const Real rt_ = x1v_(m,ie+1);
+            const Real st_ = sin(theta);
+            cf_g(m,k,j,4) = roche::GeffPlanet(rgm1_, rom2_, rgms_, ra_, rt_*st_*cos(phi),
+                                              rt_*st_*sin(phi), rt_*cos(theta))
+                            /(rgm1_/(rt_*rt_));
+          }
           if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
           if (tmu_ >= -1.0) mu0 = tmu_;
           cf_g(m,k,j,3) = mu0;
@@ -6714,7 +6734,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               const Real dtau = top_vac ? 0.0
                   : RTTopDtau(kap, pb_g(m,k,j,ie+1)*1.0e6,
                               EffGravAt(grav, ap, X1V(m,ie+1), grav_pmass,
-                                        omega, mu0, tide));
+                                        omega, mu0, tide)*cf_g(m,k,j,4));
               // The source of that column: the ghost's own Planck function, or -- with
               // rt_top_re -- the radiative-equilibrium value I_up/2, which is what a slab
               // with nothing but space above it must emit downward.  See rt_top_re.
@@ -7132,7 +7152,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             const Real dtau = tv3 ? 0.0
                 : RTTopDtau(kap, pb_g(m,k,j,ie+1)*1.0e6,
                             EffGravAt(grav, ap, X1V(m,ie+1), grav_pmass, omega, mu0,
-                                      tide));
+                                      tide)*cf_g(m,k,j,4));
             const Real bsrc = Bb_g(m,0,ie+1,k,j);
             c3top(m,0,k,j) = (1.0 - exp(-dtau/mu3a))*bsrc;
             c3top(m,1,k,j) = (1.0 - exp(-dtau/mu3b))*bsrc;
@@ -8750,7 +8770,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                + kc_g(m,b,ie+1,k,j);
                 const Real dtau = RTTopDtau(kap, ptop*1.0e6,
                                             EffGravAt(grav, ap, x1v_(m,ie+1),
-                                                      grav_pmass, omega, mu0, tide));
+                                                      grav_pmass, omega, mu0, tide)
+                                            *cf_g(m,k,j,4));
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muq[q]));
                 cktpf_g(m,c0+q,k,j) = static_cast<Real>(static_cast<RtF>(1.0)-trans);
                 // problem/ck_sph_top = 1: no datum, so the linear kernels' cktpf B = 0
@@ -11189,6 +11210,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             const Real gloc = !pp_
                 ? EffGravAt(grav, apo_, X1V(m,i), grav_pmass, omega,
                             cfv_on ? cfv_(m,k,j,3) : 0.0, tide)
+                  *(cfv_on ? cfv_(m,k,j,4) : 1.0)
                 : gver;
             const Real gg = (gloc > 0.0) ? gloc : ((gver > 0.0) ? gver : 1.0);
             Kokkos::printf("### rt_force ncycle=%d i=%d rho=%.4e T=%.4e w=%.4f "

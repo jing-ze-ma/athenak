@@ -851,8 +851,13 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   }
   if (c2p_track) C2PTrack(pdrive, stage, false);
   if (presist != nullptr) {
-    if (presist->iso_resist_type.compare("constant") != 0 && (!presist->use_rkg_sts || stage == 0)) {
+    if (presist->OhmicNeedsUpdate() && (!presist->use_rkg_sts || stage == 0)) {
       presist->SetResistivity(w0, peos->eos_data, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
+    }
+    if (presist->AmbipolarNeedsUpdate() && (!presist->use_rkg_sts || stage == 0)) {
+      presist->SetAmbipolar(w0, peos->eos_data,
+                            pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas,
+                            0, n1m1, 0, n2m1, 0, n3m1);
     }
   }
   return TaskStatus::complete;
