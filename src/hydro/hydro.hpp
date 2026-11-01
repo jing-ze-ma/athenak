@@ -273,6 +273,13 @@ class Hydro {
   // from the mirror of the interior-side state, exactly as for ix1_bc = reflect, so
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
+  // topbc-1101 ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
+  // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
+  // state at the ie+1 face moves INWARD (v_r < 0) the ghost-side state is replaced by
+  // its mirror image, exactly as for ox1_bc = reflect, so that face carries zero mass
+  // and zero advected energy (pressure only); where it moves outward the ghost-side
+  // state is left as the boundary built it.  Default false: nothing changes.
+  bool diode_ox1 = false;
   // csedge-1019 <hydro>/cs_seam_rsolver = hlle: the cubed-sphere PANEL-SEAM faces take the
   // HLLE flux (contact/shear dissipation) whatever <hydro>/rsolver is (hydro.cpp)
   bool cs_seam_hlle = false;
