@@ -166,6 +166,13 @@ TaskStatus Resistivity::CopyIniConsAndFluxes(Driver *pdrive, int stage) {
 TaskStatus Resistivity::EField(Driver *pdrive, int stage) {
   // Use CT to compute corner E
   AddResistiveEMFs(pmy_pack->pmhd->b0, pmy_pack->pmhd->efld);
+  // spherical polar: the resistive E_r of the pole x1 edge is formed per phi sector, so
+  // the sectors that share the edge disagree and the polar-row div B grows (sp_test
+  // iprob 11 RKG: max |div B| L/b0 1.6e-3 -> 3e-11 with this).  Average it over phi as
+  // the explicit path does (mhd_tasks.cpp, <mesh>/use_polar_average_eresist).
+  if (pmy_pack->pmesh->use_polar_boundary && pmy_pack->pmesh->use_polar_average_eresist) {
+    pmy_pack->pmhd->PolarAzimuthalAverageEr();
+  }
   return TaskStatus::complete;
 }
 
