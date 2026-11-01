@@ -165,6 +165,11 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
         int nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
+        // xetracer-1101: <mhd>/xe_tracer adds one scalar (MHD ctor), constructed later
+        if (pin->DoesParameterExist("mhd", "xe_tracer") &&
+            pin->GetBoolean("mhd", "xe_tracer")) {
+          nscalars += 1;
+        }
         Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
         Kokkos::realloc(b_ideal.x1f, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(b_ideal.x2f, nmb, ncells3, ncells2+1, ncells1);
