@@ -81,6 +81,7 @@ void Resistivity::SetAmbipolar(const DvceArray5D<Real> &w, const EOS_Data &eos,
   const Real amu = 1.66053906660e-24;
   const Real mion = ad_mion_amu*amu;
   const Real sigv = ad_sigv_in;
+  const int ixe = xe_idx;   // xetracer-1101: advected x_e when >= 0
   par_for("ad_coef", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     const Real rho = w(m,IDN,k,j,i);
@@ -102,7 +103,7 @@ void Resistivity::SetAmbipolar(const DvceArray5D<Real> &w, const EOS_Data &eos,
       rhoc = rho;
       pcgs = 1.0;
     }
-    const Real xe = eos.ElectronFractionKelvin(rho, T);
+    const Real xe = (ixe >= 0) ? w(m,ixe,k,j,i) : eos.ElectronFractionKelvin(rho, T);
     Real rhoi = xe*ntot*mion;
     rhoi = fmin(rhoi, 0.5*rhoc);
     const Real rhon = rhoc - rhoi;

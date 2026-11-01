@@ -21,6 +21,7 @@
 #include "coordinates/cell_locations.hpp"
 #include "utils/wb_background.hpp"
 #include "utils/fofc_report.hpp"
+#include "mhd/xe_tracer.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -58,6 +59,7 @@ enum class MHD_RSolver {advect, llf, hlle, hlld, lhlld, roe,   // non-relativist
 
 struct MHDTaskIDs {
   TaskID splitpre;
+  TaskID xesrc;
   TaskID splitpst;
   TaskID savest;
   TaskID irecv;
@@ -124,6 +126,15 @@ class MHD {
 
   int nmhd;                // number of mhd variables (5/4 for ideal/isothermal EOS)
   int nscalars;            // number of passive scalars
+  // xetracer-1101: <mhd>/xe_tracer = true adds ONE passive scalar (the last, index ixe)
+  // carrying x_e = n_e/n_tot, relaxed to Saha by recombination once per cycle
+  // (mhd_xe_tracer.cpp); the Ohmic/ambipolar eos paths then read it instead of Saha.
+  bool xe_tracer = false;
+  int ixe = -1;
+  bool xe_init_pending = false;   // set z = Saha at the next ConToPrim (fresh start or
+                                  // a restart file written without the tracer)
+  xetracer::XeTracerParams xe_par;
+  void XeTracerUpdate(Real dt, bool init);
   DvceArray5D<Real> u0;    // conserved variables
   DvceArray5D<Real> w0;    // primitive variables
   DvceFaceFld4D<Real> b0;  // face-centered magnetic fields
@@ -397,6 +408,7 @@ class MHD {
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
   TaskStatus RTStrangSplit(Driver *d, int stage);
+  TaskStatus XeTracerSource(Driver *d, int stage);
   void RTOpSplitBvals();
   TaskStatus NewTimeStep(Driver *d, int stage);
   // ...in "after_stagen_tl" task list

@@ -297,6 +297,31 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
   }
 
+  // xetracer-1101: the MHD analogue for the advected x_e.  A run with <mhd>/xe_tracer =
+  // true reading a file written without it (one scalar fewer) reads the file's MHD
+  // variables into the first nmhd_file slots; the tracer is set to local Saha by the
+  // first ConToPrim (MHD::xe_init_pending).  A file that has it clears the flag.  Any
+  // other mismatch is fatal.
+  int nmhd_file = nmhd;
+  if (pmhd != nullptr && global_variable::rst_mhd_nscalars >= 0) {
+    if (global_variable::rst_mhd_nscalars == pmhd->nscalars) {
+      pmhd->xe_init_pending = false;
+    } else if (pmhd->xe_tracer &&
+               global_variable::rst_mhd_nscalars == pmhd->nscalars - 1) {
+      nmhd_file = nmhd - 1;
+      if (global_variable::my_rank == 0) {
+        std::cout << "mhd: restart file has no x_e tracer; <mhd>/xe_tracer starts from "
+                  << "local Saha" << std::endl;
+      }
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd> carries " << pmhd->nscalars << " passive scalars "
+                << "(incl. the xe_tracer) but the restart file was written with "
+                << global_variable::rst_mhd_nscalars << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+
   // root process reads z4c last_output_time and tracker data
   if (pz4c != nullptr) {
     Real last_output_time;
@@ -937,7 +962,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     data_size_ += nout1*nout2*nout3*nhydro_file*sizeof(Real); // hydro u0
   }
   if (pmhd != nullptr) {
-    data_size_ += nout1*nout2*nout3*nmhd*sizeof(Real);   // mhd u0
+    data_size_ += nout1*nout2*nout3*nmhd_file*sizeof(Real);   // mhd u0
     data_size_ += (nout1+1)*nout2*nout3*sizeof(Real);    // mhd b0.x1f
     data_size_ += nout1*(nout2+1)*nout3*sizeof(Real);    // mhd b0.x2f
     data_size_ += nout1*nout2*(nout3+1)*sizeof(Real);    // mhd b0.x3f
@@ -1136,7 +1161,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   if (pmhd != nullptr) {
-    Kokkos::realloc(ccin, nmb, nmhd, nout3, nout2, nout1);
+    Kokkos::realloc(ccin, nmb, nmhd_file, nout3, nout2, nout1);
     for (int m=0;  m<noutmbs_max; ++m) {
       // every rank has a MB to read, so read collectively
       if (m < noutmbs_min) {
@@ -1168,9 +1193,20 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         myoffset += data_size;
       }
     }
-    Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb), Kokkos::ALL,
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
-    offset_myrank += nout1*nout2*nout3*nmhd*sizeof(Real);   // mhd u0
+    if (nmhd_file == nmhd) {
+      Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb), Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
+    } else {
+      // xetracer-1101: file variables into the first nmhd_file slots, tracer zeroed (it
+      // is set to Saha at the first ConToPrim)
+      Kokkos::deep_copy(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
+                        std::make_pair(nmhd_file, nmhd), Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL), 0.0);
+      DeepCopyAcross(Kokkos::subview(pmhd->u0, std::make_pair(0,nmb),
+                     std::make_pair(0, nmhd_file), Kokkos::ALL, Kokkos::ALL,
+                     Kokkos::ALL), ccin);
+    }
+    offset_myrank += nout1*nout2*nout3*nmhd_file*sizeof(Real);   // mhd u0
     myoffset = offset_myrank;
 
     Kokkos::realloc(fcin.x1f, nmb, nout3, nout2, nout1+1);

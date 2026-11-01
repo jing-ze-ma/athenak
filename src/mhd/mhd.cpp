@@ -26,6 +26,7 @@
 #include "mhd/mhd.hpp"
 #include "hydro/hydro_am.hpp"
 #include "utils/recipe.hpp"
+#include "units/units.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -144,6 +145,43 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     presist = new Resistivity(ppack, pin);
   } else {
     presist = nullptr;
+  }
+
+  // xetracer-1101: advected electron fraction (mhd_xe_tracer.cpp).  Read only when named;
+  // off, nscalars and every path are unchanged.
+  if (pin->DoesParameterExist("mhd", "xe_tracer")) {
+    xe_tracer = pin->GetBoolean("mhd", "xe_tracer");
+  }
+  if (xe_tracer) {
+    const bool eos_xe = (presist != nullptr) &&
+        ((pin->DoesParameterExist("mhd", "ohmic_resistivity") &&
+          pin->GetString("mhd", "ohmic_resistivity").compare("eos") == 0) ||
+         presist->ad_type == 2);
+    if (!eos_xe || !peos->eos_data.HasElectronFraction()) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/xe_tracer = true needs ohmic_resistivity = eos "
+                << "(or ambipolar = eos) and the EOS electron fraction table"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    nscalars += 1;
+    ixe = nmhd + nscalars - 1;
+    presist->xe_idx = ixe;
+    xe_init_pending = true;     // cleared by the restart reader if the file has it
+    xe_par.alpha_fac = pin->GetOrAddReal("mhd", "xe_alpha_fac", 1.0);
+    xe_par.time_cgs = (ppack->punit != nullptr) ? ppack->punit->time_cgs() : 1.0;
+    xe_par.xh = pin->GetOrAddReal("mhd", "eos_xh", 0.7381);
+    xe_par.metal_mh = peos->eos_data.tbl.metal_mh;
+    xe_par.metal_tcond = pin->GetOrAddReal("mhd", "eos_metal_tcond", 0.0);
+    xe_par.metal_cond = pin->GetOrAddBoolean("mhd", "eos_metal_condensation", false);
+    xe_par.metal_ion = pin->GetOrAddBoolean("mhd", "eos_metal_ionization", false);
+    xetracer::FillDonors(xe_par);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<mhd>/xe_tracer: advected x_e in scalar " << ixe << " (nscalars now "
+                << nscalars << "), alpha = " << xe_par.alpha_fac << " x Verner Na+, "
+                << "time unit " << xe_par.time_cgs << " s, [M/H] " << xe_par.metal_mh
+                << ", condensation " << (xe_par.metal_cond ? "on" : "off") << std::endl;
+    }
   }
 
   // <mhd>/wall_conducting = off | resistive | full (default) (condwall-1028): a REFLECT

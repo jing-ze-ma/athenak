@@ -504,6 +504,19 @@ int main(int argc, char *argv[]) {
     } else if (pinput->DoesBlockExist("hydro")) {
       global_variable::rst_hydro_nscalars = 0;
     }
+    // xetracer-1101: the same for <mhd>; a file written with <mhd>/xe_tracer = true
+    // carries one scalar more than its <mhd>/nscalars
+    if (pinput->DoesBlockExist("mhd")) {
+      int nsc = 0;
+      if (pinput->DoesParameterExist("mhd", "nscalars")) {
+        nsc = pinput->GetInteger("mhd", "nscalars");
+      }
+      if (pinput->DoesParameterExist("mhd", "xe_tracer") &&
+          pinput->GetBoolean("mhd", "xe_tracer")) {
+        nsc += 1;
+      }
+      global_variable::rst_mhd_nscalars = nsc;
+    }
     rst_potential_keys = SnapshotPotentialKeys(pinput, PotentialKeys());
     for (const auto &kv : SnapshotPotentialKeys(pinput, GridKeys())) {
       rst_potential_keys.insert(kv);

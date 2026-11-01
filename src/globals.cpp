@@ -18,5 +18,6 @@ int my_rank;   // MPI rank of this process; set at start of main();
 int nranks;    // total number of MPI ranks; set at start of main();
 bool final_outputs = false;  // Driver::Finalize's outputs (restart.cpp: no schedule step)
 bool restart_run = false;  // started from a restart file (-r); set in main() Step 3
+int rst_mhd_nscalars = -1;    // xetracer-1101: same for <mhd> (incl. the x_e tracer)
 int rst_hydro_nscalars = -1;  // acctrc-1019: nscalars the restart file was written with
 }

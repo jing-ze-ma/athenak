@@ -48,8 +48,17 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   // stage.  Each call is followed by the u0 halo/BC/ConToPrim tail (RTOpSplitBvals).  A
   // null hook returns immediately, so every run that does not enrol one is unchanged.
   id.splitpre = tl["before_timeintegrator"]->AddTask(&MHD::RTStrangSplit, this, none);
-  id.savest = tl["before_timeintegrator"]->AddTask(&MHD::SaveMHDState, this,
-                                                   id.splitpre);
+  if (xe_tracer) {
+    // xetracer-1101: x_e recombination source once per cycle (full dt), after the RT
+    // half step, before the state is saved for a dt retry
+    id.xesrc = tl["before_timeintegrator"]->AddTask(&MHD::XeTracerSource, this,
+                                                    id.splitpre);
+    id.savest = tl["before_timeintegrator"]->AddTask(&MHD::SaveMHDState, this,
+                                                     id.xesrc);
+  } else {
+    id.savest = tl["before_timeintegrator"]->AddTask(&MHD::SaveMHDState, this,
+                                                     id.splitpre);
+  }
   id.splitpst = tl["after_timeintegrator"]->AddTask(&MHD::RTStrangSplit, this, none);
   pmy_pack->split_hook_tasks = true;
 
@@ -850,6 +859,12 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
     c2p_eint_rst = false;
   }
   if (c2p_track) C2PTrack(pdrive, stage, false);
+  // xetracer-1101: z = local Saha on the first conversion of a fresh start or of a
+  // restart whose file has no tracer (wtemp is valid here), before eta reads it
+  if (xe_init_pending) {
+    XeTracerUpdate(0.0, true);
+    xe_init_pending = false;
+  }
   if (presist != nullptr) {
     if (presist->OhmicNeedsUpdate() && (!presist->use_rkg_sts || stage == 0)) {
       presist->SetResistivity(w0, peos->eos_data, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
