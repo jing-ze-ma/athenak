@@ -32,6 +32,8 @@
 #endif
 
 namespace radm1 {
+// csacc-1031 <rad_m1>/vet_gd_twin_srw (defined in rad_m1_vetgd.cpp)
+extern bool g_vgd_srw;
 //----------------------------------------------------------------------------------------
 // constructor, initializes data structures and parameters
 
@@ -1247,6 +1249,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
       vgd_twwq = pin->GetOrAddReal("rad_m1","vet_gd_twin_wq",0.5);
+      g_vgd_srw = pin->DoesParameterExist("rad_m1","vet_gd_twin_srw") &&
+                  pin->GetBoolean("rad_m1","vet_gd_twin_srw");
       if (!(vgd_twwq > 0.0 && vgd_twwq <= 1.0)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_m1>/vet_gd_twin_wq must be in (0, 1]"
