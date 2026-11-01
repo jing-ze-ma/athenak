@@ -43,6 +43,7 @@ gamma       = 1.666666666666667
 ohmic_resistivity = constant
 eta_ohm_const     = 0.1
 use_rkg_sts = false
+rkg_dt_safety = 0.0   # rkgdt-1101: > 0 = RKG dt_diff from the forward-Euler bound (test_ohm_drag_cpu n16_rkgfe); 0 = off
 
 <problem>
 m_dip    = 1.0

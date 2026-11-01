@@ -951,6 +951,10 @@ class AmModule {
   bool frame_exact = false;
   DvceArray5D<Real> frame_ln;
   void AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
+  // roche-wbtan-1101: the tangential momentum change rate (bdt = 1) AmTransport would add
+  // for fl's state and fluxes, added to fl.u0, with NO side effect (no spin reservoir
+  // update, no driver): the dhj problem/roche_wb_tan equilibrium probe
+  void AmTransportProbe(const AmFluid &fl);
   void AmSpinReturn(const AmFluid &fl);
   void FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   void AmFillV(HydroAmV &v, const AmFluid &fl);
