@@ -139,7 +139,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // Total number of MeshBlocks on this rank to be used in array dimensioning
   int nmb = std::max((ppack->nmb_thispack), (ppack->pmesh->nmb_maxperrank));
 
-  // tracer-1101: fresh-start defaults of the Alfven-floor keys (before the EOS reads them)
+  // tracer-1101: fresh-start defaults of the Alfven-floor keys (read by the EOS ctor)
   DefaultAlfvenFloorKeys(ppack, pin);
 
   // (1) construct EOS object (no default)
@@ -262,8 +262,12 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     xe_par.metal_cond = pin->GetOrAddBoolean("mhd", "eos_metal_condensation", false);
     xe_par.metal_ion = pin->GetOrAddBoolean("mhd", "eos_metal_ionization", false);
     xetracer::FillDonors(xe_par);
+    // the tracer carries y = n_e/n_H (per H nucleus, a per-mass quantity); eta and the
+    // ambipolar rho_i convert with n_H = xe_nhfac rho_cgs
+    presist->xe_nhfac = xe_par.xh/(eos_cgs::a_hyd*eos_cgs::m_u);
     if (global_variable::my_rank == 0) {
-      std::cout << "<mhd>/xe_tracer: advected x_e in scalar " << ixe << " (nscalars now "
+      std::cout << "<mhd>/xe_tracer: advected y = n_e/n_H in scalar " << ixe
+                << " (nscalars now "
                 << nscalars << "), alpha = " << xe_par.alpha_fac << " x Verner Na+, "
                 << "time unit " << xe_par.time_cgs << " s, [M/H] " << xe_par.metal_mh
                 << ", condensation " << (xe_par.metal_cond ? "on" : "off") << std::endl;

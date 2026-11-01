@@ -261,6 +261,7 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
   const Real max_eta_ = max_eta;
   // xetracer-1101: the advected x_e (MHD scalar xe_idx) replaces local Saha when >= 0
   const int ixe = xe_idx;
+  const Real nhfac = xe_nhfac;
   par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real rho = w(m,IDN,k,j,i);
@@ -282,7 +283,10 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
       // T is already in kelvin on both branches above, so the kelvin entry point is the
       // one to use -- the (d,e,T) form would scale by EOS_Data::temp_cgs, which an ideal
       // gas never sets. For a general EOS the two are the same number.
-      const Real xe = (ixe >= 0) ? w(m,ixe,k,j,i) : eos.ElectronFractionKelvin(rho, T);
+      // tracer: x_e = n_e/n_tot = y n_H/n_tot (y = n_e/n_H is what is advected)
+      const Real rhoc = gen ? rho*eos.dens_cgs : rho;
+      const Real xe = (ixe >= 0) ? w(m,ixe,k,j,i)*nhfac*rhoc/nn
+                                 : eos.ElectronFractionKelvin(rho, T);
       ResistivityEOS(xe, T, max_eta_, eta_b(m,k,j,i));
     } else {
       ResistivityPerna(nn, T, max_eta_, eta_b(m,k,j,i));

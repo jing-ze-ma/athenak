@@ -11,7 +11,7 @@
 //!                      box centre, w = <problem>/z_width (advection test: run one box
 //!                      crossing with <mhd>/xe_alpha_fac = 0)
 //! The finalize hook prints one line per cell of the first MeshBlock row (j=js,k=ks):
-//!   XE i x z x_eq n_tot T dt ncycle time
+//!   XE i x z x_eq n_tot T dt ncycle time   (z = n_e/n_tot; the tracer is y = n_e/n_H)
 //! which tst/scripts check against the backward-Euler recursion and the exact solution.
 
 #include <cmath>
@@ -58,6 +58,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real eint = eos.EnergyFromTemperature(dens, tcode);
   const Real xeq = eos.ElectronFractionKelvin(dens, tkel);
   const int iz = trc ? pmbp->pmhd->ixe : 0;
+  // the tracer carries y = n_e/n_H: y = z n_tot/n_H
+  const Real kb = 1.380649e-16;
+  const Real ntot0 = dens*eos.pres_cgs/(eos.MeanMolecularWeight(dens, eint, tcode)*
+                                        eos.temp_cgs*kb);
+  const Real nh0 = pmbp->pmhd->xe_par.xh*dens*eos.dens_cgs/(eos_cgs::a_hyd*eos_cgs::m_u);
+  const Real z2y = ntot0/nh0;
   auto w0_ = pmbp->pmhd->w0;
   par_for("pgen_xe", DevExeSpace(), 0, pmbp->nmb_thispack-1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -68,7 +74,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     w0_(m,IVZ,k,j,i) = 0.0;
     w0_(m,IEN,k,j,i) = eint;
     Real dx = (x - xc)/(zw*lx);
-    if (trc) w0_(m,iz,k,j,i) = xeq*(zfac + zamp*exp(-dx*dx));
+    if (trc) w0_(m,iz,k,j,i) = z2y*xeq*(zfac + zamp*exp(-dx*dx));
   });
   auto &b0 = pmbp->pmhd->b0;
   Kokkos::deep_copy(b0.x1f, 0.0);
@@ -105,8 +111,11 @@ void XeFinal(ParameterInput *pin, Mesh *pm) {
     const Real tk = tc*eos.temp_cgs;
     const Real mu = eos.MeanMolecularWeight(rho, w0h(0,IEN,ks,js,i), tc);
     const Real ntot = rho*eos.pres_cgs/(mu*eos.temp_cgs*kb);
+    const Real nh = pmbp->pmhd->xe_par.xh*rho*eos.dens_cgs/(eos_cgs::a_hyd*eos_cgs::m_u);
+    // printed as z = n_e/n_tot = y n_H/n_tot
     std::printf("XE %d %.17e %.17e %.17e %.17e %.17e %.17e %d %.17e\n", i-is, x,
-                w0h(0,iz,ks,js,i), eos.ElectronFractionKelvin(rho, tk), ntot, tk, pm->dt,
+                w0h(0,iz,ks,js,i)*nh/ntot, eos.ElectronFractionKelvin(rho, tk), ntot, tk,
+                pm->dt,
                 pm->ncycle, pm->time);
   }
 }

@@ -131,7 +131,7 @@ class MHD {
   // x_e (ixe), then the floor mass (ifltr, always last).  nscalars counts all of them.
   TracerLayout tracers;
   // xetracer-1101: <mhd>/xe_tracer = true adds ONE passive scalar (index ixe) carrying
-  // x_e = n_e/n_tot, relaxed to Saha by recombination once per cycle
+  // y = n_e/n_H (electrons per H nucleus; per mass), relaxed to Saha once per cycle
   // (mhd_tracers.cpp); the Ohmic/ambipolar eos paths then read it instead of Saha.
   bool xe_tracer = false;
   int ixe = -1;

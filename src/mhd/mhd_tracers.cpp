@@ -63,10 +63,13 @@ TaskStatus MHD::TracerSource(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::XeTracerUpdate
-//! \brief init = true: z = local Saha x_eq.  Otherwise one backward-Euler recombination
-//! step of n_e = z n_tot over dt (code units), capped at max(x_eq, gas-phase donors).
-//! Writes w0 and u0 (= rho z) of the tracer in every cell; the x1 boundary ghosts are
-//! the caller's (TracerX1Ghosts).
+//! \brief the tracer is y = n_e/n_H (electrons per H nucleus, n_H = xh rho/(a_H m_u)).
+//! init = true: y = local Saha x_eq n_tot/n_H.  Otherwise one backward-Euler
+//! recombination step of n_e = y n_H over dt (code units) toward n_eq = x_eq n_tot,
+//! capped at max(n_eq, gas-phase donors).  Writes w0 and u0 (= rho y) of the tracer in
+//! every cell; the x1 boundary ghosts are the caller's (TracerX1Ghosts).  A density
+//! floor that raises rho in ConsToPrim leaves u0 = rho y unchanged, i.e. the floor mass
+//! arrives with y = 0 (dilution); the next relaxation pulls it back toward Saha.
 
 void MHD::XeTracerUpdate(Real dt, bool init) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -108,25 +111,30 @@ void MHD::XeTracerUpdate(Real dt, bool init) {
       ntot = rho*rgas/kb;
       rhoc = rho;
     }
-    // a cell without a valid state (an unfilled cs corner ghost: T = 0) keeps its z
-    if (!(t > 0.0) || !(ntot > 0.0)) {
+    // a cell without a valid state (an unfilled cs corner ghost: T = 0) keeps its y
+    const Real nh = nh_fac*rhoc;
+    if (!(t > 0.0) || !(ntot > 0.0) || !(nh > 0.0)) {
       if (init) {
         w0_(m,iz,k,j,i) = 0.0;
         u0_(m,iz,k,j,i) = 0.0;
       }
       return;
     }
+    // the tracer is y = n_e/n_H (electrons per H nucleus): n_H is proportional to rho, so
+    // rho y is the electron number density times a constant and advection conserves
+    // electrons.  (z = n_e/n_tot is NOT per-mass: n_tot/rho changes with mu, ~1.3 -> 2.3
+    // between dissociated day and molecular night.)  Saha gives x_eq = n_e/n_tot.
     const Real xeq = eos.ElectronFractionKelvin(rho, t);
-    Real z;
+    const Real neq = xeq*ntot;
+    Real z;   // (= y)
     if (init) {
-      z = xeq;
+      z = neq/nh;
     } else {
-      const Real neq = xeq*ntot;
       const Real a = par.alpha_fac*xetracer::AlphaRR(t)*dt_s;
-      Real n = xetracer::Relax(w0_(m,iz,k,j,i)*ntot, neq, a);
-      const Real ncap = fmax(neq, xetracer::DonorCap(par, t, ntot*kb*t, nh_fac*rhoc));
+      Real n = xetracer::Relax(w0_(m,iz,k,j,i)*nh, neq, a);
+      const Real ncap = fmax(neq, xetracer::DonorCap(par, t, ntot*kb*t, nh));
       n = fmin(n, ncap);
-      z = n/ntot;
+      z = n/nh;
     }
     w0_(m,iz,k,j,i) = z;
     u0_(m,iz,k,j,i) = u0_(m,IDN,k,j,i)*z;
@@ -137,12 +145,12 @@ void MHD::XeTracerUpdate(Real dt, bool init) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::TracerX1Ghosts
-//! \brief zero gradient of the SPECIFIC tracer value s/rho (x_e: z; floor: the floor
-//! mass fraction) in the radial ghosts at physical x1 boundaries (the dhj inner wall and
-//! top, hse or outflow1).  The user/physical BCs set the MHD variables of those ghosts
-//! but not the scalars, so without this the ghost scalar would keep a stale value (for
-//! the floor tracer: every floor increment ConsToPrim ever made in that ghost) and feed
-//! it into the reconstruction of the edge cells.  Only the tracer slots are touched;
+//! \brief zero gradient of the SPECIFIC tracer value s/rho (x_e: y = n_e/n_H; floor: the
+//! floor mass fraction) in the radial ghosts at physical x1 boundaries (the dhj inner
+//! wall and top, hse or outflow1).  The user/physical BCs set the MHD variables of those
+//! ghosts but not the scalars, so without this the ghost scalar would keep a stale value
+//! (for the floor tracer: every floor increment ConsToPrim ever made in that ghost) and
+//! feed it into the reconstruction of the edge cells.  Only the tracer slots are touched;
 //! user scalars keep their old treatment.  u0 from the edge cell's u0 ratio; with set_w
 //! also w0.
 
@@ -200,10 +208,11 @@ void MHD::TracerX1Ghosts(bool set_w) {
 //! of every other scalar: with f = dm/rho, rho, the momenta, e_int and the other
 //! scalars' conserved values scale by (1 - f); the total energy loses
 //! de = f (e_int + KE) (+ dm phi with etotgrav, whose u0(IEN) contains rho phi); the
-//! magnetic energy is untouched.  the kinetic energy m_i v^i/2 (covariant u0 momentum, contravariant
-//! w0 velocity on the cubed sphere; orthonormal elsewhere).  w0 is updated to the new
-//! state; the general-EOS pressure cache scales by (1 - f) (constant T; exact for an
-//! ideal gas, O(f) otherwise until the next conversion re-solves it); wtemp is kept.
+//! magnetic energy is untouched.  The kinetic energy is m_i v^i/2 (covariant u0
+//! momentum, contravariant w0 velocity on the cubed sphere; orthonormal elsewhere).  w0
+//! is updated to the new state; the general-EOS pressure cache scales by (1 - f)
+//! (constant T; exact for an ideal gas, O(f) otherwise until the next conversion
+//! re-solves it); wtemp is kept.
 //! Every cell including ghosts is drained (pointwise; ghosts that mirror an interior
 //! cell get the identical result).  The ACTIVE-cell removal is booked twice: into
 //! fltr_dm/fltr_de (history Mdrain/Edrain) and, when the floor bookkeeping (c2p_track)

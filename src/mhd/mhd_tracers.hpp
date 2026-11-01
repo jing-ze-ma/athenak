@@ -13,7 +13,7 @@
 //! Slot order in u0/w0 (fixed):
 //!   [0, nmhd)                        the MHD variables
 //!   [nmhd, nmhd+nuser)               the user's <mhd>/nscalars
-//!   nmhd+nuser                       <mhd>/xe_tracer: x_e = n_e/n_tot   (if on)
+//!   nmhd+nuser                       <mhd>/xe_tracer: y = n_e/n_H (if on)
 //!   last                             <mhd>/floor_tracer: floor-added mass (if on)
 //! Both tracer keys are read only when named, so an input without them (and its
 //! restarts) has nscalars = <mhd>/nscalars exactly as before.
