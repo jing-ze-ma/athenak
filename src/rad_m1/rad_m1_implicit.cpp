@@ -2754,6 +2754,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_kill")) {
     vimp_kill = pin->GetBoolean("rad_m1","implicit_vimp_kill");
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_transport")) {   // postr-1031
+    const std::string pt = pin->GetString("rad_m1","implicit_pos_transport");
+    if (pt == "none") {
+      impl_pos_trans = 0;
+    } else if (pt == "upwind") {
+      impl_pos_trans = 1;
+    } else {
+      ImplFatal("<rad_m1>/implicit_pos_transport must be none | upwind");
+    }
+    if (impl_pos_trans != 0) {
+      pt_cnt = DvceArray1D<Real>("m1_pt_cnt", 2);
+      Kokkos::deep_copy(pt_cnt, 0.0);
+    }
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_ewf")) {
     impl_vimp_ewf = pin->GetBoolean("rad_m1","implicit_vimp_ewf");
   }
@@ -9607,6 +9621,11 @@ void RadiationM1::ImplicitReport() {
     }
     std::cout << std::endl;
   }
+  if (impl_pos_trans != 0 && pt_cnt.extent_int(0) >= 2) {   // postr-1031
+    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pt_cnt);
+    std::cout << "<rad_m1> implicit_pos_transport = upwind (rank 0):"
+              << " lagged positive x1 off-diagonals=" << h(1) << std::endl;
+  }
   if (impl_muscl && impl_muscl_pred) {
     std::cout << "<rad_m1> implicit_hr_recon_pred: dc-phase passes=" << muscl_pred_dc
               << " plm-phase passes=" << muscl_pred_hi << std::endl;
@@ -11196,6 +11215,7 @@ void RadiationM1::ImplicitVimpBuild() {
   // sp forms are `if (sph)` overwrites.
   const bool sph = sph_geom;
   const bool sphq = sph_q;
+  const bool ptuv = (impl_pos_trans == 1) && sph_geom && sph_q;   // postr-1031
   auto cvol = pmy_pack->pcoord->volume;
   auto carea = pmy_pack->pcoord->area;
   auto cdxf = M1Dxf();
@@ -11273,6 +11293,12 @@ void RadiationM1::ImplicitVimpBuild() {
                           SQR(cx1v(m,im)/rf));
             wr = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), iw_(m,M1_IW_N1,k,j,ip),
                           SQR(cx1v(m,ip)/rf));
+            if (ptuv && M1SphDrrUpNeed(iw_(m,M1_IW_WCHI,k,j,im),
+                                       iw_(m,M1_IW_WCHI,k,j,ip))) {   // postr-1031
+              M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,im), iw_(m,M1_IW_N1,k,j,im),
+                         SQR(cx1v(m,im)/rf), iw_(m,M1_IW_WCHI,k,j,ip),
+                         iw_(m,M1_IW_N1,k,j,ip), SQR(cx1v(m,ip)/rf), wl, wr);
+            }
           }
           cL[s] = bsp*wl;
           cR[s] = -bsp*wr;
@@ -14022,6 +14048,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool opgd = (opg > 0.0) && (opnr || opns);
     auto nsk_ = opn_nskip_d;
     const bool hon_ = impl_hold; auto hm_ = hold_m;   // pgrst implicit_hold
+    // postr-1031 implicit_pos_transport = upwind (rad_m1.hpp)
+    const bool ptu = (impl_pos_trans == 1) && sph_geom && sph_q;
+    auto ptc_ = pt_cnt;
     par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
@@ -14294,6 +14323,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             Real n1p = trans ? iw_(m,M1_IW_N1,k,j,ip) : 1.0;
             wiu = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1i, si);
             wp = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), n1p, sp);
+            if (ptu && M1SphDrrUpNeed(iw_(m,M1_IW_WCHI,k,j,i),
+                                      iw_(m,M1_IW_WCHI,k,j,ip))) {
+              M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,i), n1i, si, iw_(m,M1_IW_WCHI,k,j,ip),
+                         n1p, sp, wiu, wp);
+            }
             if (trans) {
               Real od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,ju,
                                        kl,ku,M1_IW_EP)
@@ -14439,6 +14473,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             Real n1m = trans ? iw_(m,M1_IW_N1,k,j,im) : 1.0;
             wil = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1i, si);
             wm = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,im), n1m, sm);
+            if (ptu && M1SphDrrUpNeed(iw_(m,M1_IW_WCHI,k,j,im),
+                                      iw_(m,M1_IW_WCHI,k,j,i))) {
+              M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,im), n1m, sm, iw_(m,M1_IW_WCHI,k,j,i),
+                         n1i, si, wm, wil);
+            }
             if (trans) {
               Real od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,im,odl,thrd,il,iu,jl,ju,
                                        kl,ku,M1_IW_EP)
@@ -14609,6 +14648,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         }
         if (ns > 0) {Kokkos::atomic_add(&nsk_(0), static_cast<Real>(ns));}
+      }
+      // postr-1031 implicit_pos_transport = upwind: a positive x1 off-diagonal still in
+      // the row (implicit_vimp, opac_newton) goes to the right-hand side at the
+      // iterate (the same fixed point), so the line rows keep the Z-matrix sign pattern
+      if (ptu) {
+        if (aa > 0.0 && (i > is || !botb)) {
+          rr -= aa*iw_(m,M1_IW_EP,k,j,i-1);
+          aa = 0.0;
+          Kokkos::atomic_add(&ptc_(1), 1.0);
+        }
+        if (cc > 0.0 && (i < ie || !topb)) {
+          rr -= cc*iw_(m,M1_IW_EP,k,j,i+1);
+          cc = 0.0;
+          Kokkos::atomic_add(&ptc_(1), 1.0);
+        }
       }
       // a Dirichlet end cell: the whole row is replaced, which keeps the matrix an
       // M-matrix and anchors the level of E (see M1_IBC_EFIX)
@@ -14873,6 +14927,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 
     // (g) the face fluxes of the new iterate, and the derived cell flux
+    const bool ptuf = (impl_pos_trans == 1) && sph_geom && sph_q;   // postr-1031
     const bool musf = muscl_now;   // xthinfix-1009 Fix B: the plm half-range face values
     const int imbf = iw_muscl;
     const bool ledf = impl_muscl_led;
@@ -14983,6 +15038,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real n1m = trans ? iw_(m,M1_IW_N1,k,j,im) : 1.0;
           Real wps = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), n1p, SQR(cx1v(m,ip)/rf));
           Real wms = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,im), n1m, SQR(cx1v(m,im)/rf));
+          if (ptuf && M1SphDrrUpNeed(iw_(m,M1_IW_WCHI,k,j,im),
+                                     iw_(m,M1_IW_WCHI,k,j,ip))) {   // postr-1031
+            M1SphDrrUp(iw_(m,M1_IW_WCHI,k,j,im), n1m, SQR(cx1v(m,im)/rf),
+                       iw_(m,M1_IW_WCHI,k,j,ip), n1p, SQR(cx1v(m,ip)/rf), wms, wps);
+          }
           gr = (wps*iw_(m,M1_IW_EP,k,j,ip) - wms*iw_(m,M1_IW_EP,k,j,im))
                /cdxf.x1f(m,k,j,i);
           od = 0.0;

@@ -1831,6 +1831,14 @@ class RadiationM1 {
   Real vkill_ev = 0.0, vkill_nc = 0.0;
   DvceArray4D<Real> vkill_;
   void ImplicitVimpKill();
+  // postr-1031 <rad_m1>/implicit_pos_transport (read only when named; default none =
+  // bitwise): upwind = the sp x1 rows take the curvature part of the S2 integrating
+  // factor upwinded where a face cell has chi < 1/3 (M1SphDrrUp; the S2 weight of the
+  // outer cell is negative there: positive off-diagonal, E < 0 beside bright cells), and
+  // a positive x1 off-diagonal left in an sp row (vimp, opac_newton) is lagged to the
+  // right-hand side (same fixed point); counted (pt_cnt(1), rank 0)
+  int impl_pos_trans = 0;
+  DvceArray1D<Real> pt_cnt;
   // kirch-1022 implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
   // off

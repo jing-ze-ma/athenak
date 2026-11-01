@@ -882,6 +882,33 @@ Real M1SphDrr(const Real chi, const Real n1, const Real s2) {
   return 0.5*(1.0 - chi) + 0.5*(3.0*chi - 1.0)*n1*n1*s2;
 }
 
+//! postr-1031 <rad_m1>/implicit_pos_transport = upwind: the M1SphDrr face weights of the
+//! LEFT (wl) and RIGHT (wr) cell of one x1 face with the curvature part UPWINDED.  The
+//! "both parts >= 0" above holds only for chi >= 1/3: with chi < 1/3 (q < 0, a beam
+//! crossing the radial direction, vet_col f_rr ~ 0) the outer cell's weight
+//! (1-chi)/2 + q n^2 s, s = (r_R/r_f)^2 > 1, turns NEGATIVE and the row gets a positive
+//! off-diagonal (anti-diffusion: a dim cell beside a bright one drains to E < 0 at the
+//! fixed point, measured at the RY Per nozzle face).  Split w(s) = w(1) + k, k = q n^2
+//! (s - 1): the two-point part w(1) = D_rr >= 0 keeps the centred gradient, and the
+//! curvature flux h E_f, h = k_L - k_R (the O(dx/r) force term), takes the donor cell's
+//! E (L if h > 0, else R).  Every coefficient is then >= 0 (M-matrix), the face flux is
+//! one number for the two cells (conservative), and the change is continuous at chi =
+//! 1/3 (h -> 0).  Applied only where either cell has chi < 1/3 (q < 0): elsewhere the
+//! weights are the M1SphDrr ones exactly (the caller keeps its own expressions there).
+KOKKOS_INLINE_FUNCTION
+bool M1SphDrrUpNeed(const Real chil, const Real chir) {
+  return (chil < 1.0/3.0) || (chir < 1.0/3.0);
+}
+
+KOKKOS_INLINE_FUNCTION
+void M1SphDrrUp(const Real chil, const Real n1l, const Real s2l, const Real chir,
+                const Real n1r, const Real s2r, Real &wl, Real &wr) {
+  const Real w1l = M1SphDrr(chil, n1l, 1.0), w1r = M1SphDrr(chir, n1r, 1.0);
+  const Real h = (M1SphDrr(chil, n1l, s2l) - w1l) - (M1SphDrr(chir, n1r, s2r) - w1r);
+  wl = w1l + fmax(h, 0.0);
+  wr = w1r + fmax(-h, 0.0);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn M1FaceAvg
 //! \brief <rad_m1>/implicit_face_weight: the x1 face value of a cell quantity from the
