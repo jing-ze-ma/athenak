@@ -143,6 +143,7 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   if (haswbq) swbq = dup5(ph->wbq0);
   // MHD: the probe is the B = 0 equilibrium (see the note in WbTanProbe)
   DvceArray4D<Real> sb1, sb2, sb3, seta, sadc;
+  DvceArray4D<Real> se31, se21, se12, se32, se23, se13;
   DvceArray5D<Real> sbcc;
   bool sxe = false;
   if constexpr (kMHD) {
@@ -155,6 +156,12 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
     // passive scalars -- the <mhd>/xe_tracer x_e among them -- are zero: an eta of the
     // probe state.  Saved here and restored below (E_B x450 in the first cycle with
     // xe_tracer + ambipolar = eos, integ-test-1101 gate (b)).
+    // wbtan-emffix-1101: MHD::Fluxes also writes the face electric fields e3x1 ... e1x3,
+    // which the stage's CornerE/CT read AFTER the user source (where the probe runs): the
+    // probe's B = 0 fields replaced this stage's EMF (the stage-1 CT of the first cycle
+    // after a fresh start or a restart: restart continuation broke).  Saved and restored.
+    se31 = dup4(ph->e3x1); se21 = dup4(ph->e2x1); se12 = dup4(ph->e1x2);
+    se32 = dup4(ph->e3x2); se23 = dup4(ph->e2x3); se13 = dup4(ph->e1x3);
     if (ph->presist != nullptr) {
       if (ph->presist->eta_b.size() > 0) seta = dup4(ph->presist->eta_b);
       if (ph->presist->ad_coef.size() > 0) sadc = dup4(ph->presist->ad_coef);
@@ -298,6 +305,9 @@ void ProbeT(Mesh *pm, F *ph, WbTan &w, ExtraFn extra, const char *who) {
   if (haswbq) Kokkos::deep_copy(ph->wbq0, swbq);
   if constexpr (kMHD) {
     ph->xe_init_pending = sxe;
+    Kokkos::deep_copy(ph->e3x1, se31); Kokkos::deep_copy(ph->e2x1, se21);
+    Kokkos::deep_copy(ph->e1x2, se12); Kokkos::deep_copy(ph->e3x2, se32);
+    Kokkos::deep_copy(ph->e2x3, se23); Kokkos::deep_copy(ph->e1x3, se13);
     if (seta.size() > 0) Kokkos::deep_copy(ph->presist->eta_b, seta);
     if (sadc.size() > 0) Kokkos::deep_copy(ph->presist->ad_coef, sadc);
     Kokkos::deep_copy(ph->b0.x1f, sb1); Kokkos::deep_copy(ph->b0.x2f, sb2);
