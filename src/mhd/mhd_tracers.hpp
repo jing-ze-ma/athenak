@@ -14,9 +14,11 @@
 //!   [0, nmhd)                        the MHD variables
 //!   [nmhd, nmhd+nuser)               the user's <mhd>/nscalars
 //!   nmhd+nuser                       <mhd>/xe_tracer: x_e = n_e/n_tot   (if on)
-//!   last                             <mhd>/floor_tracer: floor-added mass density (if on)
+//!   last                             <mhd>/floor_tracer: floor-added mass (if on)
 //! Both tracer keys are read only when named, so an input without them (and its
 //! restarts) has nscalars = <mhd>/nscalars exactly as before.
+
+#include <string>
 
 #include "parameter_input.hpp"
 

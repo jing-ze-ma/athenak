@@ -235,7 +235,8 @@ void MHD::FloorTracerDrain() {
   const Real marg = fltr_margin, fmx = fltr_fmax;
   const int ncell = nmb*nc3*nc2*nc1;
   Real sum_dm = 0.0, sum_de = 0.0;
-  Kokkos::parallel_reduce("mhd_fltr_drain", Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
+  Kokkos::parallel_reduce("mhd_fltr_drain",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
   KOKKOS_LAMBDA(const int idx, Real &adm, Real &ade) {
     const int m = idx/(nc3*nc2*nc1);
     int r = idx - m*(nc3*nc2*nc1);
