@@ -3529,6 +3529,75 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     }
     std::printf("\n");
   }
+  // csvertex-1101: x1e error next to each CUBE VERTEX, by (dj, dk) cells from the vertex
+  // edge (max over vertices, panels and radii), for the block's OWN eta*J (efld_resist)
+  // and for the EXCHANGED efld (seams averaged, vertex three-way averaged; v ~ 0 so
+  // efld is the resistive EMF alone).  Plus the vertex edge's radial profile.
+  if (has_res) {
+    auto ef1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->efld.x1e);
+    auto rcl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+    const int nv = 4;
+    Real vt[2][nv][nv];
+    for (int a=0; a<2; ++a) for (int b=0; b<nv; ++b) for (int c=0; c<nv; ++c) {
+      vt[a][b][c] = 0.0;
+    }
+    std::vector<Real> vr0(indcs.nx1, 0.0), vr1(indcs.nx1, 0.0);
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+      const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+      for (int c=0; c<4; ++c) {
+        const int sj = (c & 1) ? 1 : -1, sk = (c & 2) ? 1 : -1;
+        const int nj_id = (sj < 0) ? 8 : 12, nk_id = (sk < 0) ? 24 : 28;
+        if (!(nghbr.h_view(m,nj_id).gid >= 0 && nghbr.h_view(m,nj_id).panel != p &&
+              nghbr.h_view(m,nk_id).gid >= 0 && nghbr.h_view(m,nk_id).panel != p)) {
+          continue;
+        }
+        const int jc = (sj < 0) ? js : (je+1), kc = (sk < 0) ? ks : (ke+1);
+        for (int dk=0; dk<nv; ++dk) for (int dj=0; dj<nv; ++dj) {
+          const int j = jc - sj*dj, k = kc - sk*dk;
+          const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+          const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+          Real cx, cy, cz;
+          PanelToCart(p, xf, ef, cx, cy, cz);
+          for (int i=is; i<=ie; ++i) {
+            const Real ex = exact_e(rcl(m,i), cx, cy, cz, cx, cy, cz);
+            const Real d0 = fabs(e1(m,k,j,i) - ex)/scale;
+            const Real d1 = fabs(ef1(m,k,j,i) - ex)/scale;
+            vt[0][dk][dj] = fmax(vt[0][dk][dj], d0);
+            vt[1][dk][dj] = fmax(vt[1][dk][dj], d1);
+            if (dj == 0 && dk == 0) {
+              vr0[i-is] = fmax(vr0[i-is], d0);
+              vr1[i-is] = fmax(vr1[i-is], d1);
+            }
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &vt[0][0][0], 2*nv*nv, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, vr0.data(), indcs.nx1, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, vr1.data(), indcs.nx1, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      const char *nm[2] = {"OWN efld_resist", "EXCHANGED efld"};
+      for (int a=0; a<2; ++a) {
+        std::printf("###   VERTEX x1e max error by (dk rows, dj cols) from the vertex,"
+                    " %s:\n", nm[a]);
+        for (int dk=0; dk<nv; ++dk) {
+          std::printf("###     dk=%d:", dk);
+          for (int dj=0; dj<nv; ++dj) std::printf(" %.3e", vt[a][dk][dj]);
+          std::printf("\n");
+        }
+      }
+      std::printf("###   VERTEX edge by radial index (own | exchanged):");
+      for (int i=0; i<indcs.nx1; ++i) std::printf(" %.2e|%.2e", vr0[i], vr1[i]);
+      std::printf("\n");
+    }
+  }
 
   CSTestEosCacheCheck(pm);
 
@@ -3573,6 +3642,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     // total / operator / input, each over the 2-cell ring and the panel interior
     Real tt[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
     std::int64_t tn[2] = {0, 0};
+    Real tv[3] = {0.0, 0.0, 0.0};   // csvertex-1101: maxima on the cube-vertex edges
     const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz, bazi = cs_bazi;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
@@ -3645,6 +3715,25 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             tt[r][1] += fabs(je_ - jx);
             tt[r][2] += fabs(jd - je_);
             ++tn[r];
+            if (fabs(fabs(xf) - 0.25*M_PI) < 1.0e-12 &&
+                fabs(fabs(ef) - 0.25*M_PI) < 1.0e-12) {
+              tv[0] = fmax(tv[0], fabs(jd - jx));
+              tv[1] = fmax(tv[1], fabs(je_ - jx));
+              if (fabs(jd - je_) > tv[2]) {
+                std::printf("###   VTXIN p%d m%d (i,j,k)=(%d,%d,%d) input %.3e:", p, m, i,
+                            j, k, fabs(jd - je_)/fabs(2.0*bazi));
+                for (int kk=k-1; kk<=k; ++kk) for (int jj=j-1; jj<=j+1; ++jj) {
+                  std::printf(" b2(%d,%d)%+.2e", kk-k, jj-j,
+                              (b2h(m,kk,jj,i) - ex2f(kk,jj,i))/fabs(bazi));
+                }
+                for (int kk=k-1; kk<=k+1; ++kk) for (int jj=j-1; jj<=j; ++jj) {
+                  std::printf(" b3(%d,%d)%+.2e", kk-k, jj-j,
+                              (b3h(m,kk,jj,i) - ex3f(kk,jj,i))/fabs(bazi));
+                }
+                std::printf("\n");
+              }
+              tv[2] = fmax(tv[2], fabs(jd - je_));
+            }
           }
         }
       }
@@ -3652,9 +3741,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, &tt[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, tn, 2, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, tv, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
 #endif
     if (global_variable::my_rank == 0) {
       const Real sc = fabs(2.0*bazi);
+      std::printf("###   LOOP SPLIT VERTEX max  total=%.4e  OPERATOR=%.4e  input=%.4e\n",
+                  tv[0]/sc, tv[1]/sc, tv[2]/sc);
       const char *rn[2] = {"RING    ", "interior"};
       for (int r=0; r<2; ++r) {
         const Real w = (tn[r] > 0) ? 1.0/static_cast<Real>(tn[r])/sc : 0.0;
