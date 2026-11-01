@@ -185,7 +185,11 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
   if (need) {
     ids.push_back(kCkSlabXsW);
     ids.push_back(kCkSlabXsK);
-    const int nv = static_cast<int>(u0.extent(1));
+    // tracer-1101: the GAS variables only (nhydro/nmhd).  The ck pass never reads the
+    // passive scalars, and counting them made the slab list depend on the tracer keys:
+    // a 7th variable dropped the whole VEF section (6 slots) and a tracer switched on at
+    // a restart read the unallocated VEF snapshot (segfault in CkRstCollect)
+    const int nv = hyd ? pmbp->phydro->nhydro : pmbp->pmhd->nmhd;
     for (int n=0; n<nv; ++n) ids.push_back(kCkSlabXsU0 + n);
     if (!hyd) {
       for (int n=0; n<3; ++n) ids.push_back(kCkSlabXsB0 + n);
@@ -193,7 +197,7 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
   }
   // ck_sph_face = 5: the last refresh's state (or the staged one, not consumed yet)
   const bool vs_stg = !ck_vs_have && CkRstStaged(kCkSlabVefK);
-  const int nvu = static_cast<int>(u0.extent(1));
+  const int nvu = hyd ? pmbp->phydro->nhydro : pmbp->pmhd->nmhd;   // gas only
   if (ck_vef_on && (ck_vs_have || vs_stg) && nvu <= 6) {
     ids.push_back(kCkSlabVefCyc);
     ids.push_back(kCkSlabVefBdt);
@@ -240,6 +244,8 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       Kokkos::deep_copy(dst, static_cast<Real>(ck_vef_last));
     } else if (id == kCkSlabVefBdt) {
       Kokkos::deep_copy(dst, ck_vs_bdt);
+    } else if (id >= kCkSlabVefW && (ck_vsU_ptr == nullptr || ck_vsK_ptr == nullptr)) {
+      Kokkos::deep_copy(dst, 0.0);   // no refresh since the restart and nothing staged
     } else if (id == kCkSlabVefW) {
       if (ck_vsW_ptr->size() > 0) {
         DeepCopyAcross(dst, Kokkos::subview(*ck_vsW_ptr, nm, ALL, ALL, ALL));
@@ -408,7 +414,7 @@ inline void CkRstRebuild(Mesh *pm) {
     Kokkos::deep_copy(bck, bc);
   }
   // the storing call's state
-  const int nv = static_cast<int>(u0.extent(1));
+  const int nv = hyd ? pmbp->phydro->nhydro : pmbp->pmhd->nmhd;   // gas only
   for (int n=0; n<nv && n<16; ++n) {
     CkRstPut(kCkSlabXsU0 + n, Kokkos::subview(u0, ALL, n, ALL, ALL, ALL));
   }
@@ -493,7 +499,7 @@ inline void CkRstVefRebuild(Mesh *pm) {
   if (CkRstStaged(kCkSlabVefBdt)) bdt = ck_rst_stage[kCkSlabVefBdt][0];
   CkRstStageFree(kCkSlabVefCyc);
   CkRstStageFree(kCkSlabVefBdt);
-  const int nv = static_cast<int>(u0.extent(1));
+  const int nv = hyd ? pmbp->phydro->nhydro : pmbp->pmhd->nmhd;   // gas only
   for (int n=0; n<nv && n<6; ++n) {
     CkRstPut(kCkSlabVefU0 + n, Kokkos::subview(u0, ALL, n, ALL, ALL, ALL));
   }

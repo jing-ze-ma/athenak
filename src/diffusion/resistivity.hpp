@@ -132,6 +132,10 @@ class Resistivity {
   //             gamma_in = <mhd>/ad_sigv_in/(m_ion + m_n); see SetAmbipolar()
   // Off (ad_type = 0) nothing below is allocated and every path is unchanged.
   int ad_type = 0;              // 0 none, 1 constant, 2 eos
+  // xetracer-1101: index of the advected x_e scalar in w (MHD::ixe), or -1 = local Saha
+  int xe_idx = -1;
+  // y = n_e/n_H in that scalar; n_H = xe_nhfac rho_cgs (xh/(a_hyd m_u))
+  Real xe_nhfac = 0.0;
   Real eta_ad = 0.0;            // <mhd>/eta_ad (constant)
   Real ad_sigv_in = 1.9e-9;     // <mhd>/ad_sigv_in [cm^3/s], Langevin rate
   Real ad_mion_amu = 30.0;      // <mhd>/ad_mion_amu, mean ion mass [amu]

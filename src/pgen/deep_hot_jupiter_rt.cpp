@@ -7598,8 +7598,32 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
   // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
   const bool ttide = pm->pgen->hot_jupiter_param.roche;
-  pdata->nhist = NFH + (ttide ? 1 : 0);
+  // floortrc-1101: with <mhd>/floor_tracer and problem/flux_hst_floor, Mdrain [g/s] and
+  // Edrain [erg/s] after all the others: the floor-tracer drain (MHD::FloorTracerDrain)
+  // over the same interval as Mfloor/Efloor, which are then NET (added - drained); the
+  // gross floor addition is Mfloor + Mdrain
+  const int NDR = NFH + (ttide ? 1 : 0);
+  // (the floor tracer is a default with the Alfven floor: when the two columns do not
+  // fit, they are left out with a note instead of stopping the run)
+  bool fdrain = ffloor && (pm->pmb_pack->pmhd != nullptr) &&
+                pm->pmb_pack->pmhd->floor_tracer;
+  if (fdrain && NDR + 2 > NHISTORY_VARIABLES) {
+    static bool warned = false;
+    if (!warned && global_variable::my_rank == 0) {
+      std::cout << "### NOTE: dhj flux history: no room for Mdrain/Edrain ("
+                << NDR + 2 << " > NHISTORY_VARIABLES = " << NHISTORY_VARIABLES
+                << "; problem/am_hst_split = false frees 4); Mfloor/Efloor are NET of "
+                << "the floor-tracer drain" << std::endl;
+    }
+    warned = true;
+    fdrain = false;
+  }
+  pdata->nhist = NDR + (fdrain ? 2 : 0);
   if (ttide) pdata->label[NFH] = "Ttide";
+  if (fdrain) {
+    pdata->label[NDR] = "Mdrain";
+    pdata->label[NDR+1] = "Edrain";
+  }
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
   pdata->label[2] = "Lsw_abs";
@@ -7756,6 +7780,13 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[NFL-3] = (tint > 0.0) ? ef/tint : 0.0;
     pdata->hdata[NFL-2] = (tint > 0.0) ? mf/tint : 0.0;
     pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
+    if (fdrain) {
+      auto *pmh = pmbp->pmhd;
+      pdata->hdata[NDR] = (tint > 0.0) ? pmh->fltr_dm/tint : 0.0;
+      pdata->hdata[NDR+1] = (tint > 0.0) ? pmh->fltr_de/tint : 0.0;
+      pmh->fltr_dm = 0.0;
+      pmh->fltr_de = 0.0;
+    }
   }
   if (amh::on) AmHstColumns(pdata, pm, NFL);
   if (ttide) pdata->hdata[NFH] = DhjTideTorque(pm);

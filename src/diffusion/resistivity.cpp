@@ -185,7 +185,11 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                     << "<mhd>/eos = " << eqn_of_state << std::endl;
           std::exit(EXIT_FAILURE);
         }
-        int nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
+        // tracer-1101: the user's scalars plus the x_e / floor tracer slots, the same
+        // layout the MHD constructor builds (mhd/mhd_tracers.hpp)
+        mhd::TracerLayout tl_ = mhd::ReadTracerLayout(pin);
+        tl_.nuser = pin->GetOrAddInteger("mhd","nscalars",0);
+        int nscalars = tl_.Total();
         Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
         Kokkos::realloc(b_ideal.x1f, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(b_ideal.x2f, nmb, ncells3, ncells2+1, ncells1);
@@ -255,6 +259,9 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
   auto &wtemp_ = pmy_pack->pmhd->wtemp;
   // local copy: reading the member inside the kernel would capture `this`
   const Real max_eta_ = max_eta;
+  // xetracer-1101: the advected x_e (MHD scalar xe_idx) replaces local Saha when >= 0
+  const int ixe = xe_idx;
+  const Real nhfac = xe_nhfac;
   par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real rho = w(m,IDN,k,j,i);
@@ -276,7 +283,11 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
       // T is already in kelvin on both branches above, so the kelvin entry point is the
       // one to use -- the (d,e,T) form would scale by EOS_Data::temp_cgs, which an ideal
       // gas never sets. For a general EOS the two are the same number.
-      ResistivityEOS(eos.ElectronFractionKelvin(rho, T), T, max_eta_, eta_b(m,k,j,i));
+      // tracer: x_e = n_e/n_tot = y n_H/n_tot (y = n_e/n_H is what is advected)
+      const Real rhoc = gen ? rho*eos.dens_cgs : rho;
+      const Real xe = (ixe >= 0) ? w(m,ixe,k,j,i)*nhfac*rhoc/nn
+                                 : eos.ElectronFractionKelvin(rho, T);
+      ResistivityEOS(xe, T, max_eta_, eta_b(m,k,j,i));
     } else {
       ResistivityPerna(nn, T, max_eta_, eta_b(m,k,j,i));
     }

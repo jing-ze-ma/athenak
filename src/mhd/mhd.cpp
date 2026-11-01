@@ -26,6 +26,62 @@
 #include "mhd/mhd.hpp"
 #include "hydro/hydro_am.hpp"
 #include "utils/recipe.hpp"
+#include "units/units.hpp"
+
+namespace {
+//----------------------------------------------------------------------------------------
+//! tracer-1101 defaults (user 11-01).  Each applies only when its key is NOT named and
+//! recipe::NewDefaults(pin) holds, i.e. on a FRESH start (or <job>/recipe = prod1019);
+//! a restart whose embedded input lacks the key keeps the old behaviour (off).  The
+//! resolved value is written into the ParameterInput (GetOrAdd), so it is embedded in
+//! every restart the run writes and the restart continues with it.  An explicit key in
+//! the deck or on the command line always wins.  Every decision goes to the recipe log.
+//!   <mhd>/valfven_noinfall_fac = 4    when valfven_max_cgs > 0 and x1 is radial
+//!   <mhd>/floor_tracer = true         when valfven_max_cgs > 0
+//!   <mhd>/xe_tracer = true            (DefaultXeTracer, after the EOS exists) when
+//!                                     ohmic_resistivity = eos or ambipolar = eos and the
+//!                                     EOS has the electron-fraction table (else false)
+
+void LogDefault(ParameterInput *pin, const std::string &key, const std::string &on) {
+  if (recipe::NewDefaults(pin)) {
+    recipe::Log(key + " = " + on);
+  } else {
+    recipe::Log(key + " = off (" + std::string(
+        recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
+        "restart input has no key") + ": the old default)");
+  }
+}
+
+void DefaultAlfvenFloorKeys(MeshBlockPack *ppack, ParameterInput *pin) {
+  if (!pin->DoesParameterExist("mhd","valfven_max_cgs")) return;
+  if (!(pin->GetReal("mhd","valfven_max_cgs") > 0.0)) return;
+  const bool radial = ppack->pmesh->use_cubed_sphere || ppack->pmesh->use_spherical_polar;
+  if (radial && !pin->DoesParameterExist("mhd","valfven_noinfall_fac")) {
+    LogDefault(pin, "<mhd>/valfven_noinfall_fac", "4 (default with valfven_max_cgs > 0)");
+    if (recipe::NewDefaults(pin)) pin->GetOrAddReal("mhd","valfven_noinfall_fac",4.0);
+  }
+  if (!pin->DoesParameterExist("mhd","floor_tracer")) {
+    LogDefault(pin, "<mhd>/floor_tracer", "true (default with valfven_max_cgs > 0)");
+    if (recipe::NewDefaults(pin)) pin->GetOrAddBoolean("mhd","floor_tracer",true);
+  }
+}
+
+void DefaultXeTracer(ParameterInput *pin, const EOS_Data &eos) {
+  if (pin->DoesParameterExist("mhd","xe_tracer")) return;
+  const bool ohm_eos = pin->DoesParameterExist("mhd","ohmic_resistivity") &&
+                       pin->GetString("mhd","ohmic_resistivity").compare("eos") == 0;
+  const bool ad_eos = pin->DoesParameterExist("mhd","ambipolar") &&
+                      pin->GetString("mhd","ambipolar").compare("eos") == 0;
+  if (!(ohm_eos || ad_eos)) return;
+  if (!eos.HasElectronFraction()) {
+    recipe::Log("<mhd>/xe_tracer = off (no EOS electron-fraction table)");
+    return;
+  }
+  LogDefault(pin, "<mhd>/xe_tracer", "true (default with ohmic_resistivity or ambipolar "
+             "= eos)");
+  if (recipe::NewDefaults(pin)) pin->GetOrAddBoolean("mhd","xe_tracer",true);
+}
+}  // namespace
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
@@ -83,6 +139,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   // Total number of MeshBlocks on this rank to be used in array dimensioning
   int nmb = std::max((ppack->nmb_thispack), (ppack->pmesh->nmb_maxperrank));
 
+  // tracer-1101: fresh-start defaults of the Alfven-floor keys (read by the EOS ctor)
+  DefaultAlfvenFloorKeys(ppack, pin);
+
   // (1) construct EOS object (no default)
   std::string eqn_of_state = pin->GetString("mhd","eos");
   // ideal gas EOS
@@ -128,6 +187,39 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
+  // tracer-1101: fresh-start default of <mhd>/xe_tracer (needs the EOS table)
+  DefaultXeTracer(pin, peos->eos_data);
+  // tracer-1101: the passive-tracer slots after the user's scalars (mhd_tracers.hpp):
+  // x_e (<mhd>/xe_tracer) first, the floor mass (<mhd>/floor_tracer) last.  Both keys
+  // are read only when named; off, nscalars and every path are unchanged.
+  tracers = ReadTracerLayout(pin);
+  tracers.nuser = nscalars;
+  nscalars = tracers.Total();
+  xe_tracer = tracers.xe;
+  ixe = tracers.xe ? (nmhd + tracers.XeOff()) : -1;
+  floor_tracer = tracers.fl;
+  ifltr = tracers.fl ? (nmhd + tracers.FlOff()) : -1;
+  if (floor_tracer) {
+    peos->eos_data.ifltr = ifltr;
+    if (pin->DoesParameterExist("mhd","floor_tracer_margin")) {
+      fltr_margin = pin->GetReal("mhd","floor_tracer_margin");
+    }
+    if (pin->DoesParameterExist("mhd","floor_tracer_fmax")) {
+      fltr_fmax = pin->GetReal("mhd","floor_tracer_fmax");
+    }
+    if (fltr_margin < 1.0 || fltr_fmax <= 0.0 || fltr_fmax > 1.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/floor_tracer needs floor_tracer_margin >= 1 and "
+                << "0 < floor_tracer_fmax <= 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<mhd>/floor_tracer: floor-added mass in scalar slot " << ifltr
+                << " (nscalars " << nscalars << "); drained once per cycle where rho > "
+                << fltr_margin << " x the floor density, at most " << fltr_fmax
+                << " of the cell mass per cycle" << std::endl;
+    }
+  }
 
   // Viscosity (only constructed if needed)
   if (pin->DoesParameterExist("mhd","isotropic_viscosity")) {
@@ -144,6 +236,43 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     presist = new Resistivity(ppack, pin);
   } else {
     presist = nullptr;
+  }
+
+  // xetracer-1101: advected electron fraction (mhd_tracers.cpp).  Read only when named;
+  // off, nscalars and every path are unchanged.
+  if (xe_tracer) {
+    const bool eos_xe = (presist != nullptr) &&
+        ((pin->DoesParameterExist("mhd", "ohmic_resistivity") &&
+          pin->GetString("mhd", "ohmic_resistivity").compare("eos") == 0) ||
+         presist->ad_type == 2);
+    if (!eos_xe || !peos->eos_data.HasElectronFraction()) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/xe_tracer = true needs ohmic_resistivity = eos "
+                << "(or ambipolar = eos) and the EOS electron fraction table"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    presist->xe_idx = ixe;
+    peos->eos_data.ixe = ixe;
+    xe_init_pending = true;     // cleared by the restart reader if the file has it
+    xe_par.alpha_fac = pin->GetOrAddReal("mhd", "xe_alpha_fac", 1.0);
+    xe_par.time_cgs = (ppack->punit != nullptr) ? ppack->punit->time_cgs() : 1.0;
+    xe_par.xh = pin->GetOrAddReal("mhd", "eos_xh", 0.7381);
+    xe_par.metal_mh = peos->eos_data.tbl.metal_mh;
+    xe_par.metal_tcond = pin->GetOrAddReal("mhd", "eos_metal_tcond", 0.0);
+    xe_par.metal_cond = pin->GetOrAddBoolean("mhd", "eos_metal_condensation", false);
+    xe_par.metal_ion = pin->GetOrAddBoolean("mhd", "eos_metal_ionization", false);
+    xetracer::FillDonors(xe_par);
+    // the tracer carries y = n_e/n_H (per H nucleus, a per-mass quantity); eta and the
+    // ambipolar rho_i convert with n_H = xe_nhfac rho_cgs
+    presist->xe_nhfac = xe_par.xh/(eos_cgs::a_hyd*eos_cgs::m_u);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<mhd>/xe_tracer: advected y = n_e/n_H in scalar " << ixe
+                << " (nscalars now "
+                << nscalars << "), alpha = " << xe_par.alpha_fac << " x Verner Na+, "
+                << "time unit " << xe_par.time_cgs << " s, [M/H] " << xe_par.metal_mh
+                << ", condensation " << (xe_par.metal_cond ? "on" : "off") << std::endl;
+    }
   }
 
   // <mhd>/wall_conducting = off | resistive | full (default) (condwall-1028): a REFLECT
