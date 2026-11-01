@@ -1140,7 +1140,11 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
     auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
     auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
     const Real eta = pres->eta_ohm_const;
-    const Real scale = (iprob == 12) ? eta*2.0*b0c : eta*alpha*b0;
+    // ambipolar-1101: <mhd>/ambipolar = constant adds eta_ad (B^2 J - (J.B) B), exact
+    // on the edge from the exact B (zero for the force-free iprob 11)
+    const Real ead = (pres->ad_type == 1) ? pres->eta_ad : 0.0;
+    const Real bref = (iprob == 12) ? b0c*pm->mesh_size.x1max : b0;
+    const Real scale = ((iprob == 12) ? 2.0*b0c : alpha*b0)*(eta + ead*bref*bref);
     // exact J on an edge: alpha*B (iprob 11) or 2 b0c zhat (iprob 12), then eta*J.t
     auto exactJ = [&](Real r, Real th, Real ph, Real &jr, Real &jt, Real &jp) {
       if (iprob == 12) {
@@ -1149,7 +1153,19 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
         FFField(r, th, ph, b0, alpha, jr, jt, jp);
         jr *= alpha; jt *= alpha; jp *= alpha;
       }
+      if (ead != 0.0) {
+        Real br = 0.0, bt = 0.0, bp = b0c*r*std::sin(th);
+        if (iprob == 11) FFField(r, th, ph, b0, alpha, br, bt, bp);
+        const Real b2 = br*br + bt*bt + bp*bp, jb = jr*br + jt*bt + jp*bp;
+        const Real fr = eta*jr + ead*(b2*jr - jb*br);
+        const Real ft = eta*jt + ead*(b2*jt - jb*bt);
+        const Real fp = eta*jp + ead*(b2*jp - jb*bp);
+        // returned divided by eta so the callers' eta*J stays the exact total EMF
+        jr = (eta != 0.0) ? fr/eta : fr; jt = (eta != 0.0) ? ft/eta : ft;
+        jp = (eta != 0.0) ? fp/eta : fp;
+      }
     };
+    const Real eta_m = (ead != 0.0 && eta == 0.0) ? 1.0 : eta;   // multiplier below
     Real l1[3][2] = {}, mx[3][2] = {};
     std::int64_t nc[3][2] = {};
     int mxj[3] = {-1, -1, -1}, mxi[3] = {-1, -1, -1};
@@ -1167,7 +1183,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
             if (i <= ie) {
               exactJ(0.5*(rl + rr), tl, pl, br, bt, bph);
               const bool pol = (j - js < nbp) || (je + 1 - j < nbp);
-              const Real d = std::fabs(e1(m,k,j,i) - eta*br)/scale;
+              const Real d = std::fabs(e1(m,k,j,i) - eta_m*br)/scale;
               l1[0][pol] += d; nc[0][pol]++;
               if (d > mx[0][pol]) {
                 mx[0][pol] = d;
@@ -1180,7 +1196,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
             if (j <= je) {
               exactJ(rl, 0.5*(tl + tr), pl, br, bt, bph);
               const bool pol = (j - js < nbp) || (je - j < nbp);
-              const Real d = std::fabs(e2(m,k,j,i) - eta*bt)/scale;
+              const Real d = std::fabs(e2(m,k,j,i) - eta_m*bt)/scale;
               l1[1][pol] += d; nc[1][pol]++;
               if (d > mx[1][pol]) {
                 mx[1][pol] = d;
@@ -1193,7 +1209,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
             if (k <= ke && std::fabs(std::sin(tl)) > 1.0e-12) {
               exactJ(rl, tl, 0.5*(pl + pr), br, bt, bph);
               const bool pol = (j - js < nbp) || (je + 1 - j < nbp);
-              const Real d = std::fabs(e3(m,k,j,i) - eta*bph)/scale;
+              const Real d = std::fabs(e3(m,k,j,i) - eta_m*bph)/scale;
               l1[2][pol] += d; nc[2][pol]++;
               if (d > mx[2][pol]) {
                 mx[2][pol] = d;
