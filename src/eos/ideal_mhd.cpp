@@ -131,11 +131,19 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
     // <mhd>/valfven_max_cgs: Alfven-speed density floor (EOS_Data::va2max_inv), applied
     // like dfloor and written back below through dfloor_used
     bool vafloor_used = false;
+    bool vanoin_used = false;
     if (eos.va2max_inv > 0.0) {
       const Real dva = (SQR(u.bx) + SQR(u.by) + SQR(u.bz))*eos.va2max_inv;
       if (u.d < dva) {
         u.d = dva;
         vafloor_used = true;
+      }
+      // <mhd>/valfven_noinfall_fac (EOS_Data::va_noinfall_fac): no inward radial
+      // momentum in floor-dominated cells, its kinetic energy removed with it
+      if (eos.va_noinfall_fac > 0.0 && u.mx < 0.0 && u.d <= eos.va_noinfall_fac*dva) {
+        u.e -= 0.5*SQR(u.mx)/u.d;
+        u.mx = 0.0;
+        vanoin_used = true;
       }
     }
     SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used,
@@ -143,7 +151,7 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
     dfloor_used = dfloor_used || vafloor_used;
     // The floor-TEST pass (FOFC) is handed scratch conserved data and must leave no
     // trace, so the momentum rescale is written back only on the real pass.
-    if (!only_testfloors && vceil_used) {
+    if (!only_testfloors && (vceil_used || vanoin_used)) {
       cons(m,IM1,k,j,i) = u.mx;
       cons(m,IM2,k,j,i) = u.my;
       cons(m,IM3,k,j,i) = u.mz;

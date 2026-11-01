@@ -15,7 +15,9 @@ Gated at t = 0.5, nx1 = nx2 = nx3 = N:
   * the total Lorentz drag torque (the L_z the kinematic hold removes per stage / beta dt)
     over 16 pi m (b(2) - b(1))/15;
   * the L1 order of B_phi between N = 16 and 32;
-  * RKG super-time-stepping (mhd/use_rkg_sts) against the explicit path at N = 16.
+  * RKG super-time-stepping (mhd/use_rkg_sts) against the explicit path at N = 16;
+  * rkgdt-1101: the same with the forward-Euler dt_diff (mhd/rkg_dt_safety = 0.5, fewer
+    super-stages), held to the same RKG thresholds.
 The thresholds below carry the values measured on stswall-1029 c306af525 +
 ohmdrag-1029 (viper login node, MPI build) in the comments, with a modest margin.
 
@@ -90,8 +92,8 @@ def reference(rundir):
     return table
 
 
-def run(exe, rundir, table, n, rkg):
-    tag = "n%d_%s" % (n, "rkg" if rkg else "ex")
+def run(exe, rundir, table, n, rkg, extra=(), tag=None):
+    tag = tag or "n%d_%s" % (n, "rkg" if rkg else "ex")
     d = os.path.join(rundir, tag)
     os.makedirs(d, exist_ok=True)
     errs = os.path.join(d, "errs.dat")
@@ -102,7 +104,7 @@ def run(exe, rundir, table, n, rkg):
                     "meshblock/nx1=%d" % n, "meshblock/nx2=%d" % (n // 2),
                     "meshblock/nx3=%d" % (n // 2), "time/tlim=%r" % TLIM,
                     "mhd/use_rkg_sts=%s" % ("true" if rkg else "false"),
-                    "problem/ref_file=%s" % table, "problem/err_file=%s" % errs]
+                    "problem/ref_file=%s" % table, "problem/err_file=%s" % errs] + list(extra)
     env = dict(os.environ, OMP_NUM_THREADS="1")
     proc = subprocess.run(cmd, cwd=d, capture_output=True, text=True, env=env)
     if proc.returncode != 0 or not os.path.exists(errs):
@@ -122,6 +124,7 @@ def test_ohm_drag_cpu():
         table = reference(rundir)
         res = {n: run(exe, rundir, table, n, False) for n in (16, 32)}
         rkg = run(exe, rundir, table, 16, True)
+        rkgfe = run(exe, rundir, table, 16, True, ["mhd/rkg_dt_safety=0.5"], "n16_rkgfe")
         for n, (bphi, torque) in res.items():
             assert bphi < BPHI_L1_MAX[n], \
                 f"N={n}: B_phi L1 {bphi:.4e} > {BPHI_L1_MAX[n]}"
@@ -133,5 +136,9 @@ def test_ohm_drag_cpu():
             f"RKG B_phi L1 {rkg[0]:.4e} vs explicit {res[16][0]:.4e}"
         assert abs(rkg[1] - res[16][1]) < RKG_TORQUE_MAX, \
             f"RKG torque ratio {rkg[1]:.5f} vs explicit {res[16][1]:.5f}"
+        assert abs(rkgfe[0] / res[16][0] - 1.0) < RKG_REL_MAX, \
+            f"RKG (rkg_dt_safety 0.5) B_phi L1 {rkgfe[0]:.4e} vs explicit {res[16][0]:.4e}"
+        assert abs(rkgfe[1] - res[16][1]) < RKG_TORQUE_MAX, \
+            f"RKG (rkg_dt_safety 0.5) torque ratio {rkgfe[1]:.5f} vs explicit {res[16][1]:.5f}"
     finally:
         shutil.rmtree(BUILD, ignore_errors=True)

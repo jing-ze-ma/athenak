@@ -532,6 +532,26 @@ DvceArray2D<Real> *fhst = nullptr;   // (4, nx1): floors pending for the hst col
 DvceArray5D<Real> *cpre = nullptr;   // (nmb, 2, n3, n2, n1): u0(IEN) and e_int before ck
 int64_t nfull0 = 0;                  // ck_cad_nfull before the call
 }  // namespace ebud
+// roche-wbtan-1101 problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
+// the potential force (centrifugal of rot_potential + the Roche tide) as the hydro's OWN
+// discrete tangential momentum residual of the equipotential equilibrium W_eq, instead of
+// the analytic -rho grad_t Phi_tot at the cell centre:
+//     S_t = -(rho/rho_eq) R_t(W_eq),   R_t = -(flux divergence) + geometric source,
+// evaluated ONCE per run segment (WbTanProbe, first SourceFunc call, fresh start or
+// restart) by running the stage's own operators on W_eq: ghost exchange (panel-seam
+// resample) + x1 BCs + ConToPrim, Hydro::Fluxes, the seam flux reconciliation, the
+// coordinate source and both angular-momentum corrections.  W_eq is the IC formula (the
+// column at z_eff(Phi_tot)), so the IC is balanced in x2/x3 to round-off, seams and sp
+// poles included.  The work is booked by the etotgrav energy flux (required), as for
+// the analytic force before: E_tot stays exactly conservative, the O(h^2) mismatch
+// between rho g_t . v and the flux-form potential work lands in e_int, as before.
+namespace wbtan {
+bool on = false;
+bool ready = false;
+DvceArray5D<Real> *weq = nullptr;   // (nmb, 2, n3, n2, n1): rho_eq, eint_eq (all cells)
+DvceArray5D<Real> *gt = nullptr;    // (nmb, 2, n3, n2, n1): g_2, g_3 (covariant accel.)
+}  // namespace wbtan
+void WbTanProbe(Mesh *pm, const Real bdt);
 void EBudStage(Mesh *pm, const Real bdt);
 void EBudCk(Mesh *pm, const Real dt, const bool before);
 void EBudDrainFloors(Mesh *pm);
@@ -792,6 +812,32 @@ using correlated_k::ck_build_rosseland_table;
 // clamped, so it is bounded at any field strength -- see the use site. DEFAULT ON, since
 // in that form it is the better physics; set false to drop the magnetic force entirely.
 bool bc_outer_maxwell = true;
+// problem/top_bc (topbc-1101): the outer-x1 boundary.
+//   hse      (DEFAULT, bitwise) hydrostatic isothermal extrapolation of rho, e in the
+//            full potential phicc0 (gravity + centrifugal + tide), momenta scaled with rho,
+//            v_r copied from the last active cell (inflow allowed).  The right top when
+//            the WHOLE top shell is inside the planet's Roche lobe (closed equipotentials).
+//   outflow1 ONE-WAY OUTFLOW, for a top on OPEN equipotentials (above Phi(L1), where no
+//            hydrostatic state exists; the start-up line "top shell on OPEN
+//            equipotentials" gives the fraction).  Two parts:
+//            (a) ghosts: pure zero-gradient copy of rho, e and the tangential momenta of
+//                the last active cell, v_r_ghost = max(v_r_ie, 0); no hydrostatic or
+//                equipotential extrapolation anywhere (in the closed substellar cap of
+//                WASP-121b the hse ghosts, with a tiny effective g, were a dense
+//                reservoir that fed inflow).  The ghost total energy carries the ghost's
+//                OWN rho*phicc0 under etotgrav and its own magnetic energy.  MHD face
+//                field: tangential B zero-gradient (copied from the last active cell),
+//                normal B of the ghost faces from div B = 0 cell by cell outward.
+//            (b) the one-way top face (Hydro/MHD diode_ox1): where the interior-side
+//                state at the ie+1 face moves inward, the Riemann solver sees its mirror
+//                image (a reflecting face: zero mass and advected-energy flux, pressure
+//                only); where it moves outward, the ghost state of (a).
+//   outflow0 (a) alone -- DIAGNOSTIC ONLY, NOT one-way: the ghost pressure p_ie at the
+//            top face exceeds the hydrostatic face value, pushes the top cell inward
+//            (v_r ~ -900 m/s over the whole shell) and the Riemann solver refills it from
+//            the ghost (C32 WASP-121b smoke, topbc_1101: Mdot_top -7e11 g/s, 12x the hse
+//            inflow; -2.4e10 g/s even without the tide).
+int dhj_top_bc = 0;   // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 = outflow0
 
 // ---- problem/rt_test_* : TEST HOOKS for the well-posed checks of the implicit
 // correlated-k solve (tests_ck_implicit/wellposed/README.md).  All default off, and off
@@ -1181,6 +1227,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
+  {
+    const std::string tb = pin->GetOrAddString("problem","top_bc","hse");
+    if (tb == "hse") {
+      dhj_top_bc = 0;
+    } else if (tb == "outflow1") {
+      dhj_top_bc = 1;
+    } else if (tb == "outflow0") {
+      dhj_top_bc = 2;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/top_bc must be hse, outflow1 or outflow0, not '"
+                << tb << "'" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 && dhj_top_bc != 0) {
+      std::cout << "deep_hot_jupiter_rt: problem/top_bc = " << tb
+                << " (zero-gradient outer-x1 ghosts, v_r = max(v_r_ie, 0)"
+                << (dhj_top_bc == 1 ? "; one-way top face" : "; NOT one-way") << ")"
+                << std::endl;
+    }
+    if (dhj_top_bc == 1) {
+      if (pmy_mesh_->pmb_pack->phydro != nullptr) {
+        pmy_mesh_->pmb_pack->phydro->diode_ox1 = true;
+      }
+      if (pmy_mesh_->pmb_pack->pmhd != nullptr) {
+        pmy_mesh_->pmb_pack->pmhd->diode_ox1 = true;
+      }
+    }
+  }
   if (global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "
               << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
@@ -2210,7 +2285,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // + indirect term) joins TotPotAt wherever this function builds a potential -- the
     // equipotential IC (z_eff of Phi_tot), the ghosts, phicc0 and the phi0 faces, hence
     // the well-balanced radial force (each column's own Phi) and the etotgrav energy.
-    // The tangential tidal force is the explicit analytic -grad TidePot in SourceFunc,
+    // The tangential tidal force is the explicit analytic -grad TidePot in SourceFunc
+    // (or, with problem/roche_wb_tan, the hydro's own equilibrium residual: wbtan),
     // next to the centrifugal one; Coriolis unchanged.  Keys: roche_a [cm] (default
     // 0.02571 AU = WASP-121b) and G M_* from Kepler, Omega^2 a^3 = G (M_p + M_*), with
     // G M_p = grav ap^2 (point mass).  The centrifugal force stays in om2 (rot_potential,
@@ -2282,11 +2358,63 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the gas above that level is not bound to the planet (WASP-121b production grid:
       // x1max = 0.66 r_L1 on the axis, yet the lobe's POLAR radius is ~0.64 r_L1, so the
       // top cells near the poles sit just outside the Roche lobe)
+      // topbc-1101: the AREA fraction of the top shell (r = x1max) on open
+      // equipotentials (Phi > Phi(L1)), the guide for problem/top_bc: 0 -> hse, the
+      // top is inside the lobe; > 0 -> outflow1 (no hydrostatic state above Phi(L1))
+      {
+        double aop = 0.0, atot = 0.0;
+        const int nth = 360, nph = 180;   // phi in [0, pi]: the potential is even in phi
+        for (int it=0; it<nth; ++it) {
+          const Real th = M_PI*(it + 0.5)/nth;
+          const double w = std::sin(th);
+          for (int ip=0; ip<nph; ++ip) {
+            const Real ph = M_PI*(ip + 0.5)/nph;
+            atot += w;
+            if (TotPotAt(grav_acc, ap, r1, r1 - ap, true, om2_, th, ph, rgms_, ra_)
+                > phil1) aop += w;
+          }
+        }
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: problem/roche: " << 100.0*aop/atot
+                    << " % of the top shell (r = x1max) on OPEN equipotentials "
+                    << "(Phi > Phi(L1)); problem/top_bc = "
+                    << (dhj_top_bc == 0 ? "hse" : (dhj_top_bc == 1 ? "outflow1"
+                                                                      : "outflow0"))
+                    << (aop > 0.0 ? " (outflow1 recommended)" : " (hse recommended)")
+                    << std::endl;
+        }
+      }
       if (gsc >= 1.0e-3 && !(phtop < phil1) && global_variable::my_rank == 0) {
         std::cout << "### WARNING: problem/roche: the equipotential through part of the "
                   << "domain top is OPEN (max Phi(x1max) >= Phi(L1)): those top cells lie "
                   << "outside the planet's Roche lobe" << std::endl;
       }
+    }
+    // roche-wbtan-1101 problem/roche_wb_tan (default false; see namespace wbtan): the
+    // tangential centrifugal (+ tidal, with problem/roche) force as the hydro's own
+    // discrete residual of the equipotential equilibrium.  Works with rot_potential
+    // alone (centrifugal only) or with roche.
+    wbtan::on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
+    if (wbtan::on) {
+      std::string bad = "";
+      if (pmbp->phydro == nullptr) bad = "hydro (not MHD)";
+      if (!rot_potential) bad = "problem/rot_potential = true";
+      if (!(use_spherical_polar || use_cubed_sphere_)) bad = "sp or the cubed sphere";
+      if (pmbp->phydro != nullptr &&
+          (!use_wellbalance_dynamic || !pmbp->phydro->use_wb_x1)) {
+        bad = "wellbalance_dynamic + wb_x1";
+      }
+      if (use_wellbalance_static) bad = "no wellbalance_static";
+      if (!use_etotgrav) bad = "etotgrav = true (the work is booked by the energy flux)";
+      if (!user_srcs) bad = "problem/user_srcs = true";
+      if (tide) bad = "problem/stellar_tide = false";
+      if (pmy_mesh_->adaptive || pmy_mesh_->multilevel) bad = "a single-level mesh";
+      if (!bad.empty()) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "problem/roche_wb_tan needs " << bad << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      wbtan::ready = false;
     }
     Real Rgas = pin->GetReal("problem","Rgas");
     Real met = pin->GetReal("problem","met");
@@ -2679,6 +2807,57 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
     });
     }  // end of !restart guard on the initial condition
+
+    // roche-wbtan-1101: the equipotential equilibrium W_eq (rho, eint; v = 0) of EVERY
+    // cell incl. the ghosts, by the IC formula above (fresh start AND restart: the probe
+    // in SourceFunc runs once per run segment)
+    if (wbtan::on) {
+      const int nmbw = pmbp->nmb_thispack;
+      if (wbtan::weq == nullptr) {
+        wbtan::weq = new DvceArray5D<Real>("wbtan_weq", nmbw, 2, n3m1+1, n2m1+1, n1m1+1);
+        wbtan::gt = new DvceArray5D<Real>("wbtan_gt", nmbw, 2, n3m1+1, n2m1+1, n1m1+1);
+      }
+      auto weq_ = *wbtan::weq;
+      par_for("wbtan_weq", DevExeSpace(), 0, nmbw-1, 0, n3m1, 0, n2m1, 0, n1m1,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real x1v, x2v, x3v;
+        if (use_spherical_polar) {
+          x1v = x1v_(m,i);
+          x2v = x2v_(m,j);
+          x3v = x3v_(m,k);
+        } else {
+          x1v = x1v_(m,i);   // cubed sphere: stored centroid, as the IC
+          x2v = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+          x3v = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+        }
+        const Real r = x1v;
+        x1v -= ap;
+        Real lam = 0.0, theta, phi;
+        if (use_spherical_polar) {
+          theta = x2v;
+          phi = x3v-M_PI;
+        } else {
+          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
+        }
+        const Real zs = ZEffFromPot(grav_acc, ap,
+                                    TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
+                                             om2_, theta, phi, rgms_, ra_),
+                                    grav_pmass);
+        Real p, den;
+        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view, lgparr_init.d_view, N,
+                     zarr_init.d_view, logparr_init.d_view, zs, den, p,
+                     ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
+        weq_(m,0,k,j,i) = den;
+        weq_(m,1,k,j,i) = EintFromP(eos, igm1, den, p);
+      });
+      wbtan::ready = false;
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan ON: tangential "
+                  << (roche_on ? "centrifugal + tidal" : "centrifugal")
+                  << " force = the hydro's own residual of the equipotential state"
+                  << std::endl;
+      }
+    }
 
     // problem/seed + problem/seed_amp: a deterministic density perturbation on the
     // from-scratch initial condition.  It exists to build ENSEMBLES: the cubed-sphere
@@ -3774,6 +3953,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // a reference to a __host__ variable in device code, which hipcc rejects outright --
     // the switch has to be captured by value like any other host state.
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
+    const bool top_out_ = (dhj_top_bc != 0);   // problem/top_bc = outflow1 | outflow0
     // for the metric-correct ghost kinetic energy below (cubed sphere only)
     const bool cs_bc_ = pm->use_cubed_sphere;
     auto &ccell_bc_ = pmbp->pcoord->cos_cell;
@@ -3861,7 +4041,18 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //              b0_x1f(m,k,j,iex) = div_rest/area1(m,k,j,iex);
 //            }
           }
-          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user && top_out_) {
+            // problem/top_bc = outflow1 | outflow0: TANGENTIAL face field zero-gradient
+            // (the last active cell's faces copied into every ghost); the ghost NORMAL
+            // faces follow from div B = 0 in usrboundaryx1_bfield_divb below
+            for (int i=0; i<ng; ++i) {
+              int iex = ie+i+1;
+              b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,ie);
+              if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,ie);}
+              b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,ie);
+              if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,ie);}
+            }
+          } else if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
             for (int i=0; i<ng; ++i) {
               int iin = ie-i;
               int iex = ie+i+1;
@@ -3892,6 +4083,26 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //              }
         }
       });
+      // problem/top_bc = outflow1 | outflow0: the ghost NORMAL faces from div B = 0,
+      // ghost cell by ghost cell outward (each needs the face below it), with the
+      // tangential faces written by the kernel above -- a separate launch, because the
+      // j+1 / k+1 faces of a cell belong to other threads of that kernel
+      if (top_out_) {
+        par_for("usrboundaryx1_bfield_divb", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+        KOKKOS_LAMBDA(int m, int k, int j) {
+          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+            for (int i=0; i<ng; ++i) {
+              const int iex = ie+i+1;
+              const Real flx = b0_x1f(m,k,j,iex)*area1(m,k,j,iex)
+                  - (b0_x2f(m,k,j+1,iex)*area2(m,k,j+1,iex)
+                     - b0_x2f(m,k,j,iex)*area2(m,k,j,iex))
+                  - (b0_x3f(m,k+1,j,iex)*area3(m,k+1,j,iex)
+                     - b0_x3f(m,k,j,iex)*area3(m,k,j,iex));
+              b0_x1f(m,k,j,iex+1) = flx/area1(m,k,j,iex+1);
+            }
+          }
+        });
+      }
     }
     
 //    if (pmbp->phydro != nullptr) {
@@ -4108,7 +4319,36 @@ void HydrostaticEquilibrium(Mesh *pm) {
           Real phi_i = phicc0(m,k,j,ie);
           Real q0_i = log(e_i);
           Real factor_i = rho_i/e_i*igm1;
-          for (int i=0; i<ng; ++i) {
+          if (top_out_) {
+            // problem/top_bc = outflow1: zero-gradient copy, one-way v_r.  rho_i and e_i
+            // are the floored last-cell values above (the same extraction the hse branch
+            // starts from); the tangential momenta are copied (same rho), the radial one
+            // is clipped at zero so the ghost never pushes gas into the domain.
+            const Real m1o = fmax(u0_(m,IM1,k,j,ie), 0.0);
+            const Real m2o = u0_(m,IM2,k,j,ie);
+            const Real m3o = u0_(m,IM3,k,j,ie);
+            Real ke_o;
+            if (cs_bc_) {
+              const Real cg = ccell_bc_(m,k,j);
+              ke_o = 0.5*(m1o*m1o + (m2o*m2o - 2.0*cg*m2o*m3o + m3o*m3o)/(1.0 - cg*cg))
+                     /rho_i;
+            } else {
+              ke_o = 0.5*(SQR(m1o)+SQR(m2o)+SQR(m3o))/rho_i;
+            }
+            for (int i=0; i<ng; ++i) {
+              const int ig = ie+i+1;
+              u0_(m,IDN,k,j,ig) = rho_i;
+              u0_(m,IM1,k,j,ig) = m1o;
+              u0_(m,IM2,k,j,ig) = m2o;
+              u0_(m,IM3,k,j,ig) = m3o;
+              u0_(m,IEN,k,j,ig) = e_i + ke_o;
+              if (use_etotgrav) u0_(m,IEN,k,j,ig) += rho_i*phicc0(m,k,j,ig);
+              if (is_mhd_) u0_(m,IEN,k,j,ig) += 0.5*(SQR(bcc0(m,IBX,k,j,ig))
+                                                     + SQR(bcc0(m,IBY,k,j,ig))
+                                                     + SQR(bcc0(m,IBZ,k,j,ig)));
+            }
+          }
+          for (int i=0; i<ng && !top_out_; ++i) {
             Real dM1mag = 0.0;
             if (is_mhd_) {
               // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
@@ -4774,7 +5014,200 @@ void AmFix(Mesh *pm, const Real bdt) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn WbTanProbe (roche-wbtan-1101, problem/roche_wb_tan)
+//! \brief g_t: the hydro's own tangential momentum RHS of the equipotential equilibrium
+//! W_eq, per unit equilibrium density.  The live state (u0, w0, wder, wtemp, uflx, the
+//! x1 WB cache) is saved, W_eq (wbtan::weq, v = 0) fills the active cells, the ghosts are
+//! made exactly as the stage makes them (a private MeshBoundaryValuesCC with pbval_u's
+//! seam settings, ApplyPhysicalBCs, ConToPrim), Hydro::Fluxes runs on it (stage 0: no
+//! driver needed; FOFC held off -- it only acts on bad cells, none in an equilibrium),
+//! the panel-seam fluxes are reconciled as SendFlux/RecvFlux do, the tangential flux
+//! divergence is formed exactly as RKUpdate forms it and the coordinate source is added
+//! by the very routine HydroSrcTerms calls (bdt = 1, into a zeroed array), with the
+//! angular-momentum corrections of the stage (hydro AmModule::AmTransportProbe, the
+//! pgen's AmFix) from the same fluxes.  Then
+//!     g_c = -R_c/rho_eq,  R_c = -div F_c + S_geo,c  (c = IM2, IM3; covariant on cs),
+//! and SourceFunc adds rho g_c: at the IC the hydro's tangential RHS is cancelled to
+//! round-off.  Everything is restored, so the live stage is untouched.  One call per run
+//! segment (W_eq and the code are the same on a restart, so g is too).
+
+void WbTanProbe(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  hydro::Hydro *ph = pmbp->phydro;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1m1 = indcs.nx1 + 2*ng - 1;
+  const int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng - 1) : 0;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  const bool multi_d = pm->multi_d, three_d = pm->three_d;
+
+  auto dup5 = [](const DvceArray5D<Real> &a) {
+    DvceArray5D<Real> b(Kokkos::view_alloc("wbtan_sv", Kokkos::WithoutInitializing),
+                        a.layout());
+    Kokkos::deep_copy(b, a);
+    return b;
+  };
+  auto dup4 = [](const DvceArray4D<Real> &a) {
+    DvceArray4D<Real> b(Kokkos::view_alloc("wbtan_sv", Kokkos::WithoutInitializing),
+                        a.layout());
+    Kokkos::deep_copy(b, a);
+    return b;
+  };
+  const bool hasder = (ph->wder.size() > 0);
+  const bool hastmp = (ph->wtemp.size() > 0);
+  const bool haswbq = (ph->wbq0.size() > 0);
+  DvceArray5D<Real> su0 = dup5(ph->u0), sw0 = dup5(ph->w0);
+  DvceArray5D<Real> sder, swbq, sf1 = dup5(ph->uflx.x1f), sf2 = dup5(ph->uflx.x2f);
+  DvceArray5D<Real> sf3 = dup5(ph->uflx.x3f);
+  DvceArray4D<Real> stmp;
+  if (hasder) sder = dup5(ph->wder);
+  if (hastmp) stmp = dup4(ph->wtemp);
+  if (haswbq) swbq = dup5(ph->wbq0);
+  const bool sv_built = ph->wb_cache_built;
+  const bool sv_fofc = ph->use_fofc;
+
+  // W_eq -> u0 in the active cells (v = 0; E = eint (+ rho Phi_tot with etotgrav), as
+  // the IC), then the ghosts EXACTLY as the live stage gets them: the MeshBlock/panel
+  // exchange (own MeshBoundaryValuesCC, own communicators, same seam resample and rho
+  // guard as pbval_u), the physical + user x1 BCs, Hydro::ConToPrim
+  auto u0 = ph->u0;
+  auto weq = *wbtan::weq;
+  auto phi0 = ph->phicc0;
+  const bool etg = ph->use_etotgrav;
+  const int nvar = ph->nhydro + ph->nscalars;
+  par_for("wbtan_u", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    const Real d = weq(m,0,k,j,i);
+    u0(m,IDN,k,j,i) = d;
+    u0(m,IM1,k,j,i) = 0.0;
+    u0(m,IM2,k,j,i) = 0.0;
+    u0(m,IM3,k,j,i) = 0.0;
+    u0(m,IEN,k,j,i) = weq(m,1,k,j,i) + (etg ? d*phi0(m,k,j,i) : 0.0);
+    for (int n=IEN+1; n<nvar; ++n) u0(m,n,k,j,i) = 0.0;
+  });
+  static MeshBoundaryValuesCC *pbv = nullptr;
+  if (pbv == nullptr) {
+    pbv = new MeshBoundaryValuesCC(pmbp, nullptr, false);
+    pbv->cs_rho_guard = ph->pbval_u->cs_rho_guard;
+    pbv->cs_lin_resample = ph->pbval_u->cs_lin_resample;
+    pbv->InitializeBuffers(nvar);
+  }
+  while (pbv->InitRecv(nvar) == TaskStatus::incomplete) {}
+  if (pm->use_cubed_sphere) {
+    while (pbv->InitFluxSeamRecv(nvar) == TaskStatus::incomplete) {}
+  }
+  while (pbv->PackAndSendCC(ph->u0, ph->coarse_u0) == TaskStatus::incomplete) {}
+  while (pbv->RecvAndUnpackCC(ph->u0, ph->coarse_u0) == TaskStatus::incomplete) {}
+  while (pbv->ClearSend() == TaskStatus::incomplete) {}
+  while (pbv->ClearRecv() == TaskStatus::incomplete) {}
+  (void) ph->ApplyPhysicalBCs(nullptr, 0);
+  // no temperature guess (tguess <= 0: the table solve starts from its own bracket), so
+  // W_eq's (T, p, Gamma_1) do not depend on the live wtemp: g is the same on a fresh
+  // start and on every restart
+  if (hastmp) Kokkos::deep_copy(ph->wtemp, 0.0);
+  const bool sv_trk = ph->c2p_track;   // C2PTrack needs the driver
+  ph->c2p_track = false;
+  (void) ph->ConToPrim(nullptr, 0);
+  ph->c2p_track = sv_trk;
+  ph->wb_cache_built = false;   // the x1 WB background of W_eq
+  ph->use_fofc = false;
+  ph->Fluxes(nullptr, 0);
+  // the panel-seam flux reconciliation of SendFlux/RecvFlux
+  if (pm->use_cubed_sphere) {
+    while (pbv->PackAndSendFluxSeamCC(ph->uflx) == TaskStatus::incomplete) {}
+    while (pbv->RecvAndUnpackFluxSeamCC(ph->uflx) == TaskStatus::incomplete) {}
+    while (pbv->ClearFluxSend() == TaskStatus::incomplete) {}
+    while (pbv->ClearFluxRecv() == TaskStatus::incomplete) {}
+  }
+  // the coordinate source of W_eq alone, with bdt = 1, into a zeroed array
+  DvceArray5D<Real> us("wbtan_us", ph->u0.extent(0), ph->u0.extent(1),
+                       ph->u0.extent(2), ph->u0.extent(3), ph->u0.extent(4));
+  if (pm->use_cubed_sphere) {
+    pmbp->pcoord->SrcTermsGnomonicEquiangle(ph->w0, ph->wder, ph->pwb, ph->uflx,
+                                            ph->peos->eos_data, 1.0, us);
+  } else {
+    pmbp->pcoord->SrcTermsSphericalPolarHydro(ph->w0, ph->pwb, ph->uflx,
+                                              ph->peos->eos_data, 1.0, us);
+  }
+  // the angular-momentum corrections of the same stage, from W_eq's fluxes: the hydro
+  // module's (<hydro>/am_transport | am_vector, HydroSrcTerms) and the pgen's own
+  // (problem/coriolis_am | am_transport, AmFix in SourceFunc), both with bdt = 1 into
+  // `us` (AmFix adds to the fluid's u0, so u0 is pointed at a zeroed scratch for it)
+  if (ph->pam != nullptr) {
+    hydro::AmFluid fl{us, ph->u1, ph->w0, ph->wder, DvceArray5D<Real>(), ph->uflx,
+                      ph->peos->eos_data, false, ph->use_wellbalance_static, ph->pwb};
+    ph->pam->AmTransportProbe(fl);
+  }
+  if (amh::fix || amh::trans) {
+    Kokkos::deep_copy(ph->u0, 0.0);
+    AmFix(pm, 1.0);
+    auto u0a = ph->u0;
+    auto usa = us;
+    par_for("wbtan_amfix", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      usa(m,IM2,k,j,i) += u0a(m,IM2,k,j,i);
+      usa(m,IM3,k,j,i) += u0a(m,IM3,k,j,i);
+    });
+  }
+  auto flx1 = ph->uflx.x1f, flx2 = ph->uflx.x2f, flx3 = ph->uflx.x3f;
+  auto area1 = pmbp->pcoord->area.x1f, area2 = pmbp->pcoord->area.x2f;
+  auto area3 = pmbp->pcoord->area.x3f;
+  auto volume = pmbp->pcoord->volume;
+  auto w0 = ph->w0;
+  auto gt = *wbtan::gt;
+  Kokkos::deep_copy(gt, 0.0);
+  par_for("wbtan_gt", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    for (int c=0; c<2; ++c) {
+      const int n = IM2 + c;
+      Real divf = (flx1(m,n,k,j,i+1)*area1(m,k,j,i+1)
+                   - flx1(m,n,k,j,i)*area1(m,k,j,i))/volume(m,k,j,i);
+      if (multi_d) {
+        divf += (flx2(m,n,k,j+1,i)*area2(m,k,j+1,i)
+                 - flx2(m,n,k,j,i)*area2(m,k,j,i))/volume(m,k,j,i);
+      }
+      if (three_d) {
+        divf += (flx3(m,n,k+1,j,i)*area3(m,k+1,j,i)
+                 - flx3(m,n,k,j,i)*area3(m,k,j,i))/volume(m,k,j,i);
+      }
+      const Real rhs = -divf + us(m,n,k,j,i);
+      gt(m,c,k,j,i) = -rhs/w0(m,IDN,k,j,i);
+    }
+  });
+
+  // restore the live state
+  Kokkos::deep_copy(ph->u0, su0);
+  Kokkos::deep_copy(ph->w0, sw0);
+  Kokkos::deep_copy(ph->uflx.x1f, sf1);
+  Kokkos::deep_copy(ph->uflx.x2f, sf2);
+  Kokkos::deep_copy(ph->uflx.x3f, sf3);
+  if (hasder) Kokkos::deep_copy(ph->wder, sder);
+  if (hastmp) Kokkos::deep_copy(ph->wtemp, stmp);
+  if (haswbq) Kokkos::deep_copy(ph->wbq0, swbq);
+  ph->wb_cache_built = sv_built;
+  ph->use_fofc = sv_fofc;
+  wbtan::ready = true;
+
+  // one line: the size of g_t (max |g_c| over the rank's cells, rank 0)
+  Real gmax = 0.0;
+  Kokkos::parallel_reduce("wbtan_gmax",
+      Kokkos::RangePolicy<DevExeSpace>(0, static_cast<int>(gt.size())),
+      KOKKOS_LAMBDA(const int q, Real &mx) {
+        mx = fmax(mx, fabs(gt.data()[q]));
+      }, Kokkos::Max<Real>(gmax));
+  if (global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan: equilibrium residual probe "
+              << "done at cycle " << pm->ncycle << ", max |g_t| (rank 0) = " << gmax
+              << " cm/s^2" << std::endl;
+  }
+}
+
 void SourceFunc(Mesh *pm, Real bdt) {
+  if (wbtan::on && !wbtan::ready) WbTanProbe(pm, bdt);
   EBudStage(pm, bdt);
   DhjFluxStage(pm);
   if (amh::on) AmHstStage(pm);
@@ -4874,6 +5307,12 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const Real rgms = pm->pgen->hot_jupiter_param.roche ?
                       pm->pgen->hot_jupiter_param.roche_gms : 0.0;
     const Real rra = pm->pgen->hot_jupiter_param.roche_a;
+    // roche-wbtan-1101 problem/roche_wb_tan: the tangential centrifugal + tidal force is
+    // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
+    // radial terms unchanged; no energy term (etotgrav books the potential work)
+    const bool wbt_ = wbtan::on;
+    DvceArray5D<Real> wbtg_;
+    if (wbt_) wbtg_ = *wbtan::gt;
 
     // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
     // plain values. Radii rebuilt here with CellCenterX/LeftEdgeX are UNSTRETCHED, so
@@ -4998,8 +5437,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real cosine = cos(theta);
           Real oor = SQR(omega)*r*sine;
           Real cor = 2.0*omega*vphi;
+          if (wbt_) {
+            u0(m,IM2,k,j,i) += (rho*cor*cosine + rho*wbtg_(m,0,k,j,i))*bdt;
+            u0(m,IM3,k,j,i) += (-rho*2.0*omega*(vr*sine+vtheta*cosine)
+                                + rho*wbtg_(m,1,k,j,i))*bdt;
+          } else {
           u0(m,IM2,k,j,i) += rho*(cor+oor)*cosine*bdt;
           u0(m,IM3,k,j,i) += -rho*2.0*omega*(vr*sine+vtheta*cosine)*bdt;
+          }
           // rot_potential: the RADIAL centrifugal force lives in the potential (the
           // well-balanced source and, with etotgrav, the energy flux carry it); only the
           // theta part and Coriolis stay explicit here
@@ -5034,7 +5479,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
             u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
           }
           // roche-dhj-1031: tangential -grad TidePot (stellar_tide is refused with it)
-          if (rgms != 0.0) {
+          if (rgms != 0.0 && !wbt_) {
             const Real cph = cos(phi), sph = sin(phi);
             Real gs, gy, gz;
             roche::TideGrad(rgms, rra, r*sine*cph, r*sine*sph, r*cosine, gs, gy, gz);
@@ -5088,8 +5533,15 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // Omega^2 r sin^2(theta) = Omega^2 (x rh0 + y rh1), which the potential carries
           const Real acr_rot = rotpot_src ? SQR(omega)*(xx*rh0 + yy*rh1) : 0.0;
           u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1 - acr_rot)*bdt;
+          if (wbt_) {
+            // Coriolis only, analytically; the centrifugal (+ tidal) part is rho g_t
+            const Real ccx =  2.0*omega*vcy, ccy = -2.0*omega*vcx;
+            u0(m,IM2,k,j,i) += rho*(ccx*e1[0] + ccy*e1[1] + wbtg_(m,0,k,j,i))*bdt;
+            u0(m,IM3,k,j,i) += rho*(ccx*e2[0] + ccy*e2[1] + wbtg_(m,1,k,j,i))*bdt;
+          } else {
           u0(m,IM2,k,j,i) += rho*(acx*e1[0] + acy*e1[1])*bdt;
           u0(m,IM3,k,j,i) += rho*(acx*e2[0] + acy*e2[1])*bdt;
+          }
           // Only the centrifugal part does work -- Coriolis is perpendicular to v.  With
           // rot_potential AND etotgrav the etotgrav flux rho v Phi_tot (TotPotAt on all
           // three face sets) already does the whole centrifugal work, so no energy
@@ -5104,7 +5556,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // (CSCellAngles: phi = atan2(-y, -x)), so the stellar frame is s = -x, y' = -y,
           // z; the Cartesian acceleration is (gs, gy', -gz), projected like the
           // centrifugal one above on e1, e2 (covariant momentum components)
-          if (rgms != 0.0) {
+          if (rgms != 0.0 && !wbt_) {
             Real gs, gy, gz;
             roche::TideGrad(rgms, rra, -r*rh0, -r*rh1, r*rh2, gs, gy, gz);
             u0(m,IM2,k,j,i) += rho*(gs*e1[0] + gy*e1[1] - gz*e1[2])*bdt;
@@ -7205,6 +7657,92 @@ void AmHstColumns(HistoryData *pdata, Mesh *pm, const int n0) {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn DhjTideTorque (tidetrq-1101)
+//! \brief the z torque [g cm^2 s^-2] of the APPLIED tangential tide about the spin axis,
+//! sum over this rank's active cells of rho (r x a_t)_z vol = rho R (a_t . phi_hat) vol
+//! (the history output sums the ranks), at the current w0 (instantaneous, like Lrel/Iw):
+//! the explicit problem/roche tangential -grad TidePot, or with problem/roche_wb_tan the
+//! probed g_t (0 before the probe).  The radial part carries no z torque.  History
+//! column Ttide, present only with problem/roche, to close L_z in the planet runs.
+
+Real DhjTideTorque(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool mhd = (pmbp->pmhd != nullptr);
+  auto w0 = mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto vol = pmbp->pcoord->volume;
+  auto x1v = pmbp->pcoord->x1v;
+  auto x2v_ = pmbp->pcoord->x2v;
+  auto x3v_ = pmbp->pcoord->x3v;
+  auto &size = pmbp->pmb->mb_size;
+  auto &panel = pmbp->pmb->mb_panel;
+  auto &ic = pm->mb_indcs;
+  const int is = ic.is, js = ic.js, ks = ic.ks;
+  const int nx1 = ic.nx1, nx2 = ic.nx2, nx3 = ic.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const bool cs = pm->use_cubed_sphere, sp = pm->use_spherical_polar;
+  const Real rgms = pm->pgen->hot_jupiter_param.roche_gms;
+  const Real rra = pm->pgen->hot_jupiter_param.roche_a;
+  const bool wbt = wbtan::on;
+  if ((wbt && !wbtan::ready) || !(cs || sp)) return 0.0;
+  DvceArray5D<Real> g;
+  if (wbt) g = *wbtan::gt;
+  Real tq = 0.0;
+  Kokkos::parallel_reduce("dhj_tide_torque",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nx3*nx2*nx1),
+  KOKKOS_LAMBDA(const int idx, Real &sum) {
+    const int m = idx/(nx3*nx2*nx1);
+    int rem = idx - m*(nx3*nx2*nx1);
+    const int k = ks + rem/(nx2*nx1);
+    rem -= (k - ks)*(nx2*nx1);
+    const int j = js + rem/nx1;
+    const int i = is + rem - (j - js)*nx1;
+    const Real r = x1v(m,i);
+    const Real rv = w0(m,IDN,k,j,i)*vol(m,k,j,i);
+    if (sp) {
+      const Real theta = x2v_(m,j), phi = x3v_(m,k) - M_PI;
+      const Real sine = sin(theta), cosine = cos(theta);
+      Real aphi;
+      if (wbt) {
+        aphi = g(m,1,k,j,i);
+      } else {
+        const Real cph = cos(phi), sph = sin(phi);
+        Real gs, gy, gz;
+        roche::TideGrad(rgms, rra, r*sine*cph, r*sine*sph, r*cosine, gs, gy, gz);
+        aphi = -(-gs*sph + gy*cph);
+      }
+      sum += rv*r*sine*aphi;
+    } else {
+      const Real x2 = CellCenterX(j-js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+      const Real x3 = CellCenterX(k-ks, nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+      const int pnl = panel.d_view(m);
+      Real qc[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(pnl, 0.25*M_PI*x2, 0.25*M_PI*x3, qc);
+      cubed_sphere::PanelTangents(pnl, 0.25*M_PI*x2, 0.25*M_PI*x3, e1, e2);
+      const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+      const Real rh0 = qc[0]*qn, rh1 = qc[1]*qn, rh2 = qc[2]*qn;
+      Real ax, ay;
+      if (wbt) {
+        // covariant (g2, g3) on the unit pair (e1, e2) -> the tangential vector
+        const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+        const Real id = 1.0/(1.0 - c*c);
+        const Real a1 = (g(m,0,k,j,i) - c*g(m,1,k,j,i))*id;
+        const Real a2 = (g(m,1,k,j,i) - c*g(m,0,k,j,i))*id;
+        ax = a1*e1[0] + a2*e2[0];
+        ay = a1*e1[1] + a2*e2[1];
+      } else {
+        // as the source: Cartesian acceleration (gs, gy, -gz) in the chart frame
+        Real gs, gy, gz;
+        roche::TideGrad(rgms, rra, -r*rh0, -r*rh1, r*rh2, gs, gy, gz);
+        ax = gs;
+        ay = gy;
+      }
+      sum += rv*r*(rh0*ay - rh1*ax);
+    }
+  }, Kokkos::Sum<Real>(tq));
+  return tq;
+}
+
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   namespace ts = two_stream_rt;
   constexpr int NFH0 = 9;
@@ -7213,7 +7751,10 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
   // problem/am_hst: eight columns after all the others
   const int NFL = (fwall ? (NFH0 + 4) : NFH0) + (ffloor ? 3 : 0);
   const int NFH = NFL + (amh::on ? (amh::split ? 12 : 8) : 0);
-  pdata->nhist = NFH;
+  // tidetrq-1101: Ttide (DhjTideTorque) after all the others, only with problem/roche
+  const bool ttide = pm->pgen->hot_jupiter_param.roche;
+  pdata->nhist = NFH + (ttide ? 1 : 0);
+  if (ttide) pdata->label[NFH] = "Ttide";
   pdata->label[0] = "Lir_top";
   pdata->label[1] = "Lsw_refl";
   pdata->label[2] = "Lsw_abs";
@@ -7372,6 +7913,7 @@ void DhjFluxHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[NFL-1] = (tint > 0.0) ? efr/tint : 0.0;
   }
   if (amh::on) AmHstColumns(pdata, pm, NFL);
+  if (ttide) pdata->hdata[NFH] = DhjTideTorque(pm);
   if (!fwall) return;
   // problem/flux_hst_wall: the inner-wall in/out split, its own small reduction
   array_sum::GlobalSum wsum;

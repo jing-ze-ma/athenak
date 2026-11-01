@@ -1293,7 +1293,10 @@ void Mesh::NewTimeStep(const Real tlim) {
     // resistivity timestep
     if (pmb_pack->pmhd->presist != nullptr) {
       if (pmb_pack->pmhd->presist->use_rkg_sts) {
-        dt_diff = (cfl_no)*(pmb_pack->pmhd->presist->dtnew);
+        // rkgdt-1101: with <mhd>/rkg_dt_safety dtnew is already safety x the forward-Euler
+        // limit; the hyperbolic CFL number does not apply to it
+        dt_diff = (pmb_pack->pmhd->presist->rkg_dt_fe) ? (pmb_pack->pmhd->presist->dtnew)
+                  : (cfl_no)*(pmb_pack->pmhd->presist->dtnew);
       } else {
         dt = std::min(dt, (cfl_no)*(pmb_pack->pmhd->presist->dtnew) );
       }
