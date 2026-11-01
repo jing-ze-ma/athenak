@@ -16,7 +16,7 @@
 #include "athena.hpp"
 #include "io_wrapper.hpp"
 
-#define NHISTORY_VARIABLES 24
+#define NHISTORY_VARIABLES 32   // 24 -> 32: dhj am_hst_split + Ttide = 25 (wbtan-torquefix-1101)
 #if NHISTORY_VARIABLES > NREDUCTION_VARIABLES
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
