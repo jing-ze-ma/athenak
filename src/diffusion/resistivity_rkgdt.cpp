@@ -313,6 +313,9 @@ void Resistivity::LmaxDiag() {
       pmhd->WallEmfZero(efld_resist, wall_cond_reflect, wall_cond_ix1);
     }
     AddEMFDirect(efld_resist, ef);
+    if (pm->use_polar_boundary && pm->use_polar_average_eresist) {
+      pmhd->PolarAzimuthalAverageEr();   // as in Resistivity::EField
+    }
     while (pbb->PackAndSendFluxFC(ef) != TaskStatus::complete) {}
     while (pbb->RecvAndUnpackFluxFC(ef) != TaskStatus::complete) {}
     while (pbb->ClearSend() != TaskStatus::complete) {}
