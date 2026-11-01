@@ -34,6 +34,9 @@ Basis "template" (the regression path) maps the reference planet's 3-D columns
 (radres_0924/meas.npz) at equal pressure and applies sparc_0925/design_c8.py and
 design256.py unchanged; with the reference planet it reproduces both grids.
 
+With the host-star tide (problem/roche) use the sibling roche_anchor.py instead: same column,
+anchored on the full Roche equipotential (ap, grav, roche_a, wall p/T range, L1).
+
 Usage
   planet_setup.py --regress                      reference planet round trip (gates)
   planet_setup.py --regress --grids --grid_basis template     (also the grids)
