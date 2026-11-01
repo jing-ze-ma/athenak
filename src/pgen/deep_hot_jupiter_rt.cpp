@@ -2338,21 +2338,28 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const int nimax = x1vh.extent_int(1) - 1;
       Real rt = x1vh(0, nimax);
       for (int m=0; m<pmbp->nmb_thispack; ++m) rt = std::max(rt, x1vh(m, nimax));
-      Real ztop = 0.0;
+      // the largest z_eff of the top ghosts with and without the tide; the column grows
+      // by the DIFFERENCE only, so a negligible tide (the no-star gate,
+      // roche_gms_scale -> 0) leaves the rot_potential column (and IC) unchanged to
+      // round-off.  (The rot_potential column itself stops at 1.1 (r1 - r0) and the top
+      // ghosts read its linear extrapolation, as before.)
+      Real ztop = 0.0, ztop0 = 0.0;
       for (int it=0; it<=90; ++it) {
         const Real th = 0.5*M_PI*it/90.0;
         for (int ip=0; ip<=36; ++ip) {
           ztop = std::max(ztop, ZEffFromPot(grav_acc, ap,
                               TotPotAt(grav_acc, ap, rt, rt - ap, grav_pmass, om2_, th,
                                        M_PI*ip/36.0, rgms_, ra_), grav_pmass));
+          ztop0 = std::max(ztop0, ZEffFromPot(grav_acc, ap,
+                               TotPotAt(grav_acc, ap, rt, rt - ap, grav_pmass, om2_, th),
+                               grav_pmass));
         }
       }
-      // + 5 % of the shell as margin (not x 1.1): with a negligible tide (the no-star
-      // gate) the column, hence the IC, must stay exactly the rot_potential one
-      zcol_ = std::max(zcol_, ztop + 0.05*(r1-r0));
+      zcol_ += std::max(0.0, ztop - ztop0);
       if (global_variable::my_rank == 0) {
         std::cout << "deep_hot_jupiter_rt: problem/roche: column to z = " << zcol_
-                  << " (largest z_eff of the top ghosts " << ztop << " + 5 % of the shell)"
+                  << " (1.1 (r1 - r0) + the tidal rise of the top ghosts' z_eff, "
+                  << ztop - ztop0 << ")"
                   << std::endl;
       }
     }
