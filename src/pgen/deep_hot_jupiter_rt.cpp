@@ -250,7 +250,8 @@ void DhjCycleDiag(Mesh *pm);
 //     the angular-momentum flux IN through the inner wall (the wall torque, Maxwell
 //     stress included).  The rest, Ttop = Tcons - Twall, comes in through the top, and
 //     the L_z ledger reads dLrel/dt = Tcor + Twall + Ttop.  (Ttop has no column of its
-//     own: 9 + 3 floor + 12 = 24 = NHISTORY_VARIABLES.)
+//     own: 9 + 3 floor + 12 = 24 = NHISTORY_VARIABLES; with problem/roche the Ttide
+//     column makes it 25, so am_hst_split + flux_hst_floor + roche is a start-up FATAL.)
 namespace amh {
 bool on = false;            // problem/am_hst
 bool fix = false;           // problem/coriolis_am
@@ -1080,13 +1081,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       } else if (integ == "rk3") {
         amh::nst = 3;  amh::w[0] = 1.0/6.0;  amh::w[1] = 1.0/6.0;  amh::w[2] = 2.0/3.0;
       }
+      // + Ttide (tidetrq-1101) with problem/roche
       const int nfh = 9 + (dhj_flux_hst_wall ? 4 : 0) + (dhj_flux_hst_floor ? 3 : 0)
-                      + (amh::split ? 12 : 8);
+                      + (amh::split ? 12 : 8) + (hot_jupiter_param.roche ? 1 : 0);
       if (amh::nst == 0 || nfh > NHISTORY_VARIABLES) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "problem/am_hst needs rk1/rk2/rk3 and at most "
                   << NHISTORY_VARIABLES << " user history columns (have " << nfh << ")"
-                  << std::endl;
+                  << " (e.g. problem/am_hst_split = false frees 4)" << std::endl;
         exit(EXIT_FAILURE);
       }
       for (int n=0; n<amh::NACC; ++n) amh::acc[n] = 0.0;
@@ -5134,17 +5136,26 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
                                               ph->peos->eos_data, 1.0, us);
   }
   // the angular-momentum corrections of the same stage, from W_eq's fluxes: the hydro
-  // module's (<hydro>/am_transport | am_vector, HydroSrcTerms) and the pgen's own
-  // (problem/coriolis_am | am_transport, AmFix in SourceFunc), both with bdt = 1 into
-  // `us` (AmFix adds to the fluid's u0, so u0 is pointed at a zeroed scratch for it)
+  // module's (<hydro>/am_transport | am_vector, HydroSrcTerms) and the pgen's
+  // problem/am_transport part of AmFix (T_cons - T_code: a transport correction whose
+  // sum is the boundary torque), both with bdt = 1 into `us` (AmFix adds to the fluid's
+  // u0, so u0 is pointed at a zeroed scratch for it).  NOT the problem/coriolis_am part:
+  // -Omega Q_c of W_eq is the Coriolis torque on the equilibrium's NUMERICAL mass fluxes
+  // (the first stage's radial redistribution, sum = Omega dI/dt); frozen into g_t it was
+  // a constant net z torque (Ttide -5.5e36 on the cs C8 WASP deck, -9.8e34 = -1.2e-3
+  // Iw Omega per rotation on the C32 3x deck; wbtan torque check 11-01).  The live AmFix
+  // applies it to the evolving state every stage, as without the key.
   if (ph->pam != nullptr) {
     hydro::AmFluid fl{us, ph->u1, ph->w0, ph->wder, DvceArray5D<Real>(), ph->uflx,
                       ph->peos->eos_data, false, ph->use_wellbalance_static, ph->pwb};
     ph->pam->AmTransportProbe(fl);
   }
-  if (amh::fix || amh::trans) {
+  if (amh::trans) {
     Kokkos::deep_copy(ph->u0, 0.0);
+    const bool sv_fix = amh::fix;
+    amh::fix = false;
     AmFix(pm, 1.0);
+    amh::fix = sv_fix;
     auto u0a = ph->u0;
     auto usa = us;
     par_for("wbtan_amfix", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
