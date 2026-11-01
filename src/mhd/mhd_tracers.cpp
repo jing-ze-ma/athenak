@@ -28,6 +28,7 @@
 #include "diffusion/resistivity.hpp"
 #include "pgen/pgen.hpp"
 #include "mhd/mhd.hpp"
+#include "mhd/mhd_tracers.hpp"
 #include "mhd/xe_tracer.hpp"
 #include "utils/c2p_track.hpp"
 
