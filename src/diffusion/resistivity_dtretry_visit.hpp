@@ -44,6 +44,15 @@ void Resistivity::DtRetryVisit(V &v) {
   v.view("efld_ideal.x1e", efld_ideal.x1e);
   v.view("efld_ideal.x2e", efld_ideal.x2e);
   v.view("efld_ideal.x3e", efld_ideal.x3e);
+  v.value("ad_type", ad_type);
+  v.value("eta_ad", eta_ad);
+  v.value("ad_sigv_in", ad_sigv_in);
+  v.value("ad_mion_amu", ad_mion_amu);
+  v.value("max_eta_ad", max_eta_ad);
+  v.view("ad_coef", ad_coef);
+  v.view("jcur.x1e", jcur.x1e);
+  v.view("jcur.x2e", jcur.x2e);
+  v.view("jcur.x3e", jcur.x3e);
 }
 
 // not visited (pointers, const, threads, timers, MPI, ...):

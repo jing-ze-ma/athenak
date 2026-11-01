@@ -137,7 +137,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   }
 
   // Resistivity (only constructed if needed)
-  if (pin->DoesParameterExist("mhd","ohmic_resistivity")) {
+  // ambipolar-1101: <mhd>/ambipolar (not none) also needs the resistive machinery
+  if (pin->DoesParameterExist("mhd","ohmic_resistivity") ||
+      (pin->DoesParameterExist("mhd","ambipolar") &&
+       pin->GetString("mhd","ambipolar").compare("none") != 0)) {
     presist = new Resistivity(ppack, pin);
   } else {
     presist = nullptr;

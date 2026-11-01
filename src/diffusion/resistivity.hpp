@@ -7,7 +7,8 @@
 //========================================================================================
 //! \file resistivity.hpp
 //  \brief Contains data and functions that implement various non-ideal MHD (resistive)
-//  processes, such as Ohmic diffusion. TODO(@user): add ambipolar diffusion, Hall effect
+//  processes: Ohmic diffusion and ambipolar diffusion (<mhd>/ambipolar, ambipolar-1101).
+//  The Hall effect is not implemented.
 
 #include "athena.hpp"
 #include "parameter_input.hpp"
@@ -103,6 +104,32 @@ class Resistivity {
   DvceEdgeFld4D<Real> jnorm;   // cubed sphere only: J in the FACE-NORMAL frame, the
                                // intermediate of the two-pass curl (resistivity_gnomonic.cpp)
   DvceEdgeFld4D<Real> efld_ideal;   // edge-centered electric fields
+
+  // AMBIPOLAR DIFFUSION (ambipolar-1101).  <mhd>/ambipolar = none (default) | constant |
+  // eos.  The edge EMF gains eta_A (J - (J.B) B/B^2), eta_A = ad_coef |B|^2 per cell,
+  // capped at max_eta_ad:
+  //   constant: ad_coef = <mhd>/eta_ad (Athena++ convention eta_A = eta_ad B^2)
+  //   eos:      ad_coef = pres_cgs/(gamma_in rho_i rho_n) (cgs), rho_i = x_e n m_ion,
+  //             gamma_in = <mhd>/ad_sigv_in/(m_ion + m_n); see SetAmbipolar()
+  // Off (ad_type = 0) nothing below is allocated and every path is unchanged.
+  int ad_type = 0;              // 0 none, 1 constant, 2 eos
+  Real eta_ad = 0.0;            // <mhd>/eta_ad (constant)
+  Real ad_sigv_in = 1.9e-9;     // <mhd>/ad_sigv_in [cm^3/s], Langevin rate
+  Real ad_mion_amu = 30.0;      // <mhd>/ad_mion_amu, mean ion mass [amu]
+  Real max_eta_ad = 1.0e300;    // <mhd>/max_eta_ad, cap on eta_A alone
+  DvceArray4D<Real> ad_coef;    // eta_A/|B|^2 per cell (code units)
+  DvceEdgeFld4D<Real> jcur;     // edge current density J (AD only)
+  bool OhmicNeedsUpdate() const {
+    return (iso_resist_type.compare("perna") == 0 || iso_resist_type.compare("eos") == 0);
+  }
+  bool AmbipolarNeedsUpdate() const { return (ad_type == 2); }
+  void AddEMFAmbipolar(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc,
+                       DvceEdgeFld4D<Real> &efld);
+  void AddEMFAmbipolarGnomonic(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc,
+                               DvceEdgeFld4D<Real> &efld);
+  void SetAmbipolar(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas,
+                    const int il, const int iu, const int jl, const int ju,
+                    const int kl, const int ku);
     
     // container to hold names of TaskIDs
     ResistivityTaskIDs id;

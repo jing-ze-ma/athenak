@@ -33,13 +33,36 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     uflx_ideal("uflx_ideal",1,1,1,1,1),
     u2("u2",1,1,1,1,1),
     b2("b2",1,1,1,1),
-    efld_ideal("efld_ideal",1,1,1,1) {
-  // Read parameters for Ohmic resistivity (if any)
-  if (pin->DoesParameterExist("mhd","ohmic_resistivity")) {
-    iso_resist_type = pin->GetString("mhd","ohmic_resistivity");
+    efld_ideal("efld_ideal",1,1,1,1),
+    ad_coef("ad_coef",1,1,1,1),
+    jcur("jcur",1,1,1,1) {
+  // ambipolar-1101: <mhd>/ambipolar = none | constant | eos.  Read only if present (a
+  // GetOrAdd would write the key into every restart file and change it bitwise).
+  const bool has_ohm = pin->DoesParameterExist("mhd","ohmic_resistivity");
+  if (pin->DoesParameterExist("mhd","ambipolar")) {
+    const std::string adt = pin->GetString("mhd","ambipolar");
+    if (adt.compare("none") == 0) {
+      ad_type = 0;
+    } else if (adt.compare("constant") == 0) {
+      ad_type = 1;
+    } else if (adt.compare("eos") == 0) {
+      ad_type = 2;
+    } else {
+      std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
+                << "Invalid choice <mhd>/ambipolar = '" << adt
+                << "'; expected none, constant or eos" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // Read parameters for Ohmic resistivity (if any).  Ambipolar diffusion alone runs
+  // with iso_resist_type = "none": eta_b = 0, the Ohmic EMF adds exactly zero.
+  if (has_ohm || ad_type != 0) {
+    iso_resist_type = has_ohm ? pin->GetString("mhd","ohmic_resistivity")
+                              : std::string("none");
     // Check for valid type
     if (iso_resist_type.compare("constant") != 0 && iso_resist_type.compare("perna") != 0
-        && iso_resist_type.compare("eos") != 0) {
+        && iso_resist_type.compare("eos") != 0
+        && !(iso_resist_type.compare("none") == 0 && ad_type != 0)) {
       std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
                 << "Invalid choice for Ohmic resistivity type '" << iso_resist_type
                 << "'; expected constant, perna or eos" << std::endl;
@@ -82,9 +105,44 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       // constant resistivity
       eta_ohm_const = pin->GetReal("mhd","eta_ohm_const");
       Kokkos::deep_copy(eta_b, eta_ohm_const);
+    } else if (iso_resist_type.compare("none") == 0) {
+      eta_ohm_const = 0.0;
+      Kokkos::deep_copy(eta_b, 0.0);
     } else {
 //      min_xe = pin->GetReal("mhd","min_xe");
       max_eta = pin->GetReal("mhd","max_eta");
+    }
+    if (ad_type != 0 && pin->GetString("mhd","eos").compare("isothermal") == 0) {
+      // the resistive EMF is formed in AddFluxGeneralResist, which MHD::Fluxes calls
+      // only for an ideal (non-isothermal) EOS
+      std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
+                << "<mhd>/ambipolar needs a non-isothermal EOS" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (ad_type != 0) {
+      // eta_A cap: <mhd>/max_eta_ad on eta_A alone (the Ohmic cap max_eta is left as it
+      // is, so the Ohmic part never changes when AD is switched on).  Default: max_eta
+      // when the Ohmic coefficient has one, else no cap.
+      if (pin->DoesParameterExist("mhd","max_eta_ad")) {
+        max_eta_ad = pin->GetReal("mhd","max_eta_ad");
+      } else if (OhmicNeedsUpdate()) {
+        max_eta_ad = max_eta;
+      }
+      Kokkos::realloc(ad_coef, nmb, ncells3, ncells2, ncells1);
+      Kokkos::realloc(jcur.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+      Kokkos::realloc(jcur.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+      Kokkos::realloc(jcur.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+      Kokkos::deep_copy(jcur.x1e, 0.0);
+      Kokkos::deep_copy(jcur.x2e, 0.0);
+      Kokkos::deep_copy(jcur.x3e, 0.0);
+      if (ad_type == 1) {
+        eta_ad = pin->GetReal("mhd","eta_ad");
+        Kokkos::deep_copy(ad_coef, eta_ad);
+      } else {
+        ad_sigv_in = pin->GetOrAddReal("mhd","ad_sigv_in",1.9e-9);
+        ad_mion_amu = pin->GetOrAddReal("mhd","ad_mion_amu",30.0);
+        Kokkos::deep_copy(ad_coef, 0.0);
+      }
     }
     if (use_rkg_sts) {
         int nmhd;
@@ -794,6 +852,9 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
 //  } else {
     AddEMFGeneralResist(b, efld_resist);
 //  }
+  // ambipolar diffusion (ambipolar-1101): onto the same edge EMF, before the walls and
+  // the Poynting flux below are formed from it
+  if (ad_type != 0) AddEMFAmbipolar(b, bc, efld_resist);
   // conducting walls (condwall-1028): the resistive tangential edge EMF is 0 on the wall
   // faces.  Every edge around a wall face is then 0, so the resistive Poynting flux
   // through it (built below from these edges) is 0 as well; the explicit path adds
@@ -1031,6 +1092,11 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
   auto &dx3_ = pmy_pack->pcoord->dx3;
   // local copy: reading the member inside the reduction would capture `this`
   auto eta_b_ = eta_b;
+  // ambipolar-1101: eta_O + eta_A, eta_A = min(ad_coef |B|^2, max_eta_ad) per cell
+  const bool ad_on = (ad_type != 0);
+  auto coef_ = ad_coef;
+  auto &bcc_ = pmy_pack->pmhd->bcc0;
+  const Real cap_ad = max_eta_ad;
 
   Real fac;
   if (pmy_pack->pmesh->three_d) {
@@ -1055,6 +1121,11 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
 //    } else {
       eta = eta_b_(m,k,j,i);
 //    }
+    if (ad_on) {
+      const Real b2 = SQR(bcc_(m,IBX,k,j,i)) + SQR(bcc_(m,IBY,k,j,i))
+                    + SQR(bcc_(m,IBZ,k,j,i));
+      eta += fmin(coef_(m,k,j,i)*b2, cap_ad);
+    }
     if (use_curvilinear) {
       min_dt1 = fmin(fac*SQR(dx1_(m,k,j,i))/eta, min_dt1);
       min_dt2 = fmin(fac*SQR(dx2_(m,k,j,i))/eta, min_dt2);
