@@ -245,6 +245,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   const bool use_pole = pmy_pack->pmesh->use_polar_boundary;
+  const bool cs_nolim_ = pmy_pack->pmesh->cs_seam_fc_nolimit;   // see mesh.cpp
   // Sign/enable switch for the seam SHEAR CORRECTION, while its orientation is being
   // pinned down empirically.  The derivation fixes the magnitude; which way the
   // receiver's face tilts relative to the source's depends on the seam orientation and
@@ -835,7 +836,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
               const Real dd1 = sv1 - sv0, dd2 = sv2 - sv1;
               const Real fpos = cs_stbl(m,cs_skind,sidx_,kk,jj,4);
-              if (dd1*dd2 > 0.0 && fpos >= 0.0 && fpos <= 2.0) {
+              if (!cs_nolim_ && dd1*dd2 > 0.0 && fpos >= 0.0 && fpos <= 2.0) {
                 const Real lo0 = fmin(sv0, fmin(sv1, sv2));
                 const Real hi0 = fmax(sv0, fmax(sv1, sv2));
                 return fmin(hi0, fmax(lo0, qq));

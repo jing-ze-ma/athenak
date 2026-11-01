@@ -3529,6 +3529,75 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     }
     std::printf("\n");
   }
+  // csvertex-1101: x1e error next to each CUBE VERTEX, by (dj, dk) cells from the vertex
+  // edge (max over vertices, panels and radii), for the block's OWN eta*J (efld_resist)
+  // and for the EXCHANGED efld (seams averaged, vertex three-way averaged; v ~ 0 so
+  // efld is the resistive EMF alone).  Plus the vertex edge's radial profile.
+  if (has_res) {
+    auto ef1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->efld.x1e);
+    auto rcl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+    const int nv = 4;
+    Real vt[2][nv][nv];
+    for (int a=0; a<2; ++a) for (int b=0; b<nv; ++b) for (int c=0; c<nv; ++c) {
+      vt[a][b][c] = 0.0;
+    }
+    std::vector<Real> vr0(indcs.nx1, 0.0), vr1(indcs.nx1, 0.0);
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+      const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+      for (int c=0; c<4; ++c) {
+        const int sj = (c & 1) ? 1 : -1, sk = (c & 2) ? 1 : -1;
+        const int nj_id = (sj < 0) ? 8 : 12, nk_id = (sk < 0) ? 24 : 28;
+        if (!(nghbr.h_view(m,nj_id).gid >= 0 && nghbr.h_view(m,nj_id).panel != p &&
+              nghbr.h_view(m,nk_id).gid >= 0 && nghbr.h_view(m,nk_id).panel != p)) {
+          continue;
+        }
+        const int jc = (sj < 0) ? js : (je+1), kc = (sk < 0) ? ks : (ke+1);
+        for (int dk=0; dk<nv; ++dk) for (int dj=0; dj<nv; ++dj) {
+          const int j = jc - sj*dj, k = kc - sk*dk;
+          const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+          const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+          Real cx, cy, cz;
+          PanelToCart(p, xf, ef, cx, cy, cz);
+          for (int i=is; i<=ie; ++i) {
+            const Real ex = exact_e(rcl(m,i), cx, cy, cz, cx, cy, cz);
+            const Real d0 = fabs(e1(m,k,j,i) - ex)/scale;
+            const Real d1 = fabs(ef1(m,k,j,i) - ex)/scale;
+            vt[0][dk][dj] = fmax(vt[0][dk][dj], d0);
+            vt[1][dk][dj] = fmax(vt[1][dk][dj], d1);
+            if (dj == 0 && dk == 0) {
+              vr0[i-is] = fmax(vr0[i-is], d0);
+              vr1[i-is] = fmax(vr1[i-is], d1);
+            }
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &vt[0][0][0], 2*nv*nv, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, vr0.data(), indcs.nx1, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, vr1.data(), indcs.nx1, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      const char *nm[2] = {"OWN efld_resist", "EXCHANGED efld"};
+      for (int a=0; a<2; ++a) {
+        std::printf("###   VERTEX x1e max error by (dk rows, dj cols) from the vertex,"
+                    " %s:\n", nm[a]);
+        for (int dk=0; dk<nv; ++dk) {
+          std::printf("###     dk=%d:", dk);
+          for (int dj=0; dj<nv; ++dj) std::printf(" %.3e", vt[a][dk][dj]);
+          std::printf("\n");
+        }
+      }
+      std::printf("###   VERTEX edge by radial index (own | exchanged):");
+      for (int i=0; i<indcs.nx1; ++i) std::printf(" %.2e|%.2e", vr0[i], vr1[i]);
+      std::printf("\n");
+    }
+  }
 
   CSTestEosCacheCheck(pm);
 
@@ -3573,6 +3642,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     // total / operator / input, each over the 2-cell ring and the panel interior
     Real tt[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
     std::int64_t tn[2] = {0, 0};
+    Real tv[3] = {0.0, 0.0, 0.0};   // csvertex-1101: maxima on the cube-vertex edges
     const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz, bazi = cs_bazi;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
@@ -3645,6 +3715,25 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             tt[r][1] += fabs(je_ - jx);
             tt[r][2] += fabs(jd - je_);
             ++tn[r];
+            if (fabs(fabs(xf) - 0.25*M_PI) < 1.0e-12 &&
+                fabs(fabs(ef) - 0.25*M_PI) < 1.0e-12) {
+              tv[0] = fmax(tv[0], fabs(jd - jx));
+              tv[1] = fmax(tv[1], fabs(je_ - jx));
+              if (fabs(jd - je_) > tv[2]) {
+                std::printf("###   VTXIN p%d m%d (i,j,k)=(%d,%d,%d) input %.3e:", p, m, i,
+                            j, k, fabs(jd - je_)/fabs(2.0*bazi));
+                for (int kk=k-1; kk<=k; ++kk) for (int jj=j-1; jj<=j+1; ++jj) {
+                  std::printf(" b2(%d,%d)%+.2e", kk-k, jj-j,
+                              (b2h(m,kk,jj,i) - ex2f(kk,jj,i))/fabs(bazi));
+                }
+                for (int kk=k-1; kk<=k+1; ++kk) for (int jj=j-1; jj<=j; ++jj) {
+                  std::printf(" b3(%d,%d)%+.2e", kk-k, jj-j,
+                              (b3h(m,kk,jj,i) - ex3f(kk,jj,i))/fabs(bazi));
+                }
+                std::printf("\n");
+              }
+              tv[2] = fmax(tv[2], fabs(jd - je_));
+            }
           }
         }
       }
@@ -3652,9 +3741,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, &tt[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, tn, 2, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, tv, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
 #endif
     if (global_variable::my_rank == 0) {
       const Real sc = fabs(2.0*bazi);
+      std::printf("###   LOOP SPLIT VERTEX max  total=%.4e  OPERATOR=%.4e  input=%.4e\n",
+                  tv[0]/sc, tv[1]/sc, tv[2]/sc);
       const char *rn[2] = {"RING    ", "interior"};
       for (int r=0; r<2; ++r) {
         const Real w = (tn[r] > 0) ? 1.0/static_cast<Real>(tn[r])/sc : 0.0;
@@ -3931,6 +4023,83 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
     std::printf("###   max |B.rhat| at a RADIAL WALL = %.4e  (/|B|max = %.4e) -- the"
                 " conserved sums are a CLOSED budget only if this is ~0\n",
                 bwall, bwall/fmax(bscale, 1.0e-300));
+    // csvertex-1101: SEAM GHOST-FACE OVERSHOOT.  The first ghost layer of every face
+    // component across a panel seam, against the range of the receiving block's own
+    // adjacent active faces of the same component (2 layers in, 3 along the seam): the
+    // amount the halo value lies OUTSIDE that range, over |B|max.  Split into faces
+    // within 2 cells of a cube vertex and the rest.  This is what the FC seam
+    // resample's monotonicity clamp (<mesh>/cs_seam_fc_nolimit) exists to stop.  Plus
+    // |B| (cell centred) and p extrema in the 2-cell seam ring against the domain.
+    {
+      auto bcch = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->bcc0);
+      const Real gm1o = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+      Real ov[2] = {0.0, 0.0};          // [0] away from a vertex, [1] within 2 cells
+      Real bm[2] = {0.0, 0.0};          // max |B|: domain, seam ring
+      Real pm_[4] = {1.0e30, 1.0e30, -1.0e30, -1.0e30};   // min p dom/ring, max p
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        auto get = [&](int c, int k, int j, int i) {
+          return (c == 1) ? b1(m, k, j, i) : ((c == 2) ? b2(m, k, j, i)
+                                                      : b3(m, k, j, i));
+        };
+        const int sid[4] = {8, 12, 24, 28};
+        for (int sd=0; sd<4; ++sd) {
+          if (!(nghbr.h_view(m,sid[sd]).gid >= 0 &&
+                nghbr.h_view(m,sid[sd]).panel != mbpanel.h_view(m))) continue;
+          const bool alongj = (sd < 2);       // seam normal is x2 (j) for sd 0,1
+          const bool outer = (sd & 1);
+          for (int c=1; c<=3; ++c) {
+            const int jhi = (c == 2) ? je+1 : je, khi = (c == 3) ? ke+1 : ke;
+            const int ihi = (c == 1) ? ie+1 : ie;
+            // normal index: ghost and two interior layers
+            const bool stag = alongj ? (c == 2) : (c == 3);
+            const int lo_n = alongj ? js : ks, hi_n = alongj ? jhi : khi;
+            const int g = outer ? hi_n + 1 : lo_n - 1;
+            const int a1 = outer ? hi_n - (stag ? 1 : 0) : lo_n + (stag ? 1 : 0);
+            const int a2 = outer ? a1 - 1 : a1 + 1;
+            const int tlo = alongj ? ks : js, thi = alongj ? khi : jhi;
+            for (int t=tlo; t<=thi; ++t) {
+              const bool nearv = (t - tlo < 2) || (thi - t < 2);
+              for (int i=is; i<=ihi; ++i) {
+                const Real gv = alongj ? get(c, t, g, i) : get(c, g, t, i);
+                Real lo = 1.0e300, hi = -1.0e300;
+                for (int tt=std::max(tlo, t-1); tt<=std::min(thi, t+1); ++tt) {
+                  for (int aa=0; aa<2; ++aa) {
+                    const int n = (aa == 0) ? a1 : a2;
+                    const Real v = alongj ? get(c, tt, n, i) : get(c, n, tt, i);
+                    lo = fmin(lo, v); hi = fmax(hi, v);
+                  }
+                }
+                const Real o = fmax(0.0, fmax(gv - hi, lo - gv));
+                ov[nearv ? 1 : 0] = fmax(ov[nearv ? 1 : 0], o);
+              }
+            }
+          }
+        }
+        for (int k=ks; k<=ke; ++k) for (int j=js; j<=je; ++j) for (int i=is; i<=ie; ++i) {
+          const bool ring = (j-js < 2) || (je-j < 2) || (k-ks < 2) || (ke-k < 2);
+          const Real bb = std::sqrt(SQR(bcch(m,IBX,k,j,i)) + SQR(bcch(m,IBY,k,j,i))
+                                  + SQR(bcch(m,IBZ,k,j,i)));
+          const Real pp = gm1o*wh(m,IEN,k,j,i);
+          bm[0] = fmax(bm[0], bb); pm_[0] = fmin(pm_[0], pp); pm_[2] = fmax(pm_[2], pp);
+          if (ring) {
+            bm[1] = fmax(bm[1], bb); pm_[1] = fmin(pm_[1], pp);
+            pm_[3] = fmax(pm_[3], pp);
+          }
+        }
+      }
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, ov, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, bm, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, pm_, 2, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, pm_+2, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+      const Real bs_ = fmax(bscale, 1.0e-300);
+      std::printf("###   SEAM GHOST-FACE OVERSHOOT / |B|max:  away from a vertex %.4e"
+                  "   within 2 cells of a vertex %.4e\n", ov[0]/bs_, ov[1]/bs_);
+      std::printf("###   |B|max domain %.6e  seam ring %.6e;  p min domain %.6e"
+                  "  ring %.6e;  p max domain %.6e  ring %.6e\n", bm[0], bm[1],
+                  pm_[0], pm_[1], pm_[2], pm_[3]);
+    }
   }
   std::printf("###   NON-FINITE cells: %lld of %lld   (within 2 cells of a seam:"
               " %lld of %lld)\n",
