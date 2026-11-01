@@ -1,0 +1,35 @@
+WASP-121b hfresh (nx1 112, x1max 2.1e10): cells per H (min / median) and dr range per pressure band
+    1e-09..1e-06   bar: n  13  cells/H min 1.67 med 1.79  dr 1.082e+08..2.491e+08
+    1e-06..1e-04   bar: n  19  cells/H min 2.98 med 3.99  dr 5.139e+07..9.439e+07
+    1e-04..1e-02   bar: n  20  cells/H min 4.04 med 4.34  dr 1.684e+07..5.211e+07
+    1e-02..1e+00   bar: n  20  cells/H min 4.10 med 4.39  dr 1.545e+07..1.671e+07
+    1e+00..1e+01   bar: n   9  cells/H min 3.80 med 3.89  dr 1.654e+07..2.066e+07
+    1e+01..3e+02   bar: n  13  cells/H min 4.01 med 4.03  dr 2.148e+07..3.230e+07
+  all p >= 1e-6 bar: cells/H min 2.98;  cells above 1e-6 bar: 31
+W121 p(x1max) on the IC column = 6.124e-18 bar; r(1e-6 bar) = 1.37763e+10; check r(p(x1max)) = 2.100000e+10
+planet: ap 1.122218e+10 grav 1176.9609  x1max = r(6.124e-18 bar) = 2.150381e+10  (x1max/ap 1.9162, W121 1.8680)
+target cell count (exact W121 cells/H): 112.1
+
+N 112: max dr/target 1.0558 (6-decimal keys), dr min 1.597e+07 max 2.827e+08
+planet nx1 112: cells per H (min / median) and dr range per pressure band
+    1e-09..1e-06   bar: n  13  cells/H min 1.66 med 1.76  dr 1.155e+08..2.655e+08
+    1e-06..1e-04   bar: n  18  cells/H min 3.09 med 3.94  dr 5.453e+07..1.005e+08
+    1e-04..1e-02   bar: n  21  cells/H min 3.95 med 4.39  dr 1.831e+07..5.752e+07
+    1e-02..1e+00   bar: n  20  cells/H min 4.08 med 4.35  dr 1.597e+07..1.798e+07
+    1e+00..1e+01   bar: n   9  cells/H min 3.75 med 3.82  dr 1.702e+07..2.052e+07
+    1e+01..3e+02   bar: n  13  cells/H min 3.96 med 4.03  dr 2.125e+07..3.289e+07
+  all p >= 1e-6 bar: cells/H min 3.09;  cells above 1e-6 bar: 31
+KEYS mesh/nx1=112 meshblock/nx1=112 mesh/x1min=1.122218e+10 mesh/x1max=2.150381e+10 mesh/f_stretch_r_c1=-1.408101 mesh/f_stretch_r_c2=-1.442789 mesh/f_stretch_r_c3=-11.986535 mesh/f_stretch_r_c4=74.800789 mesh/f_stretch_r_c5=-270.736397 mesh/f_stretch_r_c6=512.862248 mesh/f_stretch_r_c7=-447.770213 mesh/f_stretch_r_c8=144.654699 mesh/f_stretch_r_b1_amp=-1.097054 mesh/f_stretch_r_b1_x=0.528078 mesh/f_stretch_r_b1_w=0.143107 mesh/f_stretch_r_b2_amp=-2.272382 mesh/f_stretch_r_b2_x=0.690801 mesh/f_stretch_r_b2_w=0.100774
+radial dt est (CFL 0.3, IC column, c_s + 1 km/s): planet 11.72 s, W121 11.43 s, ratio 1.025
+
+N 108: max dr/target 1.0984 (6-decimal keys), dr min 1.660e+07 max 2.951e+08
+planet nx1 108: cells per H (min / median) and dr range per pressure band
+    1e-09..1e-06   bar: n  13  cells/H min 1.64 med 1.71  dr 1.217e+08..2.689e+08
+    1e-06..1e-04   bar: n  17  cells/H min 2.94 med 3.76  dr 5.641e+07..1.055e+08
+    1e-04..1e-02   bar: n  21  cells/H min 3.76 med 4.21  dr 1.886e+07..6.057e+07
+    1e-02..1e+00   bar: n  19  cells/H min 3.93 med 4.19  dr 1.660e+07..1.852e+07
+    1e+00..1e+01   bar: n   8  cells/H min 3.61 med 3.68  dr 1.770e+07..2.096e+07
+    1e+01..3e+02   bar: n  13  cells/H min 3.78 med 3.87  dr 2.171e+07..3.406e+07
+  all p >= 1e-6 bar: cells/H min 2.94;  cells above 1e-6 bar: 30
+KEYS mesh/nx1=108 meshblock/nx1=108 mesh/x1min=1.122218e+10 mesh/x1max=2.150381e+10 mesh/f_stretch_r_c1=-1.337704 mesh/f_stretch_r_c2=-1.333335 mesh/f_stretch_r_c3=-12.231519 mesh/f_stretch_r_c4=76.478922 mesh/f_stretch_r_c5=-275.732764 mesh/f_stretch_r_c6=526.711196 mesh/f_stretch_r_c7=-468.896055 mesh/f_stretch_r_c8=155.162353 mesh/f_stretch_r_b1_amp=-1.131963 mesh/f_stretch_r_b1_x=0.531540 mesh/f_stretch_r_b1_w=0.147131 mesh/f_stretch_r_b2_amp=-1.973438 mesh/f_stretch_r_b2_x=0.687579 mesh/f_stretch_r_b2_w=0.093232
+radial dt est (CFL 0.3, IC column, c_s + 1 km/s): planet 12.18 s, W121 11.43 s, ratio 1.065

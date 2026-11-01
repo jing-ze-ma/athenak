@@ -1,0 +1,13 @@
+on1x_a: cycles 21700 t_end 2.8343e+05 s (2.5731 rot) s/cycle 0.0272 mean dt 13.050 s last dt 12.151 cyc/rot 8441 wall/rot 1node 3.8 min FATAL 0
+   node mem used (MemTotal-MemAvail) start 16.1 GiB peak 59.7 GiB -> run 43.7 GiB; GTT peak per GPU 20.52 GiB
+   events (sum over log rows, cols dfloor efloor tfloor vceil fail c2p_it fofc): [385867213, 537147466, 20995204, 0, 0, 0, 0] rows 27
+   Lrel    first  9.7488e+37 mid  1.6936e+35 last -9.4517e+36
+   Iw      first  7.9547e+46 mid  7.9542e+46 last  7.9543e+46
+   Tcor    first  9.1069e+34 mid  3.2036e+30 last -5.3243e+32
+   Tcc     first  7.5714e+34 mid -1.5542e+34 last -1.6123e+34
+   Tcont   first  9.1069e+34 mid  3.2036e+30 last -5.3243e+32
+   Tbnd    first  1.0113e+24 mid -7.5694e+24 last -9.8422e+24
+   Tcons   first  8.5536e+20 mid -9.2332e+24 last -1.5895e+25
+   Twall   first  0.0000e+00 mid  0.0000e+00 last  0.0000e+00
+   Efloor  first  7.4355e+18 mid  1.7654e+21 last  6.8405e+21
+   Mfloor  first  1.2728e+06 mid  9.6719e+07 last  8.2636e+07

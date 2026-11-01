@@ -1,0 +1,21 @@
+# roche_anchor.py = git show c8aac483c:inputs/production/tools/roche_anchor.py; 1x EOS dump deepconv_0925/dump/eos_table.txt md5 697ca6750fb2315eb34a0347d7495d1c; IC md5 10ee6d1855693c9781564920badbae12
+# cmd: roche_anchor.py --mp 1.170 --rp 1.742 --pref 7.07e-4 --a_au 0.02571 --porb 1.27492504 --teff 6628 --rstar 1.461 --mstar 1.358 --profile /viper/ptmp2/jinma/w121fresh_1001/ic/ic_w121_1x_f5.txt --eos /viper/ptmp2/jinma/deepconv_0925/dump/eos_table.txt --x1max 2.150381e10
+# G M_p = 1.482232e+23 (M_p = 1.1700 M_J, g(R_p) = 955.66), R_p = 1.7420 R_J at p_ref = 7.070e-04 bar
+# omega = 2 pi/P = 5.704026e-05 s^-1, a = 3.846161e+11 cm, G M_* (Kepler, as the pgen) = 1.849684e+26 -> M_* = 1.3938 M_sun (literature 1.3580: +2.63 %)
+# Teq = Teff sqrt(R*/2a) = 2409.3 K
+# IC table bottom 2240.7 bar 6026 K: table slope dlnT/dlnp 0.1655, nabla_ad 0.1667
+anchor [Roche (rot_potential + tide)]: ap = x1min = 1.144050e+10 cm, grav = 1132.4682 cm/s^2, terminator R_eff(p_ref) = 1.742000 R_J
+   p_ref surface: pole 1.72414, terminator_eq 1.76033, substellar 1.91180, antistellar 1.90276 R_J
+   inner wall r = x1min, deepest (min Phi): p = 4679.7 bar, T = 6846 K (adiabat ext.; the old linear extrapolation: 6754 K)  [below the IC table]
+   inner wall r = x1min, shallowest (max Phi): p = 58.2 bar, T = 3463 K (adiabat ext.; the old linear extrapolation: 3463 K)
+      wall pole           p =     58.3 bar  T =   3464 K
+      wall terminator_eq  p =    250.5 bar  T =   4304 K
+      wall substellar     p =   4679.7 bar  T =   6846 K
+      wall antistellar    p =   4292.4 bar  T =   6740 K
+   L1 at 2.42253e+10 cm = 3.389 R_J; ap/r_L1 = 0.472, x1max/r_L1 = 0.888
+   max Phi_tot on x1max 6.8130e+12 vs Phi(L1) 3.8466e+12  (part of the top is outside the Roche lobe: the pgen WARNs, OK)
+deck keys: <mesh> x1min = 1.144050e+10   <problem> ap = 1.144050e+10  grav = 1132.4682  omega = 5.704026e-05  roche = true  roche_a = 3.846161e+11
+
+# cross-check, tide off (= the deck's anchor; planet_setup.py anchor_limb gives the same): roche_anchor.py ... --no_roche
+anchor [rot_potential only]: ap = x1min = 1.122218e+10 cm, grav = 1176.9609 cm/s^2, terminator R_eff(p_ref) = 1.742000 R_J
+deck keys: <mesh> x1min = 1.122218e+10   <problem> ap = 1.122218e+10  grav = 1176.9609  omega = 5.704026e-05

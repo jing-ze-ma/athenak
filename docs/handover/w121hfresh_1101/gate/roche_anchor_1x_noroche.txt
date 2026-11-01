@@ -1,0 +1,14 @@
+# cmd: roche_anchor.py --mp 1.170 --rp 1.742 --pref 7.07e-4 --a_au 0.02571 --porb 1.27492504 --teff 6628 --rstar 1.461 --mstar 1.358 --profile /viper/ptmp2/jinma/w121fresh_1001/ic/ic_w121_1x_f5.txt --eos /viper/ptmp2/jinma/deepconv_0925/dump/eos_table.txt --x1max 2.1e10 --no_roche
+# G M_p = 1.482232e+23 (M_p = 1.1700 M_J, g(R_p) = 955.66), R_p = 1.7420 R_J at p_ref = 7.070e-04 bar
+# omega = 2 pi/P = 5.704026e-05 s^-1, a = 3.846161e+11 cm (tide off)
+# Teq = Teff sqrt(R*/2a) = 2409.3 K
+# IC table bottom 2240.7 bar 6026 K: table slope dlnT/dlnp 0.1655, nabla_ad 0.1667
+anchor [rot_potential only]: ap = x1min = 1.122218e+10 cm, grav = 1176.9609 cm/s^2, terminator R_eff(p_ref) = 1.742000 R_J
+   p_ref surface: pole 1.72338, terminator_eq 1.76114, substellar 1.76114, antistellar 1.76114 R_J
+   inner wall r = x1min, deepest (min Phi): p = 761.2 bar, T = 5077 K (adiabat ext.; the old linear extrapolation: 5077 K)
+   inner wall r = x1min, shallowest (max Phi): p = 250.0 bar, T = 4302 K (adiabat ext.; the old linear extrapolation: 4302 K)
+      wall pole           p =    250.0 bar  T =   4302 K
+      wall terminator_eq  p =    761.2 bar  T =   5077 K
+      wall substellar     p =    761.2 bar  T =   5077 K
+      wall antistellar    p =    761.2 bar  T =   5077 K
+deck keys: <mesh> x1min = 1.122218e+10   <problem> ap = 1.122218e+10  grav = 1176.9609  omega = 5.704026e-05

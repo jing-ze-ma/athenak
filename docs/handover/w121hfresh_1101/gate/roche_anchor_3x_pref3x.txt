@@ -1,0 +1,3 @@
+# 3x at the 3x transit pressure 3.956e-4 bar (met3/setup_w121_3x.txt): cmd roche_anchor.py --mp 1.170 --rp 1.742 --pref 3.956e-4 --a_au 0.02571 --porb 1.27492504 --teff 6628 --rstar 1.461 --mstar 1.358 --profile /viper/ptmp2/jinma/w121_s10fresh_1027/pkg/ic/ic_w121_3x_f5.txt --eos /viper/ptmp2/jinma/w121prod_0929/met3/dump/eos_table.txt --x1max 2.1e10
+anchor [Roche (rot_potential + tide)]: ap = x1min = 1.141384e+10 cm, grav = 1137.7664 cm/s^2, terminator R_eff(p_ref) = 1.742000 R_J
+deck keys: <mesh> x1min = 1.141384e+10   <problem> ap = 1.141384e+10  grav = 1137.7664  omega = 5.704026e-05  roche = true  roche_a = 3.846161e+11

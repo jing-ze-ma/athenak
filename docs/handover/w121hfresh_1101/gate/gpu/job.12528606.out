@@ -1,0 +1,33 @@
+38c3fa6cc0c27720b5643ee7c7b02bfe  /viper/ptmp2/jinma/w121hfresh_1101/bin/athena_dhj_gpu72_18247755_hfresh
+800caef9ad49cc45123bf2865c6c466e  /viper/ptmp2/jinma/w121hfresh_1101/deck/hfresh_1x.athinput
+06:17:15 start on1x_a
+06:27:16 on1x_a rc=0
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  w121hf1x
+Node list: vipa1001
+Job start: Sun Nov  1 06:17:14 CET 2026
+Job end:   Sun Nov  1 06:27:17 CET 2026
+Work dir:  /viper/ptmp2/jinma/w121hfresh_1101
+Command:   /viper/ptmp2/jinma/w121hfresh_1101/job_1x.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+12528606        w121hf1x      1            96                             00:10:03      0:0
+12528606.0    athena_dhj      1      2     96     1539.41M     1267.97M   00:10:01      0:0
+  
+Maximum memory per node: 3.228367 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 4.6 %
+CO2 footprint: 87.9908 g (estimate based on total cluster power and electricity mix)
+  

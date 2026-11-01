@@ -1,0 +1,19 @@
+# cmd: planet_setup.py (np.trapezoid=np.trapz shim) --mp 1.170 --rp 1.742 --pref 7.07e-4 --teff 6628 --rstar 1.461 --a_au 0.02571 --porb 1.27492504 --profile ic_w121_1x_f5.txt --eos deepconv_0925/dump/eos_table.txt
+# M_p = 1.1700 M_J (GM = 1.482232e+23), R_p = 1.7420 R_J = 1.245391e+10 cm at p_ref = 7.070e-04 bar
+# Teq = Teff sqrt(R*/2a) = 2409.3 K   omega = 2pi/P = 5.704026e-05 s^-1 (P = 110153.5 s)
+p_ref isobar (rot_potential, omega^2 = 3.254e-09): pole 1.232081e+10, equator 1.259071e+10, terminator area-equivalent 1.245391e+10 cm (= R_p)
+ap = x1min = 1.122218e+10 cm   grav = 1176.961 cm/s^2   g(R_p) = 955.664
+x1max = 1.638301e+10 cm (rule rce): p(x1max) on the IC column = 1.425e-09 bar; 1-D r(1e-09 bar) = 1.654262e+10; scaled-extent rule would give 1.706700e+10 (s_top 0.9406)
+   bound: T x 0.60 above 0.01 bar -> r(p_top) = 1.39441e+10, p(x1max) = 1.856e-16 bar
+   bound: T x 1.30 above 0.01 bar -> r(p_top) = 1.91970e+10, p(x1max) = 5.763e-08 bar
+   r(  1e+02 bar) = 1.13425e+10 cm  T =   3759 K  H = 1.222e+08 cm
+   r(  1e+01 bar) = 1.15766e+10 cm  T =   2528 K  H = 8.189e+07 cm
+   r(  1e+00 bar) = 1.17407e+10 cm  T =   2060 K  H = 6.844e+07 cm
+   r(  1e-01 bar) = 1.19012e+10 cm  T =   2080 K  H = 7.119e+07 cm
+   r(  1e-02 bar) = 1.20705e+10 cm  T =   2154 K  H = 7.708e+07 cm
+   r(  1e-03 bar) = 1.22756e+10 cm  T =   2472 K  H = 1.173e+08 cm
+   r(  1e-04 bar) = 1.27168e+10 cm  T =   3166 K  H = 2.281e+08 cm
+   r(  1e-06 bar) = 1.39157e+10 cm  T =   3643 K  H = 3.147e+08 cm
+   r(  1e-09 bar) = 1.65426e+10 cm  T =   3727 K  H = 4.551e+08 cm
+code IC fill (get_init_eos_arr emulation, polar column): r(p_ref) = 1.232084e+10 cm, vs r_pole +2.843e+04 (+0.0002 %)
+<problem> keys: ap = 1.122218e+10  grav = 1176.9609  Teq = 2409.3  omega = 5.704026e-05   <mesh> x1min = 1.122218e+10  x1max = 1.638301e+10
