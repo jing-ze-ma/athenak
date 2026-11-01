@@ -189,6 +189,7 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "pgen.hpp"
+#include "wbtan_common.hpp"   // roche-wbtan-1101: problem/roche_wb_tan
 #include "utils/recipe.hpp"
 
 // amdef-1019: the envelope stage fills the potential and carries rho*Phi (it needs
@@ -637,6 +638,12 @@ Real RocheGeffXYZ(const RocheParams &p, const Real x, const Real y, const Real z
 //! gnomonic tangents (m_a = p.e_a, e1.e2 = c = cos_cell), w0 IVY/IVZ contravariant
 //! (hydro_am.cpp header).  The spherical-polar path never reads any of this (cs_ = false).
 bool cs_ = false;
+// roche-wbtan-1101 problem/roche_wb_tan (default false; wbtan_common.hpp): the tangential
+// forces gt4_/gp4_ (phys_3d, sp and cs) become the hydro's own discrete tangential residual
+// of the IC's static envelope W_eq instead of the face differences of the true Phi, so the
+// static envelope is balanced in theta/phi (xi/eta) to round-off.  W_eq = the IC (EnvSetup;
+// on a restart the IC is rebuilt and u0 restored), the probe at the first RyPerSrcEnv call.
+wbtan::WbTan acc_wbt;
 
 //! (sin theta, phi in [0, 2 pi), cos theta) of the panel point (x2, x3) (code coordinates)
 KOKKOS_INLINE_FUNCTION
@@ -2191,6 +2198,7 @@ void RyPerM1PostLz(Mesh *pm) {
 
 void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  if (acc_wbt.on && !acc_wbt.ready) WbTanAccProbe(pm);   // roche-wbtan-1101
   // accspin-1028: the spin ramp's scalars (and arrays, every spin_ramp_ds) to s(t) at the
   // step's first stage (a retried / redone step starts here again: spr_slast_ is dt_retry
   // registered, so a restore of the arrays is followed by a refresh)
@@ -4551,6 +4559,53 @@ void EnvTcolColumn(MeshBlockPack *pmbp, const Real racc, const std::vector<Real>
 }
 
 //----------------------------------------------------------------------------------------
+//! roche-wbtan-1101: W_eq (rho, eint; the static envelope is at rest) of every cell from
+//! the IC EnvSetup has just written into u0 (E - rho Phi, etotgrav); on a restart
+//! (restore) u0 goes back to the restart state
+void WbTanCaptureIC(MeshBlockPack *pmbp, const DvceArray5D<Real> &usave, const bool restore) {
+  auto *phd = pmbp->phydro;
+  wbtan::Alloc(acc_wbt, pmbp);
+  auto weq = *acc_wbt.weq;
+  auto u0 = phd->u0;
+  auto phicc = phd->phicc0;
+  auto &ic = pmbp->pmesh->mb_indcs;
+  const int n1 = ic.nx1 + 2*ic.ng;
+  const int n2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
+  const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
+  par_for("wbt_weq", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1,
+          0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = u0(m,IDN,k,j,i);
+    weq(m,0,k,j,i) = d;
+    weq(m,1,k,j,i) = u0(m,IEN,k,j,i) - d*phicc(m,k,j,i);
+  });
+  if (restore) Kokkos::deep_copy(phd->u0, usave);
+  acc_wbt.ready = false;
+  if (global_variable::my_rank == 0) {
+    std::printf("ry_per_accretor: problem/roche_wb_tan ON: tangential gt4/gp4 = the hydro's "
+                "own residual of the static IC envelope (probe at the first source call)\n");
+  }
+}
+
+//! roche-wbtan-1101: the probe (wbtan_common.hpp; no pgen extra term: the accretor's
+//! Coriolis terms act on v = 0) and g_t -> gt4_/gp4_ (covariant on cs, as gt4/gp4 are)
+void WbTanAccProbe(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  wbtan::Probe(pm, acc_wbt, nullptr, "ry_per_accretor");
+  auto g = *acc_wbt.gt;
+  auto gt = gt4_, gp = gp4_;
+  auto &ic = pm->mb_indcs;
+  const int n1 = ic.nx1 + 2*ic.ng;
+  const int n2 = (ic.nx2 > 1) ? (ic.nx2 + 2*ic.ng) : 1;
+  const int n3 = (ic.nx3 > 1) ? (ic.nx3 + 2*ic.ng) : 1;
+  par_for("wbt_g4", DevExeSpace(), 0, pmbp->nmb_thispack - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    gt(m,k,j,i) = g(m,0,k,j,i);
+    gp(m,k,j,i) = g(m,1,k,j,i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! stage 2 set-up, on every start (restart included): keys, potentials (true Phi into
 //! phicc0/phi0 for etotgrav, Phi_wb into the x1 WB pair), the -dDelta/dr force (into
 //! gr_), the relaxation target, the R_acc face index, and on a fresh start the envelope
@@ -5175,7 +5230,33 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
                 "MR/JR are zero there (choose x1min so that R_acc is a log-grid face)\n",
                 racc);
   }
-  if (restart) return;
+  // roche-wbtan-1101 problem/roche_wb_tan: checks; on a restart the IC below is rebuilt
+  // into u0 for W_eq and u0 is restored (WbTanCaptureIC), the radiation untouched
+  acc_wbt.on = pin->GetOrAddBoolean("problem", "roche_wb_tan", false);
+  if (acc_wbt.on) {
+    std::string bad = "";
+    if (!p3_) bad = "problem/phys_3d = true (the 3-D tangential forces gt4_/gp4_)";
+    if (spin_ != 1.0 || spr_on_) bad = "a static envelope (spin 1, no spin ramp: W_eq at rest)";
+    if (!phd->use_etotgrav) bad = "<hydro>/etotgrav = true (the work is in the energy flux)";
+    if (pin->DoesParameterExist("problem", "env_ic_vz") &&
+        pin->GetBoolean("problem", "env_ic_vz")) {
+      bad = "no problem/env_ic_vz (the von Zeipel IC is not barotropic)";
+    }
+    if (pmbp->pmesh->adaptive || pmbp->pmesh->multilevel) bad = "a single-level mesh";
+    if (!bad.empty()) {
+      std::cout << "### FATAL ERROR in ry_per_accretor: problem/roche_wb_tan needs " << bad
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  const bool wbic = restart && acc_wbt.on;
+  DvceArray5D<Real> wbt_usave;
+  if (wbic) {
+    wbt_usave = DvceArray5D<Real>(Kokkos::view_alloc("wbt_usave", Kokkos::WithoutInitializing),
+                                  phd->u0.layout());
+    Kokkos::deep_copy(wbt_usave, phd->u0);
+  }
+  if (restart && !wbic) return;
 
   // ---- initial state: the envelope in DISCRETE hydrostatic equilibrium of the x1 WB
   // pair, column by column.  T = P/rho is the target profile at the cell centres; the
@@ -5196,7 +5277,8 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
     } else {
       EnvICGeneral(pmbp, racc, rho_amb, eqtop, icpoly, cpsi, clt, clr);
     }
-    if (rad_) RadIC(pin, pmbp);
+    if (rad_ && !wbic) RadIC(pin, pmbp);
+    if (acc_wbt.on) WbTanCaptureIC(pmbp, wbt_usave, wbic);
     return;
   }
   const Real gm1 = eos.gamma - 1.0, dfl = eos.dfloor;
@@ -5264,6 +5346,7 @@ void EnvSetup(ParameterInput *pin, MeshBlockPack *pmbp, const Real racc,
       }
     }
   });
+  if (acc_wbt.on) WbTanCaptureIC(pmbp, wbt_usave, wbic);
 }
 
 //----------------------------------------------------------------------------------------
