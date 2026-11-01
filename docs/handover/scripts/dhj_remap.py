@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Radial remap of a cubed-sphere deep_hot_jupiter_rt HYDRO restart onto a new radial
-grid.
+"""Remap of a cubed-sphere deep_hot_jupiter_rt HYDRO or MHD restart onto a new radial
+grid and/or a refined cubed sphere C(n) -> C(f n).  How-to: dhj_remap_HOWTO.md here.
 
 usage:
   dhj_remap.py RST OUTDIR [--grid "mesh/nx1=256 meshblock/nx1=256 mesh/x1min=... c1..c8"]
@@ -43,6 +43,14 @@ The
 radial remap below then runs on every fine column.  Records are written in the code's
 Z order of the new layout (panel, Morton at the root level); the pgen checks every
 LogicalLocation.  Streaming: one new MeshBlock at a time.  --selftest = gate (c).
+MHD (dhj-remap-mhd): the hydro part as above (remap.dat holds E - e_mag), and
+OUTDIR/remap_b.dat (problem/remap_bfile, set in remap.athinput) holds the edge line
+integrals of A in the radial gauge on the new grid (remap_bfield): coarse face fluxes
+kept exactly, div B at round-off with the code's areas, --bh-interp linear (default) or
+cubic horizontally.  The pgen then skips the dipole seed (problem/bbot, bbot_gauss).
+Magnetic energy is NOT conserved (C32 -> C64 at rot 320: +2.5 % total, +19 % in the
+deep grid-scale field); discard the first 0.5-1.5 rot and compare with an identity
+remap control.  --no-bfield: hydro remap.dat only.  --hfilter-deep: see hodge_filter.py.
 
 Method (per column; every column shares the radial grid), default 'avg':
   the restart holds cell AVERAGES.  ln rho and ln e (e = internal energy density, the
