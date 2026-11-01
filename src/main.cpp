@@ -504,6 +504,14 @@ int main(int argc, char *argv[]) {
     } else if (pinput->DoesBlockExist("hydro")) {
       global_variable::rst_hydro_nscalars = 0;
     }
+    // floortrc-1101: the same for <mhd>: its nscalars plus the <mhd>/floor_tracer slot
+    if (pinput->DoesBlockExist("mhd")) {
+      global_variable::rst_mhd_nscalars =
+          (pinput->DoesParameterExist("mhd", "nscalars") ?
+           pinput->GetInteger("mhd", "nscalars") : 0) +
+          ((pinput->DoesParameterExist("mhd", "floor_tracer") &&
+            pinput->GetBoolean("mhd", "floor_tracer")) ? 1 : 0);
+    }
     rst_potential_keys = SnapshotPotentialKeys(pinput, PotentialKeys());
     for (const auto &kv : SnapshotPotentialKeys(pinput, GridKeys())) {
       rst_potential_keys.insert(kv);

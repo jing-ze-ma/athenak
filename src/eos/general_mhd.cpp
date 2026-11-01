@@ -166,6 +166,7 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
     // <mhd>/valfven_max_cgs: Alfven-speed density floor (EOS_Data::va2max_inv), applied
     // like dfloor and written back below through dfloor_used
     bool vafloor_used = false;
+    const Real d_in = u.d;   // floortrc-1101: the density before any floor
     bool vanoin_used = false;
     if (eos.va2max_inv > 0.0) {
       const Real dva = (SQR(u.bx) + SQR(u.by) + SQR(u.bz))*eos.va2max_inv;
@@ -206,6 +207,8 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
       // update counter, reset conserved if floor was hit
       if (dfloor_used) {
         cons(m,IDN,k,j,i) = u.d;
+        // <mhd>/floor_tracer: the floor's mass joins the floor-mass scalar
+        if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - d_in;
         sumd++;
       }
       if (efloor_used) {

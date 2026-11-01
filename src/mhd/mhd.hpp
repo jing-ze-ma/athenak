@@ -275,6 +275,16 @@ class MHD {
   // since the owner last zeroed it; rows 2/3 the same for the operator-split conversion
   // after the split radiation.  Diagnostic only: the state is not touched.
   bool c2p_track = false;
+  // <mhd>/floor_tracer (floortrc-1101, read only when named, default off): one extra
+  // passive scalar, the LAST slot (ifltr = nmhd + nscalars - 1), holding the mass density
+  // the density floors added.  Where the floor does not bind, FloorTracerDrain removes it
+  // with its momentum and energy (same velocity, same specific internal energy), at most
+  // fltr_fmax of the cell mass per conversion and never below fltr_margin x the floor
+  // density.  See FloorTracerDrain (mhd_tasks.cpp).
+  bool floor_tracer = false;
+  int ifltr = -1;
+  Real fltr_margin = 2.0, fltr_fmax = 0.01;
+  void FloorTracerDrain();
   // set by Resistivity::RKGCoeff under <mhd>/rkg_lean for the intermediate RKG
   // super-stages: no conserved-variable halo exchange (InitRecv/SendU/RecvU skip u0)
   bool rkg_skip_u = false;

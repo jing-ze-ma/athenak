@@ -849,6 +849,9 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
     eint_rst = DvceArray4D<Real>();
     c2p_eint_rst = false;
   }
+  // <mhd>/floor_tracer: not on the frozen first conversion of a restart (the file's state
+  // already had this conversion's drain)
+  if (floor_tracer && !frozen) FloorTracerDrain();
   if (c2p_track) C2PTrack(pdrive, stage, false);
   if (presist != nullptr) {
     if (presist->iso_resist_type.compare("constant") != 0 && (!presist->use_rkg_sts || stage == 0)) {
@@ -992,3 +995,66 @@ TaskStatus MHD::RestrictB(Driver *pdrive, int stage) {
 }
 
 } // namespace mhd
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::FloorTracerDrain
+//! \brief <mhd>/floor_tracer (floortrc-1101): remove the floor-added mass (scalar slot
+//! ifltr) wherever the density floor does not bind, i.e. rho > fltr_margin x rho_fl with
+//! rho_fl = max(dfloor, B^2/v_A,max^2).  dm = min(s, fltr_fmax rho, rho - fltr_margin
+//! rho_fl) leaves the cell with the SAME velocity and the SAME specific internal energy:
+//! with f = dm/rho the density, the momentum and the internal energy density scale by
+//! (1 - f), and the conserved energy loses f (e_int + KE) (+ dm phi under etotgrav), the
+//! magnetic energy untouched.  KE = m_i v^i / 2 is exact on every grid (covariant u0
+//! momentum, contravariant w0 velocity after GnomonicEquiangleRaiseVelMHD).  Runs on the
+//! final w0/u0 of MHD::ConToPrim over all cells; the general-EOS pressure cache is scaled
+//! by (1 - f) (constant T), exact for an ideal gas and to O(f) otherwise until the next
+//! conversion re-solves it.  The tracer itself is advected as a passive scalar and leaves
+//! through the outer boundary with the mass flux.
+
+void MHD::FloorTracerDrain() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1m1 = indcs.nx1 + 2*indcs.ng - 1;
+  const int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*indcs.ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*indcs.ng - 1) : 0;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto u0_ = u0;
+  auto w0_ = w0;
+  auto bcc_ = bcc0;
+  auto wder_ = wder;
+  const bool hasder = (wder.size() > 0);
+  const bool etg = use_etotgrav;
+  DvceArray4D<Real> phi_;
+  if (etg) phi_ = phicc0;
+  const int is = ifltr;
+  const Real dfl = peos->eos_data.dfloor;
+  const Real va2i = peos->eos_data.va2max_inv;
+  const Real marg = fltr_margin, fmax = fltr_fmax;
+  par_for("mhd_fltr_drain", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    const Real rho = u0_(m,IDN,k,j,i);
+    Real s = fmin(fmax(u0_(m,is,k,j,i), 0.0), rho);
+    const Real b2 = SQR(bcc_(m,IBX,k,j,i)) + SQR(bcc_(m,IBY,k,j,i))
+                    + SQR(bcc_(m,IBZ,k,j,i));
+    const Real rfl = fmax(dfl, b2*va2i);
+    const Real dm = fmin(s, fmin(fmax*rho, rho - marg*rfl));
+    if (dm > 0.0) {
+      const Real f = dm/rho, g = 1.0 - f;
+      const Real ke = 0.5*(u0_(m,IM1,k,j,i)*w0_(m,IVX,k,j,i)
+                           + u0_(m,IM2,k,j,i)*w0_(m,IVY,k,j,i)
+                           + u0_(m,IM3,k,j,i)*w0_(m,IVZ,k,j,i));
+      Real de = f*(w0_(m,IEN,k,j,i) + ke);
+      if (etg) de += dm*phi_(m,k,j,i);
+      u0_(m,IDN,k,j,i) = rho - dm;
+      u0_(m,IM1,k,j,i) *= g;
+      u0_(m,IM2,k,j,i) *= g;
+      u0_(m,IM3,k,j,i) *= g;
+      u0_(m,IEN,k,j,i) -= de;
+      s -= dm;
+      w0_(m,IDN,k,j,i) = rho - dm;
+      w0_(m,IEN,k,j,i) *= g;
+      if (hasder) wder_(m,IDPR,k,j,i) *= g;
+    }
+    if (s != u0_(m,is,k,j,i)) u0_(m,is,k,j,i) = s;
+    w0_(m,is,k,j,i) = s/u0_(m,IDN,k,j,i);
+  });
+}

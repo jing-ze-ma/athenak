@@ -128,6 +128,32 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
+  // <mhd>/floor_tracer (floortrc-1101): one more scalar after the user's ones; read only
+  // when named, so unset inputs and their restarts are unchanged
+  if (pin->DoesParameterExist("mhd","floor_tracer") &&
+      pin->GetBoolean("mhd","floor_tracer")) {
+    floor_tracer = true;
+    nscalars += 1;
+    ifltr = nmhd + nscalars - 1;
+    peos->eos_data.ifltr = ifltr;
+    if (pin->DoesParameterExist("mhd","floor_tracer_margin")) {
+      fltr_margin = pin->GetReal("mhd","floor_tracer_margin");
+    }
+    if (pin->DoesParameterExist("mhd","floor_tracer_fmax")) {
+      fltr_fmax = pin->GetReal("mhd","floor_tracer_fmax");
+    }
+    if (fltr_margin < 1.0 || fltr_fmax <= 0.0 || fltr_fmax > 1.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/floor_tracer needs floor_tracer_margin >= 1 and "
+                << "0 < floor_tracer_fmax <= 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<mhd>/floor_tracer: floor mass carried in scalar slot " << ifltr
+                << ", drained where rho > " << fltr_margin << " x the floor density, at "
+                << "most " << fltr_fmax << " of the cell mass per conversion" << std::endl;
+    }
+  }
 
   // Viscosity (only constructed if needed)
   if (pin->DoesParameterExist("mhd","isotropic_viscosity")) {

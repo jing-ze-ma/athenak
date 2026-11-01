@@ -14,6 +14,8 @@ extern bool restart_run;   // true when started with -r <restart_file>
 extern bool final_outputs; // Driver::Finalize is writing its (unscheduled) outputs
 extern int rst_hydro_nscalars; // acctrc-1019: <hydro>/nscalars of the restart file's OWN
                                // input (-1: no restart or no <hydro>); see pgen.cpp
+extern int rst_mhd_nscalars;   // floortrc-1101: the same for <mhd> u0 records, the floor
+                               // tracer slot included (-1: no restart or no <mhd>)
 }
 
 #endif // GLOBALS_HPP_
