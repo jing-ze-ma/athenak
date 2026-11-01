@@ -2347,10 +2347,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                        M_PI*ip/36.0, rgms_, ra_), grav_pmass));
         }
       }
-      zcol_ = std::max(zcol_, 1.1*ztop);
+      // + 5 % of the shell as margin (not x 1.1): with a negligible tide (the no-star
+      // gate) the column, hence the IC, must stay exactly the rot_potential one
+      zcol_ = std::max(zcol_, ztop + 0.05*(r1-r0));
       if (global_variable::my_rank == 0) {
         std::cout << "deep_hot_jupiter_rt: problem/roche: column to z = " << zcol_
-                  << " (1.1 x the largest z_eff of the top ghosts, " << ztop << ")"
+                  << " (largest z_eff of the top ghosts " << ztop << " + 5 % of the shell)"
                   << std::endl;
       }
     }
