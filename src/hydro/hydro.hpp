@@ -274,7 +274,7 @@ class Hydro {
   // it carries zero mass and zero advected energy whatever the ghost cells hold.
   bool wall_closed_ix1 = false;
   // topbc-1101 ONE-WAY (diode) outer radial face under a USER outer-x1 boundary (set by
-  // a problem generator, e.g. dhj problem/top_bc = outflow2): where the interior-side
+  // a problem generator, e.g. dhj problem/top_bc = outflow1): where the interior-side
   // state at the ie+1 face moves INWARD (v_r < 0) the ghost-side state is replaced by
   // its mirror image, exactly as for ox1_bc = reflect, so that face carries zero mass
   // and zero advected energy (pressure only); where it moves outward the ghost-side
