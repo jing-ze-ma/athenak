@@ -557,9 +557,15 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T);
 KOKKOS_INLINE_FUNCTION
-void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T);
+void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
+                 const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext);
 template <typename View1D>
-void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T);
+void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T,
+                      const int &Ne, const View1D &Text, const View1D &lgpext);
+template <typename View1D>
+int ic_adiabat_extension(const EOS_Data &eos, const Real &gamma, const Real &Rgas,
+                         const int &N, const View1D &Tarr, const View1D &lgparr,
+                         const Real &dex, const int &Ne, View1D Text, View1D lgpext);
 template <typename View1D>
 void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                     const Real &ap, const bool &grav_pmass, const int &N,
@@ -570,9 +576,11 @@ template <typename View1D>
 void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                       const Real &ap, const bool &grav_pmass, const View1D &Tarr,
                       const View1D &lgparr, const int &N, const Real &zmax,
-                      View1D zarr, View1D logparr, const Real zlow = 0.0);
+                      View1D zarr, View1D logparr, const Real zlow,
+                      const int &Ne, const View1D &Text, const View1D &lgpext);
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
+                  const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext);
 
 //----------------------------------------------------------------------------------------
 //! \fn GravAccAt / GravPotAt
@@ -2387,6 +2395,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     } else {
       read_ic_profile(ic_prof, N, Tarr_init.h_view, lgparr_init.h_view);
     }
+    // problem/ic_adiabat_ext (default true; ic_profile only; w121hroche-1101): BELOW the
+    // table's bottom row T(p) continues along the ADIABAT through that row,
+    // dln T/dln p = GradAd(p, T) of the deck's own EOS (general table: H2 dissociation,
+    // ionization), integrated (RK4) over ic_adiabat_ext_dex decades (default 2) on
+    // Ne = 801 points uniform in log10 p.  Before, get_init_Tp(_host) continued the LAST
+    // SEGMENT of the table linearly in log10 p, which the inner wall reaches whenever it
+    // cuts equipotentials deeper than the table (rot_potential margins, problem/roche:
+    // ~4400 bar substellar vs 2241 bar for WASP-121b).  Only lookups at log10 p > the
+    // table bottom change; every lookup inside the table is bitwise (and a deck whose
+    // column never leaves the table is bitwise).  false: the old linear extrapolation.
+    // Beyond the extension's end: its last segment, linearly (WARNING printed).
+    int ne_ext = 0;
+    const int ne_alloc = 801;
+    DualArray1D<Real> Tarr_ext("Tarrext", ne_alloc);
+    DualArray1D<Real> lgparr_ext("lgparrext", ne_alloc);
+    const bool ic_ad_ext = !ic_prof.empty() &&
+                           pin->GetOrAddBoolean("problem", "ic_adiabat_ext", true);
+    const Real ic_ad_dex = ic_prof.empty() ? 0.0 :
+                           pin->GetOrAddReal("problem", "ic_adiabat_ext_dex", 2.0);
+    if (ic_ad_ext) {
+      ne_ext = ic_adiabat_extension(eos, gamma, Rgas, N, Tarr_init.h_view,
+                                    lgparr_init.h_view, ic_ad_dex, ne_alloc,
+                                    Tarr_ext.h_view, lgparr_ext.h_view);
+      Tarr_ext.modify_host();
+      Tarr_ext.sync_device();
+      lgparr_ext.modify_host();
+      lgparr_ext.sync_device();
+    }
     
     Tarr_init.modify_host();
     Tarr_init.sync_device();
@@ -2424,7 +2460,28 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     get_init_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, Tarr_init.h_view,
                      lgparr_init.h_view, N, zcol_, zarr_init.h_view,
-                     logparr_init.h_view, zlow_ic);
+                     logparr_init.h_view, zlow_ic, ne_ext, Tarr_ext.h_view,
+                     lgparr_ext.h_view);
+    if (ne_ext > 1 && global_variable::my_rank == 0) {
+      // where the column bottom sits: in the table or on the adiabat (diagnostic)
+      const Real lgbot = logparr_init.h_view(0)/std::log(10.0);
+      const Real lgtab = lgparr_init.h_view(N-1), lgend = lgparr_ext.h_view(ne_ext-1);
+      Real tbot;
+      get_init_Tp_host(N, Tarr_init.h_view, lgparr_init.h_view,
+                       std::exp(logparr_init.h_view(0)), tbot, ne_ext, Tarr_ext.h_view,
+                       lgparr_ext.h_view);
+      std::cout << "deep_hot_jupiter_rt: IC column bottom p = " << std::pow(10.0, lgbot)/1.0e6
+                << " bar, T = " << tbot << " K ("
+                << ((lgbot > lgtab) ? "on the adiabat below the table bottom "
+                                    : "inside the table; table bottom ")
+                << std::pow(10.0, lgtab)/1.0e6 << " bar)" << std::endl;
+      if (lgbot > lgend) {
+        std::cout << "### WARNING: problem/ic_adiabat_ext: the IC column reaches "
+                  << std::pow(10.0, lgbot)/1.0e6 << " bar, beyond the adiabat extension ("
+                  << std::pow(10.0, lgend)/1.0e6 << " bar): raise problem/ic_adiabat_ext_dex"
+                  << std::endl;
+      }
+    }
     
     zarr_init.modify_host();
     zarr_init.sync_device();
@@ -2561,7 +2618,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
         
       Real p, den;
-      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p);
+      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
+                   ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
 //      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
 //      p = pwb;
@@ -2726,7 +2784,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
         
         Real p, den;
-        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p);
+        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p,
+                   ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
 //        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
@@ -5787,7 +5846,18 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T) {
+void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
+                 const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext) {
+    // problem/ic_adiabat_ext: below the table bottom, the adiabat (ic_adiabat_extension);
+    // Ne = 0 or inside the table: the original lookup below, unchanged
+    if (Ne > 1 && log10(p) > lgparr(N-1)) {
+      const Real lge = log10(p);
+      const Real dle = (lgpext(Ne-1) - lgpext(0))/(Ne-1);
+      int k = static_cast<int>(std::floor((lge - lgpext(0))/dle));
+      k = (k < 0) ? 0 : ((k > Ne-2) ? Ne-2 : k);
+      T = Text(k) + (Text(k+1) - Text(k))/(lgpext(k+1) - lgpext(k))*(lge - lgpext(k));
+      return;
+    }
     
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
@@ -5840,7 +5910,18 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
 }
 
 template <typename View1D>
-void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T) {
+void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T,
+                 const int &Ne, const View1D &Text, const View1D &lgpext) {
+    // problem/ic_adiabat_ext: below the table bottom, the adiabat (ic_adiabat_extension);
+    // Ne = 0 or inside the table: the original lookup below, unchanged
+    if (Ne > 1 && log10(p) > lgparr(N-1)) {
+      const Real lge = log10(p);
+      const Real dle = (lgpext(Ne-1) - lgpext(0))/(Ne-1);
+      int k = static_cast<int>(std::floor((lge - lgpext(0))/dle));
+      k = (k < 0) ? 0 : ((k > Ne-2) ? Ne-2 : k);
+      T = Text(k) + (Text(k+1) - Text(k))/(lgpext(k+1) - lgpext(k))*(lge - lgpext(k));
+      return;
+    }
     
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
@@ -5982,7 +6063,8 @@ template <typename View1D>
 void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                       const Real &ap, const bool &grav_pmass, const View1D &Tarr,
                       const View1D &lgparr, const int &N, const Real &zmax,
-                      View1D zarr, View1D logparr, const Real zlow) {
+                      View1D zarr, View1D logparr, const Real zlow,
+                      const int &Ne, const View1D &Text, const View1D &lgpext) {
     // zlow < 0 (problem/ic_profile only): the column also covers z in [zlow, 0) -- the
     // cells and inner ghosts below the 250 bar anchor, deepest on the equator under
     // rot_potential -- integrated DOWN from p0 through the same table T(p), so they sit
@@ -5998,14 +6080,14 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
         Real T;
         const Real p = exp(logparr(n));
         const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
-        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        get_init_Tp_host(N, Tarr, lgparr, p, T, Ne, Text, lgpext);
         logparr(n+1) = logparr(n) + gz*dzd*DensFromPT(eos, Rgas, p, T)/p;
       }
       for (int n=n0; n>0; n--) {              // down
         Real T;
         const Real p = exp(logparr(n));
         const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
-        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        get_init_Tp_host(N, Tarr, lgparr, p, T, Ne, Text, lgpext);
         logparr(n-1) = logparr(n) - gz*dzd*DensFromPT(eos, Rgas, p, T)/p;
       }
       return;
@@ -6029,7 +6111,7 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
         const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
         const Real fac = gz/Rgas*dz;
 
-        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        get_init_Tp_host(N, Tarr, lgparr, p, T, Ne, Text, lgpext);
 
         // n+1 is guarded: logparr holds N entries, so the last pass of this loop used to
         // integrate one step PAST THE END of it. A one-element write off the end of a
@@ -6053,7 +6135,8 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
+                  const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext) {
 
 //    Real Rgas = 4.593e7;
     Real bar = 1.0e6;
@@ -6066,11 +6149,11 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
         if (Nt > N-2) Nt = N-2;   // as in get_wb_eos: never read past the column top
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
-        get_init_Tp(N, Tarr, lgparr, p,T);
+        get_init_Tp(N, Tarr, lgparr, p,T, Ne, Text, lgpext);
         rho = DensFromPT(eos, Rgas, p, T);
     } else {
         Real T0;
-        get_init_Tp(N, Tarr, lgparr, p0,T0);
+        get_init_Tp(N, Tarr, lgparr, p0,T0, Ne, Text, lgpext);
         Real rho0 = DensFromPT(eos, Rgas, p0, T0);
 //        Real grav_acc = -942.0;
         Real H0 = -p0/rho0/grav_acc;
@@ -6256,6 +6339,54 @@ void read_ic_profile(const std::string &fname, const int &N, View1D Tarr, View1D
   std::cout << "deep_hot_jupiter_rt: initial T(p) from problem/ic_profile '" << fname
             << "' (" << nt << " rows, log10 p = " << lg0 << " .. " << lg1
             << " barye)" << std::endl;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int ic_adiabat_extension
+//! \brief problem/ic_adiabat_ext: T(log10 p) BELOW the resampled IC table (Tarr, lgparr,
+//! N points), along the adiabat through its bottom row: dlog10 T/dlog10 p = GradAd(p, T)
+//! of the deck's EOS (pgen_eos_utils.hpp; (gamma-1)/gamma for an ideal gas), classical
+//! RK4 on Ne points uniform in log10 p from lgparr(N-1) (exactly; Text(0) = Tarr(N-1))
+//! over `dex` decades.  Host, setup only (GradAd root finds the density).  Returns Ne
+//! (0 if dex <= 0).  T is kept below 10^5.9 K (inside the general EOS table).
+
+template <typename View1D>
+int ic_adiabat_extension(const EOS_Data &eos, const Real &gamma, const Real &Rgas,
+                         const int &N, const View1D &Tarr, const View1D &lgparr,
+                         const Real &dex, const int &Ne, View1D Text, View1D lgpext) {
+  if (!(dex > 0.0) || Ne < 2) return 0;
+  const Real lg0 = lgparr(N-1), h = dex/(Ne - 1);
+  const Real tmax = std::pow(10.0, eos.IsGeneral() ? 5.9 : 30.0);
+  auto slope = [&](const Real lgp, const Real lt) {
+    const Real tk = std::min(std::pow(10.0, lt), tmax);
+    return GradAd(eos, gamma, Rgas, std::pow(10.0, lgp), tk);
+  };
+  lgpext(0) = lg0;
+  Text(0) = Tarr(N-1);
+  Real lt = std::log10(Tarr(N-1));
+  for (int k=0; k<Ne-1; ++k) {
+    const Real lgp = lg0 + k*h;
+    const Real k1 = slope(lgp, lt);
+    const Real k2 = slope(lgp + 0.5*h, lt + 0.5*h*k1);
+    const Real k3 = slope(lgp + 0.5*h, lt + 0.5*h*k2);
+    const Real k4 = slope(lgp + h, lt + h*k3);
+    lt += h*(k1 + 2.0*k2 + 2.0*k3 + k4)/6.0;
+    lgpext(k+1) = lg0 + (k+1)*h;
+    Text(k+1) = std::min(std::pow(10.0, lt), tmax);
+  }
+  if (global_variable::my_rank == 0) {
+    const Real gb = GradAd(eos, gamma, Rgas, std::pow(10.0, lg0), Tarr(N-1));
+    const Real gt = (Tarr(N-1) > Tarr(N-2)) ?
+        std::log10(Tarr(N-1)/Tarr(N-2))/(lgparr(N-1) - lgparr(N-2)) : 0.0;
+    const int k2x = static_cast<int>(std::lround((Ne - 1)*std::log10(2.0)/dex));
+    std::cout << "deep_hot_jupiter_rt: problem/ic_adiabat_ext: below the IC table bottom ("
+              << std::pow(10.0, lg0)/1.0e6 << " bar, " << Tarr(N-1) << " K; table slope "
+              << gt << ", nabla_ad " << gb << ") T follows the adiabat: "
+              << std::pow(10.0, lgpext(k2x))/1.0e6 << " bar " << Text(k2x) << " K .. "
+              << std::pow(10.0, lgpext(Ne-1))/1.0e6 << " bar " << Text(Ne-1) << " K"
+              << std::endl;
+  }
+  return Ne;
 }
 
 template <typename View1D>
