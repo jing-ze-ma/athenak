@@ -1,0 +1,7 @@
+47068657ce1a032b5cfef62729a3e31c  /viper/ptmp2/jinma/dhj_planets_1101/wasp76b/x224_work/athena_dhj_cpu_c8aac483
+7fab13b8f8bfddcb3e700aed25f2c43a  /viper/ptmp2/jinma/dhj_planets_1101/wasp76b/deck/wasp76b_hfresh.athinput
+parse x224 rc=0
+fresh x224 rc=0
+run.log:0
+/viper/ptmp2/jinma/dhj_planets_1101/wasp76b/gate/parse_x224.log:1
+GATE_DONE

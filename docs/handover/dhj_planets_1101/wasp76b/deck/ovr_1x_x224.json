@@ -1,0 +1,164 @@
+{
+ "mesh/nx1": [
+  "112",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "meshblock/nx1": [
+  "112",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/x1min": [
+  "1.174698e+10",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/x1max": [
+  "2.240000e+10",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c1": [
+  "-1.284484",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c2": [
+  "-1.317773",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c3": [
+  "-12.569699",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c4": [
+  "77.583137",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c5": [
+  "-285.978104",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c6": [
+  "540.360424",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c7": [
+  "-487.063906",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_c8": [
+  "167.004054",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_b1_amp": [
+  "-1.039277",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_b1_x": [
+  "0.578458",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_b1_w": [
+  "0.129207",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_b2_amp": [
+  "-2.187995",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_b2_x": [
+  "0.791577",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "mesh/f_stretch_r_b2_w": [
+  "0.110321",
+  "grid112.py X1MAX=2.24e10 on the tide-on anchor (grid/roche_x224; W121 hfresh cells/H carried to WASP-76b)"
+ ],
+ "problem/ap": [
+  "1.174698e+10",
+  "roche_anchor.py tide ON: ap = x1min, terminator R_eff(p_ref) = R_p (grid/nominal/roche_anchor.txt)"
+ ],
+ "problem/grav": [
+  "820.7590",
+  "roche_anchor.py tide ON: GM_p/ap^2 (grid/nominal/roche_anchor.txt)"
+ ],
+ "problem/Teq": [
+  "2215.6",
+  "Teff sqrt(R*/2a), zero albedo (Ehrenreich+2020)"
+ ],
+ "problem/omega": [
+  "4.018055e-05",
+  "2 pi / P_orb, tidally locked (Ehrenreich+2020)"
+ ],
+ "problem/albedo": [
+  "0.20",
+  "Bond albedo, README section 3"
+ ],
+ "problem/ck_swflux": [
+  "sw_band_flux_W76_11.txt",
+  "ATLAS9 host SED, sed/make_sed.py (under ck_data_dir/sw_flux)"
+ ],
+ "problem/ic_profile": [
+  "ic/ic_wasp76b_1x_f5.txt",
+  "face-5 RCE IC of this planet (package-relative)"
+ ],
+ "time/tlim": [
+  "4.691214e+07",
+  "300 rot = 13.5 t_rad(100 bar), as W121 (README section 7)"
+ ],
+ "output1/dt": [
+  "1563.74",
+  "0.01 rot"
+ ],
+ "output2/dt": [
+  "15637.4",
+  "0.1 rot"
+ ],
+ "output3/dt": [
+  "78186.9",
+  "0.5 rot"
+ ],
+ "output4/dt": [
+  "156374",
+  "1 rot"
+ ],
+ "comment/problem": [
+  "WASP-76b fresh start, general EOS + metal ionization, PURE HYDRO, am_vector (dhj_planets_1101/wasp76b)",
+  "WASP-76b"
+ ],
+ "problem/met": [
+  "0.0",
+  "[M/H] = log10(1x): EOS metal donors (eos_metal_mh default) 1x solar (README section 2)"
+ ],
+ "hydro/rad_met": [
+  "0.0",
+  "unused under route B, kept consistent; 1x solar (README section 2)"
+ ],
+ "hydro/eos_xh": [
+  "0.7381",
+  "X of the 1x EOS dump; 1x solar (README section 2)"
+ ],
+ "hydro/eos_yhe": [
+  "0.2485",
+  "Y of the 1x EOS dump; 1x solar (README section 2)"
+ ],
+ "problem/ck_table": [
+  "ck/CK1X/ck/Premixed_1x_g8_11_hiT2.txt",
+  "1x solar (README section 2)"
+ ],
+ "problem/ck_ce_table": [
+  "CE_tables/FastChem_ck_1x_int_hiT2.txt",
+  "1x solar (README section 2)"
+ ],
+ "problem/ck_data_dir": [
+  "ck/CK1X",
+  "1x solar (README section 2)"
+ ],
+ "_add": {
+  "problem/roche": [
+   "true",
+   "host-star Roche potential ON (binary >= c8aac483c; README section 6)"
+  ],
+  "problem/roche_a": [
+   "4.984302e+11",
+   "orbital separation a for the tide (roche_anchor.py)"
+  ]
+ }
+}

@@ -1,0 +1,7 @@
+fac6d83e5528c6ba7aced2ab4e6fe2f3  /viper/ptmp2/jinma/dhj_planets_1101/kelt20b_work/athena_dhj_cpu_18247755
+f9fa27b8482f779b013e15d3bce69078  /viper/ptmp2/jinma/dhj_planets_1101/wasp178b/deck/wasp178b_hfresh_1x_arm.athinput
+parse arm1x rc=0
+fresh arm1x rc=0
+run.log:0
+/viper/ptmp2/jinma/dhj_planets_1101/wasp178b/gate/parse_arm1x.log:1
+GATE_DONE

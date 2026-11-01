@@ -1,0 +1,15 @@
+77b98d895b9fca20a9c844c552430d57  deck/w189_1x.athinput
+915a25bc21320304e640eb89fa1d69e8  deck/w189_3x.athinput
+2d8b4572294bc63f46fd1584b6810e5f  deck/w189_1x.json
+e280ea25936c666d3c9dd10985631120  deck/w189_3x.json
+44a3dbdd978949c2ed61caf7081f90d2  ic/ic_w189_1x.txt
+40bf42d360558137c210abd30f6d80fa  ic/ic_w189_3x.txt
+15548436fb3c550ad472020642121415  ck/CK3X/sw_flux/sw_band_flux_W189_11.txt
+2873c2776b57ee8b42d1ea4285f471af  grid/g3x/gridkeys_124.txt
+a24b521554418f744ceff91cfc31f6fb  grid/g1x/gridkeys_124.txt
+545397fbccd3865486db3f387d38ccd8  ck/CK3X/ck/Premixed_3x_g8_11_hiT2.txt
+a36a7a73c135a4002380f97cc1bb66bc  ck/CK3X/CE_tables/FastChem_ck_3x_int_hiT2.txt
+2df0d027b8f42e937091b66402a311a1  ck/CK1X/ck/Premixed_1x_g8_11_hiT2.txt
+b6643409062f9ef3b070667c67b62da8  ck/CK1X/CE_tables/FastChem_ck_1x_int_hiT2.txt
+6823797cd33e5263741fc6dcf497b633  /viper/ptmp2/jinma/builds/bin/athena_dhj_cpu_8bcd50c8
+38c3fa6cc0c27720b5643ee7c7b02bfe  /viper/ptmp2/jinma/w121hfresh_1101/bin/athena_dhj_gpu72_18247755_hfresh

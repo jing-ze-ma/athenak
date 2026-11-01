@@ -1,0 +1,15 @@
+# G M_p = 2.521062e+23 (M_p = 1.9900 M_J, g(R_p) = 1881.81), R_p = 1.6190 R_J at p_ref = 2.369e-03 bar
+# omega = 2 pi/P = 2.669647e-05 s^-1, a = 7.559031e+11 cm, G M_* (Kepler, as the pgen) = 3.075743e+26 -> M_* = 2.3176 M_sun (literature 2.0300: +14.17 %)
+# Teq = Teff sqrt(R*/2a) = 2637.5 K
+# IC table bottom 2240.7 bar 5814 K: table slope dlnT/dlnp 0.1648, nabla_ad 0.1656
+anchor [Roche (rot_potential + tide)]: ap = x1min = 1.097734e+10 cm, grav = 2092.1317 cm/s^2, terminator R_eff(p_ref) = 1.619000 R_J
+   p_ref surface: pole 1.61723, terminator_eq 1.62077, substellar 1.63179, antistellar 1.63156 R_J
+   inner wall r = x1min, deepest (min Phi): p = 541.3 bar, T = 4647 K (adiabat ext.; the old linear extrapolation: 4647 K)
+   inner wall r = x1min, shallowest (max Phi): p = 188.8 bar, T = 3962 K (adiabat ext.; the old linear extrapolation: 3962 K)
+      wall pole           p =    188.8 bar  T =   3962 K
+      wall terminator_eq  p =    250.1 bar  T =   4135 K
+      wall substellar     p =    541.3 bar  T =   4647 K
+      wall antistellar    p =    533.9 bar  T =   4638 K
+   L1 at 4.79626e+10 cm = 6.709 R_J; ap/r_L1 = 0.229, x1max/r_L1 = 0.333
+   max Phi_tot on x1max 7.2538e+12 vs Phi(L1) 1.5141e+13
+deck keys: <mesh> x1min = 1.097734e+10   <problem> ap = 1.097734e+10  grav = 2092.1317  omega = 2.669647e-05  roche = true  roche_a = 7.559031e+11

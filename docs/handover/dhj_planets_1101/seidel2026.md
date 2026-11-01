@@ -14,8 +14,7 @@ Downloaded from https://www.eso.org/public/archives/releases/sciencepapers/eso26
   K. B. Stevenson (32 authors).
 - **Journal:** Nature Astronomy, published online 2 June 2026, **DOI 10.1038/s41550-026-02870-1**
   (ESO press release eso2606).
-- **arXiv:** none found. Searches of arXiv, the press coverage and the UvA repository (dare.uva.nl) turned up
-  no preprint.
+- **arXiv:** 2606.22455, submitted 21 June 2026 (verified 11-01 on arxiv.org/abs/2606.22455; the first search missed it).
 - **Other Seidel-led work** that matters here, but is not the 2026 sample paper: Seidel et al. 2025,
   "Vertical structure of an exoplanet's atmospheric jet stream" (WASP-121b, ESPRESSO 4-UT, arXiv:2505.08926),
   and Seidel et al. 2021, "Into the storm" (WASP-76b, A&A 653, A73). Seidel is also a co-author on a 2026

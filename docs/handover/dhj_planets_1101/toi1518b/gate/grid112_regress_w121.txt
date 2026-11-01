@@ -1,0 +1,9 @@
+WASP-121b hfresh (nx1 112, x1max 2.1e10): cells per H (min / median) and dr range per pressure band
+W121 p(x1max) on the IC column = 6.124e-18 bar; r(1e-6 bar) = 1.37763e+10; check r(p(x1max)) = 2.100000e+10
+planet: ap 1.124210e+10 grav 1172.7924  x1max = r(6.124e-18 bar) = 2.100000e+10  (x1max/ap 1.8680, W121 1.8680)
+target cell count (exact W121 cells/H): 112.1
+
+N 112: max dr/target 1.0038 (6-decimal keys), dr min 1.545e+07 max 2.698e+08
+planet nx1 112: cells per H (min / median) and dr range per pressure band
+KEYS mesh/nx1=112 meshblock/nx1=112 mesh/x1min=1.124210e+10 mesh/x1max=2.100000e+10 mesh/f_stretch_r_c1=-1.509907 mesh/f_stretch_r_c2=-1.315330 mesh/f_stretch_r_c3=-13.749615 mesh/f_stretch_r_c4=79.205421 mesh/f_stretch_r_c5=-274.940302 mesh/f_stretch_r_c6=523.658450 mesh/f_stretch_r_c7=-465.601118 mesh/f_stretch_r_c8=153.294679 mesh/f_stretch_r_b1_amp=-1.291106 mesh/f_stretch_r_b1_x=0.520394 mesh/f_stretch_r_b1_w=0.146654 mesh/f_stretch_r_b2_amp=-2.427275 mesh/f_stretch_r_b2_x=0.689756 mesh/f_stretch_r_b2_w=0.104602
+radial dt est (CFL 0.3, IC column, c_s + 1 km/s): planet 11.43 s, W121 11.43 s, ratio 0.999

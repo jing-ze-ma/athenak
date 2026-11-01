@@ -1,0 +1,17 @@
+R_p = RPRS R_* = 1.342808e+10 cm = 1.8783 R_J (Simonnin Table 7: 1.878 +- 0.042)
+a = ARS R_* = 5.551462e+11 cm = 0.03711 AU (Table 7 a: 0.03712 AU)
+Kepler a from P, M_*+M_p: 0.03710 AU
+Teq = Teff sqrt(R_*/2a) = 2546.1 K (zero albedo, full redistribution)
+omega = 2 pi / P = 3.822223e-05 s^-1 (P = 164385.6 s)
+g(R_p) = 1285.7 cm/s^2, log g = 3.109
+q = M_p/M_* = 9.2921e-04
+Hill (~L1) radius a (q/3)^(1/3) = 3.7561e+10 cm = 2.797 R_p
+Eggleton Roche-lobe volume radius = 2.6211e+10 cm = 1.952 R_p
+Stellar rotation: v sin i 85.1 km/s (Cabot+2021) -> P_rot,* <= 1.15 d
+
+ tide/gravity ratios (point mass g = GM_p/r^2):
+   r [cm]      r/R_p   r/R_L1   2(r/a)^3/q (stellar tide, substellar)  3(r/a)^3/q (tide + orbital centrifugal, substellar)  om^2 r/g (spin centrifugal, equator; in rot_potential)
+  1.2459e+10   0.928   0.332   2.433e-02   3.650e-02   1.219e-02
+  1.3428e+10   1.000   0.358   3.046e-02   4.569e-02   1.526e-02
+  1.4771e+10   1.100   0.393   4.054e-02   6.081e-02   2.031e-02
+  1.9681e+10   1.466   0.524   9.590e-02   1.439e-01   4.804e-02

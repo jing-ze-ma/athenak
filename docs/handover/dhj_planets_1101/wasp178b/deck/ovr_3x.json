@@ -1,0 +1,126 @@
+{
+ "mesh/nx1": [
+  "120",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "meshblock/nx1": [
+  "120",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/x1min": [
+  "1.178972e+10",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/x1max": [
+  "1.898531e+10",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c1": [
+  "-1.511876",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c2": [
+  "-1.325338",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c3": [
+  "-13.769158",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c4": [
+  "79.383343",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c5": [
+  "-274.524171",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c6": [
+  "524.400850",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c7": [
+  "-466.017216",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_c8": [
+  "152.888974",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_b1_amp": [
+  "-1.300975",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_b1_x": [
+  "0.515640",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_b1_w": [
+  "0.148921",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_b2_amp": [
+  "-2.422609",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_b2_x": [
+  "0.687266",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "mesh/f_stretch_r_b2_w": [
+  "0.107480",
+  "grid112.py (W121 hfresh cells/H carried to WASP-178b)"
+ ],
+ "problem/ap": [
+  "1.178972e+10",
+  "planet_setup.py: r(250 bar) on the polar IC column (Lothringer+2025, Hellier+2019 M_p)"
+ ],
+ "problem/grav": [
+  "1512.9734",
+  "planet_setup.py: GM_p/ap^2 (Lothringer+2025, Hellier+2019 M_p)"
+ ],
+ "problem/Teq": [
+  "2452.3",
+  "Teff sqrt(R*/2a), zero albedo (Lothringer+2025, Hellier+2019 M_p)"
+ ],
+ "problem/omega": [
+  "2.174158e-05",
+  "2 pi / P_orb, tidally locked (Lothringer+2025, Hellier+2019 M_p)"
+ ],
+ "problem/albedo": [
+  "0.15",
+  "Bond albedo, README section 3"
+ ],
+ "problem/ck_swflux": [
+  "sw_band_flux_W178_11.txt",
+  "ATLAS9 host SED, sed/make_sed.py (under ck/CK3X/sw_flux)"
+ ],
+ "problem/ic_profile": [
+  "ic/ic_wasp178b_3x_f5.txt",
+  "face-5 RCE IC of this planet (package-relative)"
+ ],
+ "time/tlim": [
+  "3.467927e+07",
+  "120 rot = 18.5 t_rad(100 bar), 1.05x the W121 300-rot physical time (README section 7)"
+ ],
+ "output1/dt": [
+  "2889.94",
+  "0.01 rot"
+ ],
+ "output2/dt": [
+  "28899.4",
+  "0.1 rot"
+ ],
+ "output3/dt": [
+  "144497",
+  "0.5 rot"
+ ],
+ "output4/dt": [
+  "288994",
+  "1 rot"
+ ],
+ "comment/problem": [
+  "WASP-178b fresh start, general EOS + metal ionization, PURE HYDRO, am_vector (dhj_planets_1101/wasp178b)",
+  "WASP-178b"
+ ]
+}

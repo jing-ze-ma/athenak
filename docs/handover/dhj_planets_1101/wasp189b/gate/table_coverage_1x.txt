@@ -1,0 +1,79 @@
+metallicity 1x: ck/CE /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck, EOS dump /viper/ptmp2/jinma/deepconv_0925/dump/eos_table.txt
+ck native  : T 100..6100 K (38), p 1e-08..1000 bar (34)
+ck hiT2    : T 100..10100 K (93), p 1e-08..1000 bar (34)
+hiT2 vs native at the native T nodes (<= 6100 K): max |dlog10 k| = 0.000e+00
+CE native  : T 100..6100, p 1e-08..1000 bar; hiT2: T 100..10100, p 1e-08..1000 bar
+CE hiT2 vs native (<= 6100 K): max |rel diff| = 0.000e+00
+
+FastChem hiT2 equilibrium (cols: mu, x_H2, x_H, x_e-, x_H-):
+  p  1.0e-06 bar T  2500 : mu 1.253 H2 1.34e-03 H 9.22e-01 e- 7.24e-06 H- 5.31e-13
+  p  1.0e-06 bar T  3000 : mu 1.252 H2 3.41e-05 H 9.23e-01 e- 4.40e-05 H- 1.14e-12
+  p  1.0e-06 bar T  3500 : mu 1.251 H2 2.44e-06 H 9.23e-01 e- 9.24e-05 H- 1.08e-12
+  p  1.0e-06 bar T  4000 : mu 1.251 H2 3.34e-07 H 9.23e-01 e- 1.24e-04 H- 7.57e-13
+  p  1.0e-06 bar T  4500 : mu 1.250 H2 7.09e-08 H 9.22e-01 e- 5.81e-04 H- 2.07e-12
+  p  1.0e-06 bar T  5000 : mu 1.247 H2 2.03e-08 H 9.17e-01 e- 3.38e-03 H- 7.57e-12
+  p  1.0e-06 bar T  6000 : mu 1.184 H2 2.52e-09 H 8.20e-01 e- 5.38e-02 H- 5.11e-11
+  p  1.0e-03 bar T  2500 : mu 1.745 H2 3.94e-01 H 4.99e-01 e- 1.95e-06 H- 7.76e-11
+  p  1.0e-03 bar T  3000 : mu 1.291 H2 3.17e-02 H 8.89e-01 e- 5.90e-06 H- 1.48e-10
+  p  1.0e-03 bar T  3500 : mu 1.255 H2 2.43e-03 H 9.21e-01 e- 2.19e-05 H- 2.55e-10
+  p  1.0e-03 bar T  4000 : mu 1.252 H2 3.34e-04 H 9.23e-01 e- 6.16e-05 H- 3.76e-10
+  p  1.0e-03 bar T  4500 : mu 1.251 H2 7.11e-05 H 9.23e-01 e- 9.34e-05 H- 3.33e-10
+  p  1.0e-03 bar T  5000 : mu 1.251 H2 2.05e-05 H 9.23e-01 e- 1.67e-04 H- 3.76e-10
+  p  1.0e-03 bar T  6000 : mu 1.249 H2 3.17e-06 H 9.20e-01 e- 1.87e-03 H- 1.99e-09
+  p  1.0e-01 bar T  2500 : mu 2.244 H2 7.92e-01 H 7.08e-02 e- 4.36e-07 H- 2.46e-10
+  p  1.0e-01 bar T  3000 : mu 1.906 H2 5.22e-01 H 3.61e-01 e- 2.19e-06 H- 2.23e-09
+  p  1.0e-01 bar T  3500 : mu 1.453 H2 1.61e-01 H 7.50e-01 e- 5.74e-06 H- 5.44e-09
+  p  1.0e-01 bar T  4000 : mu 1.290 H2 3.11e-02 H 8.90e-01 e- 1.52e-05 H- 8.97e-09
+  p  1.0e-01 bar T  4500 : mu 1.260 H2 7.00e-03 H 9.16e-01 e- 3.88e-05 H- 1.37e-08
+  p  1.0e-01 bar T  5000 : mu 1.254 H2 2.05e-03 H 9.21e-01 e- 6.98e-05 H- 1.57e-08
+  p  1.0e-01 bar T  6000 : mu 1.251 H2 3.19e-04 H 9.23e-01 e- 2.35e-04 H- 2.51e-08
+  p  1.0e+00 bar T  2500 : mu 2.299 H2 8.37e-01 H 2.30e-02 e- 1.76e-07 H- 3.23e-10
+  p  1.0e+00 bar T  3000 : mu 2.169 H2 7.32e-01 H 1.35e-01 e- 1.02e-06 H- 3.90e-09
+  p  1.0e+00 bar T  3500 : mu 1.850 H2 4.78e-01 H 4.09e-01 e- 3.31e-06 H- 1.71e-08
+  p  1.0e+00 bar T  4000 : mu 1.500 H2 1.98e-01 H 7.10e-01 e- 7.78e-06 H- 3.66e-08
+  p  1.0e+00 bar T  4500 : mu 1.328 H2 6.13e-02 H 8.57e-01 e- 1.81e-05 H- 5.99e-08
+  p  1.0e+00 bar T  5000 : mu 1.276 H2 1.96e-02 H 9.02e-01 e- 3.86e-05 H- 8.52e-08
+  p  1.0e+00 bar T  6000 : mu 1.255 H2 3.17e-03 H 9.20e-01 e- 1.10e-04 H- 1.17e-07
+  p  1.0e+02 bar T  2500 : mu 2.324 H2 8.56e-01 H 2.33e-03 e- 2.09e-08 H- 3.87e-10
+  p  1.0e+02 bar T  3000 : mu 2.309 H2 8.44e-01 H 1.45e-02 e- 1.42e-07 H- 5.80e-09
+  p  1.0e+02 bar T  3500 : mu 2.264 H2 8.09e-01 H 5.32e-02 e- 5.68e-07 H- 3.81e-08
+  p  1.0e+02 bar T  4000 : mu 2.167 H2 7.31e-01 H 1.36e-01 e- 1.70e-06 H- 1.53e-07
+  p  1.0e+02 bar T  4500 : mu 2.012 H2 6.07e-01 H 2.70e-01 e- 4.10e-06 H- 4.27e-07
+  p  1.0e+02 bar T  5000 : mu 1.821 H2 4.55e-01 H 4.34e-01 e- 8.31e-06 H- 8.82e-07
+  p  1.0e+02 bar T  6000 : mu 1.492 H2 1.92e-01 H 7.16e-01 e- 2.69e-05 H- 2.23e-06
+
+EOS dump: log rho -14.00..0.00, log T 1.50..6.00; rows with a non-finite entry: log T <= 1.85
+EOS mu(p, T) [the H2 -> H dissociation and H ionization, from the table itself]:
+  p   1e-08 bar:   2000 K mu 1.262 (lrho -13.12)   3000 K mu 1.258 (lrho -13.30)   3500 K mu 1.258 (lrho -13.36)   4000 K mu 1.257 (lrho -13.42)   5000 K mu 1.216 (lrho -13.53)   6000 K mu 0.838 (lrho -13.78)   8000 K OFF (log p range -2.00..11.47)
+  p   1e-06 bar:   2000 K mu 1.502 (lrho -11.04)   3000 K mu 1.258 (lrho -11.30)   3500 K mu 1.258 (lrho -11.36)   4000 K mu 1.257 (lrho -11.42)   5000 K mu 1.253 (lrho -11.52)   6000 K mu 1.186 (lrho -11.63)   8000 K mu 0.685 (lrho -11.98)
+  p   1e-03 bar:   2000 K mu 2.277 (lrho -7.86)   3000 K mu 1.290 (lrho -8.29)   3500 K mu 1.261 (lrho -8.36)   4000 K mu 1.258 (lrho -8.42)   5000 K mu 1.257 (lrho -8.52)   6000 K mu 1.255 (lrho -8.60)   8000 K mu 1.183 (lrho -8.75)
+  p   1e+00 bar:   2000 K mu 2.329 (lrho -4.85)   3000 K mu 2.158 (lrho -5.07)   3500 K mu 1.863 (lrho -5.19)   4000 K mu 1.496 (lrho -5.34)   5000 K mu 1.278 (lrho -5.51)   6000 K mu 1.261 (lrho -5.60)   8000 K mu 1.255 (lrho -5.72)
+  p   1e+02 bar:   2000 K mu 2.331 (lrho -2.85)   3000 K mu 2.312 (lrho -3.04)   3500 K mu 2.270 (lrho -3.10)   4000 K mu 2.168 (lrho -3.18)   5000 K mu 1.792 (lrho -3.37)   6000 K mu 1.461 (lrho -3.54)   8000 K mu 1.286 (lrho -3.71)
+
+== ic_1x (ic/ic_w189_1x.txt): p 9.49e-11..2.24e+03 bar, T 2342..5814 K
+     1e-10..  1e-08 bar: T  4204.. 4213 K
+     1e-08..  1e-06 bar: T  4192.. 4204 K
+     1e-06..  1e-03 bar: T  3467.. 4191 K
+     1e-03..  1e-01 bar: T  2386.. 3454 K
+     1e-01..  1e+01 bar: T  2342.. 2453 K
+     1e+01..  1e+04 bar: T  2474.. 5814 K
+   rows T > 6100 K (beyond native ck/CE data, hiT2 extension): 0 of 269
+   rows T > 10100 K (ck/CE clamped in T): 0
+   rows p < 1e-8 bar (ck/CE clamped in p): 41 (T there 4204..4213 K)
+   rows p > 1000 bar (clamped): 8
+   rows T > 3000 K (H2-H2 CIA held flat; H2 dissociated there): 189
+   log rho range -15.47..-2.02; rows below the dump (log rho < -14, inside the deck table -19..0): 30; rows off the deck EOS table: 0
+
+== global_f5_1x (rce/rce1B/f5/ckrce_nq2_B.txt): p 1.06e-09..2.83e+02 bar, T 2342..4214 K
+     1e-10..  1e-08 bar: T  4204.. 4213 K
+     1e-08..  1e-06 bar: T  4192.. 4204 K
+     1e-06..  1e-03 bar: T  3467.. 4191 K
+     1e-03..  1e-01 bar: T  2386.. 3454 K
+     1e-01..  1e+01 bar: T  2342.. 2453 K
+     1e+01..  1e+04 bar: T  2474.. 4214 K
+   rows T > 6100 K (beyond native ck/CE data, hiT2 extension): 0 of 230
+   rows T > 10100 K (ck/CE clamped in T): 0
+   rows p < 1e-8 bar (ck/CE clamped in p): 20 (T there 4204..4213 K)
+   rows p > 1000 bar (clamped): 0
+   rows T > 3000 K (H2-H2 CIA held flat; H2 dissociated there): 150
+   log rho range -14.42..-2.75; rows below the dump (log rho < -14, inside the deck table -19..0): 9; rows off the deck EOS table: 0

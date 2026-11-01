@@ -1,0 +1,126 @@
+{
+ "comment/problem": [
+  "TOI-1518b fresh start, general EOS + metal ionization, PURE HYDRO, am_vector (dhj_planets_1101)",
+  "planet"
+ ],
+ "mesh/nx1": [
+  "120",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "meshblock/nx1": [
+  "120",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/x1min": [
+  "1.245919e+10",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/x1max": [
+  "1.968103e+10",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c1": [
+  "-1.664677",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c2": [
+  "-1.427655",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c3": [
+  "-13.207455",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c4": [
+  "77.411004",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c5": [
+  "-270.393754",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c6": [
+  "526.053623",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c7": [
+  "-473.179209",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c8": [
+  "156.144830",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b1_amp": [
+  "-1.982804",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b1_x": [
+  "0.563876",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b1_w": [
+  "0.185677",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b2_amp": [
+  "-1.999987",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b2_x": [
+  "0.698666",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b2_w": [
+  "0.093838",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "time/tlim": [
+  "3.287712e+07",
+  "200 rot (README sec. 9); wall clock stops it"
+ ],
+ "problem/Teq": [
+  "2546.1",
+  "TOI-1518b: Teff sqrt(R*/2a), Simonnin+2025 Table 7 (7299 K, a/R* 4.109; zero albedo, full redistribution)"
+ ],
+ "problem/omega": [
+  "3.822223e-05",
+  "TOI-1518b: 2 pi / P_orb, P = 1.90261131 d (Simonnin+2025); tidally locked, e < 0.01 (Cabot+2021)"
+ ],
+ "problem/grav": [
+  "1493.4888",
+  "planet_setup.py: g at ap, M_p 1.83 M_J (Simonnin+2025)"
+ ],
+ "problem/ap": [
+  "1.245919e+10",
+  "planet_setup.py: r(250 bar), R_p 1.8783 R_J at the TESS p_ref"
+ ],
+ "problem/ic_profile": [
+  "ic/ic_toi1518b_3x_f5.txt",
+  "face-5 exact RCE IC of TOI-1518b"
+ ],
+ "problem/ck_swflux": [
+  "sw_band_flux_T1518_11.txt",
+  "ATLAS9 7299 K, log g 4.136, [M/H] -0.10 (sed/make_sed.py), under ck_data_dir/sw_flux"
+ ],
+ "problem/albedo": [
+  "0.10",
+  "TOI-1518b Bond albedo: choice, README sec. 4"
+ ],
+ "output1/dt": [
+  "1643.86",
+  "0.01 rot"
+ ],
+ "output2/dt": [
+  "1.64386e+04",
+  "0.1 rot"
+ ],
+ "output3/dt": [
+  "82192.8",
+  "0.5 rot"
+ ],
+ "output4/dt": [
+  "164385.6",
+  "1 rot"
+ ]
+}

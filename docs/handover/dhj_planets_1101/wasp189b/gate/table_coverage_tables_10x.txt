@@ -1,0 +1,51 @@
+metallicity 10x: ck/CE /viper/ptmp2/jinma/kelt20_0925/ckdata10, EOS dump /viper/ptmp2/jinma/wasp121_0925/met10/dump/eos_table.txt
+ck native  : T 100..6100 K (38), p 1e-08..1000 bar (34)
+ck hiT2    : T 100..10100 K (93), p 1e-08..1000 bar (34)
+hiT2 vs native at the native T nodes (<= 6100 K): max |dlog10 k| = 0.000e+00
+CE native  : T 100..6100, p 1e-08..1000 bar; hiT2: T 100..10100, p 1e-08..1000 bar
+CE hiT2 vs native (<= 6100 K): max |rel diff| = 0.000e+00
+
+FastChem hiT2 equilibrium (cols: mu, x_H2, x_H, x_e-, x_H-):
+  p  1.0e-06 bar T  2500 : mu 1.401 H2 1.33e-03 H 9.17e-01 e- 4.51e-05 H- 3.29e-12
+  p  1.0e-06 bar T  3000 : mu 1.399 H2 3.37e-05 H 9.17e-01 e- 2.15e-04 H- 5.55e-12
+  p  1.0e-06 bar T  3500 : mu 1.397 H2 2.40e-06 H 9.16e-01 e- 7.30e-04 H- 8.44e-12
+  p  1.0e-06 bar T  4000 : mu 1.394 H2 3.28e-07 H 9.14e-01 e- 9.64e-04 H- 5.83e-12
+  p  1.0e-06 bar T  4500 : mu 1.393 H2 6.96e-08 H 9.14e-01 e- 1.43e-03 H- 5.04e-12
+  p  1.0e-06 bar T  5000 : mu 1.389 H2 1.99e-08 H 9.09e-01 e- 4.52e-03 H- 1.00e-11
+  p  1.0e-06 bar T  6000 : mu 1.318 H2 2.48e-09 H 8.13e-01 e- 5.52e-02 H- 5.19e-11
+  p  1.0e-03 bar T  2500 : mu 1.949 H2 3.89e-01 H 4.96e-01 e- 9.17e-06 H- 3.62e-10
+  p  1.0e-03 bar T  3000 : mu 1.443 H2 3.13e-02 H 8.84e-01 e- 3.22e-05 H- 8.01e-10
+  p  1.0e-03 bar T  3500 : mu 1.402 H2 2.40e-03 H 9.15e-01 e- 1.02e-04 H- 1.18e-09
+  p  1.0e-03 bar T  4000 : mu 1.399 H2 3.30e-04 H 9.17e-01 e- 3.29e-04 H- 1.99e-09
+  p  1.0e-03 bar T  4500 : mu 1.396 H2 6.99e-05 H 9.15e-01 e- 6.80e-04 H- 2.40e-09
+  p  1.0e-03 bar T  5000 : mu 1.394 H2 2.02e-05 H 9.14e-01 e- 9.20e-04 H- 2.05e-09
+  p  1.0e-03 bar T  6000 : mu 1.391 H2 3.11e-06 H 9.11e-01 e- 2.60e-03 H- 2.74e-09
+  p  1.0e-01 bar T  2500 : mu 2.503 H2 7.83e-01 H 7.04e-02 e- 1.73e-06 H- 9.72e-10
+  p  1.0e-01 bar T  3000 : mu 2.128 H2 5.16e-01 H 3.59e-01 e- 9.48e-06 H- 9.59e-09
+  p  1.0e-01 bar T  3500 : mu 1.623 H2 1.59e-01 H 7.46e-01 e- 2.83e-05 H- 2.66e-08
+  p  1.0e-01 bar T  4000 : mu 1.442 H2 3.07e-02 H 8.85e-01 e- 7.03e-05 H- 4.11e-08
+  p  1.0e-01 bar T  4500 : mu 1.408 H2 6.90e-03 H 9.10e-01 e- 1.74e-04 H- 6.13e-08
+  p  1.0e-01 bar T  5000 : mu 1.400 H2 2.02e-03 H 9.14e-01 e- 3.79e-04 H- 8.46e-08
+  p  1.0e-01 bar T  6000 : mu 1.394 H2 3.13e-04 H 9.14e-01 e- 8.61e-04 H- 9.11e-08
+  p  1.0e+00 bar T  2500 : mu 2.565 H2 8.27e-01 H 2.29e-02 e- 6.39e-07 H- 1.16e-09
+  p  1.0e+00 bar T  3000 : mu 2.420 H2 7.24e-01 H 1.34e-01 e- 3.93e-06 H- 1.49e-08
+  p  1.0e+00 bar T  3500 : mu 2.066 H2 4.73e-01 H 4.06e-01 e- 1.44e-05 H- 7.38e-08
+  p  1.0e+00 bar T  4000 : mu 1.675 H2 1.96e-01 H 7.06e-01 e- 3.63e-05 H- 1.70e-07
+  p  1.0e+00 bar T  4500 : mu 1.484 H2 6.05e-02 H 8.52e-01 e- 7.93e-05 H- 2.61e-07
+  p  1.0e+00 bar T  5000 : mu 1.426 H2 1.94e-02 H 8.96e-01 e- 1.70e-04 H- 3.72e-07
+  p  1.0e+00 bar T  6000 : mu 1.400 H2 3.12e-03 H 9.12e-01 e- 5.32e-04 H- 5.61e-07
+  p  1.0e+02 bar T  2500 : mu 2.583 H2 8.46e-01 H 2.31e-03 e- 5.83e-08 H- 1.07e-09
+  p  1.0e+02 bar T  3000 : mu 2.576 H2 8.35e-01 H 1.44e-02 e- 4.68e-07 H- 1.90e-08
+  p  1.0e+02 bar T  3500 : mu 2.526 H2 7.99e-01 H 5.29e-02 e- 2.01e-06 H- 1.34e-07
+  p  1.0e+02 bar T  4000 : mu 2.418 H2 7.23e-01 H 1.36e-01 e- 6.23e-06 H- 5.59e-07
+  p  1.0e+02 bar T  4500 : mu 2.246 H2 6.00e-01 H 2.68e-01 e- 1.58e-05 H- 1.64e-06
+  p  1.0e+02 bar T  5000 : mu 2.032 H2 4.49e-01 H 4.32e-01 e- 3.39e-05 H- 3.58e-06
+  p  1.0e+02 bar T  6000 : mu 1.666 H2 1.90e-01 H 7.12e-01 e- 1.07e-04 H- 8.83e-06
+
+EOS dump: log rho -14.00..0.00, log T 1.50..6.00; rows with a non-finite entry: log T <= 1.85
+EOS mu(p, T) [the H2 -> H dissociation and H ionization, from the table itself]:
+  p   1e-08 bar:   2000 K mu 1.400 (lrho -13.07)   3000 K mu 1.395 (lrho -13.26)   3500 K mu 1.395 (lrho -13.32)   4000 K mu 1.395 (lrho -13.38)   5000 K mu 1.350 (lrho -13.49)   6000 K mu 0.932 (lrho -13.73)   8000 K mu 0.730 (lrho -13.96)
+  p   1e-06 bar:   2000 K mu 1.662 (lrho -11.00)   3000 K mu 1.396 (lrho -11.26)   3500 K mu 1.395 (lrho -11.32)   4000 K mu 1.395 (lrho -11.38)   5000 K mu 1.391 (lrho -11.48)   6000 K mu 1.316 (lrho -11.58)   8000 K mu 0.764 (lrho -11.94)
+  p   1e-03 bar:   2000 K mu 2.508 (lrho -7.82)   3000 K mu 1.431 (lrho -8.24)   3500 K mu 1.399 (lrho -8.31)   4000 K mu 1.396 (lrho -8.38)   5000 K mu 1.395 (lrho -8.48)   6000 K mu 1.393 (lrho -8.56)   8000 K mu 1.312 (lrho -8.70)
+  p   1e+00 bar:   2000 K mu 2.564 (lrho -4.81)   3000 K mu 2.377 (lrho -5.02)   3500 K mu 2.056 (lrho -5.15)   4000 K mu 1.656 (lrho -5.30)   5000 K mu 1.418 (lrho -5.47)   6000 K mu 1.398 (lrho -5.55)   8000 K mu 1.393 (lrho -5.68)
+  p   1e+02 bar:   2000 K mu 2.566 (lrho -2.81)   3000 K mu 2.546 (lrho -2.99)   3500 K mu 2.500 (lrho -3.06)   4000 K mu 2.388 (lrho -3.14)   5000 K mu 1.978 (lrho -3.32)   6000 K mu 1.617 (lrho -3.49)   8000 K mu 1.426 (lrho -3.67)

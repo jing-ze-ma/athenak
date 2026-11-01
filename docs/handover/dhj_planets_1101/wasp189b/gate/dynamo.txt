@@ -1,0 +1,5 @@
+Jupiter                  M 1.00 M_J R 1.000 R_J T_int  99.0 K: L_int 9.14e-10 L_sun  B_dyn   20.8 G  B_dip,pole (Jupiter-scaled)   8.3 G
+WASP-121b (3x RCE)       M 1.17 M_J R 1.742 R_J T_int 567.4 K: L_int 2.99e-06 L_sun  B_dyn  165.8 G  B_dip,pole (Jupiter-scaled)  66.2 G
+WASP-189b (RCE T_int)    M 1.99 M_J R 1.619 R_J T_int 490.5 K: L_int 1.44e-06 L_sun  B_dyn  154.7 G  B_dip,pole (Jupiter-scaled)  61.8 G
+WASP-189b T_int 400 K    M 1.99 M_J R 1.619 R_J T_int 400.0 K: L_int 6.38e-07 L_sun  B_dyn  117.9 G  B_dip,pole (Jupiter-scaled)  47.1 G
+WASP-189b T_int 600 K    M 1.99 M_J R 1.619 R_J T_int 600.0 K: L_int 3.23e-06 L_sun  B_dyn  202.4 G  B_dip,pole (Jupiter-scaled)  80.8 G

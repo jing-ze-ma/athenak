@@ -1,0 +1,21 @@
+# roche_anchor.py = git show c8aac483c:inputs/production/tools/roche_anchor.py (fork/fin51-r-fix); EOS dump md5 697ca6750fb2315eb34a0347d7495d1c (1x solar, deepconv_0925/dump/eos_table.txt)
+# cmd: roche_anchor.py --mp 1.83 --rp 1.8783 --pref 1.824e-3 --a_au 0.0371092 --porb 1.90261131 --teff 7299 --rstar 1.942 --mstar 1.88 --profile /viper/ptmp2/jinma/dhj_planets_1101/toi1518b/ic/ic_toi1518b_1x_f5.txt --eos /viper/ptmp2/jinma/deepconv_0925/dump/eos_table.txt --x1max 2.007760e10
+# G M_p = 2.318364e+23 (M_p = 1.8300 M_J, g(R_p) = 1285.69), R_p = 1.8783 R_J at p_ref = 1.824e-03 bar
+# omega = 2 pi/P = 3.822223e-05 s^-1, a = 5.551457e+11 cm, G M_* (Kepler, as the pgen) = 2.497181e+26 -> M_* = 1.8816 M_sun (literature 1.8800: +0.09 %)
+# Teq = Teff sqrt(R*/2a) = 2546.1 K
+# IC table bottom 2240.7 bar 6414 K: table slope dlnT/dlnp 0.1686, nabla_ad 0.1696
+anchor [Roche (rot_potential + tide)]: ap = x1min = 1.257097e+10 cm, grav = 1467.0475 cm/s^2, terminator R_eff(p_ref) = 1.878300 R_J
+   p_ref surface: pole 1.87122, terminator_eq 1.88545, substellar 1.93325, antistellar 1.93157 R_J
+   inner wall r = x1min, deepest (min Phi): p = 1286.8 bar, T = 5855 K (adiabat ext.; the old linear extrapolation: 5855 K)
+   inner wall r = x1min, shallowest (max Phi): p = 128.3 bar, T = 4178 K (adiabat ext.; the old linear extrapolation: 4178 K)
+      wall pole           p =    128.3 bar  T =   4178 K
+      wall terminator_eq  p =    250.2 bar  T =   4587 K
+      wall substellar     p =   1286.8 bar  T =   5855 K
+      wall antistellar    p =   1234.0 bar  T =   5816 K
+   L1 at 3.66815e+10 cm = 5.131 R_J; ap/r_L1 = 0.343, x1max/r_L1 = 0.547
+   max Phi_tot on x1max 7.1891e+12 vs Phi(L1) 9.0362e+12
+deck keys: <mesh> x1min = 1.257097e+10   <problem> ap = 1.257097e+10  grav = 1467.0475  omega = 3.822223e-05  roche = true  roche_a = 5.551457e+11
+
+# cross-check, tide off: roche_anchor.py ... --no_roche (planet_setup.py anchor_limb; README 3d: ap 1.248193e10 grav 1488.0510)
+anchor [rot_potential only]: ap = x1min = 1.248193e+10 cm, grav = 1488.0510 cm/s^2, terminator R_eff(p_ref) = 1.878300 R_J
+deck keys: <mesh> x1min = 1.248193e+10   <problem> ap = 1.248193e+10  grav = 1488.0510  omega = 3.822223e-05

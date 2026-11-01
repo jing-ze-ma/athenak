@@ -1,0 +1,43 @@
+gate/run_x224/bin/dhj.hydro_w.00000.bin
+  1e-9: n   4108 median|dT/T| 1.0e-03  99% 1.9e-03 max 1.92e-03  n(>5%) 0
+  1e-8: n   7516 median|dT/T| 1.2e-04  99% 5.2e-04 max 5.32e-04  n(>5%) 0
+  1e-7: n   8912 median|dT/T| 1.0e-05  99% 1.4e-05 max 1.87e-05  n(>5%) 0
+  1e-6: n  14016 median|dT/T| 4.2e-06  99% 1.5e-05 max 5.37e-05  n(>5%) 0
+  1e-5: n  16660 median|dT/T| 9.8e-06  99% 6.8e-05 max 6.91e-05  n(>5%) 0
+  1e-4: n  16900 median|dT/T| 7.0e-05  99% 3.7e-04 max 7.83e-04  n(>5%) 0
+  1e-3: n  14876 median|dT/T| 5.6e-05  99% 8.9e-05 max 8.97e-05  n(>5%) 0
+  1e-2: n  16628 median|dT/T| 4.2e-05  99% 7.2e-05 max 7.25e-05  n(>5%) 0
+  1e-1: n  17392 median|dT/T| 1.8e-05  99% 2.4e-05 max 2.43e-05  n(>5%) 0
+  1e+0: n  17196 median|dT/T| 1.3e-05  99% 2.7e-05 max 2.84e-05  n(>5%) 0
+  1e+1: n  19344 median|dT/T| 2.2e-05  99% 3.3e-05 max 3.34e-05  n(>5%) 0
+  1e+2: n  11176 median|dT/T| 1.0e-05  99% 2.2e-05 max 2.29e-05  n(>5%) 0
+  1e+3: n    116 median|dT/T| 2.1e-06  99% 3.7e-06 max 3.67e-06  n(>5%) 0
+  worst cell idx (4, 0, 6, 104) p 2.394e-09 bar T 3619 Ttab 3612 rho 1.00e-14
+gate/run_x224_b18247755/bin/dhj.hydro_w.00000.bin
+  1e-9: n   4456 median|dT/T| 1.1e-03  99% 1.9e-03 max 1.90e-03  n(>5%) 0
+  1e-8: n   7208 median|dT/T| 1.2e-04  99% 5.1e-04 max 5.25e-04  n(>5%) 0
+  1e-7: n   8304 median|dT/T| 1.0e-05  99% 1.4e-05 max 1.81e-05  n(>5%) 0
+  1e-6: n  14472 median|dT/T| 3.9e-06  99% 1.5e-05 max 5.75e-05  n(>5%) 0
+  1e-5: n  16608 median|dT/T| 9.5e-06  99% 6.8e-05 max 6.89e-05  n(>5%) 0
+  1e-4: n  14968 median|dT/T| 6.8e-05  99% 3.6e-04 max 6.69e-04  n(>5%) 0
+  1e-3: n  16224 median|dT/T| 5.6e-05  99% 8.8e-05 max 8.97e-05  n(>5%) 0
+  1e-2: n  17096 median|dT/T| 4.2e-05  99% 7.2e-05 max 7.25e-05  n(>5%) 0
+  1e-1: n  18344 median|dT/T| 1.8e-05  99% 2.4e-05 max 2.43e-05  n(>5%) 0
+  1e+0: n  17728 median|dT/T| 1.3e-05  99% 2.7e-05 max 2.84e-05  n(>5%) 0
+  1e+1: n  18720 median|dT/T| 2.2e-05  99% 3.3e-05 max 3.33e-05  n(>5%) 0
+  1e+2: n  10496 median|dT/T| 1.2e-05  99% 2.2e-05 max 2.26e-05  n(>5%) 0
+  worst cell idx (12, 0, 7, 106) p 2.422e-09 bar T 3618 Ttab 3612 rho 1.01e-14
+gate/run_nominal/bin/dhj.hydro_w.00000.bin
+  1e-9: n   4256 median|dT/T| 1.1e-03  99% 1.9e-03 max 1.91e-03  n(>5%) 0
+  1e-8: n   7064 median|dT/T| 1.3e-04  99% 5.2e-04 max 5.32e-04  n(>5%) 0
+  1e-7: n   8064 median|dT/T| 9.9e-06  99% 1.4e-05 max 1.52e-05  n(>5%) 0
+  1e-6: n  13712 median|dT/T| 4.1e-06  99% 1.5e-05 max 4.93e-05  n(>5%) 0
+  1e-5: n  16048 median|dT/T| 9.3e-06  99% 6.8e-05 max 6.88e-05  n(>5%) 0
+  1e-4: n  14792 median|dT/T| 5.7e-05  99% 3.7e-04 max 6.25e-04  n(>5%) 0
+  1e-3: n  15352 median|dT/T| 5.6e-05  99% 8.9e-05 max 8.97e-05  n(>5%) 0
+  1e-2: n  16568 median|dT/T| 4.1e-05  99% 7.2e-05 max 7.25e-05  n(>5%) 0
+  1e-1: n  17264 median|dT/T| 1.8e-05  99% 2.4e-05 max 2.43e-05  n(>5%) 0
+  1e+0: n  17040 median|dT/T| 1.2e-05  99% 2.8e-05 max 2.82e-05  n(>5%) 0
+  1e+1: n  17792 median|dT/T| 2.3e-05  99% 3.3e-05 max 3.32e-05  n(>5%) 0
+  1e+2: n  10048 median|dT/T| 1.1e-05  99% 2.3e-05 max 2.29e-05  n(>5%) 0
+  worst cell idx (0, 0, 6, 102) p 2.405e-09 bar T 3619 Ttab 3612 rho 1.01e-14

@@ -1,0 +1,154 @@
+{
+ "mesh/nx1": [
+  "124",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "meshblock/nx1": [
+  "124",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/x1min": [
+  "1.095459e+10",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/x1max": [
+  "1.595318e+10",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c1": [
+  "-1.537002",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c2": [
+  "-1.419266",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c3": [
+  "-12.064202",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c4": [
+  "75.774399",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c5": [
+  "-281.331925",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c6": [
+  "539.325351",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c7": [
+  "-464.549817",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_c8": [
+  "145.553775",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_b1_amp": [
+  "-1.449299",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_b1_x": [
+  "0.567564",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_b1_w": [
+  "0.154490",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_b2_amp": [
+  "-2.280519",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_b2_x": [
+  "0.705185",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "mesh/f_stretch_r_b2_w": [
+  "0.101823",
+  "WASP-189b radial grid (grid112.py: W121 cells/H carried over)"
+ ],
+ "comment/problem": [
+  "WASP-189b fresh start, general EOS + metal ionization, PURE HYDRO, am_vector, 1x solar",
+  "planet"
+ ],
+ "time/tlim": [
+  "7.060694e+07",
+  "300 rot of P = 2.7240330 d (Lendl+2020)"
+ ],
+ "problem/Teq": [
+  "2637.5",
+  "Teff sqrt(R*/2a), Lendl+2020 (= Seidel+2026 2638 +- 28 K)"
+ ],
+ "problem/omega": [
+  "2.669647e-05",
+  "2 pi / P_orb, P = 2.7240330 d (Lendl+2020); tidally locked"
+ ],
+ "problem/grav": [
+  "2100.8301",
+  "GM_p/ap^2, M_p 1.99 M_J (Lendl+2020)"
+ ],
+ "problem/ap": [
+  "1.095459e+10",
+  "inner radius from planet_setup.py (R_p 1.619 R_J at the CHEOPS p_ref)"
+ ],
+ "problem/albedo": [
+  "0.10",
+  "Bond albedo adopted (no measurement; Deline+2022 A_g < 0.48); see README"
+ ],
+ "problem/ck_swflux": [
+  "sw_band_flux_W189_11.txt",
+  "ATLAS9 Teff 8000 logg 4.0 [M/H] +0.29 band fluxes (sed/make_sed.py)"
+ ],
+ "problem/ic_profile": [
+  "ic/ic_w189_1x.txt",
+  "face-5 RCE IC for WASP-189b (rce/)"
+ ],
+ "hydro/rad_met": [
+  "0.0",
+  "1x solar"
+ ],
+ "hydro/eos_xh": [
+  "0.7381",
+  "1x solar (as the W121 1x input)"
+ ],
+ "hydro/eos_yhe": [
+  "0.2485",
+  "1x solar (as the W121 1x input)"
+ ],
+ "problem/met": [
+  "0.0",
+  "1x solar"
+ ],
+ "problem/ck_table": [
+  "ck/CK1X/ck/Premixed_1x_g8_11_hiT2.txt",
+  "1x solar tables"
+ ],
+ "problem/ck_ce_table": [
+  "CE_tables/FastChem_ck_1x_int_hiT2.txt",
+  "1x solar tables"
+ ],
+ "problem/ck_data_dir": [
+  "ck/CK1X",
+  "1x solar tables (repo data/exo_fms_ck)"
+ ],
+ "output1/dt": [
+  "2353.5645",
+  "0.01 rot"
+ ],
+ "output2/dt": [
+  "2.35356e+04",
+  "10 per rotation"
+ ],
+ "output3/dt": [
+  "117678.23",
+  "0.5 rot"
+ ],
+ "output4/dt": [
+  "235356.5",
+  "1 rot"
+ ]
+}

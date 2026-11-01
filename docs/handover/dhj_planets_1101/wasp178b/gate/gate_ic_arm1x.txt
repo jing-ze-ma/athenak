@@ -1,0 +1,16 @@
+cells with rho >= 1e-14 (EOS dump range): 83.3 % of active
+max |T/T_table - 1|: all cells incl. ghosts 2.90e-02 ; active 2.90e-02
+  active   1e-06..1e-03   bar: max |dT/T| 1.03e-02
+  active   1e-03..1e+00   bar: max |dT/T| 2.12e-03
+  active   1e+00..3e+02   bar: max |dT/T| 8.13e-04
+deepest active cells: pole-like 225.4 bar / 4333 K (table 4333 K), equator-like 272.8 bar / 4455 K (table 4455 K)
+deepest inner ghost: 402.0 bar / 4713 K (table 4713 K, rel -9.6e-06)
+table range 9.49e-11 .. 2.24e+03 bar
+r(p_ref = 1.028e-03 bar) over 3456 columns: 1.263980e+10 .. 1.266846e+10 ; tool pole 1.263966e+10 eq 1.266855e+10 -> rel 1.1e-05 / -6.8e-06
+  hydrostatic |dp/dr + rho g|/(rho g) with pole g          1e-06..1e-03   bar: median 4.51e-03  95% 4.04e-02
+  hydrostatic |dp/dr + rho g|/(rho g) with pole g          1e-03..1e+00   bar: median 5.22e-03  95% 1.38e-02
+  hydrostatic |dp/dr + rho g|/(rho g) with pole g          1e+00..3e+02   bar: median 4.33e-03  95% 8.35e-03
+  hydrostatic |dp/dr + rho g|/(rho g) with equator g_eff   1e-06..1e-03   bar: median 7.45e-03  95% 3.79e-02
+  hydrostatic |dp/dr + rho g|/(rho g) with equator g_eff   1e-03..1e+00   bar: median 9.52e-03  95% 1.84e-02
+  hydrostatic |dp/dr + rho g|/(rho g) with equator g_eff   1e+00..3e+02   bar: median 8.26e-03  95% 1.25e-02
+min density 1.533e-18 g/cc; density in the top active cells 2.579e-18 .. 3.437e-18

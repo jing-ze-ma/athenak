@@ -1,0 +1,15 @@
+radial dt estimate: W121 11.43 s, W189_3x_n112 7.23 s -> expected dt 8.72 s (W121 measured 13.79)
+cycles/rot: W121 7988, W189_3x_n112 26994;  nx1 112 (x 1.000 per cycle)
+cost per rotation relative to W121 hfresh: 3.38  -> 12.5 min/rot on 1 viper node (W121 3.7)
+cost per unit simulated time relative to W121: 1.58
+300 rot: 62.5 h on 1 viper node;  rotations for the W121 300-rot physical time (3.30e7 s): 140
+
+ t_rad = c_p p/(4 sigma g T^3) on the IC columns [s] (and in rotations):
+  p [bar]   W121: T      t_rad      rot  |  W189_3x_n112: T      t_rad      rot   ratio
+    1e-04      3170  2.758e+00    0.000  |     3658  8.278e-01    0.000  0.30
+    1e-03      2278  5.257e+02    0.005  |     3373  1.410e+01    0.000  0.03
+    1e-02      2091  1.419e+03    0.013  |     2397  1.337e+03    0.006  0.94
+    1e-01      2071  8.508e+03    0.077  |     2349  5.386e+03    0.023  0.63
+    1e+00      2045  6.930e+04    0.629  |     2353  3.226e+04    0.137  0.47
+    1e+01      2628  4.099e+05    3.721  |     2726  2.180e+05    0.926  0.53
+    1e+02      3832  2.421e+06   21.976  |     3908  1.334e+06    5.668  0.55

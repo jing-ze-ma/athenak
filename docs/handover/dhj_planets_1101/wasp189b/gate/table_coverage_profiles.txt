@@ -1,0 +1,41 @@
+== global_rceB (rce/rceB/ckrce_nq2_B.txt): p 1.06e-09..2.83e+02 bar, T 2236..4510 K
+     1e-10..  1e-08 bar: T  4237.. 4264 K
+     1e-08..  1e-06 bar: T  4169.. 4236 K
+     1e-06..  1e-03 bar: T  3361.. 4167 K
+     1e-03..  1e-01 bar: T  2252.. 3319 K
+     1e-01..  1e+01 bar: T  2236.. 2638 K
+     1e+01..  1e+04 bar: T  2697.. 4510 K
+   rows T > 6100 K (beyond native ck/CE data, hiT2 extension): 0 of 230
+   rows T > 10100 K (ck/CE clamped in T): 0
+   rows p < 1e-8 bar (ck/CE clamped in p): 20 (T there 4237..4264 K)
+   rows p > 1000 bar (clamped): 0
+   rows T > 3000 K (H2-H2 CIA held flat; H2 dissociated there): 149
+   log rho range -14.42..-2.78; rows below the dump (log rho < -14, inside the deck table -19..0): 9; rows off the deck EOS table: 0
+
+== dayside_mean (rce/day_mean/ckrce_nq2_B.txt): p 1.06e-09..2.83e+02 bar, T 2600..4611 K
+     1e-10..  1e-08 bar: T  4579.. 4611 K
+     1e-08..  1e-06 bar: T  4511.. 4578 K
+     1e-06..  1e-03 bar: T  3685.. 4509 K
+     1e-03..  1e-01 bar: T  2608.. 3663 K
+     1e-01..  1e+01 bar: T  2600.. 2681 K
+     1e+01..  1e+04 bar: T  2695.. 4304 K
+   rows T > 6100 K (beyond native ck/CE data, hiT2 extension): 0 of 230
+   rows T > 10100 K (ck/CE clamped in T): 0
+   rows p < 1e-8 bar (ck/CE clamped in p): 20 (T there 4579..4611 K)
+   rows p > 1000 bar (clamped): 0
+   rows T > 3000 K (H2-H2 CIA held flat; H2 dissociated there): 160
+   log rho range -14.45..-2.75; rows below the dump (log rho < -14, inside the deck table -19..0): 10; rows off the deck EOS table: 0
+
+== substellar_4x (rce/day_sub/ckrce_nq2_B.txt): p 1.06e-09..2.83e+02 bar, T 2948..5225 K
+     1e-10..  1e-08 bar: T  4931.. 5225 K
+     1e-08..  1e-06 bar: T  4893.. 4961 K
+     1e-06..  1e-03 bar: T  4076.. 4892 K
+     1e-03..  1e-01 bar: T  2960.. 4042 K
+     1e-01..  1e+01 bar: T  2948.. 2958 K
+     1e+01..  1e+04 bar: T  2959.. 3809 K
+   rows T > 6100 K (beyond native ck/CE data, hiT2 extension): 0 of 230
+   rows T > 10100 K (ck/CE clamped in T): 0
+   rows p < 1e-8 bar (ck/CE clamped in p): 20 (T there 4931..5225 K)
+   rows p > 1000 bar (clamped): 0
+   rows T > 3000 K (H2-H2 CIA held flat; H2 dissociated there): 173
+   log rho range -14.55..-2.68; rows below the dump (log rho < -14, inside the deck table -19..0): 10; rows off the deck EOS table: 0

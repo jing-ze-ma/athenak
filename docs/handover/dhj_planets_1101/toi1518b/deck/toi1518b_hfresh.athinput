@@ -1,0 +1,201 @@
+# TOI-1518b HYDRO fresh start (t = 0), 3x solar, dhj_planets_1101 (viper, 2026-11-01). Literature, choices and
+# gates: README.md next to this deck. Start from a run directory that holds ck/ and ic/ (package dirs).
+# Template: /viper/ptmp2/jinma/w121hfresh_1101/deck/hfresh.athinput (WASP-121b hfresh, fork/fin51-r-fix 182477553).
+# Every changed key is marked "# toi1518b:"; all other keys are the template values.
+#------------------------- PAR_DUMP -------------------------
+<comment>
+problem                    = TOI-1518b fresh start, general EOS + metal ionization, PURE HYDRO, am_vector (dhj_planets_1101) # toi1518b: planet (W121: WASP-121b fresh start, general EOS + metal ionization, PURE HYDRO, am_vector (w121hfresh_1101))
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010) 
+<job>
+basename = dhj 
+<mesh>
+nghost                    = 2            
+nx1                        = 120            # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 112)
+x1min                      = 1.245919e+10   # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 1.124210e+10)
+x1max                      = 1.968103e+10   # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 2.100000e+10)
+ix1_bc                    = user         
+ox1_bc                    = user         
+nx2                       = 32           
+x2min                     = -1.0         # -1 lets the pgen set the full polar range
+x2max                     = 1.0          
+ix2_bc                    = panel        
+ox2_bc                    = panel        
+nx3                       = 32           
+x3min                     = -1.0         
+x3max                     = 1.0          
+ix3_bc                    = panel        
+ox3_bc                    = panel        
+use_grid_stretch_r_poly   = true         
+f_stretch_r_c1             = -1.664677      # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: -1.509683)
+f_stretch_r_c2             = -1.427655      # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: -1.314625)
+f_stretch_r_c3             = -13.207455     # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: -13.749263)
+f_stretch_r_c4             = 77.411004      # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 79.204795)
+f_stretch_r_c5             = -270.393754    # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: -274.939323)
+f_stretch_r_c6             = 526.053623     # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 523.658095)
+f_stretch_r_c7             = -473.179209    # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: -465.600806)
+f_stretch_r_c8             = 156.144830     # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 153.292986)
+use_cubed_sphere          = true         
+cs_seam_flux              = positive     # w121prod_0927: seam flux positivity fix (default since 01df7e26; explicit)
+cs_seam_resample          = linear       # w121prod_0927: convex seam ghost resample (default; explicit)
+cs_seam_rho_guard         = 4            # w121prod_0927: seam ghost density guard (default; explicit)
+f_stretch_r_b1_amp         = -1.982804      # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: -1.290044)
+f_stretch_r_b1_x           = 0.563876       # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 0.520389)
+f_stretch_r_b1_w           = 0.185677       # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 0.146721)
+f_stretch_r_b2_amp         = -1.999987      # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: -2.426785)
+f_stretch_r_b2_x           = 0.698666       # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 0.689686)
+f_stretch_r_b2_w           = 0.093838       # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 0.104620)
+<meshblock>
+nx1                        = 120            # toi1518b: grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7) (W121: 112)
+nx2 = 16 
+nx3 = 16 
+<time>
+start_time           = 0.0   # s10fresh: fresh start (s10_e15: 33046050.0, t of the remapped dhj.00600.rst)
+evolution             = dynamic      
+integrator            = rk2          
+cfl_number            = 0.3          
+nlim                  = 1000000000   # effectively no cycle limit; tlim and the wall clock stop it.
+tlim                       = 3.287712e+07   # toi1518b: 200 rot (README sec. 9); wall clock stops it (W121: 3.304605e+07)
+ndiag                 = 100          
+dt_min                = 1.0e-3       # as s10_e15
+<units>
+length_cgs = 1.0 
+mass_cgs   = 1.0 
+time_cgs   = 1.0 
+mu         = 1.0 
+<hydro>
+wellbalance_dynamic        = true                   
+wb_x1                      = true                   
+wb_option                  = polytropic             
+wb_cache_every             = 0                      
+cs_wellbalanced_src        = false                  # 09-23 user: DROPPED. min beta at prod3 rot 283 = 1.22 (>> the ~2e-3 crossover); hurts hydro accuracy (tests_hyd4/README_wbsrc.md)
+isotropic_conduction       = none                   # 09-25 ROUTE B: ck two-stream to the wall, no diffusion (rad_* below unused)
+rad_implicit_x1            = true                   
+rad_cap_ang                = 0.5                    # silent no-op with rad_angular=false below; kept for the diff.
+rad_angular                = false                  # CHANGED from prod3 (implicit default true): see change (3).
+rad_tau_lo                 = 30.0                   
+rad_tau_hi                 = 300.0                  
+rad_kappa_src              = table                  
+rad_flux_inner             = -1.0                   # unused under route B (no conduction); sigma T_int^4 enters at the ck bottom (problem/ck_int_at_cut)
+rad_met                    = 0.4771                 # w121prod_0930 3x: was 0.0 in the 1x input
+eos                        = general                
+general_eos                = table                  
+reconstruct                = plm                    
+rsolver                    = lhllc   # hfresh: hydro rsolver (MHD deck: lhlld); lhllc_cb_sensor left at its default (1)
+am_vector                  = true    # hfresh: angular-momentum vector form + spin reservoir (cs-open-1018)
+gamma                      = 1.4727545958           # unused by the table; kept so ideal/general inputs match
+etotgrav                   = true                   
+eos_h2                     = true                   # H2 dissociation: the heat pipe
+eos_ionization             = true                   # Saha for H, He, He+
+eos_metal_ionization       = true                   # Na, K, Ca, Al, Mg, Fe -- the electron donors
+eos_radiation              = false                  # aT^4/3 is ~1e-7 of the gas pressure here
+eos_xh                     = 0.7188                 # w121prod_0930 3x: was 0.7381 in the 1x input
+eos_yhe                    = 0.2420                 # w121prod_0930 3x: was 0.2485 in the 1x input
+eos_metal_condensation     = true                   
+eos_logd_min               = -19.0   # w121_mhd_1003: as the C128 production (user 10-03)
+eos_logd_max               = 0.0                    
+eos_logt_min               = 1.5                    
+eos_logt_max               = 6.0                    
+eos_dlog                   = 0.05                   
+pfloor               = 1.0e-7   # s10_e15 value (fresh 3x f6: pfloor 1e-5, dfloor 1e-16; raised top needs these)
+dfloor               = 1.0e-18   # s10_e15 value (fresh 3x f6: pfloor 1e-5, dfloor 1e-16; raised top needs these)
+tfloor_kelvin              = 200.0                  
+
+<problem>
+sponge_top            = true                                                                    # w121prod_0927: top velocity sponge ON (1e-7..1e-6 bar) (was true)
+sponge_bottom         = false                                                                   # w121prod_0927: user 09-27: NO bottom sponge (was true)
+flux_hst_floor        = true                                                                    # w121prod_0929: Efloor, Efloor_rt, Mfloor hst columns
+# flux_hst_wall NOT set: s10fresh smoke 12405109 FATAL "am_hst ... at most 24 user history columns (have 27)"; 9 flux + 3 floor + 11 am_hst_split = 23
+am_hst                = true    # s10fresh: angular momentum columns Lrel Iw Tcor Tcc Tcont Tbnd (diagnostic only)
+am_hst_split          = true    # s10fresh: + Tx1 Tx2 Tx3 Tsrc Tcons in place of Tdif_deep Tdif_rad (diagnostic only)
+am_transport          = false   # hfresh: REQUIRED with <hydro>/am_vector (pgen YieldToPgen FATAL: the correction would be applied twice)
+ck_implicit           = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_arat          = 1e30                                                                    # w121prod_0927: T4 (was 2.0)
+ck_impl_frozen_op     = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_frozen_cof    = true                                                                    
+ck_impl_lin           = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_lin_thr       = 1                                                                       # w121prod_0927: T4 (was 1)
+ck_impl_fuse          = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_jac_lin       = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_cvsec         = true                                                                    # w121prod_0927: T4 (was false)
+ck_impl_tol           = 1.0e-8                                                                  # 3x-ck10: kept at the 3x value (user 09-30: only the keys that may remove the inflow)
+ck_impl_dtol          = 1.0e-8                                                                  
+ck_impl_maxit         = 16                                                                      # reset 09-30 (user): original 3x key (Caltech A/B: no limit cycle with 3x keys)
+ck_impl_dtmax         = 0.5                                                                     # reset 09-30 (user): original 3x key (Caltech A/B)
+ck_impl_demax         = 0.5                                                                     # default: bound on the total |e - e*|/e* per call (0 = off; off + dtmax 3 collapsed dt, SMOKE_DIAG.md)
+ck_impl_floorbound    = true                                                                    # 1x SOLAR (x1/README): was true in the 10x input
+ck_impl_kkt_demax     = true                                                                    # 1x SOLAR (x1/README): was true in the 10x input
+ck_impl_kkt_row       = true                                                                    # w121prod_0927: default since 7df65ad2; explicit (was true)
+ck_impl_conserve      = 2                                                                       # user 10-28: 2 = reported ck fluxes consistent with the applied energy in EVERY cell (was 1: bound cells only); solution bitwise unchanged
+ck_impl_verbose       = false                                                                   
+ck_impl_debug         = 0                                                                       
+ck_impl_once          = true                                                                    # w121prod_0927: C2 (was false)
+ck_impl_warm          = false                                                                   
+ck_impl_reuse_jac     = 0                                                                       
+ck_impl_seed          = 0                                                                       
+ck_impl_lw            = false                                                                   
+ck_impl_xstep         = 8                                                                       # w121prod_0927: C2 (09-26: 8) (was 0)
+ck_impl_xstep_thr     = 0.0                                                                     
+ck_impl_jreuse        = 0.2                                                                     # w121prod_0927: C2 (was 0.0)
+ck_impl_pred          = true                                                                    # w121prod_0927: C2 (was false)
+ck_impl_pred_fac      = 0.5                                                                     # w121prod_0927: C2 (was 1.0)
+ck_impl_pred_chk      = false                                                                   
+ck_impl_jreuse_xc     = false                                                                   
+ck_impl_warm_step     = false                                                                   
+ck_impl_cvkeep        = false                                                                   
+ck_impl_every         = 4                                                                       # w121prod_0927: E4 (was 1)
+ck_impl_every_thr     = 0.0                                                                     
+ck_impl_jreuse_act    = 0.25                                                                    
+ck_impl_nosync        = true                                                                    # w121prod_0927: C2 (was false)
+user_srcs             = true                                                                    
+hot_jupiter           = true                                                                    
+Teq                        = 2546.1         # toi1518b: TOI-1518b: Teff sqrt(R*/2a), Simonnin+2025 Table 7 (7299 K, a/R* 4.109; zero albedo, full redistribution) (W121: 2409.3)
+omega                      = 3.822223e-05   # toi1518b: TOI-1518b: 2 pi / P_orb, P = 1.90261131 d (Simonnin+2025); tidally locked, e < 0.01 (Cabot+2021) (W121: 5.704026e-05)
+rot_potential         = true                                                                    # sp_mhd_prod3 value; see change (2) header note for the
+grav                       = 1493.4888      # toi1518b: planet_setup.py: g at ap, M_p 1.83 M_J (Simonnin+2025) (W121: 1172.7924)
+grav_point_mass       = true                                                                    
+ap                         = 1.245919e+10   # toi1518b: planet_setup.py: r(250 bar), R_p 1.8783 R_J at the TESS p_ref (W121: 1.124210e+10)
+Rgas                  = 4.593e7                                                                 # ignored under the general EOS; composition is the EOS's
+met                   = 0.4771                                                                  # w121prod_0930 3x: was 0.0 in the 1x input
+rt_de_max             = 0.5                                                                     
+rt_use_cons           = true                                                                    
+rt_ck                 = true                                                                    
+rt_split              = false                                                                   
+ck_pcut_bar           = 1e8                                                                     # 09-25 ROUTE B: the cut falls on the inner wall
+ck_nquad              = 2                                                                       # 09-25: exact non-grey diffusion limit (nq2_0925)
+ck_int_at_cut         = true                                                                    # route B: sigma T_int^4 enters ONCE, as the ck intensity at the wall
+ck_star_teff          = 0.0                                                                     # WASP-121b: <= 0: stellar band fluxes from ck_swflux (WASP-121 model spectrum), not a blackbody (was 6000.0)
+ck_spherical          = true                                                                    # NEW: spherical thermal two-stream. See change (1).
+ck_sph_face           = 6                                                                       # w121fresh_1001 f6 (user 10-01 22:10): passive-ladder VEF closure (was 5)
+ck_sph_top            = 1                                                                       # w121fresh_1001: vacuum top (d_top = 0)
+ck_beam_sph           = true                                                                    # NEW: pseudo-spherical direct beam. See change (1).
+ck_sweep_form         = 1                                                                       # 09-22 (change 9): tm = exact probe-free spherical sweep; see header
+ck_table              = ck/CK3X/ck/Premixed_3x_g8_11_hiT2.txt   # s10fresh: package-relative (s10_e15: /raven/ptmp/jinma/w121_raven_1002/ck/CK3X/...)
+ck_ce_table           = CE_tables/FastChem_ck_3x_int_hiT2.txt                                   # w121prod_0930 3x: was CE_tables/FastChem_ck_1x_int_hiT2.txt in the 1x input
+ic_profile                 = ic/ic_toi1518b_3x_f5.txt # toi1518b: face-5 exact RCE IC of TOI-1518b (W121: ic/ic_w121_3x_f5.txt)
+ic_profile_mu         =   # dead key (no reader in 6fac5c7ff); kept for the diff, empty
+ck_data_dir           = ck/CK3X   # s10fresh: package-relative
+ck_dump_file          =                                                                         
+ck_dump_m             = 0                                                                       
+ck_dump_j             = -1                                                                      
+ck_dump_k             = -1                                                                      
+ck_swflux                  = sw_band_flux_T1518_11.txt # toi1518b: ATLAS9 7299 K, log g 4.136, [M/H] -0.10 (sed/make_sed.py), under ck_data_dir/sw_flux (W121: sw_band_flux_W121_11.txt)
+albedo                     = 0.10           # toi1518b: TOI-1518b Bond albedo: choice, README sec. 4 (W121: 0.277)
+ck_beam_par           = true                                                                    # w121prod_0927: user 09-26: beam chord walk in its own kernels (ck-fast2)
+
+<output1>
+file_type      = hst                
+data_format    = %.17e              
+dt                         = 1643.86        # toi1518b: 0.01 rot (W121: 1101.54)
+<output2>
+file_type   = log                # floor / C2P counters; rows are per-interval
+dt                         = 1.64386e+04    # toi1518b: 0.1 rot (W121: 1.10154e+04)
+<output3>
+file_type            = bin         
+variable                   = hydro_w   # hfresh: hydro primitives (MHD deck: mhd_w_bcc)
+dt                         = 82192.8        # toi1518b: 0.5 rot (W121: 55077.0)
+<output4>
+file_type            = rst                # so a 24 h timeout can be continued with -r
+dt                         = 164385.6       # toi1518b: 1 rot (W121: 110154.0)
+<mesh_refinement>
+<coord>
+#------------------------- PAR_DUMP -------------------------

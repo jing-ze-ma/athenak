@@ -1,0 +1,7 @@
+IC ic_wasp76b_1x_f5.txt: p 9.49e-11..2.24e+03 bar, T 1976..6139 K
+ck table T 100..10100 K, p 1e-08..1e+03 bar; CE table T 100..10100 K, p 1e-08..1e+03 bar
+code EOS table: log rho -19..0, log T 1.5..6 (eos_logd_min -19, eos_logt_min/max 1.5/6)
+IC                               T 1976..6139 K (p >= 1e-6 bar: 1976..4468); rho 1.00e-12..8.59e-03; ck T in range: True; rows above the ck p top (clamped, as W121): 49 of 269 (all at p < 1e-08 bar)
+day (T x 1.3 above 0.01 bar)     T 1976..6139 K (p >= 1e-6 bar: 1976..4468); rho 1.00e-12..8.59e-03; ck T in range: True; rows above the ck p top (clamped, as W121): 49 of 269 (all at p < 1e-08 bar)
+night (T x 0.6 above 0.01 bar)   T 1215..6139 K (p >= 1e-6 bar: 1215..4468); rho 1.00e-12..8.59e-03; ck T in range: True; rows above the ck p top (clamped, as W121): 49 of 269 (all at p < 1e-08 bar)
+hot-day bound sqrt2 Teq x 1.3 = 4073 K: inside the ck T range: True; T > 6100 K uses the hiT2 extension (gen_hitemp.py, H bf/ff)

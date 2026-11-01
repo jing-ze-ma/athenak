@@ -1,0 +1,154 @@
+{
+ "comment/problem": [
+  "TOI-1518b fresh start, general EOS + metal ionization, PURE HYDRO, 1x solar, am_vector (dhj_planets_1101)",
+  "planet"
+ ],
+ "mesh/nx1": [
+  "120",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "meshblock/nx1": [
+  "120",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/x1min": [
+  "1.248193e+10",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/x1max": [
+  "2.007760e+10",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c1": [
+  "-1.400240",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c2": [
+  "-1.339919",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c3": [
+  "-13.513794",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c4": [
+  "79.144016",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c5": [
+  "-282.203365",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c6": [
+  "535.555722",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c7": [
+  "-464.414222",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_c8": [
+  "147.674047",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b1_amp": [
+  "-1.240691",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b1_x": [
+  "0.540861",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b1_w": [
+  "0.138328",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b2_amp": [
+  "-2.402237",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b2_x": [
+  "0.696505",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "mesh/f_stretch_r_b2_w": [
+  "0.101864",
+  "grid112.py (W121 hfresh cells/H at equal pressure; README sec. 7)"
+ ],
+ "time/tlim": [
+  "3.287712e+07",
+  "200 rot (README sec. 9); wall clock stops it"
+ ],
+ "problem/Teq": [
+  "2546.1",
+  "TOI-1518b: Teff sqrt(R*/2a), Simonnin+2025 Table 7 (7299 K, a/R* 4.109; zero albedo, full redistribution)"
+ ],
+ "problem/omega": [
+  "3.822223e-05",
+  "TOI-1518b: 2 pi / P_orb, P = 1.90261131 d (Simonnin+2025); tidally locked, e < 0.01 (Cabot+2021)"
+ ],
+ "problem/grav": [
+  "1488.0510",
+  "planet_setup.py: g at ap, M_p 1.83 M_J (Simonnin+2025)"
+ ],
+ "problem/ap": [
+  "1.248193e+10",
+  "planet_setup.py: r(250 bar), R_p 1.8783 R_J at the TESS p_ref"
+ ],
+ "problem/ic_profile": [
+  "ic/ic_toi1518b_1x_f5.txt",
+  "face-5 exact RCE IC, 1x solar"
+ ],
+ "problem/ck_swflux": [
+  "sw_band_flux_T1518_11.txt",
+  "ATLAS9 7299 K, log g 4.136, [M/H] -0.10 (sed/make_sed.py), under ck_data_dir/sw_flux"
+ ],
+ "problem/albedo": [
+  "0.10",
+  "TOI-1518b Bond albedo: choice, README sec. 4"
+ ],
+ "output1/dt": [
+  "1643.86",
+  "0.01 rot"
+ ],
+ "output2/dt": [
+  "1.64386e+04",
+  "0.1 rot"
+ ],
+ "output3/dt": [
+  "82192.8",
+  "0.5 rot"
+ ],
+ "output4/dt": [
+  "164385.6",
+  "1 rot"
+ ],
+ "hydro/eos_xh": [
+  "0.7381",
+  "1x SOLAR sensitivity arm (README sec. 3d); value of the WASP-121b 1x input"
+ ],
+ "hydro/eos_yhe": [
+  "0.2485",
+  "1x SOLAR sensitivity arm (README sec. 3d); value of the WASP-121b 1x input"
+ ],
+ "hydro/rad_met": [
+  "0.0",
+  "1x SOLAR sensitivity arm (README sec. 3d); value of the WASP-121b 1x input"
+ ],
+ "problem/met": [
+  "0.0",
+  "1x SOLAR sensitivity arm (README sec. 3d); value of the WASP-121b 1x input"
+ ],
+ "problem/ck_table": [
+  "ck/CK1X/ck/Premixed_1x_g8_11_hiT2.txt",
+  "1x premixed ck table (repo data/exo_fms_ck)"
+ ],
+ "problem/ck_ce_table": [
+  "CE_tables/FastChem_ck_1x_int_hiT2.txt",
+  "1x FastChem CE table"
+ ],
+ "problem/ck_data_dir": [
+  "ck/CK1X",
+  "1x table set"
+ ]
+}
