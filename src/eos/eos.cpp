@@ -100,6 +100,26 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                 << " [code]: density floor rho >= B^2/v_A,max^2" << std::endl;
     }
   }
+  // <mhd>/valfven_noinfall_fac: see the note on EOS_Data::va_noinfall_fac.  Read only
+  // when named; needs valfven_max_cgs and a radial x1.
+  if (pin->DoesParameterExist(bk,"valfven_noinfall_fac")) {
+    const Real fac = pin->GetReal(bk,"valfven_noinfall_fac");
+    if (fac > 0.0) {
+      if (eos_data.va2max_inv <= 0.0 || fac < 1.0 ||
+          !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<" << bk << ">/valfven_noinfall_fac needs "
+                  << "valfven_max_cgs > 0, a value >= 1 (or 0 = off) and a radial x1 "
+                  << "(cubed sphere or spherical polar)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      eos_data.va_noinfall_fac = fac;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<mhd>/valfven_noinfall_fac = " << fac << ": inward radial momentum "
+                  << "removed where rho <= " << fac << " B^2/v_A,max^2" << std::endl;
+      }
+    }
+  }
   // <mhd>/hlld_bx_zero_tol: see the note on EOS_Data::hlld_bx_zero_tol.  Only the HLLD
   // family (hlld_mhd.hpp, hlld_uct_mhd.hpp, lhlld_mhd.hpp) reads it; in any other block
   // it would be parsed and silently ignored, so refuse it there instead.  The existence
