@@ -737,6 +737,46 @@ void AccLower(const bool cs, const Real c, Real &v2, Real &v3) {
   }
 }
 
+//! csacc-1031 (stream port): (sin theta, cos theta, phi) of the point (x2, x3): spherical
+//! polar sin(x2), cos(x2), x3 (the expressions the sp kernels used, bitwise); cs CsAng
+KOKKOS_INLINE_FUNCTION
+void AccSph(const bool cs, const int pnl, const Real x2, const Real x3, Real &sth, Real &cth,
+            Real &ph) {
+  if (cs) {
+    CsAng(pnl, x2, x3, sth, ph, cth);
+  } else {
+    sth = sin(x2);
+    cth = cos(x2);
+    ph = x3;
+  }
+}
+
+//! csacc-1031 (stream port): the stored tangential pair (v2, v3) of the vector vp e_phi
+//! (no theta part): spherical polar (0, vp); cs COVARIANT on the unit gnomonic tangents,
+//! (vp e_phi.e_xi, vp e_phi.e_eta) (0 on the axis, where e_phi is undefined)
+KOKKOS_INLINE_FUNCTION
+void AccPhiPair(const bool cs, const int pnl, const Real x2, const Real x3, const Real vp,
+                Real &v2, Real &v3) {
+  if (cs) {
+    const Real xi = 0.25*M_PI*x2, eta = 0.25*M_PI*x3;
+    Real q[3], e1[3], e2[3];
+    cubed_sphere::PanelToCart(pnl, xi, eta, q);
+    cubed_sphere::PanelTangents(pnl, xi, eta, e1, e2);
+    const Real rr = sqrt(q[0]*q[0] + q[1]*q[1]);
+    if (rr > 0.0) {
+      const Real ex = -q[1]/rr, ey = q[0]/rr;
+      v2 = vp*(ex*e1[0] + ey*e1[1]);
+      v3 = vp*(ex*e2[0] + ey*e2[1]);
+    } else {
+      v2 = 0.0;
+      v3 = 0.0;
+    }
+  } else {
+    v2 = 0.0;
+    v3 = vp;
+  }
+}
+
 //! host tables of (sin theta, phi, theta) at the cell centres (m,k,j): spherical polar
 //! std::sin(x2v), x3v, x2v (the values the host loops used, bitwise); cs from CsAng
 struct HostAng {
@@ -1846,6 +1886,9 @@ void RyPerM1Post(Mesh *pm) {
   const Real szz = sz_, wz = nsig_*sz_;
   const Real phl1 = msk_phl1_, xl1 = msk_xl1_;
   const RocheParams pr = rp_;
+  const bool csn = cs_;   // csacc-1031 (stream port)
+  auto &mbpn = pmbp->pmb->mb_panel;
+  auto &ccl = pmbp->pcoord->cos_cell;
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
   Real eke = 0.0;
   Kokkos::parallel_reduce("ryper_m1post", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -1855,10 +1898,12 @@ void RyPerM1Post(Mesh *pm) {
     const int k = (idx - m*nkji)/nji + ks;
     const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
     const int i = idx%ni + is;
-    const Real r = x1v(m,i), phv = x3c(m,k);
+    Real sthv = 1.0, cthv = 0.0, phv = x3c(m,k);
+    if (csn || g3) AccSph(csn, csn ? mbpn.d_view(m) : 0, x2c(m,j), x3c(m,k), sthv, cthv, phv);
+    const Real r = x1v(m,i);
     const Real dph = WrapPhi(phv - phs);
-    const Real zc = g3 ? nlo*cos(x2c(m,j)) : 0.0;
-    const Real sth = g3 ? sin(x2c(m,j)) : 1.0;
+    const Real zc = g3 ? nlo*cthv : 0.0;
+    const Real sth = g3 ? sthv : 1.0;
     const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
     if (innz) return;
     bool inmk;
@@ -1872,7 +1917,7 @@ void RyPerM1Post(Mesh *pm) {
     const Real d = u0(m,IDN,k,j,i);
     const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
     if (!(d > 0.0)) return;
-    const Real ke = 0.5*(m1*m1 + m2*m2 + m3*m3)/d;
+    const Real ke = 0.5*AccQ(csn, csn ? ccl(m,k,j) : 0.0, m1, m2, m3)/d;
     u0(m,IM1,k,j,i) = 0.0;
     u0(m,IM2,k,j,i) = 0.0;
     u0(m,IM3,k,j,i) = 0.0;
@@ -2195,6 +2240,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   // csacc-1031: the cubed sphere (Coriolis: core <hydro>/frame_omega; |m|^2 with cos_cell)
   const bool cs = cs_;
   auto &ccl = pmbp->pcoord->cos_cell;
+  auto &mbpcs = pmbp->pmb->mb_panel;   // csacc-1031 (spin port)
+  auto &x3cs = pmbp->pcoord->x3v;
   par_for("ryper_srce", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i), e = w0(m,IEN,k,j,i);
@@ -2311,11 +2358,31 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     } else if (((!inside && d < fsp*rfl) || (thrho > 0.0 && d < thrho)) && du > 0.0) {
       // env_sponge_spin: relax to the spin; thinsp-1029: also every cell below env_sponge_thin_rho
       const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+      if (cs) {
+        // csacc-1031 (spin port): the spin target vspn r sin(theta) e_phi as the covariant
+        // pair (m2t, m3t); the rotating-frame excess relaxes, its KE leaves E
+        const int pnl = mbpcs.d_view(m);
+        Real st, ct, phc;
+        AccSph(true, pnl, x2v(m,j), x3cs(m,k), st, ct, phc);
+        Real m2t = 0.0, m3t = 0.0;
+        if (x1v(m,i) < rspn) {
+          AccPhiPair(true, pnl, x2v(m,j), x3cs(m,k), du*vspn*x1v(m,i)*st, m2t, m3t);
+        }
+        const Real cq = ccl(m,k,j);
+        const Real e2 = m2 - m2t, e3 = m3 - m3t;
+        const Real v = sqrt(AccQ(true, cq, m1, e2, e3))/du;
+        Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
+        if (v*f > vcap) f = vcap/v;
+        const Real n2 = m2t + f*e2, n3 = m3t + f*e3;
+        u0(m,IM1,k,j,i) = f*m1;
+        u0(m,IM2,k,j,i) = n2;
+        u0(m,IM3,k,j,i) = n3;
+        u0(m,IEN,k,j,i) -= 0.5*(AccQ(true, cq, m1, m2, m3) - AccQ(true, cq, f*m1, n2, n3))/du;
+        return;
+      }
       const Real m3t = (x1v(m,i) < rspn) ? du*vspn*x1v(m,i)*sin(x2v(m,j)) : 0.0;
       const Real e3 = m3 - m3t;
-      // csacc-1031: cs runs spin 1 only (m3t = 0, refused otherwise), so the relative triple
-      // is the stored one and its |.|^2 the plain AccQ
-      const Real cq = cs ? ccl(m,k,j) : 0.0;
+      const Real cq = 0.0;
       const Real v = sqrt(AccQ(cs, cq, m1, m2, e3))/du;
       Real f = (tsp > 0.0) ? exp(-bdt/tsp) : 1.0;
       if (v*f > vcap) f = vcap/v;
@@ -2323,9 +2390,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       u0(m,IM1,k,j,i) = f*m1;
       u0(m,IM2,k,j,i) = f*m2;
       u0(m,IM3,k,j,i) = n3;
-      if (cs) {
-        u0(m,IEN,k,j,i) -= (1.0 - f*f)*0.5*AccQ(cs, cq, m1, m2, m3)/du;
-      } else {
+      {
         u0(m,IEN,k,j,i) -= 0.5*((1.0 - f*f)*(m1*m1 + m2*m2) + m3*m3 - n3*n3)/du;
       }
     }
@@ -2591,6 +2656,10 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
     auto &x2c = pmbp->pcoord->x2v;
     DvceArray5D<Real> urd;
     if (rad) urd = pmbp->pradm1->u0;
+    // csacc-1031 (stream port): the cubed sphere takes (sin, cos theta, phi) from the panel
+    // point and writes the tangential momentum / radiation flux covariant (AccPhiPair)
+    const bool csn = cs_;
+    auto &mbpn = pmbp->pmb->mb_panel;
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
     Kokkos::parallel_reduce("ryper_nzmsk", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             (nmb1 + 1)*nkji),
@@ -2599,13 +2668,16 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       const int k = (idx - m*nkji)/nji + ks;
       const int j = (idx - m*nkji - (k - ks)*nji)/ni + js;
       const int i = idx%ni + is;
-      const Real r = x1v(m,i), phv = x3c(m,k), dv = volume(m,k,j,i);
+      const int pnl = csn ? mbpn.d_view(m) : 0;
+      Real sthv = 1.0, cthv = 0.0, phv = x3c(m,k);
+      if (csn || g3) AccSph(csn, pnl, x2c(m,j), x3c(m,k), sthv, cthv, phv);
+      const Real r = x1v(m,i), dv = volume(m,k,j,i);
       const Real dph = WrapPhi(phv - phs);
       // 3-D: the nozzle's height coordinate z = r_f cos(theta) at its INNER FACE radius r_f
       // (every nozzle cell of a theta row has the same state, as every cell of a phi column,
       // so the upwind face flux equals the normalisation sum exactly); sin(theta) for the mask
-      const Real zc = g3 ? nlo*cos(x2c(m,j)) : 0.0;
-      const Real sth = g3 ? sin(x2c(m,j)) : 1.0;
+      const Real zc = g3 ? nlo*cthv : 0.0;
+      const Real sth = g3 ? sthv : 1.0;
       const bool innz = nzon && r > nlo && r < nhi && fabs(dph) < ww && (!g3 || fabs(zc) < wz);
       bool inmk = false, inbk = false;
       if (mskon && !innz) {
@@ -2627,6 +2699,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       array_sum::GlobalSum v;
       for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
       const Real d0 = u0(m,IDN,k,j,i), m30 = u0(m,IM3,k,j,i), e0 = u0(m,IEN,k,j,i);
+      const Real m10 = u0(m,IM1,k,j,i), m20 = u0(m,IM2,k,j,i);
       Real dn, v1, v3, tn;
       if (innz && l1) {
         // L1 nozzle (Lubow & Shu 1975): isothermal sonic outflow along -x at c_T, Gaussian
@@ -2647,10 +2720,12 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       }
       const Real en = eosd.EnergyFromTemperature(dn, tn) + 0.5*dn*(v1*v1 + v3*v3)
                       + dn*phc(m,k,j,i);
+      Real w2 = 0.0, w3 = v3;
+      if (csn) AccPhiPair(true, pnl, x2c(m,j), x3c(m,k), v3, w2, w3);
       u0(m,IDN,k,j,i) = dn;
       u0(m,IM1,k,j,i) = dn*v1;
-      u0(m,IM2,k,j,i) = 0.0;
-      u0(m,IM3,k,j,i) = dn*v3;
+      u0(m,IM2,k,j,i) = dn*w2;
+      u0(m,IM3,k,j,i) = dn*w3;
       u0(m,IEN,k,j,i) = en;
       // acctrc-1019: the nozzle writes stream gas (s0 = 1, s1 = 0); a sink cell is reset to
       // s = 0 (the floor gas at rest it holds is not tracked); the tracer mass each writes
@@ -2671,7 +2746,14 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         v.the_array[0] = (dn - d0)*dv;
         // phys_3d: the inertial Lz with the cylindrical radius r sin(theta)
         const Real rj = p3 ? r*sth : r;
-        v.the_array[1] = ((dn*v3 - m30) + om*rj*(dn - d0))*rj*dv;
+        if (csn) {
+          v.the_array[1] = AccJzCell(true, pnl, x2c(m,j), x3c(m,k), r, rj, dv, dn*v1, dn*w2,
+                                     dn*w3, dn, om)
+                         - AccJzCell(true, pnl, x2c(m,j), x3c(m,k), r, rj, dv, m10, m20, m30,
+                                     d0, om);
+        } else {
+          v.the_array[1] = ((dn*v3 - m30) + om*rj*(dn - d0))*rj*dv;
+        }
         v.the_array[2] = (en - e0)*dv;
         const bool inrw = rell ? (SQR(dph/sg) + (g3 ? SQR(zc/szz) : 0.0) < rn2)
                                : (fabs(dph) < rww && (!g3 || fabs(zc) < rwz));
@@ -2681,8 +2763,8 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           urd(m,radm1::M1_E,k,j,i) = er;
           if (hon) {hmk(m,k,j,i) = 1.0;}
           urd(m,radm1::M1_F1,k,j,i) = (4.0/3.0)*er*v1;
-          urd(m,radm1::M1_F2,k,j,i) = 0.0;
-          urd(m,radm1::M1_F3,k,j,i) = (4.0/3.0)*er*v3;
+          urd(m,radm1::M1_F2,k,j,i) = (4.0/3.0)*er*w2;
+          urd(m,radm1::M1_F3,k,j,i) = (4.0/3.0)*er*w3;
         }
       } else {
         v.the_array[4] = (d0 - dn)*dv;
@@ -2724,7 +2806,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
           Real eh = med;
           if (gdk) {
             const Real cph = cos(phv), sph = sin(phv);
-            const Real xx = r*sth*cph, yy = r*sth*sph, zz = g3 ? r*cos(x2c(m,j)) : 0.0;
+            const Real xx = r*sth*cph, yy = r*sth*sph, zz = g3 ? r*cthv : 0.0;
             const Real ge = DonorSurfGeff(pr, phl1, xl1, xx, yy, zz);
             eh = fmax(gdc*pow(ge, gdb), gdf);
           }
@@ -2848,9 +2930,13 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
                                   om)*a;
     }
     // the nozzle's inner face (Mnzf), inside its phi window
-    if (nzif >= 0 && fabs(WrapPhi(x3v(m,k) - phis)) < wwin &&
-        (!g3f || fabs(xf(m,nzif)*cos(x2vf(m,j))) < wzf)) {
-      v.the_array[13] = -flx(m,IDN,k,j,nzif)*area1(m,k,j,nzif);
+    if (nzif >= 0) {
+      Real sn = 1.0, cn = 0.0, pn = x3v(m,k);
+      if (csr) AccSph(true, mbpr.d_view(m), x2vf(m,j), x3v(m,k), sn, cn, pn);
+      if (fabs(WrapPhi(pn - phis)) < wwin &&
+          (!g3f || fabs(xf(m,nzif)*(csr ? cn : cos(x2vf(m,j)))) < wzf)) {
+        v.the_array[13] = -flx(m,IDN,k,j,nzif)*area1(m,k,j,nzif);
+      }
     }
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(fs));
@@ -4183,13 +4269,21 @@ void EnvICGeneral(MeshBlockPack *pmbp, const Real racc, const Real rho_amb,
     Kokkos::deep_copy(dd4, hd4);
     Kokkos::deep_copy(de4, he4);
     Kokkos::deep_copy(dv4, hv4);
+    // csacc-1031 (spin port): on the cubed sphere the IC rotation v_phi e_phi is stored as
+    // the covariant tangential pair
+    const bool csi = cs_;
+    auto &mbpi = pmbp->pmb->mb_panel;
+    auto &cx2i = pmbp->pcoord->x2v;
+    auto &cx3i = pmbp->pcoord->x3v;
     par_for("ryper_icg3", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real dc = dd4(m,k,j,i), v3 = dv4(m,k,j,i);
+      Real w2 = 0.0, w3 = v3;
+      if (csi) AccPhiPair(true, mbpi.d_view(m), cx2i(m,j), cx3i(m,k), v3, w2, w3);
       u0(m,IDN,k,j,i) = dc;
       u0(m,IM1,k,j,i) = 0.0;
-      u0(m,IM2,k,j,i) = 0.0;
-      u0(m,IM3,k,j,i) = dc*v3;
+      u0(m,IM2,k,j,i) = dc*w2;
+      u0(m,IM3,k,j,i) = dc*w3;
       u0(m,IEN,k,j,i) = de4(m,k,j,i) + 0.5*dc*v3*v3 + dc*phicc(m,k,j,i);
     });
     return;
@@ -5804,7 +5898,43 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real dphk = (ms.x3max - ms.x3min)/nk, rf = nz_rlo_;
       const Real ath = rf*rf*(std::cos(ms.x2min) - std::cos(ms.x2max))*dphk;
       Real sum = 0.0;
-      if (g3d_) {
+      if (g3d_ && cs_) {
+        // csacc-1031 (stream port): the cubed sphere sums the same window weight
+        // e^{-q^2/2} |v_r| A over the cells above the nozzle's inner face on the device
+        // (A = area.x1f of the face, (dphi, z = r_f cos theta) of the panel point), MPI-summed
+        // over the ranks (the analytic sp face table does not exist on the panels)
+        auto &a1 = pmbp->pcoord->area.x1f;
+        auto &cx2 = pmbp->pcoord->x2v;
+        auto &cx3 = pmbp->pcoord->x3v;
+        auto &mbpn = pmbp->pmb->mb_panel;
+        const int fbl = fb, js = pmy_mesh_->mb_indcs.js, je = pmy_mesh_->mb_indcs.je;
+        const int ks = pmy_mesh_->mb_indcs.ks, ke = pmy_mesh_->mb_indcs.ke;
+        const Real phs = phi_s_, sg = sig_, szz = sz_, ww = nsig_*sig_, wz = nsig_*sz_;
+        const Real vra = std::fabs(vr_s_), rf = nz_rlo_;
+        const int nkc = ke - ks + 1, njc = je - js + 1;
+        Kokkos::parallel_reduce("ryper_nzcs", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                pmbp->nmb_thispack*nkc*njc),
+        KOKKOS_LAMBDA(const int idx, Real &s) {
+          const int m = idx/(nkc*njc), k = (idx/njc)%nkc + ks, j = idx%njc + js;
+          Real st, ct, phv;
+          AccSph(true, mbpn.d_view(m), cx2(m,j), cx3(m,k), st, ct, phv);
+          const Real dph = WrapPhi(phv - phs), zj = rf*ct;
+          if (fabs(dph) < ww && fabs(zj) < wz) {
+            s += exp(-0.5*(SQR(dph/sg) + SQR(zj/szz)))*vra*a1(m,k,j,fbl);
+          }
+        }, Kokkos::Sum<Real>(sum));
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(MPI_IN_PLACE, &sum, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        if (!(sum > 0.0)) fatal("cubed sphere: the nozzle window holds no cell");
+        rho_s_ = mdot/sum;
+        if (global_variable::my_rank == 0) {
+          std::printf("ry_per_accretor: cubed-sphere 3-D nozzle: sigma_z %.4f Rsun, full rate "
+                      "stream_mdot %.6g code -> peak rho %.6g code (r_f %.5f, window sum "
+                      "%.6g)\n", sz_, mdot, rho_s_, rf, sum);
+        }
+        sum = 0.0;
+      } else if (g3d_) {
         // 3-D: stream_mdot is the FULL stream; the discrete sum over the window cells
         // (|dphi| < nsig sigma_phi, |z| < nsig sigma_z, z = r_f cos theta) of the inner
         // face's e^{-q^2/2} |v_r| A, A = r_f^2 (cos th_j - cos th_j+1) dphi
@@ -6273,24 +6403,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!env_ || !gen_ || !p3_) {
       fatal("cubed sphere: needs problem/inner = envelope, thermo = general, phys_3d = true");
     }
-    auto csno = [&](const char *key) {
-      if (pin->DoesParameterExist("problem", key) && pin->GetBoolean("problem", key)) {
-        fatal(std::string("cubed sphere: problem/") + key + " = true is not ported yet "
-              "(csacc-1031: static envelope only)");
-      }
-    };
-    csno("stream");
-    csno("donor_irr");
-    csno("stream_rad");
-    if (stream_on_ || stvol_ || msk_ || mirr_) {
-      fatal("cubed sphere: stream / stream_inject / donor_mask / donor_irr are not ported yet "
-            "(csacc-1031: static envelope only)");
+    // csacc-1031 (stream port): the 3-D volume nozzle (stream_inject = volume), its back
+    // sink, the Roche-lobe donor mask, donor_irr, stream_rad and stream_sector_light run on
+    // the panels (angles from the panel point, tangential momentum / flux covariant); the
+    // r_out boundary window and the 2-D L1 nozzle are spherical-polar only
+    if (stream_on_ && !stvol_) {
+      fatal("cubed sphere: problem/stream = true needs stream_inject = volume (the r_out "
+            "boundary window is spherical-polar only)");
+    }
+    if (stl1_) fatal("cubed sphere: stream_inject = l1 is 2-D spherical polar only");
+    if (stvol_ && !pin->DoesParameterExist("problem", "stream_mdot")) {
+      fatal("cubed sphere: stream_inject = volume needs problem/stream_mdot");
     }
     if (spr_on_) fatal("cubed sphere: problem/spin_ramp_t is not ported yet");
-    if (spin_ != 1.0) {
-      fatal("cubed sphere: problem/spin != 1 is not ported yet (the IC / wall / sponge "
-            "rotation in the cs basis)");
-    }
+    // csacc-1031 (spin port): spin != 1 runs on the panels (IC rotation and the
+    // env_sponge_spin target as covariant pairs, AccPhiPair; the wall is free-slip only)
     if (pin->DoesParameterExist("problem", "env_wall_slip") &&
         pin->GetString("problem", "env_wall_slip").compare("noslip") == 0) {
       fatal("cubed sphere: problem/env_wall_slip = noslip is not ported yet");
