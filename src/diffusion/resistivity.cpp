@@ -47,6 +47,27 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     }
     use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
     rkg_lean = use_rkg_sts && pin->GetOrAddBoolean("mhd", "rkg_lean", false);
+    // rkgdt-1101: read only when named, so a deck without them keeps its restart header
+    if (pin->DoesParameterExist("mhd", "rkg_dt_safety")) {
+      rkg_dt_safety = pin->GetReal("mhd", "rkg_dt_safety");
+    }
+    if (pin->DoesParameterExist("mhd", "rkg_lmax_diag")) {
+      rkg_lmax_diag = pin->GetInteger("mhd", "rkg_lmax_diag");
+    }
+    rkg_dt_fe = (rkg_dt_safety > 0.0);
+    if ((rkg_dt_fe || rkg_lmax_diag > 0) && !use_rkg_sts) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/rkg_dt_safety and rkg_lmax_diag need use_rkg_sts"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if ((rkg_dt_fe || rkg_lmax_diag > 0) && !(pp->pmesh->use_cubed_sphere ||
+                                             pp->pmesh->use_spherical_polar)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/rkg_dt_safety and rkg_lmax_diag: cubed sphere or "
+                << "spherical polar only" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (rkg_lean && (pp->pmesh->multilevel || !pp->pmesh->use_cubed_sphere)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mhd>/rkg_lean needs a uniform (not multilevel) "
@@ -1006,6 +1027,11 @@ void Resistivity::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
 }
 
 void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
+  // rkgdt-1101: the RKG dt_diff from the forward-Euler bound (resistivity_rkgdt.cpp)
+  if (rkg_dt_fe) {
+    NewTimeStepRKGFE();
+    return;
+  }
   // resistive timestep on MeshBlock(s) in this pack
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, nx1 = indcs.nx1;

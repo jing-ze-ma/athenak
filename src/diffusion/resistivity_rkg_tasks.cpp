@@ -77,6 +77,11 @@ void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<T
 }
 
 TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
+  // rkgdt-1101 <mhd>/rkg_lmax_diag: once, on the state the first super-step starts from
+  if (rkg_lmax_diag > 0 && !rkg_lmax_done) {
+    rkg_lmax_done = true;
+    LmaxDiag();
+  }
   Real dtp = pmy_pack->pmesh->dt_diff;
   Real dth = pmy_pack->pmesh->dt;
   tau = dth/dtp;
