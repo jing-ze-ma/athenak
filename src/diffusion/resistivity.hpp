@@ -105,6 +105,25 @@ class Resistivity {
   // inversion (only the cell-centred field is rebuilt) and the timestep -- and copy only
   // the energy slot of the conserved registers.  Uniform cubed-sphere meshes only.
   bool rkg_lean = false;
+  // <mhd>/rkg_halo_ien_only (default false, read only when named): the conserved-variable
+  // halo exchange of RKG super-stages 2..s moves only the slots of u0 that changed
+  // since the previous exchange: u0(IEN), the one slot RKUpdate writes, plus every slot
+  // the previous super-stage's ConToPrim wrote.  Exact: after the ConToPrim of every
+  // super-stage < s, u0 is compared with u1 (= u0 before that ConToPrim) slot by slot,
+  // in every cell the exchange sends or fills (active cells and the ghosts not across a
+  // physical boundary face); the per-slot bitmask is OR-reduced over all ranks.  A
+  // changed momentum slot brings all three (the seam basis transform).  Super-stage 1
+  // always exchanges everything.  Uniform grids, <= 32 slots, not with rkg_lean; a
+  // no-op without use_rkg_sts.
+  bool rkg_halo_ien_only = false;
+  int rkg_halo_changed = -1;        // slots ConToPrim changed in the previous stage
+  int64_t rkg_halo_nstage = 0;      // diagnostics: super-stages >= 2,
+  int64_t rkg_halo_nfull = 0;       // ... of which with every slot exchanged,
+  int64_t rkg_halo_nslot[32] = {};  // ... and per slot, how many exchanged it
+  // per MeshBlock, bit f set when face f (x1-, x1+, x2-, x2+, x3-, x3+) has no
+  // neighbour (physical boundary): the ghosts across it are never written by the
+  // exchange, so the check skips them (built on first use; uniform grids)
+  DvceArray1D<int> rkg_halo_phys;
   // cubed sphere + STRETCHED radial grid: take the radial derivative of the Stokes loop
   // AT the x1 face instead of at the midpoint of the two cell centres (see
   // resistivity_gnomonic.cpp).  <mhd>/cs_resist_x1_centred, default true; a no-op on an
