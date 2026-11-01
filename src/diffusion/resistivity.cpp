@@ -71,21 +71,16 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     // proddef-1101 (USER: the Caltech dhj MHD production keys as FRESH-start defaults,
-    // via recipe::NewDefaults): with a resistive diffusivity on and the key absent,
-    //   use_rkg_sts   = true  (every mesh),
-    //   rkg_lean      = true  (with STS, uniform single-level cubed sphere: its FATAL),
-    //   rkg_dt_safety = 0.5   (with STS, cubed sphere or spherical polar: its FATAL).
+    // via recipe::NewDefaults).  use_rkg_sts keeps its old default false (user 11-01);
+    // when STS is ON (named by the user) and the key is absent:
+    //   rkg_lean      = true  (uniform single-level cubed sphere: its FATAL),
+    //   rkg_dt_safety = 0.5   (cubed sphere or spherical polar: its FATAL).
     // An explicit key wins; a restart whose input lacks a key keeps the OLD default and
     // adds exactly what the old code added (use_rkg_sts, and rkg_lean only with STS).
     const bool nd = recipe::NewDefaults(pin);
     const bool curv = pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar;
     const bool lean_ok = pp->pmesh->use_cubed_sphere && !pp->pmesh->multilevel;
-    if (!pin->DoesParameterExist("mhd", "use_rkg_sts")) {
-      recipe::Log(std::string("<mhd>/use_rkg_sts = ") + (nd ? "true (default with a "
-                  "resistive diffusivity)" : "false (old default: restart input or "
-                  "recipe none)"));
-    }
-    use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", nd);
+    use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
     if (use_rkg_sts && !pin->DoesParameterExist("mhd", "rkg_lean")) {
       // an explicit rkg_halo_ien_only = true (which FATALs with rkg_lean) keeps lean off
       const bool halo = pin->DoesParameterExist("mhd", "rkg_halo_ien_only") &&
