@@ -178,8 +178,8 @@ bool dhj_flux_hst_wall = false;
 bool dhj_flux_hst_floor = false;
 // relaxdrag-1101 problem/relax_drag (default true), problem/relax_drag_rot (default 5):
 // the start-up Rayleigh drag of SourceFunc (tau = P/10 for t < 0.4 R rot, log ramp to
-// tau = P at R rot, off after; R = relax_drag_rot).  Read only when named (a named key is
-// in the input and so in every restart); absent = the drag as before, bitwise.
+// tau = P at R rot, off after; R = relax_drag_rot).  Fresh starts default relax_drag to
+// false (recipe::NewDefaults); a restart without the key keeps the drag, bitwise.
 bool dhj_relax_drag = true;
 Real dhj_relax_drag_rot = 5.0;
 Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
@@ -963,6 +963,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // stages left below a floor).  Nothing else books them: they are not fluxes, so
   // they are the part of d(tot-E)/dt that Etot_bot - Etot_top does not contain (see
   // Hydro::c2p_track).  Costs two active-cell kernels per ConToPrim; off by default.
+  // relaxdrag default (USER 11-01): false on a FRESH dhj start (recipe::NewDefaults; the
+  // resolved value is written into the input, so restarts continue with it); a restart
+  // whose input lacks the key keeps the old default true; an explicit key wins
+  if (!pin->DoesParameterExist("problem","relax_drag")) {
+    if (recipe::NewDefaults(pin)) {
+      pin->GetOrAddBoolean("problem","relax_drag",false);
+      recipe::Log("problem/relax_drag = false (default on a fresh dhj start)");
+    } else {
+      recipe::Log("problem/relax_drag = true (old default: restart input or recipe "
+                  "none)");
+    }
+  }
   if (pin->DoesParameterExist("problem","relax_drag")) {
     dhj_relax_drag = pin->GetBoolean("problem","relax_drag");
   }
