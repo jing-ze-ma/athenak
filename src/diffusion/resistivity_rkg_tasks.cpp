@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <cstdlib>
 #include <iostream>
 
 #if MPI_PARALLEL_ENABLED
@@ -131,7 +132,11 @@ TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
     if (stage > 1 && nvar <= 32 && rkg_halo_changed >= 0) {
       const int all = (nvar == 32) ? -1 : ((1 << nvar) - 1);
       const int mom = (1 << IM1) | (1 << IM2) | (1 << IM3);
-      vm = rkg_halo_changed | (1 << IEN);
+      // test aid: RKG_HALO_FORCE_MASK (env, a decimal bitmask) adds slots to every list;
+      // a superset of the changed slots is exact, so key on must still be bitwise
+      static const int force_ = std::getenv("RKG_HALO_FORCE_MASK") ?
+                                std::atoi(std::getenv("RKG_HALO_FORCE_MASK")) : 0;
+      vm = rkg_halo_changed | (1 << IEN) | force_;
       if (vm & mom) {vm |= mom;}
       if (vm == all) {vm = 0;}
     }
