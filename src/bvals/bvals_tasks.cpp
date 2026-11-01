@@ -28,7 +28,7 @@
 //! \fn  void MeshBoundaryValues::InitRecv
 //! \brief Posts non-blocking receives (with MPI) for boundary communications of vars.
 
-TaskStatus MeshBoundaryValues::InitRecv(const int nvars) {
+TaskStatus MeshBoundaryValues::InitRecv(const int nvars, const int vmask) {
 #if MPI_PARALLEL_ENABLED
   // detfence-1020: the receive buffers are still READ by the previous exchange's unpack
   // kernel (queued on the device stream, not yet run when the host gets here), and a
@@ -66,24 +66,27 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars) {
           // create tag using local ID and buffer index of *receiving* MeshBlock
           int tag = CreateBvals_MPI_Tag(m, n);
 
-          // calculate amount of data to be passed, get pointer to variables
-          int data_size = nvars;
+          // calculate amount of data to be passed, get pointer to variables; with a
+          // variable list (vmask != 0): only its chunks, compact at the start
+          int data_size = (vmask != 0) ? __builtin_popcount(vmask) : nvars;
+          int per_var = 0;
           if ( nghbr.h_view(m,n).lev < pmy_pack->pmb->mb_lev.h_view(m) ) {
-            data_size *= recvbuf[n].icoar_ndat;
+            per_var = recvbuf[n].icoar_ndat;
           } else if ( nghbr.h_view(m,n).lev == pmy_pack->pmb->mb_lev.h_view(m) ) {
             if (is_z4c_) {
-              data_size *= recvbuf[n].isame_z4c_ndat;
+              per_var = recvbuf[n].isame_z4c_ndat;
             } else {
-              data_size *= recvbuf[n].isame_ndat;
+              per_var = recvbuf[n].isame_ndat;
             }
           } else {
-            data_size *= recvbuf[n].ifine_ndat;
+            per_var = recvbuf[n].ifine_ndat;
           }
+          data_size *= per_var;
           auto recv_ptr = Kokkos::subview(recvbuf[n].vars, m, Kokkos::ALL);
 
           // Post non-blocking receive for this buffer on this MeshBlock
-          int ierr = MPI_Irecv(recv_ptr.data(), data_size, MPI_ATHENA_REAL, drank, tag,
-                               comm_vars, &(recvbuf[n].vars_req[m]));
+          int ierr = MPI_Irecv(recv_ptr.data(), data_size, MPI_ATHENA_REAL, drank,
+                               tag, comm_vars, &(recvbuf[n].vars_req[m]));
           if (ierr != MPI_SUCCESS) {no_errors=false;}
         }
       }
