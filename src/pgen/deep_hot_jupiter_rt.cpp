@@ -41,6 +41,7 @@
 #include <sstream>  // ostringstream, for the photosphere dump
 #include <iomanip>  // setw/setfill, for the cycle-diagnostic file name
 #include <string>
+#include <type_traits>  // is_same, roche_wb_tan probe
 #include <utility>  // pair, for problem/ic_profile
 #include <vector>
 
@@ -2316,11 +2317,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     wbtan::on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
     if (wbtan::on) {
       std::string bad = "";
-      if (pmbp->phydro == nullptr) bad = "hydro (not MHD)";
+
       if (!rot_potential) bad = "problem/rot_potential = true";
       if (!(use_spherical_polar || use_cubed_sphere_)) bad = "sp or the cubed sphere";
-      if (pmbp->phydro != nullptr &&
-          (!use_wellbalance_dynamic || !pmbp->phydro->use_wb_x1)) {
+      const bool wbx1t = (pmbp->phydro != nullptr) ? pmbp->phydro->use_wb_x1
+                                                   : pmbp->pmhd->use_wb_x1;
+      if (!use_wellbalance_dynamic || !wbx1t) {
         bad = "wellbalance_dynamic + wb_x1";
       }
       if (use_wellbalance_static) bad = "no wellbalance_static";
@@ -4890,9 +4892,10 @@ void AmFix(Mesh *pm, const Real bdt) {
 //! round-off.  Everything is restored, so the live stage is untouched.  One call per run
 //! segment (W_eq and the code are the same on a restart, so g is too).
 
-void WbTanProbe(Mesh *pm, const Real bdt) {
+template <class F>
+void WbTanProbeT(Mesh *pm, F *ph) {
+  constexpr bool kMHD = std::is_same<F, mhd::MHD>::value;
   MeshBlockPack *pmbp = pm->pmb_pack;
-  hydro::Hydro *ph = pmbp->phydro;
   auto &indcs = pm->mb_indcs;
   const int ng = indcs.ng;
   const int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -4925,6 +4928,19 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
   if (hasder) sder = dup5(ph->wder);
   if (hastmp) stmp = dup4(ph->wtemp);
   if (haswbq) swbq = dup5(ph->wbq0);
+  // MHD: the probe is the B = 0 equilibrium (see the note in WbTanProbe)
+  DvceArray4D<Real> sb1, sb2, sb3;
+  DvceArray5D<Real> sbcc;
+  if constexpr (kMHD) {
+    sb1 = dup4(ph->b0.x1f); sb2 = dup4(ph->b0.x2f); sb3 = dup4(ph->b0.x3f);
+    sbcc = dup5(ph->bcc0);
+  }
+  auto zero_b = [&]() {
+    if constexpr (kMHD) {
+      Kokkos::deep_copy(ph->b0.x1f, 0.0); Kokkos::deep_copy(ph->b0.x2f, 0.0);
+      Kokkos::deep_copy(ph->b0.x3f, 0.0); Kokkos::deep_copy(ph->bcc0, 0.0);
+    }
+  };
   const bool sv_built = ph->wb_cache_built;
   const bool sv_fofc = ph->use_fofc;
 
@@ -4936,7 +4952,9 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
   auto weq = *wbtan::weq;
   auto phi0 = ph->phicc0;
   const bool etg = ph->use_etotgrav;
-  const int nvar = ph->nhydro + ph->nscalars;
+  int nvar;
+  if constexpr (kMHD) {nvar = ph->nmhd + ph->nscalars;} else {nvar = ph->nhydro + ph->nscalars;}
+  zero_b();
   par_for("wbtan_u", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     const Real d = weq(m,0,k,j,i);
@@ -4963,6 +4981,7 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
   while (pbv->ClearSend() == TaskStatus::incomplete) {}
   while (pbv->ClearRecv() == TaskStatus::incomplete) {}
   (void) ph->ApplyPhysicalBCs(nullptr, 0);
+  zero_b();   // a user BC may impose a ghost field; the probe state has none
   // no temperature guess (tguess <= 0: the table solve starts from its own bracket), so
   // W_eq's (T, p, Gamma_1) do not depend on the live wtemp: g is the same on a fresh
   // start and on every restart
@@ -4971,6 +4990,7 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
   ph->c2p_track = false;
   (void) ph->ConToPrim(nullptr, 0);
   ph->c2p_track = sv_trk;
+  zero_b();
   ph->wb_cache_built = false;   // the x1 WB background of W_eq
   ph->use_fofc = false;
   ph->Fluxes(nullptr, 0);
@@ -4984,20 +5004,32 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
   // the coordinate source of W_eq alone, with bdt = 1, into a zeroed array
   DvceArray5D<Real> us("wbtan_us", ph->u0.extent(0), ph->u0.extent(1),
                        ph->u0.extent(2), ph->u0.extent(3), ph->u0.extent(4));
-  if (pm->use_cubed_sphere) {
-    pmbp->pcoord->SrcTermsGnomonicEquiangle(ph->w0, ph->wder, ph->pwb, ph->uflx,
-                                            ph->peos->eos_data, 1.0, us);
-  } else {
-    pmbp->pcoord->SrcTermsSphericalPolarHydro(ph->w0, ph->pwb, ph->uflx,
+  if constexpr (kMHD) {
+    if (pm->use_cubed_sphere) {
+      pmbp->pcoord->SrcTermsGnomonicEquiangleMHD(ph->w0, ph->bcc0, ph->wder, ph->pwb,
+                                                 ph->uflx, ph->peos->eos_data, 1.0, us);
+    } else {
+      pmbp->pcoord->SrcTermsSphericalPolarMHD(ph->w0, ph->bcc0, ph->pwb, ph->uflx,
                                               ph->peos->eos_data, 1.0, us);
+    }
+  } else {
+    if (pm->use_cubed_sphere) {
+      pmbp->pcoord->SrcTermsGnomonicEquiangle(ph->w0, ph->wder, ph->pwb, ph->uflx,
+                                              ph->peos->eos_data, 1.0, us);
+    } else {
+      pmbp->pcoord->SrcTermsSphericalPolarHydro(ph->w0, ph->pwb, ph->uflx,
+                                                ph->peos->eos_data, 1.0, us);
+    }
   }
   // the angular-momentum corrections of the same stage, from W_eq's fluxes: the hydro
   // module's (<hydro>/am_transport | am_vector, HydroSrcTerms) and the pgen's own
   // (problem/coriolis_am | am_transport, AmFix in SourceFunc), both with bdt = 1 into
   // `us` (AmFix adds to the fluid's u0, so u0 is pointed at a zeroed scratch for it)
   if (ph->pam != nullptr) {
-    hydro::AmFluid fl{us, ph->u1, ph->w0, ph->wder, DvceArray5D<Real>(), ph->uflx,
-                      ph->peos->eos_data, false, ph->use_wellbalance_static, ph->pwb};
+    DvceArray5D<Real> bcc_;
+    if constexpr (kMHD) bcc_ = ph->bcc0;
+    hydro::AmFluid fl{us, ph->u1, ph->w0, ph->wder, bcc_, ph->uflx,
+                      ph->peos->eos_data, kMHD, ph->use_wellbalance_static, ph->pwb};
     ph->pam->AmTransportProbe(fl);
   }
   if (amh::fix || amh::trans) {
@@ -5046,6 +5078,10 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
   if (hasder) Kokkos::deep_copy(ph->wder, sder);
   if (hastmp) Kokkos::deep_copy(ph->wtemp, stmp);
   if (haswbq) Kokkos::deep_copy(ph->wbq0, swbq);
+  if constexpr (kMHD) {
+    Kokkos::deep_copy(ph->b0.x1f, sb1); Kokkos::deep_copy(ph->b0.x2f, sb2);
+    Kokkos::deep_copy(ph->b0.x3f, sb3); Kokkos::deep_copy(ph->bcc0, sbcc);
+  }
   ph->wb_cache_built = sv_built;
   ph->use_fofc = sv_fofc;
   wbtan::ready = true;
@@ -5061,6 +5097,20 @@ void WbTanProbe(Mesh *pm, const Real bdt) {
     std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan: equilibrium residual probe "
               << "done at cycle " << pm->ncycle << ", max |g_t| (rank 0) = " << gmax
               << " cm/s^2" << std::endl;
+  }
+}
+
+//! MHD (problem/roche_wb_tan with <mhd>): the probe runs the MHD module's own operators
+//! on the SAME equipotential state with B = 0 (b0, bcc0 zeroed in every cell for the
+//! probe and restored after).  With the field, "the equilibrium" would include the IC's
+//! Lorentz force, and g_t would freeze its negative into a permanent force although B
+//! evolves; the IC field is weak (beta >> 1 below the top), so the pressure/potential
+//! balance is the part to cancel, and the Lorentz force stays entirely the field's own.
+void WbTanProbe(Mesh *pm, const Real bdt) {
+  if (pm->pmb_pack->pmhd != nullptr) {
+    WbTanProbeT(pm, pm->pmb_pack->pmhd);
+  } else {
+    WbTanProbeT(pm, pm->pmb_pack->phydro);
   }
 }
 
