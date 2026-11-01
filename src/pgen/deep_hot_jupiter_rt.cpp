@@ -812,6 +812,19 @@ using correlated_k::ck_build_rosseland_table;
 // clamped, so it is bounded at any field strength -- see the use site. DEFAULT ON, since
 // in that form it is the better physics; set false to drop the magnetic force entirely.
 bool bc_outer_maxwell = true;
+// problem/top_bc (topbc-1101): the outer-x1 ghost state.
+//   hse      (DEFAULT, bitwise) hydrostatic isothermal extrapolation of rho, e in the
+//            full potential phicc0 (gravity + centrifugal + tide), momenta scaled with rho,
+//            v_r copied from the last active cell (inflow allowed).
+//   outflow1 ONE-WAY OUTFLOW: pure zero-gradient copy of rho, e and the tangential
+//            momenta of the last active cell, v_r_ghost = max(v_r_ie, 0).  No hydrostatic
+//            or equipotential extrapolation anywhere: with the Roche tide the top lies on
+//            OPEN equipotentials (above Phi(L1)) over most of the shell, where no
+//            hydrostatic state exists, and in the closed substellar cap the tiny effective
+//            g made the hse ghosts a dense reservoir that fed inflow.  The ghost total
+//            energy carries the ghost's OWN rho*phicc0 under etotgrav (the bookkeeping the
+//            hse ghosts use), and its own magnetic energy.  The face field is untouched.
+int dhj_top_bc = 0;   // 0 = hse, 1 = outflow1
 
 // ---- problem/rt_test_* : TEST HOOKS for the well-posed checks of the implicit
 // correlated-k solve (tests_ck_implicit/wellposed/README.md).  All default off, and off
@@ -1201,6 +1214,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
+  {
+    const std::string tb = pin->GetOrAddString("problem","top_bc","hse");
+    if (tb == "hse") {
+      dhj_top_bc = 0;
+    } else if (tb == "outflow1") {
+      dhj_top_bc = 1;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/top_bc must be hse or outflow1, not '" << tb
+                << "'" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 && dhj_top_bc != 0) {
+      std::cout << "deep_hot_jupiter_rt: problem/top_bc = " << tb
+                << " (zero-gradient outer-x1 ghosts, v_r = max(v_r_ie, 0))" << std::endl;
+    }
+  }
   if (global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "
               << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
@@ -3872,6 +3902,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // a reference to a __host__ variable in device code, which hipcc rejects outright --
     // the switch has to be captured by value like any other host state.
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
+    const bool top_out_ = (dhj_top_bc == 1);   // problem/top_bc = outflow1
     // for the metric-correct ghost kinetic energy below (cubed sphere only)
     const bool cs_bc_ = pm->use_cubed_sphere;
     auto &ccell_bc_ = pmbp->pcoord->cos_cell;
@@ -4206,7 +4237,36 @@ void HydrostaticEquilibrium(Mesh *pm) {
           Real phi_i = phicc0(m,k,j,ie);
           Real q0_i = log(e_i);
           Real factor_i = rho_i/e_i*igm1;
-          for (int i=0; i<ng; ++i) {
+          if (top_out_) {
+            // problem/top_bc = outflow1: zero-gradient copy, one-way v_r.  rho_i and e_i
+            // are the floored last-cell values above (the same extraction the hse branch
+            // starts from); the tangential momenta are copied (same rho), the radial one
+            // is clipped at zero so the ghost never pushes gas into the domain.
+            const Real m1o = fmax(u0_(m,IM1,k,j,ie), 0.0);
+            const Real m2o = u0_(m,IM2,k,j,ie);
+            const Real m3o = u0_(m,IM3,k,j,ie);
+            Real ke_o;
+            if (cs_bc_) {
+              const Real cg = ccell_bc_(m,k,j);
+              ke_o = 0.5*(m1o*m1o + (m2o*m2o - 2.0*cg*m2o*m3o + m3o*m3o)/(1.0 - cg*cg))
+                     /rho_i;
+            } else {
+              ke_o = 0.5*(SQR(m1o)+SQR(m2o)+SQR(m3o))/rho_i;
+            }
+            for (int i=0; i<ng; ++i) {
+              const int ig = ie+i+1;
+              u0_(m,IDN,k,j,ig) = rho_i;
+              u0_(m,IM1,k,j,ig) = m1o;
+              u0_(m,IM2,k,j,ig) = m2o;
+              u0_(m,IM3,k,j,ig) = m3o;
+              u0_(m,IEN,k,j,ig) = e_i + ke_o;
+              if (use_etotgrav) u0_(m,IEN,k,j,ig) += rho_i*phicc0(m,k,j,ig);
+              if (is_mhd_) u0_(m,IEN,k,j,ig) += 0.5*(SQR(bcc0(m,IBX,k,j,ig))
+                                                     + SQR(bcc0(m,IBY,k,j,ig))
+                                                     + SQR(bcc0(m,IBZ,k,j,ig)));
+            }
+          }
+          for (int i=0; i<ng && !top_out_; ++i) {
             Real dM1mag = 0.0;
             if (is_mhd_) {
               // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
