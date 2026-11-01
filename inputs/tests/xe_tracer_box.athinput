@@ -1,0 +1,79 @@
+<comment>
+problem   = xetracer-1101 unit tests: uniform MHD box, general EOS table, x_e tracer
+
+<job>
+basename  = xebox
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 0.0
+x1max     = 1.0e9
+ix1_bc    = periodic
+ox1_bc    = periodic
+nx2       = 1
+x2min     = 0.0
+x2max     = 1.0e9
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = 0.0
+x3max     = 1.0e9
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 1
+nx3       = 1
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 200
+tlim       = 1.0e12
+ndiag      = 100000
+
+<mhd>
+eos         = general
+general_eos = table
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.4
+dfloor      = 1.0e-20
+pfloor      = 1.0e-10
+eos_xh      = 0.7188
+eos_yhe     = 0.2420
+eos_h2      = true
+eos_ionization = true
+eos_metal_ionization = true
+eos_metal_condensation = true
+eos_metal_mh = 0.4771
+eos_logd_min = -14.0
+eos_logd_max = -2.0
+eos_logt_min = 2.5
+eos_logt_max = 4.5
+eos_dlog     = 0.05
+ohmic_resistivity = eos
+max_eta     = 1.0e10
+xe_tracer   = true
+xe_alpha_fac = 1.0
+
+<problem>
+rho   = 1.0e-8
+T     = 2500.0
+vx    = 0.0
+z_fac = 10.0
+z_amp = 0.0
+z_width = 0.1
+
+<output1>
+file_type = rst
+dcycle    = 10
+dt        = 1.0e30

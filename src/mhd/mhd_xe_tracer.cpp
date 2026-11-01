@@ -93,6 +93,14 @@ void MHD::XeTracerUpdate(Real dt, bool init) {
       ntot = rho*rgas/kb;
       rhoc = rho;
     }
+    // a cell without a valid state (an unfilled cs corner ghost: T = 0) keeps its z
+    if (!(t > 0.0) || !(ntot > 0.0)) {
+      if (init) {
+        w0_(m,iz,k,j,i) = 0.0;
+        u0_(m,iz,k,j,i) = 0.0;
+      }
+      return;
+    }
     const Real xeq = eos.ElectronFractionKelvin(rho, t);
     Real z;
     if (init) {
