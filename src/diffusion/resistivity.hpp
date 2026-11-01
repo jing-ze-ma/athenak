@@ -111,7 +111,8 @@ class Resistivity {
   // u1 (= u0 before that ConToPrim) in every slot but IEN over the whole block; if any
   // cell anywhere differs (a floor / cap / fallback wrote a non-energy variable), the
   // next super-stage exchanges every variable, as without the key.  Super-stage 1
-  // always exchanges everything.  Uniform grids, not with rkg_lean.
+  // always exchanges everything.  Uniform grids, not with rkg_lean; a no-op without
+  // use_rkg_sts.
   bool rkg_halo_ien_only = false;
   bool rkg_halo_full_next = true;   // decision for the next super-stage (all ranks)
   int rkg_halo_nfull = 0;           // diagnostic: full exchanges in super-stages >= 2

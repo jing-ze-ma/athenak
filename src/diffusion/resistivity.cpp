@@ -99,13 +99,14 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     // rkghalo-1101: read only when named (a deck without it keeps its restart header)
+    // a no-op without use_rkg_sts (no super-stages)
     if (pin->DoesParameterExist("mhd", "rkg_halo_ien_only")) {
-      rkg_halo_ien_only = pin->GetBoolean("mhd", "rkg_halo_ien_only");
+      rkg_halo_ien_only = use_rkg_sts && pin->GetBoolean("mhd", "rkg_halo_ien_only");
     }
-    if (rkg_halo_ien_only && (!use_rkg_sts || rkg_lean || pp->pmesh->multilevel)) {
+    if (rkg_halo_ien_only && (rkg_lean || pp->pmesh->multilevel)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<mhd>/rkg_halo_ien_only needs use_rkg_sts = true, "
-                << "rkg_lean = false and a uniform (not multilevel) mesh" << std::endl;
+                << std::endl << "<mhd>/rkg_halo_ien_only needs rkg_lean = false and a "
+                << "uniform (not multilevel) mesh" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cs_resist_x1_centred = pin->GetOrAddBoolean("mhd", "cs_resist_x1_centred", true);
