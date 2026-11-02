@@ -158,7 +158,7 @@ void RadiationM1::VetGdThetaInit() {
 
 void RadiationM1::VetGdRingInit() {
   vgd_rbon = false;
-  if (!vgd_pol) {return;}
+  if (!vgd_pol || !vgd_rbkey) {return;}
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nx = pm->mesh_indcs.nx2, nx3t = pm->mesh_indcs.nx3;
@@ -167,7 +167,7 @@ void RadiationM1::VetGdRingInit() {
   for (int n = 0; n < nx; ++n) {
     node[n] = 0.5*(VgdThetaFace(pm, n) + VgdThetaFace(pm, n + 1));
   }
-  const double tlim = vgd_bcolat*M_PI/180.0;
+  const double tlim = ((vgd_rbcolat > 0.0) ? vgd_rbcolat : vgd_bcolat)*M_PI/180.0;
   int nz = 0;
   while (nz < nx/2 && node[nz] < tlim) {++nz;}
   nz = std::min(nz + 1, std::min(nx2b, nx/2));
@@ -222,7 +222,7 @@ void RadiationM1::VetGdRingInit() {
   vgd_rbon = true;
   if (me == 0) {
     std::cout << "<rad_m1> vet_gd (accsp-1102): polar RING buffers: " << nz
-              << " rows per pole (node colatitude < " << vgd_bcolat << " deg + 1 row, to "
+              << " rows per pole (node colatitude < " << tlim*180.0/M_PI << " deg + 1 row, to "
               << node[nz - 1]*180.0/M_PI << " deg), " << vgd_rbnit << " (block, pole) items; "
               << (ni + nc)*sizeof(Real)/1.0e9 << " GB per rank; stencils inside the polar "
               << "zone read the whole ring (no band, no clamp)" << std::endl;

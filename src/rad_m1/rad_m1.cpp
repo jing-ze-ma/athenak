@@ -1210,6 +1210,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // accsp-1102 (read only when named): the polar ring buffers of the full sphere (exact
+    // whole-ring reads in the polar zone; default off: ~3 s/cycle more on the 4-H200
+    // accretor with 8 rows, and the T6a pole test is unchanged by them) and their zone
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring")) {
+      vgd_rbkey = pin->GetBoolean("rad_m1","vet_gd_pole_ring");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring_colat")) {
+      vgd_rbcolat = pin->GetReal("rad_m1","vet_gd_pole_ring_colat");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }

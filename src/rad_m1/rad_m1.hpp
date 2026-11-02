@@ -2972,6 +2972,8 @@ class RadiationM1 {
   // (intensities, after the shell's sweep) and per build (ln chi, ln S): an upwind
   // stencil inside the polar zone reads them at its true phi (no band, no clamp)
   bool vgd_rbon = false;
+  bool vgd_rbkey = false;                 // vet_gd_pole_ring (read only when named; default off)
+  Real vgd_rbcolat = -1.0;               // vet_gd_pole_ring_colat (deg; default vet_gd_band_colat)
   int vgd_nzr = 0, vgd_nx3t = 0, vgd_nt2 = 0;
   DvceArray1D<Real> vgd_rbi, vgd_rbc;     // ((i 2 nzr + pq) nx3t + K) n + d ; ((i 2 + c) 2 nzr + pq) nx3t + K
   DvceArray2D<Real> vgd_rbth;             // (2, nzr) physical theta of ring row q (north, south)
