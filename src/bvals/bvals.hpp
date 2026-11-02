@@ -401,6 +401,16 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // receiver's array is overwritten by the neighbour's) -- the hydro's shared seam face
   // states (<mesh>/cs_seam_flux = shared, Hydro::CsSeamFaceStates)
   bool seam_raw = false;
+  // ucthshare-1102 (seam_raw only): which variables of the exchanged face record are
+  // tangential COVARIANT vector pairs (re-expressed on the receiver's basis by
+  // cubed_sphere::ApplyMomentumXform).  Default: IM2/IM3 only (the hydro record).
+  // seam_xform_b >= 0 adds the pair (seam_xform_b, seam_xform_b+1) (the MHD field);
+  // seam_xform_stride > 0 repeats the pattern every stride variables (a record of two
+  // sets: the active-radial-row states and the radial-ghost-row states); seam_xform_off
+  // moves every variable verbatim (the MHD UCT seam packets, Cartesian vectors).
+  int seam_xform_b = -1;
+  int seam_xform_stride = 0;
+  bool seam_xform_off = false;
   // cs_perm_pairs (default false): the tangential vector pairs of this object are
   // face-normal components; a seam permutes them with the axis signs instead of the
   // covariant metric transform (bvals_cc.cpp).  Set by the implicit M1 on pbval_th.
@@ -482,6 +492,10 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
 class MeshBoundaryValuesFC : public MeshBoundaryValues {
  public:
   MeshBoundaryValuesFC(MeshBlockPack *ppack, ParameterInput *pin);
+  // ucthshare-1102 <mhd>/cs_seam_emf_avg = false (diagnostic): RecvAndUnpackFluxFC leaves
+  // every edge EMF as this block computed it (no same-level sum/average, no cube-vertex
+  // average).  Single-block-per-panel cubed sphere only (the gate of the shared seam EMF).
+  bool skip_emf_reconcile = false;
 
   //functions
   void InitSendIndices(MeshBoundaryBuffer &b,int o1,int o2,int o3,int f1,int f2) override;

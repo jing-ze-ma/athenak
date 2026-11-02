@@ -257,6 +257,26 @@ class MHD {
   bool emf_uct = false;
   bool emf_uct_hlld = false;
   DvceArray5D<Real> uct1, uct2, uct3;
+  // ucthshare-1102 <mhd>/cs_seam_mhd = none (default) | faces | shared (read only when
+  // named; cubed sphere).  faces (1): each panel-seam face is ONE Riemann problem -- the
+  // ghost-side state is the neighbour panel's OWN PLM state (primitives, derived, bcc),
+  // exchanged through pbval_fs (cs_seam_states.hpp, shared with the hydro), radial ghost
+  // rows included.  shared (1)+(2)+(3), emf_scheme = uct | uct_hlld only: the seam-edge
+  // and cube-vertex UCT EMFs evaluated from the SAME inputs on every panel (UctSeamEdges,
+  // mhd_cs_seam.cpp; neighbour packets through pbval_us).  <mhd>/cs_seam_emf_avg = false
+  // (diagnostic, read only when named) skips the edge-EMF reconciliation entirely.
+  int cs_seam_mhd = 0;
+  bool cs_seam_noavg = false;
+  MeshBoundaryValuesCC *pbval_fs = nullptr;
+  MeshBoundaryValuesCC *pbval_us = nullptr;
+  DvceFaceFld5D<Real> *pseamfs = nullptr;
+  DvceFaceFld5D<Real> *pusown = nullptr;
+  DvceFaceFld5D<Real> *pusnbr = nullptr;
+  int cs_seam_nfs = 0;
+  void CsSeamInit(ParameterInput *pin);
+  void CsSeamFaceStates();
+  void UctSeamPackets();
+  void UctSeamEdges();
   bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per

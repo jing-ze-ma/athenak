@@ -60,6 +60,9 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("emf_smooth", emf_smooth);
   v.value("emf_uct", emf_uct);
   v.value("emf_uct_hlld", emf_uct_hlld);
+  v.value("cs_seam_mhd", cs_seam_mhd);
+  v.value("cs_seam_noavg", cs_seam_noavg);
+  v.value("cs_seam_nfs", cs_seam_nfs);
   v.value("use_polar_emf_diss", use_polar_emf_diss);
   v.value("cs_lowbeta_fallback", cs_lowbeta_fallback);
   v.value("polar_hlle_rows", polar_hlle_rows);
@@ -122,6 +125,11 @@ void mhd::MHD::DtRetryVisit(V &v) {
 //   peos : EquationOfState *
 //   pbval_u : MeshBoundaryValuesCC *
 //   pbval_b : MeshBoundaryValuesFC *
+//   pbval_fs : MeshBoundaryValuesCC *
+//   pbval_us : MeshBoundaryValuesCC *
+//   pseamfs : DvceFaceFld5D<Real> *
+//   pusown : DvceFaceFld5D<Real> *
+//   pusnbr : DvceFaceFld5D<Real> *
 //   porb_u : OrbitalAdvectionCC *
 //   porb_b : OrbitalAdvectionFC *
 //   psbox_u : ShearingBoxCC *

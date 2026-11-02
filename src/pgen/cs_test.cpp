@@ -397,6 +397,8 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestFFCheck(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
 void CSTestEosCacheCheck(Mesh *pm);
+void CSTestSeamGatesFinal(ParameterInput *pin, Mesh *pm);
+void (*cs_prev_final)(ParameterInput *, Mesh *) = nullptr;
 void CSTestBlastCheck(ParameterInput *pin, Mesh *pm);
 void CSTestSeamFluxCheck(Mesh *pm);
 void CSTestLevelFluxCheck(Mesh *pm);
@@ -535,6 +537,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // only thing that has touched the ghosts is one boundary exchange.
   if (iprob == 15 && pin->GetOrAddInteger("problem", "seam_halo_scan", 0) != 0) {
     pgen_final_func = CSTestSeamHaloScan;
+  }
+  if (pin->DoesParameterExist("problem", "seam_gate") &&
+      pin->GetBoolean("problem", "seam_gate")) {   // ucthshare-1102
+    cs_prev_final = pgen_final_func;
+    pgen_final_func = CSTestSeamGatesFinal;
   }
   // iprob = 13: the STRATIFIED low-beta test. Gravity is a user source term because
   // <srcterms> is refused on the cubed sphere (it has no gnomonic form); this one is
@@ -5179,6 +5186,197 @@ void CSCornerHaloSmoothness(MeshBlockPack *pmbp) {
                   fabs(bcc_h(m,2,kq,jq,imid) - bf));
     }
   }
+}
+
+
+//----------------------------------------------------------------------------------------
+//! ucthshare-1102 <problem>/seam_gate = true (read only when named): the three geometric
+//! seam gates of the iprob = 8 check (cube-vertex x1e spread, block-corner x1e spread by
+//! geometry, shared seam face single-valuedness), copied verbatim, for ANY iprob, run at
+//! the end after the problem's own final function.  One rank.
+void CSTestSeamGatesFinal(ParameterInput *pin, Mesh *pm) {
+  if (cs_prev_final != nullptr) cs_prev_final(pin, pm);
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ng = indcs.ng;
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  (void) ie;
+    {
+      auto &ef = pmbp->pmhd->efld;
+      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ef.x1e);
+      std::map<std::string, std::pair<Real,Real>> lo_hi;   // min, max over panels
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        for (int cj=0; cj<2; ++cj) {
+          for (int ck=0; ck<2; ++ck) {
+            const int jc = cj ? je+1 : js;
+            const int kc = ck ? ke+1 : ks;
+            const Real xi = 0.25*M_PI*LeftEdgeX(jc-js, indcs.nx2, size.h_view(m).x2min,
+                                                                  size.h_view(m).x2max);
+            const Real et = 0.25*M_PI*LeftEdgeX(kc-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                  size.h_view(m).x3max);
+            Real cx, cy, cz;
+            PanelToCart(p, xi, et, cx, cy, cz);
+            // A CUBE VERTEX has |x| = |y| = |z|. With several MeshBlocks per panel a
+            // block corner is usually just an ordinary interior edge, which is shared by
+            // four blocks and is not what this check is about.
+            if (fabs(fabs(cx) - fabs(cy)) > 1.0e-9 ||
+                fabs(fabs(cx) - fabs(cz)) > 1.0e-9) continue;
+            for (int i=is; i<=ie; ++i) {
+              char key[128];
+              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
+              const Real e = e1h(m,kc,jc,i);
+              auto it = lo_hi.find(std::string(key));
+              if (it == lo_hi.end()) {
+                lo_hi[std::string(key)] = std::make_pair(e,e);
+              } else {
+                it->second.first  = fmin(it->second.first, e);
+                it->second.second = fmax(it->second.second, e);
+              }
+            }
+          }
+        }
+      }
+      Real spread = 0.0, emag = 0.0;
+      int nvert = 0;
+      for (auto &kv : lo_hi) {
+        spread = fmax(spread, kv.second.second - kv.second.first);
+        emag = fmax(emag, fabs(kv.second.second));
+        ++nvert;
+      }
+      std::printf("### CS CUBE-VERTEX EMF SPREAD: %12.5e over %d vertex edges"
+                  " (max|e1| %10.3e)\n", spread, nvert, emag);
+    }
+    {
+      auto &ef = pmbp->pmhd->efld;
+      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ef.x1e);
+      std::map<std::string, std::pair<std::pair<Real,Real>,int>> tb;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        for (int cj=0; cj<2; ++cj) {
+          for (int ck=0; ck<2; ++ck) {
+            const int jc = cj ? je+1 : js;
+            const int kc = ck ? ke+1 : ks;
+            const Real xi = 0.25*M_PI*LeftEdgeX(jc-js, indcs.nx2, size.h_view(m).x2min,
+                                                                  size.h_view(m).x2max);
+            const Real et = 0.25*M_PI*LeftEdgeX(kc-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                  size.h_view(m).x3max);
+            Real cx, cy, cz;
+            PanelToCart(p, xi, et, cx, cy, cz);
+            const bool vtx = (fabs(fabs(cx)-fabs(cy)) < 1.0e-9 &&
+                              fabs(fabs(cx)-fabs(cz)) < 1.0e-9);
+            const bool seam = (fabs(fabs(xi) - 0.25*M_PI) < 1.0e-9 ||
+                               fabs(fabs(et) - 0.25*M_PI) < 1.0e-9);
+            const int bkt = vtx ? 0 : (seam ? 1 : 2);
+            for (int i=is; i<=ie; ++i) {
+              char key[128];
+              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
+              const Real e = e1h(m,kc,jc,i);
+              auto it = tb.find(std::string(key));
+              if (it == tb.end()) {
+                tb[std::string(key)] = std::make_pair(std::make_pair(e,e), bkt);
+              } else {
+                it->second.first.first  = fmin(it->second.first.first, e);
+                it->second.first.second = fmax(it->second.first.second, e);
+              }
+            }
+          }
+        }
+      }
+      Real sp[3] = {0.0, 0.0, 0.0};
+      int nb[3] = {0, 0, 0};
+      for (auto &kv : tb) {
+        const int b = kv.second.second;
+        sp[b] = fmax(sp[b], kv.second.first.second - kv.second.first.first);
+        nb[b] += 1;
+      }
+      const char *nm[3] = {"cube vertex   ", "four-block seam", "panel interior"};
+      std::printf("### CS BLOCK-CORNER x1e SPREAD by geometry\n");
+      for (int b=0; b<3; ++b) {
+        std::printf("   %s  %12.5e   (%d edges)\n", nm[b], sp[b], nb[b]);
+      }
+    }
+    {
+      auto &b0f = pmbp->pmhd->b0;
+      auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
+      auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
+      struct SeamFace { Real b; Real n[3]; int panel; };
+      // Split off the faces within ng of a seam END, i.e. a panel corner. Only there do
+      // the two panels average over DIFFERENT sets of contributions.
+      std::map<std::string, SeamFace> seen;
+      Real dmax = 0.0, bmax = 0.0, cmax = 0.0;
+      int npair = 0;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        for (int side=0; side<4; ++side) {
+          const bool jface = (side < 2);
+          const int jj = (side == 0) ? js : ((side == 1) ? je+1 : 0);
+          const int kk = (side == 2) ? ks : ((side == 3) ? ke+1 : 0);
+          const int nlo = jface ? ks : js;
+          const int nhi = jface ? ke : je;
+          for (int t=nlo; t<=nhi; ++t) {
+            const int j = jface ? jj : t;
+            const int k = jface ? t  : kk;
+            const Real x2n = size.h_view(m).x2min, x2x = size.h_view(m).x2max;
+            const Real x3n = size.h_view(m).x3min, x3x = size.h_view(m).x3max;
+            const Real xi = 0.25*M_PI*(jface
+                ? LeftEdgeX(j-js, indcs.nx2, x2n, x2x)
+                : CellCenterX(j-js, indcs.nx2, x2n, x2x));
+            const Real et = 0.25*M_PI*(jface
+                ? CellCenterX(k-ks, indcs.nx3, x3n, x3x)
+                : LeftEdgeX(k-ks, indcs.nx3, x3n, x3x));
+            Real n1[3], n2[3], cx, cy, cz;
+            PanelToCart(p, xi, et, cx, cy, cz);
+            PanelNormals(p, xi, et, n1, n2);
+            for (int i=is; i<=ie; ++i) {
+              char key[128];
+              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
+              SeamFace f;
+              f.b = jface ? b2h(m,k,j,i) : b3h(m,k,j,i);
+              for (int c=0; c<3; ++c) {f.n[c] = jface ? n1[c] : n2[c];}
+              f.panel = p;
+              auto it = seen.find(std::string(key));
+              if (it == seen.end()) {
+                seen[std::string(key)] = f;
+              } else if (it->second.panel != p) {
+                const Real dot = it->second.n[0]*f.n[0] + it->second.n[1]*f.n[1]
+                               + it->second.n[2]*f.n[2];
+                const Real d = fabs(it->second.b - dot*f.b);
+                // "near a corner" must mean near a CUBE VERTEX, tested geometrically:
+                // with several MeshBlocks per panel the ends of a block's seam are
+                // mostly ordinary interior edges, and bucketing by index would count
+                // those too and hide which faces are actually at issue.
+                Real vdot = 0.0;
+                for (int vv=0; vv<8; ++vv) {
+                  const Real vx = ((vv&1)?1.0:-1.0)/sqrt(3.0);
+                  const Real vy = ((vv&2)?1.0:-1.0)/sqrt(3.0);
+                  const Real vz = ((vv&4)?1.0:-1.0)/sqrt(3.0);
+                  vdot = fmax(vdot, cx*vx + cy*vy + cz*vz);
+                }
+                const Real dang = 0.5*M_PI/static_cast<Real>(indcs.nx2);
+                if (acos(fmin(1.0,vdot)) < (ng + 0.5)*dang) {
+                  cmax = fmax(cmax, d);
+                } else {
+                  dmax = fmax(dmax, d);
+                }
+                bmax = fmax(bmax, fabs(f.b));
+                ++npair;
+              }
+            }
+          }
+        }
+      }
+      std::printf("### CS SEAM FACE SINGLE-VALUED: max|b_P - b_Q| = %12.5e away from a"
+                  " cube vertex, %12.5e within %d cells of one; %d shared faces,"
+                  " max|b| %9.3e\n", dmax, cmax, ng, npair, bmax);
+    }
 }
 
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
